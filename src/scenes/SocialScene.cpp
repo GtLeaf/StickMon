@@ -104,8 +104,6 @@ void SocialScene::activateCurrent() {
 void SocialScene::render() {
     auto& c = PixelRenderer::canvas();
     c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, PixelRenderer::rgb(7, 9, 14));
-    c.fillRect(0, 0, Hal::DISPLAY_W, 24, PixelRenderer::rgb(25, 25, 40));
-    PixelRenderer::text(4, 4, Ui::SOCIAL, PixelRenderer::rgb(67, 213, 224), 1);
 
     renderMenu();
     renderToast();
@@ -114,19 +112,20 @@ void SocialScene::render() {
 void SocialScene::renderMenu() {
     auto& c = PixelRenderer::canvas();
     const int count = viewMode == ViewMode::PURPOSE ? (int)PURPOSE_COUNT : (int)ACTION_COUNT;
-    const int rowH = 31;
-    const int startY = 42;
+    const int rowH = 22;
+    const int startY = 20;
 
     for (int i = 0; i < count; ++i) {
         int y = startY + i * rowH;
         uint16_t color = (i == cursor) ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232);
         if (i == cursor) {
-            c.fillRect(4, y + 5, 5, 18, PixelRenderer::rgb(255, 216, 72));
+            c.fillRect(8, y + 3, 4, 14, PixelRenderer::rgb(255, 216, 72));
         }
         const char* label = viewMode == ViewMode::PURPOSE ? Ui::Social::PURPOSE_ITEMS[i] : Ui::Social::ACTION_ITEMS[i];
-        PixelRenderer::text(16, y + 6, label, color, 1);
+        c.fillRect(22, y + 3, 14, 14, PixelRenderer::rgb(135, 214, 238));
+        PixelRenderer::text(48, y + 2, label, color, 1);
         if (i < count - 1) {
-            c.drawFastHLine(4, y + rowH - 1, Hal::DISPLAY_W - 8, PixelRenderer::rgb(70, 74, 84));
+            c.drawFastHLine(48, y + rowH - 1, 150, PixelRenderer::rgb(70, 74, 84));
         }
     }
 }
@@ -134,8 +133,8 @@ void SocialScene::renderMenu() {
 void SocialScene::renderToast() {
     if (!toast || Hal::ins().millis() > toastUntil) return;
     auto& c = PixelRenderer::canvas();
-    c.fillRect(14, 216, 107, 20, PixelRenderer::rgb(34, 39, 47));
-    PixelRenderer::text(22, 220, toast, PixelRenderer::rgb(255, 255, 255), 1);
+    c.fillRect(52, 108, 136, 20, PixelRenderer::rgb(34, 39, 47));
+    PixelRenderer::text(60, 110, toast, PixelRenderer::rgb(255, 255, 255), 1);
 }
 
 const char* SocialScene::purposeName(EspNowLink::RoomPurpose purpose) {

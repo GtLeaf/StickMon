@@ -24,7 +24,7 @@ bool Hal::begin() {
     WiFi.mode(WIFI_OFF);
     btStop();
 
-    M5.Display.setRotation(0);
+    M5.Display.setRotation(1);
     M5.Display.setBrightness(brightness);
 
     sprite.setColorDepth(16);

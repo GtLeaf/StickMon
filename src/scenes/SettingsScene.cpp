@@ -9,6 +9,7 @@ void SettingsScene::onEnter() {
     cursor = 0;
     viewMode = ViewMode::MENU;
     settingsDirty = false;
+    normalizeVolumeSetting();
 }
 
 void SettingsScene::onExit() {
@@ -50,28 +51,25 @@ bool SettingsScene::onButton(const ButtonEvent& event) {
 }
 
 void SettingsScene::activateCurrent() {
+    toast = nullptr;
+    toastUntil = 0;
     switch (cursor) {
     case BRIGHTNESS:
         cycleBrightness();
-        toast = Ui::Settings::BRIGHTNESS_CHANGED;
         break;
     case GAME_SPEED:
         GameEngine::ins().cycleGameSpeed();
         markSettingsDirty();
-        toast = Ui::Common::SPEED_CHANGED;
         break;
     case VOLUME: {
         auto& settings = GameEngine::ins().gameState().settings;
-        settings.volume = (settings.volume + 1) % 4;
+        settings.volume = settings.volume >= 100 ? 0 : settings.volume + 10;
         markSettingsDirty();
-        toast = Ui::Settings::VOLUME_CHANGED;
         break;
     }
     case POWER_SAVE:
         GameEngine::ins().cycleIdleTimeout();
         markSettingsDirty();
-        toast = nullptr;
-        toastUntil = 0;
         return;
         break;
     case HELP:
@@ -84,7 +82,6 @@ void SettingsScene::activateCurrent() {
     default:
         break;
     }
-    toastUntil = Hal::ins().millis() + 1100;
 }
 
 void SettingsScene::cycleBrightness() {
@@ -97,6 +94,16 @@ void SettingsScene::cycleBrightness() {
     Hal::ins().setBrightness(next);
     GameEngine::ins().gameState().settings.brightness = next;
     markSettingsDirty();
+}
+
+void SettingsScene::normalizeVolumeSetting() {
+    auto& volume = GameEngine::ins().gameState().settings.volume;
+    uint8_t normalized = volume > 100 ? 100 : (uint8_t)((volume / 10) * 10);
+
+    if (volume != normalized) {
+        volume = normalized;
+        markSettingsDirty();
+    }
 }
 
 void SettingsScene::markSettingsDirty() {
@@ -113,8 +120,6 @@ void SettingsScene::saveSettingsIfDirty() {
 void SettingsScene::render() {
     auto& c = PixelRenderer::canvas();
     c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, PixelRenderer::rgb(7, 9, 14));
-    c.fillRect(0, 0, Hal::DISPLAY_W, 24, PixelRenderer::rgb(25, 25, 40));
-    PixelRenderer::text(4, 5, Ui::SETTINGS, PixelRenderer::rgb(67, 213, 224), 1);
     if (viewMode == ViewMode::HELP) {
         renderHelp();
     } else {
@@ -125,45 +130,45 @@ void SettingsScene::render() {
 
 void SettingsScene::renderMenu() {
     auto& c = PixelRenderer::canvas();
-    const int rowH = 24;
-    const int startY = 34;
+    const int rowH = 18;
+    const int startY = 12;
 
     for (int i = 0; i < COUNT; ++i) {
         int y = startY + i * rowH;
         bool selected = i == cursor;
         uint16_t fg = selected ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232);
-        if (selected) c.fillRect(4, y + 2, 5, 18, PixelRenderer::rgb(255, 216, 72));
-        PixelRenderer::text(16, y, Ui::Settings::ITEMS[i], fg, 1);
+        if (selected) c.fillRect(8, y + 2, 4, 12, PixelRenderer::rgb(255, 216, 72));
+        PixelRenderer::text(20, y, Ui::Settings::ITEMS[i], fg, 1);
 
         char value[16] = "";
         const auto& settings = GameEngine::ins().gameState().settings;
         if (i == BRIGHTNESS) snprintf(value, sizeof(value), "%u", Hal::ins().getBrightness());
         if (i == GAME_SPEED) snprintf(value, sizeof(value), "%.0fx", GameEngine::ins().gameSpeed());
-        if (i == VOLUME) snprintf(value, sizeof(value), "%u", settings.volume);
+        if (i == VOLUME) snprintf(value, sizeof(value), "%u%%", settings.volume);
         if (i == POWER_SAVE) snprintf(value, sizeof(value), "%s", GameEngine::ins().idleTimeoutLabel());
-        if (value[0]) PixelRenderer::text(84, y, value, PixelRenderer::rgb(135, 214, 238), 1);
+        if (value[0]) PixelRenderer::text(156, y, value, PixelRenderer::rgb(135, 214, 238), 1);
 
         if (i < COUNT - 1) {
-            c.drawFastHLine(4, y + rowH - 6, Hal::DISPLAY_W - 8, PixelRenderer::rgb(70, 74, 84));
+            c.drawFastHLine(20, y + rowH - 1, 190, PixelRenderer::rgb(70, 74, 84));
         }
     }
 }
 
 void SettingsScene::renderHelp() {
     auto& c = PixelRenderer::canvas();
-    c.fillRect(6, 34, 123, 162, PixelRenderer::rgb(25, 31, 40));
-    c.drawRect(6, 34, 123, 162, PixelRenderer::rgb(72, 83, 98));
-    PixelRenderer::text(12, 44, Ui::Settings::HELP_TITLE, PixelRenderer::rgb(67, 213, 224), 1);
-    PixelRenderer::text(12, 70, Ui::Settings::HELP_A_KEY, PixelRenderer::rgb(241, 242, 232), 1);
-    PixelRenderer::text(12, 90, Ui::Settings::HELP_B_KEY, PixelRenderer::rgb(241, 242, 232), 1);
-    PixelRenderer::text(12, 116, Ui::Settings::HELP_ROOM_A, PixelRenderer::rgb(241, 242, 232), 1);
-    PixelRenderer::text(12, 136, Ui::Settings::HELP_MENU_B, PixelRenderer::rgb(241, 242, 232), 1);
-    PixelRenderer::text(12, 164, Ui::Settings::HELP_BASIC, PixelRenderer::rgb(156, 164, 176), 1);
+    c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, PixelRenderer::rgb(10, 14, 20));
+    PixelRenderer::text(12, 10, Ui::Settings::HELP_TITLE, PixelRenderer::rgb(67, 213, 224), 1);
+    c.drawFastHLine(8, 32, 216, PixelRenderer::rgb(55, 63, 76));
+    PixelRenderer::text(18, 44, Ui::Settings::HELP_A_KEY, PixelRenderer::rgb(241, 242, 232), 1);
+    PixelRenderer::text(18, 66, Ui::Settings::HELP_B_KEY, PixelRenderer::rgb(241, 242, 232), 1);
+    PixelRenderer::text(128, 44, Ui::Settings::HELP_ROOM_A, PixelRenderer::rgb(241, 242, 232), 1);
+    PixelRenderer::text(128, 66, Ui::Settings::HELP_MENU_B, PixelRenderer::rgb(241, 242, 232), 1);
+    PixelRenderer::text(18, 100, Ui::Settings::HELP_BASIC, PixelRenderer::rgb(156, 164, 176), 1);
 }
 
 void SettingsScene::renderToast() {
     if (!toast || Hal::ins().millis() > toastUntil) return;
     auto& c = PixelRenderer::canvas();
-    c.fillRect(14, 210, 107, 20, PixelRenderer::rgb(34, 39, 47));
-    PixelRenderer::text(22, 216, toast, PixelRenderer::rgb(255, 255, 255), 1);
+    c.fillRect(70, 108, 100, 20, PixelRenderer::rgb(34, 39, 47));
+    PixelRenderer::text(78, 110, toast, PixelRenderer::rgb(255, 255, 255), 1);
 }

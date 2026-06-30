@@ -1,5 +1,7 @@
 #include "hardware/PixelRenderer.h"
 #include <Arduino.h>
+#include <cmath>
+#include <cstdlib>
 #include "assets/Font16CN.h"
 
 namespace {
@@ -99,4 +101,125 @@ void PixelRenderer::bar(int x, int y, int w, int h, uint8_t value, uint16_t fill
         canvas().fillRoundRect(x + 1, y + 1, inner, h - 2, 1, fill);
     }
     canvas().drawRoundRect(x, y, w, h, 2, rgb(45, 48, 56));
+}
+
+void PixelRenderer::drawRgb565Rle(int x, int y, int w, int h,
+                                  const uint16_t* data, uint32_t offset,
+                                  uint32_t length, bool flipX) {
+    if (!gCanvas || !data || w <= 0 || h <= 0) return;
+
+    const uint32_t total = (uint32_t)(w * h);
+    uint32_t idx = 0;
+    uint32_t pixel = 0;
+    while (idx < length && pixel < total) {
+        uint16_t token = pgm_read_word(&data[offset + idx++]);
+        uint16_t run = token & 0x7FFF;
+        if (run == 0) continue;
+
+        if (token & 0x8000) {
+            pixel += run;
+            if (pixel > total) pixel = total;
+            continue;
+        }
+
+        for (uint16_t i = 0; i < run && idx < length && pixel < total; ++i, ++pixel) {
+            uint16_t color = pgm_read_word(&data[offset + idx++]);
+            int col = pixel % w;
+            int row = pixel / w;
+            if (flipX) col = w - 1 - col;
+            gCanvas->drawPixel(x + col, y + row, color);
+        }
+    }
+}
+
+void PixelRenderer::drawRgb565RleScaled(int x, int y, int w, int h,
+                                        const uint16_t* data, uint32_t offset,
+                                        uint32_t length, float scale, bool flipX) {
+    if (!gCanvas || !data || w <= 0 || h <= 0 || scale <= 0.0f) return;
+    if (scale == 1.0f) {
+        drawRgb565Rle(x, y, w, h, data, offset, length, flipX);
+        return;
+    }
+
+    if (scale > 1.0f) {
+        const uint32_t total = (uint32_t)(w * h);
+        uint32_t idx = 0;
+        uint32_t pixel = 0;
+        while (idx < length && pixel < total) {
+            uint16_t token = pgm_read_word(&data[offset + idx++]);
+            uint16_t run = token & 0x7FFF;
+            if (run == 0) continue;
+
+            if (token & 0x8000) {
+                pixel += run;
+                if (pixel > total) pixel = total;
+                continue;
+            }
+
+            for (uint16_t i = 0; i < run && idx < length && pixel < total; ++i, ++pixel) {
+                uint16_t color = pgm_read_word(&data[offset + idx++]);
+                int col = pixel % w;
+                int row = pixel / w;
+                if (flipX) col = w - 1 - col;
+                int drawX = (int)(x + col * scale);
+                int drawY = (int)(y + row * scale);
+                int drawW = (int)ceilf(scale);
+                int drawH = (int)ceilf(scale);
+                gCanvas->fillRect(drawX, drawY, drawW, drawH, color);
+            }
+        }
+        return;
+    }
+
+    int outW = (int)(w * scale);
+    int outH = (int)(h * scale);
+    if (outW <= 0) outW = 1;
+    if (outH <= 0) outH = 1;
+
+    size_t pixelCount = (size_t)w * h;
+    uint16_t* buf = (uint16_t*)malloc(pixelCount * sizeof(uint16_t));
+    uint8_t* opaque = (uint8_t*)calloc(pixelCount, sizeof(uint8_t));
+    if (!buf || !opaque) {
+        if (buf) free(buf);
+        if (opaque) free(opaque);
+        drawRgb565Rle(x, y, w, h, data, offset, length, flipX);
+        return;
+    }
+
+    const uint32_t total = (uint32_t)(w * h);
+    uint32_t idx = 0;
+    uint32_t pixel = 0;
+    while (idx < length && pixel < total) {
+        uint16_t token = pgm_read_word(&data[offset + idx++]);
+        uint16_t run = token & 0x7FFF;
+        if (run == 0) continue;
+
+        if (token & 0x8000) {
+            pixel += run;
+            if (pixel > total) pixel = total;
+            continue;
+        }
+
+        for (uint16_t i = 0; i < run && idx < length && pixel < total; ++i, ++pixel) {
+            buf[pixel] = pgm_read_word(&data[offset + idx++]);
+            opaque[pixel] = 1;
+        }
+    }
+
+    for (int row = 0; row < outH; ++row) {
+        int srcRow = (int)(row / scale);
+        if (srcRow >= h) srcRow = h - 1;
+        for (int col = 0; col < outW; ++col) {
+            int srcCol = (int)(col / scale);
+            if (srcCol >= w) srcCol = w - 1;
+            int finalCol = flipX ? (w - 1 - srcCol) : srcCol;
+            size_t srcIndex = (size_t)srcRow * w + finalCol;
+            if (opaque[srcIndex]) {
+                gCanvas->drawPixel(x + col, y + row, buf[srcIndex]);
+            }
+        }
+    }
+
+    free(opaque);
+    free(buf);
 }

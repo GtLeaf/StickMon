@@ -18,8 +18,8 @@ public:
     int batteryLevel();
     int filteredBatteryLevel();
 
-    static constexpr int DISPLAY_W = 135;
-    static constexpr int DISPLAY_H = 240;
+    static constexpr int DISPLAY_W = 240;
+    static constexpr int DISPLAY_H = 135;
 
 private:
     Hal() = default;

@@ -1,5 +1,7 @@
 #include "scenes/ExploreScene.h"
 #include <cstdio>
+#include <cstring>
+#include "assets/PokemonSprites.h"
 #include "core/GameEngine.h"
 #include "core/UiStrings.h"
 #include "game/BattleSystem.h"
@@ -16,15 +18,171 @@ enum PickupId : uint8_t {
     PICKUP_ANTIDOTE,
     PICKUP_RARE_CANDY,
 };
+
+struct ExploreWeights {
+    uint16_t none;
+    uint16_t ball;
+    uint16_t coin;
+    uint16_t potion;
+    uint16_t superPotion;
+    uint16_t antidote;
+    uint16_t candy;
+    uint16_t encounter;
+    uint8_t minSteps;
+    uint8_t stepRange;
+    uint8_t maxEvolutionStage;
+    uint16_t maxBaseStatTotal;
+};
+
+static constexpr ExploreWeights BIOME_WEIGHTS[] = {
+    // none ball coin potion super antidote candy battle steps range stage maxBST
+    {1800, 2500, 2500, 1500, 200, 300, 30, 1170, 26, 55, 0, 330},
+    {1500, 800, 2000, 2000, 800, 800, 50, 2050, 34, 65, 1, 430},
+    {800, 500, 1000, 700, 1000, 700, 100, 5200, 42, 80, 2, 0},
+};
+
+static constexpr uint8_t WILD_LEVEL_MIN = 1;
+static constexpr uint8_t WILD_LEVEL_MAX = 10;
+static constexpr uint8_t WILD_LEVEL_COUNT = WILD_LEVEL_MAX - WILD_LEVEL_MIN + 1;
+static constexpr uint8_t WILD_LEVEL_WEIGHTS[WILD_LEVEL_COUNT] = {
+    2, 3, 4, 5, 6, 5, 4, 3, 2, 1,
+};
+
+const ExploreWeights& biomeWeights(ExploreScene::Biome biome) {
+    uint8_t idx = static_cast<uint8_t>(biome);
+    if (idx >= static_cast<uint8_t>(ExploreScene::Biome::COUNT)) idx = 0;
+    return BIOME_WEIGHTS[idx];
+}
+
+const char* biomeName(ExploreScene::Biome biome) {
+    uint8_t idx = static_cast<uint8_t>(biome);
+    if (idx >= static_cast<uint8_t>(ExploreScene::Biome::COUNT)) idx = 0;
+    return Ui::Explore::AREA_ITEMS[idx];
+}
+
+uint16_t biomeFieldColor(ExploreScene::Biome biome) {
+    switch (biome) {
+    case ExploreScene::Biome::RIVERSIDE: return PixelRenderer::rgb(36, 74, 82);
+    case ExploreScene::Biome::DEEP_FOREST: return PixelRenderer::rgb(30, 58, 44);
+    case ExploreScene::Biome::GRASS:
+    default: return PixelRenderer::rgb(37, 71, 58);
+    }
+}
+
+uint16_t biomeAccentColor(ExploreScene::Biome biome) {
+    switch (biome) {
+    case ExploreScene::Biome::RIVERSIDE: return PixelRenderer::rgb(77, 165, 196);
+    case ExploreScene::Biome::DEEP_FOREST: return PixelRenderer::rgb(112, 164, 84);
+    case ExploreScene::Biome::GRASS:
+    default: return PixelRenderer::rgb(92, 222, 112);
+    }
+}
+
+const Species* preEvolutionOf(const Species& species) {
+    const Species* table = speciesTable();
+    uint8_t count = speciesCount();
+    for (uint8_t i = 0; i < count; ++i) {
+        if (table[i].evolveTo == species.id) return &table[i];
+    }
+    // Eevee uses a branch evolution in this data table, so only one target can be
+    // represented by evolveTo. Keep the encounter stage filter aware of all branches.
+    switch (species.id) {
+    case 134:
+    case 135:
+    case 136:
+    case 196:
+    case 197:
+    case 470:
+    case 471:
+        return findSpecies(133);
+    default:
+        break;
+    }
+    return nullptr;
+}
+
+uint8_t evolutionStage(const Species& species) {
+    uint8_t stage = 0;
+    const Species* current = &species;
+    while (const Species* pre = preEvolutionOf(*current)) {
+        if (++stage >= 2) return stage;
+        current = pre;
+    }
+    return stage;
+}
+
+uint16_t baseStatTotal(const Species& species) {
+    return species.stats.hp + species.stats.atk + species.stats.def +
+           species.stats.spa + species.stats.spd + species.stats.spe;
+}
+
+uint8_t stageFallbackMinLevel(uint8_t stage) {
+    if (stage >= 2) return 30;
+    if (stage == 1) return 16;
+    return 3;
+}
+
+uint8_t minEncounterLevel(const Species& species) {
+    const Species* pre = preEvolutionOf(species);
+    if (!pre) return WILD_LEVEL_MIN;
+    if (pre->evolveMethod == EvolutionMethod::LEVEL && pre->evolveLevel > 0) {
+        return pre->evolveLevel;
+    }
+    return stageFallbackMinLevel(evolutionStage(species));
+}
+
+uint8_t maxEncounterLevel(const Species& species) {
+    if (species.evolveMethod == EvolutionMethod::LEVEL && species.evolveLevel > 0) {
+        return species.evolveLevel > 3 ? species.evolveLevel - 1 : species.evolveLevel;
+    }
+    if (species.evolveTo != 0) {
+        uint8_t nextStageMin = stageFallbackMinLevel(evolutionStage(species) + 1);
+        return nextStageMin > 3 ? nextStageMin - 1 : nextStageMin;
+    }
+    return Game::LEVEL_MAX;
+}
+
+uint8_t clampEncounterLevel(const Species& species, int level, const ExploreWeights& weights) {
+    (void)weights;
+    uint8_t minLevel = max<uint8_t>(WILD_LEVEL_MIN, minEncounterLevel(species));
+    uint8_t maxLevel = min<uint8_t>(WILD_LEVEL_MAX, maxEncounterLevel(species));
+    if (maxLevel < minLevel) maxLevel = minLevel;
+    if (level < minLevel) level = minLevel;
+    if (level > maxLevel) level = maxLevel;
+    return (uint8_t)level;
+}
+
+bool canEncounterInBiome(const Species& species, int level, const ExploreWeights& weights) {
+    if (evolutionStage(species) > weights.maxEvolutionStage) return false;
+    if (weights.maxBaseStatTotal > 0 && baseStatTotal(species) > weights.maxBaseStatTotal) return false;
+    uint8_t minLevel = max<uint8_t>(WILD_LEVEL_MIN, minEncounterLevel(species));
+    uint8_t maxLevel = min<uint8_t>(WILD_LEVEL_MAX, maxEncounterLevel(species));
+    return maxLevel >= minLevel && level >= minLevel && level <= maxLevel;
+}
+
+uint8_t rollWildLevel() {
+    uint16_t total = 0;
+    for (uint8_t weight : WILD_LEVEL_WEIGHTS) total += weight;
+
+    uint16_t r = random(0, total);
+    for (uint8_t i = 0; i < WILD_LEVEL_COUNT; ++i) {
+        if (r < WILD_LEVEL_WEIGHTS[i]) return WILD_LEVEL_MIN + i;
+        r -= WILD_LEVEL_WEIGHTS[i];
+    }
+    return 5;
+}
 }
 
 void ExploreScene::onEnter() {
-    resetWalk();
+    phase = Phase::SELECT;
+    biomeCursor = 0;
+    toast = nullptr;
+    exitAfterFaint = false;
 }
 
 void ExploreScene::update(uint32_t nowMs, float dtSeconds) {
-    (void)nowMs;
     (void)dtSeconds;
+    serviceBattleLog(nowMs);
 }
 
 bool ExploreScene::onButton(const ButtonEvent& event) {
@@ -34,6 +192,23 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
     }
 
     if (event.action != BtnAction::PRESSED) return false;
+
+    if (phase == Phase::SELECT) {
+        uint8_t optionCount = static_cast<uint8_t>(Biome::COUNT) + 1;
+        if (event.btn == 0) {
+            if (biomeCursor >= static_cast<uint8_t>(Biome::COUNT)) {
+                GameEngine::ins().requestScene(SceneID::MENU);
+            } else {
+                activeBiome = static_cast<Biome>(biomeCursor);
+                resetWalk();
+            }
+            return true;
+        }
+        if (event.btn == 1) {
+            biomeCursor = (biomeCursor + 1) % optionCount;
+            return true;
+        }
+    }
 
     if (phase == Phase::WALKING) {
         if (event.btn == 0) {
@@ -47,10 +222,15 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
     }
 
     if (phase == Phase::ENCOUNTER) {
+        if (battleLogBusy()) return true;
         if (event.btn == 0) {
             if (battleCursor == 0) attackWild();
             else if (battleCursor == 1) tryCapture();
             else fleeEncounter();
+            if (exitAfterFaint) {
+                GameEngine::ins().requestScene(SceneID::MENU);
+                return true;
+            }
             return true;
         }
         if (event.btn == 1) {
@@ -77,27 +257,64 @@ void ExploreScene::walk() {
     uint8_t stepGain = 8 + random(0, 9);
     steps += stepGain;
     GameEngine::ins().addWalkSteps(stepGain);
+
+    bool triggered = rollSceneEvent(false);
+    if (phase == Phase::ENCOUNTER) return;
+
     if (steps >= targetSteps) {
-        rollEncounter();
-    } else {
-        rollPickupEvent();
-        if (!toast || Hal::ins().millis() > toastUntil) {
-            toast = Ui::Explore::CONTINUE;
-            toastUntil = Hal::ins().millis() + 650;
-        }
+        if (!triggered) rollSceneEvent(true);
+        if (phase == Phase::ENCOUNTER) return;
+        resetRouteSegment();
+        triggered = true;
+    }
+
+    if (!triggered && (!toast || Hal::ins().millis() > toastUntil)) {
+        toast = Ui::Explore::CONTINUE;
+        toastUntil = Hal::ins().millis() + 650;
     }
 }
 
-void ExploreScene::rollPickupEvent() {
+bool ExploreScene::rollSceneEvent(bool forceEvent) {
     uint32_t r = random(0, 10000);
+    const ExploreWeights& weights = biomeWeights(activeBiome);
+    uint32_t cursor = weights.none;
+    if (!forceEvent && r < cursor) return false;
+
     uint8_t pickup = PICKUP_NONE;
-    if (r < 30 && GameEngine::ins().gameState().stepsToday >= 5000) pickup = PICKUP_RARE_CANDY;
-    else if (r < 130) pickup = PICKUP_SUPER_POTION;
-    else if (r < 330) pickup = PICKUP_ANTIDOTE;
-    else if (r < 630) pickup = PICKUP_POTION;
-    else if (r < 1130) pickup = PICKUP_BALL;
-    else if (r < 1930) pickup = PICKUP_COIN;
-    if (pickup != PICKUP_NONE) resolvePickup(pickup);
+    if (forceEvent && r < cursor) r = cursor;
+    cursor += weights.ball;
+    if (r < cursor) pickup = PICKUP_BALL;
+    else {
+        cursor += weights.coin;
+        if (r < cursor) pickup = PICKUP_COIN;
+        else {
+            cursor += weights.potion;
+            if (r < cursor) pickup = PICKUP_POTION;
+            else {
+                cursor += weights.superPotion;
+                if (r < cursor) pickup = PICKUP_SUPER_POTION;
+                else {
+                    cursor += weights.antidote;
+                    if (r < cursor) pickup = PICKUP_ANTIDOTE;
+                    else {
+                        cursor += weights.candy;
+                        if (r < cursor && GameEngine::ins().gameState().stepsToday >= 5000) pickup = PICKUP_RARE_CANDY;
+                        else {
+                            cursor += weights.encounter;
+                            if (r < cursor) {
+                                rollEncounter();
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (pickup == PICKUP_NONE) return false;
+    resolvePickup(pickup);
+    return true;
 }
 
 void ExploreScene::resolvePickup(uint8_t pickupId) {
@@ -147,17 +364,68 @@ void ExploreScene::resolvePickup(uint8_t pickupId) {
 void ExploreScene::rollEncounter() {
     const Species* table = speciesTable();
     uint8_t count = speciesCount();
-    wild = &table[random(0, count)];
-    int wildLevel = (int)GameEngine::ins().activeMonster().level + (int)random(-1, 2);
-    if (wildLevel < 3) wildLevel = 3;
-    if (wildLevel > Game::LEVEL_MAX) wildLevel = Game::LEVEL_MAX;
-    wildRuntime = GameEngine::ins().createMonster(wild->id, (uint8_t)wildLevel);
+    const ExploreWeights& weights = biomeWeights(activeBiome);
+    int wildLevel = rollWildLevel();
+
+    uint8_t candidates[32];
+    uint8_t candidateCount = 0;
+    for (uint8_t i = 0; i < count && candidateCount < sizeof(candidates); ++i) {
+        if (canEncounterInBiome(table[i], wildLevel, weights)) candidates[candidateCount++] = i;
+    }
+    if (candidateCount == 0) {
+        for (uint8_t i = 0; i < count && candidateCount < sizeof(candidates); ++i) {
+            if (evolutionStage(table[i]) <= weights.maxEvolutionStage) candidates[candidateCount++] = i;
+        }
+    }
+
+    wild = candidateCount > 0 ? &table[candidates[random(0, candidateCount)]] : &table[random(0, count)];
+    uint8_t clampedLevel = clampEncounterLevel(*wild, wildLevel, weights);
+    wildRuntime = GameEngine::ins().createMonster(wild->id, clampedLevel);
     wildHpMax = wildRuntime.hpMax;
     wildHp = wildHpMax;
     battleCursor = 0;
+    fleeAttempts = 0;
     phase = Phase::ENCOUNTER;
-    toast = Ui::Explore::WILD_APPEARED;
-    toastUntil = Hal::ins().millis() + 1200;
+    clearBattleLogs();
+    enqueueBattleLog(Ui::Explore::WILD_APPEARED);
+}
+
+void ExploreScene::clearBattleLogs() {
+    battleLogHead = 0;
+    battleLogCount = 0;
+    battleLogUntil = 0;
+    battleLogActive = false;
+    battleLogCurrent[0] = '\0';
+}
+
+void ExploreScene::enqueueBattleLog(const char* text) {
+    if (!text || !text[0]) return;
+    if (battleLogCount >= BATTLE_LOG_QUEUE_CAP) {
+        battleLogHead = (battleLogHead + 1) % BATTLE_LOG_QUEUE_CAP;
+        battleLogCount--;
+    }
+    uint8_t tail = (battleLogHead + battleLogCount) % BATTLE_LOG_QUEUE_CAP;
+    strncpy(battleLogQueue[tail], text, BATTLE_LOG_LEN - 1);
+    battleLogQueue[tail][BATTLE_LOG_LEN - 1] = '\0';
+    battleLogCount++;
+    serviceBattleLog(Hal::ins().millis());
+}
+
+void ExploreScene::serviceBattleLog(uint32_t nowMs) {
+    if (battleLogActive && (int32_t)(nowMs - battleLogUntil) < 0) return;
+    battleLogActive = false;
+    if (battleLogCount == 0) return;
+
+    strncpy(battleLogCurrent, battleLogQueue[battleLogHead], BATTLE_LOG_LEN - 1);
+    battleLogCurrent[BATTLE_LOG_LEN - 1] = '\0';
+    battleLogHead = (battleLogHead + 1) % BATTLE_LOG_QUEUE_CAP;
+    battleLogCount--;
+    battleLogActive = true;
+    battleLogUntil = nowMs + 1000;
+}
+
+bool ExploreScene::battleLogBusy() const {
+    return battleLogActive || battleLogCount > 0;
 }
 
 void ExploreScene::attackWild() {
@@ -175,25 +443,23 @@ void ExploreScene::attackWild() {
     wildRuntime.hpCur = wildHp;
 
     if (result.statusBlocked) {
-        toast = Ui::Explore::CANNOT_MOVE;
+        enqueueBattleLog(Ui::Explore::CANNOT_MOVE);
     } else if (result.effectiveness == 0) {
-        toast = Ui::Explore::NO_EFFECT;
+        enqueueBattleLog(Ui::Explore::NO_EFFECT);
     } else if (result.special) {
         const MoveInfo* move = findMove(activeSpecies.specialMoveId);
         snprintf(toastBuf, sizeof(toastBuf), Ui::Explore::SPECIAL_DAMAGE_FMT,
                  move ? move->name : Ui::Status::MOVE_UNKNOWN,
                  result.damage);
-        toast = toastBuf;
+        enqueueBattleLog(toastBuf);
     } else {
         snprintf(toastBuf, sizeof(toastBuf), Ui::Explore::DAMAGE_FMT, result.damage);
-        toast = toastBuf;
+        enqueueBattleLog(toastBuf);
         if (result.damage > 0 && activeMon.proficiency < 100) {
             activeMon.proficiency++;
             GameEngine::ins().markDirty(false);
         }
     }
-    if (wildHp == 0) toast = nullptr;
-    toastUntil = Hal::ins().millis() + 1000;
 
     if (wildHp == 0) {
         uint16_t expGain = max<uint16_t>(1, wildRuntime.level * 3);
@@ -230,23 +496,24 @@ void ExploreScene::wildCounterattack() {
     }
 
     if (result.statusBlocked) {
-        toast = Ui::Explore::WILD_CANNOT_MOVE;
+        enqueueBattleLog(Ui::Explore::WILD_CANNOT_MOVE);
     } else if (result.effectiveness == 0) {
-        toast = Ui::Explore::NO_EFFECT;
+        enqueueBattleLog(Ui::Explore::NO_EFFECT);
     } else {
         snprintf(toastBuf, sizeof(toastBuf), Ui::Explore::WILD_DAMAGE_FMT, result.damage);
-        toast = toastBuf;
+        enqueueBattleLog(toastBuf);
     }
-    toastUntil = Hal::ins().millis() + 1000;
 }
 
 void ExploreScene::finishPlayerFaint() {
-    uint16_t loss = GameEngine::ins().applyActiveFaintPenalty();
-    snprintf(toastBuf, sizeof(toastBuf), Ui::Explore::FAINTED_EXP_LOSS_FMT, loss);
+    uint32_t loss = GameEngine::ins().applyActiveFaintPenalty();
+    snprintf(toastBuf, sizeof(toastBuf), Ui::Explore::FAINTED_EXP_LOSS_FMT, (unsigned long)loss);
     toast = toastBuf;
     toastUntil = Hal::ins().millis() + 1500;
     lastCaptureSuccess = false;
-    phase = Phase::RESULT;
+    wild = nullptr;
+    wildHp = wildHpMax = 0;
+    exitAfterFaint = true;
 }
 
 void ExploreScene::tryCapture() {
@@ -254,6 +521,7 @@ void ExploreScene::tryCapture() {
     if (!GameEngine::ins().consumeBall()) {
         toast = Ui::Explore::NO_BALLS;
         toastUntil = Hal::ins().millis() + 1200;
+        enqueueBattleLog(Ui::Explore::NO_BALLS);
         return;
     }
 
@@ -274,6 +542,7 @@ void ExploreScene::tryCapture() {
     } else {
         toast = Ui::Explore::BROKE_FREE;
         toastUntil = Hal::ins().millis() + 900;
+        enqueueBattleLog(Ui::Explore::BROKE_FREE);
         wildCounterattack();
         if (phase == Phase::RESULT) return;
         return;
@@ -283,6 +552,26 @@ void ExploreScene::tryCapture() {
 }
 
 void ExploreScene::fleeEncounter() {
+    if (!wild) return;
+    const auto& activeMon = GameEngine::ins().activeMonster();
+    const Species& activeSpecies = GameEngine::ins().activeSpecies();
+    uint16_t activeSpeed = statFor(activeSpecies, activeMon, 5);
+    uint16_t wildSpeed = statFor(*wild, wildRuntime, 5);
+    bool escaped = wildSpeed == 0 || activeSpeed >= wildSpeed;
+    if (!escaped) {
+        fleeAttempts++;
+        uint16_t odds = (((uint32_t)activeSpeed * 128) / wildSpeed + 30 * fleeAttempts) & 0xFF;
+        escaped = random(0, 256) < odds;
+    }
+
+    if (!escaped) {
+        toast = Ui::Explore::FLEE_FAILED;
+        toastUntil = Hal::ins().millis() + 900;
+        enqueueBattleLog(Ui::Explore::FLEE_FAILED);
+        wildCounterattack();
+        return;
+    }
+
     GameEngine::ins().addCoins(2);
     lastCaptureSuccess = false;
     phase = Phase::RESULT;
@@ -292,23 +581,25 @@ void ExploreScene::fleeEncounter() {
 
 void ExploreScene::resetWalk() {
     phase = Phase::WALKING;
-    steps = 0;
-    targetSteps = 30 + random(0, 91);
+    resetRouteSegment();
     wild = nullptr;
     wildHp = wildHpMax = 0;
     toast = Ui::Explore::START;
     toastUntil = Hal::ins().millis() + 900;
 }
 
+void ExploreScene::resetRouteSegment() {
+    const ExploreWeights& weights = biomeWeights(activeBiome);
+    steps = 0;
+    targetSteps = weights.minSteps + random(0, weights.stepRange + 1);
+}
+
 void ExploreScene::render() {
     auto& c = PixelRenderer::canvas();
     c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, PixelRenderer::rgb(11, 22, 27));
-    if (phase != Phase::ENCOUNTER) {
-        c.fillRect(0, 0, Hal::DISPLAY_W, 24, PixelRenderer::rgb(25, 25, 40));
-        PixelRenderer::text(4, 5, Ui::EXPLORE, PixelRenderer::rgb(67, 213, 224), 1);
-    }
 
     switch (phase) {
+    case Phase::SELECT: renderBiomeMenu(); break;
     case Phase::WALKING: renderWalking(); break;
     case Phase::ENCOUNTER: renderEncounter(); break;
     case Phase::RESULT: renderResult(); break;
@@ -316,52 +607,73 @@ void ExploreScene::render() {
     renderToast();
 }
 
+void ExploreScene::renderBiomeMenu() {
+    auto& c = PixelRenderer::canvas();
+    c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, 0x0000);
+    int rowStep = 28;
+    int startY = 10;
+    int sepGap = 6;
+    uint8_t count = static_cast<uint8_t>(Biome::COUNT) + 1;
+    for (uint8_t i = 0; i < count; ++i) {
+        int y = startY + i * rowStep;
+        bool active = i == biomeCursor;
+        uint16_t color = active ? 0xFFE0 : 0xFFFF;
+        if (active) c.fillRect(4, y, 4, 16, 0xFFE0);
+        PixelRenderer::text(14, y, Ui::Explore::AREA_ITEMS[i], color, 1);
+        PixelRenderer::text(112, y, Ui::Explore::AREA_DESCS[i],
+                            active ? PixelRenderer::rgb(255, 218, 178) : 0x7BEF, 1);
+        if (i < count - 1) c.fillRect(4, y + rowStep - sepGap, Hal::DISPLAY_W - 8, 1, 0x7BEF);
+    }
+}
+
 void ExploreScene::renderWalking() {
     auto& c = PixelRenderer::canvas();
-    c.fillRect(8, 38, 119, 112, PixelRenderer::rgb(37, 71, 58));
-    c.drawRect(8, 38, 119, 112, PixelRenderer::rgb(94, 135, 99));
-    for (int i = 0; i < 7; ++i) {
-        int x = 16 + i * 16;
-        int h = 18 + (i % 3) * 8;
-        c.fillTriangle(x, 136, x + 8, 136 - h, x + 16, 136, PixelRenderer::rgb(58, 120, 75));
+    c.fillRect(10, 28, 160, 88, biomeFieldColor(activeBiome));
+    c.drawRect(10, 28, 160, 88, PixelRenderer::rgb(94, 135, 99));
+    for (int i = 0; i < 10; ++i) {
+        int x = 18 + i * 15;
+        int h = 16 + (i % 3) * 7;
+        c.fillTriangle(x, 104, x + 8, 104 - h, x + 16, 104, PixelRenderer::rgb(58, 120, 75));
     }
-    PixelRenderer::text(18, 48, Ui::Explore::GRASS_PATH, PixelRenderer::rgb(241, 242, 232), 1);
-    PixelRenderer::bar(18, 66, 98, 10, (steps * 100) / targetSteps,
-                       PixelRenderer::rgb(92, 222, 112), PixelRenderer::rgb(51, 61, 52));
+    PixelRenderer::text(24, 36, biomeName(activeBiome), PixelRenderer::rgb(241, 242, 232), 1);
+    PixelRenderer::bar(24, 58, 128, 9, (steps * 100) / targetSteps,
+                       biomeAccentColor(activeBiome), PixelRenderer::rgb(51, 61, 52));
 
     char buf[32];
     snprintf(buf, sizeof(buf), Ui::Explore::STEP_FMT, steps, targetSteps);
-    PixelRenderer::text(35, 82, buf, PixelRenderer::rgb(198, 215, 193), 1);
+    PixelRenderer::text(46, 76, buf, PixelRenderer::rgb(198, 215, 193), 1);
+    c.fillRect(182, 40, 42, 44, PixelRenderer::rgb(72, 83, 98));
+    c.fillRect(191, 50, 24, 24, biomeAccentColor(activeBiome));
 }
 
 void ExploreScene::renderEncounter() {
     auto& c = PixelRenderer::canvas();
     c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, PixelRenderer::rgb(197, 220, 192));
-    c.fillRect(0, 96, Hal::DISPLAY_W, 92, PixelRenderer::rgb(228, 225, 190));
-    c.fillEllipse(94, 88, 35, 9, PixelRenderer::rgb(155, 181, 142));
-    c.fillEllipse(35, 152, 39, 11, PixelRenderer::rgb(171, 159, 128));
+    c.fillRect(0, 78, Hal::DISPLAY_W, 24, PixelRenderer::rgb(228, 225, 190));
+    c.fillEllipse(174, 77, 34, 8, PixelRenderer::rgb(155, 181, 142));
+    c.fillEllipse(58, 101, 38, 9, PixelRenderer::rgb(171, 159, 128));
 
-    if (wild) drawMonsterBlock(*wild, 96, 66);
-    drawMonsterBlock(GameEngine::ins().activeSpecies(), 36, 124);
+    if (wild) drawMonsterBlock(*wild, 174, 45);
+    drawMonsterBlock(GameEngine::ins().activeSpecies(), 58, 70, true);
     renderBattleHud();
     renderCommandBox();
 }
 
 void ExploreScene::renderResult() {
     auto& c = PixelRenderer::canvas();
-    c.fillRect(8, 52, 119, 96, PixelRenderer::rgb(35, 42, 50));
-    c.drawRect(8, 52, 119, 96, PixelRenderer::rgb(95, 110, 126));
-    PixelRenderer::text(20, 70, lastCaptureSuccess ? Ui::Explore::CAPTURE_SUCCESS : Ui::Explore::RESULT_END,
+    c.fillRect(42, 42, 156, 58, PixelRenderer::rgb(35, 42, 50));
+    c.drawRect(42, 42, 156, 58, PixelRenderer::rgb(95, 110, 126));
+    PixelRenderer::text(58, 58, lastCaptureSuccess ? Ui::Explore::CAPTURE_SUCCESS : Ui::Explore::RESULT_END,
                         lastCaptureSuccess ? PixelRenderer::rgb(92, 222, 112) : PixelRenderer::rgb(241, 242, 232), 1);
-    if (wild) PixelRenderer::text(20, 88, wild->name, PixelRenderer::rgb(255, 216, 72), 1);
+    if (wild) PixelRenderer::text(58, 78, wild->name, PixelRenderer::rgb(255, 216, 72), 1);
 }
 
 void ExploreScene::renderToast() {
     if (!toast || Hal::ins().millis() > toastUntil) return;
     if (phase == Phase::ENCOUNTER) return;
     auto& c = PixelRenderer::canvas();
-    c.fillRect(14, 210, 107, 20, PixelRenderer::rgb(34, 39, 47));
-    PixelRenderer::text(22, 216, toast, PixelRenderer::rgb(255, 255, 255), 1);
+    c.fillRect(62, 108, 116, 20, PixelRenderer::rgb(34, 39, 47));
+    PixelRenderer::text(70, 110, toast, PixelRenderer::rgb(255, 255, 255), 1);
 }
 
 void ExploreScene::drawWildBlock(int x, int y) {
@@ -369,9 +681,18 @@ void ExploreScene::drawWildBlock(int x, int y) {
     drawMonsterBlock(*wild, x, y);
 }
 
-void ExploreScene::drawMonsterBlock(const Species& species, int x, int y) {
+void ExploreScene::drawMonsterBlock(const Species& species, int x, int y, bool back) {
     auto& c = PixelRenderer::canvas();
     c.fillEllipse(x, y + 32, 25, 7, PixelRenderer::rgb(23, 27, 34));
+    const PokemonSprites::SpriteFrame* frame = PokemonSprites::findSpeciesSprite(
+        species.id, back ? PokemonSprites::SpriteKind::BACK : PokemonSprites::SpriteKind::FRONT);
+    if (frame) {
+        uint8_t w = pgm_read_byte(&frame->width);
+        uint8_t h = pgm_read_byte(&frame->height);
+        PixelRenderer::drawRgb565Rle(x - w / 2, y - h / 2, w, h, PokemonSprites::SPRITE_RLE,
+                                     pgm_read_dword(&frame->offset), pgm_read_dword(&frame->length));
+        return;
+    }
     c.fillRect(x - 18, y - 22, 36, 40, species.colorA);
     c.fillRect(x - 11, y - 13, 22, 23, species.colorB);
     c.fillCircle(x - 6, y - 5, 2, PixelRenderer::rgb(24, 30, 38));
@@ -383,42 +704,41 @@ void ExploreScene::renderBattleHud() {
     char buf[24];
 
     if (wild) {
-        c.fillRect(5, 8, 78, 43, PixelRenderer::rgb(248, 248, 232));
-        c.drawRect(5, 8, 78, 43, PixelRenderer::rgb(74, 91, 75));
-        PixelRenderer::text(10, 12, wild->name, PixelRenderer::rgb(25, 31, 40), 1);
+        c.fillRect(6, 8, 88, 36, PixelRenderer::rgb(248, 248, 232));
+        c.drawRect(6, 8, 88, 36, PixelRenderer::rgb(74, 91, 75));
+        PixelRenderer::text(10, 10, wild->name, PixelRenderer::rgb(25, 31, 40), 1);
         snprintf(buf, sizeof(buf), Ui::Common::LEVEL_FMT, wildRuntime.level);
-        PixelRenderer::text(54, 12, buf, PixelRenderer::rgb(25, 31, 40), 1);
-        PixelRenderer::bar(12, 33, 62, 7, wildHpMax ? (wildHp * 100 / wildHpMax) : 0,
+        PixelRenderer::text(62, 10, buf, PixelRenderer::rgb(25, 31, 40), 1);
+        PixelRenderer::bar(14, 31, 70, 7, wildHpMax ? (wildHp * 100 / wildHpMax) : 0,
                            PixelRenderer::rgb(92, 222, 112), PixelRenderer::rgb(59, 70, 59));
     }
 
     const auto& active = GameEngine::ins().activeMonster();
     const Species& species = GameEngine::ins().activeSpecies();
-    c.fillRect(58, 124, 72, 53, PixelRenderer::rgb(248, 248, 232));
-    c.drawRect(58, 124, 72, 53, PixelRenderer::rgb(74, 91, 75));
-    PixelRenderer::text(64, 128, species.name, PixelRenderer::rgb(25, 31, 40), 1);
+    c.fillRect(126, 62, 108, 36, PixelRenderer::rgb(248, 248, 232));
+    c.drawRect(126, 62, 108, 36, PixelRenderer::rgb(74, 91, 75));
+    PixelRenderer::text(132, 64, species.name, PixelRenderer::rgb(25, 31, 40), 1);
     snprintf(buf, sizeof(buf), Ui::Common::LEVEL_FMT, active.level);
-    PixelRenderer::text(100, 128, buf, PixelRenderer::rgb(25, 31, 40), 1);
-    PixelRenderer::bar(66, 149, 56, 7, active.hpMax ? (active.hpCur * 100 / active.hpMax) : 0,
+    PixelRenderer::text(198, 64, buf, PixelRenderer::rgb(25, 31, 40), 1);
+    PixelRenderer::bar(134, 82, 56, 7, active.hpMax ? (active.hpCur * 100 / active.hpMax) : 0,
                        PixelRenderer::rgb(92, 222, 112), PixelRenderer::rgb(59, 70, 59));
     snprintf(buf, sizeof(buf), Ui::Explore::WILD_HP_FMT, active.hpCur, active.hpMax);
-    PixelRenderer::text(66, 160, buf, PixelRenderer::rgb(25, 31, 40), 1);
+    PixelRenderer::text(194, 78, buf, PixelRenderer::rgb(25, 31, 40), 1);
 }
 
 void ExploreScene::renderCommandBox() {
     auto& c = PixelRenderer::canvas();
-    c.fillRect(0, 188, Hal::DISPLAY_W, 52, PixelRenderer::rgb(248, 248, 232));
-    c.drawRect(0, 188, Hal::DISPLAY_W, 52, PixelRenderer::rgb(74, 91, 75));
-    c.drawFastVLine(67, 190, 48, PixelRenderer::rgb(174, 182, 151));
-    c.drawFastHLine(2, 214, 131, PixelRenderer::rgb(174, 182, 151));
+    c.fillRect(0, 101, Hal::DISPLAY_W, 34, PixelRenderer::rgb(248, 248, 232));
+    c.drawRect(0, 101, Hal::DISPLAY_W, 34, PixelRenderer::rgb(74, 91, 75));
 
-    if (toast && Hal::ins().millis() <= toastUntil) {
-        PixelRenderer::text(12, 204, toast, PixelRenderer::rgb(25, 31, 40), 1);
+    serviceBattleLog(Hal::ins().millis());
+    if (battleLogActive) {
+        PixelRenderer::text(12, 110, battleLogCurrent, PixelRenderer::rgb(25, 31, 40), 1);
         return;
     }
 
-    static constexpr int xs[] = {20, 82, 20};
-    static constexpr int ys[] = {198, 198, 222};
+    static constexpr int xs[] = {30, 104, 178};
+    static constexpr int ys[] = {110, 110, 110};
     static constexpr const char* items[] = {
         Ui::Explore::CMD_ATTACK,
         Ui::Explore::CMD_BAG,

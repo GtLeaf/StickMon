@@ -7,6 +7,7 @@ namespace {
 constexpr const char* NVS_NS = "stickmon";
 constexpr const char* NVS_KEY = "state";
 constexpr const char* HATCH_KEY = "hatch";
+constexpr const char* CLOCK_KEY = "clock_min";
 }
 
 bool SaveManager::begin() {
@@ -63,6 +64,23 @@ bool SaveManager::save(const Game::GameState& state) {
 
 void SaveManager::reset(Game::GameState& state) {
     state = Game::GameState{};
+}
+
+bool SaveManager::loadClock(uint32_t& gameMinutesTotal) {
+    Preferences prefs;
+    if (!prefs.begin(NVS_NS, true)) return false;
+    bool exists = prefs.isKey(CLOCK_KEY);
+    if (exists) gameMinutesTotal = prefs.getUInt(CLOCK_KEY, 0);
+    prefs.end();
+    return exists;
+}
+
+bool SaveManager::saveClock(uint32_t gameMinutesTotal) {
+    Preferences prefs;
+    if (!prefs.begin(NVS_NS, false)) return false;
+    size_t written = prefs.putUInt(CLOCK_KEY, gameMinutesTotal);
+    prefs.end();
+    return written == sizeof(gameMinutesTotal);
 }
 
 bool SaveManager::loadHatchProgress(Game::HatchProgress& progress) {

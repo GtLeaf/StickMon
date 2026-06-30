@@ -18,6 +18,8 @@ public:
     SceneID homeScene() const { return state.oobeDone ? SceneID::MAIN : SceneID::HATCH; }
 
     float gameSpeed() const;
+    uint32_t gameMinutesTotal() const;
+    uint16_t gameMinutesOfDay() const;
     void cycleGameSpeed();
     uint8_t idleTimeoutIndex() const;
     const char* idleTimeoutLabel() const;
@@ -40,8 +42,9 @@ public:
     const Species& activeSpecies() const;
     const Species& speciesFor(const Game::MonsterRuntime& monster) const;
     Game::MonsterRuntime createMonster(uint16_t speciesId, uint8_t level) const;
-    uint8_t activeSlot() const { return state.activeSlot; }
+    uint8_t activeSlot() const { return 0; }
     bool switchActiveMonster();
+    bool moveTeamMemberToFront(uint8_t slot);
     void addFood(uint8_t amount = 1);
     bool consumeFood();
     void addBalls(uint8_t amount);
@@ -51,6 +54,8 @@ public:
     void addCandy(uint8_t amount);
     bool addPotion(uint8_t amount);
     bool addSuperPotion(uint8_t amount);
+    bool usePotion();
+    bool useSuperPotion();
     bool addAntidote(uint8_t amount);
     bool spendCoins(uint32_t amount);
     void addCoins(uint32_t amount);
@@ -59,9 +64,10 @@ public:
     void grantEffortFrom(const Species& defeatedSpecies);
     void petMonster();
     void finishHatch(uint8_t starterStyle);
-    void addExperience(uint16_t amount);
-    uint16_t applyActiveFaintPenalty();
+    void addExperience(uint32_t amount);
+    uint32_t applyActiveFaintPenalty();
     void addWalkSteps(uint16_t steps);
+    void debugRecoverActiveMonster();
     void markDirty(bool immediate = false);
     bool saveNow();
     bool loadHatchProgress(Game::HatchProgress& progress);
@@ -78,6 +84,10 @@ private:
     void resetIdle(uint32_t nowMs);
     void updateIdle(uint32_t nowMs);
     uint32_t idleTimeoutMs() const;
+    uint32_t gameMinutesTotalAt(uint32_t nowMs) const;
+    void syncGameClock(uint32_t nowMs);
+    void resetGameClockAnchor(uint32_t nowMs);
+    void persistGameClock(uint32_t nowMs, bool force = false);
     void initDefaultState();
     void tickCare(uint32_t nowMs);
     uint32_t randomIvPacked() const;
@@ -95,6 +105,11 @@ private:
     uint32_t lastCareMs = 0;
     uint32_t lastSaveMs = 0;
     uint32_t lastActivityMs = 0;
+    uint32_t clockAnchorMs = 0;
+    uint32_t clockAnchorMinutes = 0;
+    uint32_t lastClockSaveMs = 0;
+    uint32_t lastSavedClockMinutes = 0;
+    uint16_t hpRecoveryMinuteAcc = 0;
     bool idleActive = false;
     bool idleRendered = false;
     bool saveDirty = false;

@@ -34,6 +34,7 @@ private:
 
     void activateCurrent();
     void cycleBrightness();
+    void normalizeVolumeSetting();
     void markSettingsDirty();
     void saveSettingsIfDirty();
     void renderMenu();

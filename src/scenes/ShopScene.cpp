@@ -80,12 +80,12 @@ void ShopScene::buyCurrent() {
 void ShopScene::render() {
     auto& c = PixelRenderer::canvas();
     c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, PixelRenderer::rgb(7, 9, 14));
-    c.fillRect(0, 0, Hal::DISPLAY_W, 24, PixelRenderer::rgb(25, 25, 40));
-    PixelRenderer::text(4, 5, Ui::SHOP, PixelRenderer::rgb(67, 213, 224), 1);
+    c.fillRect(0, 0, Hal::DISPLAY_W, 20, PixelRenderer::rgb(25, 25, 40));
+    PixelRenderer::text(4, 2, Ui::SHOP, PixelRenderer::rgb(67, 213, 224), 1);
 
     char coins[20];
     snprintf(coins, sizeof(coins), Ui::Shop::COINS_SHORT_FMT, (unsigned long)GameEngine::ins().coinCount());
-    PixelRenderer::text(82, 5, coins, PixelRenderer::rgb(255, 216, 72), 1);
+    PixelRenderer::text(188, 2, coins, PixelRenderer::rgb(255, 216, 72), 1);
 
     renderList();
     renderToast();
@@ -93,9 +93,9 @@ void ShopScene::render() {
 
 void ShopScene::renderList() {
     auto& c = PixelRenderer::canvas();
-    const int startY = 28;
-    const int rowH = 25;
-    const int visibleRows = min<int>(COUNT, (206 - startY) / rowH);
+    const int startY = 24;
+    const int rowH = 20;
+    const int visibleRows = min<int>(COUNT, (Hal::DISPLAY_H - startY - 4) / rowH);
     int first = 0;
     if (cursor >= visibleRows) {
         first = cursor - visibleRows + 1;
@@ -107,32 +107,33 @@ void ShopScene::renderList() {
         int y = startY + row * rowH;
         bool selected = i == cursor;
         uint16_t fg = selected ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232);
-        if (selected) c.fillRect(4, y + 4, 5, 17, PixelRenderer::rgb(255, 216, 72));
+        if (selected) c.fillRect(8, y + 4, 4, 12, PixelRenderer::rgb(255, 216, 72));
 
-        PixelRenderer::text(16, y + 4, Ui::Shop::NAMES[i], fg, 1);
+        c.fillRect(20, y + 4, 12, 12, i == BACK ? PixelRenderer::rgb(92, 98, 110) : PixelRenderer::rgb(92, 222, 112));
+        PixelRenderer::text(42, y + 2, Ui::Shop::NAMES[i], fg, 1);
         if (i != BACK) {
             char price[16];
             snprintf(price, sizeof(price), "%uC", priceFor((Item)i));
-            PixelRenderer::text(96, y + 4, price, PixelRenderer::rgb(92, 222, 112), 1);
+            PixelRenderer::text(164, y + 2, price, PixelRenderer::rgb(92, 222, 112), 1);
         }
         if (row < visibleRows - 1 && i < COUNT - 1) {
-            c.drawFastHLine(4, y + rowH - 2, Hal::DISPLAY_W - 8, PixelRenderer::rgb(70, 74, 84));
+            c.drawFastHLine(42, y + rowH - 1, 154, PixelRenderer::rgb(70, 74, 84));
         }
     }
 
     if (COUNT > visibleRows && first > 0) {
-        c.fillTriangle(122, 29, 127, 29, 124, 25, PixelRenderer::rgb(135, 214, 238));
+        c.fillTriangle(226, 31, 233, 31, 229, 27, PixelRenderer::rgb(135, 214, 238));
     }
     if (COUNT > visibleRows && first + visibleRows < COUNT) {
-        c.fillTriangle(122, 204, 127, 204, 124, 208, PixelRenderer::rgb(135, 214, 238));
+        c.fillTriangle(226, 124, 233, 124, 229, 128, PixelRenderer::rgb(135, 214, 238));
     }
 }
 
 void ShopScene::renderToast() {
     if (!toast || Hal::ins().millis() > toastUntil) return;
     auto& c = PixelRenderer::canvas();
-    c.fillRect(14, 210, 107, 20, PixelRenderer::rgb(34, 39, 47));
-    PixelRenderer::text(22, 216, toast, PixelRenderer::rgb(255, 255, 255), 1);
+    c.fillRect(70, 108, 100, 20, PixelRenderer::rgb(34, 39, 47));
+    PixelRenderer::text(78, 110, toast, PixelRenderer::rgb(255, 255, 255), 1);
 }
 
 uint16_t ShopScene::priceFor(Item item) {

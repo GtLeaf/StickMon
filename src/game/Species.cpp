@@ -13,22 +13,38 @@ constexpr uint16_t EV(uint8_t hp, uint8_t atk, uint8_t def, uint8_t spa, uint8_t
 }
 
 const Species SPECIES[] = {
-    {906, Ui::SpeciesName::SPRIGATITO, TypeId::GRASS, TypeId::NONE, {40, 61, 54, 45, 45, 65}, EV(0, 0, 0, 0, 0, 1), 907, EvolutionMethod::LEVEL, 16, C(65, 185, 88), C(190, 236, 126), 1, 2},
-    {907, Ui::SpeciesName::FLORAGATO, TypeId::GRASS, TypeId::NONE, {61, 80, 63, 60, 63, 83}, EV(0, 0, 0, 0, 0, 2), 908, EvolutionMethod::LEVEL, 36, C(34, 150, 74), C(106, 221, 114), 1, 2},
-    {908, Ui::SpeciesName::MEOWSCARADA, TypeId::GRASS, TypeId::DARK, {76, 110, 70, 81, 70, 123}, EV(0, 0, 0, 0, 0, 3), 0, EvolutionMethod::NONE, 0, C(28, 122, 70), C(126, 57, 178), 1, 3},
-    {4, Ui::SpeciesName::CHARMANDER, TypeId::FIRE, TypeId::NONE, {39, 52, 43, 60, 50, 65}, EV(0, 0, 0, 0, 0, 1), 5, EvolutionMethod::LEVEL, 16, C(244, 118, 47), C(255, 204, 83), 4, 5},
-    {5, Ui::SpeciesName::CHARMELEON, TypeId::FIRE, TypeId::NONE, {58, 64, 58, 80, 65, 80}, EV(0, 0, 0, 1, 0, 1), 6, EvolutionMethod::LEVEL, 36, C(218, 72, 44), C(255, 170, 60), 4, 5},
-    {6, Ui::SpeciesName::CHARIZARD, TypeId::FIRE, TypeId::FLYING, {78, 84, 78, 109, 85, 100}, EV(0, 0, 0, 3, 0, 0), 0, EvolutionMethod::NONE, 0, C(198, 62, 39), C(69, 142, 219), 4, 6},
-    {656, Ui::SpeciesName::FROAKIE, TypeId::WATER, TypeId::NONE, {41, 56, 40, 62, 44, 71}, EV(0, 0, 0, 0, 0, 1), 657, EvolutionMethod::LEVEL, 16, C(70, 173, 224), C(202, 239, 255), 7, 8},
-    {657, Ui::SpeciesName::FROGADIER, TypeId::WATER, TypeId::NONE, {54, 63, 52, 83, 56, 97}, EV(0, 0, 0, 0, 0, 2), 658, EvolutionMethod::LEVEL, 36, C(34, 111, 198), C(157, 216, 255), 7, 8},
-    {658, Ui::SpeciesName::GRENINJA, TypeId::WATER, TypeId::DARK, {72, 95, 67, 103, 71, 122}, EV(0, 0, 0, 0, 0, 3), 0, EvolutionMethod::NONE, 0, C(28, 77, 153), C(126, 57, 178), 7, 9},
-    {172, Ui::SpeciesName::PICHU, TypeId::ELECTRIC, TypeId::NONE, {20, 40, 15, 35, 35, 60}, EV(0, 0, 0, 0, 0, 1), 25, EvolutionMethod::FRIENDSHIP, 0, C(255, 219, 56), C(92, 62, 42), 10, 11},
-    {25, Ui::SpeciesName::PIKACHU, TypeId::ELECTRIC, TypeId::NONE, {35, 55, 40, 50, 50, 90}, EV(0, 0, 0, 0, 0, 2), 26, EvolutionMethod::STONE, 0, C(255, 211, 43), C(120, 76, 38), 10, 11},
-    {26, Ui::SpeciesName::RAICHU, TypeId::ELECTRIC, TypeId::NONE, {60, 90, 55, 90, 80, 110}, EV(0, 0, 0, 0, 0, 3), 0, EvolutionMethod::NONE, 0, C(235, 139, 48), C(255, 225, 86), 10, 12},
-    {133, Ui::SpeciesName::EEVEE, TypeId::NORMAL, TypeId::NONE, {55, 55, 50, 45, 65, 55}, EV(0, 0, 0, 0, 1, 0), 0, EvolutionMethod::BRANCH, 0, C(156, 102, 55), C(239, 211, 155), 13, 14},
-    {92, Ui::SpeciesName::GASTLY, TypeId::GHOST, TypeId::POISON, {30, 35, 30, 100, 35, 80}, EV(0, 0, 0, 1, 0, 0), 93, EvolutionMethod::LEVEL, 25, C(117, 70, 167), C(65, 39, 92), 15, 16},
-    {93, Ui::SpeciesName::HAUNTER, TypeId::GHOST, TypeId::POISON, {45, 50, 45, 115, 55, 95}, EV(0, 0, 0, 2, 0, 0), 94, EvolutionMethod::TRADE, 0, C(82, 47, 137), C(173, 103, 220), 15, 16},
-    {94, Ui::SpeciesName::GENGAR, TypeId::GHOST, TypeId::POISON, {60, 65, 60, 130, 75, 110}, EV(0, 0, 0, 3, 0, 0), 0, EvolutionMethod::NONE, 0, C(55, 38, 89), C(139, 81, 184), 15, 17},
+    {1, Ui::SpeciesName::BULBASAUR, TypeId::GRASS, TypeId::POISON, {45, 49, 49, 65, 65, 45}, GrowthRate::PARABOLIC, EV(0, 0, 0, 1, 0, 0), 2, EvolutionMethod::LEVEL, 16, C(72, 177, 128), C(89, 156, 92), 1, 2},
+    {2, Ui::SpeciesName::IVYSAUR, TypeId::GRASS, TypeId::POISON, {60, 62, 63, 80, 80, 60}, GrowthRate::PARABOLIC, EV(0, 0, 0, 1, 1, 0), 3, EvolutionMethod::LEVEL, 32, C(74, 153, 126), C(203, 104, 174), 1, 2},
+    {3, Ui::SpeciesName::VENUSAUR, TypeId::GRASS, TypeId::POISON, {80, 82, 83, 100, 100, 80}, GrowthRate::PARABOLIC, EV(0, 0, 0, 2, 1, 0), 0, EvolutionMethod::NONE, 0, C(68, 140, 104), C(226, 112, 172), 1, 3},
+    {4, Ui::SpeciesName::CHARMANDER, TypeId::FIRE, TypeId::NONE, {39, 52, 43, 60, 50, 65}, GrowthRate::PARABOLIC, EV(0, 0, 0, 0, 0, 1), 5, EvolutionMethod::LEVEL, 16, C(244, 118, 47), C(255, 204, 83), 4, 5},
+    {5, Ui::SpeciesName::CHARMELEON, TypeId::FIRE, TypeId::NONE, {58, 64, 58, 80, 65, 80}, GrowthRate::PARABOLIC, EV(0, 0, 0, 1, 0, 1), 6, EvolutionMethod::LEVEL, 36, C(218, 72, 44), C(255, 170, 60), 4, 5},
+    {6, Ui::SpeciesName::CHARIZARD, TypeId::FIRE, TypeId::FLYING, {78, 84, 78, 109, 85, 100}, GrowthRate::PARABOLIC, EV(0, 0, 0, 3, 0, 0), 0, EvolutionMethod::NONE, 0, C(198, 62, 39), C(69, 142, 219), 4, 6},
+    {7, Ui::SpeciesName::SQUIRTLE, TypeId::WATER, TypeId::NONE, {44, 48, 65, 50, 64, 43}, GrowthRate::PARABOLIC, EV(0, 0, 1, 0, 0, 0), 8, EvolutionMethod::LEVEL, 16, C(78, 163, 219), C(235, 210, 150), 7, 8},
+    {8, Ui::SpeciesName::WARTORTLE, TypeId::WATER, TypeId::NONE, {59, 63, 80, 65, 80, 58}, GrowthRate::PARABOLIC, EV(0, 0, 1, 0, 1, 0), 9, EvolutionMethod::LEVEL, 36, C(64, 137, 209), C(214, 229, 242), 7, 8},
+    {9, Ui::SpeciesName::BLASTOISE, TypeId::WATER, TypeId::NONE, {79, 83, 100, 85, 105, 78}, GrowthRate::PARABOLIC, EV(0, 0, 0, 0, 3, 0), 0, EvolutionMethod::NONE, 0, C(63, 119, 188), C(154, 132, 109), 7, 9},
+    {144, Ui::SpeciesName::ARTICUNO, TypeId::ICE, TypeId::FLYING, {90, 85, 100, 95, 125, 85}, GrowthRate::SLOW, EV(0, 0, 0, 0, 3, 0), 0, EvolutionMethod::NONE, 0, C(112, 185, 228), C(232, 247, 255), 25, 26},
+    {145, Ui::SpeciesName::ZAPDOS, TypeId::ELECTRIC, TypeId::FLYING, {90, 90, 85, 125, 90, 100}, GrowthRate::SLOW, EV(0, 0, 0, 3, 0, 0), 0, EvolutionMethod::NONE, 0, C(248, 211, 49), C(55, 55, 52), 10, 20},
+    {146, Ui::SpeciesName::MOLTRES, TypeId::FIRE, TypeId::FLYING, {90, 100, 90, 125, 85, 90}, GrowthRate::SLOW, EV(0, 0, 0, 3, 0, 0), 0, EvolutionMethod::NONE, 0, C(236, 91, 44), C(255, 209, 64), 4, 19},
+    {172, Ui::SpeciesName::PICHU, TypeId::ELECTRIC, TypeId::NONE, {20, 40, 15, 35, 35, 60}, GrowthRate::MEDIUM, EV(0, 0, 0, 0, 0, 1), 25, EvolutionMethod::FRIENDSHIP, 0, C(255, 219, 56), C(92, 62, 42), 10, 11},
+    {25, Ui::SpeciesName::PIKACHU, TypeId::ELECTRIC, TypeId::NONE, {35, 55, 40, 50, 50, 90}, GrowthRate::MEDIUM, EV(0, 0, 0, 0, 0, 2), 26, EvolutionMethod::STONE, 0, C(255, 211, 43), C(120, 76, 38), 10, 11},
+    {26, Ui::SpeciesName::RAICHU, TypeId::ELECTRIC, TypeId::NONE, {60, 90, 55, 90, 80, 110}, GrowthRate::MEDIUM, EV(0, 0, 0, 0, 0, 3), 0, EvolutionMethod::NONE, 0, C(235, 139, 48), C(255, 225, 86), 10, 12},
+    {133, Ui::SpeciesName::EEVEE, TypeId::NORMAL, TypeId::NONE, {55, 55, 50, 45, 65, 55}, GrowthRate::MEDIUM, EV(0, 0, 0, 0, 1, 0), 134, EvolutionMethod::BRANCH, 0, C(156, 102, 55), C(239, 211, 155), 13, 14},
+    {134, Ui::SpeciesName::VAPOREON, TypeId::WATER, TypeId::NONE, {130, 65, 60, 110, 95, 65}, GrowthRate::MEDIUM, EV(2, 0, 0, 0, 0, 0), 0, EvolutionMethod::NONE, 0, C(61, 142, 216), C(193, 230, 255), 13, 18},
+    {135, Ui::SpeciesName::JOLTEON, TypeId::ELECTRIC, TypeId::NONE, {65, 65, 60, 110, 95, 130}, GrowthRate::MEDIUM, EV(0, 0, 0, 0, 0, 2), 0, EvolutionMethod::NONE, 0, C(249, 218, 52), C(250, 247, 181), 10, 20},
+    {136, Ui::SpeciesName::FLAREON, TypeId::FIRE, TypeId::NONE, {65, 130, 60, 95, 110, 65}, GrowthRate::MEDIUM, EV(0, 2, 0, 0, 0, 0), 0, EvolutionMethod::NONE, 0, C(221, 91, 45), C(255, 210, 106), 13, 19},
+    {196, Ui::SpeciesName::ESPEON, TypeId::PSYCHIC, TypeId::NONE, {65, 65, 60, 130, 95, 110}, GrowthRate::MEDIUM, EV(0, 0, 0, 2, 0, 0), 0, EvolutionMethod::NONE, 0, C(190, 116, 205), C(248, 194, 238), 21, 22},
+    {197, Ui::SpeciesName::UMBREON, TypeId::DARK, TypeId::NONE, {95, 65, 110, 60, 130, 65}, GrowthRate::MEDIUM, EV(0, 0, 0, 0, 2, 0), 0, EvolutionMethod::NONE, 0, C(42, 45, 58), C(238, 204, 57), 23, 24},
+    {123, Ui::SpeciesName::SCYTHER, TypeId::BUG, TypeId::FLYING, {70, 110, 80, 55, 80, 105}, GrowthRate::MEDIUM, EV(0, 1, 0, 0, 0, 0), 212, EvolutionMethod::TRADE, 0, C(101, 179, 78), C(226, 238, 148), 29, 30},
+    {212, Ui::SpeciesName::SCIZOR, TypeId::BUG, TypeId::STEEL, {70, 130, 100, 55, 80, 65}, GrowthRate::MEDIUM, EV(0, 2, 0, 0, 0, 0), 0, EvolutionMethod::NONE, 0, C(194, 48, 55), C(160, 175, 186), 31, 32},
+    {92, Ui::SpeciesName::GASTLY, TypeId::GHOST, TypeId::POISON, {30, 35, 30, 100, 35, 80}, GrowthRate::PARABOLIC, EV(0, 0, 0, 1, 0, 0), 93, EvolutionMethod::LEVEL, 25, C(117, 70, 167), C(65, 39, 92), 15, 16},
+    {93, Ui::SpeciesName::HAUNTER, TypeId::GHOST, TypeId::POISON, {45, 50, 45, 115, 55, 95}, GrowthRate::PARABOLIC, EV(0, 0, 0, 2, 0, 0), 94, EvolutionMethod::TRADE, 0, C(82, 47, 137), C(173, 103, 220), 15, 16},
+    {94, Ui::SpeciesName::GENGAR, TypeId::GHOST, TypeId::POISON, {60, 65, 60, 130, 75, 110}, GrowthRate::PARABOLIC, EV(0, 0, 0, 3, 0, 0), 0, EvolutionMethod::NONE, 0, C(55, 38, 89), C(139, 81, 184), 15, 17},
+    {129, Ui::SpeciesName::MAGIKARP, TypeId::WATER, TypeId::NONE, {20, 10, 55, 15, 20, 80}, GrowthRate::SLOW, EV(0, 0, 0, 0, 0, 1), 130, EvolutionMethod::LEVEL, 20, C(229, 80, 48), C(247, 190, 66), 33, 34},
+    {130, Ui::SpeciesName::GYARADOS, TypeId::WATER, TypeId::FLYING, {95, 125, 79, 60, 100, 81}, GrowthRate::SLOW, EV(0, 2, 0, 0, 0, 0), 0, EvolutionMethod::NONE, 0, C(55, 124, 199), C(230, 223, 182), 35, 36},
+    {143, Ui::SpeciesName::SNORLAX, TypeId::NORMAL, TypeId::NONE, {160, 110, 65, 65, 110, 30}, GrowthRate::SLOW, EV(2, 0, 0, 0, 0, 0), 0, EvolutionMethod::NONE, 0, C(49, 84, 105), C(231, 218, 184), 37, 38},
+    {147, Ui::SpeciesName::DRATINI, TypeId::DRAGON, TypeId::NONE, {41, 64, 45, 50, 50, 50}, GrowthRate::SLOW, EV(0, 1, 0, 0, 0, 0), 148, EvolutionMethod::LEVEL, 30, C(92, 162, 219), C(238, 238, 250), 39, 40},
+    {148, Ui::SpeciesName::DRAGONAIR, TypeId::DRAGON, TypeId::NONE, {61, 84, 65, 70, 70, 70}, GrowthRate::SLOW, EV(0, 2, 0, 0, 0, 0), 149, EvolutionMethod::LEVEL, 50, C(73, 140, 209), C(247, 247, 255), 39, 40},
+    {149, Ui::SpeciesName::DRAGONITE, TypeId::DRAGON, TypeId::FLYING, {91, 134, 95, 100, 100, 80}, GrowthRate::SLOW, EV(0, 3, 0, 0, 0, 0), 0, EvolutionMethod::NONE, 0, C(229, 156, 62), C(87, 158, 213), 39, 41},
 };
 
 const MoveInfo MOVES[] = {
@@ -49,6 +65,30 @@ const MoveInfo MOVES[] = {
     {15, Ui::MoveName::LICK, Ui::MoveDesc::LICK, 35, TypeId::GHOST, false},
     {16, Ui::MoveName::SHADOW_BALL, Ui::MoveDesc::SHADOW_BALL, 60, TypeId::GHOST, true},
     {17, Ui::MoveName::DREAM_EATER, Ui::MoveDesc::DREAM_EATER, 75, TypeId::PSYCHIC, true},
+    {18, Ui::MoveName::HYDRO_SURGE, Ui::MoveDesc::HYDRO_SURGE, 75, TypeId::WATER, true},
+    {19, Ui::MoveName::FLARE_BLAST, Ui::MoveDesc::FLARE_BLAST, 75, TypeId::FIRE, true},
+    {20, Ui::MoveName::THUNDER_SPIKE, Ui::MoveDesc::THUNDER_SPIKE, 75, TypeId::ELECTRIC, true},
+    {21, Ui::MoveName::MIND_TAP, Ui::MoveDesc::MIND_TAP, 35, TypeId::PSYCHIC, true},
+    {22, Ui::MoveName::PSY_BEAM, Ui::MoveDesc::PSY_BEAM, 75, TypeId::PSYCHIC, true},
+    {23, Ui::MoveName::MOON_NIP, Ui::MoveDesc::MOON_NIP, 35, TypeId::DARK, false},
+    {24, Ui::MoveName::DARK_PULSE, Ui::MoveDesc::DARK_PULSE, 75, TypeId::DARK, true},
+    {25, Ui::MoveName::ICE_SHARD, Ui::MoveDesc::ICE_SHARD, 35, TypeId::ICE, true},
+    {26, Ui::MoveName::FROST_BEAM, Ui::MoveDesc::FROST_BEAM, 75, TypeId::ICE, true},
+    {27, Ui::MoveName::FAIRY_TOUCH, Ui::MoveDesc::FAIRY_TOUCH, 35, TypeId::FAIRY, true},
+    {28, Ui::MoveName::MOON_BLAST, Ui::MoveDesc::MOON_BLAST, 75, TypeId::FAIRY, true},
+    {29, Ui::MoveName::BUG_SLASH, Ui::MoveDesc::BUG_SLASH, 35, TypeId::BUG, false},
+    {30, Ui::MoveName::SCYTHE_DANCE, Ui::MoveDesc::SCYTHE_DANCE, 75, TypeId::BUG, false},
+    {31, Ui::MoveName::STEEL_CLAMP, Ui::MoveDesc::STEEL_CLAMP, 35, TypeId::STEEL, false},
+    {32, Ui::MoveName::IRON_CRUSH, Ui::MoveDesc::IRON_CRUSH, 75, TypeId::STEEL, false},
+    {33, Ui::MoveName::SPLASH, Ui::MoveDesc::SPLASH, 10, TypeId::WATER, false},
+    {34, Ui::MoveName::TACKLE, Ui::MoveDesc::TACKLE, 35, TypeId::NORMAL, false},
+    {35, Ui::MoveName::WATER_FANG, Ui::MoveDesc::WATER_FANG, 35, TypeId::WATER, false},
+    {36, Ui::MoveName::DRAGON_RAGE, Ui::MoveDesc::DRAGON_RAGE, 75, TypeId::DRAGON, true},
+    {37, Ui::MoveName::HEAVY_BODY, Ui::MoveDesc::HEAVY_BODY, 35, TypeId::NORMAL, false},
+    {38, Ui::MoveName::BODY_PRESS, Ui::MoveDesc::BODY_PRESS, 75, TypeId::NORMAL, false},
+    {39, Ui::MoveName::DRAGON_TAIL, Ui::MoveDesc::DRAGON_TAIL, 35, TypeId::DRAGON, false},
+    {40, Ui::MoveName::DRAGON_DANCE, Ui::MoveDesc::DRAGON_DANCE, 75, TypeId::DRAGON, true},
+    {41, Ui::MoveName::SKY_DRAGON, Ui::MoveDesc::SKY_DRAGON, 75, TypeId::FLYING, false},
 };
 
 const char* const NATURE_NAMES[Game::NATURE_COUNT] = {
@@ -169,6 +209,51 @@ uint16_t statFor(const Species& species, const Game::MonsterRuntime& monster, ui
 uint8_t evYieldAt(const Species& species, uint8_t statIndex) {
     if (statIndex >= Game::STAT_COUNT) return 0;
     return (species.evYieldPacked >> (statIndex * 2)) & 0x3;
+}
+
+uint32_t minimumExpForLevel(GrowthRate growthRate, uint8_t level) {
+    if (level <= 1) return 0;
+    if (level > Game::LEVEL_MAX) level = Game::LEVEL_MAX;
+
+    const uint32_t n = level;
+    const uint32_t n2 = n * n;
+    const uint32_t n3 = n2 * n;
+
+    switch (growthRate) {
+    case GrowthRate::ERRATIC:
+        if (n <= 50) return (n3 * (100 - n)) / 50;
+        if (n <= 68) return (n3 * (150 - n)) / 100;
+        if (n <= 98) return (n3 * ((1911 - 10 * n) / 3)) / 500;
+        return (n3 * (160 - n)) / 100;
+    case GrowthRate::FLUCTUATING:
+        if (n <= 15) return (n3 * (24 + ((n + 1) / 3))) / 50;
+        if (n <= 35) return (n3 * (14 + n)) / 50;
+        return (n3 * (32 + (n / 2))) / 50;
+    case GrowthRate::PARABOLIC: {
+        const int32_t exp = (int32_t)((6 * n3) / 5) - (int32_t)(15 * n2) + (int32_t)(100 * n) - 140;
+        return exp > 0 ? (uint32_t)exp : 0;
+    }
+    case GrowthRate::FAST:
+        return (4 * n3) / 5;
+    case GrowthRate::SLOW:
+        return (5 * n3) / 4;
+    case GrowthRate::MEDIUM:
+    default:
+        return n3;
+    }
+}
+
+uint8_t levelForExp(GrowthRate growthRate, uint32_t exp) {
+    for (uint8_t level = 2; level <= Game::LEVEL_MAX; ++level) {
+        if (exp < minimumExpForLevel(growthRate, level)) return level - 1;
+    }
+    return Game::LEVEL_MAX;
+}
+
+uint32_t expToNextLevel(GrowthRate growthRate, uint8_t level, uint32_t exp) {
+    if (level >= Game::LEVEL_MAX) return 0;
+    uint32_t next = minimumExpForLevel(growthRate, level + 1);
+    return exp < next ? next - exp : 0;
 }
 
 const char* natureName(uint8_t nature) {

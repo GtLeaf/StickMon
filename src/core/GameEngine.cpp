@@ -15,6 +15,10 @@
 #include "scenes/HatchScene.h"
 
 namespace {
+static constexpr uint16_t HP_RECOVERY_INTERVAL_MIN = 5;
+static constexpr uint32_t FAINT_RECOVERY_SECONDS = 86400UL;
+static constexpr uint32_t CLOCK_SAVE_INTERVAL_MS = 15000UL;
+
 uint8_t* effortField(Game::StatLine& ev, uint8_t statIndex) {
     switch (statIndex) {
     case 0: return &ev.hp;
@@ -40,10 +44,17 @@ bool GameEngine::begin() {
     }
     PixelRenderer::bind(&Hal::ins().canvas());
     saveManager.begin();
-    if (!saveManager.load(state)) {
+    uint32_t savedClock = 0;
+    bool hasSavedClock = saveManager.loadClock(savedClock);
+    bool loadedState = saveManager.load(state);
+    if (!loadedState) {
         initDefaultState();
-        saveNow();
     }
+    if (hasSavedClock && savedClock > state.gameMinutesTotal) {
+        state.gameMinutesTotal = savedClock;
+        markDirty(false);
+    }
+    if (!loadedState) saveNow();
     if (state.settings.idleTimeoutIndex >= 5) {
         state.settings.idleTimeoutIndex = 0;
         markDirty(false);
@@ -52,7 +63,11 @@ bool GameEngine::begin() {
     ButtonDispatcher::ins().setLongPressMs(state.settings.longPressMs);
     EspNowLink::ins().beginStub();
     switchScene(state.oobeDone ? SceneID::MAIN : SceneID::HATCH);
-    lastInputMs = lastFrameMs = lastUpdateMs = lastCareMs = lastSaveMs = lastActivityMs = Hal::ins().millis();
+    uint32_t now = Hal::ins().millis();
+    clockAnchorMs = now;
+    clockAnchorMinutes = state.gameMinutesTotal;
+    lastSavedClockMinutes = state.gameMinutesTotal;
+    lastInputMs = lastFrameMs = lastUpdateMs = lastCareMs = lastSaveMs = lastActivityMs = lastClockSaveMs = now;
     return true;
 }
 
@@ -94,8 +109,20 @@ float GameEngine::gameSpeed() const {
     return SPEEDS[idx];
 }
 
+uint32_t GameEngine::gameMinutesTotal() const {
+    return gameMinutesTotalAt(Hal::ins().millis());
+}
+
+uint16_t GameEngine::gameMinutesOfDay() const {
+    return (uint16_t)(gameMinutesTotal() % (24UL * 60UL));
+}
+
 void GameEngine::cycleGameSpeed() {
+    uint32_t now = Hal::ins().millis();
+    syncGameClock(now);
     state.settings.speedIndex = (state.settings.speedIndex + 1) % 4;
+    clockAnchorMs = now;
+    clockAnchorMinutes = state.gameMinutesTotal;
     markDirty(false);
 }
 
@@ -130,15 +157,11 @@ uint8_t GameEngine::moodValue() const {
 }
 
 const Game::MonsterRuntime& GameEngine::activeMonster() const {
-    uint8_t slot = state.activeSlot;
-    if (slot >= state.teamCount || slot >= Game::TEAM_CAP) slot = 0;
-    return state.team[slot];
+    return state.team[0];
 }
 
 Game::MonsterRuntime& GameEngine::activeMonster() {
-    uint8_t slot = state.activeSlot;
-    if (slot >= state.teamCount || slot >= Game::TEAM_CAP) slot = 0;
-    return state.team[slot];
+    return state.team[0];
 }
 
 const Species& GameEngine::activeSpecies() const {
@@ -159,6 +182,7 @@ Game::MonsterRuntime GameEngine::createMonster(uint16_t speciesId, uint8_t level
     Game::MonsterRuntime mon;
     mon.speciesId = species->id;
     mon.level = level;
+    mon.exp = minimumExpForLevel(species->growthRate, level);
     mon.ivPacked = randomIvPacked();
     mon.nature = random(0, Game::NATURE_COUNT);
     mon.hpMax = maxHpFor(*species, mon);
@@ -170,7 +194,18 @@ Game::MonsterRuntime GameEngine::createMonster(uint16_t speciesId, uint8_t level
 
 bool GameEngine::switchActiveMonster() {
     if (state.teamCount < 2) return false;
-    state.activeSlot = (state.activeSlot + 1) % state.teamCount;
+    return moveTeamMemberToFront(1);
+}
+
+bool GameEngine::moveTeamMemberToFront(uint8_t slot) {
+    if (slot == 0) return true;
+    if (slot >= state.teamCount || slot >= Game::TEAM_CAP) return false;
+    Game::MonsterRuntime selected = state.team[slot];
+    for (int8_t i = slot; i > 0; --i) {
+        state.team[i] = state.team[i - 1];
+    }
+    state.team[0] = selected;
+    state.activeSlot = 0;
     markDirty(true);
     return true;
 }
@@ -231,6 +266,26 @@ bool GameEngine::addPotion(uint8_t amount) {
 bool GameEngine::addSuperPotion(uint8_t amount) {
     if (state.bag.superPotion >= 20) return false;
     state.bag.superPotion = min<uint8_t>(20, state.bag.superPotion + amount);
+    markDirty(true);
+    return true;
+}
+
+bool GameEngine::usePotion() {
+    if (state.bag.potion == 0) return false;
+    Game::MonsterRuntime& mon = activeMonster();
+    if (mon.fainted || mon.hpCur >= mon.hpMax) return false;
+    state.bag.potion--;
+    mon.hpCur = min<uint16_t>(mon.hpMax, mon.hpCur + 20);
+    markDirty(true);
+    return true;
+}
+
+bool GameEngine::useSuperPotion() {
+    if (state.bag.superPotion == 0) return false;
+    Game::MonsterRuntime& mon = activeMonster();
+    if (mon.fainted || mon.hpCur >= mon.hpMax) return false;
+    state.bag.superPotion--;
+    mon.hpCur = min<uint16_t>(mon.hpMax, mon.hpCur + 50);
     markDirty(true);
     return true;
 }
@@ -323,9 +378,9 @@ void GameEngine::petMonster() {
 }
 
 void GameEngine::finishHatch(uint8_t starterStyle) {
-    uint16_t starterId = 906;
+    uint16_t starterId = 1;
     if (starterStyle == 1) starterId = 4;
-    else if (starterStyle == 2) starterId = 656;
+    else if (starterStyle == 2) starterId = 7;
     const Species* species = findSpecies(starterId);
     if (!species) species = &starterSpecies();
 
@@ -340,20 +395,34 @@ void GameEngine::finishHatch(uint8_t starterStyle) {
     requestScene(SceneID::MAIN);
 }
 
-void GameEngine::addExperience(uint16_t amount) {
+void GameEngine::addExperience(uint32_t amount) {
     if (amount == 0) return;
     Game::MonsterRuntime& mon = activeMonster();
-    mon.exp = min<uint16_t>(60000, mon.exp + amount);
+    const Species& species = speciesFor(mon);
+    uint8_t oldLevel = mon.level;
+    uint16_t oldHpMax = mon.hpMax;
+    uint32_t maxExp = minimumExpForLevel(species.growthRate, Game::LEVEL_MAX);
+    mon.exp = min<uint32_t>(maxExp, mon.exp + amount);
+    mon.level = levelForExp(species.growthRate, mon.exp);
+    mon.hpMax = maxHpFor(species, mon);
+    if (mon.hpMax > oldHpMax) {
+        mon.hpCur = min<uint16_t>(mon.hpMax, mon.hpCur + (mon.hpMax - oldHpMax));
+    }
+    if (mon.level < oldLevel) mon.level = oldLevel;
     markDirty(false);
 }
 
-uint16_t GameEngine::applyActiveFaintPenalty() {
+uint32_t GameEngine::applyActiveFaintPenalty() {
     Game::MonsterRuntime& mon = activeMonster();
-    uint16_t loss = mon.exp == 0 ? 0 : max<uint16_t>(1, mon.exp / 10);
-    if (loss > mon.exp) loss = mon.exp;
+    const Species& species = speciesFor(mon);
+    uint32_t levelFloor = minimumExpForLevel(species.growthRate, mon.level);
+    uint32_t availableLoss = mon.exp > levelFloor ? mon.exp - levelFloor : 0;
+    uint32_t loss = mon.exp == 0 ? 0 : max<uint32_t>(1, mon.exp / 10);
+    if (loss > availableLoss) loss = availableLoss;
     mon.exp -= loss;
     mon.hpCur = 0;
     mon.fainted = true;
+    mon.lastSeenAt = Hal::ins().millis() / 1000;
     mon.affection = mon.affection > 5 ? mon.affection - 5 : 0;
     mon.mood = mon.mood > 10 ? mon.mood - 10 : 0;
     markDirty(true);
@@ -371,15 +440,29 @@ void GameEngine::addWalkSteps(uint16_t steps) {
     markDirty(false);
 }
 
+void GameEngine::debugRecoverActiveMonster() {
+    if (state.teamCount == 0) return;
+    Game::MonsterRuntime& mon = activeMonster();
+    mon.fainted = false;
+    mon.statusBits = Game::STATUS_NONE;
+    mon.hpCur = mon.hpMax;
+    mon.satiety = 100;
+    mon.mood = 100;
+    markDirty(true);
+}
+
 void GameEngine::markDirty(bool immediate) {
     saveDirty = true;
     if (immediate) saveNow();
 }
 
 bool GameEngine::saveNow() {
+    uint32_t now = Hal::ins().millis();
+    syncGameClock(now);
     bool ok = saveManager.save(state);
+    persistGameClock(now, true);
     saveDirty = !ok;
-    lastSaveMs = Hal::ins().millis();
+    lastSaveMs = now;
     return ok;
 }
 
@@ -399,6 +482,7 @@ void GameEngine::switchScene(SceneID id) {
     if (currentScene) currentScene->onExit();
     prevId = currentId;
     currentId = id;
+    resetIdle(Hal::ins().millis());
 
     switch (id) {
     case SceneID::HATCH:
@@ -426,10 +510,12 @@ void GameEngine::switchScene(SceneID id) {
     }
 
     if (currentScene) currentScene->onEnter();
-    resetIdle(Hal::ins().millis());
 }
 
 void GameEngine::processInput(uint32_t nowMs) {
+    bool rawInputActive = Hal::ins().btnA_raw() || Hal::ins().btnB_raw();
+    if (rawInputActive) resetIdle(nowMs);
+
     ButtonEvent events[ButtonDispatcher::MAX_EVENTS_PER_POLL];
     uint8_t count = ButtonDispatcher::ins().poll(events, ButtonDispatcher::MAX_EVENTS_PER_POLL);
     if (count > 0) resetIdle(nowMs);
@@ -441,6 +527,8 @@ void GameEngine::processInput(uint32_t nowMs) {
 void GameEngine::update(uint32_t nowMs) {
     float dt = (nowMs - lastUpdateMs) / 1000.0f;
     lastUpdateMs = nowMs;
+    syncGameClock(nowMs);
+    persistGameClock(nowMs);
     tickCare(nowMs);
     if (currentScene) currentScene->update(nowMs, dt * gameSpeed());
     if (saveDirty && nowMs - lastSaveMs >= 300000UL) saveNow();
@@ -481,11 +569,40 @@ uint32_t GameEngine::idleTimeoutMs() const {
     return TIMEOUTS[idleTimeoutIndex()];
 }
 
+uint32_t GameEngine::gameMinutesTotalAt(uint32_t nowMs) const {
+    uint32_t elapsedMs = nowMs - clockAnchorMs;
+    uint32_t scaledMinutes = (uint32_t)((double)elapsedMs * (double)gameSpeed() / 60000.0);
+    return clockAnchorMinutes + scaledMinutes;
+}
+
+void GameEngine::syncGameClock(uint32_t nowMs) {
+    uint32_t total = gameMinutesTotalAt(nowMs);
+    if (total == state.gameMinutesTotal) return;
+    state.gameMinutesTotal = total;
+    saveDirty = true;
+}
+
+void GameEngine::resetGameClockAnchor(uint32_t nowMs) {
+    syncGameClock(nowMs);
+    clockAnchorMs = nowMs;
+    clockAnchorMinutes = state.gameMinutesTotal;
+}
+
+void GameEngine::persistGameClock(uint32_t nowMs, bool force) {
+    if (state.gameMinutesTotal == lastSavedClockMinutes && !force) return;
+    if (!force && nowMs - lastClockSaveMs < CLOCK_SAVE_INTERVAL_MS) return;
+    if (saveManager.saveClock(state.gameMinutesTotal)) {
+        lastSavedClockMinutes = state.gameMinutesTotal;
+        lastClockSaveMs = nowMs;
+    }
+}
+
 void GameEngine::initDefaultState() {
     saveManager.reset(state);
     const Species& starter = starterSpecies();
     state.teamCount = 1;
     state.activeSlot = 0;
+    state.gameMinutesTotal = 0;
     state.team[0] = createMonster(starter.id, 5);
     state.team[0].origin = Game::Origin::STARTER;
 }
@@ -494,14 +611,39 @@ void GameEngine::tickCare(uint32_t nowMs) {
     if (nowMs - lastCareMs < 60000UL) return;
     uint32_t elapsedMin = (nowMs - lastCareMs) / 60000UL;
     lastCareMs = nowMs;
+    uint32_t scaledHpRecoveryMin = (uint32_t)((float)elapsedMin * gameSpeed());
+    hpRecoveryMinuteAcc = min<uint32_t>(60000, hpRecoveryMinuteAcc + scaledHpRecoveryMin);
+    uint16_t hpRecoveryTicks = hpRecoveryMinuteAcc / HP_RECOVERY_INTERVAL_MIN;
+    hpRecoveryMinuteAcc %= HP_RECOVERY_INTERVAL_MIN;
+    uint32_t nowSec = nowMs / 1000;
+
     for (uint8_t i = 0; i < state.teamCount; ++i) {
         Game::MonsterRuntime& mon = state.team[i];
-        uint8_t satietyDrop = min<uint32_t>(elapsedMin, 4);
-        mon.satiety = (mon.satiety > satietyDrop) ? mon.satiety - satietyDrop : 0;
+        if (i == 0) {
+            uint8_t satietyDrop = min<uint32_t>(elapsedMin, 4);
+            mon.satiety = (mon.satiety > satietyDrop) ? mon.satiety - satietyDrop : 0;
+        }
         uint8_t targetMood = mon.satiety > 60 ? 75 : (mon.satiety > 25 ? 55 : 35);
         if (mon.fainted) targetMood = 20;
         if (mon.mood < targetMood) mon.mood++;
         else if (mon.mood > targetMood) mon.mood--;
+
+        if (mon.fainted) {
+            if (mon.lastSeenAt == 0) mon.lastSeenAt = nowSec;
+            uint32_t elapsedFaintSec = nowSec >= mon.lastSeenAt ? nowSec - mon.lastSeenAt : 0;
+            uint32_t scaledFaintSec = (uint32_t)((float)elapsedFaintSec * gameSpeed());
+            if (scaledFaintSec >= FAINT_RECOVERY_SECONDS) {
+                mon.fainted = false;
+                mon.hpCur = max<uint16_t>(1, mon.hpMax / 2);
+            }
+            continue;
+        }
+
+        if (hpRecoveryTicks > 0 && mon.hpCur < mon.hpMax && mon.satiety > 0) {
+            uint16_t gainPerTick = max<uint16_t>(1, mon.hpMax / 20);
+            uint32_t gain = (uint32_t)gainPerTick * hpRecoveryTicks;
+            mon.hpCur = min<uint16_t>(mon.hpMax, mon.hpCur + gain);
+        }
     }
     markDirty(false);
 }

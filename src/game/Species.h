@@ -34,6 +34,15 @@ struct BaseStats {
     uint8_t spe;
 };
 
+enum class GrowthRate : uint8_t {
+    MEDIUM,
+    ERRATIC,
+    FLUCTUATING,
+    PARABOLIC,
+    FAST,
+    SLOW,
+};
+
 enum class EvolutionMethod : uint8_t {
     NONE,
     LEVEL,
@@ -49,6 +58,7 @@ struct Species {
     TypeId type1;
     TypeId type2;
     BaseStats stats;
+    GrowthRate growthRate;
     uint16_t evYieldPacked;
     uint16_t evolveTo;
     EvolutionMethod evolveMethod;
@@ -78,6 +88,9 @@ uint16_t maxHpFor(const Species& species, uint8_t level);
 uint16_t maxHpFor(const Species& species, const Game::MonsterRuntime& monster);
 uint16_t statFor(const Species& species, const Game::MonsterRuntime& monster, uint8_t statIndex);
 uint8_t evYieldAt(const Species& species, uint8_t statIndex);
+uint32_t minimumExpForLevel(GrowthRate growthRate, uint8_t level);
+uint8_t levelForExp(GrowthRate growthRate, uint32_t exp);
+uint32_t expToNextLevel(GrowthRate growthRate, uint8_t level, uint32_t exp);
 const char* natureName(uint8_t nature);
 uint8_t natureBoostStat(uint8_t nature);
 uint8_t natureLowerStat(uint8_t nature);

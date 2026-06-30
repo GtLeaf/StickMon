@@ -7,7 +7,7 @@ namespace Game {
 static constexpr uint8_t TEAM_CAP = 2;
 static constexpr uint8_t STORAGE_CAP = 20;
 static constexpr uint32_t SAVE_MAGIC = 0x534D4F4E; // SMON
-static constexpr uint16_t SAVE_VERSION = 5;
+static constexpr uint16_t SAVE_VERSION = 6;
 static constexpr uint8_t STAT_COUNT = 6;
 static constexpr uint8_t NATURE_COUNT = 25;
 static constexpr uint8_t LEVEL_MAX = 50;
@@ -86,9 +86,9 @@ inline uint16_t evTotal(const StatLine& ev) {
 }
 
 struct MonsterRuntime {
-    uint16_t speciesId = 906;
+    uint16_t speciesId = 1;
     uint8_t level = 5;
-    uint16_t exp = 0;
+    uint32_t exp = 0;
     uint16_t hpCur = 20;
     uint16_t hpMax = 20;
     uint32_t ivPacked = 0;
@@ -146,7 +146,7 @@ struct GameState {
     uint32_t coins = 50;
     uint16_t stepsToday = 0;
     uint16_t walkExpToday = 0;
-    uint32_t dayStamp = 0;
+    uint32_t gameMinutesTotal = 0;
     PlayerSettings settings;
 };
 
