@@ -57,6 +57,8 @@ public:
     bool usePotion();
     bool useSuperPotion();
     bool addAntidote(uint8_t amount);
+    uint8_t itemCount(Game::ItemId item) const;
+    bool removeItem(Game::ItemId item, uint8_t amount = 1, bool immediate = true);
     bool spendCoins(uint32_t amount);
     void addCoins(uint32_t amount);
     bool recordCapture(uint16_t speciesId);
@@ -68,6 +70,7 @@ public:
     uint32_t applyActiveFaintPenalty();
     void addWalkSteps(uint16_t steps);
     void debugRecoverActiveMonster();
+    bool debugSetActiveSpecies(uint16_t speciesId);
     void markDirty(bool immediate = false);
     bool saveNow();
     bool loadHatchProgress(Game::HatchProgress& progress);
@@ -111,7 +114,6 @@ private:
     uint32_t lastSavedClockMinutes = 0;
     uint16_t hpRecoveryMinuteAcc = 0;
     bool idleActive = false;
-    bool idleRendered = false;
     bool saveDirty = false;
 
     Game::GameState state;

@@ -50,13 +50,14 @@ void Hal::flush() {
 
 void Hal::setBrightness(uint8_t value) {
     brightness = value;
-    M5.Display.setBrightness(value);
+    if (!idleBrightnessActive) {
+        M5.Display.setBrightness(value);
+    }
 }
 
 void Hal::setIdleBrightness(bool idle) {
-    static bool lastIdle = false;
-    if (idle == lastIdle) return;
-    lastIdle = idle;
+    if (idle == idleBrightnessActive) return;
+    idleBrightnessActive = idle;
     M5.Display.setBrightness(idle ? 16 : brightness);
 }
 

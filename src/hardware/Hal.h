@@ -26,6 +26,7 @@ private:
 
     LGFX_Sprite sprite;
     bool initialized = false;
+    bool idleBrightnessActive = false;
     uint8_t brightness = 128;
     int batteryFiltered = -1;
     uint32_t lastBatterySampleMs = 0;

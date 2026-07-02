@@ -138,10 +138,7 @@ void HatchScene::drawEgg() {
     c.fillEllipse(x, 115, 25, 6, PixelRenderer::rgb(159, 139, 117));
     uint8_t w = pgm_read_byte(&PokemonSprites::EGG_FRAME.width);
     uint8_t h = pgm_read_byte(&PokemonSprites::EGG_FRAME.height);
-    uint32_t length = pgm_read_dword(&PokemonSprites::EGG_FRAME.length);
-    if (length > 0) {
-        PixelRenderer::drawRgb565Rle(x - w / 2, y - h / 2, w, h, PokemonSprites::SPRITE_RLE,
-                                     pgm_read_dword(&PokemonSprites::EGG_FRAME.offset), length);
+    if (PokemonSprites::drawFrame(&PokemonSprites::EGG_FRAME, x - w / 2, y - h / 2)) {
         return;
     }
     c.fillEllipse(x, y, 24, 31, PixelRenderer::rgb(240, 232, 184));

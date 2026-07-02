@@ -1,5 +1,6 @@
 #pragma once
 
+#include "assets/PokemonSprites.h"
 #include "core/Scene.h"
 #include "game/Species.h"
 
@@ -17,22 +18,46 @@ private:
         SEEK_FOOD,
     };
 
+    enum class PmdAction : uint8_t {
+        IDLE,
+        WALKING,
+        SLEEPING,
+    };
+
+    enum class PmdDirection : uint8_t {
+        FRONT,
+        DOWN_LEFT,
+        LEFT,
+        UP_LEFT,
+        BACK,
+        UP_RIGHT,
+        RIGHT,
+        DOWN_RIGHT,
+    };
+
     struct RenderItem {
         int16_t z;
         void (MainScene::*draw)();
     };
 
     void updateMonsterAi(uint32_t nowMs, float dtSeconds);
+    void updatePmdSpriteState(uint32_t nowMs);
     void chooseAiGoal(uint32_t nowMs);
     void drawBackground();
     void drawFloor();
     void drawFood();
     void drawShadow();
     void drawMonster();
+    bool drawPmdMonster(int x, int y);
     void drawStateEffect();
     void drawHud();
     void drawToast();
     void sortAndDraw(RenderItem* items, uint8_t count);
+    PmdDirection pmdDirectionForVelocity(float vx, float vy) const;
+    uint16_t pmdDirectionFrameIndex() const;
+    bool pmdDirectionFlipX() const;
+    PokemonSprites::SpriteKind pmdSpriteKind() const;
+    const PokemonSprites::SpriteFrame* currentMonsterFrame() const;
 
     const Species* active = nullptr;
     float monsterX = 98.0f;
@@ -44,6 +69,10 @@ private:
     AiMode aiMode = AiMode::IDLE;
     uint32_t nextAiDecisionMs = 0;
     bool facingRight = true;
+    PmdAction pmdAction = PmdAction::IDLE;
+    PmdDirection pmdDirection = PmdDirection::FRONT;
+    uint8_t pmdFrame = 0;
+    uint32_t pmdFrameStartedMs = 0;
     uint32_t toastUntil = 0;
     const char* toast = nullptr;
     uint32_t comboStartMs = 0;

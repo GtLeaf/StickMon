@@ -132,6 +132,44 @@ void PixelRenderer::drawRgb565Rle(int x, int y, int w, int h,
     }
 }
 
+void PixelRenderer::drawIndexed4Rle(int x, int y, int w, int h,
+                                    const uint16_t* data, uint32_t offset,
+                                    uint32_t length, const uint16_t* palette,
+                                    uint32_t paletteOffset, uint8_t paletteSize,
+                                    bool flipX) {
+    if (!gCanvas || !data || !palette || w <= 0 || h <= 0 || paletteSize == 0) return;
+
+    const uint32_t total = (uint32_t)(w * h);
+    uint32_t idx = 0;
+    uint32_t pixel = 0;
+    while (idx < length && pixel < total) {
+        uint16_t token = pgm_read_word(&data[offset + idx++]);
+        uint16_t run = token & 0x7FFF;
+        if (run == 0) continue;
+
+        if (token & 0x8000) {
+            pixel += run;
+            if (pixel > total) pixel = total;
+            continue;
+        }
+
+        uint16_t packed = 0;
+        for (uint16_t i = 0; i < run && pixel < total; ++i, ++pixel) {
+            if ((i & 0x03) == 0) {
+                if (idx >= length) return;
+                packed = pgm_read_word(&data[offset + idx++]);
+            }
+            uint8_t paletteIndex = (packed >> ((i & 0x03) * 4)) & 0x0F;
+            if (paletteIndex >= paletteSize) continue;
+            uint16_t color = pgm_read_word(&palette[paletteOffset + paletteIndex]);
+            int col = pixel % w;
+            int row = pixel / w;
+            if (flipX) col = w - 1 - col;
+            gCanvas->drawPixel(x + col, y + row, color);
+        }
+    }
+}
+
 void PixelRenderer::drawRgb565RleScaled(int x, int y, int w, int h,
                                         const uint16_t* data, uint32_t offset,
                                         uint32_t length, float scale, bool flipX) {

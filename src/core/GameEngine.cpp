@@ -86,10 +86,7 @@ void GameEngine::run() {
     uint32_t frameMs = idleActive ? IDLE_FRAME_MS : FRAME_MS;
     if (now - lastFrameMs >= frameMs) {
         update(now);
-        if (!idleActive || !idleRendered) {
-            render(now);
-            idleRendered = idleActive;
-        }
+        render(now);
         lastFrameMs = now;
         didWork = true;
     }
@@ -297,6 +294,43 @@ bool GameEngine::addAntidote(uint8_t amount) {
     return true;
 }
 
+uint8_t GameEngine::itemCount(Game::ItemId item) const {
+    switch (item) {
+    case Game::ItemId::POKE_BALL: return state.bag.pokeBall;
+    case Game::ItemId::GREAT_BALL: return state.bag.greatBall;
+    case Game::ItemId::HEAVY_BALL: return state.bag.heavyBall;
+    case Game::ItemId::TIMER_BALL: return state.bag.timerBall;
+    case Game::ItemId::NORMAL_FOOD: return state.bag.normalFood;
+    case Game::ItemId::POTION: return state.bag.potion;
+    case Game::ItemId::SUPER_POTION: return state.bag.superPotion;
+    case Game::ItemId::ANTIDOTE: return state.bag.antidote;
+    case Game::ItemId::CANDY: return state.bag.candy;
+    default: return 0;
+    }
+}
+
+bool GameEngine::removeItem(Game::ItemId item, uint8_t amount, bool immediate) {
+    if (amount == 0) return true;
+
+    uint8_t* count = nullptr;
+    switch (item) {
+    case Game::ItemId::POKE_BALL: count = &state.bag.pokeBall; break;
+    case Game::ItemId::GREAT_BALL: count = &state.bag.greatBall; break;
+    case Game::ItemId::HEAVY_BALL: count = &state.bag.heavyBall; break;
+    case Game::ItemId::TIMER_BALL: count = &state.bag.timerBall; break;
+    case Game::ItemId::NORMAL_FOOD: count = &state.bag.normalFood; break;
+    case Game::ItemId::POTION: count = &state.bag.potion; break;
+    case Game::ItemId::SUPER_POTION: count = &state.bag.superPotion; break;
+    case Game::ItemId::ANTIDOTE: count = &state.bag.antidote; break;
+    case Game::ItemId::CANDY: count = &state.bag.candy; break;
+    default: return false;
+    }
+    if (!count || *count < amount) return false;
+    *count -= amount;
+    markDirty(immediate);
+    return true;
+}
+
 bool GameEngine::spendCoins(uint32_t amount) {
     if (state.coins < amount) return false;
     state.coins -= amount;
@@ -451,6 +485,20 @@ void GameEngine::debugRecoverActiveMonster() {
     markDirty(true);
 }
 
+bool GameEngine::debugSetActiveSpecies(uint16_t speciesId) {
+    const Species* species = findSpecies(speciesId);
+    if (!species) return false;
+
+    uint8_t level = state.teamCount > 0 ? activeMonster().level : 5;
+    Game::MonsterRuntime mon = createMonster(species->id, level);
+    mon.origin = state.teamCount > 0 ? activeMonster().origin : Game::Origin::STARTER;
+    if (state.teamCount == 0) state.teamCount = 1;
+    state.team[0] = mon;
+    state.activeSlot = 0;
+    markDirty(true);
+    return true;
+}
+
 void GameEngine::markDirty(bool immediate) {
     saveDirty = true;
     if (immediate) saveNow();
@@ -479,6 +527,7 @@ void GameEngine::clearHatchProgress() {
 }
 
 void GameEngine::switchScene(SceneID id) {
+    resetIdle(Hal::ins().millis());
     if (currentScene) currentScene->onExit();
     prevId = currentId;
     currentId = id;
@@ -542,10 +591,9 @@ void GameEngine::render(uint32_t nowMs) {
 
 void GameEngine::resetIdle(uint32_t nowMs) {
     lastActivityMs = nowMs;
-    idleRendered = false;
+    Hal::ins().setIdleBrightness(false);
     if (idleActive) {
         idleActive = false;
-        Hal::ins().setIdleBrightness(false);
     }
 }
 
@@ -554,7 +602,6 @@ void GameEngine::updateIdle(uint32_t nowMs) {
     if (timeout == 0 || idleActive) return;
     if (nowMs - lastActivityMs < timeout) return;
     idleActive = true;
-    idleRendered = false;
     Hal::ins().setIdleBrightness(true);
 }
 

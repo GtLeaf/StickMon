@@ -22,7 +22,7 @@ private:
         ITEM_BAG,
         ITEM_EXPLORE,
         ITEM_SHOP,
-        ITEM_SOCIAL,
+        ITEM_COMPUTER,
         ITEM_SETTINGS,
         ITEM_DEBUG,
         ITEM_BACK,
@@ -34,12 +34,16 @@ private:
         TEAM,
         STATUS,
         BAG,
+        COMPUTER,
+        STORAGE,
         DEBUG,
     };
 
     static constexpr uint8_t STATUS_PAGE_COUNT = 7;
     static constexpr uint8_t BAG_ITEM_COUNT = 8;
-    static constexpr uint8_t DEBUG_ITEM_COUNT = 2;
+    static constexpr uint8_t COMPUTER_ITEM_COUNT = 3;
+    static constexpr uint8_t DEBUG_ITEM_COUNT = 4;
+    static constexpr uint8_t DEBUG_SWITCH_FOCUS_COUNT = 5;
 
     static int8_t lastCursor;
     int8_t cursor = 0;
@@ -57,7 +61,13 @@ private:
     bool bagConfirmOpen = false;
     bool bagConfirmYes = true;
     float bagScroll = 0.0f;
+    uint8_t computerCursor = 0;
+    uint8_t storageCursor = 0;
+    float storageScroll = 0.0f;
     uint8_t debugCursor = 0;
+    bool debugSwitchOpen = false;
+    uint8_t debugSwitchFocus = 0;
+    uint8_t debugSwitchDigits[3] = {0, 0, 1};
     int descScrollKey = -1;
     float descScroll = 0.0f;
     uint32_t descScrollLastMs = 0;
@@ -70,7 +80,12 @@ private:
     void renderEggStatusPage();
     void renderBagPage();
     void renderBagConfirmPopup();
+    void renderComputerPage();
+    void renderStoragePage();
     void renderDebugPage();
+    void renderDebugSwitchPopup();
+    void openDebugSwitchPopup();
+    uint16_t debugSwitchTargetId() const;
     uint8_t collectVisibleBagRows(BagRow* rows, uint8_t maxRows) const;
     void renderSplitList(const BagRow* rows, uint8_t count);
     void renderBagDetail(const BagRow& row);

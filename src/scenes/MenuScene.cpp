@@ -31,14 +31,6 @@ const char* originName(Game::Origin origin) {
     }
 }
 
-void drawMiniMonster(const Species& species, int x, int y) {
-    auto& c = PixelRenderer::canvas();
-    c.fillRect(x, y, 34, 34, species.colorA);
-    c.fillRect(x + 8, y + 10, 18, 16, species.colorB);
-    c.fillCircle(x + 11, y + 15, 2, PixelRenderer::rgb(24, 30, 38));
-    c.fillCircle(x + 23, y + 15, 2, PixelRenderer::rgb(24, 30, 38));
-}
-
 void drawInfoRow(int x, int y, const char* value, uint16_t color = PixelRenderer::rgb(241, 242, 232)) {
     PixelRenderer::text(x, y, value, color, 1);
 }
@@ -139,7 +131,12 @@ void MenuScene::onEnter() {
     bagCursor = 0;
     bagConfirmOpen = false;
     bagConfirmYes = true;
+    computerCursor = 0;
+    storageCursor = 0;
+    storageScroll = 0.0f;
     debugCursor = 0;
+    debugSwitchOpen = false;
+    debugSwitchFocus = 0;
     if (GameEngine::ins().previousScene() == GameEngine::ins().homeScene()) {
         cursor = 0;
     } else {
@@ -172,9 +169,18 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                 bagConfirmOpen = false;
                 return true;
             }
+            if (viewMode == ViewMode::DEBUG && debugSwitchOpen) {
+                debugSwitchOpen = false;
+                return true;
+            }
+            if (viewMode == ViewMode::STORAGE) {
+                viewMode = ViewMode::COMPUTER;
+                return true;
+            }
             viewMode = ViewMode::MENU;
             teamActionOpen = false;
             bagConfirmOpen = false;
+            debugSwitchOpen = false;
             return true;
         }
         if (viewMode == ViewMode::TEAM) {
@@ -258,6 +264,56 @@ bool MenuScene::onButton(const ButtonEvent& event) {
             }
             return true;
         }
+        if (viewMode == ViewMode::COMPUTER && event.btn == 1 && event.action == BtnAction::PRESSED) {
+            computerCursor = (computerCursor + 1) % COMPUTER_ITEM_COUNT;
+            return true;
+        }
+        if (viewMode == ViewMode::COMPUTER && event.btn == 0 && event.action == BtnAction::PRESSED) {
+            if (computerCursor == 0) {
+                GameEngine::ins().requestScene(SceneID::SOCIAL);
+            } else if (computerCursor == 1) {
+                viewMode = ViewMode::STORAGE;
+                storageCursor = 0;
+                storageScroll = 0.0f;
+            } else {
+                viewMode = ViewMode::MENU;
+            }
+            return true;
+        }
+        if (viewMode == ViewMode::STORAGE && event.btn == 1 && event.action == BtnAction::PRESSED) {
+            uint8_t count = GameEngine::ins().gameState().storageCount + 1;
+            storageCursor = (storageCursor + 1) % count;
+            if (storageCursor == 0) storageScroll = 0.0f;
+            return true;
+        }
+        if (viewMode == ViewMode::STORAGE && event.btn == 0 && event.action == BtnAction::PRESSED) {
+            uint8_t count = GameEngine::ins().gameState().storageCount + 1;
+            if (storageCursor >= count - 1) {
+                viewMode = ViewMode::COMPUTER;
+            }
+            return true;
+        }
+        if (viewMode == ViewMode::DEBUG && debugSwitchOpen && event.btn == 1 && event.action == BtnAction::PRESSED) {
+            debugSwitchFocus = (debugSwitchFocus + 1) % DEBUG_SWITCH_FOCUS_COUNT;
+            return true;
+        }
+        if (viewMode == ViewMode::DEBUG && debugSwitchOpen && event.btn == 0 && event.action == BtnAction::PRESSED) {
+            if (debugSwitchFocus < 3) {
+                debugSwitchDigits[debugSwitchFocus] = (debugSwitchDigits[debugSwitchFocus] + 1) % 10;
+            } else if (debugSwitchFocus == 3) {
+                if (GameEngine::ins().debugSetActiveSpecies(debugSwitchTargetId())) {
+                    debugSwitchOpen = false;
+                    toast = Ui::Debug::SWITCHED;
+                    toastUntil = Hal::ins().millis() + 1100;
+                } else {
+                    toast = Ui::Debug::INVALID_ID;
+                    toastUntil = Hal::ins().millis() + 1100;
+                }
+            } else {
+                debugSwitchOpen = false;
+            }
+            return true;
+        }
         if (viewMode == ViewMode::DEBUG && event.btn == 1 && event.action == BtnAction::PRESSED) {
             debugCursor = (debugCursor + 1) % DEBUG_ITEM_COUNT;
             return true;
@@ -267,6 +323,14 @@ bool MenuScene::onButton(const ButtonEvent& event) {
             case 0:
                 GameEngine::ins().debugRecoverActiveMonster();
                 toast = Ui::Debug::RECOVERED;
+                toastUntil = Hal::ins().millis() + 1100;
+                break;
+            case 1:
+                openDebugSwitchPopup();
+                break;
+            case 2:
+                GameEngine::ins().addCoins(1000);
+                toast = Ui::Debug::COINS_ADDED;
                 toastUntil = Hal::ins().millis() + 1100;
                 break;
             default:
@@ -326,8 +390,9 @@ bool MenuScene::onButton(const ButtonEvent& event) {
     case ITEM_SHOP:
         GameEngine::ins().requestScene(SceneID::SHOP);
         return true;
-    case ITEM_SOCIAL:
-        GameEngine::ins().requestScene(SceneID::SOCIAL);
+    case ITEM_COMPUTER:
+        viewMode = ViewMode::COMPUTER;
+        computerCursor = 0;
         return true;
     case ITEM_SETTINGS:
         GameEngine::ins().requestScene(SceneID::SETTINGS);
@@ -335,6 +400,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
     case ITEM_DEBUG:
         viewMode = ViewMode::DEBUG;
         debugCursor = 0;
+        debugSwitchOpen = false;
         return true;
     case ITEM_BACK:
         GameEngine::ins().requestScene(GameEngine::ins().homeScene());
@@ -358,6 +424,14 @@ void MenuScene::render() {
     }
     if (viewMode == ViewMode::BAG) {
         renderBagPage();
+        return;
+    }
+    if (viewMode == ViewMode::COMPUTER) {
+        renderComputerPage();
+        return;
+    }
+    if (viewMode == ViewMode::STORAGE) {
+        renderStoragePage();
         return;
     }
     if (viewMode == ViewMode::DEBUG) {
@@ -545,16 +619,15 @@ void MenuScene::renderStatusPage() {
     c.drawFastHLine(6, 22, 216, PixelRenderer::rgb(55, 63, 76));
 
     if (statusPage == 0) {
-        drawMiniMonster(mon, 10, 32);
-        PixelRenderer::text(52, 7, mon.name, PixelRenderer::rgb(241, 242, 232), 1);
+        PixelRenderer::text(12, 7, mon.name, PixelRenderer::rgb(241, 242, 232), 1);
         snprintf(buf, sizeof(buf), Ui::Status::LEVEL_FMT, activeMon.level);
         drawInfoRow(150, 7, buf);
         snprintf(buf, sizeof(buf), Ui::Status::HP_FMT, activeMon.hpCur, activeMon.hpMax);
-        drawInfoRow(52, 32, buf, PixelRenderer::rgb(92, 222, 112));
+        drawInfoRow(12, 32, buf, PixelRenderer::rgb(92, 222, 112));
         snprintf(buf, sizeof(buf), Ui::Status::EXP_FMT, (unsigned long)activeMon.exp);
-        drawInfoRow(52, 50, buf);
+        drawInfoRow(12, 50, buf);
         snprintf(buf, sizeof(buf), Ui::Status::TYPE_FMT, typeName(mon.type1), typeName(mon.type2));
-        drawInfoRow(52, 68, buf, PixelRenderer::rgb(255, 216, 72));
+        drawInfoRow(12, 68, buf, PixelRenderer::rgb(255, 216, 72));
         snprintf(buf, sizeof(buf), Ui::Status::NATURE_FMT, natureName(activeMon.nature));
         drawInfoRow(132, 32, buf);
         snprintf(buf, sizeof(buf), Ui::Status::STATUS_FMT, statusName(activeMon.statusBits));
@@ -563,7 +636,7 @@ void MenuScene::renderStatusPage() {
                  activeMon.satiety, activeMon.mood);
         drawInfoRow(132, 68, buf);
         snprintf(buf, sizeof(buf), Ui::Status::AFFECTION_FMT, activeMon.affection, activeMon.proficiency);
-        drawInfoRow(52, 88, buf);
+        drawInfoRow(12, 88, buf);
     } else if (statusPage == 1) {
         PixelRenderer::text(12, 8, Ui::Status::BASE_STATS, PixelRenderer::rgb(67, 213, 224), 1);
         drawStatRow(18, 34, Ui::Status::STAT_HP, mon.stats.hp, PixelRenderer::rgb(241, 242, 232));
@@ -602,20 +675,22 @@ void MenuScene::renderStatusPage() {
         const MoveInfo* basicMove = findMove(mon.basicMoveId);
         const MoveInfo* specialMove = findMove(mon.specialMoveId);
         PixelRenderer::text(12, 8, Ui::Status::MOVE_INFO, PixelRenderer::rgb(67, 213, 224), 1);
-        PixelRenderer::text(18, 52,
+        PixelRenderer::text(18, 30, Ui::Status::BASIC_MOVE, PixelRenderer::rgb(67, 213, 224), 1);
+        PixelRenderer::text(18, 48,
                             basicMove ? basicMove->name : Ui::Status::MOVE_UNKNOWN,
                             PixelRenderer::rgb(241, 242, 232), 1);
         snprintf(buf, sizeof(buf), Ui::Status::POWER_FMT, basicMove ? basicMove->power : 0);
-        PixelRenderer::text(18, 70, buf, PixelRenderer::rgb(255, 216, 72), 1);
-        PixelRenderer::text(18, 88,
+        PixelRenderer::text(126, 48, buf, PixelRenderer::rgb(255, 216, 72), 1);
+        PixelRenderer::text(18, 66,
                             basicMove ? basicMove->description : Ui::Status::MOVE_UNKNOWN,
                             PixelRenderer::rgb(135, 214, 238), 1);
-        PixelRenderer::text(126, 52,
+        PixelRenderer::text(18, 82, Ui::Status::SPECIAL_MOVE, PixelRenderer::rgb(67, 213, 224), 1);
+        PixelRenderer::text(18, 100,
                             specialMove ? specialMove->name : Ui::Status::MOVE_UNKNOWN,
                             PixelRenderer::rgb(241, 242, 232), 1);
         snprintf(buf, sizeof(buf), Ui::Status::POWER_FMT, specialMove ? specialMove->power : 0);
-        PixelRenderer::text(126, 70, buf, PixelRenderer::rgb(255, 216, 72), 1);
-        PixelRenderer::text(126, 88,
+        PixelRenderer::text(126, 100, buf, PixelRenderer::rgb(255, 216, 72), 1);
+        PixelRenderer::text(18, 118,
                             specialMove ? specialMove->description : Ui::Status::MOVE_UNKNOWN,
                             PixelRenderer::rgb(135, 214, 238), 1);
     } else {
@@ -691,6 +766,103 @@ void MenuScene::renderBagConfirmPopup() {
     PixelRenderer::text(POP_X + 130, POP_Y + 49, Ui::Bag::NO, noColor, 1);
 }
 
+void MenuScene::renderComputerPage() {
+    auto& c = PixelRenderer::canvas();
+    c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, 0x0000);
+
+    static constexpr int ROW_X = 8;
+    static constexpr int TEXT_X = 22;
+    static constexpr int ROW_Y = 18;
+    static constexpr int ROW_H = 30;
+    static constexpr int SEP_Y_OFFSET = 23;
+    static constexpr int SEP_W = Hal::DISPLAY_W - ROW_X * 2;
+
+    for (uint8_t i = 0; i < COMPUTER_ITEM_COUNT; ++i) {
+        int y = ROW_Y + i * ROW_H;
+        bool selected = i == computerCursor;
+        uint16_t color = selected ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232);
+        if (selected) {
+            c.fillRect(ROW_X, y - 1, 4, 18, PixelRenderer::rgb(255, 216, 72));
+        }
+        PixelRenderer::text(TEXT_X, y, Ui::Computer::ITEMS[i], color, 1);
+        if (i == 1) {
+            char countBuf[16];
+            snprintf(countBuf, sizeof(countBuf), Ui::Computer::STORAGE_COUNT_FMT,
+                     GameEngine::ins().gameState().storageCount);
+            PixelRenderer::text(Hal::DISPLAY_W - textPixelWidth(countBuf) - 12, y, countBuf,
+                                selected ? PixelRenderer::rgb(255, 218, 178) : 0x7BEF,
+                                1);
+        }
+        if (i + 1 < COMPUTER_ITEM_COUNT) {
+            c.drawFastHLine(ROW_X, y + SEP_Y_OFFSET, SEP_W, PixelRenderer::rgb(55, 63, 76));
+        }
+    }
+}
+
+void MenuScene::renderStoragePage() {
+    auto& c = PixelRenderer::canvas();
+    const auto& state = GameEngine::ins().gameState();
+    uint8_t rowCount = state.storageCount + 1;
+    if (storageCursor >= rowCount) storageCursor = rowCount - 1;
+
+    c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, 0x0000);
+
+    static constexpr int ROW_X = 8;
+    static constexpr int TEXT_X = 18;
+    static constexpr int LIST_Y_START = 6;
+    static constexpr int LIST_BOTTOM = Hal::DISPLAY_H - 6;
+    static constexpr int VISIBLE_H = LIST_BOTTOM - LIST_Y_START;
+    static constexpr int ROW_H = 24;
+    static constexpr int SEP_W = Hal::DISPLAY_W - ROW_X * 2;
+
+    int totalH = rowCount * ROW_H;
+    int maxScroll = (totalH > VISIBLE_H) ? (totalH - VISIBLE_H) : 0;
+    int targetScroll = storageCursor * ROW_H - VISIBLE_H / 2 + ROW_H / 2;
+    if (targetScroll < 0) targetScroll = 0;
+    if (targetScroll > maxScroll) targetScroll = maxScroll;
+
+    float diff = (float)targetScroll - storageScroll;
+    if (fabsf(diff) < 0.5f) {
+        storageScroll = (float)targetScroll;
+    } else {
+        storageScroll += diff * 0.25f;
+    }
+
+    if (state.storageCount == 0) {
+        PixelRenderer::text(74, 44, Ui::Computer::STORAGE_EMPTY, 0x7BEF, 1);
+    }
+
+    c.setClipRect(0, LIST_Y_START, Hal::DISPLAY_W, VISIBLE_H);
+    for (uint8_t i = 0; i < rowCount; ++i) {
+        int y = LIST_Y_START + i * ROW_H - (int)storageScroll;
+        if (y + ROW_H < LIST_Y_START || y > LIST_BOTTOM) continue;
+        bool selected = i == storageCursor;
+        uint16_t color = selected ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232);
+        if (selected) {
+            c.fillRect(ROW_X, y + 2, 4, 18, PixelRenderer::rgb(255, 216, 72));
+        }
+
+        if (i < state.storageCount) {
+            const Game::MonsterRuntime& mon = state.storage[i];
+            const Species& species = GameEngine::ins().speciesFor(mon);
+            PixelRenderer::text(TEXT_X, y + 3, species.name, color, 1);
+
+            char buf[20];
+            snprintf(buf, sizeof(buf), Ui::Common::LEVEL_FMT, mon.level);
+            PixelRenderer::text(112, y + 3, buf, selected ? PixelRenderer::rgb(255, 218, 178) : 0x7BEF, 1);
+            snprintf(buf, sizeof(buf), "%u/%u", mon.hpCur, mon.hpMax);
+            PixelRenderer::text(158, y + 3, buf, selected ? PixelRenderer::rgb(255, 218, 178) : 0x7BEF, 1);
+        } else {
+            PixelRenderer::text(TEXT_X, y + 3, Ui::BACK, color, 1);
+        }
+
+        if (i + 1 < rowCount) {
+            c.drawFastHLine(ROW_X, y + ROW_H - 1, SEP_W, PixelRenderer::rgb(55, 63, 76));
+        }
+    }
+    c.clearClipRect();
+}
+
 void MenuScene::renderDebugPage() {
     auto& c = PixelRenderer::canvas();
     c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, 0x0000);
@@ -710,12 +882,72 @@ void MenuScene::renderDebugPage() {
             c.fillRect(ROW_X, y - 1, 4, 18, PixelRenderer::rgb(255, 216, 72));
         }
         PixelRenderer::text(TEXT_X, y, Ui::Debug::ITEMS[i], color, 1);
+        if (i == 1) {
+            const auto& state = GameEngine::ins().gameState();
+            uint16_t speciesId = state.teamCount > 0 ? state.team[0].speciesId : 0;
+            char idBuf[20];
+            snprintf(idBuf, sizeof(idBuf), Ui::Debug::CURRENT_ID_FMT, speciesId);
+            PixelRenderer::text(Hal::DISPLAY_W - textPixelWidth(idBuf) - 12, y, idBuf,
+                                selected ? PixelRenderer::rgb(255, 218, 178) : 0x7BEF,
+                                1);
+        }
         if (i + 1 < DEBUG_ITEM_COUNT) {
             c.drawFastHLine(ROW_X, y + SEP_Y_OFFSET, SEP_W, PixelRenderer::rgb(55, 63, 76));
         }
     }
 
+    if (debugSwitchOpen) renderDebugSwitchPopup();
     renderToast();
+}
+
+void MenuScene::openDebugSwitchPopup() {
+    const auto& state = GameEngine::ins().gameState();
+    uint16_t speciesId = state.teamCount > 0 ? state.team[0].speciesId : 1;
+    if (speciesId > 999) speciesId = 999;
+    debugSwitchDigits[0] = (speciesId / 100) % 10;
+    debugSwitchDigits[1] = (speciesId / 10) % 10;
+    debugSwitchDigits[2] = speciesId % 10;
+    debugSwitchFocus = 0;
+    debugSwitchOpen = true;
+}
+
+uint16_t MenuScene::debugSwitchTargetId() const {
+    return (uint16_t)(debugSwitchDigits[0] * 100 + debugSwitchDigits[1] * 10 + debugSwitchDigits[2]);
+}
+
+void MenuScene::renderDebugSwitchPopup() {
+    auto& c = PixelRenderer::canvas();
+    static constexpr int POP_X = 34;
+    static constexpr int POP_Y = 26;
+    static constexpr int POP_W = 172;
+    static constexpr int POP_H = 84;
+    c.fillRect(POP_X, POP_Y, POP_W, POP_H, PixelRenderer::rgb(18, 22, 30));
+    c.drawRect(POP_X, POP_Y, POP_W, POP_H, PixelRenderer::rgb(241, 242, 232));
+
+    PixelRenderer::text(POP_X + 14, POP_Y + 10, Ui::Debug::SWITCH_MON,
+                        PixelRenderer::rgb(67, 213, 224), 1);
+    PixelRenderer::text(POP_X + 14, POP_Y + 32, Ui::Debug::INPUT_ID,
+                        PixelRenderer::rgb(241, 242, 232), 1);
+
+    char digitBuf[2] = {'0', '\0'};
+    for (uint8_t i = 0; i < 3; ++i) {
+        int x = POP_X + 68 + i * 18;
+        bool selected = debugSwitchFocus == i;
+        if (selected) {
+            c.drawRect(x - 3, POP_Y + 29, 14, 18, PixelRenderer::rgb(255, 216, 72));
+        }
+        digitBuf[0] = (char)('0' + debugSwitchDigits[i]);
+        PixelRenderer::text(x, POP_Y + 32, digitBuf,
+                            selected ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232),
+                            1);
+    }
+
+    uint16_t yesColor = debugSwitchFocus == 3 ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232);
+    uint16_t cancelColor = debugSwitchFocus == 4 ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232);
+    if (debugSwitchFocus == 3) c.fillRect(POP_X + 38, POP_Y + 60, 4, 16, PixelRenderer::rgb(255, 216, 72));
+    if (debugSwitchFocus == 4) c.fillRect(POP_X + 94, POP_Y + 60, 4, 16, PixelRenderer::rgb(255, 216, 72));
+    PixelRenderer::text(POP_X + 48, POP_Y + 60, Ui::Debug::YES, yesColor, 1);
+    PixelRenderer::text(POP_X + 104, POP_Y + 60, Ui::Debug::CANCEL, cancelColor, 1);
 }
 
 uint8_t MenuScene::collectVisibleBagRows(BagRow* rows, uint8_t maxRows) const {

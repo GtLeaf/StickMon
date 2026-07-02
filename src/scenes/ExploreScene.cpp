@@ -176,7 +176,7 @@ uint8_t rollWildLevel() {
 void ExploreScene::onEnter() {
     phase = Phase::SELECT;
     biomeCursor = 0;
-    toast = nullptr;
+    resultMessage = nullptr;
     exitAfterFaint = false;
 }
 
@@ -268,10 +268,7 @@ void ExploreScene::walk() {
         triggered = true;
     }
 
-    if (!triggered && (!toast || Hal::ins().millis() > toastUntil)) {
-        toast = Ui::Explore::CONTINUE;
-        toastUntil = Hal::ins().millis() + 650;
-    }
+    (void)triggered;
 }
 
 bool ExploreScene::rollSceneEvent(bool forceEvent) {
@@ -318,47 +315,32 @@ bool ExploreScene::rollSceneEvent(bool forceEvent) {
 }
 
 void ExploreScene::resolvePickup(uint8_t pickupId) {
-    bool ok = true;
-    const char* itemName = nullptr;
     switch (pickupId) {
     case PICKUP_BALL:
         GameEngine::ins().addBalls(1);
-        itemName = Ui::Explore::PICKUP_BALL;
         break;
     case PICKUP_COIN: {
         uint8_t level = GameEngine::ins().activeMonster().level;
         uint32_t upper = 10 + min<uint8_t>(40, level);
         uint32_t coins = random(10, upper + 1);
         GameEngine::ins().addCoins(coins);
-        snprintf(toastBuf, sizeof(toastBuf), Ui::Explore::PICKUP_COIN_FMT, (unsigned long)coins);
-        toast = toastBuf;
-        toastUntil = Hal::ins().millis() + 1500;
         return;
     }
     case PICKUP_POTION:
-        ok = GameEngine::ins().addPotion(1);
-        itemName = Ui::Explore::PICKUP_POTION;
+        GameEngine::ins().addPotion(1);
         break;
     case PICKUP_SUPER_POTION:
-        ok = GameEngine::ins().addSuperPotion(1);
-        itemName = Ui::Explore::PICKUP_SUPER_POTION;
+        GameEngine::ins().addSuperPotion(1);
         break;
     case PICKUP_ANTIDOTE:
-        ok = GameEngine::ins().addAntidote(1);
-        itemName = Ui::Explore::PICKUP_ANTIDOTE;
+        GameEngine::ins().addAntidote(1);
         break;
     case PICKUP_RARE_CANDY:
         GameEngine::ins().addCandy(1);
-        itemName = Ui::Explore::PICKUP_CANDY;
         break;
     default:
         return;
     }
-
-    toast = toastBuf;
-    if (ok) snprintf(toastBuf, sizeof(toastBuf), Ui::Explore::PICKUP_FMT, itemName);
-    else toast = Ui::Shop::BAG_FULL;
-    toastUntil = Hal::ins().millis() + 1500;
 }
 
 void ExploreScene::rollEncounter() {
@@ -393,9 +375,13 @@ void ExploreScene::rollEncounter() {
 void ExploreScene::clearBattleLogs() {
     battleLogHead = 0;
     battleLogCount = 0;
+    battleLogVisibleCount = 0;
     battleLogUntil = 0;
     battleLogActive = false;
-    battleLogCurrent[0] = '\0';
+    battleResultPending = false;
+    for (uint8_t i = 0; i < BATTLE_LOG_VISIBLE_CAP; ++i) {
+        battleLogVisible[i][0] = '\0';
+    }
 }
 
 void ExploreScene::enqueueBattleLog(const char* text) {
@@ -413,11 +399,28 @@ void ExploreScene::enqueueBattleLog(const char* text) {
 
 void ExploreScene::serviceBattleLog(uint32_t nowMs) {
     if (battleLogActive && (int32_t)(nowMs - battleLogUntil) < 0) return;
-    battleLogActive = false;
-    if (battleLogCount == 0) return;
+    if (battleLogCount == 0) {
+        battleLogActive = false;
+        battleLogVisibleCount = 0;
+        for (uint8_t i = 0; i < BATTLE_LOG_VISIBLE_CAP; ++i) {
+            battleLogVisible[i][0] = '\0';
+        }
+        if (battleResultPending) {
+            battleResultPending = false;
+            phase = Phase::RESULT;
+        }
+        return;
+    }
 
-    strncpy(battleLogCurrent, battleLogQueue[battleLogHead], BATTLE_LOG_LEN - 1);
-    battleLogCurrent[BATTLE_LOG_LEN - 1] = '\0';
+    if (battleLogVisibleCount < BATTLE_LOG_VISIBLE_CAP) {
+        battleLogVisibleCount++;
+    } else {
+        strncpy(battleLogVisible[0], battleLogVisible[1], BATTLE_LOG_LEN - 1);
+        battleLogVisible[0][BATTLE_LOG_LEN - 1] = '\0';
+    }
+    uint8_t line = battleLogVisibleCount - 1;
+    strncpy(battleLogVisible[line], battleLogQueue[battleLogHead], BATTLE_LOG_LEN - 1);
+    battleLogVisible[line][BATTLE_LOG_LEN - 1] = '\0';
     battleLogHead = (battleLogHead + 1) % BATTLE_LOG_QUEUE_CAP;
     battleLogCount--;
     battleLogActive = true;
@@ -425,7 +428,7 @@ void ExploreScene::serviceBattleLog(uint32_t nowMs) {
 }
 
 bool ExploreScene::battleLogBusy() const {
-    return battleLogActive || battleLogCount > 0;
+    return battleLogActive || battleLogCount > 0 || battleResultPending;
 }
 
 void ExploreScene::attackWild() {
@@ -445,16 +448,25 @@ void ExploreScene::attackWild() {
     if (result.statusBlocked) {
         enqueueBattleLog(Ui::Explore::CANNOT_MOVE);
     } else if (result.effectiveness == 0) {
+        const MoveInfo* move = findMove(result.special ? activeSpecies.specialMoveId : activeSpecies.basicMoveId);
+        char logBuf[BATTLE_LOG_LEN];
+        snprintf(logBuf, sizeof(logBuf), Ui::Explore::MOVE_USED_FMT,
+                 activeSpecies.name,
+                 move ? move->name : Ui::Status::MOVE_UNKNOWN);
+        enqueueBattleLog(logBuf);
         enqueueBattleLog(Ui::Explore::NO_EFFECT);
-    } else if (result.special) {
-        const MoveInfo* move = findMove(activeSpecies.specialMoveId);
-        snprintf(toastBuf, sizeof(toastBuf), Ui::Explore::SPECIAL_DAMAGE_FMT,
-                 move ? move->name : Ui::Status::MOVE_UNKNOWN,
-                 result.damage);
-        enqueueBattleLog(toastBuf);
     } else {
-        snprintf(toastBuf, sizeof(toastBuf), Ui::Explore::DAMAGE_FMT, result.damage);
-        enqueueBattleLog(toastBuf);
+        const MoveInfo* move = findMove(result.special ? activeSpecies.specialMoveId : activeSpecies.basicMoveId);
+        char logBuf[BATTLE_LOG_LEN];
+        snprintf(logBuf, sizeof(logBuf), Ui::Explore::MOVE_USED_FMT,
+                 activeSpecies.name,
+                 move ? move->name : Ui::Status::MOVE_UNKNOWN);
+        enqueueBattleLog(logBuf);
+        if (result.critical) enqueueBattleLog(Ui::Explore::CRITICAL_HIT);
+        if (result.effectiveness > 100) enqueueBattleLog(Ui::Explore::SUPER_EFFECTIVE);
+        else if (result.effectiveness < 100) enqueueBattleLog(Ui::Explore::NOT_VERY_EFFECTIVE);
+        snprintf(logBuf, sizeof(logBuf), Ui::Explore::DAMAGE_FMT, result.damage);
+        enqueueBattleLog(logBuf);
         if (result.damage > 0 && activeMon.proficiency < 100) {
             activeMon.proficiency++;
             GameEngine::ins().markDirty(false);
@@ -466,9 +478,13 @@ void ExploreScene::attackWild() {
         GameEngine::ins().addExperience(expGain);
         GameEngine::ins().grantEffortFrom(*wild);
         GameEngine::ins().addCoins(10);
-        snprintf(toastBuf, sizeof(toastBuf), Ui::Explore::BATTLE_WIN_FMT, expGain);
-        toast = toastBuf;
-        phase = Phase::RESULT;
+        enqueueBattleLog(Ui::Explore::BATTLE_WIN);
+        char logBuf[BATTLE_LOG_LEN];
+        snprintf(logBuf, sizeof(logBuf), Ui::Explore::EXP_GAIN_FMT, expGain);
+        enqueueBattleLog(logBuf);
+        snprintf(resultBuf, sizeof(resultBuf), Ui::Explore::BATTLE_WIN_FMT, expGain);
+        resultMessage = resultBuf;
+        battleResultPending = true;
         lastCaptureSuccess = false;
         return;
     }
@@ -498,18 +514,30 @@ void ExploreScene::wildCounterattack() {
     if (result.statusBlocked) {
         enqueueBattleLog(Ui::Explore::WILD_CANNOT_MOVE);
     } else if (result.effectiveness == 0) {
+        const MoveInfo* move = findMove(result.special ? wild->specialMoveId : wild->basicMoveId);
+        char logBuf[BATTLE_LOG_LEN];
+        snprintf(logBuf, sizeof(logBuf), Ui::Explore::WILD_MOVE_USED_FMT,
+                 move ? move->name : Ui::Status::MOVE_UNKNOWN);
+        enqueueBattleLog(logBuf);
         enqueueBattleLog(Ui::Explore::NO_EFFECT);
     } else {
-        snprintf(toastBuf, sizeof(toastBuf), Ui::Explore::WILD_DAMAGE_FMT, result.damage);
-        enqueueBattleLog(toastBuf);
+        const MoveInfo* move = findMove(result.special ? wild->specialMoveId : wild->basicMoveId);
+        char logBuf[BATTLE_LOG_LEN];
+        snprintf(logBuf, sizeof(logBuf), Ui::Explore::WILD_MOVE_USED_FMT,
+                 move ? move->name : Ui::Status::MOVE_UNKNOWN);
+        enqueueBattleLog(logBuf);
+        if (result.critical) enqueueBattleLog(Ui::Explore::CRITICAL_HIT);
+        if (result.effectiveness > 100) enqueueBattleLog(Ui::Explore::SUPER_EFFECTIVE);
+        else if (result.effectiveness < 100) enqueueBattleLog(Ui::Explore::NOT_VERY_EFFECTIVE);
+        snprintf(logBuf, sizeof(logBuf), Ui::Explore::WILD_DAMAGE_FMT, result.damage);
+        enqueueBattleLog(logBuf);
     }
 }
 
 void ExploreScene::finishPlayerFaint() {
     uint32_t loss = GameEngine::ins().applyActiveFaintPenalty();
-    snprintf(toastBuf, sizeof(toastBuf), Ui::Explore::FAINTED_EXP_LOSS_FMT, (unsigned long)loss);
-    toast = toastBuf;
-    toastUntil = Hal::ins().millis() + 1500;
+    snprintf(resultBuf, sizeof(resultBuf), Ui::Explore::FAINTED_EXP_LOSS_FMT, (unsigned long)loss);
+    resultMessage = resultBuf;
     lastCaptureSuccess = false;
     wild = nullptr;
     wildHp = wildHpMax = 0;
@@ -519,8 +547,6 @@ void ExploreScene::finishPlayerFaint() {
 void ExploreScene::tryCapture() {
     if (!wild) return;
     if (!GameEngine::ins().consumeBall()) {
-        toast = Ui::Explore::NO_BALLS;
-        toastUntil = Hal::ins().millis() + 1200;
         enqueueBattleLog(Ui::Explore::NO_BALLS);
         return;
     }
@@ -534,21 +560,18 @@ void ExploreScene::tryCapture() {
     if (lastCaptureSuccess) {
         wildRuntime.hpCur = wildHp;
         if (GameEngine::ins().recordCapture(wildRuntime)) {
-            toast = Ui::Explore::CAPTURE_SUCCESS;
+            resultMessage = wild ? wild->name : nullptr;
         } else {
             lastCaptureSuccess = false;
-            toast = Ui::Shop::BAG_FULL;
+            resultMessage = Ui::Shop::BAG_FULL;
         }
     } else {
-        toast = Ui::Explore::BROKE_FREE;
-        toastUntil = Hal::ins().millis() + 900;
         enqueueBattleLog(Ui::Explore::BROKE_FREE);
         wildCounterattack();
         if (phase == Phase::RESULT) return;
         return;
     }
     phase = Phase::RESULT;
-    toastUntil = Hal::ins().millis() + 1200;
 }
 
 void ExploreScene::fleeEncounter() {
@@ -565,8 +588,6 @@ void ExploreScene::fleeEncounter() {
     }
 
     if (!escaped) {
-        toast = Ui::Explore::FLEE_FAILED;
-        toastUntil = Hal::ins().millis() + 900;
         enqueueBattleLog(Ui::Explore::FLEE_FAILED);
         wildCounterattack();
         return;
@@ -575,8 +596,7 @@ void ExploreScene::fleeEncounter() {
     GameEngine::ins().addCoins(2);
     lastCaptureSuccess = false;
     phase = Phase::RESULT;
-    toast = Ui::Explore::RELEASED;
-    toastUntil = Hal::ins().millis() + 1200;
+    resultMessage = Ui::Explore::RELEASED;
 }
 
 void ExploreScene::resetWalk() {
@@ -584,8 +604,8 @@ void ExploreScene::resetWalk() {
     resetRouteSegment();
     wild = nullptr;
     wildHp = wildHpMax = 0;
-    toast = Ui::Explore::START;
-    toastUntil = Hal::ins().millis() + 900;
+    battleResultPending = false;
+    resultMessage = nullptr;
 }
 
 void ExploreScene::resetRouteSegment() {
@@ -604,7 +624,6 @@ void ExploreScene::render() {
     case Phase::ENCOUNTER: renderEncounter(); break;
     case Phase::RESULT: renderResult(); break;
     }
-    renderToast();
 }
 
 void ExploreScene::renderBiomeMenu() {
@@ -665,15 +684,11 @@ void ExploreScene::renderResult() {
     c.drawRect(42, 42, 156, 58, PixelRenderer::rgb(95, 110, 126));
     PixelRenderer::text(58, 58, lastCaptureSuccess ? Ui::Explore::CAPTURE_SUCCESS : Ui::Explore::RESULT_END,
                         lastCaptureSuccess ? PixelRenderer::rgb(92, 222, 112) : PixelRenderer::rgb(241, 242, 232), 1);
-    if (wild) PixelRenderer::text(58, 78, wild->name, PixelRenderer::rgb(255, 216, 72), 1);
-}
-
-void ExploreScene::renderToast() {
-    if (!toast || Hal::ins().millis() > toastUntil) return;
-    if (phase == Phase::ENCOUNTER) return;
-    auto& c = PixelRenderer::canvas();
-    c.fillRect(62, 108, 116, 20, PixelRenderer::rgb(34, 39, 47));
-    PixelRenderer::text(70, 110, toast, PixelRenderer::rgb(255, 255, 255), 1);
+    if (resultMessage && resultMessage[0]) {
+        PixelRenderer::text(58, 78, resultMessage, PixelRenderer::rgb(255, 216, 72), 1);
+    } else if (wild) {
+        PixelRenderer::text(58, 78, wild->name, PixelRenderer::rgb(255, 216, 72), 1);
+    }
 }
 
 void ExploreScene::drawWildBlock(int x, int y) {
@@ -689,8 +704,7 @@ void ExploreScene::drawMonsterBlock(const Species& species, int x, int y, bool b
     if (frame) {
         uint8_t w = pgm_read_byte(&frame->width);
         uint8_t h = pgm_read_byte(&frame->height);
-        PixelRenderer::drawRgb565Rle(x - w / 2, y - h / 2, w, h, PokemonSprites::SPRITE_RLE,
-                                     pgm_read_dword(&frame->offset), pgm_read_dword(&frame->length));
+        PokemonSprites::drawFrame(frame, x - w / 2, y - h / 2);
         return;
     }
     c.fillRect(x - 18, y - 22, 36, 40, species.colorA);
@@ -732,8 +746,15 @@ void ExploreScene::renderCommandBox() {
     c.drawRect(0, 101, Hal::DISPLAY_W, 34, PixelRenderer::rgb(74, 91, 75));
 
     serviceBattleLog(Hal::ins().millis());
-    if (battleLogActive) {
-        PixelRenderer::text(12, 110, battleLogCurrent, PixelRenderer::rgb(25, 31, 40), 1);
+    if (phase != Phase::ENCOUNTER) return;
+    if (battleLogActive || battleLogVisibleCount > 0) {
+        uint8_t start = battleLogVisibleCount > BATTLE_LOG_VISIBLE_CAP
+            ? battleLogVisibleCount - BATTLE_LOG_VISIBLE_CAP
+            : 0;
+        for (uint8_t i = start; i < battleLogVisibleCount; ++i) {
+            int y = 104 + (i - start) * 15;
+            PixelRenderer::text(12, y, battleLogVisible[i], PixelRenderer::rgb(25, 31, 40), 1);
+        }
         return;
     }
 

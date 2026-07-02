@@ -9,6 +9,67 @@
 #include "hardware/PixelRenderer.h"
 
 namespace {
+static constexpr uint16_t PMD_IDLE_FRAME_MS = 520;
+static constexpr uint16_t PMD_WALKING_FRAME_MS = 170;
+static constexpr uint16_t PMD_SLEEPING_FRAME_MS = 700;
+static constexpr float PMD_MOVING_SPEED_EPSILON = 1.0f;
+
+struct PmdSpriteConfig {
+    uint16_t speciesId;
+    uint8_t idleFrames;
+    uint16_t idleFrameMs;
+    uint8_t walkingFrames;
+    uint8_t sleepingFrames;
+    PokemonSprites::SpriteKind idleBase;
+    PokemonSprites::SpriteKind walkingBase;
+    PokemonSprites::SpriteKind sleepingBase;
+    bool mirrorRightDirections;
+    float airHeight;
+    float bobAmplitude;
+};
+
+static constexpr PmdSpriteConfig PMD_SPRITE_CONFIGS[] = {
+    {1, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::BULBASAUR_IDLE_FRONT_0, PokemonSprites::SpriteKind::BULBASAUR_WALKING_FRONT_0, PokemonSprites::SpriteKind::BULBASAUR_SLEEPING_0, true, 0.0f, 0.0f},
+    {2, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::IVYSAUR_IDLE_FRONT_0, PokemonSprites::SpriteKind::IVYSAUR_WALKING_FRONT_0, PokemonSprites::SpriteKind::IVYSAUR_SLEEPING_0, true, 0.0f, 0.0f},
+    {3, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::VENUSAUR_IDLE_FRONT_0, PokemonSprites::SpriteKind::VENUSAUR_WALKING_FRONT_0, PokemonSprites::SpriteKind::VENUSAUR_SLEEPING_0, true, 0.0f, 0.0f},
+    {4, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::CHARMANDER_IDLE_FRONT_0, PokemonSprites::SpriteKind::CHARMANDER_WALKING_FRONT_0, PokemonSprites::SpriteKind::CHARMANDER_SLEEPING_0, true, 0.0f, 0.0f},
+    {5, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::CHARMELEON_IDLE_FRONT_0, PokemonSprites::SpriteKind::CHARMELEON_WALKING_FRONT_0, PokemonSprites::SpriteKind::CHARMELEON_SLEEPING_0, true, 0.0f, 0.0f},
+    {6, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::CHARIZARD_IDLE_FRONT_0, PokemonSprites::SpriteKind::CHARIZARD_WALKING_FRONT_0, PokemonSprites::SpriteKind::CHARIZARD_SLEEPING_0, true, 0.0f, 0.0f},
+    {7, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::SQUIRTLE_IDLE_FRONT_0, PokemonSprites::SpriteKind::SQUIRTLE_WALKING_FRONT_0, PokemonSprites::SpriteKind::SQUIRTLE_SLEEPING_0, true, 0.0f, 0.0f},
+    {8, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::WARTORTLE_IDLE_FRONT_0, PokemonSprites::SpriteKind::WARTORTLE_WALKING_FRONT_0, PokemonSprites::SpriteKind::WARTORTLE_SLEEPING_0, false, 0.0f, 0.0f},
+    {9, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::BLASTOISE_IDLE_FRONT_0, PokemonSprites::SpriteKind::BLASTOISE_WALKING_FRONT_0, PokemonSprites::SpriteKind::BLASTOISE_SLEEPING_0, true, 0.0f, 0.0f},
+    {25, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::PIKACHU_IDLE_FRONT_0, PokemonSprites::SpriteKind::PIKACHU_WALKING_FRONT_0, PokemonSprites::SpriteKind::PIKACHU_SLEEPING_0, true, 0.0f, 0.0f},
+    {26, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::RAICHU_IDLE_FRONT_0, PokemonSprites::SpriteKind::RAICHU_WALKING_FRONT_0, PokemonSprites::SpriteKind::RAICHU_SLEEPING_0, false, 0.0f, 0.0f},
+    {92, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::GASTLY_IDLE_FRONT_0, PokemonSprites::SpriteKind::GASTLY_WALKING_FRONT_0, PokemonSprites::SpriteKind::GASTLY_SLEEPING_0, true, 12.0f, 2.0f},
+    {93, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::HAUNTER_IDLE_FRONT_0, PokemonSprites::SpriteKind::HAUNTER_WALKING_FRONT_0, PokemonSprites::SpriteKind::HAUNTER_SLEEPING_0, true, 10.0f, 2.0f},
+    {94, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::GENGAR_IDLE_FRONT_0, PokemonSprites::SpriteKind::GENGAR_WALKING_FRONT_0, PokemonSprites::SpriteKind::GENGAR_SLEEPING_0, true, 0.0f, 0.0f},
+    {123, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::SCYTHER_IDLE_FRONT_0, PokemonSprites::SpriteKind::SCYTHER_WALKING_FRONT_0, PokemonSprites::SpriteKind::SCYTHER_SLEEPING_0, true, 0.0f, 0.0f},
+    {129, 2, PMD_IDLE_FRAME_MS, 1, 2, PokemonSprites::SpriteKind::MAGIKARP_IDLE_FRONT_0, PokemonSprites::SpriteKind::MAGIKARP_WALKING_FRONT_0, PokemonSprites::SpriteKind::MAGIKARP_SLEEPING_0, false, 0.0f, 0.0f},
+    {130, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::GYARADOS_IDLE_FRONT_0, PokemonSprites::SpriteKind::GYARADOS_WALKING_FRONT_0, PokemonSprites::SpriteKind::GYARADOS_SLEEPING_0, false, 0.0f, 0.0f},
+    {133, 2, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::EEVEE_IDLE_FRONT_0, PokemonSprites::SpriteKind::EEVEE_WALKING_FRONT_0, PokemonSprites::SpriteKind::EEVEE_SLEEPING_0, false, 0.0f, 0.0f},
+    {134, 1, PMD_IDLE_FRAME_MS, 4, 2, PokemonSprites::SpriteKind::VAPOREON_IDLE_FRONT_0, PokemonSprites::SpriteKind::VAPOREON_WALKING_FRONT_0, PokemonSprites::SpriteKind::VAPOREON_SLEEPING_0, false, 0.0f, 0.0f},
+    {135, 1, PMD_IDLE_FRAME_MS, 4, 2, PokemonSprites::SpriteKind::JOLTEON_IDLE_FRONT_0, PokemonSprites::SpriteKind::JOLTEON_WALKING_FRONT_0, PokemonSprites::SpriteKind::JOLTEON_SLEEPING_0, false, 0.0f, 0.0f},
+    {136, 3, PMD_IDLE_FRAME_MS, 4, 2, PokemonSprites::SpriteKind::FLAREON_IDLE_FRONT_0, PokemonSprites::SpriteKind::FLAREON_WALKING_FRONT_0, PokemonSprites::SpriteKind::FLAREON_SLEEPING_0, false, 0.0f, 0.0f},
+    {196, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::ESPEON_IDLE_FRONT_0, PokemonSprites::SpriteKind::ESPEON_WALKING_FRONT_0, PokemonSprites::SpriteKind::ESPEON_SLEEPING_0, true, 0.0f, 0.0f},
+    {197, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::UMBREON_IDLE_FRONT_0, PokemonSprites::SpriteKind::UMBREON_WALKING_FRONT_0, PokemonSprites::SpriteKind::UMBREON_SLEEPING_0, true, 0.0f, 0.0f},
+    {143, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::SNORLAX_IDLE_FRONT_0, PokemonSprites::SpriteKind::SNORLAX_WALKING_FRONT_0, PokemonSprites::SpriteKind::SNORLAX_SLEEPING_0, true, 0.0f, 0.0f},
+    {147, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::DRATINI_IDLE_FRONT_0, PokemonSprites::SpriteKind::DRATINI_WALKING_FRONT_0, PokemonSprites::SpriteKind::DRATINI_SLEEPING_0, false, 0.0f, 0.0f},
+    {148, 2, PMD_IDLE_FRAME_MS, 1, 2, PokemonSprites::SpriteKind::DRAGONAIR_IDLE_FRONT_0, PokemonSprites::SpriteKind::DRAGONAIR_WALKING_FRONT_0, PokemonSprites::SpriteKind::DRAGONAIR_SLEEPING_0, false, 0.0f, 0.0f},
+    {149, 1, PMD_IDLE_FRAME_MS, 2, 2, PokemonSprites::SpriteKind::DRAGONITE_IDLE_FRONT_0, PokemonSprites::SpriteKind::DRAGONITE_WALKING_FRONT_0, PokemonSprites::SpriteKind::DRAGONITE_SLEEPING_0, false, 0.0f, 0.0f},
+    {151, 3, 360, 2, 2, PokemonSprites::SpriteKind::MEW_IDLE_FRONT_0, PokemonSprites::SpriteKind::MEW_WALKING_FRONT_0, PokemonSprites::SpriteKind::MEW_SLEEPING_0, false, 14.0f, 3.0f},
+    {172, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::PICHU_IDLE_FRONT_0, PokemonSprites::SpriteKind::PICHU_WALKING_FRONT_0, PokemonSprites::SpriteKind::PICHU_SLEEPING_0, true, 0.0f, 0.0f},
+    {212, 2, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::SCIZOR_IDLE_FRONT_0, PokemonSprites::SpriteKind::SCIZOR_WALKING_FRONT_0, PokemonSprites::SpriteKind::SCIZOR_SLEEPING_0, true, 0.0f, 0.0f},
+    {380, 1, PMD_IDLE_FRAME_MS, 2, 2, PokemonSprites::SpriteKind::LATIAS_IDLE_FRONT_0, PokemonSprites::SpriteKind::LATIAS_WALKING_FRONT_0, PokemonSprites::SpriteKind::LATIAS_SLEEPING_0, true, 18.0f, 2.0f},
+    {381, 1, PMD_IDLE_FRAME_MS, 2, 2, PokemonSprites::SpriteKind::LATIOS_IDLE_FRONT_0, PokemonSprites::SpriteKind::LATIOS_WALKING_FRONT_0, PokemonSprites::SpriteKind::LATIOS_SLEEPING_0, true, 18.0f, 2.0f},
+};
+
+const PmdSpriteConfig* pmdSpriteConfigForSpecies(uint16_t speciesId) {
+    for (const auto& config : PMD_SPRITE_CONFIGS) {
+        if (config.speciesId == speciesId) return &config;
+    }
+    return nullptr;
+}
+
 uint8_t rgb565R(uint16_t c) {
     return (uint8_t)(((c >> 11) & 0x1F) * 255 / 31);
 }
@@ -57,6 +118,21 @@ float clampf(float value, float lo, float hi) {
     if (value < lo) return lo;
     if (value > hi) return hi;
     return value;
+}
+
+float pmdFloatYOffset(const PmdSpriteConfig* config, uint32_t nowMs) {
+    if (!config || config->airHeight <= 0.0f) return 0.0f;
+    float phase = (float)(nowMs % 1600UL) * 0.00392699f;
+    return config->airHeight + sinf(phase) * config->bobAmplitude;
+}
+
+float pmdMoveSpeedScale(const Species* species) {
+    return species && species->id == 129 ? 0.35f : 1.0f;
+}
+
+bool mainSceneIsNight() {
+    uint16_t minutes = GameEngine::ins().gameMinutesOfDay();
+    return minutes < 6 * 60 || minutes >= 18 * 60;
 }
 
 void drawHeartIcon(int centerX, int centerY, uint8_t tier, uint16_t color) {
@@ -137,12 +213,17 @@ void MainScene::onEnter() {
     targetY = monsterY;
     velocityX = 0.0f;
     velocityY = 0.0f;
+    pmdAction = PmdAction::IDLE;
+    pmdDirection = PmdDirection::FRONT;
+    pmdFrame = 0;
+    pmdFrameStartedMs = Hal::ins().millis();
     nextAiDecisionMs = 0;
 }
 
 void MainScene::update(uint32_t nowMs, float dtSeconds) {
     active = &GameEngine::ins().activeSpecies();
     updateMonsterAi(nowMs, dtSeconds);
+    updatePmdSpriteState(nowMs);
     bool combo = Hal::ins().btnA_raw() && Hal::ins().btnB_raw();
     if (!combo) {
         comboStartMs = 0;
@@ -164,7 +245,7 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
     static constexpr float MAX_Y = 100.0f;
 
     const Game::MonsterRuntime& mon = GameEngine::ins().activeMonster();
-    if (mon.fainted || mon.hpCur == 0) {
+    if (mon.fainted || mon.hpCur == 0 || (mon.statusBits & Game::STATUS_SLEEP)) {
         velocityX = 0.0f;
         velocityY = 0.0f;
         aiMode = AiMode::IDLE;
@@ -182,8 +263,9 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
         float dx = targetX - monsterX;
         float dy = targetY - monsterY;
         float dist = sqrtf(dx * dx + dy * dy);
-        float speed = aiMode == AiMode::SEEK_FOOD ? 24.0f : 16.0f;
+        float speed = aiMode == AiMode::SEEK_FOOD ? 19.0f : 10.5f;
         if (mon.mood < 40 || mon.satiety < 20) speed *= 0.72f;
+        speed *= pmdMoveSpeedScale(active);
         float step = speed * dtSeconds;
         if (dist < 1.2f || step >= dist) {
             monsterX = targetX;
@@ -191,7 +273,7 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
             aiMode = AiMode::IDLE;
             velocityX = 0.0f;
             velocityY = 0.0f;
-            nextAiDecisionMs = nowMs + random(500, 1101);
+            nextAiDecisionMs = nowMs + random(1800, 4201);
         } else {
             velocityX = dx / dist * speed;
             velocityY = dy / dist * speed * 0.75f;
@@ -205,6 +287,104 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
     monsterY = clampf(monsterY, MIN_Y, MAX_Y);
 }
 
+void MainScene::updatePmdSpriteState(uint32_t nowMs) {
+    const PmdSpriteConfig* config = active ? pmdSpriteConfigForSpecies(active->id) : nullptr;
+    if (!config) return;
+
+    const Game::MonsterRuntime& mon = GameEngine::ins().activeMonster();
+    bool sleeping = (mon.statusBits & Game::STATUS_SLEEP) != 0;
+    float speedSq = velocityX * velocityX + velocityY * velocityY;
+    bool moving = speedSq > PMD_MOVING_SPEED_EPSILON * PMD_MOVING_SPEED_EPSILON;
+    PmdAction nextAction = sleeping ? PmdAction::SLEEPING : (moving ? PmdAction::WALKING : PmdAction::IDLE);
+    PmdDirection nextDirection = moving ? pmdDirectionForVelocity(velocityX, velocityY) : pmdDirection;
+
+    if (nextAction != pmdAction || nextDirection != pmdDirection) {
+        pmdAction = nextAction;
+        pmdDirection = nextDirection;
+        pmdFrame = 0;
+        pmdFrameStartedMs = nowMs;
+        return;
+    }
+
+    uint16_t frameMs = config->idleFrameMs;
+    uint8_t frameCount = config->idleFrames;
+    if (pmdAction == PmdAction::WALKING) {
+        frameMs = PMD_WALKING_FRAME_MS;
+        frameCount = config->walkingFrames;
+    } else if (pmdAction == PmdAction::SLEEPING) {
+        frameMs = PMD_SLEEPING_FRAME_MS;
+        frameCount = config->sleepingFrames;
+    }
+    while (nowMs - pmdFrameStartedMs >= frameMs) {
+        pmdFrame = (uint8_t)((pmdFrame + 1) % frameCount);
+        pmdFrameStartedMs += frameMs;
+    }
+}
+
+MainScene::PmdDirection MainScene::pmdDirectionForVelocity(float vx, float vy) const {
+    float degrees = atan2f(vy, vx) * 57.2957795f;
+    if (degrees >= -22.5f && degrees < 22.5f) return PmdDirection::RIGHT;
+    if (degrees >= 22.5f && degrees < 67.5f) return PmdDirection::DOWN_RIGHT;
+    if (degrees >= 67.5f && degrees < 112.5f) return PmdDirection::FRONT;
+    if (degrees >= 112.5f && degrees < 157.5f) return PmdDirection::DOWN_LEFT;
+    if (degrees >= -67.5f && degrees < -22.5f) return PmdDirection::UP_RIGHT;
+    if (degrees >= -112.5f && degrees < -67.5f) return PmdDirection::BACK;
+    if (degrees >= -157.5f && degrees < -112.5f) return PmdDirection::UP_LEFT;
+    return PmdDirection::LEFT;
+}
+
+PokemonSprites::SpriteKind MainScene::pmdSpriteKind() const {
+    const PmdSpriteConfig* config = active ? pmdSpriteConfigForSpecies(active->id) : nullptr;
+    if (!config) return PokemonSprites::SpriteKind::FRONT;
+
+    if (pmdAction == PmdAction::SLEEPING) {
+        uint16_t base = static_cast<uint16_t>(config->sleepingBase);
+        return static_cast<PokemonSprites::SpriteKind>(base + (pmdFrame % config->sleepingFrames));
+    }
+
+    uint16_t directionIndex = pmdDirectionFrameIndex();
+    if (pmdAction == PmdAction::IDLE) {
+        uint16_t base = static_cast<uint16_t>(config->idleBase);
+        return static_cast<PokemonSprites::SpriteKind>(base + directionIndex * config->idleFrames + (pmdFrame % config->idleFrames));
+    }
+
+    uint16_t base = static_cast<uint16_t>(config->walkingBase);
+    return static_cast<PokemonSprites::SpriteKind>(base + directionIndex * config->walkingFrames + (pmdFrame % config->walkingFrames));
+}
+
+const PokemonSprites::SpriteFrame* MainScene::currentMonsterFrame() const {
+    if (!active) return nullptr;
+    if (pmdSpriteConfigForSpecies(active->id)) {
+        return PokemonSprites::findSpeciesSprite(active->id, pmdSpriteKind());
+    }
+    return PokemonSprites::findSpeciesSprite(active->id, PokemonSprites::SpriteKind::FRONT);
+}
+
+uint16_t MainScene::pmdDirectionFrameIndex() const {
+    const PmdSpriteConfig* config = active ? pmdSpriteConfigForSpecies(active->id) : nullptr;
+    if (!config || !config->mirrorRightDirections) return static_cast<uint16_t>(pmdDirection);
+
+    switch (pmdDirection) {
+    case PmdDirection::FRONT: return 0;
+    case PmdDirection::DOWN_LEFT: return 1;
+    case PmdDirection::LEFT: return 2;
+    case PmdDirection::UP_LEFT: return 3;
+    case PmdDirection::BACK: return 4;
+    case PmdDirection::UP_RIGHT: return 3;
+    case PmdDirection::RIGHT: return 2;
+    case PmdDirection::DOWN_RIGHT: return 1;
+    }
+    return 0;
+}
+
+bool MainScene::pmdDirectionFlipX() const {
+    const PmdSpriteConfig* config = active ? pmdSpriteConfigForSpecies(active->id) : nullptr;
+    if (!config || !config->mirrorRightDirections) return false;
+    return pmdDirection == PmdDirection::UP_RIGHT ||
+           pmdDirection == PmdDirection::RIGHT ||
+           pmdDirection == PmdDirection::DOWN_RIGHT;
+}
+
 void MainScene::chooseAiGoal(uint32_t nowMs) {
     static constexpr float MIN_X = 42.0f;
     static constexpr float MAX_X = 168.0f;
@@ -214,29 +394,29 @@ void MainScene::chooseAiGoal(uint32_t nowMs) {
     const Game::MonsterRuntime& mon = GameEngine::ins().activeMonster();
     bool nearFood = fabsf(monsterX - 164.0f) < 10.0f && fabsf(monsterY - 96.0f) < 6.0f;
     bool hungry = mon.satiety < 55 && GameEngine::ins().foodCount() > 0;
-    if (hungry && !nearFood && random(0, 100) < 45) {
+    if (hungry && !nearFood && random(0, 100) < 35) {
         aiMode = AiMode::SEEK_FOOD;
         targetX = 164.0f + random(-4, 5);
         targetY = 96.0f + random(-3, 4);
-        nextAiDecisionMs = nowMs + random(1800, 3201);
+        nextAiDecisionMs = nowMs + random(2600, 5201);
         return;
     }
 
-    if (random(0, 100) < 22) {
+    if (random(0, 100) < 62) {
         aiMode = AiMode::IDLE;
         targetX = monsterX;
         targetY = monsterY;
-        nextAiDecisionMs = nowMs + random(600, 1501);
+        nextAiDecisionMs = nowMs + random(2200, 6801);
         return;
     }
 
     aiMode = AiMode::WANDER;
     for (uint8_t tries = 0; tries < 8; ++tries) {
-        targetX = MIN_X + random(0, (int)(MAX_X - MIN_X + 1));
-        targetY = MIN_Y + random(0, (int)(MAX_Y - MIN_Y + 1));
-        if (fabsf(targetX - monsterX) >= 24.0f || fabsf(targetY - monsterY) >= 10.0f) break;
+        targetX = clampf(monsterX + (float)random(-24, 25), MIN_X, MAX_X);
+        targetY = clampf(monsterY + (float)random(-9, 10), MIN_Y, MAX_Y);
+        if (fabsf(targetX - monsterX) >= 8.0f || fabsf(targetY - monsterY) >= 4.0f) break;
     }
-    nextAiDecisionMs = nowMs + random(1800, 4201);
+    nextAiDecisionMs = nowMs + random(3200, 7601);
 }
 
 void MainScene::render() {
@@ -282,26 +462,44 @@ bool MainScene::onButton(const ButtonEvent& event) {
 
 void MainScene::drawBackground() {
     auto& c = PixelRenderer::canvas();
-    PixelRenderer::clear(PixelRenderer::rgb(194, 219, 224));
-    c.fillRect(0, 0, Hal::DISPLAY_W, 42, PixelRenderer::rgb(165, 202, 214));
-    c.fillRect(18, 10, 50, 26, PixelRenderer::rgb(238, 247, 230));
-    c.drawRect(18, 10, 50, 26, PixelRenderer::rgb(95, 130, 138));
-    c.drawLine(43, 10, 43, 35, PixelRenderer::rgb(95, 130, 138));
-    c.drawLine(18, 23, 67, 23, PixelRenderer::rgb(95, 130, 138));
-    c.fillRect(172, 21, 33, 16, PixelRenderer::rgb(140, 166, 173));
-    c.drawRect(172, 21, 33, 16, PixelRenderer::rgb(95, 130, 138));
+    bool night = mainSceneIsNight();
+    uint16_t wall = night ? PixelRenderer::rgb(58, 70, 92) : PixelRenderer::rgb(194, 219, 224);
+    uint16_t upperWall = night ? PixelRenderer::rgb(45, 56, 78) : PixelRenderer::rgb(165, 202, 214);
+    uint16_t frame = night ? PixelRenderer::rgb(37, 47, 65) : PixelRenderer::rgb(95, 130, 138);
+    uint16_t window = night ? PixelRenderer::rgb(31, 43, 72) : PixelRenderer::rgb(238, 247, 230);
+    PixelRenderer::clear(wall);
+    c.fillRect(0, 0, Hal::DISPLAY_W, 42, upperWall);
+    c.fillRect(18, 10, 50, 26, window);
+    c.drawRect(18, 10, 50, 26, frame);
+    c.drawLine(43, 10, 43, 35, frame);
+    c.drawLine(18, 23, 67, 23, frame);
+    c.fillRect(172, 21, 33, 16, night ? PixelRenderer::rgb(79, 87, 104) : PixelRenderer::rgb(140, 166, 173));
+    c.drawRect(172, 21, 33, 16, frame);
 }
 
 void MainScene::drawFloor() {
     auto& c = PixelRenderer::canvas();
-    c.fillRect(0, 42, Hal::DISPLAY_W, Hal::DISPLAY_H - 42, PixelRenderer::rgb(226, 209, 174));
+    bool night = mainSceneIsNight();
+    uint16_t floor = night ? PixelRenderer::rgb(98, 82, 74) : PixelRenderer::rgb(226, 209, 174);
+    uint16_t floorLine = night ? PixelRenderer::rgb(74, 64, 62) : PixelRenderer::rgb(206, 187, 151);
+    uint16_t rug = night ? PixelRenderer::rgb(121, 101, 82) : PixelRenderer::rgb(240, 225, 188);
+    uint16_t rugBorder = night ? PixelRenderer::rgb(91, 70, 60) : PixelRenderer::rgb(173, 140, 101);
+    c.fillRect(0, 42, Hal::DISPLAY_W, Hal::DISPLAY_H - 42, floor);
     for (int y = 56; y < Hal::DISPLAY_H; y += 16) {
-        c.drawLine(0, y, Hal::DISPLAY_W, y, PixelRenderer::rgb(206, 187, 151));
+        c.drawLine(0, y, Hal::DISPLAY_W, y, floorLine);
     }
-    c.fillRect(12, 58, 164, 58, PixelRenderer::rgb(240, 225, 188));
-    c.drawRect(12, 58, 164, 58, PixelRenderer::rgb(173, 140, 101));
-    c.fillRect(188, 72, 32, 26, PixelRenderer::rgb(186, 141, 105));
-    c.fillRect(193, 61, 22, 13, PixelRenderer::rgb(207, 168, 128));
+    c.fillRect(12, 58, 164, 58, rug);
+    c.drawRect(12, 58, 164, 58, rugBorder);
+    if (!night) {
+        fillRectAlpha(23, 42, 54, 41, PixelRenderer::rgb(255, 250, 205), 42);
+        fillRectAlpha(31, 70, 46, 22, PixelRenderer::rgb(255, 248, 190), 24);
+    } else {
+        fillRectAlpha(148, 52, 80, 68, PixelRenderer::rgb(255, 199, 104), 28);
+        fillRectAlpha(172, 68, 43, 35, PixelRenderer::rgb(255, 214, 128), 45);
+    }
+    c.fillRect(188, 72, 32, 26, night ? PixelRenderer::rgb(128, 91, 72) : PixelRenderer::rgb(186, 141, 105));
+    c.fillRect(193, 61, 22, 13, night ? PixelRenderer::rgb(179, 123, 75) : PixelRenderer::rgb(207, 168, 128));
+    if (night) c.fillRect(196, 57, 8, 4, PixelRenderer::rgb(255, 214, 128));
 }
 
 void MainScene::drawFood() {
@@ -314,24 +512,42 @@ void MainScene::drawFood() {
 }
 
 void MainScene::drawShadow() {
-    int shadowY = (int)(monsterY + 21.0f);
-    PixelRenderer::canvas().fillEllipse((int)monsterX, shadowY, 24, 6, PixelRenderer::rgb(159, 139, 117));
+    bool night = mainSceneIsNight();
+    const PmdSpriteConfig* config = active ? pmdSpriteConfigForSpecies(active->id) : nullptr;
+    bool floating = config && config->airHeight > 0.0f;
+    uint8_t frameW = 38;
+    uint8_t frameH = 42;
+    if (const PokemonSprites::SpriteFrame* frame = currentMonsterFrame()) {
+        frameW = pgm_read_byte(&frame->width);
+        frameH = pgm_read_byte(&frame->height);
+    }
+
+    int rx = constrain((int)(frameW * (floating ? 0.25f : 0.38f)), floating ? 10 : 13, floating ? 22 : 36);
+    int ry = constrain((int)(frameH * (floating ? 0.055f : 0.105f)), floating ? 3 : 4, floating ? 6 : 10);
+    if (night) {
+        rx = (rx * 11 + 5) / 10;
+        ry = (ry * 11 + 5) / 10;
+    }
+
+    int shadowY = (int)(monsterY + constrain((int)(frameH * 0.34f), 14, 28));
+    PixelRenderer::canvas().fillEllipse((int)monsterX, shadowY, rx, ry,
+                                        night ? PixelRenderer::rgb(53, 44, 50) : PixelRenderer::rgb(159, 139, 117));
 }
 
 void MainScene::drawMonster() {
     auto& c = PixelRenderer::canvas();
     int x = (int)monsterX;
-    int y = (int)monsterY;
-    PokemonSprites::SpriteKind kind = ((Hal::ins().millis() / 520) % 2 == 0)
-        ? PokemonSprites::SpriteKind::ICON_0
-        : PokemonSprites::SpriteKind::ICON_1;
-    const PokemonSprites::SpriteFrame* frame = PokemonSprites::findSpeciesSprite(active->id, kind);
+    const PmdSpriteConfig* config = active ? pmdSpriteConfigForSpecies(active->id) : nullptr;
+    int y = (int)(monsterY - pmdFloatYOffset(config, Hal::ins().millis()));
+    if (active && pmdSpriteConfigForSpecies(active->id) && drawPmdMonster(x, y)) {
+        return;
+    }
+
+    const PokemonSprites::SpriteFrame* frame = currentMonsterFrame();
     if (frame) {
         uint8_t w = pgm_read_byte(&frame->width);
         uint8_t h = pgm_read_byte(&frame->height);
-        PixelRenderer::drawRgb565Rle(x - w / 2, y - h / 2, w, h, PokemonSprites::SPRITE_RLE,
-                                     pgm_read_dword(&frame->offset), pgm_read_dword(&frame->length),
-                                     facingRight);
+        PokemonSprites::drawFrame(frame, x - w / 2, y - h / 2, facingRight);
         return;
     }
     c.fillRect(x - 19, y - 25, 38, 42, active->colorA);
@@ -341,11 +557,24 @@ void MainScene::drawMonster() {
     c.drawLine(x - 5, y + 4, x + 5, y + 4, PixelRenderer::rgb(24, 30, 38));
 }
 
+bool MainScene::drawPmdMonster(int x, int y) {
+    if (!active) return false;
+    const PokemonSprites::SpriteFrame* frame = PokemonSprites::findSpeciesSprite(active->id, pmdSpriteKind());
+    if (!frame) return false;
+
+    uint8_t w = pgm_read_byte(&frame->width);
+    uint8_t h = pgm_read_byte(&frame->height);
+    PokemonSprites::drawFrame(frame, x - w / 2, y - h / 2,
+                              pmdAction == PmdAction::SLEEPING ? false : pmdDirectionFlipX());
+    return true;
+}
+
 void MainScene::drawStateEffect() {
     if (GameEngine::ins().moodValue() < 50) return;
     auto& c = PixelRenderer::canvas();
+    const PmdSpriteConfig* config = active ? pmdSpriteConfigForSpecies(active->id) : nullptr;
     int x = (int)monsterX + 18;
-    int y = (int)monsterY - 31;
+    int y = (int)(monsterY - pmdFloatYOffset(config, Hal::ins().millis())) - 31;
     c.fillCircle(x, y, 3, PixelRenderer::rgb(255, 103, 135));
     c.fillCircle(x + 5, y, 3, PixelRenderer::rgb(255, 103, 135));
     c.fillTriangle(x - 3, y + 2, x + 8, y + 2, x + 2, y + 9, PixelRenderer::rgb(255, 103, 135));
