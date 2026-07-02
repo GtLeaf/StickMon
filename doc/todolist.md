@@ -77,4 +77,26 @@ Game Boy Advance - Pokemon Mystery Dungeon_ Red Rescue Team - Pokemon (1st Gener
 4. 093_haunter第二行正数第10，9是两帧sleeping
 5. 092_gastly第二行正数第7，8是两帧sleeping
 
-./origin_asset/source_sheets/low/中，026_raichu拆分写入项目，图片描述如下
+./origin_asset/source_sheets/low/中，026_raichu拆分写入项目，图片描述如下：
+1. walk有3帧，3帧一组，共8个朝向，24个图由第一行21个+第二行3个。从左到右依次为：正面，右下，右，右上，背面，左上，左，左下（在第二行）。8个朝向不可用镜像
+2. 第二行倒数第3，2为两帧sleep
+
+./origin_asset/source_sheets/low/中，007_squirtle，009_blastoise拆分写入项目，图片描述如下：
+1. walk有3帧，前15个图是walk0~walk4, 3帧一组，共5个朝向，从左到右依次为：正面，左下，左，左上，背面，其他方向用镜像
+2. 007_squirtle第二行正数第15，16为两帧sleep
+3. 009_blastoise第二行正数第4，5为两帧sleep
+
+也处理008_wartortle，图片描述如下：
+1. walk有3帧，3帧一组，共8个朝向，24个图由第一行21个+第二行3个。从左到右依次为：正面，右下，右，右上，背面，左上，左，左下。8个朝向不可用镜像
+2. 第二行倒数第6，7是两帧sleeping
+
+
+
+鬼斯通，迷你龙，哈克龙的运动逻辑不对
+
+
+1.鬼斯通的移动不够自然，walk中第一帧是移动的开始帧，第二帧是运动的持续帧，第三帧是运动结束帧。不应该移动过程中循环播放
+2.迷你龙改成walking0,1同时也是idle帧
+3.哈克龙将idle_0，idle_1加到walking动作里，改成walking0~2。改完后迷你龙对齐了，walking0~2一共三帧，同时walking0,1也是idle帧
+4.迷你龙,哈克龙的运动改成1->2->3->2->1，视觉上是依次加速到减速的过程
+5.抽象一些状态机，运行注入不同的运动模式

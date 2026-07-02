@@ -13,6 +13,13 @@ static constexpr uint16_t PMD_IDLE_FRAME_MS = 520;
 static constexpr uint16_t PMD_WALKING_FRAME_MS = 170;
 static constexpr uint16_t PMD_SLEEPING_FRAME_MS = 700;
 static constexpr float PMD_MOVING_SPEED_EPSILON = 1.0f;
+static constexpr float PMD_SHORT_MOVE_DISTANCE = 14.0f;
+
+enum class PmdMotionMode : uint8_t {
+    LOOP,
+    START_HOLD_END,
+    PINGPONG,
+};
 
 struct PmdSpriteConfig {
     uint16_t speciesId;
@@ -20,6 +27,7 @@ struct PmdSpriteConfig {
     uint16_t idleFrameMs;
     uint8_t walkingFrames;
     uint8_t sleepingFrames;
+    PmdMotionMode motionMode;
     PokemonSprites::SpriteKind idleBase;
     PokemonSprites::SpriteKind walkingBase;
     PokemonSprites::SpriteKind sleepingBase;
@@ -29,38 +37,38 @@ struct PmdSpriteConfig {
 };
 
 static constexpr PmdSpriteConfig PMD_SPRITE_CONFIGS[] = {
-    {1, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::BULBASAUR_IDLE_FRONT_0, PokemonSprites::SpriteKind::BULBASAUR_WALKING_FRONT_0, PokemonSprites::SpriteKind::BULBASAUR_SLEEPING_0, true, 0.0f, 0.0f},
-    {2, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::IVYSAUR_IDLE_FRONT_0, PokemonSprites::SpriteKind::IVYSAUR_WALKING_FRONT_0, PokemonSprites::SpriteKind::IVYSAUR_SLEEPING_0, true, 0.0f, 0.0f},
-    {3, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::VENUSAUR_IDLE_FRONT_0, PokemonSprites::SpriteKind::VENUSAUR_WALKING_FRONT_0, PokemonSprites::SpriteKind::VENUSAUR_SLEEPING_0, true, 0.0f, 0.0f},
-    {4, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::CHARMANDER_IDLE_FRONT_0, PokemonSprites::SpriteKind::CHARMANDER_WALKING_FRONT_0, PokemonSprites::SpriteKind::CHARMANDER_SLEEPING_0, true, 0.0f, 0.0f},
-    {5, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::CHARMELEON_IDLE_FRONT_0, PokemonSprites::SpriteKind::CHARMELEON_WALKING_FRONT_0, PokemonSprites::SpriteKind::CHARMELEON_SLEEPING_0, true, 0.0f, 0.0f},
-    {6, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::CHARIZARD_IDLE_FRONT_0, PokemonSprites::SpriteKind::CHARIZARD_WALKING_FRONT_0, PokemonSprites::SpriteKind::CHARIZARD_SLEEPING_0, true, 0.0f, 0.0f},
-    {7, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::SQUIRTLE_IDLE_FRONT_0, PokemonSprites::SpriteKind::SQUIRTLE_WALKING_FRONT_0, PokemonSprites::SpriteKind::SQUIRTLE_SLEEPING_0, true, 0.0f, 0.0f},
-    {8, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::WARTORTLE_IDLE_FRONT_0, PokemonSprites::SpriteKind::WARTORTLE_WALKING_FRONT_0, PokemonSprites::SpriteKind::WARTORTLE_SLEEPING_0, false, 0.0f, 0.0f},
-    {9, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::BLASTOISE_IDLE_FRONT_0, PokemonSprites::SpriteKind::BLASTOISE_WALKING_FRONT_0, PokemonSprites::SpriteKind::BLASTOISE_SLEEPING_0, true, 0.0f, 0.0f},
-    {25, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::PIKACHU_IDLE_FRONT_0, PokemonSprites::SpriteKind::PIKACHU_WALKING_FRONT_0, PokemonSprites::SpriteKind::PIKACHU_SLEEPING_0, true, 0.0f, 0.0f},
-    {26, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::RAICHU_IDLE_FRONT_0, PokemonSprites::SpriteKind::RAICHU_WALKING_FRONT_0, PokemonSprites::SpriteKind::RAICHU_SLEEPING_0, false, 0.0f, 0.0f},
-    {92, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::GASTLY_IDLE_FRONT_0, PokemonSprites::SpriteKind::GASTLY_WALKING_FRONT_0, PokemonSprites::SpriteKind::GASTLY_SLEEPING_0, true, 12.0f, 2.0f},
-    {93, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::HAUNTER_IDLE_FRONT_0, PokemonSprites::SpriteKind::HAUNTER_WALKING_FRONT_0, PokemonSprites::SpriteKind::HAUNTER_SLEEPING_0, true, 10.0f, 2.0f},
-    {94, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::GENGAR_IDLE_FRONT_0, PokemonSprites::SpriteKind::GENGAR_WALKING_FRONT_0, PokemonSprites::SpriteKind::GENGAR_SLEEPING_0, true, 0.0f, 0.0f},
-    {123, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::SCYTHER_IDLE_FRONT_0, PokemonSprites::SpriteKind::SCYTHER_WALKING_FRONT_0, PokemonSprites::SpriteKind::SCYTHER_SLEEPING_0, true, 0.0f, 0.0f},
-    {129, 2, PMD_IDLE_FRAME_MS, 1, 2, PokemonSprites::SpriteKind::MAGIKARP_IDLE_FRONT_0, PokemonSprites::SpriteKind::MAGIKARP_WALKING_FRONT_0, PokemonSprites::SpriteKind::MAGIKARP_SLEEPING_0, false, 0.0f, 0.0f},
-    {130, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::GYARADOS_IDLE_FRONT_0, PokemonSprites::SpriteKind::GYARADOS_WALKING_FRONT_0, PokemonSprites::SpriteKind::GYARADOS_SLEEPING_0, false, 0.0f, 0.0f},
-    {133, 2, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::EEVEE_IDLE_FRONT_0, PokemonSprites::SpriteKind::EEVEE_WALKING_FRONT_0, PokemonSprites::SpriteKind::EEVEE_SLEEPING_0, false, 0.0f, 0.0f},
-    {134, 1, PMD_IDLE_FRAME_MS, 4, 2, PokemonSprites::SpriteKind::VAPOREON_IDLE_FRONT_0, PokemonSprites::SpriteKind::VAPOREON_WALKING_FRONT_0, PokemonSprites::SpriteKind::VAPOREON_SLEEPING_0, false, 0.0f, 0.0f},
-    {135, 1, PMD_IDLE_FRAME_MS, 4, 2, PokemonSprites::SpriteKind::JOLTEON_IDLE_FRONT_0, PokemonSprites::SpriteKind::JOLTEON_WALKING_FRONT_0, PokemonSprites::SpriteKind::JOLTEON_SLEEPING_0, false, 0.0f, 0.0f},
-    {136, 3, PMD_IDLE_FRAME_MS, 4, 2, PokemonSprites::SpriteKind::FLAREON_IDLE_FRONT_0, PokemonSprites::SpriteKind::FLAREON_WALKING_FRONT_0, PokemonSprites::SpriteKind::FLAREON_SLEEPING_0, false, 0.0f, 0.0f},
-    {196, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::ESPEON_IDLE_FRONT_0, PokemonSprites::SpriteKind::ESPEON_WALKING_FRONT_0, PokemonSprites::SpriteKind::ESPEON_SLEEPING_0, true, 0.0f, 0.0f},
-    {197, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::UMBREON_IDLE_FRONT_0, PokemonSprites::SpriteKind::UMBREON_WALKING_FRONT_0, PokemonSprites::SpriteKind::UMBREON_SLEEPING_0, true, 0.0f, 0.0f},
-    {143, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::SNORLAX_IDLE_FRONT_0, PokemonSprites::SpriteKind::SNORLAX_WALKING_FRONT_0, PokemonSprites::SpriteKind::SNORLAX_SLEEPING_0, true, 0.0f, 0.0f},
-    {147, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::DRATINI_IDLE_FRONT_0, PokemonSprites::SpriteKind::DRATINI_WALKING_FRONT_0, PokemonSprites::SpriteKind::DRATINI_SLEEPING_0, false, 0.0f, 0.0f},
-    {148, 2, PMD_IDLE_FRAME_MS, 1, 2, PokemonSprites::SpriteKind::DRAGONAIR_IDLE_FRONT_0, PokemonSprites::SpriteKind::DRAGONAIR_WALKING_FRONT_0, PokemonSprites::SpriteKind::DRAGONAIR_SLEEPING_0, false, 0.0f, 0.0f},
-    {149, 1, PMD_IDLE_FRAME_MS, 2, 2, PokemonSprites::SpriteKind::DRAGONITE_IDLE_FRONT_0, PokemonSprites::SpriteKind::DRAGONITE_WALKING_FRONT_0, PokemonSprites::SpriteKind::DRAGONITE_SLEEPING_0, false, 0.0f, 0.0f},
-    {151, 3, 360, 2, 2, PokemonSprites::SpriteKind::MEW_IDLE_FRONT_0, PokemonSprites::SpriteKind::MEW_WALKING_FRONT_0, PokemonSprites::SpriteKind::MEW_SLEEPING_0, false, 14.0f, 3.0f},
-    {172, 1, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::PICHU_IDLE_FRONT_0, PokemonSprites::SpriteKind::PICHU_WALKING_FRONT_0, PokemonSprites::SpriteKind::PICHU_SLEEPING_0, true, 0.0f, 0.0f},
-    {212, 2, PMD_IDLE_FRAME_MS, 3, 2, PokemonSprites::SpriteKind::SCIZOR_IDLE_FRONT_0, PokemonSprites::SpriteKind::SCIZOR_WALKING_FRONT_0, PokemonSprites::SpriteKind::SCIZOR_SLEEPING_0, true, 0.0f, 0.0f},
-    {380, 1, PMD_IDLE_FRAME_MS, 2, 2, PokemonSprites::SpriteKind::LATIAS_IDLE_FRONT_0, PokemonSprites::SpriteKind::LATIAS_WALKING_FRONT_0, PokemonSprites::SpriteKind::LATIAS_SLEEPING_0, true, 18.0f, 2.0f},
-    {381, 1, PMD_IDLE_FRAME_MS, 2, 2, PokemonSprites::SpriteKind::LATIOS_IDLE_FRONT_0, PokemonSprites::SpriteKind::LATIOS_WALKING_FRONT_0, PokemonSprites::SpriteKind::LATIOS_SLEEPING_0, true, 18.0f, 2.0f},
+    {1, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::BULBASAUR_IDLE_FRONT_0, PokemonSprites::SpriteKind::BULBASAUR_WALKING_FRONT_0, PokemonSprites::SpriteKind::BULBASAUR_SLEEPING_0, true, 0.0f, 0.0f},
+    {2, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::IVYSAUR_IDLE_FRONT_0, PokemonSprites::SpriteKind::IVYSAUR_WALKING_FRONT_0, PokemonSprites::SpriteKind::IVYSAUR_SLEEPING_0, true, 0.0f, 0.0f},
+    {3, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::VENUSAUR_IDLE_FRONT_0, PokemonSprites::SpriteKind::VENUSAUR_WALKING_FRONT_0, PokemonSprites::SpriteKind::VENUSAUR_SLEEPING_0, true, 0.0f, 0.0f},
+    {4, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::CHARMANDER_IDLE_FRONT_0, PokemonSprites::SpriteKind::CHARMANDER_WALKING_FRONT_0, PokemonSprites::SpriteKind::CHARMANDER_SLEEPING_0, true, 0.0f, 0.0f},
+    {5, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::CHARMELEON_IDLE_FRONT_0, PokemonSprites::SpriteKind::CHARMELEON_WALKING_FRONT_0, PokemonSprites::SpriteKind::CHARMELEON_SLEEPING_0, true, 0.0f, 0.0f},
+    {6, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::CHARIZARD_IDLE_FRONT_0, PokemonSprites::SpriteKind::CHARIZARD_WALKING_FRONT_0, PokemonSprites::SpriteKind::CHARIZARD_SLEEPING_0, true, 0.0f, 0.0f},
+    {7, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::SQUIRTLE_IDLE_FRONT_0, PokemonSprites::SpriteKind::SQUIRTLE_WALKING_FRONT_0, PokemonSprites::SpriteKind::SQUIRTLE_SLEEPING_0, true, 0.0f, 0.0f},
+    {8, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::WARTORTLE_IDLE_FRONT_0, PokemonSprites::SpriteKind::WARTORTLE_WALKING_FRONT_0, PokemonSprites::SpriteKind::WARTORTLE_SLEEPING_0, false, 0.0f, 0.0f},
+    {9, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::BLASTOISE_IDLE_FRONT_0, PokemonSprites::SpriteKind::BLASTOISE_WALKING_FRONT_0, PokemonSprites::SpriteKind::BLASTOISE_SLEEPING_0, true, 0.0f, 0.0f},
+    {25, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::PIKACHU_IDLE_FRONT_0, PokemonSprites::SpriteKind::PIKACHU_WALKING_FRONT_0, PokemonSprites::SpriteKind::PIKACHU_SLEEPING_0, true, 0.0f, 0.0f},
+    {26, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::RAICHU_IDLE_FRONT_0, PokemonSprites::SpriteKind::RAICHU_WALKING_FRONT_0, PokemonSprites::SpriteKind::RAICHU_SLEEPING_0, false, 0.0f, 0.0f},
+    {92, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::GASTLY_IDLE_FRONT_0, PokemonSprites::SpriteKind::GASTLY_WALKING_FRONT_0, PokemonSprites::SpriteKind::GASTLY_SLEEPING_0, true, 12.0f, 2.0f},
+    {93, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::START_HOLD_END, PokemonSprites::SpriteKind::HAUNTER_IDLE_FRONT_0, PokemonSprites::SpriteKind::HAUNTER_WALKING_FRONT_0, PokemonSprites::SpriteKind::HAUNTER_SLEEPING_0, true, 10.0f, 2.0f},
+    {94, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::GENGAR_IDLE_FRONT_0, PokemonSprites::SpriteKind::GENGAR_WALKING_FRONT_0, PokemonSprites::SpriteKind::GENGAR_SLEEPING_0, true, 0.0f, 0.0f},
+    {123, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::SCYTHER_IDLE_FRONT_0, PokemonSprites::SpriteKind::SCYTHER_WALKING_FRONT_0, PokemonSprites::SpriteKind::SCYTHER_SLEEPING_0, true, 0.0f, 0.0f},
+    {129, 2, PMD_IDLE_FRAME_MS, 1, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::MAGIKARP_IDLE_FRONT_0, PokemonSprites::SpriteKind::MAGIKARP_WALKING_FRONT_0, PokemonSprites::SpriteKind::MAGIKARP_SLEEPING_0, false, 0.0f, 0.0f},
+    {130, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::GYARADOS_IDLE_FRONT_0, PokemonSprites::SpriteKind::GYARADOS_WALKING_FRONT_0, PokemonSprites::SpriteKind::GYARADOS_SLEEPING_0, false, 0.0f, 0.0f},
+    {133, 2, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::EEVEE_IDLE_FRONT_0, PokemonSprites::SpriteKind::EEVEE_WALKING_FRONT_0, PokemonSprites::SpriteKind::EEVEE_SLEEPING_0, false, 0.0f, 0.0f},
+    {134, 1, PMD_IDLE_FRAME_MS, 4, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::VAPOREON_IDLE_FRONT_0, PokemonSprites::SpriteKind::VAPOREON_WALKING_FRONT_0, PokemonSprites::SpriteKind::VAPOREON_SLEEPING_0, false, 0.0f, 0.0f},
+    {135, 1, PMD_IDLE_FRAME_MS, 4, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::JOLTEON_IDLE_FRONT_0, PokemonSprites::SpriteKind::JOLTEON_WALKING_FRONT_0, PokemonSprites::SpriteKind::JOLTEON_SLEEPING_0, false, 0.0f, 0.0f},
+    {136, 3, PMD_IDLE_FRAME_MS, 4, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::FLAREON_IDLE_FRONT_0, PokemonSprites::SpriteKind::FLAREON_WALKING_FRONT_0, PokemonSprites::SpriteKind::FLAREON_SLEEPING_0, false, 0.0f, 0.0f},
+    {196, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::ESPEON_IDLE_FRONT_0, PokemonSprites::SpriteKind::ESPEON_WALKING_FRONT_0, PokemonSprites::SpriteKind::ESPEON_SLEEPING_0, true, 0.0f, 0.0f},
+    {197, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::UMBREON_IDLE_FRONT_0, PokemonSprites::SpriteKind::UMBREON_WALKING_FRONT_0, PokemonSprites::SpriteKind::UMBREON_SLEEPING_0, true, 0.0f, 0.0f},
+    {143, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::SNORLAX_IDLE_FRONT_0, PokemonSprites::SpriteKind::SNORLAX_WALKING_FRONT_0, PokemonSprites::SpriteKind::SNORLAX_SLEEPING_0, true, 0.0f, 0.0f},
+    {147, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::PINGPONG, PokemonSprites::SpriteKind::DRATINI_IDLE_FRONT_0, PokemonSprites::SpriteKind::DRATINI_WALKING_FRONT_0, PokemonSprites::SpriteKind::DRATINI_SLEEPING_0, false, 0.0f, 0.0f},
+    {148, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::PINGPONG, PokemonSprites::SpriteKind::DRAGONAIR_IDLE_FRONT_0, PokemonSprites::SpriteKind::DRAGONAIR_WALKING_FRONT_0, PokemonSprites::SpriteKind::DRAGONAIR_SLEEPING_0, false, 0.0f, 0.0f},
+    {149, 1, PMD_IDLE_FRAME_MS, 2, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::DRAGONITE_IDLE_FRONT_0, PokemonSprites::SpriteKind::DRAGONITE_WALKING_FRONT_0, PokemonSprites::SpriteKind::DRAGONITE_SLEEPING_0, false, 0.0f, 0.0f},
+    {151, 3, 360, 2, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::MEW_IDLE_FRONT_0, PokemonSprites::SpriteKind::MEW_WALKING_FRONT_0, PokemonSprites::SpriteKind::MEW_SLEEPING_0, false, 14.0f, 3.0f},
+    {172, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::PICHU_IDLE_FRONT_0, PokemonSprites::SpriteKind::PICHU_WALKING_FRONT_0, PokemonSprites::SpriteKind::PICHU_SLEEPING_0, true, 0.0f, 0.0f},
+    {212, 2, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::SCIZOR_IDLE_FRONT_0, PokemonSprites::SpriteKind::SCIZOR_WALKING_FRONT_0, PokemonSprites::SpriteKind::SCIZOR_SLEEPING_0, true, 0.0f, 0.0f},
+    {380, 1, PMD_IDLE_FRAME_MS, 2, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::LATIAS_IDLE_FRONT_0, PokemonSprites::SpriteKind::LATIAS_WALKING_FRONT_0, PokemonSprites::SpriteKind::LATIAS_SLEEPING_0, true, 18.0f, 2.0f},
+    {381, 1, PMD_IDLE_FRAME_MS, 2, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::LATIOS_IDLE_FRONT_0, PokemonSprites::SpriteKind::LATIOS_WALKING_FRONT_0, PokemonSprites::SpriteKind::LATIOS_SLEEPING_0, true, 18.0f, 2.0f},
 };
 
 const PmdSpriteConfig* pmdSpriteConfigForSpecies(uint16_t speciesId) {
@@ -128,6 +136,46 @@ float pmdFloatYOffset(const PmdSpriteConfig* config, uint32_t nowMs) {
 
 float pmdMoveSpeedScale(const Species* species) {
     return species && species->id == 129 ? 0.35f : 1.0f;
+}
+
+uint8_t pmdWalkingPlaybackFrameCount(const PmdSpriteConfig* config, bool longMove) {
+    if (!config || config->walkingFrames == 0) return 1;
+    if (config->motionMode == PmdMotionMode::PINGPONG && config->walkingFrames == 3) return longMove ? 3 : 2;
+    if (config->motionMode == PmdMotionMode::START_HOLD_END && config->walkingFrames >= 2) return 2;
+    return config->walkingFrames;
+}
+
+bool pmdWalkingPlaybackLoops(const PmdSpriteConfig* config) {
+    return !config || config->motionMode == PmdMotionMode::LOOP;
+}
+
+uint8_t pmdWalkingSpriteFrameIndex(const PmdSpriteConfig* config, uint8_t playbackFrame, bool longMove) {
+    if (!config || config->walkingFrames == 0) return 0;
+    if (config->motionMode == PmdMotionMode::PINGPONG && config->walkingFrames == 3) {
+        uint8_t maxFrame = longMove ? 2 : 1;
+        return playbackFrame > maxFrame ? maxFrame : playbackFrame;
+    }
+    if (config->motionMode == PmdMotionMode::START_HOLD_END && config->walkingFrames >= 3) {
+        return playbackFrame == 0 ? 0 : 1;
+    }
+    return playbackFrame % config->walkingFrames;
+}
+
+uint8_t pmdStoppingPlaybackFrameCount(const PmdSpriteConfig* config) {
+    if (config && config->motionMode == PmdMotionMode::PINGPONG && config->walkingFrames >= 2) return 2;
+    return 1;
+}
+
+uint8_t pmdStoppingSpriteFrameIndex(const PmdSpriteConfig* config, uint8_t playbackFrame) {
+    if (!config || config->walkingFrames == 0) return 0;
+    if (config->motionMode == PmdMotionMode::PINGPONG && config->walkingFrames >= 2) {
+        static constexpr uint8_t SEQUENCE[] = {1, 0};
+        return SEQUENCE[playbackFrame < 2 ? playbackFrame : 1];
+    }
+    if (config->motionMode == PmdMotionMode::START_HOLD_END && config->walkingFrames >= 3) {
+        return (uint8_t)(config->walkingFrames - 1);
+    }
+    return 0;
 }
 
 bool mainSceneIsNight() {
@@ -216,6 +264,7 @@ void MainScene::onEnter() {
     pmdAction = PmdAction::IDLE;
     pmdDirection = PmdDirection::FRONT;
     pmdFrame = 0;
+    pmdLongMove = false;
     pmdFrameStartedMs = Hal::ins().millis();
     nextAiDecisionMs = 0;
 }
@@ -297,26 +346,74 @@ void MainScene::updatePmdSpriteState(uint32_t nowMs) {
     bool moving = speedSq > PMD_MOVING_SPEED_EPSILON * PMD_MOVING_SPEED_EPSILON;
     PmdAction nextAction = sleeping ? PmdAction::SLEEPING : (moving ? PmdAction::WALKING : PmdAction::IDLE);
     PmdDirection nextDirection = moving ? pmdDirectionForVelocity(velocityX, velocityY) : pmdDirection;
+    auto resetMoveLength = [&]() {
+        float dx = targetX - monsterX;
+        float dy = targetY - monsterY;
+        pmdLongMove = sqrtf(dx * dx + dy * dy) > PMD_SHORT_MOVE_DISTANCE;
+    };
+
+    if (pmdAction == PmdAction::STOPPING) {
+        if (nextAction == PmdAction::WALKING || nextAction == PmdAction::SLEEPING) {
+            pmdAction = nextAction;
+            pmdDirection = nextDirection;
+            pmdFrame = 0;
+            if (nextAction == PmdAction::WALKING) resetMoveLength();
+            pmdFrameStartedMs = nowMs;
+            return;
+        }
+        uint8_t frameCount = pmdStoppingPlaybackFrameCount(config);
+        while (nowMs - pmdFrameStartedMs >= PMD_WALKING_FRAME_MS) {
+            if (pmdFrame + 1 < frameCount) {
+                pmdFrame++;
+                pmdFrameStartedMs += PMD_WALKING_FRAME_MS;
+            } else {
+                pmdAction = PmdAction::IDLE;
+                pmdFrame = 0;
+                pmdLongMove = false;
+                pmdFrameStartedMs = nowMs;
+                break;
+            }
+        }
+        return;
+    }
+
+    if (pmdAction == PmdAction::WALKING &&
+        nextAction == PmdAction::IDLE &&
+        ((config->motionMode == PmdMotionMode::START_HOLD_END && config->walkingFrames >= 3) ||
+         (config->motionMode == PmdMotionMode::PINGPONG && config->walkingFrames >= 2))) {
+        pmdAction = PmdAction::STOPPING;
+        pmdFrame = 0;
+        pmdFrameStartedMs = nowMs;
+        return;
+    }
 
     if (nextAction != pmdAction || nextDirection != pmdDirection) {
         pmdAction = nextAction;
         pmdDirection = nextDirection;
         pmdFrame = 0;
+        if (nextAction == PmdAction::WALKING) resetMoveLength();
         pmdFrameStartedMs = nowMs;
         return;
     }
 
     uint16_t frameMs = config->idleFrameMs;
     uint8_t frameCount = config->idleFrames;
+    bool loops = true;
     if (pmdAction == PmdAction::WALKING) {
         frameMs = PMD_WALKING_FRAME_MS;
-        frameCount = config->walkingFrames;
+        frameCount = pmdWalkingPlaybackFrameCount(config, pmdLongMove);
+        loops = pmdWalkingPlaybackLoops(config);
     } else if (pmdAction == PmdAction::SLEEPING) {
         frameMs = PMD_SLEEPING_FRAME_MS;
         frameCount = config->sleepingFrames;
     }
+    if (frameCount == 0) frameCount = 1;
     while (nowMs - pmdFrameStartedMs >= frameMs) {
-        pmdFrame = (uint8_t)((pmdFrame + 1) % frameCount);
+        if (loops) {
+            pmdFrame = (uint8_t)((pmdFrame + 1) % frameCount);
+        } else if (pmdFrame + 1 < frameCount) {
+            pmdFrame++;
+        }
         pmdFrameStartedMs += frameMs;
     }
 }
@@ -348,8 +445,11 @@ PokemonSprites::SpriteKind MainScene::pmdSpriteKind() const {
         return static_cast<PokemonSprites::SpriteKind>(base + directionIndex * config->idleFrames + (pmdFrame % config->idleFrames));
     }
 
+    uint8_t walkingFrame = pmdAction == PmdAction::STOPPING
+        ? pmdStoppingSpriteFrameIndex(config, pmdFrame)
+        : pmdWalkingSpriteFrameIndex(config, pmdFrame, pmdLongMove);
     uint16_t base = static_cast<uint16_t>(config->walkingBase);
-    return static_cast<PokemonSprites::SpriteKind>(base + directionIndex * config->walkingFrames + (pmdFrame % config->walkingFrames));
+    return static_cast<PokemonSprites::SpriteKind>(base + directionIndex * config->walkingFrames + walkingFrame);
 }
 
 const PokemonSprites::SpriteFrame* MainScene::currentMonsterFrame() const {
@@ -547,8 +647,9 @@ void MainScene::drawMonster() {
     if (frame) {
         uint8_t w = pgm_read_byte(&frame->width);
         uint8_t h = pgm_read_byte(&frame->height);
-        PokemonSprites::drawFrame(frame, x - w / 2, y - h / 2, facingRight);
-        return;
+        if (PokemonSprites::drawFrame(frame, x - w / 2, y - h / 2, facingRight)) {
+            return;
+        }
     }
     c.fillRect(x - 19, y - 25, 38, 42, active->colorA);
     c.fillRect(x - 12, y - 17, 24, 25, active->colorB);
@@ -564,9 +665,11 @@ bool MainScene::drawPmdMonster(int x, int y) {
 
     uint8_t w = pgm_read_byte(&frame->width);
     uint8_t h = pgm_read_byte(&frame->height);
-    PokemonSprites::drawFrame(frame, x - w / 2, y - h / 2,
-                              pmdAction == PmdAction::SLEEPING ? false : pmdDirectionFlipX());
-    return true;
+    if (PokemonSprites::drawFrame(frame, x - w / 2, y - h / 2,
+                                  pmdAction == PmdAction::SLEEPING ? false : pmdDirectionFlipX())) {
+        return true;
+    }
+    return false;
 }
 
 void MainScene::drawStateEffect() {

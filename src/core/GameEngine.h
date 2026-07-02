@@ -93,6 +93,7 @@ private:
     void persistGameClock(uint32_t nowMs, bool force = false);
     void initDefaultState();
     void tickCare(uint32_t nowMs);
+    void syncSpriteCache();
     uint32_t randomIvPacked() const;
 
     static constexpr uint32_t INPUT_SAMPLE_MS = 16;

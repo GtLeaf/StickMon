@@ -1,6 +1,7 @@
 #include "core/GameEngine.h"
 #include <Arduino.h>
 #include <algorithm>
+#include "assets/PokemonSprites.h"
 #include "core/ButtonDispatcher.h"
 #include "core/UiStrings.h"
 #include "hardware/EspNowLink.h"
@@ -62,6 +63,7 @@ bool GameEngine::begin() {
     Hal::ins().setBrightness(state.settings.brightness);
     ButtonDispatcher::ins().setLongPressMs(state.settings.longPressMs);
     EspNowLink::ins().beginStub();
+    syncSpriteCache();
     switchScene(state.oobeDone ? SceneID::MAIN : SceneID::HATCH);
     uint32_t now = Hal::ins().millis();
     clockAnchorMs = now;
@@ -203,6 +205,7 @@ bool GameEngine::moveTeamMemberToFront(uint8_t slot) {
     }
     state.team[0] = selected;
     state.activeSlot = 0;
+    syncSpriteCache();
     markDirty(true);
     return true;
 }
@@ -361,6 +364,7 @@ bool GameEngine::recordCapture(const Game::MonsterRuntime& monster) {
 
     if (state.teamCount < Game::TEAM_CAP) {
         state.team[state.teamCount++] = mon;
+        syncSpriteCache();
     } else if (state.storageCount < Game::STORAGE_CAP) {
         state.storage[state.storageCount++] = mon;
     } else {
@@ -495,6 +499,7 @@ bool GameEngine::debugSetActiveSpecies(uint16_t speciesId) {
     if (state.teamCount == 0) state.teamCount = 1;
     state.team[0] = mon;
     state.activeSlot = 0;
+    syncSpriteCache();
     markDirty(true);
     return true;
 }
@@ -577,6 +582,7 @@ void GameEngine::update(uint32_t nowMs) {
     float dt = (nowMs - lastUpdateMs) / 1000.0f;
     lastUpdateMs = nowMs;
     syncGameClock(nowMs);
+    syncSpriteCache();
     persistGameClock(nowMs);
     tickCare(nowMs);
     if (currentScene) currentScene->update(nowMs, dt * gameSpeed());
@@ -693,6 +699,16 @@ void GameEngine::tickCare(uint32_t nowMs) {
         }
     }
     markDirty(false);
+}
+
+void GameEngine::syncSpriteCache() {
+    uint16_t teamSpecies[Game::TEAM_CAP] = {};
+    uint8_t count = state.teamCount;
+    if (count > Game::TEAM_CAP) count = Game::TEAM_CAP;
+    for (uint8_t i = 0; i < count; ++i) {
+        teamSpecies[i] = state.team[i].speciesId;
+    }
+    PokemonSprites::syncTeamCache(teamSpecies, count);
 }
 
 uint32_t GameEngine::randomIvPacked() const {

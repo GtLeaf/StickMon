@@ -708,29 +708,37 @@ enum class SpriteKind : uint16_t {
     DRATINI_SLEEPING_0,
     DRATINI_SLEEPING_1,
     DRAGONAIR_IDLE_FRONT_0,
-    DRAGONAIR_IDLE_FRONT_1,
     DRAGONAIR_IDLE_DOWN_LEFT_0,
-    DRAGONAIR_IDLE_DOWN_LEFT_1,
     DRAGONAIR_IDLE_LEFT_0,
-    DRAGONAIR_IDLE_LEFT_1,
     DRAGONAIR_IDLE_UP_LEFT_0,
-    DRAGONAIR_IDLE_UP_LEFT_1,
     DRAGONAIR_IDLE_BACK_0,
-    DRAGONAIR_IDLE_BACK_1,
     DRAGONAIR_IDLE_UP_RIGHT_0,
-    DRAGONAIR_IDLE_UP_RIGHT_1,
     DRAGONAIR_IDLE_RIGHT_0,
-    DRAGONAIR_IDLE_RIGHT_1,
     DRAGONAIR_IDLE_DOWN_RIGHT_0,
-    DRAGONAIR_IDLE_DOWN_RIGHT_1,
     DRAGONAIR_WALKING_FRONT_0,
+    DRAGONAIR_WALKING_FRONT_1,
+    DRAGONAIR_WALKING_FRONT_2,
     DRAGONAIR_WALKING_DOWN_LEFT_0,
+    DRAGONAIR_WALKING_DOWN_LEFT_1,
+    DRAGONAIR_WALKING_DOWN_LEFT_2,
     DRAGONAIR_WALKING_LEFT_0,
+    DRAGONAIR_WALKING_LEFT_1,
+    DRAGONAIR_WALKING_LEFT_2,
     DRAGONAIR_WALKING_UP_LEFT_0,
+    DRAGONAIR_WALKING_UP_LEFT_1,
+    DRAGONAIR_WALKING_UP_LEFT_2,
     DRAGONAIR_WALKING_BACK_0,
+    DRAGONAIR_WALKING_BACK_1,
+    DRAGONAIR_WALKING_BACK_2,
     DRAGONAIR_WALKING_UP_RIGHT_0,
+    DRAGONAIR_WALKING_UP_RIGHT_1,
+    DRAGONAIR_WALKING_UP_RIGHT_2,
     DRAGONAIR_WALKING_RIGHT_0,
+    DRAGONAIR_WALKING_RIGHT_1,
+    DRAGONAIR_WALKING_RIGHT_2,
     DRAGONAIR_WALKING_DOWN_RIGHT_0,
+    DRAGONAIR_WALKING_DOWN_RIGHT_1,
+    DRAGONAIR_WALKING_DOWN_RIGHT_2,
     DRAGONAIR_SLEEPING_0,
     DRAGONAIR_SLEEPING_1,
     DRAGONITE_IDLE_FRONT_0,
@@ -898,9 +906,30 @@ struct SpriteFrame {
     uint8_t height;
     uint8_t format;
     uint8_t paletteSize;
+    uint8_t source;
+    uint8_t reserved;
     uint32_t offset;
     uint32_t length;
     uint32_t paletteOffset;
+};
+
+struct CompressedSpeciesBlock {
+    uint16_t speciesId;
+    uint16_t rleWords;
+    uint16_t paletteWords;
+    uint16_t reserved;
+    uint32_t offset;
+    uint32_t length;
+};
+
+struct SpriteCacheStats {
+    uint8_t cachedSpecies;
+    uint32_t reloadCount;
+    uint32_t lastReloadMs;
+    uint32_t decodedBytes;
+    uint32_t compressedBytes;
+    uint32_t freePsram;
+    bool psram;
 };
 
 extern const uint16_t SPRITE_FRAME_COUNT;
@@ -908,8 +937,13 @@ extern const SpriteFrame SPRITE_FRAMES[] PROGMEM;
 extern const SpriteFrame EGG_FRAME PROGMEM;
 extern const uint16_t SPRITE_RLE[] PROGMEM;
 extern const uint16_t SPRITE_PALETTES[] PROGMEM;
+extern const CompressedSpeciesBlock SPRITE_COMPRESSED_BLOCKS[] PROGMEM;
+extern const uint16_t SPRITE_COMPRESSED_BLOCK_COUNT;
+extern const uint8_t SPRITE_COMPRESSED_DATA[] PROGMEM;
 
 const SpriteFrame* findSpeciesSprite(uint16_t speciesId, SpriteKind kind);
+void syncTeamCache(const uint16_t* speciesIds, uint8_t count);
+const SpriteCacheStats& cacheStats();
 bool drawFrame(const SpriteFrame* frame, int x, int y, bool flipX = false);
 
 }  // namespace PokemonSprites

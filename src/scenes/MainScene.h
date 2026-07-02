@@ -21,6 +21,7 @@ private:
     enum class PmdAction : uint8_t {
         IDLE,
         WALKING,
+        STOPPING,
         SLEEPING,
     };
 
@@ -72,6 +73,7 @@ private:
     PmdAction pmdAction = PmdAction::IDLE;
     PmdDirection pmdDirection = PmdDirection::FRONT;
     uint8_t pmdFrame = 0;
+    bool pmdLongMove = false;
     uint32_t pmdFrameStartedMs = 0;
     uint32_t toastUntil = 0;
     const char* toast = nullptr;
