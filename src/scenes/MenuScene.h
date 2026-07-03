@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/Scene.h"
+#include "game/GameState.h"
 
 class MenuScene : public Scene {
 public:
@@ -19,6 +20,7 @@ private:
 
     enum MenuItem : uint8_t {
         ITEM_TEAM = 0,
+        ITEM_ROOM,
         ITEM_BAG,
         ITEM_EXPLORE,
         ITEM_SHOP,
@@ -33,14 +35,18 @@ private:
         MENU,
         TEAM,
         STATUS,
+        ROOM,
+        FOOD,
         BAG,
         COMPUTER,
         STORAGE,
         DEBUG,
     };
 
-    static constexpr uint8_t STATUS_PAGE_COUNT = 7;
-    static constexpr uint8_t BAG_ITEM_COUNT = 8;
+    static constexpr uint8_t STATUS_PAGE_COUNT = 5;
+    static constexpr uint8_t BAG_ITEM_COUNT = 7;
+    static constexpr uint8_t ROOM_ITEM_COUNT = 5;
+    static constexpr uint8_t FOOD_ITEM_COUNT = Game::ROOM_FOOD_COUNT + 1;
     static constexpr uint8_t COMPUTER_ITEM_COUNT = 3;
     static constexpr uint8_t DEBUG_ITEM_COUNT = 4;
     static constexpr uint8_t DEBUG_SWITCH_FOCUS_COUNT = 5;
@@ -61,6 +67,9 @@ private:
     bool bagConfirmOpen = false;
     bool bagConfirmYes = true;
     float bagScroll = 0.0f;
+    uint8_t roomCursor = 0;
+    uint8_t foodCursor = 0;
+    float foodScroll = 0.0f;
     uint8_t computerCursor = 0;
     uint8_t storageCursor = 0;
     float storageScroll = 0.0f;
@@ -80,6 +89,8 @@ private:
     void renderEggStatusPage();
     void renderBagPage();
     void renderBagConfirmPopup();
+    void renderRoomPage();
+    void renderFoodPage();
     void renderComputerPage();
     void renderStoragePage();
     void renderDebugPage();
@@ -87,6 +98,9 @@ private:
     void openDebugSwitchPopup();
     uint16_t debugSwitchTargetId() const;
     uint8_t collectVisibleBagRows(BagRow* rows, uint8_t maxRows) const;
+    uint8_t visibleFoodIndexOf(uint8_t foodIndex) const;
+    bool isFoodBackIndex(uint8_t index) const;
+    void drawSelectionDiamond(int cx, int cy, uint16_t color);
     void renderSplitList(const BagRow* rows, uint8_t count);
     void renderBagDetail(const BagRow& row);
     void renderPageIndicator(uint8_t page, uint8_t count);

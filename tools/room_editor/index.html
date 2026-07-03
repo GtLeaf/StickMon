@@ -1,0 +1,1139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>StickMon Room Layout Tool</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #111318;
+      --panel: #1a1d24;
+      --panel-2: #222733;
+      --line: #343b4a;
+      --text: #eef2f7;
+      --muted: #a8b0bf;
+      --accent: #78d6ee;
+      --warn: #f2bd72;
+      --danger: #ff8a8a;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    button,
+    .file-button {
+      border: 1px solid var(--line);
+      background: #252b38;
+      color: var(--text);
+      border-radius: 6px;
+      padding: 7px 10px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-height: 32px;
+    }
+
+    button:hover,
+    .file-button:hover {
+      border-color: var(--accent);
+      background: #2d3444;
+    }
+
+    button.primary {
+      background: #17657a;
+      border-color: #2692ad;
+    }
+
+    button.danger {
+      border-color: #77434a;
+      background: #3a2027;
+      color: #ffd7d7;
+    }
+
+    input[type="file"] {
+      display: none;
+    }
+
+    input[type="number"],
+    input[type="text"],
+    select {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: #11151d;
+      color: var(--text);
+      border-radius: 5px;
+      padding: 6px 8px;
+      min-height: 30px;
+    }
+
+    input[type="range"] {
+      width: 100%;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 280px minmax(520px, 1fr) 320px;
+      gap: 12px;
+      min-height: 100vh;
+      padding: 12px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    .panel-header {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      background: #171b23;
+      font-weight: 700;
+    }
+
+    .panel-body {
+      padding: 12px;
+    }
+
+    .stack {
+      display: grid;
+      gap: 10px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .row-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+    }
+
+    label.field {
+      display: grid;
+      gap: 4px;
+      color: var(--muted);
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .stage-wrap {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      min-height: calc(100vh - 24px);
+    }
+
+    .stage-toolbar {
+      padding: 10px;
+      display: flex;
+      gap: 8px;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--line);
+      background: #171b23;
+    }
+
+    .segmented {
+      display: inline-grid;
+      grid-auto-flow: column;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      overflow: hidden;
+    }
+
+    .segmented button {
+      border: 0;
+      border-radius: 0;
+      min-width: 70px;
+      background: #222733;
+    }
+
+    .segmented button.active {
+      background: #17657a;
+    }
+
+    .canvas-area {
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      overflow: auto;
+      background:
+        linear-gradient(45deg, #101217 25%, transparent 25%),
+        linear-gradient(-45deg, #101217 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #101217 75%),
+        linear-gradient(-45deg, transparent 75%, #101217 75%);
+      background-size: 18px 18px;
+      background-position: 0 0, 0 9px, 9px -9px, -9px 0;
+    }
+
+    canvas {
+      width: 960px;
+      height: 540px;
+      max-width: calc(100vw - 660px);
+      max-height: calc(100vh - 150px);
+      image-rendering: pixelated;
+      border: 1px solid #526070;
+      background: #0b0d12;
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.4);
+      cursor: grab;
+    }
+
+    canvas.dragging {
+      cursor: grabbing;
+    }
+
+    .status {
+      padding: 8px 10px;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+      min-height: 34px;
+      background: #151820;
+    }
+
+    .asset-list {
+      display: grid;
+      gap: 8px;
+      max-height: 42vh;
+      overflow: auto;
+      padding-right: 2px;
+    }
+
+    .asset-item {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      border-radius: 7px;
+      padding: 8px;
+      display: grid;
+      grid-template-columns: 44px 1fr;
+      gap: 8px;
+      cursor: pointer;
+    }
+
+    .asset-item.selected {
+      border-color: var(--accent);
+      background: #20313d;
+    }
+
+    .asset-thumb {
+      width: 44px;
+      height: 44px;
+      object-fit: contain;
+      image-rendering: pixelated;
+      background: #11151d;
+      border: 1px solid #2e3644;
+      border-radius: 5px;
+    }
+
+    .asset-name {
+      font-weight: 700;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .asset-meta {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .drop-zone {
+      border: 1px dashed #536071;
+      background: #151a23;
+      border-radius: 8px;
+      padding: 14px;
+      text-align: center;
+      color: var(--muted);
+    }
+
+    .drop-zone.dragover {
+      border-color: var(--accent);
+      color: var(--text);
+      background: #182733;
+    }
+
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+    }
+
+    .check-row input {
+      width: auto;
+    }
+
+    .kbd {
+      border: 1px solid var(--line);
+      border-bottom-color: #1b2028;
+      border-radius: 4px;
+      padding: 1px 5px;
+      background: #10141c;
+      color: var(--text);
+      font-size: 12px;
+    }
+
+    @media (max-width: 1120px) {
+      .app {
+        grid-template-columns: 260px 1fr;
+      }
+
+      .right {
+        grid-column: 1 / -1;
+      }
+
+      canvas {
+        max-width: calc(100vw - 330px);
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="panel">
+      <div class="panel-header">Inputs</div>
+      <div class="panel-body stack">
+        <div class="drop-zone" id="dropZone">
+          Drop base or furniture PNG files here
+        </div>
+
+        <div class="toolbar">
+          <label class="file-button">
+            Base image
+            <input id="baseInput" type="file" accept="image/*">
+          </label>
+          <label class="file-button">
+            Furniture
+            <input id="furnitureInput" type="file" accept="image/*" multiple>
+          </label>
+          <label class="file-button">
+            Layout JSON
+            <input id="layoutInput" type="file" accept="application/json,.json">
+          </label>
+        </div>
+
+        <div class="row">
+          <label class="field">
+            Canvas W
+            <input id="canvasW" type="number" min="16" max="2048" value="240">
+          </label>
+          <label class="field">
+            Canvas H
+            <input id="canvasH" type="number" min="16" max="2048" value="135">
+          </label>
+        </div>
+
+        <div class="row">
+          <label class="field">
+            Source scale
+            <input id="sourceScale" type="number" step="0.01" min="0.01" value="4">
+          </label>
+          <label class="field">
+            Furniture import
+            <select id="furnitureImportMode">
+              <option value="source_scale">Divide by source scale</option>
+              <option value="fit_canvas">Fit inside canvas</option>
+              <option value="native">Native pixels</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="field">
+          Base fit
+          <select id="baseFit">
+            <option value="cover">Cover crop</option>
+            <option value="contain">Contain</option>
+            <option value="stretch">Stretch</option>
+          </select>
+        </label>
+
+        <div class="row">
+          <label class="field">
+            Sprite X
+            <input id="spriteX" type="number" value="88">
+          </label>
+          <label class="field">
+            Sprite Y
+            <input id="spriteY" type="number" value="50">
+          </label>
+        </div>
+
+        <div class="row">
+          <label class="field">
+            Sprite W
+            <input id="spriteW" type="number" value="64">
+          </label>
+          <label class="field">
+            Sprite H
+            <input id="spriteH" type="number" value="64">
+          </label>
+        </div>
+
+        <label class="check-row">
+          <input id="showGuides" type="checkbox" checked>
+          Show sprite and HUD guides
+        </label>
+
+        <div class="hint">
+          Coordinates are saved in target pixels. Drag items on the canvas; use arrow keys for 1 px moves.
+        </div>
+      </div>
+    </section>
+
+    <section class="panel stage-wrap">
+      <div class="stage-toolbar">
+        <div class="segmented">
+          <button id="dayMode" class="active" type="button">Day</button>
+          <button id="nightMode" type="button">Night</button>
+        </div>
+        <div class="toolbar">
+          <button id="resetView" type="button">Reset</button>
+        </div>
+      </div>
+      <div class="canvas-area">
+        <canvas id="stage" width="240" height="135"></canvas>
+      </div>
+      <div id="status" class="status">Load a base image, then add furniture PNG files.</div>
+    </section>
+
+    <section class="panel right">
+      <div class="panel-header">Furniture and export</div>
+      <div class="panel-body stack">
+        <div class="asset-list" id="assetList"></div>
+
+        <div class="stack" id="selectedPanel">
+          <div class="hint">Select furniture to edit transform and layer values.</div>
+        </div>
+
+        <div class="panel" style="background:#151820;">
+          <div class="panel-header">Night overlay</div>
+          <div class="panel-body stack">
+            <label class="field">
+              Blue tint
+              <input id="nightTint" type="range" min="0" max="90" value="46">
+            </label>
+            <label class="field">
+              Darken
+              <input id="nightDarken" type="range" min="0" max="90" value="34">
+            </label>
+            <label class="field">
+              Warm lamp
+              <input id="lampStrength" type="range" min="0" max="90" value="36">
+            </label>
+          </div>
+        </div>
+
+        <div class="toolbar">
+          <button id="exportJson" class="primary" type="button">Export layout</button>
+          <button id="exportPreview" type="button">Export preview PNG</button>
+        </div>
+
+        <div class="toolbar">
+          <button id="duplicateItem" type="button">Duplicate</button>
+          <button id="deleteItem" class="danger" type="button">Delete</button>
+        </div>
+
+        <div class="hint">
+          Export layout JSON as the source of truth. Use the fixed compose_room.py script beside this tool for day/night batch previews.
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const state = {
+      width: 240,
+      height: 135,
+      mode: "day",
+      base: null,
+      baseFit: "cover",
+      sourceScale: 4,
+      furnitureImportMode: "source_scale",
+      items: [],
+      selectedId: null,
+      nextId: 1,
+      dragging: false,
+      dragOffsetX: 0,
+      dragOffsetY: 0,
+      guides: {
+        show: true,
+        spriteX: 88,
+        spriteY: 50,
+        spriteW: 64,
+        spriteH: 64,
+        hudX: 168,
+        hudY: 2,
+        hudW: 68,
+        hudH: 54
+      },
+      night: {
+        tint: 46,
+        darken: 34,
+        lamp: 36
+      }
+    };
+
+    const canvas = document.getElementById("stage");
+    const ctx = canvas.getContext("2d");
+    const statusEl = document.getElementById("status");
+    const assetList = document.getElementById("assetList");
+    const selectedPanel = document.getElementById("selectedPanel");
+
+    function setStatus(text) {
+      statusEl.textContent = text;
+    }
+
+    function autoSourceScaleForImage(width, height) {
+      const scaleX = width / Math.max(1, state.width);
+      const scaleY = height / Math.max(1, state.height);
+      if (scaleX <= 1 && scaleY <= 1) return 1;
+      const closeAspect = Math.abs(scaleX - scaleY) / Math.max(scaleX, scaleY) < 0.08;
+      const scale = closeAspect ? (scaleX + scaleY) / 2 : Math.min(scaleX, scaleY);
+      return Math.max(1, Math.round(scale * 100) / 100);
+    }
+
+    function furnitureInitialScale(width, height) {
+      if (state.furnitureImportMode === "native") return 1;
+      if (state.furnitureImportMode === "fit_canvas") {
+        return Math.min(1, state.width / Math.max(1, width), state.height / Math.max(1, height));
+      }
+      return 1 / Math.max(0.01, state.sourceScale);
+    }
+
+    function readImageFile(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(reader.error);
+        reader.onload = () => {
+          const img = new Image();
+          img.onload = () => resolve({ file, img, dataUrl: reader.result });
+          img.onerror = reject;
+          img.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function loadBase(file) {
+      const loaded = await readImageFile(file);
+      state.base = {
+        name: file.name,
+        img: loaded.img,
+        dataUrl: loaded.dataUrl,
+        width: loaded.img.naturalWidth,
+        height: loaded.img.naturalHeight
+      };
+      const detectedScale = autoSourceScaleForImage(state.base.width, state.base.height);
+      state.sourceScale = detectedScale;
+      document.getElementById("sourceScale").value = detectedScale;
+      setStatus(`Base loaded: ${file.name} (${state.base.width}x${state.base.height}), preview sampled to ${state.width}x${state.height}, source scale ${detectedScale}x.`);
+      render();
+    }
+
+    async function addFurnitureFiles(files) {
+      for (const file of files) {
+        const loaded = await readImageFile(file);
+        const initialScale = furnitureInitialScale(loaded.img.naturalWidth, loaded.img.naturalHeight);
+        const targetW = loaded.img.naturalWidth * initialScale;
+        const targetH = loaded.img.naturalHeight * initialScale;
+        const item = {
+          id: `f${state.nextId++}`,
+          name: file.name.replace(/\.[^.]+$/, ""),
+          fileName: file.name,
+          img: loaded.img,
+          dataUrl: loaded.dataUrl,
+          sourceWidth: loaded.img.naturalWidth,
+          sourceHeight: loaded.img.naturalHeight,
+          x: Math.round((state.width - Math.min(targetW, state.width)) / 2),
+          y: Math.round((state.height - Math.min(targetH, state.height)) / 2),
+          scale: initialScale,
+          sourceScale: state.sourceScale,
+          opacity: 1,
+          z: 20,
+          visible: true,
+          anchor: "top_left",
+          slot: "floor",
+          layer: "main"
+        };
+        state.items.push(item);
+        state.selectedId = item.id;
+      }
+      setStatus(`Loaded ${files.length} furniture file(s), sampled with ${state.furnitureImportMode.replace("_", " ")}.`);
+      refreshList();
+      refreshSelectedPanel();
+      render();
+    }
+
+    function selectedItem() {
+      return state.items.find((item) => item.id === state.selectedId) || null;
+    }
+
+    function sortedItems() {
+      return [...state.items].sort((a, b) => {
+        if (a.z !== b.z) return a.z - b.z;
+        return a.id.localeCompare(b.id);
+      });
+    }
+
+    function itemBounds(item) {
+      return {
+        x: item.x,
+        y: item.y,
+        w: item.sourceWidth * item.scale,
+        h: item.sourceHeight * item.scale
+      };
+    }
+
+    function drawBase() {
+      ctx.clearRect(0, 0, state.width, state.height);
+      ctx.fillStyle = "#111318";
+      ctx.fillRect(0, 0, state.width, state.height);
+
+      if (!state.base) {
+        ctx.fillStyle = "#202734";
+        ctx.fillRect(0, 0, state.width, state.height);
+        ctx.strokeStyle = "#526070";
+        ctx.strokeRect(0.5, 0.5, state.width - 1, state.height - 1);
+        ctx.fillStyle = "#a8b0bf";
+        ctx.font = "10px sans-serif";
+        ctx.fillText("Load room base image", 62, 68);
+        return;
+      }
+
+      const img = state.base.img;
+      let sx = 0;
+      let sy = 0;
+      let sw = img.naturalWidth;
+      let sh = img.naturalHeight;
+      let dx = 0;
+      let dy = 0;
+      let dw = state.width;
+      let dh = state.height;
+
+      if (state.baseFit === "cover") {
+        const srcRatio = sw / sh;
+        const dstRatio = state.width / state.height;
+        if (srcRatio > dstRatio) {
+          sw = sh * dstRatio;
+          sx = (img.naturalWidth - sw) / 2;
+        } else {
+          sh = sw / dstRatio;
+          sy = (img.naturalHeight - sh) / 2;
+        }
+      } else if (state.baseFit === "contain") {
+        const scale = Math.min(state.width / sw, state.height / sh);
+        dw = sw * scale;
+        dh = sh * scale;
+        dx = (state.width - dw) / 2;
+        dy = (state.height - dh) / 2;
+      }
+
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
+    }
+
+    function drawItems() {
+      for (const item of sortedItems()) {
+        if (!item.visible) continue;
+        const b = itemBounds(item);
+        ctx.globalAlpha = item.opacity;
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(item.img, item.x, item.y, b.w, b.h);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    function drawNightOverlay() {
+      if (state.mode !== "night") return;
+
+      ctx.save();
+      ctx.globalCompositeOperation = "source-over";
+      ctx.fillStyle = `rgba(8, 18, 42, ${state.night.tint / 100})`;
+      ctx.fillRect(0, 0, state.width, state.height);
+      ctx.fillStyle = `rgba(0, 0, 0, ${state.night.darken / 100})`;
+      ctx.fillRect(0, 0, state.width, state.height);
+
+      const lampAlpha = state.night.lamp / 100;
+      if (lampAlpha > 0) {
+        const g = ctx.createRadialGradient(170, 70, 4, 170, 70, 68);
+        g.addColorStop(0, `rgba(255, 206, 120, ${lampAlpha})`);
+        g.addColorStop(0.45, `rgba(255, 173, 80, ${lampAlpha * 0.22})`);
+        g.addColorStop(1, "rgba(255, 173, 80, 0)");
+        ctx.globalCompositeOperation = "screen";
+        ctx.fillStyle = g;
+        ctx.fillRect(95, 10, 130, 115);
+      }
+
+      ctx.restore();
+    }
+
+    function drawGuides() {
+      if (!state.guides.show) return;
+      ctx.save();
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 2]);
+
+      ctx.strokeStyle = "rgba(120, 214, 238, 0.9)";
+      ctx.strokeRect(
+        state.guides.spriteX + 0.5,
+        state.guides.spriteY + 0.5,
+        state.guides.spriteW,
+        state.guides.spriteH
+      );
+
+      ctx.strokeStyle = "rgba(255, 190, 110, 0.9)";
+      ctx.strokeRect(
+        state.guides.hudX + 0.5,
+        state.guides.hudY + 0.5,
+        state.guides.hudW,
+        state.guides.hudH
+      );
+
+      ctx.setLineDash([]);
+      ctx.fillStyle = "rgba(120, 214, 238, 0.9)";
+      ctx.font = "6px sans-serif";
+      ctx.fillText("sprite", state.guides.spriteX, state.guides.spriteY - 2);
+      ctx.fillStyle = "rgba(255, 190, 110, 0.9)";
+      ctx.fillText("hud", state.guides.hudX, state.guides.hudY + state.guides.hudH + 7);
+      ctx.restore();
+    }
+
+    function drawSelection() {
+      const item = selectedItem();
+      if (!item) return;
+      const b = itemBounds(item);
+      ctx.save();
+      ctx.strokeStyle = "#78d6ee";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 2]);
+      ctx.strokeRect(Math.round(b.x) + 0.5, Math.round(b.y) + 0.5, Math.round(b.w), Math.round(b.h));
+      ctx.restore();
+    }
+
+    function render() {
+      state.width = Number(document.getElementById("canvasW").value) || 240;
+      state.height = Number(document.getElementById("canvasH").value) || 135;
+      state.baseFit = document.getElementById("baseFit").value;
+      state.sourceScale = Number(document.getElementById("sourceScale").value) || 1;
+      state.furnitureImportMode = document.getElementById("furnitureImportMode").value;
+      state.guides.show = document.getElementById("showGuides").checked;
+      state.guides.spriteX = Number(document.getElementById("spriteX").value) || 0;
+      state.guides.spriteY = Number(document.getElementById("spriteY").value) || 0;
+      state.guides.spriteW = Number(document.getElementById("spriteW").value) || 64;
+      state.guides.spriteH = Number(document.getElementById("spriteH").value) || 64;
+      state.night.tint = Number(document.getElementById("nightTint").value) || 0;
+      state.night.darken = Number(document.getElementById("nightDarken").value) || 0;
+      state.night.lamp = Number(document.getElementById("lampStrength").value) || 0;
+
+      if (canvas.width !== state.width || canvas.height !== state.height) {
+        canvas.width = state.width;
+        canvas.height = state.height;
+      }
+
+      drawBase();
+      drawItems();
+      drawNightOverlay();
+      drawGuides();
+      drawSelection();
+    }
+
+    function refreshList() {
+      assetList.innerHTML = "";
+      for (const item of sortedItems()) {
+        const el = document.createElement("div");
+        el.className = `asset-item${item.id === state.selectedId ? " selected" : ""}`;
+        el.innerHTML = `
+          <img class="asset-thumb" alt="" src="${item.dataUrl}">
+          <div>
+            <div class="asset-name">${escapeHtml(item.name)}</div>
+            <div class="asset-meta">x ${Math.round(item.x)}, y ${Math.round(item.y)}, z ${item.z}, ${Math.round(item.scale * 100)}%</div>
+          </div>
+        `;
+        el.addEventListener("click", () => {
+          state.selectedId = item.id;
+          refreshList();
+          refreshSelectedPanel();
+          render();
+        });
+        assetList.appendChild(el);
+      }
+      if (state.items.length === 0) {
+        assetList.innerHTML = '<div class="hint">No furniture loaded.</div>';
+      }
+    }
+
+    function refreshSelectedPanel() {
+      const item = selectedItem();
+      if (!item) {
+        selectedPanel.innerHTML = '<div class="hint">Select furniture to edit transform and layer values.</div>';
+        return;
+      }
+
+      selectedPanel.innerHTML = `
+        <label class="field">Name<input id="itemName" type="text" value="${escapeAttr(item.name)}"></label>
+        <div class="row">
+          <label class="field">X<input id="itemX" type="number" value="${Math.round(item.x)}"></label>
+          <label class="field">Y<input id="itemY" type="number" value="${Math.round(item.y)}"></label>
+        </div>
+        <div class="row">
+          <label class="field">Z<input id="itemZ" type="number" value="${item.z}"></label>
+          <label class="field">Scale<input id="itemScale" type="number" step="0.05" min="0.05" value="${item.scale}"></label>
+        </div>
+        <div class="row">
+          <label class="field">Opacity<input id="itemOpacity" type="number" step="0.05" min="0" max="1" value="${item.opacity}"></label>
+          <label class="field">Slot<input id="itemSlot" type="text" value="${escapeAttr(item.slot)}"></label>
+        </div>
+        <label class="check-row"><input id="itemVisible" type="checkbox" ${item.visible ? "checked" : ""}> Visible</label>
+        <div class="hint">Source: ${escapeHtml(item.fileName)} (${item.sourceWidth}x${item.sourceHeight}) -> target ${Math.round(item.sourceWidth * item.scale)}x${Math.round(item.sourceHeight * item.scale)}</div>
+      `;
+
+      const bind = (id, fn) => {
+        const input = document.getElementById(id);
+        input.addEventListener("input", () => {
+          fn(input);
+          refreshList();
+          render();
+        });
+      };
+      bind("itemName", (input) => { item.name = input.value; });
+      bind("itemX", (input) => { item.x = Number(input.value) || 0; });
+      bind("itemY", (input) => { item.y = Number(input.value) || 0; });
+      bind("itemZ", (input) => { item.z = Number(input.value) || 0; });
+      bind("itemScale", (input) => { item.scale = Math.max(0.05, Number(input.value) || 1); });
+      bind("itemOpacity", (input) => { item.opacity = Math.max(0, Math.min(1, Number(input.value))); });
+      bind("itemSlot", (input) => { item.slot = input.value; });
+      bind("itemVisible", (input) => { item.visible = input.checked; });
+    }
+
+    function pointerToCanvas(event) {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: (event.clientX - rect.left) * canvas.width / rect.width,
+        y: (event.clientY - rect.top) * canvas.height / rect.height
+      };
+    }
+
+    function hitTest(x, y) {
+      const items = sortedItems().reverse();
+      for (const item of items) {
+        if (!item.visible) continue;
+        const b = itemBounds(item);
+        if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
+          return item;
+        }
+      }
+      return null;
+    }
+
+    function updateModeButtons() {
+      document.getElementById("dayMode").classList.toggle("active", state.mode === "day");
+      document.getElementById("nightMode").classList.toggle("active", state.mode === "night");
+    }
+
+    function exportLayoutObject() {
+      return {
+        version: 1,
+        canvas: { width: state.width, height: state.height },
+        base: {
+          fileName: state.base ? state.base.name : "",
+          fit: state.baseFit,
+          sourceWidth: state.base ? state.base.width : 0,
+          sourceHeight: state.base ? state.base.height : 0
+        },
+        sourceScale: Number(state.sourceScale.toFixed(4)),
+        guides: state.guides,
+        night: state.night,
+        furniture: sortedItems().map((item) => ({
+          id: item.id,
+          name: item.name,
+          fileName: item.fileName,
+          x: Math.round(item.x),
+          y: Math.round(item.y),
+          z: item.z,
+          scale: Number(item.scale.toFixed(4)),
+          targetWidth: Math.round(item.sourceWidth * item.scale),
+          targetHeight: Math.round(item.sourceHeight * item.scale),
+          sourceScale: Number((item.sourceScale || state.sourceScale).toFixed(4)),
+          opacity: Number(item.opacity.toFixed(4)),
+          visible: item.visible,
+          anchor: item.anchor,
+          slot: item.slot,
+          layer: item.layer,
+          sourceWidth: item.sourceWidth,
+          sourceHeight: item.sourceHeight
+        }))
+      };
+    }
+
+    function downloadText(fileName, text, mime = "text/plain") {
+      const blob = new Blob([text], { type: mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function downloadCanvas(fileName) {
+      render();
+      canvas.toBlob((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }, "image/png");
+    }
+
+    async function importLayout(file) {
+      const text = await file.text();
+      const layout = JSON.parse(text);
+      if (layout.canvas) {
+        document.getElementById("canvasW").value = layout.canvas.width || 240;
+        document.getElementById("canvasH").value = layout.canvas.height || 135;
+      }
+      if (layout.base && layout.base.fit) {
+        document.getElementById("baseFit").value = layout.base.fit;
+      }
+      if (layout.sourceScale) {
+        document.getElementById("sourceScale").value = layout.sourceScale;
+      }
+      if (layout.guides) {
+        document.getElementById("spriteX").value = layout.guides.spriteX ?? 88;
+        document.getElementById("spriteY").value = layout.guides.spriteY ?? 50;
+        document.getElementById("spriteW").value = layout.guides.spriteW ?? 64;
+        document.getElementById("spriteH").value = layout.guides.spriteH ?? 64;
+        document.getElementById("showGuides").checked = layout.guides.show ?? true;
+      }
+      if (layout.night) {
+        document.getElementById("nightTint").value = layout.night.tint ?? 46;
+        document.getElementById("nightDarken").value = layout.night.darken ?? 34;
+        document.getElementById("lampStrength").value = layout.night.lamp ?? 36;
+      }
+
+      const byFile = new Map(state.items.map((item) => [item.fileName, item]));
+      for (const entry of layout.furniture || []) {
+        const item = byFile.get(entry.fileName);
+        if (!item) continue;
+        Object.assign(item, {
+          id: entry.id || item.id,
+          name: entry.name || item.name,
+          x: entry.x ?? item.x,
+          y: entry.y ?? item.y,
+          z: entry.z ?? item.z,
+          scale: entry.scale ?? item.scale,
+          sourceScale: entry.sourceScale ?? item.sourceScale,
+          opacity: entry.opacity ?? item.opacity,
+          visible: entry.visible ?? item.visible,
+          anchor: entry.anchor || item.anchor,
+          slot: entry.slot || item.slot,
+          layer: entry.layer || item.layer
+        });
+      }
+      setStatus(`Layout imported: ${file.name}. Matching furniture files were updated.`);
+      refreshList();
+      refreshSelectedPanel();
+      render();
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (ch) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;"
+      }[ch]));
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value).replace(/`/g, "&#096;");
+    }
+
+    document.getElementById("baseInput").addEventListener("change", (event) => {
+      if (event.target.files[0]) loadBase(event.target.files[0]);
+    });
+
+    document.getElementById("furnitureInput").addEventListener("change", (event) => {
+      addFurnitureFiles([...event.target.files]);
+    });
+
+    document.getElementById("layoutInput").addEventListener("change", (event) => {
+      if (event.target.files[0]) importLayout(event.target.files[0]);
+    });
+
+    for (const id of ["canvasW", "canvasH", "sourceScale", "furnitureImportMode", "baseFit", "showGuides", "spriteX", "spriteY", "spriteW", "spriteH", "nightTint", "nightDarken", "lampStrength"]) {
+      document.getElementById(id).addEventListener("input", render);
+    }
+
+    document.getElementById("dayMode").addEventListener("click", () => {
+      state.mode = "day";
+      updateModeButtons();
+      render();
+    });
+
+    document.getElementById("nightMode").addEventListener("click", () => {
+      state.mode = "night";
+      updateModeButtons();
+      render();
+    });
+
+    document.getElementById("resetView").addEventListener("click", () => {
+      state.selectedId = null;
+      refreshList();
+      refreshSelectedPanel();
+      render();
+    });
+
+    document.getElementById("exportJson").addEventListener("click", () => {
+      downloadText("room_layout.json", JSON.stringify(exportLayoutObject(), null, 2), "application/json");
+    });
+
+    document.getElementById("exportPreview").addEventListener("click", () => {
+      downloadCanvas(`room_${state.mode}_preview.png`);
+    });
+
+    document.getElementById("deleteItem").addEventListener("click", () => {
+      const item = selectedItem();
+      if (!item) return;
+      state.items = state.items.filter((v) => v.id !== item.id);
+      state.selectedId = null;
+      refreshList();
+      refreshSelectedPanel();
+      render();
+    });
+
+    document.getElementById("duplicateItem").addEventListener("click", () => {
+      const item = selectedItem();
+      if (!item) return;
+      const copy = { ...item, id: `f${state.nextId++}`, name: `${item.name}_copy`, x: item.x + 4, y: item.y + 4 };
+      state.items.push(copy);
+      state.selectedId = copy.id;
+      refreshList();
+      refreshSelectedPanel();
+      render();
+    });
+
+    canvas.addEventListener("pointerdown", (event) => {
+      const p = pointerToCanvas(event);
+      const item = hitTest(p.x, p.y);
+      if (item) {
+        state.selectedId = item.id;
+        state.dragging = true;
+        state.dragOffsetX = p.x - item.x;
+        state.dragOffsetY = p.y - item.y;
+        canvas.classList.add("dragging");
+        canvas.setPointerCapture(event.pointerId);
+      } else {
+        state.selectedId = null;
+      }
+      refreshList();
+      refreshSelectedPanel();
+      render();
+    });
+
+    canvas.addEventListener("pointermove", (event) => {
+      if (!state.dragging) return;
+      const item = selectedItem();
+      if (!item) return;
+      const p = pointerToCanvas(event);
+      item.x = Math.round(p.x - state.dragOffsetX);
+      item.y = Math.round(p.y - state.dragOffsetY);
+      refreshList();
+      refreshSelectedPanel();
+      render();
+    });
+
+    canvas.addEventListener("pointerup", (event) => {
+      state.dragging = false;
+      canvas.classList.remove("dragging");
+      try {
+        canvas.releasePointerCapture(event.pointerId);
+      } catch (_) {}
+    });
+
+    window.addEventListener("keydown", (event) => {
+      const item = selectedItem();
+      if (!item) return;
+      let dx = 0;
+      let dy = 0;
+      if (event.key === "ArrowLeft") dx = -1;
+      if (event.key === "ArrowRight") dx = 1;
+      if (event.key === "ArrowUp") dy = -1;
+      if (event.key === "ArrowDown") dy = 1;
+      if (!dx && !dy) return;
+      if (event.shiftKey) {
+        dx *= 8;
+        dy *= 8;
+      }
+      item.x += dx;
+      item.y += dy;
+      event.preventDefault();
+      refreshList();
+      refreshSelectedPanel();
+      render();
+    });
+
+    const dropZone = document.getElementById("dropZone");
+    dropZone.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      dropZone.classList.add("dragover");
+    });
+    dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
+    dropZone.addEventListener("drop", async (event) => {
+      event.preventDefault();
+      dropZone.classList.remove("dragover");
+      const files = [...event.dataTransfer.files];
+      const json = files.find((file) => file.name.endsWith(".json"));
+      const images = files.filter((file) => file.type.startsWith("image/"));
+      if (json) await importLayout(json);
+      if (images.length === 1 && !state.base) {
+        await loadBase(images[0]);
+      } else if (images.length) {
+        await addFurnitureFiles(images);
+      }
+    });
+
+    refreshList();
+    refreshSelectedPanel();
+    render();
+  </script>
+</body>
+</html>

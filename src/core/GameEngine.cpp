@@ -31,6 +31,20 @@ uint8_t* effortField(Game::StatLine& ev, uint8_t statIndex) {
     default: return nullptr;
     }
 }
+
+uint8_t clampFoodIndex(uint8_t foodIndex) {
+    return foodIndex < Game::ROOM_FOOD_COUNT ? foodIndex : 0;
+}
+
+void selectFirstAvailableFood(Game::RoomState& room) {
+    for (uint8_t i = 0; i < Game::ROOM_FOOD_COUNT; ++i) {
+        if (room.food[i] > 0) {
+            room.selectedFood = i;
+            return;
+        }
+    }
+    room.selectedFood = 0;
+}
 }
 
 GameEngine& GameEngine::ins() {
@@ -58,6 +72,11 @@ bool GameEngine::begin() {
     if (!loadedState) saveNow();
     if (state.settings.idleTimeoutIndex >= 5) {
         state.settings.idleTimeoutIndex = 0;
+        markDirty(false);
+    }
+    if (state.room.selectedFood >= Game::ROOM_FOOD_COUNT ||
+        (state.room.food[state.room.selectedFood] == 0 && foodCount() > 0)) {
+        selectFirstAvailableFood(state.room);
         markDirty(false);
     }
     Hal::ins().setBrightness(state.settings.brightness);
@@ -210,17 +229,68 @@ bool GameEngine::moveTeamMemberToFront(uint8_t slot) {
     return true;
 }
 
-void GameEngine::addFood(uint8_t amount) {
-    state.bag.normalFood = min<uint8_t>(30, state.bag.normalFood + amount);
+uint8_t GameEngine::foodCount() const {
+    uint16_t total = 0;
+    for (uint8_t i = 0; i < Game::ROOM_FOOD_COUNT; ++i) {
+        total += state.room.food[i];
+    }
+    return total > 255 ? 255 : (uint8_t)total;
+}
+
+uint8_t GameEngine::foodCount(uint8_t foodIndex) const {
+    foodIndex = clampFoodIndex(foodIndex);
+    return state.room.food[foodIndex];
+}
+
+uint8_t GameEngine::selectedFoodIndex() const {
+    return clampFoodIndex(state.room.selectedFood);
+}
+
+uint8_t GameEngine::selectedFoodCount() const {
+    return foodCount(selectedFoodIndex());
+}
+
+bool GameEngine::addFood(uint8_t amount) {
+    return addFoodStock(0, amount);
+}
+
+bool GameEngine::addFoodStock(uint8_t foodIndex, uint8_t amount) {
+    if (amount == 0) return true;
+    foodIndex = clampFoodIndex(foodIndex);
+    uint8_t& count = state.room.food[foodIndex];
+    if (count >= 30) return false;
+    bool hadFood = foodCount() > 0;
+    count = min<uint8_t>(30, count + amount);
+    if (!hadFood) state.room.selectedFood = foodIndex;
     markDirty(true);
+    return true;
+}
+
+bool GameEngine::selectFood(uint8_t foodIndex) {
+    foodIndex = clampFoodIndex(foodIndex);
+    if (state.room.food[foodIndex] == 0) return false;
+    state.room.selectedFood = foodIndex;
+    markDirty(true);
+    return true;
 }
 
 bool GameEngine::consumeFood() {
-    if (state.bag.normalFood == 0) return false;
-    state.bag.normalFood--;
+    uint8_t foodIndex = selectedFoodIndex();
+    if (state.room.food[foodIndex] == 0) {
+        selectFirstAvailableFood(state.room);
+        foodIndex = selectedFoodIndex();
+        if (state.room.food[foodIndex] == 0) return false;
+    }
+
+    state.room.food[foodIndex]--;
     Game::MonsterRuntime& mon = activeMonster();
-    mon.satiety = min<uint8_t>(100, mon.satiety + 15);
-    mon.mood = min<uint8_t>(100, mon.mood + 3);
+    uint8_t satietyGain = foodIndex == 1 ? 22 : 15;
+    uint8_t moodGain = foodIndex == 1 ? 5 : 3;
+    mon.satiety = min<uint8_t>(100, mon.satiety + satietyGain);
+    mon.mood = min<uint8_t>(100, mon.mood + moodGain);
+    if (state.room.food[foodIndex] == 0) {
+        selectFirstAvailableFood(state.room);
+    }
     markDirty(true);
     return true;
 }
@@ -303,7 +373,7 @@ uint8_t GameEngine::itemCount(Game::ItemId item) const {
     case Game::ItemId::GREAT_BALL: return state.bag.greatBall;
     case Game::ItemId::HEAVY_BALL: return state.bag.heavyBall;
     case Game::ItemId::TIMER_BALL: return state.bag.timerBall;
-    case Game::ItemId::NORMAL_FOOD: return state.bag.normalFood;
+    case Game::ItemId::NORMAL_FOOD: return state.room.food[0];
     case Game::ItemId::POTION: return state.bag.potion;
     case Game::ItemId::SUPER_POTION: return state.bag.superPotion;
     case Game::ItemId::ANTIDOTE: return state.bag.antidote;
@@ -321,7 +391,7 @@ bool GameEngine::removeItem(Game::ItemId item, uint8_t amount, bool immediate) {
     case Game::ItemId::GREAT_BALL: count = &state.bag.greatBall; break;
     case Game::ItemId::HEAVY_BALL: count = &state.bag.heavyBall; break;
     case Game::ItemId::TIMER_BALL: count = &state.bag.timerBall; break;
-    case Game::ItemId::NORMAL_FOOD: count = &state.bag.normalFood; break;
+    case Game::ItemId::NORMAL_FOOD: count = &state.room.food[0]; break;
     case Game::ItemId::POTION: count = &state.bag.potion; break;
     case Game::ItemId::SUPER_POTION: count = &state.bag.superPotion; break;
     case Game::ItemId::ANTIDOTE: count = &state.bag.antidote; break;
@@ -330,6 +400,10 @@ bool GameEngine::removeItem(Game::ItemId item, uint8_t amount, bool immediate) {
     }
     if (!count || *count < amount) return false;
     *count -= amount;
+    uint8_t selectedFood = selectedFoodIndex();
+    if (item == Game::ItemId::NORMAL_FOOD && state.room.food[selectedFood] == 0) {
+        selectFirstAvailableFood(state.room);
+    }
     markDirty(immediate);
     return true;
 }
@@ -352,6 +426,10 @@ bool GameEngine::recordCapture(uint16_t speciesId) {
 }
 
 bool GameEngine::recordCapture(const Game::MonsterRuntime& monster) {
+    return recordCapture(monster, Game::MET_AREA_UNKNOWN);
+}
+
+bool GameEngine::recordCapture(const Game::MonsterRuntime& monster, uint8_t metArea) {
     const Species* species = findSpecies(monster.speciesId);
     if (!species) return false;
 
@@ -359,6 +437,7 @@ bool GameEngine::recordCapture(const Game::MonsterRuntime& monster) {
     mon.hpMax = maxHpFor(*species, mon);
     mon.hpCur = mon.hpMax;
     mon.origin = Game::Origin::CAPTURED;
+    mon.metArea = metArea;
     mon.caughtAt = Hal::ins().millis() / 1000;
     mon.lastSeenAt = mon.caughtAt;
 
@@ -426,6 +505,7 @@ void GameEngine::finishHatch(uint8_t starterStyle) {
     state.activeSlot = 0;
     state.team[0] = createMonster(species->id, 5);
     state.team[0].origin = Game::Origin::HATCHED;
+    state.team[0].metArea = Game::MET_AREA_HATCHED;
     state.team[0].caughtAt = Hal::ins().millis() / 1000;
     state.team[0].lastSeenAt = state.team[0].caughtAt;
     state.oobeDone = true;
@@ -502,6 +582,10 @@ bool GameEngine::debugSetActiveSpecies(uint16_t speciesId) {
     syncSpriteCache();
     markDirty(true);
     return true;
+}
+
+void GameEngine::wakeFromIdle() {
+    resetIdle(Hal::ins().millis());
 }
 
 void GameEngine::markDirty(bool immediate) {
@@ -658,6 +742,7 @@ void GameEngine::initDefaultState() {
     state.gameMinutesTotal = 0;
     state.team[0] = createMonster(starter.id, 5);
     state.team[0].origin = Game::Origin::STARTER;
+    state.team[0].metArea = Game::MET_AREA_STARTER;
 }
 
 void GameEngine::tickCare(uint32_t nowMs) {

@@ -24,7 +24,10 @@ public:
     uint8_t idleTimeoutIndex() const;
     const char* idleTimeoutLabel() const;
     void cycleIdleTimeout();
-    uint8_t foodCount() const { return state.bag.normalFood; }
+    uint8_t foodCount() const;
+    uint8_t foodCount(uint8_t foodIndex) const;
+    uint8_t selectedFoodIndex() const;
+    uint8_t selectedFoodCount() const;
     uint8_t ballCount() const { return state.bag.pokeBall; }
     uint8_t greatBallCount() const { return state.bag.greatBall; }
     uint8_t candyCount() const { return state.bag.candy; }
@@ -45,7 +48,9 @@ public:
     uint8_t activeSlot() const { return 0; }
     bool switchActiveMonster();
     bool moveTeamMemberToFront(uint8_t slot);
-    void addFood(uint8_t amount = 1);
+    bool addFood(uint8_t amount = 1);
+    bool addFoodStock(uint8_t foodIndex, uint8_t amount = 1);
+    bool selectFood(uint8_t foodIndex);
     bool consumeFood();
     void addBalls(uint8_t amount);
     bool consumeBall();
@@ -63,6 +68,7 @@ public:
     void addCoins(uint32_t amount);
     bool recordCapture(uint16_t speciesId);
     bool recordCapture(const Game::MonsterRuntime& monster);
+    bool recordCapture(const Game::MonsterRuntime& monster, uint8_t metArea);
     void grantEffortFrom(const Species& defeatedSpecies);
     void petMonster();
     void finishHatch(uint8_t starterStyle);
@@ -71,6 +77,7 @@ public:
     void addWalkSteps(uint16_t steps);
     void debugRecoverActiveMonster();
     bool debugSetActiveSpecies(uint16_t speciesId);
+    void wakeFromIdle();
     void markDirty(bool immediate = false);
     bool saveNow();
     bool loadHatchProgress(Game::HatchProgress& progress);

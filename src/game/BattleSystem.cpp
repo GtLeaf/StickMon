@@ -80,7 +80,7 @@ DamageResult calcBasicDamage(const Game::MonsterRuntime& attacker,
         return result;
     }
 
-    uint8_t moveId = specialMove ? attackerSpecies.specialMoveId : attackerSpecies.basicMoveId;
+    uint8_t moveId = specialMove ? attackerSpecies.specialMoveId : basicMoveIdForSpecies(attackerSpecies);
     const MoveInfo* move = findMove(moveId);
     uint8_t power = move ? move->power : (specialMove ? 55 : 35);
     TypeId attackType = move ? move->type : attackerSpecies.type1;

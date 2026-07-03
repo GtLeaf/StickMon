@@ -83,6 +83,7 @@ const Species* speciesTable();
 uint8_t speciesCount();
 const Species* findSpecies(uint16_t speciesId);
 const MoveInfo* findMove(uint8_t moveId);
+uint8_t basicMoveIdForSpecies(const Species& species);
 uint8_t movePower(uint8_t moveId, uint8_t fallback);
 uint16_t maxHpFor(const Species& species, uint8_t level);
 uint16_t maxHpFor(const Species& species, const Game::MonsterRuntime& monster);

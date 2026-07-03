@@ -6,6 +6,7 @@
 #include "hardware/PixelRenderer.h"
 
 void SettingsScene::onEnter() {
+    GameEngine::ins().wakeFromIdle();
     cursor = 0;
     viewMode = ViewMode::MENU;
     settingsDirty = false;
@@ -85,6 +86,7 @@ void SettingsScene::activateCurrent() {
 }
 
 void SettingsScene::cycleBrightness() {
+    GameEngine::ins().wakeFromIdle();
     uint8_t cur = Hal::ins().getBrightness();
     uint8_t next = 128;
     if (cur < 96) next = 128;
@@ -113,6 +115,8 @@ void SettingsScene::markSettingsDirty() {
 
 void SettingsScene::saveSettingsIfDirty() {
     if (!settingsDirty) return;
+    GameEngine::ins().wakeFromIdle();
+    Hal::ins().setBrightness(GameEngine::ins().gameState().settings.brightness);
     GameEngine::ins().saveNow();
     settingsDirty = false;
 }

@@ -7,7 +7,7 @@ namespace Game {
 static constexpr uint8_t TEAM_CAP = 2;
 static constexpr uint8_t STORAGE_CAP = 20;
 static constexpr uint32_t SAVE_MAGIC = 0x534D4F4E; // SMON
-static constexpr uint16_t SAVE_VERSION = 6;
+static constexpr uint16_t SAVE_VERSION = 8;
 static constexpr uint8_t STAT_COUNT = 6;
 static constexpr uint8_t NATURE_COUNT = 25;
 static constexpr uint8_t LEVEL_MAX = 50;
@@ -15,6 +15,10 @@ static constexpr uint8_t IV_MAX = 31;
 static constexpr uint8_t EV_MAX = 252;
 static constexpr uint16_t EV_TOTAL_MAX = 510;
 static constexpr uint32_t HATCH_MAGIC = 0x48415443; // HATC
+static constexpr uint8_t ROOM_FOOD_COUNT = 2;
+static constexpr uint8_t MET_AREA_STARTER = 0xFD;
+static constexpr uint8_t MET_AREA_HATCHED = 0xFE;
+static constexpr uint8_t MET_AREA_UNKNOWN = 0xFF;
 
 enum class ItemId : uint8_t {
     POKE_BALL = 0,
@@ -99,6 +103,7 @@ struct MonsterRuntime {
     uint8_t satiety = 75;
     uint8_t proficiency = 0;
     uint8_t statusBits = STATUS_NONE;
+    uint8_t metArea = MET_AREA_UNKNOWN;
     uint8_t petCountToday = 0;
     Origin origin = Origin::STARTER;
     bool fainted = false;
@@ -112,11 +117,20 @@ struct BagState {
     uint8_t greatBall = 0;
     uint8_t heavyBall = 0;
     uint8_t timerBall = 0;
-    uint8_t normalFood = 2;
     uint8_t potion = 2;
     uint8_t superPotion = 0;
     uint8_t antidote = 0;
     uint8_t candy = 1;
+};
+
+struct RoomState {
+    uint8_t food[ROOM_FOOD_COUNT] = {2, 0};
+    uint8_t selectedFood = 0;
+    uint8_t roomStyle = 0;
+    uint8_t activeToy = 0;
+    uint8_t ownedToys = 0;
+    uint16_t ownedFurniture = 0;
+    uint16_t placedFurniture = 0;
 };
 
 struct PlayerSettings {
@@ -143,6 +157,7 @@ struct GameState {
     uint8_t storageCount = 0;
     MonsterRuntime storage[STORAGE_CAP];
     BagState bag;
+    RoomState room;
     uint32_t coins = 50;
     uint16_t stepsToday = 0;
     uint16_t walkExpToday = 0;

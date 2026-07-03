@@ -448,7 +448,7 @@ void ExploreScene::attackWild() {
     if (result.statusBlocked) {
         enqueueBattleLog(Ui::Explore::CANNOT_MOVE);
     } else if (result.effectiveness == 0) {
-        const MoveInfo* move = findMove(result.special ? activeSpecies.specialMoveId : activeSpecies.basicMoveId);
+        const MoveInfo* move = findMove(result.special ? activeSpecies.specialMoveId : basicMoveIdForSpecies(activeSpecies));
         char logBuf[BATTLE_LOG_LEN];
         snprintf(logBuf, sizeof(logBuf), Ui::Explore::MOVE_USED_FMT,
                  activeSpecies.name,
@@ -456,7 +456,7 @@ void ExploreScene::attackWild() {
         enqueueBattleLog(logBuf);
         enqueueBattleLog(Ui::Explore::NO_EFFECT);
     } else {
-        const MoveInfo* move = findMove(result.special ? activeSpecies.specialMoveId : activeSpecies.basicMoveId);
+        const MoveInfo* move = findMove(result.special ? activeSpecies.specialMoveId : basicMoveIdForSpecies(activeSpecies));
         char logBuf[BATTLE_LOG_LEN];
         snprintf(logBuf, sizeof(logBuf), Ui::Explore::MOVE_USED_FMT,
                  activeSpecies.name,
@@ -514,14 +514,14 @@ void ExploreScene::wildCounterattack() {
     if (result.statusBlocked) {
         enqueueBattleLog(Ui::Explore::WILD_CANNOT_MOVE);
     } else if (result.effectiveness == 0) {
-        const MoveInfo* move = findMove(result.special ? wild->specialMoveId : wild->basicMoveId);
+        const MoveInfo* move = findMove(result.special ? wild->specialMoveId : basicMoveIdForSpecies(*wild));
         char logBuf[BATTLE_LOG_LEN];
         snprintf(logBuf, sizeof(logBuf), Ui::Explore::WILD_MOVE_USED_FMT,
                  move ? move->name : Ui::Status::MOVE_UNKNOWN);
         enqueueBattleLog(logBuf);
         enqueueBattleLog(Ui::Explore::NO_EFFECT);
     } else {
-        const MoveInfo* move = findMove(result.special ? wild->specialMoveId : wild->basicMoveId);
+        const MoveInfo* move = findMove(result.special ? wild->specialMoveId : basicMoveIdForSpecies(*wild));
         char logBuf[BATTLE_LOG_LEN];
         snprintf(logBuf, sizeof(logBuf), Ui::Explore::WILD_MOVE_USED_FMT,
                  move ? move->name : Ui::Status::MOVE_UNKNOWN);
@@ -559,7 +559,7 @@ void ExploreScene::tryCapture() {
     lastCaptureSuccess = random(0, 100) < chance;
     if (lastCaptureSuccess) {
         wildRuntime.hpCur = wildHp;
-        if (GameEngine::ins().recordCapture(wildRuntime)) {
+        if (GameEngine::ins().recordCapture(wildRuntime, static_cast<uint8_t>(activeBiome))) {
             resultMessage = wild ? wild->name : nullptr;
         } else {
             lastCaptureSuccess = false;

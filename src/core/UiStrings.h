@@ -21,9 +21,13 @@ static constexpr const char* MOOD = "心情";
 static constexpr const char* SPEED = "速度";
 static constexpr const char* STATUS = "状态";
 static constexpr const char* TEAM = "队伍";
+static constexpr const char* FURNITURE = "家具";
+static constexpr const char* TOY = "玩具";
+static constexpr const char* ROOM_CHANGE = "房间更换";
 static constexpr const char* BRIGHTNESS = "亮度";
 static constexpr const char* BALL = "精灵球";
 static constexpr const char* NORMAL_FOOD = "普通粮";
+static constexpr const char* TASTY_FOOD = "美味粮";
 static constexpr const char* CANDY = "神奇糖果";
 static constexpr const char* COINS = "金币";
 static constexpr const char* WILD = "野生";
@@ -134,6 +138,9 @@ static constexpr const char* QUIRKY = "浮躁";
 }
 
 namespace MoveName {
+static constexpr const char* SCRATCH = "抓击";
+static constexpr const char* POUND = "拍击";
+static constexpr const char* PECK = "啄";
 static constexpr const char* LEAF_SCRATCH = "叶爪";
 static constexpr const char* PETAL_BURST = "花瓣爆发";
 static constexpr const char* NIGHT_BLOOM = "夜花术";
@@ -178,6 +185,9 @@ static constexpr const char* SKY_DRAGON = "天空龙击";
 }
 
 namespace MoveDesc {
+static constexpr const char* SCRATCH = "用爪子快速抓击";
+static constexpr const char* POUND = "用前肢或尾巴拍打";
+static constexpr const char* PECK = "用尖喙或角啄刺";
 static constexpr const char* LEAF_SCRATCH = "草叶般快速抓击";
 static constexpr const char* PETAL_BURST = "卷起花瓣攻击";
 static constexpr const char* NIGHT_BLOOM = "用暗色花影突袭";
@@ -224,7 +234,7 @@ static constexpr const char* SKY_DRAGON = "从空中俯冲龙击";
 namespace Menu {
 static constexpr const char* PET_TOAST = "摸摸头 +心情";
 static constexpr const char* FEED_TOAST = "喂食 +饱食";
-static constexpr const char* NO_FOOD = "没有普通粮";
+static constexpr const char* NO_FOOD = "没有食物了";
 static constexpr const char* SWITCH_TOAST = "已切换伙伴";
 static constexpr const char* NO_RESERVE = "没有替补";
 static constexpr const char* FAINTED_TOAST = "精灵濒死";
@@ -232,6 +242,7 @@ static constexpr const char* STORAGE_HINT = "A查看 B翻页";
 static constexpr const char* TITLE_BATTERY_FMT = "%d%%";
 static constexpr const char* ITEMS[] = {
     Ui::TEAM,
+    Ui::ROOM,
     Ui::BAG,
     Ui::EXPLORE,
     Ui::SHOP,
@@ -239,6 +250,34 @@ static constexpr const char* ITEMS[] = {
     Ui::SETTINGS,
     Ui::DEBUG,
     Ui::BACK,
+};
+}
+
+namespace Room {
+static constexpr const char* FOOD_ITEM = "食物";
+static constexpr const char* FOOD_SELECTED = "已选择食物";
+static constexpr const char* FOOD_NO_STOCK = "没有库存";
+static constexpr const char* ITEMS[] = {
+    FOOD_ITEM,
+    Ui::TOY,
+    Ui::FURNITURE,
+    Ui::ROOM_CHANGE,
+    Ui::BACK,
+};
+static constexpr const char* DESCS[] = {
+    "房间里的日常补给",
+    "后续可放置互动玩具",
+    "后续可布置房间家具",
+    "后续可切换房间风格",
+    "回到主菜单",
+};
+static constexpr const char* FOOD_NAMES[] = {
+    Ui::NORMAL_FOOD,
+    Ui::TASTY_FOOD,
+};
+static constexpr const char* FOOD_DESCS[][3] = {
+    {"基础日常粮食", "主界面按B添加", "提高伙伴饱食"},
+    {"更受欢迎的粮食", "饱食和心情更多", "后续可扩展来源"},
 };
 }
 
@@ -288,6 +327,26 @@ static constexpr const char* ACTIONS[] = {
 namespace Status {
 static constexpr const char* PARTNER = "当前伙伴";
 static constexpr const char* TEAM = Ui::TEAM;
+static constexpr const char* ABILITY = "特性";
+static constexpr const char* ABILITY_OVERGROW = "茂盛";
+static constexpr const char* ABILITY_BLAZE = "猛火";
+static constexpr const char* ABILITY_TORRENT = "激流";
+static constexpr const char* ABILITY_STATIC = "静电";
+static constexpr const char* ABILITY_SYNCHRONIZE = "同步";
+static constexpr const char* ABILITY_ADAPTABILITY = "适应力";
+static constexpr const char* ABILITY_WATER_ABSORB = "储水";
+static constexpr const char* ABILITY_VOLT_ABSORB = "蓄电";
+static constexpr const char* ABILITY_FLASH_FIRE = "引火";
+static constexpr const char* ABILITY_LEVITATE = "飘浮";
+static constexpr const char* ABILITY_TECHNICIAN = "技术高手";
+static constexpr const char* ABILITY_SWIFT_SWIM = "悠游自如";
+static constexpr const char* ABILITY_INTIMIDATE = "威吓";
+static constexpr const char* ABILITY_THICK_FAT = "厚脂肪";
+static constexpr const char* ABILITY_SHED_SKIN = "蜕皮";
+static constexpr const char* ABILITY_INNER_FOCUS = "精神力";
+static constexpr const char* GENDER_MALE = "♂";
+static constexpr const char* GENDER_FEMALE = "♀";
+static constexpr const char* GENDER_NONE = "--";
 static constexpr const char* BASE_STATS = "基础能力";
 static constexpr const char* CURRENT_STATS = "当前能力";
 static constexpr const char* EFFORT_STATS = "努力值";
@@ -298,6 +357,10 @@ static constexpr const char* SPECIAL_MOVE = "特殊招式";
 static constexpr const char* EVOLUTION = "进化";
 static constexpr const char* SOURCE_INFO = "来源";
 static constexpr const char* SOURCE_FMT = "方式:%s";
+static constexpr const char* SOURCE_AT = "在";
+static constexpr const char* SOURCE_MET = "遇到";
+static constexpr const char* SOURCE_HATCHED = "在房间孵化";
+static constexpr const char* SOURCE_STARTER = "初始伙伴";
 static constexpr const char* ORIGIN_STARTER = "初始伙伴";
 static constexpr const char* ORIGIN_HATCHED = "孵化";
 static constexpr const char* ORIGIN_CAPTURED = "捕获";
@@ -305,17 +368,21 @@ static constexpr const char* ORIGIN_TRADED = "交换";
 static constexpr const char* ORIGIN_GIFT = "礼物";
 static constexpr const char* ORIGIN_UNKNOWN = "未知";
 static constexpr const char* MOVE_UNKNOWN = "未知招式";
-static constexpr const char* TYPE_FMT = "属性:%s/%s";
+static constexpr const char* TYPE_FMT = "属性：%s/%s";
 static constexpr const char* NATURE_FMT = "性格:%s";
 static constexpr const char* ID_FMT = "#%u";
 static constexpr const char* LEVEL_FMT = "Lv%u";
+static constexpr const char* LEVEL_GENDER_FMT = "Lv%u %s";
+static constexpr const char* PROFILE_LINE_FMT = "%s %s Lv%u";
 static constexpr const char* EXP_FMT = "经验:%lu";
+static constexpr const char* EXP_VALUE_FMT = "经验值:%lu";
+static constexpr const char* EXP_NEXT_FMT = "升级需要:%lu";
 static constexpr const char* HP_FMT = "HP:%u/%u";
 static constexpr const char* TOTAL_FMT = "合计:%u/%u";
 static constexpr const char* STAT_ROW_FMT = "%s:%u";
 static constexpr const char* STAT_HP = "体力";
-static constexpr const char* STAT_ATK = "攻击";
-static constexpr const char* STAT_DEF = "防御";
+static constexpr const char* STAT_ATK = "物攻";
+static constexpr const char* STAT_DEF = "物防";
 static constexpr const char* STAT_SPA = "特攻";
 static constexpr const char* STAT_SPD = "特防";
 static constexpr const char* STAT_SPE = "速度";
@@ -337,6 +404,11 @@ static constexpr const char* STATUS_BURN = "灼伤";
 static constexpr const char* STATUS_FREEZE = "冰冻";
 static constexpr const char* STATUS_CONFUSION = "混乱";
 static constexpr const char* POWER_FMT = "威力:%u";
+static constexpr const char* PROFICIENCY_FMT = "熟练度:%s";
+static constexpr const char* PROF_LOW = "低";
+static constexpr const char* PROF_MID = "中";
+static constexpr const char* PROF_HIGH = "高";
+static constexpr const char* PROF_FULL = "满";
 static constexpr const char* MET_AT_FMT = "时间:%lu秒";
 static constexpr const char* EGG_TITLE = "初始蛋";
 static constexpr const char* EGG_STATE = "状态:孵化中";
@@ -369,7 +441,6 @@ static constexpr const char* BACK_HINT = "A返回 长A回房间";
 static constexpr const char* NAMES[] = {
     Ui::BALL,
     "高级球",
-    Ui::NORMAL_FOOD,
     "伤药",
     "高级伤药",
     "解毒药",
@@ -379,7 +450,6 @@ static constexpr const char* NAMES[] = {
 static constexpr const char* DESCS[][3] = {
     {"用于捕捉野生精灵", "基础款捕捉球", "适合普通探索"},
     {"比精灵球更可靠", "捕捉概率更高", "适合稀有目标"},
-    {"给房间补充食物", "B键可直接添加", "提高伙伴饱食"},
     {"恢复伙伴体力", "战斗后整理背包", "常备会更安心"},
     {"恢复更多体力", "比普通伤药更强", "适合高等级伙伴"},
     {"解除中毒状态", "探索前可准备", "异常时很有用"},

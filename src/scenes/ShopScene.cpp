@@ -92,8 +92,10 @@ void ShopScene::buyCurrent() {
         } else toast = Ui::Shop::BOUGHT_GREAT_BALL;
         break;
     case FOOD:
-        GameEngine::ins().addFood();
-        toast = Ui::Shop::BOUGHT_FOOD;
+        if (!GameEngine::ins().addFood()) {
+            GameEngine::ins().addCoins(price);
+            toast = Ui::Shop::BAG_FULL;
+        } else toast = Ui::Shop::BOUGHT_FOOD;
         break;
     case POTION:
         if (!GameEngine::ins().addPotion(1)) {

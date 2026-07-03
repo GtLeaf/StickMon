@@ -135,9 +135,14 @@ void HatchScene::drawEgg() {
     auto& c = PixelRenderer::canvas();
     int x = 120 + eggShakeOffset(Hal::ins().millis());
     int y = 87;
-    c.fillEllipse(x, 115, 25, 6, PixelRenderer::rgb(159, 139, 117));
     uint8_t w = pgm_read_byte(&PokemonSprites::EGG_FRAME.width);
     uint8_t h = pgm_read_byte(&PokemonSprites::EGG_FRAME.height);
+    uint8_t visualW = w > 48 ? 36 : w;
+    uint8_t visualH = h > 56 ? 44 : h;
+    int shadowRx = constrain((int)(visualW * 0.36f), 12, 18);
+    int shadowRy = constrain((int)(visualH * 0.10f), 3, 5);
+    int shadowY = y + constrain((int)(visualH * 0.45f), 18, 22);
+    c.fillEllipse(x, shadowY, shadowRx, shadowRy, PixelRenderer::rgb(159, 139, 117));
     if (PokemonSprites::drawFrame(&PokemonSprites::EGG_FRAME, x - w / 2, y - h / 2)) {
         return;
     }

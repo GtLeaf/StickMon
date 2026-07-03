@@ -605,9 +605,14 @@ void MainScene::drawFloor() {
 void MainScene::drawFood() {
     if (GameEngine::ins().foodCount() == 0) return;
     auto& c = PixelRenderer::canvas();
+    uint8_t foodIndex = GameEngine::ins().selectedFoodIndex();
+    uint16_t foodColor = foodIndex == 1 ? PixelRenderer::rgb(255, 138, 112)
+                                        : PixelRenderer::rgb(245, 180, 87);
+    uint16_t garnishColor = foodIndex == 1 ? PixelRenderer::rgb(255, 216, 72)
+                                           : PixelRenderer::rgb(92, 151, 80);
     c.fillEllipse(191, 111, 16, 6, PixelRenderer::rgb(122, 96, 76));
-    c.fillEllipse(191, 108, 13, 5, PixelRenderer::rgb(245, 180, 87));
-    c.fillCircle(186, 106, 2, PixelRenderer::rgb(92, 151, 80));
+    c.fillEllipse(191, 108, 13, 5, foodColor);
+    c.fillCircle(186, 106, 2, garnishColor);
     c.fillCircle(194, 107, 2, PixelRenderer::rgb(178, 79, 57));
 }
 
