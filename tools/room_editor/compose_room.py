@@ -58,12 +58,40 @@ def apply_night(img, night):
     return out
 
 
-def composite(layout, base_path, furniture_dir, mode):
-    width = layout["canvas"]["width"]
-    height = layout["canvas"]["height"]
+def room_size(layout):
+    geometry = layout.get("roomGeometry") or {}
+    room = geometry.get("room") or {}
+    canvas = layout.get("canvas") or {}
+    return int(room.get("width") or canvas.get("width") or 240), int(room.get("height") or canvas.get("height") or 135)
+
+
+def render_geometry(layout):
+    width, height = room_size(layout)
+    out = Image.new("RGBA", (width, height), (5, 7, 12, 255))
+    draw = ImageDraw.Draw(out)
+    for face in sorted(layout.get("roomGeometry", {}).get("faces", []), key=lambda v: v.get("drawOrder", 0)):
+        points = [(int(x), int(y)) for x, y in face.get("points", [])]
+        if len(points) < 3:
+            continue
+        fill = (182, 145, 108, 255) if face.get("type") == "wall" else (217, 151, 82, 255)
+        outline = (78, 53, 42, 255)
+        draw.polygon(points, fill=fill)
+        draw.line(points + [points[0]], fill=outline, width=1)
+    return out
+
+
+def render_base(layout, base_path):
+    width, height = room_size(layout)
+    if layout.get("roomGeometry", {}).get("faces"):
+        return render_geometry(layout)
+    if not base_path:
+        raise ValueError("--base is required when roomGeometry.faces is empty")
     base = Image.open(base_path).convert("RGBA")
-    base = fit_base(base, width, height, layout.get("base", {}).get("fit", "cover"))
-    out = base.copy()
+    return fit_base(base, width, height, layout.get("base", {}).get("fit", "cover"))
+
+
+def composite(layout, base_path, furniture_dir, mode):
+    out = render_base(layout, base_path)
 
     furniture_root = Path(furniture_dir)
     for item in sorted(layout.get("furniture", []), key=lambda v: (v.get("z", 0), v.get("id", ""))):
@@ -88,7 +116,7 @@ def composite(layout, base_path, furniture_dir, mode):
 def main():
     parser = argparse.ArgumentParser(description="Compose StickMon room day/night previews from room_layout.json.")
     parser.add_argument("--layout", required=True, help="Exported room_layout.json")
-    parser.add_argument("--base", required=True, help="Empty room base image")
+    parser.add_argument("--base", help="Fallback empty room base image for old layouts without roomGeometry")
     parser.add_argument("--furniture-dir", required=True, help="Directory containing furniture PNG files")
     parser.add_argument("--out", default="room_preview", help="Output prefix")
     args = parser.parse_args()

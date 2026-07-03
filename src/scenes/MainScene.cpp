@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdio>
 #include "assets/PokemonSprites.h"
+#include "assets/RoomAssets.h"
 #include "core/GameEngine.h"
 #include "core/UiStrings.h"
 #include "hardware/Hal.h"
@@ -561,45 +562,19 @@ bool MainScene::onButton(const ButtonEvent& event) {
 }
 
 void MainScene::drawBackground() {
-    auto& c = PixelRenderer::canvas();
-    bool night = mainSceneIsNight();
-    uint16_t wall = night ? PixelRenderer::rgb(58, 70, 92) : PixelRenderer::rgb(194, 219, 224);
-    uint16_t upperWall = night ? PixelRenderer::rgb(45, 56, 78) : PixelRenderer::rgb(165, 202, 214);
-    uint16_t frame = night ? PixelRenderer::rgb(37, 47, 65) : PixelRenderer::rgb(95, 130, 138);
-    uint16_t window = night ? PixelRenderer::rgb(31, 43, 72) : PixelRenderer::rgb(238, 247, 230);
-    PixelRenderer::clear(wall);
-    c.fillRect(0, 0, Hal::DISPLAY_W, 42, upperWall);
-    c.fillRect(18, 10, 50, 26, window);
-    c.drawRect(18, 10, 50, 26, frame);
-    c.drawLine(43, 10, 43, 35, frame);
-    c.drawLine(18, 23, 67, 23, frame);
-    c.fillRect(172, 21, 33, 16, night ? PixelRenderer::rgb(79, 87, 104) : PixelRenderer::rgb(140, 166, 173));
-    c.drawRect(172, 21, 33, 16, frame);
+    PixelRenderer::clear(PixelRenderer::rgb(5, 6, 18));
+    PixelRenderer::drawRgb565Rle(0, RoomAssets::STANDARD_ROOM_Y,
+                                 RoomAssets::STANDARD_ROOM_W,
+                                 RoomAssets::STANDARD_ROOM_H,
+                                 RoomAssets::STANDARD_ROOM_RLE, 0,
+                                 RoomAssets::STANDARD_ROOM_RLE_LEN);
+    if (mainSceneIsNight()) {
+        fillRectAlpha(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H,
+                      PixelRenderer::rgb(4, 8, 24), 58);
+    }
 }
 
 void MainScene::drawFloor() {
-    auto& c = PixelRenderer::canvas();
-    bool night = mainSceneIsNight();
-    uint16_t floor = night ? PixelRenderer::rgb(98, 82, 74) : PixelRenderer::rgb(226, 209, 174);
-    uint16_t floorLine = night ? PixelRenderer::rgb(74, 64, 62) : PixelRenderer::rgb(206, 187, 151);
-    uint16_t rug = night ? PixelRenderer::rgb(121, 101, 82) : PixelRenderer::rgb(240, 225, 188);
-    uint16_t rugBorder = night ? PixelRenderer::rgb(91, 70, 60) : PixelRenderer::rgb(173, 140, 101);
-    c.fillRect(0, 42, Hal::DISPLAY_W, Hal::DISPLAY_H - 42, floor);
-    for (int y = 56; y < Hal::DISPLAY_H; y += 16) {
-        c.drawLine(0, y, Hal::DISPLAY_W, y, floorLine);
-    }
-    c.fillRect(12, 58, 164, 58, rug);
-    c.drawRect(12, 58, 164, 58, rugBorder);
-    if (!night) {
-        fillRectAlpha(23, 42, 54, 41, PixelRenderer::rgb(255, 250, 205), 42);
-        fillRectAlpha(31, 70, 46, 22, PixelRenderer::rgb(255, 248, 190), 24);
-    } else {
-        fillRectAlpha(148, 52, 80, 68, PixelRenderer::rgb(255, 199, 104), 28);
-        fillRectAlpha(172, 68, 43, 35, PixelRenderer::rgb(255, 214, 128), 45);
-    }
-    c.fillRect(188, 72, 32, 26, night ? PixelRenderer::rgb(128, 91, 72) : PixelRenderer::rgb(186, 141, 105));
-    c.fillRect(193, 61, 22, 13, night ? PixelRenderer::rgb(179, 123, 75) : PixelRenderer::rgb(207, 168, 128));
-    if (night) c.fillRect(196, 57, 8, 4, PixelRenderer::rgb(255, 214, 128));
 }
 
 void MainScene::drawFood() {

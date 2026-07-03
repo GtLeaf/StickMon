@@ -1,0 +1,143 @@
+:root {
+  color-scheme: dark;
+  --bg: #0e1119;
+  --panel: #171b25;
+  --panel-2: #202634;
+  --line: #343b4c;
+  --text: #e8ecf4;
+  --muted: #a8b0c0;
+  --accent: #e2a44f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: minmax(480px, 960px) 300px;
+  gap: 20px;
+  align-items: start;
+  width: min(1280px, calc(100vw - 40px));
+}
+
+.preview-pane {
+  padding: 20px;
+  background: #090b12;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+#screen {
+  width: 100%;
+  max-width: 960px;
+  aspect-ratio: 16 / 9;
+  display: block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  background: #050612;
+  border: 1px solid #2f3545;
+}
+
+.controls {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+select,
+input {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--text);
+  padding: 6px 8px;
+  font: inherit;
+}
+
+.toggles {
+  display: grid;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.toggles label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+
+.toggles input {
+  width: 16px;
+  min-height: 16px;
+  accent-color: var(--accent);
+}
+
+.stats {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.stats div {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 8px;
+}
+
+.stats dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.stats dd {
+  margin: 0;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+@media (max-width: 900px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+
+  .controls {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>StickMon Room Preview</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="preview-pane" aria-label="240 by 135 screen preview">
+        <canvas id="screen" width="240" height="135"></canvas>
+      </section>
+
+      <aside class="controls" aria-label="preview controls">
+        <div class="field">
+          <label for="roomInput">背景图片</label>
+          <input id="roomInput" type="file" accept="image/png,image/jpeg,image/webp">
+        </div>
+
+        <div class="field">
+          <label for="speciesSelect">精灵</label>
+          <select id="speciesSelect"></select>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label for="actionSelect">动作</label>
+            <select id="actionSelect"></select>
+          </div>
+          <div class="field">
+            <label for="frameSelect">帧</label>
+            <select id="frameSelect"></select>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label for="xInput">X</label>
+            <input id="xInput" type="number" min="-64" max="240" value="120">
+          </div>
+          <div class="field">
+            <label for="yInput">Y</label>
+            <input id="yInput" type="number" min="-64" max="135" value="104">
+          </div>
+        </div>
+
+        <div class="toggles">
+          <label><input id="centerToggle" type="checkbox" checked> 居中锚点</label>
+          <label><input id="gridToggle" type="checkbox"> 8px 网格</label>
+          <label><input id="hudToggle" type="checkbox" checked> HUD 预留区</label>
+        </div>
+
+        <dl class="stats">
+          <div><dt>背景</dt><dd id="roomStats">-</dd></div>
+          <div><dt>精灵</dt><dd id="spriteStats">-</dd></div>
+          <div><dt>屏幕</dt><dd>240 x 135</dd></div>
+        </dl>
+      </aside>
+    </main>
+
+    <script src="./sprite_manifest.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
