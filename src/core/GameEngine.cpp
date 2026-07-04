@@ -584,6 +584,23 @@ bool GameEngine::debugSetActiveSpecies(uint16_t speciesId) {
     return true;
 }
 
+uint32_t GameEngine::debugAdvanceToTimeOfDay(uint16_t targetMinutesOfDay) {
+    uint32_t now = Hal::ins().millis();
+    syncGameClock(now);
+
+    targetMinutesOfDay %= (24U * 60U);
+    uint16_t current = (uint16_t)(state.gameMinutesTotal % (24UL * 60UL));
+    uint32_t delta = targetMinutesOfDay >= current
+        ? (uint32_t)(targetMinutesOfDay - current)
+        : (uint32_t)(24U * 60U - current + targetMinutesOfDay);
+
+    state.gameMinutesTotal += delta;
+    clockAnchorMs = now;
+    clockAnchorMinutes = state.gameMinutesTotal;
+    saveNow();
+    return delta;
+}
+
 void GameEngine::wakeFromIdle() {
     resetIdle(Hal::ins().millis());
 }

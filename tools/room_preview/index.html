@@ -41,12 +41,14 @@
           </div>
           <div class="field">
             <label for="yInput">Y</label>
-            <input id="yInput" type="number" min="-64" max="135" value="104">
+            <input id="yInput" type="number" min="-64" max="220" value="104">
           </div>
         </div>
 
         <div class="toggles">
           <label><input id="centerToggle" type="checkbox" checked> 居中锚点</label>
+          <label><input id="nightToggle" type="checkbox"> 夜晚效果</label>
+          <label><input id="walkToggle" type="checkbox" checked> 可移动区</label>
           <label><input id="gridToggle" type="checkbox"> 8px 网格</label>
           <label><input id="hudToggle" type="checkbox" checked> HUD 预留区</label>
         </div>
@@ -59,7 +61,7 @@
       </aside>
     </main>
 
-    <script src="./sprite_manifest.js"></script>
+    <script src="../../origin_asset/generated/pokemon_preview_assets.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>

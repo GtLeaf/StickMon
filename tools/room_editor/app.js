@@ -1,3 +1,6 @@
+const TRIM_PADDING = 4;
+const TRIM_THRESHOLD = 34;
+
 const state = {
   width: 240,
   height: 135,
@@ -10,6 +13,7 @@ const state = {
   baseFit: "cover",
   baseOpacity: 0.65,
   sourceScale: 4,
+  baseTrim: null,
   furnitureImportMode: "source_scale",
   aspectLocked: true,
   aspectRatio: 240 / 135,
@@ -21,6 +25,8 @@ const state = {
   selectedFaceId: null,
   selectedPointIndex: null,
   selectedPointId: null,
+  expandedFaceIds: new Set(),
+  draftExpanded: true,
   nextFaceId: 1,
   nextPointId: 1,
   draftPoints: [],
@@ -30,6 +36,8 @@ const state = {
   dragging: false,
   dragOffsetX: 0,
   dragOffsetY: 0,
+  showGrid: false,
+  snapToGrid: false,
   guides: {
     show: true,
     spriteX: 88,
@@ -45,7 +53,11 @@ const state = {
     tint: 46,
     darken: 34,
     lamp: 36
-  }
+  },
+  history: [],
+  historyIndex: -1,
+  maxHistory: 50,
+  statusHoldUntil: 0
 };
 
 const canvas = document.getElementById("stage");
@@ -59,7 +71,13 @@ const faceList = document.getElementById("faceList");
 const selectedFacePanel = document.getElementById("selectedFacePanel");
 const baseImageMeta = document.getElementById("baseImageMeta");
 
-function setStatus(text) {
+function setStatus(text, holdMs = 2500) {
+  statusEl.textContent = text;
+  state.statusHoldUntil = Date.now() + holdMs;
+}
+
+function setWorkflowStatus(text) {
+  if (Date.now() < state.statusHoldUntil) return;
   statusEl.textContent = text;
 }
 
@@ -68,7 +86,12 @@ function updateBaseImageMeta() {
     baseImageMeta.textContent = "Reference image: none";
     return;
   }
-  baseImageMeta.textContent = `Reference image: ${state.base.width}x${state.base.height}; game preview: ${state.width}x${state.height}`;
+  const prepared = preparedRoomMetrics();
+  const trim = prepared.trim;
+  baseImageMeta.textContent =
+    `Reference image: ${state.base.width}x${state.base.height}; ` +
+    `trim ${trim.x},${trim.y},${trim.width}x${trim.height}; ` +
+    `room ${prepared.width}x${prepared.height}; viewport ${state.width}x${state.height}`;
 }
 
 function updateCanvasDisplaySize() {
@@ -102,11 +125,111 @@ function editToTargetPoint(point) {
   };
 }
 
+function colorDistanceRgb(a, b) {
+  const dr = a[0] - b[0];
+  const dg = a[1] - b[1];
+  const db = a[2] - b[2];
+  return Math.sqrt(dr * dr + dg * dg + db * db);
+}
+
+function detectTrimBox(image) {
+  const sourceCanvas = document.createElement("canvas");
+  sourceCanvas.width = image.naturalWidth;
+  sourceCanvas.height = image.naturalHeight;
+  const sourceCtx = sourceCanvas.getContext("2d", { willReadFrequently: true });
+  sourceCtx.imageSmoothingEnabled = false;
+  sourceCtx.drawImage(image, 0, 0);
+
+  const { width, height } = sourceCanvas;
+  const { data } = sourceCtx.getImageData(0, 0, width, height);
+  const samplePoints = [
+    [0, 0],
+    [width - 1, 0],
+    [0, height - 1],
+    [width - 1, height - 1],
+    [Math.floor(width / 2), 0],
+    [Math.floor(width / 2), height - 1],
+  ];
+  const bg = [0, 0, 0];
+  for (const [x, y] of samplePoints) {
+    const index = (y * width + x) * 4;
+    bg[0] += data[index];
+    bg[1] += data[index + 1];
+    bg[2] += data[index + 2];
+  }
+  bg[0] /= samplePoints.length;
+  bg[1] /= samplePoints.length;
+  bg[2] /= samplePoints.length;
+
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < height; ++y) {
+    for (let x = 0; x < width; ++x) {
+      const index = (y * width + x) * 4;
+      const color = [data[index], data[index + 1], data[index + 2]];
+      if (colorDistanceRgb(color, bg) <= TRIM_THRESHOLD) continue;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+  }
+
+  if (maxX < minX || maxY < minY) {
+    return { x: 0, y: 0, width, height };
+  }
+
+  const x = Math.max(0, minX - TRIM_PADDING);
+  const y = Math.max(0, minY - TRIM_PADDING);
+  const right = Math.min(width, maxX + TRIM_PADDING + 1);
+  const bottom = Math.min(height, maxY + TRIM_PADDING + 1);
+  return { x, y, width: right - x, height: bottom - y };
+}
+
+function fallbackTrimBox() {
+  return { x: 0, y: 0, width: state.editWidth, height: state.editHeight };
+}
+
+function preparedRoomMetrics() {
+  const trim = state.baseTrim || fallbackTrimBox();
+  const width = state.width;
+  const scale = width / Math.max(1, trim.width);
+  const height = Math.max(1, Math.round(trim.height * scale));
+  const y = Math.max(0, Math.floor((state.height - height) / 2));
+  return { width, height, y, scale, trim };
+}
+
+function coerceTrimBox(raw) {
+  if (!raw) return null;
+  const x = Number(raw.x);
+  const y = Number(raw.y);
+  const width = Number(raw.width);
+  const height = Number(raw.height);
+  if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) return null;
+  return {
+    x: Math.round(x),
+    y: Math.round(y),
+    width: Math.round(width),
+    height: Math.round(height)
+  };
+}
+
 function faceTargetPoints(face) {
+  const prepared = preparedRoomMetrics();
   return face.points.map((point) => {
-    const target = editToTargetPoint(point);
+    const target = {
+      x: (point.x - prepared.trim.x) * prepared.scale,
+      y: (point.y - prepared.trim.y) * prepared.scale + prepared.y
+    };
     return { x: Math.round(target.x), y: Math.round(target.y) };
   });
+}
+
+function snapValue(value, grid = 8) {
+  if (!state.snapToGrid) return value;
+  return Math.round(value / grid) * grid;
 }
 
 function createShapePoint(x, y) {
@@ -176,16 +299,6 @@ function pruneUnusedPoints() {
   }
 }
 
-function clearDraftPoints() {
-  state.draftPoints = [];
-  state.drawingFace = false;
-  if (!state.selectedFaceId) {
-    state.selectedPointIndex = null;
-    state.selectedPointId = null;
-  }
-  pruneUnusedPoints();
-}
-
 function addDraftPoint(point) {
   if (!point) return;
   const last = state.draftPoints[state.draftPoints.length - 1];
@@ -240,6 +353,7 @@ function applyRoomSizeInput(changedField) {
   setRoomInputs(width, height);
   updateBaseImageMeta();
   render();
+  commitHistory();
 }
 
 function autoSourceScaleForImage(width, height) {
@@ -287,57 +401,109 @@ function projectSpriteCatalog() {
 }
 
 function selectedProjectSpriteEntry() {
-  const select = document.getElementById("projectSpriteSelect");
+  const select = document.getElementById("spriteSpeciesSelect");
   const speciesId = Number(select.value) || 0;
   return projectSpriteCatalog().find((entry) => entry.speciesId === speciesId) || null;
 }
 
+function selectedProjectSpriteFrame() {
+  const entry = selectedProjectSpriteEntry();
+  if (!entry) return null;
+  const action = document.getElementById("spriteActionSelect").value;
+  const framePath = document.getElementById("spriteFrameSelect").value;
+  const frames = entry.actions[action] || [];
+  return frames.find((frame) => frame.path === framePath) || frames[0] || null;
+}
+
 function updateProjectSpriteMeta() {
   const meta = document.getElementById("projectSpriteMeta");
-  const entry = selectedProjectSpriteEntry();
-  if (!entry) {
+  const frame = selectedProjectSpriteFrame();
+  if (!frame) {
     meta.textContent = "No generated project sprites found.";
     return;
   }
-  meta.textContent = `${entry.frame}, ${entry.width}x${entry.height}`;
+  meta.textContent = `${frame.kindName}, ${frame.width}x${frame.height}`;
+}
+
+function updateSpriteActionOptions() {
+  const entry = selectedProjectSpriteEntry();
+  const actionSelect = document.getElementById("spriteActionSelect");
+  actionSelect.innerHTML = "";
+  if (!entry || !entry.actions) {
+    updateSpriteFrameOptions();
+    return;
+  }
+  for (const action of Object.keys(entry.actions)) {
+    const option = document.createElement("option");
+    option.value = action;
+    option.textContent = action;
+    actionSelect.appendChild(option);
+  }
+  updateSpriteFrameOptions();
+}
+
+function updateSpriteFrameOptions() {
+  const entry = selectedProjectSpriteEntry();
+  const actionSelect = document.getElementById("spriteActionSelect");
+  const frameSelect = document.getElementById("spriteFrameSelect");
+  const action = actionSelect.value;
+  frameSelect.innerHTML = "";
+  if (!entry || !entry.actions || !entry.actions[action]) {
+    updateProjectSpriteMeta();
+    return;
+  }
+  for (const frame of entry.actions[action]) {
+    const option = document.createElement("option");
+    option.value = frame.path;
+    option.textContent = frame.kindName;
+    frameSelect.appendChild(option);
+  }
+  updateProjectSpriteMeta();
 }
 
 function initProjectSpriteControls() {
-  const select = document.getElementById("projectSpriteSelect");
+  const speciesSelect = document.getElementById("spriteSpeciesSelect");
   const addButton = document.getElementById("addProjectSprite");
   const catalog = projectSpriteCatalog();
-  select.innerHTML = "";
+  speciesSelect.innerHTML = "";
   for (const entry of catalog) {
     const option = document.createElement("option");
     option.value = String(entry.speciesId);
     option.textContent = entry.name;
-    select.appendChild(option);
+    speciesSelect.appendChild(option);
   }
   const empty = catalog.length === 0;
-  select.disabled = empty;
+  speciesSelect.disabled = empty;
+  document.getElementById("spriteActionSelect").disabled = empty;
+  document.getElementById("spriteFrameSelect").disabled = empty;
   addButton.disabled = empty;
-  select.addEventListener("input", updateProjectSpriteMeta);
-  addButton.addEventListener("click", addProjectSpritePreview);
-  updateProjectSpriteMeta();
+  speciesSelect.addEventListener("change", updateSpriteActionOptions);
+  document.getElementById("spriteActionSelect").addEventListener("change", updateSpriteFrameOptions);
+  document.getElementById("spriteFrameSelect").addEventListener("change", updateProjectSpriteMeta);
+  addButton.addEventListener("click", () => {
+    addProjectSpritePreview();
+  });
+  updateSpriteActionOptions();
 }
 
 async function addProjectSpritePreview() {
   const entry = selectedProjectSpriteEntry();
-  if (!entry) return;
-  const img = await loadImageSource(entry.path);
-  const guideW = Math.max(1, Number(state.guides.spriteW) || entry.width);
-  const guideH = Math.max(1, Number(state.guides.spriteH) || entry.height);
-  const scale = Math.min(guideW / Math.max(1, entry.width), guideH / Math.max(1, entry.height));
-  const targetW = entry.width * scale;
-  const targetH = entry.height * scale;
+  const frame = selectedProjectSpriteFrame();
+  if (!entry || !frame) return;
+  const img = await loadImageSource(frame.path);
+  const guideW = Math.max(1, Number(state.guides.spriteW) || frame.width);
+  const guideH = Math.max(1, Number(state.guides.spriteH) || frame.height);
+  const scale = Math.min(guideW / Math.max(1, frame.width), guideH / Math.max(1, frame.height));
+  const targetW = frame.width * scale;
+  const targetH = frame.height * scale;
   const item = {
     id: `f${state.nextId++}`,
     name: entry.name,
-    fileName: entry.path,
+    fileName: frame.file,
     img,
-    dataUrl: entry.path,
-    sourceWidth: entry.width,
-    sourceHeight: entry.height,
+    dataUrl: frame.path,
+    sourceWidth: frame.width,
+    sourceHeight: frame.height,
     x: Math.round(state.guides.spriteX + (guideW - targetW) / 2),
     y: Math.round(state.guides.spriteY + (guideH - targetH) / 2),
     scale,
@@ -350,7 +516,8 @@ async function addProjectSpritePreview() {
     layer: "sprite_preview",
     source: "project_sprite",
     speciesId: entry.speciesId,
-    frame: entry.frame
+    action: document.getElementById("spriteActionSelect").value,
+    frame: frame.kindName
   };
   state.items.push(item);
   state.selectedId = item.id;
@@ -359,12 +526,32 @@ async function addProjectSpritePreview() {
   state.selectedPointId = null;
   state.editMode = "furniture";
   updateEditModeButtons();
-  setStatus(`Added sprite preview: ${entry.name}.`);
+  setStatus(`Added sprite preview: ${entry.name} ${frame.kindName}.`);
   refreshList();
   refreshSelectedPanel();
   refreshFaceList();
   refreshSelectedFacePanel();
   render();
+  commitHistory();
+}
+
+async function updateProjectSpriteFrame(item, speciesId, action, framePath) {
+  const entry = projectSpriteCatalog().find((e) => e.speciesId === speciesId);
+  if (!entry || !entry.actions || !entry.actions[action]) return;
+  const frame = entry.actions[action].find((f) => f.path === framePath);
+  if (!frame) return;
+  const img = await loadImageSource(frame.path);
+  item.name = entry.name;
+  item.fileName = frame.file;
+  item.img = img;
+  item.dataUrl = frame.path;
+  item.sourceWidth = frame.width;
+  item.sourceHeight = frame.height;
+  item.speciesId = speciesId;
+  item.action = action;
+  item.frame = frame.kindName;
+  render();
+  commitHistory();
 }
 
 async function loadBase(file) {
@@ -376,6 +563,7 @@ async function loadBase(file) {
     width: loaded.img.naturalWidth,
     height: loaded.img.naturalHeight
   };
+  state.baseTrim = detectTrimBox(loaded.img);
   const detectedScale = autoSourceScaleForImage(state.base.width, state.base.height);
   const targetWidth = Math.max(16, Math.round(state.base.width / detectedScale));
   const targetHeight = Math.max(16, Math.round(state.base.height / detectedScale));
@@ -390,6 +578,7 @@ async function loadBase(file) {
   updateBaseImageMeta();
   setStatus(`Reference loaded: ${file.name} (${state.base.width}x${state.base.height}), sampled to ${state.width}x${state.height}, source scale ${detectedScale}x.`);
   render();
+  commitHistory();
 }
 
 async function addFurnitureFiles(files) {
@@ -424,6 +613,7 @@ async function addFurnitureFiles(files) {
   refreshList();
   refreshSelectedPanel();
   render();
+  commitHistory();
 }
 
 function selectedItem() {
@@ -465,7 +655,29 @@ function drawBase() {
   const img = state.base.img;
   ctx.imageSmoothingEnabled = false;
   ctx.globalAlpha = state.baseOpacity;
-  ctx.drawImage(img, 0, 0, state.editWidth, state.editHeight);
+
+  const sw = img.naturalWidth;
+  const sh = img.naturalHeight;
+  const dw = state.editWidth;
+  const dh = state.editHeight;
+
+  if (state.baseFit === "stretch") {
+    ctx.drawImage(img, 0, 0, dw, dh);
+  } else if (state.baseFit === "cover") {
+    const scale = Math.max(dw / sw, dh / sh);
+    const sWidth = dw / scale;
+    const sHeight = dh / scale;
+    const sx = (sw - sWidth) / 2;
+    const sy = (sh - sHeight) / 2;
+    ctx.drawImage(img, sx, sy, sWidth, sHeight, 0, 0, dw, dh);
+  } else {
+    const scale = Math.min(dw / sw, dh / sh);
+    const sWidth = dw / scale;
+    const sHeight = dh / scale;
+    const sx = (sw - sWidth) / 2;
+    const sy = (sh - sHeight) / 2;
+    ctx.drawImage(img, sx, sy, sWidth, sHeight, 0, 0, dw, dh);
+  }
   ctx.globalAlpha = 1;
 }
 
@@ -609,6 +821,29 @@ function drawNightOverlay() {
   ctx.restore();
 }
 
+function drawGrid() {
+  if (!state.showGrid) return;
+  ctx.save();
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.10)";
+  ctx.lineWidth = 1;
+  const step = 8;
+  for (let x = 0; x <= state.width; x += step) {
+    const editX = x * editScaleX();
+    ctx.beginPath();
+    ctx.moveTo(editX + 0.5, 0);
+    ctx.lineTo(editX + 0.5, state.editHeight);
+    ctx.stroke();
+  }
+  for (let y = 0; y <= state.height; y += step) {
+    const editY = y * editScaleY();
+    ctx.beginPath();
+    ctx.moveTo(0, editY + 0.5);
+    ctx.lineTo(state.editWidth, editY + 0.5);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawGuides() {
   if (!state.guides.show) return;
   ctx.save();
@@ -681,6 +916,8 @@ function render() {
   state.night.tint = Number(document.getElementById("nightTint").value) || 0;
   state.night.darken = Number(document.getElementById("nightDarken").value) || 0;
   state.night.lamp = Number(document.getElementById("lampStrength").value) || 0;
+  state.showGrid = document.getElementById("showGrid").checked;
+  state.snapToGrid = document.getElementById("snapToGrid").checked;
 
   if (canvas.width !== state.editWidth || canvas.height !== state.editHeight) {
     canvas.width = state.editWidth;
@@ -691,10 +928,13 @@ function render() {
   drawBase();
   drawItems();
   drawNightOverlay();
+  drawGrid();
   drawFacesOverlay();
   drawGuides();
   drawSelection();
   renderPreview();
+  updateWorkflowStatus();
+  updateSharedPointHint();
 }
 
 function refreshList() {
@@ -702,11 +942,14 @@ function refreshList() {
   for (const item of sortedItems()) {
     const el = document.createElement("div");
     el.className = `asset-item${item.id === state.selectedId ? " selected" : ""}`;
+    const meta = item.source === "project_sprite"
+      ? `${item.action || "-"}/${item.frame || "-"}, x ${Math.round(item.x)}, y ${Math.round(item.y)}, z ${item.z}`
+      : `x ${Math.round(item.x)}, y ${Math.round(item.y)}, z ${item.z}, ${Math.round(item.scale * 100)}%`;
     el.innerHTML = `
       <img class="asset-thumb" alt="" src="${item.dataUrl}">
       <div>
         <div class="asset-name">${escapeHtml(item.name)}</div>
-        <div class="asset-meta">x ${Math.round(item.x)}, y ${Math.round(item.y)}, z ${item.z}, ${Math.round(item.scale * 100)}%</div>
+        <div class="asset-meta">${escapeHtml(meta)}</div>
       </div>
     `;
     el.addEventListener("click", () => {
@@ -714,6 +957,8 @@ function refreshList() {
       state.selectedFaceId = null;
       state.selectedPointIndex = null;
       state.selectedPointId = null;
+      state.editMode = "furniture";
+      updateEditModeButtons();
       refreshList();
       refreshSelectedPanel();
       refreshFaceList();
@@ -723,19 +968,96 @@ function refreshList() {
     assetList.appendChild(el);
   }
   if (state.items.length === 0) {
-    assetList.innerHTML = '<div class="hint">No furniture loaded.</div>';
+    assetList.innerHTML = '<div class="hint">No furniture or sprite previews loaded.</div>';
   }
+}
+
+function buildSpriteSelectorHTML(item) {
+  const catalog = projectSpriteCatalog();
+  const entry = catalog.find((e) => e.speciesId === item.speciesId) || catalog[0];
+  const speciesOptions = catalog.map((e) =>
+    `<option value="${e.speciesId}"${e.speciesId === item.speciesId ? " selected" : ""}>${escapeHtml(e.name)}</option>`
+  ).join("");
+
+  const actions = entry?.actions || {};
+  const actionOptions = Object.keys(actions).map((action) =>
+    `<option value="${escapeAttr(action)}"${action === item.action ? " selected" : ""}>${escapeHtml(action)}</option>`
+  ).join("");
+
+  const frames = actions[item.action] || [];
+  const frameOptions = frames.map((frame) =>
+    `<option value="${escapeAttr(frame.path)}"${frame.kindName === item.frame ? " selected" : ""}>${escapeHtml(frame.kindName)}</option>`
+  ).join("");
+
+  return `
+    <label class="field">Species<select id="spriteItemSpecies">${speciesOptions}</select></label>
+    <div class="row">
+      <label class="field">Action<select id="spriteItemAction">${actionOptions}</select></label>
+      <label class="field">Frame<select id="spriteItemFrame">${frameOptions}</select></label>
+    </div>
+  `;
+}
+
+function bindSpriteSelectorInputs(item) {
+  const speciesInput = document.getElementById("spriteItemSpecies");
+  const actionInput = document.getElementById("spriteItemAction");
+  const frameInput = document.getElementById("spriteItemFrame");
+  if (!speciesInput || !actionInput || !frameInput) return;
+
+  function rebuildActionOptions() {
+    const entry = projectSpriteCatalog().find((e) => e.speciesId === Number(speciesInput.value));
+    const actions = entry?.actions || {};
+    actionInput.innerHTML = Object.keys(actions).map((action) =>
+      `<option value="${escapeAttr(action)}">${escapeHtml(action)}</option>`
+    ).join("");
+    rebuildFrameOptions();
+  }
+
+  function rebuildFrameOptions() {
+    const entry = projectSpriteCatalog().find((e) => e.speciesId === Number(speciesInput.value));
+    const frames = entry?.actions?.[actionInput.value] || [];
+    frameInput.innerHTML = frames.map((frame) =>
+      `<option value="${escapeAttr(frame.path)}">${escapeHtml(frame.kindName)}</option>`
+    ).join("");
+  }
+
+  speciesInput.addEventListener("change", () => {
+    rebuildActionOptions();
+    updateProjectSpriteFrame(item, Number(speciesInput.value), actionInput.value, frameInput.value).then(() => {
+      refreshList();
+      refreshSelectedPanel();
+    });
+  });
+  actionInput.addEventListener("change", () => {
+    rebuildFrameOptions();
+    updateProjectSpriteFrame(item, Number(speciesInput.value), actionInput.value, frameInput.value).then(() => {
+      refreshList();
+      refreshSelectedPanel();
+    });
+  });
+  frameInput.addEventListener("change", () => {
+    updateProjectSpriteFrame(item, Number(speciesInput.value), actionInput.value, frameInput.value).then(() => {
+      refreshList();
+      refreshSelectedPanel();
+    });
+  });
 }
 
 function refreshSelectedPanel() {
   const item = selectedItem();
   if (!item) {
-    selectedPanel.innerHTML = '<div class="hint">Select furniture to edit transform and layer values.</div>';
+    selectedPanel.innerHTML = '<div class="hint">Select furniture or a sprite preview to edit transform and layer values.</div>';
     return;
   }
 
-  selectedPanel.innerHTML = `
-    <label class="field">Name<input id="itemName" type="text" value="${escapeAttr(item.name)}"></label>
+  const isSprite = item.source === "project_sprite";
+  let html = `<label class="field">Name<input id="itemName" type="text" value="${escapeAttr(item.name)}"></label>`;
+
+  if (isSprite) {
+    html += buildSpriteSelectorHTML(item);
+  }
+
+  html += `
     <div class="row">
       <label class="field">X<input id="itemX" type="number" value="${Math.round(item.x)}"></label>
       <label class="field">Y<input id="itemY" type="number" value="${Math.round(item.y)}"></label>
@@ -752,12 +1074,19 @@ function refreshSelectedPanel() {
     <div class="hint">Source: ${escapeHtml(item.fileName)} (${item.sourceWidth}x${item.sourceHeight}) -> target ${Math.round(item.sourceWidth * item.scale)}x${Math.round(item.sourceHeight * item.scale)}</div>
   `;
 
+  selectedPanel.innerHTML = html;
+
+  if (isSprite) {
+    bindSpriteSelectorInputs(item);
+  }
+
   const bind = (id, fn) => {
     const input = document.getElementById(id);
     input.addEventListener("input", () => {
       fn(input);
       refreshList();
       render();
+      commitHistory();
     });
   };
   bind("itemName", (input) => { item.name = input.value; });
@@ -770,35 +1099,235 @@ function refreshSelectedPanel() {
   bind("itemVisible", (input) => { item.visible = input.checked; });
 }
 
-function refreshFaceList() {
-  faceList.innerHTML = "";
-  for (const face of state.faces) {
-    const el = document.createElement("div");
-    el.className = `face-item${face.id === state.selectedFaceId ? " selected" : ""}`;
-    el.innerHTML = `
-      <div class="face-color" style="background:${faceStrokeColor(face.type)}"></div>
-      <div>
-        <div class="asset-name">${escapeHtml(face.id)}</div>
-        <div class="asset-meta">${escapeHtml(face.type)}, ${face.points.length} points</div>
+function pointRowsHtml(points, selectedPointId) {
+  return points.map((point, index) => `
+    <div class="point-row${point.id === selectedPointId ? " selected" : ""}" data-point-index="${index}">
+      <button class="point-select" type="button" data-point-index="${index}">${index + 1}</button>
+      <label class="field">X<input class="point-x" data-point-index="${index}" type="number" value="${Math.round(point.x)}"></label>
+      <label class="field">Y<input class="point-y" data-point-index="${index}" type="number" value="${Math.round(point.y)}"></label>
+    </div>
+  `).join("");
+}
+
+function faceDetailHtml(face) {
+  return `
+    <div class="face-detail">
+      <label class="field">
+        Type
+        <select class="face-type-select">
+          <option value="floor" ${face.type === "floor" ? "selected" : ""}>floor</option>
+          <option value="wall" ${face.type === "wall" ? "selected" : ""}>wall</option>
+        </select>
+      </label>
+      <div class="toolbar">
+        <button class="insert-point" type="button">Add point</button>
+        <button class="delete-point danger" type="button">Delete point</button>
       </div>
-    `;
-        el.addEventListener("click", () => {
-          state.selectedFaceId = face.id;
-          state.selectedPointIndex = null;
-          state.selectedPointId = null;
-          state.selectedId = null;
-          state.editMode = "shape";
-      updateEditModeButtons();
+      <div class="point-list">
+        ${pointRowsHtml(face.points, state.selectedPointId)}
+      </div>
+      <div class="hint">${escapeHtml(face.id)} source points. Export scales these to game pixels.</div>
+    </div>
+  `;
+}
+
+function draftDetailHtml() {
+  return `
+    <div class="face-detail">
+      <div class="hint">Click the first point on the canvas to close this draft face.</div>
+      <div class="toolbar">
+        <button class="delete-point danger" type="button">Delete point</button>
+      </div>
+      <div class="point-list">
+        ${pointRowsHtml(state.draftPoints, state.selectedPointId)}
+      </div>
+      <div class="hint">Draft points can be dragged, edited, deleted, or reused with closed-face points.</div>
+    </div>
+  `;
+}
+
+function selectFaceItem(face, options = {}) {
+  state.selectedFaceId = face.id;
+  state.selectedPointIndex = null;
+  state.selectedPointId = null;
+  state.selectedId = null;
+  state.editMode = "shape";
+  if (options.expand !== false) state.expandedFaceIds.add(face.id);
+  updateEditModeButtons();
+  refreshFaceList();
+  refreshList();
+  refreshSelectedPanel();
+  render();
+}
+
+function selectDraftItem(options = {}) {
+  state.selectedFaceId = null;
+  state.selectedId = null;
+  state.editMode = "shape";
+  if (state.selectedPointIndex == null && state.draftPoints.length) selectDraftPoint(0);
+  if (options.expand !== false) state.draftExpanded = true;
+  updateEditModeButtons();
+  refreshFaceList();
+  refreshList();
+  refreshSelectedPanel();
+  render();
+}
+
+function toggleFaceExpanded(face) {
+  if (state.expandedFaceIds.has(face.id)) {
+    state.expandedFaceIds.delete(face.id);
+  } else {
+    state.expandedFaceIds.add(face.id);
+  }
+  selectFaceItem(face, { expand: false });
+}
+
+function toggleDraftExpanded() {
+  state.draftExpanded = !state.draftExpanded;
+  selectDraftItem({ expand: false });
+}
+
+function bindFaceDetailControls(face, root) {
+  const detail = root.querySelector(".face-detail");
+  if (!detail) return;
+  detail.addEventListener("click", (event) => event.stopPropagation());
+
+  detail.querySelector(".face-type-select").addEventListener("input", (event) => {
+    face.type = event.target.value;
+    refreshFaceList();
+    render();
+    commitHistory();
+  });
+  detail.querySelector(".insert-point").addEventListener("click", insertPointAfterSelected);
+  detail.querySelector(".delete-point").addEventListener("click", deleteSelectedPoint);
+
+  for (let index = 0; index < face.points.length; ++index) {
+    detail.querySelector(`.point-select[data-point-index="${index}"]`).addEventListener("click", () => {
+      selectPoint(index);
+    });
+    detail.querySelector(`.point-x[data-point-index="${index}"]`).addEventListener("input", (event) => {
+      face.points[index].x = Math.round(Number(event.target.value) || 0);
+      selectPointInFace(face, index);
+      render();
+      commitHistory();
+    });
+    detail.querySelector(`.point-y[data-point-index="${index}"]`).addEventListener("input", (event) => {
+      face.points[index].y = Math.round(Number(event.target.value) || 0);
+      selectPointInFace(face, index);
+      render();
+      commitHistory();
+    });
+  }
+}
+
+function bindDraftDetailControls(root) {
+  const detail = root.querySelector(".face-detail");
+  if (!detail) return;
+  detail.addEventListener("click", (event) => event.stopPropagation());
+  detail.querySelector(".delete-point").addEventListener("click", deleteSelectedPoint);
+
+  for (let index = 0; index < state.draftPoints.length; ++index) {
+    detail.querySelector(`.point-select[data-point-index="${index}"]`).addEventListener("click", () => {
+      selectDraftPoint(index);
       refreshFaceList();
-      refreshSelectedFacePanel();
-      refreshList();
-      refreshSelectedPanel();
       render();
     });
+    detail.querySelector(`.point-x[data-point-index="${index}"]`).addEventListener("input", (event) => {
+      state.draftPoints[index].x = Math.round(Number(event.target.value) || 0);
+      selectDraftPoint(index);
+      render();
+      commitHistory();
+    });
+    detail.querySelector(`.point-y[data-point-index="${index}"]`).addEventListener("input", (event) => {
+      state.draftPoints[index].y = Math.round(Number(event.target.value) || 0);
+      selectDraftPoint(index);
+      render();
+      commitHistory();
+    });
+  }
+}
+
+function deleteFaceById(faceId) {
+  const face = state.faces.find((entry) => entry.id === faceId);
+  if (!face) return;
+  if (!window.confirm(`Delete ${face.id}?`)) return;
+  state.faces = state.faces.filter((entry) => entry.id !== face.id);
+  state.expandedFaceIds.delete(face.id);
+  if (state.selectedFaceId === face.id) {
+    state.selectedFaceId = null;
+    state.selectedPointIndex = null;
+    state.selectedPointId = null;
+  }
+  pruneUnusedPoints();
+  refreshFaceList();
+  render();
+  commitHistory();
+}
+
+function refreshFaceList() {
+  faceList.innerHTML = "";
+  const validFaceIds = new Set(state.faces.map((face) => face.id));
+  for (const faceId of [...state.expandedFaceIds]) {
+    if (!validFaceIds.has(faceId)) state.expandedFaceIds.delete(faceId);
+  }
+  for (const face of state.faces) {
+    const selected = face.id === state.selectedFaceId;
+    const expanded = state.expandedFaceIds.has(face.id);
+    const el = document.createElement("div");
+    el.className = `face-item${selected ? " selected" : ""}`;
+    el.innerHTML = `
+      <div class="face-summary">
+        <div class="face-color" style="background:${faceStrokeColor(face.type)}"></div>
+        <div>
+          <div class="asset-name">${escapeHtml(face.id)}</div>
+          <div class="asset-meta">${escapeHtml(face.type)}, ${face.points.length} points</div>
+        </div>
+        <button class="face-toggle" type="button" title="${expanded ? "Collapse points" : "Expand points"}">${expanded ? "^" : "v"}</button>
+        <button class="face-delete danger" type="button" title="Delete face">x</button>
+      </div>
+      ${expanded ? faceDetailHtml(face) : ""}
+    `;
+    el.querySelector(".face-summary").addEventListener("click", () => selectFaceItem(face));
+    el.querySelector(".face-toggle").addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleFaceExpanded(face);
+    });
+    el.querySelector(".face-delete").addEventListener("click", (event) => {
+      event.stopPropagation();
+      deleteFaceById(face.id);
+    });
+    if (expanded) bindFaceDetailControls(face, el);
     faceList.appendChild(el);
   }
-  if (state.faces.length === 0) {
-    faceList.innerHTML = '<div class="hint">No closed faces yet.</div>';
+
+  if (state.draftPoints.length > 0) {
+    const selected = !state.selectedFaceId;
+    const expanded = state.draftExpanded;
+    const el = document.createElement("div");
+    el.className = `face-item draft${selected ? " selected" : ""}`;
+    el.innerHTML = `
+      <div class="face-summary">
+        <div class="face-color" style="background:#ffffff"></div>
+        <div>
+          <div class="asset-name">Draft points</div>
+          <div class="asset-meta">${state.draftPoints.length} unclosed point(s)</div>
+        </div>
+        <button class="face-toggle" type="button" title="${expanded ? "Collapse points" : "Expand points"}">${expanded ? "^" : "v"}</button>
+        <div></div>
+      </div>
+      ${expanded ? draftDetailHtml() : ""}
+    `;
+    el.querySelector(".face-summary").addEventListener("click", () => selectDraftItem());
+    el.querySelector(".face-toggle").addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleDraftExpanded();
+    });
+    if (expanded) bindDraftDetailControls(el);
+    faceList.appendChild(el);
+  }
+
+  if (state.faces.length === 0 && state.draftPoints.length === 0) {
+    faceList.innerHTML = '<div class="hint">No closed faces or draft points yet.</div>';
   }
 }
 
@@ -826,6 +1355,7 @@ function insertPointAfterSelected() {
   refreshFaceList();
   refreshSelectedFacePanel();
   render();
+  commitHistory();
 }
 
 function deleteSelectedPoint() {
@@ -838,6 +1368,7 @@ function deleteSelectedPoint() {
     refreshFaceList();
     refreshSelectedFacePanel();
     render();
+    commitHistory();
     return;
   }
   if (state.selectedPointIndex == null || state.selectedPointIndex < 0 ||
@@ -851,98 +1382,13 @@ function deleteSelectedPoint() {
   refreshFaceList();
   refreshSelectedFacePanel();
   render();
+  commitHistory();
 }
 
 function refreshSelectedFacePanel() {
-  const face = selectedFace();
-  if (!face) {
-    if (!state.draftPoints.length) {
-      selectedFacePanel.innerHTML = '<div class="hint">Select or draw a closed face.</div>';
-      return;
-    }
-    selectedFacePanel.innerHTML = `
-      <div class="hint">Draft: ${state.draftPoints.length} point(s). Click the first point on the canvas to close.</div>
-      <div class="toolbar">
-        <button id="deletePoint" class="danger" type="button">Delete point</button>
-      </div>
-      <div class="point-list">
-        ${state.draftPoints.map((point, index) => `
-          <div class="point-row${point.id === state.selectedPointId ? " selected" : ""}" data-point-index="${index}">
-            <button class="point-select" type="button" data-point-index="${index}">${index + 1}</button>
-            <label class="field">X<input id="pointX${index}" type="number" value="${Math.round(point.x)}"></label>
-            <label class="field">Y<input id="pointY${index}" type="number" value="${Math.round(point.y)}"></label>
-          </div>
-        `).join("")}
-      </div>
-      <div class="hint">Draft points can be dragged, deleted, or reused with closed-face points.</div>
-    `;
-    selectedFacePanel.querySelector("#deletePoint").addEventListener("click", deleteSelectedPoint);
-    for (let index = 0; index < state.draftPoints.length; ++index) {
-      selectedFacePanel.querySelector(`.point-select[data-point-index="${index}"]`).addEventListener("click", () => {
-        selectDraftPoint(index);
-        refreshSelectedFacePanel();
-        render();
-      });
-      selectedFacePanel.querySelector(`#pointX${index}`).addEventListener("input", (event) => {
-        state.draftPoints[index].x = Math.round(Number(event.target.value) || 0);
-        selectDraftPoint(index);
-        render();
-      });
-      selectedFacePanel.querySelector(`#pointY${index}`).addEventListener("input", (event) => {
-        state.draftPoints[index].y = Math.round(Number(event.target.value) || 0);
-        selectDraftPoint(index);
-        render();
-      });
-    }
-    return;
-  }
-
-  selectedFacePanel.innerHTML = `
-    <label class="field">
-      Type
-      <select id="faceType">
-        <option value="floor" ${face.type === "floor" ? "selected" : ""}>floor</option>
-        <option value="wall" ${face.type === "wall" ? "selected" : ""}>wall</option>
-      </select>
-    </label>
-    <div class="toolbar">
-      <button id="insertPoint" type="button">Add point</button>
-      <button id="deletePoint" class="danger" type="button">Delete point</button>
-    </div>
-    <div class="point-list">
-      ${face.points.map((point, index) => `
-        <div class="point-row${point.id === state.selectedPointId ? " selected" : ""}" data-point-index="${index}">
-          <button class="point-select" type="button" data-point-index="${index}">${index + 1}</button>
-          <label class="field">X<input id="pointX${index}" type="number" value="${Math.round(point.x)}"></label>
-          <label class="field">Y<input id="pointY${index}" type="number" value="${Math.round(point.y)}"></label>
-        </div>
-      `).join("")}
-    </div>
-    <div class="hint">${escapeHtml(face.id)} source points. Export scales these to ${state.width}x${state.height}.</div>
-  `;
-
-  document.getElementById("faceType").addEventListener("input", (event) => {
-    face.type = event.target.value;
-    refreshFaceList();
-    render();
-  });
-  document.getElementById("insertPoint").addEventListener("click", insertPointAfterSelected);
-  document.getElementById("deletePoint").addEventListener("click", deleteSelectedPoint);
-  for (let index = 0; index < face.points.length; ++index) {
-    selectedFacePanel.querySelector(`.point-select[data-point-index="${index}"]`).addEventListener("click", () => {
-      selectPoint(index);
-    });
-    selectedFacePanel.querySelector(`#pointX${index}`).addEventListener("input", (event) => {
-      face.points[index].x = Math.round(Number(event.target.value) || 0);
-      selectPointInFace(face, index);
-      render();
-    });
-    selectedFacePanel.querySelector(`#pointY${index}`).addEventListener("input", (event) => {
-      face.points[index].y = Math.round(Number(event.target.value) || 0);
-      selectPointInFace(face, index);
-      render();
-    });
-  }
+  selectedFacePanel.innerHTML = "";
+  selectedFacePanel.hidden = true;
+  refreshFaceList();
 }
 
 function pointerToCanvas(event) {
@@ -1025,6 +1471,7 @@ function closeDraftFace() {
   state.selectedFaceId = face.id;
   state.selectedPointIndex = 0;
   state.selectedPointId = face.points[0].id;
+  state.expandedFaceIds.add(face.id);
   state.draftPoints = [];
   state.drawingFace = false;
   setStatus(`Closed ${face.id}. Set its type on the right.`);
@@ -1090,13 +1537,13 @@ function handleShapePointerDown(event) {
 
   if (!state.drawingFace && state.draftPoints.length === 0) {
     const face = hitTestFace(point.x, point.y);
-        if (face) {
-          state.selectedFaceId = face.id;
-          state.selectedPointIndex = null;
-          state.selectedPointId = null;
-          state.selectedId = null;
-          refreshFaceList();
-          refreshSelectedFacePanel();
+    if (face) {
+      state.selectedFaceId = face.id;
+      state.selectedPointIndex = null;
+      state.selectedPointId = null;
+      state.selectedId = null;
+      refreshFaceList();
+      refreshSelectedFacePanel();
       render();
       return;
     }
@@ -1112,31 +1559,252 @@ function handleShapePointerDown(event) {
   refreshFaceList();
   refreshSelectedFacePanel();
   render();
+  commitHistory();
 }
 
 function updateModeButtons() {
   document.getElementById("dayMode").classList.toggle("active", state.mode === "day");
   document.getElementById("nightMode").classList.toggle("active", state.mode === "night");
+  const nightPanel = document.getElementById("nightOverlayPanel");
+  if (nightPanel) nightPanel.hidden = state.mode !== "night";
 }
 
 function updateEditModeButtons() {
-  document.getElementById("furnitureMode").classList.toggle("active", state.editMode === "furniture");
-  document.getElementById("shapeMode").classList.toggle("active", state.editMode === "shape");
+  const isFurniture = state.editMode === "furniture";
+  document.getElementById("furnitureMode").classList.toggle("active", isFurniture);
+  document.getElementById("shapeMode").classList.toggle("active", !isFurniture);
+
+  document.getElementById("duplicateItem").disabled = !isFurniture;
+  document.getElementById("deleteItem").disabled = !isFurniture;
 }
 
 function updatePreviewZoom() {
   previewCanvas.classList.toggle("zoomed", state.previewZoomed);
 }
 
-function exportLayoutObject() {
+function updateUndoButtons() {
+  document.getElementById("undoAction").disabled = state.historyIndex <= 0;
+  document.getElementById("redoAction").disabled = state.historyIndex >= state.history.length - 1;
+}
+
+function takeSnapshot() {
+  const pointMap = new Map();
+  const copyPoint = (p) => {
+    if (!p) return p;
+    if (pointMap.has(p.id)) return pointMap.get(p.id);
+    const copy = { ...p };
+    pointMap.set(p.id, copy);
+    return copy;
+  };
+
   return {
-    version: 1,
+    width: state.width,
+    height: state.height,
+    editWidth: state.editWidth,
+    editHeight: state.editHeight,
+    mode: state.mode,
+    base: state.base ? { ...state.base } : null,
+    baseFit: state.baseFit,
+    baseOpacity: state.baseOpacity,
+    sourceScale: state.sourceScale,
+    baseTrim: state.baseTrim ? { ...state.baseTrim } : null,
+    furnitureImportMode: state.furnitureImportMode,
+    aspectLocked: state.aspectLocked,
+    aspectRatio: state.aspectRatio,
+    items: state.items.map((item) => ({ ...item })),
+    selectedId: state.selectedId,
+    nextId: state.nextId,
+    points: state.points.map(copyPoint),
+    faces: state.faces.map((face) => ({
+      ...face,
+      points: face.points.map(copyPoint)
+    })),
+    selectedFaceId: state.selectedFaceId,
+    selectedPointIndex: state.selectedPointIndex,
+    selectedPointId: state.selectedPointId,
+    expandedFaceIds: [...state.expandedFaceIds],
+    draftExpanded: state.draftExpanded,
+    nextFaceId: state.nextFaceId,
+    nextPointId: state.nextPointId,
+    draftPoints: state.draftPoints.map(copyPoint),
+    drawingFace: state.drawingFace,
+    guides: { ...state.guides },
+    night: { ...state.night },
+    showGrid: state.showGrid,
+    snapToGrid: state.snapToGrid
+  };
+}
+
+function restoreSnapshot(snapshot) {
+  const pointMap = new Map();
+  for (const p of snapshot.points || []) {
+    pointMap.set(p.id, { ...p });
+  }
+  const restorePoint = (p) => pointMap.get(p?.id);
+
+  state.width = snapshot.width;
+  state.height = snapshot.height;
+  state.editWidth = snapshot.editWidth;
+  state.editHeight = snapshot.editHeight;
+  state.mode = snapshot.mode;
+  state.base = snapshot.base;
+  state.baseFit = snapshot.baseFit;
+  state.baseOpacity = snapshot.baseOpacity;
+  state.sourceScale = snapshot.sourceScale;
+  state.baseTrim = snapshot.baseTrim ? { ...snapshot.baseTrim } : null;
+  state.furnitureImportMode = snapshot.furnitureImportMode;
+  state.aspectLocked = snapshot.aspectLocked;
+  state.aspectRatio = snapshot.aspectRatio;
+  state.items = (snapshot.items || []).map((item) => ({ ...item }));
+  state.selectedId = snapshot.selectedId;
+  state.nextId = snapshot.nextId;
+  state.points = Array.from(pointMap.values());
+  state.faces = (snapshot.faces || []).map((face) => ({
+    ...face,
+    points: face.points.map(restorePoint).filter(Boolean)
+  }));
+  state.selectedFaceId = snapshot.selectedFaceId;
+  state.selectedPointIndex = snapshot.selectedPointIndex;
+  state.selectedPointId = snapshot.selectedPointId;
+  state.expandedFaceIds = new Set(snapshot.expandedFaceIds || []);
+  state.draftExpanded = snapshot.draftExpanded ?? true;
+  state.nextFaceId = snapshot.nextFaceId;
+  state.nextPointId = snapshot.nextPointId;
+  state.draftPoints = (snapshot.draftPoints || []).map(restorePoint).filter(Boolean);
+  state.drawingFace = snapshot.drawingFace;
+  state.guides = { ...snapshot.guides };
+  state.night = { ...snapshot.night };
+  state.showGrid = snapshot.showGrid;
+  state.snapToGrid = snapshot.snapToGrid;
+}
+
+function snapshotCompareKey(snapshot) {
+  return JSON.stringify(snapshot, (key, value) => {
+    if (key === "img" || key === "dataUrl") return undefined;
+    return value;
+  });
+}
+
+function snapshotsEqual(a, b) {
+  if (!a || !b) return false;
+  return snapshotCompareKey(a) === snapshotCompareKey(b);
+}
+
+function commitHistory() {
+  const snapshot = takeSnapshot();
+  const current = state.history[state.historyIndex];
+  if (snapshotsEqual(current, snapshot)) {
+    updateUndoButtons();
+    return;
+  }
+  state.history = state.history.slice(0, state.historyIndex + 1);
+  state.history.push(snapshot);
+  if (state.history.length > state.maxHistory) {
+    state.history.shift();
+  }
+  state.historyIndex = state.history.length - 1;
+  updateUndoButtons();
+}
+
+function undo() {
+  if (state.historyIndex <= 0) return;
+  state.historyIndex -= 1;
+  restoreSnapshot(state.history[state.historyIndex]);
+  syncInputsFromState();
+  refreshList();
+  refreshSelectedPanel();
+  refreshFaceList();
+  refreshSelectedFacePanel();
+  updateEditModeButtons();
+  render();
+  updateUndoButtons();
+  setStatus("Undone.");
+}
+
+function redo() {
+  if (state.historyIndex >= state.history.length - 1) return;
+  state.historyIndex += 1;
+  restoreSnapshot(state.history[state.historyIndex]);
+  syncInputsFromState();
+  refreshList();
+  refreshSelectedPanel();
+  refreshFaceList();
+  refreshSelectedFacePanel();
+  updateEditModeButtons();
+  render();
+  updateUndoButtons();
+  setStatus("Redone.");
+}
+
+function syncInputsFromState() {
+  document.getElementById("canvasW").value = state.width;
+  document.getElementById("canvasH").value = state.height;
+  document.getElementById("aspectLock").checked = state.aspectLocked;
+  document.getElementById("baseOpacity").value = Math.round(state.baseOpacity * 100);
+  document.getElementById("sourceScale").value = state.sourceScale;
+  document.getElementById("furnitureImportMode").value = state.furnitureImportMode;
+  document.getElementById("baseFit").value = state.baseFit;
+  document.getElementById("showGuides").checked = state.guides.show;
+  document.getElementById("showGrid").checked = state.showGrid;
+  document.getElementById("snapToGrid").checked = state.snapToGrid;
+  document.getElementById("spriteX").value = state.guides.spriteX;
+  document.getElementById("spriteY").value = state.guides.spriteY;
+  document.getElementById("spriteW").value = state.guides.spriteW;
+  document.getElementById("spriteH").value = state.guides.spriteH;
+  document.getElementById("nightTint").value = state.night.tint;
+  document.getElementById("nightDarken").value = state.night.darken;
+  document.getElementById("lampStrength").value = state.night.lamp;
+  updateBaseImageMeta();
+  updateModeButtons();
+  updateEditModeButtons();
+}
+
+function updateWorkflowStatus() {
+  if (!state.base) {
+    setWorkflowStatus("Step 1/4: Drop a reference image to start.");
+    return;
+  }
+  if (state.faces.length === 0) {
+    setWorkflowStatus("Step 2/4: Switch to Shape mode and trace wall/floor faces.");
+    return;
+  }
+  if (state.items.length === 0) {
+    setWorkflowStatus("Step 3/4: Switch to Furniture mode and import PNG furniture.");
+    return;
+  }
+  setWorkflowStatus("Step 4/4: Tune preview, add sprites, and export.");
+}
+
+function sharedPointFaceCount(point) {
+  if (!point) return 0;
+  let count = 0;
+  if (state.draftPoints.some((entry) => entry.id === point.id)) count += 1;
+  for (const face of state.faces) {
+    if (face.points.some((entry) => entry.id === point.id)) count += 1;
+  }
+  return count;
+}
+
+function updateSharedPointHint() {
+  const point = selectedPoint();
+  if (!point || state.editMode !== "shape") return;
+  const count = sharedPointFaceCount(point);
+  if (count > 1) {
+    setWorkflowStatus(`Shared point used by ${count} faces/drafts. Dragging affects all of them.`);
+  }
+}
+
+function exportLayoutObject() {
+  const prepared = preparedRoomMetrics();
+  return {
+    version: 2,
     canvas: { width: state.width, height: state.height },
     base: {
       fileName: state.base ? state.base.name : "",
       fit: state.baseFit,
       sourceWidth: state.base ? state.base.width : 0,
-      sourceHeight: state.base ? state.base.height : 0
+      sourceHeight: state.base ? state.base.height : 0,
+      trim: { ...prepared.trim }
     },
     sourceScale: Number(state.sourceScale.toFixed(4)),
     baseOpacity: Number(state.baseOpacity.toFixed(4)),
@@ -1161,6 +1829,7 @@ function exportLayoutObject() {
       layer: item.layer,
       source: item.source || "furniture",
       speciesId: item.speciesId || 0,
+      action: item.action || "",
       frame: item.frame || "",
       sourceWidth: item.sourceWidth,
       sourceHeight: item.sourceHeight
@@ -1169,9 +1838,14 @@ function exportLayoutObject() {
 }
 
 function exportRoomGeometryObject() {
+  const prepared = preparedRoomMetrics();
   return {
     version: 2,
     room: {
+      width: prepared.width,
+      height: prepared.height
+    },
+    viewport: {
       width: state.width,
       height: state.height
     },
@@ -1179,10 +1853,18 @@ function exportRoomGeometryObject() {
       width: state.editWidth,
       height: state.editHeight
     },
+    prepared: {
+      width: prepared.width,
+      height: prepared.height,
+      y: prepared.y,
+      scale: Number(prepared.scale.toFixed(8)),
+      trim: { ...prepared.trim }
+    },
     reference: {
       fileName: state.base ? state.base.name : "",
       sourceWidth: state.base ? state.base.width : 0,
       sourceHeight: state.base ? state.base.height : 0,
+      trim: { ...prepared.trim },
       fit: state.baseFit,
       opacity: Number(state.baseOpacity.toFixed(4))
     },
@@ -1240,12 +1922,21 @@ async function importLayout(file) {
   }
   if (layout.roomGeometry) {
     const geometry = layout.roomGeometry;
-    if (geometry.room) {
-      document.getElementById("canvasW").value = geometry.room.width || layout.canvas?.width || 240;
-      document.getElementById("canvasH").value = geometry.room.height || layout.canvas?.height || 135;
+    const viewportWidth = Number(geometry.viewport?.width || layout.canvas?.width || state.width || 240);
+    const viewportHeight = Number(geometry.viewport?.height || layout.canvas?.height || state.height || 135);
+    document.getElementById("canvasW").value = viewportWidth;
+    document.getElementById("canvasH").value = viewportHeight;
+    const importedTrim = coerceTrimBox(geometry.prepared?.trim || geometry.reference?.trim || layout.base?.trim);
+    if (importedTrim) {
+      state.baseTrim = importedTrim;
+    } else if (!state.base) {
+      state.baseTrim = null;
     }
-    const roomWidth = Number(geometry.room?.width || layout.canvas?.width || state.width || 240);
-    const roomHeight = Number(geometry.room?.height || layout.canvas?.height || state.height || 135);
+    const roomWidth = Number(geometry.room?.width || viewportWidth);
+    const roomHeight = Number(geometry.room?.height || viewportHeight);
+    const preparedScale = Number(geometry.prepared?.scale) ||
+      (importedTrim ? roomWidth / Math.max(1, importedTrim.width) : 0);
+    const preparedY = Number(geometry.prepared?.y) || 0;
     state.editWidth = Number(geometry.edit?.width || layout.base?.sourceWidth || state.base?.width || roomWidth);
     state.editHeight = Number(geometry.edit?.height || layout.base?.sourceHeight || state.base?.height || roomHeight);
     const pointByCoord = new Map();
@@ -1258,6 +1949,9 @@ async function importLayout(file) {
         if (face.sourcePoints) {
           x = Number(rawPoint[0]) || 0;
           y = Number(rawPoint[1]) || 0;
+        } else if (importedTrim && preparedScale > 0) {
+          x = ((Number(rawPoint[0]) || 0) / preparedScale) + importedTrim.x;
+          y = (((Number(rawPoint[1]) || 0) - preparedY) / preparedScale) + importedTrim.y;
         } else {
           x = Math.round((Number(rawPoint[0]) || 0) * state.editWidth / Math.max(1, roomWidth));
           y = Math.round((Number(rawPoint[1]) || 0) * state.editHeight / Math.max(1, roomHeight));
@@ -1298,10 +1992,14 @@ async function importLayout(file) {
     document.getElementById("lampStrength").value = layout.night.lamp ?? 36;
   }
 
+  const missing = [];
   const byFile = new Map(state.items.map((item) => [item.fileName, item]));
   for (const entry of layout.furniture || []) {
     const item = byFile.get(entry.fileName);
-    if (!item) continue;
+    if (!item) {
+      missing.push(entry.fileName);
+      continue;
+    }
     Object.assign(item, {
       id: entry.id || item.id,
       name: entry.name || item.name,
@@ -1314,15 +2012,20 @@ async function importLayout(file) {
       visible: entry.visible ?? item.visible,
       anchor: entry.anchor || item.anchor,
       slot: entry.slot || item.slot,
-      layer: entry.layer || item.layer
+      layer: entry.layer || item.layer,
+      source: entry.source || item.source,
+      speciesId: entry.speciesId ?? item.speciesId,
+      action: entry.action ?? item.action,
+      frame: entry.frame ?? item.frame
     });
   }
-  setStatus(`Layout imported: ${file.name}. Matching furniture files were updated.`);
+  setStatus(`Layout imported: ${file.name}.${missing.length ? ` Missing assets: ${missing.join(", ")}.` : ""}`);
   refreshList();
   refreshSelectedPanel();
   refreshFaceList();
   refreshSelectedFacePanel();
   render();
+  commitHistory();
 }
 
 function escapeHtml(value) {
@@ -1357,22 +2060,28 @@ document.getElementById("aspectLock").addEventListener("change", () => {
   state.aspectLocked = document.getElementById("aspectLock").checked;
   state.aspectRatio = state.width / Math.max(1, state.height);
   render();
+  commitHistory();
 });
 
-for (const id of ["baseOpacity", "sourceScale", "furnitureImportMode", "baseFit", "showGuides", "spriteX", "spriteY", "spriteW", "spriteH", "nightTint", "nightDarken", "lampStrength"]) {
-  document.getElementById(id).addEventListener("input", render);
+for (const id of ["baseOpacity", "sourceScale", "furnitureImportMode", "baseFit", "showGuides", "showGrid", "snapToGrid", "spriteX", "spriteY", "spriteW", "spriteH", "nightTint", "nightDarken", "lampStrength"]) {
+  document.getElementById(id).addEventListener("input", () => {
+    render();
+    commitHistory();
+  });
 }
 
 document.getElementById("dayMode").addEventListener("click", () => {
   state.mode = "day";
   updateModeButtons();
   render();
+  commitHistory();
 });
 
 document.getElementById("nightMode").addEventListener("click", () => {
   state.mode = "night";
   updateModeButtons();
   render();
+  commitHistory();
 });
 
 document.getElementById("furnitureMode").addEventListener("click", () => {
@@ -1385,6 +2094,7 @@ document.getElementById("furnitureMode").addEventListener("click", () => {
   refreshFaceList();
   refreshSelectedFacePanel();
   render();
+  commitHistory();
 });
 
 document.getElementById("shapeMode").addEventListener("click", () => {
@@ -1394,39 +2104,7 @@ document.getElementById("shapeMode").addEventListener("click", () => {
   refreshList();
   refreshSelectedPanel();
   render();
-});
-
-document.getElementById("newFace").addEventListener("click", () => {
-  clearDraftPoints();
-  state.editMode = "shape";
-  state.drawingFace = true;
-  state.selectedFaceId = null;
-  state.selectedPointIndex = null;
-  state.selectedPointId = null;
-  state.selectedId = null;
-  updateEditModeButtons();
-  refreshList();
-  refreshSelectedPanel();
-  refreshFaceList();
-  refreshSelectedFacePanel();
-  setStatus("Click points on the edit canvas. Click the first point to close.");
-  render();
-});
-
-document.getElementById("undoPoint").addEventListener("click", () => {
-  state.draftPoints.pop();
-  if (state.draftPoints.length === 0) state.drawingFace = false;
-  pruneUnusedPoints();
-  selectDraftPoint(Math.min(state.selectedPointIndex ?? state.draftPoints.length - 1,
-                            state.draftPoints.length - 1));
-  refreshSelectedFacePanel();
-  render();
-});
-
-document.getElementById("clearDraft").addEventListener("click", () => {
-  clearDraftPoints();
-  refreshSelectedFacePanel();
-  render();
+  commitHistory();
 });
 
 document.getElementById("resetView").addEventListener("click", () => {
@@ -1439,7 +2117,11 @@ document.getElementById("resetView").addEventListener("click", () => {
   refreshFaceList();
   refreshSelectedFacePanel();
   render();
+  commitHistory();
 });
+
+document.getElementById("undoAction").addEventListener("click", undo);
+document.getElementById("redoAction").addEventListener("click", redo);
 
 document.getElementById("exportJson").addEventListener("click", () => {
   downloadText("room_layout.json", JSON.stringify(exportLayoutObject(), null, 2), "application/json");
@@ -1458,19 +2140,6 @@ previewCanvas.addEventListener("click", () => {
   updatePreviewZoom();
 });
 
-document.getElementById("deleteFace").addEventListener("click", () => {
-  const face = selectedFace();
-  if (!face) return;
-  state.faces = state.faces.filter((entry) => entry.id !== face.id);
-  state.selectedFaceId = null;
-  state.selectedPointIndex = null;
-  state.selectedPointId = null;
-  pruneUnusedPoints();
-  refreshFaceList();
-  refreshSelectedFacePanel();
-  render();
-});
-
 document.getElementById("deleteItem").addEventListener("click", () => {
   const item = selectedItem();
   if (!item) return;
@@ -1479,6 +2148,7 @@ document.getElementById("deleteItem").addEventListener("click", () => {
   refreshList();
   refreshSelectedPanel();
   render();
+  commitHistory();
 });
 
 document.getElementById("duplicateItem").addEventListener("click", () => {
@@ -1490,11 +2160,13 @@ document.getElementById("duplicateItem").addEventListener("click", () => {
   refreshList();
   refreshSelectedPanel();
   render();
+  commitHistory();
 });
 
 canvas.addEventListener("pointerdown", (event) => {
   if (state.editMode === "shape") {
     handleShapePointerDown(event);
+    commitHistory();
     return;
   }
   const p = pointerToTarget(event);
@@ -1533,14 +2205,17 @@ canvas.addEventListener("pointermove", (event) => {
   const item = selectedItem();
   if (!item) return;
   const p = pointerToTarget(event);
-  item.x = Math.round(p.x - state.dragOffsetX);
-  item.y = Math.round(p.y - state.dragOffsetY);
+  item.x = snapValue(Math.round(p.x - state.dragOffsetX));
+  item.y = snapValue(Math.round(p.y - state.dragOffsetY));
   refreshList();
   refreshSelectedPanel();
   render();
 });
 
 canvas.addEventListener("pointerup", (event) => {
+  if (state.dragging || state.draggingPoint) {
+    commitHistory();
+  }
   state.dragging = false;
   state.draggingPoint = false;
   state.dragPointId = null;
@@ -1556,6 +2231,16 @@ window.addEventListener("keydown", (event) => {
     state.previewZoomed = false;
     updatePreviewZoom();
     event.preventDefault();
+    return;
+  }
+
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
+    event.preventDefault();
+    if (event.shiftKey) {
+      redo();
+    } else {
+      undo();
+    }
     return;
   }
 
@@ -1578,12 +2263,18 @@ window.addEventListener("keydown", (event) => {
       event.preventDefault();
       refreshSelectedFacePanel();
       render();
+      commitHistory();
       return;
     }
   }
 
   const item = selectedItem();
   if (!item) return;
+
+  if (state.editMode === "furniture" && item.source === "project_sprite") {
+    return;
+  }
+
   let dx = 0;
   let dy = 0;
   if (event.key === "ArrowLeft") dx = -1;
@@ -1595,12 +2286,13 @@ window.addEventListener("keydown", (event) => {
     dx *= 8;
     dy *= 8;
   }
-  item.x += dx;
-  item.y += dy;
+  item.x = snapValue(item.x + dx);
+  item.y = snapValue(item.y + dy);
   event.preventDefault();
   refreshList();
   refreshSelectedPanel();
   render();
+  commitHistory();
 });
 
 const dropZone = document.getElementById("dropZone");
@@ -1623,12 +2315,15 @@ dropZone.addEventListener("drop", async (event) => {
   }
 });
 
+commitHistory();
 refreshList();
 refreshSelectedPanel();
 refreshFaceList();
 refreshSelectedFacePanel();
 updateBaseImageMeta();
+updateModeButtons();
 updateEditModeButtons();
 updatePreviewZoom();
+updateUndoButtons();
 initProjectSpriteControls();
 render();

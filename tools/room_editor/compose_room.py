@@ -6,6 +6,11 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 
+TOOL_DIR = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[2]
+PROJECT_SPRITE_DIR = ROOT / "origin_asset" / "generated" / "pokemon_sprites"
+
+
 def fit_base(img, width, height, fit):
     if fit == "stretch":
         return img.resize((width, height), Image.Resampling.NEAREST)
@@ -90,6 +95,31 @@ def render_base(layout, base_path):
     return fit_base(base, width, height, layout.get("base", {}).get("fit", "cover"))
 
 
+def resolve_item_path(item, furniture_root):
+    file_name = item.get("fileName")
+    if not file_name:
+        raise FileNotFoundError("layout item is missing fileName")
+
+    raw = Path(file_name)
+    candidates = []
+    if raw.is_absolute():
+        candidates.append(raw)
+    else:
+        candidates.extend([
+            furniture_root / raw,
+            TOOL_DIR / raw,
+        ])
+        if item.get("source") == "project_sprite":
+            candidates.append(PROJECT_SPRITE_DIR / raw.name)
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    tried = ", ".join(str(path) for path in candidates)
+    raise FileNotFoundError(f"asset not found for {file_name}; tried {tried}")
+
+
 def composite(layout, base_path, furniture_dir, mode):
     out = render_base(layout, base_path)
 
@@ -97,7 +127,7 @@ def composite(layout, base_path, furniture_dir, mode):
     for item in sorted(layout.get("furniture", []), key=lambda v: (v.get("z", 0), v.get("id", ""))):
         if not item.get("visible", True):
             continue
-        src = Image.open(furniture_root / item["fileName"]).convert("RGBA")
+        src = Image.open(resolve_item_path(item, furniture_root)).convert("RGBA")
         scale = float(item.get("scale", 1))
         if scale != 1:
             size = (max(1, round(src.width * scale)), max(1, round(src.height * scale)))

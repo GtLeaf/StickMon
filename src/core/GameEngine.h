@@ -77,6 +77,7 @@ public:
     void addWalkSteps(uint16_t steps);
     void debugRecoverActiveMonster();
     bool debugSetActiveSpecies(uint16_t speciesId);
+    uint32_t debugAdvanceToTimeOfDay(uint16_t targetMinutesOfDay);
     void wakeFromIdle();
     void markDirty(bool immediate = false);
     bool saveNow();

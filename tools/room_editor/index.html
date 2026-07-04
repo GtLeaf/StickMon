@@ -81,9 +81,19 @@
           <div class="panel-header">Project sprites</div>
           <div class="panel-body stack">
             <label class="field">
-              Pokemon
-              <select id="projectSpriteSelect"></select>
+              Species
+              <select id="spriteSpeciesSelect"></select>
             </label>
+            <div class="row">
+              <label class="field">
+                Action
+                <select id="spriteActionSelect"></select>
+              </label>
+              <label class="field">
+                Frame
+                <select id="spriteFrameSelect"></select>
+              </label>
+            </div>
             <div class="toolbar">
               <button id="addProjectSprite" type="button">Add sprite preview</button>
             </div>
@@ -118,6 +128,16 @@
           Show sprite and HUD guides
         </label>
 
+        <label class="check-row">
+          <input id="showGrid" type="checkbox">
+          Show 8px grid
+        </label>
+
+        <label class="check-row">
+          <input id="snapToGrid" type="checkbox">
+          Snap furniture to 8px grid
+        </label>
+
         <div class="hint">
           Shape points are edited on the reference image. Preview and export scale them to game pixels.
         </div>
@@ -135,9 +155,8 @@
           <button id="shapeMode" type="button">Shape</button>
         </div>
         <div class="toolbar">
-          <button id="newFace" type="button">New face</button>
-          <button id="undoPoint" type="button">Undo point</button>
-          <button id="clearDraft" type="button">Clear draft</button>
+          <button id="undoAction" type="button" title="Undo (Ctrl+Z)">Undo</button>
+          <button id="redoAction" type="button" title="Redo (Ctrl+Shift+Z)">Redo</button>
           <button id="resetView" type="button">Reset</button>
         </div>
       </div>
@@ -148,31 +167,31 @@
     </section>
 
     <section class="panel right">
-      <div class="panel-header">Preview, faces and export</div>
-      <div class="panel-body stack">
+      <div class="panel-header">Preview, properties and export</div>
+      <div class="panel-body stack right-stack">
         <canvas id="preview" class="preview-canvas" width="240" height="135"></canvas>
+
+        <div class="toolbar export-toolbar">
+          <button id="exportJson" class="primary" type="button">Export layout</button>
+          <button id="exportGeometry" type="button">Export room data</button>
+          <button id="exportPreview" type="button">Export preview PNG</button>
+        </div>
+
+        <div class="stack" id="selectedPanel">
+          <div class="hint">Select furniture or a sprite preview to edit transform and layer values.</div>
+        </div>
 
         <div class="panel subpanel">
           <div class="panel-header">Room faces</div>
-          <div class="panel-body stack">
+          <div class="panel-body stack face-panel-body">
             <div class="face-list" id="faceList"></div>
-            <div class="stack" id="selectedFacePanel">
-              <div class="hint">Select or draw a closed face.</div>
-            </div>
-            <div class="toolbar">
-              <button id="deleteFace" class="danger" type="button">Delete face</button>
-              <button id="exportGeometry" class="primary" type="button">Export room data</button>
-            </div>
+            <div class="stack" id="selectedFacePanel" hidden></div>
           </div>
         </div>
 
         <div class="asset-list" id="assetList"></div>
 
-        <div class="stack" id="selectedPanel">
-          <div class="hint">Select furniture to edit transform and layer values.</div>
-        </div>
-
-        <div class="panel subpanel">
+        <div class="panel subpanel" id="nightOverlayPanel" hidden>
           <div class="panel-header">Night overlay</div>
           <div class="panel-body stack">
             <label class="field">
@@ -191,11 +210,6 @@
         </div>
 
         <div class="toolbar">
-          <button id="exportJson" class="primary" type="button">Export layout</button>
-          <button id="exportPreview" type="button">Export preview PNG</button>
-        </div>
-
-        <div class="toolbar">
           <button id="duplicateItem" type="button">Duplicate</button>
           <button id="deleteItem" class="danger" type="button">Delete</button>
         </div>
@@ -207,7 +221,7 @@
     </section>
   </main>
 
-  <script src="./generated/pokemon_preview_assets.js"></script>
+  <script src="../../origin_asset/generated/pokemon_preview_assets.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>

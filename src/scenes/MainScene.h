@@ -42,6 +42,13 @@ private:
     };
 
     void updateMonsterAi(uint32_t nowMs, float dtSeconds);
+    void updateCamera();
+    int16_t worldToScreenY(float worldY) const;
+    float walkBoundaryOffsetY() const;
+    bool monsterCenterInsideWalkArea(float x, float y) const;
+    bool randomMonsterCenterWalkPoint(float& x, float& y) const;
+    bool randomMonsterCenterWalkPointNear(float centerX, float centerY, float radiusX, float radiusY,
+                                          float& x, float& y) const;
     void updatePmdSpriteState(uint32_t nowMs);
     void chooseAiGoal(uint32_t nowMs);
     void drawBackground();
@@ -51,6 +58,8 @@ private:
     void drawMonster();
     bool drawPmdMonster(int x, int y);
     void drawStateEffect();
+    void drawNightOverlay();
+    void drawWalkBoundary();
     void drawHud();
     void drawToast();
     void sortAndDraw(RenderItem* items, uint8_t count);
@@ -67,6 +76,7 @@ private:
     float targetY = 91.0f;
     float velocityX = 0.0f;
     float velocityY = 0.0f;
+    float cameraY = 0.0f;
     AiMode aiMode = AiMode::IDLE;
     uint32_t nextAiDecisionMs = 0;
     bool facingRight = true;

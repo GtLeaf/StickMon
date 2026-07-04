@@ -48,8 +48,9 @@ private:
     static constexpr uint8_t ROOM_ITEM_COUNT = 5;
     static constexpr uint8_t FOOD_ITEM_COUNT = Game::ROOM_FOOD_COUNT + 1;
     static constexpr uint8_t COMPUTER_ITEM_COUNT = 3;
-    static constexpr uint8_t DEBUG_ITEM_COUNT = 4;
+    static constexpr uint8_t DEBUG_ITEM_COUNT = 5;
     static constexpr uint8_t DEBUG_SWITCH_FOCUS_COUNT = 5;
+    static constexpr uint8_t DEBUG_TIME_FOCUS_COUNT = 6;
 
     static int8_t lastCursor;
     int8_t cursor = 0;
@@ -77,6 +78,9 @@ private:
     bool debugSwitchOpen = false;
     uint8_t debugSwitchFocus = 0;
     uint8_t debugSwitchDigits[3] = {0, 0, 1};
+    bool debugTimeOpen = false;
+    uint8_t debugTimeFocus = 0;
+    uint8_t debugTimeDigits[4] = {0, 0, 0, 0};
     int descScrollKey = -1;
     float descScroll = 0.0f;
     uint32_t descScrollLastMs = 0;
@@ -95,8 +99,12 @@ private:
     void renderStoragePage();
     void renderDebugPage();
     void renderDebugSwitchPopup();
+    void renderDebugTimePopup();
     void openDebugSwitchPopup();
+    void openDebugTimePopup();
     uint16_t debugSwitchTargetId() const;
+    uint16_t debugTimeTargetMinutes() const;
+    void incrementDebugTimeDigit();
     uint8_t collectVisibleBagRows(BagRow* rows, uint8_t maxRows) const;
     uint8_t visibleFoodIndexOf(uint8_t foodIndex) const;
     bool isFoodBackIndex(uint8_t index) const;

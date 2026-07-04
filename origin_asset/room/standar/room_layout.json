@@ -1,0 +1,169 @@
+{
+  "version": 2,
+  "canvas": {
+    "width": 240,
+    "height": 135
+  },
+  "base": {
+    "fileName": "ChatGPT Image 2026年7月3日 19_25_48.png",
+    "fit": "cover",
+    "sourceWidth": 1672,
+    "sourceHeight": 941,
+    "trim": {
+      "x": 151,
+      "y": 0,
+      "width": 1383,
+      "height": 936
+    }
+  },
+  "sourceScale": 6.97,
+  "baseOpacity": 0.58,
+  "roomGeometry": {
+    "version": 2,
+    "room": {
+      "width": 240,
+      "height": 162
+    },
+    "viewport": {
+      "width": 240,
+      "height": 135
+    },
+    "edit": {
+      "width": 1672,
+      "height": 941
+    },
+    "prepared": {
+      "width": 240,
+      "height": 162,
+      "y": 0,
+      "scale": 0.17353579,
+      "trim": {
+        "x": 151,
+        "y": 0,
+        "width": 1383,
+        "height": 936
+      }
+    },
+    "reference": {
+      "fileName": "ChatGPT Image 2026年7月3日 19_25_48.png",
+      "sourceWidth": 1672,
+      "sourceHeight": 941,
+      "trim": {
+        "x": 151,
+        "y": 0,
+        "width": 1383,
+        "height": 936
+      },
+      "fit": "cover",
+      "opacity": 0.58
+    },
+    "faces": [
+      {
+        "id": "face1",
+        "type": "floor",
+        "drawOrder": 0,
+        "points": [
+          [
+            120,
+            71
+          ],
+          [
+            108,
+            73
+          ],
+          [
+            82,
+            63
+          ],
+          [
+            53,
+            66
+          ],
+          [
+            30,
+            79
+          ],
+          [
+            62,
+            98
+          ],
+          [
+            64,
+            111
+          ],
+          [
+            35,
+            121
+          ],
+          [
+            132,
+            155
+          ],
+          [
+            234,
+            110
+          ]
+        ],
+        "sourcePoints": [
+          [
+            842,
+            412
+          ],
+          [
+            774,
+            423
+          ],
+          [
+            626,
+            365
+          ],
+          [
+            455,
+            380
+          ],
+          [
+            325,
+            453
+          ],
+          [
+            510,
+            564
+          ],
+          [
+            519,
+            641
+          ],
+          [
+            355,
+            700
+          ],
+          [
+            909,
+            893
+          ],
+          [
+            1497,
+            632
+          ]
+        ]
+      }
+    ]
+  },
+  "guides": {
+    "show": true,
+    "spriteX": 88,
+    "spriteY": 50,
+    "spriteW": 64,
+    "spriteH": 64,
+    "hudX": 168,
+    "hudY": 2,
+    "hudW": 68,
+    "hudH": 54
+  },
+  "night": {
+    "tint": 46,
+    "darken": 34,
+    "lamp": 36
+  },
+  "furniture": []
+}

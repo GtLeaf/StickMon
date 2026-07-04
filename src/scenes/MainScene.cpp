@@ -15,6 +15,9 @@ static constexpr uint16_t PMD_WALKING_FRAME_MS = 170;
 static constexpr uint16_t PMD_SLEEPING_FRAME_MS = 700;
 static constexpr float PMD_MOVING_SPEED_EPSILON = 1.0f;
 static constexpr float PMD_SHORT_MOVE_DISTANCE = 14.0f;
+static constexpr float CAMERA_FOCUS_Y = 84.0f;
+static constexpr float FOOD_CENTER_X = 191.0f;
+static constexpr float FOOD_CENTER_Y = 108.0f;
 
 enum class PmdMotionMode : uint8_t {
     LOOP,
@@ -111,6 +114,68 @@ void fillRectAlpha(int x, int y, int w, int h, uint16_t color, uint8_t alpha) {
     }
 }
 
+void fillRadialLightAlpha(int centerX, int centerY, int radiusX, int radiusY, uint16_t color, uint8_t maxAlpha) {
+    if (radiusX <= 0 || radiusY <= 0 || maxAlpha == 0) return;
+    auto& c = PixelRenderer::canvas();
+    int minX = centerX - radiusX;
+    int maxX = centerX + radiusX;
+    int minY = centerY - radiusY;
+    int maxY = centerY + radiusY;
+    for (int py = minY; py <= maxY; ++py) {
+        if (py < 0 || py >= Hal::DISPLAY_H) continue;
+        float dy = (float)(py - centerY) / (float)radiusY;
+        for (int px = minX; px <= maxX; ++px) {
+            if (px < 0 || px >= Hal::DISPLAY_W) continue;
+            float dx = (float)(px - centerX) / (float)radiusX;
+            float distSq = dx * dx + dy * dy;
+            if (distSq > 1.0f) continue;
+            uint8_t alpha = (uint8_t)(maxAlpha * (1.0f - distSq));
+            if (alpha == 0) continue;
+            uint16_t bg = (uint16_t)c.readPixel(px, py);
+            c.drawPixel(px, py, blendRgb565(bg, color, alpha));
+        }
+    }
+}
+
+void fillSoftEllipseAlpha(int centerX, int centerY, int radiusX, int radiusY, uint16_t color, uint8_t maxAlpha) {
+    fillRadialLightAlpha(centerX, centerY, radiusX, radiusY, color, maxAlpha);
+}
+
+void fillEllipseAlpha(int centerX, int centerY, int radiusX, int radiusY, uint16_t color, uint8_t alpha) {
+    if (radiusX <= 0 || radiusY <= 0 || alpha == 0) return;
+    auto& c = PixelRenderer::canvas();
+    int minX = centerX - radiusX;
+    int maxX = centerX + radiusX;
+    int minY = centerY - radiusY;
+    int maxY = centerY + radiusY;
+    for (int py = minY; py <= maxY; ++py) {
+        if (py < 0 || py >= Hal::DISPLAY_H) continue;
+        float dy = (float)(py - centerY) / (float)radiusY;
+        for (int px = minX; px <= maxX; ++px) {
+            if (px < 0 || px >= Hal::DISPLAY_W) continue;
+            float dx = (float)(px - centerX) / (float)radiusX;
+            if (dx * dx + dy * dy > 1.0f) continue;
+            uint16_t bg = (uint16_t)c.readPixel(px, py);
+            c.drawPixel(px, py, blendRgb565(bg, color, alpha));
+        }
+    }
+}
+
+void fillTopDownLightAlpha(int height, uint16_t color, uint8_t maxAlpha) {
+    if (height <= 0 || maxAlpha == 0) return;
+    if (height > Hal::DISPLAY_H) height = Hal::DISPLAY_H;
+    auto& c = PixelRenderer::canvas();
+    for (int py = 0; py < height; ++py) {
+        float t = 1.0f - (float)py / (float)height;
+        uint8_t alpha = (uint8_t)(maxAlpha * t * t);
+        if (alpha == 0) continue;
+        for (int px = 0; px < Hal::DISPLAY_W; ++px) {
+            uint16_t bg = (uint16_t)c.readPixel(px, py);
+            c.drawPixel(px, py, blendRgb565(bg, color, alpha));
+        }
+    }
+}
+
 uint16_t moodColor(uint8_t mood) {
     if (mood > 66) return PixelRenderer::rgb(92, 222, 112);
     if (mood > 33) return PixelRenderer::rgb(255, 216, 72);
@@ -127,6 +192,93 @@ float clampf(float value, float lo, float hi) {
     if (value < lo) return lo;
     if (value > hi) return hi;
     return value;
+}
+
+float roomMaxCameraY() {
+    float bottom = (float)(RoomAssets::STANDARD_ROOM_Y + RoomAssets::STANDARD_ROOM_H);
+    float maxY = bottom - (float)Hal::DISPLAY_H;
+    return maxY > 0.0f ? maxY : 0.0f;
+}
+
+float cameraForWorldY(float worldY) {
+    return clampf(worldY - CAMERA_FOCUS_Y, 0.0f, roomMaxCameraY());
+}
+
+int16_t roomPointX(uint8_t index) {
+    return (int16_t)pgm_read_word(&RoomAssets::ROOM_WALK_POLYGON[index].x);
+}
+
+int16_t roomPointY(uint8_t index) {
+    return (int16_t)pgm_read_word(&RoomAssets::ROOM_WALK_POLYGON[index].y);
+}
+
+bool roomWalkContains(float x, float y) {
+    uint8_t count = RoomAssets::ROOM_WALK_POLYGON_COUNT;
+    if (count < 3) return true;
+
+    bool inside = false;
+    uint8_t j = count - 1;
+    for (uint8_t i = 0; i < count; ++i) {
+        float xi = (float)roomPointX(i);
+        float yi = (float)roomPointY(i);
+        float xj = (float)roomPointX(j);
+        float yj = (float)roomPointY(j);
+        bool crosses = ((yi > y) != (yj > y)) &&
+                       (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+        if (crosses) inside = !inside;
+        j = i;
+    }
+    return inside;
+}
+
+bool randomRoomWalkPoint(float& x, float& y) {
+    for (uint8_t tries = 0; tries < 48; ++tries) {
+        float px = (float)random(RoomAssets::ROOM_WALK_MIN_X, RoomAssets::ROOM_WALK_MAX_X + 1);
+        float py = (float)random(RoomAssets::ROOM_WALK_MIN_Y, RoomAssets::ROOM_WALK_MAX_Y + 1);
+        if (roomWalkContains(px, py)) {
+            x = px;
+            y = py;
+            return true;
+        }
+    }
+
+    float centerX = (RoomAssets::ROOM_WALK_MIN_X + RoomAssets::ROOM_WALK_MAX_X) * 0.5f;
+    float centerY = (RoomAssets::ROOM_WALK_MIN_Y + RoomAssets::ROOM_WALK_MAX_Y) * 0.5f;
+    if (roomWalkContains(centerX, centerY)) {
+        x = centerX;
+        y = centerY;
+        return true;
+    }
+
+    if (RoomAssets::ROOM_WALK_POLYGON_COUNT > 0) {
+        x = (float)roomPointX(0);
+        y = (float)roomPointY(0);
+        return true;
+    }
+    x = centerX;
+    y = centerY;
+    return false;
+}
+
+bool randomRoomWalkPointNear(float centerX, float centerY, float radiusX, float radiusY, float& x, float& y) {
+    int spanX = (int)roundf(radiusX);
+    int spanY = (int)roundf(radiusY);
+    if (spanX < 1) spanX = 1;
+    if (spanY < 1) spanY = 1;
+    for (uint8_t tries = 0; tries < 32; ++tries) {
+        float px = clampf(centerX + (float)random(-spanX, spanX + 1),
+                          (float)RoomAssets::ROOM_WALK_MIN_X,
+                          (float)RoomAssets::ROOM_WALK_MAX_X);
+        float py = clampf(centerY + (float)random(-spanY, spanY + 1),
+                          (float)RoomAssets::ROOM_WALK_MIN_Y,
+                          (float)RoomAssets::ROOM_WALK_MAX_Y);
+        if (roomWalkContains(px, py)) {
+            x = px;
+            y = py;
+            return true;
+        }
+    }
+    return randomRoomWalkPoint(x, y);
 }
 
 float pmdFloatYOffset(const PmdSpriteConfig* config, uint32_t nowMs) {
@@ -258,10 +410,14 @@ void drawHeartIcon(int centerX, int centerY, uint8_t tier, uint16_t color) {
 
 void MainScene::onEnter() {
     active = &GameEngine::ins().activeSpecies();
+    if (!monsterCenterInsideWalkArea(monsterX, monsterY)) {
+        randomMonsterCenterWalkPoint(monsterX, monsterY);
+    }
     targetX = monsterX;
     targetY = monsterY;
     velocityX = 0.0f;
     velocityY = 0.0f;
+    cameraY = cameraForWorldY(monsterY);
     pmdAction = PmdAction::IDLE;
     pmdDirection = PmdDirection::FRONT;
     pmdFrame = 0;
@@ -273,6 +429,7 @@ void MainScene::onEnter() {
 void MainScene::update(uint32_t nowMs, float dtSeconds) {
     active = &GameEngine::ins().activeSpecies();
     updateMonsterAi(nowMs, dtSeconds);
+    updateCamera();
     updatePmdSpriteState(nowMs);
     bool combo = Hal::ins().btnA_raw() && Hal::ins().btnB_raw();
     if (!combo) {
@@ -288,13 +445,47 @@ void MainScene::update(uint32_t nowMs, float dtSeconds) {
     }
 }
 
-void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
-    static constexpr float MIN_X = 42.0f;
-    static constexpr float MAX_X = 168.0f;
-    static constexpr float MIN_Y = 78.0f;
-    static constexpr float MAX_Y = 100.0f;
+void MainScene::updateCamera() {
+    cameraY = cameraForWorldY(monsterY);
+}
 
+int16_t MainScene::worldToScreenY(float worldY) const {
+    return (int16_t)roundf(worldY - cameraY);
+}
+
+float MainScene::walkBoundaryOffsetY() const {
+    uint8_t frameH = 42;
+    if (const PokemonSprites::SpriteFrame* frame = currentMonsterFrame()) {
+        frameH = pgm_read_byte(&frame->height);
+    }
+    return (float)constrain((int)(frameH * 0.42f), 16, 32);
+}
+
+bool MainScene::monsterCenterInsideWalkArea(float x, float y) const {
+    return roomWalkContains(x, y + walkBoundaryOffsetY());
+}
+
+bool MainScene::randomMonsterCenterWalkPoint(float& x, float& y) const {
+    if (!randomRoomWalkPoint(x, y)) return false;
+    y -= walkBoundaryOffsetY();
+    return true;
+}
+
+bool MainScene::randomMonsterCenterWalkPointNear(float centerX, float centerY, float radiusX, float radiusY,
+                                                 float& x, float& y) const {
+    if (!randomRoomWalkPointNear(centerX, centerY, radiusX, radiusY, x, y)) return false;
+    y -= walkBoundaryOffsetY();
+    return true;
+}
+
+void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
     const Game::MonsterRuntime& mon = GameEngine::ins().activeMonster();
+    if (!monsterCenterInsideWalkArea(monsterX, monsterY)) {
+        randomMonsterCenterWalkPoint(monsterX, monsterY);
+        targetX = monsterX;
+        targetY = monsterY;
+    }
+
     if (mon.fainted || mon.hpCur == 0 || (mon.statusBits & Game::STATUS_SLEEP)) {
         velocityX = 0.0f;
         velocityY = 0.0f;
@@ -306,6 +497,8 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
         chooseAiGoal(nowMs);
     }
 
+    float prevX = monsterX;
+    float prevY = monsterY;
     if (aiMode == AiMode::IDLE) {
         velocityX = 0.0f;
         velocityY = 0.0f;
@@ -333,8 +526,24 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
         }
     }
 
-    monsterX = clampf(monsterX, MIN_X, MAX_X);
-    monsterY = clampf(monsterY, MIN_Y, MAX_Y);
+    float walkOffsetY = walkBoundaryOffsetY();
+    monsterX = clampf(monsterX, (float)RoomAssets::ROOM_WALK_MIN_X, (float)RoomAssets::ROOM_WALK_MAX_X);
+    monsterY = clampf(monsterY, (float)RoomAssets::ROOM_WALK_MIN_Y - walkOffsetY,
+                      (float)RoomAssets::ROOM_WALK_MAX_Y - walkOffsetY);
+    if (!monsterCenterInsideWalkArea(monsterX, monsterY)) {
+        if (monsterCenterInsideWalkArea(prevX, prevY)) {
+            monsterX = prevX;
+            monsterY = prevY;
+        } else {
+            randomMonsterCenterWalkPoint(monsterX, monsterY);
+        }
+        targetX = monsterX;
+        targetY = monsterY;
+        velocityX = 0.0f;
+        velocityY = 0.0f;
+        aiMode = AiMode::IDLE;
+        nextAiDecisionMs = nowMs + random(1200, 2601);
+    }
 }
 
 void MainScene::updatePmdSpriteState(uint32_t nowMs) {
@@ -487,18 +696,13 @@ bool MainScene::pmdDirectionFlipX() const {
 }
 
 void MainScene::chooseAiGoal(uint32_t nowMs) {
-    static constexpr float MIN_X = 42.0f;
-    static constexpr float MAX_X = 168.0f;
-    static constexpr float MIN_Y = 78.0f;
-    static constexpr float MAX_Y = 100.0f;
-
     const Game::MonsterRuntime& mon = GameEngine::ins().activeMonster();
-    bool nearFood = fabsf(monsterX - 164.0f) < 10.0f && fabsf(monsterY - 96.0f) < 6.0f;
+    float walkY = monsterY + walkBoundaryOffsetY();
+    bool nearFood = fabsf(monsterX - FOOD_CENTER_X) < 10.0f && fabsf(walkY - FOOD_CENTER_Y) < 6.0f;
     bool hungry = mon.satiety < 55 && GameEngine::ins().foodCount() > 0;
     if (hungry && !nearFood && random(0, 100) < 35) {
         aiMode = AiMode::SEEK_FOOD;
-        targetX = 164.0f + random(-4, 5);
-        targetY = 96.0f + random(-3, 4);
+        randomMonsterCenterWalkPointNear(FOOD_CENTER_X, FOOD_CENTER_Y, 7.0f, 5.0f, targetX, targetY);
         nextAiDecisionMs = nowMs + random(2600, 5201);
         return;
     }
@@ -512,11 +716,22 @@ void MainScene::chooseAiGoal(uint32_t nowMs) {
     }
 
     aiMode = AiMode::WANDER;
-    for (uint8_t tries = 0; tries < 8; ++tries) {
-        targetX = clampf(monsterX + (float)random(-24, 25), MIN_X, MAX_X);
-        targetY = clampf(monsterY + (float)random(-9, 10), MIN_Y, MAX_Y);
-        if (fabsf(targetX - monsterX) >= 8.0f || fabsf(targetY - monsterY) >= 4.0f) break;
+    float walkOffsetY = walkBoundaryOffsetY();
+    for (uint8_t tries = 0; tries < 18; ++tries) {
+        float candidateX = clampf(monsterX + (float)random(-28, 29),
+                                  (float)RoomAssets::ROOM_WALK_MIN_X,
+                                  (float)RoomAssets::ROOM_WALK_MAX_X);
+        float candidateY = clampf(monsterY + (float)random(-16, 17),
+                                  (float)RoomAssets::ROOM_WALK_MIN_Y - walkOffsetY,
+                                  (float)RoomAssets::ROOM_WALK_MAX_Y - walkOffsetY);
+        if (!monsterCenterInsideWalkArea(candidateX, candidateY)) continue;
+        if (fabsf(candidateX - monsterX) < 8.0f && fabsf(candidateY - monsterY) < 4.0f) continue;
+        targetX = candidateX;
+        targetY = candidateY;
+        nextAiDecisionMs = nowMs + random(3200, 7601);
+        return;
     }
+    randomMonsterCenterWalkPoint(targetX, targetY);
     nextAiDecisionMs = nowMs + random(3200, 7601);
 }
 
@@ -529,6 +744,8 @@ void MainScene::render() {
         {(int16_t)(20 + depthZ), &MainScene::drawShadow},
         {(int16_t)(30 + depthZ), &MainScene::drawMonster},
         {(int16_t)(40 + depthZ), &MainScene::drawStateEffect},
+        {85, &MainScene::drawNightOverlay},
+        {88, &MainScene::drawWalkBoundary},
         {90, &MainScene::drawHud},
         {100, &MainScene::drawToast},
     };
@@ -563,15 +780,11 @@ bool MainScene::onButton(const ButtonEvent& event) {
 
 void MainScene::drawBackground() {
     PixelRenderer::clear(PixelRenderer::rgb(5, 6, 18));
-    PixelRenderer::drawRgb565Rle(0, RoomAssets::STANDARD_ROOM_Y,
+    PixelRenderer::drawRgb565Rle(0, RoomAssets::STANDARD_ROOM_Y - (int16_t)roundf(cameraY),
                                  RoomAssets::STANDARD_ROOM_W,
                                  RoomAssets::STANDARD_ROOM_H,
                                  RoomAssets::STANDARD_ROOM_RLE, 0,
                                  RoomAssets::STANDARD_ROOM_RLE_LEN);
-    if (mainSceneIsNight()) {
-        fillRectAlpha(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H,
-                      PixelRenderer::rgb(4, 8, 24), 58);
-    }
 }
 
 void MainScene::drawFloor() {
@@ -585,10 +798,10 @@ void MainScene::drawFood() {
                                         : PixelRenderer::rgb(245, 180, 87);
     uint16_t garnishColor = foodIndex == 1 ? PixelRenderer::rgb(255, 216, 72)
                                            : PixelRenderer::rgb(92, 151, 80);
-    c.fillEllipse(191, 111, 16, 6, PixelRenderer::rgb(122, 96, 76));
-    c.fillEllipse(191, 108, 13, 5, foodColor);
-    c.fillCircle(186, 106, 2, garnishColor);
-    c.fillCircle(194, 107, 2, PixelRenderer::rgb(178, 79, 57));
+    c.fillEllipse(191, worldToScreenY(111.0f), 16, 6, PixelRenderer::rgb(122, 96, 76));
+    c.fillEllipse(191, worldToScreenY(108.0f), 13, 5, foodColor);
+    c.fillCircle(186, worldToScreenY(106.0f), 2, garnishColor);
+    c.fillCircle(194, worldToScreenY(107.0f), 2, PixelRenderer::rgb(178, 79, 57));
 }
 
 void MainScene::drawShadow() {
@@ -602,23 +815,28 @@ void MainScene::drawShadow() {
         frameH = pgm_read_byte(&frame->height);
     }
 
-    int rx = constrain((int)(frameW * (floating ? 0.25f : 0.38f)), floating ? 10 : 13, floating ? 22 : 36);
-    int ry = constrain((int)(frameH * (floating ? 0.055f : 0.105f)), floating ? 3 : 4, floating ? 6 : 10);
+    int rx = constrain((int)(frameW * (floating ? 0.25f : 0.44f)), floating ? 10 : 16, floating ? 22 : 40);
+    int ry = constrain((int)(frameH * (floating ? 0.055f : 0.14f)), floating ? 3 : 6, floating ? 6 : 14);
     if (night) {
         rx = (rx * 11 + 5) / 10;
         ry = (ry * 11 + 5) / 10;
     }
 
-    int shadowY = (int)(monsterY + constrain((int)(frameH * 0.34f), 14, 28));
-    PixelRenderer::canvas().fillEllipse((int)monsterX, shadowY, rx, ry,
-                                        night ? PixelRenderer::rgb(53, 44, 50) : PixelRenderer::rgb(159, 139, 117));
+    int shadowY = worldToScreenY(monsterY + constrain((int)(frameH * 0.42f), 16, 32));
+    uint16_t shadowColor = night ? PixelRenderer::rgb(18, 16, 24) : PixelRenderer::rgb(36, 29, 24);
+    uint8_t outerAlpha = night ? (floating ? 84 : 122) : (floating ? 68 : 116);
+    uint8_t coreAlpha = night ? (floating ? 0 : 92) : (floating ? 0 : 86);
+    fillSoftEllipseAlpha((int)monsterX, shadowY, rx, ry, shadowColor, outerAlpha);
+    if (!floating) {
+        fillEllipseAlpha((int)monsterX, shadowY, max(5, rx / 2), max(2, ry / 2), shadowColor, coreAlpha);
+    }
 }
 
 void MainScene::drawMonster() {
     auto& c = PixelRenderer::canvas();
     int x = (int)monsterX;
     const PmdSpriteConfig* config = active ? pmdSpriteConfigForSpecies(active->id) : nullptr;
-    int y = (int)(monsterY - pmdFloatYOffset(config, Hal::ins().millis()));
+    int y = worldToScreenY(monsterY - pmdFloatYOffset(config, Hal::ins().millis()));
     if (active && pmdSpriteConfigForSpecies(active->id) && drawPmdMonster(x, y)) {
         return;
     }
@@ -657,10 +875,57 @@ void MainScene::drawStateEffect() {
     auto& c = PixelRenderer::canvas();
     const PmdSpriteConfig* config = active ? pmdSpriteConfigForSpecies(active->id) : nullptr;
     int x = (int)monsterX + 18;
-    int y = (int)(monsterY - pmdFloatYOffset(config, Hal::ins().millis())) - 31;
+    int y = worldToScreenY(monsterY - pmdFloatYOffset(config, Hal::ins().millis())) - 31;
     c.fillCircle(x, y, 3, PixelRenderer::rgb(255, 103, 135));
     c.fillCircle(x + 5, y, 3, PixelRenderer::rgb(255, 103, 135));
     c.fillTriangle(x - 3, y + 2, x + 8, y + 2, x + 2, y + 9, PixelRenderer::rgb(255, 103, 135));
+}
+
+void MainScene::drawNightOverlay() {
+    if (!mainSceneIsNight()) return;
+
+    fillRectAlpha(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H,
+                  PixelRenderer::rgb(8, 18, 42), 92);
+    fillRectAlpha(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H,
+                  PixelRenderer::rgb(0, 0, 0), 48);
+
+    fillTopDownLightAlpha(86, PixelRenderer::rgb(114, 150, 214), 42);
+
+    const PmdSpriteConfig* config = active ? pmdSpriteConfigForSpecies(active->id) : nullptr;
+    int glowY = worldToScreenY(monsterY - pmdFloatYOffset(config, Hal::ins().millis()) - 10.0f);
+    fillRadialLightAlpha((int)monsterX, glowY, 42, 34,
+                         PixelRenderer::rgb(255, 210, 128), 82);
+    fillRadialLightAlpha((int)monsterX, glowY, 76, 50,
+                         PixelRenderer::rgb(255, 151, 92), 26);
+}
+
+void MainScene::drawWalkBoundary() {
+    uint8_t count = RoomAssets::ROOM_WALK_POLYGON_COUNT;
+    if (count < 2) return;
+
+    auto& c = PixelRenderer::canvas();
+    uint16_t outline = PixelRenderer::rgb(0, 0, 0);
+    uint16_t red = PixelRenderer::rgb(255, 32, 32);
+
+    int16_t firstX = roomPointX(0);
+    int16_t firstY = worldToScreenY((float)roomPointY(0));
+    int16_t prevX = firstX;
+    int16_t prevY = firstY;
+    for (uint8_t i = 1; i <= count; ++i) {
+        uint8_t index = i == count ? 0 : i;
+        int16_t x = roomPointX(index);
+        int16_t y = worldToScreenY((float)roomPointY(index));
+
+        c.drawLine(prevX - 1, prevY, x - 1, y, outline);
+        c.drawLine(prevX + 1, prevY, x + 1, y, outline);
+        c.drawLine(prevX, prevY - 1, x, y - 1, outline);
+        c.drawLine(prevX, prevY + 1, x, y + 1, outline);
+        c.drawLine(prevX, prevY, x, y, red);
+
+        c.fillCircle(x, y, 2, red);
+        prevX = x;
+        prevY = y;
+    }
 }
 
 void MainScene::drawHud() {

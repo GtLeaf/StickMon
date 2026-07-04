@@ -12,8 +12,9 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[2]
 ASSET_H = ROOT / "src" / "assets" / "PokemonSprites.h"
 ASSET_CPP = ROOT / "src" / "assets" / "PokemonSprites.cpp"
-OUT_DIR = Path(__file__).resolve().parent / "generated" / "pokemon_sprites"
-MANIFEST = Path(__file__).resolve().parent / "generated" / "pokemon_preview_assets.js"
+GENERATED = ROOT / "origin_asset" / "generated"
+OUT_DIR = GENERATED / "pokemon_sprites"
+MANIFEST = GENERATED / "pokemon_preview_assets.js"
 
 
 def numbers(body: str) -> list[int]:
@@ -147,6 +148,25 @@ def parse_blocks(source: str) -> dict[int, dict]:
     return blocks
 
 
+def decode_frame(frame: dict, rle: list[int], palettes: list[int]) -> Image.Image:
+    if frame["format"] == 1:
+        pixels = decode_indexed4_rle(
+            rle,
+            palettes,
+            frame["offset"],
+            frame["length"],
+            frame["paletteOffset"],
+            frame["paletteSize"],
+            frame["width"],
+            frame["height"],
+        )
+    else:
+        pixels = decode_rgb565_rle(rle, frame["offset"], frame["length"], frame["width"], frame["height"])
+    image = Image.new("RGBA", (frame["width"], frame["height"]))
+    image.putdata(pixels)
+    return image
+
+
 def choose_preview_frame(frames: list[dict]) -> dict:
     preferred_suffixes = ("_IDLE_FRONT_0", "_WALKING_FRONT_0")
     for suffix in preferred_suffixes:
@@ -154,6 +174,13 @@ def choose_preview_frame(frames: list[dict]) -> dict:
         if match:
             return match
     return next((frame for frame in frames if frame["kindName"] == "FRONT"), frames[0])
+
+
+def frame_action(kind_name: str) -> str | None:
+    match = re.search(r"_(IDLE|WALKING|SLEEPING)(?:_|$)", kind_name)
+    if match:
+        return match.group(1).lower()
+    return None
 
 
 def slugify(value: str) -> str:
@@ -180,45 +207,56 @@ def main() -> None:
         decoded_blocks[species_id] = (rle_words, palette_words)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    manifest = []
     by_species: dict[int, list[dict]] = {}
     for frame in frames:
         by_species.setdefault(frame["speciesId"], []).append(frame)
 
+    manifest = []
     for species_id in sorted(by_species):
-        frame = choose_preview_frame(by_species[species_id])
-        if frame["source"] == 1:
+        species_frames = by_species[species_id]
+        preview_frame = choose_preview_frame(species_frames)
+        slug = slugify(preview_frame["speciesName"])
+
+        if preview_frame["source"] == 1:
             rle, palettes = decoded_blocks[species_id]
         else:
             rle, palettes = global_rle, global_palettes
 
-        if frame["format"] == 1:
-            pixels = decode_indexed4_rle(
-                rle,
-                palettes,
-                frame["offset"],
-                frame["length"],
-                frame["paletteOffset"],
-                frame["paletteSize"],
-                frame["width"],
-                frame["height"],
-            )
-        else:
-            pixels = decode_rgb565_rle(rle, frame["offset"], frame["length"], frame["width"], frame["height"])
+        actions: dict[str, list[dict]] = {}
+        for frame in species_frames:
+            action = frame_action(frame["kindName"])
+            if action is None:
+                continue
+            file_name = f"{species_id:03d}_{slug}_{frame['kindName']}.png"
+            file_path = OUT_DIR / file_name
+            try:
+                if frame["source"] == 1:
+                    frame_rle, frame_palettes = decoded_blocks[species_id]
+                else:
+                    frame_rle, frame_palettes = global_rle, global_palettes
+                image = decode_frame(frame, frame_rle, frame_palettes)
+                image.save(file_path)
+            except Exception as error:
+                print(f"warn: failed to decode {frame['kindName']} for species {species_id}: {error}")
+                continue
+            actions.setdefault(action, []).append({
+                "file": file_name,
+                "path": f"../../origin_asset/generated/pokemon_sprites/{file_name}",
+                "width": frame["width"],
+                "height": frame["height"],
+                "kindName": frame["kindName"],
+            })
 
-        slug = slugify(frame["speciesName"])
-        file_name = f"{species_id:03d}_{slug}.png"
-        image = Image.new("RGBA", (frame["width"], frame["height"]))
-        image.putdata(pixels)
-        image.save(OUT_DIR / file_name)
+        preview_file_name = f"{species_id:03d}_{slug}_{preview_frame['kindName']}.png"
         manifest.append({
             "speciesId": species_id,
-            "name": f"{species_id:03d} {frame['speciesName']}",
+            "name": f"{species_id:03d} {preview_frame['speciesName']}",
             "slug": slug,
-            "frame": frame["kindName"],
-            "width": frame["width"],
-            "height": frame["height"],
-            "path": f"./generated/pokemon_sprites/{file_name}",
+            "frame": preview_frame["kindName"],
+            "width": preview_frame["width"],
+            "height": preview_frame["height"],
+            "path": f"../../origin_asset/generated/pokemon_sprites/{preview_file_name}",
+            "actions": actions,
         })
 
     MANIFEST.parent.mkdir(parents=True, exist_ok=True)
@@ -228,7 +266,7 @@ def main() -> None:
         + ";\n",
         encoding="utf-8",
     )
-    print(f"wrote {len(manifest)} sprite previews to {OUT_DIR}")
+    print(f"wrote {len(manifest)} species previews to {OUT_DIR}")
     print(f"wrote manifest {MANIFEST}")
 
 

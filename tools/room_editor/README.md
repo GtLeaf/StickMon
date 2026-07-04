@@ -109,7 +109,9 @@ the editor.
    `4x`; a `720x405` base should use `3x`.
 4. Import furniture PNG files.
 5. Drag furniture on the canvas and edit `x`, `y`, `z`, `scale`, `slot`.
-6. For batch day/night previews, run the fixed `compose_room.py` script in this
+6. Enable `Show 8px grid` and `Snap furniture to 8px grid` for pixel-perfect
+   placement.
+7. For batch day/night previews, run the fixed `compose_room.py` script in this
    directory.
 
 ## Large Source Images
@@ -135,21 +137,30 @@ already authored at target pixel size.
 
 ## Project Sprite Preview
 
-Generate project sprite previews after sprite assets change:
+Generate project sprite previews after sprite assets change. The script needs
+Pillow:
 
 ```bash
+python3 -m pip install pillow
 python3 \
   ./tools/room_editor/generate_sprite_previews.py
 ```
 
 The script writes:
 
-- `generated/pokemon_sprites/*.png`
-- `generated/pokemon_preview_assets.js`
+- `origin_asset/generated/pokemon_sprites/*.png` (one PNG per species/frame)
+- `origin_asset/generated/pokemon_preview_assets.js`
 
-Open `index.html`, then use `Project sprites` -> `Add sprite preview`. The added
-sprite is a normal draggable preview item with `scale`, `z`, and visibility
-controls. It uses the current `Sprite X/Y/W/H` guide as its initial placement.
+Open `index.html`, then use `Project sprites` to select a species, action, and
+frame before clicking `Add sprite preview`. The added sprite appears in the
+asset list and can be:
+
+- Moved by dragging (sprite previews do not respond to arrow keys in Furniture
+  mode).
+- Deleted with the right-panel `Delete` button.
+- Changed to a different species/action/frame from the properties panel.
+
+It uses the current `Sprite X/Y/W/H` guide as its initial placement.
 
 ## Runtime Interpretation
 
@@ -164,6 +175,20 @@ The exported layout uses this model:
 Furniture should be generated as isolated PNGs. Do not rely on extracting
 furniture from a complete AI room image as the long-term source of truth.
 
+## Editor Interaction Notes
+
+- The status bar at the bottom shows the current workflow step:
+  1. Load a reference image.
+  2. Trace wall/floor faces in Shape mode.
+  3. Import furniture in Furniture mode.
+  4. Add sprite previews, tune night overlay, and export.
+- Shape-only tools (`New face`, `Undo point`, `Clear draft`) are disabled in
+  Furniture mode; furniture `Duplicate` / `Delete` are disabled in Shape mode.
+- When a vertex is shared by multiple faces, the status bar warns that moving
+  it will affect all connected faces.
+- Importing a layout only updates furniture that is already loaded; missing
+  filenames are reported in the status bar.
+
 ## Compose Script
 
 The fixed `compose_room.py` expects Pillow:
@@ -177,6 +202,8 @@ python3 ./tools/room_editor/compose_room.py \
 ```
 
 For old layouts without `roomGeometry.faces`, also pass `--base empty_room.png`.
+Project sprite preview items are resolved from
+`origin_asset/generated/pokemon_sprites` automatically.
 
 It writes:
 

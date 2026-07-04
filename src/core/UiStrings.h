@@ -295,11 +295,15 @@ namespace Debug {
 static constexpr const char* RECOVER = "一键康复";
 static constexpr const char* SWITCH_MON = "切换精灵";
 static constexpr const char* ADD_COINS = "增加1000金币";
+static constexpr const char* SET_TIME = "设置时间";
 static constexpr const char* RECOVERED = "已康复";
 static constexpr const char* SWITCHED = "已切换";
 static constexpr const char* COINS_ADDED = "金币+1000";
+static constexpr const char* TIME_SET = "时间已推进";
 static constexpr const char* INVALID_ID = "编号无效";
 static constexpr const char* CURRENT_ID_FMT = "当前:%03u";
+static constexpr const char* CURRENT_TIME_FMT = "当前:%02u:%02u";
+static constexpr const char* TARGET_TIME = "目标时间";
 static constexpr const char* INPUT_ID = "编号";
 static constexpr const char* YES = "yes";
 static constexpr const char* CANCEL = "cancel";
@@ -307,6 +311,7 @@ static constexpr const char* ITEMS[] = {
     RECOVER,
     SWITCH_MON,
     ADD_COINS,
+    SET_TIME,
     Ui::BACK,
 };
 }

@@ -253,6 +253,8 @@ void MenuScene::onEnter() {
     debugCursor = 0;
     debugSwitchOpen = false;
     debugSwitchFocus = 0;
+    debugTimeOpen = false;
+    debugTimeFocus = 0;
     if (GameEngine::ins().previousScene() == GameEngine::ins().homeScene()) {
         cursor = 0;
     } else {
@@ -289,6 +291,10 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                 debugSwitchOpen = false;
                 return true;
             }
+            if (viewMode == ViewMode::DEBUG && debugTimeOpen) {
+                debugTimeOpen = false;
+                return true;
+            }
             if (viewMode == ViewMode::STORAGE) {
                 viewMode = ViewMode::COMPUTER;
                 return true;
@@ -301,6 +307,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
             teamActionOpen = false;
             bagConfirmOpen = false;
             debugSwitchOpen = false;
+            debugTimeOpen = false;
             return true;
         }
         if (viewMode == ViewMode::ROOM && event.btn == 1 && event.action == BtnAction::PRESSED) {
@@ -470,6 +477,23 @@ bool MenuScene::onButton(const ButtonEvent& event) {
             }
             return true;
         }
+        if (viewMode == ViewMode::DEBUG && debugTimeOpen && event.btn == 1 && event.action == BtnAction::PRESSED) {
+            debugTimeFocus = (debugTimeFocus + 1) % DEBUG_TIME_FOCUS_COUNT;
+            return true;
+        }
+        if (viewMode == ViewMode::DEBUG && debugTimeOpen && event.btn == 0 && event.action == BtnAction::PRESSED) {
+            if (debugTimeFocus < 4) {
+                incrementDebugTimeDigit();
+            } else if (debugTimeFocus == 4) {
+                GameEngine::ins().debugAdvanceToTimeOfDay(debugTimeTargetMinutes());
+                debugTimeOpen = false;
+                toast = Ui::Debug::TIME_SET;
+                toastUntil = Hal::ins().millis() + 1100;
+            } else {
+                debugTimeOpen = false;
+            }
+            return true;
+        }
         if (viewMode == ViewMode::DEBUG && event.btn == 1 && event.action == BtnAction::PRESSED) {
             debugCursor = (debugCursor + 1) % DEBUG_ITEM_COUNT;
             return true;
@@ -488,6 +512,9 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                 GameEngine::ins().addCoins(1000);
                 toast = Ui::Debug::COINS_ADDED;
                 toastUntil = Hal::ins().millis() + 1100;
+                break;
+            case 3:
+                openDebugTimePopup();
                 break;
             default:
                 viewMode = ViewMode::MENU;
@@ -561,6 +588,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
         viewMode = ViewMode::DEBUG;
         debugCursor = 0;
         debugSwitchOpen = false;
+        debugTimeOpen = false;
         return true;
     case ITEM_BACK:
         GameEngine::ins().requestScene(GameEngine::ins().homeScene());
@@ -1184,9 +1212,9 @@ void MenuScene::renderDebugPage() {
 
     static constexpr int ROW_X = 8;
     static constexpr int TEXT_X = 22;
-    static constexpr int ROW_Y = 12;
-    static constexpr int ROW_H = 28;
-    static constexpr int SEP_Y_OFFSET = 22;
+    static constexpr int ROW_Y = 8;
+    static constexpr int ROW_H = 24;
+    static constexpr int SEP_Y_OFFSET = 20;
     static constexpr int SEP_W = Hal::DISPLAY_W - ROW_X * 2;
 
     for (uint8_t i = 0; i < DEBUG_ITEM_COUNT; ++i) {
@@ -1206,16 +1234,26 @@ void MenuScene::renderDebugPage() {
                                 selected ? PixelRenderer::rgb(255, 218, 178) : 0x7BEF,
                                 1);
         }
+        if (i == 3) {
+            uint16_t minutes = GameEngine::ins().gameMinutesOfDay();
+            char timeBuf[20];
+            snprintf(timeBuf, sizeof(timeBuf), Ui::Debug::CURRENT_TIME_FMT, minutes / 60, minutes % 60);
+            PixelRenderer::text(Hal::DISPLAY_W - textPixelWidth(timeBuf) - 12, y, timeBuf,
+                                selected ? PixelRenderer::rgb(255, 218, 178) : 0x7BEF,
+                                1);
+        }
         if (i + 1 < DEBUG_ITEM_COUNT) {
             c.drawFastHLine(ROW_X, y + SEP_Y_OFFSET, SEP_W, PixelRenderer::rgb(55, 63, 76));
         }
     }
 
     if (debugSwitchOpen) renderDebugSwitchPopup();
+    if (debugTimeOpen) renderDebugTimePopup();
     renderToast();
 }
 
 void MenuScene::openDebugSwitchPopup() {
+    debugTimeOpen = false;
     const auto& state = GameEngine::ins().gameState();
     uint16_t speciesId = state.teamCount > 0 ? state.team[0].speciesId : 1;
     if (speciesId > 999) speciesId = 999;
@@ -1228,6 +1266,47 @@ void MenuScene::openDebugSwitchPopup() {
 
 uint16_t MenuScene::debugSwitchTargetId() const {
     return (uint16_t)(debugSwitchDigits[0] * 100 + debugSwitchDigits[1] * 10 + debugSwitchDigits[2]);
+}
+
+void MenuScene::openDebugTimePopup() {
+    debugSwitchOpen = false;
+    uint16_t minutes = GameEngine::ins().gameMinutesOfDay();
+    uint8_t hour = minutes / 60;
+    uint8_t minute = minutes % 60;
+    debugTimeDigits[0] = hour / 10;
+    debugTimeDigits[1] = hour % 10;
+    debugTimeDigits[2] = minute / 10;
+    debugTimeDigits[3] = minute % 10;
+    debugTimeFocus = 0;
+    debugTimeOpen = true;
+}
+
+uint16_t MenuScene::debugTimeTargetMinutes() const {
+    uint8_t hour = (uint8_t)(debugTimeDigits[0] * 10 + debugTimeDigits[1]);
+    uint8_t minute = (uint8_t)(debugTimeDigits[2] * 10 + debugTimeDigits[3]);
+    if (hour > 23) hour = 23;
+    if (minute > 59) minute = 59;
+    return (uint16_t)(hour * 60 + minute);
+}
+
+void MenuScene::incrementDebugTimeDigit() {
+    if (debugTimeFocus == 0) {
+        debugTimeDigits[0] = (debugTimeDigits[0] + 1) % 3;
+        if (debugTimeDigits[0] == 2 && debugTimeDigits[1] > 3) debugTimeDigits[1] = 3;
+        return;
+    }
+    if (debugTimeFocus == 1) {
+        uint8_t maxHourOnes = debugTimeDigits[0] == 2 ? 3 : 9;
+        debugTimeDigits[1] = (debugTimeDigits[1] + 1) % (maxHourOnes + 1);
+        return;
+    }
+    if (debugTimeFocus == 2) {
+        debugTimeDigits[2] = (debugTimeDigits[2] + 1) % 6;
+        return;
+    }
+    if (debugTimeFocus == 3) {
+        debugTimeDigits[3] = (debugTimeDigits[3] + 1) % 10;
+    }
 }
 
 uint8_t MenuScene::visibleFoodIndexOf(uint8_t foodIndex) const {
@@ -1275,6 +1354,42 @@ void MenuScene::renderDebugSwitchPopup() {
     uint16_t cancelColor = debugSwitchFocus == 4 ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232);
     if (debugSwitchFocus == 3) c.fillRect(POP_X + 38, POP_Y + 60, 4, 16, PixelRenderer::rgb(255, 216, 72));
     if (debugSwitchFocus == 4) c.fillRect(POP_X + 94, POP_Y + 60, 4, 16, PixelRenderer::rgb(255, 216, 72));
+    PixelRenderer::text(POP_X + 48, POP_Y + 60, Ui::Debug::YES, yesColor, 1);
+    PixelRenderer::text(POP_X + 104, POP_Y + 60, Ui::Debug::CANCEL, cancelColor, 1);
+}
+
+void MenuScene::renderDebugTimePopup() {
+    auto& c = PixelRenderer::canvas();
+    static constexpr int POP_X = 30;
+    static constexpr int POP_Y = 26;
+    static constexpr int POP_W = 180;
+    static constexpr int POP_H = 84;
+    c.fillRect(POP_X, POP_Y, POP_W, POP_H, PixelRenderer::rgb(18, 22, 30));
+    c.drawRect(POP_X, POP_Y, POP_W, POP_H, PixelRenderer::rgb(241, 242, 232));
+
+    PixelRenderer::text(POP_X + 14, POP_Y + 10, Ui::Debug::SET_TIME,
+                        PixelRenderer::rgb(67, 213, 224), 1);
+    PixelRenderer::text(POP_X + 14, POP_Y + 32, Ui::Debug::TARGET_TIME,
+                        PixelRenderer::rgb(241, 242, 232), 1);
+
+    char digitBuf[2] = {'0', '\0'};
+    for (uint8_t i = 0; i < 4; ++i) {
+        int x = POP_X + 90 + i * 16 + (i >= 2 ? 8 : 0);
+        bool selected = debugTimeFocus == i;
+        if (selected) {
+            c.drawRect(x - 3, POP_Y + 29, 14, 18, PixelRenderer::rgb(255, 216, 72));
+        }
+        digitBuf[0] = (char)('0' + debugTimeDigits[i]);
+        PixelRenderer::text(x, POP_Y + 32, digitBuf,
+                            selected ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232),
+                            1);
+    }
+    PixelRenderer::text(POP_X + 122, POP_Y + 32, ":", PixelRenderer::rgb(241, 242, 232), 1);
+
+    uint16_t yesColor = debugTimeFocus == 4 ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232);
+    uint16_t cancelColor = debugTimeFocus == 5 ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232);
+    if (debugTimeFocus == 4) c.fillRect(POP_X + 38, POP_Y + 60, 4, 16, PixelRenderer::rgb(255, 216, 72));
+    if (debugTimeFocus == 5) c.fillRect(POP_X + 94, POP_Y + 60, 4, 16, PixelRenderer::rgb(255, 216, 72));
     PixelRenderer::text(POP_X + 48, POP_Y + 60, Ui::Debug::YES, yesColor, 1);
     PixelRenderer::text(POP_X + 104, POP_Y + 60, Ui::Debug::CANCEL, cancelColor, 1);
 }
