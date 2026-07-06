@@ -292,10 +292,23 @@ static constexpr const char* ITEMS[] = {
 }
 
 namespace Debug {
+static constexpr const char* CATEGORY_MONSTER = "精灵";
+static constexpr const char* CATEGORY_RESOURCE = "资源";
+static constexpr const char* CATEGORY_ENV = "环境";
+static constexpr const char* CATEGORY_MOTION = "运动";
 static constexpr const char* RECOVER = "一键康复";
 static constexpr const char* SWITCH_MON = "切换精灵";
 static constexpr const char* ADD_COINS = "增加1000金币";
 static constexpr const char* SET_TIME = "设置时间";
+static constexpr const char* LIGHT_SOURCE = "光源位置";
+static constexpr const char* TILT_CONTROL = "倾斜控制";
+static constexpr const char* WALK_BOUNDARY = "运动边界";
+static constexpr const char* LIGHT_FOLLOW = "跟随";
+static constexpr const char* LIGHT_TOP_LEFT = "左上";
+static constexpr const char* LIGHT_TOP = "上方";
+static constexpr const char* LIGHT_TOP_RIGHT = "右上";
+static constexpr const char* LIGHT_LEFT = "左侧";
+static constexpr const char* LIGHT_RIGHT = "右侧";
 static constexpr const char* RECOVERED = "已康复";
 static constexpr const char* SWITCHED = "已切换";
 static constexpr const char* COINS_ADDED = "金币+1000";
@@ -307,11 +320,38 @@ static constexpr const char* TARGET_TIME = "目标时间";
 static constexpr const char* INPUT_ID = "编号";
 static constexpr const char* YES = "yes";
 static constexpr const char* CANCEL = "cancel";
-static constexpr const char* ITEMS[] = {
+static constexpr const char* LIGHT_SOURCE_ITEMS[] = {
+    LIGHT_FOLLOW,
+    LIGHT_TOP_LEFT,
+    LIGHT_TOP,
+    LIGHT_TOP_RIGHT,
+    LIGHT_LEFT,
+    LIGHT_RIGHT,
+};
+static constexpr const char* ROOT_ITEMS[] = {
+    CATEGORY_MONSTER,
+    CATEGORY_RESOURCE,
+    CATEGORY_ENV,
+    CATEGORY_MOTION,
+    Ui::BACK,
+};
+static constexpr const char* MONSTER_ITEMS[] = {
     RECOVER,
     SWITCH_MON,
+    Ui::BACK,
+};
+static constexpr const char* RESOURCE_ITEMS[] = {
     ADD_COINS,
+    Ui::BACK,
+};
+static constexpr const char* ENV_ITEMS[] = {
     SET_TIME,
+    LIGHT_SOURCE,
+    Ui::BACK,
+};
+static constexpr const char* MOTION_ITEMS[] = {
+    TILT_CONTROL,
+    WALK_BOUNDARY,
     Ui::BACK,
 };
 }
@@ -373,6 +413,7 @@ static constexpr const char* ORIGIN_TRADED = "交换";
 static constexpr const char* ORIGIN_GIFT = "礼物";
 static constexpr const char* ORIGIN_UNKNOWN = "未知";
 static constexpr const char* MOVE_UNKNOWN = "未知招式";
+static constexpr const char* MOVE_NOT_LEARNED = "未学会";
 static constexpr const char* TYPE_FMT = "属性：%s/%s";
 static constexpr const char* NATURE_FMT = "性格:%s";
 static constexpr const char* ID_FMT = "#%u";
@@ -584,6 +625,10 @@ static constexpr const char* NO_EFFECT = "没有效果";
 static constexpr const char* WILD_HP_FMT = "HP:%u/%u";
 static constexpr const char* BATTLE_WIN_FMT = "胜利 +%u经验 +10C";
 static constexpr const char* FAINTED_EXP_LOSS_FMT = "濒死 -%lu经验";
+static constexpr const char* LEARN_TITLE = "学习新招式?";
+static constexpr const char* LEARN_MOVE_FMT = "要学习%s吗?";
+static constexpr const char* LEARN_EMPTY_SLOT = "放入技能2";
+static constexpr const char* LEARN_REPLACE_FMT = "替换%s";
 static constexpr const char* PICKUP_FMT = "捡到%s";
 static constexpr const char* PICKUP_COIN_FMT = "捡到%luC";
 static constexpr const char* PICKUP_BALL = "精灵球";

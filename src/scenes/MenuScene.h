@@ -43,12 +43,24 @@ private:
         DEBUG,
     };
 
+    enum class DebugCategory : uint8_t {
+        ROOT,
+        MONSTER,
+        RESOURCE,
+        ENV,
+        MOTION,
+    };
+
     static constexpr uint8_t STATUS_PAGE_COUNT = 5;
     static constexpr uint8_t BAG_ITEM_COUNT = 7;
     static constexpr uint8_t ROOM_ITEM_COUNT = 5;
     static constexpr uint8_t FOOD_ITEM_COUNT = Game::ROOM_FOOD_COUNT + 1;
     static constexpr uint8_t COMPUTER_ITEM_COUNT = 3;
-    static constexpr uint8_t DEBUG_ITEM_COUNT = 5;
+    static constexpr uint8_t DEBUG_ROOT_ITEM_COUNT = 5;
+    static constexpr uint8_t DEBUG_MONSTER_ITEM_COUNT = 3;
+    static constexpr uint8_t DEBUG_RESOURCE_ITEM_COUNT = 2;
+    static constexpr uint8_t DEBUG_ENV_ITEM_COUNT = 3;
+    static constexpr uint8_t DEBUG_MOTION_ITEM_COUNT = 3;
     static constexpr uint8_t DEBUG_SWITCH_FOCUS_COUNT = 5;
     static constexpr uint8_t DEBUG_TIME_FOCUS_COUNT = 6;
 
@@ -74,6 +86,7 @@ private:
     uint8_t computerCursor = 0;
     uint8_t storageCursor = 0;
     float storageScroll = 0.0f;
+    DebugCategory debugCategory = DebugCategory::ROOT;
     uint8_t debugCursor = 0;
     bool debugSwitchOpen = false;
     uint8_t debugSwitchFocus = 0;
@@ -100,6 +113,9 @@ private:
     void renderDebugPage();
     void renderDebugSwitchPopup();
     void renderDebugTimePopup();
+    uint8_t debugItemCount() const;
+    const char* debugItemLabel(uint8_t index) const;
+    void handleDebugAction();
     void openDebugSwitchPopup();
     void openDebugTimePopup();
     uint16_t debugSwitchTargetId() const;

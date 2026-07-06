@@ -186,6 +186,8 @@ void ExploreScene::update(uint32_t nowMs, float dtSeconds) {
 }
 
 bool ExploreScene::onButton(const ButtonEvent& event) {
+    if (phase == Phase::LEARN_MOVE && event.action == BtnAction::LONG_PRESS) return true;
+
     if ((event.btn == 0 || event.btn == 1) && event.action == BtnAction::LONG_PRESS) {
         GameEngine::ins().requestScene(SceneID::MENU);
         return true;
@@ -239,6 +241,18 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
         }
     }
 
+    if (phase == Phase::LEARN_MOVE) {
+        if (event.btn == 0) {
+            GameEngine::ins().resolvePendingMoveLearn(learnCursor == 0);
+            phase = learnReturnPhase;
+            return true;
+        }
+        if (event.btn == 1) {
+            learnCursor = (learnCursor + 1) % 2;
+            return true;
+        }
+    }
+
     if (phase == Phase::RESULT) {
         if (event.btn == 0) {
             resetWalk();
@@ -257,6 +271,7 @@ void ExploreScene::walk() {
     uint8_t stepGain = 8 + random(0, 9);
     steps += stepGain;
     GameEngine::ins().addWalkSteps(stepGain);
+    if (enterPendingMoveLearn(Phase::WALKING)) return;
 
     bool triggered = rollSceneEvent(false);
     if (phase == Phase::ENCOUNTER) return;
@@ -407,7 +422,7 @@ void ExploreScene::serviceBattleLog(uint32_t nowMs) {
         }
         if (battleResultPending) {
             battleResultPending = false;
-            phase = Phase::RESULT;
+            if (!enterPendingMoveLearn(Phase::RESULT)) phase = Phase::RESULT;
         }
         return;
     }
@@ -431,6 +446,14 @@ bool ExploreScene::battleLogBusy() const {
     return battleLogActive || battleLogCount > 0 || battleResultPending;
 }
 
+bool ExploreScene::enterPendingMoveLearn(Phase returnPhase) {
+    if (!GameEngine::ins().hasPendingMoveLearn()) return false;
+    learnCursor = 0;
+    learnReturnPhase = returnPhase;
+    phase = Phase::LEARN_MOVE;
+    return true;
+}
+
 void ExploreScene::attackWild() {
     if (!wild || wildHp == 0) return;
     auto& activeMon = GameEngine::ins().activeMonster();
@@ -448,7 +471,7 @@ void ExploreScene::attackWild() {
     if (result.statusBlocked) {
         enqueueBattleLog(Ui::Explore::CANNOT_MOVE);
     } else if (result.effectiveness == 0) {
-        const MoveInfo* move = findMove(result.special ? activeSpecies.specialMoveId : basicMoveIdForSpecies(activeSpecies));
+        const MoveInfo* move = findMove(moveIdForMonster(activeSpecies, activeMon, result.special));
         char logBuf[BATTLE_LOG_LEN];
         snprintf(logBuf, sizeof(logBuf), Ui::Explore::MOVE_USED_FMT,
                  activeSpecies.name,
@@ -456,7 +479,7 @@ void ExploreScene::attackWild() {
         enqueueBattleLog(logBuf);
         enqueueBattleLog(Ui::Explore::NO_EFFECT);
     } else {
-        const MoveInfo* move = findMove(result.special ? activeSpecies.specialMoveId : basicMoveIdForSpecies(activeSpecies));
+        const MoveInfo* move = findMove(moveIdForMonster(activeSpecies, activeMon, result.special));
         char logBuf[BATTLE_LOG_LEN];
         snprintf(logBuf, sizeof(logBuf), Ui::Explore::MOVE_USED_FMT,
                  activeSpecies.name,
@@ -514,14 +537,14 @@ void ExploreScene::wildCounterattack() {
     if (result.statusBlocked) {
         enqueueBattleLog(Ui::Explore::WILD_CANNOT_MOVE);
     } else if (result.effectiveness == 0) {
-        const MoveInfo* move = findMove(result.special ? wild->specialMoveId : basicMoveIdForSpecies(*wild));
+        const MoveInfo* move = findMove(moveIdForMonster(*wild, wildRuntime, result.special));
         char logBuf[BATTLE_LOG_LEN];
         snprintf(logBuf, sizeof(logBuf), Ui::Explore::WILD_MOVE_USED_FMT,
                  move ? move->name : Ui::Status::MOVE_UNKNOWN);
         enqueueBattleLog(logBuf);
         enqueueBattleLog(Ui::Explore::NO_EFFECT);
     } else {
-        const MoveInfo* move = findMove(result.special ? wild->specialMoveId : basicMoveIdForSpecies(*wild));
+        const MoveInfo* move = findMove(moveIdForMonster(*wild, wildRuntime, result.special));
         char logBuf[BATTLE_LOG_LEN];
         snprintf(logBuf, sizeof(logBuf), Ui::Explore::WILD_MOVE_USED_FMT,
                  move ? move->name : Ui::Status::MOVE_UNKNOWN);
@@ -622,6 +645,7 @@ void ExploreScene::render() {
     case Phase::SELECT: renderBiomeMenu(); break;
     case Phase::WALKING: renderWalking(); break;
     case Phase::ENCOUNTER: renderEncounter(); break;
+    case Phase::LEARN_MOVE: renderLearnMove(); break;
     case Phase::RESULT: renderResult(); break;
     }
 }
@@ -676,6 +700,40 @@ void ExploreScene::renderEncounter() {
     drawMonsterBlock(GameEngine::ins().activeSpecies(), 58, 70, true);
     renderBattleHud();
     renderCommandBox();
+}
+
+void ExploreScene::renderLearnMove() {
+    auto& c = PixelRenderer::canvas();
+    c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, PixelRenderer::rgb(18, 24, 32));
+    c.fillRect(24, 26, 192, 86, PixelRenderer::rgb(35, 42, 50));
+    c.drawRect(24, 26, 192, 86, PixelRenderer::rgb(241, 242, 232));
+
+    const MoveInfo* move = findMove(GameEngine::ins().pendingMoveLearnId());
+    PixelRenderer::text(46, 38, Ui::Explore::LEARN_TITLE, PixelRenderer::rgb(255, 216, 72), 1);
+
+    char line[64];
+    snprintf(line, sizeof(line), Ui::Explore::LEARN_MOVE_FMT,
+             move ? move->name : Ui::Status::MOVE_UNKNOWN);
+    PixelRenderer::text(36, 58, line, PixelRenderer::rgb(241, 242, 232), 1);
+
+    const auto& state = GameEngine::ins().gameState();
+    uint8_t slot = GameEngine::ins().pendingMoveLearnSlot();
+    const MoveInfo* oldMove = nullptr;
+    if (slot < state.teamCount && slot < Game::TEAM_CAP) {
+        oldMove = findMove(state.team[slot].move2Id);
+    }
+    if (oldMove) {
+        snprintf(line, sizeof(line), Ui::Explore::LEARN_REPLACE_FMT, oldMove->name);
+        PixelRenderer::text(48, 76, line, PixelRenderer::rgb(135, 214, 238), 1);
+    } else {
+        PixelRenderer::text(64, 76, Ui::Explore::LEARN_EMPTY_SLOT,
+                            PixelRenderer::rgb(135, 214, 238), 1);
+    }
+
+    uint16_t yesColor = learnCursor == 0 ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(156, 164, 176);
+    uint16_t noColor = learnCursor == 1 ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(156, 164, 176);
+    PixelRenderer::text(72, 96, Ui::Bag::YES, yesColor, 1);
+    PixelRenderer::text(142, 96, Ui::Bag::NO, noColor, 1);
 }
 
 void ExploreScene::renderResult() {

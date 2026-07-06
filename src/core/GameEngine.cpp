@@ -19,6 +19,20 @@ namespace {
 static constexpr uint16_t HP_RECOVERY_INTERVAL_MIN = 5;
 static constexpr uint32_t FAINT_RECOVERY_SECONDS = 86400UL;
 static constexpr uint32_t CLOCK_SAVE_INTERVAL_MS = 15000UL;
+static constexpr uint16_t GAME_MINUTES_PER_DAY = 24U * 60U;
+static constexpr uint8_t DEBUG_LIGHT_SOURCE_COUNT = 6;
+
+uint16_t careDailyCapForLevel(uint8_t level) {
+    if (level <= 10) return 60;
+    if (level <= 20) return 35;
+    return 15;
+}
+
+uint8_t careExpMultiplierForLevel(uint8_t level) {
+    if (level <= 5) return 3;
+    if (level <= 10) return 2;
+    return 1;
+}
 
 uint8_t* effortField(Game::StatLine& ev, uint8_t statIndex) {
     switch (statIndex) {
@@ -79,6 +93,8 @@ bool GameEngine::begin() {
         selectFirstAvailableFood(state.room);
         markDirty(false);
     }
+    sanitizeMonsterMoves();
+    resetDailyCountersIfNeeded();
     Hal::ins().setBrightness(state.settings.brightness);
     ButtonDispatcher::ins().setLongPressMs(state.settings.longPressMs);
     EspNowLink::ins().beginStub();
@@ -201,6 +217,10 @@ Game::MonsterRuntime GameEngine::createMonster(uint16_t speciesId, uint8_t level
     mon.speciesId = species->id;
     mon.level = level;
     mon.exp = minimumExpForLevel(species->growthRate, level);
+    mon.move1Id = basicMoveIdForSpecies(*species);
+    uint8_t secondLevel = secondMoveLearnLevelForSpecies(*species);
+    uint8_t secondMove = secondMoveIdForSpecies(*species);
+    mon.move2Id = (secondLevel > 0 && level >= secondLevel) ? secondMove : 0;
     mon.ivPacked = randomIvPacked();
     mon.nature = random(0, Game::NATURE_COUNT);
     mon.hpMax = maxHpFor(*species, mon);
@@ -284,10 +304,12 @@ bool GameEngine::consumeFood() {
 
     state.room.food[foodIndex]--;
     Game::MonsterRuntime& mon = activeMonster();
+    bool wasFull = mon.satiety >= 100;
     uint8_t satietyGain = foodIndex == 1 ? 22 : 15;
     uint8_t moodGain = foodIndex == 1 ? 5 : 3;
     mon.satiety = min<uint8_t>(100, mon.satiety + satietyGain);
     mon.mood = min<uint8_t>(100, mon.mood + moodGain);
+    grantCareExperience(foodIndex == 1 ? 6 : 4, wasFull);
     if (state.room.food[foodIndex] == 0) {
         selectFirstAvailableFood(state.room);
     }
@@ -436,6 +458,11 @@ bool GameEngine::recordCapture(const Game::MonsterRuntime& monster, uint8_t metA
     Game::MonsterRuntime mon = monster;
     mon.hpMax = maxHpFor(*species, mon);
     mon.hpCur = mon.hpMax;
+    if (!isBasicFirstMove(mon.move1Id)) mon.move1Id = basicMoveIdForSpecies(*species);
+    if (!findMove(mon.move2Id)) {
+        uint8_t secondLevel = secondMoveLearnLevelForSpecies(*species);
+        mon.move2Id = (secondLevel > 0 && mon.level >= secondLevel) ? secondMoveIdForSpecies(*species) : 0;
+    }
     mon.origin = Game::Origin::CAPTURED;
     mon.metArea = metArea;
     mon.caughtAt = Hal::ins().millis() / 1000;
@@ -492,6 +519,7 @@ void GameEngine::petMonster() {
         mon.lastPettedAt = Hal::ins().millis() / 1000;
         markDirty(true);
     }
+    grantCareExperience(2);
 }
 
 void GameEngine::finishHatch(uint8_t starterStyle) {
@@ -527,7 +555,25 @@ void GameEngine::addExperience(uint32_t amount) {
         mon.hpCur = min<uint16_t>(mon.hpMax, mon.hpCur + (mon.hpMax - oldHpMax));
     }
     if (mon.level < oldLevel) mon.level = oldLevel;
+    if (mon.level > oldLevel) queueMoveLearnIfReady(mon, species, oldLevel);
     markDirty(false);
+}
+
+bool GameEngine::resolvePendingMoveLearn(bool learn) {
+    if (!pendingMoveLearn) return false;
+    bool applied = false;
+    if (learn && pendingMoveSlot < state.teamCount && pendingMoveSlot < Game::TEAM_CAP) {
+        Game::MonsterRuntime& mon = state.team[pendingMoveSlot];
+        if (findMove(pendingMoveId)) {
+            mon.move2Id = pendingMoveId;
+            markDirty(true);
+            applied = true;
+        }
+    }
+    pendingMoveLearn = false;
+    pendingMoveSlot = 0;
+    pendingMoveId = 0;
+    return applied;
 }
 
 uint32_t GameEngine::applyActiveFaintPenalty() {
@@ -548,6 +594,8 @@ uint32_t GameEngine::applyActiveFaintPenalty() {
 }
 
 void GameEngine::addWalkSteps(uint16_t steps) {
+    syncGameClock(Hal::ins().millis());
+    resetDailyCountersIfNeeded();
     state.stepsToday = min<uint16_t>(60000, state.stepsToday + steps);
     uint16_t expGain = steps / 100;
     if (expGain > 0 && state.walkExpToday < 50) {
@@ -599,6 +647,16 @@ uint32_t GameEngine::debugAdvanceToTimeOfDay(uint16_t targetMinutesOfDay) {
     clockAnchorMinutes = state.gameMinutesTotal;
     saveNow();
     return delta;
+}
+
+const char* GameEngine::debugLightSourceLabel() const {
+    uint8_t index = debugLightSource;
+    if (index >= DEBUG_LIGHT_SOURCE_COUNT) index = 0;
+    return Ui::Debug::LIGHT_SOURCE_ITEMS[index];
+}
+
+void GameEngine::cycleDebugLightSource() {
+    debugLightSource = (uint8_t)((debugLightSource + 1) % DEBUG_LIGHT_SOURCE_COUNT);
 }
 
 void GameEngine::wakeFromIdle() {
@@ -757,13 +815,84 @@ void GameEngine::initDefaultState() {
     state.teamCount = 1;
     state.activeSlot = 0;
     state.gameMinutesTotal = 0;
+    state.careDay = 0;
+    state.careExpToday = 0;
     state.team[0] = createMonster(starter.id, 5);
     state.team[0].origin = Game::Origin::STARTER;
     state.team[0].metArea = Game::MET_AREA_STARTER;
 }
 
+void GameEngine::sanitizeMonsterMoves() {
+    bool changed = false;
+    auto sanitize = [&](Game::MonsterRuntime& mon) {
+        const Species* species = findSpecies(mon.speciesId);
+        if (!species) return;
+
+        uint8_t basicMove = basicMoveIdForSpecies(*species);
+        if (!isBasicFirstMove(mon.move1Id)) {
+            mon.move1Id = basicMove;
+            changed = true;
+        }
+
+        if (mon.move2Id == 0) return;
+        uint8_t secondLevel = secondMoveLearnLevelForSpecies(*species);
+        if (secondLevel == 0 || mon.level < secondLevel || !findMove(mon.move2Id) || mon.move2Id == mon.move1Id) {
+            mon.move2Id = 0;
+            changed = true;
+        }
+    };
+
+    for (uint8_t i = 0; i < state.teamCount && i < Game::TEAM_CAP; ++i) {
+        sanitize(state.team[i]);
+    }
+    for (uint8_t i = 0; i < state.storageCount && i < Game::STORAGE_CAP; ++i) {
+        sanitize(state.storage[i]);
+    }
+    if (changed) markDirty(false);
+}
+
+void GameEngine::resetDailyCountersIfNeeded() {
+    uint32_t day = state.gameMinutesTotal / GAME_MINUTES_PER_DAY;
+    if (day > 0xFFFF) day = 0xFFFF;
+    if (state.careDay == (uint16_t)day) return;
+
+    state.careDay = (uint16_t)day;
+    state.careExpToday = 0;
+    state.stepsToday = 0;
+    state.walkExpToday = 0;
+    for (uint8_t i = 0; i < state.teamCount && i < Game::TEAM_CAP; ++i) {
+        state.team[i].petCountToday = 0;
+    }
+    for (uint8_t i = 0; i < state.storageCount && i < Game::STORAGE_CAP; ++i) {
+        state.storage[i].petCountToday = 0;
+    }
+    markDirty(false);
+}
+
+void GameEngine::grantCareExperience(uint8_t baseAmount, bool weakGain) {
+    if (baseAmount == 0 || state.teamCount == 0) return;
+    uint32_t now = Hal::ins().millis();
+    syncGameClock(now);
+    resetDailyCountersIfNeeded();
+
+    Game::MonsterRuntime& mon = activeMonster();
+    uint16_t cap = careDailyCapForLevel(mon.level);
+    if (state.careExpToday >= cap) return;
+
+    uint16_t amount = weakGain || mon.level > 15
+        ? 1
+        : (uint16_t)baseAmount * careExpMultiplierForLevel(mon.level);
+    amount = min<uint16_t>(amount, cap - state.careExpToday);
+    if (amount == 0) return;
+
+    state.careExpToday += amount;
+    addExperience(amount);
+    markDirty(false);
+}
+
 void GameEngine::tickCare(uint32_t nowMs) {
     if (nowMs - lastCareMs < 60000UL) return;
+    resetDailyCountersIfNeeded();
     uint32_t elapsedMin = (nowMs - lastCareMs) / 60000UL;
     lastCareMs = nowMs;
     uint32_t scaledHpRecoveryMin = (uint32_t)((float)elapsedMin * gameSpeed());
@@ -819,4 +948,17 @@ uint32_t GameEngine::randomIvPacked() const {
         Game::setIv(packed, i, random(0, Game::IV_MAX + 1));
     }
     return packed;
+}
+
+void GameEngine::queueMoveLearnIfReady(Game::MonsterRuntime& mon, const Species& species, uint8_t oldLevel) {
+    if (pendingMoveLearn) return;
+    uint8_t learnLevel = secondMoveLearnLevelForSpecies(species);
+    uint8_t moveId = secondMoveIdForSpecies(species);
+    if (learnLevel == 0 || moveId == 0) return;
+    if (oldLevel >= learnLevel || mon.level < learnLevel) return;
+    if (mon.move2Id == moveId) return;
+
+    pendingMoveLearn = true;
+    pendingMoveSlot = 0;
+    pendingMoveId = moveId;
 }

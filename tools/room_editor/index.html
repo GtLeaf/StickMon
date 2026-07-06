@@ -8,77 +8,99 @@
 </head>
 <body>
   <main class="app">
-    <section class="panel">
+    <section class="panel left-panel">
       <div class="panel-header">Inputs</div>
       <div class="panel-body stack">
-        <div class="drop-zone" id="dropZone">
-          Drop base or furniture PNG files here
+        <input id="canvasW" type="hidden" value="240">
+        <input id="canvasH" type="hidden" value="135">
+        <input id="aspectLock" type="checkbox" checked hidden>
+        <input id="spriteX" type="hidden" value="88">
+        <input id="spriteY" type="hidden" value="50">
+        <input id="spriteW" type="hidden" value="64">
+        <input id="spriteH" type="hidden" value="64">
+
+        <details class="panel subpanel left-subpanel" open>
+          <summary class="panel-header collapsible-panel-summary">
+            <span>Assets</span>
+          </summary>
+          <div class="panel-body stack">
+            <div class="drop-zone" id="dropZone">
+              Drop base or furniture PNG files here
+            </div>
+
+            <div class="toolbar">
+              <label class="file-button">
+                Reference image
+                <input id="baseInput" type="file" accept="image/*">
+              </label>
+              <button id="replaceBaseButton" type="button">Replace background</button>
+              <label class="file-button">
+                Furniture
+                <input id="furnitureInput" type="file" accept="image/*" multiple>
+              </label>
+              <label class="file-button">
+                Layout JSON
+                <input id="layoutInput" type="file" accept="application/json,.json">
+              </label>
+            </div>
+
+            <div class="hint" id="baseImageMeta">Reference image: none</div>
+          </div>
+        </details>
+
+        <div class="canvas-size-summary">
+          <div class="size-chip" data-tooltip="游戏内导出使用的尺寸。宽度固定为 240，高度由背景裁剪后按比例自动计算。">
+            <span>Export canvas</span>
+            <strong id="exportCanvasSize">240x135</strong>
+          </div>
+          <div class="size-chip" data-tooltip="主编辑画布使用的高清尺寸。描面、测量和摆放都在这个高清画布上操作。">
+            <span>Edit canvas</span>
+            <strong id="editCanvasSize">240x135</strong>
+          </div>
         </div>
 
-        <div class="toolbar">
-          <label class="file-button">
-            Reference image
-            <input id="baseInput" type="file" accept="image/*">
-          </label>
-          <label class="file-button">
-            Furniture
-            <input id="furnitureInput" type="file" accept="image/*" multiple>
-          </label>
-          <label class="file-button">
-            Layout JSON
-            <input id="layoutInput" type="file" accept="application/json,.json">
-          </label>
-        </div>
+        <details class="panel subpanel left-subpanel" open>
+          <summary class="panel-header collapsible-panel-summary">
+            <span>Background</span>
+          </summary>
+          <div class="panel-body stack">
+            <label class="field">
+              Reference opacity
+              <input id="baseOpacity" type="range" min="0" max="100" value="65">
+            </label>
 
-        <div class="hint" id="baseImageMeta">Reference image: none</div>
+            <div class="row">
+              <label class="field">
+                Source scale
+                <input id="sourceScale" type="number" step="0.01" min="0.01" value="4">
+              </label>
+              <label class="field">
+                Furniture import
+                <select id="furnitureImportMode">
+                  <option value="source_scale">Divide by source scale</option>
+                  <option value="fit_canvas">Fit inside canvas</option>
+                  <option value="native">Native pixels</option>
+                </select>
+              </label>
+            </div>
 
-        <div class="row">
-          <label class="field">
-            Room W
-            <input id="canvasW" type="number" min="16" max="2048" value="240">
-          </label>
-          <label class="field">
-            Room H
-            <input id="canvasH" type="number" min="16" max="2048" value="135">
-          </label>
-        </div>
+            <label class="field">
+              Background fit
+              <select id="baseFit">
+                <option value="fit_width">Fit screen width</option>
+              </select>
+            </label>
 
-        <label class="check-row">
-          <input id="aspectLock" type="checkbox" checked>
-          Lock room aspect ratio
-        </label>
+            <div class="hint">
+              Preview/export scale the trimmed background to 240px wide. The main canvas keeps source detail for tracing and sizing. The cyan frame marks the 240x135 screen.
+            </div>
+          </div>
+        </details>
 
-        <label class="field">
-          Reference opacity
-          <input id="baseOpacity" type="range" min="0" max="100" value="65">
-        </label>
-
-        <div class="row">
-          <label class="field">
-            Source scale
-            <input id="sourceScale" type="number" step="0.01" min="0.01" value="4">
-          </label>
-          <label class="field">
-            Furniture import
-            <select id="furnitureImportMode">
-              <option value="source_scale">Divide by source scale</option>
-              <option value="fit_canvas">Fit inside canvas</option>
-              <option value="native">Native pixels</option>
-            </select>
-          </label>
-        </div>
-
-        <label class="field">
-          Base fit
-          <select id="baseFit">
-            <option value="cover">Cover crop</option>
-            <option value="contain">Contain</option>
-            <option value="stretch">Stretch</option>
-          </select>
-        </label>
-
-        <div class="panel subpanel">
-          <div class="panel-header">Project sprites</div>
+        <details class="panel subpanel left-subpanel" open>
+          <summary class="panel-header collapsible-panel-summary">
+            <span>Project sprites</span>
+          </summary>
           <div class="panel-body stack">
             <label class="field">
               Species
@@ -99,44 +121,34 @@
             </div>
             <div class="hint" id="projectSpriteMeta">Run generate_sprite_previews.py if the list is empty.</div>
           </div>
-        </div>
+        </details>
 
-        <div class="row">
-          <label class="field">
-            Sprite X
-            <input id="spriteX" type="number" value="88">
-          </label>
-          <label class="field">
-            Sprite Y
-            <input id="spriteY" type="number" value="50">
-          </label>
-        </div>
+        <details class="panel subpanel left-subpanel" open>
+          <summary class="panel-header collapsible-panel-summary">
+            <span>View helpers</span>
+          </summary>
+          <div class="panel-body stack">
+            <label class="check-row">
+              <input id="showGuides" type="checkbox" checked>
+              Show HUD guide
+            </label>
 
-        <div class="row">
-          <label class="field">
-            Sprite W
-            <input id="spriteW" type="number" value="64">
-          </label>
-          <label class="field">
-            Sprite H
-            <input id="spriteH" type="number" value="64">
-          </label>
-        </div>
+            <label class="check-row">
+              <input id="showGrid" type="checkbox">
+              Show 8px grid
+            </label>
 
-        <label class="check-row">
-          <input id="showGuides" type="checkbox" checked>
-          Show sprite and HUD guides
-        </label>
+            <label class="field">
+              Grid opacity <span id="gridOpacityValue">18%</span>
+              <input id="gridOpacity" type="range" min="0" max="100" value="18">
+            </label>
 
-        <label class="check-row">
-          <input id="showGrid" type="checkbox">
-          Show 8px grid
-        </label>
-
-        <label class="check-row">
-          <input id="snapToGrid" type="checkbox">
-          Snap furniture to 8px grid
-        </label>
+            <label class="check-row">
+              <input id="snapToGrid" type="checkbox">
+              Snap furniture to 8px grid
+            </label>
+          </div>
+        </details>
 
         <div class="hint">
           Shape points are edited on the reference image. Preview and export scale them to game pixels.
@@ -147,12 +159,18 @@
     <section class="panel stage-wrap">
       <div class="stage-toolbar">
         <div class="segmented">
-          <button id="dayMode" class="active" type="button">Day</button>
-          <button id="nightMode" type="button">Night</button>
+          <button id="dayMode" class="active" type="button">Preview Day</button>
+          <button id="nightMode" type="button">Preview Night</button>
         </div>
         <div class="segmented">
           <button id="furnitureMode" class="active" type="button">Furniture</button>
           <button id="shapeMode" type="button">Shape</button>
+        </div>
+        <div class="stage-zoom">
+          <button id="zoomOut" type="button" title="Zoom out">-</button>
+          <input id="editZoom" type="range" min="25" max="300" step="25" value="100" aria-label="Canvas zoom">
+          <button id="zoomIn" type="button" title="Zoom in">+</button>
+          <button id="zoomReset" type="button">100%</button>
         </div>
         <div class="toolbar">
           <button id="undoAction" type="button" title="Undo (Ctrl+Z)">Undo</button>
@@ -167,52 +185,214 @@
     </section>
 
     <section class="panel right">
-      <div class="panel-header">Preview, properties and export</div>
+      <div class="panel-header">Preview / Properties / Export</div>
       <div class="panel-body stack right-stack">
-        <canvas id="preview" class="preview-canvas" width="240" height="135"></canvas>
-
-        <div class="toolbar export-toolbar">
-          <button id="exportJson" class="primary" type="button">Export layout</button>
-          <button id="exportGeometry" type="button">Export room data</button>
-          <button id="exportPreview" type="button">Export preview PNG</button>
+        <div class="inspector-section preview-panel">
+          <div class="section-title-row">
+            <div class="section-title">Preview</div>
+            <div class="section-meta">240x135</div>
+          </div>
+          <div class="preview-frame">
+            <canvas id="preview" class="preview-canvas" width="240" height="135"></canvas>
+          </div>
         </div>
 
-        <div class="stack" id="selectedPanel">
-          <div class="hint">Select furniture or a sprite preview to edit transform and layer values.</div>
+        <details class="inspector-section toolbox-panel" open>
+          <summary class="section-title-row toolbox-summary">
+            <div class="section-title">Toolbox</div>
+            <div class="section-meta" id="toolboxMeta">Select</div>
+          </summary>
+          <div class="toolbox-content">
+            <div class="segmented tool-toggle">
+              <button id="selectTool" class="active" type="button">Select</button>
+              <button id="measureHeightTool" type="button">Measure H</button>
+            </div>
+            <div class="measure-readout">
+              <div class="measure-card">
+                <span>Canvas H</span>
+                <strong id="measureCanvasHeight">--</strong>
+              </div>
+              <div class="measure-card">
+                <span>Game H</span>
+                <strong id="measureGameHeight">--</strong>
+              </div>
+              <div class="measure-card wide">
+                <span>Y range</span>
+                <strong id="measureYRange">--</strong>
+              </div>
+            </div>
+            <button id="clearMeasure" type="button">Clear measure</button>
+          </div>
+        </details>
+
+        <details class="export-drawer" id="sessionExportPanel">
+          <summary>
+            <span>Session / Export</span>
+            <span class="section-meta">work + output</span>
+          </summary>
+          <div class="export-sections">
+            <div class="export-section">
+              <div class="export-section-title">Session</div>
+              <div class="hint" id="sessionExportMeta">Save keeps a browser session and updates a local JSON file when supported.</div>
+              <div class="export-grid">
+                <button id="saveSession" class="primary" type="button">Save session</button>
+                <button id="loadSession" type="button">Load session</button>
+                <button id="changeSessionFile" type="button">Change location</button>
+                <button id="clearSession" class="danger" type="button">Clear saved</button>
+              </div>
+            </div>
+            <div class="export-section">
+              <div class="export-section-title">Export</div>
+              <div class="export-grid">
+                <button id="exportJson" class="primary" type="button">Export layout</button>
+                <button id="exportGeometry" type="button">Export room data</button>
+                <button id="exportPreview" type="button">Export preview PNG</button>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <div class="inspector-section properties-panel" id="propertiesPanel">
+          <div class="section-title-row">
+            <div class="section-title">Properties</div>
+          </div>
+          <div class="stack" id="selectedPanel">
+            <div class="hint">Select furniture or a sprite preview to edit transform and layer values.</div>
+          </div>
+          <div class="toolbar item-actions">
+            <button id="duplicateItem" type="button">Duplicate</button>
+            <button id="deleteItem" class="danger" type="button">Delete</button>
+          </div>
         </div>
 
-        <div class="panel subpanel">
-          <div class="panel-header">Room faces</div>
+        <details class="panel subpanel right-subpanel room-faces-panel" open>
+          <summary class="panel-header collapsible-panel-summary">
+            <span>Room faces</span>
+          </summary>
           <div class="panel-body stack face-panel-body">
             <div class="face-list" id="faceList"></div>
             <div class="stack" id="selectedFacePanel" hidden></div>
           </div>
-        </div>
+        </details>
 
-        <div class="asset-list" id="assetList"></div>
+        <details class="panel subpanel right-subpanel asset-management-panel" id="layersPanel" open>
+          <summary class="panel-header collapsible-panel-summary">
+            <span>Layers</span>
+          </summary>
+          <div class="panel-body stack asset-panel-body">
+            <div class="asset-list" id="assetList"></div>
+          </div>
+        </details>
 
-        <div class="panel subpanel" id="nightOverlayPanel" hidden>
-          <div class="panel-header">Night overlay</div>
+        <details class="panel subpanel night-panel" id="nightOverlayPanel" open>
+          <summary class="panel-header collapsible-panel-summary">
+            <span>Light and shadows</span>
+          </summary>
           <div class="panel-body stack">
+            <div class="hint">Top buttons switch preview only. Choose which light profile you are editing here, then drag the light handle on the canvas.</div>
+            <div class="light-profile-row">
+              <span class="field-label">Editing profile</span>
+              <div class="segmented light-profile-control">
+                <button id="lightProfileShared" class="active" type="button">共享</button>
+                <button id="lightProfileDay" type="button">白天</button>
+                <button id="lightProfileNight" type="button">夜晚</button>
+              </div>
+              <div class="toolbar light-profile-actions">
+                <button id="copyLightToDay" type="button">复制到白天</button>
+                <button id="copyLightToNight" type="button">复制到夜晚</button>
+              </div>
+            </div>
+            <div class="row">
+              <label class="field">
+                Light shape
+                <select id="lightShape">
+                  <option value="radial">Radial</option>
+                  <option value="cone">Cone</option>
+                </select>
+              </label>
+              <label class="field">
+                Strength
+                <input id="lightStrength" type="range" min="0" max="200" value="28">
+              </label>
+            </div>
             <label class="field">
-              Blue tint
-              <input id="nightTint" type="range" min="0" max="90" value="46">
+              Light radius
+              <input id="lightRadius" type="range" min="8" max="240" value="68">
+            </label>
+            <details class="property-group">
+              <summary>
+                <span>Advanced light controls</span>
+                <span class="section-meta">position/depth</span>
+              </summary>
+              <div class="property-group-body stack">
+                <div class="row">
+                  <label class="field">
+                    Light X
+                    <input id="lightX" type="number" min="-2048" max="2048" value="170">
+                  </label>
+                  <label class="field">
+                    Light Y
+                    <input id="lightY" type="number" min="-2048" max="2048" value="70">
+                  </label>
+                </div>
+                <label class="field">
+                  Light depth
+                  <input id="lightDepth" type="range" min="40" max="480" value="180">
+                </label>
+                <div class="row">
+                  <label class="field">
+                    Cone angle
+                    <input id="lightAngle" type="number" min="0" max="359" value="125">
+                  </label>
+                  <label class="field">
+                    Cone spread
+                    <input id="lightSpread" type="range" min="5" max="160" value="42">
+                  </label>
+                </div>
+              </div>
+            </details>
+            <details class="property-group">
+              <summary>
+                <span>Night overlay</span>
+                <span class="section-meta">tint/darken</span>
+              </summary>
+              <div class="property-group-body stack">
+                <label class="field">
+                  Blue tint
+                  <input id="nightTint" type="range" min="0" max="90" value="46">
+                </label>
+                <label class="field">
+                  Darken
+                  <input id="nightDarken" type="range" min="0" max="90" value="34">
+                </label>
+              </div>
+            </details>
+            <label class="check-row">
+              <input id="castShadows" type="checkbox" checked>
+              Cast 2D shadows
             </label>
             <label class="field">
-              Darken
-              <input id="nightDarken" type="range" min="0" max="90" value="34">
+              Shadow mode
+              <select id="shadowMode">
+                <option value="auto">Auto</option>
+                <option value="point">Point light</option>
+                <option value="directional">Directional</option>
+              </select>
             </label>
             <label class="field">
-              Warm lamp
-              <input id="lampStrength" type="range" min="0" max="90" value="36">
+              Shadow opacity
+              <input id="shadowAlpha" type="range" min="0" max="80" value="38">
+            </label>
+            <label class="field">
+              Shadow length
+              <input id="shadowLength" type="range" min="0" max="80" value="28">
+            </label>
+            <label class="field">
+              Shadow blur
+              <input id="shadowBlur" type="range" min="0" max="12" step="0.1" value="0.6">
             </label>
           </div>
-        </div>
-
-        <div class="toolbar">
-          <button id="duplicateItem" type="button">Duplicate</button>
-          <button id="deleteItem" class="danger" type="button">Delete</button>
-        </div>
+        </details>
 
         <div class="hint">
           Export layout JSON as the source of truth. Use the fixed compose_room.py script beside this tool for day/night batch previews.
@@ -220,6 +400,66 @@
       </div>
     </section>
   </main>
+
+  <div id="cutoutModal" class="modal-backdrop" hidden>
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="cutoutTitle">
+      <div class="modal-header">
+        <div>
+          <div id="cutoutTitle" class="modal-title">Remove background?</div>
+          <div id="cutoutFileName" class="modal-subtitle"></div>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="cutout-controls">
+          <label class="field">
+            Picked color
+            <input id="cutoutColor" type="color" value="#03f903">
+          </label>
+          <label class="field">
+            Tool
+            <select id="cutoutTool">
+              <option value="pick">Pick color</option>
+              <option value="wand">Magic wand</option>
+              <option value="erase">Erase brush</option>
+              <option value="restore">Restore brush</option>
+            </select>
+          </label>
+          <label class="field">
+            Remove range <span id="cutoutToleranceValue">28</span>
+            <input id="cutoutTolerance" type="range" min="0" max="160" value="28">
+          </label>
+          <label class="field">
+            Edge feather <span id="cutoutFeatherValue">8</span>
+            <input id="cutoutFeather" type="range" min="0" max="80" value="8">
+          </label>
+          <label class="field">
+            Brush size <span id="cutoutBrushSizeValue">1</span>
+            <input id="cutoutBrushSize" type="range" min="1" max="16" value="1">
+          </label>
+          <button id="cutoutReset" type="button">Reset after</button>
+        </div>
+        <div class="cutout-compare">
+          <figure class="cutout-frame">
+            <canvas id="cutoutBefore"></canvas>
+            <figcaption>Before</figcaption>
+          </figure>
+          <figure class="cutout-frame">
+            <canvas id="cutoutAfter"></canvas>
+            <figcaption>After</figcaption>
+          </figure>
+        </div>
+        <div id="cutoutHint" class="hint">Pick a background color, then use cutout, magic wand, or brush cleanup before applying.</div>
+      </div>
+      <div class="modal-actions">
+        <button id="cutoutCancel" type="button">Cancel</button>
+        <button id="cutoutUseOriginal" type="button">Use original</button>
+        <button id="cutoutRun" type="button">Cutout</button>
+        <button id="cutoutUseResult" class="primary" type="button" disabled>Use cutout</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="hoverTooltip" class="hover-tooltip" hidden></div>
 
   <script src="../../origin_asset/generated/pokemon_preview_assets.js"></script>
   <script src="./app.js"></script>

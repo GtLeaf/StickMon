@@ -48,17 +48,18 @@ void Hal::flush() {
     sprite.pushSprite(&M5.Display, 0, 0);
 }
 
+void Hal::applyBrightness() {
+    M5.Display.setBrightness(idleBrightnessActive ? 16 : brightness);
+}
+
 void Hal::setBrightness(uint8_t value) {
     brightness = value;
-    if (!idleBrightnessActive) {
-        M5.Display.setBrightness(value);
-    }
+    applyBrightness();
 }
 
 void Hal::setIdleBrightness(bool idle) {
-    if (idle == idleBrightnessActive) return;
     idleBrightnessActive = idle;
-    M5.Display.setBrightness(idle ? 16 : brightness);
+    applyBrightness();
 }
 
 uint32_t Hal::millis() const {
@@ -71,6 +72,11 @@ bool Hal::btnA_raw() const {
 
 bool Hal::btnB_raw() const {
     return M5.BtnB.isPressed() || M5.BtnPWR.isPressed();
+}
+
+bool Hal::readAccel(float& ax, float& ay, float& az) {
+    if (!initialized) return false;
+    return M5.Imu.getAccel(&ax, &ay, &az);
 }
 
 int Hal::batteryLevel() {

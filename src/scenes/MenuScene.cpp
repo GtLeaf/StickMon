@@ -250,6 +250,7 @@ void MenuScene::onEnter() {
     computerCursor = 0;
     storageCursor = 0;
     storageScroll = 0.0f;
+    debugCategory = DebugCategory::ROOT;
     debugCursor = 0;
     debugSwitchOpen = false;
     debugSwitchFocus = 0;
@@ -293,6 +294,11 @@ bool MenuScene::onButton(const ButtonEvent& event) {
             }
             if (viewMode == ViewMode::DEBUG && debugTimeOpen) {
                 debugTimeOpen = false;
+                return true;
+            }
+            if (viewMode == ViewMode::DEBUG && debugCategory != DebugCategory::ROOT) {
+                debugCategory = DebugCategory::ROOT;
+                debugCursor = 0;
                 return true;
             }
             if (viewMode == ViewMode::STORAGE) {
@@ -495,31 +501,11 @@ bool MenuScene::onButton(const ButtonEvent& event) {
             return true;
         }
         if (viewMode == ViewMode::DEBUG && event.btn == 1 && event.action == BtnAction::PRESSED) {
-            debugCursor = (debugCursor + 1) % DEBUG_ITEM_COUNT;
+            debugCursor = (debugCursor + 1) % debugItemCount();
             return true;
         }
         if (viewMode == ViewMode::DEBUG && event.btn == 0 && event.action == BtnAction::PRESSED) {
-            switch (debugCursor) {
-            case 0:
-                GameEngine::ins().debugRecoverActiveMonster();
-                toast = Ui::Debug::RECOVERED;
-                toastUntil = Hal::ins().millis() + 1100;
-                break;
-            case 1:
-                openDebugSwitchPopup();
-                break;
-            case 2:
-                GameEngine::ins().addCoins(1000);
-                toast = Ui::Debug::COINS_ADDED;
-                toastUntil = Hal::ins().millis() + 1100;
-                break;
-            case 3:
-                openDebugTimePopup();
-                break;
-            default:
-                viewMode = ViewMode::MENU;
-                break;
-            }
+            handleDebugAction();
             return true;
         }
         if (event.btn == 0 && event.action == BtnAction::PRESSED) {
@@ -586,6 +572,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
         return true;
     case ITEM_DEBUG:
         viewMode = ViewMode::DEBUG;
+        debugCategory = DebugCategory::ROOT;
         debugCursor = 0;
         debugSwitchOpen = false;
         debugTimeOpen = false;
@@ -896,8 +883,8 @@ void MenuScene::renderStatusPage() {
         }
         c.drawRoundRect(BAR_X, BAR_Y, BAR_W, BAR_H, 2, PixelRenderer::rgb(45, 48, 56));
     } else if (statusPage == 2) {
-        const MoveInfo* basicMove = findMove(basicMoveIdForSpecies(mon));
-        const MoveInfo* specialMove = findMove(mon.specialMoveId);
+        const MoveInfo* basicMove = findMove(moveIdForMonster(mon, activeMon, false));
+        const MoveInfo* specialMove = findMove(moveIdForMonster(mon, activeMon, true));
         PixelRenderer::text(12, 8, Ui::Status::MOVE_INFO, PixelRenderer::rgb(67, 213, 224), 1);
 
         TypeId basicType = basicMove ? basicMove->type : TypeId::NORMAL;
@@ -906,18 +893,25 @@ void MenuScene::renderStatusPage() {
                             PixelRenderer::rgb(241, 242, 232), 1);
 
         int specialY = 60;
-        TypeId specialType = specialMove ? specialMove->type : TypeId::NORMAL;
-        int specialNameX = drawTypeBracket(14, specialY, specialType);
-        PixelRenderer::text(specialNameX + 4, specialY, specialMove ? specialMove->name : Ui::Status::MOVE_UNKNOWN,
-                            PixelRenderer::rgb(241, 242, 232), 1);
-        snprintf(buf, sizeof(buf), Ui::Status::PROFICIENCY_FMT,
-                 proficiencyName(activeMon.proficiency));
-        PixelRenderer::text(128, specialY, buf, PixelRenderer::rgb(255, 216, 72), 1);
-        snprintf(buf, sizeof(buf), Ui::Status::POWER_FMT, specialMove ? specialMove->power : 0);
-        PixelRenderer::text(56, specialY + 24, buf, PixelRenderer::rgb(255, 216, 72), 1);
-        PixelRenderer::text(56, specialY + 44,
-                            specialMove ? specialMove->description : Ui::Status::MOVE_UNKNOWN,
-                            PixelRenderer::rgb(135, 214, 238), 1);
+        if (specialMove) {
+            TypeId specialType = specialMove->type;
+            int specialNameX = drawTypeBracket(14, specialY, specialType);
+            PixelRenderer::text(specialNameX + 4, specialY, specialMove->name,
+                                PixelRenderer::rgb(241, 242, 232), 1);
+            snprintf(buf, sizeof(buf), Ui::Status::PROFICIENCY_FMT,
+                     proficiencyName(activeMon.proficiency));
+            PixelRenderer::text(128, specialY, buf, PixelRenderer::rgb(255, 216, 72), 1);
+            snprintf(buf, sizeof(buf), Ui::Status::POWER_FMT, specialMove->power);
+            PixelRenderer::text(56, specialY + 24, buf, PixelRenderer::rgb(255, 216, 72), 1);
+            PixelRenderer::text(56, specialY + 44,
+                                specialMove->description,
+                                PixelRenderer::rgb(135, 214, 238), 1);
+        } else {
+            PixelRenderer::text(14, specialY, Ui::Status::SPECIAL_MOVE,
+                                PixelRenderer::rgb(156, 164, 176), 1);
+            PixelRenderer::text(86, specialY, Ui::Status::MOVE_NOT_LEARNED,
+                                PixelRenderer::rgb(156, 164, 176), 1);
+        }
     } else if (statusPage == 3) {
         PixelRenderer::text(12, 8, Ui::Status::EFFORT_STATS, PixelRenderer::rgb(67, 213, 224), 1);
         snprintf(buf, sizeof(buf), Ui::Status::TOTAL_FMT, Game::evTotal(activeMon.ev), Game::EV_TOTAL_MAX);
@@ -1212,20 +1206,22 @@ void MenuScene::renderDebugPage() {
 
     static constexpr int ROW_X = 8;
     static constexpr int TEXT_X = 22;
-    static constexpr int ROW_Y = 8;
-    static constexpr int ROW_H = 24;
-    static constexpr int SEP_Y_OFFSET = 20;
+    static constexpr int ROW_Y = 0;
+    static constexpr int ROW_H = 17;
+    static constexpr int SEP_Y_OFFSET = 16;
     static constexpr int SEP_W = Hal::DISPLAY_W - ROW_X * 2;
+    uint8_t itemCount = debugItemCount();
+    if (debugCursor >= itemCount) debugCursor = 0;
 
-    for (uint8_t i = 0; i < DEBUG_ITEM_COUNT; ++i) {
+    for (uint8_t i = 0; i < itemCount; ++i) {
         int y = ROW_Y + i * ROW_H;
         bool selected = i == debugCursor;
         uint16_t color = selected ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232);
         if (selected) {
-            c.fillRect(ROW_X, y - 1, 4, 18, PixelRenderer::rgb(255, 216, 72));
+            c.fillRect(ROW_X, y, 4, 16, PixelRenderer::rgb(255, 216, 72));
         }
-        PixelRenderer::text(TEXT_X, y, Ui::Debug::ITEMS[i], color, 1);
-        if (i == 1) {
+        PixelRenderer::text(TEXT_X, y, debugItemLabel(i), color, 1);
+        if (debugCategory == DebugCategory::MONSTER && i == 1) {
             const auto& state = GameEngine::ins().gameState();
             uint16_t speciesId = state.teamCount > 0 ? state.team[0].speciesId : 0;
             char idBuf[20];
@@ -1234,7 +1230,7 @@ void MenuScene::renderDebugPage() {
                                 selected ? PixelRenderer::rgb(255, 218, 178) : 0x7BEF,
                                 1);
         }
-        if (i == 3) {
+        if (debugCategory == DebugCategory::ENV && i == 0) {
             uint16_t minutes = GameEngine::ins().gameMinutesOfDay();
             char timeBuf[20];
             snprintf(timeBuf, sizeof(timeBuf), Ui::Debug::CURRENT_TIME_FMT, minutes / 60, minutes % 60);
@@ -1242,7 +1238,25 @@ void MenuScene::renderDebugPage() {
                                 selected ? PixelRenderer::rgb(255, 218, 178) : 0x7BEF,
                                 1);
         }
-        if (i + 1 < DEBUG_ITEM_COUNT) {
+        if (debugCategory == DebugCategory::ENV && i == 1) {
+            const char* value = GameEngine::ins().debugLightSourceLabel();
+            PixelRenderer::text(Hal::DISPLAY_W - textPixelWidth(value) - 12, y, value,
+                                selected ? PixelRenderer::rgb(255, 218, 178) : 0x7BEF,
+                                1);
+        }
+        if (debugCategory == DebugCategory::MOTION && i == 0) {
+            const char* value = GameEngine::ins().debugTiltControlEnabled() ? Ui::Settings::ON : Ui::Settings::OFF;
+            PixelRenderer::text(Hal::DISPLAY_W - textPixelWidth(value) - 12, y, value,
+                                selected ? PixelRenderer::rgb(255, 218, 178) : 0x7BEF,
+                                1);
+        }
+        if (debugCategory == DebugCategory::MOTION && i == 1) {
+            const char* value = GameEngine::ins().debugWalkBoundaryVisible() ? Ui::Settings::ON : Ui::Settings::OFF;
+            PixelRenderer::text(Hal::DISPLAY_W - textPixelWidth(value) - 12, y, value,
+                                selected ? PixelRenderer::rgb(255, 218, 178) : 0x7BEF,
+                                1);
+        }
+        if (i + 1 < itemCount) {
             c.drawFastHLine(ROW_X, y + SEP_Y_OFFSET, SEP_W, PixelRenderer::rgb(55, 63, 76));
         }
     }
@@ -1250,6 +1264,89 @@ void MenuScene::renderDebugPage() {
     if (debugSwitchOpen) renderDebugSwitchPopup();
     if (debugTimeOpen) renderDebugTimePopup();
     renderToast();
+}
+
+uint8_t MenuScene::debugItemCount() const {
+    switch (debugCategory) {
+    case DebugCategory::MONSTER: return DEBUG_MONSTER_ITEM_COUNT;
+    case DebugCategory::RESOURCE: return DEBUG_RESOURCE_ITEM_COUNT;
+    case DebugCategory::ENV: return DEBUG_ENV_ITEM_COUNT;
+    case DebugCategory::MOTION: return DEBUG_MOTION_ITEM_COUNT;
+    case DebugCategory::ROOT:
+    default:
+        return DEBUG_ROOT_ITEM_COUNT;
+    }
+}
+
+const char* MenuScene::debugItemLabel(uint8_t index) const {
+    if (index >= debugItemCount()) return Ui::BACK;
+    switch (debugCategory) {
+    case DebugCategory::MONSTER: return Ui::Debug::MONSTER_ITEMS[index];
+    case DebugCategory::RESOURCE: return Ui::Debug::RESOURCE_ITEMS[index];
+    case DebugCategory::ENV: return Ui::Debug::ENV_ITEMS[index];
+    case DebugCategory::MOTION: return Ui::Debug::MOTION_ITEMS[index];
+    case DebugCategory::ROOT:
+    default:
+        return Ui::Debug::ROOT_ITEMS[index];
+    }
+}
+
+void MenuScene::handleDebugAction() {
+    if (debugCategory == DebugCategory::ROOT) {
+        switch (debugCursor) {
+        case 0: debugCategory = DebugCategory::MONSTER; break;
+        case 1: debugCategory = DebugCategory::RESOURCE; break;
+        case 2: debugCategory = DebugCategory::ENV; break;
+        case 3: debugCategory = DebugCategory::MOTION; break;
+        default:
+            viewMode = ViewMode::MENU;
+            return;
+        }
+        debugCursor = 0;
+        return;
+    }
+
+    if (debugCursor + 1 >= debugItemCount()) {
+        debugCategory = DebugCategory::ROOT;
+        debugCursor = 0;
+        return;
+    }
+
+    switch (debugCategory) {
+    case DebugCategory::MONSTER:
+        if (debugCursor == 0) {
+            GameEngine::ins().debugRecoverActiveMonster();
+            toast = Ui::Debug::RECOVERED;
+            toastUntil = Hal::ins().millis() + 1100;
+        } else if (debugCursor == 1) {
+            openDebugSwitchPopup();
+        }
+        break;
+    case DebugCategory::RESOURCE:
+        if (debugCursor == 0) {
+            GameEngine::ins().addCoins(1000);
+            toast = Ui::Debug::COINS_ADDED;
+            toastUntil = Hal::ins().millis() + 1100;
+        }
+        break;
+    case DebugCategory::ENV:
+        if (debugCursor == 0) {
+            openDebugTimePopup();
+        } else if (debugCursor == 1) {
+            GameEngine::ins().cycleDebugLightSource();
+        }
+        break;
+    case DebugCategory::MOTION:
+        if (debugCursor == 0) {
+            GameEngine::ins().toggleDebugTiltControl();
+        } else if (debugCursor == 1) {
+            GameEngine::ins().toggleDebugWalkBoundary();
+        }
+        break;
+    case DebugCategory::ROOT:
+    default:
+        break;
+    }
 }
 
 void MenuScene::openDebugSwitchPopup() {

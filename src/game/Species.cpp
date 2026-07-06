@@ -12,16 +12,25 @@ constexpr uint16_t EV(uint8_t hp, uint8_t atk, uint8_t def, uint8_t spa, uint8_t
            ((spa & 0x3) << 6) | ((spd & 0x3) << 8) | ((spe & 0x3) << 10);
 }
 
+constexpr uint16_t SPECIES_MAGIKARP = 129;
+constexpr uint8_t MOVE_SPLASH = 33;
+constexpr uint8_t MOVE_TACKLE = 34;
+constexpr uint8_t MOVE_SCRATCH = 42;
+constexpr uint8_t MOVE_POUND = 43;
+constexpr uint8_t MOVE_PECK = 44;
+constexpr uint8_t MAGIKARP_TACKLE_LEVEL = 15;
+constexpr uint8_t DEFAULT_SECOND_MOVE_LEVEL = 7;
+
 const Species SPECIES[] = {
     {1, Ui::SpeciesName::BULBASAUR, TypeId::GRASS, TypeId::POISON, {45, 49, 49, 65, 65, 45}, GrowthRate::PARABOLIC, EV(0, 0, 0, 1, 0, 0), 2, EvolutionMethod::LEVEL, 16, C(72, 177, 128), C(89, 156, 92), 34, 2},
     {2, Ui::SpeciesName::IVYSAUR, TypeId::GRASS, TypeId::POISON, {60, 62, 63, 80, 80, 60}, GrowthRate::PARABOLIC, EV(0, 0, 0, 1, 1, 0), 3, EvolutionMethod::LEVEL, 32, C(74, 153, 126), C(203, 104, 174), 34, 2},
-    {3, Ui::SpeciesName::VENUSAUR, TypeId::GRASS, TypeId::POISON, {80, 82, 83, 100, 100, 80}, GrowthRate::PARABOLIC, EV(0, 0, 0, 2, 1, 0), 0, EvolutionMethod::NONE, 0, C(68, 140, 104), C(226, 112, 172), 34, 3},
+    {3, Ui::SpeciesName::VENUSAUR, TypeId::GRASS, TypeId::POISON, {80, 82, 83, 100, 100, 80}, GrowthRate::PARABOLIC, EV(0, 0, 0, 2, 1, 0), 0, EvolutionMethod::NONE, 0, C(68, 140, 104), C(226, 112, 172), 34, 2},
     {4, Ui::SpeciesName::CHARMANDER, TypeId::FIRE, TypeId::NONE, {39, 52, 43, 60, 50, 65}, GrowthRate::PARABOLIC, EV(0, 0, 0, 0, 0, 1), 5, EvolutionMethod::LEVEL, 16, C(244, 118, 47), C(255, 204, 83), 42, 5},
     {5, Ui::SpeciesName::CHARMELEON, TypeId::FIRE, TypeId::NONE, {58, 64, 58, 80, 65, 80}, GrowthRate::PARABOLIC, EV(0, 0, 0, 1, 0, 1), 6, EvolutionMethod::LEVEL, 36, C(218, 72, 44), C(255, 170, 60), 42, 5},
     {6, Ui::SpeciesName::CHARIZARD, TypeId::FIRE, TypeId::FLYING, {78, 84, 78, 109, 85, 100}, GrowthRate::PARABOLIC, EV(0, 0, 0, 3, 0, 0), 0, EvolutionMethod::NONE, 0, C(198, 62, 39), C(69, 142, 219), 42, 6},
     {7, Ui::SpeciesName::SQUIRTLE, TypeId::WATER, TypeId::NONE, {44, 48, 65, 50, 64, 43}, GrowthRate::PARABOLIC, EV(0, 0, 1, 0, 0, 0), 8, EvolutionMethod::LEVEL, 16, C(78, 163, 219), C(235, 210, 150), 34, 8},
     {8, Ui::SpeciesName::WARTORTLE, TypeId::WATER, TypeId::NONE, {59, 63, 80, 65, 80, 58}, GrowthRate::PARABOLIC, EV(0, 0, 1, 0, 1, 0), 9, EvolutionMethod::LEVEL, 36, C(64, 137, 209), C(214, 229, 242), 34, 8},
-    {9, Ui::SpeciesName::BLASTOISE, TypeId::WATER, TypeId::NONE, {79, 83, 100, 85, 105, 78}, GrowthRate::PARABOLIC, EV(0, 0, 0, 0, 3, 0), 0, EvolutionMethod::NONE, 0, C(63, 119, 188), C(154, 132, 109), 34, 9},
+    {9, Ui::SpeciesName::BLASTOISE, TypeId::WATER, TypeId::NONE, {79, 83, 100, 85, 105, 78}, GrowthRate::PARABOLIC, EV(0, 0, 0, 0, 3, 0), 0, EvolutionMethod::NONE, 0, C(63, 119, 188), C(154, 132, 109), 34, 18},
     {151, Ui::SpeciesName::MEW, TypeId::PSYCHIC, TypeId::NONE, {100, 100, 100, 100, 100, 100}, GrowthRate::PARABOLIC, EV(3, 0, 0, 0, 0, 0), 0, EvolutionMethod::NONE, 0, C(247, 174, 202), C(255, 224, 238), 43, 22},
     {172, Ui::SpeciesName::PICHU, TypeId::ELECTRIC, TypeId::NONE, {20, 40, 15, 35, 35, 60}, GrowthRate::MEDIUM, EV(0, 0, 0, 0, 0, 1), 25, EvolutionMethod::FRIENDSHIP, 0, C(255, 219, 56), C(92, 62, 42), 34, 11},
     {25, Ui::SpeciesName::PIKACHU, TypeId::ELECTRIC, TypeId::NONE, {35, 55, 40, 50, 50, 90}, GrowthRate::MEDIUM, EV(0, 0, 0, 0, 0, 2), 26, EvolutionMethod::STONE, 0, C(255, 211, 43), C(120, 76, 38), 34, 11},
@@ -39,7 +48,7 @@ const Species SPECIES[] = {
     {92, Ui::SpeciesName::GASTLY, TypeId::GHOST, TypeId::POISON, {30, 35, 30, 100, 35, 80}, GrowthRate::PARABOLIC, EV(0, 0, 0, 1, 0, 0), 93, EvolutionMethod::LEVEL, 25, C(117, 70, 167), C(65, 39, 92), 34, 16},
     {93, Ui::SpeciesName::HAUNTER, TypeId::GHOST, TypeId::POISON, {45, 50, 45, 115, 55, 95}, GrowthRate::PARABOLIC, EV(0, 0, 0, 2, 0, 0), 94, EvolutionMethod::TRADE, 0, C(82, 47, 137), C(173, 103, 220), 34, 16},
     {94, Ui::SpeciesName::GENGAR, TypeId::GHOST, TypeId::POISON, {60, 65, 60, 130, 75, 110}, GrowthRate::PARABOLIC, EV(0, 0, 0, 3, 0, 0), 0, EvolutionMethod::NONE, 0, C(55, 38, 89), C(139, 81, 184), 34, 17},
-    {129, Ui::SpeciesName::MAGIKARP, TypeId::WATER, TypeId::NONE, {20, 10, 55, 15, 20, 80}, GrowthRate::SLOW, EV(0, 0, 0, 0, 0, 1), 130, EvolutionMethod::LEVEL, 20, C(229, 80, 48), C(247, 190, 66), 34, 33},
+    {129, Ui::SpeciesName::MAGIKARP, TypeId::WATER, TypeId::NONE, {20, 10, 55, 15, 20, 80}, GrowthRate::SLOW, EV(0, 0, 0, 0, 0, 1), 130, EvolutionMethod::LEVEL, 20, C(229, 80, 48), C(247, 190, 66), 33, 34},
     {130, Ui::SpeciesName::GYARADOS, TypeId::WATER, TypeId::FLYING, {95, 125, 79, 60, 100, 81}, GrowthRate::SLOW, EV(0, 2, 0, 0, 0, 0), 0, EvolutionMethod::NONE, 0, C(55, 124, 199), C(230, 223, 182), 34, 36},
     {143, Ui::SpeciesName::SNORLAX, TypeId::NORMAL, TypeId::NONE, {160, 110, 65, 65, 110, 30}, GrowthRate::SLOW, EV(2, 0, 0, 0, 0, 0), 0, EvolutionMethod::NONE, 0, C(49, 84, 105), C(231, 218, 184), 34, 38},
     {147, Ui::SpeciesName::DRATINI, TypeId::DRAGON, TypeId::NONE, {41, 64, 45, 50, 50, 50}, GrowthRate::SLOW, EV(0, 1, 0, 0, 0, 0), 148, EvolutionMethod::LEVEL, 30, C(92, 162, 219), C(238, 238, 250), 34, 40},
@@ -83,7 +92,7 @@ const MoveInfo MOVES[] = {
     {30, Ui::MoveName::SCYTHE_DANCE, Ui::MoveDesc::SCYTHE_DANCE, 75, TypeId::BUG, false},
     {31, Ui::MoveName::STEEL_CLAMP, Ui::MoveDesc::STEEL_CLAMP, 35, TypeId::STEEL, false},
     {32, Ui::MoveName::IRON_CRUSH, Ui::MoveDesc::IRON_CRUSH, 75, TypeId::STEEL, false},
-    {33, Ui::MoveName::SPLASH, Ui::MoveDesc::SPLASH, 10, TypeId::WATER, false},
+    {33, Ui::MoveName::SPLASH, Ui::MoveDesc::SPLASH, 0, TypeId::NORMAL, false},
     {34, Ui::MoveName::TACKLE, Ui::MoveDesc::TACKLE, 35, TypeId::NORMAL, false},
     {35, Ui::MoveName::WATER_FANG, Ui::MoveDesc::WATER_FANG, 35, TypeId::WATER, false},
     {36, Ui::MoveName::DRAGON_RAGE, Ui::MoveDesc::DRAGON_RAGE, 75, TypeId::DRAGON, true},
@@ -165,16 +174,42 @@ const MoveInfo* findMove(uint8_t moveId) {
     return nullptr;
 }
 
-uint8_t basicMoveIdForSpecies(const Species& species) {
-    switch (species.basicMoveId) {
-    case 34:
-    case 42:
-    case 43:
-    case 44:
-        return species.basicMoveId;
+bool isBasicFirstMove(uint8_t moveId) {
+    switch (moveId) {
+    case MOVE_SPLASH:
+    case MOVE_TACKLE:
+    case MOVE_SCRATCH:
+    case MOVE_POUND:
+    case MOVE_PECK:
+        return true;
     default:
-        return 34;
+        return false;
     }
+}
+
+uint8_t basicMoveIdForSpecies(const Species& species) {
+    return isBasicFirstMove(species.basicMoveId) ? species.basicMoveId : MOVE_TACKLE;
+}
+
+uint8_t secondMoveIdForSpecies(const Species& species) {
+    return findMove(species.specialMoveId) ? species.specialMoveId : 0;
+}
+
+uint8_t secondMoveLearnLevelForSpecies(const Species& species) {
+    if (secondMoveIdForSpecies(species) == 0) return 0;
+    if (species.id == SPECIES_MAGIKARP) return MAGIKARP_TACKLE_LEVEL;
+    return DEFAULT_SECOND_MOVE_LEVEL;
+}
+
+uint8_t moveIdForMonster(const Species& species, const Game::MonsterRuntime& monster, bool secondSlot) {
+    if (secondSlot) {
+        return findMove(monster.move2Id) ? monster.move2Id : 0;
+    }
+    return isBasicFirstMove(monster.move1Id) ? monster.move1Id : basicMoveIdForSpecies(species);
+}
+
+bool hasSecondMove(const Game::MonsterRuntime& monster) {
+    return findMove(monster.move2Id) != nullptr;
 }
 
 uint8_t movePower(uint8_t moveId, uint8_t fallback) {

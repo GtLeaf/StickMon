@@ -1,6 +1,6 @@
 const SCREEN_W = 240;
 const SCREEN_H = 135;
-const DEFAULT_ROOM = "../../origin_asset/room/standar/standar.png";
+const DEFAULT_ROOM = "../../origin_asset/room/standar/empty_room.png";
 const DEFAULT_LAYOUT = "../../origin_asset/room/standar/room_layout.json";
 
 const canvas = document.getElementById("screen");

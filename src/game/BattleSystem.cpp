@@ -55,6 +55,7 @@ uint8_t typeEffectiveness(TypeId attack, TypeId defend1, TypeId defend2) {
 }
 
 uint8_t specialTriggerChance(const Game::MonsterRuntime& attacker) {
+    if (!hasSecondMove(attacker)) return 0;
     uint16_t chance = 5;
     chance += min<uint8_t>(attacker.proficiency, 100) * 20 / 100;
     chance += attacker.affection * 25 / 255;
@@ -63,6 +64,7 @@ uint8_t specialTriggerChance(const Game::MonsterRuntime& attacker) {
 }
 
 bool rollSpecialMove(const Game::MonsterRuntime& attacker) {
+    if (!hasSecondMove(attacker)) return false;
     return random(0, 100) < specialTriggerChance(attacker);
 }
 
@@ -72,7 +74,8 @@ DamageResult calcBasicDamage(const Game::MonsterRuntime& attacker,
                              const Species& defenderSpecies,
                              bool specialMove) {
     DamageResult result;
-    result.special = specialMove;
+    bool useSecondMove = specialMove && hasSecondMove(attacker);
+    result.special = useSecondMove;
     if ((attacker.statusBits & Game::STATUS_SLEEP) || (attacker.statusBits & Game::STATUS_FREEZE) ||
         ((attacker.statusBits & Game::STATUS_PARALYSIS) && random(0, 100) < 25) ||
         ((attacker.statusBits & Game::STATUS_CONFUSION) && random(0, 100) < 33)) {
@@ -80,14 +83,19 @@ DamageResult calcBasicDamage(const Game::MonsterRuntime& attacker,
         return result;
     }
 
-    uint8_t moveId = specialMove ? attackerSpecies.specialMoveId : basicMoveIdForSpecies(attackerSpecies);
+    uint8_t moveId = moveIdForMonster(attackerSpecies, attacker, useSecondMove);
     const MoveInfo* move = findMove(moveId);
-    uint8_t power = move ? move->power : (specialMove ? 55 : 35);
+    bool usesSpecialStat = move ? move->special : useSecondMove;
+    uint8_t power = move ? move->power : (useSecondMove ? 55 : 35);
+    if (power == 0) {
+        result.effectiveness = 0;
+        return result;
+    }
     TypeId attackType = move ? move->type : attackerSpecies.type1;
-    uint16_t atk = statFor(attackerSpecies, attacker, specialMove ? 3 : 1);
-    if (!specialMove && (attacker.statusBits & Game::STATUS_BURN)) atk /= 2;
+    uint16_t atk = statFor(attackerSpecies, attacker, usesSpecialStat ? 3 : 1);
+    if (!usesSpecialStat && (attacker.statusBits & Game::STATUS_BURN)) atk /= 2;
     if (atk == 0) atk = 1;
-    uint16_t def = statFor(defenderSpecies, defender, specialMove ? 4 : 2);
+    uint16_t def = statFor(defenderSpecies, defender, usesSpecialStat ? 4 : 2);
     if (def == 0) def = 1;
 
     uint16_t base = (((2 * attacker.level / 5 + 2) * power * atk / def) / 50) + 2;

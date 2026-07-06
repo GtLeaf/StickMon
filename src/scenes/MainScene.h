@@ -42,6 +42,7 @@ private:
     };
 
     void updateMonsterAi(uint32_t nowMs, float dtSeconds);
+    void updateDebugTiltControl(uint32_t nowMs, float dtSeconds);
     void updateCamera();
     int16_t worldToScreenY(float worldY) const;
     float walkBoundaryOffsetY() const;

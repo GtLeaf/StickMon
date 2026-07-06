@@ -15,6 +15,9 @@ static constexpr uint16_t PMD_WALKING_FRAME_MS = 170;
 static constexpr uint16_t PMD_SLEEPING_FRAME_MS = 700;
 static constexpr float PMD_MOVING_SPEED_EPSILON = 1.0f;
 static constexpr float PMD_SHORT_MOVE_DISTANCE = 14.0f;
+static constexpr float DEBUG_TILT_DEADZONE = 0.08f;
+static constexpr float DEBUG_TILT_MAX = 0.62f;
+static constexpr float DEBUG_TILT_SPEED = 58.0f;
 static constexpr float CAMERA_FOCUS_Y = 84.0f;
 static constexpr float FOOD_CENTER_X = 191.0f;
 static constexpr float FOOD_CENTER_Y = 108.0f;
@@ -174,18 +177,6 @@ void fillTopDownLightAlpha(int height, uint16_t color, uint8_t maxAlpha) {
             c.drawPixel(px, py, blendRgb565(bg, color, alpha));
         }
     }
-}
-
-uint16_t moodColor(uint8_t mood) {
-    if (mood > 66) return PixelRenderer::rgb(92, 222, 112);
-    if (mood > 33) return PixelRenderer::rgb(255, 216, 72);
-    return PixelRenderer::rgb(239, 85, 85);
-}
-
-uint16_t hungerColor(uint8_t hunger) {
-    if (hunger > 50) return PixelRenderer::rgb(92, 222, 112);
-    if (hunger > 20) return PixelRenderer::rgb(255, 216, 72);
-    return PixelRenderer::rgb(239, 85, 85);
 }
 
 float clampf(float value, float lo, float hi) {
@@ -493,13 +484,16 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
         return;
     }
 
-    if ((int32_t)(nowMs - nextAiDecisionMs) >= 0) {
+    bool debugTilt = GameEngine::ins().debugTiltControlEnabled();
+    if (!debugTilt && (int32_t)(nowMs - nextAiDecisionMs) >= 0) {
         chooseAiGoal(nowMs);
     }
 
     float prevX = monsterX;
     float prevY = monsterY;
-    if (aiMode == AiMode::IDLE) {
+    if (debugTilt) {
+        updateDebugTiltControl(nowMs, dtSeconds);
+    } else if (aiMode == AiMode::IDLE) {
         velocityX = 0.0f;
         velocityY = 0.0f;
     } else {
@@ -544,6 +538,53 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
         aiMode = AiMode::IDLE;
         nextAiDecisionMs = nowMs + random(1200, 2601);
     }
+}
+
+void MainScene::updateDebugTiltControl(uint32_t nowMs, float dtSeconds) {
+    float ax = 0.0f;
+    float ay = 0.0f;
+    float az = 0.0f;
+    if (!Hal::ins().readAccel(ax, ay, az)) {
+        velocityX = 0.0f;
+        velocityY = 0.0f;
+        targetX = monsterX;
+        targetY = monsterY;
+        aiMode = AiMode::IDLE;
+        return;
+    }
+
+    auto applyDeadzone = [](float value) {
+        if (fabsf(value) < DEBUG_TILT_DEADZONE) return 0.0f;
+        return clampf(value, -DEBUG_TILT_MAX, DEBUG_TILT_MAX) / DEBUG_TILT_MAX;
+    };
+
+    float inputX = applyDeadzone(ax);
+    float inputY = applyDeadzone(-ay);
+    float inputLength = sqrtf(inputX * inputX + inputY * inputY);
+    if (inputLength > 1.0f) {
+        inputX /= inputLength;
+        inputY /= inputLength;
+    }
+
+    velocityX = inputX * DEBUG_TILT_SPEED;
+    velocityY = inputY * DEBUG_TILT_SPEED * 0.75f;
+    if (fabsf(velocityX) < PMD_MOVING_SPEED_EPSILON &&
+        fabsf(velocityY) < PMD_MOVING_SPEED_EPSILON) {
+        velocityX = 0.0f;
+        velocityY = 0.0f;
+        targetX = monsterX;
+        targetY = monsterY;
+        aiMode = AiMode::IDLE;
+        return;
+    }
+
+    monsterX += velocityX * dtSeconds;
+    monsterY += velocityY * dtSeconds;
+    targetX = monsterX + velocityX * 0.25f;
+    targetY = monsterY + velocityY * 0.25f;
+    aiMode = AiMode::WANDER;
+    nextAiDecisionMs = nowMs + 1000;
+    if (fabsf(velocityX) > 8.0f) facingRight = velocityX > 0.0f;
 }
 
 void MainScene::updatePmdSpriteState(uint32_t nowMs) {
@@ -882,24 +923,73 @@ void MainScene::drawStateEffect() {
 }
 
 void MainScene::drawNightOverlay() {
-    if (!mainSceneIsNight()) return;
-
-    fillRectAlpha(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H,
-                  PixelRenderer::rgb(8, 18, 42), 92);
-    fillRectAlpha(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H,
-                  PixelRenderer::rgb(0, 0, 0), 48);
-
-    fillTopDownLightAlpha(86, PixelRenderer::rgb(114, 150, 214), 42);
+    bool night = mainSceneIsNight();
+    uint8_t lightSource = GameEngine::ins().debugLightSourceIndex();
+    if (!night && lightSource == 0) return;
 
     const PmdSpriteConfig* config = active ? pmdSpriteConfigForSpecies(active->id) : nullptr;
-    int glowY = worldToScreenY(monsterY - pmdFloatYOffset(config, Hal::ins().millis()) - 10.0f);
-    fillRadialLightAlpha((int)monsterX, glowY, 42, 34,
-                         PixelRenderer::rgb(255, 210, 128), 82);
-    fillRadialLightAlpha((int)monsterX, glowY, 76, 50,
-                         PixelRenderer::rgb(255, 151, 92), 26);
+    int followX = (int)monsterX;
+    int followY = worldToScreenY(monsterY - pmdFloatYOffset(config, Hal::ins().millis()) - 10.0f);
+    int lightX = followX;
+    int lightY = followY;
+    switch (lightSource) {
+    case 1:
+        lightX = 44;
+        lightY = 30;
+        break;
+    case 2:
+        lightX = Hal::DISPLAY_W / 2;
+        lightY = 20;
+        break;
+    case 3:
+        lightX = Hal::DISPLAY_W - 44;
+        lightY = 30;
+        break;
+    case 4:
+        lightX = 34;
+        lightY = Hal::DISPLAY_H / 2;
+        break;
+    case 5:
+        lightX = Hal::DISPLAY_W - 34;
+        lightY = Hal::DISPLAY_H / 2;
+        break;
+    default:
+        break;
+    }
+
+    if (night) {
+        fillRectAlpha(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H,
+                      PixelRenderer::rgb(8, 18, 42), 92);
+        fillRectAlpha(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H,
+                      PixelRenderer::rgb(0, 0, 0), 48);
+
+        fillTopDownLightAlpha(86, PixelRenderer::rgb(114, 150, 214), 42);
+
+        int coreRadiusX = lightSource == 0 ? 42 : 58;
+        int coreRadiusY = lightSource == 0 ? 34 : 42;
+        int haloRadiusX = lightSource == 0 ? 76 : 112;
+        int haloRadiusY = lightSource == 0 ? 50 : 76;
+        fillRadialLightAlpha(lightX, lightY, coreRadiusX, coreRadiusY,
+                             PixelRenderer::rgb(255, 210, 128), 88);
+        fillRadialLightAlpha(lightX, lightY, haloRadiusX, haloRadiusY,
+                             PixelRenderer::rgb(255, 151, 92), 30);
+    } else {
+        fillRadialLightAlpha(lightX, lightY, 68, 46,
+                             PixelRenderer::rgb(255, 226, 150), 30);
+        fillRadialLightAlpha(lightX, lightY, 118, 76,
+                             PixelRenderer::rgb(255, 176, 96), 10);
+    }
+
+    if (lightSource != 0) {
+        auto& c = PixelRenderer::canvas();
+        c.fillCircle(lightX, lightY, 3, PixelRenderer::rgb(255, 236, 158));
+        c.drawCircle(lightX, lightY, 5, PixelRenderer::rgb(255, 169, 79));
+    }
 }
 
 void MainScene::drawWalkBoundary() {
+    if (!GameEngine::ins().debugWalkBoundaryVisible()) return;
+
     uint8_t count = RoomAssets::ROOM_WALK_POLYGON_COUNT;
     if (count < 2) return;
 
@@ -944,31 +1034,26 @@ void MainScene::drawHud() {
     snprintf(clock, sizeof(clock), "%02u:%02u", gameMinutes / 60, gameMinutes % 60);
     PixelRenderer::text(PANEL_X + 20, PANEL_Y + 3, clock, PixelRenderer::rgb(245, 246, 232));
 
-    int heartX = PANEL_X + 12;
+    uint8_t hunger = GameEngine::ins().hungerValue();
+    int heartX = PANEL_X + 13;
     int heartY = PANEL_Y + 27;
-    uint8_t hpPct = mon.hpMax > 0 ? (uint8_t)((uint32_t)mon.hpCur * 100 / mon.hpMax) : 0;
-    if (!mon.fainted && mon.hpCur > 0 && mon.hpMax > 0) {
-        uint8_t heartTier = hpPct > 66 ? 3 : (hpPct > 33 ? 2 : 1);
-        uint16_t heartColor = hpPct > 66 ? PixelRenderer::rgb(239, 85, 85) :
-                              (hpPct > 33 ? PixelRenderer::rgb(255, 138, 72) :
-                               PixelRenderer::rgb(204, 55, 72));
+    if (hunger > 0) {
+        uint8_t heartTier = hunger > 66 ? 3 : (hunger > 33 ? 2 : 1);
+        uint16_t heartColor = hunger > 66 ? PixelRenderer::rgb(255, 96, 126) :
+                              (hunger > 33 ? PixelRenderer::rgb(255, 154, 86) :
+                               PixelRenderer::rgb(196, 72, 86));
         drawHeartIcon(heartX, heartY, heartTier, heartColor);
     }
 
-    uint16_t mood = moodColor(GameEngine::ins().moodValue());
-    int moodX = PANEL_X + 29;
-    int moodY = PANEL_Y + 27;
-    c.fillCircle(moodX, moodY, 4, mood);
-    c.drawCircle(moodX, moodY, 4, PixelRenderer::rgb(245, 246, 232));
-
-    uint8_t hunger = GameEngine::ins().hungerValue();
-    int barX = PANEL_X + 36;
+    uint8_t hpPct = mon.hpMax > 0 ? (uint8_t)((uint32_t)mon.hpCur * 100 / mon.hpMax) : 0;
+    if (mon.fainted || mon.hpCur == 0 || mon.hpMax == 0) hpPct = 0;
+    int barX = PANEL_X + 30;
     int barY = PANEL_Y + 25;
-    int barW = 24;
-    c.fillRect(barX, barY, barW, 5, PixelRenderer::rgb(68, 72, 78));
-    int fillW = ((barW - 2) * hunger) / 100;
-    if (fillW > 0) c.fillRect(barX + 1, barY + 1, fillW, 3, hungerColor(hunger));
-    c.drawRect(barX, barY, barW, 5, PixelRenderer::rgb(245, 246, 232));
+    int barW = 30;
+    c.fillRect(barX, barY, barW, 6, PixelRenderer::rgb(39, 45, 50));
+    int fillW = ((barW - 2) * hpPct) / 100;
+    if (fillW > 0) c.fillRect(barX + 1, barY + 1, fillW, 4, PixelRenderer::rgb(92, 222, 112));
+    c.drawRect(barX, barY, barW, 6, PixelRenderer::rgb(245, 246, 232));
 }
 
 void MainScene::drawToast() {

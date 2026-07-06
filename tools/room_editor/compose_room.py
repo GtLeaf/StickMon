@@ -1,17 +1,143 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import math
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 
 TOOL_DIR = Path(__file__).resolve().parent
 ROOT = Path(__file__).resolve().parents[2]
 PROJECT_SPRITE_DIR = ROOT / "origin_asset" / "generated" / "pokemon_sprites"
+WALL_MOUNTED_NAME_MARKERS = (
+    "sheld",
+    "wall_shelf",
+    "wall-shelf",
+    "wall shelf",
+    "shelf_wall",
+    "shelf-wall",
+    "shelf wall",
+    "mounted_shelf",
+    "mounted-shelf",
+    "mounted shelf",
+    "hanging_shelf",
+    "hanging-shelf",
+    "hanging shelf",
+    "壁架",
+    "挂架",
+    "墙架",
+    "层板",
+    "搁板",
+)
+
+DEFAULT_NIGHT = {
+    "tint": 46,
+    "darken": 34,
+    "lightShape": "radial",
+    "lightStrength": 28,
+    "lightX": 170,
+    "lightY": 70,
+    "lightDepth": 180,
+    "lightRadius": 68,
+    "lightAngle": 125,
+    "lightSpread": 42,
+    "castShadows": True,
+    "shadowMode": "auto",
+    "shadowAlpha": 38,
+    "shadowLength": 28,
+    "shadowBlur": 0.6,
+}
 
 
-def fit_base(img, width, height, fit):
+def clamp_number(value, fallback, minimum, maximum):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        number = fallback
+    return max(minimum, min(maximum, number))
+
+
+def normalize_light_shape(value):
+    return value if value in {"radial", "cone"} else "radial"
+
+
+def normalize_shadow_mode(value):
+    return value if value in {"auto", "point", "directional"} else "auto"
+
+
+def normalize_shadow_surface(value, face_type="floor"):
+    if value in {"floor", "left_wall", "right_wall"}:
+        return value
+    return "left_wall" if face_type == "wall" else "floor"
+
+
+def normalize_shadow_anchor(value):
+    return value if value in {"auto", "floor", "wall"} else "auto"
+
+
+def normalize_light_settings(light, fallback=None):
+    light = light or {}
+    fallback = fallback or DEFAULT_NIGHT
+    return {
+        "lightShape": normalize_light_shape(light.get("lightShape", fallback["lightShape"])),
+        "lightStrength": clamp_number(light.get("lightStrength"), fallback["lightStrength"], 0, 200),
+        "lightX": clamp_number(light.get("lightX"), fallback["lightX"], -2048, 2048),
+        "lightY": clamp_number(light.get("lightY"), fallback["lightY"], -2048, 2048),
+        "lightDepth": clamp_number(light.get("lightDepth"), fallback["lightDepth"], 40, 480),
+        "lightRadius": clamp_number(light.get("lightRadius"), fallback["lightRadius"], 8, 240),
+        "lightAngle": clamp_number(light.get("lightAngle"), fallback["lightAngle"], 0, 359),
+        "lightSpread": clamp_number(light.get("lightSpread"), fallback["lightSpread"], 5, 160),
+    }
+
+
+def normalize_night(night, mode=None):
+    night = night or {}
+    shared_light = normalize_light_settings(night, DEFAULT_NIGHT)
+    day_light = normalize_light_settings(night.get("dayLight"), shared_light)
+    night_light = normalize_light_settings(night.get("nightLight"), shared_light)
+    separate = night.get("separateModeLights") is True
+    active_light = night_light if separate and mode == "night" else day_light if separate and mode == "day" else shared_light
+    return {
+        "tint": clamp_number(night.get("tint"), DEFAULT_NIGHT["tint"], 0, 90),
+        "darken": clamp_number(night.get("darken"), DEFAULT_NIGHT["darken"], 0, 90),
+        **active_light,
+        "separateModeLights": separate,
+        "dayLight": day_light,
+        "nightLight": night_light,
+        "castShadows": night.get("castShadows", DEFAULT_NIGHT["castShadows"]) is not False,
+        "shadowMode": normalize_shadow_mode(night.get("shadowMode", DEFAULT_NIGHT["shadowMode"])),
+        "shadowAlpha": clamp_number(night.get("shadowAlpha"), DEFAULT_NIGHT["shadowAlpha"], 0, 80),
+        "shadowLength": clamp_number(night.get("shadowLength"), DEFAULT_NIGHT["shadowLength"], 0, 80),
+        "shadowBlur": clamp_number(night.get("shadowBlur"), DEFAULT_NIGHT["shadowBlur"], 0, 12),
+    }
+
+
+def layout_trim(layout, img):
+    base = layout.get("base") or {}
+    geometry = layout.get("roomGeometry") or {}
+    reference = geometry.get("reference") or {}
+    prepared = geometry.get("prepared") or {}
+    trim = base.get("trim") or reference.get("trim") or prepared.get("trim") or {}
+    try:
+        x = int(round(float(trim.get("x", 0))))
+        y = int(round(float(trim.get("y", 0))))
+        w = int(round(float(trim.get("width", img.width))))
+        h = int(round(float(trim.get("height", img.height))))
+    except (TypeError, ValueError):
+        return (0, 0, img.width, img.height)
+    x = max(0, min(img.width - 1, x))
+    y = max(0, min(img.height - 1, y))
+    w = max(1, min(img.width - x, w))
+    h = max(1, min(img.height - y, h))
+    return (x, y, w, h)
+
+
+def fit_base(img, width, height, fit, trim=None):
+    if fit == "fit_width":
+        x, y, w, h = trim or (0, 0, img.width, img.height)
+        return img.crop((x, y, x + w, y + h)).resize((width, height), Image.Resampling.NEAREST)
+
     if fit == "stretch":
         return img.resize((width, height), Image.Resampling.NEAREST)
 
@@ -39,26 +165,67 @@ def fit_base(img, width, height, fit):
     return img.resize((width, height), Image.Resampling.NEAREST)
 
 
-def apply_night(img, night):
-    tint = int(night.get("tint", 46)) / 100
-    darken = int(night.get("darken", 34)) / 100
-    lamp = int(night.get("lamp", 36)) / 100
+def angle_delta(a, b):
+    return (a - b + math.pi) % (math.pi * 2) - math.pi
 
-    blue = Image.new("RGBA", img.size, (8, 18, 42, round(255 * tint)))
-    out = Image.alpha_composite(img, blue)
-    black = Image.new("RGBA", img.size, (0, 0, 0, round(255 * darken)))
-    out = Image.alpha_composite(out, black)
 
-    if lamp > 0:
-        glow = Image.new("RGBA", img.size, (0, 0, 0, 0))
-        draw = ImageDraw.Draw(glow)
-        cx, cy = 170, 70
-        for radius in range(68, 2, -2):
-            alpha = int(255 * lamp * (1 - radius / 68) * 0.16)
-            draw.ellipse(
-                (cx - radius, cy - radius, cx + radius, cy + radius),
-                fill=(255, 190, 95, alpha),
-            )
+def light_mask(size, night, mode):
+    strength = night["lightStrength"] / 100
+    if strength <= 0:
+        return None
+    width, height = size
+    cx = float(night["lightX"])
+    cy = float(night["lightY"])
+    radius = max(1, float(night["lightRadius"]))
+    direction = math.radians(float(night["lightAngle"]))
+    half_spread = math.radians(float(night["lightSpread"])) * 0.5
+    mode_alpha = 0.72 if mode == "night" else 0.42
+    max_alpha = min(255, 255 * strength * mode_alpha)
+    shape = night["lightShape"]
+
+    pixels = []
+    for y in range(height):
+        for x in range(width):
+            dx = x - cx
+            dy = y - cy
+            dist = math.hypot(dx, dy)
+            if dist > radius:
+                pixels.append(0)
+                continue
+            if shape == "cone":
+                if dist < 0.001:
+                    cone_factor = 1
+                else:
+                    delta = abs(angle_delta(math.atan2(dy, dx), direction))
+                    if delta > half_spread:
+                        pixels.append(0)
+                        continue
+                    cone_factor = 1 - (delta / max(half_spread, 0.001)) * 0.28
+            else:
+                cone_factor = 1
+            falloff = max(0, 1 - dist / radius) ** 1.35
+            pixels.append(int(max_alpha * falloff * cone_factor))
+
+    mask = Image.new("L", size, 0)
+    mask.putdata(pixels)
+    return mask
+
+
+def apply_lighting(img, night, mode):
+    night = normalize_night(night, mode)
+    out = img
+    if mode == "night":
+        tint = night["tint"] / 100
+        darken = night["darken"] / 100
+        blue = Image.new("RGBA", img.size, (8, 18, 42, round(255 * tint)))
+        out = Image.alpha_composite(out, blue)
+        black = Image.new("RGBA", img.size, (0, 0, 0, round(255 * darken)))
+        out = Image.alpha_composite(out, black)
+
+    mask = light_mask(out.size, night, mode)
+    if mask:
+        glow = Image.new("RGBA", out.size, (255, 250, 220, 0))
+        glow.putalpha(mask)
         out = Image.alpha_composite(out, glow)
     return out
 
@@ -75,6 +242,8 @@ def render_geometry(layout):
     out = Image.new("RGBA", (width, height), (5, 7, 12, 255))
     draw = ImageDraw.Draw(out)
     for face in sorted(layout.get("roomGeometry", {}).get("faces", []), key=lambda v: v.get("drawOrder", 0)):
+        if face.get("type") == "sprite_area":
+            continue
         points = [(int(x), int(y)) for x, y in face.get("points", [])]
         if len(points) < 3:
             continue
@@ -87,12 +256,13 @@ def render_geometry(layout):
 
 def render_base(layout, base_path):
     width, height = room_size(layout)
+    if base_path:
+        base = Image.open(base_path).convert("RGBA")
+        fit = layout.get("base", {}).get("fit", "cover")
+        return fit_base(base, width, height, fit, layout_trim(layout, base))
     if layout.get("roomGeometry", {}).get("faces"):
         return render_geometry(layout)
-    if not base_path:
-        raise ValueError("--base is required when roomGeometry.faces is empty")
-    base = Image.open(base_path).convert("RGBA")
-    return fit_base(base, width, height, layout.get("base", {}).get("fit", "cover"))
+    raise ValueError("--base is required when roomGeometry.faces is empty")
 
 
 def resolve_item_path(item, furniture_root):
@@ -120,27 +290,623 @@ def resolve_item_path(item, furniture_root):
     raise FileNotFoundError(f"asset not found for {file_name}; tried {tried}")
 
 
+def item_size(item, src):
+    target_width = item.get("targetWidth")
+    target_height = item.get("targetHeight")
+    if target_width and target_height:
+        return (max(1, round(float(target_width))), max(1, round(float(target_height))))
+    scale = float(item.get("scale", 1))
+    scale_x = float(item.get("scaleX", scale))
+    scale_y = float(item.get("scaleY", scale))
+    return (max(1, round(src.width * scale_x)), max(1, round(src.height * scale_y)))
+
+
+ITEM_HEIGHT_DEFAULTS = {
+    "wall_shelf": 18,
+    "bed_sofa": 34,
+    "food_bowl": 8,
+    "decoration_prop": 16,
+    "rug": 0,
+    "floor_decal": 0,
+    "low_prop": 8,
+    "furniture": 32,
+    "tall_furniture": 56,
+    "wall_furniture": 24,
+    "wall_prop": 0,
+}
+
+ITEM_WALL_DEPTH_DEFAULTS = {
+    "wall_shelf": 36,
+    "wall_furniture": 24,
+    "wall_prop": 4,
+}
+
+
+def item_height_px(item):
+    kind = item.get("kind", "furniture")
+    return clamp_number(item.get("heightPx"), ITEM_HEIGHT_DEFAULTS.get(kind, 32), 0, 160)
+
+
+def item_casts_shadow(item):
+    if "castsShadow" in item:
+        return item.get("castsShadow") is not False
+    return item.get("kind", "furniture") not in {"rug", "floor_decal", "wall_prop"}
+
+
+def item_wall_shadow_offset_y(item):
+    return clamp_number(item.get("wallShadowOffsetY"), 0, -80, 80)
+
+
+def item_wall_shadow_depth_px(item):
+    kind = item.get("kind", "furniture")
+    fallback = ITEM_WALL_DEPTH_DEFAULTS.get(kind, 24 if item_uses_wall_shadow_anchor(item) else 0)
+    return clamp_number(item.get("wallShadowDepthPx"), fallback, 0, 160)
+
+
+def item_footprint(item):
+    value = item.get("footprint", "auto")
+    return value if value in {"auto", "ellipse", "rect", "polygon", "none"} else "auto"
+
+
+def normalize_local_polygon(value):
+    if not isinstance(value, list):
+        return []
+    points = []
+    for raw in value:
+        if isinstance(raw, dict):
+            x = raw.get("x")
+            y = raw.get("y")
+        elif isinstance(raw, (list, tuple)) and len(raw) >= 2:
+            x, y = raw[0], raw[1]
+        else:
+            continue
+        try:
+            x = max(0, min(1, float(x)))
+            y = max(0, min(1, float(y)))
+        except (TypeError, ValueError):
+            continue
+        points.append((x, y))
+    return points if len(points) >= 3 else []
+
+
+def default_footprint_polygon():
+    return [(0.18, 0.72), (0.82, 0.72), (0.96, 0.96), (0.04, 0.96)]
+
+
+def item_footprint_polygon(item):
+    custom = normalize_local_polygon(item.get("footprintPolygon"))
+    if custom:
+        return custom
+    if item_footprint(item) == "polygon":
+        return default_footprint_polygon()
+    return []
+
+
+def item_shadow_polygon(item):
+    return normalize_local_polygon(item.get("shadowPolygon"))
+
+
+def item_uses_wall_shadow_anchor(item):
+    anchor = normalize_shadow_anchor(item.get("shadowAnchor"))
+    if anchor == "wall":
+        return True
+    if anchor == "floor":
+        return False
+
+    kind = item.get("kind", "furniture")
+    if kind in {"wall_prop", "wall_furniture", "wall_shelf"}:
+        return True
+    if str(item.get("slot", "")).lower() == "wall":
+        return True
+
+    name = f"{item.get('fileName', '')} {item.get('name', '')}".lower()
+    return any(marker in name for marker in WALL_MOUNTED_NAME_MARKERS)
+
+
+def active_shadow_mode(night):
+    mode = normalize_shadow_mode(night.get("shadowMode"))
+    if mode != "auto":
+        return mode
+    return "directional" if normalize_light_shape(night.get("lightShape")) == "cone" else "point"
+
+
+def shadow_direction(night, foot_x, foot_y, light_x, light_y):
+    if active_shadow_mode(night) == "directional":
+        angle = math.radians(float(night["lightAngle"]))
+        return math.cos(angle), math.sin(angle)
+
+    dx = foot_x - light_x
+    dy = foot_y - light_y
+    distance = math.hypot(dx, dy)
+    if distance < 0.001:
+        return 0, 1
+    return dx / distance, dy / distance
+
+
+def shadow_light_factor(night, foot_x, foot_y, light_x, light_y):
+    strength = night["lightStrength"] / 100
+    if strength <= 0:
+        return 0
+
+    radius = max(1, float(night["lightRadius"]))
+    dx = foot_x - light_x
+    dy = foot_y - light_y
+    dist = math.hypot(dx, dy)
+    if dist > radius:
+        return 0
+
+    cone_factor = 1
+    if normalize_light_shape(night["lightShape"]) == "cone" and dist > 0.001:
+        half_spread = max(0.001, math.radians(float(night["lightSpread"])) * 0.5)
+        delta = abs(angle_delta(math.atan2(dy, dx), math.radians(float(night["lightAngle"]))))
+        if delta > half_spread:
+            return 0
+        cone_factor = 1 - (delta / half_spread) * 0.28
+
+    falloff = max(0, 1 - dist / radius) ** 0.7
+    return math.sqrt(strength) * (0.45 + 0.55 * falloff) * cone_factor
+
+
+def face_receives_shadow(face):
+    return (
+        face.get("type") != "sprite_area"
+        and face.get("receivesShadow", True) is not False
+        and len(face.get("points", [])) >= 3
+    )
+
+
+def face_shadow_surface(face):
+    return normalize_shadow_surface(face.get("shadowSurface"), face.get("type", "floor"))
+
+
+def receiving_shadow_faces(layout):
+    return [face for face in layout.get("roomGeometry", {}).get("faces", []) if face_receives_shadow(face)]
+
+
+def wall_shadow_skew(surface):
+    if surface == "left_wall":
+        return -0.16
+    if surface == "right_wall":
+        return 0.16
+    return 0
+
+
+def face_projection_basis(points):
+    if not points or len(points) < 3:
+        return None
+    origin = points[0]
+    bottom_left = points[1]
+    top_right = points[-1]
+    raw_u = (top_right[0] - origin[0], top_right[1] - origin[1])
+    raw_v = (bottom_left[0] - origin[0], bottom_left[1] - origin[1])
+    u_len = math.hypot(*raw_u)
+    v_len = math.hypot(*raw_v)
+    if u_len < 0.001 or v_len < 0.001:
+        return None
+    u = (raw_u[0] / u_len, raw_u[1] / u_len)
+    v = (raw_v[0] / v_len, raw_v[1] / v_len)
+    det = u[0] * v[1] - u[1] * v[0]
+    if abs(det) < 0.001:
+        return None
+    return {"origin": origin, "u": u, "v": v, "det": det}
+
+
+def screen_to_face_local(basis, point):
+    dx = point[0] - basis["origin"][0]
+    dy = point[1] - basis["origin"][1]
+    u = (dx * basis["v"][1] - dy * basis["v"][0]) / basis["det"]
+    v = (basis["u"][0] * dy - basis["u"][1] * dx) / basis["det"]
+    return (u, v)
+
+
+def face_local_to_screen(basis, point):
+    return (
+        basis["origin"][0] + basis["u"][0] * point[0] + basis["v"][0] * point[1],
+        basis["origin"][1] + basis["u"][1] * point[0] + basis["v"][1] * point[1],
+    )
+
+
+def project_wall_local_point(point, light, light_depth, caster_depth):
+    safe_depth = min(max(0, caster_depth), max(0, light_depth - 1))
+    if safe_depth <= 0:
+        return point
+    factor = light_depth / max(1, light_depth - safe_depth)
+    return (
+        light[0] + (point[0] - light[0]) * factor,
+        light[1] + (point[1] - light[1]) * factor,
+    )
+
+
+def item_wall_shadow_depth_scaled(night, item):
+    depth_scale = max(0.2, float(night["shadowLength"] or DEFAULT_NIGHT["shadowLength"]) / DEFAULT_NIGHT["shadowLength"])
+    return item_wall_shadow_depth_px(item) * depth_scale
+
+
+def item_sort_key(item):
+    return (
+        item.get("z", 0),
+        item.get("sortY", item.get("y", 0)),
+        item.get("id", ""),
+    )
+
+
+def load_prepared_items(layout, furniture_root):
+    prepared = []
+    for item in sorted(layout.get("furniture", []), key=item_sort_key):
+        if not item.get("visible", True):
+            continue
+        src = Image.open(resolve_item_path(item, furniture_root)).convert("RGBA")
+        size = item_size(item, src)
+        if size != src.size:
+            src = src.resize(size, Image.Resampling.NEAREST)
+        opacity = max(0, min(1, float(item.get("opacity", 1))))
+        if opacity < 1:
+            alpha = src.getchannel("A").point(lambda p: int(p * opacity))
+            src.putalpha(alpha)
+        prepared.append((item, src, opacity))
+    return prepared
+
+
+def alpha_composite_clipped(base, overlay, dest):
+    x, y = dest
+    if x >= base.width or y >= base.height or x + overlay.width <= 0 or y + overlay.height <= 0:
+        return
+    crop_left = max(0, -x)
+    crop_top = max(0, -y)
+    crop_right = min(overlay.width, base.width - x)
+    crop_bottom = min(overlay.height, base.height - y)
+    if crop_right <= crop_left or crop_bottom <= crop_top:
+        return
+    cropped = overlay.crop((crop_left, crop_top, crop_right, crop_bottom))
+    base.alpha_composite(cropped, (max(0, x), max(0, y)))
+
+
+def polygon_mask_source(src, polygon):
+    points = normalize_local_polygon(polygon)
+    if not points:
+        return None
+    mask = Image.new("L", src.size, 0)
+    pixel_points = [
+        (round(x * max(1, src.width - 1)), round(y * max(1, src.height - 1)))
+        for x, y in points
+    ]
+    ImageDraw.Draw(mask).polygon(pixel_points, fill=255)
+    out = Image.new("RGBA", src.size, (0, 0, 0, 0))
+    out.putalpha(mask)
+    return out
+
+
+def shadow_source_image(src, item):
+    return polygon_mask_source(src, item_shadow_polygon(item)) or src
+
+
+def shadow_image(src, shadow_width, shadow_height, alpha_scale, blur, angle, skew=0):
+    alpha = src.getchannel("A").resize((shadow_width, shadow_height), Image.Resampling.NEAREST)
+    alpha = alpha.point(lambda p: min(255, int(p * alpha_scale)))
+    shadow = Image.new("RGBA", (shadow_width, shadow_height), (0, 0, 0, 0))
+    shadow.putalpha(alpha)
+    if blur > 0:
+        shadow = shadow.filter(ImageFilter.GaussianBlur(blur))
+    if abs(skew) > 0.001:
+        xshift = abs(skew) * shadow.height
+        matrix = (1, skew, -xshift if skew > 0 else 0, 0, 1, 0)
+        shadow = shadow.transform(
+            (round(shadow.width + xshift), shadow.height),
+            Image.Transform.AFFINE,
+            matrix,
+            resample=Image.Resampling.BICUBIC,
+        )
+    if abs(angle) > 0.01:
+        shadow = shadow.rotate(angle, resample=Image.Resampling.BICUBIC, expand=True)
+    return shadow
+
+
+def wall_shadow_opacity(night, item, light_factor, opacity, mode):
+    height_factor = max(0.25, min(2.2, item_height_px(item) / 32))
+    mode_alpha = 1 if mode == "night" else 0.42
+    return min(1, max(0, (
+        (night["shadowAlpha"] / 100)
+        * mode_alpha
+        * light_factor
+        * opacity
+        * min(1.15, 0.65 + height_factor * 0.22)
+        * 0.94
+    )))
+
+
+def base_shadow_opacity(night, item, light_factor, opacity, mode, is_wall_surface=False):
+    height_factor = max(0.25, min(2.2, item_height_px(item) / 32))
+    mode_alpha = 1 if mode == "night" else 0.42
+    alpha = (
+        (night["shadowAlpha"] / 100)
+        * mode_alpha
+        * light_factor
+        * opacity
+        * min(1.15, 0.65 + height_factor * 0.22)
+        * (0.92 if is_wall_surface else 1)
+    )
+    return min(1, max(0, alpha))
+
+
+def draw_floor_footprint_shadow(layer, night, item, src, opacity, mode, ux, uy, light_factor):
+    polygon = item_footprint_polygon(item)
+    if polygon:
+        x = float(item.get("x", 0))
+        y = float(item.get("y", 0))
+        width, height = src.size
+        height_factor = max(0.25, min(2.2, item_height_px(item) / 32))
+        shadow_length = night["shadowLength"] * height_factor
+        offset_x = ux * shadow_length * 0.72
+        offset_y = uy * shadow_length * 0.32
+        alpha = round(255 * base_shadow_opacity(night, item, light_factor, opacity, mode))
+        if alpha <= 0:
+            return True
+        shadow = Image.new("RGBA", layer.size, (0, 0, 0, 0))
+        points = [
+            (round(x + px * width + offset_x), round(y + py * height + offset_y))
+            for px, py in polygon
+        ]
+        ImageDraw.Draw(shadow).polygon(points, fill=(0, 0, 0, alpha))
+        blur = max(0.2, night["shadowBlur"])
+        if blur > 0:
+            shadow = shadow.filter(ImageFilter.GaussianBlur(blur))
+        layer.alpha_composite(shadow)
+        return True
+
+    if item_footprint(item) != "ellipse":
+        return False
+    x = float(item.get("x", 0))
+    y = float(item.get("y", 0))
+    width, height = src.size
+    height_factor = max(0.25, min(2.2, item_height_px(item) / 32))
+    shadow_length = night["shadowLength"] * height_factor
+    foot_x = x + width * 0.5
+    foot_y = y + height * 0.88
+    shadow_width = max(1, width * (0.72 + min(0.22, night["shadowLength"] / 220) * height_factor))
+    shadow_height = max(1, height * (0.16 + min(0.12, item_height_px(item) / 360)))
+    center_x = foot_x + ux * shadow_length * 0.72
+    center_y = foot_y + uy * shadow_length * 0.32
+    alpha = round(255 * base_shadow_opacity(night, item, light_factor, opacity, mode))
+    if alpha <= 0:
+        return True
+    shadow = Image.new("RGBA", layer.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(shadow)
+    draw.ellipse(
+        (
+            round(center_x - shadow_width * 0.5),
+            round(center_y - shadow_height * 0.5),
+            round(center_x + shadow_width * 0.5),
+            round(center_y + shadow_height * 0.5),
+        ),
+        fill=(0, 0, 0, alpha),
+    )
+    blur = max(0.2, night["shadowBlur"])
+    if blur > 0:
+        shadow = shadow.filter(ImageFilter.GaussianBlur(blur))
+    layer.alpha_composite(shadow)
+    return True
+
+
+def affine_shadow_image(src, alpha_scale):
+    alpha = src.getchannel("A").point(lambda p: min(255, int(p * alpha_scale)))
+    shadow = Image.new("RGBA", src.size, (0, 0, 0, 0))
+    shadow.putalpha(alpha)
+    return shadow
+
+
+def affine_warp_to_layer(src, layer_size, p0, p1, p2, blur):
+    a = (p1[0] - p0[0]) / max(1, src.width)
+    b = (p2[0] - p0[0]) / max(1, src.height)
+    c = p0[0]
+    d = (p1[1] - p0[1]) / max(1, src.width)
+    e = (p2[1] - p0[1]) / max(1, src.height)
+    f = p0[1]
+    det = a * e - b * d
+    if abs(det) < 0.00001:
+        return None
+    inv = (
+        e / det,
+        -b / det,
+        (b * f - e * c) / det,
+        -d / det,
+        a / det,
+        (d * c - a * f) / det,
+    )
+    if blur > 0:
+        src = src.filter(ImageFilter.GaussianBlur(blur))
+    return src.transform(
+        layer_size,
+        Image.Transform.AFFINE,
+        inv,
+        resample=Image.Resampling.BICUBIC,
+        fillcolor=(0, 0, 0, 0),
+    )
+
+
+def draw_wall_contact_shadow(layer, night, item, src, opacity, mode, face):
+    points = face.get("points", []) if face else []
+    basis = face_projection_basis(points)
+    if not basis:
+        return
+    x = float(item.get("x", 0))
+    y = float(item.get("y", 0))
+    width, height = src.size
+    depth = item_wall_shadow_depth_scaled(night, item)
+    if depth <= 0:
+        return
+
+    center = (x + width * 0.5, y + height * 0.76)
+    light = (night["lightX"], night["lightY"])
+    light_local = screen_to_face_local(basis, light)
+    center_local = screen_to_face_local(basis, center)
+    dx = center_local[0] - light_local[0]
+    dy = center_local[1] - light_local[1]
+    dist = math.hypot(dx, dy) or 1
+    ux = dx / dist
+    uy = dy / dist
+    left = screen_to_face_local(basis, (x + width * 0.12, y + height * 0.78))
+    right = screen_to_face_local(basis, (x + width * 0.88, y + height * 0.78))
+    drop = max(3, min(height * 0.55, depth * 0.7))
+    side = max(1, depth * 0.22)
+    polygon = [
+        face_local_to_screen(basis, (left[0] + ux * side, left[1] + uy * side)),
+        face_local_to_screen(basis, (right[0] + ux * side, right[1] + uy * side)),
+        face_local_to_screen(basis, (right[0] + ux * side * 1.7, right[1] + drop + uy * side * 1.7)),
+        face_local_to_screen(basis, (left[0] + ux * side * 1.7, left[1] + drop + uy * side * 1.7)),
+    ]
+    light_factor = shadow_light_factor(night, center[0], center[1], light[0], light[1])
+    if light_factor <= 0:
+        return
+    alpha = round(255 * wall_shadow_opacity(night, item, light_factor, opacity, mode) * 0.62)
+    if alpha <= 0:
+        return
+    contact = Image.new("RGBA", layer.size, (0, 0, 0, 0))
+    ImageDraw.Draw(contact).polygon([(round(px), round(py)) for px, py in polygon], fill=(0, 0, 0, alpha))
+    blur = max(1.2, night["shadowBlur"] + 1.4)
+    contact = contact.filter(ImageFilter.GaussianBlur(blur))
+    layer.alpha_composite(contact)
+
+
+def draw_wall_plane_shadow_for_item(layer, night, item, src, opacity, mode, face):
+    points = face.get("points", []) if face else []
+    basis = face_projection_basis(points)
+    if not basis:
+        return False
+    x = float(item.get("x", 0))
+    y = float(item.get("y", 0))
+    width, height = src.size
+    center = (x + width * 0.5, y + height * 0.5)
+    light = (night["lightX"], night["lightY"])
+    light_factor = shadow_light_factor(night, center[0], center[1], light[0], light[1])
+    if light_factor <= 0:
+        return True
+
+    light_local = screen_to_face_local(basis, light)
+    light_depth = max(2, float(night["lightDepth"]))
+    caster_depth = min(item_wall_shadow_depth_scaled(night, item), light_depth - 1)
+    if caster_depth <= 0:
+        return False
+
+    offset_v = item_wall_shadow_offset_y(item)
+    corners = [
+        screen_to_face_local(basis, (x, y)),
+        screen_to_face_local(basis, (x + width, y)),
+        screen_to_face_local(basis, (x, y + height)),
+    ]
+    projected = [
+        face_local_to_screen(
+            basis,
+            project_wall_local_point((u, v + offset_v), light_local, light_depth, caster_depth),
+        )
+        for u, v in corners
+    ]
+    draw_wall_contact_shadow(layer, night, item, src, opacity, mode, face)
+    alpha_scale = wall_shadow_opacity(night, item, light_factor, opacity, mode)
+    shadow = affine_shadow_image(shadow_source_image(src, item), alpha_scale)
+    warped = affine_warp_to_layer(shadow, layer.size, projected[0], projected[1], projected[2], night["shadowBlur"])
+    if warped:
+        layer.alpha_composite(warped)
+    return True
+
+
+def draw_shadow_for_item(layer, night, item, src, opacity, mode, surface, face=None):
+    if not item_casts_shadow(item):
+        return
+
+    x = float(item.get("x", 0))
+    y = float(item.get("y", 0))
+    width, height = src.size
+    if width <= 0 or height <= 0:
+        return
+
+    light_x = night["lightX"]
+    light_y = night["lightY"]
+    shadow_alpha = night["shadowAlpha"] / 100
+    mode_alpha = 1 if mode == "night" else 0.42
+    shadow_length = night["shadowLength"]
+    blur = night["shadowBlur"]
+    foot_x = x + width * 0.5
+    foot_y = y + height * 0.88
+    ux, uy = shadow_direction(night, foot_x, foot_y, light_x, light_y)
+    light_factor = shadow_light_factor(night, foot_x, foot_y, light_x, light_y)
+    if light_factor <= 0:
+        return
+    height_factor = max(0.25, min(2.2, item_height_px(item) / 32))
+    item_shadow_length = shadow_length * height_factor
+    is_wall_surface = surface in {"left_wall", "right_wall"}
+    uses_wall_anchor = is_wall_surface and item_uses_wall_shadow_anchor(item)
+    if uses_wall_anchor and face and draw_wall_plane_shadow_for_item(layer, night, item, src, opacity, mode, face):
+        return
+    if not is_wall_surface and draw_floor_footprint_shadow(layer, night, item, src, opacity, mode, ux, uy, light_factor):
+        return
+
+    if is_wall_surface:
+        shadow_width = max(1, round(width * (0.72 + min(0.28, height_factor * 0.12))))
+        shadow_height = max(1, round(height * (0.52 + min(0.32, item_height_px(item) / 200))))
+        wall_anchor_y = y + height * (0.86 if uses_wall_anchor else 0.34)
+        wall_shadow_lift = shadow_height * 0.08 if uses_wall_anchor else shadow_height * 0.36 + item_height_px(item) * 0.22
+        wall_light_shift = uy * item_shadow_length * (0.68 if uses_wall_anchor else 0.28)
+        wall_offset_y = item_wall_shadow_offset_y(item) if uses_wall_anchor else 0
+        center_x = foot_x + ux * item_shadow_length * 0.82
+        center_y = wall_anchor_y - wall_shadow_lift + wall_light_shift + wall_offset_y + shadow_height * 0.5
+        angle = math.degrees(math.atan2(uy, ux) * 0.05)
+        skew = wall_shadow_skew(surface)
+        surface_alpha = 0.92
+    else:
+        shadow_width = max(1, round(width * (1 + min(0.55, shadow_length / 180) * height_factor)))
+        shadow_height = max(1, round(height * (0.22 + min(0.18, item_height_px(item) / 320))))
+        center_x = foot_x + ux * item_shadow_length
+        center_y = foot_y + uy * item_shadow_length * 0.45
+        angle = math.degrees(math.atan2(uy, ux) * 0.12)
+        skew = 0
+        surface_alpha = 1
+
+    alpha_scale = min(1, max(0, shadow_alpha * mode_alpha * light_factor * opacity * min(1.15, 0.65 + height_factor * 0.22) * surface_alpha))
+    shadow = shadow_image(shadow_source_image(src, item), shadow_width, shadow_height, alpha_scale, blur, angle, skew)
+    alpha_composite_clipped(layer, shadow, (round(center_x - shadow.width / 2), round(center_y - shadow.height / 2)))
+
+
+def clip_layer_to_face(layer, face):
+    mask = Image.new("L", layer.size, 0)
+    points = [(round(point[0]), round(point[1])) for point in face.get("points", [])]
+    if len(points) < 3:
+        return layer
+    ImageDraw.Draw(mask).polygon(points, fill=255)
+    clipped = layer.copy()
+    clipped.putalpha(ImageChops.multiply(clipped.getchannel("A"), mask))
+    return clipped
+
+
+def composite_shadows(out, layout, night, prepared_items, mode):
+    night = normalize_night(night, mode)
+    if not night["castShadows"] or night["shadowAlpha"] <= 0 or night["shadowLength"] <= 0:
+        return
+
+    faces = receiving_shadow_faces(layout)
+    if not faces:
+        layer = Image.new("RGBA", out.size, (0, 0, 0, 0))
+        for item, src, opacity in prepared_items:
+            draw_shadow_for_item(layer, night, item, src, opacity, mode, "floor")
+        out.alpha_composite(layer)
+        return
+
+    for face in faces:
+        layer = Image.new("RGBA", out.size, (0, 0, 0, 0))
+        for item, src, opacity in prepared_items:
+            draw_shadow_for_item(layer, night, item, src, opacity, mode, face_shadow_surface(face), face)
+        out.alpha_composite(clip_layer_to_face(layer, face))
+
+
 def composite(layout, base_path, furniture_dir, mode):
     out = render_base(layout, base_path)
 
     furniture_root = Path(furniture_dir)
-    for item in sorted(layout.get("furniture", []), key=lambda v: (v.get("z", 0), v.get("id", ""))):
-        if not item.get("visible", True):
-            continue
-        src = Image.open(resolve_item_path(item, furniture_root)).convert("RGBA")
-        scale = float(item.get("scale", 1))
-        if scale != 1:
-            size = (max(1, round(src.width * scale)), max(1, round(src.height * scale)))
-            src = src.resize(size, Image.Resampling.NEAREST)
-        opacity = float(item.get("opacity", 1))
-        if opacity < 1:
-            alpha = src.getchannel("A").point(lambda p: int(p * opacity))
-            src.putalpha(alpha)
-        out.alpha_composite(src, (int(item.get("x", 0)), int(item.get("y", 0))))
+    prepared_items = load_prepared_items(layout, furniture_root)
+    composite_shadows(out, layout, layout.get("night", {}), prepared_items, mode)
+    for item, src, _opacity in prepared_items:
+        alpha_composite_clipped(out, src, (int(item.get("x", 0)), int(item.get("y", 0))))
 
-    if mode == "night":
-        out = apply_night(out, layout.get("night", {}))
-    return out
+    return apply_lighting(out, layout.get("night", {}), mode)
 
 
 def main():

@@ -24,6 +24,7 @@ private:
         SELECT,
         WALKING,
         ENCOUNTER,
+        LEARN_MOVE,
         RESULT,
     };
 
@@ -51,6 +52,8 @@ private:
     bool battleResultPending = false;
     bool lastCaptureSuccess = false;
     uint8_t battleCursor = 0;
+    uint8_t learnCursor = 0;
+    Phase learnReturnPhase = Phase::WALKING;
     uint8_t fleeAttempts = 0;
     bool exitAfterFaint = false;
 
@@ -62,6 +65,7 @@ private:
     void enqueueBattleLog(const char* text);
     void serviceBattleLog(uint32_t nowMs);
     bool battleLogBusy() const;
+    bool enterPendingMoveLearn(Phase returnPhase);
     void attackWild();
     void wildCounterattack();
     void finishPlayerFaint();
@@ -72,6 +76,7 @@ private:
     void renderBiomeMenu();
     void renderWalking();
     void renderEncounter();
+    void renderLearnMove();
     void renderResult();
     void drawWildBlock(int x, int y);
     void drawMonsterBlock(const Species& species, int x, int y, bool back = false);

@@ -15,6 +15,7 @@ public:
     uint32_t millis() const;
     bool btnA_raw() const;
     bool btnB_raw() const;
+    bool readAccel(float& ax, float& ay, float& az);
     int batteryLevel();
     int filteredBatteryLevel();
 
@@ -23,6 +24,8 @@ public:
 
 private:
     Hal() = default;
+
+    void applyBrightness();
 
     LGFX_Sprite sprite;
     bool initialized = false;

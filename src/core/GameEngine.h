@@ -73,11 +73,22 @@ public:
     void petMonster();
     void finishHatch(uint8_t starterStyle);
     void addExperience(uint32_t amount);
+    bool hasPendingMoveLearn() const { return pendingMoveLearn; }
+    uint8_t pendingMoveLearnId() const { return pendingMoveId; }
+    uint8_t pendingMoveLearnSlot() const { return pendingMoveSlot; }
+    bool resolvePendingMoveLearn(bool learn);
     uint32_t applyActiveFaintPenalty();
     void addWalkSteps(uint16_t steps);
     void debugRecoverActiveMonster();
     bool debugSetActiveSpecies(uint16_t speciesId);
     uint32_t debugAdvanceToTimeOfDay(uint16_t targetMinutesOfDay);
+    uint8_t debugLightSourceIndex() const { return debugLightSource; }
+    const char* debugLightSourceLabel() const;
+    void cycleDebugLightSource();
+    bool debugWalkBoundaryVisible() const { return debugShowWalkBoundary; }
+    void toggleDebugWalkBoundary() { debugShowWalkBoundary = !debugShowWalkBoundary; }
+    bool debugTiltControlEnabled() const { return debugTiltControl; }
+    void toggleDebugTiltControl() { debugTiltControl = !debugTiltControl; }
     void wakeFromIdle();
     void markDirty(bool immediate = false);
     bool saveNow();
@@ -100,9 +111,13 @@ private:
     void resetGameClockAnchor(uint32_t nowMs);
     void persistGameClock(uint32_t nowMs, bool force = false);
     void initDefaultState();
+    void sanitizeMonsterMoves();
     void tickCare(uint32_t nowMs);
+    void resetDailyCountersIfNeeded();
+    void grantCareExperience(uint8_t baseAmount, bool weakGain = false);
     void syncSpriteCache();
     uint32_t randomIvPacked() const;
+    void queueMoveLearnIfReady(Game::MonsterRuntime& mon, const Species& species, uint8_t oldLevel);
 
     static constexpr uint32_t INPUT_SAMPLE_MS = 16;
     static constexpr uint32_t FRAME_MS = 66;
@@ -124,6 +139,12 @@ private:
     uint16_t hpRecoveryMinuteAcc = 0;
     bool idleActive = false;
     bool saveDirty = false;
+    bool pendingMoveLearn = false;
+    uint8_t pendingMoveSlot = 0;
+    uint8_t pendingMoveId = 0;
+    bool debugShowWalkBoundary = false;
+    bool debugTiltControl = false;
+    uint8_t debugLightSource = 0;
 
     Game::GameState state;
     SaveManager saveManager;

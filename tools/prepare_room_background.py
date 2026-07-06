@@ -10,7 +10,7 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ROOM_DIR = ROOT / "origin_asset" / "room" / "standar"
-DEFAULT_SOURCE = DEFAULT_ROOM_DIR / "standar.png"
+DEFAULT_SOURCE = DEFAULT_ROOM_DIR / "empty_room.png"
 DEFAULT_LAYOUT = DEFAULT_ROOM_DIR / "room_layout.json"
 GENERATED_ROOM_DIR = ROOT / "origin_asset" / "generated" / "room"
 SOURCE_OUT = GENERATED_ROOM_DIR / "standard_room_source.png"

@@ -115,8 +115,6 @@ void SettingsScene::markSettingsDirty() {
 
 void SettingsScene::saveSettingsIfDirty() {
     if (!settingsDirty) return;
-    GameEngine::ins().wakeFromIdle();
-    Hal::ins().setBrightness(GameEngine::ins().gameState().settings.brightness);
     GameEngine::ins().saveNow();
     settingsDirty = false;
 }
