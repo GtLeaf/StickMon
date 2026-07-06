@@ -377,6 +377,16 @@ const state = {
   dragging: false,
   draggingItemPolygon: false,
   activeItemPolygonKey: "footprintPolygon",
+  itemPolygonDraft: {
+    active: false,
+    itemId: null,
+    key: "footprintPolygon",
+    points: [],
+    dragging: false,
+    dragIndex: null,
+    moved: false,
+    downPoint: null
+  },
   dragPolygonKey: null,
   dragPolygonIndex: null,
   draggingLight: false,
@@ -1981,13 +1991,29 @@ function parsePolygonText(text) {
 
 function polygonSummary(value) {
   const count = normalizeLocalPolygon(value).length;
-  return count ? `${count} pts` : "default";
+  return count ? `${count} pts` : "";
 }
 
 function polygonEditorIds(key) {
   return key === "shadowPolygon"
-    ? { editor: "shadowPolygonEditor", textarea: "itemShadowPolygon", meta: "itemShadowPolygonMeta" }
-    : { editor: "footprintPolygonEditor", textarea: "itemFootprintPolygon", meta: "itemFootprintPolygonMeta" };
+    ? {
+        editor: "shadowPolygonEditor",
+        textarea: "itemShadowPolygon",
+        drawButton: "drawShadowPolygon",
+        draftBar: "shadowPolygonDraftBar",
+        draftMeta: "shadowPolygonDraftMeta",
+        finishDraft: "finishShadowPolygonDraft",
+        exitDraft: "exitShadowPolygonDraft"
+      }
+    : {
+        editor: "footprintPolygonEditor",
+        textarea: "itemFootprintPolygon",
+        drawButton: "drawFootprintPolygon",
+        draftBar: "footprintPolygonDraftBar",
+        draftMeta: "footprintPolygonDraftMeta",
+        finishDraft: "finishFootprintPolygonDraft",
+        exitDraft: "exitFootprintPolygonDraft"
+      };
 }
 
 function polygonDisplayPoints(item, key) {
@@ -2022,8 +2048,21 @@ function syncPolygonEditorField(item, key, options = {}) {
 
 function updatePolygonEditorState() {
   for (const key of ["footprintPolygon", "shadowPolygon"]) {
-    const editor = document.getElementById(polygonEditorIds(key).editor);
+    const ids = polygonEditorIds(key);
+    const editor = document.getElementById(ids.editor);
     if (editor) editor.classList.toggle("active", state.activeItemPolygonKey === key);
+    const drafting = state.itemPolygonDraft.active && state.itemPolygonDraft.key === key;
+    const draftBar = document.getElementById(ids.draftBar);
+    if (draftBar) draftBar.hidden = !drafting;
+    const draftMeta = document.getElementById(ids.draftMeta);
+    if (draftMeta && drafting) {
+      const count = state.itemPolygonDraft.points.length;
+      draftMeta.textContent = count >= 3
+        ? `${count} point(s). Click the first point or Finish to close.`
+        : `${count} point(s). Add at least 3 points.`;
+    }
+    const finish = document.getElementById(ids.finishDraft);
+    if (finish) finish.disabled = !drafting || state.itemPolygonDraft.points.length < 3;
   }
 }
 
@@ -2036,6 +2075,189 @@ function materializeItemPolygon(item, key) {
   item.footprint = "polygon";
   item.footprintPolygon = current.length ? current : defaultFootprintPolygon();
   return item.footprintPolygon;
+}
+
+function isItemPolygonDraftActive(key = null) {
+  if (!state.itemPolygonDraft.active) return false;
+  if (key && state.itemPolygonDraft.key !== key) return false;
+  return Boolean(selectedItem() && selectedItem().id === state.itemPolygonDraft.itemId);
+}
+
+function resetItemPolygonDraft() {
+  state.itemPolygonDraft = {
+    active: false,
+    itemId: null,
+    key: "footprintPolygon",
+    points: [],
+    dragging: false,
+    dragIndex: null,
+    moved: false,
+    downPoint: null
+  };
+}
+
+function itemLocalToEditPoint(item, point) {
+  const bounds = itemBounds(item);
+  return targetToEditPoint({
+    x: bounds.x + point.x * bounds.w,
+    y: bounds.y + point.y * bounds.h
+  });
+}
+
+function editPointToItemLocal(item, point) {
+  const target = editToTargetPoint(point);
+  const bounds = itemBounds(item);
+  return {
+    x: Number(clampUnit((target.x - bounds.x) / Math.max(1, bounds.w)).toFixed(4)),
+    y: Number(clampUnit((target.y - bounds.y) / Math.max(1, bounds.h)).toFixed(4))
+  };
+}
+
+function clampEditPointToItem(item, point) {
+  return itemLocalToEditPoint(item, editPointToItemLocal(item, point));
+}
+
+function itemPolygonDraftLocalPoints() {
+  const item = selectedItem();
+  if (!item || !isItemPolygonDraftActive()) return [];
+  return state.itemPolygonDraft.points.map((point) => editPointToItemLocal(item, point));
+}
+
+function startItemPolygonDraft(item, key) {
+  if (!item || item.source === "project_sprite") return;
+  state.editMode = "furniture";
+  state.toolMode = "select";
+  state.selectedId = item.id;
+  state.selectedFaceId = null;
+  state.selectedPointIndex = null;
+  state.selectedPointId = null;
+  state.lightSelected = false;
+  state.dragging = false;
+  state.draggingItemPolygon = false;
+  state.draggingPoint = false;
+  state.drawingFace = false;
+  state.activeItemPolygonKey = key === "shadowPolygon" ? "shadowPolygon" : "footprintPolygon";
+  state.itemPolygonDraft = {
+    active: true,
+    itemId: item.id,
+    key: state.activeItemPolygonKey,
+    points: [],
+    dragging: false,
+    dragIndex: null,
+    moved: false,
+    downPoint: null
+  };
+  setStatus("Click canvas points to draw the polygon. Click the first point to close, or press Exit.");
+  updateEditModeButtons();
+  updatePolygonEditorState();
+  render();
+}
+
+function cancelItemPolygonDraft(message = "Polygon drawing exited.") {
+  if (!state.itemPolygonDraft.active) return;
+  canvas.classList.remove("dragging");
+  resetItemPolygonDraft();
+  setStatus(message);
+  updatePolygonEditorState();
+  render();
+}
+
+function finishItemPolygonDraft() {
+  const item = selectedItem();
+  if (!item || !isItemPolygonDraftActive()) return;
+  const points = normalizeLocalPolygon(itemPolygonDraftLocalPoints());
+  if (points.length < 3) {
+    setStatus("Add at least 3 points before closing the polygon.");
+    updatePolygonEditorState();
+    return;
+  }
+  const key = state.itemPolygonDraft.key;
+  if (key === "footprintPolygon") item.footprint = "polygon";
+  item[key] = points;
+  resetItemPolygonDraft();
+  syncPolygonEditorField(item, key);
+  setActiveItemPolygon(key);
+  setStatus(`${key === "shadowPolygon" ? "Shadow" : "Footprint"} polygon updated.`);
+  refreshList();
+  render();
+  commitHistory();
+}
+
+function hitTestItemPolygonDraftPoint(point) {
+  if (!isItemPolygonDraftActive()) return -1;
+  const radius = editHandleRadius() + 4;
+  for (let index = state.itemPolygonDraft.points.length - 1; index >= 0; --index) {
+    if (distance(point, state.itemPolygonDraft.points[index]) <= radius) return index;
+  }
+  return -1;
+}
+
+function handleItemPolygonDraftPointerDown(event) {
+  const item = selectedItem();
+  if (!item || !isItemPolygonDraftActive()) {
+    cancelItemPolygonDraft();
+    return;
+  }
+  const canvasPoint = pointerToCanvas(event);
+  const point = clampEditPointToItem(item, canvasPoint);
+  const hitIndex = hitTestItemPolygonDraftPoint(canvasPoint);
+  if (hitIndex >= 0) {
+    state.itemPolygonDraft.dragging = true;
+    state.itemPolygonDraft.dragIndex = hitIndex;
+    state.itemPolygonDraft.moved = false;
+    state.itemPolygonDraft.downPoint = canvasPoint;
+    canvas.classList.add("dragging");
+    canvas.setPointerCapture(event.pointerId);
+    setStatus(hitIndex === 0 && state.itemPolygonDraft.points.length >= 3
+      ? "Drag to adjust. Release without moving to close the polygon."
+      : "Drag point to adjust.");
+    render();
+    return;
+  }
+  state.itemPolygonDraft.points.push(point);
+  const count = state.itemPolygonDraft.points.length;
+  setStatus(count >= 3
+    ? `${count} point(s). Click the first point to close.`
+    : `${count} point(s). Add at least ${3 - count} more.`);
+  updatePolygonEditorState();
+  render();
+}
+
+function moveItemPolygonDraftPoint(point) {
+  const item = selectedItem();
+  const draft = state.itemPolygonDraft;
+  if (!item || !isItemPolygonDraftActive() || !draft.dragging || draft.dragIndex == null) return;
+  if (!draft.points[draft.dragIndex]) return;
+  const nextPoint = clampEditPointToItem(item, point);
+  draft.points[draft.dragIndex] = nextPoint;
+  if (draft.downPoint && distance(point, draft.downPoint) > 2) {
+    draft.moved = true;
+  }
+  render();
+}
+
+function finishItemPolygonDraftPointDrag(event) {
+  const draft = state.itemPolygonDraft;
+  if (!draft.dragging) return false;
+  if (event) moveItemPolygonDraftPoint(pointerToCanvas(event));
+  const pointWasMoved = draft.moved;
+  const shouldClose = event?.type !== "pointercancel" && draft.dragIndex === 0 && !draft.moved && draft.points.length >= 3;
+  draft.dragging = false;
+  draft.dragIndex = null;
+  draft.moved = false;
+  draft.downPoint = null;
+  canvas.classList.remove("dragging");
+  try {
+    if (event) canvas.releasePointerCapture(event.pointerId);
+  } catch (_) {}
+  if (shouldClose) {
+    finishItemPolygonDraft();
+  } else {
+    if (pointWasMoved) setStatus("Polygon point adjusted.");
+    updatePolygonEditorState();
+    render();
+  }
+  return true;
 }
 
 function applyItemKindPreset(item, kindValue) {
@@ -2262,7 +2484,7 @@ function itemShadowMask(item) {
 function activeShadowMode() {
   const mode = normalizeShadowMode(state.night.shadowMode);
   if (mode !== "auto") return mode;
-  return normalizeLightShape(activeLightSettings().lightShape) === "cone" ? "directional" : "point";
+  return "point";
 }
 
 function shadowDirectionForPoint(footX, footY, lightPoint) {
@@ -2395,6 +2617,72 @@ function baseShadowOpacity(item, lightFactor, heightFactor, isWallSurface = fals
     Math.min(1.15, 0.65 + heightFactor * 0.22) *
     (isWallSurface ? 0.92 : 1);
   return clampNumber(alpha, 0, 1);
+}
+
+function shadowHeightGain() {
+  return Math.max(0, Number(state.night.shadowLength) || 0) / Math.max(1, DEFAULT_NIGHT.shadowLength);
+}
+
+function localCasterHeight(item, point, scale) {
+  const verticalRatio = clampUnit(1 - point.y);
+  return itemHeightPx(item) * scale * shadowHeightGain() * verticalRatio;
+}
+
+function projectElevatedPointToReceiver(screenPoint, z, lightPoint, scale) {
+  if (z <= 0.001) return { ...screenPoint };
+  if (activeShadowMode() === "directional") {
+    const angle = angleToRad(activeLightSettings().lightAngle);
+    return {
+      x: screenPoint.x + Math.cos(angle) * z,
+      y: screenPoint.y + Math.sin(angle) * z
+    };
+  }
+
+  const lightZ = Math.max(z + 1, activeLightSettings().lightDepth * scale);
+  const factor = lightZ / Math.max(1, lightZ - z);
+  return {
+    x: lightPoint.x + (screenPoint.x - lightPoint.x) * factor,
+    y: lightPoint.y + (screenPoint.y - lightPoint.y) * factor
+  };
+}
+
+function projectedShadowPolygon2D5(item, bounds, lightPoint, scale) {
+  const polygon = normalizeLocalPolygon(item.shadowPolygon);
+  if (polygon.length < 3) return [];
+  return polygon.map((point) => {
+    const screenPoint = {
+      x: bounds.x + point.x * bounds.w,
+      y: bounds.y + point.y * bounds.h
+    };
+    return projectElevatedPointToReceiver(
+      screenPoint,
+      localCasterHeight(item, point, scale),
+      lightPoint,
+      scale
+    );
+  });
+}
+
+function drawProjectedShadow2D5(targetCtx, item, bounds, lightPoint, scale, lightFactor, heightFactor, isWallSurface) {
+  const points = projectedShadowPolygon2D5(item, bounds, lightPoint, scale);
+  if (points.length < 3) return false;
+  const alpha = baseShadowOpacity(item, lightFactor, heightFactor, isWallSurface);
+  if (alpha <= 0) return true;
+  targetCtx.save();
+  targetCtx.globalAlpha = alpha;
+  targetCtx.globalCompositeOperation = "multiply";
+  const blur = Math.max(0, state.night.shadowBlur * scale);
+  targetCtx.filter = blur > 0 ? `blur(${blur}px)` : "none";
+  targetCtx.fillStyle = "#000000";
+  targetCtx.beginPath();
+  points.forEach((point, index) => {
+    if (index === 0) targetCtx.moveTo(point.x, point.y);
+    else targetCtx.lineTo(point.x, point.y);
+  });
+  targetCtx.closePath();
+  targetCtx.fill();
+  targetCtx.restore();
+  return true;
 }
 
 function drawFloorFootprintShadow(targetCtx, item, bounds, ux, uy, lightFactor, scale, heightFactor) {
@@ -2545,6 +2833,9 @@ function drawProjectedShadow(targetCtx, item, bounds, lightPoint, scale = 1, sur
   const isWallSurface = surface === "left_wall" || surface === "right_wall";
   const usesWallAnchor = isWallSurface && itemUsesWallShadowAnchor(item);
   if (usesWallAnchor && facePoints && drawWallPlaneShadow(targetCtx, item, bounds, lightPoint, scale, facePoints)) {
+    return;
+  }
+  if (drawProjectedShadow2D5(targetCtx, item, bounds, lightPoint, scale, lightFactor, heightFactor, isWallSurface)) {
     return;
   }
   if (!isWallSurface && drawFloorFootprintShadow(targetCtx, item, bounds, ux, uy, lightFactor, scale, heightFactor)) {
@@ -3056,6 +3347,7 @@ function drawSelection() {
   ctx.strokeRect(Math.round(editBounds.x) + 0.5, Math.round(editBounds.y) + 0.5, Math.round(editBounds.w), Math.round(editBounds.h));
   drawItemLocalPolygonOverlay(item, "footprintPolygon", "rgba(112, 231, 157, 0.82)", "rgba(112, 231, 157, 0.12)");
   drawItemLocalPolygonOverlay(item, "shadowPolygon", "rgba(205, 154, 255, 0.82)", "rgba(205, 154, 255, 0.10)");
+  drawItemPolygonDraftOverlay(item);
   ctx.restore();
 }
 
@@ -3094,6 +3386,51 @@ function drawItemLocalPolygonOverlay(item, key, stroke, fill) {
       ctx.fillText(String(index + 1), point.x, point.y + 0.5);
     }
   });
+}
+
+function drawItemPolygonDraftOverlay(item) {
+  if (!item || !isItemPolygonDraftActive() || state.itemPolygonDraft.points.length === 0) return;
+  const key = state.itemPolygonDraft.key;
+  const points = state.itemPolygonDraft.points;
+  const stroke = key === "shadowPolygon" ? "rgba(205, 154, 255, 0.96)" : "rgba(112, 231, 157, 0.96)";
+  const fill = key === "shadowPolygon" ? "rgba(205, 154, 255, 0.12)" : "rgba(112, 231, 157, 0.14)";
+  ctx.save();
+  ctx.beginPath();
+  points.forEach((point, index) => {
+    if (index === 0) ctx.moveTo(point.x, point.y);
+    else ctx.lineTo(point.x, point.y);
+  });
+  if (points.length >= 3) {
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+  }
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([5, 3]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  points.forEach((point, index) => {
+    const radius = index === 0 ? 6 : 5;
+    const active = state.itemPolygonDraft.dragging && state.itemPolygonDraft.dragIndex === index;
+    ctx.beginPath();
+    if (index === 0) {
+      ctx.rect(point.x - radius, point.y - radius, radius * 2, radius * 2);
+    } else {
+      ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+    }
+    ctx.fillStyle = active ? "#fff1c2" : "#ffffff";
+    ctx.fill();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = active ? 2.2 : 1.5;
+    ctx.stroke();
+    ctx.fillStyle = "#11151d";
+    ctx.font = "7px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(String(index + 1), point.x, point.y + 0.5);
+  });
+  ctx.restore();
 }
 
 function drawMeasureOverlay() {
@@ -3472,9 +3809,14 @@ function refreshSelectedPanel() {
             <div id="footprintPolygonEditor" class="polygon-editor${state.activeItemPolygonKey === "footprintPolygon" ? " active" : ""}">
               <div class="section-title-row">
                 <div class="section-title">Footprint polygon</div>
-                <div id="itemFootprintPolygonMeta" class="section-meta">${polygonSummary(item.footprintPolygon)}</div>
+                <button id="drawFootprintPolygon" class="polygon-draw-button" type="button">Draw face</button>
               </div>
               <textarea id="itemFootprintPolygon" rows="4" spellcheck="false" placeholder="0.18, 0.72&#10;0.82, 0.72&#10;0.96, 0.96&#10;0.04, 0.96">${escapeHtml(polygonToText(item.footprintPolygon))}</textarea>
+              <div id="footprintPolygonDraftBar" class="polygon-draft-bar" hidden>
+                <span id="footprintPolygonDraftMeta">0 point(s). Add at least 3 points.</span>
+                <button id="finishFootprintPolygonDraft" type="button">Finish</button>
+                <button id="exitFootprintPolygonDraft" type="button">Exit</button>
+              </div>
               <div class="toolbar polygon-actions">
                 <button id="setFootprintBase" type="button">Base shape</button>
                 <button id="setFootprintBounds" type="button">Bounds</button>
@@ -3484,9 +3826,14 @@ function refreshSelectedPanel() {
             <div id="shadowPolygonEditor" class="polygon-editor${state.activeItemPolygonKey === "shadowPolygon" ? " active" : ""}">
               <div class="section-title-row">
                 <div class="section-title">Shadow polygon</div>
-                <div id="itemShadowPolygonMeta" class="section-meta">${polygonSummary(item.shadowPolygon)}</div>
+                <button id="drawShadowPolygon" class="polygon-draw-button" type="button">Draw face</button>
               </div>
               <textarea id="itemShadowPolygon" rows="4" spellcheck="false" placeholder="0, 0&#10;1, 0&#10;1, 1&#10;0, 1">${escapeHtml(polygonToText(item.shadowPolygon))}</textarea>
+              <div id="shadowPolygonDraftBar" class="polygon-draft-bar" hidden>
+                <span id="shadowPolygonDraftMeta">0 point(s). Add at least 3 points.</span>
+                <button id="finishShadowPolygonDraft" type="button">Finish</button>
+                <button id="exitShadowPolygonDraft" type="button">Exit</button>
+              </div>
               <div class="toolbar polygon-actions">
                 <button id="setShadowBounds" type="button">Bounds</button>
                 <button id="copyFootprintToShadow" type="button">Use footprint</button>
@@ -3653,8 +4000,25 @@ function refreshSelectedPanel() {
       render();
       commitHistory();
     };
+    const bindPolygonDraftControls = (key) => {
+      const ids = polygonEditorIds(key);
+      document.getElementById(ids.drawButton)?.addEventListener("click", (event) => {
+        event.preventDefault();
+        startItemPolygonDraft(item, key);
+      });
+      document.getElementById(ids.finishDraft)?.addEventListener("click", (event) => {
+        event.preventDefault();
+        finishItemPolygonDraft();
+      });
+      document.getElementById(ids.exitDraft)?.addEventListener("click", (event) => {
+        event.preventDefault();
+        cancelItemPolygonDraft();
+      });
+    };
     bindPolygonTextarea("itemFootprintPolygon", "footprintPolygon");
     bindPolygonTextarea("itemShadowPolygon", "shadowPolygon");
+    bindPolygonDraftControls("footprintPolygon");
+    bindPolygonDraftControls("shadowPolygon");
     document.getElementById("setFootprintBase")?.addEventListener("click", (event) => {
       event.preventDefault();
       item.footprint = "polygon";
@@ -3695,6 +4059,7 @@ function refreshSelectedPanel() {
     bind("itemOccludesSprite", (input) => { item.occludesSprite = input.checked; });
   }
   updateSizeFields();
+  updatePolygonEditorState();
   updateEditModeButtons();
 }
 
@@ -5335,6 +5700,7 @@ document.getElementById("nightMode").addEventListener("click", () => {
 document.getElementById("furnitureMode").addEventListener("click", () => {
   state.editMode = "furniture";
   state.drawingFace = false;
+  resetItemPolygonDraft();
   state.selectedFaceId = null;
   state.selectedPointIndex = null;
   state.selectedPointId = null;
@@ -5347,6 +5713,7 @@ document.getElementById("furnitureMode").addEventListener("click", () => {
 
 document.getElementById("shapeMode").addEventListener("click", () => {
   state.editMode = "shape";
+  resetItemPolygonDraft();
   state.selectedId = null;
   updateEditModeButtons();
   refreshList();
@@ -5481,6 +5848,10 @@ canvas.addEventListener("pointerdown", (event) => {
   }
 
   const canvasPoint = pointerToCanvas(event);
+  if (state.itemPolygonDraft.active) {
+    handleItemPolygonDraftPointerDown(event);
+    return;
+  }
   if (hitTestConeControl(canvasPoint.x, canvasPoint.y)) {
     state.draggingConeControl = true;
     state.lightSelected = true;
@@ -5572,6 +5943,10 @@ canvas.addEventListener("pointermove", (event) => {
     render();
     return;
   }
+  if (state.itemPolygonDraft.dragging) {
+    moveItemPolygonDraftPoint(pointerToCanvas(event));
+    return;
+  }
   if (state.draggingItemPolygon) {
     updateDraggedItemPolygon(pointerToCanvas(event));
     render();
@@ -5614,6 +5989,11 @@ function finishCanvasDrag(event) {
     return;
   }
 
+  if (state.itemPolygonDraft.dragging) {
+    finishItemPolygonDraftPointDrag(event);
+    return;
+  }
+
   if (state.dragging || state.draggingPoint || state.draggingItemPolygon || state.draggingLight || state.draggingConeControl) {
     commitHistory();
   }
@@ -5639,6 +6019,11 @@ window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && state.previewZoomed) {
     state.previewZoomed = false;
     updatePreviewZoom();
+    event.preventDefault();
+    return;
+  }
+  if (event.key === "Escape" && state.itemPolygonDraft.active) {
+    cancelItemPolygonDraft();
     event.preventDefault();
     return;
   }

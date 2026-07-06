@@ -83,9 +83,12 @@ open ./tools/room_editor/index.html
     `Height = 0` and usually disable `Cast shadow`; sofas, beds, and cabinets
     should use furniture/high-furniture kinds with a non-zero height. Wall
     shelves should use the wall-furniture kind or set `Shadow anchor` to wall.
-    Floor furniture with `Footprint = ellipse` uses an oval contact shadow
-    instead of the raw alpha-mask projection, which avoids rectangular shadows
-    for round beds and similar bulky items.
+    Floor furniture with `Shadow polygon` uses the 2.5D caster projection:
+    polygon vertices near the top of the sprite receive more height and are
+    projected away from the light source, while bottom vertices stay close to
+    the object. If no shadow polygon is set, `Footprint = ellipse` still falls
+    back to an oval contact shadow to avoid rectangular shadows for round beds
+    and similar bulky items.
     Wall-mounted objects use a 2.5D wall-plane projection: the editor maps the
     receiving wall face into local coordinates, projects the item's alpha mask
     from its `Wall depth` toward the light's `Light depth`, then adds a soft
@@ -103,29 +106,30 @@ open ./tools/room_editor/index.html
    - `Copy to Day` / `Copy to Night`: duplicate the currently edited light into
      the selected day/night profile before fine tuning it.
    - `Light shape`: use `Radial` for local glow or `Cone` for window-like beams.
-   - `Light depth`: distance from the wall plane used by wall-mounted shadow
-     projection. Smaller values exaggerate cast shadows; larger values move
-     toward a parallel-light look.
+     The shape controls the lit region only; it does not force shadow direction.
+   - `Light depth`: 2.5D height of the light source. Smaller values exaggerate
+     cast shadows; larger values move toward a parallel-light look.
    - `Light radius`: visual radius for the canvas handle.
    - `Cone angle` and `Cone spread`: tune the direction and width of cone light.
-   - `Cast 2D shadows`: draws flattened alpha-mask shadows for visible items
-     whose item-level `Cast shadow` is enabled.
-   - `Shadow mode`: `Auto` keeps radial lights as point lights and cone lights
-     as directional/window lights; use `Point light` or `Directional` to force a
-     specific shadow model.
+   - `Cast 2D shadows`: draws 2.5D projected shadows for visible items whose
+     item-level `Cast shadow` is enabled.
+   - `Shadow mode`: `Auto` uses the light handle as a point light. Use
+     `Directional` only when you intentionally want `Cone angle` to control a
+     parallel shadow direction.
    - Shadow receiving is clipped by room faces when `Receive shadows` is enabled:
-     floor surfaces use flattened floor shadows. Left/right wall surfaces use
-     wall-plane projection for wall-mounted objects and the flattened fallback
-     shadow for ordinary floor furniture.
+     floor surfaces use 2.5D floor projection when `Shadow polygon` is present.
+     Left/right wall surfaces use wall-plane projection for wall-mounted objects
+     and clipped 2.5D caster projection for ordinary floor furniture.
    - `Strength` changes light and shadow intensity. `100` matches the original
      full-strength value; values above `100` are overdrive for stronger window
      light.
    - `Light radius` and the cone shape limit which objects can cast a shadow. In
      directional shadow mode, moving the light handle changes the lit cone/region,
      while `Cone angle` controls the parallel shadow direction.
-   - `Shadow opacity`, `Shadow length`, and `Shadow blur`: tune the fake floor
-     projection. `Shadow blur` supports `0.1px` steps for small soft-shadow
-     adjustments. Click the preview canvas to zoom it.
+   - `Shadow opacity`, `Shadow length`, and `Shadow blur`: tune projected
+     shadow strength, height gain, and softness. `Shadow blur` supports `0.1px`
+     steps for small soft-shadow adjustments. Click the preview canvas to zoom
+     it.
 17. Use `Toolbox` / `Measure H` to drag a vertical measurement on the edit
     canvas. The readout shows both original canvas pixels and target game pixels.
 18. Use the export buttons:

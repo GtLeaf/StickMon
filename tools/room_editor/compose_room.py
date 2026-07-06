@@ -407,7 +407,7 @@ def active_shadow_mode(night):
     mode = normalize_shadow_mode(night.get("shadowMode"))
     if mode != "auto":
         return mode
-    return "directional" if normalize_light_shape(night.get("lightShape")) == "cone" else "point"
+    return "point"
 
 
 def shadow_direction(night, foot_x, foot_y, light_x, light_y):
@@ -628,6 +628,66 @@ def base_shadow_opacity(night, item, light_factor, opacity, mode, is_wall_surfac
     return min(1, max(0, alpha))
 
 
+def shadow_height_gain(night):
+    return max(0, float(night["shadowLength"] or 0)) / max(1, DEFAULT_NIGHT["shadowLength"])
+
+
+def local_caster_height(night, item, point):
+    vertical_ratio = max(0, min(1, 1 - point[1]))
+    return item_height_px(item) * shadow_height_gain(night) * vertical_ratio
+
+
+def project_elevated_point_to_receiver(night, point, z):
+    if z <= 0.001:
+        return point
+    if active_shadow_mode(night) == "directional":
+        angle = math.radians(float(night["lightAngle"]))
+        return (point[0] + math.cos(angle) * z, point[1] + math.sin(angle) * z)
+
+    light_x = float(night["lightX"])
+    light_y = float(night["lightY"])
+    light_z = max(z + 1, float(night["lightDepth"]))
+    factor = light_z / max(1, light_z - z)
+    return (
+        light_x + (point[0] - light_x) * factor,
+        light_y + (point[1] - light_y) * factor,
+    )
+
+
+def projected_shadow_polygon_2d5(night, item, src):
+    polygon = item_shadow_polygon(item)
+    if len(polygon) < 3:
+        return []
+    x = float(item.get("x", 0))
+    y = float(item.get("y", 0))
+    width, height = src.size
+    points = []
+    for local in polygon:
+        screen_point = (x + local[0] * width, y + local[1] * height)
+        points.append(project_elevated_point_to_receiver(
+            night,
+            screen_point,
+            local_caster_height(night, item, local),
+        ))
+    return points
+
+
+def draw_projected_shadow_2d5(layer, night, item, src, opacity, mode, light_factor, is_wall_surface=False):
+    points = projected_shadow_polygon_2d5(night, item, src)
+    if len(points) < 3:
+        return False
+    alpha = round(255 * base_shadow_opacity(night, item, light_factor, opacity, mode, is_wall_surface))
+    if alpha <= 0:
+        return True
+    shadow = Image.new("RGBA", layer.size, (0, 0, 0, 0))
+    ImageDraw.Draw(shadow).polygon([(round(px), round(py)) for px, py in points], fill=(0, 0, 0, alpha))
+    blur = max(0, float(night["shadowBlur"]))
+    if blur > 0:
+        shadow = shadow.filter(ImageFilter.GaussianBlur(blur))
+    layer.alpha_composite(shadow)
+    return True
+
+
 def draw_floor_footprint_shadow(layer, night, item, src, opacity, mode, ux, uy, light_factor):
     polygon = item_footprint_polygon(item)
     if polygon:
@@ -836,6 +896,8 @@ def draw_shadow_for_item(layer, night, item, src, opacity, mode, surface, face=N
     is_wall_surface = surface in {"left_wall", "right_wall"}
     uses_wall_anchor = is_wall_surface and item_uses_wall_shadow_anchor(item)
     if uses_wall_anchor and face and draw_wall_plane_shadow_for_item(layer, night, item, src, opacity, mode, face):
+        return
+    if draw_projected_shadow_2d5(layer, night, item, src, opacity, mode, light_factor, is_wall_surface):
         return
     if not is_wall_surface and draw_floor_footprint_shadow(layer, night, item, src, opacity, mode, ux, uy, light_factor):
         return

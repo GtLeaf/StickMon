@@ -560,6 +560,40 @@ canvas.measure-tool.dragging {
   box-shadow: 0 0 0 1px rgba(120, 214, 238, 0.2);
 }
 
+.polygon-draw-button {
+  min-width: 0;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.polygon-draft-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid rgba(120, 214, 238, 0.28);
+  border-radius: 6px;
+  background: rgba(120, 214, 238, 0.08);
+}
+
+.polygon-draft-bar[hidden] {
+  display: none;
+}
+
+.polygon-draft-bar span {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.polygon-draft-bar button {
+  min-width: 0;
+  padding: 5px 7px;
+  font-size: 11px;
+}
+
 .polygon-actions {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -652,10 +686,6 @@ canvas.measure-tool.dragging {
   height: clamp(260px, 32vh, 380px);
 }
 
-.room-faces-panel:not([open]) {
-  height: auto;
-}
-
 .collapsible-panel-summary {
   cursor: pointer;
   display: flex;
@@ -693,8 +723,15 @@ canvas.measure-tool.dragging {
 }
 
 .asset-management-panel:not([open]),
+.room-faces-panel:not([open]),
 .night-panel:not([open]) {
   height: auto;
+  min-height: 0;
+}
+
+.asset-management-panel:not([open]) > .panel-body,
+.room-faces-panel:not([open]) > .panel-body {
+  display: none;
 }
 
 .right-subpanel > .panel-body {
