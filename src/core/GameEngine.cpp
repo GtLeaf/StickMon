@@ -17,6 +17,7 @@
 
 namespace {
 static constexpr uint16_t HP_RECOVERY_INTERVAL_MIN = 5;
+static constexpr uint8_t HP_RECOVERY_PERCENT_PER_TICK = 10;
 static constexpr uint32_t FAINT_RECOVERY_SECONDS = 86400UL;
 static constexpr uint32_t CLOCK_SAVE_INTERVAL_MS = 15000UL;
 static constexpr uint16_t GAME_MINUTES_PER_DAY = 24U * 60U;
@@ -924,7 +925,10 @@ void GameEngine::tickCare(uint32_t nowMs) {
         }
 
         if (hpRecoveryTicks > 0 && mon.hpCur < mon.hpMax && mon.satiety > 0) {
-            uint16_t gainPerTick = max<uint16_t>(1, mon.hpMax / 20);
+            uint16_t gainPerTick = max<uint16_t>(
+                1,
+                (uint16_t)((mon.hpMax * HP_RECOVERY_PERCENT_PER_TICK + 99) / 100)
+            );
             uint32_t gain = (uint32_t)gainPerTick * hpRecoveryTicks;
             mon.hpCur = min<uint16_t>(mon.hpMax, mon.hpCur + gain);
         }

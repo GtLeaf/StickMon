@@ -445,19 +445,9 @@ canvas.measure-tool.dragging {
   gap: 8px;
 }
 
-.light-profile-control {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  width: 100%;
-}
-
-.light-profile-control button {
-  min-width: 0;
-}
-
 .light-profile-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
 }
 
 .light-profile-actions button {
@@ -553,6 +543,125 @@ canvas.measure-tool.dragging {
   border: 1px solid var(--line);
   border-radius: 7px;
   background: #11151d;
+}
+
+.shadow-face-targets {
+  display: grid;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #11151d;
+}
+
+.shadow-face-field {
+  display: grid;
+  gap: 5px;
+}
+
+.shadow-face-field > span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.shadow-face-control-row {
+  display: grid;
+  min-width: 0;
+}
+
+.shadow-face-dropdown {
+  min-width: 0;
+}
+
+.shadow-face-dropdown summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid #303746;
+  border-radius: 6px;
+  background: #0d1118;
+  color: var(--text);
+  cursor: pointer;
+  list-style: none;
+}
+
+.shadow-face-dropdown summary::-webkit-details-marker {
+  display: none;
+}
+
+.shadow-face-dropdown summary::after {
+  content: "v";
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.shadow-face-dropdown[open] summary {
+  border-color: #4b5668;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.shadow-face-dropdown summary span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shadow-face-targets button {
+  min-width: 0;
+  padding: 5px 8px;
+  font-size: 11px;
+}
+
+.shadow-face-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.shadow-face-list {
+  display: grid;
+  gap: 5px;
+  max-height: 128px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid #303746;
+  border-top: 0;
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+  background: #0b0f16;
+}
+
+.shadow-face-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 7px;
+  align-items: center;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.shadow-face-row input {
+  width: auto;
+}
+
+.shadow-face-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shadow-face-row small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.shadow-face-row.muted {
+  color: var(--muted);
 }
 
 .polygon-editor.active {
@@ -667,7 +776,7 @@ canvas.measure-tool.dragging {
 
 .export-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 8px;
 }
 
@@ -683,7 +792,21 @@ canvas.measure-tool.dragging {
 }
 
 .room-faces-panel {
-  height: clamp(260px, 32vh, 380px);
+  --room-faces-max-height: clamp(260px, 32vh, 380px);
+  display: block;
+  height: auto;
+  max-height: var(--room-faces-max-height);
+  min-height: 0;
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+
+.room-faces-panel[open] {
+  display: block;
+}
+
+.room-faces-panel > .collapsible-panel-summary {
+  flex: 0 0 auto;
 }
 
 .collapsible-panel-summary {
@@ -712,7 +835,7 @@ canvas.measure-tool.dragging {
 
 .room-faces-panel:not([open]) .collapsible-panel-summary::after,
 .asset-management-panel:not([open]) .collapsible-panel-summary::after,
-.night-panel:not([open]) .collapsible-panel-summary::after {
+.light-panel:not([open]) .collapsible-panel-summary::after {
   content: "v";
 }
 
@@ -724,9 +847,11 @@ canvas.measure-tool.dragging {
 
 .asset-management-panel:not([open]),
 .room-faces-panel:not([open]),
-.night-panel:not([open]) {
+.light-panel:not([open]) {
   height: auto;
+  max-height: none;
   min-height: 0;
+  flex-basis: auto;
 }
 
 .asset-management-panel:not([open]) > .panel-body,
@@ -735,6 +860,8 @@ canvas.measure-tool.dragging {
 }
 
 .right-subpanel > .panel-body {
+  flex: 1 1 auto;
+  height: auto;
   min-height: 0;
   overflow-y: auto;
   padding-right: 8px;
@@ -747,11 +874,11 @@ canvas.measure-tool.dragging {
   overscroll-behavior: contain;
 }
 
-.night-panel {
+.light-panel {
   flex: 0 0 auto;
 }
 
-#nightOverlayPanel > .panel-body {
+#lightShadowsPanel > .panel-body {
   overflow: visible;
 }
 
@@ -761,6 +888,67 @@ canvas.measure-tool.dragging {
   max-height: none;
   overflow: visible;
   padding-right: 2px;
+}
+
+.furniture-library-list {
+  display: grid;
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.library-item {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-2);
+}
+
+.library-thumb {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  border: 1px solid #2e3644;
+  border-radius: 5px;
+  background: #11151d;
+}
+
+.library-details {
+  min-width: 0;
+}
+
+.library-name {
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-meta {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-actions {
+  display: grid;
+  gap: 5px;
+}
+
+.library-add,
+.library-delete {
+  min-width: 0;
+  padding: 5px 8px;
+  font-size: 11px;
 }
 
 .asset-section-title {
@@ -809,6 +997,26 @@ canvas.measure-tool.dragging {
 .asset-item.background {
   border-color: #44546b;
   background: #1d2430;
+  cursor: pointer;
+}
+
+.asset-item.background.active-background {
+  border-color: var(--accent);
+  background: #20313d;
+}
+
+.background-replace {
+  min-width: 0;
+  padding: 5px 8px;
+  font-size: 11px;
+}
+
+.shared-transform-badge {
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .asset-item.selected {
@@ -819,14 +1027,22 @@ canvas.measure-tool.dragging {
 .face-list {
   display: grid;
   gap: 8px;
+  min-height: 0;
   overflow: visible;
 }
 
 .face-panel-body {
-  max-height: none;
-  overflow-y: auto;
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  gap: 10px;
+  height: auto;
+  max-height: calc(var(--room-faces-max-height) - 42px);
   min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding-right: 8px;
+  overscroll-behavior: contain;
 }
 
 .face-item {
@@ -836,12 +1052,16 @@ canvas.measure-tool.dragging {
   padding: 0;
   display: block;
   cursor: pointer;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .face-item.selected {
   border-color: var(--accent);
   background: #20313d;
+}
+
+.face-item.face-hidden {
+  opacity: 0.62;
 }
 
 .face-item.draft {
@@ -850,12 +1070,13 @@ canvas.measure-tool.dragging {
 
 .face-summary {
   display: grid;
-  grid-template-columns: 14px 1fr 24px 24px;
+  grid-template-columns: 14px minmax(0, 1fr) 24px 24px 24px;
   gap: 8px;
   align-items: start;
   padding: 8px;
 }
 
+.face-visibility,
 .face-toggle,
 .face-delete {
   min-width: 24px;
@@ -864,6 +1085,41 @@ canvas.measure-tool.dragging {
   height: 24px;
   padding: 0;
   border-radius: 5px;
+}
+
+.face-visibility {
+  position: relative;
+  color: var(--text);
+  background: #1b202b;
+}
+
+.face-visibility::before {
+  content: "";
+  display: block;
+  width: 13px;
+  height: 8px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+
+.face-visibility::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  transform: translate(-50%, -50%);
+}
+
+.face-visibility.is-hidden::after {
+  width: 16px;
+  height: 1px;
+  border-radius: 0;
+  background: var(--danger);
+  transform: translate(-50%, -50%) rotate(-42deg);
 }
 
 .face-toggle {

@@ -19,8 +19,11 @@ static constexpr float DEBUG_TILT_DEADZONE = 0.08f;
 static constexpr float DEBUG_TILT_MAX = 0.62f;
 static constexpr float DEBUG_TILT_SPEED = 58.0f;
 static constexpr float CAMERA_FOCUS_Y = 84.0f;
-static constexpr float FOOD_CENTER_X = 191.0f;
-static constexpr float FOOD_CENTER_Y = 108.0f;
+static constexpr float FOOD_CENTER_X = (float)RoomAssets::ROOM_FOOD_X;
+static constexpr float FOOD_CENTER_Y = (float)RoomAssets::ROOM_FOOD_Y;
+static constexpr float BED_CENTER_X = (float)RoomAssets::ROOM_BED_X;
+static constexpr float BED_CENTER_Y = (float)RoomAssets::ROOM_BED_Y;
+static constexpr uint32_t FEED_REQUEST_TIMEOUT_MS = 18000;
 
 enum class PmdMotionMode : uint8_t {
     LOOP,
@@ -478,6 +481,8 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
     }
 
     if (mon.fainted || mon.hpCur == 0 || (mon.statusBits & Game::STATUS_SLEEP)) {
+        snapMonsterToBed();
+        pendingFeed = false;
         velocityX = 0.0f;
         velocityY = 0.0f;
         aiMode = AiMode::IDLE;
@@ -485,6 +490,21 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
     }
 
     bool debugTilt = GameEngine::ins().debugTiltControlEnabled();
+    if (!debugTilt) {
+        updatePendingFeed(nowMs);
+        if (monsterNeedsBedRest() && !pendingFeed) {
+            if (monsterNearBed()) {
+                velocityX = 0.0f;
+                velocityY = 0.0f;
+                aiMode = AiMode::IDLE;
+                targetX = monsterX;
+                targetY = monsterY;
+                nextAiDecisionMs = nowMs + 2000;
+                return;
+            }
+            setBedTarget(nowMs);
+        }
+    }
     if (!debugTilt && (int32_t)(nowMs - nextAiDecisionMs) >= 0) {
         chooseAiGoal(nowMs);
     }
@@ -500,7 +520,7 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
         float dx = targetX - monsterX;
         float dy = targetY - monsterY;
         float dist = sqrtf(dx * dx + dy * dy);
-        float speed = aiMode == AiMode::SEEK_FOOD ? 19.0f : 10.5f;
+        float speed = (aiMode == AiMode::SEEK_FOOD || aiMode == AiMode::SEEK_BED) ? 19.0f : 10.5f;
         if (mon.mood < 40 || mon.satiety < 20) speed *= 0.72f;
         speed *= pmdMoveSpeedScale(active);
         float step = speed * dtSeconds;
@@ -511,6 +531,7 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
             velocityX = 0.0f;
             velocityY = 0.0f;
             nextAiDecisionMs = nowMs + random(1800, 4201);
+            updatePendingFeed(nowMs);
         } else {
             velocityX = dx / dist * speed;
             velocityY = dy / dist * speed * 0.75f;
@@ -538,6 +559,79 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
         aiMode = AiMode::IDLE;
         nextAiDecisionMs = nowMs + random(1200, 2601);
     }
+}
+
+bool MainScene::monsterNearFood() const {
+    float walkY = monsterY + walkBoundaryOffsetY();
+    return fabsf(monsterX - FOOD_CENTER_X) < 10.0f && fabsf(walkY - FOOD_CENTER_Y) < 7.0f;
+}
+
+bool MainScene::monsterNearBed() const {
+    float walkY = monsterY + walkBoundaryOffsetY();
+    return fabsf(monsterX - BED_CENTER_X) < 11.0f && fabsf(walkY - BED_CENTER_Y) < 8.0f;
+}
+
+bool MainScene::monsterNeedsBedRest() const {
+    return mainSceneIsNight();
+}
+
+void MainScene::setFoodTarget(uint32_t nowMs) {
+    targetX = FOOD_CENTER_X;
+    targetY = FOOD_CENTER_Y - walkBoundaryOffsetY();
+    if (!monsterCenterInsideWalkArea(targetX, targetY)) {
+        if (!randomMonsterCenterWalkPointNear(FOOD_CENTER_X, FOOD_CENTER_Y, 9.0f, 6.0f, targetX, targetY)) {
+            randomMonsterCenterWalkPoint(targetX, targetY);
+        }
+    }
+    aiMode = AiMode::SEEK_FOOD;
+    nextAiDecisionMs = nowMs + 1200;
+}
+
+void MainScene::setBedTarget(uint32_t nowMs) {
+    targetX = BED_CENTER_X;
+    targetY = BED_CENTER_Y - walkBoundaryOffsetY();
+    if (!monsterCenterInsideWalkArea(targetX, targetY)) {
+        if (!randomMonsterCenterWalkPointNear(BED_CENTER_X, BED_CENTER_Y, 10.0f, 7.0f, targetX, targetY)) {
+            randomMonsterCenterWalkPoint(targetX, targetY);
+        }
+    }
+    aiMode = AiMode::SEEK_BED;
+    nextAiDecisionMs = nowMs + 1400;
+}
+
+void MainScene::snapMonsterToBed() {
+    monsterX = BED_CENTER_X;
+    monsterY = BED_CENTER_Y - walkBoundaryOffsetY();
+    if (!monsterCenterInsideWalkArea(monsterX, monsterY)) {
+        if (!randomMonsterCenterWalkPointNear(BED_CENTER_X, BED_CENTER_Y, 10.0f, 7.0f, monsterX, monsterY)) {
+            randomMonsterCenterWalkPoint(monsterX, monsterY);
+        }
+    }
+    targetX = monsterX;
+    targetY = monsterY;
+}
+
+void MainScene::updatePendingFeed(uint32_t nowMs) {
+    if (!pendingFeed) return;
+    if (GameEngine::ins().foodCount() == 0 || (int32_t)(nowMs - pendingFeedUntilMs) >= 0) {
+        pendingFeed = false;
+        return;
+    }
+    if (!monsterNearFood()) {
+        setFoodTarget(nowMs);
+        return;
+    }
+
+    bool fed = GameEngine::ins().consumeFood();
+    toast = fed ? Ui::Menu::FEED_TOAST : Ui::Menu::NO_FOOD;
+    toastUntil = nowMs + 1200;
+    pendingFeed = false;
+    velocityX = 0.0f;
+    velocityY = 0.0f;
+    aiMode = AiMode::IDLE;
+    targetX = monsterX;
+    targetY = monsterY;
+    nextAiDecisionMs = nowMs + random(1600, 3201);
 }
 
 void MainScene::updateDebugTiltControl(uint32_t nowMs, float dtSeconds) {
@@ -592,7 +686,10 @@ void MainScene::updatePmdSpriteState(uint32_t nowMs) {
     if (!config) return;
 
     const Game::MonsterRuntime& mon = GameEngine::ins().activeMonster();
-    bool sleeping = (mon.statusBits & Game::STATUS_SLEEP) != 0;
+    bool sleeping = (mon.statusBits & Game::STATUS_SLEEP) != 0 ||
+                    mon.fainted ||
+                    mon.hpCur == 0 ||
+                    (mainSceneIsNight() && monsterNearBed());
     float speedSq = velocityX * velocityX + velocityY * velocityY;
     bool moving = speedSq > PMD_MOVING_SPEED_EPSILON * PMD_MOVING_SPEED_EPSILON;
     PmdAction nextAction = sleeping ? PmdAction::SLEEPING : (moving ? PmdAction::WALKING : PmdAction::IDLE);
@@ -738,12 +835,9 @@ bool MainScene::pmdDirectionFlipX() const {
 
 void MainScene::chooseAiGoal(uint32_t nowMs) {
     const Game::MonsterRuntime& mon = GameEngine::ins().activeMonster();
-    float walkY = monsterY + walkBoundaryOffsetY();
-    bool nearFood = fabsf(monsterX - FOOD_CENTER_X) < 10.0f && fabsf(walkY - FOOD_CENTER_Y) < 6.0f;
     bool hungry = mon.satiety < 55 && GameEngine::ins().foodCount() > 0;
-    if (hungry && !nearFood && random(0, 100) < 35) {
-        aiMode = AiMode::SEEK_FOOD;
-        randomMonsterCenterWalkPointNear(FOOD_CENTER_X, FOOD_CENTER_Y, 7.0f, 5.0f, targetX, targetY);
+    if (hungry && !monsterNearFood()) {
+        setFoodTarget(nowMs);
         nextAiDecisionMs = nowMs + random(2600, 5201);
         return;
     }
@@ -806,9 +900,16 @@ bool MainScene::onButton(const ButtonEvent& event) {
     }
 
     if (event.btn == 1 && event.action == BtnAction::PRESSED) {
-        bool fed = GameEngine::ins().consumeFood();
-        toast = fed ? Ui::Menu::FEED_TOAST : Ui::Menu::NO_FOOD;
-        toastUntil = Hal::ins().millis() + 1200;
+        uint32_t nowMs = Hal::ins().millis();
+        if (GameEngine::ins().foodCount() == 0) {
+            toast = Ui::Menu::NO_FOOD;
+            toastUntil = nowMs + 1200;
+            return true;
+        }
+        pendingFeed = true;
+        pendingFeedUntilMs = nowMs + FEED_REQUEST_TIMEOUT_MS;
+        setFoodTarget(nowMs);
+        updatePendingFeed(nowMs);
         return true;
     }
 
@@ -821,11 +922,16 @@ bool MainScene::onButton(const ButtonEvent& event) {
 
 void MainScene::drawBackground() {
     PixelRenderer::clear(PixelRenderer::rgb(5, 6, 18));
+    bool night = mainSceneIsNight();
+    const uint16_t* roomRle = night ? RoomAssets::STANDARD_ROOM_NIGHT_RLE
+                                    : RoomAssets::STANDARD_ROOM_DAY_RLE;
+    uint32_t roomRleLen = night ? RoomAssets::STANDARD_ROOM_NIGHT_RLE_LEN
+                                : RoomAssets::STANDARD_ROOM_DAY_RLE_LEN;
     PixelRenderer::drawRgb565Rle(0, RoomAssets::STANDARD_ROOM_Y - (int16_t)roundf(cameraY),
                                  RoomAssets::STANDARD_ROOM_W,
                                  RoomAssets::STANDARD_ROOM_H,
-                                 RoomAssets::STANDARD_ROOM_RLE, 0,
-                                 RoomAssets::STANDARD_ROOM_RLE_LEN);
+                                 roomRle, 0,
+                                 roomRleLen);
 }
 
 void MainScene::drawFloor() {
@@ -839,10 +945,11 @@ void MainScene::drawFood() {
                                         : PixelRenderer::rgb(245, 180, 87);
     uint16_t garnishColor = foodIndex == 1 ? PixelRenderer::rgb(255, 216, 72)
                                            : PixelRenderer::rgb(92, 151, 80);
-    c.fillEllipse(191, worldToScreenY(111.0f), 16, 6, PixelRenderer::rgb(122, 96, 76));
-    c.fillEllipse(191, worldToScreenY(108.0f), 13, 5, foodColor);
-    c.fillCircle(186, worldToScreenY(106.0f), 2, garnishColor);
-    c.fillCircle(194, worldToScreenY(107.0f), 2, PixelRenderer::rgb(178, 79, 57));
+    int cx = (int)FOOD_CENTER_X;
+    c.fillEllipse(cx, worldToScreenY(FOOD_CENTER_Y + 3.0f), 10, 4, PixelRenderer::rgb(122, 96, 76));
+    c.fillEllipse(cx, worldToScreenY(FOOD_CENTER_Y), 8, 3, foodColor);
+    c.fillCircle(cx - 4, worldToScreenY(FOOD_CENTER_Y - 2.0f), 2, garnishColor);
+    c.fillCircle(cx + 3, worldToScreenY(FOOD_CENTER_Y - 1.0f), 2, PixelRenderer::rgb(178, 79, 57));
 }
 
 void MainScene::drawShadow() {
@@ -925,7 +1032,7 @@ void MainScene::drawStateEffect() {
 void MainScene::drawNightOverlay() {
     bool night = mainSceneIsNight();
     uint8_t lightSource = GameEngine::ins().debugLightSourceIndex();
-    if (!night && lightSource == 0) return;
+    if (lightSource == 0) return;
 
     const PmdSpriteConfig* config = active ? pmdSpriteConfigForSpecies(active->id) : nullptr;
     int followX = (int)monsterX;
@@ -958,17 +1065,10 @@ void MainScene::drawNightOverlay() {
     }
 
     if (night) {
-        fillRectAlpha(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H,
-                      PixelRenderer::rgb(8, 18, 42), 92);
-        fillRectAlpha(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H,
-                      PixelRenderer::rgb(0, 0, 0), 48);
-
-        fillTopDownLightAlpha(86, PixelRenderer::rgb(114, 150, 214), 42);
-
-        int coreRadiusX = lightSource == 0 ? 42 : 58;
-        int coreRadiusY = lightSource == 0 ? 34 : 42;
-        int haloRadiusX = lightSource == 0 ? 76 : 112;
-        int haloRadiusY = lightSource == 0 ? 50 : 76;
+        int coreRadiusX = 58;
+        int coreRadiusY = 42;
+        int haloRadiusX = 112;
+        int haloRadiusY = 76;
         fillRadialLightAlpha(lightX, lightY, coreRadiusX, coreRadiusY,
                              PixelRenderer::rgb(255, 210, 128), 88);
         fillRadialLightAlpha(lightX, lightY, haloRadiusX, haloRadiusY,

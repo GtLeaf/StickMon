@@ -25,15 +25,19 @@
           </summary>
           <div class="panel-body stack">
             <div class="drop-zone" id="dropZone">
-              Drop base or furniture PNG files here
+              Drop background or furniture PNG files here
             </div>
 
             <div class="toolbar">
               <label class="file-button">
-                Reference image
+                Day background
                 <input id="baseInput" type="file" accept="image/*">
               </label>
-              <button id="replaceBaseButton" type="button">Replace background</button>
+              <label class="file-button">
+                Night background
+                <input id="nightBaseInput" type="file" accept="image/*">
+              </label>
+              <button id="replaceBaseButton" type="button">Replace active background</button>
               <label class="file-button">
                 Furniture
                 <input id="furnitureInput" type="file" accept="image/*" multiple>
@@ -92,7 +96,7 @@
             </label>
 
             <div class="hint">
-              Preview/export scale the trimmed background to 240px wide. The main canvas keeps source detail for tracing and sizing. The cyan frame marks the 240x135 screen.
+              Day and Night backgrounds share one trim, one coordinate system, room faces, and furniture layout. Preview/export scale the trimmed background to 240px wide. The cyan frame marks the 240x135 screen.
             </div>
           </div>
         </details>
@@ -120,6 +124,32 @@
               <button id="addProjectSprite" type="button">Add sprite preview</button>
             </div>
             <div class="hint" id="projectSpriteMeta">Run generate_sprite_previews.py if the list is empty.</div>
+          </div>
+        </details>
+
+        <details class="panel subpanel left-subpanel" open>
+          <summary class="panel-header collapsible-panel-summary">
+            <span>Furniture library</span>
+          </summary>
+          <div class="panel-body stack">
+            <div class="row">
+              <label class="field">
+                Search
+                <input id="librarySearch" type="search" placeholder="name, tag, id">
+              </label>
+              <label class="field">
+                Category
+                <select id="libraryCategory">
+                  <option value="">All</option>
+                </select>
+              </label>
+            </div>
+            <div class="furniture-library-list" id="furnitureLibraryList"></div>
+            <div class="hint" id="furnitureLibraryMeta">No furniture library loaded.</div>
+            <div class="toolbar">
+              <button id="exportSelectedFurnitureLibrary" type="button">Add selected</button>
+              <button id="changeFurnitureLibraryRoot" type="button">Change tool folder</button>
+            </div>
           </div>
         </details>
 
@@ -197,7 +227,7 @@
           </div>
         </div>
 
-        <details class="inspector-section toolbox-panel" open>
+        <details class="inspector-section toolbox-panel">
           <summary class="section-title-row toolbox-summary">
             <div class="section-title">Toolbox</div>
             <div class="section-meta" id="toolboxMeta">Select</div>
@@ -237,17 +267,18 @@
               <div class="export-grid">
                 <button id="saveSession" class="primary" type="button">Save session</button>
                 <button id="loadSession" type="button">Load session</button>
-                <button id="changeSessionFile" type="button">Change location</button>
+                <button id="changeSessionFile" type="button">Change tool folder</button>
                 <button id="clearSession" class="danger" type="button">Clear saved</button>
               </div>
             </div>
             <div class="export-section">
               <div class="export-section-title">Export</div>
               <div class="export-grid">
-                <button id="exportJson" class="primary" type="button">Export layout</button>
-                <button id="exportGeometry" type="button">Export room data</button>
+                <button id="exportJson" class="primary" type="button">Export layout JSON</button>
                 <button id="exportPreview" type="button">Export preview PNG</button>
+                <button id="exportFurnitureLibrary" type="button">Export furniture bundle</button>
               </div>
+              <div class="hint">Layout JSON includes room geometry, furniture, guides, and lighting.</div>
             </div>
           </div>
         </details>
@@ -284,18 +315,16 @@
           </div>
         </details>
 
-        <details class="panel subpanel night-panel" id="nightOverlayPanel" open>
+        <details class="panel subpanel light-panel" id="lightShadowsPanel" open>
           <summary class="panel-header collapsible-panel-summary">
             <span>Light and shadows</span>
           </summary>
           <div class="panel-body stack">
-            <div class="hint">Top buttons switch preview only. Choose which light profile you are editing here, then drag the light handle on the canvas.</div>
+            <div class="hint">Top buttons switch both preview and the light settings shown here. Drag the light handle on the canvas to edit the active mode.</div>
             <div class="light-profile-row">
-              <span class="field-label">Editing profile</span>
-              <div class="segmented light-profile-control">
-                <button id="lightProfileShared" class="active" type="button">共享</button>
-                <button id="lightProfileDay" type="button">白天</button>
-                <button id="lightProfileNight" type="button">夜晚</button>
+              <div class="section-title-row">
+                <span class="field-label">Editing</span>
+                <span class="section-meta" id="lightModeMeta">Preview Day</span>
               </div>
               <div class="toolbar light-profile-actions">
                 <button id="copyLightToDay" type="button">复制到白天</button>
@@ -351,22 +380,6 @@
                 </div>
               </div>
             </details>
-            <details class="property-group">
-              <summary>
-                <span>Night overlay</span>
-                <span class="section-meta">tint/darken</span>
-              </summary>
-              <div class="property-group-body stack">
-                <label class="field">
-                  Blue tint
-                  <input id="nightTint" type="range" min="0" max="90" value="46">
-                </label>
-                <label class="field">
-                  Darken
-                  <input id="nightDarken" type="range" min="0" max="90" value="34">
-                </label>
-              </div>
-            </details>
             <label class="check-row">
               <input id="castShadows" type="checkbox" checked>
               Cast 2D shadows
@@ -379,23 +392,12 @@
                 <option value="directional">Directional</option>
               </select>
             </label>
-            <label class="field">
-              Shadow opacity
-              <input id="shadowAlpha" type="range" min="0" max="80" value="38">
-            </label>
-            <label class="field">
-              Shadow length
-              <input id="shadowLength" type="range" min="0" max="80" value="28">
-            </label>
-            <label class="field">
-              Shadow blur
-              <input id="shadowBlur" type="range" min="0" max="12" step="0.1" value="0.6">
-            </label>
+            <div class="hint">Shadow opacity, length, and blur are configured per furniture item.</div>
           </div>
         </details>
 
         <div class="hint">
-          Export layout JSON as the source of truth. Use the fixed compose_room.py script beside this tool for day/night batch previews.
+          Export layout JSON as the source of truth. It already includes room geometry. Use the fixed compose_room.py script beside this tool for day/night batch previews.
         </div>
       </div>
     </section>
@@ -461,7 +463,8 @@
 
   <div id="hoverTooltip" class="hover-tooltip" hidden></div>
 
-  <script src="../../origin_asset/generated/pokemon_preview_assets.js"></script>
+  <script src="./generated/pokemon_preview_assets.js"></script>
+  <script src="./generated/furniture_library_assets.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>

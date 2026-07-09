@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import base64
 import re
 import zlib
 from pathlib import Path
@@ -10,11 +11,17 @@ from PIL import Image
 
 
 ROOT = Path(__file__).resolve().parents[2]
+TOOL_DIR = Path(__file__).resolve().parent
 ASSET_H = ROOT / "src" / "assets" / "PokemonSprites.h"
 ASSET_CPP = ROOT / "src" / "assets" / "PokemonSprites.cpp"
-GENERATED = ROOT / "origin_asset" / "generated"
+GENERATED = TOOL_DIR / "generated"
 OUT_DIR = GENERATED / "pokemon_sprites"
 MANIFEST = GENERATED / "pokemon_preview_assets.js"
+
+
+def png_data_url(path: Path) -> str:
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
 
 
 def numbers(body: str) -> list[int]:
@@ -223,6 +230,7 @@ def main() -> None:
             rle, palettes = global_rle, global_palettes
 
         actions: dict[str, list[dict]] = {}
+        frame_data_urls: dict[str, str] = {}
         for frame in species_frames:
             action = frame_action(frame["kindName"])
             if action is None:
@@ -236,18 +244,26 @@ def main() -> None:
                     frame_rle, frame_palettes = global_rle, global_palettes
                 image = decode_frame(frame, frame_rle, frame_palettes)
                 image.save(file_path)
+                data_url = png_data_url(file_path)
+                frame_data_urls[frame["kindName"]] = data_url
             except Exception as error:
                 print(f"warn: failed to decode {frame['kindName']} for species {species_id}: {error}")
                 continue
             actions.setdefault(action, []).append({
                 "file": file_name,
-                "path": f"../../origin_asset/generated/pokemon_sprites/{file_name}",
+                "path": f"./generated/pokemon_sprites/{file_name}",
+                "dataUrl": data_url,
                 "width": frame["width"],
                 "height": frame["height"],
                 "kindName": frame["kindName"],
             })
 
         preview_file_name = f"{species_id:03d}_{slug}_{preview_frame['kindName']}.png"
+        preview_data_url = frame_data_urls.get(preview_frame["kindName"], "")
+        if not preview_data_url:
+            preview_path = OUT_DIR / preview_file_name
+            if preview_path.exists():
+                preview_data_url = png_data_url(preview_path)
         manifest.append({
             "speciesId": species_id,
             "name": f"{species_id:03d} {preview_frame['speciesName']}",
@@ -255,7 +271,8 @@ def main() -> None:
             "frame": preview_frame["kindName"],
             "width": preview_frame["width"],
             "height": preview_frame["height"],
-            "path": f"../../origin_asset/generated/pokemon_sprites/{preview_file_name}",
+            "path": f"./generated/pokemon_sprites/{preview_file_name}",
+            "dataUrl": preview_data_url,
             "actions": actions,
         })
 

@@ -16,6 +16,7 @@ private:
         IDLE,
         WANDER,
         SEEK_FOOD,
+        SEEK_BED,
     };
 
     enum class PmdAction : uint8_t {
@@ -50,6 +51,13 @@ private:
     bool randomMonsterCenterWalkPoint(float& x, float& y) const;
     bool randomMonsterCenterWalkPointNear(float centerX, float centerY, float radiusX, float radiusY,
                                           float& x, float& y) const;
+    bool monsterNearFood() const;
+    bool monsterNearBed() const;
+    bool monsterNeedsBedRest() const;
+    void setFoodTarget(uint32_t nowMs);
+    void setBedTarget(uint32_t nowMs);
+    void snapMonsterToBed();
+    void updatePendingFeed(uint32_t nowMs);
     void updatePmdSpriteState(uint32_t nowMs);
     void chooseAiGoal(uint32_t nowMs);
     void drawBackground();
@@ -88,6 +96,8 @@ private:
     uint32_t pmdFrameStartedMs = 0;
     uint32_t toastUntil = 0;
     const char* toast = nullptr;
+    bool pendingFeed = false;
+    uint32_t pendingFeedUntilMs = 0;
     uint32_t comboStartMs = 0;
     bool comboSaved = false;
 };

@@ -1,0 +1,341 @@
+{
+  "version": 1,
+  "generatedAt": "2026-07-08T05:06:59.368Z",
+  "items": [
+    {
+      "id": "furniture_furniture_0003_bed",
+      "name": "furniture_bed",
+      "category": "bed",
+      "tags": [
+        "bed",
+        "furniture",
+        "floor",
+        "main"
+      ],
+      "fileName": "furniture_0003_bed.png",
+      "sourceWidth": 985,
+      "sourceHeight": 587,
+      "defaultScale": 0.0792,
+      "defaultScaleX": 0.0792,
+      "defaultScaleY": 0.0792,
+      "targetWidth": 78,
+      "targetHeight": 46,
+      "sourceScale": 6.97,
+      "furnitureType": "bed",
+      "kind": "furniture",
+      "heightPx": 13,
+      "footprint": "ellipse",
+      "footprintPolygon": [
+        {
+          "x": 0.07,
+          "y": 0.62
+        },
+        {
+          "x": 0.17,
+          "y": 0.53
+        },
+        {
+          "x": 0.32,
+          "y": 0.47
+        },
+        {
+          "x": 0.5,
+          "y": 0.45
+        },
+        {
+          "x": 0.69,
+          "y": 0.48
+        },
+        {
+          "x": 0.84,
+          "y": 0.55
+        },
+        {
+          "x": 0.94,
+          "y": 0.66
+        },
+        {
+          "x": 0.91,
+          "y": 0.82
+        },
+        {
+          "x": 0.76,
+          "y": 0.94
+        },
+        {
+          "x": 0.55,
+          "y": 0.99
+        },
+        {
+          "x": 0.34,
+          "y": 0.97
+        },
+        {
+          "x": 0.15,
+          "y": 0.86
+        }
+      ],
+      "shadowPolygon": [
+        {
+          "x": 0.02,
+          "y": 0.34
+        },
+        {
+          "x": 0.08,
+          "y": 0.22
+        },
+        {
+          "x": 0.24,
+          "y": 0.1
+        },
+        {
+          "x": 0.49,
+          "y": 0.02
+        },
+        {
+          "x": 0.75,
+          "y": 0.09
+        },
+        {
+          "x": 0.92,
+          "y": 0.24
+        },
+        {
+          "x": 0.99,
+          "y": 0.43
+        },
+        {
+          "x": 0.96,
+          "y": 0.66
+        },
+        {
+          "x": 0.86,
+          "y": 0.82
+        },
+        {
+          "x": 0.67,
+          "y": 0.96
+        },
+        {
+          "x": 0.5,
+          "y": 1
+        },
+        {
+          "x": 0.3,
+          "y": 0.96
+        },
+        {
+          "x": 0.12,
+          "y": 0.82
+        },
+        {
+          "x": 0.03,
+          "y": 0.62
+        }
+      ],
+      "shadowAnchor": "auto",
+      "wallShadowDepthPx": 0,
+      "wallShadowOffsetY": 0,
+      "castsShadow": true,
+      "shadowOpacity": 100,
+      "shadowLength": 22,
+      "shadowBlur": 0,
+      "receivesShadow": true,
+      "occludesSprite": true,
+      "slot": "floor",
+      "layer": "main",
+      "cutoutApplied": false,
+      "annotated": true,
+      "revision": 1,
+      "image": "images/furniture_furniture_0003_bed.png"
+    },
+    {
+      "id": "furniture_furniture_0001_shelf",
+      "name": "furniture_shelf",
+      "category": "decoration",
+      "tags": [
+        "decoration",
+        "wall_prop",
+        "wall"
+      ],
+      "fileName": "furniture_0001_shelf.png",
+      "sourceWidth": 859,
+      "sourceHeight": 522,
+      "defaultScale": 0.0594,
+      "defaultScaleX": 0.0594,
+      "defaultScaleY": 0.0594,
+      "targetWidth": 51,
+      "targetHeight": 31,
+      "sourceScale": 6.97,
+      "furnitureType": "decoration",
+      "kind": "wall_prop",
+      "heightPx": 32,
+      "footprint": "none",
+      "footprintPolygon": [],
+      "shadowPolygon": [],
+      "shadowAnchor": "wall",
+      "wallShadowDepthPx": 9,
+      "wallShadowOffsetY": 0,
+      "castsShadow": true,
+      "shadowOpacity": 100,
+      "shadowLength": 22,
+      "shadowBlur": 0,
+      "receivesShadow": false,
+      "occludesSprite": false,
+      "slot": "wall",
+      "layer": "wall",
+      "cutoutApplied": false,
+      "annotated": true,
+      "revision": 1,
+      "image": "images/furniture_furniture_0001_shelf.png"
+    },
+    {
+      "id": "furniture_furniture_0002_bowl",
+      "name": "furniture_bowl",
+      "category": "bowl",
+      "tags": [
+        "bowl",
+        "low_prop",
+        "floor",
+        "main"
+      ],
+      "fileName": "furniture_0002_bowl.png",
+      "sourceWidth": 886,
+      "sourceHeight": 635,
+      "defaultScale": 0.0226,
+      "defaultScaleX": 0.0226,
+      "defaultScaleY": 0.0226,
+      "targetWidth": 20,
+      "targetHeight": 14,
+      "sourceScale": 6.97,
+      "furnitureType": "bowl",
+      "kind": "low_prop",
+      "heightPx": 8,
+      "footprint": "polygon",
+      "footprintPolygon": [
+        {
+          "x": 0.5796,
+          "y": 0.9849
+        },
+        {
+          "x": 0.8772,
+          "y": 0.8925
+        },
+        {
+          "x": 1,
+          "y": 0.6356
+        },
+        {
+          "x": 0.6771,
+          "y": 0.3599
+        },
+        {
+          "x": 0.2826,
+          "y": 0.3948
+        },
+        {
+          "x": 0.0048,
+          "y": 0.6313
+        },
+        {
+          "x": 0.2383,
+          "y": 0.9341
+        }
+      ],
+      "shadowPolygon": [
+        {
+          "x": 0.8078,
+          "y": 0.9032
+        },
+        {
+          "x": 0.9398,
+          "y": 0.6673
+        },
+        {
+          "x": 0.9228,
+          "y": 0.3716
+        },
+        {
+          "x": 0.6896,
+          "y": 0.154
+        },
+        {
+          "x": 0.4672,
+          "y": 0.0703
+        },
+        {
+          "x": 0.0781,
+          "y": 0.2644
+        },
+        {
+          "x": 0.0978,
+          "y": 0.6185
+        },
+        {
+          "x": 0.1887,
+          "y": 0.896
+        },
+        {
+          "x": 0.5082,
+          "y": 0.9874
+        }
+      ],
+      "shadowAnchor": "auto",
+      "wallShadowDepthPx": 0,
+      "wallShadowOffsetY": 0,
+      "castsShadow": true,
+      "shadowOpacity": 38,
+      "shadowLength": 28,
+      "shadowBlur": 0.6,
+      "receivesShadow": true,
+      "occludesSprite": false,
+      "slot": "floor",
+      "layer": "main",
+      "cutoutApplied": false,
+      "annotated": true,
+      "revision": 1,
+      "image": "images/furniture_furniture_0002_bowl.png"
+    },
+    {
+      "id": "furniture_furniture_0000_carpet",
+      "name": "furniture_carpet",
+      "category": "decoration",
+      "tags": [
+        "decoration",
+        "rug",
+        "floor",
+        "main"
+      ],
+      "fileName": "furniture_0000_carpet.png",
+      "sourceWidth": 1133,
+      "sourceHeight": 512,
+      "defaultScale": 0.09,
+      "defaultScaleX": 0.09,
+      "defaultScaleY": 0.09,
+      "targetWidth": 102,
+      "targetHeight": 46,
+      "sourceScale": 6.97,
+      "furnitureType": "decoration",
+      "kind": "rug",
+      "heightPx": 0,
+      "footprint": "polygon",
+      "footprintPolygon": [],
+      "shadowPolygon": [],
+      "shadowAnchor": "auto",
+      "wallShadowDepthPx": 0,
+      "wallShadowOffsetY": 0,
+      "castsShadow": false,
+      "shadowOpacity": 38,
+      "shadowLength": 28,
+      "shadowBlur": 0.6,
+      "receivesShadow": true,
+      "occludesSprite": false,
+      "slot": "floor",
+      "layer": "main",
+      "cutoutApplied": false,
+      "annotated": true,
+      "revision": 1,
+      "image": "images/furniture_furniture_0000_carpet.png"
+    }
+  ]
+}

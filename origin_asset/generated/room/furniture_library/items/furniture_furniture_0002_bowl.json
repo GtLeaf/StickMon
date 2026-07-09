@@ -1,0 +1,104 @@
+{
+  "id": "furniture_furniture_0002_bowl",
+  "name": "forniture_0002_bowl",
+  "category": "bowl",
+  "tags": [
+    "bowl",
+    "low_prop",
+    "floor",
+    "main"
+  ],
+  "fileName": "furniture_0002_bowl.png",
+  "sourceWidth": 886,
+  "sourceHeight": 635,
+  "defaultScale": 0.0226,
+  "defaultScaleX": 0.0226,
+  "defaultScaleY": 0.0226,
+  "targetWidth": 20,
+  "targetHeight": 14,
+  "sourceScale": 6.97,
+  "furnitureType": "bowl",
+  "kind": "low_prop",
+  "heightPx": 8,
+  "footprint": "polygon",
+  "footprintPolygon": [
+    {
+      "x": 0.5796,
+      "y": 0.9849
+    },
+    {
+      "x": 0.8772,
+      "y": 0.8925
+    },
+    {
+      "x": 1,
+      "y": 0.6356
+    },
+    {
+      "x": 0.6771,
+      "y": 0.3599
+    },
+    {
+      "x": 0.2826,
+      "y": 0.3948
+    },
+    {
+      "x": 0.0048,
+      "y": 0.6313
+    },
+    {
+      "x": 0.2383,
+      "y": 0.9341
+    }
+  ],
+  "shadowPolygon": [
+    {
+      "x": 0.8078,
+      "y": 0.9032
+    },
+    {
+      "x": 0.9398,
+      "y": 0.6673
+    },
+    {
+      "x": 0.9228,
+      "y": 0.3716
+    },
+    {
+      "x": 0.6896,
+      "y": 0.154
+    },
+    {
+      "x": 0.4672,
+      "y": 0.0703
+    },
+    {
+      "x": 0.0781,
+      "y": 0.2644
+    },
+    {
+      "x": 0.0978,
+      "y": 0.6185
+    },
+    {
+      "x": 0.1887,
+      "y": 0.896
+    },
+    {
+      "x": 0.5082,
+      "y": 0.9874
+    }
+  ],
+  "shadowAnchor": "auto",
+  "wallShadowDepthPx": 0,
+  "wallShadowOffsetY": 0,
+  "castsShadow": true,
+  "receivesShadow": true,
+  "occludesSprite": false,
+  "slot": "floor",
+  "layer": "main",
+  "cutoutApplied": false,
+  "annotated": true,
+  "revision": 1,
+  "image": "images/furniture_furniture_0002_bowl.png"
+}

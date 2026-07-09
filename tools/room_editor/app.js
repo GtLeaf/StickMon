@@ -5,16 +5,19 @@ const SESSION_STORAGE_KEY = "stickmon.roomEditor.lastSession.v1";
 const SESSION_DB_NAME = "stickmon-room-editor";
 const SESSION_DB_STORE = "sessions";
 const SESSION_DB_KEY = "last";
-const SESSION_EXPORT_HANDLE_KEY = "sessionExportFileHandle";
+const ROOM_EDITOR_ROOT_HANDLE_KEY = "roomEditorRootHandle";
+const SESSION_DEFAULT_FILE_NAME = "stickmon_room_editor_session.json";
 const GAME_SCREEN_WIDTH = 240;
 const GAME_SCREEN_HEIGHT = 135;
 const PREVIEW_MAX_WIDTH = 240;
 const LIGHT_HANDLE_RADIUS = 7;
 const BASE_FIT_WIDTH = "fit_width";
+const FURNITURE_LIBRARY_BUNDLE_TYPE = "stickmon-furniture-library-bundle";
 const TOOLTIP_DELAY_MS = 900;
 const CONTROL_TOOLTIPS = {
-  baseInput: "导入房间背景参考图。编辑器会自动裁剪透明/黑边，并按 240 宽生成预览和导出尺寸。",
-  replaceBaseButton: "替换当前背景图，保留已有家具、面和光照配置。",
+  baseInput: "导入白天房间背景图。编辑器会自动裁剪透明/黑边，并按 240 宽生成预览和导出尺寸。",
+  nightBaseInput: "导入夜晚房间背景图。夜晚图默认复用白天图的裁剪、坐标、描面和家具位置。",
+  replaceBaseButton: "替换当前 Day/Night 预览模式对应的背景图，保留已有家具、面和光照配置。",
   furnitureInput: "导入家具或道具 PNG。导入后可以在主画布拖动、缩放并配置影子。",
   layoutInput: "导入之前导出的 layout/session JSON，用于恢复房间配置。",
   baseOpacity: "调整主编辑画布中背景参考图的透明度，不影响最终导出。",
@@ -25,12 +28,14 @@ const CONTROL_TOOLTIPS = {
   spriteActionSelect: "选择精灵动作帧类型。",
   spriteFrameSelect: "选择具体帧。",
   addProjectSprite: "把当前选择的精灵帧放到画面中心做尺寸和遮挡预览。",
+  librarySearch: "按名称、文件名、标签或库 ID 筛选家具库。",
+  libraryCategory: "按家具类别筛选库中家具。",
   showGuides: "显示或隐藏 HUD 参考线。",
   showGrid: "显示 8px 网格，方便按游戏像素对齐家具。",
   gridOpacity: "调整 8px 网格线的透明度。只影响主编辑画布显示，不影响预览和导出。",
   snapToGrid: "拖动家具时吸附到 8px 网格。",
-  dayMode: "切换到白天预览。只影响预览，不改变当前编辑的光源配置对象。",
-  nightMode: "切换到夜晚预览。只影响预览，不改变当前编辑的光源配置对象。",
+  dayMode: "切换到白天预览，使用 Day background 和白天光照配置。",
+  nightMode: "切换到夜晚预览，使用 Night background 和夜晚光照配置；未导入夜晚图时暂用白天图预览。",
   furnitureMode: "家具模式：选择、拖动、缩放家具和精灵预览物。",
   shapeMode: "描面模式：绘制墙面和地板面，用于承接投影。",
   editZoom: "缩放主编辑画布的显示比例。只影响查看细节，不影响坐标和导出。",
@@ -44,20 +49,19 @@ const CONTROL_TOOLTIPS = {
   selectTool: "选择工具：用于普通选择、拖动和编辑。",
   measureHeightTool: "测量工具：在高清主画布上测量高度，并换算成游戏像素。",
   clearMeasure: "清除当前测量线。",
-  saveSession: "保存当前编辑器会话，同时尽量更新本地 session JSON。",
+  saveSession: "保存当前编辑器会话，同时默认更新 room_editor/sessions 下的 session JSON。",
   loadSession: "从浏览器保存的会话恢复编辑器状态。",
-  changeSessionFile: "重新选择 session JSON 的本地保存位置。",
+  changeSessionFile: "重新选择 room_editor 工具目录，session 默认保存到 sessions/ 下。",
   clearSession: "清除浏览器里保存的编辑器会话。",
-  exportJson: "导出完整 layout JSON，供脚本生成游戏资源。",
-  exportGeometry: "只导出房间面数据，用于检查墙/地板投影配置。",
+  exportJson: "导出完整 layout JSON，已包含 roomGeometry、家具、引导线和光照配置。",
   exportPreview: "导出当前预览 PNG，用于快速检查最终效果。",
+  exportFurnitureLibrary: "导出当前场景中已标注的家具库 bundle，作为直接写入不可用时的备用方式。",
+  changeFurnitureLibraryRoot: "重新选择 room_editor 工具目录，用于 Add selected 和 session 保存。",
+  exportSelectedFurnitureLibrary: "将当前选中的已标注家具添加到 room_editor 内置家具库。",
   duplicateItem: "复制当前选中的家具或精灵预览物。",
   deleteItem: "删除当前选中的家具或精灵预览物。",
-  lightProfileShared: "编辑白天和夜晚共用的光源配置。",
-  lightProfileDay: "单独编辑白天光源配置。",
-  lightProfileNight: "单独编辑夜晚光源配置。",
-  copyLightToDay: "把当前光源参数复制到白天配置。",
-  copyLightToNight: "把当前光源参数复制到夜晚配置。",
+  copyLightToDay: "将当前右侧光源参数写入白天配置。",
+  copyLightToNight: "将当前右侧光源参数写入夜晚配置。",
   lightShape: "选择光照形状。Cone 适合模拟从窗户射入的光束。",
   lightStrength: "光照强度。数值越大，光照区域越亮。",
   lightRadius: "光照影响范围。",
@@ -66,8 +70,6 @@ const CONTROL_TOOLTIPS = {
   lightDepth: "光源深度，用于估算物体投影长度和透视感。",
   lightAngle: "锥形光中心方向角度，也可以拖动画布中的方向点调整。",
   lightSpread: "锥形光展开角度。方向点离光源越远，展开越大。",
-  nightTint: "夜晚叠加的蓝色氛围强度。",
-  nightDarken: "夜晚整体压暗强度。",
   castShadows: "开启或关闭家具投影绘制。",
   shadowMode: "选择投影算法。Auto 会根据光源形状自动选择。",
   shadowAlpha: "投影不透明度。",
@@ -82,14 +84,17 @@ const CONTROL_TOOLTIPS = {
   itemH: "物体目标高度，单位是游戏像素。",
   itemScale: "按源图尺寸缩放物体。",
   itemOpacity: "编辑器内物体透明度。",
-  itemVisible: "显示或隐藏这个物体。",
   itemAspectLock: "锁定宽高比例，调整宽度时同步高度。",
   itemCastsShadow: "这个物体是否产生投影。",
+  itemShadowOpacity: "这个物体自身投影的不透明度。",
+  itemShadowLength: "这个物体自身投影长度。",
+  itemShadowBlur: "这个物体自身投影模糊半径。",
   itemHeightPx: "物体估算高度，用于计算影子长度和墙面投影。",
   itemFootprint: "物体接触地面的形状，用于生成更自然的投影。",
   itemFootprintPolygon: "自定义接地区域多边形，使用 0-1 的物体本地坐标，每行一个 x,y。",
   itemShadowPolygon: "自定义投影轮廓多边形，使用 0-1 的物体本地坐标。留空时使用图片 alpha。",
   itemShadowAnchor: "投影锚点。墙上架子等物体应使用墙面锚点。",
+  clearShadowFaceTargets: "清空指定墙面，恢复自动投影面选择。",
   itemWallShadowDepthPx: "墙面投影深度，用于控制墙上物体影子下落距离。",
   itemWallShadowOffsetY: "墙面投影垂直偏移，用于微调墙上影子位置。",
   itemReceivesShadow: "这个物体是否接收其它物体投影。",
@@ -104,6 +109,7 @@ const CONTROL_TOOLTIP_RULES = [
   [".preview-canvas", CONTROL_TOOLTIPS.preview],
   [".asset-visibility", "显示或隐藏这个图层。隐藏后不会在预览里绘制。"],
   [".face-toggle", "展开或收起这个房间面的点位列表。"],
+  [".face-visibility", "在画布中显示或隐藏这个房间面的编辑覆盖层，不影响阴影接收。"],
   [".face-delete", "删除这个房间面。"],
   [".point-select", "选择这个点。选中后可在画布拖动或在右侧输入坐标。"],
   [".point-x", "点在高清编辑画布中的 X 坐标，导出时会换算成游戏像素。"],
@@ -111,8 +117,11 @@ const CONTROL_TOOLTIP_RULES = [
   [".face-type-select", "设置这个面是地板、墙面或精灵可活动区域。可活动区域只用于导出标注，不参与阴影承接。"],
   [".face-shadow-surface", "指定投影承接面：地板、左墙或右墙。"],
   [".face-receives-shadow", "控制这个房间面是否接收家具投影。"],
+  [".shadow-face-target", "限制当前家具的阴影只出现在勾选的墙面上。"],
   [".insert-point", "在当前边后插入一个新点，用于细化墙面或地板轮廓。"],
-  [".delete-point", "删除当前选中的点。房间面至少保留 3 个点。"]
+  [".delete-point", "删除当前选中的点。房间面至少保留 3 个点。"],
+  [".library-add", "把这个库中家具加入当前房间。"],
+  [".library-delete", "从项目家具库中删除这个家具。当前房间里已放置的实例会保留为本地物体。"]
 ];
 const FURNITURE_TYPES = [
   { value: "bed", label: "床" },
@@ -173,8 +182,6 @@ const WALL_MOUNTED_NAME_PATTERN = /(sheld|wall[_ -]?shelf|shelf[_ -]?wall|mounte
 const FACE_TYPE_SPRITE_AREA = "sprite_area";
 
 const DEFAULT_NIGHT = {
-  tint: 46,
-  darken: 34,
   lightShape: "radial",
   lightStrength: 28,
   lightX: 170,
@@ -233,6 +240,11 @@ function normalizeShadowAnchor(value) {
   return SHADOW_ANCHORS.some((anchor) => anchor.value === value) ? value : "auto";
 }
 
+function normalizeShadowFaceIds(value) {
+  const raw = Array.isArray(value) ? value : [];
+  return [...new Set(raw.map((id) => String(id || "").trim()).filter(Boolean))];
+}
+
 function normalizeLightProfile(value) {
   return ["shared", "day", "night"].includes(value) ? value : "shared";
 }
@@ -251,6 +263,10 @@ function faceTypeLabel(value) {
 
 function isSpriteAreaFace(face) {
   return normalizeFaceType(face?.type) === FACE_TYPE_SPRITE_AREA;
+}
+
+function faceVisible(face) {
+  return face?.visible !== false;
 }
 
 function normalizeLightSettings(value = {}, fallback = DEFAULT_NIGHT) {
@@ -279,8 +295,6 @@ function coerceNumber(value, fallback, min, max) {
 function normalizeNightSettings(value = {}) {
   const sharedLight = normalizeLightSettings(value, DEFAULT_NIGHT);
   return {
-    tint: coerceNumber(value.tint, DEFAULT_NIGHT.tint, 0, 90),
-    darken: coerceNumber(value.darken, DEFAULT_NIGHT.darken, 0, 90),
     ...sharedLight,
     separateModeLights: value.separateModeLights === true,
     dayLight: normalizeLightSettings(value.dayLight, sharedLight),
@@ -345,12 +359,16 @@ const state = {
   editWidth: 240,
   editHeight: 135,
   mode: "day",
-  lightProfile: "shared",
+  lightProfile: "day",
   editMode: "furniture",
   toolMode: "select",
   previewZoomed: false,
   editZoom: 1,
   base: null,
+  backgrounds: {
+    day: null,
+    night: null
+  },
   baseFit: BASE_FIT_WIDTH,
   baseOpacity: 0.65,
   sourceScale: 4,
@@ -432,12 +450,17 @@ const selectedFacePanel = document.getElementById("selectedFacePanel");
 const roomFacesPanel = document.querySelector(".room-faces-panel");
 const layersPanel = document.getElementById("layersPanel");
 const propertiesPanel = document.getElementById("propertiesPanel");
-const nightOverlayPanel = document.getElementById("nightOverlayPanel");
+const lightShadowsPanel = document.getElementById("lightShadowsPanel");
 const sessionExportMeta = document.getElementById("sessionExportMeta");
 const baseImageMeta = document.getElementById("baseImageMeta");
+const furnitureLibraryList = document.getElementById("furnitureLibraryList");
+const furnitureLibraryMeta = document.getElementById("furnitureLibraryMeta");
+const librarySearchInput = document.getElementById("librarySearch");
+const libraryCategoryInput = document.getElementById("libraryCategory");
 const hoverTooltip = document.getElementById("hoverTooltip");
 let tooltipTimer = null;
 let tooltipAnchor = null;
+let roomEditorRootHandle = null;
 let tooltipPointer = { x: 0, y: 0 };
 
 function setStatus(text, holdMs = 2500) {
@@ -457,16 +480,59 @@ function updateCanvasSizeReadouts() {
   if (editSize) editSize.textContent = `${Math.round(state.editWidth)}x${Math.round(state.editHeight)}`;
 }
 
+function normalizeBackgroundMode(mode) {
+  return mode === "night" ? "night" : "day";
+}
+
+function backgroundForMode(mode = state.mode) {
+  const normalized = normalizeBackgroundMode(mode);
+  const backgrounds = state.backgrounds || {};
+  return backgrounds[normalized] || backgrounds.day || backgrounds.night || state.base || null;
+}
+
+function primaryBackground() {
+  const backgrounds = state.backgrounds || {};
+  return backgrounds.day || backgrounds.night || state.base || null;
+}
+
+function setLegacyBaseFromBackgrounds() {
+  state.base = primaryBackground();
+}
+
+function hasBackground() {
+  return Boolean(primaryBackground());
+}
+
+function backgroundLabel(mode) {
+  return normalizeBackgroundMode(mode) === "night" ? "Night" : "Day";
+}
+
+function backgroundFileName(mode) {
+  const bg = (state.backgrounds || {})[normalizeBackgroundMode(mode)];
+  return bg?.name || "";
+}
+
+function backgroundMetaText(mode) {
+  const normalized = normalizeBackgroundMode(mode);
+  const bg = (state.backgrounds || {})[normalized];
+  if (!bg) {
+    return normalized === "night" && (state.backgrounds || {}).day
+      ? "not loaded, using day background"
+      : "not loaded";
+  }
+  return `${bg.name} ${bg.width}x${bg.height}`;
+}
+
 function updateBaseImageMeta() {
   updateCanvasSizeReadouts();
-  if (!state.base) {
-    baseImageMeta.textContent = "Reference image: none";
+  if (!hasBackground()) {
+    baseImageMeta.textContent = "Backgrounds: none";
     return;
   }
   const prepared = preparedRoomMetrics();
   const trim = prepared.trim;
   baseImageMeta.textContent =
-    `Reference image: ${state.base.width}x${state.base.height}; ` +
+    `Backgrounds: day ${backgroundMetaText("day")}; night ${backgroundMetaText("night")}; ` +
     `trim ${trim.x},${trim.y},${trim.width}x${trim.height}; ` +
     `export ${state.width}x${state.height}; edit ${state.editWidth}x${state.editHeight}; screen ${GAME_SCREEN_WIDTH}x${GAME_SCREEN_HEIGHT}`;
 }
@@ -786,7 +852,8 @@ function detectTrimBox(image) {
 }
 
 function fallbackTrimBox() {
-  return { x: 0, y: 0, width: state.base?.width || state.width, height: state.base?.height || state.height };
+  const bg = primaryBackground();
+  return { x: 0, y: 0, width: bg?.width || state.width, height: bg?.height || state.height };
 }
 
 function preparedRoomMetrics() {
@@ -948,6 +1015,12 @@ function isPointReferenced(point) {
   return state.faces.some((face) => face.points.some((entry) => entry.id === point.id));
 }
 
+function pointVisibleOnCanvas(point) {
+  if (!point) return false;
+  if (state.draftPoints.some((entry) => entry.id === point.id)) return true;
+  return state.faces.some((face) => faceVisible(face) && face.points.some((entry) => entry.id === point.id));
+}
+
 function pruneUnusedPoints() {
   state.points = state.points.filter((point) => isPointReferenced(point));
   if (state.selectedPointId && !state.points.some((point) => point.id === state.selectedPointId)) {
@@ -1029,6 +1102,40 @@ function loadImageSource(src) {
     img.onerror = reject;
     img.src = src;
   });
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error);
+    reader.onload = () => resolve(reader.result);
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function imageSourceToDataUrl(src) {
+  if (!src || /^data:/i.test(src)) return src;
+  const response = await fetch(src);
+  if (!response.ok) throw new Error(`Image fetch failed: ${src}`);
+  return blobToDataUrl(await response.blob());
+}
+
+async function loadExportableImageSource(src) {
+  try {
+    const dataUrl = await imageSourceToDataUrl(src);
+    return {
+      img: await loadImageSource(dataUrl),
+      dataUrl,
+      exportable: true
+    };
+  } catch (_) {
+    const img = await loadImageSource(src);
+    return {
+      img,
+      dataUrl: src,
+      exportable: /^data:/i.test(src)
+    };
+  }
 }
 
 function drawImagePreview(canvasEl, image) {
@@ -1529,6 +1636,736 @@ function selectedProjectSpriteFrame() {
   return frames.find((frame) => frame.path === framePath) || frames[0] || null;
 }
 
+function projectSpriteFrameSource(frame) {
+  return frame?.dataUrl || frame?.path || "";
+}
+
+function projectSpriteFrameForItem(item) {
+  if (!item || item.source !== "project_sprite") return null;
+  const entry = projectSpriteCatalog().find((candidate) => candidate.speciesId === item.speciesId);
+  if (!entry?.actions) return null;
+  const frames = entry.actions[item.action] || Object.values(entry.actions).flat();
+  return frames.find((frame) =>
+    frame.kindName === item.frame ||
+    frame.file === item.fileName ||
+    frame.path === item.dataUrl ||
+    frame.dataUrl === item.dataUrl
+  ) || null;
+}
+
+async function hydrateProjectSpriteImage(item) {
+  const frame = projectSpriteFrameForItem(item);
+  const source = projectSpriteFrameSource(frame);
+  if (!source) return false;
+  const loaded = await loadExportableImageSource(source);
+  item.img = loaded.img;
+  item.dataUrl = loaded.dataUrl;
+  item.exportableImage = loaded.exportable;
+  item.sourceWidth = item.sourceWidth || frame.width || loaded.img.naturalWidth;
+  item.sourceHeight = item.sourceHeight || frame.height || loaded.img.naturalHeight;
+  return loaded.exportable;
+}
+
+function slugifyId(value, fallback = "item") {
+  const slug = String(value || fallback)
+    .replace(/\.[^.]+$/, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return slug || fallback;
+}
+
+function rawFurnitureLibraryItems() {
+  const library = window.STICKMON_FURNITURE_LIBRARY;
+  if (Array.isArray(library)) return library;
+  if (Array.isArray(library?.items)) return library.items;
+  return [];
+}
+
+function furnitureLibraryCategory(entry) {
+  return entry.category || entry.furnitureType || "decoration";
+}
+
+function normalizeFurnitureLibraryEntry(raw, index = 0) {
+  if (!raw || typeof raw !== "object") return null;
+  const imageValue = typeof raw.image === "string" ? raw.image : raw.image?.path || raw.imagePath || raw.path || "";
+  const dataUrl = raw.dataUrl || raw.imageDataUrl || raw.image?.dataUrl || "";
+  const fileName = raw.fileName || raw.imageFileName || imageValue.split("/").pop() || `${raw.id || `library_${index}`}.png`;
+  const furnitureType = normalizeFurnitureType(raw.furnitureType || raw.category || inferFurnitureType(fileName || raw.name));
+  const kind = normalizeItemKind(raw.kind || inferItemKind(fileName || raw.name, furnitureType));
+  const id = raw.id || slugifyId(fileName || raw.name || `library_${index}`, `library_${index}`);
+  return {
+    ...raw,
+    id,
+    name: raw.name || fileName.replace(/\.[^.]+$/, "") || id,
+    fileName,
+    image: imageValue,
+    dataUrl,
+    category: furnitureLibraryCategory({ ...raw, furnitureType }),
+    furnitureType,
+    kind,
+    sourceWidth: Number(raw.sourceWidth) || Number(raw.width) || 0,
+    sourceHeight: Number(raw.sourceHeight) || Number(raw.height) || 0,
+    defaultScale: Number(raw.defaultScale ?? raw.scale ?? 1) || 1,
+    defaultScaleX: Number(raw.defaultScaleX ?? raw.scaleX ?? raw.defaultScale ?? raw.scale ?? 1) || 1,
+    defaultScaleY: Number(raw.defaultScaleY ?? raw.scaleY ?? raw.defaultScale ?? raw.scale ?? 1) || 1,
+    targetWidth: Number(raw.targetWidth) || 0,
+    targetHeight: Number(raw.targetHeight) || 0,
+    heightPx: Number(raw.heightPx) || 0,
+    footprint: normalizeFootprint(raw.footprint),
+    footprintPolygon: normalizeLocalPolygon(raw.footprintPolygon),
+    shadowPolygon: normalizeLocalPolygon(raw.shadowPolygon),
+    shadowAnchor: normalizeShadowAnchor(raw.shadowAnchor),
+    wallShadowDepthPx: Number(raw.wallShadowDepthPx) || 0,
+    wallShadowOffsetY: Number(raw.wallShadowOffsetY) || 0,
+    castsShadow: raw.castsShadow !== false,
+    shadowOpacity: coerceNumber(raw.shadowOpacity ?? raw.shadowAlpha, state.night.shadowAlpha, 0, 100),
+    shadowLength: coerceNumber(raw.shadowLength, state.night.shadowLength, 0, 120),
+    shadowBlur: coerceNumber(raw.shadowBlur, state.night.shadowBlur, 0, 16),
+    receivesShadow: raw.receivesShadow !== false,
+    occludesSprite: raw.occludesSprite === true,
+    tags: Array.isArray(raw.tags) ? raw.tags : []
+  };
+}
+
+function furnitureLibraryCatalog() {
+  return rawFurnitureLibraryItems()
+    .map(normalizeFurnitureLibraryEntry)
+    .filter(Boolean);
+}
+
+function furnitureLibraryEntryById(id) {
+  return furnitureLibraryCatalog().find((entry) => entry.id === id) || null;
+}
+
+function furnitureLibraryMatches(entry, search, category) {
+  if (category && furnitureLibraryCategory(entry) !== category) return false;
+  if (!search) return true;
+  const haystack = [
+    entry.id,
+    entry.name,
+    entry.fileName,
+    entry.category,
+    entry.furnitureType,
+    entry.kind,
+    ...(entry.tags || [])
+  ].join(" ").toLowerCase();
+  return haystack.includes(search.toLowerCase());
+}
+
+function refreshFurnitureLibraryPanel() {
+  if (!furnitureLibraryList) return;
+  const catalog = furnitureLibraryCatalog();
+  const search = librarySearchInput?.value.trim() || "";
+  const category = libraryCategoryInput?.value || "";
+  const categories = [...new Set(catalog.map(furnitureLibraryCategory).filter(Boolean))].sort();
+  if (libraryCategoryInput) {
+    const previous = libraryCategoryInput.value;
+    libraryCategoryInput.innerHTML = '<option value="">All</option>' +
+      categories.map((value) => `<option value="${escapeAttr(value)}">${escapeHtml(furnitureTypeLabel(value))}</option>`).join("");
+    libraryCategoryInput.value = categories.includes(previous) ? previous : "";
+  }
+  const entries = catalog.filter((entry) => furnitureLibraryMatches(entry, search, category));
+  furnitureLibraryList.innerHTML = "";
+  for (const entry of entries) {
+    const el = document.createElement("div");
+    el.className = "library-item";
+    const imageSrc = entry.dataUrl || entry.image || "";
+    const polygonCount = entry.footprintPolygon.length + entry.shadowPolygon.length;
+    const tags = [furnitureTypeLabel(entry.furnitureType), itemKindLabel(entry.kind), ...(entry.tags || [])]
+      .filter(Boolean)
+      .slice(0, 3)
+      .join(" / ");
+    el.innerHTML = `
+      ${imageSrc ? `<img class="library-thumb" alt="" src="${escapeAttr(imageSrc)}">` : '<div class="library-thumb"></div>'}
+      <div class="library-details">
+        <div class="library-name">${escapeHtml(entry.name)}</div>
+        <div class="library-meta">${escapeHtml(tags || entry.id)}</div>
+        <div class="library-meta">${Math.round(entry.sourceWidth || 0)}x${Math.round(entry.sourceHeight || 0)}, ${polygonCount ? `${polygonCount} polygon pts` : "semantic only"}</div>
+      </div>
+      <div class="library-actions">
+        <button class="library-add" type="button" data-library-id="${escapeAttr(entry.id)}">Add</button>
+        <button class="library-delete danger" type="button" data-library-id="${escapeAttr(entry.id)}">Delete</button>
+      </div>
+    `;
+    el.querySelector(".library-add").addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await addFurnitureLibraryEntry(entry);
+    });
+    el.querySelector(".library-delete").addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      try {
+        await deleteFurnitureLibraryEntry(entry);
+      } catch (error) {
+        console.error(error);
+        setStatus(isFilePickerAbort(error) ? "Room editor folder was not selected." : (error.message || "Deleting furniture library item failed."));
+      }
+    });
+    furnitureLibraryList.appendChild(el);
+  }
+  if (!entries.length) {
+    const empty = document.createElement("div");
+    empty.className = "hint";
+    empty.textContent = catalog.length ? "No matching furniture." : "No furniture library loaded. Select annotated furniture and click Add selected.";
+    furnitureLibraryList.appendChild(empty);
+  }
+  if (furnitureLibraryMeta) {
+    furnitureLibraryMeta.textContent = catalog.length
+      ? `${entries.length}/${catalog.length} library item(s).`
+      : "No furniture library loaded.";
+  }
+}
+
+function initFurnitureLibraryControls() {
+  librarySearchInput?.addEventListener("input", refreshFurnitureLibraryPanel);
+  libraryCategoryInput?.addEventListener("change", refreshFurnitureLibraryPanel);
+  refreshFurnitureLibraryPanel();
+}
+
+async function createFurnitureItemFromLibraryEntry(entry, placement = {}) {
+  const source = entry.dataUrl || entry.image;
+  if (!source) throw new Error(`Library item is missing image data: ${entry.name || entry.id}`);
+  const loaded = await loadExportableImageSource(source);
+  const sourceWidth = entry.sourceWidth || loaded.img.naturalWidth;
+  const sourceHeight = entry.sourceHeight || loaded.img.naturalHeight;
+  const scaleX = entry.targetWidth ? entry.targetWidth / Math.max(1, sourceWidth) : entry.defaultScaleX;
+  const scaleY = entry.targetHeight ? entry.targetHeight / Math.max(1, sourceHeight) : entry.defaultScaleY;
+  const targetW = sourceWidth * scaleX;
+  const targetH = sourceHeight * scaleY;
+  const x = placement.x ?? Math.round((state.width - Math.min(targetW, state.width)) / 2);
+  const y = placement.y ?? Math.round((state.height - Math.min(targetH, state.height)) / 2);
+  const item = {
+    id: placement.id || `f${state.nextId++}`,
+    name: placement.name || entry.name,
+    fileName: entry.fileName,
+    img: loaded.img,
+    dataUrl: loaded.dataUrl,
+    originalDataUrl: loaded.dataUrl,
+    sourceWidth,
+    sourceHeight,
+    x,
+    y,
+    scale: placement.scale ?? scaleX,
+    scaleX: placement.scaleX ?? scaleX,
+    scaleY: placement.scaleY ?? scaleY,
+    aspectLocked: placement.aspectLocked ?? Math.abs(scaleX - scaleY) < 0.0001,
+    sourceScale: placement.sourceScale ?? entry.sourceScale ?? state.sourceScale,
+    opacity: placement.opacity ?? 1,
+    z: placement.z ?? 20,
+    visible: placement.visible ?? true,
+    anchor: placement.anchor || "top_left",
+    slot: placement.slot || entry.slot || itemKindPreset(entry.kind).slot,
+    layer: placement.layer || entry.layer || itemKindPreset(entry.kind).layer,
+    source: "furniture",
+    furnitureType: normalizeFurnitureType(placement.furnitureType || entry.furnitureType),
+    kind: normalizeItemKind(placement.kind || entry.kind),
+    heightPx: placement.heightPx ?? entry.heightPx,
+    footprint: normalizeFootprint(placement.footprint || entry.footprint),
+    footprintPolygon: normalizeLocalPolygon(placement.footprintPolygon ?? entry.footprintPolygon),
+    shadowPolygon: normalizeLocalPolygon(placement.shadowPolygon ?? entry.shadowPolygon),
+    shadowAnchor: normalizeShadowAnchor(placement.shadowAnchor || entry.shadowAnchor),
+    shadowFaceIds: normalizeShadowFaceIds(placement.shadowFaceIds),
+    wallShadowDepthPx: placement.wallShadowDepthPx ?? entry.wallShadowDepthPx,
+    wallShadowOffsetY: placement.wallShadowOffsetY ?? entry.wallShadowOffsetY,
+    castsShadow: placement.castsShadow ?? entry.castsShadow,
+    shadowOpacity: placement.shadowOpacity ?? placement.shadowAlpha ?? entry.shadowOpacity,
+    shadowLength: placement.shadowLength ?? entry.shadowLength,
+    shadowBlur: placement.shadowBlur ?? entry.shadowBlur,
+    receivesShadow: placement.receivesShadow ?? entry.receivesShadow,
+    occludesSprite: placement.occludesSprite ?? entry.occludesSprite,
+    sortY: placement.sortY ?? Math.round(y + targetH),
+    cutoutApplied: placement.cutoutApplied ?? true,
+    libraryId: entry.id,
+    libraryRevision: entry.revision || 1,
+    libraryCategory: furnitureLibraryCategory(entry)
+  };
+  normalizeItemSemantics(item);
+  return item;
+}
+
+async function addFurnitureLibraryEntry(entry) {
+  try {
+    const item = await createFurnitureItemFromLibraryEntry(entry);
+    state.items.push(item);
+    state.selectedId = item.id;
+    state.selectedFaceId = null;
+    state.selectedPointIndex = null;
+    state.selectedPointId = null;
+    state.editMode = "furniture";
+    updateEditModeButtons();
+    setStatus(`Added library furniture: ${entry.name}.`);
+    refreshList();
+    refreshSelectedPanel();
+    render();
+    commitHistory();
+  } catch (error) {
+    console.error(error);
+    setStatus(error.message || "Failed to add library furniture.");
+  }
+}
+
+function isAnnotatedFurniture(item) {
+  if (!item || item.source !== "furniture" || !item.dataUrl) return false;
+  const preset = itemKindPreset(item.kind);
+  return normalizeLocalPolygon(item.footprintPolygon).length > 0 ||
+    normalizeLocalPolygon(item.shadowPolygon).length > 0 ||
+    normalizeFootprint(item.footprint) === "polygon" ||
+    normalizeShadowAnchor(item.shadowAnchor) !== "auto" ||
+    Math.round(itemHeightPx(item)) !== Math.round(preset.heightPx) ||
+    Math.round(itemWallShadowDepthPx(item)) !== Math.round(preset.wallDepthPx ?? 0) ||
+    Math.round(itemWallShadowOffsetY(item)) !== 0 ||
+    item.castsShadow !== preset.castsShadow ||
+    Math.round(itemShadowOpacity(item)) !== Math.round(state.night.shadowAlpha) ||
+    Math.round(itemShadowLength(item)) !== Math.round(state.night.shadowLength) ||
+    Number(itemShadowBlur(item).toFixed(1)) !== Number(state.night.shadowBlur.toFixed(1)) ||
+    item.receivesShadow === false ||
+    item.occludesSprite !== preset.occludesSprite;
+}
+
+function furnitureLibraryIdForItem(item) {
+  return item.libraryId || `furniture_${slugifyId(item.fileName || item.name || item.id)}`;
+}
+
+function serializeFurnitureLibraryItem(item, idOverride = "") {
+  const bounds = itemBounds(item);
+  const id = idOverride || furnitureLibraryIdForItem(item);
+  const furnitureType = normalizeFurnitureType(item.furnitureType);
+  const kind = normalizeItemKind(item.kind);
+  return {
+    id,
+    name: item.name || id,
+    category: furnitureType,
+    tags: [...new Set([furnitureType, kind, item.slot, item.layer].filter(Boolean))],
+    fileName: item.fileName || `${id}.png`,
+    sourceWidth: item.sourceWidth || item.img?.naturalWidth || Math.round(bounds.w),
+    sourceHeight: item.sourceHeight || item.img?.naturalHeight || Math.round(bounds.h),
+    dataUrl: item.dataUrl,
+    defaultScale: Number(itemScaleX(item).toFixed(4)),
+    defaultScaleX: Number(itemScaleX(item).toFixed(4)),
+    defaultScaleY: Number(itemScaleY(item).toFixed(4)),
+    targetWidth: Math.round(bounds.w),
+    targetHeight: Math.round(bounds.h),
+    sourceScale: Number((item.sourceScale || state.sourceScale).toFixed(4)),
+    furnitureType,
+    kind,
+    heightPx: Math.round(itemHeightPx(item)),
+    footprint: normalizeFootprint(item.footprint),
+    footprintPolygon: compactLocalPolygon(item.footprintPolygon),
+    shadowPolygon: compactLocalPolygon(item.shadowPolygon),
+    shadowAnchor: normalizeShadowAnchor(item.shadowAnchor),
+    wallShadowDepthPx: Math.round(itemWallShadowDepthPx(item)),
+    wallShadowOffsetY: Math.round(itemWallShadowOffsetY(item)),
+    castsShadow: itemCastsShadow(item),
+    shadowOpacity: Math.round(itemShadowOpacity(item)),
+    shadowLength: Math.round(itemShadowLength(item)),
+    shadowBlur: Number(itemShadowBlur(item).toFixed(1)),
+    receivesShadow: item.receivesShadow !== false,
+    occludesSprite: !!item.occludesSprite,
+    slot: item.slot || itemKindPreset(kind).slot,
+    layer: item.layer || itemKindPreset(kind).layer,
+    cutoutApplied: !!item.cutoutApplied,
+    annotated: isAnnotatedFurniture(item),
+    exportedFrom: {
+      roomItemId: item.id,
+      x: Math.round(item.x),
+      y: Math.round(item.y),
+      z: item.z
+    }
+  };
+}
+
+function annotatedFurnitureItems(items = state.items) {
+  return items.filter(isAnnotatedFurniture);
+}
+
+function uniqueSerializedFurnitureItems(items) {
+  const counts = new Map();
+  return items.map((item) => {
+    const baseId = furnitureLibraryIdForItem(item);
+    const count = counts.get(baseId) || 0;
+    counts.set(baseId, count + 1);
+    return serializeFurnitureLibraryItem(item, count ? `${baseId}_${count + 1}` : baseId);
+  });
+}
+
+function exportFurnitureLibraryBundle(items = annotatedFurnitureItems()) {
+  if (!items.length) {
+    setStatus("No annotated furniture to export. Configure height, footprint, shadow polygon, or shadow target first.");
+    return;
+  }
+  const payload = {
+    type: FURNITURE_LIBRARY_BUNDLE_TYPE,
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    source: "room_editor",
+    items: uniqueSerializedFurnitureItems(items)
+  };
+  downloadText("stickmon_furniture_library_bundle.json", JSON.stringify(payload, null, 2), "application/json");
+  setStatus(`Furniture library bundle exported: ${payload.items.length} item(s). Run sync_furniture_library.py to write project files.`);
+}
+
+function dataUrlMimeType(dataUrl) {
+  return (String(dataUrl || "").match(/^data:([^;,]+)/) || [])[1] || "application/octet-stream";
+}
+
+function extensionForImageMime(mime, fallbackName = "") {
+  const lower = String(mime || "").toLowerCase();
+  if (lower === "image/png") return ".png";
+  if (lower === "image/jpeg" || lower === "image/jpg") return ".jpg";
+  if (lower === "image/webp") return ".webp";
+  const match = String(fallbackName || "").match(/\.[a-z0-9]+$/i);
+  return match ? match[0].toLowerCase() : ".png";
+}
+
+function libraryImageFileName(item) {
+  const ext = extensionForImageMime(dataUrlMimeType(item.dataUrl), item.fileName || item.image || "");
+  return `${item.id}${ext}`;
+}
+
+function cleanFurnitureLibraryItem(item, imageName) {
+  const clean = { ...item };
+  delete clean.dataUrl;
+  delete clean.imageDataUrl;
+  delete clean.path;
+  delete clean.exportedFrom;
+  clean.image = imageName ? `images/${imageName}` : clean.image || "";
+  clean.fileName = clean.fileName || imageName || `${clean.id}.png`;
+  clean.revision = Number(clean.revision) || 1;
+  return clean;
+}
+
+function furnitureLibraryImageFileNameForEntry(entry) {
+  const image = typeof entry?.image === "string" ? entry.image : entry?.image?.path || "";
+  const fromImage = image.split("/").filter(Boolean).pop();
+  if (fromImage) return fromImage;
+  if (entry?.dataUrl) return libraryImageFileName(entry);
+  return "";
+}
+
+function mergeFurnitureLibraryItems(serializedItems) {
+  const existingItems = furnitureLibraryCatalog();
+  const order = [];
+  const byId = new Map();
+  for (const item of existingItems) {
+    if (!item?.id || byId.has(item.id)) continue;
+    order.push(item.id);
+    byId.set(item.id, item);
+  }
+
+  const savedItems = [];
+  for (const item of serializedItems) {
+    if (!item?.id) continue;
+    const previous = byId.get(item.id);
+    const revision = (Number(previous?.revision) || 0) + 1;
+    const next = { ...item, revision };
+    if (!byId.has(next.id)) order.push(next.id);
+    byId.set(next.id, next);
+    savedItems.push(next);
+  }
+
+  return {
+    items: order.map((id) => byId.get(id)).filter(Boolean),
+    savedItems
+  };
+}
+
+function buildFurnitureLibraryPayload(items) {
+  const generatedAt = new Date().toISOString();
+  const manifestItems = [];
+  const jsItems = [];
+  const imageFiles = [];
+
+  for (const rawItem of items) {
+    const item = normalizeFurnitureLibraryEntry(rawItem);
+    if (!item?.id) continue;
+    const imageName = item.dataUrl ? libraryImageFileName(item) : "";
+    const cleanItem = cleanFurnitureLibraryItem(item, imageName);
+    manifestItems.push(cleanItem);
+
+    const jsItem = { ...cleanItem };
+    if (item.dataUrl) jsItem.dataUrl = item.dataUrl;
+    jsItems.push(jsItem);
+
+    if (item.dataUrl) {
+      imageFiles.push({
+        name: imageName,
+        blob: dataUrlToBlob(item.dataUrl)
+      });
+    }
+  }
+
+  return {
+    manifest: {
+      version: 1,
+      generatedAt,
+      items: manifestItems
+    },
+    js: {
+      version: 1,
+      generatedAt,
+      items: jsItems
+    },
+    imageFiles
+  };
+}
+
+async function writeRoomEditorRootHandle(handle) {
+  roomEditorRootHandle = handle;
+  const db = await openSessionDb();
+  try {
+    await new Promise((resolve, reject) => {
+      const transaction = db.transaction(SESSION_DB_STORE, "readwrite");
+      transaction.objectStore(SESSION_DB_STORE).put(handle, ROOM_EDITOR_ROOT_HANDLE_KEY);
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
+async function readRoomEditorRootHandle() {
+  if (roomEditorRootHandle) return roomEditorRootHandle;
+  const db = await openSessionDb();
+  try {
+    const handle = await new Promise((resolve, reject) => {
+      const transaction = db.transaction(SESSION_DB_STORE, "readonly");
+      const request = transaction.objectStore(SESSION_DB_STORE).get(ROOM_EDITOR_ROOT_HANDLE_KEY);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+    roomEditorRootHandle = handle;
+    return handle;
+  } finally {
+    db.close();
+  }
+}
+
+async function getExistingDirectoryHandle(rootHandle, parts) {
+  let handle = rootHandle;
+  for (const part of parts) {
+    handle = await handle.getDirectoryHandle(part);
+  }
+  return handle;
+}
+
+async function getExistingFileHandle(rootHandle, parts) {
+  let handle = rootHandle;
+  for (let index = 0; index < parts.length - 1; ++index) {
+    handle = await handle.getDirectoryHandle(parts[index]);
+  }
+  return handle.getFileHandle(parts[parts.length - 1]);
+}
+
+async function getOrCreateDirectoryHandle(rootHandle, parts) {
+  let handle = rootHandle;
+  for (const part of parts) {
+    handle = await handle.getDirectoryHandle(part, { create: true });
+  }
+  return handle;
+}
+
+async function validateRoomEditorRootHandle(handle) {
+  await getExistingFileHandle(handle, ["index.html"]);
+  await getExistingFileHandle(handle, ["app.js"]);
+  return handle;
+}
+
+async function ensureRoomEditorRootHandle(forcePick = false) {
+  if (!window.showDirectoryPicker) return null;
+
+  let handle = null;
+  if (!forcePick) {
+    try {
+      handle = await readRoomEditorRootHandle();
+    } catch (_) {}
+  }
+
+  if (handle) {
+    try {
+      if (await verifyFileHandlePermission(handle, "readwrite")) {
+        await validateRoomEditorRootHandle(handle);
+        roomEditorRootHandle = handle;
+        return handle;
+      }
+    } catch (_) {
+      handle = null;
+    }
+  }
+  roomEditorRootHandle = null;
+
+  setStatus("Choose the tools/room_editor folder to save editor data.");
+  handle = await window.showDirectoryPicker({
+    id: "stickmon-room-editor-root",
+    mode: "readwrite"
+  });
+  if (!await verifyFileHandlePermission(handle, "readwrite")) {
+    throw new Error("Room editor folder permission was not granted.");
+  }
+  await validateRoomEditorRootHandle(handle);
+  try {
+    await writeRoomEditorRootHandle(handle);
+  } catch (error) {
+    console.warn("Room editor folder handle could not be persisted.", error);
+    roomEditorRootHandle = handle;
+  }
+  return handle;
+}
+
+async function writeFileText(directoryHandle, fileName, text) {
+  const fileHandle = await directoryHandle.getFileHandle(fileName, { create: true });
+  const writable = await fileHandle.createWritable();
+  try {
+    await writable.write(text);
+  } finally {
+    await writable.close();
+  }
+}
+
+async function writeFileBlob(directoryHandle, fileName, blob) {
+  const fileHandle = await directoryHandle.getFileHandle(fileName, { create: true });
+  const writable = await fileHandle.createWritable();
+  try {
+    await writable.write(blob);
+  } finally {
+    await writable.close();
+  }
+}
+
+async function removeEntryIfExists(directoryHandle, name, options = {}) {
+  if (!directoryHandle || !name) return;
+  try {
+    await directoryHandle.removeEntry(name, options);
+  } catch (error) {
+    if (error?.name !== "NotFoundError") throw error;
+  }
+}
+
+async function writeFurnitureLibraryDirectory(rootDirectoryHandle, payload) {
+  const imagesDirectory = await getOrCreateDirectoryHandle(rootDirectoryHandle, ["images"]);
+  const itemsDirectory = await getOrCreateDirectoryHandle(rootDirectoryHandle, ["items"]);
+  for (const file of payload.imageFiles) {
+    await writeFileBlob(imagesDirectory, file.name, file.blob);
+  }
+  for (const item of payload.manifest.items) {
+    await writeFileText(itemsDirectory, `${item.id}.json`, `${JSON.stringify(item, null, 2)}\n`);
+  }
+  await writeFileText(rootDirectoryHandle, "manifest.json", `${JSON.stringify(payload.manifest, null, 2)}\n`);
+}
+
+async function furnitureLibraryProjectTargets(roomEditorRootHandle) {
+  return {
+    editorRoot: await getOrCreateDirectoryHandle(roomEditorRootHandle, ["generated", "furniture_library"]),
+    editorGeneratedRoot: await getOrCreateDirectoryHandle(roomEditorRootHandle, ["generated"])
+  };
+}
+
+async function writeFurnitureLibraryPayloadToProject(targets, payload) {
+  await writeFurnitureLibraryDirectory(targets.editorRoot, payload);
+  await writeFileText(
+    targets.editorGeneratedRoot,
+    "furniture_library_assets.js",
+    `window.STICKMON_FURNITURE_LIBRARY = ${JSON.stringify(payload.js, null, 2)};\n`
+  );
+}
+
+async function writeFurnitureLibraryToProject(items, forcePick = false) {
+  const handle = await ensureRoomEditorRootHandle(forcePick);
+  if (!handle) return null;
+
+  const payload = buildFurnitureLibraryPayload(items);
+  const targets = await furnitureLibraryProjectTargets(handle);
+  await writeFurnitureLibraryPayloadToProject(targets, payload);
+
+  window.STICKMON_FURNITURE_LIBRARY = payload.js;
+  refreshFurnitureLibraryPanel();
+  return payload;
+}
+
+async function removeFurnitureLibraryEntryFiles(rootDirectoryHandle, entry) {
+  if (!entry?.id) return;
+  const itemsDirectory = await getOrCreateDirectoryHandle(rootDirectoryHandle, ["items"]);
+  const imagesDirectory = await getOrCreateDirectoryHandle(rootDirectoryHandle, ["images"]);
+  await removeEntryIfExists(itemsDirectory, `${entry.id}.json`);
+  await removeEntryIfExists(imagesDirectory, furnitureLibraryImageFileNameForEntry(entry));
+}
+
+function detachLibraryReferences(libraryId) {
+  let detached = 0;
+  for (const item of state.items) {
+    if (item.libraryId !== libraryId) continue;
+    delete item.libraryId;
+    delete item.libraryRevision;
+    delete item.libraryCategory;
+    detached += 1;
+  }
+  return detached;
+}
+
+async function deleteFurnitureLibraryEntry(entry) {
+  const normalized = normalizeFurnitureLibraryEntry(entry);
+  if (!normalized?.id) return false;
+  if (!window.confirm(`Delete "${normalized.name}" from the furniture library?`)) return false;
+
+  if (!window.showDirectoryPicker) {
+    setStatus("Direct library deleting is not supported in this browser. Use a browser with folder access.");
+    return false;
+  }
+
+  const remaining = furnitureLibraryCatalog().filter((item) => item.id !== normalized.id);
+  const handle = await ensureRoomEditorRootHandle(false);
+  if (!handle) return false;
+  const targets = await furnitureLibraryProjectTargets(handle);
+  const payload = buildFurnitureLibraryPayload(remaining);
+  await writeFurnitureLibraryPayloadToProject(targets, payload);
+  await removeFurnitureLibraryEntryFiles(targets.editorRoot, normalized);
+
+  window.STICKMON_FURNITURE_LIBRARY = payload.js;
+  const detached = detachLibraryReferences(normalized.id);
+  refreshFurnitureLibraryPanel();
+  refreshSelectedPanel();
+  refreshList();
+  render();
+  if (detached) commitHistory();
+  setStatus(`Deleted library furniture: ${normalized.name}.${detached ? ` Detached ${detached} placed item(s).` : ""}`);
+  return true;
+}
+
+async function addFurnitureItemsToLibrary(items) {
+  const candidates = items.filter(isAnnotatedFurniture);
+  if (!candidates.length) {
+    setStatus("Cannot add selected furniture yet. Configure height, footprint, shadow polygon, or shadow target first.");
+    return false;
+  }
+
+  if (!window.showDirectoryPicker) {
+    exportFurnitureLibraryBundle(candidates);
+    setStatus("Direct library writing is not supported in this browser. A furniture bundle was exported instead.");
+    return false;
+  }
+
+  const serializedItems = uniqueSerializedFurnitureItems(candidates);
+  const merged = mergeFurnitureLibraryItems(serializedItems);
+  await writeFurnitureLibraryToProject(merged.items);
+
+  candidates.forEach((item, index) => {
+    const saved = merged.savedItems[index];
+    if (!saved) return;
+    item.libraryId = saved.id;
+    item.libraryRevision = saved.revision;
+    item.libraryCategory = furnitureLibraryCategory(saved);
+  });
+  refreshSelectedPanel();
+  refreshList();
+  render();
+  commitHistory();
+  setStatus(`Saved ${merged.savedItems.length} furniture item(s) to the room editor library.`);
+  return true;
+}
+
 function updateProjectSpriteMeta() {
   const meta = document.getElementById("projectSpriteMeta");
   const frame = selectedProjectSpriteFrame();
@@ -1604,7 +2441,7 @@ async function addProjectSpritePreview() {
   const entry = selectedProjectSpriteEntry();
   const frame = selectedProjectSpriteFrame();
   if (!entry || !frame) return;
-  const img = await loadImageSource(frame.path);
+  const loaded = await loadExportableImageSource(projectSpriteFrameSource(frame));
   const maxSize = 64;
   const scale = Math.min(
     maxSize / Math.max(1, frame.width),
@@ -1619,8 +2456,8 @@ async function addProjectSpritePreview() {
     id: `f${state.nextId++}`,
     name: entry.name,
     fileName: frame.file,
-    img,
-    dataUrl: frame.path,
+    img: loaded.img,
+    dataUrl: loaded.dataUrl,
     sourceWidth: frame.width,
     sourceHeight: frame.height,
     x: Math.round(targetX),
@@ -1646,7 +2483,8 @@ async function addProjectSpritePreview() {
     sortY: Math.round(targetY + targetH),
     speciesId: entry.speciesId,
     action: document.getElementById("spriteActionSelect").value,
-    frame: frame.kindName
+    frame: frame.kindName,
+    exportableImage: loaded.exportable
   };
   state.items.push(item);
   state.selectedId = item.id;
@@ -1669,40 +2507,50 @@ async function updateProjectSpriteFrame(item, speciesId, action, framePath) {
   if (!entry || !entry.actions || !entry.actions[action]) return;
   const frame = entry.actions[action].find((f) => f.path === framePath);
   if (!frame) return;
-  const img = await loadImageSource(frame.path);
+  const loaded = await loadExportableImageSource(projectSpriteFrameSource(frame));
   item.name = entry.name;
   item.fileName = frame.file;
-  item.img = img;
-  item.dataUrl = frame.path;
+  item.img = loaded.img;
+  item.dataUrl = loaded.dataUrl;
   item.sourceWidth = frame.width;
   item.sourceHeight = frame.height;
   item.speciesId = speciesId;
   item.action = action;
   item.frame = frame.kindName;
+  item.exportableImage = loaded.exportable;
   item.sortY = autoSortY(item);
   render();
   commitHistory();
 }
 
-async function loadBase(file) {
+async function loadBase(file, mode = "day") {
+  const backgroundMode = normalizeBackgroundMode(mode);
+  const hadBackground = hasBackground();
   const loaded = await readImageFile(file);
-  state.base = {
+  const background = {
     name: file.name,
     img: loaded.img,
     dataUrl: loaded.dataUrl,
     width: loaded.img.naturalWidth,
     height: loaded.img.naturalHeight
   };
-  state.baseTrim = detectTrimBox(loaded.img);
-  const prepared = preparedRoomMetrics();
-  const detectedScale = Math.max(0.01, Math.round((prepared.trim.width / GAME_SCREEN_WIDTH) * 100) / 100);
-  state.sourceScale = detectedScale;
+  state.backgrounds[backgroundMode] = background;
+  setLegacyBaseFromBackgrounds();
+
+  const shouldUpdateSharedTransform = backgroundMode === "day" || !hadBackground || !state.baseTrim;
+  let prepared = preparedRoomMetrics();
+  if (shouldUpdateSharedTransform) {
+    state.baseTrim = detectTrimBox(loaded.img);
+    prepared = preparedRoomMetrics();
+    const detectedScale = Math.max(0.01, Math.round((prepared.trim.width / GAME_SCREEN_WIDTH) * 100) / 100);
+    state.sourceScale = detectedScale;
+    document.getElementById("sourceScale").value = detectedScale;
+  }
   state.baseFit = BASE_FIT_WIDTH;
   syncCanvasSizeToPreparedRoom();
-  document.getElementById("sourceScale").value = detectedScale;
   document.getElementById("baseFit").value = BASE_FIT_WIDTH;
   updateBaseImageMeta();
-  setStatus(`Background loaded: ${file.name} (${state.base.width}x${state.base.height}), fit to ${GAME_SCREEN_WIDTH}x${prepared.height}, canvas ${state.width}x${state.height}.`);
+  setStatus(`${backgroundLabel(backgroundMode)} background loaded: ${file.name} (${background.width}x${background.height}), shared fit ${GAME_SCREEN_WIDTH}x${prepared.height}, canvas ${state.width}x${state.height}.`);
   refreshList();
   render();
   commitHistory();
@@ -1899,17 +2747,91 @@ function itemCastsShadow(item) {
   return itemKindPreset(item.kind).castsShadow;
 }
 
+function itemShadowOpacity(item) {
+  return coerceNumber(item?.shadowOpacity ?? item?.shadowAlpha, state.night.shadowAlpha, 0, 100);
+}
+
+function itemShadowLength(item) {
+  return coerceNumber(item?.shadowLength, state.night.shadowLength, 0, 120);
+}
+
+function itemShadowBlur(item) {
+  return coerceNumber(item?.shadowBlur, state.night.shadowBlur, 0, 16);
+}
+
+function itemShadowFaceIds(item) {
+  return normalizeShadowFaceIds(item?.shadowFaceIds);
+}
+
 function itemUsesWallShadowAnchor(item) {
   const anchor = normalizeShadowAnchor(item.shadowAnchor);
   if (anchor === "wall") return true;
   if (anchor === "floor") return false;
 
   const kind = normalizeItemKind(item.kind);
-  if (kind === "wall_prop" || kind === "wall_furniture") return true;
+  if (kind === "wall_prop" || kind === "wall_furniture" || kind === "wall_shelf") return true;
   if (String(item.slot || "").toLowerCase() === "wall") return true;
 
   const name = `${item.fileName || ""} ${item.name || ""}`;
   return WALL_MOUNTED_NAME_PATTERN.test(name);
+}
+
+function itemExplicitlyTargetsFace(item, face) {
+  if (!face) return false;
+  const ids = itemShadowFaceIds(item);
+  return ids.length > 0 && ids.includes(String(face.id));
+}
+
+function faceTargetedByAnyShadowItem(face) {
+  if (!face) return false;
+  return state.items.some((item) => itemExplicitlyTargetsFace(item, face));
+}
+
+function itemShouldCastShadowOnSurface(item, surface, face = null) {
+  const targetFaceIds = itemShadowFaceIds(item);
+  const targeted = itemExplicitlyTargetsFace(item, face);
+  if (targetFaceIds.length > 0 && !targeted) return false;
+  if (face?.receivesShadow === false && !targeted) return false;
+  const isWallSurface = surface === "left_wall" || surface === "right_wall";
+  if (targetFaceIds.length > 0) return isWallSurface;
+  if (!itemUsesWallShadowAnchor(item)) return true;
+  if (!face) return true;
+  return isWallSurface;
+}
+
+function itemShadowSummary(item) {
+  if (!itemCastsShadow(item)) return "off";
+  const target = itemUsesWallShadowAnchor(item) ? "wall" : "floor";
+  const faceCount = itemShadowFaceIds(item).length;
+  return `${target} ${Math.round(itemShadowOpacity(item))}%${faceCount ? `, ${faceCount} face(s)` : ""}`;
+}
+
+function updateSelectedShadowMeta(item) {
+  const meta = document.getElementById("itemShadowMeta");
+  if (meta) meta.textContent = itemShadowSummary(item);
+}
+
+function shadowFaceDisplayName(face, index = 0) {
+  return String(face?.id || `wall ${index + 1}`);
+}
+
+function shadowFaceSelectionLabel(item, faces) {
+  const ids = itemShadowFaceIds(item);
+  if (!ids.length) return "Auto";
+  const knownIds = new Set(faces.map((face) => String(face.id)));
+  const selected = faces
+    .filter((face) => ids.includes(String(face.id)))
+    .map((face, index) => shadowFaceDisplayName(face, index));
+  const unknown = ids.filter((id) => !knownIds.has(id));
+  const labels = [...selected, ...unknown];
+  if (!labels.length) return "Auto";
+  if (labels.length <= 2) return labels.join(", ");
+  return `${labels.slice(0, 2).join(", ")} +${labels.length - 2}`;
+}
+
+function updateShadowFaceDropdownLabel(item, faces) {
+  const label = document.getElementById("shadowFaceDropdownLabel");
+  if (label) label.textContent = shadowFaceSelectionLabel(item, faces);
 }
 
 function itemFootprint(item) {
@@ -1967,10 +2889,16 @@ function defaultShadowPolygon() {
   ];
 }
 
+function itemUsesAutoFootprintPolygon(item) {
+  if (itemFootprint(item) !== "polygon") return false;
+  const kind = normalizeItemKind(item.kind);
+  return kind !== "rug" && kind !== "floor_decal";
+}
+
 function effectiveFootprintPolygon(item) {
   const custom = normalizeLocalPolygon(item.footprintPolygon);
   if (custom.length) return custom;
-  return itemFootprint(item) === "polygon" ? defaultFootprintPolygon() : [];
+  return itemUsesAutoFootprintPolygon(item) ? defaultFootprintPolygon() : [];
 }
 
 function polygonToText(value) {
@@ -2271,6 +3199,7 @@ function applyItemKindPreset(item, kindValue) {
   item.slot = preset.slot;
   item.layer = preset.layer;
   item.shadowAnchor = preset.shadowAnchor || "auto";
+  item.shadowFaceIds = [];
   item.wallShadowDepthPx = preset.wallDepthPx ?? 0;
   item.wallShadowOffsetY = 0;
   item.sortY = autoSortY(item);
@@ -2287,8 +3216,12 @@ function normalizeItemSemantics(item) {
   item.slot = item.slot || preset.slot;
   item.layer = item.layer || preset.layer;
   item.shadowAnchor = normalizeShadowAnchor(item.shadowAnchor || preset.shadowAnchor);
+  item.shadowFaceIds = normalizeShadowFaceIds(item.shadowFaceIds);
   item.wallShadowOffsetY = itemWallShadowOffsetY(item);
   item.wallShadowDepthPx = itemWallShadowDepthPx(item);
+  item.shadowOpacity = itemShadowOpacity(item);
+  item.shadowLength = itemShadowLength(item);
+  item.shadowBlur = itemShadowBlur(item);
   item.footprintPolygon = normalizeLocalPolygon(item.footprintPolygon);
   item.shadowPolygon = normalizeLocalPolygon(item.shadowPolygon);
   if (!Number.isFinite(Number(item.sortY))) item.sortY = autoSortY(item);
@@ -2297,10 +3230,6 @@ function normalizeItemSemantics(item) {
 
 function modeLightKey(mode = state.mode) {
   return mode === "night" ? "nightLight" : "dayLight";
-}
-
-function lightProfileMode(profile = state.lightProfile) {
-  return profile === "night" ? "night" : "day";
 }
 
 function copyLightSettings(light) {
@@ -2316,10 +3245,7 @@ function assignLightSettings(target, source) {
 }
 
 function previewLightSettings(mode = state.mode) {
-  if (!state.night.dayLight || !state.night.nightLight) {
-    state.night = normalizeNightSettings(state.night);
-  }
-  if (!state.night.separateModeLights) return state.night;
+  ensureSeparateModeLights();
   return state.night[modeLightKey(mode)];
 }
 
@@ -2328,12 +3254,8 @@ function activeLightSettings(mode = state.mode) {
 }
 
 function editLightSettings() {
-  if (!state.night.dayLight || !state.night.nightLight) {
-    state.night = normalizeNightSettings(state.night);
-  }
-  const profile = currentLightProfile();
-  if (profile === "shared" || !state.night.separateModeLights) return state.night;
-  return state.night[modeLightKey(lightProfileMode(profile))];
+  ensureSeparateModeLights();
+  return state.night[modeLightKey(state.mode)];
 }
 
 function activeLightPoint(mode = state.mode) {
@@ -2373,20 +3295,19 @@ function syncLightInputsFromState() {
   document.getElementById("lightRadius").value = light.lightRadius;
   document.getElementById("lightAngle").value = light.lightAngle;
   document.getElementById("lightSpread").value = light.lightSpread;
-  updateLightProfileButtons();
+  updateLightModeActions();
 }
 
 function currentLightProfile() {
-  return state.night.separateModeLights ? normalizeLightProfile(state.lightProfile || state.mode) : "shared";
+  return state.mode === "night" ? "night" : "day";
 }
 
-function updateLightProfileButtons() {
-  const profile = currentLightProfile();
-  document.getElementById("lightProfileShared").classList.toggle("active", profile === "shared");
-  document.getElementById("lightProfileDay").classList.toggle("active", profile === "day");
-  document.getElementById("lightProfileNight").classList.toggle("active", profile === "night");
-  document.getElementById("copyLightToDay").hidden = profile === "day";
-  document.getElementById("copyLightToNight").hidden = profile === "night";
+function updateLightModeActions() {
+  const mode = currentLightProfile();
+  const meta = document.getElementById("lightModeMeta");
+  if (meta) meta.textContent = mode === "night" ? "Preview Night" : "Preview Day";
+  document.getElementById("copyLightToDay").hidden = mode !== "day";
+  document.getElementById("copyLightToNight").hidden = mode !== "night";
 }
 
 function ensureSeparateModeLights() {
@@ -2397,44 +3318,23 @@ function ensureSeparateModeLights() {
   state.night.separateModeLights = true;
 }
 
-function setLightProfile(profile) {
-  profile = normalizeLightProfile(profile);
-  commitLightInputsToState();
-  if (profile === "shared") {
-    if (state.night.separateModeLights) {
-      assignLightSettings(state.night, editLightSettings());
-    }
-    state.night.separateModeLights = false;
-    state.lightProfile = "shared";
-  } else {
-    ensureSeparateModeLights();
-    state.lightProfile = profile;
-  }
-  syncLightInputsFromState();
-  updateModeButtons();
-}
-
 function copyActiveLightToProfile(profile) {
   profile = normalizeLightProfile(profile);
   if (profile === "shared") return;
   commitLightInputsToState();
   const source = copyLightSettings(editLightSettings());
   ensureSeparateModeLights();
-  assignLightSettings(state.night[modeLightKey(lightProfileMode(profile))], source);
-  if (currentLightProfile() === "shared") {
-    state.lightProfile = profile;
-  }
+  assignLightSettings(state.night[modeLightKey(profile)], source);
+  state.lightProfile = profile;
   syncLightInputsFromState();
   updateModeButtons();
+  setStatus(`Light settings copied to ${profile === "night" ? "night" : "day"}.`);
 }
 
 function syncLightProfileWithMode() {
-  if (state.night.separateModeLights) {
-    state.lightProfile = state.mode === "night" ? "night" : "day";
-  } else {
-    state.lightProfile = "shared";
-  }
-  updateLightProfileButtons();
+  ensureSeparateModeLights();
+  state.lightProfile = currentLightProfile();
+  updateLightModeActions();
 }
 
 const shadowMaskCache = new WeakMap();
@@ -2531,7 +3431,10 @@ function shadowLightFactorForPoint(footX, footY, lightPoint, scale = 1) {
 }
 
 function faceReceivesShadow(face) {
-  return face && !isSpriteAreaFace(face) && face.points.length >= 3 && face.receivesShadow !== false;
+  return face &&
+    !isSpriteAreaFace(face) &&
+    face.points.length >= 3 &&
+    (face.receivesShadow !== false || faceTargetedByAnyShadowItem(face));
 }
 
 function shadowSurfaceForFace(face) {
@@ -2592,14 +3495,14 @@ function projectWallLocalPoint(point, light, lightDepth, casterDepth) {
 }
 
 function itemWallShadowDepthScaled(item, scale) {
-  const depthScale = Math.max(0.2, (Number(state.night.shadowLength) || DEFAULT_NIGHT.shadowLength) / DEFAULT_NIGHT.shadowLength);
+  const depthScale = Math.max(0.2, itemShadowLength(item) / DEFAULT_NIGHT.shadowLength);
   return itemWallShadowDepthPx(item) * scale * depthScale;
 }
 
 function wallShadowOpacity(item, lightFactor) {
   const heightFactor = Math.max(0.25, Math.min(2.2, itemHeightPx(item) / 32));
   const modeAlpha = state.mode === "night" ? 1 : 0.42;
-  const alpha = (state.night.shadowAlpha / 100) *
+  const alpha = (itemShadowOpacity(item) / 100) *
     modeAlpha *
     lightFactor *
     Math.max(0, Math.min(1, item.opacity ?? 1)) *
@@ -2610,7 +3513,7 @@ function wallShadowOpacity(item, lightFactor) {
 
 function baseShadowOpacity(item, lightFactor, heightFactor, isWallSurface = false) {
   const modeAlpha = state.mode === "night" ? 1 : 0.42;
-  const alpha = (state.night.shadowAlpha / 100) *
+  const alpha = (itemShadowOpacity(item) / 100) *
     modeAlpha *
     lightFactor *
     Math.max(0, Math.min(1, item.opacity ?? 1)) *
@@ -2619,13 +3522,13 @@ function baseShadowOpacity(item, lightFactor, heightFactor, isWallSurface = fals
   return clampNumber(alpha, 0, 1);
 }
 
-function shadowHeightGain() {
-  return Math.max(0, Number(state.night.shadowLength) || 0) / Math.max(1, DEFAULT_NIGHT.shadowLength);
+function shadowHeightGain(item) {
+  return itemShadowLength(item) / Math.max(1, DEFAULT_NIGHT.shadowLength);
 }
 
 function localCasterHeight(item, point, scale) {
   const verticalRatio = clampUnit(1 - point.y);
-  return itemHeightPx(item) * scale * shadowHeightGain() * verticalRatio;
+  return itemHeightPx(item) * scale * shadowHeightGain(item) * verticalRatio;
 }
 
 function projectElevatedPointToReceiver(screenPoint, z, lightPoint, scale) {
@@ -2671,7 +3574,7 @@ function drawProjectedShadow2D5(targetCtx, item, bounds, lightPoint, scale, ligh
   targetCtx.save();
   targetCtx.globalAlpha = alpha;
   targetCtx.globalCompositeOperation = "multiply";
-  const blur = Math.max(0, state.night.shadowBlur * scale);
+  const blur = Math.max(0, itemShadowBlur(item) * scale);
   targetCtx.filter = blur > 0 ? `blur(${blur}px)` : "none";
   targetCtx.fillStyle = "#000000";
   targetCtx.beginPath();
@@ -2688,7 +3591,7 @@ function drawProjectedShadow2D5(targetCtx, item, bounds, lightPoint, scale, ligh
 function drawFloorFootprintShadow(targetCtx, item, bounds, ux, uy, lightFactor, scale, heightFactor) {
   const polygon = effectiveFootprintPolygon(item);
   if (polygon.length) {
-    const shadowLength = state.night.shadowLength * scale * heightFactor;
+    const shadowLength = itemShadowLength(item) * scale * heightFactor;
     const offsetX = ux * shadowLength * 0.72;
     const offsetY = uy * shadowLength * 0.32;
     const alpha = baseShadowOpacity(item, lightFactor, heightFactor);
@@ -2696,7 +3599,8 @@ function drawFloorFootprintShadow(targetCtx, item, bounds, ux, uy, lightFactor, 
     targetCtx.save();
     targetCtx.globalAlpha = alpha;
     targetCtx.globalCompositeOperation = "multiply";
-    targetCtx.filter = state.night.shadowBlur > 0 ? `blur(${Math.max(0.2 * scale, state.night.shadowBlur * scale)}px)` : "none";
+    const blur = itemShadowBlur(item);
+    targetCtx.filter = blur > 0 ? `blur(${Math.max(0.2 * scale, blur * scale)}px)` : "none";
     targetCtx.fillStyle = "#000000";
     targetCtx.beginPath();
     polygon.forEach((point, index) => {
@@ -2711,14 +3615,14 @@ function drawFloorFootprintShadow(targetCtx, item, bounds, ux, uy, lightFactor, 
     return true;
   }
   if (itemFootprint(item) !== "ellipse") return false;
-  const shadowLength = state.night.shadowLength * scale * heightFactor;
+  const shadowLength = itemShadowLength(item) * scale * heightFactor;
   const footX = bounds.x + bounds.w * 0.5;
   const footY = bounds.y + bounds.h * 0.88;
-  const shadowWidth = Math.max(1, bounds.w * (0.72 + Math.min(0.22, state.night.shadowLength / 220) * heightFactor));
+  const shadowWidth = Math.max(1, bounds.w * (0.72 + Math.min(0.22, itemShadowLength(item) / 220) * heightFactor));
   const shadowHeight = Math.max(1, bounds.h * (0.16 + Math.min(0.12, itemHeightPx(item) / 360)));
   const centerX = footX + ux * shadowLength * 0.72;
   const centerY = footY + uy * shadowLength * 0.32;
-  const blur = Math.max(0.2 * scale, state.night.shadowBlur * scale);
+  const blur = Math.max(0.2 * scale, itemShadowBlur(item) * scale);
 
   targetCtx.save();
   targetCtx.globalAlpha = baseShadowOpacity(item, lightFactor, heightFactor);
@@ -2732,45 +3636,6 @@ function drawFloorFootprintShadow(targetCtx, item, bounds, ux, uy, lightFactor, 
   targetCtx.fill();
   targetCtx.restore();
   return true;
-}
-
-function drawWallContactShadow(targetCtx, item, bounds, lightPoint, scale, facePoints) {
-  const basis = faceProjectionBasis(facePoints);
-  if (!basis) return;
-  const depth = itemWallShadowDepthScaled(item, scale);
-  if (depth <= 0) return;
-  const center = { x: bounds.x + bounds.w * 0.5, y: bounds.y + bounds.h * 0.76 };
-  const lightLocal = screenToFaceLocal(basis, lightPoint);
-  const centerLocal = screenToFaceLocal(basis, center);
-  const dx = centerLocal.u - lightLocal.u;
-  const dy = centerLocal.v - lightLocal.v;
-  const length = Math.hypot(dx, dy) || 1;
-  const ux = dx / length;
-  const uy = dy / length;
-  const bottomLeft = screenToFaceLocal(basis, { x: bounds.x + bounds.w * 0.12, y: bounds.y + bounds.h * 0.78 });
-  const bottomRight = screenToFaceLocal(basis, { x: bounds.x + bounds.w * 0.88, y: bounds.y + bounds.h * 0.78 });
-  const drop = Math.max(3 * scale, Math.min(bounds.h * 0.55, depth * 0.7));
-  const side = Math.max(1 * scale, depth * 0.22);
-  const p1 = faceLocalToScreen(basis, { u: bottomLeft.u + ux * side, v: bottomLeft.v + uy * side });
-  const p2 = faceLocalToScreen(basis, { u: bottomRight.u + ux * side, v: bottomRight.v + uy * side });
-  const p3 = faceLocalToScreen(basis, { u: bottomRight.u + ux * side * 1.7, v: bottomRight.v + drop + uy * side * 1.7 });
-  const p4 = faceLocalToScreen(basis, { u: bottomLeft.u + ux * side * 1.7, v: bottomLeft.v + drop + uy * side * 1.7 });
-  const lightFactor = shadowLightFactorForPoint(center.x, center.y, lightPoint, scale);
-  if (lightFactor <= 0) return;
-
-  targetCtx.save();
-  targetCtx.globalCompositeOperation = "multiply";
-  targetCtx.globalAlpha = wallShadowOpacity(item, lightFactor) * 0.62;
-  targetCtx.filter = `blur(${Math.max(1.2, state.night.shadowBlur * scale + 1.4 * scale)}px)`;
-  targetCtx.fillStyle = "#000000";
-  targetCtx.beginPath();
-  targetCtx.moveTo(p1.x, p1.y);
-  targetCtx.lineTo(p2.x, p2.y);
-  targetCtx.lineTo(p3.x, p3.y);
-  targetCtx.lineTo(p4.x, p4.y);
-  targetCtx.closePath();
-  targetCtx.fill();
-  targetCtx.restore();
 }
 
 function drawWallPlaneShadow(targetCtx, item, bounds, lightPoint, scale, facePoints) {
@@ -2797,12 +3662,11 @@ function drawWallPlaneShadow(targetCtx, item, bounds, lightPoint, scale, facePoi
     .map((point) => projectWallLocalPoint(point, lightLocal, lightDepth, casterDepth))
     .map((point) => faceLocalToScreen(basis, point));
 
-  drawWallContactShadow(targetCtx, item, bounds, lightPoint, scale, facePoints);
-
   targetCtx.save();
   targetCtx.globalCompositeOperation = "multiply";
   targetCtx.globalAlpha = wallShadowOpacity(item, lightFactor);
-  targetCtx.filter = state.night.shadowBlur > 0 ? `blur(${state.night.shadowBlur * scale}px)` : "none";
+  const blur = itemShadowBlur(item);
+  targetCtx.filter = blur > 0 ? `blur(${blur * scale}px)` : "none";
   targetCtx.transform(
     (projected[1].x - projected[0].x) / mask.width,
     (projected[1].y - projected[0].y) / mask.width,
@@ -2816,10 +3680,12 @@ function drawWallPlaneShadow(targetCtx, item, bounds, lightPoint, scale, facePoi
   return true;
 }
 
-function drawProjectedShadow(targetCtx, item, bounds, lightPoint, scale = 1, surface = "floor", facePoints = null) {
-  if (!state.night.castShadows || state.night.shadowAlpha <= 0 || state.night.shadowLength <= 0) return;
+function drawProjectedShadow(targetCtx, item, bounds, lightPoint, scale = 1, surface = "floor", facePoints = null, face = null) {
+  if (!state.night.castShadows || itemShadowOpacity(item) <= 0 || itemShadowLength(item) <= 0) return;
   if (!itemCastsShadow(item)) return;
   if (!item.visible || item.opacity <= 0 || bounds.w <= 0 || bounds.h <= 0) return;
+  const isWallSurface = surface === "left_wall" || surface === "right_wall";
+  if (!itemShouldCastShadowOnSurface(item, surface, face)) return;
   const mask = itemShadowMask(item);
   if (!mask) return;
 
@@ -2829,8 +3695,7 @@ function drawProjectedShadow(targetCtx, item, bounds, lightPoint, scale = 1, sur
   const lightFactor = shadowLightFactorForPoint(footX, footY, lightPoint, scale);
   if (lightFactor <= 0) return;
   const heightFactor = Math.max(0.25, Math.min(2.2, itemHeightPx(item) / 32));
-  const shadowLength = state.night.shadowLength * scale * heightFactor;
-  const isWallSurface = surface === "left_wall" || surface === "right_wall";
+  const shadowLength = itemShadowLength(item) * scale * heightFactor;
   const usesWallAnchor = isWallSurface && itemUsesWallShadowAnchor(item);
   if (usesWallAnchor && facePoints && drawWallPlaneShadow(targetCtx, item, bounds, lightPoint, scale, facePoints)) {
     return;
@@ -2843,7 +3708,7 @@ function drawProjectedShadow(targetCtx, item, bounds, lightPoint, scale = 1, sur
   }
   const shadowWidth = isWallSurface ?
     bounds.w * (0.72 + Math.min(0.28, heightFactor * 0.12)) :
-    bounds.w * (1 + Math.min(0.55, state.night.shadowLength / 180) * heightFactor);
+    bounds.w * (1 + Math.min(0.55, itemShadowLength(item) / 180) * heightFactor);
   const shadowHeight = isWallSurface ?
     Math.max(1, bounds.h * (0.52 + Math.min(0.32, itemHeightPx(item) / 200))) :
     Math.max(1, bounds.h * (0.22 + Math.min(0.18, itemHeightPx(item) / 320)));
@@ -2857,7 +3722,7 @@ function drawProjectedShadow(targetCtx, item, bounds, lightPoint, scale = 1, sur
   const destY = isWallSurface ?
     wallAnchorY - wallShadowLift + wallLightShift + wallOffsetY :
     footY - shadowHeight * 0.5 + uy * shadowLength * 0.45;
-  const blur = state.night.shadowBlur * scale;
+  const blur = itemShadowBlur(item) * scale;
 
   targetCtx.save();
   targetCtx.globalAlpha = baseShadowOpacity(item, lightFactor, heightFactor, isWallSurface);
@@ -2877,6 +3742,8 @@ function drawProjectedShadow(targetCtx, item, bounds, lightPoint, scale = 1, sur
 function drawItemShadows(targetCtx, rectForItem, lightPoint, scale = 1, pointsForFace = (face) => face.points) {
   const faces = receivingShadowFaces();
   if (!faces.length) {
+    const hasRoomFaces = state.faces.some((face) => !isSpriteAreaFace(face) && face.points.length >= 3);
+    if (hasRoomFaces) return;
     for (const item of sortedItems()) {
       drawProjectedShadow(targetCtx, item, rectForItem(item), lightPoint, scale, "floor");
     }
@@ -2890,7 +3757,7 @@ function drawItemShadows(targetCtx, rectForItem, lightPoint, scale = 1, pointsFo
     drawPolygonPath(targetCtx, points);
     targetCtx.clip();
     for (const item of sortedItems()) {
-      drawProjectedShadow(targetCtx, item, rectForItem(item), lightPoint, scale, shadowSurfaceForFace(face), points);
+      drawProjectedShadow(targetCtx, item, rectForItem(item), lightPoint, scale, shadowSurfaceForFace(face), points, face);
     }
     targetCtx.restore();
   }
@@ -2901,7 +3768,8 @@ function drawBase() {
   ctx.fillStyle = "#111318";
   ctx.fillRect(0, 0, state.editWidth, state.editHeight);
 
-  if (!state.base) {
+  const background = backgroundForMode();
+  if (!background) {
     ctx.fillStyle = "#202734";
     ctx.fillRect(0, 0, state.editWidth, state.editHeight);
     ctx.strokeStyle = "#526070";
@@ -2912,7 +3780,7 @@ function drawBase() {
     return;
   }
 
-  const img = state.base.img;
+  const img = background.img;
   const prepared = preparedRoomMetrics();
   const edit = editRoomMetrics(prepared);
   ctx.imageSmoothingEnabled = false;
@@ -2936,12 +3804,13 @@ function drawPreviewBackground() {
   previewCtx.fillStyle = "#05070c";
   previewCtx.fillRect(0, 0, state.width, state.height);
 
-  if (!state.base) {
+  const background = backgroundForMode();
+  if (!background) {
     renderRoomGeometry(previewCtx, state.width, state.height);
     return;
   }
 
-  const img = state.base.img;
+  const img = background.img;
   const prepared = preparedRoomMetrics();
   previewCtx.save();
   previewCtx.imageSmoothingEnabled = false;
@@ -3009,6 +3878,7 @@ function drawPointHandle(point, selected) {
 function drawFacesOverlay() {
   ctx.save();
   for (const face of state.faces) {
+    if (!faceVisible(face)) continue;
     if (face.points.length < 3) continue;
     drawPolygonPath(ctx, face.points);
     ctx.fillStyle = faceFillColor(face.type, face.id === state.selectedFaceId ? 0.42 : 0.24);
@@ -3034,7 +3904,14 @@ function drawFacesOverlay() {
     ctx.strokeStyle = "#78d6ee";
     ctx.strokeRect(first.x - 4, first.y - 4, 8, 8);
   }
+  const visiblePointIds = new Set([
+    ...state.draftPoints.map((point) => point.id),
+    ...state.faces
+      .filter(faceVisible)
+      .flatMap((face) => face.points.map((point) => point.id))
+  ]);
   for (const point of state.points) {
+    if (!visiblePointIds.has(point.id)) continue;
     drawPointHandle(point, point.id === state.selectedPointId);
   }
   ctx.restore();
@@ -3045,6 +3922,7 @@ function renderRoomGeometry(targetCtx, width, height) {
   targetCtx.fillStyle = "#05070c";
   targetCtx.fillRect(0, 0, width, height);
   for (const face of state.faces) {
+    if (!faceVisible(face)) continue;
     if (face.points.length < 3) continue;
     if (isSpriteAreaFace(face)) continue;
     drawPolygonPath(targetCtx, faceTargetPoints(face));
@@ -3129,15 +4007,6 @@ function drawLightShape(targetCtx, width, height, lightPoint, radiusScale) {
 }
 
 function drawLightingOverlay(targetCtx, width, height, lightPoint, radiusScale) {
-  targetCtx.save();
-  targetCtx.globalCompositeOperation = "source-over";
-  if (state.mode === "night") {
-    targetCtx.fillStyle = `rgba(8, 18, 42, ${state.night.tint / 100})`;
-    targetCtx.fillRect(0, 0, width, height);
-    targetCtx.fillStyle = `rgba(0, 0, 0, ${state.night.darken / 100})`;
-    targetCtx.fillRect(0, 0, width, height);
-  }
-  targetCtx.restore();
   drawLightShape(targetCtx, width, height, lightPoint, radiusScale);
 }
 
@@ -3167,7 +4036,7 @@ function drawScreenFrame(targetCtx, toEdit = false) {
   targetCtx.restore();
 }
 
-function drawNightOverlay() {
+function drawEditorLightOverlay() {
   drawLightingOverlay(
     ctx,
     state.editWidth,
@@ -3275,7 +4144,7 @@ function drawLightHandle() {
   ctx.stroke();
   ctx.fillStyle = "rgba(17, 19, 24, 0.78)";
   ctx.font = "9px sans-serif";
-  const profileText = currentLightProfile() === "shared" ? "Shared" : currentLightProfile() === "day" ? "Day" : "Night";
+  const profileText = currentLightProfile() === "night" ? "Night" : "Day";
   const labelW = Math.ceil(ctx.measureText(profileText).width + 12);
   ctx.fillRect(point.x + 9, point.y - 11, labelW, 13);
   ctx.fillStyle = "#fff1c2";
@@ -3501,14 +4370,9 @@ function render() {
   state.guides.spriteY = Number(document.getElementById("spriteY").value) || 0;
   state.guides.spriteW = Number(document.getElementById("spriteW").value) || 64;
   state.guides.spriteH = Number(document.getElementById("spriteH").value) || 64;
-  state.night.tint = Number(document.getElementById("nightTint").value) || 0;
-  state.night.darken = Number(document.getElementById("nightDarken").value) || 0;
   commitLightInputsToState();
   state.night.castShadows = document.getElementById("castShadows").checked;
   state.night.shadowMode = normalizeShadowMode(document.getElementById("shadowMode").value);
-  state.night.shadowAlpha = Number(document.getElementById("shadowAlpha").value) || 0;
-  state.night.shadowLength = Number(document.getElementById("shadowLength").value) || 0;
-  state.night.shadowBlur = Number(document.getElementById("shadowBlur").value) || 0;
   state.showGrid = document.getElementById("showGrid").checked;
   state.gridOpacity = clampNumber((Number(document.getElementById("gridOpacity").value) || 0) / 100, 0, 1);
   state.snapToGrid = document.getElementById("snapToGrid").checked;
@@ -3533,7 +4397,7 @@ function render() {
     Math.max(editScaleX(), editScaleY())
   );
   drawItems();
-  drawNightOverlay();
+  drawEditorLightOverlay();
   drawGrid();
   if (state.editMode === "shape") drawFacesOverlay();
   drawGuides();
@@ -3551,32 +4415,68 @@ function refreshList() {
   assetList.innerHTML = "";
   const backgroundTitle = document.createElement("div");
   backgroundTitle.className = "asset-section-title";
-  backgroundTitle.textContent = "Background";
+  backgroundTitle.textContent = "Background variants";
   assetList.appendChild(backgroundTitle);
 
-  const background = document.createElement("div");
-  background.className = "asset-item static background";
-  if (state.base) {
-    const prepared = preparedRoomMetrics();
-    background.innerHTML = `
-      <img class="asset-thumb" alt="" src="${state.base.dataUrl}">
-      <div>
-        <div class="asset-kind">Reference image</div>
-        <div class="asset-name">${escapeHtml(state.base.name)}</div>
-        <div class="asset-meta">${state.base.width}x${state.base.height}, trim ${prepared.trim.width}x${prepared.trim.height}, opacity ${Math.round(state.baseOpacity * 100)}%</div>
-      </div>
-    `;
-  } else {
-    background.innerHTML = `
-      <div class="asset-thumb"></div>
-      <div>
-        <div class="asset-kind">Reference image</div>
-        <div class="asset-name">None</div>
-        <div class="asset-meta">Drop or choose a background image.</div>
-      </div>
-    `;
+  for (const mode of ["day", "night"]) {
+    const background = document.createElement("div");
+    const active = normalizeBackgroundMode(state.mode) === mode;
+    const bg = (state.backgrounds || {})[mode];
+    background.className = `asset-item static background${active ? " active-background" : ""}`;
+    if (bg) {
+      const prepared = preparedRoomMetrics();
+      background.innerHTML = `
+        <img class="asset-thumb" alt="" src="${bg.dataUrl}">
+        <div>
+          <div class="asset-kind">${backgroundLabel(mode)} background${active ? " · previewing" : ""}</div>
+          <div class="asset-name">${escapeHtml(bg.name)}</div>
+          <div class="asset-meta">${bg.width}x${bg.height}, shared trim ${prepared.trim.width}x${prepared.trim.height}, opacity ${Math.round(state.baseOpacity * 100)}%</div>
+        </div>
+        <button class="background-replace" type="button">Replace</button>
+      `;
+    } else {
+      const fallbackText = mode === "night" && (state.backgrounds || {}).day ? "Night preview uses day background until loaded." : "Drop or choose a background image.";
+      background.innerHTML = `
+        <div class="asset-thumb"></div>
+        <div>
+          <div class="asset-kind">${backgroundLabel(mode)} background${active ? " · previewing" : ""}</div>
+          <div class="asset-name">None</div>
+          <div class="asset-meta">${fallbackText}</div>
+        </div>
+        <button class="background-replace" type="button">Load</button>
+      `;
+    }
+    background.addEventListener("click", () => {
+      state.mode = mode;
+      updateModeButtons();
+      syncLightInputsFromState();
+      refreshList();
+      render();
+    });
+    background.querySelector(".background-replace")?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const input = document.getElementById(mode === "night" ? "nightBaseInput" : "baseInput");
+      input.value = "";
+      input.click();
+    });
+    assetList.appendChild(background);
   }
-  assetList.appendChild(background);
+
+  const primary = primaryBackground();
+  if (primary) {
+    const prepared = preparedRoomMetrics();
+    const transform = document.createElement("div");
+    transform.className = "asset-item static background-transform";
+    transform.innerHTML = `
+      <div class="asset-thumb shared-transform-badge">1:1</div>
+      <div>
+        <div class="asset-kind">Shared transform</div>
+        <div class="asset-name">Day/Night linked</div>
+        <div class="asset-meta">trim ${prepared.trim.x},${prepared.trim.y},${prepared.trim.width}x${prepared.trim.height}; export ${state.width}x${state.height}</div>
+      </div>
+    `;
+    assetList.appendChild(transform);
+  }
 
   const itemTitle = document.createElement("div");
   itemTitle.className = "asset-section-title";
@@ -3589,14 +4489,15 @@ function refreshList() {
     const isSprite = item.source === "project_sprite";
     const type = isSprite ? "Project sprite" : "Furniture";
     const cutout = item.cutoutApplied ? ", cutout" : "";
-    const hidden = item.visible ? "" : ", hidden";
-    const bounds = itemBounds(item);
+	    const hidden = item.visible ? "" : ", hidden";
+	    const libraryMark = item.libraryId ? ", lib" : "";
+	    const bounds = itemBounds(item);
     const scaleText = Math.abs(itemScaleX(item) - itemScaleY(item)) < 0.0001
       ? `${Math.round(itemScaleX(item) * 100)}%`
       : `${Math.round(bounds.w)}x${Math.round(bounds.h)}`;
     const meta = isSprite
       ? `${item.action || "-"}/${item.frame || "-"}, ${Math.round(bounds.w)}x${Math.round(bounds.h)}, x ${Math.round(item.x)}, y ${Math.round(item.y)}, z ${item.z}${hidden}`
-      : `${itemKindLabel(item.kind)} h${Math.round(itemHeightPx(item))}, ${furnitureTypeLabel(item.furnitureType)}, x ${Math.round(item.x)}, y ${Math.round(item.y)}, z ${item.z}, ${scaleText}${cutout}${hidden}`;
+	      : `${itemKindLabel(item.kind)} h${Math.round(itemHeightPx(item))}, ${furnitureTypeLabel(item.furnitureType)}, x ${Math.round(item.x)}, y ${Math.round(item.y)}, z ${item.z}, ${scaleText}${cutout}${libraryMark}${hidden}`;
     el.innerHTML = `
       <img class="asset-thumb" alt="" src="${item.dataUrl}">
       <div class="asset-details">
@@ -3741,9 +4642,46 @@ function refreshSelectedPanel() {
   const bounds = itemBounds(item);
   const castsShadow = !isSprite && itemCastsShadow(item);
   const usesWallShadow = !isSprite && castsShadow && itemUsesWallShadowAnchor(item);
-  const shadowMeta = !isSprite
-    ? (castsShadow ? (usesWallShadow ? "wall" : "floor") : "off")
-    : "";
+  const selectedShadowFaceIds = new Set(itemShadowFaceIds(item));
+  const shadowMeta = !isSprite ? itemShadowSummary(item) : "";
+  const wallShadowFaces = state.faces.filter((face) =>
+    normalizeFaceType(face.type) === "wall" &&
+    !isSpriteAreaFace(face) &&
+    face.points.length >= 3
+  );
+  const showWallShadowFaces = usesWallShadow || selectedShadowFaceIds.size > 0;
+  const wallShadowFaceControls = wallShadowFaces.length
+    ? `
+      <div class="shadow-face-targets">
+        <div class="field shadow-face-field">
+          <span>Wall shadow faces</span>
+          <div class="shadow-face-control-row">
+            <details class="shadow-face-dropdown">
+              <summary><span id="shadowFaceDropdownLabel">${escapeHtml(shadowFaceSelectionLabel(item, wallShadowFaces))}</span></summary>
+              <div class="shadow-face-list">
+                ${wallShadowFaces.map((face, index) => {
+                  const surface = shadowSurfaceForFace(face);
+                  const muted = !faceVisible(face) || face.receivesShadow === false;
+                  const meta = `${surface}${face.receivesShadow === false ? ", global off" : ""}${faceVisible(face) ? "" : ", hidden"}`;
+                  return `
+                    <label class="shadow-face-row${muted ? " muted" : ""}">
+                      <input class="shadow-face-target" type="checkbox" data-face-id="${escapeAttr(face.id)}" ${selectedShadowFaceIds.has(String(face.id)) ? "checked" : ""}>
+                      <span>${escapeHtml(shadowFaceDisplayName(face, index))}</span>
+                      <small>${escapeHtml(meta)}</small>
+                    </label>
+                  `;
+                }).join("")}
+              </div>
+            </details>
+          </div>
+        </div>
+        <div class="shadow-face-actions">
+          <button id="clearShadowFaceTargets" type="button">Auto</button>
+        </div>
+        <div class="hint">None selected = automatic. Selected faces override global Receive shadows for this item.</div>
+      </div>
+    `
+    : '<div class="hint">No wall faces yet. Add wall faces in Shape mode to target wall shadows.</div>';
   let html = `
     <details class="property-group" open>
       <summary>
@@ -3770,10 +4708,7 @@ function refreshSelectedPanel() {
           <label class="field">Scale<input id="itemScale" type="number" step="0.001" min="0.0001" value="${itemScaleX(item)}"></label>
           <label class="field">Opacity<input id="itemOpacity" type="number" step="0.05" min="0" max="1" value="${item.opacity}"></label>
         </div>
-        <div class="row">
-          <label class="check-row inline-check"><input id="itemVisible" type="checkbox" ${item.visible ? "checked" : ""}> Visible</label>
-          <label class="check-row inline-check"><input id="itemAspectLock" type="checkbox" ${itemAspectLocked(item) ? "checked" : ""}> Lock aspect</label>
-        </div>
+        <label class="check-row inline-check"><input id="itemAspectLock" type="checkbox" ${itemAspectLocked(item) ? "checked" : ""}> Lock aspect</label>
         <div id="itemSizeHint" class="hint"></div>
       </div>
     </details>
@@ -3796,16 +4731,35 @@ function refreshSelectedPanel() {
       <details class="property-group">
         <summary>
           <span>Shadow</span>
-          <span class="section-meta">${shadowMeta}</span>
+          <span class="section-meta" id="itemShadowMeta">${shadowMeta}</span>
         </summary>
         <div class="property-group-body stack">
           <label class="check-row"><input id="itemCastsShadow" type="checkbox" ${itemCastsShadow(item) ? "checked" : ""}> Cast shadow</label>
+          ${castsShadow ? `
+            <div class="row-3">
+              <label class="field">Opacity<input id="itemShadowOpacity" type="number" min="0" max="100" step="1" value="${Math.round(itemShadowOpacity(item))}"></label>
+              <label class="field">Length<input id="itemShadowLength" type="number" min="0" max="120" step="1" value="${Math.round(itemShadowLength(item))}"></label>
+              <label class="field">Blur<input id="itemShadowBlur" type="number" min="0" max="16" step="0.1" value="${Number(itemShadowBlur(item).toFixed(1))}"></label>
+            </div>
+            <label class="field">Shadow target<select id="itemShadowAnchor">${shadowAnchorOptions}</select></label>
+            ${showWallShadowFaces ? wallShadowFaceControls : ""}
+            <div class="hint">Use Auto for normal floor props. Use Wall for shelves and wall-mounted furniture.</div>
+          ` : ""}
+        </div>
+      </details>
+    `;
+    html += `
+      <details class="property-group">
+        <summary>
+          <span>Shadow Advanced</span>
+          <span class="section-meta">${Math.round(itemHeightPx(item))}px</span>
+        </summary>
+        <div class="property-group-body stack">
           ${castsShadow ? `
             <div class="row">
               <label class="field">Height<input id="itemHeightPx" type="number" min="0" max="160" step="1" value="${Math.round(itemHeightPx(item))}"></label>
               <label class="field">Footprint<select id="itemFootprint">${footprintOptions}</select></label>
             </div>
-            <label class="field">Shadow anchor<select id="itemShadowAnchor">${shadowAnchorOptions}</select></label>
             <div id="footprintPolygonEditor" class="polygon-editor${state.activeItemPolygonKey === "footprintPolygon" ? " active" : ""}">
               <div class="section-title-row">
                 <div class="section-title">Footprint polygon</div>
@@ -3846,10 +4800,8 @@ function refreshSelectedPanel() {
                 <label class="field">Wall shadow Y<input id="itemWallShadowOffsetY" type="number" min="-80" max="80" step="1" value="${Math.round(itemWallShadowOffsetY(item))}"></label>
               </div>
             ` : ""}
+            <div class="hint">Advanced controls tune how the shadow shape is generated. Most furniture can keep these defaults.</div>
           ` : ""}
-          <label class="check-row"><input id="itemReceivesShadow" type="checkbox" ${item.receivesShadow !== false ? "checked" : ""}> Receive shadow</label>
-          <label class="check-row"><input id="itemOccludesSprite" type="checkbox" ${item.occludesSprite ? "checked" : ""}> Occlude sprite</label>
-          <div class="hint">Use presets first. Fine tune wall depth/Y only for wall-mounted objects.</div>
         </div>
       </details>
     `;
@@ -3858,7 +4810,7 @@ function refreshSelectedPanel() {
   html += `
     <details class="property-group">
       <summary>
-        <span>Advanced</span>
+        <span>Layering</span>
         <span class="section-meta">sortY ${Math.round(itemSortY(item))}</span>
       </summary>
       <div class="property-group-body stack">
@@ -3870,6 +4822,10 @@ function refreshSelectedPanel() {
           <label class="field">Slot<input id="itemSlot" type="text" value="${escapeAttr(item.slot)}"></label>
           <label class="field">Layer<input id="itemLayer" type="text" value="${escapeAttr(item.layer || "main")}"></label>
         </div>
+        ${!isSprite ? `
+          <label class="check-row"><input id="itemReceivesShadow" type="checkbox" ${item.receivesShadow !== false ? "checked" : ""}> Receive shadow</label>
+          <label class="check-row"><input id="itemOccludesSprite" type="checkbox" ${item.occludesSprite ? "checked" : ""}> Occlude sprite</label>
+        ` : ""}
         <div class="hint">同一 Z 层内按 Sort Y 排序。默认使用物体底部 y 值，必要时可手动调整。</div>
       </div>
     </details>
@@ -3952,7 +4908,6 @@ function refreshSelectedPanel() {
   bind("itemSlot", (input) => { item.slot = input.value; });
   bind("itemLayer", (input) => { item.layer = input.value; });
   bind("itemSortY", (input) => { item.sortY = Number(input.value) || autoSortY(item); });
-  bind("itemVisible", (input) => { item.visible = input.checked; });
   if (!isSprite) {
     const itemKindInput = document.getElementById("itemKind");
     if (itemKindInput) itemKindInput.addEventListener("change", (event) => {
@@ -3963,6 +4918,12 @@ function refreshSelectedPanel() {
       commitHistory();
     });
     bind("itemHeightPx", (input) => { item.heightPx = coerceNumber(input.value, itemHeightPx(item), 0, 160); });
+    bind("itemShadowOpacity", (input) => {
+      item.shadowOpacity = coerceNumber(input.value, itemShadowOpacity(item), 0, 100);
+      updateSelectedShadowMeta(item);
+    });
+    bind("itemShadowLength", (input) => { item.shadowLength = coerceNumber(input.value, itemShadowLength(item), 0, 120); });
+    bind("itemShadowBlur", (input) => { item.shadowBlur = coerceNumber(input.value, itemShadowBlur(item), 0, 16); });
     const footprintInput = document.getElementById("itemFootprint");
     if (footprintInput) footprintInput.addEventListener("change", (event) => {
       item.footprint = normalizeFootprint(event.target.value);
@@ -3975,6 +4936,28 @@ function refreshSelectedPanel() {
       item.shadowAnchor = normalizeShadowAnchor(event.target.value);
       refreshList();
       refreshSelectedPanel();
+      render();
+      commitHistory();
+    });
+    for (const input of selectedPanel.querySelectorAll(".shadow-face-target")) {
+      input.addEventListener("change", (event) => {
+        const ids = new Set(itemShadowFaceIds(item));
+        const faceId = String(event.target.dataset.faceId || "");
+        if (event.target.checked) ids.add(faceId);
+        else ids.delete(faceId);
+        item.shadowFaceIds = [...ids].filter(Boolean);
+        updateSelectedShadowMeta(item);
+        updateShadowFaceDropdownLabel(item, wallShadowFaces);
+        render();
+        commitHistory();
+      });
+    }
+    document.getElementById("clearShadowFaceTargets")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      item.shadowFaceIds = [];
+      for (const input of selectedPanel.querySelectorAll(".shadow-face-target")) input.checked = false;
+      updateSelectedShadowMeta(item);
+      updateShadowFaceDropdownLabel(item, wallShadowFaces);
       render();
       commitHistory();
     });
@@ -4171,6 +5154,14 @@ function toggleDraftExpanded() {
   selectDraftItem({ expand: false });
 }
 
+function toggleFaceVisible(face) {
+  face.visible = faceVisible(face) ? false : true;
+  refreshFaceList();
+  refreshSelectedPanel();
+  render();
+  commitHistory();
+}
+
 function bindFaceDetailControls(face, root) {
   const detail = root.querySelector(".face-detail");
   if (!detail) return;
@@ -4191,6 +5182,7 @@ function bindFaceDetailControls(face, root) {
       face.shadowSurface = normalizeShadowSurface(null, face.type);
     }
     refreshFaceList();
+    refreshSelectedPanel();
     render();
     commitHistory();
   });
@@ -4198,6 +5190,7 @@ function bindFaceDetailControls(face, root) {
   if (surfaceSelect) surfaceSelect.addEventListener("input", (event) => {
     face.shadowSurface = normalizeShadowSurface(event.target.value, face.type);
     refreshFaceList();
+    refreshSelectedPanel();
     render();
     commitHistory();
   });
@@ -4205,6 +5198,7 @@ function bindFaceDetailControls(face, root) {
   if (receivesShadow) receivesShadow.addEventListener("change", (event) => {
     face.receivesShadow = event.target.checked;
     refreshFaceList();
+    refreshSelectedPanel();
     render();
     commitHistory();
   });
@@ -4262,6 +5256,9 @@ function deleteFaceById(faceId) {
   if (!face) return;
   if (!window.confirm(`Delete ${face.id}?`)) return;
   state.faces = state.faces.filter((entry) => entry.id !== face.id);
+  for (const item of state.items) {
+    item.shadowFaceIds = itemShadowFaceIds(item).filter((id) => id !== String(face.id));
+  }
   state.expandedFaceIds.delete(face.id);
   if (state.selectedFaceId === face.id) {
     state.selectedFaceId = null;
@@ -4270,6 +5267,7 @@ function deleteFaceById(faceId) {
   }
   pruneUnusedPoints();
   refreshFaceList();
+  refreshSelectedPanel();
   render();
   commitHistory();
 }
@@ -4297,14 +5295,16 @@ function refreshFaceList() {
     const selected = face.id === state.selectedFaceId;
     const expanded = state.expandedFaceIds.has(face.id);
     const el = document.createElement("div");
-    el.className = `face-item${selected ? " selected" : ""}`;
+    const visible = faceVisible(face);
+    el.className = `face-item${selected ? " selected" : ""}${visible ? "" : " face-hidden"}`;
     el.innerHTML = `
       <div class="face-summary">
         <div class="face-color" style="background:${faceStrokeColor(face.type)}"></div>
         <div>
           <div class="asset-name">${escapeHtml(face.id)}</div>
-          <div class="asset-meta">${escapeHtml(faceTypeLabel(face.type))}, ${isSpriteAreaFace(face) ? "movement area" : `${escapeHtml(shadowSurfaceForFace(face))}, ${face.receivesShadow === false ? "no shadow" : "receives shadow"}`}, ${face.points.length} points</div>
+          <div class="asset-meta">${visible ? "" : "hidden, "}${escapeHtml(faceTypeLabel(face.type))}, ${isSpriteAreaFace(face) ? "movement area" : `${escapeHtml(shadowSurfaceForFace(face))}, ${face.receivesShadow === false ? "no shadow" : "receives shadow"}`}, ${face.points.length} points</div>
         </div>
+        <button class="face-visibility${visible ? "" : " is-hidden"}" type="button" title="${visible ? "Hide face on canvas" : "Show face on canvas"}" aria-label="${visible ? "Hide face on canvas" : "Show face on canvas"}"></button>
         <button class="face-toggle" type="button" title="${expanded ? "Collapse points" : "Expand points"}">${expanded ? "^" : "v"}</button>
         <button class="face-delete danger" type="button" title="Delete face">x</button>
       </div>
@@ -4314,6 +5314,10 @@ function refreshFaceList() {
     el.querySelector(".face-toggle").addEventListener("click", (event) => {
       event.stopPropagation();
       toggleFaceExpanded(face);
+    });
+    el.querySelector(".face-visibility").addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleFaceVisible(face);
     });
     el.querySelector(".face-delete").addEventListener("click", (event) => {
       event.stopPropagation();
@@ -4335,6 +5339,7 @@ function refreshFaceList() {
           <div class="asset-name">Draft points</div>
           <div class="asset-meta">${state.draftPoints.length} unclosed point(s)</div>
         </div>
+        <div></div>
         <button class="face-toggle" type="button" title="${expanded ? "Collapse points" : "Expand points"}">${expanded ? "^" : "v"}</button>
         <div></div>
       </div>
@@ -4500,6 +5505,7 @@ function pointInPolygon(point, points) {
 function hitTestFace(x, y) {
   const point = { x, y };
   for (let i = state.faces.length - 1; i >= 0; --i) {
+    if (!faceVisible(state.faces[i])) continue;
     if (state.faces[i].points.length < 3) continue;
     if (pointInPolygon(point, state.faces[i].points)) return state.faces[i];
   }
@@ -4510,6 +5516,7 @@ function hitTestPoint(x, y) {
   const radius = editHandleRadius() + 3;
   for (let pointIndex = state.points.length - 1; pointIndex >= 0; --pointIndex) {
     const point = state.points[pointIndex];
+    if (!pointVisibleOnCanvas(point)) continue;
     if (distance({ x, y }, point) <= radius) {
       return { point };
     }
@@ -4545,6 +5552,7 @@ function closeDraftFace() {
     type: "floor",
     shadowSurface: "floor",
     receivesShadow: true,
+    visible: true,
     points: state.draftPoints.slice()
   };
   state.faces.push(face);
@@ -4645,7 +5653,8 @@ function handleShapePointerDown(event) {
 function updateModeButtons() {
   document.getElementById("dayMode").classList.toggle("active", state.mode === "day");
   document.getElementById("nightMode").classList.toggle("active", state.mode === "night");
-  updateLightProfileButtons();
+  state.lightProfile = currentLightProfile();
+  updateLightModeActions();
 }
 
 function updateEditModeButtons() {
@@ -4670,7 +5679,7 @@ function syncInspectorWorkflow() {
   if (propertiesPanel) propertiesPanel.hidden = isShape || isLight;
 
   if (isLight) {
-    setDetailsOpen(nightOverlayPanel, true);
+    setDetailsOpen(lightShadowsPanel, true);
     setDetailsOpen(roomFacesPanel, false);
     setDetailsOpen(layersPanel, false);
     return;
@@ -4679,13 +5688,13 @@ function syncInspectorWorkflow() {
   if (isShape) {
     setDetailsOpen(roomFacesPanel, true);
     setDetailsOpen(layersPanel, false);
-    setDetailsOpen(nightOverlayPanel, false);
+    setDetailsOpen(lightShadowsPanel, false);
     return;
   }
 
   setDetailsOpen(layersPanel, true);
   setDetailsOpen(roomFacesPanel, false);
-  setDetailsOpen(nightOverlayPanel, false);
+  setDetailsOpen(lightShadowsPanel, false);
 }
 
 function updatePreviewZoom() {
@@ -4717,6 +5726,10 @@ function takeSnapshot() {
     mode: state.mode,
     lightProfile: state.lightProfile,
     base: state.base ? { ...state.base } : null,
+    backgrounds: {
+      day: state.backgrounds?.day ? { ...state.backgrounds.day } : null,
+      night: state.backgrounds?.night ? { ...state.backgrounds.night } : null
+    },
     baseFit: BASE_FIT_WIDTH,
     baseOpacity: state.baseOpacity,
     sourceScale: state.sourceScale,
@@ -4767,6 +5780,10 @@ function createSessionRecord() {
     savedAt: new Date().toISOString(),
     files: {
       base: snapshot.base?.name || "",
+      backgrounds: {
+        day: snapshot.backgrounds?.day?.name || "",
+        night: snapshot.backgrounds?.night?.name || ""
+      },
       items: (snapshot.items || []).map((item) => ({
         id: item.id,
         name: item.name,
@@ -4822,21 +5839,6 @@ async function writeSessionToIndexedDb(record) {
   }
 }
 
-async function writeSessionExportHandle(handle) {
-  const db = await openSessionDb();
-  try {
-    await new Promise((resolve, reject) => {
-      const transaction = db.transaction(SESSION_DB_STORE, "readwrite");
-      transaction.objectStore(SESSION_DB_STORE).put(handle, SESSION_EXPORT_HANDLE_KEY);
-      transaction.oncomplete = resolve;
-      transaction.onerror = () => reject(transaction.error);
-      transaction.onabort = () => reject(transaction.error);
-    });
-  } finally {
-    db.close();
-  }
-}
-
 async function readSessionFromIndexedDb() {
   const db = await openSessionDb();
   try {
@@ -4851,42 +5853,12 @@ async function readSessionFromIndexedDb() {
   }
 }
 
-async function readSessionExportHandle() {
-  const db = await openSessionDb();
-  try {
-    return await new Promise((resolve, reject) => {
-      const transaction = db.transaction(SESSION_DB_STORE, "readonly");
-      const request = transaction.objectStore(SESSION_DB_STORE).get(SESSION_EXPORT_HANDLE_KEY);
-      request.onsuccess = () => resolve(request.result || null);
-      request.onerror = () => reject(request.error);
-    });
-  } finally {
-    db.close();
-  }
-}
-
-async function clearSessionExportHandleFromIndexedDb() {
-  const db = await openSessionDb();
-  try {
-    await new Promise((resolve, reject) => {
-      const transaction = db.transaction(SESSION_DB_STORE, "readwrite");
-      transaction.objectStore(SESSION_DB_STORE).delete(SESSION_EXPORT_HANDLE_KEY);
-      transaction.oncomplete = resolve;
-      transaction.onerror = () => reject(transaction.error);
-      transaction.onabort = () => reject(transaction.error);
-    });
-  } finally {
-    db.close();
-  }
-}
-
 async function clearSessionFromIndexedDb() {
   const db = await openSessionDb();
   try {
     await new Promise((resolve, reject) => {
       const transaction = db.transaction(SESSION_DB_STORE, "readwrite");
       transaction.objectStore(SESSION_DB_STORE).delete(SESSION_DB_KEY);
-      transaction.objectStore(SESSION_DB_STORE).delete(SESSION_EXPORT_HANDLE_KEY);
       transaction.oncomplete = resolve;
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
@@ -4939,41 +5911,6 @@ function updateSessionExportMeta(text) {
   if (sessionExportMeta) sessionExportMeta.textContent = text;
 }
 
-async function forgetSessionExportHandle() {
-  try {
-    await clearSessionExportHandleFromIndexedDb();
-  } catch (_) {}
-}
-
-async function ensureSessionExportHandle(record, forcePick = false) {
-  if (!window.showSaveFilePicker) return null;
-
-  let handle = null;
-  if (!forcePick) {
-    try {
-      handle = await readSessionExportHandle();
-    } catch (_) {}
-  }
-
-  if (handle) {
-    try {
-      if (await verifyFileHandlePermission(handle, "readwrite")) return handle;
-    } catch (_) {
-      handle = null;
-    }
-  }
-
-  handle = await window.showSaveFilePicker({
-    suggestedName: createSessionFileName(record),
-    types: [{
-      description: "JSON files",
-      accept: { "application/json": [".json"] }
-    }]
-  });
-  await writeSessionExportHandle(handle);
-  return handle;
-}
-
 async function verifyFileHandlePermission(handle, mode = "readwrite") {
   if (!handle?.queryPermission || !handle?.requestPermission) return false;
   const options = { mode };
@@ -4983,33 +5920,46 @@ async function verifyFileHandlePermission(handle, mode = "readwrite") {
 
 async function writeSessionFile(record, forcePick = false) {
   const text = JSON.stringify(record, null, 2);
-  if (!window.showSaveFilePicker) {
+  if (!window.showDirectoryPicker) {
     downloadText(createSessionFileName(record), text, "application/json");
     return "downloaded";
   }
 
-  const handle = await ensureSessionExportHandle(record, forcePick);
-  if (!handle) {
+  const rootHandle = await ensureRoomEditorRootHandle(forcePick);
+  if (!rootHandle) {
     downloadText(createSessionFileName(record), text, "application/json");
     return "downloaded";
   }
 
-  const writable = await handle.createWritable();
-  try {
-    await writable.write(text);
-  } finally {
-    await writable.close();
-  }
-  return `updated ${handle.name || "session file"}`;
+  const sessionsDirectory = await getOrCreateDirectoryHandle(rootHandle, ["sessions"]);
+  await writeFileText(sessionsDirectory, SESSION_DEFAULT_FILE_NAME, `${text}\n`);
+  return `updated sessions/${SESSION_DEFAULT_FILE_NAME}`;
+}
+
+async function hydrateBackgroundSnapshot(background) {
+  if (!background?.dataUrl) return background || null;
+  const hydrated = { ...background };
+  const img = await loadImageSource(hydrated.dataUrl);
+  hydrated.img = img;
+  hydrated.width = hydrated.width || img.naturalWidth;
+  hydrated.height = hydrated.height || img.naturalHeight;
+  return hydrated;
 }
 
 async function hydrateSessionSnapshot(snapshot) {
   const hydrated = JSON.parse(JSON.stringify(snapshot));
+  hydrated.backgrounds = {
+    day: await hydrateBackgroundSnapshot(hydrated.backgrounds?.day || null),
+    night: await hydrateBackgroundSnapshot(hydrated.backgrounds?.night || null)
+  };
   if (hydrated.base?.dataUrl) {
-    const img = await loadImageSource(hydrated.base.dataUrl);
-    hydrated.base.img = img;
-    hydrated.base.width = hydrated.base.width || img.naturalWidth;
-    hydrated.base.height = hydrated.base.height || img.naturalHeight;
+    hydrated.base = await hydrateBackgroundSnapshot(hydrated.base);
+  }
+  if (!hydrated.backgrounds.day && !hydrated.backgrounds.night && hydrated.base) {
+    hydrated.backgrounds.day = hydrated.base;
+  }
+  if (!hydrated.base) {
+    hydrated.base = hydrated.backgrounds.day || hydrated.backgrounds.night || null;
   }
 
   hydrated.items = await Promise.all((hydrated.items || []).map(async (item) => {
@@ -5044,6 +5994,8 @@ function refreshAfterStateRestore() {
   updateEditModeButtons();
   updateToolButtons();
   updatePreviewZoom();
+  updateZoomControls();
+  updateGridOpacityLabel();
   render();
   updateUndoButtons();
 }
@@ -5063,8 +6015,10 @@ async function saveEditorSession(options = {}) {
     }
   }
   const itemCount = record.snapshot.items?.length || 0;
+  const dayName = record.files.backgrounds?.day || record.files.base || "no day background";
+  const nightName = record.files.backgrounds?.night || "no night background";
   updateSessionExportMeta(`Last save: ${backend}, ${exportResult}.`);
-  setStatus(`Session saved to ${backend}, ${exportResult}: ${record.files.base || "no background"}, ${itemCount} item(s).`);
+  setStatus(`Session saved to ${backend}, ${exportResult}: day ${dayName}, night ${nightName}, ${itemCount} item(s).`);
 }
 
 async function loadEditorSession() {
@@ -5073,19 +6027,36 @@ async function loadEditorSession() {
     setStatus("No saved session found.");
     return;
   }
+  await restoreSessionRecord(record);
+  updateSessionExportMeta(`Loaded browser session saved at ${record.savedAt ? new Date(record.savedAt).toLocaleString() : "unknown time"}.`);
+  setStatus(`Session loaded from ${record.savedAt ? new Date(record.savedAt).toLocaleString() : "saved state"}.`);
+}
+
+async function restoreSessionRecord(record) {
   const snapshot = await hydrateSessionSnapshot(record.snapshot);
   restoreSnapshot(snapshot);
   state.history = [];
   state.historyIndex = -1;
   refreshAfterStateRestore();
   commitHistory();
-  updateSessionExportMeta(`Loaded browser session saved at ${record.savedAt ? new Date(record.savedAt).toLocaleString() : "unknown time"}.`);
-  setStatus(`Session loaded from ${record.savedAt ? new Date(record.savedAt).toLocaleString() : "saved state"}.`);
+}
+
+async function tryAutoLoadEditorSession() {
+  try {
+    const record = await readSessionRecord();
+    if (!record?.snapshot) return false;
+    await restoreSessionRecord(record);
+    updateSessionExportMeta(`Auto-loaded browser session saved at ${record.savedAt ? new Date(record.savedAt).toLocaleString() : "unknown time"}.`);
+    return true;
+  } catch (error) {
+    console.warn("Auto session load failed; keeping empty room editor.", error);
+    return false;
+  }
 }
 
 async function clearEditorSession() {
   await clearSessionRecord();
-  updateSessionExportMeta("No saved session. Save will ask for a new local JSON file when supported.");
+  updateSessionExportMeta("No saved session. Save will ask for the room_editor folder when supported.");
   setStatus("Saved session cleared.");
 }
 
@@ -5105,8 +6076,12 @@ function restoreSnapshot(snapshot) {
   state.editHeight = snapshot.editHeight;
   state.editZoom = normalizedEditZoom(snapshot.editZoom == null ? 100 : Number(snapshot.editZoom) <= 3 ? Number(snapshot.editZoom) * 100 : snapshot.editZoom);
   state.mode = snapshot.mode;
-  state.lightProfile = normalizeLightProfile(snapshot.lightProfile || (snapshot.night?.separateModeLights ? state.mode : "shared"));
-  state.base = snapshot.base;
+  state.lightProfile = currentLightProfile();
+  state.backgrounds = {
+    day: snapshot.backgrounds?.day || snapshot.base || null,
+    night: snapshot.backgrounds?.night || null
+  };
+  setLegacyBaseFromBackgrounds();
   state.baseFit = BASE_FIT_WIDTH;
   state.baseOpacity = snapshot.baseOpacity;
   state.sourceScale = snapshot.sourceScale;
@@ -5120,6 +6095,7 @@ function restoreSnapshot(snapshot) {
   state.points = Array.from(pointMap.values());
   state.faces = (snapshot.faces || []).map((face) => ({
     ...face,
+    visible: face.visible !== false,
     points: face.points.map(restorePoint).filter(Boolean)
   }));
   state.selectedFaceId = snapshot.selectedFaceId;
@@ -5133,9 +6109,8 @@ function restoreSnapshot(snapshot) {
   state.drawingFace = snapshot.drawingFace;
   state.guides = { ...snapshot.guides };
   state.night = normalizeNightSettings(snapshot.night);
-  state.lightProfile = state.night.separateModeLights ?
-    normalizeLightProfile(state.lightProfile === "shared" ? state.mode : state.lightProfile) :
-    "shared";
+  ensureSeparateModeLights();
+  state.lightProfile = currentLightProfile();
   state.showGrid = snapshot.showGrid;
   state.gridOpacity = clampNumber(snapshot.gridOpacity ?? 0.18, 0, 1);
   state.snapToGrid = snapshot.snapToGrid;
@@ -5225,14 +6200,9 @@ function syncInputsFromState() {
   document.getElementById("spriteY").value = state.guides.spriteY;
   document.getElementById("spriteW").value = state.guides.spriteW;
   document.getElementById("spriteH").value = state.guides.spriteH;
-  document.getElementById("nightTint").value = state.night.tint;
-  document.getElementById("nightDarken").value = state.night.darken;
   syncLightInputsFromState();
   document.getElementById("castShadows").checked = state.night.castShadows;
   document.getElementById("shadowMode").value = state.night.shadowMode;
-  document.getElementById("shadowAlpha").value = state.night.shadowAlpha;
-  document.getElementById("shadowLength").value = state.night.shadowLength;
-  document.getElementById("shadowBlur").value = state.night.shadowBlur;
   updateBaseImageMeta();
   updateModeButtons();
   updateEditModeButtons();
@@ -5242,7 +6212,7 @@ function syncInputsFromState() {
 }
 
 function updateWorkflowStatus() {
-  if (!state.base) {
+  if (!hasBackground()) {
     setWorkflowStatus("Step 1/4: Drop a reference image to start.");
     return;
   }
@@ -5276,8 +6246,23 @@ function updateSharedPointHint() {
   }
 }
 
+function exportBackgroundInfo(mode, prepared = preparedRoomMetrics()) {
+  const normalized = normalizeBackgroundMode(mode);
+  const bg = (state.backgrounds || {})[normalized];
+  return {
+    fileName: bg ? bg.name : "",
+    role: normalized,
+    loaded: Boolean(bg),
+    sourceWidth: bg ? bg.width : 0,
+    sourceHeight: bg ? bg.height : 0,
+    fit: BASE_FIT_WIDTH,
+    trim: { ...prepared.trim }
+  };
+}
+
 function exportLayoutObject() {
   const prepared = preparedRoomMetrics();
+  const primary = primaryBackground();
   return {
     version: 2,
     canvas: {
@@ -5287,11 +6272,19 @@ function exportLayoutObject() {
       screenHeight: GAME_SCREEN_HEIGHT
     },
     base: {
-      fileName: state.base ? state.base.name : "",
+      fileName: primary ? primary.name : "",
       fit: BASE_FIT_WIDTH,
-      sourceWidth: state.base ? state.base.width : 0,
-      sourceHeight: state.base ? state.base.height : 0,
+      sourceWidth: primary ? primary.width : 0,
+      sourceHeight: primary ? primary.height : 0,
       trim: { ...prepared.trim }
+    },
+    backgrounds: {
+      activeMode: normalizeBackgroundMode(state.mode),
+      sharedTransform: true,
+      fit: BASE_FIT_WIDTH,
+      trim: { ...prepared.trim },
+      day: exportBackgroundInfo("day", prepared),
+      night: exportBackgroundInfo("night", prepared)
     },
     sourceScale: Number(state.sourceScale.toFixed(4)),
     baseOpacity: Number(state.baseOpacity.toFixed(4)),
@@ -5317,17 +6310,23 @@ function exportLayoutObject() {
       anchor: item.anchor,
       slot: item.slot,
       layer: item.layer,
-      source: item.source || "furniture",
-      furnitureType: item.source === "furniture" ? normalizeFurnitureType(item.furnitureType) : "",
+	      source: item.source || "furniture",
+	      libraryId: item.libraryId || "",
+	      libraryRevision: item.libraryRevision || 0,
+	      furnitureType: item.source === "furniture" ? normalizeFurnitureType(item.furnitureType) : "",
       kind: normalizeItemKind(item.kind),
       heightPx: Math.round(itemHeightPx(item)),
       footprint: normalizeFootprint(item.footprint),
       footprintPolygon: compactLocalPolygon(item.footprintPolygon),
       shadowPolygon: compactLocalPolygon(item.shadowPolygon),
       shadowAnchor: normalizeShadowAnchor(item.shadowAnchor),
+      shadowFaceIds: itemShadowFaceIds(item),
       wallShadowDepthPx: Math.round(itemWallShadowDepthPx(item)),
       wallShadowOffsetY: Math.round(itemWallShadowOffsetY(item)),
       castsShadow: itemCastsShadow(item),
+      shadowOpacity: Math.round(itemShadowOpacity(item)),
+      shadowLength: Math.round(itemShadowLength(item)),
+      shadowBlur: Number(itemShadowBlur(item).toFixed(1)),
       receivesShadow: item.receivesShadow !== false,
       occludesSprite: !!item.occludesSprite,
       sortY: Math.round(itemSortY(item)),
@@ -5343,6 +6342,7 @@ function exportLayoutObject() {
 
 function exportRoomGeometryObject() {
   const prepared = preparedRoomMetrics();
+  const primary = primaryBackground();
   return {
     version: 2,
     coordinateSpace: "target",
@@ -5370,16 +6370,21 @@ function exportRoomGeometryObject() {
       trim: { ...prepared.trim }
     },
     reference: {
-      fileName: state.base ? state.base.name : "",
-      sourceWidth: state.base ? state.base.width : 0,
-      sourceHeight: state.base ? state.base.height : 0,
+      fileName: primary ? primary.name : "",
+      sourceWidth: primary ? primary.width : 0,
+      sourceHeight: primary ? primary.height : 0,
       trim: { ...prepared.trim },
       fit: BASE_FIT_WIDTH,
       opacity: Number(state.baseOpacity.toFixed(4))
     },
+    backgrounds: {
+      day: exportBackgroundInfo("day", prepared),
+      night: exportBackgroundInfo("night", prepared)
+    },
     faces: state.faces.map((face, index) => ({
       id: face.id,
       type: normalizeFaceType(face.type),
+      visible: faceVisible(face),
       shadowSurface: shadowSurfaceForFace(face),
       receivesShadow: !isSpriteAreaFace(face) && face.receivesShadow !== false,
       drawOrder: index,
@@ -5390,6 +6395,7 @@ function exportRoomGeometryObject() {
       .filter(isSpriteAreaFace)
       .map((face) => ({
         id: face.id,
+        visible: faceVisible(face),
         points: faceTargetPoints(face).map((point) => [Math.round(point.x), Math.round(point.y)]),
         sourcePoints: faceSourcePoints(face)
       }))
@@ -5416,12 +6422,97 @@ function downloadBlob(fileName, blob) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function downloadCanvas(fileName) {
+function dataUrlToBlob(dataUrl) {
+  const [header, body] = String(dataUrl || "").split(",");
+  const mime = (header.match(/^data:([^;]+)/) || [])[1] || "application/octet-stream";
+  const binary = atob(body || "");
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; ++index) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return new Blob([bytes], { type: mime });
+}
+
+function canvasToPngBlob(canvasEl) {
+  return new Promise((resolve, reject) => {
+    if (canvasEl.toBlob) {
+      try {
+        canvasEl.toBlob((blob) => {
+          if (blob) {
+            resolve(blob);
+            return;
+          }
+          try {
+            resolve(dataUrlToBlob(canvasEl.toDataURL("image/png")));
+          } catch (error) {
+            reject(error);
+          }
+        }, "image/png");
+        return;
+      } catch (error) {
+        try {
+          resolve(dataUrlToBlob(canvasEl.toDataURL("image/png")));
+        } catch (_) {
+          reject(error);
+        }
+        return;
+      }
+    }
+    try {
+      resolve(dataUrlToBlob(canvasEl.toDataURL("image/png")));
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+async function ensureExportablePreviewImages() {
+  let converted = 0;
+  for (const item of state.items) {
+    if (!item.visible || !item.dataUrl || /^data:/i.test(item.dataUrl)) continue;
+    if (item.source === "project_sprite") {
+      try {
+        if (await hydrateProjectSpriteImage(item)) {
+          converted += 1;
+          continue;
+        }
+      } catch (_) {}
+    }
+    try {
+      const dataUrl = await imageSourceToDataUrl(item.dataUrl);
+      item.img = await loadImageSource(dataUrl);
+      item.dataUrl = dataUrl;
+      item.exportableImage = true;
+      converted += 1;
+    } catch (_) {
+      item.exportableImage = false;
+    }
+  }
+  return converted;
+}
+
+function resetPreviewCanvasBitmap() {
+  previewCanvas.width = Math.max(1, state.width);
+  previewCanvas.height = Math.max(1, state.height);
+}
+
+async function downloadCanvas(fileName) {
+  await ensureExportablePreviewImages();
+  resetPreviewCanvasBitmap();
   renderPreview();
-  previewCanvas.toBlob((blob) => {
+  try {
+    const blob = await canvasToPngBlob(previewCanvas);
     downloadBlob(fileName, blob);
-    if (blob) setStatus(`Preview PNG exported: ${fileName}.`);
-  }, "image/png");
+    setStatus(`Preview PNG exported: ${fileName}.`);
+  } catch (error) {
+    console.error(error);
+    const blockedItems = state.items
+      .filter((item) => item.visible && item.exportableImage === false)
+      .map((item) => item.fileName || item.name || item.id)
+      .slice(0, 3);
+    const blockedText = blockedItems.length ? ` Non-exportable image: ${blockedItems.join(", ")}.` : "";
+    setStatus(`Preview PNG export failed. Reload the editor and retry; if it still fails, re-import path-based images.${blockedText}`);
+  }
 }
 
 async function importLayout(file) {
@@ -5460,7 +6551,7 @@ async function importLayout(file) {
     const importedTrim = coerceTrimBox(geometry.prepared?.trim || geometry.reference?.trim || layout.base?.trim);
     if (importedTrim) {
       state.baseTrim = importedTrim;
-    } else if (!state.base) {
+    } else if (!hasBackground()) {
       state.baseTrim = null;
     }
     const roomWidth = Number(geometry.room?.width || canvasWidth);
@@ -5500,6 +6591,7 @@ async function importLayout(file) {
       return {
         id: face.id || `face${index + 1}`,
         type,
+        visible: face.visible !== false,
         shadowSurface: normalizeShadowSurface(face.shadowSurface, type),
         receivesShadow: type === FACE_TYPE_SPRITE_AREA ? false : face.receivesShadow !== false,
         points
@@ -5526,25 +6618,28 @@ async function importLayout(file) {
   if (layout.night) {
     const nextNight = normalizeNightSettings(layout.night);
     state.night = nextNight;
-    document.getElementById("nightTint").value = nextNight.tint;
-    document.getElementById("nightDarken").value = nextNight.darken;
     syncLightInputsFromState();
     document.getElementById("castShadows").checked = nextNight.castShadows;
     document.getElementById("shadowMode").value = nextNight.shadowMode;
-    document.getElementById("shadowAlpha").value = nextNight.shadowAlpha;
-    document.getElementById("shadowLength").value = nextNight.shadowLength;
-    document.getElementById("shadowBlur").value = nextNight.shadowBlur;
   }
 
-  const missing = [];
-  const byFile = new Map(state.items.map((item) => [item.fileName, item]));
-  for (const entry of layout.furniture || []) {
-    const item = byFile.get(entry.fileName);
-    if (!item) {
-      missing.push(entry.fileName);
-      continue;
-    }
-    Object.assign(item, {
+	  const missing = [];
+	  const byFile = new Map(state.items.map((item) => [item.fileName, item]));
+	  for (const entry of layout.furniture || []) {
+	    let item = byFile.get(entry.fileName);
+	    if (!item && entry.libraryId) {
+	      const libraryEntry = furnitureLibraryEntryById(entry.libraryId);
+	      if (libraryEntry) {
+	        item = await createFurnitureItemFromLibraryEntry(libraryEntry, entry);
+	        state.items.push(item);
+	        byFile.set(item.fileName, item);
+	      }
+	    }
+	    if (!item) {
+	      missing.push(entry.libraryId || entry.fileName);
+	      continue;
+	    }
+	    Object.assign(item, {
       id: entry.id || item.id,
       name: entry.name || item.name,
       x: entry.x ?? item.x,
@@ -5559,18 +6654,24 @@ async function importLayout(file) {
       visible: entry.visible ?? item.visible,
       anchor: entry.anchor || item.anchor,
       slot: entry.slot || item.slot,
-      layer: entry.layer || item.layer,
-      source: entry.source || item.source,
-      furnitureType: entry.furnitureType || item.furnitureType || inferFurnitureType(entry.fileName || item.fileName || entry.name || item.name),
+	      layer: entry.layer || item.layer,
+	      source: entry.source || item.source,
+	      libraryId: entry.libraryId || item.libraryId,
+	      libraryRevision: entry.libraryRevision ?? item.libraryRevision,
+	      furnitureType: entry.furnitureType || item.furnitureType || inferFurnitureType(entry.fileName || item.fileName || entry.name || item.name),
       kind: entry.kind || item.kind || inferItemKind(entry.fileName || item.fileName || entry.name || item.name, entry.furnitureType || item.furnitureType),
       heightPx: entry.heightPx ?? item.heightPx,
       footprint: entry.footprint || item.footprint,
       footprintPolygon: normalizeLocalPolygon(entry.footprintPolygon ?? item.footprintPolygon),
       shadowPolygon: normalizeLocalPolygon(entry.shadowPolygon ?? item.shadowPolygon),
       shadowAnchor: entry.shadowAnchor ?? item.shadowAnchor,
+      shadowFaceIds: normalizeShadowFaceIds(entry.shadowFaceIds ?? item.shadowFaceIds),
       wallShadowDepthPx: entry.wallShadowDepthPx ?? item.wallShadowDepthPx,
       wallShadowOffsetY: entry.wallShadowOffsetY ?? item.wallShadowOffsetY,
       castsShadow: entry.castsShadow ?? item.castsShadow,
+      shadowOpacity: entry.shadowOpacity ?? entry.shadowAlpha ?? item.shadowOpacity,
+      shadowLength: entry.shadowLength ?? item.shadowLength,
+      shadowBlur: entry.shadowBlur ?? item.shadowBlur,
       receivesShadow: entry.receivesShadow ?? item.receivesShadow,
       occludesSprite: entry.occludesSprite ?? item.occludesSprite,
       sortY: entry.sortY ?? item.sortY,
@@ -5615,11 +6716,15 @@ function escapeAttr(value) {
 }
 
 document.getElementById("baseInput").addEventListener("change", (event) => {
-  if (event.target.files[0]) loadBase(event.target.files[0]);
+  if (event.target.files[0]) loadBase(event.target.files[0], "day");
+});
+
+document.getElementById("nightBaseInput").addEventListener("change", (event) => {
+  if (event.target.files[0]) loadBase(event.target.files[0], "night");
 });
 
 document.getElementById("replaceBaseButton").addEventListener("click", () => {
-  const input = document.getElementById("baseInput");
+  const input = document.getElementById(state.mode === "night" ? "nightBaseInput" : "baseInput");
   input.value = "";
   input.click();
 });
@@ -5641,24 +6746,6 @@ document.getElementById("aspectLock").addEventListener("change", () => {
   commitHistory();
 });
 
-document.getElementById("lightProfileShared").addEventListener("click", () => {
-  setLightProfile("shared");
-  render();
-  commitHistory();
-});
-
-document.getElementById("lightProfileDay").addEventListener("click", () => {
-  setLightProfile("day");
-  render();
-  commitHistory();
-});
-
-document.getElementById("lightProfileNight").addEventListener("click", () => {
-  setLightProfile("night");
-  render();
-  commitHistory();
-});
-
 document.getElementById("copyLightToDay").addEventListener("click", () => {
   copyActiveLightToProfile("day");
   render();
@@ -5671,7 +6758,7 @@ document.getElementById("copyLightToNight").addEventListener("click", () => {
   commitHistory();
 });
 
-for (const id of ["baseOpacity", "sourceScale", "furnitureImportMode", "baseFit", "showGuides", "showGrid", "gridOpacity", "snapToGrid", "spriteX", "spriteY", "spriteW", "spriteH", "nightTint", "nightDarken", "lightShape", "lightStrength", "lightX", "lightY", "lightDepth", "lightRadius", "lightAngle", "lightSpread", "castShadows", "shadowMode", "shadowAlpha", "shadowLength", "shadowBlur"]) {
+for (const id of ["baseOpacity", "sourceScale", "furnitureImportMode", "baseFit", "showGuides", "showGrid", "gridOpacity", "snapToGrid", "spriteX", "spriteY", "spriteW", "spriteH", "lightShape", "lightStrength", "lightX", "lightY", "lightDepth", "lightRadius", "lightAngle", "lightSpread", "castShadows", "shadowMode"]) {
   document.getElementById(id).addEventListener("input", () => {
     render();
     if (id === "baseOpacity" || id === "baseFit") refreshList();
@@ -5684,6 +6771,7 @@ document.getElementById("dayMode").addEventListener("click", () => {
   state.mode = "day";
   updateModeButtons();
   syncLightInputsFromState();
+  refreshList();
   render();
   commitHistory();
 });
@@ -5693,6 +6781,7 @@ document.getElementById("nightMode").addEventListener("click", () => {
   state.mode = "night";
   updateModeButtons();
   syncLightInputsFromState();
+  refreshList();
   render();
   commitHistory();
 });
@@ -5764,14 +6853,47 @@ document.getElementById("redoAction").addEventListener("click", redo);
 
 document.getElementById("exportJson").addEventListener("click", () => {
   downloadText("room_layout.json", JSON.stringify(exportLayoutObject(), null, 2), "application/json");
+  setStatus("Layout JSON exported: room_layout.json. It includes roomGeometry.");
 });
 
-document.getElementById("exportGeometry").addEventListener("click", () => {
+document.getElementById("exportGeometry")?.addEventListener("click", () => {
   downloadText("room_geometry.json", JSON.stringify(exportRoomGeometryObject(), null, 2), "application/json");
 });
 
-document.getElementById("exportPreview").addEventListener("click", () => {
-  downloadCanvas(`room_${state.mode}_preview.png`);
+document.getElementById("exportPreview").addEventListener("click", async () => {
+  await downloadCanvas(`room_${state.mode}_preview.png`);
+});
+
+document.getElementById("exportFurnitureLibrary")?.addEventListener("click", () => {
+  exportFurnitureLibraryBundle();
+});
+
+document.getElementById("exportSelectedFurnitureLibrary")?.addEventListener("click", async () => {
+  const item = selectedItem();
+  if (!item || item.source !== "furniture") {
+    setStatus("Select annotated furniture before saving it to the library.");
+    return;
+  }
+  try {
+    await addFurnitureItemsToLibrary([item]);
+  } catch (error) {
+    console.error(error);
+    setStatus(isFilePickerAbort(error) ? "Room editor folder was not selected." : (error.message || "Adding selected furniture failed."));
+  }
+});
+
+document.getElementById("changeFurnitureLibraryRoot")?.addEventListener("click", async () => {
+  if (!window.showDirectoryPicker) {
+    setStatus("Direct library writing is not supported in this browser. Use Export furniture bundle instead.");
+    return;
+  }
+  try {
+    await ensureRoomEditorRootHandle(true);
+    setStatus("Room editor folder selected. Add selected and Save session will write under this tool folder.");
+  } catch (error) {
+    console.error(error);
+    setStatus(isFilePickerAbort(error) ? "Room editor folder was not selected." : (error.message || "Room editor folder selection failed."));
+  }
 });
 
 document.getElementById("saveSession").addEventListener("click", async () => {
@@ -5785,7 +6907,6 @@ document.getElementById("saveSession").addEventListener("click", async () => {
 
 document.getElementById("changeSessionFile").addEventListener("click", async () => {
   try {
-    await forgetSessionExportHandle();
     await saveEditorSession({ forcePick: true });
   } catch (error) {
     console.error(error);
@@ -6110,26 +7231,36 @@ dropZone.addEventListener("drop", async (event) => {
   const json = files.find((file) => file.name.endsWith(".json"));
   const images = files.filter((file) => file.type.startsWith("image/"));
   if (json) await importLayout(json);
-  if (images.length === 1 && !state.base) {
-    await loadBase(images[0]);
+  if (images.length === 1 && !hasBackground()) {
+    await loadBase(images[0], state.mode);
   } else if (images.length) {
     await addFurnitureFiles(images);
   }
 });
 
-commitHistory();
-refreshList();
-refreshSelectedPanel();
-refreshFaceList();
-refreshSelectedFacePanel();
-updateBaseImageMeta();
-updateModeButtons();
-updateEditModeButtons();
-updateToolButtons();
-updatePreviewZoom();
-updateZoomControls();
-updateGridOpacityLabel();
-setupHoverTooltips();
-updateUndoButtons();
-initProjectSpriteControls();
-render();
+function refreshInitialEmptyEditor() {
+  commitHistory();
+  refreshList();
+  refreshSelectedPanel();
+  refreshFaceList();
+  refreshSelectedFacePanel();
+  updateBaseImageMeta();
+  updateModeButtons();
+  updateEditModeButtons();
+  updateToolButtons();
+  updatePreviewZoom();
+  updateZoomControls();
+  updateGridOpacityLabel();
+  updateUndoButtons();
+  render();
+}
+
+async function initializeEditor() {
+  setupHoverTooltips();
+  initProjectSpriteControls();
+  initFurnitureLibraryControls();
+  const loaded = await tryAutoLoadEditorSession();
+  if (!loaded) refreshInitialEmptyEditor();
+}
+
+initializeEditor();

@@ -2,148 +2,481 @@
   "version": 2,
   "canvas": {
     "width": 240,
-    "height": 135
+    "height": 163,
+    "screenWidth": 240,
+    "screenHeight": 135
   },
   "base": {
-    "fileName": "ChatGPT Image 2026年7月3日 19_25_48.png",
-    "fit": "cover",
+    "fileName": "empty_room.png",
+    "fit": "fit_width",
     "sourceWidth": 1672,
     "sourceHeight": 941,
     "trim": {
-      "x": 151,
+      "x": 152,
       "y": 0,
-      "width": 1383,
-      "height": 936
+      "width": 1380,
+      "height": 939
+    }
+  },
+  "backgrounds": {
+    "activeMode": "night",
+    "sharedTransform": true,
+    "fit": "fit_width",
+    "trim": {
+      "x": 152,
+      "y": 0,
+      "width": 1380,
+      "height": 939
+    },
+    "day": {
+      "fileName": "empty_room.png",
+      "role": "day",
+      "loaded": true,
+      "sourceWidth": 1672,
+      "sourceHeight": 941,
+      "fit": "fit_width",
+      "trim": {
+        "x": 152,
+        "y": 0,
+        "width": 1380,
+        "height": 939
+      }
+    },
+    "night": {
+      "fileName": "standard_room_night.png",
+      "role": "night",
+      "loaded": true,
+      "sourceWidth": 1672,
+      "sourceHeight": 941,
+      "fit": "fit_width",
+      "trim": {
+        "x": 152,
+        "y": 0,
+        "width": 1380,
+        "height": 939
+      }
     }
   },
   "sourceScale": 6.97,
-  "baseOpacity": 0.58,
+  "baseOpacity": 1,
   "roomGeometry": {
     "version": 2,
+    "coordinateSpace": "target",
     "room": {
       "width": 240,
-      "height": 162
+      "height": 163
     },
     "viewport": {
       "width": 240,
       "height": 135
     },
+    "canvas": {
+      "width": 240,
+      "height": 163
+    },
     "edit": {
-      "width": 1672,
-      "height": 941
+      "width": 1380,
+      "height": 939
     },
     "prepared": {
       "width": 240,
-      "height": 162,
+      "height": 163,
       "y": 0,
-      "scale": 0.17353579,
+      "scale": 0.17391304,
       "trim": {
-        "x": 151,
+        "x": 152,
         "y": 0,
-        "width": 1383,
-        "height": 936
+        "width": 1380,
+        "height": 939
       }
     },
     "reference": {
-      "fileName": "ChatGPT Image 2026年7月3日 19_25_48.png",
+      "fileName": "empty_room.png",
       "sourceWidth": 1672,
       "sourceHeight": 941,
       "trim": {
-        "x": 151,
+        "x": 152,
         "y": 0,
-        "width": 1383,
-        "height": 936
+        "width": 1380,
+        "height": 939
       },
-      "fit": "cover",
-      "opacity": 0.58
+      "fit": "fit_width",
+      "opacity": 1
+    },
+    "backgrounds": {
+      "day": {
+        "fileName": "empty_room.png",
+        "role": "day",
+        "loaded": true,
+        "sourceWidth": 1672,
+        "sourceHeight": 941,
+        "fit": "fit_width",
+        "trim": {
+          "x": 152,
+          "y": 0,
+          "width": 1380,
+          "height": 939
+        }
+      },
+      "night": {
+        "fileName": "standard_room_night.png",
+        "role": "night",
+        "loaded": true,
+        "sourceWidth": 1672,
+        "sourceHeight": 941,
+        "fit": "fit_width",
+        "trim": {
+          "x": 152,
+          "y": 0,
+          "width": 1380,
+          "height": 939
+        }
+      }
     },
     "faces": [
       {
         "id": "face1",
-        "type": "floor",
+        "type": "wall",
+        "visible": false,
+        "shadowSurface": "left_wall",
+        "receivesShadow": true,
         "drawOrder": 0,
         "points": [
           [
+            10,
+            36
+          ],
+          [
+            11,
+            107
+          ],
+          [
             120,
-            71
+            72
           ],
           [
-            108,
-            73
-          ],
-          [
-            82,
-            63
-          ],
-          [
-            53,
-            66
-          ],
-          [
-            30,
-            79
-          ],
-          [
-            62,
-            98
-          ],
-          [
-            64,
-            111
-          ],
-          [
-            35,
-            121
-          ],
-          [
-            132,
-            155
-          ],
-          [
-            234,
-            110
+            119,
+            5
           ]
         ],
         "sourcePoints": [
           [
-            842,
+            207,
+            209
+          ],
+          [
+            214,
+            617
+          ],
+          [
+            841,
+            414
+          ],
+          [
+            837,
+            31
+          ]
+        ]
+      },
+      {
+        "id": "face2",
+        "type": "wall",
+        "visible": false,
+        "shadowSurface": "right_wall",
+        "receivesShadow": true,
+        "drawOrder": 1,
+        "points": [
+          [
+            232,
+            38
+          ],
+          [
+            229,
+            109
+          ],
+          [
+            120,
+            72
+          ],
+          [
+            119,
+            5
+          ]
+        ],
+        "sourcePoints": [
+          [
+            1488,
+            219
+          ],
+          [
+            1469,
+            629
+          ],
+          [
+            841,
+            414
+          ],
+          [
+            837,
+            31
+          ]
+        ]
+      },
+      {
+        "id": "face3",
+        "type": "floor",
+        "visible": false,
+        "shadowSurface": "floor",
+        "receivesShadow": true,
+        "drawOrder": 2,
+        "points": [
+          [
+            133,
+            154
+          ],
+          [
+            11,
+            107
+          ],
+          [
+            120,
+            72
+          ],
+          [
+            229,
+            109
+          ]
+        ],
+        "sourcePoints": [
+          [
+            918,
+            887
+          ],
+          [
+            214,
+            617
+          ],
+          [
+            841,
+            414
+          ],
+          [
+            1469,
+            629
+          ]
+        ]
+      },
+      {
+        "id": "face4",
+        "type": "sprite_area",
+        "visible": true,
+        "shadowSurface": "floor",
+        "receivesShadow": false,
+        "drawOrder": 3,
+        "points": [
+          [
+            120,
+            72
+          ],
+          [
+            106,
+            76
+          ],
+          [
+            93,
+            69
+          ],
+          [
+            69,
+            67
+          ],
+          [
+            51,
+            72
+          ],
+          [
+            39,
+            79
+          ],
+          [
+            44,
+            91
+          ],
+          [
+            57,
+            99
+          ],
+          [
+            55,
+            113
+          ],
+          [
+            38,
+            123
+          ],
+          [
+            132,
+            154
+          ],
+          [
+            232,
+            109
+          ]
+        ],
+        "sourcePoints": [
+          [
+            841,
+            416
+          ],
+          [
+            763,
+            436
+          ],
+          [
+            688,
+            399
+          ],
+          [
+            551,
+            387
+          ],
+          [
+            448,
             412
           ],
           [
-            774,
-            423
+            379,
+            454
           ],
           [
-            626,
-            365
+            407,
+            525
           ],
           [
-            455,
-            380
+            477,
+            571
           ],
           [
-            325,
-            453
+            470,
+            650
           ],
           [
-            510,
-            564
+            369,
+            708
           ],
           [
-            519,
-            641
+            913,
+            885
           ],
           [
-            355,
-            700
+            1487,
+            628
+          ]
+        ]
+      }
+    ],
+    "spriteAreas": [
+      {
+        "id": "face4",
+        "visible": true,
+        "points": [
+          [
+            120,
+            72
           ],
           [
-            909,
-            893
+            106,
+            76
           ],
           [
-            1497,
-            632
+            93,
+            69
+          ],
+          [
+            69,
+            67
+          ],
+          [
+            51,
+            72
+          ],
+          [
+            39,
+            79
+          ],
+          [
+            44,
+            91
+          ],
+          [
+            57,
+            99
+          ],
+          [
+            55,
+            113
+          ],
+          [
+            38,
+            123
+          ],
+          [
+            132,
+            154
+          ],
+          [
+            232,
+            109
+          ]
+        ],
+        "sourcePoints": [
+          [
+            841,
+            416
+          ],
+          [
+            763,
+            436
+          ],
+          [
+            688,
+            399
+          ],
+          [
+            551,
+            387
+          ],
+          [
+            448,
+            412
+          ],
+          [
+            379,
+            454
+          ],
+          [
+            407,
+            525
+          ],
+          [
+            477,
+            571
+          ],
+          [
+            470,
+            650
+          ],
+          [
+            369,
+            708
+          ],
+          [
+            913,
+            885
+          ],
+          [
+            1487,
+            628
           ]
         ]
       }
@@ -161,9 +494,441 @@
     "hudH": 54
   },
   "night": {
-    "tint": 46,
-    "darken": 34,
-    "lamp": 36
+    "lightShape": "cone",
+    "lightStrength": 109,
+    "lightX": 232,
+    "lightY": 20,
+    "lightDepth": 180,
+    "lightRadius": 240,
+    "lightAngle": 160,
+    "lightSpread": 28,
+    "separateModeLights": true,
+    "dayLight": {
+      "lightShape": "cone",
+      "lightStrength": 109,
+      "lightX": 239,
+      "lightY": 21,
+      "lightDepth": 180,
+      "lightRadius": 240,
+      "lightAngle": 161,
+      "lightSpread": 28
+    },
+    "nightLight": {
+      "lightShape": "radial",
+      "lightStrength": 64,
+      "lightX": 123,
+      "lightY": 4,
+      "lightDepth": 180,
+      "lightRadius": 191,
+      "lightAngle": 175,
+      "lightSpread": 20
+    },
+    "castShadows": true,
+    "shadowMode": "auto",
+    "shadowAlpha": 53,
+    "shadowLength": 22,
+    "shadowBlur": 0
   },
-  "furniture": []
+  "furniture": [
+    {
+      "id": "f1",
+      "name": "furniture_carpet",
+      "fileName": "furniture_0000_carpet.png",
+      "x": 82,
+      "y": 94,
+      "z": 19,
+      "scale": 0.09,
+      "scaleX": 0.09,
+      "scaleY": 0.09,
+      "aspectLocked": true,
+      "targetWidth": 102,
+      "targetHeight": 46,
+      "sourceScale": 6.97,
+      "opacity": 1,
+      "visible": true,
+      "anchor": "top_left",
+      "slot": "floor",
+      "layer": "main",
+      "source": "furniture",
+      "libraryId": "furniture_furniture_0000_carpet",
+      "libraryRevision": 1,
+      "furnitureType": "decoration",
+      "kind": "rug",
+      "heightPx": 0,
+      "footprint": "polygon",
+      "footprintPolygon": [],
+      "shadowPolygon": [],
+      "shadowAnchor": "auto",
+      "wallShadowDepthPx": 0,
+      "wallShadowOffsetY": 0,
+      "castsShadow": false,
+      "shadowOpacity": 38,
+      "shadowLength": 28,
+      "shadowBlur": 0.6,
+      "receivesShadow": true,
+      "occludesSprite": false,
+      "sortY": 140,
+      "cutoutApplied": false,
+      "speciesId": 0,
+      "action": "",
+      "frame": "",
+      "sourceWidth": 1133,
+      "sourceHeight": 512
+    },
+    {
+      "id": "f6",
+      "name": "furniture_shelf",
+      "fileName": "furniture_0001_shelf.png",
+      "x": 68,
+      "y": 21,
+      "z": 20,
+      "scale": 0.0594,
+      "scaleX": 0.0594,
+      "scaleY": 0.0594,
+      "aspectLocked": true,
+      "targetWidth": 51,
+      "targetHeight": 31,
+      "sourceScale": 6.97,
+      "opacity": 1,
+      "visible": true,
+      "anchor": "top_left",
+      "slot": "wall",
+      "layer": "wall",
+      "source": "furniture",
+      "libraryId": "furniture_furniture_0001_shelf",
+      "libraryRevision": 1,
+      "furnitureType": "decoration",
+      "kind": "wall_prop",
+      "heightPx": 32,
+      "footprint": "none",
+      "footprintPolygon": [],
+      "shadowPolygon": [],
+      "shadowAnchor": "wall",
+      "shadowFaceIds": [
+        "face1"
+      ],
+      "wallShadowDepthPx": 9,
+      "wallShadowOffsetY": 0,
+      "castsShadow": true,
+      "shadowOpacity": 100,
+      "shadowLength": 22,
+      "shadowBlur": 0,
+      "receivesShadow": false,
+      "occludesSprite": false,
+      "sortY": 52,
+      "cutoutApplied": false,
+      "speciesId": 0,
+      "action": "",
+      "frame": "",
+      "sourceWidth": 859,
+      "sourceHeight": 522
+    },
+    {
+      "id": "f4",
+      "name": "furniture_bed",
+      "fileName": "furniture_0003_bed.png",
+      "x": 35,
+      "y": 66,
+      "z": 20,
+      "scale": 0.0792,
+      "scaleX": 0.0792,
+      "scaleY": 0.0792,
+      "aspectLocked": true,
+      "targetWidth": 78,
+      "targetHeight": 46,
+      "sourceScale": 6.97,
+      "opacity": 1,
+      "visible": true,
+      "anchor": "top_left",
+      "slot": "floor",
+      "layer": "main",
+      "source": "furniture",
+      "libraryId": "furniture_furniture_0003_bed",
+      "libraryRevision": 1,
+      "furnitureType": "bed",
+      "kind": "furniture",
+      "heightPx": 13,
+      "footprint": "ellipse",
+      "footprintPolygon": [
+        [
+          0.07,
+          0.62
+        ],
+        [
+          0.17,
+          0.53
+        ],
+        [
+          0.32,
+          0.47
+        ],
+        [
+          0.5,
+          0.45
+        ],
+        [
+          0.69,
+          0.48
+        ],
+        [
+          0.84,
+          0.55
+        ],
+        [
+          0.94,
+          0.66
+        ],
+        [
+          0.91,
+          0.82
+        ],
+        [
+          0.76,
+          0.94
+        ],
+        [
+          0.55,
+          0.99
+        ],
+        [
+          0.34,
+          0.97
+        ],
+        [
+          0.15,
+          0.86
+        ]
+      ],
+      "shadowPolygon": [
+        [
+          0.02,
+          0.34
+        ],
+        [
+          0.08,
+          0.22
+        ],
+        [
+          0.24,
+          0.1
+        ],
+        [
+          0.49,
+          0.02
+        ],
+        [
+          0.75,
+          0.09
+        ],
+        [
+          0.92,
+          0.24
+        ],
+        [
+          0.99,
+          0.43
+        ],
+        [
+          0.96,
+          0.66
+        ],
+        [
+          0.86,
+          0.82
+        ],
+        [
+          0.67,
+          0.96
+        ],
+        [
+          0.5,
+          1
+        ],
+        [
+          0.3,
+          0.96
+        ],
+        [
+          0.12,
+          0.82
+        ],
+        [
+          0.03,
+          0.62
+        ]
+      ],
+      "shadowAnchor": "auto",
+      "wallShadowDepthPx": 0,
+      "wallShadowOffsetY": 0,
+      "castsShadow": true,
+      "shadowOpacity": 100,
+      "shadowLength": 22,
+      "shadowBlur": 0,
+      "receivesShadow": true,
+      "occludesSprite": true,
+      "sortY": 112,
+      "cutoutApplied": false,
+      "speciesId": 0,
+      "action": "",
+      "frame": "",
+      "sourceWidth": 985,
+      "sourceHeight": 587
+    },
+    {
+      "id": "f3",
+      "name": "furniture_bowl",
+      "fileName": "furniture_0002_bowl.png",
+      "x": 35,
+      "y": 106,
+      "z": 22,
+      "scale": 0.0226,
+      "scaleX": 0.0226,
+      "scaleY": 0.0226,
+      "aspectLocked": true,
+      "targetWidth": 20,
+      "targetHeight": 14,
+      "sourceScale": 6.97,
+      "opacity": 1,
+      "visible": true,
+      "anchor": "top_left",
+      "slot": "floor",
+      "layer": "main",
+      "source": "furniture",
+      "libraryId": "furniture_furniture_0002_bowl",
+      "libraryRevision": 1,
+      "furnitureType": "bowl",
+      "kind": "low_prop",
+      "heightPx": 8,
+      "footprint": "polygon",
+      "footprintPolygon": [
+        [
+          0.5796,
+          0.9849
+        ],
+        [
+          0.8772,
+          0.8925
+        ],
+        [
+          1,
+          0.6356
+        ],
+        [
+          0.6771,
+          0.3599
+        ],
+        [
+          0.2826,
+          0.3948
+        ],
+        [
+          0.0048,
+          0.6313
+        ],
+        [
+          0.2383,
+          0.9341
+        ]
+      ],
+      "shadowPolygon": [
+        [
+          0.8078,
+          0.9032
+        ],
+        [
+          0.9398,
+          0.6673
+        ],
+        [
+          0.9228,
+          0.3716
+        ],
+        [
+          0.6896,
+          0.154
+        ],
+        [
+          0.4672,
+          0.0703
+        ],
+        [
+          0.0781,
+          0.2644
+        ],
+        [
+          0.0978,
+          0.6185
+        ],
+        [
+          0.1887,
+          0.896
+        ],
+        [
+          0.5082,
+          0.9874
+        ]
+      ],
+      "shadowAnchor": "auto",
+      "wallShadowDepthPx": 0,
+      "wallShadowOffsetY": 0,
+      "castsShadow": true,
+      "shadowOpacity": 38,
+      "shadowLength": 28,
+      "shadowBlur": 0.6,
+      "receivesShadow": true,
+      "occludesSprite": false,
+      "sortY": 120,
+      "cutoutApplied": false,
+      "speciesId": 0,
+      "action": "",
+      "frame": "",
+      "sourceWidth": 886,
+      "sourceHeight": 635
+    },
+    {
+      "id": "f5",
+      "name": "001 Bulbasaur",
+      "fileName": "001_bulbasaur_BULBASAUR_IDLE_FRONT_0.png",
+      "x": 107,
+      "y": 74,
+      "z": 30,
+      "scale": 1,
+      "scaleX": 1,
+      "scaleY": 1,
+      "aspectLocked": true,
+      "targetWidth": 64,
+      "targetHeight": 64,
+      "sourceScale": 1,
+      "opacity": 1,
+      "visible": true,
+      "anchor": "top_left",
+      "slot": "sprite_preview",
+      "layer": "sprite_preview",
+      "source": "project_sprite",
+      "libraryId": "",
+      "libraryRevision": 0,
+      "furnitureType": "",
+      "kind": "furniture",
+      "heightPx": 32,
+      "footprint": "rect",
+      "footprintPolygon": [],
+      "shadowPolygon": [],
+      "shadowAnchor": "auto",
+      "wallShadowDepthPx": 0,
+      "wallShadowOffsetY": 0,
+      "castsShadow": true,
+      "shadowOpacity": 38,
+      "shadowLength": 28,
+      "shadowBlur": 0.6,
+      "receivesShadow": true,
+      "occludesSprite": true,
+      "sortY": 138,
+      "cutoutApplied": false,
+      "speciesId": 1,
+      "action": "idle",
+      "frame": "BULBASAUR_IDLE_FRONT_0",
+      "sourceWidth": 64,
+      "sourceHeight": 64
+    }
+  ]
 }

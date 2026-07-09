@@ -30,8 +30,11 @@ open ./tools/room_editor/index.html
 
 ## Recommended Asset Flow
 
-1. Generate or prepare one reference room image.
-2. Import the reference image.
+1. Generate or prepare a day room image and, optionally, a matching night room
+   image.
+2. Import `Day background`. Import `Night background` when you have a separate
+   night image. Night preview falls back to the day image until the night image
+   is loaded.
 3. Confirm the game preview size. `Room W` and `Room H` are target game pixels;
    keep `Lock room aspect ratio` enabled when changing only one dimension.
 4. Adjust `Reference opacity` so the original-size image is useful as a tracing
@@ -74,9 +77,10 @@ open ./tools/room_editor/index.html
       one-pixel brush.
     - `Reset after` restores the after image back to the original.
     - `Use cutout` imports the edited after image.
-13. Check `Asset management` for the current background, all furniture, and all
-    sprite preview items. Use the row `Delete` button to remove imported
-    furniture or sprite preview items.
+13. Check `Asset management` for the day/night background variants, all
+    furniture, and all sprite preview items. Day and Night backgrounds share one
+    trim, one coordinate system, room faces, and furniture layout. Use the row
+    `Delete` button to remove imported furniture or sprite preview items.
 14. Drag furniture on the canvas and edit transform values in the `Transform`
     group. Use `Object semantics` to set `Kind`, `Height`, `Footprint`, shadow,
     receiving, and sprite occlusion behavior. Rugs and floor decals should keep
@@ -95,16 +99,15 @@ open ./tools/room_editor/index.html
     contact shadow below the object.
 15. Use `Project sprites` to add the firmware's current Pokemon frame as a
     scale/placement preview.
-16. Use the collapsible `Light and shadows` panel on the right to tune the shared
-    day/night light source. Toggle `Day` / `Night` in the stage toolbar to
-    preview the result. Night adds the extra tint/darken overlay; both modes use
-    the configured light and projected shadows:
+16. Use the collapsible `Light and shadows` panel on the right to tune the
+    active day/night light source. Toggle `Day` / `Night` in the stage toolbar to
+    preview the result. Day uses `Day background`; Night uses `Night background`
+    when loaded and otherwise falls back to the day image. Both modes use the
+    configured light and projected shadows:
    - drag the `Light` handle on the edit canvas to change `Light X/Y`.
-   - `Light profile`: `Shared` edits one light used by both modes. `Day` and
-     `Night` edit separate lights and automatically switch the preview to the
-     matching mode.
-   - `Copy to Day` / `Copy to Night`: duplicate the currently edited light into
-     the selected day/night profile before fine tuning it.
+   - The right-side light controls follow `Preview Day` / `Preview Night`
+     directly. Day edits the day light; Night edits the night light.
+   - `复制到白天` is shown in Day mode, and `复制到夜晚` is shown in Night mode.
    - `Light shape`: use `Radial` for local glow or `Cone` for window-like beams.
      The shape controls the lit region only; it does not force shadow direction.
    - `Light depth`: 2.5D height of the light source. Smaller values exaggerate
@@ -126,28 +129,40 @@ open ./tools/room_editor/index.html
    - `Light radius` and the cone shape limit which objects can cast a shadow. In
      directional shadow mode, moving the light handle changes the lit cone/region,
      while `Cone angle` controls the parallel shadow direction.
-   - `Shadow opacity`, `Shadow length`, and `Shadow blur`: tune projected
-     shadow strength, height gain, and softness. `Shadow blur` supports `0.1px`
-     steps for small soft-shadow adjustments. Click the preview canvas to zoom
-     it.
+   - Furniture-level `Opacity`, `Length`, and `Blur` in each item's `Shadow`
+     section tune that specific object's projected shadow. `Blur` supports
+     `0.1px` steps for small soft-shadow adjustments. Click the preview canvas
+     to zoom it.
 17. Use `Toolbox` / `Measure H` to drag a vertical measurement on the edit
     canvas. The readout shows both original canvas pixels and target game pixels.
 18. Use the export buttons:
    - `Save session`: stores the current editor session in the browser and writes
-     a local JSON backup. The first save asks for the export file location; later
-     saves check permission and update the same file. Browsers without file
-     handle support fall back to downloading a `stickmon_room_editor_session_*.json`
-     backup. The backup includes the last imported file names, images,
-     furniture, room geometry, and UI settings.
+     `sessions/stickmon_room_editor_session.json` under the selected
+     `tools/room_editor` folder. Browsers without directory handle support fall
+     back to downloading a `stickmon_room_editor_session_*.json` backup. The
+     backup includes the last imported file names, images, furniture, room
+     geometry, and UI settings.
    - `Load session`: restores the browser-saved session.
    - `Clear saved`: removes the browser-saved session.
    - `Layout JSON`: can import normal room layout exports or downloaded session
      backup files.
-   - `Export layout`: writes `room_layout.json`, including room geometry and
-     furniture.
-   - `Export room data`: writes `room_geometry.json`, containing only the
-     wall/floor faces for firmware import.
+   - `Export layout JSON`: writes `room_layout.json`, including room geometry,
+     furniture, guides, and lighting. Treat this as the single source of truth.
    - `Export preview PNG`: writes a screenshot of the current day/night preview.
+     Project sprite preview frames are embedded as data URLs so this also works
+     when the editor is opened directly as a local file. If export still fails,
+     reload the editor and re-import any path-based external images.
+   - `Add to Library`: on a selected annotated furniture item, writes that item
+     directly into `generated/furniture_library` under the selected
+     `tools/room_editor` folder, and regenerates `generated/furniture_library_assets.js`.
+   - `Delete` in the Furniture library list removes that item from the room
+     editor furniture library. Already placed scene items remain in the room and
+     are detached from the removed `libraryId`.
+   - `Change tool folder`: reselects the `tools/room_editor` folder used by
+     `Save session`, `Add to Library`, and library `Delete`.
+   - `Export furniture bundle`: writes the currently annotated furniture as a
+     portable fallback bundle for browsers that cannot use local directory
+     handles.
 
 Face endpoints are stored in original reference-image pixels inside
 `sourcePoints`. Exported `points` are scaled to game pixels. Default game target
@@ -203,7 +218,8 @@ the editor.
    `Lock aspect ratio`. Target width and height can be reduced to a minimum of
    `1px`. `Object semantics` exports `kind`, `heightPx`, `footprint`,
    `shadowAnchor`, `wallShadowDepthPx`, `wallShadowOffsetY`, `castsShadow`,
-   `receivesShadow`, `occludesSprite`, and `sortY`; the older `furnitureType`
+   `shadowOpacity`, `shadowLength`, `shadowBlur`, `receivesShadow`,
+   `occludesSprite`, and `sortY`; the older `furnitureType`
    field is still exported for compatibility.
 7. Enable `Show 8px grid` and `Snap furniture to 8px grid` for pixel-perfect
    placement.
@@ -214,8 +230,8 @@ the editor.
 
 The right-side `Asset management` list shows:
 
-- the active reference/background image, including source size, trim size, and
-  opacity
+- the day/night background variants, including source size, shared trim size,
+  active preview mode, and opacity
 - imported furniture PNGs, including semantic kind, height, placement, target
   size, scale, visibility, and whether a cutout was applied
 - project sprite previews, including selected action/frame and placement
@@ -231,8 +247,8 @@ The editor separates source image size from target canvas size:
 - Preview always draws the full target room, then displays it with CSS at a
   maximum width of `240px`; height follows the room aspect ratio.
 - The white/cyan frame in preview marks the `240x135` game screen range.
-- When a reference/background image is loaded, preview uses that image as the
-  background at the target canvas size. Room geometry is only used as the
+- When a background image is loaded, preview uses the current Day/Night variant
+  as the background at the target canvas size. Room geometry is only used as the
   fallback background when no image is loaded.
 - Furniture can also be generated larger.
 - In the default furniture import mode, furniture display size is divided by
@@ -262,8 +278,8 @@ python3 \
 
 The script writes:
 
-- `origin_asset/generated/pokemon_sprites/*.png` (one PNG per species/frame)
-- `origin_asset/generated/pokemon_preview_assets.js`
+- `tools/room_editor/generated/pokemon_sprites/*.png` (one PNG per species/frame)
+- `tools/room_editor/generated/pokemon_preview_assets.js`
 
 Open `index.html`, then use `Project sprites` to select a species, action, and
 frame before clicking `Add sprite preview`. The added sprite appears in the
@@ -281,19 +297,49 @@ It uses the current `Sprite X/Y/W/H` guide as its initial placement.
 The exported layout uses this model:
 
 - `roomGeometry`: wall/floor polygons for the generated room background.
-- `base`: reference image metadata for editor reloads.
+- `backgrounds`: day/night background metadata plus the shared trim/fit
+  transform.
+- `base`: primary background metadata retained for old tooling compatibility.
 - `furniture`: ordered by `z`, then composited over the base.
 - `guides`: sprite and HUD safe zones for preview only.
-- `night`: night overlay plus shared day/night light-source and projected-shadow
-  parameters for preview and generated script.
+- `night`: shared day/night light-source and projected-shadow parameters for
+  preview and generated script.
+
+The previous standalone `room_geometry.json` export is now folded into
+`room_layout.json` as `roomGeometry`.
 
 Furniture should be generated as isolated PNGs. Do not rely on extracting
 furniture from a complete AI room image as the long-term source of truth.
 
+## Furniture Library
+
+Annotated furniture can be promoted into a reusable library:
+
+1. Select or configure furniture in the scene.
+2. Set its semantic data: preset/category, height, shadow anchor, footprint
+   polygon, and shadow polygon as needed.
+3. Use `Add to Library` from the selected furniture's `Library` section. The
+   first write asks for the `tools/room_editor` folder; later writes reuse the
+   stored directory handle and update the tool files directly.
+4. Use `Delete` in the library list to remove an item from the reusable library.
+   This rewrites the manifest and editor preview data, then removes the item's
+   JSON and image file from the tool-local library. Placed instances stay in the
+   current scene as local furniture.
+5. Use `Export furniture bundle` only as a fallback or batch handoff.
+
+The tool-local library lives in `tools/room_editor/generated/furniture_library/`.
+Direct writes also regenerate `tools/room_editor/generated/furniture_library_assets.js`
+with embedded image data so the editor can browse the library and export preview
+PNGs even when opened through `file://`.
+
+Room layouts store `libraryId` for library furniture, while keeping a snapshot
+of placement and annotation fields. If the library is present when importing a
+layout, missing furniture images can be restored from the library automatically.
+
 ## Editor Interaction Notes
 
 - The status bar at the bottom shows the current workflow step:
-  1. Load a reference image.
+  1. Load a day or night background image.
   2. Trace wall/floor faces in Shape mode.
   3. Import furniture in Furniture mode.
   4. Add sprite previews, tune lighting/shadows, and export.
@@ -316,11 +362,12 @@ python3 ./tools/room_editor/compose_room.py \
   --out room_preview
 ```
 
-Pass `--base empty_room.png` when the command-line preview should use a
-background image. Without `--base`, `roomGeometry.faces` are used as the fallback
-background.
+Pass `--day-base empty_room_day.png --night-base empty_room_night.png` when the
+command-line preview should use separate day/night background images. `--base`
+still works as a shared fallback for old layouts. Without a background path,
+`roomGeometry.faces` are used as the fallback background.
 Project sprite preview items are resolved from
-`origin_asset/generated/pokemon_sprites` automatically.
+`tools/room_editor/generated/pokemon_sprites` automatically.
 
 It writes:
 
