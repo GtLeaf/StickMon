@@ -137,6 +137,8 @@ private:
     uint32_t lastClockSaveMs = 0;
     uint32_t lastSavedClockMinutes = 0;
     uint16_t hpRecoveryMinuteAcc = 0;
+    uint16_t satietyDecayMinuteAcc = 0;
+    bool satietyDecayWasSleeping = false;
     bool idleActive = false;
     bool saveDirty = false;
     bool pendingMoveLearn = false;

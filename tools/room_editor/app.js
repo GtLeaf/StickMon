@@ -12,12 +12,12 @@ const GAME_SCREEN_HEIGHT = 135;
 const PREVIEW_MAX_WIDTH = 240;
 const LIGHT_HANDLE_RADIUS = 7;
 const BASE_FIT_WIDTH = "fit_width";
+const BACKGROUND_MODES = ["day", "night"];
 const FURNITURE_LIBRARY_BUNDLE_TYPE = "stickmon-furniture-library-bundle";
 const TOOLTIP_DELAY_MS = 900;
 const CONTROL_TOOLTIPS = {
-  baseInput: "导入白天房间背景图。编辑器会自动裁剪透明/黑边，并按 240 宽生成预览和导出尺寸。",
-  nightBaseInput: "导入夜晚房间背景图。夜晚图默认复用白天图的裁剪、坐标、描面和家具位置。",
-  replaceBaseButton: "替换当前 Day/Night 预览模式对应的背景图，保留已有家具、面和光照配置。",
+  baseInput: "导入一张或多张背景图。导入后可在 Asset management 中设置 Day/Night 显示。",
+  replaceBaseButton: "继续添加背景图，保留已有家具、面和光照配置。",
   furnitureInput: "导入家具或道具 PNG。导入后可以在主画布拖动、缩放并配置影子。",
   layoutInput: "导入之前导出的 layout/session JSON，用于恢复房间配置。",
   baseOpacity: "调整主编辑画布中背景参考图的透明度，不影响最终导出。",
@@ -34,8 +34,8 @@ const CONTROL_TOOLTIPS = {
   showGrid: "显示 8px 网格，方便按游戏像素对齐家具。",
   gridOpacity: "调整 8px 网格线的透明度。只影响主编辑画布显示，不影响预览和导出。",
   snapToGrid: "拖动家具时吸附到 8px 网格。",
-  dayMode: "切换到白天预览，使用 Day background 和白天光照配置。",
-  nightMode: "切换到夜晚预览，使用 Night background 和夜晚光照配置；未导入夜晚图时暂用白天图预览。",
+  dayMode: "切换到白天预览，绘制勾选 Day 的背景层和白天光照配置。",
+  nightMode: "切换到夜晚预览，绘制勾选 Night 的背景层和夜晚光照配置。",
   furnitureMode: "家具模式：选择、拖动、缩放家具和精灵预览物。",
   shapeMode: "描面模式：绘制墙面和地板面，用于承接投影。",
   editZoom: "缩放主编辑画布的显示比例。只影响查看细节，不影响坐标和导出。",
@@ -49,10 +49,10 @@ const CONTROL_TOOLTIPS = {
   selectTool: "选择工具：用于普通选择、拖动和编辑。",
   measureHeightTool: "测量工具：在高清主画布上测量高度，并换算成游戏像素。",
   clearMeasure: "清除当前测量线。",
-  saveSession: "保存当前编辑器会话，同时默认更新 room_editor/sessions 下的 session JSON。",
-  loadSession: "从浏览器保存的会话恢复编辑器状态。",
+  saveSession: "保存当前编辑器会话，同时更新项目 session JSON 和浏览器草稿缓存。",
+  loadSession: "优先从项目 session JSON 恢复；找不到时再恢复浏览器未保存草稿。",
   changeSessionFile: "重新选择 room_editor 工具目录，session 默认保存到 sessions/ 下。",
-  clearSession: "清除浏览器里保存的编辑器会话。",
+  clearSession: "清除浏览器里的未保存草稿缓存，不删除项目 session JSON。",
   exportJson: "导出完整 layout JSON，已包含 roomGeometry、家具、引导线和光照配置。",
   exportPreview: "导出当前预览 PNG，用于快速检查最终效果。",
   exportFurnitureLibrary: "导出当前场景中已标注的家具库 bundle，作为直接写入不可用时的备用方式。",
@@ -85,6 +85,8 @@ const CONTROL_TOOLTIPS = {
   itemScale: "按源图尺寸缩放物体。",
   itemOpacity: "编辑器内物体透明度。",
   itemAspectLock: "锁定宽高比例，调整宽度时同步高度。",
+  itemVisibleDay: "这个家具是否在白天房间中显示。",
+  itemVisibleNight: "这个家具是否在夜晚房间中显示。",
   itemCastsShadow: "这个物体是否产生投影。",
   itemShadowOpacity: "这个物体自身投影的不透明度。",
   itemShadowLength: "这个物体自身投影长度。",
@@ -365,6 +367,8 @@ const state = {
   previewZoomed: false,
   editZoom: 1,
   base: null,
+  backgroundItems: [],
+  nextBackgroundId: 1,
   backgrounds: {
     day: null,
     night: null
@@ -484,18 +488,54 @@ function normalizeBackgroundMode(mode) {
   return mode === "night" ? "night" : "day";
 }
 
+function backgroundItems() {
+  if (!Array.isArray(state.backgroundItems)) state.backgroundItems = [];
+  return state.backgroundItems;
+}
+
+function backgroundVisibleInMode(background, mode = state.mode) {
+  if (!background || background.visible === false) return false;
+  return normalizeBackgroundMode(mode) === "night"
+    ? background.visibleInNight !== false
+    : background.visibleInDay !== false;
+}
+
+function backgroundLayersForMode(mode = state.mode) {
+  const normalized = normalizeBackgroundMode(mode);
+  return backgroundItems()
+    .filter((background) => backgroundVisibleInMode(background, normalized))
+    .sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
+}
+
+function firstBackgroundLayerForMode(mode = state.mode) {
+  return backgroundLayersForMode(mode)[0] || null;
+}
+
 function backgroundForMode(mode = state.mode) {
   const normalized = normalizeBackgroundMode(mode);
+  const layer = firstBackgroundLayerForMode(normalized);
+  if (layer) return layer;
+  if (backgroundItems().length) return null;
   const backgrounds = state.backgrounds || {};
   return backgrounds[normalized] || backgrounds.day || backgrounds.night || state.base || null;
 }
 
 function primaryBackground() {
+  const primary = backgroundItems().find((background) =>
+    background.visible !== false && (background.visibleInDay !== false || background.visibleInNight !== false)
+  ) || backgroundItems()[0];
+  if (primary) return primary;
   const backgrounds = state.backgrounds || {};
   return backgrounds.day || backgrounds.night || state.base || null;
 }
 
 function setLegacyBaseFromBackgrounds() {
+  if (backgroundItems().length) {
+    state.backgrounds = {
+      day: firstBackgroundLayerForMode("day"),
+      night: firstBackgroundLayerForMode("night")
+    };
+  }
   state.base = primaryBackground();
 }
 
@@ -508,19 +548,21 @@ function backgroundLabel(mode) {
 }
 
 function backgroundFileName(mode) {
-  const bg = (state.backgrounds || {})[normalizeBackgroundMode(mode)];
+  const bg = backgroundForMode(mode);
   return bg?.name || "";
 }
 
 function backgroundMetaText(mode) {
   const normalized = normalizeBackgroundMode(mode);
-  const bg = (state.backgrounds || {})[normalized];
+  const layers = backgroundLayersForMode(normalized);
+  const bg = layers[0] || (state.backgrounds || {})[normalized];
   if (!bg) {
-    return normalized === "night" && (state.backgrounds || {}).day
+    return normalized === "night" && (firstBackgroundLayerForMode("day") || (state.backgrounds || {}).day)
       ? "not loaded, using day background"
       : "not loaded";
   }
-  return `${bg.name} ${bg.width}x${bg.height}`;
+  const suffix = layers.length > 1 ? ` +${layers.length - 1} layer(s)` : "";
+  return `${bg.name} ${bg.width}x${bg.height}${suffix}`;
 }
 
 function updateBaseImageMeta() {
@@ -1724,6 +1766,8 @@ function normalizeFurnitureLibraryEntry(raw, index = 0) {
     shadowBlur: coerceNumber(raw.shadowBlur, state.night.shadowBlur, 0, 16),
     receivesShadow: raw.receivesShadow !== false,
     occludesSprite: raw.occludesSprite === true,
+    visibleInDay: raw.visibleInDay !== false,
+    visibleInNight: raw.visibleInNight !== false,
     tags: Array.isArray(raw.tags) ? raw.tags : []
   };
 }
@@ -1736,6 +1780,54 @@ function furnitureLibraryCatalog() {
 
 function furnitureLibraryEntryById(id) {
   return furnitureLibraryCatalog().find((entry) => entry.id === id) || null;
+}
+
+function normalizeFurnitureAssetLookupKey(value) {
+  return String(value || "")
+    .split(/[\\/]/)
+    .pop()
+    .replace(/\.[^.]+$/, "")
+    .toLowerCase()
+    .replace(/forniture/g, "furniture")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function furnitureAssetLookupKeys(value) {
+  const key = normalizeFurnitureAssetLookupKey(value);
+  if (!key) return [];
+  const keys = [key];
+  const stripped = key.replace(/^(furniture_)+/, "furniture_");
+  if (stripped && stripped !== key) keys.push(stripped);
+  const withoutPrefix = stripped.replace(/^furniture_/, "");
+  if (withoutPrefix && withoutPrefix !== stripped) keys.push(withoutPrefix);
+  return [...new Set(keys)];
+}
+
+function furnitureLibraryEntryByItemReference(item) {
+  const referenceKeys = [
+    item?.libraryId,
+    item?.fileName,
+    item?.name,
+    item?.id
+  ].flatMap(furnitureAssetLookupKeys);
+  if (!referenceKeys.length) return null;
+
+  return furnitureLibraryCatalog().find((entry) => {
+    const entryKeys = [
+      entry.id,
+      entry.fileName,
+      entry.name,
+      entry.image
+    ].flatMap(furnitureAssetLookupKeys);
+    return referenceKeys.some((referenceKey) =>
+      entryKeys.some((entryKey) =>
+        entryKey === referenceKey ||
+        entryKey.endsWith(`_${referenceKey}`) ||
+        referenceKey.endsWith(`_${entryKey}`)
+      )
+    );
+  }) || null;
 }
 
 function furnitureLibraryMatches(entry, search, category) {
@@ -1855,6 +1947,8 @@ async function createFurnitureItemFromLibraryEntry(entry, placement = {}) {
     opacity: placement.opacity ?? 1,
     z: placement.z ?? 20,
     visible: placement.visible ?? true,
+    visibleInDay: placement.visibleInDay ?? entry.visibleInDay ?? true,
+    visibleInNight: placement.visibleInNight ?? entry.visibleInNight ?? true,
     anchor: placement.anchor || "top_left",
     slot: placement.slot || entry.slot || itemKindPreset(entry.kind).slot,
     layer: placement.layer || entry.layer || itemKindPreset(entry.kind).layer,
@@ -1963,6 +2057,8 @@ function serializeFurnitureLibraryItem(item, idOverride = "") {
     shadowBlur: Number(itemShadowBlur(item).toFixed(1)),
     receivesShadow: item.receivesShadow !== false,
     occludesSprite: !!item.occludesSprite,
+    visibleInDay: item.visibleInDay !== false,
+    visibleInNight: item.visibleInNight !== false,
     slot: item.slot || itemKindPreset(kind).slot,
     layer: item.layer || itemKindPreset(kind).layer,
     cutoutApplied: !!item.cutoutApplied,
@@ -2225,6 +2321,11 @@ async function writeFileText(directoryHandle, fileName, text) {
   }
 }
 
+async function readFileText(fileHandle) {
+  const file = await fileHandle.getFile();
+  return file.text();
+}
+
 async function writeFileBlob(directoryHandle, fileName, blob) {
   const fileHandle = await directoryHandle.getFileHandle(fileName, { create: true });
   const writable = await fileHandle.createWritable();
@@ -2334,16 +2435,34 @@ async function deleteFurnitureLibraryEntry(entry) {
   return true;
 }
 
-async function addFurnitureItemsToLibrary(items) {
-  const candidates = items.filter(isAnnotatedFurniture);
+function furnitureLibrarySaveCandidates(items, requireAnnotation = true) {
+  return items.filter((item) =>
+    item?.source === "furniture" &&
+    item.dataUrl &&
+    (!requireAnnotation || isAnnotatedFurniture(item))
+  );
+}
+
+async function addFurnitureItemsToLibrary(items, options = {}) {
+  const requireAnnotation = options.requireAnnotation !== false;
+  const quiet = options.quiet === true;
+  const candidates = furnitureLibrarySaveCandidates(items, requireAnnotation);
   if (!candidates.length) {
-    setStatus("Cannot add selected furniture yet. Configure height, footprint, shadow polygon, or shadow target first.");
+    if (!quiet) {
+      setStatus(requireAnnotation
+        ? "Cannot add selected furniture yet. Configure height, footprint, shadow polygon, or shadow target first."
+        : "No importable furniture image data found.");
+    }
     return false;
   }
 
   if (!window.showDirectoryPicker) {
-    exportFurnitureLibraryBundle(candidates);
-    setStatus("Direct library writing is not supported in this browser. A furniture bundle was exported instead.");
+    if (requireAnnotation) exportFurnitureLibraryBundle(candidates);
+    if (!quiet) {
+      setStatus(requireAnnotation
+        ? "Direct library writing is not supported in this browser. A furniture bundle was exported instead."
+        : "Direct library writing is not supported in this browser. Furniture was kept in the current session only.");
+    }
     return false;
   }
 
@@ -2358,11 +2477,13 @@ async function addFurnitureItemsToLibrary(items) {
     item.libraryRevision = saved.revision;
     item.libraryCategory = furnitureLibraryCategory(saved);
   });
-  refreshSelectedPanel();
-  refreshList();
-  render();
-  commitHistory();
-  setStatus(`Saved ${merged.savedItems.length} furniture item(s) to the room editor library.`);
+  if (!quiet) {
+    refreshSelectedPanel();
+    refreshList();
+    render();
+    commitHistory();
+    setStatus(`Saved ${merged.savedItems.length} furniture item(s) to the room editor library.`);
+  }
   return true;
 }
 
@@ -2523,24 +2644,68 @@ async function updateProjectSpriteFrame(item, speciesId, action, framePath) {
   commitHistory();
 }
 
-async function loadBase(file, mode = "day") {
-  const backgroundMode = normalizeBackgroundMode(mode);
-  const hadBackground = hasBackground();
-  const loaded = await readImageFile(file);
-  const background = {
-    name: file.name,
-    img: loaded.img,
-    dataUrl: loaded.dataUrl,
-    width: loaded.img.naturalWidth,
-    height: loaded.img.naturalHeight
+function inferBackgroundVisibility(fileName, forcedMode = "") {
+  if (forcedMode) {
+    const mode = normalizeBackgroundMode(forcedMode);
+    return {
+      visibleInDay: mode === "day",
+      visibleInNight: mode === "night"
+    };
+  }
+  const text = String(fileName || "").toLowerCase();
+  const isNight = /(^|[_\-\s])(night|dark|moon|evening)([_\-\s.]|$)|夜|晚上|夜晚/.test(text);
+  const isDay = /(^|[_\-\s])(day|light|sun|morning)([_\-\s.]|$)|昼|白天|白日/.test(text);
+  if (isNight && !isDay) return { visibleInDay: false, visibleInNight: true };
+  if (isDay && !isNight) return { visibleInDay: true, visibleInNight: false };
+  return { visibleInDay: true, visibleInNight: true };
+}
+
+function normalizeBackgroundItem(background, index = 0) {
+  if (!background) return null;
+  const visibility = inferBackgroundVisibility(background.name || background.fileName || "", "");
+  return {
+    ...background,
+    id: background.id || `b${state.nextBackgroundId++}`,
+    name: background.name || background.fileName || `background_${index + 1}.png`,
+    fileName: background.fileName || background.name || "",
+    visible: background.visible !== false,
+    visibleInDay: background.visibleInDay ?? visibility.visibleInDay,
+    visibleInNight: background.visibleInNight ?? visibility.visibleInNight,
+    z: Number(background.z ?? index)
   };
-  state.backgrounds[backgroundMode] = background;
+}
+
+async function loadBackgroundFiles(files, options = {}) {
+  const list = [...files].filter(Boolean);
+  if (!list.length) return;
+  const hadBackground = hasBackground();
+  const loadedBackgrounds = [];
+  for (const file of list) {
+    const loaded = await readImageFile(file);
+    const visibility = inferBackgroundVisibility(file.name, options.mode || "");
+    const background = normalizeBackgroundItem({
+      id: `b${state.nextBackgroundId++}`,
+      name: file.name,
+      fileName: file.name,
+      img: loaded.img,
+      dataUrl: loaded.dataUrl,
+      width: loaded.img.naturalWidth,
+      height: loaded.img.naturalHeight,
+      visible: true,
+      visibleInDay: visibility.visibleInDay,
+      visibleInNight: visibility.visibleInNight,
+      z: backgroundItems().length + loadedBackgrounds.length
+    });
+    loadedBackgrounds.push(background);
+  }
+  state.backgroundItems.push(...loadedBackgrounds);
   setLegacyBaseFromBackgrounds();
 
-  const shouldUpdateSharedTransform = backgroundMode === "day" || !hadBackground || !state.baseTrim;
+  const firstLoaded = loadedBackgrounds[0];
+  const shouldUpdateSharedTransform = !hadBackground || !state.baseTrim || options.updateTransform === true;
   let prepared = preparedRoomMetrics();
-  if (shouldUpdateSharedTransform) {
-    state.baseTrim = detectTrimBox(loaded.img);
+  if (shouldUpdateSharedTransform && firstLoaded?.img) {
+    state.baseTrim = detectTrimBox(firstLoaded.img);
     prepared = preparedRoomMetrics();
     const detectedScale = Math.max(0.01, Math.round((prepared.trim.width / GAME_SCREEN_WIDTH) * 100) / 100);
     state.sourceScale = detectedScale;
@@ -2550,15 +2715,21 @@ async function loadBase(file, mode = "day") {
   syncCanvasSizeToPreparedRoom();
   document.getElementById("baseFit").value = BASE_FIT_WIDTH;
   updateBaseImageMeta();
-  setStatus(`${backgroundLabel(backgroundMode)} background loaded: ${file.name} (${background.width}x${background.height}), shared fit ${GAME_SCREEN_WIDTH}x${prepared.height}, canvas ${state.width}x${state.height}.`);
+  const names = loadedBackgrounds.map((background) => background.name).join(", ");
+  setStatus(`Loaded ${loadedBackgrounds.length} background layer(s): ${names}. Shared fit ${GAME_SCREEN_WIDTH}x${prepared.height}, canvas ${state.width}x${state.height}.`);
   refreshList();
   render();
   commitHistory();
 }
 
+async function loadBase(file, mode = "day") {
+  await loadBackgroundFiles([file], { mode, updateTransform: normalizeBackgroundMode(mode) === "day" || !hasBackground() });
+}
+
 async function addFurnitureFiles(files) {
   let loadedCount = 0;
   let skippedCount = 0;
+  const loadedItems = [];
   for (const file of files) {
     const loaded = await readImageFile(file);
     const prepared = await promptFurnitureCutout(loaded);
@@ -2607,16 +2778,33 @@ async function addFurnitureFiles(files) {
     normalizeItemSemantics(item);
     state.items.push(item);
     state.selectedId = item.id;
+    loadedItems.push(item);
     loadedCount += 1;
   }
   if (!loadedCount) {
     setStatus(skippedCount ? `Skipped ${skippedCount} furniture file(s).` : "No furniture files loaded.");
     return;
   }
+  let librarySuffix = "";
+  try {
+    const copiedToLibrary = await addFurnitureItemsToLibrary(loadedItems, {
+      requireAnnotation: false,
+      quiet: true
+    });
+    librarySuffix = copiedToLibrary
+      ? " Copied to the room editor library."
+      : " Furniture is currently session-only; select the tools/room_editor folder to copy it into the library.";
+  } catch (error) {
+    console.error(error);
+    librarySuffix = isFilePickerAbort(error)
+      ? " Furniture is currently session-only because the room_editor folder was not selected."
+      : ` Furniture library copy failed: ${error.message || "unknown error"}.`;
+  }
   const skippedSuffix = skippedCount ? ` Skipped ${skippedCount}.` : "";
-  setStatus(`Loaded ${loadedCount} furniture file(s), sampled with ${state.furnitureImportMode.replace("_", " ")}.${skippedSuffix}`);
+  setStatus(`Loaded ${loadedCount} furniture file(s), sampled with ${state.furnitureImportMode.replace("_", " ")}.${skippedSuffix}${librarySuffix}`);
   refreshList();
   refreshSelectedPanel();
+  refreshFurnitureLibraryPanel();
   render();
   commitHistory();
 }
@@ -2761,6 +2949,22 @@ function itemShadowBlur(item) {
 
 function itemShadowFaceIds(item) {
   return normalizeShadowFaceIds(item?.shadowFaceIds);
+}
+
+function normalizeItemModeVisibility(item) {
+  item.visibleInDay = item.visibleInDay !== false;
+  item.visibleInNight = item.visibleInNight !== false;
+  if (!item.visibleInDay && !item.visibleInNight) {
+    item.visibleInDay = true;
+    item.visibleInNight = true;
+  }
+  return item;
+}
+
+function itemVisibleInMode(item, mode = state.mode) {
+  if (!item || item.visible === false) return false;
+  normalizeItemModeVisibility(item);
+  return normalizeBackgroundMode(mode) === "night" ? item.visibleInNight : item.visibleInDay;
 }
 
 function itemUsesWallShadowAnchor(item) {
@@ -3208,6 +3412,7 @@ function applyItemKindPreset(item, kindValue) {
 function normalizeItemSemantics(item) {
   const preset = itemKindPreset(item.kind || inferItemKind(item.fileName || item.name, item.furnitureType));
   item.kind = preset.value;
+  normalizeItemModeVisibility(item);
   item.heightPx = coerceNumber(item.heightPx, preset.heightPx, 0, 160);
   item.footprint = normalizeFootprint(item.footprint || preset.footprint);
   item.castsShadow = item.castsShadow ?? preset.castsShadow;
@@ -3683,7 +3888,7 @@ function drawWallPlaneShadow(targetCtx, item, bounds, lightPoint, scale, facePoi
 function drawProjectedShadow(targetCtx, item, bounds, lightPoint, scale = 1, surface = "floor", facePoints = null, face = null) {
   if (!state.night.castShadows || itemShadowOpacity(item) <= 0 || itemShadowLength(item) <= 0) return;
   if (!itemCastsShadow(item)) return;
-  if (!item.visible || item.opacity <= 0 || bounds.w <= 0 || bounds.h <= 0) return;
+  if (!itemVisibleInMode(item) || item.opacity <= 0 || bounds.w <= 0 || bounds.h <= 0) return;
   const isWallSurface = surface === "left_wall" || surface === "right_wall";
   if (!itemShouldCastShadowOnSurface(item, surface, face)) return;
   const mask = itemShadowMask(item);
@@ -3768,8 +3973,9 @@ function drawBase() {
   ctx.fillStyle = "#111318";
   ctx.fillRect(0, 0, state.editWidth, state.editHeight);
 
-  const background = backgroundForMode();
-  if (!background) {
+  const layers = backgroundLayersForMode();
+  const fallback = layers.length ? null : backgroundForMode();
+  if (!layers.length && !fallback) {
     ctx.fillStyle = "#202734";
     ctx.fillRect(0, 0, state.editWidth, state.editHeight);
     ctx.strokeStyle = "#526070";
@@ -3780,22 +3986,23 @@ function drawBase() {
     return;
   }
 
-  const img = background.img;
   const prepared = preparedRoomMetrics();
   const edit = editRoomMetrics(prepared);
   ctx.imageSmoothingEnabled = false;
   ctx.globalAlpha = state.baseOpacity;
-  ctx.drawImage(
-    img,
-    prepared.trim.x,
-    prepared.trim.y,
-    prepared.trim.width,
-    prepared.trim.height,
-    0,
-    edit.y,
-    edit.width,
-    edit.height
-  );
+  for (const background of layers.length ? layers : [fallback]) {
+    ctx.drawImage(
+      background.img,
+      prepared.trim.x,
+      prepared.trim.y,
+      prepared.trim.width,
+      prepared.trim.height,
+      0,
+      edit.y,
+      edit.width,
+      edit.height
+    );
+  }
   ctx.globalAlpha = 1;
 }
 
@@ -3804,33 +4011,35 @@ function drawPreviewBackground() {
   previewCtx.fillStyle = "#05070c";
   previewCtx.fillRect(0, 0, state.width, state.height);
 
-  const background = backgroundForMode();
-  if (!background) {
+  const layers = backgroundLayersForMode();
+  const fallback = layers.length ? null : backgroundForMode();
+  if (!layers.length && !fallback) {
     renderRoomGeometry(previewCtx, state.width, state.height);
     return;
   }
 
-  const img = background.img;
   const prepared = preparedRoomMetrics();
   previewCtx.save();
   previewCtx.imageSmoothingEnabled = false;
-  previewCtx.drawImage(
-    img,
-    prepared.trim.x,
-    prepared.trim.y,
-    prepared.trim.width,
-    prepared.trim.height,
-    0,
-    prepared.y,
-    prepared.width,
-    prepared.height
-  );
+  for (const background of layers.length ? layers : [fallback]) {
+    previewCtx.drawImage(
+      background.img,
+      prepared.trim.x,
+      prepared.trim.y,
+      prepared.trim.width,
+      prepared.trim.height,
+      0,
+      prepared.y,
+      prepared.width,
+      prepared.height
+    );
+  }
   previewCtx.restore();
 }
 
 function drawItems() {
   for (const item of sortedItems()) {
-    if (!item.visible) continue;
+    if (!itemVisibleInMode(item)) continue;
     const b = itemBounds(item);
     const editBounds = targetRectToEdit(item.x, item.y, b.w, b.h);
     ctx.globalAlpha = item.opacity;
@@ -3945,7 +4154,7 @@ function renderPreview() {
   previewCtx.save();
   previewCtx.globalAlpha = 0.85;
   for (const item of sortedItems()) {
-    if (!item.visible) continue;
+    if (!itemVisibleInMode(item)) continue;
     const b = itemBounds(item);
     previewCtx.imageSmoothingEnabled = false;
     previewCtx.drawImage(item.img, item.x, item.y, b.w, b.h);
@@ -4415,56 +4624,100 @@ function refreshList() {
   assetList.innerHTML = "";
   const backgroundTitle = document.createElement("div");
   backgroundTitle.className = "asset-section-title";
-  backgroundTitle.textContent = "Background variants";
+  backgroundTitle.textContent = `Background layers (${backgroundItems().length})`;
   assetList.appendChild(backgroundTitle);
 
-  for (const mode of ["day", "night"]) {
-    const background = document.createElement("div");
-    const active = normalizeBackgroundMode(state.mode) === mode;
-    const bg = (state.backgrounds || {})[mode];
-    background.className = `asset-item static background${active ? " active-background" : ""}`;
-    if (bg) {
-      const prepared = preparedRoomMetrics();
-      background.innerHTML = `
-        <img class="asset-thumb" alt="" src="${bg.dataUrl}">
-        <div>
-          <div class="asset-kind">${backgroundLabel(mode)} background${active ? " · previewing" : ""}</div>
-          <div class="asset-name">${escapeHtml(bg.name)}</div>
-          <div class="asset-meta">${bg.width}x${bg.height}, shared trim ${prepared.trim.width}x${prepared.trim.height}, opacity ${Math.round(state.baseOpacity * 100)}%</div>
+  const prepared = preparedRoomMetrics();
+  for (const background of backgroundItems()) {
+    const active = backgroundVisibleInMode(background);
+    const el = document.createElement("div");
+    el.className = `asset-item background${active ? " active-background" : ""}`;
+    const modes = [
+      background.visibleInDay !== false ? "Day" : "",
+      background.visibleInNight !== false ? "Night" : ""
+    ].filter(Boolean).join(" / ") || "No mode";
+    const hidden = background.visible === false ? ", hidden" : "";
+    const meta = `${background.width}x${background.height}, ${modes}${hidden}, opacity ${Math.round(state.baseOpacity * 100)}%`;
+    el.innerHTML = `
+      <img class="asset-thumb" alt="" src="${background.dataUrl}">
+      <div class="asset-details">
+        <div class="asset-kind">Background${active ? " · previewing" : ""}</div>
+        <div class="asset-name">${escapeHtml(background.name)}</div>
+        <div class="asset-meta">${escapeHtml(meta)}</div>
+      </div>
+      <div class="asset-actions">
+        <label class="asset-visibility" title="${background.visible !== false ? "Hide" : "Show"} ${escapeAttr(background.name)}">
+          <input class="background-visible" type="checkbox" ${background.visible !== false ? "checked" : ""}>
+          <span>${background.visible !== false ? "On" : "Off"}</span>
+        </label>
+        <div class="asset-mode-toggles">
+          <label><input class="background-day" type="checkbox" ${background.visibleInDay !== false ? "checked" : ""}> Day</label>
+          <label><input class="background-night" type="checkbox" ${background.visibleInNight !== false ? "checked" : ""}> Night</label>
         </div>
-        <button class="background-replace" type="button">Replace</button>
-      `;
-    } else {
-      const fallbackText = mode === "night" && (state.backgrounds || {}).day ? "Night preview uses day background until loaded." : "Drop or choose a background image.";
-      background.innerHTML = `
-        <div class="asset-thumb"></div>
-        <div>
-          <div class="asset-kind">${backgroundLabel(mode)} background${active ? " · previewing" : ""}</div>
-          <div class="asset-name">None</div>
-          <div class="asset-meta">${fallbackText}</div>
-        </div>
-        <button class="background-replace" type="button">Load</button>
-      `;
-    }
-    background.addEventListener("click", () => {
-      state.mode = mode;
-      updateModeButtons();
-      syncLightInputsFromState();
+        <button class="background-delete danger" type="button">Delete</button>
+      </div>
+    `;
+    el.querySelector(".background-visible").addEventListener("change", (event) => {
+      event.stopPropagation();
+      background.visible = event.target.checked;
+      setLegacyBaseFromBackgrounds();
+      updateBaseImageMeta();
       refreshList();
       render();
+      commitHistory();
     });
-    background.querySelector(".background-replace")?.addEventListener("click", (event) => {
+    el.querySelector(".background-day").addEventListener("change", (event) => {
       event.stopPropagation();
-      const input = document.getElementById(mode === "night" ? "nightBaseInput" : "baseInput");
-      input.value = "";
-      input.click();
+      background.visibleInDay = event.target.checked;
+      if (!background.visibleInDay && !background.visibleInNight) {
+        background.visibleInNight = true;
+      }
+      setLegacyBaseFromBackgrounds();
+      updateBaseImageMeta();
+      refreshList();
+      render();
+      commitHistory();
     });
-    assetList.appendChild(background);
+    el.querySelector(".background-night").addEventListener("change", (event) => {
+      event.stopPropagation();
+      background.visibleInNight = event.target.checked;
+      if (!background.visibleInDay && !background.visibleInNight) {
+        background.visibleInDay = true;
+      }
+      setLegacyBaseFromBackgrounds();
+      updateBaseImageMeta();
+      refreshList();
+      render();
+      commitHistory();
+    });
+    el.querySelector(".background-delete").addEventListener("click", (event) => {
+      event.stopPropagation();
+      const wasPrimary = primaryBackground()?.id === background.id;
+      state.backgroundItems = backgroundItems().filter((item) => item.id !== background.id);
+      setLegacyBaseFromBackgrounds();
+      if (!state.backgroundItems.length) {
+        state.baseTrim = null;
+      } else if (wasPrimary && primaryBackground()?.img) {
+        state.baseTrim = detectTrimBox(primaryBackground().img);
+      }
+      syncCanvasSizeToPreparedRoom();
+      updateBaseImageMeta();
+      refreshList();
+      render();
+      commitHistory();
+    });
+    assetList.appendChild(el);
+  }
+
+  if (!backgroundItems().length) {
+    const empty = document.createElement("div");
+    empty.className = "hint";
+    empty.textContent = "No background layers loaded.";
+    assetList.appendChild(empty);
   }
 
   const primary = primaryBackground();
   if (primary) {
-    const prepared = preparedRoomMetrics();
     const transform = document.createElement("div");
     transform.className = "asset-item static background-transform";
     transform.innerHTML = `
@@ -4490,6 +4743,7 @@ function refreshList() {
     const type = isSprite ? "Project sprite" : "Furniture";
     const cutout = item.cutoutApplied ? ", cutout" : "";
 	    const hidden = item.visible ? "" : ", hidden";
+	    const modeHidden = !isSprite && !itemVisibleInMode(item) ? `, hidden in ${normalizeBackgroundMode(state.mode)}` : "";
 	    const libraryMark = item.libraryId ? ", lib" : "";
 	    const bounds = itemBounds(item);
     const scaleText = Math.abs(itemScaleX(item) - itemScaleY(item)) < 0.0001
@@ -4497,7 +4751,7 @@ function refreshList() {
       : `${Math.round(bounds.w)}x${Math.round(bounds.h)}`;
     const meta = isSprite
       ? `${item.action || "-"}/${item.frame || "-"}, ${Math.round(bounds.w)}x${Math.round(bounds.h)}, x ${Math.round(item.x)}, y ${Math.round(item.y)}, z ${item.z}${hidden}`
-	      : `${itemKindLabel(item.kind)} h${Math.round(itemHeightPx(item))}, ${furnitureTypeLabel(item.furnitureType)}, x ${Math.round(item.x)}, y ${Math.round(item.y)}, z ${item.z}, ${scaleText}${cutout}${libraryMark}${hidden}`;
+		      : `${itemKindLabel(item.kind)} h${Math.round(itemHeightPx(item))}, ${furnitureTypeLabel(item.furnitureType)}, x ${Math.round(item.x)}, y ${Math.round(item.y)}, z ${item.z}, ${scaleText}${cutout}${libraryMark}${hidden}${modeHidden}`;
     el.innerHTML = `
       <img class="asset-thumb" alt="" src="${item.dataUrl}">
       <div class="asset-details">
@@ -4709,6 +4963,12 @@ function refreshSelectedPanel() {
           <label class="field">Opacity<input id="itemOpacity" type="number" step="0.05" min="0" max="1" value="${item.opacity}"></label>
         </div>
         <label class="check-row inline-check"><input id="itemAspectLock" type="checkbox" ${itemAspectLocked(item) ? "checked" : ""}> Lock aspect</label>
+        ${!isSprite ? `
+          <div class="mode-visibility-row">
+            <label class="check-row"><input id="itemVisibleDay" type="checkbox" ${item.visibleInDay !== false ? "checked" : ""}> Day</label>
+            <label class="check-row"><input id="itemVisibleNight" type="checkbox" ${item.visibleInNight !== false ? "checked" : ""}> Night</label>
+          </div>
+        ` : ""}
         <div id="itemSizeHint" class="hint"></div>
       </div>
     </details>
@@ -4917,6 +5177,23 @@ function refreshSelectedPanel() {
       render();
       commitHistory();
     });
+    const bindModeVisibility = (id, key) => {
+      const input = document.getElementById(id);
+      if (!input) return;
+      input.addEventListener("change", (event) => {
+        item[key] = event.target.checked;
+        if (!item.visibleInDay && !item.visibleInNight) {
+          item[key] = true;
+          event.target.checked = true;
+          setStatus("Furniture must be visible in at least one mode.");
+        }
+        refreshList();
+        render();
+        commitHistory();
+      });
+    };
+    bindModeVisibility("itemVisibleDay", "visibleInDay");
+    bindModeVisibility("itemVisibleNight", "visibleInNight");
     bind("itemHeightPx", (input) => { item.heightPx = coerceNumber(input.value, itemHeightPx(item), 0, 160); });
     bind("itemShadowOpacity", (input) => {
       item.shadowOpacity = coerceNumber(input.value, itemShadowOpacity(item), 0, 100);
@@ -5431,7 +5708,7 @@ function pointerToTarget(event) {
 function hitTest(x, y) {
   const items = sortedItems().reverse();
   for (const item of items) {
-    if (!item.visible) continue;
+    if (!itemVisibleInMode(item)) continue;
     const b = itemBounds(item);
     if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
       return item;
@@ -5726,6 +6003,8 @@ function takeSnapshot() {
     mode: state.mode,
     lightProfile: state.lightProfile,
     base: state.base ? { ...state.base } : null,
+    backgroundItems: backgroundItems().map((background) => ({ ...background })),
+    nextBackgroundId: state.nextBackgroundId,
     backgrounds: {
       day: state.backgrounds?.day ? { ...state.backgrounds.day } : null,
       night: state.backgrounds?.night ? { ...state.backgrounds.night } : null
@@ -5766,10 +6045,31 @@ function takeSnapshot() {
 }
 
 function createSessionSnapshot() {
-  return JSON.parse(JSON.stringify(takeSnapshot(), (key, value) => {
+  const snapshot = JSON.parse(JSON.stringify(takeSnapshot(), (key, value) => {
     if (key === "img") return undefined;
     return value;
   }));
+  return compactSessionSnapshot(snapshot);
+}
+
+function compactSessionSnapshot(snapshot) {
+  const compacted = snapshot || {};
+  const baseDataUrl = compacted.base?.dataUrl || "";
+  for (const mode of BACKGROUND_MODES) {
+    const background = compacted.backgrounds?.[mode];
+    if (background?.dataUrl && baseDataUrl && background.dataUrl === baseDataUrl) {
+      delete background.dataUrl;
+      background.usesBaseDataUrl = true;
+    }
+  }
+  for (const item of compacted.items || []) {
+    if (item.source === "furniture" && item.libraryId && item.dataUrl) {
+      delete item.dataUrl;
+      delete item.originalDataUrl;
+      item.usesLibraryImage = true;
+    }
+  }
+  return compacted;
 }
 
 function createSessionRecord() {
@@ -5784,6 +6084,14 @@ function createSessionRecord() {
         day: snapshot.backgrounds?.day?.name || "",
         night: snapshot.backgrounds?.night?.name || ""
       },
+      backgroundItems: (snapshot.backgroundItems || []).map((background) => ({
+        id: background.id,
+        name: background.name,
+        fileName: background.fileName || background.name,
+        visible: background.visible !== false,
+        visibleInDay: background.visibleInDay !== false,
+        visibleInNight: background.visibleInNight !== false
+      })),
       items: (snapshot.items || []).map((item) => ({
         id: item.id,
         name: item.name,
@@ -5874,28 +6182,33 @@ async function saveSessionRecord(record) {
     try {
       localStorage.removeItem(SESSION_STORAGE_KEY);
     } catch (_) {}
-    return "IndexedDB";
+    return "IndexedDB draft";
   } catch (dbError) {
     try {
       localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(record));
-      return "localStorage";
+      return "localStorage draft";
     } catch (storageError) {
       throw new Error(`Could not save session. IndexedDB: ${dbError.message}; localStorage: ${storageError.message}`);
     }
   }
 }
 
-async function readSessionRecord() {
+async function readSessionDraftRecord() {
   try {
     const record = await readSessionFromIndexedDb();
-    if (record) return record;
+    if (record) return { record, backend: "IndexedDB draft" };
   } catch (_) {}
   try {
     const raw = localStorage.getItem(SESSION_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    return raw ? { record: JSON.parse(raw), backend: "localStorage draft" } : null;
   } catch (_) {
     return null;
   }
+}
+
+async function readSessionRecord() {
+  const draft = await readSessionDraftRecord();
+  return draft?.record || null;
 }
 
 async function clearSessionRecord() {
@@ -5936,6 +6249,77 @@ async function writeSessionFile(record, forcePick = false) {
   return `updated sessions/${SESSION_DEFAULT_FILE_NAME}`;
 }
 
+function parseSessionRecordText(text, sourceLabel) {
+  const record = JSON.parse(text);
+  if (!record?.snapshot) {
+    throw new Error(`${sourceLabel} is not a StickMon room editor session.`);
+  }
+  return record;
+}
+
+async function readProjectSessionFromHandle(forcePick = false) {
+  if (!window.showDirectoryPicker) return null;
+
+  let handle = null;
+  if (forcePick) {
+    handle = await ensureRoomEditorRootHandle(true);
+  } else {
+    try {
+      handle = await readRoomEditorRootHandle();
+    } catch (_) {}
+    if (!handle) return null;
+    try {
+      const hasReadPermission = !handle.queryPermission ||
+        await handle.queryPermission({ mode: "read" }) === "granted" ||
+        await handle.queryPermission({ mode: "readwrite" }) === "granted";
+      if (!hasReadPermission) return null;
+      await validateRoomEditorRootHandle(handle);
+      roomEditorRootHandle = handle;
+    } catch (_) {
+      roomEditorRootHandle = null;
+      return null;
+    }
+  }
+
+  try {
+    const fileHandle = await getExistingFileHandle(handle, ["sessions", SESSION_DEFAULT_FILE_NAME]);
+    const text = await readFileText(fileHandle);
+    return {
+      record: parseSessionRecordText(text, `sessions/${SESSION_DEFAULT_FILE_NAME}`),
+      backend: `project sessions/${SESSION_DEFAULT_FILE_NAME}`
+    };
+  } catch (error) {
+    if (error?.name === "NotFoundError") return null;
+    throw error;
+  }
+}
+
+async function readProjectSessionFromFetch() {
+  if (!window.fetch) return null;
+  try {
+    const response = await fetch(`sessions/${SESSION_DEFAULT_FILE_NAME}?t=${Date.now()}`, { cache: "no-store" });
+    if (!response.ok) return null;
+    const text = await response.text();
+    return {
+      record: parseSessionRecordText(text, `sessions/${SESSION_DEFAULT_FILE_NAME}`),
+      backend: `project sessions/${SESSION_DEFAULT_FILE_NAME}`
+    };
+  } catch (error) {
+    if (error instanceof SyntaxError) throw error;
+    return null;
+  }
+}
+
+async function readProjectSessionRecord(options = {}) {
+  const fromHandle = await readProjectSessionFromHandle(options.forcePick === true);
+  if (fromHandle) return fromHandle;
+  if (options.allowFetch !== false) {
+    const fromFetch = await readProjectSessionFromFetch();
+    if (fromFetch) return fromFetch;
+  }
+  return null;
+}
+
 async function hydrateBackgroundSnapshot(background) {
   if (!background?.dataUrl) return background || null;
   const hydrated = { ...background };
@@ -5946,15 +6330,71 @@ async function hydrateBackgroundSnapshot(background) {
   return hydrated;
 }
 
+async function hydrateBackgroundItemSnapshot(background, index = 0) {
+  if (!background?.dataUrl) return null;
+  const hydrated = await hydrateBackgroundSnapshot(background);
+  return {
+    ...hydrated,
+    id: hydrated.id || `b${index + 1}`,
+    name: hydrated.name || hydrated.fileName || `background_${index + 1}.png`,
+    fileName: hydrated.fileName || hydrated.name || "",
+    visible: hydrated.visible !== false,
+    visibleInDay: hydrated.visibleInDay !== false,
+    visibleInNight: hydrated.visibleInNight !== false,
+    z: Number(hydrated.z ?? index)
+  };
+}
+
+async function hydrateLegacyBackgroundItems(snapshot) {
+  const legacy = [];
+  const day = snapshot.backgrounds?.day || null;
+  const night = snapshot.backgrounds?.night || null;
+  if (day?.dataUrl && night?.dataUrl && day.dataUrl === night.dataUrl) {
+    legacy.push(await hydrateBackgroundItemSnapshot({
+      ...day,
+      id: "b1",
+      visibleInDay: true,
+      visibleInNight: true,
+      z: 0
+    }, 0));
+  } else {
+    if (day?.dataUrl) {
+      legacy.push(await hydrateBackgroundItemSnapshot({
+        ...day,
+        id: "b1",
+        visibleInDay: true,
+        visibleInNight: false,
+        z: 0
+      }, legacy.length));
+    }
+    if (night?.dataUrl) {
+      legacy.push(await hydrateBackgroundItemSnapshot({
+        ...night,
+        id: `b${legacy.length + 1}`,
+        visibleInDay: false,
+        visibleInNight: true,
+        z: legacy.length
+      }, legacy.length));
+    }
+  }
+  return legacy.filter(Boolean);
+}
+
 async function hydrateSessionSnapshot(snapshot) {
   const hydrated = JSON.parse(JSON.stringify(snapshot));
+  if (hydrated.base?.dataUrl) {
+    hydrated.base = await hydrateBackgroundSnapshot(hydrated.base);
+  }
+  for (const mode of BACKGROUND_MODES) {
+    const background = hydrated.backgrounds?.[mode];
+    if (background?.usesBaseDataUrl && hydrated.base?.dataUrl) {
+      background.dataUrl = hydrated.base.dataUrl;
+    }
+  }
   hydrated.backgrounds = {
     day: await hydrateBackgroundSnapshot(hydrated.backgrounds?.day || null),
     night: await hydrateBackgroundSnapshot(hydrated.backgrounds?.night || null)
   };
-  if (hydrated.base?.dataUrl) {
-    hydrated.base = await hydrateBackgroundSnapshot(hydrated.base);
-  }
   if (!hydrated.backgrounds.day && !hydrated.backgrounds.night && hydrated.base) {
     hydrated.backgrounds.day = hydrated.base;
   }
@@ -5962,10 +6402,37 @@ async function hydrateSessionSnapshot(snapshot) {
     hydrated.base = hydrated.backgrounds.day || hydrated.backgrounds.night || null;
   }
 
-  hydrated.items = await Promise.all((hydrated.items || []).map(async (item) => {
+  if (Array.isArray(hydrated.backgroundItems) && hydrated.backgroundItems.length) {
+    hydrated.backgroundItems = (await Promise.all(
+      hydrated.backgroundItems.map((background, index) => hydrateBackgroundItemSnapshot(background, index))
+    )).filter(Boolean);
+  } else {
+    hydrated.backgroundItems = await hydrateLegacyBackgroundItems(hydrated);
+  }
+  hydrated.nextBackgroundId = Math.max(
+    Number(hydrated.nextBackgroundId) || 1,
+    ...hydrated.backgroundItems.map((background) => {
+      const match = String(background.id || "").match(/(\d+)$/);
+      return match ? Number(match[1]) + 1 : 1;
+    })
+  );
+
+  const hydratedItems = await Promise.all((hydrated.items || []).map(async (item) => {
     const next = { ...item };
     if (!next.dataUrl) {
-      throw new Error(`Saved item is missing image data: ${next.fileName || next.name || next.id}`);
+      const libraryEntry = (next.libraryId ? furnitureLibraryEntryById(next.libraryId) : null) ||
+        furnitureLibraryEntryByItemReference(next);
+      if (libraryEntry?.dataUrl || libraryEntry?.image) {
+        next.dataUrl = libraryEntry.dataUrl || libraryEntry.image;
+        next.fileName = next.fileName || libraryEntry.fileName;
+        next.sourceWidth = next.sourceWidth || libraryEntry.sourceWidth;
+        next.sourceHeight = next.sourceHeight || libraryEntry.sourceHeight;
+        next.libraryId = next.libraryId || libraryEntry.id;
+      } else if (next.visible === false) {
+        return null;
+      } else {
+        throw new Error(`Saved item is missing image data: ${next.fileName || next.name || next.id}`);
+      }
     }
     const img = await loadImageSource(next.dataUrl);
     next.img = img;
@@ -5980,6 +6447,7 @@ async function hydrateSessionSnapshot(snapshot) {
     normalizeItemSemantics(next);
     return next;
   }));
+  hydrated.items = hydratedItems.filter(Boolean);
   return hydrated;
 }
 
@@ -6000,9 +6468,12 @@ function refreshAfterStateRestore() {
   updateUndoButtons();
 }
 
+function sessionSavedAtLabel(record) {
+  return record?.savedAt ? new Date(record.savedAt).toLocaleString() : "unknown time";
+}
+
 async function saveEditorSession(options = {}) {
   const record = createSessionRecord();
-  const backend = await saveSessionRecord(record);
   let exportResult = "";
   try {
     exportResult = await writeSessionFile(record, options.forcePick === true);
@@ -6014,22 +6485,31 @@ async function saveEditorSession(options = {}) {
       exportResult = `export failed: ${error.message || error}`;
     }
   }
+  const draftBackend = await saveSessionRecord(record);
   const itemCount = record.snapshot.items?.length || 0;
   const dayName = record.files.backgrounds?.day || record.files.base || "no day background";
   const nightName = record.files.backgrounds?.night || "no night background";
-  updateSessionExportMeta(`Last save: ${backend}, ${exportResult}.`);
-  setStatus(`Session saved to ${backend}, ${exportResult}: day ${dayName}, night ${nightName}, ${itemCount} item(s).`);
+  updateSessionExportMeta(`Last save: project ${exportResult}; draft ${draftBackend}.`);
+  setStatus(`Session saved: project ${exportResult}; draft ${draftBackend}; day ${dayName}, night ${nightName}, ${itemCount} item(s).`);
 }
 
 async function loadEditorSession() {
-  const record = await readSessionRecord();
-  if (!record?.snapshot) {
+  const projectSession = await readProjectSessionRecord();
+  if (projectSession?.record?.snapshot) {
+    await restoreSessionRecord(projectSession.record);
+    updateSessionExportMeta(`Loaded ${projectSession.backend} saved at ${sessionSavedAtLabel(projectSession.record)}.`);
+    setStatus(`Session loaded from ${projectSession.backend}.`);
+    return;
+  }
+
+  const draftSession = await readSessionDraftRecord();
+  if (!draftSession?.record?.snapshot) {
     setStatus("No saved session found.");
     return;
   }
-  await restoreSessionRecord(record);
-  updateSessionExportMeta(`Loaded browser session saved at ${record.savedAt ? new Date(record.savedAt).toLocaleString() : "unknown time"}.`);
-  setStatus(`Session loaded from ${record.savedAt ? new Date(record.savedAt).toLocaleString() : "saved state"}.`);
+  await restoreSessionRecord(draftSession.record);
+  updateSessionExportMeta(`Recovered ${draftSession.backend} saved at ${sessionSavedAtLabel(draftSession.record)}. Save session to update the project session JSON.`);
+  setStatus(`Unsaved draft recovered from ${draftSession.backend}.`);
 }
 
 async function restoreSessionRecord(record) {
@@ -6043,21 +6523,27 @@ async function restoreSessionRecord(record) {
 
 async function tryAutoLoadEditorSession() {
   try {
-    const record = await readSessionRecord();
-    if (!record?.snapshot) return false;
-    await restoreSessionRecord(record);
-    updateSessionExportMeta(`Auto-loaded browser session saved at ${record.savedAt ? new Date(record.savedAt).toLocaleString() : "unknown time"}.`);
+    const projectSession = await readProjectSessionRecord();
+    if (!projectSession?.record?.snapshot) {
+      const draftSession = await readSessionDraftRecord();
+      if (draftSession?.record?.snapshot) {
+        updateSessionExportMeta(`Project session not auto-loaded. Unsaved draft available from ${draftSession.backend}, saved at ${sessionSavedAtLabel(draftSession.record)}. Click Load session to recover it.`);
+      }
+      return false;
+    }
+    await restoreSessionRecord(projectSession.record);
+    updateSessionExportMeta(`Auto-loaded ${projectSession.backend} saved at ${sessionSavedAtLabel(projectSession.record)}.`);
     return true;
   } catch (error) {
-    console.warn("Auto session load failed; keeping empty room editor.", error);
+    console.warn("Project session auto-load failed; keeping empty room editor.", error);
     return false;
   }
 }
 
 async function clearEditorSession() {
   await clearSessionRecord();
-  updateSessionExportMeta("No saved session. Save will ask for the room_editor folder when supported.");
-  setStatus("Saved session cleared.");
+  updateSessionExportMeta("Unsaved browser draft cleared. Project session JSON is unchanged.");
+  setStatus("Unsaved browser draft cleared.");
 }
 
 function restoreSnapshot(snapshot) {
@@ -6077,6 +6563,24 @@ function restoreSnapshot(snapshot) {
   state.editZoom = normalizedEditZoom(snapshot.editZoom == null ? 100 : Number(snapshot.editZoom) <= 3 ? Number(snapshot.editZoom) * 100 : snapshot.editZoom);
   state.mode = snapshot.mode;
   state.lightProfile = currentLightProfile();
+  state.backgroundItems = Array.isArray(snapshot.backgroundItems)
+    ? snapshot.backgroundItems.map((background, index) => ({
+        ...background,
+        id: background.id || `b${index + 1}`,
+        fileName: background.fileName || background.name || "",
+        visible: background.visible !== false,
+        visibleInDay: background.visibleInDay !== false,
+        visibleInNight: background.visibleInNight !== false,
+        z: Number(background.z ?? index)
+      }))
+    : [];
+  state.nextBackgroundId = Math.max(
+    Number(snapshot.nextBackgroundId) || 1,
+    ...state.backgroundItems.map((background) => {
+      const match = String(background.id || "").match(/(\d+)$/);
+      return match ? Number(match[1]) + 1 : 1;
+    })
+  );
   state.backgrounds = {
     day: snapshot.backgrounds?.day || snapshot.base || null,
     night: snapshot.backgrounds?.night || null
@@ -6248,16 +6752,33 @@ function updateSharedPointHint() {
 
 function exportBackgroundInfo(mode, prepared = preparedRoomMetrics()) {
   const normalized = normalizeBackgroundMode(mode);
-  const bg = (state.backgrounds || {})[normalized];
+  const bg = firstBackgroundLayerForMode(normalized) || (state.backgrounds || {})[normalized];
   return {
-    fileName: bg ? bg.name : "",
+    fileName: bg ? (bg.fileName || bg.name) : "",
     role: normalized,
     loaded: Boolean(bg),
     sourceWidth: bg ? bg.width : 0,
     sourceHeight: bg ? bg.height : 0,
+    layerCount: backgroundLayersForMode(normalized).length || (bg ? 1 : 0),
     fit: BASE_FIT_WIDTH,
     trim: { ...prepared.trim }
   };
+}
+
+function exportBackgroundLayers(prepared = preparedRoomMetrics()) {
+  return backgroundItems().map((background, index) => ({
+    id: background.id || `b${index + 1}`,
+    name: background.name,
+    fileName: background.fileName || background.name,
+    z: Number(background.z ?? index),
+    visible: background.visible !== false,
+    visibleInDay: background.visibleInDay !== false,
+    visibleInNight: background.visibleInNight !== false,
+    sourceWidth: background.width || 0,
+    sourceHeight: background.height || 0,
+    fit: BASE_FIT_WIDTH,
+    trim: { ...prepared.trim }
+  }));
 }
 
 function exportLayoutObject() {
@@ -6272,7 +6793,7 @@ function exportLayoutObject() {
       screenHeight: GAME_SCREEN_HEIGHT
     },
     base: {
-      fileName: primary ? primary.name : "",
+      fileName: primary ? (primary.fileName || primary.name) : "",
       fit: BASE_FIT_WIDTH,
       sourceWidth: primary ? primary.width : 0,
       sourceHeight: primary ? primary.height : 0,
@@ -6286,12 +6807,15 @@ function exportLayoutObject() {
       day: exportBackgroundInfo("day", prepared),
       night: exportBackgroundInfo("night", prepared)
     },
+    backgroundLayers: exportBackgroundLayers(prepared),
     sourceScale: Number(state.sourceScale.toFixed(4)),
     baseOpacity: Number(state.baseOpacity.toFixed(4)),
     roomGeometry: exportRoomGeometryObject(),
     guides: state.guides,
     night: state.night,
-    furniture: sortedItems().map((item) => ({
+    furniture: sortedItems()
+      .filter((item) => (item.source || "furniture") === "furniture")
+      .map((item) => ({
       id: item.id,
       name: item.name,
       fileName: item.fileName,
@@ -6307,13 +6831,15 @@ function exportLayoutObject() {
       sourceScale: Number((item.sourceScale || state.sourceScale).toFixed(4)),
       opacity: Number(item.opacity.toFixed(4)),
       visible: item.visible,
+      visibleInDay: item.visibleInDay !== false,
+      visibleInNight: item.visibleInNight !== false,
       anchor: item.anchor,
       slot: item.slot,
       layer: item.layer,
-	      source: item.source || "furniture",
-	      libraryId: item.libraryId || "",
-	      libraryRevision: item.libraryRevision || 0,
-	      furnitureType: item.source === "furniture" ? normalizeFurnitureType(item.furnitureType) : "",
+      source: "furniture",
+      libraryId: item.libraryId || "",
+      libraryRevision: item.libraryRevision || 0,
+      furnitureType: normalizeFurnitureType(item.furnitureType),
       kind: normalizeItemKind(item.kind),
       heightPx: Math.round(itemHeightPx(item)),
       footprint: normalizeFootprint(item.footprint),
@@ -6370,7 +6896,7 @@ function exportRoomGeometryObject() {
       trim: { ...prepared.trim }
     },
     reference: {
-      fileName: primary ? primary.name : "",
+      fileName: primary ? (primary.fileName || primary.name) : "",
       sourceWidth: primary ? primary.width : 0,
       sourceHeight: primary ? primary.height : 0,
       trim: { ...prepared.trim },
@@ -6379,26 +6905,20 @@ function exportRoomGeometryObject() {
     },
     backgrounds: {
       day: exportBackgroundInfo("day", prepared),
-      night: exportBackgroundInfo("night", prepared)
+      night: exportBackgroundInfo("night", prepared),
+      layers: exportBackgroundLayers(prepared)
     },
     faces: state.faces.map((face, index) => ({
       id: face.id,
       type: normalizeFaceType(face.type),
-      visible: faceVisible(face),
+      visible: !isSpriteAreaFace(face),
+      editorVisible: faceVisible(face),
       shadowSurface: shadowSurfaceForFace(face),
       receivesShadow: !isSpriteAreaFace(face) && face.receivesShadow !== false,
       drawOrder: index,
       points: faceTargetPoints(face).map((point) => [Math.round(point.x), Math.round(point.y)]),
       sourcePoints: faceSourcePoints(face)
-    })),
-    spriteAreas: state.faces
-      .filter(isSpriteAreaFace)
-      .map((face) => ({
-        id: face.id,
-        visible: faceVisible(face),
-        points: faceTargetPoints(face).map((point) => [Math.round(point.x), Math.round(point.y)]),
-        sourcePoints: faceSourcePoints(face)
-      }))
+    }))
   };
 }
 
@@ -6469,7 +6989,7 @@ function canvasToPngBlob(canvasEl) {
 async function ensureExportablePreviewImages() {
   let converted = 0;
   for (const item of state.items) {
-    if (!item.visible || !item.dataUrl || /^data:/i.test(item.dataUrl)) continue;
+    if (!itemVisibleInMode(item) || !item.dataUrl || /^data:/i.test(item.dataUrl)) continue;
     if (item.source === "project_sprite") {
       try {
         if (await hydrateProjectSpriteImage(item)) {
@@ -6507,7 +7027,7 @@ async function downloadCanvas(fileName) {
   } catch (error) {
     console.error(error);
     const blockedItems = state.items
-      .filter((item) => item.visible && item.exportableImage === false)
+      .filter((item) => itemVisibleInMode(item) && item.exportableImage === false)
       .map((item) => item.fileName || item.name || item.id)
       .slice(0, 3);
     const blockedText = blockedItems.length ? ` Non-exportable image: ${blockedItems.join(", ")}.` : "";
@@ -6591,7 +7111,7 @@ async function importLayout(file) {
       return {
         id: face.id || `face${index + 1}`,
         type,
-        visible: face.visible !== false,
+        visible: face.editorVisible ?? face.visible !== false,
         shadowSurface: normalizeShadowSurface(face.shadowSurface, type),
         receivesShadow: type === FACE_TYPE_SPRITE_AREA ? false : face.receivesShadow !== false,
         points
@@ -6649,10 +7169,12 @@ async function importLayout(file) {
       scaleX: entry.scaleX ?? (entry.targetWidth ? entry.targetWidth / Math.max(1, item.sourceWidth) : entry.scale ?? item.scaleX ?? item.scale),
       scaleY: entry.scaleY ?? (entry.targetHeight ? entry.targetHeight / Math.max(1, item.sourceHeight) : entry.scale ?? item.scaleY ?? item.scale),
       aspectLocked: entry.aspectLocked,
-      sourceScale: entry.sourceScale ?? item.sourceScale,
-      opacity: entry.opacity ?? item.opacity,
-      visible: entry.visible ?? item.visible,
-      anchor: entry.anchor || item.anchor,
+	      sourceScale: entry.sourceScale ?? item.sourceScale,
+	      opacity: entry.opacity ?? item.opacity,
+	      visible: entry.visible ?? item.visible,
+	      visibleInDay: entry.visibleInDay ?? item.visibleInDay,
+	      visibleInNight: entry.visibleInNight ?? item.visibleInNight,
+	      anchor: entry.anchor || item.anchor,
       slot: entry.slot || item.slot,
 	      layer: entry.layer || item.layer,
 	      source: entry.source || item.source,
@@ -6716,15 +7238,11 @@ function escapeAttr(value) {
 }
 
 document.getElementById("baseInput").addEventListener("change", (event) => {
-  if (event.target.files[0]) loadBase(event.target.files[0], "day");
-});
-
-document.getElementById("nightBaseInput").addEventListener("change", (event) => {
-  if (event.target.files[0]) loadBase(event.target.files[0], "night");
+  if (event.target.files.length) loadBackgroundFiles([...event.target.files]);
 });
 
 document.getElementById("replaceBaseButton").addEventListener("click", () => {
-  const input = document.getElementById(state.mode === "night" ? "nightBaseInput" : "baseInput");
+  const input = document.getElementById("baseInput");
   input.value = "";
   input.click();
 });
@@ -7231,8 +7749,11 @@ dropZone.addEventListener("drop", async (event) => {
   const json = files.find((file) => file.name.endsWith(".json"));
   const images = files.filter((file) => file.type.startsWith("image/"));
   if (json) await importLayout(json);
-  if (images.length === 1 && !hasBackground()) {
-    await loadBase(images[0], state.mode);
+  if (!images.length) {
+    return;
+  }
+  if (!hasBackground() || state.editMode === "shape") {
+    await loadBackgroundFiles(images);
   } else if (images.length) {
     await addFurnitureFiles(images);
   }

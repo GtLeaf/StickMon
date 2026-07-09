@@ -23,18 +23,23 @@
   "footprintPolygon": [],
   "shadowPolygon": [],
   "shadowAnchor": "wall",
+  "shadowFaceIds": [
+    "face1"
+  ],
   "wallShadowDepthPx": 9,
   "wallShadowOffsetY": 0,
   "castsShadow": true,
-  "shadowOpacity": 100,
-  "shadowLength": 22,
-  "shadowBlur": 0,
+  "shadowOpacity": 60,
+  "shadowLength": 12,
+  "shadowBlur": 0.8,
   "receivesShadow": false,
   "occludesSprite": false,
+  "visibleInDay": true,
+  "visibleInNight": true,
   "slot": "wall",
   "layer": "wall",
   "cutoutApplied": false,
   "annotated": true,
-  "revision": 1,
-  "image": "images/furniture_furniture_0001_shelf.png"
+  "image": "images/furniture_furniture_0001_shelf.png",
+  "revision": 1
 }

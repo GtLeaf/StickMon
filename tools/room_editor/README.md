@@ -30,11 +30,12 @@ open ./tools/room_editor/index.html
 
 ## Recommended Asset Flow
 
-1. Generate or prepare a day room image and, optionally, a matching night room
-   image.
-2. Import `Day background`. Import `Night background` when you have a separate
-   night image. Night preview falls back to the day image until the night image
-   is loaded.
+1. Generate or prepare one or more room background images. Day and night can be
+   separate images or layered variants.
+2. Import them with `Backgrounds`. Each imported background appears in
+   `Asset management` with `Day` and `Night` checkboxes. File names containing
+   `day` or `night` are assigned automatically; other names are enabled for both
+   modes by default.
 3. Confirm the game preview size. `Room W` and `Room H` are target game pixels;
    keep `Lock room aspect ratio` enabled when changing only one dimension.
 4. Adjust `Reference opacity` so the original-size image is useful as a tracing
@@ -77,10 +78,14 @@ open ./tools/room_editor/index.html
       one-pixel brush.
     - `Reset after` restores the after image back to the original.
     - `Use cutout` imports the edited after image.
-13. Check `Asset management` for the day/night background variants, all
-    furniture, and all sprite preview items. Day and Night backgrounds share one
-    trim, one coordinate system, room faces, and furniture layout. Use the row
-    `Delete` button to remove imported furniture or sprite preview items.
+    - after import, the editor tries to copy the furniture into
+      `generated/furniture_library/` under the selected `tools/room_editor`
+      folder so future sessions and layout imports can restore it by
+      `libraryId`.
+13. Check `Asset management` for background layers, all furniture, and all
+    sprite preview items. Background layers share one trim, one coordinate
+    system, room faces, and furniture layout. Use the row `Delete` button to
+    remove imported backgrounds, furniture, or sprite preview items.
 14. Drag furniture on the canvas and edit transform values in the `Transform`
     group. Use `Object semantics` to set `Kind`, `Height`, `Footprint`, shadow,
     receiving, and sprite occlusion behavior. Rugs and floor decals should keep
@@ -101,9 +106,9 @@ open ./tools/room_editor/index.html
     scale/placement preview.
 16. Use the collapsible `Light and shadows` panel on the right to tune the
     active day/night light source. Toggle `Day` / `Night` in the stage toolbar to
-    preview the result. Day uses `Day background`; Night uses `Night background`
-    when loaded and otherwise falls back to the day image. Both modes use the
-    configured light and projected shadows:
+    preview the result. Day draws background layers checked for `Day`; Night
+    draws layers checked for `Night`. Both modes use the configured light and
+    projected shadows:
    - drag the `Light` handle on the edit canvas to change `Light X/Y`.
    - The right-side light controls follow `Preview Day` / `Preview Night`
      directly. Day edits the day light; Night edits the night light.
@@ -136,14 +141,17 @@ open ./tools/room_editor/index.html
 17. Use `Toolbox` / `Measure H` to drag a vertical measurement on the edit
     canvas. The readout shows both original canvas pixels and target game pixels.
 18. Use the export buttons:
-   - `Save session`: stores the current editor session in the browser and writes
-     `sessions/stickmon_room_editor_session.json` under the selected
-     `tools/room_editor` folder. Browsers without directory handle support fall
-     back to downloading a `stickmon_room_editor_session_*.json` backup. The
-     backup includes the last imported file names, images, furniture, room
+   - `Save session`: writes `sessions/stickmon_room_editor_session.json` under
+     the selected `tools/room_editor` folder and also keeps a browser draft
+     backup in IndexedDB/localStorage. Browsers without directory handle support
+     fall back to downloading a `stickmon_room_editor_session_*.json` backup.
+     The backup includes the last imported file names, images, furniture, room
      geometry, and UI settings.
-   - `Load session`: restores the browser-saved session.
-   - `Clear saved`: removes the browser-saved session.
+   - `Load session`: restores `sessions/stickmon_room_editor_session.json`
+     first. If the project session cannot be found, it recovers the browser
+     draft backup instead.
+   - `Clear saved`: removes only the browser draft backup. It does not delete
+     the project session JSON.
    - `Layout JSON`: can import normal room layout exports or downloaded session
      backup files.
    - `Export layout JSON`: writes `room_layout.json`, including room geometry,
@@ -152,14 +160,14 @@ open ./tools/room_editor/index.html
      Project sprite preview frames are embedded as data URLs so this also works
      when the editor is opened directly as a local file. If export still fails,
      reload the editor and re-import any path-based external images.
-   - `Add to Library`: on a selected annotated furniture item, writes that item
+   - `Add selected`: on a selected annotated furniture item, writes that item
      directly into `generated/furniture_library` under the selected
      `tools/room_editor` folder, and regenerates `generated/furniture_library_assets.js`.
    - `Delete` in the Furniture library list removes that item from the room
      editor furniture library. Already placed scene items remain in the room and
      are detached from the removed `libraryId`.
    - `Change tool folder`: reselects the `tools/room_editor` folder used by
-     `Save session`, `Add to Library`, and library `Delete`.
+     `Save session`, `Add selected`, and library `Delete`.
    - `Export furniture bundle`: writes the currently annotated furniture as a
      portable fallback bundle for browsers that cannot use local directory
      handles.
@@ -230,8 +238,8 @@ the editor.
 
 The right-side `Asset management` list shows:
 
-- the day/night background variants, including source size, shared trim size,
-  active preview mode, and opacity
+- background layers, including source size, Day/Night membership, shared trim
+  size, active preview mode, opacity, and delete controls
 - imported furniture PNGs, including semantic kind, height, placement, target
   size, scale, visibility, and whether a cutout was applied
 - project sprite previews, including selected action/frame and placement
@@ -297,8 +305,10 @@ It uses the current `Sprite X/Y/W/H` guide as its initial placement.
 The exported layout uses this model:
 
 - `roomGeometry`: wall/floor polygons for the generated room background.
-- `backgrounds`: day/night background metadata plus the shared trim/fit
-  transform.
+- `backgroundLayers`: ordered background layer metadata, including Day/Night
+  visibility flags.
+- `backgrounds`: day/night primary background metadata plus the shared trim/fit
+  transform, retained for compatibility.
 - `base`: primary background metadata retained for old tooling compatibility.
 - `furniture`: ordered by `z`, then composited over the base.
 - `guides`: sprite and HUD safe zones for preview only.
@@ -318,7 +328,10 @@ Annotated furniture can be promoted into a reusable library:
 1. Select or configure furniture in the scene.
 2. Set its semantic data: preset/category, height, shadow anchor, footprint
    polygon, and shadow polygon as needed.
-3. Use `Add to Library` from the selected furniture's `Library` section. The
+3. Imported furniture is saved to the tool-local library automatically when the
+   browser has access to the selected `tools/room_editor` folder. Use
+   `Add selected` from the selected furniture's `Library` section when you want
+   to promote or update an already placed annotated item. The
    first write asks for the `tools/room_editor` folder; later writes reuse the
    stored directory handle and update the tool files directly.
 4. Use `Delete` in the library list to remove an item from the reusable library.
@@ -335,6 +348,8 @@ PNGs even when opened through `file://`.
 Room layouts store `libraryId` for library furniture, while keeping a snapshot
 of placement and annotation fields. If the library is present when importing a
 layout, missing furniture images can be restored from the library automatically.
+Saved editor sessions also compact library-backed furniture by storing the
+`libraryId` instead of duplicating the full image data.
 
 ## Editor Interaction Notes
 
@@ -376,3 +391,24 @@ It writes:
 
 The script is intended as a preview compositor. A later firmware asset
 generator can consume the same `room_layout.json` and PNG files.
+
+## Firmware Room Asset Generator
+
+Use `tools/prepare_room_background.py` to write the active room background into
+`src/assets/RoomAssets.*`. Normal mode composes all `backgroundLayers` enabled
+for Day/Night plus furniture from `room_layout.json`:
+
+```bash
+python3 ./tools/prepare_room_background.py
+```
+
+When testing a fully composed room image, bypass furniture composition so
+objects are not drawn twice:
+
+```bash
+python3 ./tools/prepare_room_background.py \
+  --direct-room-image ./origin_asset/room/standar/room_preview.png
+```
+
+`--direct-room-image` uses the same image for day and night. Use
+`--direct-day-image` and `--direct-night-image` when the two backgrounds differ.

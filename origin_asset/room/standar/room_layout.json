@@ -2,69 +2,91 @@
   "version": 2,
   "canvas": {
     "width": 240,
-    "height": 163,
+    "height": 161,
     "screenWidth": 240,
     "screenHeight": 135
   },
   "base": {
-    "fileName": "empty_room.png",
+    "fileName": "room_empty.png",
     "fit": "fit_width",
     "sourceWidth": 1672,
     "sourceHeight": 941,
     "trim": {
-      "x": 152,
+      "x": 147,
       "y": 0,
-      "width": 1380,
-      "height": 939
+      "width": 1372,
+      "height": 921
     }
   },
   "backgrounds": {
-    "activeMode": "night",
+    "activeMode": "day",
     "sharedTransform": true,
     "fit": "fit_width",
     "trim": {
-      "x": 152,
+      "x": 147,
       "y": 0,
-      "width": 1380,
-      "height": 939
+      "width": 1372,
+      "height": 921
     },
     "day": {
-      "fileName": "empty_room.png",
+      "fileName": "room_empty.png",
       "role": "day",
       "loaded": true,
       "sourceWidth": 1672,
       "sourceHeight": 941,
+      "layerCount": 1,
       "fit": "fit_width",
       "trim": {
-        "x": 152,
+        "x": 147,
         "y": 0,
-        "width": 1380,
-        "height": 939
+        "width": 1372,
+        "height": 921
       }
     },
     "night": {
-      "fileName": "standard_room_night.png",
+      "fileName": "room_empty.png",
       "role": "night",
       "loaded": true,
       "sourceWidth": 1672,
       "sourceHeight": 941,
+      "layerCount": 1,
       "fit": "fit_width",
       "trim": {
-        "x": 152,
+        "x": 147,
         "y": 0,
-        "width": 1380,
-        "height": 939
+        "width": 1372,
+        "height": 921
       }
     }
   },
-  "sourceScale": 6.97,
+  "backgroundLayers": [
+    {
+      "id": "b1",
+      "name": "room_empty.png",
+      "fileName": "room_empty.png",
+      "z": 0,
+      "visible": true,
+      "visibleInDay": true,
+      "visibleInNight": true,
+      "sourceWidth": 1672,
+      "sourceHeight": 941,
+      "fit": "fit_width",
+      "trim": {
+        "x": 147,
+        "y": 0,
+        "width": 1372,
+        "height": 921
+      }
+    }
+  ],
+  "sourceScale": 5.72,
   "baseOpacity": 1,
   "roomGeometry": {
     "version": 2,
     "coordinateSpace": "target",
     "room": {
       "width": 240,
-      "height": 163
+      "height": 161
     },
     "viewport": {
       "width": 240,
@@ -72,108 +94,131 @@
     },
     "canvas": {
       "width": 240,
-      "height": 163
+      "height": 161
     },
     "edit": {
-      "width": 1380,
-      "height": 939
+      "width": 1372,
+      "height": 921
     },
     "prepared": {
       "width": 240,
-      "height": 163,
+      "height": 161,
       "y": 0,
-      "scale": 0.17391304,
+      "scale": 0.17492711,
       "trim": {
-        "x": 152,
+        "x": 147,
         "y": 0,
-        "width": 1380,
-        "height": 939
+        "width": 1372,
+        "height": 921
       }
     },
     "reference": {
-      "fileName": "empty_room.png",
+      "fileName": "room_empty.png",
       "sourceWidth": 1672,
       "sourceHeight": 941,
       "trim": {
-        "x": 152,
+        "x": 147,
         "y": 0,
-        "width": 1380,
-        "height": 939
+        "width": 1372,
+        "height": 921
       },
       "fit": "fit_width",
       "opacity": 1
     },
     "backgrounds": {
       "day": {
-        "fileName": "empty_room.png",
+        "fileName": "room_empty.png",
         "role": "day",
         "loaded": true,
         "sourceWidth": 1672,
         "sourceHeight": 941,
+        "layerCount": 1,
         "fit": "fit_width",
         "trim": {
-          "x": 152,
+          "x": 147,
           "y": 0,
-          "width": 1380,
-          "height": 939
+          "width": 1372,
+          "height": 921
         }
       },
       "night": {
-        "fileName": "standard_room_night.png",
+        "fileName": "room_empty.png",
         "role": "night",
         "loaded": true,
         "sourceWidth": 1672,
         "sourceHeight": 941,
+        "layerCount": 1,
         "fit": "fit_width",
         "trim": {
-          "x": 152,
+          "x": 147,
           "y": 0,
-          "width": 1380,
-          "height": 939
+          "width": 1372,
+          "height": 921
         }
-      }
+      },
+      "layers": [
+        {
+          "id": "b1",
+          "name": "room_empty.png",
+          "fileName": "room_empty.png",
+          "z": 0,
+          "visible": true,
+          "visibleInDay": true,
+          "visibleInNight": true,
+          "sourceWidth": 1672,
+          "sourceHeight": 941,
+          "fit": "fit_width",
+          "trim": {
+            "x": 147,
+            "y": 0,
+            "width": 1372,
+            "height": 921
+          }
+        }
+      ]
     },
     "faces": [
       {
         "id": "face1",
         "type": "wall",
-        "visible": false,
+        "visible": true,
+        "editorVisible": true,
         "shadowSurface": "left_wall",
         "receivesShadow": true,
         "drawOrder": 0,
         "points": [
           [
             10,
-            36
+            37
           ],
           [
             11,
-            107
+            108
+          ],
+          [
+            121,
+            73
           ],
           [
             120,
-            72
-          ],
-          [
-            119,
             5
           ]
         ],
         "sourcePoints": [
           [
-            207,
+            202,
             209
           ],
           [
-            214,
-            617
+            209,
+            618
           ],
           [
-            841,
-            414
+            836,
+            415
           ],
           [
-            837,
+            832,
             31
           ]
         ]
@@ -181,43 +226,44 @@
       {
         "id": "face2",
         "type": "wall",
-        "visible": false,
+        "visible": true,
+        "editorVisible": true,
         "shadowSurface": "right_wall",
         "receivesShadow": true,
         "drawOrder": 1,
         "points": [
           [
-            232,
+            234,
             38
           ],
           [
-            229,
-            109
+            230,
+            110
+          ],
+          [
+            121,
+            73
           ],
           [
             120,
-            72
-          ],
-          [
-            119,
             5
           ]
         ],
         "sourcePoints": [
           [
-            1488,
+            1483,
             219
           ],
           [
-            1469,
-            629
+            1464,
+            630
           ],
           [
-            841,
-            414
+            836,
+            415
           ],
           [
-            837,
+            832,
             31
           ]
         ]
@@ -225,258 +271,154 @@
       {
         "id": "face3",
         "type": "floor",
-        "visible": false,
+        "visible": true,
+        "editorVisible": true,
         "shadowSurface": "floor",
         "receivesShadow": true,
         "drawOrder": 2,
         "points": [
           [
-            133,
-            154
+            134,
+            155
           ],
           [
             11,
-            107
+            108
           ],
           [
-            120,
-            72
+            121,
+            73
           ],
           [
-            229,
-            109
+            230,
+            110
           ]
         ],
         "sourcePoints": [
           [
-            918,
-            887
+            913,
+            888
           ],
           [
-            214,
-            617
+            209,
+            618
           ],
           [
-            841,
-            414
+            836,
+            415
           ],
           [
-            1469,
-            629
+            1464,
+            630
           ]
         ]
       },
       {
         "id": "face4",
         "type": "sprite_area",
-        "visible": true,
+        "visible": false,
+        "editorVisible": true,
         "shadowSurface": "floor",
         "receivesShadow": false,
         "drawOrder": 3,
         "points": [
           [
-            120,
-            72
+            121,
+            73
           ],
           [
-            106,
-            76
+            107,
+            75
           ],
           [
-            93,
-            69
-          ],
-          [
-            69,
+            94,
             67
           ],
           [
-            51,
-            72
+            71,
+            64
+          ],
+          [
+            50,
+            67
+          ],
+          [
+            37,
+            78
           ],
           [
             39,
-            79
-          ],
-          [
-            44,
             91
           ],
           [
-            57,
-            99
+            60,
+            100
           ],
           [
-            55,
-            113
+            58,
+            118
           ],
           [
-            38,
-            123
+            45,
+            124
           ],
           [
-            132,
-            154
+            133,
+            155
           ],
           [
-            232,
-            109
+            234,
+            110
           ]
         ],
         "sourcePoints": [
           [
-            841,
-            416
+            836,
+            417
           ],
           [
-            763,
-            436
+            760,
+            430
           ],
           [
-            688,
-            399
+            685,
+            381
           ],
           [
-            551,
-            387
+            554,
+            364
           ],
           [
-            448,
-            412
+            432,
+            383
           ],
           [
-            379,
-            454
+            360,
+            446
           ],
           [
-            407,
-            525
+            371,
+            523
           ],
           [
-            477,
-            571
+            492,
+            573
           ],
           [
-            470,
-            650
+            479,
+            677
           ],
           [
-            369,
-            708
+            404,
+            711
           ],
           [
-            913,
-            885
+            908,
+            886
           ],
           [
-            1487,
-            628
-          ]
-        ]
-      }
-    ],
-    "spriteAreas": [
-      {
-        "id": "face4",
-        "visible": true,
-        "points": [
-          [
-            120,
-            72
-          ],
-          [
-            106,
-            76
-          ],
-          [
-            93,
-            69
-          ],
-          [
-            69,
-            67
-          ],
-          [
-            51,
-            72
-          ],
-          [
-            39,
-            79
-          ],
-          [
-            44,
-            91
-          ],
-          [
-            57,
-            99
-          ],
-          [
-            55,
-            113
-          ],
-          [
-            38,
-            123
-          ],
-          [
-            132,
-            154
-          ],
-          [
-            232,
-            109
-          ]
-        ],
-        "sourcePoints": [
-          [
-            841,
-            416
-          ],
-          [
-            763,
-            436
-          ],
-          [
-            688,
-            399
-          ],
-          [
-            551,
-            387
-          ],
-          [
-            448,
-            412
-          ],
-          [
-            379,
-            454
-          ],
-          [
-            407,
-            525
-          ],
-          [
-            477,
-            571
-          ],
-          [
-            470,
-            650
-          ],
-          [
-            369,
-            708
-          ],
-          [
-            913,
-            885
-          ],
-          [
-            1487,
-            628
+            1482,
+            629
           ]
         ]
       }
@@ -506,7 +448,7 @@
     "dayLight": {
       "lightShape": "cone",
       "lightStrength": 109,
-      "lightX": 239,
+      "lightX": 238,
       "lightY": 21,
       "lightDepth": 180,
       "lightRadius": 240,
@@ -516,8 +458,8 @@
     "nightLight": {
       "lightShape": "radial",
       "lightStrength": 64,
-      "lightX": 123,
-      "lightY": 4,
+      "lightX": 126,
+      "lightY": 9,
       "lightDepth": 180,
       "lightRadius": 191,
       "lightAngle": 175,
@@ -531,26 +473,28 @@
   },
   "furniture": [
     {
-      "id": "f1",
-      "name": "furniture_carpet",
-      "fileName": "furniture_0000_carpet.png",
-      "x": 82,
-      "y": 94,
+      "id": "f10",
+      "name": "carpet",
+      "fileName": "carpet.png",
+      "x": 81,
+      "y": 92,
       "z": 19,
-      "scale": 0.09,
-      "scaleX": 0.09,
-      "scaleY": 0.09,
+      "scale": 0.066,
+      "scaleX": 0.066,
+      "scaleY": 0.066,
       "aspectLocked": true,
       "targetWidth": 102,
-      "targetHeight": 46,
-      "sourceScale": 6.97,
+      "targetHeight": 50,
+      "sourceScale": 5.72,
       "opacity": 1,
       "visible": true,
+      "visibleInDay": true,
+      "visibleInNight": true,
       "anchor": "top_left",
       "slot": "floor",
-      "layer": "main",
+      "layer": "floor",
       "source": "furniture",
-      "libraryId": "furniture_furniture_0000_carpet",
+      "libraryId": "furniture_carpet",
       "libraryRevision": 1,
       "furnitureType": "decoration",
       "kind": "rug",
@@ -559,21 +503,22 @@
       "footprintPolygon": [],
       "shadowPolygon": [],
       "shadowAnchor": "auto",
+      "shadowFaceIds": [],
       "wallShadowDepthPx": 0,
       "wallShadowOffsetY": 0,
       "castsShadow": false,
-      "shadowOpacity": 38,
-      "shadowLength": 28,
-      "shadowBlur": 0.6,
+      "shadowOpacity": 53,
+      "shadowLength": 22,
+      "shadowBlur": 0,
       "receivesShadow": true,
       "occludesSprite": false,
-      "sortY": 140,
+      "sortY": 142,
       "cutoutApplied": false,
       "speciesId": 0,
       "action": "",
       "frame": "",
-      "sourceWidth": 1133,
-      "sourceHeight": 512
+      "sourceWidth": 1546,
+      "sourceHeight": 752
     },
     {
       "id": "f6",
@@ -591,6 +536,8 @@
       "sourceScale": 6.97,
       "opacity": 1,
       "visible": true,
+      "visibleInDay": true,
+      "visibleInNight": true,
       "anchor": "top_left",
       "slot": "wall",
       "layer": "wall",
@@ -610,9 +557,9 @@
       "wallShadowDepthPx": 9,
       "wallShadowOffsetY": 0,
       "castsShadow": true,
-      "shadowOpacity": 100,
-      "shadowLength": 22,
-      "shadowBlur": 0,
+      "shadowOpacity": 60,
+      "shadowLength": 12,
+      "shadowBlur": 0.8,
       "receivesShadow": false,
       "occludesSprite": false,
       "sortY": 52,
@@ -624,30 +571,128 @@
       "sourceHeight": 522
     },
     {
-      "id": "f4",
-      "name": "furniture_bed",
-      "fileName": "furniture_0003_bed.png",
-      "x": 35,
-      "y": 66,
+      "id": "f7",
+      "name": "window_day",
+      "fileName": "window_day.png",
+      "x": 139,
+      "y": 23,
       "z": 20,
-      "scale": 0.0792,
-      "scaleX": 0.0792,
-      "scaleY": 0.0792,
+      "scale": 0.1748,
+      "scaleX": 0.1748,
+      "scaleY": 0.1748,
       "aspectLocked": true,
-      "targetWidth": 78,
-      "targetHeight": 46,
-      "sourceScale": 6.97,
+      "targetWidth": 45,
+      "targetHeight": 49,
+      "sourceScale": 5.72,
       "opacity": 1,
       "visible": true,
+      "visibleInDay": true,
+      "visibleInNight": false,
+      "anchor": "top_left",
+      "slot": "wall",
+      "layer": "wall",
+      "source": "furniture",
+      "libraryId": "",
+      "libraryRevision": 0,
+      "furnitureType": "decoration",
+      "kind": "wall_prop",
+      "heightPx": 0,
+      "footprint": "none",
+      "footprintPolygon": [],
+      "shadowPolygon": [],
+      "shadowAnchor": "auto",
+      "shadowFaceIds": [],
+      "wallShadowDepthPx": 4,
+      "wallShadowOffsetY": 0,
+      "castsShadow": false,
+      "shadowOpacity": 53,
+      "shadowLength": 22,
+      "shadowBlur": 0,
+      "receivesShadow": false,
+      "occludesSprite": false,
+      "sortY": 72,
+      "cutoutApplied": false,
+      "speciesId": 0,
+      "action": "",
+      "frame": "",
+      "sourceWidth": 255,
+      "sourceHeight": 283
+    },
+    {
+      "id": "f8",
+      "name": "window_night",
+      "fileName": "window_night.png",
+      "x": 139,
+      "y": 23,
+      "z": 20,
+      "scale": 0.1748,
+      "scaleX": 0.1748,
+      "scaleY": 0.1748,
+      "aspectLocked": true,
+      "targetWidth": 45,
+      "targetHeight": 49,
+      "sourceScale": 5.72,
+      "opacity": 1,
+      "visible": true,
+      "visibleInDay": false,
+      "visibleInNight": true,
+      "anchor": "top_left",
+      "slot": "wall",
+      "layer": "wall",
+      "source": "furniture",
+      "libraryId": "",
+      "libraryRevision": 0,
+      "furnitureType": "decoration",
+      "kind": "wall_prop",
+      "heightPx": 0,
+      "footprint": "none",
+      "footprintPolygon": [],
+      "shadowPolygon": [],
+      "shadowAnchor": "auto",
+      "shadowFaceIds": [],
+      "wallShadowDepthPx": 4,
+      "wallShadowOffsetY": 0,
+      "castsShadow": false,
+      "shadowOpacity": 53,
+      "shadowLength": 22,
+      "shadowBlur": 0,
+      "receivesShadow": false,
+      "occludesSprite": false,
+      "sortY": 72,
+      "cutoutApplied": false,
+      "speciesId": 0,
+      "action": "",
+      "frame": "",
+      "sourceWidth": 255,
+      "sourceHeight": 283
+    },
+    {
+      "id": "f9",
+      "name": "bed",
+      "fileName": "bed.png",
+      "x": 35,
+      "y": 64,
+      "z": 20,
+      "scale": 0.0514,
+      "scaleX": 0.0514,
+      "scaleY": 0.0514,
+      "aspectLocked": true,
+      "targetWidth": 78,
+      "targetHeight": 50,
+      "sourceScale": 5.72,
+      "opacity": 1,
+      "visible": true,
+      "visibleInDay": true,
+      "visibleInNight": true,
       "anchor": "top_left",
       "slot": "floor",
       "layer": "main",
       "source": "furniture",
-      "libraryId": "furniture_furniture_0003_bed",
+      "libraryId": "furniture_bed",
       "libraryRevision": 1,
       "furnitureType": "bed",
-      "kind": "furniture",
-      "heightPx": 13,
+      "kind": "bed_sofa",
+      "heightPx": 34,
       "footprint": "ellipse",
       "footprintPolygon": [
         [
@@ -757,27 +802,28 @@
           0.62
         ]
       ],
-      "shadowAnchor": "auto",
+      "shadowAnchor": "floor",
+      "shadowFaceIds": [],
       "wallShadowDepthPx": 0,
       "wallShadowOffsetY": 0,
       "castsShadow": true,
-      "shadowOpacity": 100,
-      "shadowLength": 22,
-      "shadowBlur": 0,
+      "shadowOpacity": 53,
+      "shadowLength": 7,
+      "shadowBlur": 0.8,
       "receivesShadow": true,
       "occludesSprite": true,
-      "sortY": 112,
+      "sortY": 114,
       "cutoutApplied": false,
       "speciesId": 0,
       "action": "",
       "frame": "",
-      "sourceWidth": 985,
-      "sourceHeight": 587
+      "sourceWidth": 1518,
+      "sourceHeight": 972
     },
     {
       "id": "f3",
-      "name": "furniture_bowl",
-      "fileName": "furniture_0002_bowl.png",
+      "name": "forniture_bowl",
+      "fileName": "forniture_0002_bowl.png",
       "x": 35,
       "y": 106,
       "z": 22,
@@ -790,6 +836,8 @@
       "sourceScale": 6.97,
       "opacity": 1,
       "visible": true,
+      "visibleInDay": true,
+      "visibleInNight": true,
       "anchor": "top_left",
       "slot": "floor",
       "layer": "main",
@@ -869,6 +917,7 @@
         ]
       ],
       "shadowAnchor": "auto",
+      "shadowFaceIds": [],
       "wallShadowDepthPx": 0,
       "wallShadowOffsetY": 0,
       "castsShadow": true,
@@ -884,51 +933,6 @@
       "frame": "",
       "sourceWidth": 886,
       "sourceHeight": 635
-    },
-    {
-      "id": "f5",
-      "name": "001 Bulbasaur",
-      "fileName": "001_bulbasaur_BULBASAUR_IDLE_FRONT_0.png",
-      "x": 107,
-      "y": 74,
-      "z": 30,
-      "scale": 1,
-      "scaleX": 1,
-      "scaleY": 1,
-      "aspectLocked": true,
-      "targetWidth": 64,
-      "targetHeight": 64,
-      "sourceScale": 1,
-      "opacity": 1,
-      "visible": true,
-      "anchor": "top_left",
-      "slot": "sprite_preview",
-      "layer": "sprite_preview",
-      "source": "project_sprite",
-      "libraryId": "",
-      "libraryRevision": 0,
-      "furnitureType": "",
-      "kind": "furniture",
-      "heightPx": 32,
-      "footprint": "rect",
-      "footprintPolygon": [],
-      "shadowPolygon": [],
-      "shadowAnchor": "auto",
-      "wallShadowDepthPx": 0,
-      "wallShadowOffsetY": 0,
-      "castsShadow": true,
-      "shadowOpacity": 38,
-      "shadowLength": 28,
-      "shadowBlur": 0.6,
-      "receivesShadow": true,
-      "occludesSprite": true,
-      "sortY": 138,
-      "cutoutApplied": false,
-      "speciesId": 1,
-      "action": "idle",
-      "frame": "BULBASAUR_IDLE_FRONT_0",
-      "sourceWidth": 64,
-      "sourceHeight": 64
     }
   ]
 }

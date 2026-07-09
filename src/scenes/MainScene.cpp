@@ -1,13 +1,19 @@
 #include "scenes/MainScene.h"
+#include <Arduino.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
+#include "assets/HudAssets.h"
 #include "assets/PokemonSprites.h"
 #include "assets/RoomAssets.h"
 #include "core/GameEngine.h"
 #include "core/UiStrings.h"
 #include "hardware/Hal.h"
 #include "hardware/PixelRenderer.h"
+extern "C" {
+#include "third_party/uzlib/uzlib.h"
+}
 
 namespace {
 static constexpr uint16_t PMD_IDLE_FRAME_MS = 520;
@@ -21,9 +27,32 @@ static constexpr float DEBUG_TILT_SPEED = 58.0f;
 static constexpr float CAMERA_FOCUS_Y = 84.0f;
 static constexpr float FOOD_CENTER_X = (float)RoomAssets::ROOM_FOOD_X;
 static constexpr float FOOD_CENTER_Y = (float)RoomAssets::ROOM_FOOD_Y;
+static constexpr float FOOD_FEED_OFFSET_X = 12.0f;
+static constexpr float FOOD_FEED_OFFSET_Y = 4.0f;
+static constexpr float FOOD_FEED_X = FOOD_CENTER_X + FOOD_FEED_OFFSET_X;
+static constexpr float FOOD_FEED_Y = FOOD_CENTER_Y + FOOD_FEED_OFFSET_Y;
 static constexpr float BED_CENTER_X = (float)RoomAssets::ROOM_BED_X;
 static constexpr float BED_CENTER_Y = (float)RoomAssets::ROOM_BED_Y;
+static constexpr float BED_SLEEP_X = (float)RoomAssets::ROOM_BED_X;
+static constexpr float BED_SLEEP_Y = (float)RoomAssets::ROOM_BED_Y;
+static constexpr float BED_APPROACH_TOLERANCE_X = 18.0f;
+static constexpr float BED_APPROACH_TOLERANCE_Y = 14.0f;
+static constexpr float BED_SLEEP_TOLERANCE_X = 2.5f;
+static constexpr float BED_SLEEP_TOLERANCE_Y = 6.0f;
 static constexpr uint32_t FEED_REQUEST_TIMEOUT_MS = 18000;
+static constexpr uint32_t NIGHT_FEED_REQUEST_TIMEOUT_MS = 45000;
+static constexpr uint16_t NIGHT_FEED_WAKE_DELAY_MIN_MS = 2600;
+static constexpr uint16_t NIGHT_FEED_WAKE_DELAY_MAX_MS = 6500;
+static constexpr uint16_t FEED_BITE_DELAY_MIN_MS = 700;
+static constexpr uint16_t FEED_BITE_DELAY_MAX_MS = 1300;
+static constexpr uint16_t FEED_SESSION_MIN_MS = 3200;
+static constexpr uint16_t FEED_SESSION_MAX_MS = 5600;
+static constexpr uint16_t POST_FEED_AWAKE_MIN_MS = 7000;
+static constexpr uint16_t POST_FEED_AWAKE_MAX_MS = 13000;
+static constexpr uint8_t DAY_AUTO_FEED_HUNGER = 55;
+static constexpr uint8_t NIGHT_AUTO_FEED_HUNGER = 30;
+static constexpr uint32_t ROOM_BUFFER_PIXELS =
+    (uint32_t)RoomAssets::STANDARD_ROOM_W * (uint32_t)RoomAssets::STANDARD_ROOM_H;
 
 enum class PmdMotionMode : uint8_t {
     LOOP,
@@ -206,6 +235,14 @@ int16_t roomPointY(uint8_t index) {
     return (int16_t)pgm_read_word(&RoomAssets::ROOM_WALK_POLYGON[index].y);
 }
 
+int16_t bedPointX(uint8_t index) {
+    return (int16_t)pgm_read_word(&RoomAssets::ROOM_BED_POLYGON[index].x);
+}
+
+int16_t bedPointY(uint8_t index) {
+    return (int16_t)pgm_read_word(&RoomAssets::ROOM_BED_POLYGON[index].y);
+}
+
 bool roomWalkContains(float x, float y) {
     uint8_t count = RoomAssets::ROOM_WALK_POLYGON_COUNT;
     if (count < 3) return true;
@@ -217,6 +254,25 @@ bool roomWalkContains(float x, float y) {
         float yi = (float)roomPointY(i);
         float xj = (float)roomPointX(j);
         float yj = (float)roomPointY(j);
+        bool crosses = ((yi > y) != (yj > y)) &&
+                       (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+        if (crosses) inside = !inside;
+        j = i;
+    }
+    return inside;
+}
+
+bool roomBedContains(float x, float y) {
+    uint8_t count = RoomAssets::ROOM_BED_POLYGON_COUNT;
+    if (count < 3) return false;
+
+    bool inside = false;
+    uint8_t j = count - 1;
+    for (uint8_t i = 0; i < count; ++i) {
+        float xi = (float)bedPointX(i);
+        float yi = (float)bedPointY(i);
+        float xj = (float)bedPointX(j);
+        float yj = (float)bedPointY(j);
         bool crosses = ((yi > y) != (yj > y)) &&
                        (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
         if (crosses) inside = !inside;
@@ -330,73 +386,172 @@ bool mainSceneIsNight() {
     return minutes < 6 * 60 || minutes >= 18 * 60;
 }
 
-void drawHeartIcon(int centerX, int centerY, uint8_t tier, uint16_t color) {
+uint16_t* gRoomBuffer = nullptr;
+bool gRoomBufferValid = false;
+bool gRoomBufferNight = false;
+
+bool ensureRoomBuffer() {
+    if (gRoomBuffer) return true;
+    if (!psramFound()) return false;
+    size_t bytes = (size_t)ROOM_BUFFER_PIXELS * sizeof(uint16_t);
+    gRoomBuffer = (uint16_t*)ps_malloc(bytes);
+    gRoomBufferValid = false;
+    return gRoomBuffer != nullptr;
+}
+
+bool inflateRawDeflate(const uint8_t* compressed, uint32_t compressedSize, uint8_t* out, uint32_t outSize) {
+    TINF_DATA d;
+    memset(&d, 0, sizeof(d));
+    uzlib_init();
+    uzlib_uncompress_init(&d, nullptr, 0);
+    d.source = compressed;
+    d.source_limit = compressed + compressedSize;
+    d.dest_start = out;
+    d.dest = out;
+    d.dest_limit = out + outSize;
+
+    int result = TINF_OK;
+    while (d.dest < d.dest_limit) {
+        result = uzlib_uncompress(&d);
+        if (result == TINF_DONE) break;
+        if (result != TINF_OK) return false;
+    }
+    return result == TINF_DONE || d.dest == d.dest_limit;
+}
+
+bool decodeRoomBaseToBuffer(uint16_t* out) {
+    if (!out) return false;
+    const uint32_t decodedBytes = RoomAssets::STANDARD_ROOM_BASE_RAW_BYTES;
+    if (decodedBytes != ROOM_BUFFER_PIXELS * sizeof(uint16_t)) return false;
+
+    uint8_t* compressed = psramFound()
+        ? (uint8_t*)ps_malloc(RoomAssets::STANDARD_ROOM_BASE_COMPRESSED_LEN)
+        : (uint8_t*)malloc(RoomAssets::STANDARD_ROOM_BASE_COMPRESSED_LEN);
+    if (!compressed) return false;
+
+    for (uint32_t i = 0; i < RoomAssets::STANDARD_ROOM_BASE_COMPRESSED_LEN; ++i) {
+        compressed[i] = pgm_read_byte(&RoomAssets::STANDARD_ROOM_BASE_COMPRESSED[i]);
+    }
+
+    bool ok = inflateRawDeflate(
+        compressed,
+        RoomAssets::STANDARD_ROOM_BASE_COMPRESSED_LEN,
+        (uint8_t*)out,
+        decodedBytes
+    );
+    free(compressed);
+    return ok;
+}
+
+void applyNightPatchToBuffer(uint16_t* out) {
+    if (!out || RoomAssets::STANDARD_ROOM_NIGHT_PATCH_RUN_COUNT == 0) return;
+    for (uint32_t runIndex = 0; runIndex < RoomAssets::STANDARD_ROOM_NIGHT_PATCH_RUN_COUNT; ++runIndex) {
+        const RoomAssets::RoomPatchRun* run = &RoomAssets::STANDARD_ROOM_NIGHT_PATCH_RUNS[runIndex];
+        uint16_t y = pgm_read_word(&run->y);
+        uint16_t x = pgm_read_word(&run->x);
+        uint16_t len = pgm_read_word(&run->len);
+        uint32_t colorOffset = pgm_read_dword(&run->colorOffset);
+        uint32_t dst = (uint32_t)y * RoomAssets::STANDARD_ROOM_W + x;
+        if (dst >= ROOM_BUFFER_PIXELS) continue;
+        uint32_t maxLen = ROOM_BUFFER_PIXELS - dst;
+        if (len > maxLen) len = (uint16_t)maxLen;
+        for (uint16_t i = 0; i < len && colorOffset + i < RoomAssets::STANDARD_ROOM_NIGHT_PATCH_PIXEL_COUNT; ++i) {
+            out[dst + i] = pgm_read_word(&RoomAssets::STANDARD_ROOM_NIGHT_PATCH_PIXELS[colorOffset + i]);
+        }
+    }
+}
+
+bool prepareRoomBuffer(bool night) {
+    if (!ensureRoomBuffer()) return false;
+    if (gRoomBufferValid && gRoomBufferNight == night) return true;
+    if (!decodeRoomBaseToBuffer(gRoomBuffer)) return false;
+    if (night) applyNightPatchToBuffer(gRoomBuffer);
+    gRoomBufferNight = night;
+    gRoomBufferValid = true;
+    return true;
+}
+
+void drawRoomBuffer(float cameraY) {
+    if (!gRoomBuffer) return;
+    int16_t roomScreenY = RoomAssets::STANDARD_ROOM_Y - (int16_t)roundf(cameraY);
+    int16_t srcY = roomScreenY < 0 ? (int16_t)-roomScreenY : 0;
+    int16_t dstY = roomScreenY > 0 ? roomScreenY : 0;
+    int16_t drawH = (int16_t)RoomAssets::STANDARD_ROOM_H - srcY;
+    int16_t screenRemaining = Hal::DISPLAY_H - dstY;
+    if (drawH > screenRemaining) drawH = screenRemaining;
+    if (drawH <= 0) return;
+
+    PixelRenderer::canvas().pushImage(
+        0,
+        dstY,
+        RoomAssets::STANDARD_ROOM_W,
+        drawH,
+        &gRoomBuffer[(uint32_t)srcY * RoomAssets::STANDARD_ROOM_W]
+    );
+}
+
+void applyNightPatchToCanvas(float cameraY) {
+    if (RoomAssets::STANDARD_ROOM_NIGHT_PATCH_RUN_COUNT == 0) return;
     auto& c = PixelRenderer::canvas();
-    if (tier >= 3) {
-        static constexpr uint8_t H = 10;
-        static constexpr uint8_t W = 11;
-        static constexpr uint16_t MASK[H] = {
-            0b00000000000,
-            0b01100001100,
-            0b11110011110,
-            0b11111111110,
-            0b11111111110,
-            0b01111111100,
-            0b00111111000,
-            0b00011110000,
-            0b00001100000,
-            0b00000100000,
-        };
-        int x = centerX - W / 2;
-        int y = centerY - H / 2;
-        for (uint8_t row = 0; row < H; ++row) {
-            for (uint8_t col = 0; col < W; ++col) {
-                if (MASK[row] & (1 << (W - 1 - col))) c.drawPixel(x + col, y + row, color);
-            }
-        }
-        return;
-    }
+    int16_t roomScreenY = RoomAssets::STANDARD_ROOM_Y - (int16_t)roundf(cameraY);
+    for (uint32_t runIndex = 0; runIndex < RoomAssets::STANDARD_ROOM_NIGHT_PATCH_RUN_COUNT; ++runIndex) {
+        const RoomAssets::RoomPatchRun* run = &RoomAssets::STANDARD_ROOM_NIGHT_PATCH_RUNS[runIndex];
+        int16_t y = (int16_t)pgm_read_word(&run->y);
+        int16_t screenY = roomScreenY + y;
+        if (screenY < 0 || screenY >= Hal::DISPLAY_H) continue;
 
-    if (tier == 2) {
-        static constexpr uint8_t H = 9;
-        static constexpr uint8_t W = 9;
-        static constexpr uint16_t MASK[H] = {
-            0b000000000,
-            0b011000110,
-            0b111101111,
-            0b111111111,
-            0b111111111,
-            0b011111110,
-            0b001111100,
-            0b000111000,
-            0b000010000,
-        };
-        int x = centerX - W / 2;
-        int y = centerY - H / 2;
-        for (uint8_t row = 0; row < H; ++row) {
-            for (uint8_t col = 0; col < W; ++col) {
-                if (MASK[row] & (1 << (W - 1 - col))) c.drawPixel(x + col, y + row, color);
-            }
+        int16_t x = (int16_t)pgm_read_word(&run->x);
+        uint16_t len = pgm_read_word(&run->len);
+        uint32_t colorOffset = pgm_read_dword(&run->colorOffset);
+        for (uint16_t i = 0; i < len && colorOffset + i < RoomAssets::STANDARD_ROOM_NIGHT_PATCH_PIXEL_COUNT; ++i) {
+            int16_t screenX = x + (int16_t)i;
+            if (screenX < 0 || screenX >= Hal::DISPLAY_W) continue;
+            uint16_t color = pgm_read_word(&RoomAssets::STANDARD_ROOM_NIGHT_PATCH_PIXELS[colorOffset + i]);
+            c.drawPixel(screenX, screenY, color);
         }
-        return;
     }
+}
 
-    static constexpr uint8_t H = 7;
-    static constexpr uint8_t W = 7;
-    static constexpr uint8_t MASK[H] = {
-        0b0000000,
-        0b0101010,
-        0b1111110,
-        0b1111110,
-        0b0111100,
-        0b0011000,
-        0b0001000,
-    };
-    int x = centerX - W / 2;
-    int y = centerY - H / 2;
-    for (uint8_t row = 0; row < H; ++row) {
-        for (uint8_t col = 0; col < W; ++col) {
-            if (MASK[row] & (1 << (W - 1 - col))) c.drawPixel(x + col, y + row, color);
+void drawRoomFallback(float cameraY, bool night) {
+    (void)cameraY;
+    (void)night;
+    PixelRenderer::clear(PixelRenderer::rgb(16, 18, 24));
+}
+
+void drawRoomCached(float cameraY, bool night) {
+    if (prepareRoomBuffer(night)) {
+        drawRoomBuffer(cameraY);
+    } else {
+        drawRoomFallback(cameraY, night);
+    }
+}
+
+void drawHungerIcon(int x, int y, uint8_t hunger) {
+    if (hunger == 0) return;
+    auto& c = PixelRenderer::canvas();
+    uint8_t visibleRows = (uint8_t)(((uint16_t)HudAssets::HUNGER_ICON_H * hunger + 99) / 100);
+    if (visibleRows > HudAssets::HUNGER_ICON_H) visibleRows = HudAssets::HUNGER_ICON_H;
+
+    const uint32_t total = (uint32_t)HudAssets::HUNGER_ICON_W * (uint32_t)HudAssets::HUNGER_ICON_H;
+    uint32_t idx = 0;
+    uint32_t pixel = 0;
+    while (idx < HudAssets::HUNGER_ICON_RLE_LEN && pixel < total) {
+        uint16_t token = pgm_read_word(&HudAssets::HUNGER_ICON_RLE[idx++]);
+        uint16_t run = token & 0x7FFF;
+        if (run == 0) continue;
+
+        if (token & 0x8000) {
+            pixel += run;
+            if (pixel > total) pixel = total;
+            continue;
+        }
+
+        for (uint16_t i = 0; i < run && idx < HudAssets::HUNGER_ICON_RLE_LEN && pixel < total; ++i, ++pixel) {
+            uint16_t color = pgm_read_word(&HudAssets::HUNGER_ICON_RLE[idx++]);
+            uint8_t row = (uint8_t)(pixel / HudAssets::HUNGER_ICON_W);
+            if (row >= visibleRows) continue;
+            uint8_t col = (uint8_t)(pixel % HudAssets::HUNGER_ICON_W);
+            c.drawPixel(x + col, y + row, color);
         }
     }
 }
@@ -404,7 +559,7 @@ void drawHeartIcon(int centerX, int centerY, uint8_t tier, uint16_t color) {
 
 void MainScene::onEnter() {
     active = &GameEngine::ins().activeSpecies();
-    if (!monsterCenterInsideWalkArea(monsterX, monsterY)) {
+    if (!monsterFootprintInsideWalkArea(monsterX, monsterY)) {
         randomMonsterCenterWalkPoint(monsterX, monsterY);
     }
     targetX = monsterX;
@@ -455,34 +610,185 @@ float MainScene::walkBoundaryOffsetY() const {
     return (float)constrain((int)(frameH * 0.42f), 16, 32);
 }
 
-bool MainScene::monsterCenterInsideWalkArea(float x, float y) const {
-    return roomWalkContains(x, y + walkBoundaryOffsetY());
+float MainScene::walkFootprintRadiusX() const {
+    uint8_t frameW = 38;
+    if (const PokemonSprites::SpriteFrame* frame = currentMonsterFrame()) {
+        frameW = pgm_read_byte(&frame->width);
+    }
+    return (float)constrain((int)(frameW * 0.24f), 7, 16);
+}
+
+float MainScene::walkFootprintRadiusY() const {
+    uint8_t frameH = 42;
+    if (const PokemonSprites::SpriteFrame* frame = currentMonsterFrame()) {
+        frameH = pgm_read_byte(&frame->height);
+    }
+    return (float)constrain((int)(frameH * 0.10f), 4, 8);
+}
+
+bool MainScene::monsterFootprintInsideWalkArea(float x, float y) const {
+    float footY = y + walkBoundaryOffsetY();
+    float rx = walkFootprintRadiusX();
+    float ry = walkFootprintRadiusY();
+    float diagX = rx * 0.70f;
+    float diagY = ry * 0.70f;
+
+    return roomWalkContains(x, footY) &&
+           roomWalkContains(x - rx, footY) &&
+           roomWalkContains(x + rx, footY) &&
+           roomWalkContains(x, footY - ry) &&
+           roomWalkContains(x - diagX, footY - diagY) &&
+           roomWalkContains(x + diagX, footY - diagY);
 }
 
 bool MainScene::randomMonsterCenterWalkPoint(float& x, float& y) const {
-    if (!randomRoomWalkPoint(x, y)) return false;
-    y -= walkBoundaryOffsetY();
-    return true;
+    float offsetY = walkBoundaryOffsetY();
+    float rx = walkFootprintRadiusX();
+    for (uint8_t tries = 0; tries < 64; ++tries) {
+        float px = (float)random(RoomAssets::ROOM_WALK_MIN_X, RoomAssets::ROOM_WALK_MAX_X + 1);
+        float py = (float)random(RoomAssets::ROOM_WALK_MIN_Y, RoomAssets::ROOM_WALK_MAX_Y + 1);
+        float centerY = py - offsetY;
+        if (px - rx < (float)RoomAssets::ROOM_WALK_MIN_X ||
+            px + rx > (float)RoomAssets::ROOM_WALK_MAX_X) {
+            continue;
+        }
+        if (monsterFootprintInsideWalkArea(px, centerY)) {
+            x = px;
+            y = centerY;
+            return true;
+        }
+    }
+
+    for (int py = RoomAssets::ROOM_WALK_MIN_Y; py <= RoomAssets::ROOM_WALK_MAX_Y; py += 4) {
+        for (int px = RoomAssets::ROOM_WALK_MIN_X; px <= RoomAssets::ROOM_WALK_MAX_X; px += 4) {
+            float centerY = (float)py - offsetY;
+            if (monsterFootprintInsideWalkArea((float)px, centerY)) {
+                x = (float)px;
+                y = centerY;
+                return true;
+            }
+        }
+    }
+
+    float px = 0.0f;
+    float py = 0.0f;
+    if (!randomRoomWalkPoint(px, py)) return false;
+    x = px;
+    y = py - offsetY;
+    return monsterFootprintInsideWalkArea(x, y);
 }
 
 bool MainScene::randomMonsterCenterWalkPointNear(float centerX, float centerY, float radiusX, float radiusY,
                                                  float& x, float& y) const {
-    if (!randomRoomWalkPointNear(centerX, centerY, radiusX, radiusY, x, y)) return false;
-    y -= walkBoundaryOffsetY();
+    float offsetY = walkBoundaryOffsetY();
+    int spanX = (int)roundf(radiusX);
+    int spanY = (int)roundf(radiusY);
+    if (spanX < 1) spanX = 1;
+    if (spanY < 1) spanY = 1;
+    for (uint8_t tries = 0; tries < 48; ++tries) {
+        float px = clampf(centerX + (float)random(-spanX, spanX + 1),
+                          (float)RoomAssets::ROOM_WALK_MIN_X,
+                          (float)RoomAssets::ROOM_WALK_MAX_X);
+        float py = clampf(centerY + (float)random(-spanY, spanY + 1),
+                          (float)RoomAssets::ROOM_WALK_MIN_Y,
+                          (float)RoomAssets::ROOM_WALK_MAX_Y);
+        float candidateY = py - offsetY;
+        if (monsterFootprintInsideWalkArea(px, candidateY)) {
+            x = px;
+            y = candidateY;
+            return true;
+        }
+    }
+    return randomMonsterCenterWalkPoint(x, y);
+}
+
+bool MainScene::monsterCanUseBedSleepPose(float x, float y) const {
+    float footY = y + walkBoundaryOffsetY();
+    return roomBedContains(x, footY) ||
+           (x >= (float)RoomAssets::ROOM_BED_MIN_X + 12.0f &&
+            x <= (float)RoomAssets::ROOM_BED_MAX_X - 12.0f &&
+            footY >= (float)RoomAssets::ROOM_BED_MIN_Y + 7.0f &&
+            footY <= (float)RoomAssets::ROOM_BED_MAX_Y - 7.0f);
+}
+
+bool MainScene::chooseBedApproachPose(float& x, float& y) const {
+    static constexpr float CANDIDATES[][2] = {
+        {0.0f, 7.0f},
+        {-7.0f, 6.0f},
+        {7.0f, 6.0f},
+        {-10.0f, 3.0f},
+        {10.0f, 3.0f},
+        {0.0f, 10.0f},
+    };
+
+    float offsetY = walkBoundaryOffsetY();
+    for (uint8_t i = 0; i < sizeof(CANDIDATES) / sizeof(CANDIDATES[0]); ++i) {
+        float candidateX = BED_SLEEP_X + CANDIDATES[i][0];
+        float candidateY = BED_SLEEP_Y + CANDIDATES[i][1] - offsetY;
+        if (monsterFootprintInsideWalkArea(candidateX, candidateY)) {
+            x = candidateX;
+            y = candidateY;
+            return true;
+        }
+    }
+
+    float bestX = 0.0f;
+    float bestY = 0.0f;
+    float bestDistSq = 1000000.0f;
+    bool found = false;
+    for (int py = RoomAssets::ROOM_WALK_MIN_Y; py <= RoomAssets::ROOM_WALK_MAX_Y; py += 3) {
+        for (int px = RoomAssets::ROOM_WALK_MIN_X; px <= RoomAssets::ROOM_WALK_MAX_X; px += 3) {
+            float centerY = (float)py - offsetY;
+            if (!monsterFootprintInsideWalkArea((float)px, centerY)) continue;
+            float dx = (float)px - BED_SLEEP_X;
+            float dy = (float)py - BED_SLEEP_Y;
+            float distSq = dx * dx + dy * dy;
+            if (!found || distSq < bestDistSq) {
+                bestX = (float)px;
+                bestY = centerY;
+                bestDistSq = distSq;
+                found = true;
+            }
+        }
+    }
+    if (!found) return false;
+    x = bestX;
+    y = bestY;
+    return true;
+}
+
+bool MainScene::chooseBedSleepPose(float& x, float& y) const {
+    static constexpr float CANDIDATES[][2] = {
+        {0.0f, 0.0f},
+        {-3.0f, -1.0f},
+        {3.0f, -1.0f},
+        {0.0f, -3.0f},
+        {-2.0f, 2.0f},
+        {2.0f, 2.0f},
+    };
+
+    float offsetY = walkBoundaryOffsetY();
+    for (uint8_t i = 0; i < sizeof(CANDIDATES) / sizeof(CANDIDATES[0]); ++i) {
+        float candidateX = BED_SLEEP_X + CANDIDATES[i][0];
+        float candidateY = BED_SLEEP_Y + CANDIDATES[i][1] - offsetY;
+        if (monsterCanUseBedSleepPose(candidateX, candidateY)) {
+            x = candidateX;
+            y = candidateY;
+            return true;
+        }
+    }
+    x = BED_SLEEP_X;
+    y = BED_SLEEP_Y - offsetY;
     return true;
 }
 
 void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
     const Game::MonsterRuntime& mon = GameEngine::ins().activeMonster();
-    if (!monsterCenterInsideWalkArea(monsterX, monsterY)) {
-        randomMonsterCenterWalkPoint(monsterX, monsterY);
-        targetX = monsterX;
-        targetY = monsterY;
-    }
-
     if (mon.fainted || mon.hpCur == 0 || (mon.statusBits & Game::STATUS_SLEEP)) {
         snapMonsterToBed();
         pendingFeed = false;
+        feedingConsumed = false;
+        feedingBiteTried = false;
         velocityX = 0.0f;
         velocityY = 0.0f;
         aiMode = AiMode::IDLE;
@@ -490,15 +796,37 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
     }
 
     bool debugTilt = GameEngine::ins().debugTiltControlEnabled();
+    bool bedRestActive = !debugTilt && monsterNeedsBedRest() && !pendingFeed;
+    if (!monsterFootprintInsideWalkArea(monsterX, monsterY) &&
+        !(bedRestActive && monsterAtBedSleepPose())) {
+        randomMonsterCenterWalkPoint(monsterX, monsterY);
+        targetX = monsterX;
+        targetY = monsterY;
+    }
+
+    if (!debugTilt && aiMode == AiMode::FEEDING) {
+        updateFeeding(nowMs);
+        return;
+    }
     if (!debugTilt) {
         updatePendingFeed(nowMs);
-        if (monsterNeedsBedRest() && !pendingFeed) {
-            if (monsterNearBed()) {
+        if (aiMode == AiMode::FEEDING) return;
+        bedRestActive = monsterNeedsBedRest() && !pendingFeed;
+        if (bedRestActive) {
+            if (monsterAtBedSleepPose()) {
                 velocityX = 0.0f;
                 velocityY = 0.0f;
                 aiMode = AiMode::IDLE;
                 targetX = monsterX;
                 targetY = monsterY;
+                nextAiDecisionMs = nowMs + 2000;
+                return;
+            }
+            if (monsterNearBed()) {
+                snapMonsterToBed();
+                velocityX = 0.0f;
+                velocityY = 0.0f;
+                aiMode = AiMode::IDLE;
                 nextAiDecisionMs = nowMs + 2000;
                 return;
             }
@@ -545,8 +873,8 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
     monsterX = clampf(monsterX, (float)RoomAssets::ROOM_WALK_MIN_X, (float)RoomAssets::ROOM_WALK_MAX_X);
     monsterY = clampf(monsterY, (float)RoomAssets::ROOM_WALK_MIN_Y - walkOffsetY,
                       (float)RoomAssets::ROOM_WALK_MAX_Y - walkOffsetY);
-    if (!monsterCenterInsideWalkArea(monsterX, monsterY)) {
-        if (monsterCenterInsideWalkArea(prevX, prevY)) {
+    if (!monsterFootprintInsideWalkArea(monsterX, monsterY)) {
+        if (monsterFootprintInsideWalkArea(prevX, prevY)) {
             monsterX = prevX;
             monsterY = prevY;
         } else {
@@ -563,23 +891,32 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
 
 bool MainScene::monsterNearFood() const {
     float walkY = monsterY + walkBoundaryOffsetY();
-    return fabsf(monsterX - FOOD_CENTER_X) < 10.0f && fabsf(walkY - FOOD_CENTER_Y) < 7.0f;
+    return fabsf(monsterX - FOOD_FEED_X) < 9.0f && fabsf(walkY - FOOD_FEED_Y) < 7.0f;
 }
 
 bool MainScene::monsterNearBed() const {
     float walkY = monsterY + walkBoundaryOffsetY();
-    return fabsf(monsterX - BED_CENTER_X) < 11.0f && fabsf(walkY - BED_CENTER_Y) < 8.0f;
+    return fabsf(monsterX - BED_CENTER_X) <= BED_APPROACH_TOLERANCE_X &&
+           fabsf(walkY - BED_CENTER_Y) <= BED_APPROACH_TOLERANCE_Y;
+}
+
+bool MainScene::monsterAtBedSleepPose() const {
+    float walkY = monsterY + walkBoundaryOffsetY();
+    return fabsf(monsterX - BED_SLEEP_X) <= BED_SLEEP_TOLERANCE_X &&
+           fabsf(walkY - BED_SLEEP_Y) <= BED_SLEEP_TOLERANCE_Y;
 }
 
 bool MainScene::monsterNeedsBedRest() const {
+    uint32_t nowMs = Hal::ins().millis();
+    if ((int32_t)(nowMs - postFeedAwakeUntilMs) < 0) return false;
     return mainSceneIsNight();
 }
 
 void MainScene::setFoodTarget(uint32_t nowMs) {
-    targetX = FOOD_CENTER_X;
-    targetY = FOOD_CENTER_Y - walkBoundaryOffsetY();
-    if (!monsterCenterInsideWalkArea(targetX, targetY)) {
-        if (!randomMonsterCenterWalkPointNear(FOOD_CENTER_X, FOOD_CENTER_Y, 9.0f, 6.0f, targetX, targetY)) {
+    targetX = FOOD_FEED_X;
+    targetY = FOOD_FEED_Y - walkBoundaryOffsetY();
+    if (!monsterFootprintInsideWalkArea(targetX, targetY)) {
+        if (!randomMonsterCenterWalkPointNear(FOOD_FEED_X, FOOD_FEED_Y, 8.0f, 5.0f, targetX, targetY)) {
             randomMonsterCenterWalkPoint(targetX, targetY);
         }
     }
@@ -588,24 +925,16 @@ void MainScene::setFoodTarget(uint32_t nowMs) {
 }
 
 void MainScene::setBedTarget(uint32_t nowMs) {
-    targetX = BED_CENTER_X;
-    targetY = BED_CENTER_Y - walkBoundaryOffsetY();
-    if (!monsterCenterInsideWalkArea(targetX, targetY)) {
-        if (!randomMonsterCenterWalkPointNear(BED_CENTER_X, BED_CENTER_Y, 10.0f, 7.0f, targetX, targetY)) {
-            randomMonsterCenterWalkPoint(targetX, targetY);
-        }
+    if (!chooseBedApproachPose(targetX, targetY)) {
+        randomMonsterCenterWalkPoint(targetX, targetY);
     }
     aiMode = AiMode::SEEK_BED;
     nextAiDecisionMs = nowMs + 1400;
 }
 
 void MainScene::snapMonsterToBed() {
-    monsterX = BED_CENTER_X;
-    monsterY = BED_CENTER_Y - walkBoundaryOffsetY();
-    if (!monsterCenterInsideWalkArea(monsterX, monsterY)) {
-        if (!randomMonsterCenterWalkPointNear(BED_CENTER_X, BED_CENTER_Y, 10.0f, 7.0f, monsterX, monsterY)) {
-            randomMonsterCenterWalkPoint(monsterX, monsterY);
-        }
+    if (!chooseBedSleepPose(monsterX, monsterY)) {
+        randomMonsterCenterWalkPoint(monsterX, monsterY);
     }
     targetX = monsterX;
     targetY = monsterY;
@@ -617,21 +946,62 @@ void MainScene::updatePendingFeed(uint32_t nowMs) {
         pendingFeed = false;
         return;
     }
+    if ((int32_t)(nowMs - pendingFeedReadyMs) < 0) {
+        velocityX = 0.0f;
+        velocityY = 0.0f;
+        targetX = monsterX;
+        targetY = monsterY;
+        return;
+    }
     if (!monsterNearFood()) {
         setFoodTarget(nowMs);
         return;
     }
 
-    bool fed = GameEngine::ins().consumeFood();
-    toast = fed ? Ui::Menu::FEED_TOAST : Ui::Menu::NO_FOOD;
-    toastUntil = nowMs + 1200;
+    enterFeeding(nowMs);
+}
+
+void MainScene::enterFeeding(uint32_t nowMs) {
     pendingFeed = false;
+    feedingConsumed = false;
+    feedingBiteTried = false;
+    feedingBiteMs = nowMs + (uint32_t)random(FEED_BITE_DELAY_MIN_MS, FEED_BITE_DELAY_MAX_MS + 1);
+    feedingUntilMs = nowMs + (uint32_t)random(FEED_SESSION_MIN_MS, FEED_SESSION_MAX_MS + 1);
     velocityX = 0.0f;
     velocityY = 0.0f;
-    aiMode = AiMode::IDLE;
+    aiMode = AiMode::FEEDING;
     targetX = monsterX;
     targetY = monsterY;
-    nextAiDecisionMs = nowMs + random(1600, 3201);
+    pmdDirection = FOOD_CENTER_X < monsterX ? PmdDirection::LEFT : PmdDirection::RIGHT;
+    facingRight = FOOD_CENTER_X > monsterX;
+}
+
+void MainScene::updateFeeding(uint32_t nowMs) {
+    velocityX = 0.0f;
+    velocityY = 0.0f;
+    targetX = monsterX;
+    targetY = monsterY;
+
+    if (!feedingBiteTried && (int32_t)(nowMs - feedingBiteMs) >= 0) {
+        bool fed = GameEngine::ins().consumeFood();
+        toast = fed ? Ui::Menu::FEED_TOAST : Ui::Menu::NO_FOOD;
+        toastUntil = nowMs + 1200;
+        feedingBiteTried = true;
+        feedingConsumed = fed;
+        if (!fed) {
+            feedingUntilMs = nowMs + 600;
+        }
+    }
+
+    if ((int32_t)(nowMs - feedingUntilMs) < 0) return;
+
+    if (feedingConsumed) {
+        postFeedAwakeUntilMs = nowMs + (uint32_t)random(POST_FEED_AWAKE_MIN_MS, POST_FEED_AWAKE_MAX_MS + 1);
+    }
+    feedingConsumed = false;
+    feedingBiteTried = false;
+    aiMode = AiMode::IDLE;
+    nextAiDecisionMs = nowMs + random(1800, 4201);
 }
 
 void MainScene::updateDebugTiltControl(uint32_t nowMs, float dtSeconds) {
@@ -652,8 +1022,10 @@ void MainScene::updateDebugTiltControl(uint32_t nowMs, float dtSeconds) {
         return clampf(value, -DEBUG_TILT_MAX, DEBUG_TILT_MAX) / DEBUG_TILT_MAX;
     };
 
-    float inputX = applyDeadzone(ax);
-    float inputY = applyDeadzone(-ay);
+    // StickS3 is rendered in landscape rotation=1. Map raw IMU axes to screen
+    // coordinates so positive input means right/down on the room canvas.
+    float inputX = applyDeadzone(-ax);
+    float inputY = applyDeadzone(ay);
     float inputLength = sqrtf(inputX * inputX + inputY * inputY);
     if (inputLength > 1.0f) {
         inputX /= inputLength;
@@ -686,10 +1058,15 @@ void MainScene::updatePmdSpriteState(uint32_t nowMs) {
     if (!config) return;
 
     const Game::MonsterRuntime& mon = GameEngine::ins().activeMonster();
+    bool feedWakeReady = pendingFeed && (int32_t)(nowMs - pendingFeedReadyMs) >= 0;
+    bool feedMovementActive = aiMode == AiMode::SEEK_FOOD ||
+                              aiMode == AiMode::FEEDING ||
+                              feedWakeReady;
+    bool postFeedAwake = (int32_t)(nowMs - postFeedAwakeUntilMs) < 0;
     bool sleeping = (mon.statusBits & Game::STATUS_SLEEP) != 0 ||
                     mon.fainted ||
                     mon.hpCur == 0 ||
-                    (mainSceneIsNight() && monsterNearBed());
+                    (mainSceneIsNight() && monsterAtBedSleepPose() && !feedMovementActive && !postFeedAwake);
     float speedSq = velocityX * velocityX + velocityY * velocityY;
     bool moving = speedSq > PMD_MOVING_SPEED_EPSILON * PMD_MOVING_SPEED_EPSILON;
     PmdAction nextAction = sleeping ? PmdAction::SLEEPING : (moving ? PmdAction::WALKING : PmdAction::IDLE);
@@ -835,7 +1212,8 @@ bool MainScene::pmdDirectionFlipX() const {
 
 void MainScene::chooseAiGoal(uint32_t nowMs) {
     const Game::MonsterRuntime& mon = GameEngine::ins().activeMonster();
-    bool hungry = mon.satiety < 55 && GameEngine::ins().foodCount() > 0;
+    uint8_t autoFeedHunger = mainSceneIsNight() ? NIGHT_AUTO_FEED_HUNGER : DAY_AUTO_FEED_HUNGER;
+    bool hungry = mon.satiety < autoFeedHunger && GameEngine::ins().foodCount() > 0;
     if (hungry && !monsterNearFood()) {
         setFoodTarget(nowMs);
         nextAiDecisionMs = nowMs + random(2600, 5201);
@@ -859,7 +1237,7 @@ void MainScene::chooseAiGoal(uint32_t nowMs) {
         float candidateY = clampf(monsterY + (float)random(-16, 17),
                                   (float)RoomAssets::ROOM_WALK_MIN_Y - walkOffsetY,
                                   (float)RoomAssets::ROOM_WALK_MAX_Y - walkOffsetY);
-        if (!monsterCenterInsideWalkArea(candidateX, candidateY)) continue;
+        if (!monsterFootprintInsideWalkArea(candidateX, candidateY)) continue;
         if (fabsf(candidateX - monsterX) < 8.0f && fabsf(candidateY - monsterY) < 4.0f) continue;
         targetX = candidateX;
         targetY = candidateY;
@@ -907,8 +1285,12 @@ bool MainScene::onButton(const ButtonEvent& event) {
             return true;
         }
         pendingFeed = true;
-        pendingFeedUntilMs = nowMs + FEED_REQUEST_TIMEOUT_MS;
-        setFoodTarget(nowMs);
+        bool restingAtNight = mainSceneIsNight() && monsterAtBedSleepPose();
+        pendingFeedReadyMs = restingAtNight
+            ? nowMs + (uint32_t)random(NIGHT_FEED_WAKE_DELAY_MIN_MS, NIGHT_FEED_WAKE_DELAY_MAX_MS + 1)
+            : nowMs;
+        pendingFeedUntilMs = nowMs + (restingAtNight ? NIGHT_FEED_REQUEST_TIMEOUT_MS : FEED_REQUEST_TIMEOUT_MS);
+        if ((int32_t)(nowMs - pendingFeedReadyMs) >= 0) setFoodTarget(nowMs);
         updatePendingFeed(nowMs);
         return true;
     }
@@ -922,16 +1304,7 @@ bool MainScene::onButton(const ButtonEvent& event) {
 
 void MainScene::drawBackground() {
     PixelRenderer::clear(PixelRenderer::rgb(5, 6, 18));
-    bool night = mainSceneIsNight();
-    const uint16_t* roomRle = night ? RoomAssets::STANDARD_ROOM_NIGHT_RLE
-                                    : RoomAssets::STANDARD_ROOM_DAY_RLE;
-    uint32_t roomRleLen = night ? RoomAssets::STANDARD_ROOM_NIGHT_RLE_LEN
-                                : RoomAssets::STANDARD_ROOM_DAY_RLE_LEN;
-    PixelRenderer::drawRgb565Rle(0, RoomAssets::STANDARD_ROOM_Y - (int16_t)roundf(cameraY),
-                                 RoomAssets::STANDARD_ROOM_W,
-                                 RoomAssets::STANDARD_ROOM_H,
-                                 roomRle, 0,
-                                 roomRleLen);
+    drawRoomCached(cameraY, mainSceneIsNight());
 }
 
 void MainScene::drawFloor() {
@@ -1135,14 +1508,8 @@ void MainScene::drawHud() {
     PixelRenderer::text(PANEL_X + 20, PANEL_Y + 3, clock, PixelRenderer::rgb(245, 246, 232));
 
     uint8_t hunger = GameEngine::ins().hungerValue();
-    int heartX = PANEL_X + 13;
-    int heartY = PANEL_Y + 27;
     if (hunger > 0) {
-        uint8_t heartTier = hunger > 66 ? 3 : (hunger > 33 ? 2 : 1);
-        uint16_t heartColor = hunger > 66 ? PixelRenderer::rgb(255, 96, 126) :
-                              (hunger > 33 ? PixelRenderer::rgb(255, 154, 86) :
-                               PixelRenderer::rgb(196, 72, 86));
-        drawHeartIcon(heartX, heartY, heartTier, heartColor);
+        drawHungerIcon(PANEL_X + 4, PANEL_Y + 19, hunger);
     }
 
     uint8_t hpPct = mon.hpMax > 0 ? (uint8_t)((uint32_t)mon.hpCur * 100 / mon.hpMax) : 0;

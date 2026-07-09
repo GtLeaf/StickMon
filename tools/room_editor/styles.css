@@ -720,6 +720,16 @@ canvas.measure-tool.dragging {
   padding-bottom: 5px;
 }
 
+.mode-visibility-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.mode-visibility-row .check-row {
+  min-height: 30px;
+}
+
 .item-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -988,6 +998,32 @@ canvas.measure-tool.dragging {
 
 .asset-visibility input {
   margin: 0;
+}
+
+.asset-actions {
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+}
+
+.asset-mode-toggles {
+  display: grid;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.asset-mode-toggles label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.background-delete {
+  min-width: 0;
+  padding: 4px 7px;
+  font-size: 11px;
 }
 
 .asset-item.static {

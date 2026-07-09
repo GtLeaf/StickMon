@@ -10,6 +10,8 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter
 TOOL_DIR = Path(__file__).resolve().parent
 ROOT = Path(__file__).resolve().parents[2]
 PROJECT_SPRITE_DIR = TOOL_DIR / "generated" / "pokemon_sprites"
+FURNITURE_LIBRARY_DIR = TOOL_DIR / "generated" / "furniture_library"
+FURNITURE_LIBRARY_MANIFEST = FURNITURE_LIBRARY_DIR / "manifest.json"
 WALL_MOUNTED_NAME_MARKERS = (
     "sheld",
     "wall_shelf",
@@ -128,6 +130,48 @@ def background_info(layout, mode):
     return info if isinstance(info, dict) else {}
 
 
+def background_layer_visible(layer, mode):
+    if layer.get("visible", True) is False:
+        return False
+    if mode == "night":
+        return layer.get("visibleInNight", True) is not False
+    return layer.get("visibleInDay", True) is not False
+
+
+def background_layers_for_mode(layout, mode):
+    layers = layout.get("backgroundLayers") or (layout.get("roomGeometry", {}).get("backgrounds", {}) or {}).get("layers") or []
+    if not isinstance(layers, list):
+        return []
+    return sorted(
+        [layer for layer in layers if isinstance(layer, dict) and background_layer_visible(layer, mode)],
+        key=lambda layer: (layer.get("z", 0), layer.get("id", "")),
+    )
+
+
+def resolve_background_layer_path(layer, base_path=None, layout_dir=None):
+    file_name = layer.get("fileName") or layer.get("name")
+    if not file_name:
+        return None
+    raw = Path(file_name)
+    candidates = []
+    if raw.is_absolute():
+        candidates.append(raw)
+    else:
+        if layout_dir:
+            candidates.append(Path(layout_dir) / raw)
+        if base_path:
+            candidates.append(Path(base_path).parent / raw)
+        candidates.extend([
+            ROOT / "origin_asset" / "room" / raw,
+            ROOT / "origin_asset" / "room" / "standar" / raw,
+        ])
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    tried = ", ".join(str(path) for path in candidates)
+    raise FileNotFoundError(f"background layer not found for {file_name}; tried {tried}")
+
+
 def layout_trim(layout, img, mode=None):
     mode_info = background_info(layout, mode) if mode else {}
     base = layout.get("base") or {}
@@ -143,6 +187,23 @@ def layout_trim(layout, img, mode=None):
         h = int(round(float(trim.get("height", img.height))))
     except (TypeError, ValueError):
         return (0, 0, img.width, img.height)
+    x = max(0, min(img.width - 1, x))
+    y = max(0, min(img.height - 1, y))
+    w = max(1, min(img.width - x, w))
+    h = max(1, min(img.height - y, h))
+    return (x, y, w, h)
+
+
+def coerce_trim_tuple(trim, img):
+    if not isinstance(trim, dict):
+        return None
+    try:
+        x = int(round(float(trim.get("x", 0))))
+        y = int(round(float(trim.get("y", 0))))
+        w = int(round(float(trim.get("width", img.width))))
+        h = int(round(float(trim.get("height", img.height))))
+    except (TypeError, ValueError):
+        return None
     x = max(0, min(img.width - 1, x))
     y = max(0, min(img.height - 1, y))
     w = max(1, min(img.width - x, w))
@@ -265,8 +326,25 @@ def render_geometry(layout):
     return out
 
 
-def render_base(layout, base_path, mode="day"):
+def render_base(layout, base_path, mode="day", layout_dir=None):
     width, height = room_size(layout)
+    layers = background_layers_for_mode(layout, mode)
+    if layers:
+        out = Image.new("RGBA", (width, height), (5, 7, 12, 255))
+        fit = background_info(layout, mode).get("fit") or layout.get("backgrounds", {}).get("fit") or layout.get("base", {}).get("fit", "cover")
+        for layer in layers:
+            layer_path = resolve_background_layer_path(layer, base_path, layout_dir)
+            if not layer_path:
+                continue
+            base = Image.open(layer_path).convert("RGBA")
+            layer_trim = coerce_trim_tuple(layer.get("trim"), base) or layout_trim(layout, base, mode)
+            fitted = fit_base(base, width, height, layer.get("fit") or fit, layer_trim)
+            opacity = max(0, min(1, float(layer.get("opacity", 1))))
+            if opacity < 1:
+                alpha = fitted.getchannel("A").point(lambda p: int(p * opacity))
+                fitted.putalpha(alpha)
+            out.alpha_composite(fitted)
+        return out
     if base_path:
         base = Image.open(base_path).convert("RGBA")
         fit = background_info(layout, mode).get("fit") or layout.get("backgrounds", {}).get("fit") or layout.get("base", {}).get("fit", "cover")
@@ -274,6 +352,42 @@ def render_base(layout, base_path, mode="day"):
     if layout.get("roomGeometry", {}).get("faces"):
         return render_geometry(layout)
     raise ValueError("--base is required when roomGeometry.faces is empty")
+
+
+def furniture_library_items():
+    if not FURNITURE_LIBRARY_MANIFEST.exists():
+        return []
+    try:
+        data = json.loads(FURNITURE_LIBRARY_MANIFEST.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    items = data.get("items", [])
+    return items if isinstance(items, list) else []
+
+
+def furniture_library_candidates(item):
+    library_id = str(item.get("libraryId") or "")
+    file_name = str(item.get("fileName") or "")
+    candidates = []
+    for entry in furniture_library_items():
+        if not isinstance(entry, dict):
+            continue
+        entry_id = str(entry.get("id") or "")
+        entry_file = str(entry.get("fileName") or "")
+        if library_id and entry_id != library_id:
+            continue
+        if not library_id and entry_file != file_name:
+            continue
+        image = entry.get("image")
+        if isinstance(image, dict):
+            image = image.get("path")
+        if isinstance(image, str) and image:
+            candidates.append(FURNITURE_LIBRARY_DIR / image)
+        if entry_id:
+            candidates.append(FURNITURE_LIBRARY_DIR / "images" / f"{entry_id}.png")
+        if entry_file:
+            candidates.append(FURNITURE_LIBRARY_DIR / "images" / Path(entry_file).name)
+    return candidates
 
 
 def resolve_item_path(item, furniture_root):
@@ -290,6 +404,8 @@ def resolve_item_path(item, furniture_root):
             furniture_root / raw,
             TOOL_DIR / raw,
         ])
+        if item.get("source", "furniture") == "furniture":
+            candidates.extend(furniture_library_candidates(item))
         if item.get("source") == "project_sprite":
             candidates.append(PROJECT_SPRITE_DIR / raw.name)
 
@@ -597,10 +713,18 @@ def item_sort_key(item):
     )
 
 
-def load_prepared_items(layout, furniture_root):
+def item_visible_in_mode(item, mode):
+    if not item.get("visible", True):
+        return False
+    if mode == "night":
+        return item.get("visibleInNight", True) is not False
+    return item.get("visibleInDay", True) is not False
+
+
+def load_prepared_items(layout, furniture_root, mode):
     prepared = []
     for item in sorted(layout.get("furniture", []), key=item_sort_key):
-        if not item.get("visible", True):
+        if not item_visible_in_mode(item, mode):
             continue
         src = Image.open(resolve_item_path(item, furniture_root)).convert("RGBA")
         size = item_size(item, src)
@@ -991,11 +1115,11 @@ def composite_shadows(out, layout, night, prepared_items, mode):
         out.alpha_composite(clip_layer_to_face(layer, face))
 
 
-def composite(layout, base_path, furniture_dir, mode, include_lighting=True):
-    out = render_base(layout, base_path, mode)
+def composite(layout, base_path, furniture_dir, mode, include_lighting=True, layout_dir=None):
+    out = render_base(layout, base_path, mode, layout_dir)
 
     furniture_root = Path(furniture_dir)
-    prepared_items = load_prepared_items(layout, furniture_root)
+    prepared_items = load_prepared_items(layout, furniture_root, mode)
     composite_shadows(out, layout, layout.get("night", {}), prepared_items, mode)
     for item, src, _opacity in prepared_items:
         alpha_composite_clipped(out, src, (int(item.get("x", 0)), int(item.get("y", 0))))
@@ -1016,15 +1140,16 @@ def main():
     parser.add_argument("--no-lighting", action="store_true", help="Only use lights for shadow projection; do not draw light glow.")
     args = parser.parse_args()
 
-    layout = json.loads(Path(args.layout).read_text(encoding="utf-8"))
+    layout_path = Path(args.layout)
+    layout = json.loads(layout_path.read_text(encoding="utf-8"))
     out_prefix = Path(args.out)
     day_base = args.day_base or args.base
     night_base = args.night_base or args.base or day_base
 
-    composite(layout, day_base, args.furniture_dir, "day", include_lighting=not args.no_lighting).save(
+    composite(layout, day_base, args.furniture_dir, "day", include_lighting=not args.no_lighting, layout_dir=layout_path.parent).save(
         out_prefix.with_name(out_prefix.name + "_day.png")
     )
-    composite(layout, night_base, args.furniture_dir, "night", include_lighting=not args.no_lighting).save(
+    composite(layout, night_base, args.furniture_dir, "night", include_lighting=not args.no_lighting, layout_dir=layout_path.parent).save(
         out_prefix.with_name(out_prefix.name + "_night.png")
     )
 

@@ -30,7 +30,7 @@ This spec is intentionally scoped to Wartortle only.
 - Exported direction order: `front`, `down_left`, `left`, `up_left`, `back`, `up_right`, `right`, `down_right`.
 - Mirrored directions: none; all 8 directions are cropped from source frames.
 
-- Note: Walking uses 24 source sprites: row 1 sprites 1..21 plus row 2 sprites 1..3.
+- Note: Walking uses 24 source sprites; down_left is overridden from the PSD `down_left` layer.
 - Note: Source direction order is front, down_right, right, up_right, back, up_left, left, down_left.
 - Note: This source sheet has no separate idle action; idle uses walking frame 0 for each direction.
 - Note: Sleeping uses row 2 sprites counted from the end: 6 and 7.

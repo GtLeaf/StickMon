@@ -3,6 +3,7 @@
 #include <algorithm>
 #include "assets/PokemonSprites.h"
 #include "core/ButtonDispatcher.h"
+#include "core/ResourceFS.h"
 #include "core/UiStrings.h"
 #include "hardware/EspNowLink.h"
 #include "hardware/Hal.h"
@@ -21,6 +22,11 @@ static constexpr uint8_t HP_RECOVERY_PERCENT_PER_TICK = 10;
 static constexpr uint32_t FAINT_RECOVERY_SECONDS = 86400UL;
 static constexpr uint32_t CLOCK_SAVE_INTERVAL_MS = 15000UL;
 static constexpr uint16_t GAME_MINUTES_PER_DAY = 24U * 60U;
+static constexpr uint16_t SLEEP_START_MINUTE = 18U * 60U;
+static constexpr uint16_t SLEEP_END_MINUTE = 6U * 60U;
+static constexpr uint8_t SATIETY_DECAY_AWAKE_INTERVAL_MIN = 1;
+static constexpr uint8_t SATIETY_DECAY_SLEEP_INTERVAL_MIN = 3;
+static constexpr uint8_t SATIETY_DECAY_MAX_DROP_PER_TICK = 4;
 static constexpr uint8_t DEBUG_LIGHT_SOURCE_COUNT = 6;
 
 uint16_t careDailyCapForLevel(uint8_t level) {
@@ -33,6 +39,11 @@ uint8_t careExpMultiplierForLevel(uint8_t level) {
     if (level <= 5) return 3;
     if (level <= 10) return 2;
     return 1;
+}
+
+bool isSleepCareTime(uint32_t gameMinutesTotal) {
+    uint16_t minutesOfDay = (uint16_t)(gameMinutesTotal % GAME_MINUTES_PER_DAY);
+    return minutesOfDay < SLEEP_END_MINUTE || minutesOfDay >= SLEEP_START_MINUTE;
 }
 
 uint8_t* effortField(Game::StatLine& ev, uint8_t statIndex) {
@@ -73,6 +84,9 @@ bool GameEngine::begin() {
         return false;
     }
     PixelRenderer::bind(&Hal::ins().canvas());
+    if (!ResourceFS::ins().begin()) {
+        Serial.println("[GameEngine] external resource FS unavailable");
+    }
     saveManager.begin();
     uint32_t savedClock = 0;
     bool hasSavedClock = saveManager.loadClock(savedClock);
@@ -905,7 +919,19 @@ void GameEngine::tickCare(uint32_t nowMs) {
     for (uint8_t i = 0; i < state.teamCount; ++i) {
         Game::MonsterRuntime& mon = state.team[i];
         if (i == 0) {
-            uint8_t satietyDrop = min<uint32_t>(elapsedMin, 4);
+            bool sleeping = (mon.statusBits & Game::STATUS_SLEEP) != 0 || isSleepCareTime(state.gameMinutesTotal);
+            uint8_t decayInterval = sleeping ? SATIETY_DECAY_SLEEP_INTERVAL_MIN
+                                             : SATIETY_DECAY_AWAKE_INTERVAL_MIN;
+            if (sleeping != satietyDecayWasSleeping) {
+                satietyDecayMinuteAcc = 0;
+                satietyDecayWasSleeping = sleeping;
+            }
+            satietyDecayMinuteAcc = min<uint32_t>(60000, (uint32_t)satietyDecayMinuteAcc + elapsedMin);
+            uint8_t satietyDrop = min<uint32_t>(
+                satietyDecayMinuteAcc / decayInterval,
+                SATIETY_DECAY_MAX_DROP_PER_TICK
+            );
+            satietyDecayMinuteAcc %= decayInterval;
             mon.satiety = (mon.satiety > satietyDrop) ? mon.satiety - satietyDrop : 0;
         }
         uint8_t targetMood = mon.satiety > 60 ? 75 : (mon.satiety > 25 ? 55 : 35);

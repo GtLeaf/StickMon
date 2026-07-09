@@ -42,6 +42,7 @@ class SpeciesSpec:
     mirror_directions: bool = True
     mirror_map: dict = field(default_factory=lambda: MIRRORS)
     export_mirror_frames: bool = True
+    frame_overrides: dict = field(default_factory=dict)
     background_tolerance: int = 0
     notes: list = field(default_factory=list)
 
@@ -316,12 +317,16 @@ SPECS = [
         source_directions=["front", "down_right", "right", "up_right", "back", "up_left", "left", "down_left"],
         mirror_directions=False,
         notes=[
-            "Walking uses 24 source sprites: row 1 sprites 1..21 plus row 2 sprites 1..3.",
+            "Walking uses 24 source sprites; down_left is overridden from the PSD `down_left` layer.",
             "Source direction order is front, down_right, right, up_right, back, up_left, left, down_left.",
             "This source sheet has no separate idle action; idle uses walking frame 0 for each direction.",
             "Sleeping uses row 2 sprites counted from the end: 6 and 7.",
         ],
-        sleeping_boxes=[(213, 33, 240, 56), (242, 32, 267, 56)],
+        frame_overrides={
+            ("idle", "down_left"): ("low/psd", "卡咪龟.psd", "down_left", (0,)),
+            ("walking", "down_left"): ("low/psd", "卡咪龟.psd", "down_left", (0, 1, 2)),
+        },
+        sleeping_boxes=[(318, 35, 342, 56), (294, 33, 316, 56)],
         boxes={
             "idle": [
                 [(2, 3, 24, 24)],
@@ -331,7 +336,7 @@ SPECS = [
                 [(268, 1, 288, 24)],
                 [(333, 0, 351, 24)],
                 [(393, 0, 413, 24)],
-                [(2, 42, 19, 56)],
+                [(461, 0, 484, 23)],
             ],
             "walking": [
                 [(2, 3, 24, 24), (26, 3, 46, 24), (48, 3, 72, 24)],
@@ -341,7 +346,7 @@ SPECS = [
                 [(268, 1, 288, 24), (290, 0, 309, 23), (311, 1, 331, 24)],
                 [(333, 0, 351, 24), (353, 0, 371, 24), (373, 1, 391, 24)],
                 [(393, 0, 413, 24), (415, 2, 437, 24), (439, 2, 458, 24)],
-                [(2, 42, 19, 56), (21, 41, 38, 56), (40, 35, 62, 56)],
+                [(461, 0, 484, 23), (486, 2, 509, 24), (510, 1, 535, 24)],
             ],
         },
     ),
@@ -384,7 +389,7 @@ SPECS = [
         slug="pikachu",
         display_name="Pikachu",
         source_name="皮卡丘.psd",
-        source_group="low/1",
+        source_group="low/psd",
         scale=2.0,
         contact_directions=SOURCE_DIRECTIONS,
         export_mirror_frames=False,
@@ -393,7 +398,7 @@ SPECS = [
             "This source sheet has no separate idle action; idle uses the first Idle/Moving frame (`walk0`).",
             "Crop boxes were derived from PSD layers walk0..walk4 and sleeping.",
         ],
-        sleeping_boxes=[(354, 22, 377, 46), (377, 22, 401, 46)],
+        sleeping_boxes=[(350, 22, 374, 46), (377, 22, 401, 46)],
         boxes={
             "idle": [
                 [(70, 15, 88, 40)],
@@ -1091,6 +1096,48 @@ def save_frame(out_dir, action, direction, index, frame):
     return path
 
 
+def find_psd_layer(layers, name):
+    for layer in layers:
+        if layer.name == name:
+            return layer
+        if layer.is_group():
+            found = find_psd_layer(layer, name)
+            if found:
+                return found
+    return None
+
+
+def psd_layer_frames(source_group, source_name, layer_name):
+    from psd_tools import PSDImage
+
+    psd = PSDImage.open(SOURCE_ROOT / source_group / source_name)
+    layer = find_psd_layer(psd, layer_name)
+    if layer is None:
+        raise ValueError(f"PSD layer not found: {source_group}/{source_name}#{layer_name}")
+
+    img = layer.composite().convert("RGBA")
+    alpha = img.getchannel("A")
+    runs = []
+    start = None
+    for x in range(img.width):
+        opaque = alpha.crop((x, 0, x + 1, img.height)).getbbox() is not None
+        if opaque and start is None:
+            start = x
+        if (not opaque or x == img.width - 1) and start is not None:
+            end = x if not opaque else x + 1
+            if end - start > 1:
+                runs.append((start, end))
+            start = None
+
+    frames = []
+    for x1, x2 in runs:
+        strip = img.crop((x1, 0, x2, img.height))
+        bbox = strip.getchannel("A").getbbox()
+        if bbox:
+            frames.append(strip.crop(bbox))
+    return frames
+
+
 def contact_rows(spec):
     rows = []
     for action in ("idle", "walking"):
@@ -1324,13 +1371,27 @@ def process_spec(spec):
     out_dir = OUT_ROOT / spec.slug
     exported = []
     contact = []
+    override_cache = {}
+
+    def override_frames(action, direction):
+        override = spec.frame_overrides.get((action, direction))
+        if not override:
+            return None
+        source_group, source_name, layer_name, indices = override
+        key = (source_group, source_name, layer_name)
+        if key not in override_cache:
+            override_cache[key] = psd_layer_frames(source_group, source_name, layer_name)
+        source_frames = override_cache[key]
+        return [frame_canvas(source_frames[index], spec) for index in indices]
 
     for action, rows in spec.boxes.items():
         source_direction_frames = {}
         for row_index, direction in enumerate(spec.source_directions):
             source_direction_frames[direction] = []
-            for frame_index, box in enumerate(rows[row_index]):
-                frame = frame_canvas(source.crop(box), spec)
+            frames = override_frames(action, direction)
+            if frames is None:
+                frames = [frame_canvas(source.crop(box), spec) for box in rows[row_index]]
+            for frame_index, frame in enumerate(frames):
                 source_direction_frames[direction].append(frame)
                 exported.append(save_frame(out_dir, action, direction, frame_index, frame))
 

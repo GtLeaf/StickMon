@@ -17,6 +17,7 @@ private:
         WANDER,
         SEEK_FOOD,
         SEEK_BED,
+        FEEDING,
     };
 
     enum class PmdAction : uint8_t {
@@ -47,17 +48,25 @@ private:
     void updateCamera();
     int16_t worldToScreenY(float worldY) const;
     float walkBoundaryOffsetY() const;
-    bool monsterCenterInsideWalkArea(float x, float y) const;
+    float walkFootprintRadiusX() const;
+    float walkFootprintRadiusY() const;
+    bool monsterFootprintInsideWalkArea(float x, float y) const;
     bool randomMonsterCenterWalkPoint(float& x, float& y) const;
     bool randomMonsterCenterWalkPointNear(float centerX, float centerY, float radiusX, float radiusY,
                                           float& x, float& y) const;
+    bool monsterCanUseBedSleepPose(float x, float y) const;
+    bool chooseBedApproachPose(float& x, float& y) const;
+    bool chooseBedSleepPose(float& x, float& y) const;
     bool monsterNearFood() const;
     bool monsterNearBed() const;
+    bool monsterAtBedSleepPose() const;
     bool monsterNeedsBedRest() const;
     void setFoodTarget(uint32_t nowMs);
     void setBedTarget(uint32_t nowMs);
     void snapMonsterToBed();
     void updatePendingFeed(uint32_t nowMs);
+    void enterFeeding(uint32_t nowMs);
+    void updateFeeding(uint32_t nowMs);
     void updatePmdSpriteState(uint32_t nowMs);
     void chooseAiGoal(uint32_t nowMs);
     void drawBackground();
@@ -98,6 +107,12 @@ private:
     const char* toast = nullptr;
     bool pendingFeed = false;
     uint32_t pendingFeedUntilMs = 0;
+    uint32_t pendingFeedReadyMs = 0;
+    uint32_t feedingBiteMs = 0;
+    uint32_t feedingUntilMs = 0;
+    uint32_t postFeedAwakeUntilMs = 0;
+    bool feedingConsumed = false;
+    bool feedingBiteTried = false;
     uint32_t comboStartMs = 0;
     bool comboSaved = false;
 };

@@ -2,6 +2,7 @@
 import argparse
 import json
 import sys
+import zlib
 from copy import deepcopy
 from pathlib import Path
 
@@ -12,12 +13,12 @@ ROOT = Path(__file__).resolve().parents[1]
 ROOM_EDITOR_DIR = ROOT / "tools" / "room_editor"
 sys.path.insert(0, str(ROOM_EDITOR_DIR))
 
-from compose_room import composite  # noqa: E402
+from compose_room import background_info, background_layers_for_mode, composite, fit_base, layout_trim, render_base  # noqa: E402
 
 
 DEFAULT_ROOM_DIR = ROOT / "origin_asset" / "room" / "standar"
 DEFAULT_LAYOUT = DEFAULT_ROOM_DIR / "room_layout.json"
-DEFAULT_FURNITURE_DIR = DEFAULT_ROOM_DIR / "forniture"
+DEFAULT_FURNITURE_DIR = DEFAULT_ROOM_DIR.parent / "forniture"
 GENERATED_ROOM_DIR = ROOT / "origin_asset" / "generated" / "room"
 DAY_SOURCE_OUT = GENERATED_ROOM_DIR / "standard_room_day_source.png"
 NIGHT_SOURCE_OUT = GENERATED_ROOM_DIR / "standard_room_night_source.png"
@@ -60,6 +61,12 @@ def resolve_room_path(layout_path, value):
 def background_path(layout_path, layout, mode, override=None, fallback=None):
     if override:
         return Path(override)
+    layers = background_layers_for_mode(layout, mode)
+    if layers:
+        file_name = layers[0].get("fileName") or layers[0].get("name")
+        path = resolve_room_path(layout_path, file_name)
+        if path:
+            return path
     backgrounds = layout.get("backgrounds") or {}
     info = backgrounds.get(mode) or {}
     file_name = info.get("fileName") if isinstance(info, dict) else None
@@ -82,9 +89,51 @@ def layout_without_preview_sprites(layout):
     return prepared
 
 
-def compose_room_image(layout, background, furniture_dir, mode):
+def compose_room_image(layout, background, furniture_dir, mode, layout_dir):
     prepared_layout = layout_without_preview_sprites(layout)
-    return composite(prepared_layout, str(background), str(furniture_dir), mode, include_lighting=False).convert("RGB")
+    return composite(
+        prepared_layout,
+        str(background) if background else None,
+        str(furniture_dir),
+        mode,
+        include_lighting=False,
+        layout_dir=layout_dir,
+    ).convert("RGB")
+
+
+def expected_background_size(layout, mode):
+    geometry = layout.get("roomGeometry") or {}
+    candidates = [
+        background_info(layout, mode),
+        layout.get("base") or {},
+        geometry.get("reference") or {},
+    ]
+    for info in candidates:
+        try:
+            width = int(info.get("sourceWidth") or 0)
+            height = int(info.get("sourceHeight") or 0)
+        except (TypeError, ValueError):
+            continue
+        if width > 0 and height > 0:
+            return width, height
+    return None
+
+
+def direct_room_image(layout, image_path, mode):
+    width, height = room_size(layout)
+    base = Image.open(image_path).convert("RGBA")
+    if base.size == (width, height):
+        return base.convert("RGB")
+
+    fit = (
+        background_info(layout, mode).get("fit")
+        or (layout.get("backgrounds") or {}).get("fit")
+        or (layout.get("base") or {}).get("fit", "cover")
+    )
+    expected_size = expected_background_size(layout, mode)
+    use_layout_trim = expected_size is None or expected_size == base.size
+    trim = layout_trim(layout, base, mode) if use_layout_trim else (0, 0, base.width, base.height)
+    return fit_base(base, width, height, fit, trim).convert("RGB")
 
 
 def clamp_room_point(x, y, room_w, room_h):
@@ -96,12 +145,16 @@ def clamp_room_point(x, y, room_w, room_h):
 
 def load_walk_polygon(layout, room_w, room_h):
     geometry = layout.get("roomGeometry") or {}
+    faces = geometry.get("faces") or []
+    sprite_face = next((face for face in faces if face.get("type") == "sprite_area"), None)
+    if sprite_face:
+        return [clamp_room_point(x, y, room_w, room_h) for x, y in sprite_face.get("points", [])]
+
     sprite_areas = geometry.get("spriteAreas") or []
     if sprite_areas:
         points = sprite_areas[0].get("points") or []
         return [clamp_room_point(x, y, room_w, room_h) for x, y in points]
 
-    faces = geometry.get("faces") or []
     floor = next((face for face in faces if face.get("type") == "floor"), None)
     if not floor:
         return []
@@ -233,6 +286,59 @@ def rle_rgb565_image(img):
     return values
 
 
+def rgb565_pixels(img):
+    rgb = img.convert("RGB")
+    if hasattr(rgb, "get_flattened_data"):
+        pixels = list(rgb.get_flattened_data())
+    else:
+        pixels = list(rgb.getdata())
+    return [rgb565(*pixel) for pixel in pixels]
+
+
+def rgb565_bytes(img):
+    values = rgb565_pixels(img)
+    out = bytearray()
+    for value in values:
+        out.append(value & 0xFF)
+        out.append((value >> 8) & 0xFF)
+    return bytes(out)
+
+
+def raw_deflate(data):
+    compressor = zlib.compressobj(6, zlib.DEFLATED, -15)
+    return compressor.compress(data) + compressor.flush()
+
+
+def night_patch_runs(day_img, night_img):
+    if day_img.size != night_img.size:
+        raise ValueError(f"day/night room sizes differ: {day_img.size} vs {night_img.size}")
+
+    width, height = day_img.size
+    day_pixels = rgb565_pixels(day_img)
+    night_pixels = rgb565_pixels(night_img)
+    runs = []
+    patch_pixels = []
+    for y in range(height):
+        row_offset = y * width
+        x = 0
+        while x < width:
+            index = row_offset + x
+            if day_pixels[index] == night_pixels[index]:
+                x += 1
+                continue
+
+            start = x
+            color_offset = len(patch_pixels)
+            while x < width:
+                index = row_offset + x
+                if day_pixels[index] == night_pixels[index]:
+                    break
+                patch_pixels.append(night_pixels[index])
+                x += 1
+            runs.append((y, start, x - start, color_offset))
+    return runs, patch_pixels
+
+
 def format_words(values):
     rows = []
     for index in range(0, len(values), 12):
@@ -240,8 +346,21 @@ def format_words(values):
     return "\n".join(rows)
 
 
+def format_bytes(values):
+    rows = []
+    for index in range(0, len(values), 16):
+        rows.append("    " + ", ".join(f"0x{value:02X}" for value in values[index:index + 16]) + ",")
+    return "\n".join(rows)
+
+
 def format_points(points):
     return "\n".join(f"    {{{x}, {y}}}," for x, y in points)
+
+
+def format_patch_runs(runs):
+    if not runs:
+        return "    {0, 0, 0, 0},"
+    return "\n".join(f"    {{{y}, {x}, {length}, {offset}}}," for y, x, length, offset in runs)
 
 
 def write_room_assets(day_img, night_img, walk_polygon, food_x, food_y, bed_polygon, bed_x, bed_y):
@@ -250,12 +369,15 @@ def write_room_assets(day_img, night_img, walk_polygon, food_x, food_y, bed_poly
 
     width, height = day_img.size
     room_y = max(0, (DISPLAY_H - height) // 2)
-    day_rle = rle_rgb565_image(day_img)
-    night_rle = rle_rgb565_image(night_img)
+    base_raw = rgb565_bytes(day_img)
+    base_compressed = raw_deflate(base_raw)
+    patch_runs, patch_pixels = night_patch_runs(day_img, night_img)
+    shared_rle = len(patch_runs) == 0
     min_x, min_y, max_x, max_y = bounds_for(walk_polygon, width, height)
     polygon_count = len(walk_polygon)
     bed_min_x, bed_min_y, bed_max_x, bed_max_y = bounds_for(bed_polygon, width, height)
     bed_polygon_count = len(bed_polygon)
+    patch_pixel_words = format_words(patch_pixels or [0])
 
     HEADER_OUT.write_text(f"""#pragma once
 #include <Arduino.h>
@@ -268,11 +390,21 @@ struct RoomPoint {{
     int16_t y;
 }};
 
+struct RoomPatchRun {{
+    uint16_t y;
+    uint16_t x;
+    uint16_t len;
+    uint32_t colorOffset;
+}};
+
 static constexpr uint16_t STANDARD_ROOM_W = {width};
 static constexpr uint16_t STANDARD_ROOM_H = {height};
 static constexpr int16_t STANDARD_ROOM_Y = {room_y};
-static constexpr uint32_t STANDARD_ROOM_DAY_RLE_LEN = {len(day_rle)};
-static constexpr uint32_t STANDARD_ROOM_NIGHT_RLE_LEN = {len(night_rle)};
+static constexpr uint32_t STANDARD_ROOM_BASE_RAW_BYTES = {len(base_raw)};
+static constexpr uint32_t STANDARD_ROOM_BASE_COMPRESSED_LEN = {len(base_compressed)};
+static constexpr uint32_t STANDARD_ROOM_NIGHT_PATCH_RUN_COUNT = {len(patch_runs)};
+static constexpr uint32_t STANDARD_ROOM_NIGHT_PATCH_PIXEL_COUNT = {len(patch_pixels)};
+static constexpr bool STANDARD_ROOM_SHARED_RLE = {"true" if shared_rle else "false"};
 
 static constexpr uint8_t ROOM_WALK_POLYGON_COUNT = {polygon_count};
 static constexpr int16_t ROOM_WALK_MIN_X = {min_x};
@@ -291,8 +423,9 @@ static constexpr int16_t ROOM_BED_MAX_Y = {bed_max_y};
 static constexpr int16_t ROOM_BED_X = {bed_x};
 static constexpr int16_t ROOM_BED_Y = {bed_y};
 
-extern const uint16_t STANDARD_ROOM_DAY_RLE[] PROGMEM;
-extern const uint16_t STANDARD_ROOM_NIGHT_RLE[] PROGMEM;
+extern const uint8_t STANDARD_ROOM_BASE_COMPRESSED[] PROGMEM;
+extern const RoomPatchRun STANDARD_ROOM_NIGHT_PATCH_RUNS[] PROGMEM;
+extern const uint16_t STANDARD_ROOM_NIGHT_PATCH_PIXELS[] PROGMEM;
 extern const RoomPoint ROOM_WALK_POLYGON[] PROGMEM;
 extern const RoomPoint ROOM_BED_POLYGON[] PROGMEM;
 
@@ -303,12 +436,16 @@ extern const RoomPoint ROOM_BED_POLYGON[] PROGMEM;
 
 namespace RoomAssets {{
 
-const uint16_t STANDARD_ROOM_DAY_RLE[] PROGMEM = {{
-{format_words(day_rle)}
+const uint8_t STANDARD_ROOM_BASE_COMPRESSED[] PROGMEM = {{
+{format_bytes(base_compressed)}
 }};
 
-const uint16_t STANDARD_ROOM_NIGHT_RLE[] PROGMEM = {{
-{format_words(night_rle)}
+const RoomPatchRun STANDARD_ROOM_NIGHT_PATCH_RUNS[] PROGMEM = {{
+{format_patch_runs(patch_runs)}
+}};
+
+const uint16_t STANDARD_ROOM_NIGHT_PATCH_PIXELS[] PROGMEM = {{
+{patch_pixel_words}
 }};
 
 const RoomPoint ROOM_WALK_POLYGON[] PROGMEM = {{
@@ -322,7 +459,7 @@ const RoomPoint ROOM_BED_POLYGON[] PROGMEM = {{
 }}
 """, encoding="utf-8")
 
-    return len(day_rle), len(night_rle), room_y
+    return len(base_raw), len(base_compressed), len(patch_runs), len(patch_pixels), room_y, shared_rle
 
 
 def main():
@@ -331,6 +468,9 @@ def main():
     parser.add_argument("--layout", default=str(DEFAULT_LAYOUT), help="room_layout.json source of truth")
     parser.add_argument("--day-base", help="Day background image. Defaults to backgrounds.day.fileName")
     parser.add_argument("--night-base", help="Night background image. Defaults to backgrounds.night.fileName")
+    parser.add_argument("--direct-room-image", help="Already composed room image used for both day/night; bypasses furniture composition")
+    parser.add_argument("--direct-day-image", help="Already composed day room image; bypasses furniture composition for day")
+    parser.add_argument("--direct-night-image", help="Already composed night room image; bypasses furniture composition for night")
     parser.add_argument("--furniture-dir", default=str(DEFAULT_FURNITURE_DIR), help="Directory containing furniture PNG files")
     parser.add_argument("--day-source-out", default=str(DAY_SOURCE_OUT), help="Copy of the day source background")
     parser.add_argument("--night-source-out", default=str(NIGHT_SOURCE_OUT), help="Copy of the night source background")
@@ -341,8 +481,12 @@ def main():
 
     layout_path = Path(args.layout)
     layout = read_layout(layout_path)
-    day_base = background_path(layout_path, layout, "day", args.day_base or args.source)
-    night_base = background_path(layout_path, layout, "night", args.night_base, day_base)
+    direct_day_value = args.direct_day_image or args.direct_room_image
+    direct_night_value = args.direct_night_image or args.direct_room_image
+    direct_day = Path(direct_day_value) if direct_day_value else None
+    direct_night = Path(direct_night_value) if direct_night_value else None
+    day_base = direct_day or background_path(layout_path, layout, "day", args.day_base or args.source)
+    night_base = direct_night or background_path(layout_path, layout, "night", args.night_base, day_base)
     furniture_dir = Path(args.furniture_dir)
 
     day_source_out = Path(args.day_source_out)
@@ -353,11 +497,27 @@ def main():
     for path in (day_source_out, night_source_out, day_png_out, night_png_out, legacy_png_out):
         path.parent.mkdir(parents=True, exist_ok=True)
 
-    Image.open(day_base).save(day_source_out)
-    Image.open(night_base).save(night_source_out)
+    if direct_day:
+        Image.open(day_base).save(day_source_out)
+    elif background_layers_for_mode(layout, "day"):
+        render_base(layout, str(day_base), "day", layout_path.parent).convert("RGB").save(day_source_out)
+    else:
+        Image.open(day_base).save(day_source_out)
+    if direct_night:
+        Image.open(night_base).save(night_source_out)
+    elif background_layers_for_mode(layout, "night"):
+        render_base(layout, str(night_base), "night", layout_path.parent).convert("RGB").save(night_source_out)
+    else:
+        Image.open(night_base).save(night_source_out)
 
-    day_img = compose_room_image(layout, day_base, furniture_dir, "day")
-    night_img = compose_room_image(layout, night_base, furniture_dir, "night")
+    day_img = (
+        direct_room_image(layout, direct_day, "day")
+        if direct_day else compose_room_image(layout, day_base, furniture_dir, "day", layout_path.parent)
+    )
+    night_img = (
+        direct_room_image(layout, direct_night, "night")
+        if direct_night else compose_room_image(layout, night_base, furniture_dir, "night", layout_path.parent)
+    )
     day_img.save(day_png_out)
     night_img.save(night_png_out)
     day_img.save(legacy_png_out)
@@ -366,12 +526,16 @@ def main():
     walk_polygon = load_walk_polygon(layout, width, height)
     food_x, food_y = food_position(layout)
     bed_polygon, bed_x, bed_y = bed_region(layout, width, height, walk_polygon)
-    day_len, night_len, room_y = write_room_assets(day_img, night_img, walk_polygon, food_x, food_y,
-                                                   bed_polygon, bed_x, bed_y)
+    base_raw_bytes, base_compressed_len, patch_run_count, patch_pixel_count, room_y, shared_rle = write_room_assets(
+        day_img, night_img, walk_polygon, food_x, food_y, bed_polygon, bed_x, bed_y
+    )
 
     print(f"layout={layout_path}")
     print(f"day_base={day_base}")
     print(f"night_base={night_base}")
+    if direct_day or direct_night:
+        print(f"direct_day_image={direct_day or '-'}")
+        print(f"direct_night_image={direct_night or '-'}")
     print(f"furniture_dir={furniture_dir}")
     print(f"day_png={day_png_out} size={day_img.width}x{day_img.height}")
     print(f"night_png={night_png_out} size={night_img.width}x{night_img.height}")
@@ -380,7 +544,12 @@ def main():
     print(f"walk_polygon_points={len(walk_polygon)}")
     print(f"food={food_x},{food_y}")
     print(f"bed={bed_x},{bed_y} bed_polygon_points={len(bed_polygon)}")
-    print(f"assets={HEADER_OUT}, {CPP_OUT} day_rle_words={day_len} night_rle_words={night_len}")
+    print(
+        f"assets={HEADER_OUT}, {CPP_OUT} base_raw_bytes={base_raw_bytes} "
+        f"base_compressed_bytes={base_compressed_len} "
+        f"night_patch_runs={patch_run_count} night_patch_pixels={patch_pixel_count} "
+        f"shared_rle={str(shared_rle).lower()}"
+    )
 
 
 if __name__ == "__main__":

@@ -32,3 +32,7 @@ After changing Chinese UI copy in `src/core/UiStrings.h`, regenerate the glyph t
 ```bash
 python3 tools/generate_font16cn.py
 ```
+
+## Asset Notes
+
+- Room asset pipeline: [doc/房间资源生成与运行时绘制说明.md](doc/房间资源生成与运行时绘制说明.md)
