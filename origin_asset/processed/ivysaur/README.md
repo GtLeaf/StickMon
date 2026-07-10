@@ -4,7 +4,7 @@ This spec is intentionally scoped to Ivysaur only.
 
 ## Source
 
-- Input sheet: `origin_asset/source_sheets/low/1/妙蛙草.psd`
+- Input sheet: `origin_asset/source_sheets/low/psd/妙蛙草.psd`
 - Background removal: pixels matching the top-left source color become transparent.
 - Crop boxes are fixed in `tools/extract_pmd_eeveelution_frames.py`; they are not a generic PMD parser.
 

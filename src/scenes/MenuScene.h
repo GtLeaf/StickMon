@@ -52,6 +52,8 @@ private:
     };
 
     static constexpr uint8_t STATUS_PAGE_COUNT = 5;
+    static constexpr uint8_t TEAM_ACTION_COUNT = 4;
+    static constexpr uint8_t STORAGE_ACTION_COUNT = 4;
     static constexpr uint8_t BAG_ITEM_COUNT = 7;
     static constexpr uint8_t ROOM_ITEM_COUNT = 5;
     static constexpr uint8_t FOOD_ITEM_COUNT = Game::ROOM_FOOD_COUNT + 1;
@@ -63,6 +65,7 @@ private:
     static constexpr uint8_t DEBUG_MOTION_ITEM_COUNT = 3;
     static constexpr uint8_t DEBUG_SWITCH_FOCUS_COUNT = 5;
     static constexpr uint8_t DEBUG_TIME_FOCUS_COUNT = 6;
+    static constexpr uint8_t NAV_STACK_CAP = 8;
 
     static int8_t lastCursor;
     int8_t cursor = 0;
@@ -72,6 +75,7 @@ private:
     ViewMode viewMode = ViewMode::MENU;
     uint8_t statusPage = 0;
     uint8_t statusMonsterIndex = 0;
+    bool statusFromStorage = false;
     uint8_t teamCursor = 0;
     uint8_t teamActionCursor = 0;
     bool teamActionOpen = false;
@@ -85,6 +89,10 @@ private:
     float foodScroll = 0.0f;
     uint8_t computerCursor = 0;
     uint8_t storageCursor = 0;
+    uint8_t storageActionCursor = 0;
+    bool storageActionOpen = false;
+    bool storageReleaseConfirmOpen = false;
+    bool storageReleaseConfirmYes = false;
     float storageScroll = 0.0f;
     DebugCategory debugCategory = DebugCategory::ROOT;
     uint8_t debugCursor = 0;
@@ -97,6 +105,11 @@ private:
     int descScrollKey = -1;
     float descScroll = 0.0f;
     uint32_t descScrollLastMs = 0;
+    int statusScrollKey = -1;
+    float statusScroll = 0.0f;
+    uint32_t statusScrollLastMs = 0;
+    ViewMode navStack[NAV_STACK_CAP] = {};
+    uint8_t navDepth = 0;
 
     void renderMenu();
     void renderToast();
@@ -110,6 +123,8 @@ private:
     void renderFoodPage();
     void renderComputerPage();
     void renderStoragePage();
+    void renderStorageActionPopup();
+    void renderStorageReleaseConfirmPopup();
     void renderDebugPage();
     void renderDebugSwitchPopup();
     void renderDebugTimePopup();
@@ -121,6 +136,9 @@ private:
     uint16_t debugSwitchTargetId() const;
     uint16_t debugTimeTargetMinutes() const;
     void incrementDebugTimeDigit();
+    void resetNavigation();
+    void pushView(ViewMode next);
+    void popView();
     uint8_t collectVisibleBagRows(BagRow* rows, uint8_t maxRows) const;
     uint8_t visibleFoodIndexOf(uint8_t foodIndex) const;
     bool isFoodBackIndex(uint8_t index) const;
@@ -128,6 +146,7 @@ private:
     void renderSplitList(const BagRow* rows, uint8_t count);
     void renderBagDetail(const BagRow& row);
     void renderPageIndicator(uint8_t page, uint8_t count);
+    void updateStatusScroll(int scrollKey, int maxScroll);
     void updateDescriptionScroll(int scrollKey, int maxScroll);
     void renderScrollableDescription(const char* const* lines, int lineCount,
                                      int x, int y, int w, uint16_t color,

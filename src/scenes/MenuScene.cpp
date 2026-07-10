@@ -63,6 +63,16 @@ int textPixelWidth(const char* value) {
     return width;
 }
 
+int statusPageContentHeight(uint8_t page) {
+    switch (page) {
+    case 0: return 129;
+    case 1: return 128;
+    case 2: return 192;
+    case 3: return 123;
+    default: return 123;
+    }
+}
+
 enum PokeBugMainIcon : int {
     POKEBUG_ICON_INFO = 0,
     POKEBUG_ICON_BOX = 1,
@@ -225,19 +235,30 @@ int drawTypeBracket(int x, int y, TypeId type) {
 
 void drawStatusMonsterIcon(const Species& species, int x, int y) {
     auto& c = PixelRenderer::canvas();
+    static constexpr float STATUS_ICON_SCALE = 1.2f;
     const PokemonSprites::SpriteFrame* frame = PokemonSprites::findSpeciesSprite(species.id, PokemonSprites::SpriteKind::ICON_0);
-    if (frame && PokemonSprites::drawFrame(frame, x, y)) return;
-    c.fillRect(x + 10, y + 8, 44, 48, species.colorA);
-    c.fillRect(x + 18, y + 18, 28, 30, species.colorB);
+    if (frame) {
+        uint8_t w = pgm_read_byte(&frame->width);
+        uint8_t h = pgm_read_byte(&frame->height);
+        int drawX = x - (int)roundf((w * (STATUS_ICON_SCALE - 1.0f)) * 0.5f);
+        int drawY = y - (int)roundf((h * (STATUS_ICON_SCALE - 1.0f)) * 0.5f);
+        if (PokemonSprites::drawFrameScaled(frame, drawX, drawY, STATUS_ICON_SCALE)) return;
+    }
+    c.fillRect(x + 6, y + 4, 53, 58, species.colorA);
+    c.fillRect(x + 16, y + 16, 34, 36, species.colorB);
 }
 }
 
 int8_t MenuScene::lastCursor = 0;
 
 void MenuScene::onEnter() {
-    viewMode = ViewMode::MENU;
+    resetNavigation();
     statusPage = 0;
     statusMonsterIndex = 0;
+    statusFromStorage = false;
+    statusScrollKey = -1;
+    statusScroll = 0.0f;
+    statusScrollLastMs = Hal::ins().millis();
     teamCursor = 0;
     teamActionCursor = 0;
     teamActionOpen = false;
@@ -249,6 +270,10 @@ void MenuScene::onEnter() {
     foodScroll = 0.0f;
     computerCursor = 0;
     storageCursor = 0;
+    storageActionCursor = 0;
+    storageActionOpen = false;
+    storageReleaseConfirmOpen = false;
+    storageReleaseConfirmYes = false;
     storageScroll = 0.0f;
     debugCategory = DebugCategory::ROOT;
     debugCursor = 0;
@@ -268,6 +293,42 @@ void MenuScene::onExit() {
     lastCursor = cursor;
 }
 
+void MenuScene::resetNavigation() {
+    navDepth = 0;
+    viewMode = ViewMode::MENU;
+}
+
+void MenuScene::pushView(ViewMode next) {
+    if (next == viewMode) return;
+    if (navDepth < NAV_STACK_CAP) {
+        navStack[navDepth++] = viewMode;
+    } else {
+        for (uint8_t i = 1; i < NAV_STACK_CAP; ++i) {
+            navStack[i - 1] = navStack[i];
+        }
+        navStack[NAV_STACK_CAP - 1] = viewMode;
+    }
+    viewMode = next;
+}
+
+void MenuScene::popView() {
+    teamActionOpen = false;
+    storageActionOpen = false;
+    storageReleaseConfirmOpen = false;
+    bagConfirmOpen = false;
+    debugSwitchOpen = false;
+    debugTimeOpen = false;
+
+    if (navDepth > 0) {
+        viewMode = navStack[--navDepth];
+    } else {
+        viewMode = ViewMode::MENU;
+    }
+    if (viewMode == ViewMode::MENU) {
+        statusFromStorage = false;
+    }
+}
+
 void MenuScene::update(uint32_t nowMs, float dtSeconds) {
     (void)nowMs;
     (void)dtSeconds;
@@ -282,6 +343,15 @@ bool MenuScene::onButton(const ButtonEvent& event) {
         if (event.btn == 1 && event.action == BtnAction::LONG_PRESS) {
             if (viewMode == ViewMode::TEAM && teamActionOpen) {
                 teamActionOpen = false;
+                return true;
+            }
+            if (viewMode == ViewMode::STORAGE && storageReleaseConfirmOpen) {
+                storageReleaseConfirmOpen = false;
+                return true;
+            }
+            if (viewMode == ViewMode::STORAGE && storageActionOpen) {
+                storageActionOpen = false;
+                storageReleaseConfirmOpen = false;
                 return true;
             }
             if (viewMode == ViewMode::BAG && bagConfirmOpen) {
@@ -301,19 +371,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                 debugCursor = 0;
                 return true;
             }
-            if (viewMode == ViewMode::STORAGE) {
-                viewMode = ViewMode::COMPUTER;
-                return true;
-            }
-            if (viewMode == ViewMode::FOOD) {
-                viewMode = ViewMode::ROOM;
-                return true;
-            }
-            viewMode = ViewMode::MENU;
-            teamActionOpen = false;
-            bagConfirmOpen = false;
-            debugSwitchOpen = false;
-            debugTimeOpen = false;
+            popView();
             return true;
         }
         if (viewMode == ViewMode::ROOM && event.btn == 1 && event.action == BtnAction::PRESSED) {
@@ -322,11 +380,11 @@ bool MenuScene::onButton(const ButtonEvent& event) {
         }
         if (viewMode == ViewMode::ROOM && event.btn == 0 && event.action == BtnAction::PRESSED) {
             if (roomCursor == 0) {
-                viewMode = ViewMode::FOOD;
+                pushView(ViewMode::FOOD);
                 foodCursor = visibleFoodIndexOf(GameEngine::ins().selectedFoodIndex());
                 foodScroll = 0.0f;
             } else if (roomCursor == ROOM_ITEM_COUNT - 1) {
-                viewMode = ViewMode::MENU;
+                popView();
             }
             return true;
         }
@@ -337,7 +395,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
         }
         if (viewMode == ViewMode::FOOD && event.btn == 0 && event.action == BtnAction::PRESSED) {
             if (isFoodBackIndex(foodCursor)) {
-                viewMode = ViewMode::ROOM;
+                popView();
             } else if (GameEngine::ins().selectFood(foodCursor)) {
                 toast = Ui::Room::FOOD_SELECTED;
                 toastUntil = Hal::ins().millis() + 900;
@@ -353,7 +411,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
             if (teamCursor >= rowCount) teamCursor = 0;
             if (event.btn == 1 && event.action == BtnAction::PRESSED) {
                 if (teamActionOpen) {
-                    teamActionCursor = (teamActionCursor + 1) % 3;
+                    teamActionCursor = (teamActionCursor + 1) % TEAM_ACTION_COUNT;
                 } else {
                     teamCursor = (teamCursor + 1) % rowCount;
                 }
@@ -362,7 +420,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
             if (event.btn == 0 && event.action == BtnAction::PRESSED) {
                 if (teamCursor >= teamCount) {
                     teamActionOpen = false;
-                    viewMode = ViewMode::MENU;
+                    popView();
                     return true;
                 }
                 if (!teamActionOpen) {
@@ -373,9 +431,12 @@ bool MenuScene::onButton(const ButtonEvent& event) {
 
                 if (teamActionCursor == 0) {
                     statusMonsterIndex = teamCursor;
+                    statusFromStorage = false;
                     statusPage = 0;
+                    statusScrollKey = -1;
+                    statusScroll = 0.0f;
                     teamActionOpen = false;
-                    viewMode = ViewMode::STATUS;
+                    pushView(ViewMode::STATUS);
                 } else if (teamActionCursor == 1) {
                     if (GameEngine::ins().moveTeamMemberToFront(teamCursor)) {
                         teamCursor = 0;
@@ -383,6 +444,25 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                         toast = Ui::Menu::SWITCH_TOAST;
                         toastUntil = Hal::ins().millis() + 1100;
                     }
+                    teamActionOpen = false;
+                } else if (teamActionCursor == 2) {
+                    bool boxFull = GameEngine::ins().gameState().storageCount >= Game::STORAGE_CAP;
+                    bool lastMonster = GameEngine::ins().gameState().teamCount <= 1;
+                    if (GameEngine::ins().depositTeamMemberToStorage(teamCursor)) {
+                        uint8_t newTeamCount = GameEngine::ins().gameState().teamCount;
+                        if (newTeamCount == 0) {
+                            teamCursor = 0;
+                        } else if (teamCursor >= newTeamCount) {
+                            teamCursor = newTeamCount - 1;
+                        }
+                        statusMonsterIndex = 0;
+                        toast = Ui::Team::DEPOSIT_TOAST;
+                    } else if (boxFull) {
+                        toast = Ui::Team::DEPOSIT_FULL_TOAST;
+                    } else if (lastMonster) {
+                        toast = Ui::Team::DEPOSIT_LAST_TOAST;
+                    }
+                    toastUntil = Hal::ins().millis() + 1100;
                     teamActionOpen = false;
                 } else {
                     teamActionOpen = false;
@@ -393,6 +473,8 @@ bool MenuScene::onButton(const ButtonEvent& event) {
         }
         if (viewMode == ViewMode::STATUS && event.btn == 1 && event.action == BtnAction::PRESSED) {
             statusPage = (statusPage + 1) % STATUS_PAGE_COUNT;
+            statusScrollKey = -1;
+            statusScroll = 0.0f;
             return true;
         }
         if (viewMode == ViewMode::BAG && event.btn == 1 && event.action == BtnAction::PRESSED) {
@@ -429,7 +511,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                 bagConfirmYes = true;
                 bagConfirmOpen = true;
             } else if (source == 6) {
-                viewMode = ViewMode::MENU;
+                popView();
             }
             return true;
         }
@@ -441,15 +523,26 @@ bool MenuScene::onButton(const ButtonEvent& event) {
             if (computerCursor == 0) {
                 GameEngine::ins().requestScene(SceneID::SOCIAL);
             } else if (computerCursor == 1) {
-                viewMode = ViewMode::STORAGE;
+                pushView(ViewMode::STORAGE);
                 storageCursor = 0;
+                storageActionCursor = 0;
+                storageActionOpen = false;
+                storageReleaseConfirmOpen = false;
                 storageScroll = 0.0f;
             } else {
-                viewMode = ViewMode::MENU;
+                popView();
             }
             return true;
         }
         if (viewMode == ViewMode::STORAGE && event.btn == 1 && event.action == BtnAction::PRESSED) {
+            if (storageReleaseConfirmOpen) {
+                storageReleaseConfirmYes = !storageReleaseConfirmYes;
+                return true;
+            }
+            if (storageActionOpen) {
+                storageActionCursor = (storageActionCursor + 1) % STORAGE_ACTION_COUNT;
+                return true;
+            }
             uint8_t count = GameEngine::ins().gameState().storageCount + 1;
             storageCursor = (storageCursor + 1) % count;
             if (storageCursor == 0) storageScroll = 0.0f;
@@ -457,8 +550,69 @@ bool MenuScene::onButton(const ButtonEvent& event) {
         }
         if (viewMode == ViewMode::STORAGE && event.btn == 0 && event.action == BtnAction::PRESSED) {
             uint8_t count = GameEngine::ins().gameState().storageCount + 1;
+            if (storageReleaseConfirmOpen) {
+                if (storageReleaseConfirmYes) {
+                    if (GameEngine::ins().releaseStorageMember(storageCursor)) {
+                        uint8_t newCount = GameEngine::ins().gameState().storageCount;
+                        if (newCount == 0) {
+                            storageCursor = 0;
+                        } else if (storageCursor >= newCount) {
+                            storageCursor = newCount - 1;
+                        }
+                        toast = Ui::Storage::RELEASE_TOAST;
+                        toastUntil = Hal::ins().millis() + 1100;
+                    }
+                    storageActionOpen = false;
+                }
+                storageReleaseConfirmOpen = false;
+                return true;
+            }
+            if (storageActionOpen) {
+                if (storageCursor >= GameEngine::ins().gameState().storageCount) {
+                    storageActionOpen = false;
+                    return true;
+                }
+                if (storageActionCursor == 0) {
+                    statusMonsterIndex = storageCursor;
+                    statusFromStorage = true;
+                    statusPage = 0;
+                    statusScrollKey = -1;
+                    statusScroll = 0.0f;
+                    storageActionOpen = false;
+                    pushView(ViewMode::STATUS);
+                } else if (storageActionCursor == 1) {
+                    if (GameEngine::ins().gameState().teamCount >= Game::TEAM_CAP) {
+                        toast = Ui::Storage::TEAM_FULL_TOAST;
+                        toastUntil = Hal::ins().millis() + 1100;
+                        return true;
+                    }
+                    if (GameEngine::ins().withdrawStorageMemberToTeam(storageCursor)) {
+                        uint8_t newCount = GameEngine::ins().gameState().storageCount;
+                        if (newCount == 0) {
+                            storageCursor = 0;
+                        } else if (storageCursor >= newCount) {
+                            storageCursor = newCount - 1;
+                        }
+                        toast = Ui::Storage::WITHDRAW_TOAST;
+                        toastUntil = Hal::ins().millis() + 1100;
+                        storageActionOpen = false;
+                    }
+                } else if (storageActionCursor == 2) {
+                    storageReleaseConfirmOpen = true;
+                    storageReleaseConfirmYes = false;
+                } else {
+                    storageActionOpen = false;
+                }
+                return true;
+            }
             if (storageCursor >= count - 1) {
-                viewMode = ViewMode::COMPUTER;
+                popView();
+                storageActionOpen = false;
+                storageReleaseConfirmOpen = false;
+            } else {
+                storageActionOpen = true;
+                storageActionCursor = 0;
+                storageReleaseConfirmOpen = false;
             }
             return true;
         }
@@ -509,7 +663,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
             return true;
         }
         if (event.btn == 0 && event.action == BtnAction::PRESSED) {
-            viewMode = ViewMode::TEAM;
+            popView();
             return true;
         }
         return false;
@@ -535,17 +689,18 @@ bool MenuScene::onButton(const ButtonEvent& event) {
 
     switch (cursor) {
     case ITEM_TEAM:
-        viewMode = ViewMode::TEAM;
+        pushView(ViewMode::TEAM);
+        statusFromStorage = false;
         teamCursor = 0;
         teamActionCursor = 0;
         teamActionOpen = false;
         return true;
     case ITEM_ROOM:
-        viewMode = ViewMode::ROOM;
+        pushView(ViewMode::ROOM);
         roomCursor = 0;
         return true;
     case ITEM_BAG:
-        viewMode = ViewMode::BAG;
+        pushView(ViewMode::BAG);
         bagCursor = 0;
         bagConfirmOpen = false;
         bagScroll = 0.0f;
@@ -564,14 +719,14 @@ bool MenuScene::onButton(const ButtonEvent& event) {
         GameEngine::ins().requestScene(SceneID::SHOP);
         return true;
     case ITEM_COMPUTER:
-        viewMode = ViewMode::COMPUTER;
+        pushView(ViewMode::COMPUTER);
         computerCursor = 0;
         return true;
     case ITEM_SETTINGS:
         GameEngine::ins().requestScene(SceneID::SETTINGS);
         return true;
     case ITEM_DEBUG:
-        viewMode = ViewMode::DEBUG;
+        pushView(ViewMode::DEBUG);
         debugCategory = DebugCategory::ROOT;
         debugCursor = 0;
         debugSwitchOpen = false;
@@ -774,13 +929,13 @@ void MenuScene::renderTeamPage() {
 void MenuScene::renderTeamActionPopup() {
     auto& c = PixelRenderer::canvas();
     static constexpr int POP_X = 142;
-    static constexpr int POP_Y = 26;
+    static constexpr int POP_Y = 20;
     static constexpr int POP_W = 78;
-    static constexpr int POP_H = 76;
+    static constexpr int POP_H = 100;
     c.fillRect(POP_X, POP_Y, POP_W, POP_H, PixelRenderer::rgb(24, 28, 36));
     c.drawRect(POP_X, POP_Y, POP_W, POP_H, PixelRenderer::rgb(241, 242, 232));
 
-    for (uint8_t i = 0; i < 3; ++i) {
+    for (uint8_t i = 0; i < TEAM_ACTION_COUNT; ++i) {
         int y = POP_Y + 9 + i * 21;
         bool selected = i == teamActionCursor;
         if (selected) c.fillRect(POP_X + 5, y - 2, 4, 18, PixelRenderer::rgb(255, 216, 72));
@@ -798,62 +953,79 @@ void MenuScene::renderStatusPage() {
 
     auto& c = PixelRenderer::canvas();
     const auto& state = GameEngine::ins().gameState();
-    if (statusMonsterIndex >= state.teamCount) statusMonsterIndex = 0;
-    const Game::MonsterRuntime& activeMon = state.team[statusMonsterIndex];
+    uint8_t statusCount = statusFromStorage ? state.storageCount : state.teamCount;
+    if (statusCount == 0) {
+        popView();
+        statusMonsterIndex = 0;
+        return;
+    }
+    if (statusMonsterIndex >= statusCount) statusMonsterIndex = 0;
+    const Game::MonsterRuntime& activeMon = statusFromStorage
+        ? state.storage[statusMonsterIndex]
+        : state.team[statusMonsterIndex];
     const Species& mon = GameEngine::ins().speciesFor(activeMon);
-    char buf[48];
+    char buf[64];
+    if (statusPage >= STATUS_PAGE_COUNT) statusPage = 0;
 
     c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, PixelRenderer::rgb(10, 14, 20));
 
+    int contentH = statusPageContentHeight(statusPage);
+    int maxScroll = contentH > Hal::DISPLAY_H ? contentH - Hal::DISPLAY_H : 0;
+    int scrollKey = (statusFromStorage ? 0x4000 : 0) | ((int)statusMonsterIndex << 8) | statusPage;
+    updateStatusScroll(scrollKey, maxScroll);
+    int scrollY = (int)statusScroll;
+    auto sy = [scrollY](int y) { return y - scrollY; };
+
+    c.setClipRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H);
     if (statusPage == 0) {
-        drawStatusMonsterIcon(mon, 10, 19);
+        drawStatusMonsterIcon(mon, 10, sy(19));
 
         int infoX = 88;
         snprintf(buf, sizeof(buf), Ui::Status::PROFILE_LINE_FMT,
                  mon.name, genderName(mon, activeMon), activeMon.level);
-        PixelRenderer::text(infoX, 16, buf, PixelRenderer::rgb(241, 242, 232), 1);
+        PixelRenderer::text(infoX, sy(16), buf, PixelRenderer::rgb(241, 242, 232), 1);
         snprintf(buf, sizeof(buf), Ui::Status::TYPE_FMT, typeName(mon.type1), typeName(mon.type2));
-        PixelRenderer::text(infoX, 38, buf, PixelRenderer::rgb(255, 216, 72), 1);
+        PixelRenderer::text(infoX, sy(38), buf, PixelRenderer::rgb(255, 216, 72), 1);
 
-        PixelRenderer::text(infoX, 60, Ui::Status::ABILITY, PixelRenderer::rgb(67, 213, 224), 1);
-        PixelRenderer::text(infoX + 42, 60, abilityName(mon), PixelRenderer::rgb(241, 242, 232), 1);
+        PixelRenderer::text(infoX, sy(60), Ui::Status::ABILITY, PixelRenderer::rgb(67, 213, 224), 1);
+        PixelRenderer::text(infoX + 42, sy(60), abilityName(mon), PixelRenderer::rgb(241, 242, 232), 1);
         snprintf(buf, sizeof(buf), Ui::Status::NATURE_FMT, natureName(activeMon.nature));
-        PixelRenderer::text(infoX, 82, buf, PixelRenderer::rgb(241, 242, 232), 1);
+        PixelRenderer::text(infoX, sy(82), buf, PixelRenderer::rgb(241, 242, 232), 1);
 
-        c.drawFastHLine(14, 101, 196, PixelRenderer::rgb(55, 63, 76));
-        PixelRenderer::text(16, 109, Ui::Status::SOURCE_INFO, PixelRenderer::rgb(67, 213, 224), 1);
+        c.drawFastHLine(14, sy(101), 196, PixelRenderer::rgb(55, 63, 76));
+        PixelRenderer::text(16, sy(109), Ui::Status::SOURCE_INFO, PixelRenderer::rgb(67, 213, 224), 1);
         if (activeMon.origin == Game::Origin::CAPTURED && activeMon.metArea < 3) {
-            PixelRenderer::text(60, 109, Ui::Status::SOURCE_AT, PixelRenderer::rgb(241, 242, 232), 1);
+            PixelRenderer::text(60, sy(109), Ui::Status::SOURCE_AT, PixelRenderer::rgb(241, 242, 232), 1);
             const char* area = metAreaName(activeMon.metArea);
-            PixelRenderer::text(84, 109, area, PixelRenderer::rgb(255, 216, 72), 1);
-            PixelRenderer::text(84 + textPixelWidth(area) + 6, 109,
+            PixelRenderer::text(84, sy(109), area, PixelRenderer::rgb(255, 216, 72), 1);
+            PixelRenderer::text(84 + textPixelWidth(area) + 6, sy(109),
                                 Ui::Status::SOURCE_MET,
                                 PixelRenderer::rgb(241, 242, 232), 1);
         } else if (activeMon.origin == Game::Origin::HATCHED) {
-            PixelRenderer::text(60, 109, Ui::Status::SOURCE_HATCHED,
+            PixelRenderer::text(60, sy(109), Ui::Status::SOURCE_HATCHED,
                                 PixelRenderer::rgb(255, 216, 72), 1);
         } else if (activeMon.origin == Game::Origin::STARTER) {
-            PixelRenderer::text(60, 109, Ui::Status::SOURCE_STARTER,
+            PixelRenderer::text(60, sy(109), Ui::Status::SOURCE_STARTER,
                                 PixelRenderer::rgb(255, 216, 72), 1);
         } else {
-            PixelRenderer::text(60, 109, originName(activeMon.origin),
+            PixelRenderer::text(60, sy(109), originName(activeMon.origin),
                                 PixelRenderer::rgb(255, 216, 72), 1);
         }
     } else if (statusPage == 1) {
-        PixelRenderer::text(12, 8, Ui::Status::CURRENT_STATS, PixelRenderer::rgb(67, 213, 224), 1);
+        PixelRenderer::text(12, sy(8), Ui::Status::CURRENT_STATS, PixelRenderer::rgb(67, 213, 224), 1);
         snprintf(buf, sizeof(buf), Ui::Status::HP_FMT, activeMon.hpCur, activeMon.hpMax);
-        PixelRenderer::text(14, 30, buf, PixelRenderer::rgb(92, 222, 112), 1);
-        drawStatRow(128, 30, Ui::Status::STAT_SPA, statFor(mon, activeMon, 3), PixelRenderer::rgb(241, 242, 232));
-        drawStatRow(14, 50, Ui::Status::STAT_ATK, statFor(mon, activeMon, 1), PixelRenderer::rgb(241, 242, 232));
-        drawStatRow(128, 50, Ui::Status::STAT_SPD, statFor(mon, activeMon, 4), PixelRenderer::rgb(241, 242, 232));
-        drawStatRow(14, 70, Ui::Status::STAT_DEF, statFor(mon, activeMon, 2), PixelRenderer::rgb(241, 242, 232));
-        drawStatRow(128, 70, Ui::Status::STAT_SPE, statFor(mon, activeMon, 5), PixelRenderer::rgb(241, 242, 232));
+        PixelRenderer::text(14, sy(30), buf, PixelRenderer::rgb(92, 222, 112), 1);
+        drawStatRow(128, sy(30), Ui::Status::STAT_SPA, statFor(mon, activeMon, 3), PixelRenderer::rgb(241, 242, 232));
+        drawStatRow(14, sy(50), Ui::Status::STAT_ATK, statFor(mon, activeMon, 1), PixelRenderer::rgb(241, 242, 232));
+        drawStatRow(128, sy(50), Ui::Status::STAT_SPD, statFor(mon, activeMon, 4), PixelRenderer::rgb(241, 242, 232));
+        drawStatRow(14, sy(70), Ui::Status::STAT_DEF, statFor(mon, activeMon, 2), PixelRenderer::rgb(241, 242, 232));
+        drawStatRow(128, sy(70), Ui::Status::STAT_SPE, statFor(mon, activeMon, 5), PixelRenderer::rgb(241, 242, 232));
 
         snprintf(buf, sizeof(buf), Ui::Status::EXP_VALUE_FMT, (unsigned long)activeMon.exp);
-        PixelRenderer::text(14, 92, buf, PixelRenderer::rgb(241, 242, 232), 1);
+        PixelRenderer::text(14, sy(92), buf, PixelRenderer::rgb(241, 242, 232), 1);
         uint32_t expNext = expToNextLevel(mon.growthRate, activeMon.level, activeMon.exp);
         snprintf(buf, sizeof(buf), Ui::Status::EXP_NEXT_FMT, (unsigned long)expNext);
-        PixelRenderer::text(128, 92, buf, PixelRenderer::rgb(241, 242, 232), 1);
+        PixelRenderer::text(128, sy(92), buf, PixelRenderer::rgb(241, 242, 232), 1);
 
         uint32_t levelExp = minimumExpForLevel(mon.growthRate, activeMon.level);
         uint32_t nextExp = activeMon.level >= Game::LEVEL_MAX
@@ -870,67 +1042,75 @@ void MenuScene::renderStatusPage() {
         static constexpr int BAR_Y = 118;
         static constexpr int BAR_W = 186;
         static constexpr int BAR_H = 9;
-        c.fillRoundRect(BAR_X, BAR_Y, BAR_W, BAR_H, 2, PixelRenderer::rgb(29, 34, 42));
+        int barY = sy(BAR_Y);
+        c.fillRoundRect(BAR_X, barY, BAR_W, BAR_H, 2, PixelRenderer::rgb(29, 34, 42));
         int totalW = ((BAR_W - 2) * totalPct) / 100;
         if (totalW > 0) {
-            c.fillRoundRect(BAR_X + 1, BAR_Y + 1, totalW, BAR_H - 2, 1,
+            c.fillRoundRect(BAR_X + 1, barY + 1, totalW, BAR_H - 2, 1,
                             PixelRenderer::rgb(112, 118, 126));
         }
         int levelW = ((BAR_W - 2) * expPct) / 100;
         if (levelW > 0) {
-            c.fillRoundRect(BAR_X + 1, BAR_Y + 1, levelW, BAR_H - 2, 1,
+            c.fillRoundRect(BAR_X + 1, barY + 1, levelW, BAR_H - 2, 1,
                             PixelRenderer::rgb(255, 216, 72));
         }
-        c.drawRoundRect(BAR_X, BAR_Y, BAR_W, BAR_H, 2, PixelRenderer::rgb(45, 48, 56));
+        c.drawRoundRect(BAR_X, barY, BAR_W, BAR_H, 2, PixelRenderer::rgb(45, 48, 56));
     } else if (statusPage == 2) {
         const MoveInfo* basicMove = findMove(moveIdForMonster(mon, activeMon, false));
-        const MoveInfo* specialMove = findMove(moveIdForMonster(mon, activeMon, true));
-        PixelRenderer::text(12, 8, Ui::Status::MOVE_INFO, PixelRenderer::rgb(67, 213, 224), 1);
+        PixelRenderer::text(12, sy(8), Ui::Status::MOVE_INFO, PixelRenderer::rgb(67, 213, 224), 1);
 
         TypeId basicType = basicMove ? basicMove->type : TypeId::NORMAL;
-        int basicNameX = drawTypeBracket(14, 31, basicType);
-        PixelRenderer::text(basicNameX + 4, 31, basicMove ? basicMove->name : Ui::Status::MOVE_UNKNOWN,
+        PixelRenderer::text(14, sy(31), Ui::Status::BASIC_MOVE, PixelRenderer::rgb(67, 213, 224), 1);
+        int basicNameX = drawTypeBracket(92, sy(31), basicType);
+        PixelRenderer::text(basicNameX + 4, sy(31), basicMove ? basicMove->name : Ui::Status::MOVE_UNKNOWN,
                             PixelRenderer::rgb(241, 242, 232), 1);
 
-        int specialY = 60;
-        if (specialMove) {
-            TypeId specialType = specialMove->type;
-            int specialNameX = drawTypeBracket(14, specialY, specialType);
-            PixelRenderer::text(specialNameX + 4, specialY, specialMove->name,
-                                PixelRenderer::rgb(241, 242, 232), 1);
+        auto drawSpecialMove = [&](uint8_t slot, int y) {
+            const MoveInfo* specialMove = findMove(specialMoveIdForMonster(activeMon, slot));
+            char label[24];
+            snprintf(label, sizeof(label), "%s%u", Ui::Status::SPECIAL_MOVE, (unsigned)(slot + 1));
+            PixelRenderer::text(14, sy(y), label,
+                                specialMove ? PixelRenderer::rgb(67, 213, 224) : PixelRenderer::rgb(156, 164, 176),
+                                1);
+            if (!specialMove) {
+                PixelRenderer::text(104, sy(y), Ui::Status::MOVE_NOT_LEARNED,
+                                    PixelRenderer::rgb(156, 164, 176), 1);
+                return;
+            }
             snprintf(buf, sizeof(buf), Ui::Status::PROFICIENCY_FMT,
                      proficiencyName(activeMon.proficiency));
-            PixelRenderer::text(128, specialY, buf, PixelRenderer::rgb(255, 216, 72), 1);
+            PixelRenderer::text(128, sy(y), buf, PixelRenderer::rgb(255, 216, 72), 1);
+            int specialNameX = drawTypeBracket(18, sy(y + 20), specialMove->type);
+            PixelRenderer::text(specialNameX + 4, sy(y + 20), specialMove->name,
+                                PixelRenderer::rgb(241, 242, 232), 1);
             snprintf(buf, sizeof(buf), Ui::Status::POWER_FMT, specialMove->power);
-            PixelRenderer::text(56, specialY + 24, buf, PixelRenderer::rgb(255, 216, 72), 1);
-            PixelRenderer::text(56, specialY + 44,
+            PixelRenderer::text(24, sy(y + 44), buf, PixelRenderer::rgb(255, 216, 72), 1);
+            PixelRenderer::text(88, sy(y + 44),
                                 specialMove->description,
                                 PixelRenderer::rgb(135, 214, 238), 1);
-        } else {
-            PixelRenderer::text(14, specialY, Ui::Status::SPECIAL_MOVE,
-                                PixelRenderer::rgb(156, 164, 176), 1);
-            PixelRenderer::text(86, specialY, Ui::Status::MOVE_NOT_LEARNED,
-                                PixelRenderer::rgb(156, 164, 176), 1);
-        }
+        };
+        drawSpecialMove(0, 58);
+        drawSpecialMove(1, 128);
     } else if (statusPage == 3) {
-        PixelRenderer::text(12, 8, Ui::Status::EFFORT_STATS, PixelRenderer::rgb(67, 213, 224), 1);
+        PixelRenderer::text(12, sy(8), Ui::Status::EFFORT_STATS, PixelRenderer::rgb(67, 213, 224), 1);
         snprintf(buf, sizeof(buf), Ui::Status::TOTAL_FMT, Game::evTotal(activeMon.ev), Game::EV_TOTAL_MAX);
-        drawInfoRow(126, 8, buf, PixelRenderer::rgb(255, 216, 72));
-        drawStatRow(18, 34, Ui::Status::STAT_HP, activeMon.ev.hp, PixelRenderer::rgb(241, 242, 232));
-        drawStatRow(18, 52, Ui::Status::STAT_ATK, activeMon.ev.atk, PixelRenderer::rgb(241, 242, 232));
-        drawStatRow(18, 70, Ui::Status::STAT_DEF, activeMon.ev.def, PixelRenderer::rgb(241, 242, 232));
-        drawStatRow(18, 88, Ui::Status::STAT_SPA, activeMon.ev.spa, PixelRenderer::rgb(241, 242, 232));
-        drawStatRow(18, 106, Ui::Status::STAT_SPD, activeMon.ev.spd, PixelRenderer::rgb(241, 242, 232));
-        drawStatRow(126, 34, Ui::Status::STAT_SPE, activeMon.ev.spe, PixelRenderer::rgb(241, 242, 232));
+        drawInfoRow(126, sy(8), buf, PixelRenderer::rgb(255, 216, 72));
+        drawStatRow(18, sy(34), Ui::Status::STAT_HP, activeMon.ev.hp, PixelRenderer::rgb(241, 242, 232));
+        drawStatRow(18, sy(52), Ui::Status::STAT_ATK, activeMon.ev.atk, PixelRenderer::rgb(241, 242, 232));
+        drawStatRow(18, sy(70), Ui::Status::STAT_DEF, activeMon.ev.def, PixelRenderer::rgb(241, 242, 232));
+        drawStatRow(18, sy(88), Ui::Status::STAT_SPA, activeMon.ev.spa, PixelRenderer::rgb(241, 242, 232));
+        drawStatRow(18, sy(106), Ui::Status::STAT_SPD, activeMon.ev.spd, PixelRenderer::rgb(241, 242, 232));
+        drawStatRow(126, sy(34), Ui::Status::STAT_SPE, activeMon.ev.spe, PixelRenderer::rgb(241, 242, 232));
     } else {
-        PixelRenderer::text(12, 8, Ui::Status::INDIVIDUAL_STATS, PixelRenderer::rgb(67, 213, 224), 1);
-        drawStatRow(18, 34, Ui::Status::STAT_HP, Game::ivAt(activeMon.ivPacked, 0), PixelRenderer::rgb(135, 214, 238));
-        drawStatRow(18, 52, Ui::Status::STAT_ATK, Game::ivAt(activeMon.ivPacked, 1), PixelRenderer::rgb(135, 214, 238));
-        drawStatRow(18, 70, Ui::Status::STAT_DEF, Game::ivAt(activeMon.ivPacked, 2), PixelRenderer::rgb(135, 214, 238));
-        drawStatRow(18, 88, Ui::Status::STAT_SPA, Game::ivAt(activeMon.ivPacked, 3), PixelRenderer::rgb(135, 214, 238));
-        drawStatRow(18, 106, Ui::Status::STAT_SPD, Game::ivAt(activeMon.ivPacked, 4), PixelRenderer::rgb(135, 214, 238));
-        drawStatRow(126, 34, Ui::Status::STAT_SPE, Game::ivAt(activeMon.ivPacked, 5), PixelRenderer::rgb(135, 214, 238));
+        PixelRenderer::text(12, sy(8), Ui::Status::INDIVIDUAL_STATS, PixelRenderer::rgb(67, 213, 224), 1);
+        drawStatRow(18, sy(34), Ui::Status::STAT_HP, Game::ivAt(activeMon.ivPacked, 0), PixelRenderer::rgb(135, 214, 238));
+        drawStatRow(18, sy(52), Ui::Status::STAT_ATK, Game::ivAt(activeMon.ivPacked, 1), PixelRenderer::rgb(135, 214, 238));
+        drawStatRow(18, sy(70), Ui::Status::STAT_DEF, Game::ivAt(activeMon.ivPacked, 2), PixelRenderer::rgb(135, 214, 238));
+        drawStatRow(18, sy(88), Ui::Status::STAT_SPA, Game::ivAt(activeMon.ivPacked, 3), PixelRenderer::rgb(135, 214, 238));
+        drawStatRow(18, sy(106), Ui::Status::STAT_SPD, Game::ivAt(activeMon.ivPacked, 4), PixelRenderer::rgb(135, 214, 238));
+        drawStatRow(126, sy(34), Ui::Status::STAT_SPE, Game::ivAt(activeMon.ivPacked, 5), PixelRenderer::rgb(135, 214, 238));
     }
+    c.clearClipRect();
 
     renderPageIndicator(statusPage, STATUS_PAGE_COUNT);
 }
@@ -1198,6 +1378,51 @@ void MenuScene::renderStoragePage() {
         }
     }
     c.clearClipRect();
+    if (storageActionOpen && storageCursor < state.storageCount) {
+        renderStorageActionPopup();
+        if (storageReleaseConfirmOpen) renderStorageReleaseConfirmPopup();
+    }
+    renderToast();
+}
+
+void MenuScene::renderStorageActionPopup() {
+    auto& c = PixelRenderer::canvas();
+    static constexpr int POP_X = 142;
+    static constexpr int POP_Y = 20;
+    static constexpr int POP_W = 78;
+    static constexpr int POP_H = 100;
+    c.fillRect(POP_X, POP_Y, POP_W, POP_H, PixelRenderer::rgb(24, 28, 36));
+    c.drawRect(POP_X, POP_Y, POP_W, POP_H, PixelRenderer::rgb(241, 242, 232));
+
+    for (uint8_t i = 0; i < STORAGE_ACTION_COUNT; ++i) {
+        int y = POP_Y + 9 + i * 21;
+        bool selected = i == storageActionCursor;
+        if (selected) c.fillRect(POP_X + 5, y - 2, 4, 18, PixelRenderer::rgb(255, 216, 72));
+        PixelRenderer::text(POP_X + 16, y, Ui::Storage::ACTIONS[i],
+                            selected ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232),
+                            1);
+    }
+}
+
+void MenuScene::renderStorageReleaseConfirmPopup() {
+    auto& c = PixelRenderer::canvas();
+    static constexpr int POP_X = 25;
+    static constexpr int POP_Y = 32;
+    static constexpr int POP_W = 190;
+    static constexpr int POP_H = 72;
+    c.fillRect(POP_X, POP_Y, POP_W, POP_H, PixelRenderer::rgb(24, 28, 36));
+    c.drawRect(POP_X, POP_Y, POP_W, POP_H, PixelRenderer::rgb(241, 242, 232));
+
+    int lineW = textPixelWidth(Ui::Storage::RELEASE_CONFIRM);
+    int lineX = POP_X + (POP_W - lineW) / 2;
+    if (lineX < POP_X + 6) lineX = POP_X + 6;
+    PixelRenderer::text(lineX, POP_Y + 17, Ui::Storage::RELEASE_CONFIRM,
+                        PixelRenderer::rgb(241, 242, 232), 1);
+
+    uint16_t yesColor = storageReleaseConfirmYes ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(156, 164, 176);
+    uint16_t noColor = !storageReleaseConfirmYes ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(156, 164, 176);
+    PixelRenderer::text(POP_X + 60, POP_Y + 49, Ui::Storage::YES, yesColor, 1);
+    PixelRenderer::text(POP_X + 130, POP_Y + 49, Ui::Storage::NO, noColor, 1);
 }
 
 void MenuScene::renderDebugPage() {
@@ -1299,7 +1524,7 @@ void MenuScene::handleDebugAction() {
         case 2: debugCategory = DebugCategory::ENV; break;
         case 3: debugCategory = DebugCategory::MOTION; break;
         default:
-            viewMode = ViewMode::MENU;
+            popView();
             return;
         }
         debugCursor = 0;
@@ -1594,6 +1819,45 @@ void MenuScene::renderBagDetail(const BagRow& row) {
     } else {
         PixelRenderer::text(RIGHT_X + 20, 80, Ui::Bag::DESCS[row.source][0], 0x7BEF, 1);
     }
+}
+
+void MenuScene::updateStatusScroll(int scrollKey, int maxScroll) {
+    uint32_t now = Hal::ins().millis();
+    if (scrollKey != statusScrollKey) {
+        statusScrollKey = scrollKey;
+        statusScroll = 0.0f;
+        statusScrollLastMs = now;
+    }
+
+    if (maxScroll <= 0) {
+        statusScroll = 0.0f;
+        statusScrollLastMs = now;
+        return;
+    }
+
+    uint32_t dt = now - statusScrollLastMs;
+    if (dt > 120) dt = 120;
+    statusScrollLastMs = now;
+
+    float ax = 0.0f;
+    float ay = 0.0f;
+    float az = 0.0f;
+    if (!Hal::ins().readAccel(ax, ay, az)) return;
+    (void)ax;
+    (void)az;
+
+    static constexpr float DEADZONE = 0.18f;
+    static constexpr float MAX_TILT = 0.75f;
+    static constexpr float SPEED = 72.0f;
+    if (fabsf(ay) < DEADZONE) return;
+    float input = ay > 0.0f ? (ay - DEADZONE) : (ay + DEADZONE);
+    input /= (MAX_TILT - DEADZONE);
+    if (input > 1.0f) input = 1.0f;
+    if (input < -1.0f) input = -1.0f;
+
+    statusScroll += input * SPEED * ((float)dt / 1000.0f);
+    if (statusScroll < 0.0f) statusScroll = 0.0f;
+    if (statusScroll > (float)maxScroll) statusScroll = (float)maxScroll;
 }
 
 void MenuScene::updateDescriptionScroll(int scrollKey, int maxScroll) {

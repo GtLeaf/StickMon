@@ -580,6 +580,12 @@ void MainScene::update(uint32_t nowMs, float dtSeconds) {
     updateMonsterAi(nowMs, dtSeconds);
     updateCamera();
     updatePmdSpriteState(nowMs);
+    uint8_t levelUp = 0;
+    if (GameEngine::ins().consumePendingLevelUp(levelUp)) {
+        snprintf(toastBuffer, sizeof(toastBuffer), Ui::Common::LEVEL_UP_FMT, levelUp);
+        toast = toastBuffer;
+        toastUntil = nowMs + 1400;
+    }
     bool combo = Hal::ins().btnA_raw() && Hal::ins().btnB_raw();
     if (!combo) {
         comboStartMs = 0;

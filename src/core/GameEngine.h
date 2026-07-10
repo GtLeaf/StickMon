@@ -48,6 +48,9 @@ public:
     uint8_t activeSlot() const { return 0; }
     bool switchActiveMonster();
     bool moveTeamMemberToFront(uint8_t slot);
+    bool depositTeamMemberToStorage(uint8_t slot);
+    bool withdrawStorageMemberToTeam(uint8_t slot);
+    bool releaseStorageMember(uint8_t slot);
     bool addFood(uint8_t amount = 1);
     bool addFoodStock(uint8_t foodIndex, uint8_t amount = 1);
     bool selectFood(uint8_t foodIndex);
@@ -73,6 +76,7 @@ public:
     void petMonster();
     void finishHatch(uint8_t starterStyle);
     void addExperience(uint32_t amount);
+    bool consumePendingLevelUp(uint8_t& level);
     bool hasPendingMoveLearn() const { return pendingMoveLearn; }
     uint8_t pendingMoveLearnId() const { return pendingMoveId; }
     uint8_t pendingMoveLearnSlot() const { return pendingMoveSlot; }
@@ -144,6 +148,8 @@ private:
     bool pendingMoveLearn = false;
     uint8_t pendingMoveSlot = 0;
     uint8_t pendingMoveId = 0;
+    bool pendingLevelUp = false;
+    uint8_t pendingLevelUpLevel = 0;
     bool debugShowWalkBoundary = false;
     bool debugTiltControl = false;
     uint8_t debugLightSource = 0;

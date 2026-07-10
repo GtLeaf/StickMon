@@ -201,15 +201,38 @@ uint8_t secondMoveLearnLevelForSpecies(const Species& species) {
     return DEFAULT_SECOND_MOVE_LEVEL;
 }
 
+uint8_t specialMoveIdForMonster(const Game::MonsterRuntime& monster, uint8_t specialSlot) {
+    uint8_t moveId = 0;
+    if (specialSlot == 0) moveId = monster.move2Id;
+    else if (specialSlot == 1) moveId = monster.move3Id;
+    return findMove(moveId) ? moveId : 0;
+}
+
+uint8_t specialMoveCount(const Game::MonsterRuntime& monster) {
+    uint8_t count = 0;
+    if (specialMoveIdForMonster(monster, 0) != 0) ++count;
+    if (specialMoveIdForMonster(monster, 1) != 0) ++count;
+    return count;
+}
+
 uint8_t moveIdForMonster(const Species& species, const Game::MonsterRuntime& monster, bool secondSlot) {
     if (secondSlot) {
-        return findMove(monster.move2Id) ? monster.move2Id : 0;
+        return specialMoveIdForMonster(monster, 0);
     }
     return isBasicFirstMove(monster.move1Id) ? monster.move1Id : basicMoveIdForSpecies(species);
 }
 
+uint8_t moveIdForMonster(const Species& species, const Game::MonsterRuntime& monster, uint8_t specialSlot) {
+    if (specialSlot < 2) return specialMoveIdForMonster(monster, specialSlot);
+    return moveIdForMonster(species, monster, false);
+}
+
+bool hasSpecialMove(const Game::MonsterRuntime& monster) {
+    return specialMoveCount(monster) > 0;
+}
+
 bool hasSecondMove(const Game::MonsterRuntime& monster) {
-    return findMove(monster.move2Id) != nullptr;
+    return hasSpecialMove(monster);
 }
 
 uint8_t movePower(uint8_t moveId, uint8_t fallback) {

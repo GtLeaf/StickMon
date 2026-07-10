@@ -34,8 +34,11 @@ class SpeciesSpec:
     source_group: str = "high"
     sleeping_source_name: str = None
     sleeping_source_group: str = None
+    sleeping_layer_override: tuple = None
     canvas_width: int = CANVAS_SIZE
     canvas_height: int = CANVAS_SIZE
+    bottom_margin: int = BOTTOM_MARGIN
+    crop_padding: int = 0
     fit_to_canvas: bool = True
     source_directions: list = field(default_factory=lambda: SOURCE_DIRECTIONS)
     contact_directions: list = field(default_factory=lambda: GENERATED_DIRECTIONS)
@@ -99,10 +102,11 @@ SPECS = [
         slug="ivysaur",
         display_name="Ivysaur",
         source_name="妙蛙草.psd",
-        source_group="low/1",
+        source_group="low/psd",
         scale=2.0,
         contact_directions=SOURCE_DIRECTIONS,
         export_mirror_frames=False,
+        sleeping_layer_override=("low/psd", "妙蛙草.psd", "sleeping"),
         notes=[
             "Only the five left-side source directions are exported; right-side directions are mirrored at runtime.",
             "This source sheet has no separate idle action; idle uses walk0 for each direction.",
@@ -131,10 +135,11 @@ SPECS = [
         slug="venusaur",
         display_name="Venusaur",
         source_name="妙蛙花.psd",
-        source_group="low/1",
+        source_group="low/psd",
         scale=2.0,
         contact_directions=SOURCE_DIRECTIONS,
         export_mirror_frames=False,
+        sleeping_layer_override=("low/psd", "妙蛙花.psd", "sleeping"),
         notes=[
             "Only the five left-side source directions are exported; right-side directions are mirrored at runtime.",
             "This source sheet has no separate idle action; idle uses walk0 for each direction.",
@@ -423,6 +428,7 @@ SPECS = [
         source_name="026_raichu.png",
         source_group="low",
         scale=2.0,
+        bottom_margin=4,
         source_directions=["front", "down_right", "right", "up_right", "back", "up_left", "left", "down_left"],
         mirror_directions=False,
         notes=[
@@ -431,27 +437,27 @@ SPECS = [
             "This source sheet has no separate idle action; idle uses walking frame 0 for each direction.",
             "Sleeping uses row 2 sprites counted from the end: 3 and 2.",
         ],
-        sleeping_boxes=[(507, 40, 533, 67), (535, 41, 561, 67)],
+        sleeping_boxes=[(507, 42, 533, 69), (535, 43, 561, 69)],
         boxes={
             "idle": [
-                [(2, 2, 29, 27)],
-                [(90, 0, 115, 27)],
-                [(176, 1, 201, 27)],
-                [(259, 0, 282, 27)],
-                [(337, 0, 365, 27)],
-                [(426, 1, 450, 27)],
-                [(505, 1, 530, 27)],
-                [(2, 38, 26, 67)],
+                [(2, 4, 29, 29)],
+                [(90, 0, 115, 29)],
+                [(176, 3, 201, 29)],
+                [(259, 2, 282, 29)],
+                [(337, 2, 365, 29)],
+                [(426, 3, 450, 29)],
+                [(505, 3, 530, 29)],
+                [(2, 40, 26, 69)],
             ],
             "walking": [
-                [(2, 2, 29, 27), (32, 3, 59, 27), (61, 3, 87, 27)],
-                [(90, 0, 115, 27), (118, 0, 144, 27), (147, 1, 173, 27)],
-                [(176, 1, 201, 27), (202, 1, 227, 27), (230, 2, 256, 27)],
-                [(259, 0, 282, 27), (285, 0, 308, 27), (311, 2, 335, 27)],
-                [(337, 0, 365, 27), (365, 0, 394, 27), (396, 0, 423, 27)],
-                [(426, 1, 450, 27), (452, 2, 477, 27), (479, 1, 503, 27)],
-                [(505, 1, 530, 27), (532, 2, 557, 27), (560, 3, 586, 27)],
-                [(2, 38, 26, 67), (27, 41, 52, 67), (54, 39, 79, 67)],
+                [(2, 4, 29, 29), (32, 5, 59, 29), (61, 5, 87, 29)],
+                [(90, 0, 115, 29), (118, 1, 144, 29), (147, 3, 173, 29)],
+                [(176, 3, 201, 29), (202, 3, 227, 29), (230, 4, 256, 29)],
+                [(259, 2, 282, 29), (285, 2, 308, 29), (311, 4, 335, 29)],
+                [(337, 2, 365, 29), (365, 1, 394, 29), (396, 1, 423, 29)],
+                [(426, 3, 450, 29), (452, 4, 477, 29), (479, 3, 503, 29)],
+                [(505, 3, 530, 29), (532, 4, 557, 29), (560, 5, 586, 29)],
+                [(2, 40, 26, 69), (27, 43, 52, 69), (54, 41, 79, 69)],
             ],
         },
     ),
@@ -494,6 +500,7 @@ SPECS = [
         source_name="093_haunter.png",
         source_group="low",
         scale=2.0,
+        bottom_margin=2,
         contact_directions=SOURCE_DIRECTIONS,
         export_mirror_frames=False,
         notes=[
@@ -501,21 +508,21 @@ SPECS = [
             "This source sheet has no separate idle action; idle uses walking frame 0 for each direction.",
             "Sleeping uses row 2 sprites 10 and 9, following the source note order.",
         ],
-        sleeping_boxes=[(242, 34, 268, 64), (208, 42, 240, 64)],
+        sleeping_boxes=[(242, 39, 268, 69), (208, 47, 240, 69)],
         boxes={
             "idle": [
-                [(2, 4, 26, 27)],
-                [(80, 0, 106, 27)],
-                [(164, 0, 190, 27)],
-                [(244, 1, 269, 27)],
-                [(322, 3, 348, 27)],
+                [(2, 9, 26, 32)],
+                [(80, 3, 106, 32)],
+                [(164, 4, 190, 32)],
+                [(244, 6, 269, 32)],
+                [(322, 8, 348, 32)],
             ],
             "walking": [
-                [(2, 4, 26, 27), (28, 5, 52, 27), (54, 3, 78, 27)],
-                [(80, 0, 106, 27), (108, 1, 134, 27), (136, 0, 162, 27)],
-                [(164, 0, 190, 27), (190, 0, 216, 27), (217, 0, 242, 27)],
-                [(244, 1, 269, 27), (269, 2, 294, 27), (295, 0, 320, 27)],
-                [(322, 3, 348, 27), (350, 5, 376, 27), (377, 2, 403, 27)],
+                [(2, 9, 26, 32), (28, 10, 52, 32), (54, 8, 78, 32)],
+                [(80, 3, 106, 32), (108, 6, 134, 32), (136, 2, 162, 32)],
+                [(164, 4, 190, 32), (190, 5, 216, 32), (217, 2, 242, 32)],
+                [(244, 6, 269, 32), (269, 7, 294, 32), (295, 5, 320, 32)],
+                [(322, 8, 348, 32), (350, 10, 376, 32), (377, 7, 403, 32)],
             ],
         },
     ),
@@ -555,31 +562,32 @@ SPECS = [
         species_id=123,
         slug="scyther",
         display_name="Scyther",
-        source_name="123_scyther.png",
-        source_group="low",
+        source_name="飞天螳螂.psd",
+        source_group="low/psd",
         scale=2.0,
         contact_directions=SOURCE_DIRECTIONS,
         export_mirror_frames=False,
         notes=[
-            "The first 15 sprites are walking frames: five directions, three frames each.",
+            "The PSD Idle/Moving section stores walk0..walk4 from top to bottom.",
+            "walk0..walk4 direction order is front, down_left, left, up_left, back.",
             "This source sheet has no separate idle action; idle uses walking frame 0 for each direction.",
-            "Sleeping uses row 2 sprites counted from the end: 7 and 6.",
+            "Sleeping frames are cropped from the PSD Sleeping section.",
         ],
-        sleeping_boxes=[(302, 37, 332, 63), (330, 36, 359, 63)],
+        sleeping_boxes=[(338, 38, 367, 64), (375, 38, 403, 66)],
         boxes={
             "idle": [
-                [(2, 2, 28, 28)],
-                [(86, 0, 116, 28)],
-                [(173, 0, 200, 28)],
-                [(258, 2, 287, 28)],
-                [(343, 2, 369, 28)],
+                [(53, 22, 79, 47)],
+                [(49, 55, 79, 84)],
+                [(53, 91, 80, 120)],
+                [(53, 130, 82, 156)],
+                [(53, 165, 79, 191)],
             ],
             "walking": [
-                [(2, 2, 28, 28), (30, 2, 56, 28), (58, 2, 84, 28)],
-                [(86, 0, 116, 28), (113, 2, 141, 28), (142, 0, 173, 28)],
-                [(173, 0, 200, 28), (201, 1, 228, 28), (230, 1, 259, 28)],
-                [(258, 2, 287, 28), (286, 2, 316, 28), (314, 4, 342, 28)],
-                [(343, 2, 369, 28), (371, 1, 396, 28), (398, 1, 423, 28)],
+                [(53, 22, 79, 47), (89, 22, 115, 47), (123, 22, 149, 47)],
+                [(49, 55, 79, 84), (86, 58, 114, 84), (123, 55, 154, 83)],
+                [(53, 91, 80, 120), (88, 93, 115, 120), (124, 93, 153, 120)],
+                [(53, 130, 82, 156), (87, 130, 117, 156), (121, 133, 149, 157)],
+                [(53, 165, 79, 191), (86, 164, 111, 191), (118, 164, 143, 191)],
             ],
         },
     ),
@@ -987,6 +995,10 @@ SPECS = [
         display_name="Latias",
         source_name="380_latias.png",
         scale=1.5,
+        canvas_width=84,
+        canvas_height=72,
+        bottom_margin=10,
+        crop_padding=1,
         source_directions=LATI_SOURCE_DIRECTIONS,
         contact_directions=LATI_SOURCE_DIRECTIONS,
         export_mirror_frames=False,
@@ -1018,6 +1030,10 @@ SPECS = [
         display_name="Latios",
         source_name="381_latios.png",
         scale=1.5,
+        canvas_width=84,
+        canvas_height=72,
+        bottom_margin=10,
+        crop_padding=1,
         source_directions=LATI_SOURCE_DIRECTIONS,
         contact_directions=LATI_SOURCE_DIRECTIONS,
         export_mirror_frames=False,
@@ -1074,17 +1090,17 @@ def validate_spec(spec):
 
 def frame_canvas(frame, spec):
     if spec.fit_to_canvas:
-        fit_scale = min(spec.scale, spec.canvas_width / frame.width, (spec.canvas_height - BOTTOM_MARGIN) / frame.height)
+        fit_scale = min(spec.scale, spec.canvas_width / frame.width, (spec.canvas_height - spec.bottom_margin) / frame.height)
     else:
         fit_scale = spec.scale
     scaled_w = max(1, int(round(frame.width * fit_scale)))
     scaled_h = max(1, int(round(frame.height * fit_scale)))
     scaled = frame.resize((scaled_w, scaled_h), Image.Resampling.NEAREST)
     canvas_w = max(spec.canvas_width, scaled.width)
-    canvas_h = max(spec.canvas_height, scaled.height + BOTTOM_MARGIN)
+    canvas_h = max(spec.canvas_height, scaled.height + spec.bottom_margin)
     canvas = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
     x = (canvas_w - scaled.width) // 2
-    y = max(0, canvas_h - BOTTOM_MARGIN - scaled.height)
+    y = max(0, canvas_h - spec.bottom_margin - scaled.height)
     canvas.alpha_composite(scaled, (x, y))
     return canvas
 
@@ -1219,7 +1235,7 @@ def write_readme(spec, out_dir):
         f"- Canvas: {spec.canvas_width}x{spec.canvas_height} px.\n"
         f"- Target scale: nearest-neighbor {spec.scale:g}x"
         f"{', capped to fit the canvas without clipping' if spec.fit_to_canvas else ', fixed without per-frame fit scaling'}.\n"
-        "- Placement: horizontally centered, bottom aligned with a 6 px bottom margin.\n"
+        f"- Placement: horizontally centered, bottom aligned with a {spec.bottom_margin} px bottom margin.\n"
         "- Naming: `{action}/{direction}_{frame_index}.png`.\n\n"
         "## Actions\n\n"
         f"- `idle`: {idle_count} {idle_word}, indices `0..{idle_count - 1}`.\n"
@@ -1384,13 +1400,25 @@ def process_spec(spec):
         source_frames = override_cache[key]
         return [frame_canvas(source_frames[index], spec) for index in indices]
 
+    def sleeping_frames():
+        if not spec.sleeping_layer_override:
+            return [
+                frame_canvas(sleeping_source.crop(padded(box, spec.crop_padding)), spec)
+                for box in spec.sleeping_boxes
+            ]
+        source_group, source_name, layer_name = spec.sleeping_layer_override
+        return [
+            frame_canvas(frame, spec)
+            for frame in psd_layer_frames(source_group, source_name, layer_name)
+        ]
+
     for action, rows in spec.boxes.items():
         source_direction_frames = {}
         for row_index, direction in enumerate(spec.source_directions):
             source_direction_frames[direction] = []
             frames = override_frames(action, direction)
             if frames is None:
-                frames = [frame_canvas(source.crop(box), spec) for box in rows[row_index]]
+                frames = [frame_canvas(source.crop(padded(box, spec.crop_padding)), spec) for box in rows[row_index]]
             for frame_index, frame in enumerate(frames):
                 source_direction_frames[direction].append(frame)
                 exported.append(save_frame(out_dir, action, direction, frame_index, frame))
@@ -1405,8 +1433,7 @@ def process_spec(spec):
             for direction in spec.contact_directions:
                 contact.append((action, direction, frame_index, Image.open(out_dir / action / f"{direction}_{frame_index}.png")))
 
-    for frame_index, box in enumerate(spec.sleeping_boxes):
-        frame = frame_canvas(sleeping_source.crop(box), spec)
+    for frame_index, frame in enumerate(sleeping_frames()):
         path = out_dir / "sleeping" / f"frame_{frame_index}.png"
         path.parent.mkdir(parents=True, exist_ok=True)
         frame.save(path)

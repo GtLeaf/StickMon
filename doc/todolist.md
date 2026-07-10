@@ -130,3 +130,14 @@ hp: 19/19   特攻：xx
 水波震动对手 (特殊技能的)
 
 其他页保持不变
+
+
+1../origin_asset/processed/haunter/haunter_idle_walking_contact.png，down_left和left被裁切
+
+ok:2../origin_asset/processed/latias和./origin_asset/processed/latios
+
+3../origin_asset/processed/raichu/raichu_idle_walking_contact.png的down_right的耳朵
+
+4../origin_asset/processed/scyther/scyther_idle_walking_contact.png完全不对
+
+5../origin_asset/processed/venusaur/venusaur_idle_walking_contact.png的sleep有一个白点

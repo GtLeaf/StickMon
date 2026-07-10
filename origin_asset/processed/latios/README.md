@@ -12,9 +12,9 @@ This spec is intentionally scoped to Latios only.
 
 - Output root: `origin_asset/processed/latios/`
 - Format: RGBA PNG with transparent background.
-- Canvas: 64x64 px.
+- Canvas: 84x72 px.
 - Target scale: nearest-neighbor 1.5x, capped to fit the canvas without clipping.
-- Placement: horizontally centered, bottom aligned with a 6 px bottom margin.
+- Placement: horizontally centered, bottom aligned with a 10 px bottom margin.
 - Naming: `{action}/{direction}_{frame_index}.png`.
 
 ## Actions
@@ -36,7 +36,7 @@ This spec is intentionally scoped to Latios only.
 ## Contact sheet
 
 - File: `latios_idle_walking_contact.png`.
-- Top-left label: output frame size, `frame 64x64 px`.
+- Top-left label: output frame size, `frame 84x72 px`.
 - Columns: exported directions in the order above.
 - Rows: `idle_0`, `walking_0`, `walking_1`, `sleeping_0`, `sleeping_1`.
 - Sleeping rows are non-directional; the frame is shown in the first grid cell only.

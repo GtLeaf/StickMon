@@ -4,7 +4,7 @@ This spec is intentionally scoped to Scyther only.
 
 ## Source
 
-- Input sheet: `origin_asset/source_sheets/low/123_scyther.png`
+- Input sheet: `origin_asset/source_sheets/low/psd/飞天螳螂.psd`
 - Background removal: pixels matching the top-left source color become transparent.
 - Crop boxes are fixed in `tools/extract_pmd_eeveelution_frames.py`; they are not a generic PMD parser.
 
@@ -30,9 +30,10 @@ This spec is intentionally scoped to Scyther only.
 - Exported direction order: `front`, `down_left`, `left`, `up_left`, `back`.
 - Mirrored directions: right-side directions are drawn by runtime mirroring; only source direction PNGs are exported.
 
-- Note: The first 15 sprites are walking frames: five directions, three frames each.
+- Note: The PSD Idle/Moving section stores walk0..walk4 from top to bottom.
+- Note: walk0..walk4 direction order is front, down_left, left, up_left, back.
 - Note: This source sheet has no separate idle action; idle uses walking frame 0 for each direction.
-- Note: Sleeping uses row 2 sprites counted from the end: 7 and 6.
+- Note: Sleeping frames are cropped from the PSD Sleeping section.
 
 ## Contact sheet
 

@@ -55,7 +55,7 @@ uint8_t typeEffectiveness(TypeId attack, TypeId defend1, TypeId defend2) {
 }
 
 uint8_t specialTriggerChance(const Game::MonsterRuntime& attacker) {
-    if (!hasSecondMove(attacker)) return 0;
+    if (!hasSpecialMove(attacker)) return 0;
     uint16_t chance = 5;
     chance += min<uint8_t>(attacker.proficiency, 100) * 20 / 100;
     chance += attacker.affection * 25 / 255;
@@ -64,18 +64,27 @@ uint8_t specialTriggerChance(const Game::MonsterRuntime& attacker) {
 }
 
 bool rollSpecialMove(const Game::MonsterRuntime& attacker) {
-    if (!hasSecondMove(attacker)) return false;
-    return random(0, 100) < specialTriggerChance(attacker);
+    return rollSpecialMoveSlot(attacker) != SPECIAL_SLOT_NONE;
+}
+
+uint8_t rollSpecialMoveSlot(const Game::MonsterRuntime& attacker) {
+    uint8_t slots[2];
+    uint8_t count = 0;
+    if (specialMoveIdForMonster(attacker, 0) != 0) slots[count++] = 0;
+    if (specialMoveIdForMonster(attacker, 1) != 0) slots[count++] = 1;
+    if (count == 0 || random(0, 100) >= specialTriggerChance(attacker)) return SPECIAL_SLOT_NONE;
+    return slots[random(0, count)];
 }
 
 DamageResult calcBasicDamage(const Game::MonsterRuntime& attacker,
                              const Species& attackerSpecies,
                              const Game::MonsterRuntime& defender,
                              const Species& defenderSpecies,
-                             bool specialMove) {
+                             uint8_t specialSlot) {
     DamageResult result;
-    bool useSecondMove = specialMove && hasSecondMove(attacker);
-    result.special = useSecondMove;
+    bool useSpecialMove = specialSlot != SPECIAL_SLOT_NONE && specialMoveIdForMonster(attacker, specialSlot) != 0;
+    result.special = useSpecialMove;
+    result.specialSlot = useSpecialMove ? specialSlot : SPECIAL_SLOT_NONE;
     if ((attacker.statusBits & Game::STATUS_SLEEP) || (attacker.statusBits & Game::STATUS_FREEZE) ||
         ((attacker.statusBits & Game::STATUS_PARALYSIS) && random(0, 100) < 25) ||
         ((attacker.statusBits & Game::STATUS_CONFUSION) && random(0, 100) < 33)) {
@@ -83,10 +92,12 @@ DamageResult calcBasicDamage(const Game::MonsterRuntime& attacker,
         return result;
     }
 
-    uint8_t moveId = moveIdForMonster(attackerSpecies, attacker, useSecondMove);
+    uint8_t moveId = useSpecialMove
+        ? specialMoveIdForMonster(attacker, specialSlot)
+        : moveIdForMonster(attackerSpecies, attacker, false);
     const MoveInfo* move = findMove(moveId);
-    bool usesSpecialStat = move ? move->special : useSecondMove;
-    uint8_t power = move ? move->power : (useSecondMove ? 55 : 35);
+    bool usesSpecialStat = move ? move->special : useSpecialMove;
+    uint8_t power = move ? move->power : (useSpecialMove ? 55 : 35);
     if (power == 0) {
         result.effectiveness = 0;
         return result;

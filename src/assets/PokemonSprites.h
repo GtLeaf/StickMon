@@ -945,5 +945,6 @@ const SpriteFrame* findSpeciesSprite(uint16_t speciesId, SpriteKind kind);
 void syncTeamCache(const uint16_t* speciesIds, uint8_t count);
 const SpriteCacheStats& cacheStats();
 bool drawFrame(const SpriteFrame* frame, int x, int y, bool flipX = false);
+bool drawFrameScaled(const SpriteFrame* frame, int x, int y, float scale, bool flipX = false);
 
 }  // namespace PokemonSprites

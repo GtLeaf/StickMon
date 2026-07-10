@@ -236,6 +236,7 @@ Game::MonsterRuntime GameEngine::createMonster(uint16_t speciesId, uint8_t level
     uint8_t secondLevel = secondMoveLearnLevelForSpecies(*species);
     uint8_t secondMove = secondMoveIdForSpecies(*species);
     mon.move2Id = (secondLevel > 0 && level >= secondLevel) ? secondMove : 0;
+    mon.move3Id = 0;
     mon.ivPacked = randomIvPacked();
     mon.nature = random(0, Game::NATURE_COUNT);
     mon.hpMax = maxHpFor(*species, mon);
@@ -260,6 +261,56 @@ bool GameEngine::moveTeamMemberToFront(uint8_t slot) {
     state.team[0] = selected;
     state.activeSlot = 0;
     syncSpriteCache();
+    markDirty(true);
+    return true;
+}
+
+bool GameEngine::depositTeamMemberToStorage(uint8_t slot) {
+    if (state.teamCount <= 1) return false;
+    if (slot >= state.teamCount || slot >= Game::TEAM_CAP) return false;
+    if (state.storageCount >= Game::STORAGE_CAP) return false;
+
+    state.storage[state.storageCount++] = state.team[slot];
+    for (uint8_t i = slot; i + 1 < state.teamCount && i + 1 < Game::TEAM_CAP; ++i) {
+        state.team[i] = state.team[i + 1];
+    }
+    state.teamCount--;
+    if (state.teamCount < Game::TEAM_CAP) {
+        state.team[state.teamCount] = Game::MonsterRuntime{};
+    }
+    state.activeSlot = 0;
+    syncSpriteCache();
+    markDirty(true);
+    return true;
+}
+
+bool GameEngine::withdrawStorageMemberToTeam(uint8_t slot) {
+    if (state.teamCount >= Game::TEAM_CAP) return false;
+    if (slot >= state.storageCount || slot >= Game::STORAGE_CAP) return false;
+
+    state.team[state.teamCount++] = state.storage[slot];
+    for (uint8_t i = slot; i + 1 < state.storageCount && i + 1 < Game::STORAGE_CAP; ++i) {
+        state.storage[i] = state.storage[i + 1];
+    }
+    state.storageCount--;
+    if (state.storageCount < Game::STORAGE_CAP) {
+        state.storage[state.storageCount] = Game::MonsterRuntime{};
+    }
+    syncSpriteCache();
+    markDirty(true);
+    return true;
+}
+
+bool GameEngine::releaseStorageMember(uint8_t slot) {
+    if (slot >= state.storageCount || slot >= Game::STORAGE_CAP) return false;
+
+    for (uint8_t i = slot; i + 1 < state.storageCount && i + 1 < Game::STORAGE_CAP; ++i) {
+        state.storage[i] = state.storage[i + 1];
+    }
+    state.storageCount--;
+    if (state.storageCount < Game::STORAGE_CAP) {
+        state.storage[state.storageCount] = Game::MonsterRuntime{};
+    }
     markDirty(true);
     return true;
 }
@@ -478,6 +529,9 @@ bool GameEngine::recordCapture(const Game::MonsterRuntime& monster, uint8_t metA
         uint8_t secondLevel = secondMoveLearnLevelForSpecies(*species);
         mon.move2Id = (secondLevel > 0 && mon.level >= secondLevel) ? secondMoveIdForSpecies(*species) : 0;
     }
+    if (!findMove(mon.move3Id) || mon.move3Id == mon.move1Id || mon.move3Id == mon.move2Id) {
+        mon.move3Id = 0;
+    }
     mon.origin = Game::Origin::CAPTURED;
     mon.metArea = metArea;
     mon.caughtAt = Hal::ins().millis() / 1000;
@@ -570,8 +624,20 @@ void GameEngine::addExperience(uint32_t amount) {
         mon.hpCur = min<uint16_t>(mon.hpMax, mon.hpCur + (mon.hpMax - oldHpMax));
     }
     if (mon.level < oldLevel) mon.level = oldLevel;
-    if (mon.level > oldLevel) queueMoveLearnIfReady(mon, species, oldLevel);
+    if (mon.level > oldLevel) {
+        pendingLevelUp = true;
+        pendingLevelUpLevel = mon.level;
+        queueMoveLearnIfReady(mon, species, oldLevel);
+    }
     markDirty(false);
+}
+
+bool GameEngine::consumePendingLevelUp(uint8_t& level) {
+    if (!pendingLevelUp) return false;
+    level = pendingLevelUpLevel;
+    pendingLevelUp = false;
+    pendingLevelUpLevel = 0;
+    return true;
 }
 
 bool GameEngine::resolvePendingMoveLearn(bool learn) {
@@ -580,7 +646,9 @@ bool GameEngine::resolvePendingMoveLearn(bool learn) {
     if (learn && pendingMoveSlot < state.teamCount && pendingMoveSlot < Game::TEAM_CAP) {
         Game::MonsterRuntime& mon = state.team[pendingMoveSlot];
         if (findMove(pendingMoveId)) {
-            mon.move2Id = pendingMoveId;
+            if (mon.move2Id == 0) mon.move2Id = pendingMoveId;
+            else if (mon.move3Id == 0) mon.move3Id = pendingMoveId;
+            else mon.move3Id = pendingMoveId;
             markDirty(true);
             applied = true;
         }
@@ -849,10 +917,16 @@ void GameEngine::sanitizeMonsterMoves() {
             changed = true;
         }
 
-        if (mon.move2Id == 0) return;
         uint8_t secondLevel = secondMoveLearnLevelForSpecies(*species);
-        if (secondLevel == 0 || mon.level < secondLevel || !findMove(mon.move2Id) || mon.move2Id == mon.move1Id) {
+        if (mon.move2Id != 0 &&
+            (secondLevel == 0 || mon.level < secondLevel || !findMove(mon.move2Id) || mon.move2Id == mon.move1Id)) {
             mon.move2Id = 0;
+            changed = true;
+        }
+        if (mon.move3Id != 0 &&
+            (secondLevel == 0 || mon.level < secondLevel || !findMove(mon.move3Id) ||
+             mon.move3Id == mon.move1Id || mon.move3Id == mon.move2Id)) {
+            mon.move3Id = 0;
             changed = true;
         }
     };
@@ -986,7 +1060,7 @@ void GameEngine::queueMoveLearnIfReady(Game::MonsterRuntime& mon, const Species&
     uint8_t moveId = secondMoveIdForSpecies(species);
     if (learnLevel == 0 || moveId == 0) return;
     if (oldLevel >= learnLevel || mon.level < learnLevel) return;
-    if (mon.move2Id == moveId) return;
+    if (mon.move2Id == moveId || mon.move3Id == moveId) return;
 
     pendingMoveLearn = true;
     pendingMoveSlot = 0;

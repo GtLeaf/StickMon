@@ -13,7 +13,7 @@ static constexpr const char* SETTINGS = "设置";
 static constexpr const char* DEBUG = "Debug";
 static constexpr const char* BACK = "返回";
 static constexpr const char* BAG = "背包";
-static constexpr const char* STORAGE = "仓库";
+static constexpr const char* STORAGE = "盒子";
 static constexpr const char* PET = "摸一摸";
 static constexpr const char* FOOD = "加食物";
 static constexpr const char* HUNGER = "饱食";
@@ -50,6 +50,7 @@ static constexpr const char* ROOM_HINT = "A摸  B喂  长A菜单";
 static constexpr const char* SPEED_CHANGED = "速度已切换";
 static constexpr const char* SAVED = "已保存";
 static constexpr const char* LEVEL_FMT = "Lv%u";
+static constexpr const char* LEVEL_UP_FMT = "升到Lv%u";
 }
 
 namespace SpeciesName {
@@ -282,7 +283,7 @@ static constexpr const char* FOOD_DESCS[][3] = {
 }
 
 namespace Computer {
-static constexpr const char* STORAGE_EMPTY = "仓库为空";
+static constexpr const char* STORAGE_EMPTY = "盒子为空";
 static constexpr const char* STORAGE_COUNT_FMT = "%u/20";
 static constexpr const char* ITEMS[] = {
     Ui::SOCIAL,
@@ -359,12 +360,36 @@ static constexpr const char* MOTION_ITEMS[] = {
 namespace Team {
 static constexpr const char* ACTION_STATUS = "状态";
 static constexpr const char* ACTION_FIRST = "首位";
+static constexpr const char* ACTION_DEPOSIT = "存入";
 static constexpr const char* ACTION_BACK = "返回";
 static constexpr const char* FIRST_BADGE = "首位";
 static constexpr const char* EMPTY = "队伍为空";
+static constexpr const char* DEPOSIT_TOAST = "已存入盒子";
+static constexpr const char* DEPOSIT_FULL_TOAST = "盒子已满";
+static constexpr const char* DEPOSIT_LAST_TOAST = "至少保留1只";
 static constexpr const char* ACTIONS[] = {
     ACTION_STATUS,
     ACTION_FIRST,
+    ACTION_DEPOSIT,
+    ACTION_BACK,
+};
+}
+
+namespace Storage {
+static constexpr const char* ACTION_STATUS = "状态";
+static constexpr const char* ACTION_WITHDRAW = "取出";
+static constexpr const char* ACTION_RELEASE = "放生";
+static constexpr const char* ACTION_BACK = "返回";
+static constexpr const char* WITHDRAW_TOAST = "已取出";
+static constexpr const char* TEAM_FULL_TOAST = "队伍已满";
+static constexpr const char* RELEASE_CONFIRM = "确定放生吗?";
+static constexpr const char* RELEASE_TOAST = "已放生";
+static constexpr const char* YES = "是";
+static constexpr const char* NO = "否";
+static constexpr const char* ACTIONS[] = {
+    ACTION_STATUS,
+    ACTION_WITHDRAW,
+    ACTION_RELEASE,
     ACTION_BACK,
 };
 }
@@ -482,7 +507,7 @@ static constexpr const char* SUPER_POTION_FMT = "高级伤药:%u";
 static constexpr const char* ANTIDOTE_FMT = "解毒药:%u";
 static constexpr const char* CANDY_FMT = "糖果:%u";
 static constexpr const char* COIN_FMT = "金币:%lu";
-static constexpr const char* STORAGE_FMT = "仓库:%u/20";
+static constexpr const char* STORAGE_FMT = "盒子:%u/20";
 static constexpr const char* BACK_HINT = "A返回 长A回房间";
 static constexpr const char* NAMES[] = {
     Ui::BALL,
@@ -628,6 +653,7 @@ static constexpr const char* FAINTED_EXP_LOSS_FMT = "濒死 -%lu经验";
 static constexpr const char* LEARN_TITLE = "学习新招式?";
 static constexpr const char* LEARN_MOVE_FMT = "要学习%s吗?";
 static constexpr const char* LEARN_EMPTY_SLOT = "放入技能2";
+static constexpr const char* LEARN_EMPTY_SLOT_2 = "放入技能3";
 static constexpr const char* LEARN_REPLACE_FMT = "替换%s";
 static constexpr const char* PICKUP_FMT = "捡到%s";
 static constexpr const char* PICKUP_COIN_FMT = "捡到%luC";

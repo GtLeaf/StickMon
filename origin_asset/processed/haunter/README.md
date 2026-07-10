@@ -14,7 +14,7 @@ This spec is intentionally scoped to Haunter only.
 - Format: RGBA PNG with transparent background.
 - Canvas: 64x64 px.
 - Target scale: nearest-neighbor 2x, capped to fit the canvas without clipping.
-- Placement: horizontally centered, bottom aligned with a 6 px bottom margin.
+- Placement: horizontally centered, bottom aligned with a 2 px bottom margin.
 - Naming: `{action}/{direction}_{frame_index}.png`.
 
 ## Actions

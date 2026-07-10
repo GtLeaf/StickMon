@@ -105,6 +105,7 @@ private:
     uint32_t pmdFrameStartedMs = 0;
     uint32_t toastUntil = 0;
     const char* toast = nullptr;
+    char toastBuffer[32] = {};
     bool pendingFeed = false;
     uint32_t pendingFeedUntilMs = 0;
     uint32_t pendingFeedReadyMs = 0;

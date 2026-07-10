@@ -463,15 +463,17 @@ void ExploreScene::attackWild() {
     }
     const Species& activeSpecies = GameEngine::ins().activeSpecies();
     wildRuntime.hpCur = wildHp;
-    bool specialMove = BattleSystem::rollSpecialMove(activeMon);
-    auto result = BattleSystem::calcBasicDamage(activeMon, activeSpecies, wildRuntime, *wild, specialMove);
+    uint8_t specialSlot = BattleSystem::rollSpecialMoveSlot(activeMon);
+    auto result = BattleSystem::calcBasicDamage(activeMon, activeSpecies, wildRuntime, *wild, specialSlot);
     wildHp = result.damage >= wildHp ? 0 : wildHp - result.damage;
     wildRuntime.hpCur = wildHp;
 
     if (result.statusBlocked) {
         enqueueBattleLog(Ui::Explore::CANNOT_MOVE);
     } else if (result.effectiveness == 0) {
-        const MoveInfo* move = findMove(moveIdForMonster(activeSpecies, activeMon, result.special));
+        const MoveInfo* move = findMove(result.special
+            ? specialMoveIdForMonster(activeMon, result.specialSlot)
+            : moveIdForMonster(activeSpecies, activeMon, false));
         char logBuf[BATTLE_LOG_LEN];
         snprintf(logBuf, sizeof(logBuf), Ui::Explore::MOVE_USED_FMT,
                  activeSpecies.name,
@@ -479,7 +481,9 @@ void ExploreScene::attackWild() {
         enqueueBattleLog(logBuf);
         enqueueBattleLog(Ui::Explore::NO_EFFECT);
     } else {
-        const MoveInfo* move = findMove(moveIdForMonster(activeSpecies, activeMon, result.special));
+        const MoveInfo* move = findMove(result.special
+            ? specialMoveIdForMonster(activeMon, result.specialSlot)
+            : moveIdForMonster(activeSpecies, activeMon, false));
         char logBuf[BATTLE_LOG_LEN];
         snprintf(logBuf, sizeof(logBuf), Ui::Explore::MOVE_USED_FMT,
                  activeSpecies.name,
@@ -505,6 +509,11 @@ void ExploreScene::attackWild() {
         char logBuf[BATTLE_LOG_LEN];
         snprintf(logBuf, sizeof(logBuf), Ui::Explore::EXP_GAIN_FMT, expGain);
         enqueueBattleLog(logBuf);
+        uint8_t levelUp = 0;
+        if (GameEngine::ins().consumePendingLevelUp(levelUp)) {
+            snprintf(logBuf, sizeof(logBuf), Ui::Common::LEVEL_UP_FMT, levelUp);
+            enqueueBattleLog(logBuf);
+        }
         snprintf(resultBuf, sizeof(resultBuf), Ui::Explore::BATTLE_WIN_FMT, expGain);
         resultMessage = resultBuf;
         battleResultPending = true;
@@ -524,8 +533,8 @@ void ExploreScene::wildCounterattack() {
     }
 
     const Species& activeSpecies = GameEngine::ins().activeSpecies();
-    bool specialMove = BattleSystem::rollSpecialMove(wildRuntime);
-    auto result = BattleSystem::calcBasicDamage(wildRuntime, *wild, activeMon, activeSpecies, specialMove);
+    uint8_t specialSlot = BattleSystem::rollSpecialMoveSlot(wildRuntime);
+    auto result = BattleSystem::calcBasicDamage(wildRuntime, *wild, activeMon, activeSpecies, specialSlot);
     activeMon.hpCur = result.damage >= activeMon.hpCur ? 0 : activeMon.hpCur - result.damage;
     GameEngine::ins().markDirty(false);
 
@@ -537,14 +546,18 @@ void ExploreScene::wildCounterattack() {
     if (result.statusBlocked) {
         enqueueBattleLog(Ui::Explore::WILD_CANNOT_MOVE);
     } else if (result.effectiveness == 0) {
-        const MoveInfo* move = findMove(moveIdForMonster(*wild, wildRuntime, result.special));
+        const MoveInfo* move = findMove(result.special
+            ? specialMoveIdForMonster(wildRuntime, result.specialSlot)
+            : moveIdForMonster(*wild, wildRuntime, false));
         char logBuf[BATTLE_LOG_LEN];
         snprintf(logBuf, sizeof(logBuf), Ui::Explore::WILD_MOVE_USED_FMT,
                  move ? move->name : Ui::Status::MOVE_UNKNOWN);
         enqueueBattleLog(logBuf);
         enqueueBattleLog(Ui::Explore::NO_EFFECT);
     } else {
-        const MoveInfo* move = findMove(moveIdForMonster(*wild, wildRuntime, result.special));
+        const MoveInfo* move = findMove(result.special
+            ? specialMoveIdForMonster(wildRuntime, result.specialSlot)
+            : moveIdForMonster(*wild, wildRuntime, false));
         char logBuf[BATTLE_LOG_LEN];
         snprintf(logBuf, sizeof(logBuf), Ui::Explore::WILD_MOVE_USED_FMT,
                  move ? move->name : Ui::Status::MOVE_UNKNOWN);
@@ -719,14 +732,21 @@ void ExploreScene::renderLearnMove() {
     const auto& state = GameEngine::ins().gameState();
     uint8_t slot = GameEngine::ins().pendingMoveLearnSlot();
     const MoveInfo* oldMove = nullptr;
+    bool fillsSecondSpecialSlot = false;
     if (slot < state.teamCount && slot < Game::TEAM_CAP) {
-        oldMove = findMove(state.team[slot].move2Id);
+        const Game::MonsterRuntime& mon = state.team[slot];
+        if (mon.move2Id != 0 && mon.move3Id == 0) {
+            fillsSecondSpecialSlot = true;
+        } else if (mon.move2Id != 0 && mon.move3Id != 0) {
+            oldMove = findMove(mon.move3Id);
+        }
     }
     if (oldMove) {
         snprintf(line, sizeof(line), Ui::Explore::LEARN_REPLACE_FMT, oldMove->name);
         PixelRenderer::text(48, 76, line, PixelRenderer::rgb(135, 214, 238), 1);
     } else {
-        PixelRenderer::text(64, 76, Ui::Explore::LEARN_EMPTY_SLOT,
+        PixelRenderer::text(64, 76,
+                            fillsSecondSpecialSlot ? Ui::Explore::LEARN_EMPTY_SLOT_2 : Ui::Explore::LEARN_EMPTY_SLOT,
                             PixelRenderer::rgb(135, 214, 238), 1);
     }
 

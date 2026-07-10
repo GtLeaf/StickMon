@@ -255,45 +255,22 @@ class AssetWriter:
         })
 
 
-def add_base_frames(writer, species_id, ident, missing, include_back=True):
+def add_base_frames(writer, species_id, ident, missing):
     icon_path = GRAPHICS / "Icons" / f"{ident}.png"
-    if not icon_path.exists():
-        missing.append(str(icon_path))
-        return
-
-    icon = to_rgba(icon_path)
-    writer.add_frame(species_id, ident, "ICON_0", icon.crop((0, 0, ICON_SIZE, ICON_SIZE)))
-
-    spec = PMD_BY_ID.get(species_id)
-    if spec and (PROCESSED / spec.slug).exists():
-        front = to_rgba(pmd_path(spec, "walking", "front_0"))
-        writer.add_frame(species_id, ident, "FRONT", front)
-        if include_back:
-            add_pmd_back_frame(writer, spec)
-        return
-
     front_path = GRAPHICS / "Front" / f"{ident}.png"
     back_path = GRAPHICS / "Back" / f"{ident}.png"
     local_missing = []
-    for path in [front_path, back_path]:
+    for path in [icon_path, front_path, back_path]:
         if not path.exists():
             local_missing.append(str(path))
     if local_missing:
         missing.extend(local_missing)
         return
 
+    icon = to_rgba(icon_path)
+    writer.add_frame(species_id, ident, "ICON_0", icon.crop((0, 0, ICON_SIZE, ICON_SIZE)))
     writer.add_frame(species_id, ident, "FRONT", resize_nearest(to_rgba(front_path), BATTLE_SIZE))
-    if include_back:
-        writer.add_frame(species_id, ident, "BACK", resize_nearest(to_rgba(back_path), BATTLE_SIZE))
-
-
-def add_pmd_back_frame(writer, spec):
-    writer.add_frame(
-        spec.species_id, spec.ident,
-        "BACK",
-        to_rgba(pmd_path(spec, "walking", "back_0")),
-        SPRITE_SOURCE_SPECIES_BLOCK,
-    )
+    writer.add_frame(species_id, ident, "BACK", resize_nearest(to_rgba(back_path), BATTLE_SIZE))
 
 
 def pmd_idle_frame_path(spec, direction, index):
@@ -387,14 +364,10 @@ def main():
         present_species_ids.add(species_id)
         spec = PMD_BY_ID.get(species_id)
         before = len(base_writer.frames)
-        add_base_frames(
-            base_writer, species_id, ident, missing,
-            include_back=not (spec and (PROCESSED / spec.slug).exists()),
-        )
+        add_base_frames(base_writer, species_id, ident, missing)
         frames.extend(base_writer.frames[before:])
         if spec and (PROCESSED / spec.slug).exists():
             action_writer = AssetWriter()
-            add_pmd_back_frame(action_writer, spec)
             add_pmd_frames(action_writer, spec)
             frames.extend(action_writer.frames)
             payload = words_to_bytes(action_writer.data) + words_to_bytes(action_writer.palettes)
@@ -413,10 +386,9 @@ def main():
         if spec.species_id in present_species_ids or not (PROCESSED / spec.slug).exists():
             continue
         before = len(base_writer.frames)
-        add_base_frames(base_writer, spec.species_id, spec.ident, missing, include_back=False)
+        add_base_frames(base_writer, spec.species_id, spec.ident, missing)
         frames.extend(base_writer.frames[before:])
         action_writer = AssetWriter()
-        add_pmd_back_frame(action_writer, spec)
         add_pmd_frames(action_writer, spec)
         frames.extend(action_writer.frames)
         payload = words_to_bytes(action_writer.data) + words_to_bytes(action_writer.palettes)
