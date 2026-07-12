@@ -10,6 +10,7 @@ void SettingsScene::onEnter() {
     cursor = 0;
     viewMode = ViewMode::MENU;
     settingsDirty = false;
+    resetConfirmYes = false;
     normalizeVolumeSetting();
 }
 
@@ -23,6 +24,34 @@ void SettingsScene::update(uint32_t nowMs, float dtSeconds) {
 }
 
 bool SettingsScene::onButton(const ButtonEvent& event) {
+    if (viewMode == ViewMode::RESET_CONFIRM) {
+        if ((event.btn == 0 || event.btn == 1) && event.action == BtnAction::LONG_PRESS) {
+            viewMode = ViewMode::MENU;
+            resetConfirmYes = false;
+            return true;
+        }
+        if (event.btn == 1 && event.action == BtnAction::PRESSED) {
+            resetConfirmYes = !resetConfirmYes;
+            return true;
+        }
+        if (event.btn == 0 && event.action == BtnAction::PRESSED) {
+            if (!resetConfirmYes) {
+                viewMode = ViewMode::MENU;
+                return true;
+            }
+            if (!GameEngine::ins().resetGame()) {
+                viewMode = ViewMode::MENU;
+                toast = Ui::Settings::RESET_FAILED;
+                toastUntil = Hal::ins().millis() + 1500;
+                return true;
+            }
+            settingsDirty = false;
+            GameEngine::ins().requestScene(SceneID::HATCH);
+            return true;
+        }
+        return false;
+    }
+
     if (viewMode == ViewMode::HELP) {
         if ((event.btn == 0 || event.btn == 1) && event.action == BtnAction::PRESSED) {
             saveSettingsIfDirty();
@@ -77,6 +106,11 @@ void SettingsScene::activateCurrent() {
         viewMode = ViewMode::HELP;
         toast = nullptr;
         return;
+    case RESET_GAME:
+        viewMode = ViewMode::RESET_CONFIRM;
+        resetConfirmYes = false;
+        toast = nullptr;
+        return;
     case BACK:
         GameEngine::ins().requestScene(SceneID::MENU);
         return;
@@ -126,6 +160,7 @@ void SettingsScene::render() {
         renderHelp();
     } else {
         renderMenu();
+        if (viewMode == ViewMode::RESET_CONFIRM) renderResetConfirm();
     }
     renderToast();
 }
@@ -133,7 +168,7 @@ void SettingsScene::render() {
 void SettingsScene::renderMenu() {
     auto& c = PixelRenderer::canvas();
     const int rowH = 18;
-    const int startY = 12;
+    const int startY = 4;
 
     for (int i = 0; i < COUNT; ++i) {
         int y = startY + i * rowH;
@@ -168,8 +203,34 @@ void SettingsScene::renderHelp() {
     PixelRenderer::text(18, 100, Ui::Settings::HELP_BASIC, PixelRenderer::rgb(156, 164, 176), 1);
 }
 
+void SettingsScene::renderResetConfirm() {
+    auto& c = PixelRenderer::canvas();
+    static constexpr int POP_X = 20;
+    static constexpr int POP_Y = 18;
+    static constexpr int POP_W = 200;
+    static constexpr int POP_H = 98;
+    c.fillRect(POP_X, POP_Y, POP_W, POP_H, PixelRenderer::rgb(24, 28, 36));
+    c.drawRect(POP_X, POP_Y, POP_W, POP_H, PixelRenderer::rgb(241, 242, 232));
+
+    PixelRenderer::text(88, POP_Y + 8, Ui::Settings::RESET_GAME,
+                        PixelRenderer::rgb(255, 216, 72), 1);
+    PixelRenderer::text(48, POP_Y + 32, Ui::Settings::RESET_WARNING,
+                        PixelRenderer::rgb(241, 242, 232), 1);
+    PixelRenderer::text(72, POP_Y + 51, Ui::Settings::RESET_QUESTION,
+                        PixelRenderer::rgb(156, 164, 176), 1);
+
+    uint16_t yesColor = resetConfirmYes ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(156, 164, 176);
+    uint16_t noColor = !resetConfirmYes ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(156, 164, 176);
+    PixelRenderer::text(62, POP_Y + 74, Ui::Settings::RESET_YES, yesColor, 1);
+    PixelRenderer::text(150, POP_Y + 74, Ui::Settings::RESET_NO, noColor, 1);
+}
+
 void SettingsScene::renderToast() {
-    if (!toast || Hal::ins().millis() > toastUntil) return;
+    if (!toast) return;
+    if ((int32_t)(Hal::ins().millis() - toastUntil) >= 0) {
+        toast = nullptr;
+        return;
+    }
     auto& c = PixelRenderer::canvas();
     c.fillRect(70, 108, 100, 20, PixelRenderer::rgb(34, 39, 47));
     PixelRenderer::text(78, 110, toast, PixelRenderer::rgb(255, 255, 255), 1);

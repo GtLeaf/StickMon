@@ -91,6 +91,12 @@ Game Boy Advance - Pokemon Mystery Dungeon_ Red Rescue Team - Pokemon (1st Gener
 2. 第二行倒数第6，7是两帧sleeping
 
 
+处理下：./origin_asset/source_sheets/low/split_by_species/016_pidgey.png,017_pidgeotto,018_pidgeot.png,
+1. walk有3帧，3帧一组，共5个朝向，从左到右，正面，左下，左，左上，背面
+2. 016的第一行最后俩帧是sleep
+3. 017的第二行的6，7是sleep
+4. 018的第二行的6，7是sleep
+
 
 鬼斯通，迷你龙，哈克龙的运动逻辑不对
 
@@ -131,13 +137,26 @@ hp: 19/19   特攻：xx
 
 其他页保持不变
 
+处理./origin_asset/source_sheets/medium/261_poochyena_262_mightyena.png描述如下：
+1.poochyena和mightyena第二行为move，3帧，5个方向，从左到右是正面，左下，左，左上，背面。其他方向用镜像
+2.poochyena和mightyena第四行，倒数2，3为sleep
 
-1../origin_asset/processed/haunter/haunter_idle_walking_contact.png，down_left和left被裁切
+处理./origin_asset/source_sheets/medium/278_wingull_279_pelipper.png描述如下：
+1.wingull和pelipper第一行为move，3帧，5个方向，从左到右是正面，左下，左，左上，背面。其他方向用镜像
+2.wingull第二行倒数2，3为sleep
+3.pelipper第四行倒数2，3为sleep
 
-ok:2../origin_asset/processed/latias和./origin_asset/processed/latios
+处理./origin_asset/source_sheets/medium/276_taillow_277_swellow.png
+1.taillow和swellow第一行为move，3帧，5个方向，从左到右是正面，左下，左，左上，背面。其他方向用镜像
+2.taillow和swellow第三行倒数2，3，为sleep
 
-3../origin_asset/processed/raichu/raichu_idle_walking_contact.png的down_right的耳朵
+./origin_asset/source_sheets/low/012_butterfree.png裁剪错误，第二行被裁掉了
 
-4../origin_asset/processed/scyther/scyther_idle_walking_contact.png完全不对
 
-5../origin_asset/processed/venusaur/venusaur_idle_walking_contact.png的sleep有一个白点
+./origin_asset/source_sheets/low/010_caterpie.png
+./origin_asset/source_sheets/low/011_metapod.png
+./origin_asset/source_sheets/low/012_butterfree.png
+./origin_asset/source_sheets/low/013_weedle.png
+./origin_asset/source_sheets/low/014_kakuna.png
+./origin_asset/source_sheets/low/015_beedrill.png
+重新裁剪，图像裁切不完整

@@ -30,6 +30,8 @@ private:
     enum Item : uint8_t {
         BALL = 0,
         GREAT_BALL,
+        HEAVY_BALL,
+        TIMER_BALL,
         POTION,
         SUPER_POTION,
         ANTIDOTE,

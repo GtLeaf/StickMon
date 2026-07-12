@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import struct
 import sys
 import zlib
 from copy import deepcopy
@@ -27,8 +28,13 @@ NIGHT_PNG_OUT = GENERATED_ROOM_DIR / "standard_room_night_240.png"
 LEGACY_PNG_OUT = GENERATED_ROOM_DIR / "standard_room_240.png"
 HEADER_OUT = ROOT / "src" / "assets" / "RoomAssets.h"
 CPP_OUT = ROOT / "src" / "assets" / "RoomAssets.cpp"
+DATA_DIR = ROOT / "data"
+PACK_OUT = DATA_DIR / "packs" / "dev"
+PACK_ROOM_OUT = PACK_OUT / "rooms"
 
 DISPLAY_H = 135
+ROOM_PACK_MAGIC = 0x4D4F5253
+ROOM_PACK_VERSION = 1
 
 
 def rgb565(r, g, b):
@@ -363,6 +369,88 @@ def format_patch_runs(runs):
     return "\n".join(f"    {{{y}, {x}, {length}, {offset}}}," for y, x, length, offset in runs)
 
 
+def write_json_file(path, payload):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def merge_pack_manifest(**updates):
+    manifest_path = PACK_OUT / "manifest.json"
+    if manifest_path.exists():
+        try:
+            loaded = json.loads(manifest_path.read_text(encoding="utf-8"))
+            payload = loaded if isinstance(loaded, dict) else {}
+        except (json.JSONDecodeError, OSError):
+            payload = {}
+    else:
+        payload = {}
+    payload.update({
+        "format": "smon-resource-pack-v1",
+        "id": "dev",
+        "schema": 1,
+        "version": "0.0.0-dev",
+    })
+    payload.update(updates)
+    write_json_file(manifest_path, payload)
+    write_json_file(DATA_DIR / "active.json", {
+        "activePack": "dev",
+        "packPath": "/packs/dev",
+    })
+
+
+def write_room_pack(width, height, room_y, base_raw, base_compressed,
+                    patch_runs, patch_pixels, walk_polygon, food_x, food_y,
+                    bed_polygon, bed_x, bed_y):
+    min_x, min_y, max_x, max_y = bounds_for(walk_polygon, width, height)
+    bed_min_x, bed_min_y, bed_max_x, bed_max_y = bounds_for(bed_polygon, width, height)
+    if not 3 <= len(walk_polygon) <= 32 or not 3 <= len(bed_polygon) <= 32:
+        raise ValueError("room polygons must contain between 3 and 32 points")
+
+    payload = bytearray()
+    payload.extend(struct.pack(
+        "<IHHHhIIIIBBhhhhhhhhhhhhHH",
+        ROOM_PACK_MAGIC,
+        ROOM_PACK_VERSION,
+        width,
+        height,
+        room_y,
+        len(base_raw),
+        len(base_compressed),
+        len(patch_runs),
+        len(patch_pixels),
+        len(walk_polygon),
+        len(bed_polygon),
+        min_x,
+        min_y,
+        max_x,
+        max_y,
+        food_x,
+        food_y,
+        bed_min_x,
+        bed_min_y,
+        bed_max_x,
+        bed_max_y,
+        bed_x,
+        bed_y,
+        1 if not patch_runs else 0,
+        0,
+    ))
+    payload.extend(base_compressed)
+    for y, x, length, offset in patch_runs:
+        payload.extend(struct.pack("<HHHI", y, x, length, offset))
+    for value in patch_pixels:
+        payload.extend(struct.pack("<H", value))
+    for x, y in walk_polygon:
+        payload.extend(struct.pack("<hh", x, y))
+    for x, y in bed_polygon:
+        payload.extend(struct.pack("<hh", x, y))
+
+    PACK_ROOM_OUT.mkdir(parents=True, exist_ok=True)
+    (PACK_ROOM_OUT / "standard.smonroom").write_bytes(payload)
+    merge_pack_manifest(room="rooms/standard.smonroom", rooms="rooms", roomCount=1)
+    return len(payload)
+
+
 def write_room_assets(day_img, night_img, walk_polygon, food_x, food_y, bed_polygon, bed_x, bed_y):
     if day_img.size != night_img.size:
         raise ValueError(f"day/night room sizes differ: {day_img.size} vs {night_img.size}")
@@ -379,87 +467,39 @@ def write_room_assets(day_img, night_img, walk_polygon, food_x, food_y, bed_poly
     bed_polygon_count = len(bed_polygon)
     patch_pixel_words = format_words(patch_pixels or [0])
 
-    HEADER_OUT.write_text(f"""#pragma once
+    HEADER_OUT.write_text("""#pragma once
 #include <Arduino.h>
 #include <cstdint>
 
-namespace RoomAssets {{
+namespace RoomAssets {
 
-struct RoomPoint {{
+struct RoomPoint {
     int16_t x;
     int16_t y;
-}};
+};
 
-struct RoomPatchRun {{
+struct RoomPatchRun {
     uint16_t y;
     uint16_t x;
     uint16_t len;
     uint32_t colorOffset;
-}};
+};
 
-static constexpr uint16_t STANDARD_ROOM_W = {width};
-static constexpr uint16_t STANDARD_ROOM_H = {height};
-static constexpr int16_t STANDARD_ROOM_Y = {room_y};
-static constexpr uint32_t STANDARD_ROOM_BASE_RAW_BYTES = {len(base_raw)};
-static constexpr uint32_t STANDARD_ROOM_BASE_COMPRESSED_LEN = {len(base_compressed)};
-static constexpr uint32_t STANDARD_ROOM_NIGHT_PATCH_RUN_COUNT = {len(patch_runs)};
-static constexpr uint32_t STANDARD_ROOM_NIGHT_PATCH_PIXEL_COUNT = {len(patch_pixels)};
-static constexpr bool STANDARD_ROOM_SHARED_RLE = {"true" if shared_rle else "false"};
-
-static constexpr uint8_t ROOM_WALK_POLYGON_COUNT = {polygon_count};
-static constexpr int16_t ROOM_WALK_MIN_X = {min_x};
-static constexpr int16_t ROOM_WALK_MIN_Y = {min_y};
-static constexpr int16_t ROOM_WALK_MAX_X = {max_x};
-static constexpr int16_t ROOM_WALK_MAX_Y = {max_y};
-
-static constexpr int16_t ROOM_FOOD_X = {food_x};
-static constexpr int16_t ROOM_FOOD_Y = {food_y};
-
-static constexpr uint8_t ROOM_BED_POLYGON_COUNT = {bed_polygon_count};
-static constexpr int16_t ROOM_BED_MIN_X = {bed_min_x};
-static constexpr int16_t ROOM_BED_MIN_Y = {bed_min_y};
-static constexpr int16_t ROOM_BED_MAX_X = {bed_max_x};
-static constexpr int16_t ROOM_BED_MAX_Y = {bed_max_y};
-static constexpr int16_t ROOM_BED_X = {bed_x};
-static constexpr int16_t ROOM_BED_Y = {bed_y};
-
-extern const uint8_t STANDARD_ROOM_BASE_COMPRESSED[] PROGMEM;
-extern const RoomPatchRun STANDARD_ROOM_NIGHT_PATCH_RUNS[] PROGMEM;
-extern const uint16_t STANDARD_ROOM_NIGHT_PATCH_PIXELS[] PROGMEM;
-extern const RoomPoint ROOM_WALK_POLYGON[] PROGMEM;
-extern const RoomPoint ROOM_BED_POLYGON[] PROGMEM;
-
-}}
+}
 """, encoding="utf-8")
 
-    CPP_OUT.write_text(f"""#include "RoomAssets.h"
+    CPP_OUT.write_text("""#include "RoomAssets.h"
 
-namespace RoomAssets {{
-
-const uint8_t STANDARD_ROOM_BASE_COMPRESSED[] PROGMEM = {{
-{format_bytes(base_compressed)}
-}};
-
-const RoomPatchRun STANDARD_ROOM_NIGHT_PATCH_RUNS[] PROGMEM = {{
-{format_patch_runs(patch_runs)}
-}};
-
-const uint16_t STANDARD_ROOM_NIGHT_PATCH_PIXELS[] PROGMEM = {{
-{patch_pixel_words}
-}};
-
-const RoomPoint ROOM_WALK_POLYGON[] PROGMEM = {{
-{format_points(walk_polygon)}
-}};
-
-const RoomPoint ROOM_BED_POLYGON[] PROGMEM = {{
-{format_points(bed_polygon)}
-}};
-
-}}
+namespace RoomAssets {
+}
 """, encoding="utf-8")
 
-    return len(base_raw), len(base_compressed), len(patch_runs), len(patch_pixels), room_y, shared_rle
+    room_pack_bytes = write_room_pack(
+        width, height, room_y, base_raw, base_compressed,
+        patch_runs, patch_pixels, walk_polygon, food_x, food_y,
+        bed_polygon, bed_x, bed_y)
+
+    return len(base_raw), len(base_compressed), len(patch_runs), len(patch_pixels), room_y, shared_rle, room_pack_bytes
 
 
 def main():
@@ -526,7 +566,7 @@ def main():
     walk_polygon = load_walk_polygon(layout, width, height)
     food_x, food_y = food_position(layout)
     bed_polygon, bed_x, bed_y = bed_region(layout, width, height, walk_polygon)
-    base_raw_bytes, base_compressed_len, patch_run_count, patch_pixel_count, room_y, shared_rle = write_room_assets(
+    base_raw_bytes, base_compressed_len, patch_run_count, patch_pixel_count, room_y, shared_rle, room_pack_bytes = write_room_assets(
         day_img, night_img, walk_polygon, food_x, food_y, bed_polygon, bed_x, bed_y
     )
 
@@ -548,7 +588,7 @@ def main():
         f"assets={HEADER_OUT}, {CPP_OUT} base_raw_bytes={base_raw_bytes} "
         f"base_compressed_bytes={base_compressed_len} "
         f"night_patch_runs={patch_run_count} night_patch_pixels={patch_pixel_count} "
-        f"shared_rle={str(shared_rle).lower()}"
+        f"shared_rle={str(shared_rle).lower()} room_pack_bytes={room_pack_bytes}"
     )
 
 

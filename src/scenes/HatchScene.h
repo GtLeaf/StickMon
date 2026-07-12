@@ -4,6 +4,8 @@
 
 class HatchScene : public Scene {
 public:
+    static void clearRuntimeProgress();
+
     void onEnter() override;
     void onExit() override;
     void update(uint32_t nowMs, float dtSeconds) override;

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 from dataclasses import dataclass
 from pathlib import Path
+import json
 import os
 import re
-import zlib
+import struct
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -12,6 +13,9 @@ SPECIES_CPP = SRC / "game" / "Species.cpp"
 OUT_H = SRC / "assets" / "PokemonSprites.h"
 OUT_CPP = SRC / "assets" / "PokemonSprites.cpp"
 PROCESSED = ROOT / "origin_asset" / "processed"
+DATA_DIR = ROOT / "data"
+PACK_OUT = DATA_DIR / "packs" / "dev"
+PACK_SPRITE_OUT = PACK_OUT / "sprites"
 
 ESSENTIALS = Path(os.environ.get(
     "ESSENTIALS_DIR",
@@ -21,12 +25,15 @@ GRAPHICS = ESSENTIALS / "Graphics" / "Pokemon"
 
 ICON_SIZE = 64
 BATTLE_SIZE = 72
-EGG_SIZE = 64
+EGG_SIZE = 32
 
 RGB565_RLE = 0
 INDEXED4_RLE = 1
 SPRITE_SOURCE_GLOBAL = 0
 SPRITE_SOURCE_SPECIES_BLOCK = 1
+SPRITE_PACK_MAGIC = 0x5350534D
+SPRITE_PACK_VERSION = 1
+SPRITE_PACK_SCHEMA = 1
 
 FULL_DIRECTIONS = ["front", "down_left", "left", "up_left", "back", "up_right", "right", "down_right"]
 SOURCE_DIRECTIONS = ["front", "down_left", "left", "up_left", "back"]
@@ -54,6 +61,9 @@ PMD_SPECS = [
     PmdSpec(7, "SQUIRTLE", "squirtle", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
     PmdSpec(8, "WARTORTLE", "wartortle", 1, 3, 2),
     PmdSpec(9, "BLASTOISE", "blastoise", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(16, "PIDGEY", "pidgey", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(17, "PIDGEOTTO", "pidgeotto", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(18, "PIDGEOT", "pidgeot", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
     PmdSpec(25, "PIKACHU", "pikachu", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
     PmdSpec(26, "RAICHU", "raichu", 1, 3, 2),
     PmdSpec(92, "GASTLY", "gastly", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
@@ -73,8 +83,14 @@ PMD_SPECS = [
     PmdSpec(148, "DRAGONAIR", "dragonair", 1, 3, 2),
     PmdSpec(149, "DRAGONITE", "dragonite", 1, 2, 2),
     PmdSpec(151, "MEW", "mew", 3, 2, 2),
+    PmdSpec(161, "SENTRET", "sentret", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(162, "FURRET", "furret", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
     PmdSpec(172, "PICHU", "pichu", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
     PmdSpec(212, "SCIZOR", "scizor", 2, 3, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(261, "POOCHYENA", "poochyena", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(262, "MIGHTYENA", "mightyena", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(278, "WINGULL", "wingull", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(279, "PELIPPER", "pelipper", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
     PmdSpec(380, "LATIAS", "latias", 1, 2, 2, tuple(SOURCE_DIRECTIONS)),
     PmdSpec(381, "LATIOS", "latios", 1, 2, 2, tuple(SOURCE_DIRECTIONS)),
 ]
@@ -315,25 +331,6 @@ def add_pmd_frames(writer, spec):
         )
 
 
-def format_words(values):
-    rows = []
-    for i in range(0, len(values), 12):
-        rows.append("    " + ", ".join(f"0x{v:04X}" for v in values[i:i + 12]) + ",")
-    return "\n".join(rows)
-
-
-def format_bytes(values):
-    rows = []
-    for i in range(0, len(values), 16):
-        rows.append("    " + ", ".join(f"0x{v:02X}" for v in values[i:i + 16]) + ",")
-    return "\n".join(rows)
-
-
-def raw_deflate(data):
-    compressor = zlib.compressobj(6, zlib.DEFLATED, -15)
-    return compressor.compress(data) + compressor.flush()
-
-
 def words_to_bytes(words):
     out = bytearray()
     for value in words:
@@ -342,13 +339,110 @@ def words_to_bytes(words):
     return bytes(out)
 
 
-def main():
-    base_writer = AssetWriter()
-    missing = []
-    frames = []
-    compressed_blocks = []
-    compressed_data = bytearray()
+def write_json_file(path, payload):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
+
+def merge_pack_manifest(**updates):
+    manifest_path = PACK_OUT / "manifest.json"
+    payload = {}
+    if manifest_path.exists():
+        try:
+            loaded = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                payload = loaded
+        except (json.JSONDecodeError, OSError):
+            pass
+    payload.update({
+        "format": "smon-resource-pack-v1",
+        "id": "dev",
+        "schema": SPRITE_PACK_SCHEMA,
+        "version": "0.0.0-dev",
+    })
+    payload.update(updates)
+    write_json_file(manifest_path, payload)
+
+
+def write_species_pack(path, species_id, writer, kind_map):
+    if len(writer.frames) > 0xFFFF:
+        raise SystemExit(f"Too many sprite frames for species {species_id}")
+    if len(writer.data) > 0xFFFF or len(writer.palettes) > 0xFFFF:
+        raise SystemExit(f"Sprite pack too large for species {species_id}")
+
+    payload = bytearray()
+    payload.extend(struct.pack(
+        "<IHHHHHH",
+        SPRITE_PACK_MAGIC,
+        SPRITE_PACK_VERSION,
+        species_id,
+        len(writer.frames),
+        len(writer.data),
+        len(writer.palettes),
+        0,
+    ))
+    for frame in writer.frames:
+        payload.extend(struct.pack(
+            "<HBBBBHIII",
+            kind_map[frame["kind"]],
+            frame["width"],
+            frame["height"],
+            frame["format"],
+            frame["palette_size"],
+            0,
+            frame["offset"],
+            frame["length"],
+            frame["palette_offset"],
+        ))
+    payload.extend(words_to_bytes(writer.data))
+    payload.extend(words_to_bytes(writer.palettes))
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(payload)
+
+
+def export_dev_pack(kind_map):
+    if PACK_SPRITE_OUT.exists():
+        for path in PACK_SPRITE_OUT.glob("*.smonsp"):
+            path.unlink()
+    PACK_SPRITE_OUT.mkdir(parents=True, exist_ok=True)
+
+    missing = []
+    exported = 0
+    present_species_ids = set()
+    for species_id, ident in species_rows():
+        present_species_ids.add(species_id)
+        writer = AssetWriter()
+        add_base_frames(writer, species_id, ident, missing)
+        spec = PMD_BY_ID.get(species_id)
+        if spec and (PROCESSED / spec.slug).exists():
+            add_pmd_frames(writer, spec)
+        if writer.frames:
+            write_species_pack(PACK_SPRITE_OUT / f"{species_id:03d}.smonsp", species_id, writer, kind_map)
+            exported += 1
+
+    for spec in PMD_SPECS:
+        if spec.species_id in present_species_ids or not (PROCESSED / spec.slug).exists():
+            continue
+        writer = AssetWriter()
+        add_base_frames(writer, spec.species_id, spec.ident, missing)
+        add_pmd_frames(writer, spec)
+        if writer.frames:
+            write_species_pack(PACK_SPRITE_OUT / f"{spec.species_id:03d}.smonsp", spec.species_id, writer, kind_map)
+            exported += 1
+
+    if missing:
+        raise SystemExit("Missing Pokemon sprite source files:\n" + "\n".join(missing))
+
+    write_json_file(DATA_DIR / "active.json", {
+        "activePack": "dev",
+        "packPath": "/packs/dev",
+    })
+    merge_pack_manifest(spriteCount=exported, sprites="sprites")
+    return exported
+
+
+def main():
     kind_names = list(BASE_KINDS)
     for spec in PMD_SPECS:
         for action, count in (("IDLE", spec.idle_frames), ("WALKING", spec.walking_frames)):
@@ -359,56 +453,7 @@ def main():
             kind_names.append(f"{spec.ident}_SLEEPING_{index}")
     kind_map = {name: index for index, name in enumerate(kind_names)}
 
-    present_species_ids = set()
-    for species_id, ident in species_rows():
-        present_species_ids.add(species_id)
-        spec = PMD_BY_ID.get(species_id)
-        before = len(base_writer.frames)
-        add_base_frames(base_writer, species_id, ident, missing)
-        frames.extend(base_writer.frames[before:])
-        if spec and (PROCESSED / spec.slug).exists():
-            action_writer = AssetWriter()
-            add_pmd_frames(action_writer, spec)
-            frames.extend(action_writer.frames)
-            payload = words_to_bytes(action_writer.data) + words_to_bytes(action_writer.palettes)
-            compressed = raw_deflate(payload)
-            compressed_blocks.append({
-                "species_id": spec.species_id,
-                "ident": spec.ident,
-                "offset": len(compressed_data),
-                "length": len(compressed),
-                "rle_words": len(action_writer.data),
-                "palette_words": len(action_writer.palettes),
-            })
-            compressed_data.extend(compressed)
-
-    for spec in PMD_SPECS:
-        if spec.species_id in present_species_ids or not (PROCESSED / spec.slug).exists():
-            continue
-        before = len(base_writer.frames)
-        add_base_frames(base_writer, spec.species_id, spec.ident, missing)
-        frames.extend(base_writer.frames[before:])
-        action_writer = AssetWriter()
-        add_pmd_frames(action_writer, spec)
-        frames.extend(action_writer.frames)
-        payload = words_to_bytes(action_writer.data) + words_to_bytes(action_writer.palettes)
-        compressed = raw_deflate(payload)
-        compressed_blocks.append({
-            "species_id": spec.species_id,
-            "ident": spec.ident,
-            "offset": len(compressed_data),
-            "length": len(compressed),
-            "rle_words": len(action_writer.data),
-            "palette_words": len(action_writer.palettes),
-        })
-        compressed_data.extend(compressed)
-
-    if missing:
-        raise SystemExit("Missing Pokemon sprite source files:\n" + "\n".join(missing))
-
-    egg_path = GRAPHICS / "Eggs" / "000.png"
-    egg_image = resize_nearest(to_rgba(egg_path), EGG_SIZE)
-    egg_format, egg_palette_size, egg_offset, egg_length, egg_palette_offset = base_writer.encode(egg_image)
+    pack_sprite_count = export_dev_pack(kind_map)
 
     enum_rows = "\n".join(f"    {name}," for name in kind_names)
     h_text = f"""#pragma once
@@ -441,17 +486,10 @@ struct SpriteFrame {{
     uint32_t paletteOffset;
 }};
 
-struct CompressedSpeciesBlock {{
-    uint16_t speciesId;
-    uint16_t rleWords;
-    uint16_t paletteWords;
-    uint16_t reserved;
-    uint32_t offset;
-    uint32_t length;
-}};
-
 struct SpriteCacheStats {{
     uint8_t cachedSpecies;
+    uint8_t missingSpecies;
+    uint16_t firstMissingSpecies;
     uint32_t reloadCount;
     uint32_t lastReloadMs;
     uint32_t decodedBytes;
@@ -460,118 +498,185 @@ struct SpriteCacheStats {{
     bool psram;
 }};
 
-extern const uint16_t SPRITE_FRAME_COUNT;
-extern const SpriteFrame SPRITE_FRAMES[] PROGMEM;
-extern const SpriteFrame EGG_FRAME PROGMEM;
-extern const uint16_t SPRITE_RLE[] PROGMEM;
-extern const uint16_t SPRITE_PALETTES[] PROGMEM;
-extern const CompressedSpeciesBlock SPRITE_COMPRESSED_BLOCKS[] PROGMEM;
-extern const uint16_t SPRITE_COMPRESSED_BLOCK_COUNT;
-extern const uint8_t SPRITE_COMPRESSED_DATA[] PROGMEM;
-
 const SpriteFrame* findSpeciesSprite(uint16_t speciesId, SpriteKind kind);
 void syncTeamCache(const uint16_t* speciesIds, uint8_t count);
+void beginRenderFrame();
 const SpriteCacheStats& cacheStats();
 bool drawFrame(const SpriteFrame* frame, int x, int y, bool flipX = false);
+bool drawFrameScaled(const SpriteFrame* frame, int x, int y, float scale, bool flipX = false);
 
 }}  // namespace PokemonSprites
 """
     OUT_H.write_text(h_text, encoding="utf-8")
 
-    frame_rows = []
-    for frame in frames:
-        frame_rows.append(
-            "    "
-            f"{{{frame['species_id']}, {kind_map[frame['kind']]}, "
-            f"{frame['width']}, {frame['height']}, {frame['format']}, {frame['palette_size']}, "
-            f"{frame['source']}, 0, "
-            f"{frame['offset']}, {frame['length']}, {frame['palette_offset']}}}, "
-            f"// {frame['ident']} {frame['kind']}"
-        )
-
-    block_rows = []
-    for block in compressed_blocks:
-        block_rows.append(
-            "    "
-            f"{{{block['species_id']}, {block['rle_words']}, {block['palette_words']}, 0, "
-            f"{block['offset']}, {block['length']}}}, "
-            f"// {block['ident']}"
-        )
-
     cpp_text = """#include "assets/PokemonSprites.h"
+#include "core/ResourcePack.h"
 #include <Arduino.h>
+#include <FS.h>
 #include <cstdlib>
 #include <cstring>
 #include "hardware/PixelRenderer.h"
-extern "C" {
-#include "third_party/uzlib/uzlib.h"
-}
 
 namespace PokemonSprites {
 
-const uint16_t SPRITE_FRAME_COUNT = %d;
-
-const SpriteFrame SPRITE_FRAMES[] PROGMEM = {
-%s
-};
-
-const SpriteFrame EGG_FRAME PROGMEM = {0, 0, %d, %d, %d, %d, %d, %d, %d, %d, %d};
-
-const uint16_t SPRITE_RLE[] PROGMEM = {
-%s
-};
-
-const uint16_t SPRITE_PALETTES[] PROGMEM = {
-%s
-};
-
-const uint16_t SPRITE_COMPRESSED_BLOCK_COUNT = %d;
-
-const CompressedSpeciesBlock SPRITE_COMPRESSED_BLOCKS[] PROGMEM = {
-%s
-};
-
-const uint8_t SPRITE_COMPRESSED_DATA[] PROGMEM = {
-%s
-};
-
 namespace {
-static constexpr uint8_t SPRITE_SOURCE_GLOBAL = %d;
-static constexpr uint8_t SPRITE_SOURCE_SPECIES_BLOCK = %d;
-static constexpr uint8_t CACHE_CAP = 2;
+static constexpr uint8_t SPRITE_SOURCE_FILE_BLOCK = 2;
+static constexpr uint8_t TEAM_CACHE_CAP = 2;
+static constexpr uint8_t CACHE_CAP = 4;
+static constexpr uint8_t KNOWN_MISSING_FILE_CAP = 16;
+static constexpr uint8_t FRAME_MISSING_CAP = 4;
+static constexpr uint8_t KNOWN_MISSING_FRAME_CAP = 16;
+static constexpr uint32_t SPRITE_PACK_MAGIC = 0x5350534D;
+static constexpr uint16_t SPRITE_PACK_VERSION = 1;
+static constexpr uint16_t MAX_PACK_FRAMES = 256;
+
+struct __attribute__((packed)) PackedSpriteHeader {
+    uint32_t magic;
+    uint16_t version;
+    uint16_t speciesId;
+    uint16_t frameCount;
+    uint16_t rleWords;
+    uint16_t paletteWords;
+    uint16_t reserved;
+};
+
+struct __attribute__((packed)) PackedSpriteFrame {
+    uint16_t kind;
+    uint8_t width;
+    uint8_t height;
+    uint8_t format;
+    uint8_t paletteSize;
+    uint16_t reserved;
+    uint32_t offset;
+    uint32_t length;
+    uint32_t paletteOffset;
+};
 
 struct CachedSpecies {
     uint16_t speciesId = 0;
     uint16_t rleWords = 0;
     uint16_t paletteWords = 0;
+    uint16_t frameCount = 0;
+    SpriteFrame* frames = nullptr;
     uint16_t* data = nullptr;
     uint16_t* palettes = nullptr;
+};
+
+struct MissingFrameKey {
+    uint16_t speciesId = 0;
+    uint16_t kind = 0;
 };
 
 CachedSpecies gCache[CACHE_CAP];
 SpriteCacheStats gStats = {};
 uint16_t gTeamSignature[CACHE_CAP] = {};
+uint16_t gKnownMissingFiles[KNOWN_MISSING_FILE_CAP] = {};
+uint16_t gTeamMissing[TEAM_CACHE_CAP] = {};
+uint16_t gFrameMissing[FRAME_MISSING_CAP] = {};
+MissingFrameKey gKnownMissingFrames[KNOWN_MISSING_FRAME_CAP] = {};
 uint8_t gTeamCount = 0;
+uint8_t gDynamicSlot = TEAM_CACHE_CAP;
+
+bool containsSpecies(const uint16_t* values, uint8_t count, uint16_t speciesId) {
+    for (uint8_t i = 0; i < count; ++i) {
+        if (values[i] == speciesId) return true;
+    }
+    return false;
+}
+
+bool appendUniqueSpecies(uint16_t* values, uint8_t count, uint16_t speciesId) {
+    if (speciesId == 0 || containsSpecies(values, count, speciesId)) return false;
+    for (uint8_t i = 0; i < count; ++i) {
+        if (values[i] == 0) {
+            values[i] = speciesId;
+            return true;
+        }
+    }
+    return false;
+}
+
+void refreshMissingStats() {
+    uint16_t unique[TEAM_CACHE_CAP + FRAME_MISSING_CAP] = {};
+    uint8_t uniqueCount = 0;
+    auto collect = [&](const uint16_t* values, uint8_t count) {
+        for (uint8_t i = 0; i < count; ++i) {
+            uint16_t speciesId = values[i];
+            if (speciesId == 0 || containsSpecies(unique, uniqueCount, speciesId)) continue;
+            unique[uniqueCount++] = speciesId;
+        }
+    };
+    collect(gTeamMissing, TEAM_CACHE_CAP);
+    collect(gFrameMissing, FRAME_MISSING_CAP);
+    gStats.missingSpecies = uniqueCount;
+    gStats.firstMissingSpecies = uniqueCount > 0 ? unique[0] : 0;
+}
+
+void noteMissingSpecies(uint16_t speciesId) {
+    if (speciesId == 0) return;
+    bool teamSpecies = false;
+    for (uint8_t i = 0; i < gTeamCount; ++i) {
+        if (gTeamSignature[i] == speciesId) {
+            gTeamMissing[i] = speciesId;
+            teamSpecies = true;
+        }
+    }
+    if (!teamSpecies) appendUniqueSpecies(gFrameMissing, FRAME_MISSING_CAP, speciesId);
+    refreshMissingStats();
+}
+
+void releaseEntry(CachedSpecies& entry) {
+    if (entry.data) free(entry.data);
+    if (entry.frames) free(entry.frames);
+    entry = CachedSpecies{};
+}
 
 void freeCache() {
     for (auto& entry : gCache) {
-        if (entry.data) free(entry.data);
-        entry = CachedSpecies{};
+        releaseEntry(entry);
     }
+    uint32_t reloadCount = gStats.reloadCount;
+    gStats = SpriteCacheStats{};
+    gStats.reloadCount = reloadCount;
     gStats.cachedSpecies = 0;
-    gStats.decodedBytes = 0;
-    gStats.compressedBytes = 0;
     gStats.freePsram = ESP.getFreePsram();
     gStats.psram = psramFound();
+    memset(gKnownMissingFiles, 0, sizeof(gKnownMissingFiles));
+    memset(gTeamMissing, 0, sizeof(gTeamMissing));
+    memset(gFrameMissing, 0, sizeof(gFrameMissing));
+    memset(gKnownMissingFrames, 0, sizeof(gKnownMissingFrames));
+    gDynamicSlot = TEAM_CACHE_CAP;
 }
 
-const CompressedSpeciesBlock* compressedBlockFor(uint16_t speciesId) {
-    for (uint16_t i = 0; i < SPRITE_COMPRESSED_BLOCK_COUNT; ++i) {
-        if (pgm_read_word(&SPRITE_COMPRESSED_BLOCKS[i].speciesId) == speciesId) {
-            return &SPRITE_COMPRESSED_BLOCKS[i];
+bool knownMissingFile(uint16_t speciesId) {
+    if (speciesId == 0) return true;
+    for (uint8_t i = 0; i < KNOWN_MISSING_FILE_CAP; ++i) {
+        if (gKnownMissingFiles[i] == speciesId) return true;
+    }
+    return false;
+}
+
+bool rememberMissingFile(uint16_t speciesId) {
+    if (speciesId == 0 || knownMissingFile(speciesId)) return false;
+    for (uint8_t i = 0; i < KNOWN_MISSING_FILE_CAP; ++i) {
+        if (gKnownMissingFiles[i] == 0) {
+            gKnownMissingFiles[i] = speciesId;
+            return true;
         }
     }
-    return nullptr;
+    return false;
+}
+
+bool rememberMissingFrame(uint16_t speciesId, uint16_t kind) {
+    for (uint8_t i = 0; i < KNOWN_MISSING_FRAME_CAP; ++i) {
+        const MissingFrameKey& key = gKnownMissingFrames[i];
+        if (key.speciesId == speciesId && key.kind == kind) return false;
+        if (key.speciesId == 0) {
+            gKnownMissingFrames[i].speciesId = speciesId;
+            gKnownMissingFrames[i].kind = kind;
+            return true;
+        }
+    }
+    return false;
 }
 
 CachedSpecies* cachedSpeciesFor(uint16_t speciesId) {
@@ -581,89 +686,171 @@ CachedSpecies* cachedSpeciesFor(uint16_t speciesId) {
     return nullptr;
 }
 
-bool inflateRawDeflate(const uint8_t* compressed, uint32_t compressedSize, uint8_t* out, uint32_t outSize) {
-    TINF_DATA d;
-    memset(&d, 0, sizeof(d));
-    uzlib_init();
-    uzlib_uncompress_init(&d, nullptr, 0);
-    d.source = compressed;
-    d.source_limit = compressed + compressedSize;
-    d.dest_start = out;
-    d.dest = out;
-    d.dest_limit = out + outSize;
-
-    int result = TINF_OK;
-    while (d.dest < d.dest_limit) {
-        result = uzlib_uncompress(&d);
-        if (result == TINF_DONE) break;
-        if (result != TINF_OK) return false;
-    }
-    return result == TINF_DONE || d.dest == d.dest_limit;
+bool readExact(fs::File& file, void* out, size_t length) {
+    if (length == 0) return true;
+    return file.read(reinterpret_cast<uint8_t*>(out), length) == length;
 }
 
-bool loadSpeciesIntoCache(uint8_t slot, uint16_t speciesId) {
-    if (slot >= CACHE_CAP) return false;
-    const CompressedSpeciesBlock* block = compressedBlockFor(speciesId);
-    if (!block) return false;
+bool validPackedFrame(const PackedSpriteFrame& frame, const PackedSpriteHeader& header) {
+    if (frame.width == 0 || frame.height == 0 || frame.length == 0) return false;
+    if (frame.format != static_cast<uint8_t>(SpriteFormat::RGB565_RLE) &&
+        frame.format != static_cast<uint8_t>(SpriteFormat::INDEXED4_RLE)) {
+        return false;
+    }
+    if (frame.offset > header.rleWords || frame.length > header.rleWords - frame.offset) return false;
+    if (frame.format == static_cast<uint8_t>(SpriteFormat::INDEXED4_RLE)) {
+        if (frame.paletteSize == 0 || frame.paletteSize > 16) return false;
+        if (frame.paletteOffset > header.paletteWords ||
+            frame.paletteSize > header.paletteWords - frame.paletteOffset) {
+            return false;
+        }
+    }
+    return true;
+}
 
-    uint16_t rleWords = pgm_read_word(&block->rleWords);
-    uint16_t paletteWords = pgm_read_word(&block->paletteWords);
-    uint32_t compressedOffset = pgm_read_dword(&block->offset);
-    uint32_t compressedSize = pgm_read_dword(&block->length);
-    uint32_t decodedBytes = ((uint32_t)rleWords + paletteWords) * sizeof(uint16_t);
-    if (decodedBytes == 0 || compressedSize == 0) return false;
+bool loadSpeciesFromResourcePack(uint8_t slot, uint16_t speciesId) {
+    ResourcePack& pack = ResourcePack::ins();
+    if (!pack.begin()) return false;
 
-    uint8_t* compressed = psramFound()
-        ? (uint8_t*)ps_malloc(compressedSize)
-        : (uint8_t*)malloc(compressedSize);
+    fs::File file;
+    if (!pack.openSpriteBlock(speciesId, file)) return false;
+
+    PackedSpriteHeader header = {};
+    if (!readExact(file, &header, sizeof(header))) return false;
+    if (header.magic != SPRITE_PACK_MAGIC ||
+        header.version != SPRITE_PACK_VERSION ||
+        header.speciesId != speciesId ||
+        header.frameCount == 0 ||
+        header.frameCount > MAX_PACK_FRAMES ||
+        header.rleWords == 0) {
+        return false;
+    }
+
+    uint32_t frameBytes = static_cast<uint32_t>(header.frameCount) * sizeof(SpriteFrame);
+    uint32_t decodedBytes = (static_cast<uint32_t>(header.rleWords) + header.paletteWords) * sizeof(uint16_t);
+    SpriteFrame* frames = psramFound()
+        ? static_cast<SpriteFrame*>(ps_malloc(frameBytes))
+        : static_cast<SpriteFrame*>(malloc(frameBytes));
     uint16_t* decoded = psramFound()
-        ? (uint16_t*)ps_malloc(decodedBytes)
-        : (uint16_t*)malloc(decodedBytes);
-    if (!compressed || !decoded) {
-        if (compressed) free(compressed);
+        ? static_cast<uint16_t*>(ps_malloc(decodedBytes))
+        : static_cast<uint16_t*>(malloc(decodedBytes));
+    if (!frames || !decoded) {
+        if (frames) free(frames);
         if (decoded) free(decoded);
         return false;
     }
 
-    for (uint32_t i = 0; i < compressedSize; ++i) {
-        compressed[i] = pgm_read_byte(&SPRITE_COMPRESSED_DATA[compressedOffset + i]);
+    for (uint16_t i = 0; i < header.frameCount; ++i) {
+        PackedSpriteFrame packed = {};
+        if (!readExact(file, &packed, sizeof(packed)) || !validPackedFrame(packed, header)) {
+            free(frames);
+            free(decoded);
+            return false;
+        }
+        frames[i] = SpriteFrame{
+            speciesId,
+            packed.kind,
+            packed.width,
+            packed.height,
+            packed.format,
+            packed.paletteSize,
+            SPRITE_SOURCE_FILE_BLOCK,
+            0,
+            packed.offset,
+            packed.length,
+            packed.paletteOffset,
+        };
     }
 
-    bool ok = inflateRawDeflate(compressed, compressedSize, (uint8_t*)decoded, decodedBytes);
-    free(compressed);
-    if (!ok) {
+    if (!readExact(file, decoded, decodedBytes)) {
+        free(frames);
         free(decoded);
         return false;
     }
 
     CachedSpecies& entry = gCache[slot];
-    if (entry.data) free(entry.data);
+    bool replacing = entry.data != nullptr;
+    releaseEntry(entry);
     entry.speciesId = speciesId;
-    entry.rleWords = rleWords;
-    entry.paletteWords = paletteWords;
+    entry.rleWords = header.rleWords;
+    entry.paletteWords = header.paletteWords;
+    entry.frameCount = header.frameCount;
+    entry.frames = frames;
     entry.data = decoded;
-    entry.palettes = decoded + rleWords;
+    entry.palettes = decoded + header.rleWords;
 
-    gStats.cachedSpecies++;
+    if (!replacing && gStats.cachedSpecies < 0xFF) ++gStats.cachedSpecies;
     gStats.decodedBytes += decodedBytes;
-    gStats.compressedBytes += compressedSize;
+    gStats.compressedBytes += file.size();
+    Serial.printf("[PokemonSprites] source=littlefs species=%u frames=%u bytes=%u\\n",
+                  speciesId, header.frameCount, static_cast<unsigned>(file.size()));
     return true;
+}
+
+bool loadSpeciesIntoCache(uint8_t slot, uint16_t speciesId) {
+    if (slot >= CACHE_CAP || speciesId == 0) return false;
+    if (loadSpeciesFromResourcePack(slot, speciesId)) {
+        if (slot < TEAM_CACHE_CAP) gTeamMissing[slot] = 0;
+        refreshMissingStats();
+        return true;
+    }
+    noteMissingSpecies(speciesId);
+    if (rememberMissingFile(speciesId)) {
+        Serial.printf("[PokemonSprites] missing species=%u\\n", speciesId);
+    }
+    return false;
+}
+
+uint8_t dynamicCacheSlot() {
+    for (uint8_t i = TEAM_CACHE_CAP; i < CACHE_CAP; ++i) {
+        if (gCache[i].speciesId == 0) return i;
+    }
+    if (gDynamicSlot < TEAM_CACHE_CAP || gDynamicSlot >= CACHE_CAP) gDynamicSlot = TEAM_CACHE_CAP;
+    uint8_t slot = gDynamicSlot++;
+    if (gDynamicSlot >= CACHE_CAP) gDynamicSlot = TEAM_CACHE_CAP;
+    return slot;
+}
+
+CachedSpecies* ensureSpeciesLoaded(uint16_t speciesId) {
+    CachedSpecies* cached = cachedSpeciesFor(speciesId);
+    if (cached) return cached;
+    if (knownMissingFile(speciesId)) {
+        noteMissingSpecies(speciesId);
+        return nullptr;
+    }
+
+    uint8_t slot = dynamicCacheSlot();
+    if (!loadSpeciesIntoCache(slot, speciesId)) return nullptr;
+    return cachedSpeciesFor(speciesId);
+}
+
+const SpriteFrame* findFrame(CachedSpecies* cached, SpriteKind kind) {
+    if (!cached || !cached->frames) return nullptr;
+    uint16_t wantedKind = static_cast<uint16_t>(kind);
+    for (uint16_t i = 0; i < cached->frameCount; ++i) {
+        if (cached->frames[i].kind == wantedKind) return &cached->frames[i];
+    }
+    return nullptr;
 }
 }
 
 const SpriteFrame* findSpeciesSprite(uint16_t speciesId, SpriteKind kind) {
-    for (uint16_t i = 0; i < SPRITE_FRAME_COUNT; ++i) {
-        if (pgm_read_word(&SPRITE_FRAMES[i].speciesId) == speciesId &&
-            pgm_read_word(&SPRITE_FRAMES[i].kind) == static_cast<uint16_t>(kind)) {
-            return &SPRITE_FRAMES[i];
-        }
+    CachedSpecies* cached = ensureSpeciesLoaded(speciesId);
+    const SpriteFrame* frame = findFrame(cached, kind);
+    if (frame) return frame;
+    if (!cached || speciesId == 0) return nullptr;
+    noteMissingSpecies(speciesId);
+    uint16_t kindValue = static_cast<uint16_t>(kind);
+    if (rememberMissingFrame(speciesId, kindValue)) {
+        Serial.printf("[PokemonSprites] missing frame species=%u kind=%u\\n",
+                      speciesId, static_cast<unsigned>(kindValue));
     }
     return nullptr;
 }
 
 void syncTeamCache(const uint16_t* speciesIds, uint8_t count) {
     if (!speciesIds) count = 0;
-    if (count > CACHE_CAP) count = CACHE_CAP;
+    if (count > TEAM_CACHE_CAP) count = TEAM_CACHE_CAP;
 
     uint16_t next[CACHE_CAP] = {};
     for (uint8_t i = 0; i < count; ++i) next[i] = speciesIds[i];
@@ -685,7 +872,7 @@ void syncTeamCache(const uint16_t* speciesIds, uint8_t count) {
     for (uint8_t i = 0; i < count; ++i) {
         if (next[i] == 0) continue;
         if (!loadSpeciesIntoCache(i, next[i])) {
-            Serial.printf("[PokemonSprites] cache miss species=%%u\\n", next[i]);
+            Serial.printf("[PokemonSprites] cache miss species=%u\\n", next[i]);
         }
     }
     gStats.reloadCount++;
@@ -693,10 +880,15 @@ void syncTeamCache(const uint16_t* speciesIds, uint8_t count) {
     gStats.freePsram = ESP.getFreePsram();
     gStats.psram = psramFound();
     Serial.printf(
-        "[PokemonSprites] cache reload species=%%u,%%u cached=%%u decoded=%%u compressed=%%u ms=%%u psram=%%u free=%%u\\n",
-        gTeamSignature[0], gTeamSignature[1], gStats.cachedSpecies,
+        "[PokemonSprites] cache reload species=%u,%u cached=%u missing=%u decoded=%u compressed=%u ms=%u psram=%u free=%u\\n",
+        gTeamSignature[0], gTeamSignature[1], gStats.cachedSpecies, gStats.missingSpecies,
         gStats.decodedBytes, gStats.compressedBytes, gStats.lastReloadMs,
         gStats.psram ? 1 : 0, gStats.freePsram);
+}
+
+void beginRenderFrame() {
+    memset(gFrameMissing, 0, sizeof(gFrameMissing));
+    refreshMissingStats();
 }
 
 const SpriteCacheStats& cacheStats() {
@@ -714,24 +906,18 @@ bool drawFrame(const SpriteFrame* frame, int x, int y, bool flipX) {
 
     uint8_t format = pgm_read_byte(&frame->format);
     uint8_t source = pgm_read_byte(&frame->source);
-    const uint16_t* rle = SPRITE_RLE;
-    const uint16_t* palettes = SPRITE_PALETTES;
-    if (source == SPRITE_SOURCE_SPECIES_BLOCK) {
-        uint16_t speciesId = pgm_read_word(&frame->speciesId);
-        CachedSpecies* cached = cachedSpeciesFor(speciesId);
-        if (!cached || offset + length > cached->rleWords) return false;
-        rle = cached->data;
-        palettes = cached->palettes;
-    }
+    if (source != SPRITE_SOURCE_FILE_BLOCK) return false;
+
+    uint16_t speciesId = pgm_read_word(&frame->speciesId);
+    CachedSpecies* cached = cachedSpeciesFor(speciesId);
+    if (!cached || offset + length > cached->rleWords) return false;
+    const uint16_t* rle = cached->data;
+    const uint16_t* palettes = cached->palettes;
 
     if (format == static_cast<uint8_t>(SpriteFormat::INDEXED4_RLE)) {
         uint32_t paletteOffset = pgm_read_dword(&frame->paletteOffset);
         uint8_t paletteSize = pgm_read_byte(&frame->paletteSize);
-        if (source == SPRITE_SOURCE_SPECIES_BLOCK) {
-            uint16_t speciesId = pgm_read_word(&frame->speciesId);
-            CachedSpecies* cached = cachedSpeciesFor(speciesId);
-            if (!cached || paletteOffset + paletteSize > cached->paletteWords) return false;
-        }
+        if (paletteOffset + paletteSize > cached->paletteWords) return false;
         PixelRenderer::drawIndexed4Rle(
             x, y, width, height, rle, offset, length, palettes,
             paletteOffset,
@@ -744,46 +930,52 @@ bool drawFrame(const SpriteFrame* frame, int x, int y, bool flipX) {
     return true;
 }
 
+bool drawFrameScaled(const SpriteFrame* frame, int x, int y, float scale, bool flipX) {
+    if (!frame) return false;
+    if (scale == 1.0f) return drawFrame(frame, x, y, flipX);
+
+    uint8_t width = pgm_read_byte(&frame->width);
+    uint8_t height = pgm_read_byte(&frame->height);
+    uint32_t offset = pgm_read_dword(&frame->offset);
+    uint32_t length = pgm_read_dword(&frame->length);
+    if (width == 0 || height == 0 || length == 0 || scale <= 0.0f) return false;
+
+    uint8_t format = pgm_read_byte(&frame->format);
+    uint8_t source = pgm_read_byte(&frame->source);
+    if (source != SPRITE_SOURCE_FILE_BLOCK) return false;
+
+    uint16_t speciesId = pgm_read_word(&frame->speciesId);
+    CachedSpecies* cached = cachedSpeciesFor(speciesId);
+    if (!cached || offset + length > cached->rleWords) return false;
+    const uint16_t* rle = cached->data;
+    const uint16_t* palettes = cached->palettes;
+
+    if (format == static_cast<uint8_t>(SpriteFormat::INDEXED4_RLE)) {
+        uint32_t paletteOffset = pgm_read_dword(&frame->paletteOffset);
+        uint8_t paletteSize = pgm_read_byte(&frame->paletteSize);
+        if (paletteOffset + paletteSize > cached->paletteWords) return false;
+        PixelRenderer::drawIndexed4RleScaled(
+            x, y, width, height, rle, offset, length, palettes,
+            paletteOffset,
+            paletteSize,
+            scale,
+            flipX);
+        return true;
+    }
+
+    PixelRenderer::drawRgb565RleScaled(x, y, width, height, rle, offset, length, scale, flipX);
+    return true;
+}
+
 }  // namespace PokemonSprites
-""" % (
-        len(frames),
-        "\n".join(frame_rows),
-        egg_image.width,
-        egg_image.height,
-        egg_format,
-        egg_palette_size,
-        SPRITE_SOURCE_GLOBAL,
-        0,
-        egg_offset,
-        egg_length,
-        egg_palette_offset,
-        format_words(base_writer.data),
-        format_words(base_writer.palettes),
-        len(compressed_blocks),
-        "\n".join(block_rows),
-        format_bytes(compressed_data),
-        SPRITE_SOURCE_GLOBAL,
-        SPRITE_SOURCE_SPECIES_BLOCK,
-    )
+"""
     OUT_CPP.write_text(cpp_text, encoding="utf-8")
 
-    raw_pixels = sum(frame["width"] * frame["height"] for frame in frames)
-    raw_pixels += egg_image.width * egg_image.height
-    raw_bytes = raw_pixels * 2
-    encoded_bytes = len(base_writer.data) * 2
-    palette_bytes = len(base_writer.palettes) * 2
-    total_bytes = encoded_bytes + palette_bytes + len(compressed_data)
+    pack_bytes = sum(path.stat().st_size for path in PACK_SPRITE_OUT.glob("*.smonsp"))
     print(
-        f"species={len(species_rows())} frames={len(frames)} "
-        f"base_rle_words={len(base_writer.data)} base_palette_words={len(base_writer.palettes)} "
-        f"compressed_blocks={len(compressed_blocks)} compressed_bytes={len(compressed_data)} "
-        f"indexed4={base_writer.indexed4_count} rgb565={base_writer.rgb565_count}"
+        f"species={len(species_rows())} kinds={len(kind_names)} "
+        f"pack_sprites={pack_sprite_count} pack_bytes={pack_bytes}"
     )
-    print(
-        f"base_rle_duplicates={base_writer.rle_duplicate_count} "
-        f"base_palette_duplicates={base_writer.palette_duplicate_count}"
-    )
-    print(f"raw_rgb565_bytes={raw_bytes} encoded_asset_bytes={total_bytes}")
 
 
 if __name__ == "__main__":

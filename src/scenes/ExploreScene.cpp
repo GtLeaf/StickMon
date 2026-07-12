@@ -1,6 +1,8 @@
 #include "scenes/ExploreScene.h"
 #include <cstdio>
 #include <cstring>
+#include <cmath>
+#include "assets/GameAssets.h"
 #include "assets/PokemonSprites.h"
 #include "core/GameEngine.h"
 #include "core/UiStrings.h"
@@ -47,6 +49,27 @@ static constexpr uint8_t WILD_LEVEL_COUNT = WILD_LEVEL_MAX - WILD_LEVEL_MIN + 1;
 static constexpr uint8_t WILD_LEVEL_WEIGHTS[WILD_LEVEL_COUNT] = {
     2, 3, 4, 5, 6, 5, 4, 3, 2, 1,
 };
+
+static constexpr Game::ItemId CAPTURE_BALLS[] = {
+    Game::ItemId::POKE_BALL,
+    Game::ItemId::GREAT_BALL,
+    Game::ItemId::HEAVY_BALL,
+    Game::ItemId::TIMER_BALL,
+};
+static constexpr uint8_t CAPTURE_BALL_COUNT = sizeof(CAPTURE_BALLS) / sizeof(CAPTURE_BALLS[0]);
+static constexpr uint32_t CAPTURE_ANIMATION_MS = 2200;
+
+const char* captureBallName(uint8_t index) {
+    return index < CAPTURE_BALL_COUNT ? Ui::Bag::NAMES[index] : Ui::BACK;
+}
+
+GameAssets::Kind battleBackgroundKind(ExploreScene::Biome biome) {
+    switch (biome) {
+    case ExploreScene::Biome::RIVERSIDE: return GameAssets::Kind::BATTLE_BG_RIVERSIDE;
+    case ExploreScene::Biome::DEEP_FOREST: return GameAssets::Kind::BATTLE_BG_DEEP_FOREST;
+    default: return GameAssets::Kind::BATTLE_BG_GRASS;
+    }
+}
 
 const ExploreWeights& biomeWeights(ExploreScene::Biome biome) {
     uint8_t idx = static_cast<uint8_t>(biome);
@@ -178,15 +201,21 @@ void ExploreScene::onEnter() {
     biomeCursor = 0;
     resultMessage = nullptr;
     exitAfterFaint = false;
+    captureMenuOpen = false;
+    captureAnimationActive = false;
 }
 
 void ExploreScene::update(uint32_t nowMs, float dtSeconds) {
     (void)dtSeconds;
     serviceBattleLog(nowMs);
+    updateCaptureAnimation(nowMs);
 }
 
 bool ExploreScene::onButton(const ButtonEvent& event) {
-    if (phase == Phase::LEARN_MOVE && event.action == BtnAction::LONG_PRESS) return true;
+    if ((phase == Phase::LEARN_MOVE || phase == Phase::ENCOUNTER) &&
+        event.action == BtnAction::LONG_PRESS) {
+        return true;
+    }
 
     if ((event.btn == 0 || event.btn == 1) && event.action == BtnAction::LONG_PRESS) {
         GameEngine::ins().requestScene(SceneID::MENU);
@@ -224,10 +253,25 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
     }
 
     if (phase == Phase::ENCOUNTER) {
+        if (captureAnimationActive) return true;
         if (battleLogBusy()) return true;
+        if (captureMenuOpen) {
+            if (event.btn == 0) {
+                if (captureCursor >= CAPTURE_BALL_COUNT) {
+                    captureMenuOpen = false;
+                } else {
+                    tryCapture(CAPTURE_BALLS[captureCursor]);
+                }
+                return true;
+            }
+            if (event.btn == 1) {
+                captureCursor = (captureCursor + 1) % (CAPTURE_BALL_COUNT + 1);
+                return true;
+            }
+        }
         if (event.btn == 0) {
             if (battleCursor == 0) attackWild();
-            else if (battleCursor == 1) tryCapture();
+            else if (battleCursor == 1) openCaptureMenu();
             else fleeEncounter();
             if (exitAfterFaint) {
                 GameEngine::ins().requestScene(SceneID::MENU);
@@ -381,6 +425,9 @@ void ExploreScene::rollEncounter() {
     wildHpMax = wildRuntime.hpMax;
     wildHp = wildHpMax;
     battleCursor = 0;
+    battleTurns = 0;
+    captureMenuOpen = false;
+    captureAnimationActive = false;
     fleeAttempts = 0;
     phase = Phase::ENCOUNTER;
     clearBattleLogs();
@@ -443,7 +490,7 @@ void ExploreScene::serviceBattleLog(uint32_t nowMs) {
 }
 
 bool ExploreScene::battleLogBusy() const {
-    return battleLogActive || battleLogCount > 0 || battleResultPending;
+    return captureAnimationActive || battleLogActive || battleLogCount > 0 || battleResultPending;
 }
 
 bool ExploreScene::enterPendingMoveLearn(Phase returnPhase) {
@@ -462,6 +509,7 @@ void ExploreScene::attackWild() {
         return;
     }
     const Species& activeSpecies = GameEngine::ins().activeSpecies();
+    if (battleTurns < 255) battleTurns++;
     wildRuntime.hpCur = wildHp;
     uint8_t specialSlot = BattleSystem::rollSpecialMoveSlot(activeMon);
     auto result = BattleSystem::calcBasicDamage(activeMon, activeSpecies, wildRuntime, *wild, specialSlot);
@@ -580,34 +628,72 @@ void ExploreScene::finishPlayerFaint() {
     exitAfterFaint = true;
 }
 
-void ExploreScene::tryCapture() {
+void ExploreScene::openCaptureMenu() {
+    captureCursor = 0;
+    while (captureCursor < CAPTURE_BALL_COUNT &&
+           GameEngine::ins().itemCount(CAPTURE_BALLS[captureCursor]) == 0) {
+        captureCursor++;
+    }
+    if (captureCursor >= CAPTURE_BALL_COUNT) {
+        enqueueBattleLog(Ui::Explore::NO_BALLS);
+        return;
+    }
+    captureMenuOpen = true;
+}
+
+void ExploreScene::tryCapture(Game::ItemId ball) {
     if (!wild) return;
-    if (!GameEngine::ins().consumeBall()) {
+    if (!GameEngine::ins().removeItem(ball)) {
+        captureMenuOpen = false;
         enqueueBattleLog(Ui::Explore::NO_BALLS);
         return;
     }
 
-    uint8_t chance = 35;
+    uint16_t chance = 35;
     if (wild->evolveTo == 0) chance = 25;
     if (wild->stats.hp < 45) chance += 20;
     uint8_t hpMissing = wildHpMax > 0 ? (uint8_t)((wildHpMax - wildHp) * 50 / wildHpMax) : 0;
-    chance = min<uint8_t>(95, chance + hpMissing);
-    lastCaptureSuccess = random(0, 100) < chance;
-    if (lastCaptureSuccess) {
+    chance += hpMissing;
+
+    uint16_t multiplier = 100;
+    if (ball == Game::ItemId::GREAT_BALL) {
+        multiplier = 150;
+    } else if (ball == Game::ItemId::HEAVY_BALL) {
+        uint16_t total = baseStatTotal(*wild);
+        multiplier = total >= 450 ? 180 : (total >= 350 ? 140 : 100);
+    } else if (ball == Game::ItemId::TIMER_BALL) {
+        multiplier = min<uint16_t>(200, 100 + static_cast<uint16_t>(battleTurns) * 15);
+    }
+    chance = min<uint16_t>(95, chance * multiplier / 100);
+
+    captureBall = ball;
+    captureOutcome = random(0, 100) < chance;
+    captureAnimationStarted = Hal::ins().millis();
+    captureAnimationActive = true;
+    captureMenuOpen = false;
+    lastCaptureSuccess = false;
+}
+
+void ExploreScene::updateCaptureAnimation(uint32_t nowMs) {
+    if (!captureAnimationActive) return;
+    if (nowMs - captureAnimationStarted < CAPTURE_ANIMATION_MS) return;
+    finishCaptureAnimation();
+}
+
+void ExploreScene::finishCaptureAnimation() {
+    captureAnimationActive = false;
+    if (captureOutcome) {
         wildRuntime.hpCur = wildHp;
-        if (GameEngine::ins().recordCapture(wildRuntime, static_cast<uint8_t>(activeBiome))) {
-            resultMessage = wild ? wild->name : nullptr;
-        } else {
-            lastCaptureSuccess = false;
-            resultMessage = Ui::Shop::BAG_FULL;
-        }
-    } else {
-        enqueueBattleLog(Ui::Explore::BROKE_FREE);
-        wildCounterattack();
-        if (phase == Phase::RESULT) return;
+        lastCaptureSuccess = GameEngine::ins().recordCapture(
+            wildRuntime, static_cast<uint8_t>(activeBiome));
+        resultMessage = lastCaptureSuccess && wild ? wild->name : Ui::Shop::BAG_FULL;
+        phase = Phase::RESULT;
         return;
     }
-    phase = Phase::RESULT;
+
+    lastCaptureSuccess = false;
+    enqueueBattleLog(Ui::Explore::BROKE_FREE);
+    wildCounterattack();
 }
 
 void ExploreScene::fleeEncounter() {
@@ -619,8 +705,8 @@ void ExploreScene::fleeEncounter() {
     bool escaped = wildSpeed == 0 || activeSpeed >= wildSpeed;
     if (!escaped) {
         fleeAttempts++;
-        uint16_t odds = (((uint32_t)activeSpeed * 128) / wildSpeed + 30 * fleeAttempts) & 0xFF;
-        escaped = random(0, 256) < odds;
+        uint32_t odds = ((uint32_t)activeSpeed * 128) / wildSpeed + 30UL * fleeAttempts;
+        escaped = odds >= 256 || random(0, 256) < odds;
     }
 
     if (!escaped) {
@@ -641,6 +727,8 @@ void ExploreScene::resetWalk() {
     wild = nullptr;
     wildHp = wildHpMax = 0;
     battleResultPending = false;
+    captureMenuOpen = false;
+    captureAnimationActive = false;
     resultMessage = nullptr;
 }
 
@@ -704,15 +792,59 @@ void ExploreScene::renderWalking() {
 
 void ExploreScene::renderEncounter() {
     auto& c = PixelRenderer::canvas();
-    c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, PixelRenderer::rgb(197, 220, 192));
-    c.fillRect(0, 78, Hal::DISPLAY_W, 24, PixelRenderer::rgb(228, 225, 190));
-    c.fillEllipse(174, 77, 34, 8, PixelRenderer::rgb(155, 181, 142));
-    c.fillEllipse(58, 101, 38, 9, PixelRenderer::rgb(171, 159, 128));
+    if (!GameAssets::drawBattleBackground(battleBackgroundKind(activeBiome))) {
+        c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, PixelRenderer::rgb(197, 220, 192));
+        c.fillRect(0, 78, Hal::DISPLAY_W, 24, PixelRenderer::rgb(228, 225, 190));
+        c.fillEllipse(174, 77, 34, 8, PixelRenderer::rgb(155, 181, 142));
+        c.fillEllipse(58, 101, 38, 9, PixelRenderer::rgb(171, 159, 128));
+    }
 
-    if (wild) drawMonsterBlock(*wild, 174, 45);
+    uint32_t captureElapsed = captureAnimationActive ? Hal::ins().millis() - captureAnimationStarted : 0;
+    bool hideWild = captureAnimationActive && captureElapsed >= 560 &&
+                    (captureOutcome || captureElapsed < 1780);
+    if (wild && !hideWild) drawMonsterBlock(*wild, 174, 45);
     drawMonsterBlock(GameEngine::ins().activeSpecies(), 58, 70, true);
+    if (captureAnimationActive) renderCaptureAnimation();
     renderBattleHud();
     renderCommandBox();
+}
+
+void ExploreScene::renderCaptureAnimation() {
+    if (!captureAnimationActive) return;
+    uint32_t elapsed = Hal::ins().millis() - captureAnimationStarted;
+    int ballX = 174;
+    int ballY = 69;
+    GameAssets::Kind kind = GameAssets::ballFrameKind(captureBall, 0);
+
+    if (elapsed < 520) {
+        float progress = elapsed / 520.0f;
+        ballX = static_cast<int>(58 + (174 - 58) * progress);
+        ballY = static_cast<int>(75 + (42 - 75) * progress - 34.0f * 4.0f * progress * (1.0f - progress));
+        kind = GameAssets::ballFrameKind(captureBall, (elapsed / 55) % 8);
+    } else if (elapsed < 760) {
+        ballY = 45;
+        kind = GameAssets::ballOpenKind(captureBall);
+        GameAssets::drawCentered(GameAssets::Kind::BALL_BURST_STAR, 174, 44, 1.0f);
+    } else if (elapsed < 1780) {
+        uint32_t shakeTime = elapsed - 760;
+        int shake = static_cast<int>(sinf(shakeTime * 0.035f) * 5.0f);
+        ballX += shake;
+        kind = GameAssets::ballFrameKind(captureBall, (shakeTime / 90) % 8);
+    } else if (!captureOutcome) {
+        kind = GameAssets::ballOpenKind(captureBall);
+        GameAssets::drawCentered(GameAssets::Kind::BALL_BURST_STAR, ballX, ballY - 12, 1.0f);
+    } else {
+        kind = GameAssets::ballFrameKind(captureBall, 0);
+        float pulse = 1.0f + 0.125f * (1.0f + sinf((elapsed - 1780) * 0.035f));
+        GameAssets::drawCentered(GameAssets::Kind::BALL_BURST_STAR, ballX - 18, ballY - 18, pulse);
+        GameAssets::drawCentered(GameAssets::Kind::BALL_BURST_STAR, ballX + 18, ballY - 12, pulse);
+    }
+
+    if (!GameAssets::drawCentered(kind, ballX, ballY)) {
+        auto& c = PixelRenderer::canvas();
+        c.fillCircle(ballX, ballY, 8, PixelRenderer::rgb(239, 85, 85));
+        c.drawFastHLine(ballX - 8, ballY, 16, 0xFFFF);
+    }
 }
 
 void ExploreScene::renderLearnMove() {
@@ -825,6 +957,25 @@ void ExploreScene::renderCommandBox() {
 
     serviceBattleLog(Hal::ins().millis());
     if (phase != Phase::ENCOUNTER) return;
+    if (captureAnimationActive) {
+        PixelRenderer::text(82, 110, Ui::Explore::CAPTURING,
+                            PixelRenderer::rgb(25, 31, 40), 1);
+        return;
+    }
+    if (captureMenuOpen) {
+        if (captureCursor >= CAPTURE_BALL_COUNT) {
+            PixelRenderer::text(100, 104, Ui::BACK, PixelRenderer::rgb(25, 31, 40), 1);
+        } else {
+            char line[32];
+            snprintf(line, sizeof(line), Ui::Explore::BALL_SELECT_FMT,
+                     captureBallName(captureCursor),
+                     GameEngine::ins().itemCount(CAPTURE_BALLS[captureCursor]));
+            PixelRenderer::text(56, 104, line, PixelRenderer::rgb(25, 31, 40), 1);
+        }
+        PixelRenderer::text(60, 119, Ui::Explore::BALL_SELECT_HINT,
+                            PixelRenderer::rgb(74, 91, 75), 1);
+        return;
+    }
     if (battleLogActive || battleLogVisibleCount > 0) {
         uint8_t start = battleLogVisibleCount > BATTLE_LOG_VISIBLE_CAP
             ? battleLogVisibleCount - BATTLE_LOG_VISIBLE_CAP

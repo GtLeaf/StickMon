@@ -16,7 +16,7 @@ ResourceFS& ResourceFS::ins() {
 bool ResourceFS::begin() {
     if (mounted_) return true;
 
-    if (!LittleFS.begin(true, BASE_PATH, MAX_OPEN_FILES, PARTITION_LABEL)) {
+    if (!LittleFS.begin(false, BASE_PATH, MAX_OPEN_FILES, PARTITION_LABEL)) {
         Serial.println("[ResourceFS] LittleFS mount failed");
         return false;
     }

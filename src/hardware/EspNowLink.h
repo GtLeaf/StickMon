@@ -2,6 +2,8 @@
 
 #include <cstdint>
 #include <cstring>
+#include <freertos/FreeRTOS.h>
+#include <freertos/portmacro.h>
 
 enum class LinkMessageType : uint8_t {
     HELLO = 0x01,
@@ -24,7 +26,7 @@ enum class LinkMessageType : uint8_t {
 
 struct LinkFrameHeader {
     uint16_t magic = 0x5AA5;
-    uint8_t version = 0x02;
+    uint8_t version = 0x03;
     LinkMessageType type = LinkMessageType::PING;
     uint8_t flags = 0;
     uint16_t seq = 0;
@@ -63,8 +65,8 @@ public:
     bool begin();
     void end();
     bool beginStub();
-    bool isEnabled() const { return enabled; }
-    Mode currentMode() const { return mode; }
+    bool isEnabled() const;
+    Mode currentMode() const;
     uint16_t nextSeq();
 
     void startHost(RoomPurpose purpose);
@@ -72,14 +74,14 @@ public:
     void stopRoom();
     void update();
 
-    uint8_t roomCount() const { return roomCountValue; }
-    const RoomEntry* roomAt(uint8_t index) const;
+    uint8_t roomCount() const;
+    bool copyRoomAt(uint8_t index, RoomEntry& out) const;
     bool sendJoinRequest(uint8_t index);
-    bool takeJoinRequest(uint8_t outMac[6], RoomPurpose& outPurpose);
-    bool sendJoinAck(const uint8_t mac[6], bool accepted);
+    bool takeJoinRequest(uint8_t outMac[6], RoomPurpose& outPurpose, uint16_t& outRequestSeq);
+    bool sendJoinAck(const uint8_t mac[6], bool accepted, uint16_t requestSeq);
     bool takeJoinAck(bool& accepted);
-    bool connected() const { return mode == Mode::CONNECTED; }
-    const uint8_t* peerMac() const { return peer; }
+    bool connected() const;
+    bool copyPeerMac(uint8_t outMac[6]) const;
 
 private:
     EspNowLink() = default;
@@ -90,13 +92,15 @@ private:
         LinkMessageType type;
         uint8_t purpose;
         uint8_t roomId;
+        uint16_t requestSeq;
         uint8_t accepted;
     };
 
     static void onReceive(const uint8_t* mac, const uint8_t* data, int len);
     void handleReceive(const uint8_t* mac, const uint8_t* data, int len);
-    bool sendPacket(const uint8_t mac[6], LinkMessageType type, RoomPurpose purpose, uint8_t accepted = 0);
-    void rememberRoom(const uint8_t mac[6], uint8_t roomId, RoomPurpose purpose);
+    bool sendPacket(const uint8_t mac[6], LinkMessageType type, RoomPurpose purpose,
+                    uint8_t packetRoomId, uint16_t requestSeq, uint8_t accepted = 0);
+    void rememberRoomLocked(const uint8_t mac[6], uint8_t roomId, RoomPurpose purpose, uint32_t nowMs);
 
     bool enabled = false;
     Mode mode = Mode::OFF;
@@ -110,6 +114,12 @@ private:
     bool pendingJoin = false;
     uint8_t pendingJoinMac[6] = {};
     RoomPurpose pendingJoinPurpose = RoomPurpose::BATTLE;
+    uint16_t pendingJoinSeq = 0;
     bool pendingAck = false;
     bool pendingAckAccepted = false;
+    bool awaitingAck = false;
+    uint8_t expectedAckMac[6] = {};
+    uint8_t expectedAckRoomId = 0;
+    uint16_t expectedAckSeq = 0;
+    mutable portMUX_TYPE stateMux = portMUX_INITIALIZER_UNLOCKED;
 };

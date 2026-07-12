@@ -1,0 +1,16 @@
+{
+  "font": "fonts/zh16.smonfont",
+  "fontCount": 1,
+  "fonts": "fonts",
+  "format": "smon-resource-pack-v1",
+  "gameAssetCount": 50,
+  "gameAssets": "game/game.smonfx",
+  "id": "dev",
+  "room": "rooms/standard.smonroom",
+  "roomCount": 1,
+  "rooms": "rooms",
+  "schema": 1,
+  "spriteCount": 41,
+  "sprites": "sprites",
+  "version": "0.0.0-dev"
+}

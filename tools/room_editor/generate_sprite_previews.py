@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import json
 import base64
+import json
 import re
-import zlib
+import struct
 from pathlib import Path
 
 from PIL import Image
@@ -13,27 +13,21 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[2]
 TOOL_DIR = Path(__file__).resolve().parent
 ASSET_H = ROOT / "src" / "assets" / "PokemonSprites.h"
-ASSET_CPP = ROOT / "src" / "assets" / "PokemonSprites.cpp"
+SPECIES_CPP = ROOT / "src" / "game" / "Species.cpp"
+PACK_DIR = ROOT / "data" / "packs" / "dev" / "sprites"
 GENERATED = TOOL_DIR / "generated"
 OUT_DIR = GENERATED / "pokemon_sprites"
 MANIFEST = GENERATED / "pokemon_preview_assets.js"
+
+PACK_MAGIC = 0x5350534D
+PACK_VERSION = 1
+PACK_HEADER = struct.Struct("<IHHHHHH")
+PACK_FRAME = struct.Struct("<HBBBBHIII")
 
 
 def png_data_url(path: Path) -> str:
     encoded = base64.b64encode(path.read_bytes()).decode("ascii")
     return f"data:image/png;base64,{encoded}"
-
-
-def numbers(body: str) -> list[int]:
-    return [int(value, 0) for value in re.findall(r"0x[0-9A-Fa-f]+|\b\d+\b", body)]
-
-
-def extract_array(text: str, name: str) -> str:
-    pattern = re.compile(rf"{re.escape(name)}\s*\[\]\s+PROGMEM\s*=\s*\{{(.*?)\n\}};", re.S)
-    match = pattern.search(text)
-    if not match:
-        raise RuntimeError(f"array not found: {name}")
-    return match.group(1)
 
 
 def rgb565_to_rgba(color: int) -> tuple[int, int, int, int]:
@@ -43,7 +37,9 @@ def rgb565_to_rgba(color: int) -> tuple[int, int, int, int]:
     return r, g, b, 255
 
 
-def decode_rgb565_rle(words: list[int], offset: int, length: int, width: int, height: int) -> list[tuple[int, int, int, int]]:
+def decode_rgb565_rle(
+    words: list[int], offset: int, length: int, width: int, height: int
+) -> list[tuple[int, int, int, int]]:
     pixels = [(0, 0, 0, 0)] * (width * height)
     idx = offset
     end = offset + length
@@ -87,15 +83,15 @@ def decode_indexed4_rle(
             pixel += run
             continue
         packed = 0
-        for i in range(run):
-            if i & 0x03 == 0:
+        for index in range(run):
+            if index & 0x03 == 0:
                 if idx >= end:
                     break
                 packed = words[idx]
                 idx += 1
             if pixel >= len(pixels):
                 break
-            palette_index = (packed >> ((i & 0x03) * 4)) & 0x0F
+            palette_index = (packed >> ((index & 0x03) * 4)) & 0x0F
             if palette_index < len(palette):
                 pixels[pixel] = rgb565_to_rgba(palette[palette_index])
             pixel += 1
@@ -103,56 +99,63 @@ def decode_indexed4_rle(
 
 
 def parse_kind_names(header: str) -> list[str]:
-    body = re.search(r"enum class SpriteKind\s*:\s*uint16_t\s*\{(.*?)\n\};", header, re.S).group(1)
+    match = re.search(r"enum class SpriteKind\s*:\s*uint16_t\s*\{(.*?)\n\};", header, re.S)
+    if not match:
+        raise RuntimeError("SpriteKind enum not found")
     names = []
-    for line in body.splitlines():
-        line = line.split("//", 1)[0].strip().rstrip(",")
-        if line:
-            names.append(line)
+    for line in match.group(1).splitlines():
+        name = line.split("//", 1)[0].strip().rstrip(",")
+        if name:
+            names.append(name)
     return names
 
 
-def parse_frames(source: str, kind_names: list[str]) -> list[dict]:
-    body = extract_array(source, "SPRITE_FRAMES")
-    pattern = re.compile(
-        r"\{(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+)\},\s*//\s*(.*)"
-    )
+def parse_species_idents(source: str) -> dict[int, str]:
+    return {
+        int(match.group(1)): match.group(2)
+        for match in re.finditer(r"\{(\d+),\s*Ui::SpeciesName::(\w+),", source)
+    }
+
+
+def words_from_bytes(payload: bytes) -> list[int]:
+    if len(payload) % 2:
+        raise RuntimeError("sprite payload has an odd byte count")
+    return list(struct.unpack(f"<{len(payload) // 2}H", payload))
+
+
+def load_sprite_pack(path: Path, kind_names: list[str]) -> tuple[int, list[dict], list[int], list[int]]:
+    payload = path.read_bytes()
+    if len(payload) < PACK_HEADER.size:
+        raise RuntimeError(f"truncated sprite pack: {path}")
+    magic, version, species_id, frame_count, rle_words, palette_words, _ = PACK_HEADER.unpack_from(payload)
+    if magic != PACK_MAGIC or version != PACK_VERSION:
+        raise RuntimeError(f"invalid sprite pack header: {path}")
+
+    frame_table_end = PACK_HEADER.size + frame_count * PACK_FRAME.size
+    data_end = frame_table_end + (rle_words + palette_words) * 2
+    if data_end != len(payload):
+        raise RuntimeError(f"sprite pack size mismatch: {path}")
+
     frames = []
-    for match in pattern.finditer(body):
-        species_id, kind, width, height, fmt, palette_size, source_id, _reserved, offset, length, palette_offset = [
-            int(match.group(i)) for i in range(1, 12)
-        ]
-        kind_name = kind_names[kind] if kind < len(kind_names) else f"KIND_{kind}"
-        comment = match.group(12).strip()
+    offset = PACK_HEADER.size
+    for _ in range(frame_count):
+        kind, width, height, fmt, palette_size, _reserved, data_offset, length, palette_offset = PACK_FRAME.unpack_from(payload, offset)
+        offset += PACK_FRAME.size
         frames.append({
             "speciesId": species_id,
             "kind": kind,
-            "kindName": kind_name,
-            "speciesName": comment.split()[0].title() if comment else f"Species {species_id}",
+            "kindName": kind_names[kind] if kind < len(kind_names) else f"KIND_{kind}",
             "width": width,
             "height": height,
             "format": fmt,
             "paletteSize": palette_size,
-            "source": source_id,
-            "offset": offset,
+            "offset": data_offset,
             "length": length,
             "paletteOffset": palette_offset,
         })
-    return frames
 
-
-def parse_blocks(source: str) -> dict[int, dict]:
-    body = extract_array(source, "SPRITE_COMPRESSED_BLOCKS")
-    pattern = re.compile(r"\{(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+)\}")
-    blocks = {}
-    for species_id, rle_words, palette_words, _reserved, offset, length in pattern.findall(body):
-        blocks[int(species_id)] = {
-            "rleWords": int(rle_words),
-            "paletteWords": int(palette_words),
-            "offset": int(offset),
-            "length": int(length),
-        }
-    return blocks
+    words = words_from_bytes(payload[frame_table_end:])
+    return species_id, frames, words[:rle_words], words[rle_words:rle_words + palette_words]
 
 
 def decode_frame(frame: dict, rle: list[int], palettes: list[int]) -> Image.Image:
@@ -168,15 +171,20 @@ def decode_frame(frame: dict, rle: list[int], palettes: list[int]) -> Image.Imag
             frame["height"],
         )
     else:
-        pixels = decode_rgb565_rle(rle, frame["offset"], frame["length"], frame["width"], frame["height"])
+        pixels = decode_rgb565_rle(
+            rle,
+            frame["offset"],
+            frame["length"],
+            frame["width"],
+            frame["height"],
+        )
     image = Image.new("RGBA", (frame["width"], frame["height"]))
     image.putdata(pixels)
     return image
 
 
 def choose_preview_frame(frames: list[dict]) -> dict:
-    preferred_suffixes = ("_IDLE_FRONT_0", "_WALKING_FRONT_0")
-    for suffix in preferred_suffixes:
+    for suffix in ("_IDLE_FRONT_0", "_WALKING_FRONT_0"):
         match = next((frame for frame in frames if frame["kindName"].endswith(suffix)), None)
         if match:
             return match
@@ -185,9 +193,7 @@ def choose_preview_frame(frames: list[dict]) -> dict:
 
 def frame_action(kind_name: str) -> str | None:
     match = re.search(r"_(IDLE|WALKING|SLEEPING)(?:_|$)", kind_name)
-    if match:
-        return match.group(1).lower()
-    return None
+    return match.group(1).lower() if match else None
 
 
 def slugify(value: str) -> str:
@@ -195,84 +201,55 @@ def slugify(value: str) -> str:
 
 
 def main() -> None:
-    header = ASSET_H.read_text(encoding="utf-8")
-    source = ASSET_CPP.read_text(encoding="utf-8")
-    kind_names = parse_kind_names(header)
-    frames = parse_frames(source, kind_names)
-    global_rle = numbers(extract_array(source, "SPRITE_RLE"))
-    global_palettes = numbers(extract_array(source, "SPRITE_PALETTES"))
-    compressed_data = bytes(numbers(extract_array(source, "SPRITE_COMPRESSED_DATA")))
-    blocks = parse_blocks(source)
-
-    decoded_blocks: dict[int, tuple[list[int], list[int]]] = {}
-    for species_id, block in blocks.items():
-        compressed = compressed_data[block["offset"]:block["offset"] + block["length"]]
-        decoded = zlib.decompress(compressed, -15)
-        words = [decoded[i] | (decoded[i + 1] << 8) for i in range(0, len(decoded), 2)]
-        rle_words = words[:block["rleWords"]]
-        palette_words = words[block["rleWords"]:block["rleWords"] + block["paletteWords"]]
-        decoded_blocks[species_id] = (rle_words, palette_words)
+    kind_names = parse_kind_names(ASSET_H.read_text(encoding="utf-8"))
+    species_idents = parse_species_idents(SPECIES_CPP.read_text(encoding="utf-8"))
+    if not PACK_DIR.exists():
+        raise RuntimeError(f"sprite pack directory not found: {PACK_DIR}")
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    by_species: dict[int, list[dict]] = {}
-    for frame in frames:
-        by_species.setdefault(frame["speciesId"], []).append(frame)
+    for old_preview in OUT_DIR.glob("*.png"):
+        old_preview.unlink()
 
     manifest = []
-    for species_id in sorted(by_species):
-        species_frames = by_species[species_id]
-        preview_frame = choose_preview_frame(species_frames)
-        slug = slugify(preview_frame["speciesName"])
-
-        if preview_frame["source"] == 1:
-            rle, palettes = decoded_blocks[species_id]
-        else:
-            rle, palettes = global_rle, global_palettes
-
+    for pack_path in sorted(PACK_DIR.glob("*.smonsp")):
+        species_id, frames, rle, palettes = load_sprite_pack(pack_path, kind_names)
+        ident = species_idents.get(species_id, f"SPECIES_{species_id}")
+        species_name = ident.title()
+        slug = slugify(ident)
+        preview_frame = choose_preview_frame(frames)
         actions: dict[str, list[dict]] = {}
         frame_data_urls: dict[str, str] = {}
-        for frame in species_frames:
+
+        for frame in frames:
             action = frame_action(frame["kindName"])
-            if action is None:
+            if action is None and frame is not preview_frame:
                 continue
             file_name = f"{species_id:03d}_{slug}_{frame['kindName']}.png"
             file_path = OUT_DIR / file_name
-            try:
-                if frame["source"] == 1:
-                    frame_rle, frame_palettes = decoded_blocks[species_id]
-                else:
-                    frame_rle, frame_palettes = global_rle, global_palettes
-                image = decode_frame(frame, frame_rle, frame_palettes)
-                image.save(file_path)
-                data_url = png_data_url(file_path)
-                frame_data_urls[frame["kindName"]] = data_url
-            except Exception as error:
-                print(f"warn: failed to decode {frame['kindName']} for species {species_id}: {error}")
-                continue
-            actions.setdefault(action, []).append({
-                "file": file_name,
-                "path": f"./generated/pokemon_sprites/{file_name}",
-                "dataUrl": data_url,
-                "width": frame["width"],
-                "height": frame["height"],
-                "kindName": frame["kindName"],
-            })
+            image = decode_frame(frame, rle, palettes)
+            image.save(file_path)
+            data_url = png_data_url(file_path)
+            frame_data_urls[frame["kindName"]] = data_url
+            if action is not None:
+                actions.setdefault(action, []).append({
+                    "file": file_name,
+                    "path": f"./generated/pokemon_sprites/{file_name}",
+                    "dataUrl": data_url,
+                    "width": frame["width"],
+                    "height": frame["height"],
+                    "kindName": frame["kindName"],
+                })
 
         preview_file_name = f"{species_id:03d}_{slug}_{preview_frame['kindName']}.png"
-        preview_data_url = frame_data_urls.get(preview_frame["kindName"], "")
-        if not preview_data_url:
-            preview_path = OUT_DIR / preview_file_name
-            if preview_path.exists():
-                preview_data_url = png_data_url(preview_path)
         manifest.append({
             "speciesId": species_id,
-            "name": f"{species_id:03d} {preview_frame['speciesName']}",
+            "name": f"{species_id:03d} {species_name}",
             "slug": slug,
             "frame": preview_frame["kindName"],
             "width": preview_frame["width"],
             "height": preview_frame["height"],
             "path": f"./generated/pokemon_sprites/{preview_file_name}",
-            "dataUrl": preview_data_url,
+            "dataUrl": frame_data_urls.get(preview_frame["kindName"], ""),
             "actions": actions,
         })
 
@@ -283,7 +260,7 @@ def main() -> None:
         + ";\n",
         encoding="utf-8",
     )
-    print(f"wrote {len(manifest)} species previews to {OUT_DIR}")
+    print(f"wrote {len(manifest)} LittleFS species previews to {OUT_DIR}")
     print(f"wrote manifest {MANIFEST}")
 
 

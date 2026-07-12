@@ -7,6 +7,29 @@
 #include "game/GameState.h"
 #include "game/Species.h"
 
+enum class FoodPlacementResult : uint8_t {
+    ADDED,
+    NO_STOCK,
+    BOWL_FULL,
+    DIFFERENT_FOOD,
+};
+
+struct MainSceneViewState {
+    bool valid = false;
+    uint16_t speciesId = 0;
+    float monsterX = 98.0f;
+    float monsterY = 91.0f;
+    float targetX = 98.0f;
+    float targetY = 91.0f;
+    uint8_t aiMode = 0;
+    uint8_t pmdAction = 0;
+    uint8_t pmdDirection = 0;
+    uint8_t pmdFrame = 0;
+    bool facingRight = true;
+    uint32_t nextDecisionRemainingMs = 0;
+    uint32_t postFeedAwakeRemainingMs = 0;
+};
+
 class GameEngine {
 public:
     static GameEngine& ins();
@@ -28,8 +51,13 @@ public:
     uint8_t foodCount(uint8_t foodIndex) const;
     uint8_t selectedFoodIndex() const;
     uint8_t selectedFoodCount() const;
+    uint8_t bowlFoodIndex() const;
+    uint8_t bowlFoodCount() const;
+    bool bowlHasFood() const { return state.room.bowlCount > 0; }
     uint8_t ballCount() const { return state.bag.pokeBall; }
     uint8_t greatBallCount() const { return state.bag.greatBall; }
+    uint8_t heavyBallCount() const { return state.bag.heavyBall; }
+    uint8_t timerBallCount() const { return state.bag.timerBall; }
     uint8_t candyCount() const { return state.bag.candy; }
     uint8_t potionCount() const { return state.bag.potion; }
     uint8_t superPotionCount() const { return state.bag.superPotion; }
@@ -54,18 +82,20 @@ public:
     bool addFood(uint8_t amount = 1);
     bool addFoodStock(uint8_t foodIndex, uint8_t amount = 1);
     bool selectFood(uint8_t foodIndex);
-    bool consumeFood();
-    void addBalls(uint8_t amount);
+    FoodPlacementResult placeSelectedFoodInBowl();
+    bool consumeBowlFood();
+    bool addBalls(uint8_t amount);
     bool consumeBall();
     bool addGreatBalls(uint8_t amount);
     bool consumeGreatBall();
-    void addCandy(uint8_t amount);
+    bool addCandy(uint8_t amount);
     bool addPotion(uint8_t amount);
     bool addSuperPotion(uint8_t amount);
     bool usePotion();
     bool useSuperPotion();
     bool addAntidote(uint8_t amount);
     uint8_t itemCount(Game::ItemId item) const;
+    bool addItem(Game::ItemId item, uint8_t amount = 1, bool immediate = true);
     bool removeItem(Game::ItemId item, uint8_t amount = 1, bool immediate = true);
     bool spendCoins(uint32_t amount);
     void addCoins(uint32_t amount);
@@ -96,6 +126,10 @@ public:
     void wakeFromIdle();
     void markDirty(bool immediate = false);
     bool saveNow();
+    bool resetGame();
+    const MainSceneViewState& mainSceneViewState() const { return mainViewState; }
+    void saveMainSceneViewState(const MainSceneViewState& value) { mainViewState = value; }
+    void clearMainSceneViewState() { mainViewState = MainSceneViewState{}; }
     bool loadHatchProgress(Game::HatchProgress& progress);
     bool saveHatchProgress(const Game::HatchProgress& progress);
     void clearHatchProgress();
@@ -107,6 +141,8 @@ private:
     void processInput(uint32_t nowMs);
     void update(uint32_t nowMs);
     void render(uint32_t nowMs);
+    bool resourceAlertVisible() const;
+    void renderResourceAlert();
     void resetIdle(uint32_t nowMs);
     void updateIdle(uint32_t nowMs);
     uint32_t idleTimeoutMs() const;
@@ -153,6 +189,7 @@ private:
     bool debugShowWalkBoundary = false;
     bool debugTiltControl = false;
     uint8_t debugLightSource = 0;
+    MainSceneViewState mainViewState;
 
     Game::GameState state;
     SaveManager saveManager;

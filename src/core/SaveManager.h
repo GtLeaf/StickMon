@@ -9,6 +9,7 @@ public:
     bool load(Game::GameState& state);
     bool save(const Game::GameState& state);
     void reset(Game::GameState& state);
+    bool clearAll();
     bool loadClock(uint32_t& gameMinutesTotal);
     bool saveClock(uint32_t gameMinutesTotal);
     bool loadHatchProgress(Game::HatchProgress& progress);

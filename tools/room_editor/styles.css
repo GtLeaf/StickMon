@@ -425,6 +425,10 @@ canvas.measure-tool.dragging {
   overflow: hidden;
 }
 
+.left-subpanel:not([open]) > .panel-body {
+  display: none;
+}
+
 .toolbox-content {
   display: grid;
   gap: 10px;
@@ -730,6 +734,42 @@ canvas.measure-tool.dragging {
   min-height: 30px;
 }
 
+.basic-option-row {
+  display: grid;
+  grid-template-columns: minmax(64px, 1fr) minmax(96px, 1fr);
+  gap: 8px;
+  align-items: end;
+}
+
+.basic-option-row .inline-check,
+.basic-option-row .mode-visibility-row .check-row {
+  min-height: 32px;
+  padding-bottom: 0;
+}
+
+.basic-option-row .mode-visibility-row {
+  grid-column: 1 / -1;
+  gap: 5px;
+}
+
+.compact-field input {
+  min-width: 0;
+}
+
+.compact-source-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.behavior-summary {
+  padding: 7px 8px;
+  border-left: 2px solid var(--accent);
+  background: #151a23;
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .item-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -843,9 +883,7 @@ canvas.measure-tool.dragging {
   font-size: 12px;
 }
 
-.room-faces-panel:not([open]) .collapsible-panel-summary::after,
-.asset-management-panel:not([open]) .collapsible-panel-summary::after,
-.light-panel:not([open]) .collapsible-panel-summary::after {
+details:not([open]) > .collapsible-panel-summary::after {
   content: "v";
 }
 
@@ -894,7 +932,7 @@ canvas.measure-tool.dragging {
 
 .asset-list {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   max-height: none;
   overflow: visible;
   padding-right: 2px;
@@ -974,16 +1012,30 @@ canvas.measure-tool.dragging {
   border: 1px solid var(--line);
   background: var(--panel-2);
   border-radius: 7px;
-  padding: 8px;
+  padding: 6px;
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) auto;
-  gap: 8px;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  gap: 6px;
   align-items: center;
   cursor: pointer;
 }
 
 .asset-details {
   min-width: 0;
+}
+
+.layer-name-row {
+  display: flex;
+  min-width: 0;
+  gap: 5px;
+  align-items: baseline;
+}
+
+.asset-kind-inline {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
 }
 
 .asset-visibility {
@@ -1002,13 +1054,13 @@ canvas.measure-tool.dragging {
 
 .asset-actions {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   justify-items: end;
 }
 
 .asset-mode-toggles {
-  display: grid;
-  gap: 3px;
+  display: flex;
+  gap: 5px;
   color: var(--muted);
   font-size: 11px;
 }
@@ -1026,14 +1078,38 @@ canvas.measure-tool.dragging {
   font-size: 11px;
 }
 
+.asset-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .asset-item.static {
   cursor: default;
 }
 
 .asset-item.background {
+  grid-template-columns: 36px minmax(0, 1fr);
   border-color: #44546b;
   background: #1d2430;
-  cursor: pointer;
+  cursor: default;
+}
+
+.asset-item.background .asset-actions {
+  grid-column: 1 / -1;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  width: 100%;
+  padding-top: 4px;
+  border-top: 1px solid rgba(83, 96, 113, 0.45);
+  align-items: center;
+  justify-items: start;
+}
+
+.asset-item.background .asset-visibility {
+  grid-auto-flow: column;
+}
+
+.asset-item.background .background-delete {
+  justify-self: end;
 }
 
 .asset-item.background.active-background {
@@ -1194,13 +1270,13 @@ canvas.measure-tool.dragging {
 
 .point-row {
   display: grid;
-  grid-template-columns: 32px 1fr 1fr;
-  gap: 6px;
-  align-items: end;
+  grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1fr) 24px;
+  gap: 5px;
+  align-items: center;
   border: 1px solid var(--line);
   background: #171c25;
   border-radius: 6px;
-  padding: 6px;
+  padding: 5px;
 }
 
 .point-row.selected {
@@ -1210,12 +1286,35 @@ canvas.measure-tool.dragging {
 
 .point-select {
   min-width: 0;
-  padding: 4px;
+  min-height: 28px;
+  padding: 3px;
+}
+
+.point-delete {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  min-height: 24px;
+  padding: 0;
+  line-height: 1;
+}
+
+.point-coordinate {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px;
+  align-items: center;
+}
+
+.point-coordinate input {
+  min-width: 0;
+  min-height: 28px;
+  padding: 4px 5px;
 }
 
 .asset-thumb {
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   object-fit: contain;
   image-rendering: pixelated;
   background: #11151d;
@@ -1232,7 +1331,10 @@ canvas.measure-tool.dragging {
 
 .asset-meta {
   color: var(--muted);
-  font-size: 12px;
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .asset-kind {
@@ -1389,9 +1491,37 @@ canvas.measure-tool.dragging {
   border: 1px dashed #536071;
   background: #151a23;
   border-radius: 8px;
-  padding: 14px;
+  min-height: 64px;
+  padding: 9px;
   text-align: center;
   color: var(--muted);
+}
+
+.drop-zone-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.drop-zone strong,
+.drop-zone span {
+  display: block;
+}
+
+.drop-zone strong {
+  margin-bottom: 3px;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.drop-zone span {
+  font-size: 11px;
+}
+
+#baseImageMeta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .drop-zone.dragover {

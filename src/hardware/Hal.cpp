@@ -58,6 +58,7 @@ void Hal::setBrightness(uint8_t value) {
 }
 
 void Hal::setIdleBrightness(bool idle) {
+    if (idleBrightnessActive == idle) return;
     idleBrightnessActive = idle;
     applyBrightness();
 }

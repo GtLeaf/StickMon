@@ -2,6 +2,7 @@ const TRIM_PADDING = 4;
 const TRIM_THRESHOLD = 34;
 const ITEM_MIN_TARGET_SIZE = 1;
 const SESSION_STORAGE_KEY = "stickmon.roomEditor.lastSession.v1";
+const LEFT_PANEL_STATE_KEY = "stickmon.roomEditor.leftPanels.v1";
 const SESSION_DB_NAME = "stickmon-room-editor";
 const SESSION_DB_STORE = "sessions";
 const SESSION_DB_KEY = "last";
@@ -16,8 +17,7 @@ const BACKGROUND_MODES = ["day", "night"];
 const FURNITURE_LIBRARY_BUNDLE_TYPE = "stickmon-furniture-library-bundle";
 const TOOLTIP_DELAY_MS = 900;
 const CONTROL_TOOLTIPS = {
-  baseInput: "导入一张或多张背景图。导入后可在 Asset management 中设置 Day/Night 显示。",
-  replaceBaseButton: "继续添加背景图，保留已有家具、面和光照配置。",
+  baseInput: "导入一张或多张背景图。导入后可在 Layers 中设置 Day/Night 显示。",
   furnitureInput: "导入家具或道具 PNG。导入后可以在主画布拖动、缩放并配置影子。",
   layoutInput: "导入之前导出的 layout/session JSON，用于恢复房间配置。",
   baseOpacity: "调整主编辑画布中背景参考图的透明度，不影响最终导出。",
@@ -76,8 +76,8 @@ const CONTROL_TOOLTIPS = {
   shadowLength: "投影长度增益。",
   shadowBlur: "投影模糊半径。",
   itemName: "当前物体名称，仅用于管理和导出识别。",
-  itemKind: "选择物体预设类型，会影响默认高度、投影锚点和层级。",
-  itemFurnitureType: "物体分类，供后续家具/道具逻辑使用。",
+  itemKind: "物理行为预设。控制默认高度、投影、接地方式、遮挡和自动绘制层。",
+  itemFurnitureType: "资源分类。用于家具库筛选和游戏语义，不改变渲染行为。",
   itemX: "物体左上角 X 坐标，单位是游戏像素。",
   itemY: "物体左上角 Y 坐标，单位是游戏像素。",
   itemW: "物体目标宽度，单位是游戏像素。",
@@ -101,13 +101,12 @@ const CONTROL_TOOLTIPS = {
   itemWallShadowOffsetY: "墙面投影垂直偏移，用于微调墙上影子位置。",
   itemReceivesShadow: "这个物体是否接收其它物体投影。",
   itemOccludesSprite: "精灵经过时，这个物体是否遮挡精灵。",
-  itemZ: "层级排序用 Z 值。数值越大越靠上。",
-  itemSortY: "同一 Z 层内的排序参考 Y 值。",
-  itemSlot: "物体挂载位置标记，例如 floor 或 wall。",
-  itemLayer: "导出层标记，用于后续游戏内分层绘制。"
+  itemZ: "主要绘制顺序。数值越大越靠上。",
+  itemSortY: "同一 Z 值内的排序参考 Y 坐标。"
 };
 const CONTROL_TOOLTIP_RULES = [
-  [".drop-zone", "拖入背景图、家具 PNG 或 layout JSON。没有背景时单张图片会作为背景导入。"],
+  ["#backgroundDropZone", "拖入一张或多张房间背景图。"],
+  ["#furnitureDropZone", "拖入一张或多张家具 PNG，随后进入抠图流程。"],
   [".preview-canvas", CONTROL_TOOLTIPS.preview],
   [".asset-visibility", "显示或隐藏这个图层。隐藏后不会在预览里绘制。"],
   [".face-toggle", "展开或收起这个房间面的点位列表。"],
@@ -121,7 +120,7 @@ const CONTROL_TOOLTIP_RULES = [
   [".face-receives-shadow", "控制这个房间面是否接收家具投影。"],
   [".shadow-face-target", "限制当前家具的阴影只出现在勾选的墙面上。"],
   [".insert-point", "在当前边后插入一个新点，用于细化墙面或地板轮廓。"],
-  [".delete-point", "删除当前选中的点。房间面至少保留 3 个点。"],
+  [".point-delete", "删除这一行对应的点。闭合面至少保留 3 个点。"],
   [".library-add", "把这个库中家具加入当前房间。"],
   [".library-delete", "从项目家具库中删除这个家具。当前房间里已放置的实例会保留为本地物体。"]
 ];
@@ -132,18 +131,25 @@ const FURNITURE_TYPES = [
   { value: "toy", label: "玩具" }
 ];
 const ITEM_KINDS = [
-  { value: "wall_shelf", label: "墙上架子", heightPx: 18, wallDepthPx: 36, footprint: "rect", shadowAnchor: "wall", castsShadow: true, receivesShadow: true, occludesSprite: false, slot: "wall", layer: "wall" },
-  { value: "bed_sofa", label: "床/沙发", heightPx: 34, footprint: "ellipse", shadowAnchor: "floor", castsShadow: true, receivesShadow: true, occludesSprite: true, slot: "floor", layer: "main" },
-  { value: "food_bowl", label: "食盆", heightPx: 8, footprint: "ellipse", shadowAnchor: "floor", castsShadow: true, receivesShadow: true, occludesSprite: false, slot: "floor", layer: "main" },
-  { value: "decoration_prop", label: "装饰物", heightPx: 16, footprint: "ellipse", shadowAnchor: "floor", castsShadow: true, receivesShadow: true, occludesSprite: false, slot: "floor", layer: "main" },
-  { value: "rug", label: "地毯", heightPx: 0, footprint: "polygon", castsShadow: false, receivesShadow: true, occludesSprite: false, slot: "floor", layer: "floor" },
-  { value: "floor_decal", label: "地面贴花", heightPx: 0, footprint: "polygon", castsShadow: false, receivesShadow: true, occludesSprite: false, slot: "floor", layer: "floor" },
-  { value: "low_prop", label: "小物件", heightPx: 8, footprint: "ellipse", castsShadow: true, receivesShadow: true, occludesSprite: false, slot: "floor", layer: "main" },
-  { value: "furniture", label: "家具", heightPx: 32, footprint: "rect", castsShadow: true, receivesShadow: true, occludesSprite: true, slot: "floor", layer: "main" },
-  { value: "tall_furniture", label: "高家具", heightPx: 56, footprint: "rect", castsShadow: true, receivesShadow: true, occludesSprite: true, slot: "floor", layer: "main" },
-  { value: "wall_furniture", label: "墙挂家具", heightPx: 24, wallDepthPx: 24, footprint: "rect", castsShadow: true, receivesShadow: true, occludesSprite: false, slot: "wall", layer: "wall" },
-  { value: "wall_prop", label: "墙面物件", heightPx: 0, wallDepthPx: 4, footprint: "none", castsShadow: false, receivesShadow: false, occludesSprite: false, slot: "wall", layer: "wall" }
+  { value: "floor_flat", label: "地面平铺", summary: "地面 · 无投影 · 不遮挡精灵", heightPx: 0, footprint: "polygon", shadowAnchor: "floor", castsShadow: false, receivesShadow: true, occludesSprite: false, slot: "floor", layer: "floor" },
+  { value: "floor_small", label: "地面小物件", summary: "地面 · 小型投影 · 不遮挡精灵", heightPx: 12, footprint: "ellipse", shadowAnchor: "floor", castsShadow: true, receivesShadow: true, occludesSprite: false, slot: "floor", layer: "main" },
+  { value: "floor_furniture", label: "地面家具", summary: "地面 · 家具投影 · 遮挡精灵", heightPx: 32, footprint: "rect", shadowAnchor: "floor", castsShadow: true, receivesShadow: true, occludesSprite: true, slot: "floor", layer: "main" },
+  { value: "wall_flat", label: "墙面装饰", summary: "墙面 · 无投影 · 不遮挡精灵", heightPx: 0, wallDepthPx: 4, footprint: "none", shadowAnchor: "wall", castsShadow: false, receivesShadow: false, occludesSprite: false, slot: "wall", layer: "wall" },
+  { value: "wall_mounted", label: "墙挂物件", summary: "墙面 · 墙面投影 · 不遮挡精灵", heightPx: 24, wallDepthPx: 24, footprint: "rect", shadowAnchor: "wall", castsShadow: true, receivesShadow: true, occludesSprite: false, slot: "wall", layer: "wall" }
 ];
+const LEGACY_ITEM_KIND_MAP = Object.freeze({
+  rug: "floor_flat",
+  floor_decal: "floor_flat",
+  food_bowl: "floor_small",
+  decoration_prop: "floor_small",
+  low_prop: "floor_small",
+  bed_sofa: "floor_furniture",
+  furniture: "floor_furniture",
+  tall_furniture: "floor_furniture",
+  wall_prop: "wall_flat",
+  wall_shelf: "wall_mounted",
+  wall_furniture: "wall_mounted"
+});
 const FOOTPRINT_TYPES = [
   { value: "auto", label: "自动" },
   { value: "ellipse", label: "椭圆" },
@@ -209,12 +215,19 @@ function furnitureTypeLabel(value) {
 }
 
 function normalizeItemKind(value) {
-  return ITEM_KINDS.some((kind) => kind.value === value) ? value : "furniture";
+  const canonical = LEGACY_ITEM_KIND_MAP[value] || value;
+  return ITEM_KINDS.some((kind) => kind.value === canonical) ? canonical : "floor_furniture";
+}
+
+function normalizeItemKindForRecord(value, record = {}) {
+  if (value === "wall_prop") return record.castsShadow === true ? "wall_mounted" : "wall_flat";
+  if (value === "wall_shelf" || value === "wall_furniture") return "wall_mounted";
+  return normalizeItemKind(value);
 }
 
 function itemKindPreset(value) {
   const normalized = normalizeItemKind(value);
-  return ITEM_KINDS.find((kind) => kind.value === normalized) || ITEM_KINDS[3];
+  return ITEM_KINDS.find((kind) => kind.value === normalized) || ITEM_KINDS[2];
 }
 
 function itemKindLabel(value) {
@@ -321,38 +334,36 @@ function inferItemKind(name, furnitureType = "") {
   const text = String(name || "").toLowerCase();
   if (text.includes("rug") || text.includes("carpet") || text.includes("mat") ||
       text.includes("地毯") || text.includes("毯") || text.includes("垫")) {
-    return "rug";
+    return "floor_flat";
   }
   if (text.includes("decal") || text.includes("floor") || text.includes("贴花") || text.includes("地面")) {
-    return "floor_decal";
+    return "floor_flat";
   }
   if (WALL_MOUNTED_NAME_PATTERN.test(text)) {
-    return "wall_shelf";
+    return "wall_mounted";
   }
   if (text.includes("wall") || text.includes("window") || text.includes("painting") ||
       text.includes("frame") || text.includes("poster") || text.includes("窗") ||
       text.includes("画") || text.includes("墙") || text.includes("壁")) {
-    return "wall_prop";
+    return "wall_flat";
   }
   if (text.includes("cabinet") || text.includes("wardrobe") || text.includes("closet") ||
       text.includes("shelf") || text.includes("bookcase") || text.includes("fridge") ||
       text.includes("柜") || text.includes("书架") || text.includes("冰箱")) {
-    return "tall_furniture";
+    return "floor_furniture";
   }
   if (text.includes("sofa") || text.includes("couch") || text.includes("chair") ||
       text.includes("table") || text.includes("desk") || text.includes("bed") ||
       text.includes("沙发") || text.includes("椅") || text.includes("桌") || text.includes("床")) {
-    return "bed_sofa";
+    return "floor_furniture";
   }
   if (furnitureType === "bowl" || furnitureType === "toy" ||
       text.includes("bowl") || text.includes("dish") || text.includes("toy") ||
       text.includes("ball") || text.includes("food") || text.includes("碗") ||
       text.includes("玩具") || text.includes("球") || text.includes("食")) {
-    return furnitureType === "bowl" || text.includes("bowl") || text.includes("dish") || text.includes("碗") || text.includes("食")
-      ? "food_bowl"
-      : "low_prop";
+    return "floor_small";
   }
-  return "decoration_prop";
+  return "floor_small";
 }
 
 const state = {
@@ -480,8 +491,14 @@ function setWorkflowStatus(text) {
 function updateCanvasSizeReadouts() {
   const exportSize = document.getElementById("exportCanvasSize");
   const editSize = document.getElementById("editCanvasSize");
+  const previewSize = document.getElementById("previewCanvasSize");
   if (exportSize) exportSize.textContent = `${Math.round(state.width)}x${Math.round(state.height)}`;
   if (editSize) editSize.textContent = `${Math.round(state.editWidth)}x${Math.round(state.editHeight)}`;
+  if (previewSize) {
+    previewSize.textContent =
+      `Room ${Math.round(state.width)}x${Math.round(state.height)} · ` +
+      `Screen ${GAME_SCREEN_WIDTH}x${GAME_SCREEN_HEIGHT}`;
+  }
 }
 
 function normalizeBackgroundMode(mode) {
@@ -569,14 +586,18 @@ function updateBaseImageMeta() {
   updateCanvasSizeReadouts();
   if (!hasBackground()) {
     baseImageMeta.textContent = "Backgrounds: none";
+    baseImageMeta.removeAttribute("title");
     return;
   }
   const prepared = preparedRoomMetrics();
   const trim = prepared.trim;
-  baseImageMeta.textContent =
+  const fullMeta =
     `Backgrounds: day ${backgroundMetaText("day")}; night ${backgroundMetaText("night")}; ` +
     `trim ${trim.x},${trim.y},${trim.width}x${trim.height}; ` +
     `export ${state.width}x${state.height}; edit ${state.editWidth}x${state.editHeight}; screen ${GAME_SCREEN_WIDTH}x${GAME_SCREEN_HEIGHT}`;
+  baseImageMeta.textContent =
+    `${backgroundItems().length} background layer(s) · room ${state.width}x${state.height} · edit ${state.editWidth}x${state.editHeight}`;
+  baseImageMeta.title = fullMeta;
 }
 
 function normalizedEditZoom(value) {
@@ -1060,7 +1081,11 @@ function isPointReferenced(point) {
 function pointVisibleOnCanvas(point) {
   if (!point) return false;
   if (state.draftPoints.some((entry) => entry.id === point.id)) return true;
-  return state.faces.some((face) => faceVisible(face) && face.points.some((entry) => entry.id === point.id));
+  if (state.drawingFace) {
+    return state.faces.some((face) => faceVisible(face) && face.points.some((entry) => entry.id === point.id));
+  }
+  const face = selectedFace();
+  return !!face && faceVisible(face) && face.points.some((entry) => entry.id === point.id);
 }
 
 function pruneUnusedPoints() {
@@ -1734,7 +1759,10 @@ function normalizeFurnitureLibraryEntry(raw, index = 0) {
   const dataUrl = raw.dataUrl || raw.imageDataUrl || raw.image?.dataUrl || "";
   const fileName = raw.fileName || raw.imageFileName || imageValue.split("/").pop() || `${raw.id || `library_${index}`}.png`;
   const furnitureType = normalizeFurnitureType(raw.furnitureType || raw.category || inferFurnitureType(fileName || raw.name));
-  const kind = normalizeItemKind(raw.kind || inferItemKind(fileName || raw.name, furnitureType));
+  const kind = normalizeItemKindForRecord(
+    raw.kind || inferItemKind(fileName || raw.name, furnitureType),
+    raw
+  );
   const id = raw.id || slugifyId(fileName || raw.name || `library_${index}`, `library_${index}`);
   return {
     ...raw,
@@ -1877,7 +1905,7 @@ function refreshFurnitureLibraryPanel() {
       </div>
       <div class="library-actions">
         <button class="library-add" type="button" data-library-id="${escapeAttr(entry.id)}">Add</button>
-        <button class="library-delete danger" type="button" data-library-id="${escapeAttr(entry.id)}">Delete</button>
+        <button class="library-delete danger" type="button" data-library-id="${escapeAttr(entry.id)}" title="Permanently delete from library">Delete</button>
       </div>
     `;
     el.querySelector(".library-add").addEventListener("click", async (event) => {
@@ -2031,7 +2059,7 @@ function serializeFurnitureLibraryItem(item, idOverride = "") {
     id,
     name: item.name || id,
     category: furnitureType,
-    tags: [...new Set([furnitureType, kind, item.slot, item.layer].filter(Boolean))],
+    tags: [...new Set([furnitureType, kind, itemKindPreset(kind).slot, itemKindPreset(kind).layer].filter(Boolean))],
     fileName: item.fileName || `${id}.png`,
     sourceWidth: item.sourceWidth || item.img?.naturalWidth || Math.round(bounds.w),
     sourceHeight: item.sourceHeight || item.img?.naturalHeight || Math.round(bounds.h),
@@ -2059,8 +2087,8 @@ function serializeFurnitureLibraryItem(item, idOverride = "") {
     occludesSprite: !!item.occludesSprite,
     visibleInDay: item.visibleInDay !== false,
     visibleInNight: item.visibleInNight !== false,
-    slot: item.slot || itemKindPreset(kind).slot,
-    layer: item.layer || itemKindPreset(kind).layer,
+    slot: itemKindPreset(kind).slot,
+    layer: itemKindPreset(kind).layer,
     cutoutApplied: !!item.cutoutApplied,
     annotated: isAnnotatedFurniture(item),
     exportedFrom: {
@@ -2409,12 +2437,20 @@ function detachLibraryReferences(libraryId) {
 async function deleteFurnitureLibraryEntry(entry) {
   const normalized = normalizeFurnitureLibraryEntry(entry);
   if (!normalized?.id) return false;
-  if (!window.confirm(`Delete "${normalized.name}" from the furniture library?`)) return false;
-
   if (!window.showDirectoryPicker) {
     setStatus("Direct library deleting is not supported in this browser. Use a browser with folder access.");
     return false;
   }
+
+  const placedCount = state.items.filter((item) => item.libraryId === normalized.id).length;
+  const placedMessage = placedCount
+    ? `\n\n${placedCount} placed item(s) will remain in this room, but they will be detached from the library.`
+    : "";
+  const confirmed = window.confirm(
+    `Permanently delete "${normalized.name}" from the furniture library?` +
+    `${placedMessage}\n\nThe library files will be removed and this action cannot be undone.`
+  );
+  if (!confirmed) return false;
 
   const remaining = furnitureLibraryCatalog().filter((item) => item.id !== normalized.id);
   const handle = await ensureRoomEditorRootHandle(false);
@@ -2595,7 +2631,7 @@ async function addProjectSpritePreview() {
     slot: "sprite_preview",
     layer: "sprite_preview",
     source: "project_sprite",
-    kind: "low_prop",
+    kind: "floor_small",
     heightPx: 16,
     footprint: "ellipse",
     castsShadow: true,
@@ -2973,8 +3009,7 @@ function itemUsesWallShadowAnchor(item) {
   if (anchor === "floor") return false;
 
   const kind = normalizeItemKind(item.kind);
-  if (kind === "wall_prop" || kind === "wall_furniture" || kind === "wall_shelf") return true;
-  if (String(item.slot || "").toLowerCase() === "wall") return true;
+  if (kind === "wall_flat" || kind === "wall_mounted") return true;
 
   const name = `${item.fileName || ""} ${item.name || ""}`;
   return WALL_MOUNTED_NAME_PATTERN.test(name);
@@ -2986,27 +3021,101 @@ function itemExplicitlyTargetsFace(item, face) {
   return ids.length > 0 && ids.includes(String(face.id));
 }
 
+function wallShadowFaces({ includeDisabled = false } = {}) {
+  return state.faces.filter((face) => {
+    if (!face || isSpriteAreaFace(face) || face.points.length < 3) return false;
+    const surface = shadowSurfaceForFace(face);
+    if (surface !== "left_wall" && surface !== "right_wall") return false;
+    return includeDisabled || face.receivesShadow !== false;
+  });
+}
+
+function pointToSegmentDistance(point, start, end) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared < 0.000001) return distance(point, start);
+  const t = clampNumber(((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared, 0, 1);
+  return distance(point, { x: start.x + dx * t, y: start.y + dy * t });
+}
+
+function pointToPolygonDistance(point, points) {
+  if (!points.length) return Number.POSITIVE_INFINITY;
+  if (pointInPolygon(point, points)) return 0;
+  let best = Number.POSITIVE_INFINITY;
+  for (let index = 0; index < points.length; index += 1) {
+    best = Math.min(best, pointToSegmentDistance(point, points[index], points[(index + 1) % points.length]));
+  }
+  return best;
+}
+
+function itemBoundsSamplePoints(bounds) {
+  const left = bounds.x;
+  const centerX = bounds.x + bounds.w * 0.5;
+  const right = bounds.x + bounds.w;
+  const top = bounds.y;
+  const centerY = bounds.y + bounds.h * 0.5;
+  const bottom = bounds.y + bounds.h;
+  return [
+    { x: centerX, y: centerY },
+    { x: left, y: top },
+    { x: centerX, y: top },
+    { x: right, y: top },
+    { x: left, y: centerY },
+    { x: right, y: centerY },
+    { x: left, y: bottom },
+    { x: centerX, y: bottom },
+    { x: right, y: bottom }
+  ];
+}
+
+function automaticWallShadowFaceId(item) {
+  const candidates = wallShadowFaces();
+  if (!candidates.length) return null;
+  const bounds = itemBounds(item);
+  const center = { x: bounds.x + bounds.w * 0.5, y: bounds.y + bounds.h * 0.5 };
+  const samples = itemBoundsSamplePoints(bounds);
+  let best = null;
+  for (const face of candidates) {
+    const points = faceTargetPoints(face);
+    const insideCount = samples.reduce((count, point) => count + (pointInPolygon(point, points) ? 1 : 0), 0);
+    const distanceToFace = pointToPolygonDistance(center, points);
+    const candidate = { id: String(face.id), insideCount, distanceToFace };
+    if (!best ||
+      candidate.insideCount > best.insideCount ||
+      (candidate.insideCount === best.insideCount && candidate.distanceToFace < best.distanceToFace)) {
+      best = candidate;
+    }
+  }
+  return best?.id || null;
+}
+
 function faceTargetedByAnyShadowItem(face) {
   if (!face) return false;
   return state.items.some((item) => itemExplicitlyTargetsFace(item, face));
 }
 
 function itemShouldCastShadowOnSurface(item, surface, face = null) {
-  const targetFaceIds = itemShadowFaceIds(item);
-  const targeted = itemExplicitlyTargetsFace(item, face);
-  if (targetFaceIds.length > 0 && !targeted) return false;
+  const knownWallFaceIds = new Set(wallShadowFaces({ includeDisabled: true }).map((entry) => String(entry.id)));
+  const targetFaceIds = itemShadowFaceIds(item).filter((id) => knownWallFaceIds.has(id));
+  const targeted = face && targetFaceIds.includes(String(face.id));
   if (face?.receivesShadow === false && !targeted) return false;
   const isWallSurface = surface === "left_wall" || surface === "right_wall";
-  if (targetFaceIds.length > 0) return isWallSurface;
-  if (!itemUsesWallShadowAnchor(item)) return true;
-  if (!face) return true;
-  return isWallSurface;
+  const usesWallAnchor = itemUsesWallShadowAnchor(item);
+  if (!usesWallAnchor) return surface === "floor";
+  if (targetFaceIds.length > 0) {
+    return isWallSurface && targeted;
+  }
+  if (!face) return surface === "floor";
+  const automaticFaceId = automaticWallShadowFaceId(item);
+  return isWallSurface && automaticFaceId != null && String(face.id) === automaticFaceId;
 }
 
 function itemShadowSummary(item) {
   if (!itemCastsShadow(item)) return "off";
-  const target = itemUsesWallShadowAnchor(item) ? "wall" : "floor";
+  const usesWallAnchor = itemUsesWallShadowAnchor(item);
   const faceCount = itemShadowFaceIds(item).length;
+  const target = usesWallAnchor ? "wall plane" : "2.5D planes";
   return `${target} ${Math.round(itemShadowOpacity(item))}%${faceCount ? `, ${faceCount} face(s)` : ""}`;
 }
 
@@ -3096,7 +3205,7 @@ function defaultShadowPolygon() {
 function itemUsesAutoFootprintPolygon(item) {
   if (itemFootprint(item) !== "polygon") return false;
   const kind = normalizeItemKind(item.kind);
-  return kind !== "rug" && kind !== "floor_decal";
+  return kind !== "floor_flat";
 }
 
 function effectiveFootprintPolygon(item) {
@@ -3392,6 +3501,23 @@ function finishItemPolygonDraftPointDrag(event) {
   return true;
 }
 
+function itemHasBehaviorOverrides(item) {
+  const preset = itemKindPreset(item.kind);
+  const currentCastsShadow = itemCastsShadow(item);
+  const currentAnchor = itemUsesWallShadowAnchor(item) ? "wall" : "floor";
+  const presetAnchor = normalizeShadowAnchor(preset.shadowAnchor) === "wall" ? "wall" : "floor";
+  const compareWallShadow = currentCastsShadow || preset.castsShadow;
+  return Math.round(itemHeightPx(item)) !== Math.round(preset.heightPx) ||
+    normalizeFootprint(item.footprint) !== normalizeFootprint(preset.footprint) ||
+    currentCastsShadow !== preset.castsShadow ||
+    (item.receivesShadow !== false) !== preset.receivesShadow ||
+    !!item.occludesSprite !== preset.occludesSprite ||
+    currentAnchor !== presetAnchor ||
+    (compareWallShadow && Math.round(itemWallShadowDepthPx(item)) !== Math.round(preset.wallDepthPx ?? 0)) ||
+    (compareWallShadow && Math.round(itemWallShadowOffsetY(item)) !== 0) ||
+    (compareWallShadow && itemShadowFaceIds(item).length > 0);
+}
+
 function applyItemKindPreset(item, kindValue) {
   const preset = itemKindPreset(kindValue);
   item.kind = preset.value;
@@ -3410,7 +3536,10 @@ function applyItemKindPreset(item, kindValue) {
 }
 
 function normalizeItemSemantics(item) {
-  const preset = itemKindPreset(item.kind || inferItemKind(item.fileName || item.name, item.furnitureType));
+  const inferredKind = String(item.slot || "").toLowerCase() === "wall"
+    ? (item.castsShadow === false ? "wall_flat" : "wall_mounted")
+    : inferItemKind(item.fileName || item.name, item.furnitureType);
+  const preset = itemKindPreset(normalizeItemKindForRecord(item.kind || inferredKind, item));
   item.kind = preset.value;
   normalizeItemModeVisibility(item);
   item.heightPx = coerceNumber(item.heightPx, preset.heightPx, 0, 160);
@@ -3418,8 +3547,8 @@ function normalizeItemSemantics(item) {
   item.castsShadow = item.castsShadow ?? preset.castsShadow;
   item.receivesShadow = item.receivesShadow ?? preset.receivesShadow;
   item.occludesSprite = item.occludesSprite ?? preset.occludesSprite;
-  item.slot = item.slot || preset.slot;
-  item.layer = item.layer || preset.layer;
+  item.slot = preset.slot;
+  item.layer = preset.layer;
   item.shadowAnchor = normalizeShadowAnchor(item.shadowAnchor || preset.shadowAnchor);
   item.shadowFaceIds = normalizeShadowFaceIds(item.shadowFaceIds);
   item.wallShadowOffsetY = itemWallShadowOffsetY(item);
@@ -3589,7 +3718,7 @@ function itemShadowMask(item) {
 function activeShadowMode() {
   const mode = normalizeShadowMode(state.night.shadowMode);
   if (mode !== "auto") return mode;
-  return "point";
+  return normalizeLightShape(activeLightSettings().lightShape) === "cone" ? "directional" : "point";
 }
 
 function shadowDirectionForPoint(footX, footY, lightPoint) {
@@ -3654,6 +3783,327 @@ function wallShadowSkew(surface) {
   if (surface === "left_wall") return -0.16;
   if (surface === "right_wall") return 0.16;
   return 0;
+}
+
+function projectionSharedPoints(pointsA, pointsB) {
+  if (!pointsA.length || !pointsB.length) return [];
+  const allPoints = [...pointsA, ...pointsB];
+  const minX = Math.min(...allPoints.map((point) => point.x));
+  const maxX = Math.max(...allPoints.map((point) => point.x));
+  const minY = Math.min(...allPoints.map((point) => point.y));
+  const maxY = Math.max(...allPoints.map((point) => point.y));
+  const tolerance = Math.max(2, Math.hypot(maxX - minX, maxY - minY) * 0.015);
+  const shared = [];
+  for (const pointA of pointsA) {
+    for (const pointB of pointsB) {
+      const separation = Math.hypot(pointA.x - pointB.x, pointA.y - pointB.y);
+      if (separation <= tolerance) {
+        shared.push({ x: (pointA.x + pointB.x) * 0.5, y: (pointA.y + pointB.y) * 0.5 });
+      }
+    }
+  }
+  if (shared.length) return shared;
+  let closest = null;
+  for (const pointA of pointsA) {
+    for (const pointB of pointsB) {
+      const separation = Math.hypot(pointA.x - pointB.x, pointA.y - pointB.y);
+      if (!closest || separation < closest.separation) closest = { pointA, pointB, separation };
+    }
+  }
+  return closest ? [{
+    x: (closest.pointA.x + closest.pointB.x) * 0.5,
+    y: (closest.pointA.y + closest.pointB.y) * 0.5
+  }] : [];
+}
+
+function closestProjectionPair(pointsA, pointsB) {
+  let closest = null;
+  for (const pointA of pointsA) {
+    for (const pointB of pointsB) {
+      const separation = Math.hypot(pointA.x - pointB.x, pointA.y - pointB.y);
+      if (!closest || separation < closest.separation) closest = { pointA, pointB, separation };
+    }
+  }
+  return closest;
+}
+
+function roomProjectionModel(pointsForFace = faceTargetPoints) {
+  const floorFace = state.faces.find((face) => !isSpriteAreaFace(face) && shadowSurfaceForFace(face) === "floor");
+  const leftFace = state.faces.find((face) => shadowSurfaceForFace(face) === "left_wall");
+  const rightFace = state.faces.find((face) => shadowSurfaceForFace(face) === "right_wall");
+  if (!floorFace || !leftFace || !rightFace) return null;
+
+  const floorPoints = pointsForFace(floorFace);
+  const leftPoints = pointsForFace(leftFace);
+  const rightPoints = pointsForFace(rightFace);
+  const leftFloor = projectionSharedPoints(leftPoints, floorPoints);
+  const rightFloor = projectionSharedPoints(rightPoints, floorPoints);
+  const wallCornerPair = closestProjectionPair(leftFloor, rightFloor);
+  if (!wallCornerPair) return null;
+  const origin = {
+    x: (wallCornerPair.pointA.x + wallCornerPair.pointB.x) * 0.5,
+    y: (wallCornerPair.pointA.y + wallCornerPair.pointB.y) * 0.5
+  };
+  const farthestFromOrigin = (points) => points.reduce((best, point) =>
+    !best || distance(point, origin) > distance(best, origin) ? point : best, null);
+  const leftExtent = farthestFromOrigin(leftFloor);
+  const rightExtent = farthestFromOrigin(rightFloor);
+  const wallShared = projectionSharedPoints(leftPoints, rightPoints);
+  const top = farthestFromOrigin(wallShared);
+  if (!leftExtent || !rightExtent || !top) return null;
+
+  const axisU = { x: leftExtent.x - origin.x, y: leftExtent.y - origin.y };
+  const axisV = { x: rightExtent.x - origin.x, y: rightExtent.y - origin.y };
+  const axisZ = { x: top.x - origin.x, y: top.y - origin.y };
+  const determinant = axisU.x * axisV.y - axisU.y * axisV.x;
+  const axisZLength = Math.hypot(axisZ.x, axisZ.y);
+  if (Math.abs(determinant) < 0.001 || axisZLength < 1) return null;
+  return {
+    type: "corner_local_planes_v1",
+    origin,
+    axisU,
+    axisV,
+    axisZ,
+    axisZLength,
+    determinant,
+    faces: {
+      floor: floorFace,
+      left_wall: leftFace,
+      right_wall: rightFace
+    },
+    points: new Map([
+      [String(floorFace.id), floorPoints],
+      [String(leftFace.id), leftPoints],
+      [String(rightFace.id), rightPoints]
+    ])
+  };
+}
+
+function screenPointToProjectionWorld(model, point, heightPx = 0) {
+  const z = heightPx / model.axisZLength;
+  const flatX = point.x - model.origin.x - model.axisZ.x * z;
+  const flatY = point.y - model.origin.y - model.axisZ.y * z;
+  return {
+    u: (flatX * model.axisV.y - flatY * model.axisV.x) / model.determinant,
+    v: (model.axisU.x * flatY - model.axisU.y * flatX) / model.determinant,
+    z
+  };
+}
+
+function projectionWorldToScreen(model, point) {
+  return {
+    x: model.origin.x + model.axisU.x * point.u + model.axisV.x * point.v + model.axisZ.x * point.z,
+    y: model.origin.y + model.axisU.y * point.u + model.axisV.y * point.v + model.axisZ.y * point.z
+  };
+}
+
+function itemProjectionFaces(item, model) {
+  const explicit = new Set(itemShadowFaceIds(item));
+  const validExplicit = [...explicit].some((id) => model.points.has(String(id)));
+  return Object.entries(model.faces)
+    .map(([surface, face]) => ({ surface, face, points: model.points.get(String(face.id)) || [] }))
+    .filter(({ surface, face }) => {
+      const targeted = explicit.has(String(face.id));
+      if (face.receivesShadow === false && !targeted) return false;
+      if (surface === "floor") return true;
+      return !validExplicit || targeted;
+    });
+}
+
+const projectionContourCache = new WeakMap();
+
+function projectionConvexHull(points) {
+  if (points.length <= 3) return points;
+  const sorted = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
+  const cross = (origin, a, b) =>
+    (a.x - origin.x) * (b.y - origin.y) - (a.y - origin.y) * (b.x - origin.x);
+  const half = [];
+  for (const point of sorted) {
+    while (half.length >= 2 && cross(half[half.length - 2], half[half.length - 1], point) <= 0) half.pop();
+    half.push(point);
+  }
+  const lower = [...half];
+  half.length = 0;
+  for (let index = sorted.length - 1; index >= 0; index -= 1) {
+    const point = sorted[index];
+    while (half.length >= 2 && cross(half[half.length - 2], half[half.length - 1], point) <= 0) half.pop();
+    half.push(point);
+  }
+  lower.pop();
+  half.pop();
+  return [...lower, ...half];
+}
+
+function imageAlphaProjectionContour(item) {
+  if (!item.img) return [];
+  if (projectionContourCache.has(item.img)) return projectionContourCache.get(item.img);
+  try {
+    const sourceWidth = item.img.naturalWidth || item.img.width || item.sourceWidth || 1;
+    const sourceHeight = item.img.naturalHeight || item.img.height || item.sourceHeight || 1;
+    const sampleScale = Math.min(1, 128 / Math.max(sourceWidth, sourceHeight));
+    const width = Math.max(1, Math.round(sourceWidth * sampleScale));
+    const height = Math.max(1, Math.round(sourceHeight * sampleScale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const sampleCtx = canvas.getContext("2d", { willReadFrequently: true });
+    sampleCtx.imageSmoothingEnabled = false;
+    sampleCtx.drawImage(item.img, 0, 0, width, height);
+    const pixels = sampleCtx.getImageData(0, 0, width, height).data;
+    const points = [];
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        if (pixels[(y * width + x) * 4 + 3] > 8) points.push({ x, y });
+      }
+    }
+    const contour = projectionConvexHull(points).map((point) => ({
+      x: clampUnit((point.x + 0.5) / width),
+      y: clampUnit((point.y + 0.5) / height)
+    }));
+    projectionContourCache.set(item.img, contour);
+    return contour;
+  } catch (_) {
+    projectionContourCache.set(item.img, []);
+    return [];
+  }
+}
+
+function itemProjectionContour(item) {
+  const custom = normalizeLocalPolygon(item.shadowPolygon);
+  if (custom.length) return custom;
+  const footprint = itemFootprint(item);
+  if (footprint === "none") return [];
+  if (footprint === "polygon") return effectiveFootprintPolygon(item);
+  if (footprint === "rect") return [
+    { x: 0.12, y: 0.72 },
+    { x: 0.88, y: 0.72 },
+    { x: 0.88, y: 0.96 },
+    { x: 0.12, y: 0.96 }
+  ];
+  if (footprint === "ellipse") {
+    return Array.from({ length: 12 }, (_, index) => {
+      const angle = Math.PI * 2 * index / 12;
+      return { x: 0.5 + Math.cos(angle) * 0.38, y: 0.84 + Math.sin(angle) * 0.13 };
+    });
+  }
+  const alphaContour = imageAlphaProjectionContour(item);
+  return alphaContour.length >= 3 ? alphaContour : defaultShadowPolygon();
+}
+
+function projectionRayDirection(model, casterWorld, screenPoint, heightPx, lightPoint, scale) {
+  if (activeShadowMode() === "directional") {
+    const angle = angleToRad(activeLightSettings().lightAngle);
+    const targetScreen = {
+      x: screenPoint.x + Math.cos(angle) * heightPx,
+      y: screenPoint.y + Math.sin(angle) * heightPx
+    };
+    const targetWorld = screenPointToProjectionWorld(model, targetScreen, 0);
+    return {
+      u: targetWorld.u - casterWorld.u,
+      v: targetWorld.v - casterWorld.v,
+      z: targetWorld.z - casterWorld.z
+    };
+  }
+  const lightWorld = screenPointToProjectionWorld(
+    model,
+    lightPoint,
+    activeLightSettings().lightDepth * scale
+  );
+  return {
+    u: casterWorld.u - lightWorld.u,
+    v: casterWorld.v - lightWorld.v,
+    z: casterWorld.z - lightWorld.z
+  };
+}
+
+function projectionPlaneIntersection(origin, direction, surface) {
+  const coordinate = surface === "floor" ? "z" : surface === "left_wall" ? "v" : "u";
+  const denominator = direction[coordinate];
+  const value = origin[coordinate];
+  if (Math.abs(denominator) < 0.000001) {
+    return Math.abs(value) < 0.000001 ? { ...origin, t: 0 } : null;
+  }
+  const t = -value / denominator;
+  if (t < -0.000001) return null;
+  return {
+    u: origin.u + direction.u * t,
+    v: origin.v + direction.v * t,
+    z: origin.z + direction.z * t,
+    t
+  };
+}
+
+function nearestProjectionReceiver(model, origin, direction, receivers, scale) {
+  let best = null;
+  const tolerance = Math.max(1, scale * 1.5);
+  for (const receiver of receivers) {
+    const hit = projectionPlaneIntersection(origin, direction, receiver.surface);
+    if (!hit) continue;
+    const screen = projectionWorldToScreen(model, hit);
+    if (!pointInPolygon(screen, receiver.points) && pointToPolygonDistance(screen, receiver.points) > tolerance) continue;
+    if (!best || hit.t < best.t) best = { ...hit, screen, receiver };
+  }
+  return best;
+}
+
+function drawUnifiedFloorItemShadow(
+  targetCtx,
+  item,
+  bounds,
+  lightPoint,
+  scale,
+  model
+) {
+  if (!model || itemUsesWallShadowAnchor(item)) return false;
+  if (!itemCastsShadow(item) || !itemVisibleInMode(item) || itemRenderOpacity(item) <= 0) return true;
+  if (itemShadowOpacity(item) <= 0 || itemShadowLength(item) <= 0) return true;
+  const contour = itemProjectionContour(item);
+  if (contour.length < 3) return true;
+  const receivers = itemProjectionFaces(item, model);
+  if (!receivers.length) return true;
+
+  const footX = bounds.x + bounds.w * 0.5;
+  const footY = bounds.y + bounds.h * 0.88;
+  const lightFactor = shadowLightFactorForPoint(footX, footY, lightPoint, scale);
+  if (lightFactor <= 0) return true;
+  const projected = contour.map((point) => {
+    const screenPoint = { x: bounds.x + point.x * bounds.w, y: bounds.y + point.y * bounds.h };
+    const heightPx = localCasterHeight(item, point, scale);
+    const casterWorld = screenPointToProjectionWorld(model, screenPoint, heightPx);
+    const direction = projectionRayDirection(model, casterWorld, screenPoint, heightPx, lightPoint, scale);
+    const hit = nearestProjectionReceiver(model, casterWorld, direction, receivers, scale);
+    if (hit) return hit.screen;
+    const floorHit = projectionPlaneIntersection(casterWorld, direction, "floor");
+    return floorHit ? projectionWorldToScreen(model, floorHit) : screenPoint;
+  });
+  if (projected.length < 3) return true;
+
+  const heightFactor = Math.max(0.25, Math.min(2.2, itemHeightPx(item) / 32));
+  targetCtx.save();
+  targetCtx.beginPath();
+  for (const receiver of receivers) {
+    if (receiver.points.length < 3) continue;
+    targetCtx.moveTo(receiver.points[0].x, receiver.points[0].y);
+    for (let index = 1; index < receiver.points.length; index += 1) {
+      targetCtx.lineTo(receiver.points[index].x, receiver.points[index].y);
+    }
+    targetCtx.closePath();
+  }
+  targetCtx.clip();
+  targetCtx.globalAlpha = baseShadowOpacity(item, lightFactor, heightFactor);
+  targetCtx.globalCompositeOperation = "multiply";
+  const blur = Math.max(0, itemShadowBlur(item) * scale);
+  targetCtx.filter = blur > 0 ? `blur(${blur}px)` : "none";
+  targetCtx.fillStyle = "#000000";
+  targetCtx.beginPath();
+  projected.forEach((point, index) => {
+    if (index === 0) targetCtx.moveTo(point.x, point.y);
+    else targetCtx.lineTo(point.x, point.y);
+  });
+  targetCtx.closePath();
+  targetCtx.fill();
+  targetCtx.restore();
+  return true;
 }
 
 function faceProjectionBasis(points) {
@@ -3794,7 +4244,14 @@ function drawProjectedShadow2D5(targetCtx, item, bounds, lightPoint, scale, ligh
 }
 
 function drawFloorFootprintShadow(targetCtx, item, bounds, ux, uy, lightFactor, scale, heightFactor) {
-  const polygon = effectiveFootprintPolygon(item);
+  const footprint = itemFootprint(item);
+  if (footprint === "none") return true;
+  const polygon = footprint === "rect" ? [
+    { x: 0.12, y: 0.72 },
+    { x: 0.88, y: 0.72 },
+    { x: 0.88, y: 0.96 },
+    { x: 0.12, y: 0.96 }
+  ] : footprint === "polygon" ? effectiveFootprintPolygon(item) : [];
   if (polygon.length) {
     const shadowLength = itemShadowLength(item) * scale * heightFactor;
     const offsetX = ux * shadowLength * 0.72;
@@ -3819,7 +4276,8 @@ function drawFloorFootprintShadow(targetCtx, item, bounds, ux, uy, lightFactor, 
     targetCtx.restore();
     return true;
   }
-  if (itemFootprint(item) !== "ellipse") return false;
+  if (footprint === "polygon" || footprint === "rect") return true;
+  if (footprint !== "ellipse") return false;
   const shadowLength = itemShadowLength(item) * scale * heightFactor;
   const footX = bounds.x + bounds.w * 0.5;
   const footY = bounds.y + bounds.h * 0.88;
@@ -3905,7 +4363,8 @@ function drawProjectedShadow(targetCtx, item, bounds, lightPoint, scale = 1, sur
   if (usesWallAnchor && facePoints && drawWallPlaneShadow(targetCtx, item, bounds, lightPoint, scale, facePoints)) {
     return;
   }
-  if (drawProjectedShadow2D5(targetCtx, item, bounds, lightPoint, scale, lightFactor, heightFactor, isWallSurface)) {
+  if ((!isWallSurface || usesWallAnchor) &&
+      drawProjectedShadow2D5(targetCtx, item, bounds, lightPoint, scale, lightFactor, heightFactor, isWallSurface)) {
     return;
   }
   if (!isWallSurface && drawFloorFootprintShadow(targetCtx, item, bounds, ux, uy, lightFactor, scale, heightFactor)) {
@@ -3944,12 +4403,34 @@ function drawProjectedShadow(targetCtx, item, bounds, lightPoint, scale = 1, sur
   targetCtx.restore();
 }
 
-function drawItemShadows(targetCtx, rectForItem, lightPoint, scale = 1, pointsForFace = (face) => face.points) {
+function drawItemShadows(
+  targetCtx,
+  rectForItem,
+  lightPoint,
+  scale = 1,
+  pointsForFace = (face) => face.points,
+  items = sortedItems()
+) {
   const faces = receivingShadowFaces();
+  const projectionModel = roomProjectionModel(pointsForFace);
+  const unifiedItems = new Set();
+  for (const item of items) {
+    if (drawUnifiedFloorItemShadow(
+      targetCtx,
+      item,
+      rectForItem(item),
+      lightPoint,
+      scale,
+      projectionModel
+    )) {
+      unifiedItems.add(item);
+    }
+  }
   if (!faces.length) {
     const hasRoomFaces = state.faces.some((face) => !isSpriteAreaFace(face) && face.points.length >= 3);
     if (hasRoomFaces) return;
-    for (const item of sortedItems()) {
+    for (const item of items) {
+      if (unifiedItems.has(item)) continue;
       drawProjectedShadow(targetCtx, item, rectForItem(item), lightPoint, scale, "floor");
     }
     return;
@@ -3961,11 +4442,40 @@ function drawItemShadows(targetCtx, rectForItem, lightPoint, scale = 1, pointsFo
     targetCtx.save();
     drawPolygonPath(targetCtx, points);
     targetCtx.clip();
-    for (const item of sortedItems()) {
+    for (const item of items) {
+      if (unifiedItems.has(item)) continue;
       drawProjectedShadow(targetCtx, item, rectForItem(item), lightPoint, scale, shadowSurfaceForFace(face), points, face);
     }
     targetCtx.restore();
   }
+}
+
+function createItemShadowLayers(targetCtx, rectForItem, lightPoint, scale = 1, pointsForFace = (face) => face.points) {
+  if (!state.night.castShadows) return [];
+  const casters = sortedItems().filter((item) =>
+    itemVisibleInMode(item) &&
+    itemCastsShadow(item) &&
+    itemRenderOpacity(item) > 0 &&
+    itemShadowOpacity(item) > 0 &&
+    itemShadowLength(item) > 0
+  );
+  return casters.map((item) => {
+    const layer = document.createElement("canvas");
+    layer.width = targetCtx.canvas.width;
+    layer.height = targetCtx.canvas.height;
+    drawItemShadows(layer.getContext("2d"), rectForItem, lightPoint, scale, pointsForFace, [item]);
+    return { item, layer };
+  });
+}
+
+function drawShadowLayers(targetCtx, shadowLayers) {
+  targetCtx.save();
+  targetCtx.globalAlpha = 1;
+  targetCtx.globalCompositeOperation = "source-over";
+  for (const { layer } of shadowLayers) {
+    targetCtx.drawImage(layer, 0, 0);
+  }
+  targetCtx.restore();
 }
 
 function drawBase() {
@@ -4037,16 +4547,59 @@ function drawPreviewBackground() {
   previewCtx.restore();
 }
 
-function drawItems() {
-  for (const item of sortedItems()) {
-    if (!itemVisibleInMode(item)) continue;
-    const b = itemBounds(item);
-    const editBounds = targetRectToEdit(item.x, item.y, b.w, b.h);
-    ctx.globalAlpha = item.opacity;
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(item.img, editBounds.x, editBounds.y, editBounds.w, editBounds.h);
+function itemRenderOpacity(item) {
+  return clampNumber(Number(item?.opacity), 1, 0, 1);
+}
+
+function drawReceiverShadows(
+  targetCtx,
+  receiver,
+  receiverBounds,
+  shadowLayers,
+  receiverLayer
+) {
+  if (receiver.receivesShadow === false || itemRenderOpacity(receiver) <= 0 || !state.night.castShadows) return;
+  const applicable = shadowLayers.filter(({ item }) => item !== receiver);
+  if (!applicable.length) return;
+
+  const layerCtx = receiverLayer.getContext("2d");
+  layerCtx.clearRect(0, 0, receiverLayer.width, receiverLayer.height);
+  layerCtx.save();
+  layerCtx.globalAlpha = 1;
+  layerCtx.globalCompositeOperation = "source-over";
+  for (const { layer } of applicable) {
+    layerCtx.drawImage(layer, 0, 0);
   }
-  ctx.globalAlpha = 1;
+  layerCtx.restore();
+
+  layerCtx.save();
+  layerCtx.globalCompositeOperation = "destination-in";
+  layerCtx.globalAlpha = itemRenderOpacity(receiver);
+  layerCtx.imageSmoothingEnabled = false;
+  layerCtx.drawImage(receiver.img, receiverBounds.x, receiverBounds.y, receiverBounds.w, receiverBounds.h);
+  layerCtx.restore();
+
+  targetCtx.save();
+  targetCtx.globalAlpha = 1;
+  targetCtx.globalCompositeOperation = "source-over";
+  targetCtx.drawImage(receiverLayer, 0, 0);
+  targetCtx.restore();
+}
+
+function drawSceneItems(targetCtx, rectForItem, shadowLayers) {
+  const items = sortedItems().filter((item) => itemVisibleInMode(item));
+  const receiverLayer = document.createElement("canvas");
+  receiverLayer.width = targetCtx.canvas.width;
+  receiverLayer.height = targetCtx.canvas.height;
+  for (const item of items) {
+    const bounds = rectForItem(item);
+    targetCtx.save();
+    targetCtx.globalAlpha = itemRenderOpacity(item);
+    targetCtx.imageSmoothingEnabled = false;
+    targetCtx.drawImage(item.img, bounds.x, bounds.y, bounds.w, bounds.h);
+    targetCtx.restore();
+    drawReceiverShadows(targetCtx, item, bounds, shadowLayers, receiverLayer);
+  }
 }
 
 function faceFillColor(type, alpha = 0.35) {
@@ -4113,11 +4666,12 @@ function drawFacesOverlay() {
     ctx.strokeStyle = "#78d6ee";
     ctx.strokeRect(first.x - 4, first.y - 4, 8, 8);
   }
+  const selected = selectedFace();
   const visiblePointIds = new Set([
     ...state.draftPoints.map((point) => point.id),
-    ...state.faces
-      .filter(faceVisible)
-      .flatMap((face) => face.points.map((point) => point.id))
+    ...(state.drawingFace
+      ? state.faces.filter(faceVisible).flatMap((face) => face.points.map((point) => point.id))
+      : (selected && faceVisible(selected) ? selected.points.map((point) => point.id) : []))
   ]);
   for (const point of state.points) {
     if (!visiblePointIds.has(point.id)) continue;
@@ -4150,16 +4704,9 @@ function renderPreview() {
   }
   const lightPoint = activeLightPoint();
   drawPreviewBackground();
-  drawItemShadows(previewCtx, itemBounds, lightPoint, 1, faceTargetPoints);
-  previewCtx.save();
-  previewCtx.globalAlpha = 0.85;
-  for (const item of sortedItems()) {
-    if (!itemVisibleInMode(item)) continue;
-    const b = itemBounds(item);
-    previewCtx.imageSmoothingEnabled = false;
-    previewCtx.drawImage(item.img, item.x, item.y, b.w, b.h);
-  }
-  previewCtx.restore();
+  const shadowLayers = createItemShadowLayers(previewCtx, itemBounds, lightPoint, 1, faceTargetPoints);
+  drawShadowLayers(previewCtx, shadowLayers);
+  drawSceneItems(previewCtx, itemBounds, shadowLayers);
 
   drawLightingOverlay(previewCtx, state.width, state.height, lightPoint, 1);
   drawScreenFrame(previewCtx);
@@ -4423,9 +4970,18 @@ function drawSelection() {
   ctx.lineWidth = 1;
   ctx.setLineDash([2, 2]);
   ctx.strokeRect(Math.round(editBounds.x) + 0.5, Math.round(editBounds.y) + 0.5, Math.round(editBounds.w), Math.round(editBounds.h));
-  drawItemLocalPolygonOverlay(item, "footprintPolygon", "rgba(112, 231, 157, 0.82)", "rgba(112, 231, 157, 0.12)");
-  drawItemLocalPolygonOverlay(item, "shadowPolygon", "rgba(205, 154, 255, 0.82)", "rgba(205, 154, 255, 0.10)");
-  drawItemPolygonDraftOverlay(item);
+  const advancedOpen = document.getElementById("shadowAdvancedGroup")?.open === true;
+  if (advancedOpen || isItemPolygonDraftActive()) {
+    const key = isItemPolygonDraftActive()
+      ? state.itemPolygonDraft.key
+      : state.activeItemPolygonKey;
+    if (key === "shadowPolygon") {
+      drawItemLocalPolygonOverlay(item, "shadowPolygon", "rgba(205, 154, 255, 0.82)", "rgba(205, 154, 255, 0.10)");
+    } else {
+      drawItemLocalPolygonOverlay(item, "footprintPolygon", "rgba(112, 231, 157, 0.82)", "rgba(112, 231, 157, 0.12)");
+    }
+    drawItemPolygonDraftOverlay(item);
+  }
   ctx.restore();
 }
 
@@ -4596,16 +5152,18 @@ function render() {
 
   drawBase();
   const lightPoint = activeLightPoint();
-  drawItemShadows(
+  const editRectForItem = (item) => {
+    const bounds = itemBounds(item);
+    return targetRectToEdit(bounds.x, bounds.y, bounds.w, bounds.h);
+  };
+  const shadowLayers = createItemShadowLayers(
     ctx,
-    (item) => {
-      const bounds = itemBounds(item);
-      return targetRectToEdit(bounds.x, bounds.y, bounds.w, bounds.h);
-    },
+    editRectForItem,
     targetToEditPoint(lightPoint),
     Math.max(editScaleX(), editScaleY())
   );
-  drawItems();
+  drawShadowLayers(ctx, shadowLayers);
+  drawSceneItems(ctx, editRectForItem, shadowLayers);
   drawEditorLightOverlay();
   drawGrid();
   if (state.editMode === "shape") drawFacesOverlay();
@@ -4627,7 +5185,6 @@ function refreshList() {
   backgroundTitle.textContent = `Background layers (${backgroundItems().length})`;
   assetList.appendChild(backgroundTitle);
 
-  const prepared = preparedRoomMetrics();
   for (const background of backgroundItems()) {
     const active = backgroundVisibleInMode(background);
     const el = document.createElement("div");
@@ -4637,7 +5194,7 @@ function refreshList() {
       background.visibleInNight !== false ? "Night" : ""
     ].filter(Boolean).join(" / ") || "No mode";
     const hidden = background.visible === false ? ", hidden" : "";
-    const meta = `${background.width}x${background.height}, ${modes}${hidden}, opacity ${Math.round(state.baseOpacity * 100)}%`;
+    const meta = `${background.width}x${background.height} · ${modes}${hidden}`;
     el.innerHTML = `
       <img class="asset-thumb" alt="" src="${background.dataUrl}">
       <div class="asset-details">
@@ -4716,21 +5273,6 @@ function refreshList() {
     assetList.appendChild(empty);
   }
 
-  const primary = primaryBackground();
-  if (primary) {
-    const transform = document.createElement("div");
-    transform.className = "asset-item static background-transform";
-    transform.innerHTML = `
-      <div class="asset-thumb shared-transform-badge">1:1</div>
-      <div>
-        <div class="asset-kind">Shared transform</div>
-        <div class="asset-name">Day/Night linked</div>
-        <div class="asset-meta">trim ${prepared.trim.x},${prepared.trim.y},${prepared.trim.width}x${prepared.trim.height}; export ${state.width}x${state.height}</div>
-      </div>
-    `;
-    assetList.appendChild(transform);
-  }
-
   const itemTitle = document.createElement("div");
   itemTitle.className = "asset-section-title";
   itemTitle.textContent = `Scene layers (${state.items.length})`;
@@ -4741,22 +5283,20 @@ function refreshList() {
     el.className = `asset-item${item.id === state.selectedId ? " selected" : ""}`;
     const isSprite = item.source === "project_sprite";
     const type = isSprite ? "Project sprite" : "Furniture";
-    const cutout = item.cutoutApplied ? ", cutout" : "";
-	    const hidden = item.visible ? "" : ", hidden";
-	    const modeHidden = !isSprite && !itemVisibleInMode(item) ? `, hidden in ${normalizeBackgroundMode(state.mode)}` : "";
-	    const libraryMark = item.libraryId ? ", lib" : "";
-	    const bounds = itemBounds(item);
-    const scaleText = Math.abs(itemScaleX(item) - itemScaleY(item)) < 0.0001
-      ? `${Math.round(itemScaleX(item) * 100)}%`
-      : `${Math.round(bounds.w)}x${Math.round(bounds.h)}`;
+    const bounds = itemBounds(item);
     const meta = isSprite
-      ? `${item.action || "-"}/${item.frame || "-"}, ${Math.round(bounds.w)}x${Math.round(bounds.h)}, x ${Math.round(item.x)}, y ${Math.round(item.y)}, z ${item.z}${hidden}`
-		      : `${itemKindLabel(item.kind)} h${Math.round(itemHeightPx(item))}, ${furnitureTypeLabel(item.furnitureType)}, x ${Math.round(item.x)}, y ${Math.round(item.y)}, z ${item.z}, ${scaleText}${cutout}${libraryMark}${hidden}${modeHidden}`;
+      ? `${item.action || "-"}/${item.frame || "-"} · ${Math.round(bounds.w)}x${Math.round(bounds.h)} · z${item.z}`
+      : `${itemKindLabel(item.kind)} · ${Math.round(bounds.w)}x${Math.round(bounds.h)} · z${item.z}`;
+    el.setAttribute("role", "button");
+    el.setAttribute("tabindex", "0");
+    el.setAttribute("aria-pressed", item.id === state.selectedId ? "true" : "false");
     el.innerHTML = `
       <img class="asset-thumb" alt="" src="${item.dataUrl}">
       <div class="asset-details">
-        <div class="asset-kind">${escapeHtml(type)}</div>
-        <div class="asset-name">${escapeHtml(item.name)}</div>
+        <div class="layer-name-row">
+          <span class="asset-kind-inline">${escapeHtml(type)}</span>
+          <span class="asset-name">${escapeHtml(item.name)}</span>
+        </div>
         <div class="asset-meta">${escapeHtml(meta)}</div>
       </div>
       <label class="asset-visibility" title="${item.visible ? "Hide" : "Show"} ${escapeAttr(item.name)}">
@@ -4764,7 +5304,7 @@ function refreshList() {
         <span>${item.visible ? "On" : "Off"}</span>
       </label>
     `;
-    el.addEventListener("click", () => {
+    const selectLayerItem = () => {
       state.selectedId = item.id;
       state.selectedFaceId = null;
       state.selectedPointIndex = null;
@@ -4777,6 +5317,13 @@ function refreshList() {
       refreshFaceList();
       refreshSelectedFacePanel();
       render();
+    };
+    el.addEventListener("click", selectLayerItem);
+    el.addEventListener("keydown", (event) => {
+      if (event.target !== el) return;
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      selectLayerItem();
     });
     el.querySelector(".asset-visibility").addEventListener("click", (event) => {
       event.stopPropagation();
@@ -4894,6 +5441,7 @@ function refreshSelectedPanel() {
   )).join("");
 
   const bounds = itemBounds(item);
+  const behaviorPreset = itemKindPreset(item.kind);
   const castsShadow = !isSprite && itemCastsShadow(item);
   const usesWallShadow = !isSprite && castsShadow && itemUsesWallShadowAnchor(item);
   const selectedShadowFaceIds = new Set(itemShadowFaceIds(item));
@@ -4945,10 +5493,8 @@ function refreshSelectedPanel() {
       <div class="property-group-body stack">
         <label class="field">Name<input id="itemName" type="text" value="${escapeAttr(item.name)}"></label>
         ${!isSprite ? `
-          <div class="row">
-            <label class="field">Preset<select id="itemKind">${itemKindOptions}</select></label>
-            <label class="field">Category<select id="itemFurnitureType">${furnitureTypeOptions}</select></label>
-          </div>
+          <label class="field">Behavior<select id="itemKind">${itemKindOptions}</select></label>
+          <div class="behavior-summary">${escapeHtml(behaviorPreset.summary)}</div>
         ` : ""}
         <div class="row">
           <label class="field">X<input id="itemX" type="number" value="${Math.round(item.x)}"></label>
@@ -4958,25 +5504,24 @@ function refreshSelectedPanel() {
           <label class="field">W<input id="itemW" type="number" step="1" min="1" value="${Math.round(bounds.w)}"></label>
           <label class="field">H<input id="itemH" type="number" step="1" min="1" value="${Math.round(bounds.h)}"></label>
         </div>
-        <div class="row">
-          <label class="field">Scale<input id="itemScale" type="number" step="0.001" min="0.0001" value="${itemScaleX(item)}"></label>
-          <label class="field">Opacity<input id="itemOpacity" type="number" step="0.05" min="0" max="1" value="${item.opacity}"></label>
+        <div class="basic-option-row">
+          <label class="field compact-field">Opacity<input id="itemOpacity" type="number" step="0.05" min="0" max="1" value="${item.opacity}"></label>
+          <label class="check-row inline-check"><input id="itemAspectLock" type="checkbox" ${itemAspectLocked(item) ? "checked" : ""}> Lock ratio</label>
+          ${!isSprite ? `
+            <div class="mode-visibility-row">
+              <label class="check-row"><input id="itemVisibleDay" type="checkbox" ${item.visibleInDay !== false ? "checked" : ""}> Day</label>
+              <label class="check-row"><input id="itemVisibleNight" type="checkbox" ${item.visibleInNight !== false ? "checked" : ""}> Night</label>
+            </div>
+          ` : ""}
         </div>
-        <label class="check-row inline-check"><input id="itemAspectLock" type="checkbox" ${itemAspectLocked(item) ? "checked" : ""}> Lock aspect</label>
-        ${!isSprite ? `
-          <div class="mode-visibility-row">
-            <label class="check-row"><input id="itemVisibleDay" type="checkbox" ${item.visibleInDay !== false ? "checked" : ""}> Day</label>
-            <label class="check-row"><input id="itemVisibleNight" type="checkbox" ${item.visibleInNight !== false ? "checked" : ""}> Night</label>
-          </div>
-        ` : ""}
-        <div id="itemSizeHint" class="hint"></div>
+        ${isSprite ? '<div id="itemSizeHint" class="hint compact-source-meta"></div>' : ""}
       </div>
     </details>
   `;
 
   if (isSprite) {
     html += `
-      <details class="property-group">
+      <details class="property-group" id="itemSourceGroup">
         <summary>
           <span>Sprite source</span>
           <span class="section-meta">${escapeHtml(item.action || "-")}</span>
@@ -4988,6 +5533,19 @@ function refreshSelectedPanel() {
     `;
   } else {
     html += `
+      <details class="property-group" id="itemMetadataGroup">
+        <summary>
+          <span>Metadata</span>
+          <span class="section-meta">${escapeHtml(furnitureTypeLabel(item.furnitureType))}</span>
+        </summary>
+        <div class="property-group-body stack">
+          <label class="field">Library category<select id="itemFurnitureType">${furnitureTypeOptions}</select></label>
+          <div class="hint">Used for library filtering and gameplay identity. It does not change shadows or placement behavior.</div>
+          <div id="itemSizeHint" class="hint compact-source-meta"></div>
+        </div>
+      </details>
+    `;
+    html += `
       <details class="property-group">
         <summary>
           <span>Shadow</span>
@@ -4995,6 +5553,7 @@ function refreshSelectedPanel() {
         </summary>
         <div class="property-group-body stack">
           <label class="check-row"><input id="itemCastsShadow" type="checkbox" ${itemCastsShadow(item) ? "checked" : ""}> Cast shadow</label>
+          <label class="check-row"><input id="itemReceivesShadow" type="checkbox" ${item.receivesShadow !== false ? "checked" : ""}> Receive shadow</label>
           ${castsShadow ? `
             <div class="row-3">
               <label class="field">Opacity<input id="itemShadowOpacity" type="number" min="0" max="100" step="1" value="${Math.round(itemShadowOpacity(item))}"></label>
@@ -5009,7 +5568,7 @@ function refreshSelectedPanel() {
       </details>
     `;
     html += `
-      <details class="property-group">
+      <details class="property-group" id="shadowAdvancedGroup">
         <summary>
           <span>Shadow Advanced</span>
           <span class="section-meta">${Math.round(itemHeightPx(item))}px</span>
@@ -5068,9 +5627,9 @@ function refreshSelectedPanel() {
   }
 
   html += `
-    <details class="property-group">
+    <details class="property-group" id="itemDrawOrderGroup">
       <summary>
-        <span>Layering</span>
+        <span>Draw order</span>
         <span class="section-meta">sortY ${Math.round(itemSortY(item))}</span>
       </summary>
       <div class="property-group-body stack">
@@ -5078,20 +5637,17 @@ function refreshSelectedPanel() {
           <label class="field">Z<input id="itemZ" type="number" value="${item.z}"></label>
           <label class="field">Sort Y<input id="itemSortY" type="number" value="${Math.round(itemSortY(item))}"></label>
         </div>
-        <div class="row">
-          <label class="field">Slot<input id="itemSlot" type="text" value="${escapeAttr(item.slot)}"></label>
-          <label class="field">Layer<input id="itemLayer" type="text" value="${escapeAttr(item.layer || "main")}"></label>
-        </div>
         ${!isSprite ? `
-          <label class="check-row"><input id="itemReceivesShadow" type="checkbox" ${item.receivesShadow !== false ? "checked" : ""}> Receive shadow</label>
           <label class="check-row"><input id="itemOccludesSprite" type="checkbox" ${item.occludesSprite ? "checked" : ""}> Occlude sprite</label>
         ` : ""}
-        <div class="hint">同一 Z 层内按 Sort Y 排序。默认使用物体底部 y 值，必要时可手动调整。</div>
+        <div class="hint">Z controls the main draw order. Items with the same Z use Sort Y, normally the object's bottom edge.</div>
       </div>
     </details>
   `;
 
   selectedPanel.innerHTML = html;
+
+  document.getElementById("shadowAdvancedGroup")?.addEventListener("toggle", () => render());
 
   if (isSprite) {
     bindSpriteSelectorInputs(item);
@@ -5120,10 +5676,11 @@ function refreshSelectedPanel() {
     setInputValue("itemSortY", Math.round(itemSortY(item)), exceptId);
     const hint = document.getElementById("itemSizeHint");
     if (hint) {
-      hint.textContent =
-        `Source: ${item.fileName} (${item.sourceWidth}x${item.sourceHeight}) -> ` +
-        `target ${Math.round(nextBounds.w)}x${Math.round(nextBounds.h)}, ` +
-        `scale ${Math.round(itemScaleX(item) * 100)}% x ${Math.round(itemScaleY(item) * 100)}%`;
+      const source = `${item.sourceWidth}x${item.sourceHeight}`;
+      const target = `${Math.round(nextBounds.w)}x${Math.round(nextBounds.h)}`;
+      const scale = `${Math.round(itemScaleX(item) * 100)}% x ${Math.round(itemScaleY(item) * 100)}%`;
+      hint.textContent = `Source ${source} · Target ${target} · ${scale}`;
+      hint.title = `${item.fileName}: source ${source}, target ${target}, scale ${scale}`;
     }
   };
   const bindSize = (id, fn) => {
@@ -5165,12 +5722,16 @@ function refreshSelectedPanel() {
     commitHistory();
   });
   bind("itemOpacity", (input) => { item.opacity = Math.max(0, Math.min(1, Number(input.value))); });
-  bind("itemSlot", (input) => { item.slot = input.value; });
-  bind("itemLayer", (input) => { item.layer = input.value; });
   bind("itemSortY", (input) => { item.sortY = Number(input.value) || autoSortY(item); });
   if (!isSprite) {
     const itemKindInput = document.getElementById("itemKind");
     if (itemKindInput) itemKindInput.addEventListener("change", (event) => {
+      if (itemHasBehaviorOverrides(item) && !window.confirm(
+        "Changing Behavior resets height, footprint, shadow target, shadow flags, sprite occlusion, and wall depth. Custom polygon points are kept. Continue?"
+      )) {
+        event.target.value = normalizeItemKind(item.kind);
+        return;
+      }
       applyItemKindPreset(item, event.target.value);
       refreshList();
       refreshSelectedPanel();
@@ -5323,12 +5884,14 @@ function refreshSelectedPanel() {
   updateEditModeButtons();
 }
 
-function pointRowsHtml(points, selectedPointId) {
+function pointRowsHtml(points, selectedPointId, options = {}) {
+  const canDeleteBelowThree = options.canDeleteBelowThree === true;
   return points.map((point, index) => `
     <div class="point-row${point.id === selectedPointId ? " selected" : ""}" data-point-index="${index}">
       <button class="point-select" type="button" data-point-index="${index}">${index + 1}</button>
-      <label class="field">X<input class="point-x" data-point-index="${index}" type="number" value="${Math.round(point.x)}"></label>
-      <label class="field">Y<input class="point-y" data-point-index="${index}" type="number" value="${Math.round(point.y)}"></label>
+      <label class="field point-coordinate"><span>X</span><input class="point-x" data-point-index="${index}" type="number" value="${Math.round(point.x)}"></label>
+      <label class="field point-coordinate"><span>Y</span><input class="point-y" data-point-index="${index}" type="number" value="${Math.round(point.y)}"></label>
+      <button class="point-delete danger" type="button" data-point-index="${index}" title="${canDeleteBelowThree || points.length > 3 ? `Delete point ${index + 1}` : "A closed face needs at least 3 points"}" aria-label="Delete point ${index + 1}" ${canDeleteBelowThree || points.length > 3 ? "" : "disabled"}>&times;</button>
     </div>
   `).join("");
 }
@@ -5365,7 +5928,6 @@ function faceDetailHtml(face) {
       `}
       <div class="toolbar">
         <button class="insert-point" type="button">Add point</button>
-        <button class="delete-point danger" type="button">Delete point</button>
       </div>
       <div class="point-list">
         ${pointRowsHtml(face.points, state.selectedPointId)}
@@ -5379,11 +5941,8 @@ function draftDetailHtml() {
   return `
     <div class="face-detail">
       <div class="hint">Click the first point on the canvas to close this draft face.</div>
-      <div class="toolbar">
-        <button class="delete-point danger" type="button">Delete point</button>
-      </div>
       <div class="point-list">
-        ${pointRowsHtml(state.draftPoints, state.selectedPointId)}
+        ${pointRowsHtml(state.draftPoints, state.selectedPointId, { canDeleteBelowThree: true })}
       </div>
       <div class="hint">Draft points can be dragged, edited, deleted, or reused with closed-face points.</div>
     </div>
@@ -5480,7 +6039,6 @@ function bindFaceDetailControls(face, root) {
     commitHistory();
   });
   detail.querySelector(".insert-point").addEventListener("click", insertPointAfterSelected);
-  detail.querySelector(".delete-point").addEventListener("click", deleteSelectedPoint);
 
   for (let index = 0; index < face.points.length; ++index) {
     detail.querySelector(`.point-select[data-point-index="${index}"]`).addEventListener("click", () => {
@@ -5498,6 +6056,10 @@ function bindFaceDetailControls(face, root) {
       render();
       commitHistory();
     });
+    detail.querySelector(`.point-delete[data-point-index="${index}"]`).addEventListener("click", (event) => {
+      event.stopPropagation();
+      deleteFacePoint(face, index);
+    });
   }
 }
 
@@ -5505,7 +6067,6 @@ function bindDraftDetailControls(root) {
   const detail = root.querySelector(".face-detail");
   if (!detail) return;
   detail.addEventListener("click", (event) => event.stopPropagation());
-  detail.querySelector(".delete-point").addEventListener("click", deleteSelectedPoint);
 
   for (let index = 0; index < state.draftPoints.length; ++index) {
     detail.querySelector(`.point-select[data-point-index="${index}"]`).addEventListener("click", () => {
@@ -5524,6 +6085,10 @@ function bindDraftDetailControls(root) {
       selectDraftPoint(index);
       render();
       commitHistory();
+    });
+    detail.querySelector(`.point-delete[data-point-index="${index}"]`).addEventListener("click", (event) => {
+      event.stopPropagation();
+      deleteDraftPoint(index);
     });
   }
 }
@@ -5574,6 +6139,7 @@ function refreshFaceList() {
     const el = document.createElement("div");
     const visible = faceVisible(face);
     el.className = `face-item${selected ? " selected" : ""}${visible ? "" : " face-hidden"}`;
+    el.dataset.faceId = face.id;
     el.innerHTML = `
       <div class="face-summary">
         <div class="face-color" style="background:${faceStrokeColor(face.type)}"></div>
@@ -5582,8 +6148,8 @@ function refreshFaceList() {
           <div class="asset-meta">${visible ? "" : "hidden, "}${escapeHtml(faceTypeLabel(face.type))}, ${isSpriteAreaFace(face) ? "movement area" : `${escapeHtml(shadowSurfaceForFace(face))}, ${face.receivesShadow === false ? "no shadow" : "receives shadow"}`}, ${face.points.length} points</div>
         </div>
         <button class="face-visibility${visible ? "" : " is-hidden"}" type="button" title="${visible ? "Hide face on canvas" : "Show face on canvas"}" aria-label="${visible ? "Hide face on canvas" : "Show face on canvas"}"></button>
-        <button class="face-toggle" type="button" title="${expanded ? "Collapse points" : "Expand points"}">${expanded ? "^" : "v"}</button>
-        <button class="face-delete danger" type="button" title="Delete face">x</button>
+        <button class="face-toggle" type="button" title="${expanded ? "Collapse points" : "Expand points"}" aria-label="${expanded ? "Collapse" : "Expand"} ${escapeAttr(face.id)} points">${expanded ? "^" : "v"}</button>
+        <button class="face-delete danger" type="button" title="Delete face" aria-label="Delete ${escapeAttr(face.id)}">x</button>
       </div>
       ${expanded ? faceDetailHtml(face) : ""}
     `;
@@ -5660,27 +6226,23 @@ function insertPointAfterSelected() {
   commitHistory();
 }
 
-function deleteSelectedPoint() {
-  const face = selectedFace();
-  if (face) {
-    if (state.selectedPointIndex == null || face.points.length <= 3) return;
-    face.points.splice(state.selectedPointIndex, 1);
-    pruneUnusedPoints();
-    selectPointInFace(face, Math.min(state.selectedPointIndex, face.points.length - 1));
-    refreshFaceList();
-    refreshSelectedFacePanel();
-    render();
-    commitHistory();
-    return;
-  }
-  if (state.selectedPointIndex == null || state.selectedPointIndex < 0 ||
-      state.selectedPointIndex >= state.draftPoints.length) {
-    return;
-  }
-  state.draftPoints.splice(state.selectedPointIndex, 1);
+function deleteFacePoint(face, index) {
+  if (!face || face.points.length <= 3 || index < 0 || index >= face.points.length) return;
+  face.points.splice(index, 1);
+  pruneUnusedPoints();
+  selectPointInFace(face, Math.min(index, face.points.length - 1));
+  refreshFaceList();
+  refreshSelectedFacePanel();
+  render();
+  commitHistory();
+}
+
+function deleteDraftPoint(index) {
+  if (index < 0 || index >= state.draftPoints.length) return;
+  state.draftPoints.splice(index, 1);
   if (state.draftPoints.length === 0) state.drawingFace = false;
   pruneUnusedPoints();
-  selectDraftPoint(Math.min(state.selectedPointIndex, state.draftPoints.length - 1));
+  selectDraftPoint(Math.min(index, state.draftPoints.length - 1));
   refreshFaceList();
   refreshSelectedFacePanel();
   render();
@@ -5969,7 +6531,7 @@ function syncInspectorWorkflow() {
     return;
   }
 
-  setDetailsOpen(layersPanel, true);
+  setDetailsOpen(layersPanel, !selectedItem());
   setDetailsOpen(roomFacesPanel, false);
   setDetailsOpen(lightShadowsPanel, false);
 }
@@ -6781,11 +7343,65 @@ function exportBackgroundLayers(prepared = preparedRoomMetrics()) {
   }));
 }
 
+function exportProjectionVector(point) {
+  return [Number(point.x.toFixed(4)), Number(point.y.toFixed(4))];
+}
+
+function exportRoomProjectionObject() {
+  const model = roomProjectionModel(faceTargetPoints);
+  if (!model) return null;
+  return {
+    type: model.type,
+    origin: exportProjectionVector(model.origin),
+    axisU: exportProjectionVector(model.axisU),
+    axisV: exportProjectionVector(model.axisV),
+    axisZ: exportProjectionVector(model.axisZ),
+    planes: {
+      floor: { faceId: model.faces.floor.id, coordinate: "z", value: 0 },
+      leftWall: { faceId: model.faces.left_wall.id, coordinate: "v", value: 0 },
+      rightWall: { faceId: model.faces.right_wall.id, coordinate: "u", value: 0 }
+    }
+  };
+}
+
+function exportItemProjectionObject(item) {
+  const model = roomProjectionModel(faceTargetPoints);
+  if (!model) return null;
+  const bounds = itemBounds(item);
+  const anchorPoint = { x: bounds.x + bounds.w * 0.5, y: bounds.y + bounds.h * 0.88 };
+  const usesWallAnchor = itemUsesWallShadowAnchor(item);
+  const explicitFaceId = itemShadowFaceIds(item).find((id) => model.points.has(String(id)));
+  const anchorFace = usesWallAnchor ?
+    (explicitFaceId ? Object.values(model.faces).find((face) => String(face.id) === explicitFaceId) :
+      Object.values(model.faces).find((face) => String(face.id) === automaticWallShadowFaceId(item))) :
+    model.faces.floor;
+  if (!anchorFace) return null;
+
+  let anchorUV;
+  if (anchorFace === model.faces.floor) {
+    const world = screenPointToProjectionWorld(model, anchorPoint, 0);
+    anchorUV = [world.u, world.v];
+  } else {
+    const basis = faceProjectionBasis(model.points.get(String(anchorFace.id)) || []);
+    if (!basis) return null;
+    const local = screenToFaceLocal(basis, anchorPoint);
+    anchorUV = [local.u / basis.uLength, local.v / basis.vLength];
+  }
+  return {
+    model: model.type,
+    anchorFaceId: anchorFace.id,
+    anchorUV: anchorUV.map((value) => Number(value.toFixed(5))),
+    heightPx: Math.round(itemHeightPx(item)),
+    depthPx: Math.round(itemWallShadowDepthPx(item)),
+    casterContour: compactLocalPolygon(item.shadowPolygon)
+  };
+}
+
 function exportLayoutObject() {
   const prepared = preparedRoomMetrics();
   const primary = primaryBackground();
   return {
-    version: 2,
+    version: 4,
     canvas: {
       width: state.width,
       height: state.height,
@@ -6834,8 +7450,8 @@ function exportLayoutObject() {
       visibleInDay: item.visibleInDay !== false,
       visibleInNight: item.visibleInNight !== false,
       anchor: item.anchor,
-      slot: item.slot,
-      layer: item.layer,
+      slot: itemKindPreset(item.kind).slot,
+      layer: itemKindPreset(item.kind).layer,
       source: "furniture",
       libraryId: item.libraryId || "",
       libraryRevision: item.libraryRevision || 0,
@@ -6853,6 +7469,7 @@ function exportLayoutObject() {
       shadowOpacity: Math.round(itemShadowOpacity(item)),
       shadowLength: Math.round(itemShadowLength(item)),
       shadowBlur: Number(itemShadowBlur(item).toFixed(1)),
+      projection: exportItemProjectionObject(item),
       receivesShadow: item.receivesShadow !== false,
       occludesSprite: !!item.occludesSprite,
       sortY: Math.round(itemSortY(item)),
@@ -6870,8 +7487,9 @@ function exportRoomGeometryObject() {
   const prepared = preparedRoomMetrics();
   const primary = primaryBackground();
   return {
-    version: 2,
+    version: 3,
     coordinateSpace: "target",
+    projection: exportRoomProjectionObject(),
     room: {
       width: prepared.width,
       height: prepared.height
@@ -7182,14 +7800,15 @@ async function importLayout(file) {
 	      libraryRevision: entry.libraryRevision ?? item.libraryRevision,
 	      furnitureType: entry.furnitureType || item.furnitureType || inferFurnitureType(entry.fileName || item.fileName || entry.name || item.name),
       kind: entry.kind || item.kind || inferItemKind(entry.fileName || item.fileName || entry.name || item.name, entry.furnitureType || item.furnitureType),
-      heightPx: entry.heightPx ?? item.heightPx,
+      heightPx: entry.projection?.heightPx ?? entry.heightPx ?? item.heightPx,
       footprint: entry.footprint || item.footprint,
       footprintPolygon: normalizeLocalPolygon(entry.footprintPolygon ?? item.footprintPolygon),
-      shadowPolygon: normalizeLocalPolygon(entry.shadowPolygon ?? item.shadowPolygon),
+      shadowPolygon: normalizeLocalPolygon(entry.projection?.casterContour ?? entry.shadowPolygon ?? item.shadowPolygon),
       shadowAnchor: entry.shadowAnchor ?? item.shadowAnchor,
       shadowFaceIds: normalizeShadowFaceIds(entry.shadowFaceIds ?? item.shadowFaceIds),
-      wallShadowDepthPx: entry.wallShadowDepthPx ?? item.wallShadowDepthPx,
+      wallShadowDepthPx: entry.projection?.depthPx ?? entry.wallShadowDepthPx ?? item.wallShadowDepthPx,
       wallShadowOffsetY: entry.wallShadowOffsetY ?? item.wallShadowOffsetY,
+      projection: entry.projection ? { ...entry.projection } : item.projection,
       castsShadow: entry.castsShadow ?? item.castsShadow,
       shadowOpacity: entry.shadowOpacity ?? entry.shadowAlpha ?? item.shadowOpacity,
       shadowLength: entry.shadowLength ?? item.shadowLength,
@@ -7237,14 +7856,10 @@ function escapeAttr(value) {
   return escapeHtml(value).replace(/`/g, "&#096;");
 }
 
-document.getElementById("baseInput").addEventListener("change", (event) => {
-  if (event.target.files.length) loadBackgroundFiles([...event.target.files]);
-});
-
-document.getElementById("replaceBaseButton").addEventListener("click", () => {
-  const input = document.getElementById("baseInput");
-  input.value = "";
-  input.click();
+document.getElementById("baseInput").addEventListener("change", async (event) => {
+  const files = [...event.target.files];
+  event.target.value = "";
+  if (files.length) await loadBackgroundFiles(files);
 });
 
 document.getElementById("furnitureInput").addEventListener("change", (event) => {
@@ -7736,28 +8351,67 @@ window.addEventListener("keydown", (event) => {
   commitHistory();
 });
 
-const dropZone = document.getElementById("dropZone");
-dropZone.addEventListener("dragover", (event) => {
-  event.preventDefault();
-  dropZone.classList.add("dragover");
-});
-dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
-dropZone.addEventListener("drop", async (event) => {
-  event.preventDefault();
-  dropZone.classList.remove("dragover");
-  const files = [...event.dataTransfer.files];
-  const json = files.find((file) => file.name.endsWith(".json"));
-  const images = files.filter((file) => file.type.startsWith("image/"));
-  if (json) await importLayout(json);
-  if (!images.length) {
-    return;
+function setupImageDropZone(id, onDrop) {
+  const dropZone = document.getElementById(id);
+  if (!dropZone) return;
+  dropZone.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    dropZone.classList.add("dragover");
+  });
+  dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
+  dropZone.addEventListener("drop", async (event) => {
+    event.preventDefault();
+    dropZone.classList.remove("dragover");
+    const images = [...event.dataTransfer.files].filter((file) => file.type.startsWith("image/"));
+    if (!images.length) {
+      setStatus("Drop image files here. Use Layout JSON to restore a layout.");
+      return;
+    }
+    await onDrop(images);
+  });
+}
+
+setupImageDropZone("backgroundDropZone", (images) => loadBackgroundFiles(images));
+setupImageDropZone("furnitureDropZone", (images) => addFurnitureFiles(images));
+
+function setupLeftPanelState() {
+  const panelIds = [
+    "assetsPanel",
+    "backgroundPanel",
+    "furnitureImportPanel",
+    "projectSpritesPanel",
+    "furnitureLibraryPanel",
+    "viewHelpersPanel"
+  ];
+  const panels = panelIds
+    .map((id) => document.getElementById(id))
+    .filter(Boolean);
+  let saved = null;
+  try {
+    saved = JSON.parse(localStorage.getItem(LEFT_PANEL_STATE_KEY) || "null");
+  } catch {
+    saved = null;
   }
-  if (!hasBackground() || state.editMode === "shape") {
-    await loadBackgroundFiles(images);
-  } else if (images.length) {
-    await addFurnitureFiles(images);
+  const defaults = hasBackground()
+    ? { furnitureLibraryPanel: true }
+    : { assetsPanel: true, backgroundPanel: true };
+  const openState = saved && typeof saved === "object" ? saved : defaults;
+  let ready = false;
+  const save = () => {
+    if (!ready) return;
+    const next = Object.fromEntries(panels.map((panel) => [panel.id, panel.open]));
+    try {
+      localStorage.setItem(LEFT_PANEL_STATE_KEY, JSON.stringify(next));
+    } catch {
+      // Panel preferences are optional; editing still works without storage.
+    }
+  };
+  for (const panel of panels) {
+    panel.open = openState[panel.id] === true;
+    panel.addEventListener("toggle", save);
   }
-});
+  requestAnimationFrame(() => { ready = true; });
+}
 
 function refreshInitialEmptyEditor() {
   commitHistory();
@@ -7782,6 +8436,7 @@ async function initializeEditor() {
   initFurnitureLibraryControls();
   const loaded = await tryAutoLoadEditorSession();
   if (!loaded) refreshInitialEmptyEditor();
+  setupLeftPanelState();
 }
 
 initializeEditor();

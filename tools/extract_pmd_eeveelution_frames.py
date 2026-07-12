@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 from dataclasses import dataclass, field
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, ImageOps
@@ -47,6 +48,7 @@ class SpeciesSpec:
     export_mirror_frames: bool = True
     frame_overrides: dict = field(default_factory=dict)
     background_tolerance: int = 0
+    mask_to_largest_component: bool = False
     notes: list = field(default_factory=list)
 
 
@@ -386,6 +388,114 @@ SPECS = [
                 [(105, 107, 132, 135), (139, 107, 166, 134), (174, 107, 201, 134)],
                 [(113, 144, 136, 170), (138, 144, 163, 170), (164, 144, 188, 170)],
                 [(110, 175, 136, 204), (138, 176, 163, 204), (165, 176, 190, 204)],
+            ],
+        },
+    ),
+    SpeciesSpec(
+        species_id=16,
+        slug="pidgey",
+        display_name="Pidgey",
+        source_name="016_pidgey.png",
+        source_group="low/split_by_species",
+        scale=2.0,
+        fit_to_canvas=False,
+        crop_padding=1,
+        contact_directions=SOURCE_DIRECTIONS,
+        export_mirror_frames=False,
+        mask_to_largest_component=True,
+        notes=[
+            "The first 15 sprites on row 1 are walking frames: five directions, three frames each.",
+            "This sheet has no separate idle action; idle uses walking frame 0 for each direction.",
+            "Sleeping uses the final two sprites on row 1.",
+            "Overlapping neighboring frame bounds are isolated by keeping the target connected component.",
+        ],
+        sleeping_boxes=[(562, 5, 578, 19), (580, 6, 596, 19)],
+        boxes={
+            "idle": [
+                [(2, 2, 15, 19)],
+                [(47, 1, 62, 19)],
+                [(99, 1, 118, 19)],
+                [(162, 0, 178, 19)],
+                [(213, 1, 226, 19)],
+            ],
+            "walking": [
+                [(2, 2, 15, 19), (17, 1, 30, 19), (32, 4, 45, 19)],
+                [(47, 1, 62, 19), (64, 1, 80, 19), (82, 2, 97, 19)],
+                [(99, 1, 118, 19), (119, 0, 139, 19), (141, 4, 161, 19)],
+                [(162, 0, 178, 19), (178, 0, 195, 19), (195, 1, 211, 19)],
+                [(213, 1, 226, 19), (228, 0, 241, 19), (243, 4, 256, 19)],
+            ],
+        },
+    ),
+    SpeciesSpec(
+        species_id=17,
+        slug="pidgeotto",
+        display_name="Pidgeotto",
+        source_name="017_pidgeotto.png",
+        source_group="low/split_by_species",
+        scale=2.0,
+        fit_to_canvas=False,
+        crop_padding=1,
+        contact_directions=SOURCE_DIRECTIONS,
+        export_mirror_frames=False,
+        mask_to_largest_component=True,
+        notes=[
+            "The first 15 sprites on row 1 are walking frames: five directions, three frames each.",
+            "This sheet has no separate idle action; idle uses walking frame 0 for each direction.",
+            "Sleeping uses sprites 6 and 7 on row 2.",
+            "Overlapping neighboring frame bounds are isolated by keeping the target connected component.",
+        ],
+        sleeping_boxes=[(127, 39, 148, 60), (150, 40, 171, 60)],
+        boxes={
+            "idle": [
+                [(2, 2, 19, 24)],
+                [(59, 2, 80, 24)],
+                [(128, 2, 152, 24)],
+                [(207, 1, 229, 24)],
+                [(277, 0, 292, 24)],
+            ],
+            "walking": [
+                [(2, 2, 19, 24), (21, 2, 38, 24), (40, 2, 57, 24)],
+                [(59, 2, 80, 24), (82, 3, 103, 24), (105, 2, 127, 24)],
+                [(128, 2, 152, 24), (154, 3, 180, 24), (181, 3, 206, 24)],
+                [(207, 1, 229, 24), (228, 1, 251, 24), (253, 2, 275, 24)],
+                [(277, 0, 292, 24), (294, 0, 310, 24), (312, 0, 328, 24)],
+            ],
+        },
+    ),
+    SpeciesSpec(
+        species_id=18,
+        slug="pidgeot",
+        display_name="Pidgeot",
+        source_name="018_pidgeot.png",
+        source_group="low/split_by_species",
+        scale=2.0,
+        fit_to_canvas=False,
+        crop_padding=1,
+        contact_directions=SOURCE_DIRECTIONS,
+        export_mirror_frames=False,
+        mask_to_largest_component=True,
+        notes=[
+            "The first 15 sprites on row 1 are walking frames: five directions, three frames each.",
+            "This sheet has no separate idle action; idle uses walking frame 0 for each direction.",
+            "Sleeping uses sprites 6 and 7 on row 2.",
+            "Overlapping neighboring frame bounds are isolated by keeping the target connected component.",
+        ],
+        sleeping_boxes=[(139, 40, 161, 62), (163, 42, 185, 62)],
+        boxes={
+            "idle": [
+                [(2, 2, 19, 26)],
+                [(58, 1, 80, 26)],
+                [(128, 2, 154, 26)],
+                [(203, 1, 225, 26)],
+                [(270, 1, 285, 26)],
+            ],
+            "walking": [
+                [(2, 2, 19, 26), (21, 2, 38, 26), (40, 2, 57, 26)],
+                [(58, 1, 80, 26), (82, 3, 104, 26), (106, 1, 128, 26)],
+                [(128, 2, 154, 26), (152, 3, 178, 26), (177, 3, 203, 26)],
+                [(203, 1, 225, 26), (223, 0, 247, 26), (248, 2, 268, 26)],
+                [(270, 1, 285, 26), (287, 1, 302, 26), (304, 1, 319, 26)],
             ],
         },
     ),
@@ -963,6 +1073,76 @@ SPECS = [
         },
     ),
     SpeciesSpec(
+        species_id=161,
+        slug="sentret",
+        display_name="Sentret",
+        source_name="161_sentret_162_furret.png",
+        scale=2.0,
+        canvas_width=64,
+        canvas_height=76,
+        fit_to_canvas=False,
+        crop_padding=1,
+        contact_directions=SOURCE_DIRECTIONS,
+        export_mirror_frames=False,
+        notes=[
+            "The source sheet contains all eight clockwise directions starting at front.",
+            "Only front, down_left, left, up_left, and back are exported; right-side directions are mirrored at runtime.",
+            "A taller canvas preserves the fixed 2x scale of the upright tail without shrinking idle frames.",
+        ],
+        sleeping_boxes=[(366, 18, 389, 37), (391, 18, 414, 37)],
+        boxes={
+            "idle": [
+                [(7, 20, 30, 52)],
+                [(7, 54, 27, 86)],
+                [(7, 88, 22, 120)],
+                [(7, 122, 25, 154)],
+                [(7, 156, 28, 188)],
+            ],
+            "walking": [
+                [(178, 19, 197, 41), (199, 19, 220, 41), (222, 19, 241, 41)],
+                [(178, 46, 200, 67), (202, 43, 224, 67), (226, 44, 247, 67)],
+                [(178, 70, 202, 93), (204, 69, 228, 93), (230, 70, 253, 93)],
+                [(178, 96, 199, 119), (201, 95, 224, 119), (226, 95, 247, 119)],
+                [(178, 122, 198, 145), (200, 121, 219, 145), (221, 122, 241, 145)],
+            ],
+        },
+    ),
+    SpeciesSpec(
+        species_id=162,
+        slug="furret",
+        display_name="Furret",
+        source_name="161_sentret_162_furret.png",
+        scale=2.0,
+        canvas_width=84,
+        canvas_height=80,
+        fit_to_canvas=False,
+        crop_padding=1,
+        contact_directions=SOURCE_DIRECTIONS,
+        export_mirror_frames=False,
+        notes=[
+            "The source sheet contains all eight clockwise directions starting at front.",
+            "Only front, down_left, left, up_left, and back are exported; right-side directions are mirrored at runtime.",
+            "The wider canvas preserves the fixed 2x scale of long horizontal poses without clipping or shrinking.",
+        ],
+        sleeping_boxes=[(441, 320, 461, 340), (463, 320, 483, 340)],
+        boxes={
+            "idle": [
+                [(290, 320, 308, 344)],
+                [(290, 346, 313, 372)],
+                [(290, 374, 314, 400)],
+                [(290, 402, 314, 427)],
+                [(290, 429, 308, 454)],
+            ],
+            "walking": [
+                [(69, 330, 82, 353), (84, 330, 97, 353), (99, 320, 114, 353)],
+                [(69, 359, 101, 382), (103, 360, 133, 382), (135, 355, 166, 382)],
+                [(69, 389, 105, 408), (107, 384, 144, 408), (146, 387, 185, 408)],
+                [(69, 418, 99, 438), (101, 410, 129, 438), (131, 419, 164, 438)],
+                [(69, 440, 88, 475), (90, 450, 105, 475), (107, 452, 124, 475)],
+            ],
+        },
+    ),
+    SpeciesSpec(
         species_id=212,
         slug="scizor",
         display_name="Scizor",
@@ -986,6 +1166,225 @@ SPECS = [
                 [(120, 94, 148, 121), (150, 94, 179, 121), (182, 94, 210, 121)],
                 [(117, 125, 139, 152), (150, 125, 177, 152), (181, 125, 209, 152)],
                 [(115, 154, 138, 183), (149, 153, 175, 183), (181, 152, 208, 183)],
+            ],
+        },
+    ),
+    SpeciesSpec(
+        species_id=261,
+        slug="poochyena",
+        display_name="Poochyena",
+        source_name="261_poochyena_262_mightyena.png",
+        source_group="medium",
+        scale=2.0,
+        fit_to_canvas=False,
+        crop_padding=1,
+        contact_directions=SOURCE_DIRECTIONS,
+        export_mirror_frames=False,
+        notes=[
+            "Row 2 contains 15 moving frames: five directions, three frames each.",
+            "This sheet has no separate idle action; idle uses moving frame 0 for each direction.",
+            "Sleeping uses the third-last and second-last sprites on row 4, in left-to-right order.",
+            "Only five source directions are exported; right-side directions are mirrored at runtime.",
+        ],
+        sleeping_boxes=[(217, 128, 239, 143), (242, 127, 264, 143)],
+        boxes={
+            "idle": [
+                [(16, 59, 32, 77)],
+                [(75, 56, 94, 77)],
+                [(144, 56, 167, 77)],
+                [(224, 53, 243, 77)],
+                [(293, 54, 307, 77)],
+            ],
+            "walking": [
+                [(16, 59, 32, 77), (35, 58, 51, 77), (54, 54, 72, 77)],
+                [(75, 56, 94, 77), (97, 57, 118, 77), (121, 56, 141, 77)],
+                [(144, 56, 167, 77), (170, 53, 193, 77), (196, 56, 221, 77)],
+                [(224, 53, 243, 77), (246, 50, 265, 77), (268, 56, 290, 77)],
+                [(293, 54, 307, 77), (310, 53, 324, 77), (327, 60, 341, 77)],
+            ],
+        },
+    ),
+    SpeciesSpec(
+        species_id=262,
+        slug="mightyena",
+        display_name="Mightyena",
+        source_name="261_poochyena_262_mightyena.png",
+        source_group="medium",
+        scale=2.0,
+        canvas_width=64,
+        canvas_height=72,
+        fit_to_canvas=False,
+        crop_padding=1,
+        contact_directions=SOURCE_DIRECTIONS,
+        export_mirror_frames=False,
+        notes=[
+            "Row 2 contains 15 moving frames: five directions, three frames each.",
+            "This sheet has no separate idle action; idle uses moving frame 0 for each direction.",
+            "Sleeping uses the third-last and second-last sprites on row 4, in left-to-right order.",
+            "Only five source directions are exported; right-side directions are mirrored at runtime.",
+            "A taller canvas preserves fixed 2x scaling for the 30-pixel-high moving poses.",
+        ],
+        sleeping_boxes=[(231, 281, 247, 305), (250, 280, 266, 305)],
+        boxes={
+            "idle": [
+                [(3, 206, 19, 232)],
+                [(60, 206, 82, 232)],
+                [(137, 207, 165, 232)],
+                [(232, 204, 253, 232)],
+                [(306, 205, 320, 232)],
+            ],
+            "walking": [
+                [(3, 206, 19, 232), (22, 205, 38, 232), (41, 205, 57, 232)],
+                [(60, 206, 82, 232), (85, 207, 108, 232), (111, 205, 134, 232)],
+                [(137, 207, 165, 232), (168, 208, 197, 232), (200, 208, 229, 232)],
+                [(232, 204, 253, 232), (256, 204, 277, 232), (280, 202, 303, 232)],
+                [(306, 205, 320, 232), (323, 204, 337, 232), (340, 204, 354, 232)],
+            ],
+        },
+    ),
+    SpeciesSpec(
+        species_id=276,
+        slug="taillow",
+        display_name="Taillow",
+        source_name="276_taillow_277_swellow.png",
+        source_group="medium",
+        scale=2.0,
+        fit_to_canvas=False,
+        crop_padding=1,
+        contact_directions=SOURCE_DIRECTIONS,
+        export_mirror_frames=False,
+        notes=[
+            "Row 1 contains 15 moving frames: five directions, three frames each.",
+            "This sheet has no separate idle action; idle uses moving frame 0 for each direction.",
+            "Sleeping uses the third-last and second-last sprites on row 3, before the shadow sprite.",
+            "Only five source directions are exported; right-side directions are mirrored at runtime.",
+        ],
+        sleeping_boxes=[(241, 80, 257, 94), (260, 79, 278, 94)],
+        boxes={
+            "idle": [
+                [(55, 20, 68, 36)],
+                [(103, 20, 121, 36)],
+                [(165, 21, 188, 36)],
+                [(240, 19, 260, 36)],
+                [(308, 20, 321, 36)],
+            ],
+            "walking": [
+                [(55, 20, 68, 36), (71, 19, 84, 36), (87, 21, 100, 36)],
+                [(103, 20, 121, 36), (124, 19, 143, 36), (146, 21, 162, 36)],
+                [(165, 21, 188, 36), (191, 19, 214, 36), (217, 22, 237, 36)],
+                [(240, 19, 260, 36), (263, 17, 283, 36), (286, 20, 305, 36)],
+                [(308, 20, 321, 36), (324, 18, 337, 36), (340, 21, 353, 36)],
+            ],
+        },
+    ),
+    SpeciesSpec(
+        species_id=277,
+        slug="swellow",
+        display_name="Swellow",
+        source_name="276_taillow_277_swellow.png",
+        source_group="medium",
+        scale=2.0,
+        canvas_width=68,
+        canvas_height=64,
+        fit_to_canvas=False,
+        crop_padding=1,
+        contact_directions=SOURCE_DIRECTIONS,
+        export_mirror_frames=False,
+        notes=[
+            "Row 1 contains 15 moving frames: five directions, three frames each.",
+            "This sheet has no separate idle action; idle uses moving frame 0 for each direction.",
+            "Sleeping uses the third-last and second-last sprites on row 3, before the shadow sprite.",
+            "Only five source directions are exported; right-side directions are mirrored at runtime.",
+            "A wider canvas preserves fixed 2x scaling for the 31-pixel-wide moving poses.",
+        ],
+        sleeping_boxes=[(329, 188, 356, 205), (359, 188, 388, 205)],
+        boxes={
+            "idle": [
+                [(15, 120, 30, 140)],
+                [(91, 120, 112, 140)],
+                [(167, 119, 193, 140)],
+                [(246, 118, 269, 140)],
+                [(321, 117, 338, 140)],
+            ],
+            "walking": [
+                [(15, 120, 30, 140), (33, 119, 54, 140), (57, 118, 88, 140)],
+                [(91, 120, 112, 140), (115, 118, 137, 140), (140, 115, 164, 140)],
+                [(167, 119, 193, 140), (196, 118, 217, 140), (220, 115, 243, 140)],
+                [(246, 118, 269, 140), (272, 116, 291, 140), (294, 113, 318, 140)],
+                [(321, 117, 338, 140), (341, 115, 360, 140), (363, 115, 392, 140)],
+            ],
+        },
+    ),
+    SpeciesSpec(
+        species_id=278,
+        slug="wingull",
+        display_name="Wingull",
+        source_name="278_wingull_279_pelipper.png",
+        source_group="medium",
+        scale=2.0,
+        fit_to_canvas=False,
+        crop_padding=1,
+        contact_directions=SOURCE_DIRECTIONS,
+        export_mirror_frames=False,
+        notes=[
+            "Row 1 contains 15 moving frames: five directions, three frames each.",
+            "This sheet has no separate idle action; idle uses moving frame 0 for each direction.",
+            "Sleeping uses the third-last and second-last sprites on row 2, before the shadow sprite.",
+            "Only five source directions are exported; right-side directions are mirrored at runtime.",
+        ],
+        sleeping_boxes=[(334, 63, 355, 82), (358, 63, 381, 82)],
+        boxes={
+            "idle": [
+                [(19, 30, 49, 47)],
+                [(114, 27, 139, 47)],
+                [(193, 23, 215, 47)],
+                [(268, 27, 292, 47)],
+                [(346, 29, 376, 47)],
+            ],
+            "walking": [
+                [(19, 30, 49, 47), (52, 30, 80, 47), (83, 29, 111, 47)],
+                [(114, 27, 139, 47), (142, 27, 165, 47), (168, 27, 190, 47)],
+                [(193, 23, 215, 47), (218, 25, 240, 47), (243, 24, 265, 47)],
+                [(268, 27, 292, 47), (295, 28, 318, 47), (321, 27, 343, 47)],
+                [(346, 29, 376, 47), (379, 29, 407, 47), (410, 28, 436, 46)],
+            ],
+        },
+    ),
+    SpeciesSpec(
+        species_id=279,
+        slug="pelipper",
+        display_name="Pelipper",
+        source_name="278_wingull_279_pelipper.png",
+        source_group="medium",
+        scale=2.0,
+        canvas_width=68,
+        canvas_height=64,
+        fit_to_canvas=False,
+        crop_padding=1,
+        contact_directions=SOURCE_DIRECTIONS,
+        export_mirror_frames=False,
+        notes=[
+            "Row 1 contains 15 moving frames: five directions, three frames each.",
+            "This sheet has no separate idle action; idle uses moving frame 0 for each direction.",
+            "Sleeping uses the third-last and second-last sprites on row 4, before the shadow sprite.",
+            "Only five source directions are exported; right-side directions are mirrored at runtime.",
+            "A wider canvas preserves fixed 2x scaling for the 31-pixel-wide moving poses.",
+        ],
+        sleeping_boxes=[(260, 208, 286, 229), (289, 209, 314, 229)],
+        boxes={
+            "idle": [
+                [(3, 110, 30, 130)],
+                [(101, 109, 127, 130)],
+                [(195, 109, 219, 130)],
+                [(276, 107, 301, 130)],
+                [(361, 107, 388, 130)],
+            ],
+            "walking": [
+                [(3, 110, 30, 130), (33, 110, 64, 130), (67, 110, 98, 130)],
+                [(101, 109, 127, 130), (130, 111, 159, 130), (162, 111, 192, 130)],
+                [(195, 109, 219, 130), (222, 111, 246, 130), (249, 111, 273, 130)],
+                [(276, 107, 301, 130), (304, 107, 329, 130), (332, 107, 358, 130)],
+                [(361, 107, 388, 130), (391, 107, 420, 130), (423, 107, 452, 130)],
             ],
         },
     ),
@@ -1063,12 +1462,19 @@ SPECS = [
 
 
 def clear_background(img, tolerance=0):
-    bg = img.getpixel((0, 0))[:3]
+    bg_pixel = img.getpixel((0, 0))
+    bg = bg_pixel[:3]
+    transparent_bg = bg_pixel[3] <= 16
     data = img.get_flattened_data() if hasattr(img, "get_flattened_data") else img.getdata()
     pixels = []
     for r, g, b, a in data:
-        near_bg = tolerance > 0 and max(abs(r - bg[0]), abs(g - bg[1]), abs(b - bg[2])) <= tolerance
-        pixels.append((0, 0, 0, 0) if a <= 16 or (r, g, b) == bg or near_bg else (r, g, b, a))
+        same_bg = not transparent_bg and (r, g, b) == bg
+        near_bg = (
+            not transparent_bg
+            and tolerance > 0
+            and max(abs(r - bg[0]), abs(g - bg[1]), abs(b - bg[2])) <= tolerance
+        )
+        pixels.append((0, 0, 0, 0) if a <= 16 or same_bg or near_bg else (r, g, b, a))
     out = Image.new("RGBA", img.size)
     out.putdata(pixels)
     return out
@@ -1274,6 +1680,52 @@ def padded(box, pad=1):
     return (max(0, x1 - pad), max(0, y1 - pad), x2 + pad, y2 + pad)
 
 
+def keep_largest_alpha_component(frame):
+    alpha = frame.getchannel("A")
+    opaque = {
+        (x, y)
+        for y in range(frame.height)
+        for x in range(frame.width)
+        if alpha.getpixel((x, y)) > 16
+    }
+    components = []
+    while opaque:
+        seed = opaque.pop()
+        component = {seed}
+        stack = [seed]
+        while stack:
+            x, y = stack.pop()
+            for nx in (x - 1, x, x + 1):
+                for ny in (y - 1, y, y + 1):
+                    point = (nx, ny)
+                    if point in opaque:
+                        opaque.remove(point)
+                        component.add(point)
+                        stack.append(point)
+        components.append(component)
+
+    if not components:
+        return frame
+
+    largest = max(components, key=len)
+    out = frame.copy()
+    pixels = out.load()
+    for component in components:
+        if component is largest:
+            continue
+        for x, y in component:
+            r, g, b, _ = pixels[x, y]
+            pixels[x, y] = (r, g, b, 0)
+    return out
+
+
+def crop_source_frame(source, box, spec):
+    frame = source.crop(padded(box, spec.crop_padding))
+    if spec.mask_to_largest_component:
+        frame = keep_largest_alpha_component(frame)
+    return frame_canvas(frame, spec)
+
+
 def write_mew_readme(spec, out_dir):
     readme = out_dir / "README.md"
     readme.write_text(
@@ -1403,7 +1855,7 @@ def process_spec(spec):
     def sleeping_frames():
         if not spec.sleeping_layer_override:
             return [
-                frame_canvas(sleeping_source.crop(padded(box, spec.crop_padding)), spec)
+                crop_source_frame(sleeping_source, box, spec)
                 for box in spec.sleeping_boxes
             ]
         source_group, source_name, layer_name = spec.sleeping_layer_override
@@ -1418,7 +1870,7 @@ def process_spec(spec):
             source_direction_frames[direction] = []
             frames = override_frames(action, direction)
             if frames is None:
-                frames = [frame_canvas(source.crop(padded(box, spec.crop_padding)), spec) for box in rows[row_index]]
+                frames = [crop_source_frame(source, box, spec) for box in rows[row_index]]
             for frame_index, frame in enumerate(frames):
                 source_direction_frames[direction].append(frame)
                 exported.append(save_frame(out_dir, action, direction, frame_index, frame))
@@ -1446,7 +1898,28 @@ def process_spec(spec):
 
 
 def main():
-    for spec in SPECS:
+    parser = argparse.ArgumentParser(description="Extract fixed PMD sprite frames.")
+    parser.add_argument(
+        "species",
+        nargs="*",
+        help="Optional species ids or slugs to process; all species are processed when omitted.",
+    )
+    args = parser.parse_args()
+
+    selected = SPECS
+    if args.species:
+        requested = {value.lower() for value in args.species}
+        selected = [
+            spec
+            for spec in SPECS
+            if spec.slug.lower() in requested or str(spec.species_id) in requested
+        ]
+        found = {spec.slug.lower() for spec in selected} | {str(spec.species_id) for spec in selected}
+        missing = sorted(requested - found)
+        if missing:
+            parser.error(f"unknown species: {', '.join(missing)}")
+
+    for spec in selected:
         process_spec(spec)
 
 

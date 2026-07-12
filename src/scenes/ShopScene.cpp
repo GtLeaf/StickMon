@@ -1,5 +1,6 @@
 #include "scenes/ShopScene.h"
 #include <cstdio>
+#include "assets/GameAssets.h"
 #include "core/GameEngine.h"
 #include "core/UiStrings.h"
 #include "hardware/Hal.h"
@@ -82,14 +83,28 @@ void ShopScene::buyCurrent() {
 
     switch (item) {
     case BALL:
-        GameEngine::ins().addBalls(1);
-        toast = Ui::Shop::BOUGHT_BALL;
+        if (!GameEngine::ins().addBalls(1)) {
+            GameEngine::ins().addCoins(price);
+            toast = Ui::Shop::BAG_FULL;
+        } else toast = Ui::Shop::BOUGHT_BALL;
         break;
     case GREAT_BALL:
         if (!GameEngine::ins().addGreatBalls(1)) {
             GameEngine::ins().addCoins(price);
             toast = Ui::Shop::BAG_FULL;
         } else toast = Ui::Shop::BOUGHT_GREAT_BALL;
+        break;
+    case HEAVY_BALL:
+        if (!GameEngine::ins().addItem(Game::ItemId::HEAVY_BALL)) {
+            GameEngine::ins().addCoins(price);
+            toast = Ui::Shop::BAG_FULL;
+        } else toast = Ui::Shop::BOUGHT_HEAVY_BALL;
+        break;
+    case TIMER_BALL:
+        if (!GameEngine::ins().addItem(Game::ItemId::TIMER_BALL)) {
+            GameEngine::ins().addCoins(price);
+            toast = Ui::Shop::BAG_FULL;
+        } else toast = Ui::Shop::BOUGHT_TIMER_BALL;
         break;
     case FOOD:
         if (!GameEngine::ins().addFood()) {
@@ -116,8 +131,10 @@ void ShopScene::buyCurrent() {
         } else toast = Ui::Shop::BOUGHT_ANTIDOTE;
         break;
     case CANDY:
-        GameEngine::ins().addCandy(1);
-        toast = Ui::Shop::BOUGHT_CANDY;
+        if (!GameEngine::ins().addCandy(1)) {
+            GameEngine::ins().addCoins(price);
+            toast = Ui::Shop::BAG_FULL;
+        } else toast = Ui::Shop::BOUGHT_CANDY;
         break;
     default:
         break;
@@ -153,6 +170,8 @@ ShopScene::Item ShopScene::itemAtIndex(uint8_t index) const {
     static constexpr Item EXPLORE_ITEMS[] = {
         BALL,
         GREAT_BALL,
+        HEAVY_BALL,
+        TIMER_BALL,
         POTION,
         ANTIDOTE,
         BACK,
@@ -175,6 +194,8 @@ ShopScene::Item ShopScene::sellItemAtIndex(uint8_t index) const {
     static constexpr Item SELL_ITEMS[] = {
         BALL,
         GREAT_BALL,
+        HEAVY_BALL,
+        TIMER_BALL,
         FOOD,
         POTION,
         SUPER_POTION,
@@ -194,7 +215,7 @@ ShopScene::Item ShopScene::sellItemAtIndex(uint8_t index) const {
 uint8_t ShopScene::currentItemCount() const {
     switch (viewMode) {
     case ViewMode::EXPLORE:
-        return 5;
+        return 7;
     case ViewMode::DAILY:
         return 3;
     case ViewMode::SELL:
@@ -209,6 +230,8 @@ uint8_t ShopScene::sellItemCount() const {
     static constexpr Item SELL_ITEMS[] = {
         BALL,
         GREAT_BALL,
+        HEAVY_BALL,
+        TIMER_BALL,
         FOOD,
         POTION,
         SUPER_POTION,
@@ -292,7 +315,10 @@ void ShopScene::renderItemList() {
         uint16_t fg = selected ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232);
         if (selected) c.fillRect(8, y + 4, 4, 12, PixelRenderer::rgb(255, 216, 72));
 
-        c.fillRect(20, y + 4, 12, 12, item == BACK ? PixelRenderer::rgb(92, 98, 110) : PixelRenderer::rgb(92, 222, 112));
+        if (item == BACK || !GameAssets::draw(GameAssets::itemKind(gameItemIdFor(item)), 18, y + 2)) {
+            c.fillRect(20, y + 4, 12, 12,
+                       item == BACK ? PixelRenderer::rgb(92, 98, 110) : PixelRenderer::rgb(92, 222, 112));
+        }
         PixelRenderer::text(42, y + 2, nameFor(item), fg, 1);
         if (item != BACK) {
             char price[16];
@@ -342,7 +368,10 @@ void ShopScene::renderSellPage() {
         uint16_t fg = selected ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232);
         if (selected) c.fillRect(8, y + 4, 4, 12, PixelRenderer::rgb(255, 216, 72));
 
-        c.fillRect(20, y + 4, 12, 12, item == BACK ? PixelRenderer::rgb(92, 98, 110) : PixelRenderer::rgb(247, 167, 74));
+        if (item == BACK || !GameAssets::draw(GameAssets::itemKind(gameItemIdFor(item)), 18, y + 2)) {
+            c.fillRect(20, y + 4, 12, 12,
+                       item == BACK ? PixelRenderer::rgb(92, 98, 110) : PixelRenderer::rgb(247, 167, 74));
+        }
         PixelRenderer::text(42, y + 2, nameFor(item), fg, 1);
         if (item != BACK) {
             char countText[8];
@@ -375,7 +404,11 @@ void ShopScene::renderSellPage() {
 }
 
 void ShopScene::renderToast() {
-    if (!toast || Hal::ins().millis() > toastUntil) return;
+    if (!toast) return;
+    if ((int32_t)(Hal::ins().millis() - toastUntil) >= 0) {
+        toast = nullptr;
+        return;
+    }
     auto& c = PixelRenderer::canvas();
     c.fillRect(70, 108, 100, 20, PixelRenderer::rgb(34, 39, 47));
     PixelRenderer::text(78, 110, toast, PixelRenderer::rgb(255, 255, 255), 1);
@@ -385,6 +418,8 @@ uint16_t ShopScene::priceFor(Item item) {
     switch (item) {
     case BALL: return 50;
     case GREAT_BALL: return 120;
+    case HEAVY_BALL: return 160;
+    case TIMER_BALL: return 180;
     case FOOD: return 20;
     case POTION: return 60;
     case SUPER_POTION: return 120;
@@ -402,6 +437,8 @@ Game::ItemId ShopScene::gameItemIdFor(Item item) {
     switch (item) {
     case BALL: return Game::ItemId::POKE_BALL;
     case GREAT_BALL: return Game::ItemId::GREAT_BALL;
+    case HEAVY_BALL: return Game::ItemId::HEAVY_BALL;
+    case TIMER_BALL: return Game::ItemId::TIMER_BALL;
     case POTION: return Game::ItemId::POTION;
     case SUPER_POTION: return Game::ItemId::SUPER_POTION;
     case ANTIDOTE: return Game::ItemId::ANTIDOTE;

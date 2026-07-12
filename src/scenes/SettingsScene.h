@@ -17,6 +17,7 @@ private:
         VOLUME,
         POWER_SAVE,
         HELP,
+        RESET_GAME,
         BACK,
         COUNT,
     };
@@ -24,6 +25,7 @@ private:
     enum class ViewMode : uint8_t {
         MENU,
         HELP,
+        RESET_CONFIRM,
     };
 
     uint8_t cursor = 0;
@@ -31,6 +33,7 @@ private:
     uint32_t toastUntil = 0;
     ViewMode viewMode = ViewMode::MENU;
     bool settingsDirty = false;
+    bool resetConfirmYes = false;
 
     void activateCurrent();
     void cycleBrightness();
@@ -39,5 +42,6 @@ private:
     void saveSettingsIfDirty();
     void renderMenu();
     void renderHelp();
+    void renderResetConfirm();
     void renderToast();
 };

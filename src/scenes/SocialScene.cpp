@@ -10,6 +10,8 @@ void SocialScene::onEnter() {
     EspNowLink::ins().begin();
     viewMode = ViewMode::PURPOSE;
     cursor = 0;
+    joinRequested = false;
+    joinRequestedAt = 0;
 }
 
 void SocialScene::onExit() {
@@ -22,16 +24,28 @@ void SocialScene::update(uint32_t nowMs, float dtSeconds) {
     EspNowLink::ins().update();
 
     EspNowLink::RoomPurpose purpose;
-    if (EspNowLink::ins().takeJoinRequest(joinMac, purpose)) {
-        EspNowLink::ins().sendJoinAck(joinMac, true);
+    uint16_t requestSeq = 0;
+    if (EspNowLink::ins().takeJoinRequest(joinMac, purpose, requestSeq)) {
+        EspNowLink::ins().sendJoinAck(joinMac, true, requestSeq);
         toast = Ui::Social::ACCEPTED;
         toastUntil = Hal::ins().millis() + 1500;
     }
 
     bool accepted = false;
     if (EspNowLink::ins().takeJoinAck(accepted)) {
+        joinRequested = false;
+        if (!accepted) EspNowLink::ins().stopRoom();
         toast = accepted ? Ui::Social::CONNECT_OK : Ui::Social::CONNECT_REJECTED;
         toastUntil = Hal::ins().millis() + 1500;
+    }
+
+    if (joinRequested && nowMs - joinRequestedAt >= 3000) joinRequested = false;
+    if (!joinRequested && EspNowLink::ins().currentMode() == EspNowLink::Mode::SEARCHING &&
+        EspNowLink::ins().roomCount() > 0 && EspNowLink::ins().sendJoinRequest(0)) {
+        joinRequested = true;
+        joinRequestedAt = nowMs;
+        toast = Ui::Social::JOIN_REQUESTED;
+        toastUntil = nowMs + 1400;
     }
 }
 
@@ -78,10 +92,12 @@ void SocialScene::activateCurrent() {
 
     switch (cursor) {
     case ACTION_HOST:
+        joinRequested = false;
         EspNowLink::ins().startHost(selectedPurpose);
         toast = hostToast(selectedPurpose);
         break;
     case ACTION_SEARCH:
+        joinRequested = false;
         EspNowLink::ins().startSearch(selectedPurpose);
         toast = searchToast(selectedPurpose);
         break;
@@ -93,11 +109,6 @@ void SocialScene::activateCurrent() {
         return;
     }
 
-    if (EspNowLink::ins().currentMode() == EspNowLink::Mode::SEARCHING &&
-        EspNowLink::ins().roomCount() > 0) {
-        EspNowLink::ins().sendJoinRequest(0);
-        toast = Ui::Social::JOIN_REQUESTED;
-    }
     toastUntil = Hal::ins().millis() + 1400;
 }
 
@@ -131,7 +142,11 @@ void SocialScene::renderMenu() {
 }
 
 void SocialScene::renderToast() {
-    if (!toast || Hal::ins().millis() > toastUntil) return;
+    if (!toast) return;
+    if ((int32_t)(Hal::ins().millis() - toastUntil) >= 0) {
+        toast = nullptr;
+        return;
+    }
     auto& c = PixelRenderer::canvas();
     c.fillRect(52, 108, 136, 20, PixelRenderer::rgb(34, 39, 47));
     PixelRenderer::text(60, 110, toast, PixelRenderer::rgb(255, 255, 255), 1);

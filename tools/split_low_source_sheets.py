@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 from pathlib import Path
 import shutil
 from PIL import Image
@@ -36,12 +37,12 @@ LOW_REQUIRED_SPECIES = [
 ]
 
 LOW_EXTRA_SPLIT_SPECIES = [
-    ("001_025", 10, "caterpie", 710, 765),
-    ("001_025", 11, "metapod", 776, 823),
-    ("001_025", 12, "butterfree", 835, 887),
-    ("001_025", 13, "weedle", 898, 947),
-    ("001_025", 14, "kakuna", 959, 1008),
-    ("001_025", 15, "beedrill", 1019, 1065),
+    ("001_025", 10, "caterpie", 710, 768),
+    ("001_025", 11, "metapod", 768, 831),
+    ("001_025", 12, "butterfree", 833, 898),
+    ("001_025", 13, "weedle", 894, 958),
+    ("001_025", 14, "kakuna", 958, 1008),
+    ("001_025", 15, "beedrill", 1008, 1065),
     ("001_025", 16, "pidgey", 1070, 1118),
     ("001_025", 17, "pidgeotto", 1122, 1182),
     ("001_025", 18, "pidgeot", 1186, 1248),
@@ -123,7 +124,10 @@ LOW_EXTRA_SPLIT_SPECIES = [
     ("101_125", 125, "electabuzz", 2086, 2193),
 ]
 
+LOW_EXTRA_COPY_IDS = set(range(10, 19))
+
 CLEANUP_RECTS = {
+    ("001_025", 12): [(253, 861, 610, 898)],
     ("076_100", 100): [(80, 1854, 370, 1879)],
 }
 
@@ -145,11 +149,10 @@ def trim_horizontal(img):
     if bbox is None:
         return img
     pad = 2
-    left = max(0, bbox[0] - pad)
-    top = max(0, bbox[1] - pad)
-    right = min(img.width, bbox[2] + pad)
-    bottom = min(img.height, bbox[3] + pad)
-    return img.crop((left, top, right, bottom))
+    content = img.crop(tuple(bbox))
+    padded = Image.new("RGBA", (content.width + pad * 2, content.height + pad * 2), img.getpixel((0, 0)))
+    padded.alpha_composite(content, (pad, pad))
+    return padded
 
 
 def erase_source_rects(img, sheet_key, species_id, y1):
@@ -170,11 +173,27 @@ def erase_source_rects(img, sheet_key, species_id, y1):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Split low-confidence PMD species sheets.")
+    parser.add_argument(
+        "species",
+        nargs="*",
+        type=int,
+        help="Optional Pokedex ids to process; all configured species are processed when omitted.",
+    )
+    args = parser.parse_args()
+
     SPLIT_DIR.mkdir(parents=True, exist_ok=True)
     sheet_cache = {}
 
     entries = [(entry, True) for entry in LOW_REQUIRED_SPECIES]
-    entries.extend((entry, False) for entry in LOW_EXTRA_SPLIT_SPECIES)
+    entries.extend((entry, entry[1] in LOW_EXTRA_COPY_IDS) for entry in LOW_EXTRA_SPLIT_SPECIES)
+    if args.species:
+        requested = set(args.species)
+        entries = [(entry, copy_to_low) for entry, copy_to_low in entries if entry[1] in requested]
+        found = {entry[1] for entry, _ in entries}
+        missing = sorted(requested - found)
+        if missing:
+            parser.error(f"unknown species ids: {', '.join(str(value) for value in missing)}")
 
     for (sheet_key, species_id, slug, y1, y2), copy_to_low in entries:
         sheet = sheet_cache.get(sheet_key)

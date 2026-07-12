@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdio>
 #include "assets/MenuAssets.h"
+#include "assets/GameAssets.h"
 #include "assets/PokemonSprites.h"
 #include "core/UiStrings.h"
 #include "core/GameEngine.h"
@@ -102,18 +103,34 @@ uint8_t bagItemCount(uint8_t sourceIndex) {
     switch (sourceIndex) {
     case 0: return GameEngine::ins().ballCount();
     case 1: return GameEngine::ins().greatBallCount();
-    case 2: return GameEngine::ins().potionCount();
-    case 3: return GameEngine::ins().superPotionCount();
-    case 4: return GameEngine::ins().antidoteCount();
-    case 5: return GameEngine::ins().candyCount();
-    case 6: return 1;
+    case 2: return GameEngine::ins().heavyBallCount();
+    case 3: return GameEngine::ins().timerBallCount();
+    case 4: return GameEngine::ins().potionCount();
+    case 5: return GameEngine::ins().superPotionCount();
+    case 6: return GameEngine::ins().antidoteCount();
+    case 7: return GameEngine::ins().candyCount();
+    case 8: return 1;
     default: return 0;
+    }
+}
+
+Game::ItemId bagItemId(uint8_t sourceIndex) {
+    switch (sourceIndex) {
+    case 0: return Game::ItemId::POKE_BALL;
+    case 1: return Game::ItemId::GREAT_BALL;
+    case 2: return Game::ItemId::HEAVY_BALL;
+    case 3: return Game::ItemId::TIMER_BALL;
+    case 4: return Game::ItemId::POTION;
+    case 5: return Game::ItemId::SUPER_POTION;
+    case 6: return Game::ItemId::ANTIDOTE;
+    case 7: return Game::ItemId::CANDY;
+    default: return Game::ItemId::COUNT;
     }
 }
 
 uint8_t bagVisibleItemCount() {
     uint8_t count = 1; // Back is always visible.
-    for (uint8_t i = 0; i < 6; ++i) {
+    for (uint8_t i = 0; i < 8; ++i) {
         if (bagItemCount(i) > 0) ++count;
     }
     return count;
@@ -121,12 +138,12 @@ uint8_t bagVisibleItemCount() {
 
 uint8_t bagSourceIndexForVisible(uint8_t visibleIndex) {
     uint8_t visible = 0;
-    for (uint8_t source = 0; source < 6; ++source) {
+    for (uint8_t source = 0; source < 8; ++source) {
         if (bagItemCount(source) == 0) continue;
         if (visible == visibleIndex) return source;
         ++visible;
     }
-    return 6;
+    return 8;
 }
 
 uint16_t foodColor(uint8_t foodIndex) {
@@ -406,7 +423,9 @@ bool MenuScene::onButton(const ButtonEvent& event) {
             return true;
         }
         if (viewMode == ViewMode::TEAM) {
-            uint8_t teamCount = GameEngine::ins().gameState().teamCount;
+            const auto& state = GameEngine::ins().gameState();
+            bool showingEgg = !state.oobeDone;
+            uint8_t teamCount = showingEgg ? 1 : state.teamCount;
             uint8_t rowCount = teamCount + 1;
             if (teamCursor >= rowCount) teamCursor = 0;
             if (event.btn == 1 && event.action == BtnAction::PRESSED) {
@@ -421,6 +440,16 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                 if (teamCursor >= teamCount) {
                     teamActionOpen = false;
                     popView();
+                    return true;
+                }
+                if (showingEgg) {
+                    statusMonsterIndex = 0;
+                    statusFromStorage = false;
+                    statusPage = 0;
+                    statusScrollKey = -1;
+                    statusScroll = 0.0f;
+                    teamActionOpen = false;
+                    pushView(ViewMode::STATUS);
                     return true;
                 }
                 if (!teamActionOpen) {
@@ -490,10 +519,10 @@ bool MenuScene::onButton(const ButtonEvent& event) {
         if (viewMode == ViewMode::BAG && event.btn == 0 && event.action == BtnAction::PRESSED) {
             if (bagConfirmOpen) {
                 if (bagConfirmYes) {
-                    if (bagConfirmSource == 2) {
+                    if (bagConfirmSource == 4) {
                         toast = GameEngine::ins().usePotion() ? Ui::Bag::USED_POTION : Ui::Bag::HP_FULL;
                         toastUntil = Hal::ins().millis() + 1100;
-                    } else if (bagConfirmSource == 3) {
+                    } else if (bagConfirmSource == 5) {
                         toast = GameEngine::ins().useSuperPotion() ? Ui::Bag::USED_SUPER_POTION : Ui::Bag::HP_FULL;
                         toastUntil = Hal::ins().millis() + 1100;
                     }
@@ -502,15 +531,15 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                 return true;
             }
             uint8_t source = bagSourceIndexForVisible(bagCursor);
-            if (source == 2) {
+            if (source == 4) {
                 bagConfirmSource = source;
                 bagConfirmYes = true;
                 bagConfirmOpen = true;
-            } else if (source == 3) {
+            } else if (source == 5) {
                 bagConfirmSource = source;
                 bagConfirmYes = true;
                 bagConfirmOpen = true;
-            } else if (source == 6) {
+            } else if (source == 8) {
                 popView();
             }
             return true;
@@ -706,6 +735,12 @@ bool MenuScene::onButton(const ButtonEvent& event) {
         bagScroll = 0.0f;
         return true;
     case ITEM_EXPLORE: {
+        const auto& state = GameEngine::ins().gameState();
+        if (!state.oobeDone || state.teamCount == 0) {
+            toast = Ui::Menu::HATCH_FIRST;
+            toastUntil = Hal::ins().millis() + 1100;
+            return true;
+        }
         const auto& mon = GameEngine::ins().activeMonster();
         if (mon.fainted || mon.hpCur == 0) {
             toast = Ui::Menu::FAINTED_TOAST;
@@ -859,7 +894,11 @@ void MenuScene::renderMenu() {
 }
 
 void MenuScene::renderToast() {
-    if (!toast || Hal::ins().millis() > toastUntil) return;
+    if (!toast) return;
+    if ((int32_t)(Hal::ins().millis() - toastUntil) >= 0) {
+        toast = nullptr;
+        return;
+    }
     auto& c = PixelRenderer::canvas();
     c.fillRect(70, 108, 100, 20, PixelRenderer::rgb(34, 39, 47));
     PixelRenderer::text(78, 110, toast, PixelRenderer::rgb(255, 255, 255), 1);
@@ -868,7 +907,9 @@ void MenuScene::renderToast() {
 void MenuScene::renderTeamPage() {
     auto& c = PixelRenderer::canvas();
     const auto& state = GameEngine::ins().gameState();
-    uint8_t rowCount = state.teamCount + 1;
+    bool showingEgg = !state.oobeDone;
+    uint8_t teamCount = showingEgg ? 1 : state.teamCount;
+    uint8_t rowCount = teamCount + 1;
     if (teamCursor >= rowCount) teamCursor = 0;
 
     c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, PixelRenderer::rgb(10, 14, 20));
@@ -882,11 +923,25 @@ void MenuScene::renderTeamPage() {
     for (uint8_t i = 0; i < rowCount; ++i) {
         int y = ROW_Y + i * (ROW_H + ROW_GAP);
         bool selected = i == teamCursor;
-        if (i >= state.teamCount) {
+        if (i >= teamCount) {
             uint16_t color = selected ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232);
             if (selected) c.fillRect(ROW_X, y + 2, 4, 18, PixelRenderer::rgb(255, 216, 72));
             PixelRenderer::text(ROW_X + 16, y + 3, Ui::BACK, color, 1);
             c.drawFastHLine(ROW_X, y + 24, ROW_W, PixelRenderer::rgb(55, 63, 76));
+            continue;
+        }
+
+        if (showingEgg) {
+            uint16_t border = selected ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(72, 83, 98);
+            c.drawRect(ROW_X, y, ROW_W, ROW_H, border);
+            if (selected) c.fillRect(ROW_X, y, 4, ROW_H, PixelRenderer::rgb(255, 216, 72));
+            if (!GameAssets::drawCentered(GameAssets::Kind::EGG, ROW_X + 25, y + ROW_H / 2)) {
+                c.fillEllipse(ROW_X + 25, y + ROW_H / 2, 11, 15, PixelRenderer::rgb(240, 232, 184));
+            }
+            PixelRenderer::text(ROW_X + 50, y + 1, Ui::Status::EGG_TITLE,
+                                PixelRenderer::rgb(241, 242, 232), 1);
+            PixelRenderer::text(ROW_X + 50, y + 18, Ui::Status::EGG_STATE,
+                                PixelRenderer::rgb(255, 216, 72), 1);
             continue;
         }
 
@@ -922,7 +977,7 @@ void MenuScene::renderTeamPage() {
         }
     }
 
-    if (teamActionOpen && teamCursor < state.teamCount) renderTeamActionPopup();
+    if (!showingEgg && teamActionOpen && teamCursor < state.teamCount) renderTeamActionPopup();
     renderToast();
 }
 
@@ -1120,11 +1175,9 @@ void MenuScene::renderEggStatusPage() {
 
     statusPage = 0;
     c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, PixelRenderer::rgb(10, 14, 20));
-    c.fillEllipse(44, 63, 19, 28, PixelRenderer::rgb(240, 232, 184));
-    c.fillEllipse(44, 64, 14, 21, PixelRenderer::rgb(255, 248, 214));
-    c.drawEllipse(44, 63, 19, 28, PixelRenderer::rgb(109, 92, 62));
-    c.fillCircle(36, 57, 3, PixelRenderer::rgb(255, 145, 67));
-    c.fillCircle(52, 70, 3, PixelRenderer::rgb(71, 169, 226));
+    if (!GameAssets::drawCentered(GameAssets::Kind::EGG, 44, 63, 1.5f)) {
+        c.fillEllipse(44, 63, 16, 23, PixelRenderer::rgb(240, 232, 184));
+    }
     PixelRenderer::text(88, 38, Ui::Status::EGG_TITLE, PixelRenderer::rgb(241, 242, 232), 1);
     c.drawFastHLine(84, 65, 122, PixelRenderer::rgb(55, 63, 76));
     PixelRenderer::text(88, 78, Ui::Status::EGG_STATE, PixelRenderer::rgb(255, 216, 72), 1);
@@ -1196,7 +1249,6 @@ void MenuScene::renderRoomPage() {
         }
     }
 
-    PixelRenderer::text(22, 116, Ui::Room::DESCS[roomCursor], PixelRenderer::rgb(135, 214, 238), 1);
     renderToast();
 }
 
@@ -1725,6 +1777,8 @@ uint8_t MenuScene::collectVisibleBagRows(BagRow* rows, uint8_t maxRows) const {
     SourceRow sources[] = {
         {GameEngine::ins().ballCount(), PixelRenderer::rgb(239, 85, 85)},
         {GameEngine::ins().greatBallCount(), PixelRenderer::rgb(67, 124, 230)},
+        {GameEngine::ins().heavyBallCount(), PixelRenderer::rgb(85, 92, 104)},
+        {GameEngine::ins().timerBallCount(), PixelRenderer::rgb(239, 180, 68)},
         {GameEngine::ins().potionCount(), PixelRenderer::rgb(92, 222, 112)},
         {GameEngine::ins().superPotionCount(), PixelRenderer::rgb(135, 214, 238)},
         {GameEngine::ins().antidoteCount(), PixelRenderer::rgb(174, 115, 228)},
@@ -1795,8 +1849,13 @@ void MenuScene::renderBagDetail(const BagRow& row) {
         int nameY = iconY + 2;
         int storageY = nameY + 16;
 
-        c.fillRect(iconX, iconY, ICON_W, ICON_H, row.color);
-        c.fillRect(iconX + 18, iconY + 8, 22, 12, PixelRenderer::rgb(241, 242, 232));
+        c.fillRect(iconX, iconY, ICON_W, ICON_H, PixelRenderer::rgb(18, 24, 32));
+        c.drawRect(iconX, iconY, ICON_W, ICON_H, row.color);
+        Game::ItemId item = bagItemId(row.source);
+        if (!GameAssets::drawCentered(GameAssets::itemKind(item), iconX + ICON_W / 2,
+                                      iconY + ICON_H / 2, 1.5f)) {
+            c.fillRect(iconX + 18, iconY + 8, 22, 12, row.color);
+        }
 
         PixelRenderer::text(textX, nameY, Ui::Bag::NAMES[row.source], 0xFFFF, 1);
         char buf[16];

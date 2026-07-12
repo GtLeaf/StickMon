@@ -18,6 +18,10 @@ Open:
 open ./tools/room_editor/index.html
 ```
 
+The left sidebar remembers which sections you opened in this browser. With a
+loaded room it starts from the furniture library; without a room it starts from
+Assets and Background.
+
 ## Files
 
 - `index.html`: DOM structure only.
@@ -25,15 +29,16 @@ open ./tools/room_editor/index.html
 - `app.js`: image import, shape editing, furniture placement, preview, import,
   and export logic.
 - `compose_room.py`: command-line day/night preview compositor.
-- `generate_sprite_previews.py`: extracts current firmware sprite frames from
-  `src/assets/PokemonSprites.cpp` into editor-loadable PNG previews.
+- `generate_sprite_previews.py`: extracts current LittleFS `.smonsp` sprite
+  frames from `data/packs/dev/sprites/` into editor-loadable PNG previews.
 
 ## Recommended Asset Flow
 
 1. Generate or prepare one or more room background images. Day and night can be
    separate images or layered variants.
-2. Import them with `Backgrounds`. Each imported background appears in
-   `Asset management` with `Day` and `Night` checkboxes. File names containing
+2. Import them with `Add backgrounds` or the dedicated `Background` drop zone.
+   Each imported background appears in `Layers` with `Day` and `Night`
+   checkboxes. File names containing
    `day` or `night` are assigned automatically; other names are enabled for both
    modes by default.
 3. Confirm the game preview size. `Room W` and `Room H` are target game pixels;
@@ -55,14 +60,15 @@ open ./tools/room_editor/index.html
    - drag an endpoint in the edit canvas
    - select a point in the right panel and edit `X` / `Y`
    - use `Add point` to insert a point on the selected edge
-   - use `Delete point` to remove the selected point
+   - use the close button on a point row to remove that point
    - draft points that have not formed a face can also be dragged, edited, and
      deleted
    - when drawing a new face, click an existing endpoint to reuse it in the new
      face
 10. Generate furniture as separate transparent PNG files.
 11. Switch the editor to `Furniture`.
-12. Import furniture PNG files. Each file opens a cutout dialog:
+12. Import furniture PNG files with the `Furniture` button or the dedicated
+    `Furniture` drop zone. Each file opens a cutout dialog:
     - `Cancel` skips the current file and does not import it.
     - `Use original` keeps the image unchanged.
     - click either image with `Pick color` to sample the background color.
@@ -82,22 +88,25 @@ open ./tools/room_editor/index.html
       `generated/furniture_library/` under the selected `tools/room_editor`
       folder so future sessions and layout imports can restore it by
       `libraryId`.
-13. Check `Asset management` for background layers, all furniture, and all
+13. Check `Layers` for background layers, all furniture, and all
     sprite preview items. Background layers share one trim, one coordinate
-    system, room faces, and furniture layout. Use the row `Delete` button to
-    remove imported backgrounds, furniture, or sprite preview items.
-14. Drag furniture on the canvas and edit transform values in the `Transform`
-    group. Use `Object semantics` to set `Kind`, `Height`, `Footprint`, shadow,
-    receiving, and sprite occlusion behavior. Rugs and floor decals should keep
-    `Height = 0` and usually disable `Cast shadow`; sofas, beds, and cabinets
-    should use furniture/high-furniture kinds with a non-zero height. Wall
-    shelves should use the wall-furniture kind or set `Shadow anchor` to wall.
-    Floor furniture with `Shadow polygon` uses the 2.5D caster projection:
-    polygon vertices near the top of the sprite receive more height and are
-    projected away from the light source, while bottom vertices stay close to
-    the object. If no shadow polygon is set, `Footprint = ellipse` still falls
-    back to an oval contact shadow to avoid rectangular shadows for round beds
-    and similar bulky items.
+    system, room faces, and furniture layout. Background rows have their own
+    `Delete` button; select furniture or a sprite and use `Properties > Delete`.
+14. Drag furniture on the canvas and edit position and size in `Basic`.
+    Choose one of five `Behavior` presets: floor flat, floor small object, floor
+    furniture, wall decoration, or wall-mounted object. `Metadata > Library
+    category` identifies what the asset is without changing its physical
+    behavior. Height, footprint, shadow, receiving, and wall depth remain
+    adjustable in the Shadow groups.
+    Floor furniture uses one local-plane 2.5D caster projection. The floor,
+    left wall, and right wall share a calibrated `U/V/Z` basis derived from the
+    traced room faces. Each caster vertex follows one light ray and stops at the
+    nearest receiving plane, so one shadow can cross the wall/floor boundary
+    without generating duplicate floor and wall copies. Vertices near the top
+    of `Shadow polygon` receive more height while bottom vertices stay close to
+    the anchor plane. `Rect`, `Ellipse`, and `Polygon` provide simplified caster
+    contours; `Auto` derives a convex contour from the sprite alpha; `None`
+    disables the caster shadow.
     Wall-mounted objects use a 2.5D wall-plane projection: the editor maps the
     receiving wall face into local coordinates, projects the item's alpha mask
     from its `Wall depth` toward the light's `Light depth`, then adds a soft
@@ -114,20 +123,29 @@ open ./tools/room_editor/index.html
      directly. Day edits the day light; Night edits the night light.
    - `复制到白天` is shown in Day mode, and `复制到夜晚` is shown in Night mode.
    - `Light shape`: use `Radial` for local glow or `Cone` for window-like beams.
-     The shape controls the lit region only; it does not force shadow direction.
+     In `Auto` shadow mode, radial lights use point projection and cone lights
+     use the cone angle as a directional projection.
    - `Light depth`: 2.5D height of the light source. Smaller values exaggerate
      cast shadows; larger values move toward a parallel-light look.
    - `Light radius`: visual radius for the canvas handle.
    - `Cone angle` and `Cone spread`: tune the direction and width of cone light.
    - `Cast 2D shadows`: draws 2.5D projected shadows for visible items whose
      item-level `Cast shadow` is enabled.
-   - `Shadow mode`: `Auto` uses the light handle as a point light. Use
-     `Directional` only when you intentionally want `Cone angle` to control a
-     parallel shadow direction.
-   - Shadow receiving is clipped by room faces when `Receive shadows` is enabled:
-     floor surfaces use 2.5D floor projection when `Shadow polygon` is present.
-     Left/right wall surfaces use wall-plane projection for wall-mounted objects
-     and clipped 2.5D caster projection for ordinary floor furniture.
+   - `Shadow mode`: `Auto` chooses point projection for a radial light and
+     directional projection for a cone light. Select `Point` or `Directional`
+     to override that choice.
+   - Shadow receiving uses the calibrated floor/left-wall/right-wall planes when
+     `Receive shadows` is enabled. Floor furniture is projected once; each ray
+     stops at its nearest valid plane and the shared result is clipped by the
+     room faces. Left/right wall surfaces retain wall-plane projection for
+     wall-mounted objects.
+     An unassigned wall-mounted object automatically chooses the wall with the
+     best overlap and shortest distance; selecting wall faces explicitly enables
+     deliberate multi-wall projection. Selecting wall faces for floor furniture
+     restricts which wall planes its rays may hit; the floor remains a candidate.
+     Furniture with item-level `Receive shadow` enabled is composited as a
+     receiver, so rugs and other floor overlays do not erase shadows cast onto
+     them.
    - `Strength` changes light and shadow intensity. `100` matches the original
      full-strength value; values above `100` are overdrive for stronger window
      light.
@@ -221,31 +239,32 @@ the editor.
 5. Use the cutout dialog when the furniture image has a solid-color background.
    Cancel skips the file; magic wand and brush tools can clean up the after
    image before import.
-6. Drag furniture on the canvas and edit transform values in `Transform`.
-   `Scale` applies uniform resizing; `W` and `H` can be locked or unlocked with
-   `Lock aspect ratio`. Target width and height can be reduced to a minimum of
-   `1px`. `Object semantics` exports `kind`, `heightPx`, `footprint`,
+6. Drag furniture on the canvas and edit `X`, `Y`, `W`, and `H` in `Basic`.
+   `W` and `H` can be linked or unlinked with `Lock ratio`. Target width and
+   height can be reduced to a minimum of
+   `1px`. `Behavior` exports a canonical `kind` plus `heightPx`, `footprint`,
    `shadowAnchor`, `wallShadowDepthPx`, `wallShadowOffsetY`, `castsShadow`,
    `shadowOpacity`, `shadowLength`, `shadowBlur`, `receivesShadow`,
-   `occludesSprite`, and `sortY`; the older `furnitureType`
-   field is still exported for compatibility.
+   `occludesSprite`, and `sortY`. `slot` and `layer` are derived automatically.
+   `furnitureType` remains the independent library/gameplay category.
 7. Enable `Show 8px grid` and `Snap furniture to 8px grid` for pixel-perfect
    placement.
 8. For batch day/night previews, run the fixed `compose_room.py` script in this
    directory.
 
-## Asset Management
+## Layers
 
-The right-side `Asset management` list shows:
+The right-side `Layers` list shows:
 
-- background layers, including source size, Day/Night membership, shared trim
-  size, active preview mode, opacity, and delete controls
-- imported furniture PNGs, including semantic kind, height, placement, target
-  size, scale, visibility, and whether a cutout was applied
-- project sprite previews, including selected action/frame and placement
+- background layers, including source size, Day/Night membership, active
+  preview mode, visibility, and delete controls
+- imported furniture PNGs, including kind, target size, Z layer, and visibility
+- project sprite previews, including selected action/frame, target size, Z
+  layer, and visibility
 
-Click a furniture or sprite row to edit its transform and layer properties. Use
-the row `Delete` button to remove an imported item from the layout.
+Click a furniture or sprite row to edit its properties. The list collapses while
+an item is selected so `Properties` remains the primary workspace; use the
+right-side `Delete` button to remove that item.
 
 ## Large Source Images
 
@@ -305,18 +324,37 @@ It uses the current `Sprite X/Y/W/H` guide as its initial placement.
 The exported layout uses this model:
 
 - `roomGeometry`: wall/floor polygons for the generated room background.
+- `roomGeometry.projection`: the shared local-plane `origin`, `axisU`, `axisV`,
+  `axisZ`, and face-to-plane mapping used by the 2.5D shadow solver.
 - `backgroundLayers`: ordered background layer metadata, including Day/Night
   visibility flags.
 - `backgrounds`: day/night primary background metadata plus the shared trim/fit
   transform, retained for compatibility.
 - `base`: primary background metadata retained for old tooling compatibility.
-- `furniture`: ordered by `z`, then composited over the base.
+- `furniture`: ordered by `z`, then composited over the base. Each exported item
+  includes derived `projection.anchorFaceId`, `anchorUV`, height/depth, and its
+  caster contour while retaining legacy `x/y` fields.
 - `guides`: sprite and HUD safe zones for preview only.
 - `night`: shared day/night light-source and projected-shadow parameters for
   preview and generated script.
 
 The previous standalone `room_geometry.json` export is now folded into
 `room_layout.json` as `roomGeometry`.
+
+Furniture behavior uses five canonical `kind` values:
+
+- `floor_flat`: floor overlays with no cast shadow or sprite occlusion
+- `floor_small`: small floor objects that cast shadows but do not occlude sprites
+- `floor_furniture`: floor furniture that casts shadows and occludes sprites
+- `wall_flat`: flat wall decoration without a cast shadow
+- `wall_mounted`: wall-mounted objects that cast onto wall faces
+
+Old values such as `rug`, `bed_sofa`, `tall_furniture`, `wall_prop`, and
+`wall_shelf` are migrated when loaded. `slot` and `layer` are still exported for
+older consumers, but users no longer edit them directly. Layouts exported with
+this model use schema `version: 4`. Version 3 and older layouts remain readable;
+the projection basis and furniture anchors are derived from their existing faces
+and screen coordinates when explicit projection metadata is absent.
 
 Furniture should be generated as isolated PNGs. Do not rely on extracting
 furniture from a complete AI room image as the long-term source of truth.

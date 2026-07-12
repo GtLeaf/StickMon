@@ -1,9 +1,13 @@
 #include "core/GameEngine.h"
 #include <Arduino.h>
 #include <algorithm>
+#include <cstdio>
 #include "assets/PokemonSprites.h"
 #include "core/ButtonDispatcher.h"
+#include "core/FontResource.h"
+#include "core/ResourcePack.h"
 #include "core/ResourceFS.h"
+#include "core/RoomResource.h"
 #include "core/UiStrings.h"
 #include "hardware/EspNowLink.h"
 #include "hardware/Hal.h"
@@ -71,6 +75,11 @@ void selectFirstAvailableFood(Game::RoomState& room) {
     }
     room.selectedFood = 0;
 }
+
+uint32_t gameSecondsForMinutes(uint32_t minutes) {
+    uint64_t seconds = static_cast<uint64_t>(minutes) * 60ULL;
+    return seconds > 0xFFFFFFFFULL ? 0xFFFFFFFFUL : static_cast<uint32_t>(seconds);
+}
 }
 
 GameEngine& GameEngine::ins() {
@@ -87,6 +96,9 @@ bool GameEngine::begin() {
     if (!ResourceFS::ins().begin()) {
         Serial.println("[GameEngine] external resource FS unavailable");
     }
+    ResourcePack::ins().begin();
+    FontResource::ins().begin();
+    RoomResource::ins().begin();
     saveManager.begin();
     uint32_t savedClock = 0;
     bool hasSavedClock = saveManager.loadClock(savedClock);
@@ -241,7 +253,7 @@ Game::MonsterRuntime GameEngine::createMonster(uint16_t speciesId, uint8_t level
     mon.nature = random(0, Game::NATURE_COUNT);
     mon.hpMax = maxHpFor(*species, mon);
     mon.hpCur = mon.hpMax;
-    mon.caughtAt = Hal::ins().millis() / 1000;
+    mon.caughtAt = gameSecondsForMinutes(gameMinutesTotal());
     mon.lastSeenAt = mon.caughtAt;
     return mon;
 }
@@ -260,6 +272,7 @@ bool GameEngine::moveTeamMemberToFront(uint8_t slot) {
     }
     state.team[0] = selected;
     state.activeSlot = 0;
+    clearMainSceneViewState();
     syncSpriteCache();
     markDirty(true);
     return true;
@@ -279,6 +292,7 @@ bool GameEngine::depositTeamMemberToStorage(uint8_t slot) {
         state.team[state.teamCount] = Game::MonsterRuntime{};
     }
     state.activeSlot = 0;
+    if (slot == 0) clearMainSceneViewState();
     syncSpriteCache();
     markDirty(true);
     return true;
@@ -336,6 +350,14 @@ uint8_t GameEngine::selectedFoodCount() const {
     return foodCount(selectedFoodIndex());
 }
 
+uint8_t GameEngine::bowlFoodIndex() const {
+    return clampFoodIndex(state.room.bowlFood);
+}
+
+uint8_t GameEngine::bowlFoodCount() const {
+    return state.room.bowlCount;
+}
+
 bool GameEngine::addFood(uint8_t amount) {
     return addFoodStock(0, amount);
 }
@@ -346,7 +368,7 @@ bool GameEngine::addFoodStock(uint8_t foodIndex, uint8_t amount) {
     uint8_t& count = state.room.food[foodIndex];
     if (count >= 30) return false;
     bool hadFood = foodCount() > 0;
-    count = min<uint8_t>(30, count + amount);
+    count = (uint8_t)min<uint16_t>(30, (uint16_t)count + amount);
     if (!hadFood) state.room.selectedFood = foodIndex;
     markDirty(true);
     return true;
@@ -360,32 +382,50 @@ bool GameEngine::selectFood(uint8_t foodIndex) {
     return true;
 }
 
-bool GameEngine::consumeFood() {
+FoodPlacementResult GameEngine::placeSelectedFoodInBowl() {
     uint8_t foodIndex = selectedFoodIndex();
     if (state.room.food[foodIndex] == 0) {
         selectFirstAvailableFood(state.room);
         foodIndex = selectedFoodIndex();
-        if (state.room.food[foodIndex] == 0) return false;
+        if (state.room.food[foodIndex] == 0) return FoodPlacementResult::NO_STOCK;
+    }
+    if (state.room.bowlCount >= Game::ROOM_BOWL_CAPACITY) {
+        return FoodPlacementResult::BOWL_FULL;
+    }
+    if (state.room.bowlCount > 0 && state.room.bowlFood != foodIndex) {
+        return FoodPlacementResult::DIFFERENT_FOOD;
     }
 
     state.room.food[foodIndex]--;
+    state.room.bowlFood = foodIndex;
+    state.room.bowlCount++;
+    if (state.room.food[foodIndex] == 0) selectFirstAvailableFood(state.room);
+    markDirty(true);
+    return FoodPlacementResult::ADDED;
+}
+
+bool GameEngine::consumeBowlFood() {
+    if (state.room.bowlCount == 0) return false;
+    uint8_t foodIndex = bowlFoodIndex();
+    state.room.bowlCount--;
     Game::MonsterRuntime& mon = activeMonster();
     bool wasFull = mon.satiety >= 100;
     uint8_t satietyGain = foodIndex == 1 ? 22 : 15;
     uint8_t moodGain = foodIndex == 1 ? 5 : 3;
-    mon.satiety = min<uint8_t>(100, mon.satiety + satietyGain);
-    mon.mood = min<uint8_t>(100, mon.mood + moodGain);
+    mon.satiety = (uint8_t)min<uint16_t>(100, (uint16_t)mon.satiety + satietyGain);
+    mon.mood = (uint8_t)min<uint16_t>(100, (uint16_t)mon.mood + moodGain);
     grantCareExperience(foodIndex == 1 ? 6 : 4, wasFull);
-    if (state.room.food[foodIndex] == 0) {
-        selectFirstAvailableFood(state.room);
-    }
+    if (state.room.bowlCount == 0) state.room.bowlFood = 0;
     markDirty(true);
     return true;
 }
 
-void GameEngine::addBalls(uint8_t amount) {
-    state.bag.pokeBall = min<uint8_t>(99, state.bag.pokeBall + amount);
+bool GameEngine::addBalls(uint8_t amount) {
+    if (amount == 0) return true;
+    if (state.bag.pokeBall >= 99) return false;
+    state.bag.pokeBall = (uint8_t)min<uint16_t>(99, (uint16_t)state.bag.pokeBall + amount);
     markDirty(true);
+    return true;
 }
 
 bool GameEngine::consumeBall() {
@@ -397,7 +437,7 @@ bool GameEngine::consumeBall() {
 
 bool GameEngine::addGreatBalls(uint8_t amount) {
     if (state.bag.greatBall >= 50) return false;
-    state.bag.greatBall = min<uint8_t>(50, state.bag.greatBall + amount);
+    state.bag.greatBall = (uint8_t)min<uint16_t>(50, (uint16_t)state.bag.greatBall + amount);
     markDirty(true);
     return true;
 }
@@ -409,21 +449,24 @@ bool GameEngine::consumeGreatBall() {
     return true;
 }
 
-void GameEngine::addCandy(uint8_t amount) {
-    state.bag.candy = min<uint8_t>(30, state.bag.candy + amount);
+bool GameEngine::addCandy(uint8_t amount) {
+    if (amount == 0) return true;
+    if (state.bag.candy >= 30) return false;
+    state.bag.candy = (uint8_t)min<uint16_t>(30, (uint16_t)state.bag.candy + amount);
     markDirty(true);
+    return true;
 }
 
 bool GameEngine::addPotion(uint8_t amount) {
     if (state.bag.potion >= 30) return false;
-    state.bag.potion = min<uint8_t>(30, state.bag.potion + amount);
+    state.bag.potion = (uint8_t)min<uint16_t>(30, (uint16_t)state.bag.potion + amount);
     markDirty(true);
     return true;
 }
 
 bool GameEngine::addSuperPotion(uint8_t amount) {
     if (state.bag.superPotion >= 20) return false;
-    state.bag.superPotion = min<uint8_t>(20, state.bag.superPotion + amount);
+    state.bag.superPotion = (uint8_t)min<uint16_t>(20, (uint16_t)state.bag.superPotion + amount);
     markDirty(true);
     return true;
 }
@@ -450,7 +493,7 @@ bool GameEngine::useSuperPotion() {
 
 bool GameEngine::addAntidote(uint8_t amount) {
     if (state.bag.antidote >= 30) return false;
-    state.bag.antidote = min<uint8_t>(30, state.bag.antidote + amount);
+    state.bag.antidote = (uint8_t)min<uint16_t>(30, (uint16_t)state.bag.antidote + amount);
     markDirty(true);
     return true;
 }
@@ -468,6 +511,29 @@ uint8_t GameEngine::itemCount(Game::ItemId item) const {
     case Game::ItemId::CANDY: return state.bag.candy;
     default: return 0;
     }
+}
+
+bool GameEngine::addItem(Game::ItemId item, uint8_t amount, bool immediate) {
+    if (amount == 0) return true;
+
+    uint8_t* count = nullptr;
+    uint8_t limit = 99;
+    switch (item) {
+    case Game::ItemId::POKE_BALL: count = &state.bag.pokeBall; break;
+    case Game::ItemId::GREAT_BALL: count = &state.bag.greatBall; limit = 50; break;
+    case Game::ItemId::HEAVY_BALL: count = &state.bag.heavyBall; limit = 50; break;
+    case Game::ItemId::TIMER_BALL: count = &state.bag.timerBall; limit = 50; break;
+    case Game::ItemId::NORMAL_FOOD: count = &state.room.food[0]; limit = 20; break;
+    case Game::ItemId::POTION: count = &state.bag.potion; limit = 30; break;
+    case Game::ItemId::SUPER_POTION: count = &state.bag.superPotion; limit = 20; break;
+    case Game::ItemId::ANTIDOTE: count = &state.bag.antidote; limit = 30; break;
+    case Game::ItemId::CANDY: count = &state.bag.candy; limit = 30; break;
+    default: return false;
+    }
+    if (!count || *count >= limit) return false;
+    *count = static_cast<uint8_t>(min<uint16_t>(limit, static_cast<uint16_t>(*count) + amount));
+    markDirty(immediate);
+    return true;
 }
 
 bool GameEngine::removeItem(Game::ItemId item, uint8_t amount, bool immediate) {
@@ -504,8 +570,8 @@ bool GameEngine::spendCoins(uint32_t amount) {
 }
 
 void GameEngine::addCoins(uint32_t amount) {
-    state.coins += amount;
-    if (state.coins > 99999) state.coins = 99999;
+    uint64_t total = static_cast<uint64_t>(state.coins) + amount;
+    state.coins = total > 99999 ? 99999 : static_cast<uint32_t>(total);
     markDirty(true);
 }
 
@@ -534,7 +600,7 @@ bool GameEngine::recordCapture(const Game::MonsterRuntime& monster, uint8_t metA
     }
     mon.origin = Game::Origin::CAPTURED;
     mon.metArea = metArea;
-    mon.caughtAt = Hal::ins().millis() / 1000;
+    mon.caughtAt = gameSecondsForMinutes(gameMinutesTotal());
     mon.lastSeenAt = mon.caughtAt;
 
     if (state.teamCount < Game::TEAM_CAP) {
@@ -583,9 +649,9 @@ void GameEngine::petMonster() {
     Game::MonsterRuntime& mon = activeMonster();
     if (mon.petCountToday < 4) {
         mon.petCountToday++;
-        mon.mood = min<uint8_t>(100, mon.mood + 5);
-        mon.affection = min<uint8_t>(255, mon.affection + 2);
-        mon.lastPettedAt = Hal::ins().millis() / 1000;
+        mon.mood = (uint8_t)min<uint16_t>(100, (uint16_t)mon.mood + 5);
+        mon.affection = (uint8_t)min<uint16_t>(255, (uint16_t)mon.affection + 2);
+        mon.lastPettedAt = gameSecondsForMinutes(gameMinutesTotal());
         markDirty(true);
     }
     grantCareExperience(2);
@@ -601,10 +667,14 @@ void GameEngine::finishHatch(uint8_t starterStyle) {
     state.teamCount = 1;
     state.activeSlot = 0;
     state.team[0] = createMonster(species->id, 5);
+    clearMainSceneViewState();
     state.team[0].origin = Game::Origin::HATCHED;
     state.team[0].metArea = Game::MET_AREA_HATCHED;
-    state.team[0].caughtAt = Hal::ins().millis() / 1000;
+    state.team[0].caughtAt = gameSecondsForMinutes(gameMinutesTotal());
     state.team[0].lastSeenAt = state.team[0].caughtAt;
+    state.bag = Game::BagState{};
+    state.room = Game::RoomState{};
+    state.coins = 50;
     state.oobeDone = true;
     markDirty(true);
     requestScene(SceneID::MAIN);
@@ -617,7 +687,8 @@ void GameEngine::addExperience(uint32_t amount) {
     uint8_t oldLevel = mon.level;
     uint16_t oldHpMax = mon.hpMax;
     uint32_t maxExp = minimumExpForLevel(species.growthRate, Game::LEVEL_MAX);
-    mon.exp = min<uint32_t>(maxExp, mon.exp + amount);
+    uint64_t totalExp = static_cast<uint64_t>(mon.exp) + amount;
+    mon.exp = totalExp > maxExp ? maxExp : static_cast<uint32_t>(totalExp);
     mon.level = levelForExp(species.growthRate, mon.exp);
     mon.hpMax = maxHpFor(species, mon);
     if (mon.hpMax > oldHpMax) {
@@ -660,6 +731,7 @@ bool GameEngine::resolvePendingMoveLearn(bool learn) {
 }
 
 uint32_t GameEngine::applyActiveFaintPenalty() {
+    syncGameClock(Hal::ins().millis());
     Game::MonsterRuntime& mon = activeMonster();
     const Species& species = speciesFor(mon);
     uint32_t levelFloor = minimumExpForLevel(species.growthRate, mon.level);
@@ -669,7 +741,7 @@ uint32_t GameEngine::applyActiveFaintPenalty() {
     mon.exp -= loss;
     mon.hpCur = 0;
     mon.fainted = true;
-    mon.lastSeenAt = Hal::ins().millis() / 1000;
+    mon.lastSeenAt = gameSecondsForMinutes(state.gameMinutesTotal);
     mon.affection = mon.affection > 5 ? mon.affection - 5 : 0;
     mon.mood = mon.mood > 10 ? mon.mood - 10 : 0;
     markDirty(true);
@@ -679,12 +751,12 @@ uint32_t GameEngine::applyActiveFaintPenalty() {
 void GameEngine::addWalkSteps(uint16_t steps) {
     syncGameClock(Hal::ins().millis());
     resetDailyCountersIfNeeded();
-    state.stepsToday = min<uint16_t>(60000, state.stepsToday + steps);
-    uint16_t expGain = steps / 100;
-    if (expGain > 0 && state.walkExpToday < 50) {
-        expGain = min<uint16_t>(expGain, 50 - state.walkExpToday);
+    state.stepsToday = (uint16_t)min<uint32_t>(60000, (uint32_t)state.stepsToday + steps);
+    uint16_t earnedWalkExp = min<uint16_t>(50, state.stepsToday / 100);
+    if (earnedWalkExp > state.walkExpToday) {
+        uint16_t expGain = earnedWalkExp - state.walkExpToday;
         addExperience(expGain);
-        state.walkExpToday += expGain;
+        state.walkExpToday = earnedWalkExp;
     }
     markDirty(false);
 }
@@ -710,6 +782,7 @@ bool GameEngine::debugSetActiveSpecies(uint16_t speciesId) {
     if (state.teamCount == 0) state.teamCount = 1;
     state.team[0] = mon;
     state.activeSlot = 0;
+    clearMainSceneViewState();
     syncSpriteCache();
     markDirty(true);
     return true;
@@ -759,6 +832,46 @@ bool GameEngine::saveNow() {
     saveDirty = !ok;
     lastSaveMs = now;
     return ok;
+}
+
+bool GameEngine::resetGame() {
+    if (!saveManager.clearAll()) {
+        Serial.println("[GameEngine] failed to clear game data");
+        return false;
+    }
+
+    uint32_t now = Hal::ins().millis();
+    clockAnchorMs = now;
+    clockAnchorMinutes = 0;
+    initDefaultState();
+    HatchScene::clearRuntimeProgress();
+    clearMainSceneViewState();
+    hpRecoveryMinuteAcc = 0;
+    satietyDecayMinuteAcc = 0;
+    satietyDecayWasSleeping = false;
+    pendingMoveLearn = false;
+    pendingMoveSlot = 0;
+    pendingMoveId = 0;
+    pendingLevelUp = false;
+    pendingLevelUpLevel = 0;
+    debugShowWalkBoundary = false;
+    debugTiltControl = false;
+    debugLightSource = 0;
+    saveDirty = false;
+
+    lastSavedClockMinutes = 0;
+    lastClockSaveMs = now;
+    lastCareMs = now;
+    lastUpdateMs = now;
+    resetIdle(now);
+    Hal::ins().setBrightness(state.settings.brightness);
+    ButtonDispatcher::ins().setLongPressMs(state.settings.longPressMs);
+    syncSpriteCache();
+
+    if (!saveNow()) {
+        Serial.println("[GameEngine] reset completed but default save failed");
+    }
+    return true;
 }
 
 bool GameEngine::loadHatchProgress(Game::HatchProgress& progress) {
@@ -815,6 +928,7 @@ void GameEngine::processInput(uint32_t nowMs) {
     ButtonEvent events[ButtonDispatcher::MAX_EVENTS_PER_POLL];
     uint8_t count = ButtonDispatcher::ins().poll(events, ButtonDispatcher::MAX_EVENTS_PER_POLL);
     if (count > 0) resetIdle(nowMs);
+    if (resourceAlertVisible()) return;
     for (uint8_t i = 0; i < count; ++i) {
         if (currentScene && currentScene->onButton(events[i])) continue;
     }
@@ -823,6 +937,12 @@ void GameEngine::processInput(uint32_t nowMs) {
 void GameEngine::update(uint32_t nowMs) {
     float dt = (nowMs - lastUpdateMs) / 1000.0f;
     lastUpdateMs = nowMs;
+    if (resourceAlertVisible()) {
+        clockAnchorMs = nowMs;
+        clockAnchorMinutes = state.gameMinutesTotal;
+        lastCareMs = nowMs;
+        return;
+    }
     syncGameClock(nowMs);
     syncSpriteCache();
     persistGameClock(nowMs);
@@ -833,8 +953,58 @@ void GameEngine::update(uint32_t nowMs) {
 
 void GameEngine::render(uint32_t nowMs) {
     (void)nowMs;
+    PokemonSprites::beginRenderFrame();
     if (currentScene) currentScene->render();
+    renderResourceAlert();
     Hal::ins().flush();
+}
+
+bool GameEngine::resourceAlertVisible() const {
+    if (!FontResource::ins().loaded()) return true;
+    if (RoomResource::ins().missing()) return true;
+    return PokemonSprites::cacheStats().missingSpecies > 0;
+}
+
+void GameEngine::renderResourceAlert() {
+    if (!resourceAlertVisible()) return;
+
+    auto& c = PixelRenderer::canvas();
+    static constexpr int POP_X = 24;
+    static constexpr int POP_Y = 34;
+    static constexpr int POP_W = 192;
+    static constexpr int POP_H = 64;
+    c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, 0x0000);
+
+    uint16_t bg = PixelRenderer::rgb(18, 22, 30);
+    uint16_t border = PixelRenderer::rgb(241, 242, 232);
+    uint16_t warn = PixelRenderer::rgb(255, 216, 72);
+    uint16_t text = PixelRenderer::rgb(245, 246, 232);
+
+    c.fillRect(POP_X, POP_Y, POP_W, POP_H, bg);
+    c.drawRect(POP_X, POP_Y, POP_W, POP_H, border);
+    PixelRenderer::text(POP_X + 50, POP_Y + 8, Ui::ResourceAlert::TITLE, warn);
+
+    int y = POP_Y + 30;
+    if (RoomResource::ins().missing()) {
+        PixelRenderer::text(POP_X + 18, y, Ui::ResourceAlert::ROOM_MISSING, text);
+        y += 16;
+    }
+
+    const auto& spriteStats = PokemonSprites::cacheStats();
+    if (spriteStats.missingSpecies > 0) {
+        PixelRenderer::text(POP_X + 18, y, Ui::ResourceAlert::SPRITE_MISSING, text);
+        if (spriteStats.firstMissingSpecies != 0) {
+            char idBuf[12];
+            std::snprintf(idBuf, sizeof(idBuf), "#%03u", spriteStats.firstMissingSpecies);
+            PixelRenderer::text(POP_X + 130, y, idBuf, warn);
+        }
+        y += 16;
+    }
+
+    if (!FontResource::ins().loaded() &&
+        !RoomResource::ins().missing() && spriteStats.missingSpecies == 0) {
+        PixelRenderer::text(POP_X + 18, y, Ui::ResourceAlert::FONT_MISSING, text);
+    }
 }
 
 void GameEngine::resetIdle(uint32_t nowMs) {
@@ -894,15 +1064,19 @@ void GameEngine::persistGameClock(uint32_t nowMs, bool force) {
 
 void GameEngine::initDefaultState() {
     saveManager.reset(state);
-    const Species& starter = starterSpecies();
-    state.teamCount = 1;
+    state.teamCount = 0;
+    state.storageCount = 0;
     state.activeSlot = 0;
     state.gameMinutesTotal = 0;
     state.careDay = 0;
     state.careExpToday = 0;
-    state.team[0] = createMonster(starter.id, 5);
-    state.team[0].origin = Game::Origin::STARTER;
-    state.team[0].metArea = Game::MET_AREA_STARTER;
+    state.bag = Game::BagState{};
+    state.bag.pokeBall = 0;
+    state.bag.potion = 0;
+    state.bag.candy = 0;
+    state.room = Game::RoomState{};
+    for (uint8_t i = 0; i < Game::ROOM_FOOD_COUNT; ++i) state.room.food[i] = 0;
+    state.coins = 0;
 }
 
 void GameEngine::sanitizeMonsterMoves() {
@@ -988,9 +1162,9 @@ void GameEngine::tickCare(uint32_t nowMs) {
     hpRecoveryMinuteAcc = min<uint32_t>(60000, hpRecoveryMinuteAcc + scaledHpRecoveryMin);
     uint16_t hpRecoveryTicks = hpRecoveryMinuteAcc / HP_RECOVERY_INTERVAL_MIN;
     hpRecoveryMinuteAcc %= HP_RECOVERY_INTERVAL_MIN;
-    uint32_t nowSec = nowMs / 1000;
+    uint32_t nowGameSec = gameSecondsForMinutes(state.gameMinutesTotal);
 
-    for (uint8_t i = 0; i < state.teamCount; ++i) {
+    for (uint8_t i = 0; i < state.teamCount && i < Game::TEAM_CAP; ++i) {
         Game::MonsterRuntime& mon = state.team[i];
         if (i == 0) {
             bool sleeping = (mon.statusBits & Game::STATUS_SLEEP) != 0 || isSleepCareTime(state.gameMinutesTotal);
@@ -1014,12 +1188,12 @@ void GameEngine::tickCare(uint32_t nowMs) {
         else if (mon.mood > targetMood) mon.mood--;
 
         if (mon.fainted) {
-            if (mon.lastSeenAt == 0) mon.lastSeenAt = nowSec;
-            uint32_t elapsedFaintSec = nowSec >= mon.lastSeenAt ? nowSec - mon.lastSeenAt : 0;
-            uint32_t scaledFaintSec = (uint32_t)((float)elapsedFaintSec * gameSpeed());
-            if (scaledFaintSec >= FAINT_RECOVERY_SECONDS) {
+            if (mon.lastSeenAt == 0 || mon.lastSeenAt > nowGameSec) mon.lastSeenAt = nowGameSec;
+            uint32_t elapsedFaintSec = nowGameSec - mon.lastSeenAt;
+            if (elapsedFaintSec >= FAINT_RECOVERY_SECONDS) {
                 mon.fainted = false;
                 mon.hpCur = max<uint16_t>(1, mon.hpMax / 2);
+                mon.lastSeenAt = nowGameSec;
             }
             continue;
         }

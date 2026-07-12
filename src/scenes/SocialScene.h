@@ -38,6 +38,8 @@ private:
     uint32_t toastUntil = 0;
     const char* toast = nullptr;
     uint8_t joinMac[6] = {};
+    bool joinRequested = false;
+    uint32_t joinRequestedAt = 0;
 
     void activateCurrent();
     void renderMenu();

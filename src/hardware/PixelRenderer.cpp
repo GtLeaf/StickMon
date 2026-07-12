@@ -2,7 +2,8 @@
 #include <Arduino.h>
 #include <cmath>
 #include <cstdlib>
-#include "assets/Font16CN.h"
+#include "assets/FontFallbackCN.h"
+#include "core/FontResource.h"
 
 namespace {
 LGFX_Sprite* gCanvas = nullptr;
@@ -27,10 +28,11 @@ uint32_t readUtf8(const char*& p) {
     return '?';
 }
 
-void drawCnGlyph(LGFX_Sprite& canvas, int x, int y, const Font16CNGlyph* glyph, uint16_t color) {
+void drawCnGlyphBitmap(LGFX_Sprite& canvas, int x, int y, const uint8_t* bitmap,
+                       uint16_t color, bool progmem) {
     for (int row = 0; row < 16; ++row) {
-        uint8_t left = pgm_read_byte(&glyph->bitmap[row * 2]);
-        uint8_t right = pgm_read_byte(&glyph->bitmap[row * 2 + 1]);
+        uint8_t left = progmem ? pgm_read_byte(&bitmap[row * 2]) : bitmap[row * 2];
+        uint8_t right = progmem ? pgm_read_byte(&bitmap[row * 2 + 1]) : bitmap[row * 2 + 1];
         for (int col = 0; col < 8; ++col) {
             if (left & (1 << (7 - col))) canvas.drawPixel(x + col, y + row, color);
         }
@@ -84,9 +86,11 @@ void PixelRenderer::text(int x, int y, const char* value, uint16_t color, uint8_
             continue;
         }
 
-        const Font16CNGlyph* glyph = findFont16CNGlyph(cp);
-        if (glyph) {
-            drawCnGlyph(canvas(), cursor, y, glyph, color);
+        const uint8_t* bitmap = FontResource::ins().findGlyphBitmap(cp);
+        if (bitmap) {
+            drawCnGlyphBitmap(canvas(), cursor, y, bitmap, color, false);
+        } else if (const FontFallbackCNGlyph* glyph = findFontFallbackCNGlyph(cp)) {
+            drawCnGlyphBitmap(canvas(), cursor, y, glyph->bitmap, color, true);
         } else {
             canvas().drawRect(cursor + 2, y + 2, 12, 12, color);
         }

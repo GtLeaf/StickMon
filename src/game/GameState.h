@@ -7,7 +7,7 @@ namespace Game {
 static constexpr uint8_t TEAM_CAP = 2;
 static constexpr uint8_t STORAGE_CAP = 20;
 static constexpr uint32_t SAVE_MAGIC = 0x534D4F4E; // SMON
-static constexpr uint16_t SAVE_VERSION = 11;
+static constexpr uint16_t SAVE_VERSION = 13;
 static constexpr uint8_t STAT_COUNT = 6;
 static constexpr uint8_t NATURE_COUNT = 25;
 static constexpr uint8_t LEVEL_MAX = 50;
@@ -16,6 +16,7 @@ static constexpr uint8_t EV_MAX = 252;
 static constexpr uint16_t EV_TOTAL_MAX = 510;
 static constexpr uint32_t HATCH_MAGIC = 0x48415443; // HATC
 static constexpr uint8_t ROOM_FOOD_COUNT = 2;
+static constexpr uint8_t ROOM_BOWL_CAPACITY = 3;
 static constexpr uint8_t MET_AREA_STARTER = 0xFD;
 static constexpr uint8_t MET_AREA_HATCHED = 0xFE;
 static constexpr uint8_t MET_AREA_UNKNOWN = 0xFF;
@@ -129,6 +130,8 @@ struct BagState {
 struct RoomState {
     uint8_t food[ROOM_FOOD_COUNT] = {2, 0};
     uint8_t selectedFood = 0;
+    uint8_t bowlFood = 0;
+    uint8_t bowlCount = 0;
     uint8_t roomStyle = 0;
     uint8_t activeToy = 0;
     uint8_t ownedToys = 0;

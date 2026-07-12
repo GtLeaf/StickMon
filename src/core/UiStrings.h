@@ -43,6 +43,13 @@ static constexpr const char* PSRAM_ON = "PSRAM";
 static constexpr const char* PSRAM_OFF = "SRAM";
 static constexpr const char* HATCH = "孵化";
 
+namespace ResourceAlert {
+static constexpr const char* TITLE = "资源缺失";
+static constexpr const char* FONT_MISSING = "缺少字体资源";
+static constexpr const char* ROOM_MISSING = "缺少房间资源";
+static constexpr const char* SPRITE_MISSING = "缺少精灵资源";
+}
+
 namespace Common {
 static constexpr const char* INPUT_HINT = "A确认 B移动 长按返回";
 static constexpr const char* SHORT_HINT = "A选 B移 长按返";
@@ -63,7 +70,16 @@ static constexpr const char* CHARIZARD = "喷火龙";
 static constexpr const char* SQUIRTLE = "杰尼龟";
 static constexpr const char* WARTORTLE = "卡咪龟";
 static constexpr const char* BLASTOISE = "水箭龟";
+static constexpr const char* PIDGEY = "波波";
+static constexpr const char* PIDGEOTTO = "比比鸟";
+static constexpr const char* PIDGEOT = "大比鸟";
 static constexpr const char* MEW = "梦幻";
+static constexpr const char* SENTRET = "尾立";
+static constexpr const char* FURRET = "大尾立";
+static constexpr const char* POOCHYENA = "土狼犬";
+static constexpr const char* MIGHTYENA = "大狼犬";
+static constexpr const char* WINGULL = "长翅鸥";
+static constexpr const char* PELIPPER = "大嘴鸥";
 static constexpr const char* PICHU = "皮丘";
 static constexpr const char* PIKACHU = "皮卡丘";
 static constexpr const char* RAICHU = "雷丘";
@@ -234,11 +250,14 @@ static constexpr const char* SKY_DRAGON = "从空中俯冲龙击";
 
 namespace Menu {
 static constexpr const char* PET_TOAST = "摸摸头 +心情";
-static constexpr const char* FEED_TOAST = "喂食 +饱食";
 static constexpr const char* NO_FOOD = "没有食物了";
+static constexpr const char* FOOD_ADDED = "已添加食物";
+static constexpr const char* FOOD_FULL = "食物已满";
+static constexpr const char* FOOD_MIXED = "食物不同";
 static constexpr const char* SWITCH_TOAST = "已切换伙伴";
 static constexpr const char* NO_RESERVE = "没有替补";
 static constexpr const char* FAINTED_TOAST = "精灵濒死";
+static constexpr const char* HATCH_FIRST = "请先完成孵化";
 static constexpr const char* STORAGE_HINT = "A查看 B翻页";
 static constexpr const char* TITLE_BATTERY_FMT = "%d%%";
 static constexpr const char* ITEMS[] = {
@@ -277,7 +296,7 @@ static constexpr const char* FOOD_NAMES[] = {
     Ui::TASTY_FOOD,
 };
 static constexpr const char* FOOD_DESCS[][3] = {
-    {"基础日常粮食", "主界面按B添加", "提高伙伴饱食"},
+    {"基础日常粮食", "主界面按B放入", "精灵会自己进食"},
     {"更受欢迎的粮食", "饱食和心情更多", "后续可扩展来源"},
 };
 }
@@ -512,6 +531,8 @@ static constexpr const char* BACK_HINT = "A返回 长A回房间";
 static constexpr const char* NAMES[] = {
     Ui::BALL,
     "高级球",
+    "沉重球",
+    "时间球",
     "伤药",
     "高级伤药",
     "解毒药",
@@ -521,6 +542,8 @@ static constexpr const char* NAMES[] = {
 static constexpr const char* DESCS[][3] = {
     {"用于捕捉野生精灵", "基础款捕捉球", "适合普通探索"},
     {"比精灵球更可靠", "捕捉概率更高", "适合稀有目标"},
+    {"针对大型目标", "体格越强越有效", "适合强壮精灵"},
+    {"战斗越久越可靠", "耐心等待时机", "适合持久战"},
     {"恢复伙伴体力", "战斗后整理背包", "常备会更安心"},
     {"恢复更多体力", "比普通伤药更强", "适合高等级伙伴"},
     {"解除中毒状态", "探索前可准备", "异常时很有用"},
@@ -545,12 +568,19 @@ static constexpr const char* HELP_B_KEY = "B:机身侧面按键";
 static constexpr const char* HELP_ROOM_A = "房间长按A进菜单";
 static constexpr const char* HELP_MENU_B = "菜单长按B返回";
 static constexpr const char* HELP_BASIC = "A确认  B移动";
+static constexpr const char* RESET_GAME = "重置游戏";
+static constexpr const char* RESET_WARNING = "会清除所有游戏数据";
+static constexpr const char* RESET_QUESTION = "确定继续吗?";
+static constexpr const char* RESET_YES = "确定";
+static constexpr const char* RESET_NO = "取消";
+static constexpr const char* RESET_FAILED = "重置失败";
 static constexpr const char* ITEMS[] = {
     Ui::BRIGHTNESS,
     Ui::SPEED,
     "音量",
     POWER_SAVE,
     HELP,
+    RESET_GAME,
     Ui::BACK,
 };
 static constexpr const char* ON = "开";
@@ -562,6 +592,8 @@ static constexpr const char* NOT_ENOUGH_COINS = "金币不够";
 static constexpr const char* BAG_FULL = "背包已满";
 static constexpr const char* BOUGHT_BALL = "买到精灵球";
 static constexpr const char* BOUGHT_GREAT_BALL = "买到高级球";
+static constexpr const char* BOUGHT_HEAVY_BALL = "买到沉重球";
+static constexpr const char* BOUGHT_TIMER_BALL = "买到时间球";
 static constexpr const char* BOUGHT_FOOD = "买到普通粮";
 static constexpr const char* BOUGHT_POTION = "买到伤药";
 static constexpr const char* BOUGHT_ANTIDOTE = "买到解毒药";
@@ -584,6 +616,8 @@ static constexpr const char* CATEGORY_ITEMS[] = {
 static constexpr const char* NAMES[] = {
     Ui::BALL,
     "高级球",
+    "沉重球",
+    "时间球",
     "伤药",
     "高级伤药",
     "解毒药",
@@ -594,6 +628,8 @@ static constexpr const char* NAMES[] = {
 static constexpr const char* DESCS[] = {
     "捕捉野生精灵",
     "提高捕捉概率",
+    "适合体格强壮的精灵",
+    "战斗越久捕捉越稳",
     "恢复伙伴体力",
     "恢复更多体力",
     "解除中毒状态",
@@ -607,6 +643,9 @@ namespace Explore {
 static constexpr const char* CONTINUE = "继续前进...";
 static constexpr const char* WILD_APPEARED = "野生精灵出现!";
 static constexpr const char* NO_BALLS = "没有精灵球";
+static constexpr const char* CAPTURING = "捕捉中...";
+static constexpr const char* BALL_SELECT_FMT = "< %s x%u >";
+static constexpr const char* BALL_SELECT_HINT = "A投掷 B切换";
 static constexpr const char* CAPTURE_SUCCESS = "捕捉成功!";
 static constexpr const char* BROKE_FREE = "挣脱了!";
 static constexpr const char* RELEASED = "放走了它 +2C";

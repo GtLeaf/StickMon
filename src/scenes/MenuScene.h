@@ -54,7 +54,7 @@ private:
     static constexpr uint8_t STATUS_PAGE_COUNT = 5;
     static constexpr uint8_t TEAM_ACTION_COUNT = 4;
     static constexpr uint8_t STORAGE_ACTION_COUNT = 4;
-    static constexpr uint8_t BAG_ITEM_COUNT = 7;
+    static constexpr uint8_t BAG_ITEM_COUNT = 9;
     static constexpr uint8_t ROOM_ITEM_COUNT = 5;
     static constexpr uint8_t FOOD_ITEM_COUNT = Game::ROOM_FOOD_COUNT + 1;
     static constexpr uint8_t COMPUTER_ITEM_COUNT = 3;

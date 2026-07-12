@@ -19,21 +19,27 @@
         <input id="spriteW" type="hidden" value="64">
         <input id="spriteH" type="hidden" value="64">
 
-        <details class="panel subpanel left-subpanel" open>
+        <details class="panel subpanel left-subpanel" id="assetsPanel">
           <summary class="panel-header collapsible-panel-summary">
             <span>Assets</span>
           </summary>
           <div class="panel-body stack">
-            <div class="drop-zone" id="dropZone">
-              Drop background or furniture PNG files here
+            <div class="drop-zone-grid">
+              <div class="drop-zone" id="backgroundDropZone">
+                <strong>Background</strong>
+                <span>Drop image files</span>
+              </div>
+              <div class="drop-zone" id="furnitureDropZone">
+                <strong>Furniture</strong>
+                <span>Drop PNG files</span>
+              </div>
             </div>
 
             <div class="toolbar">
               <label class="file-button">
-                Backgrounds
+                Add backgrounds
                 <input id="baseInput" type="file" accept="image/*" multiple>
               </label>
-              <button id="replaceBaseButton" type="button">Add background</button>
               <label class="file-button">
                 Furniture
                 <input id="furnitureInput" type="file" accept="image/*" multiple>
@@ -59,7 +65,7 @@
           </div>
         </div>
 
-        <details class="panel subpanel left-subpanel" open>
+        <details class="panel subpanel left-subpanel" id="backgroundPanel">
           <summary class="panel-header collapsible-panel-summary">
             <span>Background</span>
           </summary>
@@ -69,35 +75,37 @@
               <input id="baseOpacity" type="range" min="0" max="100" value="65">
             </label>
 
-            <div class="row">
-              <label class="field">
-                Source scale
-                <input id="sourceScale" type="number" step="0.01" min="0.01" value="4">
-              </label>
-              <label class="field">
-                Furniture import
-                <select id="furnitureImportMode">
-                  <option value="source_scale">Divide by source scale</option>
-                  <option value="fit_canvas">Fit inside canvas</option>
-                  <option value="native">Native pixels</option>
-                </select>
-              </label>
-            </div>
-
-            <label class="field">
-              Background fit
-              <select id="baseFit">
-                <option value="fit_width">Fit screen width</option>
-              </select>
-            </label>
+            <select id="baseFit" hidden>
+              <option value="fit_width">Fit screen width</option>
+            </select>
 
             <div class="hint">
-              Backgrounds can be layered and assigned to Day, Night, or both from Asset management. All background layers share one trim, one coordinate system, room faces, and furniture layout. Preview/export scale the trimmed background to 240px wide. The cyan frame marks the 240x135 screen.
+              Backgrounds fit 240px wide. Assign Day/Night visibility in Layers; the cyan frame marks the 240x135 screen.
             </div>
           </div>
         </details>
 
-        <details class="panel subpanel left-subpanel" open>
+        <details class="panel subpanel left-subpanel" id="furnitureImportPanel">
+          <summary class="panel-header collapsible-panel-summary">
+            <span>Furniture import</span>
+          </summary>
+          <div class="panel-body stack">
+            <label class="field">
+              Source scale
+              <input id="sourceScale" type="number" step="0.01" min="0.01" value="4">
+            </label>
+            <label class="field">
+              Initial sizing
+              <select id="furnitureImportMode">
+                <option value="source_scale">Divide by source scale</option>
+                <option value="fit_canvas">Fit inside canvas</option>
+                <option value="native">Native pixels</option>
+              </select>
+            </label>
+          </div>
+        </details>
+
+        <details class="panel subpanel left-subpanel" id="projectSpritesPanel">
           <summary class="panel-header collapsible-panel-summary">
             <span>Project sprites</span>
           </summary>
@@ -106,16 +114,14 @@
               Species
               <select id="spriteSpeciesSelect"></select>
             </label>
-            <div class="row">
-              <label class="field">
-                Action
-                <select id="spriteActionSelect"></select>
-              </label>
-              <label class="field">
-                Frame
-                <select id="spriteFrameSelect"></select>
-              </label>
-            </div>
+            <label class="field">
+              Action
+              <select id="spriteActionSelect"></select>
+            </label>
+            <label class="field">
+              Frame
+              <select id="spriteFrameSelect"></select>
+            </label>
             <div class="toolbar">
               <button id="addProjectSprite" type="button">Add sprite preview</button>
             </div>
@@ -123,7 +129,7 @@
           </div>
         </details>
 
-        <details class="panel subpanel left-subpanel" open>
+        <details class="panel subpanel left-subpanel" id="furnitureLibraryPanel">
           <summary class="panel-header collapsible-panel-summary">
             <span>Furniture library</span>
           </summary>
@@ -149,7 +155,7 @@
           </div>
         </details>
 
-        <details class="panel subpanel left-subpanel" open>
+        <details class="panel subpanel left-subpanel" id="viewHelpersPanel">
           <summary class="panel-header collapsible-panel-summary">
             <span>View helpers</span>
           </summary>
@@ -216,7 +222,7 @@
         <div class="inspector-section preview-panel">
           <div class="section-title-row">
             <div class="section-title">Preview</div>
-            <div class="section-meta">240x135</div>
+            <div class="section-meta" id="previewCanvasSize">Room 240x135 · Screen 240x135</div>
           </div>
           <div class="preview-frame">
             <canvas id="preview" class="preview-canvas" width="240" height="135"></canvas>

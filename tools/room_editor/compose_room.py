@@ -429,35 +429,50 @@ def item_size(item, src):
 
 
 ITEM_HEIGHT_DEFAULTS = {
-    "wall_shelf": 18,
-    "bed_sofa": 34,
-    "food_bowl": 8,
-    "decoration_prop": 16,
-    "rug": 0,
-    "floor_decal": 0,
-    "low_prop": 8,
-    "furniture": 32,
-    "tall_furniture": 56,
-    "wall_furniture": 24,
-    "wall_prop": 0,
+    "floor_flat": 0,
+    "floor_small": 12,
+    "floor_furniture": 32,
+    "wall_flat": 0,
+    "wall_mounted": 24,
 }
 
 ITEM_WALL_DEPTH_DEFAULTS = {
-    "wall_shelf": 36,
-    "wall_furniture": 24,
-    "wall_prop": 4,
+    "wall_flat": 4,
+    "wall_mounted": 24,
+}
+
+LEGACY_ITEM_KIND_MAP = {
+    "rug": "floor_flat",
+    "floor_decal": "floor_flat",
+    "food_bowl": "floor_small",
+    "decoration_prop": "floor_small",
+    "low_prop": "floor_small",
+    "bed_sofa": "floor_furniture",
+    "furniture": "floor_furniture",
+    "tall_furniture": "floor_furniture",
+    "wall_prop": "wall_flat",
+    "wall_shelf": "wall_mounted",
+    "wall_furniture": "wall_mounted",
 }
 
 
+def item_kind(item):
+    raw = item.get("kind", "floor_furniture")
+    if raw == "wall_prop":
+        return "wall_mounted" if item.get("castsShadow") is True else "wall_flat"
+    canonical = LEGACY_ITEM_KIND_MAP.get(raw, raw)
+    return canonical if canonical in ITEM_HEIGHT_DEFAULTS else "floor_furniture"
+
+
 def item_height_px(item):
-    kind = item.get("kind", "furniture")
+    kind = item_kind(item)
     return clamp_number(item.get("heightPx"), ITEM_HEIGHT_DEFAULTS.get(kind, 32), 0, 160)
 
 
 def item_casts_shadow(item):
     if "castsShadow" in item:
         return item.get("castsShadow") is not False
-    return item.get("kind", "furniture") not in {"rug", "floor_decal", "wall_prop"}
+    return item_kind(item) not in {"floor_flat", "wall_flat"}
 
 
 def item_shadow_opacity(night, item):
@@ -477,7 +492,7 @@ def item_wall_shadow_offset_y(item):
 
 
 def item_wall_shadow_depth_px(item):
-    kind = item.get("kind", "furniture")
+    kind = item_kind(item)
     fallback = ITEM_WALL_DEPTH_DEFAULTS.get(kind, 24 if item_uses_wall_shadow_anchor(item) else 0)
     return clamp_number(item.get("wallShadowDepthPx"), fallback, 0, 160)
 
@@ -513,7 +528,7 @@ def default_footprint_polygon():
 
 
 def item_uses_auto_footprint_polygon(item):
-    return item_footprint(item) == "polygon" and item.get("kind") not in {"rug", "floor_decal"}
+    return item_footprint(item) == "polygon" and item_kind(item) != "floor_flat"
 
 
 def item_footprint_polygon(item):
@@ -536,8 +551,8 @@ def item_uses_wall_shadow_anchor(item):
     if anchor == "floor":
         return False
 
-    kind = item.get("kind", "furniture")
-    if kind in {"wall_prop", "wall_furniture", "wall_shelf"}:
+    kind = item_kind(item)
+    if kind in {"wall_flat", "wall_mounted"}:
         return True
     if str(item.get("slot", "")).lower() == "wall":
         return True
@@ -556,28 +571,120 @@ def item_explicitly_targets_face(item, face):
     return str(face.get("id", "")) in item_shadow_face_ids(item)
 
 
-def item_should_cast_shadow_on_surface(item, src, surface, face=None):
-    target_face_ids = item_shadow_face_ids(item)
-    targeted = item_explicitly_targets_face(item, face)
-    if target_face_ids and not targeted:
-        return False
+def wall_shadow_faces(layout, include_disabled=False):
+    faces = layout.get("roomGeometry", {}).get("faces", []) if layout else []
+    return [
+        face
+        for face in faces
+        if face.get("type") != "sprite_area"
+        and len(face.get("points", [])) >= 3
+        and normalize_shadow_surface(face.get("shadowSurface"), face.get("type", "floor")) in {"left_wall", "right_wall"}
+        and (include_disabled or face.get("receivesShadow", True) is not False)
+    ]
+
+
+def point_in_polygon(point, points):
+    inside = False
+    point_x, point_y = point
+    for index, current in enumerate(points):
+        previous = points[index - 1]
+        current_x, current_y = float(current[0]), float(current[1])
+        previous_x, previous_y = float(previous[0]), float(previous[1])
+        intersects = ((current_y > point_y) != (previous_y > point_y)) and (
+            point_x
+            < (previous_x - current_x) * (point_y - current_y) / ((previous_y - current_y) or 1e-6) + current_x
+        )
+        if intersects:
+            inside = not inside
+    return inside
+
+
+def point_to_segment_distance(point, start, end):
+    point_x, point_y = point
+    start_x, start_y = float(start[0]), float(start[1])
+    end_x, end_y = float(end[0]), float(end[1])
+    dx = end_x - start_x
+    dy = end_y - start_y
+    length_squared = dx * dx + dy * dy
+    if length_squared < 0.000001:
+        return math.hypot(point_x - start_x, point_y - start_y)
+    ratio = ((point_x - start_x) * dx + (point_y - start_y) * dy) / length_squared
+    ratio = max(0, min(1, ratio))
+    return math.hypot(point_x - (start_x + dx * ratio), point_y - (start_y + dy * ratio))
+
+
+def point_to_polygon_distance(point, points):
+    if not points:
+        return math.inf
+    if point_in_polygon(point, points):
+        return 0
+    return min(
+        point_to_segment_distance(point, points[index], points[(index + 1) % len(points)])
+        for index in range(len(points))
+    )
+
+
+def item_bounds_sample_points(item, src):
+    x = float(item.get("x", 0))
+    y = float(item.get("y", 0))
+    width, height = src.size
+    left, center_x, right = x, x + width * 0.5, x + width
+    top, center_y, bottom = y, y + height * 0.5, y + height
+    return [
+        (center_x, center_y),
+        (left, top),
+        (center_x, top),
+        (right, top),
+        (left, center_y),
+        (right, center_y),
+        (left, bottom),
+        (center_x, bottom),
+        (right, bottom),
+    ]
+
+
+def automatic_wall_shadow_face_id(item, src, layout):
+    candidates = wall_shadow_faces(layout)
+    if not candidates:
+        return None
+    samples = item_bounds_sample_points(item, src)
+    center = samples[0]
+    best = None
+    for face in candidates:
+        points = face.get("points", [])
+        candidate = (
+            sum(1 for point in samples if point_in_polygon(point, points)),
+            point_to_polygon_distance(center, points),
+            str(face.get("id", "")),
+        )
+        if best is None or candidate[0] > best[0] or (candidate[0] == best[0] and candidate[1] < best[1]):
+            best = candidate
+    return best[2] if best else None
+
+
+def item_should_cast_shadow_on_surface(item, src, surface, face=None, layout=None):
+    known_wall_face_ids = {str(entry.get("id", "")) for entry in wall_shadow_faces(layout, include_disabled=True)}
+    target_face_ids = [face_id for face_id in item_shadow_face_ids(item) if face_id in known_wall_face_ids]
+    targeted = bool(face and str(face.get("id", "")) in target_face_ids)
     if face and face.get("receivesShadow", True) is False and not targeted:
         return False
     is_wall_surface = surface in {"left_wall", "right_wall"}
+    uses_wall_anchor = item_uses_wall_shadow_anchor(item)
+    if not uses_wall_anchor:
+        return surface == "floor"
     if target_face_ids:
-        return is_wall_surface
-    if not item_uses_wall_shadow_anchor(item):
-        return True
+        return is_wall_surface and targeted
     if face is None:
-        return True
-    return is_wall_surface
+        return surface == "floor"
+    automatic_face_id = automatic_wall_shadow_face_id(item, src, layout)
+    return is_wall_surface and automatic_face_id is not None and str(face.get("id", "")) == automatic_face_id
 
 
 def active_shadow_mode(night):
     mode = normalize_shadow_mode(night.get("shadowMode"))
     if mode != "auto":
         return mode
-    return "point"
+    return "directional" if normalize_light_shape(night.get("lightShape")) == "cone" else "point"
 
 
 def shadow_direction(night, foot_x, foot_y, light_x, light_y):
@@ -644,6 +751,312 @@ def receiving_shadow_faces(layout):
         for face in layout.get("roomGeometry", {}).get("faces", [])
         if face_receives_shadow(face, targeted_face_ids)
     ]
+
+
+def projection_point(raw):
+    if isinstance(raw, dict):
+        return float(raw.get("x", 0)), float(raw.get("y", 0))
+    return float(raw[0]), float(raw[1])
+
+
+def projection_shared_points(points_a, points_b):
+    if not points_a or not points_b:
+        return []
+    normalized_a = [projection_point(point) for point in points_a]
+    normalized_b = [projection_point(point) for point in points_b]
+    all_points = normalized_a + normalized_b
+    min_x = min(point[0] for point in all_points)
+    max_x = max(point[0] for point in all_points)
+    min_y = min(point[1] for point in all_points)
+    max_y = max(point[1] for point in all_points)
+    tolerance = max(2, math.hypot(max_x - min_x, max_y - min_y) * 0.015)
+    shared = [
+        ((point_a[0] + point_b[0]) * 0.5, (point_a[1] + point_b[1]) * 0.5)
+        for point_a in normalized_a
+        for point_b in normalized_b
+        if math.hypot(point_a[0] - point_b[0], point_a[1] - point_b[1]) <= tolerance
+    ]
+    if shared:
+        return shared
+    point_a, point_b = min(
+        ((point_a, point_b) for point_a in normalized_a for point_b in normalized_b),
+        key=lambda pair: math.hypot(pair[0][0] - pair[1][0], pair[0][1] - pair[1][1]),
+    )
+    return [((point_a[0] + point_b[0]) * 0.5, (point_a[1] + point_b[1]) * 0.5)]
+
+
+def closest_projection_pair(points_a, points_b):
+    if not points_a or not points_b:
+        return None
+    return min(
+        ((point_a, point_b) for point_a in points_a for point_b in points_b),
+        key=lambda pair: math.hypot(pair[0][0] - pair[1][0], pair[0][1] - pair[1][1]),
+    )
+
+
+def room_projection_model(layout):
+    geometry = layout.get("roomGeometry", {})
+    faces = geometry.get("faces", [])
+    floor_face = next((face for face in faces if face.get("type") != "sprite_area" and face_shadow_surface(face) == "floor"), None)
+    left_face = next((face for face in faces if face_shadow_surface(face) == "left_wall"), None)
+    right_face = next((face for face in faces if face_shadow_surface(face) == "right_wall"), None)
+    if not floor_face or not left_face or not right_face:
+        return None
+
+    projection = geometry.get("projection") or {}
+    if projection.get("type") == "corner_local_planes_v1":
+        try:
+            origin = projection_point(projection["origin"])
+            axis_u = projection_point(projection["axisU"])
+            axis_v = projection_point(projection["axisV"])
+            axis_z = projection_point(projection["axisZ"])
+        except (KeyError, TypeError, ValueError):
+            origin = axis_u = axis_v = axis_z = None
+    else:
+        origin = axis_u = axis_v = axis_z = None
+
+    if origin is None:
+        floor_points = floor_face.get("points", [])
+        left_points = left_face.get("points", [])
+        right_points = right_face.get("points", [])
+        left_floor = projection_shared_points(left_points, floor_points)
+        right_floor = projection_shared_points(right_points, floor_points)
+        corner_pair = closest_projection_pair(left_floor, right_floor)
+        if not corner_pair:
+            return None
+        origin = (
+            (corner_pair[0][0] + corner_pair[1][0]) * 0.5,
+            (corner_pair[0][1] + corner_pair[1][1]) * 0.5,
+        )
+
+        def farthest(points):
+            return max(points, key=lambda point: math.hypot(point[0] - origin[0], point[1] - origin[1])) if points else None
+
+        left_extent = farthest(left_floor)
+        right_extent = farthest(right_floor)
+        top = farthest(projection_shared_points(left_points, right_points))
+        if not left_extent or not right_extent or not top:
+            return None
+        axis_u = (left_extent[0] - origin[0], left_extent[1] - origin[1])
+        axis_v = (right_extent[0] - origin[0], right_extent[1] - origin[1])
+        axis_z = (top[0] - origin[0], top[1] - origin[1])
+
+    determinant = axis_u[0] * axis_v[1] - axis_u[1] * axis_v[0]
+    axis_z_length = math.hypot(axis_z[0], axis_z[1])
+    if abs(determinant) < 0.001 or axis_z_length < 1:
+        return None
+    return {
+        "type": "corner_local_planes_v1",
+        "origin": origin,
+        "axisU": axis_u,
+        "axisV": axis_v,
+        "axisZ": axis_z,
+        "axisZLength": axis_z_length,
+        "determinant": determinant,
+        "faces": {"floor": floor_face, "left_wall": left_face, "right_wall": right_face},
+        "points": {
+            str(floor_face.get("id", "")): [projection_point(point) for point in floor_face.get("points", [])],
+            str(left_face.get("id", "")): [projection_point(point) for point in left_face.get("points", [])],
+            str(right_face.get("id", "")): [projection_point(point) for point in right_face.get("points", [])],
+        },
+    }
+
+
+def screen_to_projection_world(model, point, height_px=0):
+    z = height_px / model["axisZLength"]
+    flat_x = point[0] - model["origin"][0] - model["axisZ"][0] * z
+    flat_y = point[1] - model["origin"][1] - model["axisZ"][1] * z
+    return (
+        (flat_x * model["axisV"][1] - flat_y * model["axisV"][0]) / model["determinant"],
+        (model["axisU"][0] * flat_y - model["axisU"][1] * flat_x) / model["determinant"],
+        z,
+    )
+
+
+def projection_world_to_screen(model, point):
+    return (
+        model["origin"][0] + model["axisU"][0] * point[0] + model["axisV"][0] * point[1] + model["axisZ"][0] * point[2],
+        model["origin"][1] + model["axisU"][1] * point[0] + model["axisV"][1] * point[1] + model["axisZ"][1] * point[2],
+    )
+
+
+def item_projection_faces(item, model):
+    explicit = set(item_shadow_face_ids(item))
+    valid_explicit = any(face_id in model["points"] for face_id in explicit)
+    receivers = []
+    for surface, face in model["faces"].items():
+        face_id = str(face.get("id", ""))
+        targeted = face_id in explicit
+        if face.get("receivesShadow", True) is False and not targeted:
+            continue
+        if surface != "floor" and valid_explicit and not targeted:
+            continue
+        receivers.append({"surface": surface, "face": face, "points": model["points"].get(face_id, [])})
+    return receivers
+
+
+def projection_convex_hull(points):
+    if len(points) <= 3:
+        return points
+    sorted_points = sorted(points)
+
+    def cross(origin, a, b):
+        return (a[0] - origin[0]) * (b[1] - origin[1]) - (a[1] - origin[1]) * (b[0] - origin[0])
+
+    lower = []
+    for point in sorted_points:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], point) <= 0:
+            lower.pop()
+        lower.append(point)
+    upper = []
+    for point in reversed(sorted_points):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], point) <= 0:
+            upper.pop()
+        upper.append(point)
+    return lower[:-1] + upper[:-1]
+
+
+def image_alpha_projection_contour(src):
+    scale = min(1, 128 / max(src.size))
+    width = max(1, round(src.width * scale))
+    height = max(1, round(src.height * scale))
+    alpha = src.getchannel("A")
+    if alpha.size != (width, height):
+        alpha = alpha.resize((width, height), Image.Resampling.NEAREST)
+    pixels = alpha.load()
+    points = [
+        (x, y)
+        for y in range(height)
+        for x in range(width)
+        if pixels[x, y] > 8
+    ]
+    return [
+        ((x + 0.5) / width, (y + 0.5) / height)
+        for x, y in projection_convex_hull(points)
+    ]
+
+
+def item_projection_contour(item, src=None):
+    custom = item_shadow_polygon(item)
+    if custom:
+        return custom
+    footprint = item_footprint(item)
+    if footprint == "none":
+        return []
+    if footprint == "polygon":
+        return item_footprint_polygon(item)
+    if footprint == "rect":
+        return [(0.12, 0.72), (0.88, 0.72), (0.88, 0.96), (0.12, 0.96)]
+    if footprint == "ellipse":
+        return [
+            (0.5 + math.cos(math.tau * index / 12) * 0.38, 0.84 + math.sin(math.tau * index / 12) * 0.13)
+            for index in range(12)
+        ]
+    alpha_contour = image_alpha_projection_contour(src) if src is not None else []
+    return alpha_contour if len(alpha_contour) >= 3 else [(0, 0), (1, 0), (1, 1), (0, 1)]
+
+
+def projection_ray_direction(night, model, caster_world, screen_point, height_px):
+    if active_shadow_mode(night) == "directional":
+        angle = math.radians(float(night["lightAngle"]))
+        target_screen = (
+            screen_point[0] + math.cos(angle) * height_px,
+            screen_point[1] + math.sin(angle) * height_px,
+        )
+        target_world = screen_to_projection_world(model, target_screen, 0)
+        return tuple(target_world[index] - caster_world[index] for index in range(3))
+    light_world = screen_to_projection_world(
+        model,
+        (float(night["lightX"]), float(night["lightY"])),
+        float(night["lightDepth"]),
+    )
+    return tuple(caster_world[index] - light_world[index] for index in range(3))
+
+
+def projection_plane_intersection(origin, direction, surface):
+    coordinate = 2 if surface == "floor" else 1 if surface == "left_wall" else 0
+    denominator = direction[coordinate]
+    value = origin[coordinate]
+    if abs(denominator) < 0.000001:
+        return (*origin, 0) if abs(value) < 0.000001 else None
+    t = -value / denominator
+    if t < -0.000001:
+        return None
+    return (
+        origin[0] + direction[0] * t,
+        origin[1] + direction[1] * t,
+        origin[2] + direction[2] * t,
+        t,
+    )
+
+
+def nearest_projection_receiver(model, origin, direction, receivers):
+    best = None
+    for receiver in receivers:
+        hit = projection_plane_intersection(origin, direction, receiver["surface"])
+        if not hit:
+            continue
+        screen = projection_world_to_screen(model, hit[:3])
+        if not point_in_polygon(screen, receiver["points"]) and point_to_polygon_distance(screen, receiver["points"]) > 1.5:
+            continue
+        candidate = {"world": hit[:3], "t": hit[3], "screen": screen, "receiver": receiver}
+        if best is None or candidate["t"] < best["t"]:
+            best = candidate
+    return best
+
+
+def draw_unified_floor_item_shadow(layer, layout, night, item, src, opacity, mode, model):
+    if not model or item_uses_wall_shadow_anchor(item):
+        return False
+    if not item_casts_shadow(item) or opacity <= 0:
+        return True
+    if item_shadow_opacity(night, item) <= 0 or item_shadow_length(night, item) <= 0:
+        return True
+    contour = item_projection_contour(item, src)
+    if len(contour) < 3:
+        return True
+    receivers = item_projection_faces(item, model)
+    if not receivers:
+        return True
+
+    x = float(item.get("x", 0))
+    y = float(item.get("y", 0))
+    width, height = src.size
+    foot_x = x + width * 0.5
+    foot_y = y + height * 0.88
+    light_factor = shadow_light_factor(night, foot_x, foot_y, night["lightX"], night["lightY"])
+    if light_factor <= 0:
+        return True
+    projected = []
+    for local in contour:
+        screen_point = (x + local[0] * width, y + local[1] * height)
+        height_px = local_caster_height(night, item, local)
+        caster_world = screen_to_projection_world(model, screen_point, height_px)
+        direction = projection_ray_direction(night, model, caster_world, screen_point, height_px)
+        hit = nearest_projection_receiver(model, caster_world, direction, receivers)
+        if hit:
+            projected.append(hit["screen"])
+            continue
+        floor_hit = projection_plane_intersection(caster_world, direction, "floor")
+        projected.append(projection_world_to_screen(model, floor_hit[:3]) if floor_hit else screen_point)
+
+    height_factor = max(0.25, min(2.2, item_height_px(item) / 32))
+    alpha = round(255 * base_shadow_opacity(night, item, light_factor, opacity, mode))
+    if alpha <= 0:
+        return True
+    shadow = Image.new("RGBA", layer.size, (0, 0, 0, 0))
+    ImageDraw.Draw(shadow).polygon([(round(point[0]), round(point[1])) for point in projected], fill=(0, 0, 0, alpha))
+    blur = max(0, item_shadow_blur(night, item))
+    if blur > 0:
+        shadow = shadow.filter(ImageFilter.GaussianBlur(blur))
+    receiver_mask = Image.new("L", layer.size, 0)
+    mask_draw = ImageDraw.Draw(receiver_mask)
+    for receiver in receivers:
+        if len(receiver["points"]) >= 3:
+            mask_draw.polygon([(round(point[0]), round(point[1])) for point in receiver["points"]], fill=255)
+    shadow.putalpha(ImageChops.multiply(shadow.getchannel("A"), receiver_mask))
+    layer.alpha_composite(shadow)
+    return True
 
 
 def wall_shadow_skew(surface):
@@ -731,11 +1144,16 @@ def load_prepared_items(layout, furniture_root, mode):
         if size != src.size:
             src = src.resize(size, Image.Resampling.NEAREST)
         opacity = max(0, min(1, float(item.get("opacity", 1))))
-        if opacity < 1:
-            alpha = src.getchannel("A").point(lambda p: int(p * opacity))
-            src.putalpha(alpha)
         prepared.append((item, src, opacity))
     return prepared
+
+
+def image_with_opacity(src, opacity):
+    if opacity >= 1:
+        return src
+    rendered = src.copy()
+    rendered.putalpha(src.getchannel("A").point(lambda value: round(value * opacity)))
+    return rendered
 
 
 def alpha_composite_clipped(base, overlay, dest):
@@ -880,7 +1298,15 @@ def draw_projected_shadow_2d5(layer, night, item, src, opacity, mode, light_fact
 
 
 def draw_floor_footprint_shadow(layer, night, item, src, opacity, mode, ux, uy, light_factor):
-    polygon = item_footprint_polygon(item)
+    footprint = item_footprint(item)
+    if footprint == "none":
+        return True
+    if footprint == "rect":
+        polygon = [(0.12, 0.72), (0.88, 0.72), (0.88, 0.96), (0.12, 0.96)]
+    elif footprint == "polygon":
+        polygon = item_footprint_polygon(item)
+    else:
+        polygon = []
     if polygon:
         x = float(item.get("x", 0))
         y = float(item.get("y", 0))
@@ -898,13 +1324,16 @@ def draw_floor_footprint_shadow(layer, night, item, src, opacity, mode, ux, uy, 
             for px, py in polygon
         ]
         ImageDraw.Draw(shadow).polygon(points, fill=(0, 0, 0, alpha))
-        blur = max(0.2, item_shadow_blur(night, item))
+        configured_blur = item_shadow_blur(night, item)
+        blur = max(0.2, configured_blur) if configured_blur > 0 else 0
         if blur > 0:
             shadow = shadow.filter(ImageFilter.GaussianBlur(blur))
         layer.alpha_composite(shadow)
         return True
 
-    if item_footprint(item) != "ellipse":
+    if footprint in {"polygon", "rect"}:
+        return True
+    if footprint != "ellipse":
         return False
     x = float(item.get("x", 0))
     y = float(item.get("y", 0))
@@ -1015,12 +1444,12 @@ def draw_wall_plane_shadow_for_item(layer, night, item, src, opacity, mode, face
     return True
 
 
-def draw_shadow_for_item(layer, night, item, src, opacity, mode, surface, face=None):
+def draw_shadow_for_item(layer, night, item, src, opacity, mode, surface, face=None, layout=None):
     if not item_casts_shadow(item):
         return
     if item_shadow_opacity(night, item) <= 0 or item_shadow_length(night, item) <= 0:
         return
-    if not item_should_cast_shadow_on_surface(item, src, surface, face):
+    if not item_should_cast_shadow_on_surface(item, src, surface, face, layout):
         return
 
     x = float(item.get("x", 0))
@@ -1047,7 +1476,9 @@ def draw_shadow_for_item(layer, night, item, src, opacity, mode, surface, face=N
     uses_wall_anchor = is_wall_surface and item_uses_wall_shadow_anchor(item)
     if uses_wall_anchor and face and draw_wall_plane_shadow_for_item(layer, night, item, src, opacity, mode, face):
         return
-    if draw_projected_shadow_2d5(layer, night, item, src, opacity, mode, light_factor, is_wall_surface):
+    if (not is_wall_surface or uses_wall_anchor) and draw_projected_shadow_2d5(
+        layer, night, item, src, opacity, mode, light_factor, is_wall_surface
+    ):
         return
     if not is_wall_surface and draw_floor_footprint_shadow(layer, night, item, src, opacity, mode, ux, uy, light_factor):
         return
@@ -1089,30 +1520,78 @@ def clip_layer_to_face(layer, face):
     return clipped
 
 
-def composite_shadows(out, layout, night, prepared_items, mode):
+def render_shadow_layer(size, layout, night, prepared_items, mode):
     night = normalize_night(night, mode)
+    result = Image.new("RGBA", size, (0, 0, 0, 0))
     if not night["castShadows"]:
-        return
+        return result
 
     faces = receiving_shadow_faces(layout)
+    projection_model = room_projection_model(layout)
+    unified_items = set()
+    for item, src, opacity in prepared_items:
+        if draw_unified_floor_item_shadow(result, layout, night, item, src, opacity, mode, projection_model):
+            unified_items.add(id(item))
     if not faces:
         has_room_faces = any(
             face.get("type") != "sprite_area" and len(face.get("points", [])) >= 3
             for face in layout.get("roomGeometry", {}).get("faces", [])
         )
         if has_room_faces:
-            return
-        layer = Image.new("RGBA", out.size, (0, 0, 0, 0))
+            return result
+        layer = Image.new("RGBA", size, (0, 0, 0, 0))
         for item, src, opacity in prepared_items:
-            draw_shadow_for_item(layer, night, item, src, opacity, mode, "floor")
-        out.alpha_composite(layer)
-        return
+            if id(item) in unified_items:
+                continue
+            draw_shadow_for_item(layer, night, item, src, opacity, mode, "floor", layout=layout)
+        result.alpha_composite(layer)
+        return result
 
     for face in faces:
-        layer = Image.new("RGBA", out.size, (0, 0, 0, 0))
+        layer = Image.new("RGBA", size, (0, 0, 0, 0))
         for item, src, opacity in prepared_items:
-            draw_shadow_for_item(layer, night, item, src, opacity, mode, face_shadow_surface(face), face)
-        out.alpha_composite(clip_layer_to_face(layer, face))
+            if id(item) in unified_items:
+                continue
+            draw_shadow_for_item(layer, night, item, src, opacity, mode, face_shadow_surface(face), face, layout)
+        result.alpha_composite(clip_layer_to_face(layer, face))
+    return result
+
+
+def composite_shadows(out, layout, night, prepared_items, mode):
+    out.alpha_composite(render_shadow_layer(out.size, layout, night, prepared_items, mode))
+
+
+def item_shadow_layers(size, layout, night, prepared_items, mode):
+    layers = []
+    for prepared in prepared_items:
+        item, _src, opacity = prepared
+        if opacity <= 0 or not item_casts_shadow(item):
+            continue
+        layer = render_shadow_layer(size, layout, night, [prepared], mode)
+        if layer.getbbox() is not None:
+            layers.append((item, layer))
+    return layers
+
+
+def composite_receiver_shadows(out, receiver, src, opacity, shadow_layers):
+    if receiver.get("receivesShadow", True) is False or opacity <= 0:
+        return
+    applicable = [layer for caster, layer in shadow_layers if caster is not receiver]
+    if not applicable:
+        return
+
+    overlay = Image.new("RGBA", out.size, (0, 0, 0, 0))
+    for layer in applicable:
+        overlay.alpha_composite(layer)
+
+    receiver_layer = Image.new("RGBA", out.size, (0, 0, 0, 0))
+    alpha_composite_clipped(
+        receiver_layer,
+        image_with_opacity(src, opacity),
+        (round(float(receiver.get("x", 0))), round(float(receiver.get("y", 0)))),
+    )
+    overlay.putalpha(ImageChops.multiply(overlay.getchannel("A"), receiver_layer.getchannel("A")))
+    out.alpha_composite(overlay)
 
 
 def composite(layout, base_path, furniture_dir, mode, include_lighting=True, layout_dir=None):
@@ -1120,9 +1599,16 @@ def composite(layout, base_path, furniture_dir, mode, include_lighting=True, lay
 
     furniture_root = Path(furniture_dir)
     prepared_items = load_prepared_items(layout, furniture_root, mode)
-    composite_shadows(out, layout, layout.get("night", {}), prepared_items, mode)
-    for item, src, _opacity in prepared_items:
-        alpha_composite_clipped(out, src, (int(item.get("x", 0)), int(item.get("y", 0))))
+    shadows = item_shadow_layers(out.size, layout, layout.get("night", {}), prepared_items, mode)
+    for _item, layer in shadows:
+        out.alpha_composite(layer)
+    for item, src, opacity in prepared_items:
+        alpha_composite_clipped(
+            out,
+            image_with_opacity(src, opacity),
+            (round(float(item.get("x", 0))), round(float(item.get("y", 0)))),
+        )
+        composite_receiver_shadows(out, item, src, opacity, shadows)
 
     if include_lighting:
         return apply_lighting(out, layout.get("night", {}), mode)

@@ -1,7 +1,9 @@
 #include "scenes/HatchScene.h"
 #include <cstdio>
-#include "assets/PokemonSprites.h"
+#include "assets/GameAssets.h"
 #include "core/GameEngine.h"
+#include "core/RoomRenderer.h"
+#include "core/RoomResource.h"
 #include "core/UiStrings.h"
 #include "hardware/Hal.h"
 #include "hardware/PixelRenderer.h"
@@ -11,6 +13,26 @@ constexpr uint8_t INTERACTION_THRESHOLD = 10;
 float savedElapsed = 0.0f;
 uint16_t savedPokeCount = 0;
 uint16_t savedWipeCount = 0;
+
+bool hatchSceneIsNight() {
+    uint16_t minutes = GameEngine::ins().gameMinutesOfDay();
+    return minutes < 6 * 60 || minutes >= 18 * 60;
+}
+
+float hatchCameraY() {
+    RoomResource& room = RoomResource::ins();
+    if (!room.available()) return 0.0f;
+    float maxCamera = static_cast<float>(room.roomY() + room.height() - Hal::DISPLAY_H);
+    if (maxCamera < 0.0f) maxCamera = 0.0f;
+    float camera = static_cast<float>(room.roomY() + room.bedY() - 16) - 84.0f;
+    return constrain(camera, 0.0f, maxCamera);
+}
+}
+
+void HatchScene::clearRuntimeProgress() {
+    savedElapsed = 0.0f;
+    savedPokeCount = 0;
+    savedWipeCount = 0;
 }
 
 void HatchScene::onEnter() {
@@ -116,53 +138,35 @@ int8_t HatchScene::eggShakeOffset(uint32_t nowMs) const {
 }
 
 void HatchScene::drawRoom() {
-    auto& c = PixelRenderer::canvas();
-    PixelRenderer::clear(PixelRenderer::rgb(194, 219, 224));
-    c.fillRect(0, 0, Hal::DISPLAY_W, 42, PixelRenderer::rgb(165, 202, 214));
-    c.fillRect(18, 10, 50, 26, PixelRenderer::rgb(238, 247, 230));
-    c.drawRect(18, 10, 50, 26, PixelRenderer::rgb(95, 130, 138));
-    c.drawLine(43, 10, 43, 35, PixelRenderer::rgb(95, 130, 138));
-    c.drawLine(18, 23, 67, 23, PixelRenderer::rgb(95, 130, 138));
-    c.fillRect(0, 42, Hal::DISPLAY_W, Hal::DISPLAY_H - 42, PixelRenderer::rgb(226, 209, 174));
-    for (int y = 56; y < Hal::DISPLAY_H; y += 16) {
-        c.drawLine(0, y, Hal::DISPLAY_W, y, PixelRenderer::rgb(206, 187, 151));
-    }
-    c.fillRect(38, 58, 164, 58, PixelRenderer::rgb(240, 225, 188));
-    c.drawRect(38, 58, 164, 58, PixelRenderer::rgb(173, 140, 101));
+    RoomRenderer::draw(hatchCameraY(), hatchSceneIsNight());
 }
 
 void HatchScene::drawEgg() {
     auto& c = PixelRenderer::canvas();
-    int x = 120 + eggShakeOffset(Hal::ins().millis());
-    int y = 87;
-    uint8_t w = pgm_read_byte(&PokemonSprites::EGG_FRAME.width);
-    uint8_t h = pgm_read_byte(&PokemonSprites::EGG_FRAME.height);
-    uint8_t visualW = w > 48 ? 36 : w;
-    uint8_t visualH = h > 56 ? 44 : h;
-    int shadowRx = constrain((int)(visualW * 0.36f), 12, 18);
-    int shadowRy = constrain((int)(visualH * 0.10f), 3, 5);
-    int shadowY = y + constrain((int)(visualH * 0.45f), 18, 22);
-    c.fillEllipse(x, shadowY, shadowRx, shadowRy, PixelRenderer::rgb(159, 139, 117));
-    if (PokemonSprites::drawFrame(&PokemonSprites::EGG_FRAME, x - w / 2, y - h / 2)) {
-        return;
+    RoomResource& room = RoomResource::ins();
+    int x = room.available() ? room.bedX() : Hal::DISPLAY_W / 2;
+    int y = room.available()
+        ? static_cast<int>(room.roomY() + room.bedY() - 16 - hatchCameraY())
+        : 84;
+    x += eggShakeOffset(Hal::ins().millis());
+    if (!GameAssets::drawCentered(GameAssets::Kind::EGG, x, y)) {
+        c.fillRect(x - 12, y - 16, 24, 32, PixelRenderer::rgb(255, 216, 72));
     }
-    c.fillEllipse(x, y, 24, 31, PixelRenderer::rgb(240, 232, 184));
-    c.fillEllipse(x, y + 1, 18, 24, PixelRenderer::rgb(255, 248, 214));
-    c.drawEllipse(x, y, 24, 31, PixelRenderer::rgb(109, 92, 62));
-    c.fillCircle(x - 12, y - 7, 4, PixelRenderer::rgb(255, 145, 67));
-    c.fillCircle(x + 12, y + 8, 4, PixelRenderer::rgb(71, 169, 226));
-    c.fillCircle(x + 1, y - 18, 3, PixelRenderer::rgb(102, 190, 90));
 }
 
 void HatchScene::drawHud() {
     auto& c = PixelRenderer::canvas();
     c.fillRect(168, 2, 68, 22, PixelRenderer::rgb(34, 39, 47));
     c.drawRect(168, 2, 68, 22, PixelRenderer::rgb(72, 83, 98));
-    PixelRenderer::text(176, 5, Ui::ROOM, PixelRenderer::rgb(245, 246, 232));
+    PixelRenderer::text(176, 5, Ui::Hatch::TITLE, PixelRenderer::rgb(245, 246, 232));
 }
 
 void HatchScene::drawToast() {
-    if (!toast || Hal::ins().millis() > toastUntil) return;
+    if (!toast) return;
+    if ((int32_t)(Hal::ins().millis() - toastUntil) >= 0) {
+        toast = nullptr;
+        return;
+    }
     auto& c = PixelRenderer::canvas();
     c.fillRect(72, 6, 96, 20, PixelRenderer::rgb(41, 45, 55));
     PixelRenderer::text(98, 8, toast, PixelRenderer::rgb(255, 255, 255));

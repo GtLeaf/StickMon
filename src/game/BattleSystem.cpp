@@ -47,11 +47,10 @@ uint8_t singleEffect(TypeId attack, TypeId defend) {
 
 namespace BattleSystem {
 
-uint8_t typeEffectiveness(TypeId attack, TypeId defend1, TypeId defend2) {
+uint16_t typeEffectiveness(TypeId attack, TypeId defend1, TypeId defend2) {
     uint16_t value = singleEffect(attack, defend1);
     value = (value * singleEffect(attack, defend2)) / 100;
-    if (value > 255) value = 255;
-    return (uint8_t)value;
+    return value;
 }
 
 uint8_t specialTriggerChance(const Game::MonsterRuntime& attacker) {
@@ -111,7 +110,7 @@ DamageResult calcBasicDamage(const Game::MonsterRuntime& attacker,
 
     uint16_t base = (((2 * attacker.level / 5 + 2) * power * atk / def) / 50) + 2;
     uint8_t stab = (attackType == attackerSpecies.type1 || attackType == attackerSpecies.type2) ? 150 : 100;
-    uint8_t eff = typeEffectiveness(attackType, defenderSpecies.type1, defenderSpecies.type2);
+    uint16_t eff = typeEffectiveness(attackType, defenderSpecies.type1, defenderSpecies.type2);
     uint8_t randomFactor = random(85, 101);
     bool crit = random(0, 16) == 0;
     uint32_t damage = base;
