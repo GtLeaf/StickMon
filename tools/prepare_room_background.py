@@ -34,7 +34,8 @@ PACK_ROOM_OUT = PACK_OUT / "rooms"
 
 DISPLAY_H = 135
 ROOM_PACK_MAGIC = 0x4D4F5253
-ROOM_PACK_VERSION = 1
+ROOM_PACK_VERSION = 2
+ROOM_PACK_HEADER_FORMAT = "<IHHHhIIIIBBBBhhhhhhhhhhhhhhhhhhhhHH"
 
 
 def rgb565(r, g, b):
@@ -165,6 +166,30 @@ def load_walk_polygon(layout, room_w, room_h):
     if not floor:
         return []
     return [clamp_room_point(x, y, room_w, room_h) for x, y in floor.get("points", [])]
+
+
+def doorway_region(layout, room_w, room_h, walk_polygon):
+    geometry = layout.get("roomGeometry") or {}
+    faces = geometry.get("faces") or []
+    doorway = next((face for face in faces if face.get("type") == "doorway"), None)
+    if not doorway:
+        return [], (0, 0), (0, 0)
+
+    points = [clamp_room_point(x, y, room_w, room_h) for x, y in doorway.get("points", [])]
+    if len(points) < 3:
+        return [], (0, 0), (0, 0)
+
+    walk_x, walk_y = polygon_anchor(walk_polygon)
+    edge_midpoints = []
+    for index, (x0, y0) in enumerate(points):
+        x1, y1 = points[(index + 1) % len(points)]
+        midpoint = clamp_room_point((x0 + x1) * 0.5, (y0 + y1) * 0.5, room_w, room_h)
+        distance = (midpoint[0] - walk_x) ** 2 + (midpoint[1] - walk_y) ** 2
+        edge_midpoints.append((distance, midpoint))
+
+    inside = min(edge_midpoints, key=lambda item: item[0])[1]
+    outside = max(edge_midpoints, key=lambda item: item[0])[1]
+    return points, inside, outside
 
 
 def bounds_for(points, width, height):
@@ -400,15 +425,19 @@ def merge_pack_manifest(**updates):
 
 def write_room_pack(width, height, room_y, base_raw, base_compressed,
                     patch_runs, patch_pixels, walk_polygon, food_x, food_y,
-                    bed_polygon, bed_x, bed_y):
+                    bed_polygon, bed_x, bed_y, doorway_polygon,
+                    doorway_inside, doorway_outside):
     min_x, min_y, max_x, max_y = bounds_for(walk_polygon, width, height)
     bed_min_x, bed_min_y, bed_max_x, bed_max_y = bounds_for(bed_polygon, width, height)
+    door_min_x, door_min_y, door_max_x, door_max_y = bounds_for(doorway_polygon, width, height)
     if not 3 <= len(walk_polygon) <= 32 or not 3 <= len(bed_polygon) <= 32:
         raise ValueError("room polygons must contain between 3 and 32 points")
+    if doorway_polygon and not 3 <= len(doorway_polygon) <= 32:
+        raise ValueError("doorway polygon must contain between 3 and 32 points")
 
     payload = bytearray()
     payload.extend(struct.pack(
-        "<IHHHhIIIIBBhhhhhhhhhhhhHH",
+        ROOM_PACK_HEADER_FORMAT,
         ROOM_PACK_MAGIC,
         ROOM_PACK_VERSION,
         width,
@@ -420,6 +449,8 @@ def write_room_pack(width, height, room_y, base_raw, base_compressed,
         len(patch_pixels),
         len(walk_polygon),
         len(bed_polygon),
+        len(doorway_polygon),
+        0,
         min_x,
         min_y,
         max_x,
@@ -432,6 +463,14 @@ def write_room_pack(width, height, room_y, base_raw, base_compressed,
         bed_max_y,
         bed_x,
         bed_y,
+        door_min_x,
+        door_min_y,
+        door_max_x,
+        door_max_y,
+        doorway_inside[0],
+        doorway_inside[1],
+        doorway_outside[0],
+        doorway_outside[1],
         1 if not patch_runs else 0,
         0,
     ))
@@ -444,6 +483,8 @@ def write_room_pack(width, height, room_y, base_raw, base_compressed,
         payload.extend(struct.pack("<hh", x, y))
     for x, y in bed_polygon:
         payload.extend(struct.pack("<hh", x, y))
+    for x, y in doorway_polygon:
+        payload.extend(struct.pack("<hh", x, y))
 
     PACK_ROOM_OUT.mkdir(parents=True, exist_ok=True)
     (PACK_ROOM_OUT / "standard.smonroom").write_bytes(payload)
@@ -451,7 +492,9 @@ def write_room_pack(width, height, room_y, base_raw, base_compressed,
     return len(payload)
 
 
-def write_room_assets(day_img, night_img, walk_polygon, food_x, food_y, bed_polygon, bed_x, bed_y):
+def write_room_assets(day_img, night_img, walk_polygon, food_x, food_y,
+                      bed_polygon, bed_x, bed_y, doorway_polygon,
+                      doorway_inside, doorway_outside):
     if day_img.size != night_img.size:
         raise ValueError(f"day/night room sizes differ: {day_img.size} vs {night_img.size}")
 
@@ -497,7 +540,8 @@ namespace RoomAssets {
     room_pack_bytes = write_room_pack(
         width, height, room_y, base_raw, base_compressed,
         patch_runs, patch_pixels, walk_polygon, food_x, food_y,
-        bed_polygon, bed_x, bed_y)
+        bed_polygon, bed_x, bed_y, doorway_polygon,
+        doorway_inside, doorway_outside)
 
     return len(base_raw), len(base_compressed), len(patch_runs), len(patch_pixels), room_y, shared_rle, room_pack_bytes
 
@@ -566,8 +610,13 @@ def main():
     walk_polygon = load_walk_polygon(layout, width, height)
     food_x, food_y = food_position(layout)
     bed_polygon, bed_x, bed_y = bed_region(layout, width, height, walk_polygon)
+    doorway_polygon, doorway_inside, doorway_outside = doorway_region(
+        layout, width, height, walk_polygon
+    )
     base_raw_bytes, base_compressed_len, patch_run_count, patch_pixel_count, room_y, shared_rle, room_pack_bytes = write_room_assets(
-        day_img, night_img, walk_polygon, food_x, food_y, bed_polygon, bed_x, bed_y
+        day_img, night_img, walk_polygon, food_x, food_y,
+        bed_polygon, bed_x, bed_y, doorway_polygon,
+        doorway_inside, doorway_outside
     )
 
     print(f"layout={layout_path}")
@@ -584,6 +633,11 @@ def main():
     print(f"walk_polygon_points={len(walk_polygon)}")
     print(f"food={food_x},{food_y}")
     print(f"bed={bed_x},{bed_y} bed_polygon_points={len(bed_polygon)}")
+    print(
+        f"doorway_inside={doorway_inside[0]},{doorway_inside[1]} "
+        f"doorway_outside={doorway_outside[0]},{doorway_outside[1]} "
+        f"doorway_polygon_points={len(doorway_polygon)}"
+    )
     print(
         f"assets={HEADER_OUT}, {CPP_OUT} base_raw_bytes={base_raw_bytes} "
         f"base_compressed_bytes={base_compressed_len} "

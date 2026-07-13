@@ -1,0 +1,1999 @@
+{
+  "format": "StickMonExploreMap",
+  "version": 1,
+  "source": {
+    "mapId": 5,
+    "name": "Route 1",
+    "crop": [
+      12,
+      6
+    ]
+  },
+  "grid": {
+    "width": 16,
+    "height": 12,
+    "tileSize": 26
+  },
+  "entry": [
+    8,
+    0
+  ],
+  "exits": [
+    [
+      7,
+      11
+    ]
+  ],
+  "terrainTags": {
+    "0": "None",
+    "1": "Ledge",
+    "2": "Grass",
+    "3": "Sand",
+    "4": "Rock",
+    "5": "DeepWater",
+    "6": "StillWater",
+    "7": "Water",
+    "8": "Waterfall",
+    "9": "WaterfallCrest",
+    "10": "TallGrass",
+    "11": "UnderwaterGrass",
+    "12": "Ice",
+    "13": "Neutral",
+    "14": "SootGrass",
+    "15": "Bridge",
+    "16": "Puddle",
+    "17": "NoEffect"
+  },
+  "flags": {
+    "entry": 1,
+    "exit": 2,
+    "water": 4,
+    "floatable": 8,
+    "route": 16,
+    "event": 32
+  },
+  "stats": {
+    "cells": 192,
+    "landReachable": 163,
+    "floatReachable": 163,
+    "floatOnlyReachable": 0,
+    "water": 0,
+    "floatableWater": 0,
+    "invalidRouteEdges": 1
+  },
+  "invalidRouteEdges": [
+    {
+      "route": 0,
+      "from": [
+        12,
+        4
+      ],
+      "to": [
+        12,
+        5
+      ]
+    }
+  ],
+  "cells": [
+    {
+      "x": 0,
+      "y": 0,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 1,
+      "y": 0,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 2,
+      "y": 0,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 3,
+      "y": 0,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 4,
+      "y": 0,
+      "landBlocked": 8,
+      "floatBlocked": 8,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 5,
+      "y": 0,
+      "landBlocked": 8,
+      "floatBlocked": 8,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 6,
+      "y": 0,
+      "landBlocked": 8,
+      "floatBlocked": 8,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 7,
+      "y": 0,
+      "landBlocked": 8,
+      "floatBlocked": 8,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 8,
+      "y": 0,
+      "landBlocked": 8,
+      "floatBlocked": 8,
+      "terrainTag": 3,
+      "flags": 17,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 9,
+      "y": 0,
+      "landBlocked": 8,
+      "floatBlocked": 8,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 10,
+      "y": 0,
+      "landBlocked": 8,
+      "floatBlocked": 8,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 11,
+      "y": 0,
+      "landBlocked": 8,
+      "floatBlocked": 8,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 12,
+      "y": 0,
+      "landBlocked": 8,
+      "floatBlocked": 8,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 13,
+      "y": 0,
+      "landBlocked": 8,
+      "floatBlocked": 8,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 14,
+      "y": 0,
+      "landBlocked": 8,
+      "floatBlocked": 8,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 15,
+      "y": 0,
+      "landBlocked": 12,
+      "floatBlocked": 12,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 0,
+      "y": 1,
+      "landBlocked": 2,
+      "floatBlocked": 2,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 1,
+      "y": 1,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 2,
+      "y": 1,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 3,
+      "y": 1,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 4,
+      "y": 1,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 5,
+      "y": 1,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 6,
+      "y": 1,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 7,
+      "y": 1,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 8,
+      "y": 1,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 9,
+      "y": 1,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 10,
+      "y": 1,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 11,
+      "y": 1,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 12,
+      "y": 1,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 13,
+      "y": 1,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 14,
+      "y": 1,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 15,
+      "y": 1,
+      "landBlocked": 4,
+      "floatBlocked": 4,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 0,
+      "y": 2,
+      "landBlocked": 2,
+      "floatBlocked": 2,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 1,
+      "y": 2,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 2,
+      "y": 2,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 3,
+      "y": 2,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 4,
+      "y": 2,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 5,
+      "y": 2,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 6,
+      "y": 2,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 7,
+      "y": 2,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 8,
+      "y": 2,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 9,
+      "y": 2,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 10,
+      "y": 2,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 11,
+      "y": 2,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 12,
+      "y": 2,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 13,
+      "y": 2,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 14,
+      "y": 2,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 15,
+      "y": 2,
+      "landBlocked": 4,
+      "floatBlocked": 4,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 0,
+      "y": 3,
+      "landBlocked": 2,
+      "floatBlocked": 2,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 1,
+      "y": 3,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 2,
+      "y": 3,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 3,
+      "y": 3,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 4,
+      "y": 3,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 5,
+      "y": 3,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 6,
+      "y": 3,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 7,
+      "y": 3,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 8,
+      "y": 3,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 9,
+      "y": 3,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 10,
+      "y": 3,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 11,
+      "y": 3,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 12,
+      "y": 3,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 13,
+      "y": 3,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 14,
+      "y": 3,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 15,
+      "y": 3,
+      "landBlocked": 4,
+      "floatBlocked": 4,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 0,
+      "y": 4,
+      "landBlocked": 2,
+      "floatBlocked": 2,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 1,
+      "y": 4,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 2,
+      "y": 4,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 3,
+      "y": 4,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 4,
+      "y": 4,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 5,
+      "y": 4,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 6,
+      "y": 4,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 7,
+      "y": 4,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 8,
+      "y": 4,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 9,
+      "y": 4,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 10,
+      "y": 4,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 11,
+      "y": 4,
+      "landBlocked": 7,
+      "floatBlocked": 7,
+      "terrainTag": 1,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 12,
+      "y": 4,
+      "landBlocked": 7,
+      "floatBlocked": 7,
+      "terrainTag": 1,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 13,
+      "y": 4,
+      "landBlocked": 7,
+      "floatBlocked": 7,
+      "terrainTag": 1,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 14,
+      "y": 4,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 15,
+      "y": 4,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 0,
+      "y": 5,
+      "landBlocked": 2,
+      "floatBlocked": 2,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 1,
+      "y": 5,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 2,
+      "y": 5,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 3,
+      "y": 5,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 4,
+      "y": 5,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 5,
+      "y": 5,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 6,
+      "y": 5,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 7,
+      "y": 5,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 8,
+      "y": 5,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 9,
+      "y": 5,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 10,
+      "y": 5,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 11,
+      "y": 5,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 12,
+      "y": 5,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 13,
+      "y": 5,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 14,
+      "y": 5,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 15,
+      "y": 5,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 0,
+      "y": 6,
+      "landBlocked": 2,
+      "floatBlocked": 2,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 1,
+      "y": 6,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 2,
+      "y": 6,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 3,
+      "y": 6,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 4,
+      "y": 6,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 5,
+      "y": 6,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 6,
+      "y": 6,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 7,
+      "y": 6,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 8,
+      "y": 6,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 9,
+      "y": 6,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 10,
+      "y": 6,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 11,
+      "y": 6,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 12,
+      "y": 6,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 13,
+      "y": 6,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 14,
+      "y": 6,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 15,
+      "y": 6,
+      "landBlocked": 4,
+      "floatBlocked": 4,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 0,
+      "y": 7,
+      "landBlocked": 2,
+      "floatBlocked": 2,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 1,
+      "y": 7,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 2,
+      "y": 7,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 3,
+      "y": 7,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 4,
+      "y": 7,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 5,
+      "y": 7,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 6,
+      "y": 7,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 7,
+      "y": 7,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 8,
+      "y": 7,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 9,
+      "y": 7,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 10,
+      "y": 7,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 11,
+      "y": 7,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 12,
+      "y": 7,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 13,
+      "y": 7,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 14,
+      "y": 7,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 15,
+      "y": 7,
+      "landBlocked": 4,
+      "floatBlocked": 4,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 0,
+      "y": 8,
+      "landBlocked": 2,
+      "floatBlocked": 2,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 1,
+      "y": 8,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 2,
+      "y": 8,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 3,
+      "y": 8,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 4,
+      "y": 8,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 5,
+      "y": 8,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 6,
+      "y": 8,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 7,
+      "y": 8,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 8,
+      "y": 8,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 9,
+      "y": 8,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 10,
+      "y": 8,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 11,
+      "y": 8,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 12,
+      "y": 8,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 13,
+      "y": 8,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 14,
+      "y": 8,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 32,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 15,
+      "y": 8,
+      "landBlocked": 4,
+      "floatBlocked": 4,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 0,
+      "y": 9,
+      "landBlocked": 2,
+      "floatBlocked": 2,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 1,
+      "y": 9,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 2,
+      "y": 9,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 3,
+      "y": 9,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 4,
+      "y": 9,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 5,
+      "y": 9,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 6,
+      "y": 9,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 7,
+      "y": 9,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 8,
+      "y": 9,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 9,
+      "y": 9,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 10,
+      "y": 9,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 11,
+      "y": 9,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 12,
+      "y": 9,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 13,
+      "y": 9,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 14,
+      "y": 9,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 15,
+      "y": 9,
+      "landBlocked": 4,
+      "floatBlocked": 4,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 0,
+      "y": 10,
+      "landBlocked": 2,
+      "floatBlocked": 2,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 1,
+      "y": 10,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 2,
+      "y": 10,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 32,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 3,
+      "y": 10,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 32,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 4,
+      "y": 10,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 5,
+      "y": 10,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 6,
+      "y": 10,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 7,
+      "y": 10,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 8,
+      "y": 10,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 9,
+      "y": 10,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 10,
+      "y": 10,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 11,
+      "y": 10,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 12,
+      "y": 10,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 13,
+      "y": 10,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 14,
+      "y": 10,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 15,
+      "y": 10,
+      "landBlocked": 4,
+      "floatBlocked": 4,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 0,
+      "y": 11,
+      "landBlocked": 3,
+      "floatBlocked": 3,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 1,
+      "y": 11,
+      "landBlocked": 1,
+      "floatBlocked": 1,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 2,
+      "y": 11,
+      "landBlocked": 1,
+      "floatBlocked": 1,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 3,
+      "y": 11,
+      "landBlocked": 1,
+      "floatBlocked": 1,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 4,
+      "y": 11,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 5,
+      "y": 11,
+      "landBlocked": 1,
+      "floatBlocked": 1,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 6,
+      "y": 11,
+      "landBlocked": 1,
+      "floatBlocked": 1,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 7,
+      "y": 11,
+      "landBlocked": 1,
+      "floatBlocked": 1,
+      "terrainTag": 3,
+      "flags": 18,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 8,
+      "y": 11,
+      "landBlocked": 1,
+      "floatBlocked": 1,
+      "terrainTag": 3,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 9,
+      "y": 11,
+      "landBlocked": 1,
+      "floatBlocked": 1,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 10,
+      "y": 11,
+      "landBlocked": 1,
+      "floatBlocked": 1,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 11,
+      "y": 11,
+      "landBlocked": 1,
+      "floatBlocked": 1,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 12,
+      "y": 11,
+      "landBlocked": 1,
+      "floatBlocked": 1,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 13,
+      "y": 11,
+      "landBlocked": 1,
+      "floatBlocked": 1,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 14,
+      "y": 11,
+      "landBlocked": 1,
+      "floatBlocked": 1,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 15,
+      "y": 11,
+      "landBlocked": 5,
+      "floatBlocked": 5,
+      "terrainTag": 2,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    }
+  ]
+}

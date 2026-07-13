@@ -11,6 +11,7 @@ SPLIT_DIR = LOW_DIR / "split_by_species"
 SHEETS = {
     "001_025": "Game Boy Advance - Pokemon Mystery Dungeon_ Red Rescue Team - Pokemon (1st Generation) - Pokemon (#001-025).png",
     "026_050": "Game Boy Advance - Pokemon Mystery Dungeon_ Red Rescue Team - Pokemon (1st Generation) - Pokemon (#026-050).png",
+    "051_075": "Game Boy Advance - Pokemon Mystery Dungeon_ Red Rescue Team - Pokemon (1st Generation) - Pokemon (#051-075).png",
     "076_100": "Game Boy Advance - Pokemon Mystery Dungeon_ Red Rescue Team - Pokemon (1st Generation) - Pokemon (#076-100).png",
     "101_125": "Game Boy Advance - Pokemon Mystery Dungeon_ Red Rescue Team - Pokemon (1st Generation) - Pokemon (#101-125).png",
 }
@@ -76,6 +77,8 @@ LOW_EXTRA_SPLIT_SPECIES = [
     ("026_050", 48, "venonat", 1500, 1531),
     ("026_050", 49, "venomoth", 1539, 1596),
     ("026_050", 50, "diglett", 1600, 1646),
+    ("051_075", 74, "geodude", 1898, 1962),
+    ("051_075", 75, "graveler", 1968, 2032),
     ("076_100", 76, "golem", 6, 88),
     ("076_100", 77, "ponyta", 94, 155),
     ("076_100", 78, "rapidash", 161, 240),
@@ -124,7 +127,7 @@ LOW_EXTRA_SPLIT_SPECIES = [
     ("101_125", 125, "electabuzz", 2086, 2193),
 ]
 
-LOW_EXTRA_COPY_IDS = set(range(10, 19))
+LOW_EXTRA_COPY_IDS = set(range(10, 19)) | {74, 75, 76}
 
 CLEANUP_RECTS = {
     ("001_025", 12): [(253, 861, 610, 898)],

@@ -65,20 +65,13 @@ bool decodeBase() {
     if (!roomBuffer || room.baseRawBytes() != roomBufferPixels * sizeof(uint16_t)) return false;
 
     const uint32_t compressedLen = room.baseCompressedLen();
-    uint8_t* compressed = static_cast<uint8_t*>(ps_malloc(compressedLen));
-    if (!compressed) compressed = static_cast<uint8_t*>(malloc(compressedLen));
+    const uint8_t* compressed = room.baseCompressedData();
     if (!compressed) return false;
-
-    for (uint32_t i = 0; i < compressedLen; ++i) {
-        compressed[i] = room.baseCompressedByte(i);
-    }
-    bool ok = inflateRawDeflate(
+    return inflateRawDeflate(
         compressed,
         compressedLen,
         reinterpret_cast<uint8_t*>(roomBuffer),
         room.baseRawBytes());
-    free(compressed);
-    return ok;
 }
 
 void applyNightPatch() {
@@ -99,6 +92,7 @@ void applyNightPatch() {
 bool prepare(bool night) {
     if (!ensureRoomBuffer()) return false;
     if (roomBufferValid && roomBufferNight == night) return true;
+    uint32_t started = millis();
     if (!decodeBase()) {
         Serial.println("[RoomRenderer] base decode failed");
         roomBufferValid = false;
@@ -107,9 +101,10 @@ bool prepare(bool night) {
     if (night) applyNightPatch();
     roomBufferNight = night;
     roomBufferValid = true;
-    Serial.printf("[RoomRenderer] prepared mode=%s bytes=%u\n",
+    Serial.printf("[RoomRenderer] prepared mode=%s bytes=%u ms=%u\n",
                   night ? "night" : "day",
-                  static_cast<unsigned>(roomBufferPixels * sizeof(uint16_t)));
+                  static_cast<unsigned>(roomBufferPixels * sizeof(uint16_t)),
+                  millis() - started);
     return true;
 }
 

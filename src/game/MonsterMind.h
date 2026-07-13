@@ -11,7 +11,15 @@ enum class MonsterDesire : uint8_t {
     STARE,
 };
 
+static constexpr uint8_t MONSTER_FEED_TARGET_SATIETY = 85;
+
+enum class MonsterMovementMode : uint8_t {
+    NORMAL,
+    COCOON_SHUFFLE,
+};
+
 struct MonsterBehaviorProfile {
+    MonsterMovementMode movementMode = MonsterMovementMode::NORMAL;
     float moveSpeedScale = 1.0f;
     uint16_t idleMinMs = 2600;
     uint16_t idleMaxMs = 6800;
@@ -23,7 +31,7 @@ struct MonsterBehaviorProfile {
 class MonsterMind {
 public:
     void reset(uint32_t nowMs);
-    void update(const Game::MonsterRuntime& monster, bool isNight,
+    void update(const Game::MonsterRuntime& monster, bool sleepTime,
                 bool bowlHasFood, uint32_t nowMs);
     MonsterDesire topDesire() const { return topDesire_; }
     void onActivity(uint32_t nowMs);

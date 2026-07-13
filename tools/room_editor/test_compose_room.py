@@ -52,6 +52,41 @@ class ShadowLogicTests(unittest.TestCase):
             "point",
         )
 
+    def test_doorway_is_semantic_and_not_a_shadow_surface(self):
+        layout = self.corner_layout()
+        doorway = {
+            "id": "doorway",
+            "type": "doorway",
+            "shadowSurface": "floor",
+            "receivesShadow": True,
+            "visible": True,
+            "points": [[24, 20], [40, 20], [40, 44], [24, 44]],
+        }
+        layout["roomGeometry"]["faces"].insert(0, doorway)
+
+        model = compose_room.room_projection_model(layout)
+
+        self.assertTrue(compose_room.is_semantic_face(doorway))
+        self.assertNotIn(doorway, compose_room.receiving_shadow_faces(layout))
+        self.assertEqual(model["faces"]["floor"]["id"], "floor")
+
+    def test_geometry_fallback_does_not_paint_doorway(self):
+        layout = {
+            "canvas": {"width": 16, "height": 16},
+            "roomGeometry": {
+                "faces": [{
+                    "id": "doorway",
+                    "type": "doorway",
+                    "visible": True,
+                    "points": [[2, 2], [13, 2], [13, 13], [2, 13]],
+                }]
+            },
+        }
+
+        image = compose_room.render_geometry(layout)
+
+        self.assertEqual(image.getpixel((8, 8)), (5, 7, 12, 255))
+
     def test_automatic_wall_target_chooses_one_nearest_face(self):
         left = {
             "id": "left",

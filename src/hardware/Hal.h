@@ -12,6 +12,8 @@ public:
     void setBrightness(uint8_t value);
     void setIdleBrightness(bool idle);
     uint8_t getBrightness() const { return brightness; }
+    uint8_t getDisplayBrightness() const { return M5.Display.getBrightness(); }
+    bool isIdleBrightnessActive() const { return idleBrightnessActive; }
     uint32_t millis() const;
     bool btnA_raw() const;
     bool btnB_raw() const;

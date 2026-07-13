@@ -16,7 +16,10 @@ constexpr const char* DEFAULT_ROOMS_DIR = "rooms";
 constexpr const char* DEFAULT_FONTS_DIR = "fonts";
 constexpr const char* DEFAULT_ROOM_PATH = "rooms/standard.smonroom";
 constexpr const char* DEFAULT_FONT_PATH = "fonts/zh16.smonfont";
-constexpr const char* DEFAULT_GAME_ASSETS_PATH = "game/game.smonfx";
+constexpr const char* DEFAULT_UI_ASSETS_PATH = "game/ui.smonfx";
+constexpr const char* DEFAULT_BATTLE_ASSETS_PATH = "game/battle.smonfx";
+constexpr const char* DEFAULT_MAP_ASSETS_PATH = "game/maps.smonfx";
+constexpr const char* DEFAULT_HATCH_ASSETS_PATH = "game/hatch.smonfx";
 constexpr size_t CONFIG_CAP = 1024;
 
 void copyText(char* dest, size_t cap, const char* value) {
@@ -214,8 +217,20 @@ bool ResourcePack::openDefaultFont(fs::File& file) const {
     return active_ && openRelative(defaultFontPath_, file);
 }
 
-bool ResourcePack::openGameAssets(fs::File& file) const {
-    return active_ && openRelative(gameAssetsPath_, file);
+bool ResourcePack::openUiAssets(fs::File& file) const {
+    return active_ && openRelative(uiAssetsPath_, file);
+}
+
+bool ResourcePack::openBattleAssets(fs::File& file) const {
+    return active_ && openRelative(battleAssetsPath_, file);
+}
+
+bool ResourcePack::openMapAssets(fs::File& file) const {
+    return active_ && openRelative(mapAssetsPath_, file);
+}
+
+bool ResourcePack::openHatchAssets(fs::File& file) const {
+    return active_ && openRelative(hatchAssetsPath_, file);
 }
 
 bool ResourcePack::openRelative(const char* relativePath, fs::File& file) const {
@@ -237,7 +252,10 @@ void ResourcePack::setDefaultRoot() {
     copyText(fontsDir_, sizeof(fontsDir_), DEFAULT_FONTS_DIR);
     copyText(defaultRoomPath_, sizeof(defaultRoomPath_), DEFAULT_ROOM_PATH);
     copyText(defaultFontPath_, sizeof(defaultFontPath_), DEFAULT_FONT_PATH);
-    copyText(gameAssetsPath_, sizeof(gameAssetsPath_), DEFAULT_GAME_ASSETS_PATH);
+    copyText(uiAssetsPath_, sizeof(uiAssetsPath_), DEFAULT_UI_ASSETS_PATH);
+    copyText(battleAssetsPath_, sizeof(battleAssetsPath_), DEFAULT_BATTLE_ASSETS_PATH);
+    copyText(mapAssetsPath_, sizeof(mapAssetsPath_), DEFAULT_MAP_ASSETS_PATH);
+    copyText(hatchAssetsPath_, sizeof(hatchAssetsPath_), DEFAULT_HATCH_ASSETS_PATH);
 }
 
 bool ResourcePack::loadActiveConfig() {
@@ -305,7 +323,10 @@ bool ResourcePack::loadManifest() {
         !copyOptionalPath(json, "fonts", fontsDir_, sizeof(fontsDir_)) ||
         !copyOptionalPath(json, "room", defaultRoomPath_, sizeof(defaultRoomPath_)) ||
         !copyOptionalPath(json, "font", defaultFontPath_, sizeof(defaultFontPath_)) ||
-        !copyOptionalPath(json, "gameAssets", gameAssetsPath_, sizeof(gameAssetsPath_))) {
+        !copyOptionalPath(json, "uiAssets", uiAssetsPath_, sizeof(uiAssetsPath_)) ||
+        !copyOptionalPath(json, "battleAssets", battleAssetsPath_, sizeof(battleAssetsPath_)) ||
+        !copyOptionalPath(json, "mapAssets", mapAssetsPath_, sizeof(mapAssetsPath_)) ||
+        !copyOptionalPath(json, "hatchAssets", hatchAssetsPath_, sizeof(hatchAssetsPath_))) {
         Serial.println("[ResourcePack] invalid resource path in manifest");
         return false;
     }

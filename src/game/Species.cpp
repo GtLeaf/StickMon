@@ -31,6 +31,9 @@ const Species SPECIES[] = {
     {7, Ui::SpeciesName::SQUIRTLE, TypeId::WATER, TypeId::NONE, {44, 48, 65, 50, 64, 43}, GrowthRate::PARABOLIC, EV(0, 0, 1, 0, 0, 0), 8, EvolutionMethod::LEVEL, 16, C(78, 163, 219), C(235, 210, 150), 34, 8},
     {8, Ui::SpeciesName::WARTORTLE, TypeId::WATER, TypeId::NONE, {59, 63, 80, 65, 80, 58}, GrowthRate::PARABOLIC, EV(0, 0, 1, 0, 1, 0), 9, EvolutionMethod::LEVEL, 36, C(64, 137, 209), C(214, 229, 242), 34, 8},
     {9, Ui::SpeciesName::BLASTOISE, TypeId::WATER, TypeId::NONE, {79, 83, 100, 85, 105, 78}, GrowthRate::PARABOLIC, EV(0, 0, 0, 0, 3, 0), 0, EvolutionMethod::NONE, 0, C(63, 119, 188), C(154, 132, 109), 34, 18},
+    {10, Ui::SpeciesName::CATERPIE, TypeId::BUG, TypeId::NONE, {45, 30, 35, 20, 20, 45}, GrowthRate::MEDIUM, EV(0, 0, 0, 0, 0, 1), 11, EvolutionMethod::LEVEL, 7, C(94, 190, 89), C(246, 218, 79), 34, 29},
+    {11, Ui::SpeciesName::METAPOD, TypeId::BUG, TypeId::NONE, {50, 20, 55, 25, 25, 30}, GrowthRate::MEDIUM, EV(0, 0, 2, 0, 0, 0), 12, EvolutionMethod::LEVEL, 10, C(117, 180, 79), C(210, 237, 142), 34, 37},
+    {12, Ui::SpeciesName::BUTTERFREE, TypeId::BUG, TypeId::FLYING, {60, 45, 50, 90, 80, 70}, GrowthRate::MEDIUM, EV(0, 0, 0, 2, 1, 0), 0, EvolutionMethod::NONE, 0, C(225, 235, 236), C(95, 66, 140), 34, 22},
     {16, Ui::SpeciesName::PIDGEY, TypeId::NORMAL, TypeId::FLYING, {40, 45, 40, 35, 35, 56}, GrowthRate::PARABOLIC, EV(0, 0, 0, 0, 0, 1), 17, EvolutionMethod::LEVEL, 18, C(181, 132, 69), C(238, 216, 158), 44, 6},
     {17, Ui::SpeciesName::PIDGEOTTO, TypeId::NORMAL, TypeId::FLYING, {63, 60, 55, 50, 50, 71}, GrowthRate::PARABOLIC, EV(0, 0, 0, 0, 0, 2), 18, EvolutionMethod::LEVEL, 36, C(184, 124, 59), C(238, 211, 130), 44, 6},
     {18, Ui::SpeciesName::PIDGEOT, TypeId::NORMAL, TypeId::FLYING, {83, 80, 75, 70, 70, 101}, GrowthRate::PARABOLIC, EV(0, 0, 0, 0, 0, 3), 0, EvolutionMethod::NONE, 0, C(179, 115, 51), C(245, 210, 91), 44, 6},
@@ -44,6 +47,9 @@ const Species SPECIES[] = {
     {172, Ui::SpeciesName::PICHU, TypeId::ELECTRIC, TypeId::NONE, {20, 40, 15, 35, 35, 60}, GrowthRate::MEDIUM, EV(0, 0, 0, 0, 0, 1), 25, EvolutionMethod::FRIENDSHIP, 0, C(255, 219, 56), C(92, 62, 42), 34, 11},
     {25, Ui::SpeciesName::PIKACHU, TypeId::ELECTRIC, TypeId::NONE, {35, 55, 40, 50, 50, 90}, GrowthRate::MEDIUM, EV(0, 0, 0, 0, 0, 2), 26, EvolutionMethod::STONE, 0, C(255, 211, 43), C(120, 76, 38), 34, 11},
     {26, Ui::SpeciesName::RAICHU, TypeId::ELECTRIC, TypeId::NONE, {60, 90, 55, 90, 80, 110}, GrowthRate::MEDIUM, EV(0, 0, 0, 0, 0, 3), 0, EvolutionMethod::NONE, 0, C(235, 139, 48), C(255, 225, 86), 34, 12},
+    {74, Ui::SpeciesName::GEODUDE, TypeId::ROCK, TypeId::GROUND, {40, 80, 100, 30, 30, 20}, GrowthRate::PARABOLIC, EV(0, 0, 1, 0, 0, 0), 75, EvolutionMethod::LEVEL, 25, C(120, 125, 125), C(180, 165, 140), 34, 45},
+    {75, Ui::SpeciesName::GRAVELER, TypeId::ROCK, TypeId::GROUND, {55, 95, 115, 45, 45, 35}, GrowthRate::PARABOLIC, EV(0, 0, 2, 0, 0, 0), 76, EvolutionMethod::TRADE, 0, C(108, 112, 112), C(164, 156, 142), 34, 46},
+    {76, Ui::SpeciesName::GOLEM, TypeId::ROCK, TypeId::GROUND, {80, 120, 130, 55, 65, 45}, GrowthRate::PARABOLIC, EV(0, 0, 3, 0, 0, 0), 0, EvolutionMethod::NONE, 0, C(92, 104, 105), C(206, 137, 62), 34, 46},
     {133, Ui::SpeciesName::EEVEE, TypeId::NORMAL, TypeId::NONE, {55, 55, 50, 45, 65, 55}, GrowthRate::MEDIUM, EV(0, 0, 0, 0, 1, 0), 134, EvolutionMethod::BRANCH, 0, C(156, 102, 55), C(239, 211, 155), 34, 14},
     {134, Ui::SpeciesName::VAPOREON, TypeId::WATER, TypeId::NONE, {130, 65, 60, 110, 95, 65}, GrowthRate::MEDIUM, EV(2, 0, 0, 0, 0, 0), 0, EvolutionMethod::NONE, 0, C(61, 142, 216), C(193, 230, 255), 34, 18},
     {135, Ui::SpeciesName::JOLTEON, TypeId::ELECTRIC, TypeId::NONE, {65, 65, 60, 110, 95, 130}, GrowthRate::MEDIUM, EV(0, 0, 0, 0, 0, 2), 0, EvolutionMethod::NONE, 0, C(249, 218, 52), C(250, 247, 181), 34, 20},
@@ -110,6 +116,8 @@ const MoveInfo MOVES[] = {
     {39, Ui::MoveName::DRAGON_TAIL, Ui::MoveDesc::DRAGON_TAIL, 35, TypeId::DRAGON, false},
     {40, Ui::MoveName::DRAGON_DANCE, Ui::MoveDesc::DRAGON_DANCE, 75, TypeId::DRAGON, true},
     {41, Ui::MoveName::SKY_DRAGON, Ui::MoveDesc::SKY_DRAGON, 75, TypeId::FLYING, false},
+    {45, Ui::MoveName::ROCK_THROW, Ui::MoveDesc::ROCK_THROW, 35, TypeId::ROCK, false},
+    {46, Ui::MoveName::ROCK_SLIDE, Ui::MoveDesc::ROCK_SLIDE, 75, TypeId::ROCK, false},
 };
 
 const char* const NATURE_NAMES[Game::NATURE_COUNT] = {

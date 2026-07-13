@@ -258,7 +258,7 @@ P_special = base + w1*proficiency_norm + w2*affection_norm + w3*mic_norm + w4*hp
 |状态|触发|解除|
 |---|---|---|
 |`ALIVE`|HP \> 0|—|
-|`FAINTED`|HP = 0|在队伍 / 仓库静养 **24 真实小时** 后自动恢复至 100% HP|
+|`FAINTED`|HP = 0|静养 **1 游戏小时** 后恢复至 10% HP，随后进入常规 HP 恢复|
 |`OUT_OF_PARTY`|全队濒死|退出探索 / 战斗，回主界面|
 
 ### 4\.5\.2 战斗中濒死流程（PvE / PvP）
@@ -286,19 +286,19 @@ P_special = base + w1*proficiency_norm + w2*affection_norm + w3*mic_norm + w4*hp
 > 
 > 
 
-### 4\.5\.3 24h 静养恢复
+### 4\.5\.3 1h 静养与后续恢复
 
 ```Plain Text
-// 每 5 min RTC 唤醒一次，扫描所有精灵
+// 定期扫描所有精灵
 void faint_recovery_tick(void) {
-    uint32_t now = rtc_unix();
+    uint32_t now = game_seconds();
     for (auto& p : team_and_storage) {
-        if (p.fainted && now - p.faint_ts >= 86400) {
+        if (p.fainted && now - p.faint_ts >= 3600) {
             p.fainted   = 0;
-            p.hp_cur    = p.hp_max / 2;          // 恢复 50% HP
+            p.hp_cur    = max(1, ceil(p.hp_max * 0.1)); // 第一档恢复 10% HP
             p.affection = max(0, p.affection - 5); // 濒死扣 5 亲密度
             p.mood     -= 10;                    // 心情同步下降
-            push_notification("XXX 醒过来了！");
+            // 后续沿用常规每 5 游戏分钟按百分比恢复 HP
         }
     }
 }
@@ -310,9 +310,9 @@ void faint_recovery_tick(void) {
 |道具|价格|效果|
 |---|---|---|
 |神奇糖果（§16\.5）|2000 Coin|**不能用于复活**，仅升级|
-|~~复活种子~~|—|**本期不实现**，按 24h 静养唯一通道|
+|~~复活种子~~|—|**本期不实现**，按 1h 静养通道恢复|
 
-> 设计意图：让「濒死」成为有真实代价的事件，鼓励玩家慎用招牌精灵、通过队伍轮换分摊风险，而不是用一颗药水把"濒死"消解为"几秒钟麻烦"。
+> 设计意图：让「濒死」保留明确的一小时静养代价，同时避免一天内无法继续使用喜爱精灵。伤药仍不能直接解除濒死。
 > 
 > 
 
@@ -320,7 +320,7 @@ void faint_recovery_tick(void) {
 
 ## 4\.6 濒死 EXP 不扣减
 
-- 当前出战 KO 后队列空 → 立即 BATTLE\_END，winner = 对方设计取舍：本期不实现负反馈式扣 EXP；濒死的代价已经足够（24h 静养 \+ 亲密度 \-5 \+ mood \-10），再扣 EXP 会让玩家挫败感过强。
+- 当前出战 KO 后队列空 → 立即 BATTLE\_END，winner = 对方设计取舍：濒死仍包含 1h 静养、亲密度与心情下降等代价。
 
 - EXP / Coin 按 §7\.3\.1 BattleEnd 结构正常结算
 
@@ -595,7 +595,7 @@ walking_exp = floor(steps_today / 100) * 1   // 每 100 步 = 1 EXP
 |💊 **万灵药 Heal Powder**|250 🪙|解全部异常状态|✓|
 |🍬 **神奇糖果 Rare Candy**|2000 🪙|升 1 级（≤ Lv50），顺带回满 HP|✗（§A\.8）|
 
-> ⚠ **复活类道具不实现**——濒死走 §A\.1 的 24h 静养唯一通道，避免负反馈被消解。神奇糖果**每周限购 5 颗**。
+> ⚠ **复活类道具不实现**——濒死走 §4.5.3 的 1h 静养通道。神奇糖果**每周限购 5 颗**。
 > 
 > 
 
@@ -628,7 +628,7 @@ walking_exp = floor(steps_today / 100) * 1   // 每 100 步 = 1 EXP
 |🛏 **岩浆温床**|1200 🪙|\+2/h|×1\.5|火系精灵心情 \+15%，雪地 biome 解锁|
 |🛏 **星空冥想垫**|1500 🪙|\+4/h|×1\.3|超能 / 恶 / 幽灵心情 \+10%；夜间遭遇率 \+5%|
 
-> 与 §A\.1 24h 静养联动：装备 v0\.2 床后，FAINTED → ALIVE 恢复时间按 `24h / sleep_speed` 计算（最快 16h）。
+> 与 §4.5.3 静养联动：后续装备床时，FAINTED → ALIVE 的 1h 静养时间可按 `1h / sleep_speed` 计算。
 > 
 > 
 

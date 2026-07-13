@@ -34,7 +34,7 @@ public:
     uint32_t nightPatchRunCount() const { return nightPatchRunCount_; }
     uint32_t nightPatchPixelCount() const { return nightPatchPixelCount_; }
 
-    uint8_t baseCompressedByte(uint32_t index) const;
+    const uint8_t* baseCompressedData() const { return loaded_ ? baseCompressed_ : nullptr; }
     PatchRun nightPatchRun(uint32_t index) const;
     uint16_t nightPatchPixel(uint32_t index) const;
 
@@ -56,6 +56,17 @@ public:
     int16_t bedX() const { return bedX_; }
     int16_t bedY() const { return bedY_; }
     Point bedPoint(uint8_t index) const;
+
+    uint8_t doorwayPolygonCount() const { return doorwayPolygonCount_; }
+    int16_t doorwayMinX() const { return doorwayMinX_; }
+    int16_t doorwayMinY() const { return doorwayMinY_; }
+    int16_t doorwayMaxX() const { return doorwayMaxX_; }
+    int16_t doorwayMaxY() const { return doorwayMaxY_; }
+    int16_t doorwayInsideX() const { return doorwayInsideX_; }
+    int16_t doorwayInsideY() const { return doorwayInsideY_; }
+    int16_t doorwayOutsideX() const { return doorwayOutsideX_; }
+    int16_t doorwayOutsideY() const { return doorwayOutsideY_; }
+    Point doorwayPoint(uint8_t index) const;
 
 private:
     RoomResource() = default;
@@ -92,9 +103,20 @@ private:
     int16_t bedX_ = 0;
     int16_t bedY_ = 0;
 
+    uint8_t doorwayPolygonCount_ = 0;
+    int16_t doorwayMinX_ = 0;
+    int16_t doorwayMinY_ = 0;
+    int16_t doorwayMaxX_ = 0;
+    int16_t doorwayMaxY_ = 0;
+    int16_t doorwayInsideX_ = 0;
+    int16_t doorwayInsideY_ = 0;
+    int16_t doorwayOutsideX_ = 0;
+    int16_t doorwayOutsideY_ = 0;
+
     uint8_t* baseCompressed_ = nullptr;
     PatchRun* nightPatchRuns_ = nullptr;
     uint16_t* nightPatchPixels_ = nullptr;
     Point* walkPolygon_ = nullptr;
     Point* bedPolygon_ = nullptr;
+    Point* doorwayPolygon_ = nullptr;
 };

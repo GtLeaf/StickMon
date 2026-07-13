@@ -47,8 +47,11 @@ class SpeciesSpec:
     mirror_map: dict = field(default_factory=lambda: MIRRORS)
     export_mirror_frames: bool = True
     frame_overrides: dict = field(default_factory=dict)
+    auxiliary_boxes: dict = field(default_factory=dict)
+    auxiliary_directions: dict = field(default_factory=dict)
     background_tolerance: int = 0
     mask_to_largest_component: bool = False
+    runtime_wired: bool = True
     notes: list = field(default_factory=list)
 
 
@@ -392,6 +395,117 @@ SPECS = [
         },
     ),
     SpeciesSpec(
+        species_id=10,
+        slug="caterpie",
+        display_name="Caterpie",
+        source_name="010_caterpie.png",
+        source_group="low",
+        scale=2.0,
+        fit_to_canvas=False,
+        crop_padding=1,
+        contact_directions=SOURCE_DIRECTIONS,
+        export_mirror_frames=False,
+        mask_to_largest_component=True,
+        notes=[
+            "The first 15 sprites on row 1 are walking frames: five directions, three frames each.",
+            "This sheet has no separate idle action; idle uses walking frame 0 for each direction.",
+            "Sleeping uses the fourth-last and third-last sprites on row 1, in left-to-right order.",
+            "Only five source directions are exported; right-side directions are mirrored at runtime.",
+            "Overlapping neighboring frame bounds are isolated by keeping the target connected component.",
+        ],
+        sleeping_boxes=[(514, 10, 534, 25), (536, 11, 557, 25)],
+        boxes={
+            "idle": [
+                [(2, 6, 14, 25)],
+                [(44, 10, 64, 25)],
+                [(111, 8, 134, 25)],
+                [(179, 4, 200, 25)],
+                [(235, 5, 247, 25)],
+            ],
+            "walking": [
+                [(2, 6, 14, 25), (16, 6, 28, 25), (30, 4, 42, 25)],
+                [(44, 10, 64, 25), (66, 11, 85, 25), (87, 11, 109, 25)],
+                [(111, 8, 134, 25), (136, 9, 157, 25), (159, 9, 183, 25)],
+                [(179, 4, 200, 25), (199, 7, 218, 25), (215, 3, 236, 25)],
+                [(235, 5, 247, 25), (249, 7, 261, 25), (263, 2, 275, 25)],
+            ],
+        },
+    ),
+    SpeciesSpec(
+        species_id=11,
+        slug="metapod",
+        display_name="Metapod",
+        source_name="011_metapod.png",
+        source_group="low",
+        scale=2.0,
+        fit_to_canvas=False,
+        crop_padding=1,
+        contact_directions=SOURCE_DIRECTIONS,
+        export_mirror_frames=False,
+        mask_to_largest_component=True,
+        notes=[
+            "The first 15 sprites on row 1 are walking frames: five directions, three frames each.",
+            "This sheet has no separate idle action; idle uses walking frame 0 for each direction.",
+            "Sleeping uses the third-last and second-last sprites on row 1, in left-to-right order.",
+            "Only five source directions are exported; right-side directions are mirrored at runtime.",
+            "Overlapping neighboring frame bounds are isolated by keeping the target connected component.",
+        ],
+        sleeping_boxes=[(517, 9, 540, 28), (542, 9, 564, 28)],
+        boxes={
+            "idle": [
+                [(2, 7, 19, 28)],
+                [(60, 7, 81, 28)],
+                [(128, 7, 152, 28)],
+                [(208, 6, 228, 28)],
+                [(266, 4, 283, 28)],
+            ],
+            "walking": [
+                [(2, 7, 19, 28), (20, 6, 39, 28), (41, 6, 58, 28)],
+                [(60, 7, 81, 28), (83, 9, 106, 28), (108, 6, 126, 28)],
+                [(128, 7, 152, 28), (154, 9, 181, 28), (183, 5, 206, 28)],
+                [(208, 6, 228, 28), (228, 8, 249, 28), (248, 5, 267, 28)],
+                [(266, 4, 283, 28), (284, 2, 301, 28), (302, 6, 319, 28)],
+            ],
+        },
+    ),
+    SpeciesSpec(
+        species_id=12,
+        slug="butterfree",
+        display_name="Butterfree",
+        source_name="012_butterfree.png",
+        source_group="low",
+        scale=2.0,
+        fit_to_canvas=False,
+        crop_padding=1,
+        contact_directions=SOURCE_DIRECTIONS,
+        export_mirror_frames=False,
+        mask_to_largest_component=True,
+        notes=[
+            "The first 15 sprites on row 1 are walking frames: five directions, three frames each.",
+            "This sheet has no separate idle action; idle uses walking frame 0 for each direction.",
+            "Sleeping uses sprites 2 and 3 on row 2.",
+            "Only five source directions are exported; right-side directions are mirrored at runtime.",
+            "Overlapping neighboring frame bounds are isolated by keeping the target connected component.",
+        ],
+        sleeping_boxes=[(30, 38, 57, 62), (59, 39, 86, 62)],
+        boxes={
+            "idle": [
+                [(2, 5, 26, 28)],
+                [(80, 3, 101, 28)],
+                [(150, 4, 171, 28)],
+                [(216, 4, 238, 28)],
+                [(286, 6, 310, 28)],
+            ],
+            "walking": [
+                [(2, 5, 26, 28), (28, 7, 56, 28), (58, 3, 78, 28)],
+                [(80, 3, 101, 28), (103, 3, 127, 28), (129, 3, 149, 28)],
+                [(150, 4, 171, 28), (171, 2, 192, 28), (193, 4, 215, 28)],
+                [(216, 4, 238, 28), (240, 4, 261, 28), (263, 5, 284, 28)],
+                [(286, 6, 310, 28), (312, 6, 342, 28), (344, 6, 364, 28)],
+            ],
+        },
+    ),
+    SpeciesSpec(
         species_id=16,
         slug="pidgey",
         display_name="Pidgey",
@@ -568,6 +682,119 @@ SPECS = [
                 [(426, 3, 450, 29), (452, 4, 477, 29), (479, 3, 503, 29)],
                 [(505, 3, 530, 29), (532, 4, 557, 29), (560, 5, 586, 29)],
                 [(2, 40, 26, 69), (27, 43, 52, 69), (54, 41, 79, 69)],
+            ],
+        },
+    ),
+    SpeciesSpec(
+        species_id=74,
+        slug="geodude",
+        display_name="Geodude",
+        source_name="074_geodude.png",
+        source_group="low",
+        scale=2.0,
+        fit_to_canvas=False,
+        crop_padding=1,
+        contact_directions=SOURCE_DIRECTIONS,
+        export_mirror_frames=False,
+        mask_to_largest_component=True,
+        notes=[
+            "The first 15 sprites on row 1 are walking frames: five directions, three frames each.",
+            "This sheet has no separate idle action; idle uses walking frame 0 for each direction.",
+            "Sleeping uses the seventh-last and sixth-last sprites on row 2, in left-to-right order.",
+            "Only five source directions are exported; right-side directions are mirrored at runtime.",
+            "Overlapping neighboring frame bounds are isolated by keeping the target connected component.",
+        ],
+        sleeping_boxes=[(286, 45, 311, 66), (313, 45, 338, 66)],
+        boxes={
+            "idle": [
+                [(2, 14, 30, 29)],
+                [(82, 11, 107, 29)],
+                [(159, 8, 174, 29)],
+                [(214, 7, 233, 29)],
+                [(277, 15, 303, 29)],
+            ],
+            "walking": [
+                [(2, 14, 30, 29), (32, 11, 55, 29), (57, 11, 81, 29)],
+                [(82, 11, 107, 29), (109, 13, 136, 29), (138, 8, 157, 29)],
+                [(159, 8, 174, 29), (176, 11, 197, 29), (199, 7, 212, 29)],
+                [(214, 7, 233, 29), (235, 6, 249, 29), (251, 11, 275, 29)],
+                [(277, 15, 303, 29), (305, 12, 328, 29), (330, 12, 353, 29)],
+            ],
+        },
+    ),
+    SpeciesSpec(
+        species_id=75,
+        slug="graveler",
+        display_name="Graveler",
+        source_name="075_graveler.png",
+        source_group="low",
+        scale=2.0,
+        canvas_height=68,
+        fit_to_canvas=False,
+        crop_padding=1,
+        contact_directions=SOURCE_DIRECTIONS,
+        export_mirror_frames=False,
+        mask_to_largest_component=True,
+        notes=[
+            "The first 15 sprites on row 1 are walking frames: five directions, three frames each.",
+            "This sheet has no separate idle action; idle uses walking frame 0 for each direction.",
+            "Sleeping uses the seventh-last and sixth-last sprites on row 2, in left-to-right order.",
+            "Only five source directions are exported; right-side directions are mirrored at runtime.",
+            "A 64x68 canvas preserves fixed 2x scaling for the tallest walking poses.",
+            "Overlapping neighboring frame bounds are isolated by keeping the target connected component.",
+        ],
+        sleeping_boxes=[(341, 46, 368, 65), (370, 47, 397, 65)],
+        boxes={
+            "idle": [
+                [(2, 6, 25, 30)],
+                [(85, 3, 108, 30)],
+                [(160, 2, 179, 30)],
+                [(226, 3, 248, 30)],
+                [(298, 5, 323, 30)],
+            ],
+            "walking": [
+                [(2, 6, 25, 30), (27, 7, 54, 30), (56, 7, 83, 30)],
+                [(85, 3, 108, 30), (108, 2, 131, 30), (133, 5, 158, 30)],
+                [(160, 2, 179, 30), (181, 2, 200, 30), (202, 3, 224, 30)],
+                [(226, 3, 248, 30), (250, 3, 273, 30), (275, 2, 296, 30)],
+                [(298, 5, 323, 30), (325, 4, 351, 30), (353, 4, 379, 30)],
+            ],
+        },
+    ),
+    SpeciesSpec(
+        species_id=76,
+        slug="golem",
+        display_name="Golem",
+        source_name="076_golem.png",
+        source_group="low",
+        scale=2.0,
+        fit_to_canvas=False,
+        crop_padding=1,
+        contact_directions=SOURCE_DIRECTIONS,
+        export_mirror_frames=False,
+        mask_to_largest_component=True,
+        notes=[
+            "The first 15 sprites on row 1 are walking frames: five directions, three frames each.",
+            "This sheet has no separate idle action; idle uses walking frame 0 for each direction.",
+            "Sleeping uses the ninth-last and eighth-last sprites on row 2, in left-to-right order.",
+            "Only five source directions are exported; right-side directions are mirrored at runtime.",
+            "Overlapping neighboring frame bounds are isolated by keeping the target connected component.",
+        ],
+        sleeping_boxes=[(330, 34, 354, 58), (356, 35, 380, 58)],
+        boxes={
+            "idle": [
+                [(2, 3, 26, 26)],
+                [(86, 2, 110, 26)],
+                [(165, 2, 188, 26)],
+                [(239, 2, 263, 26)],
+                [(317, 3, 341, 26)],
+            ],
+            "walking": [
+                [(2, 3, 26, 26), (29, 3, 55, 26), (57, 3, 83, 26)],
+                [(86, 2, 110, 26), (112, 4, 137, 26), (140, 2, 163, 26)],
+                [(165, 2, 188, 26), (190, 3, 212, 26), (214, 4, 237, 26)],
+                [(239, 2, 263, 26), (265, 2, 288, 26), (290, 3, 314, 26)],
+                [(317, 3, 341, 26), (343, 3, 368, 26), (370, 3, 395, 26)],
             ],
         },
     ),
@@ -935,6 +1162,116 @@ SPECS = [
                 [(60, 101, 76, 127), (79, 103, 94, 127), (99, 101, 119, 126)],
                 [(56, 134, 75, 160), (78, 135, 98, 160), (103, 133, 123, 160)],
             ],
+        },
+    ),
+    SpeciesSpec(
+        species_id=183,
+        slug="marill",
+        display_name="Marill",
+        source_name="183_marill_184_azumarill.png",
+        source_group="medium",
+        scale=2.0,
+        canvas_height=68,
+        fit_to_canvas=False,
+        crop_padding=1,
+        contact_directions=SOURCE_DIRECTIONS,
+        export_mirror_frames=False,
+        runtime_wired=False,
+        notes=[
+            "Row 1 contains 15 moving frames: five directions, three frames each.",
+            "This sheet has no separate idle action; idle uses moving frame 0 for each direction.",
+            "Sleeping uses the third-last and second-last sprites on row 3, before the shadow sprite.",
+            "Row 2 contains ten attack frames: five directions, two frames each; these are reserved for future use.",
+            "Only five source directions are exported; right-side directions are mirrored at runtime.",
+        ],
+        sleeping_boxes=[(219, 89, 246, 109), (249, 89, 277, 109)],
+        boxes={
+            "idle": [
+                [(21, 19, 39, 42)],
+                [(84, 20, 104, 42)],
+                [(154, 22, 175, 42)],
+                [(225, 22, 243, 42)],
+                [(289, 22, 307, 42)],
+            ],
+            "walking": [
+                [(21, 19, 39, 42), (42, 20, 60, 42), (63, 20, 81, 42)],
+                [(84, 20, 104, 42), (107, 22, 128, 42), (131, 22, 151, 42)],
+                [(154, 22, 175, 42), (178, 23, 199, 42), (202, 23, 222, 42)],
+                [(225, 22, 243, 42), (246, 22, 263, 42), (266, 23, 286, 42)],
+                [(289, 22, 307, 42), (310, 23, 328, 42), (331, 23, 349, 42)],
+            ],
+        },
+        auxiliary_boxes={
+            "attack": [
+                [(69, 48, 87, 76), (90, 47, 108, 76)],
+                [(111, 49, 128, 76), (131, 53, 159, 76)],
+                [(162, 52, 178, 76), (181, 56, 209, 76)],
+                [(212, 53, 229, 76), (232, 56, 258, 76)],
+                [(261, 54, 279, 76), (282, 58, 300, 76)],
+            ],
+        },
+        auxiliary_directions={"attack": SOURCE_DIRECTIONS},
+    ),
+    SpeciesSpec(
+        species_id=184,
+        slug="azumarill",
+        display_name="Azumarill",
+        source_name="183_marill_184_azumarill.png",
+        source_group="medium",
+        scale=2.0,
+        canvas_height=68,
+        fit_to_canvas=False,
+        crop_padding=1,
+        contact_directions=SOURCE_DIRECTIONS,
+        export_mirror_frames=False,
+        runtime_wired=False,
+        notes=[
+            "Row 1 contains 15 moving frames: five directions, three frames each.",
+            "This sheet has no separate idle action; idle uses moving frame 0 for each direction.",
+            "Sleeping uses the third-last and second-last sprites on row 4, before the shadow sprite.",
+            "Row 2 contains ten attack frames: five directions, two frames each; these are reserved for future use.",
+            "Row 3 contains one jump frame for each of all eight source directions; these are reserved for future use.",
+            "Only the five moving and attack source directions use runtime mirroring; jump keeps all eight source directions.",
+        ],
+        sleeping_boxes=[(217, 233, 242, 255), (245, 236, 271, 255)],
+        boxes={
+            "idle": [
+                [(3, 131, 27, 156)],
+                [(84, 131, 108, 156)],
+                [(163, 131, 181, 156)],
+                [(228, 132, 246, 156)],
+                [(292, 133, 316, 156)],
+            ],
+            "walking": [
+                [(3, 131, 27, 156), (30, 130, 56, 156), (59, 132, 81, 156)],
+                [(84, 131, 108, 156), (111, 131, 135, 156), (138, 130, 160, 156)],
+                [(163, 131, 181, 156), (184, 132, 203, 156), (206, 131, 225, 156)],
+                [(228, 132, 246, 156), (249, 131, 269, 156), (272, 132, 289, 156)],
+                [(292, 133, 316, 156), (319, 131, 341, 156), (344, 131, 365, 156)],
+            ],
+        },
+        auxiliary_boxes={
+            "attack": [
+                [(70, 164, 90, 189), (93, 163, 116, 189)],
+                [(119, 162, 141, 189), (144, 162, 166, 189)],
+                [(169, 163, 186, 189), (189, 161, 208, 189)],
+                [(211, 165, 227, 189), (230, 163, 248, 189)],
+                [(251, 168, 270, 189), (273, 163, 297, 189)],
+            ],
+            "jump": [
+                [(101, 197, 122, 222)],
+                [(125, 196, 143, 222)],
+                [(146, 195, 161, 222)],
+                [(164, 196, 182, 222)],
+                [(185, 197, 206, 222)],
+                [(209, 195, 226, 222)],
+                [(229, 194, 243, 222)],
+                [(246, 196, 266, 222)],
+            ],
+        },
+        auxiliary_directions={
+            "attack": SOURCE_DIRECTIONS,
+            "jump": GENERATED_DIRECTIONS,
         },
     ),
     SpeciesSpec(
@@ -1492,6 +1829,16 @@ def validate_spec(spec):
         for row in rows:
             if len(row) != frame_count:
                 raise ValueError(f"{spec.slug} {action} rows must have a consistent frame count")
+    for action, rows in spec.auxiliary_boxes.items():
+        directions = spec.auxiliary_directions.get(action, spec.source_directions)
+        if len(rows) != len(directions):
+            raise ValueError(f"{spec.slug} {action} must have one source row per direction")
+        frame_count = len(rows[0])
+        if frame_count == 0:
+            raise ValueError(f"{spec.slug} {action} has no frames")
+        for row in rows:
+            if len(row) != frame_count:
+                raise ValueError(f"{spec.slug} {action} rows must have a consistent frame count")
 
 
 def frame_canvas(frame, spec):
@@ -1570,7 +1917,7 @@ def contact_rows(spec):
     return rows
 
 
-def make_contact_sheet_for_rows(spec, out_dir, frames, rows, directions):
+def make_contact_sheet_for_rows(spec, out_dir, frames, rows, directions, filename=None):
     by_key = {(action, direction, index): frame for action, direction, index, frame in frames}
     cell_w = spec.canvas_width + 10
     cell_h = spec.canvas_height + 10
@@ -1601,7 +1948,7 @@ def make_contact_sheet_for_rows(spec, out_dir, frames, rows, directions):
             sprite_y = y + 5
             sheet.alpha_composite(by_key[(action, direction, index)], (x, sprite_y))
             draw.rectangle((x, sprite_y, x + spec.canvas_width - 1, sprite_y + spec.canvas_height - 1), outline=(44, 156, 170, 255))
-    sheet.save(out_dir / f"{spec.slug}_idle_walking_contact.png")
+    sheet.save(out_dir / (filename or f"{spec.slug}_idle_walking_contact.png"))
 
 
 def make_contact_sheet(spec, out_dir, frames):
@@ -1626,6 +1973,36 @@ def write_readme(spec, out_dir):
     notes_text = "".join(f"- Note: {note}\n" for note in spec.notes)
     if notes_text:
         notes_text += "\n"
+    auxiliary_text = ""
+    auxiliary_contact_text = ""
+    for action, rows in spec.auxiliary_boxes.items():
+        directions = spec.auxiliary_directions.get(action, spec.source_directions)
+        frame_count = len(rows[0])
+        auxiliary_text += (
+            f"- `{action}`: {frame_count} frame{'s' if frame_count != 1 else ''} per direction; "
+            f"source directions are {', '.join(f'`{direction}`' for direction in directions)}. "
+            "Extracted for future use and not wired into the current runtime state machine.\n"
+        )
+        auxiliary_contact_text += f"- File: `{spec.slug}_{action}_contact.png`.\n"
+    if auxiliary_text:
+        auxiliary_text += "\n"
+    if spec.runtime_wired:
+        runtime_text = (
+            "## Runtime state machine\n\n"
+            "- Runtime owner: `src/scenes/MainScene.cpp`.\n"
+            f"- Scope: only species `{spec.species_id}` uses this {spec.display_name} state set.\n"
+            "- State action: `sleeping` when the monster has `STATUS_SLEEP`, `idle` when the AI velocity is near zero, otherwise `walking`.\n"
+            "- Direction input: the current AI velocity vector is mapped to the 8 generated directions.\n"
+            "- Idle behavior: when movement stops, the monster keeps the last movement direction and plays that direction's idle loop.\n"
+            "- Sleeping behavior: sleeping frames ignore direction.\n"
+            "- SpriteKind order: `tools/generate_pokemon_sprites.py` appends this species' kinds in generated direction order, with all idle frames first, walking frames second, and sleeping frames after.\n"
+        )
+    else:
+        runtime_text = (
+            "## Runtime state machine\n\n"
+            "- Preview only: this species is not registered in `tools/generate_pokemon_sprites.py`, `Species.cpp`, or `MainScene.cpp`.\n"
+            "- No LittleFS sprite pack is generated until the preview is approved.\n"
+        )
     readme = out_dir / "README.md"
     readme.write_text(
         f"# {spec.species_id} {spec.display_name} PMD processing spec\n\n"
@@ -1647,6 +2024,7 @@ def write_readme(spec, out_dir):
         f"- `idle`: {idle_count} {idle_word}, indices `0..{idle_count - 1}`.\n"
         f"- `walking`: {walking_count} {walking_word}, indices `0..{walking_count - 1}`.\n\n"
         f"- `sleeping`: {sleeping_count} non-directional {sleeping_word}, indices `0..{sleeping_count - 1}`.\n\n"
+        f"{auxiliary_text}"
         "## Directions\n\n"
         f"- Source row order: {', '.join(f'`{direction}`' for direction in spec.source_directions)}.\n"
         f"- Exported direction order: {', '.join(f'`{direction}`' for direction in spec.contact_directions)}.\n"
@@ -1654,6 +2032,7 @@ def write_readme(spec, out_dir):
         f"{notes_text}"
         "## Contact sheet\n\n"
         f"- File: `{spec.slug}_idle_walking_contact.png`.\n"
+        f"{auxiliary_contact_text}"
         f"- Top-left label: output frame size, `frame {spec.canvas_width}x{spec.canvas_height} px`.\n"
         "- Columns: exported directions in the order above.\n"
         f"- Rows: {', '.join(f'`{a}_{i}`' for a, i in contact_rows(spec))}.\n"
@@ -1663,14 +2042,7 @@ def write_readme(spec, out_dir):
         "- `ICON_0`: first 64x64 cell from Pokemon Essentials icon sheet; reserved for future storage/list pages.\n"
         "- `FRONT`: `walking/front_0.png`.\n"
         "- `BACK`: `walking/back_0.png`.\n\n"
-        "## Runtime state machine\n\n"
-        "- Runtime owner: `src/scenes/MainScene.cpp`.\n"
-        f"- Scope: only species `{spec.species_id}` uses this {spec.display_name} state set.\n"
-        "- State action: `sleeping` when the monster has `STATUS_SLEEP`, `idle` when the AI velocity is near zero, otherwise `walking`.\n"
-        "- Direction input: the current AI velocity vector is mapped to the 8 generated directions.\n"
-        "- Idle behavior: when movement stops, the monster keeps the last movement direction and plays that direction's idle loop.\n"
-        "- Sleeping behavior: sleeping frames ignore direction.\n"
-        "- SpriteKind order: `tools/generate_pokemon_sprites.py` appends this species' kinds in generated direction order, with all idle frames first, walking frames second, and sleeping frames after.\n",
+        f"{runtime_text}",
         encoding="utf-8",
     )
 
@@ -1891,6 +2263,24 @@ def process_spec(spec):
         frame.save(path)
         exported.append(path)
         contact.append(("sleeping", None, frame_index, frame))
+
+    for action, rows in spec.auxiliary_boxes.items():
+        directions = spec.auxiliary_directions.get(action, spec.source_directions)
+        auxiliary_contact = []
+        for row_index, direction in enumerate(directions):
+            for frame_index, box in enumerate(rows[row_index]):
+                frame = crop_source_frame(source, box, spec)
+                exported.append(save_frame(out_dir, action, direction, frame_index, frame))
+                auxiliary_contact.append((action, direction, frame_index, frame))
+        auxiliary_rows = [(action, frame_index) for frame_index in range(len(rows[0]))]
+        make_contact_sheet_for_rows(
+            spec,
+            out_dir,
+            auxiliary_contact,
+            auxiliary_rows,
+            directions,
+            f"{spec.slug}_{action}_contact.png",
+        )
 
     write_readme(spec, out_dir)
     make_contact_sheet(spec, out_dir, contact)

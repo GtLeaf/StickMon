@@ -37,11 +37,12 @@ const CONTROL_TOOLTIPS = {
   dayMode: "切换到白天预览，绘制勾选 Day 的背景层和白天光照配置。",
   nightMode: "切换到夜晚预览，绘制勾选 Night 的背景层和夜晚光照配置。",
   furnitureMode: "家具模式：选择、拖动、缩放家具和精灵预览物。",
-  shapeMode: "描面模式：绘制墙面和地板面，用于承接投影。",
+  shapeMode: "描面模式：绘制墙面、地板、精灵活动区和门口区域。",
   editZoom: "缩放主编辑画布的显示比例。只影响查看细节，不影响坐标和导出。",
   zoomOut: "缩小主编辑画布显示比例。",
   zoomIn: "放大主编辑画布显示比例。",
   zoomReset: "把主编辑画布显示比例恢复到 100%。",
+  projectionGuides: "固定显示完整 2.5D 坐标与家具投影诊断。Shape 模式和阴影高级设置展开时会自动显示。",
   undoAction: "撤销上一步配置修改。",
   redoAction: "重做刚撤销的修改。",
   resetView: "清空当前选择并把主编辑画布缩放恢复到 100%。",
@@ -115,7 +116,7 @@ const CONTROL_TOOLTIP_RULES = [
   [".point-select", "选择这个点。选中后可在画布拖动或在右侧输入坐标。"],
   [".point-x", "点在高清编辑画布中的 X 坐标，导出时会换算成游戏像素。"],
   [".point-y", "点在高清编辑画布中的 Y 坐标，导出时会换算成游戏像素。"],
-  [".face-type-select", "设置这个面是地板、墙面或精灵可活动区域。可活动区域只用于导出标注，不参与阴影承接。"],
+  [".face-type-select", "设置这个面是地板、墙面、精灵可活动区域或门口。语义区域只用于导出标注，不参与背景或阴影绘制。"],
   [".face-shadow-surface", "指定投影承接面：地板、左墙或右墙。"],
   [".face-receives-shadow", "控制这个房间面是否接收家具投影。"],
   [".shadow-face-target", "限制当前家具的阴影只出现在勾选的墙面上。"],
@@ -188,6 +189,7 @@ const LIGHT_SETTING_KEYS = [
 ];
 const WALL_MOUNTED_NAME_PATTERN = /(sheld|wall[_ -]?shelf|shelf[_ -]?wall|mounted[_ -]?shelf|hanging[_ -]?shelf|壁架|挂架|墙架|层板|搁板)/i;
 const FACE_TYPE_SPRITE_AREA = "sprite_area";
+const FACE_TYPE_DOORWAY = "doorway";
 
 const DEFAULT_NIGHT = {
   lightShape: "radial",
@@ -265,7 +267,7 @@ function normalizeLightProfile(value) {
 }
 
 function normalizeFaceType(value) {
-  if (value === "wall" || value === FACE_TYPE_SPRITE_AREA) return value;
+  if (value === "wall" || value === FACE_TYPE_SPRITE_AREA || value === FACE_TYPE_DOORWAY) return value;
   return "floor";
 }
 
@@ -273,11 +275,26 @@ function faceTypeLabel(value) {
   const type = normalizeFaceType(value);
   if (type === "wall") return "wall";
   if (type === FACE_TYPE_SPRITE_AREA) return "sprite area";
+  if (type === FACE_TYPE_DOORWAY) return "门口";
   return "floor";
 }
 
 function isSpriteAreaFace(face) {
   return normalizeFaceType(face?.type) === FACE_TYPE_SPRITE_AREA;
+}
+
+function isDoorwayFace(face) {
+  return normalizeFaceType(face?.type) === FACE_TYPE_DOORWAY;
+}
+
+function isSemanticAreaFace(face) {
+  return isSpriteAreaFace(face) || isDoorwayFace(face);
+}
+
+function semanticFaceSummary(face) {
+  if (isSpriteAreaFace(face)) return "movement area";
+  if (isDoorwayFace(face)) return "transition area";
+  return "";
 }
 
 function faceVisible(face) {
@@ -427,6 +444,7 @@ const state = {
   lightSelected: false,
   dragOffsetX: 0,
   dragOffsetY: 0,
+  showProjectionGuides: false,
   showGrid: false,
   gridOpacity: 0.18,
   snapToGrid: false,
@@ -717,6 +735,7 @@ function setupHoverTooltips() {
 function setEditZoom(percent) {
   state.editZoom = normalizedEditZoom(percent);
   updateCanvasDisplaySize();
+  render();
 }
 
 function updateCanvasDisplaySize() {
@@ -3023,7 +3042,7 @@ function itemExplicitlyTargetsFace(item, face) {
 
 function wallShadowFaces({ includeDisabled = false } = {}) {
   return state.faces.filter((face) => {
-    if (!face || isSpriteAreaFace(face) || face.points.length < 3) return false;
+    if (!face || isSemanticAreaFace(face) || face.points.length < 3) return false;
     const surface = shadowSurfaceForFace(face);
     if (surface !== "left_wall" && surface !== "right_wall") return false;
     return includeDisabled || face.receivesShadow !== false;
@@ -3766,7 +3785,7 @@ function shadowLightFactorForPoint(footX, footY, lightPoint, scale = 1) {
 
 function faceReceivesShadow(face) {
   return face &&
-    !isSpriteAreaFace(face) &&
+    !isSemanticAreaFace(face) &&
     face.points.length >= 3 &&
     (face.receivesShadow !== false || faceTargetedByAnyShadowItem(face));
 }
@@ -3828,9 +3847,9 @@ function closestProjectionPair(pointsA, pointsB) {
 }
 
 function roomProjectionModel(pointsForFace = faceTargetPoints) {
-  const floorFace = state.faces.find((face) => !isSpriteAreaFace(face) && shadowSurfaceForFace(face) === "floor");
-  const leftFace = state.faces.find((face) => shadowSurfaceForFace(face) === "left_wall");
-  const rightFace = state.faces.find((face) => shadowSurfaceForFace(face) === "right_wall");
+  const floorFace = state.faces.find((face) => !isSemanticAreaFace(face) && shadowSurfaceForFace(face) === "floor");
+  const leftFace = state.faces.find((face) => !isSemanticAreaFace(face) && shadowSurfaceForFace(face) === "left_wall");
+  const rightFace = state.faces.find((face) => !isSemanticAreaFace(face) && shadowSurfaceForFace(face) === "right_wall");
   if (!floorFace || !leftFace || !rightFace) return null;
 
   const floorPoints = pointsForFace(floorFace);
@@ -4044,6 +4063,346 @@ function nearestProjectionReceiver(model, origin, direction, receivers, scale) {
     if (!best || hit.t < best.t) best = { ...hit, screen, receiver };
   }
   return best;
+}
+
+const PROJECTION_GUIDE_COLORS = {
+  u: "#ff9b73",
+  v: "#63d6ff",
+  z: "#91e68a",
+  floor: "#f2bd72",
+  left_wall: "#ff9b73",
+  right_wall: "#63d6ff"
+};
+
+function projectionGuideAutoActive() {
+  return state.editMode === "shape" ||
+    state.lightSelected ||
+    document.getElementById("shadowAdvancedGroup")?.open === true;
+}
+
+function projectionGuidesVisible() {
+  return state.showProjectionGuides || projectionGuideAutoActive();
+}
+
+function updateProjectionGuideButton(model = null) {
+  const button = document.getElementById("projectionGuides");
+  if (!button) return;
+  const automatic = projectionGuideAutoActive();
+  const hasProjection = Boolean(model);
+  button.classList.toggle("active", state.showProjectionGuides);
+  button.classList.toggle("auto-active", !state.showProjectionGuides && automatic && hasProjection);
+  button.setAttribute("aria-pressed", state.showProjectionGuides ? "true" : "false");
+  button.setAttribute("aria-label", hasProjection
+    ? `2.5D guides: ${state.showProjectionGuides ? "pinned" : automatic ? "automatic" : "off"}`
+    : "2.5D guides: draw floor, left wall, and right wall faces first");
+}
+
+function projectionGuideCanvasScale() {
+  return 1 / Math.max(0.25, state.editZoom || 1);
+}
+
+function unitVector(vector) {
+  const length = Math.hypot(vector.x, vector.y);
+  if (length < 0.000001) return { x: 0, y: 0 };
+  return { x: vector.x / length, y: vector.y / length };
+}
+
+function drawProjectionArrow(targetCtx, start, end, color, { dashed = false, alpha = 1 } = {}) {
+  const scale = projectionGuideCanvasScale();
+  const direction = unitVector({ x: end.x - start.x, y: end.y - start.y });
+  if (!direction.x && !direction.y) return;
+  const headLength = 7 * scale;
+  const headWidth = 4 * scale;
+  const base = {
+    x: end.x - direction.x * headLength,
+    y: end.y - direction.y * headLength
+  };
+  const normal = { x: -direction.y, y: direction.x };
+
+  targetCtx.save();
+  targetCtx.globalAlpha = alpha;
+  targetCtx.strokeStyle = color;
+  targetCtx.fillStyle = color;
+  targetCtx.lineWidth = 1.35 * scale;
+  if (dashed) targetCtx.setLineDash([5 * scale, 4 * scale]);
+  targetCtx.beginPath();
+  targetCtx.moveTo(start.x, start.y);
+  targetCtx.lineTo(base.x, base.y);
+  targetCtx.stroke();
+  targetCtx.setLineDash([]);
+  targetCtx.beginPath();
+  targetCtx.moveTo(end.x, end.y);
+  targetCtx.lineTo(base.x + normal.x * headWidth, base.y + normal.y * headWidth);
+  targetCtx.lineTo(base.x - normal.x * headWidth, base.y - normal.y * headWidth);
+  targetCtx.closePath();
+  targetCtx.fill();
+  targetCtx.restore();
+}
+
+function drawProjectionLabel(targetCtx, text, point, color, offset = { x: 0, y: 0 }) {
+  const scale = projectionGuideCanvasScale();
+  const fontSize = 10 * scale;
+  const paddingX = 5 * scale;
+  const paddingY = 3 * scale;
+  targetCtx.save();
+  targetCtx.font = `600 ${fontSize}px sans-serif`;
+  targetCtx.textBaseline = "top";
+  const width = targetCtx.measureText(text).width + paddingX * 2;
+  const height = fontSize + paddingY * 2;
+  const desiredX = point.x + offset.x * scale;
+  const desiredY = point.y + offset.y * scale;
+  const x = clampNumber(desiredX, 2 * scale, Math.max(2 * scale, state.editWidth - width - 2 * scale));
+  const y = clampNumber(desiredY, 2 * scale, Math.max(2 * scale, state.editHeight - height - 2 * scale));
+  targetCtx.fillStyle = "rgba(9, 12, 17, 0.82)";
+  targetCtx.fillRect(x, y, width, height);
+  targetCtx.strokeStyle = color;
+  targetCtx.lineWidth = scale;
+  targetCtx.strokeRect(x + 0.5 * scale, y + 0.5 * scale, width - scale, height - scale);
+  targetCtx.fillStyle = color;
+  targetCtx.fillText(text, x + paddingX, y + paddingY);
+  targetCtx.restore();
+}
+
+function drawProjectionInfoPanel(targetCtx, lines, point) {
+  if (!lines.length) return;
+  const scale = projectionGuideCanvasScale();
+  const fontSize = 9 * scale;
+  const lineHeight = 13 * scale;
+  const padding = 6 * scale;
+  targetCtx.save();
+  targetCtx.font = `${fontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  const width = Math.max(...lines.map((line) => targetCtx.measureText(line).width)) + padding * 2;
+  const height = lineHeight * lines.length + padding * 2 - 2 * scale;
+  const x = clampNumber(point.x, 3 * scale, Math.max(3 * scale, state.editWidth - width - 3 * scale));
+  const y = clampNumber(point.y, 3 * scale, Math.max(3 * scale, state.editHeight - height - 3 * scale));
+  targetCtx.fillStyle = "rgba(9, 12, 17, 0.88)";
+  targetCtx.fillRect(x, y, width, height);
+  targetCtx.strokeStyle = "rgba(217, 248, 255, 0.68)";
+  targetCtx.lineWidth = scale;
+  targetCtx.strokeRect(x + 0.5 * scale, y + 0.5 * scale, width - scale, height - scale);
+  targetCtx.fillStyle = "#eef2f7";
+  targetCtx.textBaseline = "top";
+  lines.forEach((line, index) => targetCtx.fillText(line, x + padding, y + padding + index * lineHeight));
+  targetCtx.restore();
+}
+
+function drawProjectionMiniGizmo(model) {
+  const scale = projectionGuideCanvasScale();
+  const panel = {
+    x: 8 * scale,
+    y: 8 * scale,
+    w: 72 * scale,
+    h: 48 * scale
+  };
+  const origin = { x: panel.x + 35 * scale, y: panel.y + 27 * scale };
+  const axes = [
+    { key: "u", label: "U", vector: model.axisU, length: 16 },
+    { key: "v", label: "V", vector: model.axisV, length: 16 },
+    { key: "z", label: "Z", vector: model.axisZ, length: 18 }
+  ];
+
+  ctx.save();
+  ctx.fillStyle = "rgba(9, 12, 17, 0.76)";
+  ctx.fillRect(panel.x, panel.y, panel.w, panel.h);
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.22)";
+  ctx.lineWidth = scale;
+  ctx.strokeRect(panel.x + 0.5 * scale, panel.y + 0.5 * scale, panel.w - scale, panel.h - scale);
+  ctx.fillStyle = "rgba(238, 242, 247, 0.78)";
+  ctx.font = `600 ${8 * scale}px sans-serif`;
+  ctx.textBaseline = "top";
+  ctx.fillText("2.5D", panel.x + 4 * scale, panel.y + 4 * scale);
+  for (const axis of axes) {
+    const direction = unitVector(axis.vector);
+    const end = {
+      x: origin.x + direction.x * axis.length * scale,
+      y: origin.y + direction.y * axis.length * scale
+    };
+    drawProjectionArrow(ctx, origin, end, PROJECTION_GUIDE_COLORS[axis.key]);
+    ctx.fillStyle = PROJECTION_GUIDE_COLORS[axis.key];
+    ctx.font = `700 ${8 * scale}px sans-serif`;
+    ctx.fillText(axis.label, end.x + direction.x * 2 * scale - 2 * scale, end.y + direction.y * 2 * scale - 4 * scale);
+  }
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(origin.x, origin.y, 2.2 * scale, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function projectionReceiverLabel(receiver) {
+  if (!receiver) return "None";
+  if (receiver.surface === "left_wall") return `Left ${receiver.face.id}`;
+  if (receiver.surface === "right_wall") return `Right ${receiver.face.id}`;
+  return `Floor ${receiver.face.id}`;
+}
+
+function floorItemProjectionDiagnostics(item, bounds, lightPoint, scale, model) {
+  const receivers = itemProjectionFaces(item, model);
+  const contour = itemProjectionContour(item);
+  const rays = [];
+  for (const point of contour) {
+    const casterPoint = { x: bounds.x + point.x * bounds.w, y: bounds.y + point.y * bounds.h };
+    const heightPx = localCasterHeight(item, point, scale);
+    const casterWorld = screenPointToProjectionWorld(model, casterPoint, heightPx);
+    const direction = projectionRayDirection(model, casterWorld, casterPoint, heightPx, lightPoint, scale);
+    const hit = nearestProjectionReceiver(model, casterWorld, direction, receivers, scale);
+    rays.push({ casterPoint, heightPx, hit });
+  }
+  return rays;
+}
+
+function wallItemProjectionReceivers(item, model) {
+  const explicit = new Set(itemShadowFaceIds(item));
+  const automaticId = automaticWallShadowFaceId(item);
+  return [model.faces.left_wall, model.faces.right_wall]
+    .filter(Boolean)
+    .filter((face) => explicit.size ? explicit.has(String(face.id)) : String(face.id) === String(automaticId))
+    .map((face) => ({
+      face,
+      surface: shadowSurfaceForFace(face),
+      points: model.points.get(String(face.id)) || []
+    }));
+}
+
+function drawProjectionReceiverHighlights(receivers) {
+  const scale = projectionGuideCanvasScale();
+  ctx.save();
+  for (const receiver of receivers) {
+    if (!receiver?.points?.length) continue;
+    const color = PROJECTION_GUIDE_COLORS[receiver.surface] || "#ffffff";
+    drawPolygonPath(ctx, receiver.points);
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.11;
+    ctx.fill();
+    ctx.globalAlpha = 0.92;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.4 * scale;
+    ctx.setLineDash([6 * scale, 4 * scale]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.restore();
+}
+
+function drawSelectedItemProjectionDiagnostics(model) {
+  const item = selectedItem();
+  if (!item || item.source === "project_sprite" || !itemVisibleInMode(item)) return;
+  const scale = Math.max(editScaleX(), editScaleY());
+  const targetBounds = itemBounds(item);
+  const bounds = targetRectToEdit(targetBounds.x, targetBounds.y, targetBounds.w, targetBounds.h);
+  const anchor = { x: bounds.x + bounds.w * 0.5, y: bounds.y + bounds.h * 0.88 };
+  const wallAnchor = itemUsesWallShadowAnchor(item);
+  const anchorWorld = screenPointToProjectionWorld(model, anchor, 0);
+  const effectiveHeight = itemHeightPx(item) * scale;
+  const top = wallAnchor
+    ? (() => {
+        const zDirection = unitVector(model.axisZ);
+        return {
+          x: anchor.x + zDirection.x * effectiveHeight,
+          y: anchor.y + zDirection.y * effectiveHeight
+        };
+      })()
+    : projectionWorldToScreen(model, {
+        u: anchorWorld.u,
+        v: anchorWorld.v,
+        z: effectiveHeight / model.axisZLength
+      });
+  const lightPoint = lightEditPoint();
+  const scaleCss = projectionGuideCanvasScale();
+  const rays = wallAnchor ? [] : floorItemProjectionDiagnostics(item, bounds, lightPoint, scale, model);
+  const receivers = wallAnchor
+    ? wallItemProjectionReceivers(item, model)
+    : [...new Map(rays.filter((ray) => ray.hit).map((ray) => [
+        String(ray.hit.receiver.face.id),
+        ray.hit.receiver
+      ])).values()];
+  const shadowActive = state.night.castShadows &&
+    itemCastsShadow(item) &&
+    itemShadowOpacity(item) > 0 &&
+    itemShadowLength(item) > 0 &&
+    shadowLightFactorForPoint(anchor.x, anchor.y, lightPoint, scale) > 0;
+
+  if (shadowActive) drawProjectionReceiverHighlights(receivers);
+
+  ctx.save();
+  ctx.lineWidth = 1.5 * scaleCss;
+  ctx.strokeStyle = PROJECTION_GUIDE_COLORS.z;
+  ctx.setLineDash([5 * scaleCss, 3 * scaleCss]);
+  ctx.beginPath();
+  ctx.moveTo(anchor.x, anchor.y);
+  ctx.lineTo(top.x, top.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = PROJECTION_GUIDE_COLORS.z;
+  for (const point of [anchor, top]) {
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, 3.2 * scaleCss, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  if (shadowActive && !wallAnchor && rays.length) {
+    const representative = rays.reduce((best, ray) =>
+      !best || ray.heightPx > best.heightPx ? ray : best, null);
+    if (representative) {
+      if (activeShadowMode() !== "directional") {
+        drawProjectionArrow(ctx, lightPoint, representative.casterPoint, "#fff1c2", { dashed: true, alpha: 0.42 });
+      }
+      if (representative.hit) {
+        const color = PROJECTION_GUIDE_COLORS[representative.hit.receiver.surface] || "#ffffff";
+        drawProjectionArrow(ctx, representative.casterPoint, representative.hit.screen, color, { dashed: true, alpha: 0.94 });
+      }
+    }
+  }
+
+  const receiverText = shadowActive
+    ? (receivers.length ? receivers.map(projectionReceiverLabel).join(" + ") : "No receiver")
+    : "Shadow inactive";
+  const coordinateText = wallAnchor
+    ? "Wall anchor"
+    : `U ${anchorWorld.u.toFixed(2)} · V ${anchorWorld.v.toFixed(2)} · Z 0.00`;
+  drawProjectionInfoPanel(ctx, [
+    coordinateText,
+    `Height ${Math.round(itemHeightPx(item))}px`,
+    `${wallAnchor ? "Target" : "Hit"} ${receiverText}`
+  ], {
+    x: bounds.x + bounds.w + 10 * scaleCss,
+    y: Math.min(anchor.y, top.y) - 4 * scaleCss
+  });
+}
+
+function drawFullRoomProjectionGuides(model) {
+  const axes = [
+    { label: "Floor U", vector: model.axisU, color: PROJECTION_GUIDE_COLORS.u, offset: { x: -8, y: 5 } },
+    { label: "Floor V", vector: model.axisV, color: PROJECTION_GUIDE_COLORS.v, offset: { x: 5, y: 5 } },
+    { label: "Height Z", vector: model.axisZ, color: PROJECTION_GUIDE_COLORS.z, offset: { x: 5, y: -14 } }
+  ];
+  const scale = projectionGuideCanvasScale();
+  ctx.save();
+  for (const axis of axes) {
+    const end = { x: model.origin.x + axis.vector.x, y: model.origin.y + axis.vector.y };
+    drawProjectionArrow(ctx, model.origin, end, axis.color, { dashed: true, alpha: 0.78 });
+    drawProjectionLabel(ctx, axis.label, end, axis.color, axis.offset);
+  }
+  ctx.fillStyle = "#ffffff";
+  ctx.strokeStyle = "rgba(9, 12, 17, 0.86)";
+  ctx.lineWidth = 2 * scale;
+  ctx.beginPath();
+  ctx.arc(model.origin.x, model.origin.y, 4 * scale, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  drawProjectionLabel(ctx, "O", model.origin, "#ffffff", { x: -18, y: 5 });
+  ctx.restore();
+}
+
+function drawProjectionGuidesOverlay() {
+  const model = roomProjectionModel();
+  updateProjectionGuideButton(model);
+  if (!model) return;
+  drawProjectionMiniGizmo(model);
+  if (!projectionGuidesVisible()) return;
+  drawFullRoomProjectionGuides(model);
+  drawSelectedItemProjectionDiagnostics(model);
 }
 
 function drawUnifiedFloorItemShadow(
@@ -4427,7 +4786,7 @@ function drawItemShadows(
     }
   }
   if (!faces.length) {
-    const hasRoomFaces = state.faces.some((face) => !isSpriteAreaFace(face) && face.points.length >= 3);
+    const hasRoomFaces = state.faces.some((face) => !isSemanticAreaFace(face) && face.points.length >= 3);
     if (hasRoomFaces) return;
     for (const item of items) {
       if (unifiedItems.has(item)) continue;
@@ -4606,6 +4965,7 @@ function faceFillColor(type, alpha = 0.35) {
   const normalized = normalizeFaceType(type);
   if (normalized === "wall") return `rgba(120, 214, 238, ${alpha})`;
   if (normalized === FACE_TYPE_SPRITE_AREA) return `rgba(112, 231, 157, ${alpha})`;
+  if (normalized === FACE_TYPE_DOORWAY) return `rgba(255, 111, 97, ${alpha})`;
   return `rgba(242, 189, 114, ${alpha})`;
 }
 
@@ -4613,6 +4973,7 @@ function faceStrokeColor(type) {
   const normalized = normalizeFaceType(type);
   if (normalized === "wall") return "#78d6ee";
   if (normalized === FACE_TYPE_SPRITE_AREA) return "#70e79d";
+  if (normalized === FACE_TYPE_DOORWAY) return "#ff6f61";
   return "#f2bd72";
 }
 
@@ -4647,7 +5008,9 @@ function drawFacesOverlay() {
     ctx.fill();
     ctx.strokeStyle = face.id === state.selectedFaceId ? "#ffffff" : faceStrokeColor(face.type);
     ctx.lineWidth = face.id === state.selectedFaceId ? 2 : 1;
+    if (isDoorwayFace(face)) ctx.setLineDash([8, 4]);
     ctx.stroke();
+    ctx.setLineDash([]);
   }
 
   if (state.draftPoints.length) {
@@ -4687,7 +5050,7 @@ function renderRoomGeometry(targetCtx, width, height) {
   for (const face of state.faces) {
     if (!faceVisible(face)) continue;
     if (face.points.length < 3) continue;
-    if (isSpriteAreaFace(face)) continue;
+    if (isSemanticAreaFace(face)) continue;
     drawPolygonPath(targetCtx, faceTargetPoints(face));
     targetCtx.fillStyle = face.type === "wall" ? "#b6916c" : "#d99752";
     targetCtx.fill();
@@ -5168,6 +5531,7 @@ function render() {
   drawGrid();
   if (state.editMode === "shape") drawFacesOverlay();
   drawGuides();
+  drawProjectionGuidesOverlay();
   drawSelection();
   drawLightHandle();
   drawMeasureOverlay();
@@ -5448,7 +5812,7 @@ function refreshSelectedPanel() {
   const shadowMeta = !isSprite ? itemShadowSummary(item) : "";
   const wallShadowFaces = state.faces.filter((face) =>
     normalizeFaceType(face.type) === "wall" &&
-    !isSpriteAreaFace(face) &&
+    !isSemanticAreaFace(face) &&
     face.points.length >= 3
   );
   const showWallShadowFaces = usesWallShadow || selectedShadowFaceIds.size > 0;
@@ -5899,6 +6263,8 @@ function pointRowsHtml(points, selectedPointId, options = {}) {
 function faceDetailHtml(face) {
   const type = normalizeFaceType(face.type);
   const isSpriteArea = type === FACE_TYPE_SPRITE_AREA;
+  const isDoorway = type === FACE_TYPE_DOORWAY;
+  const isSemanticArea = isSpriteArea || isDoorway;
   const surfaceOptions = SHADOW_SURFACES.map((surface) => (
     `<option value="${surface.value}" ${normalizeShadowSurface(face.shadowSurface, face.type) === surface.value ? "selected" : ""}>${surface.label}</option>`
   )).join("");
@@ -5910,10 +6276,13 @@ function faceDetailHtml(face) {
           <option value="floor" ${type === "floor" ? "selected" : ""}>floor</option>
           <option value="wall" ${type === "wall" ? "selected" : ""}>wall</option>
           <option value="${FACE_TYPE_SPRITE_AREA}" ${isSpriteArea ? "selected" : ""}>sprite area</option>
+          <option value="${FACE_TYPE_DOORWAY}" ${isDoorway ? "selected" : ""}>门口</option>
         </select>
       </label>
-      ${isSpriteArea ? `
-        <div class="hint">This polygon is exported as a sprite movement area. It does not receive furniture shadows.</div>
+      ${isSemanticArea ? `
+        <div class="hint">${isDoorway
+          ? "该多边形会作为 doorway 过渡区域导出，供后续进门/出门动画使用；不参与背景与阴影绘制。"
+          : "This polygon is exported as a sprite movement area. It does not receive furniture shadows."}</div>
       ` : `
         <div class="row">
         <label class="field">
@@ -6007,10 +6376,12 @@ function bindFaceDetailControls(face, root) {
     const previousSurface = normalizeShadowSurface(face.shadowSurface, face.type);
     const previousType = normalizeFaceType(face.type);
     face.type = normalizeFaceType(event.target.value);
-    if (face.type === FACE_TYPE_SPRITE_AREA) {
+    const nextIsSemantic = face.type === FACE_TYPE_SPRITE_AREA || face.type === FACE_TYPE_DOORWAY;
+    const previousWasSemantic = previousType === FACE_TYPE_SPRITE_AREA || previousType === FACE_TYPE_DOORWAY;
+    if (nextIsSemantic) {
       face.shadowSurface = "floor";
       face.receivesShadow = false;
-    } else if (previousType === FACE_TYPE_SPRITE_AREA) {
+    } else if (previousWasSemantic) {
       face.receivesShadow = true;
       face.shadowSurface = normalizeShadowSurface(null, face.type);
     } else if ((previousSurface === "floor" && face.type === "wall") ||
@@ -6145,7 +6516,7 @@ function refreshFaceList() {
         <div class="face-color" style="background:${faceStrokeColor(face.type)}"></div>
         <div>
           <div class="asset-name">${escapeHtml(face.id)}</div>
-          <div class="asset-meta">${visible ? "" : "hidden, "}${escapeHtml(faceTypeLabel(face.type))}, ${isSpriteAreaFace(face) ? "movement area" : `${escapeHtml(shadowSurfaceForFace(face))}, ${face.receivesShadow === false ? "no shadow" : "receives shadow"}`}, ${face.points.length} points</div>
+          <div class="asset-meta">${visible ? "" : "hidden, "}${escapeHtml(faceTypeLabel(face.type))}, ${isSemanticAreaFace(face) ? semanticFaceSummary(face) : `${escapeHtml(shadowSurfaceForFace(face))}, ${face.receivesShadow === false ? "no shadow" : "receives shadow"}`}, ${face.points.length} points</div>
         </div>
         <button class="face-visibility${visible ? "" : " is-hidden"}" type="button" title="${visible ? "Hide face on canvas" : "Show face on canvas"}" aria-label="${visible ? "Hide face on canvas" : "Show face on canvas"}"></button>
         <button class="face-toggle" type="button" title="${expanded ? "Collapse points" : "Expand points"}" aria-label="${expanded ? "Collapse" : "Expand"} ${escapeAttr(face.id)} points">${expanded ? "^" : "v"}</button>
@@ -6600,6 +6971,7 @@ function takeSnapshot() {
     drawingFace: state.drawingFace,
     guides: { ...state.guides },
     night: JSON.parse(JSON.stringify(state.night)),
+    showProjectionGuides: state.showProjectionGuides,
     showGrid: state.showGrid,
     gridOpacity: state.gridOpacity,
     snapToGrid: state.snapToGrid
@@ -7159,11 +7531,18 @@ function restoreSnapshot(snapshot) {
   state.selectedId = snapshot.selectedId;
   state.nextId = snapshot.nextId;
   state.points = Array.from(pointMap.values());
-  state.faces = (snapshot.faces || []).map((face) => ({
-    ...face,
-    visible: face.visible !== false,
-    points: face.points.map(restorePoint).filter(Boolean)
-  }));
+  state.faces = (snapshot.faces || []).map((face) => {
+    const type = normalizeFaceType(face.type);
+    const semantic = type === FACE_TYPE_SPRITE_AREA || type === FACE_TYPE_DOORWAY;
+    return {
+      ...face,
+      type,
+      visible: face.visible !== false,
+      shadowSurface: normalizeShadowSurface(face.shadowSurface, type),
+      receivesShadow: semantic ? false : face.receivesShadow !== false,
+      points: face.points.map(restorePoint).filter(Boolean)
+    };
+  });
   state.selectedFaceId = snapshot.selectedFaceId;
   state.selectedPointIndex = snapshot.selectedPointIndex;
   state.selectedPointId = snapshot.selectedPointId;
@@ -7177,6 +7556,7 @@ function restoreSnapshot(snapshot) {
   state.night = normalizeNightSettings(snapshot.night);
   ensureSeparateModeLights();
   state.lightProfile = currentLightProfile();
+  state.showProjectionGuides = snapshot.showProjectionGuides === true;
   state.showGrid = snapshot.showGrid;
   state.gridOpacity = clampNumber(snapshot.gridOpacity ?? 0.18, 0, 1);
   state.snapToGrid = snapshot.snapToGrid;
@@ -7529,10 +7909,10 @@ function exportRoomGeometryObject() {
     faces: state.faces.map((face, index) => ({
       id: face.id,
       type: normalizeFaceType(face.type),
-      visible: !isSpriteAreaFace(face),
+      visible: !isSemanticAreaFace(face),
       editorVisible: faceVisible(face),
       shadowSurface: shadowSurfaceForFace(face),
-      receivesShadow: !isSpriteAreaFace(face) && face.receivesShadow !== false,
+      receivesShadow: !isSemanticAreaFace(face) && face.receivesShadow !== false,
       drawOrder: index,
       points: faceTargetPoints(face).map((point) => [Math.round(point.x), Math.round(point.y)]),
       sourcePoints: faceSourcePoints(face)
@@ -7731,7 +8111,9 @@ async function importLayout(file) {
         type,
         visible: face.editorVisible ?? face.visible !== false,
         shadowSurface: normalizeShadowSurface(face.shadowSurface, type),
-        receivesShadow: type === FACE_TYPE_SPRITE_AREA ? false : face.receivesShadow !== false,
+        receivesShadow: type === FACE_TYPE_SPRITE_AREA || type === FACE_TYPE_DOORWAY
+          ? false
+          : face.receivesShadow !== false,
         points
       };
     });
@@ -7947,6 +8329,12 @@ document.getElementById("shapeMode").addEventListener("click", () => {
 document.getElementById("selectTool").addEventListener("click", () => setToolMode("select"));
 document.getElementById("measureHeightTool").addEventListener("click", () => setToolMode("measureHeight"));
 document.getElementById("clearMeasure").addEventListener("click", clearMeasurement);
+
+document.getElementById("projectionGuides").addEventListener("click", () => {
+  state.showProjectionGuides = !state.showProjectionGuides;
+  render();
+  commitHistory();
+});
 
 document.getElementById("editZoom").addEventListener("input", (event) => {
   setEditZoom(event.target.value);

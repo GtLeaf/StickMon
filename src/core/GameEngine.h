@@ -14,6 +14,14 @@ enum class FoodPlacementResult : uint8_t {
     DIFFERENT_FOOD,
 };
 
+enum class ExploreTravelPhase : uint8_t {
+    NONE,
+    DEPARTING,
+    ACTIVE,
+    RETURNING,
+    RETURNING_FAINTED,
+};
+
 struct MainSceneViewState {
     bool valid = false;
     uint16_t speciesId = 0;
@@ -26,6 +34,7 @@ struct MainSceneViewState {
     uint8_t pmdDirection = 0;
     uint8_t pmdFrame = 0;
     bool facingRight = true;
+    bool faintRestActive = false;
     uint32_t nextDecisionRemainingMs = 0;
     uint32_t postFeedAwakeRemainingMs = 0;
 };
@@ -37,12 +46,16 @@ public:
     bool begin();
     void run();
     void requestScene(SceneID id);
+    bool fadeToScene(SceneID id, uint16_t durationMs = 300);
+    bool sceneFadeActive() const;
+    bool sceneFadeInActive() const;
     SceneID previousScene() const { return prevId; }
     SceneID homeScene() const { return state.oobeDone ? SceneID::MAIN : SceneID::HATCH; }
 
     float gameSpeed() const;
     uint32_t gameMinutesTotal() const;
     uint16_t gameMinutesOfDay() const;
+    bool isMonsterSleepTime() const;
     void cycleGameSpeed();
     uint8_t idleTimeoutIndex() const;
     const char* idleTimeoutLabel() const;
@@ -133,6 +146,12 @@ public:
     bool loadHatchProgress(Game::HatchProgress& progress);
     bool saveHatchProgress(const Game::HatchProgress& progress);
     void clearHatchProgress();
+    void beginExploreDeparture(uint8_t area);
+    void markExploreActive();
+    void beginExploreReturn(bool fainted);
+    void finishExploreReturn();
+    ExploreTravelPhase exploreTravelPhase() const { return exploreTravel; }
+    uint8_t pendingExploreArea() const { return exploreArea; }
 
 private:
     GameEngine() = default;
@@ -141,6 +160,8 @@ private:
     void processInput(uint32_t nowMs);
     void update(uint32_t nowMs);
     void render(uint32_t nowMs);
+    void updateSceneFade(uint32_t nowMs);
+    void renderSceneFade(uint32_t nowMs);
     bool resourceAlertVisible() const;
     void renderResourceAlert();
     void resetIdle(uint32_t nowMs);
@@ -155,13 +176,20 @@ private:
     void tickCare(uint32_t nowMs);
     void resetDailyCountersIfNeeded();
     void grantCareExperience(uint8_t baseAmount, bool weakGain = false);
-    void syncSpriteCache();
+    bool syncSpriteCache(uint8_t loadBudget = 0xFF);
     uint32_t randomIvPacked() const;
     void queueMoveLearnIfReady(Game::MonsterRuntime& mon, const Species& species, uint8_t oldLevel);
 
     static constexpr uint32_t INPUT_SAMPLE_MS = 16;
     static constexpr uint32_t FRAME_MS = 66;
     static constexpr uint32_t IDLE_FRAME_MS = 250;
+
+    enum class SceneFadePhase : uint8_t {
+        NONE,
+        OUT,
+        HOLD,
+        IN,
+    };
 
     std::unique_ptr<Scene> currentScene;
     SceneID currentId = SceneID::MAIN;
@@ -189,6 +217,19 @@ private:
     bool debugShowWalkBoundary = false;
     bool debugTiltControl = false;
     uint8_t debugLightSource = 0;
+    uint8_t brightnessTraceFrames = 0;
+    uint32_t brightnessTraceStartedMs = 0;
+    bool startupFirstFrameRendered = false;
+    bool startupSpriteCacheReady = false;
+    uint32_t bootStartedMs = 0;
+    SceneFadePhase sceneFade = SceneFadePhase::NONE;
+    SceneID sceneFadeTarget = SceneID::MAIN;
+    uint32_t sceneFadeStartedMs = 0;
+    uint32_t sceneFadeLastStepMs = 0;
+    uint16_t sceneFadeProgressMs = 0;
+    uint16_t sceneFadeDurationMs = 300;
+    ExploreTravelPhase exploreTravel = ExploreTravelPhase::NONE;
+    uint8_t exploreArea = 0;
     MainSceneViewState mainViewState;
 
     Game::GameState state;

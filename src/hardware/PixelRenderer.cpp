@@ -59,6 +59,32 @@ void PixelRenderer::clear(uint16_t color) {
     canvas().fillSprite(color);
 }
 
+void PixelRenderer::darken(uint8_t amount) {
+    if (!gCanvas || amount == 0) return;
+    if (amount == 255) {
+        gCanvas->fillSprite(0);
+        return;
+    }
+
+    uint16_t* pixels = static_cast<uint16_t*>(gCanvas->getBuffer());
+    if (!pixels) return;
+
+    // M5GFX stores a 16-bit Sprite as rgb565_2Byte (byte-swapped RGB565).
+    // Convert to normal RGB565 for the brightness calculation, then restore
+    // the storage order. Treating the raw word as RGB565 produces color noise.
+    const uint16_t keep = 255 - amount;
+    const uint32_t count = static_cast<uint32_t>(gCanvas->width()) * gCanvas->height();
+    for (uint32_t i = 0; i < count; ++i) {
+        const uint16_t raw = pixels[i];
+        const uint16_t color = static_cast<uint16_t>((raw << 8) | (raw >> 8));
+        const uint16_t red = static_cast<uint16_t>((((color >> 11) & 0x1F) * keep) / 255);
+        const uint16_t green = static_cast<uint16_t>((((color >> 5) & 0x3F) * keep) / 255);
+        const uint16_t blue = static_cast<uint16_t>(((color & 0x1F) * keep) / 255);
+        const uint16_t darkened = static_cast<uint16_t>((red << 11) | (green << 5) | blue);
+        pixels[i] = static_cast<uint16_t>((darkened << 8) | (darkened >> 8));
+    }
+}
+
 void PixelRenderer::text(int x, int y, const char* value, uint16_t color, uint8_t size) {
     (void)size;
     canvas().setFont(&fonts::AsciiFont8x16);

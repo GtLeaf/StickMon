@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 4,
   "canvas": {
     "width": 240,
     "height": 161,
@@ -82,8 +82,44 @@
   "sourceScale": 5.72,
   "baseOpacity": 1,
   "roomGeometry": {
-    "version": 2,
+    "version": 3,
     "coordinateSpace": "target",
+    "projection": {
+      "type": "corner_local_planes_v1",
+      "origin": [
+        121,
+        73
+      ],
+      "axisU": [
+        -110,
+        35
+      ],
+      "axisV": [
+        109,
+        37
+      ],
+      "axisZ": [
+        -1,
+        -68
+      ],
+      "planes": {
+        "floor": {
+          "faceId": "face3",
+          "coordinate": "z",
+          "value": 0
+        },
+        "leftWall": {
+          "faceId": "face1",
+          "coordinate": "v",
+          "value": 0
+        },
+        "rightWall": {
+          "faceId": "face2",
+          "coordinate": "u",
+          "value": 0
+        }
+      }
+    },
     "room": {
       "width": 240,
       "height": 161
@@ -421,6 +457,51 @@
             629
           ]
         ]
+      },
+      {
+        "id": "face5",
+        "type": "doorway",
+        "visible": false,
+        "editorVisible": true,
+        "shadowSurface": "floor",
+        "receivesShadow": false,
+        "drawOrder": 4,
+        "points": [
+          [
+            41,
+            144
+          ],
+          [
+            65,
+            155
+          ],
+          [
+            79,
+            136
+          ],
+          [
+            56,
+            127
+          ]
+        ],
+        "sourcePoints": [
+          [
+            381,
+            825
+          ],
+          [
+            521,
+            885
+          ],
+          [
+            598,
+            776
+          ],
+          [
+            469,
+            728
+          ]
+        ]
       }
     ]
   },
@@ -497,7 +578,7 @@
       "libraryId": "furniture_carpet",
       "libraryRevision": 1,
       "furnitureType": "decoration",
-      "kind": "rug",
+      "kind": "floor_flat",
       "heightPx": 0,
       "footprint": "polygon",
       "footprintPolygon": [],
@@ -510,6 +591,17 @@
       "shadowOpacity": 53,
       "shadowLength": 22,
       "shadowBlur": 0,
+      "projection": {
+        "model": "corner_local_planes_v1",
+        "anchorFaceId": "face3",
+        "anchorUV": [
+          0.81459,
+          0.92298
+        ],
+        "heightPx": 0,
+        "depthPx": 0,
+        "casterContour": []
+      },
       "receivesShadow": true,
       "occludesSprite": false,
       "sortY": 142,
@@ -545,7 +637,7 @@
       "libraryId": "furniture_furniture_0001_shelf",
       "libraryRevision": 1,
       "furnitureType": "decoration",
-      "kind": "wall_prop",
+      "kind": "wall_mounted",
       "heightPx": 32,
       "footprint": "none",
       "footprintPolygon": [],
@@ -560,6 +652,17 @@
       "shadowOpacity": 60,
       "shadowLength": 12,
       "shadowBlur": 0.8,
+      "projection": {
+        "model": "corner_local_planes_v1",
+        "anchorFaceId": "face1",
+        "anchorUV": [
+          0.75456,
+          0.49885
+        ],
+        "heightPx": 32,
+        "depthPx": 9,
+        "casterContour": []
+      },
       "receivesShadow": false,
       "occludesSprite": false,
       "sortY": 52,
@@ -595,7 +698,7 @@
       "libraryId": "",
       "libraryRevision": 0,
       "furnitureType": "decoration",
-      "kind": "wall_prop",
+      "kind": "wall_flat",
       "heightPx": 0,
       "footprint": "none",
       "footprintPolygon": [],
@@ -608,6 +711,17 @@
       "shadowOpacity": 53,
       "shadowLength": 22,
       "shadowBlur": 0,
+      "projection": {
+        "model": "corner_local_planes_v1",
+        "anchorFaceId": "face2",
+        "anchorUV": [
+          0.61402,
+          0.67779
+        ],
+        "heightPx": 0,
+        "depthPx": 4,
+        "casterContour": []
+      },
       "receivesShadow": false,
       "occludesSprite": false,
       "sortY": 72,
@@ -643,7 +757,7 @@
       "libraryId": "",
       "libraryRevision": 0,
       "furnitureType": "decoration",
-      "kind": "wall_prop",
+      "kind": "wall_flat",
       "heightPx": 0,
       "footprint": "none",
       "footprintPolygon": [],
@@ -656,6 +770,17 @@
       "shadowOpacity": 53,
       "shadowLength": 22,
       "shadowBlur": 0,
+      "projection": {
+        "model": "corner_local_planes_v1",
+        "anchorFaceId": "face2",
+        "anchorUV": [
+          0.61402,
+          0.67779
+        ],
+        "heightPx": 0,
+        "depthPx": 4,
+        "casterContour": []
+      },
       "receivesShadow": false,
       "occludesSprite": false,
       "sortY": 72,
@@ -670,8 +795,8 @@
       "id": "f9",
       "name": "bed",
       "fileName": "bed.png",
-      "x": 35,
-      "y": 64,
+      "x": 40,
+      "y": 61,
       "z": 20,
       "scale": 0.0514,
       "scaleX": 0.0514,
@@ -691,9 +816,9 @@
       "libraryId": "furniture_bed",
       "libraryRevision": 1,
       "furnitureType": "bed",
-      "kind": "bed_sofa",
-      "heightPx": 34,
-      "footprint": "ellipse",
+      "kind": "floor_furniture",
+      "heightPx": 37,
+      "footprint": "polygon",
       "footprintPolygon": [
         [
           0.07,
@@ -708,16 +833,16 @@
           0.47
         ],
         [
-          0.5,
-          0.45
+          0.4796,
+          0.4451
         ],
         [
           0.69,
           0.48
         ],
         [
-          0.84,
-          0.55
+          0.8052,
+          0.5713
         ],
         [
           0.94,
@@ -808,11 +933,79 @@
       "wallShadowOffsetY": 0,
       "castsShadow": true,
       "shadowOpacity": 53,
-      "shadowLength": 7,
+      "shadowLength": 26,
       "shadowBlur": 0.8,
+      "projection": {
+        "model": "corner_local_planes_v1",
+        "anchorFaceId": "face3",
+        "anchorUV": [
+          0.63877,
+          0.25931
+        ],
+        "heightPx": 37,
+        "depthPx": 0,
+        "casterContour": [
+          [
+            0.02,
+            0.34
+          ],
+          [
+            0.08,
+            0.22
+          ],
+          [
+            0.24,
+            0.1
+          ],
+          [
+            0.49,
+            0.02
+          ],
+          [
+            0.75,
+            0.09
+          ],
+          [
+            0.92,
+            0.24
+          ],
+          [
+            0.99,
+            0.43
+          ],
+          [
+            0.96,
+            0.66
+          ],
+          [
+            0.86,
+            0.82
+          ],
+          [
+            0.67,
+            0.96
+          ],
+          [
+            0.5,
+            1
+          ],
+          [
+            0.3,
+            0.96
+          ],
+          [
+            0.12,
+            0.82
+          ],
+          [
+            0.03,
+            0.62
+          ]
+        ]
+      },
       "receivesShadow": true,
       "occludesSprite": true,
-      "sortY": 114,
+      "sortY": 111,
       "cutoutApplied": false,
       "speciesId": 0,
       "action": "",
@@ -845,7 +1038,7 @@
       "libraryId": "furniture_furniture_0002_bowl",
       "libraryRevision": 1,
       "furnitureType": "bowl",
-      "kind": "low_prop",
+      "kind": "floor_small",
       "heightPx": 8,
       "footprint": "polygon",
       "footprintPolygon": [
@@ -924,6 +1117,54 @@
       "shadowOpacity": 38,
       "shadowLength": 28,
       "shadowBlur": 0.6,
+      "projection": {
+        "model": "corner_local_planes_v1",
+        "anchorFaceId": "face3",
+        "anchorUV": [
+          0.98718,
+          0.29899
+        ],
+        "heightPx": 8,
+        "depthPx": 0,
+        "casterContour": [
+          [
+            0.8078,
+            0.9032
+          ],
+          [
+            0.9398,
+            0.6673
+          ],
+          [
+            0.9228,
+            0.3716
+          ],
+          [
+            0.6896,
+            0.154
+          ],
+          [
+            0.4672,
+            0.0703
+          ],
+          [
+            0.0781,
+            0.2644
+          ],
+          [
+            0.0978,
+            0.6185
+          ],
+          [
+            0.1887,
+            0.896
+          ],
+          [
+            0.5082,
+            0.9874
+          ]
+        ]
+      },
       "receivesShadow": true,
       "occludesSprite": false,
       "sortY": 120,

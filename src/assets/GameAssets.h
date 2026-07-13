@@ -55,6 +55,44 @@ enum class Kind : uint16_t {
     BATTLE_BG_GRASS,
     BATTLE_BG_RIVERSIDE,
     BATTLE_BG_DEEP_FOREST,
+    EXPLORE_TILE_0072,
+    EXPLORE_TILE_0144,
+    EXPLORE_TILE_0168,
+    EXPLORE_TILE_0385,
+    EXPLORE_TILE_0386,
+    EXPLORE_TILE_0387,
+    EXPLORE_TILE_0388,
+    EXPLORE_TILE_0389,
+    EXPLORE_TILE_0390,
+    EXPLORE_TILE_0415,
+    EXPLORE_TILE_0537,
+    EXPLORE_TILE_0538,
+    EXPLORE_TILE_0539,
+    EXPLORE_TILE_0540,
+    EXPLORE_TILE_0542,
+    EXPLORE_TILE_0545,
+    EXPLORE_TILE_0546,
+    EXPLORE_TILE_0547,
+    EXPLORE_TILE_0553,
+    EXPLORE_TILE_0554,
+    EXPLORE_TILE_0555,
+    EXPLORE_TILE_0556,
+    EXPLORE_TILE_0558,
+    EXPLORE_TILE_0800,
+    EXPLORE_TILE_0801,
+    EXPLORE_TILE_0802,
+    EXPLORE_TILE_0804,
+    EXPLORE_TILE_0805,
+    EXPLORE_TILE_0808,
+    EXPLORE_TILE_0809,
+    EXPLORE_TILE_0810,
+    EXPLORE_TILE_0811,
+    EXPLORE_TILE_0818,
+    EXPLORE_TILE_0819,
+    EXPLORE_TILE_1662,
+    EXPLORE_TILE_1665,
+    EXPLORE_TILE_1681,
+    EXPLORE_TILE_1682,
     EGG,
     COUNT,
 };
@@ -65,6 +103,8 @@ uint32_t compressedBytes();
 bool draw(Kind kind, int x, int y, float scale = 1.0f);
 bool drawCentered(Kind kind, int centerX, int centerY, float scale = 1.0f);
 bool drawBattleBackground(Kind kind);
+bool drawBackgroundViewport(Kind kind, int cameraX, int cameraY);
+bool drawExploreTile(uint16_t tileId, int x, int y);
 
 Kind itemKind(Game::ItemId item);
 Kind ballFrameKind(Game::ItemId item, uint8_t frame);

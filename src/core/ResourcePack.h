@@ -20,7 +20,10 @@ public:
     bool openRoom(const char* roomId, fs::File& file) const;
     bool openFont(const char* fontId, fs::File& file) const;
     bool openDefaultFont(fs::File& file) const;
-    bool openGameAssets(fs::File& file) const;
+    bool openUiAssets(fs::File& file) const;
+    bool openBattleAssets(fs::File& file) const;
+    bool openMapAssets(fs::File& file) const;
+    bool openHatchAssets(fs::File& file) const;
 
 private:
     ResourcePack() = default;
@@ -41,5 +44,8 @@ private:
     char fontsDir_[32] = {};
     char defaultRoomPath_[64] = {};
     char defaultFontPath_[64] = {};
-    char gameAssetsPath_[64] = {};
+    char uiAssetsPath_[64] = {};
+    char battleAssetsPath_[64] = {};
+    char mapAssetsPath_[64] = {};
+    char hatchAssetsPath_[64] = {};
 };

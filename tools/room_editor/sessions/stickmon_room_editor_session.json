@@ -1,7 +1,7 @@
 {
   "version": 1,
   "type": "stickmon-room-editor-session",
-  "savedAt": "2026-07-11T16:39:39.768Z",
+  "savedAt": "2026-07-12T13:17:18.765Z",
   "files": {
     "base": "room_empty.png",
     "backgrounds": {
@@ -636,7 +636,7 @@
         "usesLibraryImage": true
       }
     ],
-    "selectedId": "f9",
+    "selectedId": null,
     "nextId": 11,
     "points": [
       {
@@ -733,6 +733,26 @@
         "id": "p19",
         "x": 1335,
         "y": 629
+      },
+      {
+        "id": "p20",
+        "x": 234,
+        "y": 826
+      },
+      {
+        "id": "p21",
+        "x": 374,
+        "y": 886
+      },
+      {
+        "id": "p23",
+        "x": 451,
+        "y": 777
+      },
+      {
+        "id": "p24",
+        "x": 322,
+        "y": 728
       }
     ],
     "faces": [
@@ -891,15 +911,46 @@
             "y": 629
           }
         ]
+      },
+      {
+        "id": "face5",
+        "type": "doorway",
+        "shadowSurface": "floor",
+        "receivesShadow": false,
+        "visible": true,
+        "points": [
+          {
+            "id": "p20",
+            "x": 234,
+            "y": 826
+          },
+          {
+            "id": "p21",
+            "x": 374,
+            "y": 886
+          },
+          {
+            "id": "p23",
+            "x": 451,
+            "y": 777
+          },
+          {
+            "id": "p24",
+            "x": 322,
+            "y": 728
+          }
+        ]
       }
     ],
-    "selectedFaceId": null,
-    "selectedPointIndex": null,
-    "selectedPointId": null,
-    "expandedFaceIds": [],
+    "selectedFaceId": "face5",
+    "selectedPointIndex": 2,
+    "selectedPointId": "p23",
+    "expandedFaceIds": [
+      "face5"
+    ],
     "draftExpanded": true,
-    "nextFaceId": 5,
-    "nextPointId": 20,
+    "nextFaceId": 6,
+    "nextPointId": 25,
     "draftPoints": [],
     "drawingFace": false,
     "guides": {

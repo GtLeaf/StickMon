@@ -265,6 +265,22 @@ label.field {
   width: 100%;
 }
 
+.projection-guide-toggle {
+  min-width: 58px;
+  font-variant-numeric: tabular-nums;
+}
+
+.projection-guide-toggle.active {
+  border-color: #2692ad;
+  background: #17657a;
+}
+
+.projection-guide-toggle.auto-active:not(.active) {
+  border-color: rgba(120, 214, 238, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(120, 214, 238, 0.18);
+  color: #d9f8ff;
+}
+
 .canvas-area {
   display: grid;
   place-items: center;

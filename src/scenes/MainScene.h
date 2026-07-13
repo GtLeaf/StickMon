@@ -44,12 +44,28 @@ private:
         DOWN_RIGHT,
     };
 
+    enum class DoorTransitionMode : uint8_t {
+        NONE,
+        EXIT_ROUTE,
+        EXIT_CROSS,
+        EXIT_FADE,
+        ENTER_WAIT_FADE,
+        ENTER_CROSS,
+        FAINT_WAIT_FADE,
+    };
+
     struct RenderItem {
         int16_t z;
         void (MainScene::*draw)();
     };
 
     void updateMonsterAi(uint32_t nowMs, float dtSeconds);
+    void beginDoorTransition(uint32_t nowMs);
+    void updateDoorTransition(uint32_t nowMs);
+    bool prepareDoorAnchors();
+    bool chooseDoorInsidePose(float& x, float& y) const;
+    bool updateDoorRoute(float dtSeconds);
+    bool moveDoorToward(float x, float y, float speed, float dtSeconds, bool enforceWalkArea);
     void updateDebugTiltControl(uint32_t nowMs, float dtSeconds);
     void updateCamera();
     int16_t worldToScreenY(float worldY) const;
@@ -86,6 +102,7 @@ private:
     void persistViewState(uint32_t nowMs);
     void updatePmdSpriteState(uint32_t nowMs);
     void chooseAiGoal(uint32_t nowMs);
+    bool startWander(uint32_t nowMs);
     void drawBackground();
     void drawFloor();
     void drawFood();
@@ -133,6 +150,14 @@ private:
     uint32_t feedingUntilMs = 0;
     uint32_t postFeedAwakeUntilMs = 0;
     bool feedingConsumed = false;
+    bool faintRestActive = false;
+    DoorTransitionMode doorTransition = DoorTransitionMode::NONE;
+    float doorInsideX = 0.0f;
+    float doorInsideY = 0.0f;
+    float doorOutsideX = 0.0f;
+    float doorOutsideY = 0.0f;
+    uint32_t doorLastUpdateMs = 0;
+    uint32_t doorPhaseStartedMs = 0;
     MonsterMind mind;
     MonsterBehaviorProfile behaviorProfile;
     static constexpr uint8_t MOVE_ROUTE_CAP = 20;

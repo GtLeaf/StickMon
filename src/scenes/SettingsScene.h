@@ -34,6 +34,7 @@ private:
     ViewMode viewMode = ViewMode::MENU;
     bool settingsDirty = false;
     bool resetConfirmYes = false;
+    float menuScroll = 0.0f;
 
     void activateCurrent();
     void cycleBrightness();

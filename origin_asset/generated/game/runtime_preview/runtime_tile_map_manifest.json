@@ -1,0 +1,82 @@
+{
+  "algorithmVersion": 1,
+  "expeditionSeed": 539363091,
+  "maps": [
+    {
+      "index": 0,
+      "area": 0,
+      "selectedExit": 1,
+      "image": "runtime_tile_map_01_99adb62e.png",
+      "debug": "runtime_tile_map_01_99adb62e_debug.png",
+      "data": "runtime_tile_map_01_99adb62e.json",
+      "seed": 2578298414,
+      "fingerprint": "a9ddcd31",
+      "entry": {
+        "point": [
+          0,
+          8
+        ],
+        "edge": "left"
+      },
+      "hasCoast": false,
+      "hasForest": true
+    },
+    {
+      "index": 1,
+      "area": 1,
+      "selectedExit": 0,
+      "image": "runtime_tile_map_02_73c0a14a.png",
+      "debug": "runtime_tile_map_02_73c0a14a_debug.png",
+      "data": "runtime_tile_map_02_73c0a14a.json",
+      "seed": 1942004042,
+      "fingerprint": "ca7429b2",
+      "entry": {
+        "point": [
+          9,
+          0
+        ],
+        "edge": "top"
+      },
+      "hasCoast": true,
+      "hasForest": false
+    },
+    {
+      "index": 2,
+      "area": 2,
+      "selectedExit": 1,
+      "image": "runtime_tile_map_03_ad5997e6.png",
+      "debug": "runtime_tile_map_03_ad5997e6_debug.png",
+      "data": "runtime_tile_map_03_ad5997e6.json",
+      "seed": 2908329958,
+      "fingerprint": "aabea237",
+      "entry": {
+        "point": [
+          0,
+          6
+        ],
+        "edge": "left"
+      },
+      "hasCoast": false,
+      "hasForest": false
+    },
+    {
+      "index": 3,
+      "area": 3,
+      "selectedExit": 1,
+      "image": "runtime_tile_map_04_b3a991b3.png",
+      "debug": "runtime_tile_map_04_b3a991b3_debug.png",
+      "data": "runtime_tile_map_04_b3a991b3.json",
+      "seed": 3014234547,
+      "fingerprint": "1b79da0e",
+      "entry": {
+        "point": [
+          3,
+          0
+        ],
+        "edge": "top"
+      },
+      "hasCoast": false,
+      "hasForest": false
+    }
+  ]
+}

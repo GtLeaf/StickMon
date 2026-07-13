@@ -23,15 +23,17 @@
 namespace {
 static constexpr uint16_t HP_RECOVERY_INTERVAL_MIN = 5;
 static constexpr uint8_t HP_RECOVERY_PERCENT_PER_TICK = 10;
-static constexpr uint32_t FAINT_RECOVERY_SECONDS = 86400UL;
+static constexpr uint32_t FAINT_REST_SECONDS = 60UL * 60UL;
 static constexpr uint32_t CLOCK_SAVE_INTERVAL_MS = 15000UL;
 static constexpr uint16_t GAME_MINUTES_PER_DAY = 24U * 60U;
-static constexpr uint16_t SLEEP_START_MINUTE = 18U * 60U;
-static constexpr uint16_t SLEEP_END_MINUTE = 6U * 60U;
+static constexpr uint16_t BASE_SLEEP_START_MINUTE = 22U * 60U;
+static constexpr uint16_t BASE_SLEEP_END_MINUTE = 6U * 60U;
+static constexpr int16_t NATURE_SLEEP_OFFSET_MINUTE = 30;
 static constexpr uint8_t SATIETY_DECAY_AWAKE_INTERVAL_MIN = 1;
 static constexpr uint8_t SATIETY_DECAY_SLEEP_INTERVAL_MIN = 3;
 static constexpr uint8_t SATIETY_DECAY_MAX_DROP_PER_TICK = 4;
 static constexpr uint8_t DEBUG_LIGHT_SOURCE_COUNT = 6;
+static constexpr uint16_t SCENE_FADE_HOLD_MS = 500;
 
 uint16_t careDailyCapForLevel(uint8_t level) {
     if (level <= 10) return 60;
@@ -45,9 +47,56 @@ uint8_t careExpMultiplierForLevel(uint8_t level) {
     return 1;
 }
 
-bool isSleepCareTime(uint32_t gameMinutesTotal) {
+struct MonsterSleepSchedule {
+    uint16_t startMinute;
+    uint16_t endMinute;
+};
+
+constexpr bool isMinuteInSleepWindow(uint16_t minutesOfDay,
+                                     uint16_t startMinute,
+                                     uint16_t endMinute) {
+    return minutesOfDay < endMinute || minutesOfDay >= startMinute;
+}
+
+static_assert(!isMinuteInSleepWindow(21U * 60U + 59U,
+                                    BASE_SLEEP_START_MINUTE, BASE_SLEEP_END_MINUTE),
+              "baseline 21:59 must be awake time");
+static_assert(isMinuteInSleepWindow(22U * 60U,
+                                   BASE_SLEEP_START_MINUTE, BASE_SLEEP_END_MINUTE),
+              "baseline 22:00 must be sleep time");
+static_assert(isMinuteInSleepWindow(5U * 60U + 59U,
+                                   BASE_SLEEP_START_MINUTE, BASE_SLEEP_END_MINUTE),
+              "baseline 05:59 must be sleep time");
+static_assert(!isMinuteInSleepWindow(6U * 60U,
+                                    BASE_SLEEP_START_MINUTE, BASE_SLEEP_END_MINUTE),
+              "baseline 06:00 must be awake time");
+
+MonsterSleepSchedule sleepScheduleForNature(uint8_t nature) {
+    uint8_t boosted = natureBoostStat(nature);
+    uint8_t lowered = natureLowerStat(nature);
+    if (boosted == 5 && lowered != 5) {
+        return {
+            static_cast<uint16_t>(BASE_SLEEP_START_MINUTE + NATURE_SLEEP_OFFSET_MINUTE),
+            static_cast<uint16_t>(BASE_SLEEP_END_MINUTE - NATURE_SLEEP_OFFSET_MINUTE),
+        };
+    }
+    if (lowered == 5 && boosted != 5) {
+        return {
+            static_cast<uint16_t>(BASE_SLEEP_START_MINUTE - NATURE_SLEEP_OFFSET_MINUTE),
+            static_cast<uint16_t>(BASE_SLEEP_END_MINUTE + NATURE_SLEEP_OFFSET_MINUTE),
+        };
+    }
+    return {BASE_SLEEP_START_MINUTE, BASE_SLEEP_END_MINUTE};
+}
+
+bool isScheduledSleepMinute(uint16_t minutesOfDay, uint8_t nature) {
+    MonsterSleepSchedule schedule = sleepScheduleForNature(nature);
+    return isMinuteInSleepWindow(minutesOfDay, schedule.startMinute, schedule.endMinute);
+}
+
+bool isSleepCareTime(uint32_t gameMinutesTotal, uint8_t nature) {
     uint16_t minutesOfDay = (uint16_t)(gameMinutesTotal % GAME_MINUTES_PER_DAY);
-    return minutesOfDay < SLEEP_END_MINUTE || minutesOfDay >= SLEEP_START_MINUTE;
+    return isScheduledSleepMinute(minutesOfDay, nature);
 }
 
 uint8_t* effortField(Game::StatLine& ev, uint8_t statIndex) {
@@ -88,6 +137,7 @@ GameEngine& GameEngine::ins() {
 }
 
 bool GameEngine::begin() {
+    bootStartedMs = millis();
     if (!Hal::ins().begin()) {
         Serial.println("[GameEngine] Hal init failed");
         return false;
@@ -125,13 +175,17 @@ bool GameEngine::begin() {
     Hal::ins().setBrightness(state.settings.brightness);
     ButtonDispatcher::ins().setLongPressMs(state.settings.longPressMs);
     EspNowLink::ins().beginStub();
-    syncSpriteCache();
+    startupFirstFrameRendered = false;
+    PokemonSprites::setDynamicLoadingEnabled(false);
+    startupSpriteCacheReady = syncSpriteCache(0);
     switchScene(state.oobeDone ? SceneID::MAIN : SceneID::HATCH);
     uint32_t now = Hal::ins().millis();
     clockAnchorMs = now;
     clockAnchorMinutes = state.gameMinutesTotal;
     lastSavedClockMinutes = state.gameMinutesTotal;
     lastInputMs = lastFrameMs = lastUpdateMs = lastCareMs = lastSaveMs = lastActivityMs = lastClockSaveMs = now;
+    Serial.printf("[BootTiming] init_ms=%u sprites_ready=%u\n",
+                  now - bootStartedMs, startupSpriteCacheReady ? 1 : 0);
     return true;
 }
 
@@ -143,6 +197,7 @@ void GameEngine::run() {
     if (now - lastInputMs >= INPUT_SAMPLE_MS) {
         lastInputMs = now;
         processInput(now);
+        now = Hal::ins().millis();
         didWork = true;
     }
 
@@ -163,6 +218,48 @@ void GameEngine::requestScene(SceneID id) {
     switchScene(id);
 }
 
+bool GameEngine::fadeToScene(SceneID id, uint16_t durationMs) {
+    if (id == currentId || sceneFade != SceneFadePhase::NONE) return false;
+    sceneFadeTarget = id;
+    sceneFadeDurationMs = max<uint16_t>(1, durationMs);
+    sceneFadeStartedMs = Hal::ins().millis();
+    sceneFadeLastStepMs = sceneFadeStartedMs;
+    sceneFadeProgressMs = 0;
+    sceneFade = SceneFadePhase::OUT;
+    resetIdle(sceneFadeStartedMs);
+    return true;
+}
+
+bool GameEngine::sceneFadeActive() const {
+    return sceneFade != SceneFadePhase::NONE;
+}
+
+bool GameEngine::sceneFadeInActive() const {
+    return sceneFade == SceneFadePhase::IN;
+}
+
+void GameEngine::beginExploreDeparture(uint8_t area) {
+    exploreArea = area;
+    exploreTravel = ExploreTravelPhase::DEPARTING;
+    requestScene(SceneID::MAIN);
+}
+
+void GameEngine::markExploreActive() {
+    if (exploreTravel == ExploreTravelPhase::DEPARTING) {
+        exploreTravel = ExploreTravelPhase::ACTIVE;
+    }
+}
+
+void GameEngine::beginExploreReturn(bool fainted) {
+    exploreTravel = fainted ? ExploreTravelPhase::RETURNING_FAINTED
+                            : ExploreTravelPhase::RETURNING;
+    if (!fadeToScene(SceneID::MAIN)) requestScene(SceneID::MAIN);
+}
+
+void GameEngine::finishExploreReturn() {
+    exploreTravel = ExploreTravelPhase::NONE;
+}
+
 float GameEngine::gameSpeed() const {
     static constexpr float SPEEDS[] = {1.0f, 2.0f, 4.0f, 8.0f};
     uint8_t idx = state.settings.speedIndex;
@@ -176,6 +273,10 @@ uint32_t GameEngine::gameMinutesTotal() const {
 
 uint16_t GameEngine::gameMinutesOfDay() const {
     return (uint16_t)(gameMinutesTotal() % (24UL * 60UL));
+}
+
+bool GameEngine::isMonsterSleepTime() const {
+    return isScheduledSleepMinute(gameMinutesOfDay(), activeMonster().nature);
 }
 
 void GameEngine::cycleGameSpeed() {
@@ -887,6 +988,17 @@ void GameEngine::clearHatchProgress() {
 }
 
 void GameEngine::switchScene(SceneID id) {
+    uint32_t switchStartedAt = Hal::ins().millis();
+    bool traceBrightnessExit = currentId == SceneID::SETTINGS && id != SceneID::SETTINGS;
+    if (traceBrightnessExit) {
+        Serial.printf("[Scene] settings switch begin t=%lu from=%u to=%u configured=%u display=%u idle=%u\n",
+                      (unsigned long)switchStartedAt,
+                      (unsigned)currentId,
+                      (unsigned)id,
+                      Hal::ins().getBrightness(),
+                      Hal::ins().getDisplayBrightness(),
+                      Hal::ins().isIdleBrightnessActive() ? 1 : 0);
+    }
     resetIdle(Hal::ins().millis());
     if (currentScene) currentScene->onExit();
     prevId = currentId;
@@ -919,6 +1031,18 @@ void GameEngine::switchScene(SceneID id) {
     }
 
     if (currentScene) currentScene->onEnter();
+    if (traceBrightnessExit) {
+        brightnessTraceFrames = 3;
+        brightnessTraceStartedMs = switchStartedAt;
+        uint32_t finishedAt = Hal::ins().millis();
+        Serial.printf("[Scene] settings switch end t=%lu cost=%lums scene=%u configured=%u display=%u idle=%u\n",
+                      (unsigned long)finishedAt,
+                      (unsigned long)(finishedAt - switchStartedAt),
+                      (unsigned)currentId,
+                      Hal::ins().getBrightness(),
+                      Hal::ins().getDisplayBrightness(),
+                      Hal::ins().isIdleBrightnessActive() ? 1 : 0);
+    }
 }
 
 void GameEngine::processInput(uint32_t nowMs) {
@@ -928,6 +1052,7 @@ void GameEngine::processInput(uint32_t nowMs) {
     ButtonEvent events[ButtonDispatcher::MAX_EVENTS_PER_POLL];
     uint8_t count = ButtonDispatcher::ins().poll(events, ButtonDispatcher::MAX_EVENTS_PER_POLL);
     if (count > 0) resetIdle(nowMs);
+    if (sceneFade != SceneFadePhase::NONE) return;
     if (resourceAlertVisible()) return;
     for (uint8_t i = 0; i < count; ++i) {
         if (currentScene && currentScene->onButton(events[i])) continue;
@@ -944,19 +1069,100 @@ void GameEngine::update(uint32_t nowMs) {
         return;
     }
     syncGameClock(nowMs);
-    syncSpriteCache();
+    if (startupFirstFrameRendered && !startupSpriteCacheReady) {
+        startupSpriteCacheReady = syncSpriteCache(1);
+        if (startupSpriteCacheReady) {
+            PokemonSprites::setDynamicLoadingEnabled(true);
+            Serial.printf("[BootTiming] sprites_ready_ms=%u\n", nowMs - bootStartedMs);
+        }
+    } else {
+        syncSpriteCache(startupFirstFrameRendered ? 0xFF : 0);
+    }
     persistGameClock(nowMs);
     tickCare(nowMs);
-    if (currentScene) currentScene->update(nowMs, dt * gameSpeed());
+    if (currentScene && sceneFade != SceneFadePhase::HOLD) {
+        currentScene->update(nowMs, dt * gameSpeed());
+    }
+    updateSceneFade(nowMs);
     if (saveDirty && nowMs - lastSaveMs >= 300000UL) saveNow();
 }
 
+void GameEngine::updateSceneFade(uint32_t nowMs) {
+    if (sceneFade == SceneFadePhase::NONE) return;
+    if (sceneFade == SceneFadePhase::HOLD) {
+        uint32_t elapsed = nowMs >= sceneFadeStartedMs ? nowMs - sceneFadeStartedMs : 0;
+        if (elapsed < SCENE_FADE_HOLD_MS) return;
+
+        switchScene(sceneFadeTarget);
+        sceneFade = SceneFadePhase::IN;
+        sceneFadeStartedMs = Hal::ins().millis();
+        sceneFadeLastStepMs = sceneFadeStartedMs;
+        sceneFadeProgressMs = 0;
+        return;
+    }
+
+    uint32_t stepMs = 0;
+    if (nowMs >= sceneFadeLastStepMs) {
+        stepMs = min<uint32_t>(FRAME_MS, nowMs - sceneFadeLastStepMs);
+        sceneFadeLastStepMs = nowMs;
+    }
+    sceneFadeProgressMs = static_cast<uint16_t>(min<uint32_t>(
+        sceneFadeDurationMs,
+        static_cast<uint32_t>(sceneFadeProgressMs) + stepMs));
+    if (sceneFadeProgressMs < sceneFadeDurationMs) return;
+
+    if (sceneFade == SceneFadePhase::OUT) {
+        sceneFade = SceneFadePhase::HOLD;
+        sceneFadeStartedMs = Hal::ins().millis();
+        return;
+    }
+    sceneFade = SceneFadePhase::NONE;
+}
+
 void GameEngine::render(uint32_t nowMs) {
-    (void)nowMs;
+    if (brightnessTraceFrames > 0) {
+        Serial.printf("[Scene] post-settings frame begin t=%lu elapsed=%lums remaining=%u scene=%u configured=%u display=%u idle=%u\n",
+                      (unsigned long)nowMs,
+                      (unsigned long)(nowMs - brightnessTraceStartedMs),
+                      brightnessTraceFrames,
+                      (unsigned)currentId,
+                      Hal::ins().getBrightness(),
+                      Hal::ins().getDisplayBrightness(),
+                      Hal::ins().isIdleBrightnessActive() ? 1 : 0);
+    }
     PokemonSprites::beginRenderFrame();
     if (currentScene) currentScene->render();
     renderResourceAlert();
+    renderSceneFade(Hal::ins().millis());
     Hal::ins().flush();
+    if (brightnessTraceFrames > 0) {
+        uint32_t finishedAt = Hal::ins().millis();
+        Serial.printf("[Scene] post-settings frame end t=%lu cost=%lums display=%u\n",
+                      (unsigned long)finishedAt,
+                      (unsigned long)(finishedAt - nowMs),
+                      Hal::ins().getDisplayBrightness());
+        brightnessTraceFrames--;
+    }
+    if (!startupFirstFrameRendered) {
+        startupFirstFrameRendered = true;
+        if (startupSpriteCacheReady) PokemonSprites::setDynamicLoadingEnabled(true);
+        Serial.printf("[BootTiming] first_frame_ms=%u sprites_ready=%u\n",
+                      Hal::ins().millis() - bootStartedMs, startupSpriteCacheReady ? 1 : 0);
+    }
+}
+
+void GameEngine::renderSceneFade(uint32_t nowMs) {
+    (void)nowMs;
+    if (sceneFade == SceneFadePhase::NONE) return;
+    if (sceneFade == SceneFadePhase::HOLD) {
+        PixelRenderer::darken(255);
+        return;
+    }
+    uint32_t progress = min<uint32_t>(sceneFadeDurationMs, sceneFadeProgressMs);
+    uint8_t amount = sceneFade == SceneFadePhase::OUT
+        ? (uint8_t)(progress * 255UL / sceneFadeDurationMs)
+        : (uint8_t)(255UL - progress * 255UL / sceneFadeDurationMs);
+    PixelRenderer::darken(amount);
 }
 
 bool GameEngine::resourceAlertVisible() const {
@@ -1018,7 +1224,8 @@ void GameEngine::resetIdle(uint32_t nowMs) {
 void GameEngine::updateIdle(uint32_t nowMs) {
     uint32_t timeout = idleTimeoutMs();
     if (timeout == 0 || idleActive) return;
-    if (nowMs - lastActivityMs < timeout) return;
+    int32_t elapsed = (int32_t)(nowMs - lastActivityMs);
+    if (elapsed < 0 || (uint32_t)elapsed < timeout) return;
     idleActive = true;
     Hal::ins().setIdleBrightness(true);
 }
@@ -1164,10 +1371,39 @@ void GameEngine::tickCare(uint32_t nowMs) {
     hpRecoveryMinuteAcc %= HP_RECOVERY_INTERVAL_MIN;
     uint32_t nowGameSec = gameSecondsForMinutes(state.gameMinutesTotal);
 
+    auto updateHealthRecovery = [&](Game::MonsterRuntime& mon) {
+        if (mon.fainted) {
+            if (mon.lastSeenAt == 0 || mon.lastSeenAt > nowGameSec) mon.lastSeenAt = nowGameSec;
+            uint32_t elapsedFaintSec = nowGameSec - mon.lastSeenAt;
+            if (elapsedFaintSec >= FAINT_REST_SECONDS) {
+                mon.fainted = false;
+                mon.statusBits = Game::STATUS_NONE;
+                mon.hpCur = max<uint16_t>(
+                    1,
+                    (uint16_t)((mon.hpMax * HP_RECOVERY_PERCENT_PER_TICK + 99) / 100)
+                );
+                mon.lastSeenAt = nowGameSec;
+                Serial.printf("[Care] faint rest complete species=%u hp=%u/%u\n",
+                              mon.speciesId, mon.hpCur, mon.hpMax);
+            }
+            return;
+        }
+
+        if (hpRecoveryTicks > 0 && mon.hpCur < mon.hpMax && mon.satiety > 0) {
+            uint16_t gainPerTick = max<uint16_t>(
+                1,
+                (uint16_t)((mon.hpMax * HP_RECOVERY_PERCENT_PER_TICK + 99) / 100)
+            );
+            uint32_t gain = (uint32_t)gainPerTick * hpRecoveryTicks;
+            mon.hpCur = min<uint16_t>(mon.hpMax, mon.hpCur + gain);
+        }
+    };
+
     for (uint8_t i = 0; i < state.teamCount && i < Game::TEAM_CAP; ++i) {
         Game::MonsterRuntime& mon = state.team[i];
         if (i == 0) {
-            bool sleeping = (mon.statusBits & Game::STATUS_SLEEP) != 0 || isSleepCareTime(state.gameMinutesTotal);
+            bool sleeping = (mon.statusBits & Game::STATUS_SLEEP) != 0 ||
+                            isSleepCareTime(state.gameMinutesTotal, mon.nature);
             uint8_t decayInterval = sleeping ? SATIETY_DECAY_SLEEP_INTERVAL_MIN
                                              : SATIETY_DECAY_AWAKE_INTERVAL_MIN;
             if (sleeping != satietyDecayWasSleeping) {
@@ -1186,38 +1422,22 @@ void GameEngine::tickCare(uint32_t nowMs) {
         if (mon.fainted) targetMood = 20;
         if (mon.mood < targetMood) mon.mood++;
         else if (mon.mood > targetMood) mon.mood--;
-
-        if (mon.fainted) {
-            if (mon.lastSeenAt == 0 || mon.lastSeenAt > nowGameSec) mon.lastSeenAt = nowGameSec;
-            uint32_t elapsedFaintSec = nowGameSec - mon.lastSeenAt;
-            if (elapsedFaintSec >= FAINT_RECOVERY_SECONDS) {
-                mon.fainted = false;
-                mon.hpCur = max<uint16_t>(1, mon.hpMax / 2);
-                mon.lastSeenAt = nowGameSec;
-            }
-            continue;
-        }
-
-        if (hpRecoveryTicks > 0 && mon.hpCur < mon.hpMax && mon.satiety > 0) {
-            uint16_t gainPerTick = max<uint16_t>(
-                1,
-                (uint16_t)((mon.hpMax * HP_RECOVERY_PERCENT_PER_TICK + 99) / 100)
-            );
-            uint32_t gain = (uint32_t)gainPerTick * hpRecoveryTicks;
-            mon.hpCur = min<uint16_t>(mon.hpMax, mon.hpCur + gain);
-        }
+        updateHealthRecovery(mon);
+    }
+    for (uint8_t i = 0; i < state.storageCount && i < Game::STORAGE_CAP; ++i) {
+        updateHealthRecovery(state.storage[i]);
     }
     markDirty(false);
 }
 
-void GameEngine::syncSpriteCache() {
+bool GameEngine::syncSpriteCache(uint8_t loadBudget) {
     uint16_t teamSpecies[Game::TEAM_CAP] = {};
     uint8_t count = state.teamCount;
     if (count > Game::TEAM_CAP) count = Game::TEAM_CAP;
     for (uint8_t i = 0; i < count; ++i) {
         teamSpecies[i] = state.team[i].speciesId;
     }
-    PokemonSprites::syncTeamCache(teamSpecies, count);
+    return PokemonSprites::syncTeamCache(teamSpecies, count, loadBudget);
 }
 
 uint32_t GameEngine::randomIvPacked() const {

@@ -153,10 +153,23 @@ hp: 19/19   特攻：xx
 ./origin_asset/source_sheets/low/012_butterfree.png裁剪错误，第二行被裁掉了
 
 
-./origin_asset/source_sheets/low/010_caterpie.png
-./origin_asset/source_sheets/low/011_metapod.png
-./origin_asset/source_sheets/low/012_butterfree.png
-./origin_asset/source_sheets/low/013_weedle.png
-./origin_asset/source_sheets/low/014_kakuna.png
-./origin_asset/source_sheets/low/015_beedrill.png
-重新裁剪，图像裁切不完整
+处理./origin_asset/source_sheets/low/010_caterpie.png,011_metapod,012_butterfree。先生成预览图，等我确认后再写人
+1. 第一行前15帧为move，3帧，5个方向，从左到右是正面，左下，左，左上，背面。其他方向用镜像
+2. 010_caterpie第一行倒数3，4为sleep
+3. 011_metapod第一行倒数2，3为sleep
+4. 012_butterfree第二行2，3为sleep
+
+处理./origin_asset/source_sheets/low/074_geodude.png，075_graveler，076_golem先生成预览图，等我确认后再写人
+1. 第一行前15帧为move，3帧，5个方向，从左到右是正面，左下，左，左上，背面。其他方向用镜像
+2. 074_geodude,075_graveler的第二行倒数6，7为sleep
+3. 076_golem的第二行倒数8，9为sleep
+
+处理./origin_asset/source_sheets/medium/183_marill_184_azumarill.png,先生成预览图，等我确认后再写入
+1. marill和azumarill第一行为move，3帧，5个方向，从左到右是正面，左下，左，左上，背面。其他方向用镜像
+2. marill第三行倒数2，3，为sleep
+3. azumarill第四行倒数2，3，为sleep
+4. marill,azumarill第二行为攻击动画，2帧一组，5个方向同move
+5. azumarill 第三行为跳跃动画，1帧，8个方向从左到右是正面，左下，左，左上，背面，右上，右，右下
+6. 攻击和和跳跃动画先解析出来，留着后续备用
+
+处理./origin_asset/source_sheets/medium/194_wooper_195_quagsire.png,先生成预览图，等我确认后再写入

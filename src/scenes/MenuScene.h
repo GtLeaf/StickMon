@@ -102,6 +102,7 @@ private:
     bool debugTimeOpen = false;
     uint8_t debugTimeFocus = 0;
     uint8_t debugTimeDigits[4] = {0, 0, 0, 0};
+    float debugScroll = 0.0f;
     int descScrollKey = -1;
     float descScroll = 0.0f;
     uint32_t descScrollLastMs = 0;

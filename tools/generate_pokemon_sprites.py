@@ -5,6 +5,7 @@ import json
 import os
 import re
 import struct
+import zlib
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,7 +33,8 @@ INDEXED4_RLE = 1
 SPRITE_SOURCE_GLOBAL = 0
 SPRITE_SOURCE_SPECIES_BLOCK = 1
 SPRITE_PACK_MAGIC = 0x5350534D
-SPRITE_PACK_VERSION = 1
+SPRITE_PACK_VERSION = 2
+SPRITE_PACK_FLAG_RAW_DEFLATE = 1
 SPRITE_PACK_SCHEMA = 1
 
 FULL_DIRECTIONS = ["front", "down_left", "left", "up_left", "back", "up_right", "right", "down_right"]
@@ -61,11 +63,17 @@ PMD_SPECS = [
     PmdSpec(7, "SQUIRTLE", "squirtle", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
     PmdSpec(8, "WARTORTLE", "wartortle", 1, 3, 2),
     PmdSpec(9, "BLASTOISE", "blastoise", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(10, "CATERPIE", "caterpie", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(11, "METAPOD", "metapod", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(12, "BUTTERFREE", "butterfree", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
     PmdSpec(16, "PIDGEY", "pidgey", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
     PmdSpec(17, "PIDGEOTTO", "pidgeotto", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
     PmdSpec(18, "PIDGEOT", "pidgeot", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
     PmdSpec(25, "PIKACHU", "pikachu", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
     PmdSpec(26, "RAICHU", "raichu", 1, 3, 2),
+    PmdSpec(74, "GEODUDE", "geodude", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(75, "GRAVELER", "graveler", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(76, "GOLEM", "golem", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
     PmdSpec(92, "GASTLY", "gastly", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
     PmdSpec(93, "HAUNTER", "haunter", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
     PmdSpec(94, "GENGAR", "gengar", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
@@ -371,16 +379,6 @@ def write_species_pack(path, species_id, writer, kind_map):
         raise SystemExit(f"Sprite pack too large for species {species_id}")
 
     payload = bytearray()
-    payload.extend(struct.pack(
-        "<IHHHHHH",
-        SPRITE_PACK_MAGIC,
-        SPRITE_PACK_VERSION,
-        species_id,
-        len(writer.frames),
-        len(writer.data),
-        len(writer.palettes),
-        0,
-    ))
     for frame in writer.frames:
         payload.extend(struct.pack(
             "<HBBBBHIII",
@@ -397,8 +395,24 @@ def write_species_pack(path, species_id, writer, kind_map):
     payload.extend(words_to_bytes(writer.data))
     payload.extend(words_to_bytes(writer.palettes))
 
+    compressor = zlib.compressobj(level=6, wbits=-15)
+    compressed = compressor.compress(payload) + compressor.flush()
+    header = struct.pack(
+        "<IHHHHHHIII",
+        SPRITE_PACK_MAGIC,
+        SPRITE_PACK_VERSION,
+        species_id,
+        len(writer.frames),
+        len(writer.data),
+        len(writer.palettes),
+        SPRITE_PACK_FLAG_RAW_DEFLATE,
+        len(payload),
+        len(compressed),
+        zlib.crc32(payload) & 0xFFFFFFFF,
+    )
+
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(payload)
+    path.write_bytes(header + compressed)
 
 
 def export_dev_pack(kind_map):
@@ -453,6 +467,24 @@ def main():
             kind_names.append(f"{spec.ident}_SLEEPING_{index}")
     kind_map = {name: index for index, name in enumerate(kind_names)}
 
+    walking_rows = []
+    for spec in PMD_SPECS:
+        right_direction = "right" if "right" in spec.directions else "left"
+        walking_rows.append(
+            "    {%d, SpriteKind::%s_WALKING_FRONT_0, SpriteKind::%s_WALKING_LEFT_0, "
+            "SpriteKind::%s_WALKING_BACK_0, SpriteKind::%s_WALKING_%s_0, %d, %s}," % (
+                spec.species_id,
+                spec.ident,
+                spec.ident,
+                spec.ident,
+                spec.ident,
+                right_direction.upper(),
+                spec.walking_frames,
+                "false" if right_direction == "right" else "true",
+            )
+        )
+    walking_table = "\n".join(walking_rows)
+
     pack_sprite_count = export_dev_pack(kind_map)
 
     enum_rows = "\n".join(f"    {name}," for name in kind_names)
@@ -470,6 +502,19 @@ enum class SpriteKind : uint16_t {{
 enum class SpriteFormat : uint8_t {{
     RGB565_RLE = 0,
     INDEXED4_RLE = 1,
+}};
+
+enum class WalkDirection : uint8_t {{
+    DOWN,
+    LEFT,
+    UP,
+    RIGHT,
+}};
+
+struct WalkingAnimation {{
+    SpriteKind base;
+    uint8_t frameCount;
+    bool flipX;
 }};
 
 struct SpriteFrame {{
@@ -499,7 +544,9 @@ struct SpriteCacheStats {{
 }};
 
 const SpriteFrame* findSpeciesSprite(uint16_t speciesId, SpriteKind kind);
-void syncTeamCache(const uint16_t* speciesIds, uint8_t count);
+bool walkingAnimation(uint16_t speciesId, WalkDirection direction, WalkingAnimation& animation);
+bool syncTeamCache(const uint16_t* speciesIds, uint8_t count, uint8_t loadBudget = 0xFF);
+void setDynamicLoadingEnabled(bool enabled);
 void beginRenderFrame();
 const SpriteCacheStats& cacheStats();
 bool drawFrame(const SpriteFrame* frame, int x, int y, bool flipX = false);
@@ -510,6 +557,7 @@ bool drawFrameScaled(const SpriteFrame* frame, int x, int y, float scale, bool f
     OUT_H.write_text(h_text, encoding="utf-8")
 
     cpp_text = """#include "assets/PokemonSprites.h"
+#include "core/DeflateDecoder.h"
 #include "core/ResourcePack.h"
 #include <Arduino.h>
 #include <FS.h>
@@ -527,8 +575,10 @@ static constexpr uint8_t KNOWN_MISSING_FILE_CAP = 16;
 static constexpr uint8_t FRAME_MISSING_CAP = 4;
 static constexpr uint8_t KNOWN_MISSING_FRAME_CAP = 16;
 static constexpr uint32_t SPRITE_PACK_MAGIC = 0x5350534D;
-static constexpr uint16_t SPRITE_PACK_VERSION = 1;
+static constexpr uint16_t SPRITE_PACK_VERSION = 2;
+static constexpr uint16_t SPRITE_PACK_FLAG_RAW_DEFLATE = 1;
 static constexpr uint16_t MAX_PACK_FRAMES = 256;
+static constexpr uint32_t MAX_PACK_PAYLOAD_BYTES = 128000;
 
 struct __attribute__((packed)) PackedSpriteHeader {
     uint32_t magic;
@@ -537,7 +587,10 @@ struct __attribute__((packed)) PackedSpriteHeader {
     uint16_t frameCount;
     uint16_t rleWords;
     uint16_t paletteWords;
-    uint16_t reserved;
+    uint16_t flags;
+    uint32_t payloadRawBytes;
+    uint32_t payloadCompressedBytes;
+    uint32_t payloadCrc32;
 };
 
 struct __attribute__((packed)) PackedSpriteFrame {
@@ -552,12 +605,18 @@ struct __attribute__((packed)) PackedSpriteFrame {
     uint32_t paletteOffset;
 };
 
+static_assert(sizeof(PackedSpriteHeader) == 28, "Unexpected sprite pack header layout");
+static_assert(sizeof(PackedSpriteFrame) == 20, "Unexpected sprite pack frame layout");
+
 struct CachedSpecies {
     uint16_t speciesId = 0;
     uint16_t rleWords = 0;
     uint16_t paletteWords = 0;
     uint16_t frameCount = 0;
     SpriteFrame* frames = nullptr;
+    uint8_t* payload = nullptr;
+    uint32_t payloadBytes = 0;
+    uint32_t packedBytes = 0;
     uint16_t* data = nullptr;
     uint16_t* palettes = nullptr;
 };
@@ -576,6 +635,7 @@ uint16_t gFrameMissing[FRAME_MISSING_CAP] = {};
 MissingFrameKey gKnownMissingFrames[KNOWN_MISSING_FRAME_CAP] = {};
 uint8_t gTeamCount = 0;
 uint8_t gDynamicSlot = TEAM_CACHE_CAP;
+bool gDynamicLoadingEnabled = true;
 
 bool containsSpecies(const uint16_t* values, uint8_t count, uint16_t speciesId) {
     for (uint8_t i = 0; i < count; ++i) {
@@ -625,7 +685,16 @@ void noteMissingSpecies(uint16_t speciesId) {
 }
 
 void releaseEntry(CachedSpecies& entry) {
-    if (entry.data) free(entry.data);
+    if (entry.payload) {
+        uint32_t decodedBytes = entry.payloadBytes +
+                                static_cast<uint32_t>(entry.frameCount) * sizeof(SpriteFrame);
+        gStats.decodedBytes = gStats.decodedBytes >= decodedBytes
+            ? gStats.decodedBytes - decodedBytes : 0;
+        gStats.compressedBytes = gStats.compressedBytes >= entry.packedBytes
+            ? gStats.compressedBytes - entry.packedBytes : 0;
+        if (gStats.cachedSpecies > 0) --gStats.cachedSpecies;
+        free(entry.payload);
+    }
     if (entry.frames) free(entry.frames);
     entry = CachedSpecies{};
 }
@@ -722,29 +791,57 @@ bool loadSpeciesFromResourcePack(uint8_t slot, uint16_t speciesId) {
         header.speciesId != speciesId ||
         header.frameCount == 0 ||
         header.frameCount > MAX_PACK_FRAMES ||
-        header.rleWords == 0) {
+        header.rleWords == 0 ||
+        header.flags != SPRITE_PACK_FLAG_RAW_DEFLATE ||
+        header.payloadRawBytes == 0 ||
+        header.payloadRawBytes > MAX_PACK_PAYLOAD_BYTES ||
+        header.payloadCompressedBytes == 0) {
         return false;
     }
 
     uint32_t frameBytes = static_cast<uint32_t>(header.frameCount) * sizeof(SpriteFrame);
-    uint32_t decodedBytes = (static_cast<uint32_t>(header.rleWords) + header.paletteWords) * sizeof(uint16_t);
-    SpriteFrame* frames = psramFound()
-        ? static_cast<SpriteFrame*>(ps_malloc(frameBytes))
-        : static_cast<SpriteFrame*>(malloc(frameBytes));
-    uint16_t* decoded = psramFound()
-        ? static_cast<uint16_t*>(ps_malloc(decodedBytes))
-        : static_cast<uint16_t*>(malloc(decodedBytes));
-    if (!frames || !decoded) {
-        if (frames) free(frames);
-        if (decoded) free(decoded);
+    uint32_t packedFrameBytes = static_cast<uint32_t>(header.frameCount) * sizeof(PackedSpriteFrame);
+    uint32_t expectedPayloadBytes = packedFrameBytes +
+        (static_cast<uint32_t>(header.rleWords) + header.paletteWords) * sizeof(uint16_t);
+    uint32_t fileBytes = static_cast<uint32_t>(file.size());
+    if (expectedPayloadBytes != header.payloadRawBytes ||
+        static_cast<uint64_t>(sizeof(PackedSpriteHeader)) + header.payloadCompressedBytes != file.size()) {
         return false;
     }
 
+    SpriteFrame* frames = psramFound()
+        ? static_cast<SpriteFrame*>(ps_malloc(frameBytes))
+        : static_cast<SpriteFrame*>(malloc(frameBytes));
+    uint8_t* payload = psramFound()
+        ? static_cast<uint8_t*>(ps_malloc(header.payloadRawBytes))
+        : static_cast<uint8_t*>(malloc(header.payloadRawBytes));
+    if (!frames || !payload) {
+        if (frames) free(frames);
+        if (payload) free(payload);
+        return false;
+    }
+
+    DeflateDecoder::Stats decodeStats{};
+    if (!DeflateDecoder::inflateFile(file,
+                                     header.payloadCompressedBytes,
+                                     payload,
+                                     header.payloadRawBytes,
+                                     header.payloadCrc32,
+                                     &decodeStats)) {
+        free(frames);
+        free(payload);
+        Serial.printf(
+            "[PokemonSprites] decode failed species=%u read=%u inflate=%u total=%u\\n",
+            speciesId, decodeStats.readMs, decodeStats.inflateMs, decodeStats.totalMs);
+        return false;
+    }
+
+    const auto* packedFrames = reinterpret_cast<const PackedSpriteFrame*>(payload);
     for (uint16_t i = 0; i < header.frameCount; ++i) {
-        PackedSpriteFrame packed = {};
-        if (!readExact(file, &packed, sizeof(packed)) || !validPackedFrame(packed, header)) {
+        const PackedSpriteFrame& packed = packedFrames[i];
+        if (!validPackedFrame(packed, header)) {
             free(frames);
-            free(decoded);
+            free(payload);
             return false;
         }
         frames[i] = SpriteFrame{
@@ -762,28 +859,28 @@ bool loadSpeciesFromResourcePack(uint8_t slot, uint16_t speciesId) {
         };
     }
 
-    if (!readExact(file, decoded, decodedBytes)) {
-        free(frames);
-        free(decoded);
-        return false;
-    }
+    uint16_t* decoded = reinterpret_cast<uint16_t*>(payload + packedFrameBytes);
 
     CachedSpecies& entry = gCache[slot];
-    bool replacing = entry.data != nullptr;
     releaseEntry(entry);
     entry.speciesId = speciesId;
     entry.rleWords = header.rleWords;
     entry.paletteWords = header.paletteWords;
     entry.frameCount = header.frameCount;
     entry.frames = frames;
+    entry.payload = payload;
+    entry.payloadBytes = header.payloadRawBytes;
+    entry.packedBytes = fileBytes;
     entry.data = decoded;
     entry.palettes = decoded + header.rleWords;
 
-    if (!replacing && gStats.cachedSpecies < 0xFF) ++gStats.cachedSpecies;
-    gStats.decodedBytes += decodedBytes;
-    gStats.compressedBytes += file.size();
-    Serial.printf("[PokemonSprites] source=littlefs species=%u frames=%u bytes=%u\\n",
-                  speciesId, header.frameCount, static_cast<unsigned>(file.size()));
+    if (gStats.cachedSpecies < 0xFF) ++gStats.cachedSpecies;
+    gStats.decodedBytes += header.payloadRawBytes + frameBytes;
+    gStats.compressedBytes += fileBytes;
+    Serial.printf(
+        "[PokemonSprites] source=littlefs species=%u frames=%u compressed=%u decoded=%u read=%u inflate=%u total=%u\\n",
+        speciesId, header.frameCount, fileBytes, header.payloadRawBytes + frameBytes,
+        decodeStats.readMs, decodeStats.inflateMs, decodeStats.totalMs);
     return true;
 }
 
@@ -814,6 +911,7 @@ uint8_t dynamicCacheSlot() {
 CachedSpecies* ensureSpeciesLoaded(uint16_t speciesId) {
     CachedSpecies* cached = cachedSpeciesFor(speciesId);
     if (cached) return cached;
+    if (!gDynamicLoadingEnabled) return nullptr;
     if (knownMissingFile(speciesId)) {
         noteMissingSpecies(speciesId);
         return nullptr;
@@ -848,42 +946,63 @@ const SpriteFrame* findSpeciesSprite(uint16_t speciesId, SpriteKind kind) {
     return nullptr;
 }
 
-void syncTeamCache(const uint16_t* speciesIds, uint8_t count) {
+bool syncTeamCache(const uint16_t* speciesIds, uint8_t count, uint8_t loadBudget) {
     if (!speciesIds) count = 0;
     if (count > TEAM_CACHE_CAP) count = TEAM_CACHE_CAP;
 
     uint16_t next[CACHE_CAP] = {};
     for (uint8_t i = 0; i < count; ++i) next[i] = speciesIds[i];
+    bool signatureChanged = count != gTeamCount;
     if (count == gTeamCount) {
-        bool same = true;
         for (uint8_t i = 0; i < CACHE_CAP; ++i) {
             if (next[i] != gTeamSignature[i]) {
-                same = false;
+                signatureChanged = true;
                 break;
             }
         }
-        if (same) return;
     }
 
     uint32_t start = millis();
-    freeCache();
-    gTeamCount = count;
-    for (uint8_t i = 0; i < CACHE_CAP; ++i) gTeamSignature[i] = next[i];
+    if (signatureChanged) {
+        freeCache();
+        gTeamCount = count;
+        for (uint8_t i = 0; i < CACHE_CAP; ++i) gTeamSignature[i] = next[i];
+        ++gStats.reloadCount;
+    }
+
+    uint8_t loadedThisCall = 0;
     for (uint8_t i = 0; i < count; ++i) {
-        if (next[i] == 0) continue;
+        if (next[i] == 0 || gCache[i].speciesId == next[i]) continue;
+        if (loadedThisCall >= loadBudget) continue;
         if (!loadSpeciesIntoCache(i, next[i])) {
             Serial.printf("[PokemonSprites] cache miss species=%u\\n", next[i]);
         }
+        ++loadedThisCall;
     }
-    gStats.reloadCount++;
+
+    bool ready = true;
+    for (uint8_t i = 0; i < count; ++i) {
+        if (next[i] != 0 && gCache[i].speciesId != next[i]) {
+            ready = false;
+            break;
+        }
+    }
+    if (!signatureChanged && loadedThisCall == 0) return ready;
+
     gStats.lastReloadMs = millis() - start;
     gStats.freePsram = ESP.getFreePsram();
     gStats.psram = psramFound();
     Serial.printf(
-        "[PokemonSprites] cache reload species=%u,%u cached=%u missing=%u decoded=%u compressed=%u ms=%u psram=%u free=%u\\n",
-        gTeamSignature[0], gTeamSignature[1], gStats.cachedSpecies, gStats.missingSpecies,
+        "[PokemonSprites] cache sync species=%u,%u loaded=%u ready=%u cached=%u missing=%u decoded=%u compressed=%u ms=%u psram=%u free=%u\\n",
+        gTeamSignature[0], gTeamSignature[1], loadedThisCall, ready ? 1 : 0,
+        gStats.cachedSpecies, gStats.missingSpecies,
         gStats.decodedBytes, gStats.compressedBytes, gStats.lastReloadMs,
         gStats.psram ? 1 : 0, gStats.freePsram);
+    return ready;
+}
+
+void setDynamicLoadingEnabled(bool enabled) {
+    gDynamicLoadingEnabled = enabled;
 }
 
 void beginRenderFrame() {
@@ -969,6 +1088,52 @@ bool drawFrameScaled(const SpriteFrame* frame, int x, int y, float scale, bool f
 
 }  // namespace PokemonSprites
 """
+    walking_config = f"""
+struct WalkingConfig {{
+    uint16_t speciesId;
+    SpriteKind downBase;
+    SpriteKind leftBase;
+    SpriteKind upBase;
+    SpriteKind rightBase;
+    uint8_t frameCount;
+    bool rightFlipX;
+}};
+
+static constexpr WalkingConfig WALKING_CONFIGS[] = {{
+{walking_table}
+}};
+"""
+    cpp_text = cpp_text.replace(
+        "namespace {\nstatic constexpr uint8_t SPRITE_SOURCE_FILE_BLOCK",
+        "namespace {\n" + walking_config + "\nstatic constexpr uint8_t SPRITE_SOURCE_FILE_BLOCK",
+        1,
+    )
+    walking_function = """
+bool walkingAnimation(uint16_t speciesId, WalkDirection direction, WalkingAnimation& animation) {
+    for (const auto& config : WALKING_CONFIGS) {
+        if (config.speciesId != speciesId) continue;
+        animation.frameCount = config.frameCount;
+        animation.flipX = false;
+        switch (direction) {
+        case WalkDirection::DOWN: animation.base = config.downBase; break;
+        case WalkDirection::LEFT: animation.base = config.leftBase; break;
+        case WalkDirection::UP: animation.base = config.upBase; break;
+        case WalkDirection::RIGHT:
+            animation.base = config.rightBase;
+            animation.flipX = config.rightFlipX;
+            break;
+        }
+        return animation.frameCount > 0;
+    }
+    return false;
+}
+
+"""
+    cpp_text = cpp_text.replace(
+        "const SpriteFrame* findSpeciesSprite(uint16_t speciesId, SpriteKind kind)",
+        walking_function + "const SpriteFrame* findSpeciesSprite(uint16_t speciesId, SpriteKind kind)",
+        1,
+    )
     OUT_CPP.write_text(cpp_text, encoding="utf-8")
 
     pack_bytes = sum(path.stat().st_size for path in PACK_SPRITE_OUT.glob("*.smonsp"))

@@ -1,0 +1,1364 @@
+[
+  {
+    "mapId": 1,
+    "name": "Intro",
+    "width": 20,
+    "height": 15,
+    "tileset": "Poke Centre interior",
+    "category": "special",
+    "eventCount": 2,
+    "features": [
+      "基础地形"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.0,
+      0.0
+    ]
+  },
+  {
+    "mapId": 2,
+    "name": "Lappet Town",
+    "width": 32,
+    "height": 21,
+    "tileset": "Outside",
+    "category": "settlement",
+    "eventCount": 4,
+    "features": [
+      "森林边界",
+      "栅栏",
+      "水域"
+    ],
+    "autotiles": [
+      "Flowers1"
+    ],
+    "layerCoverage": [
+      1.0,
+      0.16666666666666666,
+      0.019345238095238096
+    ]
+  },
+  {
+    "mapId": 3,
+    "name": "Player's house",
+    "width": 31,
+    "height": 15,
+    "tileset": "Interior general",
+    "category": "interior",
+    "eventCount": 14,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.22795698924731184,
+      0.03225806451612903
+    ]
+  },
+  {
+    "mapId": 4,
+    "name": "Pokémon Lab",
+    "width": 20,
+    "height": 15,
+    "tileset": "Interior general",
+    "category": "interior",
+    "eventCount": 11,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.2833333333333333,
+      0.01
+    ]
+  },
+  {
+    "mapId": 5,
+    "name": "Route 1",
+    "width": 36,
+    "height": 24,
+    "tileset": "Outside",
+    "category": "route",
+    "eventCount": 11,
+    "features": [
+      "道路",
+      "草丛",
+      "森林边界",
+      "栅栏"
+    ],
+    "autotiles": [
+      "Flowers1"
+    ],
+    "layerCoverage": [
+      1.0,
+      0.1087962962962963,
+      0.03935185185185185
+    ]
+  },
+  {
+    "mapId": 6,
+    "name": "Kurt's house",
+    "width": 20,
+    "height": 15,
+    "tileset": "Interior general",
+    "category": "interior",
+    "eventCount": 2,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.18333333333333332,
+      0.043333333333333335
+    ]
+  },
+  {
+    "mapId": 7,
+    "name": "Cedolan City",
+    "width": 60,
+    "height": 43,
+    "tileset": "Outside",
+    "category": "settlement",
+    "eventCount": 11,
+    "features": [
+      "道路",
+      "森林边界",
+      "栅栏",
+      "水域"
+    ],
+    "autotiles": [
+      "Flowers1",
+      "Fountain1"
+    ],
+    "layerCoverage": [
+      1.0,
+      0.2391472868217054,
+      0.05891472868217054
+    ]
+  },
+  {
+    "mapId": 8,
+    "name": "Daisy's house",
+    "width": 20,
+    "height": 15,
+    "tileset": "Interior general",
+    "category": "interior",
+    "eventCount": 6,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.19666666666666666,
+      0.02666666666666667
+    ]
+  },
+  {
+    "mapId": 9,
+    "name": "Cedolan City Poké Center",
+    "width": 20,
+    "height": 15,
+    "tileset": "Poke Centre interior",
+    "category": "service",
+    "eventCount": 6,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.21,
+      0.013333333333333334
+    ]
+  },
+  {
+    "mapId": 10,
+    "name": "Cedolan Gym",
+    "width": 20,
+    "height": 17,
+    "tileset": "Gyms interior",
+    "category": "arena",
+    "eventCount": 4,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.047058823529411764,
+      0.0
+    ]
+  },
+  {
+    "mapId": 11,
+    "name": "Pokémon Institute",
+    "width": 20,
+    "height": 15,
+    "tileset": "Interior general",
+    "category": "interior",
+    "eventCount": 5,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.30666666666666664,
+      0.06333333333333334
+    ]
+  },
+  {
+    "mapId": 12,
+    "name": "Cedolan City Condo",
+    "width": 20,
+    "height": 15,
+    "tileset": "Interior general",
+    "category": "interior",
+    "eventCount": 5,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.23,
+      0.013333333333333334
+    ]
+  },
+  {
+    "mapId": 13,
+    "name": "Game Corner",
+    "width": 20,
+    "height": 32,
+    "tileset": "Game Corner interior",
+    "category": "service",
+    "eventCount": 31,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.2328125,
+      0.0140625
+    ]
+  },
+  {
+    "mapId": 14,
+    "name": "Cedolan Dept. 1F",
+    "width": 20,
+    "height": 17,
+    "tileset": "Department store interior",
+    "category": "service",
+    "eventCount": 6,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      0.9794117647058823,
+      0.22058823529411764,
+      0.011764705882352941
+    ]
+  },
+  {
+    "mapId": 15,
+    "name": "Cedolan Dept. 2F",
+    "width": 20,
+    "height": 17,
+    "tileset": "Department store interior",
+    "category": "service",
+    "eventCount": 6,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      0.9823529411764705,
+      0.21176470588235294,
+      0.026470588235294117
+    ]
+  },
+  {
+    "mapId": 16,
+    "name": "Cedolan Dept. 3F",
+    "width": 20,
+    "height": 17,
+    "tileset": "Department store interior",
+    "category": "service",
+    "eventCount": 5,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      0.9823529411764705,
+      0.23529411764705882,
+      0.06470588235294118
+    ]
+  },
+  {
+    "mapId": 17,
+    "name": "Cedolan Dept. 4F",
+    "width": 20,
+    "height": 17,
+    "tileset": "Department store interior",
+    "category": "service",
+    "eventCount": 5,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      0.9823529411764705,
+      0.22647058823529412,
+      0.01764705882352941
+    ]
+  },
+  {
+    "mapId": 18,
+    "name": "Cedolan Dept. 5F",
+    "width": 20,
+    "height": 17,
+    "tileset": "Department store interior",
+    "category": "service",
+    "eventCount": 6,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      0.9823529411764705,
+      0.2088235294117647,
+      0.026470588235294117
+    ]
+  },
+  {
+    "mapId": 19,
+    "name": "Cedolan Dept. Rooftop",
+    "width": 32,
+    "height": 20,
+    "tileset": "Department store interior",
+    "category": "service",
+    "eventCount": 3,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.1109375,
+      0.0265625
+    ]
+  },
+  {
+    "mapId": 20,
+    "name": "Cedolan Dept. Elevator",
+    "width": 20,
+    "height": 15,
+    "tileset": "Department store interior",
+    "category": "service",
+    "eventCount": 5,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.02,
+      0.0
+    ]
+  },
+  {
+    "mapId": 21,
+    "name": "Route 2",
+    "width": 39,
+    "height": 77,
+    "tileset": "Outside",
+    "category": "route",
+    "eventCount": 17,
+    "features": [
+      "道路",
+      "草丛",
+      "森林边界",
+      "栅栏",
+      "水域"
+    ],
+    "autotiles": [
+      "Flowers1"
+    ],
+    "layerCoverage": [
+      1.0,
+      0.1441891441891442,
+      0.10855810855810856
+    ]
+  },
+  {
+    "mapId": 23,
+    "name": "Lerucean Town",
+    "width": 41,
+    "height": 41,
+    "tileset": "Outside",
+    "category": "settlement",
+    "eventCount": 9,
+    "features": [
+      "道路",
+      "森林边界",
+      "栅栏"
+    ],
+    "autotiles": [
+      "Flowers1"
+    ],
+    "layerCoverage": [
+      1.0,
+      0.2409280190362879,
+      0.04104699583581202
+    ]
+  },
+  {
+    "mapId": 24,
+    "name": "Lerucean Town Poké Center",
+    "width": 20,
+    "height": 15,
+    "tileset": "Poke Centre interior",
+    "category": "service",
+    "eventCount": 6,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.21,
+      0.013333333333333334
+    ]
+  },
+  {
+    "mapId": 25,
+    "name": "Lerucean Town Mart",
+    "width": 20,
+    "height": 15,
+    "tileset": "Mart interior",
+    "category": "service",
+    "eventCount": 4,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.19666666666666666,
+      0.006666666666666667
+    ]
+  },
+  {
+    "mapId": 26,
+    "name": "Pokémon Fan Club",
+    "width": 20,
+    "height": 15,
+    "tileset": "Interior general",
+    "category": "interior",
+    "eventCount": 8,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.17333333333333334,
+      0.0
+    ]
+  },
+  {
+    "mapId": 27,
+    "name": "Pokémon Day Care",
+    "width": 20,
+    "height": 15,
+    "tileset": "Interior general",
+    "category": "interior",
+    "eventCount": 4,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.14,
+      0.0
+    ]
+  },
+  {
+    "mapId": 28,
+    "name": "Natural Park",
+    "width": 50,
+    "height": 45,
+    "tileset": "Outside",
+    "category": "wild",
+    "eventCount": 3,
+    "features": [
+      "道路",
+      "草丛",
+      "前景高草",
+      "森林边界",
+      "栅栏",
+      "水域"
+    ],
+    "autotiles": [
+      "Flowers1"
+    ],
+    "layerCoverage": [
+      1.0,
+      0.20933333333333334,
+      0.024444444444444446
+    ]
+  },
+  {
+    "mapId": 29,
+    "name": "Natural Park Entrance",
+    "width": 20,
+    "height": 15,
+    "tileset": "Interior general",
+    "category": "interior",
+    "eventCount": 4,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.18,
+      0.01
+    ]
+  },
+  {
+    "mapId": 30,
+    "name": "Natural Park Pavillion",
+    "width": 20,
+    "height": 15,
+    "tileset": "Interior general",
+    "category": "interior",
+    "eventCount": 7,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.1,
+      0.0
+    ]
+  },
+  {
+    "mapId": 31,
+    "name": "Route 3",
+    "width": 70,
+    "height": 69,
+    "tileset": "Outside",
+    "category": "route",
+    "eventCount": 30,
+    "features": [
+      "道路",
+      "草丛",
+      "森林边界"
+    ],
+    "autotiles": [
+      "Flowers1"
+    ],
+    "layerCoverage": [
+      1.0,
+      0.02194616977225673,
+      0.034782608695652174
+    ]
+  },
+  {
+    "mapId": 34,
+    "name": "Ice Cave",
+    "width": 42,
+    "height": 41,
+    "tileset": "Caves",
+    "category": "cave",
+    "eventCount": 11,
+    "features": [
+      "岩壁分层"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.3042973286875726,
+      0.0040650406504065045
+    ]
+  },
+  {
+    "mapId": 35,
+    "name": "Ingido Plateau outside",
+    "width": 35,
+    "height": 40,
+    "tileset": "Outside",
+    "category": "route",
+    "eventCount": 2,
+    "features": [
+      "道路",
+      "森林边界"
+    ],
+    "autotiles": [
+      "Flowers1"
+    ],
+    "layerCoverage": [
+      1.0,
+      0.225,
+      0.054285714285714284
+    ]
+  },
+  {
+    "mapId": 36,
+    "name": "Pokémon League entrance",
+    "width": 25,
+    "height": 19,
+    "tileset": "Poke Centre interior",
+    "category": "interior",
+    "eventCount": 8,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.19157894736842104,
+      0.01263157894736842
+    ]
+  },
+  {
+    "mapId": 37,
+    "name": "Pokémon League room 1",
+    "width": 20,
+    "height": 15,
+    "tileset": "Gyms interior",
+    "category": "arena",
+    "eventCount": 3,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.12666666666666668,
+      0.006666666666666667
+    ]
+  },
+  {
+    "mapId": 38,
+    "name": "Hall of Fame",
+    "width": 20,
+    "height": 15,
+    "tileset": "Gyms interior",
+    "category": "arena",
+    "eventCount": 1,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.0,
+      0.0
+    ]
+  },
+  {
+    "mapId": 39,
+    "name": "Route 4",
+    "width": 44,
+    "height": 23,
+    "tileset": "Outside",
+    "category": "route",
+    "eventCount": 1,
+    "features": [
+      "道路",
+      "草丛",
+      "森林边界",
+      "栅栏",
+      "水域"
+    ],
+    "autotiles": [
+      "Sea",
+      "Sea deep",
+      "Sea without shore"
+    ],
+    "layerCoverage": [
+      1.0,
+      0.1551383399209486,
+      0.03260869565217391
+    ]
+  },
+  {
+    "mapId": 40,
+    "name": "Route 4 Cycling Road",
+    "width": 33,
+    "height": 21,
+    "tileset": "Outside",
+    "category": "route",
+    "eventCount": 1,
+    "features": [
+      "道路",
+      "草丛",
+      "森林边界",
+      "栅栏",
+      "水域"
+    ],
+    "autotiles": [
+      "Sea",
+      "Sea deep",
+      "Sea without shore"
+    ],
+    "layerCoverage": [
+      1.0,
+      0.18181818181818182,
+      0.025974025974025976
+    ]
+  },
+  {
+    "mapId": 41,
+    "name": "Route 5",
+    "width": 36,
+    "height": 138,
+    "tileset": "Outside",
+    "category": "route",
+    "eventCount": 96,
+    "features": [
+      "道路",
+      "草丛",
+      "森林边界",
+      "栅栏",
+      "水域"
+    ],
+    "autotiles": [
+      "Sea",
+      "Sea deep",
+      "Sea without shore",
+      "Water rock"
+    ],
+    "layerCoverage": [
+      1.0,
+      0.1358695652173913,
+      0.04045893719806763
+    ]
+  },
+  {
+    "mapId": 44,
+    "name": "Route 6",
+    "width": 45,
+    "height": 38,
+    "tileset": "Outside",
+    "category": "route",
+    "eventCount": 1,
+    "features": [
+      "道路",
+      "草丛",
+      "森林边界",
+      "栅栏",
+      "水域"
+    ],
+    "autotiles": [
+      "Flowers1",
+      "Sea",
+      "Sea deep",
+      "Sea without shore",
+      "Water rock"
+    ],
+    "layerCoverage": [
+      1.0,
+      0.17543859649122806,
+      0.06023391812865497
+    ]
+  },
+  {
+    "mapId": 45,
+    "name": "Route 6 Cycling Road",
+    "width": 39,
+    "height": 24,
+    "tileset": "Outside",
+    "category": "route",
+    "eventCount": 1,
+    "features": [
+      "道路",
+      "草丛",
+      "森林边界",
+      "栅栏",
+      "水域"
+    ],
+    "autotiles": [
+      "Flowers1",
+      "Sea",
+      "Sea deep",
+      "Water rock"
+    ],
+    "layerCoverage": [
+      1.0,
+      0.2232905982905983,
+      0.008547008547008548
+    ]
+  },
+  {
+    "mapId": 46,
+    "name": "Route 4 Cycling Road gate",
+    "width": 20,
+    "height": 15,
+    "tileset": "Interior general",
+    "category": "interior",
+    "eventCount": 3,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.27666666666666667,
+      0.0
+    ]
+  },
+  {
+    "mapId": 47,
+    "name": "Route 7",
+    "width": 70,
+    "height": 43,
+    "tileset": "Outside",
+    "category": "route",
+    "eventCount": 12,
+    "features": [
+      "草丛",
+      "森林边界"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.1053156146179402,
+      0.021926910299003323
+    ]
+  },
+  {
+    "mapId": 49,
+    "name": "Rock Cave 1F",
+    "width": 34,
+    "height": 29,
+    "tileset": "Caves",
+    "category": "cave",
+    "eventCount": 16,
+    "features": [
+      "岩壁分层"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.19574036511156187,
+      0.008113590263691683
+    ]
+  },
+  {
+    "mapId": 50,
+    "name": "Rock Cave B1F",
+    "width": 30,
+    "height": 26,
+    "tileset": "Caves",
+    "category": "cave",
+    "eventCount": 4,
+    "features": [
+      "岩壁分层"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.40512820512820513,
+      0.09487179487179487
+    ]
+  },
+  {
+    "mapId": 51,
+    "name": "Dungeon",
+    "width": 20,
+    "height": 15,
+    "tileset": "Dungeon cave",
+    "category": "cave",
+    "eventCount": 1,
+    "features": [
+      "岩壁分层"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  {
+    "mapId": 52,
+    "name": "Battle Frontier",
+    "width": 44,
+    "height": 36,
+    "tileset": "Outside",
+    "category": "settlement",
+    "eventCount": 6,
+    "features": [
+      "基础地形"
+    ],
+    "autotiles": [
+      "Flowers1"
+    ],
+    "layerCoverage": [
+      1.0,
+      0.22537878787878787,
+      0.036616161616161616
+    ]
+  },
+  {
+    "mapId": 53,
+    "name": "Battle Frontier Poké Center",
+    "width": 20,
+    "height": 15,
+    "tileset": "Poke Centre interior",
+    "category": "service",
+    "eventCount": 6,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.21,
+      0.013333333333333334
+    ]
+  },
+  {
+    "mapId": 54,
+    "name": "Battle Frontier Mart",
+    "width": 20,
+    "height": 15,
+    "tileset": "Mart interior",
+    "category": "service",
+    "eventCount": 6,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.19333333333333333,
+      0.006666666666666667
+    ]
+  },
+  {
+    "mapId": 55,
+    "name": "Battle Tower",
+    "width": 20,
+    "height": 15,
+    "tileset": "Trainer Tower interior",
+    "category": "arena",
+    "eventCount": 12,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.21666666666666667,
+      0.05333333333333334
+    ]
+  },
+  {
+    "mapId": 56,
+    "name": "Battle Tower arena",
+    "width": 20,
+    "height": 15,
+    "tileset": "Trainer Tower interior",
+    "category": "arena",
+    "eventCount": 2,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.06666666666666667,
+      0.0
+    ]
+  },
+  {
+    "mapId": 57,
+    "name": "Stadium Cup lobby",
+    "width": 20,
+    "height": 15,
+    "tileset": "Trainer Tower interior",
+    "category": "arena",
+    "eventCount": 11,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.19333333333333333,
+      0.05333333333333334
+    ]
+  },
+  {
+    "mapId": 58,
+    "name": "Battle Palace",
+    "width": 20,
+    "height": 15,
+    "tileset": "Interior general",
+    "category": "interior",
+    "eventCount": 7,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.15666666666666668,
+      0.02
+    ]
+  },
+  {
+    "mapId": 59,
+    "name": "Battle Palace arena",
+    "width": 20,
+    "height": 15,
+    "tileset": "Interior general",
+    "category": "arena",
+    "eventCount": 2,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.04666666666666667,
+      0.0
+    ]
+  },
+  {
+    "mapId": 60,
+    "name": "Battle Arena",
+    "width": 20,
+    "height": 15,
+    "tileset": "Interior general",
+    "category": "arena",
+    "eventCount": 5,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.13333333333333333,
+      0.02
+    ]
+  },
+  {
+    "mapId": 61,
+    "name": "Battle Arena arena",
+    "width": 20,
+    "height": 15,
+    "tileset": "Gyms interior",
+    "category": "arena",
+    "eventCount": 2,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.02666666666666667,
+      0.0
+    ]
+  },
+  {
+    "mapId": 62,
+    "name": "Battle Factory",
+    "width": 20,
+    "height": 15,
+    "tileset": "Interior general",
+    "category": "interior",
+    "eventCount": 8,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.20666666666666667,
+      0.03
+    ]
+  },
+  {
+    "mapId": 63,
+    "name": "Battle Factory intro corridor",
+    "width": 20,
+    "height": 15,
+    "tileset": "Interior general",
+    "category": "interior",
+    "eventCount": 1,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.16333333333333333,
+      0.0
+    ]
+  },
+  {
+    "mapId": 64,
+    "name": "Battle Factory arena",
+    "width": 20,
+    "height": 15,
+    "tileset": "Interior general",
+    "category": "arena",
+    "eventCount": 2,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.12333333333333334,
+      0.0
+    ]
+  },
+  {
+    "mapId": 65,
+    "name": "Battle Factory corridor",
+    "width": 20,
+    "height": 15,
+    "tileset": "Interior general",
+    "category": "interior",
+    "eventCount": 1,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.16333333333333333,
+      0.0
+    ]
+  },
+  {
+    "mapId": 66,
+    "name": "Safari Zone outside",
+    "width": 22,
+    "height": 21,
+    "tileset": "Outside",
+    "category": "wild",
+    "eventCount": 1,
+    "features": [
+      "道路",
+      "草丛",
+      "森林边界",
+      "栅栏"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.1277056277056277,
+      0.030303030303030304
+    ]
+  },
+  {
+    "mapId": 67,
+    "name": "Safari Zone gate",
+    "width": 20,
+    "height": 15,
+    "tileset": "Interior general",
+    "category": "interior",
+    "eventCount": 2,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.13666666666666666,
+      0.0
+    ]
+  },
+  {
+    "mapId": 68,
+    "name": "Safari Zone",
+    "width": 51,
+    "height": 34,
+    "tileset": "Outside",
+    "category": "wild",
+    "eventCount": 3,
+    "features": [
+      "道路",
+      "草丛",
+      "水域"
+    ],
+    "autotiles": [
+      "Sea",
+      "Sea without shore"
+    ],
+    "layerCoverage": [
+      1.0,
+      0.10438292964244521,
+      0.040945790080738176
+    ]
+  },
+  {
+    "mapId": 69,
+    "name": "Route 8",
+    "width": 46,
+    "height": 35,
+    "tileset": "Outside",
+    "category": "route",
+    "eventCount": 5,
+    "features": [
+      "草丛",
+      "森林边界",
+      "栅栏",
+      "水域",
+      "瀑布"
+    ],
+    "autotiles": [
+      "Sea",
+      "Sea deep",
+      "Waterfall",
+      "Waterfall bottom",
+      "Waterfall crest"
+    ],
+    "layerCoverage": [
+      1.0,
+      0.15714285714285714,
+      0.02732919254658385
+    ]
+  },
+  {
+    "mapId": 70,
+    "name": "Route 8 underwater",
+    "width": 46,
+    "height": 35,
+    "tileset": "Underwater",
+    "category": "cave",
+    "eventCount": 0,
+    "features": [
+      "水域",
+      "岩壁分层"
+    ],
+    "autotiles": [
+      "Seaweed dark",
+      "Seaweed light",
+      "Underwater dark"
+    ],
+    "layerCoverage": [
+      1.0,
+      0.153416149068323,
+      0.0
+    ]
+  },
+  {
+    "mapId": 71,
+    "name": "Route 8 harbor",
+    "width": 20,
+    "height": 15,
+    "tileset": "Harbour interior",
+    "category": "island",
+    "eventCount": 4,
+    "features": [
+      "水域"
+    ],
+    "autotiles": [
+      "Sea"
+    ],
+    "layerCoverage": [
+      1.0,
+      0.4166666666666667,
+      0.05
+    ]
+  },
+  {
+    "mapId": 72,
+    "name": "Berth Island",
+    "width": 29,
+    "height": 31,
+    "tileset": "Outside",
+    "category": "island",
+    "eventCount": 8,
+    "features": [
+      "森林边界",
+      "水域"
+    ],
+    "autotiles": [
+      "Sea",
+      "Sea deep"
+    ],
+    "layerCoverage": [
+      1.0,
+      0.09343715239154617,
+      0.05561735261401557
+    ]
+  },
+  {
+    "mapId": 73,
+    "name": "Faraday Island",
+    "width": 29,
+    "height": 31,
+    "tileset": "Outside",
+    "category": "island",
+    "eventCount": 4,
+    "features": [
+      "森林边界",
+      "水域"
+    ],
+    "autotiles": [
+      "Sea",
+      "Sea deep"
+    ],
+    "layerCoverage": [
+      1.0,
+      0.08898776418242492,
+      0.05561735261401557
+    ]
+  },
+  {
+    "mapId": 74,
+    "name": "Route 6 Cycling Road gate",
+    "width": 20,
+    "height": 15,
+    "tileset": "Interior general",
+    "category": "interior",
+    "eventCount": 3,
+    "features": [
+      "室内分区"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.27666666666666667,
+      0.0
+    ]
+  },
+  {
+    "mapId": 75,
+    "name": "Tiall Region",
+    "width": 32,
+    "height": 24,
+    "tileset": "Outside",
+    "category": "route",
+    "eventCount": 1,
+    "features": [
+      "草丛",
+      "森林边界"
+    ],
+    "autotiles": [],
+    "layerCoverage": [
+      1.0,
+      0.06770833333333333,
+      0.020833333333333332
+    ]
+  }
+]

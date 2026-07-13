@@ -40,10 +40,13 @@ static constexpr uint16_t FEED_SESSION_MIN_MS = 3200;
 static constexpr uint16_t FEED_SESSION_MAX_MS = 5600;
 static constexpr uint16_t POST_FEED_AWAKE_MIN_MS = 7000;
 static constexpr uint16_t POST_FEED_AWAKE_MAX_MS = 13000;
-static constexpr uint8_t FEED_CONTINUE_SATIETY = 82;
+static constexpr uint32_t POST_FAINT_AWAKE_MS = 30000UL;
 static constexpr uint16_t MIND_UPDATE_MS = 400;
 static constexpr uint16_t MOVE_STUCK_MS = 1600;
 static constexpr float MOVE_PROGRESS_EPSILON = 0.45f;
+static constexpr float DOOR_ROUTE_SPEED = 42.0f;
+static constexpr float DOOR_CROSS_SPEED = 28.0f;
+static constexpr uint32_t DOOR_ROUTE_TIMEOUT_MS = 8000UL;
 static constexpr int NAV_CELL_PX = 8;
 static constexpr uint8_t NAV_MAX_COLS = 32;
 static constexpr uint8_t NAV_MAX_ROWS = 32;
@@ -120,11 +123,17 @@ static constexpr PmdSpriteConfig PMD_SPRITE_CONFIGS[] = {
     {7, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::SQUIRTLE_IDLE_FRONT_0, PokemonSprites::SpriteKind::SQUIRTLE_WALKING_FRONT_0, PokemonSprites::SpriteKind::SQUIRTLE_SLEEPING_0, true, 0.0f, 0.0f},
     {8, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::WARTORTLE_IDLE_FRONT_0, PokemonSprites::SpriteKind::WARTORTLE_WALKING_FRONT_0, PokemonSprites::SpriteKind::WARTORTLE_SLEEPING_0, false, 0.0f, 0.0f},
     {9, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::BLASTOISE_IDLE_FRONT_0, PokemonSprites::SpriteKind::BLASTOISE_WALKING_FRONT_0, PokemonSprites::SpriteKind::BLASTOISE_SLEEPING_0, true, 0.0f, 0.0f},
+    {10, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::CATERPIE_IDLE_FRONT_0, PokemonSprites::SpriteKind::CATERPIE_WALKING_FRONT_0, PokemonSprites::SpriteKind::CATERPIE_SLEEPING_0, true, 0.0f, 0.0f},
+    {11, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::START_HOLD_END, PokemonSprites::SpriteKind::METAPOD_IDLE_FRONT_0, PokemonSprites::SpriteKind::METAPOD_WALKING_FRONT_0, PokemonSprites::SpriteKind::METAPOD_SLEEPING_0, true, 0.0f, 0.0f},
+    {12, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::BUTTERFREE_IDLE_FRONT_0, PokemonSprites::SpriteKind::BUTTERFREE_WALKING_FRONT_0, PokemonSprites::SpriteKind::BUTTERFREE_SLEEPING_0, true, 0.0f, 0.0f},
     {16, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::PIDGEY_IDLE_FRONT_0, PokemonSprites::SpriteKind::PIDGEY_WALKING_FRONT_0, PokemonSprites::SpriteKind::PIDGEY_SLEEPING_0, true, 0.0f, 0.0f},
     {17, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::PIDGEOTTO_IDLE_FRONT_0, PokemonSprites::SpriteKind::PIDGEOTTO_WALKING_FRONT_0, PokemonSprites::SpriteKind::PIDGEOTTO_SLEEPING_0, true, 0.0f, 0.0f},
     {18, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::PIDGEOT_IDLE_FRONT_0, PokemonSprites::SpriteKind::PIDGEOT_WALKING_FRONT_0, PokemonSprites::SpriteKind::PIDGEOT_SLEEPING_0, true, 0.0f, 0.0f},
     {25, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::PIKACHU_IDLE_FRONT_0, PokemonSprites::SpriteKind::PIKACHU_WALKING_FRONT_0, PokemonSprites::SpriteKind::PIKACHU_SLEEPING_0, true, 0.0f, 0.0f},
     {26, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::RAICHU_IDLE_FRONT_0, PokemonSprites::SpriteKind::RAICHU_WALKING_FRONT_0, PokemonSprites::SpriteKind::RAICHU_SLEEPING_0, false, 0.0f, 0.0f},
+    {74, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::GEODUDE_IDLE_FRONT_0, PokemonSprites::SpriteKind::GEODUDE_WALKING_FRONT_0, PokemonSprites::SpriteKind::GEODUDE_SLEEPING_0, true, 0.0f, 0.0f},
+    {75, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::GRAVELER_IDLE_FRONT_0, PokemonSprites::SpriteKind::GRAVELER_WALKING_FRONT_0, PokemonSprites::SpriteKind::GRAVELER_SLEEPING_0, true, 0.0f, 0.0f},
+    {76, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::GOLEM_IDLE_FRONT_0, PokemonSprites::SpriteKind::GOLEM_WALKING_FRONT_0, PokemonSprites::SpriteKind::GOLEM_SLEEPING_0, true, 0.0f, 0.0f},
     {92, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::GASTLY_IDLE_FRONT_0, PokemonSprites::SpriteKind::GASTLY_WALKING_FRONT_0, PokemonSprites::SpriteKind::GASTLY_SLEEPING_0, true, 12.0f, 2.0f},
     {93, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::START_HOLD_END, PokemonSprites::SpriteKind::HAUNTER_IDLE_FRONT_0, PokemonSprites::SpriteKind::HAUNTER_WALKING_FRONT_0, PokemonSprites::SpriteKind::HAUNTER_SLEEPING_0, true, 10.0f, 2.0f},
     {94, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::GENGAR_IDLE_FRONT_0, PokemonSprites::SpriteKind::GENGAR_WALKING_FRONT_0, PokemonSprites::SpriteKind::GENGAR_SLEEPING_0, true, 0.0f, 0.0f},
@@ -426,6 +435,10 @@ bool mainSceneIsNight() {
     return minutes < 6 * 60 || minutes >= 18 * 60;
 }
 
+bool mainSceneIsSleepTime() {
+    return GameEngine::ins().isMonsterSleepTime();
+}
+
 void drawHungerIcon(int x, int y, uint8_t hunger) {
     if (hunger == 0) return;
     auto& c = PixelRenderer::canvas();
@@ -491,14 +504,19 @@ void MainScene::onEnter() {
         if (!buildMoveRoute(targetX, targetY)) aiMode = AiMode::IDLE;
     }
     if (nextAiDecisionMs == 0) nextAiDecisionMs = nowMs;
+    beginDoorTransition(nowMs);
 }
 
 void MainScene::onExit() {
-    persistViewState(Hal::ins().millis());
+    if (doorTransition == DoorTransitionMode::NONE) {
+        persistViewState(Hal::ins().millis());
+    }
 }
 
 void MainScene::restoreViewState(uint32_t nowMs) {
     const MainSceneViewState& saved = GameEngine::ins().mainSceneViewState();
+    const Game::MonsterRuntime& mon = GameEngine::ins().activeMonster();
+    bool currentlyFainted = mon.fainted || mon.hpCur == 0;
     if (!saved.valid || !active || saved.speciesId != active->id) {
         targetX = monsterX;
         targetY = monsterY;
@@ -509,6 +527,7 @@ void MainScene::restoreViewState(uint32_t nowMs) {
         facingRight = true;
         nextAiDecisionMs = nowMs;
         postFeedAwakeUntilMs = 0;
+        faintRestActive = currentlyFainted;
         return;
     }
 
@@ -532,6 +551,7 @@ void MainScene::restoreViewState(uint32_t nowMs) {
     postFeedAwakeUntilMs = saved.postFeedAwakeRemainingMs == 0
         ? 0
         : nowMs + saved.postFeedAwakeRemainingMs;
+    faintRestActive = saved.faintRestActive || currentlyFainted;
 }
 
 void MainScene::persistViewState(uint32_t nowMs) {
@@ -552,6 +572,7 @@ void MainScene::persistViewState(uint32_t nowMs) {
     saved.pmdDirection = (uint8_t)pmdDirection;
     saved.pmdFrame = pmdFrame;
     saved.facingRight = facingRight;
+    saved.faintRestActive = faintRestActive;
     saved.nextDecisionRemainingMs = (int32_t)(nextAiDecisionMs - nowMs) > 0
         ? nextAiDecisionMs - nowMs
         : 0;
@@ -563,9 +584,11 @@ void MainScene::persistViewState(uint32_t nowMs) {
 
 void MainScene::update(uint32_t nowMs, float dtSeconds) {
     active = &GameEngine::ins().activeSpecies();
-    updateMonsterAi(nowMs, dtSeconds);
+    if (doorTransition == DoorTransitionMode::NONE) updateMonsterAi(nowMs, dtSeconds);
+    else updateDoorTransition(nowMs);
     updateCamera();
     updatePmdSpriteState(nowMs);
+    if (doorTransition != DoorTransitionMode::NONE) return;
     uint8_t levelUp = 0;
     if (GameEngine::ins().consumePendingLevelUp(levelUp)) {
         snprintf(toastBuffer, sizeof(toastBuffer), Ui::Common::LEVEL_UP_FMT, levelUp);
@@ -584,6 +607,221 @@ void MainScene::update(uint32_t nowMs, float dtSeconds) {
         toastUntil = nowMs + 1200;
         comboSaved = true;
     }
+}
+
+void MainScene::beginDoorTransition(uint32_t nowMs) {
+    ExploreTravelPhase phase = GameEngine::ins().exploreTravelPhase();
+    if (phase != ExploreTravelPhase::DEPARTING &&
+        phase != ExploreTravelPhase::RETURNING &&
+        phase != ExploreTravelPhase::RETURNING_FAINTED) {
+        return;
+    }
+
+    clearMoveRoute();
+    feedingConsumed = false;
+    velocityX = 0.0f;
+    velocityY = 0.0f;
+    aiMode = AiMode::IDLE;
+    doorLastUpdateMs = nowMs;
+    doorPhaseStartedMs = nowMs;
+
+    if (phase == ExploreTravelPhase::RETURNING_FAINTED) {
+        faintRestActive = true;
+        snapMonsterToBed();
+        aiMode = AiMode::RESTING;
+        pmdAction = PmdAction::SLEEPING;
+        doorTransition = DoorTransitionMode::FAINT_WAIT_FADE;
+        return;
+    }
+
+    if (!prepareDoorAnchors()) {
+        if (phase == ExploreTravelPhase::DEPARTING) {
+            doorTransition = DoorTransitionMode::EXIT_FADE;
+            if (!GameEngine::ins().fadeToScene(SceneID::EXPLORE)) {
+                GameEngine::ins().requestScene(SceneID::EXPLORE);
+            }
+        } else {
+            randomMonsterCenterWalkPoint(monsterX, monsterY);
+            targetX = monsterX;
+            targetY = monsterY;
+            doorTransition = DoorTransitionMode::ENTER_WAIT_FADE;
+        }
+        return;
+    }
+
+    if (phase == ExploreTravelPhase::DEPARTING) {
+        targetX = doorInsideX;
+        targetY = doorInsideY;
+        if (!buildMoveRoute(targetX, targetY)) {
+            doorTransition = DoorTransitionMode::EXIT_FADE;
+            if (!GameEngine::ins().fadeToScene(SceneID::EXPLORE)) {
+                GameEngine::ins().requestScene(SceneID::EXPLORE);
+            }
+            return;
+        }
+        doorTransition = DoorTransitionMode::EXIT_ROUTE;
+        return;
+    }
+
+    monsterX = doorOutsideX;
+    monsterY = doorOutsideY;
+    targetX = doorInsideX;
+    targetY = doorInsideY;
+    pmdAction = PmdAction::IDLE;
+    pmdFrame = 0;
+    doorTransition = DoorTransitionMode::ENTER_WAIT_FADE;
+}
+
+void MainScene::updateDoorTransition(uint32_t nowMs) {
+    uint32_t elapsedMs = doorLastUpdateMs == 0 || nowMs < doorLastUpdateMs
+        ? 0
+        : nowMs - doorLastUpdateMs;
+    doorLastUpdateMs = nowMs;
+    float dtSeconds = min<uint32_t>(120, elapsedMs) / 1000.0f;
+
+    switch (doorTransition) {
+    case DoorTransitionMode::EXIT_ROUTE:
+        if (nowMs - doorPhaseStartedMs >= DOOR_ROUTE_TIMEOUT_MS) {
+            clearMoveRoute();
+            velocityX = velocityY = 0.0f;
+            doorTransition = DoorTransitionMode::EXIT_FADE;
+            if (!GameEngine::ins().fadeToScene(SceneID::EXPLORE)) {
+                GameEngine::ins().requestScene(SceneID::EXPLORE);
+            }
+            return;
+        }
+        if (updateDoorRoute(dtSeconds)) {
+            targetX = doorOutsideX;
+            targetY = doorOutsideY;
+            doorTransition = DoorTransitionMode::EXIT_CROSS;
+            doorPhaseStartedMs = nowMs;
+        }
+        return;
+    case DoorTransitionMode::EXIT_CROSS:
+        if (moveDoorToward(doorOutsideX, doorOutsideY, DOOR_CROSS_SPEED, dtSeconds, false)) {
+            velocityX = velocityY = 0.0f;
+            doorTransition = DoorTransitionMode::EXIT_FADE;
+            if (!GameEngine::ins().fadeToScene(SceneID::EXPLORE)) {
+                GameEngine::ins().requestScene(SceneID::EXPLORE);
+            }
+        }
+        return;
+    case DoorTransitionMode::EXIT_FADE:
+        velocityX = velocityY = 0.0f;
+        return;
+    case DoorTransitionMode::ENTER_WAIT_FADE:
+        velocityX = velocityY = 0.0f;
+        if (GameEngine::ins().sceneFadeActive()) return;
+        if (!prepareDoorAnchors()) {
+            doorTransition = DoorTransitionMode::NONE;
+            GameEngine::ins().finishExploreReturn();
+            nextAiDecisionMs = nowMs + 800;
+            return;
+        }
+        targetX = doorInsideX;
+        targetY = doorInsideY;
+        doorTransition = DoorTransitionMode::ENTER_CROSS;
+        doorPhaseStartedMs = nowMs;
+        return;
+    case DoorTransitionMode::ENTER_CROSS:
+        if (moveDoorToward(doorInsideX, doorInsideY, DOOR_CROSS_SPEED, dtSeconds, false)) {
+            velocityX = velocityY = 0.0f;
+            monsterX = doorInsideX;
+            monsterY = doorInsideY;
+            targetX = monsterX;
+            targetY = monsterY;
+            aiMode = AiMode::IDLE;
+            nextAiDecisionMs = nowMs + random(900, 1601);
+            mind.onActivity(nowMs);
+            doorTransition = DoorTransitionMode::NONE;
+            GameEngine::ins().finishExploreReturn();
+        }
+        return;
+    case DoorTransitionMode::FAINT_WAIT_FADE:
+        velocityX = velocityY = 0.0f;
+        if (!GameEngine::ins().sceneFadeActive()) {
+            doorTransition = DoorTransitionMode::NONE;
+            GameEngine::ins().finishExploreReturn();
+        }
+        return;
+    case DoorTransitionMode::NONE:
+        return;
+    }
+}
+
+bool MainScene::prepareDoorAnchors() {
+    if (room().doorwayPolygonCount() < 3) return false;
+    if (!chooseDoorInsidePose(doorInsideX, doorInsideY)) return false;
+    doorOutsideX = (float)room().doorwayOutsideX();
+    doorOutsideY = (float)room().doorwayOutsideY() - walkBoundaryOffsetY();
+    return true;
+}
+
+bool MainScene::chooseDoorInsidePose(float& x, float& y) const {
+    float anchorX = (float)room().doorwayInsideX();
+    float anchorY = (float)room().doorwayInsideY();
+    float offsetY = walkBoundaryOffsetY();
+    auto tryCandidate = [&](int dx, int dy) {
+        float candidateX = anchorX + dx;
+        float candidateY = anchorY + dy - offsetY;
+        if (!monsterFootprintInsideWalkArea(candidateX, candidateY)) return false;
+        x = candidateX;
+        y = candidateY;
+        return true;
+    };
+
+    if (tryCandidate(0, 0)) return true;
+    for (int radius = 2; radius <= 48; radius += 2) {
+        for (int offset = -radius; offset <= radius; offset += 2) {
+            if (tryCandidate(radius, offset) || tryCandidate(-radius, offset) ||
+                tryCandidate(offset, radius) || tryCandidate(offset, -radius)) return true;
+        }
+    }
+    return false;
+}
+
+bool MainScene::updateDoorRoute(float dtSeconds) {
+    float waypointX = targetX;
+    float waypointY = targetY;
+    if (!currentWaypoint(waypointX, waypointY)) return true;
+    if (!moveDoorToward(waypointX, waypointY, DOOR_ROUTE_SPEED, dtSeconds, true)) return false;
+    moveRouteIndex++;
+    if (moveRouteIndex < moveRouteCount) return false;
+    clearMoveRoute();
+    return true;
+}
+
+bool MainScene::moveDoorToward(float x, float y, float speed, float dtSeconds,
+                               bool enforceWalkArea) {
+    float dx = x - monsterX;
+    float dy = y - monsterY;
+    float distance = sqrtf(dx * dx + dy * dy);
+    float step = speed * dtSeconds;
+    if (distance <= 1.0f || step >= distance) {
+        monsterX = x;
+        monsterY = y;
+        velocityX = velocityY = 0.0f;
+        return true;
+    }
+    if (distance <= 0.001f || step <= 0.0f) {
+        velocityX = velocityY = 0.0f;
+        return false;
+    }
+
+    float previousX = monsterX;
+    float previousY = monsterY;
+    velocityX = dx / distance * speed;
+    velocityY = dy / distance * speed;
+    monsterX += velocityX * dtSeconds;
+    monsterY += velocityY * dtSeconds;
+    if (fabsf(velocityX) > 4.0f) facingRight = velocityX > 0.0f;
+    if (enforceWalkArea && !monsterFootprintInsideWalkArea(monsterX, monsterY)) {
+        monsterX = previousX;
+        monsterY = previousY;
+        velocityX = velocityY = 0.0f;
+        return false;
+    }
+    return false;
 }
 
 void MainScene::updateCamera() {
@@ -853,24 +1091,28 @@ void MainScene::updateStuckWatchdog(uint32_t nowMs, float distanceToWaypoint) {
 
 bool MainScene::chooseFoodApproachPose(float& x, float& y) const {
     float offsetY = walkBoundaryOffsetY();
-    float bestDistance = 1000000.0f;
-    bool found = false;
-    for (int dy = -6; dy <= 6; ++dy) {
-        for (int dx = -8; dx <= 8; ++dx) {
-            float footX = foodFeedX() + dx;
-            float footY = foodFeedY() + dy;
-            float candidateY = footY - offsetY;
-            if (!monsterFootprintInsideWalkArea(footX, candidateY)) continue;
-            float distance = (float)(dx * dx + dy * dy);
-            if (!found || distance < bestDistance) {
-                x = footX;
-                y = candidateY;
-                bestDistance = distance;
-                found = true;
-            }
+    auto tryCandidate = [&](int dx, int dy) {
+        float candidateX = foodFeedX() + dx;
+        float candidateY = foodFeedY() + dy - offsetY;
+        if (!monsterFootprintInsideWalkArea(candidateX, candidateY)) return false;
+        x = candidateX;
+        y = candidateY;
+        return true;
+    };
+
+    if (tryCandidate(0, 0)) return true;
+    for (int radius = 2; radius <= 36; radius += 2) {
+        int yRadius = min(radius, 24);
+        for (int dy = -yRadius; dy <= yRadius; dy += 2) {
+            if (tryCandidate(radius, dy)) return true;
+            if (tryCandidate(-radius, dy)) return true;
+        }
+        for (int dx = -radius + 2; dx <= radius - 2; dx += 2) {
+            if (tryCandidate(dx, yRadius)) return true;
+            if (tryCandidate(dx, -yRadius)) return true;
         }
     }
-    return found;
+    return false;
 }
 
 bool MainScene::monsterCanUseBedSleepPose(float x, float y) const {
@@ -955,13 +1197,39 @@ bool MainScene::chooseBedSleepPose(float& x, float& y) const {
 
 void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
     const Game::MonsterRuntime& mon = GameEngine::ins().activeMonster();
-    if (mon.fainted || mon.hpCur == 0 || (mon.statusBits & Game::STATUS_SLEEP)) {
+    bool currentlyFainted = mon.fainted || mon.hpCur == 0;
+    if (currentlyFainted || (mon.statusBits & Game::STATUS_SLEEP)) {
+        if (currentlyFainted) faintRestActive = true;
         if (!monsterAtBedSleepPose()) snapMonsterToBed();
         clearMoveRoute();
         feedingConsumed = false;
         velocityX = 0.0f;
         velocityY = 0.0f;
         aiMode = AiMode::RESTING;
+        return;
+    }
+
+    bool sleepTime = mainSceneIsSleepTime();
+    if (faintRestActive && !sleepTime) {
+        faintRestActive = false;
+        postFeedAwakeUntilMs = nowMs + POST_FAINT_AWAKE_MS;
+        mind.onActivity(nowMs);
+        beginWaking(nowMs, false);
+        return;
+    }
+
+    if (!sleepTime && aiMode == AiMode::RESTING) {
+        mind.onActivity(nowMs);
+        beginWaking(nowMs, false);
+        return;
+    }
+    if (!sleepTime && aiMode == AiMode::SEEK_BED) {
+        clearMoveRoute();
+        velocityX = 0.0f;
+        velocityY = 0.0f;
+        aiMode = AiMode::IDLE;
+        nextAiDecisionMs = nowMs + random(700, 1401);
+        mind.onActivity(nowMs);
         return;
     }
 
@@ -1018,7 +1286,8 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
             }
             return;
         }
-        if (wakingForFood && GameEngine::ins().bowlHasFood() && mon.satiety < FEED_CONTINUE_SATIETY) {
+        if (wakingForFood && GameEngine::ins().bowlHasFood() &&
+            mon.satiety < MONSTER_FEED_TARGET_SATIETY) {
             setFoodTarget(nowMs);
         } else {
             aiMode = AiMode::IDLE;
@@ -1045,7 +1314,7 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
         targetY = monsterY;
         bool wantsFood = mind.topDesire() == MonsterDesire::EAT &&
                          GameEngine::ins().bowlHasFood() &&
-                         mon.satiety < FEED_CONTINUE_SATIETY;
+                         mon.satiety < MONSTER_FEED_TARGET_SATIETY;
         if (wantsFood) {
             beginWaking(nowMs, true);
         } else if (!monsterNeedsBedRest()) {
@@ -1129,7 +1398,10 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
 
 bool MainScene::monsterNearFood() const {
     float walkY = monsterY + walkBoundaryOffsetY();
-    return fabsf(monsterX - foodFeedX()) < 9.0f && fabsf(walkY - foodFeedY()) < 7.0f;
+    float toleranceX = max(9.0f, walkFootprintRadiusX() + 8.0f);
+    float toleranceY = max(7.0f, walkFootprintRadiusY() + 6.0f);
+    return fabsf(monsterX - foodFeedX()) <= toleranceX &&
+           fabsf(walkY - foodFeedY()) <= toleranceY;
 }
 
 bool MainScene::monsterNearBed() const {
@@ -1147,12 +1419,12 @@ bool MainScene::monsterAtBedSleepPose() const {
 bool MainScene::monsterNeedsBedRest() const {
     uint32_t nowMs = Hal::ins().millis();
     if ((int32_t)(nowMs - postFeedAwakeUntilMs) < 0) return false;
-    return mind.topDesire() == MonsterDesire::REST;
+    return mainSceneIsSleepTime() && mind.topDesire() == MonsterDesire::REST;
 }
 
 void MainScene::updateMind(uint32_t nowMs) {
     if ((int32_t)(nowMs - nextMindUpdateMs) < 0) return;
-    mind.update(GameEngine::ins().activeMonster(), mainSceneIsNight(),
+    mind.update(GameEngine::ins().activeMonster(), mainSceneIsSleepTime(),
                 GameEngine::ins().bowlHasFood(), nowMs);
     nextMindUpdateMs = nowMs + MIND_UPDATE_MS;
 }
@@ -1192,7 +1464,7 @@ void MainScene::beginWaking(uint32_t nowMs, bool forFood) {
     velocityX = 0.0f;
     velocityY = 0.0f;
     wakingForFood = forFood;
-    uint16_t delayMs = mainSceneIsNight()
+    uint16_t delayMs = mainSceneIsSleepTime()
         ? (uint16_t)random(NIGHT_FEED_WAKE_DELAY_MIN_MS, NIGHT_FEED_WAKE_DELAY_MAX_MS + 1)
         : (uint16_t)random(DAY_WAKE_DELAY_MIN_MS, DAY_WAKE_DELAY_MAX_MS + 1);
     stateUntilMs = nowMs + delayMs;
@@ -1216,10 +1488,12 @@ void MainScene::finishMovement(uint32_t nowMs) {
     clearMoveRoute();
     velocityX = 0.0f;
     velocityY = 0.0f;
-    if (completedMode == AiMode::SEEK_FOOD && GameEngine::ins().bowlHasFood() &&
-        GameEngine::ins().activeMonster().satiety < FEED_CONTINUE_SATIETY && monsterNearFood()) {
-        enterFeeding(nowMs);
-        return;
+    if (completedMode == AiMode::SEEK_FOOD) {
+        if (GameEngine::ins().bowlHasFood() &&
+            GameEngine::ins().activeMonster().satiety < MONSTER_FEED_TARGET_SATIETY) {
+            enterFeeding(nowMs);
+            return;
+        }
     }
     if (completedMode == AiMode::SEEK_BED) {
         enterResting(nowMs);
@@ -1227,7 +1501,7 @@ void MainScene::finishMovement(uint32_t nowMs) {
     }
     if (completedMode == AiMode::LEAVING_BED) {
         if (wakingForFood && GameEngine::ins().bowlHasFood() &&
-            GameEngine::ins().activeMonster().satiety < FEED_CONTINUE_SATIETY) {
+            GameEngine::ins().activeMonster().satiety < MONSTER_FEED_TARGET_SATIETY) {
             setFoodTarget(nowMs);
         } else {
             aiMode = AiMode::IDLE;
@@ -1302,14 +1576,14 @@ void MainScene::updateFeeding(uint32_t nowMs) {
 
     const Game::MonsterRuntime& mon = GameEngine::ins().activeMonster();
     if ((int32_t)(nowMs - feedingBiteMs) >= 0 &&
-        GameEngine::ins().bowlHasFood() && mon.satiety < FEED_CONTINUE_SATIETY) {
+        GameEngine::ins().bowlHasFood() && mon.satiety < MONSTER_FEED_TARGET_SATIETY) {
         bool fed = GameEngine::ins().consumeBowlFood();
         feedingConsumed = feedingConsumed || fed;
         feedingBiteMs = nowMs + (uint32_t)random(FEED_BITE_INTERVAL_MIN_MS,
                                                    FEED_BITE_INTERVAL_MAX_MS + 1);
         if (!fed) feedingUntilMs = nowMs + 600;
     }
-    if (!GameEngine::ins().bowlHasFood() || mon.satiety >= FEED_CONTINUE_SATIETY) {
+    if (!GameEngine::ins().bowlHasFood() || mon.satiety >= MONSTER_FEED_TARGET_SATIETY) {
         if ((int32_t)(feedingUntilMs - (nowMs + 700)) > 0) feedingUntilMs = nowMs + 700;
     }
 
@@ -1538,7 +1812,7 @@ void MainScene::chooseAiGoal(uint32_t nowMs) {
     const Game::MonsterRuntime& mon = GameEngine::ins().activeMonster();
     switch (mind.topDesire()) {
     case MonsterDesire::EAT:
-        if (GameEngine::ins().bowlHasFood() && mon.satiety < FEED_CONTINUE_SATIETY) {
+        if (GameEngine::ins().bowlHasFood() && mon.satiety < MONSTER_FEED_TARGET_SATIETY) {
             if (monsterNearFood()) enterFeeding(nowMs);
             else setFoodTarget(nowMs);
             return;
@@ -1550,27 +1824,11 @@ void MainScene::chooseAiGoal(uint32_t nowMs) {
             else setBedTarget(nowMs);
             return;
         }
+        if (startWander(nowMs)) return;
         break;
-    case MonsterDesire::WANDER: {
-        float walkOffsetY = walkBoundaryOffsetY();
-        for (uint8_t tries = 0; tries < 18; ++tries) {
-            int radiusX = behaviorProfile.wanderRadiusX;
-            int radiusY = behaviorProfile.wanderRadiusY;
-            float candidateX = clampf(monsterX + (float)random(-radiusX, radiusX + 1),
-                                      (float)roomWalkMinX(),
-                                      (float)roomWalkMaxX());
-            float candidateY = clampf(monsterY + (float)random(-radiusY, radiusY + 1),
-                                      (float)roomWalkMinY() - walkOffsetY,
-                                      (float)roomWalkMaxY() - walkOffsetY);
-            if (!monsterFootprintInsideWalkArea(candidateX, candidateY)) continue;
-            if (fabsf(candidateX - monsterX) < 8.0f && fabsf(candidateY - monsterY) < 4.0f) continue;
-            targetX = candidateX;
-            targetY = candidateY;
-            beginMovement(AiMode::WANDER, nowMs);
-            return;
-        }
+    case MonsterDesire::WANDER:
+        if (startWander(nowMs)) return;
         break;
-    }
     case MonsterDesire::STARE:
         if (random(100) < 32) {
             int direction = (int)pmdDirection + (random(2) == 0 ? -1 : 1);
@@ -1593,6 +1851,31 @@ void MainScene::chooseAiGoal(uint32_t nowMs) {
     }
 }
 
+bool MainScene::startWander(uint32_t nowMs) {
+    float walkOffsetY = walkBoundaryOffsetY();
+    bool cocoonShuffle = behaviorProfile.movementMode == MonsterMovementMode::COCOON_SHUFFLE;
+    for (uint8_t tries = 0; tries < 18; ++tries) {
+        int radiusX = behaviorProfile.wanderRadiusX;
+        int radiusY = behaviorProfile.wanderRadiusY;
+        float candidateX = clampf(monsterX + (float)random(-radiusX, radiusX + 1),
+                                  (float)roomWalkMinX(),
+                                  (float)roomWalkMaxX());
+        float candidateY = clampf(monsterY + (float)random(-radiusY, radiusY + 1),
+                                  (float)roomWalkMinY() - walkOffsetY,
+                                  (float)roomWalkMaxY() - walkOffsetY);
+        if (!monsterFootprintInsideWalkArea(candidateX, candidateY)) continue;
+        float minDeltaX = cocoonShuffle ? 4.0f : 8.0f;
+        float minDeltaY = cocoonShuffle ? 2.0f : 4.0f;
+        if (fabsf(candidateX - monsterX) < minDeltaX &&
+            fabsf(candidateY - monsterY) < minDeltaY) continue;
+        targetX = candidateX;
+        targetY = candidateY;
+        beginMovement(AiMode::WANDER, nowMs);
+        if (aiMode == AiMode::WANDER || aiMode == AiMode::TURNING) return true;
+    }
+    return false;
+}
+
 void MainScene::render() {
     int16_t depthZ = (int16_t)(monsterY - 78.0f);
     RenderItem items[] = {
@@ -1611,6 +1894,7 @@ void MainScene::render() {
 }
 
 bool MainScene::onButton(const ButtonEvent& event) {
+    if (doorTransition != DoorTransitionMode::NONE) return true;
     if (event.action != BtnAction::PRESSED && event.action != BtnAction::LONG_PRESS) {
         return false;
     }

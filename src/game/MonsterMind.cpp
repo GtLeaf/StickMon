@@ -19,30 +19,26 @@ void MonsterMind::reset(uint32_t nowMs) {
     lastActivityMs_ = nowMs;
 }
 
-void MonsterMind::update(const Game::MonsterRuntime& monster, bool isNight,
+void MonsterMind::update(const Game::MonsterRuntime& monster, bool sleepTime,
                          bool bowlHasFood, uint32_t nowMs) {
-    uint8_t hpPercent = monster.hpMax == 0
-        ? 0
-        : static_cast<uint8_t>(std::min<uint32_t>(100, monster.hpCur * 100UL / monster.hpMax));
     uint32_t inactiveSeconds = lastActivityMs_ == 0 ? 0 : (nowMs - lastActivityMs_) / 1000UL;
     uint16_t boredom = std::min<uint32_t>(90, inactiveSeconds * 2UL);
 
     uint16_t base[4] = {};
-    if (bowlHasFood && monster.satiety < 85) {
+    if (bowlHasFood && monster.satiety < MONSTER_FEED_TARGET_SATIETY) {
         base[static_cast<uint8_t>(MonsterDesire::EAT)] =
-            55 + static_cast<uint16_t>(85 - monster.satiety) * 2 +
+            55 + static_cast<uint16_t>(MONSTER_FEED_TARGET_SATIETY - monster.satiety) * 2 +
             (monster.satiety < 35 ? 40 : 0);
     }
 
-    uint16_t rest = isNight ? 150 : 15;
-    if (hpPercent < 50) rest += static_cast<uint16_t>(50 - hpPercent) * 2;
+    uint16_t rest = sleepTime ? 150 : 15;
     if (monster.mood < 35) rest += 30;
     base[static_cast<uint8_t>(MonsterDesire::REST)] = rest;
 
-    uint16_t wander = (isNight ? 15 : 42) + monster.mood / 3 + boredom;
+    uint16_t wander = (sleepTime ? 15 : 42) + monster.mood / 3 + boredom;
     if (monster.satiety < 25) wander /= 2;
     base[static_cast<uint8_t>(MonsterDesire::WANDER)] = wander;
-    base[static_cast<uint8_t>(MonsterDesire::STARE)] = 50 + (isNight ? 20 : 0);
+    base[static_cast<uint8_t>(MonsterDesire::STARE)] = 50 + (sleepTime ? 20 : 0);
 
     for (uint8_t i = 0; i < 4; ++i) {
         uint16_t score = base[i] + static_cast<uint16_t>(random(0, 9));
@@ -98,6 +94,15 @@ MonsterBehaviorProfile behaviorProfileFor(const Species& species,
     }
 
     switch (species.id) {
+    case 11:
+        profile.movementMode = MonsterMovementMode::COCOON_SHUFFLE;
+        profile.moveSpeedScale = 0.18f;
+        profile.idleMinMs = 9000;
+        profile.idleMaxMs = 18000;
+        profile.wanderRadiusX = 12;
+        profile.wanderRadiusY = 7;
+        profile.turnPauseMs = 650;
+        break;
     case 129:
         profile.moveSpeedScale = 0.35f;
         profile.idleMinMs = 4200;

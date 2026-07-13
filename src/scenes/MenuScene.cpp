@@ -188,9 +188,15 @@ const char* abilityName(const Species& species) {
     case 7:
     case 8:
     case 9: return Ui::Status::ABILITY_TORRENT;
+    case 10: return Ui::Status::ABILITY_SHIELD_DUST;
+    case 11: return Ui::Status::ABILITY_SHED_SKIN;
+    case 12: return Ui::Status::ABILITY_COMPOUND_EYES;
     case 25:
     case 26:
     case 172: return Ui::Status::ABILITY_STATIC;
+    case 74:
+    case 75:
+    case 76: return Ui::Status::ABILITY_STURDY;
     case 92:
     case 93:
     case 94:
@@ -230,7 +236,7 @@ const char* proficiencyName(uint8_t value) {
 }
 
 const char* metAreaName(uint8_t metArea) {
-    if (metArea < 3) return Ui::Explore::AREA_ITEMS[metArea];
+    if (metArea < Ui::Explore::AREA_COUNT) return Ui::Explore::AREA_ITEMS[metArea];
     return Ui::Status::ORIGIN_UNKNOWN;
 }
 
@@ -298,6 +304,7 @@ void MenuScene::onEnter() {
     debugSwitchFocus = 0;
     debugTimeOpen = false;
     debugTimeFocus = 0;
+    debugScroll = 0.0f;
     if (GameEngine::ins().previousScene() == GameEngine::ins().homeScene()) {
         cursor = 0;
     } else {
@@ -386,6 +393,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
             if (viewMode == ViewMode::DEBUG && debugCategory != DebugCategory::ROOT) {
                 debugCategory = DebugCategory::ROOT;
                 debugCursor = 0;
+                debugScroll = 0.0f;
                 return true;
             }
             popView();
@@ -685,6 +693,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
         }
         if (viewMode == ViewMode::DEBUG && event.btn == 1 && event.action == BtnAction::PRESSED) {
             debugCursor = (debugCursor + 1) % debugItemCount();
+            if (debugCursor == 0) debugScroll = 0.0f;
             return true;
         }
         if (viewMode == ViewMode::DEBUG && event.btn == 0 && event.action == BtnAction::PRESSED) {
@@ -764,6 +773,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
         pushView(ViewMode::DEBUG);
         debugCategory = DebugCategory::ROOT;
         debugCursor = 0;
+        debugScroll = 0.0f;
         debugSwitchOpen = false;
         debugTimeOpen = false;
         return true;
@@ -1049,7 +1059,8 @@ void MenuScene::renderStatusPage() {
 
         c.drawFastHLine(14, sy(101), 196, PixelRenderer::rgb(55, 63, 76));
         PixelRenderer::text(16, sy(109), Ui::Status::SOURCE_INFO, PixelRenderer::rgb(67, 213, 224), 1);
-        if (activeMon.origin == Game::Origin::CAPTURED && activeMon.metArea < 3) {
+        if (activeMon.origin == Game::Origin::CAPTURED &&
+            activeMon.metArea < Ui::Explore::AREA_COUNT) {
             PixelRenderer::text(60, sy(109), Ui::Status::SOURCE_AT, PixelRenderer::rgb(241, 242, 232), 1);
             const char* area = metAreaName(activeMon.metArea);
             PixelRenderer::text(84, sy(109), area, PixelRenderer::rgb(255, 216, 72), 1);
@@ -1482,28 +1493,51 @@ void MenuScene::renderDebugPage() {
     c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, 0x0000);
 
     static constexpr int ROW_X = 8;
-    static constexpr int TEXT_X = 22;
-    static constexpr int ROW_Y = 0;
-    static constexpr int ROW_H = 17;
-    static constexpr int SEP_Y_OFFSET = 16;
-    static constexpr int SEP_W = Hal::DISPLAY_W - ROW_X * 2;
+    static constexpr int TEXT_X = 20;
+    static constexpr int ROW_Y = 6;
+    static constexpr int ROW_H = 24;
+    static constexpr int TEXT_Y_OFFSET = 4;
+    static constexpr int SEP_Y_OFFSET = ROW_H - 1;
+    static constexpr int SEP_W = Hal::DISPLAY_W - TEXT_X - 10;
     uint8_t itemCount = debugItemCount();
-    if (debugCursor >= itemCount) debugCursor = 0;
+    if (debugCursor >= itemCount) {
+        debugCursor = 0;
+        debugScroll = 0.0f;
+    }
+
+    const int contentH = ROW_Y * 2 + itemCount * ROW_H;
+    const int maxScroll = contentH > Hal::DISPLAY_H ? contentH - Hal::DISPLAY_H : 0;
+    int targetScroll = ROW_Y + debugCursor * ROW_H + ROW_H / 2 - Hal::DISPLAY_H / 2;
+    if (targetScroll < 0) targetScroll = 0;
+    if (targetScroll > maxScroll) targetScroll = maxScroll;
+
+    if (maxScroll <= 0) {
+        debugScroll = 0.0f;
+    } else {
+        float diff = (float)targetScroll - debugScroll;
+        if (diff > -0.5f && diff < 0.5f) {
+            debugScroll = (float)targetScroll;
+        } else {
+            debugScroll += diff * 0.25f;
+        }
+    }
 
     for (uint8_t i = 0; i < itemCount; ++i) {
-        int y = ROW_Y + i * ROW_H;
+        int rowY = ROW_Y + i * ROW_H - (int)debugScroll;
+        if (rowY + ROW_H <= 0 || rowY >= Hal::DISPLAY_H) continue;
+        int textY = rowY + TEXT_Y_OFFSET;
         bool selected = i == debugCursor;
         uint16_t color = selected ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232);
         if (selected) {
-            c.fillRect(ROW_X, y, 4, 16, PixelRenderer::rgb(255, 216, 72));
+            c.fillRect(ROW_X, textY, 4, 16, PixelRenderer::rgb(255, 216, 72));
         }
-        PixelRenderer::text(TEXT_X, y, debugItemLabel(i), color, 1);
+        PixelRenderer::text(TEXT_X, textY, debugItemLabel(i), color, 1);
         if (debugCategory == DebugCategory::MONSTER && i == 1) {
             const auto& state = GameEngine::ins().gameState();
             uint16_t speciesId = state.teamCount > 0 ? state.team[0].speciesId : 0;
             char idBuf[20];
             snprintf(idBuf, sizeof(idBuf), Ui::Debug::CURRENT_ID_FMT, speciesId);
-            PixelRenderer::text(Hal::DISPLAY_W - textPixelWidth(idBuf) - 12, y, idBuf,
+            PixelRenderer::text(Hal::DISPLAY_W - textPixelWidth(idBuf) - 12, textY, idBuf,
                                 selected ? PixelRenderer::rgb(255, 218, 178) : 0x7BEF,
                                 1);
         }
@@ -1511,30 +1545,30 @@ void MenuScene::renderDebugPage() {
             uint16_t minutes = GameEngine::ins().gameMinutesOfDay();
             char timeBuf[20];
             snprintf(timeBuf, sizeof(timeBuf), Ui::Debug::CURRENT_TIME_FMT, minutes / 60, minutes % 60);
-            PixelRenderer::text(Hal::DISPLAY_W - textPixelWidth(timeBuf) - 12, y, timeBuf,
+            PixelRenderer::text(Hal::DISPLAY_W - textPixelWidth(timeBuf) - 12, textY, timeBuf,
                                 selected ? PixelRenderer::rgb(255, 218, 178) : 0x7BEF,
                                 1);
         }
         if (debugCategory == DebugCategory::ENV && i == 1) {
             const char* value = GameEngine::ins().debugLightSourceLabel();
-            PixelRenderer::text(Hal::DISPLAY_W - textPixelWidth(value) - 12, y, value,
+            PixelRenderer::text(Hal::DISPLAY_W - textPixelWidth(value) - 12, textY, value,
                                 selected ? PixelRenderer::rgb(255, 218, 178) : 0x7BEF,
                                 1);
         }
         if (debugCategory == DebugCategory::MOTION && i == 0) {
             const char* value = GameEngine::ins().debugTiltControlEnabled() ? Ui::Settings::ON : Ui::Settings::OFF;
-            PixelRenderer::text(Hal::DISPLAY_W - textPixelWidth(value) - 12, y, value,
+            PixelRenderer::text(Hal::DISPLAY_W - textPixelWidth(value) - 12, textY, value,
                                 selected ? PixelRenderer::rgb(255, 218, 178) : 0x7BEF,
                                 1);
         }
         if (debugCategory == DebugCategory::MOTION && i == 1) {
             const char* value = GameEngine::ins().debugWalkBoundaryVisible() ? Ui::Settings::ON : Ui::Settings::OFF;
-            PixelRenderer::text(Hal::DISPLAY_W - textPixelWidth(value) - 12, y, value,
+            PixelRenderer::text(Hal::DISPLAY_W - textPixelWidth(value) - 12, textY, value,
                                 selected ? PixelRenderer::rgb(255, 218, 178) : 0x7BEF,
                                 1);
         }
         if (i + 1 < itemCount) {
-            c.drawFastHLine(ROW_X, y + SEP_Y_OFFSET, SEP_W, PixelRenderer::rgb(55, 63, 76));
+            c.drawFastHLine(TEXT_X, rowY + SEP_Y_OFFSET, SEP_W, PixelRenderer::rgb(55, 63, 76));
         }
     }
 
@@ -1580,12 +1614,14 @@ void MenuScene::handleDebugAction() {
             return;
         }
         debugCursor = 0;
+        debugScroll = 0.0f;
         return;
     }
 
     if (debugCursor + 1 >= debugItemCount()) {
         debugCategory = DebugCategory::ROOT;
         debugCursor = 0;
+        debugScroll = 0.0f;
         return;
     }
 

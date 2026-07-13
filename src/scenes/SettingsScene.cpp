@@ -11,11 +11,26 @@ void SettingsScene::onEnter() {
     viewMode = ViewMode::MENU;
     settingsDirty = false;
     resetConfirmYes = false;
+    menuScroll = 0.0f;
     normalizeVolumeSetting();
 }
 
 void SettingsScene::onExit() {
+    uint32_t startedAt = Hal::ins().millis();
+    Serial.printf("[Settings] exit begin t=%lu dirty=%u configured=%u display=%u idle=%u\n",
+                  (unsigned long)startedAt,
+                  settingsDirty ? 1 : 0,
+                  Hal::ins().getBrightness(),
+                  Hal::ins().getDisplayBrightness(),
+                  Hal::ins().isIdleBrightnessActive() ? 1 : 0);
     saveSettingsIfDirty();
+    uint32_t finishedAt = Hal::ins().millis();
+    Serial.printf("[Settings] exit end t=%lu cost=%lums configured=%u display=%u idle=%u\n",
+                  (unsigned long)finishedAt,
+                  (unsigned long)(finishedAt - startedAt),
+                  Hal::ins().getBrightness(),
+                  Hal::ins().getDisplayBrightness(),
+                  Hal::ins().isIdleBrightnessActive() ? 1 : 0);
 }
 
 void SettingsScene::update(uint32_t nowMs, float dtSeconds) {
@@ -71,6 +86,7 @@ bool SettingsScene::onButton(const ButtonEvent& event) {
     }
     if (event.btn == 1 && event.action == BtnAction::PRESSED) {
         cursor = (cursor + 1) % COUNT;
+        if (cursor == 0) menuScroll = 0.0f;
         return true;
     }
     if (event.btn == 0 && event.action == BtnAction::PRESSED) {
@@ -127,6 +143,9 @@ void SettingsScene::cycleBrightness() {
     else if (cur < 160) next = 192;
     else if (cur < 224) next = 255;
     else next = 64;
+    Serial.printf("[Settings] brightness selection t=%lu current=%u next=%u display=%u\n",
+                  (unsigned long)Hal::ins().millis(), cur, next,
+                  Hal::ins().getDisplayBrightness());
     Hal::ins().setBrightness(next);
     GameEngine::ins().gameState().settings.brightness = next;
     markSettingsDirty();
@@ -149,7 +168,19 @@ void SettingsScene::markSettingsDirty() {
 
 void SettingsScene::saveSettingsIfDirty() {
     if (!settingsDirty) return;
-    GameEngine::ins().saveNow();
+    uint32_t startedAt = Hal::ins().millis();
+    Serial.printf("[Settings] save begin t=%lu brightness=%u display=%u\n",
+                  (unsigned long)startedAt,
+                  Hal::ins().getBrightness(),
+                  Hal::ins().getDisplayBrightness());
+    bool saved = GameEngine::ins().saveNow();
+    uint32_t finishedAt = Hal::ins().millis();
+    Serial.printf("[Settings] save end t=%lu cost=%lums ok=%u brightness=%u display=%u\n",
+                  (unsigned long)finishedAt,
+                  (unsigned long)(finishedAt - startedAt),
+                  saved ? 1 : 0,
+                  Hal::ins().getBrightness(),
+                  Hal::ins().getDisplayBrightness());
     settingsDirty = false;
 }
 
@@ -169,9 +200,26 @@ void SettingsScene::renderMenu() {
     auto& c = PixelRenderer::canvas();
     const int rowH = 18;
     const int startY = 4;
+    const int contentH = startY * 2 + COUNT * rowH;
+    const int maxScroll = contentH > Hal::DISPLAY_H ? contentH - Hal::DISPLAY_H : 0;
+    int targetScroll = startY + cursor * rowH + rowH / 2 - Hal::DISPLAY_H / 2;
+    if (targetScroll < 0) targetScroll = 0;
+    if (targetScroll > maxScroll) targetScroll = maxScroll;
+
+    if (maxScroll <= 0) {
+        menuScroll = 0.0f;
+    } else {
+        float diff = (float)targetScroll - menuScroll;
+        if (diff > -0.5f && diff < 0.5f) {
+            menuScroll = (float)targetScroll;
+        } else {
+            menuScroll += diff * 0.25f;
+        }
+    }
 
     for (int i = 0; i < COUNT; ++i) {
-        int y = startY + i * rowH;
+        int y = startY + i * rowH - (int)menuScroll;
+        if (y + rowH <= 0 || y >= Hal::DISPLAY_H) continue;
         bool selected = i == cursor;
         uint16_t fg = selected ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232);
         if (selected) c.fillRect(8, y + 2, 4, 12, PixelRenderer::rgb(255, 216, 72));

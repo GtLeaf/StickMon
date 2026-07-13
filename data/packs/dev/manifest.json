@@ -1,16 +1,19 @@
 {
+  "battleAssets": "game/battle.smonfx",
   "font": "fonts/zh16.smonfont",
   "fontCount": 1,
   "fonts": "fonts",
   "format": "smon-resource-pack-v1",
-  "gameAssetCount": 50,
-  "gameAssets": "game/game.smonfx",
+  "gameAssetCount": 88,
+  "hatchAssets": "game/hatch.smonfx",
   "id": "dev",
+  "mapAssets": "game/maps.smonfx",
   "room": "rooms/standard.smonroom",
   "roomCount": 1,
   "rooms": "rooms",
   "schema": 1,
-  "spriteCount": 41,
+  "spriteCount": 47,
   "sprites": "sprites",
+  "uiAssets": "game/ui.smonfx",
   "version": "0.0.0-dev"
 }

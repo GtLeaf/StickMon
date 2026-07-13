@@ -32,6 +32,7 @@ WALL_MOUNTED_NAME_MARKERS = (
     "层板",
     "搁板",
 )
+SEMANTIC_FACE_TYPES = {"sprite_area", "doorway"}
 
 DEFAULT_NIGHT = {
     "lightShape": "radial",
@@ -70,6 +71,10 @@ def normalize_shadow_surface(value, face_type="floor"):
     if value in {"floor", "left_wall", "right_wall"}:
         return value
     return "left_wall" if face_type == "wall" else "floor"
+
+
+def is_semantic_face(face):
+    return (face or {}).get("type") in SEMANTIC_FACE_TYPES
 
 
 def normalize_shadow_anchor(value):
@@ -314,7 +319,7 @@ def render_geometry(layout):
     for face in sorted(layout.get("roomGeometry", {}).get("faces", []), key=lambda v: v.get("drawOrder", 0)):
         if face.get("visible", True) is False:
             continue
-        if face.get("type") == "sprite_area":
+        if is_semantic_face(face):
             continue
         points = [(int(x), int(y)) for x, y in face.get("points", [])]
         if len(points) < 3:
@@ -576,7 +581,7 @@ def wall_shadow_faces(layout, include_disabled=False):
     return [
         face
         for face in faces
-        if face.get("type") != "sprite_area"
+        if not is_semantic_face(face)
         and len(face.get("points", [])) >= 3
         and normalize_shadow_surface(face.get("shadowSurface"), face.get("type", "floor")) in {"left_wall", "right_wall"}
         and (include_disabled or face.get("receivesShadow", True) is not False)
@@ -734,7 +739,7 @@ def targeted_shadow_face_ids(layout):
 def face_receives_shadow(face, targeted_face_ids=None):
     targeted_face_ids = targeted_face_ids or set()
     return (
-        face.get("type") != "sprite_area"
+        not is_semantic_face(face)
         and (face.get("receivesShadow", True) is not False or str(face.get("id", "")) in targeted_face_ids)
         and len(face.get("points", [])) >= 3
     )
@@ -797,9 +802,9 @@ def closest_projection_pair(points_a, points_b):
 def room_projection_model(layout):
     geometry = layout.get("roomGeometry", {})
     faces = geometry.get("faces", [])
-    floor_face = next((face for face in faces if face.get("type") != "sprite_area" and face_shadow_surface(face) == "floor"), None)
-    left_face = next((face for face in faces if face_shadow_surface(face) == "left_wall"), None)
-    right_face = next((face for face in faces if face_shadow_surface(face) == "right_wall"), None)
+    floor_face = next((face for face in faces if not is_semantic_face(face) and face_shadow_surface(face) == "floor"), None)
+    left_face = next((face for face in faces if not is_semantic_face(face) and face_shadow_surface(face) == "left_wall"), None)
+    right_face = next((face for face in faces if not is_semantic_face(face) and face_shadow_surface(face) == "right_wall"), None)
     if not floor_face or not left_face or not right_face:
         return None
 
@@ -1534,7 +1539,7 @@ def render_shadow_layer(size, layout, night, prepared_items, mode):
             unified_items.add(id(item))
     if not faces:
         has_room_faces = any(
-            face.get("type") != "sprite_area" and len(face.get("points", [])) >= 3
+            not is_semantic_face(face) and len(face.get("points", [])) >= 3
             for face in layout.get("roomGeometry", {}).get("faces", [])
         )
         if has_room_faces:

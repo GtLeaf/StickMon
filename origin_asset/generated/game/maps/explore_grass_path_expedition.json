@@ -1,0 +1,107 @@
+{
+  "format": "StickMonExploreExpedition",
+  "version": 1,
+  "scene": "grass_path",
+  "label": "草丛小路",
+  "seed": 20260713,
+  "mapCount": 4,
+  "maps": [
+    {
+      "key": "grass_path_01",
+      "map": "origin_asset/generated/game/explore_grass_path_01_416.png",
+      "semantic": "origin_asset/generated/game/maps/explore_grass_path_01.smonmap",
+      "entry": [
+        7,
+        11
+      ],
+      "exits": [
+        [
+          7,
+          0
+        ],
+        [
+          15,
+          3
+        ]
+      ],
+      "selectedExit": 1
+    },
+    {
+      "key": "grass_path_02",
+      "map": "origin_asset/generated/game/explore_grass_path_02_416.png",
+      "semantic": "origin_asset/generated/game/maps/explore_grass_path_02.smonmap",
+      "entry": [
+        0,
+        6
+      ],
+      "exits": [
+        [
+          5,
+          0
+        ],
+        [
+          11,
+          11
+        ]
+      ],
+      "selectedExit": 1
+    },
+    {
+      "key": "grass_path_03",
+      "map": "origin_asset/generated/game/explore_grass_path_03_416.png",
+      "semantic": "origin_asset/generated/game/maps/explore_grass_path_03.smonmap",
+      "entry": [
+        10,
+        0
+      ],
+      "exits": [
+        [
+          10,
+          11
+        ],
+        [
+          15,
+          4
+        ]
+      ],
+      "selectedExit": 1
+    },
+    {
+      "key": "grass_path_04",
+      "map": "origin_asset/generated/game/explore_grass_path_04_416.png",
+      "semantic": "origin_asset/generated/game/maps/explore_grass_path_04.smonmap",
+      "entry": [
+        0,
+        8
+      ],
+      "exits": [
+        [
+          15,
+          8
+        ],
+        [
+          8,
+          0
+        ]
+      ],
+      "selectedExit": 0
+    }
+  ],
+  "transitions": [
+    {
+      "from": "grass_path_01",
+      "exit": 1,
+      "to": "grass_path_02"
+    },
+    {
+      "from": "grass_path_02",
+      "exit": 1,
+      "to": "grass_path_03"
+    },
+    {
+      "from": "grass_path_03",
+      "exit": 1,
+      "to": "grass_path_04"
+    }
+  ]
+}

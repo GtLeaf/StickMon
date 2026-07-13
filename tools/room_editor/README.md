@@ -46,14 +46,20 @@ Assets and Background.
 4. Adjust `Reference opacity` so the original-size image is useful as a tracing
    guide in the edit area.
 5. Switch the editor to `Shape`.
-6. Click points on the edit canvas to draw wall/floor outlines. The edit canvas
-   uses the reference image's original pixel size.
+6. Click points on the edit canvas to draw physical surfaces or semantic areas.
+   The edit canvas uses the reference image's original pixel size.
 7. Click the first point to close the shape into a face.
 8. Select each closed face on the right and set its type:
    - `wall`
    - `floor`
+   - `sprite area`
+   - `门口` (`doorway`)
    Set `Surface` to `floor`, `left wall`, or `right wall`, and keep
    `Receive shadows` enabled only for the polygons that should catch shadows.
+   `sprite area` and `doorway` are semantic polygons: they are exported for
+   gameplay but are not painted and never receive furniture shadows. Use one
+   `doorway` polygon to cover the transition zone where a sprite should enter
+   or leave the room.
    For window-light rooms, trace the green wall panels separately from wood
    frames/windows if only the wall panels should receive cast shadows.
 9. Keep endpoints editable:
@@ -111,6 +117,16 @@ Assets and Background.
     receiving wall face into local coordinates, projects the item's alpha mask
     from its `Wall depth` toward the light's `Light depth`, then adds a soft
     contact shadow below the object.
+    Once a floor, left-wall, and right-wall face are available, the edit canvas
+    keeps a small `U/V/Z` orientation marker in its top-left corner. The `2.5D`
+    toolbar button pins the full room axes and selected-furniture diagnostics.
+    The same overlay appears automatically in Shape mode, while the light is
+    selected, or while `Shadow Advanced` is open. For a selected floor item it
+    shows the floor anchor, configured height, representative light ray, and
+    every room face reached by the current caster contour. For a wall item it
+    highlights the selected or automatically chosen target wall. These helpers
+    are editor-only: they are saved as a session view preference but are never
+    drawn in Preview or exported PNG files.
 15. Use `Project sprites` to add the firmware's current Pokemon frame as a
     scale/placement preview.
 16. Use the collapsible `Light and shadows` panel on the right to tune the
@@ -222,6 +238,9 @@ The firmware-side importer should interpret:
 
 - `type = "wall"` as a wall polygon filled by the selected wall material.
 - `type = "floor"` as a floor polygon filled by the selected floor material.
+- `type = "sprite_area"` as the allowed sprite movement polygon.
+- `type = "doorway"` as a room transition polygon for future enter/exit
+  animation paths. It is semantic data and is not rendered as room geometry.
 - `drawOrder` as the paint order within the room background.
 - `points` as the firmware/game-coordinate polygon.
 - `sourcePoints` as editor-only original-reference coordinates.
@@ -393,7 +412,7 @@ Saved editor sessions also compact library-backed furniture by storing the
 
 - The status bar at the bottom shows the current workflow step:
   1. Load a day or night background image.
-  2. Trace wall/floor faces in Shape mode.
+  2. Trace physical faces and semantic areas in Shape mode.
   3. Import furniture in Furniture mode.
   4. Add sprite previews, tune lighting/shadows, and export.
 - Shape-only tools (`New face`, `Undo point`, `Clear draft`) are disabled in

@@ -1,4 +1,5 @@
 #include "assets/PokemonSprites.h"
+#include "core/DeflateDecoder.h"
 #include "core/ResourcePack.h"
 #include <Arduino.h>
 #include <FS.h>
@@ -9,6 +10,67 @@
 namespace PokemonSprites {
 
 namespace {
+
+struct WalkingConfig {
+    uint16_t speciesId;
+    SpriteKind downBase;
+    SpriteKind leftBase;
+    SpriteKind upBase;
+    SpriteKind rightBase;
+    uint8_t frameCount;
+    bool rightFlipX;
+};
+
+static constexpr WalkingConfig WALKING_CONFIGS[] = {
+    {1, SpriteKind::BULBASAUR_WALKING_FRONT_0, SpriteKind::BULBASAUR_WALKING_LEFT_0, SpriteKind::BULBASAUR_WALKING_BACK_0, SpriteKind::BULBASAUR_WALKING_LEFT_0, 3, true},
+    {2, SpriteKind::IVYSAUR_WALKING_FRONT_0, SpriteKind::IVYSAUR_WALKING_LEFT_0, SpriteKind::IVYSAUR_WALKING_BACK_0, SpriteKind::IVYSAUR_WALKING_LEFT_0, 3, true},
+    {3, SpriteKind::VENUSAUR_WALKING_FRONT_0, SpriteKind::VENUSAUR_WALKING_LEFT_0, SpriteKind::VENUSAUR_WALKING_BACK_0, SpriteKind::VENUSAUR_WALKING_LEFT_0, 3, true},
+    {4, SpriteKind::CHARMANDER_WALKING_FRONT_0, SpriteKind::CHARMANDER_WALKING_LEFT_0, SpriteKind::CHARMANDER_WALKING_BACK_0, SpriteKind::CHARMANDER_WALKING_LEFT_0, 3, true},
+    {5, SpriteKind::CHARMELEON_WALKING_FRONT_0, SpriteKind::CHARMELEON_WALKING_LEFT_0, SpriteKind::CHARMELEON_WALKING_BACK_0, SpriteKind::CHARMELEON_WALKING_LEFT_0, 3, true},
+    {6, SpriteKind::CHARIZARD_WALKING_FRONT_0, SpriteKind::CHARIZARD_WALKING_LEFT_0, SpriteKind::CHARIZARD_WALKING_BACK_0, SpriteKind::CHARIZARD_WALKING_LEFT_0, 3, true},
+    {7, SpriteKind::SQUIRTLE_WALKING_FRONT_0, SpriteKind::SQUIRTLE_WALKING_LEFT_0, SpriteKind::SQUIRTLE_WALKING_BACK_0, SpriteKind::SQUIRTLE_WALKING_LEFT_0, 3, true},
+    {8, SpriteKind::WARTORTLE_WALKING_FRONT_0, SpriteKind::WARTORTLE_WALKING_LEFT_0, SpriteKind::WARTORTLE_WALKING_BACK_0, SpriteKind::WARTORTLE_WALKING_RIGHT_0, 3, false},
+    {9, SpriteKind::BLASTOISE_WALKING_FRONT_0, SpriteKind::BLASTOISE_WALKING_LEFT_0, SpriteKind::BLASTOISE_WALKING_BACK_0, SpriteKind::BLASTOISE_WALKING_LEFT_0, 3, true},
+    {10, SpriteKind::CATERPIE_WALKING_FRONT_0, SpriteKind::CATERPIE_WALKING_LEFT_0, SpriteKind::CATERPIE_WALKING_BACK_0, SpriteKind::CATERPIE_WALKING_LEFT_0, 3, true},
+    {11, SpriteKind::METAPOD_WALKING_FRONT_0, SpriteKind::METAPOD_WALKING_LEFT_0, SpriteKind::METAPOD_WALKING_BACK_0, SpriteKind::METAPOD_WALKING_LEFT_0, 3, true},
+    {12, SpriteKind::BUTTERFREE_WALKING_FRONT_0, SpriteKind::BUTTERFREE_WALKING_LEFT_0, SpriteKind::BUTTERFREE_WALKING_BACK_0, SpriteKind::BUTTERFREE_WALKING_LEFT_0, 3, true},
+    {16, SpriteKind::PIDGEY_WALKING_FRONT_0, SpriteKind::PIDGEY_WALKING_LEFT_0, SpriteKind::PIDGEY_WALKING_BACK_0, SpriteKind::PIDGEY_WALKING_LEFT_0, 3, true},
+    {17, SpriteKind::PIDGEOTTO_WALKING_FRONT_0, SpriteKind::PIDGEOTTO_WALKING_LEFT_0, SpriteKind::PIDGEOTTO_WALKING_BACK_0, SpriteKind::PIDGEOTTO_WALKING_LEFT_0, 3, true},
+    {18, SpriteKind::PIDGEOT_WALKING_FRONT_0, SpriteKind::PIDGEOT_WALKING_LEFT_0, SpriteKind::PIDGEOT_WALKING_BACK_0, SpriteKind::PIDGEOT_WALKING_LEFT_0, 3, true},
+    {25, SpriteKind::PIKACHU_WALKING_FRONT_0, SpriteKind::PIKACHU_WALKING_LEFT_0, SpriteKind::PIKACHU_WALKING_BACK_0, SpriteKind::PIKACHU_WALKING_LEFT_0, 3, true},
+    {26, SpriteKind::RAICHU_WALKING_FRONT_0, SpriteKind::RAICHU_WALKING_LEFT_0, SpriteKind::RAICHU_WALKING_BACK_0, SpriteKind::RAICHU_WALKING_RIGHT_0, 3, false},
+    {74, SpriteKind::GEODUDE_WALKING_FRONT_0, SpriteKind::GEODUDE_WALKING_LEFT_0, SpriteKind::GEODUDE_WALKING_BACK_0, SpriteKind::GEODUDE_WALKING_LEFT_0, 3, true},
+    {75, SpriteKind::GRAVELER_WALKING_FRONT_0, SpriteKind::GRAVELER_WALKING_LEFT_0, SpriteKind::GRAVELER_WALKING_BACK_0, SpriteKind::GRAVELER_WALKING_LEFT_0, 3, true},
+    {76, SpriteKind::GOLEM_WALKING_FRONT_0, SpriteKind::GOLEM_WALKING_LEFT_0, SpriteKind::GOLEM_WALKING_BACK_0, SpriteKind::GOLEM_WALKING_LEFT_0, 3, true},
+    {92, SpriteKind::GASTLY_WALKING_FRONT_0, SpriteKind::GASTLY_WALKING_LEFT_0, SpriteKind::GASTLY_WALKING_BACK_0, SpriteKind::GASTLY_WALKING_LEFT_0, 3, true},
+    {93, SpriteKind::HAUNTER_WALKING_FRONT_0, SpriteKind::HAUNTER_WALKING_LEFT_0, SpriteKind::HAUNTER_WALKING_BACK_0, SpriteKind::HAUNTER_WALKING_LEFT_0, 3, true},
+    {94, SpriteKind::GENGAR_WALKING_FRONT_0, SpriteKind::GENGAR_WALKING_LEFT_0, SpriteKind::GENGAR_WALKING_BACK_0, SpriteKind::GENGAR_WALKING_LEFT_0, 3, true},
+    {123, SpriteKind::SCYTHER_WALKING_FRONT_0, SpriteKind::SCYTHER_WALKING_LEFT_0, SpriteKind::SCYTHER_WALKING_BACK_0, SpriteKind::SCYTHER_WALKING_LEFT_0, 3, true},
+    {129, SpriteKind::MAGIKARP_WALKING_FRONT_0, SpriteKind::MAGIKARP_WALKING_LEFT_0, SpriteKind::MAGIKARP_WALKING_BACK_0, SpriteKind::MAGIKARP_WALKING_RIGHT_0, 1, false},
+    {130, SpriteKind::GYARADOS_WALKING_FRONT_0, SpriteKind::GYARADOS_WALKING_LEFT_0, SpriteKind::GYARADOS_WALKING_BACK_0, SpriteKind::GYARADOS_WALKING_RIGHT_0, 3, false},
+    {133, SpriteKind::EEVEE_WALKING_FRONT_0, SpriteKind::EEVEE_WALKING_LEFT_0, SpriteKind::EEVEE_WALKING_BACK_0, SpriteKind::EEVEE_WALKING_RIGHT_0, 3, false},
+    {134, SpriteKind::VAPOREON_WALKING_FRONT_0, SpriteKind::VAPOREON_WALKING_LEFT_0, SpriteKind::VAPOREON_WALKING_BACK_0, SpriteKind::VAPOREON_WALKING_RIGHT_0, 4, false},
+    {135, SpriteKind::JOLTEON_WALKING_FRONT_0, SpriteKind::JOLTEON_WALKING_LEFT_0, SpriteKind::JOLTEON_WALKING_BACK_0, SpriteKind::JOLTEON_WALKING_RIGHT_0, 4, false},
+    {136, SpriteKind::FLAREON_WALKING_FRONT_0, SpriteKind::FLAREON_WALKING_LEFT_0, SpriteKind::FLAREON_WALKING_BACK_0, SpriteKind::FLAREON_WALKING_RIGHT_0, 4, false},
+    {196, SpriteKind::ESPEON_WALKING_FRONT_0, SpriteKind::ESPEON_WALKING_LEFT_0, SpriteKind::ESPEON_WALKING_BACK_0, SpriteKind::ESPEON_WALKING_LEFT_0, 3, true},
+    {197, SpriteKind::UMBREON_WALKING_FRONT_0, SpriteKind::UMBREON_WALKING_LEFT_0, SpriteKind::UMBREON_WALKING_BACK_0, SpriteKind::UMBREON_WALKING_LEFT_0, 3, true},
+    {143, SpriteKind::SNORLAX_WALKING_FRONT_0, SpriteKind::SNORLAX_WALKING_LEFT_0, SpriteKind::SNORLAX_WALKING_BACK_0, SpriteKind::SNORLAX_WALKING_LEFT_0, 3, true},
+    {147, SpriteKind::DRATINI_WALKING_FRONT_0, SpriteKind::DRATINI_WALKING_LEFT_0, SpriteKind::DRATINI_WALKING_BACK_0, SpriteKind::DRATINI_WALKING_RIGHT_0, 3, false},
+    {148, SpriteKind::DRAGONAIR_WALKING_FRONT_0, SpriteKind::DRAGONAIR_WALKING_LEFT_0, SpriteKind::DRAGONAIR_WALKING_BACK_0, SpriteKind::DRAGONAIR_WALKING_RIGHT_0, 3, false},
+    {149, SpriteKind::DRAGONITE_WALKING_FRONT_0, SpriteKind::DRAGONITE_WALKING_LEFT_0, SpriteKind::DRAGONITE_WALKING_BACK_0, SpriteKind::DRAGONITE_WALKING_RIGHT_0, 2, false},
+    {151, SpriteKind::MEW_WALKING_FRONT_0, SpriteKind::MEW_WALKING_LEFT_0, SpriteKind::MEW_WALKING_BACK_0, SpriteKind::MEW_WALKING_RIGHT_0, 2, false},
+    {161, SpriteKind::SENTRET_WALKING_FRONT_0, SpriteKind::SENTRET_WALKING_LEFT_0, SpriteKind::SENTRET_WALKING_BACK_0, SpriteKind::SENTRET_WALKING_LEFT_0, 3, true},
+    {162, SpriteKind::FURRET_WALKING_FRONT_0, SpriteKind::FURRET_WALKING_LEFT_0, SpriteKind::FURRET_WALKING_BACK_0, SpriteKind::FURRET_WALKING_LEFT_0, 3, true},
+    {172, SpriteKind::PICHU_WALKING_FRONT_0, SpriteKind::PICHU_WALKING_LEFT_0, SpriteKind::PICHU_WALKING_BACK_0, SpriteKind::PICHU_WALKING_LEFT_0, 3, true},
+    {212, SpriteKind::SCIZOR_WALKING_FRONT_0, SpriteKind::SCIZOR_WALKING_LEFT_0, SpriteKind::SCIZOR_WALKING_BACK_0, SpriteKind::SCIZOR_WALKING_LEFT_0, 3, true},
+    {261, SpriteKind::POOCHYENA_WALKING_FRONT_0, SpriteKind::POOCHYENA_WALKING_LEFT_0, SpriteKind::POOCHYENA_WALKING_BACK_0, SpriteKind::POOCHYENA_WALKING_LEFT_0, 3, true},
+    {262, SpriteKind::MIGHTYENA_WALKING_FRONT_0, SpriteKind::MIGHTYENA_WALKING_LEFT_0, SpriteKind::MIGHTYENA_WALKING_BACK_0, SpriteKind::MIGHTYENA_WALKING_LEFT_0, 3, true},
+    {278, SpriteKind::WINGULL_WALKING_FRONT_0, SpriteKind::WINGULL_WALKING_LEFT_0, SpriteKind::WINGULL_WALKING_BACK_0, SpriteKind::WINGULL_WALKING_LEFT_0, 3, true},
+    {279, SpriteKind::PELIPPER_WALKING_FRONT_0, SpriteKind::PELIPPER_WALKING_LEFT_0, SpriteKind::PELIPPER_WALKING_BACK_0, SpriteKind::PELIPPER_WALKING_LEFT_0, 3, true},
+    {380, SpriteKind::LATIAS_WALKING_FRONT_0, SpriteKind::LATIAS_WALKING_LEFT_0, SpriteKind::LATIAS_WALKING_BACK_0, SpriteKind::LATIAS_WALKING_LEFT_0, 2, true},
+    {381, SpriteKind::LATIOS_WALKING_FRONT_0, SpriteKind::LATIOS_WALKING_LEFT_0, SpriteKind::LATIOS_WALKING_BACK_0, SpriteKind::LATIOS_WALKING_LEFT_0, 2, true},
+};
+
 static constexpr uint8_t SPRITE_SOURCE_FILE_BLOCK = 2;
 static constexpr uint8_t TEAM_CACHE_CAP = 2;
 static constexpr uint8_t CACHE_CAP = 4;
@@ -16,8 +78,10 @@ static constexpr uint8_t KNOWN_MISSING_FILE_CAP = 16;
 static constexpr uint8_t FRAME_MISSING_CAP = 4;
 static constexpr uint8_t KNOWN_MISSING_FRAME_CAP = 16;
 static constexpr uint32_t SPRITE_PACK_MAGIC = 0x5350534D;
-static constexpr uint16_t SPRITE_PACK_VERSION = 1;
+static constexpr uint16_t SPRITE_PACK_VERSION = 2;
+static constexpr uint16_t SPRITE_PACK_FLAG_RAW_DEFLATE = 1;
 static constexpr uint16_t MAX_PACK_FRAMES = 256;
+static constexpr uint32_t MAX_PACK_PAYLOAD_BYTES = 128000;
 
 struct __attribute__((packed)) PackedSpriteHeader {
     uint32_t magic;
@@ -26,7 +90,10 @@ struct __attribute__((packed)) PackedSpriteHeader {
     uint16_t frameCount;
     uint16_t rleWords;
     uint16_t paletteWords;
-    uint16_t reserved;
+    uint16_t flags;
+    uint32_t payloadRawBytes;
+    uint32_t payloadCompressedBytes;
+    uint32_t payloadCrc32;
 };
 
 struct __attribute__((packed)) PackedSpriteFrame {
@@ -41,12 +108,18 @@ struct __attribute__((packed)) PackedSpriteFrame {
     uint32_t paletteOffset;
 };
 
+static_assert(sizeof(PackedSpriteHeader) == 28, "Unexpected sprite pack header layout");
+static_assert(sizeof(PackedSpriteFrame) == 20, "Unexpected sprite pack frame layout");
+
 struct CachedSpecies {
     uint16_t speciesId = 0;
     uint16_t rleWords = 0;
     uint16_t paletteWords = 0;
     uint16_t frameCount = 0;
     SpriteFrame* frames = nullptr;
+    uint8_t* payload = nullptr;
+    uint32_t payloadBytes = 0;
+    uint32_t packedBytes = 0;
     uint16_t* data = nullptr;
     uint16_t* palettes = nullptr;
 };
@@ -65,6 +138,7 @@ uint16_t gFrameMissing[FRAME_MISSING_CAP] = {};
 MissingFrameKey gKnownMissingFrames[KNOWN_MISSING_FRAME_CAP] = {};
 uint8_t gTeamCount = 0;
 uint8_t gDynamicSlot = TEAM_CACHE_CAP;
+bool gDynamicLoadingEnabled = true;
 
 bool containsSpecies(const uint16_t* values, uint8_t count, uint16_t speciesId) {
     for (uint8_t i = 0; i < count; ++i) {
@@ -114,7 +188,16 @@ void noteMissingSpecies(uint16_t speciesId) {
 }
 
 void releaseEntry(CachedSpecies& entry) {
-    if (entry.data) free(entry.data);
+    if (entry.payload) {
+        uint32_t decodedBytes = entry.payloadBytes +
+                                static_cast<uint32_t>(entry.frameCount) * sizeof(SpriteFrame);
+        gStats.decodedBytes = gStats.decodedBytes >= decodedBytes
+            ? gStats.decodedBytes - decodedBytes : 0;
+        gStats.compressedBytes = gStats.compressedBytes >= entry.packedBytes
+            ? gStats.compressedBytes - entry.packedBytes : 0;
+        if (gStats.cachedSpecies > 0) --gStats.cachedSpecies;
+        free(entry.payload);
+    }
     if (entry.frames) free(entry.frames);
     entry = CachedSpecies{};
 }
@@ -211,29 +294,57 @@ bool loadSpeciesFromResourcePack(uint8_t slot, uint16_t speciesId) {
         header.speciesId != speciesId ||
         header.frameCount == 0 ||
         header.frameCount > MAX_PACK_FRAMES ||
-        header.rleWords == 0) {
+        header.rleWords == 0 ||
+        header.flags != SPRITE_PACK_FLAG_RAW_DEFLATE ||
+        header.payloadRawBytes == 0 ||
+        header.payloadRawBytes > MAX_PACK_PAYLOAD_BYTES ||
+        header.payloadCompressedBytes == 0) {
         return false;
     }
 
     uint32_t frameBytes = static_cast<uint32_t>(header.frameCount) * sizeof(SpriteFrame);
-    uint32_t decodedBytes = (static_cast<uint32_t>(header.rleWords) + header.paletteWords) * sizeof(uint16_t);
-    SpriteFrame* frames = psramFound()
-        ? static_cast<SpriteFrame*>(ps_malloc(frameBytes))
-        : static_cast<SpriteFrame*>(malloc(frameBytes));
-    uint16_t* decoded = psramFound()
-        ? static_cast<uint16_t*>(ps_malloc(decodedBytes))
-        : static_cast<uint16_t*>(malloc(decodedBytes));
-    if (!frames || !decoded) {
-        if (frames) free(frames);
-        if (decoded) free(decoded);
+    uint32_t packedFrameBytes = static_cast<uint32_t>(header.frameCount) * sizeof(PackedSpriteFrame);
+    uint32_t expectedPayloadBytes = packedFrameBytes +
+        (static_cast<uint32_t>(header.rleWords) + header.paletteWords) * sizeof(uint16_t);
+    uint32_t fileBytes = static_cast<uint32_t>(file.size());
+    if (expectedPayloadBytes != header.payloadRawBytes ||
+        static_cast<uint64_t>(sizeof(PackedSpriteHeader)) + header.payloadCompressedBytes != file.size()) {
         return false;
     }
 
+    SpriteFrame* frames = psramFound()
+        ? static_cast<SpriteFrame*>(ps_malloc(frameBytes))
+        : static_cast<SpriteFrame*>(malloc(frameBytes));
+    uint8_t* payload = psramFound()
+        ? static_cast<uint8_t*>(ps_malloc(header.payloadRawBytes))
+        : static_cast<uint8_t*>(malloc(header.payloadRawBytes));
+    if (!frames || !payload) {
+        if (frames) free(frames);
+        if (payload) free(payload);
+        return false;
+    }
+
+    DeflateDecoder::Stats decodeStats{};
+    if (!DeflateDecoder::inflateFile(file,
+                                     header.payloadCompressedBytes,
+                                     payload,
+                                     header.payloadRawBytes,
+                                     header.payloadCrc32,
+                                     &decodeStats)) {
+        free(frames);
+        free(payload);
+        Serial.printf(
+            "[PokemonSprites] decode failed species=%u read=%u inflate=%u total=%u\n",
+            speciesId, decodeStats.readMs, decodeStats.inflateMs, decodeStats.totalMs);
+        return false;
+    }
+
+    const auto* packedFrames = reinterpret_cast<const PackedSpriteFrame*>(payload);
     for (uint16_t i = 0; i < header.frameCount; ++i) {
-        PackedSpriteFrame packed = {};
-        if (!readExact(file, &packed, sizeof(packed)) || !validPackedFrame(packed, header)) {
+        const PackedSpriteFrame& packed = packedFrames[i];
+        if (!validPackedFrame(packed, header)) {
             free(frames);
-            free(decoded);
+            free(payload);
             return false;
         }
         frames[i] = SpriteFrame{
@@ -251,28 +362,28 @@ bool loadSpeciesFromResourcePack(uint8_t slot, uint16_t speciesId) {
         };
     }
 
-    if (!readExact(file, decoded, decodedBytes)) {
-        free(frames);
-        free(decoded);
-        return false;
-    }
+    uint16_t* decoded = reinterpret_cast<uint16_t*>(payload + packedFrameBytes);
 
     CachedSpecies& entry = gCache[slot];
-    bool replacing = entry.data != nullptr;
     releaseEntry(entry);
     entry.speciesId = speciesId;
     entry.rleWords = header.rleWords;
     entry.paletteWords = header.paletteWords;
     entry.frameCount = header.frameCount;
     entry.frames = frames;
+    entry.payload = payload;
+    entry.payloadBytes = header.payloadRawBytes;
+    entry.packedBytes = fileBytes;
     entry.data = decoded;
     entry.palettes = decoded + header.rleWords;
 
-    if (!replacing && gStats.cachedSpecies < 0xFF) ++gStats.cachedSpecies;
-    gStats.decodedBytes += decodedBytes;
-    gStats.compressedBytes += file.size();
-    Serial.printf("[PokemonSprites] source=littlefs species=%u frames=%u bytes=%u\n",
-                  speciesId, header.frameCount, static_cast<unsigned>(file.size()));
+    if (gStats.cachedSpecies < 0xFF) ++gStats.cachedSpecies;
+    gStats.decodedBytes += header.payloadRawBytes + frameBytes;
+    gStats.compressedBytes += fileBytes;
+    Serial.printf(
+        "[PokemonSprites] source=littlefs species=%u frames=%u compressed=%u decoded=%u read=%u inflate=%u total=%u\n",
+        speciesId, header.frameCount, fileBytes, header.payloadRawBytes + frameBytes,
+        decodeStats.readMs, decodeStats.inflateMs, decodeStats.totalMs);
     return true;
 }
 
@@ -303,6 +414,7 @@ uint8_t dynamicCacheSlot() {
 CachedSpecies* ensureSpeciesLoaded(uint16_t speciesId) {
     CachedSpecies* cached = cachedSpeciesFor(speciesId);
     if (cached) return cached;
+    if (!gDynamicLoadingEnabled) return nullptr;
     if (knownMissingFile(speciesId)) {
         noteMissingSpecies(speciesId);
         return nullptr;
@@ -323,6 +435,26 @@ const SpriteFrame* findFrame(CachedSpecies* cached, SpriteKind kind) {
 }
 }
 
+
+bool walkingAnimation(uint16_t speciesId, WalkDirection direction, WalkingAnimation& animation) {
+    for (const auto& config : WALKING_CONFIGS) {
+        if (config.speciesId != speciesId) continue;
+        animation.frameCount = config.frameCount;
+        animation.flipX = false;
+        switch (direction) {
+        case WalkDirection::DOWN: animation.base = config.downBase; break;
+        case WalkDirection::LEFT: animation.base = config.leftBase; break;
+        case WalkDirection::UP: animation.base = config.upBase; break;
+        case WalkDirection::RIGHT:
+            animation.base = config.rightBase;
+            animation.flipX = config.rightFlipX;
+            break;
+        }
+        return animation.frameCount > 0;
+    }
+    return false;
+}
+
 const SpriteFrame* findSpeciesSprite(uint16_t speciesId, SpriteKind kind) {
     CachedSpecies* cached = ensureSpeciesLoaded(speciesId);
     const SpriteFrame* frame = findFrame(cached, kind);
@@ -337,42 +469,63 @@ const SpriteFrame* findSpeciesSprite(uint16_t speciesId, SpriteKind kind) {
     return nullptr;
 }
 
-void syncTeamCache(const uint16_t* speciesIds, uint8_t count) {
+bool syncTeamCache(const uint16_t* speciesIds, uint8_t count, uint8_t loadBudget) {
     if (!speciesIds) count = 0;
     if (count > TEAM_CACHE_CAP) count = TEAM_CACHE_CAP;
 
     uint16_t next[CACHE_CAP] = {};
     for (uint8_t i = 0; i < count; ++i) next[i] = speciesIds[i];
+    bool signatureChanged = count != gTeamCount;
     if (count == gTeamCount) {
-        bool same = true;
         for (uint8_t i = 0; i < CACHE_CAP; ++i) {
             if (next[i] != gTeamSignature[i]) {
-                same = false;
+                signatureChanged = true;
                 break;
             }
         }
-        if (same) return;
     }
 
     uint32_t start = millis();
-    freeCache();
-    gTeamCount = count;
-    for (uint8_t i = 0; i < CACHE_CAP; ++i) gTeamSignature[i] = next[i];
+    if (signatureChanged) {
+        freeCache();
+        gTeamCount = count;
+        for (uint8_t i = 0; i < CACHE_CAP; ++i) gTeamSignature[i] = next[i];
+        ++gStats.reloadCount;
+    }
+
+    uint8_t loadedThisCall = 0;
     for (uint8_t i = 0; i < count; ++i) {
-        if (next[i] == 0) continue;
+        if (next[i] == 0 || gCache[i].speciesId == next[i]) continue;
+        if (loadedThisCall >= loadBudget) continue;
         if (!loadSpeciesIntoCache(i, next[i])) {
             Serial.printf("[PokemonSprites] cache miss species=%u\n", next[i]);
         }
+        ++loadedThisCall;
     }
-    gStats.reloadCount++;
+
+    bool ready = true;
+    for (uint8_t i = 0; i < count; ++i) {
+        if (next[i] != 0 && gCache[i].speciesId != next[i]) {
+            ready = false;
+            break;
+        }
+    }
+    if (!signatureChanged && loadedThisCall == 0) return ready;
+
     gStats.lastReloadMs = millis() - start;
     gStats.freePsram = ESP.getFreePsram();
     gStats.psram = psramFound();
     Serial.printf(
-        "[PokemonSprites] cache reload species=%u,%u cached=%u missing=%u decoded=%u compressed=%u ms=%u psram=%u free=%u\n",
-        gTeamSignature[0], gTeamSignature[1], gStats.cachedSpecies, gStats.missingSpecies,
+        "[PokemonSprites] cache sync species=%u,%u loaded=%u ready=%u cached=%u missing=%u decoded=%u compressed=%u ms=%u psram=%u free=%u\n",
+        gTeamSignature[0], gTeamSignature[1], loadedThisCall, ready ? 1 : 0,
+        gStats.cachedSpecies, gStats.missingSpecies,
         gStats.decodedBytes, gStats.compressedBytes, gStats.lastReloadMs,
         gStats.psram ? 1 : 0, gStats.freePsram);
+    return ready;
+}
+
+void setDynamicLoadingEnabled(bool enabled) {
+    gDynamicLoadingEnabled = enabled;
 }
 
 void beginRenderFrame() {

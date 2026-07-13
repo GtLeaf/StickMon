@@ -49,16 +49,36 @@ void Hal::flush() {
 }
 
 void Hal::applyBrightness() {
-    M5.Display.setBrightness(idleBrightnessActive ? 16 : brightness);
+    uint8_t target = idleBrightnessActive ? 16 : brightness;
+    uint8_t before = M5.Display.getBrightness();
+    uint32_t startedAt = millis();
+    M5.Display.setBrightness(target);
+    Serial.printf("[Brightness] apply t=%lu idle=%u configured=%u before=%u target=%u after=%u cost=%lums\n",
+                  (unsigned long)startedAt,
+                  idleBrightnessActive ? 1 : 0,
+                  brightness,
+                  before,
+                  target,
+                  M5.Display.getBrightness(),
+                  (unsigned long)(millis() - startedAt));
 }
 
 void Hal::setBrightness(uint8_t value) {
+    Serial.printf("[Brightness] set t=%lu old=%u new=%u idle=%u display=%u\n",
+                  (unsigned long)millis(), brightness, value,
+                  idleBrightnessActive ? 1 : 0, M5.Display.getBrightness());
     brightness = value;
     applyBrightness();
 }
 
 void Hal::setIdleBrightness(bool idle) {
     if (idleBrightnessActive == idle) return;
+    Serial.printf("[Brightness] idle t=%lu old=%u new=%u configured=%u display=%u\n",
+                  (unsigned long)millis(),
+                  idleBrightnessActive ? 1 : 0,
+                  idle ? 1 : 0,
+                  brightness,
+                  M5.Display.getBrightness());
     idleBrightnessActive = idle;
     applyBrightness();
 }
