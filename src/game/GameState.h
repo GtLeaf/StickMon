@@ -4,19 +4,26 @@
 
 namespace Game {
 
+using MoveId = uint16_t;
+
 static constexpr uint8_t TEAM_CAP = 2;
 static constexpr uint8_t STORAGE_CAP = 20;
+static constexpr uint8_t ITEM_STACK_CAP = 99;
 static constexpr uint32_t SAVE_MAGIC = 0x534D4F4E; // SMON
-static constexpr uint16_t SAVE_VERSION = 13;
+static constexpr uint16_t SAVE_VERSION = 19;
 static constexpr uint8_t STAT_COUNT = 6;
 static constexpr uint8_t NATURE_COUNT = 25;
-static constexpr uint8_t LEVEL_MAX = 50;
+static constexpr uint8_t LEVEL_MAX = 100;
+static constexpr uint8_t MOVE_SLOT_COUNT = 3;
+static constexpr uint8_t MOVE_PROFICIENCY_MAX = 100;
 static constexpr uint8_t IV_MAX = 31;
 static constexpr uint8_t EV_MAX = 252;
 static constexpr uint16_t EV_TOTAL_MAX = 510;
 static constexpr uint32_t HATCH_MAGIC = 0x48415443; // HATC
 static constexpr uint8_t ROOM_FOOD_COUNT = 2;
-static constexpr uint8_t ROOM_BOWL_CAPACITY = 3;
+static constexpr uint8_t ROOM_BOWL_CAPACITY = 1;
+static constexpr uint8_t ROOM_NORMAL_FOOD_INDEX = 0;
+static constexpr uint8_t ROOM_NORMAL_FOOD_BITES = 3;
 static constexpr uint8_t MET_AREA_STARTER = 0xFD;
 static constexpr uint8_t MET_AREA_HATCHED = 0xFE;
 static constexpr uint8_t MET_AREA_UNKNOWN = 0xFF;
@@ -34,7 +41,7 @@ enum class ItemId : uint8_t {
     COUNT,
 };
 
-enum StatusBits : uint8_t {
+enum LegacyStatusBits : uint8_t {
     STATUS_NONE = 0,
     STATUS_POISON = 1 << 0,
     STATUS_PARALYSIS = 1 << 1,
@@ -42,6 +49,16 @@ enum StatusBits : uint8_t {
     STATUS_BURN = 1 << 3,
     STATUS_FREEZE = 1 << 4,
     STATUS_CONFUSION = 1 << 5,
+};
+
+enum class MajorStatus : uint8_t {
+    NONE = 0,
+    POISON,
+    TOXIC,
+    PARALYSIS,
+    SLEEP,
+    BURN,
+    FREEZE,
 };
 
 enum class Origin : uint8_t {
@@ -90,23 +107,28 @@ inline uint16_t evTotal(const StatLine& ev) {
     return ev.hp + ev.atk + ev.def + ev.spa + ev.spd + ev.spe;
 }
 
+inline uint8_t roomFoodBitesPerServing(uint8_t foodIndex) {
+    return foodIndex == ROOM_NORMAL_FOOD_INDEX ? ROOM_NORMAL_FOOD_BITES : 1;
+}
+
 struct MonsterRuntime {
     uint16_t speciesId = 1;
     uint8_t level = 5;
     uint32_t exp = 0;
     uint16_t hpCur = 20;
     uint16_t hpMax = 20;
-    uint8_t move1Id = 0;
-    uint8_t move2Id = 0;
-    uint8_t move3Id = 0;
+    MoveId move1Id = 0;
+    MoveId move2Id = 0;
+    MoveId move3Id = 0;
     uint32_t ivPacked = 0;
     StatLine ev;
     uint8_t nature = 0;
     uint8_t affection = 30;
     uint8_t mood = 70;
     uint8_t satiety = 75;
-    uint8_t proficiency = 0;
-    uint8_t statusBits = STATUS_NONE;
+    uint8_t moveProficiency[MOVE_SLOT_COUNT] = {};
+    MajorStatus majorStatus = MajorStatus::NONE;
+    uint8_t majorStatusTurns = 0;
     uint8_t metArea = MET_AREA_UNKNOWN;
     uint8_t petCountToday = 0;
     Origin origin = Origin::STARTER;
@@ -114,6 +136,8 @@ struct MonsterRuntime {
     uint32_t caughtAt = 0;
     uint32_t lastSeenAt = 0;
     uint32_t lastPettedAt = 0;
+    uint32_t lastExploredAt = 0;
+    uint32_t lastWindowGazeAt = 0;
 };
 
 struct BagState {
@@ -132,6 +156,7 @@ struct RoomState {
     uint8_t selectedFood = 0;
     uint8_t bowlFood = 0;
     uint8_t bowlCount = 0;
+    uint8_t bowlBitesRemaining = 0;
     uint8_t roomStyle = 0;
     uint8_t activeToy = 0;
     uint8_t ownedToys = 0;
@@ -170,6 +195,12 @@ struct GameState {
     uint16_t careExpToday = 0;
     uint16_t careDay = 0;
     uint32_t gameMinutesTotal = 0;
+    bool pendingLevelUp = false;
+    uint8_t pendingLevelUpLevel = 0;
+    bool pendingMoveLearn = false;
+    uint8_t pendingMoveSlot = 0;
+    MoveId pendingMoveId = 0;
+    uint16_t pendingMoveCursor = 0;
     PlayerSettings settings;
 };
 

@@ -1,0 +1,4275 @@
+{
+  "format": "StickMonExploreMap",
+  "version": 1,
+  "source": {
+    "mapId": 0,
+    "name": "横贯大瀑 03",
+    "crop": [
+      0,
+      0
+    ],
+    "generated": true,
+    "seed": 20260714,
+    "variant": "waterfall_archipelago_03",
+    "tilesetReferenceMapId": 49
+  },
+  "grid": {
+    "width": 16,
+    "height": 12,
+    "tileSize": 26
+  },
+  "entry": [
+    0,
+    9
+  ],
+  "exits": [
+    [
+      15,
+      8
+    ],
+    [
+      4,
+      11
+    ]
+  ],
+  "terrainTags": {
+    "0": "None",
+    "1": "Ledge",
+    "2": "Grass",
+    "3": "Sand",
+    "4": "Rock",
+    "5": "DeepWater",
+    "6": "StillWater",
+    "7": "Water",
+    "8": "Waterfall",
+    "9": "WaterfallCrest",
+    "10": "TallGrass",
+    "11": "UnderwaterGrass",
+    "12": "Ice",
+    "13": "Neutral",
+    "14": "SootGrass",
+    "15": "Bridge",
+    "16": "Puddle",
+    "17": "NoEffect"
+  },
+  "flags": {
+    "entry": 1,
+    "exit": 2,
+    "water": 4,
+    "floatable": 8,
+    "route": 16,
+    "event": 32
+  },
+  "stats": {
+    "cells": 192,
+    "landReachable": 44,
+    "floatReachable": 44,
+    "floatOnlyReachable": 0,
+    "water": 125,
+    "floatableWater": 77,
+    "invalidRouteEdges": 0
+  },
+  "invalidRouteEdges": [],
+  "cells": [
+    {
+      "x": 0,
+      "y": 0,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 1,
+      "y": 0,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 2,
+      "y": 0,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 3,
+      "y": 0,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 4,
+      "y": 0,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 5,
+      "y": 0,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 6,
+      "y": 0,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 7,
+      "y": 0,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 8,
+      "y": 0,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 9,
+      "y": 0,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 10,
+      "y": 0,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 11,
+      "y": 0,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 12,
+      "y": 0,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 13,
+      "y": 0,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 14,
+      "y": 0,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 15,
+      "y": 0,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 0,
+      "y": 1,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 1,
+      "y": 1,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 2,
+      "y": 1,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 3,
+      "y": 1,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 4,
+      "y": 1,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 5,
+      "y": 1,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 6,
+      "y": 1,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 7,
+      "y": 1,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 8,
+      "y": 1,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 9,
+      "y": 1,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 10,
+      "y": 1,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 11,
+      "y": 1,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 12,
+      "y": 1,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 13,
+      "y": 1,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 14,
+      "y": 1,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 15,
+      "y": 1,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 0,
+      "y": 2,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 1,
+      "y": 2,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 2,
+      "y": 2,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 3,
+      "y": 2,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 4,
+      "y": 2,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 5,
+      "y": 2,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 6,
+      "y": 2,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 7,
+      "y": 2,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 8,
+      "y": 2,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 9,
+      "y": 2,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 10,
+      "y": 2,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 11,
+      "y": 2,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 12,
+      "y": 2,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 13,
+      "y": 2,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 14,
+      "y": 2,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 15,
+      "y": 2,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 8,
+      "flags": 4,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 0,
+      "y": 3,
+      "landBlocked": 15,
+      "floatBlocked": 2,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 1,
+      "y": 3,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 2,
+      "y": 3,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 3,
+      "y": 3,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 4,
+      "y": 3,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 5,
+      "y": 3,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 6,
+      "y": 3,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 7,
+      "y": 3,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 8,
+      "y": 3,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 9,
+      "y": 3,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 10,
+      "y": 3,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 11,
+      "y": 3,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 12,
+      "y": 3,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 13,
+      "y": 3,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 14,
+      "y": 3,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 15,
+      "y": 3,
+      "landBlocked": 15,
+      "floatBlocked": 4,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 0,
+      "y": 4,
+      "landBlocked": 15,
+      "floatBlocked": 2,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 1,
+      "y": 4,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 2,
+      "y": 4,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 3,
+      "y": 4,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 4,
+      "y": 4,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 5,
+      "y": 4,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 6,
+      "y": 4,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 7,
+      "y": 4,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 8,
+      "y": 4,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 9,
+      "y": 4,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 10,
+      "y": 4,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 11,
+      "y": 4,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 12,
+      "y": 4,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 13,
+      "y": 4,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 14,
+      "y": 4,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 15,
+      "y": 4,
+      "landBlocked": 15,
+      "floatBlocked": 4,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 0,
+      "y": 5,
+      "landBlocked": 15,
+      "floatBlocked": 2,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 1,
+      "y": 5,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 2,
+      "y": 5,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 3,
+      "y": 5,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 4,
+      "y": 5,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 5,
+      "y": 5,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 6,
+      "y": 5,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 7,
+      "y": 5,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 8,
+      "y": 5,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 9,
+      "y": 5,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 10,
+      "y": 5,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 11,
+      "y": 5,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 12,
+      "y": 5,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 13,
+      "y": 5,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 14,
+      "y": 5,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 15,
+      "y": 5,
+      "landBlocked": 15,
+      "floatBlocked": 4,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 0,
+      "y": 6,
+      "landBlocked": 15,
+      "floatBlocked": 2,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 1,
+      "y": 6,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 2,
+      "y": 6,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 3,
+      "y": 6,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 4,
+      "y": 6,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 5,
+      "y": 6,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 6,
+      "y": 6,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 7,
+      "y": 6,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 8,
+      "y": 6,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 9,
+      "y": 6,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 10,
+      "y": 6,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 11,
+      "y": 6,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 12,
+      "y": 6,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 13,
+      "y": 6,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 14,
+      "y": 6,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 15,
+      "y": 6,
+      "landBlocked": 15,
+      "floatBlocked": 4,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 0,
+      "y": 7,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 4,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 1,
+      "y": 7,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 4,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 2,
+      "y": 7,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 4,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 3,
+      "y": 7,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 4,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 4,
+      "y": 7,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 4,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 5,
+      "y": 7,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 4,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 6,
+      "y": 7,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 4,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 7,
+      "y": 7,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 8,
+      "y": 7,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 4,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 9,
+      "y": 7,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 4,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 10,
+      "y": 7,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 4,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 11,
+      "y": 7,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 4,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 12,
+      "y": 7,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 13,
+      "y": 7,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 4,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 14,
+      "y": 7,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 4,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 15,
+      "y": 7,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 4,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 0,
+      "y": 8,
+      "landBlocked": 2,
+      "floatBlocked": 2,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 1,
+      "y": 8,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 2,
+      "y": 8,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 3,
+      "y": 8,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 4,
+      "y": 8,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 5,
+      "y": 8,
+      "landBlocked": 8,
+      "floatBlocked": 8,
+      "terrainTag": 15,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 6,
+      "y": 8,
+      "landBlocked": 8,
+      "floatBlocked": 8,
+      "terrainTag": 15,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 7,
+      "y": 8,
+      "landBlocked": 8,
+      "floatBlocked": 8,
+      "terrainTag": 15,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 8,
+      "y": 8,
+      "landBlocked": 8,
+      "floatBlocked": 8,
+      "terrainTag": 15,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 9,
+      "y": 8,
+      "landBlocked": 8,
+      "floatBlocked": 8,
+      "terrainTag": 15,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 10,
+      "y": 8,
+      "landBlocked": 8,
+      "floatBlocked": 8,
+      "terrainTag": 15,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 11,
+      "y": 8,
+      "landBlocked": 8,
+      "floatBlocked": 8,
+      "terrainTag": 15,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 12,
+      "y": 8,
+      "landBlocked": 8,
+      "floatBlocked": 8,
+      "terrainTag": 15,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 13,
+      "y": 8,
+      "landBlocked": 8,
+      "floatBlocked": 8,
+      "terrainTag": 15,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 14,
+      "y": 8,
+      "landBlocked": 8,
+      "floatBlocked": 8,
+      "terrainTag": 15,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 15,
+      "y": 8,
+      "landBlocked": 4,
+      "floatBlocked": 4,
+      "terrainTag": 0,
+      "flags": 18,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 0,
+      "y": 9,
+      "landBlocked": 2,
+      "floatBlocked": 2,
+      "terrainTag": 0,
+      "flags": 17,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 1,
+      "y": 9,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 2,
+      "y": 9,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 3,
+      "y": 9,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 4,
+      "y": 9,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 5,
+      "y": 9,
+      "landBlocked": 1,
+      "floatBlocked": 1,
+      "terrainTag": 15,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 6,
+      "y": 9,
+      "landBlocked": 1,
+      "floatBlocked": 1,
+      "terrainTag": 15,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 7,
+      "y": 9,
+      "landBlocked": 1,
+      "floatBlocked": 1,
+      "terrainTag": 15,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 8,
+      "y": 9,
+      "landBlocked": 1,
+      "floatBlocked": 1,
+      "terrainTag": 15,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 9,
+      "y": 9,
+      "landBlocked": 1,
+      "floatBlocked": 1,
+      "terrainTag": 15,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 10,
+      "y": 9,
+      "landBlocked": 1,
+      "floatBlocked": 1,
+      "terrainTag": 15,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 11,
+      "y": 9,
+      "landBlocked": 1,
+      "floatBlocked": 1,
+      "terrainTag": 15,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 12,
+      "y": 9,
+      "landBlocked": 1,
+      "floatBlocked": 1,
+      "terrainTag": 15,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 13,
+      "y": 9,
+      "landBlocked": 1,
+      "floatBlocked": 1,
+      "terrainTag": 15,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 14,
+      "y": 9,
+      "landBlocked": 1,
+      "floatBlocked": 1,
+      "terrainTag": 15,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 15,
+      "y": 9,
+      "landBlocked": 4,
+      "floatBlocked": 4,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 0,
+      "y": 10,
+      "landBlocked": 2,
+      "floatBlocked": 2,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 1,
+      "y": 10,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 2,
+      "y": 10,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 3,
+      "y": 10,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 4,
+      "y": 10,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 16,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 5,
+      "y": 10,
+      "landBlocked": 0,
+      "floatBlocked": 0,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 6,
+      "y": 10,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 4,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 7,
+      "y": 10,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 8,
+      "y": 10,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 4,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 9,
+      "y": 10,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 4,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 10,
+      "y": 10,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 4,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 11,
+      "y": 10,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 4,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 12,
+      "y": 10,
+      "landBlocked": 15,
+      "floatBlocked": 0,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 13,
+      "y": 10,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 4,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 14,
+      "y": 10,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 4,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 15,
+      "y": 10,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 4,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 0,
+      "y": 11,
+      "landBlocked": 3,
+      "floatBlocked": 3,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 1,
+      "y": 11,
+      "landBlocked": 1,
+      "floatBlocked": 1,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 2,
+      "y": 11,
+      "landBlocked": 1,
+      "floatBlocked": 1,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 3,
+      "y": 11,
+      "landBlocked": 1,
+      "floatBlocked": 1,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 4,
+      "y": 11,
+      "landBlocked": 1,
+      "floatBlocked": 1,
+      "terrainTag": 0,
+      "flags": 18,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 5,
+      "y": 11,
+      "landBlocked": 1,
+      "floatBlocked": 1,
+      "terrainTag": 0,
+      "flags": 0,
+      "landReachable": true,
+      "floatReachable": true
+    },
+    {
+      "x": 6,
+      "y": 11,
+      "landBlocked": 15,
+      "floatBlocked": 15,
+      "terrainTag": 4,
+      "flags": 0,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 7,
+      "y": 11,
+      "landBlocked": 15,
+      "floatBlocked": 1,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 8,
+      "y": 11,
+      "landBlocked": 15,
+      "floatBlocked": 1,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 9,
+      "y": 11,
+      "landBlocked": 15,
+      "floatBlocked": 1,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 10,
+      "y": 11,
+      "landBlocked": 15,
+      "floatBlocked": 1,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 11,
+      "y": 11,
+      "landBlocked": 15,
+      "floatBlocked": 1,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 12,
+      "y": 11,
+      "landBlocked": 15,
+      "floatBlocked": 1,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 13,
+      "y": 11,
+      "landBlocked": 15,
+      "floatBlocked": 1,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 14,
+      "y": 11,
+      "landBlocked": 15,
+      "floatBlocked": 1,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    },
+    {
+      "x": 15,
+      "y": 11,
+      "landBlocked": 15,
+      "floatBlocked": 5,
+      "terrainTag": 7,
+      "flags": 12,
+      "landReachable": false,
+      "floatReachable": false
+    }
+  ],
+  "generation": {
+    "landCells": [
+      [
+        0,
+        8
+      ],
+      [
+        0,
+        9
+      ],
+      [
+        0,
+        10
+      ],
+      [
+        0,
+        11
+      ],
+      [
+        1,
+        8
+      ],
+      [
+        1,
+        9
+      ],
+      [
+        1,
+        10
+      ],
+      [
+        1,
+        11
+      ],
+      [
+        2,
+        8
+      ],
+      [
+        2,
+        9
+      ],
+      [
+        2,
+        10
+      ],
+      [
+        2,
+        11
+      ],
+      [
+        3,
+        8
+      ],
+      [
+        3,
+        9
+      ],
+      [
+        3,
+        10
+      ],
+      [
+        3,
+        11
+      ],
+      [
+        4,
+        8
+      ],
+      [
+        4,
+        9
+      ],
+      [
+        4,
+        10
+      ],
+      [
+        4,
+        11
+      ],
+      [
+        5,
+        8
+      ],
+      [
+        5,
+        9
+      ],
+      [
+        5,
+        10
+      ],
+      [
+        5,
+        11
+      ],
+      [
+        9,
+        8
+      ],
+      [
+        9,
+        9
+      ],
+      [
+        10,
+        8
+      ],
+      [
+        10,
+        9
+      ],
+      [
+        14,
+        8
+      ],
+      [
+        14,
+        9
+      ],
+      [
+        15,
+        8
+      ],
+      [
+        15,
+        9
+      ]
+    ],
+    "roadCells": [
+      [
+        0,
+        9
+      ],
+      [
+        0,
+        10
+      ],
+      [
+        1,
+        9
+      ],
+      [
+        1,
+        10
+      ],
+      [
+        2,
+        9
+      ],
+      [
+        2,
+        10
+      ],
+      [
+        3,
+        9
+      ],
+      [
+        3,
+        10
+      ],
+      [
+        4,
+        9
+      ],
+      [
+        4,
+        10
+      ],
+      [
+        4,
+        11
+      ],
+      [
+        5,
+        8
+      ],
+      [
+        5,
+        9
+      ],
+      [
+        5,
+        10
+      ],
+      [
+        5,
+        11
+      ],
+      [
+        6,
+        8
+      ],
+      [
+        6,
+        9
+      ],
+      [
+        7,
+        8
+      ],
+      [
+        7,
+        9
+      ],
+      [
+        8,
+        8
+      ],
+      [
+        8,
+        9
+      ],
+      [
+        9,
+        8
+      ],
+      [
+        9,
+        9
+      ],
+      [
+        10,
+        8
+      ],
+      [
+        10,
+        9
+      ],
+      [
+        11,
+        8
+      ],
+      [
+        11,
+        9
+      ],
+      [
+        12,
+        8
+      ],
+      [
+        12,
+        9
+      ],
+      [
+        13,
+        8
+      ],
+      [
+        13,
+        9
+      ],
+      [
+        14,
+        8
+      ],
+      [
+        14,
+        9
+      ],
+      [
+        15,
+        8
+      ],
+      [
+        15,
+        9
+      ]
+    ],
+    "waterCells": [
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        1
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        0,
+        3
+      ],
+      [
+        0,
+        4
+      ],
+      [
+        0,
+        5
+      ],
+      [
+        0,
+        6
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        3
+      ],
+      [
+        1,
+        4
+      ],
+      [
+        1,
+        5
+      ],
+      [
+        1,
+        6
+      ],
+      [
+        2,
+        0
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        2,
+        4
+      ],
+      [
+        2,
+        5
+      ],
+      [
+        2,
+        6
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        1
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        3,
+        3
+      ],
+      [
+        3,
+        4
+      ],
+      [
+        3,
+        5
+      ],
+      [
+        3,
+        6
+      ],
+      [
+        4,
+        0
+      ],
+      [
+        4,
+        1
+      ],
+      [
+        4,
+        2
+      ],
+      [
+        4,
+        3
+      ],
+      [
+        4,
+        4
+      ],
+      [
+        4,
+        5
+      ],
+      [
+        4,
+        6
+      ],
+      [
+        5,
+        0
+      ],
+      [
+        5,
+        1
+      ],
+      [
+        5,
+        2
+      ],
+      [
+        5,
+        3
+      ],
+      [
+        5,
+        4
+      ],
+      [
+        5,
+        5
+      ],
+      [
+        5,
+        6
+      ],
+      [
+        6,
+        0
+      ],
+      [
+        6,
+        1
+      ],
+      [
+        6,
+        2
+      ],
+      [
+        6,
+        3
+      ],
+      [
+        6,
+        4
+      ],
+      [
+        6,
+        5
+      ],
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        0
+      ],
+      [
+        7,
+        1
+      ],
+      [
+        7,
+        2
+      ],
+      [
+        7,
+        3
+      ],
+      [
+        7,
+        4
+      ],
+      [
+        7,
+        5
+      ],
+      [
+        7,
+        6
+      ],
+      [
+        7,
+        7
+      ],
+      [
+        7,
+        8
+      ],
+      [
+        7,
+        9
+      ],
+      [
+        7,
+        10
+      ],
+      [
+        7,
+        11
+      ],
+      [
+        8,
+        0
+      ],
+      [
+        8,
+        1
+      ],
+      [
+        8,
+        2
+      ],
+      [
+        8,
+        3
+      ],
+      [
+        8,
+        4
+      ],
+      [
+        8,
+        5
+      ],
+      [
+        8,
+        6
+      ],
+      [
+        8,
+        11
+      ],
+      [
+        9,
+        0
+      ],
+      [
+        9,
+        1
+      ],
+      [
+        9,
+        2
+      ],
+      [
+        9,
+        3
+      ],
+      [
+        9,
+        4
+      ],
+      [
+        9,
+        5
+      ],
+      [
+        9,
+        6
+      ],
+      [
+        9,
+        11
+      ],
+      [
+        10,
+        0
+      ],
+      [
+        10,
+        1
+      ],
+      [
+        10,
+        2
+      ],
+      [
+        10,
+        3
+      ],
+      [
+        10,
+        4
+      ],
+      [
+        10,
+        5
+      ],
+      [
+        10,
+        6
+      ],
+      [
+        10,
+        11
+      ],
+      [
+        11,
+        0
+      ],
+      [
+        11,
+        1
+      ],
+      [
+        11,
+        2
+      ],
+      [
+        11,
+        3
+      ],
+      [
+        11,
+        4
+      ],
+      [
+        11,
+        5
+      ],
+      [
+        11,
+        6
+      ],
+      [
+        11,
+        11
+      ],
+      [
+        12,
+        0
+      ],
+      [
+        12,
+        1
+      ],
+      [
+        12,
+        2
+      ],
+      [
+        12,
+        3
+      ],
+      [
+        12,
+        4
+      ],
+      [
+        12,
+        5
+      ],
+      [
+        12,
+        6
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        12,
+        8
+      ],
+      [
+        12,
+        9
+      ],
+      [
+        12,
+        10
+      ],
+      [
+        12,
+        11
+      ],
+      [
+        13,
+        0
+      ],
+      [
+        13,
+        1
+      ],
+      [
+        13,
+        2
+      ],
+      [
+        13,
+        3
+      ],
+      [
+        13,
+        4
+      ],
+      [
+        13,
+        5
+      ],
+      [
+        13,
+        6
+      ],
+      [
+        13,
+        11
+      ],
+      [
+        14,
+        0
+      ],
+      [
+        14,
+        1
+      ],
+      [
+        14,
+        2
+      ],
+      [
+        14,
+        3
+      ],
+      [
+        14,
+        4
+      ],
+      [
+        14,
+        5
+      ],
+      [
+        14,
+        6
+      ],
+      [
+        14,
+        11
+      ],
+      [
+        15,
+        0
+      ],
+      [
+        15,
+        1
+      ],
+      [
+        15,
+        2
+      ],
+      [
+        15,
+        3
+      ],
+      [
+        15,
+        4
+      ],
+      [
+        15,
+        5
+      ],
+      [
+        15,
+        6
+      ],
+      [
+        15,
+        11
+      ]
+    ],
+    "bridgeCells": [
+      [
+        5,
+        8
+      ],
+      [
+        5,
+        9
+      ],
+      [
+        6,
+        8
+      ],
+      [
+        6,
+        9
+      ],
+      [
+        7,
+        8
+      ],
+      [
+        7,
+        9
+      ],
+      [
+        8,
+        8
+      ],
+      [
+        8,
+        9
+      ],
+      [
+        9,
+        8
+      ],
+      [
+        9,
+        9
+      ],
+      [
+        10,
+        8
+      ],
+      [
+        10,
+        9
+      ],
+      [
+        11,
+        8
+      ],
+      [
+        11,
+        9
+      ],
+      [
+        12,
+        8
+      ],
+      [
+        12,
+        9
+      ],
+      [
+        13,
+        8
+      ],
+      [
+        13,
+        9
+      ],
+      [
+        14,
+        8
+      ],
+      [
+        14,
+        9
+      ]
+    ],
+    "cliffCells": [
+      [
+        0,
+        7
+      ],
+      [
+        1,
+        7
+      ],
+      [
+        2,
+        7
+      ],
+      [
+        3,
+        7
+      ],
+      [
+        4,
+        7
+      ],
+      [
+        5,
+        7
+      ],
+      [
+        6,
+        7
+      ],
+      [
+        6,
+        8
+      ],
+      [
+        6,
+        9
+      ],
+      [
+        6,
+        10
+      ],
+      [
+        6,
+        11
+      ],
+      [
+        8,
+        7
+      ],
+      [
+        8,
+        8
+      ],
+      [
+        8,
+        9
+      ],
+      [
+        8,
+        10
+      ],
+      [
+        9,
+        7
+      ],
+      [
+        9,
+        10
+      ],
+      [
+        10,
+        7
+      ],
+      [
+        10,
+        10
+      ],
+      [
+        11,
+        7
+      ],
+      [
+        11,
+        8
+      ],
+      [
+        11,
+        9
+      ],
+      [
+        11,
+        10
+      ],
+      [
+        13,
+        7
+      ],
+      [
+        13,
+        8
+      ],
+      [
+        13,
+        9
+      ],
+      [
+        13,
+        10
+      ],
+      [
+        14,
+        7
+      ],
+      [
+        14,
+        10
+      ],
+      [
+        15,
+        7
+      ],
+      [
+        15,
+        10
+      ]
+    ],
+    "stairCells": [],
+    "caveLadderCells": [],
+    "caveDownLadderModuleCells": [],
+    "boulderCells": [],
+    "waterRockCells": [],
+    "waterfallCells": [
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        1
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        2,
+        0
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        1
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        4,
+        0
+      ],
+      [
+        4,
+        1
+      ],
+      [
+        4,
+        2
+      ],
+      [
+        5,
+        0
+      ],
+      [
+        5,
+        1
+      ],
+      [
+        5,
+        2
+      ],
+      [
+        6,
+        0
+      ],
+      [
+        6,
+        1
+      ],
+      [
+        6,
+        2
+      ],
+      [
+        7,
+        0
+      ],
+      [
+        7,
+        1
+      ],
+      [
+        7,
+        2
+      ],
+      [
+        8,
+        0
+      ],
+      [
+        8,
+        1
+      ],
+      [
+        8,
+        2
+      ],
+      [
+        9,
+        0
+      ],
+      [
+        9,
+        1
+      ],
+      [
+        9,
+        2
+      ],
+      [
+        10,
+        0
+      ],
+      [
+        10,
+        1
+      ],
+      [
+        10,
+        2
+      ],
+      [
+        11,
+        0
+      ],
+      [
+        11,
+        1
+      ],
+      [
+        11,
+        2
+      ],
+      [
+        12,
+        0
+      ],
+      [
+        12,
+        1
+      ],
+      [
+        12,
+        2
+      ],
+      [
+        13,
+        0
+      ],
+      [
+        13,
+        1
+      ],
+      [
+        13,
+        2
+      ],
+      [
+        14,
+        0
+      ],
+      [
+        14,
+        1
+      ],
+      [
+        14,
+        2
+      ],
+      [
+        15,
+        0
+      ],
+      [
+        15,
+        1
+      ],
+      [
+        15,
+        2
+      ]
+    ],
+    "waterfallCrestCells": [],
+    "waterfallBodyCells": [
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        2,
+        0
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        1
+      ],
+      [
+        4,
+        0
+      ],
+      [
+        4,
+        1
+      ],
+      [
+        5,
+        0
+      ],
+      [
+        5,
+        1
+      ],
+      [
+        6,
+        0
+      ],
+      [
+        6,
+        1
+      ],
+      [
+        7,
+        0
+      ],
+      [
+        7,
+        1
+      ],
+      [
+        8,
+        0
+      ],
+      [
+        8,
+        1
+      ],
+      [
+        9,
+        0
+      ],
+      [
+        9,
+        1
+      ],
+      [
+        10,
+        0
+      ],
+      [
+        10,
+        1
+      ],
+      [
+        11,
+        0
+      ],
+      [
+        11,
+        1
+      ],
+      [
+        12,
+        0
+      ],
+      [
+        12,
+        1
+      ],
+      [
+        13,
+        0
+      ],
+      [
+        13,
+        1
+      ],
+      [
+        14,
+        0
+      ],
+      [
+        14,
+        1
+      ],
+      [
+        15,
+        0
+      ],
+      [
+        15,
+        1
+      ]
+    ],
+    "waterfallBottomCells": [
+      [
+        0,
+        2
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        4,
+        2
+      ],
+      [
+        5,
+        2
+      ],
+      [
+        6,
+        2
+      ],
+      [
+        7,
+        2
+      ],
+      [
+        8,
+        2
+      ],
+      [
+        9,
+        2
+      ],
+      [
+        10,
+        2
+      ],
+      [
+        11,
+        2
+      ],
+      [
+        12,
+        2
+      ],
+      [
+        13,
+        2
+      ],
+      [
+        14,
+        2
+      ],
+      [
+        15,
+        2
+      ]
+    ],
+    "upstreamWaterCells": [],
+    "downstreamWaterCells": [],
+    "islandFootprintCells": [
+      [
+        0,
+        7
+      ],
+      [
+        0,
+        8
+      ],
+      [
+        0,
+        9
+      ],
+      [
+        0,
+        10
+      ],
+      [
+        0,
+        11
+      ],
+      [
+        1,
+        7
+      ],
+      [
+        1,
+        8
+      ],
+      [
+        1,
+        9
+      ],
+      [
+        1,
+        10
+      ],
+      [
+        1,
+        11
+      ],
+      [
+        2,
+        7
+      ],
+      [
+        2,
+        8
+      ],
+      [
+        2,
+        9
+      ],
+      [
+        2,
+        10
+      ],
+      [
+        2,
+        11
+      ],
+      [
+        3,
+        7
+      ],
+      [
+        3,
+        8
+      ],
+      [
+        3,
+        9
+      ],
+      [
+        3,
+        10
+      ],
+      [
+        3,
+        11
+      ],
+      [
+        4,
+        7
+      ],
+      [
+        4,
+        8
+      ],
+      [
+        4,
+        9
+      ],
+      [
+        4,
+        10
+      ],
+      [
+        4,
+        11
+      ],
+      [
+        5,
+        7
+      ],
+      [
+        5,
+        8
+      ],
+      [
+        5,
+        9
+      ],
+      [
+        5,
+        10
+      ],
+      [
+        5,
+        11
+      ],
+      [
+        6,
+        7
+      ],
+      [
+        6,
+        8
+      ],
+      [
+        6,
+        9
+      ],
+      [
+        6,
+        10
+      ],
+      [
+        6,
+        11
+      ],
+      [
+        8,
+        7
+      ],
+      [
+        8,
+        8
+      ],
+      [
+        8,
+        9
+      ],
+      [
+        8,
+        10
+      ],
+      [
+        9,
+        7
+      ],
+      [
+        9,
+        8
+      ],
+      [
+        9,
+        9
+      ],
+      [
+        9,
+        10
+      ],
+      [
+        10,
+        7
+      ],
+      [
+        10,
+        8
+      ],
+      [
+        10,
+        9
+      ],
+      [
+        10,
+        10
+      ],
+      [
+        11,
+        7
+      ],
+      [
+        11,
+        8
+      ],
+      [
+        11,
+        9
+      ],
+      [
+        11,
+        10
+      ],
+      [
+        13,
+        7
+      ],
+      [
+        13,
+        8
+      ],
+      [
+        13,
+        9
+      ],
+      [
+        13,
+        10
+      ],
+      [
+        14,
+        7
+      ],
+      [
+        14,
+        8
+      ],
+      [
+        14,
+        9
+      ],
+      [
+        14,
+        10
+      ],
+      [
+        15,
+        7
+      ],
+      [
+        15,
+        8
+      ],
+      [
+        15,
+        9
+      ],
+      [
+        15,
+        10
+      ]
+    ],
+    "ancientTreeCells": [],
+    "streamTransitionCells": [],
+    "solidScenery": [
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        1
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        0,
+        3
+      ],
+      [
+        0,
+        4
+      ],
+      [
+        0,
+        5
+      ],
+      [
+        0,
+        6
+      ],
+      [
+        0,
+        7
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        3
+      ],
+      [
+        1,
+        4
+      ],
+      [
+        1,
+        5
+      ],
+      [
+        1,
+        6
+      ],
+      [
+        1,
+        7
+      ],
+      [
+        2,
+        0
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        2,
+        4
+      ],
+      [
+        2,
+        5
+      ],
+      [
+        2,
+        6
+      ],
+      [
+        2,
+        7
+      ],
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        1
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        3,
+        3
+      ],
+      [
+        3,
+        4
+      ],
+      [
+        3,
+        5
+      ],
+      [
+        3,
+        6
+      ],
+      [
+        3,
+        7
+      ],
+      [
+        4,
+        0
+      ],
+      [
+        4,
+        1
+      ],
+      [
+        4,
+        2
+      ],
+      [
+        4,
+        3
+      ],
+      [
+        4,
+        4
+      ],
+      [
+        4,
+        5
+      ],
+      [
+        4,
+        6
+      ],
+      [
+        4,
+        7
+      ],
+      [
+        5,
+        0
+      ],
+      [
+        5,
+        1
+      ],
+      [
+        5,
+        2
+      ],
+      [
+        5,
+        3
+      ],
+      [
+        5,
+        4
+      ],
+      [
+        5,
+        5
+      ],
+      [
+        5,
+        6
+      ],
+      [
+        5,
+        7
+      ],
+      [
+        6,
+        0
+      ],
+      [
+        6,
+        1
+      ],
+      [
+        6,
+        2
+      ],
+      [
+        6,
+        3
+      ],
+      [
+        6,
+        4
+      ],
+      [
+        6,
+        5
+      ],
+      [
+        6,
+        6
+      ],
+      [
+        6,
+        7
+      ],
+      [
+        6,
+        8
+      ],
+      [
+        6,
+        9
+      ],
+      [
+        6,
+        10
+      ],
+      [
+        6,
+        11
+      ],
+      [
+        7,
+        0
+      ],
+      [
+        7,
+        1
+      ],
+      [
+        7,
+        2
+      ],
+      [
+        7,
+        3
+      ],
+      [
+        7,
+        4
+      ],
+      [
+        7,
+        5
+      ],
+      [
+        7,
+        6
+      ],
+      [
+        7,
+        7
+      ],
+      [
+        7,
+        10
+      ],
+      [
+        7,
+        11
+      ],
+      [
+        8,
+        0
+      ],
+      [
+        8,
+        1
+      ],
+      [
+        8,
+        2
+      ],
+      [
+        8,
+        3
+      ],
+      [
+        8,
+        4
+      ],
+      [
+        8,
+        5
+      ],
+      [
+        8,
+        6
+      ],
+      [
+        8,
+        7
+      ],
+      [
+        8,
+        8
+      ],
+      [
+        8,
+        9
+      ],
+      [
+        8,
+        10
+      ],
+      [
+        8,
+        11
+      ],
+      [
+        9,
+        0
+      ],
+      [
+        9,
+        1
+      ],
+      [
+        9,
+        2
+      ],
+      [
+        9,
+        3
+      ],
+      [
+        9,
+        4
+      ],
+      [
+        9,
+        5
+      ],
+      [
+        9,
+        6
+      ],
+      [
+        9,
+        7
+      ],
+      [
+        9,
+        10
+      ],
+      [
+        9,
+        11
+      ],
+      [
+        10,
+        0
+      ],
+      [
+        10,
+        1
+      ],
+      [
+        10,
+        2
+      ],
+      [
+        10,
+        3
+      ],
+      [
+        10,
+        4
+      ],
+      [
+        10,
+        5
+      ],
+      [
+        10,
+        6
+      ],
+      [
+        10,
+        7
+      ],
+      [
+        10,
+        10
+      ],
+      [
+        10,
+        11
+      ],
+      [
+        11,
+        0
+      ],
+      [
+        11,
+        1
+      ],
+      [
+        11,
+        2
+      ],
+      [
+        11,
+        3
+      ],
+      [
+        11,
+        4
+      ],
+      [
+        11,
+        5
+      ],
+      [
+        11,
+        6
+      ],
+      [
+        11,
+        7
+      ],
+      [
+        11,
+        8
+      ],
+      [
+        11,
+        9
+      ],
+      [
+        11,
+        10
+      ],
+      [
+        11,
+        11
+      ],
+      [
+        12,
+        0
+      ],
+      [
+        12,
+        1
+      ],
+      [
+        12,
+        2
+      ],
+      [
+        12,
+        3
+      ],
+      [
+        12,
+        4
+      ],
+      [
+        12,
+        5
+      ],
+      [
+        12,
+        6
+      ],
+      [
+        12,
+        7
+      ],
+      [
+        12,
+        10
+      ],
+      [
+        12,
+        11
+      ],
+      [
+        13,
+        0
+      ],
+      [
+        13,
+        1
+      ],
+      [
+        13,
+        2
+      ],
+      [
+        13,
+        3
+      ],
+      [
+        13,
+        4
+      ],
+      [
+        13,
+        5
+      ],
+      [
+        13,
+        6
+      ],
+      [
+        13,
+        7
+      ],
+      [
+        13,
+        8
+      ],
+      [
+        13,
+        9
+      ],
+      [
+        13,
+        10
+      ],
+      [
+        13,
+        11
+      ],
+      [
+        14,
+        0
+      ],
+      [
+        14,
+        1
+      ],
+      [
+        14,
+        2
+      ],
+      [
+        14,
+        3
+      ],
+      [
+        14,
+        4
+      ],
+      [
+        14,
+        5
+      ],
+      [
+        14,
+        6
+      ],
+      [
+        14,
+        7
+      ],
+      [
+        14,
+        10
+      ],
+      [
+        14,
+        11
+      ],
+      [
+        15,
+        0
+      ],
+      [
+        15,
+        1
+      ],
+      [
+        15,
+        2
+      ],
+      [
+        15,
+        3
+      ],
+      [
+        15,
+        4
+      ],
+      [
+        15,
+        5
+      ],
+      [
+        15,
+        6
+      ],
+      [
+        15,
+        7
+      ],
+      [
+        15,
+        10
+      ],
+      [
+        15,
+        11
+      ]
+    ]
+  }
+}

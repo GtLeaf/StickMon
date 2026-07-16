@@ -415,8 +415,12 @@ Saved editor sessions also compact library-backed furniture by storing the
   2. Trace physical faces and semantic areas in Shape mode.
   3. Import furniture in Furniture mode.
   4. Add sprite previews, tune lighting/shadows, and export.
-- Shape-only tools (`New face`, `Undo point`, `Clear draft`) are disabled in
-  Furniture mode; furniture `Duplicate` / `Delete` are disabled in Shape mode.
+- Entering Shape mode only selects and adjusts existing faces or points. Click
+  `+` in the `Room faces` header to start adding points on the canvas.
+- While adding a face, click the first point to close it. Click `x` in the
+  `Room faces` header or press `Esc` to pause; an unfinished draft is kept and
+  the same `+` button resumes it.
+- Furniture `Duplicate` / `Delete` actions are disabled in Shape mode.
 - When a vertex is shared by multiple faces, the status bar warns that moving
   it will affect all connected faces.
 - Importing a layout only updates furniture that is already loaded; missing

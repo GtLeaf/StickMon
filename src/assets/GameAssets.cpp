@@ -17,7 +17,7 @@ constexpr uint32_t PACK_MAGIC = 0x58464753;
 constexpr uint16_t PACK_VERSION = 2;
 constexpr uint32_t FLAG_RAW_DEFLATE = 1;
 constexpr uint8_t FORMAT_INDEXED4_RLE = 1;
-constexpr uint16_t MAX_FRAMES = 96;
+constexpr uint16_t MAX_FRAMES = 256;
 constexpr uint32_t MAX_DATA_WORDS = 200000;
 constexpr uint32_t MAX_PALETTE_WORDS = 2048;
 constexpr uint32_t MAX_PAYLOAD_BYTES = 384000;
@@ -108,7 +108,7 @@ PackSlot packSlotFor(Kind kind) {
     uint16_t value = static_cast<uint16_t>(kind);
     if (value <= static_cast<uint16_t>(Kind::ITEM_CANDY)) return PackSlot::UI;
     if (kind == Kind::EGG) return PackSlot::HATCH;
-    if (kind >= Kind::EXPLORE_TILE_0072 && kind <= Kind::EXPLORE_TILE_1682) {
+    if (kind >= Kind::EXPLORE_TILE_0072 && kind <= Kind::EXPLORE_WATERFALL_BOTTOM_F3) {
         return PackSlot::MAP;
     }
     if (kind < Kind::COUNT) return PackSlot::BATTLE;
@@ -346,10 +346,45 @@ bool drawBackgroundViewport(Kind kind, int cameraX, int cameraY) {
     return true;
 }
 
-bool drawExploreTile(uint16_t tileId, int x, int y) {
+bool drawExploreTile(uint16_t tileId, int x, int y, uint8_t animationFrame) {
     Kind kind = Kind::COUNT;
+    uint8_t seaFrame = animationFrame % 8;
+    uint8_t waterfallFrame = animationFrame % 4;
     switch (tileId) {
-    case 72: kind = Kind::EXPLORE_TILE_0072; break;
+    case 48:
+        kind = static_cast<Kind>(static_cast<uint16_t>(Kind::EXPLORE_TILE_0048_F0) + seaFrame);
+        break;
+    case 64:
+        kind = static_cast<Kind>(static_cast<uint16_t>(Kind::EXPLORE_TILE_0064_F0) + seaFrame);
+        break;
+    case 68:
+        kind = static_cast<Kind>(static_cast<uint16_t>(Kind::EXPLORE_TILE_0068_F0) + seaFrame);
+        break;
+    case 72:
+        kind = seaFrame == 0
+                   ? Kind::EXPLORE_TILE_0072
+                   : static_cast<Kind>(
+                         static_cast<uint16_t>(Kind::EXPLORE_TILE_0072_F1) + seaFrame - 1);
+        break;
+    case 80:
+        kind = static_cast<Kind>(static_cast<uint16_t>(Kind::EXPLORE_TILE_0080_F0) + seaFrame);
+        break;
+    case 84:
+        kind = static_cast<Kind>(static_cast<uint16_t>(Kind::EXPLORE_TILE_0084_F0) + seaFrame);
+        break;
+    case 273: case 283: case 285:
+        kind = static_cast<Kind>(
+            static_cast<uint16_t>(Kind::EXPLORE_WATERFALL_CREST_F0) + waterfallFrame);
+        break;
+    case 288: case 304: case 308: case 312: case 316: case 322: case 324:
+    case 326: case 328:
+        kind = static_cast<Kind>(
+            static_cast<uint16_t>(Kind::EXPLORE_WATERFALL_BODY_F0) + waterfallFrame);
+        break;
+    case 336:
+        kind = static_cast<Kind>(
+            static_cast<uint16_t>(Kind::EXPLORE_WATERFALL_BOTTOM_F0) + waterfallFrame);
+        break;
     case 144: kind = Kind::EXPLORE_TILE_0144; break;
     case 168: kind = Kind::EXPLORE_TILE_0168; break;
     case 385: kind = Kind::EXPLORE_TILE_0385; break;
@@ -383,10 +418,80 @@ bool drawExploreTile(uint16_t tileId, int x, int y) {
     case 811: kind = Kind::EXPLORE_TILE_0811; break;
     case 818: kind = Kind::EXPLORE_TILE_0818; break;
     case 819: kind = Kind::EXPLORE_TILE_0819; break;
+    case 859: kind = Kind::EXPLORE_TILE_0859; break;
+    case 1088: kind = Kind::EXPLORE_TILE_1088; break;
+    case 1090: kind = Kind::EXPLORE_TILE_1090; break;
+    case 1096: kind = Kind::EXPLORE_TILE_1096; break;
+    case 1097: kind = Kind::EXPLORE_TILE_1097; break;
+    case 1098: kind = Kind::EXPLORE_TILE_1098; break;
+    case 1104: kind = Kind::EXPLORE_TILE_1104; break;
+    case 1106: kind = Kind::EXPLORE_TILE_1106; break;
+    case 1161: kind = Kind::EXPLORE_TILE_1161; break;
+    case 1162: kind = Kind::EXPLORE_TILE_1162; break;
+    case 1185: kind = Kind::EXPLORE_TILE_1185; break;
+    case 1188: kind = Kind::EXPLORE_TILE_1188; break;
+    case 1506: kind = Kind::EXPLORE_TILE_1506; break;
+    case 1507: kind = Kind::EXPLORE_TILE_1507; break;
+    case 1514: kind = Kind::EXPLORE_TILE_1514; break;
+    case 1515: kind = Kind::EXPLORE_TILE_1515; break;
+    case 1532: kind = Kind::EXPLORE_TILE_1532; break;
+    case 1627: kind = Kind::EXPLORE_TILE_1627; break;
+    case 1635: kind = Kind::EXPLORE_TILE_1635; break;
+    case 1643: kind = Kind::EXPLORE_TILE_1643; break;
     case 1662: kind = Kind::EXPLORE_TILE_1662; break;
     case 1665: kind = Kind::EXPLORE_TILE_1665; break;
     case 1681: kind = Kind::EXPLORE_TILE_1681; break;
     case 1682: kind = Kind::EXPLORE_TILE_1682; break;
+    case 4400: kind = Kind::EXPLORE_TILE_4400; break;
+    case 4401: kind = Kind::EXPLORE_TILE_4401; break;
+    case 4402: kind = Kind::EXPLORE_TILE_4402; break;
+    case 4403: kind = Kind::EXPLORE_TILE_4403; break;
+    case 1231: kind = Kind::EXPLORE_TILE_1231; break;
+    case 4500: kind = Kind::EXPLORE_TILE_4500; break;
+    case 4501: kind = Kind::EXPLORE_TILE_4501; break;
+    case 4502: kind = Kind::EXPLORE_TILE_4502; break;
+    case 4503: kind = Kind::EXPLORE_TILE_4503; break;
+    case 4504: kind = Kind::EXPLORE_TILE_4504; break;
+    case 4505: kind = Kind::EXPLORE_TILE_4505; break;
+    case 4506: kind = Kind::EXPLORE_TILE_4506; break;
+    case 4507: kind = Kind::EXPLORE_TILE_4507; break;
+    case 4508: kind = Kind::EXPLORE_TILE_4508; break;
+    case 4509: kind = Kind::EXPLORE_TILE_4509; break;
+    case 4510: kind = Kind::EXPLORE_TILE_4510; break;
+    case 4511: kind = Kind::EXPLORE_TILE_4511; break;
+    case 4512: kind = Kind::EXPLORE_TILE_4512; break;
+    case 4513: kind = Kind::EXPLORE_TILE_4513; break;
+    case 4514: kind = Kind::EXPLORE_TILE_4514; break;
+    case 4515: kind = Kind::EXPLORE_TILE_4515; break;
+    case 4516: kind = Kind::EXPLORE_TILE_4516; break;
+    case 4517: kind = Kind::EXPLORE_TILE_4517; break;
+    case 4518: kind = Kind::EXPLORE_TILE_4518; break;
+    case 4519: kind = Kind::EXPLORE_TILE_4519; break;
+    case 4520: kind = Kind::EXPLORE_TILE_4520; break;
+    case 4521: kind = Kind::EXPLORE_TILE_4521; break;
+    case 4522: kind = Kind::EXPLORE_TILE_4522; break;
+    case 4523: kind = Kind::EXPLORE_TILE_4523; break;
+    case 4524: kind = Kind::EXPLORE_TILE_4524; break;
+    case 4525: kind = Kind::EXPLORE_TILE_4525; break;
+    case 4526: kind = Kind::EXPLORE_TILE_4526; break;
+    case 4527: kind = Kind::EXPLORE_TILE_4527; break;
+    case 4528: kind = Kind::EXPLORE_TILE_4528; break;
+    case 4529: kind = Kind::EXPLORE_TILE_4529; break;
+    case 4530: kind = Kind::EXPLORE_TILE_4530; break;
+    case 4531: kind = Kind::EXPLORE_TILE_4531; break;
+    case 4532: kind = Kind::EXPLORE_TILE_4532; break;
+    case 4533: kind = Kind::EXPLORE_TILE_4533; break;
+    case 4534: kind = Kind::EXPLORE_TILE_4534; break;
+    case 4535: kind = Kind::EXPLORE_TILE_4535; break;
+    case 4536: kind = Kind::EXPLORE_TILE_4536; break;
+    case 4537: kind = Kind::EXPLORE_TILE_4537; break;
+    case 4538: kind = Kind::EXPLORE_TILE_4538; break;
+    case 4539: kind = Kind::EXPLORE_TILE_4539; break;
+    case 4540: kind = Kind::EXPLORE_TILE_4540; break;
+    case 4541: kind = Kind::EXPLORE_TILE_4541; break;
+    case 4542: kind = Kind::EXPLORE_TILE_4542; break;
+    case 4543: kind = Kind::EXPLORE_TILE_4543; break;
+    case 4544: kind = Kind::EXPLORE_TILE_4544; break;
     default: return false;
     }
     return draw(kind, x, y);

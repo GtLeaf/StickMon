@@ -20,8 +20,8 @@ private:
     };
 
     enum Category : uint8_t {
-        CATEGORY_EXPLORE = 0,
-        CATEGORY_DAILY,
+        CATEGORY_DAILY = 0,
+        CATEGORY_EXPLORE,
         CATEGORY_SELL,
         CATEGORY_BACK,
         CATEGORY_COUNT,
@@ -42,23 +42,34 @@ private:
     };
 
     ViewMode viewMode = ViewMode::CATEGORY;
+    Category activeCategory = CATEGORY_DAILY;
     uint8_t cursor = 0;
+    float itemColumnX = 128.0f;
+    float itemAnimCursor = 0.0f;
     const char* toast = nullptr;
     uint32_t toastUntil = 0;
 
     void activateCategory();
+    void returnToCategories();
     void buyCurrent();
     void sellCurrent();
     Item currentItem() const;
+    Item selectedItem() const;
     Item itemAtIndex(uint8_t index) const;
+    Item itemForCategory(Category category, uint8_t index) const;
     Item sellItemAtIndex(uint8_t index) const;
     uint8_t currentItemCount() const;
+    uint8_t itemCountForCategory(Category category, bool includeBack) const;
     uint8_t sellItemCount() const;
     uint8_t ownedCountFor(Item item) const;
+    bool itemColumnSettled() const;
     void renderList();
     void renderCategoryList();
-    void renderItemList();
-    void renderSellPage();
+    void renderSubmenu();
+    void renderIconColumn(int centerX, bool dimmed, bool selectable);
+    void renderItemDetail();
+    void drawItemIcon(Item item, int centerX, int centerY, float scale,
+                      uint16_t fallbackColor) const;
     void renderToast();
     static uint16_t priceFor(Item item);
     static uint16_t sellPriceFor(Item item);

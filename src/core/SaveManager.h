@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include "core/MainSceneViewState.h"
 #include "game/GameState.h"
 
 class SaveManager {
@@ -12,6 +13,8 @@ public:
     bool clearAll();
     bool loadClock(uint32_t& gameMinutesTotal);
     bool saveClock(uint32_t gameMinutesTotal);
+    bool loadMainSceneView(MainSceneViewState& viewState);
+    bool saveMainSceneView(const MainSceneViewState& viewState);
     bool loadHatchProgress(Game::HatchProgress& progress);
     bool saveHatchProgress(const Game::HatchProgress& progress);
     void clearHatchProgress();

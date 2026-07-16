@@ -37,7 +37,8 @@ const CONTROL_TOOLTIPS = {
   dayMode: "切换到白天预览，绘制勾选 Day 的背景层和白天光照配置。",
   nightMode: "切换到夜晚预览，绘制勾选 Night 的背景层和夜晚光照配置。",
   furnitureMode: "家具模式：选择、拖动、缩放家具和精灵预览物。",
-  shapeMode: "描面模式：绘制墙面、地板、精灵活动区和门口区域。",
+  shapeMode: "描面模式：选择或调整已有房间面。点击 Room faces 的 Add 后才会在画布上新增节点。",
+  addRoomFace: "开始或暂停新增房间面。开启后点击画布生成节点，点击第一个节点闭合。",
   editZoom: "缩放主编辑画布的显示比例。只影响查看细节，不影响坐标和导出。",
   zoomOut: "缩小主编辑画布显示比例。",
   zoomIn: "放大主编辑画布显示比例。",
@@ -481,6 +482,7 @@ const selectedPanel = document.getElementById("selectedPanel");
 const faceList = document.getElementById("faceList");
 const selectedFacePanel = document.getElementById("selectedFacePanel");
 const roomFacesPanel = document.querySelector(".room-faces-panel");
+const addRoomFaceButton = document.getElementById("addRoomFace");
 const layersPanel = document.getElementById("layersPanel");
 const propertiesPanel = document.getElementById("propertiesPanel");
 const lightShadowsPanel = document.getElementById("lightShadowsPanel");
@@ -6319,6 +6321,7 @@ function draftDetailHtml() {
 }
 
 function selectFaceItem(face, options = {}) {
+  state.drawingFace = false;
   state.selectedFaceId = face.id;
   state.selectedPointIndex = null;
   state.selectedPointId = null;
@@ -6488,13 +6491,16 @@ function deleteFaceById(faceId) {
 function refreshFaceList() {
   faceList.innerHTML = "";
   const hasFaceData = state.faces.length > 0 || state.draftPoints.length > 0;
+  const panelAvailable = hasFaceData || state.editMode === "shape";
   if (roomFacesPanel) {
-    roomFacesPanel.hidden = !hasFaceData;
-    if (hasFaceData && state.editMode === "shape" && !state.lightSelected) {
+    roomFacesPanel.hidden = !panelAvailable;
+    if (panelAvailable && state.editMode === "shape" && !state.lightSelected) {
       roomFacesPanel.open = true;
     }
   }
+  updateRoomFaceAddButton();
   if (!hasFaceData) {
+    faceList.innerHTML = '<div class="hint room-face-empty">No room faces yet. Click + to add one.</div>';
     selectedFacePanel.innerHTML = "";
     selectedFacePanel.hidden = true;
     return;
@@ -6847,17 +6853,16 @@ function handleShapePointerDown(event) {
     }
   }
 
-  state.drawingFace = true;
   state.selectedFaceId = null;
   state.selectedPointIndex = null;
   state.selectedPointId = null;
   state.selectedId = null;
-  addDraftPoint(createShapePoint(point.x, point.y));
-  setStatus(`${state.draftPoints.length} point(s). Click the first point to close the face.`);
+  setStatus(state.draftPoints.length
+    ? "Room face draft is paused. Click Add to continue drawing."
+    : "Click Add in Room faces before drawing a new face.");
   refreshFaceList();
   refreshSelectedFacePanel();
   render();
-  commitHistory();
 }
 
 function updateModeButtons() {
@@ -6865,6 +6870,66 @@ function updateModeButtons() {
   document.getElementById("nightMode").classList.toggle("active", state.mode === "night");
   state.lightProfile = currentLightProfile();
   updateLightModeActions();
+}
+
+function updateRoomFaceAddButton() {
+  if (!addRoomFaceButton) return;
+  const inShapeMode = state.editMode === "shape";
+  const drawing = inShapeMode && state.drawingFace;
+  const hasDraft = state.draftPoints.length > 0;
+  addRoomFaceButton.hidden = false;
+  addRoomFaceButton.classList.toggle("active", drawing);
+  addRoomFaceButton.textContent = drawing ? "×" : "+";
+  addRoomFaceButton.setAttribute("aria-pressed", drawing ? "true" : "false");
+  addRoomFaceButton.setAttribute("aria-label", drawing
+    ? "Pause room face drawing"
+    : hasDraft ? "Continue room face draft" : "Add room face");
+  canvas.classList.toggle("shape-tool", inShapeMode && !drawing);
+  canvas.classList.toggle("face-draw-tool", drawing);
+}
+
+function setRoomFaceDrawing(active) {
+  state.drawingFace = Boolean(active);
+  state.draggingPoint = false;
+  state.dragPointId = null;
+  canvas.classList.remove("dragging");
+
+  if (state.drawingFace) {
+    state.editMode = "shape";
+    state.toolMode = "select";
+    state.selectedId = null;
+    state.selectedFaceId = null;
+    state.lightSelected = false;
+    resetItemPolygonDraft();
+    if (state.draftPoints.length) {
+      if (!state.selectedPointId || !state.draftPoints.some((point) => point.id === state.selectedPointId)) {
+        selectDraftPoint(0);
+      }
+      state.draftExpanded = true;
+      setStatus(`Continuing room face draft with ${state.draftPoints.length} point(s). Click the first point to close.`);
+    } else {
+      state.selectedPointIndex = null;
+      state.selectedPointId = null;
+      setStatus("Room face drawing active. Click the canvas to add the first point.");
+    }
+  } else {
+    setStatus(state.draftPoints.length
+      ? "Room face drawing paused. Click Add to continue the existing draft."
+      : "Room face drawing stopped. Click Add to draw another face.");
+  }
+
+  updateToolButtons();
+  updateEditModeButtons();
+  refreshFaceList();
+  refreshSelectedFacePanel();
+  refreshList();
+  refreshSelectedPanel();
+  render();
+}
+
+function toggleRoomFaceDrawing() {
+  setRoomFaceDrawing(!state.drawingFace);
+  commitHistory();
 }
 
 function updateEditModeButtons() {
@@ -6876,6 +6941,7 @@ function updateEditModeButtons() {
   document.getElementById("duplicateItem").disabled = !isFurniture || !hasSelectedItem;
   document.getElementById("deleteItem").disabled = !isFurniture || !hasSelectedItem;
   syncInspectorWorkflow();
+  updateRoomFaceAddButton();
 }
 
 function setDetailsOpen(panel, open) {
@@ -7449,6 +7515,7 @@ async function loadEditorSession() {
 async function restoreSessionRecord(record) {
   const snapshot = await hydrateSessionSnapshot(record.snapshot);
   restoreSnapshot(snapshot);
+  state.drawingFace = false;
   state.history = [];
   state.historyIndex = -1;
   refreshAfterStateRestore();
@@ -8039,6 +8106,7 @@ async function importLayout(file) {
   if (layout.type === "stickmon-room-editor-session" || layout.snapshot) {
     const snapshot = await hydrateSessionSnapshot(layout.snapshot || layout);
     restoreSnapshot(snapshot);
+    state.drawingFace = false;
     state.history = [];
     state.historyIndex = -1;
     refreshAfterStateRestore();
@@ -8317,6 +8385,7 @@ document.getElementById("furnitureMode").addEventListener("click", () => {
 
 document.getElementById("shapeMode").addEventListener("click", () => {
   state.editMode = "shape";
+  state.drawingFace = false;
   resetItemPolygonDraft();
   state.selectedId = null;
   updateEditModeButtons();
@@ -8324,6 +8393,12 @@ document.getElementById("shapeMode").addEventListener("click", () => {
   refreshSelectedPanel();
   render();
   commitHistory();
+});
+
+addRoomFaceButton?.addEventListener("click", (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  toggleRoomFaceDrawing();
 });
 
 document.getElementById("selectTool").addEventListener("click", () => setToolMode("select"));
@@ -8666,6 +8741,12 @@ window.addEventListener("keydown", (event) => {
   }
   if (event.key === "Escape" && state.itemPolygonDraft.active) {
     cancelItemPolygonDraft();
+    event.preventDefault();
+    return;
+  }
+  if (event.key === "Escape" && state.editMode === "shape" && state.drawingFace) {
+    setRoomFaceDrawing(false);
+    commitHistory();
     event.preventDefault();
     return;
   }

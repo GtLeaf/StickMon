@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import json
 import os
 import re
@@ -9,6 +10,7 @@ from pathlib import Path
 from PIL import Image
 
 from generate_explore_map import autotile_variant, regular_tile
+from map_generation_rules import CUSTOM_TILE_SOURCES
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,8 +36,12 @@ MAGIC = 0x58464753  # SGFX
 VERSION = 2
 FLAG_RAW_DEFLATE = 1
 FORMAT_INDEXED4_RLE = 1
+MAX_PACK_FRAMES = 256
+MAX_PACK_DATA_WORDS = 200000
+MAX_PACK_PALETTE_WORDS = 2048
+MAX_PACK_PAYLOAD_BYTES = 384000
 
-ITEM_SIZE = 16
+ITEM_SIZE = 36
 BALL_W = 32
 BALL_H = 64
 BACKGROUND_W = 240
@@ -65,6 +71,7 @@ BACKGROUNDS = [
     ("BATTLE_BG_GRASS", "field_bg.png"),
     ("BATTLE_BG_RIVERSIDE", "water_bg.png"),
     ("BATTLE_BG_DEEP_FOREST", "forest_bg.png"),
+    ("BATTLE_BG_SNOW", "snow_bg.png"),
 ]
 
 EXPLORE_TILES = [
@@ -102,11 +109,75 @@ EXPLORE_TILES = [
     ("EXPLORE_TILE_0811", 811),
     ("EXPLORE_TILE_0818", 818),
     ("EXPLORE_TILE_0819", 819),
+    ("EXPLORE_TILE_0859", 859),
+    ("EXPLORE_TILE_1088", 1088),
+    ("EXPLORE_TILE_1090", 1090),
+    ("EXPLORE_TILE_1096", 1096),
+    ("EXPLORE_TILE_1097", 1097),
+    ("EXPLORE_TILE_1098", 1098),
+    ("EXPLORE_TILE_1104", 1104),
+    ("EXPLORE_TILE_1106", 1106),
+    ("EXPLORE_TILE_1161", 1161),
+    ("EXPLORE_TILE_1162", 1162),
+    ("EXPLORE_TILE_1185", 1185),
+    ("EXPLORE_TILE_1188", 1188),
+    ("EXPLORE_TILE_1506", 1506),
+    ("EXPLORE_TILE_1507", 1507),
+    ("EXPLORE_TILE_1514", 1514),
+    ("EXPLORE_TILE_1515", 1515),
+    ("EXPLORE_TILE_1532", 1532),
+    ("EXPLORE_TILE_1627", 1627),
+    ("EXPLORE_TILE_1635", 1635),
+    ("EXPLORE_TILE_1643", 1643),
     ("EXPLORE_TILE_1662", 1662),
     ("EXPLORE_TILE_1665", 1665),
     ("EXPLORE_TILE_1681", 1681),
     ("EXPLORE_TILE_1682", 1682),
+    ("EXPLORE_TILE_4400", 4400),
+    ("EXPLORE_TILE_4401", 4401),
+    ("EXPLORE_TILE_4402", 4402),
+    ("EXPLORE_TILE_4403", 4403),
+    ("EXPLORE_TILE_1231", 1231),
 ]
+
+EXTERNAL_EXPLORE_TILES = [
+    (f"EXPLORE_TILE_{runtime_id:04d}", runtime_id, tileset_name, source_id)
+    for runtime_id, (tileset_name, source_id) in CUSTOM_TILE_SOURCES.items()
+]
+
+ANIMATED_EXPLORE_FRAMES = []
+for tile_id in (48, 64, 68):
+    ANIMATED_EXPLORE_FRAMES.extend(
+        (f"EXPLORE_TILE_{tile_id:04d}_F{frame}", tile_id, "Sea", frame)
+        for frame in range(8)
+    )
+ANIMATED_EXPLORE_FRAMES.extend(
+    (f"EXPLORE_TILE_0072_F{frame}", 72, "Sea", frame)
+    for frame in range(1, 8)
+)
+for tile_id in (80, 84):
+    ANIMATED_EXPLORE_FRAMES.extend(
+        (f"EXPLORE_TILE_{tile_id:04d}_F{frame}", tile_id, "Sea", frame)
+        for frame in range(8)
+    )
+for kind_prefix, tile_id, source_name in (
+    ("EXPLORE_WATERFALL_CREST", 273, "Waterfall crest"),
+    ("EXPLORE_WATERFALL_BODY", 288, "Waterfall"),
+    ("EXPLORE_WATERFALL_BOTTOM", 336, "Waterfall bottom"),
+):
+    ANIMATED_EXPLORE_FRAMES.extend(
+        (f"{kind_prefix}_F{frame}", tile_id, source_name, frame)
+        for frame in range(4)
+    )
+
+ANIMATED_EXPLORE_TILE_IDS = {
+    48, 64, 68, 72, 80, 84,
+    283, 273, 285,
+    322, 308, 324,
+    304, 288, 312,
+    328, 316, 326,
+    336,
+}
 
 OUTSIDE_AUTOTILES = (
     "Sea",
@@ -125,6 +196,8 @@ for kind_prefix, _ in BALLS:
 KIND_ORDER.append("BALL_BURST_STAR")
 KIND_ORDER.extend(kind for kind, _ in BACKGROUNDS)
 KIND_ORDER.extend(kind for kind, _ in EXPLORE_TILES)
+KIND_ORDER.extend(kind for kind, _runtime_id, _tileset, _source_id in EXTERNAL_EXPLORE_TILES)
+KIND_ORDER.extend(kind for kind, _tile_id, _source, _frame in ANIMATED_EXPLORE_FRAMES)
 KIND_ORDER.append("EGG")
 KIND_IDS = {kind: index for index, kind in enumerate(KIND_ORDER)}
 
@@ -139,17 +212,34 @@ def validate_kind_order():
         raise ValueError("GameAssets::Kind order does not match generated pack order")
 
 
+def validate_runtime_pack_limit():
+    source = GAME_ASSETS_SOURCE.read_text(encoding="utf-8")
+    match = re.search(r"constexpr\s+uint16_t\s+MAX_FRAMES\s*=\s*(\d+)\s*;", source)
+    if not match:
+        raise ValueError(f"unable to parse MAX_FRAMES: {GAME_ASSETS_SOURCE}")
+    if int(match.group(1)) != MAX_PACK_FRAMES:
+        raise ValueError(
+            "game asset frame limit mismatch: "
+            f"generator={MAX_PACK_FRAMES} runtime={match.group(1)}"
+        )
+
+
 def validate_explore_tile_mapping():
     source = GAME_ASSETS_SOURCE.read_text(encoding="utf-8")
-    mapping = {
-        int(tile_id): kind
-        for tile_id, kind in re.findall(
-            r"case\s+(\d+):\s+kind\s*=\s*Kind::(EXPLORE_TILE_\d+);",
-            source,
-        )
-    }
-    expected = {tile_id: kind for kind, tile_id in EXPLORE_TILES}
-    if mapping != expected:
+    match = re.search(
+        r"bool drawExploreTile\(.*?\)\s*\{(.*?)\n\}\n\nKind itemKind",
+        source,
+        re.S,
+    )
+    if not match:
+        raise ValueError("unable to parse GameAssets::drawExploreTile")
+    mapped_ids = {int(tile_id) for tile_id in re.findall(r"case\s+(\d+)\s*:", match.group(1))}
+    expected_ids = (
+        {tile_id for _kind, tile_id in EXPLORE_TILES}
+        | {runtime_id for _kind, runtime_id, _tileset, _source_id in EXTERNAL_EXPLORE_TILES}
+        | ANIMATED_EXPLORE_TILE_IDS
+    )
+    if mapped_ids != expected_ids:
         raise ValueError("GameAssets::drawExploreTile mapping does not match EXPLORE_TILES")
 
 
@@ -284,6 +374,13 @@ def prepare_explore_tile(tile_id, tileset, autotiles):
     return tile.resize((26, 26), Image.Resampling.NEAREST)
 
 
+def prepare_animated_explore_tile(tile_id, source, frame_index):
+    tile = autotile_variant(source, tile_id % 48, frame_index)
+    if tile is None or tile.size != (32, 32):
+        raise ValueError(f"unable to render animated explore tile: {tile_id} frame={frame_index}")
+    return tile.resize((26, 26), Image.Resampling.NEAREST)
+
+
 def build_assets():
     writers = {
         "ui": Writer(),
@@ -324,6 +421,22 @@ def build_assets():
     for kind, tile_id in EXPLORE_TILES:
         tile = prepare_explore_tile(tile_id, tileset, autotiles)
         writers["map"].add(kind, quantize_rgba(tile, 16))
+    external_tilesets = {
+        tileset_name: load_rgba(GRAPHICS / "Tilesets" / tileset_name)
+        for _kind, _runtime_id, tileset_name, _source_id in EXTERNAL_EXPLORE_TILES
+    }
+    for kind, _runtime_id, tileset_name, source_id in EXTERNAL_EXPLORE_TILES:
+        tile = prepare_explore_tile(source_id, external_tilesets[tileset_name], ())
+        writers["map"].add(kind, quantize_rgba(tile, 16))
+    animated_sources = {
+        name: load_rgba(GRAPHICS / "Autotiles" / f"{name}.png")
+        for name in {source for _kind, _tile_id, source, _frame in ANIMATED_EXPLORE_FRAMES}
+    }
+    for kind, tile_id, source_name, frame_index in ANIMATED_EXPLORE_FRAMES:
+        tile = prepare_animated_explore_tile(
+            tile_id, animated_sources[source_name], frame_index
+        )
+        writers["map"].add(kind, quantize_rgba(tile, 16))
 
     egg = prepare_egg(GRAPHICS / "Pokemon" / "Eggs" / "000.png")
     GENERATED_GAME_DIR.mkdir(parents=True, exist_ok=True)
@@ -343,6 +456,20 @@ def raw_deflate(payload):
 
 
 def write_pack(name, writer):
+    if len(writer.frames) > MAX_PACK_FRAMES:
+        raise ValueError(
+            f"{name} pack has {len(writer.frames)} frames; limit is {MAX_PACK_FRAMES}"
+        )
+    if len(writer.data) > MAX_PACK_DATA_WORDS:
+        raise ValueError(
+            f"{name} pack has {len(writer.data)} data words; "
+            f"limit is {MAX_PACK_DATA_WORDS}"
+        )
+    if len(writer.palettes) > MAX_PACK_PALETTE_WORDS:
+        raise ValueError(
+            f"{name} pack has {len(writer.palettes)} palette words; "
+            f"limit is {MAX_PACK_PALETTE_WORDS}"
+        )
     payload = bytearray()
     for frame in writer.frames:
         payload.extend(struct.pack(
@@ -359,6 +486,11 @@ def write_pack(name, writer):
         ))
     payload.extend(words_to_bytes(writer.data))
     payload.extend(words_to_bytes(writer.palettes))
+    if len(payload) > MAX_PACK_PAYLOAD_BYTES:
+        raise ValueError(
+            f"{name} pack payload is {len(payload)} bytes; "
+            f"limit is {MAX_PACK_PAYLOAD_BYTES}"
+        )
 
     compressed = raw_deflate(payload)
     header = struct.pack(
@@ -416,10 +548,22 @@ def write_manifest(writers):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Build StickMon game asset packs")
+    parser.add_argument(
+        "--only",
+        default="ui,battle,map,hatch",
+        help="comma-separated packs to write (ui,battle,map,hatch)",
+    )
+    args = parser.parse_args()
+    selected = tuple(name.strip() for name in args.only.split(",") if name.strip())
+    if not selected or any(name not in OUTPUTS for name in selected):
+        raise ValueError("--only must contain ui,battle,map,hatch")
+
     validate_kind_order()
+    validate_runtime_pack_limit()
     validate_explore_tile_mapping()
     writers = build_assets()
-    results = [write_pack(name, writers[name]) for name in ("ui", "battle", "map", "hatch")]
+    results = [write_pack(name, writers[name]) for name in selected]
     write_manifest(writers)
     for result in results:
         ratio = result["pack_bytes"] / result["raw_bytes"] if result["raw_bytes"] else 0

@@ -4,9 +4,9 @@
 
 namespace MenuAssets {
 
-static constexpr uint8_t FRAME_W = 32;
-static constexpr uint8_t FRAME_H = 32;
-static constexpr uint8_t MAIN_ICON_COUNT = 7;
+static constexpr uint8_t FRAME_W = 40;
+static constexpr uint8_t FRAME_H = 40;
+static constexpr uint8_t MAIN_ICON_COUNT = 9;
 static constexpr uint8_t BOX_ICON_COUNT = 7;
 
 struct RleFrame {

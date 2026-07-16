@@ -12,13 +12,13 @@
 #include "hardware/PixelRenderer.h"
 
 namespace {
-const char* statusName(uint8_t statusBits) {
-    if (statusBits & Game::STATUS_POISON) return Ui::Status::STATUS_POISON;
-    if (statusBits & Game::STATUS_PARALYSIS) return Ui::Status::STATUS_PARALYSIS;
-    if (statusBits & Game::STATUS_SLEEP) return Ui::Status::STATUS_SLEEP;
-    if (statusBits & Game::STATUS_BURN) return Ui::Status::STATUS_BURN;
-    if (statusBits & Game::STATUS_FREEZE) return Ui::Status::STATUS_FREEZE;
-    if (statusBits & Game::STATUS_CONFUSION) return Ui::Status::STATUS_CONFUSION;
+const char* statusName(Game::MajorStatus status) {
+    if (status == Game::MajorStatus::POISON) return Ui::Status::STATUS_POISON;
+    if (status == Game::MajorStatus::TOXIC) return Ui::Status::STATUS_TOXIC;
+    if (status == Game::MajorStatus::PARALYSIS) return Ui::Status::STATUS_PARALYSIS;
+    if (status == Game::MajorStatus::SLEEP) return Ui::Status::STATUS_SLEEP;
+    if (status == Game::MajorStatus::BURN) return Ui::Status::STATUS_BURN;
+    if (status == Game::MajorStatus::FREEZE) return Ui::Status::STATUS_FREEZE;
     return Ui::Status::STATUS_OK;
 }
 
@@ -64,6 +64,65 @@ int textPixelWidth(const char* value) {
     return width;
 }
 
+int wrapText(const char* value, int maxWidth, int x, int y, uint16_t color, bool draw) {
+    if (!value || !*value || maxWidth <= 0) return 0;
+
+    char line[96];
+    int lineBytes = 0;
+    int lineWidth = 0;
+    int lines = 0;
+    auto flushLine = [&]() {
+        if (lineBytes == 0) return;
+        line[lineBytes] = '\0';
+        if (draw) PixelRenderer::text(x, y + lines * 16, line, color, 1);
+        ++lines;
+        lineBytes = 0;
+        lineWidth = 0;
+    };
+
+    const uint8_t* p = reinterpret_cast<const uint8_t*>(value);
+    while (*p) {
+        if (*p == '\n') {
+            flushLine();
+            ++p;
+            continue;
+        }
+
+        int bytes = 1;
+        int glyphWidth = *p == ' ' ? 5 : 8;
+        if ((*p & 0xE0) == 0xC0) {
+            bytes = 2;
+            glyphWidth = 16;
+        } else if ((*p & 0xF0) == 0xE0) {
+            bytes = 3;
+            glyphWidth = 16;
+        } else if ((*p & 0xF8) == 0xF0) {
+            bytes = 4;
+            glyphWidth = 16;
+        }
+
+        if (lineBytes > 0 &&
+            (lineWidth + glyphWidth > maxWidth || lineBytes + bytes >= (int)sizeof(line))) {
+            flushLine();
+        }
+        for (int index = 0; index < bytes && p[index]; ++index) {
+            line[lineBytes++] = static_cast<char>(p[index]);
+        }
+        lineWidth += glyphWidth;
+        p += bytes;
+    }
+    flushLine();
+    return lines;
+}
+
+int wrappedTextLineCount(const char* value, int maxWidth) {
+    return wrapText(value, maxWidth, 0, 0, 0, false);
+}
+
+int drawWrappedText(int x, int y, const char* value, int maxWidth, uint16_t color) {
+    return wrapText(value, maxWidth, x, y, color, true);
+}
+
 int statusPageContentHeight(uint8_t page) {
     switch (page) {
     case 0: return 129;
@@ -74,29 +133,10 @@ int statusPageContentHeight(uint8_t page) {
     }
 }
 
-enum PokeBugMainIcon : int {
-    POKEBUG_ICON_INFO = 0,
-    POKEBUG_ICON_BOX = 1,
-    POKEBUG_ICON_SOCIAL = 2,
-    POKEBUG_ICON_EXPLORE = 3,
-    POKEBUG_ICON_SETTINGS = 4,
-    POKEBUG_ICON_BACK = 5,
-    POKEBUG_ICON_DEBUG = 6,
-};
-
 int menuIconIndex(uint8_t item) {
-    switch (item) {
-    case 0: return POKEBUG_ICON_INFO;
-    case 2: return POKEBUG_ICON_BOX;
-    case 3: return POKEBUG_ICON_EXPLORE;
-    case 5: return POKEBUG_ICON_SOCIAL;
-    case 6: return POKEBUG_ICON_SETTINGS;
-    case 7: return POKEBUG_ICON_DEBUG;
-    case 8: return POKEBUG_ICON_BACK;
-    case 1: // room has no matching PokeBug icon; keep fallback block.
-    case 4: // shop has no matching PokeBug icon; keep fallback block.
-    default: return -1;
-    }
+    // The generated icon pack keeps the original team/room/bag/explore order.
+    static constexpr uint8_t ICON_BY_MENU_ITEM[] = {3, 0, 1, 2, 4, 5, 6, 7, 8};
+    return item < sizeof(ICON_BY_MENU_ITEM) ? ICON_BY_MENU_ITEM[item] : -1;
 }
 
 uint8_t bagItemCount(uint8_t sourceIndex) {
@@ -206,6 +246,20 @@ const char* abilityName(const Species& species) {
     case 134: return Ui::Status::ABILITY_WATER_ABSORB;
     case 135: return Ui::Status::ABILITY_VOLT_ABSORB;
     case 136: return Ui::Status::ABILITY_FLASH_FIRE;
+    case 298:
+    case 183:
+    case 184: return Ui::Status::ABILITY_HUGE_POWER;
+    case 194:
+    case 195: return Ui::Status::ABILITY_WATER_ABSORB;
+    case 285:
+    case 286: return Ui::Status::ABILITY_EFFECT_SPORE;
+    case 322: return Ui::Status::ABILITY_SIMPLE;
+    case 323: return Ui::Status::ABILITY_SOLID_ROCK;
+    case 361:
+    case 362: return Ui::Status::ABILITY_INNER_FOCUS;
+    case 41:
+    case 42:
+    case 169: return Ui::Status::ABILITY_INNER_FOCUS;
     case 123:
     case 212: return Ui::Status::ABILITY_TECHNICIAN;
     case 129: return Ui::Status::ABILITY_SWIFT_SWIM;
@@ -214,6 +268,9 @@ const char* abilityName(const Species& species) {
     case 147:
     case 148: return Ui::Status::ABILITY_SHED_SKIN;
     case 149: return Ui::Status::ABILITY_INNER_FOCUS;
+    case 280:
+    case 281:
+    case 282:
     case 151:
     case 196:
     case 197:
@@ -257,7 +314,6 @@ int drawTypeBracket(int x, int y, TypeId type) {
 }
 
 void drawStatusMonsterIcon(const Species& species, int x, int y) {
-    auto& c = PixelRenderer::canvas();
     static constexpr float STATUS_ICON_SCALE = 1.2f;
     const PokemonSprites::SpriteFrame* frame = PokemonSprites::findSpeciesSprite(species.id, PokemonSprites::SpriteKind::ICON_0);
     if (frame) {
@@ -267,14 +323,13 @@ void drawStatusMonsterIcon(const Species& species, int x, int y) {
         int drawY = y - (int)roundf((h * (STATUS_ICON_SCALE - 1.0f)) * 0.5f);
         if (PokemonSprites::drawFrameScaled(frame, drawX, drawY, STATUS_ICON_SCALE)) return;
     }
-    c.fillRect(x + 6, y + 4, 53, 58, species.colorA);
-    c.fillRect(x + 16, y + 16, 34, 36, species.colorB);
 }
 }
 
 int8_t MenuScene::lastCursor = 0;
 
 void MenuScene::onEnter() {
+    exploreContextMode = false;
     resetNavigation();
     statusPage = 0;
     statusMonsterIndex = 0;
@@ -311,6 +366,30 @@ void MenuScene::onEnter() {
         cursor = lastCursor;
     }
     animCursor = (float)cursor;
+    if (GameEngine::ins().consumeDebugMenuReturnRequest()) {
+        pushView(ViewMode::DEBUG);
+        debugCursor = DEBUG_BATTLE_ROOT_INDEX;
+    }
+}
+
+void MenuScene::openExploreTeamView() {
+    openExploreView(ViewMode::TEAM);
+}
+
+void MenuScene::openExploreBagView() {
+    openExploreView(ViewMode::BAG);
+    bagScroll = 0.0f;
+}
+
+void MenuScene::openExploreView(ViewMode next) {
+    onEnter();
+    exploreContextMode = true;
+    viewMode = next;
+    navDepth = 0;
+}
+
+bool MenuScene::exploreViewClosed() const {
+    return exploreContextMode && viewMode == ViewMode::MENU;
 }
 
 void MenuScene::onExit() {
@@ -353,6 +432,17 @@ void MenuScene::popView() {
     }
 }
 
+uint8_t MenuScene::teamActionCount() const {
+    return exploreContextMode ? 3 : TEAM_ACTION_COUNT;
+}
+
+const char* MenuScene::teamActionLabel(uint8_t index) const {
+    if (!exploreContextMode) return Ui::Team::ACTIONS[index];
+    if (index == 0) return Ui::Team::ACTION_STATUS;
+    if (index == 1) return Ui::Team::ACTION_FIRST;
+    return Ui::Team::ACTION_BACK;
+}
+
 void MenuScene::update(uint32_t nowMs, float dtSeconds) {
     (void)nowMs;
     (void)dtSeconds;
@@ -361,6 +451,10 @@ void MenuScene::update(uint32_t nowMs, float dtSeconds) {
 bool MenuScene::onButton(const ButtonEvent& event) {
     if (viewMode != ViewMode::MENU) {
         if (event.btn == 0 && event.action == BtnAction::LONG_PRESS) {
+            if (exploreContextMode) {
+                resetNavigation();
+                return true;
+            }
             GameEngine::ins().requestScene(GameEngine::ins().homeScene());
             return true;
         }
@@ -438,7 +532,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
             if (teamCursor >= rowCount) teamCursor = 0;
             if (event.btn == 1 && event.action == BtnAction::PRESSED) {
                 if (teamActionOpen) {
-                    teamActionCursor = (teamActionCursor + 1) % TEAM_ACTION_COUNT;
+                    teamActionCursor = (teamActionCursor + 1) % teamActionCount();
                 } else {
                     teamCursor = (teamCursor + 1) % rowCount;
                 }
@@ -482,7 +576,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                         toastUntil = Hal::ins().millis() + 1100;
                     }
                     teamActionOpen = false;
-                } else if (teamActionCursor == 2) {
+                } else if (teamActionCursor == 2 && !exploreContextMode) {
                     bool boxFull = GameEngine::ins().gameState().storageCount >= Game::STORAGE_CAP;
                     bool lastMonster = GameEngine::ins().gameState().teamCount <= 1;
                     if (GameEngine::ins().depositTeamMemberToStorage(teamCursor)) {
@@ -533,6 +627,9 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                     } else if (bagConfirmSource == 5) {
                         toast = GameEngine::ins().useSuperPotion() ? Ui::Bag::USED_SUPER_POTION : Ui::Bag::HP_FULL;
                         toastUntil = Hal::ins().millis() + 1100;
+                    } else if (bagConfirmSource == 6) {
+                        toast = GameEngine::ins().useAntidote() ? Ui::Bag::USED_ANTIDOTE : Ui::Bag::STATUS_NORMAL;
+                        toastUntil = Hal::ins().millis() + 1100;
                     }
                 }
                 bagConfirmOpen = false;
@@ -544,6 +641,10 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                 bagConfirmYes = true;
                 bagConfirmOpen = true;
             } else if (source == 5) {
+                bagConfirmSource = source;
+                bagConfirmYes = true;
+                bagConfirmOpen = true;
+            } else if (source == 6) {
                 bagConfirmSource = source;
                 bagConfirmYes = true;
                 bagConfirmOpen = true;
@@ -837,11 +938,11 @@ void MenuScene::renderMenu() {
                         1);
 
     constexpr int centerY = Hal::DISPLAY_H / 2;
-    constexpr int spacing = 42;
+    constexpr int spacing = 50;
     constexpr float lerp = 0.25f;
-    constexpr int boxW = 56;
-    constexpr int boxH = 32;
-    constexpr int iconSlotW = 56;
+    constexpr int boxW = 60;
+    constexpr int boxH = 40;
+    constexpr int iconSlotW = 60;
     constexpr int boxX = 20;
 
     float target = (float)cursor;
@@ -996,15 +1097,16 @@ void MenuScene::renderTeamActionPopup() {
     static constexpr int POP_X = 142;
     static constexpr int POP_Y = 20;
     static constexpr int POP_W = 78;
-    static constexpr int POP_H = 100;
-    c.fillRect(POP_X, POP_Y, POP_W, POP_H, PixelRenderer::rgb(24, 28, 36));
-    c.drawRect(POP_X, POP_Y, POP_W, POP_H, PixelRenderer::rgb(241, 242, 232));
+    uint8_t actionCount = teamActionCount();
+    int popH = 16 + actionCount * 21;
+    c.fillRect(POP_X, POP_Y, POP_W, popH, PixelRenderer::rgb(24, 28, 36));
+    c.drawRect(POP_X, POP_Y, POP_W, popH, PixelRenderer::rgb(241, 242, 232));
 
-    for (uint8_t i = 0; i < TEAM_ACTION_COUNT; ++i) {
+    for (uint8_t i = 0; i < actionCount; ++i) {
         int y = POP_Y + 9 + i * 21;
         bool selected = i == teamActionCursor;
         if (selected) c.fillRect(POP_X + 5, y - 2, 4, 18, PixelRenderer::rgb(255, 216, 72));
-        PixelRenderer::text(POP_X + 16, y, Ui::Team::ACTIONS[i],
+        PixelRenderer::text(POP_X + 16, y, teamActionLabel(i),
                             selected ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232),
                             1);
     }
@@ -1035,6 +1137,20 @@ void MenuScene::renderStatusPage() {
     c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, PixelRenderer::rgb(10, 14, 20));
 
     int contentH = statusPageContentHeight(statusPage);
+    if (statusPage == 2) {
+        static constexpr int MOVE_DESC_W = Hal::DISPLAY_W - 36;
+        contentH = 78;
+        for (uint8_t slot = 0; slot < SPECIAL_MOVE_SLOT_COUNT; ++slot) {
+            const MoveInfo* move = findMove(specialMoveIdForMonster(activeMon, slot));
+            if (!move) {
+                contentH += 38;
+                continue;
+            }
+            int lines = wrappedTextLineCount(move->description, MOVE_DESC_W);
+            contentH += 74 + std::max(1, lines) * 16;
+        }
+        contentH = std::max(contentH, Hal::DISPLAY_H);
+    }
     int maxScroll = contentH > Hal::DISPLAY_H ? contentH - Hal::DISPLAY_H : 0;
     int scrollKey = (statusFromStorage ? 0x4000 : 0) | ((int)statusMonsterIndex << 8) | statusPage;
     updateStatusScroll(scrollKey, maxScroll);
@@ -1056,6 +1172,12 @@ void MenuScene::renderStatusPage() {
         PixelRenderer::text(infoX + 42, sy(60), abilityName(mon), PixelRenderer::rgb(241, 242, 232), 1);
         snprintf(buf, sizeof(buf), Ui::Status::NATURE_FMT, natureName(activeMon.nature));
         PixelRenderer::text(infoX, sy(82), buf, PixelRenderer::rgb(241, 242, 232), 1);
+        snprintf(buf, sizeof(buf), Ui::Status::STATUS_FMT, statusName(activeMon.majorStatus));
+        PixelRenderer::text(10, sy(82), buf,
+                            activeMon.majorStatus == Game::MajorStatus::NONE
+                                ? PixelRenderer::rgb(156, 164, 176)
+                                : PixelRenderer::rgb(239, 128, 85),
+                            1);
 
         c.drawFastHLine(14, sy(101), 196, PixelRenderer::rgb(55, 63, 76));
         PixelRenderer::text(16, sy(109), Ui::Status::SOURCE_INFO, PixelRenderer::rgb(67, 213, 224), 1);
@@ -1127,10 +1249,15 @@ void MenuScene::renderStatusPage() {
 
         TypeId basicType = basicMove ? basicMove->type : TypeId::NORMAL;
         PixelRenderer::text(14, sy(31), Ui::Status::BASIC_MOVE, PixelRenderer::rgb(67, 213, 224), 1);
-        int basicNameX = drawTypeBracket(92, sy(31), basicType);
-        PixelRenderer::text(basicNameX + 4, sy(31), basicMove ? basicMove->name : Ui::Status::MOVE_UNKNOWN,
+        snprintf(buf, sizeof(buf), Ui::Status::PROFICIENCY_FMT,
+                 proficiencyName(activeMon.moveProficiency[0]));
+        PixelRenderer::text(128, sy(31), buf, PixelRenderer::rgb(255, 216, 72), 1);
+        int basicNameX = drawTypeBracket(18, sy(51), basicType);
+        PixelRenderer::text(basicNameX + 4, sy(51), basicMove ? basicMove->name : Ui::Status::MOVE_UNKNOWN,
                             PixelRenderer::rgb(241, 242, 232), 1);
 
+        static constexpr int MOVE_DESC_X = 18;
+        static constexpr int MOVE_DESC_W = Hal::DISPLAY_W - MOVE_DESC_X * 2;
         auto drawSpecialMove = [&](uint8_t slot, int y) {
             const MoveInfo* specialMove = findMove(specialMoveIdForMonster(activeMon, slot));
             char label[24];
@@ -1141,22 +1268,22 @@ void MenuScene::renderStatusPage() {
             if (!specialMove) {
                 PixelRenderer::text(104, sy(y), Ui::Status::MOVE_NOT_LEARNED,
                                     PixelRenderer::rgb(156, 164, 176), 1);
-                return;
+                return y + 38;
             }
             snprintf(buf, sizeof(buf), Ui::Status::PROFICIENCY_FMT,
-                     proficiencyName(activeMon.proficiency));
+                     proficiencyName(activeMon.moveProficiency[slot + 1]));
             PixelRenderer::text(128, sy(y), buf, PixelRenderer::rgb(255, 216, 72), 1);
             int specialNameX = drawTypeBracket(18, sy(y + 20), specialMove->type);
             PixelRenderer::text(specialNameX + 4, sy(y + 20), specialMove->name,
                                 PixelRenderer::rgb(241, 242, 232), 1);
             snprintf(buf, sizeof(buf), Ui::Status::POWER_FMT, specialMove->power);
             PixelRenderer::text(24, sy(y + 44), buf, PixelRenderer::rgb(255, 216, 72), 1);
-            PixelRenderer::text(88, sy(y + 44),
-                                specialMove->description,
-                                PixelRenderer::rgb(135, 214, 238), 1);
+            int lines = drawWrappedText(MOVE_DESC_X, sy(y + 64), specialMove->description,
+                                        MOVE_DESC_W, PixelRenderer::rgb(135, 214, 238));
+            return y + 74 + std::max(1, lines) * 16;
         };
-        drawSpecialMove(0, 58);
-        drawSpecialMove(1, 128);
+        int moveY = drawSpecialMove(0, 78);
+        drawSpecialMove(1, moveY);
     } else if (statusPage == 3) {
         PixelRenderer::text(12, sy(8), Ui::Status::EFFORT_STATS, PixelRenderer::rgb(67, 213, 224), 1);
         snprintf(buf, sizeof(buf), Ui::Status::TOTAL_FMT, Game::evTotal(activeMon.ev), Game::EV_TOTAL_MAX);
@@ -1609,6 +1736,23 @@ void MenuScene::handleDebugAction() {
         case 1: debugCategory = DebugCategory::RESOURCE; break;
         case 2: debugCategory = DebugCategory::ENV; break;
         case 3: debugCategory = DebugCategory::MOTION; break;
+        case DEBUG_BATTLE_ROOT_INDEX: {
+            auto& engine = GameEngine::ins();
+            const auto& state = engine.gameState();
+            if (!state.oobeDone || state.teamCount == 0) {
+                toast = Ui::Menu::HATCH_FIRST;
+                toastUntil = Hal::ins().millis() + 1100;
+                return;
+            }
+            const auto& mon = engine.activeMonster();
+            if (mon.fainted || mon.hpCur == 0) {
+                toast = Ui::Menu::FAINTED_TOAST;
+                toastUntil = Hal::ins().millis() + 1100;
+                return;
+            }
+            engine.beginDebugBattle();
+            return;
+        }
         default:
             popView();
             return;
@@ -1806,30 +1950,25 @@ void MenuScene::renderDebugTimePopup() {
 
 uint8_t MenuScene::collectVisibleBagRows(BagRow* rows, uint8_t maxRows) const {
     if (!rows || maxRows == 0) return 0;
-    struct SourceRow {
-        uint8_t count;
-        uint16_t color;
-    };
-    SourceRow sources[] = {
-        {GameEngine::ins().ballCount(), PixelRenderer::rgb(239, 85, 85)},
-        {GameEngine::ins().greatBallCount(), PixelRenderer::rgb(67, 124, 230)},
-        {GameEngine::ins().heavyBallCount(), PixelRenderer::rgb(85, 92, 104)},
-        {GameEngine::ins().timerBallCount(), PixelRenderer::rgb(239, 180, 68)},
-        {GameEngine::ins().potionCount(), PixelRenderer::rgb(92, 222, 112)},
-        {GameEngine::ins().superPotionCount(), PixelRenderer::rgb(135, 214, 238)},
-        {GameEngine::ins().antidoteCount(), PixelRenderer::rgb(174, 115, 228)},
-        {GameEngine::ins().candyCount(), PixelRenderer::rgb(255, 216, 72)},
-        {1, PixelRenderer::rgb(123, 125, 123)},
+    uint8_t sources[] = {
+        GameEngine::ins().ballCount(),
+        GameEngine::ins().greatBallCount(),
+        GameEngine::ins().heavyBallCount(),
+        GameEngine::ins().timerBallCount(),
+        GameEngine::ins().potionCount(),
+        GameEngine::ins().superPotionCount(),
+        GameEngine::ins().antidoteCount(),
+        GameEngine::ins().candyCount(),
+        1,
     };
 
     uint8_t count = 0;
     for (uint8_t source = 0; source < BAG_ITEM_COUNT - 1 && count < maxRows; ++source) {
-        if (sources[source].count == 0) continue;
-        rows[count++] = {source, sources[source].count, sources[source].color};
+        if (sources[source] == 0) continue;
+        rows[count++] = {source, sources[source]};
     }
     if (count < maxRows) {
-        rows[count++] = {BAG_ITEM_COUNT - 1, sources[BAG_ITEM_COUNT - 1].count,
-                         sources[BAG_ITEM_COUNT - 1].color};
+        rows[count++] = {BAG_ITEM_COUNT - 1, sources[BAG_ITEM_COUNT - 1]};
     }
     return count;
 }
@@ -1872,11 +2011,11 @@ void MenuScene::renderSplitList(const BagRow* rows, uint8_t count) {
 }
 
 void MenuScene::renderBagDetail(const BagRow& row) {
-    auto& c = PixelRenderer::canvas();
     static constexpr int LEFT_W = 78;
     static constexpr int RIGHT_X = LEFT_W + 8;
     static constexpr int ICON_W = 58;
-    static constexpr int ICON_H = 28;
+    static constexpr int ICON_H = 36;
+    static constexpr float ICON_SCALE = 1.0f;
     int iconX = RIGHT_X + 5;
     int iconY = 8;
 
@@ -1885,13 +2024,9 @@ void MenuScene::renderBagDetail(const BagRow& row) {
         int nameY = iconY + 2;
         int storageY = nameY + 16;
 
-        c.fillRect(iconX, iconY, ICON_W, ICON_H, PixelRenderer::rgb(18, 24, 32));
-        c.drawRect(iconX, iconY, ICON_W, ICON_H, row.color);
         Game::ItemId item = bagItemId(row.source);
-        if (!GameAssets::drawCentered(GameAssets::itemKind(item), iconX + ICON_W / 2,
-                                      iconY + ICON_H / 2, 1.5f)) {
-            c.fillRect(iconX + 18, iconY + 8, 22, 12, row.color);
-        }
+        GameAssets::drawCentered(GameAssets::itemKind(item), iconX + ICON_W / 2,
+                                 iconY + ICON_H / 2, ICON_SCALE);
 
         PixelRenderer::text(textX, nameY, Ui::Bag::NAMES[row.source], 0xFFFF, 1);
         char buf[16];
@@ -1938,17 +2073,34 @@ void MenuScene::updateStatusScroll(int scrollKey, int maxScroll) {
     float ay = 0.0f;
     float az = 0.0f;
     if (!Hal::ins().readAccel(ax, ay, az)) return;
-    (void)ax;
-    (void)az;
 
-    static constexpr float DEADZONE = 0.18f;
-    static constexpr float MAX_TILT = 0.75f;
     static constexpr float SPEED = 72.0f;
-    if (fabsf(ay) < DEADZONE) return;
-    float input = ay > 0.0f ? (ay - DEADZONE) : (ay + DEADZONE);
-    input /= (MAX_TILT - DEADZONE);
+    float input = 0.0f;
+    if (statusPage == 2) {
+        static constexpr float UP_THRESHOLD_DEG = 25.0f;
+        static constexpr float DOWN_THRESHOLD_DEG = 50.0f;
+        static constexpr float FULL_SPEED_RANGE_DEG = 15.0f;
+        static constexpr float DEGREES_PER_RADIAN = 57.2957795f;
+
+        // 0 degrees is screen-up and 90 degrees is upright. The absolute
+        // pitch keeps the interaction independent of the sensor axis sign.
+        float horizontalGravity = sqrtf(ax * ax + az * az);
+        float angleDeg = atan2f(fabsf(ay), horizontalGravity) * DEGREES_PER_RADIAN;
+        if (angleDeg < UP_THRESHOLD_DEG) {
+            input = -(UP_THRESHOLD_DEG - angleDeg) / FULL_SPEED_RANGE_DEG;
+        } else if (angleDeg > DOWN_THRESHOLD_DEG) {
+            input = (angleDeg - DOWN_THRESHOLD_DEG) / FULL_SPEED_RANGE_DEG;
+        }
+    } else {
+        static constexpr float DEADZONE = 0.18f;
+        static constexpr float MAX_TILT = 0.75f;
+        if (fabsf(ay) < DEADZONE) return;
+        input = ay > 0.0f ? (ay - DEADZONE) : (ay + DEADZONE);
+        input /= (MAX_TILT - DEADZONE);
+    }
     if (input > 1.0f) input = 1.0f;
     if (input < -1.0f) input = -1.0f;
+    if (input == 0.0f) return;
 
     statusScroll += input * SPEED * ((float)dt / 1000.0f);
     if (statusScroll < 0.0f) statusScroll = 0.0f;

@@ -59,5 +59,10 @@ This spec is intentionally scoped to Azumarill only.
 
 ## Runtime state machine
 
-- Preview only: this species is not registered in `tools/generate_pokemon_sprites.py`, `Species.cpp`, or `MainScene.cpp`.
-- No LittleFS sprite pack is generated until the preview is approved.
+- Runtime owner: `src/scenes/MainScene.cpp`.
+- Scope: only species `184` uses this Azumarill state set.
+- State action: `sleeping` when the monster has `STATUS_SLEEP`, `idle` when the AI velocity is near zero, otherwise `walking`.
+- Direction input: the current AI velocity vector is mapped to the 8 generated directions.
+- Idle behavior: when movement stops, the monster keeps the last movement direction and plays that direction's idle loop.
+- Sleeping behavior: sleeping frames ignore direction.
+- SpriteKind order: `tools/generate_pokemon_sprites.py` appends this species' kinds in generated direction order, with all idle frames first, walking frames second, and sleeping frames after.

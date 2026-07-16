@@ -1,0 +1,7296 @@
+{
+  "tileset": "${ESSENTIALS_DIR}/Graphics/Tilesets/Caves.png",
+  "referenceMap": "Map034 Ice Cave",
+  "candidateRange": [
+    1120,
+    1543
+  ],
+  "iceRockCandidateRange": [
+    1120,
+    1239
+  ],
+  "coreSnowIceCandidateRange": [
+    1240,
+    1543
+  ],
+  "tileCount": 424,
+  "statusCounts": {
+    "confirmed": 36,
+    "inferred": 35,
+    "map034_unknown": 16,
+    "placeholder": 62,
+    "unknown": 275
+  },
+  "statusLegend": {
+    "confirmed": {
+      "short": "CONF",
+      "color": [
+        75,
+        214,
+        132,
+        255
+      ],
+      "description": "User-confirmed meaning"
+    },
+    "inferred": {
+      "short": "INFER",
+      "color": [
+        255,
+        203,
+        87,
+        255
+      ],
+      "description": "Visual or metadata inference; needs confirmation"
+    },
+    "map034_unknown": {
+      "short": "M34?",
+      "color": [
+        91,
+        169,
+        255,
+        255
+      ],
+      "description": "Used by Map034, but exact meaning is unknown"
+    },
+    "unknown": {
+      "short": "UNK",
+      "color": [
+        161,
+        174,
+        180,
+        255
+      ],
+      "description": "Candidate tile with no confirmed meaning"
+    },
+    "placeholder": {
+      "short": "EMPTY",
+      "color": [
+        242,
+        92,
+        92,
+        255
+      ],
+      "description": "Red-cross placeholder or empty source slot"
+    }
+  },
+  "contactSheet": "frost_candidates_contact_sheet.png",
+  "pages": [
+    "frost_candidates_1120_1183.png",
+    "frost_candidates_1184_1247.png",
+    "frost_candidates_1248_1311.png",
+    "frost_candidates_1312_1375.png",
+    "frost_candidates_1376_1439.png",
+    "frost_candidates_1440_1503.png",
+    "frost_candidates_1504_1543.png"
+  ],
+  "tiles": [
+    {
+      "tileId": 1120,
+      "zone": "ice-rock-candidate",
+      "status": "confirmed",
+      "label": "transparent rock island NW",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 92,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 4
+    },
+    {
+      "tileId": 1121,
+      "zone": "ice-rock-candidate",
+      "status": "confirmed",
+      "label": "transparent rock island N",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 92,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 4
+    },
+    {
+      "tileId": 1122,
+      "zone": "ice-rock-candidate",
+      "status": "confirmed",
+      "label": "transparent rock island NE",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 92,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 4
+    },
+    {
+      "tileId": 1123,
+      "zone": "ice-rock-candidate",
+      "status": "confirmed",
+      "label": "background rock island NW",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 92,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 4
+    },
+    {
+      "tileId": 1124,
+      "zone": "ice-rock-candidate",
+      "status": "confirmed",
+      "label": "background rock island N",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 92,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 4
+    },
+    {
+      "tileId": 1125,
+      "zone": "ice-rock-candidate",
+      "status": "confirmed",
+      "label": "background rock island NE",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 92,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 4
+    },
+    {
+      "tileId": 1126,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 92,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 4
+    },
+    {
+      "tileId": 1127,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 92,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 4
+    },
+    {
+      "tileId": 1128,
+      "zone": "ice-rock-candidate",
+      "status": "confirmed",
+      "label": "transparent rock island W",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 93,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 4
+    },
+    {
+      "tileId": 1129,
+      "zone": "ice-rock-candidate",
+      "status": "confirmed",
+      "label": "transparent rock island center",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 93,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 4
+    },
+    {
+      "tileId": 1130,
+      "zone": "ice-rock-candidate",
+      "status": "confirmed",
+      "label": "transparent rock island E",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 93,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 4
+    },
+    {
+      "tileId": 1131,
+      "zone": "ice-rock-candidate",
+      "status": "confirmed",
+      "label": "background rock island W",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 93,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 4
+    },
+    {
+      "tileId": 1132,
+      "zone": "ice-rock-candidate",
+      "status": "confirmed",
+      "label": "background rock island center",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 93,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 4
+    },
+    {
+      "tileId": 1133,
+      "zone": "ice-rock-candidate",
+      "status": "confirmed",
+      "label": "background rock island E",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 93,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 4
+    },
+    {
+      "tileId": 1134,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 93,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 4
+    },
+    {
+      "tileId": 1135,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 93,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 4
+    },
+    {
+      "tileId": 1136,
+      "zone": "ice-rock-candidate",
+      "status": "confirmed",
+      "label": "transparent rock island SW",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 94,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 4
+    },
+    {
+      "tileId": 1137,
+      "zone": "ice-rock-candidate",
+      "status": "confirmed",
+      "label": "transparent rock island S",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 94,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 4
+    },
+    {
+      "tileId": 1138,
+      "zone": "ice-rock-candidate",
+      "status": "confirmed",
+      "label": "transparent rock island SE",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 94,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 4
+    },
+    {
+      "tileId": 1139,
+      "zone": "ice-rock-candidate",
+      "status": "confirmed",
+      "label": "background rock island SW",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 94,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 4
+    },
+    {
+      "tileId": 1140,
+      "zone": "ice-rock-candidate",
+      "status": "confirmed",
+      "label": "background rock island S",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 94,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 4
+    },
+    {
+      "tileId": 1141,
+      "zone": "ice-rock-candidate",
+      "status": "confirmed",
+      "label": "background rock island SE",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 94,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 4
+    },
+    {
+      "tileId": 1142,
+      "zone": "ice-rock-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 94,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1143,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 94,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1144,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 95,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 4
+    },
+    {
+      "tileId": 1145,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 95,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 4
+    },
+    {
+      "tileId": 1146,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 95,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 4
+    },
+    {
+      "tileId": 1147,
+      "zone": "ice-rock-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 95,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1148,
+      "zone": "ice-rock-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 95,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1149,
+      "zone": "ice-rock-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 95,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1150,
+      "zone": "ice-rock-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 95,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1151,
+      "zone": "ice-rock-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 95,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1152,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 96,
+      "passage": 7,
+      "priority": 0,
+      "terrainTag": 1
+    },
+    {
+      "tileId": 1153,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 96,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1154,
+      "zone": "ice-rock-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 96,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1155,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 96,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1156,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 96,
+      "passage": 7,
+      "priority": 0,
+      "terrainTag": 1
+    },
+    {
+      "tileId": 1157,
+      "zone": "ice-rock-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 96,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1158,
+      "zone": "ice-rock-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 96,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1159,
+      "zone": "ice-rock-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 96,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1160,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 97,
+      "passage": 11,
+      "priority": 0,
+      "terrainTag": 1
+    },
+    {
+      "tileId": 1161,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 97,
+      "passage": 11,
+      "priority": 0,
+      "terrainTag": 1
+    },
+    {
+      "tileId": 1162,
+      "zone": "ice-rock-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 97,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1163,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 97,
+      "passage": 13,
+      "priority": 0,
+      "terrainTag": 1
+    },
+    {
+      "tileId": 1164,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 97,
+      "passage": 13,
+      "priority": 0,
+      "terrainTag": 1
+    },
+    {
+      "tileId": 1165,
+      "zone": "ice-rock-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 97,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1166,
+      "zone": "ice-rock-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 97,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1167,
+      "zone": "ice-rock-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 97,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1168,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 98,
+      "passage": 11,
+      "priority": 0,
+      "terrainTag": 1
+    },
+    {
+      "tileId": 1169,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 98,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1170,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 98,
+      "passage": 7,
+      "priority": 0,
+      "terrainTag": 1
+    },
+    {
+      "tileId": 1171,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 98,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1172,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 98,
+      "passage": 13,
+      "priority": 0,
+      "terrainTag": 1
+    },
+    {
+      "tileId": 1173,
+      "zone": "ice-rock-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 98,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1174,
+      "zone": "ice-rock-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 98,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1175,
+      "zone": "ice-rock-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 98,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1176,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 99,
+      "passage": 8,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1177,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 99,
+      "passage": 8,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1178,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 99,
+      "passage": 8,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1179,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 99,
+      "passage": 8,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1180,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 99,
+      "passage": 8,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1181,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 99,
+      "passage": 8,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1182,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 99,
+      "passage": 8,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1183,
+      "zone": "ice-rock-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 99,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1184,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 100,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1185,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 100,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1186,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 100,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1187,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 100,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1188,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 100,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1189,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 100,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1190,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 100,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1191,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 100,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1192,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 101,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1193,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 101,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1194,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 101,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1195,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 101,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1196,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 101,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1197,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 101,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1198,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 101,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1199,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 101,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1200,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 102,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1201,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 102,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1202,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 102,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1203,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 102,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1204,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 102,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1205,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 102,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1206,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 102,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1207,
+      "zone": "ice-rock-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 102,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1208,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 103,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1209,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 103,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1210,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 103,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1211,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 103,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1212,
+      "zone": "ice-rock-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 103,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1213,
+      "zone": "ice-rock-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 103,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1214,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 103,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1215,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 103,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1216,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 104,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1217,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 104,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1218,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 104,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1219,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 104,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1220,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 104,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1221,
+      "zone": "ice-rock-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 104,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1222,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 104,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1223,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 104,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1224,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 105,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1225,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 105,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1226,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 105,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1227,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 105,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1228,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 105,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1229,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 105,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1230,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 105,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1231,
+      "zone": "ice-rock-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 105,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1232,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 106,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1233,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 106,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1234,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 106,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1235,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 106,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 13
+    },
+    {
+      "tileId": 1236,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 106,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 13
+    },
+    {
+      "tileId": 1237,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 106,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1238,
+      "zone": "ice-rock-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 106,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1239,
+      "zone": "ice-rock-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 106,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1240,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 107,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1241,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 107,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1242,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 107,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1243,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 107,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1244,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 107,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1245,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 107,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1246,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 107,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1247,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 107,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1248,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 108,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1249,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 108,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1250,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 108,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1251,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 108,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1252,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 108,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1253,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 108,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1254,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 108,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1255,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 108,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1256,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 109,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1257,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 109,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1258,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 109,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1259,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 109,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1260,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 109,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1261,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 109,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1262,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 109,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1263,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 109,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1264,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 110,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1265,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 110,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1266,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 110,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1267,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 110,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1268,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 110,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1269,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 110,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1270,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 110,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1271,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 110,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1272,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 111,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1273,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 111,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1274,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 111,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1275,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 111,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1276,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 111,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1277,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 111,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1278,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 111,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1279,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 111,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1280,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 112,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1281,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 112,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1282,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 112,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1283,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 112,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1284,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 112,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1285,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 112,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1286,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 112,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1287,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 112,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1288,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 113,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1289,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 113,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1290,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 113,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1291,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 113,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 13
+    },
+    {
+      "tileId": 1292,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 113,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 13
+    },
+    {
+      "tileId": 1293,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 113,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1294,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 113,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1295,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 113,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1296,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "snow mass NW / outside SE?",
+      "map034Count": 10,
+      "map034Layers": [
+        0,
+        10,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 114,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1297,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "wall south?",
+      "map034Count": 83,
+      "map034Layers": [
+        0,
+        83,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 114,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1298,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "snow mass NE / outside SW?",
+      "map034Count": 10,
+      "map034Layers": [
+        0,
+        10,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 114,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1299,
+      "zone": "snow-ice-candidate",
+      "status": "confirmed",
+      "label": "cave exit left",
+      "map034Count": 1,
+      "map034Layers": [
+        0,
+        1,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 114,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1300,
+      "zone": "snow-ice-candidate",
+      "status": "confirmed",
+      "label": "cave exit center",
+      "map034Count": 1,
+      "map034Layers": [
+        0,
+        1,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 114,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1301,
+      "zone": "snow-ice-candidate",
+      "status": "confirmed",
+      "label": "cave exit right",
+      "map034Count": 1,
+      "map034Layers": [
+        0,
+        1,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 114,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1302,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "wall NW?",
+      "map034Count": 12,
+      "map034Layers": [
+        0,
+        12,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 114,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1303,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "wall NE?",
+      "map034Count": 6,
+      "map034Layers": [
+        0,
+        6,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 114,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1304,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "wall east?",
+      "map034Count": 38,
+      "map034Layers": [
+        0,
+        38,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 115,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1305,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "blocked snow fill?",
+      "map034Count": 1260,
+      "map034Layers": [
+        1236,
+        24,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 115,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1306,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "wall west?",
+      "map034Count": 32,
+      "map034Layers": [
+        0,
+        32,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 115,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1307,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 115,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1308,
+      "zone": "snow-ice-candidate",
+      "status": "map034_unknown",
+      "label": "Map034 use; meaning?",
+      "map034Count": 1,
+      "map034Layers": [
+        0,
+        0,
+        1
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 115,
+      "passage": 0,
+      "priority": 1,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1309,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 115,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1310,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "wall SW?",
+      "map034Count": 12,
+      "map034Layers": [
+        0,
+        12,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 115,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1311,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "wall SE?",
+      "map034Count": 12,
+      "map034Layers": [
+        0,
+        12,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 115,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1312,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "snow mass SW / outside NE?",
+      "map034Count": 4,
+      "map034Layers": [
+        0,
+        4,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 116,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1313,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "wall north?",
+      "map034Count": 90,
+      "map034Layers": [
+        0,
+        90,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 116,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1314,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "snow mass SE / outside NW?",
+      "map034Count": 10,
+      "map034Layers": [
+        0,
+        10,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 116,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1315,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 116,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1316,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 116,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1317,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 116,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1318,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "inner wall turn?",
+      "map034Count": 1,
+      "map034Layers": [
+        0,
+        1,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 116,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1319,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "inner wall turn?",
+      "map034Count": 1,
+      "map034Layers": [
+        0,
+        1,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 116,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1320,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 117,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1321,
+      "zone": "snow-ice-candidate",
+      "status": "confirmed",
+      "label": "cracked ice",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 117,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1322,
+      "zone": "snow-ice-candidate",
+      "status": "confirmed",
+      "label": "broken-ice hole",
+      "map034Count": 1,
+      "map034Layers": [
+        1,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 117,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1323,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 117,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1324,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 117,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1325,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 117,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1326,
+      "zone": "snow-ice-candidate",
+      "status": "confirmed",
+      "label": "round water SW",
+      "map034Count": 1,
+      "map034Layers": [
+        0,
+        1,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 117,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1327,
+      "zone": "snow-ice-candidate",
+      "status": "confirmed",
+      "label": "round water SE",
+      "map034Count": 1,
+      "map034Layers": [
+        0,
+        1,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 117,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1328,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "ice surface?",
+      "map034Count": 155,
+      "map034Layers": [
+        155,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 118,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 12
+    },
+    {
+      "tileId": 1329,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 118,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1330,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 118,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1331,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 118,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1332,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "ladder top?",
+      "map034Count": 1,
+      "map034Layers": [
+        0,
+        0,
+        1
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 118,
+      "passage": 0,
+      "priority": 1,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1333,
+      "zone": "snow-ice-candidate",
+      "status": "confirmed",
+      "label": "stairs down",
+      "map034Count": 1,
+      "map034Layers": [
+        1,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 118,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1334,
+      "zone": "snow-ice-candidate",
+      "status": "map034_unknown",
+      "label": "Map034 use; meaning?",
+      "map034Count": 1,
+      "map034Layers": [
+        1,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 118,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1335,
+      "zone": "snow-ice-candidate",
+      "status": "map034_unknown",
+      "label": "Map034 use; meaning?",
+      "map034Count": 1,
+      "map034Layers": [
+        1,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 118,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1336,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 119,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1337,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 119,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1338,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 119,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1339,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 119,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1340,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "ladder bottom?",
+      "map034Count": 1,
+      "map034Layers": [
+        0,
+        0,
+        1
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 119,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1341,
+      "zone": "snow-ice-candidate",
+      "status": "confirmed",
+      "label": "hole",
+      "map034Count": 1,
+      "map034Layers": [
+        1,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 119,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1342,
+      "zone": "snow-ice-candidate",
+      "status": "map034_unknown",
+      "label": "Map034 use; meaning?",
+      "map034Count": 1,
+      "map034Layers": [
+        1,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 119,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1343,
+      "zone": "snow-ice-candidate",
+      "status": "map034_unknown",
+      "label": "Map034 use; meaning?",
+      "map034Count": 1,
+      "map034Layers": [
+        1,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 119,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1344,
+      "zone": "snow-ice-candidate",
+      "status": "confirmed",
+      "label": "edge trace start",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 120,
+      "passage": 7,
+      "priority": 0,
+      "terrainTag": 1
+    },
+    {
+      "tileId": 1345,
+      "zone": "snow-ice-candidate",
+      "status": "confirmed",
+      "label": "edge turn R>D",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 120,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1346,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 120,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1347,
+      "zone": "snow-ice-candidate",
+      "status": "confirmed",
+      "label": "edge turn U>R",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 120,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1348,
+      "zone": "snow-ice-candidate",
+      "status": "confirmed",
+      "label": "edge trace end",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 120,
+      "passage": 7,
+      "priority": 0,
+      "terrainTag": 1
+    },
+    {
+      "tileId": 1349,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "snow boulder?",
+      "map034Count": 21,
+      "map034Layers": [
+        0,
+        21,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 120,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1350,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "object upper half?",
+      "map034Count": 6,
+      "map034Layers": [
+        0,
+        2,
+        4
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 120,
+      "passage": 0,
+      "priority": 1,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1351,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "snow boulder alt?",
+      "map034Count": 4,
+      "map034Layers": [
+        0,
+        4,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 120,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1352,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 121,
+      "passage": 11,
+      "priority": 0,
+      "terrainTag": 1
+    },
+    {
+      "tileId": 1353,
+      "zone": "snow-ice-candidate",
+      "status": "confirmed",
+      "label": "edge down",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 121,
+      "passage": 11,
+      "priority": 0,
+      "terrainTag": 1
+    },
+    {
+      "tileId": 1354,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 121,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1355,
+      "zone": "snow-ice-candidate",
+      "status": "confirmed",
+      "label": "edge up",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 121,
+      "passage": 13,
+      "priority": 0,
+      "terrainTag": 1
+    },
+    {
+      "tileId": 1356,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 121,
+      "passage": 13,
+      "priority": 0,
+      "terrainTag": 1
+    },
+    {
+      "tileId": 1357,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "snow rock?",
+      "map034Count": 116,
+      "map034Layers": [
+        0,
+        116,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 121,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1358,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "ice crystal base?",
+      "map034Count": 5,
+      "map034Layers": [
+        0,
+        5,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 121,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1359,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "ice crystal alt?",
+      "map034Count": 5,
+      "map034Layers": [
+        0,
+        5,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 121,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1360,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 122,
+      "passage": 11,
+      "priority": 0,
+      "terrainTag": 1
+    },
+    {
+      "tileId": 1361,
+      "zone": "snow-ice-candidate",
+      "status": "confirmed",
+      "label": "edge turn D>R",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 122,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1362,
+      "zone": "snow-ice-candidate",
+      "status": "confirmed",
+      "label": "edge right",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 122,
+      "passage": 7,
+      "priority": 0,
+      "terrainTag": 1
+    },
+    {
+      "tileId": 1363,
+      "zone": "snow-ice-candidate",
+      "status": "confirmed",
+      "label": "edge turn R>U",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 122,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1364,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 122,
+      "passage": 13,
+      "priority": 0,
+      "terrainTag": 1
+    },
+    {
+      "tileId": 1365,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 122,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1366,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "small snow rock?",
+      "map034Count": 3,
+      "map034Layers": [
+        0,
+        3,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 122,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1367,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "small snow rock alt?",
+      "map034Count": 15,
+      "map034Layers": [
+        0,
+        15,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 122,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1368,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 123,
+      "passage": 8,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1369,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 123,
+      "passage": 8,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1370,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 123,
+      "passage": 8,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1371,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 123,
+      "passage": 8,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1372,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 123,
+      "passage": 8,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1373,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 123,
+      "passage": 8,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1374,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 123,
+      "passage": 8,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1375,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 123,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1376,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 124,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1377,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 124,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1378,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 124,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1379,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 124,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1380,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 124,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1381,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 124,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1382,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 124,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1383,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 124,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1384,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 125,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1385,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 125,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1386,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "walkable snow floor?",
+      "map034Count": 194,
+      "map034Layers": [
+        194,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 125,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1387,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 125,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1388,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 125,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1389,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 125,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1390,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 125,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1391,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 125,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1392,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 126,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1393,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 126,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1394,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 126,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1395,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 126,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1396,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 126,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1397,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 126,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1398,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 126,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1399,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 126,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1400,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 127,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1401,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 127,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1402,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 127,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1403,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 127,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1404,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 127,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1405,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 127,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1406,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 127,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1407,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 127,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1408,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 128,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1409,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 128,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1410,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 128,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1411,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 128,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1412,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 128,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1413,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 128,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1414,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 128,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1415,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 128,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1416,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 129,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1417,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 129,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1418,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 129,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1419,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 129,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1420,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 129,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1421,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 129,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1422,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 129,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1423,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 129,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1424,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 130,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1425,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 130,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1426,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 130,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1427,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 130,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 13
+    },
+    {
+      "tileId": 1428,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 130,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 13
+    },
+    {
+      "tileId": 1429,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 130,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1430,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 130,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1431,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 130,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1432,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 131,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1433,
+      "zone": "snow-ice-candidate",
+      "status": "map034_unknown",
+      "label": "Map034 use; meaning?",
+      "map034Count": 4,
+      "map034Layers": [
+        4,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 131,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1434,
+      "zone": "snow-ice-candidate",
+      "status": "map034_unknown",
+      "label": "Map034 use; meaning?",
+      "map034Count": 5,
+      "map034Layers": [
+        5,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 131,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1435,
+      "zone": "snow-ice-candidate",
+      "status": "map034_unknown",
+      "label": "Map034 use; meaning?",
+      "map034Count": 1,
+      "map034Layers": [
+        1,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 131,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1436,
+      "zone": "snow-ice-candidate",
+      "status": "map034_unknown",
+      "label": "Map034 use; meaning?",
+      "map034Count": 1,
+      "map034Layers": [
+        1,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 131,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1437,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 131,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1438,
+      "zone": "snow-ice-candidate",
+      "status": "map034_unknown",
+      "label": "Map034 use; meaning?",
+      "map034Count": 1,
+      "map034Layers": [
+        1,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 131,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1439,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 131,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1440,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 132,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1441,
+      "zone": "snow-ice-candidate",
+      "status": "map034_unknown",
+      "label": "Map034 use; meaning?",
+      "map034Count": 2,
+      "map034Layers": [
+        2,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 132,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1442,
+      "zone": "snow-ice-candidate",
+      "status": "map034_unknown",
+      "label": "Map034 use; meaning?",
+      "map034Count": 6,
+      "map034Layers": [
+        6,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 132,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1443,
+      "zone": "snow-ice-candidate",
+      "status": "map034_unknown",
+      "label": "Map034 use; meaning?",
+      "map034Count": 2,
+      "map034Layers": [
+        2,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 132,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1444,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 132,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1445,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 132,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1446,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 132,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1447,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 132,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1448,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 133,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1449,
+      "zone": "snow-ice-candidate",
+      "status": "map034_unknown",
+      "label": "Map034 use; meaning?",
+      "map034Count": 1,
+      "map034Layers": [
+        1,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 133,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1450,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 133,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1451,
+      "zone": "snow-ice-candidate",
+      "status": "map034_unknown",
+      "label": "Map034 use; meaning?",
+      "map034Count": 1,
+      "map034Layers": [
+        1,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 133,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1452,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 133,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1453,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 133,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1454,
+      "zone": "snow-ice-candidate",
+      "status": "map034_unknown",
+      "label": "Map034 use; meaning?",
+      "map034Count": 2,
+      "map034Layers": [
+        2,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 133,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1455,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 133,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1456,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 134,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1457,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 134,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1458,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 134,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1459,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 134,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1460,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 134,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1461,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 134,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1462,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 134,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1463,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 134,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1464,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 135,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1465,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 135,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1466,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 135,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1467,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 135,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1468,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 135,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1469,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 135,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1470,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 135,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1471,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 135,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1472,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 136,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1473,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 136,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1474,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 136,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1475,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 136,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1476,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 136,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1477,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 136,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1478,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 136,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1479,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 136,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1480,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 137,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1481,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 137,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1482,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 137,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1483,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 137,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 13
+    },
+    {
+      "tileId": 1484,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 137,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 13
+    },
+    {
+      "tileId": 1485,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 137,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1486,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 137,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1487,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 137,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1488,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 138,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1489,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 138,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1490,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "ice edge south?",
+      "map034Count": 26,
+      "map034Layers": [
+        26,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 138,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1491,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 138,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1492,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "ice edge NW?",
+      "map034Count": 4,
+      "map034Layers": [
+        4,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 138,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1493,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 138,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1494,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "ice edge NE?",
+      "map034Count": 4,
+      "map034Layers": [
+        4,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 138,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1495,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 138,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1496,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 139,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1497,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "ice edge east?",
+      "map034Count": 18,
+      "map034Layers": [
+        18,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 139,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1498,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 139,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1499,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "ice edge west?",
+      "map034Count": 18,
+      "map034Layers": [
+        18,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 139,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1500,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 139,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1501,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 139,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1502,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 139,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1503,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 139,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1504,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 140,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1505,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 140,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1506,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "ice edge north?",
+      "map034Count": 26,
+      "map034Layers": [
+        26,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 140,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1507,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 140,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1508,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "ice edge SW?",
+      "map034Count": 4,
+      "map034Layers": [
+        4,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 140,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1509,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 140,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1510,
+      "zone": "snow-ice-candidate",
+      "status": "inferred",
+      "label": "ice edge SE?",
+      "map034Count": 4,
+      "map034Layers": [
+        4,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 140,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1511,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 140,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1512,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 141,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1513,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 141,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1514,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 141,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1515,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 141,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1516,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 141,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1517,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 141,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1518,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 141,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1519,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 141,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1520,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 142,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1521,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 142,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1522,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 142,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1523,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 142,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1524,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 142,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1525,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 142,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1526,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 142,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1527,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 142,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1528,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 143,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1529,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 143,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1530,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 143,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1531,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 143,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1532,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 143,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1533,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 143,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1534,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 143,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1535,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 143,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1536,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 0,
+      "sourceRow": 144,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1537,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 1,
+      "sourceRow": 144,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1538,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 2,
+      "sourceRow": 144,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1539,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 3,
+      "sourceRow": 144,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1540,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 4,
+      "sourceRow": 144,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1541,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 5,
+      "sourceRow": 144,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1542,
+      "zone": "snow-ice-candidate",
+      "status": "unknown",
+      "label": "meaning unknown",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 6,
+      "sourceRow": 144,
+      "passage": 0,
+      "priority": 0,
+      "terrainTag": 0
+    },
+    {
+      "tileId": 1543,
+      "zone": "snow-ice-candidate",
+      "status": "placeholder",
+      "label": "source placeholder",
+      "map034Count": 0,
+      "map034Layers": [
+        0,
+        0,
+        0
+      ],
+      "sourceColumn": 7,
+      "sourceRow": 144,
+      "passage": 15,
+      "priority": 0,
+      "terrainTag": 0
+    }
+  ]
+}

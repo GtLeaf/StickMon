@@ -4,6 +4,22 @@
 #include <algorithm>
 
 namespace {
+static constexpr int8_t NATURE_ACTIVITY_BIAS[Game::NATURE_COUNT] = {
+     0,  0,  1,  0,  2,
+     1,  0, -2,  2, -1,
+    -1,  2,  0,  2,  1,
+    -1, -2, -2, -1,  1,
+    -1, -1,  0, -1,  2,
+};
+
+static constexpr int8_t NATURE_SOCIABILITY_BIAS[Game::NATURE_COUNT] = {
+     0,  2,  1, -1,  1,
+     0,  2, -1,  1,  1,
+    -2, -1,  0,  2,  2,
+    -2, -1, -1, -2,  0,
+     1,  2, -1, -1,  0,
+};
+
 uint8_t clampScore(uint16_t value) {
     return value > 255 ? 255 : static_cast<uint8_t>(value);
 }
@@ -74,6 +90,9 @@ void MonsterMind::onRested(uint32_t nowMs) {
 MonsterBehaviorProfile behaviorProfileFor(const Species& species,
                                           const Game::MonsterRuntime& monster) {
     MonsterBehaviorProfile profile;
+    uint8_t nature = monster.nature < Game::NATURE_COUNT ? monster.nature : 0;
+    profile.activityBias = NATURE_ACTIVITY_BIAS[nature];
+    profile.sociabilityBias = NATURE_SOCIABILITY_BIAS[nature];
     float statScale = 0.72f + static_cast<float>(species.stats.spe) / 280.0f;
     if (natureBoostStat(monster.nature) == 5) statScale *= 1.08f;
     if (natureLowerStat(monster.nature) == 5) statScale *= 0.90f;
@@ -102,16 +121,19 @@ MonsterBehaviorProfile behaviorProfileFor(const Species& species,
         profile.wanderRadiusX = 12;
         profile.wanderRadiusY = 7;
         profile.turnPauseMs = 650;
+        profile.activityBias = -2;
         break;
     case 129:
         profile.moveSpeedScale = 0.35f;
         profile.idleMinMs = 4200;
         profile.idleMaxMs = 9200;
+        profile.activityBias = std::min<int8_t>(profile.activityBias, -1);
         break;
     case 143:
         profile.moveSpeedScale *= 0.72f;
         profile.idleMinMs = 4800;
         profile.idleMaxMs = 9800;
+        profile.activityBias = std::min<int8_t>(profile.activityBias, -1);
         break;
     case 92:
     case 93:

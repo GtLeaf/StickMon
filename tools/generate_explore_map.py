@@ -9,6 +9,8 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
+from map_generation_rules import CUSTOM_TILE_VERTICAL_FLIPS
+
 
 ROOT = Path(__file__).resolve().parents[1]
 ESSENTIALS = Path(os.environ.get(
@@ -63,6 +65,7 @@ TERRAIN_TAG_NAMES = {
 WATER_TERRAIN_TAGS = frozenset((5, 6, 7, 8, 9))
 FLOATABLE_TERRAIN_TAGS = frozenset((5, 6, 7))
 IGNORE_PASSABILITY_TAG = 13
+BRIDGE_TERRAIN_TAG = 15
 
 # RPG Maker XP direction passage bits: down, left, right, up.
 DIRECTIONS = (
@@ -205,26 +208,34 @@ def load_image(path):
 
 
 def regular_tile(tileset, tile_id):
-    index = tile_id - 384
+    source_id = CUSTOM_TILE_VERTICAL_FLIPS.get(tile_id, tile_id)
+    index = source_id - 384
     if index < 0:
         return None
     x = (index % 8) * TILE_SIZE
     y = (index // 8) * TILE_SIZE
     if x + TILE_SIZE > tileset.width or y + TILE_SIZE > tileset.height:
         return None
-    return tileset.crop((x, y, x + TILE_SIZE, y + TILE_SIZE))
+    tile = tileset.crop((x, y, x + TILE_SIZE, y + TILE_SIZE))
+    if source_id != tile_id:
+        tile = tile.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+    return tile
 
 
-def autotile_frame(source):
+def autotile_frame(source, frame_index=0):
     if source.height == TILE_SIZE:
-        return source.crop((0, 0, TILE_SIZE, TILE_SIZE))
+        frame_count = max(1, source.width // TILE_SIZE)
+        frame_x = (frame_index % frame_count) * TILE_SIZE
+        return source.crop((frame_x, 0, frame_x + TILE_SIZE, TILE_SIZE))
     if source.width < 96 or source.height < 128:
         return source.crop((0, 0, min(TILE_SIZE, source.width), min(TILE_SIZE, source.height)))
-    return source.crop((0, 0, 96, 128))
+    frame_count = max(1, source.width // 96)
+    frame_x = (frame_index % frame_count) * 96
+    return source.crop((frame_x, 0, frame_x + 96, 128))
 
 
-def autotile_variant(source, variant):
-    frame = autotile_frame(source)
+def autotile_variant(source, variant, frame_index=0):
+    frame = autotile_frame(source, frame_index)
     if frame.size == (TILE_SIZE, TILE_SIZE):
         return frame
     tile = Image.new("RGBA", (TILE_SIZE, TILE_SIZE), (0, 0, 0, 0))
@@ -316,6 +327,12 @@ def blocked_mask_for_cell(data, x, y, allow_float=False):
                 continue
             passage = table_value(passages, tile_id)
             priority = table_value(priorities, tile_id)
+
+            # A bridge is the active walking surface. Its directional edge
+            # mask replaces the blocked water or cliff tile underneath it.
+            if terrain_tag == BRIDGE_TERRAIN_TAG:
+                blocked = bool((passage & direction_bit) or (passage & 0x0F) == 0x0F)
+                break
 
             # Water tiles carry 0x0f passage in Essentials. Floating movement
             # opens that surface while preserving blocking structures above it.

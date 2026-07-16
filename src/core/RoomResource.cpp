@@ -9,11 +9,13 @@
 
 namespace {
 static constexpr uint32_t ROOM_PACK_MAGIC = 0x4D4F5253;
-static constexpr uint16_t ROOM_PACK_VERSION = 2;
+static constexpr uint16_t ROOM_PACK_VERSION_V2 = 2;
+static constexpr uint16_t ROOM_PACK_VERSION = 3;
 static constexpr const char* DEFAULT_ROOM_ID = "standard";
 static constexpr uint16_t MAX_ROOM_W = 240;
 static constexpr uint16_t MAX_ROOM_H = 320;
 static constexpr uint8_t MAX_POLYGON_POINTS = 32;
+static constexpr uint8_t MAX_BEHAVIOR_ANCHORS = 8;
 static constexpr uint32_t MAX_PATCH_RUNS = 4096;
 static constexpr uint32_t MAX_PATCH_PIXELS = 65535;
 
@@ -30,7 +32,7 @@ struct __attribute__((packed)) PackedRoomHeader {
     uint8_t walkPolygonCount;
     uint8_t bedPolygonCount;
     uint8_t doorwayPolygonCount;
-    uint8_t reservedCount;
+    uint8_t behaviorAnchorCount;
     int16_t walkMinX;
     int16_t walkMinY;
     int16_t walkMaxX;
@@ -55,6 +57,7 @@ struct __attribute__((packed)) PackedRoomHeader {
     uint16_t reserved;
 };
 static_assert(sizeof(PackedRoomHeader) == 76, "room pack v2 header size changed");
+static_assert(sizeof(RoomResource::BehaviorAnchor) == 6, "room behavior anchor layout changed");
 
 template <typename T>
 T* allocArray(size_t count) {
@@ -69,7 +72,8 @@ bool readExact(fs::File& file, void* out, size_t length) {
 }
 
 bool validHeader(const PackedRoomHeader& h) {
-    if (h.magic != ROOM_PACK_MAGIC || h.version != ROOM_PACK_VERSION) return false;
+    if (h.magic != ROOM_PACK_MAGIC ||
+        (h.version != ROOM_PACK_VERSION_V2 && h.version != ROOM_PACK_VERSION)) return false;
     if (h.width == 0 || h.width > MAX_ROOM_W || h.height == 0 || h.height > MAX_ROOM_H) return false;
     if (h.roomY < 0 || h.roomY >= static_cast<int16_t>(MAX_ROOM_H)) return false;
     if (h.baseRawBytes != (uint32_t)h.width * h.height * sizeof(uint16_t)) return false;
@@ -80,7 +84,9 @@ bool validHeader(const PackedRoomHeader& h) {
         (h.doorwayPolygonCount < 3 || h.doorwayPolygonCount > MAX_POLYGON_POINTS)) return false;
     if (h.nightPatchRunCount > MAX_PATCH_RUNS || h.nightPatchPixelCount > MAX_PATCH_PIXELS) return false;
     if ((h.nightPatchRunCount == 0) != (h.nightPatchPixelCount == 0)) return false;
-    if (h.flags > 1 || h.reservedCount != 0 || h.reserved != 0) return false;
+    if (h.flags > 1 || h.reserved != 0) return false;
+    if ((h.version == ROOM_PACK_VERSION_V2 && h.behaviorAnchorCount != 0) ||
+        h.behaviorAnchorCount > MAX_BEHAVIOR_ANCHORS) return false;
 
     auto validBounds = [](int16_t minX, int16_t minY, int16_t maxX, int16_t maxY,
                           uint16_t width, uint16_t height) {
@@ -109,7 +115,8 @@ bool validHeader(const PackedRoomHeader& h) {
 
 bool validPayload(const PackedRoomHeader& h, const RoomResource::PatchRun* runs,
                   const RoomResource::Point* walk, const RoomResource::Point* bed,
-                  const RoomResource::Point* doorway) {
+                  const RoomResource::Point* doorway,
+                  const RoomResource::BehaviorAnchor* anchors) {
     uint32_t expectedColorOffset = 0;
     for (uint32_t i = 0; i < h.nightPatchRunCount; ++i) {
         const RoomResource::PatchRun& run = runs[i];
@@ -148,10 +155,21 @@ bool validPayload(const PackedRoomHeader& h, const RoomResource::PatchRun* runs,
                                  h.walkMinX, h.walkMinY, h.walkMaxX, h.walkMaxY) &&
                  validatePolygon(bed, h.bedPolygonCount,
                                  h.bedMinX, h.bedMinY, h.bedMaxX, h.bedMaxY);
-    if (!valid || h.doorwayPolygonCount == 0) return valid;
-    return validatePolygon(doorway, h.doorwayPolygonCount,
-                           h.doorwayMinX, h.doorwayMinY,
-                           h.doorwayMaxX, h.doorwayMaxY);
+    if (valid && h.doorwayPolygonCount > 0) {
+        valid = validatePolygon(doorway, h.doorwayPolygonCount,
+                                h.doorwayMinX, h.doorwayMinY,
+                                h.doorwayMaxX, h.doorwayMaxY);
+    }
+    if (!valid) return false;
+
+    for (uint8_t i = 0; i < h.behaviorAnchorCount; ++i) {
+        const RoomResource::BehaviorAnchor& anchor = anchors[i];
+        if (anchor.type == 0 || anchor.facing > 7 ||
+            anchor.footX < 0 || anchor.footY < 0 ||
+            anchor.footX >= static_cast<int16_t>(h.width) ||
+            anchor.footY >= static_cast<int16_t>(h.height)) return false;
+    }
+    return true;
 }
 }
 
@@ -166,10 +184,11 @@ bool RoomResource::begin() {
     clearMeta();
     loaded_ = loadExternal();
     Serial.printf("[RoomResource] source=%s size=%ux%u base=%u patchRuns=%u patchPixels=%u "
-                  "door=%u inside=%d,%d outside=%d,%d\n",
+                  "door=%u inside=%d,%d outside=%d,%d anchors=%u\n",
                   source(), width_, height_, baseCompressedLen_,
                   nightPatchRunCount_, nightPatchPixelCount_, doorwayPolygonCount_,
-                  doorwayInsideX_, doorwayInsideY_, doorwayOutsideX_, doorwayOutsideY_);
+                  doorwayInsideX_, doorwayInsideY_, doorwayOutsideX_, doorwayOutsideY_,
+                  behaviorAnchorCount_);
     return loaded_;
 }
 
@@ -202,6 +221,23 @@ RoomResource::Point RoomResource::doorwayPoint(uint8_t index) const {
     return loaded_ ? doorwayPolygon_[index] : out;
 }
 
+RoomResource::BehaviorAnchor RoomResource::behaviorAnchor(uint8_t index) const {
+    BehaviorAnchor out{};
+    if (index >= behaviorAnchorCount_) return out;
+    return loaded_ ? behaviorAnchors_[index] : out;
+}
+
+bool RoomResource::findBehaviorAnchor(BehaviorAnchorType type, BehaviorAnchor& out) const {
+    uint8_t rawType = static_cast<uint8_t>(type);
+    for (uint8_t i = 0; i < behaviorAnchorCount_; ++i) {
+        if (behaviorAnchors_[i].type == rawType) {
+            out = behaviorAnchors_[i];
+            return true;
+        }
+    }
+    return false;
+}
+
 bool RoomResource::loadExternal() {
     ResourcePack& pack = ResourcePack::ins();
     if (!pack.begin()) return false;
@@ -219,7 +255,8 @@ bool RoomResource::loadExternal() {
                             static_cast<uint64_t>(header.nightPatchRunCount) * sizeof(PatchRun) +
                             static_cast<uint64_t>(header.nightPatchPixelCount) * sizeof(uint16_t) +
                             static_cast<uint64_t>(header.walkPolygonCount + header.bedPolygonCount +
-                                                  header.doorwayPolygonCount) * sizeof(Point);
+                                                  header.doorwayPolygonCount) * sizeof(Point) +
+                            static_cast<uint64_t>(header.behaviorAnchorCount) * sizeof(BehaviorAnchor);
     if (expectedSize != file.size()) {
         Serial.println("[RoomResource] room payload size mismatch");
         return false;
@@ -231,19 +268,22 @@ bool RoomResource::loadExternal() {
     Point* walk = allocArray<Point>(header.walkPolygonCount);
     Point* bed = allocArray<Point>(header.bedPolygonCount);
     Point* doorway = allocArray<Point>(header.doorwayPolygonCount);
+    BehaviorAnchor* anchors = allocArray<BehaviorAnchor>(header.behaviorAnchorCount);
 
     if (!baseCompressed ||
         (header.nightPatchRunCount && !patchRuns) ||
         (header.nightPatchPixelCount && !patchPixels) ||
         (header.walkPolygonCount && !walk) ||
         (header.bedPolygonCount && !bed) ||
-        (header.doorwayPolygonCount && !doorway)) {
+        (header.doorwayPolygonCount && !doorway) ||
+        (header.behaviorAnchorCount && !anchors)) {
         if (baseCompressed) free(baseCompressed);
         if (patchRuns) free(patchRuns);
         if (patchPixels) free(patchPixels);
         if (walk) free(walk);
         if (bed) free(bed);
         if (doorway) free(doorway);
+        if (anchors) free(anchors);
         return false;
     }
 
@@ -253,7 +293,8 @@ bool RoomResource::loadExternal() {
         readExact(file, patchPixels, sizeof(uint16_t) * header.nightPatchPixelCount) &&
         readExact(file, walk, sizeof(Point) * header.walkPolygonCount) &&
         readExact(file, bed, sizeof(Point) * header.bedPolygonCount) &&
-        readExact(file, doorway, sizeof(Point) * header.doorwayPolygonCount);
+        readExact(file, doorway, sizeof(Point) * header.doorwayPolygonCount) &&
+        readExact(file, anchors, sizeof(BehaviorAnchor) * header.behaviorAnchorCount);
     if (!ok) {
         free(baseCompressed);
         if (patchRuns) free(patchRuns);
@@ -261,16 +302,18 @@ bool RoomResource::loadExternal() {
         if (walk) free(walk);
         if (bed) free(bed);
         if (doorway) free(doorway);
+        if (anchors) free(anchors);
         return false;
     }
 
-    if (!validPayload(header, patchRuns, walk, bed, doorway)) {
+    if (!validPayload(header, patchRuns, walk, bed, doorway, anchors)) {
         free(baseCompressed);
         if (patchRuns) free(patchRuns);
         if (patchPixels) free(patchPixels);
         if (walk) free(walk);
         if (bed) free(bed);
         if (doorway) free(doorway);
+        if (anchors) free(anchors);
         Serial.println("[RoomResource] invalid room metadata");
         return false;
     }
@@ -286,6 +329,7 @@ bool RoomResource::loadExternal() {
     walkPolygonCount_ = header.walkPolygonCount;
     bedPolygonCount_ = header.bedPolygonCount;
     doorwayPolygonCount_ = header.doorwayPolygonCount;
+    behaviorAnchorCount_ = header.behaviorAnchorCount;
     walkMinX_ = header.walkMinX;
     walkMinY_ = header.walkMinY;
     walkMaxX_ = header.walkMaxX;
@@ -312,6 +356,7 @@ bool RoomResource::loadExternal() {
     walkPolygon_ = walk;
     bedPolygon_ = bed;
     doorwayPolygon_ = doorway;
+    behaviorAnchors_ = anchors;
     return true;
 }
 
@@ -348,6 +393,7 @@ void RoomResource::clearMeta() {
     doorwayInsideY_ = 0;
     doorwayOutsideX_ = 0;
     doorwayOutsideY_ = 0;
+    behaviorAnchorCount_ = 0;
 }
 
 void RoomResource::releaseExternal() {
@@ -357,10 +403,12 @@ void RoomResource::releaseExternal() {
     if (walkPolygon_) free(walkPolygon_);
     if (bedPolygon_) free(bedPolygon_);
     if (doorwayPolygon_) free(doorwayPolygon_);
+    if (behaviorAnchors_) free(behaviorAnchors_);
     baseCompressed_ = nullptr;
     nightPatchRuns_ = nullptr;
     nightPatchPixels_ = nullptr;
     walkPolygon_ = nullptr;
     bedPolygon_ = nullptr;
     doorwayPolygon_ = nullptr;
+    behaviorAnchors_ = nullptr;
 }

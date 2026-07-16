@@ -43,6 +43,8 @@ enum class GrowthRate : uint8_t {
     SLOW,
 };
 
+static constexpr uint8_t SPECIAL_MOVE_SLOT_COUNT = 2;
+
 enum class EvolutionMethod : uint8_t {
     NONE,
     LEVEL,
@@ -63,37 +65,116 @@ struct Species {
     uint16_t evolveTo;
     EvolutionMethod evolveMethod;
     uint8_t evolveLevel;
-    uint16_t colorA;
-    uint16_t colorB;
-    uint8_t basicMoveId;
-    uint8_t specialMoveId;
+    uint16_t baseExp;
+};
+
+enum class DamageClass : uint8_t {
+    PHYSICAL,
+    SPECIAL,
+    STATUS,
+};
+
+enum class BattleStat : uint8_t {
+    ATTACK = 0,
+    DEFENSE,
+    SP_ATTACK,
+    SP_DEFENSE,
+    SPEED,
+    ACCURACY,
+    EVASION,
+    COUNT,
+};
+
+enum class MoveEffectKind : uint8_t {
+    MAJOR_STATUS = 0,
+    CONFUSION,
+    FLINCH,
+    BIND,
+    STAT_STAGE,
+    DRAIN,
+    RECOIL,
+    HEAL,
+    REST,
+    CURE_STATUS,
+    CLEAR_BIND,
+    YAWN,
+};
+
+enum class MoveEffectTarget : uint8_t {
+    DEFENDER = 0,
+    ATTACKER,
+};
+
+struct MoveEffectSpec {
+    MoveEffectKind kind;
+    MoveEffectTarget target;
+    uint8_t chance;
+    int8_t value;
+    uint8_t aux;
+    uint8_t minTurns;
+    uint8_t maxTurns;
+};
+
+static_assert(sizeof(MoveEffectSpec) == 7, "move effects must remain flash compact");
+
+enum MoveFlags : uint8_t {
+    MOVE_FLAG_NONE = 0,
+    MOVE_FLAG_USABLE_ASLEEP = 1 << 0,
 };
 
 struct MoveInfo {
-    uint8_t id;
+    Game::MoveId id;
     const char* name;
     const char* description;
-    uint8_t power;
+    uint16_t power;
     TypeId type;
-    bool special;
+    DamageClass damageClass;
+    uint8_t accuracy;
+    uint8_t pp;
+    int8_t priority;
+    bool battleSupported;
+    uint16_t effectOffset;
+    uint8_t effectCount;
+    uint8_t minHits;
+    uint8_t maxHits;
+    uint8_t criticalStage;
+    uint8_t flags;
+};
+
+struct LearnsetEntry {
+    uint8_t level;
+    Game::MoveId moveId;
+};
+
+struct SpeciesLearnset {
+    uint16_t speciesId;
+    uint16_t offset;
+    uint8_t count;
+    Game::MoveId basicMoveId;
 };
 
 const Species& starterSpecies();
 const Species* speciesTable();
 uint8_t speciesCount();
 const Species* findSpecies(uint16_t speciesId);
-const MoveInfo* findMove(uint8_t moveId);
-bool isBasicFirstMove(uint8_t moveId);
-uint8_t basicMoveIdForSpecies(const Species& species);
-uint8_t secondMoveIdForSpecies(const Species& species);
-uint8_t secondMoveLearnLevelForSpecies(const Species& species);
-uint8_t specialMoveIdForMonster(const Game::MonsterRuntime& monster, uint8_t specialSlot);
+const MoveInfo* findMove(Game::MoveId moveId);
+const MoveEffectSpec* moveEffectFor(const MoveInfo& move, uint8_t index);
+const SpeciesLearnset* findLearnset(uint16_t speciesId);
+const LearnsetEntry* learnsetEntryForSpecies(const Species& species, uint16_t index);
+uint16_t learnsetEntryCountForSpecies(const Species& species);
+bool isMoveBattleSupported(Game::MoveId moveId);
+bool canLearnAsSpecialMove(const Species& species, Game::MoveId moveId);
+bool isBasicFirstMoveForSpecies(const Species& species, Game::MoveId moveId);
+Game::MoveId basicMoveIdForSpecies(const Species& species);
+uint8_t moveLearnLevelForSpecies(const Species& species, Game::MoveId moveId);
+void resetMovesForLevel(Game::MonsterRuntime& monster, const Species& species);
+Game::MoveId specialMoveIdForMonster(const Game::MonsterRuntime& monster, uint8_t specialSlot);
 uint8_t specialMoveCount(const Game::MonsterRuntime& monster);
-uint8_t moveIdForMonster(const Species& species, const Game::MonsterRuntime& monster, bool secondSlot);
-uint8_t moveIdForMonster(const Species& species, const Game::MonsterRuntime& monster, uint8_t specialSlot);
+Game::MoveId moveIdForMonster(const Species& species, const Game::MonsterRuntime& monster, bool secondSlot);
+Game::MoveId moveIdForMonster(const Species& species, const Game::MonsterRuntime& monster, uint8_t specialSlot);
 bool hasSpecialMove(const Game::MonsterRuntime& monster);
 bool hasSecondMove(const Game::MonsterRuntime& monster);
-uint8_t movePower(uint8_t moveId, uint8_t fallback);
+uint16_t movePower(Game::MoveId moveId, uint16_t fallback);
 uint16_t maxHpFor(const Species& species, uint8_t level);
 uint16_t maxHpFor(const Species& species, const Game::MonsterRuntime& monster);
 uint16_t statFor(const Species& species, const Game::MonsterRuntime& monster, uint8_t statIndex);

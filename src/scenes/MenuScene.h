@@ -10,19 +10,21 @@ public:
     void update(uint32_t nowMs, float dtSeconds) override;
     void render() override;
     bool onButton(const ButtonEvent& event) override;
+    void openExploreTeamView();
+    void openExploreBagView();
+    bool exploreViewClosed() const;
 
 private:
     struct BagRow {
         uint8_t source;
         uint8_t count;
-        uint16_t color;
     };
 
     enum MenuItem : uint8_t {
-        ITEM_TEAM = 0,
+        ITEM_EXPLORE = 0,
+        ITEM_TEAM,
         ITEM_ROOM,
         ITEM_BAG,
-        ITEM_EXPLORE,
         ITEM_SHOP,
         ITEM_COMPUTER,
         ITEM_SETTINGS,
@@ -58,7 +60,8 @@ private:
     static constexpr uint8_t ROOM_ITEM_COUNT = 5;
     static constexpr uint8_t FOOD_ITEM_COUNT = Game::ROOM_FOOD_COUNT + 1;
     static constexpr uint8_t COMPUTER_ITEM_COUNT = 3;
-    static constexpr uint8_t DEBUG_ROOT_ITEM_COUNT = 5;
+    static constexpr uint8_t DEBUG_ROOT_ITEM_COUNT = 6;
+    static constexpr uint8_t DEBUG_BATTLE_ROOT_INDEX = 4;
     static constexpr uint8_t DEBUG_MONSTER_ITEM_COUNT = 3;
     static constexpr uint8_t DEBUG_RESOURCE_ITEM_COUNT = 2;
     static constexpr uint8_t DEBUG_ENV_ITEM_COUNT = 3;
@@ -76,6 +79,7 @@ private:
     uint8_t statusPage = 0;
     uint8_t statusMonsterIndex = 0;
     bool statusFromStorage = false;
+    bool exploreContextMode = false;
     uint8_t teamCursor = 0;
     uint8_t teamActionCursor = 0;
     bool teamActionOpen = false;
@@ -138,8 +142,11 @@ private:
     uint16_t debugTimeTargetMinutes() const;
     void incrementDebugTimeDigit();
     void resetNavigation();
+    void openExploreView(ViewMode next);
     void pushView(ViewMode next);
     void popView();
+    uint8_t teamActionCount() const;
+    const char* teamActionLabel(uint8_t index) const;
     uint8_t collectVisibleBagRows(BagRow* rows, uint8_t maxRows) const;
     uint8_t visibleFoodIndexOf(uint8_t foodIndex) const;
     bool isFoodBackIndex(uint8_t index) const;

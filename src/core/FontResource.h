@@ -2,6 +2,11 @@
 
 #include <cstdint>
 
+enum class FontFace : uint8_t {
+    SARASA_CJK = 0,
+    UNSCII_ASCII,
+};
+
 class FontResource {
 public:
     static constexpr uint8_t GLYPH_W = 16;
@@ -11,10 +16,11 @@ public:
     static FontResource& ins();
 
     bool begin();
-    bool loaded() const { return loaded_; }
-    const char* source() const { return loaded_ ? "littlefs" : "missing"; }
-    uint16_t glyphCount() const { return glyphCount_; }
-    const uint8_t* findGlyphBitmap(uint32_t codepoint);
+    bool loaded() const;
+    bool loaded(FontFace face) const;
+    const char* source() const { return loaded() ? "littlefs" : "missing"; }
+    uint16_t glyphCount(FontFace face) const;
+    const uint8_t* findGlyphBitmap(uint32_t codepoint, FontFace face);
 
 private:
     struct __attribute__((packed)) Glyph {
@@ -22,14 +28,20 @@ private:
         uint8_t bitmap[GLYPH_BYTES];
     };
 
+    struct FontData {
+        bool loaded = false;
+        uint16_t glyphCount = 0;
+        Glyph* glyphs = nullptr;
+    };
+
     FontResource() = default;
     ~FontResource() = default;
 
-    bool loadExternal();
-    void releaseExternal();
+    const FontData& dataFor(FontFace face) const;
+    bool loadExternal(FontFace face, FontData& data);
+    void releaseExternal(FontData& data);
 
     bool initialized_ = false;
-    bool loaded_ = false;
-    uint16_t glyphCount_ = 0;
-    Glyph* glyphs_ = nullptr;
+    FontData sarasaCjk_;
+    FontData unsciiAscii_;
 };

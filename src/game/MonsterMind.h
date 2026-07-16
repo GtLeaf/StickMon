@@ -26,6 +26,8 @@ struct MonsterBehaviorProfile {
     uint8_t wanderRadiusX = 28;
     uint8_t wanderRadiusY = 16;
     uint16_t turnPauseMs = 220;
+    int8_t activityBias = 0;
+    int8_t sociabilityBias = 0;
 };
 
 class MonsterMind {

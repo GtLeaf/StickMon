@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+
+SMALL_ISLAND_TILES = (
+    (552, 553, 554),
+    (560, 561, 562),
+    (568, 569, 570),
+)
+SMALL_ISLAND_CENTER_TILE = 561
+SMALL_ISLAND_EDGE_TILES = frozenset(
+    tile_id
+    for row in SMALL_ISLAND_TILES
+    for tile_id in row
+    if tile_id != SMALL_ISLAND_CENTER_TILE
+)
+
+CLIFF_RIGHT_TO_DOWN_CORNER_TILE = 571
+CLIFF_LEFT_TO_DOWN_CORNER_TILE = 572
+
+CAVE_ENTRANCE_TILES = {
+    "left": (515,),
+    "right": (517,),
+    "front": (524, 532),
+    "back": (526,),
+}
+
+ROCK_STEP_TILE = 539
+UP_LADDER_TILES = (540, 548)
+DOWN_LADDER_TILE = 541
+DOWN_LADDER_BASE_TILES = (
+    (601, 602, 603),
+    (609, 610, 611),
+    (617, 618, 619),
+)
+DOWN_LADDER_CENTER_TILE = 610
+DOWN_LADDER_ROCK_EDGE_TOP_TILES = (601, 602, 603)
+DOWN_LADDER_OPEN_TOP_SOURCE_TILES = (617, 618, 619)
+DOWN_LADDER_OPEN_TOP_FLIP_Y = True
+
+EDGE_TRACE_TILES = (579, 580, 588, 596, 597, 598, 590, 582, 583)
+EDGE_TRACE_TURN_TILES = {
+    "left_to_down": 580,
+    "down_to_right": 596,
+    "right_to_up": 598,
+    "up_to_right": 582,
+}
+
+FROST_CAVE_EXIT_TILES = (1299, 1300, 1301)
+FROST_BLOCKED_SNOW_MASS_TILES = (
+    (1296, 1297, 1298),
+    (1304, 1305, 1306),
+    (1312, 1313, 1314),
+)
+FROST_INNER_WALL_CORNER_TILES = {
+    "outside_nw": 1314,
+    "outside_ne": 1312,
+    "outside_sw": 1298,
+    "outside_se": 1296,
+}
+CRACKED_ICE_TILE = 1321
+BROKEN_ICE_HOLE_TILE = 1322
+ROUND_WATER_BOTTOM_TILES = (1326, 1327)
+DOWNWARD_STAIRS_TILE = 1333
+CAVE_HOLE_TILE = 1341
+
+ICE_CAVE_EDGE_TRACE_TILES = (
+    1344, 1345, 1353, 1361, 1362, 1363, 1355, 1347, 1348,
+)
+ICE_CAVE_EDGE_TRACE_TURN_TILES = {
+    "left_to_down": 1345,
+    "down_to_right": 1361,
+    "right_to_up": 1363,
+    "up_to_right": 1347,
+}
+
+ICE_ROCK_ISLAND_TRANSPARENT_TILES = (
+    (1120, 1121, 1122),
+    (1128, 1129, 1130),
+    (1136, 1137, 1138),
+)
+ICE_ROCK_ISLAND_BACKGROUND_TILES = (
+    (1123, 1124, 1125),
+    (1131, 1132, 1133),
+    (1139, 1140, 1141),
+)

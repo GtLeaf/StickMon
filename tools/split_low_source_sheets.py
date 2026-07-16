@@ -127,7 +127,7 @@ LOW_EXTRA_SPLIT_SPECIES = [
     ("101_125", 125, "electabuzz", 2086, 2193),
 ]
 
-LOW_EXTRA_COPY_IDS = set(range(10, 19)) | {74, 75, 76}
+LOW_EXTRA_COPY_IDS = set(range(10, 19)) | {41, 42, 74, 75, 76}
 
 CLEANUP_RECTS = {
     ("001_025", 12): [(253, 861, 610, 898)],

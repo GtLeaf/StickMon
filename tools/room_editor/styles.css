@@ -322,6 +322,15 @@ canvas.measure-tool.dragging {
   cursor: ns-resize;
 }
 
+canvas.shape-tool {
+  cursor: default;
+}
+
+canvas.face-draw-tool,
+canvas.face-draw-tool.dragging {
+  cursor: crosshair;
+}
+
 .preview-canvas {
   width: 240px;
   height: auto;
@@ -873,6 +882,28 @@ canvas.measure-tool.dragging {
 
 .room-faces-panel > .collapsible-panel-summary {
   flex: 0 0 auto;
+}
+
+.room-faces-panel > .collapsible-panel-summary::after {
+  margin-left: 0;
+}
+
+.room-face-add {
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  min-height: 26px;
+  margin-left: auto;
+  padding: 0;
+  border-radius: 5px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.room-face-add.active {
+  border-color: #2692ad;
+  background: #17657a;
+  color: #ffffff;
 }
 
 .collapsible-panel-summary {

@@ -1,0 +1,328 @@
+{
+  "status": "prototype-only",
+  "sourceTileset": "${ESSENTIALS_DIR}/Graphics/Tilesets/Caves.png",
+  "referenceMap": "Map034 Ice Cave",
+  "tileCatalog": "origin_asset/generated/game/tileset_reference/frost_crystal_cave/frost_candidates_contact_sheet.png",
+  "tileCatalogPages": [
+    "origin_asset/generated/game/tileset_reference/frost_crystal_cave/frost_candidates_1120_1183.png",
+    "origin_asset/generated/game/tileset_reference/frost_crystal_cave/frost_candidates_1184_1247.png",
+    "origin_asset/generated/game/tileset_reference/frost_crystal_cave/frost_candidates_1248_1311.png",
+    "origin_asset/generated/game/tileset_reference/frost_crystal_cave/frost_candidates_1312_1375.png",
+    "origin_asset/generated/game/tileset_reference/frost_crystal_cave/frost_candidates_1376_1439.png",
+    "origin_asset/generated/game/tileset_reference/frost_crystal_cave/frost_candidates_1440_1503.png",
+    "origin_asset/generated/game/tileset_reference/frost_crystal_cave/frost_candidates_1504_1543.png"
+  ],
+  "assumptions": {
+    "outsideSnowBlocked": 1305,
+    "walkableFloor": 1386,
+    "wallTiles": {
+      "top_left": 1302,
+      "top": 1313,
+      "top_right": 1303,
+      "left": 1306,
+      "right": 1304,
+      "bottom_left": 1310,
+      "bottom": 1297,
+      "bottom_right": 1311
+    },
+    "iceTiles": {
+      "top_left": 1492,
+      "top": 1506,
+      "top_right": 1494,
+      "left": 1499,
+      "center": 1328,
+      "right": 1497,
+      "bottom_left": 1508,
+      "bottom": 1490,
+      "bottom_right": 1510
+    },
+    "sceneryTiles": {
+      "crystal_top": 1350,
+      "crystal_blue": 1358,
+      "crystal_white": 1359,
+      "snow_boulder": 1349,
+      "snow_boulder_alt": 1351,
+      "small_rock": 1366,
+      "small_rock_alt": 1367
+    },
+    "enabledRockIslandVariants": [
+      "transparent"
+    ]
+  },
+  "maps": [
+    {
+      "key": "frost_crystal_cave_01",
+      "label": "Winding Rock Entrance",
+      "image": "frost_crystal_cave_01_416.png",
+      "debug": "frost_crystal_cave_01_debug.png",
+      "entry": {
+        "edge": "left",
+        "point": [
+          0,
+          9
+        ],
+        "span": [
+          [
+            0,
+            8
+          ],
+          [
+            0,
+            9
+          ]
+        ]
+      },
+      "exits": [
+        {
+          "edge": "top",
+          "point": [
+            10,
+            0
+          ],
+          "span": [
+            [
+              10,
+              0
+            ],
+            [
+              11,
+              0
+            ]
+          ]
+        },
+        {
+          "edge": "right",
+          "point": [
+            15,
+            6
+          ],
+          "span": [
+            [
+              15,
+              5
+            ],
+            [
+              15,
+              6
+            ]
+          ]
+        }
+      ],
+      "selectedExit": 0,
+      "rockIslands": [
+        {
+          "x": 2,
+          "y": 6,
+          "variant": "transparent"
+        }
+      ],
+      "stats": {
+        "walkable": 74,
+        "blocked": 118,
+        "ice": 0,
+        "rockIslandTiles": 9
+      }
+    },
+    {
+      "key": "frost_crystal_cave_02",
+      "label": "Crosswind Ice Gallery",
+      "image": "frost_crystal_cave_02_416.png",
+      "debug": "frost_crystal_cave_02_debug.png",
+      "entry": {
+        "edge": "bottom",
+        "point": [
+          8,
+          11
+        ],
+        "span": [
+          [
+            8,
+            11
+          ],
+          [
+            9,
+            11
+          ]
+        ]
+      },
+      "exits": [
+        {
+          "edge": "left",
+          "point": [
+            0,
+            5
+          ],
+          "span": [
+            [
+              0,
+              4
+            ],
+            [
+              0,
+              5
+            ]
+          ]
+        },
+        {
+          "edge": "right",
+          "point": [
+            15,
+            4
+          ],
+          "span": [
+            [
+              15,
+              4
+            ],
+            [
+              15,
+              5
+            ]
+          ]
+        }
+      ],
+      "selectedExit": 0,
+      "rockIslands": [],
+      "stats": {
+        "walkable": 88,
+        "blocked": 104,
+        "ice": 35,
+        "rockIslandTiles": 0
+      }
+    },
+    {
+      "key": "frost_crystal_cave_03",
+      "label": "Twin Crystal Halls",
+      "image": "frost_crystal_cave_03_416.png",
+      "debug": "frost_crystal_cave_03_debug.png",
+      "entry": {
+        "edge": "left",
+        "point": [
+          0,
+          6
+        ],
+        "span": [
+          [
+            0,
+            5
+          ],
+          [
+            0,
+            6
+          ]
+        ]
+      },
+      "exits": [
+        {
+          "edge": "bottom",
+          "point": [
+            12,
+            11
+          ],
+          "span": [
+            [
+              12,
+              11
+            ],
+            [
+              13,
+              11
+            ]
+          ]
+        },
+        {
+          "edge": "top",
+          "point": [
+            3,
+            0
+          ],
+          "span": [
+            [
+              3,
+              0
+            ],
+            [
+              4,
+              0
+            ]
+          ]
+        }
+      ],
+      "selectedExit": 0,
+      "rockIslands": [],
+      "stats": {
+        "walkable": 79,
+        "blocked": 113,
+        "ice": 0,
+        "rockIslandTiles": 0
+      }
+    },
+    {
+      "key": "frost_crystal_cave_04",
+      "label": "Deep Crystal Ring",
+      "image": "frost_crystal_cave_04_416.png",
+      "debug": "frost_crystal_cave_04_debug.png",
+      "entry": {
+        "edge": "bottom",
+        "point": [
+          7,
+          11
+        ],
+        "span": [
+          [
+            7,
+            11
+          ],
+          [
+            8,
+            11
+          ]
+        ]
+      },
+      "exits": [
+        {
+          "edge": "right",
+          "point": [
+            15,
+            4
+          ],
+          "span": [
+            [
+              15,
+              3
+            ],
+            [
+              15,
+              4
+            ]
+          ]
+        },
+        {
+          "edge": "left",
+          "point": [
+            0,
+            8
+          ],
+          "span": [
+            [
+              0,
+              7
+            ],
+            [
+              0,
+              8
+            ]
+          ]
+        }
+      ],
+      "selectedExit": 0,
+      "rockIslands": [],
+      "stats": {
+        "walkable": 102,
+        "blocked": 90,
+        "ice": 18,
+        "rockIslandTiles": 0
+      }
+    }
+  ]
+}

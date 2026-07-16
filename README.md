@@ -23,15 +23,20 @@ The project follows the PokeBug StickS3 PlatformIO baseline and enables PSRAM th
 - Social scene has an ESP-NOW room MVP for battle/trade/evolution discovery.
 - Shop scene sells balls, food, and candy placeholders.
 - Explore scene has step-threshold encounters, ball capture, and coin rewards.
-- Chinese UI text uses M5GFX `efontCN` fonts.
 - Settings scene follows the CyberGardener list style with values on the same row.
-- Chinese UI uses a generated project-specific 16px bitmap glyph table.
+- Chinese UI text uses a generated 16px bitmap table derived from Sarasa
+  Gothic SC Regular. All ASCII letters, numbers, punctuation, and spaces use
+  Unscii at its native 8x16 size; the gender symbols use Unscii as well.
 
-After changing Chinese UI copy in `src/core/UiStrings.h`, regenerate the glyph table:
+After changing UI copy in `src/core/UiStrings.h`, regenerate the glyph table:
 
 ```bash
 python3 tools/generate_font16cn.py
 ```
+
+The source fonts and their SIL Open Font Licenses are stored under
+`third_party/fonts/sarasa-gothic-sc/`. Unscii source and licensing details are
+stored under `third_party/fonts/unscii/`.
 
 ## Asset Notes
 

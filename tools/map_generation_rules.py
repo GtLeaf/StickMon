@@ -13,6 +13,74 @@ DEEP_SEA_TILE_ID = 144
 DEEP_SEA_EDGE_TILE_ID = 168
 SEA_SHORE_TILE_ID = 72
 
+# Outside.png only supplies the north-facing versions of these still-water
+# corners. Reserve tile IDs immediately after the tileset for vertical flips
+# used when a stream narrows toward the bottom of the screen.
+STREAM_TOP_OUTER_LEFT_TILE = 1088
+STREAM_TOP_OUTER_RIGHT_TILE = 1090
+STREAM_TOP_INNER_LEFT_TILE = 1104
+STREAM_TOP_INNER_RIGHT_TILE = 1106
+STREAM_BOTTOM_OUTER_LEFT_TILE = 4400
+STREAM_BOTTOM_OUTER_RIGHT_TILE = 4401
+STREAM_BOTTOM_INNER_LEFT_TILE = 4402
+STREAM_BOTTOM_INNER_RIGHT_TILE = 4403
+CUSTOM_TILE_VERTICAL_FLIPS = {
+    STREAM_BOTTOM_OUTER_LEFT_TILE: STREAM_TOP_OUTER_LEFT_TILE,
+    STREAM_BOTTOM_OUTER_RIGHT_TILE: STREAM_TOP_OUTER_RIGHT_TILE,
+    STREAM_BOTTOM_INNER_LEFT_TILE: STREAM_TOP_INNER_LEFT_TILE,
+    STREAM_BOTTOM_INNER_RIGHT_TILE: STREAM_TOP_INNER_RIGHT_TILE,
+}
+
+# Runtime-only IDs keep tiles from other Essentials tilesets from colliding
+# with the numeric IDs already used by Outside.png.
+CUSTOM_TILE_SOURCES = {
+    4500: ("Caves.png", 1305),  # snow field
+    4501: ("Caves.png", 1280),  # packed-snow route
+    4502: ("Caves.png", 1293),
+    4503: ("Caves.png", 1294),
+    4504: ("Caves.png", 1328),  # ice streak
+    4505: ("Caves.png", 1320),  # ice gleam
+    4506: ("Caves.png", 1321),  # cracked ice
+    4507: ("Caves.png", 1357),  # snow rock
+    4508: ("Caves.png", 1358),  # ice crystal
+    4509: ("Caves.png", 1359),
+    4510: ("Caves.png", 1366),  # snow boulder
+    4511: ("Caves.png", 1386),  # walkable cave floor
+    4512: ("Caves.png", 1302),  # outer wall NW
+    4513: ("Caves.png", 1313),  # outer wall north
+    4514: ("Caves.png", 1303),  # outer wall NE
+    4515: ("Caves.png", 1306),  # outer wall west
+    4516: ("Caves.png", 1304),  # outer wall east
+    4517: ("Caves.png", 1310),  # outer wall SW
+    4518: ("Caves.png", 1297),  # outer wall south
+    4519: ("Caves.png", 1311),  # outer wall SE
+    4520: ("Caves.png", 1314),  # inner wall, outside NW
+    4521: ("Caves.png", 1312),  # inner wall, outside NE
+    4522: ("Caves.png", 1298),  # inner wall, outside SW
+    4523: ("Caves.png", 1296),  # inner wall, outside SE
+    4524: ("Caves.png", 1492),  # ice edge NW
+    4525: ("Caves.png", 1506),  # ice edge north
+    4526: ("Caves.png", 1494),  # ice edge NE
+    4527: ("Caves.png", 1499),  # ice edge west
+    4528: ("Caves.png", 1497),  # ice edge east
+    4529: ("Caves.png", 1508),  # ice edge SW
+    4530: ("Caves.png", 1490),  # ice edge south
+    4531: ("Caves.png", 1510),  # ice edge SE
+    4532: ("Caves.png", 1120),  # transparent rock hill NW
+    4533: ("Caves.png", 1121),  # transparent rock hill N
+    4534: ("Caves.png", 1122),  # transparent rock hill NE
+    4535: ("Caves.png", 1128),  # transparent rock hill W
+    4536: ("Caves.png", 1129),  # transparent rock hill center
+    4537: ("Caves.png", 1130),  # transparent rock hill E
+    4538: ("Caves.png", 1136),  # transparent rock hill SW
+    4539: ("Caves.png", 1137),  # transparent rock hill S
+    4540: ("Caves.png", 1138),  # transparent rock hill SE
+    4541: ("Caves.png", 1350),  # crystal upper half
+    4542: ("Caves.png", 1349),  # large snow boulder
+    4543: ("Caves.png", 1351),  # large snow boulder alt
+    4544: ("Caves.png", 1367),  # small snow boulder alt
+}
+
 LIGHTHOUSE_TILE_ROWS = (
     (3941, 3942, 3943),
     (3949, 3950, 3951),

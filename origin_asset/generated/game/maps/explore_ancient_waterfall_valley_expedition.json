@@ -1,0 +1,111 @@
+{
+  "format": "StickMonExploreExpedition",
+  "version": 1,
+  "scene": "ancient_waterfall_valley",
+  "label": "古木瀑谷",
+  "seed": 20260713,
+  "mapCount": 4,
+  "maps": [
+    {
+      "key": "ancient_waterfall_valley_01",
+      "map": "origin_asset/generated/game/explore_ancient_waterfall_valley_01_416.png",
+      "semantic": "origin_asset/generated/game/maps/explore_ancient_waterfall_valley_01.smonmap",
+      "animation": "origin_asset/generated/game/explore_ancient_waterfall_valley_01_416.gif",
+      "entry": [
+        11,
+        11
+      ],
+      "exits": [
+        [
+          15,
+          9
+        ],
+        [
+          11,
+          0
+        ]
+      ],
+      "selectedExit": 0
+    },
+    {
+      "key": "ancient_waterfall_valley_02",
+      "map": "origin_asset/generated/game/explore_ancient_waterfall_valley_02_416.png",
+      "semantic": "origin_asset/generated/game/maps/explore_ancient_waterfall_valley_02.smonmap",
+      "animation": "origin_asset/generated/game/explore_ancient_waterfall_valley_02_416.gif",
+      "entry": [
+        0,
+        2
+      ],
+      "exits": [
+        [
+          4,
+          11
+        ],
+        [
+          4,
+          0
+        ]
+      ],
+      "selectedExit": 0
+    },
+    {
+      "key": "ancient_waterfall_valley_03",
+      "map": "origin_asset/generated/game/explore_ancient_waterfall_valley_03_416.png",
+      "semantic": "origin_asset/generated/game/maps/explore_ancient_waterfall_valley_03.smonmap",
+      "animation": "origin_asset/generated/game/explore_ancient_waterfall_valley_03_416.gif",
+      "entry": [
+        5,
+        0
+      ],
+      "exits": [
+        [
+          0,
+          9
+        ],
+        [
+          5,
+          11
+        ]
+      ],
+      "selectedExit": 0
+    },
+    {
+      "key": "ancient_waterfall_valley_04",
+      "map": "origin_asset/generated/game/explore_ancient_waterfall_valley_04_416.png",
+      "semantic": "origin_asset/generated/game/maps/explore_ancient_waterfall_valley_04.smonmap",
+      "animation": "origin_asset/generated/game/explore_ancient_waterfall_valley_04_416.gif",
+      "entry": [
+        15,
+        9
+      ],
+      "exits": [
+        [
+          12,
+          0
+        ],
+        [
+          12,
+          11
+        ]
+      ],
+      "selectedExit": 0
+    }
+  ],
+  "transitions": [
+    {
+      "from": "ancient_waterfall_valley_01",
+      "exit": 0,
+      "to": "ancient_waterfall_valley_02"
+    },
+    {
+      "from": "ancient_waterfall_valley_02",
+      "exit": 0,
+      "to": "ancient_waterfall_valley_03"
+    },
+    {
+      "from": "ancient_waterfall_valley_03",
+      "exit": 0,
+      "to": "ancient_waterfall_valley_04"
+    }
+  ]
+}

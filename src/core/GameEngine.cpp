@@ -23,6 +23,7 @@
 namespace {
 static constexpr uint16_t HP_RECOVERY_INTERVAL_MIN = 5;
 static constexpr uint8_t HP_RECOVERY_PERCENT_PER_TICK = 10;
+static constexpr uint8_t HP_RECOVERY_EMPTY_GAIN_PER_TICK = 1;
 static constexpr uint32_t FAINT_REST_SECONDS = 60UL * 60UL;
 static constexpr uint32_t CLOCK_SAVE_INTERVAL_MS = 15000UL;
 static constexpr uint16_t GAME_MINUTES_PER_DAY = 24U * 60U;
@@ -155,6 +156,9 @@ bool GameEngine::begin() {
     bool loadedState = saveManager.load(state);
     if (!loadedState) {
         initDefaultState();
+        clearMainSceneViewState();
+    } else if (!saveManager.loadMainSceneView(mainViewState)) {
+        clearMainSceneViewState();
     }
     if (hasSavedClock && savedClock > state.gameMinutesTotal) {
         state.gameMinutesTotal = savedClock;
@@ -247,6 +251,8 @@ void GameEngine::beginExploreDeparture(uint8_t area) {
 void GameEngine::markExploreActive() {
     if (exploreTravel == ExploreTravelPhase::DEPARTING) {
         exploreTravel = ExploreTravelPhase::ACTIVE;
+        activeMonster().lastExploredAt = gameSecondsForMinutes(gameMinutesTotal());
+        markDirty(false);
     }
 }
 
@@ -258,6 +264,30 @@ void GameEngine::beginExploreReturn(bool fainted) {
 
 void GameEngine::finishExploreReturn() {
     exploreTravel = ExploreTravelPhase::NONE;
+}
+
+void GameEngine::beginDebugBattle() {
+    debugBattleRequested = true;
+    debugMenuReturnRequested = false;
+    requestScene(SceneID::EXPLORE);
+}
+
+bool GameEngine::consumeDebugBattleRequest() {
+    bool requested = debugBattleRequested;
+    debugBattleRequested = false;
+    return requested;
+}
+
+void GameEngine::endDebugBattle() {
+    debugBattleRequested = false;
+    debugMenuReturnRequested = true;
+    requestScene(SceneID::MENU);
+}
+
+bool GameEngine::consumeDebugMenuReturnRequest() {
+    bool requested = debugMenuReturnRequested;
+    debugMenuReturnRequested = false;
+    return requested;
 }
 
 float GameEngine::gameSpeed() const {
@@ -345,17 +375,15 @@ Game::MonsterRuntime GameEngine::createMonster(uint16_t speciesId, uint8_t level
     mon.speciesId = species->id;
     mon.level = level;
     mon.exp = minimumExpForLevel(species->growthRate, level);
-    mon.move1Id = basicMoveIdForSpecies(*species);
-    uint8_t secondLevel = secondMoveLearnLevelForSpecies(*species);
-    uint8_t secondMove = secondMoveIdForSpecies(*species);
-    mon.move2Id = (secondLevel > 0 && level >= secondLevel) ? secondMove : 0;
-    mon.move3Id = 0;
+    resetMovesForLevel(mon, *species);
     mon.ivPacked = randomIvPacked();
     mon.nature = random(0, Game::NATURE_COUNT);
     mon.hpMax = maxHpFor(*species, mon);
     mon.hpCur = mon.hpMax;
     mon.caughtAt = gameSecondsForMinutes(gameMinutesTotal());
     mon.lastSeenAt = mon.caughtAt;
+    mon.lastExploredAt = mon.caughtAt;
+    mon.lastWindowGazeAt = mon.caughtAt;
     return mon;
 }
 
@@ -467,9 +495,9 @@ bool GameEngine::addFoodStock(uint8_t foodIndex, uint8_t amount) {
     if (amount == 0) return true;
     foodIndex = clampFoodIndex(foodIndex);
     uint8_t& count = state.room.food[foodIndex];
-    if (count >= 30) return false;
+    if (count >= Game::ITEM_STACK_CAP) return false;
     bool hadFood = foodCount() > 0;
-    count = (uint8_t)min<uint16_t>(30, (uint16_t)count + amount);
+    count = (uint8_t)min<uint16_t>(Game::ITEM_STACK_CAP, (uint16_t)count + amount);
     if (!hadFood) state.room.selectedFood = foodIndex;
     markDirty(true);
     return true;
@@ -490,43 +518,61 @@ FoodPlacementResult GameEngine::placeSelectedFoodInBowl() {
         foodIndex = selectedFoodIndex();
         if (state.room.food[foodIndex] == 0) return FoodPlacementResult::NO_STOCK;
     }
-    if (state.room.bowlCount >= Game::ROOM_BOWL_CAPACITY) {
-        return FoodPlacementResult::BOWL_FULL;
-    }
-    if (state.room.bowlCount > 0 && state.room.bowlFood != foodIndex) {
-        return FoodPlacementResult::DIFFERENT_FOOD;
+    if (state.room.bowlCount > 0) {
+        uint8_t bitesPerServing = Game::roomFoodBitesPerServing(state.room.bowlFood);
+        uint8_t remaining = state.room.bowlBitesRemaining;
+        if (remaining == 0 || remaining > bitesPerServing) remaining = bitesPerServing;
+        uint8_t refillThreshold = bitesPerServing / 2;
+        if (remaining > refillThreshold) return FoodPlacementResult::BOWL_FULL;
+        if (state.room.bowlFood != foodIndex) return FoodPlacementResult::DIFFERENT_FOOD;
     }
 
     state.room.food[foodIndex]--;
     state.room.bowlFood = foodIndex;
-    state.room.bowlCount++;
+    state.room.bowlCount = 1;
+    state.room.bowlBitesRemaining = Game::roomFoodBitesPerServing(foodIndex);
     if (state.room.food[foodIndex] == 0) selectFirstAvailableFood(state.room);
     markDirty(true);
     return FoodPlacementResult::ADDED;
 }
 
-bool GameEngine::consumeBowlFood() {
-    if (state.room.bowlCount == 0) return false;
+FoodConsumeResult GameEngine::consumeBowlFood() {
+    FoodConsumeResult result;
+    if (state.room.bowlCount == 0) return result;
     uint8_t foodIndex = bowlFoodIndex();
-    state.room.bowlCount--;
+    result.foodIndex = foodIndex;
+    uint8_t bitesPerServing = Game::roomFoodBitesPerServing(foodIndex);
+    if (state.room.bowlBitesRemaining == 0 ||
+        state.room.bowlBitesRemaining > bitesPerServing) {
+        state.room.bowlBitesRemaining = bitesPerServing;
+    }
+    state.room.bowlBitesRemaining--;
+    if (state.room.bowlBitesRemaining == 0) {
+        state.room.bowlCount = 0;
+        state.room.bowlFood = 0;
+    }
+
     Game::MonsterRuntime& mon = activeMonster();
+    result.satietyBefore = mon.satiety;
+    result.moodBefore = mon.mood;
     bool wasFull = mon.satiety >= 100;
-    uint8_t satietyGain = foodIndex == 1 ? 22 : 15;
+    bool normalFood = foodIndex == Game::ROOM_NORMAL_FOOD_INDEX;
+    uint8_t satietyGain = normalFood ? 25 : 22;
     uint8_t moodGain = foodIndex == 1 ? 5 : 3;
     mon.satiety = (uint8_t)min<uint16_t>(100, (uint16_t)mon.satiety + satietyGain);
     mon.mood = (uint8_t)min<uint16_t>(100, (uint16_t)mon.mood + moodGain);
-    grantCareExperience(foodIndex == 1 ? 6 : 4, wasFull);
-    if (state.room.bowlCount == 0) state.room.bowlFood = 0;
+    result.consumed = true;
+    result.satietyAfter = mon.satiety;
+    result.moodAfter = mon.mood;
+    result.lastBite = state.room.bowlCount == 0;
+    result.becameFull = !wasFull && mon.satiety >= 100;
+    grantCareExperience(normalFood ? 1 : 6, wasFull);
     markDirty(true);
-    return true;
+    return result;
 }
 
 bool GameEngine::addBalls(uint8_t amount) {
-    if (amount == 0) return true;
-    if (state.bag.pokeBall >= 99) return false;
-    state.bag.pokeBall = (uint8_t)min<uint16_t>(99, (uint16_t)state.bag.pokeBall + amount);
-    markDirty(true);
-    return true;
+    return addItem(Game::ItemId::POKE_BALL, amount);
 }
 
 bool GameEngine::consumeBall() {
@@ -537,10 +583,7 @@ bool GameEngine::consumeBall() {
 }
 
 bool GameEngine::addGreatBalls(uint8_t amount) {
-    if (state.bag.greatBall >= 50) return false;
-    state.bag.greatBall = (uint8_t)min<uint16_t>(50, (uint16_t)state.bag.greatBall + amount);
-    markDirty(true);
-    return true;
+    return addItem(Game::ItemId::GREAT_BALL, amount);
 }
 
 bool GameEngine::consumeGreatBall() {
@@ -551,25 +594,15 @@ bool GameEngine::consumeGreatBall() {
 }
 
 bool GameEngine::addCandy(uint8_t amount) {
-    if (amount == 0) return true;
-    if (state.bag.candy >= 30) return false;
-    state.bag.candy = (uint8_t)min<uint16_t>(30, (uint16_t)state.bag.candy + amount);
-    markDirty(true);
-    return true;
+    return addItem(Game::ItemId::CANDY, amount);
 }
 
 bool GameEngine::addPotion(uint8_t amount) {
-    if (state.bag.potion >= 30) return false;
-    state.bag.potion = (uint8_t)min<uint16_t>(30, (uint16_t)state.bag.potion + amount);
-    markDirty(true);
-    return true;
+    return addItem(Game::ItemId::POTION, amount);
 }
 
 bool GameEngine::addSuperPotion(uint8_t amount) {
-    if (state.bag.superPotion >= 20) return false;
-    state.bag.superPotion = (uint8_t)min<uint16_t>(20, (uint16_t)state.bag.superPotion + amount);
-    markDirty(true);
-    return true;
+    return addItem(Game::ItemId::SUPER_POTION, amount);
 }
 
 bool GameEngine::usePotion() {
@@ -593,8 +626,16 @@ bool GameEngine::useSuperPotion() {
 }
 
 bool GameEngine::addAntidote(uint8_t amount) {
-    if (state.bag.antidote >= 30) return false;
-    state.bag.antidote = (uint8_t)min<uint16_t>(30, (uint16_t)state.bag.antidote + amount);
+    return addItem(Game::ItemId::ANTIDOTE, amount);
+}
+
+bool GameEngine::useAntidote() {
+    if (state.bag.antidote == 0) return false;
+    Game::MonsterRuntime& mon = activeMonster();
+    if (mon.majorStatus == Game::MajorStatus::NONE) return false;
+    state.bag.antidote--;
+    mon.majorStatus = Game::MajorStatus::NONE;
+    mon.majorStatusTurns = 0;
     markDirty(true);
     return true;
 }
@@ -618,21 +659,21 @@ bool GameEngine::addItem(Game::ItemId item, uint8_t amount, bool immediate) {
     if (amount == 0) return true;
 
     uint8_t* count = nullptr;
-    uint8_t limit = 99;
     switch (item) {
     case Game::ItemId::POKE_BALL: count = &state.bag.pokeBall; break;
-    case Game::ItemId::GREAT_BALL: count = &state.bag.greatBall; limit = 50; break;
-    case Game::ItemId::HEAVY_BALL: count = &state.bag.heavyBall; limit = 50; break;
-    case Game::ItemId::TIMER_BALL: count = &state.bag.timerBall; limit = 50; break;
-    case Game::ItemId::NORMAL_FOOD: count = &state.room.food[0]; limit = 20; break;
-    case Game::ItemId::POTION: count = &state.bag.potion; limit = 30; break;
-    case Game::ItemId::SUPER_POTION: count = &state.bag.superPotion; limit = 20; break;
-    case Game::ItemId::ANTIDOTE: count = &state.bag.antidote; limit = 30; break;
-    case Game::ItemId::CANDY: count = &state.bag.candy; limit = 30; break;
+    case Game::ItemId::GREAT_BALL: count = &state.bag.greatBall; break;
+    case Game::ItemId::HEAVY_BALL: count = &state.bag.heavyBall; break;
+    case Game::ItemId::TIMER_BALL: count = &state.bag.timerBall; break;
+    case Game::ItemId::NORMAL_FOOD: count = &state.room.food[0]; break;
+    case Game::ItemId::POTION: count = &state.bag.potion; break;
+    case Game::ItemId::SUPER_POTION: count = &state.bag.superPotion; break;
+    case Game::ItemId::ANTIDOTE: count = &state.bag.antidote; break;
+    case Game::ItemId::CANDY: count = &state.bag.candy; break;
     default: return false;
     }
-    if (!count || *count >= limit) return false;
-    *count = static_cast<uint8_t>(min<uint16_t>(limit, static_cast<uint16_t>(*count) + amount));
+    if (!count || *count >= Game::ITEM_STACK_CAP) return false;
+    *count = static_cast<uint8_t>(min<uint16_t>(
+        Game::ITEM_STACK_CAP, static_cast<uint16_t>(*count) + amount));
     markDirty(immediate);
     return true;
 }
@@ -691,18 +732,13 @@ bool GameEngine::recordCapture(const Game::MonsterRuntime& monster, uint8_t metA
     Game::MonsterRuntime mon = monster;
     mon.hpMax = maxHpFor(*species, mon);
     mon.hpCur = mon.hpMax;
-    if (!isBasicFirstMove(mon.move1Id)) mon.move1Id = basicMoveIdForSpecies(*species);
-    if (!findMove(mon.move2Id)) {
-        uint8_t secondLevel = secondMoveLearnLevelForSpecies(*species);
-        mon.move2Id = (secondLevel > 0 && mon.level >= secondLevel) ? secondMoveIdForSpecies(*species) : 0;
-    }
-    if (!findMove(mon.move3Id) || mon.move3Id == mon.move1Id || mon.move3Id == mon.move2Id) {
-        mon.move3Id = 0;
-    }
+    resetMovesForLevel(mon, *species);
     mon.origin = Game::Origin::CAPTURED;
     mon.metArea = metArea;
     mon.caughtAt = gameSecondsForMinutes(gameMinutesTotal());
     mon.lastSeenAt = mon.caughtAt;
+    mon.lastExploredAt = mon.caughtAt;
+    mon.lastWindowGazeAt = mon.caughtAt;
 
     if (state.teamCount < Game::TEAM_CAP) {
         state.team[state.teamCount++] = mon;
@@ -718,7 +754,13 @@ bool GameEngine::recordCapture(const Game::MonsterRuntime& monster, uint8_t metA
 }
 
 void GameEngine::grantEffortFrom(const Species& defeatedSpecies) {
-    Game::MonsterRuntime& mon = activeMonster();
+    grantEffortToTeamMember(0, defeatedSpecies);
+}
+
+void GameEngine::grantEffortToTeamMember(uint8_t teamSlot,
+                                         const Species& defeatedSpecies) {
+    if (teamSlot >= state.teamCount || teamSlot >= Game::TEAM_CAP) return;
+    Game::MonsterRuntime& mon = state.team[teamSlot];
     bool changed = false;
     for (uint8_t i = 0; i < Game::STAT_COUNT; ++i) {
         uint8_t amount = evYieldAt(defeatedSpecies, i);
@@ -746,16 +788,35 @@ void GameEngine::grantEffortFrom(const Species& defeatedSpecies) {
     }
 }
 
-void GameEngine::petMonster() {
+PetResult GameEngine::petMonster() {
+    PetResult result;
+    uint32_t nowMs = Hal::ins().millis();
+    syncGameClock(nowMs);
+    resetDailyCountersIfNeeded();
     Game::MonsterRuntime& mon = activeMonster();
-    if (mon.petCountToday < 4) {
-        mon.petCountToday++;
-        mon.mood = (uint8_t)min<uint16_t>(100, (uint16_t)mon.mood + 5);
-        mon.affection = (uint8_t)min<uint16_t>(255, (uint16_t)mon.affection + 2);
-        mon.lastPettedAt = gameSecondsForMinutes(gameMinutesTotal());
-        markDirty(true);
+    if (mon.fainted || mon.hpCur == 0) {
+        result.outcome = PetOutcome::NEEDS_REST;
+        return result;
     }
+
+    mon.lastPettedAt = gameSecondsForMinutes(state.gameMinutesTotal);
+    if (mon.petCountToday >= 4) {
+        result.outcome = PetOutcome::DAILY_LIMIT;
+        markDirty(false);
+        return result;
+    }
+
+    uint8_t oldMood = mon.mood;
+    uint8_t oldAffection = mon.affection;
+    mon.petCountToday++;
+    mon.mood = (uint8_t)min<uint16_t>(100, (uint16_t)mon.mood + 5);
+    mon.affection = (uint8_t)min<uint16_t>(255, (uint16_t)mon.affection + 2);
+    result.outcome = PetOutcome::REWARDED;
+    result.moodGain = mon.mood - oldMood;
+    result.affectionGain = mon.affection - oldAffection;
     grantCareExperience(2);
+    markDirty(true);
+    return result;
 }
 
 void GameEngine::finishHatch(uint8_t starterStyle) {
@@ -773,6 +834,8 @@ void GameEngine::finishHatch(uint8_t starterStyle) {
     state.team[0].metArea = Game::MET_AREA_HATCHED;
     state.team[0].caughtAt = gameSecondsForMinutes(gameMinutesTotal());
     state.team[0].lastSeenAt = state.team[0].caughtAt;
+    state.team[0].lastExploredAt = state.team[0].caughtAt;
+    state.team[0].lastWindowGazeAt = state.team[0].caughtAt;
     state.bag = Game::BagState{};
     state.room = Game::RoomState{};
     state.coins = 50;
@@ -782,11 +845,16 @@ void GameEngine::finishHatch(uint8_t starterStyle) {
 }
 
 void GameEngine::addExperience(uint32_t amount) {
-    if (amount == 0) return;
-    Game::MonsterRuntime& mon = activeMonster();
+    addExperienceToTeamMember(0, amount);
+}
+
+uint32_t GameEngine::addExperienceToTeamMember(uint8_t teamSlot, uint32_t amount) {
+    if (amount == 0 || teamSlot >= state.teamCount || teamSlot >= Game::TEAM_CAP) return 0;
+    Game::MonsterRuntime& mon = state.team[teamSlot];
     const Species& species = speciesFor(mon);
     uint8_t oldLevel = mon.level;
     uint16_t oldHpMax = mon.hpMax;
+    uint32_t oldExp = mon.exp;
     uint32_t maxExp = minimumExpForLevel(species.growthRate, Game::LEVEL_MAX);
     uint64_t totalExp = static_cast<uint64_t>(mon.exp) + amount;
     mon.exp = totalExp > maxExp ? maxExp : static_cast<uint32_t>(totalExp);
@@ -796,38 +864,57 @@ void GameEngine::addExperience(uint32_t amount) {
         mon.hpCur = min<uint16_t>(mon.hpMax, mon.hpCur + (mon.hpMax - oldHpMax));
     }
     if (mon.level < oldLevel) mon.level = oldLevel;
-    if (mon.level > oldLevel) {
-        pendingLevelUp = true;
-        pendingLevelUpLevel = mon.level;
-        queueMoveLearnIfReady(mon, species, oldLevel);
+    bool leveledUp = mon.level > oldLevel;
+    if (leveledUp) {
+        state.pendingLevelUp = true;
+        state.pendingLevelUpLevel = mon.level;
+        queueMoveLearnIfReady(mon, species, oldLevel, teamSlot);
     }
-    markDirty(false);
+    markDirty(leveledUp);
+    return mon.exp > oldExp ? mon.exp - oldExp : 0;
 }
 
-bool GameEngine::consumePendingLevelUp(uint8_t& level) {
-    if (!pendingLevelUp) return false;
-    level = pendingLevelUpLevel;
-    pendingLevelUp = false;
-    pendingLevelUpLevel = 0;
+bool GameEngine::acknowledgePendingLevelUp() {
+    if (!state.pendingLevelUp) return false;
+    state.pendingLevelUp = false;
+    state.pendingLevelUpLevel = 0;
+    markDirty(true);
     return true;
 }
 
 bool GameEngine::resolvePendingMoveLearn(bool learn) {
-    if (!pendingMoveLearn) return false;
+    if (!state.pendingMoveLearn) return false;
+    const uint8_t teamSlot = state.pendingMoveSlot;
+    const uint16_t nextCursor = state.pendingMoveCursor;
     bool applied = false;
-    if (learn && pendingMoveSlot < state.teamCount && pendingMoveSlot < Game::TEAM_CAP) {
-        Game::MonsterRuntime& mon = state.team[pendingMoveSlot];
-        if (findMove(pendingMoveId)) {
-            if (mon.move2Id == 0) mon.move2Id = pendingMoveId;
-            else if (mon.move3Id == 0) mon.move3Id = pendingMoveId;
-            else mon.move3Id = pendingMoveId;
-            markDirty(true);
+    if (teamSlot < state.teamCount && teamSlot < Game::TEAM_CAP) {
+        Game::MonsterRuntime& mon = state.team[teamSlot];
+        const Species* species = findSpecies(mon.speciesId);
+        if (learn && species && mon.level >= moveLearnLevelForSpecies(*species, state.pendingMoveId) &&
+            canLearnAsSpecialMove(*species, state.pendingMoveId) &&
+            mon.move2Id != state.pendingMoveId && mon.move3Id != state.pendingMoveId) {
+            if (mon.move2Id == 0) {
+                mon.move2Id = state.pendingMoveId;
+                mon.moveProficiency[1] = 0;
+            } else {
+                mon.move3Id = state.pendingMoveId;
+                mon.moveProficiency[2] = 0;
+            }
             applied = true;
         }
+
+        state.pendingMoveLearn = false;
+        state.pendingMoveSlot = 0;
+        state.pendingMoveId = 0;
+        state.pendingMoveCursor = 0;
+        if (species) queueNextPendingMove(mon, *species, teamSlot, nextCursor);
+    } else {
+        state.pendingMoveLearn = false;
+        state.pendingMoveSlot = 0;
+        state.pendingMoveId = 0;
+        state.pendingMoveCursor = 0;
     }
-    pendingMoveLearn = false;
-    pendingMoveSlot = 0;
-    pendingMoveId = 0;
+    markDirty(true);
     return applied;
 }
 
@@ -856,8 +943,8 @@ void GameEngine::addWalkSteps(uint16_t steps) {
     uint16_t earnedWalkExp = min<uint16_t>(50, state.stepsToday / 100);
     if (earnedWalkExp > state.walkExpToday) {
         uint16_t expGain = earnedWalkExp - state.walkExpToday;
-        addExperience(expGain);
         state.walkExpToday = earnedWalkExp;
+        addExperience(expGain);
     }
     markDirty(false);
 }
@@ -866,7 +953,8 @@ void GameEngine::debugRecoverActiveMonster() {
     if (state.teamCount == 0) return;
     Game::MonsterRuntime& mon = activeMonster();
     mon.fainted = false;
-    mon.statusBits = Game::STATUS_NONE;
+    mon.majorStatus = Game::MajorStatus::NONE;
+    mon.majorStatusTurns = 0;
     mon.hpCur = mon.hpMax;
     mon.satiety = 100;
     mon.mood = 100;
@@ -927,8 +1015,12 @@ void GameEngine::markDirty(bool immediate) {
 
 bool GameEngine::saveNow() {
     uint32_t now = Hal::ins().millis();
+    if (currentScene) currentScene->onBeforeSave();
     syncGameClock(now);
-    bool ok = saveManager.save(state);
+    bool stateSaved = saveManager.save(state);
+    bool viewSaved = saveManager.saveMainSceneView(mainViewState);
+    bool ok = stateSaved && viewSaved;
+    if (!viewSaved) Serial.println("[GameEngine] main view save failed");
     persistGameClock(now, true);
     saveDirty = !ok;
     lastSaveMs = now;
@@ -950,11 +1042,6 @@ bool GameEngine::resetGame() {
     hpRecoveryMinuteAcc = 0;
     satietyDecayMinuteAcc = 0;
     satietyDecayWasSleeping = false;
-    pendingMoveLearn = false;
-    pendingMoveSlot = 0;
-    pendingMoveId = 0;
-    pendingLevelUp = false;
-    pendingLevelUpLevel = 0;
     debugShowWalkBoundary = false;
     debugTiltControl = false;
     debugLightSource = 0;
@@ -1292,23 +1379,44 @@ void GameEngine::sanitizeMonsterMoves() {
         const Species* species = findSpecies(mon.speciesId);
         if (!species) return;
 
-        uint8_t basicMove = basicMoveIdForSpecies(*species);
-        if (!isBasicFirstMove(mon.move1Id)) {
+        Game::MoveId basicMove = basicMoveIdForSpecies(*species);
+        if (!isBasicFirstMoveForSpecies(*species, mon.move1Id)) {
             mon.move1Id = basicMove;
+            mon.moveProficiency[0] = 0;
             changed = true;
         }
 
-        uint8_t secondLevel = secondMoveLearnLevelForSpecies(*species);
+        uint8_t move2Level = moveLearnLevelForSpecies(*species, mon.move2Id);
         if (mon.move2Id != 0 &&
-            (secondLevel == 0 || mon.level < secondLevel || !findMove(mon.move2Id) || mon.move2Id == mon.move1Id)) {
+            (move2Level == 0 || mon.level < move2Level ||
+             !canLearnAsSpecialMove(*species, mon.move2Id) ||
+             mon.move2Id == mon.move1Id)) {
             mon.move2Id = 0;
+            mon.moveProficiency[1] = 0;
             changed = true;
         }
+        uint8_t move3Level = moveLearnLevelForSpecies(*species, mon.move3Id);
         if (mon.move3Id != 0 &&
-            (secondLevel == 0 || mon.level < secondLevel || !findMove(mon.move3Id) ||
+            (move3Level == 0 || mon.level < move3Level ||
+             !canLearnAsSpecialMove(*species, mon.move3Id) ||
              mon.move3Id == mon.move1Id || mon.move3Id == mon.move2Id)) {
             mon.move3Id = 0;
+            mon.moveProficiency[2] = 0;
             changed = true;
+        }
+        const Game::MoveId moves[Game::MOVE_SLOT_COUNT] = {
+            mon.move1Id,
+            mon.move2Id,
+            mon.move3Id,
+        };
+        for (uint8_t slot = 0; slot < Game::MOVE_SLOT_COUNT; ++slot) {
+            uint8_t normalized = moves[slot] == 0
+                ? 0
+                : min<uint8_t>(mon.moveProficiency[slot], Game::MOVE_PROFICIENCY_MAX);
+            if (mon.moveProficiency[slot] != normalized) {
+                mon.moveProficiency[slot] = normalized;
+                changed = true;
+            }
         }
     };
 
@@ -1377,7 +1485,8 @@ void GameEngine::tickCare(uint32_t nowMs) {
             uint32_t elapsedFaintSec = nowGameSec - mon.lastSeenAt;
             if (elapsedFaintSec >= FAINT_REST_SECONDS) {
                 mon.fainted = false;
-                mon.statusBits = Game::STATUS_NONE;
+                mon.majorStatus = Game::MajorStatus::NONE;
+                mon.majorStatusTurns = 0;
                 mon.hpCur = max<uint16_t>(
                     1,
                     (uint16_t)((mon.hpMax * HP_RECOVERY_PERCENT_PER_TICK + 99) / 100)
@@ -1389,11 +1498,13 @@ void GameEngine::tickCare(uint32_t nowMs) {
             return;
         }
 
-        if (hpRecoveryTicks > 0 && mon.hpCur < mon.hpMax && mon.satiety > 0) {
-            uint16_t gainPerTick = max<uint16_t>(
-                1,
-                (uint16_t)((mon.hpMax * HP_RECOVERY_PERCENT_PER_TICK + 99) / 100)
-            );
+        if (hpRecoveryTicks > 0 && mon.hpCur < mon.hpMax) {
+            uint16_t gainPerTick = mon.satiety == 0
+                ? HP_RECOVERY_EMPTY_GAIN_PER_TICK
+                : max<uint16_t>(
+                    1,
+                    (uint16_t)((mon.hpMax * HP_RECOVERY_PERCENT_PER_TICK + 99) / 100)
+                );
             uint32_t gain = (uint32_t)gainPerTick * hpRecoveryTicks;
             mon.hpCur = min<uint16_t>(mon.hpMax, mon.hpCur + gain);
         }
@@ -1402,7 +1513,7 @@ void GameEngine::tickCare(uint32_t nowMs) {
     for (uint8_t i = 0; i < state.teamCount && i < Game::TEAM_CAP; ++i) {
         Game::MonsterRuntime& mon = state.team[i];
         if (i == 0) {
-            bool sleeping = (mon.statusBits & Game::STATUS_SLEEP) != 0 ||
+            bool sleeping = mon.majorStatus == Game::MajorStatus::SLEEP ||
                             isSleepCareTime(state.gameMinutesTotal, mon.nature);
             uint8_t decayInterval = sleeping ? SATIETY_DECAY_SLEEP_INTERVAL_MIN
                                              : SATIETY_DECAY_AWAKE_INTERVAL_MIN;
@@ -1448,15 +1559,38 @@ uint32_t GameEngine::randomIvPacked() const {
     return packed;
 }
 
-void GameEngine::queueMoveLearnIfReady(Game::MonsterRuntime& mon, const Species& species, uint8_t oldLevel) {
-    if (pendingMoveLearn) return;
-    uint8_t learnLevel = secondMoveLearnLevelForSpecies(species);
-    uint8_t moveId = secondMoveIdForSpecies(species);
-    if (learnLevel == 0 || moveId == 0) return;
-    if (oldLevel >= learnLevel || mon.level < learnLevel) return;
-    if (mon.move2Id == moveId || mon.move3Id == moveId) return;
+bool GameEngine::queueNextPendingMove(Game::MonsterRuntime& mon, const Species& species,
+                                      uint8_t teamSlot, uint16_t startIndex) {
+    const uint16_t count = learnsetEntryCountForSpecies(species);
+    for (uint16_t index = startIndex; index < count; ++index) {
+        const LearnsetEntry* entry = learnsetEntryForSpecies(species, index);
+        if (!entry || entry->level > mon.level) break;
+        if (!canLearnAsSpecialMove(species, entry->moveId) ||
+            mon.move2Id == entry->moveId || mon.move3Id == entry->moveId) {
+            continue;
+        }
+        state.pendingMoveLearn = true;
+        state.pendingMoveSlot = teamSlot;
+        state.pendingMoveId = entry->moveId;
+        state.pendingMoveCursor = index + 1;
+        return true;
+    }
+    state.pendingMoveLearn = false;
+    state.pendingMoveSlot = 0;
+    state.pendingMoveId = 0;
+    state.pendingMoveCursor = 0;
+    return false;
+}
 
-    pendingMoveLearn = true;
-    pendingMoveSlot = 0;
-    pendingMoveId = moveId;
+void GameEngine::queueMoveLearnIfReady(Game::MonsterRuntime& mon, const Species& species,
+                                       uint8_t oldLevel, uint8_t teamSlot) {
+    if (state.pendingMoveLearn) return;
+    uint16_t startIndex = 0;
+    const uint16_t count = learnsetEntryCountForSpecies(species);
+    while (startIndex < count) {
+        const LearnsetEntry* entry = learnsetEntryForSpecies(species, startIndex);
+        if (!entry || entry->level > oldLevel) break;
+        ++startIndex;
+    }
+    queueNextPendingMove(mon, species, teamSlot, startIndex);
 }

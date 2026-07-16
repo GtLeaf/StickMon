@@ -1,0 +1,104 @@
+{
+  "tileset": "${ESSENTIALS_DIR}/Graphics/Tilesets/Caves.png",
+  "tileSize": 32,
+  "columns": 8,
+  "rows": 199,
+  "firstId": 384,
+  "lastId": 1975,
+  "tileCount": 1592,
+  "rowsPerPage": 16,
+  "contactSheet": "caves_tiles_ids_contact_sheet.png",
+  "pages": [
+    {
+      "file": "caves_tiles_ids_0384_0511.png",
+      "firstId": 384,
+      "lastId": 511,
+      "sourceRowStart": 0,
+      "sourceRowCount": 16
+    },
+    {
+      "file": "caves_tiles_ids_0512_0639.png",
+      "firstId": 512,
+      "lastId": 639,
+      "sourceRowStart": 16,
+      "sourceRowCount": 16
+    },
+    {
+      "file": "caves_tiles_ids_0640_0767.png",
+      "firstId": 640,
+      "lastId": 767,
+      "sourceRowStart": 32,
+      "sourceRowCount": 16
+    },
+    {
+      "file": "caves_tiles_ids_0768_0895.png",
+      "firstId": 768,
+      "lastId": 895,
+      "sourceRowStart": 48,
+      "sourceRowCount": 16
+    },
+    {
+      "file": "caves_tiles_ids_0896_1023.png",
+      "firstId": 896,
+      "lastId": 1023,
+      "sourceRowStart": 64,
+      "sourceRowCount": 16
+    },
+    {
+      "file": "caves_tiles_ids_1024_1151.png",
+      "firstId": 1024,
+      "lastId": 1151,
+      "sourceRowStart": 80,
+      "sourceRowCount": 16
+    },
+    {
+      "file": "caves_tiles_ids_1152_1279.png",
+      "firstId": 1152,
+      "lastId": 1279,
+      "sourceRowStart": 96,
+      "sourceRowCount": 16
+    },
+    {
+      "file": "caves_tiles_ids_1280_1407.png",
+      "firstId": 1280,
+      "lastId": 1407,
+      "sourceRowStart": 112,
+      "sourceRowCount": 16
+    },
+    {
+      "file": "caves_tiles_ids_1408_1535.png",
+      "firstId": 1408,
+      "lastId": 1535,
+      "sourceRowStart": 128,
+      "sourceRowCount": 16
+    },
+    {
+      "file": "caves_tiles_ids_1536_1663.png",
+      "firstId": 1536,
+      "lastId": 1663,
+      "sourceRowStart": 144,
+      "sourceRowCount": 16
+    },
+    {
+      "file": "caves_tiles_ids_1664_1791.png",
+      "firstId": 1664,
+      "lastId": 1791,
+      "sourceRowStart": 160,
+      "sourceRowCount": 16
+    },
+    {
+      "file": "caves_tiles_ids_1792_1919.png",
+      "firstId": 1792,
+      "lastId": 1919,
+      "sourceRowStart": 176,
+      "sourceRowCount": 16
+    },
+    {
+      "file": "caves_tiles_ids_1920_1975.png",
+      "firstId": 1920,
+      "lastId": 1975,
+      "sourceRowStart": 192,
+      "sourceRowCount": 7
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "type": "stickmon-room-editor-session",
-  "savedAt": "2026-07-12T13:17:18.765Z",
+  "savedAt": "2026-07-13T17:13:27.436Z",
   "files": {
     "base": "room_empty.png",
     "backgrounds": {
@@ -273,7 +273,7 @@
         "sourceWidth": 64,
         "sourceHeight": 64,
         "x": 103,
-        "y": 73,
+        "y": 71,
         "scale": 1,
         "scaleX": 1,
         "scaleY": 1,
@@ -295,7 +295,7 @@
         "castsShadow": true,
         "receivesShadow": true,
         "occludesSprite": true,
-        "sortY": 137,
+        "sortY": 135,
         "shadowAnchor": "auto",
         "wallShadowOffsetY": 0,
         "wallShadowDepthPx": 0,
@@ -314,11 +314,11 @@
         "fileName": "furniture_0001_shelf.png",
         "sourceWidth": 859,
         "sourceHeight": 522,
-        "x": 68,
+        "x": 67,
         "y": 21,
-        "scale": 0.059371362048894066,
-        "scaleX": 0.059371362048894066,
-        "scaleY": 0.059371362048894066,
+        "scale": 0.06519208381839348,
+        "scaleX": 0.06519208381839348,
+        "scaleY": 0.06519208381839348,
         "aspectLocked": true,
         "sourceScale": 6.97,
         "opacity": 1,
@@ -335,7 +335,7 @@
         "castsShadow": true,
         "receivesShadow": false,
         "occludesSprite": false,
-        "sortY": 52,
+        "sortY": 55,
         "cutoutApplied": false,
         "shadowAnchor": "wall",
         "wallShadowOffsetY": 0,
@@ -445,11 +445,11 @@
         "fileName": "bed.png",
         "sourceWidth": 1518,
         "sourceHeight": 972,
-        "x": 40,
-        "y": 61,
-        "scale": 0.05138339920948617,
-        "scaleX": 0.05138339920948617,
-        "scaleY": 0.05138339920948617,
+        "x": 36,
+        "y": 62,
+        "scale": 0.052700922266139656,
+        "scaleX": 0.052700922266139656,
+        "scaleY": 0.052700922266139656,
         "aspectLocked": true,
         "sourceScale": 5.72,
         "opacity": 1,
@@ -466,7 +466,7 @@
         "castsShadow": true,
         "receivesShadow": true,
         "occludesSprite": true,
-        "sortY": 111,
+        "sortY": 113,
         "cutoutApplied": false,
         "visibleInDay": true,
         "visibleInNight": true,
@@ -676,48 +676,28 @@
       },
       {
         "id": "p8",
-        "x": 689,
-        "y": 417
+        "x": 685,
+        "y": 399
       },
       {
         "id": "p9",
-        "x": 613,
-        "y": 430
+        "x": 626,
+        "y": 423
       },
       {
         "id": "p10",
-        "x": 538,
-        "y": 381
+        "x": 531,
+        "y": 514
       },
       {
         "id": "p11",
-        "x": 407,
-        "y": 364
-      },
-      {
-        "id": "p12",
-        "x": 285,
-        "y": 383
-      },
-      {
-        "id": "p13",
-        "x": 213,
-        "y": 446
-      },
-      {
-        "id": "p14",
-        "x": 224,
-        "y": 523
-      },
-      {
-        "id": "p15",
-        "x": 345,
-        "y": 573
+        "x": 373,
+        "y": 528
       },
       {
         "id": "p16",
-        "x": 332,
-        "y": 677
+        "x": 351,
+        "y": 655
       },
       {
         "id": "p17",
@@ -731,8 +711,8 @@
       },
       {
         "id": "p19",
-        "x": 1335,
-        "y": 629
+        "x": 1320,
+        "y": 617
       },
       {
         "id": "p20",
@@ -852,48 +832,28 @@
         "points": [
           {
             "id": "p8",
-            "x": 689,
-            "y": 417
+            "x": 685,
+            "y": 399
           },
           {
             "id": "p9",
-            "x": 613,
-            "y": 430
+            "x": 626,
+            "y": 423
           },
           {
             "id": "p10",
-            "x": 538,
-            "y": 381
+            "x": 531,
+            "y": 514
           },
           {
             "id": "p11",
-            "x": 407,
-            "y": 364
-          },
-          {
-            "id": "p12",
-            "x": 285,
-            "y": 383
-          },
-          {
-            "id": "p13",
-            "x": 213,
-            "y": 446
-          },
-          {
-            "id": "p14",
-            "x": 224,
-            "y": 523
-          },
-          {
-            "id": "p15",
-            "x": 345,
-            "y": 573
+            "x": 373,
+            "y": 528
           },
           {
             "id": "p16",
-            "x": 332,
-            "y": 677
+            "x": 351,
+            "y": 655
           },
           {
             "id": "p17",
@@ -907,8 +867,8 @@
           },
           {
             "id": "p19",
-            "x": 1335,
-            "y": 629
+            "x": 1320,
+            "y": 617
           }
         ]
       },
@@ -942,15 +902,13 @@
         ]
       }
     ],
-    "selectedFaceId": "face5",
-    "selectedPointIndex": 2,
-    "selectedPointId": "p23",
-    "expandedFaceIds": [
-      "face5"
-    ],
+    "selectedFaceId": "face4",
+    "selectedPointIndex": 7,
+    "selectedPointId": "p19",
+    "expandedFaceIds": [],
     "draftExpanded": true,
     "nextFaceId": 6,
-    "nextPointId": 25,
+    "nextPointId": 26,
     "draftPoints": [],
     "drawingFace": false,
     "guides": {
@@ -1000,6 +958,7 @@
       "shadowLength": 22,
       "shadowBlur": 0
     },
+    "showProjectionGuides": true,
     "showGrid": false,
     "gridOpacity": 0.18,
     "snapToGrid": false

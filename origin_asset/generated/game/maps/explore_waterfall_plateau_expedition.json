@@ -1,0 +1,111 @@
+{
+  "format": "StickMonExploreExpedition",
+  "version": 1,
+  "scene": "waterfall_plateau",
+  "label": "瀑岛高台",
+  "seed": 20260714,
+  "mapCount": 4,
+  "maps": [
+    {
+      "key": "waterfall_plateau_01",
+      "map": "origin_asset/generated/game/explore_waterfall_plateau_01_416.png",
+      "semantic": "origin_asset/generated/game/maps/explore_waterfall_plateau_01.smonmap",
+      "animation": "origin_asset/generated/game/explore_waterfall_plateau_01_416.gif",
+      "entry": [
+        6,
+        11
+      ],
+      "exits": [
+        [
+          15,
+          9
+        ],
+        [
+          6,
+          0
+        ]
+      ],
+      "selectedExit": 0
+    },
+    {
+      "key": "waterfall_plateau_02",
+      "map": "origin_asset/generated/game/explore_waterfall_plateau_02_416.png",
+      "semantic": "origin_asset/generated/game/maps/explore_waterfall_plateau_02.smonmap",
+      "animation": "origin_asset/generated/game/explore_waterfall_plateau_02_416.gif",
+      "entry": [
+        0,
+        2
+      ],
+      "exits": [
+        [
+          15,
+          2
+        ],
+        [
+          7,
+          11
+        ]
+      ],
+      "selectedExit": 1
+    },
+    {
+      "key": "waterfall_plateau_03",
+      "map": "origin_asset/generated/game/explore_waterfall_plateau_03_416.png",
+      "semantic": "origin_asset/generated/game/maps/explore_waterfall_plateau_03.smonmap",
+      "animation": "origin_asset/generated/game/explore_waterfall_plateau_03_416.gif",
+      "entry": [
+        7,
+        0
+      ],
+      "exits": [
+        [
+          0,
+          9
+        ],
+        [
+          15,
+          9
+        ]
+      ],
+      "selectedExit": 1
+    },
+    {
+      "key": "waterfall_plateau_04",
+      "map": "origin_asset/generated/game/explore_waterfall_plateau_04_416.png",
+      "semantic": "origin_asset/generated/game/maps/explore_waterfall_plateau_04.smonmap",
+      "animation": "origin_asset/generated/game/explore_waterfall_plateau_04_416.gif",
+      "entry": [
+        0,
+        9
+      ],
+      "exits": [
+        [
+          12,
+          0
+        ],
+        [
+          12,
+          11
+        ]
+      ],
+      "selectedExit": 0
+    }
+  ],
+  "transitions": [
+    {
+      "from": "waterfall_plateau_01",
+      "exit": 0,
+      "to": "waterfall_plateau_02"
+    },
+    {
+      "from": "waterfall_plateau_02",
+      "exit": 1,
+      "to": "waterfall_plateau_03"
+    },
+    {
+      "from": "waterfall_plateau_03",
+      "exit": 1,
+      "to": "waterfall_plateau_04"
+    }
+  ]
+}

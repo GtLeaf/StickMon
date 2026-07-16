@@ -359,40 +359,24 @@
         "drawOrder": 3,
         "points": [
           [
-            121,
-            73
+            120,
+            70
           ],
           [
-            107,
-            75
+            110,
+            74
           ],
           [
-            94,
-            67
+            93,
+            90
           ],
           [
-            71,
-            64
+            65,
+            92
           ],
           [
-            50,
-            67
-          ],
-          [
-            37,
-            78
-          ],
-          [
-            39,
-            91
-          ],
-          [
-            60,
-            100
-          ],
-          [
-            58,
-            118
+            61,
+            115
           ],
           [
             45,
@@ -403,46 +387,30 @@
             155
           ],
           [
-            234,
-            110
+            231,
+            108
           ]
         ],
         "sourcePoints": [
           [
-            836,
-            417
+            832,
+            399
           ],
           [
-            760,
-            430
+            773,
+            423
           ],
           [
-            685,
-            381
+            678,
+            514
           ],
           [
-            554,
-            364
+            520,
+            528
           ],
           [
-            432,
-            383
-          ],
-          [
-            360,
-            446
-          ],
-          [
-            371,
-            523
-          ],
-          [
-            492,
-            573
-          ],
-          [
-            479,
-            677
+            498,
+            655
           ],
           [
             404,
@@ -453,8 +421,8 @@
             886
           ],
           [
-            1482,
-            629
+            1467,
+            617
           ]
         ]
       },
@@ -616,15 +584,15 @@
       "id": "f6",
       "name": "furniture_shelf",
       "fileName": "furniture_0001_shelf.png",
-      "x": 68,
+      "x": 67,
       "y": 21,
       "z": 20,
-      "scale": 0.0594,
-      "scaleX": 0.0594,
-      "scaleY": 0.0594,
+      "scale": 0.0652,
+      "scaleX": 0.0652,
+      "scaleY": 0.0652,
       "aspectLocked": true,
-      "targetWidth": 51,
-      "targetHeight": 31,
+      "targetWidth": 56,
+      "targetHeight": 34,
       "sourceScale": 6.97,
       "opacity": 1,
       "visible": true,
@@ -656,8 +624,8 @@
         "model": "corner_local_planes_v1",
         "anchorFaceId": "face1",
         "anchorUV": [
-          0.75456,
-          0.49885
+          0.7678,
+          0.54248
         ],
         "heightPx": 32,
         "depthPx": 9,
@@ -665,7 +633,7 @@
       },
       "receivesShadow": false,
       "occludesSprite": false,
-      "sortY": 52,
+      "sortY": 55,
       "cutoutApplied": false,
       "speciesId": 0,
       "action": "",
@@ -795,15 +763,15 @@
       "id": "f9",
       "name": "bed",
       "fileName": "bed.png",
-      "x": 40,
-      "y": 61,
+      "x": 36,
+      "y": 62,
       "z": 20,
-      "scale": 0.0514,
-      "scaleX": 0.0514,
-      "scaleY": 0.0514,
+      "scale": 0.0527,
+      "scaleX": 0.0527,
+      "scaleY": 0.0527,
       "aspectLocked": true,
-      "targetWidth": 78,
-      "targetHeight": 50,
+      "targetWidth": 80,
+      "targetHeight": 51,
       "sourceScale": 5.72,
       "opacity": 1,
       "visible": true,
@@ -939,8 +907,8 @@
         "model": "corner_local_planes_v1",
         "anchorFaceId": "face3",
         "anchorUV": [
-          0.63877,
-          0.25931
+          0.68225,
+          0.27566
         ],
         "heightPx": 37,
         "depthPx": 0,
@@ -1005,7 +973,7 @@
       },
       "receivesShadow": true,
       "occludesSprite": true,
-      "sortY": 111,
+      "sortY": 113,
       "cutoutApplied": false,
       "speciesId": 0,
       "action": "",

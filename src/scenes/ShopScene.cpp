@@ -1,4 +1,5 @@
 #include "scenes/ShopScene.h"
+#include <cmath>
 #include <cstdio>
 #include "assets/GameAssets.h"
 #include "core/GameEngine.h"
@@ -6,25 +7,127 @@
 #include "hardware/Hal.h"
 #include "hardware/PixelRenderer.h"
 
+namespace {
+static constexpr float CATEGORY_ICON_COLUMN_X = 128.0f;
+static constexpr float SUBMENU_ICON_COLUMN_X = 28.0f;
+static constexpr float ICON_COLUMN_SPEED = 420.0f;
+static constexpr float ITEM_SCROLL_LERP = 0.25f;
+static constexpr float SHOP_ICON_SCALE = 1.0f;
+static constexpr float SELECTED_SHOP_ICON_SCALE = 1.2f;
+static constexpr int CONTENT_TOP = 24;
+static constexpr int ICON_ROW_H = 37;
+static constexpr int ICON_CENTER_Y = Hal::DISPLAY_H / 2;
+static constexpr int SUBMENU_DIVIDER_X = 58;
+
+uint16_t darkenRgb565(uint16_t color, uint8_t keep) {
+    uint16_t red = (uint16_t)((((color >> 11) & 0x1F) * keep) / 255);
+    uint16_t green = (uint16_t)((((color >> 5) & 0x3F) * keep) / 255);
+    uint16_t blue = (uint16_t)(((color & 0x1F) * keep) / 255);
+    return (uint16_t)((red << 11) | (green << 5) | blue);
+}
+
+void shadeRect(int x, int y, int w, int h, uint8_t keep) {
+    auto& c = PixelRenderer::canvas();
+    const uint16_t background = PixelRenderer::rgb(7, 9, 14);
+    int x0 = x < 0 ? 0 : x;
+    int y0 = y < 0 ? 0 : y;
+    int x1 = x + w > Hal::DISPLAY_W ? Hal::DISPLAY_W : x + w;
+    int y1 = y + h > Hal::DISPLAY_H ? Hal::DISPLAY_H : y + h;
+    for (int py = y0; py < y1; ++py) {
+        for (int px = x0; px < x1; ++px) {
+            uint16_t color = (uint16_t)c.readPixel(px, py);
+            if (color == background) continue;
+            c.drawPixel(px, py, darkenRgb565(color, keep));
+        }
+    }
+}
+
+uint8_t utf8CharBytes(uint8_t lead) {
+    if (lead < 0x80) return 1;
+    if ((lead & 0xE0) == 0xC0) return 2;
+    if ((lead & 0xF0) == 0xE0) return 3;
+    if ((lead & 0xF8) == 0xF0) return 4;
+    return 1;
+}
+
+int utf8GlyphWidth(uint8_t lead) {
+    if (lead >= 0x80) return 16;
+    return lead == ' ' ? 5 : 8;
+}
+
+void drawWrappedText(const char* value, int x, int y, int maxWidth,
+                     uint16_t color, uint8_t maxLines) {
+    if (!value || !*value || maxWidth <= 0 || maxLines == 0) return;
+    const uint8_t* p = reinterpret_cast<const uint8_t*>(value);
+    char line[64] = {};
+    uint8_t lineBytes = 0;
+    int lineWidth = 0;
+    uint8_t lineIndex = 0;
+
+    auto flushLine = [&]() {
+        if (lineBytes == 0 || lineIndex >= maxLines) return;
+        line[lineBytes] = '\0';
+        PixelRenderer::text(x, y + lineIndex * 16, line, color, 1);
+        ++lineIndex;
+        lineBytes = 0;
+        lineWidth = 0;
+    };
+
+    while (*p && lineIndex < maxLines) {
+        if (*p == '\n') {
+            ++p;
+            flushLine();
+            continue;
+        }
+        uint8_t bytes = utf8CharBytes(*p);
+        int glyphWidth = utf8GlyphWidth(*p);
+        if (lineBytes > 0 && lineWidth + glyphWidth > maxWidth) {
+            flushLine();
+            if (lineIndex >= maxLines) break;
+        }
+        if (lineBytes + bytes >= sizeof(line)) {
+            flushLine();
+            if (lineIndex >= maxLines) break;
+        }
+        for (uint8_t i = 0; i < bytes && p[i]; ++i) line[lineBytes++] = (char)p[i];
+        lineWidth += glyphWidth;
+        p += bytes;
+    }
+    flushLine();
+}
+}
+
 void ShopScene::onEnter() {
     viewMode = ViewMode::CATEGORY;
+    activeCategory = CATEGORY_DAILY;
     cursor = 0;
+    itemColumnX = CATEGORY_ICON_COLUMN_X;
+    itemAnimCursor = 0.0f;
     toast = nullptr;
     toastUntil = 0;
 }
 
 void ShopScene::update(uint32_t nowMs, float dtSeconds) {
     (void)nowMs;
-    (void)dtSeconds;
+    float targetX = viewMode == ViewMode::CATEGORY
+        ? CATEGORY_ICON_COLUMN_X : SUBMENU_ICON_COLUMN_X;
+    float delta = targetX - itemColumnX;
+    float clampedDt = dtSeconds > 0.05f ? 0.05f : dtSeconds;
+    float step = ICON_COLUMN_SPEED * clampedDt;
+    if (fabsf(delta) <= step || step <= 0.0f) {
+        if (step > 0.0f) itemColumnX = targetX;
+        return;
+    }
+    itemColumnX += delta > 0.0f ? step : -step;
 }
 
 bool ShopScene::onButton(const ButtonEvent& event) {
+    if ((event.btn == 0 || event.btn == 1) && !itemColumnSettled()) return true;
     if ((event.btn == 0 || event.btn == 1) && event.action == BtnAction::LONG_PRESS) {
         if (viewMode == ViewMode::CATEGORY) {
             GameEngine::ins().requestScene(SceneID::MENU);
         } else {
-            viewMode = ViewMode::CATEGORY;
-            cursor = 0;
+            returnToCategories();
         }
         return true;
     }
@@ -48,15 +151,18 @@ bool ShopScene::onButton(const ButtonEvent& event) {
 
 void ShopScene::activateCategory() {
     switch (cursor) {
-    case CATEGORY_EXPLORE:
-        viewMode = ViewMode::EXPLORE;
-        cursor = 0;
-        break;
     case CATEGORY_DAILY:
+        activeCategory = CATEGORY_DAILY;
         viewMode = ViewMode::DAILY;
         cursor = 0;
         break;
+    case CATEGORY_EXPLORE:
+        activeCategory = CATEGORY_EXPLORE;
+        viewMode = ViewMode::EXPLORE;
+        cursor = 0;
+        break;
     case CATEGORY_SELL:
+        activeCategory = CATEGORY_SELL;
         viewMode = ViewMode::SELL;
         cursor = 0;
         break;
@@ -66,11 +172,16 @@ void ShopScene::activateCategory() {
     }
 }
 
+void ShopScene::returnToCategories() {
+    viewMode = ViewMode::CATEGORY;
+    cursor = (uint8_t)activeCategory;
+    toast = nullptr;
+}
+
 void ShopScene::buyCurrent() {
     Item item = currentItem();
     if (item == BACK) {
-        viewMode = ViewMode::CATEGORY;
-        cursor = 0;
+        returnToCategories();
         return;
     }
 
@@ -145,8 +256,7 @@ void ShopScene::buyCurrent() {
 void ShopScene::sellCurrent() {
     Item item = sellItemAtIndex(cursor);
     if (item == BACK) {
-        viewMode = ViewMode::CATEGORY;
-        cursor = 0;
+        returnToCategories();
         return;
     }
 
@@ -166,7 +276,11 @@ ShopScene::Item ShopScene::currentItem() const {
     return itemAtIndex(cursor);
 }
 
-ShopScene::Item ShopScene::itemAtIndex(uint8_t index) const {
+ShopScene::Item ShopScene::selectedItem() const {
+    return viewMode == ViewMode::SELL ? sellItemAtIndex(cursor) : currentItem();
+}
+
+ShopScene::Item ShopScene::itemForCategory(Category category, uint8_t index) const {
     static constexpr Item EXPLORE_ITEMS[] = {
         BALL,
         GREAT_BALL,
@@ -182,12 +296,18 @@ ShopScene::Item ShopScene::itemAtIndex(uint8_t index) const {
         BACK,
     };
 
-    if (viewMode == ViewMode::DAILY) {
+    if (category == CATEGORY_DAILY) {
         uint8_t idx = index < (sizeof(DAILY_ITEMS) / sizeof(DAILY_ITEMS[0])) ? index : 0;
         return DAILY_ITEMS[idx];
     }
+    if (category == CATEGORY_SELL) return sellItemAtIndex(index);
+    if (category == CATEGORY_BACK) return BACK;
     uint8_t idx = index < (sizeof(EXPLORE_ITEMS) / sizeof(EXPLORE_ITEMS[0])) ? index : 0;
     return EXPLORE_ITEMS[idx];
+}
+
+ShopScene::Item ShopScene::itemAtIndex(uint8_t index) const {
+    return itemForCategory(activeCategory, index);
 }
 
 ShopScene::Item ShopScene::sellItemAtIndex(uint8_t index) const {
@@ -213,16 +333,21 @@ ShopScene::Item ShopScene::sellItemAtIndex(uint8_t index) const {
 }
 
 uint8_t ShopScene::currentItemCount() const {
-    switch (viewMode) {
-    case ViewMode::EXPLORE:
-        return 7;
-    case ViewMode::DAILY:
-        return 3;
-    case ViewMode::SELL:
-        return sellItemCount();
-    default:
-        return CATEGORY_COUNT;
+    return viewMode == ViewMode::CATEGORY
+        ? CATEGORY_COUNT : itemCountForCategory(activeCategory, true);
+}
+
+uint8_t ShopScene::itemCountForCategory(Category category, bool includeBack) const {
+    uint8_t count = 0;
+    switch (category) {
+    case CATEGORY_DAILY: count = 3; break;
+    case CATEGORY_EXPLORE: count = 7; break;
+    case CATEGORY_SELL: count = sellItemCount(); break;
+    case CATEGORY_BACK: return 0;
+    default: return 0;
     }
+    if (!includeBack && count > 0) --count;
+    return count;
 }
 
 uint8_t ShopScene::sellItemCount() const {
@@ -250,6 +375,12 @@ uint8_t ShopScene::ownedCountFor(Item item) const {
     return GameEngine::ins().itemCount(gameItem);
 }
 
+bool ShopScene::itemColumnSettled() const {
+    float targetX = viewMode == ViewMode::CATEGORY
+        ? CATEGORY_ICON_COLUMN_X : SUBMENU_ICON_COLUMN_X;
+    return fabsf(itemColumnX - targetX) < 0.5f;
+}
+
 void ShopScene::render() {
     auto& c = PixelRenderer::canvas();
     c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, PixelRenderer::rgb(7, 9, 14));
@@ -267,140 +398,154 @@ void ShopScene::render() {
 void ShopScene::renderList() {
     if (viewMode == ViewMode::CATEGORY) {
         renderCategoryList();
-    } else if (viewMode == ViewMode::SELL) {
-        renderSellPage();
     } else {
-        renderItemList();
+        renderSubmenu();
     }
 }
 
 void ShopScene::renderCategoryList() {
     auto& c = PixelRenderer::canvas();
-    const int startY = 26;
-    const int rowH = 24;
-    const int iconX = 22;
-    const int textX = 48;
+    if (itemColumnSettled()) {
+        static constexpr int DIVIDER_X = 76;
+        static constexpr int START_Y = 26;
+        static constexpr int ROW_H = 24;
+        static constexpr int TEXT_X = 16;
+        c.drawFastVLine(DIVIDER_X, CONTENT_TOP, Hal::DISPLAY_H - CONTENT_TOP - 5,
+                        PixelRenderer::rgb(70, 74, 84));
 
-    for (uint8_t i = 0; i < CATEGORY_COUNT; ++i) {
-        int y = startY + i * rowH;
-        bool selected = i == cursor;
-        uint16_t fg = selected ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232);
-        if (selected) c.fillRect(8, y + 3, 4, 14, PixelRenderer::rgb(255, 216, 72));
-        c.fillRect(iconX, y + 3, 14, 14,
-                   i == CATEGORY_BACK ? PixelRenderer::rgb(92, 98, 110) : PixelRenderer::rgb(135, 214, 238));
-        PixelRenderer::text(textX, y + 2, Ui::Shop::CATEGORY_ITEMS[i], fg, 1);
-        if (i + 1 < CATEGORY_COUNT) {
-            c.drawFastHLine(textX, y + rowH - 1, 150, PixelRenderer::rgb(70, 74, 84));
+        for (uint8_t i = 0; i < CATEGORY_COUNT; ++i) {
+            int y = START_Y + i * ROW_H;
+            bool selected = i == cursor;
+            uint16_t fg = selected ? PixelRenderer::rgb(255, 216, 72)
+                                   : PixelRenderer::rgb(241, 242, 232);
+            if (selected) {
+                c.fillRect(7, y + 2, 3, 16, PixelRenderer::rgb(255, 216, 72));
+            }
+            PixelRenderer::text(TEXT_X, y + 2, Ui::Shop::CATEGORY_ITEMS[i], fg, 1);
         }
+    }
+
+    renderIconColumn((int)roundf(itemColumnX), true, false);
+}
+
+void ShopScene::renderSubmenu() {
+    auto& c = PixelRenderer::canvas();
+    bool settled = itemColumnSettled();
+    renderIconColumn((int)roundf(itemColumnX), false, settled);
+    if (!settled) return;
+
+    c.drawFastVLine(SUBMENU_DIVIDER_X, CONTENT_TOP, Hal::DISPLAY_H - CONTENT_TOP - 5,
+                    PixelRenderer::rgb(70, 74, 84));
+    renderItemDetail();
+}
+
+void ShopScene::renderIconColumn(int centerX, bool dimmed, bool selectable) {
+    auto& c = PixelRenderer::canvas();
+    Category category = viewMode == ViewMode::CATEGORY
+        ? (Category)cursor : activeCategory;
+    uint8_t itemCount = itemCountForCategory(category, viewMode != ViewMode::CATEGORY);
+    if (itemCount == 0) return;
+
+    if (selectable) {
+        float diff = (float)cursor - itemAnimCursor;
+        if (fabsf(diff) < 0.05f) {
+            itemAnimCursor = (float)cursor;
+        } else {
+            itemAnimCursor += diff * ITEM_SCROLL_LERP;
+        }
+    } else {
+        itemAnimCursor = 0.0f;
+    }
+    c.setClipRect(centerX - 29, CONTENT_TOP, 58, Hal::DISPLAY_H - CONTENT_TOP);
+    for (uint8_t pass = 0; pass < 2; ++pass) {
+        for (uint8_t i = 0; i < itemCount; ++i) {
+            bool selected = selectable && i == cursor;
+            if (selected != (pass == 1)) continue;
+
+            int centerY = ICON_CENTER_Y +
+                (int)roundf(((float)i - itemAnimCursor) * ICON_ROW_H);
+            if (centerY + 24 < CONTENT_TOP || centerY - 24 >= Hal::DISPLAY_H) continue;
+
+            Item item = itemForCategory(category, i);
+            if (selected) {
+                c.fillRect(centerX - 27, centerY - 8, 3, 16,
+                           PixelRenderer::rgb(255, 216, 72));
+            }
+            drawItemIcon(item, centerX, centerY,
+                         selected ? SELECTED_SHOP_ICON_SCALE : SHOP_ICON_SCALE,
+                         selected ? PixelRenderer::rgb(255, 216, 72)
+                                  : PixelRenderer::rgb(135, 214, 238));
+            if (dimmed) {
+                shadeRect(centerX - 20, centerY - 20, 40, 40, 112);
+            }
+        }
+    }
+    c.clearClipRect();
+
+    uint16_t arrowColor = dimmed ? PixelRenderer::rgb(55, 88, 94)
+                                 : PixelRenderer::rgb(135, 214, 238);
+    if (itemAnimCursor > 0.05f) {
+        c.fillTriangle(centerX + 21, CONTENT_TOP + 5,
+                       centerX + 27, CONTENT_TOP + 5,
+                       centerX + 24, CONTENT_TOP + 1, arrowColor);
+    }
+    if (itemAnimCursor < (float)(itemCount - 1) - 0.05f) {
+        c.fillTriangle(centerX + 21, Hal::DISPLAY_H - 7,
+                       centerX + 27, Hal::DISPLAY_H - 7,
+                       centerX + 24, Hal::DISPLAY_H - 3, arrowColor);
     }
 }
 
-void ShopScene::renderItemList() {
+void ShopScene::drawItemIcon(Item item, int centerX, int centerY, float scale,
+                             uint16_t fallbackColor) const {
     auto& c = PixelRenderer::canvas();
-    const int startY = 24;
-    const int rowH = 20;
-    const int itemCount = currentItemCount();
-    const int visibleRows = min<int>(itemCount, (Hal::DISPLAY_H - startY - 4) / rowH);
-    int first = 0;
-    if (cursor >= visibleRows) {
-        first = cursor - visibleRows + 1;
+    if (item == BACK) {
+        int halfW = (int)roundf(6.0f * scale);
+        int halfH = (int)roundf(5.0f * scale);
+        c.drawFastHLine(centerX - halfW, centerY, halfW * 2, fallbackColor);
+        c.drawLine(centerX - halfW, centerY, centerX - 1, centerY - halfH, fallbackColor);
+        c.drawLine(centerX - halfW, centerY, centerX - 1, centerY + halfH, fallbackColor);
+        return;
     }
-
-    for (int row = 0; row < visibleRows; ++row) {
-        int i = first + row;
-        if (i >= itemCount) break;
-        Item item = itemAtIndex(i);
-        int y = startY + row * rowH;
-        bool selected = i == cursor;
-        uint16_t fg = selected ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232);
-        if (selected) c.fillRect(8, y + 4, 4, 12, PixelRenderer::rgb(255, 216, 72));
-
-        if (item == BACK || !GameAssets::draw(GameAssets::itemKind(gameItemIdFor(item)), 18, y + 2)) {
-            c.fillRect(20, y + 4, 12, 12,
-                       item == BACK ? PixelRenderer::rgb(92, 98, 110) : PixelRenderer::rgb(92, 222, 112));
-        }
-        PixelRenderer::text(42, y + 2, nameFor(item), fg, 1);
-        if (item != BACK) {
-            char price[16];
-            snprintf(price, sizeof(price), "%uC", priceFor(item));
-            PixelRenderer::text(164, y + 2, price, PixelRenderer::rgb(92, 222, 112), 1);
-        }
-        if (row < visibleRows - 1 && i < itemCount - 1) {
-            c.drawFastHLine(42, y + rowH - 1, 154, PixelRenderer::rgb(70, 74, 84));
-        }
-    }
-
-    if (itemCount > visibleRows && first > 0) {
-        c.fillTriangle(226, 31, 233, 31, 229, 27, PixelRenderer::rgb(135, 214, 238));
-    }
-    if (itemCount > visibleRows && first + visibleRows < itemCount) {
-        c.fillTriangle(226, 124, 233, 124, 229, 128, PixelRenderer::rgb(135, 214, 238));
-    }
-
-    Item selected = currentItem();
-    if (selected != BACK) {
-        c.fillRect(16, 104, 188, 14, PixelRenderer::rgb(7, 9, 14));
-        PixelRenderer::text(18, 104, descFor(selected), PixelRenderer::rgb(135, 214, 238), 1);
-    }
+    if (GameAssets::drawCentered(GameAssets::itemKind(gameItemIdFor(item)),
+                                 centerX, centerY, scale)) return;
+    PixelRenderer::text(centerX - 4, centerY - 8, "?", fallbackColor, 1);
 }
 
-void ShopScene::renderSellPage() {
-    auto& c = PixelRenderer::canvas();
-    const int startY = 24;
-    const int rowH = 20;
-    const int itemCount = sellItemCount();
-    const int visibleRows = min<int>(itemCount, (Hal::DISPLAY_H - startY - 4) / rowH);
-    int first = 0;
-    if (cursor >= visibleRows) {
-        first = cursor - visibleRows + 1;
-    }
+void ShopScene::renderItemDetail() {
+    static constexpr int DETAIL_X = SUBMENU_DIVIDER_X + 10;
+    static constexpr int DETAIL_W = Hal::DISPLAY_W - DETAIL_X - 6;
+    Item item = selectedItem();
+    uint16_t titleColor = PixelRenderer::rgb(241, 242, 232);
+    uint16_t accentColor = PixelRenderer::rgb(255, 216, 72);
+    uint16_t descColor = PixelRenderer::rgb(135, 214, 238);
 
-    if (itemCount == 1) {
-        PixelRenderer::text(42, 48, Ui::Shop::SELL_EMPTY, PixelRenderer::rgb(241, 242, 232), 1);
-    }
-
-    for (int row = 0; row < visibleRows; ++row) {
-        int i = first + row;
-        if (i >= itemCount) break;
-        Item item = sellItemAtIndex(i);
-        int y = startY + row * rowH;
-        bool selected = i == cursor;
-        uint16_t fg = selected ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232);
-        if (selected) c.fillRect(8, y + 4, 4, 12, PixelRenderer::rgb(255, 216, 72));
-
-        if (item == BACK || !GameAssets::draw(GameAssets::itemKind(gameItemIdFor(item)), 18, y + 2)) {
-            c.fillRect(20, y + 4, 12, 12,
-                       item == BACK ? PixelRenderer::rgb(92, 98, 110) : PixelRenderer::rgb(247, 167, 74));
+    PixelRenderer::text(DETAIL_X, 27, nameFor(item), titleColor, 1);
+    if (item == BACK) {
+        if (viewMode == ViewMode::SELL && sellItemCount() == 1) {
+            drawWrappedText(Ui::Shop::SELL_EMPTY, DETAIL_X, 52, DETAIL_W,
+                            PixelRenderer::rgb(255, 218, 178), 2);
+            drawWrappedText(Ui::Shop::BACK_TO_CATEGORY, DETAIL_X, 91, DETAIL_W,
+                            descColor, 2);
+        } else {
+            drawWrappedText(Ui::Shop::BACK_TO_CATEGORY, DETAIL_X, 60, DETAIL_W,
+                            descColor, 3);
         }
-        PixelRenderer::text(42, y + 2, nameFor(item), fg, 1);
-        if (item != BACK) {
-            char countText[8];
-            snprintf(countText, sizeof(countText), Ui::Bag::COUNT_X_FMT, ownedCountFor(item));
-            PixelRenderer::text(116, y + 2, countText, PixelRenderer::rgb(255, 218, 178), 1);
-
-            char price[16];
-            snprintf(price, sizeof(price), "%uC", sellPriceFor(item));
-            PixelRenderer::text(164, y + 2, price, PixelRenderer::rgb(92, 222, 112), 1);
-        }
-        if (row < visibleRows - 1 && i < itemCount - 1) {
-            c.drawFastHLine(42, y + rowH - 1, 154, PixelRenderer::rgb(70, 74, 84));
-        }
+        return;
     }
 
-    if (itemCount > visibleRows && first > 0) {
-        c.fillTriangle(226, 31, 233, 31, 229, 27, PixelRenderer::rgb(135, 214, 238));
-    }
-    if (itemCount > visibleRows && first + visibleRows < itemCount) {
-        c.fillTriangle(226, 124, 233, 124, 229, 128, PixelRenderer::rgb(135, 214, 238));
-    }
+    char price[20];
+    snprintf(price, sizeof(price),
+             viewMode == ViewMode::SELL ? Ui::Shop::SELL_PRICE_FMT : Ui::Shop::PRICE_FMT,
+             viewMode == ViewMode::SELL ? sellPriceFor(item) : priceFor(item));
+    PixelRenderer::text(DETAIL_X, 50, price, accentColor, 1);
 
-    Item selected = sellItemAtIndex(cursor);
-    if (selected != BACK) {
-        c.fillRect(16, 104, 188, 14, PixelRenderer::rgb(7, 9, 14));
-        char line[24];
-        snprintf(line, sizeof(line), Ui::Shop::SELL_PRICE_FMT, sellPriceFor(selected));
-        PixelRenderer::text(18, 104, line, PixelRenderer::rgb(135, 214, 238), 1);
-    }
+    char count[20];
+    snprintf(count, sizeof(count), Ui::Shop::OWNED_FMT, ownedCountFor(item));
+    PixelRenderer::text(DETAIL_X + 88, 50, count,
+                        PixelRenderer::rgb(255, 218, 178), 1);
+
+    drawWrappedText(descFor(item), DETAIL_X, 76, DETAIL_W, descColor, 3);
 }
 
 void ShopScene::renderToast() {

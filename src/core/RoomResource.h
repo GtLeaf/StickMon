@@ -5,9 +5,20 @@
 
 class RoomResource {
 public:
+    enum class BehaviorAnchorType : uint8_t {
+        WINDOW_GAZE = 1,
+    };
+
     struct Point {
         int16_t x;
         int16_t y;
+    };
+
+    struct __attribute__((packed)) BehaviorAnchor {
+        uint8_t type;
+        uint8_t facing;
+        int16_t footX;
+        int16_t footY;
     };
 
     struct __attribute__((packed)) PatchRun {
@@ -68,6 +79,10 @@ public:
     int16_t doorwayOutsideY() const { return doorwayOutsideY_; }
     Point doorwayPoint(uint8_t index) const;
 
+    uint8_t behaviorAnchorCount() const { return behaviorAnchorCount_; }
+    BehaviorAnchor behaviorAnchor(uint8_t index) const;
+    bool findBehaviorAnchor(BehaviorAnchorType type, BehaviorAnchor& out) const;
+
 private:
     RoomResource() = default;
     ~RoomResource() = default;
@@ -112,6 +127,7 @@ private:
     int16_t doorwayInsideY_ = 0;
     int16_t doorwayOutsideX_ = 0;
     int16_t doorwayOutsideY_ = 0;
+    uint8_t behaviorAnchorCount_ = 0;
 
     uint8_t* baseCompressed_ = nullptr;
     PatchRun* nightPatchRuns_ = nullptr;
@@ -119,4 +135,5 @@ private:
     Point* walkPolygon_ = nullptr;
     Point* bedPolygon_ = nullptr;
     Point* doorwayPolygon_ = nullptr;
+    BehaviorAnchor* behaviorAnchors_ = nullptr;
 };

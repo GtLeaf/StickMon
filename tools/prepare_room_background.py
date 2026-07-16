@@ -34,8 +34,11 @@ PACK_ROOM_OUT = PACK_OUT / "rooms"
 
 DISPLAY_H = 135
 ROOM_PACK_MAGIC = 0x4D4F5253
-ROOM_PACK_VERSION = 2
+ROOM_PACK_VERSION = 3
 ROOM_PACK_HEADER_FORMAT = "<IHHHhIIIIBBBBhhhhhhhhhhhhhhhhhhhhHH"
+ROOM_BEHAVIOR_ANCHOR_FORMAT = "<BBhh"
+ROOM_ANCHOR_WINDOW_GAZE = 1
+ROOM_FACING_BACK = 4
 
 
 def rgb565(r, g, b):
@@ -234,6 +237,67 @@ def furniture_item(layout, *keywords):
     return None
 
 
+def point_in_polygon(x, y, points):
+    inside = False
+    previous = points[-1]
+    for current in points:
+        x0, y0 = previous
+        x1, y1 = current
+        if (y0 > y) != (y1 > y):
+            edge_x = (x1 - x0) * (y - y0) / float(y1 - y0) + x0
+            if x < edge_x:
+                inside = not inside
+        previous = current
+    return inside
+
+
+def generic_monster_footprint_inside(x, foot_y, walk_polygon):
+    radius_x = 16.0
+    radius_y = 8.0
+    diagonal_x = radius_x * 0.70
+    diagonal_y = radius_y * 0.70
+    samples = (
+        (x, foot_y),
+        (x - radius_x, foot_y),
+        (x + radius_x, foot_y),
+        (x, foot_y - radius_y),
+        (x - diagonal_x, foot_y - diagonal_y),
+        (x + diagonal_x, foot_y - diagonal_y),
+    )
+    return all(point_in_polygon(px, py, walk_polygon) for px, py in samples)
+
+
+def behavior_anchors_for_layout(layout, room_w, room_h, walk_polygon):
+    window = furniture_item(layout, "window", "窗")
+    if not window or len(walk_polygon) < 3:
+        return []
+
+    manual = window.get("interactionFoot")
+    if isinstance(manual, list) and len(manual) == 2:
+        foot_x, foot_y = clamp_room_point(manual[0], manual[1], room_w, room_h)
+        if generic_monster_footprint_inside(foot_x, foot_y, walk_polygon):
+            return [(ROOM_ANCHOR_WINDOW_GAZE, ROOM_FACING_BACK, foot_x, foot_y)]
+
+    window_x = float(window.get("x", 0)) + float(window.get("targetWidth") or 0) * 0.5
+    window_y = float(window.get("y", 0)) + float(window.get("targetHeight") or 0) * 0.5
+    best = None
+    for foot_y in range(room_h):
+        for foot_x in range(room_w):
+            if not generic_monster_footprint_inside(foot_x, foot_y, walk_polygon):
+                continue
+            # Prefer standing horizontally in front of the window instead of
+            # selecting a much lower point that merely has a similar distance.
+            distance = 4.0 * (foot_x - window_x) ** 2 + (foot_y - window_y) ** 2
+            if foot_y < window_y + 20:
+                distance += 10000
+            candidate = (distance, foot_x, foot_y)
+            if best is None or candidate < best:
+                best = candidate
+    if best is None:
+        return []
+    return [(ROOM_ANCHOR_WINDOW_GAZE, ROOM_FACING_BACK, best[1], best[2])]
+
+
 def furniture_polygon(item, key, room_w, room_h):
     if not item:
         return []
@@ -426,7 +490,7 @@ def merge_pack_manifest(**updates):
 def write_room_pack(width, height, room_y, base_raw, base_compressed,
                     patch_runs, patch_pixels, walk_polygon, food_x, food_y,
                     bed_polygon, bed_x, bed_y, doorway_polygon,
-                    doorway_inside, doorway_outside):
+                    doorway_inside, doorway_outside, behavior_anchors):
     min_x, min_y, max_x, max_y = bounds_for(walk_polygon, width, height)
     bed_min_x, bed_min_y, bed_max_x, bed_max_y = bounds_for(bed_polygon, width, height)
     door_min_x, door_min_y, door_max_x, door_max_y = bounds_for(doorway_polygon, width, height)
@@ -434,6 +498,8 @@ def write_room_pack(width, height, room_y, base_raw, base_compressed,
         raise ValueError("room polygons must contain between 3 and 32 points")
     if doorway_polygon and not 3 <= len(doorway_polygon) <= 32:
         raise ValueError("doorway polygon must contain between 3 and 32 points")
+    if len(behavior_anchors) > 8:
+        raise ValueError("room may contain at most 8 behavior anchors")
 
     payload = bytearray()
     payload.extend(struct.pack(
@@ -450,7 +516,7 @@ def write_room_pack(width, height, room_y, base_raw, base_compressed,
         len(walk_polygon),
         len(bed_polygon),
         len(doorway_polygon),
-        0,
+        len(behavior_anchors),
         min_x,
         min_y,
         max_x,
@@ -485,6 +551,14 @@ def write_room_pack(width, height, room_y, base_raw, base_compressed,
         payload.extend(struct.pack("<hh", x, y))
     for x, y in doorway_polygon:
         payload.extend(struct.pack("<hh", x, y))
+    for anchor_type, facing, foot_x, foot_y in behavior_anchors:
+        payload.extend(struct.pack(
+            ROOM_BEHAVIOR_ANCHOR_FORMAT,
+            anchor_type,
+            facing,
+            foot_x,
+            foot_y,
+        ))
 
     PACK_ROOM_OUT.mkdir(parents=True, exist_ok=True)
     (PACK_ROOM_OUT / "standard.smonroom").write_bytes(payload)
@@ -494,7 +568,7 @@ def write_room_pack(width, height, room_y, base_raw, base_compressed,
 
 def write_room_assets(day_img, night_img, walk_polygon, food_x, food_y,
                       bed_polygon, bed_x, bed_y, doorway_polygon,
-                      doorway_inside, doorway_outside):
+                      doorway_inside, doorway_outside, behavior_anchors):
     if day_img.size != night_img.size:
         raise ValueError(f"day/night room sizes differ: {day_img.size} vs {night_img.size}")
 
@@ -541,7 +615,7 @@ namespace RoomAssets {
         width, height, room_y, base_raw, base_compressed,
         patch_runs, patch_pixels, walk_polygon, food_x, food_y,
         bed_polygon, bed_x, bed_y, doorway_polygon,
-        doorway_inside, doorway_outside)
+        doorway_inside, doorway_outside, behavior_anchors)
 
     return len(base_raw), len(base_compressed), len(patch_runs), len(patch_pixels), room_y, shared_rle, room_pack_bytes
 
@@ -613,10 +687,11 @@ def main():
     doorway_polygon, doorway_inside, doorway_outside = doorway_region(
         layout, width, height, walk_polygon
     )
+    behavior_anchors = behavior_anchors_for_layout(layout, width, height, walk_polygon)
     base_raw_bytes, base_compressed_len, patch_run_count, patch_pixel_count, room_y, shared_rle, room_pack_bytes = write_room_assets(
         day_img, night_img, walk_polygon, food_x, food_y,
         bed_polygon, bed_x, bed_y, doorway_polygon,
-        doorway_inside, doorway_outside
+        doorway_inside, doorway_outside, behavior_anchors
     )
 
     print(f"layout={layout_path}")
@@ -638,6 +713,7 @@ def main():
         f"doorway_outside={doorway_outside[0]},{doorway_outside[1]} "
         f"doorway_polygon_points={len(doorway_polygon)}"
     )
+    print(f"behavior_anchors={behavior_anchors}")
     print(
         f"assets={HEADER_OUT}, {CPP_OUT} base_raw_bytes={base_raw_bytes} "
         f"base_compressed_bytes={base_compressed_len} "

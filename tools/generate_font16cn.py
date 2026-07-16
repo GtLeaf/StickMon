@@ -9,29 +9,44 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 DATA_DIR = ROOT / "data"
 PACK_OUT = DATA_DIR / "packs" / "dev"
-PACK_FONT_OUT = PACK_OUT / "fonts" / "zh16.smonfont"
+PACK_FONT_REGULAR_OUT = PACK_OUT / "fonts" / "zh16.smonfont"
+PACK_FONT_UNSCII_ASCII_OUT = PACK_OUT / "fonts" / "ascii16-unscii.smonfont"
 FALLBACK_H_OUT = SRC / "assets" / "FontFallbackCN.h"
 FALLBACK_CPP_OUT = SRC / "assets" / "FontFallbackCN.cpp"
-FONT_PATH = "/System/Library/Fonts/STHeiti Medium.ttc"
+SARASA_FONT_PATH = (
+    ROOT / "third_party" / "fonts" / "sarasa-gothic-sc" /
+    "SarasaGothicSC-Regular.ttf"
+)
+UNSCII_FONT_PATH = (
+    ROOT / "third_party" / "fonts" / "unscii" / "unscii-16.hex"
+)
 FONT_PACK_MAGIC = 0x4E464D53  # SMFN
 FONT_PACK_VERSION = 1
 FONT_GLYPH_W = 16
 FONT_GLYPH_H = 16
 FONT_GLYPH_BYTES = 32
+ASCII_CELL_W = 8
+ASCII_DRAW_W = 7
+PRINTABLE_ASCII = frozenset(chr(codepoint) for codepoint in range(0x21, 0x7F))
+UNSCII_CHARS = PRINTABLE_ASCII.union({"♀", "♂"})
 TEXT_EXTENSIONS = {".json", ".txt", ".md"}
 
 
 def collect_chars_from_text(text):
-    chars = set()
-    for ch in text:
-        if "\u4e00" <= ch <= "\u9fff":
-            chars.add(ch)
-    return chars
+    return {
+        ch for ch in text
+        if ord(ch) >= 0x80 and ch.isprintable() and not ch.isspace()
+    }
 
 
 def collect_ui_chars():
     text = (SRC / "core" / "UiStrings.h").read_text(encoding="utf-8")
-    return collect_chars_from_text(text)
+    chars = collect_chars_from_text(text)
+    learnset_snapshot = ROOT / "tools" / "pokemon_data" / "oras_learnsets.json"
+    if learnset_snapshot.exists():
+        chars.update(collect_chars_from_text(
+            learnset_snapshot.read_text(encoding="utf-8")))
+    return chars
 
 
 def collect_fallback_chars():
@@ -60,15 +75,69 @@ def sorted_chars(chars):
     return sorted(chars, key=ord)
 
 
+def load_unscii_glyphs(path):
+    glyphs = {}
+    for line_number, raw_line in enumerate(
+            path.read_text(encoding="ascii").splitlines(), start=1):
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            codepoint_text, bitmap_text = line.split(":", 1)
+            codepoint = int(codepoint_text, 16)
+        except ValueError as exc:
+            raise ValueError(
+                f"Invalid Unscii record at {path}:{line_number}") from exc
+        if chr(codepoint) not in UNSCII_CHARS:
+            continue
+        if len(bitmap_text) != FONT_GLYPH_H * 2:
+            raise ValueError(
+                f"Unscii glyph U+{codepoint:04X} is not 8x16 at "
+                f"{path}:{line_number}"
+            )
+        try:
+            rows = bytes.fromhex(bitmap_text)
+        except ValueError as exc:
+            raise ValueError(
+                f"Invalid Unscii bitmap at {path}:{line_number}") from exc
+
+        bitmap = bytearray()
+        for row in rows:
+            bitmap.extend((row, 0))
+        glyphs[chr(codepoint)] = bytes(bitmap)
+
+    missing = UNSCII_CHARS.difference(glyphs)
+    if missing:
+        labels = ", ".join(f"U+{ord(ch):04X}" for ch in sorted_chars(missing))
+        raise ValueError(f"Unscii font is missing printable ASCII glyphs: {labels}")
+    return glyphs
+
+
 def glyph_bytes(font, ch):
-    img = Image.new("L", (16, 16), 0)
-    draw = ImageDraw.Draw(img)
+    scratch = Image.new("L", (FONT_GLYPH_W, FONT_GLYPH_H), 0)
+    draw = ImageDraw.Draw(scratch)
     bbox = draw.textbbox((0, 0), ch, font=font)
     w = bbox[2] - bbox[0]
     h = bbox[3] - bbox[1]
-    x = (16 - w) // 2 - bbox[0]
-    y = (16 - h) // 2 - bbox[1]
-    draw.text((x, y), ch, font=font, fill=255)
+    if w <= 0 or h <= 0:
+        return [0] * FONT_GLYPH_BYTES
+
+    glyph = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(glyph).text((-bbox[0], -bbox[1]), ch, font=font, fill=255)
+
+    cell_w = ASCII_CELL_W if ord(ch) < 0x80 else FONT_GLYPH_W
+    max_draw_w = ASCII_DRAW_W if ord(ch) < 0x80 else FONT_GLYPH_W
+    scale = min(1.0, max_draw_w / w, FONT_GLYPH_H / h)
+    if scale < 1.0:
+        scaled_w = max(1, round(w * scale))
+        scaled_h = max(1, round(h * scale))
+        glyph = glyph.resize((scaled_w, scaled_h), Image.Resampling.LANCZOS)
+        w, h = glyph.size
+
+    img = Image.new("L", (FONT_GLYPH_W, FONT_GLYPH_H), 0)
+    x = (cell_w - w) // 2
+    y = (FONT_GLYPH_H - h) // 2
+    img.paste(glyph, (x, y))
 
     out = []
     for row in range(16):
@@ -116,12 +185,12 @@ def write_active_config():
     })
 
 
-def write_pack_font(chars, font):
-    PACK_FONT_OUT.parent.mkdir(parents=True, exist_ok=True)
+def write_pack_font(path, chars, glyph_for_char):
+    path.parent.mkdir(parents=True, exist_ok=True)
     glyph_rows = bytearray()
     for ch in sorted_chars(chars):
         glyph_rows += struct.pack("<I", ord(ch))
-        glyph_rows += bytes(glyph_bytes(font, ch))
+        glyph_rows += bytes(glyph_for_char(ch))
 
     header = struct.pack(
         "<IHHBBBBI",
@@ -134,14 +203,7 @@ def write_pack_font(chars, font):
         0,
         0,
     )
-    PACK_FONT_OUT.write_bytes(header + glyph_rows)
-    write_active_config()
-    merge_pack_manifest(
-        format="smon-resource-pack-v1",
-        font="fonts/zh16.smonfont",
-        fontCount=1,
-        fonts="fonts",
-    )
+    path.write_bytes(header + glyph_rows)
 
 
 def write_firmware_fallback(chars, font):
@@ -165,7 +227,8 @@ const FontFallbackCNGlyph* findFontFallbackCNGlyph(uint32_t codepoint);
     rows = []
     for ch in sorted_chars(chars):
         data_s = ", ".join(f"0x{value:02X}" for value in glyph_bytes(font, ch))
-        rows.append(f"    {{0x{ord(ch):04X}, {{{data_s}}}}}, // {ch}")
+        label = ch if ord(ch) >= 0x80 else f"ASCII U+{ord(ch):04X}"
+        rows.append(f"    {{0x{ord(ch):04X}, {{{data_s}}}}}, // {label}")
 
     FALLBACK_CPP_OUT.write_text(
         """#include "assets/FontFallbackCN.h"
@@ -177,7 +240,12 @@ const FontFallbackCNGlyph FONT_FALLBACK_CN_GLYPHS[] PROGMEM = {
         + f"""
 }};
 
-const uint16_t FONT_FALLBACK_CN_COUNT = {len(chars)};
+static_assert(sizeof(FONT_FALLBACK_CN_GLYPHS) /
+                  sizeof(FONT_FALLBACK_CN_GLYPHS[0]) == {len(chars)},
+              "font fallback glyph count mismatch");
+
+const uint16_t FONT_FALLBACK_CN_COUNT =
+    sizeof(FONT_FALLBACK_CN_GLYPHS) / sizeof(FONT_FALLBACK_CN_GLYPHS[0]);
 
 const FontFallbackCNGlyph* findFontFallbackCNGlyph(uint32_t codepoint) {{
     int lo = 0;
@@ -197,16 +265,42 @@ const FontFallbackCNGlyph* findFontFallbackCNGlyph(uint32_t codepoint) {{
 
 
 def main():
-    font = ImageFont.truetype(FONT_PATH, 16, index=0)
+    for name, path in (
+            ("Sarasa Gothic SC Regular", SARASA_FONT_PATH),
+            ("Unscii 16", UNSCII_FONT_PATH)):
+        if not path.exists():
+            raise FileNotFoundError(f"{name} font not found: {path}")
+
+    regular_font = ImageFont.truetype(str(SARASA_FONT_PATH), 16)
+    unscii_glyphs = load_unscii_glyphs(UNSCII_FONT_PATH)
     fallback_chars = collect_fallback_chars()
     pack_chars = collect_ui_chars()
     pack_chars.update(collect_pack_text_chars())
+    pack_chars.difference_update(UNSCII_CHARS)
 
-    write_firmware_fallback(fallback_chars, font)
-    write_pack_font(sorted_chars(pack_chars), font)
+    pack_chars = sorted_chars(pack_chars)
+    write_firmware_fallback(fallback_chars, regular_font)
+    write_pack_font(
+        PACK_FONT_REGULAR_OUT,
+        pack_chars,
+        lambda ch: glyph_bytes(regular_font, ch),
+    )
+    write_pack_font(
+        PACK_FONT_UNSCII_ASCII_OUT,
+        UNSCII_CHARS,
+        lambda ch: unscii_glyphs[ch],
+    )
+    write_active_config()
+    merge_pack_manifest(
+        format="smon-resource-pack-v1",
+        font="fonts/zh16.smonfont",
+        fontCount=2,
+        fonts="fonts",
+    )
     print(
-        f"Generated firmware fallback glyphs={len(fallback_chars)} "
-        f"LittleFS font glyphs={len(pack_chars)}"
+        f"Generated Sarasa Gothic SC CJK firmware fallback glyphs={len(fallback_chars)} "
+        f"LittleFS CJK glyphs={len(pack_chars)} "
+        f"Unscii glyphs={len(UNSCII_CHARS)}"
     )
 
 

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include "core/MainSceneViewState.h"
 #include "core/SaveManager.h"
 #include "core/Scene.h"
 #include "game/GameState.h"
@@ -14,29 +15,35 @@ enum class FoodPlacementResult : uint8_t {
     DIFFERENT_FOOD,
 };
 
+struct FoodConsumeResult {
+    bool consumed = false;
+    uint8_t foodIndex = 0;
+    uint8_t satietyBefore = 0;
+    uint8_t satietyAfter = 0;
+    uint8_t moodBefore = 0;
+    uint8_t moodAfter = 0;
+    bool lastBite = false;
+    bool becameFull = false;
+};
+
+enum class PetOutcome : uint8_t {
+    REWARDED,
+    DAILY_LIMIT,
+    NEEDS_REST,
+};
+
+struct PetResult {
+    PetOutcome outcome = PetOutcome::DAILY_LIMIT;
+    uint8_t moodGain = 0;
+    uint8_t affectionGain = 0;
+};
+
 enum class ExploreTravelPhase : uint8_t {
     NONE,
     DEPARTING,
     ACTIVE,
     RETURNING,
     RETURNING_FAINTED,
-};
-
-struct MainSceneViewState {
-    bool valid = false;
-    uint16_t speciesId = 0;
-    float monsterX = 98.0f;
-    float monsterY = 91.0f;
-    float targetX = 98.0f;
-    float targetY = 91.0f;
-    uint8_t aiMode = 0;
-    uint8_t pmdAction = 0;
-    uint8_t pmdDirection = 0;
-    uint8_t pmdFrame = 0;
-    bool facingRight = true;
-    bool faintRestActive = false;
-    uint32_t nextDecisionRemainingMs = 0;
-    uint32_t postFeedAwakeRemainingMs = 0;
 };
 
 class GameEngine {
@@ -66,6 +73,7 @@ public:
     uint8_t selectedFoodCount() const;
     uint8_t bowlFoodIndex() const;
     uint8_t bowlFoodCount() const;
+    uint8_t bowlFoodBitesRemaining() const { return state.room.bowlBitesRemaining; }
     bool bowlHasFood() const { return state.room.bowlCount > 0; }
     uint8_t ballCount() const { return state.bag.pokeBall; }
     uint8_t greatBallCount() const { return state.bag.greatBall; }
@@ -96,7 +104,7 @@ public:
     bool addFoodStock(uint8_t foodIndex, uint8_t amount = 1);
     bool selectFood(uint8_t foodIndex);
     FoodPlacementResult placeSelectedFoodInBowl();
-    bool consumeBowlFood();
+    FoodConsumeResult consumeBowlFood();
     bool addBalls(uint8_t amount);
     bool consumeBall();
     bool addGreatBalls(uint8_t amount);
@@ -107,6 +115,7 @@ public:
     bool usePotion();
     bool useSuperPotion();
     bool addAntidote(uint8_t amount);
+    bool useAntidote();
     uint8_t itemCount(Game::ItemId item) const;
     bool addItem(Game::ItemId item, uint8_t amount = 1, bool immediate = true);
     bool removeItem(Game::ItemId item, uint8_t amount = 1, bool immediate = true);
@@ -116,13 +125,17 @@ public:
     bool recordCapture(const Game::MonsterRuntime& monster);
     bool recordCapture(const Game::MonsterRuntime& monster, uint8_t metArea);
     void grantEffortFrom(const Species& defeatedSpecies);
-    void petMonster();
+    void grantEffortToTeamMember(uint8_t teamSlot, const Species& defeatedSpecies);
+    PetResult petMonster();
     void finishHatch(uint8_t starterStyle);
     void addExperience(uint32_t amount);
-    bool consumePendingLevelUp(uint8_t& level);
-    bool hasPendingMoveLearn() const { return pendingMoveLearn; }
-    uint8_t pendingMoveLearnId() const { return pendingMoveId; }
-    uint8_t pendingMoveLearnSlot() const { return pendingMoveSlot; }
+    uint32_t addExperienceToTeamMember(uint8_t teamSlot, uint32_t amount);
+    bool hasPendingLevelUp() const { return state.pendingLevelUp; }
+    uint8_t pendingLevelUpLevel() const { return state.pendingLevelUpLevel; }
+    bool acknowledgePendingLevelUp();
+    bool hasPendingMoveLearn() const { return state.pendingMoveLearn; }
+    Game::MoveId pendingMoveLearnId() const { return state.pendingMoveId; }
+    uint8_t pendingMoveLearnSlot() const { return state.pendingMoveSlot; }
     bool resolvePendingMoveLearn(bool learn);
     uint32_t applyActiveFaintPenalty();
     void addWalkSteps(uint16_t steps);
@@ -152,6 +165,10 @@ public:
     void finishExploreReturn();
     ExploreTravelPhase exploreTravelPhase() const { return exploreTravel; }
     uint8_t pendingExploreArea() const { return exploreArea; }
+    void beginDebugBattle();
+    bool consumeDebugBattleRequest();
+    void endDebugBattle();
+    bool consumeDebugMenuReturnRequest();
 
 private:
     GameEngine() = default;
@@ -178,7 +195,10 @@ private:
     void grantCareExperience(uint8_t baseAmount, bool weakGain = false);
     bool syncSpriteCache(uint8_t loadBudget = 0xFF);
     uint32_t randomIvPacked() const;
-    void queueMoveLearnIfReady(Game::MonsterRuntime& mon, const Species& species, uint8_t oldLevel);
+    bool queueNextPendingMove(Game::MonsterRuntime& mon, const Species& species,
+                              uint8_t teamSlot, uint16_t startIndex);
+    void queueMoveLearnIfReady(Game::MonsterRuntime& mon, const Species& species,
+                               uint8_t oldLevel, uint8_t teamSlot);
 
     static constexpr uint32_t INPUT_SAMPLE_MS = 16;
     static constexpr uint32_t FRAME_MS = 66;
@@ -209,11 +229,6 @@ private:
     bool satietyDecayWasSleeping = false;
     bool idleActive = false;
     bool saveDirty = false;
-    bool pendingMoveLearn = false;
-    uint8_t pendingMoveSlot = 0;
-    uint8_t pendingMoveId = 0;
-    bool pendingLevelUp = false;
-    uint8_t pendingLevelUpLevel = 0;
     bool debugShowWalkBoundary = false;
     bool debugTiltControl = false;
     uint8_t debugLightSource = 0;
@@ -230,6 +245,8 @@ private:
     uint16_t sceneFadeDurationMs = 300;
     ExploreTravelPhase exploreTravel = ExploreTravelPhase::NONE;
     uint8_t exploreArea = 0;
+    bool debugBattleRequested = false;
+    bool debugMenuReturnRequested = false;
     MainSceneViewState mainViewState;
 
     Game::GameState state;

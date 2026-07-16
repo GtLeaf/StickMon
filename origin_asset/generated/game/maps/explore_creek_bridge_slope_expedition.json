@@ -1,0 +1,107 @@
+{
+  "format": "StickMonExploreExpedition",
+  "version": 1,
+  "scene": "creek_bridge_slope",
+  "label": "溪桥坡地",
+  "seed": 20260713,
+  "mapCount": 4,
+  "maps": [
+    {
+      "key": "creek_bridge_slope_01",
+      "map": "origin_asset/generated/game/explore_creek_bridge_slope_01_416.png",
+      "semantic": "origin_asset/generated/game/maps/explore_creek_bridge_slope_01.smonmap",
+      "entry": [
+        3,
+        11
+      ],
+      "exits": [
+        [
+          15,
+          7
+        ],
+        [
+          3,
+          0
+        ]
+      ],
+      "selectedExit": 0
+    },
+    {
+      "key": "creek_bridge_slope_02",
+      "map": "origin_asset/generated/game/explore_creek_bridge_slope_02_416.png",
+      "semantic": "origin_asset/generated/game/maps/explore_creek_bridge_slope_02.smonmap",
+      "entry": [
+        0,
+        8
+      ],
+      "exits": [
+        [
+          8,
+          0
+        ],
+        [
+          15,
+          3
+        ]
+      ],
+      "selectedExit": 0
+    },
+    {
+      "key": "creek_bridge_slope_03",
+      "map": "origin_asset/generated/game/explore_creek_bridge_slope_03_416.png",
+      "semantic": "origin_asset/generated/game/maps/explore_creek_bridge_slope_03.smonmap",
+      "entry": [
+        11,
+        11
+      ],
+      "exits": [
+        [
+          0,
+          3
+        ],
+        [
+          11,
+          0
+        ]
+      ],
+      "selectedExit": 0
+    },
+    {
+      "key": "creek_bridge_slope_04",
+      "map": "origin_asset/generated/game/explore_creek_bridge_slope_04_416.png",
+      "semantic": "origin_asset/generated/game/maps/explore_creek_bridge_slope_04.smonmap",
+      "entry": [
+        15,
+        6
+      ],
+      "exits": [
+        [
+          4,
+          0
+        ],
+        [
+          4,
+          11
+        ]
+      ],
+      "selectedExit": 1
+    }
+  ],
+  "transitions": [
+    {
+      "from": "creek_bridge_slope_01",
+      "exit": 0,
+      "to": "creek_bridge_slope_02"
+    },
+    {
+      "from": "creek_bridge_slope_02",
+      "exit": 0,
+      "to": "creek_bridge_slope_03"
+    },
+    {
+      "from": "creek_bridge_slope_03",
+      "exit": 0,
+      "to": "creek_bridge_slope_04"
+    }
+  ]
+}

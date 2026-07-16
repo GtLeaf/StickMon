@@ -198,11 +198,16 @@ void SettingsScene::render() {
 
 void SettingsScene::renderMenu() {
     auto& c = PixelRenderer::canvas();
-    const int rowH = 18;
-    const int startY = 4;
-    const int contentH = startY * 2 + COUNT * rowH;
+    static constexpr int ROW_H = 24;
+    static constexpr int START_Y = 6;
+    static constexpr int TEXT_Y_OFFSET = 4;
+    static constexpr int INDICATOR_X = 8;
+    static constexpr int CONTENT_X = 20;
+    static constexpr int VALUE_X = 156;
+    static constexpr int SEPARATOR_W = Hal::DISPLAY_W - CONTENT_X * 2;
+    const int contentH = START_Y * 2 + COUNT * ROW_H;
     const int maxScroll = contentH > Hal::DISPLAY_H ? contentH - Hal::DISPLAY_H : 0;
-    int targetScroll = startY + cursor * rowH + rowH / 2 - Hal::DISPLAY_H / 2;
+    int targetScroll = START_Y + cursor * ROW_H + ROW_H / 2 - Hal::DISPLAY_H / 2;
     if (targetScroll < 0) targetScroll = 0;
     if (targetScroll > maxScroll) targetScroll = maxScroll;
 
@@ -218,12 +223,15 @@ void SettingsScene::renderMenu() {
     }
 
     for (int i = 0; i < COUNT; ++i) {
-        int y = startY + i * rowH - (int)menuScroll;
-        if (y + rowH <= 0 || y >= Hal::DISPLAY_H) continue;
+        int y = START_Y + i * ROW_H - (int)menuScroll;
+        if (y + ROW_H <= 0 || y >= Hal::DISPLAY_H) continue;
         bool selected = i == cursor;
         uint16_t fg = selected ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232);
-        if (selected) c.fillRect(8, y + 2, 4, 12, PixelRenderer::rgb(255, 216, 72));
-        PixelRenderer::text(20, y, Ui::Settings::ITEMS[i], fg, 1);
+        int textY = y + TEXT_Y_OFFSET;
+        if (selected) {
+            c.fillRect(INDICATOR_X, textY, 4, 16, PixelRenderer::rgb(255, 216, 72));
+        }
+        PixelRenderer::text(CONTENT_X, textY, Ui::Settings::ITEMS[i], fg, 1);
 
         char value[16] = "";
         const auto& settings = GameEngine::ins().gameState().settings;
@@ -231,10 +239,11 @@ void SettingsScene::renderMenu() {
         if (i == GAME_SPEED) snprintf(value, sizeof(value), "%.0fx", GameEngine::ins().gameSpeed());
         if (i == VOLUME) snprintf(value, sizeof(value), "%u%%", settings.volume);
         if (i == POWER_SAVE) snprintf(value, sizeof(value), "%s", GameEngine::ins().idleTimeoutLabel());
-        if (value[0]) PixelRenderer::text(156, y, value, PixelRenderer::rgb(135, 214, 238), 1);
+        if (value[0]) PixelRenderer::text(VALUE_X, textY, value, PixelRenderer::rgb(135, 214, 238), 1);
 
         if (i < COUNT - 1) {
-            c.drawFastHLine(20, y + rowH - 1, 190, PixelRenderer::rgb(70, 74, 84));
+            c.drawFastHLine(CONTENT_X, y + ROW_H - 1, SEPARATOR_W,
+                            PixelRenderer::rgb(70, 74, 84));
         }
     }
 }

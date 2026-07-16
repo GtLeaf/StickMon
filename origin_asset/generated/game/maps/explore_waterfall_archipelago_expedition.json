@@ -1,0 +1,111 @@
+{
+  "format": "StickMonExploreExpedition",
+  "version": 1,
+  "scene": "waterfall_archipelago",
+  "label": "瀑海群岛",
+  "seed": 20260714,
+  "mapCount": 4,
+  "maps": [
+    {
+      "key": "waterfall_archipelago_01",
+      "map": "origin_asset/generated/game/explore_waterfall_archipelago_01_416.png",
+      "semantic": "origin_asset/generated/game/maps/explore_waterfall_archipelago_01.smonmap",
+      "animation": "origin_asset/generated/game/explore_waterfall_archipelago_01_416.gif",
+      "entry": [
+        7,
+        11
+      ],
+      "exits": [
+        [
+          15,
+          8
+        ],
+        [
+          0,
+          8
+        ]
+      ],
+      "selectedExit": 0
+    },
+    {
+      "key": "waterfall_archipelago_02",
+      "map": "origin_asset/generated/game/explore_waterfall_archipelago_02_416.png",
+      "semantic": "origin_asset/generated/game/maps/explore_waterfall_archipelago_02.smonmap",
+      "animation": "origin_asset/generated/game/explore_waterfall_archipelago_02_416.gif",
+      "entry": [
+        0,
+        8
+      ],
+      "exits": [
+        [
+          15,
+          8
+        ],
+        [
+          9,
+          11
+        ]
+      ],
+      "selectedExit": 0
+    },
+    {
+      "key": "waterfall_archipelago_03",
+      "map": "origin_asset/generated/game/explore_waterfall_archipelago_03_416.png",
+      "semantic": "origin_asset/generated/game/maps/explore_waterfall_archipelago_03.smonmap",
+      "animation": "origin_asset/generated/game/explore_waterfall_archipelago_03_416.gif",
+      "entry": [
+        0,
+        9
+      ],
+      "exits": [
+        [
+          15,
+          8
+        ],
+        [
+          4,
+          11
+        ]
+      ],
+      "selectedExit": 0
+    },
+    {
+      "key": "waterfall_archipelago_04",
+      "map": "origin_asset/generated/game/explore_waterfall_archipelago_04_416.png",
+      "semantic": "origin_asset/generated/game/maps/explore_waterfall_archipelago_04.smonmap",
+      "animation": "origin_asset/generated/game/explore_waterfall_archipelago_04_416.gif",
+      "entry": [
+        0,
+        8
+      ],
+      "exits": [
+        [
+          11,
+          11
+        ],
+        [
+          15,
+          8
+        ]
+      ],
+      "selectedExit": 0
+    }
+  ],
+  "transitions": [
+    {
+      "from": "waterfall_archipelago_01",
+      "exit": 0,
+      "to": "waterfall_archipelago_02"
+    },
+    {
+      "from": "waterfall_archipelago_02",
+      "exit": 0,
+      "to": "waterfall_archipelago_03"
+    },
+    {
+      "from": "waterfall_archipelago_03",
+      "exit": 0,
+      "to": "waterfall_archipelago_04"
+    }
+  ]
+}

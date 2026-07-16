@@ -7,6 +7,16 @@
 
 namespace {
 LGFX_Sprite* gCanvas = nullptr;
+static constexpr uint8_t MAX_TEXT_OUTLINE_WIDTH = 2;
+static constexpr uint8_t NATIVE_TEXT_HEIGHT = 16;
+static constexpr uint8_t ASCII_CELL_WIDTH = 8;
+static constexpr int MAX_OUTLINE_GLYPH_WIDTH = 16;
+static constexpr int MAX_OUTLINE_MASK_WIDTH =
+    MAX_OUTLINE_GLYPH_WIDTH + MAX_TEXT_OUTLINE_WIDTH * 2;
+static constexpr int MAX_OUTLINE_MASK_HEIGHT =
+    NATIVE_TEXT_HEIGHT + MAX_TEXT_OUTLINE_WIDTH * 2;
+static constexpr int MAX_OUTLINE_MASK_PIXELS =
+    MAX_OUTLINE_MASK_WIDTH * MAX_OUTLINE_MASK_HEIGHT;
 
 uint32_t readUtf8(const char*& p) {
     const uint8_t* s = reinterpret_cast<const uint8_t*>(p);
@@ -28,18 +38,202 @@ uint32_t readUtf8(const char*& p) {
     return '?';
 }
 
-void drawCnGlyphBitmap(LGFX_Sprite& canvas, int x, int y, const uint8_t* bitmap,
-                       uint16_t color, bool progmem) {
-    for (int row = 0; row < 16; ++row) {
-        uint8_t left = progmem ? pgm_read_byte(&bitmap[row * 2]) : bitmap[row * 2];
-        uint8_t right = progmem ? pgm_read_byte(&bitmap[row * 2 + 1]) : bitmap[row * 2 + 1];
-        for (int col = 0; col < 8; ++col) {
-            if (left & (1 << (7 - col))) canvas.drawPixel(x + col, y + row, color);
-        }
-        for (int col = 0; col < 8; ++col) {
-            if (right & (1 << (7 - col))) canvas.drawPixel(x + 8 + col, y + row, color);
+uint16_t readGlyphRow(const uint8_t* bitmap, int row, bool progmem) {
+    const uint8_t left = progmem ? pgm_read_byte(&bitmap[row * 2]) : bitmap[row * 2];
+    const uint8_t right = progmem ? pgm_read_byte(&bitmap[row * 2 + 1]) : bitmap[row * 2 + 1];
+    return static_cast<uint16_t>(left) << 8 | right;
+}
+
+void drawGlyphBitmap(LGFX_Sprite& canvas, int x, int y, const uint8_t* bitmap,
+                     uint16_t color, bool progmem, int glyphWidth) {
+    for (int row = 0; row < NATIVE_TEXT_HEIGHT; ++row) {
+        const uint16_t bits = readGlyphRow(bitmap, row, progmem);
+        for (int col = 0; col < glyphWidth; ++col) {
+            if (bits & (1U << (15 - col))) canvas.drawPixel(x + col, y + row, color);
         }
     }
+}
+
+void drawOuterOutline(LGFX_Sprite& canvas, int x, int y,
+                      const uint32_t* glyphRows, int glyphWidth, int glyphHeight,
+                      uint16_t color, uint8_t width) {
+    static constexpr int PAD = MAX_TEXT_OUTLINE_WIDTH;
+    uint32_t originalRows[MAX_OUTLINE_MASK_HEIGHT] = {};
+    uint32_t expandedRows[MAX_OUTLINE_MASK_HEIGHT] = {};
+    uint32_t exteriorRows[MAX_OUTLINE_MASK_HEIGHT] = {};
+    uint16_t queue[MAX_OUTLINE_MASK_PIXELS];
+    const int maskWidth = glyphWidth + PAD * 2;
+    const int maskHeight = glyphHeight + PAD * 2;
+    const uint32_t validColumns = (1UL << maskWidth) - 1;
+
+    for (int row = 0; row < glyphHeight; ++row) {
+        const uint32_t positioned = (glyphRows[row] << PAD) & validColumns;
+        originalRows[row + PAD] = positioned;
+
+        for (int dy = -width; dy <= width; ++dy) {
+            const uint8_t horizontalWidth = width - abs(dy);
+            uint32_t horizontal = positioned;
+            for (uint8_t offset = 1; offset <= horizontalWidth; ++offset) {
+                horizontal |= positioned << offset;
+                horizontal |= positioned >> offset;
+            }
+            expandedRows[row + PAD + dy] |= horizontal & validColumns;
+        }
+    }
+
+    uint16_t head = 0;
+    uint16_t tail = 0;
+    auto pushExterior = [&](int row, int col) {
+        const uint32_t bit = 1UL << col;
+        if ((originalRows[row] & bit) != 0 || (exteriorRows[row] & bit) != 0) return;
+        exteriorRows[row] |= bit;
+        queue[tail++] = static_cast<uint16_t>((row << 5) | col);
+    };
+
+    for (int col = 0; col < maskWidth; ++col) {
+        pushExterior(0, col);
+        pushExterior(maskHeight - 1, col);
+    }
+    for (int row = 1; row + 1 < maskHeight; ++row) {
+        pushExterior(row, 0);
+        pushExterior(row, maskWidth - 1);
+    }
+
+    static constexpr int8_t NEIGHBOR_X[] = {-1, 1, 0, 0};
+    static constexpr int8_t NEIGHBOR_Y[] = {0, 0, -1, 1};
+    while (head < tail) {
+        const uint16_t packed = queue[head++];
+        const int row = packed >> 5;
+        const int col = packed & 0x1F;
+        for (uint8_t i = 0; i < 4; ++i) {
+            const int nextRow = row + NEIGHBOR_Y[i];
+            const int nextCol = col + NEIGHBOR_X[i];
+            if (nextRow < 0 || nextRow >= maskHeight ||
+                nextCol < 0 || nextCol >= maskWidth) {
+                continue;
+            }
+            pushExterior(nextRow, nextCol);
+        }
+    }
+
+    for (int row = 0; row < maskHeight; ++row) {
+        const uint32_t visibleOutline = expandedRows[row] & exteriorRows[row];
+        for (int col = 0; col < maskWidth; ++col) {
+            if (visibleOutline & (1UL << col)) {
+                canvas.drawPixel(x + col - PAD, y + row - PAD, color);
+            }
+        }
+    }
+}
+
+void drawGlyphOutline(LGFX_Sprite& canvas, int x, int y, const uint8_t* bitmap,
+                      uint16_t color, bool progmem, int glyphWidth,
+                      uint8_t width) {
+    uint32_t glyphRows[NATIVE_TEXT_HEIGHT] = {};
+    for (int row = 0; row < NATIVE_TEXT_HEIGHT; ++row) {
+        const uint16_t bits = readGlyphRow(bitmap, row, progmem);
+        for (int col = 0; col < glyphWidth; ++col) {
+            if (bits & (1U << (15 - col))) glyphRows[row] |= 1UL << col;
+        }
+    }
+    drawOuterOutline(canvas, x, y, glyphRows, glyphWidth,
+                     NATIVE_TEXT_HEIGHT, color, width);
+}
+
+void drawGlyphPass(LGFX_Sprite& canvas, int x, int y, const uint8_t* bitmap,
+                   uint16_t color, bool progmem, int glyphWidth,
+                   uint8_t outlineWidth) {
+    if (outlineWidth > 0) {
+        drawGlyphOutline(canvas, x, y, bitmap, color, progmem, glyphWidth,
+                         outlineWidth);
+    } else {
+        drawGlyphBitmap(canvas, x, y, bitmap, color, progmem, glyphWidth);
+    }
+}
+
+bool usesUnscii(uint32_t codepoint) {
+    return codepoint < 0x80 || codepoint == 0x2640 || codepoint == 0x2642;
+}
+
+int glyphAdvance(uint32_t codepoint) {
+    return usesUnscii(codepoint) ? ASCII_CELL_WIDTH : NATIVE_TEXT_HEIGHT;
+}
+
+void drawTextPass(int x, int y, const char* value, uint16_t color,
+                  uint8_t outlineWidth = 0) {
+    int cursor = x;
+    const char* p = value;
+    while (*p) {
+        const uint32_t codepoint = readUtf8(p);
+        if (codepoint == '\n') {
+            cursor = x;
+            y += NATIVE_TEXT_HEIGHT;
+            continue;
+        }
+        if (codepoint == ' ') {
+            cursor += glyphAdvance(codepoint);
+            continue;
+        }
+
+        const bool unscii = usesUnscii(codepoint);
+        const int glyphWidth = unscii ? ASCII_CELL_WIDTH : NATIVE_TEXT_HEIGHT;
+        const FontFace face = unscii
+            ? FontFace::UNSCII_ASCII
+            : FontFace::SARASA_CJK;
+        const uint8_t* bitmap =
+            FontResource::ins().findGlyphBitmap(codepoint, face);
+        if (bitmap) {
+            drawGlyphPass(PixelRenderer::canvas(), cursor, y, bitmap, color,
+                          false, glyphWidth, outlineWidth);
+        } else if (!unscii) {
+            const FontFallbackCNGlyph* glyph = findFontFallbackCNGlyph(codepoint);
+            if (glyph) {
+                drawGlyphPass(PixelRenderer::canvas(), cursor, y, glyph->bitmap,
+                              color, true, glyphWidth, outlineWidth);
+            } else {
+                PixelRenderer::canvas().drawRect(cursor + 1, y + 2, 12, 12, color);
+            }
+        } else {
+            static constexpr int boxWidth = 6;
+            static constexpr int boxHeight = 12;
+            static constexpr int boxY = 2;
+            if (outlineWidth > 0) {
+                for (int offset = -outlineWidth; offset <= outlineWidth; ++offset) {
+                    PixelRenderer::canvas().drawRect(cursor + 1 + offset, y + boxY,
+                                                     boxWidth, boxHeight, color);
+                    PixelRenderer::canvas().drawRect(cursor + 1, y + boxY + offset,
+                                                     boxWidth, boxHeight, color);
+                }
+            } else {
+                PixelRenderer::canvas().drawRect(cursor + 1, y + boxY,
+                                                 boxWidth, boxHeight, color);
+            }
+        }
+        cursor += glyphAdvance(codepoint);
+    }
+}
+
+uint8_t rgb565R(uint16_t color) {
+    return static_cast<uint8_t>(((color >> 11) & 0x1F) * 255 / 31);
+}
+
+uint8_t rgb565G(uint16_t color) {
+    return static_cast<uint8_t>(((color >> 5) & 0x3F) * 255 / 63);
+}
+
+uint8_t rgb565B(uint16_t color) {
+    return static_cast<uint8_t>((color & 0x1F) * 255 / 31);
+}
+
+uint16_t blendRgb565(uint16_t dst, uint16_t src, uint8_t alpha) {
+    const uint8_t inv = static_cast<uint8_t>(255 - alpha);
+    const uint8_t red = static_cast<uint8_t>(
+        (rgb565R(src) * alpha + rgb565R(dst) * inv) / 255);
+    const uint8_t green = static_cast<uint8_t>(
+        (rgb565G(src) * alpha + rgb565G(dst) * inv) / 255);
+    const uint8_t blue = static_cast<uint8_t>(
+        (rgb565B(src) * alpha + rgb565B(dst) * inv) / 255);
+    return PixelRenderer::rgb(red, green, blue);
 }
 }
 
@@ -85,43 +279,43 @@ void PixelRenderer::darken(uint8_t amount) {
     }
 }
 
-void PixelRenderer::text(int x, int y, const char* value, uint16_t color, uint8_t size) {
-    (void)size;
-    canvas().setFont(&fonts::AsciiFont8x16);
-    canvas().setTextSize(1);
-    canvas().setTextColor(color);
-    canvas().setTextDatum(top_left);
-
-    int cursor = x;
-    const char* p = value;
-    while (*p) {
-        uint32_t cp = readUtf8(p);
-        if (cp == '\n') {
-            cursor = x;
-            y += 16;
-            continue;
-        }
-        if (cp < 0x80) {
-            if (cp == ' ') {
-                cursor += 5;
-            } else {
-                char buf[2] = {(char)cp, '\0'};
-                canvas().drawString(buf, cursor, y);
-                cursor += 8;
-            }
-            continue;
-        }
-
-        const uint8_t* bitmap = FontResource::ins().findGlyphBitmap(cp);
-        if (bitmap) {
-            drawCnGlyphBitmap(canvas(), cursor, y, bitmap, color, false);
-        } else if (const FontFallbackCNGlyph* glyph = findFontFallbackCNGlyph(cp)) {
-            drawCnGlyphBitmap(canvas(), cursor, y, glyph->bitmap, color, true);
-        } else {
-            canvas().drawRect(cursor + 2, y + 2, 12, 12, color);
-        }
-        cursor += 16;
+void PixelRenderer::fillRectAlpha(int x, int y, int w, int h,
+                                  uint16_t color, uint8_t alpha) {
+    if (!gCanvas || w <= 0 || h <= 0 || alpha == 0) return;
+    if (alpha == 255) {
+        gCanvas->fillRect(x, y, w, h, color);
+        return;
     }
+
+    const int left = x < 0 ? 0 : x;
+    const int top = y < 0 ? 0 : y;
+    const int right = x + w > gCanvas->width() ? gCanvas->width() : x + w;
+    const int bottom = y + h > gCanvas->height() ? gCanvas->height() : y + h;
+    for (int py = top; py < bottom; ++py) {
+        for (int px = left; px < right; ++px) {
+            const uint16_t background = static_cast<uint16_t>(gCanvas->readPixel(px, py));
+            gCanvas->drawPixel(px, py, blendRgb565(background, color, alpha));
+        }
+    }
+}
+
+void PixelRenderer::text(int x, int y, const char* value, uint16_t color,
+                         uint8_t size) {
+    (void)size;
+    drawTextPass(x, y, value, color);
+}
+
+void PixelRenderer::textOutlined(int x, int y, const char* value, uint16_t color,
+                                 uint16_t outline, uint8_t outlineWidth,
+                                 uint8_t size) {
+    (void)size;
+    if (outlineWidth == 0) {
+        drawTextPass(x, y, value, color);
+        return;
+    }
+    if (outlineWidth > MAX_TEXT_OUTLINE_WIDTH) outlineWidth = MAX_TEXT_OUTLINE_WIDTH;
+    drawTextPass(x, y, value, outline, outlineWidth);
+    drawTextPass(x, y, value, color);
 }
 
 void PixelRenderer::bar(int x, int y, int w, int h, uint8_t value, uint16_t fill, uint16_t bg) {

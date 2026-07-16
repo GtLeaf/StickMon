@@ -18,6 +18,7 @@ public:
     virtual ~Scene() = default;
     virtual void onEnter() {}
     virtual void onExit() {}
+    virtual void onBeforeSave() {}
     virtual void update(uint32_t nowMs, float dtSeconds) = 0;
     virtual void render() = 0;
     virtual bool onButton(const ButtonEvent& event) { (void)event; return false; }

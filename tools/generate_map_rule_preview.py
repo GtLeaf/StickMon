@@ -8,6 +8,7 @@ from PIL import Image, ImageDraw
 
 from generate_explore_map import autotile_variant
 from map_generation_rules import (
+    CUSTOM_TILE_VERTICAL_FLIPS,
     FOREST_BODY_IDS,
     FOREST_CROWN_IDS,
     ROAD_TILE_IDS,
@@ -30,6 +31,15 @@ AUTOTILE_NAMES = (
     "Water rock",
     "Fountain1",
 )
+WATERFALL_AUTOTILE_NAMES = (
+    "Sea",
+    "Sea without shore",
+    "Sea deep",
+    "Sand shore",
+    "Waterfall crest",
+    "Waterfall",
+    "Waterfall bottom",
+)
 MAP_W = 16
 MAP_H = 12
 SOURCE_TILE = 32
@@ -37,24 +47,43 @@ GAME_TILE = 26
 
 
 def regular_tile(tileset, tile_id):
-    index = tile_id - 384
+    source_id = CUSTOM_TILE_VERTICAL_FLIPS.get(tile_id, tile_id)
+    index = source_id - 384
     x = (index % 8) * SOURCE_TILE
     y = (index // 8) * SOURCE_TILE
-    return tileset.crop((x, y, x + SOURCE_TILE, y + SOURCE_TILE))
+    tile = tileset.crop((x, y, x + SOURCE_TILE, y + SOURCE_TILE))
+    if source_id != tile_id:
+        tile = tile.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+    return tile
 
 
 def paste_tile(canvas, tileset, tile_id, x, y):
     canvas.alpha_composite(regular_tile(tileset, tile_id), (x * SOURCE_TILE, y * SOURCE_TILE))
 
 
-def load_autotiles():
+def load_autotiles(names=AUTOTILE_NAMES):
+    if names is None:
+        names = AUTOTILE_NAMES
     return [
-        Image.open(ESSENTIALS / "Graphics" / "Autotiles" / f"{name}.png").convert("RGBA")
-        for name in AUTOTILE_NAMES
+        (
+            Image.open(ESSENTIALS / "Graphics" / "Autotiles" / f"{name}.png").convert("RGBA")
+            if name
+            else None
+        )
+        for name in names
     ]
 
 
-def render_layer(tile_ids, tileset, autotiles=()):
+def render_layer(
+    tile_ids,
+    tileset,
+    autotiles=(),
+    frame_index=0,
+    tile_source_overrides=None,
+    external_tilesets=None,
+):
+    tile_source_overrides = tile_source_overrides or {}
+    external_tilesets = external_tilesets or {}
     canvas = Image.new(
         "RGBA",
         (MAP_W * SOURCE_TILE, MAP_H * SOURCE_TILE),
@@ -69,10 +98,21 @@ def render_layer(tile_ids, tileset, autotiles=()):
             autotile_index = tile_id // 48 - 1
             if not 0 <= autotile_index < len(autotiles):
                 continue
-            tile = autotile_variant(autotiles[autotile_index], tile_id % 48)
+            if autotiles[autotile_index] is None:
+                continue
+            tile = autotile_variant(
+                autotiles[autotile_index],
+                tile_id % 48,
+                frame_index,
+            )
             canvas.alpha_composite(tile, (x * SOURCE_TILE, y * SOURCE_TILE))
         else:
-            paste_tile(canvas, tileset, tile_id, x, y)
+            source = tile_source_overrides.get(tile_id)
+            if source:
+                tileset_name, source_id = source
+                paste_tile(canvas, external_tilesets[tileset_name], source_id, x, y)
+            else:
+                paste_tile(canvas, tileset, tile_id, x, y)
     return canvas
 
 

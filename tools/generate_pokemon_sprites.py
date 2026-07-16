@@ -94,13 +94,30 @@ PMD_SPECS = [
     PmdSpec(161, "SENTRET", "sentret", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
     PmdSpec(162, "FURRET", "furret", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
     PmdSpec(172, "PICHU", "pichu", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(183, "MARILL", "marill", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(184, "AZUMARILL", "azumarill", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(194, "WOOPER", "wooper", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(195, "QUAGSIRE", "quagsire", 1, 2, 2, tuple(SOURCE_DIRECTIONS)),
     PmdSpec(212, "SCIZOR", "scizor", 2, 3, 2, tuple(SOURCE_DIRECTIONS)),
     PmdSpec(261, "POOCHYENA", "poochyena", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
     PmdSpec(262, "MIGHTYENA", "mightyena", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
     PmdSpec(278, "WINGULL", "wingull", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
     PmdSpec(279, "PELIPPER", "pelipper", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(285, "SHROOMISH", "shroomish", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(286, "BRELOOM", "breloom", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
     PmdSpec(380, "LATIAS", "latias", 1, 2, 2, tuple(SOURCE_DIRECTIONS)),
     PmdSpec(381, "LATIOS", "latios", 1, 2, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(298, "AZURILL", "azurill", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(322, "NUMEL", "numel", 2, 3, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(323, "CAMERUPT", "camerupt", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(361, "SNORUNT", "snorunt", 1, 4, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(362, "GLALIE", "glalie", 1, 1, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(280, "RALTS", "ralts", 2, 3, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(281, "KIRLIA", "kirlia", 2, 2, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(282, "GARDEVOIR", "gardevoir", 3, 3, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(41, "ZUBAT", "zubat", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(42, "GOLBAT", "golbat", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
+    PmdSpec(169, "CROBAT", "crobat", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
 ]
 PMD_BY_ID = {spec.species_id: spec for spec in PMD_SPECS}
 
@@ -115,6 +132,14 @@ def to_rgba(path):
 
 def resize_nearest(img, size):
     return img.resize((size, size), Image.Resampling.NEAREST)
+
+
+def trim_alpha_padding(img, alpha_threshold=16):
+    alpha = img.getchannel("A").point(
+        lambda value: 255 if value > alpha_threshold else 0
+    )
+    bounds = alpha.getbbox()
+    return img.crop(bounds) if bounds else img
 
 
 def image_pixels(img):
@@ -293,7 +318,8 @@ def add_base_frames(writer, species_id, ident, missing):
 
     icon = to_rgba(icon_path)
     writer.add_frame(species_id, ident, "ICON_0", icon.crop((0, 0, ICON_SIZE, ICON_SIZE)))
-    writer.add_frame(species_id, ident, "FRONT", resize_nearest(to_rgba(front_path), BATTLE_SIZE))
+    front = resize_nearest(to_rgba(front_path), BATTLE_SIZE)
+    writer.add_frame(species_id, ident, "FRONT", trim_alpha_padding(front))
     writer.add_frame(species_id, ident, "BACK", resize_nearest(to_rgba(back_path), BATTLE_SIZE))
 
 
