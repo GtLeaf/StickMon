@@ -83,11 +83,11 @@ def collect_images(gen):
         present_species_ids.add(species_id)
         gen.add_base_frames(collector, species_id, ident, missing)
         spec = gen.PMD_BY_ID.get(species_id)
-        if spec and (gen.PROCESSED / spec.slug).exists():
+        if spec and gen.processed_species_dir(spec).exists():
             gen.add_pmd_frames(collector, spec)
 
     for spec in gen.PMD_SPECS:
-        if spec.species_id in present_species_ids or not (gen.PROCESSED / spec.slug).exists():
+        if spec.species_id in present_species_ids or not gen.processed_species_dir(spec).exists():
             continue
         gen.add_base_frames(collector, spec.species_id, spec.ident, missing)
         gen.add_pmd_frames(collector, spec)
@@ -106,11 +106,11 @@ def build_current_rle_payloads(gen):
         present_species_ids.add(species_id)
         gen.add_base_frames(writer, species_id, ident, missing)
         spec = gen.PMD_BY_ID.get(species_id)
-        if spec and (gen.PROCESSED / spec.slug).exists():
+        if spec and gen.processed_species_dir(spec).exists():
             gen.add_pmd_frames(writer, spec)
 
     for spec in gen.PMD_SPECS:
-        if spec.species_id in present_species_ids or not (gen.PROCESSED / spec.slug).exists():
+        if spec.species_id in present_species_ids or not gen.processed_species_dir(spec).exists():
             continue
         gen.add_base_frames(writer, spec.species_id, spec.ident, missing)
         gen.add_pmd_frames(writer, spec)

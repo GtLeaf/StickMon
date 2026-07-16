@@ -131,6 +131,8 @@ private:
     bool routeMoving = false;
     uint8_t routeWalkDirection = 0;
     uint8_t routeFollowerWalkDirection = 0;
+    uint8_t routeVisualWalkDirection = 0;
+    uint8_t routeFollowerVisualWalkDirection = 0;
     float routeWorldX = 0.0f;
     float routeWorldY = 0.0f;
     float routeFromX = 0.0f;

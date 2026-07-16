@@ -556,7 +556,6 @@ bool sanitizeMonster(Game::MonsterRuntime& mon) {
 
     if (!isBasicFirstMoveForSpecies(*species, mon.move1Id)) {
         mon.move1Id = basicMoveIdForSpecies(*species);
-        mon.moveProficiency[0] = 0;
     }
     uint8_t move2Level = moveLearnLevelForSpecies(*species, mon.move2Id);
     if (mon.move2Id != 0 &&
@@ -593,7 +592,8 @@ bool sanitizeMonster(Game::MonsterRuntime& mon) {
         mon.move3Id,
     };
     for (uint8_t slot = 0; slot < Game::MOVE_SLOT_COUNT; ++slot) {
-        if (moves[slot] == 0) mon.moveProficiency[slot] = 0;
+        if (slot == 0) mon.moveProficiency[slot] = Game::MOVE_PROFICIENCY_MAX;
+        else if (moves[slot] == 0) mon.moveProficiency[slot] = 0;
         else if (mon.moveProficiency[slot] > Game::MOVE_PROFICIENCY_MAX) {
             mon.moveProficiency[slot] = Game::MOVE_PROFICIENCY_MAX;
         }
@@ -849,7 +849,9 @@ void importSharedProficiency(Game::MonsterRuntime& mon, uint8_t proficiency) {
         mon.move3Id,
     };
     for (uint8_t slot = 0; slot < Game::MOVE_SLOT_COUNT; ++slot) {
-        mon.moveProficiency[slot] = moves[slot] == 0 ? 0 : value;
+        mon.moveProficiency[slot] = slot == 0
+            ? Game::MOVE_PROFICIENCY_MAX
+            : (moves[slot] == 0 ? 0 : value);
     }
 }
 

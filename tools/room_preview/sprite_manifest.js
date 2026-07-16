@@ -13,7 +13,7 @@ window.STICKMON_SPRITES = {
       "en": "Bulbasaur",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/bulbasaur/idle/front_0.png",
+        "path": "../../origin_asset/processed/001_bulbasaur/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -21,31 +21,31 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/bulbasaur/idle/back_0.png",
+            "path": "../../origin_asset/processed/001_bulbasaur/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/bulbasaur/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/001_bulbasaur/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/bulbasaur/idle/front_0.png",
+            "path": "../../origin_asset/processed/001_bulbasaur/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/bulbasaur/idle/left_0.png",
+            "path": "../../origin_asset/processed/001_bulbasaur/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/bulbasaur/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/001_bulbasaur/idle/up_left_0.png",
             "width": 64,
             "height": 64
           }
@@ -53,91 +53,91 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/bulbasaur/walking/back_0.png",
+            "path": "../../origin_asset/processed/001_bulbasaur/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/bulbasaur/walking/back_1.png",
+            "path": "../../origin_asset/processed/001_bulbasaur/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_2.png",
-            "path": "../../origin_asset/processed/bulbasaur/walking/back_2.png",
+            "path": "../../origin_asset/processed/001_bulbasaur/walking/back_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/bulbasaur/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/001_bulbasaur/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/bulbasaur/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/001_bulbasaur/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_2.png",
-            "path": "../../origin_asset/processed/bulbasaur/walking/down_left_2.png",
+            "path": "../../origin_asset/processed/001_bulbasaur/walking/down_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/bulbasaur/walking/front_0.png",
+            "path": "../../origin_asset/processed/001_bulbasaur/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/bulbasaur/walking/front_1.png",
+            "path": "../../origin_asset/processed/001_bulbasaur/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_2.png",
-            "path": "../../origin_asset/processed/bulbasaur/walking/front_2.png",
+            "path": "../../origin_asset/processed/001_bulbasaur/walking/front_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/bulbasaur/walking/left_0.png",
+            "path": "../../origin_asset/processed/001_bulbasaur/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/bulbasaur/walking/left_1.png",
+            "path": "../../origin_asset/processed/001_bulbasaur/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_2.png",
-            "path": "../../origin_asset/processed/bulbasaur/walking/left_2.png",
+            "path": "../../origin_asset/processed/001_bulbasaur/walking/left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/bulbasaur/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/001_bulbasaur/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/bulbasaur/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/001_bulbasaur/walking/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_2.png",
-            "path": "../../origin_asset/processed/bulbasaur/walking/up_left_2.png",
+            "path": "../../origin_asset/processed/001_bulbasaur/walking/up_left_2.png",
             "width": 64,
             "height": 64
           }
@@ -145,13 +145,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/bulbasaur/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/001_bulbasaur/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/bulbasaur/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/001_bulbasaur/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -166,7 +166,7 @@ window.STICKMON_SPRITES = {
       "en": "Ivysaur",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/ivysaur/idle/front_0.png",
+        "path": "../../origin_asset/processed/002_ivysaur/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -174,31 +174,31 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/ivysaur/idle/back_0.png",
+            "path": "../../origin_asset/processed/002_ivysaur/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/ivysaur/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/002_ivysaur/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/ivysaur/idle/front_0.png",
+            "path": "../../origin_asset/processed/002_ivysaur/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/ivysaur/idle/left_0.png",
+            "path": "../../origin_asset/processed/002_ivysaur/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/ivysaur/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/002_ivysaur/idle/up_left_0.png",
             "width": 64,
             "height": 64
           }
@@ -206,91 +206,91 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/ivysaur/walking/back_0.png",
+            "path": "../../origin_asset/processed/002_ivysaur/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/ivysaur/walking/back_1.png",
+            "path": "../../origin_asset/processed/002_ivysaur/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_2.png",
-            "path": "../../origin_asset/processed/ivysaur/walking/back_2.png",
+            "path": "../../origin_asset/processed/002_ivysaur/walking/back_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/ivysaur/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/002_ivysaur/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/ivysaur/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/002_ivysaur/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_2.png",
-            "path": "../../origin_asset/processed/ivysaur/walking/down_left_2.png",
+            "path": "../../origin_asset/processed/002_ivysaur/walking/down_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/ivysaur/walking/front_0.png",
+            "path": "../../origin_asset/processed/002_ivysaur/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/ivysaur/walking/front_1.png",
+            "path": "../../origin_asset/processed/002_ivysaur/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_2.png",
-            "path": "../../origin_asset/processed/ivysaur/walking/front_2.png",
+            "path": "../../origin_asset/processed/002_ivysaur/walking/front_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/ivysaur/walking/left_0.png",
+            "path": "../../origin_asset/processed/002_ivysaur/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/ivysaur/walking/left_1.png",
+            "path": "../../origin_asset/processed/002_ivysaur/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_2.png",
-            "path": "../../origin_asset/processed/ivysaur/walking/left_2.png",
+            "path": "../../origin_asset/processed/002_ivysaur/walking/left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/ivysaur/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/002_ivysaur/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/ivysaur/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/002_ivysaur/walking/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_2.png",
-            "path": "../../origin_asset/processed/ivysaur/walking/up_left_2.png",
+            "path": "../../origin_asset/processed/002_ivysaur/walking/up_left_2.png",
             "width": 64,
             "height": 64
           }
@@ -298,13 +298,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/ivysaur/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/002_ivysaur/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/ivysaur/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/002_ivysaur/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -319,7 +319,7 @@ window.STICKMON_SPRITES = {
       "en": "Venusaur",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/venusaur/idle/front_0.png",
+        "path": "../../origin_asset/processed/003_venusaur/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -327,31 +327,31 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/venusaur/idle/back_0.png",
+            "path": "../../origin_asset/processed/003_venusaur/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/venusaur/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/003_venusaur/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/venusaur/idle/front_0.png",
+            "path": "../../origin_asset/processed/003_venusaur/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/venusaur/idle/left_0.png",
+            "path": "../../origin_asset/processed/003_venusaur/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/venusaur/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/003_venusaur/idle/up_left_0.png",
             "width": 64,
             "height": 64
           }
@@ -359,91 +359,91 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/venusaur/walking/back_0.png",
+            "path": "../../origin_asset/processed/003_venusaur/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/venusaur/walking/back_1.png",
+            "path": "../../origin_asset/processed/003_venusaur/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_2.png",
-            "path": "../../origin_asset/processed/venusaur/walking/back_2.png",
+            "path": "../../origin_asset/processed/003_venusaur/walking/back_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/venusaur/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/003_venusaur/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/venusaur/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/003_venusaur/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_2.png",
-            "path": "../../origin_asset/processed/venusaur/walking/down_left_2.png",
+            "path": "../../origin_asset/processed/003_venusaur/walking/down_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/venusaur/walking/front_0.png",
+            "path": "../../origin_asset/processed/003_venusaur/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/venusaur/walking/front_1.png",
+            "path": "../../origin_asset/processed/003_venusaur/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_2.png",
-            "path": "../../origin_asset/processed/venusaur/walking/front_2.png",
+            "path": "../../origin_asset/processed/003_venusaur/walking/front_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/venusaur/walking/left_0.png",
+            "path": "../../origin_asset/processed/003_venusaur/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/venusaur/walking/left_1.png",
+            "path": "../../origin_asset/processed/003_venusaur/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_2.png",
-            "path": "../../origin_asset/processed/venusaur/walking/left_2.png",
+            "path": "../../origin_asset/processed/003_venusaur/walking/left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/venusaur/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/003_venusaur/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/venusaur/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/003_venusaur/walking/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_2.png",
-            "path": "../../origin_asset/processed/venusaur/walking/up_left_2.png",
+            "path": "../../origin_asset/processed/003_venusaur/walking/up_left_2.png",
             "width": 64,
             "height": 64
           }
@@ -451,13 +451,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/venusaur/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/003_venusaur/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/venusaur/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/003_venusaur/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -472,7 +472,7 @@ window.STICKMON_SPRITES = {
       "en": "Charmander",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/charmander/idle/front_0.png",
+        "path": "../../origin_asset/processed/004_charmander/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -480,31 +480,31 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/charmander/idle/back_0.png",
+            "path": "../../origin_asset/processed/004_charmander/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/charmander/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/004_charmander/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/charmander/idle/front_0.png",
+            "path": "../../origin_asset/processed/004_charmander/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/charmander/idle/left_0.png",
+            "path": "../../origin_asset/processed/004_charmander/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/charmander/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/004_charmander/idle/up_left_0.png",
             "width": 64,
             "height": 64
           }
@@ -512,91 +512,91 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/charmander/walking/back_0.png",
+            "path": "../../origin_asset/processed/004_charmander/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/charmander/walking/back_1.png",
+            "path": "../../origin_asset/processed/004_charmander/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_2.png",
-            "path": "../../origin_asset/processed/charmander/walking/back_2.png",
+            "path": "../../origin_asset/processed/004_charmander/walking/back_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/charmander/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/004_charmander/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/charmander/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/004_charmander/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_2.png",
-            "path": "../../origin_asset/processed/charmander/walking/down_left_2.png",
+            "path": "../../origin_asset/processed/004_charmander/walking/down_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/charmander/walking/front_0.png",
+            "path": "../../origin_asset/processed/004_charmander/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/charmander/walking/front_1.png",
+            "path": "../../origin_asset/processed/004_charmander/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_2.png",
-            "path": "../../origin_asset/processed/charmander/walking/front_2.png",
+            "path": "../../origin_asset/processed/004_charmander/walking/front_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/charmander/walking/left_0.png",
+            "path": "../../origin_asset/processed/004_charmander/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/charmander/walking/left_1.png",
+            "path": "../../origin_asset/processed/004_charmander/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_2.png",
-            "path": "../../origin_asset/processed/charmander/walking/left_2.png",
+            "path": "../../origin_asset/processed/004_charmander/walking/left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/charmander/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/004_charmander/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/charmander/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/004_charmander/walking/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_2.png",
-            "path": "../../origin_asset/processed/charmander/walking/up_left_2.png",
+            "path": "../../origin_asset/processed/004_charmander/walking/up_left_2.png",
             "width": 64,
             "height": 64
           }
@@ -604,13 +604,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/charmander/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/004_charmander/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/charmander/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/004_charmander/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -625,7 +625,7 @@ window.STICKMON_SPRITES = {
       "en": "Charmeleon",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/charmeleon/idle/front_0.png",
+        "path": "../../origin_asset/processed/005_charmeleon/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -633,31 +633,31 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/charmeleon/idle/back_0.png",
+            "path": "../../origin_asset/processed/005_charmeleon/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/charmeleon/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/005_charmeleon/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/charmeleon/idle/front_0.png",
+            "path": "../../origin_asset/processed/005_charmeleon/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/charmeleon/idle/left_0.png",
+            "path": "../../origin_asset/processed/005_charmeleon/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/charmeleon/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/005_charmeleon/idle/up_left_0.png",
             "width": 64,
             "height": 64
           }
@@ -665,91 +665,91 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/charmeleon/walking/back_0.png",
+            "path": "../../origin_asset/processed/005_charmeleon/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/charmeleon/walking/back_1.png",
+            "path": "../../origin_asset/processed/005_charmeleon/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_2.png",
-            "path": "../../origin_asset/processed/charmeleon/walking/back_2.png",
+            "path": "../../origin_asset/processed/005_charmeleon/walking/back_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/charmeleon/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/005_charmeleon/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/charmeleon/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/005_charmeleon/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_2.png",
-            "path": "../../origin_asset/processed/charmeleon/walking/down_left_2.png",
+            "path": "../../origin_asset/processed/005_charmeleon/walking/down_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/charmeleon/walking/front_0.png",
+            "path": "../../origin_asset/processed/005_charmeleon/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/charmeleon/walking/front_1.png",
+            "path": "../../origin_asset/processed/005_charmeleon/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_2.png",
-            "path": "../../origin_asset/processed/charmeleon/walking/front_2.png",
+            "path": "../../origin_asset/processed/005_charmeleon/walking/front_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/charmeleon/walking/left_0.png",
+            "path": "../../origin_asset/processed/005_charmeleon/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/charmeleon/walking/left_1.png",
+            "path": "../../origin_asset/processed/005_charmeleon/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_2.png",
-            "path": "../../origin_asset/processed/charmeleon/walking/left_2.png",
+            "path": "../../origin_asset/processed/005_charmeleon/walking/left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/charmeleon/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/005_charmeleon/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/charmeleon/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/005_charmeleon/walking/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_2.png",
-            "path": "../../origin_asset/processed/charmeleon/walking/up_left_2.png",
+            "path": "../../origin_asset/processed/005_charmeleon/walking/up_left_2.png",
             "width": 64,
             "height": 64
           }
@@ -757,13 +757,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/charmeleon/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/005_charmeleon/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/charmeleon/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/005_charmeleon/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -778,7 +778,7 @@ window.STICKMON_SPRITES = {
       "en": "Charizard",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/charizard/idle/front_0.png",
+        "path": "../../origin_asset/processed/006_charizard/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -786,31 +786,31 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/charizard/idle/back_0.png",
+            "path": "../../origin_asset/processed/006_charizard/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/charizard/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/006_charizard/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/charizard/idle/front_0.png",
+            "path": "../../origin_asset/processed/006_charizard/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/charizard/idle/left_0.png",
+            "path": "../../origin_asset/processed/006_charizard/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/charizard/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/006_charizard/idle/up_left_0.png",
             "width": 64,
             "height": 64
           }
@@ -818,91 +818,91 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/charizard/walking/back_0.png",
+            "path": "../../origin_asset/processed/006_charizard/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/charizard/walking/back_1.png",
+            "path": "../../origin_asset/processed/006_charizard/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_2.png",
-            "path": "../../origin_asset/processed/charizard/walking/back_2.png",
+            "path": "../../origin_asset/processed/006_charizard/walking/back_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/charizard/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/006_charizard/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/charizard/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/006_charizard/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_2.png",
-            "path": "../../origin_asset/processed/charizard/walking/down_left_2.png",
+            "path": "../../origin_asset/processed/006_charizard/walking/down_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/charizard/walking/front_0.png",
+            "path": "../../origin_asset/processed/006_charizard/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/charizard/walking/front_1.png",
+            "path": "../../origin_asset/processed/006_charizard/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_2.png",
-            "path": "../../origin_asset/processed/charizard/walking/front_2.png",
+            "path": "../../origin_asset/processed/006_charizard/walking/front_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/charizard/walking/left_0.png",
+            "path": "../../origin_asset/processed/006_charizard/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/charizard/walking/left_1.png",
+            "path": "../../origin_asset/processed/006_charizard/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_2.png",
-            "path": "../../origin_asset/processed/charizard/walking/left_2.png",
+            "path": "../../origin_asset/processed/006_charizard/walking/left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/charizard/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/006_charizard/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/charizard/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/006_charizard/walking/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_2.png",
-            "path": "../../origin_asset/processed/charizard/walking/up_left_2.png",
+            "path": "../../origin_asset/processed/006_charizard/walking/up_left_2.png",
             "width": 64,
             "height": 64
           }
@@ -910,13 +910,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/charizard/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/006_charizard/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/charizard/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/006_charizard/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -931,7 +931,7 @@ window.STICKMON_SPRITES = {
       "en": "Squirtle",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/squirtle/idle/front_0.png",
+        "path": "../../origin_asset/processed/007_squirtle/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -939,31 +939,31 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/squirtle/idle/back_0.png",
+            "path": "../../origin_asset/processed/007_squirtle/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/squirtle/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/007_squirtle/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/squirtle/idle/front_0.png",
+            "path": "../../origin_asset/processed/007_squirtle/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/squirtle/idle/left_0.png",
+            "path": "../../origin_asset/processed/007_squirtle/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/squirtle/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/007_squirtle/idle/up_left_0.png",
             "width": 64,
             "height": 64
           }
@@ -971,91 +971,91 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/squirtle/walking/back_0.png",
+            "path": "../../origin_asset/processed/007_squirtle/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/squirtle/walking/back_1.png",
+            "path": "../../origin_asset/processed/007_squirtle/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_2.png",
-            "path": "../../origin_asset/processed/squirtle/walking/back_2.png",
+            "path": "../../origin_asset/processed/007_squirtle/walking/back_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/squirtle/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/007_squirtle/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/squirtle/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/007_squirtle/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_2.png",
-            "path": "../../origin_asset/processed/squirtle/walking/down_left_2.png",
+            "path": "../../origin_asset/processed/007_squirtle/walking/down_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/squirtle/walking/front_0.png",
+            "path": "../../origin_asset/processed/007_squirtle/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/squirtle/walking/front_1.png",
+            "path": "../../origin_asset/processed/007_squirtle/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_2.png",
-            "path": "../../origin_asset/processed/squirtle/walking/front_2.png",
+            "path": "../../origin_asset/processed/007_squirtle/walking/front_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/squirtle/walking/left_0.png",
+            "path": "../../origin_asset/processed/007_squirtle/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/squirtle/walking/left_1.png",
+            "path": "../../origin_asset/processed/007_squirtle/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_2.png",
-            "path": "../../origin_asset/processed/squirtle/walking/left_2.png",
+            "path": "../../origin_asset/processed/007_squirtle/walking/left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/squirtle/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/007_squirtle/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/squirtle/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/007_squirtle/walking/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_2.png",
-            "path": "../../origin_asset/processed/squirtle/walking/up_left_2.png",
+            "path": "../../origin_asset/processed/007_squirtle/walking/up_left_2.png",
             "width": 64,
             "height": 64
           }
@@ -1063,13 +1063,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/squirtle/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/007_squirtle/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/squirtle/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/007_squirtle/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -1084,7 +1084,7 @@ window.STICKMON_SPRITES = {
       "en": "Wartortle",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/wartortle/idle/front_0.png",
+        "path": "../../origin_asset/processed/008_wartortle/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -1092,49 +1092,49 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/wartortle/idle/back_0.png",
+            "path": "../../origin_asset/processed/008_wartortle/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/wartortle/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/008_wartortle/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_0.png",
-            "path": "../../origin_asset/processed/wartortle/idle/down_right_0.png",
+            "path": "../../origin_asset/processed/008_wartortle/idle/down_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/wartortle/idle/front_0.png",
+            "path": "../../origin_asset/processed/008_wartortle/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/wartortle/idle/left_0.png",
+            "path": "../../origin_asset/processed/008_wartortle/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_0.png",
-            "path": "../../origin_asset/processed/wartortle/idle/right_0.png",
+            "path": "../../origin_asset/processed/008_wartortle/idle/right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/wartortle/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/008_wartortle/idle/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_0.png",
-            "path": "../../origin_asset/processed/wartortle/idle/up_right_0.png",
+            "path": "../../origin_asset/processed/008_wartortle/idle/up_right_0.png",
             "width": 64,
             "height": 64
           }
@@ -1142,145 +1142,145 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/wartortle/walking/back_0.png",
+            "path": "../../origin_asset/processed/008_wartortle/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/wartortle/walking/back_1.png",
+            "path": "../../origin_asset/processed/008_wartortle/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_2.png",
-            "path": "../../origin_asset/processed/wartortle/walking/back_2.png",
+            "path": "../../origin_asset/processed/008_wartortle/walking/back_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/wartortle/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/008_wartortle/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/wartortle/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/008_wartortle/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_2.png",
-            "path": "../../origin_asset/processed/wartortle/walking/down_left_2.png",
+            "path": "../../origin_asset/processed/008_wartortle/walking/down_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_0.png",
-            "path": "../../origin_asset/processed/wartortle/walking/down_right_0.png",
+            "path": "../../origin_asset/processed/008_wartortle/walking/down_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_1.png",
-            "path": "../../origin_asset/processed/wartortle/walking/down_right_1.png",
+            "path": "../../origin_asset/processed/008_wartortle/walking/down_right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_2.png",
-            "path": "../../origin_asset/processed/wartortle/walking/down_right_2.png",
+            "path": "../../origin_asset/processed/008_wartortle/walking/down_right_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/wartortle/walking/front_0.png",
+            "path": "../../origin_asset/processed/008_wartortle/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/wartortle/walking/front_1.png",
+            "path": "../../origin_asset/processed/008_wartortle/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_2.png",
-            "path": "../../origin_asset/processed/wartortle/walking/front_2.png",
+            "path": "../../origin_asset/processed/008_wartortle/walking/front_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/wartortle/walking/left_0.png",
+            "path": "../../origin_asset/processed/008_wartortle/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/wartortle/walking/left_1.png",
+            "path": "../../origin_asset/processed/008_wartortle/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_2.png",
-            "path": "../../origin_asset/processed/wartortle/walking/left_2.png",
+            "path": "../../origin_asset/processed/008_wartortle/walking/left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_0.png",
-            "path": "../../origin_asset/processed/wartortle/walking/right_0.png",
+            "path": "../../origin_asset/processed/008_wartortle/walking/right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_1.png",
-            "path": "../../origin_asset/processed/wartortle/walking/right_1.png",
+            "path": "../../origin_asset/processed/008_wartortle/walking/right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_2.png",
-            "path": "../../origin_asset/processed/wartortle/walking/right_2.png",
+            "path": "../../origin_asset/processed/008_wartortle/walking/right_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/wartortle/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/008_wartortle/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/wartortle/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/008_wartortle/walking/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_2.png",
-            "path": "../../origin_asset/processed/wartortle/walking/up_left_2.png",
+            "path": "../../origin_asset/processed/008_wartortle/walking/up_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_0.png",
-            "path": "../../origin_asset/processed/wartortle/walking/up_right_0.png",
+            "path": "../../origin_asset/processed/008_wartortle/walking/up_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_1.png",
-            "path": "../../origin_asset/processed/wartortle/walking/up_right_1.png",
+            "path": "../../origin_asset/processed/008_wartortle/walking/up_right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_2.png",
-            "path": "../../origin_asset/processed/wartortle/walking/up_right_2.png",
+            "path": "../../origin_asset/processed/008_wartortle/walking/up_right_2.png",
             "width": 64,
             "height": 64
           }
@@ -1288,13 +1288,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/wartortle/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/008_wartortle/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/wartortle/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/008_wartortle/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -1309,7 +1309,7 @@ window.STICKMON_SPRITES = {
       "en": "Blastoise",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/blastoise/idle/front_0.png",
+        "path": "../../origin_asset/processed/009_blastoise/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -1317,31 +1317,31 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/blastoise/idle/back_0.png",
+            "path": "../../origin_asset/processed/009_blastoise/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/blastoise/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/009_blastoise/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/blastoise/idle/front_0.png",
+            "path": "../../origin_asset/processed/009_blastoise/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/blastoise/idle/left_0.png",
+            "path": "../../origin_asset/processed/009_blastoise/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/blastoise/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/009_blastoise/idle/up_left_0.png",
             "width": 64,
             "height": 64
           }
@@ -1349,91 +1349,91 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/blastoise/walking/back_0.png",
+            "path": "../../origin_asset/processed/009_blastoise/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/blastoise/walking/back_1.png",
+            "path": "../../origin_asset/processed/009_blastoise/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_2.png",
-            "path": "../../origin_asset/processed/blastoise/walking/back_2.png",
+            "path": "../../origin_asset/processed/009_blastoise/walking/back_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/blastoise/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/009_blastoise/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/blastoise/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/009_blastoise/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_2.png",
-            "path": "../../origin_asset/processed/blastoise/walking/down_left_2.png",
+            "path": "../../origin_asset/processed/009_blastoise/walking/down_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/blastoise/walking/front_0.png",
+            "path": "../../origin_asset/processed/009_blastoise/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/blastoise/walking/front_1.png",
+            "path": "../../origin_asset/processed/009_blastoise/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_2.png",
-            "path": "../../origin_asset/processed/blastoise/walking/front_2.png",
+            "path": "../../origin_asset/processed/009_blastoise/walking/front_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/blastoise/walking/left_0.png",
+            "path": "../../origin_asset/processed/009_blastoise/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/blastoise/walking/left_1.png",
+            "path": "../../origin_asset/processed/009_blastoise/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_2.png",
-            "path": "../../origin_asset/processed/blastoise/walking/left_2.png",
+            "path": "../../origin_asset/processed/009_blastoise/walking/left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/blastoise/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/009_blastoise/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/blastoise/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/009_blastoise/walking/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_2.png",
-            "path": "../../origin_asset/processed/blastoise/walking/up_left_2.png",
+            "path": "../../origin_asset/processed/009_blastoise/walking/up_left_2.png",
             "width": 64,
             "height": 64
           }
@@ -1441,13 +1441,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/blastoise/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/009_blastoise/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/blastoise/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/009_blastoise/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -1462,7 +1462,7 @@ window.STICKMON_SPRITES = {
       "en": "Pikachu",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/pikachu/idle/front_0.png",
+        "path": "../../origin_asset/processed/025_pikachu/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -1470,31 +1470,31 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/pikachu/idle/back_0.png",
+            "path": "../../origin_asset/processed/025_pikachu/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/pikachu/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/025_pikachu/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/pikachu/idle/front_0.png",
+            "path": "../../origin_asset/processed/025_pikachu/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/pikachu/idle/left_0.png",
+            "path": "../../origin_asset/processed/025_pikachu/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/pikachu/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/025_pikachu/idle/up_left_0.png",
             "width": 64,
             "height": 64
           }
@@ -1502,91 +1502,91 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/pikachu/walking/back_0.png",
+            "path": "../../origin_asset/processed/025_pikachu/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/pikachu/walking/back_1.png",
+            "path": "../../origin_asset/processed/025_pikachu/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_2.png",
-            "path": "../../origin_asset/processed/pikachu/walking/back_2.png",
+            "path": "../../origin_asset/processed/025_pikachu/walking/back_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/pikachu/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/025_pikachu/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/pikachu/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/025_pikachu/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_2.png",
-            "path": "../../origin_asset/processed/pikachu/walking/down_left_2.png",
+            "path": "../../origin_asset/processed/025_pikachu/walking/down_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/pikachu/walking/front_0.png",
+            "path": "../../origin_asset/processed/025_pikachu/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/pikachu/walking/front_1.png",
+            "path": "../../origin_asset/processed/025_pikachu/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_2.png",
-            "path": "../../origin_asset/processed/pikachu/walking/front_2.png",
+            "path": "../../origin_asset/processed/025_pikachu/walking/front_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/pikachu/walking/left_0.png",
+            "path": "../../origin_asset/processed/025_pikachu/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/pikachu/walking/left_1.png",
+            "path": "../../origin_asset/processed/025_pikachu/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_2.png",
-            "path": "../../origin_asset/processed/pikachu/walking/left_2.png",
+            "path": "../../origin_asset/processed/025_pikachu/walking/left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/pikachu/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/025_pikachu/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/pikachu/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/025_pikachu/walking/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_2.png",
-            "path": "../../origin_asset/processed/pikachu/walking/up_left_2.png",
+            "path": "../../origin_asset/processed/025_pikachu/walking/up_left_2.png",
             "width": 64,
             "height": 64
           }
@@ -1594,13 +1594,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/pikachu/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/025_pikachu/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/pikachu/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/025_pikachu/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -1615,7 +1615,7 @@ window.STICKMON_SPRITES = {
       "en": "Raichu",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/raichu/idle/front_0.png",
+        "path": "../../origin_asset/processed/026_raichu/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -1623,49 +1623,49 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/raichu/idle/back_0.png",
+            "path": "../../origin_asset/processed/026_raichu/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/raichu/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/026_raichu/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_0.png",
-            "path": "../../origin_asset/processed/raichu/idle/down_right_0.png",
+            "path": "../../origin_asset/processed/026_raichu/idle/down_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/raichu/idle/front_0.png",
+            "path": "../../origin_asset/processed/026_raichu/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/raichu/idle/left_0.png",
+            "path": "../../origin_asset/processed/026_raichu/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_0.png",
-            "path": "../../origin_asset/processed/raichu/idle/right_0.png",
+            "path": "../../origin_asset/processed/026_raichu/idle/right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/raichu/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/026_raichu/idle/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_0.png",
-            "path": "../../origin_asset/processed/raichu/idle/up_right_0.png",
+            "path": "../../origin_asset/processed/026_raichu/idle/up_right_0.png",
             "width": 64,
             "height": 64
           }
@@ -1673,145 +1673,145 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/raichu/walking/back_0.png",
+            "path": "../../origin_asset/processed/026_raichu/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/raichu/walking/back_1.png",
+            "path": "../../origin_asset/processed/026_raichu/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_2.png",
-            "path": "../../origin_asset/processed/raichu/walking/back_2.png",
+            "path": "../../origin_asset/processed/026_raichu/walking/back_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/raichu/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/026_raichu/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/raichu/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/026_raichu/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_2.png",
-            "path": "../../origin_asset/processed/raichu/walking/down_left_2.png",
+            "path": "../../origin_asset/processed/026_raichu/walking/down_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_0.png",
-            "path": "../../origin_asset/processed/raichu/walking/down_right_0.png",
+            "path": "../../origin_asset/processed/026_raichu/walking/down_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_1.png",
-            "path": "../../origin_asset/processed/raichu/walking/down_right_1.png",
+            "path": "../../origin_asset/processed/026_raichu/walking/down_right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_2.png",
-            "path": "../../origin_asset/processed/raichu/walking/down_right_2.png",
+            "path": "../../origin_asset/processed/026_raichu/walking/down_right_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/raichu/walking/front_0.png",
+            "path": "../../origin_asset/processed/026_raichu/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/raichu/walking/front_1.png",
+            "path": "../../origin_asset/processed/026_raichu/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_2.png",
-            "path": "../../origin_asset/processed/raichu/walking/front_2.png",
+            "path": "../../origin_asset/processed/026_raichu/walking/front_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/raichu/walking/left_0.png",
+            "path": "../../origin_asset/processed/026_raichu/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/raichu/walking/left_1.png",
+            "path": "../../origin_asset/processed/026_raichu/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_2.png",
-            "path": "../../origin_asset/processed/raichu/walking/left_2.png",
+            "path": "../../origin_asset/processed/026_raichu/walking/left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_0.png",
-            "path": "../../origin_asset/processed/raichu/walking/right_0.png",
+            "path": "../../origin_asset/processed/026_raichu/walking/right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_1.png",
-            "path": "../../origin_asset/processed/raichu/walking/right_1.png",
+            "path": "../../origin_asset/processed/026_raichu/walking/right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_2.png",
-            "path": "../../origin_asset/processed/raichu/walking/right_2.png",
+            "path": "../../origin_asset/processed/026_raichu/walking/right_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/raichu/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/026_raichu/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/raichu/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/026_raichu/walking/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_2.png",
-            "path": "../../origin_asset/processed/raichu/walking/up_left_2.png",
+            "path": "../../origin_asset/processed/026_raichu/walking/up_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_0.png",
-            "path": "../../origin_asset/processed/raichu/walking/up_right_0.png",
+            "path": "../../origin_asset/processed/026_raichu/walking/up_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_1.png",
-            "path": "../../origin_asset/processed/raichu/walking/up_right_1.png",
+            "path": "../../origin_asset/processed/026_raichu/walking/up_right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_2.png",
-            "path": "../../origin_asset/processed/raichu/walking/up_right_2.png",
+            "path": "../../origin_asset/processed/026_raichu/walking/up_right_2.png",
             "width": 64,
             "height": 64
           }
@@ -1819,13 +1819,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/raichu/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/026_raichu/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/raichu/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/026_raichu/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -1840,7 +1840,7 @@ window.STICKMON_SPRITES = {
       "en": "Gastly",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/gastly/idle/front_0.png",
+        "path": "../../origin_asset/processed/092_gastly/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -1848,31 +1848,31 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/gastly/idle/back_0.png",
+            "path": "../../origin_asset/processed/092_gastly/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/gastly/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/092_gastly/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/gastly/idle/front_0.png",
+            "path": "../../origin_asset/processed/092_gastly/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/gastly/idle/left_0.png",
+            "path": "../../origin_asset/processed/092_gastly/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/gastly/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/092_gastly/idle/up_left_0.png",
             "width": 64,
             "height": 64
           }
@@ -1880,91 +1880,91 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/gastly/walking/back_0.png",
+            "path": "../../origin_asset/processed/092_gastly/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/gastly/walking/back_1.png",
+            "path": "../../origin_asset/processed/092_gastly/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_2.png",
-            "path": "../../origin_asset/processed/gastly/walking/back_2.png",
+            "path": "../../origin_asset/processed/092_gastly/walking/back_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/gastly/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/092_gastly/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/gastly/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/092_gastly/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_2.png",
-            "path": "../../origin_asset/processed/gastly/walking/down_left_2.png",
+            "path": "../../origin_asset/processed/092_gastly/walking/down_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/gastly/walking/front_0.png",
+            "path": "../../origin_asset/processed/092_gastly/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/gastly/walking/front_1.png",
+            "path": "../../origin_asset/processed/092_gastly/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_2.png",
-            "path": "../../origin_asset/processed/gastly/walking/front_2.png",
+            "path": "../../origin_asset/processed/092_gastly/walking/front_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/gastly/walking/left_0.png",
+            "path": "../../origin_asset/processed/092_gastly/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/gastly/walking/left_1.png",
+            "path": "../../origin_asset/processed/092_gastly/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_2.png",
-            "path": "../../origin_asset/processed/gastly/walking/left_2.png",
+            "path": "../../origin_asset/processed/092_gastly/walking/left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/gastly/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/092_gastly/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/gastly/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/092_gastly/walking/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_2.png",
-            "path": "../../origin_asset/processed/gastly/walking/up_left_2.png",
+            "path": "../../origin_asset/processed/092_gastly/walking/up_left_2.png",
             "width": 64,
             "height": 64
           }
@@ -1972,13 +1972,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/gastly/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/092_gastly/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/gastly/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/092_gastly/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -1993,7 +1993,7 @@ window.STICKMON_SPRITES = {
       "en": "Haunter",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/haunter/idle/front_0.png",
+        "path": "../../origin_asset/processed/093_haunter/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -2001,31 +2001,31 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/haunter/idle/back_0.png",
+            "path": "../../origin_asset/processed/093_haunter/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/haunter/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/093_haunter/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/haunter/idle/front_0.png",
+            "path": "../../origin_asset/processed/093_haunter/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/haunter/idle/left_0.png",
+            "path": "../../origin_asset/processed/093_haunter/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/haunter/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/093_haunter/idle/up_left_0.png",
             "width": 64,
             "height": 64
           }
@@ -2033,91 +2033,91 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/haunter/walking/back_0.png",
+            "path": "../../origin_asset/processed/093_haunter/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/haunter/walking/back_1.png",
+            "path": "../../origin_asset/processed/093_haunter/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_2.png",
-            "path": "../../origin_asset/processed/haunter/walking/back_2.png",
+            "path": "../../origin_asset/processed/093_haunter/walking/back_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/haunter/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/093_haunter/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/haunter/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/093_haunter/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_2.png",
-            "path": "../../origin_asset/processed/haunter/walking/down_left_2.png",
+            "path": "../../origin_asset/processed/093_haunter/walking/down_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/haunter/walking/front_0.png",
+            "path": "../../origin_asset/processed/093_haunter/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/haunter/walking/front_1.png",
+            "path": "../../origin_asset/processed/093_haunter/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_2.png",
-            "path": "../../origin_asset/processed/haunter/walking/front_2.png",
+            "path": "../../origin_asset/processed/093_haunter/walking/front_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/haunter/walking/left_0.png",
+            "path": "../../origin_asset/processed/093_haunter/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/haunter/walking/left_1.png",
+            "path": "../../origin_asset/processed/093_haunter/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_2.png",
-            "path": "../../origin_asset/processed/haunter/walking/left_2.png",
+            "path": "../../origin_asset/processed/093_haunter/walking/left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/haunter/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/093_haunter/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/haunter/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/093_haunter/walking/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_2.png",
-            "path": "../../origin_asset/processed/haunter/walking/up_left_2.png",
+            "path": "../../origin_asset/processed/093_haunter/walking/up_left_2.png",
             "width": 64,
             "height": 64
           }
@@ -2125,13 +2125,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/haunter/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/093_haunter/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/haunter/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/093_haunter/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -2146,7 +2146,7 @@ window.STICKMON_SPRITES = {
       "en": "Gengar",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/gengar/idle/front_0.png",
+        "path": "../../origin_asset/processed/094_gengar/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -2154,31 +2154,31 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/gengar/idle/back_0.png",
+            "path": "../../origin_asset/processed/094_gengar/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/gengar/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/094_gengar/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/gengar/idle/front_0.png",
+            "path": "../../origin_asset/processed/094_gengar/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/gengar/idle/left_0.png",
+            "path": "../../origin_asset/processed/094_gengar/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/gengar/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/094_gengar/idle/up_left_0.png",
             "width": 64,
             "height": 64
           }
@@ -2186,91 +2186,91 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/gengar/walking/back_0.png",
+            "path": "../../origin_asset/processed/094_gengar/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/gengar/walking/back_1.png",
+            "path": "../../origin_asset/processed/094_gengar/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_2.png",
-            "path": "../../origin_asset/processed/gengar/walking/back_2.png",
+            "path": "../../origin_asset/processed/094_gengar/walking/back_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/gengar/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/094_gengar/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/gengar/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/094_gengar/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_2.png",
-            "path": "../../origin_asset/processed/gengar/walking/down_left_2.png",
+            "path": "../../origin_asset/processed/094_gengar/walking/down_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/gengar/walking/front_0.png",
+            "path": "../../origin_asset/processed/094_gengar/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/gengar/walking/front_1.png",
+            "path": "../../origin_asset/processed/094_gengar/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_2.png",
-            "path": "../../origin_asset/processed/gengar/walking/front_2.png",
+            "path": "../../origin_asset/processed/094_gengar/walking/front_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/gengar/walking/left_0.png",
+            "path": "../../origin_asset/processed/094_gengar/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/gengar/walking/left_1.png",
+            "path": "../../origin_asset/processed/094_gengar/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_2.png",
-            "path": "../../origin_asset/processed/gengar/walking/left_2.png",
+            "path": "../../origin_asset/processed/094_gengar/walking/left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/gengar/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/094_gengar/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/gengar/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/094_gengar/walking/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_2.png",
-            "path": "../../origin_asset/processed/gengar/walking/up_left_2.png",
+            "path": "../../origin_asset/processed/094_gengar/walking/up_left_2.png",
             "width": 64,
             "height": 64
           }
@@ -2278,13 +2278,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/gengar/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/094_gengar/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/gengar/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/094_gengar/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -2299,7 +2299,7 @@ window.STICKMON_SPRITES = {
       "en": "Scyther",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/scyther/idle/front_0.png",
+        "path": "../../origin_asset/processed/123_scyther/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -2307,31 +2307,31 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/scyther/idle/back_0.png",
+            "path": "../../origin_asset/processed/123_scyther/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/scyther/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/123_scyther/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/scyther/idle/front_0.png",
+            "path": "../../origin_asset/processed/123_scyther/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/scyther/idle/left_0.png",
+            "path": "../../origin_asset/processed/123_scyther/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/scyther/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/123_scyther/idle/up_left_0.png",
             "width": 64,
             "height": 64
           }
@@ -2339,91 +2339,91 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/scyther/walking/back_0.png",
+            "path": "../../origin_asset/processed/123_scyther/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/scyther/walking/back_1.png",
+            "path": "../../origin_asset/processed/123_scyther/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_2.png",
-            "path": "../../origin_asset/processed/scyther/walking/back_2.png",
+            "path": "../../origin_asset/processed/123_scyther/walking/back_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/scyther/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/123_scyther/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/scyther/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/123_scyther/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_2.png",
-            "path": "../../origin_asset/processed/scyther/walking/down_left_2.png",
+            "path": "../../origin_asset/processed/123_scyther/walking/down_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/scyther/walking/front_0.png",
+            "path": "../../origin_asset/processed/123_scyther/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/scyther/walking/front_1.png",
+            "path": "../../origin_asset/processed/123_scyther/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_2.png",
-            "path": "../../origin_asset/processed/scyther/walking/front_2.png",
+            "path": "../../origin_asset/processed/123_scyther/walking/front_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/scyther/walking/left_0.png",
+            "path": "../../origin_asset/processed/123_scyther/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/scyther/walking/left_1.png",
+            "path": "../../origin_asset/processed/123_scyther/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_2.png",
-            "path": "../../origin_asset/processed/scyther/walking/left_2.png",
+            "path": "../../origin_asset/processed/123_scyther/walking/left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/scyther/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/123_scyther/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/scyther/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/123_scyther/walking/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_2.png",
-            "path": "../../origin_asset/processed/scyther/walking/up_left_2.png",
+            "path": "../../origin_asset/processed/123_scyther/walking/up_left_2.png",
             "width": 64,
             "height": 64
           }
@@ -2431,13 +2431,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/scyther/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/123_scyther/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/scyther/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/123_scyther/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -2452,7 +2452,7 @@ window.STICKMON_SPRITES = {
       "en": "Magikarp",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/magikarp/idle/front_0.png",
+        "path": "../../origin_asset/processed/129_magikarp/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -2460,97 +2460,97 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/magikarp/idle/back_0.png",
+            "path": "../../origin_asset/processed/129_magikarp/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/magikarp/idle/back_1.png",
+            "path": "../../origin_asset/processed/129_magikarp/idle/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/magikarp/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/129_magikarp/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/magikarp/idle/down_left_1.png",
+            "path": "../../origin_asset/processed/129_magikarp/idle/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_0.png",
-            "path": "../../origin_asset/processed/magikarp/idle/down_right_0.png",
+            "path": "../../origin_asset/processed/129_magikarp/idle/down_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_1.png",
-            "path": "../../origin_asset/processed/magikarp/idle/down_right_1.png",
+            "path": "../../origin_asset/processed/129_magikarp/idle/down_right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/magikarp/idle/front_0.png",
+            "path": "../../origin_asset/processed/129_magikarp/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/magikarp/idle/front_1.png",
+            "path": "../../origin_asset/processed/129_magikarp/idle/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/magikarp/idle/left_0.png",
+            "path": "../../origin_asset/processed/129_magikarp/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/magikarp/idle/left_1.png",
+            "path": "../../origin_asset/processed/129_magikarp/idle/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_0.png",
-            "path": "../../origin_asset/processed/magikarp/idle/right_0.png",
+            "path": "../../origin_asset/processed/129_magikarp/idle/right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_1.png",
-            "path": "../../origin_asset/processed/magikarp/idle/right_1.png",
+            "path": "../../origin_asset/processed/129_magikarp/idle/right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/magikarp/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/129_magikarp/idle/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/magikarp/idle/up_left_1.png",
+            "path": "../../origin_asset/processed/129_magikarp/idle/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_0.png",
-            "path": "../../origin_asset/processed/magikarp/idle/up_right_0.png",
+            "path": "../../origin_asset/processed/129_magikarp/idle/up_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_1.png",
-            "path": "../../origin_asset/processed/magikarp/idle/up_right_1.png",
+            "path": "../../origin_asset/processed/129_magikarp/idle/up_right_1.png",
             "width": 64,
             "height": 64
           }
@@ -2558,49 +2558,49 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/magikarp/walking/back_0.png",
+            "path": "../../origin_asset/processed/129_magikarp/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/magikarp/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/129_magikarp/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_0.png",
-            "path": "../../origin_asset/processed/magikarp/walking/down_right_0.png",
+            "path": "../../origin_asset/processed/129_magikarp/walking/down_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/magikarp/walking/front_0.png",
+            "path": "../../origin_asset/processed/129_magikarp/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/magikarp/walking/left_0.png",
+            "path": "../../origin_asset/processed/129_magikarp/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_0.png",
-            "path": "../../origin_asset/processed/magikarp/walking/right_0.png",
+            "path": "../../origin_asset/processed/129_magikarp/walking/right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/magikarp/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/129_magikarp/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_0.png",
-            "path": "../../origin_asset/processed/magikarp/walking/up_right_0.png",
+            "path": "../../origin_asset/processed/129_magikarp/walking/up_right_0.png",
             "width": 64,
             "height": 64
           }
@@ -2608,13 +2608,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/magikarp/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/129_magikarp/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/magikarp/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/129_magikarp/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -2629,7 +2629,7 @@ window.STICKMON_SPRITES = {
       "en": "Gyarados",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/gyarados/idle/front_0.png",
+        "path": "../../origin_asset/processed/130_gyarados/idle/front_0.png",
         "width": 88,
         "height": 82
       },
@@ -2637,49 +2637,49 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/gyarados/idle/back_0.png",
+            "path": "../../origin_asset/processed/130_gyarados/idle/back_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/gyarados/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/130_gyarados/idle/down_left_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "down_right_0.png",
-            "path": "../../origin_asset/processed/gyarados/idle/down_right_0.png",
+            "path": "../../origin_asset/processed/130_gyarados/idle/down_right_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/gyarados/idle/front_0.png",
+            "path": "../../origin_asset/processed/130_gyarados/idle/front_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/gyarados/idle/left_0.png",
+            "path": "../../origin_asset/processed/130_gyarados/idle/left_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "right_0.png",
-            "path": "../../origin_asset/processed/gyarados/idle/right_0.png",
+            "path": "../../origin_asset/processed/130_gyarados/idle/right_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/gyarados/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/130_gyarados/idle/up_left_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "up_right_0.png",
-            "path": "../../origin_asset/processed/gyarados/idle/up_right_0.png",
+            "path": "../../origin_asset/processed/130_gyarados/idle/up_right_0.png",
             "width": 88,
             "height": 82
           }
@@ -2687,145 +2687,145 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/gyarados/walking/back_0.png",
+            "path": "../../origin_asset/processed/130_gyarados/walking/back_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/gyarados/walking/back_1.png",
+            "path": "../../origin_asset/processed/130_gyarados/walking/back_1.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "back_2.png",
-            "path": "../../origin_asset/processed/gyarados/walking/back_2.png",
+            "path": "../../origin_asset/processed/130_gyarados/walking/back_2.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/gyarados/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/130_gyarados/walking/down_left_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/gyarados/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/130_gyarados/walking/down_left_1.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "down_left_2.png",
-            "path": "../../origin_asset/processed/gyarados/walking/down_left_2.png",
+            "path": "../../origin_asset/processed/130_gyarados/walking/down_left_2.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "down_right_0.png",
-            "path": "../../origin_asset/processed/gyarados/walking/down_right_0.png",
+            "path": "../../origin_asset/processed/130_gyarados/walking/down_right_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "down_right_1.png",
-            "path": "../../origin_asset/processed/gyarados/walking/down_right_1.png",
+            "path": "../../origin_asset/processed/130_gyarados/walking/down_right_1.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "down_right_2.png",
-            "path": "../../origin_asset/processed/gyarados/walking/down_right_2.png",
+            "path": "../../origin_asset/processed/130_gyarados/walking/down_right_2.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/gyarados/walking/front_0.png",
+            "path": "../../origin_asset/processed/130_gyarados/walking/front_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/gyarados/walking/front_1.png",
+            "path": "../../origin_asset/processed/130_gyarados/walking/front_1.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "front_2.png",
-            "path": "../../origin_asset/processed/gyarados/walking/front_2.png",
+            "path": "../../origin_asset/processed/130_gyarados/walking/front_2.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/gyarados/walking/left_0.png",
+            "path": "../../origin_asset/processed/130_gyarados/walking/left_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/gyarados/walking/left_1.png",
+            "path": "../../origin_asset/processed/130_gyarados/walking/left_1.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "left_2.png",
-            "path": "../../origin_asset/processed/gyarados/walking/left_2.png",
+            "path": "../../origin_asset/processed/130_gyarados/walking/left_2.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "right_0.png",
-            "path": "../../origin_asset/processed/gyarados/walking/right_0.png",
+            "path": "../../origin_asset/processed/130_gyarados/walking/right_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "right_1.png",
-            "path": "../../origin_asset/processed/gyarados/walking/right_1.png",
+            "path": "../../origin_asset/processed/130_gyarados/walking/right_1.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "right_2.png",
-            "path": "../../origin_asset/processed/gyarados/walking/right_2.png",
+            "path": "../../origin_asset/processed/130_gyarados/walking/right_2.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/gyarados/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/130_gyarados/walking/up_left_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/gyarados/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/130_gyarados/walking/up_left_1.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "up_left_2.png",
-            "path": "../../origin_asset/processed/gyarados/walking/up_left_2.png",
+            "path": "../../origin_asset/processed/130_gyarados/walking/up_left_2.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "up_right_0.png",
-            "path": "../../origin_asset/processed/gyarados/walking/up_right_0.png",
+            "path": "../../origin_asset/processed/130_gyarados/walking/up_right_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "up_right_1.png",
-            "path": "../../origin_asset/processed/gyarados/walking/up_right_1.png",
+            "path": "../../origin_asset/processed/130_gyarados/walking/up_right_1.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "up_right_2.png",
-            "path": "../../origin_asset/processed/gyarados/walking/up_right_2.png",
+            "path": "../../origin_asset/processed/130_gyarados/walking/up_right_2.png",
             "width": 88,
             "height": 82
           }
@@ -2833,13 +2833,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/gyarados/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/130_gyarados/sleeping/frame_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/gyarados/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/130_gyarados/sleeping/frame_1.png",
             "width": 88,
             "height": 82
           }
@@ -2854,7 +2854,7 @@ window.STICKMON_SPRITES = {
       "en": "Eevee",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/eevee/idle/front_0.png",
+        "path": "../../origin_asset/processed/133_eevee/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -2862,97 +2862,97 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/eevee/idle/back_0.png",
+            "path": "../../origin_asset/processed/133_eevee/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/eevee/idle/back_1.png",
+            "path": "../../origin_asset/processed/133_eevee/idle/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/eevee/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/133_eevee/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/eevee/idle/down_left_1.png",
+            "path": "../../origin_asset/processed/133_eevee/idle/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_0.png",
-            "path": "../../origin_asset/processed/eevee/idle/down_right_0.png",
+            "path": "../../origin_asset/processed/133_eevee/idle/down_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_1.png",
-            "path": "../../origin_asset/processed/eevee/idle/down_right_1.png",
+            "path": "../../origin_asset/processed/133_eevee/idle/down_right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/eevee/idle/front_0.png",
+            "path": "../../origin_asset/processed/133_eevee/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/eevee/idle/front_1.png",
+            "path": "../../origin_asset/processed/133_eevee/idle/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/eevee/idle/left_0.png",
+            "path": "../../origin_asset/processed/133_eevee/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/eevee/idle/left_1.png",
+            "path": "../../origin_asset/processed/133_eevee/idle/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_0.png",
-            "path": "../../origin_asset/processed/eevee/idle/right_0.png",
+            "path": "../../origin_asset/processed/133_eevee/idle/right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_1.png",
-            "path": "../../origin_asset/processed/eevee/idle/right_1.png",
+            "path": "../../origin_asset/processed/133_eevee/idle/right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/eevee/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/133_eevee/idle/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/eevee/idle/up_left_1.png",
+            "path": "../../origin_asset/processed/133_eevee/idle/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_0.png",
-            "path": "../../origin_asset/processed/eevee/idle/up_right_0.png",
+            "path": "../../origin_asset/processed/133_eevee/idle/up_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_1.png",
-            "path": "../../origin_asset/processed/eevee/idle/up_right_1.png",
+            "path": "../../origin_asset/processed/133_eevee/idle/up_right_1.png",
             "width": 64,
             "height": 64
           }
@@ -2960,145 +2960,145 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/eevee/walking/back_0.png",
+            "path": "../../origin_asset/processed/133_eevee/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/eevee/walking/back_1.png",
+            "path": "../../origin_asset/processed/133_eevee/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_2.png",
-            "path": "../../origin_asset/processed/eevee/walking/back_2.png",
+            "path": "../../origin_asset/processed/133_eevee/walking/back_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/eevee/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/133_eevee/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/eevee/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/133_eevee/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_2.png",
-            "path": "../../origin_asset/processed/eevee/walking/down_left_2.png",
+            "path": "../../origin_asset/processed/133_eevee/walking/down_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_0.png",
-            "path": "../../origin_asset/processed/eevee/walking/down_right_0.png",
+            "path": "../../origin_asset/processed/133_eevee/walking/down_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_1.png",
-            "path": "../../origin_asset/processed/eevee/walking/down_right_1.png",
+            "path": "../../origin_asset/processed/133_eevee/walking/down_right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_2.png",
-            "path": "../../origin_asset/processed/eevee/walking/down_right_2.png",
+            "path": "../../origin_asset/processed/133_eevee/walking/down_right_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/eevee/walking/front_0.png",
+            "path": "../../origin_asset/processed/133_eevee/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/eevee/walking/front_1.png",
+            "path": "../../origin_asset/processed/133_eevee/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_2.png",
-            "path": "../../origin_asset/processed/eevee/walking/front_2.png",
+            "path": "../../origin_asset/processed/133_eevee/walking/front_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/eevee/walking/left_0.png",
+            "path": "../../origin_asset/processed/133_eevee/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/eevee/walking/left_1.png",
+            "path": "../../origin_asset/processed/133_eevee/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_2.png",
-            "path": "../../origin_asset/processed/eevee/walking/left_2.png",
+            "path": "../../origin_asset/processed/133_eevee/walking/left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_0.png",
-            "path": "../../origin_asset/processed/eevee/walking/right_0.png",
+            "path": "../../origin_asset/processed/133_eevee/walking/right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_1.png",
-            "path": "../../origin_asset/processed/eevee/walking/right_1.png",
+            "path": "../../origin_asset/processed/133_eevee/walking/right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_2.png",
-            "path": "../../origin_asset/processed/eevee/walking/right_2.png",
+            "path": "../../origin_asset/processed/133_eevee/walking/right_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/eevee/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/133_eevee/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/eevee/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/133_eevee/walking/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_2.png",
-            "path": "../../origin_asset/processed/eevee/walking/up_left_2.png",
+            "path": "../../origin_asset/processed/133_eevee/walking/up_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_0.png",
-            "path": "../../origin_asset/processed/eevee/walking/up_right_0.png",
+            "path": "../../origin_asset/processed/133_eevee/walking/up_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_1.png",
-            "path": "../../origin_asset/processed/eevee/walking/up_right_1.png",
+            "path": "../../origin_asset/processed/133_eevee/walking/up_right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_2.png",
-            "path": "../../origin_asset/processed/eevee/walking/up_right_2.png",
+            "path": "../../origin_asset/processed/133_eevee/walking/up_right_2.png",
             "width": 64,
             "height": 64
           }
@@ -3106,13 +3106,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/eevee/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/133_eevee/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/eevee/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/133_eevee/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -3127,7 +3127,7 @@ window.STICKMON_SPRITES = {
       "en": "Vaporeon",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/vaporeon/idle/front_0.png",
+        "path": "../../origin_asset/processed/134_vaporeon/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -3135,49 +3135,49 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/vaporeon/idle/back_0.png",
+            "path": "../../origin_asset/processed/134_vaporeon/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/vaporeon/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/134_vaporeon/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_0.png",
-            "path": "../../origin_asset/processed/vaporeon/idle/down_right_0.png",
+            "path": "../../origin_asset/processed/134_vaporeon/idle/down_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/vaporeon/idle/front_0.png",
+            "path": "../../origin_asset/processed/134_vaporeon/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/vaporeon/idle/left_0.png",
+            "path": "../../origin_asset/processed/134_vaporeon/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_0.png",
-            "path": "../../origin_asset/processed/vaporeon/idle/right_0.png",
+            "path": "../../origin_asset/processed/134_vaporeon/idle/right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/vaporeon/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/134_vaporeon/idle/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_0.png",
-            "path": "../../origin_asset/processed/vaporeon/idle/up_right_0.png",
+            "path": "../../origin_asset/processed/134_vaporeon/idle/up_right_0.png",
             "width": 64,
             "height": 64
           }
@@ -3185,193 +3185,193 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/back_0.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/back_1.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_2.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/back_2.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/back_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_3.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/back_3.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/back_3.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_2.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/down_left_2.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/down_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_3.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/down_left_3.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/down_left_3.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_0.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/down_right_0.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/down_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_1.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/down_right_1.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/down_right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_2.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/down_right_2.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/down_right_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_3.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/down_right_3.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/down_right_3.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/front_0.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/front_1.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_2.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/front_2.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/front_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_3.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/front_3.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/front_3.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/left_0.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/left_1.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_2.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/left_2.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_3.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/left_3.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/left_3.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_0.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/right_0.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_1.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/right_1.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_2.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/right_2.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/right_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_3.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/right_3.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/right_3.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_2.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/up_left_2.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/up_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_3.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/up_left_3.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/up_left_3.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_0.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/up_right_0.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/up_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_1.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/up_right_1.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/up_right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_2.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/up_right_2.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/up_right_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_3.png",
-            "path": "../../origin_asset/processed/vaporeon/walking/up_right_3.png",
+            "path": "../../origin_asset/processed/134_vaporeon/walking/up_right_3.png",
             "width": 64,
             "height": 64
           }
@@ -3379,13 +3379,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/vaporeon/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/134_vaporeon/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/vaporeon/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/134_vaporeon/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -3400,7 +3400,7 @@ window.STICKMON_SPRITES = {
       "en": "Jolteon",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/jolteon/idle/front_0.png",
+        "path": "../../origin_asset/processed/135_jolteon/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -3408,49 +3408,49 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/jolteon/idle/back_0.png",
+            "path": "../../origin_asset/processed/135_jolteon/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/jolteon/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/135_jolteon/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_0.png",
-            "path": "../../origin_asset/processed/jolteon/idle/down_right_0.png",
+            "path": "../../origin_asset/processed/135_jolteon/idle/down_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/jolteon/idle/front_0.png",
+            "path": "../../origin_asset/processed/135_jolteon/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/jolteon/idle/left_0.png",
+            "path": "../../origin_asset/processed/135_jolteon/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_0.png",
-            "path": "../../origin_asset/processed/jolteon/idle/right_0.png",
+            "path": "../../origin_asset/processed/135_jolteon/idle/right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/jolteon/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/135_jolteon/idle/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_0.png",
-            "path": "../../origin_asset/processed/jolteon/idle/up_right_0.png",
+            "path": "../../origin_asset/processed/135_jolteon/idle/up_right_0.png",
             "width": 64,
             "height": 64
           }
@@ -3458,193 +3458,193 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/jolteon/walking/back_0.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/jolteon/walking/back_1.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_2.png",
-            "path": "../../origin_asset/processed/jolteon/walking/back_2.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/back_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_3.png",
-            "path": "../../origin_asset/processed/jolteon/walking/back_3.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/back_3.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/jolteon/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/jolteon/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_2.png",
-            "path": "../../origin_asset/processed/jolteon/walking/down_left_2.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/down_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_3.png",
-            "path": "../../origin_asset/processed/jolteon/walking/down_left_3.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/down_left_3.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_0.png",
-            "path": "../../origin_asset/processed/jolteon/walking/down_right_0.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/down_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_1.png",
-            "path": "../../origin_asset/processed/jolteon/walking/down_right_1.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/down_right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_2.png",
-            "path": "../../origin_asset/processed/jolteon/walking/down_right_2.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/down_right_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_3.png",
-            "path": "../../origin_asset/processed/jolteon/walking/down_right_3.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/down_right_3.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/jolteon/walking/front_0.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/jolteon/walking/front_1.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_2.png",
-            "path": "../../origin_asset/processed/jolteon/walking/front_2.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/front_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_3.png",
-            "path": "../../origin_asset/processed/jolteon/walking/front_3.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/front_3.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/jolteon/walking/left_0.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/jolteon/walking/left_1.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_2.png",
-            "path": "../../origin_asset/processed/jolteon/walking/left_2.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_3.png",
-            "path": "../../origin_asset/processed/jolteon/walking/left_3.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/left_3.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_0.png",
-            "path": "../../origin_asset/processed/jolteon/walking/right_0.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_1.png",
-            "path": "../../origin_asset/processed/jolteon/walking/right_1.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_2.png",
-            "path": "../../origin_asset/processed/jolteon/walking/right_2.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/right_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_3.png",
-            "path": "../../origin_asset/processed/jolteon/walking/right_3.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/right_3.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/jolteon/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/jolteon/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_2.png",
-            "path": "../../origin_asset/processed/jolteon/walking/up_left_2.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/up_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_3.png",
-            "path": "../../origin_asset/processed/jolteon/walking/up_left_3.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/up_left_3.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_0.png",
-            "path": "../../origin_asset/processed/jolteon/walking/up_right_0.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/up_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_1.png",
-            "path": "../../origin_asset/processed/jolteon/walking/up_right_1.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/up_right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_2.png",
-            "path": "../../origin_asset/processed/jolteon/walking/up_right_2.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/up_right_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_3.png",
-            "path": "../../origin_asset/processed/jolteon/walking/up_right_3.png",
+            "path": "../../origin_asset/processed/135_jolteon/walking/up_right_3.png",
             "width": 64,
             "height": 64
           }
@@ -3652,13 +3652,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/jolteon/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/135_jolteon/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/jolteon/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/135_jolteon/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -3673,7 +3673,7 @@ window.STICKMON_SPRITES = {
       "en": "Flareon",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/flareon/idle/front_0.png",
+        "path": "../../origin_asset/processed/136_flareon/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -3681,145 +3681,145 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/flareon/idle/back_0.png",
+            "path": "../../origin_asset/processed/136_flareon/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/flareon/idle/back_1.png",
+            "path": "../../origin_asset/processed/136_flareon/idle/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_2.png",
-            "path": "../../origin_asset/processed/flareon/idle/back_2.png",
+            "path": "../../origin_asset/processed/136_flareon/idle/back_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/flareon/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/136_flareon/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/flareon/idle/down_left_1.png",
+            "path": "../../origin_asset/processed/136_flareon/idle/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_2.png",
-            "path": "../../origin_asset/processed/flareon/idle/down_left_2.png",
+            "path": "../../origin_asset/processed/136_flareon/idle/down_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_0.png",
-            "path": "../../origin_asset/processed/flareon/idle/down_right_0.png",
+            "path": "../../origin_asset/processed/136_flareon/idle/down_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_1.png",
-            "path": "../../origin_asset/processed/flareon/idle/down_right_1.png",
+            "path": "../../origin_asset/processed/136_flareon/idle/down_right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_2.png",
-            "path": "../../origin_asset/processed/flareon/idle/down_right_2.png",
+            "path": "../../origin_asset/processed/136_flareon/idle/down_right_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/flareon/idle/front_0.png",
+            "path": "../../origin_asset/processed/136_flareon/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/flareon/idle/front_1.png",
+            "path": "../../origin_asset/processed/136_flareon/idle/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_2.png",
-            "path": "../../origin_asset/processed/flareon/idle/front_2.png",
+            "path": "../../origin_asset/processed/136_flareon/idle/front_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/flareon/idle/left_0.png",
+            "path": "../../origin_asset/processed/136_flareon/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/flareon/idle/left_1.png",
+            "path": "../../origin_asset/processed/136_flareon/idle/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_2.png",
-            "path": "../../origin_asset/processed/flareon/idle/left_2.png",
+            "path": "../../origin_asset/processed/136_flareon/idle/left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_0.png",
-            "path": "../../origin_asset/processed/flareon/idle/right_0.png",
+            "path": "../../origin_asset/processed/136_flareon/idle/right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_1.png",
-            "path": "../../origin_asset/processed/flareon/idle/right_1.png",
+            "path": "../../origin_asset/processed/136_flareon/idle/right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_2.png",
-            "path": "../../origin_asset/processed/flareon/idle/right_2.png",
+            "path": "../../origin_asset/processed/136_flareon/idle/right_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/flareon/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/136_flareon/idle/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/flareon/idle/up_left_1.png",
+            "path": "../../origin_asset/processed/136_flareon/idle/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_2.png",
-            "path": "../../origin_asset/processed/flareon/idle/up_left_2.png",
+            "path": "../../origin_asset/processed/136_flareon/idle/up_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_0.png",
-            "path": "../../origin_asset/processed/flareon/idle/up_right_0.png",
+            "path": "../../origin_asset/processed/136_flareon/idle/up_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_1.png",
-            "path": "../../origin_asset/processed/flareon/idle/up_right_1.png",
+            "path": "../../origin_asset/processed/136_flareon/idle/up_right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_2.png",
-            "path": "../../origin_asset/processed/flareon/idle/up_right_2.png",
+            "path": "../../origin_asset/processed/136_flareon/idle/up_right_2.png",
             "width": 64,
             "height": 64
           }
@@ -3827,193 +3827,193 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/flareon/walking/back_0.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/flareon/walking/back_1.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_2.png",
-            "path": "../../origin_asset/processed/flareon/walking/back_2.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/back_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_3.png",
-            "path": "../../origin_asset/processed/flareon/walking/back_3.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/back_3.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/flareon/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/flareon/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_2.png",
-            "path": "../../origin_asset/processed/flareon/walking/down_left_2.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/down_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_3.png",
-            "path": "../../origin_asset/processed/flareon/walking/down_left_3.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/down_left_3.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_0.png",
-            "path": "../../origin_asset/processed/flareon/walking/down_right_0.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/down_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_1.png",
-            "path": "../../origin_asset/processed/flareon/walking/down_right_1.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/down_right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_2.png",
-            "path": "../../origin_asset/processed/flareon/walking/down_right_2.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/down_right_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_3.png",
-            "path": "../../origin_asset/processed/flareon/walking/down_right_3.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/down_right_3.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/flareon/walking/front_0.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/flareon/walking/front_1.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_2.png",
-            "path": "../../origin_asset/processed/flareon/walking/front_2.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/front_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_3.png",
-            "path": "../../origin_asset/processed/flareon/walking/front_3.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/front_3.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/flareon/walking/left_0.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/flareon/walking/left_1.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_2.png",
-            "path": "../../origin_asset/processed/flareon/walking/left_2.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_3.png",
-            "path": "../../origin_asset/processed/flareon/walking/left_3.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/left_3.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_0.png",
-            "path": "../../origin_asset/processed/flareon/walking/right_0.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_1.png",
-            "path": "../../origin_asset/processed/flareon/walking/right_1.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_2.png",
-            "path": "../../origin_asset/processed/flareon/walking/right_2.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/right_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_3.png",
-            "path": "../../origin_asset/processed/flareon/walking/right_3.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/right_3.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/flareon/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/flareon/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_2.png",
-            "path": "../../origin_asset/processed/flareon/walking/up_left_2.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/up_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_3.png",
-            "path": "../../origin_asset/processed/flareon/walking/up_left_3.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/up_left_3.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_0.png",
-            "path": "../../origin_asset/processed/flareon/walking/up_right_0.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/up_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_1.png",
-            "path": "../../origin_asset/processed/flareon/walking/up_right_1.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/up_right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_2.png",
-            "path": "../../origin_asset/processed/flareon/walking/up_right_2.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/up_right_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_3.png",
-            "path": "../../origin_asset/processed/flareon/walking/up_right_3.png",
+            "path": "../../origin_asset/processed/136_flareon/walking/up_right_3.png",
             "width": 64,
             "height": 64
           }
@@ -4021,13 +4021,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/flareon/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/136_flareon/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/flareon/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/136_flareon/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -4042,7 +4042,7 @@ window.STICKMON_SPRITES = {
       "en": "Snorlax",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/snorlax/idle/front_0.png",
+        "path": "../../origin_asset/processed/143_snorlax/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -4050,31 +4050,31 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/snorlax/idle/back_0.png",
+            "path": "../../origin_asset/processed/143_snorlax/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/snorlax/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/143_snorlax/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/snorlax/idle/front_0.png",
+            "path": "../../origin_asset/processed/143_snorlax/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/snorlax/idle/left_0.png",
+            "path": "../../origin_asset/processed/143_snorlax/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/snorlax/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/143_snorlax/idle/up_left_0.png",
             "width": 64,
             "height": 64
           }
@@ -4082,91 +4082,91 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/snorlax/walking/back_0.png",
+            "path": "../../origin_asset/processed/143_snorlax/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/snorlax/walking/back_1.png",
+            "path": "../../origin_asset/processed/143_snorlax/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_2.png",
-            "path": "../../origin_asset/processed/snorlax/walking/back_2.png",
+            "path": "../../origin_asset/processed/143_snorlax/walking/back_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/snorlax/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/143_snorlax/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/snorlax/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/143_snorlax/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_2.png",
-            "path": "../../origin_asset/processed/snorlax/walking/down_left_2.png",
+            "path": "../../origin_asset/processed/143_snorlax/walking/down_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/snorlax/walking/front_0.png",
+            "path": "../../origin_asset/processed/143_snorlax/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/snorlax/walking/front_1.png",
+            "path": "../../origin_asset/processed/143_snorlax/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_2.png",
-            "path": "../../origin_asset/processed/snorlax/walking/front_2.png",
+            "path": "../../origin_asset/processed/143_snorlax/walking/front_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/snorlax/walking/left_0.png",
+            "path": "../../origin_asset/processed/143_snorlax/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/snorlax/walking/left_1.png",
+            "path": "../../origin_asset/processed/143_snorlax/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_2.png",
-            "path": "../../origin_asset/processed/snorlax/walking/left_2.png",
+            "path": "../../origin_asset/processed/143_snorlax/walking/left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/snorlax/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/143_snorlax/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/snorlax/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/143_snorlax/walking/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_2.png",
-            "path": "../../origin_asset/processed/snorlax/walking/up_left_2.png",
+            "path": "../../origin_asset/processed/143_snorlax/walking/up_left_2.png",
             "width": 64,
             "height": 64
           }
@@ -4174,13 +4174,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/snorlax/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/143_snorlax/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/snorlax/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/143_snorlax/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -4195,7 +4195,7 @@ window.STICKMON_SPRITES = {
       "en": "Dratini",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/dratini/idle/front_0.png",
+        "path": "../../origin_asset/processed/147_dratini/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -4203,49 +4203,49 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/dratini/idle/back_0.png",
+            "path": "../../origin_asset/processed/147_dratini/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/dratini/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/147_dratini/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_0.png",
-            "path": "../../origin_asset/processed/dratini/idle/down_right_0.png",
+            "path": "../../origin_asset/processed/147_dratini/idle/down_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/dratini/idle/front_0.png",
+            "path": "../../origin_asset/processed/147_dratini/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/dratini/idle/left_0.png",
+            "path": "../../origin_asset/processed/147_dratini/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_0.png",
-            "path": "../../origin_asset/processed/dratini/idle/right_0.png",
+            "path": "../../origin_asset/processed/147_dratini/idle/right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/dratini/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/147_dratini/idle/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_0.png",
-            "path": "../../origin_asset/processed/dratini/idle/up_right_0.png",
+            "path": "../../origin_asset/processed/147_dratini/idle/up_right_0.png",
             "width": 64,
             "height": 64
           }
@@ -4253,145 +4253,145 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/dratini/walking/back_0.png",
+            "path": "../../origin_asset/processed/147_dratini/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/dratini/walking/back_1.png",
+            "path": "../../origin_asset/processed/147_dratini/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_2.png",
-            "path": "../../origin_asset/processed/dratini/walking/back_2.png",
+            "path": "../../origin_asset/processed/147_dratini/walking/back_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/dratini/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/147_dratini/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/dratini/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/147_dratini/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_2.png",
-            "path": "../../origin_asset/processed/dratini/walking/down_left_2.png",
+            "path": "../../origin_asset/processed/147_dratini/walking/down_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_0.png",
-            "path": "../../origin_asset/processed/dratini/walking/down_right_0.png",
+            "path": "../../origin_asset/processed/147_dratini/walking/down_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_1.png",
-            "path": "../../origin_asset/processed/dratini/walking/down_right_1.png",
+            "path": "../../origin_asset/processed/147_dratini/walking/down_right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_2.png",
-            "path": "../../origin_asset/processed/dratini/walking/down_right_2.png",
+            "path": "../../origin_asset/processed/147_dratini/walking/down_right_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/dratini/walking/front_0.png",
+            "path": "../../origin_asset/processed/147_dratini/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/dratini/walking/front_1.png",
+            "path": "../../origin_asset/processed/147_dratini/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_2.png",
-            "path": "../../origin_asset/processed/dratini/walking/front_2.png",
+            "path": "../../origin_asset/processed/147_dratini/walking/front_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/dratini/walking/left_0.png",
+            "path": "../../origin_asset/processed/147_dratini/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/dratini/walking/left_1.png",
+            "path": "../../origin_asset/processed/147_dratini/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_2.png",
-            "path": "../../origin_asset/processed/dratini/walking/left_2.png",
+            "path": "../../origin_asset/processed/147_dratini/walking/left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_0.png",
-            "path": "../../origin_asset/processed/dratini/walking/right_0.png",
+            "path": "../../origin_asset/processed/147_dratini/walking/right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_1.png",
-            "path": "../../origin_asset/processed/dratini/walking/right_1.png",
+            "path": "../../origin_asset/processed/147_dratini/walking/right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_2.png",
-            "path": "../../origin_asset/processed/dratini/walking/right_2.png",
+            "path": "../../origin_asset/processed/147_dratini/walking/right_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/dratini/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/147_dratini/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/dratini/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/147_dratini/walking/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_2.png",
-            "path": "../../origin_asset/processed/dratini/walking/up_left_2.png",
+            "path": "../../origin_asset/processed/147_dratini/walking/up_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_0.png",
-            "path": "../../origin_asset/processed/dratini/walking/up_right_0.png",
+            "path": "../../origin_asset/processed/147_dratini/walking/up_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_1.png",
-            "path": "../../origin_asset/processed/dratini/walking/up_right_1.png",
+            "path": "../../origin_asset/processed/147_dratini/walking/up_right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_2.png",
-            "path": "../../origin_asset/processed/dratini/walking/up_right_2.png",
+            "path": "../../origin_asset/processed/147_dratini/walking/up_right_2.png",
             "width": 64,
             "height": 64
           }
@@ -4399,13 +4399,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/dratini/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/147_dratini/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/dratini/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/147_dratini/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -4420,7 +4420,7 @@ window.STICKMON_SPRITES = {
       "en": "Dragonair",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/dragonair/idle/front_0.png",
+        "path": "../../origin_asset/processed/148_dragonair/idle/front_0.png",
         "width": 88,
         "height": 82
       },
@@ -4428,97 +4428,97 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/dragonair/idle/back_0.png",
+            "path": "../../origin_asset/processed/148_dragonair/idle/back_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/dragonair/idle/back_1.png",
+            "path": "../../origin_asset/processed/148_dragonair/idle/back_1.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/dragonair/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/148_dragonair/idle/down_left_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/dragonair/idle/down_left_1.png",
+            "path": "../../origin_asset/processed/148_dragonair/idle/down_left_1.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "down_right_0.png",
-            "path": "../../origin_asset/processed/dragonair/idle/down_right_0.png",
+            "path": "../../origin_asset/processed/148_dragonair/idle/down_right_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "down_right_1.png",
-            "path": "../../origin_asset/processed/dragonair/idle/down_right_1.png",
+            "path": "../../origin_asset/processed/148_dragonair/idle/down_right_1.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/dragonair/idle/front_0.png",
+            "path": "../../origin_asset/processed/148_dragonair/idle/front_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/dragonair/idle/front_1.png",
+            "path": "../../origin_asset/processed/148_dragonair/idle/front_1.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/dragonair/idle/left_0.png",
+            "path": "../../origin_asset/processed/148_dragonair/idle/left_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/dragonair/idle/left_1.png",
+            "path": "../../origin_asset/processed/148_dragonair/idle/left_1.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "right_0.png",
-            "path": "../../origin_asset/processed/dragonair/idle/right_0.png",
+            "path": "../../origin_asset/processed/148_dragonair/idle/right_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "right_1.png",
-            "path": "../../origin_asset/processed/dragonair/idle/right_1.png",
+            "path": "../../origin_asset/processed/148_dragonair/idle/right_1.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/dragonair/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/148_dragonair/idle/up_left_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/dragonair/idle/up_left_1.png",
+            "path": "../../origin_asset/processed/148_dragonair/idle/up_left_1.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "up_right_0.png",
-            "path": "../../origin_asset/processed/dragonair/idle/up_right_0.png",
+            "path": "../../origin_asset/processed/148_dragonair/idle/up_right_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "up_right_1.png",
-            "path": "../../origin_asset/processed/dragonair/idle/up_right_1.png",
+            "path": "../../origin_asset/processed/148_dragonair/idle/up_right_1.png",
             "width": 88,
             "height": 82
           }
@@ -4526,49 +4526,49 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/dragonair/walking/back_0.png",
+            "path": "../../origin_asset/processed/148_dragonair/walking/back_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/dragonair/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/148_dragonair/walking/down_left_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "down_right_0.png",
-            "path": "../../origin_asset/processed/dragonair/walking/down_right_0.png",
+            "path": "../../origin_asset/processed/148_dragonair/walking/down_right_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/dragonair/walking/front_0.png",
+            "path": "../../origin_asset/processed/148_dragonair/walking/front_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/dragonair/walking/left_0.png",
+            "path": "../../origin_asset/processed/148_dragonair/walking/left_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "right_0.png",
-            "path": "../../origin_asset/processed/dragonair/walking/right_0.png",
+            "path": "../../origin_asset/processed/148_dragonair/walking/right_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/dragonair/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/148_dragonair/walking/up_left_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "up_right_0.png",
-            "path": "../../origin_asset/processed/dragonair/walking/up_right_0.png",
+            "path": "../../origin_asset/processed/148_dragonair/walking/up_right_0.png",
             "width": 88,
             "height": 82
           }
@@ -4576,13 +4576,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/dragonair/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/148_dragonair/sleeping/frame_0.png",
             "width": 88,
             "height": 82
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/dragonair/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/148_dragonair/sleeping/frame_1.png",
             "width": 88,
             "height": 82
           }
@@ -4597,7 +4597,7 @@ window.STICKMON_SPRITES = {
       "en": "Dragonite",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/dragonite/idle/front_0.png",
+        "path": "../../origin_asset/processed/149_dragonite/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -4605,49 +4605,49 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/dragonite/idle/back_0.png",
+            "path": "../../origin_asset/processed/149_dragonite/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/dragonite/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/149_dragonite/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_0.png",
-            "path": "../../origin_asset/processed/dragonite/idle/down_right_0.png",
+            "path": "../../origin_asset/processed/149_dragonite/idle/down_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/dragonite/idle/front_0.png",
+            "path": "../../origin_asset/processed/149_dragonite/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/dragonite/idle/left_0.png",
+            "path": "../../origin_asset/processed/149_dragonite/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_0.png",
-            "path": "../../origin_asset/processed/dragonite/idle/right_0.png",
+            "path": "../../origin_asset/processed/149_dragonite/idle/right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/dragonite/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/149_dragonite/idle/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_0.png",
-            "path": "../../origin_asset/processed/dragonite/idle/up_right_0.png",
+            "path": "../../origin_asset/processed/149_dragonite/idle/up_right_0.png",
             "width": 64,
             "height": 64
           }
@@ -4655,97 +4655,97 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/dragonite/walking/back_0.png",
+            "path": "../../origin_asset/processed/149_dragonite/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/dragonite/walking/back_1.png",
+            "path": "../../origin_asset/processed/149_dragonite/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/dragonite/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/149_dragonite/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/dragonite/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/149_dragonite/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_0.png",
-            "path": "../../origin_asset/processed/dragonite/walking/down_right_0.png",
+            "path": "../../origin_asset/processed/149_dragonite/walking/down_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_1.png",
-            "path": "../../origin_asset/processed/dragonite/walking/down_right_1.png",
+            "path": "../../origin_asset/processed/149_dragonite/walking/down_right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/dragonite/walking/front_0.png",
+            "path": "../../origin_asset/processed/149_dragonite/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/dragonite/walking/front_1.png",
+            "path": "../../origin_asset/processed/149_dragonite/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/dragonite/walking/left_0.png",
+            "path": "../../origin_asset/processed/149_dragonite/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/dragonite/walking/left_1.png",
+            "path": "../../origin_asset/processed/149_dragonite/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_0.png",
-            "path": "../../origin_asset/processed/dragonite/walking/right_0.png",
+            "path": "../../origin_asset/processed/149_dragonite/walking/right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_1.png",
-            "path": "../../origin_asset/processed/dragonite/walking/right_1.png",
+            "path": "../../origin_asset/processed/149_dragonite/walking/right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/dragonite/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/149_dragonite/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/dragonite/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/149_dragonite/walking/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_0.png",
-            "path": "../../origin_asset/processed/dragonite/walking/up_right_0.png",
+            "path": "../../origin_asset/processed/149_dragonite/walking/up_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_1.png",
-            "path": "../../origin_asset/processed/dragonite/walking/up_right_1.png",
+            "path": "../../origin_asset/processed/149_dragonite/walking/up_right_1.png",
             "width": 64,
             "height": 64
           }
@@ -4753,13 +4753,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/dragonite/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/149_dragonite/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/dragonite/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/149_dragonite/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -4774,7 +4774,7 @@ window.STICKMON_SPRITES = {
       "en": "Mew",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/mew/idle/front_0.png",
+        "path": "../../origin_asset/processed/151_mew/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -4782,145 +4782,145 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/mew/idle/back_0.png",
+            "path": "../../origin_asset/processed/151_mew/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/mew/idle/back_1.png",
+            "path": "../../origin_asset/processed/151_mew/idle/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_2.png",
-            "path": "../../origin_asset/processed/mew/idle/back_2.png",
+            "path": "../../origin_asset/processed/151_mew/idle/back_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/mew/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/151_mew/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/mew/idle/down_left_1.png",
+            "path": "../../origin_asset/processed/151_mew/idle/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_2.png",
-            "path": "../../origin_asset/processed/mew/idle/down_left_2.png",
+            "path": "../../origin_asset/processed/151_mew/idle/down_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_0.png",
-            "path": "../../origin_asset/processed/mew/idle/down_right_0.png",
+            "path": "../../origin_asset/processed/151_mew/idle/down_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_1.png",
-            "path": "../../origin_asset/processed/mew/idle/down_right_1.png",
+            "path": "../../origin_asset/processed/151_mew/idle/down_right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_2.png",
-            "path": "../../origin_asset/processed/mew/idle/down_right_2.png",
+            "path": "../../origin_asset/processed/151_mew/idle/down_right_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/mew/idle/front_0.png",
+            "path": "../../origin_asset/processed/151_mew/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/mew/idle/front_1.png",
+            "path": "../../origin_asset/processed/151_mew/idle/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_2.png",
-            "path": "../../origin_asset/processed/mew/idle/front_2.png",
+            "path": "../../origin_asset/processed/151_mew/idle/front_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/mew/idle/left_0.png",
+            "path": "../../origin_asset/processed/151_mew/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/mew/idle/left_1.png",
+            "path": "../../origin_asset/processed/151_mew/idle/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_2.png",
-            "path": "../../origin_asset/processed/mew/idle/left_2.png",
+            "path": "../../origin_asset/processed/151_mew/idle/left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_0.png",
-            "path": "../../origin_asset/processed/mew/idle/right_0.png",
+            "path": "../../origin_asset/processed/151_mew/idle/right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_1.png",
-            "path": "../../origin_asset/processed/mew/idle/right_1.png",
+            "path": "../../origin_asset/processed/151_mew/idle/right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_2.png",
-            "path": "../../origin_asset/processed/mew/idle/right_2.png",
+            "path": "../../origin_asset/processed/151_mew/idle/right_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/mew/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/151_mew/idle/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/mew/idle/up_left_1.png",
+            "path": "../../origin_asset/processed/151_mew/idle/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_2.png",
-            "path": "../../origin_asset/processed/mew/idle/up_left_2.png",
+            "path": "../../origin_asset/processed/151_mew/idle/up_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_0.png",
-            "path": "../../origin_asset/processed/mew/idle/up_right_0.png",
+            "path": "../../origin_asset/processed/151_mew/idle/up_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_1.png",
-            "path": "../../origin_asset/processed/mew/idle/up_right_1.png",
+            "path": "../../origin_asset/processed/151_mew/idle/up_right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_2.png",
-            "path": "../../origin_asset/processed/mew/idle/up_right_2.png",
+            "path": "../../origin_asset/processed/151_mew/idle/up_right_2.png",
             "width": 64,
             "height": 64
           }
@@ -4928,97 +4928,97 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/mew/walking/back_0.png",
+            "path": "../../origin_asset/processed/151_mew/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/mew/walking/back_1.png",
+            "path": "../../origin_asset/processed/151_mew/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/mew/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/151_mew/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/mew/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/151_mew/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_0.png",
-            "path": "../../origin_asset/processed/mew/walking/down_right_0.png",
+            "path": "../../origin_asset/processed/151_mew/walking/down_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_right_1.png",
-            "path": "../../origin_asset/processed/mew/walking/down_right_1.png",
+            "path": "../../origin_asset/processed/151_mew/walking/down_right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/mew/walking/front_0.png",
+            "path": "../../origin_asset/processed/151_mew/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/mew/walking/front_1.png",
+            "path": "../../origin_asset/processed/151_mew/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/mew/walking/left_0.png",
+            "path": "../../origin_asset/processed/151_mew/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/mew/walking/left_1.png",
+            "path": "../../origin_asset/processed/151_mew/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_0.png",
-            "path": "../../origin_asset/processed/mew/walking/right_0.png",
+            "path": "../../origin_asset/processed/151_mew/walking/right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "right_1.png",
-            "path": "../../origin_asset/processed/mew/walking/right_1.png",
+            "path": "../../origin_asset/processed/151_mew/walking/right_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/mew/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/151_mew/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/mew/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/151_mew/walking/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_0.png",
-            "path": "../../origin_asset/processed/mew/walking/up_right_0.png",
+            "path": "../../origin_asset/processed/151_mew/walking/up_right_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_right_1.png",
-            "path": "../../origin_asset/processed/mew/walking/up_right_1.png",
+            "path": "../../origin_asset/processed/151_mew/walking/up_right_1.png",
             "width": 64,
             "height": 64
           }
@@ -5026,13 +5026,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/mew/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/151_mew/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/mew/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/151_mew/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -5047,7 +5047,7 @@ window.STICKMON_SPRITES = {
       "en": "Pichu",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/pichu/idle/front_0.png",
+        "path": "../../origin_asset/processed/172_pichu/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -5055,31 +5055,31 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/pichu/idle/back_0.png",
+            "path": "../../origin_asset/processed/172_pichu/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/pichu/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/172_pichu/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/pichu/idle/front_0.png",
+            "path": "../../origin_asset/processed/172_pichu/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/pichu/idle/left_0.png",
+            "path": "../../origin_asset/processed/172_pichu/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/pichu/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/172_pichu/idle/up_left_0.png",
             "width": 64,
             "height": 64
           }
@@ -5087,91 +5087,91 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/pichu/walking/back_0.png",
+            "path": "../../origin_asset/processed/172_pichu/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/pichu/walking/back_1.png",
+            "path": "../../origin_asset/processed/172_pichu/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_2.png",
-            "path": "../../origin_asset/processed/pichu/walking/back_2.png",
+            "path": "../../origin_asset/processed/172_pichu/walking/back_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/pichu/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/172_pichu/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/pichu/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/172_pichu/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_2.png",
-            "path": "../../origin_asset/processed/pichu/walking/down_left_2.png",
+            "path": "../../origin_asset/processed/172_pichu/walking/down_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/pichu/walking/front_0.png",
+            "path": "../../origin_asset/processed/172_pichu/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/pichu/walking/front_1.png",
+            "path": "../../origin_asset/processed/172_pichu/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_2.png",
-            "path": "../../origin_asset/processed/pichu/walking/front_2.png",
+            "path": "../../origin_asset/processed/172_pichu/walking/front_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/pichu/walking/left_0.png",
+            "path": "../../origin_asset/processed/172_pichu/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/pichu/walking/left_1.png",
+            "path": "../../origin_asset/processed/172_pichu/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_2.png",
-            "path": "../../origin_asset/processed/pichu/walking/left_2.png",
+            "path": "../../origin_asset/processed/172_pichu/walking/left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/pichu/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/172_pichu/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/pichu/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/172_pichu/walking/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_2.png",
-            "path": "../../origin_asset/processed/pichu/walking/up_left_2.png",
+            "path": "../../origin_asset/processed/172_pichu/walking/up_left_2.png",
             "width": 64,
             "height": 64
           }
@@ -5179,13 +5179,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/pichu/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/172_pichu/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/pichu/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/172_pichu/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -5200,7 +5200,7 @@ window.STICKMON_SPRITES = {
       "en": "Espeon",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/espeon/idle/front_0.png",
+        "path": "../../origin_asset/processed/196_espeon/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -5208,31 +5208,31 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/espeon/idle/back_0.png",
+            "path": "../../origin_asset/processed/196_espeon/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/espeon/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/196_espeon/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/espeon/idle/front_0.png",
+            "path": "../../origin_asset/processed/196_espeon/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/espeon/idle/left_0.png",
+            "path": "../../origin_asset/processed/196_espeon/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/espeon/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/196_espeon/idle/up_left_0.png",
             "width": 64,
             "height": 64
           }
@@ -5240,91 +5240,91 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/espeon/walking/back_0.png",
+            "path": "../../origin_asset/processed/196_espeon/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/espeon/walking/back_1.png",
+            "path": "../../origin_asset/processed/196_espeon/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_2.png",
-            "path": "../../origin_asset/processed/espeon/walking/back_2.png",
+            "path": "../../origin_asset/processed/196_espeon/walking/back_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/espeon/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/196_espeon/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/espeon/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/196_espeon/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_2.png",
-            "path": "../../origin_asset/processed/espeon/walking/down_left_2.png",
+            "path": "../../origin_asset/processed/196_espeon/walking/down_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/espeon/walking/front_0.png",
+            "path": "../../origin_asset/processed/196_espeon/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/espeon/walking/front_1.png",
+            "path": "../../origin_asset/processed/196_espeon/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_2.png",
-            "path": "../../origin_asset/processed/espeon/walking/front_2.png",
+            "path": "../../origin_asset/processed/196_espeon/walking/front_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/espeon/walking/left_0.png",
+            "path": "../../origin_asset/processed/196_espeon/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/espeon/walking/left_1.png",
+            "path": "../../origin_asset/processed/196_espeon/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_2.png",
-            "path": "../../origin_asset/processed/espeon/walking/left_2.png",
+            "path": "../../origin_asset/processed/196_espeon/walking/left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/espeon/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/196_espeon/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/espeon/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/196_espeon/walking/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_2.png",
-            "path": "../../origin_asset/processed/espeon/walking/up_left_2.png",
+            "path": "../../origin_asset/processed/196_espeon/walking/up_left_2.png",
             "width": 64,
             "height": 64
           }
@@ -5332,13 +5332,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/espeon/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/196_espeon/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/espeon/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/196_espeon/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -5353,7 +5353,7 @@ window.STICKMON_SPRITES = {
       "en": "Umbreon",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/umbreon/idle/front_0.png",
+        "path": "../../origin_asset/processed/197_umbreon/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -5361,31 +5361,31 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/umbreon/idle/back_0.png",
+            "path": "../../origin_asset/processed/197_umbreon/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/umbreon/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/197_umbreon/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/umbreon/idle/front_0.png",
+            "path": "../../origin_asset/processed/197_umbreon/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/umbreon/idle/left_0.png",
+            "path": "../../origin_asset/processed/197_umbreon/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/umbreon/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/197_umbreon/idle/up_left_0.png",
             "width": 64,
             "height": 64
           }
@@ -5393,91 +5393,91 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/umbreon/walking/back_0.png",
+            "path": "../../origin_asset/processed/197_umbreon/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/umbreon/walking/back_1.png",
+            "path": "../../origin_asset/processed/197_umbreon/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_2.png",
-            "path": "../../origin_asset/processed/umbreon/walking/back_2.png",
+            "path": "../../origin_asset/processed/197_umbreon/walking/back_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/umbreon/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/197_umbreon/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/umbreon/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/197_umbreon/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_2.png",
-            "path": "../../origin_asset/processed/umbreon/walking/down_left_2.png",
+            "path": "../../origin_asset/processed/197_umbreon/walking/down_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/umbreon/walking/front_0.png",
+            "path": "../../origin_asset/processed/197_umbreon/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/umbreon/walking/front_1.png",
+            "path": "../../origin_asset/processed/197_umbreon/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_2.png",
-            "path": "../../origin_asset/processed/umbreon/walking/front_2.png",
+            "path": "../../origin_asset/processed/197_umbreon/walking/front_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/umbreon/walking/left_0.png",
+            "path": "../../origin_asset/processed/197_umbreon/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/umbreon/walking/left_1.png",
+            "path": "../../origin_asset/processed/197_umbreon/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_2.png",
-            "path": "../../origin_asset/processed/umbreon/walking/left_2.png",
+            "path": "../../origin_asset/processed/197_umbreon/walking/left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/umbreon/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/197_umbreon/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/umbreon/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/197_umbreon/walking/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_2.png",
-            "path": "../../origin_asset/processed/umbreon/walking/up_left_2.png",
+            "path": "../../origin_asset/processed/197_umbreon/walking/up_left_2.png",
             "width": 64,
             "height": 64
           }
@@ -5485,13 +5485,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/umbreon/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/197_umbreon/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/umbreon/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/197_umbreon/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -5506,7 +5506,7 @@ window.STICKMON_SPRITES = {
       "en": "Scizor",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/scizor/idle/front_0.png",
+        "path": "../../origin_asset/processed/212_scizor/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -5514,61 +5514,61 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/scizor/idle/back_0.png",
+            "path": "../../origin_asset/processed/212_scizor/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/scizor/idle/back_1.png",
+            "path": "../../origin_asset/processed/212_scizor/idle/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/scizor/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/212_scizor/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/scizor/idle/down_left_1.png",
+            "path": "../../origin_asset/processed/212_scizor/idle/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/scizor/idle/front_0.png",
+            "path": "../../origin_asset/processed/212_scizor/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/scizor/idle/front_1.png",
+            "path": "../../origin_asset/processed/212_scizor/idle/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/scizor/idle/left_0.png",
+            "path": "../../origin_asset/processed/212_scizor/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/scizor/idle/left_1.png",
+            "path": "../../origin_asset/processed/212_scizor/idle/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/scizor/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/212_scizor/idle/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/scizor/idle/up_left_1.png",
+            "path": "../../origin_asset/processed/212_scizor/idle/up_left_1.png",
             "width": 64,
             "height": 64
           }
@@ -5576,91 +5576,91 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/scizor/walking/back_0.png",
+            "path": "../../origin_asset/processed/212_scizor/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/scizor/walking/back_1.png",
+            "path": "../../origin_asset/processed/212_scizor/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_2.png",
-            "path": "../../origin_asset/processed/scizor/walking/back_2.png",
+            "path": "../../origin_asset/processed/212_scizor/walking/back_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/scizor/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/212_scizor/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/scizor/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/212_scizor/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_2.png",
-            "path": "../../origin_asset/processed/scizor/walking/down_left_2.png",
+            "path": "../../origin_asset/processed/212_scizor/walking/down_left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/scizor/walking/front_0.png",
+            "path": "../../origin_asset/processed/212_scizor/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/scizor/walking/front_1.png",
+            "path": "../../origin_asset/processed/212_scizor/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_2.png",
-            "path": "../../origin_asset/processed/scizor/walking/front_2.png",
+            "path": "../../origin_asset/processed/212_scizor/walking/front_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/scizor/walking/left_0.png",
+            "path": "../../origin_asset/processed/212_scizor/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/scizor/walking/left_1.png",
+            "path": "../../origin_asset/processed/212_scizor/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_2.png",
-            "path": "../../origin_asset/processed/scizor/walking/left_2.png",
+            "path": "../../origin_asset/processed/212_scizor/walking/left_2.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/scizor/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/212_scizor/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/scizor/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/212_scizor/walking/up_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_2.png",
-            "path": "../../origin_asset/processed/scizor/walking/up_left_2.png",
+            "path": "../../origin_asset/processed/212_scizor/walking/up_left_2.png",
             "width": 64,
             "height": 64
           }
@@ -5668,13 +5668,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/scizor/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/212_scizor/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/scizor/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/212_scizor/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -5689,7 +5689,7 @@ window.STICKMON_SPRITES = {
       "en": "Latias",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/latias/idle/front_0.png",
+        "path": "../../origin_asset/processed/380_latias/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -5697,31 +5697,31 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/latias/idle/back_0.png",
+            "path": "../../origin_asset/processed/380_latias/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/latias/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/380_latias/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/latias/idle/front_0.png",
+            "path": "../../origin_asset/processed/380_latias/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/latias/idle/left_0.png",
+            "path": "../../origin_asset/processed/380_latias/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/latias/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/380_latias/idle/up_left_0.png",
             "width": 64,
             "height": 64
           }
@@ -5729,61 +5729,61 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/latias/walking/back_0.png",
+            "path": "../../origin_asset/processed/380_latias/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/latias/walking/back_1.png",
+            "path": "../../origin_asset/processed/380_latias/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/latias/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/380_latias/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/latias/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/380_latias/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/latias/walking/front_0.png",
+            "path": "../../origin_asset/processed/380_latias/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/latias/walking/front_1.png",
+            "path": "../../origin_asset/processed/380_latias/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/latias/walking/left_0.png",
+            "path": "../../origin_asset/processed/380_latias/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/latias/walking/left_1.png",
+            "path": "../../origin_asset/processed/380_latias/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/latias/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/380_latias/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/latias/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/380_latias/walking/up_left_1.png",
             "width": 64,
             "height": 64
           }
@@ -5791,13 +5791,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/latias/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/380_latias/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/latias/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/380_latias/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }
@@ -5812,7 +5812,7 @@ window.STICKMON_SPRITES = {
       "en": "Latios",
       "defaultFrame": {
         "file": "front_0.png",
-        "path": "../../origin_asset/processed/latios/idle/front_0.png",
+        "path": "../../origin_asset/processed/381_latios/idle/front_0.png",
         "width": 64,
         "height": 64
       },
@@ -5820,31 +5820,31 @@ window.STICKMON_SPRITES = {
         "idle": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/latios/idle/back_0.png",
+            "path": "../../origin_asset/processed/381_latios/idle/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/latios/idle/down_left_0.png",
+            "path": "../../origin_asset/processed/381_latios/idle/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/latios/idle/front_0.png",
+            "path": "../../origin_asset/processed/381_latios/idle/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/latios/idle/left_0.png",
+            "path": "../../origin_asset/processed/381_latios/idle/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/latios/idle/up_left_0.png",
+            "path": "../../origin_asset/processed/381_latios/idle/up_left_0.png",
             "width": 64,
             "height": 64
           }
@@ -5852,61 +5852,61 @@ window.STICKMON_SPRITES = {
         "walking": [
           {
             "file": "back_0.png",
-            "path": "../../origin_asset/processed/latios/walking/back_0.png",
+            "path": "../../origin_asset/processed/381_latios/walking/back_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "back_1.png",
-            "path": "../../origin_asset/processed/latios/walking/back_1.png",
+            "path": "../../origin_asset/processed/381_latios/walking/back_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_0.png",
-            "path": "../../origin_asset/processed/latios/walking/down_left_0.png",
+            "path": "../../origin_asset/processed/381_latios/walking/down_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "down_left_1.png",
-            "path": "../../origin_asset/processed/latios/walking/down_left_1.png",
+            "path": "../../origin_asset/processed/381_latios/walking/down_left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_0.png",
-            "path": "../../origin_asset/processed/latios/walking/front_0.png",
+            "path": "../../origin_asset/processed/381_latios/walking/front_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "front_1.png",
-            "path": "../../origin_asset/processed/latios/walking/front_1.png",
+            "path": "../../origin_asset/processed/381_latios/walking/front_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_0.png",
-            "path": "../../origin_asset/processed/latios/walking/left_0.png",
+            "path": "../../origin_asset/processed/381_latios/walking/left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "left_1.png",
-            "path": "../../origin_asset/processed/latios/walking/left_1.png",
+            "path": "../../origin_asset/processed/381_latios/walking/left_1.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_0.png",
-            "path": "../../origin_asset/processed/latios/walking/up_left_0.png",
+            "path": "../../origin_asset/processed/381_latios/walking/up_left_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "up_left_1.png",
-            "path": "../../origin_asset/processed/latios/walking/up_left_1.png",
+            "path": "../../origin_asset/processed/381_latios/walking/up_left_1.png",
             "width": 64,
             "height": 64
           }
@@ -5914,13 +5914,13 @@ window.STICKMON_SPRITES = {
         "sleeping": [
           {
             "file": "frame_0.png",
-            "path": "../../origin_asset/processed/latios/sleeping/frame_0.png",
+            "path": "../../origin_asset/processed/381_latios/sleeping/frame_0.png",
             "width": 64,
             "height": 64
           },
           {
             "file": "frame_1.png",
-            "path": "../../origin_asset/processed/latios/sleeping/frame_1.png",
+            "path": "../../origin_asset/processed/381_latios/sleeping/frame_1.png",
             "width": 64,
             "height": 64
           }

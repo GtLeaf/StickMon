@@ -29,6 +29,7 @@ OUTPUTS = {
 }
 GENERATED_GAME_DIR = ROOT / "origin_asset" / "generated" / "game"
 EGG_PREVIEW = GENERATED_GAME_DIR / "egg_32.png"
+STATUS_ICON_DIR = ROOT / "origin_asset" / "icon" / "status"
 GAME_ASSETS_HEADER = ROOT / "src" / "assets" / "GameAssets.h"
 GAME_ASSETS_SOURCE = ROOT / "src" / "assets" / "GameAssets.cpp"
 
@@ -47,6 +48,7 @@ BALL_H = 64
 BACKGROUND_W = 240
 BACKGROUND_H = 135
 EGG_SIZE = 32
+STATUS_ICON_SIZE = 12
 
 ITEMS = [
     ("ITEM_POKE_BALL", "POKEBALL.png"),
@@ -65,6 +67,15 @@ BALLS = [
     ("GREAT_BALL", "GREATBALL"),
     ("HEAVY_BALL", "HEAVYBALL"),
     ("TIMER_BALL", "TIMERBALL"),
+]
+
+STATUS_ICONS = [
+    ("STATUS_POISON", "status_poison.png"),
+    ("STATUS_TOXIC", "status_toxic.png"),
+    ("STATUS_PARALYSIS", "status_paralysis.png"),
+    ("STATUS_SLEEP", "status_sleep.png"),
+    ("STATUS_BURN", "status_burn.png"),
+    ("STATUS_FREEZE", "status_freeze.png"),
 ]
 
 BACKGROUNDS = [
@@ -199,6 +210,7 @@ KIND_ORDER.extend(kind for kind, _ in EXPLORE_TILES)
 KIND_ORDER.extend(kind for kind, _runtime_id, _tileset, _source_id in EXTERNAL_EXPLORE_TILES)
 KIND_ORDER.extend(kind for kind, _tile_id, _source, _frame in ANIMATED_EXPLORE_FRAMES)
 KIND_ORDER.append("EGG")
+KIND_ORDER.extend(kind for kind, _ in STATUS_ICONS)
 KIND_IDS = {kind: index for index, kind in enumerate(KIND_ORDER)}
 
 
@@ -415,6 +427,11 @@ def build_assets():
         image = load_rgba(GRAPHICS / "Battlebacks" / filename)
         image = image.resize((BACKGROUND_W, BACKGROUND_H), Image.Resampling.LANCZOS)
         writers["battle"].add(kind, quantize_rgba(image, 16))
+
+    for kind, filename in STATUS_ICONS:
+        image = load_rgba(STATUS_ICON_DIR / filename)
+        image = image.resize((STATUS_ICON_SIZE, STATUS_ICON_SIZE), Image.Resampling.NEAREST)
+        writers["battle"].add(kind, quantize_rgba(image, 15))
 
     tileset = load_rgba(GRAPHICS / "Tilesets" / "Outside.png")
     autotiles = [load_rgba(GRAPHICS / "Autotiles" / f"{name}.png") for name in OUTSIDE_AUTOTILES]

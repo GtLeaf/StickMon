@@ -224,6 +224,12 @@ enum class Kind : uint16_t {
     EXPLORE_WATERFALL_BOTTOM_F2,
     EXPLORE_WATERFALL_BOTTOM_F3,
     EGG,
+    STATUS_POISON,
+    STATUS_TOXIC,
+    STATUS_PARALYSIS,
+    STATUS_SLEEP,
+    STATUS_BURN,
+    STATUS_FREEZE,
     COUNT,
 };
 
@@ -237,6 +243,7 @@ bool drawBackgroundViewport(Kind kind, int cameraX, int cameraY);
 bool drawExploreTile(uint16_t tileId, int x, int y, uint8_t animationFrame = 0);
 
 Kind itemKind(Game::ItemId item);
+Kind statusKind(Game::MajorStatus status);
 Kind ballFrameKind(Game::ItemId item, uint8_t frame);
 Kind ballOpenKind(Game::ItemId item);
 

@@ -236,6 +236,7 @@ void resetMovesForLevel(Game::MonsterRuntime& monster, const Species& species) {
     for (uint8_t slot = 0; slot < Game::MOVE_SLOT_COUNT; ++slot) {
         monster.moveProficiency[slot] = 0;
     }
+    monster.moveProficiency[0] = Game::MOVE_PROFICIENCY_MAX;
 
     const uint16_t count = learnsetEntryCountForSpecies(species);
     for (uint16_t index = 0; index < count; ++index) {

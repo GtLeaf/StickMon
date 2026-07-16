@@ -512,6 +512,18 @@ Kind itemKind(Game::ItemId item) {
     }
 }
 
+Kind statusKind(Game::MajorStatus status) {
+    switch (status) {
+    case Game::MajorStatus::POISON: return Kind::STATUS_POISON;
+    case Game::MajorStatus::TOXIC: return Kind::STATUS_TOXIC;
+    case Game::MajorStatus::PARALYSIS: return Kind::STATUS_PARALYSIS;
+    case Game::MajorStatus::SLEEP: return Kind::STATUS_SLEEP;
+    case Game::MajorStatus::BURN: return Kind::STATUS_BURN;
+    case Game::MajorStatus::FREEZE: return Kind::STATUS_FREEZE;
+    default: return Kind::COUNT;
+    }
+}
+
 Kind ballFrameKind(Game::ItemId item, uint8_t frame) {
     frame %= 8;
     uint16_t base = static_cast<uint16_t>(Kind::BALL_POKE_BALL_0);

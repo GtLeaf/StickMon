@@ -1,5 +1,6 @@
 #pragma once
 
+#include "assets/PokemonMotion.h"
 #include "assets/PokemonSprites.h"
 #include "core/RoomResource.h"
 #include "core/Scene.h"
@@ -200,6 +201,10 @@ private:
     PmdAction pmdAction = PmdAction::IDLE;
     PmdDirection pmdDirection = PmdDirection::FRONT;
     uint8_t pmdFrame = 0;
+    uint8_t pmdMotionPhase = PokemonMotion::SLITHER_IDLE_PHASE_INDEX;
+    int8_t pmdRenderOffsetX = 0;
+    int8_t pmdRenderOffsetY = 0;
+    uint16_t pmdMotionCycleMs = PokemonMotion::SLITHER_AMBIENT_MAX_CYCLE_MS;
     bool pmdLongMove = false;
     uint32_t pmdFrameStartedMs = 0;
     uint32_t toastUntil = 0;

@@ -496,6 +496,10 @@ uint8_t pmdWalkingSpriteFrameIndex(const PmdSpriteConfig* config, uint8_t playba
     if (!config || config->walkingFrames == 0) return 0;
     PmdMotionMode motionMode = pmdMotionModeForConfig(config);
     if (motionMode == PmdMotionMode::PINGPONG && config->walkingFrames == 3) {
+        if (PokemonMotion::behaviorForSpecies(config->speciesId).mode ==
+            PokemonMotion::Mode::SLITHER) {
+            return playbackFrame % config->walkingFrames;
+        }
         uint8_t maxFrame = longMove ? 2 : 1;
         return playbackFrame > maxFrame ? maxFrame : playbackFrame;
     }
@@ -600,6 +604,10 @@ void MainScene::onEnter() {
     velocityY = 0.0f;
     cameraY = cameraForWorldY(monsterY);
     pmdLongMove = false;
+    pmdMotionPhase = PokemonMotion::SLITHER_IDLE_PHASE_INDEX;
+    pmdRenderOffsetX = 0;
+    pmdRenderOffsetY = 0;
+    pmdMotionCycleMs = PokemonMotion::SLITHER_AMBIENT_MAX_CYCLE_MS;
     pmdFrameStartedMs = nowMs;
     clearMoveRoute();
     if (aiMode == AiMode::WANDER || aiMode == AiMode::SEEK_FOOD ||
@@ -2325,6 +2333,7 @@ void MainScene::updatePmdSpriteState(uint32_t nowMs) {
     if (!config) return;
     const PokemonMotion::Behavior motionBehavior =
         PokemonMotion::behaviorForSpecies(config->speciesId);
+    const bool slithering = motionBehavior.mode == PokemonMotion::Mode::SLITHER;
 
     const Game::MonsterRuntime& mon = GameEngine::ins().activeMonster();
     bool sleeping = mon.majorStatus == Game::MajorStatus::SLEEP ||
@@ -2341,25 +2350,66 @@ void MainScene::updatePmdSpriteState(uint32_t nowMs) {
         float dy = targetY - monsterY;
         pmdLongMove = sqrtf(dx * dx + dy * dy) > PMD_SHORT_MOVE_DISTANCE;
     };
+    auto clearMotionPose = [&]() {
+        pmdMotionPhase = PokemonMotion::SLITHER_IDLE_PHASE_INDEX;
+        pmdRenderOffsetX = 0;
+        pmdRenderOffsetY = 0;
+    };
+    auto applySlitherPose = [&](uint32_t elapsedMs) {
+        PokemonMotion::Pose pose = PokemonMotion::slitherPose(
+            motionBehavior, config->walkingFrames, elapsedMs,
+            pmdMotionCycleMs, static_cast<uint8_t>(pmdDirection));
+        pmdFrame = pose.frameIndex;
+        pmdMotionPhase = pose.phaseIndex;
+        pmdRenderOffsetX = pose.offsetX;
+        pmdRenderOffsetY = pose.offsetY;
+        return pose.directionChangeSafe;
+    };
+    auto beginWalking = [&](PmdDirection direction) {
+        pmdAction = PmdAction::WALKING;
+        pmdDirection = direction;
+        pmdFrame = 0;
+        resetMoveLength();
+        pmdFrameStartedMs = nowMs;
+        if (slithering) {
+            pmdMotionCycleMs = PokemonMotion::cycleDurationMs(
+                motionBehavior, PokemonMotion::PlaybackContext::AMBIENT,
+                sqrtf(speedSq));
+            applySlitherPose(0);
+        } else {
+            clearMotionPose();
+        }
+    };
 
     if (pmdAction == PmdAction::STOPPING) {
-        if (nextAction == PmdAction::WALKING || nextAction == PmdAction::SLEEPING) {
+        if (nextAction == PmdAction::WALKING) {
+            beginWalking(nextDirection);
+            return;
+        }
+        if (nextAction == PmdAction::SLEEPING) {
             pmdAction = nextAction;
             pmdDirection = nextDirection;
             pmdFrame = 0;
-            if (nextAction == PmdAction::WALKING) resetMoveLength();
+            pmdLongMove = false;
+            clearMotionPose();
             pmdFrameStartedMs = nowMs;
             return;
         }
+        uint16_t stoppingFrameMs = slithering
+            ? PokemonMotion::slitherSettleFrameMs(pmdMotionCycleMs)
+            : motionBehavior.moveFrameMs;
+        if (stoppingFrameMs == 0) stoppingFrameMs = 1;
         uint8_t frameCount = pmdStoppingPlaybackFrameCount(config);
-        while (nowMs - pmdFrameStartedMs >= motionBehavior.moveFrameMs) {
+        while (nowMs - pmdFrameStartedMs >= stoppingFrameMs) {
             if (pmdFrame + 1 < frameCount) {
                 pmdFrame++;
-                pmdFrameStartedMs += motionBehavior.moveFrameMs;
+                if (slithering && pmdFrame > 0) clearMotionPose();
+                pmdFrameStartedMs += stoppingFrameMs;
             } else {
                 pmdAction = PmdAction::IDLE;
                 pmdFrame = 0;
                 pmdLongMove = false;
+                clearMotionPose();
                 pmdFrameStartedMs = nowMs;
                 break;
             }
@@ -2372,17 +2422,60 @@ void MainScene::updatePmdSpriteState(uint32_t nowMs) {
         nextAction == PmdAction::IDLE &&
         ((motionMode == PmdMotionMode::START_HOLD_END && config->walkingFrames >= 3) ||
          (motionMode == PmdMotionMode::PINGPONG && config->walkingFrames >= 2))) {
+        if (slithering &&
+            pmdMotionPhase == PokemonMotion::SLITHER_IDLE_PHASE_INDEX) {
+            pmdAction = PmdAction::IDLE;
+            pmdFrame = 0;
+            pmdLongMove = false;
+            clearMotionPose();
+            pmdFrameStartedMs = nowMs;
+            return;
+        }
         pmdAction = PmdAction::STOPPING;
         pmdFrame = 0;
+        if (slithering) {
+            uint32_t settlePhaseMs =
+                PokemonMotion::slitherReturnPhaseStartMs(pmdMotionCycleMs);
+            PokemonMotion::Pose settlePose = PokemonMotion::slitherPose(
+                motionBehavior, config->walkingFrames, settlePhaseMs,
+                pmdMotionCycleMs, static_cast<uint8_t>(pmdDirection));
+            pmdMotionPhase = settlePose.phaseIndex;
+            pmdRenderOffsetX = settlePose.offsetX;
+            pmdRenderOffsetY = settlePose.offsetY;
+        }
         pmdFrameStartedMs = nowMs;
         return;
     }
 
-    if (nextAction != pmdAction || nextDirection != pmdDirection) {
-        pmdAction = nextAction;
+    if (nextAction != pmdAction) {
+        if (nextAction == PmdAction::WALKING) {
+            beginWalking(nextDirection);
+        } else {
+            pmdAction = nextAction;
+            pmdDirection = nextDirection;
+            pmdFrame = 0;
+            pmdLongMove = false;
+            clearMotionPose();
+            pmdFrameStartedMs = nowMs;
+        }
+        return;
+    }
+
+    if (pmdAction == PmdAction::WALKING && slithering) {
+        uint32_t elapsedMs = nowMs - pmdFrameStartedMs;
+        bool directionChangeSafe = applySlitherPose(elapsedMs);
+        if (nextDirection != pmdDirection && directionChangeSafe) {
+            pmdDirection = nextDirection;
+            applySlitherPose(elapsedMs);
+        }
+        return;
+    }
+
+    if (nextDirection != pmdDirection) {
         pmdDirection = nextDirection;
         pmdFrame = 0;
-        if (nextAction == PmdAction::WALKING) resetMoveLength();
+        if (pmdAction == PmdAction::WALKING) resetMoveLength();
+        clearMotionPose();
         pmdFrameStartedMs = nowMs;
         return;
     }
@@ -2763,6 +2856,8 @@ bool MainScene::drawPmdMonster(int x, int y) {
     const PokemonSprites::SpriteFrame* frame = PokemonSprites::findSpeciesSprite(active->id, pmdSpriteKind());
     if (!frame) return false;
 
+    x += pmdRenderOffsetX;
+    y += pmdRenderOffsetY;
     uint8_t w = pgm_read_byte(&frame->width);
     uint8_t h = pgm_read_byte(&frame->height);
     if (PokemonSprites::drawFrame(frame, x - w / 2, y - h / 2,

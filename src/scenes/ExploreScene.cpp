@@ -1862,7 +1862,7 @@ void ExploreScene::applyBattleDamage() {
         uint8_t moveSlot = battleActionResult.special
             ? static_cast<uint8_t>(battleActionResult.specialSlot + 1)
             : 0;
-        if (moveSlot < Game::MOVE_SLOT_COUNT &&
+        if (moveSlot > 0 && moveSlot < Game::MOVE_SLOT_COUNT &&
             activeMon.moveProficiency[moveSlot] < Game::MOVE_PROFICIENCY_MAX) {
             activeMon.moveProficiency[moveSlot]++;
         }
@@ -2292,6 +2292,7 @@ bool ExploreScene::resetRouteSegment() {
     routeIndex = 0;
     routeMoving = false;
     routeWalkDirection = static_cast<uint8_t>(inwardDirection(generatedMap.entry.edge));
+    routeVisualWalkDirection = routeWalkDirection;
     mapTargetSteps = max<uint16_t>(1, path.pointCount - 1);
     ExploreMapGenerator::Point start = path.points[0];
     routeWorldX = routeWorldCoordinate(start.x);
@@ -2299,6 +2300,7 @@ bool ExploreScene::resetRouteSegment() {
     routeFromX = routeTargetX = routeWorldX;
     routeFromY = routeTargetY = routeWorldY;
     routeFollowerWalkDirection = routeWalkDirection;
+    routeFollowerVisualWalkDirection = routeFollowerWalkDirection;
     routeFollowerWorldX = routeWorldX;
     routeFollowerWorldY = routeWorldY;
     PokemonSprites::WalkDirection direction =
@@ -2532,39 +2534,92 @@ void ExploreScene::drawRouteMonster(const Species& species, float worldX,
     auto& c = PixelRenderer::canvas();
     const PokemonSprites::SpriteFrame* marker = nullptr;
     bool markerFlipX = false;
+    int8_t poseOffsetX = 0;
+    int8_t poseOffsetY = 0;
+    const PokemonMotion::Behavior motion =
+        PokemonMotion::behaviorForSpecies(species.id);
+    uint8_t* visualWalkDirection = follower
+        ? &routeFollowerVisualWalkDirection
+        : &routeVisualWalkDirection;
+    bool animationActive = false;
+    uint32_t movementElapsedMs = 0;
+    uint32_t stepElapsedMs = 0;
+    uint16_t stepDurationMs = 1;
+
+    if (routeMoving && (!follower || routeFollowerMoving)) {
+        uint32_t animationNow = exploreMenuOpen ? exploreMenuOpenedAt : Hal::ins().millis();
+        uint32_t elapsed = animationNow - routeMoveStarted;
+        if (!follower || elapsed > ROUTE_FOLLOWER_DELAY_MS) {
+            if (follower) elapsed -= ROUTE_FOLLOWER_DELAY_MS;
+            animationActive = true;
+            stepDurationMs = max<uint16_t>(
+                1, follower ? routeFollowerMoveDurationMs
+                            : routeLeaderMoveDurationMs);
+            stepElapsedMs = elapsed;
+            movementElapsedMs = elapsed;
+            if (phase == Phase::EXITING) {
+                stepDurationMs = max<uint16_t>(1, motion.stepDurationMs);
+                stepElapsedMs %= stepDurationMs;
+            } else {
+                stepElapsedMs = min<uint32_t>(stepElapsedMs, stepDurationMs - 1);
+                uint32_t completedSteps = routeIndex > 0 ? routeIndex - 1 : 0;
+                if (follower) {
+                    uint8_t followerTargetIndex = routeFollowerTargetIndex(routeIndex);
+                    completedSteps = followerTargetIndex > 0
+                        ? followerTargetIndex - 1
+                        : 0;
+                }
+                movementElapsedMs = completedSteps * motion.stepDurationMs +
+                                    stepElapsedMs;
+            }
+        }
+    }
+
+    if (motion.mode != PokemonMotion::Mode::SLITHER || !animationActive) {
+        *visualWalkDirection = walkDirection;
+    } else {
+        uint16_t cycleMs = PokemonMotion::cycleDurationMs(
+            motion, PokemonMotion::PlaybackContext::ROUTE);
+        uint8_t motionPhase = PokemonMotion::slitherPhaseIndex(
+            movementElapsedMs, cycleMs);
+        if (PokemonMotion::slitherDirectionChangeSafe(motionPhase)) {
+            *visualWalkDirection = walkDirection;
+        }
+    }
+
     PokemonSprites::WalkingAnimation animation{};
     if (PokemonSprites::walkingAnimation(
             species.id,
-            static_cast<PokemonSprites::WalkDirection>(walkDirection),
+            static_cast<PokemonSprites::WalkDirection>(*visualWalkDirection),
             animation)) {
         uint8_t frameIndex = 0;
-        if (routeMoving && (!follower || routeFollowerMoving)) {
-            uint32_t animationNow = exploreMenuOpen ? exploreMenuOpenedAt : Hal::ins().millis();
-            uint32_t elapsed = animationNow - routeMoveStarted;
-            if (!follower || elapsed > ROUTE_FOLLOWER_DELAY_MS) {
-                if (follower) elapsed -= ROUTE_FOLLOWER_DELAY_MS;
-                const PokemonMotion::Behavior motion =
-                    PokemonMotion::behaviorForSpecies(species.id);
-                uint16_t stepDurationMs = max<uint16_t>(
-                    1, follower ? routeFollowerMoveDurationMs
-                                : routeLeaderMoveDurationMs);
-                uint32_t stepElapsedMs = elapsed;
-                uint32_t movementElapsedMs = elapsed;
-                if (phase == Phase::EXITING) {
-                    stepDurationMs = max<uint16_t>(1, motion.stepDurationMs);
-                    stepElapsedMs %= stepDurationMs;
-                } else {
-                    stepElapsedMs = min<uint32_t>(stepElapsedMs, stepDurationMs - 1);
-                    uint32_t completedSteps = routeIndex > 0 ? routeIndex - 1 : 0;
-                    if (follower) {
-                        uint8_t followerTargetIndex = routeFollowerTargetIndex(routeIndex);
-                        completedSteps = followerTargetIndex > 0
-                            ? followerTargetIndex - 1
-                            : 0;
-                    }
-                    movementElapsedMs = completedSteps * motion.stepDurationMs +
-                                        stepElapsedMs;
+        if (animationActive) {
+            if (motion.mode == PokemonMotion::Mode::SLITHER) {
+                uint8_t registrationDirection = 0;
+                switch (static_cast<PokemonSprites::WalkDirection>(
+                            *visualWalkDirection)) {
+                case PokemonSprites::WalkDirection::DOWN:
+                    registrationDirection = 0;
+                    break;
+                case PokemonSprites::WalkDirection::LEFT:
+                    registrationDirection = 2;
+                    break;
+                case PokemonSprites::WalkDirection::UP:
+                    registrationDirection = 4;
+                    break;
+                case PokemonSprites::WalkDirection::RIGHT:
+                    registrationDirection = 6;
+                    break;
                 }
+                PokemonMotion::Pose pose = PokemonMotion::slitherPose(
+                    motion, animation.frameCount, movementElapsedMs,
+                    PokemonMotion::cycleDurationMs(
+                        motion, PokemonMotion::PlaybackContext::ROUTE),
+                    registrationDirection);
+                frameIndex = pose.frameIndex;
+                poseOffsetX = pose.offsetX;
+                poseOffsetY = pose.offsetY;
+            } else {
                 frameIndex = PokemonMotion::movementFrame(
                     motion, animation.frameCount, movementElapsedMs,
                     stepElapsedMs, stepDurationMs);
@@ -2577,6 +2632,8 @@ void ExploreScene::drawRouteMonster(const Species& species, float worldX,
         markerFlipX = animation.flipX;
     }
     if (!marker) {
+        poseOffsetX = 0;
+        poseOffsetY = 0;
         marker = PokemonSprites::findSpeciesSprite(
             species.id, PokemonSprites::SpriteKind::ICON_0);
     }
@@ -2589,6 +2646,8 @@ void ExploreScene::drawRouteMonster(const Species& species, float worldX,
         c.fillEllipse(markerX + markerW / 2, markerY + markerH - 10,
                       10, 3,
                       PixelRenderer::rgb(68, 87, 74));
+        markerX += static_cast<int>(roundf(poseOffsetX * scale));
+        markerY += static_cast<int>(roundf(poseOffsetY * scale));
         PokemonSprites::drawFrameScaled(marker, markerX, markerY, scale, markerFlipX);
     }
 }
@@ -2625,9 +2684,9 @@ void ExploreScene::renderExploreMenu() {
                           sizeof(Ui::Explore::SIDE_MENU_ITEMS[0]),
                   "explore side menu labels must match the menu item count");
     auto& c = PixelRenderer::canvas();
-    static constexpr int PANEL_X = 156;
+    static constexpr int PANEL_W = 60;
+    static constexpr int PANEL_X = Hal::DISPLAY_W - PANEL_W;
     static constexpr int PANEL_Y = 0;
-    static constexpr int PANEL_W = Hal::DISPLAY_W - PANEL_X;
     static constexpr int PANEL_H = Hal::DISPLAY_H;
     static constexpr int ROW_H = 30;
     const uint16_t background = PixelRenderer::rgb(20, 25, 32);
@@ -2640,8 +2699,8 @@ void ExploreScene::renderExploreMenu() {
     for (uint8_t i = 0; i < EXPLORE_MENU_ITEM_COUNT; ++i) {
         int y = PANEL_Y + 9 + i * ROW_H;
         bool selected = i == exploreMenuCursor;
-        if (selected) c.fillRect(PANEL_X + 6, y, 4, 18, active);
-        PixelRenderer::text(PANEL_X + 17, y, Ui::Explore::SIDE_MENU_ITEMS[i],
+        if (selected) c.fillRect(PANEL_X + 5, y, 3, 18, active);
+        PixelRenderer::text(PANEL_X + 13, y, Ui::Explore::SIDE_MENU_ITEMS[i],
                             selected ? active : inactive, 1);
     }
 }
@@ -2819,28 +2878,16 @@ void ExploreScene::drawMonsterSprite(const Species& species, int x, int groundY,
 void ExploreScene::renderBattleHud() {
     auto& c = PixelRenderer::canvas();
     char buf[24];
-    auto drawStatus = [](int x, int y, Game::MajorStatus status) {
-        const char* label = nullptr;
-        uint16_t color = PixelRenderer::rgb(239, 128, 85);
-        switch (status) {
-        case Game::MajorStatus::POISON: label = Ui::Status::STATUS_POISON; break;
-        case Game::MajorStatus::TOXIC: label = Ui::Status::STATUS_TOXIC; break;
-        case Game::MajorStatus::PARALYSIS:
-            label = Ui::Status::STATUS_PARALYSIS;
-            color = PixelRenderer::rgb(224, 180, 52);
-            break;
-        case Game::MajorStatus::SLEEP:
-            label = Ui::Status::STATUS_SLEEP;
-            color = PixelRenderer::rgb(112, 151, 219);
-            break;
-        case Game::MajorStatus::BURN: label = Ui::Status::STATUS_BURN; break;
-        case Game::MajorStatus::FREEZE:
-            label = Ui::Status::STATUS_FREEZE;
-            color = PixelRenderer::rgb(80, 176, 210);
-            break;
-        default: break;
+    auto drawHpWithStatus = [](int statusX, int statusY, int hpX, int hpY, int hpWidth,
+                               uint16_t hp, uint16_t hpMax, Game::MajorStatus status) {
+        GameAssets::Kind statusAsset = GameAssets::statusKind(status);
+        if (statusAsset != GameAssets::Kind::COUNT) {
+            GameAssets::draw(statusAsset, statusX, statusY);
         }
-        if (label) drawBattleText(x, y, label, color);
+        PixelRenderer::bar(hpX, hpY, hpWidth, 6,
+                           hpMax ? (hp * 100 / hpMax) : 0,
+                           PixelRenderer::rgb(92, 222, 112),
+                           PixelRenderer::rgb(59, 70, 59));
     };
 
     if (wild) {
@@ -2848,10 +2895,8 @@ void ExploreScene::renderBattleHud() {
         drawBattleDarkText(6, 5, wild->name);
         snprintf(buf, sizeof(buf), Ui::Common::LEVEL_FMT, wildRuntime.level);
         drawBattleAsciiRightAligned(124, 5, buf);
-        PixelRenderer::bar(12, 23, 90, 6,
-                           wildHpMax ? (shownWildHp * 100 / wildHpMax) : 0,
-                           PixelRenderer::rgb(92, 222, 112), PixelRenderer::rgb(59, 70, 59));
-        drawStatus(104, 18, wildRuntime.majorStatus);
+        drawHpWithStatus(12, 20, 28, 23, 74, shownWildHp, wildHpMax,
+                         wildRuntime.majorStatus);
     }
 
     const auto& active = GameEngine::ins().activeMonster();
@@ -2874,11 +2919,8 @@ void ExploreScene::renderBattleHud() {
     if (!showVictoryExp) {
         uint16_t shownPlayerHp = battleHpForRender(
             false, active.hpCur, Hal::ins().millis());
-        PixelRenderer::bar(128, 85, 102, 6,
-                           active.hpMax ? (shownPlayerHp * 100 / active.hpMax) : 0,
-                           PixelRenderer::rgb(92, 222, 112),
-                           PixelRenderer::rgb(59, 70, 59));
-        drawStatus(96, 80, active.majorStatus);
+        drawHpWithStatus(128, 82, 144, 85, 86, shownPlayerHp, active.hpMax,
+                         active.majorStatus);
         return;
     }
 

@@ -53,6 +53,10 @@ class PmdSpec:
     directions: tuple = tuple(FULL_DIRECTIONS)
 
 
+def processed_species_dir(spec):
+    return PROCESSED / f"{spec.species_id:03d}_{spec.slug}"
+
+
 PMD_SPECS = [
     PmdSpec(1, "BULBASAUR", "bulbasaur", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
     PmdSpec(2, "IVYSAUR", "ivysaur", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
@@ -231,9 +235,9 @@ def species_rows():
 
 def pmd_path(spec, action, name):
     if action == "sleeping":
-        path = PROCESSED / spec.slug / action / f"frame_{name}.png"
+        path = processed_species_dir(spec) / action / f"frame_{name}.png"
     else:
-        path = PROCESSED / spec.slug / action / f"{name}.png"
+        path = processed_species_dir(spec) / action / f"{name}.png"
     if not path.exists():
         raise FileNotFoundError(path)
     return path
@@ -455,14 +459,14 @@ def export_dev_pack(kind_map):
         writer = AssetWriter()
         add_base_frames(writer, species_id, ident, missing)
         spec = PMD_BY_ID.get(species_id)
-        if spec and (PROCESSED / spec.slug).exists():
+        if spec and processed_species_dir(spec).exists():
             add_pmd_frames(writer, spec)
         if writer.frames:
             write_species_pack(PACK_SPRITE_OUT / f"{species_id:03d}.smonsp", species_id, writer, kind_map)
             exported += 1
 
     for spec in PMD_SPECS:
-        if spec.species_id in present_species_ids or not (PROCESSED / spec.slug).exists():
+        if spec.species_id in present_species_ids or not processed_species_dir(spec).exists():
             continue
         writer = AssetWriter()
         add_base_frames(writer, spec.species_id, spec.ident, missing)

@@ -1249,9 +1249,6 @@ void MenuScene::renderStatusPage() {
 
         TypeId basicType = basicMove ? basicMove->type : TypeId::NORMAL;
         PixelRenderer::text(14, sy(31), Ui::Status::BASIC_MOVE, PixelRenderer::rgb(67, 213, 224), 1);
-        snprintf(buf, sizeof(buf), Ui::Status::PROFICIENCY_FMT,
-                 proficiencyName(activeMon.moveProficiency[0]));
-        PixelRenderer::text(128, sy(31), buf, PixelRenderer::rgb(255, 216, 72), 1);
         int basicNameX = drawTypeBracket(18, sy(51), basicType);
         PixelRenderer::text(basicNameX + 4, sy(51), basicMove ? basicMove->name : Ui::Status::MOVE_UNKNOWN,
                             PixelRenderer::rgb(241, 242, 232), 1);

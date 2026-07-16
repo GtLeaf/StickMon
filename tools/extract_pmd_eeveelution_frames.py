@@ -56,6 +56,14 @@ class SpeciesSpec:
     notes: list = field(default_factory=list)
 
 
+def processed_dir_name(spec):
+    return f"{spec.species_id:03d}_{spec.slug}"
+
+
+def processed_species_dir(spec):
+    return OUT_ROOT / processed_dir_name(spec)
+
+
 SPECS = [
     SpeciesSpec(
         species_id=151,
@@ -2617,7 +2625,7 @@ def write_readme(spec, out_dir):
         f"{' within tolerance ' + str(spec.background_tolerance) if spec.background_tolerance else ''} become transparent.\n"
         "- Crop boxes are fixed in `tools/extract_pmd_eeveelution_frames.py`; they are not a generic PMD parser.\n\n"
         "## Output frames\n\n"
-        f"- Output root: `origin_asset/processed/{spec.slug}/`\n"
+        f"- Output root: `origin_asset/processed/{processed_dir_name(spec)}/`\n"
         "- Format: RGBA PNG with transparent background.\n"
         f"- Canvas: {spec.canvas_width}x{spec.canvas_height} px.\n"
         f"- Target scale: nearest-neighbor {spec.scale:g}x"
@@ -2712,7 +2720,7 @@ def write_mew_readme(spec, out_dir):
         "- Background removal: pixels matching the top-left source color become transparent.\n"
         "- Crop boxes are fixed in `tools/extract_pmd_eeveelution_frames.py`; they are not a generic PMD parser.\n\n"
         "## Output frames\n\n"
-        f"- Output root: `origin_asset/processed/{spec.slug}/`\n"
+        f"- Output root: `origin_asset/processed/{processed_dir_name(spec)}/`\n"
         "- Format: RGBA PNG with transparent background.\n"
         f"- Canvas: {spec.canvas_width}x{spec.canvas_height} px.\n"
         f"- Target scale: nearest-neighbor {spec.scale:g}x, capped to fit the canvas without clipping.\n"
@@ -2741,7 +2749,7 @@ def write_mew_readme(spec, out_dir):
 
 def process_mew_spec(spec):
     source = clear_background(Image.open(SOURCE_ROOT / spec.source_group / spec.source_name).convert("RGBA"))
-    out_dir = OUT_ROOT / spec.slug
+    out_dir = processed_species_dir(spec)
     exported = []
     contact = []
 
@@ -2812,7 +2820,7 @@ def process_spec(spec):
     if spec.sleeping_source_name:
         sleeping_group = spec.sleeping_source_group or spec.source_group
         sleeping_source = clear_background(Image.open(SOURCE_ROOT / sleeping_group / spec.sleeping_source_name).convert("RGBA"), spec.background_tolerance)
-    out_dir = OUT_ROOT / spec.slug
+    out_dir = processed_species_dir(spec)
     exported = []
     contact = []
     override_cache = {}

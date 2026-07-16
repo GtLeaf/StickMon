@@ -264,6 +264,15 @@ void GameEngine::beginExploreReturn(bool fainted) {
 
 void GameEngine::finishExploreReturn() {
     exploreTravel = ExploreTravelPhase::NONE;
+    bool statusCleared = false;
+    for (uint8_t slot = 0; slot < state.teamCount && slot < Game::TEAM_CAP; ++slot) {
+        Game::MonsterRuntime& mon = state.team[slot];
+        if (mon.majorStatus == Game::MajorStatus::NONE && mon.majorStatusTurns == 0) continue;
+        mon.majorStatus = Game::MajorStatus::NONE;
+        mon.majorStatusTurns = 0;
+        statusCleared = true;
+    }
+    if (statusCleared) markDirty(true);
 }
 
 void GameEngine::beginDebugBattle() {
@@ -1382,7 +1391,6 @@ void GameEngine::sanitizeMonsterMoves() {
         Game::MoveId basicMove = basicMoveIdForSpecies(*species);
         if (!isBasicFirstMoveForSpecies(*species, mon.move1Id)) {
             mon.move1Id = basicMove;
-            mon.moveProficiency[0] = 0;
             changed = true;
         }
 
@@ -1410,9 +1418,11 @@ void GameEngine::sanitizeMonsterMoves() {
             mon.move3Id,
         };
         for (uint8_t slot = 0; slot < Game::MOVE_SLOT_COUNT; ++slot) {
-            uint8_t normalized = moves[slot] == 0
-                ? 0
-                : min<uint8_t>(mon.moveProficiency[slot], Game::MOVE_PROFICIENCY_MAX);
+            uint8_t normalized = slot == 0
+                ? Game::MOVE_PROFICIENCY_MAX
+                : (moves[slot] == 0
+                    ? 0
+                    : min<uint8_t>(mon.moveProficiency[slot], Game::MOVE_PROFICIENCY_MAX));
             if (mon.moveProficiency[slot] != normalized) {
                 mon.moveProficiency[slot] = normalized;
                 changed = true;

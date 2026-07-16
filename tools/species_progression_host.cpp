@@ -125,9 +125,8 @@ int main() {
     mon.moveProficiency[2] = 56;
     resetMovesForLevel(mon, *bulbasaur);
     if (mon.move1Id != 33 || mon.move2Id != 45 || mon.move3Id != 0) return 23;
-    for (uint8_t slot = 0; slot < Game::MOVE_SLOT_COUNT; ++slot) {
-        if (mon.moveProficiency[slot] != 0) return 32;
-    }
+    if (mon.moveProficiency[0] != Game::MOVE_PROFICIENCY_MAX ||
+        mon.moveProficiency[1] != 0 || mon.moveProficiency[2] != 0) return 32;
     mon.level = 9;
     resetMovesForLevel(mon, *bulbasaur);
     if (mon.move1Id != 33 || mon.move2Id != 45 || mon.move3Id != 22) return 24;
