@@ -2,6 +2,7 @@
 #include <cstdint>
 
 #include "game/BattleSystem.h"
+#include "game/ExploreBoss.h"
 #include "game/Species.h"
 
 namespace {
@@ -19,6 +20,16 @@ constexpr std::array<GrowthExpectation, 6> EXPECTED_GROWTH = {{
     {GrowthRate::FAST, 800000},
     {GrowthRate::SLOW, 1250000},
 }};
+
+constexpr uint16_t EXPECTED_BOSS_EXP
+    [ExploreBoss::AREA_COUNT][ExploreBoss::CANDIDATE_COUNT] = {
+        {494, 414, 348, 320},
+        {688, 918, 732, 732},
+        {1458, 1820, 1650, 1796},
+        {2016, 2700, 2616, 2892},
+        {2786, 3406, 3648, 2650},
+        {5168, 4594, 4172, 4612},
+    };
 
 bool hasLearnsetEntry(const Species& species, uint8_t level, Game::MoveId moveId) {
     const uint16_t count = learnsetEntryCountForSpecies(species);
@@ -69,6 +80,16 @@ int main() {
             previousLevel = entry->level;
         }
         if (learnsetEntryForSpecies(species, learnset->count) != nullptr) return 11;
+
+        if (species.evolveTo != 0) {
+            const Species* target = findSpecies(species.evolveTo);
+            if (!target || target->id == species.id) return 36;
+            if (target->growthRate != species.growthRate) return 37;
+            if (species.evolveMethod == EvolutionMethod::LEVEL &&
+                (species.evolveLevel < 2 || species.evolveLevel > Game::LEVEL_MAX)) {
+                return 38;
+            }
+        }
     }
 
     const Species* bulbasaur = findSpecies(1);
@@ -82,6 +103,13 @@ int main() {
         BattleSystem::experienceReward(*magikarp, 12) != 68 ||
         BattleSystem::experienceReward(*magikarp, 17) != 97) {
         return 31;
+    }
+    if (BattleSystem::RESERVE_EXP_PERCENT != 50) return 39;
+    BattleSystem::ExperienceAwards soloAwards = BattleSystem::experienceAwards(97, false);
+    BattleSystem::ExperienceAwards teamAwards = BattleSystem::experienceAwards(97, true);
+    if (soloAwards.active != 97 || soloAwards.reserve != 0 ||
+        teamAwards.active != 97 || teamAwards.reserve != 48) {
+        return 40;
     }
     if (basicMoveIdForSpecies(*bulbasaur) != 33) return 13;
     if (!hasLearnsetEntry(*bulbasaur, 7, 73)) return 14;   // Leech Seed
@@ -146,6 +174,109 @@ int main() {
     mon.level = 15;
     resetMovesForLevel(mon, *magikarp);
     if (mon.move1Id != 150 || mon.move2Id != 33) return 28;
+
+    mon = {};
+    mon.speciesId = bulbasaur->id;
+    mon.level = 15;
+    if (levelUpEvolutionTarget(*bulbasaur, mon) != nullptr) return 41;
+    mon.level = 16;
+    const Species* ivysaur = levelUpEvolutionTarget(*bulbasaur, mon);
+    if (!ivysaur || ivysaur->id != 2) return 42;
+    mon.speciesId = ivysaur->id;
+    mon.level = 31;
+    if (levelUpEvolutionTarget(*ivysaur, mon) != nullptr) return 43;
+    mon.level = 32;
+    const Species* venusaur = levelUpEvolutionTarget(*ivysaur, mon);
+    if (!venusaur || venusaur->id != 3 ||
+        levelUpEvolutionTarget(*venusaur, mon) != nullptr) {
+        return 44;
+    }
+
+    const Species* azurill = findSpecies(298);
+    const Species* pikachu = findSpecies(25);
+    const Species* graveler = findSpecies(75);
+    const Species* eevee = findSpecies(133);
+    if (!azurill || !pikachu || !graveler || !eevee) return 45;
+    mon = {};
+    mon.speciesId = azurill->id;
+    mon.level = 10;
+    mon.affection = FRIENDSHIP_EVOLUTION_THRESHOLD - 1;
+    if (levelUpEvolutionTarget(*azurill, mon) != nullptr) return 46;
+    mon.affection = FRIENDSHIP_EVOLUTION_THRESHOLD;
+    const Species* marill = levelUpEvolutionTarget(*azurill, mon);
+    if (!marill || marill->id != 183) return 47;
+    mon.level = Game::LEVEL_MAX;
+    mon.affection = 255;
+    if (levelUpEvolutionTarget(*pikachu, mon) != nullptr ||
+        levelUpEvolutionTarget(*graveler, mon) != nullptr ||
+        levelUpEvolutionTarget(*eevee, mon) != nullptr) {
+        return 48;
+    }
+
+    bool testedInheritedMove = false;
+    for (uint8_t speciesIndex = 0; speciesIndex < speciesCount(); ++speciesIndex) {
+        const Species& source = speciesTable()[speciesIndex];
+        const Species* target = findSpecies(source.evolveTo);
+        if (!target) continue;
+        const uint16_t count = learnsetEntryCountForSpecies(source);
+        for (uint16_t entryIndex = 0; entryIndex < count; ++entryIndex) {
+            const LearnsetEntry* entry = learnsetEntryForSpecies(source, entryIndex);
+            if (!entry || !canLearnAsSpecialMove(source, entry->moveId) ||
+                moveLearnLevelForSpecies(*target, entry->moveId) != 0) {
+                continue;
+            }
+            if (!canRetainSpecialMove(*target, entry->moveId, Game::LEVEL_MAX)) return 49;
+            testedInheritedMove = true;
+            break;
+        }
+        if (testedInheritedMove) break;
+    }
+    if (!testedInheritedMove) return 50;
+
+    if (ExploreBoss::SPAWN_CHANCE != 4000 ||
+        ExploreBoss::SPAWN_ROLL_MAX != 10000) {
+        return 51;
+    }
+    if (ExploreBoss::victoryCoinReward(false) != 0 ||
+        ExploreBoss::victoryCoinReward(true) !=
+            ExploreBoss::VICTORY_COIN_REWARD) {
+        return 59;
+    }
+    uint8_t previousBossLevel = 0;
+    for (uint8_t area = 0; area < ExploreBoss::AREA_COUNT; ++area) {
+        const ExploreBoss::Config& boss = ExploreBoss::configForArea(area);
+        if (boss.level <= previousBossLevel || boss.level > Game::LEVEL_MAX) return 53;
+        if (boss.experiencePercent != 200) return 54;
+        for (uint8_t candidate = 0;
+             candidate < ExploreBoss::CANDIDATE_COUNT;
+             ++candidate) {
+            uint16_t speciesId = boss.speciesIds[candidate];
+            const Species* bossSpecies = findSpecies(speciesId);
+            if (!bossSpecies ||
+                ExploreBoss::speciesForRoll(area, candidate) != speciesId ||
+                ExploreBoss::speciesForRoll(
+                    area, candidate + ExploreBoss::CANDIDATE_COUNT) != speciesId) {
+                return 52;
+            }
+            for (uint8_t previous = 0; previous < candidate; ++previous) {
+                if (boss.speciesIds[previous] == speciesId) return 58;
+            }
+            uint16_t baseReward = BattleSystem::experienceReward(
+                *bossSpecies, boss.level);
+            uint16_t bossReward = BattleSystem::scaledExperienceReward(
+                baseReward, boss.experiencePercent);
+            if (bossReward != EXPECTED_BOSS_EXP[area][candidate]) return 55;
+            BattleSystem::ExperienceAwards awards = BattleSystem::experienceAwards(
+                bossReward, true);
+            if (awards.active != bossReward || awards.reserve != baseReward) return 56;
+        }
+        previousBossLevel = boss.level;
+    }
+    if (!ExploreBoss::canPlaceOnPath(3) ||
+        ExploreBoss::routeIndex(3) != 1 ||
+        ExploreBoss::routeIndex(12) != 10) {
+        return 57;
+    }
 
     return 0;
 }

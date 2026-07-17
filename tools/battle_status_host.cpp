@@ -165,5 +165,53 @@ int main() {
         attackerState, defenderState);
     if (!miss.missed || miss.damage != 0) return 14;
 
+    attacker = monster(1);
+    attacker.affection = 0;
+    attacker.hpCur = attacker.hpMax;
+    attacker.moveProficiency[1] = 0;
+    attacker.moveProficiency[2] = 0;
+    if (BattleSystem::specialTriggerChance(attacker, 0) != 15 ||
+        BattleSystem::specialTriggerChance(attacker, 1) != 15) {
+        return 15;
+    }
+    attacker.moveProficiency[1] = 25;
+    attacker.moveProficiency[2] = 60;
+    if (BattleSystem::specialTriggerChance(attacker, 0) != 19 ||
+        BattleSystem::specialTriggerChance(attacker, 1) != 31) {
+        return 16;
+    }
+    attacker.moveProficiency[1] = Game::MOVE_PROFICIENCY_MAX;
+    attacker.moveProficiency[2] = Game::MOVE_PROFICIENCY_MAX;
+    if (BattleSystem::specialTriggerChance(attacker, 0) != 40 ||
+        BattleSystem::specialTriggerChance(attacker, 1) != 40) {
+        return 17;
+    }
+    setRandom({0});
+    if (BattleSystem::rollSpecialMoveSlot(attacker) != 0) return 18;
+    setRandom({39});
+    if (BattleSystem::rollSpecialMoveSlot(attacker) != 0) return 19;
+    setRandom({40});
+    if (BattleSystem::rollSpecialMoveSlot(attacker) != 1) return 20;
+    setRandom({79});
+    if (BattleSystem::rollSpecialMoveSlot(attacker) != 1) return 21;
+    setRandom({80});
+    if (BattleSystem::rollSpecialMoveSlot(attacker) != BattleSystem::SPECIAL_SLOT_NONE) return 22;
+
+    uint8_t previousChance = 0;
+    attacker.affection = 0;
+    attacker.hpCur = attacker.hpMax;
+    for (uint8_t proficiency = 0; proficiency <= Game::MOVE_PROFICIENCY_MAX;
+         ++proficiency) {
+        attacker.moveProficiency[1] = proficiency;
+        uint8_t chance = BattleSystem::specialTriggerChance(attacker, 0);
+        if (chance < 15 || chance > 40 || chance < previousChance) return 23;
+        previousChance = chance;
+    }
+    attacker.moveProficiency[1] = 0;
+    attacker.affection = 255;
+    if (BattleSystem::specialTriggerChance(attacker, 0) != 25) return 24;
+    attacker.hpCur = 1;
+    if (BattleSystem::specialTriggerChance(attacker, 0) != 30) return 25;
+
     return 0;
 }

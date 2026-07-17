@@ -37,6 +37,7 @@ static constexpr uint8_t SLITHER_RETURN_START_UNIT = 18;
 static constexpr uint8_t SLITHER_IDLE_START_UNIT = 26;
 static constexpr uint8_t SLITHER_RETURN_PHASE_INDEX = 2;
 static constexpr uint8_t SLITHER_IDLE_PHASE_INDEX = 3;
+static constexpr uint16_t WALK_ROUTE_PHASE_MS = 100;
 static constexpr uint16_t SLITHER_ROUTE_CYCLE_MS = 700;
 static constexpr uint16_t SLITHER_AMBIENT_MIN_CYCLE_MS = 1100;
 static constexpr uint16_t SLITHER_AMBIENT_MAX_CYCLE_MS = 1400;
@@ -71,6 +72,21 @@ inline Behavior behaviorForSpecies(uint16_t speciesId) {
     // Dratini's extracted frames need their original per-phase registration restored.
     behavior.registeredSlither = speciesId == 147;
     return behavior;
+}
+
+inline uint16_t routeStepDurationMs(const Behavior& behavior,
+                                    uint8_t frameCount) {
+    if (behavior.mode != Mode::WALK || frameCount <= 1) {
+        return behavior.stepDurationMs;
+    }
+
+    uint32_t durationMs =
+        static_cast<uint32_t>(frameCount + 1U) * WALK_ROUTE_PHASE_MS;
+    if (durationMs < behavior.stepDurationMs) {
+        durationMs = behavior.stepDurationMs;
+    }
+    if (durationMs > 0xFFFFU) durationMs = 0xFFFFU;
+    return static_cast<uint16_t>(durationMs);
 }
 
 inline uint16_t cycleDurationMs(const Behavior& behavior, PlaybackContext context,

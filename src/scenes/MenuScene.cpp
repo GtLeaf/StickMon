@@ -12,16 +12,6 @@
 #include "hardware/PixelRenderer.h"
 
 namespace {
-const char* statusName(Game::MajorStatus status) {
-    if (status == Game::MajorStatus::POISON) return Ui::Status::STATUS_POISON;
-    if (status == Game::MajorStatus::TOXIC) return Ui::Status::STATUS_TOXIC;
-    if (status == Game::MajorStatus::PARALYSIS) return Ui::Status::STATUS_PARALYSIS;
-    if (status == Game::MajorStatus::SLEEP) return Ui::Status::STATUS_SLEEP;
-    if (status == Game::MajorStatus::BURN) return Ui::Status::STATUS_BURN;
-    if (status == Game::MajorStatus::FREEZE) return Ui::Status::STATUS_FREEZE;
-    return Ui::Status::STATUS_OK;
-}
-
 const char* originName(Game::Origin origin) {
     switch (origin) {
     case Game::Origin::STARTER: return Ui::Status::ORIGIN_STARTER;
@@ -1071,6 +1061,10 @@ void MenuScene::renderTeamPage() {
         int barX = ROW_X + 112;
         int barY = y + 7;
         int barW = ROW_W - 124;
+        GameAssets::Kind statusIcon = GameAssets::statusKind(mon.majorStatus);
+        if (statusIcon != GameAssets::Kind::COUNT) {
+            GameAssets::drawCentered(statusIcon, barX - 8, barY + 4);
+        }
         c.fillRect(barX, barY, barW, 8, PixelRenderer::rgb(82, 87, 95));
         int fillW = (barW * hpPct) / 100;
         if (fillW > 0) c.fillRect(barX, barY, fillW, 8, hpColor);
@@ -1172,12 +1166,6 @@ void MenuScene::renderStatusPage() {
         PixelRenderer::text(infoX + 42, sy(60), abilityName(mon), PixelRenderer::rgb(241, 242, 232), 1);
         snprintf(buf, sizeof(buf), Ui::Status::NATURE_FMT, natureName(activeMon.nature));
         PixelRenderer::text(infoX, sy(82), buf, PixelRenderer::rgb(241, 242, 232), 1);
-        snprintf(buf, sizeof(buf), Ui::Status::STATUS_FMT, statusName(activeMon.majorStatus));
-        PixelRenderer::text(10, sy(82), buf,
-                            activeMon.majorStatus == Game::MajorStatus::NONE
-                                ? PixelRenderer::rgb(156, 164, 176)
-                                : PixelRenderer::rgb(239, 128, 85),
-                            1);
 
         c.drawFastHLine(14, sy(101), 196, PixelRenderer::rgb(55, 63, 76));
         PixelRenderer::text(16, sy(109), Ui::Status::SOURCE_INFO, PixelRenderer::rgb(67, 213, 224), 1);
@@ -1691,6 +1679,17 @@ void MenuScene::renderDebugPage() {
                                 selected ? PixelRenderer::rgb(255, 218, 178) : 0x7BEF,
                                 1);
         }
+        if (debugCategory == DebugCategory::ROOT &&
+            i == DEBUG_ENEMY_BOUNDS_ROOT_INDEX) {
+            const char* value = GameEngine::ins().debugEnemyDrawBoundsVisible()
+                ? Ui::Settings::ON
+                : Ui::Settings::OFF;
+            PixelRenderer::text(Hal::DISPLAY_W - textPixelWidth(value) - 12,
+                                textY, value,
+                                selected ? PixelRenderer::rgb(255, 218, 178)
+                                         : 0x7BEF,
+                                1);
+        }
         if (i + 1 < itemCount) {
             c.drawFastHLine(TEXT_X, rowY + SEP_Y_OFFSET, SEP_W, PixelRenderer::rgb(55, 63, 76));
         }
@@ -1702,6 +1701,12 @@ void MenuScene::renderDebugPage() {
 }
 
 uint8_t MenuScene::debugItemCount() const {
+    static_assert(DEBUG_ROOT_ITEM_COUNT ==
+                      sizeof(Ui::Debug::ROOT_ITEMS) /
+                          sizeof(Ui::Debug::ROOT_ITEMS[0]),
+                  "debug root labels must match the root item count");
+    static_assert(DEBUG_ENEMY_BOUNDS_ROOT_INDEX + 1 < DEBUG_ROOT_ITEM_COUNT,
+                  "debug enemy bounds toggle must precede the back item");
     switch (debugCategory) {
     case DebugCategory::MONSTER: return DEBUG_MONSTER_ITEM_COUNT;
     case DebugCategory::RESOURCE: return DEBUG_RESOURCE_ITEM_COUNT;
@@ -1750,6 +1755,9 @@ void MenuScene::handleDebugAction() {
             engine.beginDebugBattle();
             return;
         }
+        case DEBUG_ENEMY_BOUNDS_ROOT_INDEX:
+            GameEngine::ins().toggleDebugEnemyDrawBounds();
+            return;
         default:
             popView();
             return;
@@ -2074,8 +2082,8 @@ void MenuScene::updateStatusScroll(int scrollKey, int maxScroll) {
     static constexpr float SPEED = 72.0f;
     float input = 0.0f;
     if (statusPage == 2) {
-        static constexpr float UP_THRESHOLD_DEG = 25.0f;
-        static constexpr float DOWN_THRESHOLD_DEG = 50.0f;
+        static constexpr float UP_THRESHOLD_DEG = 20.0f;
+        static constexpr float DOWN_THRESHOLD_DEG = 45.0f;
         static constexpr float FULL_SPEED_RANGE_DEG = 15.0f;
         static constexpr float DEGREES_PER_RADIAN = 57.2957795f;
 

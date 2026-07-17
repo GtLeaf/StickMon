@@ -143,6 +143,24 @@ const Species* findSpecies(uint16_t speciesId) {
     return nullptr;
 }
 
+const Species* levelUpEvolutionTarget(const Species& species,
+                                      const Game::MonsterRuntime& monster) {
+    if (species.evolveTo == 0 || species.evolveTo == species.id) return nullptr;
+
+    bool ready = false;
+    switch (species.evolveMethod) {
+    case EvolutionMethod::LEVEL:
+        ready = species.evolveLevel > 0 && monster.level >= species.evolveLevel;
+        break;
+    case EvolutionMethod::FRIENDSHIP:
+        ready = monster.affection >= FRIENDSHIP_EVOLUTION_THRESHOLD;
+        break;
+    default:
+        break;
+    }
+    return ready ? findSpecies(species.evolveTo) : nullptr;
+}
+
 const MoveInfo* findMove(Game::MoveId moveId) {
     size_t low = 0;
     size_t high = OFFICIAL_MOVE_COUNT;
@@ -227,6 +245,31 @@ bool canLearnAsSpecialMove(const Species& species, Game::MoveId moveId) {
            !isBasicFirstMoveForSpecies(species, moveId) &&
            moveLearnLevelForSpecies(species, moveId) > 0 &&
            isMoveBattleSupported(moveId);
+}
+
+namespace {
+bool canRetainSpecialMoveFromLine(const Species& species, Game::MoveId moveId,
+                                  uint8_t level, uint8_t depth) {
+    uint8_t learnLevel = moveLearnLevelForSpecies(species, moveId);
+    if (learnLevel > 0 && learnLevel <= level && canLearnAsSpecialMove(species, moveId)) {
+        return true;
+    }
+    if (depth >= speciesCount()) return false;
+
+    for (uint8_t index = 0; index < speciesCount(); ++index) {
+        const Species& candidate = speciesTable()[index];
+        if (candidate.evolveTo == species.id && candidate.id != species.id &&
+            canRetainSpecialMoveFromLine(candidate, moveId, level, depth + 1)) {
+            return true;
+        }
+    }
+    return false;
+}
+}
+
+bool canRetainSpecialMove(const Species& species, Game::MoveId moveId, uint8_t level) {
+    return moveId != 0 && isMoveBattleSupported(moveId) &&
+           canRetainSpecialMoveFromLine(species, moveId, level, 0);
 }
 
 void resetMovesForLevel(Game::MonsterRuntime& monster, const Species& species) {

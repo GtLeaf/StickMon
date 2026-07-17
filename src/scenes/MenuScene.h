@@ -60,8 +60,9 @@ private:
     static constexpr uint8_t ROOM_ITEM_COUNT = 5;
     static constexpr uint8_t FOOD_ITEM_COUNT = Game::ROOM_FOOD_COUNT + 1;
     static constexpr uint8_t COMPUTER_ITEM_COUNT = 3;
-    static constexpr uint8_t DEBUG_ROOT_ITEM_COUNT = 6;
+    static constexpr uint8_t DEBUG_ROOT_ITEM_COUNT = 7;
     static constexpr uint8_t DEBUG_BATTLE_ROOT_INDEX = 4;
+    static constexpr uint8_t DEBUG_ENEMY_BOUNDS_ROOT_INDEX = 5;
     static constexpr uint8_t DEBUG_MONSTER_ITEM_COUNT = 3;
     static constexpr uint8_t DEBUG_RESOURCE_ITEM_COUNT = 2;
     static constexpr uint8_t DEBUG_ENV_ITEM_COUNT = 3;

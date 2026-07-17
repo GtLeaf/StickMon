@@ -27,6 +27,10 @@ GRAPHICS = ESSENTIALS / "Graphics" / "Pokemon"
 ICON_SIZE = 64
 BATTLE_SIZE = 72
 EGG_SIZE = 32
+ENEMY_FRONT_MAX_WIDTH = 116
+ENEMY_FRONT_MAX_HEIGHT = 66
+ENEMY_FRONT_MIN_TARGET_HEIGHT = 48
+ENEMY_FRONT_MAX_UPSCALE = 1.75
 
 RGB565_RLE = 0
 INDEXED4_RLE = 1
@@ -144,6 +148,35 @@ def trim_alpha_padding(img, alpha_threshold=16):
     )
     bounds = alpha.getbbox()
     return img.crop(bounds) if bounds else img
+
+
+def prepare_enemy_battle_front(img):
+    trimmed = trim_alpha_padding(img)
+    base_width = trimmed.width * BATTLE_SIZE / max(1, img.width)
+    base_height = trimmed.height * BATTLE_SIZE / max(1, img.height)
+
+    scale = 1.0
+    if base_height < ENEMY_FRONT_MIN_TARGET_HEIGHT:
+        scale = min(
+            ENEMY_FRONT_MIN_TARGET_HEIGHT / max(1.0, base_height),
+            ENEMY_FRONT_MAX_UPSCALE,
+        )
+    if base_width * scale > ENEMY_FRONT_MAX_WIDTH:
+        scale = min(scale, ENEMY_FRONT_MAX_WIDTH / max(1.0, base_width))
+    if base_height * scale > ENEMY_FRONT_MAX_HEIGHT:
+        scale = min(scale, ENEMY_FRONT_MAX_HEIGHT / max(1.0, base_height))
+
+    target_width = min(
+        ENEMY_FRONT_MAX_WIDTH,
+        max(1, int(base_width * scale + 0.5)),
+    )
+    target_height = min(
+        ENEMY_FRONT_MAX_HEIGHT,
+        max(1, int(base_height * scale + 0.5)),
+    )
+    return trimmed.resize(
+        (target_width, target_height), Image.Resampling.NEAREST
+    )
 
 
 def image_pixels(img):
@@ -322,8 +355,8 @@ def add_base_frames(writer, species_id, ident, missing):
 
     icon = to_rgba(icon_path)
     writer.add_frame(species_id, ident, "ICON_0", icon.crop((0, 0, ICON_SIZE, ICON_SIZE)))
-    front = resize_nearest(to_rgba(front_path), BATTLE_SIZE)
-    writer.add_frame(species_id, ident, "FRONT", trim_alpha_padding(front))
+    front = prepare_enemy_battle_front(to_rgba(front_path))
+    writer.add_frame(species_id, ident, "FRONT", front)
     writer.add_frame(species_id, ident, "BACK", resize_nearest(to_rgba(back_path), BATTLE_SIZE))
 
 

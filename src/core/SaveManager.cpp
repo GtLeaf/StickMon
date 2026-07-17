@@ -557,15 +557,14 @@ bool sanitizeMonster(Game::MonsterRuntime& mon) {
     if (!isBasicFirstMoveForSpecies(*species, mon.move1Id)) {
         mon.move1Id = basicMoveIdForSpecies(*species);
     }
-    uint8_t move2Level = moveLearnLevelForSpecies(*species, mon.move2Id);
     if (mon.move2Id != 0 &&
-        (!canLearnAsSpecialMove(*species, mon.move2Id) || mon.level < move2Level)) {
+        (!canRetainSpecialMove(*species, mon.move2Id, mon.level) ||
+         mon.move2Id == mon.move1Id)) {
         mon.move2Id = 0;
     }
-    uint8_t move3Level = moveLearnLevelForSpecies(*species, mon.move3Id);
     if (mon.move3Id != 0 &&
-        (!canLearnAsSpecialMove(*species, mon.move3Id) || mon.level < move3Level ||
-         mon.move3Id == mon.move2Id)) {
+        (!canRetainSpecialMove(*species, mon.move3Id, mon.level) ||
+         mon.move3Id == mon.move1Id || mon.move3Id == mon.move2Id)) {
         mon.move3Id = 0;
     }
 

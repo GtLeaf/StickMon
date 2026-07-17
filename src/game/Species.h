@@ -44,6 +44,7 @@ enum class GrowthRate : uint8_t {
 };
 
 static constexpr uint8_t SPECIAL_MOVE_SLOT_COUNT = 2;
+static constexpr uint8_t FRIENDSHIP_EVOLUTION_THRESHOLD = 220;
 
 enum class EvolutionMethod : uint8_t {
     NONE,
@@ -157,6 +158,8 @@ const Species& starterSpecies();
 const Species* speciesTable();
 uint8_t speciesCount();
 const Species* findSpecies(uint16_t speciesId);
+const Species* levelUpEvolutionTarget(const Species& species,
+                                      const Game::MonsterRuntime& monster);
 const MoveInfo* findMove(Game::MoveId moveId);
 const MoveEffectSpec* moveEffectFor(const MoveInfo& move, uint8_t index);
 const SpeciesLearnset* findLearnset(uint16_t speciesId);
@@ -164,6 +167,7 @@ const LearnsetEntry* learnsetEntryForSpecies(const Species& species, uint16_t in
 uint16_t learnsetEntryCountForSpecies(const Species& species);
 bool isMoveBattleSupported(Game::MoveId moveId);
 bool canLearnAsSpecialMove(const Species& species, Game::MoveId moveId);
+bool canRetainSpecialMove(const Species& species, Game::MoveId moveId, uint8_t level);
 bool isBasicFirstMoveForSpecies(const Species& species, Game::MoveId moveId);
 Game::MoveId basicMoveIdForSpecies(const Species& species);
 uint8_t moveLearnLevelForSpecies(const Species& species, Game::MoveId moveId);

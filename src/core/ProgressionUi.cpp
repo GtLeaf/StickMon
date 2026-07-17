@@ -28,6 +28,31 @@ void renderLevelUp(uint8_t level) {
     PixelRenderer::text(92, 92, Ui::Common::A_CONTINUE, hint, 1);
 }
 
+void renderEvolution(uint16_t fromSpeciesId, uint16_t toSpeciesId) {
+    auto& canvas = PixelRenderer::canvas();
+    const uint16_t background = PixelRenderer::rgb(18, 24, 32);
+    const uint16_t panel = PixelRenderer::rgb(35, 42, 50);
+    const uint16_t border = PixelRenderer::rgb(241, 242, 232);
+    const uint16_t accent = PixelRenderer::rgb(255, 216, 72);
+    const uint16_t hint = PixelRenderer::rgb(135, 214, 238);
+    const Species* from = findSpecies(fromSpeciesId);
+    const Species* to = findSpecies(toSpeciesId);
+
+    canvas.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, background);
+    canvas.fillRect(24, 20, 192, 98, panel);
+    canvas.drawRect(24, 20, 192, 98, border);
+    PixelRenderer::text(96, 30, Ui::Common::EVOLUTION_TITLE, accent, 1);
+
+    char line[48];
+    snprintf(line, sizeof(line), Ui::Common::EVOLUTION_FMT,
+             from ? from->name : Ui::Status::MOVE_UNKNOWN);
+    PixelRenderer::text(48, 54, line, border, 1);
+    PixelRenderer::text(80, 76,
+                        to ? to->name : Ui::Status::MOVE_UNKNOWN,
+                        accent, 1);
+    PixelRenderer::text(92, 98, Ui::Common::A_CONTINUE, hint, 1);
+}
+
 void renderMoveLearn(uint8_t cursor) {
     auto& canvas = PixelRenderer::canvas();
     canvas.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, PixelRenderer::rgb(18, 24, 32));
@@ -70,6 +95,31 @@ void renderMoveLearn(uint8_t cursor) {
                                    : PixelRenderer::rgb(156, 164, 176);
     PixelRenderer::text(72, 96, Ui::Bag::YES, yesColor, 1);
     PixelRenderer::text(142, 96, Ui::Bag::NO, noColor, 1);
+}
+
+void renderMoveReplacement() {
+    auto& canvas = PixelRenderer::canvas();
+    const uint16_t background = PixelRenderer::rgb(18, 24, 32);
+    const uint16_t panel = PixelRenderer::rgb(35, 42, 50);
+    const uint16_t border = PixelRenderer::rgb(241, 242, 232);
+    const uint16_t accent = PixelRenderer::rgb(255, 216, 72);
+    const uint16_t hint = PixelRenderer::rgb(135, 214, 238);
+
+    canvas.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, background);
+    canvas.fillRect(24, 20, 192, 98, panel);
+    canvas.drawRect(24, 20, 192, 98, border);
+    PixelRenderer::text(72, 28, Ui::Explore::MOVE_REPLACED_TITLE, accent, 1);
+
+    const MoveInfo* oldMove = findMove(GameEngine::ins().pendingMoveReplacementOldId());
+    const MoveInfo* newMove = findMove(GameEngine::ins().pendingMoveReplacementNewId());
+    char line[64];
+    snprintf(line, sizeof(line), Ui::Explore::MOVE_FORGOT_FMT,
+             oldMove ? oldMove->name : Ui::Status::MOVE_UNKNOWN);
+    PixelRenderer::text(40, 52, line, PixelRenderer::rgb(156, 164, 176), 1);
+    snprintf(line, sizeof(line), Ui::Explore::MOVE_LEARNED_FMT,
+             newMove ? newMove->name : Ui::Status::MOVE_UNKNOWN);
+    PixelRenderer::text(40, 74, line, border, 1);
+    PixelRenderer::text(92, 98, Ui::Common::A_CONTINUE, hint, 1);
 }
 
 } // namespace ProgressionUi

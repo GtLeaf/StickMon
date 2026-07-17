@@ -8,6 +8,41 @@ static constexpr uint8_t H = 50;
 static constexpr uint8_t D = 200;
 static constexpr uint8_t Z = 0;
 
+static constexpr uint8_t SPECIAL_CHANCE_MIN = 15;
+static constexpr uint8_t SPECIAL_CHANCE_MAX = 40;
+static constexpr uint8_t SPECIAL_AFFECTION_BONUS_MAX = 10;
+static constexpr uint8_t SPECIAL_LOW_HP_BONUS = 5;
+static constexpr uint32_t PROFICIENCY_CURVE_DENOMINATOR = 1000000UL;
+
+constexpr uint32_t clampedProficiency(uint8_t proficiency) {
+    return proficiency > Game::MOVE_PROFICIENCY_MAX
+        ? Game::MOVE_PROFICIENCY_MAX
+        : proficiency;
+}
+
+constexpr uint32_t proficiencySmoothstep(uint8_t proficiency) {
+    return clampedProficiency(proficiency) * clampedProficiency(proficiency) *
+           (300UL - 2UL * clampedProficiency(proficiency));
+}
+
+constexpr uint8_t specialProficiencyChance(uint8_t proficiency) {
+    return static_cast<uint8_t>(
+        SPECIAL_CHANCE_MIN +
+        ((SPECIAL_CHANCE_MAX - SPECIAL_CHANCE_MIN) *
+             proficiencySmoothstep(proficiency) +
+         PROFICIENCY_CURVE_DENOMINATOR / 2) /
+            PROFICIENCY_CURVE_DENOMINATOR);
+}
+
+static_assert(specialProficiencyChance(0) == 15 &&
+                  specialProficiencyChance(25) == 19 &&
+                  specialProficiencyChance(50) == 28 &&
+                  specialProficiencyChance(60) == 31 &&
+                  specialProficiencyChance(75) == 36 &&
+                  specialProficiencyChance(90) == 39 &&
+                  specialProficiencyChance(100) == 40,
+              "special move proficiency curve must keep its tuning anchors");
+
 static constexpr uint8_t TYPE_EFFECT[18][18] = {
 //   Nor Fir Wat Gra Ele Ice Fig Poi Gro Fly Psy Bug Roc Gho Dra Dar Ste Fai
     {N,  N,  N,  N,  N,  N,  N,  N,  N,  N,  N,  N,  H,  Z,  N,  N,  H,  N},
@@ -155,12 +190,12 @@ uint8_t specialTriggerChance(const Game::MonsterRuntime& attacker, uint8_t speci
     if (specialMoveIdForMonster(attacker, specialSlot) == 0) return 0;
     uint8_t moveSlot = specialSlot + 1;
     if (moveSlot >= Game::MOVE_SLOT_COUNT) return 0;
-    uint16_t chance = 5;
-    chance += min<uint8_t>(attacker.moveProficiency[moveSlot],
-                           Game::MOVE_PROFICIENCY_MAX) * 20 / 100;
-    chance += attacker.affection * 25 / 255;
-    if (attacker.hpMax > 0 && attacker.hpCur * 100UL < attacker.hpMax * 30UL) chance += 15;
-    return chance > 85 ? 85 : static_cast<uint8_t>(chance);
+    uint16_t chance = specialProficiencyChance(attacker.moveProficiency[moveSlot]);
+    chance += attacker.affection * SPECIAL_AFFECTION_BONUS_MAX / 255;
+    if (attacker.hpMax > 0 && attacker.hpCur * 100UL < attacker.hpMax * 30UL) {
+        chance += SPECIAL_LOW_HP_BONUS;
+    }
+    return min<uint16_t>(chance, SPECIAL_CHANCE_MAX);
 }
 
 bool rollSpecialMove(const Game::MonsterRuntime& attacker) {
@@ -168,15 +203,21 @@ bool rollSpecialMove(const Game::MonsterRuntime& attacker) {
 }
 
 uint8_t rollSpecialMoveSlot(const Game::MonsterRuntime& attacker) {
-    uint8_t slots[SPECIAL_MOVE_SLOT_COUNT];
-    uint8_t count = 0;
-    if (specialMoveIdForMonster(attacker, 0) != 0) slots[count++] = 0;
-    if (specialMoveIdForMonster(attacker, 1) != 0) slots[count++] = 1;
-    if (count == 0) return SPECIAL_SLOT_NONE;
-    uint8_t specialSlot = slots[random(0, count)];
-    return random(0, 100) < specialTriggerChance(attacker, specialSlot)
-        ? specialSlot
-        : SPECIAL_SLOT_NONE;
+    uint8_t chances[SPECIAL_MOVE_SLOT_COUNT] = {};
+    uint8_t totalChance = 0;
+    for (uint8_t specialSlot = 0; specialSlot < SPECIAL_MOVE_SLOT_COUNT; ++specialSlot) {
+        chances[specialSlot] = specialTriggerChance(attacker, specialSlot);
+        totalChance += chances[specialSlot];
+    }
+    if (totalChance == 0) return SPECIAL_SLOT_NONE;
+
+    uint8_t roll = static_cast<uint8_t>(random(0, 100));
+    uint8_t threshold = 0;
+    for (uint8_t specialSlot = 0; specialSlot < SPECIAL_MOVE_SLOT_COUNT; ++specialSlot) {
+        threshold += chances[specialSlot];
+        if (roll < threshold) return specialSlot;
+    }
+    return SPECIAL_SLOT_NONE;
 }
 
 Game::MoveId moveIdForAction(const Game::MonsterRuntime& attacker,

@@ -137,6 +137,16 @@ public:
     Game::MoveId pendingMoveLearnId() const { return state.pendingMoveId; }
     uint8_t pendingMoveLearnSlot() const { return state.pendingMoveSlot; }
     bool resolvePendingMoveLearn(bool learn);
+    bool hasPendingMoveReplacement() const { return moveReplacementEventCount > 0; }
+    uint8_t pendingMoveReplacementSlot() const;
+    Game::MoveId pendingMoveReplacementOldId() const;
+    Game::MoveId pendingMoveReplacementNewId() const;
+    bool acknowledgePendingMoveReplacement();
+    bool hasPendingEvolution() const { return evolutionEventCount > 0; }
+    uint8_t pendingEvolutionSlot() const;
+    uint16_t pendingEvolutionFromSpeciesId() const;
+    uint16_t pendingEvolutionToSpeciesId() const;
+    bool acknowledgePendingEvolution();
     uint32_t applyActiveFaintPenalty();
     void addWalkSteps(uint16_t steps);
     void debugRecoverActiveMonster();
@@ -149,6 +159,10 @@ public:
     void toggleDebugWalkBoundary() { debugShowWalkBoundary = !debugShowWalkBoundary; }
     bool debugTiltControlEnabled() const { return debugTiltControl; }
     void toggleDebugTiltControl() { debugTiltControl = !debugTiltControl; }
+    bool debugEnemyDrawBoundsVisible() const { return debugShowEnemyDrawBounds; }
+    void toggleDebugEnemyDrawBounds() {
+        debugShowEnemyDrawBounds = !debugShowEnemyDrawBounds;
+    }
     void wakeFromIdle();
     void markDirty(bool immediate = false);
     bool saveNow();
@@ -190,6 +204,8 @@ private:
     void persistGameClock(uint32_t nowMs, bool force = false);
     void initDefaultState();
     void sanitizeMonsterMoves();
+    bool sanitizeMonsterMovesForSpecies(Game::MonsterRuntime& mon,
+                                        const Species& species);
     void tickCare(uint32_t nowMs);
     void resetDailyCountersIfNeeded();
     void grantCareExperience(uint8_t baseAmount, bool weakGain = false);
@@ -199,6 +215,14 @@ private:
                               uint8_t teamSlot, uint16_t startIndex);
     void queueMoveLearnIfReady(Game::MonsterRuntime& mon, const Species& species,
                                uint8_t oldLevel, uint8_t teamSlot);
+    void queueMoveReplacementEvent(uint8_t teamSlot, Game::MoveId oldMoveId,
+                                   Game::MoveId newMoveId);
+    bool applyLevelUpEvolutions(Game::MonsterRuntime& mon, uint8_t teamSlot,
+                                bool notify);
+    bool reconcileLevelUpEvolutions();
+    void queueEvolutionEvent(uint8_t teamSlot, uint16_t fromSpeciesId,
+                             uint16_t toSpeciesId);
+    void clearPendingMoveLearn();
 
     static constexpr uint32_t INPUT_SAMPLE_MS = 16;
     static constexpr uint32_t FRAME_MS = 66;
@@ -210,6 +234,23 @@ private:
         HOLD,
         IN,
     };
+
+    struct EvolutionEvent {
+        uint8_t teamSlot = 0;
+        uint16_t fromSpeciesId = 0;
+        uint16_t toSpeciesId = 0;
+    };
+
+    struct MoveReplacementEvent {
+        uint8_t teamSlot = 0;
+        Game::MoveId oldMoveId = 0;
+        Game::MoveId newMoveId = 0;
+    };
+
+    static constexpr uint8_t EVOLUTION_EVENT_CAP = Game::TEAM_CAP * 2;
+    // Current learnsets top out at 25 entries; leave room for a full catch-up
+    // level-up on every teammate before the UI drains the notifications.
+    static constexpr uint8_t MOVE_REPLACEMENT_EVENT_CAP = Game::TEAM_CAP * 32;
 
     std::unique_ptr<Scene> currentScene;
     SceneID currentId = SceneID::MAIN;
@@ -231,6 +272,7 @@ private:
     bool saveDirty = false;
     bool debugShowWalkBoundary = false;
     bool debugTiltControl = false;
+    bool debugShowEnemyDrawBounds = false;
     uint8_t debugLightSource = 0;
     uint8_t brightnessTraceFrames = 0;
     uint32_t brightnessTraceStartedMs = 0;
@@ -247,6 +289,12 @@ private:
     uint8_t exploreArea = 0;
     bool debugBattleRequested = false;
     bool debugMenuReturnRequested = false;
+    EvolutionEvent evolutionEvents[EVOLUTION_EVENT_CAP] = {};
+    uint8_t evolutionEventHead = 0;
+    uint8_t evolutionEventCount = 0;
+    MoveReplacementEvent moveReplacementEvents[MOVE_REPLACEMENT_EVENT_CAP] = {};
+    uint8_t moveReplacementEventHead = 0;
+    uint8_t moveReplacementEventCount = 0;
     MainSceneViewState mainViewState;
 
     Game::GameState state;

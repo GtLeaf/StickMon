@@ -59,6 +59,8 @@ static constexpr const char* SAVED = "已保存";
 static constexpr const char* LEVEL_FMT = "Lv%u";
 static constexpr const char* LEVEL_UP_TITLE = "升级!";
 static constexpr const char* LEVEL_UP_FMT = "升到Lv%u";
+static constexpr const char* EVOLUTION_TITLE = "进化!";
+static constexpr const char* EVOLUTION_FMT = "%s进化!";
 static constexpr const char* A_CONTINUE = "A 继续";
 }
 
@@ -367,6 +369,7 @@ static constexpr const char* SET_TIME = "设置时间";
 static constexpr const char* LIGHT_SOURCE = "光源位置";
 static constexpr const char* TILT_CONTROL = "倾斜控制";
 static constexpr const char* WALK_BOUNDARY = "运动边界";
+static constexpr const char* ENEMY_DRAW_BOUNDS = "敌方绘制框";
 static constexpr const char* LIGHT_FOLLOW = "跟随";
 static constexpr const char* LIGHT_TOP_LEFT = "左上";
 static constexpr const char* LIGHT_TOP = "上方";
@@ -398,6 +401,7 @@ static constexpr const char* ROOT_ITEMS[] = {
     CATEGORY_ENV,
     CATEGORY_MOTION,
     RANDOM_BATTLE,
+    ENEMY_DRAW_BOUNDS,
     Ui::BACK,
 };
 static constexpr const char* MONSTER_ITEMS[] = {
@@ -706,7 +710,6 @@ static constexpr const char* BALL_SELECT_FMT = "< %s x%u >";
 static constexpr const char* BALL_SELECT_HINT = "A投掷 B切换";
 static constexpr const char* CAPTURE_SUCCESS = "捕捉成功!";
 static constexpr const char* BROKE_FREE = "挣脱了!";
-static constexpr const char* RELEASED = "放走了它 +2C";
 static constexpr const char* FLEE_FAILED = "没能逃掉!";
 static constexpr const char* START = "开始探索";
 static constexpr const char* HUD_FMT = "球:%u 金:%lu";
@@ -758,6 +761,9 @@ static constexpr const char* SPECIAL_DAMAGE_FMT = "%s %u伤害";
 static constexpr const char* WILD_DAMAGE_FMT = "受到%u伤害";
 static constexpr const char* MOVE_USED_FMT = "%s使用了%s!";
 static constexpr const char* WILD_MOVE_USED_FMT = "对手使用了%s!";
+static constexpr const char* BOSS_BADGE = "头目";
+static constexpr const char* BOSS_APPEARED = "区域头目出现了!";
+static constexpr const char* BOSS_DEFEATED = "区域头目被击败!";
 static constexpr const char* CRITICAL_HIT = "击中要害!";
 static constexpr const char* SUPER_EFFECTIVE = "效果拔群!";
 static constexpr const char* NOT_VERY_EFFECTIVE = "效果不佳";
@@ -765,6 +771,7 @@ static constexpr const char* BATTLE_WIN = "战斗胜利!";
 static constexpr const char* EXP_GAIN_FMT = "获得%u经验";
 static constexpr const char* SHARED_EXP_GAIN_FMT = "%s获得%u经验";
 static constexpr const char* LEVEL_UP_LOG_FMT = "%s升到Lv%u!";
+static constexpr const char* EVOLUTION_LOG_FMT = "%s进化! %s";
 static constexpr const char* MOVE_LEARNED_LOG_FMT = "%s学会了%s!";
 static constexpr const char* COIN_GAIN_FMT = "获得%u金币";
 static constexpr const char* CANNOT_MOVE = "无法行动";
@@ -808,6 +815,9 @@ static constexpr const char* LEARN_MOVE_FMT = "要学习%s吗?";
 static constexpr const char* LEARN_EMPTY_SLOT = "放入技能2";
 static constexpr const char* LEARN_EMPTY_SLOT_2 = "放入技能3";
 static constexpr const char* LEARN_REPLACE_FMT = "替换%s";
+static constexpr const char* MOVE_REPLACED_TITLE = "招式已替换";
+static constexpr const char* MOVE_FORGOT_FMT = "忘记了%s";
+static constexpr const char* MOVE_LEARNED_FMT = "学会了%s";
 static constexpr const char* PICKUP_FMT = "捡到%s";
 static constexpr const char* PICKUP_COIN_FMT = "捡到%luC";
 static constexpr const char* PICKUP_BALL = "精灵球";

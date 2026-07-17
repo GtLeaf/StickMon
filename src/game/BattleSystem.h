@@ -8,6 +8,12 @@ namespace BattleSystem {
 
 static constexpr uint8_t SPECIAL_SLOT_NONE = 0xFF;
 static constexpr uint8_t EFFECT_OUTCOME_CAP = 12;
+static constexpr uint8_t RESERVE_EXP_PERCENT = 50;
+
+struct ExperienceAwards {
+    uint16_t active = 0;
+    uint16_t reserve = 0;
+};
 
 struct BattleActorState {
     int8_t statStages[static_cast<uint8_t>(BattleStat::COUNT)] = {};
@@ -88,6 +94,21 @@ struct DamageResult {
 inline uint16_t experienceReward(const Species& defeatedSpecies, uint8_t defeatedLevel) {
     uint32_t reward = static_cast<uint32_t>(defeatedSpecies.baseExp) * defeatedLevel / 7;
     return static_cast<uint16_t>(reward > 0 ? reward : 1);
+}
+
+inline uint16_t scaledExperienceReward(uint16_t reward, uint16_t percent) {
+    uint32_t scaled = static_cast<uint32_t>(reward) * percent / 100;
+    if (scaled == 0 && reward > 0) scaled = 1;
+    return static_cast<uint16_t>(scaled > 0xFFFFU ? 0xFFFFU : scaled);
+}
+
+inline ExperienceAwards experienceAwards(uint16_t reward, bool hasHealthyReserve) {
+    ExperienceAwards awards;
+    awards.active = reward;
+    if (hasHealthyReserve) {
+        awards.reserve = static_cast<uint32_t>(reward) * RESERVE_EXP_PERCENT / 100;
+    }
+    return awards;
 }
 
 uint16_t typeEffectiveness(TypeId attack, TypeId defend1, TypeId defend2);

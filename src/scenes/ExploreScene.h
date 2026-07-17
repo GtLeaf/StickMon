@@ -31,7 +31,9 @@ private:
         WALKING,
         ENCOUNTER,
         LEVEL_UP,
+        EVOLUTION,
         LEARN_MOVE,
+        MOVE_REPLACED,
         PICKUP,
         RESULT,
         EXITING,
@@ -80,6 +82,7 @@ private:
     bool captureMenuOpen = false;
     bool captureAnimationActive = false;
     bool captureOutcome = false;
+    bool battleIsBoss = false;
     Game::ItemId captureBall = Game::ItemId::POKE_BALL;
     uint32_t captureAnimationStarted = 0;
     uint8_t pendingBattleSwitchSlot = 0xFF;
@@ -156,6 +159,10 @@ private:
     bool routePickupAvailable = false;
     uint8_t routeGuaranteedEncounterIndex = 0;
     bool routeGuaranteedEncounterPending = false;
+    bool expeditionBossScheduled = false;
+    uint16_t expeditionBossSpeciesId = 0;
+    uint8_t routeBossIndex = 0;
+    bool routeBossPending = false;
     static constexpr uint8_t EXPLORE_MENU_ITEM_COUNT = 4;
     bool exploreMenuOpen = false;
     bool exploreSubViewOpen = false;
@@ -171,11 +178,13 @@ private:
     void resumeWalk();
     void generateMapBlocks();
     void prepareMapRoutes();
+    void placeRouteBoss();
     void placeRoutePickup();
     bool collectRoutePickup();
     void advanceMapBlock(uint8_t nextMap);
     int8_t currentDepthLevelOffset(uint8_t spread) const;
-    void beginEncounter(const Species& species, uint8_t level);
+    void beginEncounter(const Species& species, uint8_t level, bool boss = false);
+    void beginRouteBossEncounter();
     void beginDebugEncounter();
     void rollEncounter();
     bool rollRandomEncounter(bool guaranteed);
@@ -225,6 +234,7 @@ private:
     void renderResult();
     void renderEndPrompt();
     void renderExploreMenu();
+    void renderRouteBoss(int cameraX, int cameraY);
     void renderRoutePickup(int cameraX, int cameraY);
     void drawRouteMonster(const Species& species, float worldX, float worldY,
                           uint8_t walkDirection, bool follower,

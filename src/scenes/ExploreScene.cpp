@@ -10,6 +10,7 @@
 #include "core/ProgressionUi.h"
 #include "core/UiStrings.h"
 #include "game/BattleSystem.h"
+#include "game/ExploreBoss.h"
 #include "hardware/Hal.h"
 #include "hardware/PixelRenderer.h"
 
@@ -115,8 +116,6 @@ static constexpr uint32_t BATTLE_HIT_SHAKE_MS = 280;
 static constexpr uint32_t BATTLE_HP_DRAIN_MS = 420;
 static constexpr uint32_t BATTLE_ACTION_MS =
     BATTLE_HIT_DELAY_MS + BATTLE_HIT_SHAKE_MS + BATTLE_HP_DRAIN_MS;
-static constexpr uint8_t BATTLE_WIN_COIN_REWARD = 10;
-static constexpr uint8_t EXP_SHARE_PERCENT = 50;
 static constexpr uint8_t EXPLORE_MAP_TILES_W = 16;
 static constexpr uint8_t EXPLORE_MAP_TILES_H = 12;
 static constexpr uint16_t EXPLORE_TILE_SIZE = 26;
@@ -126,27 +125,87 @@ static constexpr float ROUTE_FOLLOWER_START_OFFSET = EXPLORE_TILE_SIZE;
 static constexpr uint16_t ROUTE_FOLLOWER_DELAY_MS = 120;
 static constexpr uint8_t ROUTE_FOLLOWER_GAP_STEPS = 2;
 static constexpr int ROUTE_PICKUP_VISUAL_OFFSET_Y = 6;
+static constexpr float ROUTE_BOSS_PATROL_DISTANCE = 5.0f;
+static constexpr uint32_t ROUTE_BOSS_PATROL_CYCLE_MS = 6000;
+static constexpr uint32_t ROUTE_BOSS_PATROL_OUT_START_MS = 1600;
+static constexpr uint32_t ROUTE_BOSS_PATROL_OUT_END_MS = 2300;
+static constexpr uint32_t ROUTE_BOSS_PATROL_RETURN_START_MS = 3800;
+static constexpr uint32_t ROUTE_BOSS_PATROL_RETURN_END_MS = 4500;
 static constexpr float ROUTE_EXIT_MARGIN = EXPLORE_TILE_SIZE * 2.0f;
 static constexpr uint8_t EXPLORE_HUD_ALPHA = 150;
 static constexpr int BATTLE_ASCII_ADVANCE = 8;
 static constexpr uint8_t BATTLE_FOOTER_ALPHA = 153;
 
+constexpr uint16_t routeBossPatrolPhasePermille(uint32_t phase) {
+    return phase < ROUTE_BOSS_PATROL_OUT_START_MS
+        ? 0
+        : (phase < ROUTE_BOSS_PATROL_OUT_END_MS
+            ? static_cast<uint16_t>(
+                (phase - ROUTE_BOSS_PATROL_OUT_START_MS) * 1000U /
+                (ROUTE_BOSS_PATROL_OUT_END_MS - ROUTE_BOSS_PATROL_OUT_START_MS))
+            : (phase < ROUTE_BOSS_PATROL_RETURN_START_MS
+                ? 1000
+                : (phase < ROUTE_BOSS_PATROL_RETURN_END_MS
+                    ? static_cast<uint16_t>(
+                        1000U -
+                        (phase - ROUTE_BOSS_PATROL_RETURN_START_MS) * 1000U /
+                        (ROUTE_BOSS_PATROL_RETURN_END_MS -
+                         ROUTE_BOSS_PATROL_RETURN_START_MS))
+                    : 0)));
+}
+
+constexpr uint16_t routeBossPatrolPermille(uint32_t nowMs) {
+    return routeBossPatrolPhasePermille(nowMs % ROUTE_BOSS_PATROL_CYCLE_MS);
+}
+
+constexpr bool routeBossPatrolFacesOutward(uint32_t phase) {
+    return phase >= ROUTE_BOSS_PATROL_OUT_START_MS &&
+           phase < ROUTE_BOSS_PATROL_RETURN_START_MS;
+}
+
+static_assert(routeBossPatrolPermille(0) == 0 &&
+                  routeBossPatrolPermille(ROUTE_BOSS_PATROL_OUT_END_MS) == 1000 &&
+                  routeBossPatrolPermille(ROUTE_BOSS_PATROL_RETURN_END_MS) == 0,
+              "route boss patrol must leave and return to its anchor");
+static_assert(!routeBossPatrolFacesOutward(0) &&
+                  routeBossPatrolFacesOutward(ROUTE_BOSS_PATROL_OUT_START_MS) &&
+                  routeBossPatrolFacesOutward(ROUTE_BOSS_PATROL_OUT_END_MS) &&
+                  !routeBossPatrolFacesOutward(ROUTE_BOSS_PATROL_RETURN_START_MS),
+              "route boss must hold its last movement direction at each endpoint");
+
 struct BattleLayout {
     static constexpr int FOOTER_Y = 99;
     static constexpr int FOOTER_H = Hal::DISPLAY_H - FOOTER_Y;
 
+    static constexpr int PLAYER_NAME_Y = 66;
+
     static constexpr int WILD_X = 178;
-    static constexpr int WILD_GROUND_Y = 62;
-    static constexpr int WILD_MAX_W = 100;
-    static constexpr int WILD_MAX_H = 58;
-    static constexpr int WILD_MIN_TARGET_H = 42;
-    static constexpr int WILD_MAX_UPSCALE_PERCENT = 150;
+    static constexpr int WILD_GROUND_Y = PLAYER_NAME_Y;
+    static constexpr int WILD_MAX_W = 116;
+    static constexpr int WILD_MAX_H = WILD_GROUND_Y;
 
     static constexpr int PLAYER_X = 58;
     static constexpr int PLAYER_GROUND_Y = 97;
     static constexpr int PLAYER_MAX_W = 100;
     static constexpr int PLAYER_MAX_H = 62;
+
+    static constexpr int EXP_LABEL_X = 118;
+    static constexpr int EXP_LABEL_VISUAL_H = 9;
+    static constexpr int EXP_BAR_X = 149;
+    static constexpr int EXP_BAR_Y = 85;
+    static constexpr int EXP_BAR_W = 81;
+    static constexpr int EXP_BAR_H = 6;
+    static constexpr int EXP_LABEL_Y =
+        EXP_BAR_Y + EXP_BAR_H / 2 - EXP_LABEL_VISUAL_H / 2;
 };
+
+static_assert(BattleLayout::EXP_LABEL_Y +
+                  BattleLayout::EXP_LABEL_VISUAL_H / 2 ==
+                  BattleLayout::EXP_BAR_Y + BattleLayout::EXP_BAR_H / 2,
+              "battle EXP label and bar must share the same vertical center");
+
+static_assert(BattleLayout::WILD_GROUND_Y - BattleLayout::WILD_MAX_H == 0,
+              "wild sprite bounds must reach the top edge of the display");
 
 void drawBattleText(int x, int y, const char* value, uint16_t color) {
     PixelRenderer::textOutlined(
@@ -160,6 +219,35 @@ void drawBattleDarkText(int x, int y, const char* value) {
 void drawBattleAsciiRightAligned(int rightX, int y, const char* value) {
     drawBattleDarkText(rightX - static_cast<int>(strlen(value)) * BATTLE_ASCII_ADVANCE,
                        y, value);
+}
+
+void drawBattleCompactExpLabel(int x, int y, uint16_t color) {
+    // Native 8x8 Unscii E/X/P glyphs keep the compact label pixel-aligned.
+    static constexpr uint32_t FOREGROUND[8] = {
+        0x000000U, 0x3EC37EU, 0x666606U, 0x663C06U,
+        0x3E183EU, 0x063C06U, 0x066606U, 0x06C37EU,
+    };
+    static constexpr uint32_t OUTLINE[10] = {
+        0x00000000U, 0x007D86FCU, 0x00824902U, 0x010332F2U,
+        0x01028472U, 0x00824882U, 0x00728472U, 0x001332F2U,
+        0x00124902U, 0x000D86FCU,
+    };
+    auto& canvas = PixelRenderer::canvas();
+    uint16_t outline = PixelRenderer::rgb(255, 255, 255);
+    for (int row = 0; row < 10; ++row) {
+        for (int col = 0; col < 26; ++col) {
+            if (OUTLINE[row] & (1UL << col)) {
+                canvas.drawPixel(x + col - 1, y + row - 1, outline);
+            }
+        }
+    }
+    for (int row = 0; row < 8; ++row) {
+        for (int col = 0; col < 24; ++col) {
+            if (FOREGROUND[row] & (1UL << col)) {
+                canvas.drawPixel(x + col, y + row, color);
+            }
+        }
+    }
 }
 
 void drawBattleConditionEffects(int centerX, int groundY,
@@ -520,6 +608,8 @@ constexpr int8_t depthLevelOffset(uint16_t progressPermille, uint8_t spread) {
 
 static_assert(ROUTE_MAP_COUNT == Ui::Explore::AREA_COUNT,
               "explore area strings and route maps must stay aligned");
+static_assert(ROUTE_MAP_COUNT == ExploreBoss::AREA_COUNT,
+              "explore boss configs and route maps must stay aligned");
 static_assert(routeLevelsStrictlyIncrease(ROUTE_MAPS),
               "explore area average levels must follow menu order");
 static_assert(routeTuningValid(ROUTE_MAPS),
@@ -594,6 +684,18 @@ bool hasHealthyRouteFollower(const Game::GameState& state) {
     if (state.teamCount <= 1) return false;
     const Game::MonsterRuntime& follower = state.team[1];
     return !follower.fainted && follower.hpCur > 0;
+}
+
+uint16_t routeStepDurationForSpecies(uint16_t speciesId) {
+    PokemonSprites::WalkingAnimation animation{};
+    uint8_t frameCount = 1;
+    if (PokemonSprites::walkingAnimation(
+            speciesId, PokemonSprites::WalkDirection::DOWN, animation) &&
+        animation.frameCount > 0) {
+        frameCount = animation.frameCount;
+    }
+    return PokemonMotion::routeStepDurationMs(
+        PokemonMotion::behaviorForSpecies(speciesId), frameCount);
 }
 
 static_assert(routeFollowerTargetIndex(0) == 0 &&
@@ -766,6 +868,10 @@ void ExploreScene::onEnter() {
     exploreMenuOpenedAt = 0;
     autoWalkActive = false;
     walkStepResolutionPending = false;
+    battleIsBoss = false;
+    expeditionBossScheduled = false;
+    expeditionBossSpeciesId = 0;
+    routeBossPending = false;
     debugBattleMode = engine.consumeDebugBattleRequest();
     if (debugBattleMode) {
         activeArea = Area::GRASS_PATH;
@@ -823,7 +929,9 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
         return true;
     }
 
-    if ((phase == Phase::LEVEL_UP || phase == Phase::LEARN_MOVE || phase == Phase::ENCOUNTER) &&
+    if ((phase == Phase::LEVEL_UP || phase == Phase::EVOLUTION ||
+         phase == Phase::LEARN_MOVE || phase == Phase::MOVE_REPLACED ||
+         phase == Phase::ENCOUNTER) &&
         event.action == BtnAction::LONG_PRESS) {
         return true;
     }
@@ -929,7 +1037,24 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
     if (phase == Phase::LEVEL_UP) {
         if (event.btn == 0) {
             GameEngine::ins().acknowledgePendingLevelUp();
-            if (GameEngine::ins().hasPendingMoveLearn()) {
+            if (GameEngine::ins().hasPendingEvolution()) {
+                phase = Phase::EVOLUTION;
+            } else if (GameEngine::ins().hasPendingMoveLearn()) {
+                learnCursor = 0;
+                phase = Phase::LEARN_MOVE;
+            } else {
+                finishProgression();
+            }
+        }
+        return true;
+    }
+
+    if (phase == Phase::EVOLUTION) {
+        if (event.btn == 0) {
+            GameEngine::ins().acknowledgePendingEvolution();
+            if (GameEngine::ins().hasPendingEvolution()) {
+                phase = Phase::EVOLUTION;
+            } else if (GameEngine::ins().hasPendingMoveLearn()) {
                 learnCursor = 0;
                 phase = Phase::LEARN_MOVE;
             } else {
@@ -942,9 +1067,7 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
     if (phase == Phase::LEARN_MOVE) {
         if (event.btn == 0) {
             GameEngine::ins().resolvePendingMoveLearn(learnCursor == 0);
-            if (GameEngine::ins().hasPendingMoveLearn()) {
-                learnCursor = 0;
-            } else {
+            if (!enterPendingProgression(progressionReturnPhase)) {
                 finishProgression();
             }
             return true;
@@ -953,6 +1076,16 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
             learnCursor = (learnCursor + 1) % 2;
             return true;
         }
+    }
+
+    if (phase == Phase::MOVE_REPLACED) {
+        if (event.btn == 0) {
+            GameEngine::ins().acknowledgePendingMoveReplacement();
+            if (!enterPendingProgression(progressionReturnPhase)) {
+                finishProgression();
+            }
+        }
+        return true;
     }
 
     if (phase == Phase::RESULT) {
@@ -1018,8 +1151,8 @@ void ExploreScene::beginRouteExit() {
         routeFollowerWalkDirection);
 
     auto& engine = GameEngine::ins();
-    uint16_t leaderStepDuration = PokemonMotion::behaviorForSpecies(
-        engine.activeSpecies().id).stepDurationMs;
+    uint16_t leaderStepDuration = routeStepDurationForSpecies(
+        engine.activeSpecies().id);
     routeLeaderMoveDurationMs = routeDurationForDistance(
         routeFromX, routeFromY, routeTargetX, routeTargetY, leaderStepDuration);
     routeMoveDurationMs = routeLeaderMoveDurationMs;
@@ -1027,8 +1160,8 @@ void ExploreScene::beginRouteExit() {
     routeFollowerMoving = false;
     const Game::GameState& state = engine.gameState();
     if (hasHealthyRouteFollower(state)) {
-        uint16_t followerStepDuration = PokemonMotion::behaviorForSpecies(
-            engine.speciesFor(state.team[1]).id).stepDurationMs;
+        uint16_t followerStepDuration = routeStepDurationForSpecies(
+            engine.speciesFor(state.team[1]).id);
         routeFollowerMoveDurationMs = routeDurationForDistance(
             routeFollowerFromX, routeFollowerFromY,
             routeFollowerTargetX, routeFollowerTargetY,
@@ -1130,14 +1263,14 @@ void ExploreScene::walk() {
                           fabsf(routeFollowerTargetY - routeFollowerFromY) >= 0.01f;
     routeMoveStarted = Hal::ins().millis();
     auto& engine = GameEngine::ins();
-    routeLeaderMoveDurationMs = PokemonMotion::behaviorForSpecies(
-        engine.activeSpecies().id).stepDurationMs;
+    routeLeaderMoveDurationMs = routeStepDurationForSpecies(
+        engine.activeSpecies().id);
     routeFollowerMoveDurationMs = routeLeaderMoveDurationMs;
     routeMoveDurationMs = routeLeaderMoveDurationMs;
     const Game::GameState& state = engine.gameState();
     if (hasHealthyRouteFollower(state)) {
-        routeFollowerMoveDurationMs = PokemonMotion::behaviorForSpecies(
-            engine.speciesFor(state.team[1]).id).stepDurationMs;
+        routeFollowerMoveDurationMs = routeStepDurationForSpecies(
+            engine.speciesFor(state.team[1]).id);
         if (routeFollowerMoving) {
             routeMoveDurationMs = max<uint16_t>(
                 routeLeaderMoveDurationMs,
@@ -1218,6 +1351,10 @@ void ExploreScene::finishCompletedWalkStep() {
 
     const ExploreMapGenerator::Path& path = generatedMap.paths[currentRoutePath];
     if (exploreMenuOpen) return;
+    if (routeBossPending && routeIndex == routeBossIndex) {
+        beginRouteBossEncounter();
+        return;
+    }
     if (collectRoutePickup()) {
         autoWalkActive = false;
         return;
@@ -1229,6 +1366,10 @@ void ExploreScene::finishCompletedWalkStep() {
         } else {
             beginRouteExit();
         }
+        return;
+    }
+    if (routeBossPending && routeIndex + 1 == routeBossIndex) {
+        autoWalkActive = false;
         return;
     }
     bool guaranteeEncounter = routeGuaranteedEncounterPending &&
@@ -1320,8 +1461,9 @@ int8_t ExploreScene::currentDepthLevelOffset(uint8_t spread) const {
     return depthLevelOffset(expeditionProgress, spread);
 }
 
-void ExploreScene::beginEncounter(const Species& species, uint8_t level) {
+void ExploreScene::beginEncounter(const Species& species, uint8_t level, bool boss) {
     wild = &species;
+    battleIsBoss = boss;
     wildRuntime = GameEngine::ins().createMonster(wild->id, level);
     wildHpMax = wildRuntime.hpMax;
     wildHp = wildHpMax;
@@ -1337,7 +1479,26 @@ void ExploreScene::beginEncounter(const Species& species, uint8_t level) {
     autoWalkActive = false;
     phase = Phase::ENCOUNTER;
     clearBattleLogs();
-    enqueueBattleLog(Ui::Explore::WILD_APPEARED);
+    enqueueBattleLog(battleIsBoss ? Ui::Explore::BOSS_APPEARED
+                                  : Ui::Explore::WILD_APPEARED);
+}
+
+void ExploreScene::beginRouteBossEncounter() {
+    if (!routeBossPending || currentMapBlock + 1 != mapBlockCount) return;
+    const ExploreBoss::Config& config = ExploreBoss::configForArea(
+        mapBlocks[currentMapBlock]);
+    const Species* boss = findSpecies(expeditionBossSpeciesId);
+    routeBossPending = false;
+    if (!boss) {
+        Serial.printf("[ExploreBoss] missing species=%u area=%u\n",
+                      expeditionBossSpeciesId, mapBlocks[currentMapBlock]);
+        return;
+    }
+    encounterCooldownSteps = ENCOUNTER_COOLDOWN_STEP_COUNT;
+    Serial.printf("[ExploreBoss] encounter area=%u species=%u level=%u exp=%u%%\n",
+                  mapBlocks[currentMapBlock], expeditionBossSpeciesId, config.level,
+                  config.experiencePercent);
+    beginEncounter(*boss, config.level, true);
 }
 
 void ExploreScene::beginDebugEncounter() {
@@ -1432,8 +1593,10 @@ void ExploreScene::serviceBattleLog(uint32_t nowMs) {
             if (debugBattleMode) {
                 phase = Phase::RESULT;
                 resultMessage = Ui::Explore::BATTLE_WIN;
+                enterPendingProgression(Phase::RESULT);
             } else {
                 resumeWalk();
+                enterPendingProgression(Phase::WALKING);
             }
         }
         return;
@@ -1513,6 +1676,14 @@ bool ExploreScene::enterPendingProgression(Phase returnPhase) {
         phase = Phase::LEVEL_UP;
         return true;
     }
+    if (GameEngine::ins().hasPendingEvolution()) {
+        phase = Phase::EVOLUTION;
+        return true;
+    }
+    if (GameEngine::ins().hasPendingMoveReplacement()) {
+        phase = Phase::MOVE_REPLACED;
+        return true;
+    }
     if (GameEngine::ins().hasPendingMoveLearn()) {
         learnCursor = 0;
         phase = Phase::LEARN_MOVE;
@@ -1533,6 +1704,16 @@ void ExploreScene::enqueueBattleProgressionLogs(uint8_t teamSlot) {
         engine.acknowledgePendingLevelUp();
         snprintf(logBuf, sizeof(logBuf), Ui::Explore::LEVEL_UP_LOG_FMT,
                  species.name, level);
+        enqueueBattleLog(logBuf);
+    }
+
+    while (engine.hasPendingEvolution() && engine.pendingEvolutionSlot() == teamSlot) {
+        const Species* from = findSpecies(engine.pendingEvolutionFromSpeciesId());
+        const Species* to = findSpecies(engine.pendingEvolutionToSpeciesId());
+        engine.acknowledgePendingEvolution();
+        snprintf(logBuf, sizeof(logBuf), Ui::Explore::EVOLUTION_LOG_FMT,
+                 from ? from->name : Ui::Status::MOVE_UNKNOWN,
+                 to ? to->name : Ui::Status::MOVE_UNKNOWN);
         enqueueBattleLog(logBuf);
     }
 
@@ -1932,6 +2113,12 @@ void ExploreScene::finishWildFaint() {
     auto& engine = GameEngine::ins();
     auto& activeMon = engine.activeMonster();
     uint16_t expGain = BattleSystem::experienceReward(*wild, wildRuntime.level);
+    if (battleIsBoss) {
+        const ExploreBoss::Config& config = ExploreBoss::configForArea(
+            mapBlocks[currentMapBlock]);
+        expGain = BattleSystem::scaledExperienceReward(
+            expGain, config.experiencePercent);
+    }
     uint8_t reserveSlot = 0xFF;
     const Game::GameState& state = engine.gameState();
     for (uint8_t slot = 1; slot < state.teamCount && slot < Game::TEAM_CAP; ++slot) {
@@ -1941,10 +2128,10 @@ void ExploreScene::finishWildFaint() {
             break;
         }
     }
-    uint16_t reserveExpGain = reserveSlot == 0xFF
-        ? 0
-        : static_cast<uint32_t>(expGain) * EXP_SHARE_PERCENT / 100;
-    uint16_t activeExpGain = expGain - reserveExpGain;
+    BattleSystem::ExperienceAwards expAwards = BattleSystem::experienceAwards(
+        expGain, reserveSlot != 0xFF);
+    uint16_t reserveExpGain = expAwards.reserve;
+    uint16_t activeExpGain = expAwards.active;
     uint32_t expBefore = activeMon.exp;
     engine.grantEffortFrom(*wild);
     if (reserveSlot != 0xFF) {
@@ -1954,6 +2141,7 @@ void ExploreScene::finishWildFaint() {
     prepareExpAnimation(expBefore, engine.activeMonster().exp);
     battleResultPending = true;
     enqueueBattleLog(Ui::Explore::BATTLE_WIN);
+    if (battleIsBoss) enqueueBattleLog(Ui::Explore::BOSS_DEFEATED);
     char logBuf[BATTLE_LOG_LEN];
     snprintf(logBuf, sizeof(logBuf), Ui::Explore::EXP_GAIN_FMT,
              static_cast<unsigned>(activeExpAwarded));
@@ -1972,11 +2160,13 @@ void ExploreScene::finishWildFaint() {
         }
     }
 
-    // Save every experience update together with the final coin reward.
-    engine.addCoins(BATTLE_WIN_COIN_REWARD);
-    snprintf(logBuf, sizeof(logBuf), Ui::Explore::COIN_GAIN_FMT,
-             BATTLE_WIN_COIN_REWARD);
-    enqueueBattleLog(logBuf);
+    uint8_t coinReward = ExploreBoss::victoryCoinReward(battleIsBoss);
+    if (coinReward > 0) {
+        engine.addCoins(coinReward);
+        snprintf(logBuf, sizeof(logBuf), Ui::Explore::COIN_GAIN_FMT,
+                 static_cast<unsigned>(coinReward));
+        enqueueBattleLog(logBuf);
+    }
     lastCaptureSuccess = false;
 }
 
@@ -2209,10 +2399,12 @@ void ExploreScene::fleeEncounter() {
         return;
     }
 
-    GameEngine::ins().addCoins(2);
     lastCaptureSuccess = false;
-    phase = Phase::RESULT;
-    resultMessage = Ui::Explore::RELEASED;
+    if (debugBattleMode) {
+        returnToDebugMenu();
+    } else {
+        resumeWalk();
+    }
 }
 
 void ExploreScene::resetWalk() {
@@ -2231,6 +2423,7 @@ void ExploreScene::resetWalk() {
 
 void ExploreScene::resumeWalk() {
     phase = Phase::WALKING;
+    battleIsBoss = false;
     wild = nullptr;
     wildHp = wildHpMax = 0;
     battleResultPending = false;
@@ -2324,6 +2517,7 @@ bool ExploreScene::resetRouteSegment() {
     routeFollowerTargetX = routeFollowerWorldX;
     routeFollowerTargetY = routeFollowerWorldY;
     routeFollowerMoving = false;
+    placeRouteBoss();
     placeRoutePickup();
     return true;
 }
@@ -2333,6 +2527,14 @@ void ExploreScene::generateMapBlocks() {
     if (selectedMap >= ROUTE_MAP_COUNT) selectedMap = 0;
     const RouteMap& map = routeMap(selectedMap);
     mapBlockCount = mapCountForRoll(map, static_cast<uint8_t>(random(0, 100)));
+    expeditionBossScheduled = random(0, ExploreBoss::SPAWN_ROLL_MAX) <
+                              ExploreBoss::SPAWN_CHANCE;
+    expeditionBossSpeciesId = expeditionBossScheduled
+        ? ExploreBoss::speciesForRoll(
+              selectedMap,
+              static_cast<uint32_t>(
+                  random(0, ExploreBoss::CANDIDATE_COUNT)))
+        : 0;
     for (uint8_t i = 0; i < MAP_BLOCK_CAP; ++i) {
         mapBlocks[i] = i < mapBlockCount ? selectedMap : 0xFF;
     }
@@ -2341,8 +2543,10 @@ void ExploreScene::generateMapBlocks() {
     currentRoutePath = 0;
     activeExitMask = 0;
     for (uint8_t i = 0; i < MAP_EXIT_CAP; ++i) exitNextMaps[i] = 0xFF;
-    Serial.printf("[ExploreRun] area=%u maps=%u seed=%08lx\n",
+    Serial.printf("[ExploreRun] area=%u maps=%u boss=%u bossSpecies=%u seed=%08lx\n",
                   selectedMap, mapBlockCount,
+                  expeditionBossScheduled ? 1 : 0,
+                  expeditionBossSpeciesId,
                   static_cast<unsigned long>(expeditionSeed));
 }
 
@@ -2358,7 +2562,45 @@ void ExploreScene::prepareMapRoutes() {
         activeExitMask = static_cast<uint8_t>(activeExitMask | (1U << pathId));
         if (hasNextMap) exitNextMaps[pathId] = mapBlocks[currentMapBlock + 1];
     }
+    if (expeditionBossScheduled && currentMapBlock + 1 == mapBlockCount) {
+        uint8_t bossPaths[MAP_EXIT_CAP];
+        uint8_t bossPathCount = 0;
+        for (uint8_t pathId = 0; pathId < pathCount; ++pathId) {
+            if (ExploreBoss::canPlaceOnPath(generatedMap.paths[pathId].pointCount)) {
+                bossPaths[bossPathCount++] = pathId;
+            }
+        }
+        if (bossPathCount > 0) {
+            currentRoutePath = bossPaths[random(0, bossPathCount)];
+            return;
+        }
+    }
     currentRoutePath = random(0, pathCount);
+}
+
+void ExploreScene::placeRouteBoss() {
+    routeBossIndex = 0;
+    routeBossPending = false;
+    if (!expeditionBossScheduled || expeditionBossSpeciesId == 0 ||
+        currentMapBlock + 1 != mapBlockCount) {
+        return;
+    }
+
+    const ExploreMapGenerator::Path& path = generatedMap.paths[currentRoutePath];
+    if (!ExploreBoss::canPlaceOnPath(path.pointCount)) {
+        Serial.printf("[ExploreBoss] no placement block=%u path=%u points=%u\n",
+                      currentMapBlock, currentRoutePath, path.pointCount);
+        return;
+    }
+
+    routeBossIndex = ExploreBoss::routeIndex(path.pointCount);
+    routeBossPending = true;
+    const ExploreBoss::Config& config = ExploreBoss::configForArea(
+        mapBlocks[currentMapBlock]);
+    Serial.printf("[ExploreBoss] placed area=%u path=%u index=%u species=%u "
+                  "level=%u exp=%u%%\n",
+                  mapBlocks[currentMapBlock], currentRoutePath, routeBossIndex,
+                  expeditionBossSpeciesId, config.level, config.experiencePercent);
 }
 
 void ExploreScene::placeRoutePickup() {
@@ -2369,6 +2611,11 @@ void ExploreScene::placeRoutePickup() {
     routeGuaranteedEncounterPending = false;
     const ExploreMapGenerator::Path& path = generatedMap.paths[currentRoutePath];
     if (path.pointCount < 2) return;
+    if (routeBossPending) {
+        Serial.printf("[ExploreEvent] block=%u type=boss index=%u\n",
+                      currentMapBlock, routeBossIndex);
+        return;
+    }
 
     if (path.pointCount < 3) {
         routePickupIndex = path.pointCount - 1;
@@ -2441,7 +2688,13 @@ void ExploreScene::render() {
     case Phase::LEVEL_UP:
         ProgressionUi::renderLevelUp(GameEngine::ins().pendingLevelUpLevel());
         break;
+    case Phase::EVOLUTION:
+        ProgressionUi::renderEvolution(
+            GameEngine::ins().pendingEvolutionFromSpeciesId(),
+            GameEngine::ins().pendingEvolutionToSpeciesId());
+        break;
     case Phase::LEARN_MOVE: ProgressionUi::renderMoveLearn(learnCursor); break;
+    case Phase::MOVE_REPLACED: ProgressionUi::renderMoveReplacement(); break;
     case Phase::PICKUP:
         renderWalking();
         renderPickupPrompt();
@@ -2498,6 +2751,16 @@ void ExploreScene::renderWalking() {
 
     renderRoutePickup(cameraX, cameraY);
 
+    bool bossBehindTeam = false;
+    if (routeBossPending) {
+        const ExploreMapGenerator::Path& path = generatedMap.paths[currentRoutePath];
+        if (routeBossIndex < path.pointCount) {
+            bossBehindTeam = routeWorldCoordinate(path.points[routeBossIndex].y) <=
+                             routeWorldY;
+        }
+    }
+    if (bossBehindTeam) renderRouteBoss(cameraX, cameraY);
+
     auto& engine = GameEngine::ins();
     const Species& activeSpecies = engine.activeSpecies();
     const Game::GameState& state = engine.gameState();
@@ -2520,12 +2783,106 @@ void ExploreScene::renderWalking() {
         drawRouteMonster(activeSpecies, routeWorldX, routeWorldY,
                          routeWalkDirection, false, cameraX, cameraY);
     }
+    if (routeBossPending && !bossBehindTeam) renderRouteBoss(cameraX, cameraY);
 
     const uint16_t panel = PixelRenderer::rgb(8, 10, 14);
     PixelRenderer::fillRectAlpha(156, 2, 80, 22, panel, EXPLORE_HUD_ALPHA);
     c.drawRect(156, 2, 80, 22, PixelRenderer::rgb(72, 83, 98));
     PixelRenderer::text(162, 5, map.name, PixelRenderer::rgb(245, 246, 232), 1);
     if (exploreMenuOpen) renderExploreMenu();
+}
+
+void ExploreScene::renderRouteBoss(int cameraX, int cameraY) {
+    if (!routeBossPending) return;
+    const ExploreMapGenerator::Path& path = generatedMap.paths[currentRoutePath];
+    if (routeBossIndex >= path.pointCount) return;
+
+    const Species* species = findSpecies(expeditionBossSpeciesId);
+    if (!species) return;
+
+    const ExploreMapGenerator::Point& point = path.points[routeBossIndex];
+    float anchorX = routeWorldCoordinate(point.x);
+    float anchorY = routeWorldCoordinate(point.y);
+    float tangentX = 0.0f;
+    float tangentY = 1.0f;
+    if (routeBossIndex + 1 < path.pointCount) {
+        const ExploreMapGenerator::Point& next = path.points[routeBossIndex + 1];
+        tangentX = routeWorldCoordinate(next.x) - anchorX;
+        tangentY = routeWorldCoordinate(next.y) - anchorY;
+    }
+    float tangentLength = hypotf(tangentX, tangentY);
+    if (tangentLength > 0.01f) {
+        tangentX /= tangentLength;
+        tangentY /= tangentLength;
+    }
+
+    uint32_t nowMs = Hal::ins().millis();
+    uint32_t patrolPhase = nowMs % ROUTE_BOSS_PATROL_CYCLE_MS;
+    bool movingOut = patrolPhase >= ROUTE_BOSS_PATROL_OUT_START_MS &&
+                     patrolPhase < ROUTE_BOSS_PATROL_OUT_END_MS;
+    bool movingBack = patrolPhase >= ROUTE_BOSS_PATROL_RETURN_START_MS &&
+                      patrolPhase < ROUTE_BOSS_PATROL_RETURN_END_MS;
+    bool patrolMoving = movingOut || movingBack;
+    float patrolOffset = ROUTE_BOSS_PATROL_DISTANCE *
+                         routeBossPatrolPermille(nowMs) / 1000.0f;
+    float worldX = anchorX + tangentX * patrolOffset;
+    float worldY = anchorY + tangentY * patrolOffset;
+
+    uint8_t walkDirection = static_cast<uint8_t>(PokemonSprites::WalkDirection::DOWN);
+    if (routeBossPatrolFacesOutward(patrolPhase)) {
+        walkDirection = routeDirectionForDelta(tangentX, tangentY, walkDirection);
+    } else {
+        walkDirection = routeDirectionForDelta(-tangentX, -tangentY, walkDirection);
+    }
+
+    const PokemonSprites::SpriteFrame* frame = nullptr;
+    bool flipX = false;
+    PokemonSprites::WalkingAnimation animation{};
+    if (PokemonSprites::walkingAnimation(
+            species->id,
+            static_cast<PokemonSprites::WalkDirection>(walkDirection),
+            animation)) {
+        uint8_t frameIndex = 0;
+        if (patrolMoving) {
+            uint32_t moveStarted = movingOut ? ROUTE_BOSS_PATROL_OUT_START_MS
+                                             : ROUTE_BOSS_PATROL_RETURN_START_MS;
+            uint16_t moveDuration = static_cast<uint16_t>(
+                movingOut
+                    ? ROUTE_BOSS_PATROL_OUT_END_MS - ROUTE_BOSS_PATROL_OUT_START_MS
+                    : ROUTE_BOSS_PATROL_RETURN_END_MS - ROUTE_BOSS_PATROL_RETURN_START_MS);
+            uint32_t moveElapsed = patrolPhase - moveStarted;
+            frameIndex = PokemonMotion::movementFrame(
+                PokemonMotion::behaviorForSpecies(species->id),
+                animation.frameCount, moveElapsed, moveElapsed, moveDuration);
+        }
+        frame = PokemonSprites::findSpeciesSprite(
+            species->id,
+            static_cast<PokemonSprites::SpriteKind>(
+                static_cast<uint16_t>(animation.base) + frameIndex));
+        flipX = animation.flipX;
+    }
+    if (!frame) {
+        frame = PokemonSprites::findSpeciesSprite(
+            species->id, PokemonSprites::SpriteKind::ICON_0);
+    }
+    if (!frame) return;
+
+    constexpr float scale = 0.8f;
+    int drawW = max<int>(1, static_cast<int>(roundf(frame->width * scale)));
+    int drawH = max<int>(1, static_cast<int>(roundf(frame->height * scale)));
+    int centerX = static_cast<int>(roundf(worldX)) - cameraX;
+    int centerY = static_cast<int>(roundf(worldY)) - cameraY;
+    int drawX = centerX - drawW / 2;
+    int drawY = centerY - drawH / 2;
+    if (drawX + drawW < -8 || drawX >= Hal::DISPLAY_W + 8 ||
+        drawY + drawH < -16 || drawY >= Hal::DISPLAY_H + 8) {
+        return;
+    }
+
+    auto& c = PixelRenderer::canvas();
+    c.fillEllipse(centerX, drawY + drawH - 10, 10, 3,
+                  PixelRenderer::rgb(68, 87, 74));
+    PokemonSprites::drawFrameScaled(frame, drawX, drawY, scale, flipX);
 }
 
 void ExploreScene::drawRouteMonster(const Species& species, float worldX,
@@ -2558,7 +2915,8 @@ void ExploreScene::drawRouteMonster(const Species& species, float worldX,
             stepElapsedMs = elapsed;
             movementElapsedMs = elapsed;
             if (phase == Phase::EXITING) {
-                stepDurationMs = max<uint16_t>(1, motion.stepDurationMs);
+                stepDurationMs = max<uint16_t>(
+                    1, routeStepDurationForSpecies(species.id));
                 stepElapsedMs %= stepDurationMs;
             } else {
                 stepElapsedMs = min<uint32_t>(stepElapsedMs, stepDurationMs - 1);
@@ -2743,6 +3101,12 @@ void ExploreScene::renderEncounter() {
     if (captureAnimationActive) renderCaptureAnimation();
     renderBattleHud();
     renderCommandBox();
+    if (GameEngine::ins().debugEnemyDrawBoundsVisible()) {
+        c.drawRect(BattleLayout::WILD_X - BattleLayout::WILD_MAX_W / 2,
+                   BattleLayout::WILD_GROUND_Y - BattleLayout::WILD_MAX_H,
+                   BattleLayout::WILD_MAX_W, BattleLayout::WILD_MAX_H,
+                   PixelRenderer::rgb(255, 0, 0));
+    }
 }
 
 void ExploreScene::renderCaptureAnimation() {
@@ -2851,10 +3215,6 @@ void ExploreScene::drawMonsterSprite(const Species& species, int x, int groundY,
     uint8_t w = pgm_read_byte(&frame->width);
     uint8_t h = pgm_read_byte(&frame->height);
     float scale = 1.0f;
-    if (!back && h < BattleLayout::WILD_MIN_TARGET_H) {
-        scale = min(static_cast<float>(BattleLayout::WILD_MIN_TARGET_H) / h,
-                    BattleLayout::WILD_MAX_UPSCALE_PERCENT / 100.0f);
-    }
     if (w * scale > maxWidth) scale = static_cast<float>(maxWidth) / w;
     if (h * scale > maxHeight) scale = static_cast<float>(maxHeight) / h;
 
@@ -2894,7 +3254,7 @@ void ExploreScene::renderBattleHud() {
         uint16_t shownWildHp = battleHpForRender(true, wildHp, Hal::ins().millis());
         drawBattleDarkText(6, 5, wild->name);
         snprintf(buf, sizeof(buf), Ui::Common::LEVEL_FMT, wildRuntime.level);
-        drawBattleAsciiRightAligned(124, 5, buf);
+        drawBattleAsciiRightAligned(114, 5, buf);
         drawHpWithStatus(12, 20, 28, 23, 74, shownWildHp, wildHpMax,
                          wildRuntime.majorStatus);
     }
@@ -2912,9 +3272,9 @@ void ExploreScene::renderBattleHud() {
         ? levelForExp(species.growthRate, shownExp)
         : active.level;
 
-    drawBattleDarkText(120, 66, species.name);
+    drawBattleDarkText(120, BattleLayout::PLAYER_NAME_Y, species.name);
     snprintf(buf, sizeof(buf), Ui::Common::LEVEL_FMT, shownLevel);
-    drawBattleAsciiRightAligned(238, 66, buf);
+    drawBattleAsciiRightAligned(228, BattleLayout::PLAYER_NAME_Y, buf);
 
     if (!showVictoryExp) {
         uint16_t shownPlayerHp = battleHpForRender(
@@ -2933,13 +3293,20 @@ void ExploreScene::renderBattleHud() {
         : static_cast<uint8_t>(min<uint32_t>(
             100,
             (shownExp - levelFloor) * 100UL / max<uint32_t>(1, levelCeiling - levelFloor)));
-    drawBattleText(118, 80, Ui::Explore::EXP_LABEL,
-                   PixelRenderer::rgb(35, 86, 126));
-    c.fillRect(149, 85, 81, 6, PixelRenderer::rgb(38, 51, 59));
-    c.fillRect(150, 86, 79, 4, PixelRenderer::rgb(184, 198, 194));
-    int expFill = 79 * expPercent / 100;
+    drawBattleCompactExpLabel(
+        BattleLayout::EXP_LABEL_X, BattleLayout::EXP_LABEL_Y,
+        PixelRenderer::rgb(35, 86, 126));
+    c.fillRect(BattleLayout::EXP_BAR_X, BattleLayout::EXP_BAR_Y,
+               BattleLayout::EXP_BAR_W, BattleLayout::EXP_BAR_H,
+               PixelRenderer::rgb(38, 51, 59));
+    c.fillRect(BattleLayout::EXP_BAR_X + 1, BattleLayout::EXP_BAR_Y + 1,
+               BattleLayout::EXP_BAR_W - 2, BattleLayout::EXP_BAR_H - 2,
+               PixelRenderer::rgb(184, 198, 194));
+    int expFill = (BattleLayout::EXP_BAR_W - 2) * expPercent / 100;
     if (expFill > 0) {
-        c.fillRect(150, 86, expFill, 4, PixelRenderer::rgb(35, 118, 184));
+        c.fillRect(BattleLayout::EXP_BAR_X + 1, BattleLayout::EXP_BAR_Y + 1,
+                   expFill, BattleLayout::EXP_BAR_H - 2,
+                   PixelRenderer::rgb(35, 118, 184));
     }
 }
 

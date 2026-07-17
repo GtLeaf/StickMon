@@ -703,7 +703,11 @@ void MainScene::persistViewState(uint32_t nowMs) {
 }
 
 void MainScene::update(uint32_t nowMs, float dtSeconds) {
-    active = &GameEngine::ins().activeSpecies();
+    const Species* nextActive = &GameEngine::ins().activeSpecies();
+    if (!active || active->id != nextActive->id) {
+        behaviorProfile = behaviorProfileFor(*nextActive, GameEngine::ins().activeMonster());
+    }
+    active = nextActive;
     if (doorTransition == DoorTransitionMode::NONE) {
         if (progressionModal != ProgressionModal::NONE || openPendingProgression()) {
             velocityX = 0.0f;
@@ -2651,6 +2655,14 @@ bool MainScene::openPendingProgression() {
         progressionModal = ProgressionModal::LEVEL_UP;
         return true;
     }
+    if (GameEngine::ins().hasPendingEvolution()) {
+        progressionModal = ProgressionModal::EVOLUTION;
+        return true;
+    }
+    if (GameEngine::ins().hasPendingMoveReplacement()) {
+        progressionModal = ProgressionModal::MOVE_REPLACED;
+        return true;
+    }
     if (GameEngine::ins().hasPendingMoveLearn()) {
         progressionLearnCursor = 0;
         progressionModal = ProgressionModal::LEARN_MOVE;
@@ -2683,6 +2695,22 @@ bool MainScene::onButton(const ButtonEvent& event) {
         if (progressionModal == ProgressionModal::LEVEL_UP) {
             if (event.btn == 0) {
                 GameEngine::ins().acknowledgePendingLevelUp();
+                progressionModal = ProgressionModal::NONE;
+                openPendingProgression();
+            }
+            return true;
+        }
+        if (progressionModal == ProgressionModal::EVOLUTION) {
+            if (event.btn == 0) {
+                GameEngine::ins().acknowledgePendingEvolution();
+                progressionModal = ProgressionModal::NONE;
+                openPendingProgression();
+            }
+            return true;
+        }
+        if (progressionModal == ProgressionModal::MOVE_REPLACED) {
+            if (event.btn == 0) {
+                GameEngine::ins().acknowledgePendingMoveReplacement();
                 progressionModal = ProgressionModal::NONE;
                 openPendingProgression();
             }
@@ -2762,8 +2790,14 @@ bool MainScene::onButton(const ButtonEvent& event) {
 void MainScene::drawProgressionPopup() {
     if (progressionModal == ProgressionModal::LEVEL_UP) {
         ProgressionUi::renderLevelUp(GameEngine::ins().pendingLevelUpLevel());
+    } else if (progressionModal == ProgressionModal::EVOLUTION) {
+        ProgressionUi::renderEvolution(
+            GameEngine::ins().pendingEvolutionFromSpeciesId(),
+            GameEngine::ins().pendingEvolutionToSpeciesId());
     } else if (progressionModal == ProgressionModal::LEARN_MOVE) {
         ProgressionUi::renderMoveLearn(progressionLearnCursor);
+    } else if (progressionModal == ProgressionModal::MOVE_REPLACED) {
+        ProgressionUi::renderMoveReplacement();
     }
 }
 

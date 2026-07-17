@@ -86,7 +86,9 @@ private:
     enum class ProgressionModal : uint8_t {
         NONE,
         LEVEL_UP,
+        EVOLUTION,
         LEARN_MOVE,
+        MOVE_REPLACED,
     };
 
     struct RenderItem {
