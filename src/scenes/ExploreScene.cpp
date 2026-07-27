@@ -11,13 +11,13 @@
 #include "core/UiStrings.h"
 #include "game/BattleSystem.h"
 #include "game/ExploreBoss.h"
+#include "game/FriendshipSystem.h"
 #include "hardware/Hal.h"
 #include "hardware/PixelRenderer.h"
 
 namespace {
 enum PickupId : uint8_t {
     PICKUP_NONE = 0,
-    PICKUP_BALL,
     PICKUP_COIN,
     PICKUP_POTION,
     PICKUP_SUPER_POTION,
@@ -26,7 +26,6 @@ enum PickupId : uint8_t {
 };
 
 struct PickupWeights {
-    uint16_t ball;
     uint16_t coin;
     uint16_t potion;
     uint16_t superPotion;
@@ -42,7 +41,7 @@ struct EncounterEntry {
 };
 
 constexpr uint16_t pickupWeightTotal(const PickupWeights& weights) {
-    return weights.ball + weights.coin + weights.potion + weights.superPotion +
+    return weights.coin + weights.potion + weights.superPotion +
            weights.antidote + weights.candy;
 }
 
@@ -102,20 +101,14 @@ constexpr uint8_t guaranteedEncounterIndex(uint8_t pathPointCount, uint8_t coold
             : pathPointCount * 2 / 3);
 }
 
-static constexpr Game::ItemId CAPTURE_BALLS[] = {
-    Game::ItemId::POKE_BALL,
-    Game::ItemId::GREAT_BALL,
-    Game::ItemId::HEAVY_BALL,
-    Game::ItemId::TIMER_BALL,
-};
-static constexpr uint8_t CAPTURE_BALL_COUNT = sizeof(CAPTURE_BALLS) / sizeof(CAPTURE_BALLS[0]);
-static constexpr uint32_t CAPTURE_ANIMATION_MS = 2200;
 static constexpr uint32_t EXP_ANIMATION_MS = 900;
 static constexpr uint32_t BATTLE_HIT_DELAY_MS = 260;
 static constexpr uint32_t BATTLE_HIT_SHAKE_MS = 280;
 static constexpr uint32_t BATTLE_HP_DRAIN_MS = 420;
 static constexpr uint32_t BATTLE_ACTION_MS =
     BATTLE_HIT_DELAY_MS + BATTLE_HIT_SHAKE_MS + BATTLE_HP_DRAIN_MS;
+static constexpr uint32_t BATTLE_SWITCH_PHASE_MS = 360;
+static constexpr int BATTLE_SWITCH_TRAVEL_X = 120;
 static constexpr uint8_t EXPLORE_MAP_TILES_W = 16;
 static constexpr uint8_t EXPLORE_MAP_TILES_H = 12;
 static constexpr uint16_t EXPLORE_TILE_SIZE = 26;
@@ -174,9 +167,6 @@ static_assert(!routeBossPatrolFacesOutward(0) &&
               "route boss must hold its last movement direction at each endpoint");
 
 struct BattleLayout {
-    static constexpr int FOOTER_Y = 99;
-    static constexpr int FOOTER_H = Hal::DISPLAY_H - FOOTER_Y;
-
     static constexpr int PLAYER_NAME_Y = 66;
 
     static constexpr int WILD_X = 178;
@@ -184,10 +174,13 @@ struct BattleLayout {
     static constexpr int WILD_MAX_W = 116;
     static constexpr int WILD_MAX_H = WILD_GROUND_Y;
 
-    static constexpr int PLAYER_X = 58;
-    static constexpr int PLAYER_GROUND_Y = 97;
-    static constexpr int PLAYER_MAX_W = 100;
-    static constexpr int PLAYER_MAX_H = 62;
+    static constexpr int PLAYER_X = 52;
+    static constexpr int PLAYER_GROUND_Y = 107;
+    static constexpr int PLAYER_MAX_W = 105;
+    static constexpr int PLAYER_MAX_H = 65;
+
+    static constexpr int FOOTER_Y = 99;
+    static constexpr int FOOTER_H = Hal::DISPLAY_H - FOOTER_Y;
 
     static constexpr int EXP_LABEL_X = 118;
     static constexpr int EXP_LABEL_VISUAL_H = 9;
@@ -206,6 +199,10 @@ static_assert(BattleLayout::EXP_LABEL_Y +
 
 static_assert(BattleLayout::WILD_GROUND_Y - BattleLayout::WILD_MAX_H == 0,
               "wild sprite bounds must reach the top edge of the display");
+static_assert(BattleLayout::PLAYER_X - BattleLayout::PLAYER_MAX_W / 2 == 0,
+              "player sprite bounds must reach the left edge of the display");
+static_assert(BattleLayout::PLAYER_GROUND_Y - BattleLayout::PLAYER_MAX_H == 42,
+              "player sprite bounds must use the lowered top edge");
 
 void drawBattleText(int x, int y, const char* value, uint16_t color) {
     PixelRenderer::textOutlined(
@@ -214,6 +211,14 @@ void drawBattleText(int x, int y, const char* value, uint16_t color) {
 
 void drawBattleDarkText(int x, int y, const char* value) {
     drawBattleText(x, y, value, PixelRenderer::rgb(25, 31, 40));
+}
+
+void drawBattleFooterText(int x, int y, const char* value, uint16_t color) {
+    PixelRenderer::text(x, y, value, color, 1);
+}
+
+void drawBattleFooterDarkText(int x, int y, const char* value) {
+    drawBattleFooterText(x, y, value, PixelRenderer::rgb(25, 31, 40));
 }
 
 void drawBattleAsciiRightAligned(int rightX, int y, const char* value) {
@@ -483,7 +488,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         3,
         4,
         500,
-        {250, 250, 167, 42, 83, 42},
+        {500, 167, 42, 83, 42},
         GRASS_PATH_ENCOUNTERS,
         ENTRY_COUNT(GRASS_PATH_ENCOUNTERS),
         0x2227,
@@ -498,7 +503,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         4,
         5,
         600,
-        {152, 254, 254, 101, 118, 51},
+        {406, 254, 101, 118, 51},
         CREEK_SLOPE_ENCOUNTERS,
         ENTRY_COUNT(CREEK_SLOPE_ENCOUNTERS),
         0x224A,
@@ -513,7 +518,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         4,
         6,
         700,
-        {260, 240, 180, 100, 100, 80},
+        {500, 180, 100, 100, 80},
         TALL_GRASS_PARK_ENCOUNTERS,
         ENTRY_COUNT(TALL_GRASS_PARK_ENCOUNTERS),
         0x2A66,
@@ -528,7 +533,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         5,
         7,
         900,
-        {91, 137, 160, 183, 114, 91},
+        {228, 160, 183, 114, 91},
         FROST_CRYSTAL_CAVE_ENCOUNTERS,
         ENTRY_COUNT(FROST_CRYSTAL_CAVE_ENCOUNTERS),
         0xB6DB,
@@ -543,7 +548,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         6,
         8,
         1100,
-        {130, 183, 183, 183, 183, 52},
+        {313, 183, 183, 183, 52},
         MIST_FOREST_PATH_ENCOUNTERS,
         ENTRY_COUNT(MIST_FOREST_PATH_ENCOUNTERS),
         0x1945,
@@ -558,7 +563,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         7,
         9,
         1300,
-        {118, 176, 147, 206, 147, 88},
+        {294, 147, 206, 147, 88},
         ANCIENT_WATERFALL_VALLEY_ENCOUNTERS,
         ENTRY_COUNT(ANCIENT_WATERFALL_VALLEY_ENCOUNTERS),
         0x1987,
@@ -674,6 +679,31 @@ float routeWorldCoordinate(uint8_t tile) {
     return tile * EXPLORE_TILE_SIZE + EXPLORE_TILE_SIZE * 0.5f;
 }
 
+struct RouteWorldPoint {
+    float x;
+    float y;
+};
+
+RouteWorldPoint routePathPointWorld(const ExploreMapGenerator::Path& path,
+                                    uint8_t index) {
+    if (path.pointCount == 0) return {0.0f, 0.0f};
+    index = min<uint8_t>(index, path.pointCount - 1);
+    const ExploreMapGenerator::Point& point = path.points[index];
+    RouteWorldPoint world{
+        routeWorldCoordinate(point.x),
+        routeWorldCoordinate(point.y),
+    };
+    if (path.pointCount == 1) return world;
+
+    // Vertical roads use two tile columns; horizontal art already uses the base row.
+    uint8_t neighborIndex = index == 0 ? 1 : index - 1;
+    const ExploreMapGenerator::Point& neighbor = path.points[neighborIndex];
+    if (neighbor.x == point.x) {
+        world.x += EXPLORE_TILE_SIZE * 0.5f;
+    }
+    return world;
+}
+
 constexpr uint8_t routeFollowerTargetIndex(uint8_t leaderIndex) {
     return leaderIndex >= ROUTE_FOLLOWER_GAP_STEPS
         ? leaderIndex - ROUTE_FOLLOWER_GAP_STEPS
@@ -730,14 +760,12 @@ const RouteMap& routeMap(uint8_t index) {
 
 uint8_t rollPickupId(const PickupWeights& weights) {
     bool candyAvailable = GameEngine::ins().gameState().stepsToday >= 5000;
-    uint16_t total = weights.ball + weights.coin + weights.potion +
+    uint16_t total = weights.coin + weights.potion +
                      weights.superPotion + weights.antidote +
                      (candyAvailable ? weights.candy : 0);
-    if (total == 0) return PICKUP_BALL;
+    if (total == 0) return PICKUP_NONE;
 
     uint16_t roll = static_cast<uint16_t>(random(0, total));
-    if (roll < weights.ball) return PICKUP_BALL;
-    roll -= weights.ball;
     if (roll < weights.coin) return PICKUP_COIN;
     roll -= weights.coin;
     if (roll < weights.potion) return PICKUP_POTION;
@@ -745,7 +773,7 @@ uint8_t rollPickupId(const PickupWeights& weights) {
     if (roll < weights.superPotion) return PICKUP_SUPER_POTION;
     roll -= weights.superPotion;
     if (roll < weights.antidote) return PICKUP_ANTIDOTE;
-    return candyAvailable ? PICKUP_RARE_CANDY : PICKUP_BALL;
+    return PICKUP_RARE_CANDY;
 }
 
 PokemonSprites::WalkDirection inwardDirection(ExploreMapGenerator::Edge edge) {
@@ -815,25 +843,20 @@ void drawGeneratedMapViewport(const ExploreMapGenerator::Map& generated,
     }
 }
 
-const char* captureBallName(uint8_t index) {
-    return index < CAPTURE_BALL_COUNT ? Ui::Bag::NAMES[index] : Ui::BACK;
-}
-
-uint16_t baseStatTotal(const Species& species) {
-    return species.stats.hp + species.stats.atk + species.stats.def +
-           species.stats.spa + species.stats.spd + species.stats.spe;
-}
-
-const EncounterEntry& rollEncounterEntry(const RouteMap& map) {
-    uint16_t total = 0;
-    for (uint8_t i = 0; i < map.encounterCount; ++i) total += map.encounters[i].weight;
-
-    uint16_t roll = random(0, total);
+const EncounterEntry* rollEncounterEntry(const RouteMap& map) {
+    if (!map.encounters || map.encounterCount == 0) return nullptr;
+    uint32_t total = 0;
     for (uint8_t i = 0; i < map.encounterCount; ++i) {
-        if (roll < map.encounters[i].weight) return map.encounters[i];
+        total += map.encounters[i].weight;
+    }
+    if (total == 0) return nullptr;
+
+    uint32_t roll = static_cast<uint32_t>(random(static_cast<long>(total)));
+    for (uint8_t i = 0; i < map.encounterCount; ++i) {
+        if (roll < map.encounters[i].weight) return &map.encounters[i];
         roll -= map.encounters[i].weight;
     }
-    return map.encounters[0];
+    return nullptr;
 }
 
 uint8_t rollWildLevel(uint8_t minLevel, uint8_t maxLevel, uint8_t targetLevel) {
@@ -861,14 +884,14 @@ void ExploreScene::onEnter() {
     areaCursor = 0;
     resultMessage = nullptr;
     defeatAwaitInput = false;
-    captureMenuOpen = false;
-    captureAnimationActive = false;
+    clearFriendshipFlow();
     exploreMenuOpen = false;
     exploreSubViewOpen = false;
     exploreMenuOpenedAt = 0;
     autoWalkActive = false;
     walkStepResolutionPending = false;
     battleIsBoss = false;
+    battleFoodBond = 0;
     expeditionBossScheduled = false;
     expeditionBossSpeciesId = 0;
     routeBossPending = false;
@@ -900,13 +923,48 @@ void ExploreScene::update(uint32_t nowMs, float dtSeconds) {
     updateRouteMovement(nowMs);
     updateExpAnimation(nowMs);
     serviceBattleLog(nowMs);
+    updateBattleSwitch(nowMs);
     updateBattleTurn(nowMs);
-    updateCaptureAnimation(nowMs);
 }
 
 bool ExploreScene::onButton(const ButtonEvent& event) {
     if (exploreSubViewOpen) {
         exploreSubView.onButton(event);
+        MenuScene::BattleBagResult itemResult =
+            exploreSubView.consumeBattleBagResult();
+        if (itemResult != MenuScene::BattleBagResult::NONE) {
+            exploreSubViewOpen = false;
+            switch (itemResult) {
+            case MenuScene::BattleBagResult::POTION:
+                enqueueBattleLog(Ui::Bag::USED_POTION);
+                break;
+            case MenuScene::BattleBagResult::SUPER_POTION:
+                enqueueBattleLog(Ui::Bag::USED_SUPER_POTION);
+                break;
+            case MenuScene::BattleBagResult::ANTIDOTE:
+                enqueueBattleLog(Ui::Bag::USED_ANTIDOTE);
+                break;
+            case MenuScene::BattleBagResult::PARALYZE_HEAL:
+                enqueueBattleLog(Ui::Bag::USED_PARALYZE_HEAL);
+                break;
+            case MenuScene::BattleBagResult::AWAKENING:
+                enqueueBattleLog(Ui::Bag::USED_AWAKENING);
+                break;
+            case MenuScene::BattleBagResult::BURN_HEAL:
+                enqueueBattleLog(Ui::Bag::USED_BURN_HEAL);
+                break;
+            case MenuScene::BattleBagResult::ICE_HEAL:
+                enqueueBattleLog(Ui::Bag::USED_ICE_HEAL);
+                break;
+            case MenuScene::BattleBagResult::FOOD_THROWN:
+                throwFood(exploreSubView.battleBagThrownFoodIndex());
+                return true;
+            default:
+                break;
+            }
+            wildCounterattack();
+            return true;
+        }
         if (exploreSubView.exploreViewClosed()) {
             exploreSubViewOpen = false;
         }
@@ -925,6 +983,20 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
     if (phase == Phase::PICKUP) {
         if (event.btn == 0 && event.action == BtnAction::PRESSED) {
             resumeWalk();
+        }
+        return true;
+    }
+
+    if (phase == Phase::FRIENDSHIP) {
+        if (event.action == BtnAction::LONG_PRESS) return true;
+        if (event.action != BtnAction::PRESSED) return true;
+        bool confirmationStep =
+            friendshipStep == FriendshipStep::CONTACT_CONFIRM ||
+            friendshipStep == FriendshipStep::TEAM_CONFIRM;
+        if (event.btn == 1 && confirmationStep) {
+            friendshipConfirmYes = !friendshipConfirmYes;
+        } else if (event.btn == 0) {
+            resolveFriendshipOffer();
         }
         return true;
     }
@@ -1001,35 +1073,27 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
     }
 
     if (phase == Phase::ENCOUNTER) {
-        if (captureAnimationActive) return true;
         if (battleLogBusy()) return true;
         if (defeatAwaitInput) {
             if (debugBattleMode) returnToDebugMenu();
             else requestExploreExit(true);
             return true;
         }
-        if (captureMenuOpen) {
-            if (event.btn == 0) {
-                if (captureCursor >= CAPTURE_BALL_COUNT) {
-                    captureMenuOpen = false;
-                } else {
-                    tryCapture(CAPTURE_BALLS[captureCursor]);
-                }
-                return true;
-            }
-            if (event.btn == 1) {
-                captureCursor = (captureCursor + 1) % (CAPTURE_BALL_COUNT + 1);
-                return true;
-            }
-        }
         if (event.btn == 0) {
-            if (battleCursor == 0) attackWild();
-            else if (battleCursor == 1) openCaptureMenu();
-            else fleeEncounter();
+            if (battleCursor == 0) {
+                attackWild();
+            } else if (battleCursor == 1) {
+                exploreSubView.openBattleBagView(wild ? wild->name : nullptr);
+                exploreSubViewOpen = true;
+            } else if (battleCursor == 2) {
+                switchBattleMonster();
+            } else {
+                fleeEncounter();
+            }
             return true;
         }
         if (event.btn == 1) {
-            battleCursor = (battleCursor + 1) % 3;
+            battleCursor = (battleCursor + 1) % 4;
             return true;
         }
     }
@@ -1241,16 +1305,16 @@ void ExploreScene::walk() {
     routeFromX = routeWorldX;
     routeFromY = routeWorldY;
     ++routeIndex;
-    ExploreMapGenerator::Point target = path.points[routeIndex];
-    routeTargetX = routeWorldCoordinate(target.x);
-    routeTargetY = routeWorldCoordinate(target.y);
+    RouteWorldPoint target = routePathPointWorld(path, routeIndex);
+    routeTargetX = target.x;
+    routeTargetY = target.y;
     routeFollowerTargetX = routeFollowerFromX;
     routeFollowerTargetY = routeFollowerFromY;
     if (routeIndex >= ROUTE_FOLLOWER_GAP_STEPS) {
-        const ExploreMapGenerator::Point& followerTarget =
-            path.points[routeFollowerTargetIndex(routeIndex)];
-        routeFollowerTargetX = routeWorldCoordinate(followerTarget.x);
-        routeFollowerTargetY = routeWorldCoordinate(followerTarget.y);
+        RouteWorldPoint followerTarget = routePathPointWorld(
+            path, routeFollowerTargetIndex(routeIndex));
+        routeFollowerTargetX = followerTarget.x;
+        routeFollowerTargetY = followerTarget.y;
     }
     float dx = routeTargetX - routeFromX;
     float dy = routeTargetY - routeFromY;
@@ -1403,10 +1467,6 @@ void ExploreScene::resolvePickup(uint8_t pickupId) {
     const char* itemName = nullptr;
     bool stored = true;
     switch (pickupId) {
-    case PICKUP_BALL:
-        stored = GameEngine::ins().addBalls(1);
-        itemName = Ui::Explore::PICKUP_BALL;
-        break;
     case PICKUP_COIN: {
         uint8_t level = GameEngine::ins().activeMonster().level;
         uint32_t upper = 10 + min<uint8_t>(40, level);
@@ -1444,7 +1504,6 @@ void ExploreScene::resolvePickup(uint8_t pickupId) {
         }
     }
     resultMessage = resultBuf;
-    lastCaptureSuccess = false;
     autoWalkActive = false;
     phase = Phase::PICKUP;
 }
@@ -1468,9 +1527,8 @@ void ExploreScene::beginEncounter(const Species& species, uint8_t level, bool bo
     wildHpMax = wildRuntime.hpMax;
     wildHp = wildHpMax;
     battleCursor = 0;
-    battleTurns = 0;
-    captureMenuOpen = false;
-    captureAnimationActive = false;
+    battleFoodBond = 0;
+    clearFriendshipFlow();
     defeatAwaitInput = false;
     pendingBattleSwitchSlot = 0xFF;
     BattleSystem::resetVolatile(playerBattleState);
@@ -1515,15 +1573,20 @@ void ExploreScene::beginDebugEncounter() {
 
 void ExploreScene::rollEncounter() {
     const RouteMap& map = routeMap(mapBlocks[currentMapBlock]);
-    const EncounterEntry& encounter = rollEncounterEntry(map);
-    const Species* opponent = findSpecies(encounter.speciesId);
-    if (!opponent) opponent = &speciesTable()[0];
+    const EncounterEntry* encounter = rollEncounterEntry(map);
+    const Species* opponent = encounter ? findSpecies(encounter->speciesId) : nullptr;
+    if (!opponent) opponent = &starterSpecies();
     int16_t target = static_cast<int16_t>(map.averageLevel) +
                      currentDepthLevelOffset(map.depthSpread);
     uint8_t targetLevel = static_cast<uint8_t>(
         constrain(target, WILD_LEVEL_MIN, WILD_LEVEL_MAX));
-    uint8_t wildLevel = rollWildLevel(
-        encounter.minLevel, encounter.maxLevel, targetLevel);
+    uint8_t wildLevel = encounter
+        ? rollWildLevel(encounter->minLevel, encounter->maxLevel, targetLevel)
+        : targetLevel;
+    if (!encounter) {
+        Serial.printf("[Explore] empty encounter table area=%u\n",
+                      static_cast<unsigned>(activeArea));
+    }
     beginEncounter(*opponent, wildLevel);
 }
 
@@ -1534,6 +1597,7 @@ void ExploreScene::clearBattleLogs() {
     battleLogUntil = 0;
     battleLogActive = false;
     battleResultPending = false;
+    fleeExitPending = false;
     battleExpVisible = false;
     expAnimationPending = false;
     expAnimationActive = false;
@@ -1554,6 +1618,9 @@ void ExploreScene::clearBattleLogs() {
     battleHpTo = 0;
     battleActionStarted = 0;
     pendingBattleSwitchSlot = 0xFF;
+    battleSwitchStage = BattleSwitchStage::NONE;
+    battleSwitchStarted = 0;
+    battleSwitchConsumesTurn = false;
     for (uint8_t i = 0; i < BATTLE_LOG_QUEUE_CAP; ++i) {
         battleLogCues[i] = BattleLogCue::NONE;
     }
@@ -1588,16 +1655,21 @@ void ExploreScene::serviceBattleLog(uint32_t nowMs) {
         for (uint8_t i = 0; i < BATTLE_LOG_VISIBLE_CAP; ++i) {
             battleLogVisible[i][0] = '\0';
         }
+        if (fleeExitPending) {
+            fleeExitPending = false;
+            clearFriendshipFlow();
+            if (debugBattleMode) returnToDebugMenu();
+            else resumeWalk();
+            return;
+        }
         if (battleResultPending) {
             battleResultPending = false;
-            if (debugBattleMode) {
-                phase = Phase::RESULT;
-                resultMessage = Ui::Explore::BATTLE_WIN;
-                enterPendingProgression(Phase::RESULT);
-            } else {
-                resumeWalk();
-                enterPendingProgression(Phase::WALKING);
+            if (friendshipOfferPending) {
+                clearFriendshipFlow();
+                phase = Phase::FRIENDSHIP;
+                return;
             }
+            finishBattleVictoryFlow();
         }
         return;
     }
@@ -1620,16 +1692,16 @@ void ExploreScene::serviceBattleLog(uint32_t nowMs) {
     battleLogCount--;
     if (cue == BattleLogCue::EXP_GAIN) {
         startExpAnimation(nowMs);
-    } else if (cue == BattleLogCue::TEAM_SWITCH) {
-        activatePendingBattleSwitch();
     }
     battleLogActive = true;
     battleLogUntil = nowMs + 1000;
 }
 
 bool ExploreScene::battleLogBusy() const {
-    return captureAnimationActive || battleLogActive || battleLogCount > 0 ||
-           battleResultPending || expAnimationPending || expAnimationActive ||
+    return battleLogActive || battleLogCount > 0 || battleResultPending ||
+           fleeExitPending || expAnimationPending ||
+           expAnimationActive ||
+           battleSwitchStage != BattleSwitchStage::NONE ||
            battleTurnStage != BattleTurnStage::IDLE;
 }
 
@@ -1880,7 +1952,7 @@ void ExploreScene::beginBattleAction() {
 
     battleActionCheck = BattleSystem::checkAction(
         attacker, attackerSpecies, attackerState, moveId);
-    if (!battleActionAttackerWild) engine.markDirty(false);
+    if (!battleActionAttackerWild) engine.markDirty(SaveUrgency::DEFERRED);
     if (battleActionCheck.wokeUp) {
         snprintf(logBuf, sizeof(logBuf), Ui::Explore::WOKE_UP_FMT, attackerName);
         enqueueBattleLog(logBuf);
@@ -2000,7 +2072,7 @@ void ExploreScene::applyBattleDamage() {
             wildRuntime.hpCur = wildHp;
         } else {
             activeMon.hpCur = battleHpTo;
-            engine.markDirty(false);
+            engine.markDirty(SaveUrgency::DEFERRED);
         }
         return;
     }
@@ -2048,7 +2120,7 @@ void ExploreScene::applyBattleDamage() {
             activeMon.moveProficiency[moveSlot]++;
         }
     }
-    engine.markDirty(false);
+    engine.markDirty(SaveUrgency::DEFERRED);
 }
 
 void ExploreScene::finishBattleAction() {
@@ -2088,7 +2160,7 @@ void ExploreScene::resolveBattleEndTurn() {
         wildEffects.outcomes[index].target = MoveEffectTarget::ATTACKER;
     }
     enqueueBattleEffectLogs(wildEffects, true);
-    engine.markDirty(false);
+    engine.markDirty(SaveUrgency::DEFERRED);
 
     battleActionCount = 0;
     battleActionIndex = 0;
@@ -2167,7 +2239,19 @@ void ExploreScene::finishWildFaint() {
                  static_cast<unsigned>(coinReward));
         enqueueBattleLog(logBuf);
     }
-    lastCaptureSuccess = false;
+    bool hasRoom = state.storageCount < Game::STORAGE_CAP;
+    uint16_t friendshipShakeRolls[FriendshipSystem::SHAKE_CHECK_COUNT];
+    for (uint8_t check = 0;
+         check < FriendshipSystem::SHAKE_CHECK_COUNT; ++check) {
+        friendshipShakeRolls[check] = static_cast<uint16_t>(
+            random(0, 65536));
+    }
+    friendshipOfferPending =
+        hasRoom && (debugBattleMode ||
+                    FriendshipSystem::passesOfferChecks(
+                        *wild, wildRuntime, battleIsBoss,
+                        static_cast<uint16_t>(random(0, 1000)),
+                        friendshipShakeRolls, battleFoodBond));
 }
 
 void ExploreScene::attackWild() {
@@ -2200,7 +2284,6 @@ void ExploreScene::attackWild() {
     battleActionCount = 2;
     battleActionIndex = 0;
     battleTurnStage = BattleTurnStage::WAIT_ACTION_START;
-    if (battleTurns < 255) battleTurns++;
     updateBattleTurn(Hal::ins().millis());
 }
 
@@ -2218,6 +2301,117 @@ void ExploreScene::wildCounterattack() {
     battleActionIndex = 0;
     battleTurnStage = BattleTurnStage::WAIT_ACTION_START;
     updateBattleTurn(Hal::ins().millis());
+}
+
+void ExploreScene::throwFood(uint8_t foodIndex) {
+    if (!wild || wildHp == 0 || battleTurnStage != BattleTurnStage::IDLE) return;
+    if (foodIndex >= Game::ROOM_FOOD_COUNT) foodIndex = 0;
+
+    char logBuf[BATTLE_LOG_LEN];
+    snprintf(logBuf, sizeof(logBuf), Ui::Explore::FOOD_THROW_FMT,
+             wild->name, Ui::Room::FOOD_NAMES[foodIndex]);
+    enqueueBattleLog(logBuf);
+
+    FoodTuning::ThrowClass throwClass =
+        FriendshipSystem::classifyFoodThrow(foodIndex, wildRuntime.nature);
+    bool accepted = FriendshipSystem::acceptsFoodThrow(
+        battleIsBoss, throwClass, static_cast<uint8_t>(random(0, 100)));
+    if (!accepted) {
+        snprintf(logBuf, sizeof(logBuf),
+                 throwClass == FoodTuning::ThrowClass::DISLIKED
+                     ? Ui::Explore::FOOD_REFUSED_DISLIKED_FMT
+                     : Ui::Explore::FOOD_REFUSED_FMT,
+                 wild->name);
+        enqueueBattleLog(logBuf);
+        wildCounterattack();
+        return;
+    }
+
+    battleFoodBond = FriendshipSystem::addFoodBond(
+        battleFoodBond, FriendshipSystem::throwBondGain(throwClass));
+    snprintf(logBuf, sizeof(logBuf),
+             throwClass == FoodTuning::ThrowClass::LIKED
+                 ? Ui::Explore::FOOD_ACCEPTED_LIKED_FMT
+                 : Ui::Explore::FOOD_ACCEPTED_FMT,
+             wild->name);
+    enqueueBattleLog(logBuf);
+    resolveBattleEndTurn();
+}
+
+void ExploreScene::switchBattleMonster() {
+    const Game::GameState& state = GameEngine::ins().gameState();
+    if (state.teamCount < 2 || state.team[1].fainted ||
+        state.team[1].hpCur == 0) {
+        enqueueBattleLog(Ui::Explore::NO_SWITCH_TARGET);
+        return;
+    }
+
+    beginBattleSwitch(1, true);
+}
+
+void ExploreScene::beginBattleSwitch(uint8_t slot, bool consumesTurn) {
+    const auto& state = GameEngine::ins().gameState();
+    if (battleSwitchStage != BattleSwitchStage::NONE ||
+        slot == 0 || slot >= state.teamCount ||
+        state.team[slot].fainted || state.team[slot].hpCur == 0) {
+        if (consumesTurn) enqueueBattleLog(Ui::Explore::NO_SWITCH_TARGET);
+        return;
+    }
+
+    pendingBattleSwitchSlot = slot;
+    battleSwitchConsumesTurn = consumesTurn;
+    battleSwitchStage = BattleSwitchStage::RETREATING;
+    battleSwitchStarted = Hal::ins().millis();
+    battleCursor = 0;
+}
+
+void ExploreScene::updateBattleSwitch(uint32_t nowMs) {
+    if (battleSwitchStage == BattleSwitchStage::NONE ||
+        nowMs - battleSwitchStarted < BATTLE_SWITCH_PHASE_MS) {
+        return;
+    }
+
+    if (battleSwitchStage == BattleSwitchStage::RETREATING) {
+        uint8_t slot = pendingBattleSwitchSlot;
+        if (slot == 0xFF || !GameEngine::ins().moveTeamMemberToFront(slot)) {
+            bool consumedTurn = battleSwitchConsumesTurn;
+            pendingBattleSwitchSlot = 0xFF;
+            battleSwitchConsumesTurn = false;
+            battleSwitchStage = BattleSwitchStage::NONE;
+            if (consumedTurn) enqueueBattleLog(Ui::Explore::NO_SWITCH_TARGET);
+            else defeatAwaitInput = true;
+            return;
+        }
+        pendingBattleSwitchSlot = 0xFF;
+        BattleSystem::resetVolatile(playerBattleState);
+        battleSwitchStage = BattleSwitchStage::ENTERING;
+        battleSwitchStarted = nowMs;
+        return;
+    }
+
+    bool consumedTurn = battleSwitchConsumesTurn;
+    battleSwitchConsumesTurn = false;
+    battleSwitchStage = BattleSwitchStage::NONE;
+
+    char logBuf[BATTLE_LOG_LEN];
+    snprintf(logBuf, sizeof(logBuf), Ui::Explore::SWITCH_IN_FMT,
+             GameEngine::ins().activeSpecies().name);
+    enqueueBattleLog(logBuf);
+    if (consumedTurn) wildCounterattack();
+}
+
+int ExploreScene::battleSwitchOffsetX(uint32_t nowMs) const {
+    if (battleSwitchStage == BattleSwitchStage::NONE) return 0;
+    float progress = min<uint32_t>(
+        BATTLE_SWITCH_PHASE_MS, nowMs - battleSwitchStarted) /
+        static_cast<float>(BATTLE_SWITCH_PHASE_MS);
+    if (battleSwitchStage == BattleSwitchStage::RETREATING) {
+        return -static_cast<int>(
+            roundf(BATTLE_SWITCH_TRAVEL_X * progress * progress));
+    }
+    float remaining = 1.0f - progress;
+    return -static_cast<int>(
+        roundf(BATTLE_SWITCH_TRAVEL_X * remaining * remaining));
 }
 
 uint16_t ExploreScene::battleHpForRender(bool wildSide, uint16_t currentHp,
@@ -2267,8 +2461,7 @@ void ExploreScene::finishPlayerFaint() {
     snprintf(resultBuf, sizeof(resultBuf), Ui::Explore::FAINTED_EXP_LOSS_FMT, (unsigned long)loss);
     enqueueBattleLog(resultBuf);
     resultMessage = resultBuf;
-    lastCaptureSuccess = false;
-    captureMenuOpen = false;
+    clearFriendshipFlow();
 
     const Game::GameState& state = engine.gameState();
     pendingBattleSwitchSlot = 0xFF;
@@ -2281,9 +2474,7 @@ void ExploreScene::finishPlayerFaint() {
     }
 
     if (pendingBattleSwitchSlot != 0xFF) {
-        const Species& replacement = engine.speciesFor(state.team[pendingBattleSwitchSlot]);
-        snprintf(logBuf, sizeof(logBuf), Ui::Explore::SWITCH_IN_FMT, replacement.name);
-        enqueueBattleLog(logBuf, BattleLogCue::TEAM_SWITCH);
+        beginBattleSwitch(pendingBattleSwitchSlot, false);
         return;
     }
 
@@ -2291,86 +2482,90 @@ void ExploreScene::finishPlayerFaint() {
     defeatAwaitInput = true;
 }
 
-void ExploreScene::activatePendingBattleSwitch() {
-    if (pendingBattleSwitchSlot == 0xFF) return;
-    uint8_t slot = pendingBattleSwitchSlot;
-    pendingBattleSwitchSlot = 0xFF;
-    if (GameEngine::ins().moveTeamMemberToFront(slot)) {
-        BattleSystem::resetVolatile(playerBattleState);
-        battleCursor = 0;
+void ExploreScene::finishBattleVictoryFlow() {
+    if (debugBattleMode) {
+        phase = Phase::RESULT;
+        resultMessage = Ui::Explore::BATTLE_WIN;
+        enterPendingProgression(Phase::RESULT);
+        return;
+    }
+    resumeWalk();
+    enterPendingProgression(Phase::WALKING);
+}
+
+void ExploreScene::clearFriendshipFlow() {
+    friendshipOfferPending = false;
+    friendshipConfirmYes = true;
+    friendshipStep = FriendshipStep::CONTACT_CONFIRM;
+    friendshipContactIndex = 0xFF;
+}
+
+void ExploreScene::resolveFriendshipOffer() {
+    auto& engine = GameEngine::ins();
+    if (!wild) {
+        clearFriendshipFlow();
+        finishBattleVictoryFlow();
         return;
     }
 
-    defeatAwaitInput = true;
-}
-
-void ExploreScene::openCaptureMenu() {
-    captureCursor = 0;
-    while (captureCursor < CAPTURE_BALL_COUNT &&
-           GameEngine::ins().itemCount(CAPTURE_BALLS[captureCursor]) == 0) {
-        captureCursor++;
-    }
-    if (captureCursor >= CAPTURE_BALL_COUNT) {
-        enqueueBattleLog(Ui::Explore::NO_BALLS);
+    switch (friendshipStep) {
+    case FriendshipStep::CONTACT_CONFIRM: {
+        if (!friendshipConfirmYes) {
+            clearFriendshipFlow();
+            finishBattleVictoryFlow();
+            return;
+        }
+        uint8_t contactSlot = 0xFF;
+        uint8_t metArea = debugBattleMode
+            ? Game::MET_AREA_UNKNOWN
+            : mapBlocks[currentMapBlock];
+        if (!engine.recordFriendContact(wildRuntime, metArea, &contactSlot)) {
+            clearFriendshipFlow();
+            resultMessage = Ui::Explore::FRIEND_CONTACTS_FULL;
+            phase = Phase::RESULT;
+            return;
+        }
+        friendshipContactIndex = contactSlot;
+        friendshipStep = FriendshipStep::CONTACT_ACQUIRED;
+        snprintf(resultBuf, sizeof(resultBuf),
+                 Ui::Explore::FRIEND_CONTACT_ACQUIRED_FMT, wild->name);
+        resultMessage = resultBuf;
         return;
     }
-    captureMenuOpen = true;
-}
-
-void ExploreScene::tryCapture(Game::ItemId ball) {
-    if (!wild) return;
-    if (!GameEngine::ins().removeItem(ball)) {
-        captureMenuOpen = false;
-        enqueueBattleLog(Ui::Explore::NO_BALLS);
+    case FriendshipStep::CONTACT_ACQUIRED:
+        if (engine.gameState().teamCount < Game::TEAM_CAP) {
+            friendshipStep = FriendshipStep::TEAM_CONFIRM;
+            friendshipConfirmYes = true;
+            return;
+        }
+        clearFriendshipFlow();
+        finishBattleVictoryFlow();
         return;
-    }
-
-    uint16_t chance = 35;
-    if (wild->evolveTo == 0) chance = 25;
-    if (wild->stats.hp < 45) chance += 20;
-    uint8_t hpMissing = wildHpMax > 0 ? (uint8_t)((wildHpMax - wildHp) * 50 / wildHpMax) : 0;
-    chance += hpMissing;
-
-    uint16_t multiplier = 100;
-    if (ball == Game::ItemId::GREAT_BALL) {
-        multiplier = 150;
-    } else if (ball == Game::ItemId::HEAVY_BALL) {
-        uint16_t total = baseStatTotal(*wild);
-        multiplier = total >= 450 ? 180 : (total >= 350 ? 140 : 100);
-    } else if (ball == Game::ItemId::TIMER_BALL) {
-        multiplier = min<uint16_t>(200, 100 + static_cast<uint16_t>(battleTurns) * 15);
-    }
-    chance = min<uint16_t>(95, chance * multiplier / 100);
-
-    captureBall = ball;
-    captureOutcome = random(0, 100) < chance;
-    captureAnimationStarted = Hal::ins().millis();
-    captureAnimationActive = true;
-    captureMenuOpen = false;
-    lastCaptureSuccess = false;
-}
-
-void ExploreScene::updateCaptureAnimation(uint32_t nowMs) {
-    if (!captureAnimationActive) return;
-    if (nowMs - captureAnimationStarted < CAPTURE_ANIMATION_MS) return;
-    finishCaptureAnimation();
-}
-
-void ExploreScene::finishCaptureAnimation() {
-    captureAnimationActive = false;
-    if (captureOutcome) {
-        wildRuntime.hpCur = wildHp;
-        lastCaptureSuccess = debugBattleMode
-            ? GameEngine::ins().recordCapture(wildRuntime)
-            : GameEngine::ins().recordCapture(wildRuntime, mapBlocks[currentMapBlock]);
-        resultMessage = lastCaptureSuccess && wild ? wild->name : Ui::Shop::BAG_FULL;
+    case FriendshipStep::TEAM_CONFIRM:
+        if (!friendshipConfirmYes) {
+            clearFriendshipFlow();
+            finishBattleVictoryFlow();
+            return;
+        }
+        if (friendshipContactIndex != 0xFF &&
+            engine.inviteContactToTeam(friendshipContactIndex)) {
+            friendshipContactIndex = 0xFF;
+            initializeRouteFollowerPosition(true);
+            friendshipStep = FriendshipStep::TEAM_JOINED;
+            snprintf(resultBuf, sizeof(resultBuf),
+                     Ui::Explore::FRIEND_TEAM_JOINED_FMT, wild->name);
+            resultMessage = resultBuf;
+            return;
+        }
+        clearFriendshipFlow();
+        resultMessage = Ui::Storage::TEAM_FULL_TOAST;
         phase = Phase::RESULT;
         return;
+    case FriendshipStep::TEAM_JOINED:
+        clearFriendshipFlow();
+        finishBattleVictoryFlow();
+        return;
     }
-
-    lastCaptureSuccess = false;
-    enqueueBattleLog(Ui::Explore::BROKE_FREE);
-    wildCounterattack();
 }
 
 void ExploreScene::fleeEncounter() {
@@ -2399,12 +2594,9 @@ void ExploreScene::fleeEncounter() {
         return;
     }
 
-    lastCaptureSuccess = false;
-    if (debugBattleMode) {
-        returnToDebugMenu();
-    } else {
-        resumeWalk();
-    }
+    clearFriendshipFlow();
+    fleeExitPending = true;
+    enqueueBattleLog(Ui::Explore::FLEE_SUCCESS);
 }
 
 void ExploreScene::resetWalk() {
@@ -2427,15 +2619,62 @@ void ExploreScene::resumeWalk() {
     wild = nullptr;
     wildHp = wildHpMax = 0;
     battleResultPending = false;
+    fleeExitPending = false;
     battleExpVisible = false;
-    captureMenuOpen = false;
-    captureAnimationActive = false;
+    clearFriendshipFlow();
     resultMessage = nullptr;
     exploreMenuOpen = false;
     exploreSubViewOpen = false;
     exploreMenuOpenedAt = 0;
     routeMoving = false;
     autoWalkActive = false;
+}
+
+void ExploreScene::initializeRouteFollowerPosition(bool useTrailPosition) {
+    routeFollowerWalkDirection = routeWalkDirection;
+    routeFollowerVisualWalkDirection = routeFollowerWalkDirection;
+    routeFollowerWorldX = routeWorldX;
+    routeFollowerWorldY = routeWorldY;
+
+    if (generatedMap.pathCount > 0 &&
+        currentRoutePath < generatedMap.pathCount &&
+        useTrailPosition &&
+        routeIndex >= ROUTE_FOLLOWER_GAP_STEPS) {
+        const ExploreMapGenerator::Path& path =
+            generatedMap.paths[currentRoutePath];
+        RouteWorldPoint trail = routePathPointWorld(
+            path, routeFollowerTargetIndex(routeIndex));
+        routeFollowerWorldX = trail.x;
+        routeFollowerWorldY = trail.y;
+        routeFollowerWalkDirection = routeDirectionForDelta(
+            routeWorldX - routeFollowerWorldX,
+            routeWorldY - routeFollowerWorldY,
+            routeWalkDirection);
+        routeFollowerVisualWalkDirection = routeFollowerWalkDirection;
+    } else {
+        PokemonSprites::WalkDirection direction =
+            static_cast<PokemonSprites::WalkDirection>(routeWalkDirection);
+        if (direction == PokemonSprites::WalkDirection::UP ||
+            direction == PokemonSprites::WalkDirection::DOWN) {
+            float candidate = routeWorldX + ROUTE_FOLLOWER_START_OFFSET;
+            if (candidate > EXPLORE_MAP_W - EXPLORE_TILE_SIZE * 0.5f) {
+                candidate = routeWorldX - ROUTE_FOLLOWER_START_OFFSET;
+            }
+            routeFollowerWorldX = candidate;
+        } else {
+            float candidate = routeWorldY + ROUTE_FOLLOWER_START_OFFSET;
+            if (candidate > EXPLORE_MAP_H - EXPLORE_TILE_SIZE * 0.5f) {
+                candidate = routeWorldY - ROUTE_FOLLOWER_START_OFFSET;
+            }
+            routeFollowerWorldY = candidate;
+        }
+    }
+
+    routeFollowerFromX = routeFollowerWorldX;
+    routeFollowerFromY = routeFollowerWorldY;
+    routeFollowerTargetX = routeFollowerWorldX;
+    routeFollowerTargetY = routeFollowerWorldY;
+    routeFollowerMoving = false;
 }
 
 bool ExploreScene::resetRouteSegment() {
@@ -2487,36 +2726,12 @@ bool ExploreScene::resetRouteSegment() {
     routeWalkDirection = static_cast<uint8_t>(inwardDirection(generatedMap.entry.edge));
     routeVisualWalkDirection = routeWalkDirection;
     mapTargetSteps = max<uint16_t>(1, path.pointCount - 1);
-    ExploreMapGenerator::Point start = path.points[0];
-    routeWorldX = routeWorldCoordinate(start.x);
-    routeWorldY = routeWorldCoordinate(start.y);
+    RouteWorldPoint start = routePathPointWorld(path, 0);
+    routeWorldX = start.x;
+    routeWorldY = start.y;
     routeFromX = routeTargetX = routeWorldX;
     routeFromY = routeTargetY = routeWorldY;
-    routeFollowerWalkDirection = routeWalkDirection;
-    routeFollowerVisualWalkDirection = routeFollowerWalkDirection;
-    routeFollowerWorldX = routeWorldX;
-    routeFollowerWorldY = routeWorldY;
-    PokemonSprites::WalkDirection direction =
-        static_cast<PokemonSprites::WalkDirection>(routeWalkDirection);
-    if (direction == PokemonSprites::WalkDirection::UP ||
-        direction == PokemonSprites::WalkDirection::DOWN) {
-        float candidate = routeWorldX + ROUTE_FOLLOWER_START_OFFSET;
-        if (candidate > EXPLORE_MAP_W - EXPLORE_TILE_SIZE * 0.5f) {
-            candidate = routeWorldX - ROUTE_FOLLOWER_START_OFFSET;
-        }
-        routeFollowerWorldX = candidate;
-    } else {
-        float candidate = routeWorldY + ROUTE_FOLLOWER_START_OFFSET;
-        if (candidate > EXPLORE_MAP_H - EXPLORE_TILE_SIZE * 0.5f) {
-            candidate = routeWorldY - ROUTE_FOLLOWER_START_OFFSET;
-        }
-        routeFollowerWorldY = candidate;
-    }
-    routeFollowerFromX = routeFollowerWorldX;
-    routeFollowerFromY = routeFollowerWorldY;
-    routeFollowerTargetX = routeFollowerWorldX;
-    routeFollowerTargetY = routeFollowerWorldY;
-    routeFollowerMoving = false;
+    initializeRouteFollowerPosition(false);
     placeRouteBoss();
     placeRoutePickup();
     return true;
@@ -2695,6 +2910,10 @@ void ExploreScene::render() {
         break;
     case Phase::LEARN_MOVE: ProgressionUi::renderMoveLearn(learnCursor); break;
     case Phase::MOVE_REPLACED: ProgressionUi::renderMoveReplacement(); break;
+    case Phase::FRIENDSHIP:
+        renderEncounter();
+        renderFriendshipPrompt();
+        break;
     case Phase::PICKUP:
         renderWalking();
         renderPickupPrompt();
@@ -2755,8 +2974,8 @@ void ExploreScene::renderWalking() {
     if (routeBossPending) {
         const ExploreMapGenerator::Path& path = generatedMap.paths[currentRoutePath];
         if (routeBossIndex < path.pointCount) {
-            bossBehindTeam = routeWorldCoordinate(path.points[routeBossIndex].y) <=
-                             routeWorldY;
+            bossBehindTeam =
+                routePathPointWorld(path, routeBossIndex).y <= routeWorldY;
         }
     }
     if (bossBehindTeam) renderRouteBoss(cameraX, cameraY);
@@ -2800,15 +3019,15 @@ void ExploreScene::renderRouteBoss(int cameraX, int cameraY) {
     const Species* species = findSpecies(expeditionBossSpeciesId);
     if (!species) return;
 
-    const ExploreMapGenerator::Point& point = path.points[routeBossIndex];
-    float anchorX = routeWorldCoordinate(point.x);
-    float anchorY = routeWorldCoordinate(point.y);
+    RouteWorldPoint anchor = routePathPointWorld(path, routeBossIndex);
+    float anchorX = anchor.x;
+    float anchorY = anchor.y;
     float tangentX = 0.0f;
     float tangentY = 1.0f;
     if (routeBossIndex + 1 < path.pointCount) {
-        const ExploreMapGenerator::Point& next = path.points[routeBossIndex + 1];
-        tangentX = routeWorldCoordinate(next.x) - anchorX;
-        tangentY = routeWorldCoordinate(next.y) - anchorY;
+        RouteWorldPoint next = routePathPointWorld(path, routeBossIndex + 1);
+        tangentX = next.x - anchorX;
+        tangentY = next.y - anchorY;
     }
     float tangentLength = hypotf(tangentX, tangentY);
     if (tangentLength > 0.01f) {
@@ -3015,25 +3234,36 @@ void ExploreScene::renderRoutePickup(int cameraX, int cameraY) {
     const ExploreMapGenerator::Path& path = generatedMap.paths[currentRoutePath];
     if (routePickupIndex >= path.pointCount) return;
 
-    const ExploreMapGenerator::Point& point = path.points[routePickupIndex];
-    int x = static_cast<int>(routeWorldCoordinate(point.x)) - cameraX;
-    int y = static_cast<int>(routeWorldCoordinate(point.y)) - cameraY +
+    RouteWorldPoint point = routePathPointWorld(path, routePickupIndex);
+    int x = static_cast<int>(roundf(point.x)) - cameraX;
+    int y = static_cast<int>(roundf(point.y)) - cameraY +
             ROUTE_PICKUP_VISUAL_OFFSET_Y;
-    if (x < -12 || x >= Hal::DISPLAY_W + 12 ||
-        y < -12 || y >= Hal::DISPLAY_H + 12) {
+    if (x < -13 || x >= Hal::DISPLAY_W + 13 ||
+        y < -13 || y >= Hal::DISPLAY_H + 13) {
         return;
     }
 
     auto& c = PixelRenderer::canvas();
-    c.fillEllipse(x, y + 5, 6, 2, PixelRenderer::rgb(55, 68, 59));
+    c.fillEllipse(x, y + 6, 7, 2, PixelRenderer::rgb(55, 68, 59));
     if (GameAssets::drawCentered(
-            GameAssets::Kind::ITEM_POKE_BALL, x, y - 4, 0.5f)) {
+            GameAssets::Kind::EXPLORE_PICKUP_BALL, x, y - 4)) {
         return;
     }
-    c.fillCircle(x, y - 4, 6, PixelRenderer::rgb(224, 69, 65));
-    c.fillRect(x - 5, y - 4, 10, 5, 0xFFFF);
-    c.drawFastHLine(x - 6, y - 4, 12, PixelRenderer::rgb(35, 39, 44));
+    if (GameAssets::drawCentered(
+            GameAssets::Kind::ITEM_POKE_BALL, x, y - 4, 0.62f)) {
+        return;
+    }
+    c.fillCircle(x, y - 4, 7, PixelRenderer::rgb(224, 69, 65));
+    for (int row = 0; row <= 6; ++row) {
+        int halfWidth = static_cast<int>(
+            sqrtf(49.0f - static_cast<float>(row * row)));
+        c.drawFastHLine(x - halfWidth, y - 4 + row,
+                        halfWidth * 2 + 1, 0xFFFF);
+    }
+    c.drawCircle(x, y - 4, 7, PixelRenderer::rgb(35, 39, 44));
+    c.drawFastHLine(x - 7, y - 4, 14, PixelRenderer::rgb(35, 39, 44));
     c.fillCircle(x, y - 4, 2, 0xFFFF);
+    c.drawCircle(x, y - 4, 2, PixelRenderer::rgb(35, 39, 44));
 }
 
 void ExploreScene::renderExploreMenu() {
@@ -3072,10 +3302,7 @@ void ExploreScene::renderEncounter() {
     }
 
     uint32_t nowMs = Hal::ins().millis();
-    uint32_t captureElapsed = captureAnimationActive ? nowMs - captureAnimationStarted : 0;
-    bool hideWild = captureAnimationActive && captureElapsed >= 560 &&
-                    (captureOutcome || captureElapsed < 1780);
-    if (wild && !hideWild) {
+    if (wild) {
         drawMonsterSprite(*wild,
                           BattleLayout::WILD_X, BattleLayout::WILD_GROUND_Y,
                           BattleLayout::WILD_MAX_W, BattleLayout::WILD_MAX_H,
@@ -3087,68 +3314,30 @@ void ExploreScene::renderEncounter() {
                                        wildBattleState, nowMs);
         }
     }
+    int playerOffsetX =
+        battleHitShakeX(false, nowMs) + battleSwitchOffsetX(nowMs);
     drawMonsterSprite(GameEngine::ins().activeSpecies(),
                       BattleLayout::PLAYER_X, BattleLayout::PLAYER_GROUND_Y,
                       BattleLayout::PLAYER_MAX_W, BattleLayout::PLAYER_MAX_H,
-                      true, battleHitShakeX(false, nowMs));
+                      true, playerOffsetX);
     const auto& activeMonster = GameEngine::ins().activeMonster();
     if (activeMonster.hpCur > 0) {
-        drawBattleConditionEffects(BattleLayout::PLAYER_X,
+        drawBattleConditionEffects(BattleLayout::PLAYER_X + playerOffsetX,
                                    BattleLayout::PLAYER_GROUND_Y,
                                    activeMonster.majorStatus,
                                    playerBattleState, nowMs);
     }
-    if (captureAnimationActive) renderCaptureAnimation();
     renderBattleHud();
     renderCommandBox();
-    if (GameEngine::ins().debugEnemyDrawBoundsVisible()) {
+    if (GameEngine::ins().debugBattleDrawBoundsVisible()) {
         c.drawRect(BattleLayout::WILD_X - BattleLayout::WILD_MAX_W / 2,
                    BattleLayout::WILD_GROUND_Y - BattleLayout::WILD_MAX_H,
                    BattleLayout::WILD_MAX_W, BattleLayout::WILD_MAX_H,
                    PixelRenderer::rgb(255, 0, 0));
-    }
-}
-
-void ExploreScene::renderCaptureAnimation() {
-    if (!captureAnimationActive) return;
-    uint32_t elapsed = Hal::ins().millis() - captureAnimationStarted;
-    int ballX = BattleLayout::WILD_X;
-    int ballY = BattleLayout::WILD_GROUND_Y - 8;
-    GameAssets::Kind kind = GameAssets::ballFrameKind(captureBall, 0);
-
-    if (elapsed < 520) {
-        float progress = elapsed / 520.0f;
-        ballX = static_cast<int>(BattleLayout::PLAYER_X +
-                                 (BattleLayout::WILD_X - BattleLayout::PLAYER_X) * progress);
-        ballY = static_cast<int>(75 +
-                                 ((BattleLayout::WILD_GROUND_Y - 26) - 75) * progress -
-                                 34.0f * 4.0f * progress * (1.0f - progress));
-        kind = GameAssets::ballFrameKind(captureBall, (elapsed / 55) % 8);
-    } else if (elapsed < 760) {
-        ballY = BattleLayout::WILD_GROUND_Y - 26;
-        kind = GameAssets::ballOpenKind(captureBall);
-        GameAssets::drawCentered(GameAssets::Kind::BALL_BURST_STAR,
-                                 BattleLayout::WILD_X,
-                                 BattleLayout::WILD_GROUND_Y - 27, 1.0f);
-    } else if (elapsed < 1780) {
-        uint32_t shakeTime = elapsed - 760;
-        int shake = static_cast<int>(sinf(shakeTime * 0.035f) * 5.0f);
-        ballX += shake;
-        kind = GameAssets::ballFrameKind(captureBall, (shakeTime / 90) % 8);
-    } else if (!captureOutcome) {
-        kind = GameAssets::ballOpenKind(captureBall);
-        GameAssets::drawCentered(GameAssets::Kind::BALL_BURST_STAR, ballX, ballY - 12, 1.0f);
-    } else {
-        kind = GameAssets::ballFrameKind(captureBall, 0);
-        float pulse = 1.0f + 0.125f * (1.0f + sinf((elapsed - 1780) * 0.035f));
-        GameAssets::drawCentered(GameAssets::Kind::BALL_BURST_STAR, ballX - 18, ballY - 18, pulse);
-        GameAssets::drawCentered(GameAssets::Kind::BALL_BURST_STAR, ballX + 18, ballY - 12, pulse);
-    }
-
-    if (!GameAssets::drawCentered(kind, ballX, ballY)) {
-        auto& c = PixelRenderer::canvas();
-        c.fillCircle(ballX, ballY, 8, PixelRenderer::rgb(239, 85, 85));
-        c.drawFastHLine(ballX - 8, ballY, 16, 0xFFFF);
+        c.drawRect(BattleLayout::PLAYER_X - BattleLayout::PLAYER_MAX_W / 2,
+                   BattleLayout::PLAYER_GROUND_Y - BattleLayout::PLAYER_MAX_H,
+                   BattleLayout::PLAYER_MAX_W, BattleLayout::PLAYER_MAX_H,
+                   PixelRenderer::rgb(0, 220, 255));
     }
 }
 
@@ -3156,25 +3345,70 @@ void ExploreScene::renderResult() {
     auto& c = PixelRenderer::canvas();
     c.fillRect(42, 42, 156, 58, PixelRenderer::rgb(35, 42, 50));
     c.drawRect(42, 42, 156, 58, PixelRenderer::rgb(95, 110, 126));
-    if (lastCaptureSuccess) {
-        PixelRenderer::text(58, 58, Ui::Explore::CAPTURE_SUCCESS,
-                            PixelRenderer::rgb(92, 222, 112), 1);
-        const char* capturedName = resultMessage && resultMessage[0]
-            ? resultMessage
-            : (wild ? wild->name : nullptr);
-        if (capturedName) {
-            PixelRenderer::text(58, 78, capturedName,
-                                PixelRenderer::rgb(255, 216, 72), 1);
-        }
-    } else {
-        const char* result = resultMessage && resultMessage[0]
-            ? resultMessage
-            : (wild ? wild->name : nullptr);
-        if (result) {
-            PixelRenderer::text(58, 67, result,
-                                PixelRenderer::rgb(241, 242, 232), 1);
-        }
+    const char* result = resultMessage && resultMessage[0]
+        ? resultMessage
+        : (wild ? wild->name : nullptr);
+    if (result) {
+        PixelRenderer::text(58, 67, result,
+                            PixelRenderer::rgb(241, 242, 232), 1);
     }
+}
+
+void ExploreScene::renderFriendshipPrompt() {
+    auto& c = PixelRenderer::canvas();
+    static constexpr int PANEL_X = 12;
+    static constexpr int PANEL_Y = 14;
+    static constexpr int PANEL_W = 216;
+    static constexpr int PANEL_H = 108;
+    c.fillRect(PANEL_X, PANEL_Y, PANEL_W, PANEL_H,
+               PixelRenderer::rgb(24, 28, 36));
+    c.drawRect(PANEL_X, PANEL_Y, PANEL_W, PANEL_H,
+               PixelRenderer::rgb(241, 242, 232));
+
+    char line[64] = {};
+    const char* secondLine = nullptr;
+    bool showChoice = false;
+    switch (friendshipStep) {
+    case FriendshipStep::CONTACT_CONFIRM:
+        snprintf(line, sizeof(line), Ui::Explore::FRIEND_RECOGNIZES_FMT,
+                 wild ? wild->name : "");
+        secondLine = Ui::Explore::FRIEND_CONTACT_QUESTION;
+        showChoice = true;
+        break;
+    case FriendshipStep::CONTACT_ACQUIRED:
+        snprintf(line, sizeof(line), Ui::Explore::FRIEND_CONTACT_ACQUIRED_FMT,
+                 wild ? wild->name : "");
+        break;
+    case FriendshipStep::TEAM_CONFIRM:
+        snprintf(line, sizeof(line), "%s", wild ? wild->name : "");
+        secondLine = Ui::Explore::FRIEND_TEAM_QUESTION;
+        showChoice = true;
+        break;
+    case FriendshipStep::TEAM_JOINED:
+        snprintf(line, sizeof(line), Ui::Explore::FRIEND_TEAM_JOINED_FMT,
+                 wild ? wild->name : "");
+        break;
+    }
+
+    int firstLineY = secondLine ? PANEL_Y + 17 : PANEL_Y + 43;
+    PixelRenderer::text(PANEL_X + 12, firstLineY, line,
+                        PixelRenderer::rgb(241, 242, 232), 1);
+    if (secondLine) {
+        PixelRenderer::text(PANEL_X + 28, PANEL_Y + 43, secondLine,
+                            PixelRenderer::rgb(255, 216, 72), 1);
+    }
+    if (!showChoice) return;
+
+    uint16_t yesColor = friendshipConfirmYes
+        ? PixelRenderer::rgb(255, 216, 72)
+        : PixelRenderer::rgb(156, 164, 176);
+    uint16_t noColor = friendshipConfirmYes
+        ? PixelRenderer::rgb(156, 164, 176)
+        : PixelRenderer::rgb(255, 216, 72);
+    PixelRenderer::text(PANEL_X + 58, PANEL_Y + 75,
+                        Ui::Explore::FRIEND_YES, yesColor, 1);
+    PixelRenderer::text(PANEL_X + 146, PANEL_Y + 75,
+                        Ui::Explore::FRIEND_NO, noColor, 1);
 }
 
 void ExploreScene::renderPickupPrompt() {
@@ -3226,7 +3460,8 @@ void ExploreScene::drawMonsterSprite(const Species& species, int x, int groundY,
     int shadowRadiusY = constrain(drawH / 12, 3, 6);
 
     auto& c = PixelRenderer::canvas();
-    c.fillEllipse(x, groundY - 1, shadowRadiusX, shadowRadiusY,
+    c.fillEllipse(x + spriteOffsetX, groundY - 1,
+                  shadowRadiusX, shadowRadiusY,
                   PixelRenderer::rgb(23, 27, 34));
     if (scale < 0.999f || scale > 1.001f) {
         PokemonSprites::drawFrameScaled(frame, drawX, drawY, scale);
@@ -3319,45 +3554,33 @@ void ExploreScene::renderCommandBox() {
                PixelRenderer::rgb(74, 91, 75));
 
     if (phase != Phase::ENCOUNTER) return;
-    if (captureAnimationActive) {
-        drawBattleDarkText(82, 109, Ui::Explore::CAPTURING);
-        return;
-    }
-    if (captureMenuOpen) {
-        if (captureCursor >= CAPTURE_BALL_COUNT) {
-            drawBattleDarkText(100, 101, Ui::BACK);
-        } else {
-            char line[32];
-            snprintf(line, sizeof(line), Ui::Explore::BALL_SELECT_FMT,
-                     captureBallName(captureCursor),
-                     GameEngine::ins().itemCount(CAPTURE_BALLS[captureCursor]));
-            drawBattleDarkText(56, 101, line);
-        }
-        drawBattleText(60, 117, Ui::Explore::BALL_SELECT_HINT,
-                       PixelRenderer::rgb(74, 91, 75));
-        return;
-    }
     if (battleLogActive || battleLogVisibleCount > 0) {
         for (uint8_t i = 0; i < battleLogVisibleCount; ++i) {
-            drawBattleDarkText(12, 101 + i * 16, battleLogVisible[i]);
+            drawBattleFooterDarkText(12, 101 + i * 16, battleLogVisible[i]);
         }
         return;
     }
     if (defeatAwaitInput) {
-        drawBattleDarkText(72, 109, Ui::Explore::ANY_KEY_RETURN);
+        drawBattleFooterDarkText(72, 109, Ui::Explore::ANY_KEY_RETURN);
         return;
     }
-    if (battleTurnStage != BattleTurnStage::IDLE) return;
+    if (battleTurnStage != BattleTurnStage::IDLE ||
+        battleSwitchStage != BattleSwitchStage::NONE) {
+        return;
+    }
 
-    static constexpr int xs[] = {30, 104, 178};
-    static constexpr int ys[] = {109, 109, 109};
+    static constexpr int xs[] = {18, 74, 126, 190};
+    static constexpr int ys[] = {109, 109, 109, 109};
     static constexpr const char* items[] = {
-        Ui::Explore::CMD_ATTACK,
+        Ui::Explore::CMD_BATTLE,
         Ui::Explore::CMD_BAG,
+        Ui::Explore::CMD_SWITCH,
         Ui::Explore::CMD_FLEE,
     };
-    for (uint8_t i = 0; i < 3; ++i) {
-        if (battleCursor == i) drawBattleDarkText(xs[i] - 14, ys[i], ">");
-        drawBattleDarkText(xs[i], ys[i], items[i]);
+    for (uint8_t i = 0; i < 4; ++i) {
+        if (battleCursor == i) {
+            drawBattleFooterDarkText(xs[i] - 10, ys[i], ">");
+        }
+        drawBattleFooterDarkText(xs[i], ys[i], items[i]);
     }
 }

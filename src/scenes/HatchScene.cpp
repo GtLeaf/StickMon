@@ -76,7 +76,6 @@ bool HatchScene::onButton(const ButtonEvent& event) {
         toast = Ui::Hatch::WARM;
         pokeCount++;
     }
-    persistProgress(true);
     toastUntil = Hal::ins().millis() + 700;
     return true;
 }
@@ -146,7 +145,7 @@ void HatchScene::drawEgg() {
     RoomResource& room = RoomResource::ins();
     int x = room.available() ? room.bedX() : Hal::DISPLAY_W / 2;
     int y = room.available()
-        ? static_cast<int>(room.roomY() + room.bedY() - 16 - hatchCameraY())
+        ? static_cast<int>(room.roomY() + room.bedY() - 26 - hatchCameraY())
         : 84;
     x += eggShakeOffset(Hal::ins().millis());
     if (!GameAssets::drawCentered(GameAssets::Kind::EGG, x, y)) {

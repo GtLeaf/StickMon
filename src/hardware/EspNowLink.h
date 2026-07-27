@@ -9,6 +9,8 @@ enum class LinkMessageType : uint8_t {
     HELLO = 0x01,
     BYE = 0x02,
     PING = 0x03,
+    JOIN_REQ = 0x04,
+    JOIN_ACK = 0x05,
     BATTLE_REQ = 0x10,
     BATTLE_ACK = 0x11,
     BATTLE_TURN = 0x12,
@@ -38,6 +40,8 @@ class EspNowLink {
 public:
     static constexpr uint8_t MAX_ROOMS = 4;
     static constexpr uint8_t BROADCAST_MAC[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    // The current protocol only establishes an ephemeral UI session. Any frame
+    // that mutates save data must add authenticated pairing before release.
 
     enum class Mode : uint8_t {
         OFF,

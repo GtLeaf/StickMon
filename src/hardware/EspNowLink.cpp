@@ -201,7 +201,7 @@ bool EspNowLink::sendJoinRequest(uint8_t index) {
     awaitingAck = true;
     pendingAck = false;
     portEXIT_CRITICAL(&stateMux);
-    bool sent = sendPacket(room.mac, LinkMessageType::TRADE_REQ, room.purpose,
+    bool sent = sendPacket(room.mac, LinkMessageType::JOIN_REQ, room.purpose,
                            room.roomId, requestSeq);
     if (!sent) {
         portENTER_CRITICAL(&stateMux);
@@ -233,7 +233,7 @@ bool EspNowLink::sendJoinAck(const uint8_t mac[6], bool accepted, uint16_t reque
         mode = Mode::CONNECTED;
     }
     portEXIT_CRITICAL(&stateMux);
-    bool sent = sendPacket(mac, LinkMessageType::TRADE_OFFER, purpose,
+    bool sent = sendPacket(mac, LinkMessageType::JOIN_ACK, purpose,
                            localRoomId, requestSeq, accepted ? 1 : 0);
     if (!sent && accepted) {
         portENTER_CRITICAL(&stateMux);
@@ -285,14 +285,14 @@ void EspNowLink::handleReceive(const uint8_t* mac, const uint8_t* data, int len)
     if (packet.type == LinkMessageType::HELLO && mode == Mode::SEARCHING &&
         purpose == activePurpose && packet.roomId != 0) {
         rememberRoomLocked(mac, packet.roomId, purpose, now);
-    } else if (packet.type == LinkMessageType::TRADE_REQ && mode == Mode::HOSTING &&
+    } else if (packet.type == LinkMessageType::JOIN_REQ && mode == Mode::HOSTING &&
                purpose == activePurpose && packet.roomId == roomId &&
                packet.requestSeq != 0 && !pendingJoin) {
         memcpy(pendingJoinMac, mac, 6);
         pendingJoinPurpose = purpose;
         pendingJoinSeq = packet.requestSeq;
         pendingJoin = true;
-    } else if (packet.type == LinkMessageType::TRADE_OFFER && mode == Mode::SEARCHING &&
+    } else if (packet.type == LinkMessageType::JOIN_ACK && mode == Mode::SEARCHING &&
                awaitingAck && purpose == activePurpose &&
                packet.roomId == expectedAckRoomId && packet.requestSeq == expectedAckSeq &&
                memcmp(mac, expectedAckMac, 6) == 0) {

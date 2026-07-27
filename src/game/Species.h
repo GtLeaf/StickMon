@@ -67,6 +67,7 @@ struct Species {
     EvolutionMethod evolveMethod;
     uint8_t evolveLevel;
     uint16_t baseExp;
+    uint8_t catchRate;
 };
 
 enum class DamageClass : uint8_t {
@@ -189,5 +190,8 @@ uint32_t expToNextLevel(GrowthRate growthRate, uint8_t level, uint32_t exp);
 const char* natureName(uint8_t nature);
 uint8_t natureBoostStat(uint8_t nature);
 uint8_t natureLowerStat(uint8_t nature);
+// Food index (RoomState::food slot) the nature likes/dislikes; -1 when neutral.
+int8_t natureLikedFoodIndex(uint8_t nature);
+int8_t natureDislikedFoodIndex(uint8_t nature);
 const char* typeName(TypeId type);
 const char* evolutionMethodName(EvolutionMethod method);

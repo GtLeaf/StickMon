@@ -15,6 +15,12 @@ enum class FoodPlacementResult : uint8_t {
     DIFFERENT_FOOD,
 };
 
+enum class FoodReaction : uint8_t {
+    NORMAL,
+    LIKED,
+    DISLIKED,
+};
+
 struct FoodConsumeResult {
     bool consumed = false;
     uint8_t foodIndex = 0;
@@ -24,6 +30,7 @@ struct FoodConsumeResult {
     uint8_t moodAfter = 0;
     bool lastBite = false;
     bool becameFull = false;
+    FoodReaction reaction = FoodReaction::NORMAL;
 };
 
 enum class PetOutcome : uint8_t {
@@ -46,13 +53,19 @@ enum class ExploreTravelPhase : uint8_t {
     RETURNING_FAINTED,
 };
 
+enum class SaveUrgency : uint8_t {
+    DEFERRED,
+    SOON,
+    IMMEDIATE,
+};
+
 class GameEngine {
 public:
     static GameEngine& ins();
 
     bool begin();
     void run();
-    void requestScene(SceneID id);
+    void requestScene(SceneID id, bool saveBeforeSwitch = true);
     bool fadeToScene(SceneID id, uint16_t durationMs = 300);
     bool sceneFadeActive() const;
     bool sceneFadeInActive() const;
@@ -75,15 +88,15 @@ public:
     uint8_t bowlFoodCount() const;
     uint8_t bowlFoodBitesRemaining() const { return state.room.bowlBitesRemaining; }
     bool bowlHasFood() const { return state.room.bowlCount > 0; }
-    uint8_t ballCount() const { return state.bag.pokeBall; }
-    uint8_t greatBallCount() const { return state.bag.greatBall; }
-    uint8_t heavyBallCount() const { return state.bag.heavyBall; }
-    uint8_t timerBallCount() const { return state.bag.timerBall; }
     uint8_t candyCount() const { return state.bag.candy; }
     uint8_t potionCount() const { return state.bag.potion; }
     uint8_t superPotionCount() const { return state.bag.superPotion; }
     uint8_t antidoteCount() const { return state.bag.antidote; }
-    uint8_t capturedCount() const { return state.teamCount + state.storageCount; }
+    uint8_t paralyzeHealCount() const { return state.bag.paralyzeHeal; }
+    uint8_t awakeningCount() const { return state.bag.awakening; }
+    uint8_t burnHealCount() const { return state.bag.burnHeal; }
+    uint8_t iceHealCount() const { return state.bag.iceHeal; }
+    uint8_t companionCount() const { return state.teamCount + state.storageCount; }
     uint32_t coinCount() const { return state.coins; }
     uint8_t hungerValue() const;
     uint8_t moodValue() const;
@@ -97,18 +110,15 @@ public:
     uint8_t activeSlot() const { return 0; }
     bool switchActiveMonster();
     bool moveTeamMemberToFront(uint8_t slot);
-    bool depositTeamMemberToStorage(uint8_t slot);
-    bool withdrawStorageMemberToTeam(uint8_t slot);
-    bool releaseStorageMember(uint8_t slot);
+    bool forgetTeamMemberMove(uint8_t teamSlot, uint8_t moveSlot);
+    bool moveTeamMemberToContacts(uint8_t slot);
+    bool inviteContactToTeam(uint8_t slot);
+    bool deleteContact(uint8_t slot);
     bool addFood(uint8_t amount = 1);
     bool addFoodStock(uint8_t foodIndex, uint8_t amount = 1);
     bool selectFood(uint8_t foodIndex);
     FoodPlacementResult placeSelectedFoodInBowl();
     FoodConsumeResult consumeBowlFood();
-    bool addBalls(uint8_t amount);
-    bool consumeBall();
-    bool addGreatBalls(uint8_t amount);
-    bool consumeGreatBall();
     bool addCandy(uint8_t amount);
     bool addPotion(uint8_t amount);
     bool addSuperPotion(uint8_t amount);
@@ -116,14 +126,24 @@ public:
     bool useSuperPotion();
     bool addAntidote(uint8_t amount);
     bool useAntidote();
+    bool addParalyzeHeal(uint8_t amount);
+    bool useParalyzeHeal();
+    bool addAwakening(uint8_t amount);
+    bool useAwakening();
+    bool addBurnHeal(uint8_t amount);
+    bool useBurnHeal();
+    bool addIceHeal(uint8_t amount);
+    bool useIceHeal();
     uint8_t itemCount(Game::ItemId item) const;
-    bool addItem(Game::ItemId item, uint8_t amount = 1, bool immediate = true);
-    bool removeItem(Game::ItemId item, uint8_t amount = 1, bool immediate = true);
+    bool addItem(Game::ItemId item, uint8_t amount = 1,
+                 SaveUrgency urgency = SaveUrgency::SOON);
+    bool removeItem(Game::ItemId item, uint8_t amount = 1,
+                    SaveUrgency urgency = SaveUrgency::SOON);
     bool spendCoins(uint32_t amount);
     void addCoins(uint32_t amount);
-    bool recordCapture(uint16_t speciesId);
-    bool recordCapture(const Game::MonsterRuntime& monster);
-    bool recordCapture(const Game::MonsterRuntime& monster, uint8_t metArea);
+    bool recordFriendContact(const Game::MonsterRuntime& monster,
+                             uint8_t metArea,
+                             uint8_t* contactSlot = nullptr);
     void grantEffortFrom(const Species& defeatedSpecies);
     void grantEffortToTeamMember(uint8_t teamSlot, const Species& defeatedSpecies);
     PetResult petMonster();
@@ -159,12 +179,13 @@ public:
     void toggleDebugWalkBoundary() { debugShowWalkBoundary = !debugShowWalkBoundary; }
     bool debugTiltControlEnabled() const { return debugTiltControl; }
     void toggleDebugTiltControl() { debugTiltControl = !debugTiltControl; }
-    bool debugEnemyDrawBoundsVisible() const { return debugShowEnemyDrawBounds; }
-    void toggleDebugEnemyDrawBounds() {
-        debugShowEnemyDrawBounds = !debugShowEnemyDrawBounds;
+    bool debugBattleDrawBoundsVisible() const { return debugShowBattleDrawBounds; }
+    void toggleDebugBattleDrawBounds() {
+        debugShowBattleDrawBounds = !debugShowBattleDrawBounds;
     }
     void wakeFromIdle();
-    void markDirty(bool immediate = false);
+    bool idleModeActive() const { return idleActive; }
+    void markDirty(SaveUrgency urgency = SaveUrgency::DEFERRED);
     bool saveNow();
     bool resetGame();
     const MainSceneViewState& mainSceneViewState() const { return mainViewState; }
@@ -187,7 +208,7 @@ public:
 private:
     GameEngine() = default;
 
-    void switchScene(SceneID id);
+    void switchScene(SceneID id, bool saveBeforeSwitch = true);
     void processInput(uint32_t nowMs);
     void update(uint32_t nowMs);
     void render(uint32_t nowMs);
@@ -201,7 +222,6 @@ private:
     uint32_t gameMinutesTotalAt(uint32_t nowMs) const;
     void syncGameClock(uint32_t nowMs);
     void resetGameClockAnchor(uint32_t nowMs);
-    void persistGameClock(uint32_t nowMs, bool force = false);
     void initDefaultState();
     void sanitizeMonsterMoves();
     bool sanitizeMonsterMovesForSpecies(Game::MonsterRuntime& mon,
@@ -260,22 +280,22 @@ private:
     uint32_t lastUpdateMs = 0;
     uint32_t lastCareMs = 0;
     uint32_t lastSaveMs = 0;
+    uint32_t saveDirtySinceMs = 0;
+    uint32_t saveSoonSinceMs = 0;
+    uint32_t lastSaveMutationMs = 0;
     uint32_t lastActivityMs = 0;
     uint32_t clockAnchorMs = 0;
     uint32_t clockAnchorMinutes = 0;
-    uint32_t lastClockSaveMs = 0;
-    uint32_t lastSavedClockMinutes = 0;
     uint16_t hpRecoveryMinuteAcc = 0;
     uint16_t satietyDecayMinuteAcc = 0;
     bool satietyDecayWasSleeping = false;
     bool idleActive = false;
     bool saveDirty = false;
+    bool saveSoon = false;
     bool debugShowWalkBoundary = false;
     bool debugTiltControl = false;
-    bool debugShowEnemyDrawBounds = false;
+    bool debugShowBattleDrawBounds = false;
     uint8_t debugLightSource = 0;
-    uint8_t brightnessTraceFrames = 0;
-    uint32_t brightnessTraceStartedMs = 0;
     bool startupFirstFrameRendered = false;
     bool startupSpriteCacheReady = false;
     uint32_t bootStartedMs = 0;

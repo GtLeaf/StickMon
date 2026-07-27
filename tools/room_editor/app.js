@@ -2148,7 +2148,7 @@ function exportFurnitureLibraryBundle(items = annotatedFurnitureItems()) {
     items: uniqueSerializedFurnitureItems(items)
   };
   downloadText("stickmon_furniture_library_bundle.json", JSON.stringify(payload, null, 2), "application/json");
-  setStatus(`Furniture library bundle exported: ${payload.items.length} item(s). Run sync_furniture_library.py to write project files.`);
+  setStatus(`Furniture library bundle exported: ${payload.items.length} item(s). Keep it as a portable backup or batch handoff.`);
 }
 
 function dataUrlMimeType(dataUrl) {

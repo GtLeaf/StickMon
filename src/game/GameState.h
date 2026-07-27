@@ -10,7 +10,7 @@ static constexpr uint8_t TEAM_CAP = 2;
 static constexpr uint8_t STORAGE_CAP = 20;
 static constexpr uint8_t ITEM_STACK_CAP = 99;
 static constexpr uint32_t SAVE_MAGIC = 0x534D4F4E; // SMON
-static constexpr uint16_t SAVE_VERSION = 19;
+static constexpr uint16_t SAVE_VERSION = 2;
 static constexpr uint8_t STAT_COUNT = 6;
 static constexpr uint8_t NATURE_COUNT = 25;
 static constexpr uint8_t LEVEL_MAX = 100;
@@ -20,36 +20,66 @@ static constexpr uint8_t IV_MAX = 31;
 static constexpr uint8_t EV_MAX = 252;
 static constexpr uint16_t EV_TOTAL_MAX = 510;
 static constexpr uint32_t HATCH_MAGIC = 0x48415443; // HATC
-static constexpr uint8_t ROOM_FOOD_COUNT = 2;
+static constexpr uint8_t ROOM_FOOD_COUNT = 7;
 static constexpr uint8_t ROOM_BOWL_CAPACITY = 1;
 static constexpr uint8_t ROOM_NORMAL_FOOD_INDEX = 0;
 static constexpr uint8_t ROOM_NORMAL_FOOD_BITES = 3;
+static constexpr uint8_t ROOM_TASTY_FOOD_INDEX = 1;
+static constexpr uint8_t ROOM_SWEET_FOOD_INDEX = 2;
+static constexpr uint8_t ROOM_SPICY_FOOD_INDEX = 3;
+static constexpr uint8_t ROOM_SOUR_FOOD_INDEX = 4;
+static constexpr uint8_t ROOM_BITTER_FOOD_INDEX = 5;
+static constexpr uint8_t ROOM_DRY_FOOD_INDEX = 6;
 static constexpr uint8_t MET_AREA_STARTER = 0xFD;
 static constexpr uint8_t MET_AREA_HATCHED = 0xFE;
 static constexpr uint8_t MET_AREA_UNKNOWN = 0xFF;
 
 enum class ItemId : uint8_t {
-    POKE_BALL = 0,
-    GREAT_BALL,
-    HEAVY_BALL,
-    TIMER_BALL,
-    NORMAL_FOOD,
+    NORMAL_FOOD = 0,
     POTION,
     SUPER_POTION,
     ANTIDOTE,
     CANDY,
+    TASTY_FOOD,
+    SWEET_FOOD,
+    SPICY_FOOD,
+    SOUR_FOOD,
+    BITTER_FOOD,
+    DRY_FOOD,
+    PARALYZE_HEAL,
+    AWAKENING,
+    BURN_HEAL,
+    ICE_HEAL,
     COUNT,
 };
 
-enum LegacyStatusBits : uint8_t {
-    STATUS_NONE = 0,
-    STATUS_POISON = 1 << 0,
-    STATUS_PARALYSIS = 1 << 1,
-    STATUS_SLEEP = 1 << 2,
-    STATUS_BURN = 1 << 3,
-    STATUS_FREEZE = 1 << 4,
-    STATUS_CONFUSION = 1 << 5,
-};
+// Maps food ItemIds to RoomState::food slots; returns -1 for non-food items.
+inline int8_t foodIndexForItemId(ItemId item) {
+    switch (item) {
+    case ItemId::NORMAL_FOOD: return ROOM_NORMAL_FOOD_INDEX;
+    case ItemId::TASTY_FOOD: return (int8_t)ROOM_TASTY_FOOD_INDEX;
+    case ItemId::SWEET_FOOD: return (int8_t)ROOM_SWEET_FOOD_INDEX;
+    case ItemId::SPICY_FOOD: return (int8_t)ROOM_SPICY_FOOD_INDEX;
+    case ItemId::SOUR_FOOD: return (int8_t)ROOM_SOUR_FOOD_INDEX;
+    case ItemId::BITTER_FOOD: return (int8_t)ROOM_BITTER_FOOD_INDEX;
+    case ItemId::DRY_FOOD: return (int8_t)ROOM_DRY_FOOD_INDEX;
+    default: return -1;
+    }
+}
+
+// Inverse of foodIndexForItemId; returns COUNT for out-of-range slots.
+inline ItemId itemIdForFoodIndex(uint8_t foodIndex) {
+    switch (foodIndex) {
+    case ROOM_NORMAL_FOOD_INDEX: return ItemId::NORMAL_FOOD;
+    case ROOM_TASTY_FOOD_INDEX: return ItemId::TASTY_FOOD;
+    case ROOM_SWEET_FOOD_INDEX: return ItemId::SWEET_FOOD;
+    case ROOM_SPICY_FOOD_INDEX: return ItemId::SPICY_FOOD;
+    case ROOM_SOUR_FOOD_INDEX: return ItemId::SOUR_FOOD;
+    case ROOM_BITTER_FOOD_INDEX: return ItemId::BITTER_FOOD;
+    case ROOM_DRY_FOOD_INDEX: return ItemId::DRY_FOOD;
+    default: return ItemId::COUNT;
+    }
+}
 
 enum class MajorStatus : uint8_t {
     NONE = 0,
@@ -64,7 +94,7 @@ enum class MajorStatus : uint8_t {
 enum class Origin : uint8_t {
     STARTER = 0,
     HATCHED,
-    CAPTURED,
+    BEFRIENDED,
     TRADED,
     GIFT,
     UNKNOWN = 0xFF,
@@ -133,7 +163,7 @@ struct MonsterRuntime {
     uint8_t petCountToday = 0;
     Origin origin = Origin::STARTER;
     bool fainted = false;
-    uint32_t caughtAt = 0;
+    uint32_t metAt = 0;
     uint32_t lastSeenAt = 0;
     uint32_t lastPettedAt = 0;
     uint32_t lastExploredAt = 0;
@@ -141,10 +171,10 @@ struct MonsterRuntime {
 };
 
 struct BagState {
-    uint8_t pokeBall = 5;
-    uint8_t greatBall = 0;
-    uint8_t heavyBall = 0;
-    uint8_t timerBall = 0;
+    uint8_t paralyzeHeal = 0;
+    uint8_t awakening = 0;
+    uint8_t burnHeal = 0;
+    uint8_t iceHeal = 0;
     uint8_t potion = 2;
     uint8_t superPotion = 0;
     uint8_t antidote = 0;
@@ -169,7 +199,8 @@ struct PlayerSettings {
     uint8_t speedIndex = 0; // 1x, 2x, 4x, 8x
     uint16_t longPressMs = 500;
     uint16_t doubleClickMs = 300;
-    uint8_t volume = 0;
+    uint8_t volume = 50;
+    bool voiceCallEnabled = false;
     bool vibrationOn = false;
     uint8_t idleTimeoutIndex = 0; // 0=30s, 1=2min, 2=5min, 3=10min, 4=never
     bool leftHanded = false;

@@ -2,9 +2,11 @@
 
 import re
 import shutil
+import struct
 import subprocess
 import tempfile
 import unittest
+import zlib
 from unittest import mock
 from pathlib import Path
 
@@ -16,6 +18,8 @@ from generate_pokemon_sprites import (
     ENEMY_FRONT_MAX_WIDTH,
     PMD_SPECS,
     prepare_enemy_battle_front,
+    prepare_player_battle_back,
+    prepare_status_portrait,
     pmd_walking_frame_path,
     trim_alpha_padding,
 )
@@ -25,6 +29,35 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class GeneratePokemonSpritesTests(unittest.TestCase):
+    def test_asset_writer_records_visible_bottom_padding(self):
+        image = Image.new("RGBA", (12, 16), (0, 0, 0, 0))
+        image.paste((255, 255, 255, 255), (2, 3, 10, 11))
+
+        writer = generator.AssetWriter()
+        writer.add_frame(1, "TEST", "FRONT", image)
+
+        self.assertEqual(5, writer.frames[0]["ground_padding"])
+
+    def test_species_pack_encodes_ground_padding_marker(self):
+        image = Image.new("RGBA", (12, 16), (0, 0, 0, 0))
+        image.paste((255, 255, 255, 255), (2, 3, 10, 11))
+        writer = generator.AssetWriter()
+        writer.add_frame(1, "TEST", "FRONT", image)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pack_path = Path(temp_dir) / "001.smonsp"
+            generator.write_species_pack(pack_path, 1, writer, {"FRONT": 7})
+            pack = pack_path.read_bytes()
+
+        header_size = struct.calcsize("<IHHHHHHIII")
+        payload = zlib.decompress(pack[header_size:], wbits=-15)
+        packed_frame = struct.unpack_from("<HBBBBHIII", payload)
+
+        self.assertEqual(
+            generator.SPRITE_FRAME_GROUND_MARKER | 5,
+            packed_frame[5],
+        )
+
     def test_trim_alpha_padding_keeps_only_visible_bounds(self):
         image = Image.new("RGBA", (8, 7), (0, 0, 0, 0))
         image.putpixel((2, 1), (255, 0, 0, 17))
@@ -53,7 +86,24 @@ class GeneratePokemonSpritesTests(unittest.TestCase):
         self.assertLessEqual(generated.width, ENEMY_FRONT_MAX_WIDTH)
         self.assertLessEqual(generated.height, ENEMY_FRONT_MAX_HEIGHT)
 
-    def test_only_enemy_front_uses_final_size_generation(self):
+    def test_status_portrait_only_scales_down_to_fit_panel(self):
+        small = Image.new("RGBA", (160, 160), (0, 0, 0, 0))
+        small.paste((255, 255, 255, 255), (55, 45, 103, 121))
+        large = Image.new("RGBA", (160, 160), (0, 0, 0, 0))
+        large.paste((255, 255, 255, 255), (20, 20, 140, 140))
+
+        self.assertEqual((48, 76), prepare_status_portrait(small).size)
+        self.assertEqual((70, 70), prepare_status_portrait(large).size)
+
+    def test_player_back_is_generated_at_final_battle_size(self):
+        square = Image.new("RGBA", (160, 160), (255, 255, 255, 255))
+        wide = Image.new("RGBA", (160, 160), (0, 0, 0, 0))
+        wide.paste((255, 255, 255, 255), (20, 50, 140, 110))
+
+        self.assertEqual((65, 65), prepare_player_battle_back(square).size)
+        self.assertEqual((105, 53), prepare_player_battle_back(wide).size)
+
+    def test_base_frames_use_purpose_specific_sizes(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             graphics = Path(temp_dir)
             for folder in ("Icons", "Front", "Back"):
@@ -78,8 +128,9 @@ class GeneratePokemonSpritesTests(unittest.TestCase):
             }
             self.assertEqual([], missing)
             self.assertEqual((48, 48), dimensions["FRONT"])
-            self.assertEqual((72, 72), dimensions["BACK"])
+            self.assertEqual((65, 65), dimensions["BACK"])
             self.assertEqual((64, 64), dimensions["ICON_0"])
+            self.assertEqual((70, 70), dimensions["STATUS"])
 
     def test_all_configured_walking_frames_exist_and_are_visible(self):
         checked = 0

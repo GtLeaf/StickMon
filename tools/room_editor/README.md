@@ -402,6 +402,10 @@ Direct writes also regenerate `tools/room_editor/generated/furniture_library_ass
 with embedded image data so the editor can browse the library and export preview
 PNGs even when opened through `file://`.
 
+This tool-local directory is the project's only furniture-library source of
+truth. Do not mirror it under `origin_asset/generated/room`; that directory is
+reserved for disposable room previews and runtime-generation byproducts.
+
 Room layouts store `libraryId` for library furniture, while keeping a snapshot
 of placement and annotation fields. If the library is present when importing a
 layout, missing furniture images can be restored from the library automatically.

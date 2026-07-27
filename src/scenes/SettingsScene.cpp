@@ -1,7 +1,11 @@
 #include "scenes/SettingsScene.h"
+#include <algorithm>
 #include <cstdio>
+#include "core/CryPlayer.h"
 #include "core/GameEngine.h"
+#include "core/TraceLog.h"
 #include "core/UiStrings.h"
+#include "core/VoiceCallService.h"
 #include "hardware/Hal.h"
 #include "hardware/PixelRenderer.h"
 
@@ -9,36 +13,70 @@ void SettingsScene::onEnter() {
     GameEngine::ins().wakeFromIdle();
     cursor = 0;
     viewMode = ViewMode::MENU;
-    settingsDirty = false;
     resetConfirmYes = false;
     menuScroll = 0.0f;
+    voiceCursor = 0;
+    enrollmentFinishedAt = 0;
+    VoiceCallService::ins().begin();
     normalizeVolumeSetting();
 }
 
 void SettingsScene::onExit() {
-    uint32_t startedAt = Hal::ins().millis();
-    Serial.printf("[Settings] exit begin t=%lu dirty=%u configured=%u display=%u idle=%u\n",
-                  (unsigned long)startedAt,
-                  settingsDirty ? 1 : 0,
-                  Hal::ins().getBrightness(),
-                  Hal::ins().getDisplayBrightness(),
-                  Hal::ins().isIdleBrightnessActive() ? 1 : 0);
-    saveSettingsIfDirty();
-    uint32_t finishedAt = Hal::ins().millis();
-    Serial.printf("[Settings] exit end t=%lu cost=%lums configured=%u display=%u idle=%u\n",
-                  (unsigned long)finishedAt,
-                  (unsigned long)(finishedAt - startedAt),
-                  Hal::ins().getBrightness(),
-                  Hal::ins().getDisplayBrightness(),
-                  Hal::ins().isIdleBrightnessActive() ? 1 : 0);
+    VoiceCallService::ins().cancelEnrollment();
 }
 
 void SettingsScene::update(uint32_t nowMs, float dtSeconds) {
-    (void)nowMs;
     (void)dtSeconds;
+    if (viewMode != ViewMode::VOICE_ENROLL) return;
+    auto& voice = VoiceCallService::ins();
+    voice.updateEnrollment(nowMs);
+    if (voice.enrollmentState() == VoiceCallService::EnrollmentState::SUCCESS) {
+        if (enrollmentFinishedAt == 0) enrollmentFinishedAt = nowMs;
+        if (nowMs - enrollmentFinishedAt >= 1200) {
+            voice.cancelEnrollment();
+            viewMode = ViewMode::VOICE_CALL;
+            enrollmentFinishedAt = 0;
+        }
+    }
 }
 
 bool SettingsScene::onButton(const ButtonEvent& event) {
+    if (viewMode == ViewMode::VOICE_ENROLL) {
+        if ((event.btn == 0 || event.btn == 1) && event.action == BtnAction::LONG_PRESS) {
+            VoiceCallService::ins().cancelEnrollment();
+            viewMode = ViewMode::VOICE_CALL;
+            enrollmentFinishedAt = 0;
+            return true;
+        }
+        auto& voice = VoiceCallService::ins();
+        auto error = voice.enrollmentError();
+        bool terminalError =
+            voice.enrollmentState() == VoiceCallService::EnrollmentState::ERROR &&
+            (error == VoiceCallService::EnrollmentError::SAVE_FAILED ||
+             error == VoiceCallService::EnrollmentError::MICROPHONE ||
+             error == VoiceCallService::EnrollmentError::NO_MEMORY);
+        if ((event.btn == 0 || event.btn == 1) &&
+            event.action == BtnAction::PRESSED && terminalError) {
+            voice.cancelEnrollment();
+            viewMode = ViewMode::VOICE_CALL;
+            enrollmentFinishedAt = 0;
+            return true;
+        }
+        if (event.btn == 0 && event.action == BtnAction::PRESSED &&
+            voice.enrollmentState() == VoiceCallService::EnrollmentState::SUCCESS) {
+            voice.cancelEnrollment();
+            viewMode = ViewMode::VOICE_CALL;
+            enrollmentFinishedAt = 0;
+            return true;
+        }
+        return true;
+    }
+
+    if (viewMode == ViewMode::VOICE_CALL) {
+        handleVoiceCallButton(event);
+        return true;
+    }
+
     if (viewMode == ViewMode::RESET_CONFIRM) {
         if ((event.btn == 0 || event.btn == 1) && event.action == BtnAction::LONG_PRESS) {
             viewMode = ViewMode::MENU;
@@ -60,7 +98,6 @@ bool SettingsScene::onButton(const ButtonEvent& event) {
                 toastUntil = Hal::ins().millis() + 1500;
                 return true;
             }
-            settingsDirty = false;
             GameEngine::ins().requestScene(SceneID::HATCH);
             return true;
         }
@@ -69,7 +106,6 @@ bool SettingsScene::onButton(const ButtonEvent& event) {
 
     if (viewMode == ViewMode::HELP) {
         if ((event.btn == 0 || event.btn == 1) && event.action == BtnAction::PRESSED) {
-            saveSettingsIfDirty();
             viewMode = ViewMode::MENU;
             return true;
         }
@@ -108,11 +144,24 @@ void SettingsScene::activateCurrent() {
         markSettingsDirty();
         break;
     case VOLUME: {
-        auto& settings = GameEngine::ins().gameState().settings;
+        auto& engine = GameEngine::ins();
+        auto& state = engine.gameState();
+        auto& settings = state.settings;
         settings.volume = settings.volume >= 100 ? 0 : settings.volume + 10;
+        Hal::ins().setAudioVolume(settings.volume);
+        if (settings.volume == 0) {
+            CryPlayer::ins().stop();
+        } else if (state.teamCount > 0) {
+            CryPlayer::ins().replay(engine.activeMonster().speciesId);
+        }
         markSettingsDirty();
         break;
     }
+    case VOICE_CALL:
+        viewMode = ViewMode::VOICE_CALL;
+        voiceCursor = 0;
+        toast = nullptr;
+        return;
     case POWER_SAVE:
         GameEngine::ins().cycleIdleTimeout();
         markSettingsDirty();
@@ -128,7 +177,7 @@ void SettingsScene::activateCurrent() {
         toast = nullptr;
         return;
     case BACK:
-        GameEngine::ins().requestScene(SceneID::MENU);
+        GameEngine::ins().requestScene(SceneID::MENU, false);
         return;
     default:
         break;
@@ -143,9 +192,9 @@ void SettingsScene::cycleBrightness() {
     else if (cur < 160) next = 192;
     else if (cur < 224) next = 255;
     else next = 64;
-    Serial.printf("[Settings] brightness selection t=%lu current=%u next=%u display=%u\n",
-                  (unsigned long)Hal::ins().millis(), cur, next,
-                  Hal::ins().getDisplayBrightness());
+    STICKMON_TRACEF("[Settings] brightness t=%lu current=%u next=%u display=%u\n",
+                    (unsigned long)Hal::ins().millis(), cur, next,
+                    Hal::ins().getDisplayBrightness());
     Hal::ins().setBrightness(next);
     GameEngine::ins().gameState().settings.brightness = next;
     markSettingsDirty();
@@ -159,29 +208,11 @@ void SettingsScene::normalizeVolumeSetting() {
         volume = normalized;
         markSettingsDirty();
     }
+    Hal::ins().setAudioVolume(volume);
 }
 
 void SettingsScene::markSettingsDirty() {
-    settingsDirty = true;
-    GameEngine::ins().markDirty(false);
-}
-
-void SettingsScene::saveSettingsIfDirty() {
-    if (!settingsDirty) return;
-    uint32_t startedAt = Hal::ins().millis();
-    Serial.printf("[Settings] save begin t=%lu brightness=%u display=%u\n",
-                  (unsigned long)startedAt,
-                  Hal::ins().getBrightness(),
-                  Hal::ins().getDisplayBrightness());
-    bool saved = GameEngine::ins().saveNow();
-    uint32_t finishedAt = Hal::ins().millis();
-    Serial.printf("[Settings] save end t=%lu cost=%lums ok=%u brightness=%u display=%u\n",
-                  (unsigned long)finishedAt,
-                  (unsigned long)(finishedAt - startedAt),
-                  saved ? 1 : 0,
-                  Hal::ins().getBrightness(),
-                  Hal::ins().getDisplayBrightness());
-    settingsDirty = false;
+    GameEngine::ins().markDirty(SaveUrgency::SOON);
 }
 
 void SettingsScene::render() {
@@ -189,6 +220,10 @@ void SettingsScene::render() {
     c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, PixelRenderer::rgb(7, 9, 14));
     if (viewMode == ViewMode::HELP) {
         renderHelp();
+    } else if (viewMode == ViewMode::VOICE_CALL) {
+        renderVoiceCall();
+    } else if (viewMode == ViewMode::VOICE_ENROLL) {
+        renderVoiceEnrollment();
     } else {
         renderMenu();
         if (viewMode == ViewMode::RESET_CONFIRM) renderResetConfirm();
@@ -198,6 +233,8 @@ void SettingsScene::render() {
 
 void SettingsScene::renderMenu() {
     auto& c = PixelRenderer::canvas();
+    static_assert(sizeof(Ui::Settings::ITEMS) / sizeof(Ui::Settings::ITEMS[0]) == COUNT,
+                  "Settings labels must match SettingsScene::Item");
     static constexpr int ROW_H = 24;
     static constexpr int START_Y = 6;
     static constexpr int TEXT_Y_OFFSET = 4;
@@ -238,6 +275,12 @@ void SettingsScene::renderMenu() {
         if (i == BRIGHTNESS) snprintf(value, sizeof(value), "%u", Hal::ins().getBrightness());
         if (i == GAME_SPEED) snprintf(value, sizeof(value), "%.0fx", GameEngine::ins().gameSpeed());
         if (i == VOLUME) snprintf(value, sizeof(value), "%u%%", settings.volume);
+        if (i == VOICE_CALL) {
+            snprintf(value, sizeof(value), "%s",
+                     !settings.voiceCallEnabled ? Ui::Settings::OFF :
+                     (VoiceCallService::ins().profileReady() ? Ui::Settings::ON :
+                                                              Ui::Settings::VOICE_PENDING));
+        }
         if (i == POWER_SAVE) snprintf(value, sizeof(value), "%s", GameEngine::ins().idleTimeoutLabel());
         if (value[0]) PixelRenderer::text(VALUE_X, textY, value, PixelRenderer::rgb(135, 214, 238), 1);
 
@@ -246,6 +289,115 @@ void SettingsScene::renderMenu() {
                             PixelRenderer::rgb(70, 74, 84));
         }
     }
+}
+
+void SettingsScene::handleVoiceCallButton(const ButtonEvent& event) {
+    if ((event.btn == 0 || event.btn == 1) && event.action == BtnAction::LONG_PRESS) {
+        viewMode = ViewMode::MENU;
+        return;
+    }
+    auto& settings = GameEngine::ins().gameState().settings;
+    uint8_t count = settings.voiceCallEnabled ? 3 : 2;
+    if (event.btn == 1 && event.action == BtnAction::PRESSED) {
+        voiceCursor = (voiceCursor + 1) % count;
+        return;
+    }
+    if (event.btn != 0 || event.action != BtnAction::PRESSED) return;
+    if (voiceCursor == 0) {
+        settings.voiceCallEnabled = !settings.voiceCallEnabled;
+        if (!settings.voiceCallEnabled && voiceCursor >= 1) voiceCursor = 0;
+        markSettingsDirty();
+        return;
+    }
+    if (settings.voiceCallEnabled && voiceCursor == 1) {
+        CryPlayer::ins().stop();
+        enrollmentFinishedAt = 0;
+        VoiceCallService::ins().beginEnrollment(Hal::ins().millis());
+        viewMode = ViewMode::VOICE_ENROLL;
+        return;
+    }
+    viewMode = ViewMode::MENU;
+}
+
+void SettingsScene::renderVoiceCall() {
+    auto& c = PixelRenderer::canvas();
+    const auto& settings = GameEngine::ins().gameState().settings;
+    bool ready = VoiceCallService::ins().profileReady();
+    uint8_t count = settings.voiceCallEnabled ? 3 : 2;
+    if (voiceCursor >= count) voiceCursor = 0;
+    PixelRenderer::text(12, 8, Ui::Settings::VOICE_CALL,
+                        PixelRenderer::rgb(67, 213, 224), 1);
+    c.drawFastHLine(8, 30, 224, PixelRenderer::rgb(55, 63, 76));
+
+    for (uint8_t i = 0; i < count; ++i) {
+        int y = 39 + i * 28;
+        bool selected = i == voiceCursor;
+        uint16_t fg = selected ? PixelRenderer::rgb(255, 216, 72)
+                               : PixelRenderer::rgb(241, 242, 232);
+        if (selected) c.fillRect(8, y, 4, 16, fg);
+        const char* label = nullptr;
+        const char* value = nullptr;
+        if (i == 0) {
+            label = Ui::Settings::VOICE_ENABLE;
+            value = settings.voiceCallEnabled ? Ui::Settings::ON : Ui::Settings::OFF;
+        } else if (settings.voiceCallEnabled && i == 1) {
+            label = ready ? Ui::Settings::VOICE_REENROLL : Ui::Settings::VOICE_ENROLL;
+            value = ready ? Ui::Settings::VOICE_READY : Ui::Settings::VOICE_PENDING;
+        } else {
+            label = Ui::BACK;
+        }
+        PixelRenderer::text(20, y, label, fg, 1);
+        if (value) PixelRenderer::text(166, y, value,
+                                       PixelRenderer::rgb(135, 214, 238), 1);
+        if (i + 1 < count) c.drawFastHLine(20, y + 22, 200,
+                                           PixelRenderer::rgb(70, 74, 84));
+    }
+}
+
+const char* SettingsScene::enrollmentMessage() const {
+    auto& voice = VoiceCallService::ins();
+    using Error = VoiceCallService::EnrollmentError;
+    if (voice.enrollmentState() == VoiceCallService::EnrollmentState::SUCCESS) {
+        return Ui::Settings::VOICE_DONE;
+    }
+    switch (voice.enrollmentError()) {
+    case Error::MICROPHONE: return Ui::Settings::VOICE_MIC_FAILED;
+    case Error::TOO_QUIET: return Ui::Settings::VOICE_QUIET;
+    case Error::TOO_SHORT: return Ui::Settings::VOICE_SHORT;
+    case Error::TOO_NOISY: return Ui::Settings::VOICE_NOISY;
+    case Error::INCONSISTENT: return Ui::Settings::VOICE_INCONSISTENT;
+    case Error::SAVE_FAILED: return Ui::Settings::VOICE_SAVE_FAILED;
+    case Error::NO_MEMORY: return Ui::Settings::VOICE_NO_MEMORY;
+    default: return Ui::Settings::VOICE_LISTENING;
+    }
+}
+
+void SettingsScene::renderVoiceEnrollment() {
+    auto& c = PixelRenderer::canvas();
+    auto& voice = VoiceCallService::ins();
+    c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, PixelRenderer::rgb(0, 0, 0));
+    c.fillRect(12, 10, 216, 114, PixelRenderer::rgb(20, 24, 31));
+    c.drawRect(12, 10, 216, 114, PixelRenderer::rgb(241, 242, 232));
+    PixelRenderer::text(88, 18, Ui::Settings::VOICE_ENROLL,
+                        PixelRenderer::rgb(255, 216, 72), 1);
+    PixelRenderer::text(48, 40, Ui::Settings::VOICE_PROMPT,
+                        PixelRenderer::rgb(241, 242, 232), 1);
+    char take[16];
+    snprintf(take, sizeof(take), "第 %u/3 次", std::min<uint8_t>(3, voice.enrollmentTake()));
+    PixelRenderer::text(91, 59, take, PixelRenderer::rgb(135, 214, 238), 1);
+
+    int centerY = 86;
+    c.drawFastHLine(24, centerY, 192, PixelRenderer::rgb(55, 63, 76));
+    const int8_t* wave = voice.waveform();
+    for (size_t i = 0; i < voice.waveformSize(); ++i) {
+        int h = std::max<int>(1, wave[i]);
+        c.drawFastVLine(25 + static_cast<int>(i) * 6, centerY - h / 2, h,
+                        PixelRenderer::rgb(67, 213, 224));
+    }
+    PixelRenderer::text(35, 105, enrollmentMessage(),
+                        voice.enrollmentError() == VoiceCallService::EnrollmentError::NONE
+                            ? PixelRenderer::rgb(156, 164, 176)
+                            : PixelRenderer::rgb(255, 116, 94), 1);
 }
 
 void SettingsScene::renderHelp() {

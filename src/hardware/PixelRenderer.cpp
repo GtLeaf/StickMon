@@ -1,7 +1,6 @@
 #include "hardware/PixelRenderer.h"
 #include <Arduino.h>
 #include <cmath>
-#include <cstdlib>
 #include "assets/FontFallbackCN.h"
 #include "core/FontResource.h"
 
@@ -18,24 +17,50 @@ static constexpr int MAX_OUTLINE_MASK_HEIGHT =
 static constexpr int MAX_OUTLINE_MASK_PIXELS =
     MAX_OUTLINE_MASK_WIDTH * MAX_OUTLINE_MASK_HEIGHT;
 
+bool isUtf8Continuation(uint8_t value) {
+    return (value & 0xC0) == 0x80;
+}
+
 uint32_t readUtf8(const char*& p) {
     const uint8_t* s = reinterpret_cast<const uint8_t*>(p);
     if (s[0] < 0x80) {
         p += 1;
         return s[0];
     }
-    if ((s[0] & 0xE0) == 0xC0) {
+    if (s[0] >= 0xC2 && s[0] <= 0xDF &&
+        s[1] != 0 && isUtf8Continuation(s[1])) {
         uint32_t cp = ((s[0] & 0x1F) << 6) | (s[1] & 0x3F);
         p += 2;
         return cp;
     }
-    if ((s[0] & 0xF0) == 0xE0) {
+    if (s[0] >= 0xE0 && s[0] <= 0xEF &&
+        s[1] != 0 && isUtf8Continuation(s[1]) &&
+        s[2] != 0 && isUtf8Continuation(s[2])) {
         uint32_t cp = ((s[0] & 0x0F) << 12) | ((s[1] & 0x3F) << 6) | (s[2] & 0x3F);
-        p += 3;
-        return cp;
+        if (cp >= 0x800 && (cp < 0xD800 || cp > 0xDFFF)) {
+            p += 3;
+            return cp;
+        }
+    }
+    if (s[0] >= 0xF0 && s[0] <= 0xF4 &&
+        s[1] != 0 && isUtf8Continuation(s[1]) &&
+        s[2] != 0 && isUtf8Continuation(s[2]) &&
+        s[3] != 0 && isUtf8Continuation(s[3])) {
+        uint32_t cp = ((s[0] & 0x07) << 18) | ((s[1] & 0x3F) << 12) |
+                      ((s[2] & 0x3F) << 6) | (s[3] & 0x3F);
+        if (cp >= 0x10000 && cp <= 0x10FFFF) {
+            p += 4;
+            return cp;
+        }
     }
     p += 1;
     return '?';
+}
+
+bool mapDownscaledCoordinate(int source, float scale, int outputSize, int& output) {
+    output = static_cast<int>(ceilf(source * scale));
+    return output >= 0 && output < outputSize &&
+           static_cast<int>(output / scale) == source;
 }
 
 uint16_t readGlyphRow(const uint8_t* bitmap, int row, bool progmem) {
@@ -405,7 +430,42 @@ void PixelRenderer::drawIndexed4RleScaled(int x, int y, int w, int h,
         return;
     }
     if (scale < 1.0f) {
-        drawIndexed4Rle(x, y, w, h, data, offset, length, palette, paletteOffset, paletteSize, flipX);
+        int outW = max<int>(1, static_cast<int>(w * scale));
+        int outH = max<int>(1, static_cast<int>(h * scale));
+        const uint32_t total = static_cast<uint32_t>(w * h);
+        uint32_t idx = 0;
+        uint32_t pixel = 0;
+        while (idx < length && pixel < total) {
+            uint16_t token = pgm_read_word(&data[offset + idx++]);
+            uint16_t run = token & 0x7FFF;
+            if (run == 0) continue;
+            if (token & 0x8000) {
+                pixel = min<uint32_t>(total, pixel + run);
+                continue;
+            }
+
+            uint16_t packed = 0;
+            for (uint16_t i = 0; i < run && pixel < total; ++i, ++pixel) {
+                if ((i & 0x03) == 0) {
+                    if (idx >= length) return;
+                    packed = pgm_read_word(&data[offset + idx++]);
+                }
+                uint8_t paletteIndex = (packed >> ((i & 0x03) * 4)) & 0x0F;
+                if (paletteIndex >= paletteSize) continue;
+
+                int sourceCol = static_cast<int>(pixel % w);
+                int sourceRow = static_cast<int>(pixel / w);
+                int sampledCol = flipX ? w - 1 - sourceCol : sourceCol;
+                int drawCol = 0;
+                int drawRow = 0;
+                if (!mapDownscaledCoordinate(sampledCol, scale, outW, drawCol) ||
+                    !mapDownscaledCoordinate(sourceRow, scale, outH, drawRow)) {
+                    continue;
+                }
+                uint16_t color = pgm_read_word(&palette[paletteOffset + paletteIndex]);
+                gCanvas->drawPixel(x + drawCol, y + drawRow, color);
+            }
+        }
         return;
     }
 
@@ -488,16 +548,6 @@ void PixelRenderer::drawRgb565RleScaled(int x, int y, int w, int h,
     if (outW <= 0) outW = 1;
     if (outH <= 0) outH = 1;
 
-    size_t pixelCount = (size_t)w * h;
-    uint16_t* buf = (uint16_t*)malloc(pixelCount * sizeof(uint16_t));
-    uint8_t* opaque = (uint8_t*)calloc(pixelCount, sizeof(uint8_t));
-    if (!buf || !opaque) {
-        if (buf) free(buf);
-        if (opaque) free(opaque);
-        drawRgb565Rle(x, y, w, h, data, offset, length, flipX);
-        return;
-    }
-
     const uint32_t total = (uint32_t)(w * h);
     uint32_t idx = 0;
     uint32_t pixel = 0;
@@ -507,31 +557,21 @@ void PixelRenderer::drawRgb565RleScaled(int x, int y, int w, int h,
         if (run == 0) continue;
 
         if (token & 0x8000) {
-            pixel += run;
-            if (pixel > total) pixel = total;
+            pixel = min<uint32_t>(total, pixel + run);
             continue;
         }
 
         for (uint16_t i = 0; i < run && idx < length && pixel < total; ++i, ++pixel) {
-            buf[pixel] = pgm_read_word(&data[offset + idx++]);
-            opaque[pixel] = 1;
-        }
-    }
-
-    for (int row = 0; row < outH; ++row) {
-        int srcRow = (int)(row / scale);
-        if (srcRow >= h) srcRow = h - 1;
-        for (int col = 0; col < outW; ++col) {
-            int srcCol = (int)(col / scale);
-            if (srcCol >= w) srcCol = w - 1;
-            int finalCol = flipX ? (w - 1 - srcCol) : srcCol;
-            size_t srcIndex = (size_t)srcRow * w + finalCol;
-            if (opaque[srcIndex]) {
-                gCanvas->drawPixel(x + col, y + row, buf[srcIndex]);
+            uint16_t color = pgm_read_word(&data[offset + idx++]);
+            int sourceCol = static_cast<int>(pixel % w);
+            int sourceRow = static_cast<int>(pixel / w);
+            int sampledCol = flipX ? w - 1 - sourceCol : sourceCol;
+            int drawCol = 0;
+            int drawRow = 0;
+            if (mapDownscaledCoordinate(sampledCol, scale, outW, drawCol) &&
+                mapDownscaledCoordinate(sourceRow, scale, outH, drawRow)) {
+                gCanvas->drawPixel(x + drawCol, y + drawRow, color);
             }
         }
     }
-
-    free(opaque);
-    free(buf);
 }

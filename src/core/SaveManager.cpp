@@ -1,8 +1,8 @@
 #include "core/SaveManager.h"
 #include <Arduino.h>
 #include <Preferences.h>
+#include <nvs.h>
 #include <cmath>
-#include <cstdlib>
 #include <cstring>
 #include <new>
 #include "game/Species.h"
@@ -11,24 +11,14 @@ namespace {
 constexpr const char* NVS_NS = "stickmon";
 constexpr const char* NVS_KEY = "state";
 constexpr const char* HATCH_KEY = "hatch";
-constexpr const char* CLOCK_KEY = "clock_min";
-constexpr const char* MAIN_SCENE_VIEW_KEY = "main_view";
+constexpr uint32_t SAVE_RECORD_MAGIC = 0x3156534D; // MSV1
+constexpr uint16_t SAVE_RECORD_VERSION = 2;
+static_assert(SAVE_RECORD_VERSION == Game::SAVE_VERSION,
+              "save record and game-state versions must advance together");
 constexpr uint32_t MAIN_SCENE_VIEW_MAGIC = 0x4D565354; // MVST
 constexpr uint16_t MAIN_SCENE_VIEW_VERSION = 1;
 constexpr uint32_t MAIN_SCENE_VIEW_MAX_REMAINING_MS = 24UL * 60UL * 60UL * 1000UL;
 constexpr float MAIN_SCENE_VIEW_COORD_LIMIT = 8192.0f;
-constexpr uint16_t LEGACY_SAVE_VERSION_V8 = 8;
-constexpr uint16_t LEGACY_SAVE_VERSION_V9 = 9;
-constexpr uint16_t LEGACY_SAVE_VERSION_V10 = 10;
-constexpr uint16_t LEGACY_SAVE_VERSION_V11 = 11;
-constexpr uint16_t LEGACY_SAVE_VERSION_V12 = 12;
-constexpr uint16_t LEGACY_SAVE_VERSION_V13 = 13;
-constexpr uint16_t LEGACY_SAVE_VERSION_V14 = 14;
-constexpr uint16_t LEGACY_SAVE_VERSION_V15 = 15;
-constexpr uint16_t LEGACY_SAVE_VERSION_V16 = 16;
-constexpr uint16_t LEGACY_SAVE_VERSION_V17 = 17;
-constexpr uint16_t LEGACY_SAVE_VERSION_V18 = 18;
-constexpr uint16_t GAME_MINUTES_PER_DAY = 24U * 60U;
 
 struct MainSceneViewRecord {
     uint32_t magic;
@@ -51,439 +41,13 @@ struct MainSceneViewRecord {
     uint32_t postFeedAwakeRemainingMs;
 };
 
-struct LegacyRoomStateV12 {
-    uint8_t food[Game::ROOM_FOOD_COUNT] = {2, 0};
-    uint8_t selectedFood = 0;
-    uint8_t roomStyle = 0;
-    uint8_t activeToy = 0;
-    uint8_t ownedToys = 0;
-    uint16_t ownedFurniture = 0;
-    uint16_t placedFurniture = 0;
+struct SaveRecord {
+    uint32_t magic = SAVE_RECORD_MAGIC;
+    uint16_t version = SAVE_RECORD_VERSION;
+    uint16_t reserved = 0;
+    Game::GameState state;
+    MainSceneViewRecord view{};
 };
-
-struct LegacyRoomStateV13 {
-    uint8_t food[Game::ROOM_FOOD_COUNT] = {2, 0};
-    uint8_t selectedFood = 0;
-    uint8_t bowlFood = 0;
-    uint8_t bowlCount = 0;
-    uint8_t roomStyle = 0;
-    uint8_t activeToy = 0;
-    uint8_t ownedToys = 0;
-    uint16_t ownedFurniture = 0;
-    uint16_t placedFurniture = 0;
-};
-
-struct LegacyMonsterRuntimeV8 {
-    uint16_t speciesId = 1;
-    uint8_t level = 5;
-    uint32_t exp = 0;
-    uint16_t hpCur = 20;
-    uint16_t hpMax = 20;
-    uint32_t ivPacked = 0;
-    Game::StatLine ev;
-    uint8_t nature = 0;
-    uint8_t affection = 30;
-    uint8_t mood = 70;
-    uint8_t satiety = 75;
-    uint8_t proficiency = 0;
-    uint8_t statusBits = Game::STATUS_NONE;
-    uint8_t metArea = Game::MET_AREA_UNKNOWN;
-    uint8_t petCountToday = 0;
-    Game::Origin origin = Game::Origin::STARTER;
-    bool fainted = false;
-    uint32_t caughtAt = 0;
-    uint32_t lastSeenAt = 0;
-    uint32_t lastPettedAt = 0;
-};
-
-struct LegacyGameStateV8 {
-    uint32_t magic = Game::SAVE_MAGIC;
-    uint16_t version = LEGACY_SAVE_VERSION_V8;
-    uint16_t checksum = 0;
-    bool oobeDone = false;
-    uint16_t hatchSeconds = 180;
-    uint8_t activeSlot = 0;
-    uint8_t teamCount = 1;
-    LegacyMonsterRuntimeV8 team[Game::TEAM_CAP];
-    uint8_t storageCount = 0;
-    LegacyMonsterRuntimeV8 storage[Game::STORAGE_CAP];
-    Game::BagState bag;
-    LegacyRoomStateV12 room;
-    uint32_t coins = 50;
-    uint16_t stepsToday = 0;
-    uint16_t walkExpToday = 0;
-    uint32_t gameMinutesTotal = 0;
-    Game::PlayerSettings settings;
-};
-
-struct LegacyMonsterRuntimeV10 {
-    uint16_t speciesId = 1;
-    uint8_t level = 5;
-    uint32_t exp = 0;
-    uint16_t hpCur = 20;
-    uint16_t hpMax = 20;
-    uint8_t move1Id = 0;
-    uint8_t move2Id = 0;
-    uint32_t ivPacked = 0;
-    Game::StatLine ev;
-    uint8_t nature = 0;
-    uint8_t affection = 30;
-    uint8_t mood = 70;
-    uint8_t satiety = 75;
-    uint8_t proficiency = 0;
-    uint8_t statusBits = Game::STATUS_NONE;
-    uint8_t metArea = Game::MET_AREA_UNKNOWN;
-    uint8_t petCountToday = 0;
-    Game::Origin origin = Game::Origin::STARTER;
-    bool fainted = false;
-    uint32_t caughtAt = 0;
-    uint32_t lastSeenAt = 0;
-    uint32_t lastPettedAt = 0;
-};
-
-struct LegacyMonsterRuntimeV15 {
-    uint16_t speciesId = 1;
-    uint8_t level = 5;
-    uint32_t exp = 0;
-    uint16_t hpCur = 20;
-    uint16_t hpMax = 20;
-    uint8_t move1Id = 0;
-    uint8_t move2Id = 0;
-    uint8_t move3Id = 0;
-    uint32_t ivPacked = 0;
-    Game::StatLine ev;
-    uint8_t nature = 0;
-    uint8_t affection = 30;
-    uint8_t mood = 70;
-    uint8_t satiety = 75;
-    uint8_t proficiency = 0;
-    uint8_t statusBits = Game::STATUS_NONE;
-    uint8_t metArea = Game::MET_AREA_UNKNOWN;
-    uint8_t petCountToday = 0;
-    Game::Origin origin = Game::Origin::STARTER;
-    bool fainted = false;
-    uint32_t caughtAt = 0;
-    uint32_t lastSeenAt = 0;
-    uint32_t lastPettedAt = 0;
-};
-
-struct LegacyMonsterRuntimeV16 {
-    uint16_t speciesId = 1;
-    uint8_t level = 5;
-    uint32_t exp = 0;
-    uint16_t hpCur = 20;
-    uint16_t hpMax = 20;
-    Game::MoveId move1Id = 0;
-    Game::MoveId move2Id = 0;
-    Game::MoveId move3Id = 0;
-    uint32_t ivPacked = 0;
-    Game::StatLine ev;
-    uint8_t nature = 0;
-    uint8_t affection = 30;
-    uint8_t mood = 70;
-    uint8_t satiety = 75;
-    uint8_t proficiency = 0;
-    uint8_t statusBits = Game::STATUS_NONE;
-    uint8_t metArea = Game::MET_AREA_UNKNOWN;
-    uint8_t petCountToday = 0;
-    Game::Origin origin = Game::Origin::STARTER;
-    bool fainted = false;
-    uint32_t caughtAt = 0;
-    uint32_t lastSeenAt = 0;
-    uint32_t lastPettedAt = 0;
-};
-
-struct LegacyMonsterRuntimeV17 {
-    uint16_t speciesId = 1;
-    uint8_t level = 5;
-    uint32_t exp = 0;
-    uint16_t hpCur = 20;
-    uint16_t hpMax = 20;
-    Game::MoveId move1Id = 0;
-    Game::MoveId move2Id = 0;
-    Game::MoveId move3Id = 0;
-    uint32_t ivPacked = 0;
-    Game::StatLine ev;
-    uint8_t nature = 0;
-    uint8_t affection = 30;
-    uint8_t mood = 70;
-    uint8_t satiety = 75;
-    uint8_t proficiency = 0;
-    uint8_t statusBits = Game::STATUS_NONE;
-    uint8_t metArea = Game::MET_AREA_UNKNOWN;
-    uint8_t petCountToday = 0;
-    Game::Origin origin = Game::Origin::STARTER;
-    bool fainted = false;
-    uint32_t caughtAt = 0;
-    uint32_t lastSeenAt = 0;
-    uint32_t lastPettedAt = 0;
-    uint32_t lastExploredAt = 0;
-    uint32_t lastWindowGazeAt = 0;
-};
-
-struct LegacyMonsterRuntimeV18 {
-    uint16_t speciesId = 1;
-    uint8_t level = 5;
-    uint32_t exp = 0;
-    uint16_t hpCur = 20;
-    uint16_t hpMax = 20;
-    Game::MoveId move1Id = 0;
-    Game::MoveId move2Id = 0;
-    Game::MoveId move3Id = 0;
-    uint32_t ivPacked = 0;
-    Game::StatLine ev;
-    uint8_t nature = 0;
-    uint8_t affection = 30;
-    uint8_t mood = 70;
-    uint8_t satiety = 75;
-    uint8_t moveProficiency[Game::MOVE_SLOT_COUNT] = {};
-    uint8_t statusBits = Game::STATUS_NONE;
-    uint8_t metArea = Game::MET_AREA_UNKNOWN;
-    uint8_t petCountToday = 0;
-    Game::Origin origin = Game::Origin::STARTER;
-    bool fainted = false;
-    uint32_t caughtAt = 0;
-    uint32_t lastSeenAt = 0;
-    uint32_t lastPettedAt = 0;
-    uint32_t lastExploredAt = 0;
-    uint32_t lastWindowGazeAt = 0;
-};
-
-struct LegacyGameStateV9 {
-    uint32_t magic = Game::SAVE_MAGIC;
-    uint16_t version = LEGACY_SAVE_VERSION_V9;
-    uint16_t checksum = 0;
-    bool oobeDone = false;
-    uint16_t hatchSeconds = 180;
-    uint8_t activeSlot = 0;
-    uint8_t teamCount = 1;
-    LegacyMonsterRuntimeV10 team[Game::TEAM_CAP];
-    uint8_t storageCount = 0;
-    LegacyMonsterRuntimeV10 storage[Game::STORAGE_CAP];
-    Game::BagState bag;
-    LegacyRoomStateV12 room;
-    uint32_t coins = 50;
-    uint16_t stepsToday = 0;
-    uint16_t walkExpToday = 0;
-    uint32_t gameMinutesTotal = 0;
-    Game::PlayerSettings settings;
-};
-
-struct LegacyGameStateV10 {
-    uint32_t magic = Game::SAVE_MAGIC;
-    uint16_t version = LEGACY_SAVE_VERSION_V10;
-    uint16_t checksum = 0;
-    bool oobeDone = false;
-    uint16_t hatchSeconds = 180;
-    uint8_t activeSlot = 0;
-    uint8_t teamCount = 1;
-    LegacyMonsterRuntimeV10 team[Game::TEAM_CAP];
-    uint8_t storageCount = 0;
-    LegacyMonsterRuntimeV10 storage[Game::STORAGE_CAP];
-    Game::BagState bag;
-    LegacyRoomStateV12 room;
-    uint32_t coins = 50;
-    uint16_t stepsToday = 0;
-    uint16_t walkExpToday = 0;
-    uint16_t careExpToday = 0;
-    uint16_t careDay = 0;
-    uint32_t gameMinutesTotal = 0;
-    Game::PlayerSettings settings;
-};
-
-struct LegacyGameStateV12 {
-    uint32_t magic = Game::SAVE_MAGIC;
-    uint16_t version = LEGACY_SAVE_VERSION_V12;
-    uint16_t checksum = 0;
-    bool oobeDone = false;
-    uint16_t hatchSeconds = 180;
-    uint8_t activeSlot = 0;
-    uint8_t teamCount = 1;
-    LegacyMonsterRuntimeV15 team[Game::TEAM_CAP];
-    uint8_t storageCount = 0;
-    LegacyMonsterRuntimeV15 storage[Game::STORAGE_CAP];
-    Game::BagState bag;
-    LegacyRoomStateV12 room;
-    uint32_t coins = 50;
-    uint16_t stepsToday = 0;
-    uint16_t walkExpToday = 0;
-    uint16_t careExpToday = 0;
-    uint16_t careDay = 0;
-    uint32_t gameMinutesTotal = 0;
-    Game::PlayerSettings settings;
-};
-
-struct LegacyGameStateV13 {
-    uint32_t magic = Game::SAVE_MAGIC;
-    uint16_t version = LEGACY_SAVE_VERSION_V13;
-    uint16_t checksum = 0;
-    bool oobeDone = false;
-    uint16_t hatchSeconds = 180;
-    uint8_t activeSlot = 0;
-    uint8_t teamCount = 1;
-    LegacyMonsterRuntimeV15 team[Game::TEAM_CAP];
-    uint8_t storageCount = 0;
-    LegacyMonsterRuntimeV15 storage[Game::STORAGE_CAP];
-    Game::BagState bag;
-    LegacyRoomStateV13 room;
-    uint32_t coins = 50;
-    uint16_t stepsToday = 0;
-    uint16_t walkExpToday = 0;
-    uint16_t careExpToday = 0;
-    uint16_t careDay = 0;
-    uint32_t gameMinutesTotal = 0;
-    Game::PlayerSettings settings;
-};
-
-struct LegacyGameStateV14 {
-    uint32_t magic = Game::SAVE_MAGIC;
-    uint16_t version = LEGACY_SAVE_VERSION_V14;
-    uint16_t checksum = 0;
-    bool oobeDone = false;
-    uint16_t hatchSeconds = 180;
-    uint8_t activeSlot = 0;
-    uint8_t teamCount = 1;
-    LegacyMonsterRuntimeV15 team[Game::TEAM_CAP];
-    uint8_t storageCount = 0;
-    LegacyMonsterRuntimeV15 storage[Game::STORAGE_CAP];
-    Game::BagState bag;
-    Game::RoomState room;
-    uint32_t coins = 50;
-    uint16_t stepsToday = 0;
-    uint16_t walkExpToday = 0;
-    uint16_t careExpToday = 0;
-    uint16_t careDay = 0;
-    uint32_t gameMinutesTotal = 0;
-    Game::PlayerSettings settings;
-};
-
-struct LegacyGameStateV15 {
-    uint32_t magic = Game::SAVE_MAGIC;
-    uint16_t version = LEGACY_SAVE_VERSION_V15;
-    uint16_t checksum = 0;
-    bool oobeDone = false;
-    uint16_t hatchSeconds = 180;
-    uint8_t activeSlot = 0;
-    uint8_t teamCount = 1;
-    LegacyMonsterRuntimeV15 team[Game::TEAM_CAP];
-    uint8_t storageCount = 0;
-    LegacyMonsterRuntimeV15 storage[Game::STORAGE_CAP];
-    Game::BagState bag;
-    Game::RoomState room;
-    uint32_t coins = 50;
-    uint16_t stepsToday = 0;
-    uint16_t walkExpToday = 0;
-    uint16_t careExpToday = 0;
-    uint16_t careDay = 0;
-    uint32_t gameMinutesTotal = 0;
-    bool pendingLevelUp = false;
-    uint8_t pendingLevelUpLevel = 0;
-    bool pendingMoveLearn = false;
-    uint8_t pendingMoveSlot = 0;
-    uint8_t pendingMoveId = 0;
-    Game::PlayerSettings settings;
-};
-
-struct LegacyGameStateV16 {
-    uint32_t magic = Game::SAVE_MAGIC;
-    uint16_t version = LEGACY_SAVE_VERSION_V16;
-    uint16_t checksum = 0;
-    bool oobeDone = false;
-    uint16_t hatchSeconds = 180;
-    uint8_t activeSlot = 0;
-    uint8_t teamCount = 1;
-    LegacyMonsterRuntimeV16 team[Game::TEAM_CAP];
-    uint8_t storageCount = 0;
-    LegacyMonsterRuntimeV16 storage[Game::STORAGE_CAP];
-    Game::BagState bag;
-    Game::RoomState room;
-    uint32_t coins = 50;
-    uint16_t stepsToday = 0;
-    uint16_t walkExpToday = 0;
-    uint16_t careExpToday = 0;
-    uint16_t careDay = 0;
-    uint32_t gameMinutesTotal = 0;
-    bool pendingLevelUp = false;
-    uint8_t pendingLevelUpLevel = 0;
-    bool pendingMoveLearn = false;
-    uint8_t pendingMoveSlot = 0;
-    Game::MoveId pendingMoveId = 0;
-    uint16_t pendingMoveCursor = 0;
-    Game::PlayerSettings settings;
-};
-
-struct LegacyGameStateV17 {
-    uint32_t magic = Game::SAVE_MAGIC;
-    uint16_t version = LEGACY_SAVE_VERSION_V17;
-    uint16_t checksum = 0;
-    bool oobeDone = false;
-    uint16_t hatchSeconds = 180;
-    uint8_t activeSlot = 0;
-    uint8_t teamCount = 1;
-    LegacyMonsterRuntimeV17 team[Game::TEAM_CAP];
-    uint8_t storageCount = 0;
-    LegacyMonsterRuntimeV17 storage[Game::STORAGE_CAP];
-    Game::BagState bag;
-    Game::RoomState room;
-    uint32_t coins = 50;
-    uint16_t stepsToday = 0;
-    uint16_t walkExpToday = 0;
-    uint16_t careExpToday = 0;
-    uint16_t careDay = 0;
-    uint32_t gameMinutesTotal = 0;
-    bool pendingLevelUp = false;
-    uint8_t pendingLevelUpLevel = 0;
-    bool pendingMoveLearn = false;
-    uint8_t pendingMoveSlot = 0;
-    Game::MoveId pendingMoveId = 0;
-    uint16_t pendingMoveCursor = 0;
-    Game::PlayerSettings settings;
-};
-
-struct LegacyGameStateV18 {
-    uint32_t magic = Game::SAVE_MAGIC;
-    uint16_t version = LEGACY_SAVE_VERSION_V18;
-    uint16_t checksum = 0;
-    bool oobeDone = false;
-    uint16_t hatchSeconds = 180;
-    uint8_t activeSlot = 0;
-    uint8_t teamCount = 1;
-    LegacyMonsterRuntimeV18 team[Game::TEAM_CAP];
-    uint8_t storageCount = 0;
-    LegacyMonsterRuntimeV18 storage[Game::STORAGE_CAP];
-    Game::BagState bag;
-    Game::RoomState room;
-    uint32_t coins = 50;
-    uint16_t stepsToday = 0;
-    uint16_t walkExpToday = 0;
-    uint16_t careExpToday = 0;
-    uint16_t careDay = 0;
-    uint32_t gameMinutesTotal = 0;
-    bool pendingLevelUp = false;
-    uint8_t pendingLevelUpLevel = 0;
-    bool pendingMoveLearn = false;
-    uint8_t pendingMoveSlot = 0;
-    Game::MoveId pendingMoveId = 0;
-    uint16_t pendingMoveCursor = 0;
-    Game::PlayerSettings settings;
-};
-
-static_assert(sizeof(LegacyGameStateV13) != sizeof(Game::GameState),
-              "v13 and current save layouts must be distinguishable");
-static_assert(sizeof(LegacyGameStateV14) != sizeof(Game::GameState),
-              "v14 and current save layouts must be distinguishable");
-static_assert(sizeof(LegacyGameStateV15) != sizeof(Game::GameState),
-              "v15 and current save layouts must be distinguishable");
-static_assert(sizeof(LegacyGameStateV16) != sizeof(Game::GameState),
-              "v16 and current save layouts must be distinguishable");
-static_assert(sizeof(LegacyGameStateV17) != sizeof(Game::GameState),
-              "v17 and current save layouts must be distinguishable");
-static_assert(sizeof(LegacyGameStateV18) != sizeof(LegacyGameStateV17),
-              "v17 and v18 save layouts must be distinguishable");
-static_assert(sizeof(LegacyGameStateV17) != sizeof(LegacyGameStateV16),
-              "v16 and v17 save layouts must be distinguishable");
-static_assert(sizeof(LegacyGameStateV15) != sizeof(LegacyGameStateV14),
-              "v14 and v15 save layouts must be distinguishable");
 
 template <typename T>
 uint16_t checksumObject(const T& object) {
@@ -514,6 +78,30 @@ bool mainSceneViewValuesValid(const MainSceneViewState& viewState) {
            mainSceneCoordinateValid(viewState.targetY);
 }
 
+bool makeMainSceneViewRecord(const MainSceneViewState& viewState,
+                             MainSceneViewRecord& record) {
+    if (!mainSceneViewValuesValid(viewState)) return false;
+    record = MainSceneViewRecord{};
+    record.magic = MAIN_SCENE_VIEW_MAGIC;
+    record.version = MAIN_SCENE_VIEW_VERSION;
+    record.speciesId = viewState.speciesId;
+    record.valid = viewState.valid ? 1 : 0;
+    record.aiMode = viewState.aiMode;
+    record.pmdAction = viewState.pmdAction;
+    record.pmdDirection = viewState.pmdDirection;
+    record.pmdFrame = viewState.pmdFrame;
+    record.facingRight = viewState.facingRight ? 1 : 0;
+    record.faintRestActive = viewState.faintRestActive ? 1 : 0;
+    record.monsterX = viewState.monsterX;
+    record.monsterY = viewState.monsterY;
+    record.targetX = viewState.targetX;
+    record.targetY = viewState.targetY;
+    record.nextDecisionRemainingMs = viewState.nextDecisionRemainingMs;
+    record.postFeedAwakeRemainingMs = viewState.postFeedAwakeRemainingMs;
+    record.checksum = checksumObject(record);
+    return true;
+}
+
 bool mainSceneViewRecordValid(const MainSceneViewRecord& record) {
     if (record.magic != MAIN_SCENE_VIEW_MAGIC ||
         record.version != MAIN_SCENE_VIEW_VERSION ||
@@ -529,14 +117,34 @@ bool mainSceneViewRecordValid(const MainSceneViewRecord& record) {
            mainSceneCoordinateValid(record.targetY);
 }
 
-void resetGameState(Game::GameState& state) {
-    state.~GameState();
-    new (&state) Game::GameState();
+void loadMainSceneViewRecord(const MainSceneViewRecord& record,
+                             MainSceneViewState& viewState) {
+    viewState = MainSceneViewState{};
+    if (!record.valid) return;
+    viewState.valid = true;
+    viewState.speciesId = record.speciesId;
+    viewState.monsterX = record.monsterX;
+    viewState.monsterY = record.monsterY;
+    viewState.targetX = record.targetX;
+    viewState.targetY = record.targetY;
+    viewState.aiMode = record.aiMode;
+    viewState.pmdAction = record.pmdAction;
+    viewState.pmdDirection = record.pmdDirection;
+    viewState.pmdFrame = record.pmdFrame;
+    viewState.facingRight = record.facingRight != 0;
+    viewState.faintRestActive = record.faintRestActive != 0;
+    viewState.nextDecisionRemainingMs =
+        record.nextDecisionRemainingMs > MAIN_SCENE_VIEW_MAX_REMAINING_MS
+            ? MAIN_SCENE_VIEW_MAX_REMAINING_MS
+            : record.nextDecisionRemainingMs;
+    viewState.postFeedAwakeRemainingMs =
+        record.postFeedAwakeRemainingMs > MAIN_SCENE_VIEW_MAX_REMAINING_MS
+            ? MAIN_SCENE_VIEW_MAX_REMAINING_MS
+            : record.postFeedAwakeRemainingMs;
 }
 
-uint32_t gameSecondsForMinutes(uint32_t minutes) {
-    uint64_t seconds = static_cast<uint64_t>(minutes) * 60ULL;
-    return seconds > 0xFFFFFFFFULL ? 0xFFFFFFFFUL : static_cast<uint32_t>(seconds);
+void resetGameState(Game::GameState& state) {
+    state = Game::GameState{};
 }
 
 bool sanitizeMonster(Game::MonsterRuntime& mon) {
@@ -654,10 +262,6 @@ bool sanitizeState(Game::GameState& state) {
             changed = true;
         }
     };
-    clampU8(state.bag.pokeBall, Game::ITEM_STACK_CAP);
-    clampU8(state.bag.greatBall, Game::ITEM_STACK_CAP);
-    clampU8(state.bag.heavyBall, Game::ITEM_STACK_CAP);
-    clampU8(state.bag.timerBall, Game::ITEM_STACK_CAP);
     clampU8(state.bag.potion, Game::ITEM_STACK_CAP);
     clampU8(state.bag.superPotion, Game::ITEM_STACK_CAP);
     clampU8(state.bag.antidote, Game::ITEM_STACK_CAP);
@@ -790,622 +394,6 @@ bool sanitizeState(Game::GameState& state) {
     return changed;
 }
 
-void resetLegacyFaintTimestamps(Game::GameState& state) {
-    uint32_t nowGameSeconds = gameSecondsForMinutes(state.gameMinutesTotal);
-    for (uint8_t i = 0; i < state.teamCount; ++i) {
-        if (state.team[i].fainted) state.team[i].lastSeenAt = nowGameSeconds;
-    }
-    for (uint8_t i = 0; i < state.storageCount; ++i) {
-        if (state.storage[i].fainted) state.storage[i].lastSeenAt = nowGameSeconds;
-    }
-}
-
-void resetLegacyExploreTimestamps(Game::GameState& state) {
-    uint32_t nowGameSeconds = gameSecondsForMinutes(state.gameMinutesTotal);
-    for (uint8_t i = 0; i < state.teamCount; ++i) {
-        state.team[i].lastExploredAt = nowGameSeconds;
-        state.team[i].lastWindowGazeAt = nowGameSeconds;
-    }
-    for (uint8_t i = 0; i < state.storageCount; ++i) {
-        state.storage[i].lastExploredAt = nowGameSeconds;
-        state.storage[i].lastWindowGazeAt = nowGameSeconds;
-    }
-}
-
-void convertLegacyRoom(const LegacyRoomStateV12& oldRoom, Game::RoomState& room) {
-    for (uint8_t i = 0; i < Game::ROOM_FOOD_COUNT; ++i) room.food[i] = oldRoom.food[i];
-    room.selectedFood = oldRoom.selectedFood;
-    room.bowlFood = 0;
-    room.bowlCount = 0;
-    room.bowlBitesRemaining = 0;
-    room.roomStyle = oldRoom.roomStyle;
-    room.activeToy = oldRoom.activeToy;
-    room.ownedToys = oldRoom.ownedToys;
-    room.ownedFurniture = oldRoom.ownedFurniture;
-    room.placedFurniture = oldRoom.placedFurniture;
-}
-
-void convertLegacyRoom(const LegacyRoomStateV13& oldRoom, Game::RoomState& room) {
-    for (uint8_t i = 0; i < Game::ROOM_FOOD_COUNT; ++i) room.food[i] = oldRoom.food[i];
-    room.selectedFood = oldRoom.selectedFood;
-    room.bowlFood = oldRoom.bowlFood;
-    room.bowlCount = oldRoom.bowlCount;
-    room.bowlBitesRemaining = oldRoom.bowlCount > 0
-        ? Game::roomFoodBitesPerServing(oldRoom.bowlFood)
-        : 0;
-    room.roomStyle = oldRoom.roomStyle;
-    room.activeToy = oldRoom.activeToy;
-    room.ownedToys = oldRoom.ownedToys;
-    room.ownedFurniture = oldRoom.ownedFurniture;
-    room.placedFurniture = oldRoom.placedFurniture;
-}
-
-void importSharedProficiency(Game::MonsterRuntime& mon, uint8_t proficiency) {
-    uint8_t value = min<uint8_t>(proficiency, Game::MOVE_PROFICIENCY_MAX);
-    const Game::MoveId moves[Game::MOVE_SLOT_COUNT] = {
-        mon.move1Id,
-        mon.move2Id,
-        mon.move3Id,
-    };
-    for (uint8_t slot = 0; slot < Game::MOVE_SLOT_COUNT; ++slot) {
-        mon.moveProficiency[slot] = slot == 0
-            ? Game::MOVE_PROFICIENCY_MAX
-            : (moves[slot] == 0 ? 0 : value);
-    }
-}
-
-void importLegacyStatus(Game::MonsterRuntime& mon, uint8_t statusBits) {
-    mon.majorStatusTurns = 0;
-    if (statusBits & Game::STATUS_POISON) {
-        mon.majorStatus = Game::MajorStatus::POISON;
-    } else if (statusBits & Game::STATUS_PARALYSIS) {
-        mon.majorStatus = Game::MajorStatus::PARALYSIS;
-    } else if (statusBits & Game::STATUS_SLEEP) {
-        mon.majorStatus = Game::MajorStatus::SLEEP;
-        mon.majorStatusTurns = 2;
-    } else if (statusBits & Game::STATUS_BURN) {
-        mon.majorStatus = Game::MajorStatus::BURN;
-    } else if (statusBits & Game::STATUS_FREEZE) {
-        mon.majorStatus = Game::MajorStatus::FREEZE;
-    } else {
-        mon.majorStatus = Game::MajorStatus::NONE;
-    }
-}
-
-void convertLegacyMonster(const LegacyMonsterRuntimeV8& oldMon, Game::MonsterRuntime& mon) {
-    mon.speciesId = oldMon.speciesId;
-    mon.level = oldMon.level;
-    mon.exp = oldMon.exp;
-    mon.hpCur = oldMon.hpCur;
-    mon.hpMax = oldMon.hpMax;
-    mon.ivPacked = oldMon.ivPacked;
-    mon.ev = oldMon.ev;
-    mon.nature = oldMon.nature;
-    mon.affection = oldMon.affection;
-    mon.mood = oldMon.mood;
-    mon.satiety = oldMon.satiety;
-    importLegacyStatus(mon, oldMon.statusBits);
-    mon.metArea = oldMon.metArea;
-    mon.petCountToday = oldMon.petCountToday;
-    mon.origin = oldMon.origin;
-    mon.fainted = oldMon.fainted;
-    mon.caughtAt = oldMon.caughtAt;
-    mon.lastSeenAt = oldMon.lastSeenAt;
-    mon.lastPettedAt = oldMon.lastPettedAt;
-
-    const Species* species = findSpecies(mon.speciesId);
-    if (!species) species = &starterSpecies();
-    resetMovesForLevel(mon, *species);
-    importSharedProficiency(mon, oldMon.proficiency);
-}
-
-void convertLegacyMonster(const LegacyMonsterRuntimeV10& oldMon, Game::MonsterRuntime& mon) {
-    mon.speciesId = oldMon.speciesId;
-    mon.level = oldMon.level;
-    mon.exp = oldMon.exp;
-    mon.hpCur = oldMon.hpCur;
-    mon.hpMax = oldMon.hpMax;
-    mon.ivPacked = oldMon.ivPacked;
-    mon.ev = oldMon.ev;
-    mon.nature = oldMon.nature;
-    mon.affection = oldMon.affection;
-    mon.mood = oldMon.mood;
-    mon.satiety = oldMon.satiety;
-    importLegacyStatus(mon, oldMon.statusBits);
-    mon.metArea = oldMon.metArea;
-    mon.petCountToday = oldMon.petCountToday;
-    mon.origin = oldMon.origin;
-    mon.fainted = oldMon.fainted;
-    mon.caughtAt = oldMon.caughtAt;
-    mon.lastSeenAt = oldMon.lastSeenAt;
-    mon.lastPettedAt = oldMon.lastPettedAt;
-
-    const Species* species = findSpecies(mon.speciesId);
-    if (!species) species = &starterSpecies();
-    resetMovesForLevel(mon, *species);
-    importSharedProficiency(mon, oldMon.proficiency);
-}
-
-void convertLegacyMonster(const LegacyMonsterRuntimeV15& oldMon, Game::MonsterRuntime& mon) {
-    mon.speciesId = oldMon.speciesId;
-    mon.level = oldMon.level;
-    mon.exp = oldMon.exp;
-    mon.hpCur = oldMon.hpCur;
-    mon.hpMax = oldMon.hpMax;
-    mon.ivPacked = oldMon.ivPacked;
-    mon.ev = oldMon.ev;
-    mon.nature = oldMon.nature;
-    mon.affection = oldMon.affection;
-    mon.mood = oldMon.mood;
-    mon.satiety = oldMon.satiety;
-    importLegacyStatus(mon, oldMon.statusBits);
-    mon.metArea = oldMon.metArea;
-    mon.petCountToday = oldMon.petCountToday;
-    mon.origin = oldMon.origin;
-    mon.fainted = oldMon.fainted;
-    mon.caughtAt = oldMon.caughtAt;
-    mon.lastSeenAt = oldMon.lastSeenAt;
-    mon.lastPettedAt = oldMon.lastPettedAt;
-
-    const Species* species = findSpecies(mon.speciesId);
-    if (!species) species = &starterSpecies();
-    resetMovesForLevel(mon, *species);
-    importSharedProficiency(mon, oldMon.proficiency);
-}
-
-void convertLegacyMonster(const LegacyMonsterRuntimeV16& oldMon, Game::MonsterRuntime& mon) {
-    mon.speciesId = oldMon.speciesId;
-    mon.level = oldMon.level;
-    mon.exp = oldMon.exp;
-    mon.hpCur = oldMon.hpCur;
-    mon.hpMax = oldMon.hpMax;
-    mon.move1Id = oldMon.move1Id;
-    mon.move2Id = oldMon.move2Id;
-    mon.move3Id = oldMon.move3Id;
-    mon.ivPacked = oldMon.ivPacked;
-    mon.ev = oldMon.ev;
-    mon.nature = oldMon.nature;
-    mon.affection = oldMon.affection;
-    mon.mood = oldMon.mood;
-    mon.satiety = oldMon.satiety;
-    importLegacyStatus(mon, oldMon.statusBits);
-    mon.metArea = oldMon.metArea;
-    mon.petCountToday = oldMon.petCountToday;
-    mon.origin = oldMon.origin;
-    mon.fainted = oldMon.fainted;
-    mon.caughtAt = oldMon.caughtAt;
-    mon.lastSeenAt = oldMon.lastSeenAt;
-    mon.lastPettedAt = oldMon.lastPettedAt;
-    importSharedProficiency(mon, oldMon.proficiency);
-}
-
-void convertLegacyMonster(const LegacyMonsterRuntimeV17& oldMon, Game::MonsterRuntime& mon) {
-    mon.speciesId = oldMon.speciesId;
-    mon.level = oldMon.level;
-    mon.exp = oldMon.exp;
-    mon.hpCur = oldMon.hpCur;
-    mon.hpMax = oldMon.hpMax;
-    mon.move1Id = oldMon.move1Id;
-    mon.move2Id = oldMon.move2Id;
-    mon.move3Id = oldMon.move3Id;
-    mon.ivPacked = oldMon.ivPacked;
-    mon.ev = oldMon.ev;
-    mon.nature = oldMon.nature;
-    mon.affection = oldMon.affection;
-    mon.mood = oldMon.mood;
-    mon.satiety = oldMon.satiety;
-    importLegacyStatus(mon, oldMon.statusBits);
-    mon.metArea = oldMon.metArea;
-    mon.petCountToday = oldMon.petCountToday;
-    mon.origin = oldMon.origin;
-    mon.fainted = oldMon.fainted;
-    mon.caughtAt = oldMon.caughtAt;
-    mon.lastSeenAt = oldMon.lastSeenAt;
-    mon.lastPettedAt = oldMon.lastPettedAt;
-    mon.lastExploredAt = oldMon.lastExploredAt;
-    mon.lastWindowGazeAt = oldMon.lastWindowGazeAt;
-    importSharedProficiency(mon, oldMon.proficiency);
-}
-
-void convertLegacyMonster(const LegacyMonsterRuntimeV18& oldMon, Game::MonsterRuntime& mon) {
-    mon.speciesId = oldMon.speciesId;
-    mon.level = oldMon.level;
-    mon.exp = oldMon.exp;
-    mon.hpCur = oldMon.hpCur;
-    mon.hpMax = oldMon.hpMax;
-    mon.move1Id = oldMon.move1Id;
-    mon.move2Id = oldMon.move2Id;
-    mon.move3Id = oldMon.move3Id;
-    mon.ivPacked = oldMon.ivPacked;
-    mon.ev = oldMon.ev;
-    mon.nature = oldMon.nature;
-    mon.affection = oldMon.affection;
-    mon.mood = oldMon.mood;
-    mon.satiety = oldMon.satiety;
-    for (uint8_t slot = 0; slot < Game::MOVE_SLOT_COUNT; ++slot) {
-        mon.moveProficiency[slot] = oldMon.moveProficiency[slot];
-    }
-    importLegacyStatus(mon, oldMon.statusBits);
-    mon.metArea = oldMon.metArea;
-    mon.petCountToday = oldMon.petCountToday;
-    mon.origin = oldMon.origin;
-    mon.fainted = oldMon.fainted;
-    mon.caughtAt = oldMon.caughtAt;
-    mon.lastSeenAt = oldMon.lastSeenAt;
-    mon.lastPettedAt = oldMon.lastPettedAt;
-    mon.lastExploredAt = oldMon.lastExploredAt;
-    mon.lastWindowGazeAt = oldMon.lastWindowGazeAt;
-}
-
-bool migrateLegacyV8(const LegacyGameStateV8& legacy, Game::GameState& state) {
-    if (legacy.magic != Game::SAVE_MAGIC ||
-        legacy.version != LEGACY_SAVE_VERSION_V8 ||
-        legacy.checksum != checksumObject(legacy)) {
-        return false;
-    }
-
-    Game::GameState next;
-    next.magic = Game::SAVE_MAGIC;
-    next.version = Game::SAVE_VERSION;
-    next.checksum = 0;
-    next.oobeDone = legacy.oobeDone;
-    next.hatchSeconds = legacy.hatchSeconds;
-    next.activeSlot = 0;
-    next.teamCount = legacy.teamCount > Game::TEAM_CAP ? Game::TEAM_CAP : legacy.teamCount;
-    next.storageCount = legacy.storageCount > Game::STORAGE_CAP ? Game::STORAGE_CAP : legacy.storageCount;
-    for (uint8_t i = 0; i < Game::TEAM_CAP; ++i) convertLegacyMonster(legacy.team[i], next.team[i]);
-    for (uint8_t i = 0; i < Game::STORAGE_CAP; ++i) convertLegacyMonster(legacy.storage[i], next.storage[i]);
-    next.bag = legacy.bag;
-    convertLegacyRoom(legacy.room, next.room);
-    next.coins = legacy.coins;
-    next.stepsToday = legacy.stepsToday;
-    next.walkExpToday = legacy.walkExpToday;
-    next.gameMinutesTotal = legacy.gameMinutesTotal;
-    uint32_t day = next.gameMinutesTotal / GAME_MINUTES_PER_DAY;
-    next.careDay = (uint16_t)(day > 0xFFFF ? 0xFFFF : day);
-    next.careExpToday = 0;
-    next.settings = legacy.settings;
-    resetLegacyExploreTimestamps(next);
-    sanitizeState(next);
-    resetLegacyFaintTimestamps(next);
-    state = next;
-    return true;
-}
-
-bool migrateLegacyV9(const LegacyGameStateV9& legacy, Game::GameState& state) {
-    if (legacy.magic != Game::SAVE_MAGIC ||
-        legacy.version != LEGACY_SAVE_VERSION_V9 ||
-        legacy.checksum != checksumObject(legacy)) {
-        return false;
-    }
-
-    Game::GameState next;
-    next.magic = Game::SAVE_MAGIC;
-    next.version = Game::SAVE_VERSION;
-    next.checksum = 0;
-    next.oobeDone = legacy.oobeDone;
-    next.hatchSeconds = legacy.hatchSeconds;
-    next.activeSlot = 0;
-    next.teamCount = legacy.teamCount > Game::TEAM_CAP ? Game::TEAM_CAP : legacy.teamCount;
-    next.storageCount = legacy.storageCount > Game::STORAGE_CAP ? Game::STORAGE_CAP : legacy.storageCount;
-    for (uint8_t i = 0; i < Game::TEAM_CAP; ++i) convertLegacyMonster(legacy.team[i], next.team[i]);
-    for (uint8_t i = 0; i < Game::STORAGE_CAP; ++i) convertLegacyMonster(legacy.storage[i], next.storage[i]);
-    next.bag = legacy.bag;
-    convertLegacyRoom(legacy.room, next.room);
-    next.coins = legacy.coins;
-    next.stepsToday = legacy.stepsToday;
-    next.walkExpToday = legacy.walkExpToday;
-    next.gameMinutesTotal = legacy.gameMinutesTotal;
-    uint32_t day = next.gameMinutesTotal / GAME_MINUTES_PER_DAY;
-    next.careDay = (uint16_t)(day > 0xFFFF ? 0xFFFF : day);
-    next.careExpToday = 0;
-    next.settings = legacy.settings;
-    resetLegacyExploreTimestamps(next);
-    sanitizeState(next);
-    resetLegacyFaintTimestamps(next);
-    state = next;
-    return true;
-}
-
-bool migrateLegacyV10(const LegacyGameStateV10& legacy, Game::GameState& state) {
-    if (legacy.magic != Game::SAVE_MAGIC ||
-        legacy.version != LEGACY_SAVE_VERSION_V10 ||
-        legacy.checksum != checksumObject(legacy)) {
-        return false;
-    }
-
-    Game::GameState next;
-    next.magic = Game::SAVE_MAGIC;
-    next.version = Game::SAVE_VERSION;
-    next.checksum = 0;
-    next.oobeDone = legacy.oobeDone;
-    next.hatchSeconds = legacy.hatchSeconds;
-    next.activeSlot = 0;
-    next.teamCount = legacy.teamCount > Game::TEAM_CAP ? Game::TEAM_CAP : legacy.teamCount;
-    next.storageCount = legacy.storageCount > Game::STORAGE_CAP ? Game::STORAGE_CAP : legacy.storageCount;
-    for (uint8_t i = 0; i < Game::TEAM_CAP; ++i) convertLegacyMonster(legacy.team[i], next.team[i]);
-    for (uint8_t i = 0; i < Game::STORAGE_CAP; ++i) convertLegacyMonster(legacy.storage[i], next.storage[i]);
-    next.bag = legacy.bag;
-    convertLegacyRoom(legacy.room, next.room);
-    next.coins = legacy.coins;
-    next.stepsToday = legacy.stepsToday;
-    next.walkExpToday = legacy.walkExpToday;
-    next.careExpToday = legacy.careExpToday;
-    next.careDay = legacy.careDay;
-    next.gameMinutesTotal = legacy.gameMinutesTotal;
-    next.settings = legacy.settings;
-    resetLegacyExploreTimestamps(next);
-    sanitizeState(next);
-    resetLegacyFaintTimestamps(next);
-    state = next;
-    return true;
-}
-
-bool migrateLegacyV12(const LegacyGameStateV12& legacy, Game::GameState& state) {
-    if (legacy.magic != Game::SAVE_MAGIC ||
-        (legacy.version != LEGACY_SAVE_VERSION_V11 && legacy.version != LEGACY_SAVE_VERSION_V12) ||
-        legacy.checksum != checksumObject(legacy)) {
-        return false;
-    }
-
-    Game::GameState next;
-    next.magic = Game::SAVE_MAGIC;
-    next.version = Game::SAVE_VERSION;
-    next.checksum = 0;
-    next.oobeDone = legacy.oobeDone;
-    next.hatchSeconds = legacy.hatchSeconds;
-    next.activeSlot = legacy.activeSlot;
-    next.teamCount = legacy.teamCount;
-    next.storageCount = legacy.storageCount;
-    for (uint8_t i = 0; i < Game::TEAM_CAP; ++i) convertLegacyMonster(legacy.team[i], next.team[i]);
-    for (uint8_t i = 0; i < Game::STORAGE_CAP; ++i) convertLegacyMonster(legacy.storage[i], next.storage[i]);
-    next.bag = legacy.bag;
-    convertLegacyRoom(legacy.room, next.room);
-    next.coins = legacy.coins;
-    next.stepsToday = legacy.stepsToday;
-    next.walkExpToday = legacy.walkExpToday;
-    next.careExpToday = legacy.careExpToday;
-    next.careDay = legacy.careDay;
-    next.gameMinutesTotal = legacy.gameMinutesTotal;
-    next.settings = legacy.settings;
-    resetLegacyExploreTimestamps(next);
-    sanitizeState(next);
-    if (legacy.version == LEGACY_SAVE_VERSION_V11) resetLegacyFaintTimestamps(next);
-    state = next;
-    return true;
-}
-
-bool migrateLegacyV13(const LegacyGameStateV13& legacy, Game::GameState& state) {
-    if (legacy.magic != Game::SAVE_MAGIC ||
-        legacy.version != LEGACY_SAVE_VERSION_V13 ||
-        legacy.checksum != checksumObject(legacy)) {
-        return false;
-    }
-
-    Game::GameState next;
-    next.magic = Game::SAVE_MAGIC;
-    next.version = Game::SAVE_VERSION;
-    next.checksum = 0;
-    next.oobeDone = legacy.oobeDone;
-    next.hatchSeconds = legacy.hatchSeconds;
-    next.activeSlot = legacy.activeSlot;
-    next.teamCount = legacy.teamCount;
-    next.storageCount = legacy.storageCount;
-    for (uint8_t i = 0; i < Game::TEAM_CAP; ++i) convertLegacyMonster(legacy.team[i], next.team[i]);
-    for (uint8_t i = 0; i < Game::STORAGE_CAP; ++i) convertLegacyMonster(legacy.storage[i], next.storage[i]);
-    next.bag = legacy.bag;
-    convertLegacyRoom(legacy.room, next.room);
-    next.coins = legacy.coins;
-    next.stepsToday = legacy.stepsToday;
-    next.walkExpToday = legacy.walkExpToday;
-    next.careExpToday = legacy.careExpToday;
-    next.careDay = legacy.careDay;
-    next.gameMinutesTotal = legacy.gameMinutesTotal;
-    next.settings = legacy.settings;
-    resetLegacyExploreTimestamps(next);
-    sanitizeState(next);
-    state = next;
-    return true;
-}
-
-bool migrateLegacyV14(const LegacyGameStateV14& legacy, Game::GameState& state) {
-    if (legacy.magic != Game::SAVE_MAGIC ||
-        legacy.version != LEGACY_SAVE_VERSION_V14 ||
-        legacy.checksum != checksumObject(legacy)) {
-        return false;
-    }
-
-    Game::GameState next;
-    next.magic = Game::SAVE_MAGIC;
-    next.version = Game::SAVE_VERSION;
-    next.checksum = 0;
-    next.oobeDone = legacy.oobeDone;
-    next.hatchSeconds = legacy.hatchSeconds;
-    next.activeSlot = legacy.activeSlot;
-    next.teamCount = legacy.teamCount;
-    next.storageCount = legacy.storageCount;
-    for (uint8_t i = 0; i < Game::TEAM_CAP; ++i) convertLegacyMonster(legacy.team[i], next.team[i]);
-    for (uint8_t i = 0; i < Game::STORAGE_CAP; ++i) convertLegacyMonster(legacy.storage[i], next.storage[i]);
-    next.bag = legacy.bag;
-    next.room = legacy.room;
-    next.coins = legacy.coins;
-    next.stepsToday = legacy.stepsToday;
-    next.walkExpToday = legacy.walkExpToday;
-    next.careExpToday = legacy.careExpToday;
-    next.careDay = legacy.careDay;
-    next.gameMinutesTotal = legacy.gameMinutesTotal;
-    next.settings = legacy.settings;
-    resetLegacyExploreTimestamps(next);
-    sanitizeState(next);
-    state = next;
-    return true;
-}
-
-bool migrateLegacyV15(const LegacyGameStateV15& legacy, Game::GameState& state) {
-    if (legacy.magic != Game::SAVE_MAGIC ||
-        legacy.version != LEGACY_SAVE_VERSION_V15 ||
-        legacy.checksum != checksumObject(legacy)) {
-        return false;
-    }
-
-    Game::GameState next;
-    next.magic = Game::SAVE_MAGIC;
-    next.version = Game::SAVE_VERSION;
-    next.checksum = 0;
-    next.oobeDone = legacy.oobeDone;
-    next.hatchSeconds = legacy.hatchSeconds;
-    next.activeSlot = legacy.activeSlot;
-    next.teamCount = legacy.teamCount;
-    next.storageCount = legacy.storageCount;
-    for (uint8_t i = 0; i < Game::TEAM_CAP; ++i) {
-        convertLegacyMonster(legacy.team[i], next.team[i]);
-    }
-    for (uint8_t i = 0; i < Game::STORAGE_CAP; ++i) {
-        convertLegacyMonster(legacy.storage[i], next.storage[i]);
-    }
-    next.bag = legacy.bag;
-    next.room = legacy.room;
-    next.coins = legacy.coins;
-    next.stepsToday = legacy.stepsToday;
-    next.walkExpToday = legacy.walkExpToday;
-    next.careExpToday = legacy.careExpToday;
-    next.careDay = legacy.careDay;
-    next.gameMinutesTotal = legacy.gameMinutesTotal;
-    next.pendingLevelUp = legacy.pendingLevelUp;
-    next.pendingLevelUpLevel = legacy.pendingLevelUpLevel;
-    next.settings = legacy.settings;
-    resetLegacyExploreTimestamps(next);
-    sanitizeState(next);
-    state = next;
-    return true;
-}
-
-bool migrateLegacyV16(const LegacyGameStateV16& legacy, Game::GameState& state) {
-    if (legacy.magic != Game::SAVE_MAGIC ||
-        legacy.version != LEGACY_SAVE_VERSION_V16 ||
-        legacy.checksum != checksumObject(legacy)) {
-        return false;
-    }
-
-    Game::GameState next;
-    next.magic = Game::SAVE_MAGIC;
-    next.version = Game::SAVE_VERSION;
-    next.checksum = 0;
-    next.oobeDone = legacy.oobeDone;
-    next.hatchSeconds = legacy.hatchSeconds;
-    next.activeSlot = legacy.activeSlot;
-    next.teamCount = legacy.teamCount;
-    next.storageCount = legacy.storageCount;
-    for (uint8_t i = 0; i < Game::TEAM_CAP; ++i) {
-        convertLegacyMonster(legacy.team[i], next.team[i]);
-    }
-    for (uint8_t i = 0; i < Game::STORAGE_CAP; ++i) {
-        convertLegacyMonster(legacy.storage[i], next.storage[i]);
-    }
-    next.bag = legacy.bag;
-    next.room = legacy.room;
-    next.coins = legacy.coins;
-    next.stepsToday = legacy.stepsToday;
-    next.walkExpToday = legacy.walkExpToday;
-    next.careExpToday = legacy.careExpToday;
-    next.careDay = legacy.careDay;
-    next.gameMinutesTotal = legacy.gameMinutesTotal;
-    next.pendingLevelUp = legacy.pendingLevelUp;
-    next.pendingLevelUpLevel = legacy.pendingLevelUpLevel;
-    next.pendingMoveLearn = legacy.pendingMoveLearn;
-    next.pendingMoveSlot = legacy.pendingMoveSlot;
-    next.pendingMoveId = legacy.pendingMoveId;
-    next.pendingMoveCursor = legacy.pendingMoveCursor;
-    next.settings = legacy.settings;
-    resetLegacyExploreTimestamps(next);
-    sanitizeState(next);
-    state = next;
-    return true;
-}
-
-bool migrateLegacyV17(const LegacyGameStateV17& legacy, Game::GameState& state) {
-    if (legacy.magic != Game::SAVE_MAGIC ||
-        legacy.version != LEGACY_SAVE_VERSION_V17 ||
-        legacy.checksum != checksumObject(legacy)) {
-        return false;
-    }
-
-    Game::GameState next;
-    next.magic = Game::SAVE_MAGIC;
-    next.version = Game::SAVE_VERSION;
-    next.checksum = 0;
-    next.oobeDone = legacy.oobeDone;
-    next.hatchSeconds = legacy.hatchSeconds;
-    next.activeSlot = legacy.activeSlot;
-    next.teamCount = legacy.teamCount;
-    next.storageCount = legacy.storageCount;
-    for (uint8_t i = 0; i < Game::TEAM_CAP; ++i) {
-        convertLegacyMonster(legacy.team[i], next.team[i]);
-    }
-    for (uint8_t i = 0; i < Game::STORAGE_CAP; ++i) {
-        convertLegacyMonster(legacy.storage[i], next.storage[i]);
-    }
-    next.bag = legacy.bag;
-    next.room = legacy.room;
-    next.coins = legacy.coins;
-    next.stepsToday = legacy.stepsToday;
-    next.walkExpToday = legacy.walkExpToday;
-    next.careExpToday = legacy.careExpToday;
-    next.careDay = legacy.careDay;
-    next.gameMinutesTotal = legacy.gameMinutesTotal;
-    next.pendingLevelUp = legacy.pendingLevelUp;
-    next.pendingLevelUpLevel = legacy.pendingLevelUpLevel;
-    next.pendingMoveLearn = legacy.pendingMoveLearn;
-    next.pendingMoveSlot = legacy.pendingMoveSlot;
-    next.pendingMoveId = legacy.pendingMoveId;
-    next.pendingMoveCursor = legacy.pendingMoveCursor;
-    next.settings = legacy.settings;
-    sanitizeState(next);
-    state = next;
-    return true;
-}
-
-bool migrateLegacyV18(const LegacyGameStateV18& legacy, Game::GameState& state) {
-    if (legacy.magic != Game::SAVE_MAGIC ||
-        legacy.version != LEGACY_SAVE_VERSION_V18 ||
-        legacy.checksum != checksumObject(legacy)) {
-        return false;
-    }
-
-    Game::GameState next;
-    next.magic = Game::SAVE_MAGIC;
-    next.version = Game::SAVE_VERSION;
-    next.checksum = 0;
-    next.oobeDone = legacy.oobeDone;
-    next.hatchSeconds = legacy.hatchSeconds;
-    next.activeSlot = legacy.activeSlot;
-    next.teamCount = legacy.teamCount;
-    next.storageCount = legacy.storageCount;
-    for (uint8_t i = 0; i < Game::TEAM_CAP; ++i) {
-        convertLegacyMonster(legacy.team[i], next.team[i]);
-    }
-    for (uint8_t i = 0; i < Game::STORAGE_CAP; ++i) {
-        convertLegacyMonster(legacy.storage[i], next.storage[i]);
-    }
-    next.bag = legacy.bag;
-    next.room = legacy.room;
-    next.coins = legacy.coins;
-    next.stepsToday = legacy.stepsToday;
-    next.walkExpToday = legacy.walkExpToday;
-    next.careExpToday = legacy.careExpToday;
-    next.careDay = legacy.careDay;
-    next.gameMinutesTotal = legacy.gameMinutesTotal;
-    next.pendingLevelUp = legacy.pendingLevelUp;
-    next.pendingLevelUpLevel = legacy.pendingLevelUpLevel;
-    next.pendingMoveLearn = legacy.pendingMoveLearn;
-    next.pendingMoveSlot = legacy.pendingMoveSlot;
-    next.pendingMoveId = legacy.pendingMoveId;
-    next.pendingMoveCursor = legacy.pendingMoveCursor;
-    next.settings = legacy.settings;
-    sanitizeState(next);
-    state = next;
-    return true;
-}
 }
 
 bool SaveManager::begin() {
@@ -1415,195 +403,101 @@ bool SaveManager::begin() {
     return ok;
 }
 
-bool SaveManager::load(Game::GameState& state) {
+bool SaveManager::load(Game::GameState& state,
+                       MainSceneViewState& viewState,
+                       bool* normalized) {
+    if (normalized) *normalized = false;
+    viewState = MainSceneViewState{};
     Preferences prefs;
     if (!prefs.begin(NVS_NS, true)) return false;
     size_t len = prefs.getBytesLength(NVS_KEY);
-    if (len == sizeof(LegacyGameStateV18)) {
-        auto* legacy = static_cast<LegacyGameStateV18*>(std::malloc(sizeof(LegacyGameStateV18)));
-        if (!legacy) {
-            prefs.end();
-            Serial.println("[SaveManager] v18 migration allocation failed");
-            return false;
-        }
-        size_t read = prefs.getBytes(NVS_KEY, legacy, sizeof(*legacy));
-        bool isV18 = read == sizeof(*legacy) && legacy->version == LEGACY_SAVE_VERSION_V18;
-        if (isV18) {
-            prefs.end();
-            bool migrated = migrateLegacyV18(*legacy, state);
-            std::free(legacy);
-            if (!migrated) {
-                Serial.println("[SaveManager] invalid v18 state; reset to current version");
-                reset(state);
-                return false;
-            }
-            bool saved = save(state);
-            Serial.printf("[SaveManager] migrated v18 to v%u saved=%u\n",
-                          Game::SAVE_VERSION, saved ? 1 : 0);
-            return true;
-        }
-        std::free(legacy);
-    }
-    if (len == sizeof(LegacyGameStateV17)) {
-        auto* legacy = static_cast<LegacyGameStateV17*>(std::malloc(sizeof(LegacyGameStateV17)));
-        if (!legacy) {
-            prefs.end();
-            Serial.println("[SaveManager] v17 migration allocation failed");
-            return false;
-        }
-        size_t read = prefs.getBytes(NVS_KEY, legacy, sizeof(*legacy));
-        prefs.end();
-        bool migrated = read == sizeof(*legacy) && migrateLegacyV17(*legacy, state);
-        std::free(legacy);
-        if (!migrated) {
-            Serial.println("[SaveManager] invalid v17 state; reset to current version");
-            reset(state);
-            return false;
-        }
-        bool saved = save(state);
-        Serial.printf("[SaveManager] migrated v17 to v%u saved=%u\n",
-                      Game::SAVE_VERSION, saved ? 1 : 0);
-        return true;
-    }
-    if (len == sizeof(LegacyGameStateV16)) {
-        auto* legacy = static_cast<LegacyGameStateV16*>(std::malloc(sizeof(LegacyGameStateV16)));
-        if (!legacy) {
-            prefs.end();
-            Serial.println("[SaveManager] v16 migration allocation failed");
-            return false;
-        }
-        size_t read = prefs.getBytes(NVS_KEY, legacy, sizeof(*legacy));
-        prefs.end();
-        bool migrated = read == sizeof(*legacy) && migrateLegacyV16(*legacy, state);
-        std::free(legacy);
-        if (!migrated) {
-            Serial.println("[SaveManager] invalid v16 state; reset to current version");
-            reset(state);
-            return false;
-        }
-        bool saved = save(state);
-        Serial.printf("[SaveManager] migrated v16 to v%u saved=%u\n",
-                      Game::SAVE_VERSION, saved ? 1 : 0);
-        return true;
-    }
-    if (len == sizeof(LegacyGameStateV15)) {
-        auto* legacy = static_cast<LegacyGameStateV15*>(std::malloc(sizeof(LegacyGameStateV15)));
-        if (!legacy) {
-            prefs.end();
-            Serial.println("[SaveManager] v15 migration allocation failed");
-            return false;
-        }
-        size_t read = prefs.getBytes(NVS_KEY, legacy, sizeof(*legacy));
-        prefs.end();
-        bool migrated = read == sizeof(*legacy) && migrateLegacyV15(*legacy, state);
-        std::free(legacy);
-        if (!migrated) {
-            Serial.println("[SaveManager] invalid v15 state; reset to current version");
-            reset(state);
-            return false;
-        }
-        bool saved = save(state);
-        Serial.printf("[SaveManager] migrated v15 to v%u saved=%u\n",
-                      Game::SAVE_VERSION, saved ? 1 : 0);
-        return true;
-    }
-    if (len == sizeof(LegacyGameStateV14)) {
-        auto* legacy = static_cast<LegacyGameStateV14*>(std::malloc(sizeof(LegacyGameStateV14)));
-        if (!legacy) {
-            prefs.end();
-            Serial.println("[SaveManager] v14 migration allocation failed");
-            return false;
-        }
-        size_t read = prefs.getBytes(NVS_KEY, legacy, sizeof(*legacy));
-        prefs.end();
-        bool migrated = read == sizeof(*legacy) && migrateLegacyV14(*legacy, state);
-        std::free(legacy);
-        if (!migrated) {
-            Serial.println("[SaveManager] invalid v14 state; reset to current version");
-            reset(state);
-            return false;
-        }
-        bool saved = save(state);
-        Serial.printf("[SaveManager] migrated v14 to v%u saved=%u\n",
-                      Game::SAVE_VERSION, saved ? 1 : 0);
-        return true;
-    }
-    if (len == sizeof(LegacyGameStateV13)) {
-        auto* legacy = static_cast<LegacyGameStateV13*>(std::malloc(sizeof(LegacyGameStateV13)));
-        if (!legacy) {
-            prefs.end();
-            Serial.println("[SaveManager] v13 migration allocation failed");
-            return false;
-        }
-        size_t read = prefs.getBytes(NVS_KEY, legacy, sizeof(*legacy));
-        prefs.end();
-        bool migrated = read == sizeof(*legacy) && migrateLegacyV13(*legacy, state);
-        std::free(legacy);
-        if (!migrated) {
-            Serial.println("[SaveManager] invalid v13 state; reset to current version");
-            reset(state);
-            return false;
-        }
-        bool saved = save(state);
-        Serial.printf("[SaveManager] migrated v13 to v%u saved=%u\n",
-                      Game::SAVE_VERSION, saved ? 1 : 0);
-        return true;
-    }
-    if (len != sizeof(Game::GameState)) {
+    if (len != sizeof(SaveRecord)) {
         prefs.end();
         Serial.printf("[SaveManager] unsupported state size=%u expected=%u; reset to v%u\n",
                       (unsigned)len,
-                      (unsigned)sizeof(Game::GameState),
+                      (unsigned)sizeof(SaveRecord),
                       Game::SAVE_VERSION);
         reset(state);
         return false;
     }
 
-    size_t read = prefs.getBytes(NVS_KEY, &state, sizeof(state));
+    auto* record = new (std::nothrow) SaveRecord{};
+    if (!record) {
+        prefs.end();
+        Serial.println("[SaveManager] state load allocation failed");
+        reset(state);
+        return false;
+    }
+    size_t read = prefs.getBytes(NVS_KEY, record, sizeof(*record));
     prefs.end();
-    uint16_t expectedChecksum = checksum(state);
-    if (read != sizeof(state) ||
-        state.magic != Game::SAVE_MAGIC ||
-        state.version != Game::SAVE_VERSION ||
-        state.checksum != expectedChecksum) {
+    uint16_t expectedChecksum = checksum(record->state);
+    if (read != sizeof(*record) ||
+        record->magic != SAVE_RECORD_MAGIC ||
+        record->version != SAVE_RECORD_VERSION ||
+        record->reserved != 0 ||
+        record->state.magic != Game::SAVE_MAGIC ||
+        record->state.version != Game::SAVE_VERSION ||
+        record->state.checksum != expectedChecksum) {
         Serial.printf("[SaveManager] unsupported/invalid state read=%u magic=%08lx version=%u checksum=%04x/%04x; reset to v%u\n",
                       (unsigned)read,
-                      (unsigned long)state.magic,
-                      state.version,
-                      state.checksum,
+                      (unsigned long)record->state.magic,
+                      record->state.version,
+                      record->state.checksum,
                       expectedChecksum,
                       Game::SAVE_VERSION);
+        delete record;
         reset(state);
         return false;
     }
 
-    if (sanitizeState(state)) {
-        Serial.println("[SaveManager] normalized state fields");
-        save(state);
+    state = record->state;
+    bool viewValid = mainSceneViewRecordValid(record->view);
+    if (viewValid) {
+        loadMainSceneViewRecord(record->view, viewState);
+    } else {
+        Serial.println("[SaveManager] invalid main scene view state; reset view");
     }
+    delete record;
+
+    bool changed = sanitizeState(state);
+    if (changed) {
+        Serial.println("[SaveManager] normalized state fields");
+    }
+    if (normalized) *normalized = changed || !viewValid;
     return true;
 }
 
-bool SaveManager::save(const Game::GameState& state) {
-    auto* copy = static_cast<Game::GameState*>(std::malloc(sizeof(Game::GameState)));
-    if (!copy) {
-        Serial.println("[SaveManager] state save allocation failed");
+bool SaveManager::saveSnapshot(const Game::GameState& state,
+                               const MainSceneViewState& viewState) {
+    auto* record = new (std::nothrow) SaveRecord{};
+    if (!record) {
+        Serial.println("[SaveManager] snapshot allocation failed");
         return false;
     }
-    memcpy(copy, &state, sizeof(*copy));
-    copy->magic = Game::SAVE_MAGIC;
-    copy->version = Game::SAVE_VERSION;
-    copy->checksum = checksum(*copy);
+    if (!makeMainSceneViewRecord(viewState, record->view)) {
+        Serial.println("[SaveManager] refused invalid main scene view state");
+        delete record;
+        return false;
+    }
+    record->state = state;
+    record->state.magic = Game::SAVE_MAGIC;
+    record->state.version = Game::SAVE_VERSION;
+    record->state.checksum = checksum(record->state);
 
-    Preferences prefs;
-    if (!prefs.begin(NVS_NS, false)) {
-        std::free(copy);
-        return false;
+    nvs_handle_t handle = 0;
+    esp_err_t result = nvs_open(NVS_NS, NVS_READWRITE, &handle);
+    if (result == ESP_OK) {
+        result = nvs_set_blob(handle, NVS_KEY, record, sizeof(*record));
     }
-    size_t written = prefs.putBytes(NVS_KEY, copy, sizeof(*copy));
-    prefs.end();
-    std::free(copy);
-    return written == sizeof(Game::GameState);
+    if (result == ESP_OK) result = nvs_commit(handle);
+    if (handle != 0) nvs_close(handle);
+    delete record;
+
+    if (result != ESP_OK) {
+        Serial.printf("[SaveManager] snapshot write failed err=%d\n",
+                      static_cast<int>(result));
+    }
+    return result == ESP_OK;
 }
 
 void SaveManager::reset(Game::GameState& state) {
@@ -1616,99 +510,6 @@ bool SaveManager::clearAll() {
     bool cleared = prefs.clear();
     prefs.end();
     return cleared;
-}
-
-bool SaveManager::loadClock(uint32_t& gameMinutesTotal) {
-    Preferences prefs;
-    if (!prefs.begin(NVS_NS, true)) return false;
-    bool exists = prefs.isKey(CLOCK_KEY);
-    if (exists) gameMinutesTotal = prefs.getUInt(CLOCK_KEY, 0);
-    prefs.end();
-    return exists;
-}
-
-bool SaveManager::saveClock(uint32_t gameMinutesTotal) {
-    Preferences prefs;
-    if (!prefs.begin(NVS_NS, false)) return false;
-    size_t written = prefs.putUInt(CLOCK_KEY, gameMinutesTotal);
-    prefs.end();
-    return written == sizeof(gameMinutesTotal);
-}
-
-bool SaveManager::loadMainSceneView(MainSceneViewState& viewState) {
-    viewState = MainSceneViewState{};
-    Preferences prefs;
-    if (!prefs.begin(NVS_NS, true)) return false;
-    size_t len = prefs.getBytesLength(MAIN_SCENE_VIEW_KEY);
-    if (len != sizeof(MainSceneViewRecord)) {
-        prefs.end();
-        return false;
-    }
-
-    MainSceneViewRecord record{};
-    size_t read = prefs.getBytes(MAIN_SCENE_VIEW_KEY, &record, sizeof(record));
-    prefs.end();
-    if (read != sizeof(record) || !mainSceneViewRecordValid(record)) {
-        Serial.println("[SaveManager] invalid main scene view state");
-        return false;
-    }
-
-    if (!record.valid) return true;
-    viewState.valid = true;
-    viewState.speciesId = record.speciesId;
-    viewState.monsterX = record.monsterX;
-    viewState.monsterY = record.monsterY;
-    viewState.targetX = record.targetX;
-    viewState.targetY = record.targetY;
-    viewState.aiMode = record.aiMode;
-    viewState.pmdAction = record.pmdAction;
-    viewState.pmdDirection = record.pmdDirection;
-    viewState.pmdFrame = record.pmdFrame;
-    viewState.facingRight = record.facingRight != 0;
-    viewState.faintRestActive = record.faintRestActive != 0;
-    viewState.nextDecisionRemainingMs =
-        record.nextDecisionRemainingMs > MAIN_SCENE_VIEW_MAX_REMAINING_MS
-            ? MAIN_SCENE_VIEW_MAX_REMAINING_MS
-            : record.nextDecisionRemainingMs;
-    viewState.postFeedAwakeRemainingMs =
-        record.postFeedAwakeRemainingMs > MAIN_SCENE_VIEW_MAX_REMAINING_MS
-            ? MAIN_SCENE_VIEW_MAX_REMAINING_MS
-            : record.postFeedAwakeRemainingMs;
-    Serial.printf("[SaveManager] main view loaded species=%u mode=%u\n",
-                  viewState.speciesId, viewState.aiMode);
-    return true;
-}
-
-bool SaveManager::saveMainSceneView(const MainSceneViewState& viewState) {
-    if (!mainSceneViewValuesValid(viewState)) {
-        Serial.println("[SaveManager] refused invalid main scene view state");
-        return false;
-    }
-
-    MainSceneViewRecord record{};
-    record.magic = MAIN_SCENE_VIEW_MAGIC;
-    record.version = MAIN_SCENE_VIEW_VERSION;
-    record.speciesId = viewState.speciesId;
-    record.valid = viewState.valid ? 1 : 0;
-    record.aiMode = viewState.aiMode;
-    record.pmdAction = viewState.pmdAction;
-    record.pmdDirection = viewState.pmdDirection;
-    record.pmdFrame = viewState.pmdFrame;
-    record.facingRight = viewState.facingRight ? 1 : 0;
-    record.faintRestActive = viewState.faintRestActive ? 1 : 0;
-    record.monsterX = viewState.monsterX;
-    record.monsterY = viewState.monsterY;
-    record.targetX = viewState.targetX;
-    record.targetY = viewState.targetY;
-    record.nextDecisionRemainingMs = viewState.nextDecisionRemainingMs;
-    record.postFeedAwakeRemainingMs = viewState.postFeedAwakeRemainingMs;
-    record.checksum = checksumObject(record);
-
-    Preferences prefs;
-    if (!prefs.begin(NVS_NS, false)) return false;
-    size_t written = prefs.putBytes(MAIN_SCENE_VIEW_KEY, &record, sizeof(record));
-    prefs.end();
-    return written == sizeof(record);
 }
 
 bool SaveManager::loadHatchProgress(Game::HatchProgress& progress) {

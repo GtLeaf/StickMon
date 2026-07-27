@@ -28,14 +28,20 @@ private:
     };
 
     enum Item : uint8_t {
-        BALL = 0,
-        GREAT_BALL,
-        HEAVY_BALL,
-        TIMER_BALL,
-        POTION,
+        POTION = 0,
         SUPER_POTION,
         ANTIDOTE,
+        PARALYZE_HEAL,
+        AWAKENING,
+        BURN_HEAL,
+        ICE_HEAL,
         FOOD,
+        TASTY_FOOD,
+        SWEET_FOOD,
+        SPICY_FOOD,
+        SOUR_FOOD,
+        BITTER_FOOD,
+        DRY_FOOD,
         CANDY,
         BACK,
         COUNT,
@@ -76,6 +82,25 @@ private:
     static Game::ItemId gameItemIdFor(Item item);
     static const char* nameFor(Item item);
     static const char* descFor(Item item);
+    static constexpr Item SELL_ITEMS[] = {
+        FOOD,
+        TASTY_FOOD,
+        SWEET_FOOD,
+        SPICY_FOOD,
+        SOUR_FOOD,
+        BITTER_FOOD,
+        DRY_FOOD,
+        POTION,
+        SUPER_POTION,
+        ANTIDOTE,
+        PARALYZE_HEAL,
+        AWAKENING,
+        BURN_HEAL,
+        ICE_HEAL,
+        CANDY,
+    };
+    static constexpr uint8_t SELL_ITEM_TYPE_COUNT =
+        sizeof(SELL_ITEMS) / sizeof(SELL_ITEMS[0]);
 
     char toastBuffer[24] = {};
 };

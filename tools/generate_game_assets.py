@@ -43,6 +43,8 @@ MAX_PACK_PALETTE_WORDS = 2048
 MAX_PACK_PAYLOAD_BYTES = 384000
 
 ITEM_SIZE = 36
+EXPLORE_PICKUP_SIZE = 22
+EXPLORE_PICKUP_CONTENT_SIZE = 19
 BALL_W = 32
 BALL_H = 64
 BACKGROUND_W = 240
@@ -60,6 +62,20 @@ ITEMS = [
     ("ITEM_SUPER_POTION", "SUPERPOTION.png"),
     ("ITEM_ANTIDOTE", "ANTIDOTE.png"),
     ("ITEM_CANDY", "RARECANDY.png"),
+    ("ITEM_TASTY_FOOD", "SITRUSBERRY.png"),
+    ("ITEM_SWEET_FOOD", "PECHABERRY.png"),
+    ("ITEM_SPICY_FOOD", "CHERIBERRY.png"),
+    ("ITEM_SOUR_FOOD", "ASPEARBERRY.png"),
+    ("ITEM_BITTER_FOOD", "RAWSTBERRY.png"),
+    ("ITEM_DRY_FOOD", "CHESTOBERRY.png"),
+    ("ITEM_PARALYZE_HEAL", "PARALYZEHEAL.png"),
+    ("ITEM_AWAKENING", "AWAKENING.png"),
+    ("ITEM_BURN_HEAL", "BURNHEAL.png"),
+    ("ITEM_ICE_HEAL", "ICEHEAL.png"),
+]
+
+EXPLORE_PICKUP_MARKERS = [
+    ("EXPLORE_PICKUP_BALL", "POKEBALL.png"),
 ]
 
 BALLS = [
@@ -211,6 +227,7 @@ KIND_ORDER.extend(kind for kind, _runtime_id, _tileset, _source_id in EXTERNAL_E
 KIND_ORDER.extend(kind for kind, _tile_id, _source, _frame in ANIMATED_EXPLORE_FRAMES)
 KIND_ORDER.append("EGG")
 KIND_ORDER.extend(kind for kind, _ in STATUS_ICONS)
+KIND_ORDER.extend(kind for kind, _ in EXPLORE_PICKUP_MARKERS)
 KIND_IDS = {kind: index for index, kind in enumerate(KIND_ORDER)}
 
 
@@ -253,6 +270,20 @@ def validate_explore_tile_mapping():
     )
     if mapped_ids != expected_ids:
         raise ValueError("GameAssets::drawExploreTile mapping does not match EXPLORE_TILES")
+
+
+def validate_explore_pickup_pack_mapping():
+    source = GAME_ASSETS_SOURCE.read_text(encoding="utf-8")
+    match = re.search(
+        r"PackSlot packSlotFor\(Kind kind\)\s*\{(.*?)\n\}",
+        source,
+        re.S,
+    )
+    if not match:
+        raise ValueError("unable to parse GameAssets::packSlotFor")
+    for kind, _filename in EXPLORE_PICKUP_MARKERS:
+        if f"Kind::{kind}" not in match.group(1):
+            raise ValueError(f"{kind} is not routed to the UI asset pack")
 
 
 def rgb565(r, g, b):
@@ -373,6 +404,33 @@ def prepare_egg(path):
     return canvas
 
 
+def prepare_explore_pickup_marker(path):
+    source = load_rgba(path)
+    bbox = source.getchannel("A").getbbox()
+    if not bbox:
+        raise ValueError(f"explore pickup marker has no opaque pixels: {path}")
+    marker = source.crop(bbox)
+    scale = min(
+        EXPLORE_PICKUP_CONTENT_SIZE / marker.width,
+        EXPLORE_PICKUP_CONTENT_SIZE / marker.height,
+    )
+    marker = marker.resize(
+        (max(1, round(marker.width * scale)), max(1, round(marker.height * scale))),
+        Image.Resampling.NEAREST,
+    )
+    canvas = Image.new(
+        "RGBA", (EXPLORE_PICKUP_SIZE, EXPLORE_PICKUP_SIZE), (0, 0, 0, 0)
+    )
+    canvas.alpha_composite(
+        marker,
+        (
+            (EXPLORE_PICKUP_SIZE - marker.width) // 2,
+            (EXPLORE_PICKUP_SIZE - marker.height) // 2,
+        ),
+    )
+    return canvas
+
+
 def prepare_explore_tile(tile_id, tileset, autotiles):
     if tile_id < 384:
         autotile_index = tile_id // 48 - 1
@@ -432,6 +490,10 @@ def build_assets():
         image = load_rgba(STATUS_ICON_DIR / filename)
         image = image.resize((STATUS_ICON_SIZE, STATUS_ICON_SIZE), Image.Resampling.NEAREST)
         writers["battle"].add(kind, quantize_rgba(image, 15))
+
+    for kind, filename in EXPLORE_PICKUP_MARKERS:
+        image = prepare_explore_pickup_marker(GRAPHICS / "Items" / filename)
+        writers["ui"].add(kind, quantize_rgba(image, 15))
 
     tileset = load_rgba(GRAPHICS / "Tilesets" / "Outside.png")
     autotiles = [load_rgba(GRAPHICS / "Autotiles" / f"{name}.png") for name in OUTSIDE_AUTOTILES]
@@ -579,6 +641,7 @@ def main():
     validate_kind_order()
     validate_runtime_pack_limit()
     validate_explore_tile_mapping()
+    validate_explore_pickup_pack_mapping()
     writers = build_assets()
     results = [write_pack(name, writers[name]) for name in selected]
     write_manifest(writers)

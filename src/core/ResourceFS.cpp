@@ -4,7 +4,7 @@
 
 namespace {
 constexpr const char* BASE_PATH = "/assets";
-constexpr const char* PARTITION_LABEL = "spiffs";
+constexpr const char* PARTITION_LABEL = "littlefs";
 constexpr uint8_t MAX_OPEN_FILES = 8;
 }
 

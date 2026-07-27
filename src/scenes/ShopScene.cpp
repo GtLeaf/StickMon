@@ -7,6 +7,9 @@
 #include "hardware/Hal.h"
 #include "hardware/PixelRenderer.h"
 
+// Out-of-class definition required by C++11 for the odr-used constexpr array.
+constexpr ShopScene::Item ShopScene::SELL_ITEMS[];
+
 namespace {
 static constexpr float CATEGORY_ICON_COLUMN_X = 128.0f;
 static constexpr float SUBMENU_ICON_COLUMN_X = 28.0f;
@@ -192,63 +195,17 @@ void ShopScene::buyCurrent() {
         return;
     }
 
-    switch (item) {
-    case BALL:
-        if (!GameEngine::ins().addBalls(1)) {
-            GameEngine::ins().addCoins(price);
-            toast = Ui::Shop::BAG_FULL;
-        } else toast = Ui::Shop::BOUGHT_BALL;
-        break;
-    case GREAT_BALL:
-        if (!GameEngine::ins().addGreatBalls(1)) {
-            GameEngine::ins().addCoins(price);
-            toast = Ui::Shop::BAG_FULL;
-        } else toast = Ui::Shop::BOUGHT_GREAT_BALL;
-        break;
-    case HEAVY_BALL:
-        if (!GameEngine::ins().addItem(Game::ItemId::HEAVY_BALL)) {
-            GameEngine::ins().addCoins(price);
-            toast = Ui::Shop::BAG_FULL;
-        } else toast = Ui::Shop::BOUGHT_HEAVY_BALL;
-        break;
-    case TIMER_BALL:
-        if (!GameEngine::ins().addItem(Game::ItemId::TIMER_BALL)) {
-            GameEngine::ins().addCoins(price);
-            toast = Ui::Shop::BAG_FULL;
-        } else toast = Ui::Shop::BOUGHT_TIMER_BALL;
-        break;
-    case FOOD:
-        if (!GameEngine::ins().addFood()) {
-            GameEngine::ins().addCoins(price);
-            toast = Ui::Shop::BAG_FULL;
-        } else toast = Ui::Shop::BOUGHT_FOOD;
-        break;
-    case POTION:
-        if (!GameEngine::ins().addPotion(1)) {
-            GameEngine::ins().addCoins(price);
-            toast = Ui::Shop::BAG_FULL;
-        } else toast = Ui::Shop::BOUGHT_POTION;
-        break;
-    case SUPER_POTION:
-        if (!GameEngine::ins().addSuperPotion(1)) {
-            GameEngine::ins().addCoins(price);
-            toast = Ui::Shop::BAG_FULL;
-        } else toast = Ui::Shop::BOUGHT_POTION;
-        break;
-    case ANTIDOTE:
-        if (!GameEngine::ins().addAntidote(1)) {
-            GameEngine::ins().addCoins(price);
-            toast = Ui::Shop::BAG_FULL;
-        } else toast = Ui::Shop::BOUGHT_ANTIDOTE;
-        break;
-    case CANDY:
-        if (!GameEngine::ins().addCandy(1)) {
-            GameEngine::ins().addCoins(price);
-            toast = Ui::Shop::BAG_FULL;
-        } else toast = Ui::Shop::BOUGHT_CANDY;
-        break;
-    default:
-        break;
+    Game::ItemId gameItem = gameItemIdFor(item);
+    int8_t foodIndex = Game::foodIndexForItemId(gameItem);
+    bool added = foodIndex >= 0
+        ? GameEngine::ins().addFoodStock((uint8_t)foodIndex, 1)
+        : GameEngine::ins().addItem(gameItem, 1);
+    if (!added) {
+        GameEngine::ins().addCoins(price);
+        toast = Ui::Shop::BAG_FULL;
+    } else {
+        snprintf(toastBuffer, sizeof(toastBuffer), Ui::Shop::BOUGHT_FMT, nameFor(item));
+        toast = toastBuffer;
     }
     toastUntil = Hal::ins().millis() + 1200;
 }
@@ -261,7 +218,7 @@ void ShopScene::sellCurrent() {
     }
 
     uint16_t sellPrice = sellPriceFor(item);
-    if (GameEngine::ins().removeItem(gameItemIdFor(item), 1, false)) {
+    if (GameEngine::ins().removeItem(gameItemIdFor(item))) {
         GameEngine::ins().addCoins(sellPrice);
         snprintf(toastBuffer, sizeof(toastBuffer), Ui::Shop::SOLD_FMT, sellPrice);
         toast = toastBuffer;
@@ -282,16 +239,22 @@ ShopScene::Item ShopScene::selectedItem() const {
 
 ShopScene::Item ShopScene::itemForCategory(Category category, uint8_t index) const {
     static constexpr Item EXPLORE_ITEMS[] = {
-        BALL,
-        GREAT_BALL,
-        HEAVY_BALL,
-        TIMER_BALL,
         POTION,
         ANTIDOTE,
+        PARALYZE_HEAL,
+        AWAKENING,
+        BURN_HEAL,
+        ICE_HEAL,
         BACK,
     };
     static constexpr Item DAILY_ITEMS[] = {
         FOOD,
+        TASTY_FOOD,
+        SWEET_FOOD,
+        SPICY_FOOD,
+        SOUR_FOOD,
+        BITTER_FOOD,
+        DRY_FOOD,
         CANDY,
         BACK,
     };
@@ -311,18 +274,6 @@ ShopScene::Item ShopScene::itemAtIndex(uint8_t index) const {
 }
 
 ShopScene::Item ShopScene::sellItemAtIndex(uint8_t index) const {
-    static constexpr Item SELL_ITEMS[] = {
-        BALL,
-        GREAT_BALL,
-        HEAVY_BALL,
-        TIMER_BALL,
-        FOOD,
-        POTION,
-        SUPER_POTION,
-        ANTIDOTE,
-        CANDY,
-    };
-
     uint8_t visible = 0;
     for (Item item : SELL_ITEMS) {
         if (ownedCountFor(item) == 0) continue;
@@ -340,8 +291,8 @@ uint8_t ShopScene::currentItemCount() const {
 uint8_t ShopScene::itemCountForCategory(Category category, bool includeBack) const {
     uint8_t count = 0;
     switch (category) {
-    case CATEGORY_DAILY: count = 3; break;
-    case CATEGORY_EXPLORE: count = 7; break;
+    case CATEGORY_DAILY: count = 9; break;   // 7 foods + CANDY + BACK
+    case CATEGORY_EXPLORE: count = 7; break; // 6 medicines + BACK
     case CATEGORY_SELL: count = sellItemCount(); break;
     case CATEGORY_BACK: return 0;
     default: return 0;
@@ -352,17 +303,6 @@ uint8_t ShopScene::itemCountForCategory(Category category, bool includeBack) con
 
 uint8_t ShopScene::sellItemCount() const {
     uint8_t count = 1; // Back is always visible.
-    static constexpr Item SELL_ITEMS[] = {
-        BALL,
-        GREAT_BALL,
-        HEAVY_BALL,
-        TIMER_BALL,
-        FOOD,
-        POTION,
-        SUPER_POTION,
-        ANTIDOTE,
-        CANDY,
-    };
     for (Item item : SELL_ITEMS) {
         if (ownedCountFor(item) > 0) ++count;
     }
@@ -382,6 +322,10 @@ bool ShopScene::itemColumnSettled() const {
 }
 
 void ShopScene::render() {
+    static_assert(sizeof(Ui::Shop::NAMES) / sizeof(Ui::Shop::NAMES[0]) == COUNT,
+                  "shop labels must match ShopScene::Item");
+    static_assert(sizeof(Ui::Shop::DESCS) / sizeof(Ui::Shop::DESCS[0]) == COUNT,
+                  "shop descriptions must match ShopScene::Item");
     auto& c = PixelRenderer::canvas();
     c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, PixelRenderer::rgb(7, 9, 14));
     c.fillRect(0, 0, Hal::DISPLAY_W, 20, PixelRenderer::rgb(25, 25, 40));
@@ -561,14 +505,20 @@ void ShopScene::renderToast() {
 
 uint16_t ShopScene::priceFor(Item item) {
     switch (item) {
-    case BALL: return 50;
-    case GREAT_BALL: return 120;
-    case HEAVY_BALL: return 160;
-    case TIMER_BALL: return 180;
     case FOOD: return 20;
+    case TASTY_FOOD: return 60;
+    case SWEET_FOOD: return 45;
+    case SPICY_FOOD: return 45;
+    case SOUR_FOOD: return 45;
+    case BITTER_FOOD: return 45;
+    case DRY_FOOD: return 45;
     case POTION: return 60;
     case SUPER_POTION: return 120;
     case ANTIDOTE: return 40;
+    case PARALYZE_HEAL: return 40;
+    case AWAKENING: return 40;
+    case BURN_HEAL: return 40;
+    case ICE_HEAL: return 40;
     case CANDY: return 200;
     default: return 0;
     }
@@ -580,14 +530,20 @@ uint16_t ShopScene::sellPriceFor(Item item) {
 
 Game::ItemId ShopScene::gameItemIdFor(Item item) {
     switch (item) {
-    case BALL: return Game::ItemId::POKE_BALL;
-    case GREAT_BALL: return Game::ItemId::GREAT_BALL;
-    case HEAVY_BALL: return Game::ItemId::HEAVY_BALL;
-    case TIMER_BALL: return Game::ItemId::TIMER_BALL;
     case POTION: return Game::ItemId::POTION;
     case SUPER_POTION: return Game::ItemId::SUPER_POTION;
     case ANTIDOTE: return Game::ItemId::ANTIDOTE;
+    case PARALYZE_HEAL: return Game::ItemId::PARALYZE_HEAL;
+    case AWAKENING: return Game::ItemId::AWAKENING;
+    case BURN_HEAL: return Game::ItemId::BURN_HEAL;
+    case ICE_HEAL: return Game::ItemId::ICE_HEAL;
     case FOOD: return Game::ItemId::NORMAL_FOOD;
+    case TASTY_FOOD: return Game::ItemId::TASTY_FOOD;
+    case SWEET_FOOD: return Game::ItemId::SWEET_FOOD;
+    case SPICY_FOOD: return Game::ItemId::SPICY_FOOD;
+    case SOUR_FOOD: return Game::ItemId::SOUR_FOOD;
+    case BITTER_FOOD: return Game::ItemId::BITTER_FOOD;
+    case DRY_FOOD: return Game::ItemId::DRY_FOOD;
     case CANDY: return Game::ItemId::CANDY;
     default: return Game::ItemId::COUNT;
     }

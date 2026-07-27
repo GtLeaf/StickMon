@@ -15,6 +15,16 @@ enum class Kind : uint16_t {
     ITEM_SUPER_POTION,
     ITEM_ANTIDOTE,
     ITEM_CANDY,
+    ITEM_TASTY_FOOD,
+    ITEM_SWEET_FOOD,
+    ITEM_SPICY_FOOD,
+    ITEM_SOUR_FOOD,
+    ITEM_BITTER_FOOD,
+    ITEM_DRY_FOOD,
+    ITEM_PARALYZE_HEAL,
+    ITEM_AWAKENING,
+    ITEM_BURN_HEAL,
+    ITEM_ICE_HEAL,
     BALL_POKE_BALL_0,
     BALL_POKE_BALL_1,
     BALL_POKE_BALL_2,
@@ -230,6 +240,7 @@ enum class Kind : uint16_t {
     STATUS_SLEEP,
     STATUS_BURN,
     STATUS_FREEZE,
+    EXPLORE_PICKUP_BALL,
     COUNT,
 };
 
@@ -244,7 +255,5 @@ bool drawExploreTile(uint16_t tileId, int x, int y, uint8_t animationFrame = 0);
 
 Kind itemKind(Game::ItemId item);
 Kind statusKind(Game::MajorStatus status);
-Kind ballFrameKind(Game::ItemId item, uint8_t frame);
-Kind ballOpenKind(Game::ItemId item);
 
 }  // namespace GameAssets

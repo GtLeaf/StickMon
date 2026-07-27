@@ -34,6 +34,7 @@ private:
         EVOLUTION,
         LEARN_MOVE,
         MOVE_REPLACED,
+        FRIENDSHIP,
         PICKUP,
         RESULT,
         EXITING,
@@ -54,7 +55,6 @@ private:
     enum class BattleLogCue : uint8_t {
         NONE,
         EXP_GAIN,
-        TEAM_SWITCH,
     };
     // Holds a complete two-sided turn plus faint and defeat messages.
     static constexpr uint8_t BATTLE_LOG_QUEUE_CAP = 24;
@@ -69,23 +69,35 @@ private:
     uint32_t battleLogUntil = 0;
     bool battleLogActive = false;
     bool battleResultPending = false;
+    bool fleeExitPending = false;
     bool battleExpVisible = false;
     bool expAnimationPending = false;
     bool expAnimationActive = false;
     uint32_t expAnimationFrom = 0;
     uint32_t expAnimationTo = 0;
     uint32_t expAnimationStarted = 0;
-    bool lastCaptureSuccess = false;
+    enum class FriendshipStep : uint8_t {
+        CONTACT_CONFIRM,
+        CONTACT_ACQUIRED,
+        TEAM_CONFIRM,
+        TEAM_JOINED,
+    };
+    bool friendshipOfferPending = false;
+    bool friendshipConfirmYes = true;
+    FriendshipStep friendshipStep = FriendshipStep::CONTACT_CONFIRM;
+    uint8_t friendshipContactIndex = 0xFF;
     uint8_t battleCursor = 0;
-    uint8_t captureCursor = 0;
-    uint8_t battleTurns = 0;
-    bool captureMenuOpen = false;
-    bool captureAnimationActive = false;
-    bool captureOutcome = false;
     bool battleIsBoss = false;
-    Game::ItemId captureBall = Game::ItemId::POKE_BALL;
-    uint32_t captureAnimationStarted = 0;
+    uint8_t battleFoodBond = 0;
     uint8_t pendingBattleSwitchSlot = 0xFF;
+    enum class BattleSwitchStage : uint8_t {
+        NONE,
+        RETREATING,
+        ENTERING,
+    };
+    BattleSwitchStage battleSwitchStage = BattleSwitchStage::NONE;
+    uint32_t battleSwitchStarted = 0;
+    bool battleSwitchConsumesTurn = false;
     enum class BattleTurnStage : uint8_t {
         IDLE,
         WAIT_ACTION_START,
@@ -195,6 +207,9 @@ private:
     bool battleLogBusy() const;
     bool battleLogPlaybackBusy() const;
     void updateBattleTurn(uint32_t nowMs);
+    void updateBattleSwitch(uint32_t nowMs);
+    void beginBattleSwitch(uint8_t slot, bool consumesTurn);
+    int battleSwitchOffsetX(uint32_t nowMs) const;
     void beginBattleAction();
     void finishBattleAction();
     void applyBattleDamage();
@@ -212,13 +227,14 @@ private:
     bool enterPendingProgression(Phase returnPhase);
     void enqueueBattleProgressionLogs(uint8_t teamSlot);
     void attackWild();
+    void throwFood(uint8_t foodIndex);
+    void switchBattleMonster();
     void wildCounterattack();
     void finishPlayerFaint();
-    void activatePendingBattleSwitch();
-    void openCaptureMenu();
-    void tryCapture(Game::ItemId ball);
-    void updateCaptureAnimation(uint32_t nowMs);
-    void finishCaptureAnimation();
+    void finishBattleVictoryFlow();
+    void clearFriendshipFlow();
+    void resolveFriendshipOffer();
+    void initializeRouteFollowerPosition(bool useTrailPosition);
     void fleeEncounter();
     void resetWalk();
     bool resetRouteSegment();
@@ -229,7 +245,7 @@ private:
     void renderAreaMenu();
     void renderWalking();
     void renderEncounter();
-    void renderCaptureAnimation();
+    void renderFriendshipPrompt();
     void renderPickupPrompt();
     void renderResult();
     void renderEndPrompt();

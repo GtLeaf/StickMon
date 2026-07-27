@@ -15,6 +15,7 @@ private:
         BRIGHTNESS = 0,
         GAME_SPEED,
         VOLUME,
+        VOICE_CALL,
         POWER_SAVE,
         HELP,
         RESET_GAME,
@@ -25,6 +26,8 @@ private:
     enum class ViewMode : uint8_t {
         MENU,
         HELP,
+        VOICE_CALL,
+        VOICE_ENROLL,
         RESET_CONFIRM,
     };
 
@@ -32,17 +35,21 @@ private:
     const char* toast = nullptr;
     uint32_t toastUntil = 0;
     ViewMode viewMode = ViewMode::MENU;
-    bool settingsDirty = false;
     bool resetConfirmYes = false;
     float menuScroll = 0.0f;
+    uint8_t voiceCursor = 0;
+    uint32_t enrollmentFinishedAt = 0;
 
     void activateCurrent();
     void cycleBrightness();
     void normalizeVolumeSetting();
     void markSettingsDirty();
-    void saveSettingsIfDirty();
     void renderMenu();
     void renderHelp();
+    void renderVoiceCall();
+    void renderVoiceEnrollment();
     void renderResetConfirm();
     void renderToast();
+    void handleVoiceCallButton(const ButtonEvent& event);
+    const char* enrollmentMessage() const;
 };

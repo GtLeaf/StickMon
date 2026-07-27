@@ -6,11 +6,13 @@
 #include "assets/HudAssets.h"
 #include "assets/PokemonMotion.h"
 #include "assets/PokemonSprites.h"
+#include "core/CryPlayer.h"
 #include "core/GameEngine.h"
 #include "core/ProgressionUi.h"
 #include "core/RoomRenderer.h"
 #include "core/RoomResource.h"
 #include "core/UiStrings.h"
+#include "core/VoiceCallService.h"
 #include "hardware/Hal.h"
 #include "hardware/PixelRenderer.h"
 
@@ -577,6 +579,7 @@ void drawHungerIcon(int x, int y, uint8_t hunger) {
 }
 
 void MainScene::onEnter() {
+    VoiceCallService::ins().begin();
     active = &GameEngine::ins().activeSpecies();
     uint32_t nowMs = Hal::ins().millis();
     roomAction = RoomAction::NONE;
@@ -584,6 +587,7 @@ void MainScene::onEnter() {
     heartEffectUntilMs = 0;
     hungerAnimUntilMs = 0;
     feedingHadTastyBite = false;
+    feedingHadDislikedBite = false;
     feedingBecameFull = false;
     feedingMoodAfter = 0;
     progressionModal = ProgressionModal::NONE;
@@ -621,6 +625,7 @@ void MainScene::onEnter() {
 }
 
 void MainScene::onExit() {
+    VoiceCallService::ins().stopListening();
     onBeforeSave();
 }
 
@@ -708,6 +713,32 @@ void MainScene::update(uint32_t nowMs, float dtSeconds) {
         behaviorProfile = behaviorProfileFor(*nextActive, GameEngine::ins().activeMonster());
     }
     active = nextActive;
+    auto& voice = VoiceCallService::ins();
+    const auto& settings = GameEngine::ins().gameState().settings;
+    const auto& voiceMonster = GameEngine::ins().activeMonster();
+    bool voiceCanRespond = !voiceMonster.fainted && voiceMonster.hpCur > 0 &&
+                           voiceMonster.majorStatus != Game::MajorStatus::SLEEP &&
+                           aiMode != AiMode::RESTING && aiMode != AiMode::WAKING &&
+                           aiMode != AiMode::SEEK_BED && !mainSceneIsSleepTime();
+    bool voiceAvailable = settings.voiceCallEnabled && voice.profileReady() &&
+                          !GameEngine::ins().idleModeActive() &&
+                          voiceCanRespond &&
+                          doorTransition == DoorTransitionMode::NONE &&
+                          progressionModal == ProgressionModal::NONE &&
+                          !Hal::ins().audioPlaying();
+    if (voiceAvailable) {
+        if (!voice.listening() && roomAction != RoomAction::VOICE_CALL_APPROACH &&
+            roomAction != RoomAction::VOICE_CALL_WAIT) {
+            voice.startListening(nowMs);
+        }
+        voice.updateListening(nowMs);
+        if (voice.consumeMatch()) {
+            GameEngine::ins().wakeFromIdle();
+            startVoiceCallReaction(nowMs);
+        }
+    } else {
+        voice.stopListening();
+    }
     if (doorTransition == DoorTransitionMode::NONE) {
         if (progressionModal != ProgressionModal::NONE || openPendingProgression()) {
             velocityX = 0.0f;
@@ -969,11 +1000,10 @@ int16_t MainScene::worldToScreenY(float worldY) const {
 }
 
 float MainScene::walkBoundaryOffsetY() const {
-    uint8_t frameH = 42;
     if (const PokemonSprites::SpriteFrame* frame = movementBoundsFrame()) {
-        frameH = pgm_read_byte(&frame->height);
+        return static_cast<float>(PokemonSprites::frameGroundOffsetY(frame));
     }
-    return (float)constrain((int)(frameH * 0.42f), 16, 32);
+    return 18.0f;
 }
 
 float MainScene::walkFootprintRadiusX() const {
@@ -1497,8 +1527,13 @@ void MainScene::finishRoomAction(uint32_t nowMs) {
     nextAiDecisionMs = nowMs + (uint32_t)random(650, 1201);
     if (completed == RoomAction::FEED_FINISH) {
         feedingHadTastyBite = false;
+        feedingHadDislikedBite = false;
         feedingBecameFull = false;
         feedingMoodAfter = 0;
+    }
+    if (completed == RoomAction::VOICE_CALL_APPROACH ||
+        completed == RoomAction::VOICE_CALL_WAIT) {
+        VoiceCallService::ins().clearDetectionQueue(nowMs);
     }
     mind.onActivity(nowMs);
 }
@@ -1525,6 +1560,36 @@ bool MainScene::startAttention(uint32_t nowMs) {
         return true;
     }
     return beginScriptedMove(RoomAction::ATTENTION_APPROACH, x, y, nowMs);
+}
+
+bool MainScene::startVoiceCallReaction(uint32_t nowMs) {
+    const Game::MonsterRuntime& mon = GameEngine::ins().activeMonster();
+    if (mon.fainted || mon.hpCur == 0 || mon.majorStatus == Game::MajorStatus::SLEEP ||
+        aiMode == AiMode::RESTING || aiMode == AiMode::WAKING ||
+        aiMode == AiMode::SEEK_BED || aiMode == AiMode::FEEDING ||
+        doorTransition != DoorTransitionMode::NONE ||
+        progressionModal != ProgressionModal::NONE) {
+        return false;
+    }
+
+    float x = 0.0f;
+    float y = 0.0f;
+    if (!chooseAttentionPose(x, y)) return false;
+    cancelRoomAction(nowMs);
+    clearMoveRoute();
+    velocityX = 0.0f;
+    velocityY = 0.0f;
+    if (fabsf(x - monsterX) < 3.0f && fabsf(y - monsterY) < 3.0f) {
+        aiMode = AiMode::IDLE;
+        roomAction = RoomAction::VOICE_CALL_WAIT;
+        roomActionStartedMs = nowMs;
+        roomActionUntilMs = nowMs + 1250;
+        pmdDirection = PmdDirection::FRONT;
+        showHearts(HeartEffect::TWO, nowMs, 1250);
+        CryPlayer::ins().replay(mon.speciesId);
+        return true;
+    }
+    return beginScriptedMove(RoomAction::VOICE_CALL_APPROACH, x, y, nowMs);
 }
 
 bool MainScene::startWindowGaze(uint32_t nowMs) {
@@ -1649,6 +1714,15 @@ void MainScene::finishScriptedMovement(uint32_t nowMs) {
         pmdDirection = PmdDirection::FRONT;
         showHearts(HeartEffect::ONE, nowMs, ATTENTION_WAIT_MS);
         return;
+    case RoomAction::VOICE_CALL_APPROACH:
+        roomAction = RoomAction::VOICE_CALL_WAIT;
+        roomActionStartedMs = nowMs;
+        roomActionUntilMs = nowMs + 1250;
+        aiMode = AiMode::IDLE;
+        pmdDirection = PmdDirection::FRONT;
+        showHearts(HeartEffect::TWO, nowMs, 1250);
+        CryPlayer::ins().replay(GameEngine::ins().activeMonster().speciesId);
+        return;
     case RoomAction::WINDOW_APPROACH:
         roomAction = RoomAction::WINDOW_WAIT;
         roomActionStartedMs = nowMs;
@@ -1657,7 +1731,7 @@ void MainScene::finishScriptedMovement(uint32_t nowMs) {
         aiMode = AiMode::IDLE;
         pmdDirection = windowGazeDirection;
         GameEngine::ins().activeMonster().lastWindowGazeAt = currentGameSeconds();
-        GameEngine::ins().markDirty(false);
+        GameEngine::ins().markDirty(SaveUrgency::DEFERRED);
         return;
     case RoomAction::CIRCLE: {
         roomActionPhase++;
@@ -1691,6 +1765,7 @@ bool MainScene::updateRoomAction(uint32_t nowMs) {
     case RoomAction::PET_CALM:
     case RoomAction::QUIET_GAZE:
     case RoomAction::ATTENTION_WAIT:
+    case RoomAction::VOICE_CALL_WAIT:
     case RoomAction::WINDOW_WAIT:
         velocityX = 0.0f;
         velocityY = 0.0f;
@@ -1736,6 +1811,7 @@ bool MainScene::updateRoomAction(uint32_t nowMs) {
         return true;
     case RoomAction::PET_WITHDRAW:
     case RoomAction::ATTENTION_APPROACH:
+    case RoomAction::VOICE_CALL_APPROACH:
     case RoomAction::CIRCLE:
     case RoomAction::DASH:
     case RoomAction::STEP_BACK:
@@ -1778,6 +1854,7 @@ void MainScene::startPetReaction(uint32_t nowMs, const PetResult& result) {
         roomActionUntilMs = nowMs + 1150;
         pmdDirection = PmdDirection::FRONT;
         showHearts(HeartEffect::TWO, nowMs, 1250);
+        CryPlayer::ins().replay(mon.speciesId);
         return;
     }
     if (!lowHp && reactionMood < 30) {
@@ -1787,6 +1864,7 @@ void MainScene::startPetReaction(uint32_t nowMs, const PetResult& result) {
                              -1.5707963f, 0.45f, x, y) &&
             beginScriptedMove(RoomAction::PET_WITHDRAW, x, y, nowMs)) {
             showHearts(HeartEffect::ONE, nowMs, 900);
+            CryPlayer::ins().replay(mon.speciesId);
             return;
         }
     }
@@ -1796,6 +1874,7 @@ void MainScene::startPetReaction(uint32_t nowMs, const PetResult& result) {
     roomActionUntilMs = nowMs + 750;
     pmdDirection = PmdDirection::FRONT;
     showHearts(HeartEffect::ONE, nowMs, 900);
+    CryPlayer::ins().replay(mon.speciesId);
 }
 
 void MainScene::startFeedFinish(uint32_t nowMs) {
@@ -1812,15 +1891,17 @@ void MainScene::startFeedFinish(uint32_t nowMs) {
 
 float MainScene::actionRenderYOffset(uint32_t nowMs) const {
     bool happyFeed = roomAction == RoomAction::FEED_FINISH && roomActionPhase == 0 &&
+                     !feedingHadDislikedBite &&
                      (feedingHadTastyBite || feedingBecameFull || feedingMoodAfter >= 60 ||
                       behaviorProfile.activityBias > 0);
-    if (roomAction != RoomAction::PET_HAPPY && !happyFeed) return 0.0f;
+    bool voiceHappy = roomAction == RoomAction::VOICE_CALL_WAIT;
+    if (roomAction != RoomAction::PET_HAPPY && !voiceHappy && !happyFeed) return 0.0f;
     uint32_t elapsed = nowMs - roomActionStartedMs;
-    uint32_t hopDuration = roomAction == RoomAction::PET_HAPPY ? 1000UL : 600UL;
+    uint32_t hopDuration = (roomAction == RoomAction::PET_HAPPY || voiceHappy) ? 1000UL : 600UL;
     if (elapsed >= hopDuration) return 0.0f;
     const PmdSpriteConfig* config = active ? pmdSpriteConfigForSpecies(active->id) : nullptr;
     float amplitude = config && config->airHeight > 0.0f ? 3.0f : 5.0f;
-    float cycles = roomAction == RoomAction::PET_HAPPY ? 2.0f : 1.0f;
+    float cycles = (roomAction == RoomAction::PET_HAPPY || voiceHappy) ? 2.0f : 1.0f;
     float phase = (float)elapsed / (float)hopDuration;
     return fabsf(sinf(phase * 3.14159265f * cycles)) * amplitude;
 }
@@ -1960,6 +2041,8 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
 
     bool contextualAction = roomAction == RoomAction::ATTENTION_APPROACH ||
                             roomAction == RoomAction::ATTENTION_WAIT ||
+                            roomAction == RoomAction::VOICE_CALL_APPROACH ||
+                            roomAction == RoomAction::VOICE_CALL_WAIT ||
                             roomAction == RoomAction::LOOK_AROUND ||
                             roomAction == RoomAction::CIRCLE ||
                             roomAction == RoomAction::DASH ||
@@ -2216,6 +2299,7 @@ void MainScene::enterFeeding(uint32_t nowMs) {
     cancelRoomAction(nowMs);
     feedingConsumed = false;
     feedingHadTastyBite = false;
+    feedingHadDislikedBite = false;
     feedingBecameFull = false;
     feedingMoodAfter = GameEngine::ins().activeMonster().mood;
     feedingBiteMs = nowMs + (uint32_t)random(FEED_BITE_DELAY_MIN_MS, FEED_BITE_DELAY_MAX_MS + 1);
@@ -2257,9 +2341,20 @@ void MainScene::updateFeeding(uint32_t nowMs) {
             hungerAnimStartedMs = nowMs;
             hungerAnimUntilMs = nowMs + HUNGER_ANIM_MS;
             feedingMoodAfter = result.moodAfter;
-            feedingHadTastyBite = feedingHadTastyBite || result.foodIndex == 1;
+            feedingHadTastyBite = feedingHadTastyBite || result.foodIndex == 1 ||
+                                  result.reaction == FoodReaction::LIKED;
+            feedingHadDislikedBite = feedingHadDislikedBite ||
+                                     result.reaction == FoodReaction::DISLIKED;
             feedingBecameFull = feedingBecameFull || result.becameFull;
-            if (result.foodIndex == 1) showHearts(HeartEffect::ONE, nowMs, 900);
+            if (result.reaction == FoodReaction::LIKED) {
+                showHearts(HeartEffect::TWO, nowMs, 1250);
+            } else if (result.foodIndex == 1) {
+                showHearts(HeartEffect::ONE, nowMs, 900);
+            } else if (result.reaction == FoodReaction::DISLIKED) {
+                // 不合口味：没有爱心，下一口停顿更久，肉眼可见的犹豫。
+                feedingBiteMs = nowMs + (uint32_t)random(FEED_BITE_INTERVAL_MIN_MS,
+                                                         FEED_BITE_INTERVAL_MAX_MS + 1) + 900;
+            }
         } else {
             feedingUntilMs = nowMs + 600;
         }
@@ -2733,6 +2828,8 @@ bool MainScene::onButton(const ButtonEvent& event) {
         return false;
     }
 
+    VoiceCallService::ins().stopListening();
+
     if (event.btn == 0 && event.action == BtnAction::PRESSED) {
         uint32_t nowMs = Hal::ins().millis();
         PetResult result = GameEngine::ins().petMonster();
@@ -2817,10 +2914,38 @@ void MainScene::drawFood() {
     uint8_t remainingBites = min<uint8_t>(
         maxBites,
         GameEngine::ins().bowlFoodBitesRemaining());
-    uint16_t foodColor = foodIndex == 1 ? PixelRenderer::rgb(255, 138, 112)
-                                        : PixelRenderer::rgb(245, 180, 87);
-    uint16_t garnishColor = foodIndex == 1 ? PixelRenderer::rgb(255, 216, 72)
-                                           : PixelRenderer::rgb(92, 151, 80);
+    uint16_t foodColor;
+    uint16_t garnishColor;
+    switch (foodIndex) {
+    case 1: // 美味粮
+        foodColor = PixelRenderer::rgb(255, 138, 112);
+        garnishColor = PixelRenderer::rgb(255, 216, 72);
+        break;
+    case 2: // 甜味粮
+        foodColor = PixelRenderer::rgb(255, 150, 188);
+        garnishColor = PixelRenderer::rgb(255, 255, 255);
+        break;
+    case 3: // 辣味粮
+        foodColor = PixelRenderer::rgb(238, 76, 56);
+        garnishColor = PixelRenderer::rgb(255, 196, 60);
+        break;
+    case 4: // 酸味粮
+        foodColor = PixelRenderer::rgb(186, 220, 84);
+        garnishColor = PixelRenderer::rgb(244, 244, 190);
+        break;
+    case 5: // 苦味粮
+        foodColor = PixelRenderer::rgb(152, 104, 198);
+        garnishColor = PixelRenderer::rgb(220, 200, 240);
+        break;
+    case 6: // 涩味粮
+        foodColor = PixelRenderer::rgb(122, 184, 142);
+        garnishColor = PixelRenderer::rgb(226, 240, 214);
+        break;
+    default: // 普通粮
+        foodColor = PixelRenderer::rgb(245, 180, 87);
+        garnishColor = PixelRenderer::rgb(92, 151, 80);
+        break;
+    }
     int cx = (int)foodCenterX();
     int foodY = worldToScreenY(foodCenterY());
     c.fillEllipse(cx, worldToScreenY(foodCenterY() + 3.0f), 10, 4, PixelRenderer::rgb(122, 96, 76));
@@ -2855,13 +2980,16 @@ void MainScene::drawShadow() {
         ry = (ry * 11 + 5) / 10;
     }
 
-    int shadowY = worldToScreenY(monsterY + constrain((int)(frameH * 0.42f), 16, 32));
+    int shadowX = (int)monsterX + pmdRenderOffsetX;
+    int shadowY = worldToScreenY(
+        monsterY + PokemonSprites::frameGroundOffsetY(frame) + pmdRenderOffsetY);
     uint16_t shadowColor = night ? PixelRenderer::rgb(18, 16, 24) : PixelRenderer::rgb(36, 29, 24);
     uint8_t outerAlpha = night ? (floating ? 84 : 122) : (floating ? 68 : 116);
     uint8_t coreAlpha = night ? (floating ? 0 : 92) : (floating ? 0 : 86);
-    fillSoftEllipseAlpha((int)monsterX, shadowY, rx, ry, shadowColor, outerAlpha);
+    fillSoftEllipseAlpha(shadowX, shadowY, rx, ry, shadowColor, outerAlpha);
     if (!floating) {
-        fillEllipseAlpha((int)monsterX, shadowY, max(5, rx / 2), max(2, ry / 2), shadowColor, coreAlpha);
+        fillEllipseAlpha(shadowX, shadowY, max(5, rx / 2), max(2, ry / 2),
+                         shadowColor, coreAlpha);
     }
 }
 

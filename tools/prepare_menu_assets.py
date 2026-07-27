@@ -197,7 +197,9 @@ def standalone_icon_paths(source_dir: Path) -> list[Path]:
     paths = list(source_dir.glob("*.png"))
     indexed: dict[int, Path] = {}
     for path in paths:
-        match = re.search(r"\((\d+)\)\.png$", path.name)
+        match = re.search(r"\((\d+)\)\.png$", path.name) or re.fullmatch(
+            r"(\d+)\.png", path.name
+        )
         if not match:
             continue
         index = int(match.group(1))
@@ -230,8 +232,10 @@ def remove_baked_checkerboard(image: Image.Image) -> Image.Image:
     return source
 
 
-def render_standalone_icon(source_path: Path) -> Image.Image:
-    source = remove_baked_checkerboard(Image.open(source_path))
+def render_standalone_icon(source_path: Path, keep_white: bool = False) -> Image.Image:
+    source = Image.open(source_path).convert("RGBA")
+    if not keep_white:
+        source = remove_baked_checkerboard(source)
     bbox = source.getchannel("A").getbbox()
     if bbox is None:
         raise ValueError(f"standalone icon has no visible pixels: {source_path}")
@@ -249,10 +253,13 @@ def render_standalone_icon(source_path: Path) -> Image.Image:
     return icon
 
 
-def build_sheet_from_directory(source_dir: Path) -> Image.Image:
+def build_sheet_from_directory(source_dir: Path, keep_white: bool = False) -> Image.Image:
     sheet = Image.new("RGBA", (ICON_COUNT * ICON_SIZE, ICON_SIZE), (0, 0, 0, 0))
     for index, source_path in enumerate(standalone_icon_paths(source_dir)):
-        sheet.alpha_composite(render_standalone_icon(source_path), (index * ICON_SIZE, 0))
+        sheet.alpha_composite(
+            render_standalone_icon(source_path, keep_white=keep_white),
+            (index * ICON_SIZE, 0),
+        )
     return sheet
 
 
@@ -373,6 +380,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--preview", type=Path, default=DEFAULT_PREVIEW)
     parser.add_argument("--cpp", type=Path, default=DEFAULT_CPP)
     parser.add_argument("--header", type=Path, default=DEFAULT_HEADER)
+    parser.add_argument(
+        "--keep-white",
+        action="store_true",
+        help=(
+            "do not strip baked white/checkerboard pixels; use when sources "
+            "have a real alpha channel and white outlines must be preserved"
+        ),
+    )
     return parser.parse_args()
 
 
@@ -381,7 +396,7 @@ def main() -> None:
     sheet = (
         build_sheet(args.source, args.debug_source)
         if args.source
-        else build_sheet_from_directory(args.source_dir)
+        else build_sheet_from_directory(args.source_dir, keep_white=args.keep_white)
     )
     args.sheet.parent.mkdir(parents=True, exist_ok=True)
     args.preview.parent.mkdir(parents=True, exist_ok=True)

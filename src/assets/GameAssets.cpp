@@ -106,7 +106,10 @@ const char* packName(PackSlot slot) {
 
 PackSlot packSlotFor(Kind kind) {
     uint16_t value = static_cast<uint16_t>(kind);
-    if (value <= static_cast<uint16_t>(Kind::ITEM_CANDY)) return PackSlot::UI;
+    if (value <= static_cast<uint16_t>(Kind::ITEM_CANDY) ||
+        kind == Kind::EXPLORE_PICKUP_BALL) {
+        return PackSlot::UI;
+    }
     if (kind == Kind::EGG) return PackSlot::HATCH;
     if (kind >= Kind::EXPLORE_TILE_0072 && kind <= Kind::EXPLORE_WATERFALL_BOTTOM_F3) {
         return PackSlot::MAP;
@@ -499,15 +502,21 @@ bool drawExploreTile(uint16_t tileId, int x, int y, uint8_t animationFrame) {
 
 Kind itemKind(Game::ItemId item) {
     switch (item) {
-    case Game::ItemId::POKE_BALL: return Kind::ITEM_POKE_BALL;
-    case Game::ItemId::GREAT_BALL: return Kind::ITEM_GREAT_BALL;
-    case Game::ItemId::HEAVY_BALL: return Kind::ITEM_HEAVY_BALL;
-    case Game::ItemId::TIMER_BALL: return Kind::ITEM_TIMER_BALL;
     case Game::ItemId::NORMAL_FOOD: return Kind::ITEM_NORMAL_FOOD;
     case Game::ItemId::POTION: return Kind::ITEM_POTION;
     case Game::ItemId::SUPER_POTION: return Kind::ITEM_SUPER_POTION;
     case Game::ItemId::ANTIDOTE: return Kind::ITEM_ANTIDOTE;
     case Game::ItemId::CANDY: return Kind::ITEM_CANDY;
+    case Game::ItemId::TASTY_FOOD: return Kind::ITEM_TASTY_FOOD;
+    case Game::ItemId::SWEET_FOOD: return Kind::ITEM_SWEET_FOOD;
+    case Game::ItemId::SPICY_FOOD: return Kind::ITEM_SPICY_FOOD;
+    case Game::ItemId::SOUR_FOOD: return Kind::ITEM_SOUR_FOOD;
+    case Game::ItemId::BITTER_FOOD: return Kind::ITEM_BITTER_FOOD;
+    case Game::ItemId::DRY_FOOD: return Kind::ITEM_DRY_FOOD;
+    case Game::ItemId::PARALYZE_HEAL: return Kind::ITEM_PARALYZE_HEAL;
+    case Game::ItemId::AWAKENING: return Kind::ITEM_AWAKENING;
+    case Game::ItemId::BURN_HEAL: return Kind::ITEM_BURN_HEAL;
+    case Game::ItemId::ICE_HEAL: return Kind::ITEM_ICE_HEAL;
     default: return Kind::COUNT;
     }
 }
@@ -521,27 +530,6 @@ Kind statusKind(Game::MajorStatus status) {
     case Game::MajorStatus::BURN: return Kind::STATUS_BURN;
     case Game::MajorStatus::FREEZE: return Kind::STATUS_FREEZE;
     default: return Kind::COUNT;
-    }
-}
-
-Kind ballFrameKind(Game::ItemId item, uint8_t frame) {
-    frame %= 8;
-    uint16_t base = static_cast<uint16_t>(Kind::BALL_POKE_BALL_0);
-    switch (item) {
-    case Game::ItemId::GREAT_BALL: base = static_cast<uint16_t>(Kind::BALL_GREAT_BALL_0); break;
-    case Game::ItemId::HEAVY_BALL: base = static_cast<uint16_t>(Kind::BALL_HEAVY_BALL_0); break;
-    case Game::ItemId::TIMER_BALL: base = static_cast<uint16_t>(Kind::BALL_TIMER_BALL_0); break;
-    default: break;
-    }
-    return static_cast<Kind>(base + frame);
-}
-
-Kind ballOpenKind(Game::ItemId item) {
-    switch (item) {
-    case Game::ItemId::GREAT_BALL: return Kind::BALL_GREAT_BALL_OPEN;
-    case Game::ItemId::HEAVY_BALL: return Kind::BALL_HEAVY_BALL_OPEN;
-    case Game::ItemId::TIMER_BALL: return Kind::BALL_TIMER_BALL_OPEN;
-    default: return Kind::BALL_POKE_BALL_OPEN;
     }
 }
 

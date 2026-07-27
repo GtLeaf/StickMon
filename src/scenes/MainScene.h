@@ -39,6 +39,8 @@ private:
         PET_WITHDRAW,
         ATTENTION_APPROACH,
         ATTENTION_WAIT,
+        VOICE_CALL_APPROACH,
+        VOICE_CALL_WAIT,
         LOOK_AROUND,
         CIRCLE,
         DASH,
@@ -107,6 +109,7 @@ private:
     void scheduleSpecialAction(uint32_t nowMs);
     bool ambientActionAllowed() const;
     bool startAttention(uint32_t nowMs);
+    bool startVoiceCallReaction(uint32_t nowMs);
     bool startAutonomousAction(uint32_t nowMs);
     bool startWindowGaze(uint32_t nowMs);
     bool chooseAttentionPose(float& x, float& y) const;
@@ -216,6 +219,7 @@ private:
     uint32_t postFeedAwakeUntilMs = 0;
     bool feedingConsumed = false;
     bool feedingHadTastyBite = false;
+    bool feedingHadDislikedBite = false;
     bool feedingBecameFull = false;
     uint8_t feedingMoodAfter = 0;
     uint32_t hungerAnimStartedMs = 0;

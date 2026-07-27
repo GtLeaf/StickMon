@@ -12,6 +12,7 @@ constexpr const char* DEFAULT_PACK_ROOT = "/packs/dev";
 constexpr const char* PACK_ROOT_PREFIX = "/packs/";
 constexpr const char* PACK_FORMAT = "smon-resource-pack-v1";
 constexpr const char* DEFAULT_SPRITES_DIR = "sprites";
+constexpr const char* DEFAULT_CRIES_DIR = "cries";
 constexpr const char* DEFAULT_ROOMS_DIR = "rooms";
 constexpr const char* DEFAULT_FONTS_DIR = "fonts";
 constexpr const char* DEFAULT_ROOM_PATH = "rooms/standard.smonroom";
@@ -86,23 +87,125 @@ const char* findJsonValue(const char* json, const char* key) {
     return nullptr;
 }
 
+int hexDigitValue(char value) {
+    if (value >= '0' && value <= '9') return value - '0';
+    if (value >= 'a' && value <= 'f') return value - 'a' + 10;
+    if (value >= 'A' && value <= 'F') return value - 'A' + 10;
+    return -1;
+}
+
+bool parseJsonHex4(const char*& pos, uint16_t& value) {
+    value = 0;
+    for (uint8_t i = 0; i < 4; ++i) {
+        if (pos[i] == '\0') return false;
+        int digit = hexDigitValue(pos[i]);
+        if (digit < 0) return false;
+        value = static_cast<uint16_t>((value << 4) | digit);
+    }
+    pos += 4;
+    return true;
+}
+
+bool appendUtf8Codepoint(uint32_t codepoint, char* out, size_t cap, size_t& len) {
+    if (codepoint == 0 || codepoint > 0x10FFFF ||
+        (codepoint >= 0xD800 && codepoint <= 0xDFFF)) {
+        return false;
+    }
+    uint8_t bytes = codepoint <= 0x7F ? 1 :
+                    codepoint <= 0x7FF ? 2 :
+                    codepoint <= 0xFFFF ? 3 : 4;
+    if (len + bytes >= cap) return false;
+    if (bytes == 1) {
+        out[len++] = static_cast<char>(codepoint);
+    } else if (bytes == 2) {
+        out[len++] = static_cast<char>(0xC0 | (codepoint >> 6));
+        out[len++] = static_cast<char>(0x80 | (codepoint & 0x3F));
+    } else if (bytes == 3) {
+        out[len++] = static_cast<char>(0xE0 | (codepoint >> 12));
+        out[len++] = static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+        out[len++] = static_cast<char>(0x80 | (codepoint & 0x3F));
+    } else {
+        out[len++] = static_cast<char>(0xF0 | (codepoint >> 18));
+        out[len++] = static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F));
+        out[len++] = static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+        out[len++] = static_cast<char>(0x80 | (codepoint & 0x3F));
+    }
+    return true;
+}
+
 bool extractJsonString(const char* json, const char* key, char* out, size_t cap) {
     const char* pos = findJsonValue(json, key);
     if (!pos || *pos != '"' || cap == 0) return false;
     ++pos;
     size_t len = 0;
     while (*pos && *pos != '"') {
-        char value = *pos++;
-        if (value == '\\') {
-            char escaped = *pos++;
-            if (escaped == '"' || escaped == '\\' || escaped == '/') value = escaped;
-            else return false;
+        uint8_t value = static_cast<uint8_t>(*pos++);
+        if (value < 0x20) return false;
+        if (value != '\\') {
+            if (len + 1 >= cap) return false;
+            out[len++] = static_cast<char>(value);
+            continue;
+        }
+
+        char escaped = *pos++;
+        if (escaped == '\0') return false;
+        switch (escaped) {
+        case '"': value = '"'; break;
+        case '\\': value = '\\'; break;
+        case '/': value = '/'; break;
+        case 'b': value = '\b'; break;
+        case 'f': value = '\f'; break;
+        case 'n': value = '\n'; break;
+        case 'r': value = '\r'; break;
+        case 't': value = '\t'; break;
+        case 'u': {
+            uint16_t first = 0;
+            if (!parseJsonHex4(pos, first)) return false;
+            uint32_t codepoint = first;
+            if (first >= 0xD800 && first <= 0xDBFF) {
+                if (pos[0] != '\\' || pos[1] != 'u') return false;
+                pos += 2;
+                uint16_t second = 0;
+                if (!parseJsonHex4(pos, second) ||
+                    second < 0xDC00 || second > 0xDFFF) {
+                    return false;
+                }
+                codepoint = 0x10000UL +
+                    ((static_cast<uint32_t>(first) - 0xD800UL) << 10) +
+                    (static_cast<uint32_t>(second) - 0xDC00UL);
+            } else if (first >= 0xDC00 && first <= 0xDFFF) {
+                return false;
+            }
+            if (!appendUtf8Codepoint(codepoint, out, cap, len)) return false;
+            continue;
+        }
+        default:
+            return false;
         }
         if (len + 1 >= cap) return false;
-        out[len++] = value;
+        out[len++] = static_cast<char>(value);
     }
     out[len] = '\0';
     return len > 0 && *pos == '"';
+}
+
+enum class JsonStringStatus : uint8_t {
+    MISSING,
+    VALID,
+    INVALID,
+};
+
+JsonStringStatus extractJsonStringAlias(const char* json,
+                                        const char* primary,
+                                        const char* fallback,
+                                        char* out,
+                                        size_t cap) {
+    const char* key = findJsonValue(json, primary) ? primary :
+                      findJsonValue(json, fallback) ? fallback : nullptr;
+    if (!key) return JsonStringStatus::MISSING;
+    return extractJsonString(json, key, out, cap)
+        ? JsonStringStatus::VALID
+        : JsonStringStatus::INVALID;
 }
 
 bool extractJsonUint16(const char* json, const char* key, uint16_t& out) {
@@ -155,6 +258,18 @@ bool isSafePackName(const char* value) {
     return isSafePathText(value, false) && std::strchr(value, '/') == nullptr;
 }
 
+bool isSafeVersionText(const char* value) {
+    if (!value || value[0] == '\0') return false;
+    for (const char* pos = value; *pos; ++pos) {
+        char ch = *pos;
+        bool allowed = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+                       (ch >= '0' && ch <= '9') || ch == '.' || ch == '-' ||
+                       ch == '_' || ch == '+';
+        if (!allowed) return false;
+    }
+    return true;
+}
+
 bool copyOptionalPath(const char* json, const char* key, char* dest, size_t cap) {
     if (!findJsonValue(json, key)) return true;
     char value[64] = {};
@@ -196,6 +311,15 @@ bool ResourcePack::openSpriteBlock(uint16_t speciesId, fs::File& file) const {
     char relative[64];
     int written = std::snprintf(relative, sizeof(relative), "%s/%03u.smonsp", spritesDir_, speciesId);
     return written > 0 && static_cast<size_t>(written) < sizeof(relative) && openRelative(relative, file);
+}
+
+bool ResourcePack::openCry(uint16_t speciesId, fs::File& file) const {
+    if (!active_) return false;
+    char relative[64];
+    int written = std::snprintf(
+        relative, sizeof(relative), "%s/%03u.smoncry", criesDir_, speciesId);
+    return written > 0 && static_cast<size_t>(written) < sizeof(relative) &&
+           openRelative(relative, file);
 }
 
 bool ResourcePack::openRoom(const char* roomId, fs::File& file) const {
@@ -248,6 +372,7 @@ void ResourcePack::setDefaultRoot() {
     id_[0] = '\0';
     version_[0] = '\0';
     copyText(spritesDir_, sizeof(spritesDir_), DEFAULT_SPRITES_DIR);
+    copyText(criesDir_, sizeof(criesDir_), DEFAULT_CRIES_DIR);
     copyText(roomsDir_, sizeof(roomsDir_), DEFAULT_ROOMS_DIR);
     copyText(fontsDir_, sizeof(fontsDir_), DEFAULT_FONTS_DIR);
     copyText(defaultRoomPath_, sizeof(defaultRoomPath_), DEFAULT_ROOM_PATH);
@@ -263,8 +388,13 @@ bool ResourcePack::loadActiveConfig() {
     if (!readTextFile(ACTIVE_CONFIG_PATH, json, sizeof(json))) return false;
 
     char path[sizeof(root_)] = {};
-    if (extractJsonString(json, "packPath", path, sizeof(path)) ||
-        extractJsonString(json, "path", path, sizeof(path))) {
+    JsonStringStatus pathStatus =
+        extractJsonStringAlias(json, "packPath", "path", path, sizeof(path));
+    if (pathStatus == JsonStringStatus::INVALID) {
+        Serial.println("[ResourcePack] invalid pack root config");
+        return false;
+    }
+    if (pathStatus == JsonStringStatus::VALID) {
         if (!isSafePathText(path, true)) {
             Serial.printf("[ResourcePack] invalid pack root: %s\n", path);
             return false;
@@ -274,8 +404,14 @@ bool ResourcePack::loadActiveConfig() {
     }
 
     char packName[32] = {};
-    if (extractJsonString(json, "activePack", packName, sizeof(packName)) ||
-        extractJsonString(json, "pack", packName, sizeof(packName))) {
+    JsonStringStatus packStatus =
+        extractJsonStringAlias(json, "activePack", "pack",
+                               packName, sizeof(packName));
+    if (packStatus == JsonStringStatus::INVALID) {
+        Serial.println("[ResourcePack] invalid active pack config");
+        return false;
+    }
+    if (packStatus == JsonStringStatus::VALID) {
         if (!isSafePackName(packName)) {
             Serial.printf("[ResourcePack] invalid pack id: %s\n", packName);
             return false;
@@ -313,12 +449,22 @@ bool ResourcePack::loadManifest() {
         return false;
     }
 
-    extractJsonString(json, "id", id_, sizeof(id_));
-    extractJsonString(json, "version", version_, sizeof(version_));
+    bool hasId = findJsonValue(json, "id") != nullptr;
+    bool hasVersion = findJsonValue(json, "version") != nullptr;
+    if ((hasId && !extractJsonString(json, "id", id_, sizeof(id_))) ||
+        (hasVersion && !extractJsonString(json, "version", version_, sizeof(version_)))) {
+        Serial.println("[ResourcePack] invalid manifest metadata");
+        return false;
+    }
     if (id_[0] == '\0') copyText(id_, sizeof(id_), "dev");
     if (version_[0] == '\0') copyText(version_, sizeof(version_), "0.0.0");
+    if (!isSafePackName(id_) || !isSafeVersionText(version_)) {
+        Serial.println("[ResourcePack] unsafe manifest metadata");
+        return false;
+    }
 
     if (!copyOptionalPath(json, "sprites", spritesDir_, sizeof(spritesDir_)) ||
+        !copyOptionalPath(json, "cries", criesDir_, sizeof(criesDir_)) ||
         !copyOptionalPath(json, "rooms", roomsDir_, sizeof(roomsDir_)) ||
         !copyOptionalPath(json, "fonts", fontsDir_, sizeof(fontsDir_)) ||
         !copyOptionalPath(json, "room", defaultRoomPath_, sizeof(defaultRoomPath_)) ||

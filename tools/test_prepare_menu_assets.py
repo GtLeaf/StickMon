@@ -12,7 +12,9 @@ class MainMenuAssetTests(unittest.TestCase):
 
         self.assertEqual(len(paths), menu_assets.ICON_COUNT)
         for index, path in enumerate(paths, start=1):
-            self.assertTrue(path.name.endswith(f"({index}).png"))
+            self.assertTrue(
+                path.name == f"{index}.png" or path.name.endswith(f"({index}).png")
+            )
 
     def test_baked_checkerboard_becomes_transparent(self):
         source = menu_assets.standalone_icon_paths(menu_assets.DEFAULT_SOURCE_DIR)[0]

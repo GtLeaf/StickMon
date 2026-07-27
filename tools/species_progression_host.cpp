@@ -3,6 +3,7 @@
 
 #include "game/BattleSystem.h"
 #include "game/ExploreBoss.h"
+#include "game/FriendshipSystem.h"
 #include "game/Species.h"
 
 namespace {
@@ -71,6 +72,7 @@ int main() {
         if (!learnset || learnset->count == 0) return 7;
         if (!findMove(basicMoveIdForSpecies(species))) return 8;
         if (species.baseExp == 0) return 29;
+        if (species.catchRate == 0) return 60;
 
         uint8_t previousLevel = 0;
         for (uint16_t entryIndex = 0; entryIndex < learnset->count; ++entryIndex) {
@@ -98,6 +100,69 @@ int main() {
     if (!bulbasaur || !metapod || !magikarp) return 12;
     if (bulbasaur->baseExp != 64 || metapod->baseExp != 72 || magikarp->baseExp != 40) {
         return 30;
+    }
+    if (bulbasaur->catchRate != 45 || metapod->catchRate != 120 ||
+        magikarp->catchRate != 255) {
+        return 61;
+    }
+    const Species* latias = findSpecies(380);
+    if (!latias || latias->catchRate != 3) return 62;
+
+    Game::MonsterRuntime friendshipTarget;
+    friendshipTarget.level = 25;
+    friendshipTarget.majorStatus = Game::MajorStatus::NONE;
+    uint16_t normalChance = FriendshipSystem::offerChancePermille(
+        *bulbasaur, friendshipTarget, false);
+    friendshipTarget.majorStatus = Game::MajorStatus::SLEEP;
+    uint16_t sleepChance = FriendshipSystem::offerChancePermille(
+        *bulbasaur, friendshipTarget, false);
+    friendshipTarget.majorStatus = Game::MajorStatus::NONE;
+    uint16_t bossChance = FriendshipSystem::offerChancePermille(
+        *bulbasaur, friendshipTarget, true);
+    uint16_t legendaryChance = FriendshipSystem::offerChancePermille(
+        *latias, friendshipTarget, false);
+    uint16_t fedChance = FriendshipSystem::offerChancePermille(
+        *bulbasaur, friendshipTarget, false,
+        FriendshipSystem::FOOD_BOND_MAX);
+    uint16_t easyFedChance = FriendshipSystem::offerChancePermille(
+        *magikarp, friendshipTarget, false,
+        FriendshipSystem::FOOD_BOND_MAX);
+    if (normalChance < 24 || normalChance > 30 ||
+        sleepChance <= normalChance || sleepChance > 60 ||
+        bossChance >= normalChance || legendaryChance > 3 ||
+        fedChance < normalChance * 2 - 1 ||
+        fedChance > normalChance * 2 + 1 ||
+        easyFedChance != FriendshipSystem::OFFER_CHANCE_MAX_PERMILLE) {
+        return 63;
+    }
+    uint16_t lowRolls[FriendshipSystem::SHAKE_CHECK_COUNT] = {};
+    uint16_t highRolls[FriendshipSystem::SHAKE_CHECK_COUNT] = {
+        65535, 65535, 65535, 65535,
+    };
+    if (!FriendshipSystem::passesOfferChecks(
+            *magikarp, friendshipTarget, false, 0, lowRolls) ||
+        FriendshipSystem::passesOfferChecks(
+            *magikarp, friendshipTarget, false,
+            FriendshipSystem::OFFER_GATE_PERMILLE, lowRolls) ||
+        !FriendshipSystem::passesOfferChecks(
+            *magikarp, friendshipTarget, false, 200, lowRolls,
+            FriendshipSystem::FOOD_BOND_MAX) ||
+        FriendshipSystem::passesOfferChecks(
+            *magikarp, friendshipTarget, false,
+            FriendshipSystem::OFFER_CHANCE_MAX_PERMILLE, lowRolls,
+            FriendshipSystem::FOOD_BOND_MAX) ||
+        FriendshipSystem::passesOfferChecks(
+            *bulbasaur, friendshipTarget, false, 0, highRolls)) {
+        return 64;
+    }
+    if (FriendshipSystem::addFoodBond(0, FriendshipSystem::NORMAL_FOOD_BOND_GAIN) != 30 ||
+        FriendshipSystem::addFoodBond(90, FriendshipSystem::NORMAL_FOOD_BOND_GAIN) !=
+            FriendshipSystem::FOOD_BOND_MAX ||
+        !FriendshipSystem::acceptsNormalFood(false, 49) ||
+        FriendshipSystem::acceptsNormalFood(false, 50) ||
+        !FriendshipSystem::acceptsNormalFood(true, 29) ||
+        FriendshipSystem::acceptsNormalFood(true, 30)) {
+        return 65;
     }
     if (BattleSystem::experienceReward(*magikarp, 7) != 40 ||
         BattleSystem::experienceReward(*magikarp, 12) != 68 ||

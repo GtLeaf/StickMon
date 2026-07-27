@@ -5,6 +5,18 @@
 
 class MenuScene : public Scene {
 public:
+    enum class BattleBagResult : uint8_t {
+        NONE,
+        POTION,
+        SUPER_POTION,
+        ANTIDOTE,
+        FOOD_THROWN,
+        PARALYZE_HEAL,
+        AWAKENING,
+        BURN_HEAL,
+        ICE_HEAL,
+    };
+
     void onEnter() override;
     void onExit() override;
     void update(uint32_t nowMs, float dtSeconds) override;
@@ -12,6 +24,9 @@ public:
     bool onButton(const ButtonEvent& event) override;
     void openExploreTeamView();
     void openExploreBagView();
+    void openBattleBagView(const char* targetName);
+    BattleBagResult consumeBattleBagResult();
+    uint8_t battleBagThrownFoodIndex() const { return battleBagFoodIndex; }
     bool exploreViewClosed() const;
 
 private:
@@ -37,6 +52,7 @@ private:
         MENU,
         TEAM,
         STATUS,
+        MOVES,
         ROOM,
         FOOD,
         BAG,
@@ -53,16 +69,23 @@ private:
         MOTION,
     };
 
+    enum class TeamAction : uint8_t {
+        STATUS,
+        FIRST,
+        MOVES,
+        LEAVE,
+        BACK,
+    };
+
     static constexpr uint8_t STATUS_PAGE_COUNT = 5;
-    static constexpr uint8_t TEAM_ACTION_COUNT = 4;
     static constexpr uint8_t STORAGE_ACTION_COUNT = 4;
-    static constexpr uint8_t BAG_ITEM_COUNT = 9;
+    static constexpr uint8_t BAG_ITEM_COUNT = 16;
     static constexpr uint8_t ROOM_ITEM_COUNT = 5;
     static constexpr uint8_t FOOD_ITEM_COUNT = Game::ROOM_FOOD_COUNT + 1;
     static constexpr uint8_t COMPUTER_ITEM_COUNT = 3;
     static constexpr uint8_t DEBUG_ROOT_ITEM_COUNT = 7;
     static constexpr uint8_t DEBUG_BATTLE_ROOT_INDEX = 4;
-    static constexpr uint8_t DEBUG_ENEMY_BOUNDS_ROOT_INDEX = 5;
+    static constexpr uint8_t DEBUG_DRAW_BOUNDS_ROOT_INDEX = 5;
     static constexpr uint8_t DEBUG_MONSTER_ITEM_COUNT = 3;
     static constexpr uint8_t DEBUG_RESOURCE_ITEM_COUNT = 2;
     static constexpr uint8_t DEBUG_ENV_ITEM_COUNT = 3;
@@ -76,14 +99,24 @@ private:
     float animCursor = 0.0f;
     uint32_t toastUntil = 0;
     const char* toast = nullptr;
+    char toastBuffer[24] = {};
     ViewMode viewMode = ViewMode::MENU;
     uint8_t statusPage = 0;
     uint8_t statusMonsterIndex = 0;
     bool statusFromStorage = false;
     bool exploreContextMode = false;
+    bool battleBagMode = false;
+    const char* battleTargetName = nullptr;
+    BattleBagResult battleBagResult = BattleBagResult::NONE;
+    uint8_t battleBagFoodIndex = 0;
     uint8_t teamCursor = 0;
     uint8_t teamActionCursor = 0;
     bool teamActionOpen = false;
+    uint8_t moveMonsterIndex = 0;
+    uint8_t moveCursor = 0;
+    uint8_t moveForgetSlot = 0;
+    bool moveForgetConfirmOpen = false;
+    bool moveForgetConfirmYes = false;
     uint8_t bagCursor = 0;
     uint8_t bagConfirmSource = 0;
     bool bagConfirmOpen = false;
@@ -122,6 +155,8 @@ private:
     void renderTeamPage();
     void renderTeamActionPopup();
     void renderStatusPage();
+    void renderMovesPage();
+    void renderMoveForgetConfirmPopup();
     void renderEggStatusPage();
     void renderBagPage();
     void renderBagConfirmPopup();
@@ -147,6 +182,7 @@ private:
     void pushView(ViewMode next);
     void popView();
     uint8_t teamActionCount() const;
+    TeamAction teamActionAt(uint8_t index) const;
     const char* teamActionLabel(uint8_t index) const;
     uint8_t collectVisibleBagRows(BagRow* rows, uint8_t maxRows) const;
     uint8_t visibleFoodIndexOf(uint8_t foodIndex) const;
