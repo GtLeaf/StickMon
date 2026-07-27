@@ -25,6 +25,26 @@ enum class Kind : uint16_t {
     ITEM_AWAKENING,
     ITEM_BURN_HEAL,
     ITEM_ICE_HEAL,
+    SHOWER_BUBBLE_0,
+    SHOWER_BUBBLE_1,
+    SHOWER_BUBBLE_2,
+    SHOWER_BUBBLE_3,
+    SHOWER_BUBBLE_4,
+    SHOWER_BUBBLE_5,
+    SHOWER_BRUSH,
+    SHOWER_SOAP_0,
+    SHOWER_SOAP_1,
+    SHOWER_SOAP_2,
+    SHOWER_SOAP_3,
+    SHOWER_SOAP_4,
+    SHOWER_SOAP_5,
+    SHOWER_SOAP_6,
+    SHOWER_SOAP_7,
+    SHOWER_SPRINKLER,
+    SHOWER_MENU_SOAP,
+    SHOWER_MENU_BRUSH,
+    SHOWER_MENU_SPRINKLER,
+    SHOWER_BACKGROUND,
     BALL_POKE_BALL_0,
     BALL_POKE_BALL_1,
     BALL_POKE_BALL_2,
@@ -249,6 +269,8 @@ bool available();
 uint32_t compressedBytes();
 bool draw(Kind kind, int x, int y, float scale = 1.0f);
 bool drawCentered(Kind kind, int centerX, int centerY, float scale = 1.0f);
+bool drawCenteredAlpha(Kind kind, int centerX, int centerY,
+                       float scale, uint8_t alpha);
 bool drawBattleBackground(Kind kind);
 bool drawBackgroundViewport(Kind kind, int cameraX, int cameraY);
 bool drawExploreTile(uint16_t tileId, int x, int y, uint8_t animationFrame = 0);

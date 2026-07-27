@@ -25,13 +25,13 @@ static constexpr const char* FURNITURE = "家具";
 static constexpr const char* TOY = "玩具";
 static constexpr const char* ROOM_CHANGE = "房间更换";
 static constexpr const char* BRIGHTNESS = "亮度";
-static constexpr const char* NORMAL_FOOD = "普通粮";
-static constexpr const char* TASTY_FOOD = "美味粮";
-static constexpr const char* SWEET_FOOD = "甜味粮";
-static constexpr const char* SPICY_FOOD = "辣味粮";
-static constexpr const char* SOUR_FOOD = "酸味粮";
-static constexpr const char* BITTER_FOOD = "苦味粮";
-static constexpr const char* DRY_FOOD = "涩味粮";
+static constexpr const char* NORMAL_FOOD = "橙橙果";
+static constexpr const char* TASTY_FOOD = "文柚果";
+static constexpr const char* SWEET_FOOD = "桃桃果";
+static constexpr const char* SPICY_FOOD = "樱子果";
+static constexpr const char* SOUR_FOOD = "利木果";
+static constexpr const char* BITTER_FOOD = "莓莓果";
+static constexpr const char* DRY_FOOD = "零余果";
 static constexpr const char* CANDY = "神奇糖果";
 static constexpr const char* COINS = "金币";
 static constexpr const char* WILD = "野生";
@@ -328,6 +328,7 @@ static constexpr const char* FOOD_SELECTED = "已选择食物";
 static constexpr const char* FOOD_NO_STOCK = "没有库存";
 static constexpr const char* ITEMS[] = {
     FOOD_ITEM,
+    "洗澡",
     Ui::TOY,
     Ui::FURNITURE,
     Ui::ROOM_CHANGE,
@@ -335,6 +336,7 @@ static constexpr const char* ITEMS[] = {
 };
 static constexpr const char* DESCS[] = {
     "房间里的日常补给",
+    "给精灵洗个澡",
     "后续可放置互动玩具",
     "后续可布置房间家具",
     "后续可切换房间风格",
@@ -350,13 +352,40 @@ static constexpr const char* FOOD_NAMES[] = {
     Ui::DRY_FOOD,
 };
 static constexpr const char* FOOD_DESCS[][3] = {
-    {"基础日常粮食", "主界面按B放入", "精灵会自己进食"},
-    {"更受欢迎的粮食", "饱食和心情更多", "后续可扩展来源"},
+    {"基础日常的树果", "主界面按B放入", "精灵会自己进食"},
+    {"更受欢迎的树果", "饱食和心情更多", "后续可扩展来源"},
     {"甜甜的口味", "心情提升最多", "饱食提升较少"},
     {"辣辣的口味", "饱食提升较多", "心情提升一般"},
     {"酸酸的口味", "饱食心情均衡", "适合日常投喂"},
     {"苦苦的口味", "饱食提升最多", "照顾经验更多"},
     {"涩涩的口味", "饱食心情均衡", "略带清爽口感"},
+};
+}
+
+namespace Shower {
+static constexpr const char* TOOL_NAMES[] = {
+    "肥皂",
+    "刷子",
+    "冲洗",
+    "结束",
+};
+static constexpr const char* NO_SOAP = "没有肥皂";
+static constexpr const char* ALREADY_SOAPED = "已经有泡沫了";
+static constexpr const char* EXIT_FOAM = "身上还有泡沫";
+static constexpr const char* EXIT_QUESTION = "要结束吗?";
+static constexpr const char* INCOMPLETE = "洗澡没有完成";
+static constexpr const char* EXP_GAIN_FMT = "经验 +%u";
+static constexpr const char* YES = "yes";
+static constexpr const char* NO = "no";
+static constexpr const char* SOAP_NAMES[] = {
+    "婴儿粉皂",
+    "树叶皂",
+    "薄荷皂",
+    "星云皂",
+    "贝壳皂",
+    "蜂窝皂",
+    "水滴皂",
+    "纯白皂",
 };
 }
 
@@ -533,7 +562,7 @@ static constexpr const char* MOVE_NOT_LEARNED = "未学会";
 static constexpr const char* TYPE_FMT = "属性：%s/%s";
 static constexpr const char* NATURE_FMT = "性格:%s";
 static constexpr const char* NATURE_PREFERENCE_FMT = "性格:%s(喜%s厌%s)";
-// 按食物索引（2~6 为口味粮）给出单字口味名。
+// 按食物索引（2~6 为口味树果）给出单字口味名。
 static constexpr const char* FLAVOR_NAMES[] = {
     "", "", "甜", "辣", "酸", "苦", "涩",
 };
@@ -603,7 +632,7 @@ static constexpr const char* USE_CONFIRM_FMT = "是否给%s使用?";
 static constexpr const char* THROW_CONFIRM_FMT = "是否向%s投掷?";
 static constexpr const char* YES = "yes";
 static constexpr const char* NO = "no";
-static constexpr const char* FOOD_FMT = "普通粮:%u";
+static constexpr const char* FOOD_FMT = "橙橙果:%u";
 static constexpr const char* POTION_FMT = "伤药:%u";
 static constexpr const char* SUPER_POTION_FMT = "高级伤药:%u";
 static constexpr const char* ANTIDOTE_FMT = "解毒药:%u";
@@ -704,7 +733,7 @@ static constexpr const char* OFF = "关";
 namespace Shop {
 static constexpr const char* NOT_ENOUGH_COINS = "金币不够";
 static constexpr const char* BAG_FULL = "背包已满";
-static constexpr const char* BOUGHT_FOOD = "买到普通粮";
+static constexpr const char* BOUGHT_FOOD = "买到橙橙果";
 static constexpr const char* BOUGHT_FMT = "买到%s";
 static constexpr const char* BOUGHT_POTION = "买到伤药";
 static constexpr const char* BOUGHT_ANTIDOTE = "买到解毒药";
@@ -742,6 +771,14 @@ static constexpr const char* NAMES[] = {
     Ui::BITTER_FOOD,
     Ui::DRY_FOOD,
     Ui::CANDY,
+    "婴儿粉皂",
+    "树叶皂",
+    "薄荷皂",
+    "星云皂",
+    "贝壳皂",
+    "蜂窝皂",
+    "水滴皂",
+    "纯白皂",
     Ui::BACK,
 };
 static constexpr const char* DESCS[] = {
@@ -760,6 +797,14 @@ static constexpr const char* DESCS[] = {
     "苦味 照顾经验多",
     "涩味 清爽口感",
     "升级道具占位",
+    "婴儿粉 长方圆角小气泡",
+    "天蓝色 蛋形树叶压印",
+    "薄荷绿 圆盘螺旋纹理",
+    "淡紫色 云朵星形凹印",
+    "奶油黄 贝壳脊线纹理",
+    "珊瑚橙 六边蜂窝压印",
+    "海泡青 鹅卵石水滴高光",
+    "纯白色 高长斜切边缘",
     "回到菜单",
 };
 }

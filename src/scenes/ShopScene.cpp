@@ -256,6 +256,14 @@ ShopScene::Item ShopScene::itemForCategory(Category category, uint8_t index) con
         BITTER_FOOD,
         DRY_FOOD,
         CANDY,
+        SOAP_0,
+        SOAP_1,
+        SOAP_2,
+        SOAP_3,
+        SOAP_4,
+        SOAP_5,
+        SOAP_6,
+        SOAP_7,
         BACK,
     };
 
@@ -289,9 +297,11 @@ uint8_t ShopScene::currentItemCount() const {
 }
 
 uint8_t ShopScene::itemCountForCategory(Category category, bool includeBack) const {
+    static constexpr uint8_t DAILY_ITEM_COUNT =
+        Game::ROOM_FOOD_COUNT + Game::SOAP_VARIANT_COUNT + 2;
     uint8_t count = 0;
     switch (category) {
-    case CATEGORY_DAILY: count = 9; break;   // 7 foods + CANDY + BACK
+    case CATEGORY_DAILY: count = DAILY_ITEM_COUNT; break;
     case CATEGORY_EXPLORE: count = 7; break; // 6 medicines + BACK
     case CATEGORY_SELL: count = sellItemCount(); break;
     case CATEGORY_BACK: return 0;
@@ -520,6 +530,15 @@ uint16_t ShopScene::priceFor(Item item) {
     case BURN_HEAL: return 40;
     case ICE_HEAL: return 40;
     case CANDY: return 200;
+    case SOAP_0:
+    case SOAP_1:
+    case SOAP_2:
+    case SOAP_3:
+    case SOAP_4:
+    case SOAP_5:
+    case SOAP_6:
+    case SOAP_7:
+        return 25;
     default: return 0;
     }
 }
@@ -545,6 +564,14 @@ Game::ItemId ShopScene::gameItemIdFor(Item item) {
     case BITTER_FOOD: return Game::ItemId::BITTER_FOOD;
     case DRY_FOOD: return Game::ItemId::DRY_FOOD;
     case CANDY: return Game::ItemId::CANDY;
+    case SOAP_0: return Game::ItemId::SOAP_0;
+    case SOAP_1: return Game::ItemId::SOAP_1;
+    case SOAP_2: return Game::ItemId::SOAP_2;
+    case SOAP_3: return Game::ItemId::SOAP_3;
+    case SOAP_4: return Game::ItemId::SOAP_4;
+    case SOAP_5: return Game::ItemId::SOAP_5;
+    case SOAP_6: return Game::ItemId::SOAP_6;
+    case SOAP_7: return Game::ItemId::SOAP_7;
     default: return Game::ItemId::COUNT;
     }
 }

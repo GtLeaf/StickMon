@@ -2917,31 +2917,31 @@ void MainScene::drawFood() {
     uint16_t foodColor;
     uint16_t garnishColor;
     switch (foodIndex) {
-    case 1: // 美味粮
+    case 1: // 文柚果
         foodColor = PixelRenderer::rgb(255, 138, 112);
         garnishColor = PixelRenderer::rgb(255, 216, 72);
         break;
-    case 2: // 甜味粮
+    case 2: // 桃桃果
         foodColor = PixelRenderer::rgb(255, 150, 188);
         garnishColor = PixelRenderer::rgb(255, 255, 255);
         break;
-    case 3: // 辣味粮
+    case 3: // 樱子果
         foodColor = PixelRenderer::rgb(238, 76, 56);
         garnishColor = PixelRenderer::rgb(255, 196, 60);
         break;
-    case 4: // 酸味粮
+    case 4: // 利木果
         foodColor = PixelRenderer::rgb(186, 220, 84);
         garnishColor = PixelRenderer::rgb(244, 244, 190);
         break;
-    case 5: // 苦味粮
+    case 5: // 莓莓果
         foodColor = PixelRenderer::rgb(152, 104, 198);
         garnishColor = PixelRenderer::rgb(220, 200, 240);
         break;
-    case 6: // 涩味粮
+    case 6: // 零余果
         foodColor = PixelRenderer::rgb(122, 184, 142);
         garnishColor = PixelRenderer::rgb(226, 240, 214);
         break;
-    default: // 普通粮
+    default: // 橙橙果
         foodColor = PixelRenderer::rgb(245, 180, 87);
         garnishColor = PixelRenderer::rgb(92, 151, 80);
         break;

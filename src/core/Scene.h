@@ -11,6 +11,7 @@ enum class SceneID : uint8_t {
     EXPLORE,
     SETTINGS,
     HATCH,
+    SHOWER,
 };
 
 class Scene {

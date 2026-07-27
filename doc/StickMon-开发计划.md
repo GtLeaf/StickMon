@@ -281,7 +281,7 @@ doc/
 - 主界面使用 64x64 `Icons` 两帧动画
 - 战斗使用 72x72 压缩版 `Front` / `Back`
 - 孵化场景使用压缩版 `Eggs/000`
-- Essentials 道具图标：四种球、普通粮、两种伤药、解毒药、神奇糖果，统一生成 36x36 并在商店和背包中按 1x 绘制
+- Essentials 道具图标：四种球、七种树果（橙橙果/文柚果/桃桃果/樱子果/利木果/莓莓果/零余果）、两种伤药、解毒药、神奇糖果，统一生成 36x36 并在商店和背包中按 1x 绘制
 - 四种球的投掷、打开、晃动和捕获星光动画
 - 草丛小路、河畔、深林三套战斗背景
 - Essentials Outside/Autotile/Caves 派生的 167 帧 26x26 探索 tile atlas，以及设备端三层随机地图生成器
@@ -424,7 +424,7 @@ v0.3 再考虑：
 
 通用游戏图像继续来自 Pokemon Essentials v21.1：
 
-- `Graphics/Items`：四种球、伤药、解毒药、神奇糖果；普通粮开发期映射为 `ORANBERRY.png`。
+- `Graphics/Items`：四种球、伤药、解毒药、神奇糖果；七种食物统一使用树果图标，依次映射 `ORANBERRY.png`（橙橙果）、`SITRUSBERRY.png`（文柚果）、`PECHABERRY.png`（桃桃果）、`CHERIBERRY.png`（樱子果）、`ASPEARBERRY.png`（利木果）、`RAWSTBERRY.png`（莓莓果）、`CHESTOBERRY.png`（零余果）。
 - `Graphics/Battle animations`：四种球各 8 帧旋转图、打开状态和 `ballBurst_star.png`。
 - `Graphics/Battlebacks`：`field_bg.png`、`water_bg.png`、`forest_bg.png`，分别映射草丛小路、河畔、深林。
 - `Graphics/Tilesets/Outside.png`、`Graphics/Tilesets/Caves.png`、`Graphics/Autotiles/Sea*.png` 与 Map069 的三段瀑布 autotile：生成运行时地图使用的 167 帧 26x26 tile atlas；Map028、Map034、Map039、Map069 等原地图继续作为组合规则证据。

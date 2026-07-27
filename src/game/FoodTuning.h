@@ -18,16 +18,16 @@ struct FoodProfile {
 };
 
 static constexpr FoodProfile PROFILES[Game::ROOM_FOOD_COUNT] = {
-    {25, 3, 1}, // 0 普通粮（3 口/份，见 roomFoodBitesPerServing）
-    {22, 5, 6}, // 1 美味粮
-    {20, 8, 6}, // 2 甜味粮
-    {24, 4, 6}, // 3 辣味粮
-    {22, 6, 6}, // 4 酸味粮
-    {26, 3, 7}, // 5 苦味粮
-    {23, 5, 6}, // 6 涩味粮
+    {25, 3, 1}, // 0 橙橙果（3 口/份，见 roomFoodBitesPerServing）
+    {22, 5, 6}, // 1 文柚果
+    {20, 8, 6}, // 2 桃桃果
+    {24, 4, 6}, // 3 樱子果
+    {22, 6, 6}, // 4 利木果
+    {26, 3, 7}, // 5 莓莓果
+    {23, 5, 6}, // 6 零余果
 };
 
-// 口味偏好对心情的修正（百分比，100 = 不变）。仅作用于 2~6 号口味粮。
+// 口味偏好对心情的修正（百分比，100 = 不变）。仅作用于 2~6 号口味树果。
 static constexpr uint8_t LIKED_MOOD_PERCENT = 150;
 static constexpr uint8_t DISLIKED_MOOD_PERCENT = 75;
 
@@ -45,8 +45,8 @@ static constexpr int8_t STAT_TO_FOOD_INDEX[Game::STAT_COUNT] = {
 
 // ---- 战斗投掷结算 -----------------------------------------------------------
 enum class ThrowClass : uint8_t {
-    NORMAL = 0, // 普通粮，或不对口味的口味粮
-    TASTY,      // 美味粮
+    NORMAL = 0, // 橙橙果，或不对口味的口味树果
+    TASTY,      // 文柚果
     LIKED,      // 野生精灵喜欢口味
     DISLIKED,   // 野生精灵讨厌口味
     COUNT,

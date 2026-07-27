@@ -12,7 +12,7 @@ constexpr const char* NVS_NS = "stickmon";
 constexpr const char* NVS_KEY = "state";
 constexpr const char* HATCH_KEY = "hatch";
 constexpr uint32_t SAVE_RECORD_MAGIC = 0x3156534D; // MSV1
-constexpr uint16_t SAVE_RECORD_VERSION = 2;
+constexpr uint16_t SAVE_RECORD_VERSION = 3;
 static_assert(SAVE_RECORD_VERSION == Game::SAVE_VERSION,
               "save record and game-state versions must advance together");
 constexpr uint32_t MAIN_SCENE_VIEW_MAGIC = 0x4D565354; // MVST
@@ -266,6 +266,13 @@ bool sanitizeState(Game::GameState& state) {
     clampU8(state.bag.superPotion, Game::ITEM_STACK_CAP);
     clampU8(state.bag.antidote, Game::ITEM_STACK_CAP);
     clampU8(state.bag.candy, Game::ITEM_STACK_CAP);
+    clampU8(state.bag.paralyzeHeal, Game::ITEM_STACK_CAP);
+    clampU8(state.bag.awakening, Game::ITEM_STACK_CAP);
+    clampU8(state.bag.burnHeal, Game::ITEM_STACK_CAP);
+    clampU8(state.bag.iceHeal, Game::ITEM_STACK_CAP);
+    for (uint8_t i = 0; i < Game::SOAP_VARIANT_COUNT; ++i) {
+        clampU8(state.bag.soap[i], Game::ITEM_STACK_CAP);
+    }
     for (uint8_t i = 0; i < Game::ROOM_FOOD_COUNT; ++i) {
         clampU8(state.room.food[i], Game::ITEM_STACK_CAP);
     }

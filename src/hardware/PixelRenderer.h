@@ -32,7 +32,8 @@ public:
                                       const uint16_t* data, uint32_t offset,
                                       uint32_t length, const uint16_t* palette,
                                       uint32_t paletteOffset, uint8_t paletteSize,
-                                      float scale, bool flipX = false);
+                                      float scale, bool flipX = false,
+                                      uint8_t alpha = 255);
     static void drawRgb565RleScaled(int x, int y, int w, int h,
                                     const uint16_t* data, uint32_t offset,
                                     uint32_t length, float scale, bool flipX = false);

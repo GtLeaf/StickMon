@@ -43,6 +43,14 @@ private:
         BITTER_FOOD,
         DRY_FOOD,
         CANDY,
+        SOAP_0,
+        SOAP_1,
+        SOAP_2,
+        SOAP_3,
+        SOAP_4,
+        SOAP_5,
+        SOAP_6,
+        SOAP_7,
         BACK,
         COUNT,
     };
@@ -98,6 +106,14 @@ private:
         BURN_HEAL,
         ICE_HEAL,
         CANDY,
+        SOAP_0,
+        SOAP_1,
+        SOAP_2,
+        SOAP_3,
+        SOAP_4,
+        SOAP_5,
+        SOAP_6,
+        SOAP_7,
     };
     static constexpr uint8_t SELL_ITEM_TYPE_COUNT =
         sizeof(SELL_ITEMS) / sizeof(SELL_ITEMS[0]);

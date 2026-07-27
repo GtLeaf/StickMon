@@ -423,9 +423,12 @@ void PixelRenderer::drawIndexed4RleScaled(int x, int y, int w, int h,
                                           const uint16_t* data, uint32_t offset,
                                           uint32_t length, const uint16_t* palette,
                                           uint32_t paletteOffset, uint8_t paletteSize,
-                                          float scale, bool flipX) {
-    if (!gCanvas || !data || !palette || w <= 0 || h <= 0 || paletteSize == 0 || scale <= 0.0f) return;
-    if (scale == 1.0f) {
+                                          float scale, bool flipX, uint8_t alpha) {
+    if (!gCanvas || !data || !palette || w <= 0 || h <= 0 ||
+        paletteSize == 0 || scale <= 0.0f || alpha == 0) {
+        return;
+    }
+    if (scale == 1.0f && alpha == 255) {
         drawIndexed4Rle(x, y, w, h, data, offset, length, palette, paletteOffset, paletteSize, flipX);
         return;
     }
@@ -463,7 +466,17 @@ void PixelRenderer::drawIndexed4RleScaled(int x, int y, int w, int h,
                     continue;
                 }
                 uint16_t color = pgm_read_word(&palette[paletteOffset + paletteIndex]);
-                gCanvas->drawPixel(x + drawCol, y + drawRow, color);
+                int drawX = x + drawCol;
+                int drawY = y + drawRow;
+                if (alpha == 255) {
+                    gCanvas->drawPixel(drawX, drawY, color);
+                } else if (drawX >= 0 && drawY >= 0 &&
+                           drawX < gCanvas->width() && drawY < gCanvas->height()) {
+                    uint16_t background =
+                        static_cast<uint16_t>(gCanvas->readPixel(drawX, drawY));
+                    gCanvas->drawPixel(
+                        drawX, drawY, blendRgb565(background, color, alpha));
+                }
             }
         }
         return;
@@ -499,7 +512,11 @@ void PixelRenderer::drawIndexed4RleScaled(int x, int y, int w, int h,
             if (flipX) col = w - 1 - col;
             int drawX = (int)(x + col * scale);
             int drawY = (int)(y + row * scale);
-            gCanvas->fillRect(drawX, drawY, drawW, drawH, color);
+            if (alpha == 255) {
+                gCanvas->fillRect(drawX, drawY, drawW, drawH, color);
+            } else {
+                fillRectAlpha(drawX, drawY, drawW, drawH, color, alpha);
+            }
         }
     }
 }

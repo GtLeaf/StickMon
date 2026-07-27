@@ -106,7 +106,7 @@ const char* packName(PackSlot slot) {
 
 PackSlot packSlotFor(Kind kind) {
     uint16_t value = static_cast<uint16_t>(kind);
-    if (value <= static_cast<uint16_t>(Kind::ITEM_CANDY) ||
+    if (value <= static_cast<uint16_t>(Kind::SHOWER_BACKGROUND) ||
         kind == Kind::EXPLORE_PICKUP_BALL) {
         return PackSlot::UI;
     }
@@ -328,6 +328,21 @@ bool drawCentered(Kind kind, int centerX, int centerY, float scale) {
     return true;
 }
 
+bool drawCenteredAlpha(Kind kind, int centerX, int centerY,
+                       float scale, uint8_t alpha) {
+    FrameRef ref = findFrame(kind);
+    if (!ref.frame || alpha == 0) return false;
+    int width = static_cast<int>(ref.frame->width * scale);
+    int height = static_cast<int>(ref.frame->height * scale);
+    PixelRenderer::drawIndexed4RleScaled(
+        centerX - width / 2, centerY - height / 2,
+        ref.frame->width, ref.frame->height,
+        ref.pack->data, ref.frame->offset, ref.frame->length,
+        ref.pack->palettes, ref.frame->paletteOffset, ref.frame->paletteSize,
+        scale, false, alpha);
+    return true;
+}
+
 bool drawBattleBackground(Kind kind) {
     return drawBackgroundViewport(kind, 0, 0);
 }
@@ -517,6 +532,14 @@ Kind itemKind(Game::ItemId item) {
     case Game::ItemId::AWAKENING: return Kind::ITEM_AWAKENING;
     case Game::ItemId::BURN_HEAL: return Kind::ITEM_BURN_HEAL;
     case Game::ItemId::ICE_HEAL: return Kind::ITEM_ICE_HEAL;
+    case Game::ItemId::SOAP_0: return Kind::SHOWER_SOAP_0;
+    case Game::ItemId::SOAP_1: return Kind::SHOWER_SOAP_1;
+    case Game::ItemId::SOAP_2: return Kind::SHOWER_SOAP_2;
+    case Game::ItemId::SOAP_3: return Kind::SHOWER_SOAP_3;
+    case Game::ItemId::SOAP_4: return Kind::SHOWER_SOAP_4;
+    case Game::ItemId::SOAP_5: return Kind::SHOWER_SOAP_5;
+    case Game::ItemId::SOAP_6: return Kind::SHOWER_SOAP_6;
+    case Game::ItemId::SOAP_7: return Kind::SHOWER_SOAP_7;
     default: return Kind::COUNT;
     }
 }

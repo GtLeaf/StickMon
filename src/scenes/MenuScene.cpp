@@ -215,12 +215,12 @@ uint8_t bagSourceIndexForVisible(uint8_t visibleIndex, bool battleOnly) {
 
 uint16_t foodColor(uint8_t foodIndex) {
     switch (foodIndex) {
-    case 1: return PixelRenderer::rgb(255, 138, 112); // 美味粮
-    case 2: return PixelRenderer::rgb(255, 150, 188); // 甜味粮
-    case 3: return PixelRenderer::rgb(238, 76, 56);   // 辣味粮
-    case 4: return PixelRenderer::rgb(186, 220, 84);  // 酸味粮
-    case 5: return PixelRenderer::rgb(152, 104, 198); // 苦味粮
-    case 6: return PixelRenderer::rgb(122, 184, 142); // 涩味粮
+    case 1: return PixelRenderer::rgb(255, 138, 112); // 文柚果
+    case 2: return PixelRenderer::rgb(255, 150, 188); // 桃桃果
+    case 3: return PixelRenderer::rgb(238, 76, 56);   // 樱子果
+    case 4: return PixelRenderer::rgb(186, 220, 84);  // 利木果
+    case 5: return PixelRenderer::rgb(152, 104, 198); // 莓莓果
+    case 6: return PixelRenderer::rgb(122, 184, 142); // 零余果
     default: return PixelRenderer::rgb(245, 180, 87);
     }
 }
@@ -613,6 +613,8 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                 pushView(ViewMode::FOOD);
                 foodCursor = visibleFoodIndexOf(GameEngine::ins().selectedFoodIndex());
                 foodScroll = 0.0f;
+            } else if (roomCursor == 1) {
+                GameEngine::ins().requestScene(SceneID::SHOWER);
             } else if (roomCursor == ROOM_ITEM_COUNT - 1) {
                 popView();
             }
@@ -1764,8 +1766,8 @@ void MenuScene::renderRoomPage() {
     static constexpr int ROW_X = 8;
     static constexpr int TEXT_X = 22;
     static constexpr int VALUE_X = 158;
-    static constexpr int ROW_Y = 12;
-    static constexpr int ROW_H = 24;
+    static constexpr int ROW_Y = 5;
+    static constexpr int ROW_H = 21;
     static constexpr int SEP_W = Hal::DISPLAY_W - ROW_X * 2;
 
     for (uint8_t i = 0; i < ROOM_ITEM_COUNT; ++i) {

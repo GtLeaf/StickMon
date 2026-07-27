@@ -11,9 +11,19 @@ from generate_game_assets import (
     EXPLORE_PICKUP_CONTENT_SIZE,
     EXPLORE_PICKUP_SIZE,
     MAX_PACK_FRAMES,
+    SHOWER_BRUSH_SIZE,
+    SHOWER_BACKGROUND_SIZE,
+    SHOWER_BUBBLE_SIZES,
+    SHOWER_SOAP_SIZE,
+    SHOWER_SPRINKLER_SIZE,
+    SHOWER_MENU_SOAP_SIZE,
+    SHOWER_MENU_BRUSH_SIZE,
+    SHOWER_MENU_SPRINKLER_SIZE,
+    prepare_shower_assets,
     prepare_explore_pickup_marker,
     validate_explore_pickup_pack_mapping,
     validate_runtime_pack_limit,
+    validate_shower_pack_mapping,
     write_pack,
 )
 
@@ -24,6 +34,32 @@ class GenerateGameAssetsTests(unittest.TestCase):
 
     def test_explore_pickup_marker_is_routed_to_ui_pack(self):
         validate_explore_pickup_pack_mapping()
+
+    def test_shower_assets_are_routed_to_ui_pack(self):
+        validate_shower_pack_mapping()
+
+    def test_shower_reference_sheets_are_extracted_at_runtime_sizes(self):
+        assets = dict(prepare_shower_assets())
+        for index, size in enumerate(SHOWER_BUBBLE_SIZES):
+            self.assertEqual(assets[f"SHOWER_BUBBLE_{index}"].size, size)
+        self.assertEqual(assets["SHOWER_BRUSH"].size, SHOWER_BRUSH_SIZE)
+        for index in range(8):
+            self.assertEqual(assets[f"SHOWER_SOAP_{index}"].size, SHOWER_SOAP_SIZE)
+            self.assertIsNotNone(
+                assets[f"SHOWER_SOAP_{index}"].getchannel("A").getbbox()
+            )
+        self.assertEqual(
+            assets["SHOWER_SPRINKLER"].size, SHOWER_SPRINKLER_SIZE
+        )
+        self.assertEqual(assets["SHOWER_MENU_SOAP"].size, SHOWER_MENU_SOAP_SIZE)
+        self.assertEqual(assets["SHOWER_MENU_BRUSH"].size, SHOWER_MENU_BRUSH_SIZE)
+        self.assertEqual(
+            assets["SHOWER_MENU_SPRINKLER"].size,
+            SHOWER_MENU_SPRINKLER_SIZE,
+        )
+        self.assertEqual(
+            assets["SHOWER_BACKGROUND"].size, SHOWER_BACKGROUND_SIZE
+        )
 
     def test_oversized_pack_is_rejected_before_writing(self):
         writer = SimpleNamespace(

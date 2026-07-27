@@ -23,6 +23,7 @@
 #include "scenes/ExploreScene.h"
 #include "scenes/SettingsScene.h"
 #include "scenes/HatchScene.h"
+#include "scenes/ShowerScene.h"
 
 namespace {
 static constexpr uint16_t HP_RECOVERY_INTERVAL_MIN = 5;
@@ -68,6 +69,23 @@ uint8_t careExpMultiplierForLevel(uint8_t level) {
     if (level <= 10) return 2;
     return 1;
 }
+
+constexpr uint8_t fullBathExperienceForLevel(uint8_t level) {
+    return 9 + (static_cast<uint16_t>(level) + 4) / 5 < 15
+        ? static_cast<uint8_t>(
+            9 + (static_cast<uint16_t>(level) + 4) / 5)
+        : 15;
+}
+
+static_assert(fullBathExperienceForLevel(1) == 10 &&
+              fullBathExperienceForLevel(5) == 10 &&
+              fullBathExperienceForLevel(6) == 11 &&
+              fullBathExperienceForLevel(11) == 12 &&
+              fullBathExperienceForLevel(16) == 13 &&
+              fullBathExperienceForLevel(21) == 14 &&
+              fullBathExperienceForLevel(26) == 15 &&
+              fullBathExperienceForLevel(Game::LEVEL_MAX) == 15,
+              "bath experience must rise slowly and remain capped at 15");
 
 struct MonsterSleepSchedule {
     uint16_t startMinute;
@@ -155,6 +173,7 @@ uint32_t gameSecondsForMinutes(uint32_t minutes) {
 Scene* allocateScene(SceneID id) {
     switch (id) {
     case SceneID::HATCH: return new (std::nothrow) HatchScene();
+    case SceneID::SHOWER: return new (std::nothrow) ShowerScene();
     case SceneID::SETTINGS: return new (std::nothrow) SettingsScene();
     case SceneID::EXPLORE: return new (std::nothrow) ExploreScene();
     case SceneID::SHOP: return new (std::nothrow) ShopScene();
@@ -615,7 +634,7 @@ FoodConsumeResult GameEngine::consumeBowlFood() {
     bool wasFull = mon.satiety >= 100;
     const FoodTuning::FoodProfile& profile = FoodTuning::PROFILES[foodIndex];
     uint16_t moodGain = profile.moodGain;
-    // 口味偏好只作用于口味粮（2~6 号），基础粮不参与。
+    // 口味偏好只作用于口味树果（2~6 号），基础树果不参与。
     if (foodIndex >= Game::ROOM_SWEET_FOOD_INDEX) {
         if (natureLikedFoodIndex(mon.nature) == (int8_t)foodIndex) {
             moodGain = (uint16_t)moodGain * FoodTuning::LIKED_MOOD_PERCENT / 100;
@@ -744,6 +763,8 @@ namespace {
 uint8_t* itemStockPointer(Game::GameState& s, Game::ItemId item) {
     int8_t foodIndex = Game::foodIndexForItemId(item);
     if (foodIndex >= 0) return &s.room.food[foodIndex];
+    int8_t soapIndex = Game::soapIndexForItemId(item);
+    if (soapIndex >= 0) return &s.bag.soap[soapIndex];
     switch (item) {
     case Game::ItemId::POTION: return &s.bag.potion;
     case Game::ItemId::SUPER_POTION: return &s.bag.superPotion;
@@ -791,6 +812,49 @@ bool GameEngine::removeItem(Game::ItemId item, uint8_t amount, SaveUrgency urgen
     }
     markDirty(urgency);
     return true;
+}
+
+uint8_t GameEngine::grantBathReward(BathRewardStage stage) {
+    if (state.teamCount == 0) return 0;
+    uint32_t now = Hal::ins().millis();
+    syncGameClock(now);
+    resetDailyCountersIfNeeded();
+
+    Game::MonsterRuntime& mon = activeMonster();
+    uint8_t fullBathExp = fullBathExperienceForLevel(mon.level);
+    uint8_t soapExp = fullBathExp <= 13 ? 2 : 3;
+    uint8_t brushExp = fullBathExp <= 11 ? 3 : 4;
+    uint8_t expGain = 0;
+    uint8_t moodGain = 0;
+    switch (stage) {
+    case BathRewardStage::SOAP:
+        expGain = soapExp;
+        break;
+    case BathRewardStage::BRUSH:
+        expGain = brushExp;
+        moodGain = 2;
+        break;
+    case BathRewardStage::RINSE:
+        expGain = fullBathExp - soapExp - brushExp;
+        moodGain = 8;
+        break;
+    }
+
+    uint16_t cap = careDailyCapForLevel(mon.level);
+    uint16_t available = state.careExpToday < cap
+        ? cap - state.careExpToday
+        : 0;
+    expGain = static_cast<uint8_t>(min<uint16_t>(expGain, available));
+    if (expGain > 0) {
+        state.careExpToday += expGain;
+        addExperience(expGain);
+    }
+    if (moodGain > 0) {
+        mon.mood = static_cast<uint8_t>(
+            min<uint16_t>(100, static_cast<uint16_t>(mon.mood) + moodGain));
+    }
+    markDirty(SaveUrgency::SOON);
+    return expGain;
 }
 
 bool GameEngine::spendCoins(uint32_t amount) {

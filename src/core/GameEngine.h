@@ -21,6 +21,12 @@ enum class FoodReaction : uint8_t {
     DISLIKED,
 };
 
+enum class BathRewardStage : uint8_t {
+    SOAP,
+    BRUSH,
+    RINSE,
+};
+
 struct FoodConsumeResult {
     bool consumed = false;
     uint8_t foodIndex = 0;
@@ -96,6 +102,9 @@ public:
     uint8_t awakeningCount() const { return state.bag.awakening; }
     uint8_t burnHealCount() const { return state.bag.burnHeal; }
     uint8_t iceHealCount() const { return state.bag.iceHeal; }
+    uint8_t soapCount(uint8_t soapIndex) const {
+        return soapIndex < Game::SOAP_VARIANT_COUNT ? state.bag.soap[soapIndex] : 0;
+    }
     uint8_t companionCount() const { return state.teamCount + state.storageCount; }
     uint32_t coinCount() const { return state.coins; }
     uint8_t hungerValue() const;
@@ -139,6 +148,7 @@ public:
                  SaveUrgency urgency = SaveUrgency::SOON);
     bool removeItem(Game::ItemId item, uint8_t amount = 1,
                     SaveUrgency urgency = SaveUrgency::SOON);
+    uint8_t grantBathReward(BathRewardStage stage);
     bool spendCoins(uint32_t amount);
     void addCoins(uint32_t amount);
     bool recordFriendContact(const Game::MonsterRuntime& monster,

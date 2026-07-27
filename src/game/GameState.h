@@ -10,7 +10,7 @@ static constexpr uint8_t TEAM_CAP = 2;
 static constexpr uint8_t STORAGE_CAP = 20;
 static constexpr uint8_t ITEM_STACK_CAP = 99;
 static constexpr uint32_t SAVE_MAGIC = 0x534D4F4E; // SMON
-static constexpr uint16_t SAVE_VERSION = 2;
+static constexpr uint16_t SAVE_VERSION = 3;
 static constexpr uint8_t STAT_COUNT = 6;
 static constexpr uint8_t NATURE_COUNT = 25;
 static constexpr uint8_t LEVEL_MAX = 100;
@@ -21,6 +21,7 @@ static constexpr uint8_t EV_MAX = 252;
 static constexpr uint16_t EV_TOTAL_MAX = 510;
 static constexpr uint32_t HATCH_MAGIC = 0x48415443; // HATC
 static constexpr uint8_t ROOM_FOOD_COUNT = 7;
+static constexpr uint8_t SOAP_VARIANT_COUNT = 8;
 static constexpr uint8_t ROOM_BOWL_CAPACITY = 1;
 static constexpr uint8_t ROOM_NORMAL_FOOD_INDEX = 0;
 static constexpr uint8_t ROOM_NORMAL_FOOD_BITES = 3;
@@ -50,8 +51,21 @@ enum class ItemId : uint8_t {
     AWAKENING,
     BURN_HEAL,
     ICE_HEAL,
+    SOAP_0,
+    SOAP_1,
+    SOAP_2,
+    SOAP_3,
+    SOAP_4,
+    SOAP_5,
+    SOAP_6,
+    SOAP_7,
     COUNT,
 };
+static_assert(
+    static_cast<uint8_t>(ItemId::SOAP_7) -
+        static_cast<uint8_t>(ItemId::SOAP_0) + 1 ==
+        SOAP_VARIANT_COUNT,
+    "soap item ids must stay contiguous");
 
 // Maps food ItemIds to RoomState::food slots; returns -1 for non-food items.
 inline int8_t foodIndexForItemId(ItemId item) {
@@ -79,6 +93,19 @@ inline ItemId itemIdForFoodIndex(uint8_t foodIndex) {
     case ROOM_DRY_FOOD_INDEX: return ItemId::DRY_FOOD;
     default: return ItemId::COUNT;
     }
+}
+
+inline int8_t soapIndexForItemId(ItemId item) {
+    uint8_t value = static_cast<uint8_t>(item);
+    uint8_t first = static_cast<uint8_t>(ItemId::SOAP_0);
+    uint8_t last = static_cast<uint8_t>(ItemId::SOAP_7);
+    return value >= first && value <= last ? static_cast<int8_t>(value - first) : -1;
+}
+
+inline ItemId itemIdForSoapIndex(uint8_t soapIndex) {
+    if (soapIndex >= SOAP_VARIANT_COUNT) return ItemId::COUNT;
+    return static_cast<ItemId>(
+        static_cast<uint8_t>(ItemId::SOAP_0) + soapIndex);
 }
 
 enum class MajorStatus : uint8_t {
@@ -179,6 +206,7 @@ struct BagState {
     uint8_t superPotion = 0;
     uint8_t antidote = 0;
     uint8_t candy = 1;
+    uint8_t soap[SOAP_VARIANT_COUNT] = {};
 };
 
 struct RoomState {

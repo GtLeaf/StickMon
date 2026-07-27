@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+from collections import deque
 import json
 import os
 import re
@@ -30,6 +31,8 @@ OUTPUTS = {
 GENERATED_GAME_DIR = ROOT / "origin_asset" / "generated" / "game"
 EGG_PREVIEW = GENERATED_GAME_DIR / "egg_32.png"
 STATUS_ICON_DIR = ROOT / "origin_asset" / "icon" / "status"
+SHOWER_SOURCE_DIR = ROOT / "origin_asset" / "icon" / "home" / "shower"
+SHOWER_PREVIEW_DIR = GENERATED_GAME_DIR / "shower"
 GAME_ASSETS_HEADER = ROOT / "src" / "assets" / "GameAssets.h"
 GAME_ASSETS_SOURCE = ROOT / "src" / "assets" / "GameAssets.cpp"
 
@@ -51,6 +54,21 @@ BACKGROUND_W = 240
 BACKGROUND_H = 135
 EGG_SIZE = 32
 STATUS_ICON_SIZE = 12
+SHOWER_BUBBLE_SIZES = (
+    (8, 8),
+    (16, 16),
+    (24, 24),
+    (32, 32),
+    (48, 48),
+    (64, 40),
+)
+SHOWER_BRUSH_SIZE = (32, 48)
+SHOWER_SOAP_SIZE = (32, 32)
+SHOWER_SPRINKLER_SIZE = (40, 40)
+SHOWER_BACKGROUND_SIZE = (240, 135)
+SHOWER_MENU_SOAP_SIZE = (38, 38)
+SHOWER_MENU_BRUSH_SIZE = (38, 58)
+SHOWER_MENU_SPRINKLER_SIZE = (48, 48)
 
 ITEMS = [
     ("ITEM_POKE_BALL", "POKEBALL.png"),
@@ -72,6 +90,17 @@ ITEMS = [
     ("ITEM_AWAKENING", "AWAKENING.png"),
     ("ITEM_BURN_HEAL", "BURNHEAL.png"),
     ("ITEM_ICE_HEAL", "ICEHEAL.png"),
+]
+
+SHOWER_ASSETS = [
+    *(f"SHOWER_BUBBLE_{index}" for index in range(len(SHOWER_BUBBLE_SIZES))),
+    "SHOWER_BRUSH",
+    *(f"SHOWER_SOAP_{index}" for index in range(8)),
+    "SHOWER_SPRINKLER",
+    "SHOWER_MENU_SOAP",
+    "SHOWER_MENU_BRUSH",
+    "SHOWER_MENU_SPRINKLER",
+    "SHOWER_BACKGROUND",
 ]
 
 EXPLORE_PICKUP_MARKERS = [
@@ -217,6 +246,7 @@ OUTSIDE_AUTOTILES = (
 )
 
 KIND_ORDER = [kind for kind, _ in ITEMS]
+KIND_ORDER.extend(SHOWER_ASSETS)
 for kind_prefix, _ in BALLS:
     KIND_ORDER.extend(f"BALL_{kind_prefix}_{index}" for index in range(8))
     KIND_ORDER.append(f"BALL_{kind_prefix}_OPEN")
@@ -253,6 +283,141 @@ def validate_runtime_pack_limit():
         )
 
 
+def remove_edge_white_background(image):
+    image = image.convert("RGBA")
+    width, height = image.size
+    pixels = image.load()
+    visited = bytearray(width * height)
+    pending = deque()
+
+    def enqueue(x, y):
+        index = y * width + x
+        if visited[index]:
+            return
+        r, g, b, _a = pixels[x, y]
+        if min(r, g, b) < 235 or max(r, g, b) - min(r, g, b) > 24:
+            return
+        visited[index] = 1
+        pending.append((x, y))
+
+    for x in range(width):
+        enqueue(x, 0)
+        enqueue(x, height - 1)
+    for y in range(height):
+        enqueue(0, y)
+        enqueue(width - 1, y)
+
+    while pending:
+        x, y = pending.popleft()
+        pixels[x, y] = (*pixels[x, y][:3], 0)
+        if x > 0:
+            enqueue(x - 1, y)
+        if x + 1 < width:
+            enqueue(x + 1, y)
+        if y > 0:
+            enqueue(x, y - 1)
+        if y + 1 < height:
+            enqueue(x, y + 1)
+    return image
+
+
+def extract_showcase_sprites(source_path, expected_count):
+    image = remove_edge_white_background(Image.open(source_path))
+    alpha = image.getchannel("A")
+    columns = [
+        x for x in range(image.width)
+        if alpha.crop((x, 0, x + 1, image.height)).getbbox() is not None
+    ]
+    if not columns:
+        raise ValueError(f"no shower sprites found: {source_path}")
+
+    runs = []
+    start = previous = columns[0]
+    for x in columns[1:]:
+        if x - previous > 8:
+            runs.append((start, previous + 1))
+            start = x
+        previous = x
+    runs.append((start, previous + 1))
+    if len(runs) != expected_count:
+        raise ValueError(
+            f"expected {expected_count} shower sprites, found {len(runs)}: {source_path}"
+        )
+
+    sprites = []
+    for left, right in runs:
+        segment = image.crop((left, 0, right, image.height))
+        bbox = segment.getchannel("A").getbbox()
+        if not bbox:
+            raise ValueError(f"empty shower sprite segment: {source_path}")
+        sprites.append(segment.crop(bbox))
+    return sprites
+
+
+def fit_sprite_canvas(image, size, padding=1):
+    target_w, target_h = size
+    max_w = max(1, target_w - padding * 2)
+    max_h = max(1, target_h - padding * 2)
+    scale = min(max_w / image.width, max_h / image.height)
+    resized = image.resize(
+        (max(1, round(image.width * scale)), max(1, round(image.height * scale))),
+        Image.Resampling.NEAREST,
+    )
+    canvas = Image.new("RGBA", size, (0, 0, 0, 0))
+    canvas.alpha_composite(
+        resized,
+        ((target_w - resized.width) // 2, (target_h - resized.height) // 2),
+    )
+    return canvas
+
+
+def prepare_shower_assets():
+    bubble_sources = extract_showcase_sprites(
+        SHOWER_SOURCE_DIR / "bobble.png", len(SHOWER_BUBBLE_SIZES)
+    )
+    brush_source = extract_showcase_sprites(SHOWER_SOURCE_DIR / "bush.png", 1)[0]
+    soap_sources = extract_showcase_sprites(SHOWER_SOURCE_DIR / "soap.png", 8)
+    sprinkler_source = extract_showcase_sprites(
+        SHOWER_SOURCE_DIR / "sprinkler.png", 1
+    )[0]
+
+    assets = []
+    for index, (source, size) in enumerate(zip(bubble_sources, SHOWER_BUBBLE_SIZES)):
+        assets.append((f"SHOWER_BUBBLE_{index}", fit_sprite_canvas(source, size, 0)))
+    assets.append(("SHOWER_BRUSH", fit_sprite_canvas(brush_source, SHOWER_BRUSH_SIZE)))
+    for index, source in enumerate(soap_sources):
+        assets.append((f"SHOWER_SOAP_{index}", fit_sprite_canvas(source, SHOWER_SOAP_SIZE)))
+    assets.append((
+        "SHOWER_SPRINKLER",
+        fit_sprite_canvas(sprinkler_source, SHOWER_SPRINKLER_SIZE),
+    ))
+    assets.append((
+        "SHOWER_MENU_SOAP",
+        fit_sprite_canvas(soap_sources[0], SHOWER_MENU_SOAP_SIZE),
+    ))
+    assets.append((
+        "SHOWER_MENU_BRUSH",
+        fit_sprite_canvas(brush_source, SHOWER_MENU_BRUSH_SIZE),
+    ))
+    assets.append((
+        "SHOWER_MENU_SPRINKLER",
+        fit_sprite_canvas(sprinkler_source, SHOWER_MENU_SPRINKLER_SIZE),
+    ))
+    bathroom = Image.open(
+        SHOWER_SOURCE_DIR / "bathroom" / "bathroom.png"
+    ).convert("RGB")
+    crop_height = round(bathroom.width * SHOWER_BACKGROUND_SIZE[1] /
+                        SHOWER_BACKGROUND_SIZE[0])
+    crop_top = max(0, (bathroom.height - crop_height) // 2)
+    bathroom = bathroom.crop(
+        (0, crop_top, bathroom.width, crop_top + crop_height)
+    ).resize(SHOWER_BACKGROUND_SIZE, Image.Resampling.LANCZOS)
+    # 浴室背景按原图清晰度上屏，不做模糊处理。
+    bathroom = bathroom.convert("RGBA")
+    assets.append(("SHOWER_BACKGROUND", bathroom))
+    return assets
+
+
 def validate_explore_tile_mapping():
     source = GAME_ASSETS_SOURCE.read_text(encoding="utf-8")
     match = re.search(
@@ -284,6 +449,17 @@ def validate_explore_pickup_pack_mapping():
     for kind, _filename in EXPLORE_PICKUP_MARKERS:
         if f"Kind::{kind}" not in match.group(1):
             raise ValueError(f"{kind} is not routed to the UI asset pack")
+
+
+def validate_shower_pack_mapping():
+    source = GAME_ASSETS_SOURCE.read_text(encoding="utf-8")
+    match = re.search(
+        r"PackSlot packSlotFor\(Kind kind\)\s*\{(.*?)\n\}",
+        source,
+        re.S,
+    )
+    if not match or "Kind::SHOWER_BACKGROUND" not in match.group(1):
+        raise ValueError("shower assets are not routed to the UI asset pack")
 
 
 def rgb565(r, g, b):
@@ -464,6 +640,11 @@ def build_assets():
         image = image.resize((ITEM_SIZE, ITEM_SIZE), Image.Resampling.NEAREST)
         writers["ui"].add(kind, quantize_rgba(image, 15))
 
+    SHOWER_PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
+    for kind, image in prepare_shower_assets():
+        image.save(SHOWER_PREVIEW_DIR / f"{kind.lower()}.png")
+        writers["ui"].add(kind, quantize_rgba(image, 15))
+
     for kind_prefix, filename in BALLS:
         sheet = load_rgba(GRAPHICS / "Battle animations" / f"ball_{filename}.png")
         if sheet.size != (BALL_W * 8, BALL_H):
@@ -642,6 +823,7 @@ def main():
     validate_runtime_pack_limit()
     validate_explore_tile_mapping()
     validate_explore_pickup_pack_mapping()
+    validate_shower_pack_mapping()
     writers = build_assets()
     results = [write_pack(name, writers[name]) for name in selected]
     write_manifest(writers)
