@@ -987,6 +987,7 @@ uint8_t rollWildLevel(uint8_t minLevel, uint8_t maxLevel, uint8_t targetLevel) {
 
 void ExploreScene::onEnter() {
     auto& engine = GameEngine::ins();
+    PokemonSprites::setDynamicSceneSpecies(nullptr, 0);
     phase = Phase::SELECT;
     areaCursor = 0;
     areaAnimCursor = 0.0f;
@@ -1030,11 +1031,16 @@ void ExploreScene::onEnter() {
     if (phase == Phase::SELECT) loadAreaPreview();
 }
 
+void ExploreScene::onExit() {
+    PokemonSprites::setDynamicSceneSpecies(nullptr, 0);
+}
+
 void ExploreScene::update(uint32_t nowMs, float dtSeconds) {
     if (exploreSubViewOpen) {
         exploreSubView.update(nowMs, dtSeconds);
         return;
     }
+    updateAreaPreviewLoading(nowMs);
     updateRouteMovement(nowMs);
     updateExpAnimation(nowMs);
     serviceBattleLog(nowMs);
@@ -2838,18 +2844,31 @@ void ExploreScene::snapshotActivePool() {
     uint8_t areaIndex = static_cast<uint8_t>(activeArea);
     if (areaIndex >= ROUTE_MAP_COUNT) {
         activePool.count = 0;
+        PokemonSprites::setDynamicSceneSpecies(nullptr, 0);
         return;
     }
-    const RouteMap& map = routeMap(areaIndex);
-    ExplorePool::SourceEntry source[ExplorePool::MAX_SOURCE_ENTRIES];
-    uint8_t sourceCount = buildPoolSource(
-        map, source, ExplorePool::MAX_SOURCE_ENTRIES);
-    auto& engine = GameEngine::ins();
-    uint32_t slotIndex = ExplorePool::slotIndexFor(engine.gameMinutesTotal());
-    uint8_t rerollCount = engine.gameState().explorePoolRerollCounts[areaIndex];
-    activePool = ExplorePool::buildPool(
-        source, sourceCount,
-        ExplorePool::mixSeed(slotIndex, areaIndex, rerollCount));
+    activePool = buildAreaPool(areaIndex);
+
+    memset(areaPreloadSpeciesIds, 0, sizeof(areaPreloadSpeciesIds));
+    areaPreloadSpeciesCount = 0;
+    for (uint8_t i = 0; i < activePool.count; ++i) {
+        uint16_t speciesId = activePool.entries[i].speciesId;
+        bool duplicate = false;
+        for (uint8_t j = 0; j < areaPreloadSpeciesCount; ++j) {
+            if (areaPreloadSpeciesIds[j] == speciesId) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (!duplicate && speciesId != 0) {
+            areaPreloadSpeciesIds[areaPreloadSpeciesCount++] = speciesId;
+        }
+    }
+    PokemonSprites::setDynamicSceneSpecies(
+        areaPreloadSpeciesIds, areaPreloadSpeciesCount);
+    areaPreviewLoadPending = !PokemonSprites::preloadDynamicSpecies(
+        areaPreloadSpeciesIds, areaPreloadSpeciesCount, 0);
+    areaPreviewNextLoadAt = Hal::ins().millis() + 1;
 }
 
 bool ExploreScene::ownsSpecies(uint16_t speciesId) const {
@@ -3227,35 +3246,88 @@ void ExploreScene::render() {
     }
 }
 
-void ExploreScene::loadAreaPreview() {
-    memset(areaPreviewFrames, 0, sizeof(areaPreviewFrames));
-    areaPreviewPool = ExplorePool::Pool{};
-    areaPreviewStartedAt = Hal::ins().millis();
-    if (areaCursor >= ROUTE_MAP_COUNT) return;
+ExplorePool::Pool ExploreScene::buildAreaPool(uint8_t areaIndex) const {
+    if (areaIndex >= ROUTE_MAP_COUNT) return ExplorePool::Pool{};
 
-    // 预览展示当前时段种子的活跃池全成员：所见即本趟可遭遇（§7.1/§7.5）
-    const RouteMap& map = routeMap(areaCursor);
+    const RouteMap& map = routeMap(areaIndex);
     ExplorePool::SourceEntry source[ExplorePool::MAX_SOURCE_ENTRIES];
     uint8_t sourceCount = buildPoolSource(
         map, source, ExplorePool::MAX_SOURCE_ENTRIES);
-    auto& engine = GameEngine::ins();
+    const auto& engine = GameEngine::ins();
     uint32_t slotIndex = ExplorePool::slotIndexFor(engine.gameMinutesTotal());
-    uint8_t rerollCount = engine.gameState().explorePoolRerollCounts[areaCursor];
-    areaPreviewPool = ExplorePool::buildPool(
+    uint8_t rerollCount =
+        engine.gameState().explorePoolRerollCounts[areaIndex];
+    return ExplorePool::buildPool(
         source, sourceCount,
-        ExplorePool::mixSeed(slotIndex, areaCursor, rerollCount));
+        ExplorePool::mixSeed(slotIndex, areaIndex, rerollCount));
+}
 
-    uint16_t speciesIds[AREA_PREVIEW_COUNT] = {};
-    for (uint8_t i = 0; i < areaPreviewPool.count; ++i) {
-        speciesIds[i] = areaPreviewPool.entries[i].speciesId;
+void ExploreScene::loadAreaPreview() {
+    memset(areaPreviewFrames, 0, sizeof(areaPreviewFrames));
+    memset(areaPreviewSpeciesIds, 0, sizeof(areaPreviewSpeciesIds));
+    memset(areaPreloadSpeciesIds, 0, sizeof(areaPreloadSpeciesIds));
+    areaPreloadSpeciesCount = 0;
+    areaPreviewPool = ExplorePool::Pool{};
+    areaPreviewStartedAt = Hal::ins().millis();
+    areaPreviewNextLoadAt = areaPreviewStartedAt + 80;
+    areaPreviewLoadPending = false;
+    if (areaCursor >= ROUTE_MAP_COUNT) {
+        PokemonSprites::setDynamicSceneSpecies(nullptr, 0);
+        return;
     }
-    PokemonSprites::preloadDynamicSpecies(speciesIds, areaPreviewPool.count);
+
+    // 预览展示当前时段种子的活跃池全成员：所见即本趟可遭遇（§7.1/§7.5）
+    areaPreviewPool = buildAreaPool(areaCursor);
+    auto appendPreloadSpecies = [&](uint16_t speciesId) {
+        if (speciesId == 0 || areaPreloadSpeciesCount >= AREA_PRELOAD_CAP) return;
+        for (uint8_t i = 0; i < areaPreloadSpeciesCount; ++i) {
+            if (areaPreloadSpeciesIds[i] == speciesId) return;
+        }
+        areaPreloadSpeciesIds[areaPreloadSpeciesCount++] = speciesId;
+    };
     for (uint8_t i = 0; i < areaPreviewPool.count; ++i) {
-        areaPreviewFrames[i] = PokemonSprites::findSpeciesSprite(
-            speciesIds[i], PokemonSprites::SpriteKind::FRONT);
+        areaPreviewSpeciesIds[i] = areaPreviewPool.entries[i].speciesId;
+        appendPreloadSpecies(areaPreviewSpeciesIds[i]);
+    }
+    PokemonSprites::setDynamicSceneSpecies(
+        areaPreviewSpeciesIds, areaPreviewPool.count);
+
+    // 当前区域优先，空闲帧继续预取菜单中的后两个区域。
+    for (uint8_t ahead = 1; ahead <= AREA_PRELOAD_AHEAD; ++ahead) {
+        uint8_t nextArea = static_cast<uint8_t>(
+            (areaCursor + ahead) % ROUTE_MAP_COUNT);
+        ExplorePool::Pool nextPool = buildAreaPool(nextArea);
+        for (uint8_t i = 0; i < nextPool.count; ++i) {
+            appendPreloadSpecies(nextPool.entries[i].speciesId);
+        }
+    }
+    areaPreviewLoadPending = !PokemonSprites::preloadDynamicSpecies(
+        areaPreloadSpeciesIds, areaPreloadSpeciesCount, 0);
+    refreshAreaPreviewFrames();
+}
+
+void ExploreScene::updateAreaPreviewLoading(uint32_t nowMs) {
+    if (!areaPreviewLoadPending ||
+        static_cast<int32_t>(nowMs - areaPreviewNextLoadAt) < 0) {
+        return;
+    }
+
+    areaPreviewLoadPending = !PokemonSprites::preloadDynamicSpecies(
+        areaPreloadSpeciesIds, areaPreloadSpeciesCount, 1);
+    if (phase == Phase::SELECT && areaCursor < ROUTE_MAP_COUNT) {
+        refreshAreaPreviewFrames();
+    }
+    areaPreviewNextLoadAt = nowMs + 1;
+}
+
+void ExploreScene::refreshAreaPreviewFrames() {
+    for (uint8_t i = 0; i < areaPreviewPool.count; ++i) {
+        uint16_t speciesId = areaPreviewPool.entries[i].speciesId;
+        areaPreviewFrames[i] = PokemonSprites::findCachedSpeciesSprite(
+            speciesId, PokemonSprites::SpriteKind::FRONT);
         if (!areaPreviewFrames[i]) {
-            areaPreviewFrames[i] = PokemonSprites::findSpeciesSprite(
-                speciesIds[i], PokemonSprites::SpriteKind::ICON_0);
+            areaPreviewFrames[i] = PokemonSprites::findCachedSpeciesSprite(
+                speciesId, PokemonSprites::SpriteKind::ICON_0);
         }
     }
 }
@@ -3332,8 +3404,9 @@ void ExploreScene::renderAreaMenu() {
     if (poolCount == 0) return;
     uint32_t elapsed = Hal::ins().millis() - areaPreviewStartedAt;
     // 整体右往左轮播:右帧先转到中间,新帧从右侧滑入
+    // 初次展示按池顺序排成 0、1、2，避免环形上一项把末尾稀有剪影放到最左侧。
     uint8_t currentPreview = static_cast<uint8_t>(
-        (elapsed / PREVIEW_CYCLE_MS) % poolCount);
+        (elapsed / PREVIEW_CYCLE_MS + 1) % poolCount);
     uint8_t nextPreview =
         static_cast<uint8_t>((currentPreview + 1) % poolCount);
     uint8_t prevPreview = static_cast<uint8_t>(

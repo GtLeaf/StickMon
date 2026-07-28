@@ -677,10 +677,13 @@ struct SpriteCacheStats {{
 }};
 
 const SpriteFrame* findSpeciesSprite(uint16_t speciesId, SpriteKind kind);
+const SpriteFrame* findCachedSpeciesSprite(uint16_t speciesId, SpriteKind kind);
 int16_t frameGroundOffsetY(const SpriteFrame* frame);
 bool walkingAnimation(uint16_t speciesId, WalkDirection direction, WalkingAnimation& animation);
 bool syncTeamCache(const uint16_t* speciesIds, uint8_t count, uint8_t loadBudget = 0xFF);
-bool preloadDynamicSpecies(const uint16_t* speciesIds, uint8_t count);
+bool preloadDynamicSpecies(const uint16_t* speciesIds, uint8_t count,
+                           uint8_t loadBudget = 0xFF);
+void setDynamicSceneSpecies(const uint16_t* speciesIds, uint8_t count);
 void setDynamicLoadingEnabled(bool enabled);
 void beginRenderFrame();
 const SpriteCacheStats& cacheStats();
@@ -709,8 +712,9 @@ namespace {
 static constexpr uint8_t SPRITE_SOURCE_FILE_BLOCK = 2;
 static constexpr uint16_t SPRITE_FRAME_GROUND_MARKER = 0xA500;
 static constexpr uint8_t TEAM_CACHE_CAP = 2;
-static constexpr uint8_t DYNAMIC_CACHE_CAP = 6;
+static constexpr uint8_t DYNAMIC_CACHE_CAP = 18;
 static constexpr uint8_t CACHE_CAP = TEAM_CACHE_CAP + DYNAMIC_CACHE_CAP;
+static constexpr uint8_t SCENE_SPECIES_CAP = 6;
 static constexpr uint8_t KNOWN_MISSING_FILE_CAP = 16;
 static constexpr uint8_t FRAME_MISSING_CAP = 4;
 static constexpr uint8_t KNOWN_MISSING_FRAME_CAP = 16;
@@ -759,6 +763,7 @@ struct CachedSpecies {
     uint32_t packedBytes = 0;
     uint16_t* data = nullptr;
     uint16_t* palettes = nullptr;
+    uint32_t lastUsed = 0;
 };
 
 struct MissingFrameKey {
@@ -774,7 +779,9 @@ uint16_t gTeamMissing[TEAM_CACHE_CAP] = {};
 uint16_t gFrameMissing[FRAME_MISSING_CAP] = {};
 MissingFrameKey gKnownMissingFrames[KNOWN_MISSING_FRAME_CAP] = {};
 uint8_t gTeamCount = 0;
-uint8_t gDynamicSlot = TEAM_CACHE_CAP;
+uint16_t gSceneSpecies[SCENE_SPECIES_CAP] = {};
+uint8_t gSceneSpeciesCount = 0;
+uint32_t gUseSerial = 0;
 bool gDynamicLoadingEnabled = true;
 
 bool containsSpecies(const uint16_t* values, uint8_t count, uint16_t speciesId) {
@@ -853,7 +860,9 @@ void freeCache() {
     memset(gTeamMissing, 0, sizeof(gTeamMissing));
     memset(gFrameMissing, 0, sizeof(gFrameMissing));
     memset(gKnownMissingFrames, 0, sizeof(gKnownMissingFrames));
-    gDynamicSlot = TEAM_CACHE_CAP;
+    memset(gSceneSpecies, 0, sizeof(gSceneSpecies));
+    gSceneSpeciesCount = 0;
+    gUseSerial = 0;
 }
 
 bool knownMissingFile(uint16_t speciesId) {
@@ -888,9 +897,19 @@ bool rememberMissingFrame(uint16_t speciesId, uint16_t kind) {
     return false;
 }
 
-CachedSpecies* cachedSpeciesFor(uint16_t speciesId) {
+void touchEntry(CachedSpecies& entry) {
+    if (entry.speciesId == 0) return;
+    ++gUseSerial;
+    if (gUseSerial == 0) gUseSerial = 1;
+    entry.lastUsed = gUseSerial;
+}
+
+CachedSpecies* cachedSpeciesFor(uint16_t speciesId, bool touch = true) {
     for (auto& entry : gCache) {
-        if (entry.speciesId == speciesId && entry.data) return &entry;
+        if (entry.speciesId == speciesId && entry.data) {
+            if (touch) touchEntry(entry);
+            return &entry;
+        }
     }
     return nullptr;
 }
@@ -1016,6 +1035,7 @@ bool loadSpeciesFromResourcePack(uint8_t slot, uint16_t speciesId) {
     entry.packedBytes = fileBytes;
     entry.data = decoded;
     entry.palettes = decoded + header.rleWords;
+    touchEntry(entry);
 
     if (gStats.cachedSpecies < 0xFF) ++gStats.cachedSpecies;
     gStats.decodedBytes += header.payloadRawBytes + frameBytes;
@@ -1041,14 +1061,26 @@ bool loadSpeciesIntoCache(uint8_t slot, uint16_t speciesId) {
     return false;
 }
 
-uint8_t dynamicCacheSlot() {
+uint8_t dynamicCacheSlot(const uint16_t* protectedSpecies = nullptr,
+                         uint8_t protectedCount = 0) {
     for (uint8_t i = TEAM_CACHE_CAP; i < CACHE_CAP; ++i) {
         if (gCache[i].speciesId == 0) return i;
     }
-    if (gDynamicSlot < TEAM_CACHE_CAP || gDynamicSlot >= CACHE_CAP) gDynamicSlot = TEAM_CACHE_CAP;
-    uint8_t slot = gDynamicSlot++;
-    if (gDynamicSlot >= CACHE_CAP) gDynamicSlot = TEAM_CACHE_CAP;
-    return slot;
+
+    uint8_t oldestSlot = CACHE_CAP;
+    uint32_t oldestUse = UINT32_MAX;
+    for (uint8_t i = TEAM_CACHE_CAP; i < CACHE_CAP; ++i) {
+        uint16_t speciesId = gCache[i].speciesId;
+        if (containsSpecies(gSceneSpecies, gSceneSpeciesCount, speciesId) ||
+            containsSpecies(protectedSpecies, protectedCount, speciesId)) {
+            continue;
+        }
+        if (oldestSlot == CACHE_CAP || gCache[i].lastUsed < oldestUse) {
+            oldestSlot = i;
+            oldestUse = gCache[i].lastUsed;
+        }
+    }
+    return oldestSlot;
 }
 
 CachedSpecies* ensureSpeciesLoaded(uint16_t speciesId) {
@@ -1061,6 +1093,7 @@ CachedSpecies* ensureSpeciesLoaded(uint16_t speciesId) {
     }
 
     uint8_t slot = dynamicCacheSlot();
+    if (slot >= CACHE_CAP) return nullptr;
     if (!loadSpeciesIntoCache(slot, speciesId)) return nullptr;
     return cachedSpeciesFor(speciesId);
 }
@@ -1087,6 +1120,10 @@ const SpriteFrame* findSpeciesSprite(uint16_t speciesId, SpriteKind kind) {
                       speciesId, static_cast<unsigned>(kindValue));
     }
     return nullptr;
+}
+
+const SpriteFrame* findCachedSpeciesSprite(uint16_t speciesId, SpriteKind kind) {
+    return findFrame(cachedSpeciesFor(speciesId), kind);
 }
 
 int16_t frameGroundOffsetY(const SpriteFrame* frame) {
@@ -1118,15 +1155,27 @@ bool syncTeamCache(const uint16_t* speciesIds, uint8_t count, uint8_t loadBudget
 
     uint32_t start = millis();
     if (signatureChanged) {
-        freeCache();
+        for (uint8_t i = 0; i < TEAM_CACHE_CAP; ++i) {
+            releaseEntry(gCache[i]);
+        }
+        memset(gTeamMissing, 0, sizeof(gTeamMissing));
         gTeamCount = count;
         for (uint8_t i = 0; i < CACHE_CAP; ++i) gTeamSignature[i] = next[i];
         ++gStats.reloadCount;
     }
 
     uint8_t loadedThisCall = 0;
+    uint8_t movedThisCall = 0;
     for (uint8_t i = 0; i < count; ++i) {
         if (next[i] == 0 || gCache[i].speciesId == next[i]) continue;
+        CachedSpecies* cached = cachedSpeciesFor(next[i], false);
+        if (cached && cached >= &gCache[TEAM_CACHE_CAP]) {
+            gCache[i] = *cached;
+            *cached = CachedSpecies{};
+            touchEntry(gCache[i]);
+            ++movedThisCall;
+            continue;
+        }
         if (loadedThisCall >= loadBudget) continue;
         if (!loadSpeciesIntoCache(i, next[i])) {
             Serial.printf("[PokemonSprites] cache miss species=%u\\n", next[i]);
@@ -1141,52 +1190,85 @@ bool syncTeamCache(const uint16_t* speciesIds, uint8_t count, uint8_t loadBudget
             break;
         }
     }
-    if (!signatureChanged && loadedThisCall == 0) return ready;
+    if (!signatureChanged && loadedThisCall == 0 && movedThisCall == 0) return ready;
 
     gStats.lastReloadMs = millis() - start;
     gStats.freePsram = ESP.getFreePsram();
     gStats.psram = psramFound();
     Serial.printf(
-        "[PokemonSprites] cache sync species=%u,%u loaded=%u ready=%u cached=%u missing=%u decoded=%u compressed=%u ms=%u psram=%u free=%u\\n",
-        gTeamSignature[0], gTeamSignature[1], loadedThisCall, ready ? 1 : 0,
+        "[PokemonSprites] cache sync species=%u,%u loaded=%u moved=%u ready=%u cached=%u missing=%u decoded=%u compressed=%u ms=%u psram=%u free=%u\\n",
+        gTeamSignature[0], gTeamSignature[1], loadedThisCall, movedThisCall,
+        ready ? 1 : 0,
         gStats.cachedSpecies, gStats.missingSpecies,
         gStats.decodedBytes, gStats.compressedBytes, gStats.lastReloadMs,
         gStats.psram ? 1 : 0, gStats.freePsram);
     return ready;
 }
 
-bool preloadDynamicSpecies(const uint16_t* speciesIds, uint8_t count) {
+bool preloadDynamicSpecies(const uint16_t* speciesIds, uint8_t count,
+                           uint8_t loadBudget) {
     if (!speciesIds) count = 0;
     if (count > DYNAMIC_CACHE_CAP) count = DYNAMIC_CACHE_CAP;
 
-    for (uint8_t i = TEAM_CACHE_CAP; i < CACHE_CAP; ++i) {
-        releaseEntry(gCache[i]);
-    }
-    gDynamicSlot = TEAM_CACHE_CAP;
-
-    bool ready = true;
-    uint8_t slot = TEAM_CACHE_CAP;
+    uint16_t requested[DYNAMIC_CACHE_CAP] = {};
+    uint8_t requestedCount = 0;
     for (uint8_t i = 0; i < count; ++i) {
         uint16_t speciesId = speciesIds[i];
-        if (speciesId == 0) continue;
-
-        bool duplicate = false;
-        for (uint8_t previous = 0; previous < i; ++previous) {
-            if (speciesIds[previous] == speciesId) {
-                duplicate = true;
-                break;
-            }
-        }
-        if (duplicate || cachedSpeciesFor(speciesId)) continue;
-        if (slot >= CACHE_CAP || !loadSpeciesIntoCache(slot, speciesId)) {
-            ready = false;
+        if (speciesId == 0 ||
+            containsSpecies(requested, requestedCount, speciesId)) {
             continue;
         }
-        ++slot;
+        requested[requestedCount++] = speciesId;
     }
-    gDynamicSlot = slot < CACHE_CAP ? slot : TEAM_CACHE_CAP;
+
+    uint32_t start = millis();
+    uint8_t loadAttempts = 0;
+    uint8_t evicted = 0;
+    for (uint8_t i = 0; i < requestedCount; ++i) {
+        uint16_t speciesId = requested[i];
+        if (cachedSpeciesFor(speciesId, false) || knownMissingFile(speciesId)) continue;
+        if (loadAttempts >= loadBudget) continue;
+        uint8_t slot = dynamicCacheSlot(requested, requestedCount);
+        if (slot >= CACHE_CAP) continue;
+        if (gCache[slot].speciesId != 0) ++evicted;
+        ++loadAttempts;
+        loadSpeciesIntoCache(slot, speciesId);
+    }
+
+    bool ready = true;
+    for (uint8_t i = 0; i < requestedCount; ++i) {
+        uint16_t speciesId = requested[i];
+        if (!cachedSpeciesFor(speciesId, false) && !knownMissingFile(speciesId)) {
+            ready = false;
+            break;
+        }
+    }
+    if (loadAttempts > 0) {
+        gStats.lastReloadMs = millis() - start;
+        Serial.printf(
+            "[PokemonSprites] dynamic lru requested=%u evicted=%u loaded=%u ready=%u ms=%u\\n",
+            requestedCount, evicted, loadAttempts, ready ? 1 : 0,
+            gStats.lastReloadMs);
+    }
     gStats.freePsram = ESP.getFreePsram();
     return ready;
+}
+
+void setDynamicSceneSpecies(const uint16_t* speciesIds, uint8_t count) {
+    memset(gSceneSpecies, 0, sizeof(gSceneSpecies));
+    gSceneSpeciesCount = 0;
+    if (!speciesIds) count = 0;
+    if (count > SCENE_SPECIES_CAP) count = SCENE_SPECIES_CAP;
+    for (uint8_t i = 0; i < count; ++i) {
+        uint16_t speciesId = speciesIds[i];
+        if (speciesId == 0 ||
+            containsSpecies(gSceneSpecies, gSceneSpeciesCount, speciesId)) {
+            continue;
+        }
+        gSceneSpecies[gSceneSpeciesCount++] = speciesId;
+        CachedSpecies* cached = cachedSpeciesFor(speciesId, false);
+        if (cached) touchEntry(*cached);
+    }
 }
 
 void setDynamicLoadingEnabled(bool enabled) {

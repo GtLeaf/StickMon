@@ -30,6 +30,20 @@ from generate_game_assets import (
 
 
 class GenerateGameAssetsTests(unittest.TestCase):
+    def test_runtime_uses_direct_kind_index(self):
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "assets"
+            / "GameAssets.cpp"
+        ).read_text()
+
+        self.assertIn("uint16_t frameIndices[", source)
+        find_frame = source.split("FrameRef findFrame(Kind kind)", 1)[1].split(
+            "bool decodeBackgroundViewport", 1
+        )[0]
+        self.assertNotIn("pack.frameCount; ++i", find_frame)
+
     def test_generator_frame_limit_matches_runtime(self):
         validate_runtime_pack_limit()
 

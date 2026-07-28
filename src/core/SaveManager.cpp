@@ -91,6 +91,14 @@ struct SaveRecord {
     MainSceneViewRecord view{};
 };
 
+struct SaveRecordHeader {
+    uint32_t magic;
+    uint16_t version;
+    uint16_t reserved;
+};
+
+static_assert(sizeof(SaveRecordHeader) == 8, "unexpected save record header size");
+
 static_assert(
     offsetof(Game::GameState, friendshipPityFailCount) ==
         offsetof(GameStateV4, friendshipPityFailCount),
@@ -513,19 +521,66 @@ bool SaveManager::load(Game::GameState& state,
     Preferences prefs;
     if (!prefs.begin(NVS_NS, true)) return false;
     size_t len = prefs.getBytesLength(NVS_KEY);
-    if (len == sizeof(SaveRecordV4)) {
+    if (len != sizeof(SaveRecordV4) && len != sizeof(SaveRecord)) {
+        prefs.end();
+        Serial.printf("[SaveManager] unsupported state size=%u expected=%u; reset to v%u\n",
+                      (unsigned)len,
+                      (unsigned)sizeof(SaveRecord),
+                      Game::SAVE_VERSION);
+        reset(state);
+        return false;
+    }
+
+    auto* raw = new (std::nothrow) uint8_t[len];
+    if (!raw) {
+        prefs.end();
+        Serial.println("[SaveManager] state load allocation failed");
+        reset(state);
+        return false;
+    }
+    size_t read = prefs.getBytes(NVS_KEY, raw, len);
+    prefs.end();
+    if (read != len) {
+        Serial.printf("[SaveManager] state read failed read=%u expected=%u\n",
+                      (unsigned)read,
+                      (unsigned)len);
+        delete[] raw;
+        reset(state);
+        return false;
+    }
+
+    SaveRecordHeader header{};
+    memcpy(&header, raw, sizeof(header));
+    if (header.magic != SAVE_RECORD_MAGIC || header.reserved != 0) {
+        Serial.printf("[SaveManager] invalid state header magic=%08lx version=%u reserved=%u\n",
+                      (unsigned long)header.magic,
+                      header.version,
+                      header.reserved);
+        delete[] raw;
+        reset(state);
+        return false;
+    }
+
+    if (header.version == LEGACY_SAVE_RECORD_VERSION) {
+        if (len != sizeof(SaveRecordV4)) {
+            Serial.printf("[SaveManager] invalid v4 state size=%u expected=%u\n",
+                          (unsigned)len,
+                          (unsigned)sizeof(SaveRecordV4));
+            delete[] raw;
+            reset(state);
+            return false;
+        }
         auto* legacy = new (std::nothrow) SaveRecordV4{};
         if (!legacy) {
-            prefs.end();
+            delete[] raw;
             Serial.println("[SaveManager] v4 migration allocation failed");
             reset(state);
             return false;
         }
-        size_t read = prefs.getBytes(NVS_KEY, legacy, sizeof(*legacy));
-        prefs.end();
+        memcpy(legacy, raw, sizeof(*legacy));
+        delete[] raw;
         uint16_t expectedChecksum = checksumObject(legacy->state);
         bool valid =
-            read == sizeof(*legacy) &&
             legacy->magic == SAVE_RECORD_MAGIC &&
             legacy->version == LEGACY_SAVE_RECORD_VERSION &&
             legacy->reserved == 0 &&
@@ -554,28 +609,29 @@ bool SaveManager::load(Game::GameState& state,
                       Game::SAVE_VERSION, changed ? 1 : 0);
         return true;
     }
-    if (len != sizeof(SaveRecord)) {
-        prefs.end();
-        Serial.printf("[SaveManager] unsupported state size=%u expected=%u; reset to v%u\n",
+
+    if (header.version != SAVE_RECORD_VERSION || len != sizeof(SaveRecord)) {
+        Serial.printf("[SaveManager] unsupported state version=%u size=%u expected=v%u/%u\n",
+                      header.version,
                       (unsigned)len,
-                      (unsigned)sizeof(SaveRecord),
-                      Game::SAVE_VERSION);
+                      Game::SAVE_VERSION,
+                      (unsigned)sizeof(SaveRecord));
+        delete[] raw;
         reset(state);
         return false;
     }
 
     auto* record = new (std::nothrow) SaveRecord{};
     if (!record) {
-        prefs.end();
+        delete[] raw;
         Serial.println("[SaveManager] state load allocation failed");
         reset(state);
         return false;
     }
-    size_t read = prefs.getBytes(NVS_KEY, record, sizeof(*record));
-    prefs.end();
+    memcpy(record, raw, sizeof(*record));
+    delete[] raw;
     uint16_t expectedChecksum = checksum(record->state);
-    if (read != sizeof(*record) ||
-        record->magic != SAVE_RECORD_MAGIC ||
+    if (record->magic != SAVE_RECORD_MAGIC ||
         record->version != SAVE_RECORD_VERSION ||
         record->reserved != 0 ||
         record->state.magic != Game::SAVE_MAGIC ||

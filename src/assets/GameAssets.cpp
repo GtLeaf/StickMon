@@ -21,6 +21,7 @@ constexpr uint16_t MAX_FRAMES = 256;
 constexpr uint32_t MAX_DATA_WORDS = 200000;
 constexpr uint32_t MAX_PALETTE_WORDS = 2048;
 constexpr uint32_t MAX_PAYLOAD_BYTES = 384000;
+constexpr uint16_t INVALID_FRAME_INDEX = 0xFFFF;
 
 enum class PackSlot : uint8_t {
     UI,
@@ -78,6 +79,7 @@ struct FrameRef {
 bool initialized = false;
 bool resourcePackReady = false;
 AssetPack packs[static_cast<uint8_t>(PackSlot::COUNT)];
+uint16_t frameIndices[static_cast<uint16_t>(Kind::COUNT)];
 uint16_t* background = nullptr;
 Kind cachedBackground = Kind::COUNT;
 int cachedBackgroundX = -1;
@@ -189,12 +191,18 @@ bool loadPack(PackSlot slot) {
                                           header.payloadCrc32,
                                           &stats);
     Frame* loadedFrames = reinterpret_cast<Frame*>(payload);
+    bool seenKinds[static_cast<uint16_t>(Kind::COUNT)] = {};
     if (ok) {
         for (uint16_t i = 0; i < header.frameCount; ++i) {
-            if (!validFrame(loadedFrames[i], header)) {
+            uint16_t kindValue = loadedFrames[i].kind;
+            if (!validFrame(loadedFrames[i], header) ||
+                packSlotFor(static_cast<Kind>(kindValue)) != slot ||
+                seenKinds[kindValue] ||
+                frameIndices[kindValue] != INVALID_FRAME_INDEX) {
                 ok = false;
                 break;
             }
+            seenKinds[kindValue] = true;
         }
     }
     if (!ok) {
@@ -213,6 +221,9 @@ bool loadPack(PackSlot slot) {
     loadedPack.palettes = loadedPack.data + header.dataWords;
     loadedPack.paletteWords = header.paletteWords;
     loadedPack.packedBytes = static_cast<uint32_t>(expectedFile);
+    for (uint16_t i = 0; i < header.frameCount; ++i) {
+        frameIndices[loadedFrames[i].kind] = i;
+    }
     loadedPack.loaded = true;
     Serial.printf(
         "[GameAssets] pack=%s frames=%u compressed=%u decoded=%u read=%u inflate=%u total=%u psram=%u\n",
@@ -222,19 +233,17 @@ bool loadPack(PackSlot slot) {
 }
 
 FrameRef findFrame(Kind kind) {
+    uint16_t value = static_cast<uint16_t>(kind);
+    if (value >= static_cast<uint16_t>(Kind::COUNT)) return {};
     PackSlot slot = packSlotFor(kind);
     if (!loadPack(slot)) return {};
     AssetPack& pack = packs[static_cast<uint8_t>(slot)];
-    uint16_t value = static_cast<uint16_t>(kind);
-    for (uint16_t i = 0; i < pack.frameCount; ++i) {
-        if (pack.frames[i].kind == value) {
-            FrameRef ref;
-            ref.pack = &pack;
-            ref.frame = &pack.frames[i];
-            return ref;
-        }
-    }
-    return {};
+    uint16_t index = frameIndices[value];
+    if (index == INVALID_FRAME_INDEX || index >= pack.frameCount) return {};
+    FrameRef ref;
+    ref.pack = &pack;
+    ref.frame = &pack.frames[index];
+    return ref;
 }
 
 bool decodeBackgroundViewport(const FrameRef& ref, int cameraX, int cameraY) {
@@ -289,6 +298,7 @@ bool decodeBackgroundViewport(const FrameRef& ref, int cameraX, int cameraY) {
 bool begin() {
     if (initialized) return resourcePackReady;
     initialized = true;
+    for (uint16_t& index : frameIndices) index = INVALID_FRAME_INDEX;
     resourcePackReady = ResourcePack::ins().begin();
     return resourcePackReady;
 }

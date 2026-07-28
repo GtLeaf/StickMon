@@ -198,14 +198,33 @@ class GeneratePokemonSpritesTests(unittest.TestCase):
 
         self.assertEqual(expected, generated)
 
-    def test_dynamic_cache_holds_all_explore_preview_species(self):
+    def test_dynamic_lru_cache_holds_current_and_two_prefetched_areas(self):
         source = (ROOT / "src" / "assets" / "PokemonSprites.cpp").read_text()
 
-        self.assertIn("static constexpr uint8_t DYNAMIC_CACHE_CAP = 6;", source)
+        self.assertIn("static constexpr uint8_t DYNAMIC_CACHE_CAP = 18;", source)
         self.assertIn(
-            "bool preloadDynamicSpecies(const uint16_t* speciesIds, uint8_t count)",
+            "bool preloadDynamicSpecies(const uint16_t* speciesIds, uint8_t count,",
             source,
         )
+        self.assertIn("findCachedSpeciesSprite", source)
+        self.assertIn("loadAttempts >= loadBudget", source)
+        self.assertIn("uint32_t lastUsed = 0;", source)
+        self.assertIn("dynamicCacheSlot(requested, requestedCount)", source)
+        self.assertIn("setDynamicSceneSpecies", source)
+
+        explore_source = (
+            ROOT / "src" / "scenes" / "ExploreScene.cpp"
+        ).read_text()
+        self.assertRegex(
+            explore_source,
+            r"areaPreloadSpeciesIds,\s*areaPreloadSpeciesCount,\s*0\)",
+        )
+        self.assertRegex(
+            explore_source,
+            r"areaPreloadSpeciesIds,\s*areaPreloadSpeciesCount,\s*1\)",
+        )
+        self.assertIn("ahead <= AREA_PRELOAD_AHEAD", explore_source)
+        self.assertIn("(areaCursor + ahead) % ROUTE_MAP_COUNT", explore_source)
 
     @unittest.skipUnless(shutil.which("c++"), "host C++ compiler is unavailable")
     def test_route_motion_timing(self):

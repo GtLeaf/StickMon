@@ -26,7 +26,7 @@ public:
     };
 
     void onEnter() override;
-    void onExit() override {}
+    void onExit() override;
     void update(uint32_t nowMs, float dtSeconds) override;
     void render() override;
     bool onButton(const ButtonEvent& event) override;
@@ -53,9 +53,17 @@ private:
     float areaAnimCursor = 0.0f;
     // 栖息地轮换：预览展示当前种子活跃池（§7.5，轮播池成员）
     static constexpr uint8_t AREA_PREVIEW_COUNT = 6;
+    static constexpr uint8_t AREA_PRELOAD_AHEAD = 2;
+    static constexpr uint8_t AREA_PRELOAD_CAP =
+        AREA_PREVIEW_COUNT * (AREA_PRELOAD_AHEAD + 1);
     static_assert(AREA_PREVIEW_COUNT == ExplorePool::POOL_CAP,
                   "area preview must show the whole active pool");
     uint32_t areaPreviewStartedAt = 0;
+    uint32_t areaPreviewNextLoadAt = 0;
+    uint16_t areaPreviewSpeciesIds[AREA_PREVIEW_COUNT] = {};
+    uint16_t areaPreloadSpeciesIds[AREA_PRELOAD_CAP] = {};
+    uint8_t areaPreloadSpeciesCount = 0;
+    bool areaPreviewLoadPending = false;
     const PokemonSprites::SpriteFrame*
         areaPreviewFrames[AREA_PREVIEW_COUNT] = {};
     ExplorePool::Pool areaPreviewPool{};
@@ -270,7 +278,10 @@ private:
     void requestExploreExit(bool fainted = false, bool showEndPrompt = true);
     void closeExploreMenu();
     void renderAreaMenu();
+    ExplorePool::Pool buildAreaPool(uint8_t areaIndex) const;
     void loadAreaPreview();
+    void updateAreaPreviewLoading(uint32_t nowMs);
+    void refreshAreaPreviewFrames();
     void snapshotActivePool();
     void renderWalking();
     void renderEncounter();
