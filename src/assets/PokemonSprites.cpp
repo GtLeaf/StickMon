@@ -92,7 +92,9 @@ static constexpr WalkingConfig WALKING_CONFIGS[] = {
 static constexpr uint8_t SPRITE_SOURCE_FILE_BLOCK = 2;
 static constexpr uint16_t SPRITE_FRAME_GROUND_MARKER = 0xA500;
 static constexpr uint8_t TEAM_CACHE_CAP = 2;
-static constexpr uint8_t DYNAMIC_CACHE_CAP = 3;
+// 动态槽必须能容纳探索预览活跃池全体成员(POOL_CAP=6),否则预览取帧时
+// 按需加载会驱逐已缓存成员,使 areaPreviewFrames 的裸指针失效(轮播空白)
+static constexpr uint8_t DYNAMIC_CACHE_CAP = 6;
 static constexpr uint8_t CACHE_CAP = TEAM_CACHE_CAP + DYNAMIC_CACHE_CAP;
 static constexpr uint8_t KNOWN_MISSING_FILE_CAP = 16;
 static constexpr uint8_t FRAME_MISSING_CAP = 4;

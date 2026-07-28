@@ -31,6 +31,9 @@ OUTPUTS = {
 GENERATED_GAME_DIR = ROOT / "origin_asset" / "generated" / "game"
 EGG_PREVIEW = GENERATED_GAME_DIR / "egg_32.png"
 STATUS_ICON_DIR = ROOT / "origin_asset" / "icon" / "status"
+EXPLORE_MENU_BG_SOURCE = (
+    ROOT / "origin_asset" / "mainScreen" / "menu" / "explore" / "bg_explore.png"
+)
 SHOWER_SOURCE_DIR = ROOT / "origin_asset" / "icon" / "home" / "shower"
 SHOWER_PREVIEW_DIR = GENERATED_GAME_DIR / "shower"
 GAME_ASSETS_HEADER = ROOT / "src" / "assets" / "GameAssets.h"
@@ -129,6 +132,10 @@ BACKGROUNDS = [
     ("BATTLE_BG_RIVERSIDE", "water_bg.png"),
     ("BATTLE_BG_DEEP_FOREST", "forest_bg.png"),
     ("BATTLE_BG_SNOW", "snow_bg.png"),
+]
+
+MENU_BACKGROUNDS = [
+    ("EXPLORE_MENU_BACKGROUND", EXPLORE_MENU_BG_SOURCE),
 ]
 
 EXPLORE_TILES = [
@@ -253,6 +260,7 @@ for kind_prefix, _ in BALLS:
     KIND_ORDER.append(f"BALL_{kind_prefix}_OPEN")
 KIND_ORDER.append("BALL_BURST_STAR")
 KIND_ORDER.extend(kind for kind, _ in BACKGROUNDS)
+KIND_ORDER.extend(kind for kind, _ in MENU_BACKGROUNDS)
 KIND_ORDER.extend(kind for kind, _ in EXPLORE_TILES)
 KIND_ORDER.extend(kind for kind, _runtime_id, _tileset, _source_id in EXTERNAL_EXPLORE_TILES)
 KIND_ORDER.extend(kind for kind, _tile_id, _source, _frame in ANIMATED_EXPLORE_FRAMES)
@@ -673,6 +681,11 @@ def build_assets():
 
     for kind, filename in BACKGROUNDS:
         image = load_rgba(GRAPHICS / "Battlebacks" / filename)
+        image = image.resize((BACKGROUND_W, BACKGROUND_H), Image.Resampling.LANCZOS)
+        writers["battle"].add(kind, quantize_rgba(image, 16))
+
+    for kind, source_path in MENU_BACKGROUNDS:
+        image = load_rgba(source_path)
         image = image.resize((BACKGROUND_W, BACKGROUND_H), Image.Resampling.LANCZOS)
         writers["battle"].add(kind, quantize_rgba(image, 16))
 

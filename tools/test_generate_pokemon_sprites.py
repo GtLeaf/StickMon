@@ -120,7 +120,7 @@ class GeneratePokemonSpritesTests(unittest.TestCase):
             writer = generator.AssetWriter()
             missing = []
             with mock.patch.object(generator, "GRAPHICS", graphics):
-                generator.add_base_frames(writer, 1, "TEST", missing)
+                generator.add_base_frames(writer, 3, "TEST", missing)
 
             dimensions = {
                 frame["kind"]: (frame["width"], frame["height"])
@@ -131,6 +131,33 @@ class GeneratePokemonSpritesTests(unittest.TestCase):
             self.assertEqual((65, 65), dimensions["BACK"])
             self.assertEqual((64, 64), dimensions["ICON_0"])
             self.assertEqual((70, 70), dimensions["STATUS"])
+
+    def test_no_upscale_species_keeps_grid_aligned_front_size(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            graphics = Path(temp_dir)
+            for folder in ("Icons", "Front", "Back"):
+                (graphics / folder).mkdir()
+
+            icon = Image.new("RGBA", (64, 64), (255, 0, 0, 255))
+            front = Image.new("RGBA", (160, 160), (0, 0, 0, 0))
+            front.paste((0, 255, 0, 255), (40, 40, 120, 120))
+            back = Image.new("RGBA", (160, 160), (0, 0, 255, 255))
+            icon.save(graphics / "Icons" / "TEST.png")
+            front.save(graphics / "Front" / "TEST.png")
+            back.save(graphics / "Back" / "TEST.png")
+
+            writer = generator.AssetWriter()
+            missing = []
+            with mock.patch.object(generator, "GRAPHICS", graphics):
+                generator.add_base_frames(writer, 194, "TEST", missing)
+
+            dimensions = {
+                frame["kind"]: (frame["width"], frame["height"])
+                for frame in writer.frames
+            }
+            self.assertEqual([], missing)
+            # 乌波等易糊精灵不强制放大:80x80 内容保持 72/160 基准比例
+            self.assertEqual((36, 36), dimensions["FRONT"])
 
     def test_all_configured_walking_frames_exist_and_are_visible(self):
         checked = 0

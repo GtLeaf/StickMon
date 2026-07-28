@@ -5,6 +5,7 @@
 
 #include "assets/GameAssets.h"
 #include "assets/PokemonSprites.h"
+#include "core/CryPlayer.h"
 #include "core/GameEngine.h"
 #include "core/UiStrings.h"
 #include "hardware/Hal.h"
@@ -114,6 +115,7 @@ void ShowerScene::resetBathSession() {
     soapRewarded = false;
     brushRewarded = false;
     rinseRewarded = false;
+    completionHearts = 0;
     exitConfirmYes = false;
 }
 
@@ -384,14 +386,18 @@ void ShowerScene::updateRinsing(uint32_t nowMs, float dtSeconds) {
     if (nowMs - modeStartedMs >= RINSE_MIN_DURATION_MS &&
         !anyFoam() && atmosphereAlpha <= 1.0f) {
         for (WaterDrop& drop : water) drop.active = false;
-        if (soapRewarded) {
-            awardBathStage(BathRewardStage::RINSE);
-            soapUsed = false;
-            enterMode(Mode::COMPLETE, nowMs);
+        awardBathStage(BathRewardStage::RINSE);
+        soapUsed = false;
+        completionHearts = static_cast<uint8_t>(
+            (soapRewarded ? 1 : 0) + (brushRewarded ? 1 : 0) +
+            (rinseRewarded ? 1 : 0));
+        enterMode(Mode::COMPLETE, nowMs);
+        // 收尾反应由爱心数决定:3 个叫声、2 个跳一下、1 个无动作
+        hopStartMs = 0;
+        if (completionHearts >= 3) {
+            CryPlayer::ins().play(GameEngine::ins().activeSpecies().id);
+        } else if (completionHearts == 2) {
             startHop(10.0f, nowMs);
-        } else {
-            resetBathSession();
-            enterMode(Mode::MENU, nowMs);
         }
     }
 }
@@ -912,8 +918,11 @@ void ShowerScene::drawHearts() const {
     auto& c = PixelRenderer::canvas();
     uint16_t color = PixelRenderer::rgb(242, 74, 97);
     uint32_t elapsed = Hal::ins().millis() - modeStartedMs;
-    for (uint8_t i = 0; i < 3; ++i) {
-        int x = 52 + i * 36;
+    uint8_t count = min<uint8_t>(completionHearts, 3);
+    if (count == 0) return;
+    int startX = 88 - (count - 1) * 18;
+    for (uint8_t i = 0; i < count; ++i) {
+        int x = startX + i * 36;
         int y = 23 - static_cast<int>((elapsed / 90 + i * 3) % 6);
         c.fillCircle(x - 3, y, 4, color);
         c.fillCircle(x + 3, y, 4, color);

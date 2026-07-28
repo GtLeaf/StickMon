@@ -10,7 +10,7 @@ static constexpr uint8_t TEAM_CAP = 2;
 static constexpr uint8_t STORAGE_CAP = 20;
 static constexpr uint8_t ITEM_STACK_CAP = 99;
 static constexpr uint32_t SAVE_MAGIC = 0x534D4F4E; // SMON
-static constexpr uint16_t SAVE_VERSION = 3;
+static constexpr uint16_t SAVE_VERSION = 4;
 static constexpr uint8_t STAT_COUNT = 6;
 static constexpr uint8_t NATURE_COUNT = 25;
 static constexpr uint8_t LEVEL_MAX = 100;
@@ -31,6 +31,7 @@ static constexpr uint8_t ROOM_SPICY_FOOD_INDEX = 3;
 static constexpr uint8_t ROOM_SOUR_FOOD_INDEX = 4;
 static constexpr uint8_t ROOM_BITTER_FOOD_INDEX = 5;
 static constexpr uint8_t ROOM_DRY_FOOD_INDEX = 6;
+static constexpr uint8_t EXPLORE_AREA_COUNT = 6;
 static constexpr uint8_t MET_AREA_STARTER = 0xFD;
 static constexpr uint8_t MET_AREA_HATCHED = 0xFE;
 static constexpr uint8_t MET_AREA_UNKNOWN = 0xFF;
@@ -257,6 +258,11 @@ struct GameState {
     MoveId pendingMoveId = 0;
     uint16_t pendingMoveCursor = 0;
     PlayerSettings settings;
+    // 栖息地轮换：每区域活跃池重抽计数，击败区域头目 +1（§7.2/§7.6）
+    uint8_t explorePoolRerollCounts[EXPLORE_AREA_COUNT] = {};
+    // 结交连败保底：最近交友目标物种与连败数（§7.9.4）
+    uint16_t friendshipPitySpeciesId = 0;
+    uint8_t friendshipPityFailCount = 0;
 };
 
 struct HatchProgress {

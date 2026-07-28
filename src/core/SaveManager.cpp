@@ -12,7 +12,7 @@ constexpr const char* NVS_NS = "stickmon";
 constexpr const char* NVS_KEY = "state";
 constexpr const char* HATCH_KEY = "hatch";
 constexpr uint32_t SAVE_RECORD_MAGIC = 0x3156534D; // MSV1
-constexpr uint16_t SAVE_RECORD_VERSION = 3;
+constexpr uint16_t SAVE_RECORD_VERSION = 4;
 static_assert(SAVE_RECORD_VERSION == Game::SAVE_VERSION,
               "save record and game-state versions must advance together");
 constexpr uint32_t MAIN_SCENE_VIEW_MAGIC = 0x4D565354; // MVST
@@ -416,6 +416,12 @@ bool sanitizeState(Game::GameState& state) {
     }
     if (state.settings.language != 0) {
         state.settings.language = 0;
+        changed = true;
+    }
+    if (state.friendshipPitySpeciesId != 0 &&
+        !findSpecies(state.friendshipPitySpeciesId)) {
+        state.friendshipPitySpeciesId = 0;
+        state.friendshipPityFailCount = 0;
         changed = true;
     }
     return changed;

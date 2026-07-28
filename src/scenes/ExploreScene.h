@@ -3,6 +3,7 @@
 #include "core/Scene.h"
 #include "game/BattleSystem.h"
 #include "game/ExploreMapGenerator.h"
+#include "game/ExplorePool.h"
 #include "game/GameState.h"
 #include "game/Species.h"
 #include "scenes/MenuScene.h"
@@ -48,10 +49,16 @@ private:
     Phase phase = Phase::SELECT;
     uint8_t areaCursor = 0;
     float areaAnimCursor = 0.0f;
+    // 栖息地轮换：预览展示当前种子活跃池（§7.5，轮播池成员）
+    static constexpr uint8_t AREA_PREVIEW_COUNT = 6;
+    static_assert(AREA_PREVIEW_COUNT == ExplorePool::POOL_CAP,
+                  "area preview must show the whole active pool");
     uint32_t areaPreviewStartedAt = 0;
-    static constexpr uint8_t AREA_PREVIEW_COUNT = 3;
     const PokemonSprites::SpriteFrame*
         areaPreviewFrames[AREA_PREVIEW_COUNT] = {};
+    ExplorePool::Pool areaPreviewPool{};
+    // 趟内活跃池快照：探险开始时按种子重建，趟内遭遇只在池内滚点（§7.8）
+    ExplorePool::Pool activePool{};
     Area activeArea = Area::GRASS_PATH;
     uint16_t steps = 0;
     uint16_t mapTargetSteps = 1;
@@ -253,6 +260,7 @@ private:
     void closeExploreMenu();
     void renderAreaMenu();
     void loadAreaPreview();
+    void snapshotActivePool();
     void renderWalking();
     void renderEncounter();
     void renderFriendshipPrompt();

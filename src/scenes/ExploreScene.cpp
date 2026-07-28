@@ -11,6 +11,7 @@
 #include "core/UiStrings.h"
 #include "game/BattleSystem.h"
 #include "game/ExploreBoss.h"
+#include "game/ExplorePool.h"
 #include "game/FriendshipSystem.h"
 #include "hardware/Hal.h"
 #include "hardware/PixelRenderer.h"
@@ -66,6 +67,8 @@ static constexpr uint16_t DEPTH_MIDDLE_START_PERMILLE = 333;
 static constexpr uint16_t DEPTH_DEEP_START_PERMILLE = 667;
 static constexpr uint8_t ENCOUNTER_COOLDOWN_STEP_COUNT = 5;
 static constexpr uint8_t MAX_ENCOUNTERS_PER_MAP = 2;
+// 结交连败保底：同一物种连续失败 5 次后下一次战胜必定触发邀约（§7.9.4）
+static constexpr uint8_t FRIENDSHIP_PITY_FAIL_COUNT = 5;
 static constexpr uint16_t MAP_PICKUP_CHANCE = 6500;
 static constexpr uint32_t MAP_GENERATION_SAFE_SEED = 1;
 static constexpr uint32_t MAP_GENERATION_RETRY_SALTS[] = {
@@ -393,66 +396,89 @@ struct RouteMap {
     uint16_t accentColor;
 };
 
+// 遭遇表按 doc/探索模式精灵分布方案_v1.0.md §五 全量替换（22 只新增精灵入场）
 static constexpr EncounterEntry GRASS_PATH_ENCOUNTERS[] = {
-    {10, 27, 1, 6},    // Caterpie (before Lv.7 evolution)
-    {161, 25, 1, 9},   // Sentret
-    {16, 22, 2, 9},    // Pidgey
-    {261, 15, 2, 9},   // Poochyena
-    {172, 8, 3, 9},    // Pichu
-    {133, 2, 3, 9},    // Eevee
-    {1, 1, 3, 9},      // Bulbasaur
+    {10,  18, 1, 6},   // Caterpie
+    {161, 19, 1, 9},   // Sentret
+    {16,  17, 2, 9},   // Pidgey
+    {261, 13, 2, 9},   // Poochyena
+    {280,  8, 3, 9},   // Ralts      (NEW)
+    {172,  6, 3, 9},   // Pichu
+    {11,  15, 3, 9},   // Metapod    (NEW)
+    {133,  2, 3, 9},   // Eevee
+    {1,    1, 3, 9},   // Bulbasaur
+    {4,    1, 3, 9},   // Charmander (NEW)
 };
 
 static constexpr EncounterEntry CREEK_SLOPE_ENCOUNTERS[] = {
-    {194, 23, 7, 17},  // Wooper
-    {298, 16, 7, 15},  // Azurill
-    {183, 10, 8, 17},  // Marill
-    {278, 19, 7, 17},  // Wingull
-    {129, 16, 7, 17},  // Magikarp (before Lv.20 evolution)
-    {74, 12, 8, 17},   // Geodude
-    {16, 2, 7, 17},    // Pidgey
-    {147, 1, 10, 17},  // Dratini
-    {7, 1, 7, 15},     // Squirtle (before Lv.16 evolution)
+    {194, 20, 7, 17},  // Wooper
+    {298, 13, 7, 15},  // Azurill
+    {183,  8, 8, 17},  // Marill
+    {278, 16, 7, 17},  // Wingull
+    {129, 14, 7, 17},  // Magikarp
+    {74,  10, 8, 17},  // Geodude
+    {322,  6, 8, 17},  // Numel      (NEW)
+    {41,   7, 8, 17},  // Zubat      (NEW)
+    {16,   2, 7, 17},  // Pidgey
+    {147,  1, 10, 17}, // Dratini
+    {7,    1, 7, 15},  // Squirtle
+    {5,    1, 7, 17},  // Charmeleon (NEW)
+    {8,    1, 7, 15},  // Wartortle  (NEW)
 };
 
 static constexpr EncounterEntry TALL_GRASS_PARK_ENCOUNTERS[] = {
-    {12, 34, 17, 27},  // Butterfree
-    {285, 25, 17, 22}, // Shroomish (before Lv.23 evolution)
-    {25, 15, 17, 27},  // Pikachu
-    {162, 12, 17, 27}, // Furret
-    {281, 8, 20, 29},  // Kirlia (before Lv.30 evolution)
-    {133, 3, 17, 27},  // Eevee
-    {123, 2, 17, 27},  // Scyther
-    {2, 1, 17, 31},    // Ivysaur (before Lv.32 evolution)
+    {12,  25, 17, 27}, // Butterfree
+    {285, 19, 17, 22}, // Shroomish
+    {25,  11, 17, 27}, // Pikachu
+    {162,  9, 17, 27}, // Furret
+    {281,  6, 20, 29}, // Kirlia
+    {17,   6, 17, 27}, // Pidgeotto  (NEW)
+    {184,  5, 17, 27}, // Azumarill  (NEW)
+    {279,  5, 17, 27}, // Pelipper   (NEW)
+    {130,  4, 17, 27}, // Gyarados   (NEW)
+    {26,   3, 17, 27}, // Raichu     (NEW)
+    {92,   3, 17, 27}, // Gastly     (NEW)
+    {133,  2, 17, 27}, // Eevee
+    {123,  1, 17, 27}, // Scyther
+    {2,    1, 17, 31}, // Ivysaur
 };
 
 static constexpr EncounterEntry MIST_FOREST_PATH_ENCOUNTERS[] = {
-    {94, 27, 41, 53},  // Gengar
-    {169, 23, 41, 53}, // Crobat
-    {286, 18, 41, 53}, // Breloom
-    {262, 15, 41, 53}, // Mightyena
-    {282, 9, 41, 53},  // Gardevoir
-    {212, 4, 41, 53},  // Scizor
-    {197, 4, 41, 53},  // Umbreon
+    {94,  22, 41, 53}, // Gengar
+    {169, 20, 41, 53}, // Crobat
+    {286, 15, 41, 53}, // Breloom
+    {262, 12, 41, 53}, // Mightyena
+    {282,  7, 41, 53}, // Gardevoir
+    {362,  5, 41, 53}, // Glalie     (NEW)
+    {134,  3, 41, 53}, // Vaporeon   (NEW)
+    {135,  3, 41, 53}, // Jolteon    (NEW)
+    {136,  3, 41, 53}, // Flareon    (NEW)
+    {196,  3, 41, 53}, // Espeon     (NEW)
+    {212,  3, 41, 53}, // Scizor
+    {197,  3, 41, 53}, // Umbreon
+    {3,    1, 41, 53}, // Venusaur   (NEW)
 };
 
 static constexpr EncounterEntry ANCIENT_WATERFALL_VALLEY_ENCOUNTERS[] = {
-    {76, 29, 53, 67},  // Golem
+    {76,  29, 53, 67}, // Golem
     {169, 22, 53, 67}, // Crobat
     {323, 21, 53, 67}, // Camerupt
-    {94, 13, 53, 67},  // Gengar
-    {195, 8, 53, 67},  // Quagsire
-    {212, 4, 53, 67},  // Scizor
-    {149, 2, 53, 67},  // Dragonite
-    {6, 1, 53, 67},    // Charizard
+    {94,  13, 53, 67}, // Gengar
+    {195,  8, 53, 67}, // Quagsire
+    {212,  4, 53, 67}, // Scizor
+    {149,  2, 53, 67}, // Dragonite
+    {6,    1, 53, 67}, // Charizard
 };
 
 static constexpr EncounterEntry FROST_CRYSTAL_CAVE_ENCOUNTERS[] = {
-    {361, 56, 28, 41}, // Snorunt (before Lv.42 evolution)
-    {42, 18, 28, 41},  // Golbat
-    {75, 14, 28, 41},  // Graveler
-    {93, 8, 28, 41},   // Haunter
-    {282, 4, 30, 42},  // Gardevoir
+    {361, 50, 28, 41}, // Snorunt
+    {42,  16, 28, 41}, // Golbat
+    {75,  12, 28, 41}, // Graveler
+    {93,   7, 28, 41}, // Haunter
+    {148,  5, 28, 41}, // Dragonair  (NEW)
+    {18,   3, 28, 41}, // Pidgeot    (NEW)
+    {9,    1, 28, 41}, // Blastoise  (NEW)
+    {282,  6, 30, 42}, // Gardevoir
 };
 
 static_assert(encounterWeightTotal(GRASS_PATH_ENCOUNTERS) == 100,
@@ -574,33 +600,24 @@ static constexpr RouteMap ROUTE_MAPS[] = {
 
 static constexpr uint8_t ROUTE_MAP_COUNT = sizeof(ROUTE_MAPS) / sizeof(ROUTE_MAPS[0]);
 
-uint16_t encounterPreviewSpecies(const RouteMap& map, uint8_t rank) {
-    static constexpr uint8_t PREVIEW_COUNT = 3;
-    if (!map.encounters || rank >= PREVIEW_COUNT || rank >= map.encounterCount) {
-        return 0;
+// 从区域遭遇表提取活跃池源视图（仅 speciesId/weight 两列参与抽池）
+uint8_t buildPoolSource(const RouteMap& map, ExplorePool::SourceEntry* out,
+                        uint8_t cap) {
+    uint8_t count = min<uint8_t>(cap, map.encounterCount);
+    for (uint8_t i = 0; i < count; ++i) {
+        out[i] = ExplorePool::SourceEntry{
+            map.encounters[i].speciesId,
+            map.encounters[i].weight,
+        };
     }
+    return count;
+}
 
-    uint8_t selected[PREVIEW_COUNT] = {0xFF, 0xFF, 0xFF};
-    for (uint8_t slot = 0; slot <= rank; ++slot) {
-        uint8_t best = 0xFF;
-        for (uint8_t i = 0; i < map.encounterCount; ++i) {
-            bool alreadySelected = false;
-            for (uint8_t used = 0; used < slot; ++used) {
-                if (selected[used] == i) {
-                    alreadySelected = true;
-                    break;
-                }
-            }
-            if (alreadySelected) continue;
-            if (best == 0xFF ||
-                map.encounters[i].weight > map.encounters[best].weight) {
-                best = i;
-            }
-        }
-        if (best == 0xFF) return 0;
-        selected[slot] = best;
+const EncounterEntry* findEncounterEntry(const RouteMap& map, uint16_t speciesId) {
+    for (uint8_t i = 0; i < map.encounterCount; ++i) {
+        if (map.encounters[i].speciesId == speciesId) return &map.encounters[i];
     }
-    return map.encounters[selected[rank]].speciesId;
+    return nullptr;
 }
 
 int uiTextWidth(const char* value) {
@@ -633,6 +650,28 @@ void drawAreaPreviewFrame(const PokemonSprites::SpriteFrame* frame,
         frame,
         centerX - static_cast<int>(frame->width) / 2,
         centerY - static_cast<int>(frame->height) / 2);
+}
+
+// 稀有成员金标：在帧上方画一枚小菱形（§7.5 高亮标识）
+void drawRareMarker(int centerX, int topY) {
+    auto& c = PixelRenderer::canvas();
+    const uint16_t gold = PixelRenderer::rgb(255, 216, 72);
+    c.fillRect(centerX, topY, 1, 1, gold);
+    c.fillRect(centerX - 1, topY + 1, 3, 1, gold);
+    c.fillRect(centerX - 2, topY + 2, 5, 1, gold);
+    c.fillRect(centerX - 1, topY + 3, 3, 1, gold);
+    c.fillRect(centerX, topY + 4, 1, 1, gold);
+}
+
+// 轮播单个成员：帧本体 + 稀有金标
+void drawPreviewMember(const ExplorePool::Pool& pool, uint8_t index,
+                       const PokemonSprites::SpriteFrame* frame,
+                       int centerX, int centerY) {
+    drawAreaPreviewFrame(frame, centerX, centerY);
+    if (frame && index < pool.count && pool.entries[index].rare) {
+        drawRareMarker(centerX,
+                       centerY - static_cast<int>(frame->height) / 2 - 7);
+    }
 }
 
 constexpr uint8_t mapCountForRoll(const RouteMap& map, uint8_t roll) {
@@ -674,6 +713,8 @@ constexpr int8_t depthLevelOffset(uint16_t progressPermille, uint8_t spread) {
 
 static_assert(ROUTE_MAP_COUNT == Ui::Explore::AREA_COUNT,
               "explore area strings and route maps must stay aligned");
+static_assert(ROUTE_MAP_COUNT == Game::EXPLORE_AREA_COUNT,
+              "save reroll counters and route maps must stay aligned");
 static_assert(ROUTE_MAP_COUNT == ExploreBoss::AREA_COUNT,
               "explore boss configs and route maps must stay aligned");
 static_assert(routeLevelsStrictlyIncrease(ROUTE_MAPS),
@@ -920,6 +961,20 @@ const EncounterEntry* rollEncounterEntry(const RouteMap& map) {
     return nullptr;
 }
 
+// 活跃池内滚点：稀有成员按 weight × RARE_ROLL_BONUS 计（§7.4 / §7.9.3）
+const ExplorePool::PoolEntry* rollPoolEntry(const ExplorePool::Pool& pool) {
+    uint32_t total = ExplorePool::poolWeightTotal(pool);
+    if (total == 0) return nullptr;
+
+    uint32_t roll = static_cast<uint32_t>(random(static_cast<long>(total)));
+    for (uint8_t i = 0; i < pool.count; ++i) {
+        uint32_t weight = ExplorePool::rollWeightOf(pool.entries[i]);
+        if (roll < weight) return &pool.entries[i];
+        roll -= weight;
+    }
+    return nullptr;
+}
+
 uint8_t rollWildLevel(uint8_t minLevel, uint8_t maxLevel, uint8_t targetLevel) {
     if (minLevel < WILD_LEVEL_MIN) minLevel = WILD_LEVEL_MIN;
     if (maxLevel > WILD_LEVEL_MAX) maxLevel = WILD_LEVEL_MAX;
@@ -944,7 +999,6 @@ void ExploreScene::onEnter() {
     phase = Phase::SELECT;
     areaCursor = 0;
     areaAnimCursor = 0.0f;
-    areaPreviewStartedAt = Hal::ins().millis();
     resultMessage = nullptr;
     defeatAwaitInput = false;
     clearFriendshipFlow();
@@ -1642,7 +1696,14 @@ void ExploreScene::beginDebugEncounter() {
 
 void ExploreScene::rollEncounter() {
     const RouteMap& map = routeMap(mapBlocks[currentMapBlock]);
-    const EncounterEntry* encounter = rollEncounterEntry(map);
+    // 趟内只在活跃池快照中滚点（§7.8）；快照为空时退回全表兜底
+    const EncounterEntry* encounter = nullptr;
+    if (activePool.count > 0) {
+        const ExplorePool::PoolEntry* picked = rollPoolEntry(activePool);
+        encounter = picked ? findEncounterEntry(map, picked->speciesId) : nullptr;
+    } else {
+        encounter = rollEncounterEntry(map);
+    }
     const Species* opponent = encounter ? findSpecies(encounter->speciesId) : nullptr;
     if (!opponent) opponent = &starterSpecies();
     int16_t target = static_cast<int16_t>(map.averageLevel) +
@@ -2321,6 +2382,41 @@ void ExploreScene::finishWildFaint() {
                         *wild, wildRuntime, battleIsBoss,
                         static_cast<uint16_t>(random(0, 1000)),
                         friendshipShakeRolls, battleFoodBond));
+
+    // 栖息地轮换：击败区域头目 → 该区域重抽计数 +1 并立即重建活跃池（§7.2）
+    if (battleIsBoss) {
+        uint8_t bossArea = mapBlocks[currentMapBlock];
+        if (bossArea < Game::EXPLORE_AREA_COUNT) {
+            ++engine.gameState().explorePoolRerollCounts[bossArea];
+            engine.markDirty(SaveUrgency::DEFERRED);
+            snapshotActivePool();
+        }
+    }
+
+    // 结交连败保底（§7.9.4）：FriendshipSystem 数值不动，仅外层计数与强制触发
+    if (hasRoom && !debugBattleMode) {
+        Game::GameState& save = engine.gameState();
+        bool pityReady = save.friendshipPitySpeciesId == wild->id &&
+                         save.friendshipPityFailCount >= FRIENDSHIP_PITY_FAIL_COUNT;
+        if (!friendshipOfferPending && pityReady) {
+            // 连败达到阈值：本次战胜必定触发结交邀约，保底记录清零
+            friendshipOfferPending = true;
+            save.friendshipPitySpeciesId = 0;
+            save.friendshipPityFailCount = 0;
+            engine.markDirty(SaveUrgency::DEFERRED);
+        } else if (!friendshipOfferPending) {
+            // 结交失败：同物种连败 +1，异物种重置记录
+            if (save.friendshipPitySpeciesId == wild->id) {
+                if (save.friendshipPityFailCount < 255) {
+                    ++save.friendshipPityFailCount;
+                }
+            } else {
+                save.friendshipPitySpeciesId = wild->id;
+                save.friendshipPityFailCount = 1;
+            }
+            engine.markDirty(SaveUrgency::DEFERRED);
+        }
+    }
 }
 
 void ExploreScene::attackWild() {
@@ -2596,6 +2692,16 @@ void ExploreScene::resolveFriendshipOffer() {
         }
         friendshipContactIndex = contactSlot;
         friendshipStep = FriendshipStep::CONTACT_ACQUIRED;
+        // 结交成功：清零连败保底记录（§7.9.4）
+        {
+            Game::GameState& save = engine.gameState();
+            if (save.friendshipPitySpeciesId != 0 ||
+                save.friendshipPityFailCount != 0) {
+                save.friendshipPitySpeciesId = 0;
+                save.friendshipPityFailCount = 0;
+                engine.markDirty(SaveUrgency::DEFERRED);
+            }
+        }
         snprintf(resultBuf, sizeof(resultBuf),
                  Ui::Explore::FRIEND_CONTACT_ACQUIRED_FMT, wild->name);
         resultMessage = resultBuf;
@@ -2668,9 +2774,29 @@ void ExploreScene::fleeEncounter() {
     enqueueBattleLog(Ui::Explore::FLEE_SUCCESS);
 }
 
+void ExploreScene::snapshotActivePool() {
+    // 活跃池由 (时段序号, 区域ID, 重抽计数) 派生种子确定性重建，不进存档（§7.6）
+    uint8_t areaIndex = static_cast<uint8_t>(activeArea);
+    if (areaIndex >= ROUTE_MAP_COUNT) {
+        activePool.count = 0;
+        return;
+    }
+    const RouteMap& map = routeMap(areaIndex);
+    ExplorePool::SourceEntry source[ExplorePool::MAX_SOURCE_ENTRIES];
+    uint8_t sourceCount = buildPoolSource(
+        map, source, ExplorePool::MAX_SOURCE_ENTRIES);
+    auto& engine = GameEngine::ins();
+    uint32_t slotIndex = ExplorePool::slotIndexFor(engine.gameMinutesTotal());
+    uint8_t rerollCount = engine.gameState().explorePoolRerollCounts[areaIndex];
+    activePool = ExplorePool::buildPool(
+        source, sourceCount,
+        ExplorePool::mixSeed(slotIndex, areaIndex, rerollCount));
+}
+
 void ExploreScene::resetWalk() {
     phase = Phase::WALKING;
     generateMapBlocks();
+    snapshotActivePool();
     currentMapBlock = 0;
     steps = 0;
     mapEncounterCount = 0;
@@ -2998,16 +3124,28 @@ void ExploreScene::render() {
 
 void ExploreScene::loadAreaPreview() {
     memset(areaPreviewFrames, 0, sizeof(areaPreviewFrames));
+    areaPreviewPool = ExplorePool::Pool{};
     areaPreviewStartedAt = Hal::ins().millis();
     if (areaCursor >= ROUTE_MAP_COUNT) return;
 
+    // 预览展示当前时段种子的活跃池全成员：所见即本趟可遭遇（§7.1/§7.5）
     const RouteMap& map = routeMap(areaCursor);
+    ExplorePool::SourceEntry source[ExplorePool::MAX_SOURCE_ENTRIES];
+    uint8_t sourceCount = buildPoolSource(
+        map, source, ExplorePool::MAX_SOURCE_ENTRIES);
+    auto& engine = GameEngine::ins();
+    uint32_t slotIndex = ExplorePool::slotIndexFor(engine.gameMinutesTotal());
+    uint8_t rerollCount = engine.gameState().explorePoolRerollCounts[areaCursor];
+    areaPreviewPool = ExplorePool::buildPool(
+        source, sourceCount,
+        ExplorePool::mixSeed(slotIndex, areaCursor, rerollCount));
+
     uint16_t speciesIds[AREA_PREVIEW_COUNT] = {};
-    for (uint8_t i = 0; i < AREA_PREVIEW_COUNT; ++i) {
-        speciesIds[i] = encounterPreviewSpecies(map, i);
+    for (uint8_t i = 0; i < areaPreviewPool.count; ++i) {
+        speciesIds[i] = areaPreviewPool.entries[i].speciesId;
     }
-    PokemonSprites::preloadDynamicSpecies(speciesIds, AREA_PREVIEW_COUNT);
-    for (uint8_t i = 0; i < AREA_PREVIEW_COUNT; ++i) {
+    PokemonSprites::preloadDynamicSpecies(speciesIds, areaPreviewPool.count);
+    for (uint8_t i = 0; i < areaPreviewPool.count; ++i) {
         areaPreviewFrames[i] = PokemonSprites::findSpeciesSprite(
             speciesIds[i], PokemonSprites::SpriteKind::FRONT);
         if (!areaPreviewFrames[i]) {
@@ -3019,13 +3157,16 @@ void ExploreScene::loadAreaPreview() {
 
 void ExploreScene::renderAreaMenu() {
     auto& c = PixelRenderer::canvas();
-    c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, 0x0000);
-    static constexpr int LEFT_W = 90;
+    if (!GameAssets::drawBattleBackground(GameAssets::Kind::EXPLORE_MENU_BACKGROUND)) {
+        c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, 0x0000);
+    }
+    static constexpr int LEFT_W = 70;
     static constexpr int CENTER_Y = Hal::DISPLAY_H / 2;
     static constexpr int AREA_SPACING = 34;
     static constexpr float CURSOR_LERP = 0.25f;
     static constexpr int PREVIEW_CENTER_X =
         LEFT_W + (Hal::DISPLAY_W - LEFT_W) / 2;
+    // 活跃池轮播（§7.5）：三帧可见，右帧先转到中间，整体向左轮转
     static constexpr int PREVIEW_CENTER_Y =
         26 + (Hal::DISPLAY_H - 26) / 2;
     static constexpr int PREVIEW_GAP = 10;
@@ -3033,7 +3174,6 @@ void ExploreScene::renderAreaMenu() {
     static constexpr uint32_t PREVIEW_MOVE_MS = 500;
     static constexpr uint32_t PREVIEW_HOLD_MS =
         PREVIEW_CYCLE_MS - PREVIEW_MOVE_MS;
-    static constexpr uint8_t PREVIEW_SPECIES_COUNT = 3;
 
     float target = static_cast<float>(areaCursor);
     float diff = target - areaAnimCursor;
@@ -3055,7 +3195,7 @@ void ExploreScene::renderAreaMenu() {
             ? PixelRenderer::rgb(255, 216, 72)
             : PixelRenderer::rgb(156, 164, 176);
         if (active) {
-            c.fillRect(5, y - 12, 3, 24,
+            c.fillRect(5, y - 6, 3, 12,
                        PixelRenderer::rgb(255, 216, 72));
         }
         int textX = (LEFT_W - uiTextWidth(name)) / 2 + 4;
@@ -3064,25 +3204,30 @@ void ExploreScene::renderAreaMenu() {
     c.clearClipRect();
 
     c.drawFastVLine(LEFT_W, 4, Hal::DISPLAY_H - 8,
-                    PixelRenderer::rgb(55, 63, 76));
-    int titleX = PREVIEW_CENTER_X -
-                 uiTextWidth(Ui::Explore::HABITAT_MONSTERS) / 2;
-    PixelRenderer::text(titleX, 4, Ui::Explore::HABITAT_MONSTERS,
-                        PixelRenderer::rgb(241, 242, 232), 1);
+                    PixelRenderer::rgb(241, 242, 232));
+    // 池内有稀有成员时标题换成「大量出现!」提示玩家时间窗口（§7.5）
+    const char* title = areaCursor < ROUTE_MAP_COUNT &&
+                                ExplorePool::poolHasRare(areaPreviewPool)
+                            ? Ui::Explore::MASS_OUTBREAK
+                            : Ui::Explore::HABITAT_MONSTERS;
+    int titleX = PREVIEW_CENTER_X - uiTextWidth(title) / 2;
+    PixelRenderer::text(titleX, 4, title, PixelRenderer::rgb(241, 242, 232), 1);
     c.drawFastHLine(LEFT_W + 8, 24, Hal::DISPLAY_W - LEFT_W - 16,
-                    PixelRenderer::rgb(55, 63, 76));
+                    PixelRenderer::rgb(241, 242, 232));
 
     if (areaCursor >= ROUTE_MAP_COUNT) return;
+
+    // 轮播活跃池全成员；稀有成员带金标（§7.5）
+    const uint8_t poolCount = areaPreviewPool.count;
+    if (poolCount == 0) return;
     uint32_t elapsed = Hal::ins().millis() - areaPreviewStartedAt;
-    // 从最左边的开始轮播:左帧先转到中间,整体向右轮转
+    // 整体右往左轮播:右帧先转到中间,新帧从右侧滑入
     uint8_t currentPreview = static_cast<uint8_t>(
-        (PREVIEW_SPECIES_COUNT -
-         (elapsed / PREVIEW_CYCLE_MS) % PREVIEW_SPECIES_COUNT) %
-        PREVIEW_SPECIES_COUNT);
+        (elapsed / PREVIEW_CYCLE_MS) % poolCount);
     uint8_t nextPreview =
-        static_cast<uint8_t>((currentPreview + 1) % PREVIEW_SPECIES_COUNT);
+        static_cast<uint8_t>((currentPreview + 1) % poolCount);
     uint8_t prevPreview = static_cast<uint8_t>(
-        (currentPreview + PREVIEW_SPECIES_COUNT - 1) % PREVIEW_SPECIES_COUNT);
+        (currentPreview + poolCount - 1) % poolCount);
     uint32_t cycleElapsed = elapsed % PREVIEW_CYCLE_MS;
     float progress = cycleElapsed <= PREVIEW_HOLD_MS
         ? 0.0f
@@ -3106,40 +3251,46 @@ void ExploreScene::renderAreaMenu() {
                     frameWidth(prev) / 2;
         int rightX = PREVIEW_CENTER_X + frameWidth(cur) / 2 + PREVIEW_GAP +
                      frameWidth(next) / 2;
-        drawAreaPreviewFrame(prev, leftX, PREVIEW_CENTER_Y);
-        drawAreaPreviewFrame(cur, PREVIEW_CENTER_X, PREVIEW_CENTER_Y);
-        drawAreaPreviewFrame(next, rightX, PREVIEW_CENTER_Y);
+        drawPreviewMember(areaPreviewPool, prevPreview, prev, leftX,
+                          PREVIEW_CENTER_Y);
+        drawPreviewMember(areaPreviewPool, currentPreview, cur,
+                          PREVIEW_CENTER_X, PREVIEW_CENTER_Y);
+        drawPreviewMember(areaPreviewPool, nextPreview, next, rightX,
+                          PREVIEW_CENTER_Y);
     } else {
-        // 切换:左帧滑到中间,中间帧滑到右槽,新帧从左侧滑入
+        // 切换:右帧滑到中间,中间帧滑到左槽,新帧从右侧滑入
         // (间隔按实际宽度留 10px)
         const PokemonSprites::SpriteFrame* cur = areaPreviewFrames[currentPreview];
-        const PokemonSprites::SpriteFrame* prev = areaPreviewFrames[prevPreview];
-        uint8_t enteringPreview = static_cast<uint8_t>(
-            (prevPreview + PREVIEW_SPECIES_COUNT - 1) % PREVIEW_SPECIES_COUNT);
+        const PokemonSprites::SpriteFrame* next = areaPreviewFrames[nextPreview];
+        uint8_t enteringPreview =
+            static_cast<uint8_t>((nextPreview + 1) % poolCount);
         const PokemonSprites::SpriteFrame* entering =
             areaPreviewFrames[enteringPreview];
         int curW = frameWidth(cur);
-        int prevW = frameWidth(prev);
+        int nextW = frameWidth(next);
         int enteringW = frameWidth(entering);
         // 旧槽位(中间为当前帧)
-        int prevOldX = PREVIEW_CENTER_X - curW / 2 - PREVIEW_GAP - prevW / 2;
+        int nextOldX = PREVIEW_CENTER_X + curW / 2 + PREVIEW_GAP + nextW / 2;
         int curOldX = PREVIEW_CENTER_X;
-        int enteringOldX = -enteringW / 2 - 4;
-        // 新槽位(左帧成为中间帧)
-        int prevNewX = PREVIEW_CENTER_X;
-        int curNewX = PREVIEW_CENTER_X + prevW / 2 + PREVIEW_GAP + curW / 2;
+        int enteringOldX = Hal::DISPLAY_W + enteringW / 2 + 4;
+        // 新槽位(右帧成为中间帧)
+        int nextNewX = PREVIEW_CENTER_X;
+        int curNewX = PREVIEW_CENTER_X - nextW / 2 - PREVIEW_GAP - curW / 2;
         int enteringNewX =
-            PREVIEW_CENTER_X - prevW / 2 - PREVIEW_GAP - enteringW / 2;
-        int prevX = prevOldX +
-                    static_cast<int>(roundf((prevNewX - prevOldX) * progress));
+            PREVIEW_CENTER_X + nextW / 2 + PREVIEW_GAP + enteringW / 2;
+        int nextX = nextOldX +
+                    static_cast<int>(roundf((nextNewX - nextOldX) * progress));
         int curX = curOldX +
                    static_cast<int>(roundf((curNewX - curOldX) * progress));
         int enteringX = enteringOldX +
                         static_cast<int>(
                             roundf((enteringNewX - enteringOldX) * progress));
-        drawAreaPreviewFrame(prev, prevX, PREVIEW_CENTER_Y);
-        drawAreaPreviewFrame(cur, curX, PREVIEW_CENTER_Y);
-        drawAreaPreviewFrame(entering, enteringX, PREVIEW_CENTER_Y);
+        drawPreviewMember(areaPreviewPool, currentPreview, cur, curX,
+                          PREVIEW_CENTER_Y);
+        drawPreviewMember(areaPreviewPool, nextPreview, next, nextX,
+                          PREVIEW_CENTER_Y);
+        drawPreviewMember(areaPreviewPool, enteringPreview, entering,
+                          enteringX, PREVIEW_CENTER_Y);
     }
     c.clearClipRect();
 }

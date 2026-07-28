@@ -809,6 +809,7 @@ static constexpr const char* MAP_EXIT = "出口";
 static constexpr const char* MAP_BLOCK_FMT = "%u/%u区";
 static constexpr const char* END = "结束";
 static constexpr const char* HABITAT_MONSTERS = "栖息精灵";
+static constexpr const char* MASS_OUTBREAK = "大量出现!";
 static constexpr const char* SIDE_MENU_ITEMS[] = {
     Ui::TEAM,
     Ui::BAG,

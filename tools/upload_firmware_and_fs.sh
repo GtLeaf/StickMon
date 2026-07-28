@@ -5,6 +5,10 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_NAME="m5stick-s3"
 UPLOAD_PORT=""
 DRY_RUN=0
+# 编译产物导出目录（供 tools/web-flasher 上传固件用），可用 OUT_DIR 覆盖
+OUT_DIR="${OUT_DIR:-$ROOT_DIR/tools/out}"
+# boot_app0.bin 在 PlatformIO 框架目录而非工程构建目录，可用 BOOT_APP0_BIN 覆盖
+BOOT_APP0_BIN="${BOOT_APP0_BIN:-$HOME/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin}"
 
 if [[ -n "${PIO_BIN:-}" ]]; then
     PIO_BIN="$PIO_BIN"
@@ -19,17 +23,23 @@ usage() {
 Usage: tools/upload_firmware_and_fs.sh [options]
 
 Builds and uploads the firmware (including the partition table), then uploads
-the complete data/ directory as a LittleFS image.
+the complete data/ directory as a LittleFS image. After building, the files
+needed by tools/web-flasher (bootloader / partitions / boot_app0 / firmware /
+littlefs .bin) are exported to tools/out/.
 
 Options:
   -p, --port PORT          Upload port, for example /dev/cu.usbmodem2101.
                            Omit this option to let PlatformIO auto-detect it.
   -e, --environment NAME   PlatformIO environment. Default: m5stick-s3.
+  -o, --out DIR            Export directory for build artifacts.
+                           Default: tools/out.
       --dry-run            Print the commands without executing them.
   -h, --help               Show this help.
 
 Environment:
   PIO_BIN                  Override the PlatformIO executable path.
+  OUT_DIR                  Same as --out (the option wins if both are given).
+  BOOT_APP0_BIN            Override the boot_app0.bin path.
 EOF
 }
 
@@ -43,6 +53,11 @@ while [[ $# -gt 0 ]]; do
         -e|--environment)
             [[ $# -ge 2 ]] || { echo "[flash] Missing value for $1" >&2; exit 2; }
             ENV_NAME="$2"
+            shift 2
+            ;;
+        -o|--out)
+            [[ $# -ge 2 ]] || { echo "[flash] Missing value for $1" >&2; exit 2; }
+            OUT_DIR="$2"
             shift 2
             ;;
         --dry-run)
@@ -101,13 +116,41 @@ echo "[flash] Port: ${UPLOAD_PORT:-auto-detect}"
 echo "[flash] PlatformIO: $PIO_BIN"
 echo "[flash] Close any running 'pio device monitor' before continuing."
 
-echo "[flash] 1/4 Building firmware..."
+echo "[flash] 1/5 Building firmware..."
 run_pio
 
-echo "[flash] 2/4 Building LittleFS image..."
+echo "[flash] 2/5 Building LittleFS image..."
 run_pio -t buildfs
 
-echo "[flash] 3/4 Uploading firmware and partition table..."
+echo "[flash] 3/5 Exporting build artifacts to: $OUT_DIR"
+BUILD_DIR="$ROOT_DIR/.pio/build/$ENV_NAME"
+# 与 tools/web-flasher 上传表单一一对应的 5 个 bin
+ARTIFACTS=(
+    "$BUILD_DIR/bootloader.bin"
+    "$BUILD_DIR/partitions.bin"
+    "$BOOT_APP0_BIN"
+    "$BUILD_DIR/firmware.bin"
+    "$BUILD_DIR/littlefs.bin"
+)
+if [[ "$DRY_RUN" == "1" ]]; then
+    for src in "${ARTIFACTS[@]}"; do
+        printf '[flash] Would copy: %q -> %q\n' "$src" "$OUT_DIR/$(basename "$src")"
+    done
+else
+    for src in "${ARTIFACTS[@]}"; do
+        if [[ ! -f "$src" ]]; then
+            echo "[flash] Build artifact missing: $src" >&2
+            exit 1
+        fi
+    done
+    mkdir -p "$OUT_DIR"
+    for src in "${ARTIFACTS[@]}"; do
+        cp -f "$src" "$OUT_DIR/$(basename "$src")"
+        echo "[flash] Exported: $OUT_DIR/$(basename "$src")"
+    done
+fi
+
+echo "[flash] 4/5 Uploading firmware and partition table..."
 if [[ -n "$UPLOAD_PORT" ]]; then
     run_pio -t upload --upload-port "$UPLOAD_PORT"
 else
@@ -118,7 +161,7 @@ if [[ "$DRY_RUN" != "1" ]]; then
     sleep 2
 fi
 
-echo "[flash] 4/4 Uploading LittleFS resources..."
+echo "[flash] 5/5 Uploading LittleFS resources..."
 if [[ -n "$UPLOAD_PORT" ]]; then
     run_pio -t uploadfs --upload-port "$UPLOAD_PORT"
 else
@@ -126,3 +169,6 @@ else
 fi
 
 echo "[flash] Firmware and LittleFS upload completed."
+if [[ "$DRY_RUN" != "1" ]]; then
+    echo "[flash] Build artifacts for web-flasher are in: $OUT_DIR"
+fi

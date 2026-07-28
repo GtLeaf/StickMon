@@ -31,6 +31,13 @@ ENEMY_FRONT_MAX_WIDTH = 116
 ENEMY_FRONT_MAX_HEIGHT = 66
 ENEMY_FRONT_MIN_TARGET_HEIGHT = 48
 ENEMY_FRONT_MAX_UPSCALE = 1.75
+# 这些精灵按 0.45 基准换算后需要 1.33 倍以上放大才能达到最小高度,
+# 有效缩放率 >= 0.60,与源图 2px 像素网格严重错位(肉眼发糊)。
+# 它们不再强制放大,保持网格对齐的基准尺寸:
+# 最糊: 妙蛙种子/杰尼龟/绿毛虫/铁甲蛹/波波/小拳石/皮丘/玛力露/乌波/土狼犬/拉鲁拉丝/蘑蘑菇/雪童子
+ENEMY_FRONT_NO_UPSCALE_SPECIES = frozenset({
+    1, 7, 10, 11, 16, 74, 172, 183, 194, 261, 280, 285, 361,
+})
 PLAYER_BACK_MAX_WIDTH = 105
 PLAYER_BACK_MAX_HEIGHT = 65
 STATUS_PORTRAIT_MAX_WIDTH = 70
@@ -151,13 +158,13 @@ def trim_alpha_padding(img, alpha_threshold=16):
     return img.crop(bounds) if bounds else img
 
 
-def prepare_enemy_battle_front(img):
+def prepare_enemy_battle_front(img, allow_upscale=True):
     trimmed = trim_alpha_padding(img)
     base_width = trimmed.width * BATTLE_SIZE / max(1, img.width)
     base_height = trimmed.height * BATTLE_SIZE / max(1, img.height)
 
     scale = 1.0
-    if base_height < ENEMY_FRONT_MIN_TARGET_HEIGHT:
+    if allow_upscale and base_height < ENEMY_FRONT_MIN_TARGET_HEIGHT:
         scale = min(
             ENEMY_FRONT_MIN_TARGET_HEIGHT / max(1.0, base_height),
             ENEMY_FRONT_MAX_UPSCALE,
@@ -401,7 +408,10 @@ def add_base_frames(writer, species_id, ident, missing):
     icon = to_rgba(icon_path)
     writer.add_frame(species_id, ident, "ICON_0", icon.crop((0, 0, ICON_SIZE, ICON_SIZE)))
     front_source = to_rgba(front_path)
-    front = prepare_enemy_battle_front(front_source)
+    front = prepare_enemy_battle_front(
+        front_source,
+        allow_upscale=species_id not in ENEMY_FRONT_NO_UPSCALE_SPECIES,
+    )
     writer.add_frame(species_id, ident, "FRONT", front)
     writer.add_frame(
         species_id,
