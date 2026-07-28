@@ -213,18 +213,6 @@ uint8_t bagSourceIndexForVisible(uint8_t visibleIndex, bool battleOnly) {
     return BAG_SOURCE_BACK;
 }
 
-uint16_t foodColor(uint8_t foodIndex) {
-    switch (foodIndex) {
-    case 1: return PixelRenderer::rgb(255, 138, 112); // 文柚果
-    case 2: return PixelRenderer::rgb(255, 150, 188); // 桃桃果
-    case 3: return PixelRenderer::rgb(238, 76, 56);   // 樱子果
-    case 4: return PixelRenderer::rgb(186, 220, 84);  // 利木果
-    case 5: return PixelRenderer::rgb(152, 104, 198); // 莓莓果
-    case 6: return PixelRenderer::rgb(122, 184, 142); // 零余果
-    default: return PixelRenderer::rgb(245, 180, 87);
-    }
-}
-
 uint16_t typeColor(TypeId type) {
     switch (type) {
     case TypeId::FIRE: return PixelRenderer::rgb(239, 91, 67);
@@ -614,6 +602,12 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                 foodCursor = visibleFoodIndexOf(GameEngine::ins().selectedFoodIndex());
                 foodScroll = 0.0f;
             } else if (roomCursor == 1) {
+                const auto& state = GameEngine::ins().gameState();
+                if (!state.oobeDone || state.teamCount == 0) {
+                    toast = Ui::Menu::HATCH_FIRST;
+                    toastUntil = Hal::ins().millis() + 1100;
+                    return true;
+                }
                 GameEngine::ins().requestScene(SceneID::SHOWER);
             } else if (roomCursor == ROOM_ITEM_COUNT - 1) {
                 popView();
@@ -1848,13 +1842,11 @@ void MenuScene::renderFoodPage() {
     }
 
     uint8_t stock = GameEngine::ins().foodCount(foodCursor);
-    uint16_t iconColor = foodColor(foodCursor);
     int iconX = LEFT_W + 13;
     int iconY = 9;
-    c.fillEllipse(iconX + 29, iconY + 18, 28, 11, PixelRenderer::rgb(112, 87, 70));
-    c.fillEllipse(iconX + 29, iconY + 14, 23, 9, iconColor);
-    c.fillCircle(iconX + 21, iconY + 11, 2, PixelRenderer::rgb(92, 151, 80));
-    c.fillCircle(iconX + 37, iconY + 12, 2, PixelRenderer::rgb(178, 79, 57));
+    GameAssets::drawCentered(
+        GameAssets::itemKind(Game::itemIdForFoodIndex(foodCursor)),
+        iconX + 29, iconY + 18);
 
     int textX = iconX + 68;
     PixelRenderer::text(textX, iconY + 2, Ui::Room::FOOD_NAMES[foodCursor], 0xFFFF, 1);

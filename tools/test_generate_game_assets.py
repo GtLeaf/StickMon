@@ -19,6 +19,7 @@ from generate_game_assets import (
     SHOWER_MENU_SOAP_SIZE,
     SHOWER_MENU_BRUSH_SIZE,
     SHOWER_MENU_SPRINKLER_SIZE,
+    SHOWER_SOAP_COUNT,
     prepare_shower_assets,
     prepare_explore_pickup_marker,
     validate_explore_pickup_pack_mapping,
@@ -43,7 +44,7 @@ class GenerateGameAssetsTests(unittest.TestCase):
         for index, size in enumerate(SHOWER_BUBBLE_SIZES):
             self.assertEqual(assets[f"SHOWER_BUBBLE_{index}"].size, size)
         self.assertEqual(assets["SHOWER_BRUSH"].size, SHOWER_BRUSH_SIZE)
-        for index in range(8):
+        for index in range(SHOWER_SOAP_COUNT):
             self.assertEqual(assets[f"SHOWER_SOAP_{index}"].size, SHOWER_SOAP_SIZE)
             self.assertIsNotNone(
                 assets[f"SHOWER_SOAP_{index}"].getchannel("A").getbbox()

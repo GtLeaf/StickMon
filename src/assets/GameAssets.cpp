@@ -535,11 +535,6 @@ Kind itemKind(Game::ItemId item) {
     case Game::ItemId::SOAP_0: return Kind::SHOWER_SOAP_0;
     case Game::ItemId::SOAP_1: return Kind::SHOWER_SOAP_1;
     case Game::ItemId::SOAP_2: return Kind::SHOWER_SOAP_2;
-    case Game::ItemId::SOAP_3: return Kind::SHOWER_SOAP_3;
-    case Game::ItemId::SOAP_4: return Kind::SHOWER_SOAP_4;
-    case Game::ItemId::SOAP_5: return Kind::SHOWER_SOAP_5;
-    case Game::ItemId::SOAP_6: return Kind::SHOWER_SOAP_6;
-    case Game::ItemId::SOAP_7: return Kind::SHOWER_SOAP_7;
     default: return Kind::COUNT;
     }
 }

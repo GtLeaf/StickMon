@@ -98,6 +98,37 @@ private:
         void (MainScene::*draw)();
     };
 
+    enum class VisitorState : uint8_t {
+        IDLE,
+        WALK,
+        GO_TO_SLEEP,
+        SLEEPING,
+    };
+
+    struct VisitorActor {
+        bool active = false;
+        VisitorState state = VisitorState::IDLE;
+        uint16_t speciesId = 0;
+        float x = 0.0f;
+        float y = 0.0f;
+        float targetX = 0.0f;
+        float targetY = 0.0f;
+        float dropOffsetY = 0.0f;
+        float sleepX = 0.0f;
+        float sleepY = 0.0f;
+        bool sleepSpotValid = false;
+        uint32_t stateUntilMs = 0;
+        uint32_t frameStartedMs = 0;
+        uint8_t frameIndex = 0;
+        PokemonSprites::WalkDirection direction = PokemonSprites::WalkDirection::DOWN;
+        bool facingRight = true;
+    };
+
+    // Persists the visitor across scene switches (e.g. opening the menu) so it
+    // does not teleport when returning to the room.
+    static VisitorActor savedVisitor;
+    static bool savedVisitorValid;
+
     void updateMonsterAi(uint32_t nowMs, float dtSeconds);
     bool updateRoomAction(uint32_t nowMs);
     void cancelRoomAction(uint32_t nowMs);
@@ -167,6 +198,16 @@ private:
     void chooseAiGoal(uint32_t nowMs);
     bool startWander(uint32_t nowMs);
     bool openPendingProgression();
+    bool visitorHostActive() const;
+    void spawnVisitor(uint32_t nowMs, bool dropIn);
+    bool pickVisitorPoint(float& x, float& y) const;
+    bool pickVisitorSleepSpot(float& x, float& y) const;
+    void updateVisitor(uint32_t nowMs, float dtSeconds);
+    void advanceVisitorFrames(uint32_t nowMs, bool walking);
+    const PokemonSprites::SpriteFrame* visitorCurrentFrame(bool& flipX) const;
+    void drawVisitorShadow();
+    void drawVisitor();
+    void drawVisitorSleepZz(int screenX, int spriteTopY) const;
     void drawBackground();
     void drawFloor();
     void drawFood();
@@ -262,4 +303,5 @@ private:
     uint32_t nextSpecialActionMs = 0;
     uint32_t comboStartMs = 0;
     bool comboSaved = false;
+    VisitorActor visitor;
 };

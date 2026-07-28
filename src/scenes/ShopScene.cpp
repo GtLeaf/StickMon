@@ -259,11 +259,6 @@ ShopScene::Item ShopScene::itemForCategory(Category category, uint8_t index) con
         SOAP_0,
         SOAP_1,
         SOAP_2,
-        SOAP_3,
-        SOAP_4,
-        SOAP_5,
-        SOAP_6,
-        SOAP_7,
         BACK,
     };
 
@@ -533,11 +528,6 @@ uint16_t ShopScene::priceFor(Item item) {
     case SOAP_0:
     case SOAP_1:
     case SOAP_2:
-    case SOAP_3:
-    case SOAP_4:
-    case SOAP_5:
-    case SOAP_6:
-    case SOAP_7:
         return 25;
     default: return 0;
     }
@@ -567,11 +557,6 @@ Game::ItemId ShopScene::gameItemIdFor(Item item) {
     case SOAP_0: return Game::ItemId::SOAP_0;
     case SOAP_1: return Game::ItemId::SOAP_1;
     case SOAP_2: return Game::ItemId::SOAP_2;
-    case SOAP_3: return Game::ItemId::SOAP_3;
-    case SOAP_4: return Game::ItemId::SOAP_4;
-    case SOAP_5: return Game::ItemId::SOAP_5;
-    case SOAP_6: return Game::ItemId::SOAP_6;
-    case SOAP_7: return Game::ItemId::SOAP_7;
     default: return Game::ItemId::COUNT;
     }
 }

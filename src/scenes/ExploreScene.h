@@ -7,6 +7,10 @@
 #include "game/Species.h"
 #include "scenes/MenuScene.h"
 
+namespace PokemonSprites {
+struct SpriteFrame;
+}
+
 class ExploreScene : public Scene {
 public:
     enum class Area : uint8_t {
@@ -43,6 +47,11 @@ private:
 
     Phase phase = Phase::SELECT;
     uint8_t areaCursor = 0;
+    float areaAnimCursor = 0.0f;
+    uint32_t areaPreviewStartedAt = 0;
+    static constexpr uint8_t AREA_PREVIEW_COUNT = 3;
+    const PokemonSprites::SpriteFrame*
+        areaPreviewFrames[AREA_PREVIEW_COUNT] = {};
     Area activeArea = Area::GRASS_PATH;
     uint16_t steps = 0;
     uint16_t mapTargetSteps = 1;
@@ -243,6 +252,7 @@ private:
     void requestExploreExit(bool fainted = false, bool showEndPrompt = true);
     void closeExploreMenu();
     void renderAreaMenu();
+    void loadAreaPreview();
     void renderWalking();
     void renderEncounter();
     void renderFriendshipPrompt();

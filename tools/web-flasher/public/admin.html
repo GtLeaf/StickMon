@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StickMon 刷机站 · 管理</title>
+<link rel="stylesheet" href="/assets/style.css?v=2">
+</head>
+<body>
+<div class="wrap">
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">▞</div>
+      <div>
+        <h1>FLASHER ADMIN</h1>
+        <small>固件发布管理</small>
+      </div>
+    </div>
+    <a class="admin-link" href="/">← 返回主页</a>
+  </header>
+
+  <!-- 登录 -->
+  <div id="login-panel" class="panel hidden" style="max-width: 420px; margin: 60px auto;">
+    <h2>管理员登录</h2>
+    <div class="field">
+      <label>管理口令</label>
+      <input type="password" id="pw" autocomplete="current-password"
+        onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button class="btn" onclick="doLogin()">登 录</button>
+    <div id="login-msg" class="msg"></div>
+  </div>
+
+  <!-- 管理台 -->
+  <div id="dash" class="hidden">
+
+    <div class="panel">
+      <h2>发布新固件</h2>
+      <div class="field">
+        <label>固件名称</label>
+        <input type="text" id="f-name" placeholder="StickMon 电子宠物机">
+      </div>
+      <div class="field">
+        <label>版本号（已自动填入下一版本，可修改）</label>
+        <input type="text" id="f-version">
+      </div>
+      <div class="field">
+        <label>更新说明（显示在主页卡片上）</label>
+        <textarea id="f-notes" placeholder="- 新增 xx 精灵&#10;- 修复 xx 问题"></textarea>
+      </div>
+
+      <div class="field">
+        <label>固件文件（firmware 必选）</label>
+        <button class="btn secondary" id="fetch-btn" onclick="doFetchBuild()">🔍 自动拉取构建产物</button>
+        <div id="fetch-msg" class="msg"></div>
+        <div id="file-rows"></div>
+      </div>
+
+      <div class="field">
+        <label>封面图（PNG / JPEG / WebP，≤ 5MB，主页卡片展示用）</label>
+        <input type="file" id="f-image" accept="image/png,image/jpeg,image/webp">
+      </div>
+
+      <button class="btn" id="upload-btn" onclick="doUpload()">上 传 发 布</button>
+      <div id="upload-msg" class="msg"></div>
+    </div>
+
+    <div class="panel">
+      <h2>已发布版本</h2>
+      <table class="admin-table">
+        <thead>
+          <tr><th>版本</th><th>名称</th><th>大小</th><th>刷机次数</th><th>发布时间</th><th>操作</th></tr>
+        </thead>
+        <tbody id="fw-tbody"></tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2>首页轮播图</h2>
+      <div id="slide-list" class="slide-list"></div>
+      <div class="field" style="margin-top: 14px;">
+        <label>添加轮播图（PNG / JPEG / WebP，每张 ≤ 5MB，可多选）</label>
+        <input type="file" id="slide-files" accept="image/png,image/jpeg,image/webp" multiple>
+      </div>
+      <button class="btn" id="slide-upload-btn" onclick="doSlideUpload()">上 传 图 片</button>
+      <div id="slide-msg" class="msg"></div>
+    </div>
+
+    <button class="btn secondary" onclick="doLogout()">退出登录</button>
+  </div>
+</div>
+
+<script>
+const BIN_KEYS = ['bootloader', 'partitions', 'boot_app0', 'firmware', 'littlefs'];
+const H = { 'X-Requested-With': 'fetch' };
+
+// 渲染文件上传行（大小紧跟文件框；手动选择文件时也即时更新大小）
+const rowsEl = document.getElementById('file-rows');
+for (const key of BIN_KEYS) {
+  const row = document.createElement('div');
+  row.className = 'file-row';
+  row.innerHTML = `
+    <span class="k">${key}.bin${key === 'firmware' ? ' *' : ''}</span>
+    <input type="file" id="file-${key}" accept=".bin">
+    <span class="hint mono" id="sz-${key}"></span>`;
+  rowsEl.appendChild(row);
+  document.getElementById('file-' + key).addEventListener('change', (e) => {
+    const f = e.target.files[0];
+    document.getElementById('sz-' + key).textContent = f ? fmtSize(f.size) : '';
+  });
+}
+const hint = document.createElement('div');
+hint.className = 'hint';
+hint.textContent = '烧录偏移由服务端读取固件工程的 partitions.csv 自动确定，无需手动填写。';
+rowsEl.appendChild(hint);
+
+function show(id) { document.getElementById(id).classList.remove('hidden'); }
+function hide(id) { document.getElementById(id).classList.add('hidden'); }
+function fmtSize(b) { return b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.round(b / 1024) + ' KB'; }
+function fmtDate(t) { return new Date(t).toLocaleString('zh-CN'); }
+
+async function checkSession() {
+  const { admin } = await (await fetch('/api/me')).json();
+  if (admin) { show('dash'); loadList(); loadSlides(); fillNextVersion(); }
+  else show('login-panel');
+}
+
+async function doLogin() {
+  const msg = document.getElementById('login-msg');
+  msg.className = 'msg'; msg.textContent = '';
+  const res = await fetch('/api/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...H },
+    body: JSON.stringify({ password: document.getElementById('pw').value }),
+  });
+  if (res.ok) { hide('login-panel'); show('dash'); loadList(); loadSlides(); fillNextVersion(); }
+  else {
+    const { error } = await res.json().catch(() => ({ error: '登录失败' }));
+    msg.className = 'msg err'; msg.textContent = error;
+  }
+}
+
+async function doLogout() {
+  await fetch('/api/logout', { method: 'POST', headers: H });
+  location.reload();
+}
+
+async function fillNextVersion() {
+  const { version } = await (await fetch('/api/admin/next-version', { headers: H })).json();
+  document.getElementById('f-version').value = version;
+}
+
+// ---- 构建产物自动拉取：拉取后直接填入下方文件选择框 ----
+async function doFetchBuild() {
+  const msg = document.getElementById('fetch-msg');
+  const btn = document.getElementById('fetch-btn');
+  msg.className = 'msg'; msg.textContent = '';
+  btn.disabled = true; btn.textContent = '拉取中…';
+  try {
+    const res = await fetch('/api/admin/build-info', { headers: H });
+    const data = await res.json();
+    if (!res.ok) { msg.className = 'msg err'; msg.textContent = data.error || '扫描失败'; return; }
+
+    let filled = 0;
+    for (const f of data.files) {
+      const input = document.getElementById('file-' + f.key);
+      const sz = document.getElementById('sz-' + f.key);
+      if (!f.exists) {
+        input.value = '';
+        sz.textContent = '构建目录未找到';
+        continue;
+      }
+      // 拉取 bin 内容，用 DataTransfer 填入 file input（浏览器不允许直接设置路径）
+      const bin = await fetch(`/api/admin/build-files/${f.key}`, { headers: H });
+      if (!bin.ok) { sz.textContent = '拉取失败'; continue; }
+      const dt = new DataTransfer();
+      dt.items.add(new File([await bin.blob()], `${f.key}.bin`));
+      input.files = dt.files;
+      sz.textContent = fmtSize(f.size);
+      filled++;
+    }
+    msg.className = 'msg ' + (data.ready ? 'ok' : 'err');
+    msg.textContent = `已填入 ${filled} 个文件（合计 ${fmtSize(data.totalSize)}），来源：${data.buildDir}`
+      + (data.ready ? '' : '；缺少 firmware.bin，请先在 StickMon 工程执行 pio run');
+  } finally {
+    btn.disabled = false; btn.textContent = '🔍 自动拉取构建产物';
+  }
+}
+
+async function doUpload() {
+  const msg = document.getElementById('upload-msg');
+  const btn = document.getElementById('upload-btn');
+  msg.className = 'msg'; msg.textContent = '';
+  const fd = new FormData();
+  fd.append('name', document.getElementById('f-name').value);
+  fd.append('version', document.getElementById('f-version').value);
+  fd.append('notes', document.getElementById('f-notes').value);
+  for (const key of BIN_KEYS) {
+    const f = document.getElementById('file-' + key).files[0];
+    if (f) fd.append(key, f);
+  }
+  const img = document.getElementById('f-image').files[0];
+  if (img) fd.append('image', img);
+
+  btn.disabled = true; btn.textContent = '上传中…';
+  try {
+    const res = await fetch('/api/admin/firmwares', { method: 'POST', headers: H, body: fd });
+    const data = await res.json();
+    if (res.ok) {
+      msg.className = 'msg ok'; msg.textContent = '发布成功，主页已可刷入。';
+      document.getElementById('f-notes').value = '';
+      document.getElementById('fetch-msg').className = 'msg';
+      document.getElementById('fetch-msg').textContent = '';
+      for (const key of BIN_KEYS) {
+        document.getElementById('file-' + key).value = '';
+        document.getElementById('sz-' + key).textContent = '';
+      }
+      document.getElementById('f-image').value = '';
+      fillNextVersion(); loadList();
+    } else {
+      msg.className = 'msg err'; msg.textContent = data.error || '上传失败';
+    }
+  } finally {
+    btn.disabled = false; btn.textContent = '上 传 发 布';
+  }
+}
+
+async function loadList() {
+  const { firmwares } = await (await fetch('/api/firmwares')).json();
+  const tbody = document.getElementById('fw-tbody');
+  tbody.innerHTML = '';
+  for (const fw of firmwares) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="mono">v${fw.version}</td>
+      <td>${fw.name}</td>
+      <td class="mono">${fmtSize(fw.totalSize)}</td>
+      <td class="mono">${fw.downloads}</td>
+      <td class="mono">${fmtDate(fw.createdAt)}</td>
+      <td></td>`;
+    const ops = tr.lastElementChild;
+
+    const editBtn = document.createElement('button');
+    editBtn.className = 'btn secondary small';
+    editBtn.textContent = '编辑';
+    editBtn.onclick = () => doEdit(fw);
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn danger small';
+    delBtn.textContent = '删除';
+    delBtn.onclick = () => doDelete(fw);
+
+    ops.append(editBtn, delBtn);
+    tbody.appendChild(tr);
+  }
+}
+
+async function doEdit(fw) {
+  const name = prompt('固件名称', fw.name);
+  if (name === null) return;
+  const version = prompt('版本号', fw.version);
+  if (version === null) return;
+  const notes = prompt('更新说明', fw.notes);
+  if (notes === null) return;
+  const res = await fetch(`/api/admin/firmwares/${fw.id}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json', ...H },
+    body: JSON.stringify({ name, version, notes }),
+  });
+  if (res.ok) loadList();
+  else alert((await res.json()).error || '保存失败');
+}
+
+async function doDelete(fw) {
+  if (!confirm(`确认删除 v${fw.version}（${fw.name}）？\n磁盘上的固件文件与封面图会一并删除，不可恢复。`)) return;
+  const res = await fetch(`/api/admin/firmwares/${fw.id}`, { method: 'DELETE', headers: H });
+  if (res.ok) loadList();
+  else alert((await res.json()).error || '删除失败');
+}
+
+// ---- 轮播图管理 ----
+async function loadSlides() {
+  const { slides } = await (await fetch('/api/slides')).json();
+  const box = document.getElementById('slide-list');
+  box.innerHTML = '';
+  if (!slides.length) {
+    box.innerHTML = '<div class="hint">暂无轮播图，主页不会显示轮播模块。</div>';
+    return;
+  }
+  slides.forEach((s, i) => {
+    const row = document.createElement('div');
+    row.className = 'slide-item';
+    row.innerHTML = `<img src="${s.url}" alt="slide ${i + 1}"><span class="mono">#${i + 1}</span>`;
+    const ops = document.createElement('div');
+    ops.className = 'slide-ops';
+
+    const up = document.createElement('button');
+    up.className = 'btn secondary small'; up.textContent = '上移';
+    up.disabled = i === 0;
+    up.onclick = () => moveSlide(s.id, -1);
+
+    const down = document.createElement('button');
+    down.className = 'btn secondary small'; down.textContent = '下移';
+    down.disabled = i === slides.length - 1;
+    down.onclick = () => moveSlide(s.id, 1);
+
+    const del = document.createElement('button');
+    del.className = 'btn danger small'; del.textContent = '删除';
+    del.onclick = () => deleteSlide(s.id, i + 1);
+
+    ops.append(up, down, del);
+    row.appendChild(ops);
+    box.appendChild(row);
+  });
+}
+
+async function doSlideUpload() {
+  const msg = document.getElementById('slide-msg');
+  const btn = document.getElementById('slide-upload-btn');
+  const input = document.getElementById('slide-files');
+  msg.className = 'msg'; msg.textContent = '';
+  if (!input.files.length) { msg.className = 'msg err'; msg.textContent = '请先选择图片'; return; }
+  const fd = new FormData();
+  for (const f of input.files) fd.append('images', f);
+  btn.disabled = true; btn.textContent = '上传中…';
+  try {
+    const res = await fetch('/api/admin/slides', { method: 'POST', headers: H, body: fd });
+    const data = await res.json();
+    if (res.ok) {
+      msg.className = 'msg ok'; msg.textContent = `已添加 ${data.added.length} 张轮播图`;
+      input.value = ''; loadSlides();
+    } else {
+      msg.className = 'msg err'; msg.textContent = data.error || '上传失败';
+    }
+  } finally {
+    btn.disabled = false; btn.textContent = '上 传 图 片';
+  }
+}
+
+async function moveSlide(id, dir) {
+  const res = await fetch(`/api/admin/slides/${id}/move`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json', ...H },
+    body: JSON.stringify({ dir }),
+  });
+  if (res.ok) loadSlides();
+}
+
+async function deleteSlide(id, n) {
+  if (!confirm(`确认删除第 ${n} 张轮播图？图片文件会一并删除。`)) return;
+  const res = await fetch(`/api/admin/slides/${id}`, { method: 'DELETE', headers: H });
+  if (res.ok) loadSlides();
+  else alert((await res.json()).error || '删除失败');
+}
+
+checkSession();
+</script>
+</body>
+</html>

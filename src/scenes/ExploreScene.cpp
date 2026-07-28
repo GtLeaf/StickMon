@@ -574,6 +574,67 @@ static constexpr RouteMap ROUTE_MAPS[] = {
 
 static constexpr uint8_t ROUTE_MAP_COUNT = sizeof(ROUTE_MAPS) / sizeof(ROUTE_MAPS[0]);
 
+uint16_t encounterPreviewSpecies(const RouteMap& map, uint8_t rank) {
+    static constexpr uint8_t PREVIEW_COUNT = 3;
+    if (!map.encounters || rank >= PREVIEW_COUNT || rank >= map.encounterCount) {
+        return 0;
+    }
+
+    uint8_t selected[PREVIEW_COUNT] = {0xFF, 0xFF, 0xFF};
+    for (uint8_t slot = 0; slot <= rank; ++slot) {
+        uint8_t best = 0xFF;
+        for (uint8_t i = 0; i < map.encounterCount; ++i) {
+            bool alreadySelected = false;
+            for (uint8_t used = 0; used < slot; ++used) {
+                if (selected[used] == i) {
+                    alreadySelected = true;
+                    break;
+                }
+            }
+            if (alreadySelected) continue;
+            if (best == 0xFF ||
+                map.encounters[i].weight > map.encounters[best].weight) {
+                best = i;
+            }
+        }
+        if (best == 0xFF) return 0;
+        selected[slot] = best;
+    }
+    return map.encounters[selected[rank]].speciesId;
+}
+
+int uiTextWidth(const char* value) {
+    if (!value) return 0;
+    int width = 0;
+    const uint8_t* p = reinterpret_cast<const uint8_t*>(value);
+    while (*p) {
+        if (*p < 0x80) {
+            width += *p == ' ' ? 5 : 8;
+            ++p;
+        } else if ((*p & 0xE0) == 0xC0) {
+            width += 16;
+            p += 2;
+        } else if ((*p & 0xF0) == 0xE0) {
+            width += 16;
+            p += 3;
+        } else {
+            width += 8;
+            ++p;
+        }
+    }
+    return width;
+}
+
+void drawAreaPreviewFrame(const PokemonSprites::SpriteFrame* frame,
+                          int centerX, int centerY) {
+    if (!frame) return;
+
+    PokemonSprites::drawFrame(
+        frame,
+        centerX - static_cast<int>(frame->width) / 2,
+        centerY - static_cast<int>(frame->height) / 2);
+}
+
 constexpr uint8_t mapCountForRoll(const RouteMap& map, uint8_t roll) {
     return map.maxMapCount <= map.minMapCount
         ? map.minMapCount
@@ -882,6 +943,8 @@ void ExploreScene::onEnter() {
     auto& engine = GameEngine::ins();
     phase = Phase::SELECT;
     areaCursor = 0;
+    areaAnimCursor = 0.0f;
+    areaPreviewStartedAt = Hal::ins().millis();
     resultMessage = nullptr;
     defeatAwaitInput = false;
     clearFriendshipFlow();
@@ -913,6 +976,7 @@ void ExploreScene::onEnter() {
         engine.markExploreActive();
         resetWalk();
     }
+    if (phase == Phase::SELECT) loadAreaPreview();
 }
 
 void ExploreScene::update(uint32_t nowMs, float dtSeconds) {
@@ -1060,7 +1124,12 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
             return true;
         }
         if (event.btn == 1) {
-            areaCursor = (areaCursor + 1) % optionCount;
+            areaCursor++;
+            if (areaCursor >= optionCount) {
+                areaCursor = 0;
+                areaAnimCursor = 0.0f;
+            }
+            loadAreaPreview();
             return true;
         }
     }
@@ -2927,34 +2996,152 @@ void ExploreScene::render() {
     }
 }
 
+void ExploreScene::loadAreaPreview() {
+    memset(areaPreviewFrames, 0, sizeof(areaPreviewFrames));
+    areaPreviewStartedAt = Hal::ins().millis();
+    if (areaCursor >= ROUTE_MAP_COUNT) return;
+
+    const RouteMap& map = routeMap(areaCursor);
+    uint16_t speciesIds[AREA_PREVIEW_COUNT] = {};
+    for (uint8_t i = 0; i < AREA_PREVIEW_COUNT; ++i) {
+        speciesIds[i] = encounterPreviewSpecies(map, i);
+    }
+    PokemonSprites::preloadDynamicSpecies(speciesIds, AREA_PREVIEW_COUNT);
+    for (uint8_t i = 0; i < AREA_PREVIEW_COUNT; ++i) {
+        areaPreviewFrames[i] = PokemonSprites::findSpeciesSprite(
+            speciesIds[i], PokemonSprites::SpriteKind::FRONT);
+        if (!areaPreviewFrames[i]) {
+            areaPreviewFrames[i] = PokemonSprites::findSpeciesSprite(
+                speciesIds[i], PokemonSprites::SpriteKind::ICON_0);
+        }
+    }
+}
+
 void ExploreScene::renderAreaMenu() {
     auto& c = PixelRenderer::canvas();
     c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, 0x0000);
-    static constexpr uint8_t VISIBLE_ROWS = 5;
-    static constexpr int ROW_STEP = 25;
-    static constexpr int START_Y = 4;
-    static constexpr int SEPARATOR_Y_OFFSET = 21;
-    uint8_t count = static_cast<uint8_t>(Area::COUNT) + 1;
-    uint8_t first = areaCursor >= VISIBLE_ROWS ? areaCursor - VISIBLE_ROWS + 1 : 0;
-    if (first + VISIBLE_ROWS > count) first = count - VISIBLE_ROWS;
+    static constexpr int LEFT_W = 90;
+    static constexpr int CENTER_Y = Hal::DISPLAY_H / 2;
+    static constexpr int AREA_SPACING = 34;
+    static constexpr float CURSOR_LERP = 0.25f;
+    static constexpr int PREVIEW_CENTER_X =
+        LEFT_W + (Hal::DISPLAY_W - LEFT_W) / 2;
+    static constexpr int PREVIEW_CENTER_Y =
+        26 + (Hal::DISPLAY_H - 26) / 2;
+    static constexpr int PREVIEW_GAP = 10;
+    static constexpr uint32_t PREVIEW_CYCLE_MS = 2800;
+    static constexpr uint32_t PREVIEW_MOVE_MS = 500;
+    static constexpr uint32_t PREVIEW_HOLD_MS =
+        PREVIEW_CYCLE_MS - PREVIEW_MOVE_MS;
+    static constexpr uint8_t PREVIEW_SPECIES_COUNT = 3;
 
-    for (uint8_t slot = 0; slot < VISIBLE_ROWS; ++slot) {
-        uint8_t i = first + slot;
-        int y = START_Y + slot * ROW_STEP;
-        bool active = i == areaCursor;
-        const char* name = i < ROUTE_MAP_COUNT ? routeMap(i).name : Ui::BACK;
-        const char* description = i < ROUTE_MAP_COUNT
-            ? routeMap(i).description
-            : Ui::Explore::AREA_DESCS[Ui::Explore::AREA_COUNT];
-        uint16_t color = active ? 0xFFE0 : 0xFFFF;
-        if (active) c.fillRect(4, y, 4, 16, 0xFFE0);
-        PixelRenderer::text(14, y, name, color, 1);
-        PixelRenderer::text(112, y, description,
-                            active ? PixelRenderer::rgb(255, 218, 178) : 0x7BEF, 1);
-        if (slot + 1 < VISIBLE_ROWS) {
-            c.fillRect(4, y + SEPARATOR_Y_OFFSET, Hal::DISPLAY_W - 8, 1, 0x7BEF);
-        }
+    float target = static_cast<float>(areaCursor);
+    float diff = target - areaAnimCursor;
+    if (fabsf(diff) < 0.05f) {
+        areaAnimCursor = target;
+    } else {
+        areaAnimCursor += diff * CURSOR_LERP;
     }
+
+    uint8_t count = static_cast<uint8_t>(Area::COUNT) + 1;
+    c.setClipRect(0, 0, LEFT_W, Hal::DISPLAY_H);
+    for (uint8_t i = 0; i < count; ++i) {
+        float offset = static_cast<float>(i) - areaAnimCursor;
+        if (fabsf(offset) > 2.25f) continue;
+        int y = CENTER_Y + static_cast<int>(roundf(offset * AREA_SPACING));
+        bool active = fabsf(offset) < 0.5f;
+        const char* name = i < ROUTE_MAP_COUNT ? routeMap(i).name : Ui::BACK;
+        uint16_t color = active
+            ? PixelRenderer::rgb(255, 216, 72)
+            : PixelRenderer::rgb(156, 164, 176);
+        if (active) {
+            c.fillRect(5, y - 12, 3, 24,
+                       PixelRenderer::rgb(255, 216, 72));
+        }
+        int textX = (LEFT_W - uiTextWidth(name)) / 2 + 4;
+        PixelRenderer::text(textX, y - 8, name, color, 1);
+    }
+    c.clearClipRect();
+
+    c.drawFastVLine(LEFT_W, 4, Hal::DISPLAY_H - 8,
+                    PixelRenderer::rgb(55, 63, 76));
+    int titleX = PREVIEW_CENTER_X -
+                 uiTextWidth(Ui::Explore::HABITAT_MONSTERS) / 2;
+    PixelRenderer::text(titleX, 4, Ui::Explore::HABITAT_MONSTERS,
+                        PixelRenderer::rgb(241, 242, 232), 1);
+    c.drawFastHLine(LEFT_W + 8, 24, Hal::DISPLAY_W - LEFT_W - 16,
+                    PixelRenderer::rgb(55, 63, 76));
+
+    if (areaCursor >= ROUTE_MAP_COUNT) return;
+    uint32_t elapsed = Hal::ins().millis() - areaPreviewStartedAt;
+    // 从最左边的开始轮播:左帧先转到中间,整体向右轮转
+    uint8_t currentPreview = static_cast<uint8_t>(
+        (PREVIEW_SPECIES_COUNT -
+         (elapsed / PREVIEW_CYCLE_MS) % PREVIEW_SPECIES_COUNT) %
+        PREVIEW_SPECIES_COUNT);
+    uint8_t nextPreview =
+        static_cast<uint8_t>((currentPreview + 1) % PREVIEW_SPECIES_COUNT);
+    uint8_t prevPreview = static_cast<uint8_t>(
+        (currentPreview + PREVIEW_SPECIES_COUNT - 1) % PREVIEW_SPECIES_COUNT);
+    uint32_t cycleElapsed = elapsed % PREVIEW_CYCLE_MS;
+    float progress = cycleElapsed <= PREVIEW_HOLD_MS
+        ? 0.0f
+        : (cycleElapsed - PREVIEW_HOLD_MS) /
+              static_cast<float>(PREVIEW_MOVE_MS);
+    progress = min(1.0f, progress);
+    progress = progress * progress * (3.0f - 2.0f * progress);
+
+    auto frameWidth = [](const PokemonSprites::SpriteFrame* frame) {
+        return frame ? static_cast<int>(frame->width) : 0;
+    };
+    c.setClipRect(LEFT_W + 1, 26,
+                  Hal::DISPLAY_W - LEFT_W - 1,
+                  Hal::DISPLAY_H - 26);
+    if (progress <= 0.0f) {
+        // 静止:中间帧锚定在面板中心,两侧按实际宽度留 10px 缝
+        const PokemonSprites::SpriteFrame* cur = areaPreviewFrames[currentPreview];
+        const PokemonSprites::SpriteFrame* prev = areaPreviewFrames[prevPreview];
+        const PokemonSprites::SpriteFrame* next = areaPreviewFrames[nextPreview];
+        int leftX = PREVIEW_CENTER_X - frameWidth(cur) / 2 - PREVIEW_GAP -
+                    frameWidth(prev) / 2;
+        int rightX = PREVIEW_CENTER_X + frameWidth(cur) / 2 + PREVIEW_GAP +
+                     frameWidth(next) / 2;
+        drawAreaPreviewFrame(prev, leftX, PREVIEW_CENTER_Y);
+        drawAreaPreviewFrame(cur, PREVIEW_CENTER_X, PREVIEW_CENTER_Y);
+        drawAreaPreviewFrame(next, rightX, PREVIEW_CENTER_Y);
+    } else {
+        // 切换:左帧滑到中间,中间帧滑到右槽,新帧从左侧滑入
+        // (间隔按实际宽度留 10px)
+        const PokemonSprites::SpriteFrame* cur = areaPreviewFrames[currentPreview];
+        const PokemonSprites::SpriteFrame* prev = areaPreviewFrames[prevPreview];
+        uint8_t enteringPreview = static_cast<uint8_t>(
+            (prevPreview + PREVIEW_SPECIES_COUNT - 1) % PREVIEW_SPECIES_COUNT);
+        const PokemonSprites::SpriteFrame* entering =
+            areaPreviewFrames[enteringPreview];
+        int curW = frameWidth(cur);
+        int prevW = frameWidth(prev);
+        int enteringW = frameWidth(entering);
+        // 旧槽位(中间为当前帧)
+        int prevOldX = PREVIEW_CENTER_X - curW / 2 - PREVIEW_GAP - prevW / 2;
+        int curOldX = PREVIEW_CENTER_X;
+        int enteringOldX = -enteringW / 2 - 4;
+        // 新槽位(左帧成为中间帧)
+        int prevNewX = PREVIEW_CENTER_X;
+        int curNewX = PREVIEW_CENTER_X + prevW / 2 + PREVIEW_GAP + curW / 2;
+        int enteringNewX =
+            PREVIEW_CENTER_X - prevW / 2 - PREVIEW_GAP - enteringW / 2;
+        int prevX = prevOldX +
+                    static_cast<int>(roundf((prevNewX - prevOldX) * progress));
+        int curX = curOldX +
+                   static_cast<int>(roundf((curNewX - curOldX) * progress));
+        int enteringX = enteringOldX +
+                        static_cast<int>(
+                            roundf((enteringNewX - enteringOldX) * progress));
+        drawAreaPreviewFrame(prev, prevX, PREVIEW_CENTER_Y);
+        drawAreaPreviewFrame(cur, curX, PREVIEW_CENTER_Y);
+        drawAreaPreviewFrame(entering, enteringX, PREVIEW_CENTER_Y);
+    }
+    c.clearClipRect();
 }
 
 void ExploreScene::renderWalking() {
@@ -3456,13 +3643,7 @@ void ExploreScene::drawMonsterSprite(const Species& species, int x, int groundY,
     int drawH = max<int>(1, static_cast<int>(roundf(h * scale)));
     int drawX = x - drawW / 2 + spriteOffsetX;
     int drawY = groundY - drawH;
-    int shadowRadiusX = constrain(drawW * 3 / 8, 10, maxWidth / 2);
-    int shadowRadiusY = constrain(drawH / 12, 3, 6);
 
-    auto& c = PixelRenderer::canvas();
-    c.fillEllipse(x + spriteOffsetX, groundY - 1,
-                  shadowRadiusX, shadowRadiusY,
-                  PixelRenderer::rgb(23, 27, 34));
     if (scale < 0.999f || scale > 1.001f) {
         PokemonSprites::drawFrameScaled(frame, drawX, drawY, scale);
     } else {

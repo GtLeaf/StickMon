@@ -379,10 +379,17 @@ class AssetWriter:
         })
 
 
+def sprite_source_path(subdir, species_id, ident):
+    plain = GRAPHICS / subdir / f"{ident}.png"
+    if plain.exists():
+        return plain
+    return GRAPHICS / subdir / f"{species_id:03d}_{ident}.png"
+
+
 def add_base_frames(writer, species_id, ident, missing):
-    icon_path = GRAPHICS / "Icons" / f"{ident}.png"
-    front_path = GRAPHICS / "Front" / f"{ident}.png"
-    back_path = GRAPHICS / "Back" / f"{ident}.png"
+    icon_path = sprite_source_path("Icons", species_id, ident)
+    front_path = sprite_source_path("Front", species_id, ident)
+    back_path = sprite_source_path("Back", species_id, ident)
     local_missing = []
     for path in [icon_path, front_path, back_path]:
         if not path.exists():
@@ -663,6 +670,7 @@ const SpriteFrame* findSpeciesSprite(uint16_t speciesId, SpriteKind kind);
 int16_t frameGroundOffsetY(const SpriteFrame* frame);
 bool walkingAnimation(uint16_t speciesId, WalkDirection direction, WalkingAnimation& animation);
 bool syncTeamCache(const uint16_t* speciesIds, uint8_t count, uint8_t loadBudget = 0xFF);
+bool preloadDynamicSpecies(const uint16_t* speciesIds, uint8_t count);
 void setDynamicLoadingEnabled(bool enabled);
 void beginRenderFrame();
 const SpriteCacheStats& cacheStats();
@@ -689,7 +697,8 @@ namespace {
 static constexpr uint8_t SPRITE_SOURCE_FILE_BLOCK = 2;
 static constexpr uint16_t SPRITE_FRAME_GROUND_MARKER = 0xA500;
 static constexpr uint8_t TEAM_CACHE_CAP = 2;
-static constexpr uint8_t CACHE_CAP = 4;
+static constexpr uint8_t DYNAMIC_CACHE_CAP = 3;
+static constexpr uint8_t CACHE_CAP = TEAM_CACHE_CAP + DYNAMIC_CACHE_CAP;
 static constexpr uint8_t KNOWN_MISSING_FILE_CAP = 16;
 static constexpr uint8_t FRAME_MISSING_CAP = 4;
 static constexpr uint8_t KNOWN_MISSING_FRAME_CAP = 16;
@@ -1131,6 +1140,40 @@ bool syncTeamCache(const uint16_t* speciesIds, uint8_t count, uint8_t loadBudget
         gStats.cachedSpecies, gStats.missingSpecies,
         gStats.decodedBytes, gStats.compressedBytes, gStats.lastReloadMs,
         gStats.psram ? 1 : 0, gStats.freePsram);
+    return ready;
+}
+
+bool preloadDynamicSpecies(const uint16_t* speciesIds, uint8_t count) {
+    if (!speciesIds) count = 0;
+    if (count > DYNAMIC_CACHE_CAP) count = DYNAMIC_CACHE_CAP;
+
+    for (uint8_t i = TEAM_CACHE_CAP; i < CACHE_CAP; ++i) {
+        releaseEntry(gCache[i]);
+    }
+    gDynamicSlot = TEAM_CACHE_CAP;
+
+    bool ready = true;
+    uint8_t slot = TEAM_CACHE_CAP;
+    for (uint8_t i = 0; i < count; ++i) {
+        uint16_t speciesId = speciesIds[i];
+        if (speciesId == 0) continue;
+
+        bool duplicate = false;
+        for (uint8_t previous = 0; previous < i; ++previous) {
+            if (speciesIds[previous] == speciesId) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (duplicate || cachedSpeciesFor(speciesId)) continue;
+        if (slot >= CACHE_CAP || !loadSpeciesIntoCache(slot, speciesId)) {
+            ready = false;
+            continue;
+        }
+        ++slot;
+    }
+    gDynamicSlot = slot < CACHE_CAP ? slot : TEAM_CACHE_CAP;
+    gStats.freePsram = ESP.getFreePsram();
     return ready;
 }
 

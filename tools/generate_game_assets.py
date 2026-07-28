@@ -62,13 +62,14 @@ SHOWER_BUBBLE_SIZES = (
     (48, 48),
     (64, 40),
 )
-SHOWER_BRUSH_SIZE = (32, 48)
-SHOWER_SOAP_SIZE = (32, 32)
-SHOWER_SPRINKLER_SIZE = (40, 40)
+SHOWER_SOAP_COUNT = 3
+SHOWER_BRUSH_SIZE = (42, 42)
+SHOWER_SOAP_SIZE = (36, 36)
+SHOWER_SPRINKLER_SIZE = (42, 42)
 SHOWER_BACKGROUND_SIZE = (240, 135)
-SHOWER_MENU_SOAP_SIZE = (38, 38)
-SHOWER_MENU_BRUSH_SIZE = (38, 58)
-SHOWER_MENU_SPRINKLER_SIZE = (48, 48)
+SHOWER_MENU_SOAP_SIZE = (43, 43)
+SHOWER_MENU_BRUSH_SIZE = (50, 50)
+SHOWER_MENU_SPRINKLER_SIZE = (50, 50)
 
 ITEMS = [
     ("ITEM_POKE_BALL", "POKEBALL.png"),
@@ -95,7 +96,7 @@ ITEMS = [
 SHOWER_ASSETS = [
     *(f"SHOWER_BUBBLE_{index}" for index in range(len(SHOWER_BUBBLE_SIZES))),
     "SHOWER_BRUSH",
-    *(f"SHOWER_SOAP_{index}" for index in range(8)),
+    *(f"SHOWER_SOAP_{index}" for index in range(SHOWER_SOAP_COUNT)),
     "SHOWER_SPRINKLER",
     "SHOWER_MENU_SOAP",
     "SHOWER_MENU_BRUSH",
@@ -375,11 +376,17 @@ def prepare_shower_assets():
     bubble_sources = extract_showcase_sprites(
         SHOWER_SOURCE_DIR / "bobble.png", len(SHOWER_BUBBLE_SIZES)
     )
-    brush_source = extract_showcase_sprites(SHOWER_SOURCE_DIR / "bush.png", 1)[0]
-    soap_sources = extract_showcase_sprites(SHOWER_SOURCE_DIR / "soap.png", 8)
-    sprinkler_source = extract_showcase_sprites(
-        SHOWER_SOURCE_DIR / "sprinkler.png", 1
-    )[0]
+    brush_source = Image.open(SHOWER_SOURCE_DIR / "bush.png").convert("RGBA")
+    soap_paths = sorted((SHOWER_SOURCE_DIR / "soap").glob("soap_*.png*"))
+    if len(soap_paths) != SHOWER_SOAP_COUNT:
+        raise ValueError(
+            f"expected {SHOWER_SOAP_COUNT} shower soaps, found "
+            f"{len(soap_paths)}: {SHOWER_SOURCE_DIR / 'soap'}"
+        )
+    soap_sources = [Image.open(path).convert("RGBA") for path in soap_paths]
+    sprinkler_source = Image.open(
+        SHOWER_SOURCE_DIR / "sprinkle.png"
+    ).convert("RGBA")
 
     assets = []
     for index, (source, size) in enumerate(zip(bubble_sources, SHOWER_BUBBLE_SIZES)):
@@ -641,6 +648,8 @@ def build_assets():
         writers["ui"].add(kind, quantize_rgba(image, 15))
 
     SHOWER_PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
+    for stale_preview in SHOWER_PREVIEW_DIR.glob("*.png"):
+        stale_preview.unlink()
     for kind, image in prepare_shower_assets():
         image.save(SHOWER_PREVIEW_DIR / f"{kind.lower()}.png")
         writers["ui"].add(kind, quantize_rgba(image, 15))

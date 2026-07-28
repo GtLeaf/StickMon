@@ -21,7 +21,7 @@ static constexpr uint8_t EV_MAX = 252;
 static constexpr uint16_t EV_TOTAL_MAX = 510;
 static constexpr uint32_t HATCH_MAGIC = 0x48415443; // HATC
 static constexpr uint8_t ROOM_FOOD_COUNT = 7;
-static constexpr uint8_t SOAP_VARIANT_COUNT = 8;
+static constexpr uint8_t SOAP_VARIANT_COUNT = 3;
 static constexpr uint8_t ROOM_BOWL_CAPACITY = 1;
 static constexpr uint8_t ROOM_NORMAL_FOOD_INDEX = 0;
 static constexpr uint8_t ROOM_NORMAL_FOOD_BITES = 3;
@@ -54,15 +54,10 @@ enum class ItemId : uint8_t {
     SOAP_0,
     SOAP_1,
     SOAP_2,
-    SOAP_3,
-    SOAP_4,
-    SOAP_5,
-    SOAP_6,
-    SOAP_7,
     COUNT,
 };
 static_assert(
-    static_cast<uint8_t>(ItemId::SOAP_7) -
+    static_cast<uint8_t>(ItemId::SOAP_2) -
         static_cast<uint8_t>(ItemId::SOAP_0) + 1 ==
         SOAP_VARIANT_COUNT,
     "soap item ids must stay contiguous");
@@ -98,7 +93,7 @@ inline ItemId itemIdForFoodIndex(uint8_t foodIndex) {
 inline int8_t soapIndexForItemId(ItemId item) {
     uint8_t value = static_cast<uint8_t>(item);
     uint8_t first = static_cast<uint8_t>(ItemId::SOAP_0);
-    uint8_t last = static_cast<uint8_t>(ItemId::SOAP_7);
+    uint8_t last = static_cast<uint8_t>(ItemId::SOAP_2);
     return value >= first && value <= last ? static_cast<int8_t>(value - first) : -1;
 }
 
@@ -124,6 +119,7 @@ enum class Origin : uint8_t {
     BEFRIENDED,
     TRADED,
     GIFT,
+    VISITOR,
     UNKNOWN = 0xFF,
 };
 
@@ -230,7 +226,7 @@ struct PlayerSettings {
     uint8_t volume = 50;
     bool voiceCallEnabled = false;
     bool vibrationOn = false;
-    uint8_t idleTimeoutIndex = 0; // 0=30s, 1=2min, 2=5min, 3=10min, 4=never
+    uint8_t idleTimeoutIndex = 2; // 0=30s, 1=2min, 2=5min, 3=10min, 4=never
     bool leftHanded = false;
     uint8_t language = 0; // 0 = zh-CN
 };

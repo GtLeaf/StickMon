@@ -6,7 +6,7 @@ static constexpr const char* ROOM = "房间";
 static constexpr const char* MENU = "菜单";
 static constexpr const char* SHOP = "商店";
 static constexpr const char* EXPLORE = "探索";
-static constexpr const char* SOCIAL = "通讯";
+static constexpr const char* SOCIAL = "社交";
 static constexpr const char* COMPUTER = "电脑";
 static constexpr const char* EXCHANGE = "交换";
 static constexpr const char* SETTINGS = "设置";
@@ -329,17 +329,11 @@ static constexpr const char* FOOD_NO_STOCK = "没有库存";
 static constexpr const char* ITEMS[] = {
     FOOD_ITEM,
     "洗澡",
-    Ui::TOY,
-    Ui::FURNITURE,
-    Ui::ROOM_CHANGE,
     Ui::BACK,
 };
 static constexpr const char* DESCS[] = {
     "房间里的日常补给",
     "给精灵洗个澡",
-    "后续可放置互动玩具",
-    "后续可布置房间家具",
-    "后续可切换房间风格",
     "回到主菜单",
 };
 static constexpr const char* FOOD_NAMES[] = {
@@ -374,18 +368,13 @@ static constexpr const char* ALREADY_SOAPED = "已经有泡沫了";
 static constexpr const char* EXIT_FOAM = "身上还有泡沫";
 static constexpr const char* EXIT_QUESTION = "要结束吗?";
 static constexpr const char* INCOMPLETE = "洗澡没有完成";
-static constexpr const char* EXP_GAIN_FMT = "经验 +%u";
+static constexpr const char* EXP_GAIN_FMT = "+%u exp";
 static constexpr const char* YES = "yes";
 static constexpr const char* NO = "no";
 static constexpr const char* SOAP_NAMES[] = {
     "婴儿粉皂",
     "树叶皂",
     "薄荷皂",
-    "星云皂",
-    "贝壳皂",
-    "蜂窝皂",
-    "水滴皂",
-    "纯白皂",
 };
 }
 
@@ -774,11 +763,6 @@ static constexpr const char* NAMES[] = {
     "婴儿粉皂",
     "树叶皂",
     "薄荷皂",
-    "星云皂",
-    "贝壳皂",
-    "蜂窝皂",
-    "水滴皂",
-    "纯白皂",
     Ui::BACK,
 };
 static constexpr const char* DESCS[] = {
@@ -800,11 +784,6 @@ static constexpr const char* DESCS[] = {
     "婴儿粉 长方圆角小气泡",
     "天蓝色 蛋形树叶压印",
     "薄荷绿 圆盘螺旋纹理",
-    "淡紫色 云朵星形凹印",
-    "奶油黄 贝壳脊线纹理",
-    "珊瑚橙 六边蜂窝压印",
-    "海泡青 鹅卵石水滴高光",
-    "纯白色 高长斜切边缘",
     "回到菜单",
 };
 }
@@ -829,6 +808,7 @@ static constexpr const char* MAP_ENTRY = "入口";
 static constexpr const char* MAP_EXIT = "出口";
 static constexpr const char* MAP_BLOCK_FMT = "%u/%u区";
 static constexpr const char* END = "结束";
+static constexpr const char* HABITAT_MONSTERS = "栖息精灵";
 static constexpr const char* SIDE_MENU_ITEMS[] = {
     Ui::TEAM,
     Ui::BAG,
@@ -836,12 +816,12 @@ static constexpr const char* SIDE_MENU_ITEMS[] = {
     Ui::BACK,
 };
 static constexpr unsigned AREA_COUNT = 6;
-static constexpr const char* GRASS_PATH = "草丛小路";
-static constexpr const char* CREEK_SLOPE = "溪桥坡地";
-static constexpr const char* TALL_GRASS_PARK = "高草公园";
-static constexpr const char* FROST_CRYSTAL_CAVE = "霜晶冰窟";
-static constexpr const char* MIST_FOREST_PATH = "雾隐林径";
-static constexpr const char* ANCIENT_WATERFALL_VALLEY = "古木瀑谷";
+static constexpr const char* GRASS_PATH = "青草径";
+static constexpr const char* CREEK_SLOPE = "溪桥坡";
+static constexpr const char* TALL_GRASS_PARK = "高草园";
+static constexpr const char* FROST_CRYSTAL_CAVE = "霜晶窟";
+static constexpr const char* MIST_FOREST_PATH = "雾林径";
+static constexpr const char* ANCIENT_WATERFALL_VALLEY = "古瀑谷";
 static constexpr const char* AREA_ITEMS[] = {
     GRASS_PATH,
     CREEK_SLOPE,
@@ -957,28 +937,34 @@ static constexpr const char* DONE = "孵化完成";
 namespace Social {
 static constexpr const char* NOW = "NOW";
 static constexpr const char* OFF = "OFF";
-static constexpr const char* ACCEPTED = "已接受连接";
-static constexpr const char* CONNECT_OK = "连接成功";
-static constexpr const char* CONNECT_REJECTED = "连接被拒绝";
-static constexpr const char* HOSTING_BATTLE = "正在广播对战房";
-static constexpr const char* SEARCHING_BATTLE = "正在搜索对战房";
-static constexpr const char* HOSTING_TRADE = "正在广播交换房";
-static constexpr const char* SEARCHING_TRADE = "正在搜索交换房";
-static constexpr const char* HOSTING_EVOLVE = "正在广播进化房";
-static constexpr const char* SEARCHING_EVOLVE = "正在搜索进化房";
-static constexpr const char* HOSTING_GIFT = "正在广播礼物房";
-static constexpr const char* SEARCHING_GIFT = "正在搜索礼物房";
-static constexpr const char* JOIN_REQUESTED = "已请求加入房间";
-static constexpr const char* ROOM_COUNT_FMT = "房间:%d";
-static constexpr const char* PURPOSE_ITEMS[] = {
-    Ui::BATTLE,
-    Ui::TRADE,
-    Ui::GIFT,
-    Ui::BACK,
-};
-static constexpr const char* ACTION_ITEMS[] = {
-    "创建",
-    "搜索",
+static constexpr const char* HOSTING_VISIT = "正在广播邀请";
+static constexpr const char* SEARCHING_VISIT = "正在搜索邀请";
+static constexpr const char* WAIT_GUEST_SUB = "等待访客加入…";
+static constexpr const char* WAIT_SECONDS_FMT = "已等待 %u 秒";
+static constexpr const char* HOST_TIMEOUT = "等待超时,没有访客加入";
+static constexpr const char* GUEST_CONNECTING = "访客连接中";
+static constexpr const char* SYNCING = "正在同步精灵数据";
+static constexpr const char* REQUESTING_JOIN = "正在请求加入";
+static constexpr const char* SEARCH_TIMEOUT = "没有找到邀请";
+static constexpr const char* JOIN_REJECTED = "加入被拒绝";
+static constexpr const char* ROOMS_FOUND_FMT = "已发现房间:%d";
+static constexpr const char* SELECT_ROOM = "选择房间";
+static constexpr const char* ROOM_ROW_FMT = "房间 %03u";
+static constexpr const char* CANCEL_HINT = "A:取消";
+static constexpr const char* BACK_HINT = "A:返回";
+static constexpr const char* ENTERED_ROOM = "已进入对方房间";
+static constexpr const char* VISITING_TITLE = "拜访中";
+static constexpr const char* VISITING_GUEST_HINT = "你的精灵正在对方房间";
+static constexpr const char* VISITING_HOST_HINT = "有访客在你的房间";
+static constexpr const char* REJECT_STORAGE_FULL = "对方通讯录已满";
+static constexpr const char* REJECT_NO_MONSTER = "对方没有精灵";
+static constexpr const char* HOST_FULL = "通讯录已满,无法接待";
+static constexpr const char* LINK_FAILED = "连接失败";
+static constexpr const char* LINK_LOST = "连接已断开";
+static constexpr const char* RECALL_HINT = "A召回 长按返回";
+static constexpr const char* MENU_ITEMS[] = {
+    "邀请",
+    "拜访",
     Ui::BACK,
 };
 }

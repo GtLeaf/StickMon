@@ -65,6 +65,16 @@ enum class SaveUrgency : uint8_t {
     IMMEDIATE,
 };
 
+struct VisitSessionState {
+    bool active = false;
+    bool asHost = false;
+    uint32_t startedMs = 0;
+    uint32_t lastPingSentMs = 0;
+    uint32_t lastStatusSentMs = 0;
+    uint32_t lastPeerMessageMs = 0;
+    uint8_t peerMac[6] = {};
+};
+
 class GameEngine {
 public:
     static GameEngine& ins();
@@ -214,6 +224,13 @@ public:
     bool consumeDebugBattleRequest();
     void endDebugBattle();
     bool consumeDebugMenuReturnRequest();
+    bool visitActive() const { return visitSession.active; }
+    bool visitAsHost() const { return visitSession.asHost; }
+    uint8_t beginVisitAsHost(uint16_t speciesId, uint8_t level, uint8_t nature,
+                             uint8_t satiety, uint8_t mood, uint8_t affection);
+    void beginVisitAsVisitor();
+    void endVisit();
+    bool takeVisitLinkLost();
 
 private:
     GameEngine() = default;
@@ -237,6 +254,7 @@ private:
     bool sanitizeMonsterMovesForSpecies(Game::MonsterRuntime& mon,
                                         const Species& species);
     void tickCare(uint32_t nowMs);
+    void updateVisit(uint32_t nowMs);
     void resetDailyCountersIfNeeded();
     void grantCareExperience(uint8_t baseAmount, bool weakGain = false);
     bool syncSpriteCache(uint8_t loadBudget = 0xFF);
@@ -326,6 +344,8 @@ private:
     uint8_t moveReplacementEventHead = 0;
     uint8_t moveReplacementEventCount = 0;
     MainSceneViewState mainViewState;
+    VisitSessionState visitSession;
+    bool visitLinkLost = false;
 
     Game::GameState state;
     SaveManager saveManager;

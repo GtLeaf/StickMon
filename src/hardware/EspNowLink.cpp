@@ -71,6 +71,7 @@ void EspNowLink::end() {
     pendingJoin = false;
     pendingAck = false;
     awaitingAck = false;
+    resetSessionStateLocked();
     portEXIT_CRITICAL(&stateMux);
 }
 
@@ -83,6 +84,7 @@ bool EspNowLink::beginStub() {
     pendingJoin = false;
     pendingAck = false;
     awaitingAck = false;
+    resetSessionStateLocked();
     portEXIT_CRITICAL(&stateMux);
     return true;
 }
@@ -120,6 +122,7 @@ void EspNowLink::startHost(RoomPurpose purpose) {
     pendingJoin = false;
     pendingAck = false;
     awaitingAck = false;
+    resetSessionStateLocked();
     portEXIT_CRITICAL(&stateMux);
 }
 
@@ -131,6 +134,7 @@ void EspNowLink::startSearch(RoomPurpose purpose) {
     roomCountValue = 0;
     pendingAck = false;
     awaitingAck = false;
+    resetSessionStateLocked();
     portEXIT_CRITICAL(&stateMux);
 }
 
@@ -141,6 +145,7 @@ void EspNowLink::stopRoom() {
     pendingJoin = false;
     pendingAck = false;
     awaitingAck = false;
+    resetSessionStateLocked();
     portEXIT_CRITICAL(&stateMux);
 }
 
@@ -151,6 +156,9 @@ void EspNowLink::update() {
     bool advertise = false;
     RoomPurpose advertisePurpose = RoomPurpose::BATTLE;
     uint8_t advertiseRoomId = 0;
+    bool retransmit = false;
+    TrackedSessionSend retransmitSnapshot;
+    uint8_t retransmitMac[6] = {};
     portENTER_CRITICAL(&stateMux);
     if (mode == Mode::HOSTING && now - lastAdvertMs >= 500) {
         lastAdvertMs = now;
@@ -167,10 +175,28 @@ void EspNowLink::update() {
             i++;
         }
     }
+
+    if (tracked.active && now - tracked.lastSendMs >= SESSION_RETRANSMIT_MS) {
+        if (tracked.attempts > SESSION_MAX_ATTEMPTS) {
+            tracked.active = false;
+            sessionResultReady = true;
+            sessionResultSuccess = false;
+        } else {
+            tracked.attempts++;
+            tracked.lastSendMs = now;
+            retransmit = true;
+            retransmitSnapshot = tracked;
+            memcpy(retransmitMac, peer, 6);
+        }
+    }
     portEXIT_CRITICAL(&stateMux);
 
     if (advertise) {
         sendPacket(BROADCAST_MAC, LinkMessageType::HELLO, advertisePurpose, advertiseRoomId, 0);
+    }
+    if (retransmit) {
+        sendSessionFrame(retransmitMac, retransmitSnapshot.type, retransmitSnapshot.seq,
+                         sessionId(), retransmitSnapshot.payload, retransmitSnapshot.payloadLen);
     }
 }
 
@@ -231,6 +257,7 @@ bool EspNowLink::sendJoinAck(const uint8_t mac[6], bool accepted, uint16_t reque
     if (accepted) {
         memcpy(peer, mac, 6);
         mode = Mode::CONNECTED;
+        sessionIdValue = requestSeq;
     }
     portEXIT_CRITICAL(&stateMux);
     bool sent = sendPacket(mac, LinkMessageType::JOIN_ACK, purpose,
@@ -273,11 +300,16 @@ void EspNowLink::onReceive(const uint8_t* mac, const uint8_t* data, int len) {
 }
 
 void EspNowLink::handleReceive(const uint8_t* mac, const uint8_t* data, int len) {
-    if (!mac || !data || len != (int)sizeof(WirePacket)) return;
+    if (!mac || !data) return;
+    if (len == (int)sizeof(SessionFrame)) {
+        handleSessionFrame(mac, data, len);
+        return;
+    }
+    if (len != (int)sizeof(WirePacket)) return;
     WirePacket packet{};
     memcpy(&packet, data, sizeof(packet));
     if (packet.magic != 0x5AA5 || packet.version != 0x03) return;
-    if (packet.purpose > static_cast<uint8_t>(RoomPurpose::GIFT)) return;
+    if (packet.purpose > static_cast<uint8_t>(RoomPurpose::VISIT)) return;
 
     RoomPurpose purpose = (RoomPurpose)packet.purpose;
     uint32_t now = Hal::ins().millis();
@@ -299,7 +331,10 @@ void EspNowLink::handleReceive(const uint8_t* mac, const uint8_t* data, int len)
         pendingAck = true;
         pendingAckAccepted = packet.accepted != 0;
         awaitingAck = false;
-        if (pendingAckAccepted) memcpy(peer, mac, 6);
+        if (pendingAckAccepted) {
+            memcpy(peer, mac, 6);
+            sessionIdValue = expectedAckSeq;
+        }
     }
     portEXIT_CRITICAL(&stateMux);
 }
@@ -340,4 +375,162 @@ void EspNowLink::rememberRoomLocked(const uint8_t mac[6], uint8_t seenRoomId,
     entry.roomId = seenRoomId;
     entry.purpose = purpose;
     entry.lastSeenMs = now;
+}
+
+bool EspNowLink::isSessionType(LinkMessageType type) {
+    uint8_t value = static_cast<uint8_t>(type);
+    return value >= static_cast<uint8_t>(LinkMessageType::VISIT_SYNC) &&
+           value <= static_cast<uint8_t>(LinkMessageType::SESSION_ACK);
+}
+
+uint16_t EspNowLink::sessionId() const {
+    portENTER_CRITICAL(&stateMux);
+    uint16_t value = sessionIdValue;
+    portEXIT_CRITICAL(&stateMux);
+    return value;
+}
+
+bool EspNowLink::sendSessionMessage(LinkMessageType type, const void* payload, uint8_t payloadLen) {
+    if (!isSessionType(type) || type == LinkMessageType::SESSION_ACK) return false;
+    if (payloadLen > SESSION_PAYLOAD_CAP) return false;
+    if (payloadLen > 0 && !payload) return false;
+
+    uint8_t target[6] = {};
+    uint16_t frameSeq = 0;
+    uint16_t frameSessionId = 0;
+    uint32_t now = Hal::ins().millis();
+    portENTER_CRITICAL(&stateMux);
+    bool available = mode == Mode::CONNECTED && !tracked.active;
+    if (available) {
+        frameSeq = seq++;
+        if (seq == 0) seq = 1;
+        frameSessionId = sessionIdValue;
+        memcpy(target, peer, 6);
+        tracked.active = true;
+        tracked.type = type;
+        tracked.seq = frameSeq;
+        tracked.attempts = 1;
+        tracked.payloadLen = payloadLen;
+        tracked.lastSendMs = now;
+        if (payloadLen > 0) memcpy(tracked.payload, payload, payloadLen);
+    }
+    portEXIT_CRITICAL(&stateMux);
+    if (!available) return false;
+
+    // The tracked slot drives retransmission, so a transient send failure here
+    // is recovered by update() instead of being reported to the caller.
+    sendSessionFrame(target, type, frameSeq, frameSessionId, payload, payloadLen);
+    return true;
+}
+
+bool EspNowLink::sessionSendBusy() const {
+    portENTER_CRITICAL(&stateMux);
+    bool busy = tracked.active;
+    portEXIT_CRITICAL(&stateMux);
+    return busy;
+}
+
+bool EspNowLink::takeSessionSendResult(bool& success) {
+    portENTER_CRITICAL(&stateMux);
+    bool available = sessionResultReady;
+    if (available) {
+        success = sessionResultSuccess;
+        sessionResultReady = false;
+    }
+    portEXIT_CRITICAL(&stateMux);
+    return available;
+}
+
+bool EspNowLink::takeSessionMessage(LinkMessageType& type, uint8_t* payload, uint8_t& payloadLen) {
+    portENTER_CRITICAL(&stateMux);
+    bool available = rxPending;
+    if (available) {
+        type = rxType;
+        payloadLen = rxPayloadLen;
+        if (payload && rxPayloadLen > 0) memcpy(payload, rxPayload, rxPayloadLen);
+        rxPending = false;
+    }
+    portEXIT_CRITICAL(&stateMux);
+    return available;
+}
+
+void EspNowLink::handleSessionFrame(const uint8_t* mac, const uint8_t* data, int len) {
+    if (len != (int)sizeof(SessionFrame)) return;
+    SessionFrame frame{};
+    memcpy(&frame, data, sizeof(frame));
+    if (frame.magic != 0x5AA5 || frame.version != 0x03) return;
+    LinkMessageType type = static_cast<LinkMessageType>(frame.type);
+    if (!isSessionType(type)) return;
+    if (frame.payloadLen > SESSION_PAYLOAD_CAP) return;
+
+    bool sendAck = false;
+    uint16_t ackSeq = 0;
+    uint16_t ackSessionId = 0;
+    uint8_t target[6] = {};
+    portENTER_CRITICAL(&stateMux);
+    bool valid = mode == Mode::CONNECTED && sessionIdValue != 0 &&
+                 frame.sessionId == sessionIdValue && memcmp(mac, peer, 6) == 0;
+    if (valid) {
+        if (type == LinkMessageType::SESSION_ACK) {
+            if (tracked.active && tracked.seq == frame.seq) {
+                tracked.active = false;
+                sessionResultReady = true;
+                sessionResultSuccess = true;
+            }
+        } else {
+            memcpy(target, peer, 6);
+            sendAck = true;
+            ackSeq = frame.seq;
+            ackSessionId = sessionIdValue;
+            bool duplicate = lastRxValid && lastRxSeq == frame.seq;
+            if (!duplicate) {
+                lastRxValid = true;
+                lastRxSeq = frame.seq;
+                if (!rxPending) {
+                    rxType = type;
+                    rxPayloadLen = frame.payloadLen;
+                    if (frame.payloadLen > 0) memcpy(rxPayload, frame.payload, frame.payloadLen);
+                    rxPending = true;
+                }
+            }
+        }
+    }
+    portEXIT_CRITICAL(&stateMux);
+
+    if (sendAck) {
+        sendSessionFrame(target, LinkMessageType::SESSION_ACK, ackSeq, ackSessionId, nullptr, 0);
+    }
+}
+
+bool EspNowLink::sendSessionFrame(const uint8_t mac[6], LinkMessageType type, uint16_t frameSeq,
+                                  uint16_t frameSessionId, const void* payload, uint8_t payloadLen) {
+    if (!isEnabled()) return false;
+    if (!esp_now_is_peer_exist(mac)) {
+        esp_now_peer_info_t peerInfo{};
+        memcpy(peerInfo.peer_addr, mac, 6);
+        peerInfo.channel = 0;
+        peerInfo.encrypt = false;
+        if (esp_now_add_peer(&peerInfo) != ESP_OK) return false;
+    }
+
+    SessionFrame frame{};
+    frame.magic = 0x5AA5;
+    frame.version = 0x03;
+    frame.type = static_cast<uint8_t>(type);
+    frame.seq = frameSeq;
+    frame.sessionId = frameSessionId;
+    frame.payloadLen = payloadLen;
+    if (payloadLen > 0 && payload) memcpy(frame.payload, payload, payloadLen);
+    return esp_now_send(mac, (const uint8_t*)&frame, sizeof(frame)) == ESP_OK;
+}
+
+void EspNowLink::resetSessionStateLocked() {
+    sessionIdValue = 0;
+    tracked = TrackedSessionSend{};
+    sessionResultReady = false;
+    sessionResultSuccess = false;
+    rxPending = false;
+    rxPayloadLen = 0;
+    lastRxValid = false;
+    lastRxSeq = 0;
 }

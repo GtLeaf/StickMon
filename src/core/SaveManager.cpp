@@ -216,7 +216,7 @@ bool sanitizeMonster(Game::MonsterRuntime& mon) {
     }
     if (mon.petCountToday > 4) mon.petCountToday = 4;
     uint8_t origin = static_cast<uint8_t>(mon.origin);
-    if (origin > static_cast<uint8_t>(Game::Origin::GIFT) && mon.origin != Game::Origin::UNKNOWN) {
+    if (origin > static_cast<uint8_t>(Game::Origin::VISITOR) && mon.origin != Game::Origin::UNKNOWN) {
         mon.origin = Game::Origin::UNKNOWN;
     }
 
@@ -247,6 +247,26 @@ bool sanitizeState(Game::GameState& state) {
     }
     if (state.teamCount > Game::TEAM_CAP) {
         state.teamCount = Game::TEAM_CAP;
+        changed = true;
+    }
+    // Visiting guests never survive a reboot; drop them from the team on load.
+    for (uint8_t i = 0; i < state.teamCount;) {
+        if (state.team[i].origin == Game::Origin::VISITOR) {
+            for (uint8_t j = i + 1; j < state.teamCount; ++j) {
+                state.team[j - 1] = state.team[j];
+            }
+            state.teamCount--;
+            if (state.teamCount < Game::TEAM_CAP) {
+                state.team[state.teamCount] = Game::MonsterRuntime{};
+            }
+            changed = true;
+        } else {
+            ++i;
+        }
+    }
+    if (state.oobeDone && state.teamCount == 0) {
+        state.teamCount = 1;
+        state.team[0] = Game::MonsterRuntime{};
         changed = true;
     }
     if (state.storageCount > Game::STORAGE_CAP) {

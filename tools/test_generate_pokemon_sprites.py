@@ -171,6 +171,15 @@ class GeneratePokemonSpritesTests(unittest.TestCase):
 
         self.assertEqual(expected, generated)
 
+    def test_dynamic_cache_holds_all_explore_preview_species(self):
+        source = (ROOT / "src" / "assets" / "PokemonSprites.cpp").read_text()
+
+        self.assertIn("static constexpr uint8_t DYNAMIC_CACHE_CAP = 3;", source)
+        self.assertIn(
+            "bool preloadDynamicSpecies(const uint16_t* speciesIds, uint8_t count)",
+            source,
+        )
+
     @unittest.skipUnless(shutil.which("c++"), "host C++ compiler is unavailable")
     def test_route_motion_timing(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include "assets/GameAssets.h"
 #include "assets/HudAssets.h"
 #include "assets/PokemonMotion.h"
 #include "assets/PokemonSprites.h"
@@ -66,6 +67,18 @@ static constexpr int NAV_CELL_PX = 8;
 static constexpr uint8_t NAV_MAX_COLS = 32;
 static constexpr uint8_t NAV_MAX_ROWS = 32;
 static constexpr uint16_t NAV_MAX_NODES = NAV_MAX_COLS * NAV_MAX_ROWS;
+static constexpr float VISITOR_WALK_SPEED = 26.0f;
+static constexpr float VISITOR_DROP_SPEED = 90.0f;
+static constexpr float VISITOR_DROP_HEIGHT = 64.0f;
+static constexpr float VISITOR_AVOID_RADIUS = 20.0f;
+static constexpr uint16_t VISITOR_IDLE_MIN_MS = 1000;
+static constexpr uint16_t VISITOR_IDLE_MAX_MS = 3000;
+static constexpr uint16_t VISITOR_WALK_FRAME_MS = 240;
+static constexpr float VISITOR_SLEEP_ARRIVE_DIST = 2.0f;
+static constexpr uint16_t VISITOR_SLEEP_FRAME_MS = 800;
+static constexpr uint16_t VISITOR_SLEEP_ZZ_CYCLE_MS = 1600;
+static constexpr float VISITOR_SLEEP_SPOT_RETRY_RADIUS = 40.0f;
+static constexpr uint8_t VISITOR_SLEEP_SPOT_RETRIES = 24;
 
 constexpr bool doorRouteStepAllowed(bool enforceWalkArea, bool enteringWalkArea,
                                     bool currentInside, bool nextInside) {
@@ -446,6 +459,15 @@ bool randomRoomWalkPoint(float& x, float& y) {
     return false;
 }
 
+PokemonSprites::WalkDirection visitorWalkDirectionForDelta(float dx, float dy) {
+    if (fabsf(dx) >= fabsf(dy)) {
+        return dx >= 0.0f ? PokemonSprites::WalkDirection::RIGHT
+                          : PokemonSprites::WalkDirection::LEFT;
+    }
+    return dy >= 0.0f ? PokemonSprites::WalkDirection::DOWN
+                      : PokemonSprites::WalkDirection::UP;
+}
+
 bool randomRoomWalkPointNear(float centerX, float centerY, float radiusX, float radiusY, float& x, float& y) {
     int spanX = (int)roundf(radiusX);
     int spanY = (int)roundf(radiusY);
@@ -578,6 +600,9 @@ void drawHungerIcon(int x, int y, uint8_t hunger) {
 }
 }
 
+MainScene::VisitorActor MainScene::savedVisitor{};
+bool MainScene::savedVisitorValid = false;
+
 void MainScene::onEnter() {
     VoiceCallService::ins().begin();
     active = &GameEngine::ins().activeSpecies();
@@ -621,11 +646,30 @@ void MainScene::onEnter() {
     if (nextAiDecisionMs == 0) nextAiDecisionMs = nowMs;
     scheduleAttention(nowMs, true);
     scheduleSpecialAction(nowMs);
+    visitor.active = false;
+    if (visitorHostActive()) {
+        const Game::MonsterRuntime& guest = GameEngine::ins().gameState().team[1];
+        if (savedVisitorValid && savedVisitor.speciesId == guest.speciesId) {
+            visitor = savedVisitor;
+            visitor.dropOffsetY = 0.0f;
+            visitor.frameStartedMs = nowMs;
+            if (visitor.state == VisitorState::IDLE) {
+                visitor.stateUntilMs = nowMs + 1000;
+            } else if (visitor.state == VisitorState::SLEEPING && !mainSceneIsNight()) {
+                visitor.state = VisitorState::IDLE;
+                visitor.stateUntilMs = nowMs + 1000;
+            }
+        } else {
+            spawnVisitor(nowMs, false);
+        }
+    }
     beginDoorTransition(nowMs);
 }
 
 void MainScene::onExit() {
     VoiceCallService::ins().stopListening();
+    savedVisitor = visitor;
+    savedVisitorValid = visitor.active;
     onBeforeSave();
 }
 
@@ -713,6 +757,7 @@ void MainScene::update(uint32_t nowMs, float dtSeconds) {
         behaviorProfile = behaviorProfileFor(*nextActive, GameEngine::ins().activeMonster());
     }
     active = nextActive;
+    updateVisitor(nowMs, dtSeconds);
     auto& voice = VoiceCallService::ins();
     const auto& settings = GameEngine::ins().gameState().settings;
     const auto& voiceMonster = GameEngine::ins().activeMonster();
@@ -2766,14 +2811,306 @@ bool MainScene::openPendingProgression() {
     return false;
 }
 
+bool MainScene::visitorHostActive() const {
+    const GameEngine& engine = GameEngine::ins();
+    if (!engine.visitActive() || !engine.visitAsHost()) return false;
+    const Game::GameState& state = engine.gameState();
+    return state.teamCount >= 2 && state.team[1].origin == Game::Origin::VISITOR;
+}
+
+void MainScene::spawnVisitor(uint32_t nowMs, bool dropIn) {
+    const Game::MonsterRuntime& guest = GameEngine::ins().gameState().team[1];
+    visitor.active = true;
+    visitor.speciesId = guest.speciesId;
+    float x = monsterX;
+    float y = monsterY;
+    pickVisitorPoint(x, y);
+    visitor.x = x;
+    visitor.y = y;
+    visitor.targetX = x;
+    visitor.targetY = y;
+    visitor.dropOffsetY = dropIn ? VISITOR_DROP_HEIGHT : 0.0f;
+    visitor.sleepSpotValid = false;
+    visitor.sleepX = x;
+    visitor.sleepY = y;
+    visitor.state = VisitorState::IDLE;
+    visitor.stateUntilMs = nowMs + (uint32_t)random(VISITOR_IDLE_MIN_MS, VISITOR_IDLE_MAX_MS + 1);
+    visitor.frameStartedMs = nowMs;
+    visitor.frameIndex = 0;
+    visitor.direction = PokemonSprites::WalkDirection::DOWN;
+    visitor.facingRight = true;
+}
+
+bool MainScene::pickVisitorPoint(float& x, float& y) const {
+    for (uint8_t tries = 0; tries < 16; ++tries) {
+        float px = 0.0f;
+        float py = 0.0f;
+        if (!randomMonsterCenterWalkPoint(px, py)) break;
+        float dx = px - monsterX;
+        float dy = py - monsterY;
+        if (dx * dx + dy * dy >= VISITOR_AVOID_RADIUS * VISITOR_AVOID_RADIUS) {
+            x = px;
+            y = py;
+            return true;
+        }
+    }
+    return randomMonsterCenterWalkPoint(x, y);
+}
+
+bool MainScene::pickVisitorSleepSpot(float& x, float& y) const {
+    // 床的右侧空地,离床一段距离(房间中部)
+    static constexpr float OFFSETS[][2] = {
+        {62.0f, 6.0f}, {68.0f, 14.0f}, {58.0f, -4.0f}, {72.0f, 8.0f},
+        {65.0f, 20.0f}, {55.0f, 12.0f}, {76.0f, 0.0f},
+    };
+    float baseX = bedCenterX();
+    float baseY = bedCenterY();
+    for (const auto& offset : OFFSETS) {
+        float px = baseX + offset[0];
+        float py = baseY + offset[1];
+        if (monsterFootprintInsideWalkArea(px, py) && !roomBedContains(px, py)) {
+            x = px;
+            y = py;
+            return true;
+        }
+    }
+    int radius = (int)VISITOR_SLEEP_SPOT_RETRY_RADIUS;
+    for (uint8_t tries = 0; tries < VISITOR_SLEEP_SPOT_RETRIES; ++tries) {
+        float px = baseX + (float)random(40, 40 + radius);
+        float py = baseY + (float)random(-radius / 2, radius / 2 + 1);
+        if (monsterFootprintInsideWalkArea(px, py) && !roomBedContains(px, py)) {
+            x = px;
+            y = py;
+            return true;
+        }
+    }
+    return randomMonsterCenterWalkPoint(x, y);
+}
+
+void MainScene::advanceVisitorFrames(uint32_t nowMs, bool walking) {
+    uint16_t frameMs = walking ? VISITOR_WALK_FRAME_MS : PMD_IDLE_FRAME_MS;
+    while (nowMs - visitor.frameStartedMs >= frameMs) {
+        visitor.frameIndex++;
+        visitor.frameStartedMs += frameMs;
+    }
+}
+
+void MainScene::updateVisitor(uint32_t nowMs, float dtSeconds) {
+    if (!visitorHostActive()) {
+        visitor.active = false;
+        return;
+    }
+    uint16_t speciesId = GameEngine::ins().gameState().team[1].speciesId;
+    if (!visitor.active || visitor.speciesId != speciesId) {
+        spawnVisitor(nowMs, true);
+        return;
+    }
+
+    if (visitor.dropOffsetY > 0.0f) {
+        visitor.dropOffsetY -= VISITOR_DROP_SPEED * dtSeconds;
+        if (visitor.dropOffsetY < 0.0f) visitor.dropOffsetY = 0.0f;
+        advanceVisitorFrames(nowMs, false);
+        return;
+    }
+
+    bool night = mainSceneIsNight();
+
+    if (visitor.state == VisitorState::SLEEPING) {
+        if (!night) {
+            visitor.state = VisitorState::IDLE;
+            visitor.stateUntilMs = nowMs + (uint32_t)random(VISITOR_IDLE_MIN_MS, VISITOR_IDLE_MAX_MS + 1);
+            visitor.frameStartedMs = nowMs;
+            visitor.frameIndex = 0;
+            return;
+        }
+        while (nowMs - visitor.frameStartedMs >= VISITOR_SLEEP_FRAME_MS) {
+            visitor.frameIndex++;
+            visitor.frameStartedMs += VISITOR_SLEEP_FRAME_MS;
+        }
+        return;
+    }
+
+    if (night && visitor.state != VisitorState::GO_TO_SLEEP) {
+        if (!visitor.sleepSpotValid) {
+            pickVisitorSleepSpot(visitor.sleepX, visitor.sleepY);
+            visitor.sleepSpotValid = true;
+        }
+        visitor.targetX = visitor.sleepX;
+        visitor.targetY = visitor.sleepY;
+        visitor.state = VisitorState::GO_TO_SLEEP;
+        visitor.frameStartedMs = nowMs;
+        visitor.frameIndex = 0;
+    } else if (!night && visitor.state == VisitorState::GO_TO_SLEEP) {
+        visitor.state = VisitorState::IDLE;
+        visitor.stateUntilMs = nowMs + (uint32_t)random(VISITOR_IDLE_MIN_MS, VISITOR_IDLE_MAX_MS + 1);
+        visitor.frameStartedMs = nowMs;
+        visitor.frameIndex = 0;
+        return;
+    }
+
+    if (visitor.state == VisitorState::IDLE) {
+        advanceVisitorFrames(nowMs, false);
+        if ((int32_t)(nowMs - visitor.stateUntilMs) < 0) return;
+        float tx = 0.0f;
+        float ty = 0.0f;
+        if (pickVisitorPoint(tx, ty)) {
+            visitor.targetX = tx;
+            visitor.targetY = ty;
+            visitor.state = VisitorState::WALK;
+            visitor.frameStartedMs = nowMs;
+            visitor.frameIndex = 0;
+        } else {
+            visitor.stateUntilMs = nowMs + VISITOR_IDLE_MIN_MS;
+        }
+        return;
+    }
+
+    float dx = visitor.targetX - visitor.x;
+    float dy = visitor.targetY - visitor.y;
+    float distance = sqrtf(dx * dx + dy * dy);
+    float step = VISITOR_WALK_SPEED * dtSeconds;
+    float arriveDist = visitor.state == VisitorState::GO_TO_SLEEP ? VISITOR_SLEEP_ARRIVE_DIST : 1.0f;
+    if (distance <= step || distance < arriveDist) {
+        visitor.x = visitor.targetX;
+        visitor.y = visitor.targetY;
+        if (visitor.state == VisitorState::GO_TO_SLEEP) {
+            visitor.state = VisitorState::SLEEPING;
+        } else {
+            visitor.state = VisitorState::IDLE;
+            visitor.stateUntilMs = nowMs + (uint32_t)random(VISITOR_IDLE_MIN_MS, VISITOR_IDLE_MAX_MS + 1);
+        }
+        visitor.frameStartedMs = nowMs;
+        visitor.frameIndex = 0;
+        return;
+    }
+    float nextX = visitor.x + dx / distance * step;
+    float nextY = visitor.y + dy / distance * step;
+    if (!monsterFootprintInsideWalkArea(nextX, nextY)) {
+        if (visitor.state == VisitorState::GO_TO_SLEEP) {
+            visitor.state = VisitorState::SLEEPING;
+            visitor.frameStartedMs = nowMs;
+            visitor.frameIndex = 0;
+        } else {
+            visitor.state = VisitorState::IDLE;
+            visitor.stateUntilMs = nowMs + VISITOR_IDLE_MIN_MS;
+            visitor.frameStartedMs = nowMs;
+        }
+        return;
+    }
+    visitor.x = nextX;
+    visitor.y = nextY;
+    visitor.direction = visitorWalkDirectionForDelta(dx, dy);
+    if (fabsf(dx) > 0.5f) visitor.facingRight = dx > 0.0f;
+    advanceVisitorFrames(nowMs, true);
+}
+
+const PokemonSprites::SpriteFrame* MainScene::visitorCurrentFrame(bool& flipX) const {
+    flipX = false;
+    if (!visitor.active) return nullptr;
+    bool sleeping = visitor.state == VisitorState::SLEEPING && visitor.dropOffsetY <= 0.0f;
+    if (sleeping) {
+        if (const PmdSpriteConfig* config = pmdSpriteConfigForSpecies(visitor.speciesId)) {
+            uint8_t frameCount = config->sleepingFrames == 0 ? 1 : config->sleepingFrames;
+            const PokemonSprites::SpriteFrame* frame = PokemonSprites::findSpeciesSprite(
+                visitor.speciesId,
+                static_cast<PokemonSprites::SpriteKind>(
+                    static_cast<uint16_t>(config->sleepingBase) + visitor.frameIndex % frameCount));
+            if (frame) return frame;
+        }
+        flipX = visitor.facingRight;
+        return PokemonSprites::findSpeciesSprite(visitor.speciesId, PokemonSprites::SpriteKind::FRONT);
+    }
+    bool walking = (visitor.state == VisitorState::WALK ||
+                    visitor.state == VisitorState::GO_TO_SLEEP) && visitor.dropOffsetY <= 0.0f;
+    if (walking) {
+        PokemonSprites::WalkingAnimation animation{};
+        if (PokemonSprites::walkingAnimation(visitor.speciesId, visitor.direction, animation)) {
+            uint8_t frameCount = animation.frameCount == 0 ? 1 : animation.frameCount;
+            const PokemonSprites::SpriteFrame* frame = PokemonSprites::findSpeciesSprite(
+                visitor.speciesId,
+                static_cast<PokemonSprites::SpriteKind>(
+                    static_cast<uint16_t>(animation.base) + visitor.frameIndex % frameCount));
+            if (frame) {
+                flipX = animation.flipX;
+                return frame;
+            }
+        }
+    } else if (const PmdSpriteConfig* config = pmdSpriteConfigForSpecies(visitor.speciesId)) {
+        uint8_t frameCount = config->idleFrames == 0 ? 1 : config->idleFrames;
+        const PokemonSprites::SpriteFrame* frame = PokemonSprites::findSpeciesSprite(
+            visitor.speciesId,
+            static_cast<PokemonSprites::SpriteKind>(
+                static_cast<uint16_t>(config->idleBase) + visitor.frameIndex % frameCount));
+        if (frame) return frame;
+    }
+    flipX = visitor.facingRight;
+    return PokemonSprites::findSpeciesSprite(visitor.speciesId, PokemonSprites::SpriteKind::FRONT);
+}
+
+void MainScene::drawVisitorShadow() {
+    if (visitor.state == VisitorState::SLEEPING) return;
+    bool flipX = false;
+    const PokemonSprites::SpriteFrame* frame = visitorCurrentFrame(flipX);
+    if (!frame) return;
+
+    bool night = mainSceneIsNight();
+    uint8_t frameW = pgm_read_byte(&frame->width);
+    uint8_t frameH = pgm_read_byte(&frame->height);
+    int rx = constrain((int)(frameW * 0.44f), 16, 40);
+    int ry = constrain((int)(frameH * 0.14f), 6, 14);
+    if (night) {
+        rx = (rx * 11 + 5) / 10;
+        ry = (ry * 11 + 5) / 10;
+    }
+    int shadowX = (int)roundf(visitor.x);
+    int shadowY = worldToScreenY(visitor.y + PokemonSprites::frameGroundOffsetY(frame));
+    uint16_t shadowColor = night ? PixelRenderer::rgb(18, 16, 24) : PixelRenderer::rgb(36, 29, 24);
+    uint8_t outerAlpha = night ? 122 : 116;
+    uint8_t coreAlpha = night ? 92 : 86;
+    fillSoftEllipseAlpha(shadowX, shadowY, rx, ry, shadowColor, outerAlpha);
+    fillEllipseAlpha(shadowX, shadowY, max(5, rx / 2), max(2, ry / 2), shadowColor, coreAlpha);
+}
+
+void MainScene::drawVisitor() {
+    bool flipX = false;
+    const PokemonSprites::SpriteFrame* frame = visitorCurrentFrame(flipX);
+    if (!frame) return;
+
+    int x = (int)roundf(visitor.x);
+    int y = worldToScreenY(visitor.y - visitor.dropOffsetY);
+    uint8_t w = pgm_read_byte(&frame->width);
+    uint8_t h = pgm_read_byte(&frame->height);
+    PokemonSprites::drawFrame(frame, x - w / 2, y - h / 2, flipX);
+    if (visitor.state == VisitorState::SLEEPING && visitor.dropOffsetY <= 0.0f) {
+        drawVisitorSleepZz(x, y - h / 2);
+    }
+}
+
+void MainScene::drawVisitorSleepZz(int screenX, int spriteTopY) const {
+    uint32_t nowMs = Hal::ins().millis();
+    for (uint8_t i = 0; i < 2; ++i) {
+        uint32_t phase = (nowMs + i * (VISITOR_SLEEP_ZZ_CYCLE_MS / 2)) % VISITOR_SLEEP_ZZ_CYCLE_MS;
+        float t = (float)phase / (float)VISITOR_SLEEP_ZZ_CYCLE_MS;
+        int zx = screenX + 8 + (int)(t * 4.0f) + (int)i * 3;
+        int zy = spriteTopY - 7 - (int)(t * 9.0f) - (int)i * 2;
+        uint16_t color = t < 0.34f ? PixelRenderer::rgb(255, 255, 255)
+            : (t < 0.67f ? PixelRenderer::rgb(176, 176, 184)
+                         : PixelRenderer::rgb(112, 112, 124));
+        PixelRenderer::text(zx, zy, "Z", color, 1);
+    }
+}
+
 void MainScene::render() {
     int16_t depthZ = (int16_t)(monsterY - 78.0f);
+    int16_t visitorDepthZ = (int16_t)(visitor.y - 78.0f);
     RenderItem items[] = {
         {0, &MainScene::drawBackground},
         {10, &MainScene::drawFloor},
         {18, &MainScene::drawFood},
         {(int16_t)(20 + depthZ), &MainScene::drawShadow},
+        {(int16_t)(20 + visitorDepthZ), &MainScene::drawVisitorShadow},
         {(int16_t)(30 + depthZ), &MainScene::drawMonster},
+        {(int16_t)(30 + visitorDepthZ), &MainScene::drawVisitor},
         {(int16_t)(40 + depthZ), &MainScene::drawStateEffect},
         {85, &MainScene::drawNightOverlay},
         {88, &MainScene::drawWalkBoundary},
@@ -2914,56 +3251,26 @@ void MainScene::drawFood() {
     uint8_t remainingBites = min<uint8_t>(
         maxBites,
         GameEngine::ins().bowlFoodBitesRemaining());
-    uint16_t foodColor;
-    uint16_t garnishColor;
-    switch (foodIndex) {
-    case 1: // 文柚果
-        foodColor = PixelRenderer::rgb(255, 138, 112);
-        garnishColor = PixelRenderer::rgb(255, 216, 72);
-        break;
-    case 2: // 桃桃果
-        foodColor = PixelRenderer::rgb(255, 150, 188);
-        garnishColor = PixelRenderer::rgb(255, 255, 255);
-        break;
-    case 3: // 樱子果
-        foodColor = PixelRenderer::rgb(238, 76, 56);
-        garnishColor = PixelRenderer::rgb(255, 196, 60);
-        break;
-    case 4: // 利木果
-        foodColor = PixelRenderer::rgb(186, 220, 84);
-        garnishColor = PixelRenderer::rgb(244, 244, 190);
-        break;
-    case 5: // 莓莓果
-        foodColor = PixelRenderer::rgb(152, 104, 198);
-        garnishColor = PixelRenderer::rgb(220, 200, 240);
-        break;
-    case 6: // 零余果
-        foodColor = PixelRenderer::rgb(122, 184, 142);
-        garnishColor = PixelRenderer::rgb(226, 240, 214);
-        break;
-    default: // 橙橙果
-        foodColor = PixelRenderer::rgb(245, 180, 87);
-        garnishColor = PixelRenderer::rgb(92, 151, 80);
-        break;
-    }
     int cx = (int)foodCenterX();
     int foodY = worldToScreenY(foodCenterY());
-    c.fillEllipse(cx, worldToScreenY(foodCenterY() + 3.0f), 10, 4, PixelRenderer::rgb(122, 96, 76));
 
-    static constexpr int FOOD_LEFT = -8;
-    static constexpr int FOOD_WIDTH = 17;
+    static constexpr int FOOD_LEFT = -9;
+    static constexpr int FOOD_WIDTH = 18;
     int visibleWidth = maxBites == 0
         ? 0
         : (FOOD_WIDTH * remainingBites + maxBites - 1) / maxBites;
     if (visibleWidth <= 0) return;
-    c.setClipRect(cx + FOOD_LEFT, foodY - 4, visibleWidth, 9);
-    c.fillEllipse(cx, foodY, 8, 3, foodColor);
-    c.fillCircle(cx - 4, foodY - 2, 2, garnishColor);
-    c.fillCircle(cx + 3, foodY - 1, 2, PixelRenderer::rgb(178, 79, 57));
+    c.setClipRect(cx + FOOD_LEFT, foodY - 12, visibleWidth, 20);
+    if (!GameAssets::drawCentered(
+            GameAssets::itemKind(Game::itemIdForFoodIndex(foodIndex)),
+            cx, foodY - 3, 0.5f)) {
+        c.fillEllipse(cx, foodY, 8, 3, PixelRenderer::rgb(238, 76, 56));
+    }
     c.clearClipRect();
 }
 
 void MainScene::drawShadow() {
+    if (pmdAction == PmdAction::SLEEPING) return;
     const PokemonSprites::SpriteFrame* frame = currentMonsterFrame();
     if (!frame) return;
 

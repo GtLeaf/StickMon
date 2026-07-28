@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StickMon 刷机站</title>
+<link rel="stylesheet" href="/assets/style.css?v=2">
+<script type="module"
+  src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">▞</div>
+      <div>
+        <h1>STICKMON FLASHER</h1>
+        <small>浏览器直刷 · 免安装 · 固件 + 数据一键写入</small>
+      </div>
+    </div>
+    <div class="admin-actions">
+      <button id="dbg-entry" class="admin-link hidden" type="button"></button>
+      <a class="admin-link" href="/admin">管理入口 →</a>
+    </div>
+  </header>
+
+  <!-- 浏览器不支持提示 -->
+  <div id="no-webserial" class="banner err hidden">
+    当前浏览器不支持 Web Serial，无法刷机。请使用电脑版 <b>Chrome / Edge / Brave / Opera</b> 打开本页（Safari 与 Firefox 暂不支持）。
+  </div>
+
+  <!-- 非 HTTPS 提示 -->
+  <div id="no-https" class="banner err hidden">
+    当前页面不是 HTTPS 访问，浏览器会禁止串口连接。请通过 https:// 域名访问本站。
+  </div>
+
+  <!-- 轮播图 -->
+  <div id="carousel" class="carousel hidden">
+    <div class="track" id="carousel-track"></div>
+    <button class="car-btn prev" id="car-prev" aria-label="上一张">‹</button>
+    <button class="car-btn next" id="car-next" aria-label="下一张">›</button>
+    <div class="dots" id="carousel-dots"></div>
+  </div>
+
+  <!-- 刷机引导 -->
+  <div class="banner warn">
+    <b>刷机步骤</b>
+    <ol>
+      <li>用 <b>USB 数据线</b>把 StickS3 连接到电脑（充电-only 线不行）</li>
+      <li>在下方选择版本，点 <b>一键刷入</b> → <b>Connect</b>，在弹窗中选择设备串口</li>
+      <li>等待 1~2 分钟写入完成，设备自动重启</li>
+      <li>若连接失败 / 设备变砖：<b>按住机身 BOOT 键不放，再插拔一次 USB</b>，松开后重试 Connect</li>
+      <li>刷机<b>不会清除</b>设备里的存档与设置（NVS 分区保留）</li>
+    </ol>
+  </div>
+
+  <div id="list" class="grid"></div>
+  <div id="empty" class="banner hidden">还没有发布任何固件版本。</div>
+
+  <footer>
+    STICKMON FLASHER · WebSerial / esptool-js · 刷机过程全程在本地浏览器完成
+  </footer>
+
+  <!-- 串口调试弹窗（替代原 esp-web-tools 的 Logs & Console） -->
+  <div id="dbg-overlay" class="dbg-overlay hidden">
+    <div class="dbg-modal">
+      <div class="dbg-head">
+        <b id="dbg-title"></b>
+        <span id="dbg-status" class="hint"></span>
+        <span class="dbg-ops">
+          <button class="btn secondary small" id="dbg-conn"></button>
+          <button class="btn secondary small" id="dbg-clear"></button>
+          <button class="btn secondary small" id="dbg-close"></button>
+        </span>
+      </div>
+      <pre id="dbg-log" class="dbg-log"></pre>
+    </div>
+  </div>
+</div>
+
+<script src="/assets/flasher-i18n.js?v=2"></script>
+<script type="module">
+const listEl = document.getElementById('list');
+const emptyEl = document.getElementById('empty');
+
+// 环境检测
+if (!('serial' in navigator)) {
+  document.getElementById('no-webserial').classList.remove('hidden');
+}
+if (location.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(location.hostname)) {
+  document.getElementById('no-https').classList.remove('hidden');
+}
+
+function fmtSize(bytes) {
+  if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+  return Math.round(bytes / 1024) + ' KB';
+}
+function fmtDate(ts) {
+  return new Date(ts).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
+}
+
+async function load() {
+  const res = await fetch('/api/firmwares');
+  const { firmwares } = await res.json();
+  if (!firmwares.length) { emptyEl.classList.remove('hidden'); return; }
+
+  firmwares.forEach((fw, i) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="thumb">
+        ${fw.image
+          ? `<img src="${fw.image}" alt="${fw.name} v${fw.version}" loading="lazy">`
+          : `<span class="placeholder">NO IMAGE</span>`}
+      </div>
+      <div class="body">
+        <div class="ver-row">
+          <span class="ver">v${fw.version}</span>
+          ${i === 0 ? '<span class="badge-latest">最新</span>' : ''}
+        </div>
+        <div class="name">${fw.name}</div>
+        <div class="meta">${fw.chip} · ${fmtSize(fw.totalSize)} · ${fmtDate(fw.createdAt)} · 已刷 ${fw.downloads} 次</div>
+        ${fw.notes ? `<div class="notes">${fw.notes}</div>` : ''}
+        <esp-web-install-button manifest="/api/firmwares/${fw.id}/manifest.json">
+          <button class="flash-btn" slot="activate">⚡ 一键刷入</button>
+          <span slot="unsupported">浏览器不支持，请用 Chrome / Edge</span>
+          <span slot="not-allowed">需要 HTTPS 环境</span>
+        </esp-web-install-button>
+      </div>`;
+    listEl.appendChild(card);
+  });
+}
+
+load().catch((e) => {
+  emptyEl.textContent = '固件列表加载失败：' + e.message;
+  emptyEl.classList.remove('hidden');
+});
+
+// 跳过 esp-web-tools 的「Install / Logs & Console」菜单，直接进 Confirm Installation。
+// 注意：依赖 esp-web-tools@10 的内部字段，升级大版本时需复查。
+new MutationObserver((muts) => {
+  for (const m of muts) {
+    for (const node of m.addedNodes) {
+      if (node.nodeName === 'EWT-INSTALL-DIALOG') {
+        localizeDialog(node);
+        skipToConfirm(node);
+      }
+    }
+  }
+}).observe(document.body, { childList: true });
+
+// ---- 弹窗汉化：监听 shadowRoot，把 esp-web-tools 渲染出的英文按对照表替换为中文 ----
+// 文案全部在 /assets/flasher-i18n.js 的 FLASHER_I18N.dialog。
+// Lit 每次重渲染会产生新节点，MutationObserver 会再次触发翻译；
+// 只在内容确实变化时才写 DOM，不会形成死循环。
+function translateText(t) {
+  const { exact, patterns } = window.FLASHER_I18N.dialog;
+  if (Object.prototype.hasOwnProperty.call(exact, t)) return exact[t];
+  for (const [re, rep] of patterns) {
+    if (re.test(t)) return t.replace(re, rep);
+  }
+  return null;
+}
+
+function translateTree(root) {
+  if (!root) return;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let n;
+  while ((n = walker.nextNode())) {
+    const t = n.nodeValue.trim();
+    if (!t || !/[A-Za-z?]/.test(t)) continue;
+    const zh = translateText(t);
+    if (zh === null) continue;
+    if (zh === '') {
+      // 空串 = 隐藏整个入口（Logs & Console / Erase User Data）
+      const host = n.parentElement
+        && n.parentElement.closest('ew-list-item, ew-text-button, ew-filled-button, ew-outlined-button');
+      if (host) host.style.display = 'none';
+      else if (n.nodeValue !== '') n.nodeValue = '';
+    } else {
+      // 保留原首尾空白，避免破坏 Lit 模板内的行内布局
+      const lead = n.nodeValue.match(/^\s*/)[0];
+      const trail = n.nodeValue.match(/\s*$/)[0];
+      const next = lead + zh + trail;
+      if (n.nodeValue !== next) n.nodeValue = next;
+    }
+  }
+  // ewt-page-message 的提示文字在 label 属性上（元素内部是独立 shadow，文本遍历进不去）
+  for (const el of root.querySelectorAll('ewt-page-message[label]')) {
+    const zh = translateText(el.getAttribute('label').trim());
+    if (zh && el.getAttribute('label') !== zh) el.setAttribute('label', zh);
+  }
+}
+
+function localizeDialog(dlg) {
+  const run = () => translateTree(dlg.shadowRoot);
+  new MutationObserver(run).observe(dlg.shadowRoot, {
+    childList: true, subtree: true, characterData: true,
+  });
+  // 安装成功页的「ok」按钮默认会回到 esp-web-tools 的「Install xxx」菜单页，
+  // 这里拦截它的点击，直接关闭整个弹窗（_handleClose 会释放串口并移除节点）。
+  // Lit 的 @click 绑在按钮自身，同元素上后注册的监听器抢不到先，
+  // 所以在 shadowRoot 的捕获阶段拦截。
+  dlg.shadowRoot.addEventListener('click', (e) => {
+    if (dlg._state !== 'INSTALL' || !dlg._installState || dlg._installState.state !== 'finished') return;
+    if (!e.composedPath().some((el) => el.nodeName === 'EW-TEXT-BUTTON')) return;
+    e.stopPropagation();
+    e.preventDefault();
+    dlg._handleClose().catch(() => {});
+  }, true);
+  run();
+}
+
+async function skipToConfirm(dlg) {
+  // 任何时候都不全片擦除（保留 NVS 存档）：包住 _startInstall 强制 erase=false，
+  // 菜单 Install / ASK_ERASE 等所有入口都会被拦下，不止下方的跳过路径
+  const origStart = dlg._startInstall.bind(dlg);
+  dlg._startInstall = () => origStart(false);
+  // 等 manifest 拉取完成（期间 _state 保持 DASHBOARD，出错则变 ERROR）
+  for (let i = 0; i < 100 && !dlg._manifest && dlg._state === 'DASHBOARD'; i++) {
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  if (dlg._manifest && dlg._state === 'DASHBOARD') dlg._startInstall();
+}
+
+// ---- 串口调试弹窗（替代 esp-web-tools 的 Logs & Console，文案见 FLASHER_I18N.debug）----
+(function initDebugConsole() {
+  if (!('serial' in navigator)) return;
+  const T = window.FLASHER_I18N.debug;
+  const entry = document.getElementById('dbg-entry');
+  const overlay = document.getElementById('dbg-overlay');
+  const logEl = document.getElementById('dbg-log');
+  const statusEl = document.getElementById('dbg-status');
+  const connBtn = document.getElementById('dbg-conn');
+
+  document.getElementById('dbg-title').textContent = T.title;
+  entry.textContent = T.entry;
+  connBtn.textContent = T.connect;
+  document.getElementById('dbg-clear').textContent = T.clear;
+  document.getElementById('dbg-close').textContent = T.close;
+  statusEl.textContent = T.statusIdle;
+  entry.classList.remove('hidden');
+
+  let port = null, reader = null;
+
+  function append(text) {
+    logEl.textContent += text;
+    // 限制长度，避免长时间挂机撑爆内存
+    if (logEl.textContent.length > 200000) {
+      logEl.textContent = logEl.textContent.slice(-100000);
+    }
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  async function disconnect() {
+    const r = reader; reader = null;
+    if (r) await r.cancel().catch(() => {});
+    if (port) { await port.close().catch(() => {}); port = null; }
+    connBtn.textContent = T.connect;
+    statusEl.textContent = T.statusIdle;
+  }
+
+  async function connect() {
+    try {
+      port = await navigator.serial.requestPort();
+    } catch { port = null; return; } // 用户取消选择，静默返回
+    try {
+      await port.open({ baudRate: 115200 });
+    } catch (e) {
+      append(T.connectFailed + e.message + '\n');
+      port = null;
+      return;
+    }
+    connBtn.textContent = T.disconnect;
+    statusEl.textContent = T.statusConnected;
+    const decoder = new TextDecoder();
+    try {
+      while (port && port.readable) {
+        reader = port.readable.getReader();
+        try {
+          for (;;) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            append(decoder.decode(value, { stream: true }));
+          }
+        } finally {
+          reader.releaseLock();
+          reader = null;
+        }
+        if (!port) break; // 主动断开
+        append('\n' + T.disconnected + '\n');
+        break;
+      }
+    } catch (e) {
+      append('\n' + T.connectFailed + e.message + '\n');
+    }
+    await disconnect();
+  }
+
+  entry.onclick = () => overlay.classList.remove('hidden');
+  document.getElementById('dbg-close').onclick = async () => {
+    overlay.classList.add('hidden');
+    await disconnect();
+  };
+  document.getElementById('dbg-clear').onclick = () => { logEl.textContent = ''; };
+  connBtn.onclick = () => (port ? disconnect() : connect());
+})();
+
+// ---- 轮播图 ----
+(async function initCarousel() {
+  const box = document.getElementById('carousel');
+  const track = document.getElementById('carousel-track');
+  const dotsEl = document.getElementById('carousel-dots');
+  try {
+    const { slides } = await (await fetch('/api/slides')).json();
+    if (!slides.length) return;
+    box.classList.remove('hidden');
+
+    slides.forEach((s, i) => {
+      const img = document.createElement('img');
+      img.src = s.url;
+      img.alt = `slide ${i + 1}`;
+      if (i > 0) img.loading = 'lazy';
+      track.appendChild(img);
+      const dot = document.createElement('button');
+      dot.className = 'dot';
+      dot.setAttribute('aria-label', `第 ${i + 1} 张`);
+      dot.onclick = () => go(i, true);
+      dotsEl.appendChild(dot);
+    });
+
+    let cur = 0, timer = null;
+    function render() {
+      track.style.transform = `translateX(-${cur * 100}%)`;
+      dotsEl.querySelectorAll('.dot').forEach((d, i) => d.classList.toggle('on', i === cur));
+    }
+    function go(i, manual) {
+      cur = (i + slides.length) % slides.length;
+      render();
+      if (manual) restart();
+    }
+    function restart() {
+      clearInterval(timer);
+      if (slides.length > 1) timer = setInterval(() => go(cur + 1), 5000);
+    }
+    document.getElementById('car-prev').onclick = () => go(cur - 1, true);
+    document.getElementById('car-next').onclick = () => go(cur + 1, true);
+    box.addEventListener('mouseenter', () => clearInterval(timer));
+    box.addEventListener('mouseleave', restart);
+    if (slides.length <= 1) {
+      document.getElementById('car-prev').style.display = 'none';
+      document.getElementById('car-next').style.display = 'none';
+    }
+    render(); restart();
+  } catch { /* 轮播加载失败不影响刷机功能 */ }
+})();
+</script>
+</body>
+</html>

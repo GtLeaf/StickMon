@@ -43,6 +43,10 @@ static constexpr uint8_t SATIETY_DECAY_SLEEP_INTERVAL_MIN = 3;
 static constexpr uint8_t SATIETY_DECAY_MAX_DROP_PER_TICK = 4;
 static constexpr uint8_t DEBUG_LIGHT_SOURCE_COUNT = 6;
 static constexpr uint16_t SCENE_FADE_HOLD_MS = 500;
+static constexpr uint32_t VISIT_PING_INTERVAL_MS = 5000UL;
+static constexpr uint32_t VISIT_STATUS_INTERVAL_MS = 3000UL;
+static constexpr uint32_t VISIT_PEER_TIMEOUT_MS = 12000UL;
+static constexpr uint32_t VISIT_DURATION_SEC = 1800UL;
 
 constexpr bool supportsLongPressHome(SceneID scene) {
     return scene == SceneID::MENU ||
@@ -451,6 +455,7 @@ Game::MonsterRuntime GameEngine::createMonster(uint16_t speciesId, uint8_t level
 
 bool GameEngine::switchActiveMonster() {
     if (state.teamCount < 2) return false;
+    if (state.team[1].origin == Game::Origin::VISITOR) return false;
     return moveTeamMemberToFront(1);
 }
 
@@ -501,6 +506,124 @@ bool GameEngine::moveTeamMemberToContacts(uint8_t slot) {
     syncSpriteCache();
     markDirty(SaveUrgency::IMMEDIATE);
     return true;
+}
+
+uint8_t GameEngine::beginVisitAsHost(uint16_t speciesId, uint8_t level, uint8_t nature,
+                                     uint8_t satiety, uint8_t mood, uint8_t affection) {
+    if (!state.oobeDone || state.teamCount == 0) return 2;
+    if (state.teamCount >= Game::TEAM_CAP && !moveTeamMemberToContacts(1)) return 1;
+
+    state.team[1] = createMonster(speciesId, level);
+    Game::MonsterRuntime& guest = state.team[1];
+    guest.nature = nature;
+    guest.satiety = satiety;
+    guest.mood = mood;
+    guest.affection = affection;
+    guest.origin = Game::Origin::VISITOR;
+    state.teamCount = 2;
+    state.activeSlot = 0;
+    syncSpriteCache();
+
+    uint32_t now = Hal::ins().millis();
+    visitSession.active = true;
+    visitSession.asHost = true;
+    visitSession.startedMs = now;
+    visitSession.lastPingSentMs = now;
+    visitSession.lastStatusSentMs = now;
+    visitSession.lastPeerMessageMs = now;
+    EspNowLink::ins().copyPeerMac(visitSession.peerMac);
+    markDirty(SaveUrgency::IMMEDIATE);
+    return 0;
+}
+
+void GameEngine::beginVisitAsVisitor() {
+    uint32_t now = Hal::ins().millis();
+    visitSession.active = true;
+    visitSession.asHost = false;
+    visitSession.startedMs = now;
+    visitSession.lastPingSentMs = now;
+    visitSession.lastStatusSentMs = now;
+    visitSession.lastPeerMessageMs = now;
+    EspNowLink::ins().copyPeerMac(visitSession.peerMac);
+}
+
+void GameEngine::endVisit() {
+    if (!visitSession.active) return;
+    if (visitSession.asHost && state.teamCount >= 2 &&
+        state.team[1].origin == Game::Origin::VISITOR) {
+        state.team[1] = Game::MonsterRuntime{};
+        state.teamCount = 1;
+        state.activeSlot = 0;
+        syncSpriteCache();
+        markDirty(SaveUrgency::IMMEDIATE);
+    }
+    visitSession = VisitSessionState{};
+}
+
+bool GameEngine::takeVisitLinkLost() {
+    bool value = visitLinkLost;
+    visitLinkLost = false;
+    return value;
+}
+
+void GameEngine::updateVisit(uint32_t nowMs) {
+    EspNowLink& link = EspNowLink::ins();
+    link.update();
+
+    if (visitSession.asHost) {
+        if (nowMs - visitSession.lastStatusSentMs >= VISIT_STATUS_INTERVAL_MS) {
+            uint32_t elapsedSec = (nowMs - visitSession.startedMs) / 1000;
+            VisitStatusPayload status{};
+            status.active = 1;
+            status.remainSec = elapsedSec >= VISIT_DURATION_SEC
+                                   ? 0
+                                   : (uint16_t)(VISIT_DURATION_SEC - elapsedSec);
+            if (link.sendSessionMessage(LinkMessageType::VISIT_STATUS, &status, sizeof(status))) {
+                visitSession.lastStatusSentMs = nowMs;
+            }
+        }
+    } else {
+        if (nowMs - visitSession.lastPingSentMs >= VISIT_PING_INTERVAL_MS) {
+            VisitPingPayload ping{};
+            ping.satiety = activeMonster().satiety;
+            ping.mood = activeMonster().mood;
+            if (link.sendSessionMessage(LinkMessageType::VISIT_PING, &ping, sizeof(ping))) {
+                visitSession.lastPingSentMs = nowMs;
+            }
+        }
+    }
+
+    LinkMessageType type;
+    uint8_t payload[24];
+    uint8_t payloadLen = 0;
+    if (link.takeSessionMessage(type, payload, payloadLen)) {
+        visitSession.lastPeerMessageMs = nowMs;
+        if (visitSession.asHost) {
+            if (type == LinkMessageType::VISIT_PING && payloadLen >= sizeof(VisitPingPayload) &&
+                state.teamCount >= 2 && state.team[1].origin == Game::Origin::VISITOR) {
+                VisitPingPayload ping{};
+                memcpy(&ping, payload, sizeof(ping));
+                if (state.team[1].satiety != ping.satiety || state.team[1].mood != ping.mood) {
+                    state.team[1].satiety = ping.satiety;
+                    state.team[1].mood = ping.mood;
+                    markDirty(SaveUrgency::DEFERRED);
+                }
+            } else if (type == LinkMessageType::VISIT_RECALL) {
+                VisitEndPayload end{0};
+                link.sendSessionMessage(LinkMessageType::VISIT_END, &end, sizeof(end));
+                endVisit();
+                return;
+            }
+        } else if (type == LinkMessageType::VISIT_END) {
+            endVisit();
+            return;
+        }
+    }
+
+    if (nowMs - visitSession.lastPeerMessageMs > VISIT_PEER_TIMEOUT_MS) {
+        visitLinkLost = true;
+        endVisit();
+    }
 }
 
 bool GameEngine::inviteContactToTeam(uint8_t slot) {
@@ -1439,6 +1562,7 @@ void GameEngine::update(uint32_t nowMs) {
         syncSpriteCache(startupFirstFrameRendered ? 0xFF : 0);
     }
     tickCare(nowMs);
+    if (visitSession.active) updateVisit(nowMs);
     if (currentScene && sceneFade != SceneFadePhase::HOLD) {
         currentScene->update(nowMs, dt * gameSpeed());
     }
