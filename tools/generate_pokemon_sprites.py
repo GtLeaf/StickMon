@@ -685,6 +685,8 @@ void setDynamicLoadingEnabled(bool enabled);
 void beginRenderFrame();
 const SpriteCacheStats& cacheStats();
 bool drawFrame(const SpriteFrame* frame, int x, int y, bool flipX = false);
+bool drawFrameSilhouette(const SpriteFrame* frame, int x, int y,
+                         uint16_t color = 0, bool flipX = false);
 bool drawFrameScaled(const SpriteFrame* frame, int x, int y, float scale, bool flipX = false);
 
 }}  // namespace PokemonSprites
@@ -707,7 +709,7 @@ namespace {
 static constexpr uint8_t SPRITE_SOURCE_FILE_BLOCK = 2;
 static constexpr uint16_t SPRITE_FRAME_GROUND_MARKER = 0xA500;
 static constexpr uint8_t TEAM_CACHE_CAP = 2;
-static constexpr uint8_t DYNAMIC_CACHE_CAP = 3;
+static constexpr uint8_t DYNAMIC_CACHE_CAP = 6;
 static constexpr uint8_t CACHE_CAP = TEAM_CACHE_CAP + DYNAMIC_CACHE_CAP;
 static constexpr uint8_t KNOWN_MISSING_FILE_CAP = 16;
 static constexpr uint8_t FRAME_MISSING_CAP = 4;
@@ -1232,6 +1234,34 @@ bool drawFrame(const SpriteFrame* frame, int x, int y, bool flipX) {
     }
 
     PixelRenderer::drawRgb565Rle(x, y, width, height, rle, offset, length, flipX);
+    return true;
+}
+
+bool drawFrameSilhouette(const SpriteFrame* frame, int x, int y,
+                         uint16_t color, bool flipX) {
+    if (!frame) return false;
+
+    uint8_t width = pgm_read_byte(&frame->width);
+    uint8_t height = pgm_read_byte(&frame->height);
+    uint32_t offset = pgm_read_dword(&frame->offset);
+    uint32_t length = pgm_read_dword(&frame->length);
+    if (width == 0 || height == 0 || length == 0) return false;
+
+    uint8_t format = pgm_read_byte(&frame->format);
+    uint8_t source = pgm_read_byte(&frame->source);
+    if (source != SPRITE_SOURCE_FILE_BLOCK) return false;
+
+    uint16_t speciesId = pgm_read_word(&frame->speciesId);
+    CachedSpecies* cached = cachedSpeciesFor(speciesId);
+    if (!cached || offset + length > cached->rleWords) return false;
+
+    if (format == static_cast<uint8_t>(SpriteFormat::INDEXED4_RLE)) {
+        PixelRenderer::drawIndexed4RleSolid(
+            x, y, width, height, cached->data, offset, length, color, flipX);
+        return true;
+    }
+    PixelRenderer::drawRgb565RleSolid(
+        x, y, width, height, cached->data, offset, length, color, flipX);
     return true;
 }
 

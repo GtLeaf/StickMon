@@ -1663,6 +1663,8 @@ void setDynamicLoadingEnabled(bool enabled);
 void beginRenderFrame();
 const SpriteCacheStats& cacheStats();
 bool drawFrame(const SpriteFrame* frame, int x, int y, bool flipX = false);
+bool drawFrameSilhouette(const SpriteFrame* frame, int x, int y,
+                         uint16_t color = 0, bool flipX = false);
 bool drawFrameScaled(const SpriteFrame* frame, int x, int y, float scale, bool flipX = false);
 
 }  // namespace PokemonSprites

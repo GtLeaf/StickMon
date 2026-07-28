@@ -28,6 +28,14 @@ public:
                                 uint32_t length, const uint16_t* palette,
                                 uint32_t paletteOffset, uint8_t paletteSize,
                                 bool flipX = false);
+    static void drawRgb565RleSolid(int x, int y, int w, int h,
+                                   const uint16_t* data, uint32_t offset,
+                                   uint32_t length, uint16_t color,
+                                   bool flipX = false);
+    static void drawIndexed4RleSolid(int x, int y, int w, int h,
+                                     const uint16_t* data, uint32_t offset,
+                                     uint32_t length, uint16_t color,
+                                     bool flipX = false);
     static void drawIndexed4RleScaled(int x, int y, int w, int h,
                                       const uint16_t* data, uint32_t offset,
                                       uint32_t length, const uint16_t* palette,

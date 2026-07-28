@@ -10,7 +10,7 @@ static constexpr uint8_t TEAM_CAP = 2;
 static constexpr uint8_t STORAGE_CAP = 20;
 static constexpr uint8_t ITEM_STACK_CAP = 99;
 static constexpr uint32_t SAVE_MAGIC = 0x534D4F4E; // SMON
-static constexpr uint16_t SAVE_VERSION = 4;
+static constexpr uint16_t SAVE_VERSION = 5;
 static constexpr uint8_t STAT_COUNT = 6;
 static constexpr uint8_t NATURE_COUNT = 25;
 static constexpr uint8_t LEVEL_MAX = 100;
@@ -263,6 +263,10 @@ struct GameState {
     // 结交连败保底：最近交友目标物种与连败数（§7.9.4）
     uint16_t friendshipPitySpeciesId = 0;
     uint8_t friendshipPityFailCount = 0;
+    // 特殊精灵：bit0=卡比兽，bit1=拉帝亚斯，bit2=拉帝欧斯（§八）
+    uint8_t specialBossDefeatedMask = 0;
+    // [0]=拉帝亚斯，[1]=拉帝欧斯；游荡战结束后递增
+    uint8_t roamingRerollCounts[2] = {};
 };
 
 struct HatchProgress {

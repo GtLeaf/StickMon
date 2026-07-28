@@ -4,6 +4,7 @@
 #include "game/BattleSystem.h"
 #include "game/ExploreMapGenerator.h"
 #include "game/ExplorePool.h"
+#include "game/ExploreSpecialEncounter.h"
 #include "game/GameState.h"
 #include "game/Species.h"
 #include "scenes/MenuScene.h"
@@ -40,6 +41,7 @@ private:
         LEARN_MOVE,
         MOVE_REPLACED,
         FRIENDSHIP,
+        SPECIAL_PROMPT,
         PICKUP,
         RESULT,
         EXITING,
@@ -104,6 +106,7 @@ private:
     uint8_t friendshipContactIndex = 0xFF;
     uint8_t battleCursor = 0;
     bool battleIsBoss = false;
+    bool battleAllowsFriendship = true;
     uint8_t battleFoodBond = 0;
     uint8_t pendingBattleSwitchSlot = 0xFF;
     enum class BattleSwitchStage : uint8_t {
@@ -189,6 +192,11 @@ private:
     bool routeGuaranteedEncounterPending = false;
     bool expeditionBossScheduled = false;
     uint16_t expeditionBossSpeciesId = 0;
+    uint8_t expeditionBossLevel = 0;
+    uint16_t expeditionBossExperiencePercent = 100;
+    ExploreSpecial::Kind expeditionSpecialKind = ExploreSpecial::Kind::NONE;
+    bool specialRelocationHandled = false;
+    bool specialChallengeYes = true;
     uint8_t routeBossIndex = 0;
     bool routeBossPending = false;
     static constexpr uint8_t EXPLORE_MENU_ITEM_COUNT = 4;
@@ -213,6 +221,9 @@ private:
     int8_t currentDepthLevelOffset(uint8_t spread) const;
     void beginEncounter(const Species& species, uint8_t level, bool boss = false);
     void beginRouteBossEncounter();
+    void promptOrBeginRouteBoss();
+    void finishRoamingEncounter();
+    void markFirstSpecialVictory();
     void beginDebugEncounter();
     void rollEncounter();
     bool rollRandomEncounter(bool guaranteed);
@@ -264,6 +275,7 @@ private:
     void renderWalking();
     void renderEncounter();
     void renderFriendshipPrompt();
+    void renderSpecialPrompt();
     void renderPickupPrompt();
     void renderResult();
     void renderEndPrompt();
@@ -278,4 +290,6 @@ private:
                            int spriteOffsetX = 0);
     void renderBattleHud();
     void renderCommandBox();
+    bool ownsSpecies(uint16_t speciesId) const;
+    ExploreSpecial::Kind specialKindForArea(uint8_t area) const;
 };

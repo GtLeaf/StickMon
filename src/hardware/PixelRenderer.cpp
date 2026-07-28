@@ -419,6 +419,65 @@ void PixelRenderer::drawIndexed4Rle(int x, int y, int w, int h,
     }
 }
 
+void PixelRenderer::drawRgb565RleSolid(int x, int y, int w, int h,
+                                       const uint16_t* data, uint32_t offset,
+                                       uint32_t length, uint16_t color,
+                                       bool flipX) {
+    if (!gCanvas || !data || w <= 0 || h <= 0) return;
+
+    const uint32_t total = static_cast<uint32_t>(w * h);
+    uint32_t idx = 0;
+    uint32_t pixel = 0;
+    while (idx < length && pixel < total) {
+        uint16_t token = pgm_read_word(&data[offset + idx++]);
+        uint16_t run = token & 0x7FFF;
+        if (run == 0) continue;
+        if (token & 0x8000) {
+            pixel = min<uint32_t>(total, pixel + run);
+            continue;
+        }
+
+        for (uint16_t i = 0;
+             i < run && idx < length && pixel < total;
+             ++i, ++idx, ++pixel) {
+            int col = static_cast<int>(pixel % w);
+            int row = static_cast<int>(pixel / w);
+            if (flipX) col = w - 1 - col;
+            gCanvas->drawPixel(x + col, y + row, color);
+        }
+    }
+}
+
+void PixelRenderer::drawIndexed4RleSolid(int x, int y, int w, int h,
+                                         const uint16_t* data, uint32_t offset,
+                                         uint32_t length, uint16_t color,
+                                         bool flipX) {
+    if (!gCanvas || !data || w <= 0 || h <= 0) return;
+
+    const uint32_t total = static_cast<uint32_t>(w * h);
+    uint32_t idx = 0;
+    uint32_t pixel = 0;
+    while (idx < length && pixel < total) {
+        uint16_t token = pgm_read_word(&data[offset + idx++]);
+        uint16_t run = token & 0x7FFF;
+        if (run == 0) continue;
+        if (token & 0x8000) {
+            pixel = min<uint32_t>(total, pixel + run);
+            continue;
+        }
+
+        uint16_t packedPixels = static_cast<uint16_t>((run + 3U) / 4U);
+        if (idx + packedPixels > length) return;
+        for (uint16_t i = 0; i < run && pixel < total; ++i, ++pixel) {
+            int col = static_cast<int>(pixel % w);
+            int row = static_cast<int>(pixel / w);
+            if (flipX) col = w - 1 - col;
+            gCanvas->drawPixel(x + col, y + row, color);
+        }
+        idx += packedPixels;
+    }
+}
+
 void PixelRenderer::drawIndexed4RleScaled(int x, int y, int w, int h,
                                           const uint16_t* data, uint32_t offset,
                                           uint32_t length, const uint16_t* palette,

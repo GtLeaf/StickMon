@@ -643,35 +643,24 @@ int uiTextWidth(const char* value) {
 }
 
 void drawAreaPreviewFrame(const PokemonSprites::SpriteFrame* frame,
-                          int centerX, int centerY) {
+                          int centerX, int centerY, bool silhouette) {
     if (!frame) return;
 
-    PokemonSprites::drawFrame(
-        frame,
-        centerX - static_cast<int>(frame->width) / 2,
-        centerY - static_cast<int>(frame->height) / 2);
+    int x = centerX - static_cast<int>(frame->width) / 2;
+    int y = centerY - static_cast<int>(frame->height) / 2;
+    if (silhouette) {
+        PokemonSprites::drawFrameSilhouette(frame, x, y, 0x0000);
+    } else {
+        PokemonSprites::drawFrame(frame, x, y);
+    }
 }
 
-// 稀有成员金标：在帧上方画一枚小菱形（§7.5 高亮标识）
-void drawRareMarker(int centerX, int topY) {
-    auto& c = PixelRenderer::canvas();
-    const uint16_t gold = PixelRenderer::rgb(255, 216, 72);
-    c.fillRect(centerX, topY, 1, 1, gold);
-    c.fillRect(centerX - 1, topY + 1, 3, 1, gold);
-    c.fillRect(centerX - 2, topY + 2, 5, 1, gold);
-    c.fillRect(centerX - 1, topY + 3, 3, 1, gold);
-    c.fillRect(centerX, topY + 4, 1, 1, gold);
-}
-
-// 轮播单个成员：帧本体 + 稀有金标
+// 稀有成员只公开轮廓，不提前暴露具体精灵。
 void drawPreviewMember(const ExplorePool::Pool& pool, uint8_t index,
                        const PokemonSprites::SpriteFrame* frame,
                        int centerX, int centerY) {
-    drawAreaPreviewFrame(frame, centerX, centerY);
-    if (frame && index < pool.count && pool.entries[index].rare) {
-        drawRareMarker(centerX,
-                       centerY - static_cast<int>(frame->height) / 2 - 7);
-    }
+    bool rare = index < pool.count && pool.entries[index].rare;
+    drawAreaPreviewFrame(frame, centerX, centerY, rare);
 }
 
 constexpr uint8_t mapCountForRoll(const RouteMap& map, uint8_t roll) {
@@ -717,6 +706,8 @@ static_assert(ROUTE_MAP_COUNT == Game::EXPLORE_AREA_COUNT,
               "save reroll counters and route maps must stay aligned");
 static_assert(ROUTE_MAP_COUNT == ExploreBoss::AREA_COUNT,
               "explore boss configs and route maps must stay aligned");
+static_assert(ROUTE_MAP_COUNT == ExploreSpecial::AREA_COUNT,
+              "special encounter areas and route maps must stay aligned");
 static_assert(routeLevelsStrictlyIncrease(ROUTE_MAPS),
               "explore area average levels must follow menu order");
 static_assert(routeTuningValid(ROUTE_MAPS),
@@ -1008,9 +999,15 @@ void ExploreScene::onEnter() {
     autoWalkActive = false;
     walkStepResolutionPending = false;
     battleIsBoss = false;
+    battleAllowsFriendship = true;
     battleFoodBond = 0;
     expeditionBossScheduled = false;
     expeditionBossSpeciesId = 0;
+    expeditionBossLevel = 0;
+    expeditionBossExperiencePercent = 100;
+    expeditionSpecialKind = ExploreSpecial::Kind::NONE;
+    specialRelocationHandled = false;
+    specialChallengeYes = true;
     routeBossPending = false;
     debugBattleMode = engine.consumeDebugBattleRequest();
     if (debugBattleMode) {
@@ -1115,6 +1112,22 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
             friendshipConfirmYes = !friendshipConfirmYes;
         } else if (event.btn == 0) {
             resolveFriendshipOffer();
+        }
+        return true;
+    }
+
+    if (phase == Phase::SPECIAL_PROMPT) {
+        if (event.action == BtnAction::LONG_PRESS) return true;
+        if (event.action != BtnAction::PRESSED) return true;
+        if (event.btn == 1) {
+            specialChallengeYes = !specialChallengeYes;
+        } else if (event.btn == 0) {
+            if (specialChallengeYes) {
+                beginRouteBossEncounter();
+            } else {
+                routeBossPending = false;
+                phase = Phase::WALKING;
+            }
         }
         return true;
     }
@@ -1539,7 +1552,7 @@ void ExploreScene::finishCompletedWalkStep() {
     const ExploreMapGenerator::Path& path = generatedMap.paths[currentRoutePath];
     if (exploreMenuOpen) return;
     if (routeBossPending && routeIndex == routeBossIndex) {
-        beginRouteBossEncounter();
+        promptOrBeginRouteBoss();
         return;
     }
     if (collectRoutePickup()) {
@@ -1646,6 +1659,7 @@ int8_t ExploreScene::currentDepthLevelOffset(uint8_t spread) const {
 void ExploreScene::beginEncounter(const Species& species, uint8_t level, bool boss) {
     wild = &species;
     battleIsBoss = boss;
+    battleAllowsFriendship = true;
     wildRuntime = GameEngine::ins().createMonster(wild->id, level);
     wildHpMax = wildRuntime.hpMax;
     wildHp = wildHpMax;
@@ -1664,10 +1678,20 @@ void ExploreScene::beginEncounter(const Species& species, uint8_t level, bool bo
                                   : Ui::Explore::WILD_APPEARED);
 }
 
+void ExploreScene::promptOrBeginRouteBoss() {
+    if (!routeBossPending) return;
+    if (expeditionSpecialKind != ExploreSpecial::Kind::NONE &&
+        ExploreSpecial::configFor(expeditionSpecialKind).optional) {
+        autoWalkActive = false;
+        specialChallengeYes = true;
+        phase = Phase::SPECIAL_PROMPT;
+        return;
+    }
+    beginRouteBossEncounter();
+}
+
 void ExploreScene::beginRouteBossEncounter() {
     if (!routeBossPending || currentMapBlock + 1 != mapBlockCount) return;
-    const ExploreBoss::Config& config = ExploreBoss::configForArea(
-        mapBlocks[currentMapBlock]);
     const Species* boss = findSpecies(expeditionBossSpeciesId);
     routeBossPending = false;
     if (!boss) {
@@ -1676,10 +1700,16 @@ void ExploreScene::beginRouteBossEncounter() {
         return;
     }
     encounterCooldownSteps = ENCOUNTER_COOLDOWN_STEP_COUNT;
-    Serial.printf("[ExploreBoss] encounter area=%u species=%u level=%u exp=%u%%\n",
-                  mapBlocks[currentMapBlock], expeditionBossSpeciesId, config.level,
-                  config.experiencePercent);
-    beginEncounter(*boss, config.level, true);
+    Serial.printf("[ExploreBoss] encounter area=%u species=%u level=%u "
+                  "exp=%u%% special=%u\n",
+                  mapBlocks[currentMapBlock], expeditionBossSpeciesId,
+                  expeditionBossLevel, expeditionBossExperiencePercent,
+                  static_cast<unsigned>(expeditionSpecialKind));
+    beginEncounter(*boss, expeditionBossLevel, true);
+    if (expeditionSpecialKind != ExploreSpecial::Kind::NONE) {
+        battleAllowsFriendship =
+            ExploreSpecial::configFor(expeditionSpecialKind).allowsFriendship;
+    }
 }
 
 void ExploreScene::beginDebugEncounter() {
@@ -2310,16 +2340,41 @@ void ExploreScene::finishBattleEndTurn() {
     }
 }
 
+void ExploreScene::markFirstSpecialVictory() {
+    if (!ExploreSpecial::isFirstBoss(expeditionSpecialKind)) return;
+    uint8_t bit = ExploreSpecial::defeatedBit(expeditionSpecialKind);
+    if (bit == 0) return;
+
+    auto& engine = GameEngine::ins();
+    Game::GameState& state = engine.gameState();
+    if ((state.specialBossDefeatedMask & bit) != 0) return;
+    state.specialBossDefeatedMask =
+        static_cast<uint8_t>(state.specialBossDefeatedMask | bit);
+    engine.markDirty(SaveUrgency::IMMEDIATE);
+}
+
+void ExploreScene::finishRoamingEncounter() {
+    if (specialRelocationHandled ||
+        !ExploreSpecial::isRoaming(expeditionSpecialKind)) {
+        return;
+    }
+    int8_t index = ExploreSpecial::roamingIndex(expeditionSpecialKind);
+    if (index < 0 || index >= ExploreSpecial::ROAMER_COUNT) return;
+
+    auto& engine = GameEngine::ins();
+    ++engine.gameState().roamingRerollCounts[index];
+    specialRelocationHandled = true;
+    engine.markDirty(SaveUrgency::IMMEDIATE);
+}
+
 void ExploreScene::finishWildFaint() {
     if (!wild) return;
     auto& engine = GameEngine::ins();
     auto& activeMon = engine.activeMonster();
     uint16_t expGain = BattleSystem::experienceReward(*wild, wildRuntime.level);
     if (battleIsBoss) {
-        const ExploreBoss::Config& config = ExploreBoss::configForArea(
-            mapBlocks[currentMapBlock]);
         expGain = BattleSystem::scaledExperienceReward(
-            expGain, config.experiencePercent);
+            expGain, expeditionBossExperiencePercent);
     }
     uint8_t reserveSlot = 0xFF;
     const Game::GameState& state = engine.gameState();
@@ -2369,6 +2424,8 @@ void ExploreScene::finishWildFaint() {
                  static_cast<unsigned>(coinReward));
         enqueueBattleLog(logBuf);
     }
+    markFirstSpecialVictory();
+    finishRoamingEncounter();
     bool hasRoom = state.storageCount < Game::STORAGE_CAP;
     uint16_t friendshipShakeRolls[FriendshipSystem::SHAKE_CHECK_COUNT];
     for (uint8_t check = 0;
@@ -2377,7 +2434,7 @@ void ExploreScene::finishWildFaint() {
             random(0, 65536));
     }
     friendshipOfferPending =
-        hasRoom && (debugBattleMode ||
+        battleAllowsFriendship && hasRoom && (debugBattleMode ||
                     FriendshipSystem::passesOfferChecks(
                         *wild, wildRuntime, battleIsBoss,
                         static_cast<uint16_t>(random(0, 1000)),
@@ -2394,7 +2451,7 @@ void ExploreScene::finishWildFaint() {
     }
 
     // 结交连败保底（§7.9.4）：FriendshipSystem 数值不动，仅外层计数与强制触发
-    if (hasRoom && !debugBattleMode) {
+    if (battleAllowsFriendship && hasRoom && !debugBattleMode) {
         Game::GameState& save = engine.gameState();
         bool pityReady = save.friendshipPitySpeciesId == wild->id &&
                          save.friendshipPityFailCount >= FRIENDSHIP_PITY_FAIL_COUNT;
@@ -2644,6 +2701,7 @@ void ExploreScene::finishPlayerFaint() {
     }
 
     enqueueBattleLog(Ui::Explore::BATTLE_LOST);
+    finishRoamingEncounter();
     defeatAwaitInput = true;
 }
 
@@ -2770,6 +2828,7 @@ void ExploreScene::fleeEncounter() {
     }
 
     clearFriendshipFlow();
+    finishRoamingEncounter();
     fleeExitPending = true;
     enqueueBattleLog(Ui::Explore::FLEE_SUCCESS);
 }
@@ -2791,6 +2850,30 @@ void ExploreScene::snapshotActivePool() {
     activePool = ExplorePool::buildPool(
         source, sourceCount,
         ExplorePool::mixSeed(slotIndex, areaIndex, rerollCount));
+}
+
+bool ExploreScene::ownsSpecies(uint16_t speciesId) const {
+    const Game::GameState& state = GameEngine::ins().gameState();
+    for (uint8_t i = 0; i < state.teamCount && i < Game::TEAM_CAP; ++i) {
+        if (state.team[i].speciesId == speciesId) return true;
+    }
+    for (uint8_t i = 0; i < state.storageCount && i < Game::STORAGE_CAP; ++i) {
+        if (state.storage[i].speciesId == speciesId) return true;
+    }
+    return false;
+}
+
+ExploreSpecial::Kind ExploreScene::specialKindForArea(uint8_t area) const {
+    const auto& engine = GameEngine::ins();
+    const Game::GameState& state = engine.gameState();
+    uint32_t slotIndex = ExploreSpecial::slotIndexFor(
+        engine.gameMinutesTotal());
+    return ExploreSpecial::kindForArea(
+        area,
+        state.specialBossDefeatedMask,
+        slotIndex,
+        state.roamingRerollCounts,
+        ownsSpecies(ExploreSpecial::MEW));
 }
 
 void ExploreScene::resetWalk() {
@@ -2937,14 +3020,30 @@ void ExploreScene::generateMapBlocks() {
     if (selectedMap >= ROUTE_MAP_COUNT) selectedMap = 0;
     const RouteMap& map = routeMap(selectedMap);
     mapBlockCount = mapCountForRoll(map, static_cast<uint8_t>(random(0, 100)));
-    expeditionBossScheduled = random(0, ExploreBoss::SPAWN_ROLL_MAX) <
-                              ExploreBoss::SPAWN_CHANCE;
-    expeditionBossSpeciesId = expeditionBossScheduled
-        ? ExploreBoss::speciesForRoll(
-              selectedMap,
-              static_cast<uint32_t>(
-                  random(0, ExploreBoss::CANDIDATE_COUNT)))
-        : 0;
+    expeditionSpecialKind = specialKindForArea(selectedMap);
+    specialRelocationHandled = false;
+    if (expeditionSpecialKind != ExploreSpecial::Kind::NONE) {
+        ExploreSpecial::Config special =
+            ExploreSpecial::configFor(expeditionSpecialKind);
+        expeditionBossScheduled = true;
+        expeditionBossSpeciesId = special.speciesId;
+        expeditionBossLevel = special.level;
+        expeditionBossExperiencePercent = special.experiencePercent;
+    } else {
+        expeditionBossScheduled =
+            random(0, ExploreBoss::SPAWN_ROLL_MAX) <
+            ExploreBoss::SPAWN_CHANCE;
+        expeditionBossSpeciesId = expeditionBossScheduled
+            ? ExploreBoss::speciesForRoll(
+                  selectedMap,
+                  static_cast<uint32_t>(
+                      random(0, ExploreBoss::CANDIDATE_COUNT)))
+            : 0;
+        const ExploreBoss::Config& normal =
+            ExploreBoss::configForArea(selectedMap);
+        expeditionBossLevel = normal.level;
+        expeditionBossExperiencePercent = normal.experiencePercent;
+    }
     for (uint8_t i = 0; i < MAP_BLOCK_CAP; ++i) {
         mapBlocks[i] = i < mapBlockCount ? selectedMap : 0xFF;
     }
@@ -2953,10 +3052,13 @@ void ExploreScene::generateMapBlocks() {
     currentRoutePath = 0;
     activeExitMask = 0;
     for (uint8_t i = 0; i < MAP_EXIT_CAP; ++i) exitNextMaps[i] = 0xFF;
-    Serial.printf("[ExploreRun] area=%u maps=%u boss=%u bossSpecies=%u seed=%08lx\n",
+    Serial.printf("[ExploreRun] area=%u maps=%u boss=%u bossSpecies=%u "
+                  "bossLevel=%u special=%u seed=%08lx\n",
                   selectedMap, mapBlockCount,
                   expeditionBossScheduled ? 1 : 0,
                   expeditionBossSpeciesId,
+                  expeditionBossLevel,
+                  static_cast<unsigned>(expeditionSpecialKind),
                   static_cast<unsigned long>(expeditionSeed));
 }
 
@@ -3005,12 +3107,11 @@ void ExploreScene::placeRouteBoss() {
 
     routeBossIndex = ExploreBoss::routeIndex(path.pointCount);
     routeBossPending = true;
-    const ExploreBoss::Config& config = ExploreBoss::configForArea(
-        mapBlocks[currentMapBlock]);
     Serial.printf("[ExploreBoss] placed area=%u path=%u index=%u species=%u "
                   "level=%u exp=%u%%\n",
                   mapBlocks[currentMapBlock], currentRoutePath, routeBossIndex,
-                  expeditionBossSpeciesId, config.level, config.experiencePercent);
+                  expeditionBossSpeciesId, expeditionBossLevel,
+                  expeditionBossExperiencePercent);
 }
 
 void ExploreScene::placeRoutePickup() {
@@ -3109,6 +3210,10 @@ void ExploreScene::render() {
         renderEncounter();
         renderFriendshipPrompt();
         break;
+    case Phase::SPECIAL_PROMPT:
+        renderWalking();
+        renderSpecialPrompt();
+        break;
     case Phase::PICKUP:
         renderWalking();
         renderPickupPrompt();
@@ -3191,9 +3296,14 @@ void ExploreScene::renderAreaMenu() {
         int y = CENTER_Y + static_cast<int>(roundf(offset * AREA_SPACING));
         bool active = fabsf(offset) < 0.5f;
         const char* name = i < ROUTE_MAP_COUNT ? routeMap(i).name : Ui::BACK;
-        uint16_t color = active
-            ? PixelRenderer::rgb(255, 216, 72)
-            : PixelRenderer::rgb(156, 164, 176);
+        bool specialActive =
+            i < ROUTE_MAP_COUNT &&
+            specialKindForArea(i) != ExploreSpecial::Kind::NONE;
+        uint16_t color = specialActive
+            ? PixelRenderer::rgb(72, 220, 255)
+            : (active
+                ? PixelRenderer::rgb(255, 216, 72)
+                : PixelRenderer::rgb(156, 164, 176));
         if (active) {
             c.fillRect(5, y - 6, 3, 12,
                        PixelRenderer::rgb(255, 216, 72));
@@ -3217,7 +3327,7 @@ void ExploreScene::renderAreaMenu() {
 
     if (areaCursor >= ROUTE_MAP_COUNT) return;
 
-    // 轮播活跃池全成员；稀有成员带金标（§7.5）
+    // 轮播活跃池全成员；稀有成员以黑色剪影隐藏身份（§7.5）
     const uint8_t poolCount = areaPreviewPool.count;
     if (poolCount == 0) return;
     uint32_t elapsed = Hal::ins().millis() - areaPreviewStartedAt;
@@ -3747,6 +3857,42 @@ void ExploreScene::renderFriendshipPrompt() {
                         Ui::Explore::FRIEND_YES, yesColor, 1);
     PixelRenderer::text(PANEL_X + 146, PANEL_Y + 75,
                         Ui::Explore::FRIEND_NO, noColor, 1);
+}
+
+void ExploreScene::renderSpecialPrompt() {
+    auto& c = PixelRenderer::canvas();
+    static constexpr int PANEL_X = 22;
+    static constexpr int PANEL_Y = 24;
+    static constexpr int PANEL_W = 196;
+    static constexpr int PANEL_H = 88;
+    c.fillRect(PANEL_X, PANEL_Y, PANEL_W, PANEL_H,
+               PixelRenderer::rgb(24, 28, 36));
+    c.drawRect(PANEL_X, PANEL_Y, PANEL_W, PANEL_H,
+               PixelRenderer::rgb(241, 242, 232));
+
+    const Species* species = findSpecies(expeditionBossSpeciesId);
+    char line[48] = {};
+    snprintf(line, sizeof(line), Ui::Explore::SPECIAL_FOUND_FMT,
+             species ? species->name : "");
+    PixelRenderer::text(
+        PANEL_X + (PANEL_W - uiTextWidth(line)) / 2,
+        PANEL_Y + 12, line, PixelRenderer::rgb(72, 220, 255), 1);
+    PixelRenderer::text(
+        PANEL_X + (PANEL_W -
+                   uiTextWidth(Ui::Explore::SPECIAL_CHALLENGE_QUESTION)) / 2,
+        PANEL_Y + 36, Ui::Explore::SPECIAL_CHALLENGE_QUESTION,
+        PixelRenderer::rgb(241, 242, 232), 1);
+
+    uint16_t challengeColor = specialChallengeYes
+        ? PixelRenderer::rgb(255, 216, 72)
+        : PixelRenderer::rgb(156, 164, 176);
+    uint16_t bypassColor = specialChallengeYes
+        ? PixelRenderer::rgb(156, 164, 176)
+        : PixelRenderer::rgb(255, 216, 72);
+    PixelRenderer::text(PANEL_X + 45, PANEL_Y + 61,
+                        Ui::Explore::SPECIAL_CHALLENGE, challengeColor, 1);
+    PixelRenderer::text(PANEL_X + 130, PANEL_Y + 61,
+                        Ui::Explore::SPECIAL_BYPASS, bypassColor, 1);
 }
 
 void ExploreScene::renderPickupPrompt() {
