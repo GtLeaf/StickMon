@@ -11,7 +11,9 @@
 #include "core/UiStrings.h"
 #include "game/BattleSystem.h"
 #include "game/ExploreBoss.h"
+#include "game/ExploreEncounters.h"
 #include "game/ExplorePool.h"
+#include "game/FriendshipPity.h"
 #include "game/FriendshipSystem.h"
 #include "hardware/Hal.h"
 #include "hardware/PixelRenderer.h"
@@ -34,30 +36,11 @@ struct PickupWeights {
     uint16_t candy;
 };
 
-struct EncounterEntry {
-    uint16_t speciesId;
-    uint8_t weight;
-    uint8_t minLevel;
-    uint8_t maxLevel;
-};
+using EncounterEntry = ExploreEncounters::Entry;
 
 constexpr uint16_t pickupWeightTotal(const PickupWeights& weights) {
     return weights.coin + weights.potion + weights.superPotion +
            weights.antidote + weights.candy;
-}
-
-template <size_t N>
-constexpr uint16_t encounterWeightTotal(const EncounterEntry (&entries)[N], size_t index = 0) {
-    return index == N ? 0 : entries[index].weight + encounterWeightTotal(entries, index + 1);
-}
-
-template <size_t N>
-constexpr bool encounterLevelRangesValid(const EncounterEntry (&entries)[N], size_t index = 0) {
-    return index == N ||
-           (entries[index].minLevel >= 1 &&
-            entries[index].minLevel <= entries[index].maxLevel &&
-            entries[index].maxLevel <= Game::LEVEL_MAX &&
-            encounterLevelRangesValid(entries, index + 1));
 }
 
 static constexpr uint8_t WILD_LEVEL_MIN = 1;
@@ -67,8 +50,6 @@ static constexpr uint16_t DEPTH_MIDDLE_START_PERMILLE = 333;
 static constexpr uint16_t DEPTH_DEEP_START_PERMILLE = 667;
 static constexpr uint8_t ENCOUNTER_COOLDOWN_STEP_COUNT = 5;
 static constexpr uint8_t MAX_ENCOUNTERS_PER_MAP = 2;
-// 结交连败保底：同一物种连续失败 5 次后下一次战胜必定触发邀约（§7.9.4）
-static constexpr uint8_t FRIENDSHIP_PITY_FAIL_COUNT = 5;
 static constexpr uint16_t MAP_PICKUP_CHANCE = 6500;
 static constexpr uint32_t MAP_GENERATION_SAFE_SEED = 1;
 static constexpr uint32_t MAP_GENERATION_RETRY_SALTS[] = {
@@ -77,6 +58,13 @@ static constexpr uint32_t MAP_GENERATION_RETRY_SALTS[] = {
     0x9E3779B9U,
     0x85EBCA6BU,
 };
+static constexpr uint32_t AREA_PREVIEW_CYCLE_MS = 2800;
+static constexpr uint32_t AREA_PREVIEW_MOVE_MS = 500;
+static constexpr uint32_t AREA_PREVIEW_HOLD_MS =
+    AREA_PREVIEW_CYCLE_MS - AREA_PREVIEW_MOVE_MS;
+static constexpr float AREA_CURSOR_LERP = 0.5f;
+static constexpr uint32_t PREVIEW_LOAD_AFTER_CURSOR_MS = 80;
+static constexpr uint32_t PREVIEW_BACKGROUND_LOAD_INTERVAL_MS = 80;
 
 constexpr uint8_t cooldownAfterCompletedStep(uint8_t cooldown) {
     return cooldown > 0 ? cooldown - 1 : 0;
@@ -396,110 +384,16 @@ struct RouteMap {
     uint16_t accentColor;
 };
 
-// 遭遇表按 doc/探索模式精灵分布方案_v1.0.md §五 全量替换（22 只新增精灵入场）
-static constexpr EncounterEntry GRASS_PATH_ENCOUNTERS[] = {
-    {10,  18, 1, 6},   // Caterpie
-    {161, 19, 1, 9},   // Sentret
-    {16,  17, 2, 9},   // Pidgey
-    {261, 13, 2, 9},   // Poochyena
-    {280,  8, 3, 9},   // Ralts      (NEW)
-    {172,  6, 3, 9},   // Pichu
-    {11,  15, 3, 9},   // Metapod    (NEW)
-    {133,  2, 3, 9},   // Eevee
-    {1,    1, 3, 9},   // Bulbasaur
-    {4,    1, 3, 9},   // Charmander (NEW)
-};
-
-static constexpr EncounterEntry CREEK_SLOPE_ENCOUNTERS[] = {
-    {194, 20, 7, 17},  // Wooper
-    {298, 13, 7, 15},  // Azurill
-    {183,  8, 8, 17},  // Marill
-    {278, 16, 7, 17},  // Wingull
-    {129, 14, 7, 17},  // Magikarp
-    {74,  10, 8, 17},  // Geodude
-    {322,  6, 8, 17},  // Numel      (NEW)
-    {41,   7, 8, 17},  // Zubat      (NEW)
-    {16,   2, 7, 17},  // Pidgey
-    {147,  1, 10, 17}, // Dratini
-    {7,    1, 7, 15},  // Squirtle
-    {5,    1, 7, 17},  // Charmeleon (NEW)
-    {8,    1, 7, 15},  // Wartortle  (NEW)
-};
-
-static constexpr EncounterEntry TALL_GRASS_PARK_ENCOUNTERS[] = {
-    {12,  25, 17, 27}, // Butterfree
-    {285, 19, 17, 22}, // Shroomish
-    {25,  11, 17, 27}, // Pikachu
-    {162,  9, 17, 27}, // Furret
-    {281,  6, 20, 29}, // Kirlia
-    {17,   6, 17, 27}, // Pidgeotto  (NEW)
-    {184,  5, 17, 27}, // Azumarill  (NEW)
-    {279,  5, 17, 27}, // Pelipper   (NEW)
-    {130,  4, 17, 27}, // Gyarados   (NEW)
-    {26,   3, 17, 27}, // Raichu     (NEW)
-    {92,   3, 17, 27}, // Gastly     (NEW)
-    {133,  2, 17, 27}, // Eevee
-    {123,  1, 17, 27}, // Scyther
-    {2,    1, 17, 31}, // Ivysaur
-};
-
-static constexpr EncounterEntry MIST_FOREST_PATH_ENCOUNTERS[] = {
-    {94,  22, 41, 53}, // Gengar
-    {169, 20, 41, 53}, // Crobat
-    {286, 15, 41, 53}, // Breloom
-    {262, 12, 41, 53}, // Mightyena
-    {282,  7, 41, 53}, // Gardevoir
-    {362,  5, 41, 53}, // Glalie     (NEW)
-    {134,  3, 41, 53}, // Vaporeon   (NEW)
-    {135,  3, 41, 53}, // Jolteon    (NEW)
-    {136,  3, 41, 53}, // Flareon    (NEW)
-    {196,  3, 41, 53}, // Espeon     (NEW)
-    {212,  3, 41, 53}, // Scizor
-    {197,  3, 41, 53}, // Umbreon
-    {3,    1, 41, 53}, // Venusaur   (NEW)
-};
-
-static constexpr EncounterEntry ANCIENT_WATERFALL_VALLEY_ENCOUNTERS[] = {
-    {76,  29, 53, 67}, // Golem
-    {169, 22, 53, 67}, // Crobat
-    {323, 21, 53, 67}, // Camerupt
-    {94,  13, 53, 67}, // Gengar
-    {195,  8, 53, 67}, // Quagsire
-    {212,  4, 53, 67}, // Scizor
-    {149,  2, 53, 67}, // Dragonite
-    {6,    1, 53, 67}, // Charizard
-};
-
-static constexpr EncounterEntry FROST_CRYSTAL_CAVE_ENCOUNTERS[] = {
-    {361, 50, 28, 41}, // Snorunt
-    {42,  16, 28, 41}, // Golbat
-    {75,  12, 28, 41}, // Graveler
-    {93,   7, 28, 41}, // Haunter
-    {148,  5, 28, 41}, // Dragonair  (NEW)
-    {18,   3, 28, 41}, // Pidgeot    (NEW)
-    {9,    1, 28, 41}, // Blastoise  (NEW)
-    {282,  6, 30, 42}, // Gardevoir
-};
-
-static_assert(encounterWeightTotal(GRASS_PATH_ENCOUNTERS) == 100,
-              "grass path encounter weights must sum to 100");
-static_assert(encounterWeightTotal(CREEK_SLOPE_ENCOUNTERS) == 100,
-              "creek slope encounter weights must sum to 100");
-static_assert(encounterWeightTotal(TALL_GRASS_PARK_ENCOUNTERS) == 100,
-              "tall grass park encounter weights must sum to 100");
-static_assert(encounterWeightTotal(MIST_FOREST_PATH_ENCOUNTERS) == 100,
-              "mist forest path encounter weights must sum to 100");
-static_assert(encounterWeightTotal(ANCIENT_WATERFALL_VALLEY_ENCOUNTERS) == 100,
-              "ancient waterfall valley encounter weights must sum to 100");
-static_assert(encounterWeightTotal(FROST_CRYSTAL_CAVE_ENCOUNTERS) == 100,
-              "frost crystal cave encounter weights must sum to 100");
-static_assert(encounterLevelRangesValid(GRASS_PATH_ENCOUNTERS) &&
-                  encounterLevelRangesValid(CREEK_SLOPE_ENCOUNTERS) &&
-                  encounterLevelRangesValid(TALL_GRASS_PARK_ENCOUNTERS) &&
-                  encounterLevelRangesValid(FROST_CRYSTAL_CAVE_ENCOUNTERS) &&
-                  encounterLevelRangesValid(MIST_FOREST_PATH_ENCOUNTERS) &&
-                  encounterLevelRangesValid(ANCIENT_WATERFALL_VALLEY_ENCOUNTERS),
-              "explore encounter levels must stay within the global level range");
+static constexpr auto& GRASS_PATH_ENCOUNTERS = ExploreEncounters::GRASS_PATH;
+static constexpr auto& CREEK_SLOPE_ENCOUNTERS = ExploreEncounters::CREEK_SLOPE;
+static constexpr auto& TALL_GRASS_PARK_ENCOUNTERS =
+    ExploreEncounters::TALL_GRASS_PARK;
+static constexpr auto& FROST_CRYSTAL_CAVE_ENCOUNTERS =
+    ExploreEncounters::FROST_CRYSTAL_CAVE;
+static constexpr auto& MIST_FOREST_PATH_ENCOUNTERS =
+    ExploreEncounters::MIST_FOREST_PATH;
+static constexpr auto& ANCIENT_WATERFALL_VALLEY_ENCOUNTERS =
+    ExploreEncounters::ANCIENT_WATERFALL_VALLEY;
 
 #define ENTRY_COUNT(entriesValue) \
     static_cast<uint8_t>(sizeof(entriesValue) / sizeof(entriesValue[0]))
@@ -599,8 +493,10 @@ static constexpr RouteMap ROUTE_MAPS[] = {
 #undef ENTRY_COUNT
 
 static constexpr uint8_t ROUTE_MAP_COUNT = sizeof(ROUTE_MAPS) / sizeof(ROUTE_MAPS[0]);
+static_assert(ROUTE_MAP_COUNT == Game::EXPLORE_AREA_COUNT,
+              "route tables and persistent pool counters must stay aligned");
 
-// 从区域遭遇表提取活跃池源视图（仅 speciesId/weight 两列参与抽池）
+// 从区域遭遇表提取活跃池源视图。
 uint8_t buildPoolSource(const RouteMap& map, ExplorePool::SourceEntry* out,
                         uint8_t cap) {
     uint8_t count = min<uint8_t>(cap, map.encounterCount);
@@ -608,6 +504,7 @@ uint8_t buildPoolSource(const RouteMap& map, ExplorePool::SourceEntry* out,
         out[i] = ExplorePool::SourceEntry{
             map.encounters[i].speciesId,
             map.encounters[i].weight,
+            map.encounters[i].rarity,
         };
     }
     return count;
@@ -655,12 +552,15 @@ void drawAreaPreviewFrame(const PokemonSprites::SpriteFrame* frame,
     }
 }
 
-// 稀有成员只公开轮廓，不提前暴露具体精灵。
+// Rare members stay hidden until the player has actually met them.
 void drawPreviewMember(const ExplorePool::Pool& pool, uint8_t index,
                        const PokemonSprites::SpriteFrame* frame,
                        int centerX, int centerY) {
-    bool rare = index < pool.count && pool.entries[index].rare;
-    drawAreaPreviewFrame(frame, centerX, centerY, rare);
+    bool rare = index < pool.count &&
+                ExplorePool::isRare(pool.entries[index].rarity);
+    bool hidden = rare &&
+        !GameEngine::ins().hasEncounteredSpecies(pool.entries[index].speciesId);
+    drawAreaPreviewFrame(frame, centerX, centerY, hidden);
 }
 
 constexpr uint8_t mapCountForRoll(const RouteMap& map, uint8_t roll) {
@@ -1035,17 +935,110 @@ void ExploreScene::onExit() {
     PokemonSprites::setDynamicSceneSpecies(nullptr, 0);
 }
 
-void ExploreScene::update(uint32_t nowMs, float dtSeconds) {
+Game::MonsterRuntime& ExploreScene::battlePlayerMonster() {
+    auto& state = GameEngine::ins().gameState();
+    uint8_t slot = battlePlayerSlot < state.teamCount ? battlePlayerSlot : 0;
+    return state.team[slot];
+}
+
+const Game::MonsterRuntime& ExploreScene::battlePlayerMonster() const {
+    const auto& state = GameEngine::ins().gameState();
+    uint8_t slot = battlePlayerSlot < state.teamCount ? battlePlayerSlot : 0;
+    return state.team[slot];
+}
+
+const Species& ExploreScene::battlePlayerSpecies() const {
+    return GameEngine::ins().speciesFor(battlePlayerMonster());
+}
+
+SceneUpdateResult ExploreScene::update(uint32_t nowMs, float dtSeconds) {
     if (exploreSubViewOpen) {
-        exploreSubView.update(nowMs, dtSeconds);
-        return;
+        return exploreSubView.update(nowMs, dtSeconds);
     }
+    bool redraw = false;
+    bool areaCursorAnimating = false;
+    bool areaCursorMoved = false;
+    if (phase == Phase::SELECT) {
+        float target = static_cast<float>(areaCursor);
+        float diff = target - areaAnimCursor;
+        if (fabsf(diff) < 0.05f) {
+            if (areaAnimCursor != target) {
+                areaAnimCursor = target;
+                redraw = true;
+                areaCursorMoved = true;
+            }
+        } else {
+            areaAnimCursor += diff * AREA_CURSOR_LERP;
+            if (fabsf(target - areaAnimCursor) < 0.05f) {
+                areaAnimCursor = target;
+            }
+            redraw = true;
+            areaCursorMoved = true;
+        }
+        areaCursorAnimating =
+            fabsf(target - areaAnimCursor) >= 0.05f;
+        if (areaCursor < ROUTE_MAP_COUNT && areaPreviewPool.count > 0) {
+            uint32_t visualCycle =
+                (nowMs - areaPreviewStartedAt) / AREA_PREVIEW_CYCLE_MS;
+            if (visualCycle != areaPreviewVisualCycle) {
+                areaPreviewVisualCycle = visualCycle;
+                redraw = true;
+            }
+        }
+    }
+
+    // Keep synchronous LittleFS decode work out of the cursor transition.
+    // The final cursor frame is rendered first, then preloading resumes.
+    if (areaCursorMoved && areaPreviewLoadPending) {
+        areaPreviewNextLoadAt = nowMs + PREVIEW_LOAD_AFTER_CURSOR_MS;
+    }
+    bool previewLoadWasDue = areaPreviewLoadPending &&
+        static_cast<int32_t>(nowMs - areaPreviewNextLoadAt) >= 0;
     updateAreaPreviewLoading(nowMs);
-    updateRouteMovement(nowMs);
+    if (previewLoadWasDue) redraw = true;
+    redraw = updateRouteMovement(nowMs) || redraw;
     updateExpAnimation(nowMs);
-    serviceBattleLog(nowMs);
+    redraw = serviceBattleLog(nowMs) || redraw;
     updateBattleSwitch(nowMs);
     updateBattleTurn(nowMs);
+
+    bool dynamic = phase == Phase::WALKING || phase == Phase::EXITING;
+    if (phase == Phase::SELECT) {
+        dynamic = areaCursorAnimating;
+        if (areaCursor < ROUTE_MAP_COUNT && areaPreviewPool.count > 0) {
+            uint32_t cycleElapsed =
+                (nowMs - areaPreviewStartedAt) % AREA_PREVIEW_CYCLE_MS;
+            dynamic = dynamic || cycleElapsed > AREA_PREVIEW_HOLD_MS;
+        }
+    }
+    if (phase == Phase::ENCOUNTER || phase == Phase::FRIENDSHIP) {
+        const auto& active = battlePlayerMonster();
+        dynamic = dynamic || battleLogBusy() || expAnimationActive ||
+                  battleSwitchStage != BattleSwitchStage::NONE ||
+                  battleTurnStage != BattleTurnStage::IDLE ||
+                  wildRuntime.majorStatus != Game::MajorStatus::NONE ||
+                  active.majorStatus != Game::MajorStatus::NONE;
+    }
+
+    uint32_t nextDelay =
+        dynamic ? 66 : SceneUpdateResult::NO_UPDATE;
+    if (phase == Phase::SELECT && !dynamic &&
+        areaCursor < ROUTE_MAP_COUNT && areaPreviewPool.count > 0) {
+        uint32_t cycleElapsed =
+            (nowMs - areaPreviewStartedAt) % AREA_PREVIEW_CYCLE_MS;
+        nextDelay = max<uint32_t>(
+            1, AREA_PREVIEW_HOLD_MS - cycleElapsed + 1);
+    }
+    if (areaPreviewLoadPending) {
+        uint32_t loadDelay =
+            static_cast<int32_t>(nowMs - areaPreviewNextLoadAt) >= 0
+                ? 1 : areaPreviewNextLoadAt - nowMs;
+        if (nextDelay == SceneUpdateResult::NO_UPDATE ||
+            loadDelay < nextDelay) {
+            nextDelay = loadDelay;
+        }
+    }
+    return SceneUpdateResult(redraw || dynamic, nextDelay);
 }
 
 bool ExploreScene::onButton(const ButtonEvent& event) {
@@ -1225,7 +1218,8 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
             if (battleCursor == 0) {
                 attackWild();
             } else if (battleCursor == 1) {
-                exploreSubView.openBattleBagView(wild ? wild->name : nullptr);
+                exploreSubView.openBattleBagView(
+                    wild ? wild->name : nullptr, battlePlayerSlot);
                 exploreSubViewOpen = true;
             } else if (battleCursor == 2) {
                 switchBattleMonster();
@@ -1498,9 +1492,10 @@ void ExploreScene::beginAutoWalk() {
     walk();
 }
 
-void ExploreScene::updateRouteMovement(uint32_t nowMs) {
-    if (!routeMoving || exploreMenuOpen) return;
+bool ExploreScene::updateRouteMovement(uint32_t nowMs) {
+    if (!routeMoving || exploreMenuOpen) return false;
     uint32_t elapsed = nowMs - routeMoveStarted;
+    uint32_t completedAt = routeMoveStarted + routeMoveDurationMs;
     uint16_t leaderDurationMs = max<uint16_t>(1, routeLeaderMoveDurationMs);
     float leaderProgress = min(
         1.0f, elapsed / static_cast<float>(leaderDurationMs));
@@ -1532,7 +1527,7 @@ void ExploreScene::updateRouteMovement(uint32_t nowMs) {
         routeFollowerWorldY = routeFollowerFromY +
                               (routeFollowerTargetY - routeFollowerFromY) * followerEased;
     }
-    if (elapsed < routeMoveDurationMs) return;
+    if (elapsed < routeMoveDurationMs) return true;
 
     routeWorldX = routeTargetX;
     routeWorldY = routeTargetY;
@@ -1542,13 +1537,18 @@ void ExploreScene::updateRouteMovement(uint32_t nowMs) {
     routeFollowerMoving = false;
     if (phase == Phase::EXITING) {
         phase = Phase::ENDING;
-        return;
+        return true;
     }
     if (enterPendingProgression(Phase::WALKING)) {
         walkStepResolutionPending = true;
-        return;
+        return true;
     }
     finishCompletedWalkStep();
+    if (routeMoving && autoWalkActive && phase == Phase::WALKING &&
+        static_cast<int32_t>(nowMs - completedAt) >= 0) {
+        routeMoveStarted = completedAt;
+    }
+    return true;
 }
 
 void ExploreScene::finishCompletedWalkStep() {
@@ -1663,6 +1663,7 @@ int8_t ExploreScene::currentDepthLevelOffset(uint8_t spread) const {
 }
 
 void ExploreScene::beginEncounter(const Species& species, uint8_t level, bool boss) {
+    GameEngine::ins().recordEncounteredSpecies(species.id);
     wild = &species;
     battleIsBoss = boss;
     battleAllowsFriendship = true;
@@ -1673,6 +1674,7 @@ void ExploreScene::beginEncounter(const Species& species, uint8_t level, bool bo
     battleFoodBond = 0;
     clearFriendshipFlow();
     defeatAwaitInput = false;
+    battlePlayerSlot = 0;
     pendingBattleSwitchSlot = 0xFF;
     BattleSystem::resetVolatile(playerBattleState);
     BattleSystem::resetVolatile(wildBattleState);
@@ -1813,9 +1815,10 @@ void ExploreScene::enqueueBattleLog(const char* text, BattleLogCue cue) {
     serviceBattleLog(Hal::ins().millis());
 }
 
-void ExploreScene::serviceBattleLog(uint32_t nowMs) {
-    if (battleLogActive && (int32_t)(nowMs - battleLogUntil) < 0) return;
+bool ExploreScene::serviceBattleLog(uint32_t nowMs) {
+    if (battleLogActive && (int32_t)(nowMs - battleLogUntil) < 0) return false;
     if (battleLogCount == 0) {
+        bool changed = battleLogActive || battleLogVisibleCount > 0;
         battleLogActive = false;
         battleLogVisibleCount = 0;
         for (uint8_t i = 0; i < BATTLE_LOG_VISIBLE_CAP; ++i) {
@@ -1826,18 +1829,19 @@ void ExploreScene::serviceBattleLog(uint32_t nowMs) {
             clearFriendshipFlow();
             if (debugBattleMode) returnToDebugMenu();
             else resumeWalk();
-            return;
+            return true;
         }
         if (battleResultPending) {
             battleResultPending = false;
             if (friendshipOfferPending) {
                 clearFriendshipFlow();
                 phase = Phase::FRIENDSHIP;
-                return;
+                return true;
             }
             finishBattleVictoryFlow();
+            return true;
         }
-        return;
+        return changed;
     }
 
     uint8_t line = 0;
@@ -1861,6 +1865,7 @@ void ExploreScene::serviceBattleLog(uint32_t nowMs) {
     }
     battleLogActive = true;
     battleLogUntil = nowMs + 1000;
+    return true;
 }
 
 bool ExploreScene::battleLogBusy() const {
@@ -1901,7 +1906,7 @@ void ExploreScene::updateExpAnimation(uint32_t nowMs) {
 uint32_t ExploreScene::battleExpForRender(uint32_t nowMs) const {
     if (expAnimationPending) return expAnimationFrom;
     if (!expAnimationActive || nowMs <= expAnimationStarted) {
-        return expAnimationActive ? expAnimationFrom : GameEngine::ins().activeMonster().exp;
+        return expAnimationActive ? expAnimationFrom : battlePlayerMonster().exp;
     }
     uint32_t elapsed = min<uint32_t>(EXP_ANIMATION_MS, nowMs - expAnimationStarted);
     uint64_t distance = static_cast<uint64_t>(expAnimationTo - expAnimationFrom) * elapsed;
@@ -1974,7 +1979,7 @@ void ExploreScene::enqueueBattleProgressionLogs(uint8_t teamSlot) {
 void ExploreScene::enqueueBattleEffectLogs(const BattleSystem::EffectResolution& effects,
                                            bool attackerWild) {
     if (!wild) return;
-    const Species& playerSpecies = GameEngine::ins().activeSpecies();
+    const Species& playerSpecies = battlePlayerSpecies();
     auto statusLabel = [](Game::MajorStatus status) -> const char* {
         switch (status) {
         case Game::MajorStatus::POISON: return Ui::Status::STATUS_POISON;
@@ -2094,8 +2099,8 @@ void ExploreScene::beginBattleAction() {
     }
 
     auto& engine = GameEngine::ins();
-    auto& activeMon = engine.activeMonster();
-    const Species& activeSpecies = engine.activeSpecies();
+    auto& activeMon = battlePlayerMonster();
+    const Species& activeSpecies = battlePlayerSpecies();
     battleActionAttackerWild = battleActionOrder[battleActionIndex];
     battleActionSelfHit = false;
     battleActionResult = BattleSystem::DamageResult{};
@@ -2229,7 +2234,8 @@ void ExploreScene::beginBattleAction() {
 
 void ExploreScene::applyBattleDamage() {
     auto& engine = GameEngine::ins();
-    auto& activeMon = engine.activeMonster();
+    auto& activeMon = battlePlayerMonster();
+    const Species& activeSpecies = battlePlayerSpecies();
     wildRuntime.hpCur = wildHp;
 
     if (battleActionSelfHit) {
@@ -2265,11 +2271,11 @@ void ExploreScene::applyBattleDamage() {
         if (battleActionAttackerWild) {
             battleEffectResolution = BattleSystem::applyMoveEffects(
                 *move, wildRuntime, *wild, wildBattleState,
-                activeMon, engine.activeSpecies(), playerBattleState,
+                activeMon, activeSpecies, playerBattleState,
                 actualDamage, defenderCanStillAct);
         } else {
             battleEffectResolution = BattleSystem::applyMoveEffects(
-                *move, activeMon, engine.activeSpecies(), playerBattleState,
+                *move, activeMon, activeSpecies, playerBattleState,
                 wildRuntime, *wild, wildBattleState,
                 actualDamage, defenderCanStillAct);
         }
@@ -2290,7 +2296,7 @@ void ExploreScene::applyBattleDamage() {
 }
 
 void ExploreScene::finishBattleAction() {
-    bool playerFainted = GameEngine::ins().activeMonster().hpCur == 0;
+    bool playerFainted = battlePlayerMonster().hpCur == 0;
     bool wildFainted = wildHp == 0;
     if (playerFainted || wildFainted) {
         battleTurnStage = BattleTurnStage::IDLE;
@@ -2312,7 +2318,7 @@ void ExploreScene::finishBattleAction() {
 void ExploreScene::resolveBattleEndTurn() {
     auto& engine = GameEngine::ins();
     BattleSystem::EffectResolution playerEffects = BattleSystem::resolveEndTurn(
-        engine.activeMonster(), engine.activeSpecies(), playerBattleState);
+        battlePlayerMonster(), battlePlayerSpecies(), playerBattleState);
     for (uint8_t index = 0; index < playerEffects.count; ++index) {
         playerEffects.outcomes[index].target = MoveEffectTarget::ATTACKER;
     }
@@ -2341,7 +2347,7 @@ void ExploreScene::finishBattleEndTurn() {
     battleTurnStage = BattleTurnStage::IDLE;
     if (wildHp == 0) {
         finishWildFaint();
-    } else if (GameEngine::ins().activeMonster().hpCur == 0) {
+    } else if (battlePlayerMonster().hpCur == 0) {
         finishPlayerFaint();
     }
 }
@@ -2376,7 +2382,8 @@ void ExploreScene::finishRoamingEncounter() {
 void ExploreScene::finishWildFaint() {
     if (!wild) return;
     auto& engine = GameEngine::ins();
-    auto& activeMon = engine.activeMonster();
+    auto& activeMon = battlePlayerMonster();
+    uint8_t activeSlot = battlePlayerSlot;
     uint16_t expGain = BattleSystem::experienceReward(*wild, wildRuntime.level);
     if (battleIsBoss) {
         expGain = BattleSystem::scaledExperienceReward(
@@ -2384,7 +2391,8 @@ void ExploreScene::finishWildFaint() {
     }
     uint8_t reserveSlot = 0xFF;
     const Game::GameState& state = engine.gameState();
-    for (uint8_t slot = 1; slot < state.teamCount && slot < Game::TEAM_CAP; ++slot) {
+    for (uint8_t slot = 0; slot < state.teamCount && slot < Game::TEAM_CAP; ++slot) {
+        if (slot == activeSlot) continue;
         const Game::MonsterRuntime& teammate = state.team[slot];
         if (!teammate.fainted && teammate.hpCur > 0) {
             reserveSlot = slot;
@@ -2396,12 +2404,13 @@ void ExploreScene::finishWildFaint() {
     uint16_t reserveExpGain = expAwards.reserve;
     uint16_t activeExpGain = expAwards.active;
     uint32_t expBefore = activeMon.exp;
-    engine.grantEffortFrom(*wild);
+    engine.grantEffortToTeamMember(activeSlot, *wild);
     if (reserveSlot != 0xFF) {
         engine.grantEffortToTeamMember(reserveSlot, *wild);
     }
-    uint32_t activeExpAwarded = engine.addExperienceToTeamMember(0, activeExpGain);
-    prepareExpAnimation(expBefore, engine.activeMonster().exp);
+    uint32_t activeExpAwarded =
+        engine.addExperienceToTeamMember(activeSlot, activeExpGain);
+    prepareExpAnimation(expBefore, battlePlayerMonster().exp);
     battleResultPending = true;
     enqueueBattleLog(Ui::Explore::BATTLE_WIN);
     if (battleIsBoss) enqueueBattleLog(Ui::Explore::BOSS_DEFEATED);
@@ -2409,7 +2418,7 @@ void ExploreScene::finishWildFaint() {
     snprintf(logBuf, sizeof(logBuf), Ui::Explore::EXP_GAIN_FMT,
              static_cast<unsigned>(activeExpAwarded));
     enqueueBattleLog(logBuf, BattleLogCue::EXP_GAIN);
-    enqueueBattleProgressionLogs(0);
+    enqueueBattleProgressionLogs(activeSlot);
 
     if (reserveSlot != 0xFF && reserveExpGain > 0) {
         uint32_t awarded = engine.addExperienceToTeamMember(
@@ -2433,18 +2442,41 @@ void ExploreScene::finishWildFaint() {
     markFirstSpecialVictory();
     finishRoamingEncounter();
     bool hasRoom = state.storageCount < Game::STORAGE_CAP;
-    uint16_t friendshipShakeRolls[FriendshipSystem::SHAKE_CHECK_COUNT];
-    for (uint8_t check = 0;
-         check < FriendshipSystem::SHAKE_CHECK_COUNT; ++check) {
-        friendshipShakeRolls[check] = static_cast<uint16_t>(
-            random(0, 65536));
+    int8_t pityIndex = FriendshipPity::indexFor(wild->id);
+    uint8_t pityFailCount = pityIndex >= 0
+        ? engine.gameState().friendshipPityFailCounts[pityIndex]
+        : 0;
+    FriendshipPity::Tier pityTier = pityIndex >= 0
+        ? FriendshipPity::tierAt(static_cast<uint8_t>(pityIndex))
+        : FriendshipPity::Tier::NONE;
+    uint16_t baseOfferChance = FriendshipSystem::offerChancePermille(
+        *wild, wildRuntime, battleIsBoss, battleFoodBond);
+    uint16_t offerChance = FriendshipPity::chanceWithBonus(
+        baseOfferChance, pityTier, pityFailCount);
+    friendshipOfferPending = false;
+    if (battleAllowsFriendship && hasRoom) {
+        if (debugBattleMode) {
+            friendshipOfferPending = true;
+        } else {
+            uint16_t friendshipShakeRolls[FriendshipSystem::SHAKE_CHECK_COUNT];
+            for (uint8_t check = 0;
+                 check < FriendshipSystem::SHAKE_CHECK_COUNT; ++check) {
+                friendshipShakeRolls[check] = static_cast<uint16_t>(
+                    random(0, 65536));
+            }
+            bool baseOfferPassed = FriendshipSystem::passesOfferChecks(
+                *wild, wildRuntime, battleIsBoss,
+                static_cast<uint16_t>(random(0, 1000)),
+                friendshipShakeRolls, battleFoodBond);
+            uint16_t conditionalBonus =
+                FriendshipPity::conditionalBonusPermille(
+                    baseOfferChance, offerChance);
+            bool pityOfferPassed =
+                !baseOfferPassed && conditionalBonus > 0 &&
+                static_cast<uint16_t>(random(0, 1000)) < conditionalBonus;
+            friendshipOfferPending = baseOfferPassed || pityOfferPassed;
+        }
     }
-    friendshipOfferPending =
-        battleAllowsFriendship && hasRoom && (debugBattleMode ||
-                    FriendshipSystem::passesOfferChecks(
-                        *wild, wildRuntime, battleIsBoss,
-                        static_cast<uint16_t>(random(0, 1000)),
-                        friendshipShakeRolls, battleFoodBond));
 
     // 栖息地轮换：击败区域头目 → 该区域重抽计数 +1 并立即重建活跃池（§7.2）
     if (battleIsBoss) {
@@ -2456,27 +2488,13 @@ void ExploreScene::finishWildFaint() {
         }
     }
 
-    // 结交连败保底（§7.9.4）：FriendshipSystem 数值不动，仅外层计数与强制触发
-    if (battleAllowsFriendship && hasRoom && !debugBattleMode) {
+    // 按物种独立累计失败层数；加成已叠加在最终结交概率上（§7.9.4）。
+    if (battleAllowsFriendship && hasRoom && !debugBattleMode &&
+        pityIndex >= 0 && !friendshipOfferPending) {
         Game::GameState& save = engine.gameState();
-        bool pityReady = save.friendshipPitySpeciesId == wild->id &&
-                         save.friendshipPityFailCount >= FRIENDSHIP_PITY_FAIL_COUNT;
-        if (!friendshipOfferPending && pityReady) {
-            // 连败达到阈值：本次战胜必定触发结交邀约，保底记录清零
-            friendshipOfferPending = true;
-            save.friendshipPitySpeciesId = 0;
-            save.friendshipPityFailCount = 0;
-            engine.markDirty(SaveUrgency::DEFERRED);
-        } else if (!friendshipOfferPending) {
-            // 结交失败：同物种连败 +1，异物种重置记录
-            if (save.friendshipPitySpeciesId == wild->id) {
-                if (save.friendshipPityFailCount < 255) {
-                    ++save.friendshipPityFailCount;
-                }
-            } else {
-                save.friendshipPitySpeciesId = wild->id;
-                save.friendshipPityFailCount = 1;
-            }
+        uint8_t& failCount = save.friendshipPityFailCounts[pityIndex];
+        if (failCount < FriendshipPity::MAX_FAIL_COUNT) {
+            ++failCount;
             engine.markDirty(SaveUrgency::DEFERRED);
         }
     }
@@ -2484,13 +2502,13 @@ void ExploreScene::finishWildFaint() {
 
 void ExploreScene::attackWild() {
     if (!wild || wildHp == 0 || battleTurnStage != BattleTurnStage::IDLE) return;
-    auto& activeMon = GameEngine::ins().activeMonster();
+    auto& activeMon = battlePlayerMonster();
     if (activeMon.hpCur == 0 || activeMon.fainted) {
         finishPlayerFaint();
         return;
     }
 
-    const Species& activeSpecies = GameEngine::ins().activeSpecies();
+    const Species& activeSpecies = battlePlayerSpecies();
     battleTurnSpecialSlots[0] = BattleSystem::rollSpecialMoveSlot(activeMon);
     battleTurnSpecialSlots[1] = BattleSystem::rollSpecialMoveSlot(wildRuntime);
     Game::MoveId playerMove = BattleSystem::moveIdForAction(
@@ -2517,7 +2535,7 @@ void ExploreScene::attackWild() {
 
 void ExploreScene::wildCounterattack() {
     if (!wild || wildHp == 0 || battleTurnStage != BattleTurnStage::IDLE) return;
-    const auto& activeMon = GameEngine::ins().activeMonster();
+    const auto& activeMon = battlePlayerMonster();
     if (activeMon.hpCur == 0 || activeMon.fainted) {
         finishPlayerFaint();
         return;
@@ -2568,19 +2586,23 @@ void ExploreScene::throwFood(uint8_t foodIndex) {
 
 void ExploreScene::switchBattleMonster() {
     const Game::GameState& state = GameEngine::ins().gameState();
-    if (state.teamCount < 2 || state.team[1].fainted ||
-        state.team[1].hpCur == 0) {
-        enqueueBattleLog(Ui::Explore::NO_SWITCH_TARGET);
-        return;
+    for (uint8_t slot = 0;
+         slot < state.teamCount && slot < Game::TEAM_CAP; ++slot) {
+        if (slot == battlePlayerSlot) continue;
+        const Game::MonsterRuntime& candidate = state.team[slot];
+        if (!candidate.fainted && candidate.hpCur > 0) {
+            beginBattleSwitch(slot, true);
+            return;
+        }
     }
-
-    beginBattleSwitch(1, true);
+    enqueueBattleLog(Ui::Explore::NO_SWITCH_TARGET);
 }
 
 void ExploreScene::beginBattleSwitch(uint8_t slot, bool consumesTurn) {
     const auto& state = GameEngine::ins().gameState();
     if (battleSwitchStage != BattleSwitchStage::NONE ||
-        slot == 0 || slot >= state.teamCount ||
+        slot == battlePlayerSlot || slot >= state.teamCount ||
+        slot >= Game::TEAM_CAP ||
         state.team[slot].fainted || state.team[slot].hpCur == 0) {
         if (consumesTurn) enqueueBattleLog(Ui::Explore::NO_SWITCH_TARGET);
         return;
@@ -2601,7 +2623,10 @@ void ExploreScene::updateBattleSwitch(uint32_t nowMs) {
 
     if (battleSwitchStage == BattleSwitchStage::RETREATING) {
         uint8_t slot = pendingBattleSwitchSlot;
-        if (slot == 0xFF || !GameEngine::ins().moveTeamMemberToFront(slot)) {
+        const auto& state = GameEngine::ins().gameState();
+        if (slot == 0xFF || slot >= state.teamCount ||
+            slot >= Game::TEAM_CAP || state.team[slot].fainted ||
+            state.team[slot].hpCur == 0) {
             bool consumedTurn = battleSwitchConsumesTurn;
             pendingBattleSwitchSlot = 0xFF;
             battleSwitchConsumesTurn = false;
@@ -2610,6 +2635,7 @@ void ExploreScene::updateBattleSwitch(uint32_t nowMs) {
             else defeatAwaitInput = true;
             return;
         }
+        battlePlayerSlot = slot;
         pendingBattleSwitchSlot = 0xFF;
         BattleSystem::resetVolatile(playerBattleState);
         battleSwitchStage = BattleSwitchStage::ENTERING;
@@ -2623,7 +2649,7 @@ void ExploreScene::updateBattleSwitch(uint32_t nowMs) {
 
     char logBuf[BATTLE_LOG_LEN];
     snprintf(logBuf, sizeof(logBuf), Ui::Explore::SWITCH_IN_FMT,
-             GameEngine::ins().activeSpecies().name);
+             battlePlayerSpecies().name);
     enqueueBattleLog(logBuf);
     if (consumedTurn) wildCounterattack();
 }
@@ -2680,8 +2706,9 @@ int ExploreScene::battleHitShakeX(bool wildSide, uint32_t nowMs) const {
 void ExploreScene::finishPlayerFaint() {
     if (defeatAwaitInput) return;
     auto& engine = GameEngine::ins();
-    const char* faintedName = engine.activeSpecies().name;
-    uint32_t loss = engine.applyActiveFaintPenalty();
+    const char* faintedName = battlePlayerSpecies().name;
+    uint32_t loss =
+        engine.applyFaintPenaltyToTeamMember(battlePlayerSlot);
     char logBuf[BATTLE_LOG_LEN];
     snprintf(logBuf, sizeof(logBuf), Ui::Explore::FAINTED_FMT,
              faintedName);
@@ -2693,7 +2720,8 @@ void ExploreScene::finishPlayerFaint() {
 
     const Game::GameState& state = engine.gameState();
     pendingBattleSwitchSlot = 0xFF;
-    for (uint8_t slot = 1; slot < state.teamCount && slot < Game::TEAM_CAP; ++slot) {
+    for (uint8_t slot = 0; slot < state.teamCount && slot < Game::TEAM_CAP; ++slot) {
+        if (slot == battlePlayerSlot) continue;
         const Game::MonsterRuntime& candidate = state.team[slot];
         if (!candidate.fainted && candidate.hpCur > 0) {
             pendingBattleSwitchSlot = slot;
@@ -2756,13 +2784,13 @@ void ExploreScene::resolveFriendshipOffer() {
         }
         friendshipContactIndex = contactSlot;
         friendshipStep = FriendshipStep::CONTACT_ACQUIRED;
-        // 结交成功：清零连败保底记录（§7.9.4）
+        // 结交成功只清零当前物种，其他物种的累积不受影响。
         {
             Game::GameState& save = engine.gameState();
-            if (save.friendshipPitySpeciesId != 0 ||
-                save.friendshipPityFailCount != 0) {
-                save.friendshipPitySpeciesId = 0;
-                save.friendshipPityFailCount = 0;
+            int8_t pityIndex = FriendshipPity::indexFor(wild->id);
+            if (pityIndex >= 0 &&
+                save.friendshipPityFailCounts[pityIndex] != 0) {
+                save.friendshipPityFailCounts[pityIndex] = 0;
                 engine.markDirty(SaveUrgency::DEFERRED);
             }
         }
@@ -2814,8 +2842,8 @@ void ExploreScene::fleeEncounter() {
         wildCounterattack();
         return;
     }
-    const auto& activeMon = GameEngine::ins().activeMonster();
-    const Species& activeSpecies = GameEngine::ins().activeSpecies();
+    const auto& activeMon = battlePlayerMonster();
+    const Species& activeSpecies = battlePlayerSpecies();
     uint16_t activeSpeed = BattleSystem::effectiveSpeed(
         activeMon, activeSpecies, playerBattleState);
     uint16_t wildSpeed = BattleSystem::effectiveSpeed(
@@ -2841,6 +2869,7 @@ void ExploreScene::fleeEncounter() {
 
 void ExploreScene::snapshotActivePool() {
     // 活跃池由 (时段序号, 区域ID, 重抽计数) 派生种子确定性重建，不进存档（§7.6）
+    serviceAreaPoolCache(0);
     uint8_t areaIndex = static_cast<uint8_t>(activeArea);
     if (areaIndex >= ROUTE_MAP_COUNT) {
         activePool.count = 0;
@@ -3246,7 +3275,7 @@ void ExploreScene::render() {
     }
 }
 
-ExplorePool::Pool ExploreScene::buildAreaPool(uint8_t areaIndex) const {
+ExplorePool::Pool ExploreScene::buildAreaPool(uint8_t areaIndex) {
     if (areaIndex >= ROUTE_MAP_COUNT) return ExplorePool::Pool{};
 
     const RouteMap& map = routeMap(areaIndex);
@@ -3262,13 +3291,104 @@ ExplorePool::Pool ExploreScene::buildAreaPool(uint8_t areaIndex) const {
         ExplorePool::mixSeed(slotIndex, areaIndex, rerollCount));
 }
 
+uint8_t ExploreScene::collectAreaPoolSpecies(uint16_t* speciesIds,
+                                             uint8_t capacity,
+                                             uint8_t priorityArea) {
+    if (!speciesIds || capacity == 0) return 0;
+    uint8_t count = 0;
+    if (priorityArea < ROUTE_MAP_COUNT) {
+        count = ExplorePool::appendUniqueSpecies(
+            buildAreaPool(priorityArea), speciesIds, count, capacity);
+    }
+    for (uint8_t area = 0; area < ROUTE_MAP_COUNT; ++area) {
+        if (area == priorityArea) continue;
+        count = ExplorePool::appendUniqueSpecies(
+            buildAreaPool(area), speciesIds, count, capacity);
+    }
+    return count;
+}
+
+bool ExploreScene::serviceAreaPoolCache(uint8_t loadBudget) {
+    static uint32_t cachedSlotIndex = UINT32_MAX;
+    static uint8_t cachedRerollCounts[Game::EXPLORE_AREA_COUNT] = {};
+    static bool cacheSignatureValid = false;
+    static uint16_t speciesIds[AREA_PRELOAD_CAP] = {};
+    static uint8_t speciesCount = 0;
+    static uint8_t firstPoolSpeciesCount = 0;
+    static bool firstPoolReadyLogged = false;
+    static bool allPoolsReadyLogged = false;
+
+    auto& engine = GameEngine::ins();
+    uint32_t slotIndex =
+        ExplorePool::slotIndexFor(engine.gameMinutesTotal());
+    const uint8_t* rerollCounts =
+        engine.gameState().explorePoolRerollCounts;
+    bool signatureChanged =
+        !cacheSignatureValid || slotIndex != cachedSlotIndex;
+    if (!signatureChanged) {
+        for (uint8_t area = 0; area < Game::EXPLORE_AREA_COUNT; ++area) {
+            if (rerollCounts[area] != cachedRerollCounts[area]) {
+                signatureChanged = true;
+                break;
+            }
+        }
+    }
+    if (signatureChanged) {
+        memset(speciesIds, 0, sizeof(speciesIds));
+        firstPoolSpeciesCount = buildAreaPool(0).count;
+        speciesCount = collectAreaPoolSpecies(
+            speciesIds, AREA_PRELOAD_CAP, 0);
+        cachedSlotIndex = slotIndex;
+        for (uint8_t area = 0; area < Game::EXPLORE_AREA_COUNT; ++area) {
+            cachedRerollCounts[area] = rerollCounts[area];
+        }
+        cacheSignatureValid = true;
+        firstPoolReadyLogged = false;
+        allPoolsReadyLogged = false;
+        Serial.printf(
+            "[ExplorePreload] pools reset slot=%lu species=%u rerolls=%u,%u,%u,%u,%u,%u\n",
+            static_cast<unsigned long>(slotIndex), speciesCount,
+            cachedRerollCounts[0], cachedRerollCounts[1],
+            cachedRerollCounts[2], cachedRerollCounts[3],
+            cachedRerollCounts[4], cachedRerollCounts[5]);
+    }
+
+    PokemonSprites::setPinnedDynamicSpecies(
+        speciesIds, speciesCount);
+    bool ready = PokemonSprites::preloadDynamicSpecies(
+        speciesIds, speciesCount, loadBudget);
+    bool firstPoolReady = PokemonSprites::preloadDynamicSpecies(
+        speciesIds, firstPoolSpeciesCount, 0);
+    if (firstPoolReady && !firstPoolReadyLogged) {
+        firstPoolReadyLogged = true;
+        Serial.printf(
+            "[ExplorePreload] first_pool ready slot=%lu reroll=%u species=%u\n",
+            static_cast<unsigned long>(slotIndex),
+            cachedRerollCounts[0], firstPoolSpeciesCount);
+    }
+    if (ready && !allPoolsReadyLogged) {
+        allPoolsReadyLogged = true;
+        const auto& stats = PokemonSprites::cacheStats();
+        Serial.printf(
+            "[ExplorePreload] all_pools ready slot=%lu species=%u decoded=%lu free=%lu\n",
+            static_cast<unsigned long>(slotIndex), speciesCount,
+            static_cast<unsigned long>(stats.decodedBytes),
+            static_cast<unsigned long>(stats.freePsram));
+    } else if (!ready) {
+        allPoolsReadyLogged = false;
+    }
+    return ready;
+}
+
 void ExploreScene::loadAreaPreview() {
+    serviceAreaPoolCache(0);
     memset(areaPreviewFrames, 0, sizeof(areaPreviewFrames));
     memset(areaPreviewSpeciesIds, 0, sizeof(areaPreviewSpeciesIds));
     memset(areaPreloadSpeciesIds, 0, sizeof(areaPreloadSpeciesIds));
     areaPreloadSpeciesCount = 0;
     areaPreviewPool = ExplorePool::Pool{};
     areaPreviewStartedAt = Hal::ins().millis();
+    areaPreviewVisualCycle = UINT32_MAX;
     areaPreviewNextLoadAt = areaPreviewStartedAt + 80;
     areaPreviewLoadPending = false;
     if (areaCursor >= ROUTE_MAP_COUNT) {
@@ -3278,31 +3398,21 @@ void ExploreScene::loadAreaPreview() {
 
     // 预览展示当前时段种子的活跃池全成员：所见即本趟可遭遇（§7.1/§7.5）
     areaPreviewPool = buildAreaPool(areaCursor);
-    auto appendPreloadSpecies = [&](uint16_t speciesId) {
-        if (speciesId == 0 || areaPreloadSpeciesCount >= AREA_PRELOAD_CAP) return;
-        for (uint8_t i = 0; i < areaPreloadSpeciesCount; ++i) {
-            if (areaPreloadSpeciesIds[i] == speciesId) return;
-        }
-        areaPreloadSpeciesIds[areaPreloadSpeciesCount++] = speciesId;
-    };
     for (uint8_t i = 0; i < areaPreviewPool.count; ++i) {
         areaPreviewSpeciesIds[i] = areaPreviewPool.entries[i].speciesId;
-        appendPreloadSpecies(areaPreviewSpeciesIds[i]);
     }
     PokemonSprites::setDynamicSceneSpecies(
         areaPreviewSpeciesIds, areaPreviewPool.count);
 
-    // 当前区域优先，空闲帧继续预取菜单中的后两个区域。
-    for (uint8_t ahead = 1; ahead <= AREA_PRELOAD_AHEAD; ++ahead) {
-        uint8_t nextArea = static_cast<uint8_t>(
-            (areaCursor + ahead) % ROUTE_MAP_COUNT);
-        ExplorePool::Pool nextPool = buildAreaPool(nextArea);
-        for (uint8_t i = 0; i < nextPool.count; ++i) {
-            appendPreloadSpecies(nextPool.entries[i].speciesId);
-        }
-    }
+    // Current-area members lead the queue. All six active pools remain pinned,
+    // so changing the cursor never evicts a preview that was already loaded.
+    areaPreloadSpeciesCount = collectAreaPoolSpecies(
+        areaPreloadSpeciesIds, AREA_PRELOAD_CAP, areaCursor);
     areaPreviewLoadPending = !PokemonSprites::preloadDynamicSpecies(
         areaPreloadSpeciesIds, areaPreloadSpeciesCount, 0);
+    areaPreviewStartedAt = Hal::ins().millis();
+    areaPreviewNextLoadAt =
+        areaPreviewStartedAt + PREVIEW_LOAD_AFTER_CURSOR_MS;
     refreshAreaPreviewFrames();
 }
 
@@ -3317,7 +3427,10 @@ void ExploreScene::updateAreaPreviewLoading(uint32_t nowMs) {
     if (phase == Phase::SELECT && areaCursor < ROUTE_MAP_COUNT) {
         refreshAreaPreviewFrames();
     }
-    areaPreviewNextLoadAt = nowMs + 1;
+    bool currentPoolReady = PokemonSprites::preloadDynamicSpecies(
+        areaPreviewSpeciesIds, areaPreviewPool.count, 0);
+    areaPreviewNextLoadAt = nowMs +
+        (currentPoolReady ? PREVIEW_BACKGROUND_LOAD_INTERVAL_MS : 1);
 }
 
 void ExploreScene::refreshAreaPreviewFrames() {
@@ -3340,26 +3453,12 @@ void ExploreScene::renderAreaMenu() {
     static constexpr int LEFT_W = 70;
     static constexpr int CENTER_Y = Hal::DISPLAY_H / 2;
     static constexpr int AREA_SPACING = 34;
-    static constexpr float CURSOR_LERP = 0.25f;
     static constexpr int PREVIEW_CENTER_X =
         LEFT_W + (Hal::DISPLAY_W - LEFT_W) / 2;
     // 活跃池轮播（§7.5）：三帧可见，右帧先转到中间，整体向左轮转
     static constexpr int PREVIEW_CENTER_Y =
         26 + (Hal::DISPLAY_H - 26) / 2;
     static constexpr int PREVIEW_GAP = 10;
-    static constexpr uint32_t PREVIEW_CYCLE_MS = 2800;
-    static constexpr uint32_t PREVIEW_MOVE_MS = 500;
-    static constexpr uint32_t PREVIEW_HOLD_MS =
-        PREVIEW_CYCLE_MS - PREVIEW_MOVE_MS;
-
-    float target = static_cast<float>(areaCursor);
-    float diff = target - areaAnimCursor;
-    if (fabsf(diff) < 0.05f) {
-        areaAnimCursor = target;
-    } else {
-        areaAnimCursor += diff * CURSOR_LERP;
-    }
-
     uint8_t count = static_cast<uint8_t>(Area::COUNT) + 1;
     c.setClipRect(0, 0, LEFT_W, Hal::DISPLAY_H);
     for (uint8_t i = 0; i < count; ++i) {
@@ -3406,16 +3505,16 @@ void ExploreScene::renderAreaMenu() {
     // 整体右往左轮播:右帧先转到中间,新帧从右侧滑入
     // 初次展示按池顺序排成 0、1、2，避免环形上一项把末尾稀有剪影放到最左侧。
     uint8_t currentPreview = static_cast<uint8_t>(
-        (elapsed / PREVIEW_CYCLE_MS + 1) % poolCount);
+        (elapsed / AREA_PREVIEW_CYCLE_MS + 1) % poolCount);
     uint8_t nextPreview =
         static_cast<uint8_t>((currentPreview + 1) % poolCount);
     uint8_t prevPreview = static_cast<uint8_t>(
         (currentPreview + poolCount - 1) % poolCount);
-    uint32_t cycleElapsed = elapsed % PREVIEW_CYCLE_MS;
-    float progress = cycleElapsed <= PREVIEW_HOLD_MS
+    uint32_t cycleElapsed = elapsed % AREA_PREVIEW_CYCLE_MS;
+    float progress = cycleElapsed <= AREA_PREVIEW_HOLD_MS
         ? 0.0f
-        : (cycleElapsed - PREVIEW_HOLD_MS) /
-              static_cast<float>(PREVIEW_MOVE_MS);
+        : (cycleElapsed - AREA_PREVIEW_HOLD_MS) /
+              static_cast<float>(AREA_PREVIEW_MOVE_MS);
     progress = min(1.0f, progress);
     progress = progress * progress * (3.0f - 2.0f * progress);
 
@@ -3837,11 +3936,11 @@ void ExploreScene::renderEncounter() {
     }
     int playerOffsetX =
         battleHitShakeX(false, nowMs) + battleSwitchOffsetX(nowMs);
-    drawMonsterSprite(GameEngine::ins().activeSpecies(),
+    drawMonsterSprite(battlePlayerSpecies(),
                       BattleLayout::PLAYER_X, BattleLayout::PLAYER_GROUND_Y,
                       BattleLayout::PLAYER_MAX_W, BattleLayout::PLAYER_MAX_H,
                       true, playerOffsetX);
-    const auto& activeMonster = GameEngine::ins().activeMonster();
+    const auto& activeMonster = battlePlayerMonster();
     if (activeMonster.hpCur > 0) {
         drawBattleConditionEffects(BattleLayout::PLAYER_X + playerOffsetX,
                                    BattleLayout::PLAYER_GROUND_Y,
@@ -4045,8 +4144,8 @@ void ExploreScene::renderBattleHud() {
                          wildRuntime.majorStatus);
     }
 
-    const auto& active = GameEngine::ins().activeMonster();
-    const Species& species = GameEngine::ins().activeSpecies();
+    const auto& active = battlePlayerMonster();
+    const Species& species = battlePlayerSpecies();
     bool showVictoryExp = wild && wildHp == 0 && battleResultPending &&
                           battleExpVisible;
     bool holdPreRewardLevel = wild && wildHp == 0 && battleResultPending &&

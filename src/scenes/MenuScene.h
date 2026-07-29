@@ -19,12 +19,12 @@ public:
 
     void onEnter() override;
     void onExit() override;
-    void update(uint32_t nowMs, float dtSeconds) override;
+    SceneUpdateResult update(uint32_t nowMs, float dtSeconds) override;
     void render() override;
     bool onButton(const ButtonEvent& event) override;
     void openExploreTeamView();
     void openExploreBagView();
-    void openBattleBagView(const char* targetName);
+    void openBattleBagView(const char* targetName, uint8_t targetTeamSlot);
     BattleBagResult consumeBattleBagResult();
     uint8_t battleBagThrownFoodIndex() const { return battleBagFoodIndex; }
     bool exploreViewClosed() const;
@@ -107,6 +107,7 @@ private:
     bool exploreContextMode = false;
     bool battleBagMode = false;
     const char* battleTargetName = nullptr;
+    uint8_t battleTargetTeamSlot = 0;
     BattleBagResult battleBagResult = BattleBagResult::NONE;
     uint8_t battleBagFoodIndex = 0;
     uint8_t teamCursor = 0;
@@ -147,6 +148,7 @@ private:
     int statusScrollKey = -1;
     float statusScroll = 0.0f;
     uint32_t statusScrollLastMs = 0;
+    int lastBatteryLevel = -1;
     ViewMode navStack[NAV_STACK_CAP] = {};
     uint8_t navDepth = 0;
 
@@ -191,8 +193,8 @@ private:
     void renderSplitList(const BagRow* rows, uint8_t count);
     void renderBagDetail(const BagRow& row);
     void renderPageIndicator(uint8_t page, uint8_t count);
-    void updateStatusScroll(int scrollKey, int maxScroll);
-    void updateDescriptionScroll(int scrollKey, int maxScroll);
+    bool updateStatusScroll(int scrollKey, int maxScroll);
+    bool updateDescriptionScroll(int scrollKey, int maxScroll);
     void renderScrollableDescription(const char* const* lines, int lineCount,
                                      int x, int y, int w, uint16_t color,
                                      int scrollKey);

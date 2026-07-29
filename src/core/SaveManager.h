@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include "core/MainSceneViewState.h"
+#include "game/EncounterHistory.h"
 #include "game/GameState.h"
 
 class SaveManager {
@@ -12,6 +13,9 @@ public:
               bool* normalized = nullptr);
     bool saveSnapshot(const Game::GameState& state,
                       const MainSceneViewState& viewState);
+    bool loadEncounterHistory(Game::EncounterHistory& history,
+                              bool* normalized = nullptr);
+    bool saveEncounterHistory(const Game::EncounterHistory& history);
     void reset(Game::GameState& state);
     bool clearAll();
     bool loadHatchProgress(Game::HatchProgress& progress);

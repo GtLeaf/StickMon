@@ -751,7 +751,7 @@ void MainScene::persistViewState(uint32_t nowMs) {
     GameEngine::ins().saveMainSceneViewState(saved);
 }
 
-void MainScene::update(uint32_t nowMs, float dtSeconds) {
+SceneUpdateResult MainScene::update(uint32_t nowMs, float dtSeconds) {
     const Species* nextActive = &GameEngine::ins().activeSpecies();
     if (!active || active->id != nextActive->id) {
         behaviorProfile = behaviorProfileFor(*nextActive, GameEngine::ins().activeMonster());
@@ -790,7 +790,7 @@ void MainScene::update(uint32_t nowMs, float dtSeconds) {
             velocityY = 0.0f;
             updateCamera();
             updatePmdSpriteState(nowMs);
-            return;
+            return SceneUpdateResult::after(66);
         }
         updateMonsterAi(nowMs, dtSeconds);
         if (openPendingProgression()) {
@@ -798,14 +798,16 @@ void MainScene::update(uint32_t nowMs, float dtSeconds) {
             velocityY = 0.0f;
             updateCamera();
             updatePmdSpriteState(nowMs);
-            return;
+            return SceneUpdateResult::after(66);
         }
     } else {
         updateDoorTransition(nowMs);
     }
     updateCamera();
     updatePmdSpriteState(nowMs);
-    if (doorTransition != DoorTransitionMode::NONE) return;
+    if (doorTransition != DoorTransitionMode::NONE) {
+        return SceneUpdateResult::after(66);
+    }
     bool combo = Hal::ins().btnA_raw() && Hal::ins().btnB_raw();
     if (!combo) {
         comboStartMs = 0;
@@ -818,6 +820,10 @@ void MainScene::update(uint32_t nowMs, float dtSeconds) {
         toastUntil = nowMs + 1200;
         comboSaved = true;
     }
+    if (toast && static_cast<int32_t>(nowMs - toastUntil) >= 0) {
+        toast = nullptr;
+    }
+    return SceneUpdateResult::after(66);
 }
 
 void MainScene::beginDoorTransition(uint32_t nowMs) {
@@ -3527,10 +3533,6 @@ void MainScene::drawHud() {
 
 void MainScene::drawToast() {
     if (!toast) return;
-    if ((int32_t)(Hal::ins().millis() - toastUntil) >= 0) {
-        toast = nullptr;
-        return;
-    }
     auto& c = PixelRenderer::canvas();
     c.fillRect(68, 6, 96, 20, PixelRenderer::rgb(41, 45, 55));
     PixelRenderer::text(76, 8, toast, PixelRenderer::rgb(255, 255, 255));

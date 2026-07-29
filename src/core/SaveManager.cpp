@@ -7,15 +7,20 @@
 #include <cstring>
 #include <new>
 #include "game/ExploreSpecialEncounter.h"
+#include "game/FriendshipPity.h"
 #include "game/Species.h"
 
 namespace {
 constexpr const char* NVS_NS = "stickmon";
 constexpr const char* NVS_KEY = "state";
 constexpr const char* HATCH_KEY = "hatch";
+constexpr const char* ENCOUNTER_KEY = "encounters";
 constexpr uint32_t SAVE_RECORD_MAGIC = 0x3156534D; // MSV1
-constexpr uint16_t SAVE_RECORD_VERSION = 5;
-constexpr uint16_t LEGACY_SAVE_RECORD_VERSION = 4;
+constexpr uint16_t SAVE_RECORD_VERSION = 6;
+constexpr uint16_t LEGACY_SAVE_RECORD_VERSION_V4 = 4;
+constexpr uint16_t LEGACY_SAVE_RECORD_VERSION_V5 = 5;
+constexpr uint32_t ENCOUNTER_RECORD_MAGIC = 0x31454D53; // SME1
+constexpr uint16_t ENCOUNTER_RECORD_VERSION = 1;
 static_assert(SAVE_RECORD_VERSION == Game::SAVE_VERSION,
               "save record and game-state versions must advance together");
 constexpr uint32_t MAIN_SCENE_VIEW_MAGIC = 0x4D565354; // MVST
@@ -46,7 +51,7 @@ struct MainSceneViewRecord {
 
 struct GameStateV4 {
     uint32_t magic = Game::SAVE_MAGIC;
-    uint16_t version = LEGACY_SAVE_RECORD_VERSION;
+    uint16_t version = LEGACY_SAVE_RECORD_VERSION_V4;
     uint16_t checksum = 0;
     bool oobeDone = false;
     uint16_t hatchSeconds = 180;
@@ -75,11 +80,52 @@ struct GameStateV4 {
     uint8_t friendshipPityFailCount = 0;
 };
 
+struct GameStateV5 {
+    uint32_t magic = Game::SAVE_MAGIC;
+    uint16_t version = LEGACY_SAVE_RECORD_VERSION_V5;
+    uint16_t checksum = 0;
+    bool oobeDone = false;
+    uint16_t hatchSeconds = 180;
+    uint8_t activeSlot = 0;
+    uint8_t teamCount = 1;
+    Game::MonsterRuntime team[Game::TEAM_CAP];
+    uint8_t storageCount = 0;
+    Game::MonsterRuntime storage[Game::STORAGE_CAP];
+    Game::BagState bag;
+    Game::RoomState room;
+    uint32_t coins = 50;
+    uint16_t stepsToday = 0;
+    uint16_t walkExpToday = 0;
+    uint16_t careExpToday = 0;
+    uint16_t careDay = 0;
+    uint32_t gameMinutesTotal = 0;
+    bool pendingLevelUp = false;
+    uint8_t pendingLevelUpLevel = 0;
+    bool pendingMoveLearn = false;
+    uint8_t pendingMoveSlot = 0;
+    Game::MoveId pendingMoveId = 0;
+    uint16_t pendingMoveCursor = 0;
+    Game::PlayerSettings settings;
+    uint8_t explorePoolRerollCounts[Game::EXPLORE_AREA_COUNT] = {};
+    uint16_t friendshipPitySpeciesId = 0;
+    uint8_t friendshipPityFailCount = 0;
+    uint8_t specialBossDefeatedMask = 0;
+    uint8_t roamingRerollCounts[2] = {};
+};
+
 struct SaveRecordV4 {
     uint32_t magic = SAVE_RECORD_MAGIC;
-    uint16_t version = LEGACY_SAVE_RECORD_VERSION;
+    uint16_t version = LEGACY_SAVE_RECORD_VERSION_V4;
     uint16_t reserved = 0;
     GameStateV4 state;
+    MainSceneViewRecord view{};
+};
+
+struct SaveRecordV5 {
+    uint32_t magic = SAVE_RECORD_MAGIC;
+    uint16_t version = LEGACY_SAVE_RECORD_VERSION_V5;
+    uint16_t reserved = 0;
+    GameStateV5 state;
     MainSceneViewRecord view{};
 };
 
@@ -97,27 +143,49 @@ struct SaveRecordHeader {
     uint16_t reserved;
 };
 
+struct EncounterRecord {
+    uint32_t magic = ENCOUNTER_RECORD_MAGIC;
+    uint16_t version = ENCOUNTER_RECORD_VERSION;
+    uint16_t checksum = 0;
+    Game::EncounterHistory history;
+};
+
 static_assert(sizeof(SaveRecordHeader) == 8, "unexpected save record header size");
 
 static_assert(
-    offsetof(Game::GameState, friendshipPityFailCount) ==
-        offsetof(GameStateV4, friendshipPityFailCount),
-    "v4 state prefix changed; update migration before changing save fields");
+    offsetof(Game::GameState, friendshipPityFailCounts) ==
+        offsetof(GameStateV4, friendshipPitySpeciesId) &&
+    offsetof(GameStateV4, friendshipPitySpeciesId) ==
+        offsetof(GameStateV5, friendshipPitySpeciesId),
+    "legacy state prefix changed; update migration before changing save fields");
 static_assert(
-    offsetof(Game::GameState, specialBossDefeatedMask) <= sizeof(GameStateV4),
-    "v4 state must contain the complete prefix before special fields");
+    offsetof(GameStateV5, specialBossDefeatedMask) <
+        offsetof(GameStateV5, roamingRerollCounts),
+    "v5 special encounter fields must keep their migration order");
 
-void migrateV4State(const GameStateV4& legacy, Game::GameState& state) {
+template <typename LegacyState>
+void migrateLegacyPrefix(const LegacyState& legacy, Game::GameState& state) {
     state = Game::GameState{};
     constexpr size_t LEGACY_PREFIX_BYTES =
-        offsetof(Game::GameState, specialBossDefeatedMask);
+        offsetof(Game::GameState, friendshipPityFailCounts);
     memcpy(&state, &legacy, LEGACY_PREFIX_BYTES);
     state.magic = Game::SAVE_MAGIC;
     state.version = Game::SAVE_VERSION;
     state.checksum = 0;
+}
+
+void migrateV4State(const GameStateV4& legacy, Game::GameState& state) {
+    migrateLegacyPrefix(legacy, state);
     state.specialBossDefeatedMask = 0;
     state.roamingRerollCounts[0] = 0;
     state.roamingRerollCounts[1] = 0;
+}
+
+void migrateV5State(const GameStateV5& legacy, Game::GameState& state) {
+    migrateLegacyPrefix(legacy, state);
+    state.specialBossDefeatedMask = legacy.specialBossDefeatedMask;
+    state.roamingRerollCounts[0] = legacy.roamingRerollCounts[0];
+    state.roamingRerollCounts[1] = legacy.roamingRerollCounts[1];
 }
 
 template <typename T>
@@ -489,11 +557,13 @@ bool sanitizeState(Game::GameState& state) {
         state.settings.language = 0;
         changed = true;
     }
-    if (state.friendshipPitySpeciesId != 0 &&
-        !findSpecies(state.friendshipPitySpeciesId)) {
-        state.friendshipPitySpeciesId = 0;
-        state.friendshipPityFailCount = 0;
-        changed = true;
+    for (uint8_t i = 0; i < Game::FRIENDSHIP_PITY_TRACKED_COUNT; ++i) {
+        if (state.friendshipPityFailCounts[i] >
+            FriendshipPity::MAX_FAIL_COUNT) {
+            state.friendshipPityFailCounts[i] =
+                FriendshipPity::MAX_FAIL_COUNT;
+            changed = true;
+        }
     }
     uint8_t specialMask = static_cast<uint8_t>(
         state.specialBossDefeatedMask & ExploreSpecial::VALID_DEFEATED_MASK);
@@ -521,7 +591,9 @@ bool SaveManager::load(Game::GameState& state,
     Preferences prefs;
     if (!prefs.begin(NVS_NS, true)) return false;
     size_t len = prefs.getBytesLength(NVS_KEY);
-    if (len != sizeof(SaveRecordV4) && len != sizeof(SaveRecord)) {
+    if (len != sizeof(SaveRecordV4) &&
+        len != sizeof(SaveRecordV5) &&
+        len != sizeof(SaveRecord)) {
         prefs.end();
         Serial.printf("[SaveManager] unsupported state size=%u expected=%u; reset to v%u\n",
                       (unsigned)len,
@@ -561,7 +633,7 @@ bool SaveManager::load(Game::GameState& state,
         return false;
     }
 
-    if (header.version == LEGACY_SAVE_RECORD_VERSION) {
+    if (header.version == LEGACY_SAVE_RECORD_VERSION_V4) {
         if (len != sizeof(SaveRecordV4)) {
             Serial.printf("[SaveManager] invalid v4 state size=%u expected=%u\n",
                           (unsigned)len,
@@ -582,13 +654,13 @@ bool SaveManager::load(Game::GameState& state,
         uint16_t expectedChecksum = checksumObject(legacy->state);
         bool valid =
             legacy->magic == SAVE_RECORD_MAGIC &&
-            legacy->version == LEGACY_SAVE_RECORD_VERSION &&
+            legacy->version == LEGACY_SAVE_RECORD_VERSION_V4 &&
             legacy->reserved == 0 &&
             legacy->state.magic == Game::SAVE_MAGIC &&
-            legacy->state.version == LEGACY_SAVE_RECORD_VERSION &&
+            legacy->state.version == LEGACY_SAVE_RECORD_VERSION_V4 &&
             legacy->state.checksum == expectedChecksum;
         if (!valid) {
-            Serial.println("[SaveManager] invalid v4 state; reset to v5");
+            Serial.println("[SaveManager] invalid v4 state; reset to v6");
             delete legacy;
             reset(state);
             return false;
@@ -606,6 +678,55 @@ bool SaveManager::load(Game::GameState& state,
         bool changed = sanitizeState(state);
         if (normalized) *normalized = true;
         Serial.printf("[SaveManager] migrated v4 state to v%u normalized=%u\n",
+                      Game::SAVE_VERSION, changed ? 1 : 0);
+        return true;
+    }
+
+    if (header.version == LEGACY_SAVE_RECORD_VERSION_V5) {
+        if (len != sizeof(SaveRecordV5)) {
+            Serial.printf("[SaveManager] invalid v5 state size=%u expected=%u\n",
+                          (unsigned)len,
+                          (unsigned)sizeof(SaveRecordV5));
+            delete[] raw;
+            reset(state);
+            return false;
+        }
+        auto* legacy = new (std::nothrow) SaveRecordV5{};
+        if (!legacy) {
+            delete[] raw;
+            Serial.println("[SaveManager] v5 migration allocation failed");
+            reset(state);
+            return false;
+        }
+        memcpy(legacy, raw, sizeof(*legacy));
+        delete[] raw;
+        uint16_t expectedChecksum = checksumObject(legacy->state);
+        bool valid =
+            legacy->magic == SAVE_RECORD_MAGIC &&
+            legacy->version == LEGACY_SAVE_RECORD_VERSION_V5 &&
+            legacy->reserved == 0 &&
+            legacy->state.magic == Game::SAVE_MAGIC &&
+            legacy->state.version == LEGACY_SAVE_RECORD_VERSION_V5 &&
+            legacy->state.checksum == expectedChecksum;
+        if (!valid) {
+            Serial.println("[SaveManager] invalid v5 state; reset to v6");
+            delete legacy;
+            reset(state);
+            return false;
+        }
+
+        migrateV5State(legacy->state, state);
+        bool viewValid = mainSceneViewRecordValid(legacy->view);
+        if (viewValid) {
+            loadMainSceneViewRecord(legacy->view, viewState);
+        } else {
+            Serial.println("[SaveManager] invalid v5 main scene view; reset view");
+        }
+        delete legacy;
+
+        bool changed = sanitizeState(state);
+        if (normalized) *normalized = true;
+        Serial.printf("[SaveManager] migrated v5 state to v%u normalized=%u\n",
                       Game::SAVE_VERSION, changed ? 1 : 0);
         return true;
     }
@@ -697,6 +818,66 @@ bool SaveManager::saveSnapshot(const Game::GameState& state,
                       static_cast<int>(result));
     }
     return result == ESP_OK;
+}
+
+bool SaveManager::loadEncounterHistory(Game::EncounterHistory& history,
+                                       bool* normalized) {
+    if (normalized) *normalized = false;
+    history.clear();
+
+    Preferences prefs;
+    if (!prefs.begin(NVS_NS, true)) return false;
+    size_t len = prefs.getBytesLength(ENCOUNTER_KEY);
+    if (len == 0) {
+        prefs.end();
+        return false;
+    }
+    if (len != sizeof(EncounterRecord)) {
+        prefs.end();
+        Serial.printf("[SaveManager] invalid encounter history size=%u expected=%u\n",
+                      static_cast<unsigned>(len),
+                      static_cast<unsigned>(sizeof(EncounterRecord)));
+        return false;
+    }
+
+    EncounterRecord record{};
+    size_t read = prefs.getBytes(ENCOUNTER_KEY, &record, sizeof(record));
+    prefs.end();
+    uint16_t expectedChecksum = checksumObject(record);
+    if (read != sizeof(record) ||
+        record.magic != ENCOUNTER_RECORD_MAGIC ||
+        record.version != ENCOUNTER_RECORD_VERSION ||
+        record.checksum != expectedChecksum) {
+        Serial.println("[SaveManager] invalid encounter history; reset history");
+        return false;
+    }
+
+    history = record.history;
+    bool changed = history.sanitize();
+    if (normalized) *normalized = changed;
+    return true;
+}
+
+bool SaveManager::saveEncounterHistory(
+    const Game::EncounterHistory& history) {
+    EncounterRecord record{};
+    record.history = history;
+    record.history.sanitize();
+    record.checksum = checksumObject(record);
+
+    Preferences prefs;
+    if (!prefs.begin(NVS_NS, false)) return false;
+    size_t written =
+        prefs.putBytes(ENCOUNTER_KEY, &record, sizeof(record));
+    prefs.end();
+    if (written != sizeof(record)) {
+        Serial.printf(
+            "[SaveManager] encounter history write failed written=%u expected=%u\n",
+            static_cast<unsigned>(written),
+            static_cast<unsigned>(sizeof(record)));
+        return false;
+    }
+    return true;
 }
 
 void SaveManager::reset(Game::GameState& state) {

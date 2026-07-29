@@ -189,8 +189,10 @@ inline uint16_t slitherSettleFrameMs(uint16_t cycleMs) {
 inline float stepPosition(const Behavior& behavior, float progress) {
     if (progress < 0.0f) progress = 0.0f;
     if (progress > 1.0f) progress = 1.0f;
-    if (behavior.mode == Mode::SLITHER) return progress;
-    return progress * progress * (3.0f - 2.0f * progress);
+    if (behavior.mode == Mode::HOP) {
+        return progress * progress * (3.0f - 2.0f * progress);
+    }
+    return progress;
 }
 
 inline uint8_t movementFrame(const Behavior& behavior, uint8_t frameCount,

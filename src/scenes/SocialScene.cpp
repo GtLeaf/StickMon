@@ -65,6 +65,8 @@ void SocialScene::onEnter() {
     acceptPending = false;
     resultText = nullptr;
     phase = GameEngine::ins().visitActive() ? LinkPhase::VISITING : LinkPhase::MENU;
+    lastVisualTick = UINT32_MAX;
+    lastRoomCount = EspNowLink::ins().roomCount();
 }
 
 void SocialScene::onExit() {
@@ -72,8 +74,10 @@ void SocialScene::onExit() {
     if (!GameEngine::ins().visitActive()) EspNowLink::ins().end();
 }
 
-void SocialScene::update(uint32_t nowMs, float dtSeconds) {
+SceneUpdateResult SocialScene::update(uint32_t nowMs, float dtSeconds) {
     (void)dtSeconds;
+    LinkPhase phaseBefore = phase;
+    uint8_t roomsBefore = EspNowLink::ins().roomCount();
     EspNowLink::ins().update();
 
     if (GameEngine::ins().takeVisitLinkLost()) {
@@ -109,6 +113,47 @@ void SocialScene::update(uint32_t nowMs, float dtSeconds) {
     default:
         break;
     }
+
+    bool redraw = phase != phaseBefore;
+    uint8_t roomCount = EspNowLink::ins().roomCount();
+    redraw = redraw || roomCount != roomsBefore || roomCount != lastRoomCount;
+    lastRoomCount = roomCount;
+
+    bool linkActive =
+        phase == LinkPhase::HOST_ADVERTISING ||
+        phase == LinkPhase::HOST_WAIT_SYNC ||
+        phase == LinkPhase::VISITOR_SEARCHING ||
+        phase == LinkPhase::VISITOR_ROOM_LIST ||
+        phase == LinkPhase::VISITOR_JOINING ||
+        phase == LinkPhase::VISITOR_WAIT_ACCEPT;
+    bool animatedStatus =
+        phase == LinkPhase::HOST_ADVERTISING ||
+        phase == LinkPhase::HOST_WAIT_SYNC ||
+        phase == LinkPhase::VISITOR_SEARCHING ||
+        phase == LinkPhase::VISITOR_JOINING ||
+        phase == LinkPhase::VISITOR_WAIT_ACCEPT;
+    uint32_t visualTick = nowMs / DOTS_INTERVAL_MS;
+    if (animatedStatus && visualTick != lastVisualTick) {
+        lastVisualTick = visualTick;
+        redraw = true;
+    }
+
+    uint32_t nextDelay =
+        linkActive ? 66 : SceneUpdateResult::NO_UPDATE;
+    if (phase == LinkPhase::VISITING) nextDelay = 200;
+    if (toast) {
+        if (static_cast<int32_t>(nowMs - toastUntil) >= 0) {
+            toast = nullptr;
+            redraw = true;
+        } else {
+            uint32_t toastDelay = toastUntil - nowMs;
+            if (nextDelay == SceneUpdateResult::NO_UPDATE ||
+                toastDelay < nextDelay) {
+                nextDelay = toastDelay;
+            }
+        }
+    }
+    return SceneUpdateResult(redraw, nextDelay);
 }
 
 void SocialScene::updateHostAdvertising(uint32_t nowMs) {
@@ -505,10 +550,6 @@ void SocialScene::renderVisiting() {
 
 void SocialScene::renderToast() {
     if (!toast) return;
-    if ((int32_t)(Hal::ins().millis() - toastUntil) >= 0) {
-        toast = nullptr;
-        return;
-    }
     auto& c = PixelRenderer::canvas();
     c.fillRect(52, 108, 136, 20, PixelRenderer::rgb(34, 39, 47));
     PixelRenderer::text(60, 110, toast, PixelRenderer::rgb(255, 255, 255), 1);

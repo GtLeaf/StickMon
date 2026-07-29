@@ -1662,6 +1662,7 @@ bool syncTeamCache(const uint16_t* speciesIds, uint8_t count, uint8_t loadBudget
 bool preloadDynamicSpecies(const uint16_t* speciesIds, uint8_t count,
                            uint8_t loadBudget = 0xFF);
 void setDynamicSceneSpecies(const uint16_t* speciesIds, uint8_t count);
+void setPinnedDynamicSpecies(const uint16_t* speciesIds, uint8_t count);
 void setDynamicLoadingEnabled(bool enabled);
 void beginRenderFrame();
 const SpriteCacheStats& cacheStats();

@@ -7,7 +7,7 @@ class ShopScene : public Scene {
 public:
     void onEnter() override;
     void onExit() override {}
-    void update(uint32_t nowMs, float dtSeconds) override;
+    SceneUpdateResult update(uint32_t nowMs, float dtSeconds) override;
     void render() override;
     bool onButton(const ButtonEvent& event) override;
 

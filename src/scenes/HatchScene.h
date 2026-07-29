@@ -8,7 +8,7 @@ public:
 
     void onEnter() override;
     void onExit() override;
-    void update(uint32_t nowMs, float dtSeconds) override;
+    SceneUpdateResult update(uint32_t nowMs, float dtSeconds) override;
     void render() override;
     bool onButton(const ButtonEvent& event) override;
 
@@ -19,6 +19,8 @@ private:
     uint16_t lastSavedSecond = 0;
     uint32_t toastUntil = 0;
     const char* toast = nullptr;
+    int8_t lastEggOffset = 0;
+    bool lastNight = false;
 
     void complete();
     void persistProgress(bool force);

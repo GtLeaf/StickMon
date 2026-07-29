@@ -124,7 +124,28 @@ void ShowerScene::enterMode(Mode next, uint32_t nowMs) {
     modeStartedMs = nowMs;
 }
 
-void ShowerScene::update(uint32_t nowMs, float dtSeconds) {
+SceneUpdateResult ShowerScene::update(uint32_t nowMs, float dtSeconds) {
+    bool redraw = false;
+    Mode modeBefore = mode;
+    float atmosphereBefore = atmosphereAlpha;
+    float menuTarget = static_cast<float>(menuCursor);
+    while (menuTarget - menuAnimCursor > MENU_COUNT / 2.0f) {
+        menuTarget -= MENU_COUNT;
+    }
+    while (menuTarget - menuAnimCursor < -MENU_COUNT / 2.0f) {
+        menuTarget += MENU_COUNT;
+    }
+    float menuDiff = menuTarget - menuAnimCursor;
+    if (fabsf(menuDiff) < 0.04f) {
+        if (menuAnimCursor != menuTarget) {
+            menuAnimCursor = menuTarget;
+            redraw = true;
+        }
+    } else {
+        menuAnimCursor += menuDiff * 0.25f;
+        redraw = true;
+    }
+
     float ax = 0.0f;
     float ay = 0.0f;
     float az = 0.0f;
@@ -171,6 +192,68 @@ void ShowerScene::update(uint32_t nowMs, float dtSeconds) {
         break;
     }
     updateAtmosphere(dtSeconds);
+    redraw = redraw || mode != modeBefore ||
+             atmosphereAlpha != atmosphereBefore;
+    bool effectActive = false;
+    for (ExpFloat& floater : expFloats) {
+        if (!floater.active) continue;
+        if (nowMs - floater.bornMs >= EXP_FLOAT_DURATION_MS) {
+            floater.active = false;
+            redraw = true;
+        } else {
+            effectActive = true;
+        }
+    }
+    if (toast && static_cast<int32_t>(nowMs - toastUntilMs) >= 0) {
+        toast = nullptr;
+        redraw = true;
+    }
+
+    bool atmosphereMoving =
+        atmosphereTarget ? atmosphereAlpha < 255.0f : atmosphereAlpha > 0.0f;
+    bool timedReaction =
+        (hopStartMs != 0 && nowMs - hopStartMs < HOP_DURATION_MS) ||
+        (wiggleStartMs != 0 && nowMs - wiggleStartMs < WIGGLE_DURATION_MS) ||
+        nowMs < turnUntilMs;
+    if (hopStartMs != 0 && nowMs - hopStartMs >= HOP_DURATION_MS) {
+        hopStartMs = 0;
+        redraw = true;
+    }
+    if (wiggleStartMs != 0 &&
+        nowMs - wiggleStartMs >= WIGGLE_DURATION_MS) {
+        wiggleStartMs = 0;
+        redraw = true;
+    }
+    if (turnUntilMs != 0 && nowMs >= turnUntilMs) {
+        turnUntilMs = 0;
+        redraw = true;
+    }
+    bool modeAnimating =
+        mode == Mode::SOAPING || mode == Mode::BRUSHING ||
+        mode == Mode::RINSING || mode == Mode::COMPLETE;
+    bool animating =
+        modeAnimating || atmosphereMoving || effectActive || timedReaction ||
+        fabsf(menuTarget - menuAnimCursor) >= 0.04f;
+    uint32_t nextDelay =
+        animating ? 66 : SceneUpdateResult::NO_UPDATE;
+    if (mode == Mode::INCOMPLETE) {
+        uint32_t elapsed = nowMs - modeStartedMs;
+        if (elapsed < INCOMPLETE_DURATION_MS) {
+            uint32_t remaining = INCOMPLETE_DURATION_MS - elapsed;
+            if (nextDelay == SceneUpdateResult::NO_UPDATE ||
+                remaining < nextDelay) {
+                nextDelay = remaining;
+            }
+        }
+    }
+    if (toast && static_cast<int32_t>(toastUntilMs - nowMs) > 0) {
+        uint32_t toastDelay = toastUntilMs - nowMs;
+        if (nextDelay == SceneUpdateResult::NO_UPDATE ||
+            toastDelay < nextDelay) {
+            nextDelay = toastDelay;
+        }
+    }
+    return SceneUpdateResult(redraw || animating, nextDelay);
 }
 
 bool ShowerScene::onButton(const ButtonEvent& event) {
@@ -855,13 +938,6 @@ void ShowerScene::drawMenu() {
         PixelRenderer::fillRectAlpha(
             x, 0, 1, Hal::DISPLAY_H, PixelRenderer::rgb(0, 0, 0), alpha);
     }
-    float target = static_cast<float>(menuCursor);
-    while (target - menuAnimCursor > MENU_COUNT / 2.0f) target -= MENU_COUNT;
-    while (target - menuAnimCursor < -MENU_COUNT / 2.0f) target += MENU_COUNT;
-    float diff = target - menuAnimCursor;
-    if (fabsf(diff) < 0.04f) menuAnimCursor = target;
-    else menuAnimCursor += diff * 0.25f;
-
     c.fillRect(MENU_INDICATOR_X, MENU_CENTER_Y - 8, 3, 16,
                PixelRenderer::rgb(255, 216, 72));
     for (uint8_t i = 0; i < MENU_COUNT; ++i) {
@@ -968,10 +1044,7 @@ void ShowerScene::drawExpFloats() {
     for (ExpFloat& floater : expFloats) {
         if (!floater.active) continue;
         uint32_t age = nowMs - floater.bornMs;
-        if (age >= EXP_FLOAT_DURATION_MS) {
-            floater.active = false;
-            continue;
-        }
+        if (age >= EXP_FLOAT_DURATION_MS) continue;
         float progress = static_cast<float>(age) / EXP_FLOAT_DURATION_MS;
         int y = static_cast<int>(floater.y - EXP_FLOAT_RISE_PX * progress);
         uint8_t brightness = 255;
@@ -999,10 +1072,6 @@ void ShowerScene::drawExpFloats() {
 
 void ShowerScene::drawToast() {
     if (!toast) return;
-    if (static_cast<int32_t>(Hal::ins().millis() - toastUntilMs) >= 0) {
-        toast = nullptr;
-        return;
-    }
     PixelRenderer::fillRectAlpha(
         39, 103, 100, 22, PixelRenderer::rgb(18, 22, 29), 225);
     PixelRenderer::text(55, 106, toast, PixelRenderer::rgb(255, 232, 150), 1);

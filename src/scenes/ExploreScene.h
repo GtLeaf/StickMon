@@ -15,6 +15,8 @@ struct SpriteFrame;
 
 class ExploreScene : public Scene {
 public:
+    static bool serviceAreaPoolCache(uint8_t loadBudget = 1);
+
     enum class Area : uint8_t {
         GRASS_PATH,
         CREEK_SLOPE,
@@ -24,10 +26,13 @@ public:
         ANCIENT_WATERFALL_VALLEY,
         COUNT,
     };
+    static_assert(static_cast<uint8_t>(Area::COUNT) ==
+                      Game::EXPLORE_AREA_COUNT,
+                  "explore area cache capacity must cover every route");
 
     void onEnter() override;
     void onExit() override;
-    void update(uint32_t nowMs, float dtSeconds) override;
+    SceneUpdateResult update(uint32_t nowMs, float dtSeconds) override;
     void render() override;
     bool onButton(const ButtonEvent& event) override;
 
@@ -53,13 +58,13 @@ private:
     float areaAnimCursor = 0.0f;
     // 栖息地轮换：预览展示当前种子活跃池（§7.5，轮播池成员）
     static constexpr uint8_t AREA_PREVIEW_COUNT = 6;
-    static constexpr uint8_t AREA_PRELOAD_AHEAD = 2;
     static constexpr uint8_t AREA_PRELOAD_CAP =
-        AREA_PREVIEW_COUNT * (AREA_PRELOAD_AHEAD + 1);
+        AREA_PREVIEW_COUNT * Game::EXPLORE_AREA_COUNT;
     static_assert(AREA_PREVIEW_COUNT == ExplorePool::POOL_CAP,
                   "area preview must show the whole active pool");
     uint32_t areaPreviewStartedAt = 0;
     uint32_t areaPreviewNextLoadAt = 0;
+    uint32_t areaPreviewVisualCycle = UINT32_MAX;
     uint16_t areaPreviewSpeciesIds[AREA_PREVIEW_COUNT] = {};
     uint16_t areaPreloadSpeciesIds[AREA_PRELOAD_CAP] = {};
     uint8_t areaPreloadSpeciesCount = 0;
@@ -117,6 +122,7 @@ private:
     bool battleAllowsFriendship = true;
     uint8_t battleFoodBond = 0;
     uint8_t pendingBattleSwitchSlot = 0xFF;
+    uint8_t battlePlayerSlot = 0;
     enum class BattleSwitchStage : uint8_t {
         NONE,
         RETREATING,
@@ -216,7 +222,7 @@ private:
 
     void walk();
     void beginAutoWalk();
-    void updateRouteMovement(uint32_t nowMs);
+    bool updateRouteMovement(uint32_t nowMs);
     void finishCompletedWalkStep();
     void finishProgression();
     void resumeWalk();
@@ -228,6 +234,9 @@ private:
     void advanceMapBlock(uint8_t nextMap);
     int8_t currentDepthLevelOffset(uint8_t spread) const;
     void beginEncounter(const Species& species, uint8_t level, bool boss = false);
+    Game::MonsterRuntime& battlePlayerMonster();
+    const Game::MonsterRuntime& battlePlayerMonster() const;
+    const Species& battlePlayerSpecies() const;
     void beginRouteBossEncounter();
     void promptOrBeginRouteBoss();
     void finishRoamingEncounter();
@@ -238,7 +247,7 @@ private:
     void resolvePickup(uint8_t pickupId);
     void clearBattleLogs();
     void enqueueBattleLog(const char* text, BattleLogCue cue = BattleLogCue::NONE);
-    void serviceBattleLog(uint32_t nowMs);
+    bool serviceBattleLog(uint32_t nowMs);
     bool battleLogBusy() const;
     bool battleLogPlaybackBusy() const;
     void updateBattleTurn(uint32_t nowMs);
@@ -278,7 +287,10 @@ private:
     void requestExploreExit(bool fainted = false, bool showEndPrompt = true);
     void closeExploreMenu();
     void renderAreaMenu();
-    ExplorePool::Pool buildAreaPool(uint8_t areaIndex) const;
+    static ExplorePool::Pool buildAreaPool(uint8_t areaIndex);
+    static uint8_t collectAreaPoolSpecies(uint16_t* speciesIds,
+                                          uint8_t capacity,
+                                          uint8_t priorityArea = 0xFF);
     void loadAreaPreview();
     void updateAreaPreviewLoading(uint32_t nowMs);
     void refreshAreaPreviewFrames();

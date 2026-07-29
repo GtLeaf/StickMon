@@ -11,6 +11,7 @@
 #include "core/ResourcePack.h"
 #include "core/ResourceFS.h"
 #include "core/RoomResource.h"
+#include "core/TraceLog.h"
 #include "core/UiStrings.h"
 #include "game/FoodTuning.h"
 #include "hardware/EspNowLink.h"
@@ -47,6 +48,22 @@ static constexpr uint32_t VISIT_PING_INTERVAL_MS = 5000UL;
 static constexpr uint32_t VISIT_STATUS_INTERVAL_MS = 3000UL;
 static constexpr uint32_t VISIT_PEER_TIMEOUT_MS = 12000UL;
 static constexpr uint32_t VISIT_DURATION_SEC = 1800UL;
+static constexpr uint32_t FULL_FRAME_BYTES =
+    Hal::DISPLAY_W * Hal::DISPLAY_H * 2UL;
+
+const char* sceneLogName(SceneID scene) {
+    switch (scene) {
+    case SceneID::MAIN: return "main";
+    case SceneID::MENU: return "menu";
+    case SceneID::SOCIAL: return "social";
+    case SceneID::SHOP: return "shop";
+    case SceneID::EXPLORE: return "explore";
+    case SceneID::SETTINGS: return "settings";
+    case SceneID::HATCH: return "hatch";
+    case SceneID::SHOWER: return "shower";
+    default: return "unknown";
+    }
+}
 
 constexpr bool supportsLongPressHome(SceneID scene) {
     return scene == SceneID::MENU ||
@@ -211,10 +228,17 @@ bool GameEngine::begin() {
     saveManager.begin();
     bool normalizedState = false;
     bool loadedState = saveManager.load(state, mainViewState, &normalizedState);
+    bool normalizedEncounterHistory = false;
+    saveManager.loadEncounterHistory(
+        encounterHistory, &normalizedEncounterHistory);
+    encounterHistoryDirty = normalizedEncounterHistory;
     if (!loadedState) {
         initDefaultState();
         clearMainSceneViewState();
     }
+    uint32_t loadedAt = Hal::ins().millis();
+    clockAnchorMs = loadedAt;
+    clockAnchorMinutes = state.gameMinutesTotal;
     if (normalizedState) markDirty(SaveUrgency::DEFERRED);
     if (!loadedState) saveNow();
     if (state.settings.idleTimeoutIndex >= 5) {
@@ -227,6 +251,10 @@ bool GameEngine::begin() {
         markDirty(SaveUrgency::DEFERRED);
     }
     sanitizeMonsterMoves();
+    if (syncOwnedSpeciesToEncounterHistory()) {
+        encounterHistoryDirty = true;
+    }
+    if (encounterHistoryDirty) markDirty(SaveUrgency::SOON);
     if (reconcileLevelUpEvolutions()) {
         bool saved = saveNow();
         Serial.printf("[Evolution] reconciled overdue evolutions saved=%u\n",
@@ -238,13 +266,21 @@ bool GameEngine::begin() {
     ButtonDispatcher::ins().setLongPressMs(state.settings.longPressMs);
     EspNowLink::ins().beginStub();
     startupFirstFrameRendered = false;
+    mainSceneFirstFrameRendered = false;
+    nextExplorePoolPreloadMs = 0;
     PokemonSprites::setDynamicLoadingEnabled(false);
     startupSpriteCacheReady = syncSpriteCache(0);
     switchScene(state.oobeDone ? SceneID::MAIN : SceneID::HATCH);
     uint32_t now = Hal::ins().millis();
     clockAnchorMs = now;
     clockAnchorMinutes = state.gameMinutesTotal;
-    lastInputMs = lastFrameMs = lastUpdateMs = lastCareMs = lastSaveMs = lastActivityMs = now;
+    lastInputMs = lastFrameMs = lastUpdateMs = lastSceneUpdateMs =
+        lastCareMs = lastSaveMs = lastActivityMs = now;
+    nextSceneUpdateMs = now;
+    sceneUpdateScheduled = true;
+    sceneDirty = true;
+    resourceAlertWasVisible = resourceAlertVisible();
+    renderStatsStartedMs = now;
     Serial.printf("[BootTiming] init_ms=%u sprites_ready=%u\n",
                   now - bootStartedMs, startupSpriteCacheReady ? 1 : 0);
     return true;
@@ -264,13 +300,26 @@ void GameEngine::run() {
 
     updateIdle(now);
     uint32_t frameMs = idleActive ? IDLE_FRAME_MS : FRAME_MS;
-    if (now - lastFrameMs >= frameMs) {
+    if (now - lastUpdateMs >= frameMs) {
         update(now);
+        now = Hal::ins().millis();
+        didWork = true;
+    }
+
+    bool immediateSceneUpdatePending =
+        sceneUpdateScheduled &&
+        static_cast<int32_t>(now - nextSceneUpdateMs) >= 0;
+    if (sceneDirty && !immediateSceneUpdatePending &&
+        now - lastFrameMs >= frameMs) {
+        sceneDirty = false;
         render(now);
+        // Anchor cadence to frame start so drawing and SPI transfer time do not
+        // get added to every frame interval.
         lastFrameMs = now;
         didWork = true;
     }
 
+    emitRenderStats(Hal::ins().millis());
     if (!didWork) delay(1);
 }
 
@@ -287,6 +336,8 @@ bool GameEngine::fadeToScene(SceneID id, uint16_t durationMs) {
     sceneFadeLastStepMs = sceneFadeStartedMs;
     sceneFadeProgressMs = 0;
     sceneFade = SceneFadePhase::OUT;
+    sceneDirty = true;
+    scheduleSceneUpdate(sceneFadeStartedMs);
     resetIdle(sceneFadeStartedMs);
     return true;
 }
@@ -791,9 +842,12 @@ bool GameEngine::addSuperPotion(uint8_t amount) {
     return addItem(Game::ItemId::SUPER_POTION, amount);
 }
 
-bool GameEngine::usePotion() {
-    if (state.bag.potion == 0) return false;
-    Game::MonsterRuntime& mon = activeMonster();
+bool GameEngine::usePotion(uint8_t teamSlot) {
+    if (state.bag.potion == 0 || teamSlot >= state.teamCount ||
+        teamSlot >= Game::TEAM_CAP) {
+        return false;
+    }
+    Game::MonsterRuntime& mon = state.team[teamSlot];
     if (mon.fainted || mon.hpCur == 0 || mon.hpCur >= mon.hpMax) return false;
     state.bag.potion--;
     mon.hpCur = min<uint16_t>(mon.hpMax, mon.hpCur + 20);
@@ -801,9 +855,12 @@ bool GameEngine::usePotion() {
     return true;
 }
 
-bool GameEngine::useSuperPotion() {
-    if (state.bag.superPotion == 0) return false;
-    Game::MonsterRuntime& mon = activeMonster();
+bool GameEngine::useSuperPotion(uint8_t teamSlot) {
+    if (state.bag.superPotion == 0 || teamSlot >= state.teamCount ||
+        teamSlot >= Game::TEAM_CAP) {
+        return false;
+    }
+    Game::MonsterRuntime& mon = state.team[teamSlot];
     if (mon.fainted || mon.hpCur == 0 || mon.hpCur >= mon.hpMax) return false;
     state.bag.superPotion--;
     mon.hpCur = min<uint16_t>(mon.hpMax, mon.hpCur + 50);
@@ -831,8 +888,9 @@ bool cureMajorStatus(uint8_t& stock, Game::MonsterRuntime& mon,
 }
 }
 
-bool GameEngine::useAntidote() {
-    bool cured = cureMajorStatus(state.bag.antidote, activeMonster(),
+bool GameEngine::useAntidote(uint8_t teamSlot) {
+    if (teamSlot >= state.teamCount || teamSlot >= Game::TEAM_CAP) return false;
+    bool cured = cureMajorStatus(state.bag.antidote, state.team[teamSlot],
                                  Game::MajorStatus::POISON, Game::MajorStatus::TOXIC);
     if (cured) markDirty(SaveUrgency::SOON);
     return cured;
@@ -842,8 +900,9 @@ bool GameEngine::addParalyzeHeal(uint8_t amount) {
     return addItem(Game::ItemId::PARALYZE_HEAL, amount);
 }
 
-bool GameEngine::useParalyzeHeal() {
-    bool cured = cureMajorStatus(state.bag.paralyzeHeal, activeMonster(),
+bool GameEngine::useParalyzeHeal(uint8_t teamSlot) {
+    if (teamSlot >= state.teamCount || teamSlot >= Game::TEAM_CAP) return false;
+    bool cured = cureMajorStatus(state.bag.paralyzeHeal, state.team[teamSlot],
                                  Game::MajorStatus::PARALYSIS);
     if (cured) markDirty(SaveUrgency::SOON);
     return cured;
@@ -853,8 +912,9 @@ bool GameEngine::addAwakening(uint8_t amount) {
     return addItem(Game::ItemId::AWAKENING, amount);
 }
 
-bool GameEngine::useAwakening() {
-    bool cured = cureMajorStatus(state.bag.awakening, activeMonster(),
+bool GameEngine::useAwakening(uint8_t teamSlot) {
+    if (teamSlot >= state.teamCount || teamSlot >= Game::TEAM_CAP) return false;
+    bool cured = cureMajorStatus(state.bag.awakening, state.team[teamSlot],
                                  Game::MajorStatus::SLEEP);
     if (cured) markDirty(SaveUrgency::SOON);
     return cured;
@@ -864,8 +924,9 @@ bool GameEngine::addBurnHeal(uint8_t amount) {
     return addItem(Game::ItemId::BURN_HEAL, amount);
 }
 
-bool GameEngine::useBurnHeal() {
-    bool cured = cureMajorStatus(state.bag.burnHeal, activeMonster(),
+bool GameEngine::useBurnHeal(uint8_t teamSlot) {
+    if (teamSlot >= state.teamCount || teamSlot >= Game::TEAM_CAP) return false;
+    bool cured = cureMajorStatus(state.bag.burnHeal, state.team[teamSlot],
                                  Game::MajorStatus::BURN);
     if (cured) markDirty(SaveUrgency::SOON);
     return cured;
@@ -875,8 +936,9 @@ bool GameEngine::addIceHeal(uint8_t amount) {
     return addItem(Game::ItemId::ICE_HEAL, amount);
 }
 
-bool GameEngine::useIceHeal() {
-    bool cured = cureMajorStatus(state.bag.iceHeal, activeMonster(),
+bool GameEngine::useIceHeal(uint8_t teamSlot) {
+    if (teamSlot >= state.teamCount || teamSlot >= Game::TEAM_CAP) return false;
+    bool cured = cureMajorStatus(state.bag.iceHeal, state.team[teamSlot],
                                  Game::MajorStatus::FREEZE);
     if (cured) markDirty(SaveUrgency::SOON);
     return cured;
@@ -1314,9 +1376,10 @@ bool GameEngine::reconcileLevelUpEvolutions() {
     return changed;
 }
 
-uint32_t GameEngine::applyActiveFaintPenalty() {
+uint32_t GameEngine::applyFaintPenaltyToTeamMember(uint8_t teamSlot) {
+    if (teamSlot >= state.teamCount || teamSlot >= Game::TEAM_CAP) return 0;
     syncGameClock(Hal::ins().millis());
-    Game::MonsterRuntime& mon = activeMonster();
+    Game::MonsterRuntime& mon = state.team[teamSlot];
     const Species& species = speciesFor(mon);
     uint32_t levelFloor = minimumExpForLevel(species.growthRate, mon.level);
     uint32_t availableLoss = mon.exp > levelFloor ? mon.exp - levelFloor : 0;
@@ -1406,6 +1469,8 @@ void GameEngine::wakeFromIdle() {
 
 void GameEngine::markDirty(SaveUrgency urgency) {
     uint32_t now = Hal::ins().millis();
+    sceneDirty = true;
+    ++renderStatsStateWakes;
     if (!saveDirty) saveDirtySinceMs = now;
     saveDirty = true;
     lastSaveMutationMs = now;
@@ -1420,8 +1485,13 @@ bool GameEngine::saveNow() {
     uint32_t now = Hal::ins().millis();
     if (currentScene) currentScene->onBeforeSave();
     syncGameClock(now);
-    bool ok = saveManager.saveSnapshot(state, mainViewState);
+    if (syncOwnedSpeciesToEncounterHistory()) encounterHistoryDirty = true;
+    bool stateOk = saveManager.saveSnapshot(state, mainViewState);
+    bool historyOk = !encounterHistoryDirty ||
+        saveManager.saveEncounterHistory(encounterHistory);
+    bool ok = stateOk && historyOk;
     lastSaveMs = now;
+    if (historyOk) encounterHistoryDirty = false;
     if (ok) {
         saveDirty = false;
         saveSoon = false;
@@ -1447,8 +1517,10 @@ bool GameEngine::resetGame() {
 
     uint32_t now = Hal::ins().millis();
     clockAnchorMs = now;
-    clockAnchorMinutes = 0;
     initDefaultState();
+    clockAnchorMinutes = state.gameMinutesTotal;
+    encounterHistory.clear();
+    encounterHistoryDirty = false;
     HatchScene::clearRuntimeProgress();
     clearMainSceneViewState();
     hpRecoveryMinuteAcc = 0;
@@ -1477,6 +1549,37 @@ bool GameEngine::resetGame() {
     return true;
 }
 
+bool GameEngine::hasEncounteredSpecies(uint16_t speciesId) const {
+    if (encounterHistory.contains(speciesId)) return true;
+    for (uint8_t i = 0; i < state.teamCount && i < Game::TEAM_CAP; ++i) {
+        if (state.team[i].speciesId == speciesId) return true;
+    }
+    for (uint8_t i = 0; i < state.storageCount && i < Game::STORAGE_CAP; ++i) {
+        if (state.storage[i].speciesId == speciesId) return true;
+    }
+    return false;
+}
+
+bool GameEngine::recordEncounteredSpecies(uint16_t speciesId) {
+    if (!encounterHistory.add(speciesId)) return false;
+    encounterHistoryDirty = true;
+    Serial.printf("[EncounterHistory] unlocked species=%u total=%u\n",
+                  speciesId, encounterHistory.count);
+    markDirty(SaveUrgency::SOON);
+    return true;
+}
+
+bool GameEngine::syncOwnedSpeciesToEncounterHistory() {
+    bool changed = false;
+    for (uint8_t i = 0; i < state.teamCount && i < Game::TEAM_CAP; ++i) {
+        changed |= encounterHistory.add(state.team[i].speciesId);
+    }
+    for (uint8_t i = 0; i < state.storageCount && i < Game::STORAGE_CAP; ++i) {
+        changed |= encounterHistory.add(state.storage[i].speciesId);
+    }
+    return changed;
+}
+
 bool GameEngine::loadHatchProgress(Game::HatchProgress& progress) {
     return saveManager.loadHatchProgress(progress);
 }
@@ -1491,6 +1594,7 @@ void GameEngine::clearHatchProgress() {
 
 void GameEngine::switchScene(SceneID id, bool saveBeforeSwitch) {
     uint32_t now = Hal::ins().millis();
+    SceneID fromId = currentId;
     resetIdle(now);
     if (saveBeforeSwitch && saveDirty && !saveNow()) {
         Serial.println("[GameEngine] save before scene switch failed");
@@ -1519,6 +1623,22 @@ void GameEngine::switchScene(SceneID id, bool saveBeforeSwitch) {
     }
     currentId = actualId;
     currentScene->onEnter();
+    uint32_t enteredAt = Hal::ins().millis();
+    lastSceneUpdateMs = enteredAt;
+    sceneDirty = true;
+    scheduleSceneUpdate(enteredAt);
+    ++renderStatsSceneSwitches;
+    lastLoggedDemandMode = 0xFF;
+    STICKMON_RENDER_STATSF(
+        "[RenderScene] t=%lu from=%s to=%s enter_ms=%lu\n",
+        static_cast<unsigned long>(enteredAt),
+        sceneLogName(fromId), sceneLogName(currentId),
+        static_cast<unsigned long>(enteredAt - now));
+}
+
+void GameEngine::scheduleSceneUpdate(uint32_t nowMs) {
+    nextSceneUpdateMs = nowMs;
+    sceneUpdateScheduled = true;
 }
 
 void GameEngine::processInput(uint32_t nowMs) {
@@ -1537,15 +1657,27 @@ void GameEngine::processInput(uint32_t nowMs) {
             requestScene(homeScene());
             return;
         }
-        if (currentScene && currentScene->onButton(event)) continue;
+        if (currentScene && currentScene->onButton(event)) {
+            sceneDirty = true;
+            scheduleSceneUpdate(nowMs);
+            ++renderStatsInputWakes;
+            continue;
+        }
     }
 }
 
 void GameEngine::update(uint32_t nowMs) {
-    float dt = (nowMs - lastUpdateMs) / 1000.0f;
     lastUpdateMs = nowMs;
+    ++renderStatsCoreUpdates;
     CryPlayer::ins().update();
-    if (resourceAlertVisible()) {
+    bool alertVisible = resourceAlertVisible();
+    if (alertVisible != resourceAlertWasVisible) {
+        resourceAlertWasVisible = alertVisible;
+        sceneDirty = true;
+        if (!alertVisible) scheduleSceneUpdate(nowMs);
+    }
+    if (alertVisible) {
+        sceneUpdateScheduled = false;
         clockAnchorMs = nowMs;
         clockAnchorMinutes = state.gameMinutesTotal;
         lastCareMs = nowMs;
@@ -1561,12 +1693,45 @@ void GameEngine::update(uint32_t nowMs) {
     } else {
         syncSpriteCache(startupFirstFrameRendered ? 0xFF : 0);
     }
+    if (mainSceneFirstFrameRendered && startupSpriteCacheReady &&
+        currentId == SceneID::MAIN &&
+        static_cast<int32_t>(nowMs - nextExplorePoolPreloadMs) >= 0) {
+        bool ready = ExploreScene::serviceAreaPoolCache(1);
+        nextExplorePoolPreloadMs = nowMs + (ready ? 1000UL : 250UL);
+    }
     tickCare(nowMs);
     if (visitSession.active) updateVisit(nowMs);
-    if (currentScene && sceneFade != SceneFadePhase::HOLD) {
-        currentScene->update(nowMs, dt * gameSpeed());
+    bool sceneUpdateDue =
+        sceneUpdateScheduled &&
+        static_cast<int32_t>(nowMs - nextSceneUpdateMs) >= 0;
+    if (currentScene && sceneFade != SceneFadePhase::HOLD && sceneUpdateDue) {
+        Scene* updatingScene = currentScene.get();
+        float dt = (nowMs - lastSceneUpdateMs) / 1000.0f;
+        lastSceneUpdateMs = nowMs;
+        sceneUpdateScheduled = false;
+        SceneUpdateResult result =
+            updatingScene->update(nowMs, dt * gameSpeed());
+        if (currentScene.get() == updatingScene) {
+            ++renderStatsSceneUpdates;
+            if (result.redraw) ++renderStatsRedrawRequests;
+            logSceneDemand(result, nowMs);
+            sceneDirty = sceneDirty || result.redraw;
+            if (result.nextUpdateDelayMs != SceneUpdateResult::NO_UPDATE) {
+                nextSceneUpdateMs = nowMs + max<uint32_t>(
+                    1, result.nextUpdateDelayMs);
+                sceneUpdateScheduled = true;
+            }
+        }
     }
+    SceneFadePhase fadeBefore = sceneFade;
+    uint16_t fadeProgressBefore = sceneFadeProgressMs;
     updateSceneFade(nowMs);
+    if (sceneFade != SceneFadePhase::NONE &&
+        (sceneFade != fadeBefore || sceneFadeProgressMs != fadeProgressBefore)) {
+        sceneDirty = true;
+    } else if (fadeBefore != sceneFade) {
+        sceneDirty = true;
+    }
     if (saveDirty && nowMs - lastSaveMs >= SAVE_MIN_INTERVAL_MS) {
         bool soonDue = saveSoon &&
             (nowMs - lastSaveMutationMs >= SAVE_SOON_QUIET_MS ||
@@ -1574,6 +1739,103 @@ void GameEngine::update(uint32_t nowMs) {
         bool deferredDue = nowMs - saveDirtySinceMs >= SAVE_DEFERRED_MAX_DELAY_MS;
         if (soonDue || deferredDue) saveNow();
     }
+}
+
+void GameEngine::logSceneDemand(const SceneUpdateResult& result,
+                                uint32_t nowMs) {
+    uint8_t mode = 0;
+    const char* modeName = "parked";
+    if (result.nextUpdateDelayMs != SceneUpdateResult::NO_UPDATE) {
+        if (result.nextUpdateDelayMs <= FRAME_MS) {
+            mode = 2;
+            modeName = "animate";
+        } else {
+            mode = 1;
+            modeName = "timer";
+        }
+    }
+    if (mode == lastLoggedDemandMode && currentId == lastLoggedDemandScene) {
+        return;
+    }
+    lastLoggedDemandMode = mode;
+    lastLoggedDemandScene = currentId;
+    if (result.nextUpdateDelayMs == SceneUpdateResult::NO_UPDATE) {
+        STICKMON_RENDER_STATSF(
+            "[RenderDemand] t=%lu scene=%s mode=%s redraw=%u next=none\n",
+            static_cast<unsigned long>(nowMs), sceneLogName(currentId),
+            modeName, result.redraw ? 1 : 0);
+    } else {
+        STICKMON_RENDER_STATSF(
+            "[RenderDemand] t=%lu scene=%s mode=%s redraw=%u next_ms=%lu\n",
+            static_cast<unsigned long>(nowMs), sceneLogName(currentId),
+            modeName, result.redraw ? 1 : 0,
+            static_cast<unsigned long>(result.nextUpdateDelayMs));
+    }
+}
+
+void GameEngine::emitRenderStats(uint32_t nowMs) {
+    uint32_t elapsed = nowMs - renderStatsStartedMs;
+    if (elapsed < RENDER_STATS_INTERVAL_MS) return;
+
+    uint32_t fixedFrames = renderStatsCoreUpdates;
+    uint32_t avoided = fixedFrames > renderStatsFlushes
+        ? fixedFrames - renderStatsFlushes : 0;
+    uint32_t avoidedPermille = fixedFrames > 0
+        ? avoided * 1000UL / fixedFrames : 0;
+    uint32_t actualKb =
+        renderStatsFlushes * FULL_FRAME_BYTES / 1024UL;
+    uint32_t savedKb = avoided * FULL_FRAME_BYTES / 1024UL;
+    uint32_t avgDrawUs = renderStatsFlushes > 0
+        ? renderStatsDrawUs / renderStatsFlushes : 0;
+    uint32_t avgFlushUs = renderStatsFlushes > 0
+        ? renderStatsFlushUs / renderStatsFlushes : 0;
+    uint32_t displayUs = renderStatsDrawUs + renderStatsFlushUs;
+    uint32_t displayDutyPermille =
+        elapsed > 0 ? displayUs / elapsed : 0;
+
+    STICKMON_RENDER_STATSF(
+        "[RenderStats] win_ms=%lu scene=%s idle=%u baseline_flush=%lu "
+        "scene_updates=%lu redraw_req=%lu actual_flush=%lu "
+        "avoided=%lu/%lu(%lu.%lu%%) input=%lu state=%lu switches=%lu "
+        "spi_actual_kb=%lu spi_saved_kb=%lu "
+        "display_cpu_ms=%lu display_duty=%lu.%lu%% "
+        "draw_avg_us=%lu draw_max_us=%lu "
+        "flush_avg_us=%lu flush_max_us=%lu\n",
+        static_cast<unsigned long>(elapsed), sceneLogName(currentId),
+        idleActive ? 1 : 0,
+        static_cast<unsigned long>(fixedFrames),
+        static_cast<unsigned long>(renderStatsSceneUpdates),
+        static_cast<unsigned long>(renderStatsRedrawRequests),
+        static_cast<unsigned long>(renderStatsFlushes),
+        static_cast<unsigned long>(avoided),
+        static_cast<unsigned long>(fixedFrames),
+        static_cast<unsigned long>(avoidedPermille / 10),
+        static_cast<unsigned long>(avoidedPermille % 10),
+        static_cast<unsigned long>(renderStatsInputWakes),
+        static_cast<unsigned long>(renderStatsStateWakes),
+        static_cast<unsigned long>(renderStatsSceneSwitches),
+        static_cast<unsigned long>(actualKb),
+        static_cast<unsigned long>(savedKb),
+        static_cast<unsigned long>(displayUs / 1000UL),
+        static_cast<unsigned long>(displayDutyPermille / 10),
+        static_cast<unsigned long>(displayDutyPermille % 10),
+        static_cast<unsigned long>(avgDrawUs),
+        static_cast<unsigned long>(renderStatsMaxDrawUs),
+        static_cast<unsigned long>(avgFlushUs),
+        static_cast<unsigned long>(renderStatsMaxFlushUs));
+
+    renderStatsStartedMs = nowMs;
+    renderStatsCoreUpdates = 0;
+    renderStatsSceneUpdates = 0;
+    renderStatsRedrawRequests = 0;
+    renderStatsFlushes = 0;
+    renderStatsInputWakes = 0;
+    renderStatsStateWakes = 0;
+    renderStatsSceneSwitches = 0;
+    renderStatsDrawUs = 0;
+    renderStatsFlushUs = 0;
+    renderStatsMaxDrawUs = 0;
+    renderStatsMaxFlushUs = 0;
 }
 
 void GameEngine::updateSceneFade(uint32_t nowMs) {
@@ -1609,11 +1871,24 @@ void GameEngine::updateSceneFade(uint32_t nowMs) {
 }
 
 void GameEngine::render(uint32_t nowMs) {
+    uint32_t drawStartedUs = micros();
     PokemonSprites::beginRenderFrame();
     if (currentScene) currentScene->render();
     renderResourceAlert();
     renderSceneFade(Hal::ins().millis());
+    uint32_t flushStartedUs = micros();
     Hal::ins().flush();
+    if (currentId == SceneID::MAIN) {
+        mainSceneFirstFrameRendered = true;
+    }
+    uint32_t flushedUs = micros();
+    uint32_t drawUs = flushStartedUs - drawStartedUs;
+    uint32_t flushUs = flushedUs - flushStartedUs;
+    ++renderStatsFlushes;
+    renderStatsDrawUs += drawUs;
+    renderStatsFlushUs += flushUs;
+    renderStatsMaxDrawUs = max(renderStatsMaxDrawUs, drawUs);
+    renderStatsMaxFlushUs = max(renderStatsMaxFlushUs, flushUs);
     if (!startupFirstFrameRendered) {
         startupFirstFrameRendered = true;
         if (startupSpriteCacheReady) PokemonSprites::setDynamicLoadingEnabled(true);
@@ -1744,7 +2019,7 @@ void GameEngine::initDefaultState() {
     state.teamCount = 0;
     state.storageCount = 0;
     state.activeSlot = 0;
-    state.gameMinutesTotal = 0;
+    state.gameMinutesTotal = Game::INITIAL_GAME_MINUTES;
     state.careDay = 0;
     state.careExpToday = 0;
     state.bag = Game::BagState{};

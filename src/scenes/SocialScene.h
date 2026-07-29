@@ -7,7 +7,7 @@ class SocialScene : public Scene {
 public:
     void onEnter() override;
     void onExit() override;
-    void update(uint32_t nowMs, float dtSeconds) override;
+    SceneUpdateResult update(uint32_t nowMs, float dtSeconds) override;
     void render() override;
     bool onButton(const ButtonEvent& event) override;
 
@@ -52,6 +52,8 @@ private:
     bool acceptPending = false;
     uint32_t lastSendTryMs = 0;
     uint8_t roomCursor = 0;
+    uint32_t lastVisualTick = UINT32_MAX;
+    uint8_t lastRoomCount = 0;
 
     void setToast(const char* text, uint32_t durationMs = 1500);
     void enterMenuPhase();

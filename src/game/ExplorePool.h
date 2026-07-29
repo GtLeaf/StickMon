@@ -8,23 +8,37 @@ namespace ExplorePool {
 
 static constexpr uint8_t POOL_CAP = 6;           // 活跃池容量（预览 2x3 图标阵）
 static constexpr uint8_t MAX_SOURCE_ENTRIES = 24; // 单区域遭遇表条目上限
-static constexpr uint8_t COMMON_WEIGHT_MIN = 4;  // weight >= 4 进普通池（§7.3）
-static constexpr uint8_t RARE_WEIGHT_MAX = 3;    // weight <= 3 进稀有池（§7.3）
 static constexpr uint8_t RARE_ROLL_BONUS = 3;    // 稀有成员池内滚点权重倍率（§7.9.3）
+static constexpr uint8_t RARE_ROLL_WEIGHT_CAP = 10;
 static constexpr uint8_t BASE_SLOTS_MIN = 4;     // 基础槽 4~5 只普通（§7.3）
 static constexpr uint8_t BASE_SLOTS_MAX = 5;
 static constexpr uint32_t SLOT_PERIOD_MINUTES = 480; // 8 小时一个时段（§7.2）
 
-// 池抽取的源数据视图：只需遭遇表的 {speciesId, weight} 两列
+enum class Rarity : uint8_t {
+    COMMON = 0,
+    NORMAL,
+    UNCOMMON,
+    RARE,
+    VERY_RARE,
+    ULTRA_RARE,
+};
+
+constexpr bool isRare(Rarity rarity) {
+    return static_cast<uint8_t>(rarity) >=
+           static_cast<uint8_t>(Rarity::RARE);
+}
+
+// 稀有度决定分池，权重只影响池内遭遇滚点。
 struct SourceEntry {
     uint16_t speciesId;
     uint8_t weight;
+    Rarity rarity;
 };
 
 struct PoolEntry {
     uint16_t speciesId;
-    uint8_t weight; // 原表权重（滚点时稀有成员按 RARE_ROLL_BONUS 倍率计）
-    bool rare;
+    uint8_t weight;
+    Rarity rarity;
 };
 
 struct Pool {
@@ -43,9 +57,6 @@ struct Xorshift32 {
     }
     uint32_t below(uint32_t bound) { return bound == 0 ? 0 : next() % bound; }
 };
-
-inline bool isCommonWeight(uint8_t weight) { return weight >= COMMON_WEIGHT_MIN; }
-inline bool isRareWeight(uint8_t weight) { return weight <= RARE_WEIGHT_MAX; }
 
 // 时段序号 = 游戏内总分钟 / 480（§7.2）
 inline uint32_t slotIndexFor(uint32_t gameMinutesTotal) {
@@ -68,10 +79,12 @@ inline uint8_t rareSlotsForRoll(uint32_t roll) {
     return roll < 40 ? 0 : (roll < 80 ? 1 : 2);
 }
 
-// 池内滚点权重：稀有成员 ×3（§7.4 / §7.9.3）
+// 池内滚点权重：稀有成员 ×3，最高 10（§7.4 / §7.9.3）
 inline uint8_t rollWeightOf(const PoolEntry& entry) {
-    return entry.rare ? static_cast<uint8_t>(entry.weight * RARE_ROLL_BONUS)
-                      : entry.weight;
+    if (!isRare(entry.rarity)) return entry.weight;
+    uint16_t boosted = static_cast<uint16_t>(entry.weight) * RARE_ROLL_BONUS;
+    return static_cast<uint8_t>(
+        boosted > RARE_ROLL_WEIGHT_CAP ? RARE_ROLL_WEIGHT_CAP : boosted);
 }
 
 inline uint32_t poolWeightTotal(const Pool& pool) {
@@ -84,12 +97,32 @@ inline uint32_t poolWeightTotal(const Pool& pool) {
 
 inline bool poolHasRare(const Pool& pool) {
     for (uint8_t i = 0; i < pool.count; ++i) {
-        if (pool.entries[i].rare) return true;
+        if (isRare(pool.entries[i].rarity)) return true;
     }
     return false;
 }
 
-// 由种子确定性重建活跃池：基础槽 4~5 只普通（均匀不放回）+ 0~2 只稀有（§7.3）。
+inline uint8_t appendUniqueSpecies(const Pool& pool, uint16_t* speciesIds,
+                                   uint8_t count, uint8_t capacity) {
+    if (!speciesIds || count >= capacity) return count;
+    for (uint8_t entryIndex = 0;
+         entryIndex < pool.count && count < capacity;
+         ++entryIndex) {
+        uint16_t speciesId = pool.entries[entryIndex].speciesId;
+        if (speciesId == 0) continue;
+        bool duplicate = false;
+        for (uint8_t i = 0; i < count; ++i) {
+            if (speciesIds[i] == speciesId) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (!duplicate) speciesIds[count++] = speciesId;
+    }
+    return count;
+}
+
+// 由种子确定性重建活跃池：先决定 0~2 个稀有槽，再决定 4~5 个基础槽（§7.3）。
 // 兜底：普通池不足 4 只全取；稀有池为空则稀有槽恒 0；总容量不超过 POOL_CAP。
 inline Pool buildPool(const SourceEntry* source, uint8_t sourceCount, uint32_t seed) {
     Pool pool{};
@@ -101,21 +134,24 @@ inline Pool buildPool(const SourceEntry* source, uint8_t sourceCount, uint32_t s
     uint8_t commonCount = 0;
     uint8_t rareCount = 0;
     for (uint8_t i = 0; i < sourceCount; ++i) {
-        if (isCommonWeight(source[i].weight)) {
-            commonIndices[commonCount++] = i;
-        } else if (isRareWeight(source[i].weight)) {
+        if (isRare(source[i].rarity)) {
             rareIndices[rareCount++] = i;
+        } else {
+            commonIndices[commonCount++] = i;
         }
     }
 
     Xorshift32 rng{seed};
-    uint8_t baseSlots = static_cast<uint8_t>(
-        BASE_SLOTS_MIN + rng.below(BASE_SLOTS_MAX - BASE_SLOTS_MIN + 1));
-    if (baseSlots > commonCount) baseSlots = commonCount;
     uint8_t rareSlots = rareSlotsForRoll(rng.below(100));
     if (rareSlots > rareCount) rareSlots = rareCount;
-    if (rareSlots > POOL_CAP - baseSlots) {
-        rareSlots = static_cast<uint8_t>(POOL_CAP - baseSlots);
+    uint8_t baseSlots = rareSlots >= 2
+        ? BASE_SLOTS_MIN
+        : static_cast<uint8_t>(
+              BASE_SLOTS_MIN +
+              rng.below(BASE_SLOTS_MAX - BASE_SLOTS_MIN + 1));
+    if (baseSlots > commonCount) baseSlots = commonCount;
+    if (baseSlots > POOL_CAP - rareSlots) {
+        baseSlots = static_cast<uint8_t>(POOL_CAP - rareSlots);
     }
 
     // Fisher-Yates 部分洗牌：均匀不放回抽取
@@ -134,11 +170,13 @@ inline Pool buildPool(const SourceEntry* source, uint8_t sourceCount, uint32_t s
 
     for (uint8_t i = 0; i < baseSlots; ++i) {
         const SourceEntry& entry = source[commonIndices[i]];
-        pool.entries[pool.count++] = PoolEntry{entry.speciesId, entry.weight, false};
+        pool.entries[pool.count++] =
+            PoolEntry{entry.speciesId, entry.weight, entry.rarity};
     }
     for (uint8_t i = 0; i < rareSlots; ++i) {
         const SourceEntry& entry = source[rareIndices[i]];
-        pool.entries[pool.count++] = PoolEntry{entry.speciesId, entry.weight, true};
+        pool.entries[pool.count++] =
+            PoolEntry{entry.speciesId, entry.weight, entry.rarity};
     }
     return pool;
 }

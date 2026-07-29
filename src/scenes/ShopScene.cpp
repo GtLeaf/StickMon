@@ -110,18 +110,52 @@ void ShopScene::onEnter() {
     toastUntil = 0;
 }
 
-void ShopScene::update(uint32_t nowMs, float dtSeconds) {
-    (void)nowMs;
+SceneUpdateResult ShopScene::update(uint32_t nowMs, float dtSeconds) {
+    bool redraw = false;
+    bool animating = false;
     float targetX = viewMode == ViewMode::CATEGORY
         ? CATEGORY_ICON_COLUMN_X : SUBMENU_ICON_COLUMN_X;
     float delta = targetX - itemColumnX;
     float clampedDt = dtSeconds > 0.05f ? 0.05f : dtSeconds;
     float step = ICON_COLUMN_SPEED * clampedDt;
-    if (fabsf(delta) <= step || step <= 0.0f) {
-        if (step > 0.0f) itemColumnX = targetX;
-        return;
+    if (fabsf(delta) > 0.05f) {
+        animating = true;
+        float before = itemColumnX;
+        if (fabsf(delta) <= step && step > 0.0f) {
+            itemColumnX = targetX;
+        } else if (step > 0.0f) {
+            itemColumnX += delta > 0.0f ? step : -step;
+        }
+        redraw = redraw || itemColumnX != before;
     }
-    itemColumnX += delta > 0.0f ? step : -step;
+
+    float targetCursor =
+        viewMode == ViewMode::CATEGORY || !itemColumnSettled()
+            ? 0.0f : static_cast<float>(cursor);
+    float cursorDelta = targetCursor - itemAnimCursor;
+    if (fabsf(cursorDelta) > 0.05f) {
+        itemAnimCursor += cursorDelta * ITEM_SCROLL_LERP;
+        redraw = true;
+        animating = true;
+    } else if (itemAnimCursor != targetCursor) {
+        itemAnimCursor = targetCursor;
+        redraw = true;
+    }
+
+    uint32_t nextDelay = animating ? 66 : SceneUpdateResult::NO_UPDATE;
+    if (toast) {
+        if (static_cast<int32_t>(nowMs - toastUntil) >= 0) {
+            toast = nullptr;
+            redraw = true;
+        } else {
+            uint32_t toastDelay = toastUntil - nowMs;
+            if (nextDelay == SceneUpdateResult::NO_UPDATE ||
+                toastDelay < nextDelay) {
+                nextDelay = toastDelay;
+            }
+        }
+    }
+    return SceneUpdateResult(redraw, nextDelay);
 }
 
 bool ShopScene::onButton(const ButtonEvent& event) {
@@ -395,16 +429,6 @@ void ShopScene::renderIconColumn(int centerX, bool dimmed, bool selectable) {
     uint8_t itemCount = itemCountForCategory(category, viewMode != ViewMode::CATEGORY);
     if (itemCount == 0) return;
 
-    if (selectable) {
-        float diff = (float)cursor - itemAnimCursor;
-        if (fabsf(diff) < 0.05f) {
-            itemAnimCursor = (float)cursor;
-        } else {
-            itemAnimCursor += diff * ITEM_SCROLL_LERP;
-        }
-    } else {
-        itemAnimCursor = 0.0f;
-    }
     c.setClipRect(centerX - 29, CONTENT_TOP, 58, Hal::DISPLAY_H - CONTENT_TOP);
     for (uint8_t pass = 0; pass < 2; ++pass) {
         for (uint8_t i = 0; i < itemCount; ++i) {
@@ -499,10 +523,6 @@ void ShopScene::renderItemDetail() {
 
 void ShopScene::renderToast() {
     if (!toast) return;
-    if ((int32_t)(Hal::ins().millis() - toastUntil) >= 0) {
-        toast = nullptr;
-        return;
-    }
     auto& c = PixelRenderer::canvas();
     c.fillRect(70, 108, 100, 20, PixelRenderer::rgb(34, 39, 47));
     PixelRenderer::text(78, 110, toast, PixelRenderer::rgb(255, 255, 255), 1);

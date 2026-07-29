@@ -6,6 +6,7 @@
 #include "core/SaveManager.h"
 #include "core/Scene.h"
 #include "game/GameState.h"
+#include "game/EncounterHistory.h"
 #include "game/Species.h"
 
 enum class FoodPlacementResult : uint8_t {
@@ -121,6 +122,8 @@ public:
     uint8_t moodValue() const;
     const Game::GameState& gameState() const { return state; }
     Game::GameState& gameState() { return state; }
+    bool hasEncounteredSpecies(uint16_t speciesId) const;
+    bool recordEncounteredSpecies(uint16_t speciesId);
     const Game::MonsterRuntime& activeMonster() const;
     Game::MonsterRuntime& activeMonster();
     const Species& activeSpecies() const;
@@ -141,18 +144,18 @@ public:
     bool addCandy(uint8_t amount);
     bool addPotion(uint8_t amount);
     bool addSuperPotion(uint8_t amount);
-    bool usePotion();
-    bool useSuperPotion();
+    bool usePotion(uint8_t teamSlot = 0);
+    bool useSuperPotion(uint8_t teamSlot = 0);
     bool addAntidote(uint8_t amount);
-    bool useAntidote();
+    bool useAntidote(uint8_t teamSlot = 0);
     bool addParalyzeHeal(uint8_t amount);
-    bool useParalyzeHeal();
+    bool useParalyzeHeal(uint8_t teamSlot = 0);
     bool addAwakening(uint8_t amount);
-    bool useAwakening();
+    bool useAwakening(uint8_t teamSlot = 0);
     bool addBurnHeal(uint8_t amount);
-    bool useBurnHeal();
+    bool useBurnHeal(uint8_t teamSlot = 0);
     bool addIceHeal(uint8_t amount);
-    bool useIceHeal();
+    bool useIceHeal(uint8_t teamSlot = 0);
     uint8_t itemCount(Game::ItemId item) const;
     bool addItem(Game::ItemId item, uint8_t amount = 1,
                  SaveUrgency urgency = SaveUrgency::SOON);
@@ -187,7 +190,10 @@ public:
     uint16_t pendingEvolutionFromSpeciesId() const;
     uint16_t pendingEvolutionToSpeciesId() const;
     bool acknowledgePendingEvolution();
-    uint32_t applyActiveFaintPenalty();
+    uint32_t applyFaintPenaltyToTeamMember(uint8_t teamSlot);
+    uint32_t applyActiveFaintPenalty() {
+        return applyFaintPenaltyToTeamMember(0);
+    }
     void addWalkSteps(uint16_t steps);
     void debugRecoverActiveMonster();
     bool debugSetActiveSpecies(uint16_t speciesId);
@@ -238,6 +244,9 @@ private:
     void switchScene(SceneID id, bool saveBeforeSwitch = true);
     void processInput(uint32_t nowMs);
     void update(uint32_t nowMs);
+    void scheduleSceneUpdate(uint32_t nowMs);
+    void logSceneDemand(const SceneUpdateResult& result, uint32_t nowMs);
+    void emitRenderStats(uint32_t nowMs);
     void render(uint32_t nowMs);
     void updateSceneFade(uint32_t nowMs);
     void renderSceneFade(uint32_t nowMs);
@@ -275,6 +284,7 @@ private:
     static constexpr uint32_t INPUT_SAMPLE_MS = 16;
     static constexpr uint32_t FRAME_MS = 66;
     static constexpr uint32_t IDLE_FRAME_MS = 250;
+    static constexpr uint32_t RENDER_STATS_INTERVAL_MS = 10000;
 
     enum class SceneFadePhase : uint8_t {
         NONE,
@@ -306,6 +316,8 @@ private:
     uint32_t lastInputMs = 0;
     uint32_t lastFrameMs = 0;
     uint32_t lastUpdateMs = 0;
+    uint32_t lastSceneUpdateMs = 0;
+    uint32_t nextSceneUpdateMs = 0;
     uint32_t lastCareMs = 0;
     uint32_t lastSaveMs = 0;
     uint32_t saveDirtySinceMs = 0;
@@ -326,6 +338,25 @@ private:
     uint8_t debugLightSource = 0;
     bool startupFirstFrameRendered = false;
     bool startupSpriteCacheReady = false;
+    bool mainSceneFirstFrameRendered = false;
+    uint32_t nextExplorePoolPreloadMs = 0;
+    bool sceneDirty = true;
+    bool sceneUpdateScheduled = true;
+    bool resourceAlertWasVisible = false;
+    uint32_t renderStatsStartedMs = 0;
+    uint32_t renderStatsCoreUpdates = 0;
+    uint32_t renderStatsSceneUpdates = 0;
+    uint32_t renderStatsRedrawRequests = 0;
+    uint32_t renderStatsFlushes = 0;
+    uint32_t renderStatsInputWakes = 0;
+    uint32_t renderStatsStateWakes = 0;
+    uint32_t renderStatsSceneSwitches = 0;
+    uint32_t renderStatsDrawUs = 0;
+    uint32_t renderStatsFlushUs = 0;
+    uint32_t renderStatsMaxDrawUs = 0;
+    uint32_t renderStatsMaxFlushUs = 0;
+    uint8_t lastLoggedDemandMode = 0xFF;
+    SceneID lastLoggedDemandScene = SceneID::MAIN;
     uint32_t bootStartedMs = 0;
     SceneFadePhase sceneFade = SceneFadePhase::NONE;
     SceneID sceneFadeTarget = SceneID::MAIN;
@@ -348,5 +379,9 @@ private:
     bool visitLinkLost = false;
 
     Game::GameState state;
+    Game::EncounterHistory encounterHistory;
+    bool encounterHistoryDirty = false;
     SaveManager saveManager;
+
+    bool syncOwnedSpeciesToEncounterHistory();
 };

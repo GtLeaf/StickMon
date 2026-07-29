@@ -47,6 +47,9 @@ void HatchScene::onEnter() {
         wipeCount = savedWipeCount;
     }
     lastSavedSecond = (uint16_t)elapsed;
+    uint32_t nowMs = Hal::ins().millis();
+    lastEggOffset = eggShakeOffset(nowMs);
+    lastNight = hatchSceneIsNight();
 }
 
 void HatchScene::onExit() {
@@ -56,11 +59,45 @@ void HatchScene::onExit() {
     persistProgress(true);
 }
 
-void HatchScene::update(uint32_t nowMs, float dtSeconds) {
-    (void)nowMs;
+SceneUpdateResult HatchScene::update(uint32_t nowMs, float dtSeconds) {
     elapsed += dtSeconds;
     persistProgress(false);
-    if (elapsed >= GameEngine::ins().gameState().hatchSeconds) complete();
+    if (elapsed >= GameEngine::ins().gameState().hatchSeconds) {
+        complete();
+        return SceneUpdateResult::idle();
+    }
+
+    int8_t eggOffset = eggShakeOffset(nowMs);
+    bool night = hatchSceneIsNight();
+    bool redraw = eggOffset != lastEggOffset || night != lastNight;
+    lastEggOffset = eggOffset;
+    lastNight = night;
+
+    uint8_t progress = hatchProgress();
+    uint16_t interval = 2400 - static_cast<uint16_t>(progress) * 19;
+    if (interval < 360) interval = 360;
+    uint16_t phaseMs = nowMs % interval;
+    uint32_t nextDelay = phaseMs <= 230
+        ? 46 - (phaseMs % 46)
+        : interval - phaseMs;
+
+    float remaining =
+        GameEngine::ins().gameState().hatchSeconds - elapsed;
+    float speed = GameEngine::ins().gameSpeed();
+    uint32_t completionDelay = static_cast<uint32_t>(
+        max(1.0f, remaining * 1000.0f / max(0.01f, speed)));
+    if (completionDelay < nextDelay) nextDelay = completionDelay;
+
+    if (toast) {
+        if (static_cast<int32_t>(nowMs - toastUntil) >= 0) {
+            toast = nullptr;
+            redraw = true;
+        } else {
+            uint32_t toastDelay = toastUntil - nowMs;
+            if (toastDelay < nextDelay) nextDelay = toastDelay;
+        }
+    }
+    return SceneUpdateResult(redraw, nextDelay);
 }
 
 bool HatchScene::onButton(const ButtonEvent& event) {
@@ -162,10 +199,6 @@ void HatchScene::drawHud() {
 
 void HatchScene::drawToast() {
     if (!toast) return;
-    if ((int32_t)(Hal::ins().millis() - toastUntil) >= 0) {
-        toast = nullptr;
-        return;
-    }
     auto& c = PixelRenderer::canvas();
     c.fillRect(72, 6, 96, 20, PixelRenderer::rgb(41, 45, 55));
     PixelRenderer::text(98, 8, toast, PixelRenderer::rgb(255, 255, 255));

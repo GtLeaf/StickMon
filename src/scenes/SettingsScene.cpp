@@ -1,5 +1,6 @@
 #include "scenes/SettingsScene.h"
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include "core/CryPlayer.h"
 #include "core/GameEngine.h"
@@ -25,19 +26,59 @@ void SettingsScene::onExit() {
     VoiceCallService::ins().cancelEnrollment();
 }
 
-void SettingsScene::update(uint32_t nowMs, float dtSeconds) {
+SceneUpdateResult SettingsScene::update(uint32_t nowMs, float dtSeconds) {
     (void)dtSeconds;
-    if (viewMode != ViewMode::VOICE_ENROLL) return;
-    auto& voice = VoiceCallService::ins();
-    voice.updateEnrollment(nowMs);
-    if (voice.enrollmentState() == VoiceCallService::EnrollmentState::SUCCESS) {
-        if (enrollmentFinishedAt == 0) enrollmentFinishedAt = nowMs;
-        if (nowMs - enrollmentFinishedAt >= 1200) {
-            voice.cancelEnrollment();
-            viewMode = ViewMode::VOICE_CALL;
-            enrollmentFinishedAt = 0;
+    bool redraw = false;
+    uint32_t nextDelay = SceneUpdateResult::NO_UPDATE;
+
+    if (viewMode == ViewMode::VOICE_ENROLL) {
+        auto& voice = VoiceCallService::ins();
+        voice.updateEnrollment(nowMs);
+        redraw = true;
+        nextDelay = 66;
+        if (voice.enrollmentState() == VoiceCallService::EnrollmentState::SUCCESS) {
+            if (enrollmentFinishedAt == 0) enrollmentFinishedAt = nowMs;
+            if (nowMs - enrollmentFinishedAt >= 1200) {
+                voice.cancelEnrollment();
+                viewMode = ViewMode::VOICE_CALL;
+                enrollmentFinishedAt = 0;
+            }
         }
     }
+
+    if (viewMode == ViewMode::MENU) {
+        static constexpr int ROW_H = 24;
+        static constexpr int START_Y = 6;
+        const int contentH = START_Y * 2 + COUNT * ROW_H;
+        const int maxScroll =
+            contentH > Hal::DISPLAY_H ? contentH - Hal::DISPLAY_H : 0;
+        int targetScroll =
+            START_Y + cursor * ROW_H + ROW_H / 2 - Hal::DISPLAY_H / 2;
+        targetScroll = constrain(targetScroll, 0, maxScroll);
+        float diff = static_cast<float>(targetScroll) - menuScroll;
+        if (fabsf(diff) >= 0.5f) {
+            menuScroll += diff * 0.25f;
+            redraw = true;
+            nextDelay = 66;
+        } else if (menuScroll != static_cast<float>(targetScroll)) {
+            menuScroll = static_cast<float>(targetScroll);
+            redraw = true;
+        }
+    }
+
+    if (toast) {
+        if (static_cast<int32_t>(nowMs - toastUntil) >= 0) {
+            toast = nullptr;
+            redraw = true;
+        } else {
+            uint32_t toastDelay = toastUntil - nowMs;
+            if (nextDelay == SceneUpdateResult::NO_UPDATE ||
+                toastDelay < nextDelay) {
+                nextDelay = toastDelay;
+            }
+        }
+    }
+    return SceneUpdateResult(redraw, nextDelay);
 }
 
 bool SettingsScene::onButton(const ButtonEvent& event) {
@@ -242,23 +283,6 @@ void SettingsScene::renderMenu() {
     static constexpr int CONTENT_X = 20;
     static constexpr int VALUE_X = 156;
     static constexpr int SEPARATOR_W = Hal::DISPLAY_W - CONTENT_X * 2;
-    const int contentH = START_Y * 2 + COUNT * ROW_H;
-    const int maxScroll = contentH > Hal::DISPLAY_H ? contentH - Hal::DISPLAY_H : 0;
-    int targetScroll = START_Y + cursor * ROW_H + ROW_H / 2 - Hal::DISPLAY_H / 2;
-    if (targetScroll < 0) targetScroll = 0;
-    if (targetScroll > maxScroll) targetScroll = maxScroll;
-
-    if (maxScroll <= 0) {
-        menuScroll = 0.0f;
-    } else {
-        float diff = (float)targetScroll - menuScroll;
-        if (diff > -0.5f && diff < 0.5f) {
-            menuScroll = (float)targetScroll;
-        } else {
-            menuScroll += diff * 0.25f;
-        }
-    }
-
     for (int i = 0; i < COUNT; ++i) {
         int y = START_Y + i * ROW_H - (int)menuScroll;
         if (y + ROW_H <= 0 || y >= Hal::DISPLAY_H) continue;
@@ -436,10 +460,6 @@ void SettingsScene::renderResetConfirm() {
 
 void SettingsScene::renderToast() {
     if (!toast) return;
-    if ((int32_t)(Hal::ins().millis() - toastUntil) >= 0) {
-        toast = nullptr;
-        return;
-    }
     auto& c = PixelRenderer::canvas();
     c.fillRect(70, 108, 100, 20, PixelRenderer::rgb(34, 39, 47));
     PixelRenderer::text(78, 110, toast, PixelRenderer::rgb(255, 255, 255), 1);

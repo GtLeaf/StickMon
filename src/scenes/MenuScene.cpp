@@ -312,6 +312,33 @@ const char* proficiencyName(uint8_t value) {
     return Ui::Status::PROF_LOW;
 }
 
+uint16_t proficiencyColor(uint8_t value) {
+    if (value >= 90) return PixelRenderer::rgb(75, 209, 225);
+    if (value >= 60) return PixelRenderer::rgb(92, 222, 112);
+    if (value >= 25) return PixelRenderer::rgb(255, 216, 72);
+    return PixelRenderer::rgb(239, 85, 85);
+}
+
+void drawProficiencyBar(int x, int y, int width, int height, uint8_t value) {
+    auto& c = PixelRenderer::canvas();
+    value = std::min<uint8_t>(value, 100);
+
+    const uint16_t trackColor = PixelRenderer::rgb(82, 87, 95);
+    const uint16_t borderColor = PixelRenderer::rgb(45, 48, 56);
+    const int radius = height / 2;
+    c.fillRoundRect(x, y, width, height, radius, trackColor);
+
+    const int innerWidth = width - 2;
+    const int fillWidth = (innerWidth * value) / 100;
+    if (fillWidth > 0) {
+        const int fillHeight = height - 2;
+        const int fillRadius = std::min(fillHeight / 2, fillWidth / 2);
+        c.fillRoundRect(x + 1, y + 1, fillWidth, fillHeight,
+                        fillRadius, proficiencyColor(value));
+    }
+    c.drawRoundRect(x, y, width, height, radius, borderColor);
+}
+
 const MoveInfo* moveInfoForSlot(const Species& species,
                                 const Game::MonsterRuntime& mon,
                                 uint8_t moveSlot) {
@@ -384,6 +411,7 @@ void MenuScene::onEnter() {
     exploreContextMode = false;
     battleBagMode = false;
     battleTargetName = nullptr;
+    battleTargetTeamSlot = 0;
     battleBagResult = BattleBagResult::NONE;
     resetNavigation();
     statusPage = 0;
@@ -426,6 +454,7 @@ void MenuScene::onEnter() {
         cursor = lastCursor;
     }
     animCursor = (float)cursor;
+    lastBatteryLevel = Hal::ins().filteredBatteryLevel();
     if (GameEngine::ins().consumeDebugMenuReturnRequest()) {
         pushView(ViewMode::DEBUG);
         debugCursor = DEBUG_BATTLE_ROOT_INDEX;
@@ -441,10 +470,12 @@ void MenuScene::openExploreBagView() {
     bagScroll = 0.0f;
 }
 
-void MenuScene::openBattleBagView(const char* targetName) {
+void MenuScene::openBattleBagView(const char* targetName,
+                                  uint8_t targetTeamSlot) {
     openExploreView(ViewMode::BAG);
     battleBagMode = true;
     battleTargetName = targetName;
+    battleTargetTeamSlot = targetTeamSlot;
     bagScroll = 0.0f;
 }
 
@@ -538,9 +569,171 @@ const char* MenuScene::teamActionLabel(uint8_t index) const {
     }
 }
 
-void MenuScene::update(uint32_t nowMs, float dtSeconds) {
-    (void)nowMs;
+SceneUpdateResult MenuScene::update(uint32_t nowMs, float dtSeconds) {
     (void)dtSeconds;
+    bool redraw = false;
+    uint32_t nextDelay = SceneUpdateResult::NO_UPDATE;
+    auto animateScroll = [&](float& value, int target) {
+        float diff = static_cast<float>(target) - value;
+        if (fabsf(diff) < 0.5f) {
+            if (value != static_cast<float>(target)) {
+                value = static_cast<float>(target);
+                redraw = true;
+            }
+            return;
+        }
+        value += diff * 0.25f;
+        redraw = true;
+        nextDelay = 66;
+    };
+    auto animateDescription = [&](const char* const* lines, uint8_t count,
+                                  int width, int key) {
+        int maxLineW = 0;
+        for (uint8_t i = 0; i < count; ++i) {
+            maxLineW = max(maxLineW, textPixelWidth(lines[i]));
+        }
+        int maxScroll = maxLineW > width ? maxLineW - width + 4 : 0;
+        redraw = updateDescriptionScroll(key, maxScroll) || redraw;
+        if (maxScroll > 0) nextDelay = 66;
+    };
+
+    if (viewMode == ViewMode::MENU) {
+        float target = static_cast<float>(cursor);
+        float diff = target - animCursor;
+        if (fabsf(diff) < 0.05f) {
+            if (animCursor != target) {
+                animCursor = target;
+                redraw = true;
+            }
+        } else {
+            animCursor += diff * 0.25f;
+            redraw = true;
+            nextDelay = 66;
+        }
+        int battery = Hal::ins().filteredBatteryLevel();
+        if (battery != lastBatteryLevel) {
+            lastBatteryLevel = battery;
+            redraw = true;
+        }
+        if (nextDelay == SceneUpdateResult::NO_UPDATE) nextDelay = 30000;
+    } else if (viewMode == ViewMode::FOOD) {
+        static constexpr int VISIBLE_H = Hal::DISPLAY_H - 12;
+        static constexpr int ROW_H = 22;
+        int maxScroll = max(0, FOOD_ITEM_COUNT * ROW_H - VISIBLE_H);
+        int target = foodCursor * ROW_H - VISIBLE_H / 2 + ROW_H / 2;
+        animateScroll(foodScroll, constrain(target, 0, maxScroll));
+        if (!isFoodBackIndex(foodCursor)) {
+            const char* lines[3] = {
+                Ui::Room::FOOD_DESCS[foodCursor][0],
+                Ui::Room::FOOD_DESCS[foodCursor][1],
+                Ui::Room::FOOD_DESCS[foodCursor][2],
+            };
+            animateDescription(
+                lines, 3, Hal::DISPLAY_W - 90,
+                0x300 + foodCursor);
+        }
+    } else if (viewMode == ViewMode::STORAGE) {
+        static constexpr int VISIBLE_H = Hal::DISPLAY_H - 12;
+        static constexpr int ROW_H = 24;
+        uint8_t rows = GameEngine::ins().gameState().storageCount + 1;
+        int maxScroll = max(0, static_cast<int>(rows) * ROW_H - VISIBLE_H);
+        int target =
+            storageCursor * ROW_H - VISIBLE_H / 2 + ROW_H / 2;
+        animateScroll(storageScroll, constrain(target, 0, maxScroll));
+    } else if (viewMode == ViewMode::DEBUG) {
+        static constexpr int ROW_Y = 6;
+        static constexpr int ROW_H = 24;
+        int maxScroll = max(
+            0, ROW_Y * 2 + static_cast<int>(debugItemCount()) * ROW_H -
+                   Hal::DISPLAY_H);
+        int target =
+            ROW_Y + debugCursor * ROW_H + ROW_H / 2 - Hal::DISPLAY_H / 2;
+        animateScroll(debugScroll, constrain(target, 0, maxScroll));
+    } else if (viewMode == ViewMode::BAG) {
+        BagRow rows[BAG_ITEM_COUNT] = {};
+        uint8_t count = collectVisibleBagRows(rows, BAG_ITEM_COUNT);
+        static constexpr int VISIBLE_H = Hal::DISPLAY_H - 12;
+        static constexpr int ROW_H = 22;
+        int maxScroll =
+            max(0, static_cast<int>(count) * ROW_H - VISIBLE_H);
+        int target = bagCursor * ROW_H - VISIBLE_H / 2 + ROW_H / 2;
+        animateScroll(bagScroll, constrain(target, 0, maxScroll));
+        // Item descriptions may marquee horizontally when they exceed the
+        // detail column, so only that state keeps the page animated.
+        if (count > 0 && bagCursor < count &&
+            rows[bagCursor].source < BAG_ITEM_COUNT - 1) {
+            const char* const* lines = Ui::Bag::DESCS[rows[bagCursor].source];
+            animateDescription(
+                lines, 3, Hal::DISPLAY_W - 88,
+                0x200 + rows[bagCursor].source);
+        }
+    } else if (viewMode == ViewMode::MOVES) {
+        const auto& state = GameEngine::ins().gameState();
+        if (moveMonsterIndex < state.teamCount) {
+            const Game::MonsterRuntime& mon = state.team[moveMonsterIndex];
+            const Species& species = GameEngine::ins().speciesFor(mon);
+            uint8_t moveCount = learnedMoveCount(species, mon);
+            if (moveCursor < moveCount) {
+                uint8_t slot =
+                    learnedMoveSlotAt(species, mon, moveCursor);
+                const MoveInfo* move =
+                    moveInfoForSlot(species, mon, slot);
+                if (move) {
+                    const char* lines[] = {move->description};
+                    animateDescription(
+                        lines, 1, Hal::DISPLAY_W - 101,
+                        0x6000 | (moveMonsterIndex << 4) | slot);
+                }
+            }
+        }
+    } else if (viewMode == ViewMode::STATUS) {
+        const auto& state = GameEngine::ins().gameState();
+        uint8_t count =
+            statusFromStorage ? state.storageCount : state.teamCount;
+        if (statusMonsterIndex < count) {
+            const Game::MonsterRuntime& mon =
+                statusFromStorage ? state.storage[statusMonsterIndex]
+                                  : state.team[statusMonsterIndex];
+            int contentH = statusPageContentHeight(statusPage);
+            if (statusPage == 2) {
+                static constexpr int MOVE_DESC_W = Hal::DISPLAY_W - 36;
+                contentH = 78;
+                for (uint8_t slot = 0;
+                     slot < SPECIAL_MOVE_SLOT_COUNT; ++slot) {
+                    const MoveInfo* move =
+                        findMove(specialMoveIdForMonster(mon, slot));
+                    if (!move) {
+                        contentH += 38;
+                        continue;
+                    }
+                    int lines =
+                        wrappedTextLineCount(move->description, MOVE_DESC_W);
+                    contentH += 74 + max(1, lines) * 16;
+                }
+                contentH = max(contentH, Hal::DISPLAY_H);
+            }
+            int maxScroll = max(0, contentH - Hal::DISPLAY_H);
+            int key =
+                (statusFromStorage ? 0x4000 : 0) |
+                (static_cast<int>(statusMonsterIndex) << 8) | statusPage;
+            redraw = updateStatusScroll(key, maxScroll) || redraw;
+            if (maxScroll > 0) nextDelay = 66;
+        }
+    }
+
+    if (toast) {
+        if (static_cast<int32_t>(nowMs - toastUntil) >= 0) {
+            toast = nullptr;
+            redraw = true;
+        } else {
+            uint32_t toastDelay = toastUntil - nowMs;
+            if (nextDelay == SceneUpdateResult::NO_UPDATE ||
+                toastDelay < nextDelay) {
+                nextDelay = toastDelay;
+            }
+        }
+    }
+    return SceneUpdateResult(redraw, nextDelay);
 }
 
 bool MenuScene::onButton(const ButtonEvent& event) {
@@ -805,42 +998,46 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                 if (bagConfirmYes) {
                     bool used = false;
                     BattleBagResult result = BattleBagResult::NONE;
+                    const auto& state = GameEngine::ins().gameState();
+                    uint8_t targetSlot = battleBagMode
+                        ? battleTargetTeamSlot : 0;
+                    if (targetSlot >= state.teamCount) targetSlot = 0;
                     if (bagConfirmSource == 0) {
-                        const auto& mon = GameEngine::ins().activeMonster();
+                        const auto& mon = state.team[targetSlot];
                         if (mon.fainted || mon.hpCur == 0) {
                             toast = Ui::Bag::FAINTED_CANNOT_HEAL;
                         } else {
-                            used = GameEngine::ins().usePotion();
+                            used = GameEngine::ins().usePotion(targetSlot);
                             toast = used ? Ui::Bag::USED_POTION : Ui::Bag::HP_FULL;
                             result = BattleBagResult::POTION;
                         }
                     } else if (bagConfirmSource == 1) {
-                        const auto& mon = GameEngine::ins().activeMonster();
+                        const auto& mon = state.team[targetSlot];
                         if (mon.fainted || mon.hpCur == 0) {
                             toast = Ui::Bag::FAINTED_CANNOT_HEAL;
                         } else {
-                            used = GameEngine::ins().useSuperPotion();
+                            used = GameEngine::ins().useSuperPotion(targetSlot);
                             toast = used ? Ui::Bag::USED_SUPER_POTION : Ui::Bag::HP_FULL;
                             result = BattleBagResult::SUPER_POTION;
                         }
                     } else if (bagConfirmSource == 2) {
-                        used = GameEngine::ins().useAntidote();
+                        used = GameEngine::ins().useAntidote(targetSlot);
                         toast = used ? Ui::Bag::USED_ANTIDOTE : Ui::Bag::STATUS_NORMAL;
                         result = BattleBagResult::ANTIDOTE;
                     } else if (bagConfirmSource == BAG_SOURCE_HEAL_BASE + 0) {
-                        used = GameEngine::ins().useParalyzeHeal();
+                        used = GameEngine::ins().useParalyzeHeal(targetSlot);
                         toast = used ? Ui::Bag::USED_PARALYZE_HEAL : Ui::Bag::STATUS_NORMAL;
                         result = BattleBagResult::PARALYZE_HEAL;
                     } else if (bagConfirmSource == BAG_SOURCE_HEAL_BASE + 1) {
-                        used = GameEngine::ins().useAwakening();
+                        used = GameEngine::ins().useAwakening(targetSlot);
                         toast = used ? Ui::Bag::USED_AWAKENING : Ui::Bag::STATUS_NORMAL;
                         result = BattleBagResult::AWAKENING;
                     } else if (bagConfirmSource == BAG_SOURCE_HEAL_BASE + 2) {
-                        used = GameEngine::ins().useBurnHeal();
+                        used = GameEngine::ins().useBurnHeal(targetSlot);
                         toast = used ? Ui::Bag::USED_BURN_HEAL : Ui::Bag::STATUS_NORMAL;
                         result = BattleBagResult::BURN_HEAL;
                     } else if (bagConfirmSource == BAG_SOURCE_HEAL_BASE + 3) {
-                        used = GameEngine::ins().useIceHeal();
+                        used = GameEngine::ins().useIceHeal(targetSlot);
                         toast = used ? Ui::Bag::USED_ICE_HEAL : Ui::Bag::STATUS_NORMAL;
                         result = BattleBagResult::ICE_HEAL;
                     } else if (battleBagMode && bagConfirmSource >= BAG_SOURCE_FOOD_BASE &&
@@ -1188,19 +1385,10 @@ void MenuScene::renderMenu() {
 
     constexpr int centerY = Hal::DISPLAY_H / 2;
     constexpr int spacing = 50;
-    constexpr float lerp = 0.25f;
     constexpr int boxW = 60;
     constexpr int boxH = 40;
     constexpr int iconSlotW = 60;
     constexpr int boxX = 20;
-
-    float target = (float)cursor;
-    float diff = target - animCursor;
-    if (fabsf(diff) < 0.05f) {
-        animCursor = target;
-    } else {
-        animCursor += diff * lerp;
-    }
 
     int order[ITEM_COUNT];
     for (int i = 0; i < ITEM_COUNT; ++i) order[i] = i;
@@ -1255,10 +1443,6 @@ void MenuScene::renderMenu() {
 
 void MenuScene::renderToast() {
     if (!toast) return;
-    if ((int32_t)(Hal::ins().millis() - toastUntil) >= 0) {
-        toast = nullptr;
-        return;
-    }
     auto& c = PixelRenderer::canvas();
     c.fillRect(70, 108, 100, 20, PixelRenderer::rgb(34, 39, 47));
     PixelRenderer::text(78, 110, toast, PixelRenderer::rgb(255, 255, 255), 1);
@@ -1413,9 +1597,9 @@ void MenuScene::renderMovesPage() {
         uint8_t moveSlot = learnedMoveSlotAt(species, mon, moveCursor);
         const MoveInfo* move = moveInfoForSlot(species, mon, moveSlot);
         if (move) {
-            PixelRenderer::text(RIGHT_X + 2, 7, move->name,
+            int moveNameX = drawTypeBracket(RIGHT_X + 2, 7, move->type);
+            PixelRenderer::text(moveNameX + 3, 7, move->name,
                                 PixelRenderer::rgb(241, 242, 232), 1);
-            drawTypeBracket(RIGHT_X + 2, 28, move->type);
 
             char line[48];
             char power[8];
@@ -1432,16 +1616,16 @@ void MenuScene::renderMovesPage() {
             }
             snprintf(line, sizeof(line), Ui::Team::MOVE_POWER_ACCURACY_FMT,
                      power, accuracy);
-            PixelRenderer::text(RIGHT_X + 2, 49, line,
+            PixelRenderer::text(RIGHT_X + 2, 31, line,
                                 PixelRenderer::rgb(255, 216, 72), 1);
-            snprintf(line, sizeof(line), Ui::Team::MOVE_PP_PROFICIENCY_FMT,
-                     move->pp, proficiencyName(mon.moveProficiency[moveSlot]));
-            PixelRenderer::text(RIGHT_X + 2, 69, line,
+            PixelRenderer::text(RIGHT_X + 2, 52, Ui::Team::MOVE_PROFICIENCY,
                                 PixelRenderer::rgb(135, 214, 238), 1);
+            drawProficiencyBar(RIGHT_X + 48, 56, 86, 9,
+                               mon.moveProficiency[moveSlot]);
 
             const char* description[] = {move->description};
             renderScrollableDescription(
-                description, 1, RIGHT_X + 2, 94,
+                description, 1, RIGHT_X + 2, 76,
                 Hal::DISPLAY_W - RIGHT_X - 4,
                 PixelRenderer::rgb(255, 218, 178),
                 0x6000 | (moveMonsterIndex << 4) | moveSlot);
@@ -1521,24 +1705,6 @@ void MenuScene::renderStatusPage() {
 
     c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, PixelRenderer::rgb(10, 14, 20));
 
-    int contentH = statusPageContentHeight(statusPage);
-    if (statusPage == 2) {
-        static constexpr int MOVE_DESC_W = Hal::DISPLAY_W - 36;
-        contentH = 78;
-        for (uint8_t slot = 0; slot < SPECIAL_MOVE_SLOT_COUNT; ++slot) {
-            const MoveInfo* move = findMove(specialMoveIdForMonster(activeMon, slot));
-            if (!move) {
-                contentH += 38;
-                continue;
-            }
-            int lines = wrappedTextLineCount(move->description, MOVE_DESC_W);
-            contentH += 74 + std::max(1, lines) * 16;
-        }
-        contentH = std::max(contentH, Hal::DISPLAY_H);
-    }
-    int maxScroll = contentH > Hal::DISPLAY_H ? contentH - Hal::DISPLAY_H : 0;
-    int scrollKey = (statusFromStorage ? 0x4000 : 0) | ((int)statusMonsterIndex << 8) | statusPage;
-    updateStatusScroll(scrollKey, maxScroll);
     int scrollY = (int)statusScroll;
     auto sy = [scrollY](int y) { return y - scrollY; };
 
@@ -1739,8 +1905,12 @@ void MenuScene::renderBagConfirmPopup() {
                    bagConfirmSource < BAG_SOURCE_FOOD_BASE + Game::ROOM_FOOD_COUNT;
     const char* format = isThrow
         ? Ui::Bag::THROW_CONFIRM_FMT : Ui::Bag::USE_CONFIRM_FMT;
+    const auto& state = GameEngine::ins().gameState();
+    uint8_t targetSlot =
+        battleTargetTeamSlot < state.teamCount ? battleTargetTeamSlot : 0;
     const char* target = isThrow && battleTargetName
-        ? battleTargetName : GameEngine::ins().activeSpecies().name;
+        ? battleTargetName
+        : GameEngine::ins().speciesFor(state.team[targetSlot]).name;
     snprintf(line, sizeof(line), format, target);
     int lineW = textPixelWidth(line);
     int lineX = POP_X + (POP_W - lineW) / 2;
@@ -1801,19 +1971,6 @@ void MenuScene::renderFoodPage() {
     if (foodCursor >= FOOD_ITEM_COUNT) foodCursor = 0;
 
     c.drawFastVLine(LEFT_W, 6, Hal::DISPLAY_H - 12, 0x7BEF);
-
-    int totalH = FOOD_ITEM_COUNT * ROW_H;
-    int maxScroll = (totalH > VISIBLE_H) ? (totalH - VISIBLE_H) : 0;
-    int targetScroll = foodCursor * ROW_H - VISIBLE_H / 2 + ROW_H / 2;
-    if (targetScroll < 0) targetScroll = 0;
-    if (targetScroll > maxScroll) targetScroll = maxScroll;
-
-    float diff = (float)targetScroll - foodScroll;
-    if (fabsf(diff) < 0.5f) {
-        foodScroll = (float)targetScroll;
-    } else {
-        foodScroll += diff * 0.25f;
-    }
 
     uint8_t selectedFood = GameEngine::ins().selectedFoodIndex();
     c.setClipRect(0, LIST_Y_START, LEFT_W - 1, VISIBLE_H);
@@ -1917,19 +2074,6 @@ void MenuScene::renderStoragePage() {
     static constexpr int ROW_H = 24;
     static constexpr int SEP_W = Hal::DISPLAY_W - ROW_X * 2;
 
-    int totalH = rowCount * ROW_H;
-    int maxScroll = (totalH > VISIBLE_H) ? (totalH - VISIBLE_H) : 0;
-    int targetScroll = storageCursor * ROW_H - VISIBLE_H / 2 + ROW_H / 2;
-    if (targetScroll < 0) targetScroll = 0;
-    if (targetScroll > maxScroll) targetScroll = maxScroll;
-
-    float diff = (float)targetScroll - storageScroll;
-    if (fabsf(diff) < 0.5f) {
-        storageScroll = (float)targetScroll;
-    } else {
-        storageScroll += diff * 0.25f;
-    }
-
     if (state.storageCount == 0) {
         PixelRenderer::text(74, 44, Ui::Computer::STORAGE_EMPTY, 0x7BEF, 1);
     }
@@ -2025,23 +2169,6 @@ void MenuScene::renderDebugPage() {
     if (debugCursor >= itemCount) {
         debugCursor = 0;
         debugScroll = 0.0f;
-    }
-
-    const int contentH = ROW_Y * 2 + itemCount * ROW_H;
-    const int maxScroll = contentH > Hal::DISPLAY_H ? contentH - Hal::DISPLAY_H : 0;
-    int targetScroll = ROW_Y + debugCursor * ROW_H + ROW_H / 2 - Hal::DISPLAY_H / 2;
-    if (targetScroll < 0) targetScroll = 0;
-    if (targetScroll > maxScroll) targetScroll = maxScroll;
-
-    if (maxScroll <= 0) {
-        debugScroll = 0.0f;
-    } else {
-        float diff = (float)targetScroll - debugScroll;
-        if (diff > -0.5f && diff < 0.5f) {
-            debugScroll = (float)targetScroll;
-        } else {
-            debugScroll += diff * 0.25f;
-        }
     }
 
     for (uint8_t i = 0; i < itemCount; ++i) {
@@ -2409,19 +2536,6 @@ void MenuScene::renderSplitList(const BagRow* rows, uint8_t count) {
 
     c.drawFastVLine(LEFT_W, 6, Hal::DISPLAY_H - 12, 0x7BEF);
 
-    int totalH = count * ROW_H;
-    int maxScroll = (totalH > VISIBLE_H) ? (totalH - VISIBLE_H) : 0;
-    int targetScroll = bagCursor * ROW_H - VISIBLE_H / 2 + ROW_H / 2;
-    if (targetScroll < 0) targetScroll = 0;
-    if (targetScroll > maxScroll) targetScroll = maxScroll;
-
-    float diff = (float)targetScroll - bagScroll;
-    if (fabsf(diff) < 0.5f) {
-        bagScroll = (float)targetScroll;
-    } else {
-        bagScroll += diff * 0.25f;
-    }
-
     c.setClipRect(0, LIST_Y_START, LEFT_W - 1, VISIBLE_H);
     for (uint8_t i = 0; i < count; ++i) {
         int y = LIST_Y_START + i * ROW_H - (int)bagScroll;
@@ -2475,8 +2589,10 @@ void MenuScene::renderBagDetail(const BagRow& row) {
     }
 }
 
-void MenuScene::updateStatusScroll(int scrollKey, int maxScroll) {
+bool MenuScene::updateStatusScroll(int scrollKey, int maxScroll) {
     uint32_t now = Hal::ins().millis();
+    float before = statusScroll;
+    int previousKey = statusScrollKey;
     if (scrollKey != statusScrollKey) {
         statusScrollKey = scrollKey;
         statusScroll = 0.0f;
@@ -2486,7 +2602,7 @@ void MenuScene::updateStatusScroll(int scrollKey, int maxScroll) {
     if (maxScroll <= 0) {
         statusScroll = 0.0f;
         statusScrollLastMs = now;
-        return;
+        return previousKey != statusScrollKey || before != statusScroll;
     }
 
     uint32_t dt = now - statusScrollLastMs;
@@ -2496,7 +2612,9 @@ void MenuScene::updateStatusScroll(int scrollKey, int maxScroll) {
     float ax = 0.0f;
     float ay = 0.0f;
     float az = 0.0f;
-    if (!Hal::ins().readAccel(ax, ay, az)) return;
+    if (!Hal::ins().readAccel(ax, ay, az)) {
+        return previousKey != statusScrollKey || before != statusScroll;
+    }
 
     static constexpr float SPEED = 72.0f;
     float input = 0.0f;
@@ -2518,20 +2636,27 @@ void MenuScene::updateStatusScroll(int scrollKey, int maxScroll) {
     } else {
         static constexpr float DEADZONE = 0.18f;
         static constexpr float MAX_TILT = 0.75f;
-        if (fabsf(ay) < DEADZONE) return;
+        if (fabsf(ay) < DEADZONE) {
+            return previousKey != statusScrollKey || before != statusScroll;
+        }
         input = ay > 0.0f ? (ay - DEADZONE) : (ay + DEADZONE);
         input /= (MAX_TILT - DEADZONE);
     }
     if (input > 1.0f) input = 1.0f;
     if (input < -1.0f) input = -1.0f;
-    if (input == 0.0f) return;
+    if (input == 0.0f) {
+        return previousKey != statusScrollKey || before != statusScroll;
+    }
 
     statusScroll += input * SPEED * ((float)dt / 1000.0f);
     if (statusScroll < 0.0f) statusScroll = 0.0f;
     if (statusScroll > (float)maxScroll) statusScroll = (float)maxScroll;
+    return previousKey != statusScrollKey || before != statusScroll;
 }
 
-void MenuScene::updateDescriptionScroll(int scrollKey, int maxScroll) {
+bool MenuScene::updateDescriptionScroll(int scrollKey, int maxScroll) {
+    float before = descScroll;
+    int previousKey = descScrollKey;
     if (scrollKey != descScrollKey) {
         descScrollKey = scrollKey;
         descScroll = 0.0f;
@@ -2541,7 +2666,7 @@ void MenuScene::updateDescriptionScroll(int scrollKey, int maxScroll) {
     if (maxScroll <= 0) {
         descScroll = 0.0f;
         descScrollLastMs = Hal::ins().millis();
-        return;
+        return previousKey != descScrollKey || before != descScroll;
     }
 
     uint32_t now = Hal::ins().millis();
@@ -2550,21 +2675,14 @@ void MenuScene::updateDescriptionScroll(int scrollKey, int maxScroll) {
     descScrollLastMs = now;
     descScroll += 28.0f * ((float)dt / 1000.0f);
     if (descScroll > (float)(maxScroll + 18)) descScroll = 0.0f;
+    return previousKey != descScrollKey || before != descScroll;
 }
 
 void MenuScene::renderScrollableDescription(const char* const* lines, int lineCount,
                                             int x, int y, int w, uint16_t color,
                                             int scrollKey) {
     if (lineCount <= 0 || w <= 0) return;
-
-    int maxLineW = 0;
-    for (int i = 0; i < lineCount; ++i) {
-        int lineW = textPixelWidth(lines[i]);
-        if (lineW > maxLineW) maxLineW = lineW;
-    }
-    int maxScroll = maxLineW > w ? maxLineW - w + 4 : 0;
-    updateDescriptionScroll(scrollKey, maxScroll);
-
+    (void)scrollKey;
     auto& c = PixelRenderer::canvas();
     c.setClipRect(x, y - 1, w, lineCount * 16 + 2);
     for (int i = 0; i < lineCount; ++i) {

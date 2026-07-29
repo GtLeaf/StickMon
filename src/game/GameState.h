@@ -10,7 +10,7 @@ static constexpr uint8_t TEAM_CAP = 2;
 static constexpr uint8_t STORAGE_CAP = 20;
 static constexpr uint8_t ITEM_STACK_CAP = 99;
 static constexpr uint32_t SAVE_MAGIC = 0x534D4F4E; // SMON
-static constexpr uint16_t SAVE_VERSION = 5;
+static constexpr uint16_t SAVE_VERSION = 6;
 static constexpr uint8_t STAT_COUNT = 6;
 static constexpr uint8_t NATURE_COUNT = 25;
 static constexpr uint8_t LEVEL_MAX = 100;
@@ -32,6 +32,8 @@ static constexpr uint8_t ROOM_SOUR_FOOD_INDEX = 4;
 static constexpr uint8_t ROOM_BITTER_FOOD_INDEX = 5;
 static constexpr uint8_t ROOM_DRY_FOOD_INDEX = 6;
 static constexpr uint8_t EXPLORE_AREA_COUNT = 6;
+static constexpr uint8_t FRIENDSHIP_PITY_TRACKED_COUNT = 38;
+static constexpr uint32_t INITIAL_GAME_MINUTES = 7UL * 60UL;
 static constexpr uint8_t MET_AREA_STARTER = 0xFD;
 static constexpr uint8_t MET_AREA_HATCHED = 0xFE;
 static constexpr uint8_t MET_AREA_UNKNOWN = 0xFF;
@@ -250,7 +252,7 @@ struct GameState {
     uint16_t walkExpToday = 0;
     uint16_t careExpToday = 0;
     uint16_t careDay = 0;
-    uint32_t gameMinutesTotal = 0;
+    uint32_t gameMinutesTotal = INITIAL_GAME_MINUTES;
     bool pendingLevelUp = false;
     uint8_t pendingLevelUpLevel = 0;
     bool pendingMoveLearn = false;
@@ -260,9 +262,8 @@ struct GameState {
     PlayerSettings settings;
     // 栖息地轮换：每区域活跃池重抽计数，击败区域头目 +1（§7.2/§7.6）
     uint8_t explorePoolRerollCounts[EXPLORE_AREA_COUNT] = {};
-    // 结交连败保底：最近交友目标物种与连败数（§7.9.4）
-    uint16_t friendshipPitySpeciesId = 0;
-    uint8_t friendshipPityFailCount = 0;
+    // 结交累积：按白名单物种独立记录，索引见 FriendshipPity.h（§7.9.4）
+    uint8_t friendshipPityFailCounts[FRIENDSHIP_PITY_TRACKED_COUNT] = {};
     // 特殊精灵：bit0=卡比兽，bit1=拉帝亚斯，bit2=拉帝欧斯（§八）
     uint8_t specialBossDefeatedMask = 0;
     // [0]=拉帝亚斯，[1]=拉帝欧斯；游荡战结束后递增
