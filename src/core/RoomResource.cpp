@@ -3,7 +3,6 @@
 #include "core/ResourcePack.h"
 
 #include <Arduino.h>
-#include <FS.h>
 #include <cstdlib>
 #include <cstring>
 
@@ -63,10 +62,10 @@ template <typename T>
 T* allocArray(size_t count) {
     if (count == 0) return nullptr;
     size_t bytes = sizeof(T) * count;
-    return psramFound() ? static_cast<T*>(ps_malloc(bytes)) : static_cast<T*>(malloc(bytes));
+    return static_cast<T*>(Platform::memory().allocate(bytes, true));
 }
 
-bool readExact(fs::File& file, void* out, size_t length) {
+bool readExact(Platform::ResourceFile& file, void* out, size_t length) {
     if (length == 0) return true;
     return file.read(reinterpret_cast<uint8_t*>(out), length) == length;
 }
@@ -242,7 +241,7 @@ bool RoomResource::loadExternal() {
     ResourcePack& pack = ResourcePack::ins();
     if (!pack.begin()) return false;
 
-    fs::File file;
+    Platform::ResourceFile file;
     if (!pack.openRoom(DEFAULT_ROOM_ID, file)) return false;
 
     PackedRoomHeader header{};
@@ -277,13 +276,13 @@ bool RoomResource::loadExternal() {
         (header.bedPolygonCount && !bed) ||
         (header.doorwayPolygonCount && !doorway) ||
         (header.behaviorAnchorCount && !anchors)) {
-        if (baseCompressed) free(baseCompressed);
-        if (patchRuns) free(patchRuns);
-        if (patchPixels) free(patchPixels);
-        if (walk) free(walk);
-        if (bed) free(bed);
-        if (doorway) free(doorway);
-        if (anchors) free(anchors);
+        if (baseCompressed) Platform::memory().release(baseCompressed);
+        if (patchRuns) Platform::memory().release(patchRuns);
+        if (patchPixels) Platform::memory().release(patchPixels);
+        if (walk) Platform::memory().release(walk);
+        if (bed) Platform::memory().release(bed);
+        if (doorway) Platform::memory().release(doorway);
+        if (anchors) Platform::memory().release(anchors);
         return false;
     }
 
@@ -296,24 +295,24 @@ bool RoomResource::loadExternal() {
         readExact(file, doorway, sizeof(Point) * header.doorwayPolygonCount) &&
         readExact(file, anchors, sizeof(BehaviorAnchor) * header.behaviorAnchorCount);
     if (!ok) {
-        free(baseCompressed);
-        if (patchRuns) free(patchRuns);
-        if (patchPixels) free(patchPixels);
-        if (walk) free(walk);
-        if (bed) free(bed);
-        if (doorway) free(doorway);
-        if (anchors) free(anchors);
+        Platform::memory().release(baseCompressed);
+        if (patchRuns) Platform::memory().release(patchRuns);
+        if (patchPixels) Platform::memory().release(patchPixels);
+        if (walk) Platform::memory().release(walk);
+        if (bed) Platform::memory().release(bed);
+        if (doorway) Platform::memory().release(doorway);
+        if (anchors) Platform::memory().release(anchors);
         return false;
     }
 
     if (!validPayload(header, patchRuns, walk, bed, doorway, anchors)) {
-        free(baseCompressed);
-        if (patchRuns) free(patchRuns);
-        if (patchPixels) free(patchPixels);
-        if (walk) free(walk);
-        if (bed) free(bed);
-        if (doorway) free(doorway);
-        if (anchors) free(anchors);
+        Platform::memory().release(baseCompressed);
+        if (patchRuns) Platform::memory().release(patchRuns);
+        if (patchPixels) Platform::memory().release(patchPixels);
+        if (walk) Platform::memory().release(walk);
+        if (bed) Platform::memory().release(bed);
+        if (doorway) Platform::memory().release(doorway);
+        if (anchors) Platform::memory().release(anchors);
         Serial.println("[RoomResource] invalid room metadata");
         return false;
     }
@@ -397,13 +396,13 @@ void RoomResource::clearMeta() {
 }
 
 void RoomResource::releaseExternal() {
-    if (baseCompressed_) free(baseCompressed_);
-    if (nightPatchRuns_) free(nightPatchRuns_);
-    if (nightPatchPixels_) free(nightPatchPixels_);
-    if (walkPolygon_) free(walkPolygon_);
-    if (bedPolygon_) free(bedPolygon_);
-    if (doorwayPolygon_) free(doorwayPolygon_);
-    if (behaviorAnchors_) free(behaviorAnchors_);
+    if (baseCompressed_) Platform::memory().release(baseCompressed_);
+    if (nightPatchRuns_) Platform::memory().release(nightPatchRuns_);
+    if (nightPatchPixels_) Platform::memory().release(nightPatchPixels_);
+    if (walkPolygon_) Platform::memory().release(walkPolygon_);
+    if (bedPolygon_) Platform::memory().release(bedPolygon_);
+    if (doorwayPolygon_) Platform::memory().release(doorwayPolygon_);
+    if (behaviorAnchors_) Platform::memory().release(behaviorAnchors_);
     baseCompressed_ = nullptr;
     nightPatchRuns_ = nullptr;
     nightPatchPixels_ = nullptr;

@@ -150,6 +150,7 @@ private:
         SEEK_FOOD,
         FEEDING,
         GO_TO_SLEEP,
+        YIELDING_BED,
         SLEEPING,
     };
 
@@ -301,6 +302,8 @@ private:
     void spawnVisitor(uint32_t nowMs, bool dropIn);
     bool pickVisitorPoint(float& x, float& y) const;
     bool pickVisitorSleepSpot(float& x, float& y) const;
+    bool visitorPointBlocksBedRoute(float x, float y) const;
+    bool startVisitorBedYield(uint32_t nowMs);
     void updateVisitor(uint32_t nowMs, float dtSeconds);
     void advanceVisitorFrames(uint32_t nowMs, bool walking);
     const PokemonSprites::SpriteFrame* visitorCurrentFrame(bool& flipX) const;

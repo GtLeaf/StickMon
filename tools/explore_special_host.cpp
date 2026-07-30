@@ -27,13 +27,17 @@ int main() {
         return fail(1, "first bosses must override all later activity");
     }
 
-    if (configFor(Kind::FIRST_SNORLAX).level != 27 ||
-        configFor(Kind::FIRST_LATIAS).level != 53 ||
-        configFor(Kind::FIRST_LATIOS).level != 67 ||
-        configFor(Kind::ROAMING_LATIAS).level != 70 ||
-        configFor(Kind::ROAMING_LATIOS).level != 70 ||
-        configFor(Kind::MEW_EVENT).level != 70) {
+    if (encounterLevel(Kind::FIRST_SNORLAX, 27) != 27 ||
+        encounterLevel(Kind::FIRST_LATIAS, 53) != 53 ||
+        encounterLevel(Kind::FIRST_LATIOS, 67) != 67 ||
+        encounterLevel(Kind::ROAMING_LATIAS, 53) != 70 ||
+        encounterLevel(Kind::ROAMING_LATIOS, 67) != 70 ||
+        encounterLevel(Kind::MEW_EVENT, 53) != 70) {
         return fail(2, "special encounter levels");
+    }
+    if (encounterLevel(Kind::FIRST_LATIAS, 58) != 58 ||
+        encounterLevel(Kind::FIRST_LATIOS, 72) != 72) {
+        return fail(12, "first legendary levels must track area tuning");
     }
     if (configFor(Kind::FIRST_LATIAS).allowsFriendship ||
         configFor(Kind::FIRST_LATIOS).allowsFriendship ||

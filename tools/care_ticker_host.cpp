@@ -55,10 +55,12 @@ int main() {
     state.careDay = 0;
     state.gameMinutesTotal = Game::GAME_MINUTES_PER_DAY;
     state.pairMoodRewardsToday = 3;
+    state.candyPurchasesToday = Game::DAILY_CANDY_PURCHASE_CAP;
     state.storage[0].petCountToday =
         Game::Bond::inviteLockMarker(1);
     if (!Game::resetDailyCareCounters(state) ||
         state.pairMoodRewardsToday != 0 ||
+        state.candyPurchasesToday != 0 ||
         state.storage[0].petCountToday !=
             Game::Bond::inviteLockMarker(1)) {
         return fail(5, "daily reset must preserve invitation lock marker");

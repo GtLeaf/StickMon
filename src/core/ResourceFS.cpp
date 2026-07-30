@@ -1,12 +1,6 @@
 #include "core/ResourceFS.h"
 #include <Arduino.h>
-#include <LittleFS.h>
-
-namespace {
-constexpr const char* BASE_PATH = "/assets";
-constexpr const char* PARTITION_LABEL = "littlefs";
-constexpr uint8_t MAX_OPEN_FILES = 8;
-}
+#include "platform/api/PlatformServices.h"
 
 ResourceFS& ResourceFS::ins() {
     static ResourceFS instance;
@@ -16,26 +10,26 @@ ResourceFS& ResourceFS::ins() {
 bool ResourceFS::begin() {
     if (mounted_) return true;
 
-    if (!LittleFS.begin(false, BASE_PATH, MAX_OPEN_FILES, PARTITION_LABEL)) {
-        Serial.println("[ResourceFS] LittleFS mount failed");
+    if (!Platform::resources().mount()) {
+        Serial.println("[ResourceFS] resource store mount failed");
         return false;
     }
 
     mounted_ = true;
     Serial.printf("[ResourceFS] LittleFS mounted total=%u used=%u\n",
-                  (unsigned)LittleFS.totalBytes(),
-                  (unsigned)LittleFS.usedBytes());
+                  (unsigned)Platform::resources().totalBytes(),
+                  (unsigned)Platform::resources().usedBytes());
     return true;
 }
 
 size_t ResourceFS::totalBytes() const {
-    return mounted_ ? LittleFS.totalBytes() : 0;
+    return mounted_ ? Platform::resources().totalBytes() : 0;
 }
 
 size_t ResourceFS::usedBytes() const {
-    return mounted_ ? LittleFS.usedBytes() : 0;
+    return mounted_ ? Platform::resources().usedBytes() : 0;
 }
 
-fs::FS& ResourceFS::fs() {
-    return LittleFS;
+Platform::ResourceFile ResourceFS::open(const char* path) {
+    return mounted_ ? Platform::resources().open(path) : Platform::ResourceFile{};
 }

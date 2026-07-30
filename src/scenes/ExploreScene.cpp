@@ -2784,7 +2784,10 @@ void ExploreScene::finishWildFaint() {
     if (battleIsBoss) {
         uint8_t bossArea = mapBlocks[currentMapBlock];
         if (bossArea < Game::EXPLORE_AREA_COUNT) {
-            ++engine.gameState().explorePoolRerollCounts[bossArea];
+            uint8_t& rerollCount =
+                engine.gameState().explorePoolRerollCounts[bossArea];
+            rerollCount = rerollCount == UINT8_MAX
+                ? 1 : static_cast<uint8_t>(rerollCount + 1);
             engine.markDirty(SaveUrgency::DEFERRED);
             snapshotActivePool();
         }
@@ -3389,7 +3392,9 @@ void ExploreScene::generateMapBlocks() {
             ExploreSpecial::configFor(expeditionSpecialKind);
         expeditionBossScheduled = true;
         expeditionBossSpeciesId = special.speciesId;
-        expeditionBossLevel = special.level;
+        expeditionBossLevel = ExploreSpecial::encounterLevel(
+            expeditionSpecialKind,
+            ExploreBoss::configForArea(selectedMap).level);
         expeditionBossExperiencePercent = special.experiencePercent;
     } else if (bossLengthEligible) {
         expeditionBossScheduled =

@@ -78,6 +78,7 @@ private:
     Item selectedItem() const;
     Item itemAtIndex(uint8_t index) const;
     Item itemForCategory(Category category, uint8_t index) const;
+    bool itemUnlocked(Item item) const;
     Item sellItemAtIndex(uint8_t index) const;
     uint8_t currentItemCount() const;
     uint8_t itemCountForCategory(Category category, bool includeBack) const;

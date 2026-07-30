@@ -1,7 +1,7 @@
 #pragma once
 
-#include <FS.h>
 #include <cstddef>
+#include "platform/api/PlatformServices.h"
 
 class ResourceFS {
 public:
@@ -11,7 +11,7 @@ public:
     bool mounted() const { return mounted_; }
     size_t totalBytes() const;
     size_t usedBytes() const;
-    fs::FS& fs();
+    Platform::ResourceFile open(const char* path);
 
 private:
     ResourceFS() = default;

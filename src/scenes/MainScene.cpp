@@ -748,9 +748,16 @@ void MainScene::onEnter() {
             visitor = savedVisitor;
             visitor.dropOffsetY = 0.0f;
             visitor.frameStartedMs = nowMs;
+            clearVisitorMoveRoute();
             if (visitor.state == VisitorState::IDLE) {
                 visitor.stateUntilMs = nowMs + 1000;
             } else if (visitor.state == VisitorState::SLEEPING && !mainSceneIsNight()) {
+                visitor.state = VisitorState::IDLE;
+                visitor.stateUntilMs = nowMs + 1000;
+            } else if (visitor.state == VisitorState::YIELDING_BED &&
+                       (!mainSceneIsNight() ||
+                        !buildVisitorMoveRoute(
+                            visitor.targetX, visitor.targetY))) {
                 visitor.state = VisitorState::IDLE;
                 visitor.stateUntilMs = nowMs + 1000;
             }
@@ -2783,8 +2790,19 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
 
     velocityX = dx / dist * speed;
     velocityY = dy / dist * speed * 0.75f;
-    monsterX += velocityX * dtSeconds;
-    monsterY += velocityY * dtSeconds;
+    float nextMonsterX = monsterX + velocityX * dtSeconds;
+    float nextMonsterY = monsterY + velocityY * dtSeconds;
+    if (aiMode == AiMode::SEEK_BED &&
+        visitor.state == VisitorState::YIELDING_BED &&
+        !doorStepKeepsSpacing(monsterX, monsterY,
+                              nextMonsterX, nextMonsterY,
+                              visitor.x, visitor.y)) {
+        velocityX = 0.0f;
+        velocityY = 0.0f;
+        return;
+    }
+    monsterX = nextMonsterX;
+    monsterY = nextMonsterY;
     if (fabsf(dx) > 8.0f) facingRight = dx > 0.0f;
 
     float walkOffsetY = walkBoundaryOffsetY();
@@ -4559,6 +4577,72 @@ bool MainScene::pickVisitorSleepSpot(float& x, float& y) const {
     return randomMonsterCenterWalkPoint(x, y);
 }
 
+bool MainScene::visitorPointBlocksBedRoute(float x, float y) const {
+    float clearance = doorActorMinSeparation() + 2.0f;
+    float clearanceSq = clearance * clearance;
+    auto segmentDistanceSq = [x, y](float fromX, float fromY,
+                                    float toX, float toY) {
+        float dx = toX - fromX;
+        float dy = toY - fromY;
+        float lengthSq = dx * dx + dy * dy;
+        float t = lengthSq <= 0.001f
+            ? 0.0f
+            : ((x - fromX) * dx + (y - fromY) * dy) / lengthSq;
+        if (t < 0.0f) t = 0.0f;
+        if (t > 1.0f) t = 1.0f;
+        float nearestX = fromX + dx * t;
+        float nearestY = fromY + dy * t;
+        float distanceX = x - nearestX;
+        float distanceY = y - nearestY;
+        return distanceX * distanceX + distanceY * distanceY;
+    };
+
+    float fromX = monsterX;
+    float fromY = monsterY;
+    if (moveRouteIndex >= moveRouteCount) {
+        return segmentDistanceSq(fromX, fromY, targetX, targetY) < clearanceSq;
+    }
+    for (uint8_t index = moveRouteIndex; index < moveRouteCount; ++index) {
+        float toX = moveRouteX[index];
+        float toY = moveRouteY[index];
+        if (segmentDistanceSq(fromX, fromY, toX, toY) < clearanceSq) return true;
+        fromX = toX;
+        fromY = toY;
+    }
+    return false;
+}
+
+bool MainScene::startVisitorBedYield(uint32_t nowMs) {
+    clearVisitorMoveRoute();
+    float offsetY = walkBoundaryOffsetY();
+    float bedClearance = doorActorMinSeparation() + 20.0f;
+    float bedClearanceSq = bedClearance * bedClearance;
+
+    for (uint8_t tries = 0; tries < 40; ++tries) {
+        float candidateX = visitor.x;
+        float candidateY = visitor.y;
+        if (!randomMonsterCenterWalkPoint(candidateX, candidateY)) continue;
+        float bedDx = candidateX - bedCenterX();
+        float bedDy = candidateY + offsetY - bedCenterY();
+        if (bedDx * bedDx + bedDy * bedDy < bedClearanceSq ||
+            visitorPointBlocksBedRoute(candidateX, candidateY) ||
+            roomBedContains(candidateX, candidateY + offsetY) ||
+            !buildVisitorMoveRoute(candidateX, candidateY)) {
+            continue;
+        }
+
+        visitor.targetX = candidateX;
+        visitor.targetY = candidateY;
+        visitor.sleepSpotValid = false;
+        visitor.state = VisitorState::YIELDING_BED;
+        visitor.frameStartedMs = nowMs;
+        visitor.frameIndex = 0;
+        return true;
+    }
+    clearVisitorMoveRoute();
+    return false;
+}
+
 void MainScene::advanceVisitorFrames(uint32_t nowMs, bool walking) {
     uint16_t frameMs = walking ? VISITOR_WALK_FRAME_MS : PMD_IDLE_FRAME_MS;
     while (nowMs - visitor.frameStartedMs >= frameMs) {
@@ -4615,6 +4699,15 @@ void MainScene::updateVisitor(uint32_t nowMs, float dtSeconds) {
 
     bool night = mainSceneIsNight();
 
+    bool mainSeekingBed = aiMode == AiMode::SEEK_BED ||
+        (aiMode == AiMode::TURNING && turnNextMode == AiMode::SEEK_BED);
+    if (visitor.state == VisitorState::SLEEPING && mainSeekingBed &&
+        visitorMonster.majorStatus != Game::MajorStatus::SLEEP &&
+        visitorPointBlocksBedRoute(visitor.x, visitor.y) &&
+        startVisitorBedYield(nowMs)) {
+        return;
+    }
+
     if (visitor.state == VisitorState::SEEK_FOOD) {
         updateVisitorFoodSeek(nowMs, dtSeconds);
         return;
@@ -4647,7 +4740,8 @@ void MainScene::updateVisitor(uint32_t nowMs, float dtSeconds) {
         return;
     }
 
-    if (night && visitor.state != VisitorState::GO_TO_SLEEP) {
+    if (night && visitor.state != VisitorState::GO_TO_SLEEP &&
+        visitor.state != VisitorState::YIELDING_BED) {
         if (!visitor.sleepSpotValid) {
             pickVisitorSleepSpot(visitor.sleepX, visitor.sleepY);
             visitor.sleepSpotValid = true;
@@ -4683,15 +4777,36 @@ void MainScene::updateVisitor(uint32_t nowMs, float dtSeconds) {
         return;
     }
 
-    float dx = visitor.targetX - visitor.x;
-    float dy = visitor.targetY - visitor.y;
+    float movementTargetX = visitor.targetX;
+    float movementTargetY = visitor.targetY;
+    if (visitor.state == VisitorState::YIELDING_BED) {
+        currentVisitorWaypoint(movementTargetX, movementTargetY);
+    }
+    float dx = movementTargetX - visitor.x;
+    float dy = movementTargetY - visitor.y;
     float distance = sqrtf(dx * dx + dy * dy);
     float step = VISITOR_WALK_SPEED * dtSeconds;
-    float arriveDist = visitor.state == VisitorState::GO_TO_SLEEP ? VISITOR_SLEEP_ARRIVE_DIST : 1.0f;
+    bool movingToSleep = visitor.state == VisitorState::GO_TO_SLEEP ||
+                         visitor.state == VisitorState::YIELDING_BED;
+    float arriveDist = movingToSleep ? VISITOR_SLEEP_ARRIVE_DIST : 1.0f;
     if (distance <= step || distance < arriveDist) {
-        visitor.x = visitor.targetX;
-        visitor.y = visitor.targetY;
-        if (visitor.state == VisitorState::GO_TO_SLEEP) {
+        visitor.x = movementTargetX;
+        visitor.y = movementTargetY;
+        if (visitor.state == VisitorState::YIELDING_BED) {
+            ++visitorMoveRouteIndex;
+            if (visitorMoveRouteIndex < visitorMoveRouteCount) {
+                visitor.frameStartedMs = nowMs;
+                visitor.frameIndex = 0;
+                return;
+            }
+            clearVisitorMoveRoute();
+        }
+        if (movingToSleep) {
+            if (visitor.state == VisitorState::YIELDING_BED) {
+                visitor.sleepX = visitor.x;
+                visitor.sleepY = visitor.y;
+                visitor.sleepSpotValid = true;
+            }
             visitor.state = VisitorState::SLEEPING;
             visitor.stateUntilMs =
                 nowMs + (uint32_t)random(NIGHT_FEED_WAKE_DELAY_MIN_MS,
@@ -4707,7 +4822,13 @@ void MainScene::updateVisitor(uint32_t nowMs, float dtSeconds) {
     float nextX = visitor.x + dx / distance * step;
     float nextY = visitor.y + dy / distance * step;
     if (!monsterFootprintInsideWalkArea(nextX, nextY)) {
-        if (visitor.state == VisitorState::GO_TO_SLEEP) {
+        if (movingToSleep) {
+            if (visitor.state == VisitorState::YIELDING_BED) {
+                clearVisitorMoveRoute();
+                visitor.sleepX = visitor.x;
+                visitor.sleepY = visitor.y;
+                visitor.sleepSpotValid = true;
+            }
             visitor.state = VisitorState::SLEEPING;
             visitor.stateUntilMs =
                 nowMs + (uint32_t)random(NIGHT_FEED_WAKE_DELAY_MIN_MS,
@@ -4746,7 +4867,9 @@ const PokemonSprites::SpriteFrame* MainScene::visitorCurrentFrame(bool& flipX) c
     }
     bool walking = (visitor.state == VisitorState::WALK ||
                     visitor.state == VisitorState::SEEK_FOOD ||
-                    visitor.state == VisitorState::GO_TO_SLEEP) && visitor.dropOffsetY <= 0.0f;
+                    visitor.state == VisitorState::GO_TO_SLEEP ||
+                    visitor.state == VisitorState::YIELDING_BED) &&
+                   visitor.dropOffsetY <= 0.0f;
     if (walking) {
         PokemonSprites::WalkingAnimation animation{};
         if (PokemonSprites::walkingAnimation(visitor.speciesId, visitor.direction, animation)) {

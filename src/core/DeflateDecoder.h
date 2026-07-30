@@ -1,8 +1,8 @@
 #pragma once
 
-#include <FS.h>
 #include <cstddef>
 #include <cstdint>
+#include "platform/api/PlatformServices.h"
 
 namespace DeflateDecoder {
 
@@ -15,7 +15,7 @@ struct Stats {
 };
 
 // Inflates a raw DEFLATE stream from the file's current position into output.
-bool inflateFile(fs::File& file,
+bool inflateFile(Platform::ResourceFile& file,
                  uint32_t compressedBytes,
                  uint8_t* output,
                  size_t outputBytes,

@@ -8,7 +8,11 @@ class M5StickS3Platform final : public Platform::IPlatformLifecycle,
                                 public Platform::IDisplayDevice,
                                 public Platform::IAudioDevice,
                                 public Platform::IImuDevice,
-                                public Platform::IPowerDevice {
+                                public Platform::IPowerDevice,
+                                public Platform::IBlobStore,
+                                public Platform::IResourceStore,
+                                public Platform::IMemoryAllocator,
+                                public Platform::IPeerTransport {
 public:
     static M5StickS3Platform& instance();
     Platform::Services& serviceBundle();
@@ -51,6 +55,31 @@ public:
     void enterDeepSleep(uint64_t timerWakeUs,
                         bool wakeOnSecondaryButton) override;
 
+    bool initialize() override;
+    size_t blobSize(const char* nameSpace, const char* key) override;
+    bool readBlob(const char* nameSpace, const char* key,
+                  void* output, size_t length) override;
+    bool writeBlob(const char* nameSpace, const char* key,
+                   const void* data, size_t length) override;
+    bool removeBlob(const char* nameSpace, const char* key) override;
+    bool clearNamespace(const char* nameSpace) override;
+
+    bool mount() override;
+    size_t totalBytes() const override;
+    size_t usedBytes() const override;
+    Platform::ResourceFile open(const char* path) override;
+
+    void* allocate(size_t bytes, bool preferExternal) override;
+    void release(void* memory) override;
+    size_t externalFree() const override;
+
+    bool enable() override;
+    void end() override;
+    bool active() const override;
+    bool send(const uint8_t destination[6], const void* data,
+              size_t length) override;
+    bool receive(Platform::PeerPacket& packet) override;
+
 private:
     M5StickS3Platform();
 
@@ -59,6 +88,8 @@ private:
     uint8_t audioVolume_ = 50;
     bool microphoneMode_ = false;
     uint32_t microphoneRecordingUntilMs_ = 0;
+    bool resourceStoreReady_ = false;
+    bool peerTransportActive_ = false;
 };
 
 void bindM5StickS3Platform();

@@ -1,7 +1,5 @@
 #include "core/SaveManager.h"
 #include <Arduino.h>
-#include <Preferences.h>
-#include <nvs.h>
 #include <cmath>
 #include <cstring>
 #include <new>
@@ -9,6 +7,7 @@
 #include "game/ExploreSpecialEncounter.h"
 #include "game/FriendshipPity.h"
 #include "game/Species.h"
+#include "platform/api/PlatformServices.h"
 
 namespace {
 constexpr const char* NVS_NS = "stickmon";
@@ -392,6 +391,10 @@ bool sanitizeState(Game::GameState& state) {
         state.pairMoodRewardsToday = 3;
         changed = true;
     }
+    if (state.candyPurchasesToday > Game::DAILY_CANDY_PURCHASE_CAP) {
+        state.candyPurchasesToday = Game::DAILY_CANDY_PURCHASE_CAP;
+        changed = true;
+    }
     if (!state.pendingLevelUp) {
         if (state.pendingLevelUpLevel != 0) {
             state.pendingLevelUpLevel = 0;
@@ -488,10 +491,7 @@ bool sanitizeState(Game::GameState& state) {
 }
 
 bool SaveManager::begin() {
-    Preferences prefs;
-    bool ok = prefs.begin(NVS_NS, false);
-    prefs.end();
-    return ok;
+    return Platform::blobs().initialize();
 }
 
 bool SaveManager::load(Game::GameState& state,
@@ -499,11 +499,8 @@ bool SaveManager::load(Game::GameState& state,
                        bool* normalized) {
     if (normalized) *normalized = false;
     viewState = MainSceneViewState{};
-    Preferences prefs;
-    if (!prefs.begin(NVS_NS, true)) return false;
-    size_t len = prefs.getBytesLength(NVS_KEY);
+    size_t len = Platform::blobs().blobSize(NVS_NS, NVS_KEY);
     if (len != sizeof(SaveRecord)) {
-        prefs.end();
         Serial.printf("[SaveManager] unsupported state size=%u expected=%u; reset to v%u\n",
                       (unsigned)len,
                       (unsigned)sizeof(SaveRecord),
@@ -514,14 +511,13 @@ bool SaveManager::load(Game::GameState& state,
 
     auto* raw = new (std::nothrow) uint8_t[len];
     if (!raw) {
-        prefs.end();
         Serial.println("[SaveManager] state load allocation failed");
         reset(state);
         return false;
     }
-    size_t read = prefs.getBytes(NVS_KEY, raw, len);
-    prefs.end();
-    if (read != len) {
+    bool readOk = Platform::blobs().readBlob(NVS_NS, NVS_KEY, raw, len);
+    size_t read = readOk ? len : 0;
+    if (!readOk) {
         Serial.printf("[SaveManager] state read failed read=%u expected=%u\n",
                       (unsigned)read,
                       (unsigned)len);
@@ -615,20 +611,14 @@ bool SaveManager::saveSnapshot(const Game::GameState& state,
     record->state.version = Game::SAVE_VERSION;
     record->state.checksum = checksum(record->state);
 
-    nvs_handle_t handle = 0;
-    esp_err_t result = nvs_open(NVS_NS, NVS_READWRITE, &handle);
-    if (result == ESP_OK) {
-        result = nvs_set_blob(handle, NVS_KEY, record, sizeof(*record));
-    }
-    if (result == ESP_OK) result = nvs_commit(handle);
-    if (handle != 0) nvs_close(handle);
+    bool result = Platform::blobs().writeBlob(
+        NVS_NS, NVS_KEY, record, sizeof(*record));
     delete record;
 
-    if (result != ESP_OK) {
-        Serial.printf("[SaveManager] snapshot write failed err=%d\n",
-                      static_cast<int>(result));
+    if (!result) {
+        Serial.println("[SaveManager] snapshot write failed");
     }
-    return result == ESP_OK;
+    return result;
 }
 
 bool SaveManager::loadEncounterHistory(Game::EncounterHistory& history,
@@ -636,15 +626,11 @@ bool SaveManager::loadEncounterHistory(Game::EncounterHistory& history,
     if (normalized) *normalized = false;
     history.clear();
 
-    Preferences prefs;
-    if (!prefs.begin(NVS_NS, true)) return false;
-    size_t len = prefs.getBytesLength(ENCOUNTER_KEY);
+    size_t len = Platform::blobs().blobSize(NVS_NS, ENCOUNTER_KEY);
     if (len == 0) {
-        prefs.end();
         return false;
     }
     if (len != sizeof(EncounterRecord)) {
-        prefs.end();
         Serial.printf("[SaveManager] invalid encounter history size=%u expected=%u\n",
                       static_cast<unsigned>(len),
                       static_cast<unsigned>(sizeof(EncounterRecord)));
@@ -652,8 +638,9 @@ bool SaveManager::loadEncounterHistory(Game::EncounterHistory& history,
     }
 
     EncounterRecord record{};
-    size_t read = prefs.getBytes(ENCOUNTER_KEY, &record, sizeof(record));
-    prefs.end();
+    size_t read = Platform::blobs().readBlob(
+        NVS_NS, ENCOUNTER_KEY, &record, sizeof(record))
+        ? sizeof(record) : 0;
     uint16_t expectedChecksum = checksumObject(record);
     if (read != sizeof(record) ||
         record.magic != ENCOUNTER_RECORD_MAGIC ||
@@ -676,11 +663,9 @@ bool SaveManager::saveEncounterHistory(
     record.history.sanitize();
     record.checksum = checksumObject(record);
 
-    Preferences prefs;
-    if (!prefs.begin(NVS_NS, false)) return false;
-    size_t written =
-        prefs.putBytes(ENCOUNTER_KEY, &record, sizeof(record));
-    prefs.end();
+    size_t written = Platform::blobs().writeBlob(
+        NVS_NS, ENCOUNTER_KEY, &record, sizeof(record))
+        ? sizeof(record) : 0;
     if (written != sizeof(record)) {
         Serial.printf(
             "[SaveManager] encounter history write failed written=%u expected=%u\n",
@@ -696,26 +681,20 @@ void SaveManager::reset(Game::GameState& state) {
 }
 
 bool SaveManager::clearAll() {
-    Preferences prefs;
-    if (!prefs.begin(NVS_NS, false)) return false;
-    bool cleared = prefs.clear();
-    prefs.end();
-    return cleared;
+    return Platform::blobs().clearNamespace(NVS_NS);
 }
 
 bool SaveManager::loadHatchProgress(Game::HatchProgress& progress) {
-    Preferences prefs;
-    if (!prefs.begin(NVS_NS, true)) return false;
-    size_t len = prefs.getBytesLength(HATCH_KEY);
+    size_t len = Platform::blobs().blobSize(NVS_NS, HATCH_KEY);
     if (len != sizeof(Game::HatchProgress)) {
-        prefs.end();
         progress = Game::HatchProgress{};
         return false;
     }
 
     Game::HatchProgress loaded;
-    size_t read = prefs.getBytes(HATCH_KEY, &loaded, sizeof(loaded));
-    prefs.end();
+    size_t read = Platform::blobs().readBlob(
+        NVS_NS, HATCH_KEY, &loaded, sizeof(loaded))
+        ? sizeof(loaded) : 0;
     if (read != sizeof(loaded) ||
         loaded.magic != Game::HATCH_MAGIC ||
         loaded.checksum != checksum(loaded)) {
@@ -732,18 +711,12 @@ bool SaveManager::saveHatchProgress(const Game::HatchProgress& progress) {
     copy.magic = Game::HATCH_MAGIC;
     copy.checksum = checksum(copy);
 
-    Preferences prefs;
-    if (!prefs.begin(NVS_NS, false)) return false;
-    size_t written = prefs.putBytes(HATCH_KEY, &copy, sizeof(copy));
-    prefs.end();
-    return written == sizeof(copy);
+    return Platform::blobs().writeBlob(
+        NVS_NS, HATCH_KEY, &copy, sizeof(copy));
 }
 
 void SaveManager::clearHatchProgress() {
-    Preferences prefs;
-    if (!prefs.begin(NVS_NS, false)) return;
-    prefs.remove(HATCH_KEY);
-    prefs.end();
+    Platform::blobs().removeBlob(NVS_NS, HATCH_KEY);
 }
 
 uint16_t SaveManager::checksum(const Game::GameState& state) {

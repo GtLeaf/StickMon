@@ -2,7 +2,7 @@
 
 #include "core/DeflateDecoder.h"
 #include "core/ResourcePack.h"
-#include "hardware/Hal.h"
+#include "platform/api/PlatformServices.h"
 
 #include <Arduino.h>
 #include <cstdlib>
@@ -32,7 +32,7 @@ struct __attribute__((packed)) PackedCryHeader {
 
 static_assert(sizeof(PackedCryHeader) == 32, "Unexpected cry pack header layout");
 
-bool readExact(fs::File& file, void* output, size_t length) {
+bool readExact(Platform::ResourceFile& file, void* output, size_t length) {
     return length == 0 ||
            file.read(reinterpret_cast<uint8_t*>(output), length) == length;
 }
@@ -45,12 +45,12 @@ CryPlayer& CryPlayer::ins() {
 
 bool CryPlayer::play(uint16_t speciesId) {
     update();
-    if (speciesId == 0 || Hal::ins().getAudioVolume() == 0) return false;
-    if (pcm_ || Hal::ins().audioPlaying()) return false;
+    if (speciesId == 0 || Platform::audio().volume() == 0) return false;
+    if (pcm_ || Platform::audio().playing()) return false;
 
     ResourcePack& pack = ResourcePack::ins();
     if (!pack.begin()) return false;
-    fs::File file;
+    Platform::ResourceFile file;
     if (!pack.openCry(speciesId, file)) {
         Serial.printf("[CryPlayer] missing species=%u\n", speciesId);
         return false;
@@ -75,9 +75,8 @@ bool CryPlayer::play(uint16_t speciesId) {
         return false;
     }
 
-    uint8_t* pcm = psramFound()
-        ? static_cast<uint8_t*>(ps_malloc(header.payloadRawBytes))
-        : static_cast<uint8_t*>(malloc(header.payloadRawBytes));
+    uint8_t* pcm = static_cast<uint8_t*>(
+        Platform::memory().allocate(header.payloadRawBytes, true));
     if (!pcm) {
         Serial.printf("[CryPlayer] allocation failed species=%u bytes=%u\n",
                       speciesId, header.payloadRawBytes);
@@ -91,7 +90,7 @@ bool CryPlayer::play(uint16_t speciesId) {
                                      header.payloadRawBytes,
                                      header.payloadCrc32,
                                      &stats)) {
-        free(pcm);
+        Platform::memory().release(pcm);
         Serial.printf("[CryPlayer] decode failed species=%u read=%u inflate=%u\n",
                       speciesId, stats.readMs, stats.inflateMs);
         return false;
@@ -100,7 +99,7 @@ bool CryPlayer::play(uint16_t speciesId) {
     pcm_ = pcm;
     pcmBytes_ = header.payloadRawBytes;
     speciesId_ = speciesId;
-    if (!Hal::ins().playPcmU8(pcm_, pcmBytes_, header.sampleRate)) {
+    if (!Platform::audio().playPcmU8(pcm_, pcmBytes_, header.sampleRate)) {
         releaseBuffer();
         Serial.printf("[CryPlayer] playback failed species=%u\n", speciesId);
         return false;
@@ -114,23 +113,23 @@ bool CryPlayer::play(uint16_t speciesId) {
 }
 
 bool CryPlayer::replay(uint16_t speciesId) {
-    if (speciesId == 0 || Hal::ins().getAudioVolume() == 0) return false;
+    if (speciesId == 0 || Platform::audio().volume() == 0) return false;
     if (pcm_ && speciesId_ == speciesId) {
-        return Hal::ins().playPcmU8(pcm_, pcmBytes_, CRY_SAMPLE_RATE);
+        return Platform::audio().playPcmU8(pcm_, pcmBytes_, CRY_SAMPLE_RATE);
     }
     return play(speciesId);
 }
 
 void CryPlayer::update() {
-    if (pcm_ && !Hal::ins().audioPlaying()) releaseBuffer();
+    if (pcm_ && !Platform::audio().playing()) releaseBuffer();
 }
 
 void CryPlayer::stop() {
-    if (pcm_) Hal::ins().stopAudio();
+    if (pcm_) Platform::audio().stop();
 }
 
 void CryPlayer::releaseBuffer() {
-    if (pcm_) free(pcm_);
+    if (pcm_) Platform::memory().release(pcm_);
     pcm_ = nullptr;
     pcmBytes_ = 0;
     speciesId_ = 0;

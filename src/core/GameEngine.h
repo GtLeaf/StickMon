@@ -3,6 +3,9 @@
 #include <cstdint>
 #include <memory>
 #include "core/MainSceneViewState.h"
+#include "core/GameClockService.h"
+#include "core/ResourceService.h"
+#include "core/SaveCoordinator.h"
 #include "core/SaveManager.h"
 #include "core/Scene.h"
 #include "game/GameState.h"
@@ -155,6 +158,8 @@ public:
     }
     uint8_t companionCount() const { return state.teamCount + state.storageCount; }
     uint32_t coinCount() const { return state.coins; }
+    bool candyPurchaseAvailable();
+    bool recordCandyPurchase();
     uint8_t hungerValue() const;
     uint8_t moodValue() const;
     const Game::GameState& gameState() const { return state; }
@@ -425,18 +430,10 @@ private:
     uint32_t lastSceneUpdateMs = 0;
     uint32_t nextSceneUpdateMs = 0;
     uint32_t lastCareMs = 0;
-    uint32_t lastSaveMs = 0;
-    uint32_t saveDirtySinceMs = 0;
-    uint32_t saveSoonSinceMs = 0;
-    uint32_t lastSaveMutationMs = 0;
     uint32_t lastActivityMs = 0;
-    uint32_t clockAnchorMs = 0;
-    uint32_t clockAnchorMinutes = 0;
     // 跨 tickCare 调用保留的会话型照护累加器（不持久化），见 game/CareTicker.h。
     Game::CareTickAccumulators careAcc = {};
     bool idleActive = false;
-    bool saveDirty = false;
-    bool saveSoon = false;
     bool debugShowWalkBoundary = false;
     bool debugTiltControl = false;
     bool debugShowBattleDrawBounds = false;
@@ -499,6 +496,9 @@ private:
     Game::EncounterHistory encounterHistory;
     bool encounterHistoryDirty = false;
     SaveManager saveManager;
+    SaveCoordinator saveCoordinator;
+    GameClockService gameClock;
+    ResourceService resourceService;
 
     bool syncOwnedSpeciesToEncounterHistory();
     uint8_t contactVisitorTeamSlot() const;

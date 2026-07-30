@@ -811,6 +811,7 @@ static constexpr const char* OFF = "关";
 namespace Shop {
 static constexpr const char* NOT_ENOUGH_COINS = "金币不够";
 static constexpr const char* BAG_FULL = "背包已满";
+static constexpr const char* CANDY_DAILY_LIMIT = "今天不能再买";
 static constexpr const char* BOUGHT_FOOD = "买到饼干";
 static constexpr const char* BOUGHT_FMT = "买到%s";
 static constexpr const char* BOUGHT_POTION = "买到伤药";

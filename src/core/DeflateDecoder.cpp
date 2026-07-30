@@ -2,8 +2,8 @@
 
 #include "third_party/uzlib/uzlib.h"
 
-#include <Arduino.h>
 #include <algorithm>
+#include "platform/api/PlatformServices.h"
 
 namespace DeflateDecoder {
 namespace {
@@ -18,7 +18,7 @@ constexpr uint32_t CRC32_NIBBLE_TABLE[16] = {
 
 struct FileInflateContext {
     TINF_DATA state{};
-    fs::File* file = nullptr;
+    Platform::ResourceFile* file = nullptr;
     uint32_t remaining = 0;
     uint32_t bytesRead = 0;
     uint32_t readMs = 0;
@@ -34,9 +34,9 @@ int refillSource(TINF_DATA* state) {
     if (!context->file || context->remaining == 0) return -1;
 
     size_t wanted = std::min<size_t>(sizeof(context->input), context->remaining);
-    uint32_t started = millis();
+    uint32_t started = Platform::clock().millis();
     size_t received = context->file->read(context->input, wanted);
-    context->readMs += millis() - started;
+    context->readMs += Platform::clock().millis() - started;
     if (received == 0) {
         context->readFailed = true;
         return -1;
@@ -61,7 +61,7 @@ uint32_t crc32(const uint8_t* data, size_t length) {
 
 }  // namespace
 
-bool inflateFile(fs::File& file,
+bool inflateFile(Platform::ResourceFile& file,
                  uint32_t compressedBytes,
                  uint8_t* output,
                  size_t outputBytes,
@@ -70,7 +70,7 @@ bool inflateFile(fs::File& file,
     Stats result{};
     result.inputBytes = compressedBytes;
     result.outputBytes = static_cast<uint32_t>(outputBytes);
-    uint32_t started = millis();
+    uint32_t started = Platform::clock().millis();
 
     if (!file || !output || compressedBytes == 0 || outputBytes == 0 ||
         outputBytes > UINT32_MAX) {
@@ -99,7 +99,7 @@ bool inflateFile(fs::File& file,
     uint32_t actualCrc32 = produced == outputBytes ? crc32(output, outputBytes) : 0;
 
     result.readMs = context.readMs;
-    result.totalMs = millis() - started;
+    result.totalMs = Platform::clock().millis() - started;
     result.inflateMs = result.totalMs >= result.readMs ? result.totalMs - result.readMs : 0;
     if (stats) *stats = result;
 

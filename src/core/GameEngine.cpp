@@ -8,8 +8,6 @@
 #include "assets/PokemonSprites.h"
 #include "core/ButtonDispatcher.h"
 #include "core/FontResource.h"
-#include "core/ResourcePack.h"
-#include "core/ResourceFS.h"
 #include "core/RoomResource.h"
 #include "core/TraceLog.h"
 #include "core/UiStrings.h"
@@ -32,10 +30,6 @@
 namespace {
 // 照护相关常量与睡眠时段辅助函数已移至 game/CareTicker.h，
 // 供 GameEngine（清醒 tick）与深度睡眠定时静默唤醒路径共用。
-static constexpr uint32_t SAVE_SOON_QUIET_MS = 2000UL;
-static constexpr uint32_t SAVE_SOON_MAX_DELAY_MS = 15000UL;
-static constexpr uint32_t SAVE_DEFERRED_MAX_DELAY_MS = 300000UL;
-static constexpr uint32_t SAVE_MIN_INTERVAL_MS = 1000UL;
 static constexpr uint8_t DEBUG_LIGHT_SOURCE_COUNT = 6;
 static constexpr uint16_t SCENE_FADE_HOLD_MS = 500;
 static constexpr uint32_t VISIT_PING_INTERVAL_MS = 5000UL;
@@ -166,12 +160,9 @@ bool GameEngine::begin() {
         return false;
     }
     PixelRenderer::bind(Hal::ins().frameBuffer());
-    if (!ResourceFS::ins().begin()) {
+    if (!resourceService.begin()) {
         Serial.println("[GameEngine] external resource FS unavailable");
     }
-    ResourcePack::ins().begin();
-    FontResource::ins().begin();
-    RoomResource::ins().begin();
     saveManager.begin();
     bool normalizedState = false;
     bool loadedState = saveManager.load(state, mainViewState, &normalizedState);
@@ -184,8 +175,8 @@ bool GameEngine::begin() {
         clearMainSceneViewState();
     }
     uint32_t loadedAt = Hal::ins().millis();
-    clockAnchorMs = loadedAt;
-    clockAnchorMinutes = state.gameMinutesTotal;
+    gameClock.start(loadedAt, state.gameMinutesTotal);
+    saveCoordinator.reset(loadedAt);
     if (normalizedState) markDirty(SaveUrgency::DEFERRED);
     if (!loadedState) saveNow();
     if (state.settings.idleTimeoutIndex >= 5) {
@@ -214,10 +205,9 @@ bool GameEngine::begin() {
     startupSpriteCacheReady = syncSpriteCache(0);
     switchScene(state.oobeDone ? SceneID::MAIN : SceneID::HATCH);
     uint32_t now = Hal::ins().millis();
-    clockAnchorMs = now;
-    clockAnchorMinutes = state.gameMinutesTotal;
+    gameClock.start(now, state.gameMinutesTotal);
     lastInputMs = lastFrameMs = lastUpdateMs = lastSceneUpdateMs =
-        lastCareMs = lastSaveMs = lastActivityMs = now;
+        lastCareMs = lastActivityMs = now;
     nextSceneUpdateMs = now;
     sceneUpdateScheduled = true;
     sceneDirty = true;
@@ -367,7 +357,7 @@ float GameEngine::gameSpeed() const {
 }
 
 uint32_t GameEngine::gameMinutesTotal() const {
-    return gameMinutesTotalAt(Hal::ins().millis());
+    return gameClock.minutesAt(Hal::ins().millis(), gameSpeed());
 }
 
 uint16_t GameEngine::gameMinutesOfDay() const {
@@ -382,8 +372,7 @@ void GameEngine::cycleGameSpeed() {
     uint32_t now = Hal::ins().millis();
     syncGameClock(now);
     state.settings.speedIndex = (state.settings.speedIndex + 1) % 4;
-    clockAnchorMs = now;
-    clockAnchorMinutes = state.gameMinutesTotal;
+    gameClock.set(now, state.gameMinutesTotal);
     markDirty(SaveUrgency::DEFERRED);
 }
 
@@ -1380,6 +1369,23 @@ void GameEngine::addCoins(uint32_t amount) {
     markDirty(SaveUrgency::SOON);
 }
 
+bool GameEngine::candyPurchaseAvailable() {
+    syncGameClock(Hal::ins().millis());
+    resetDailyCountersIfNeeded();
+    return state.candyPurchasesToday < Game::DAILY_CANDY_PURCHASE_CAP;
+}
+
+bool GameEngine::recordCandyPurchase() {
+    syncGameClock(Hal::ins().millis());
+    resetDailyCountersIfNeeded();
+    if (state.candyPurchasesToday >= Game::DAILY_CANDY_PURCHASE_CAP) {
+        return false;
+    }
+    ++state.candyPurchasesToday;
+    markDirty(SaveUrgency::SOON);
+    return true;
+}
+
 bool GameEngine::recordFriendContact(const Game::MonsterRuntime& monster,
                                      uint8_t metArea,
                                      uint8_t* contactSlot) {
@@ -1509,7 +1515,7 @@ void GameEngine::finishHatch(uint8_t starterStyle) {
     state.team[0].lastWindowGazeAt = state.team[0].metAt;
     state.bag = Game::BagState{};
     state.room = Game::RoomState{};
-    state.coins = 50;
+    state.coins = Game::INITIAL_COINS;
     state.oobeDone = true;
     markDirty(SaveUrgency::IMMEDIATE);
     requestScene(SceneID::MAIN);
@@ -1948,8 +1954,7 @@ uint32_t GameEngine::debugAdvanceToTimeOfDay(uint16_t targetMinutesOfDay) {
         : (uint32_t)(24U * 60U - current + targetMinutesOfDay);
 
     state.gameMinutesTotal += delta;
-    clockAnchorMs = now;
-    clockAnchorMinutes = state.gameMinutesTotal;
+    gameClock.set(now, state.gameMinutesTotal);
     saveNow();
     return delta;
 }
@@ -1975,13 +1980,11 @@ void GameEngine::invalidateScene() {
 
 void GameEngine::markSaveDirty(SaveUrgency urgency) {
     uint32_t now = Hal::ins().millis();
-    if (!saveDirty) saveDirtySinceMs = now;
-    saveDirty = true;
-    lastSaveMutationMs = now;
-    if (urgency == SaveUrgency::SOON && !saveSoon) {
-        saveSoon = true;
-        saveSoonSinceMs = now;
-    }
+    saveCoordinator.mark(
+        now,
+        urgency == SaveUrgency::DEFERRED
+            ? SaveCoordinator::Priority::DEFERRED
+            : SaveCoordinator::Priority::SOON);
     if (urgency == SaveUrgency::IMMEDIATE) saveNow();
 }
 
@@ -2057,21 +2060,8 @@ bool GameEngine::saveNow() {
     bool historyOk = !encounterHistoryDirty ||
         saveManager.saveEncounterHistory(encounterHistory);
     bool ok = stateOk && historyOk;
-    lastSaveMs = now;
     if (historyOk) encounterHistoryDirty = false;
-    if (ok) {
-        saveDirty = false;
-        saveSoon = false;
-        saveDirtySinceMs = 0;
-        saveSoonSinceMs = 0;
-        lastSaveMutationMs = 0;
-    } else {
-        saveDirty = true;
-        saveSoon = true;
-        if (saveDirtySinceMs == 0) saveDirtySinceMs = now;
-        saveSoonSinceMs = now;
-        lastSaveMutationMs = now;
-    }
+    saveCoordinator.recordAttempt(now, ok);
     return ok;
 }
 
@@ -2083,9 +2073,8 @@ bool GameEngine::resetGame() {
     VoiceCallService::ins().clearCachedProfile();
 
     uint32_t now = Hal::ins().millis();
-    clockAnchorMs = now;
     initDefaultState();
-    clockAnchorMinutes = state.gameMinutesTotal;
+    gameClock.set(now, state.gameMinutesTotal);
     encounterHistory.clear();
     encounterHistoryDirty = false;
     HatchScene::clearRuntimeProgress();
@@ -2095,11 +2084,7 @@ bool GameEngine::resetGame() {
     debugTiltControl = false;
     debugShowBattleDrawBounds = false;
     debugLightSource = 0;
-    saveDirty = false;
-    saveSoon = false;
-    saveDirtySinceMs = 0;
-    saveSoonSinceMs = 0;
-    lastSaveMutationMs = 0;
+    saveCoordinator.reset(now);
 
     lastCareMs = now;
     lastUpdateMs = now;
@@ -2161,7 +2146,7 @@ void GameEngine::switchScene(SceneID id, bool saveBeforeSwitch) {
     uint32_t now = Hal::ins().millis();
     SceneID fromId = currentId;
     resetIdle(now);
-    if (saveBeforeSwitch && saveDirty && !saveNow()) {
+    if (saveBeforeSwitch && saveCoordinator.dirty() && !saveNow()) {
         Serial.println("[GameEngine] save before scene switch failed");
     }
     if (currentScene) {
@@ -2250,8 +2235,7 @@ void GameEngine::update(uint32_t nowMs) {
     }
     if (alertVisible) {
         sceneUpdateScheduled = false;
-        clockAnchorMs = nowMs;
-        clockAnchorMinutes = state.gameMinutesTotal;
+        gameClock.set(nowMs, state.gameMinutesTotal);
         lastCareMs = nowMs;
         return;
     }
@@ -2303,13 +2287,7 @@ void GameEngine::update(uint32_t nowMs) {
     } else if (fadeBefore != sceneFade) {
         sceneDirty = true;
     }
-    if (saveDirty && nowMs - lastSaveMs >= SAVE_MIN_INTERVAL_MS) {
-        bool soonDue = saveSoon &&
-            (nowMs - lastSaveMutationMs >= SAVE_SOON_QUIET_MS ||
-             nowMs - saveSoonSinceMs >= SAVE_SOON_MAX_DELAY_MS);
-        bool deferredDue = nowMs - saveDirtySinceMs >= SAVE_DEFERRED_MAX_DELAY_MS;
-        if (soonDue || deferredDue) saveNow();
-    }
+    if (saveCoordinator.due(nowMs)) saveNow();
 }
 
 void GameEngine::logSceneDemand(const SceneUpdateResult& result,
@@ -2543,7 +2521,7 @@ void GameEngine::updateIdle(uint32_t nowMs) {
     if (timeout == 0 || idleActive) return;
     int32_t elapsed = (int32_t)(nowMs - lastActivityMs);
     if (elapsed < 0 || (uint32_t)elapsed < timeout) return;
-    if (saveDirty && !saveNow()) {
+    if (saveCoordinator.dirty() && !saveNow()) {
         Serial.println("[GameEngine] save before idle failed");
     }
     idleActive = true;
@@ -2563,22 +2541,18 @@ uint32_t GameEngine::idleTimeoutMs() const {
 }
 
 uint32_t GameEngine::gameMinutesTotalAt(uint32_t nowMs) const {
-    uint32_t elapsedMs = nowMs - clockAnchorMs;
-    uint32_t scaledMinutes = (uint32_t)((double)elapsedMs * (double)gameSpeed() / 60000.0);
-    return clockAnchorMinutes + scaledMinutes;
+    return gameClock.minutesAt(nowMs, gameSpeed());
 }
 
 void GameEngine::syncGameClock(uint32_t nowMs) {
-    uint32_t total = gameMinutesTotalAt(nowMs);
-    if (total == state.gameMinutesTotal) return;
-    state.gameMinutesTotal = total;
-    markDirty(SaveUrgency::DEFERRED);
+    if (gameClock.sync(nowMs, gameSpeed(), state.gameMinutesTotal)) {
+        markDirty(SaveUrgency::DEFERRED);
+    }
 }
 
 void GameEngine::resetGameClockAnchor(uint32_t nowMs) {
     syncGameClock(nowMs);
-    clockAnchorMs = nowMs;
-    clockAnchorMinutes = state.gameMinutesTotal;
+    gameClock.set(nowMs, state.gameMinutesTotal);
 }
 
 void GameEngine::initDefaultState() {

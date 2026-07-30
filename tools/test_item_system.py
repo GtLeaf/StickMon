@@ -23,16 +23,15 @@ def array_items(source, name):
 
 
 class ItemSystemTests(unittest.TestCase):
-    @unittest.skipUnless(shutil.which("c++"), "host C++ compiler is unavailable")
-    def test_session_item_effects(self):
+    def compile_and_run_host(self, source_name):
         with tempfile.TemporaryDirectory() as temp_dir:
-            binary = Path(temp_dir) / "item_system_host"
+            binary = Path(temp_dir) / Path(source_name).stem
             subprocess.run(
                 [
                     "c++",
                     "-std=c++17",
                     f"-I{ROOT / 'src'}",
-                    str(ROOT / "tools" / "item_system_host.cpp"),
+                    str(ROOT / "tools" / source_name),
                     "-o",
                     str(binary),
                 ],
@@ -46,6 +45,14 @@ class ItemSystemTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
             )
+
+    @unittest.skipUnless(shutil.which("c++"), "host C++ compiler is unavailable")
+    def test_session_item_effects(self):
+        self.compile_and_run_host("item_system_host.cpp")
+
+    @unittest.skipUnless(shutil.which("c++"), "host C++ compiler is unavailable")
+    def test_shop_unlocks_follow_exploration_progress(self):
+        self.compile_and_run_host("explore_item_progression_host.cpp")
 
     def test_shop_explore_catalog_keeps_all_products_and_back(self):
         source = (ROOT / "src" / "scenes" / "ShopScene.h").read_text()

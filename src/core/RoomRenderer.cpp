@@ -2,6 +2,7 @@
 
 #include "core/RoomResource.h"
 #include "hardware/Hal.h"
+#include "platform/api/PlatformServices.h"
 #include "presentation/PixelRenderer.h"
 
 #include <Arduino.h>
@@ -28,13 +29,14 @@ bool ensureRoomBuffer() {
     if (pixels == 0) return false;
     if (roomBuffer && roomBufferPixels == pixels) return true;
 
-    if (roomBuffer) free(roomBuffer);
+    if (roomBuffer) Platform::memory().release(roomBuffer);
     roomBuffer = nullptr;
     roomBufferPixels = 0;
     roomBufferValid = false;
 
-    if (!psramFound()) return false;
-    roomBuffer = static_cast<uint16_t*>(ps_malloc(static_cast<size_t>(pixels) * sizeof(uint16_t)));
+    if (Platform::power().externalMemorySize() == 0) return false;
+    roomBuffer = static_cast<uint16_t*>(Platform::memory().allocate(
+        static_cast<size_t>(pixels) * sizeof(uint16_t), true));
     roomBufferPixels = roomBuffer ? pixels : 0;
     return roomBuffer != nullptr;
 }

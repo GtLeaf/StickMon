@@ -1,13 +1,11 @@
 #include "core/VoiceCallService.h"
 
-#include "hardware/Hal.h"
+#include "platform/api/PlatformServices.h"
 
 #include <Arduino.h>
-#include <Preferences.h>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-#include <esp_heap_caps.h>
 
 namespace {
 constexpr uint32_t PROFILE_MAGIC = 0x31434D53UL;  // SMC1
@@ -124,14 +122,12 @@ bool VoiceCallService::begin() {
 
 bool VoiceCallService::ensureBuffers() {
     if (!capture_) {
-        capture_ = static_cast<int16_t*>(heap_caps_malloc(
-            ENROLL_SAMPLES * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-        if (!capture_) capture_ = static_cast<int16_t*>(malloc(ENROLL_SAMPLES * sizeof(int16_t)));
+        capture_ = static_cast<int16_t*>(Platform::memory().allocate(
+            ENROLL_SAMPLES * sizeof(int16_t), true));
     }
     if (!rolling_) {
-        rolling_ = static_cast<int16_t*>(heap_caps_malloc(
-            ROLLING_SAMPLES * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-        if (!rolling_) rolling_ = static_cast<int16_t*>(malloc(ROLLING_SAMPLES * sizeof(int16_t)));
+        rolling_ = static_cast<int16_t*>(Platform::memory().allocate(
+            ROLLING_SAMPLES * sizeof(int16_t), true));
     }
     return capture_ && rolling_;
 }
@@ -162,16 +158,11 @@ bool VoiceCallService::validProfile(const VoiceProfile& profile) const {
 }
 
 bool VoiceCallService::loadProfile() {
-    Preferences prefs;
-    if (!prefs.begin(NVS_NAMESPACE, true)) return false;
-    if (!prefs.isKey(PROFILE_KEY) ||
-        prefs.getBytesLength(PROFILE_KEY) != sizeof(VoiceProfile)) {
-        prefs.end();
-        return false;
-    }
+    if (Platform::blobs().blobSize(NVS_NAMESPACE, PROFILE_KEY) !=
+        sizeof(VoiceProfile)) return false;
     VoiceProfile loaded{};
-    bool ok = prefs.getBytes(PROFILE_KEY, &loaded, sizeof(loaded)) == sizeof(loaded);
-    prefs.end();
+    bool ok = Platform::blobs().readBlob(
+        NVS_NAMESPACE, PROFILE_KEY, &loaded, sizeof(loaded));
     if (!ok || !validProfile(loaded)) return false;
     profile_ = loaded;
     return true;
@@ -185,36 +176,29 @@ bool VoiceCallService::saveCandidate() {
     candidate_.checksum = checksum(reinterpret_cast<const uint8_t*>(&candidate_),
                                    offsetof(VoiceProfile, checksum));
 
-    Preferences prefs;
-    if (!prefs.begin(NVS_NAMESPACE, false)) {
-        Serial.println("[VoiceCall] save failed stage=open");
-        return false;
-    }
     // A blob update is already atomic after nvs_commit(). Keeping a temporary
     // copy made re-enrollment require space for three profiles at once.
-    if (prefs.isKey(TEMP_KEY)) prefs.remove(TEMP_KEY);
-    size_t written = prefs.putBytes(
-        PROFILE_KEY, &candidate_, sizeof(candidate_));
+    Platform::blobs().removeBlob(NVS_NAMESPACE, TEMP_KEY);
+    bool written = Platform::blobs().writeBlob(
+        NVS_NAMESPACE, PROFILE_KEY, &candidate_, sizeof(candidate_));
     VoiceProfile verify{};
-    size_t stored = prefs.getBytesLength(PROFILE_KEY);
-    size_t read = stored == sizeof(verify)
-        ? prefs.getBytes(PROFILE_KEY, &verify, sizeof(verify))
-        : 0;
-    bool valid = read == sizeof(verify) && validProfile(verify);
-    prefs.end();
-    if (written != sizeof(candidate_) || stored != sizeof(verify) || !valid) {
+    size_t stored = Platform::blobs().blobSize(NVS_NAMESPACE, PROFILE_KEY);
+    bool read = stored == sizeof(verify) && Platform::blobs().readBlob(
+        NVS_NAMESPACE, PROFILE_KEY, &verify, sizeof(verify));
+    bool valid = read && validProfile(verify);
+    if (!written || stored != sizeof(verify) || !valid) {
         Serial.printf(
             "[VoiceCall] save failed stage=profile written=%u stored=%u read=%u valid=%u\n",
-            static_cast<unsigned>(written),
+            written ? static_cast<unsigned>(sizeof(candidate_)) : 0U,
             static_cast<unsigned>(stored),
-            static_cast<unsigned>(read),
+            read ? static_cast<unsigned>(sizeof(verify)) : 0U,
             valid ? 1 : 0);
         return false;
     }
     profile_ = candidate_;
     profileReady_ = true;
     Serial.printf("[VoiceCall] profile saved bytes=%u\n",
-                  static_cast<unsigned>(written));
+                  static_cast<unsigned>(sizeof(candidate_)));
     return true;
 }
 
@@ -451,7 +435,7 @@ bool VoiceCallService::beginEnrollment(uint32_t nowMs) {
         enrollmentError_ = EnrollmentError::NO_MEMORY;
         return false;
     }
-    if (!Hal::ins().beginMicrophone()) {
+    if (!Platform::audio().beginMicrophone()) {
         enrollmentState_ = EnrollmentState::ERROR;
         enrollmentError_ = EnrollmentError::MICROPHONE;
         return false;
@@ -468,7 +452,7 @@ bool VoiceCallService::beginEnrollment(uint32_t nowMs) {
 void VoiceCallService::startEnrollmentTake(uint32_t nowMs) {
     memset(capture_, 0, ENROLL_SAMPLES * sizeof(int16_t));
     memset(waveform_, 0, sizeof(waveform_));
-    if (!Hal::ins().recordMicrophone(capture_, ENROLL_SAMPLES, SAMPLE_RATE)) {
+    if (!Platform::audio().recordMicrophone(capture_, ENROLL_SAMPLES, SAMPLE_RATE)) {
         enrollmentState_ = EnrollmentState::ERROR;
         enrollmentError_ = EnrollmentError::MICROPHONE;
         finishAudioMode();
@@ -499,7 +483,7 @@ void VoiceCallService::updateEnrollment(uint32_t nowMs) {
         return;
     case EnrollmentState::RECORDING:
         updateWaveform(nowMs);
-        if (Hal::ins().microphoneRecording()) return;
+        if (Platform::audio().microphoneRecording()) return;
         break;
     case EnrollmentState::BETWEEN_TAKES:
         if (nowMs - stateStartedMs_ >= 650) {
@@ -508,7 +492,7 @@ void VoiceCallService::updateEnrollment(uint32_t nowMs) {
         }
         return;
     case EnrollmentState::ERROR:
-        if (nowMs - stateStartedMs_ >= 1400 && Hal::ins().microphoneActive()) {
+        if (nowMs - stateStartedMs_ >= 1400 && Platform::audio().microphoneActive()) {
             enrollmentError_ = EnrollmentError::NONE;
             enrollmentState_ = EnrollmentState::PREPARING;
             stateStartedMs_ = nowMs;
@@ -576,7 +560,7 @@ void VoiceCallService::updateEnrollment(uint32_t nowMs) {
 }
 
 void VoiceCallService::finishAudioMode() {
-    Hal::ins().endMicrophone();
+    Platform::audio().endMicrophone();
 }
 
 void VoiceCallService::cancelEnrollment() {
@@ -640,14 +624,14 @@ bool VoiceCallService::startListening(uint32_t nowMs) {
     begin();
     if (listening_) return true;
     if (!profileReady_ || !ensureBuffers() || enrollmentState_ != EnrollmentState::IDLE ||
-        !Hal::ins().beginMicrophone()) {
+        !Platform::audio().beginMicrophone()) {
         return false;
     }
     resetRolling();
     resetListeningVad();
     matchPending_ = false;
     listening_ = true;
-    listenCapturePending_ = Hal::ins().recordMicrophone(
+    listenCapturePending_ = Platform::audio().recordMicrophone(
         capture_, LISTEN_CHUNK_SAMPLES, SAMPLE_RATE);
     listenCaptureStartedMs_ = nowMs;
     if (!listenCapturePending_) stopListening();
@@ -670,7 +654,7 @@ void VoiceCallService::updateListening(uint32_t nowMs) {
     // Mic_Class marks its queue active from a worker task. Waiting for most of
     // the block duration avoids mistaking that short scheduling gap for EOF.
     if (listenCapturePending_ && nowMs - listenCaptureStartedMs_ < LISTEN_CHUNK_MS - 40) return;
-    if (listenCapturePending_ && Hal::ins().microphoneRecording()) return;
+    if (listenCapturePending_ && Platform::audio().microphoneRecording()) return;
     if (listenCapturePending_) {
         appendListeningChunk();
         listenCapturePending_ = false;
@@ -679,11 +663,11 @@ void VoiceCallService::updateListening(uint32_t nowMs) {
             rollingCount_ >= LISTEN_CHUNK_SAMPLES * 2) {
             VoiceTemplate sample{};
             EnrollmentError error = EnrollmentError::NONE;
-            uint32_t recognizeStartedMs = Hal::ins().millis();
+            uint32_t recognizeStartedMs = Platform::clock().millis();
             if (extractTemplate(rolling_, rollingCount_, sample, error, true)) {
                 bool matched = profileMatches(sample);
                 Serial.printf("[VoiceCall] recognize cost=%lums matched=%u\n",
-                              static_cast<unsigned long>(Hal::ins().millis() -
+                              static_cast<unsigned long>(Platform::clock().millis() -
                                                          recognizeStartedMs),
                               matched ? 1 : 0);
                 if (matched) {
@@ -702,7 +686,7 @@ void VoiceCallService::updateListening(uint32_t nowMs) {
         }
     }
     memset(capture_, 0, LISTEN_CHUNK_SAMPLES * sizeof(int16_t));
-    listenCapturePending_ = Hal::ins().recordMicrophone(
+    listenCapturePending_ = Platform::audio().recordMicrophone(
         capture_, LISTEN_CHUNK_SAMPLES, SAMPLE_RATE);
     listenCaptureStartedMs_ = nowMs;
     if (!listenCapturePending_) stopListening();

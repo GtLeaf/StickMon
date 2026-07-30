@@ -3,7 +3,6 @@
 #include "core/ResourcePack.h"
 
 #include <Arduino.h>
-#include <FS.h>
 #include <cstdlib>
 
 namespace {
@@ -23,7 +22,7 @@ struct __attribute__((packed)) PackedFontHeader {
     uint32_t flags;
 };
 
-bool readExact(fs::File& file, void* out, size_t length) {
+bool readExact(Platform::ResourceFile& file, void* out, size_t length) {
     if (length == 0) return true;
     return file.read(reinterpret_cast<uint8_t*>(out), length) == length;
 }
@@ -113,7 +112,7 @@ bool FontResource::loadExternal(FontFace face, FontData& data) {
     ResourcePack& pack = ResourcePack::ins();
     releaseExternal(data);
 
-    fs::File file;
+    Platform::ResourceFile file;
     bool opened = face == FontFace::UNSCII_ASCII
         ? pack.openFont(UNSCII_ASCII_FONT_ID, file)
         : pack.openDefaultFont(file);
@@ -150,9 +149,8 @@ bool FontResource::loadExternal(FontFace face, FontData& data) {
                       static_cast<unsigned>(expectedSize));
         return false;
     }
-    Glyph* glyphs = psramFound()
-        ? static_cast<Glyph*>(ps_malloc(bytes))
-        : static_cast<Glyph*>(malloc(bytes));
+    Glyph* glyphs = static_cast<Glyph*>(
+        Platform::memory().allocate(bytes, true));
     if (!glyphs) {
         Serial.printf("[FontResource] %s font allocation failed bytes=%u\n",
                       faceName(face),
@@ -163,7 +161,7 @@ bool FontResource::loadExternal(FontFace face, FontData& data) {
     if (!readExact(file, glyphs, bytes)) {
         Serial.printf("[FontResource] %s font glyph payload truncated\n",
                       faceName(face));
-        free(glyphs);
+        Platform::memory().release(glyphs);
         return false;
     }
 
@@ -174,7 +172,7 @@ bool FontResource::loadExternal(FontFace face, FontData& data) {
             Serial.printf("[FontResource] %s font codepoint invalid index=%u value=U+%04lX\n",
                           faceName(face), i,
                           static_cast<unsigned long>(codepoint));
-            free(glyphs);
+            Platform::memory().release(glyphs);
             return false;
         }
         if (i > 0 && codepoint <= previous) {
@@ -183,7 +181,7 @@ bool FontResource::loadExternal(FontFace face, FontData& data) {
                           i,
                           static_cast<unsigned long>(previous),
                           static_cast<unsigned long>(codepoint));
-            free(glyphs);
+            Platform::memory().release(glyphs);
             return false;
         }
         previous = codepoint;
@@ -196,7 +194,7 @@ bool FontResource::loadExternal(FontFace face, FontData& data) {
 }
 
 void FontResource::releaseExternal(FontData& data) {
-    if (data.glyphs) free(data.glyphs);
+    if (data.glyphs) Platform::memory().release(data.glyphs);
     data.glyphs = nullptr;
     data.glyphCount = 0;
     data.loaded = false;

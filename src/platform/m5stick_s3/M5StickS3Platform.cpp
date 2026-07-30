@@ -1,10 +1,15 @@
 #include "platform/m5stick_s3/M5StickS3Platform.h"
 
 #include <Arduino.h>
+#include <LittleFS.h>
 #include <M5Unified.h>
+#include <Preferences.h>
 #include <WiFi.h>
 #include <driver/rtc_io.h>
+#include <esp_now.h>
 #include <esp_sleep.h>
+#include <esp_wifi.h>
+#include <new>
 
 namespace {
 
@@ -23,11 +28,58 @@ static_assert(hardwareVolumeForPercent(100) == 255,
               "Full volume must map to 255");
 
 constexpr gpio_num_t SECONDARY_WAKE_GPIO = GPIO_NUM_12;
+constexpr const char* RESOURCE_BASE_PATH = "/assets";
+constexpr const char* RESOURCE_PARTITION = "littlefs";
+constexpr uint8_t RESOURCE_MAX_OPEN_FILES = 8;
+
+class LittleResourceFile final : public Platform::IResourceFile {
+public:
+    explicit LittleResourceFile(fs::File file) : file_(std::move(file)) {}
+    bool valid() const override { return file_ && !file_.isDirectory(); }
+    size_t size() const override { return valid() ? file_.size() : 0; }
+    size_t position() const override { return valid() ? file_.position() : 0; }
+    size_t read(void* output, size_t length) override {
+        return valid() && output
+            ? file_.read(static_cast<uint8_t*>(output), length)
+            : 0;
+    }
+    bool seek(size_t position) override {
+        return valid() && file_.seek(position, fs::SeekSet);
+    }
+    void close() override { file_.close(); }
+
+private:
+    mutable fs::File file_;
+};
+
+constexpr uint8_t PEER_QUEUE_CAPACITY = 8;
+Platform::PeerPacket gPeerQueue[PEER_QUEUE_CAPACITY];
+volatile uint8_t gPeerQueueHead = 0;
+volatile uint8_t gPeerQueueTail = 0;
+portMUX_TYPE gPeerQueueMux = portMUX_INITIALIZER_UNLOCKED;
+
+void receivePeerPacket(const uint8_t* mac, const uint8_t* data, int length) {
+    if (!mac || !data || length <= 0 ||
+        static_cast<size_t>(length) > Platform::PeerPacket::MAX_PAYLOAD_BYTES) {
+        return;
+    }
+    portENTER_CRITICAL(&gPeerQueueMux);
+    uint8_t next = static_cast<uint8_t>((gPeerQueueHead + 1) % PEER_QUEUE_CAPACITY);
+    if (next != gPeerQueueTail) {
+        Platform::PeerPacket& packet = gPeerQueue[gPeerQueueHead];
+        memcpy(packet.source, mac, sizeof(packet.source));
+        memcpy(packet.payload, data, static_cast<size_t>(length));
+        packet.length = static_cast<size_t>(length);
+        gPeerQueueHead = next;
+    }
+    portEXIT_CRITICAL(&gPeerQueueMux);
+}
 
 }  // namespace
 
 M5StickS3Platform::M5StickS3Platform()
-    : services_{*this, *this, *this, *this, *this, *this, *this} {}
+    : services_{*this, *this, *this, *this, *this, *this, *this,
+                *this, *this, *this, *this} {}
 
 M5StickS3Platform& M5StickS3Platform::instance() {
     static M5StickS3Platform platform;
@@ -254,4 +306,161 @@ void M5StickS3Platform::enterDeepSleep(
         esp_sleep_enable_timer_wakeup(timerWakeUs);
     }
     esp_deep_sleep_start();
+}
+
+bool M5StickS3Platform::initialize() {
+    Preferences preferences;
+    bool ready = preferences.begin("stickmon", false);
+    preferences.end();
+    return ready;
+}
+
+size_t M5StickS3Platform::blobSize(const char* nameSpace, const char* key) {
+    Preferences preferences;
+    if (!nameSpace || !key || !preferences.begin(nameSpace, true)) return 0;
+    size_t result = preferences.getBytesLength(key);
+    preferences.end();
+    return result;
+}
+
+bool M5StickS3Platform::readBlob(const char* nameSpace, const char* key,
+                                 void* output, size_t length) {
+    Preferences preferences;
+    if (!nameSpace || !key || !output || length == 0 ||
+        !preferences.begin(nameSpace, true)) {
+        return false;
+    }
+    bool result = preferences.getBytesLength(key) == length &&
+                  preferences.getBytes(key, output, length) == length;
+    preferences.end();
+    return result;
+}
+
+bool M5StickS3Platform::writeBlob(const char* nameSpace, const char* key,
+                                  const void* data, size_t length) {
+    Preferences preferences;
+    if (!nameSpace || !key || !data || length == 0 ||
+        !preferences.begin(nameSpace, false)) {
+        return false;
+    }
+    bool result = preferences.putBytes(key, data, length) == length;
+    preferences.end();
+    return result;
+}
+
+bool M5StickS3Platform::removeBlob(const char* nameSpace, const char* key) {
+    Preferences preferences;
+    if (!nameSpace || !key || !preferences.begin(nameSpace, false)) return false;
+    bool result = !preferences.isKey(key) || preferences.remove(key);
+    preferences.end();
+    return result;
+}
+
+bool M5StickS3Platform::clearNamespace(const char* nameSpace) {
+    Preferences preferences;
+    if (!nameSpace || !preferences.begin(nameSpace, false)) return false;
+    bool result = preferences.clear();
+    preferences.end();
+    return result;
+}
+
+bool M5StickS3Platform::mount() {
+    if (resourceStoreReady_) return true;
+    resourceStoreReady_ = LittleFS.begin(
+        false, RESOURCE_BASE_PATH, RESOURCE_MAX_OPEN_FILES, RESOURCE_PARTITION);
+    return resourceStoreReady_;
+}
+
+size_t M5StickS3Platform::totalBytes() const {
+    return resourceStoreReady_ ? LittleFS.totalBytes() : 0;
+}
+
+size_t M5StickS3Platform::usedBytes() const {
+    return resourceStoreReady_ ? LittleFS.usedBytes() : 0;
+}
+
+Platform::ResourceFile M5StickS3Platform::open(const char* path) {
+    if (!resourceStoreReady_ || !path) return {};
+    fs::File file = LittleFS.open(path, "r");
+    if (!file || file.isDirectory()) return {};
+    auto* implementation = new (std::nothrow) LittleResourceFile(std::move(file));
+    return Platform::ResourceFile(implementation);
+}
+
+void* M5StickS3Platform::allocate(size_t bytes, bool preferExternal) {
+    if (bytes == 0) return nullptr;
+    if (preferExternal && psramFound()) {
+        if (void* memory = ps_malloc(bytes)) return memory;
+    }
+    return malloc(bytes);
+}
+
+void M5StickS3Platform::release(void* memory) {
+    free(memory);
+}
+
+size_t M5StickS3Platform::externalFree() const {
+    return ESP.getFreePsram();
+}
+
+bool M5StickS3Platform::enable() {
+    if (peerTransportActive_) return true;
+    WiFi.mode(WIFI_STA);
+    WiFi.disconnect();
+    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+    if (esp_now_init() != ESP_OK ||
+        esp_now_register_recv_cb(receivePeerPacket) != ESP_OK) {
+        esp_now_deinit();
+        WiFi.mode(WIFI_OFF);
+        return false;
+    }
+    portENTER_CRITICAL(&gPeerQueueMux);
+    gPeerQueueHead = 0;
+    gPeerQueueTail = 0;
+    portEXIT_CRITICAL(&gPeerQueueMux);
+    peerTransportActive_ = true;
+    return true;
+}
+
+void M5StickS3Platform::end() {
+    if (!peerTransportActive_) return;
+    esp_now_unregister_recv_cb();
+    esp_now_deinit();
+    WiFi.mode(WIFI_OFF);
+    peerTransportActive_ = false;
+}
+
+bool M5StickS3Platform::active() const {
+    return peerTransportActive_;
+}
+
+bool M5StickS3Platform::send(const uint8_t destination[6], const void* data,
+                             size_t length) {
+    if (!peerTransportActive_ || !destination || !data || length == 0 ||
+        length > Platform::PeerPacket::MAX_PAYLOAD_BYTES) {
+        return false;
+    }
+    if (!esp_now_is_peer_exist(destination)) {
+        esp_now_peer_info_t peer{};
+        memcpy(peer.peer_addr, destination, sizeof(peer.peer_addr));
+        peer.channel = 0;
+        peer.encrypt = false;
+        if (esp_now_add_peer(&peer) != ESP_OK) return false;
+    }
+    return esp_now_send(destination, static_cast<const uint8_t*>(data), length) ==
+           ESP_OK;
+}
+
+bool M5StickS3Platform::receive(Platform::PeerPacket& packet) {
+    if (!peerTransportActive_) return false;
+    portENTER_CRITICAL(&gPeerQueueMux);
+    if (gPeerQueueTail == gPeerQueueHead) {
+        portEXIT_CRITICAL(&gPeerQueueMux);
+        return false;
+    }
+    packet = gPeerQueue[gPeerQueueTail];
+    gPeerQueueTail = static_cast<uint8_t>(
+        (gPeerQueueTail + 1) % PEER_QUEUE_CAPACITY);
+    portEXIT_CRITICAL(&gPeerQueueMux);
+    return true;
 }

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <FS.h>
 #include <cstdint>
+#include "platform/api/PlatformServices.h"
 
 class ResourcePack {
 public:
@@ -16,22 +16,22 @@ public:
     const char* version() const { return version_; }
     uint16_t schema() const { return schema_; }
 
-    bool openSpriteBlock(uint16_t speciesId, fs::File& file) const;
-    bool openCry(uint16_t speciesId, fs::File& file) const;
-    bool openRoom(const char* roomId, fs::File& file) const;
-    bool openFont(const char* fontId, fs::File& file) const;
-    bool openDefaultFont(fs::File& file) const;
-    bool openUiAssets(fs::File& file) const;
-    bool openBattleAssets(fs::File& file) const;
-    bool openMapAssets(fs::File& file) const;
-    bool openHatchAssets(fs::File& file) const;
+    bool openSpriteBlock(uint16_t speciesId, Platform::ResourceFile& file) const;
+    bool openCry(uint16_t speciesId, Platform::ResourceFile& file) const;
+    bool openRoom(const char* roomId, Platform::ResourceFile& file) const;
+    bool openFont(const char* fontId, Platform::ResourceFile& file) const;
+    bool openDefaultFont(Platform::ResourceFile& file) const;
+    bool openUiAssets(Platform::ResourceFile& file) const;
+    bool openBattleAssets(Platform::ResourceFile& file) const;
+    bool openMapAssets(Platform::ResourceFile& file) const;
+    bool openHatchAssets(Platform::ResourceFile& file) const;
 
 private:
     ResourcePack() = default;
 
     bool loadActiveConfig();
     bool loadManifest();
-    bool openRelative(const char* relativePath, fs::File& file) const;
+    bool openRelative(const char* relativePath, Platform::ResourceFile& file) const;
     void setDefaultRoot();
 
     bool initialized_ = false;

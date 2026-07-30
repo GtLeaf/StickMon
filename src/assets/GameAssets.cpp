@@ -6,7 +6,6 @@
 #include "presentation/PixelRenderer.h"
 
 #include <Arduino.h>
-#include <FS.h>
 #include <cstdlib>
 #include <cstring>
 
@@ -89,10 +88,10 @@ template <typename T>
 T* allocate(size_t count) {
     if (count == 0) return nullptr;
     size_t bytes = sizeof(T) * count;
-    return psramFound() ? static_cast<T*>(ps_malloc(bytes)) : static_cast<T*>(malloc(bytes));
+    return static_cast<T*>(Platform::memory().allocate(bytes, true));
 }
 
-bool readExact(fs::File& file, void* out, size_t length) {
+bool readExact(Platform::ResourceFile& file, void* out, size_t length) {
     return length == 0 || file.read(reinterpret_cast<uint8_t*>(out), length) == length;
 }
 
@@ -121,7 +120,7 @@ PackSlot packSlotFor(Kind kind) {
     return PackSlot::COUNT;
 }
 
-bool openPackFile(ResourcePack& pack, PackSlot slot, fs::File& file) {
+bool openPackFile(ResourcePack& pack, PackSlot slot, Platform::ResourceFile& file) {
     switch (slot) {
     case PackSlot::UI: return pack.openUiAssets(file);
     case PackSlot::BATTLE: return pack.openBattleAssets(file);
@@ -150,7 +149,7 @@ bool loadPack(PackSlot slot) {
     if (!resourcePackReady) return false;
 
     ResourcePack& resourcePack = ResourcePack::ins();
-    fs::File file;
+    Platform::ResourceFile file;
     if (!openPackFile(resourcePack, slot, file)) {
         Serial.printf("[GameAssets] pack=%s missing\n", packName(slot));
         return false;
@@ -207,7 +206,7 @@ bool loadPack(PackSlot slot) {
         }
     }
     if (!ok) {
-        free(payload);
+        Platform::memory().release(payload);
         Serial.printf("[GameAssets] pack=%s invalid payload read=%u inflate=%u total=%u\n",
                       packName(slot), stats.readMs, stats.inflateMs, stats.totalMs);
         return false;
@@ -229,7 +228,8 @@ bool loadPack(PackSlot slot) {
     Serial.printf(
         "[GameAssets] pack=%s frames=%u compressed=%u decoded=%u read=%u inflate=%u total=%u psram=%u\n",
         packName(slot), header.frameCount, loadedPack.packedBytes, header.payloadRawBytes,
-        stats.readMs, stats.inflateMs, stats.totalMs, psramFound() ? 1 : 0);
+        stats.readMs, stats.inflateMs, stats.totalMs,
+        Platform::power().externalMemorySize() > 0 ? 1 : 0);
     return true;
 }
 

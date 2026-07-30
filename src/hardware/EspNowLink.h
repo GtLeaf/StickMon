@@ -2,8 +2,6 @@
 
 #include <cstdint>
 #include <cstring>
-#include <freertos/FreeRTOS.h>
-#include <freertos/portmacro.h>
 
 enum class LinkMessageType : uint8_t {
     HELLO = 0x01,
@@ -167,7 +165,6 @@ private:
     };
 
     static bool isSessionType(LinkMessageType type);
-    static void onReceive(const uint8_t* mac, const uint8_t* data, int len);
     void handleReceive(const uint8_t* mac, const uint8_t* data, int len);
     void handleSessionFrame(const uint8_t* mac, const uint8_t* data, int len);
     bool sendPacket(const uint8_t mac[6], LinkMessageType type, RoomPurpose purpose,
@@ -206,5 +203,4 @@ private:
     uint8_t rxPayload[SESSION_PAYLOAD_CAP] = {};
     bool lastRxValid = false;
     uint16_t lastRxSeq = 0;
-    mutable portMUX_TYPE stateMux = portMUX_INITIALIZER_UNLOCKED;
 };

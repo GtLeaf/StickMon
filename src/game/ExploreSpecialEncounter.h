@@ -44,7 +44,8 @@ enum class Kind : uint8_t {
 struct Config {
     uint16_t speciesId;
     uint8_t area;
-    uint8_t level;
+    // Zero means use the area's normal boss level; roamers use a fixed level.
+    uint8_t fixedLevel;
     uint16_t experiencePercent;
     bool optional;
     bool allowsFriendship;
@@ -53,11 +54,11 @@ struct Config {
 static constexpr Config NO_CONFIG =
     {0, INVALID_AREA, 0, 100, false, false};
 static constexpr Config FIRST_SNORLAX_CONFIG =
-    {SNORLAX, SNORLAX_AREA, 27, 200, false, true};
+    {SNORLAX, SNORLAX_AREA, 0, 200, false, true};
 static constexpr Config FIRST_LATIAS_CONFIG =
-    {LATIAS, LATIAS_AREA, 53, 200, false, false};
+    {LATIAS, LATIAS_AREA, 0, 200, false, false};
 static constexpr Config FIRST_LATIOS_CONFIG =
-    {LATIOS, LATIOS_AREA, 67, 200, false, false};
+    {LATIOS, LATIOS_AREA, 0, 200, false, false};
 static constexpr Config ROAMING_LATIAS_CONFIG =
     {LATIAS, INVALID_AREA, ROAMING_LEVEL, 200, true, true};
 static constexpr Config ROAMING_LATIOS_CONFIG =
@@ -90,6 +91,14 @@ constexpr bool isFirstBoss(Kind kind) {
 constexpr bool isRoaming(Kind kind) {
     return kind == Kind::ROAMING_LATIAS ||
            kind == Kind::ROAMING_LATIOS;
+}
+
+constexpr uint8_t encounterLevel(Kind kind, uint8_t areaBossLevel) {
+    return kind == Kind::NONE
+        ? 0
+        : (configFor(kind).fixedLevel == 0
+        ? areaBossLevel
+        : configFor(kind).fixedLevel);
 }
 
 constexpr int8_t roamingIndex(Kind kind) {
@@ -207,13 +216,13 @@ inline Kind kindForArea(uint8_t area, uint8_t defeatedMask,
     return Kind::NONE;
 }
 
-static_assert(configFor(Kind::FIRST_SNORLAX).level == 27 &&
-                  configFor(Kind::FIRST_LATIAS).level == 53 &&
-                  configFor(Kind::FIRST_LATIOS).level == 67,
-              "first special boss levels must match area progression");
-static_assert(configFor(Kind::ROAMING_LATIAS).level == ROAMING_LEVEL &&
-                  configFor(Kind::ROAMING_LATIOS).level == ROAMING_LEVEL &&
-                  configFor(Kind::MEW_EVENT).level == ROAMING_LEVEL,
+static_assert(encounterLevel(Kind::FIRST_SNORLAX, 27) == 27 &&
+                  encounterLevel(Kind::FIRST_LATIAS, 53) == 53 &&
+                  encounterLevel(Kind::FIRST_LATIOS, 67) == 67,
+              "first special bosses must inherit their area boss level");
+static_assert(encounterLevel(Kind::ROAMING_LATIAS, 53) == ROAMING_LEVEL &&
+                  encounterLevel(Kind::ROAMING_LATIOS, 67) == ROAMING_LEVEL &&
+                  encounterLevel(Kind::MEW_EVENT, 53) == ROAMING_LEVEL,
               "roaming legendary and mythical encounters must stay level 70");
 
 } // namespace ExploreSpecial

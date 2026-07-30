@@ -3,7 +3,6 @@
 #include "core/DeflateDecoder.h"
 #include "core/ResourcePack.h"
 #include <Arduino.h>
-#include <FS.h>
 #include <cstdlib>
 #include <cstring>
 #include "presentation/PixelRenderer.h"
@@ -225,9 +224,9 @@ void releaseEntry(CachedSpecies& entry) {
         gStats.compressedBytes = gStats.compressedBytes >= entry.packedBytes
             ? gStats.compressedBytes - entry.packedBytes : 0;
         if (gStats.cachedSpecies > 0) --gStats.cachedSpecies;
-        free(entry.payload);
+        Platform::memory().release(entry.payload);
     }
-    if (entry.frames) free(entry.frames);
+    if (entry.frames) Platform::memory().release(entry.frames);
     entry = CachedSpecies{};
 }
 
@@ -240,7 +239,7 @@ void freeCache() {
     gStats.reloadCount = reloadCount;
     gStats.cachedSpecies = 0;
     gStats.freePsram = ESP.getFreePsram();
-    gStats.psram = psramFound();
+    gStats.psram = Platform::power().externalMemorySize() > 0;
     memset(gKnownMissingFiles, 0, sizeof(gKnownMissingFiles));
     memset(gTeamSignature, 0, sizeof(gTeamSignature));
     memset(gTeamMissing, 0, sizeof(gTeamMissing));
@@ -303,7 +302,7 @@ CachedSpecies* cachedSpeciesFor(uint16_t speciesId, bool touch = true) {
     return nullptr;
 }
 
-bool readExact(fs::File& file, void* out, size_t length) {
+bool readExact(Platform::ResourceFile& file, void* out, size_t length) {
     if (length == 0) return true;
     return file.read(reinterpret_cast<uint8_t*>(out), length) == length;
 }
@@ -329,7 +328,7 @@ bool loadSpeciesFromResourcePack(uint8_t slot, uint16_t speciesId) {
     ResourcePack& pack = ResourcePack::ins();
     if (!pack.begin()) return false;
 
-    fs::File file;
+    Platform::ResourceFile file;
     if (!pack.openSpriteBlock(speciesId, file)) return false;
 
     PackedSpriteHeader header = {};
@@ -357,15 +356,13 @@ bool loadSpeciesFromResourcePack(uint8_t slot, uint16_t speciesId) {
         return false;
     }
 
-    SpriteFrame* frames = psramFound()
-        ? static_cast<SpriteFrame*>(ps_malloc(frameBytes))
-        : static_cast<SpriteFrame*>(malloc(frameBytes));
-    uint8_t* payload = psramFound()
-        ? static_cast<uint8_t*>(ps_malloc(header.payloadRawBytes))
-        : static_cast<uint8_t*>(malloc(header.payloadRawBytes));
+    SpriteFrame* frames = static_cast<SpriteFrame*>(
+        Platform::memory().allocate(frameBytes, true));
+    uint8_t* payload = static_cast<uint8_t*>(
+        Platform::memory().allocate(header.payloadRawBytes, true));
     if (!frames || !payload) {
-        if (frames) free(frames);
-        if (payload) free(payload);
+        if (frames) Platform::memory().release(frames);
+        if (payload) Platform::memory().release(payload);
         return false;
     }
 
@@ -376,8 +373,8 @@ bool loadSpeciesFromResourcePack(uint8_t slot, uint16_t speciesId) {
                                      header.payloadRawBytes,
                                      header.payloadCrc32,
                                      &decodeStats)) {
-        free(frames);
-        free(payload);
+        Platform::memory().release(frames);
+        Platform::memory().release(payload);
         Serial.printf(
             "[PokemonSprites] decode failed species=%u read=%u inflate=%u total=%u\n",
             speciesId, decodeStats.readMs, decodeStats.inflateMs, decodeStats.totalMs);
@@ -388,8 +385,8 @@ bool loadSpeciesFromResourcePack(uint8_t slot, uint16_t speciesId) {
     for (uint16_t i = 0; i < header.frameCount; ++i) {
         const PackedSpriteFrame& packed = packedFrames[i];
         if (!validPackedFrame(packed, header)) {
-            free(frames);
-            free(payload);
+            Platform::memory().release(frames);
+            Platform::memory().release(payload);
             return false;
         }
         frames[i] = SpriteFrame{
@@ -622,7 +619,7 @@ bool syncTeamCache(const uint16_t* speciesIds, uint8_t count, uint8_t loadBudget
 
     gStats.lastReloadMs = millis() - start;
     gStats.freePsram = ESP.getFreePsram();
-    gStats.psram = psramFound();
+    gStats.psram = Platform::power().externalMemorySize() > 0;
     Serial.printf(
         "[PokemonSprites] cache sync species=%u,%u loaded=%u moved=%u ready=%u cached=%u missing=%u decoded=%u compressed=%u ms=%u psram=%u free=%u\n",
         gTeamSignature[0], gTeamSignature[1], loadedThisCall, movedThisCall,

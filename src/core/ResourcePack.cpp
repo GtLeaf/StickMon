@@ -31,8 +31,8 @@ void copyText(char* dest, size_t cap, const char* value) {
 
 bool readTextFile(const char* path, char* buffer, size_t cap) {
     if (!path || !buffer || cap == 0) return false;
-    fs::File file = ResourceFS::ins().fs().open(path, "r");
-    if (!file || file.isDirectory()) return false;
+    Platform::ResourceFile file = ResourceFS::ins().open(path);
+    if (!file) return false;
     size_t size = file.size();
     if (size == 0 || size >= cap) return false;
     size_t read = file.read(reinterpret_cast<uint8_t*>(buffer), size);
@@ -306,14 +306,14 @@ bool ResourcePack::begin() {
     return active_;
 }
 
-bool ResourcePack::openSpriteBlock(uint16_t speciesId, fs::File& file) const {
+bool ResourcePack::openSpriteBlock(uint16_t speciesId, Platform::ResourceFile& file) const {
     if (!active_) return false;
     char relative[64];
     int written = std::snprintf(relative, sizeof(relative), "%s/%03u.smonsp", spritesDir_, speciesId);
     return written > 0 && static_cast<size_t>(written) < sizeof(relative) && openRelative(relative, file);
 }
 
-bool ResourcePack::openCry(uint16_t speciesId, fs::File& file) const {
+bool ResourcePack::openCry(uint16_t speciesId, Platform::ResourceFile& file) const {
     if (!active_) return false;
     char relative[64];
     int written = std::snprintf(
@@ -322,7 +322,7 @@ bool ResourcePack::openCry(uint16_t speciesId, fs::File& file) const {
            openRelative(relative, file);
 }
 
-bool ResourcePack::openRoom(const char* roomId, fs::File& file) const {
+bool ResourcePack::openRoom(const char* roomId, Platform::ResourceFile& file) const {
     if (!active_ || !isSafePackName(roomId)) return false;
     if (std::strcmp(roomId, "standard") == 0) return openRelative(defaultRoomPath_, file);
     char relative[64];
@@ -330,40 +330,40 @@ bool ResourcePack::openRoom(const char* roomId, fs::File& file) const {
     return written > 0 && static_cast<size_t>(written) < sizeof(relative) && openRelative(relative, file);
 }
 
-bool ResourcePack::openFont(const char* fontId, fs::File& file) const {
+bool ResourcePack::openFont(const char* fontId, Platform::ResourceFile& file) const {
     if (!active_ || !isSafePackName(fontId)) return false;
     char relative[64];
     int written = std::snprintf(relative, sizeof(relative), "%s/%s.smonfont", fontsDir_, fontId);
     return written > 0 && static_cast<size_t>(written) < sizeof(relative) && openRelative(relative, file);
 }
 
-bool ResourcePack::openDefaultFont(fs::File& file) const {
+bool ResourcePack::openDefaultFont(Platform::ResourceFile& file) const {
     return active_ && openRelative(defaultFontPath_, file);
 }
 
-bool ResourcePack::openUiAssets(fs::File& file) const {
+bool ResourcePack::openUiAssets(Platform::ResourceFile& file) const {
     return active_ && openRelative(uiAssetsPath_, file);
 }
 
-bool ResourcePack::openBattleAssets(fs::File& file) const {
+bool ResourcePack::openBattleAssets(Platform::ResourceFile& file) const {
     return active_ && openRelative(battleAssetsPath_, file);
 }
 
-bool ResourcePack::openMapAssets(fs::File& file) const {
+bool ResourcePack::openMapAssets(Platform::ResourceFile& file) const {
     return active_ && openRelative(mapAssetsPath_, file);
 }
 
-bool ResourcePack::openHatchAssets(fs::File& file) const {
+bool ResourcePack::openHatchAssets(Platform::ResourceFile& file) const {
     return active_ && openRelative(hatchAssetsPath_, file);
 }
 
-bool ResourcePack::openRelative(const char* relativePath, fs::File& file) const {
+bool ResourcePack::openRelative(const char* relativePath, Platform::ResourceFile& file) const {
     if (!active_ || !isSafePathText(relativePath, false)) return false;
     char path[128];
     int written = std::snprintf(path, sizeof(path), "%s/%s", root_, relativePath);
     if (written <= 0 || static_cast<size_t>(written) >= sizeof(path)) return false;
-    file = ResourceFS::ins().fs().open(path, "r");
-    return file && !file.isDirectory();
+    file = ResourceFS::ins().open(path);
+    return static_cast<bool>(file);
 }
 
 void ResourcePack::setDefaultRoot() {

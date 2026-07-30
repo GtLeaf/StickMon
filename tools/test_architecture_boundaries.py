@@ -63,6 +63,40 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                     violations.append(str(relative))
         self.assertEqual([], violations, "\n" + "\n".join(violations))
 
+    def test_core_storage_and_resources_use_platform_services(self):
+        self.assert_no_patterns(
+            ROOT / "src" / "core",
+            [
+                ("Preferences", r"#\s*include\s*[<\"]Preferences\.h[>\"]"),
+                ("LittleFS", r"#\s*include\s*[<\"]LittleFS\.h[>\"]"),
+                ("ESP NVS", r"#\s*include\s*[<\"]nvs\.h[>\"]"),
+                ("ESP heap", r"#\s*include\s*[<\"]esp_heap_caps\.h[>\"]"),
+                ("Arduino FS handles", r"\bfs::File\b"),
+            ],
+        )
+
+    def test_link_protocol_is_transport_independent(self):
+        self.assert_no_patterns(
+            ROOT / "src" / "hardware",
+            [
+                ("ESP-NOW", r"#\s*include\s*[<\"]esp_now\.h[>\"]"),
+                ("WiFi", r"#\s*include\s*[<\"]WiFi\.h[>\"]"),
+                ("FreeRTOS", r"#\s*include\s*[<\"]freertos/"),
+            ],
+        )
+        link_source = "\n".join(
+            (ROOT / "src" / "hardware" / name).read_text(encoding="utf-8")
+            for name in ("EspNowLink.h", "EspNowLink.cpp")
+        )
+        for label, pattern in (
+            ("Arduino", r"#\s*include\s*[<\"]Arduino\.h[>\"]"),
+            ("legacy Hal", r"#\s*include\s*[<\"]hardware/Hal\.h[>\"]"),
+        ):
+            self.assertIsNone(
+                re.search(pattern, link_source),
+                f"EspNowLink depends on {label}",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

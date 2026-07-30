@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 namespace Platform {
 
@@ -93,6 +94,118 @@ public:
                                 bool wakeOnSecondaryButton) = 0;
 };
 
+class IBlobStore {
+public:
+    virtual ~IBlobStore() = default;
+    virtual bool initialize() = 0;
+    virtual size_t blobSize(const char* nameSpace, const char* key) = 0;
+    virtual bool readBlob(const char* nameSpace, const char* key,
+                          void* output, size_t length) = 0;
+    virtual bool writeBlob(const char* nameSpace, const char* key,
+                           const void* data, size_t length) = 0;
+    virtual bool removeBlob(const char* nameSpace, const char* key) = 0;
+    virtual bool clearNamespace(const char* nameSpace) = 0;
+};
+
+class IResourceFile {
+public:
+    virtual ~IResourceFile() = default;
+    virtual bool valid() const = 0;
+    virtual size_t size() const = 0;
+    virtual size_t position() const = 0;
+    virtual size_t read(void* output, size_t length) = 0;
+    virtual bool seek(size_t position) = 0;
+    virtual void close() = 0;
+};
+
+class ResourceFile {
+public:
+    ResourceFile() = default;
+    explicit ResourceFile(IResourceFile* implementation)
+        : implementation_(implementation) {}
+    ~ResourceFile() { reset(); }
+
+    ResourceFile(const ResourceFile&) = delete;
+    ResourceFile& operator=(const ResourceFile&) = delete;
+    ResourceFile(ResourceFile&& other) noexcept
+        : implementation_(other.implementation_) {
+        other.implementation_ = nullptr;
+    }
+    ResourceFile& operator=(ResourceFile&& other) noexcept {
+        if (this != &other) {
+            reset();
+            implementation_ = other.implementation_;
+            other.implementation_ = nullptr;
+        }
+        return *this;
+    }
+
+    explicit operator bool() const {
+        return implementation_ && implementation_->valid();
+    }
+    size_t size() const { return implementation_ ? implementation_->size() : 0; }
+    size_t position() const {
+        return implementation_ ? implementation_->position() : 0;
+    }
+    size_t read(void* output, size_t length) {
+        return implementation_ ? implementation_->read(output, length) : 0;
+    }
+    size_t read(uint8_t* output, size_t length) {
+        return read(static_cast<void*>(output), length);
+    }
+    bool seek(size_t position) {
+        return implementation_ && implementation_->seek(position);
+    }
+    void close() {
+        if (implementation_) implementation_->close();
+    }
+    void reset(IResourceFile* implementation = nullptr) {
+        if (implementation_) {
+            implementation_->close();
+            delete implementation_;
+        }
+        implementation_ = implementation;
+    }
+
+private:
+    IResourceFile* implementation_ = nullptr;
+};
+
+class IResourceStore {
+public:
+    virtual ~IResourceStore() = default;
+    virtual bool mount() = 0;
+    virtual size_t totalBytes() const = 0;
+    virtual size_t usedBytes() const = 0;
+    virtual ResourceFile open(const char* path) = 0;
+};
+
+class IMemoryAllocator {
+public:
+    virtual ~IMemoryAllocator() = default;
+    virtual void* allocate(size_t bytes, bool preferExternal) = 0;
+    virtual void release(void* memory) = 0;
+    virtual size_t externalFree() const = 0;
+};
+
+struct PeerPacket {
+    static constexpr size_t MAX_PAYLOAD_BYTES = 250;
+    uint8_t source[6] = {};
+    uint8_t payload[MAX_PAYLOAD_BYTES] = {};
+    size_t length = 0;
+};
+
+class IPeerTransport {
+public:
+    virtual ~IPeerTransport() = default;
+    virtual bool enable() = 0;
+    virtual void end() = 0;
+    virtual bool active() const = 0;
+    virtual bool send(const uint8_t destination[6], const void* data,
+                      size_t length) = 0;
+    virtual bool receive(PeerPacket& packet) = 0;
+};
+
 struct Services {
     IPlatformLifecycle& lifecycle;
     IClock& clock;
@@ -101,6 +214,10 @@ struct Services {
     IAudioDevice& audio;
     IImuDevice& imu;
     IPowerDevice& power;
+    IBlobStore& blobs;
+    IResourceStore& resources;
+    IMemoryAllocator& memory;
+    IPeerTransport& peers;
 };
 
 void bind(Services& services);
@@ -113,5 +230,9 @@ inline IDisplayDevice& display() { return services().display; }
 inline IAudioDevice& audio() { return services().audio; }
 inline IImuDevice& imu() { return services().imu; }
 inline IPowerDevice& power() { return services().power; }
+inline IBlobStore& blobs() { return services().blobs; }
+inline IResourceStore& resources() { return services().resources; }
+inline IMemoryAllocator& memory() { return services().memory; }
+inline IPeerTransport& peers() { return services().peers; }
 
 }  // namespace Platform

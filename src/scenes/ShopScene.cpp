@@ -5,6 +5,7 @@
 #include "core/GameEngine.h"
 #include "core/UiStrings.h"
 #include "core/UiMotion.h"
+#include "game/ExploreItemProgression.h"
 #include "hardware/Hal.h"
 #include "presentation/PixelRenderer.h"
 
@@ -201,8 +202,15 @@ void ShopScene::buyCurrent() {
         return;
     }
 
+    auto& engine = GameEngine::ins();
+    if (item == CANDY && !engine.candyPurchaseAvailable()) {
+        toast = Ui::Shop::CANDY_DAILY_LIMIT;
+        toastUntil = Hal::ins().millis() + 1200;
+        return;
+    }
+
     uint16_t price = priceFor(item);
-    if (!GameEngine::ins().spendCoins(price)) {
+    if (!engine.spendCoins(price)) {
         toast = Ui::Shop::NOT_ENOUGH_COINS;
         toastUntil = Hal::ins().millis() + 1200;
         return;
@@ -211,11 +219,15 @@ void ShopScene::buyCurrent() {
     Game::ItemId gameItem = gameItemIdFor(item);
     int8_t foodIndex = Game::foodIndexForItemId(gameItem);
     bool added = foodIndex >= 0
-        ? GameEngine::ins().addFoodStock((uint8_t)foodIndex, 1)
-        : GameEngine::ins().addItem(gameItem, 1);
+        ? engine.addFoodStock((uint8_t)foodIndex, 1)
+        : engine.addItem(gameItem, 1);
     if (!added) {
-        GameEngine::ins().addCoins(price);
+        engine.addCoins(price);
         toast = Ui::Shop::BAG_FULL;
+    } else if (item == CANDY && !engine.recordCandyPurchase()) {
+        engine.removeItem(gameItem, 1);
+        engine.addCoins(price);
+        toast = Ui::Shop::CANDY_DAILY_LIMIT;
     } else {
         snprintf(toastBuffer, sizeof(toastBuffer), Ui::Shop::BOUGHT_FMT, nameFor(item));
         toast = toastBuffer;
@@ -251,14 +263,28 @@ ShopScene::Item ShopScene::selectedItem() const {
 }
 
 ShopScene::Item ShopScene::itemForCategory(Category category, uint8_t index) const {
-    if (category == CATEGORY_DAILY) {
-        uint8_t idx = index < DAILY_ITEM_COUNT ? index : 0;
-        return DAILY_ITEMS[idx];
-    }
     if (category == CATEGORY_SELL) return sellItemAtIndex(index);
     if (category == CATEGORY_BACK) return BACK;
-    uint8_t idx = index < EXPLORE_ITEM_COUNT ? index : 0;
-    return EXPLORE_ITEMS[idx];
+
+    const Item* items = category == CATEGORY_DAILY
+        ? DAILY_ITEMS : EXPLORE_ITEMS;
+    uint8_t itemCount = category == CATEGORY_DAILY
+        ? DAILY_ITEM_COUNT : EXPLORE_ITEM_COUNT;
+    uint8_t visible = 0;
+    for (uint8_t i = 0; i < itemCount; ++i) {
+        Item item = items[i];
+        if (item == BACK || !itemUnlocked(item)) continue;
+        if (visible == index) return item;
+        ++visible;
+    }
+    return BACK;
+}
+
+bool ShopScene::itemUnlocked(Item item) const {
+    Game::ItemId gameItem = gameItemIdFor(item);
+    return gameItem != Game::ItemId::COUNT &&
+        ExploreItemProgression::isShopItemUnlocked(
+            gameItem, GameEngine::ins().gameState());
 }
 
 ShopScene::Item ShopScene::itemAtIndex(uint8_t index) const {
@@ -281,15 +307,20 @@ uint8_t ShopScene::currentItemCount() const {
 }
 
 uint8_t ShopScene::itemCountForCategory(Category category, bool includeBack) const {
-    uint8_t count = 0;
-    switch (category) {
-    case CATEGORY_DAILY: count = DAILY_ITEM_COUNT; break;
-    case CATEGORY_EXPLORE: count = EXPLORE_ITEM_COUNT; break;
-    case CATEGORY_SELL: count = sellItemCount(); break;
-    case CATEGORY_BACK: return 0;
-    default: return 0;
+    if (category == CATEGORY_SELL) {
+        uint8_t count = sellItemCount();
+        return !includeBack && count > 0 ? static_cast<uint8_t>(count - 1) : count;
     }
-    if (!includeBack && count > 0) --count;
+    if (category != CATEGORY_DAILY && category != CATEGORY_EXPLORE) return 0;
+
+    const Item* items = category == CATEGORY_DAILY
+        ? DAILY_ITEMS : EXPLORE_ITEMS;
+    uint8_t itemCount = category == CATEGORY_DAILY
+        ? DAILY_ITEM_COUNT : EXPLORE_ITEM_COUNT;
+    uint8_t count = includeBack ? 1 : 0;
+    for (uint8_t i = 0; i < itemCount; ++i) {
+        if (items[i] != BACK && itemUnlocked(items[i])) ++count;
+    }
     return count;
 }
 

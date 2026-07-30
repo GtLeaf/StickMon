@@ -100,6 +100,7 @@ inline bool resetDailyCareCounters(GameState& state) {
     state.stepsToday = 0;
     state.walkExpToday = 0;
     state.pairMoodRewardsToday = 0;
+    state.candyPurchasesToday = 0;
     for (uint8_t i = 0; i < state.teamCount && i < Game::TEAM_CAP; ++i) {
         state.team[i].petCountToday = 0;
     }
