@@ -93,7 +93,7 @@ constexpr uint8_t throwBondGain(FoodTuning::ThrowClass throwClass) {
     return FoodTuning::THROW_BOND_GAIN[(uint8_t)throwClass];
 }
 
-// 依据野生精灵性格偏好为一次投掷分类；橙橙果与非命中口味的口味树果按 NORMAL 结算。
+// 依据野生精灵性格偏好为一次投掷分类；饼干与非命中口味的口味树果按 NORMAL 结算。
 inline FoodTuning::ThrowClass classifyFoodThrow(uint8_t foodIndex, uint8_t wildNature) {
     if (foodIndex == Game::ROOM_TASTY_FOOD_INDEX) return FoodTuning::ThrowClass::TASTY;
     if (foodIndex >= Game::ROOM_SWEET_FOOD_INDEX) {

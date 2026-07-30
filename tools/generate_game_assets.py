@@ -94,6 +94,18 @@ ITEMS = [
     ("ITEM_AWAKENING", "AWAKENING.png"),
     ("ITEM_BURN_HEAL", "BURNHEAL.png"),
     ("ITEM_ICE_HEAL", "ICEHEAL.png"),
+    ("ITEM_MAX_POTION", "MAXPOTION.png"),
+    ("ITEM_FULL_RESTORE", "FULLRESTORE.png"),
+    ("ITEM_FULL_HEAL", "FULLHEAL.png"),
+    ("ITEM_FIRE_STONE", "FIRESTONE.png"),
+    ("ITEM_WATER_STONE", "WATERSTONE.png"),
+    ("ITEM_THUNDER_STONE", "THUNDERSTONE.png"),
+    ("ITEM_REVIVE", "REVIVE.png"),
+    ("ITEM_MAX_REPEL", "MAXREPEL.png"),
+    ("ITEM_HONEY", "HONEY.png"),
+    ("ITEM_NUGGET", "NUGGET.png"),
+    ("ITEM_BIG_PEARL", "BIGPEARL.png"),
+    ("ITEM_STAR_PIECE", "STARPIECE.png"),
 ]
 
 SHOWER_ASSETS = [
@@ -136,6 +148,10 @@ BACKGROUNDS = [
 
 MENU_BACKGROUNDS = [
     ("EXPLORE_MENU_BACKGROUND", EXPLORE_MENU_BG_SOURCE),
+]
+
+EVOLUTION_BACKGROUNDS = [
+    ("EVOLUTION_BACKGROUND", GRAPHICS / "UI" / "evolution_bg.png"),
 ]
 
 EXPLORE_TILES = [
@@ -267,6 +283,7 @@ KIND_ORDER.extend(kind for kind, _tile_id, _source, _frame in ANIMATED_EXPLORE_F
 KIND_ORDER.append("EGG")
 KIND_ORDER.extend(kind for kind, _ in STATUS_ICONS)
 KIND_ORDER.extend(kind for kind, _ in EXPLORE_PICKUP_MARKERS)
+KIND_ORDER.extend(kind for kind, _ in EVOLUTION_BACKGROUNDS)
 KIND_IDS = {kind: index for index, kind in enumerate(KIND_ORDER)}
 
 
@@ -685,6 +702,11 @@ def build_assets():
         writers["battle"].add(kind, quantize_rgba(image, 16))
 
     for kind, source_path in MENU_BACKGROUNDS:
+        image = load_rgba(source_path)
+        image = image.resize((BACKGROUND_W, BACKGROUND_H), Image.Resampling.LANCZOS)
+        writers["battle"].add(kind, quantize_rgba(image, 16))
+
+    for kind, source_path in EVOLUTION_BACKGROUNDS:
         image = load_rgba(source_path)
         image = image.resize((BACKGROUND_W, BACKGROUND_H), Image.Resampling.LANCZOS)
         writers["battle"].add(kind, quantize_rgba(image, 16))

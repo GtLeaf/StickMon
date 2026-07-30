@@ -46,6 +46,18 @@ private:
         SOAP_0,
         SOAP_1,
         SOAP_2,
+        MAX_POTION,
+        FULL_RESTORE,
+        FULL_HEAL,
+        FIRE_STONE,
+        WATER_STONE,
+        THUNDER_STONE,
+        REVIVE,
+        MAX_REPEL,
+        HONEY,
+        NUGGET,
+        BIG_PEARL,
+        STAR_PIECE,
         BACK,
         COUNT,
     };
@@ -85,6 +97,39 @@ private:
     static Game::ItemId gameItemIdFor(Item item);
     static const char* nameFor(Item item);
     static const char* descFor(Item item);
+    static constexpr Item EXPLORE_ITEMS[] = {
+        POTION,
+        SUPER_POTION,
+        ANTIDOTE,
+        PARALYZE_HEAL,
+        AWAKENING,
+        BURN_HEAL,
+        ICE_HEAL,
+        MAX_POTION,
+        FULL_RESTORE,
+        FIRE_STONE,
+        WATER_STONE,
+        THUNDER_STONE,
+        REVIVE,
+        MAX_REPEL,
+        HONEY,
+        BACK,
+    };
+    static constexpr Item DAILY_ITEMS[] = {
+        FOOD,
+        TASTY_FOOD,
+        SWEET_FOOD,
+        SPICY_FOOD,
+        SOUR_FOOD,
+        BITTER_FOOD,
+        DRY_FOOD,
+        CANDY,
+        FULL_HEAL,
+        SOAP_0,
+        SOAP_1,
+        SOAP_2,
+        BACK,
+    };
     static constexpr Item SELL_ITEMS[] = {
         FOOD,
         TASTY_FOOD,
@@ -104,7 +149,23 @@ private:
         SOAP_0,
         SOAP_1,
         SOAP_2,
+        MAX_POTION,
+        FULL_RESTORE,
+        FULL_HEAL,
+        FIRE_STONE,
+        WATER_STONE,
+        THUNDER_STONE,
+        REVIVE,
+        MAX_REPEL,
+        HONEY,
+        NUGGET,
+        BIG_PEARL,
+        STAR_PIECE,
     };
+    static constexpr uint8_t EXPLORE_ITEM_COUNT =
+        sizeof(EXPLORE_ITEMS) / sizeof(EXPLORE_ITEMS[0]);
+    static constexpr uint8_t DAILY_ITEM_COUNT =
+        sizeof(DAILY_ITEMS) / sizeof(DAILY_ITEMS[0]);
     static constexpr uint8_t SELL_ITEM_TYPE_COUNT =
         sizeof(SELL_ITEMS) / sizeof(SELL_ITEMS[0]);
 

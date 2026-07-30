@@ -2,6 +2,7 @@
 
 #include "assets/PokemonMotion.h"
 #include "assets/PokemonSprites.h"
+#include "core/ProgressionUi.h"
 #include "core/RoomResource.h"
 #include "core/Scene.h"
 #include "game/MonsterMind.h"
@@ -79,18 +80,63 @@ private:
         NONE,
         EXIT_ROUTE,
         EXIT_CROSS,
+        EXIT_SECOND_ROUTE,
+        EXIT_SECOND_CROSS,
         EXIT_FADE,
         ENTER_WAIT_FADE,
         ENTER_CROSS,
+        ENTER_CLEAR_ROUTE,
+        ENTER_SECOND_CROSS,
         FAINT_WAIT_FADE,
+    };
+
+    enum class DoorActor : uint8_t {
+        MAIN,
+        VISITOR,
     };
 
     enum class ProgressionModal : uint8_t {
         NONE,
         LEVEL_UP,
         EVOLUTION,
+        EVOLUTION_CANCELLED,
         LEARN_MOVE,
         MOVE_REPLACED,
+    };
+
+    enum class ContactDialog : uint8_t {
+        NONE,
+        KNOCK,
+        PLAY_ARRIVAL,
+        GIFT_ARRIVAL,
+        EXPLORE_INVITE,
+        HAPPY_RETURN,
+        BYE_RETURN,
+        HAPPY_VISIT,
+        BYE_VISIT,
+    };
+
+    enum class ContactGuestMotion : uint8_t {
+        NONE,
+        ENTER_CROSS,
+        EXIT_ROUTE,
+        EXIT_CROSS,
+    };
+
+    enum class PairInteraction : uint8_t {
+        NONE,
+        GREET,
+        CHASE,
+        FOLLOW,
+    };
+
+    enum class PairInteractionPhase : uint8_t {
+        NONE,
+        APPROACH,
+        INVITE,
+        ACTIVE,
+        SETTLE,
+        CELEBRATE,
     };
 
     struct RenderItem {
@@ -158,8 +204,20 @@ private:
     void updateDoorTransition(uint32_t nowMs);
     bool prepareDoorAnchors();
     bool chooseDoorInsidePose(float& x, float& y) const;
+    bool chooseDoorWaitPose(float actorX, float actorY, float& x, float& y) const;
     bool updateDoorRoute(float dtSeconds);
-    bool moveDoorToward(float x, float y, float speed, float dtSeconds, bool enforceWalkArea);
+    bool updateVisitorDoorRoute(float dtSeconds);
+    bool moveDoorToward(float x, float y, float speed, float dtSeconds,
+                        bool enforceWalkArea, bool avoidVisitor = false);
+    bool moveVisitorDoorToward(float x, float y, float speed, float dtSeconds,
+                               bool enforceWalkArea, bool avoidMain = false);
+    void updateDoorWaitingActor(float dtSeconds);
+    void beginSecondDoorExit(uint32_t nowMs);
+    void finishDoorDeparture();
+    bool doorStepKeepsSpacing(float currentX, float currentY,
+                              float nextX, float nextY,
+                              float otherX, float otherY) const;
+    float doorActorMinSeparation() const;
     void updateDebugTiltControl(uint32_t nowMs, float dtSeconds);
     void updateCamera();
     int16_t worldToScreenY(float worldY) const;
@@ -188,9 +246,17 @@ private:
     void enterFeeding(uint32_t nowMs);
     void updateFeeding(uint32_t nowMs);
     bool buildMoveRoute(float goalX, float goalY);
-    bool pathSegmentInsideWalkArea(float fromX, float fromY, float toX, float toY) const;
+    bool buildVisitorMoveRoute(float goalX, float goalY);
+    bool buildMoveRouteFrom(float startX, float startY, float goalX, float goalY,
+                            float* routeX, float* routeY,
+                            uint8_t& routeCount, uint8_t& routeIndex,
+                            bool allowOutsideStart);
+    bool pathSegmentInsideWalkArea(float fromX, float fromY, float toX, float toY,
+                                   bool allowOutsideStart = false) const;
     void clearMoveRoute();
+    void clearVisitorMoveRoute();
     bool currentWaypoint(float& x, float& y) const;
+    bool currentVisitorWaypoint(float& x, float& y) const;
     void updateStuckWatchdog(uint32_t nowMs, float distanceToWaypoint);
     void restoreViewState(uint32_t nowMs);
     void persistViewState(uint32_t nowMs);
@@ -198,6 +264,26 @@ private:
     void chooseAiGoal(uint32_t nowMs);
     bool startWander(uint32_t nowMs);
     bool openPendingProgression();
+    void schedulePairInteraction(uint32_t nowMs, bool immediate = false);
+    bool pairInteractionAllowed() const;
+    bool startPairInteraction(uint32_t nowMs);
+    bool updatePairInteraction(uint32_t nowMs, float dtSeconds);
+    void beginPairActive(uint32_t nowMs);
+    void beginPairSettle(uint32_t nowMs);
+    void beginPairCelebrate(uint32_t nowMs);
+    void finishPairInteraction(uint32_t nowMs, bool reward);
+    void cancelPairInteraction(uint32_t nowMs);
+    bool choosePairApproachPose(bool moverMain, float& x, float& y) const;
+    bool choosePairLeaderGoal(bool leaderMain, float& x, float& y) const;
+    bool buildPairActorRoute(bool mainActor, float x, float y);
+    bool updatePairActorRoute(bool mainActor, float speed, float dtSeconds,
+                              uint32_t nowMs, bool keepSpacing);
+    void facePairActors();
+    void updateContactVisit(uint32_t nowMs, float dtSeconds);
+    void beginContactGuestEntry(uint32_t nowMs);
+    void beginContactGuestExit(uint32_t nowMs);
+    bool handleContactDialogButton(const ButtonEvent& event);
+    void drawContactDialog();
     bool visitorHostActive() const;
     void spawnVisitor(uint32_t nowMs, bool dropIn);
     bool pickVisitorPoint(float& x, float& y) const;
@@ -269,7 +355,25 @@ private:
     uint8_t hungerAnimTo = 0;
     bool faintRestActive = false;
     ProgressionModal progressionModal = ProgressionModal::NONE;
-    uint8_t progressionLearnCursor = 0;
+    ContactDialog contactDialog = ContactDialog::NONE;
+    ContactGuestMotion contactGuestMotion = ContactGuestMotion::NONE;
+    uint32_t contactGuestMotionStartedMs = 0;
+    bool contactDialogYes = true;
+    PairInteraction pairInteraction = PairInteraction::NONE;
+    PairInteractionPhase pairInteractionPhase =
+        PairInteractionPhase::NONE;
+    bool pairLeaderMain = true;
+    bool pairForcedPlay = false;
+    uint8_t pairLegsRemaining = 0;
+    uint32_t nextPairInteractionMs = 0;
+    uint32_t pairPhaseStartedMs = 0;
+    uint32_t pairPhaseUntilMs = 0;
+    uint32_t pairInteractionUntilMs = 0;
+    uint32_t pairFollowerDelayUntilMs = 0;
+    float pairTrailX = 0.0f;
+    float pairTrailY = 0.0f;
+    uint16_t progressionCancelledSpeciesId = 0;
+    ProgressionUi::MoveLearnState progressionMoveLearn{};
     DoorTransitionMode doorTransition = DoorTransitionMode::NONE;
     float doorInsideX = 0.0f;
     float doorInsideY = 0.0f;
@@ -278,6 +382,15 @@ private:
     uint32_t doorLastUpdateMs = 0;
     uint32_t doorPhaseStartedMs = 0;
     bool doorRouteEnteringWalkArea = false;
+    bool visitorDoorRouteEnteringWalkArea = false;
+    bool doorDepartureHasVisitor = false;
+    bool doorMainHidden = false;
+    bool doorVisitorHidden = false;
+    DoorActor doorFirstActor = DoorActor::MAIN;
+    float doorWaitX = 0.0f;
+    float doorWaitY = 0.0f;
+    VisitorActor visitorBeforeDoorDeparture;
+    bool visitorDepartureSnapshotValid = false;
     MonsterMind mind;
     MonsterBehaviorProfile behaviorProfile;
     static constexpr uint8_t MOVE_ROUTE_CAP = 20;
@@ -285,6 +398,10 @@ private:
     float moveRouteY[MOVE_ROUTE_CAP] = {};
     uint8_t moveRouteCount = 0;
     uint8_t moveRouteIndex = 0;
+    float visitorMoveRouteX[MOVE_ROUTE_CAP] = {};
+    float visitorMoveRouteY[MOVE_ROUTE_CAP] = {};
+    uint8_t visitorMoveRouteCount = 0;
+    uint8_t visitorMoveRouteIndex = 0;
     float lastWaypointDistance = 0.0f;
     uint32_t lastMoveProgressMs = 0;
     uint8_t stuckRecoveryCount = 0;

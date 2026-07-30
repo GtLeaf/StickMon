@@ -15,6 +15,10 @@ public:
         AWAKENING,
         BURN_HEAL,
         ICE_HEAL,
+        MAX_POTION,
+        FULL_RESTORE,
+        FULL_HEAL,
+        REVIVE,
     };
 
     void onEnter() override;
@@ -67,6 +71,7 @@ private:
         RESOURCE,
         ENV,
         MOTION,
+        BATTLE,
     };
 
     enum class TeamAction : uint8_t {
@@ -79,17 +84,22 @@ private:
 
     static constexpr uint8_t STATUS_PAGE_COUNT = 5;
     static constexpr uint8_t STORAGE_ACTION_COUNT = 4;
-    static constexpr uint8_t BAG_ITEM_COUNT = 16;
+    static constexpr uint8_t BAG_ITEM_COUNT = 25;
     static constexpr uint8_t ROOM_ITEM_COUNT = 3;
     static constexpr uint8_t FOOD_ITEM_COUNT = Game::ROOM_FOOD_COUNT + 1;
     static constexpr uint8_t COMPUTER_ITEM_COUNT = 3;
-    static constexpr uint8_t DEBUG_ROOT_ITEM_COUNT = 7;
+    static constexpr uint8_t DEBUG_ROOT_ITEM_COUNT = 6;
     static constexpr uint8_t DEBUG_BATTLE_ROOT_INDEX = 4;
-    static constexpr uint8_t DEBUG_DRAW_BOUNDS_ROOT_INDEX = 5;
-    static constexpr uint8_t DEBUG_MONSTER_ITEM_COUNT = 3;
+    static constexpr uint8_t DEBUG_MONSTER_ITEM_COUNT = 4;
+    static constexpr uint8_t DEBUG_MONSTER_RECOVER_INDEX = 0;
+    static constexpr uint8_t DEBUG_MONSTER_LEVEL_UP_INDEX = 1;
+    static constexpr uint8_t DEBUG_MONSTER_SWITCH_INDEX = 2;
     static constexpr uint8_t DEBUG_RESOURCE_ITEM_COUNT = 2;
     static constexpr uint8_t DEBUG_ENV_ITEM_COUNT = 3;
     static constexpr uint8_t DEBUG_MOTION_ITEM_COUNT = 3;
+    static constexpr uint8_t DEBUG_BATTLE_ITEM_COUNT = 3;
+    static constexpr uint8_t DEBUG_BATTLE_RANDOM_INDEX = 0;
+    static constexpr uint8_t DEBUG_BATTLE_DRAW_BOUNDS_INDEX = 1;
     static constexpr uint8_t DEBUG_SWITCH_FOCUS_COUNT = 5;
     static constexpr uint8_t DEBUG_TIME_FOCUS_COUNT = 6;
     static constexpr uint8_t NAV_STACK_CAP = 8;
@@ -130,6 +140,8 @@ private:
     uint8_t storageCursor = 0;
     uint8_t storageActionCursor = 0;
     bool storageActionOpen = false;
+    bool storageInviteConfirmOpen = false;
+    bool storageInviteConfirmYes = true;
     bool storageReleaseConfirmOpen = false;
     bool storageReleaseConfirmYes = false;
     float storageScroll = 0.0f;
@@ -167,6 +179,7 @@ private:
     void renderComputerPage();
     void renderStoragePage();
     void renderStorageActionPopup();
+    void renderStorageInviteConfirmPopup();
     void renderStorageReleaseConfirmPopup();
     void renderDebugPage();
     void renderDebugSwitchPopup();

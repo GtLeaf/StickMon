@@ -161,6 +161,8 @@ uint8_t speciesCount();
 const Species* findSpecies(uint16_t speciesId);
 const Species* levelUpEvolutionTarget(const Species& species,
                                       const Game::MonsterRuntime& monster);
+// 进化石触发的目标；石头无效或不匹配时返回 nullptr。
+const Species* stoneEvolutionTarget(const Species& species, Game::ItemId stone);
 const MoveInfo* findMove(Game::MoveId moveId);
 const MoveEffectSpec* moveEffectFor(const MoveInfo& move, uint8_t index);
 const SpeciesLearnset* findLearnset(uint16_t speciesId);

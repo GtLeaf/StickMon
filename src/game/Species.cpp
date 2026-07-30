@@ -162,6 +162,24 @@ const Species* levelUpEvolutionTarget(const Species& species,
     return ready ? findSpecies(species.evolveTo) : nullptr;
 }
 
+const Species* stoneEvolutionTarget(const Species& species, Game::ItemId stone) {
+    uint16_t targetId = 0;
+    if (species.evolveMethod == EvolutionMethod::BRANCH) {
+        // 伊布分支进化：火/水/雷之石分别对应火伊布/水伊布/雷伊布。
+        switch (stone) {
+        case Game::ItemId::FIRE_STONE: targetId = 136; break;
+        case Game::ItemId::WATER_STONE: targetId = 134; break;
+        case Game::ItemId::THUNDER_STONE: targetId = 135; break;
+        default: break;
+        }
+    } else if (species.evolveMethod == EvolutionMethod::STONE &&
+               stone == Game::ItemId::THUNDER_STONE) {
+        // 目前唯一的 STONE 进化链：皮卡丘 --雷之石--> 雷丘。
+        targetId = species.evolveTo;
+    }
+    return targetId != 0 ? findSpecies(targetId) : nullptr;
+}
+
 const MoveInfo* findMove(Game::MoveId moveId) {
     size_t low = 0;
     size_t high = OFFICIAL_MOVE_COUNT;

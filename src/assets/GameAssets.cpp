@@ -542,6 +542,18 @@ Kind itemKind(Game::ItemId item) {
     case Game::ItemId::AWAKENING: return Kind::ITEM_AWAKENING;
     case Game::ItemId::BURN_HEAL: return Kind::ITEM_BURN_HEAL;
     case Game::ItemId::ICE_HEAL: return Kind::ITEM_ICE_HEAL;
+    case Game::ItemId::MAX_POTION: return Kind::ITEM_MAX_POTION;
+    case Game::ItemId::FULL_RESTORE: return Kind::ITEM_FULL_RESTORE;
+    case Game::ItemId::FULL_HEAL: return Kind::ITEM_FULL_HEAL;
+    case Game::ItemId::FIRE_STONE: return Kind::ITEM_FIRE_STONE;
+    case Game::ItemId::WATER_STONE: return Kind::ITEM_WATER_STONE;
+    case Game::ItemId::THUNDER_STONE: return Kind::ITEM_THUNDER_STONE;
+    case Game::ItemId::REVIVE: return Kind::ITEM_REVIVE;
+    case Game::ItemId::MAX_REPEL: return Kind::ITEM_MAX_REPEL;
+    case Game::ItemId::HONEY: return Kind::ITEM_HONEY;
+    case Game::ItemId::NUGGET: return Kind::ITEM_NUGGET;
+    case Game::ItemId::BIG_PEARL: return Kind::ITEM_BIG_PEARL;
+    case Game::ItemId::STAR_PIECE: return Kind::ITEM_STAR_PIECE;
     case Game::ItemId::SOAP_0: return Kind::SHOWER_SOAP_0;
     case Game::ItemId::SOAP_1: return Kind::SHOWER_SOAP_1;
     case Game::ItemId::SOAP_2: return Kind::SHOWER_SOAP_2;

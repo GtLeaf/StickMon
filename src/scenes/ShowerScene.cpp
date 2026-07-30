@@ -8,6 +8,7 @@
 #include "core/CryPlayer.h"
 #include "core/GameEngine.h"
 #include "core/UiStrings.h"
+#include "core/UiMotion.h"
 #include "hardware/Hal.h"
 #include "hardware/PixelRenderer.h"
 
@@ -125,7 +126,7 @@ void ShowerScene::enterMode(Mode next, uint32_t nowMs) {
 }
 
 SceneUpdateResult ShowerScene::update(uint32_t nowMs, float dtSeconds) {
-    bool redraw = false;
+    RenderDemand demand;
     Mode modeBefore = mode;
     float atmosphereBefore = atmosphereAlpha;
     float menuTarget = static_cast<float>(menuCursor);
@@ -135,16 +136,9 @@ SceneUpdateResult ShowerScene::update(uint32_t nowMs, float dtSeconds) {
     while (menuTarget - menuAnimCursor < -MENU_COUNT / 2.0f) {
         menuTarget += MENU_COUNT;
     }
-    float menuDiff = menuTarget - menuAnimCursor;
-    if (fabsf(menuDiff) < 0.04f) {
-        if (menuAnimCursor != menuTarget) {
-            menuAnimCursor = menuTarget;
-            redraw = true;
-        }
-    } else {
-        menuAnimCursor += menuDiff * 0.25f;
-        redraw = true;
-    }
+    UiMotion::StepResult menuStep = UiMotion::lerp(
+        menuAnimCursor, menuTarget, 0.25f, 0.04f);
+    demand.changed(menuStep.changed);
 
     float ax = 0.0f;
     float ay = 0.0f;
@@ -192,22 +186,19 @@ SceneUpdateResult ShowerScene::update(uint32_t nowMs, float dtSeconds) {
         break;
     }
     updateAtmosphere(dtSeconds);
-    redraw = redraw || mode != modeBefore ||
-             atmosphereAlpha != atmosphereBefore;
+    demand.changed(mode != modeBefore ||
+                   atmosphereAlpha != atmosphereBefore);
     bool effectActive = false;
     for (ExpFloat& floater : expFloats) {
         if (!floater.active) continue;
         if (nowMs - floater.bornMs >= EXP_FLOAT_DURATION_MS) {
             floater.active = false;
-            redraw = true;
+            demand.redraw();
         } else {
             effectActive = true;
         }
     }
-    if (toast && static_cast<int32_t>(nowMs - toastUntilMs) >= 0) {
-        toast = nullptr;
-        redraw = true;
-    }
+    if (demand.expired(toast != nullptr, nowMs, toastUntilMs)) toast = nullptr;
 
     bool atmosphereMoving =
         atmosphereTarget ? atmosphereAlpha < 255.0f : atmosphereAlpha > 0.0f;
@@ -217,43 +208,31 @@ SceneUpdateResult ShowerScene::update(uint32_t nowMs, float dtSeconds) {
         nowMs < turnUntilMs;
     if (hopStartMs != 0 && nowMs - hopStartMs >= HOP_DURATION_MS) {
         hopStartMs = 0;
-        redraw = true;
+        demand.redraw();
     }
     if (wiggleStartMs != 0 &&
         nowMs - wiggleStartMs >= WIGGLE_DURATION_MS) {
         wiggleStartMs = 0;
-        redraw = true;
+        demand.redraw();
     }
     if (turnUntilMs != 0 && nowMs >= turnUntilMs) {
         turnUntilMs = 0;
-        redraw = true;
+        demand.redraw();
     }
     bool modeAnimating =
         mode == Mode::SOAPING || mode == Mode::BRUSHING ||
         mode == Mode::RINSING || mode == Mode::COMPLETE;
     bool animating =
         modeAnimating || atmosphereMoving || effectActive || timedReaction ||
-        fabsf(menuTarget - menuAnimCursor) >= 0.04f;
-    uint32_t nextDelay =
-        animating ? 66 : SceneUpdateResult::NO_UPDATE;
+        menuStep.active;
+    demand.animate(animating);
     if (mode == Mode::INCOMPLETE) {
         uint32_t elapsed = nowMs - modeStartedMs;
         if (elapsed < INCOMPLETE_DURATION_MS) {
-            uint32_t remaining = INCOMPLETE_DURATION_MS - elapsed;
-            if (nextDelay == SceneUpdateResult::NO_UPDATE ||
-                remaining < nextDelay) {
-                nextDelay = remaining;
-            }
+            demand.wakeIn(INCOMPLETE_DURATION_MS - elapsed);
         }
     }
-    if (toast && static_cast<int32_t>(toastUntilMs - nowMs) > 0) {
-        uint32_t toastDelay = toastUntilMs - nowMs;
-        if (nextDelay == SceneUpdateResult::NO_UPDATE ||
-            toastDelay < nextDelay) {
-            nextDelay = toastDelay;
-        }
-    }
-    return SceneUpdateResult(redraw || animating, nextDelay);
+    return demand.result();
 }
 
 bool ShowerScene::onButton(const ButtonEvent& event) {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/Scene.h"
+#include "core/ProgressionUi.h"
 #include "game/BattleSystem.h"
 #include "game/ExploreMapGenerator.h"
 #include "game/ExplorePool.h"
@@ -43,6 +44,7 @@ private:
         ENCOUNTER,
         LEVEL_UP,
         EVOLUTION,
+        EVOLUTION_CANCELLED,
         LEARN_MOVE,
         MOVE_REPLACED,
         FRIENDSHIP,
@@ -76,6 +78,8 @@ private:
     ExplorePool::Pool activePool{};
     Area activeArea = Area::GRASS_PATH;
     uint16_t steps = 0;
+    uint8_t adventureBondGain = 0;
+    bool adventureBondSettled = false;
     uint16_t mapTargetSteps = 1;
     const Species* wild = nullptr;
     Game::MonsterRuntime wildRuntime;
@@ -156,7 +160,8 @@ private:
     uint16_t battleHpFrom = 0;
     uint16_t battleHpTo = 0;
     uint32_t battleActionStarted = 0;
-    uint8_t learnCursor = 0;
+    ProgressionUi::MoveLearnState moveLearnState{};
+    uint16_t progressionCancelledSpeciesId = 0;
     Phase progressionReturnPhase = Phase::WALKING;
     bool walkStepResolutionPending = false;
     uint8_t fleeAttempts = 0;
@@ -243,7 +248,8 @@ private:
     void markFirstSpecialVictory();
     void beginDebugEncounter();
     void rollEncounter();
-    bool rollRandomEncounter(bool guaranteed);
+    bool rollRandomEncounter(bool guaranteed, bool bypassGate,
+                             bool repelActiveThisStep);
     void resolvePickup(uint8_t pickupId);
     void clearBattleLogs();
     void enqueueBattleLog(const char* text, BattleLogCue cue = BattleLogCue::NONE);
@@ -284,6 +290,8 @@ private:
     bool resetRouteSegment();
     void returnToDebugMenu();
     void beginRouteExit();
+    void settleAdventureBond();
+    void completeExploreReturn(bool fainted);
     void requestExploreExit(bool fainted = false, bool showEndPrompt = true);
     void closeExploreMenu();
     void renderAreaMenu();

@@ -7,7 +7,9 @@
 #include "assets/PokemonSprites.h"
 #include "core/UiStrings.h"
 #include "core/GameEngine.h"
+#include "core/UiMotion.h"
 #include "core/VoiceCallService.h"
+#include "game/BondSystem.h"
 #include "game/Species.h"
 #include "hardware/Hal.h"
 #include "hardware/PixelRenderer.h"
@@ -53,6 +55,38 @@ int textPixelWidth(const char* value) {
         }
     }
     return width;
+}
+
+uint8_t formalTeamCount(const Game::GameState& state) {
+    uint8_t count = 0;
+    for (uint8_t slot = 0;
+         slot < state.teamCount && slot < Game::TEAM_CAP; ++slot) {
+        if (state.team[slot].origin != Game::Origin::VISITOR) ++count;
+    }
+    return count;
+}
+
+const char* bondLevelName(Game::Bond::Value value) {
+    uint8_t level = static_cast<uint8_t>(Game::Bond::levelFor(value));
+    return Ui::Storage::BOND_LEVELS[level - 1];
+}
+
+uint16_t bondLevelColor(Game::Bond::Value value) {
+    switch (Game::Bond::levelFor(value)) {
+    case Game::Bond::Level::AVERSE:
+        return PixelRenderer::rgb(210, 82, 92);
+    case Game::Bond::Level::DISTANT:
+        return PixelRenderer::rgb(136, 144, 158);
+    case Game::Bond::Level::ACQUAINTED:
+        return PixelRenderer::rgb(150, 164, 178);
+    case Game::Bond::Level::FAMILIAR:
+        return PixelRenderer::rgb(105, 210, 150);
+    case Game::Bond::Level::TRUSTED:
+        return PixelRenderer::rgb(255, 216, 72);
+    case Game::Bond::Level::CLOSE:
+        return PixelRenderer::rgb(255, 126, 168);
+    }
+    return PixelRenderer::rgb(150, 164, 178);
 }
 
 int wrapText(const char* value, int maxWidth, int x, int y, uint16_t color, bool draw) {
@@ -130,10 +164,13 @@ int menuIconIndex(uint8_t item) {
     return item < sizeof(ICON_BY_MENU_ITEM) ? ICON_BY_MENU_ITEM[item] : -1;
 }
 
-// 背包源索引：0~3 伤药/糖果，4~10 七种食物（仅战斗模式可见），11~14 状态药，15 返回。
+// 背包源索引：0~3 伤药/糖果，4~10 七种食物（仅战斗模式可见），11~14 状态药，
+// 15~23 全满药/全复药/全愈药/火之石/水之石/雷之石/复活草/黄金喷雾/甜甜蜜，24 返回。
 static constexpr uint8_t BAG_SOURCE_FOOD_BASE = 4;
 static constexpr uint8_t BAG_SOURCE_HEAL_BASE = 11;
-static constexpr uint8_t BAG_SOURCE_BACK = 15;
+static constexpr uint8_t BAG_SOURCE_EXTRA_BASE = 15;
+static constexpr uint8_t BAG_SOURCE_EXTRA_COUNT = 9;
+static constexpr uint8_t BAG_SOURCE_BACK = 24;
 
 uint8_t bagItemCount(uint8_t sourceIndex) {
     switch (sourceIndex) {
@@ -145,6 +182,15 @@ uint8_t bagItemCount(uint8_t sourceIndex) {
     case BAG_SOURCE_HEAL_BASE + 1: return GameEngine::ins().awakeningCount();
     case BAG_SOURCE_HEAL_BASE + 2: return GameEngine::ins().burnHealCount();
     case BAG_SOURCE_HEAL_BASE + 3: return GameEngine::ins().iceHealCount();
+    case BAG_SOURCE_EXTRA_BASE + 0: return GameEngine::ins().maxPotionCount();
+    case BAG_SOURCE_EXTRA_BASE + 1: return GameEngine::ins().fullRestoreCount();
+    case BAG_SOURCE_EXTRA_BASE + 2: return GameEngine::ins().fullHealCount();
+    case BAG_SOURCE_EXTRA_BASE + 3: return GameEngine::ins().fireStoneCount();
+    case BAG_SOURCE_EXTRA_BASE + 4: return GameEngine::ins().waterStoneCount();
+    case BAG_SOURCE_EXTRA_BASE + 5: return GameEngine::ins().thunderStoneCount();
+    case BAG_SOURCE_EXTRA_BASE + 6: return GameEngine::ins().reviveCount();
+    case BAG_SOURCE_EXTRA_BASE + 7: return GameEngine::ins().maxRepelCount();
+    case BAG_SOURCE_EXTRA_BASE + 8: return GameEngine::ins().honeyCount();
     case BAG_SOURCE_BACK: return 1;
     default:
         if (sourceIndex >= BAG_SOURCE_FOOD_BASE &&
@@ -165,6 +211,15 @@ Game::ItemId bagItemId(uint8_t sourceIndex) {
     case BAG_SOURCE_HEAL_BASE + 1: return Game::ItemId::AWAKENING;
     case BAG_SOURCE_HEAL_BASE + 2: return Game::ItemId::BURN_HEAL;
     case BAG_SOURCE_HEAL_BASE + 3: return Game::ItemId::ICE_HEAL;
+    case BAG_SOURCE_EXTRA_BASE + 0: return Game::ItemId::MAX_POTION;
+    case BAG_SOURCE_EXTRA_BASE + 1: return Game::ItemId::FULL_RESTORE;
+    case BAG_SOURCE_EXTRA_BASE + 2: return Game::ItemId::FULL_HEAL;
+    case BAG_SOURCE_EXTRA_BASE + 3: return Game::ItemId::FIRE_STONE;
+    case BAG_SOURCE_EXTRA_BASE + 4: return Game::ItemId::WATER_STONE;
+    case BAG_SOURCE_EXTRA_BASE + 5: return Game::ItemId::THUNDER_STONE;
+    case BAG_SOURCE_EXTRA_BASE + 6: return Game::ItemId::REVIVE;
+    case BAG_SOURCE_EXTRA_BASE + 7: return Game::ItemId::MAX_REPEL;
+    case BAG_SOURCE_EXTRA_BASE + 8: return Game::ItemId::HONEY;
     default:
         if (sourceIndex >= BAG_SOURCE_FOOD_BASE &&
             sourceIndex < BAG_SOURCE_FOOD_BASE + Game::ROOM_FOOD_COUNT) {
@@ -182,15 +237,37 @@ bool bagItemVisible(uint8_t sourceIndex, bool battleOnly) {
     if (sourceIndex >= BAG_SOURCE_HEAL_BASE && sourceIndex < BAG_SOURCE_HEAL_BASE + 4) {
         return true; // 状态药两种模式都可用
     }
-    if (!battleOnly) return sourceIndex < 4;
+    if (!battleOnly) {
+        return sourceIndex < 4 ||
+               (sourceIndex >= BAG_SOURCE_EXTRA_BASE &&
+                sourceIndex < BAG_SOURCE_EXTRA_BASE + BAG_SOURCE_EXTRA_COUNT);
+    }
     switch (sourceIndex) {
     case 0: // Potion
     case 1: // Super Potion
     case 2: // Antidote
+    case BAG_SOURCE_EXTRA_BASE + 0: // Max Potion
+    case BAG_SOURCE_EXTRA_BASE + 1: // Full Restore
+    case BAG_SOURCE_EXTRA_BASE + 2: // Full Heal
+    case BAG_SOURCE_EXTRA_BASE + 6: // Revive
         return true;
     default:
         return false;
     }
+}
+
+uint8_t bagTargetSlotForSource(uint8_t sourceIndex, bool battleMode,
+                               uint8_t requestedSlot,
+                               const Game::GameState& state) {
+    uint8_t fallback =
+        requestedSlot < state.teamCount && requestedSlot < Game::TEAM_CAP
+            ? requestedSlot : 0;
+    if (sourceIndex != BAG_SOURCE_EXTRA_BASE + 6) return fallback;
+    for (uint8_t slot = 0;
+         slot < state.teamCount && slot < Game::TEAM_CAP; ++slot) {
+        if (state.team[slot].fainted || state.team[slot].hpCur == 0) return slot;
+    }
+    return battleMode ? fallback : 0;
 }
 
 uint8_t bagVisibleItemCount(bool battleOnly) {
@@ -438,6 +515,8 @@ void MenuScene::onEnter() {
     storageCursor = 0;
     storageActionCursor = 0;
     storageActionOpen = false;
+    storageInviteConfirmOpen = false;
+    storageInviteConfirmYes = true;
     storageReleaseConfirmOpen = false;
     storageReleaseConfirmYes = false;
     storageScroll = 0.0f;
@@ -457,7 +536,8 @@ void MenuScene::onEnter() {
     lastBatteryLevel = Hal::ins().filteredBatteryLevel();
     if (GameEngine::ins().consumeDebugMenuReturnRequest()) {
         pushView(ViewMode::DEBUG);
-        debugCursor = DEBUG_BATTLE_ROOT_INDEX;
+        debugCategory = DebugCategory::BATTLE;
+        debugCursor = DEBUG_BATTLE_RANDOM_INDEX;
     }
 }
 
@@ -522,6 +602,7 @@ void MenuScene::popView() {
     teamActionOpen = false;
     moveForgetConfirmOpen = false;
     storageActionOpen = false;
+    storageInviteConfirmOpen = false;
     storageReleaseConfirmOpen = false;
     bagConfirmOpen = false;
     debugSwitchOpen = false;
@@ -540,14 +621,16 @@ void MenuScene::popView() {
 uint8_t MenuScene::teamActionCount() const {
     const auto& state = GameEngine::ins().gameState();
     bool canSetFirst = teamCursor > 0 && teamCursor < state.teamCount;
-    bool canLeave = !exploreContextMode && state.teamCount > 1;
+    bool canLeave =
+        !exploreContextMode && formalTeamCount(state) > 1;
     return 3 + (canSetFirst ? 1 : 0) + (canLeave ? 1 : 0);
 }
 
 MenuScene::TeamAction MenuScene::teamActionAt(uint8_t index) const {
     const auto& state = GameEngine::ins().gameState();
     bool canSetFirst = teamCursor > 0 && teamCursor < state.teamCount;
-    bool canLeave = !exploreContextMode && state.teamCount > 1;
+    bool canLeave =
+        !exploreContextMode && formalTeamCount(state) > 1;
     uint8_t actionIndex = 0;
     if (index == actionIndex++) return TeamAction::STATUS;
     if (canSetFirst) {
@@ -571,20 +654,12 @@ const char* MenuScene::teamActionLabel(uint8_t index) const {
 
 SceneUpdateResult MenuScene::update(uint32_t nowMs, float dtSeconds) {
     (void)dtSeconds;
-    bool redraw = false;
-    uint32_t nextDelay = SceneUpdateResult::NO_UPDATE;
+    RenderDemand demand;
     auto animateScroll = [&](float& value, int target) {
-        float diff = static_cast<float>(target) - value;
-        if (fabsf(diff) < 0.5f) {
-            if (value != static_cast<float>(target)) {
-                value = static_cast<float>(target);
-                redraw = true;
-            }
-            return;
-        }
-        value += diff * 0.25f;
-        redraw = true;
-        nextDelay = 66;
+        UiMotion::StepResult step = UiMotion::lerp(
+            value, static_cast<float>(target), 0.25f, 0.5f);
+        demand.changed(step.changed);
+        demand.animate(step.active);
     };
     auto animateDescription = [&](const char* const* lines, uint8_t count,
                                   int width, int key) {
@@ -593,29 +668,21 @@ SceneUpdateResult MenuScene::update(uint32_t nowMs, float dtSeconds) {
             maxLineW = max(maxLineW, textPixelWidth(lines[i]));
         }
         int maxScroll = maxLineW > width ? maxLineW - width + 4 : 0;
-        redraw = updateDescriptionScroll(key, maxScroll) || redraw;
-        if (maxScroll > 0) nextDelay = 66;
+        demand.changed(updateDescriptionScroll(key, maxScroll));
+        demand.animate(maxScroll > 0);
     };
 
     if (viewMode == ViewMode::MENU) {
-        float target = static_cast<float>(cursor);
-        float diff = target - animCursor;
-        if (fabsf(diff) < 0.05f) {
-            if (animCursor != target) {
-                animCursor = target;
-                redraw = true;
-            }
-        } else {
-            animCursor += diff * 0.25f;
-            redraw = true;
-            nextDelay = 66;
-        }
+        UiMotion::StepResult step = UiMotion::lerp(
+            animCursor, static_cast<float>(cursor), 0.25f);
+        demand.changed(step.changed);
+        demand.animate(step.active);
         int battery = Hal::ins().filteredBatteryLevel();
         if (battery != lastBatteryLevel) {
             lastBatteryLevel = battery;
-            redraw = true;
+            demand.redraw();
         }
-        if (nextDelay == SceneUpdateResult::NO_UPDATE) nextDelay = 30000;
+        demand.wakeIn(30000);
     } else if (viewMode == ViewMode::FOOD) {
         static constexpr int VISIBLE_H = Hal::DISPLAY_H - 12;
         static constexpr int ROW_H = 22;
@@ -716,24 +783,13 @@ SceneUpdateResult MenuScene::update(uint32_t nowMs, float dtSeconds) {
             int key =
                 (statusFromStorage ? 0x4000 : 0) |
                 (static_cast<int>(statusMonsterIndex) << 8) | statusPage;
-            redraw = updateStatusScroll(key, maxScroll) || redraw;
-            if (maxScroll > 0) nextDelay = 66;
+            demand.changed(updateStatusScroll(key, maxScroll));
+            if (maxScroll > 0) demand.wakeIn(66);
         }
     }
 
-    if (toast) {
-        if (static_cast<int32_t>(nowMs - toastUntil) >= 0) {
-            toast = nullptr;
-            redraw = true;
-        } else {
-            uint32_t toastDelay = toastUntil - nowMs;
-            if (nextDelay == SceneUpdateResult::NO_UPDATE ||
-                toastDelay < nextDelay) {
-                nextDelay = toastDelay;
-            }
-        }
-    }
-    return SceneUpdateResult(redraw, nextDelay);
+    if (demand.expired(toast != nullptr, nowMs, toastUntil)) toast = nullptr;
+    return demand.result();
 }
 
 bool MenuScene::onButton(const ButtonEvent& event) {
@@ -753,6 +809,10 @@ bool MenuScene::onButton(const ButtonEvent& event) {
             }
             if (viewMode == ViewMode::MOVES && moveForgetConfirmOpen) {
                 moveForgetConfirmOpen = false;
+                return true;
+            }
+            if (viewMode == ViewMode::STORAGE && storageInviteConfirmOpen) {
+                storageInviteConfirmOpen = false;
                 return true;
             }
             if (viewMode == ViewMode::STORAGE && storageReleaseConfirmOpen) {
@@ -999,9 +1059,9 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                     bool used = false;
                     BattleBagResult result = BattleBagResult::NONE;
                     const auto& state = GameEngine::ins().gameState();
-                    uint8_t targetSlot = battleBagMode
-                        ? battleTargetTeamSlot : 0;
-                    if (targetSlot >= state.teamCount) targetSlot = 0;
+                    uint8_t targetSlot = bagTargetSlotForSource(
+                        bagConfirmSource, battleBagMode,
+                        battleBagMode ? battleTargetTeamSlot : 0, state);
                     if (bagConfirmSource == 0) {
                         const auto& mon = state.team[targetSlot];
                         if (mon.fainted || mon.hpCur == 0) {
@@ -1040,6 +1100,48 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                         used = GameEngine::ins().useIceHeal(targetSlot);
                         toast = used ? Ui::Bag::USED_ICE_HEAL : Ui::Bag::STATUS_NORMAL;
                         result = BattleBagResult::ICE_HEAL;
+                    } else if (bagConfirmSource == BAG_SOURCE_EXTRA_BASE + 0) {
+                        const auto& mon = state.team[targetSlot];
+                        if (mon.fainted || mon.hpCur == 0) {
+                            toast = Ui::Bag::FAINTED_CANNOT_HEAL;
+                        } else {
+                            used = GameEngine::ins().useMaxPotion(targetSlot);
+                            toast = used ? Ui::Bag::USED_MAX_POTION : Ui::Bag::HP_FULL;
+                            result = BattleBagResult::MAX_POTION;
+                        }
+                    } else if (bagConfirmSource == BAG_SOURCE_EXTRA_BASE + 1) {
+                        const auto& mon = state.team[targetSlot];
+                        if (mon.fainted || mon.hpCur == 0) {
+                            toast = Ui::Bag::FAINTED_CANNOT_HEAL;
+                        } else {
+                            used = GameEngine::ins().useFullRestore(targetSlot);
+                            toast = used ? Ui::Bag::USED_FULL_RESTORE
+                                         : Ui::Bag::FULL_RESTORE_NOT_NEEDED;
+                            result = BattleBagResult::FULL_RESTORE;
+                        }
+                    } else if (bagConfirmSource == BAG_SOURCE_EXTRA_BASE + 2) {
+                        used = GameEngine::ins().useFullHeal(targetSlot);
+                        toast = used ? Ui::Bag::USED_FULL_HEAL : Ui::Bag::STATUS_NORMAL;
+                        result = BattleBagResult::FULL_HEAL;
+                    } else if (bagConfirmSource >= BAG_SOURCE_EXTRA_BASE + 3 &&
+                               bagConfirmSource < BAG_SOURCE_EXTRA_BASE + 6) {
+                        used = GameEngine::ins().useEvolutionStone(
+                            targetSlot, bagItemId(bagConfirmSource));
+                        toast = used ? Ui::Bag::STONE_EVOLUTION_BEGIN
+                                     : Ui::Bag::STONE_NO_EFFECT;
+                    } else if (bagConfirmSource == BAG_SOURCE_EXTRA_BASE + 6) {
+                        used = GameEngine::ins().useRevive(targetSlot);
+                        toast = used ? Ui::Bag::USED_REVIVE
+                                     : Ui::Bag::REVIVE_NO_FAINTED;
+                        result = BattleBagResult::REVIVE;
+                    } else if (bagConfirmSource == BAG_SOURCE_EXTRA_BASE + 7) {
+                        used = GameEngine::ins().useMaxRepel();
+                        toast = used ? Ui::Bag::USED_MAX_REPEL
+                                     : Ui::Bag::MAX_REPEL_ACTIVE;
+                    } else if (bagConfirmSource == BAG_SOURCE_EXTRA_BASE + 8) {
+                        used = GameEngine::ins().useHoney();
+                        toast = used ? Ui::Bag::USED_HONEY
+                                     : Ui::Bag::HONEY_ACTIVE;
                     } else if (battleBagMode && bagConfirmSource >= BAG_SOURCE_FOOD_BASE &&
                                bagConfirmSource < BAG_SOURCE_FOOD_BASE + Game::ROOM_FOOD_COUNT) {
                         uint8_t foodIndex = bagConfirmSource - BAG_SOURCE_FOOD_BASE;
@@ -1085,6 +1187,11 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                 bagConfirmSource = source;
                 bagConfirmYes = true;
                 bagConfirmOpen = true;
+            } else if (!battleBagMode && source >= BAG_SOURCE_EXTRA_BASE &&
+                       source < BAG_SOURCE_EXTRA_BASE + BAG_SOURCE_EXTRA_COUNT) {
+                bagConfirmSource = source;
+                bagConfirmYes = true;
+                bagConfirmOpen = true;
             } else if (battleBagMode && source >= BAG_SOURCE_FOOD_BASE &&
                        source < BAG_SOURCE_FOOD_BASE + Game::ROOM_FOOD_COUNT) {
                 bagConfirmSource = source;
@@ -1115,6 +1222,10 @@ bool MenuScene::onButton(const ButtonEvent& event) {
             return true;
         }
         if (viewMode == ViewMode::STORAGE && event.btn == 1 && event.action == BtnAction::PRESSED) {
+            if (storageInviteConfirmOpen) {
+                storageInviteConfirmYes = !storageInviteConfirmYes;
+                return true;
+            }
             if (storageReleaseConfirmOpen) {
                 storageReleaseConfirmYes = !storageReleaseConfirmYes;
                 return true;
@@ -1130,6 +1241,32 @@ bool MenuScene::onButton(const ButtonEvent& event) {
         }
         if (viewMode == ViewMode::STORAGE && event.btn == 0 && event.action == BtnAction::PRESSED) {
             uint8_t count = GameEngine::ins().gameState().storageCount + 1;
+            if (storageInviteConfirmOpen) {
+                if (storageInviteConfirmYes) {
+                    ContactInviteResult result =
+                        GameEngine::ins().inviteContactToTeam(storageCursor);
+                    if (result == ContactInviteResult::JOINED) {
+                        uint8_t newCount =
+                            GameEngine::ins().gameState().storageCount;
+                        storageCursor =
+                            newCount == 0 ? 0 : min<uint8_t>(storageCursor,
+                                                            newCount - 1);
+                        toast = Ui::Storage::INVITE_ACCEPTED;
+                        storageActionOpen = false;
+                    } else if (result == ContactInviteResult::REFUSED) {
+                        toast = Ui::Storage::INVITE_REFUSED;
+                        storageActionOpen = false;
+                    } else if (result == ContactInviteResult::LOCKED) {
+                        toast = Ui::Storage::INVITE_LOCKED;
+                    } else if (result == ContactInviteResult::TEAM_FULL) {
+                        toast = Ui::Storage::TEAM_FULL_TOAST;
+                    }
+                    toastUntil = Hal::ins().millis() + 1400;
+                }
+                storageInviteConfirmOpen = false;
+                storageInviteConfirmYes = true;
+                return true;
+            }
             if (storageReleaseConfirmOpen) {
                 if (storageReleaseConfirmYes) {
                     if (GameEngine::ins().deleteContact(storageCursor)) {
@@ -1166,17 +1303,18 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                         toastUntil = Hal::ins().millis() + 1100;
                         return true;
                     }
-                    if (GameEngine::ins().inviteContactToTeam(storageCursor)) {
-                        uint8_t newCount = GameEngine::ins().gameState().storageCount;
-                        if (newCount == 0) {
-                            storageCursor = 0;
-                        } else if (storageCursor >= newCount) {
-                            storageCursor = newCount - 1;
-                        }
-                        toast = Ui::Storage::INVITE_TOAST;
+                    if (GameEngine::ins().contactIsVisiting(storageCursor)) {
+                        toast = Ui::Storage::VISITING;
                         toastUntil = Hal::ins().millis() + 1100;
-                        storageActionOpen = false;
+                        return true;
                     }
+                    if (GameEngine::ins().contactInviteLocked(storageCursor)) {
+                        toast = Ui::Storage::INVITE_LOCKED;
+                        toastUntil = Hal::ins().millis() + 1100;
+                        return true;
+                    }
+                    storageInviteConfirmOpen = true;
+                    storageInviteConfirmYes = true;
                 } else if (storageActionCursor == 2) {
                     storageReleaseConfirmOpen = true;
                     storageReleaseConfirmYes = false;
@@ -1192,6 +1330,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
             } else {
                 storageActionOpen = true;
                 storageActionCursor = 0;
+                storageInviteConfirmOpen = false;
                 storageReleaseConfirmOpen = false;
             }
             return true;
@@ -1471,7 +1610,6 @@ void MenuScene::renderTeamPage() {
             uint16_t color = selected ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232);
             if (selected) c.fillRect(ROW_X, y + 2, 4, 18, PixelRenderer::rgb(255, 216, 72));
             PixelRenderer::text(ROW_X + 16, y + 3, Ui::BACK, color, 1);
-            c.drawFastHLine(ROW_X, y + 24, ROW_W, PixelRenderer::rgb(55, 63, 76));
             continue;
         }
 
@@ -1521,7 +1659,9 @@ void MenuScene::renderTeamPage() {
         PixelRenderer::text(ROW_X + 112, y + 19, buf, PixelRenderer::rgb(241, 242, 232), 1);
     }
 
-    if (!showingEgg && teamActionOpen && teamCursor < state.teamCount) renderTeamActionPopup();
+    if (!showingEgg && teamActionOpen && teamCursor < teamCount) {
+        renderTeamActionPopup();
+    }
     renderToast();
 }
 
@@ -1906,12 +2046,18 @@ void MenuScene::renderBagConfirmPopup() {
     const char* format = isThrow
         ? Ui::Bag::THROW_CONFIRM_FMT : Ui::Bag::USE_CONFIRM_FMT;
     const auto& state = GameEngine::ins().gameState();
-    uint8_t targetSlot =
-        battleTargetTeamSlot < state.teamCount ? battleTargetTeamSlot : 0;
-    const char* target = isThrow && battleTargetName
-        ? battleTargetName
-        : GameEngine::ins().speciesFor(state.team[targetSlot]).name;
-    snprintf(line, sizeof(line), format, target);
+    if (bagConfirmSource == BAG_SOURCE_EXTRA_BASE + 7 ||
+        bagConfirmSource == BAG_SOURCE_EXTRA_BASE + 8) {
+        snprintf(line, sizeof(line), Ui::Bag::USE_ITEM_CONFIRM_FMT,
+                 Ui::Bag::NAMES[bagConfirmSource]);
+    } else {
+        uint8_t targetSlot = bagTargetSlotForSource(
+            bagConfirmSource, battleBagMode, battleTargetTeamSlot, state);
+        const char* target = isThrow && battleTargetName
+            ? battleTargetName
+            : GameEngine::ins().speciesFor(state.team[targetSlot]).name;
+        snprintf(line, sizeof(line), format, target);
+    }
     int lineW = textPixelWidth(line);
     int lineX = POP_X + (POP_W - lineW) / 2;
     if (lineX < POP_X + 6) lineX = POP_X + 6;
@@ -2083,7 +2229,13 @@ void MenuScene::renderStoragePage() {
         int y = LIST_Y_START + i * ROW_H - (int)storageScroll;
         if (y + ROW_H < LIST_Y_START || y > LIST_BOTTOM) continue;
         bool selected = i == storageCursor;
-        uint16_t color = selected ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232);
+        bool unavailable = i < state.storageCount &&
+            (GameEngine::ins().contactInviteLocked(i) ||
+             GameEngine::ins().contactIsVisiting(i));
+        uint16_t color = unavailable
+            ? PixelRenderer::rgb(92, 98, 108)
+            : (selected ? PixelRenderer::rgb(255, 216, 72)
+                        : PixelRenderer::rgb(241, 242, 232));
         if (selected) {
             c.fillRect(ROW_X, y + 2, 4, 18, PixelRenderer::rgb(255, 216, 72));
         }
@@ -2093,11 +2245,13 @@ void MenuScene::renderStoragePage() {
             const Species& species = GameEngine::ins().speciesFor(mon);
             PixelRenderer::text(TEXT_X, y + 3, species.name, color, 1);
 
-            char buf[20];
-            snprintf(buf, sizeof(buf), Ui::Common::LEVEL_FMT, mon.level);
-            PixelRenderer::text(112, y + 3, buf, selected ? PixelRenderer::rgb(255, 218, 178) : 0x7BEF, 1);
-            snprintf(buf, sizeof(buf), "%u/%u", mon.hpCur, mon.hpMax);
-            PixelRenderer::text(158, y + 3, buf, selected ? PixelRenderer::rgb(255, 218, 178) : 0x7BEF, 1);
+            const char* bondLabel = bondLevelName(mon.bond);
+            int bondX = Hal::DISPLAY_W - textPixelWidth(bondLabel) - 10;
+            PixelRenderer::text(max(TEXT_X + 82, bondX), y + 3,
+                                bondLabel,
+                                unavailable ? color
+                                            : bondLevelColor(mon.bond),
+                                1);
         } else {
             PixelRenderer::text(TEXT_X, y + 3, Ui::BACK, color, 1);
         }
@@ -2109,9 +2263,44 @@ void MenuScene::renderStoragePage() {
     c.clearClipRect();
     if (storageActionOpen && storageCursor < state.storageCount) {
         renderStorageActionPopup();
+        if (storageInviteConfirmOpen) renderStorageInviteConfirmPopup();
         if (storageReleaseConfirmOpen) renderStorageReleaseConfirmPopup();
     }
     renderToast();
+}
+
+void MenuScene::renderStorageInviteConfirmPopup() {
+    auto& c = PixelRenderer::canvas();
+    const auto& state = GameEngine::ins().gameState();
+    if (storageCursor >= state.storageCount) return;
+    const Species& species =
+        GameEngine::ins().speciesFor(state.storage[storageCursor]);
+
+    static constexpr int POP_X = 18;
+    static constexpr int POP_Y = 30;
+    static constexpr int POP_W = 204;
+    static constexpr int POP_H = 76;
+    c.fillRect(POP_X, POP_Y, POP_W, POP_H, PixelRenderer::rgb(24, 28, 36));
+    c.drawRect(POP_X, POP_Y, POP_W, POP_H,
+               PixelRenderer::rgb(241, 242, 232));
+
+    char line[48];
+    snprintf(line, sizeof(line), Ui::Storage::INVITE_CONFIRM_FMT,
+             species.name);
+    int lineX = POP_X + max(6, (POP_W - textPixelWidth(line)) / 2);
+    PixelRenderer::text(lineX, POP_Y + 17, line,
+                        PixelRenderer::rgb(241, 242, 232), 1);
+
+    uint16_t yesColor = storageInviteConfirmYes
+        ? PixelRenderer::rgb(255, 216, 72)
+        : PixelRenderer::rgb(156, 164, 176);
+    uint16_t noColor = !storageInviteConfirmYes
+        ? PixelRenderer::rgb(255, 216, 72)
+        : PixelRenderer::rgb(156, 164, 176);
+    PixelRenderer::text(POP_X + 62, POP_Y + 52, Ui::Storage::YES,
+                        yesColor, 1);
+    PixelRenderer::text(POP_X + 137, POP_Y + 52, Ui::Storage::NO,
+                        noColor, 1);
 }
 
 void MenuScene::renderStorageActionPopup() {
@@ -2181,46 +2370,46 @@ void MenuScene::renderDebugPage() {
             c.fillRect(ROW_X, textY, 4, 16, PixelRenderer::rgb(255, 216, 72));
         }
         PixelRenderer::text(TEXT_X, textY, debugItemLabel(i), color, 1);
-        if (debugCategory == DebugCategory::MONSTER && i == 1) {
-            const auto& state = GameEngine::ins().gameState();
-            uint16_t speciesId = state.teamCount > 0 ? state.team[0].speciesId : 0;
-            char idBuf[20];
-            snprintf(idBuf, sizeof(idBuf), Ui::Debug::CURRENT_ID_FMT, speciesId);
-            PixelRenderer::text(Hal::DISPLAY_W - textPixelWidth(idBuf) - 12, textY, idBuf,
-                                selected ? PixelRenderer::rgb(255, 218, 178) : 0x7BEF,
-                                1);
+        char valueBuffer[24] = {};
+        const char* value = nullptr;
+        auto& engine = GameEngine::ins();
+        const auto& state = engine.gameState();
+        if (debugCategory == DebugCategory::MONSTER) {
+            if (i == DEBUG_MONSTER_LEVEL_UP_INDEX && state.teamCount > 0) {
+                snprintf(valueBuffer, sizeof(valueBuffer), Ui::Common::LEVEL_FMT,
+                         state.team[0].level);
+                value = valueBuffer;
+            } else if (i == DEBUG_MONSTER_SWITCH_INDEX) {
+                uint16_t speciesId =
+                    state.teamCount > 0 ? state.team[0].speciesId : 0;
+                snprintf(valueBuffer, sizeof(valueBuffer),
+                         Ui::Debug::CURRENT_ID_FMT, speciesId);
+                value = valueBuffer;
+            }
+        } else if (debugCategory == DebugCategory::ENV) {
+            if (i == 0) {
+                uint16_t minutes = engine.gameMinutesOfDay();
+                snprintf(valueBuffer, sizeof(valueBuffer),
+                         Ui::Debug::CURRENT_TIME_FMT,
+                         minutes / 60, minutes % 60);
+                value = valueBuffer;
+            } else if (i == 1) {
+                value = engine.debugLightSourceLabel();
+            }
+        } else if (debugCategory == DebugCategory::MOTION) {
+            if (i == 0) {
+                value = engine.debugTiltControlEnabled()
+                    ? Ui::Settings::ON : Ui::Settings::OFF;
+            } else if (i == 1) {
+                value = engine.debugWalkBoundaryVisible()
+                    ? Ui::Settings::ON : Ui::Settings::OFF;
+            }
+        } else if (debugCategory == DebugCategory::BATTLE &&
+                   i == DEBUG_BATTLE_DRAW_BOUNDS_INDEX) {
+            value = engine.debugBattleDrawBoundsVisible()
+                ? Ui::Settings::ON : Ui::Settings::OFF;
         }
-        if (debugCategory == DebugCategory::ENV && i == 0) {
-            uint16_t minutes = GameEngine::ins().gameMinutesOfDay();
-            char timeBuf[20];
-            snprintf(timeBuf, sizeof(timeBuf), Ui::Debug::CURRENT_TIME_FMT, minutes / 60, minutes % 60);
-            PixelRenderer::text(Hal::DISPLAY_W - textPixelWidth(timeBuf) - 12, textY, timeBuf,
-                                selected ? PixelRenderer::rgb(255, 218, 178) : 0x7BEF,
-                                1);
-        }
-        if (debugCategory == DebugCategory::ENV && i == 1) {
-            const char* value = GameEngine::ins().debugLightSourceLabel();
-            PixelRenderer::text(Hal::DISPLAY_W - textPixelWidth(value) - 12, textY, value,
-                                selected ? PixelRenderer::rgb(255, 218, 178) : 0x7BEF,
-                                1);
-        }
-        if (debugCategory == DebugCategory::MOTION && i == 0) {
-            const char* value = GameEngine::ins().debugTiltControlEnabled() ? Ui::Settings::ON : Ui::Settings::OFF;
-            PixelRenderer::text(Hal::DISPLAY_W - textPixelWidth(value) - 12, textY, value,
-                                selected ? PixelRenderer::rgb(255, 218, 178) : 0x7BEF,
-                                1);
-        }
-        if (debugCategory == DebugCategory::MOTION && i == 1) {
-            const char* value = GameEngine::ins().debugWalkBoundaryVisible() ? Ui::Settings::ON : Ui::Settings::OFF;
-            PixelRenderer::text(Hal::DISPLAY_W - textPixelWidth(value) - 12, textY, value,
-                                selected ? PixelRenderer::rgb(255, 218, 178) : 0x7BEF,
-                                1);
-        }
-        if (debugCategory == DebugCategory::ROOT &&
-            i == DEBUG_DRAW_BOUNDS_ROOT_INDEX) {
-            const char* value = GameEngine::ins().debugBattleDrawBoundsVisible()
-                ? Ui::Settings::ON
-                : Ui::Settings::OFF;
+        if (value) {
             PixelRenderer::text(Hal::DISPLAY_W - textPixelWidth(value) - 12,
                                 textY, value,
                                 selected ? PixelRenderer::rgb(255, 218, 178)
@@ -2242,13 +2431,30 @@ uint8_t MenuScene::debugItemCount() const {
                       sizeof(Ui::Debug::ROOT_ITEMS) /
                           sizeof(Ui::Debug::ROOT_ITEMS[0]),
                   "debug root labels must match the root item count");
-    static_assert(DEBUG_DRAW_BOUNDS_ROOT_INDEX + 1 < DEBUG_ROOT_ITEM_COUNT,
-                  "debug battle bounds toggle must precede the back item");
+    static_assert(DEBUG_MONSTER_ITEM_COUNT ==
+                      sizeof(Ui::Debug::MONSTER_ITEMS) /
+                          sizeof(Ui::Debug::MONSTER_ITEMS[0]),
+                  "debug monster labels must match the item count");
+    static_assert(DEBUG_BATTLE_ITEM_COUNT ==
+                      sizeof(Ui::Debug::BATTLE_ITEMS) /
+                          sizeof(Ui::Debug::BATTLE_ITEMS[0]),
+                  "debug battle labels must match the item count");
+    static_assert(DEBUG_RESOURCE_ITEM_COUNT ==
+                      sizeof(Ui::Debug::RESOURCE_ITEMS) /
+                          sizeof(Ui::Debug::RESOURCE_ITEMS[0]) &&
+                  DEBUG_ENV_ITEM_COUNT ==
+                      sizeof(Ui::Debug::ENV_ITEMS) /
+                          sizeof(Ui::Debug::ENV_ITEMS[0]) &&
+                  DEBUG_MOTION_ITEM_COUNT ==
+                      sizeof(Ui::Debug::MOTION_ITEMS) /
+                          sizeof(Ui::Debug::MOTION_ITEMS[0]),
+                  "debug category labels must match their item counts");
     switch (debugCategory) {
     case DebugCategory::MONSTER: return DEBUG_MONSTER_ITEM_COUNT;
     case DebugCategory::RESOURCE: return DEBUG_RESOURCE_ITEM_COUNT;
     case DebugCategory::ENV: return DEBUG_ENV_ITEM_COUNT;
     case DebugCategory::MOTION: return DEBUG_MOTION_ITEM_COUNT;
+    case DebugCategory::BATTLE: return DEBUG_BATTLE_ITEM_COUNT;
     case DebugCategory::ROOT:
     default:
         return DEBUG_ROOT_ITEM_COUNT;
@@ -2262,6 +2468,7 @@ const char* MenuScene::debugItemLabel(uint8_t index) const {
     case DebugCategory::RESOURCE: return Ui::Debug::RESOURCE_ITEMS[index];
     case DebugCategory::ENV: return Ui::Debug::ENV_ITEMS[index];
     case DebugCategory::MOTION: return Ui::Debug::MOTION_ITEMS[index];
+    case DebugCategory::BATTLE: return Ui::Debug::BATTLE_ITEMS[index];
     case DebugCategory::ROOT:
     default:
         return Ui::Debug::ROOT_ITEMS[index];
@@ -2275,26 +2482,9 @@ void MenuScene::handleDebugAction() {
         case 1: debugCategory = DebugCategory::RESOURCE; break;
         case 2: debugCategory = DebugCategory::ENV; break;
         case 3: debugCategory = DebugCategory::MOTION; break;
-        case DEBUG_BATTLE_ROOT_INDEX: {
-            auto& engine = GameEngine::ins();
-            const auto& state = engine.gameState();
-            if (!state.oobeDone || state.teamCount == 0) {
-                toast = Ui::Menu::HATCH_FIRST;
-                toastUntil = Hal::ins().millis() + 1100;
-                return;
-            }
-            const auto& mon = engine.activeMonster();
-            if (mon.fainted || mon.hpCur == 0) {
-                toast = Ui::Menu::FAINTED_TOAST;
-                toastUntil = Hal::ins().millis() + 1100;
-                return;
-            }
-            engine.beginDebugBattle();
-            return;
-        }
-        case DEBUG_DRAW_BOUNDS_ROOT_INDEX:
-            GameEngine::ins().toggleDebugBattleDrawBounds();
-            return;
+        case DEBUG_BATTLE_ROOT_INDEX:
+            debugCategory = DebugCategory::BATTLE;
+            break;
         default:
             popView();
             return;
@@ -2313,11 +2503,32 @@ void MenuScene::handleDebugAction() {
 
     switch (debugCategory) {
     case DebugCategory::MONSTER:
-        if (debugCursor == 0) {
-            GameEngine::ins().debugRecoverActiveMonster();
-            toast = Ui::Debug::RECOVERED;
+        if (debugCursor == DEBUG_MONSTER_RECOVER_INDEX) {
+            auto& engine = GameEngine::ins();
+            if (engine.gameState().teamCount == 0) {
+                toast = Ui::Menu::HATCH_FIRST;
+            } else {
+                engine.debugRecoverActiveMonster();
+                toast = Ui::Debug::RECOVERED;
+            }
             toastUntil = Hal::ins().millis() + 1100;
-        } else if (debugCursor == 1) {
+        } else if (debugCursor == DEBUG_MONSTER_LEVEL_UP_INDEX) {
+            auto& engine = GameEngine::ins();
+            const auto& state = engine.gameState();
+            if (state.teamCount == 0) {
+                toast = Ui::Menu::HATCH_FIRST;
+            } else if (state.team[0].level >= Game::LEVEL_MAX) {
+                toast = Ui::Debug::LEVEL_MAX;
+            } else if (engine.debugLevelUpActiveMonster()) {
+                snprintf(toastBuffer, sizeof(toastBuffer),
+                         Ui::Debug::LEVEL_UP_FMT,
+                         engine.activeMonster().level);
+                toast = toastBuffer;
+            } else {
+                toast = Ui::Debug::LEVEL_MAX;
+            }
+            toastUntil = Hal::ins().millis() + 1100;
+        } else if (debugCursor == DEBUG_MONSTER_SWITCH_INDEX) {
             openDebugSwitchPopup();
         }
         break;
@@ -2342,6 +2553,27 @@ void MenuScene::handleDebugAction() {
             GameEngine::ins().toggleDebugWalkBoundary();
         }
         break;
+    case DebugCategory::BATTLE: {
+        auto& engine = GameEngine::ins();
+        if (debugCursor == DEBUG_BATTLE_RANDOM_INDEX) {
+            const auto& state = engine.gameState();
+            if (!state.oobeDone || state.teamCount == 0) {
+                toast = Ui::Menu::HATCH_FIRST;
+                toastUntil = Hal::ins().millis() + 1100;
+                return;
+            }
+            const auto& mon = engine.activeMonster();
+            if (mon.fainted || mon.hpCur == 0) {
+                toast = Ui::Menu::FAINTED_TOAST;
+                toastUntil = Hal::ins().millis() + 1100;
+                return;
+            }
+            engine.beginDebugBattle();
+        } else if (debugCursor == DEBUG_BATTLE_DRAW_BOUNDS_INDEX) {
+            engine.toggleDebugBattleDrawBounds();
+        }
+        break;
+    }
     case DebugCategory::ROOT:
     default:
         break;
@@ -2508,6 +2740,15 @@ uint8_t MenuScene::collectVisibleBagRows(BagRow* rows, uint8_t maxRows) const {
         GameEngine::ins().awakeningCount(),
         GameEngine::ins().burnHealCount(),
         GameEngine::ins().iceHealCount(),
+        GameEngine::ins().maxPotionCount(),
+        GameEngine::ins().fullRestoreCount(),
+        GameEngine::ins().fullHealCount(),
+        GameEngine::ins().fireStoneCount(),
+        GameEngine::ins().waterStoneCount(),
+        GameEngine::ins().thunderStoneCount(),
+        GameEngine::ins().reviveCount(),
+        GameEngine::ins().maxRepelCount(),
+        GameEngine::ins().honeyCount(),
         1,
     };
 

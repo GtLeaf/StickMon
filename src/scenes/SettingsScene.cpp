@@ -6,6 +6,7 @@
 #include "core/GameEngine.h"
 #include "core/TraceLog.h"
 #include "core/UiStrings.h"
+#include "core/UiMotion.h"
 #include "core/VoiceCallService.h"
 #include "hardware/Hal.h"
 #include "hardware/PixelRenderer.h"
@@ -28,14 +29,12 @@ void SettingsScene::onExit() {
 
 SceneUpdateResult SettingsScene::update(uint32_t nowMs, float dtSeconds) {
     (void)dtSeconds;
-    bool redraw = false;
-    uint32_t nextDelay = SceneUpdateResult::NO_UPDATE;
+    RenderDemand demand;
 
     if (viewMode == ViewMode::VOICE_ENROLL) {
         auto& voice = VoiceCallService::ins();
         voice.updateEnrollment(nowMs);
-        redraw = true;
-        nextDelay = 66;
+        demand.animate(true);
         if (voice.enrollmentState() == VoiceCallService::EnrollmentState::SUCCESS) {
             if (enrollmentFinishedAt == 0) enrollmentFinishedAt = nowMs;
             if (nowMs - enrollmentFinishedAt >= 1200) {
@@ -55,30 +54,14 @@ SceneUpdateResult SettingsScene::update(uint32_t nowMs, float dtSeconds) {
         int targetScroll =
             START_Y + cursor * ROW_H + ROW_H / 2 - Hal::DISPLAY_H / 2;
         targetScroll = constrain(targetScroll, 0, maxScroll);
-        float diff = static_cast<float>(targetScroll) - menuScroll;
-        if (fabsf(diff) >= 0.5f) {
-            menuScroll += diff * 0.25f;
-            redraw = true;
-            nextDelay = 66;
-        } else if (menuScroll != static_cast<float>(targetScroll)) {
-            menuScroll = static_cast<float>(targetScroll);
-            redraw = true;
-        }
+        UiMotion::StepResult step = UiMotion::lerp(
+            menuScroll, static_cast<float>(targetScroll), 0.25f, 0.5f);
+        demand.changed(step.changed);
+        demand.animate(step.active);
     }
 
-    if (toast) {
-        if (static_cast<int32_t>(nowMs - toastUntil) >= 0) {
-            toast = nullptr;
-            redraw = true;
-        } else {
-            uint32_t toastDelay = toastUntil - nowMs;
-            if (nextDelay == SceneUpdateResult::NO_UPDATE ||
-                toastDelay < nextDelay) {
-                nextDelay = toastDelay;
-            }
-        }
-    }
-    return SceneUpdateResult(redraw, nextDelay);
+    if (demand.expired(toast != nullptr, nowMs, toastUntil)) toast = nullptr;
+    return demand.result();
 }
 
 bool SettingsScene::onButton(const ButtonEvent& event) {

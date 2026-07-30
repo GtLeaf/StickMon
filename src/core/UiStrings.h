@@ -25,14 +25,26 @@ static constexpr const char* FURNITURE = "家具";
 static constexpr const char* TOY = "玩具";
 static constexpr const char* ROOM_CHANGE = "房间更换";
 static constexpr const char* BRIGHTNESS = "亮度";
-static constexpr const char* NORMAL_FOOD = "橙橙果";
-static constexpr const char* TASTY_FOOD = "文柚果";
+static constexpr const char* NORMAL_FOOD = "饼干";
+static constexpr const char* TASTY_FOOD = "能量方块";
 static constexpr const char* SWEET_FOOD = "桃桃果";
 static constexpr const char* SPICY_FOOD = "樱子果";
 static constexpr const char* SOUR_FOOD = "利木果";
 static constexpr const char* BITTER_FOOD = "莓莓果";
 static constexpr const char* DRY_FOOD = "零余果";
 static constexpr const char* CANDY = "神奇糖果";
+static constexpr const char* MAX_POTION = "全满药";
+static constexpr const char* FULL_RESTORE = "全复药";
+static constexpr const char* FULL_HEAL = "全愈药";
+static constexpr const char* FIRE_STONE = "火之石";
+static constexpr const char* WATER_STONE = "水之石";
+static constexpr const char* THUNDER_STONE = "雷之石";
+static constexpr const char* REVIVE = "复活草";
+static constexpr const char* MAX_REPEL = "黄金喷雾";
+static constexpr const char* HONEY = "甜甜蜜";
+static constexpr const char* NUGGET = "金珠";
+static constexpr const char* BIG_PEARL = "大珍珠";
+static constexpr const char* STAR_PIECE = "星星碎片";
 static constexpr const char* COINS = "金币";
 static constexpr const char* WILD = "野生";
 static constexpr const char* EMPTY = "空闲";
@@ -65,6 +77,8 @@ static constexpr const char* LEVEL_UP_TITLE = "升级!";
 static constexpr const char* LEVEL_UP_FMT = "升到Lv%u";
 static constexpr const char* EVOLUTION_TITLE = "进化!";
 static constexpr const char* EVOLUTION_FMT = "%s进化!";
+static constexpr const char* EVOLUTION_COMPLETE_FMT = "%s进化完成!";
+static constexpr const char* EVOLUTION_CANCELLED_FMT = "%s停止进化!";
 static constexpr const char* A_CONTINUE = "A 继续";
 }
 
@@ -346,8 +360,8 @@ static constexpr const char* FOOD_NAMES[] = {
     Ui::DRY_FOOD,
 };
 static constexpr const char* FOOD_DESCS[][3] = {
-    {"基础日常的树果", "主界面按B放入", "精灵会自己进食"},
-    {"更受欢迎的树果", "饱食和心情更多", "后续可扩展来源"},
+    {"基础日常的点心", "主界面按B放入", "精灵会自己进食"},
+    {"更受欢迎的点心", "饱食和心情更多", "后续可扩展来源"},
     {"甜甜的口味", "心情提升最多", "饱食提升较少"},
     {"辣辣的口味", "饱食提升较多", "心情提升一般"},
     {"酸酸的口味", "饱食心情均衡", "适合日常投喂"},
@@ -393,8 +407,10 @@ static constexpr const char* CATEGORY_MONSTER = "精灵";
 static constexpr const char* CATEGORY_RESOURCE = "资源";
 static constexpr const char* CATEGORY_ENV = "环境";
 static constexpr const char* CATEGORY_MOTION = "运动";
+static constexpr const char* CATEGORY_BATTLE = "战斗";
 static constexpr const char* RANDOM_BATTLE = "随机对战";
 static constexpr const char* RECOVER = "一键康复";
+static constexpr const char* LEVEL_UP = "升级一级";
 static constexpr const char* SWITCH_MON = "切换精灵";
 static constexpr const char* ADD_COINS = "增加1000金币";
 static constexpr const char* SET_TIME = "设置时间";
@@ -409,6 +425,8 @@ static constexpr const char* LIGHT_TOP_RIGHT = "右上";
 static constexpr const char* LIGHT_LEFT = "左侧";
 static constexpr const char* LIGHT_RIGHT = "右侧";
 static constexpr const char* RECOVERED = "已康复";
+static constexpr const char* LEVEL_UP_FMT = "升级至Lv%u";
+static constexpr const char* LEVEL_MAX = "已达最高等级";
 static constexpr const char* SWITCHED = "已切换";
 static constexpr const char* COINS_ADDED = "金币+1000";
 static constexpr const char* TIME_SET = "时间已推进";
@@ -432,12 +450,12 @@ static constexpr const char* ROOT_ITEMS[] = {
     CATEGORY_RESOURCE,
     CATEGORY_ENV,
     CATEGORY_MOTION,
-    RANDOM_BATTLE,
-    BATTLE_DRAW_BOUNDS,
+    CATEGORY_BATTLE,
     Ui::BACK,
 };
 static constexpr const char* MONSTER_ITEMS[] = {
     RECOVER,
+    LEVEL_UP,
     SWITCH_MON,
     Ui::BACK,
 };
@@ -453,6 +471,11 @@ static constexpr const char* ENV_ITEMS[] = {
 static constexpr const char* MOTION_ITEMS[] = {
     TILT_CONTROL,
     WALK_BOUNDARY,
+    Ui::BACK,
+};
+static constexpr const char* BATTLE_ITEMS[] = {
+    RANDOM_BATTLE,
+    BATTLE_DRAW_BOUNDS,
     Ui::BACK,
 };
 }
@@ -483,9 +506,22 @@ static constexpr const char* ACTION_INVITE = "邀请";
 static constexpr const char* ACTION_DELETE = "删除";
 static constexpr const char* ACTION_BACK = "返回";
 static constexpr const char* INVITE_TOAST = "已加入队伍";
+static constexpr const char* INVITE_CONFIRM_FMT = "邀请%s同行吗？";
+static constexpr const char* INVITE_ACCEPTED = "它开心地答应了";
+static constexpr const char* INVITE_REFUSED = "它婉拒了邀请";
+static constexpr const char* INVITE_LOCKED = "今天不能再邀请";
+static constexpr const char* VISITING = "正在房间做客";
 static constexpr const char* TEAM_FULL_TOAST = "队伍已满";
 static constexpr const char* DELETE_CONFIRM = "删除";
 static constexpr const char* DELETE_TOAST = "删除";
+static constexpr const char* BOND_LEVELS[] = {
+    "抗拒",
+    "疏远",
+    "初识",
+    "熟悉",
+    "信赖",
+    "挚友",
+};
 static constexpr const char* YES = "是";
 static constexpr const char* NO = "否";
 static constexpr const char* ACTIONS[] = {
@@ -494,6 +530,19 @@ static constexpr const char* ACTIONS[] = {
     ACTION_DELETE,
     ACTION_BACK,
 };
+}
+
+namespace ContactVisit {
+static constexpr const char* KNOCK = "好像有敲门声，要去看看吗？";
+static constexpr const char* PLAY_FMT = "%s来找你玩了";
+static constexpr const char* GIFT_FMT = "%s送来了普通粮";
+static constexpr const char* EXPLORE_FMT = "%s想邀请你去探险";
+static constexpr const char* HAPPY_RETURN = "今天的探险真开心！";
+static constexpr const char* BYE_RETURN = "下次再一起去吧！";
+static constexpr const char* HAPPY_VISIT = "今天玩得很开心！";
+static constexpr const char* BYE_VISIT = "下次再来找你玩！";
+static constexpr const char* YES = "是";
+static constexpr const char* NO = "否";
 }
 
 namespace Status {
@@ -613,15 +662,28 @@ static constexpr const char* USED_PARALYZE_HEAL = "麻痹状态已解除";
 static constexpr const char* USED_AWAKENING = "睡眠状态已解除";
 static constexpr const char* USED_BURN_HEAL = "灼伤状态已解除";
 static constexpr const char* USED_ICE_HEAL = "冰冻状态已解除";
+static constexpr const char* USED_MAX_POTION = "已使用全满药";
+static constexpr const char* USED_FULL_RESTORE = "已使用全复药";
+static constexpr const char* USED_FULL_HEAL = "异常状态已全部解除";
+static constexpr const char* FULL_RESTORE_NOT_NEEDED = "体力已满且无异常";
+static constexpr const char* STONE_NO_EFFECT = "对它没有效果";
+static constexpr const char* STONE_EVOLUTION_BEGIN = "进化的力量觉醒了!";
+static constexpr const char* USED_REVIVE = "已使用复活草";
+static constexpr const char* REVIVE_NO_FAINTED = "没有濒死的精灵";
+static constexpr const char* USED_MAX_REPEL = "已使用黄金喷雾";
+static constexpr const char* USED_HONEY = "已使用甜甜蜜";
+static constexpr const char* MAX_REPEL_ACTIVE = "黄金喷雾仍在生效";
+static constexpr const char* HONEY_ACTIVE = "甜甜蜜仍在生效";
 static constexpr const char* THREW_FOOD_FMT = "已投掷%s";
 static constexpr const char* HP_FULL = "体力已满";
 static constexpr const char* FAINTED_CANNOT_HEAL = "濒死时无法使用伤药";
 static constexpr const char* STATUS_NORMAL = "没有对应异常状态";
 static constexpr const char* USE_CONFIRM_FMT = "是否给%s使用?";
+static constexpr const char* USE_ITEM_CONFIRM_FMT = "是否使用%s?";
 static constexpr const char* THROW_CONFIRM_FMT = "是否向%s投掷?";
 static constexpr const char* YES = "yes";
 static constexpr const char* NO = "no";
-static constexpr const char* FOOD_FMT = "橙橙果:%u";
+static constexpr const char* FOOD_FMT = "饼干:%u";
 static constexpr const char* POTION_FMT = "伤药:%u";
 static constexpr const char* SUPER_POTION_FMT = "高级伤药:%u";
 static constexpr const char* ANTIDOTE_FMT = "解毒药:%u";
@@ -645,6 +707,15 @@ static constexpr const char* NAMES[] = {
     "解眠药",
     "灼伤药",
     "解冻药",
+    Ui::MAX_POTION,
+    Ui::FULL_RESTORE,
+    Ui::FULL_HEAL,
+    Ui::FIRE_STONE,
+    Ui::WATER_STONE,
+    Ui::THUNDER_STONE,
+    Ui::REVIVE,
+    Ui::MAX_REPEL,
+    Ui::HONEY,
     Ui::BACK,
 };
 static constexpr const char* DESCS[][3] = {
@@ -663,6 +734,15 @@ static constexpr const char* DESCS[][3] = {
     {"解除睡眠状态", "仅在睡眠时生效", "战斗中可以使用"},
     {"解除灼伤状态", "仅在灼伤时生效", "战斗中可以使用"},
     {"解除冰冻状态", "仅在冰冻时生效", "战斗中可以使用"},
+    {"体力全部恢复", "濒死时无法使用", "适合高等级伙伴"},
+    {"体力全满并解除异常", "濒死时无法使用", "终局常备良药"},
+    {"解除全部异常状态", "不恢复体力", "一瓶应对所有异常"},
+    {"让特定精灵进化", "伊布可进化为火伊布", "对其他精灵无效"},
+    {"让特定精灵进化", "伊布可进化为水伊布", "对其他精灵无效"},
+    {"让特定精灵进化", "皮卡丘可进化为雷丘", "伊布可进化为雷伊布"},
+    {"让濒死伙伴复活", "回复一半体力", "探索途中必备"},
+    {"100步内避开遇敌", "对下一次探索生效", "保底遭遇不受影响"},
+    {"下一步必定遇敌", "对下一次探索生效", "刷怪提速好帮手"},
     {"回到主菜单", "继续选择其他功能", ""},
 };
 }
@@ -722,7 +802,7 @@ static constexpr const char* OFF = "关";
 namespace Shop {
 static constexpr const char* NOT_ENOUGH_COINS = "金币不够";
 static constexpr const char* BAG_FULL = "背包已满";
-static constexpr const char* BOUGHT_FOOD = "买到橙橙果";
+static constexpr const char* BOUGHT_FOOD = "买到饼干";
 static constexpr const char* BOUGHT_FMT = "买到%s";
 static constexpr const char* BOUGHT_POTION = "买到伤药";
 static constexpr const char* BOUGHT_ANTIDOTE = "买到解毒药";
@@ -763,6 +843,18 @@ static constexpr const char* NAMES[] = {
     "婴儿粉皂",
     "树叶皂",
     "薄荷皂",
+    Ui::MAX_POTION,
+    Ui::FULL_RESTORE,
+    Ui::FULL_HEAL,
+    Ui::FIRE_STONE,
+    Ui::WATER_STONE,
+    Ui::THUNDER_STONE,
+    Ui::REVIVE,
+    Ui::MAX_REPEL,
+    Ui::HONEY,
+    Ui::NUGGET,
+    Ui::BIG_PEARL,
+    Ui::STAR_PIECE,
     Ui::BACK,
 };
 static constexpr const char* DESCS[] = {
@@ -784,6 +876,18 @@ static constexpr const char* DESCS[] = {
     "婴儿粉 长方圆角小气泡",
     "天蓝色 蛋形树叶压印",
     "薄荷绿 圆盘螺旋纹理",
+    "体力全部恢复",
+    "体力全满并解除异常",
+    "解除全部异常状态",
+    "蕴含火之力的进化石",
+    "蕴含水之力的进化石",
+    "蕴含雷之力的进化石",
+    "濒死复活并回复半血",
+    "100步内避开随机遇敌",
+    "下一步必定遇敌",
+    "纯卖钱 值500C",
+    "纯卖钱 值1000C",
+    "纯卖钱 值2500C",
     "回到菜单",
 };
 }
@@ -916,7 +1020,9 @@ static constexpr const char* LEARN_TITLE = "学习新招式?";
 static constexpr const char* LEARN_MOVE_FMT = "要学习%s吗?";
 static constexpr const char* LEARN_EMPTY_SLOT = "放入技能2";
 static constexpr const char* LEARN_EMPTY_SLOT_2 = "放入技能3";
-static constexpr const char* LEARN_REPLACE_FMT = "替换%s";
+static constexpr const char* LEARN_CHOOSE_REPLACEMENT = "选择要遗忘的技能";
+static constexpr const char* LEARN_FORGET_FMT = "遗忘%s";
+static constexpr const char* LEARN_WILL_LEARN_FMT = "将学习%s";
 static constexpr const char* MOVE_REPLACED_TITLE = "招式已替换";
 static constexpr const char* MOVE_FORGOT_FMT = "忘记了%s";
 static constexpr const char* MOVE_LEARNED_FMT = "学会了%s";
@@ -927,6 +1033,7 @@ static constexpr const char* PICKUP_SUPER_POTION = "高级伤药";
 static constexpr const char* PICKUP_ANTIDOTE = "解毒药";
 static constexpr const char* PICKUP_CANDY = "神奇糖果";
 static constexpr const char* RESULT_END = "探索结束";
+static constexpr const char* BOND_GAIN_FMT = "羁绊 +%u";
 static constexpr const char* A_CONTINUE = "A 继续探索";
 }
 

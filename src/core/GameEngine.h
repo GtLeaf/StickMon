@@ -6,6 +6,8 @@
 #include "core/SaveManager.h"
 #include "core/Scene.h"
 #include "game/GameState.h"
+#include "game/CareTicker.h"
+#include "game/ExploreItemEffects.h"
 #include "game/EncounterHistory.h"
 #include "game/Species.h"
 
@@ -50,6 +52,21 @@ struct PetResult {
     PetOutcome outcome = PetOutcome::DAILY_LIMIT;
     uint8_t moodGain = 0;
     uint8_t affectionGain = 0;
+};
+
+enum class ContactInviteResult : uint8_t {
+    JOINED,
+    REFUSED,
+    LOCKED,
+    TEAM_FULL,
+    INVALID,
+};
+
+enum class ContactVisitKind : uint8_t {
+    NONE,
+    PLAY,
+    GIFT,
+    EXPLORE,
 };
 
 enum class ExploreTravelPhase : uint8_t {
@@ -113,6 +130,18 @@ public:
     uint8_t awakeningCount() const { return state.bag.awakening; }
     uint8_t burnHealCount() const { return state.bag.burnHeal; }
     uint8_t iceHealCount() const { return state.bag.iceHeal; }
+    uint8_t maxPotionCount() const { return state.bag.maxPotion; }
+    uint8_t fullRestoreCount() const { return state.bag.fullRestore; }
+    uint8_t fullHealCount() const { return state.bag.fullHeal; }
+    uint8_t fireStoneCount() const { return state.bag.fireStone; }
+    uint8_t waterStoneCount() const { return state.bag.waterStone; }
+    uint8_t thunderStoneCount() const { return state.bag.thunderStone; }
+    uint8_t reviveCount() const { return state.bag.revive; }
+    uint8_t maxRepelCount() const { return state.bag.maxRepel; }
+    uint8_t honeyCount() const { return state.bag.honey; }
+    uint8_t nuggetCount() const { return state.bag.nugget; }
+    uint8_t bigPearlCount() const { return state.bag.bigPearl; }
+    uint8_t starPieceCount() const { return state.bag.starPiece; }
     uint8_t soapCount(uint8_t soapIndex) const {
         return soapIndex < Game::SOAP_VARIANT_COUNT ? state.bag.soap[soapIndex] : 0;
     }
@@ -134,7 +163,31 @@ public:
     bool moveTeamMemberToFront(uint8_t slot);
     bool forgetTeamMemberMove(uint8_t teamSlot, uint8_t moveSlot);
     bool moveTeamMemberToContacts(uint8_t slot);
-    bool inviteContactToTeam(uint8_t slot);
+    ContactInviteResult inviteContactToTeam(uint8_t slot);
+    bool contactInviteLocked(uint8_t slot) const;
+    uint8_t contactInviteChance(uint8_t slot) const;
+    bool prepareDailyContactVisit();
+    bool contactKnockPending() const { return contactVisit.pendingKnock; }
+    bool localContactVisitActive() const { return contactVisit.active; }
+    ContactVisitKind contactVisitKind() const { return contactVisit.kind; }
+    uint16_t contactVisitSpeciesId() const;
+    bool acceptContactKnock();
+    void declineContactKnock();
+    void acceptContactExploreInvitation();
+    bool contactVisitExploring() const {
+        return contactVisit.active && contactVisit.exploring;
+    }
+    bool contactVisitFarewellPending() const {
+        return contactVisit.active && contactVisit.farewellPending;
+    }
+    bool contactVisitTimedOut(uint32_t nowMs) const;
+    void requestContactVisitFarewell();
+    bool restoreContactHostToFront();
+    void completeContactVisit();
+    bool contactIsVisiting(uint8_t storageSlot) const {
+        return contactVisit.active &&
+               contactVisit.storageSlot == storageSlot;
+    }
     bool deleteContact(uint8_t slot);
     bool addFood(uint8_t amount = 1);
     bool addFoodStock(uint8_t foodIndex, uint8_t amount = 1);
@@ -156,6 +209,22 @@ public:
     bool useBurnHeal(uint8_t teamSlot = 0);
     bool addIceHeal(uint8_t amount);
     bool useIceHeal(uint8_t teamSlot = 0);
+    bool useMaxPotion(uint8_t teamSlot = 0);
+    bool useFullRestore(uint8_t teamSlot = 0);
+    bool useFullHeal(uint8_t teamSlot = 0);
+    bool useEvolutionStone(uint8_t teamSlot, Game::ItemId stone);
+    bool useRevive(uint8_t teamSlot = 0);
+    // 黄金喷雾/甜甜蜜：效果为会话状态（不进存档，重启失效），对下一次探索生效。
+    bool useMaxRepel();
+    bool useHoney();
+    uint8_t repelStepsRemaining() const {
+        return exploreItemEffects.repelStepsRemaining();
+    }
+    void tickRepelStep() { exploreItemEffects.completeWalkStep(); }
+    bool honeyEncounterPending() const {
+        return exploreItemEffects.honeyEncounterPending();
+    }
+    void clearHoneyEncounter() { exploreItemEffects.consumeHoneyEncounter(); }
     uint8_t itemCount(Game::ItemId item) const;
     bool addItem(Game::ItemId item, uint8_t amount = 1,
                  SaveUrgency urgency = SaveUrgency::SOON);
@@ -169,6 +238,7 @@ public:
                              uint8_t* contactSlot = nullptr);
     void grantEffortFrom(const Species& defeatedSpecies);
     void grantEffortToTeamMember(uint8_t teamSlot, const Species& defeatedSpecies);
+    bool rewardPairInteractionMood();
     PetResult petMonster();
     void finishHatch(uint8_t starterStyle);
     void addExperience(uint32_t amount);
@@ -179,7 +249,9 @@ public:
     bool hasPendingMoveLearn() const { return state.pendingMoveLearn; }
     Game::MoveId pendingMoveLearnId() const { return state.pendingMoveId; }
     uint8_t pendingMoveLearnSlot() const { return state.pendingMoveSlot; }
+    bool pendingMoveLearnNeedsReplacement() const;
     bool resolvePendingMoveLearn(bool learn);
+    bool resolvePendingMoveLearnReplacing(uint8_t replacementSlot);
     bool hasPendingMoveReplacement() const { return moveReplacementEventCount > 0; }
     uint8_t pendingMoveReplacementSlot() const;
     Game::MoveId pendingMoveReplacementOldId() const;
@@ -190,12 +262,15 @@ public:
     uint16_t pendingEvolutionFromSpeciesId() const;
     uint16_t pendingEvolutionToSpeciesId() const;
     bool acknowledgePendingEvolution();
+    bool cancelPendingEvolution();
     uint32_t applyFaintPenaltyToTeamMember(uint8_t teamSlot);
     uint32_t applyActiveFaintPenalty() {
         return applyFaintPenaltyToTeamMember(0);
     }
+    uint8_t grantAdventureBond(uint16_t steps);
     void addWalkSteps(uint16_t steps);
     void debugRecoverActiveMonster();
+    bool debugLevelUpActiveMonster();
     bool debugSetActiveSpecies(uint16_t speciesId);
     uint32_t debugAdvanceToTimeOfDay(uint16_t targetMinutesOfDay);
     uint8_t debugLightSourceIndex() const { return debugLightSource; }
@@ -211,8 +286,14 @@ public:
     }
     void wakeFromIdle();
     bool idleModeActive() const { return idleActive; }
+    void invalidateScene();
     void markDirty(SaveUrgency urgency = SaveUrgency::DEFERRED);
     bool saveNow();
+    // 主界面长按 B 键进入深度睡眠：睡前强制存档，唤醒为冷启动读档。
+    void enterDeepSleep();
+    // 深度睡眠定时静默唤醒入口（main.cpp setup 中按唤醒原因调用）：
+    // 只跑照护逻辑并写档，随后重新武装定时器再次深睡；不返回。
+    void runSilentCareWake();
     bool resetGame();
     const MainSceneViewState& mainSceneViewState() const { return mainViewState; }
     void saveMainSceneViewState(const MainSceneViewState& value) { mainViewState = value; }
@@ -258,6 +339,7 @@ private:
     uint32_t gameMinutesTotalAt(uint32_t nowMs) const;
     void syncGameClock(uint32_t nowMs);
     void resetGameClockAnchor(uint32_t nowMs);
+    void markSaveDirty(SaveUrgency urgency);
     void initDefaultState();
     void sanitizeMonsterMoves();
     bool sanitizeMonsterMovesForSpecies(Game::MonsterRuntime& mon,
@@ -275,11 +357,17 @@ private:
     void queueMoveReplacementEvent(uint8_t teamSlot, Game::MoveId oldMoveId,
                                    Game::MoveId newMoveId);
     bool applyLevelUpEvolutions(Game::MonsterRuntime& mon, uint8_t teamSlot,
-                                bool notify);
-    bool reconcileLevelUpEvolutions();
-    void queueEvolutionEvent(uint8_t teamSlot, uint16_t fromSpeciesId,
-                             uint16_t toSpeciesId);
+                                bool notify, uint8_t oldLevel);
+    bool queueEvolutionEvent(uint8_t teamSlot, uint16_t fromSpeciesId,
+                             uint16_t toSpeciesId,
+                             const Game::MonsterRuntime& beforeEvolution,
+                             uint8_t oldLevel,
+                             Game::ItemId consumedItem = Game::ItemId::COUNT);
+    void removeEvolutionEventsForSlot(uint8_t teamSlot);
+    void removeMoveReplacementEventsForSlot(uint8_t teamSlot);
     void clearPendingMoveLearn();
+    bool resolvePendingMoveLearnInternal(bool learn,
+                                         uint8_t replacementSlot);
 
     static constexpr uint32_t INPUT_SAMPLE_MS = 16;
     static constexpr uint32_t FRAME_MS = 66;
@@ -293,10 +381,26 @@ private:
         IN,
     };
 
+    struct EvolutionSnapshot {
+        uint16_t speciesId = 0;
+        uint16_t hpCur = 0;
+        uint16_t hpMax = 0;
+        Game::MoveId move1Id = 0;
+        Game::MoveId move2Id = 0;
+        Game::MoveId move3Id = 0;
+        uint8_t moveProficiency[Game::MOVE_SLOT_COUNT] = {};
+        bool pendingMoveLearn = false;
+        Game::MoveId pendingMoveId = 0;
+        uint16_t pendingMoveCursor = 0;
+    };
+
     struct EvolutionEvent {
         uint8_t teamSlot = 0;
+        uint8_t oldLevel = 0;
         uint16_t fromSpeciesId = 0;
         uint16_t toSpeciesId = 0;
+        Game::ItemId consumedItem = Game::ItemId::COUNT;
+        EvolutionSnapshot before;
     };
 
     struct MoveReplacementEvent {
@@ -326,9 +430,8 @@ private:
     uint32_t lastActivityMs = 0;
     uint32_t clockAnchorMs = 0;
     uint32_t clockAnchorMinutes = 0;
-    uint16_t hpRecoveryMinuteAcc = 0;
-    uint16_t satietyDecayMinuteAcc = 0;
-    bool satietyDecayWasSleeping = false;
+    // 跨 tickCare 调用保留的会话型照护累加器（不持久化），见 game/CareTicker.h。
+    Game::CareTickAccumulators careAcc = {};
     bool idleActive = false;
     bool saveDirty = false;
     bool saveSoon = false;
@@ -368,6 +471,8 @@ private:
     uint8_t exploreArea = 0;
     bool debugBattleRequested = false;
     bool debugMenuReturnRequested = false;
+    // 会话级道具效果（黄金喷雾/甜甜蜜），不进存档，重启失效。
+    Game::ExploreItemEffects exploreItemEffects;
     EvolutionEvent evolutionEvents[EVOLUTION_EVENT_CAP] = {};
     uint8_t evolutionEventHead = 0;
     uint8_t evolutionEventCount = 0;
@@ -376,6 +481,16 @@ private:
     uint8_t moveReplacementEventCount = 0;
     MainSceneViewState mainViewState;
     VisitSessionState visitSession;
+    struct ContactVisitSession {
+        bool pendingKnock = false;
+        bool active = false;
+        bool exploring = false;
+        bool farewellPending = false;
+        uint8_t storageSlot = 0xFF;
+        ContactVisitKind kind = ContactVisitKind::NONE;
+        uint32_t startedMs = 0;
+        uint32_t checkedDay = 0xFFFFFFFFUL;
+    } contactVisit;
     bool visitLinkLost = false;
 
     Game::GameState state;
@@ -384,4 +499,5 @@ private:
     SaveManager saveManager;
 
     bool syncOwnedSpeciesToEncounterHistory();
+    uint8_t contactVisitorTeamSlot() const;
 };

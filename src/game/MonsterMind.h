@@ -15,7 +15,7 @@ static constexpr uint8_t MONSTER_FEED_TARGET_SATIETY = 85;
 
 enum class MonsterMovementMode : uint8_t {
     NORMAL,
-    COCOON_SHUFFLE,
+    STATIONARY,
 };
 
 struct MonsterBehaviorProfile {

@@ -76,6 +76,7 @@ void SocialScene::onExit() {
 
 SceneUpdateResult SocialScene::update(uint32_t nowMs, float dtSeconds) {
     (void)dtSeconds;
+    RenderDemand demand;
     LinkPhase phaseBefore = phase;
     uint8_t roomsBefore = EspNowLink::ins().roomCount();
     EspNowLink::ins().update();
@@ -114,9 +115,9 @@ SceneUpdateResult SocialScene::update(uint32_t nowMs, float dtSeconds) {
         break;
     }
 
-    bool redraw = phase != phaseBefore;
+    demand.changed(phase != phaseBefore);
     uint8_t roomCount = EspNowLink::ins().roomCount();
-    redraw = redraw || roomCount != roomsBefore || roomCount != lastRoomCount;
+    demand.changed(roomCount != roomsBefore || roomCount != lastRoomCount);
     lastRoomCount = roomCount;
 
     bool linkActive =
@@ -135,25 +136,13 @@ SceneUpdateResult SocialScene::update(uint32_t nowMs, float dtSeconds) {
     uint32_t visualTick = nowMs / DOTS_INTERVAL_MS;
     if (animatedStatus && visualTick != lastVisualTick) {
         lastVisualTick = visualTick;
-        redraw = true;
+        demand.redraw();
     }
 
-    uint32_t nextDelay =
-        linkActive ? 66 : SceneUpdateResult::NO_UPDATE;
-    if (phase == LinkPhase::VISITING) nextDelay = 200;
-    if (toast) {
-        if (static_cast<int32_t>(nowMs - toastUntil) >= 0) {
-            toast = nullptr;
-            redraw = true;
-        } else {
-            uint32_t toastDelay = toastUntil - nowMs;
-            if (nextDelay == SceneUpdateResult::NO_UPDATE ||
-                toastDelay < nextDelay) {
-                nextDelay = toastDelay;
-            }
-        }
-    }
-    return SceneUpdateResult(redraw, nextDelay);
+    if (linkActive) demand.wakeIn(66);
+    if (phase == LinkPhase::VISITING) demand.wakeIn(200);
+    if (demand.expired(toast != nullptr, nowMs, toastUntil)) toast = nullptr;
+    return demand.result();
 }
 
 void SocialScene::updateHostAdvertising(uint32_t nowMs) {

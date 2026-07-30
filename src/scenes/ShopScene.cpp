@@ -4,10 +4,13 @@
 #include "assets/GameAssets.h"
 #include "core/GameEngine.h"
 #include "core/UiStrings.h"
+#include "core/UiMotion.h"
 #include "hardware/Hal.h"
 #include "hardware/PixelRenderer.h"
 
-// Out-of-class definition required by C++11 for the odr-used constexpr array.
+// Out-of-class definitions required by C++11 for odr-used constexpr arrays.
+constexpr ShopScene::Item ShopScene::EXPLORE_ITEMS[];
+constexpr ShopScene::Item ShopScene::DAILY_ITEMS[];
 constexpr ShopScene::Item ShopScene::SELL_ITEMS[];
 
 namespace {
@@ -111,51 +114,27 @@ void ShopScene::onEnter() {
 }
 
 SceneUpdateResult ShopScene::update(uint32_t nowMs, float dtSeconds) {
-    bool redraw = false;
+    RenderDemand demand;
     bool animating = false;
     float targetX = viewMode == ViewMode::CATEGORY
         ? CATEGORY_ICON_COLUMN_X : SUBMENU_ICON_COLUMN_X;
-    float delta = targetX - itemColumnX;
     float clampedDt = dtSeconds > 0.05f ? 0.05f : dtSeconds;
-    float step = ICON_COLUMN_SPEED * clampedDt;
-    if (fabsf(delta) > 0.05f) {
-        animating = true;
-        float before = itemColumnX;
-        if (fabsf(delta) <= step && step > 0.0f) {
-            itemColumnX = targetX;
-        } else if (step > 0.0f) {
-            itemColumnX += delta > 0.0f ? step : -step;
-        }
-        redraw = redraw || itemColumnX != before;
-    }
+    UiMotion::StepResult columnStep = UiMotion::approach(
+        itemColumnX, targetX, ICON_COLUMN_SPEED * clampedDt);
+    demand.changed(columnStep.changed);
+    animating = columnStep.active;
 
     float targetCursor =
         viewMode == ViewMode::CATEGORY || !itemColumnSettled()
             ? 0.0f : static_cast<float>(cursor);
-    float cursorDelta = targetCursor - itemAnimCursor;
-    if (fabsf(cursorDelta) > 0.05f) {
-        itemAnimCursor += cursorDelta * ITEM_SCROLL_LERP;
-        redraw = true;
-        animating = true;
-    } else if (itemAnimCursor != targetCursor) {
-        itemAnimCursor = targetCursor;
-        redraw = true;
-    }
+    UiMotion::StepResult cursorStep = UiMotion::lerp(
+        itemAnimCursor, targetCursor, ITEM_SCROLL_LERP);
+    demand.changed(cursorStep.changed);
+    animating = animating || cursorStep.active;
 
-    uint32_t nextDelay = animating ? 66 : SceneUpdateResult::NO_UPDATE;
-    if (toast) {
-        if (static_cast<int32_t>(nowMs - toastUntil) >= 0) {
-            toast = nullptr;
-            redraw = true;
-        } else {
-            uint32_t toastDelay = toastUntil - nowMs;
-            if (nextDelay == SceneUpdateResult::NO_UPDATE ||
-                toastDelay < nextDelay) {
-                nextDelay = toastDelay;
-            }
-        }
-    }
-    return SceneUpdateResult(redraw, nextDelay);
+    demand.animate(animating);
+    if (demand.expired(toast != nullptr, nowMs, toastUntil)) toast = nullptr;
+    return demand.result();
 }
 
 bool ShopScene::onButton(const ButtonEvent& event) {
@@ -272,37 +251,13 @@ ShopScene::Item ShopScene::selectedItem() const {
 }
 
 ShopScene::Item ShopScene::itemForCategory(Category category, uint8_t index) const {
-    static constexpr Item EXPLORE_ITEMS[] = {
-        POTION,
-        ANTIDOTE,
-        PARALYZE_HEAL,
-        AWAKENING,
-        BURN_HEAL,
-        ICE_HEAL,
-        BACK,
-    };
-    static constexpr Item DAILY_ITEMS[] = {
-        FOOD,
-        TASTY_FOOD,
-        SWEET_FOOD,
-        SPICY_FOOD,
-        SOUR_FOOD,
-        BITTER_FOOD,
-        DRY_FOOD,
-        CANDY,
-        SOAP_0,
-        SOAP_1,
-        SOAP_2,
-        BACK,
-    };
-
     if (category == CATEGORY_DAILY) {
-        uint8_t idx = index < (sizeof(DAILY_ITEMS) / sizeof(DAILY_ITEMS[0])) ? index : 0;
+        uint8_t idx = index < DAILY_ITEM_COUNT ? index : 0;
         return DAILY_ITEMS[idx];
     }
     if (category == CATEGORY_SELL) return sellItemAtIndex(index);
     if (category == CATEGORY_BACK) return BACK;
-    uint8_t idx = index < (sizeof(EXPLORE_ITEMS) / sizeof(EXPLORE_ITEMS[0])) ? index : 0;
+    uint8_t idx = index < EXPLORE_ITEM_COUNT ? index : 0;
     return EXPLORE_ITEMS[idx];
 }
 
@@ -326,12 +281,10 @@ uint8_t ShopScene::currentItemCount() const {
 }
 
 uint8_t ShopScene::itemCountForCategory(Category category, bool includeBack) const {
-    static constexpr uint8_t DAILY_ITEM_COUNT =
-        Game::ROOM_FOOD_COUNT + Game::SOAP_VARIANT_COUNT + 2;
     uint8_t count = 0;
     switch (category) {
     case CATEGORY_DAILY: count = DAILY_ITEM_COUNT; break;
-    case CATEGORY_EXPLORE: count = 7; break; // 6 medicines + BACK
+    case CATEGORY_EXPLORE: count = EXPLORE_ITEM_COUNT; break;
     case CATEGORY_SELL: count = sellItemCount(); break;
     case CATEGORY_BACK: return 0;
     default: return 0;
@@ -544,7 +497,21 @@ uint16_t ShopScene::priceFor(Item item) {
     case AWAKENING: return 40;
     case BURN_HEAL: return 40;
     case ICE_HEAL: return 40;
-    case CANDY: return 200;
+    case CANDY: return 2000;
+    case MAX_POTION: return 300;
+    case FULL_RESTORE: return 400;
+    case FULL_HEAL: return 150;
+    case FIRE_STONE:
+    case WATER_STONE:
+    case THUNDER_STONE:
+        return 1000;
+    case REVIVE: return 300;
+    case MAX_REPEL: return 150;
+    case HONEY: return 100;
+    case NUGGET:
+    case BIG_PEARL:
+    case STAR_PIECE:
+        return 0; // 仅捡拾获得，不进购买货架
     case SOAP_0:
     case SOAP_1:
     case SOAP_2:
@@ -554,6 +521,12 @@ uint16_t ShopScene::priceFor(Item item) {
 }
 
 uint16_t ShopScene::sellPriceFor(Item item) {
+    switch (item) {
+    case NUGGET: return 500;
+    case BIG_PEARL: return 1000;
+    case STAR_PIECE: return 2500;
+    default: break;
+    }
     return priceFor(item) / 2;
 }
 
@@ -574,6 +547,18 @@ Game::ItemId ShopScene::gameItemIdFor(Item item) {
     case BITTER_FOOD: return Game::ItemId::BITTER_FOOD;
     case DRY_FOOD: return Game::ItemId::DRY_FOOD;
     case CANDY: return Game::ItemId::CANDY;
+    case MAX_POTION: return Game::ItemId::MAX_POTION;
+    case FULL_RESTORE: return Game::ItemId::FULL_RESTORE;
+    case FULL_HEAL: return Game::ItemId::FULL_HEAL;
+    case FIRE_STONE: return Game::ItemId::FIRE_STONE;
+    case WATER_STONE: return Game::ItemId::WATER_STONE;
+    case THUNDER_STONE: return Game::ItemId::THUNDER_STONE;
+    case REVIVE: return Game::ItemId::REVIVE;
+    case MAX_REPEL: return Game::ItemId::MAX_REPEL;
+    case HONEY: return Game::ItemId::HONEY;
+    case NUGGET: return Game::ItemId::NUGGET;
+    case BIG_PEARL: return Game::ItemId::BIG_PEARL;
+    case STAR_PIECE: return Game::ItemId::STAR_PIECE;
     case SOAP_0: return Game::ItemId::SOAP_0;
     case SOAP_1: return Game::ItemId::SOAP_1;
     case SOAP_2: return Game::ItemId::SOAP_2;

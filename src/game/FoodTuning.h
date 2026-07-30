@@ -18,8 +18,8 @@ struct FoodProfile {
 };
 
 static constexpr FoodProfile PROFILES[Game::ROOM_FOOD_COUNT] = {
-    {25, 3, 1}, // 0 橙橙果（3 口/份，见 roomFoodBitesPerServing）
-    {22, 5, 6}, // 1 文柚果
+    {25, 3, 1}, // 0 饼干（3 口/份，见 roomFoodBitesPerServing）
+    {22, 5, 6}, // 1 能量方块
     {20, 8, 6}, // 2 桃桃果
     {24, 4, 6}, // 3 樱子果
     {22, 6, 6}, // 4 利木果
@@ -45,8 +45,8 @@ static constexpr int8_t STAT_TO_FOOD_INDEX[Game::STAT_COUNT] = {
 
 // ---- 战斗投掷结算 -----------------------------------------------------------
 enum class ThrowClass : uint8_t {
-    NORMAL = 0, // 橙橙果，或不对口味的口味树果
-    TASTY,      // 文柚果
+    NORMAL = 0, // 饼干，或不对口味的口味树果
+    TASTY,      // 能量方块
     LIKED,      // 野生精灵喜欢口味
     DISLIKED,   // 野生精灵讨厌口味
     COUNT,

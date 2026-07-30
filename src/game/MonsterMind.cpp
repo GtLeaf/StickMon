@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <algorithm>
+#include "game/SpeciesBehavior.h"
 
 namespace {
 static constexpr int8_t NATURE_ACTIVITY_BIAS[Game::NATURE_COUNT] = {
@@ -112,17 +113,19 @@ MonsterBehaviorProfile behaviorProfileFor(const Species& species,
         profile.turnPauseMs = 280;
     }
 
-    switch (species.id) {
-    case 11:
-        profile.movementMode = MonsterMovementMode::COCOON_SHUFFLE;
-        profile.moveSpeedScale = 0.18f;
-        profile.idleMinMs = 9000;
-        profile.idleMaxMs = 18000;
-        profile.wanderRadiusX = 12;
-        profile.wanderRadiusY = 7;
-        profile.turnPauseMs = 650;
+    if (Game::isFixedCocoonSpecies(species.id)) {
+        profile.movementMode = MonsterMovementMode::STATIONARY;
+        profile.moveSpeedScale = 0.0f;
+        profile.idleMinMs = 12000;
+        profile.idleMaxMs = 24000;
+        profile.wanderRadiusX = 0;
+        profile.wanderRadiusY = 0;
+        profile.turnPauseMs = 0;
         profile.activityBias = -2;
-        break;
+        return profile;
+    }
+
+    switch (species.id) {
     case 129:
         profile.moveSpeedScale = 0.35f;
         profile.idleMinMs = 4200;

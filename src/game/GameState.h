@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 namespace Game {
@@ -10,7 +11,7 @@ static constexpr uint8_t TEAM_CAP = 2;
 static constexpr uint8_t STORAGE_CAP = 20;
 static constexpr uint8_t ITEM_STACK_CAP = 99;
 static constexpr uint32_t SAVE_MAGIC = 0x534D4F4E; // SMON
-static constexpr uint16_t SAVE_VERSION = 6;
+static constexpr uint16_t SAVE_VERSION = 1;
 static constexpr uint8_t STAT_COUNT = 6;
 static constexpr uint8_t NATURE_COUNT = 25;
 static constexpr uint8_t LEVEL_MAX = 100;
@@ -54,6 +55,18 @@ enum class ItemId : uint8_t {
     AWAKENING,
     BURN_HEAL,
     ICE_HEAL,
+    MAX_POTION,
+    FULL_RESTORE,
+    FULL_HEAL,
+    FIRE_STONE,
+    WATER_STONE,
+    THUNDER_STONE,
+    REVIVE,
+    MAX_REPEL,
+    HONEY,
+    NUGGET,
+    BIG_PEARL,
+    STAR_PIECE,
     SOAP_0,
     SOAP_1,
     SOAP_2,
@@ -189,12 +202,18 @@ struct MonsterRuntime {
     uint8_t petCountToday = 0;
     Origin origin = Origin::STARTER;
     bool fainted = false;
+    int8_t bond = 100;
     uint32_t metAt = 0;
     uint32_t lastSeenAt = 0;
     uint32_t lastPettedAt = 0;
     uint32_t lastExploredAt = 0;
     uint32_t lastWindowGazeAt = 0;
 };
+
+static_assert(sizeof(MonsterRuntime) == 64,
+              "MonsterRuntime layout is part of the v1 save format");
+static_assert(offsetof(MonsterRuntime, bond) == 43,
+              "bond must reuse the v1 padding byte to preserve save size");
 
 struct BagState {
     uint8_t paralyzeHeal = 0;
@@ -206,6 +225,18 @@ struct BagState {
     uint8_t antidote = 0;
     uint8_t candy = 1;
     uint8_t soap[SOAP_VARIANT_COUNT] = {};
+    uint8_t maxPotion = 0;
+    uint8_t fullRestore = 0;
+    uint8_t fullHeal = 0;
+    uint8_t fireStone = 0;
+    uint8_t waterStone = 0;
+    uint8_t thunderStone = 0;
+    uint8_t revive = 0;
+    uint8_t maxRepel = 0;
+    uint8_t honey = 0;
+    uint8_t nugget = 0;
+    uint8_t bigPearl = 0;
+    uint8_t starPiece = 0;
 };
 
 struct RoomState {
@@ -252,6 +283,7 @@ struct GameState {
     uint16_t walkExpToday = 0;
     uint16_t careExpToday = 0;
     uint16_t careDay = 0;
+    uint8_t pairMoodRewardsToday = 0;
     uint32_t gameMinutesTotal = INITIAL_GAME_MINUTES;
     bool pendingLevelUp = false;
     uint8_t pendingLevelUpLevel = 0;

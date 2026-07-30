@@ -2,3 +2,5 @@
 .vscode/
 .DS_Store
 tools/out/
+__pycache__/
+*.pyc

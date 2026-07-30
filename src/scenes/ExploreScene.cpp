@@ -26,21 +26,31 @@ enum PickupId : uint8_t {
     PICKUP_SUPER_POTION,
     PICKUP_ANTIDOTE,
     PICKUP_RARE_CANDY,
+    PICKUP_MAX_POTION,
+    PICKUP_FULL_RESTORE,
+    PICKUP_FULL_HEAL,
+    PICKUP_REVIVE,
+    PICKUP_MAX_REPEL,
+    PICKUP_HONEY,
+    PICKUP_NUGGET,
+    PICKUP_BIG_PEARL,
+    PICKUP_STAR_PIECE,
 };
 
-struct PickupWeights {
-    uint16_t coin;
-    uint16_t potion;
-    uint16_t superPotion;
-    uint16_t antidote;
-    uint16_t candy;
+// 分地图捡拾池：每张 RouteMap 挂一张 {pickupId, weight} 小表，
+// 金币数量由 RouteMap 的 minCoin/maxCoin 区间决定（高级地图钱更多）。
+struct PickupEntry {
+    uint8_t pickupId;
+    uint16_t weight;
 };
 
 using EncounterEntry = ExploreEncounters::Entry;
 
-constexpr uint16_t pickupWeightTotal(const PickupWeights& weights) {
-    return weights.coin + weights.potion + weights.superPotion +
-           weights.antidote + weights.candy;
+// C++11 constexpr 限制：用递归代替循环。
+constexpr uint16_t pickupWeightTotal(const PickupEntry* table, uint8_t count) {
+    return count == 0
+        ? 0
+        : table[0].weight + pickupWeightTotal(table + 1, count - 1);
 }
 
 static constexpr uint8_t WILD_LEVEL_MIN = 1;
@@ -78,6 +88,16 @@ constexpr uint8_t cooldownAfterCompletedSteps(uint8_t cooldown, uint8_t steps) {
 
 constexpr bool encounterGateOpen(uint8_t cooldown, uint8_t encounterCount) {
     return cooldown == 0 && encounterCount < MAX_ENCOUNTERS_PER_MAP;
+}
+
+constexpr bool encounterGateAllows(uint8_t cooldown, uint8_t encounterCount,
+                                   bool bypassGate) {
+    return bypassGate || encounterGateOpen(cooldown, encounterCount);
+}
+
+constexpr bool repelAllowsEncounter(bool guaranteed,
+                                    bool repelActiveThisStep) {
+    return guaranteed || !repelActiveThisStep;
 }
 
 constexpr bool canScheduleGuaranteedEncounter(uint8_t pathPointCount, uint8_t cooldown) {
@@ -377,7 +397,10 @@ struct RouteMap {
     uint8_t minMapCount;
     uint8_t maxMapCount;
     uint16_t encounterChance;
-    PickupWeights pickupWeights;
+    const PickupEntry* pickupTable;
+    uint8_t pickupEntryCount;
+    uint8_t minCoin;
+    uint8_t maxCoin;
     const EncounterEntry* encounters;
     uint8_t encounterCount;
     uint16_t fieldColor;
@@ -398,6 +421,37 @@ static constexpr auto& ANCIENT_WATERFALL_VALLEY_ENCOUNTERS =
 #define ENTRY_COUNT(entriesValue) \
     static_cast<uint8_t>(sizeof(entriesValue) / sizeof(entriesValue[0]))
 
+// 分地图捡拾池（权重；糖果另有 stepsToday>=5000 门槛，金币按区间滚点）。
+static constexpr PickupEntry GRASS_PATH_PICKUPS[] = {
+    {PICKUP_COIN, 40}, {PICKUP_POTION, 25}, {PICKUP_ANTIDOTE, 10},
+    {PICKUP_HONEY, 10}, {PICKUP_NUGGET, 3}, {PICKUP_RARE_CANDY, 2},
+};
+static constexpr PickupEntry CREEK_SLOPE_PICKUPS[] = {
+    {PICKUP_COIN, 40}, {PICKUP_POTION, 20}, {PICKUP_ANTIDOTE, 10},
+    {PICKUP_MAX_REPEL, 8}, {PICKUP_HONEY, 8}, {PICKUP_NUGGET, 5},
+    {PICKUP_RARE_CANDY, 2},
+};
+static constexpr PickupEntry TALL_GRASS_PARK_PICKUPS[] = {
+    {PICKUP_COIN, 38}, {PICKUP_SUPER_POTION, 20}, {PICKUP_ANTIDOTE, 8},
+    {PICKUP_REVIVE, 5}, {PICKUP_MAX_REPEL, 8}, {PICKUP_NUGGET, 6},
+    {PICKUP_BIG_PEARL, 3}, {PICKUP_RARE_CANDY, 2},
+};
+static constexpr PickupEntry FROST_CRYSTAL_CAVE_PICKUPS[] = {
+    {PICKUP_COIN, 36}, {PICKUP_SUPER_POTION, 18}, {PICKUP_FULL_HEAL, 8},
+    {PICKUP_REVIVE, 6}, {PICKUP_MAX_REPEL, 6}, {PICKUP_NUGGET, 4},
+    {PICKUP_BIG_PEARL, 6}, {PICKUP_RARE_CANDY, 2},
+};
+static constexpr PickupEntry MIST_FOREST_PATH_PICKUPS[] = {
+    {PICKUP_COIN, 34}, {PICKUP_MAX_POTION, 15}, {PICKUP_FULL_HEAL, 8},
+    {PICKUP_REVIVE, 7}, {PICKUP_BIG_PEARL, 7}, {PICKUP_STAR_PIECE, 4},
+    {PICKUP_RARE_CANDY, 2},
+};
+static constexpr PickupEntry ANCIENT_WATERFALL_VALLEY_PICKUPS[] = {
+    {PICKUP_COIN, 32}, {PICKUP_MAX_POTION, 15}, {PICKUP_FULL_RESTORE, 6},
+    {PICKUP_REVIVE, 8}, {PICKUP_BIG_PEARL, 5}, {PICKUP_STAR_PIECE, 7},
+    {PICKUP_RARE_CANDY, 2},
+};
+
 static constexpr RouteMap ROUTE_MAPS[] = {
     {
         Ui::Explore::GRASS_PATH,
@@ -408,7 +462,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         3,
         4,
         500,
-        {500, 167, 42, 83, 42},
+        GRASS_PATH_PICKUPS, ENTRY_COUNT(GRASS_PATH_PICKUPS), 10, 30,
         GRASS_PATH_ENCOUNTERS,
         ENTRY_COUNT(GRASS_PATH_ENCOUNTERS),
         0x2227,
@@ -423,7 +477,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         4,
         5,
         600,
-        {406, 254, 101, 118, 51},
+        CREEK_SLOPE_PICKUPS, ENTRY_COUNT(CREEK_SLOPE_PICKUPS), 15, 40,
         CREEK_SLOPE_ENCOUNTERS,
         ENTRY_COUNT(CREEK_SLOPE_ENCOUNTERS),
         0x224A,
@@ -438,7 +492,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         4,
         6,
         700,
-        {500, 180, 100, 100, 80},
+        TALL_GRASS_PARK_PICKUPS, ENTRY_COUNT(TALL_GRASS_PARK_PICKUPS), 20, 60,
         TALL_GRASS_PARK_ENCOUNTERS,
         ENTRY_COUNT(TALL_GRASS_PARK_ENCOUNTERS),
         0x2A66,
@@ -453,7 +507,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         5,
         7,
         900,
-        {228, 160, 183, 114, 91},
+        FROST_CRYSTAL_CAVE_PICKUPS, ENTRY_COUNT(FROST_CRYSTAL_CAVE_PICKUPS), 30, 80,
         FROST_CRYSTAL_CAVE_ENCOUNTERS,
         ENTRY_COUNT(FROST_CRYSTAL_CAVE_ENCOUNTERS),
         0xB6DB,
@@ -468,7 +522,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         6,
         8,
         1100,
-        {313, 183, 183, 183, 52},
+        MIST_FOREST_PATH_PICKUPS, ENTRY_COUNT(MIST_FOREST_PATH_PICKUPS), 40, 110,
         MIST_FOREST_PATH_ENCOUNTERS,
         ENTRY_COUNT(MIST_FOREST_PATH_ENCOUNTERS),
         0x1945,
@@ -483,7 +537,8 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         7,
         9,
         1300,
-        {294, 147, 206, 147, 88},
+        ANCIENT_WATERFALL_VALLEY_PICKUPS,
+        ENTRY_COUNT(ANCIENT_WATERFALL_VALLEY_PICKUPS), 50, 150,
         ANCIENT_WATERFALL_VALLEY_ENCOUNTERS,
         ENTRY_COUNT(ANCIENT_WATERFALL_VALLEY_ENCOUNTERS),
         0x1987,
@@ -588,7 +643,9 @@ constexpr bool routeTuningValid(const RouteMap (&maps)[N], size_t index = 0) {
             maps[index].maxMapCount <= 9 &&
             maps[index].maxMapCount - maps[index].minMapCount <= 2 &&
             maps[index].encounterChance <= 10000 &&
-            pickupWeightTotal(maps[index].pickupWeights) > 0 &&
+            maps[index].pickupEntryCount > 0 &&
+            pickupWeightTotal(maps[index].pickupTable, maps[index].pickupEntryCount) > 0 &&
+            maps[index].maxCoin >= maps[index].minCoin &&
             routeTuningValid(maps, index + 1));
 }
 
@@ -631,7 +688,12 @@ static_assert(cooldownAfterCompletedSteps(ENCOUNTER_COOLDOWN_STEP_COUNT, 4) == 1
                   encounterGateOpen(0, 1) &&
                   !encounterGateOpen(1, 0) &&
                   !encounterGateOpen(0, MAX_ENCOUNTERS_PER_MAP),
-              "encounter cooldown and per-map cap must gate random battles");
+                  "encounter cooldown and per-map cap must gate random battles");
+static_assert(encounterGateAllows(5, MAX_ENCOUNTERS_PER_MAP, true) &&
+                  !encounterGateAllows(5, MAX_ENCOUNTERS_PER_MAP, false) &&
+                  repelAllowsEncounter(true, true) &&
+                  !repelAllowsEncounter(false, true),
+              "honey must bypass the gate while repel only blocks random battles");
 static_assert(canScheduleGuaranteedEncounter(12, 5) &&
                   guaranteedEncounterIndex(12, 5) == 8 &&
                   !canScheduleGuaranteedEncounter(6, 5),
@@ -751,22 +813,26 @@ const RouteMap& routeMap(uint8_t index) {
     return ROUTE_MAPS[index < ROUTE_MAP_COUNT ? index : 0];
 }
 
-uint8_t rollPickupId(const PickupWeights& weights) {
+uint8_t rollPickupId(const RouteMap& map) {
     bool candyAvailable = GameEngine::ins().gameState().stepsToday >= 5000;
-    uint16_t total = weights.coin + weights.potion +
-                     weights.superPotion + weights.antidote +
-                     (candyAvailable ? weights.candy : 0);
+    uint16_t total = 0;
+    for (uint8_t i = 0; i < map.pickupEntryCount; ++i) {
+        if (map.pickupTable[i].pickupId == PICKUP_RARE_CANDY && !candyAvailable) {
+            continue;
+        }
+        total += map.pickupTable[i].weight;
+    }
     if (total == 0) return PICKUP_NONE;
 
     uint16_t roll = static_cast<uint16_t>(random(0, total));
-    if (roll < weights.coin) return PICKUP_COIN;
-    roll -= weights.coin;
-    if (roll < weights.potion) return PICKUP_POTION;
-    roll -= weights.potion;
-    if (roll < weights.superPotion) return PICKUP_SUPER_POTION;
-    roll -= weights.superPotion;
-    if (roll < weights.antidote) return PICKUP_ANTIDOTE;
-    return PICKUP_RARE_CANDY;
+    for (uint8_t i = 0; i < map.pickupEntryCount; ++i) {
+        if (map.pickupTable[i].pickupId == PICKUP_RARE_CANDY && !candyAvailable) {
+            continue;
+        }
+        if (roll < map.pickupTable[i].weight) return map.pickupTable[i].pickupId;
+        roll -= map.pickupTable[i].weight;
+    }
+    return PICKUP_NONE;
 }
 
 PokemonSprites::WalkDirection inwardDirection(ExploreMapGenerator::Edge edge) {
@@ -889,6 +955,10 @@ void ExploreScene::onEnter() {
     auto& engine = GameEngine::ins();
     PokemonSprites::setDynamicSceneSpecies(nullptr, 0);
     phase = Phase::SELECT;
+    adventureBondGain = 0;
+    adventureBondSettled = false;
+    progressionCancelledSpeciesId = 0;
+    ProgressionUi::resetMoveLearnState(moveLearnState);
     areaCursor = 0;
     areaAnimCursor = 0.0f;
     resultMessage = nullptr;
@@ -955,7 +1025,7 @@ SceneUpdateResult ExploreScene::update(uint32_t nowMs, float dtSeconds) {
     if (exploreSubViewOpen) {
         return exploreSubView.update(nowMs, dtSeconds);
     }
-    bool redraw = false;
+    RenderDemand demand;
     bool areaCursorAnimating = false;
     bool areaCursorMoved = false;
     if (phase == Phase::SELECT) {
@@ -964,7 +1034,7 @@ SceneUpdateResult ExploreScene::update(uint32_t nowMs, float dtSeconds) {
         if (fabsf(diff) < 0.05f) {
             if (areaAnimCursor != target) {
                 areaAnimCursor = target;
-                redraw = true;
+                demand.redraw();
                 areaCursorMoved = true;
             }
         } else {
@@ -972,7 +1042,7 @@ SceneUpdateResult ExploreScene::update(uint32_t nowMs, float dtSeconds) {
             if (fabsf(target - areaAnimCursor) < 0.05f) {
                 areaAnimCursor = target;
             }
-            redraw = true;
+            demand.redraw();
             areaCursorMoved = true;
         }
         areaCursorAnimating =
@@ -982,7 +1052,7 @@ SceneUpdateResult ExploreScene::update(uint32_t nowMs, float dtSeconds) {
                 (nowMs - areaPreviewStartedAt) / AREA_PREVIEW_CYCLE_MS;
             if (visualCycle != areaPreviewVisualCycle) {
                 areaPreviewVisualCycle = visualCycle;
-                redraw = true;
+                demand.redraw();
             }
         }
     }
@@ -995,12 +1065,29 @@ SceneUpdateResult ExploreScene::update(uint32_t nowMs, float dtSeconds) {
     bool previewLoadWasDue = areaPreviewLoadPending &&
         static_cast<int32_t>(nowMs - areaPreviewNextLoadAt) >= 0;
     updateAreaPreviewLoading(nowMs);
-    if (previewLoadWasDue) redraw = true;
-    redraw = updateRouteMovement(nowMs) || redraw;
+    demand.changed(previewLoadWasDue);
+    demand.changed(updateRouteMovement(nowMs));
+
+    bool expWasActive = expAnimationActive;
     updateExpAnimation(nowMs);
-    redraw = serviceBattleLog(nowMs) || redraw;
+    demand.changed(expWasActive != expAnimationActive);
+    demand.changed(serviceBattleLog(nowMs));
+
+    BattleSwitchStage switchStageBefore = battleSwitchStage;
+    uint8_t playerSlotBefore = battlePlayerSlot;
     updateBattleSwitch(nowMs);
+    demand.changed(switchStageBefore != battleSwitchStage ||
+                   playerSlotBefore != battlePlayerSlot);
+
+    Phase phaseBeforeTurn = phase;
+    BattleTurnStage turnStageBefore = battleTurnStage;
+    uint16_t playerHpBefore = battlePlayerMonster().hpCur;
+    uint16_t wildHpBefore = wildHp;
     updateBattleTurn(nowMs);
+    demand.changed(phaseBeforeTurn != phase ||
+                   turnStageBefore != battleTurnStage ||
+                   playerHpBefore != battlePlayerMonster().hpCur ||
+                   wildHpBefore != wildHp);
 
     bool dynamic = phase == Phase::WALKING || phase == Phase::EXITING;
     if (phase == Phase::SELECT) {
@@ -1019,26 +1106,32 @@ SceneUpdateResult ExploreScene::update(uint32_t nowMs, float dtSeconds) {
                   wildRuntime.majorStatus != Game::MajorStatus::NONE ||
                   active.majorStatus != Game::MajorStatus::NONE;
     }
+    if (phase == Phase::EVOLUTION) {
+        dynamic = dynamic || !ProgressionUi::evolutionAnimationComplete(
+            GameEngine::ins().pendingEvolutionFromSpeciesId(),
+            GameEngine::ins().pendingEvolutionToSpeciesId(),
+            nowMs);
+    }
+    if (phase == Phase::EVOLUTION_CANCELLED) {
+        dynamic = dynamic ||
+            !ProgressionUi::evolutionCancellationComplete(nowMs);
+    }
 
-    uint32_t nextDelay =
-        dynamic ? 66 : SceneUpdateResult::NO_UPDATE;
+    demand.animate(dynamic);
     if (phase == Phase::SELECT && !dynamic &&
         areaCursor < ROUTE_MAP_COUNT && areaPreviewPool.count > 0) {
         uint32_t cycleElapsed =
             (nowMs - areaPreviewStartedAt) % AREA_PREVIEW_CYCLE_MS;
-        nextDelay = max<uint32_t>(
-            1, AREA_PREVIEW_HOLD_MS - cycleElapsed + 1);
+        demand.wakeIn(max<uint32_t>(
+            1, AREA_PREVIEW_HOLD_MS - cycleElapsed + 1));
     }
     if (areaPreviewLoadPending) {
         uint32_t loadDelay =
             static_cast<int32_t>(nowMs - areaPreviewNextLoadAt) >= 0
                 ? 1 : areaPreviewNextLoadAt - nowMs;
-        if (nextDelay == SceneUpdateResult::NO_UPDATE ||
-            loadDelay < nextDelay) {
-            nextDelay = loadDelay;
-        }
+        demand.wakeIn(loadDelay);
     }
-    return SceneUpdateResult(redraw || dynamic, nextDelay);
+    return demand.result();
 }
 
 bool ExploreScene::onButton(const ButtonEvent& event) {
@@ -1070,6 +1163,18 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
             case MenuScene::BattleBagResult::ICE_HEAL:
                 enqueueBattleLog(Ui::Bag::USED_ICE_HEAL);
                 break;
+            case MenuScene::BattleBagResult::MAX_POTION:
+                enqueueBattleLog(Ui::Bag::USED_MAX_POTION);
+                break;
+            case MenuScene::BattleBagResult::FULL_RESTORE:
+                enqueueBattleLog(Ui::Bag::USED_FULL_RESTORE);
+                break;
+            case MenuScene::BattleBagResult::FULL_HEAL:
+                enqueueBattleLog(Ui::Bag::USED_FULL_HEAL);
+                break;
+            case MenuScene::BattleBagResult::REVIVE:
+                enqueueBattleLog(Ui::Bag::USED_REVIVE);
+                break;
             case MenuScene::BattleBagResult::FOOD_THROWN:
                 throwFood(exploreSubView.battleBagThrownFoodIndex());
                 return true;
@@ -1087,7 +1192,7 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
 
     if (phase == Phase::ENDING) {
         if ((event.btn == 0 || event.btn == 1) && event.action == BtnAction::PRESSED) {
-            GameEngine::ins().beginExploreReturn(false);
+            completeExploreReturn(false);
         }
         return true;
     }
@@ -1132,8 +1237,13 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
     }
 
     if ((phase == Phase::LEVEL_UP || phase == Phase::EVOLUTION ||
-         phase == Phase::LEARN_MOVE || phase == Phase::MOVE_REPLACED ||
-         phase == Phase::ENCOUNTER) &&
+         phase == Phase::EVOLUTION_CANCELLED ||
+         phase == Phase::LEARN_MOVE ||
+         phase == Phase::MOVE_REPLACED) &&
+        event.action != BtnAction::PRESSED) {
+        return true;
+    }
+    if (phase == Phase::ENCOUNTER &&
         event.action == BtnAction::LONG_PRESS) {
         return true;
     }
@@ -1240,7 +1350,7 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
             if (GameEngine::ins().hasPendingEvolution()) {
                 phase = Phase::EVOLUTION;
             } else if (GameEngine::ins().hasPendingMoveLearn()) {
-                learnCursor = 0;
+                ProgressionUi::resetMoveLearnState(moveLearnState);
                 phase = Phase::LEARN_MOVE;
             } else {
                 finishProgression();
@@ -1250,12 +1360,34 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
     }
 
     if (phase == Phase::EVOLUTION) {
+        if (event.btn == 1) {
+            uint16_t retainedSpeciesId =
+                GameEngine::ins().pendingEvolutionFromSpeciesId();
+            uint16_t targetSpeciesId =
+                GameEngine::ins().pendingEvolutionToSpeciesId();
+            if (GameEngine::ins().cancelPendingEvolution()) {
+                ProgressionUi::beginEvolutionCancellation(
+                    retainedSpeciesId, targetSpeciesId,
+                    Hal::ins().millis());
+                progressionCancelledSpeciesId = retainedSpeciesId;
+                phase = Phase::EVOLUTION_CANCELLED;
+            }
+            return true;
+        }
         if (event.btn == 0) {
+            uint32_t nowMs = Hal::ins().millis();
+            if (!ProgressionUi::evolutionAnimationComplete(
+                    GameEngine::ins().pendingEvolutionFromSpeciesId(),
+                    GameEngine::ins().pendingEvolutionToSpeciesId(),
+                    nowMs)) {
+                return true;
+            }
             GameEngine::ins().acknowledgePendingEvolution();
+            ProgressionUi::resetEvolutionAnimation();
             if (GameEngine::ins().hasPendingEvolution()) {
                 phase = Phase::EVOLUTION;
             } else if (GameEngine::ins().hasPendingMoveLearn()) {
-                learnCursor = 0;
+                ProgressionUi::resetMoveLearnState(moveLearnState);
                 phase = Phase::LEARN_MOVE;
             } else {
                 finishProgression();
@@ -1264,18 +1396,29 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
         return true;
     }
 
-    if (phase == Phase::LEARN_MOVE) {
+    if (phase == Phase::EVOLUTION_CANCELLED) {
         if (event.btn == 0) {
-            GameEngine::ins().resolvePendingMoveLearn(learnCursor == 0);
+            if (!ProgressionUi::evolutionCancellationComplete(
+                    Hal::ins().millis())) {
+                return true;
+            }
+            ProgressionUi::resetEvolutionAnimation();
+            progressionCancelledSpeciesId = 0;
             if (!enterPendingProgression(progressionReturnPhase)) {
                 finishProgression();
             }
-            return true;
         }
-        if (event.btn == 1) {
-            learnCursor = (learnCursor + 1) % 2;
-            return true;
+        return true;
+    }
+
+    if (phase == Phase::LEARN_MOVE) {
+        if (ProgressionUi::handleMoveLearnInput(
+                moveLearnState, event.btn)) {
+            if (!enterPendingProgression(progressionReturnPhase)) {
+                finishProgression();
+            }
         }
+        return true;
     }
 
     if (phase == Phase::MOVE_REPLACED) {
@@ -1393,18 +1536,24 @@ void ExploreScene::requestExploreExit(bool fainted, bool showEndPrompt) {
     }
     if (phase == Phase::SELECT &&
         GameEngine::ins().exploreTravelPhase() != ExploreTravelPhase::ACTIVE) {
-        GameEngine::ins().requestScene(SceneID::MENU);
+        if (GameEngine::ins().contactVisitExploring()) {
+            GameEngine::ins().requestContactVisitFarewell();
+            GameEngine::ins().requestScene(SceneID::MAIN);
+        } else {
+            GameEngine::ins().requestScene(SceneID::MENU);
+        }
         return;
     }
     const Game::MonsterRuntime& mon = GameEngine::ins().activeMonster();
     bool returnFainted = fainted || mon.fainted || mon.hpCur == 0;
     routeMoving = false;
     autoWalkActive = false;
+    settleAdventureBond();
     if (returnFainted || !showEndPrompt) {
         exploreMenuOpen = false;
         exploreSubViewOpen = false;
         exploreMenuOpenedAt = 0;
-        GameEngine::ins().beginExploreReturn(returnFainted);
+        completeExploreReturn(returnFainted);
         return;
     }
     if (phase == Phase::ENDING) return;
@@ -1412,6 +1561,17 @@ void ExploreScene::requestExploreExit(bool fainted, bool showEndPrompt) {
     exploreSubViewOpen = false;
     exploreMenuOpenedAt = 0;
     phase = Phase::ENDING;
+}
+
+void ExploreScene::settleAdventureBond() {
+    if (adventureBondSettled || debugBattleMode) return;
+    adventureBondSettled = true;
+    adventureBondGain = GameEngine::ins().grantAdventureBond(steps);
+}
+
+void ExploreScene::completeExploreReturn(bool fainted) {
+    settleAdventureBond();
+    GameEngine::ins().beginExploreReturn(fainted);
 }
 
 void ExploreScene::closeExploreMenu() {
@@ -1554,6 +1714,9 @@ bool ExploreScene::updateRouteMovement(uint32_t nowMs) {
 void ExploreScene::finishCompletedWalkStep() {
     bool encounterBlockedThisStep = encounterCooldownSteps > 0;
     encounterCooldownSteps = cooldownAfterCompletedStep(encounterCooldownSteps);
+    auto& engine = GameEngine::ins();
+    bool repelActiveThisStep = engine.repelStepsRemaining() > 0;
+    engine.tickRepelStep();
 
     const ExploreMapGenerator::Path& path = generatedMap.paths[currentRoutePath];
     if (exploreMenuOpen) return;
@@ -1580,7 +1743,12 @@ void ExploreScene::finishCompletedWalkStep() {
     }
     bool guaranteeEncounter = routeGuaranteedEncounterPending &&
                               routeIndex >= routeGuaranteedEncounterIndex;
-    if (!encounterBlockedThisStep && rollRandomEncounter(guaranteeEncounter)) {
+    // 甜甜蜜：下一步必遇敌（保底标记等价物），遇敌闸门关闭时保留到再下一步。
+    bool honeyActive = engine.honeyEncounterPending();
+    if ((honeyActive || !encounterBlockedThisStep) &&
+        rollRandomEncounter(guaranteeEncounter || honeyActive,
+                            honeyActive, repelActiveThisStep)) {
+        if (honeyActive) engine.clearHoneyEncounter();
         autoWalkActive = false;
         return;
     }
@@ -1594,9 +1762,15 @@ void ExploreScene::finishProgression() {
     finishCompletedWalkStep();
 }
 
-bool ExploreScene::rollRandomEncounter(bool guaranteed) {
-    if (!encounterGateOpen(encounterCooldownSteps, mapEncounterCount)) return false;
+bool ExploreScene::rollRandomEncounter(bool guaranteed, bool bypassGate,
+                                       bool repelActiveThisStep) {
+    if (!encounterGateAllows(
+            encounterCooldownSteps, mapEncounterCount, bypassGate)) {
+        return false;
+    }
     const RouteMap& map = routeMap(mapBlocks[currentMapBlock]);
+    // 黄金喷雾生效中：非保底随机遇敌不触发（保底/BOSS 不受影响）。
+    if (!repelAllowsEncounter(guaranteed, repelActiveThisStep)) return false;
     if (!guaranteed && random(0, 10000) >= map.encounterChance) return false;
     ++mapEncounterCount;
     encounterCooldownSteps = ENCOUNTER_COOLDOWN_STEP_COUNT;
@@ -1606,37 +1780,77 @@ bool ExploreScene::rollRandomEncounter(bool guaranteed) {
 }
 
 void ExploreScene::resolvePickup(uint8_t pickupId) {
-    const char* itemName = nullptr;
-    bool stored = true;
-    switch (pickupId) {
-    case PICKUP_COIN: {
-        uint8_t level = GameEngine::ins().activeMonster().level;
-        uint32_t upper = 10 + min<uint8_t>(40, level);
-        uint32_t coins = random(10, upper + 1);
+    if (pickupId == PICKUP_COIN) {
+        const RouteMap& map = routeMap(mapBlocks[currentMapBlock]);
+        uint32_t coins = random(map.minCoin, (uint32_t)map.maxCoin + 1);
         GameEngine::ins().addCoins(coins);
         snprintf(resultBuf, sizeof(resultBuf), Ui::Explore::PICKUP_COIN_FMT,
                  (unsigned long)coins);
-        break;
+        resultMessage = resultBuf;
+        autoWalkActive = false;
+        phase = Phase::PICKUP;
+        return;
     }
+
+    Game::ItemId itemId = Game::ItemId::COUNT;
+    const char* itemName = nullptr;
+    switch (pickupId) {
     case PICKUP_POTION:
-        stored = GameEngine::ins().addPotion(1);
+        itemId = Game::ItemId::POTION;
         itemName = Ui::Explore::PICKUP_POTION;
         break;
     case PICKUP_SUPER_POTION:
-        stored = GameEngine::ins().addSuperPotion(1);
+        itemId = Game::ItemId::SUPER_POTION;
         itemName = Ui::Explore::PICKUP_SUPER_POTION;
         break;
     case PICKUP_ANTIDOTE:
-        stored = GameEngine::ins().addAntidote(1);
+        itemId = Game::ItemId::ANTIDOTE;
         itemName = Ui::Explore::PICKUP_ANTIDOTE;
         break;
     case PICKUP_RARE_CANDY:
-        stored = GameEngine::ins().addCandy(1);
+        itemId = Game::ItemId::CANDY;
         itemName = Ui::Explore::PICKUP_CANDY;
+        break;
+    case PICKUP_MAX_POTION:
+        itemId = Game::ItemId::MAX_POTION;
+        itemName = Ui::MAX_POTION;
+        break;
+    case PICKUP_FULL_RESTORE:
+        itemId = Game::ItemId::FULL_RESTORE;
+        itemName = Ui::FULL_RESTORE;
+        break;
+    case PICKUP_FULL_HEAL:
+        itemId = Game::ItemId::FULL_HEAL;
+        itemName = Ui::FULL_HEAL;
+        break;
+    case PICKUP_REVIVE:
+        itemId = Game::ItemId::REVIVE;
+        itemName = Ui::REVIVE;
+        break;
+    case PICKUP_MAX_REPEL:
+        itemId = Game::ItemId::MAX_REPEL;
+        itemName = Ui::MAX_REPEL;
+        break;
+    case PICKUP_HONEY:
+        itemId = Game::ItemId::HONEY;
+        itemName = Ui::HONEY;
+        break;
+    case PICKUP_NUGGET:
+        itemId = Game::ItemId::NUGGET;
+        itemName = Ui::NUGGET;
+        break;
+    case PICKUP_BIG_PEARL:
+        itemId = Game::ItemId::BIG_PEARL;
+        itemName = Ui::BIG_PEARL;
+        break;
+    case PICKUP_STAR_PIECE:
+        itemId = Game::ItemId::STAR_PIECE;
+        itemName = Ui::STAR_PIECE;
         break;
     default:
         return;
     }
+    bool stored = GameEngine::ins().addItem(itemId, 1);
     if (itemName) {
         if (stored) {
             snprintf(resultBuf, sizeof(resultBuf), Ui::Explore::PICKUP_FMT,
@@ -1928,7 +2142,7 @@ bool ExploreScene::enterPendingProgression(Phase returnPhase) {
         return true;
     }
     if (GameEngine::ins().hasPendingMoveLearn()) {
-        learnCursor = 0;
+        ProgressionUi::resetMoveLearnState(moveLearnState);
         phase = Phase::LEARN_MOVE;
         return true;
     }
@@ -1950,21 +2164,14 @@ void ExploreScene::enqueueBattleProgressionLogs(uint8_t teamSlot) {
         enqueueBattleLog(logBuf);
     }
 
-    while (engine.hasPendingEvolution() && engine.pendingEvolutionSlot() == teamSlot) {
-        const Species* from = findSpecies(engine.pendingEvolutionFromSpeciesId());
-        const Species* to = findSpecies(engine.pendingEvolutionToSpeciesId());
-        engine.acknowledgePendingEvolution();
-        snprintf(logBuf, sizeof(logBuf), Ui::Explore::EVOLUTION_LOG_FMT,
-                 from ? from->name : Ui::Status::MOVE_UNKNOWN,
-                 to ? to->name : Ui::Status::MOVE_UNKNOWN);
-        enqueueBattleLog(logBuf);
-    }
-
     while (engine.hasPendingMoveLearn()) {
         uint8_t learnerSlot = engine.pendingMoveLearnSlot();
         if (learnerSlot >= state.teamCount || learnerSlot >= Game::TEAM_CAP) {
             engine.resolvePendingMoveLearn(false);
             continue;
+        }
+        if (engine.pendingMoveLearnNeedsReplacement()) {
+            break;
         }
         const Species& learnerSpecies = engine.speciesFor(state.team[learnerSlot]);
         const MoveInfo* move = findMove(engine.pendingMoveLearnId());
@@ -2815,7 +3022,8 @@ void ExploreScene::resolveFriendshipOffer() {
             return;
         }
         if (friendshipContactIndex != 0xFF &&
-            engine.inviteContactToTeam(friendshipContactIndex)) {
+            engine.inviteContactToTeam(friendshipContactIndex) ==
+                ContactInviteResult::JOINED) {
             friendshipContactIndex = 0xFF;
             initializeRouteFollowerPosition(true);
             friendshipStep = FriendshipStep::TEAM_JOINED;
@@ -3178,7 +3386,7 @@ void ExploreScene::placeRoutePickup() {
 
     if (path.pointCount < 3) {
         routePickupIndex = path.pointCount - 1;
-        routePickupItem = rollPickupId(routeMap(mapBlocks[currentMapBlock]).pickupWeights);
+        routePickupItem = rollPickupId(routeMap(mapBlocks[currentMapBlock]));
         routePickupAvailable = routePickupItem != PICKUP_NONE;
         return;
     }
@@ -3199,7 +3407,7 @@ void ExploreScene::placeRoutePickup() {
     uint8_t last = min<uint8_t>(path.pointCount - 2, path.pointCount * 3 / 4);
     if (first > last) first = last = path.pointCount / 2;
     routePickupIndex = static_cast<uint8_t>(random(first, last + 1));
-    routePickupItem = rollPickupId(routeMap(mapBlocks[currentMapBlock]).pickupWeights);
+    routePickupItem = rollPickupId(routeMap(mapBlocks[currentMapBlock]));
     routePickupAvailable = routePickupItem != PICKUP_NONE;
     Serial.printf("[ExploreEvent] block=%u type=item index=%u cooldown=%u\n",
                   currentMapBlock, routePickupIndex, encounterCooldownSteps);
@@ -3250,9 +3458,16 @@ void ExploreScene::render() {
     case Phase::EVOLUTION:
         ProgressionUi::renderEvolution(
             GameEngine::ins().pendingEvolutionFromSpeciesId(),
-            GameEngine::ins().pendingEvolutionToSpeciesId());
+            GameEngine::ins().pendingEvolutionToSpeciesId(),
+            Hal::ins().millis());
         break;
-    case Phase::LEARN_MOVE: ProgressionUi::renderMoveLearn(learnCursor); break;
+    case Phase::EVOLUTION_CANCELLED:
+        ProgressionUi::renderEvolutionCancelled(
+            progressionCancelledSpeciesId, Hal::ins().millis());
+        break;
+    case Phase::LEARN_MOVE:
+        ProgressionUi::renderMoveLearn(moveLearnState);
+        break;
     case Phase::MOVE_REPLACED: ProgressionUi::renderMoveReplacement(); break;
     case Phase::FRIENDSHIP:
         renderEncounter();
@@ -4091,7 +4306,17 @@ void ExploreScene::renderEndPrompt() {
     c.drawRect(PANEL_X, PANEL_Y, PANEL_W, PANEL_H, PixelRenderer::rgb(241, 242, 232));
     PixelRenderer::text(88, PANEL_Y + 13, Ui::Explore::RESULT_END,
                         PixelRenderer::rgb(255, 216, 72), 1);
-    PixelRenderer::text(64, PANEL_Y + 39, Ui::Explore::ANY_KEY_RETURN,
+    int returnY = PANEL_Y + 39;
+    if (adventureBondGain > 0) {
+        char bondBuf[24];
+        snprintf(bondBuf, sizeof(bondBuf), Ui::Explore::BOND_GAIN_FMT,
+                 adventureBondGain);
+        PixelRenderer::text(
+            (Hal::DISPLAY_W - uiTextWidth(bondBuf)) / 2,
+            PANEL_Y + 33, bondBuf, PixelRenderer::rgb(255, 154, 181), 1);
+        returnY = PANEL_Y + 50;
+    }
+    PixelRenderer::text(64, returnY, Ui::Explore::ANY_KEY_RETURN,
                         PixelRenderer::rgb(241, 242, 232), 1);
 }
 

@@ -60,16 +60,17 @@ void HatchScene::onExit() {
 }
 
 SceneUpdateResult HatchScene::update(uint32_t nowMs, float dtSeconds) {
+    RenderDemand demand;
     elapsed += dtSeconds;
     persistProgress(false);
     if (elapsed >= GameEngine::ins().gameState().hatchSeconds) {
         complete();
-        return SceneUpdateResult::idle();
+        return demand.result();
     }
 
     int8_t eggOffset = eggShakeOffset(nowMs);
     bool night = hatchSceneIsNight();
-    bool redraw = eggOffset != lastEggOffset || night != lastNight;
+    demand.changed(eggOffset != lastEggOffset || night != lastNight);
     lastEggOffset = eggOffset;
     lastNight = night;
 
@@ -77,27 +78,19 @@ SceneUpdateResult HatchScene::update(uint32_t nowMs, float dtSeconds) {
     uint16_t interval = 2400 - static_cast<uint16_t>(progress) * 19;
     if (interval < 360) interval = 360;
     uint16_t phaseMs = nowMs % interval;
-    uint32_t nextDelay = phaseMs <= 230
+    demand.wakeIn(phaseMs <= 230
         ? 46 - (phaseMs % 46)
-        : interval - phaseMs;
+        : interval - phaseMs);
 
     float remaining =
         GameEngine::ins().gameState().hatchSeconds - elapsed;
     float speed = GameEngine::ins().gameSpeed();
     uint32_t completionDelay = static_cast<uint32_t>(
         max(1.0f, remaining * 1000.0f / max(0.01f, speed)));
-    if (completionDelay < nextDelay) nextDelay = completionDelay;
+    demand.wakeIn(completionDelay);
 
-    if (toast) {
-        if (static_cast<int32_t>(nowMs - toastUntil) >= 0) {
-            toast = nullptr;
-            redraw = true;
-        } else {
-            uint32_t toastDelay = toastUntil - nowMs;
-            if (toastDelay < nextDelay) nextDelay = toastDelay;
-        }
-    }
-    return SceneUpdateResult(redraw, nextDelay);
+    if (demand.expired(toast != nullptr, nowMs, toastUntil)) toast = nullptr;
+    return demand.result();
 }
 
 bool HatchScene::onButton(const ButtonEvent& event) {
