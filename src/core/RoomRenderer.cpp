@@ -2,7 +2,7 @@
 
 #include "core/RoomResource.h"
 #include "hardware/Hal.h"
-#include "hardware/PixelRenderer.h"
+#include "presentation/PixelRenderer.h"
 
 #include <Arduino.h>
 #include <cmath>

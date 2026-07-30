@@ -10,6 +10,7 @@ from PIL import Image
 from generate_game_assets import (
     EXPLORE_PICKUP_CONTENT_SIZE,
     EXPLORE_PICKUP_SIZE,
+    ITEMS,
     MAX_PACK_FRAMES,
     SHOWER_BRUSH_SIZE,
     SHOWER_BACKGROUND_SIZE,
@@ -30,6 +31,11 @@ from generate_game_assets import (
 
 
 class GenerateGameAssetsTests(unittest.TestCase):
+    def test_food_icons_match_their_ui_names(self):
+        item_sources = dict(ITEMS)
+        self.assertEqual(item_sources["ITEM_NORMAL_FOOD"], "LAVACOOKIE.png")
+        self.assertEqual(item_sources["ITEM_TASTY_FOOD"], "RAGECANDYBAR.png")
+
     def test_runtime_uses_direct_kind_index(self):
         source = (
             Path(__file__).resolve().parents[1]

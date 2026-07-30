@@ -4,7 +4,7 @@
 #include "core/GameEngine.h"
 #include "core/UiStrings.h"
 #include "hardware/Hal.h"
-#include "hardware/PixelRenderer.h"
+#include "presentation/PixelRenderer.h"
 
 namespace {
 
@@ -229,7 +229,13 @@ void SocialScene::updateHostWaitSync(uint32_t nowMs) {
                     // 链接成功,房主直接回主界面(访客精灵已在队伍中)
                     GameEngine::ins().requestScene(SceneID::MAIN);
                 } else {
-                    showResult(Ui::Social::HOST_FULL);
+                    VisitHostResult result =
+                        static_cast<VisitHostResult>(pendingAccept.reason);
+                    showResult(
+                        result == VisitHostResult::TEAM_NOT_SOLO ||
+                                result == VisitHostResult::NO_MONSTER
+                            ? Ui::Social::HOST_TEAM_REQUIRED
+                            : Ui::Social::HOST_FULL);
                 }
                 return;
             }
@@ -242,10 +248,10 @@ void SocialScene::updateHostWaitSync(uint32_t nowMs) {
             type == LinkMessageType::VISIT_SYNC && payloadLen >= sizeof(VisitSyncPayload)) {
             VisitSyncPayload sync{};
             memcpy(&sync, payload, sizeof(sync));
-            uint8_t reason = GameEngine::ins().beginVisitAsHost(
+            VisitHostResult result = GameEngine::ins().beginVisitAsHost(
                 sync.speciesId, sync.level, sync.nature, sync.satiety, sync.mood, sync.affection);
-            pendingAccept.accepted = reason == 0 ? 1 : 0;
-            pendingAccept.reason = reason;
+            pendingAccept.accepted = result == VisitHostResult::ACCEPTED ? 1 : 0;
+            pendingAccept.reason = static_cast<uint8_t>(result);
             acceptPending = true;
             lastSendTryMs = 0;
             phaseStartedMs = nowMs;
@@ -280,8 +286,18 @@ void SocialScene::updateVisitorWaitAccept(uint32_t nowMs) {
             phase = LinkPhase::VISITING;
             setToast(Ui::Social::ENTERED_ROOM);
         } else {
-            showResult(accept.reason == 1 ? Ui::Social::REJECT_STORAGE_FULL
-                                          : Ui::Social::REJECT_NO_MONSTER);
+            switch (static_cast<VisitHostResult>(accept.reason)) {
+            case VisitHostResult::STORAGE_FULL:
+                showResult(Ui::Social::REJECT_STORAGE_FULL);
+                break;
+            case VisitHostResult::TEAM_NOT_SOLO:
+                showResult(Ui::Social::REJECT_HOST_TEAM);
+                break;
+            case VisitHostResult::NO_MONSTER:
+            default:
+                showResult(Ui::Social::REJECT_NO_MONSTER);
+                break;
+            }
         }
         return;
     }
@@ -361,6 +377,10 @@ bool SocialScene::onButton(const ButtonEvent& event) {
 void SocialScene::activateCurrent() {
     switch (cursor) {
     case ITEM_INVITE:
+        if (!GameEngine::ins().canHostVisit()) {
+            setToast(Ui::Social::HOST_TEAM_REQUIRED);
+            return;
+        }
         joinRequested = false;
         EspNowLink::ins().startHost(EspNowLink::RoomPurpose::VISIT);
         phase = LinkPhase::HOST_ADVERTISING;

@@ -70,6 +70,7 @@ enum class ItemId : uint8_t {
     SOAP_0,
     SOAP_1,
     SOAP_2,
+    HEART_SCALE,
     COUNT,
 };
 static_assert(
@@ -237,7 +238,10 @@ struct BagState {
     uint8_t nugget = 0;
     uint8_t bigPearl = 0;
     uint8_t starPiece = 0;
+    uint8_t heartScale = 0;
 };
+static_assert(sizeof(BagState) == 24,
+              "heart scale must reuse the existing GameState alignment byte");
 
 struct RoomState {
     uint8_t food[ROOM_FOOD_COUNT] = {2, 0};
@@ -301,6 +305,10 @@ struct GameState {
     // [0]=拉帝亚斯，[1]=拉帝欧斯；游荡战结束后递增
     uint8_t roamingRerollCounts[2] = {};
 };
+static_assert(sizeof(GameState) == 1560,
+              "v1 save size changed; update the save contract deliberately");
+static_assert(offsetof(GameState, room) == 1452,
+              "BagState must not shift the v1 room/save layout");
 
 struct HatchProgress {
     uint32_t magic = HATCH_MAGIC;

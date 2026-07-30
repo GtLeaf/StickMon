@@ -2,6 +2,7 @@
 #include <deque>
 
 #include "game/BattleSystem.h"
+#include "game/GameRandom.h"
 #include "game/Species.h"
 
 namespace {
@@ -19,6 +20,10 @@ long nextRandom(long minimum, long maximum) {
     value %= range;
     if (value < 0) value += range;
     return minimum + value;
+}
+
+uint32_t testRandomRange(uint32_t minimum, uint32_t maximum) {
+    return static_cast<uint32_t>(nextRandom(minimum, maximum));
 }
 
 Game::MonsterRuntime monster(uint16_t speciesId, uint8_t level = 20) {
@@ -50,6 +55,7 @@ long random(long minimum, long maximum) {
 }
 
 int main() {
+    GameRandom::setRangeProvider(testRandomRange);
     const Species& bulbasaur = *findSpecies(1);
     const Species& charmander = *findSpecies(4);
     const Species& squirtle = *findSpecies(7);
@@ -212,6 +218,74 @@ int main() {
     if (BattleSystem::specialTriggerChance(attacker, 0) != 25) return 24;
     attacker.hpCur = 1;
     if (BattleSystem::specialTriggerChance(attacker, 0) != 30) return 25;
+
+    BattleSystem::BattleAiMemory aiMemory;
+    attacker = monster(1);
+    attacker.move1Id = 33;   // 撞击
+    attacker.move2Id = 77;   // 毒粉
+    attacker.move3Id = 45;   // 叫声
+    attacker.moveProficiency[1] = Game::MOVE_PROFICIENCY_MAX;
+    attacker.moveProficiency[2] = Game::MOVE_PROFICIENCY_MAX;
+    defender = monster(7);
+    attackerState = {};
+    defenderState = {};
+
+    defender.majorStatus = Game::MajorStatus::POISON;
+    auto poisonedWeights = BattleSystem::aiMoveWeights(
+        attacker, bulbasaur, attackerState,
+        defender, squirtle, defenderState, aiMemory);
+    if (poisonedWeights.special[0] != 0 || poisonedWeights.basic == 0) return 26;
+
+    defender.majorStatus = Game::MajorStatus::NONE;
+    aiMemory.lastMoveId = 77;
+    aiMemory.consecutiveStatusMoves = 1;
+    auto repeatWeights = BattleSystem::aiMoveWeights(
+        attacker, bulbasaur, attackerState,
+        defender, squirtle, defenderState, aiMemory);
+    if (repeatWeights.special[0] != 0 || repeatWeights.special[1] == 0) return 27;
+
+    aiMemory.lastMoveId = 45;
+    aiMemory.consecutiveStatusMoves = 2;
+    auto statusChainWeights = BattleSystem::aiMoveWeights(
+        attacker, bulbasaur, attackerState,
+        defender, squirtle, defenderState, aiMemory);
+    if (statusChainWeights.special[0] != 0 ||
+        statusChainWeights.special[1] != 0 ||
+        statusChainWeights.basic == 0) {
+        return 28;
+    }
+
+    attacker.move2Id = 106;  // 变硬
+    attacker.move3Id = 0;
+    attackerState = {};
+    attackerState.statStages[static_cast<uint8_t>(BattleStat::DEFENSE)] = 6;
+    aiMemory = {};
+    auto cappedBuffWeights = BattleSystem::aiMoveWeights(
+        attacker, bulbasaur, attackerState,
+        defender, squirtle, defenderState, aiMemory);
+    if (cappedBuffWeights.special[0] != 0) return 29;
+
+    attacker = monster(4);
+    attacker.move1Id = 10;   // 抓
+    attacker.move2Id = 52;   // 火花
+    attacker.move3Id = 0;
+    attacker.moveProficiency[1] = Game::MOVE_PROFICIENCY_MAX;
+    const Species& gastly = *findSpecies(92);
+    defender = monster(92);
+    attackerState = {};
+    defenderState = {};
+    aiMemory = {};
+    auto ghostWeights = BattleSystem::aiMoveWeights(
+        attacker, charmander, attackerState,
+        defender, gastly, defenderState, aiMemory);
+    if (ghostWeights.basic != 0 || ghostWeights.special[0] == 0) return 30;
+    setRandom({0});
+    if (BattleSystem::chooseAiMoveSlot(
+            attacker, charmander, attackerState,
+            defender, gastly, defenderState, aiMemory) != 0 ||
+        aiMemory.lastMoveId != 52 || aiMemory.consecutiveStatusMoves != 0) {
+        return 31;
+    }
 
     return 0;
 }

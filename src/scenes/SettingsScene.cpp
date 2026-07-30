@@ -9,7 +9,7 @@
 #include "core/UiMotion.h"
 #include "core/VoiceCallService.h"
 #include "hardware/Hal.h"
-#include "hardware/PixelRenderer.h"
+#include "presentation/PixelRenderer.h"
 
 void SettingsScene::onEnter() {
     GameEngine::ins().wakeFromIdle();
@@ -211,11 +211,14 @@ void SettingsScene::activateCurrent() {
 void SettingsScene::cycleBrightness() {
     GameEngine::ins().wakeFromIdle();
     uint8_t cur = Hal::ins().getBrightness();
-    uint8_t next = 128;
-    if (cur < 96) next = 128;
-    else if (cur < 160) next = 192;
-    else if (cur < 224) next = 255;
-    else next = 64;
+    static constexpr uint8_t LEVELS[] = {32, 64, 128, 192, 255};
+    uint8_t next = LEVELS[0];
+    for (uint8_t level : LEVELS) {
+        if (level > cur) {
+            next = level;
+            break;
+        }
+    }
     STICKMON_TRACEF("[Settings] brightness t=%lu current=%u next=%u display=%u\n",
                     (unsigned long)Hal::ins().millis(), cur, next,
                     Hal::ins().getDisplayBrightness());

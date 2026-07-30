@@ -7,6 +7,7 @@
 #include "assets/HudAssets.h"
 #include "assets/PokemonMotion.h"
 #include "assets/PokemonSprites.h"
+#include "core/ButtonDispatcher.h"
 #include "core/CryPlayer.h"
 #include "core/GameEngine.h"
 #include "core/ProgressionUi.h"
@@ -16,7 +17,7 @@
 #include "core/VoiceCallService.h"
 #include "game/SpeciesBehavior.h"
 #include "hardware/Hal.h"
-#include "hardware/PixelRenderer.h"
+#include "presentation/PixelRenderer.h"
 
 namespace {
 static constexpr uint16_t PMD_IDLE_FRAME_MS = 520;
@@ -638,8 +639,8 @@ void drawHungerIcon(int x, int y, uint8_t hunger) {
     uint8_t hiddenRows = HudAssets::HUNGER_ICON_H - visibleRows;
     uint16_t emptyColor = PixelRenderer::rgb(66, 69, 72);
 
-    static constexpr int8_t CUT_JITTER[HudAssets::HUNGER_ICON_W] = {
-        -1, 0, 1, 0, 2, 1, 0, -1, 1, 0, 2, 0, -1, 1, 0, 2, 1, 0,
+    static constexpr int8_t CUT_JITTER[] = {
+        -1, 0, 1, 0, 2, 1, 0, -1, 1, 0, 2, 0, -1, 1,
     };
 
     const uint32_t total = (uint32_t)HudAssets::HUNGER_ICON_W * (uint32_t)HudAssets::HUNGER_ICON_H;
@@ -690,6 +691,9 @@ void MainScene::onEnter() {
     feedingHadDislikedBite = false;
     feedingBecameFull = false;
     feedingMoodAfter = 0;
+    bowlEaterSlot = -1;
+    visitorFeedingBiteMs = 0;
+    visitorFeedingUntilMs = 0;
     progressionModal = ProgressionModal::NONE;
     progressionCancelledSpeciesId = 0;
     ProgressionUi::resetMoveLearnState(progressionMoveLearn);
@@ -753,6 +757,9 @@ void MainScene::onEnter() {
         } else {
             spawnVisitor(nowMs, false);
         }
+        if (guest.fainted || guest.hpCur == 0) {
+            restFaintedVisitor(nowMs);
+        }
     }
     beginDoorTransition(nowMs);
     if (GameEngine::ins().localContactVisitActive() &&
@@ -770,6 +777,7 @@ void MainScene::onEnter() {
 }
 
 void MainScene::onExit() {
+    bowlEaterSlot = -1;
     cancelPairInteraction(Hal::ins().millis());
     VoiceCallService::ins().stopListening();
     if (visitorDepartureSnapshotValid &&
@@ -944,7 +952,9 @@ SceneUpdateResult MainScene::update(uint32_t nowMs, float dtSeconds) {
     if (doorTransition != DoorTransitionMode::NONE) {
         return SceneUpdateResult::animate(66);
     }
-    bool combo = Hal::ins().btnA_raw() && Hal::ins().btnB_raw();
+    bool combo =
+        ButtonDispatcher::ins().isDown(Platform::InputButton::PRIMARY) &&
+        ButtonDispatcher::ins().isDown(Platform::InputButton::SECONDARY);
     if (!combo) {
         comboStartMs = 0;
         comboSaved = false;
@@ -972,6 +982,9 @@ void MainScene::beginDoorTransition(uint32_t nowMs) {
 
     cancelPairInteraction(nowMs);
     cancelRoomAction(nowMs);
+    bowlEaterSlot = -1;
+    visitorFeedingBiteMs = 0;
+    visitorFeedingUntilMs = 0;
     clearMoveRoute();
     feedingConsumed = false;
     velocityX = 0.0f;
@@ -988,12 +1001,23 @@ void MainScene::beginDoorTransition(uint32_t nowMs) {
     visitorDepartureSnapshotValid = false;
     clearVisitorMoveRoute();
 
-    if (phase == ExploreTravelPhase::RETURNING_FAINTED) {
+    const Game::MonsterRuntime& mainMonster =
+        GameEngine::ins().activeMonster();
+    bool mainFainted = mainMonster.fainted || mainMonster.hpCur == 0;
+    if (phase == ExploreTravelPhase::RETURNING_FAINTED ||
+        (phase == ExploreTravelPhase::RETURNING && mainFainted)) {
         faintRestActive = true;
         snapMonsterToBed();
         aiMode = AiMode::RESTING;
         pmdAction = PmdAction::SLEEPING;
         doorTransition = DoorTransitionMode::FAINT_WAIT_FADE;
+        return;
+    }
+
+    if (phase == ExploreTravelPhase::DEPARTING && mainFainted) {
+        doorMainHidden = true;
+        doorVisitorHidden = true;
+        finishDoorDeparture();
         return;
     }
 
@@ -1013,7 +1037,7 @@ void MainScene::beginDoorTransition(uint32_t nowMs) {
     }
 
     if (phase == ExploreTravelPhase::DEPARTING) {
-        doorDepartureHasVisitor = visitor.active && visitorHostActive();
+        doorDepartureHasVisitor = visitorCanUseDoor();
         if (doorDepartureHasVisitor) {
             visitorBeforeDoorDeparture = visitor;
             visitorDepartureSnapshotValid = true;
@@ -1078,7 +1102,7 @@ void MainScene::beginDoorTransition(uint32_t nowMs) {
     targetY = doorInsideY;
     pmdAction = PmdAction::IDLE;
     pmdFrame = 0;
-    doorDepartureHasVisitor = visitor.active && visitorHostActive();
+    doorDepartureHasVisitor = visitorCanUseDoor();
     if (doorDepartureHasVisitor) {
         if (!chooseDoorWaitPose(monsterX, monsterY, doorWaitX, doorWaitY)) {
             doorDepartureHasVisitor = false;
@@ -2524,6 +2548,12 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
     const Game::MonsterRuntime& mon = GameEngine::ins().activeMonster();
     const Game::SpeciesCareProfile careProfile =
         Game::speciesCareProfileFor(mon.speciesId);
+    bool mainFoodAction =
+        aiMode == AiMode::SEEK_FOOD || aiMode == AiMode::FEEDING ||
+        (aiMode == AiMode::TURNING &&
+         (turnNextMode == AiMode::SEEK_FOOD ||
+          turnNextMode == AiMode::FEEDING));
+    if (bowlEaterSlot == 0 && !mainFoodAction) releaseBowl(0);
     if (!careProfile.canMove) {
         if (!monsterFootprintInsideWalkArea(monsterX, monsterY)) {
             randomMonsterCenterWalkPoint(monsterX, monsterY);
@@ -2889,6 +2919,7 @@ void MainScene::finishMovement(uint32_t nowMs) {
             enterFeeding(nowMs);
             return;
         }
+        releaseBowl(0);
     }
     if (completedMode == AiMode::SEEK_BED) {
         enterResting(nowMs);
@@ -2914,16 +2945,23 @@ void MainScene::finishMovement(uint32_t nowMs) {
 }
 
 void MainScene::setFoodTarget(uint32_t nowMs) {
+    if (!claimBowl(0)) {
+        aiMode = AiMode::IDLE;
+        nextAiDecisionMs = nowMs + 900;
+        return;
+    }
     targetX = foodFeedX();
     targetY = foodFeedY() - walkBoundaryOffsetY();
     if (!monsterFootprintInsideWalkArea(targetX, targetY)) {
         if (!chooseFoodApproachPose(targetX, targetY)) {
+            releaseBowl(0);
             aiMode = AiMode::IDLE;
             nextAiDecisionMs = nowMs + 2200;
             return;
         }
     }
     beginMovement(AiMode::SEEK_FOOD, nowMs);
+    if (aiMode == AiMode::IDLE) releaseBowl(0);
 }
 
 void MainScene::setBedTarget(uint32_t nowMs) {
@@ -2942,6 +2980,11 @@ void MainScene::snapMonsterToBed() {
 }
 
 void MainScene::enterFeeding(uint32_t nowMs) {
+    if (!claimBowl(0)) {
+        aiMode = AiMode::IDLE;
+        nextAiDecisionMs = nowMs + 900;
+        return;
+    }
     cancelRoomAction(nowMs);
     feedingConsumed = false;
     feedingHadTastyBite = false;
@@ -2977,7 +3020,7 @@ void MainScene::updateFeeding(uint32_t nowMs) {
     const Game::MonsterRuntime& mon = GameEngine::ins().activeMonster();
     if ((int32_t)(nowMs - feedingBiteMs) >= 0 &&
         GameEngine::ins().bowlHasFood() && mon.satiety < MONSTER_FEED_TARGET_SATIETY) {
-        FoodConsumeResult result = GameEngine::ins().consumeBowlFood();
+        FoodConsumeResult result = GameEngine::ins().consumeBowlFood(0);
         feedingConsumed = feedingConsumed || result.consumed;
         feedingBiteMs = nowMs + (uint32_t)random(FEED_BITE_INTERVAL_MIN_MS,
                                                    FEED_BITE_INTERVAL_MAX_MS + 1);
@@ -3015,6 +3058,7 @@ void MainScene::updateFeeding(uint32_t nowMs) {
         postFeedAwakeUntilMs = nowMs + (uint32_t)random(POST_FEED_AWAKE_MIN_MS, POST_FEED_AWAKE_MAX_MS + 1);
     }
     mind.onAte(nowMs);
+    releaseBowl(0);
     if (feedingConsumed) {
         feedingConsumed = false;
         startFeedFinish(nowMs);
@@ -4213,6 +4257,239 @@ bool MainScene::visitorHostActive() const {
            engine.localContactVisitActive();
 }
 
+bool MainScene::visitorCanUseDoor() const {
+    if (!visitor.active || !visitorHostActive()) return false;
+    const Game::GameState& state = GameEngine::ins().gameState();
+    if (state.teamCount < 2) return false;
+    const Game::MonsterRuntime& mon = state.team[1];
+    return !mon.fainted && mon.hpCur > 0;
+}
+
+bool MainScene::teamMemberCanEatFromBowl(uint8_t teamSlot) const {
+    const GameEngine& engine = GameEngine::ins();
+    const Game::GameState& state = engine.gameState();
+    if (!engine.bowlHasFood() || teamSlot >= state.teamCount ||
+        teamSlot >= Game::TEAM_CAP) {
+        return false;
+    }
+    const Game::MonsterRuntime& mon = state.team[teamSlot];
+    const Game::SpeciesCareProfile care =
+        Game::speciesCareProfileFor(mon.speciesId);
+    return mon.origin != Game::Origin::VISITOR &&
+           care.needsFood && care.canMove &&
+           !mon.fainted && mon.hpCur > 0 &&
+           mon.majorStatus != Game::MajorStatus::SLEEP &&
+           mon.satiety < MONSTER_FEED_TARGET_SATIETY;
+}
+
+bool MainScene::visitorCanSeekFood() const {
+    if (!visitor.active || visitor.dropOffsetY > 0.0f ||
+        !teamMemberCanEatFromBowl(1)) {
+        return false;
+    }
+    return visitor.state == VisitorState::IDLE ||
+           visitor.state == VisitorState::SEEK_FOOD ||
+           visitor.state == VisitorState::FEEDING;
+}
+
+int8_t MainScene::preferredBowlEater() const {
+    bool mainFoodAction =
+        aiMode == AiMode::SEEK_FOOD || aiMode == AiMode::FEEDING ||
+        (aiMode == AiMode::TURNING &&
+         (turnNextMode == AiMode::SEEK_FOOD ||
+          turnNextMode == AiMode::FEEDING));
+    bool mainReadyToEat =
+        mainFoodAction ||
+        ((aiMode == AiMode::IDLE || aiMode == AiMode::RESTING ||
+          aiMode == AiMode::WAKING || aiMode == AiMode::LEAVING_BED) &&
+         mind.topDesire() == MonsterDesire::EAT);
+    bool mainEligible = mainReadyToEat && teamMemberCanEatFromBowl(0);
+    bool visitorEligible = visitorCanSeekFood();
+    if (!mainEligible) return visitorEligible ? 1 : -1;
+    if (!visitorEligible) return 0;
+
+    float targetX = foodFeedX();
+    float targetY = foodFeedY() - walkBoundaryOffsetY();
+    float mainDx = monsterX - targetX;
+    float mainDy = monsterY - targetY;
+    float visitorDx = visitor.x - targetX;
+    float visitorDy = visitor.y - targetY;
+    float mainDistanceSq = mainDx * mainDx + mainDy * mainDy;
+    float visitorDistanceSq = visitorDx * visitorDx + visitorDy * visitorDy;
+    return visitorDistanceSq < mainDistanceSq ? 1 : 0;
+}
+
+bool MainScene::claimBowl(uint8_t teamSlot) {
+    if (bowlEaterSlot >= 0) return bowlEaterSlot == (int8_t)teamSlot;
+    if (preferredBowlEater() != (int8_t)teamSlot) return false;
+    bowlEaterSlot = (int8_t)teamSlot;
+    return true;
+}
+
+void MainScene::releaseBowl(uint8_t teamSlot) {
+    if (bowlEaterSlot == (int8_t)teamSlot) bowlEaterSlot = -1;
+}
+
+bool MainScene::startVisitorFoodSeek(uint32_t nowMs) {
+    if (bowlEaterSlot == 0 && teamMemberCanEatFromBowl(1)) {
+        visitor.stateUntilMs = nowMs + 500;
+        return true;
+    }
+    if (teamMemberCanEatFromBowl(0) &&
+        (int32_t)(nowMs - nextMindUpdateMs) >= 0) {
+        return false;
+    }
+    if (!claimBowl(1)) return false;
+
+    visitor.targetX = foodFeedX();
+    visitor.targetY = foodFeedY() - walkBoundaryOffsetY();
+    if (!monsterFootprintInsideWalkArea(visitor.targetX, visitor.targetY)) {
+        float approachX = visitor.targetX;
+        float approachY = visitor.targetY;
+        if (!chooseFoodApproachPose(approachX, approachY)) {
+            releaseBowl(1);
+            return false;
+        }
+        visitor.targetX = approachX;
+        visitor.targetY = approachY;
+    }
+    if (!buildVisitorMoveRoute(visitor.targetX, visitor.targetY)) {
+        releaseBowl(1);
+        return false;
+    }
+
+    visitor.state = VisitorState::SEEK_FOOD;
+    visitor.stateUntilMs = nowMs + DOOR_ROUTE_TIMEOUT_MS;
+    visitor.frameStartedMs = nowMs;
+    visitor.frameIndex = 0;
+    return true;
+}
+
+void MainScene::enterVisitorFeeding(uint32_t nowMs) {
+    clearVisitorMoveRoute();
+    visitor.state = VisitorState::FEEDING;
+    visitor.targetX = visitor.x;
+    visitor.targetY = visitor.y;
+    visitor.direction = visitorWalkDirectionForDelta(
+        foodCenterX() - visitor.x,
+        foodCenterY() - (visitor.y + walkBoundaryOffsetY()));
+    if (fabsf(foodCenterX() - visitor.x) > 0.5f) {
+        visitor.facingRight = foodCenterX() > visitor.x;
+    }
+    visitor.frameStartedMs = nowMs;
+    visitor.frameIndex = 0;
+    visitorFeedingBiteMs =
+        nowMs + (uint32_t)random(FEED_BITE_DELAY_MIN_MS,
+                                 FEED_BITE_DELAY_MAX_MS + 1);
+    visitorFeedingUntilMs =
+        nowMs + (uint32_t)random(FEED_SESSION_MIN_MS,
+                                 FEED_SESSION_MAX_MS + 1);
+}
+
+void MainScene::updateVisitorFoodSeek(uint32_t nowMs, float dtSeconds) {
+    if (bowlEaterSlot != 1 || !teamMemberCanEatFromBowl(1) ||
+        (int32_t)(nowMs - visitor.stateUntilMs) >= 0) {
+        clearVisitorMoveRoute();
+        releaseBowl(1);
+        visitor.state = VisitorState::IDLE;
+        visitor.stateUntilMs = nowMs + VISITOR_IDLE_MIN_MS;
+        visitor.frameStartedMs = nowMs;
+        visitor.frameIndex = 0;
+        return;
+    }
+
+    float waypointX = visitor.targetX;
+    float waypointY = visitor.targetY;
+    if (!currentVisitorWaypoint(waypointX, waypointY)) {
+        enterVisitorFeeding(nowMs);
+        return;
+    }
+
+    doorLastUpdateMs = nowMs;
+    if (!moveVisitorDoorToward(waypointX, waypointY, VISITOR_WALK_SPEED,
+                               dtSeconds, true, true)) {
+        visitor.state = VisitorState::SEEK_FOOD;
+        return;
+    }
+    visitor.state = VisitorState::SEEK_FOOD;
+    ++visitorMoveRouteIndex;
+    if (visitorMoveRouteIndex < visitorMoveRouteCount) return;
+    enterVisitorFeeding(nowMs);
+}
+
+void MainScene::updateVisitorFeeding(uint32_t nowMs) {
+    const Game::GameState& state = GameEngine::ins().gameState();
+    if (bowlEaterSlot != 1 || state.teamCount < 2 ||
+        state.team[1].origin == Game::Origin::VISITOR ||
+        state.team[1].fainted || state.team[1].hpCur == 0) {
+        releaseBowl(1);
+        visitor.state = VisitorState::IDLE;
+        visitor.stateUntilMs = nowMs + VISITOR_IDLE_MIN_MS;
+        return;
+    }
+
+    const Game::MonsterRuntime& mon = state.team[1];
+    if ((int32_t)(nowMs - visitorFeedingBiteMs) >= 0 &&
+        GameEngine::ins().bowlHasFood() &&
+        mon.satiety < MONSTER_FEED_TARGET_SATIETY) {
+        FoodConsumeResult result = GameEngine::ins().consumeBowlFood(1);
+        visitorFeedingBiteMs =
+            nowMs + (uint32_t)random(FEED_BITE_INTERVAL_MIN_MS,
+                                     FEED_BITE_INTERVAL_MAX_MS + 1);
+        if (!result.consumed) visitorFeedingUntilMs = nowMs + 600;
+        if (result.reaction == FoodReaction::DISLIKED) {
+            visitorFeedingBiteMs += 900;
+        }
+    }
+    if (!GameEngine::ins().bowlHasFood() ||
+        mon.satiety >= MONSTER_FEED_TARGET_SATIETY) {
+        if ((int32_t)(visitorFeedingUntilMs - (nowMs + 700)) > 0) {
+            visitorFeedingUntilMs = nowMs + 700;
+        }
+    }
+    if ((int32_t)(nowMs - visitorFeedingUntilMs) < 0) {
+        advanceVisitorFrames(nowMs, false);
+        return;
+    }
+
+    releaseBowl(1);
+    visitor.state = VisitorState::IDLE;
+    visitor.stateUntilMs =
+        nowMs + (uint32_t)random(VISITOR_IDLE_MIN_MS,
+                                 VISITOR_IDLE_MAX_MS + 1);
+    visitor.frameStartedMs = nowMs;
+    visitor.frameIndex = 0;
+}
+
+void MainScene::restFaintedVisitor(uint32_t nowMs) {
+    releaseBowl(1);
+    clearVisitorMoveRoute();
+    visitor.dropOffsetY = 0.0f;
+
+    if (!visitor.sleepSpotValid ||
+        !monsterFootprintInsideWalkArea(visitor.sleepX, visitor.sleepY)) {
+        float sleepX = visitor.x;
+        float sleepY = visitor.y;
+        visitor.sleepSpotValid = pickVisitorSleepSpot(sleepX, sleepY);
+        visitor.sleepX = sleepX;
+        visitor.sleepY = sleepY;
+    }
+
+    bool enteringRest =
+        visitor.state != VisitorState::SLEEPING ||
+        fabsf(visitor.x - visitor.sleepX) > 0.5f ||
+        fabsf(visitor.y - visitor.sleepY) > 0.5f;
+    visitor.x = visitor.sleepX;
+    visitor.y = visitor.sleepY;
+    visitor.targetX = visitor.x;
+    visitor.targetY = visitor.y;
+    visitor.state = VisitorState::SLEEPING;
+    if (enteringRest) {
+        visitor.frameStartedMs = nowMs;
+        visitor.frameIndex = 0;
+    }
+}
+
 void MainScene::spawnVisitor(uint32_t nowMs, bool dropIn) {
     const Game::MonsterRuntime& guest = GameEngine::ins().gameState().team[1];
     visitor.active = true;
@@ -4292,12 +4569,28 @@ void MainScene::advanceVisitorFrames(uint32_t nowMs, bool walking) {
 
 void MainScene::updateVisitor(uint32_t nowMs, float dtSeconds) {
     if (!visitorHostActive()) {
+        releaseBowl(1);
         visitor.active = false;
         return;
     }
-    uint16_t speciesId = GameEngine::ins().gameState().team[1].speciesId;
+    const Game::MonsterRuntime& visitorMonster =
+        GameEngine::ins().gameState().team[1];
+    uint16_t speciesId = visitorMonster.speciesId;
     if (!visitor.active || visitor.speciesId != speciesId) {
+        releaseBowl(1);
         spawnVisitor(nowMs, true);
+        if (visitorMonster.fainted || visitorMonster.hpCur == 0) {
+            restFaintedVisitor(nowMs);
+        }
+        return;
+    }
+
+    if (visitorMonster.fainted || visitorMonster.hpCur == 0) {
+        restFaintedVisitor(nowMs);
+        while (nowMs - visitor.frameStartedMs >= VISITOR_SLEEP_FRAME_MS) {
+            visitor.frameIndex++;
+            visitor.frameStartedMs += VISITOR_SLEEP_FRAME_MS;
+        }
         return;
     }
 
@@ -4311,6 +4604,7 @@ void MainScene::updateVisitor(uint32_t nowMs, float dtSeconds) {
     }
 
     if (!careProfile.canMove) {
+        releaseBowl(1);
         visitor.state = VisitorState::IDLE;
         visitor.targetX = visitor.x;
         visitor.targetY = visitor.y;
@@ -4321,6 +4615,15 @@ void MainScene::updateVisitor(uint32_t nowMs, float dtSeconds) {
 
     bool night = mainSceneIsNight();
 
+    if (visitor.state == VisitorState::SEEK_FOOD) {
+        updateVisitorFoodSeek(nowMs, dtSeconds);
+        return;
+    }
+    if (visitor.state == VisitorState::FEEDING) {
+        updateVisitorFeeding(nowMs);
+        return;
+    }
+
     if (visitor.state == VisitorState::SLEEPING) {
         if (!night) {
             visitor.state = VisitorState::IDLE;
@@ -4328,6 +4631,14 @@ void MainScene::updateVisitor(uint32_t nowMs, float dtSeconds) {
             visitor.frameStartedMs = nowMs;
             visitor.frameIndex = 0;
             return;
+        }
+        if (teamMemberCanEatFromBowl(1) &&
+            (int32_t)(nowMs - visitor.stateUntilMs) >= 0) {
+            visitor.state = VisitorState::IDLE;
+            startVisitorFoodSeek(nowMs);
+            if (visitor.state == VisitorState::SEEK_FOOD) return;
+            visitor.state = VisitorState::SLEEPING;
+            visitor.stateUntilMs = nowMs + 1000;
         }
         while (nowMs - visitor.frameStartedMs >= VISITOR_SLEEP_FRAME_MS) {
             visitor.frameIndex++;
@@ -4356,6 +4667,7 @@ void MainScene::updateVisitor(uint32_t nowMs, float dtSeconds) {
 
     if (visitor.state == VisitorState::IDLE) {
         advanceVisitorFrames(nowMs, false);
+        if (startVisitorFoodSeek(nowMs)) return;
         if ((int32_t)(nowMs - visitor.stateUntilMs) < 0) return;
         float tx = 0.0f;
         float ty = 0.0f;
@@ -4381,6 +4693,9 @@ void MainScene::updateVisitor(uint32_t nowMs, float dtSeconds) {
         visitor.y = visitor.targetY;
         if (visitor.state == VisitorState::GO_TO_SLEEP) {
             visitor.state = VisitorState::SLEEPING;
+            visitor.stateUntilMs =
+                nowMs + (uint32_t)random(NIGHT_FEED_WAKE_DELAY_MIN_MS,
+                                         NIGHT_FEED_WAKE_DELAY_MAX_MS + 1);
         } else {
             visitor.state = VisitorState::IDLE;
             visitor.stateUntilMs = nowMs + (uint32_t)random(VISITOR_IDLE_MIN_MS, VISITOR_IDLE_MAX_MS + 1);
@@ -4394,6 +4709,9 @@ void MainScene::updateVisitor(uint32_t nowMs, float dtSeconds) {
     if (!monsterFootprintInsideWalkArea(nextX, nextY)) {
         if (visitor.state == VisitorState::GO_TO_SLEEP) {
             visitor.state = VisitorState::SLEEPING;
+            visitor.stateUntilMs =
+                nowMs + (uint32_t)random(NIGHT_FEED_WAKE_DELAY_MIN_MS,
+                                         NIGHT_FEED_WAKE_DELAY_MAX_MS + 1);
             visitor.frameStartedMs = nowMs;
             visitor.frameIndex = 0;
         } else {
@@ -4427,6 +4745,7 @@ const PokemonSprites::SpriteFrame* MainScene::visitorCurrentFrame(bool& flipX) c
         return PokemonSprites::findSpeciesSprite(visitor.speciesId, PokemonSprites::SpriteKind::FRONT);
     }
     bool walking = (visitor.state == VisitorState::WALK ||
+                    visitor.state == VisitorState::SEEK_FOOD ||
                     visitor.state == VisitorState::GO_TO_SLEEP) && visitor.dropOffsetY <= 0.0f;
     if (walking) {
         PokemonSprites::WalkingAnimation animation{};
@@ -4988,7 +5307,7 @@ void MainScene::drawHud() {
     if (visibleCount == 0 && state.teamCount > 0) {
         visibleSlots[visibleCount++] = 0;
     }
-    int panelH = visibleCount > 1 ? 59 : 38;
+    int panelH = visibleCount > 1 ? 57 : 38;
     fillRoundRectAlpha(PANEL_X, PANEL_Y, PANEL_W, panelH, PANEL_RADIUS,
                        PixelRenderer::rgb(8, 10, 14), 150);
     c.drawRoundRect(PANEL_X, PANEL_Y, PANEL_W, panelH, PANEL_RADIUS,
@@ -5023,8 +5342,8 @@ void MainScene::drawHud() {
             : 0;
         if (mon.fainted || mon.hpCur == 0 || mon.hpMax == 0) hpPct = 0;
 
-        int rowY = PANEL_Y + 18 + visibleIndex * 21;
-        drawHungerIcon(PANEL_X + 4, rowY, hunger);
+        int rowY = PANEL_Y + 18 + visibleIndex * 19;
+        drawHungerIcon(PANEL_X + 6, rowY + 2, hunger);
         int barX = PANEL_X + 29;
         int barW = 31;
 

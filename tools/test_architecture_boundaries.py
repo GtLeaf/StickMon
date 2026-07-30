@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+
+import re
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SOURCE_SUFFIXES = {".h", ".hpp", ".c", ".cpp"}
+
+
+def source_files(folder):
+    return [
+        path
+        for path in folder.rglob("*")
+        if path.is_file() and path.suffix in SOURCE_SUFFIXES
+    ]
+
+
+class ArchitectureBoundaryTests(unittest.TestCase):
+    def assert_no_patterns(self, folder, patterns):
+        violations = []
+        for path in source_files(folder):
+            text = path.read_text(encoding="utf-8")
+            for label, pattern in patterns:
+                if re.search(pattern, text):
+                    violations.append(
+                        f"{path.relative_to(ROOT)} depends on {label}"
+                    )
+        self.assertEqual([], violations, "\n" + "\n".join(violations))
+
+    def test_game_logic_is_host_buildable(self):
+        self.assert_no_patterns(
+            ROOT / "src" / "game",
+            [
+                ("Arduino", r"#\s*include\s*[<\"]Arduino\.h[>\"]"),
+                ("M5 SDK", r"#\s*include\s*[<\"]M5(?:Unified|GFX)"),
+                ("hardware layer", r"#\s*include\s*[<\"]hardware/"),
+                ("concrete platform", r"#\s*include\s*[<\"]platform/m5stick_s3/"),
+                ("ESP-IDF", r"#\s*include\s*[<\"](?:esp_|driver/|freertos/)"),
+            ],
+        )
+
+    def test_presentation_is_device_independent(self):
+        self.assert_no_patterns(
+            ROOT / "src" / "presentation",
+            [
+                ("Arduino", r"#\s*include\s*[<\"]Arduino\.h[>\"]"),
+                ("M5 SDK", r"#\s*include\s*[<\"]M5(?:Unified|GFX)"),
+                ("GPIO or ESP-IDF", r"#\s*include\s*[<\"](?:esp_|driver/|freertos/)"),
+                ("concrete platform", r"#\s*include\s*[<\"]platform/m5stick_s3/"),
+            ],
+        )
+
+    def test_m5_sdk_is_confined_to_platform_adapter(self):
+        allowed = Path("src/platform/m5stick_s3/M5StickS3Platform.cpp")
+        violations = []
+        for path in source_files(ROOT / "src"):
+            text = path.read_text(encoding="utf-8")
+            if re.search(r"#\s*include\s*[<\"]M5(?:Unified|GFX)", text):
+                relative = path.relative_to(ROOT)
+                if relative != allowed:
+                    violations.append(str(relative))
+        self.assertEqual([], violations, "\n" + "\n".join(violations))
+
+
+if __name__ == "__main__":
+    unittest.main()

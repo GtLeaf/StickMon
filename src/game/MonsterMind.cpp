@@ -1,7 +1,7 @@
 #include "game/MonsterMind.h"
 
-#include <Arduino.h>
 #include <algorithm>
+#include "game/GameRandom.h"
 #include "game/SpeciesBehavior.h"
 
 namespace {
@@ -58,7 +58,8 @@ void MonsterMind::update(const Game::MonsterRuntime& monster, bool sleepTime,
     base[static_cast<uint8_t>(MonsterDesire::STARE)] = 50 + (sleepTime ? 20 : 0);
 
     for (uint8_t i = 0; i < 4; ++i) {
-        uint16_t score = base[i] + static_cast<uint16_t>(random(0, 9));
+        uint16_t score =
+            base[i] + static_cast<uint16_t>(GameRandom::range(0, 9));
         if (i == static_cast<uint8_t>(topDesire_)) score += INERTIA_BONUS;
         scores_[i] = clampScore(score);
     }

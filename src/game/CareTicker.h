@@ -13,8 +13,8 @@
 namespace Game {
 
 constexpr uint16_t GAME_MINUTES_PER_DAY = 24U * 60U;
-constexpr uint16_t HP_RECOVERY_INTERVAL_MIN = 5;
-constexpr uint8_t HP_RECOVERY_PERCENT_PER_TICK = 10;
+constexpr uint16_t HP_RECOVERY_INTERVAL_MIN = 1;
+constexpr uint8_t HP_RECOVERY_PERCENT_PER_TICK = 5;
 constexpr uint8_t HP_RECOVERY_EMPTY_GAIN_PER_TICK = 1;
 constexpr uint32_t FAINT_REST_SECONDS = 60UL * 60UL;
 constexpr uint8_t SATIETY_DECAY_AWAKE_INTERVAL_MIN = 1;

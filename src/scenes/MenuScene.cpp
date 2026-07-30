@@ -12,7 +12,7 @@
 #include "game/BondSystem.h"
 #include "game/Species.h"
 #include "hardware/Hal.h"
-#include "hardware/PixelRenderer.h"
+#include "presentation/PixelRenderer.h"
 
 namespace {
 const char* originName(Game::Origin origin) {
@@ -165,12 +165,13 @@ int menuIconIndex(uint8_t item) {
 }
 
 // 背包源索引：0~3 伤药/糖果，4~10 七种食物（仅战斗模式可见），11~14 状态药，
-// 15~23 全满药/全复药/全愈药/火之石/水之石/雷之石/复活草/黄金喷雾/甜甜蜜，24 返回。
+// 15~24 全满药/全复药/全愈药/火之石/水之石/雷之石/复活草/黄金喷雾/甜甜蜜/心之鳞片，25 返回。
 static constexpr uint8_t BAG_SOURCE_FOOD_BASE = 4;
 static constexpr uint8_t BAG_SOURCE_HEAL_BASE = 11;
 static constexpr uint8_t BAG_SOURCE_EXTRA_BASE = 15;
-static constexpr uint8_t BAG_SOURCE_EXTRA_COUNT = 9;
-static constexpr uint8_t BAG_SOURCE_BACK = 24;
+static constexpr uint8_t BAG_SOURCE_EXTRA_COUNT = 10;
+static constexpr uint8_t BAG_SOURCE_HEART_SCALE = BAG_SOURCE_EXTRA_BASE + 9;
+static constexpr uint8_t BAG_SOURCE_BACK = 25;
 
 uint8_t bagItemCount(uint8_t sourceIndex) {
     switch (sourceIndex) {
@@ -191,6 +192,7 @@ uint8_t bagItemCount(uint8_t sourceIndex) {
     case BAG_SOURCE_EXTRA_BASE + 6: return GameEngine::ins().reviveCount();
     case BAG_SOURCE_EXTRA_BASE + 7: return GameEngine::ins().maxRepelCount();
     case BAG_SOURCE_EXTRA_BASE + 8: return GameEngine::ins().honeyCount();
+    case BAG_SOURCE_HEART_SCALE: return GameEngine::ins().heartScaleCount();
     case BAG_SOURCE_BACK: return 1;
     default:
         if (sourceIndex >= BAG_SOURCE_FOOD_BASE &&
@@ -220,6 +222,7 @@ Game::ItemId bagItemId(uint8_t sourceIndex) {
     case BAG_SOURCE_EXTRA_BASE + 6: return Game::ItemId::REVIVE;
     case BAG_SOURCE_EXTRA_BASE + 7: return Game::ItemId::MAX_REPEL;
     case BAG_SOURCE_EXTRA_BASE + 8: return Game::ItemId::HONEY;
+    case BAG_SOURCE_HEART_SCALE: return Game::ItemId::HEART_SCALE;
     default:
         if (sourceIndex >= BAG_SOURCE_FOOD_BASE &&
             sourceIndex < BAG_SOURCE_FOOD_BASE + Game::ROOM_FOOD_COUNT) {
@@ -505,6 +508,10 @@ void MenuScene::onEnter() {
     moveForgetSlot = 0;
     moveForgetConfirmOpen = false;
     moveForgetConfirmYes = false;
+    movePageMode = MovePageMode::MANAGE;
+    recallMoveCount = 0;
+    recallSelectedIndex = 0;
+    moveListScroll = 0.0f;
     bagCursor = 0;
     bagConfirmOpen = false;
     bagConfirmYes = true;
@@ -739,18 +746,43 @@ SceneUpdateResult MenuScene::update(uint32_t nowMs, float dtSeconds) {
         if (moveMonsterIndex < state.teamCount) {
             const Game::MonsterRuntime& mon = state.team[moveMonsterIndex];
             const Species& species = GameEngine::ins().speciesFor(mon);
-            uint8_t moveCount = learnedMoveCount(species, mon);
-            if (moveCursor < moveCount) {
-                uint8_t slot =
-                    learnedMoveSlotAt(species, mon, moveCursor);
-                const MoveInfo* move =
-                    moveInfoForSlot(species, mon, slot);
-                if (move) {
-                    const char* lines[] = {move->description};
-                    animateDescription(
-                        lines, 1, Hal::DISPLAY_W - 101,
-                        0x6000 | (moveMonsterIndex << 4) | slot);
-                }
+            uint8_t learnedCount = learnedMoveCount(species, mon);
+            uint8_t rowCount = movePageMode == MovePageMode::MANAGE
+                ? learnedCount + 1
+                : (movePageMode == MovePageMode::RECALL_SELECT
+                    ? recallMoveCount + 1
+                    : SPECIAL_MOVE_SLOT_COUNT + 1);
+            static constexpr int LIST_Y = 6;
+            static constexpr int ROW_H = 24;
+            static constexpr int VISIBLE_H = Hal::DISPLAY_H - LIST_Y * 2;
+            int maxScroll = max(
+                0, static_cast<int>(rowCount) * ROW_H - VISIBLE_H);
+            int target = moveCursor * ROW_H - VISIBLE_H / 2 + ROW_H / 2;
+            animateScroll(moveListScroll, constrain(target, 0, maxScroll));
+
+            const MoveInfo* move = nullptr;
+            int descriptionKey = -1;
+            if (movePageMode == MovePageMode::MANAGE &&
+                moveCursor < learnedCount) {
+                uint8_t slot = learnedMoveSlotAt(species, mon, moveCursor);
+                move = moveInfoForSlot(species, mon, slot);
+                descriptionKey =
+                    0x6000 | (moveMonsterIndex << 4) | slot;
+            } else if (movePageMode == MovePageMode::RECALL_SELECT &&
+                       moveCursor < recallMoveCount) {
+                move = findMove(recallMoveIds[moveCursor]);
+                descriptionKey = 0x7000 | recallMoveIds[moveCursor];
+            } else if (movePageMode == MovePageMode::RECALL_REPLACE &&
+                       moveCursor < SPECIAL_MOVE_SLOT_COUNT) {
+                uint8_t slot = static_cast<uint8_t>(moveCursor + 1);
+                move = moveInfoForSlot(species, mon, slot);
+                descriptionKey =
+                    0x7800 | (moveMonsterIndex << 4) | slot;
+            }
+            if (move) {
+                const char* lines[] = {move->description};
+                animateDescription(lines, 1, Hal::DISPLAY_W - 101,
+                                   descriptionKey);
             }
         }
     } else if (viewMode == ViewMode::STATUS) {
@@ -809,6 +841,15 @@ bool MenuScene::onButton(const ButtonEvent& event) {
             }
             if (viewMode == ViewMode::MOVES && moveForgetConfirmOpen) {
                 moveForgetConfirmOpen = false;
+                return true;
+            }
+            if (viewMode == ViewMode::MOVES &&
+                movePageMode == MovePageMode::RECALL_REPLACE) {
+                movePageMode = MovePageMode::RECALL_SELECT;
+                moveCursor = recallSelectedIndex;
+                moveListScroll = 0.0f;
+                descScrollKey = -1;
+                descScroll = 0.0f;
                 return true;
             }
             if (viewMode == ViewMode::STORAGE && storageInviteConfirmOpen) {
@@ -940,6 +981,8 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                 } else if (action == TeamAction::MOVES) {
                     moveMonsterIndex = teamCursor;
                     moveCursor = 0;
+                    movePageMode = MovePageMode::MANAGE;
+                    moveListScroll = 0.0f;
                     moveForgetSlot = 0;
                     moveForgetConfirmOpen = false;
                     moveForgetConfirmYes = false;
@@ -982,8 +1025,12 @@ bool MenuScene::onButton(const ButtonEvent& event) {
             }
             const Game::MonsterRuntime& mon = state.team[moveMonsterIndex];
             const Species& species = GameEngine::ins().speciesFor(mon);
-            uint8_t moveCount = learnedMoveCount(species, mon);
-            uint8_t rowCount = moveCount + 1;
+            uint8_t learnedCount = learnedMoveCount(species, mon);
+            uint8_t rowCount = movePageMode == MovePageMode::MANAGE
+                ? learnedCount + 1
+                : (movePageMode == MovePageMode::RECALL_SELECT
+                    ? recallMoveCount + 1
+                    : SPECIAL_MOVE_SLOT_COUNT + 1);
             if (moveCursor >= rowCount) moveCursor = rowCount - 1;
 
             if (event.btn == 1 && event.action == BtnAction::PRESSED) {
@@ -997,6 +1044,48 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                 return true;
             }
             if (event.btn == 0 && event.action == BtnAction::PRESSED) {
+                if (movePageMode == MovePageMode::RECALL_SELECT) {
+                    if (moveCursor >= recallMoveCount) {
+                        movePageMode = MovePageMode::MANAGE;
+                        popView();
+                    } else {
+                        recallSelectedIndex = moveCursor;
+                        movePageMode = MovePageMode::RECALL_REPLACE;
+                        moveCursor = 0;
+                        moveListScroll = 0.0f;
+                        descScrollKey = -1;
+                        descScroll = 0.0f;
+                    }
+                    return true;
+                }
+                if (movePageMode == MovePageMode::RECALL_REPLACE) {
+                    if (moveCursor >= SPECIAL_MOVE_SLOT_COUNT) {
+                        movePageMode = MovePageMode::RECALL_SELECT;
+                        moveCursor = recallSelectedIndex;
+                        moveListScroll = 0.0f;
+                        descScrollKey = -1;
+                        descScroll = 0.0f;
+                        return true;
+                    }
+                    Game::MoveId recalledId =
+                        recallMoveIds[recallSelectedIndex];
+                    const MoveInfo* recalled = findMove(recalledId);
+                    bool used = GameEngine::ins().recallMove(
+                        moveMonsterIndex, recalledId,
+                        static_cast<uint8_t>(moveCursor + 1));
+                    if (used) {
+                        snprintf(toastBuffer, sizeof(toastBuffer),
+                                 Ui::Team::MOVE_RECALLED_FMT,
+                                 recalled ? recalled->name : "");
+                        toast = toastBuffer;
+                        movePageMode = MovePageMode::MANAGE;
+                        popView();
+                    } else {
+                        toast = Ui::Team::MOVE_RECALL_FAILED;
+                    }
+                    toastUntil = Hal::ins().millis() + 1100;
+                    return true;
+                }
                 if (moveForgetConfirmOpen) {
                     if (moveForgetConfirmYes &&
                         GameEngine::ins().forgetTeamMemberMove(
@@ -1017,7 +1106,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                     }
                     return true;
                 }
-                if (moveCursor >= moveCount) {
+                if (moveCursor >= learnedCount) {
                     popView();
                     return true;
                 }
@@ -1189,9 +1278,29 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                 bagConfirmOpen = true;
             } else if (!battleBagMode && source >= BAG_SOURCE_EXTRA_BASE &&
                        source < BAG_SOURCE_EXTRA_BASE + BAG_SOURCE_EXTRA_COUNT) {
-                bagConfirmSource = source;
-                bagConfirmYes = true;
-                bagConfirmOpen = true;
+                if (source == BAG_SOURCE_HEART_SCALE) {
+                    moveMonsterIndex = 0;
+                    recallMoveCount = GameEngine::ins().collectRecallableMoves(
+                        moveMonsterIndex, recallMoveIds,
+                        MAX_RECALLABLE_MOVE_COUNT);
+                    if (recallMoveCount == 0) {
+                        toast = Ui::Team::MOVE_RECALL_EMPTY;
+                        toastUntil = Hal::ins().millis() + 1100;
+                    } else {
+                        movePageMode = MovePageMode::RECALL_SELECT;
+                        moveCursor = 0;
+                        recallSelectedIndex = 0;
+                        moveListScroll = 0.0f;
+                        moveForgetConfirmOpen = false;
+                        descScrollKey = -1;
+                        descScroll = 0.0f;
+                        pushView(ViewMode::MOVES);
+                    }
+                } else {
+                    bagConfirmSource = source;
+                    bagConfirmYes = true;
+                    bagConfirmOpen = true;
+                }
             } else if (battleBagMode && source >= BAG_SOURCE_FOOD_BASE &&
                        source < BAG_SOURCE_FOOD_BASE + Game::ROOM_FOOD_COUNT) {
                 bagConfirmSource = source;
@@ -1231,7 +1340,10 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                 return true;
             }
             if (storageActionOpen) {
-                storageActionCursor = (storageActionCursor + 1) % STORAGE_ACTION_COUNT;
+                bool canDelete = GameEngine::ins().canDeleteContact(storageCursor);
+                uint8_t actionCount = canDelete ? STORAGE_ACTION_COUNT
+                                                : STORAGE_ACTION_COUNT - 1;
+                storageActionCursor = (storageActionCursor + 1) % actionCount;
                 return true;
             }
             uint8_t count = GameEngine::ins().gameState().storageCount + 1;
@@ -1315,7 +1427,8 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                     }
                     storageInviteConfirmOpen = true;
                     storageInviteConfirmYes = true;
-                } else if (storageActionCursor == 2) {
+                } else if (storageActionCursor == 2 &&
+                           GameEngine::ins().canDeleteContact(storageCursor)) {
                     storageReleaseConfirmOpen = true;
                     storageReleaseConfirmYes = false;
                 } else {
@@ -1695,8 +1808,12 @@ void MenuScene::renderMovesPage() {
 
     const Game::MonsterRuntime& mon = state.team[moveMonsterIndex];
     const Species& species = GameEngine::ins().speciesFor(mon);
-    uint8_t moveCount = learnedMoveCount(species, mon);
-    uint8_t rowCount = moveCount + 1;
+    uint8_t learnedCount = learnedMoveCount(species, mon);
+    uint8_t rowCount = movePageMode == MovePageMode::MANAGE
+        ? learnedCount + 1
+        : (movePageMode == MovePageMode::RECALL_SELECT
+            ? recallMoveCount + 1
+            : SPECIAL_MOVE_SLOT_COUNT + 1);
     if (moveCursor >= rowCount) moveCursor = rowCount - 1;
 
     static constexpr int LEFT_W = 90;
@@ -1710,8 +1827,10 @@ void MenuScene::renderMovesPage() {
     c.drawFastVLine(LEFT_W, 6, Hal::DISPLAY_H - 12,
                     PixelRenderer::rgb(123, 125, 123));
 
+    c.setClipRect(0, LIST_Y, LEFT_W, Hal::DISPLAY_H - LIST_Y * 2);
     for (uint8_t index = 0; index < rowCount; ++index) {
-        int y = LIST_Y + index * ROW_H;
+        int y = LIST_Y + index * ROW_H - static_cast<int>(moveListScroll);
+        if (y + ROW_H < LIST_Y || y >= Hal::DISPLAY_H - LIST_Y) continue;
         bool selected = index == moveCursor;
         uint16_t color = selected
             ? PixelRenderer::rgb(255, 216, 72)
@@ -1720,62 +1839,114 @@ void MenuScene::renderMovesPage() {
             c.fillRect(2, y + 2, 3, 18, PixelRenderer::rgb(255, 216, 72));
         }
 
-        if (index < moveCount) {
-            uint8_t moveSlot = learnedMoveSlotAt(species, mon, index);
-            const MoveInfo* move = moveInfoForSlot(species, mon, moveSlot);
-            if (move) PixelRenderer::text(TEXT_X, y + 3, move->name, color, 1);
+        const MoveInfo* rowMove = nullptr;
+        bool isBack = false;
+        if (movePageMode == MovePageMode::MANAGE) {
+            if (index < learnedCount) {
+                uint8_t moveSlot = learnedMoveSlotAt(species, mon, index);
+                rowMove = moveInfoForSlot(species, mon, moveSlot);
+            } else {
+                isBack = true;
+            }
+        } else if (movePageMode == MovePageMode::RECALL_SELECT) {
+            if (index < recallMoveCount) {
+                rowMove = findMove(recallMoveIds[index]);
+            } else {
+                isBack = true;
+            }
+        } else if (index < SPECIAL_MOVE_SLOT_COUNT) {
+            rowMove = moveInfoForSlot(
+                species, mon, static_cast<uint8_t>(index + 1));
         } else {
+            isBack = true;
+        }
+
+        if (rowMove) {
+            PixelRenderer::text(TEXT_X, y + 3, rowMove->name, color, 1);
+        } else if (isBack) {
             PixelRenderer::text(TEXT_X, y + 3, Ui::BACK, color, 1);
+        } else {
+            PixelRenderer::text(TEXT_X, y + 3,
+                                Ui::Team::MOVE_UNLEARNED, color, 1);
         }
         if (index + 1 < rowCount) {
             c.drawFastHLine(5, y + ROW_H - 1, LEFT_W - 10,
                             PixelRenderer::rgb(55, 63, 76));
         }
     }
+    c.clearClipRect();
 
-    if (moveCursor < moveCount) {
-        uint8_t moveSlot = learnedMoveSlotAt(species, mon, moveCursor);
-        const MoveInfo* move = moveInfoForSlot(species, mon, moveSlot);
-        if (move) {
-            int moveNameX = drawTypeBracket(RIGHT_X + 2, 7, move->type);
-            PixelRenderer::text(moveNameX + 3, 7, move->name,
-                                PixelRenderer::rgb(241, 242, 232), 1);
-
-            char line[48];
-            char power[8];
-            char accuracy[8];
-            if (move->power > 0) {
-                snprintf(power, sizeof(power), "%u", move->power);
-            } else {
-                snprintf(power, sizeof(power), "--");
-            }
-            if (move->accuracy > 0) {
-                snprintf(accuracy, sizeof(accuracy), "%u", move->accuracy);
-            } else {
-                snprintf(accuracy, sizeof(accuracy), "--");
-            }
-            snprintf(line, sizeof(line), Ui::Team::MOVE_POWER_ACCURACY_FMT,
-                     power, accuracy);
-            PixelRenderer::text(RIGHT_X + 2, 31, line,
-                                PixelRenderer::rgb(255, 216, 72), 1);
-            PixelRenderer::text(RIGHT_X + 2, 52, Ui::Team::MOVE_PROFICIENCY,
-                                PixelRenderer::rgb(135, 214, 238), 1);
-            drawProficiencyBar(RIGHT_X + 48, 56, 86, 9,
-                               mon.moveProficiency[moveSlot]);
-
-            const char* description[] = {move->description};
-            renderScrollableDescription(
-                description, 1, RIGHT_X + 2, 76,
-                Hal::DISPLAY_W - RIGHT_X - 4,
-                PixelRenderer::rgb(255, 218, 178),
-                0x6000 | (moveMonsterIndex << 4) | moveSlot);
-        }
+    const MoveInfo* move = nullptr;
+    uint8_t proficiency = 0;
+    int descriptionKey = -1;
+    const char* emptyHint = nullptr;
+    if (movePageMode == MovePageMode::MANAGE &&
+        moveCursor < learnedCount) {
+        uint8_t slot = learnedMoveSlotAt(species, mon, moveCursor);
+        move = moveInfoForSlot(species, mon, slot);
+        proficiency = mon.moveProficiency[slot];
+        descriptionKey = 0x6000 | (moveMonsterIndex << 4) | slot;
+    } else if (movePageMode == MovePageMode::RECALL_SELECT &&
+               moveCursor < recallMoveCount) {
+        move = findMove(recallMoveIds[moveCursor]);
+        descriptionKey = 0x7000 | recallMoveIds[moveCursor];
+    } else if (movePageMode == MovePageMode::RECALL_REPLACE &&
+               moveCursor < SPECIAL_MOVE_SLOT_COUNT) {
+        uint8_t slot = static_cast<uint8_t>(moveCursor + 1);
+        move = moveInfoForSlot(species, mon, slot);
+        proficiency = mon.moveProficiency[slot];
+        descriptionKey = 0x7800 | (moveMonsterIndex << 4) | slot;
+        if (!move) emptyHint = Ui::Team::MOVE_UNLEARNED;
+    } else if (movePageMode == MovePageMode::MANAGE) {
+        emptyHint = Ui::Team::MOVE_BACK_HINT;
+    } else if (movePageMode == MovePageMode::RECALL_SELECT) {
+        emptyHint = Ui::Team::MOVE_RECALL_BACK_HINT;
     } else {
-        PixelRenderer::text(RIGHT_X + 26, 58, Ui::Team::MOVE_BACK_HINT,
+        emptyHint = Ui::Team::MOVE_REPLACE_BACK_HINT;
+    }
+
+    if (move) {
+        int moveNameX = drawTypeBracket(RIGHT_X + 2, 7, move->type);
+        PixelRenderer::text(moveNameX + 3, 7, move->name,
+                            PixelRenderer::rgb(241, 242, 232), 1);
+
+        char line[48];
+        char power[8];
+        char accuracy[8];
+        if (move->power > 0) {
+            snprintf(power, sizeof(power), "%u", move->power);
+        } else {
+            snprintf(power, sizeof(power), "--");
+        }
+        if (move->accuracy > 0) {
+            snprintf(accuracy, sizeof(accuracy), "%u", move->accuracy);
+        } else {
+            snprintf(accuracy, sizeof(accuracy), "--");
+        }
+        snprintf(line, sizeof(line), Ui::Team::MOVE_POWER_ACCURACY_FMT,
+                 power, accuracy);
+        PixelRenderer::text(RIGHT_X + 2, 31, line,
+                            PixelRenderer::rgb(255, 216, 72), 1);
+        PixelRenderer::text(RIGHT_X + 2, 52, Ui::Team::MOVE_PROFICIENCY,
+                            PixelRenderer::rgb(135, 214, 238), 1);
+        drawProficiencyBar(RIGHT_X + 48, 56, 86, 9, proficiency);
+
+        const char* description[] = {move->description};
+        renderScrollableDescription(
+            description, 1, RIGHT_X + 2, 76,
+            Hal::DISPLAY_W - RIGHT_X - 4,
+            PixelRenderer::rgb(255, 218, 178), descriptionKey);
+    } else if (emptyHint) {
+        int detailWidth = Hal::DISPLAY_W - RIGHT_X;
+        int hintX = RIGHT_X + max(
+            2, (detailWidth - textPixelWidth(emptyHint)) / 2);
+        PixelRenderer::text(hintX, 58, emptyHint,
                             PixelRenderer::rgb(156, 164, 176), 1);
     }
 
-    if (moveForgetConfirmOpen) renderMoveForgetConfirmPopup();
+    if (movePageMode == MovePageMode::MANAGE && moveForgetConfirmOpen) {
+        renderMoveForgetConfirmPopup();
+    }
     renderToast();
 }
 
@@ -2305,18 +2476,22 @@ void MenuScene::renderStorageInviteConfirmPopup() {
 
 void MenuScene::renderStorageActionPopup() {
     auto& c = PixelRenderer::canvas();
+    bool canDelete = GameEngine::ins().canDeleteContact(storageCursor);
+    uint8_t actionCount = canDelete ? STORAGE_ACTION_COUNT
+                                    : STORAGE_ACTION_COUNT - 1;
     static constexpr int POP_X = 142;
     static constexpr int POP_Y = 20;
     static constexpr int POP_W = 78;
-    static constexpr int POP_H = 100;
-    c.fillRect(POP_X, POP_Y, POP_W, POP_H, PixelRenderer::rgb(24, 28, 36));
-    c.drawRect(POP_X, POP_Y, POP_W, POP_H, PixelRenderer::rgb(241, 242, 232));
+    int popH = 16 + actionCount * 21;
+    c.fillRect(POP_X, POP_Y, POP_W, popH, PixelRenderer::rgb(24, 28, 36));
+    c.drawRect(POP_X, POP_Y, POP_W, popH, PixelRenderer::rgb(241, 242, 232));
 
-    for (uint8_t i = 0; i < STORAGE_ACTION_COUNT; ++i) {
+    for (uint8_t i = 0; i < actionCount; ++i) {
         int y = POP_Y + 9 + i * 21;
         bool selected = i == storageActionCursor;
         if (selected) c.fillRect(POP_X + 5, y - 2, 4, 18, PixelRenderer::rgb(255, 216, 72));
-        PixelRenderer::text(POP_X + 16, y, Ui::Storage::ACTIONS[i],
+        uint8_t actionIndex = !canDelete && i == 2 ? 3 : i;
+        PixelRenderer::text(POP_X + 16, y, Ui::Storage::ACTIONS[actionIndex],
                             selected ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232),
                             1);
     }
@@ -2508,7 +2683,7 @@ void MenuScene::handleDebugAction() {
             if (engine.gameState().teamCount == 0) {
                 toast = Ui::Menu::HATCH_FIRST;
             } else {
-                engine.debugRecoverActiveMonster();
+                engine.debugRecoverTeam();
                 toast = Ui::Debug::RECOVERED;
             }
             toastUntil = Hal::ins().millis() + 1100;
@@ -2749,6 +2924,7 @@ uint8_t MenuScene::collectVisibleBagRows(BagRow* rows, uint8_t maxRows) const {
         GameEngine::ins().reviveCount(),
         GameEngine::ins().maxRepelCount(),
         GameEngine::ins().honeyCount(),
+        GameEngine::ins().heartScaleCount(),
         1,
     };
 

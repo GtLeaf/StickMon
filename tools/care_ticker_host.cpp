@@ -34,6 +34,23 @@ int main() {
         return fail(2, "temporary visitors must not consume hunger");
     }
 
+    state.team[0].hpMax = 100;
+    state.team[0].hpCur = 50;
+    state.team[0].satiety = 50;
+    acc = Game::CareTickAccumulators{};
+    Game::applyCareMinutes(state, acc, 1, 1.0f, true);
+    if (state.team[0].hpCur != 55) {
+        return fail(3, "home recovery must restore five percent per minute");
+    }
+
+    state.team[0].hpCur = 50;
+    state.team[0].satiety = 0;
+    acc = Game::CareTickAccumulators{};
+    Game::applyCareMinutes(state, acc, 1, 1.0f, true);
+    if (state.team[0].hpCur != 51) {
+        return fail(4, "empty hunger must keep slower home recovery");
+    }
+
     state.storageCount = 1;
     state.careDay = 0;
     state.gameMinutesTotal = Game::GAME_MINUTES_PER_DAY;
@@ -44,7 +61,7 @@ int main() {
         state.pairMoodRewardsToday != 0 ||
         state.storage[0].petCountToday !=
             Game::Bond::inviteLockMarker(1)) {
-        return fail(3, "daily reset must preserve invitation lock marker");
+        return fail(5, "daily reset must preserve invitation lock marker");
     }
 
     std::printf("[care_ticker_host] all tests passed\n");

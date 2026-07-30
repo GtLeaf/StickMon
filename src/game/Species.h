@@ -44,6 +44,7 @@ enum class GrowthRate : uint8_t {
 };
 
 static constexpr uint8_t SPECIAL_MOVE_SLOT_COUNT = 2;
+static constexpr uint8_t MAX_RECALLABLE_MOVE_COUNT = 80;
 static constexpr uint8_t FRIENDSHIP_EVOLUTION_THRESHOLD = 220;
 
 enum class EvolutionMethod : uint8_t {
@@ -171,6 +172,10 @@ uint16_t learnsetEntryCountForSpecies(const Species& species);
 bool isMoveBattleSupported(Game::MoveId moveId);
 bool canLearnAsSpecialMove(const Species& species, Game::MoveId moveId);
 bool canRetainSpecialMove(const Species& species, Game::MoveId moveId, uint8_t level);
+uint8_t collectRecallableMoves(const Species& species,
+                               const Game::MonsterRuntime& monster,
+                               Game::MoveId* outMoves,
+                               uint8_t capacity);
 bool isBasicFirstMoveForSpecies(const Species& species, Game::MoveId moveId);
 Game::MoveId basicMoveIdForSpecies(const Species& species);
 uint8_t moveLearnLevelForSpecies(const Species& species, Game::MoveId moveId);

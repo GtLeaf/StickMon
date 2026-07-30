@@ -1,11 +1,12 @@
-#include "hardware/PixelRenderer.h"
-#include <Arduino.h>
+#include "presentation/PixelRenderer.h"
+#include <algorithm>
 #include <cmath>
 #include "assets/FontFallbackCN.h"
 #include "core/FontResource.h"
+#include "platform/api/ProgramMemory.h"
 
 namespace {
-LGFX_Sprite* gCanvas = nullptr;
+Canvas565 gCanvas;
 static constexpr uint8_t MAX_TEXT_OUTLINE_WIDTH = 2;
 static constexpr uint8_t NATIVE_TEXT_HEIGHT = 16;
 static constexpr uint8_t ASCII_CELL_WIDTH = 8;
@@ -64,12 +65,16 @@ bool mapDownscaledCoordinate(int source, float scale, int outputSize, int& outpu
 }
 
 uint16_t readGlyphRow(const uint8_t* bitmap, int row, bool progmem) {
-    const uint8_t left = progmem ? pgm_read_byte(&bitmap[row * 2]) : bitmap[row * 2];
-    const uint8_t right = progmem ? pgm_read_byte(&bitmap[row * 2 + 1]) : bitmap[row * 2 + 1];
+    const uint8_t left = progmem
+        ? Platform::readProgramByte(&bitmap[row * 2])
+        : bitmap[row * 2];
+    const uint8_t right = progmem
+        ? Platform::readProgramByte(&bitmap[row * 2 + 1])
+        : bitmap[row * 2 + 1];
     return static_cast<uint16_t>(left) << 8 | right;
 }
 
-void drawGlyphBitmap(LGFX_Sprite& canvas, int x, int y, const uint8_t* bitmap,
+void drawGlyphBitmap(Canvas565& canvas, int x, int y, const uint8_t* bitmap,
                      uint16_t color, bool progmem, int glyphWidth) {
     for (int row = 0; row < NATIVE_TEXT_HEIGHT; ++row) {
         const uint16_t bits = readGlyphRow(bitmap, row, progmem);
@@ -79,7 +84,7 @@ void drawGlyphBitmap(LGFX_Sprite& canvas, int x, int y, const uint8_t* bitmap,
     }
 }
 
-void drawOuterOutline(LGFX_Sprite& canvas, int x, int y,
+void drawOuterOutline(Canvas565& canvas, int x, int y,
                       const uint32_t* glyphRows, int glyphWidth, int glyphHeight,
                       uint16_t color, uint8_t width) {
     static constexpr int PAD = MAX_TEXT_OUTLINE_WIDTH;
@@ -96,7 +101,7 @@ void drawOuterOutline(LGFX_Sprite& canvas, int x, int y,
         originalRows[row + PAD] = positioned;
 
         for (int dy = -width; dy <= width; ++dy) {
-            const uint8_t horizontalWidth = width - abs(dy);
+            const uint8_t horizontalWidth = width - std::abs(dy);
             uint32_t horizontal = positioned;
             for (uint8_t offset = 1; offset <= horizontalWidth; ++offset) {
                 horizontal |= positioned << offset;
@@ -151,7 +156,7 @@ void drawOuterOutline(LGFX_Sprite& canvas, int x, int y,
     }
 }
 
-void drawGlyphOutline(LGFX_Sprite& canvas, int x, int y, const uint8_t* bitmap,
+void drawGlyphOutline(Canvas565& canvas, int x, int y, const uint8_t* bitmap,
                       uint16_t color, bool progmem, int glyphWidth,
                       uint8_t width) {
     uint32_t glyphRows[NATIVE_TEXT_HEIGHT] = {};
@@ -165,7 +170,7 @@ void drawGlyphOutline(LGFX_Sprite& canvas, int x, int y, const uint8_t* bitmap,
                      NATIVE_TEXT_HEIGHT, color, width);
 }
 
-void drawGlyphPass(LGFX_Sprite& canvas, int x, int y, const uint8_t* bitmap,
+void drawGlyphPass(Canvas565& canvas, int x, int y, const uint8_t* bitmap,
                    uint16_t color, bool progmem, int glyphWidth,
                    uint8_t outlineWidth) {
     if (outlineWidth > 0) {
@@ -262,12 +267,12 @@ uint16_t blendRgb565(uint16_t dst, uint16_t src, uint8_t alpha) {
 }
 }
 
-void PixelRenderer::bind(LGFX_Sprite* target) {
-    gCanvas = target;
+void PixelRenderer::bind(const Platform::FrameBuffer565& target) {
+    gCanvas.attach(target);
 }
 
-LGFX_Sprite& PixelRenderer::canvas() {
-    return *gCanvas;
+Canvas565& PixelRenderer::canvas() {
+    return gCanvas;
 }
 
 uint16_t PixelRenderer::rgb(uint8_t r, uint8_t g, uint8_t b) {
@@ -279,47 +284,43 @@ void PixelRenderer::clear(uint16_t color) {
 }
 
 void PixelRenderer::darken(uint8_t amount) {
-    if (!gCanvas || amount == 0) return;
+    if (!gCanvas.attached() || amount == 0) return;
     if (amount == 255) {
-        gCanvas->fillSprite(0);
+        gCanvas.fillSprite(0);
         return;
     }
 
-    uint16_t* pixels = static_cast<uint16_t*>(gCanvas->getBuffer());
+    uint16_t* pixels = gCanvas.rawPixels();
     if (!pixels) return;
 
-    // M5GFX stores a 16-bit Sprite as rgb565_2Byte (byte-swapped RGB565).
-    // Convert to normal RGB565 for the brightness calculation, then restore
-    // the storage order. Treating the raw word as RGB565 produces color noise.
     const uint16_t keep = 255 - amount;
-    const uint32_t count = static_cast<uint32_t>(gCanvas->width()) * gCanvas->height();
+    const uint32_t count = gCanvas.pixelCount();
     for (uint32_t i = 0; i < count; ++i) {
-        const uint16_t raw = pixels[i];
-        const uint16_t color = static_cast<uint16_t>((raw << 8) | (raw >> 8));
+        const uint16_t color = gCanvas.decodeColor(pixels[i]);
         const uint16_t red = static_cast<uint16_t>((((color >> 11) & 0x1F) * keep) / 255);
         const uint16_t green = static_cast<uint16_t>((((color >> 5) & 0x3F) * keep) / 255);
         const uint16_t blue = static_cast<uint16_t>(((color & 0x1F) * keep) / 255);
         const uint16_t darkened = static_cast<uint16_t>((red << 11) | (green << 5) | blue);
-        pixels[i] = static_cast<uint16_t>((darkened << 8) | (darkened >> 8));
+        pixels[i] = gCanvas.encodeColor(darkened);
     }
 }
 
 void PixelRenderer::fillRectAlpha(int x, int y, int w, int h,
                                   uint16_t color, uint8_t alpha) {
-    if (!gCanvas || w <= 0 || h <= 0 || alpha == 0) return;
+    if (!gCanvas.attached() || w <= 0 || h <= 0 || alpha == 0) return;
     if (alpha == 255) {
-        gCanvas->fillRect(x, y, w, h, color);
+        gCanvas.fillRect(x, y, w, h, color);
         return;
     }
 
     const int left = x < 0 ? 0 : x;
     const int top = y < 0 ? 0 : y;
-    const int right = x + w > gCanvas->width() ? gCanvas->width() : x + w;
-    const int bottom = y + h > gCanvas->height() ? gCanvas->height() : y + h;
+    const int right = x + w > gCanvas.width() ? gCanvas.width() : x + w;
+    const int bottom = y + h > gCanvas.height() ? gCanvas.height() : y + h;
     for (int py = top; py < bottom; ++py) {
         for (int px = left; px < right; ++px) {
-            const uint16_t background = static_cast<uint16_t>(gCanvas->readPixel(px, py));
-            gCanvas->drawPixel(px, py, blendRgb565(background, color, alpha));
+            const uint16_t background = gCanvas.readPixel(px, py);
+            gCanvas.drawPixel(px, py, blendRgb565(background, color, alpha));
         }
     }
 }
@@ -355,13 +356,14 @@ void PixelRenderer::bar(int x, int y, int w, int h, uint8_t value, uint16_t fill
 void PixelRenderer::drawRgb565Rle(int x, int y, int w, int h,
                                   const uint16_t* data, uint32_t offset,
                                   uint32_t length, bool flipX) {
-    if (!gCanvas || !data || w <= 0 || h <= 0) return;
+    if (!gCanvas.attached() || !data || w <= 0 || h <= 0) return;
 
     const uint32_t total = (uint32_t)(w * h);
     uint32_t idx = 0;
     uint32_t pixel = 0;
     while (idx < length && pixel < total) {
-        uint16_t token = pgm_read_word(&data[offset + idx++]);
+        uint16_t token =
+            Platform::readProgramWord(&data[offset + idx++]);
         uint16_t run = token & 0x7FFF;
         if (run == 0) continue;
 
@@ -372,11 +374,12 @@ void PixelRenderer::drawRgb565Rle(int x, int y, int w, int h,
         }
 
         for (uint16_t i = 0; i < run && idx < length && pixel < total; ++i, ++pixel) {
-            uint16_t color = pgm_read_word(&data[offset + idx++]);
+            uint16_t color =
+                Platform::readProgramWord(&data[offset + idx++]);
             int col = pixel % w;
             int row = pixel / w;
             if (flipX) col = w - 1 - col;
-            gCanvas->drawPixel(x + col, y + row, color);
+            gCanvas.drawPixel(x + col, y + row, color);
         }
     }
 }
@@ -386,13 +389,15 @@ void PixelRenderer::drawIndexed4Rle(int x, int y, int w, int h,
                                     uint32_t length, const uint16_t* palette,
                                     uint32_t paletteOffset, uint8_t paletteSize,
                                     bool flipX) {
-    if (!gCanvas || !data || !palette || w <= 0 || h <= 0 || paletteSize == 0) return;
+    if (!gCanvas.attached() || !data || !palette || w <= 0 || h <= 0 ||
+        paletteSize == 0) return;
 
     const uint32_t total = (uint32_t)(w * h);
     uint32_t idx = 0;
     uint32_t pixel = 0;
     while (idx < length && pixel < total) {
-        uint16_t token = pgm_read_word(&data[offset + idx++]);
+        uint16_t token =
+            Platform::readProgramWord(&data[offset + idx++]);
         uint16_t run = token & 0x7FFF;
         if (run == 0) continue;
 
@@ -406,15 +411,17 @@ void PixelRenderer::drawIndexed4Rle(int x, int y, int w, int h,
         for (uint16_t i = 0; i < run && pixel < total; ++i, ++pixel) {
             if ((i & 0x03) == 0) {
                 if (idx >= length) return;
-                packed = pgm_read_word(&data[offset + idx++]);
+                packed =
+                    Platform::readProgramWord(&data[offset + idx++]);
             }
             uint8_t paletteIndex = (packed >> ((i & 0x03) * 4)) & 0x0F;
             if (paletteIndex >= paletteSize) continue;
-            uint16_t color = pgm_read_word(&palette[paletteOffset + paletteIndex]);
+            uint16_t color = Platform::readProgramWord(
+                &palette[paletteOffset + paletteIndex]);
             int col = pixel % w;
             int row = pixel / w;
             if (flipX) col = w - 1 - col;
-            gCanvas->drawPixel(x + col, y + row, color);
+            gCanvas.drawPixel(x + col, y + row, color);
         }
     }
 }
@@ -423,17 +430,18 @@ void PixelRenderer::drawRgb565RleSolid(int x, int y, int w, int h,
                                        const uint16_t* data, uint32_t offset,
                                        uint32_t length, uint16_t color,
                                        bool flipX) {
-    if (!gCanvas || !data || w <= 0 || h <= 0) return;
+    if (!gCanvas.attached() || !data || w <= 0 || h <= 0) return;
 
     const uint32_t total = static_cast<uint32_t>(w * h);
     uint32_t idx = 0;
     uint32_t pixel = 0;
     while (idx < length && pixel < total) {
-        uint16_t token = pgm_read_word(&data[offset + idx++]);
+        uint16_t token =
+            Platform::readProgramWord(&data[offset + idx++]);
         uint16_t run = token & 0x7FFF;
         if (run == 0) continue;
         if (token & 0x8000) {
-            pixel = min<uint32_t>(total, pixel + run);
+            pixel = std::min<uint32_t>(total, pixel + run);
             continue;
         }
 
@@ -443,7 +451,7 @@ void PixelRenderer::drawRgb565RleSolid(int x, int y, int w, int h,
             int col = static_cast<int>(pixel % w);
             int row = static_cast<int>(pixel / w);
             if (flipX) col = w - 1 - col;
-            gCanvas->drawPixel(x + col, y + row, color);
+            gCanvas.drawPixel(x + col, y + row, color);
         }
     }
 }
@@ -452,17 +460,18 @@ void PixelRenderer::drawIndexed4RleSolid(int x, int y, int w, int h,
                                          const uint16_t* data, uint32_t offset,
                                          uint32_t length, uint16_t color,
                                          bool flipX) {
-    if (!gCanvas || !data || w <= 0 || h <= 0) return;
+    if (!gCanvas.attached() || !data || w <= 0 || h <= 0) return;
 
     const uint32_t total = static_cast<uint32_t>(w * h);
     uint32_t idx = 0;
     uint32_t pixel = 0;
     while (idx < length && pixel < total) {
-        uint16_t token = pgm_read_word(&data[offset + idx++]);
+        uint16_t token =
+            Platform::readProgramWord(&data[offset + idx++]);
         uint16_t run = token & 0x7FFF;
         if (run == 0) continue;
         if (token & 0x8000) {
-            pixel = min<uint32_t>(total, pixel + run);
+            pixel = std::min<uint32_t>(total, pixel + run);
             continue;
         }
 
@@ -472,7 +481,7 @@ void PixelRenderer::drawIndexed4RleSolid(int x, int y, int w, int h,
             int col = static_cast<int>(pixel % w);
             int row = static_cast<int>(pixel / w);
             if (flipX) col = w - 1 - col;
-            gCanvas->drawPixel(x + col, y + row, color);
+            gCanvas.drawPixel(x + col, y + row, color);
         }
         idx += packedPixels;
     }
@@ -483,7 +492,7 @@ void PixelRenderer::drawIndexed4RleScaled(int x, int y, int w, int h,
                                           uint32_t length, const uint16_t* palette,
                                           uint32_t paletteOffset, uint8_t paletteSize,
                                           float scale, bool flipX, uint8_t alpha) {
-    if (!gCanvas || !data || !palette || w <= 0 || h <= 0 ||
+    if (!gCanvas.attached() || !data || !palette || w <= 0 || h <= 0 ||
         paletteSize == 0 || scale <= 0.0f || alpha == 0) {
         return;
     }
@@ -492,17 +501,18 @@ void PixelRenderer::drawIndexed4RleScaled(int x, int y, int w, int h,
         return;
     }
     if (scale < 1.0f) {
-        int outW = max<int>(1, static_cast<int>(w * scale));
-        int outH = max<int>(1, static_cast<int>(h * scale));
+        int outW = std::max<int>(1, static_cast<int>(w * scale));
+        int outH = std::max<int>(1, static_cast<int>(h * scale));
         const uint32_t total = static_cast<uint32_t>(w * h);
         uint32_t idx = 0;
         uint32_t pixel = 0;
         while (idx < length && pixel < total) {
-            uint16_t token = pgm_read_word(&data[offset + idx++]);
+            uint16_t token =
+                Platform::readProgramWord(&data[offset + idx++]);
             uint16_t run = token & 0x7FFF;
             if (run == 0) continue;
             if (token & 0x8000) {
-                pixel = min<uint32_t>(total, pixel + run);
+                pixel = std::min<uint32_t>(total, pixel + run);
                 continue;
             }
 
@@ -510,7 +520,8 @@ void PixelRenderer::drawIndexed4RleScaled(int x, int y, int w, int h,
             for (uint16_t i = 0; i < run && pixel < total; ++i, ++pixel) {
                 if ((i & 0x03) == 0) {
                     if (idx >= length) return;
-                    packed = pgm_read_word(&data[offset + idx++]);
+                    packed =
+                        Platform::readProgramWord(&data[offset + idx++]);
                 }
                 uint8_t paletteIndex = (packed >> ((i & 0x03) * 4)) & 0x0F;
                 if (paletteIndex >= paletteSize) continue;
@@ -524,16 +535,17 @@ void PixelRenderer::drawIndexed4RleScaled(int x, int y, int w, int h,
                     !mapDownscaledCoordinate(sourceRow, scale, outH, drawRow)) {
                     continue;
                 }
-                uint16_t color = pgm_read_word(&palette[paletteOffset + paletteIndex]);
+                uint16_t color = Platform::readProgramWord(
+                    &palette[paletteOffset + paletteIndex]);
                 int drawX = x + drawCol;
                 int drawY = y + drawRow;
                 if (alpha == 255) {
-                    gCanvas->drawPixel(drawX, drawY, color);
+                    gCanvas.drawPixel(drawX, drawY, color);
                 } else if (drawX >= 0 && drawY >= 0 &&
-                           drawX < gCanvas->width() && drawY < gCanvas->height()) {
+                           drawX < gCanvas.width() && drawY < gCanvas.height()) {
                     uint16_t background =
-                        static_cast<uint16_t>(gCanvas->readPixel(drawX, drawY));
-                    gCanvas->drawPixel(
+                        gCanvas.readPixel(drawX, drawY);
+                    gCanvas.drawPixel(
                         drawX, drawY, blendRgb565(background, color, alpha));
                 }
             }
@@ -547,7 +559,8 @@ void PixelRenderer::drawIndexed4RleScaled(int x, int y, int w, int h,
     int drawW = (int)ceilf(scale);
     int drawH = (int)ceilf(scale);
     while (idx < length && pixel < total) {
-        uint16_t token = pgm_read_word(&data[offset + idx++]);
+        uint16_t token =
+            Platform::readProgramWord(&data[offset + idx++]);
         uint16_t run = token & 0x7FFF;
         if (run == 0) continue;
 
@@ -561,18 +574,20 @@ void PixelRenderer::drawIndexed4RleScaled(int x, int y, int w, int h,
         for (uint16_t i = 0; i < run && pixel < total; ++i, ++pixel) {
             if ((i & 0x03) == 0) {
                 if (idx >= length) return;
-                packed = pgm_read_word(&data[offset + idx++]);
+                packed =
+                    Platform::readProgramWord(&data[offset + idx++]);
             }
             uint8_t paletteIndex = (packed >> ((i & 0x03) * 4)) & 0x0F;
             if (paletteIndex >= paletteSize) continue;
-            uint16_t color = pgm_read_word(&palette[paletteOffset + paletteIndex]);
+            uint16_t color = Platform::readProgramWord(
+                &palette[paletteOffset + paletteIndex]);
             int col = pixel % w;
             int row = pixel / w;
             if (flipX) col = w - 1 - col;
             int drawX = (int)(x + col * scale);
             int drawY = (int)(y + row * scale);
             if (alpha == 255) {
-                gCanvas->fillRect(drawX, drawY, drawW, drawH, color);
+                gCanvas.fillRect(drawX, drawY, drawW, drawH, color);
             } else {
                 fillRectAlpha(drawX, drawY, drawW, drawH, color, alpha);
             }
@@ -583,7 +598,8 @@ void PixelRenderer::drawIndexed4RleScaled(int x, int y, int w, int h,
 void PixelRenderer::drawRgb565RleScaled(int x, int y, int w, int h,
                                         const uint16_t* data, uint32_t offset,
                                         uint32_t length, float scale, bool flipX) {
-    if (!gCanvas || !data || w <= 0 || h <= 0 || scale <= 0.0f) return;
+    if (!gCanvas.attached() || !data || w <= 0 || h <= 0 ||
+        scale <= 0.0f) return;
     if (scale == 1.0f) {
         drawRgb565Rle(x, y, w, h, data, offset, length, flipX);
         return;
@@ -594,7 +610,8 @@ void PixelRenderer::drawRgb565RleScaled(int x, int y, int w, int h,
         uint32_t idx = 0;
         uint32_t pixel = 0;
         while (idx < length && pixel < total) {
-            uint16_t token = pgm_read_word(&data[offset + idx++]);
+            uint16_t token =
+                Platform::readProgramWord(&data[offset + idx++]);
             uint16_t run = token & 0x7FFF;
             if (run == 0) continue;
 
@@ -605,7 +622,8 @@ void PixelRenderer::drawRgb565RleScaled(int x, int y, int w, int h,
             }
 
             for (uint16_t i = 0; i < run && idx < length && pixel < total; ++i, ++pixel) {
-                uint16_t color = pgm_read_word(&data[offset + idx++]);
+                uint16_t color =
+                    Platform::readProgramWord(&data[offset + idx++]);
                 int col = pixel % w;
                 int row = pixel / w;
                 if (flipX) col = w - 1 - col;
@@ -613,7 +631,7 @@ void PixelRenderer::drawRgb565RleScaled(int x, int y, int w, int h,
                 int drawY = (int)(y + row * scale);
                 int drawW = (int)ceilf(scale);
                 int drawH = (int)ceilf(scale);
-                gCanvas->fillRect(drawX, drawY, drawW, drawH, color);
+                gCanvas.fillRect(drawX, drawY, drawW, drawH, color);
             }
         }
         return;
@@ -628,17 +646,19 @@ void PixelRenderer::drawRgb565RleScaled(int x, int y, int w, int h,
     uint32_t idx = 0;
     uint32_t pixel = 0;
     while (idx < length && pixel < total) {
-        uint16_t token = pgm_read_word(&data[offset + idx++]);
+        uint16_t token =
+            Platform::readProgramWord(&data[offset + idx++]);
         uint16_t run = token & 0x7FFF;
         if (run == 0) continue;
 
         if (token & 0x8000) {
-            pixel = min<uint32_t>(total, pixel + run);
+            pixel = std::min<uint32_t>(total, pixel + run);
             continue;
         }
 
         for (uint16_t i = 0; i < run && idx < length && pixel < total; ++i, ++pixel) {
-            uint16_t color = pgm_read_word(&data[offset + idx++]);
+            uint16_t color =
+                Platform::readProgramWord(&data[offset + idx++]);
             int sourceCol = static_cast<int>(pixel % w);
             int sourceRow = static_cast<int>(pixel / w);
             int sampledCol = flipX ? w - 1 - sourceCol : sourceCol;
@@ -646,7 +666,7 @@ void PixelRenderer::drawRgb565RleScaled(int x, int y, int w, int h,
             int drawRow = 0;
             if (mapDownscaledCoordinate(sampledCol, scale, outW, drawCol) &&
                 mapDownscaledCoordinate(sourceRow, scale, outH, drawRow)) {
-                gCanvas->drawPixel(x + drawCol, y + drawRow, color);
+                gCanvas.drawPixel(x + drawCol, y + drawRow, color);
             }
         }
     }

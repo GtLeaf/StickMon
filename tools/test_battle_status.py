@@ -23,6 +23,7 @@ class BattleStatusTests(unittest.TestCase):
                     f"-I{ROOT / 'src'}",
                     str(ROOT / "tools" / "battle_status_host.cpp"),
                     str(ROOT / "src" / "game" / "BattleSystem.cpp"),
+                    str(ROOT / "src" / "game" / "GameRandom.cpp"),
                     str(ROOT / "src" / "game" / "Species.cpp"),
                     "-o",
                     str(binary),
@@ -32,6 +33,21 @@ class BattleStatusTests(unittest.TestCase):
                 text=True,
             )
             subprocess.run([str(binary)], check=True, capture_output=True, text=True)
+
+    def test_player_and_wild_both_use_tactical_move_selection(self):
+        source = (ROOT / "src" / "scenes" / "ExploreScene.cpp").read_text()
+        attack_start = source.index("void ExploreScene::attackWild()")
+        attack_end = source.index("void ExploreScene::wildCounterattack()")
+        attack = source[attack_start:attack_end]
+        self.assertIn(
+            "battleTurnSpecialSlots[0] = BattleSystem::chooseAiMoveSlot(",
+            attack,
+        )
+        self.assertIn(
+            "battleTurnSpecialSlots[1] = BattleSystem::chooseAiMoveSlot(",
+            attack,
+        )
+        self.assertNotIn("rollSpecialMoveSlot", attack)
 
 
 if __name__ == "__main__":

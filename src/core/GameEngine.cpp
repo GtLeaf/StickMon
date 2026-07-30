@@ -2,8 +2,6 @@
 #include "core/CryPlayer.h"
 #include "core/VoiceCallService.h"
 #include <Arduino.h>
-#include <driver/rtc_io.h>
-#include <esp_sleep.h>
 #include <algorithm>
 #include <cstdio>
 #include <new>
@@ -20,7 +18,8 @@
 #include "game/SpeciesBehavior.h"
 #include "hardware/EspNowLink.h"
 #include "hardware/Hal.h"
-#include "hardware/PixelRenderer.h"
+#include "presentation/PixelRenderer.h"
+#include "platform/api/PlatformServices.h"
 #include "scenes/MainScene.h"
 #include "scenes/MenuScene.h"
 #include "scenes/SocialScene.h"
@@ -50,19 +49,8 @@ static constexpr uint32_t CONTACT_VISIT_PLAY_MS = 30000UL;
 static constexpr uint32_t SILENT_CARE_WAKE_MINUTES = 10;
 static constexpr uint64_t SILENT_CARE_WAKE_INTERVAL_US =
     (uint64_t)SILENT_CARE_WAKE_MINUTES * 60ULL * 1000000ULL;
-static constexpr gpio_num_t DEEP_SLEEP_WAKE_BUTTON = GPIO_NUM_12;
 static constexpr uint32_t FULL_FRAME_BYTES =
     Hal::DISPLAY_W * Hal::DISPLAY_H * 2UL;
-
-void configureDeepSleepWakeSources() {
-    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
-    rtc_gpio_pullup_en(DEEP_SLEEP_WAKE_BUTTON);
-    rtc_gpio_pulldown_dis(DEEP_SLEEP_WAKE_BUTTON);
-    esp_sleep_enable_ext1_wakeup(
-        1ULL << static_cast<uint8_t>(DEEP_SLEEP_WAKE_BUTTON),
-        ESP_EXT1_WAKEUP_ANY_LOW);
-    esp_sleep_enable_timer_wakeup(SILENT_CARE_WAKE_INTERVAL_US);
-}
 
 using Game::gameSecondsForMinutes;
 using Game::isScheduledSleepMinute;
@@ -172,12 +160,12 @@ GameEngine& GameEngine::ins() {
 }
 
 bool GameEngine::begin() {
-    bootStartedMs = millis();
+    bootStartedMs = Platform::clock().millis();
     if (!Hal::ins().begin()) {
         Serial.println("[GameEngine] Hal init failed");
         return false;
     }
-    PixelRenderer::bind(&Hal::ins().canvas());
+    PixelRenderer::bind(Hal::ins().frameBuffer());
     if (!ResourceFS::ins().begin()) {
         Serial.println("[GameEngine] external resource FS unavailable");
     }
@@ -241,7 +229,7 @@ bool GameEngine::begin() {
 }
 
 void GameEngine::run() {
-    M5.update();
+    Platform::input().update();
     uint32_t now = Hal::ins().millis();
     bool didWork = false;
 
@@ -274,7 +262,7 @@ void GameEngine::run() {
     }
 
     emitRenderStats(Hal::ins().millis());
-    if (!didWork) delay(1);
+    if (!didWork) Platform::clock().sleepMs(1);
 }
 
 void GameEngine::requestScene(SceneID id, bool saveBeforeSwitch) {
@@ -532,10 +520,13 @@ bool GameEngine::moveTeamMemberToContacts(uint8_t slot) {
     return true;
 }
 
-uint8_t GameEngine::beginVisitAsHost(uint16_t speciesId, uint8_t level, uint8_t nature,
-                                     uint8_t satiety, uint8_t mood, uint8_t affection) {
-    if (!state.oobeDone || state.teamCount == 0) return 2;
-    if (state.teamCount >= Game::TEAM_CAP && !moveTeamMemberToContacts(1)) return 1;
+VisitHostResult GameEngine::beginVisitAsHost(
+    uint16_t speciesId, uint8_t level, uint8_t nature,
+    uint8_t satiety, uint8_t mood, uint8_t affection) {
+    if (!state.oobeDone || state.teamCount == 0) {
+        return VisitHostResult::NO_MONSTER;
+    }
+    if (!canHostVisit()) return VisitHostResult::TEAM_NOT_SOLO;
 
     state.team[1] = createMonster(speciesId, level);
     Game::MonsterRuntime& guest = state.team[1];
@@ -557,7 +548,7 @@ uint8_t GameEngine::beginVisitAsHost(uint16_t speciesId, uint8_t level, uint8_t 
     visitSession.lastPeerMessageMs = now;
     EspNowLink::ins().copyPeerMac(visitSession.peerMac);
     markDirty(SaveUrgency::IMMEDIATE);
-    return 0;
+    return VisitHostResult::ACCEPTED;
 }
 
 void GameEngine::beginVisitAsVisitor() {
@@ -873,9 +864,15 @@ void GameEngine::completeContactVisit() {
     markDirty(SaveUrgency::IMMEDIATE);
 }
 
+bool GameEngine::canDeleteContact(uint8_t slot) const {
+    return slot < state.storageCount && slot < Game::STORAGE_CAP &&
+           state.storage[slot].origin != Game::Origin::HATCHED &&
+           !contactIsVisiting(slot);
+}
+
 bool GameEngine::deleteContact(uint8_t slot) {
     if (slot >= state.storageCount || slot >= Game::STORAGE_CAP) return false;
-    if (contactIsVisiting(slot)) return false;
+    if (!canDeleteContact(slot)) return false;
     if (contactVisit.active && slot < contactVisit.storageSlot) {
         --contactVisit.storageSlot;
     }
@@ -969,10 +966,16 @@ FoodPlacementResult GameEngine::placeSelectedFoodInBowl() {
     return FoodPlacementResult::ADDED;
 }
 
-FoodConsumeResult GameEngine::consumeBowlFood() {
+FoodConsumeResult GameEngine::consumeBowlFood(uint8_t teamSlot) {
     FoodConsumeResult result;
-    if (state.room.bowlCount == 0) return result;
-    if (!Game::speciesCareProfileFor(activeMonster().speciesId).needsFood) {
+    if (state.room.bowlCount == 0 ||
+        teamSlot >= state.teamCount || teamSlot >= Game::TEAM_CAP) {
+        return result;
+    }
+    Game::MonsterRuntime& mon = state.team[teamSlot];
+    if (mon.origin == Game::Origin::VISITOR ||
+        mon.fainted || mon.hpCur == 0 ||
+        !Game::speciesCareProfileFor(mon.speciesId).needsFood) {
         return result;
     }
     uint8_t foodIndex = bowlFoodIndex();
@@ -988,7 +991,6 @@ FoodConsumeResult GameEngine::consumeBowlFood() {
         state.room.bowlFood = 0;
     }
 
-    Game::MonsterRuntime& mon = activeMonster();
     result.satietyBefore = mon.satiety;
     result.moodBefore = mon.mood;
     bool wasFull = mon.satiety >= 100;
@@ -1011,7 +1013,7 @@ FoodConsumeResult GameEngine::consumeBowlFood() {
     result.moodAfter = mon.mood;
     result.lastBite = state.room.bowlCount == 0;
     result.becameFull = !wasFull && mon.satiety >= 100;
-    grantCareExperience(profile.careExp, wasFull);
+    grantCareExperience(profile.careExp, wasFull, teamSlot);
     markDirty(SaveUrgency::SOON);
     return result;
 }
@@ -1231,6 +1233,7 @@ uint8_t* itemStockPointer(Game::GameState& s, Game::ItemId item) {
     case Game::ItemId::NUGGET: return &s.bag.nugget;
     case Game::ItemId::BIG_PEARL: return &s.bag.bigPearl;
     case Game::ItemId::STAR_PIECE: return &s.bag.starPiece;
+    case Game::ItemId::HEART_SCALE: return &s.bag.heartScale;
     default: return nullptr;
     }
 }
@@ -1271,41 +1274,54 @@ bool GameEngine::removeItem(Game::ItemId item, uint8_t amount, SaveUrgency urgen
     return true;
 }
 
+uint8_t GameEngine::collectRecallableMoves(uint8_t teamSlot,
+                                           Game::MoveId* outMoves,
+                                           uint8_t capacity) const {
+    if (teamSlot >= state.teamCount || teamSlot >= Game::TEAM_CAP) return 0;
+    const Game::MonsterRuntime& mon = state.team[teamSlot];
+    return ::collectRecallableMoves(
+        speciesFor(mon), mon, outMoves, capacity);
+}
+
+bool GameEngine::recallMove(uint8_t teamSlot, Game::MoveId moveId,
+                            uint8_t replacementSlot) {
+    if (teamSlot >= state.teamCount || teamSlot >= Game::TEAM_CAP ||
+        replacementSlot == 0 || replacementSlot >= Game::MOVE_SLOT_COUNT ||
+        itemCount(Game::ItemId::HEART_SCALE) == 0) {
+        return false;
+    }
+
+    Game::MoveId recallable[MAX_RECALLABLE_MOVE_COUNT] = {};
+    uint8_t recallableCount = collectRecallableMoves(
+        teamSlot, recallable, MAX_RECALLABLE_MOVE_COUNT);
+    bool validMove = false;
+    for (uint8_t index = 0; index < recallableCount; ++index) {
+        if (recallable[index] == moveId) {
+            validMove = true;
+            break;
+        }
+    }
+    if (!validMove ||
+        !removeItem(Game::ItemId::HEART_SCALE, 1, SaveUrgency::DEFERRED)) {
+        return false;
+    }
+
+    Game::MonsterRuntime& mon = state.team[teamSlot];
+    Game::MoveId& target = replacementSlot == 1 ? mon.move2Id : mon.move3Id;
+    target = moveId;
+    mon.moveProficiency[replacementSlot] = 0;
+    markDirty(SaveUrgency::IMMEDIATE);
+    return true;
+}
+
 bool GameEngine::useEvolutionStone(uint8_t teamSlot, Game::ItemId stone) {
     if (teamSlot >= state.teamCount || teamSlot >= Game::TEAM_CAP) return false;
+    if (itemCount(stone) == 0) return false;
     Game::MonsterRuntime& mon = state.team[teamSlot];
     const Species* target = stoneEvolutionTarget(speciesFor(mon), stone);
     if (!target) return false;
-    uint16_t oldSpeciesId = mon.speciesId;
-    if (!queueEvolutionEvent(
-            teamSlot, oldSpeciesId, target->id, mon, mon.level, stone)) {
-        return false;
-    }
-    if (!removeItem(stone, 1, SaveUrgency::SOON)) {
-        removeEvolutionEventsForSlot(teamSlot);
-        return false;
-    }
-
-    // 与升级进化相同的结算路径（applyLevelUpEvolutions 单步版本）。
-    if (state.pendingMoveLearn && state.pendingMoveSlot == teamSlot) {
-        clearPendingMoveLearn();
-    }
-    uint16_t oldHpMax = mon.hpMax;
-    bool canReceiveHpGain = !mon.fainted && mon.hpCur > 0;
-    mon.speciesId = target->id;
-    sanitizeMonsterMovesForSpecies(mon, *target);
-    mon.hpMax = maxHpFor(*target, mon);
-    if (canReceiveHpGain && mon.hpMax > oldHpMax) {
-        mon.hpCur = min<uint16_t>(mon.hpMax, mon.hpCur + (mon.hpMax - oldHpMax));
-    } else {
-        mon.hpCur = min<uint16_t>(mon.hpCur, mon.hpMax);
-    }
-
-    Serial.printf("[Evolution] stone slot=%u species=%u->%u level=%u hp=%u/%u\n",
-                  teamSlot, oldSpeciesId, target->id, mon.level, mon.hpCur, mon.hpMax);
-    if (teamSlot == 0) clearMainSceneViewState();
-    markDirty(SaveUrgency::IMMEDIATE);
-    return true;
+    return queueEvolutionEvent(
+        teamSlot, mon.speciesId, target->id, mon.level, stone);
 }
 
 uint8_t GameEngine::grantBathReward(BathRewardStage stage) {
@@ -1521,12 +1537,13 @@ uint32_t GameEngine::addExperienceToTeamMember(uint8_t teamSlot, uint32_t amount
     if (mon.level < oldLevel) mon.level = oldLevel;
     bool leveledUp = mon.level > oldLevel;
     if (leveledUp) {
-        bool evolved = applyLevelUpEvolutions(
+        bool evolutionQueued = applyLevelUpEvolutions(
             mon, teamSlot, true, oldLevel);
         state.pendingLevelUp = true;
         state.pendingLevelUpLevel = mon.level;
-        queueMoveLearnIfReady(mon, speciesFor(mon), oldLevel, teamSlot);
-        if (evolved) syncSpriteCache();
+        if (!evolutionQueued) {
+            queueMoveLearnIfReady(mon, speciesFor(mon), oldLevel, teamSlot);
+        }
     }
     markDirty(leveledUp ? SaveUrgency::IMMEDIATE : SaveUrgency::DEFERRED);
     return mon.exp > oldExp ? mon.exp - oldExp : 0;
@@ -1666,13 +1683,6 @@ uint16_t GameEngine::pendingEvolutionToSpeciesId() const {
 
 bool GameEngine::acknowledgePendingEvolution() {
     if (!hasPendingEvolution()) return false;
-    evolutionEventHead = (evolutionEventHead + 1) % EVOLUTION_EVENT_CAP;
-    --evolutionEventCount;
-    return true;
-}
-
-bool GameEngine::cancelPendingEvolution() {
-    if (!hasPendingEvolution()) return false;
     const EvolutionEvent event = evolutionEvents[evolutionEventHead];
     if (event.teamSlot >= state.teamCount ||
         event.teamSlot >= Game::TEAM_CAP) {
@@ -1683,54 +1693,85 @@ bool GameEngine::cancelPendingEvolution() {
     }
 
     Game::MonsterRuntime& mon = state.team[event.teamSlot];
-    mon.speciesId = event.before.speciesId;
-    mon.hpCur = event.before.hpCur;
-    mon.hpMax = event.before.hpMax;
-    mon.move1Id = event.before.move1Id;
-    mon.move2Id = event.before.move2Id;
-    mon.move3Id = event.before.move3Id;
-    memcpy(mon.moveProficiency, event.before.moveProficiency,
-           sizeof(mon.moveProficiency));
-
-    removeEvolutionEventsForSlot(event.teamSlot);
-    removeMoveReplacementEventsForSlot(event.teamSlot);
-    if (state.pendingMoveLearn &&
-        state.pendingMoveSlot == event.teamSlot) {
-        clearPendingMoveLearn();
+    const Species* target = findSpecies(event.toSpeciesId);
+    if (!target || mon.speciesId != event.fromSpeciesId) {
+        evolutionEventHead =
+            (evolutionEventHead + 1) % EVOLUTION_EVENT_CAP;
+        --evolutionEventCount;
+        return false;
     }
-    if (event.before.pendingMoveLearn) {
-        state.pendingMoveLearn = true;
-        state.pendingMoveSlot = event.teamSlot;
-        state.pendingMoveId = event.before.pendingMoveId;
-        state.pendingMoveCursor = event.before.pendingMoveCursor;
-    } else if (!state.pendingMoveLearn) {
-        const Species& restoredSpecies = speciesFor(mon);
+    if (event.consumedItem != Game::ItemId::COUNT &&
+        !removeItem(event.consumedItem, 1, SaveUrgency::SOON)) {
+        return false;
+    }
+
+    uint16_t oldHpMax = mon.hpMax;
+    bool canReceiveHpGain = !mon.fainted && mon.hpCur > 0;
+    mon.speciesId = target->id;
+    sanitizeMonsterMovesForSpecies(mon, *target);
+    mon.hpMax = maxHpFor(*target, mon);
+    if (canReceiveHpGain && mon.hpMax > oldHpMax) {
+        mon.hpCur = min<uint16_t>(
+            mon.hpMax, mon.hpCur + (mon.hpMax - oldHpMax));
+    } else {
+        mon.hpCur = min<uint16_t>(mon.hpCur, mon.hpMax);
+    }
+
+    evolutionEventHead = (evolutionEventHead + 1) % EVOLUTION_EVENT_CAP;
+    --evolutionEventCount;
+
+    bool nextEvolutionQueued = applyLevelUpEvolutions(
+        mon, event.teamSlot, true, event.oldLevel);
+    if (!nextEvolutionQueued) {
         queueMoveLearnIfReady(
-            mon, restoredSpecies, event.oldLevel, event.teamSlot);
-    }
-
-    if (event.consumedItem != Game::ItemId::COUNT) {
-        addItem(event.consumedItem, 1, SaveUrgency::IMMEDIATE);
+            mon, speciesFor(mon), event.oldLevel, event.teamSlot);
     }
     if (event.teamSlot == 0) clearMainSceneViewState();
     syncSpriteCache();
     markDirty(SaveUrgency::IMMEDIATE);
     Serial.printf(
+        "[Evolution] committed slot=%u species=%u->%u level=%u hp=%u/%u\n",
+        event.teamSlot, event.fromSpeciesId, event.toSpeciesId,
+        mon.level, mon.hpCur, mon.hpMax);
+    return true;
+}
+
+bool GameEngine::cancelPendingEvolution() {
+    if (!hasPendingEvolution()) return false;
+    const EvolutionEvent event = evolutionEvents[evolutionEventHead];
+    evolutionEventHead = (evolutionEventHead + 1) % EVOLUTION_EVENT_CAP;
+    --evolutionEventCount;
+    bool validTeamSlot = event.teamSlot < state.teamCount &&
+                         event.teamSlot < Game::TEAM_CAP;
+    if (event.consumedItem == Game::ItemId::COUNT && validTeamSlot) {
+        Game::MonsterRuntime& mon = state.team[event.teamSlot];
+        queueMoveLearnIfReady(
+            mon, speciesFor(mon), event.oldLevel, event.teamSlot);
+        markDirty(SaveUrgency::IMMEDIATE);
+    }
+    Serial.printf(
         "[Evolution] cancelled slot=%u species=%u retained level=%u hp=%u/%u\n",
-        event.teamSlot, mon.speciesId, mon.level, mon.hpCur, mon.hpMax);
+        event.teamSlot, event.fromSpeciesId,
+        validTeamSlot ? state.team[event.teamSlot].level : 0,
+        validTeamSlot ? state.team[event.teamSlot].hpCur : 0,
+        validTeamSlot ? state.team[event.teamSlot].hpMax : 0);
     return true;
 }
 
 bool GameEngine::queueEvolutionEvent(
     uint8_t teamSlot, uint16_t fromSpeciesId,
     uint16_t toSpeciesId,
-    const Game::MonsterRuntime& beforeEvolution,
     uint8_t oldLevel,
     Game::ItemId consumedItem) {
     if (evolutionEventCount >= EVOLUTION_EVENT_CAP) {
         Serial.printf("[Evolution] notification queue full; dropped slot=%u %u->%u\n",
                       teamSlot, fromSpeciesId, toSpeciesId);
         return false;
+    }
+    for (uint8_t offset = 0; offset < evolutionEventCount; ++offset) {
+        uint8_t queuedIndex =
+            (evolutionEventHead + offset) % EVOLUTION_EVENT_CAP;
+        if (evolutionEvents[queuedIndex].teamSlot == teamSlot) return false;
     }
     uint8_t index = (evolutionEventHead + evolutionEventCount) % EVOLUTION_EVENT_CAP;
     EvolutionEvent& event = evolutionEvents[index];
@@ -1740,22 +1781,6 @@ bool GameEngine::queueEvolutionEvent(
     event.fromSpeciesId = fromSpeciesId;
     event.toSpeciesId = toSpeciesId;
     event.consumedItem = consumedItem;
-    event.before.speciesId = beforeEvolution.speciesId;
-    event.before.hpCur = beforeEvolution.hpCur;
-    event.before.hpMax = beforeEvolution.hpMax;
-    event.before.move1Id = beforeEvolution.move1Id;
-    event.before.move2Id = beforeEvolution.move2Id;
-    event.before.move3Id = beforeEvolution.move3Id;
-    memcpy(event.before.moveProficiency,
-           beforeEvolution.moveProficiency,
-           sizeof(event.before.moveProficiency));
-    event.before.pendingMoveLearn =
-        state.pendingMoveLearn &&
-        state.pendingMoveSlot == teamSlot;
-    if (event.before.pendingMoveLearn) {
-        event.before.pendingMoveId = state.pendingMoveId;
-        event.before.pendingMoveCursor = state.pendingMoveCursor;
-    }
     ++evolutionEventCount;
     return true;
 }
@@ -1801,41 +1826,12 @@ void GameEngine::clearPendingMoveLearn() {
 
 bool GameEngine::applyLevelUpEvolutions(Game::MonsterRuntime& mon, uint8_t teamSlot,
                                         bool notify, uint8_t oldLevel) {
-    bool changed = false;
-    for (uint8_t step = 0; step < speciesCount(); ++step) {
-        const Species& from = speciesFor(mon);
-        const Species* target = levelUpEvolutionTarget(from, mon);
-        if (!target) break;
-
-        uint16_t oldSpeciesId = mon.speciesId;
-        if (notify && teamSlot < Game::TEAM_CAP &&
-            !queueEvolutionEvent(
-                teamSlot, oldSpeciesId, target->id, mon, oldLevel)) {
-            break;
-        }
-        if (teamSlot < Game::TEAM_CAP && state.pendingMoveLearn &&
-            state.pendingMoveSlot == teamSlot) {
-            clearPendingMoveLearn();
-        }
-
-        uint16_t oldHpMax = mon.hpMax;
-        bool canReceiveHpGain = !mon.fainted && mon.hpCur > 0;
-        mon.speciesId = target->id;
-        sanitizeMonsterMovesForSpecies(mon, *target);
-        mon.hpMax = maxHpFor(*target, mon);
-        if (canReceiveHpGain && mon.hpMax > oldHpMax) {
-            mon.hpCur = min<uint16_t>(mon.hpMax, mon.hpCur + (mon.hpMax - oldHpMax));
-        } else {
-            mon.hpCur = min<uint16_t>(mon.hpCur, mon.hpMax);
-        }
-
-        Serial.printf("[Evolution] slot=%u species=%u->%u level=%u hp=%u/%u\n",
-                      teamSlot, oldSpeciesId, target->id, mon.level, mon.hpCur, mon.hpMax);
-        changed = true;
-    }
-
-    if (changed && teamSlot == 0) clearMainSceneViewState();
-    return changed;
+    const Species& from = speciesFor(mon);
+    const Species* target = levelUpEvolutionTarget(from, mon);
+    if (!target) return false;
+    if (!notify || teamSlot >= Game::TEAM_CAP) return false;
+    return queueEvolutionEvent(
+        teamSlot, mon.speciesId, target->id, oldLevel);
 }
 
 uint32_t GameEngine::applyFaintPenaltyToTeamMember(uint8_t teamSlot) {
@@ -1894,15 +1890,19 @@ void GameEngine::addWalkSteps(uint16_t steps) {
     markDirty(SaveUrgency::DEFERRED);
 }
 
-void GameEngine::debugRecoverActiveMonster() {
+void GameEngine::debugRecoverTeam() {
     if (state.teamCount == 0) return;
-    Game::MonsterRuntime& mon = activeMonster();
-    mon.fainted = false;
-    mon.majorStatus = Game::MajorStatus::NONE;
-    mon.majorStatusTurns = 0;
-    mon.hpCur = mon.hpMax;
-    mon.satiety = 100;
-    mon.mood = 100;
+    for (uint8_t slot = 0;
+         slot < state.teamCount && slot < Game::TEAM_CAP;
+         ++slot) {
+        Game::MonsterRuntime& mon = state.team[slot];
+        mon.fainted = false;
+        mon.majorStatus = Game::MajorStatus::NONE;
+        mon.majorStatusTurns = 0;
+        mon.hpCur = mon.hpMax;
+        mon.satiety = 100;
+        mon.mood = 100;
+    }
     markDirty(SaveUrgency::SOON);
 }
 
@@ -1995,8 +1995,7 @@ void GameEngine::enterDeepSleep() {
     VoiceCallService::ins().stopListening();
     Hal::ins().stopAudio();
     Hal::ins().setBrightness(0);
-    M5.Display.sleep();
-    M5.Display.waitDisplay();
+    Platform::display().sleep();
 
     Serial.println("[Power] Long-press B: waiting for release");
     Serial.flush();
@@ -2004,16 +2003,16 @@ void GameEngine::enterDeepSleep() {
     // GPIO12 is active-low. Arming it while B is still held would wake the
     // device immediately, so wait until the long-press has been released.
     do {
-        M5.update();
-        delay(10);
-    } while (Hal::ins().btnB_raw());
+        Platform::input().update();
+        Platform::clock().sleepMs(10);
+    } while (Platform::input().pressed(Platform::InputButton::SECONDARY));
 
-    configureDeepSleepWakeSources();
     Serial.println("[Power] entering deep sleep; wake=B/timer");
     Serial.flush();
-    esp_deep_sleep_start();
+    Platform::power().enterDeepSleep(
+        SILENT_CARE_WAKE_INTERVAL_US, true);
     while (true) {
-        delay(1000);
+        Platform::clock().sleepMs(1000);
     }
 }
 
@@ -2042,10 +2041,10 @@ void GameEngine::runSilentCareWake() {
         Serial.println("[Power] silent care wake: no save loaded, skip care");
     }
     Serial.flush();
-    configureDeepSleepWakeSources();
-    esp_deep_sleep_start();
-    // esp_deep_sleep_start 不会返回；若异常返回则停在原地避免继续执行。
+    Platform::power().enterDeepSleep(
+        SILENT_CARE_WAKE_INTERVAL_US, true);
     while (true) {
+        Platform::clock().sleepMs(1000);
     }
 }
 
@@ -2183,8 +2182,8 @@ void GameEngine::switchScene(SceneID id, bool saveBeforeSwitch) {
     }
     if (!currentScene) {
         Serial.println("[GameEngine] fatal scene allocation failure; restarting");
-        delay(50);
-        ESP.restart();
+        Platform::clock().sleepMs(50);
+        Platform::power().restart();
         return;
     }
     currentId = actualId;
@@ -2208,7 +2207,9 @@ void GameEngine::scheduleSceneUpdate(uint32_t nowMs) {
 }
 
 void GameEngine::processInput(uint32_t nowMs) {
-    bool rawInputActive = Hal::ins().btnA_raw() || Hal::ins().btnB_raw();
+    bool rawInputActive =
+        Platform::input().pressed(Platform::InputButton::PRIMARY) ||
+        Platform::input().pressed(Platform::InputButton::SECONDARY);
     if (rawInputActive) resetIdle(nowMs);
 
     ButtonEvent events[ButtonDispatcher::MAX_EVENTS_PER_POLL];
@@ -2280,8 +2281,7 @@ void GameEngine::update(uint32_t nowMs) {
         float dt = (nowMs - lastSceneUpdateMs) / 1000.0f;
         lastSceneUpdateMs = nowMs;
         sceneUpdateScheduled = false;
-        SceneUpdateResult result =
-            updatingScene->update(nowMs, dt * gameSpeed());
+        SceneUpdateResult result = updatingScene->update(nowMs, dt);
         if (currentScene.get() == updatingScene) {
             ++renderStatsSceneUpdates;
             if (result.redraw) ++renderStatsRedrawRequests;
@@ -2662,13 +2662,17 @@ void GameEngine::resetDailyCountersIfNeeded() {
     if (Game::resetDailyCareCounters(state)) markDirty(SaveUrgency::DEFERRED);
 }
 
-void GameEngine::grantCareExperience(uint8_t baseAmount, bool weakGain) {
-    if (baseAmount == 0 || state.teamCount == 0) return;
+void GameEngine::grantCareExperience(uint8_t baseAmount, bool weakGain,
+                                     uint8_t teamSlot) {
+    if (baseAmount == 0 || teamSlot >= state.teamCount ||
+        teamSlot >= Game::TEAM_CAP) {
+        return;
+    }
     uint32_t now = Hal::ins().millis();
     syncGameClock(now);
     resetDailyCountersIfNeeded();
 
-    Game::MonsterRuntime& mon = activeMonster();
+    Game::MonsterRuntime& mon = state.team[teamSlot];
     uint16_t cap = careDailyCapForLevel(mon.level);
     if (state.careExpToday >= cap) return;
 
@@ -2679,7 +2683,7 @@ void GameEngine::grantCareExperience(uint8_t baseAmount, bool weakGain) {
     if (amount == 0) return;
 
     state.careExpToday += amount;
-    addExperience(amount);
+    addExperienceToTeamMember(teamSlot, amount);
     markDirty(SaveUrgency::DEFERRED);
 }
 

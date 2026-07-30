@@ -2,6 +2,7 @@
 
 #include "core/Scene.h"
 #include "game/GameState.h"
+#include "game/Species.h"
 
 class MenuScene : public Scene {
 public:
@@ -74,6 +75,12 @@ private:
         BATTLE,
     };
 
+    enum class MovePageMode : uint8_t {
+        MANAGE,
+        RECALL_SELECT,
+        RECALL_REPLACE,
+    };
+
     enum class TeamAction : uint8_t {
         STATUS,
         FIRST,
@@ -84,7 +91,7 @@ private:
 
     static constexpr uint8_t STATUS_PAGE_COUNT = 5;
     static constexpr uint8_t STORAGE_ACTION_COUNT = 4;
-    static constexpr uint8_t BAG_ITEM_COUNT = 25;
+    static constexpr uint8_t BAG_ITEM_COUNT = 26;
     static constexpr uint8_t ROOM_ITEM_COUNT = 3;
     static constexpr uint8_t FOOD_ITEM_COUNT = Game::ROOM_FOOD_COUNT + 1;
     static constexpr uint8_t COMPUTER_ITEM_COUNT = 3;
@@ -109,7 +116,7 @@ private:
     float animCursor = 0.0f;
     uint32_t toastUntil = 0;
     const char* toast = nullptr;
-    char toastBuffer[24] = {};
+    char toastBuffer[48] = {};
     ViewMode viewMode = ViewMode::MENU;
     uint8_t statusPage = 0;
     uint8_t statusMonsterIndex = 0;
@@ -128,6 +135,11 @@ private:
     uint8_t moveForgetSlot = 0;
     bool moveForgetConfirmOpen = false;
     bool moveForgetConfirmYes = false;
+    MovePageMode movePageMode = MovePageMode::MANAGE;
+    Game::MoveId recallMoveIds[MAX_RECALLABLE_MOVE_COUNT] = {};
+    uint8_t recallMoveCount = 0;
+    uint8_t recallSelectedIndex = 0;
+    float moveListScroll = 0.0f;
     uint8_t bagCursor = 0;
     uint8_t bagConfirmSource = 0;
     bool bagConfirmOpen = false;

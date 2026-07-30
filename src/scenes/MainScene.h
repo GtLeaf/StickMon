@@ -147,6 +147,8 @@ private:
     enum class VisitorState : uint8_t {
         IDLE,
         WALK,
+        SEEK_FOOD,
+        FEEDING,
         GO_TO_SLEEP,
         SLEEPING,
     };
@@ -285,6 +287,17 @@ private:
     bool handleContactDialogButton(const ButtonEvent& event);
     void drawContactDialog();
     bool visitorHostActive() const;
+    bool visitorCanUseDoor() const;
+    bool teamMemberCanEatFromBowl(uint8_t teamSlot) const;
+    bool visitorCanSeekFood() const;
+    int8_t preferredBowlEater() const;
+    bool claimBowl(uint8_t teamSlot);
+    void releaseBowl(uint8_t teamSlot);
+    bool startVisitorFoodSeek(uint32_t nowMs);
+    void enterVisitorFeeding(uint32_t nowMs);
+    void updateVisitorFoodSeek(uint32_t nowMs, float dtSeconds);
+    void updateVisitorFeeding(uint32_t nowMs);
+    void restFaintedVisitor(uint32_t nowMs);
     void spawnVisitor(uint32_t nowMs, bool dropIn);
     bool pickVisitorPoint(float& x, float& y) const;
     bool pickVisitorSleepSpot(float& x, float& y) const;
@@ -349,6 +362,9 @@ private:
     bool feedingHadDislikedBite = false;
     bool feedingBecameFull = false;
     uint8_t feedingMoodAfter = 0;
+    int8_t bowlEaterSlot = -1;
+    uint32_t visitorFeedingBiteMs = 0;
+    uint32_t visitorFeedingUntilMs = 0;
     uint32_t hungerAnimStartedMs = 0;
     uint32_t hungerAnimUntilMs = 0;
     uint8_t hungerAnimFrom = 0;

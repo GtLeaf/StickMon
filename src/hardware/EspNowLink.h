@@ -44,7 +44,7 @@ struct __attribute__((packed)) VisitSyncPayload {
 
 struct __attribute__((packed)) VisitAcceptPayload {
     uint8_t accepted;  // 0/1
-    uint8_t reason;    // 0=ok 1=通讯录已满 2=无精灵
+    uint8_t reason;    // VisitHostResult: 0=ok 1=通讯录满 2=无精灵 3=房主队伍非一只
 };
 
 struct __attribute__((packed)) VisitPingPayload {

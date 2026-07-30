@@ -24,6 +24,16 @@ struct BattleActorState {
     bool flinched = false;
 };
 
+struct BattleAiMemory {
+    Game::MoveId lastMoveId = 0;
+    uint8_t consecutiveStatusMoves = 0;
+};
+
+struct BattleMoveWeights {
+    uint16_t basic = 0;
+    uint16_t special[SPECIAL_MOVE_SLOT_COUNT] = {};
+};
+
 enum class ActionBlockReason : uint8_t {
     NONE = 0,
     FLINCH,
@@ -115,6 +125,22 @@ uint16_t typeEffectiveness(TypeId attack, TypeId defend1, TypeId defend2);
 uint8_t specialTriggerChance(const Game::MonsterRuntime& attacker, uint8_t specialSlot);
 bool rollSpecialMove(const Game::MonsterRuntime& attacker);
 uint8_t rollSpecialMoveSlot(const Game::MonsterRuntime& attacker);
+BattleMoveWeights aiMoveWeights(
+    const Game::MonsterRuntime& attacker,
+    const Species& attackerSpecies,
+    const BattleActorState& attackerState,
+    const Game::MonsterRuntime& defender,
+    const Species& defenderSpecies,
+    const BattleActorState& defenderState,
+    const BattleAiMemory& memory);
+uint8_t chooseAiMoveSlot(
+    const Game::MonsterRuntime& attacker,
+    const Species& attackerSpecies,
+    const BattleActorState& attackerState,
+    const Game::MonsterRuntime& defender,
+    const Species& defenderSpecies,
+    const BattleActorState& defenderState,
+    BattleAiMemory& memory);
 Game::MoveId moveIdForAction(const Game::MonsterRuntime& attacker,
                              const Species& attackerSpecies,
                              uint8_t specialSlot);

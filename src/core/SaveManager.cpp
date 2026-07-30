@@ -328,6 +328,7 @@ bool sanitizeState(Game::GameState& state) {
     clampU8(state.bag.nugget, Game::ITEM_STACK_CAP);
     clampU8(state.bag.bigPearl, Game::ITEM_STACK_CAP);
     clampU8(state.bag.starPiece, Game::ITEM_STACK_CAP);
+    clampU8(state.bag.heartScale, Game::ITEM_STACK_CAP);
     for (uint8_t i = 0; i < Game::SOAP_VARIANT_COUNT; ++i) {
         clampU8(state.bag.soap[i], Game::ITEM_STACK_CAP);
     }
@@ -396,12 +397,19 @@ bool sanitizeState(Game::GameState& state) {
             state.pendingLevelUpLevel = 0;
             changed = true;
         }
-    } else if (state.teamCount == 0 ||
-               state.pendingLevelUpLevel == 0 ||
-               state.pendingLevelUpLevel > state.team[0].level) {
-        state.pendingLevelUp = false;
-        state.pendingLevelUpLevel = 0;
-        changed = true;
+    } else {
+        uint8_t highestTeamLevel = 0;
+        for (uint8_t slot = 0;
+             slot < state.teamCount && slot < Game::TEAM_CAP; ++slot) {
+            highestTeamLevel = max(highestTeamLevel, state.team[slot].level);
+        }
+        if (state.teamCount == 0 ||
+            state.pendingLevelUpLevel == 0 ||
+            state.pendingLevelUpLevel > highestTeamLevel) {
+            state.pendingLevelUp = false;
+            state.pendingLevelUpLevel = 0;
+            changed = true;
+        }
     }
 
     bool pendingMoveValid = false;
@@ -432,8 +440,8 @@ bool sanitizeState(Game::GameState& state) {
         state.pendingMoveCursor = 0;
         changed = true;
     }
-    if (state.settings.brightness < 16) {
-        state.settings.brightness = 16;
+    if (state.settings.brightness < 32) {
+        state.settings.brightness = 32;
         changed = true;
     }
     if (state.settings.speedIndex >= 4) {

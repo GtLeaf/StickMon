@@ -270,6 +270,7 @@ enum class Kind : uint16_t {
     STATUS_FREEZE,
     EXPLORE_PICKUP_BALL,
     EVOLUTION_BACKGROUND,
+    ITEM_HEART_SCALE,
     COUNT,
 };
 

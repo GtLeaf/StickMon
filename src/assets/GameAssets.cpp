@@ -3,7 +3,7 @@
 #include "core/DeflateDecoder.h"
 #include "core/ResourcePack.h"
 #include "hardware/Hal.h"
-#include "hardware/PixelRenderer.h"
+#include "presentation/PixelRenderer.h"
 
 #include <Arduino.h>
 #include <FS.h>
@@ -109,6 +109,7 @@ const char* packName(PackSlot slot) {
 PackSlot packSlotFor(Kind kind) {
     uint16_t value = static_cast<uint16_t>(kind);
     if (value <= static_cast<uint16_t>(Kind::SHOWER_BACKGROUND) ||
+        kind == Kind::ITEM_HEART_SCALE ||
         kind == Kind::EXPLORE_PICKUP_BALL) {
         return PackSlot::UI;
     }
@@ -554,6 +555,7 @@ Kind itemKind(Game::ItemId item) {
     case Game::ItemId::NUGGET: return Kind::ITEM_NUGGET;
     case Game::ItemId::BIG_PEARL: return Kind::ITEM_BIG_PEARL;
     case Game::ItemId::STAR_PIECE: return Kind::ITEM_STAR_PIECE;
+    case Game::ItemId::HEART_SCALE: return Kind::ITEM_HEART_SCALE;
     case Game::ItemId::SOAP_0: return Kind::SHOWER_SOAP_0;
     case Game::ItemId::SOAP_1: return Kind::SHOWER_SOAP_1;
     case Game::ItemId::SOAP_2: return Kind::SHOWER_SOAP_2;

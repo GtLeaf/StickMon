@@ -1,4 +1,5 @@
 #include "scenes/HatchScene.h"
+#include <algorithm>
 #include <cstdio>
 #include "assets/GameAssets.h"
 #include "core/GameEngine.h"
@@ -6,7 +7,7 @@
 #include "core/RoomResource.h"
 #include "core/UiStrings.h"
 #include "hardware/Hal.h"
-#include "hardware/PixelRenderer.h"
+#include "presentation/PixelRenderer.h"
 
 namespace {
 constexpr uint8_t INTERACTION_THRESHOLD = 10;
@@ -25,7 +26,7 @@ float hatchCameraY() {
     float maxCamera = static_cast<float>(room.roomY() + room.height() - Hal::DISPLAY_H);
     if (maxCamera < 0.0f) maxCamera = 0.0f;
     float camera = static_cast<float>(room.roomY() + room.bedY() - 16) - 84.0f;
-    return constrain(camera, 0.0f, maxCamera);
+    return std::max(0.0f, std::min(maxCamera, camera));
 }
 }
 
@@ -86,7 +87,8 @@ SceneUpdateResult HatchScene::update(uint32_t nowMs, float dtSeconds) {
         GameEngine::ins().gameState().hatchSeconds - elapsed;
     float speed = GameEngine::ins().gameSpeed();
     uint32_t completionDelay = static_cast<uint32_t>(
-        max(1.0f, remaining * 1000.0f / max(0.01f, speed)));
+        std::max(1.0f, remaining * 1000.0f /
+                           std::max(0.01f, speed)));
     demand.wakeIn(completionDelay);
 
     if (demand.expired(toast != nullptr, nowMs, toastUntil)) toast = nullptr;

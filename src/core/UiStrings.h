@@ -45,6 +45,7 @@ static constexpr const char* HONEY = "甜甜蜜";
 static constexpr const char* NUGGET = "金珠";
 static constexpr const char* BIG_PEARL = "大珍珠";
 static constexpr const char* STAR_PIECE = "星星碎片";
+static constexpr const char* HEART_SCALE = "心之鳞片";
 static constexpr const char* COINS = "金币";
 static constexpr const char* WILD = "野生";
 static constexpr const char* EMPTY = "空闲";
@@ -496,6 +497,12 @@ static constexpr const char* MOVE_FORGET_CONFIRM_FMT = "是否遗忘%s？";
 static constexpr const char* MOVE_BASIC_LOCKED = "技能1已锁定";
 static constexpr const char* MOVE_FORGOT = "已遗忘技能";
 static constexpr const char* MOVE_BACK_HINT = "返回队伍";
+static constexpr const char* MOVE_UNLEARNED = "未学会";
+static constexpr const char* MOVE_RECALL_EMPTY = "没有可回忆的招式";
+static constexpr const char* MOVE_RECALL_FAILED = "回忆失败";
+static constexpr const char* MOVE_RECALLED_FMT = "已回忆%s";
+static constexpr const char* MOVE_RECALL_BACK_HINT = "返回背包";
+static constexpr const char* MOVE_REPLACE_BACK_HINT = "返回回忆列表";
 static constexpr const char* YES = "yes";
 static constexpr const char* NO = "no";
 }
@@ -716,6 +723,7 @@ static constexpr const char* NAMES[] = {
     Ui::REVIVE,
     Ui::MAX_REPEL,
     Ui::HONEY,
+    Ui::HEART_SCALE,
     Ui::BACK,
 };
 static constexpr const char* DESCS[][3] = {
@@ -743,6 +751,7 @@ static constexpr const char* DESCS[][3] = {
     {"让濒死伙伴复活", "回复一半体力", "探索途中必备"},
     {"100步内避开遇敌", "对下一次探索生效", "保底遭遇不受影响"},
     {"下一步必定遇敌", "对下一次探索生效", "刷怪提速好帮手"},
+    {"让伙伴回忆招式", "选择招式后替换技能", "使用后消耗一枚"},
     {"回到主菜单", "继续选择其他功能", ""},
 };
 }
@@ -1070,7 +1079,9 @@ static constexpr const char* VISITING_GUEST_HINT = "你的精灵正在对方房�
 static constexpr const char* VISITING_HOST_HINT = "有访客在你的房间";
 static constexpr const char* REJECT_STORAGE_FULL = "对方通讯录已满";
 static constexpr const char* REJECT_NO_MONSTER = "对方没有精灵";
+static constexpr const char* REJECT_HOST_TEAM = "房主队伍需一只";
 static constexpr const char* HOST_FULL = "通讯录已满,无法接待";
+static constexpr const char* HOST_TEAM_REQUIRED = "队伍需只留一只";
 static constexpr const char* LINK_FAILED = "连接失败";
 static constexpr const char* LINK_LOST = "连接已断开";
 static constexpr const char* RECALL_HINT = "A召回 长按返回";

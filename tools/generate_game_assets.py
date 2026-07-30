@@ -79,12 +79,12 @@ ITEMS = [
     ("ITEM_GREAT_BALL", "GREATBALL.png"),
     ("ITEM_HEAVY_BALL", "HEAVYBALL.png"),
     ("ITEM_TIMER_BALL", "TIMERBALL.png"),
-    ("ITEM_NORMAL_FOOD", "ORANBERRY.png"),
+    ("ITEM_NORMAL_FOOD", "LAVACOOKIE.png"),
     ("ITEM_POTION", "POTION.png"),
     ("ITEM_SUPER_POTION", "SUPERPOTION.png"),
     ("ITEM_ANTIDOTE", "ANTIDOTE.png"),
     ("ITEM_CANDY", "RARECANDY.png"),
-    ("ITEM_TASTY_FOOD", "SITRUSBERRY.png"),
+    ("ITEM_TASTY_FOOD", "RAGECANDYBAR.png"),
     ("ITEM_SWEET_FOOD", "PECHABERRY.png"),
     ("ITEM_SPICY_FOOD", "CHERIBERRY.png"),
     ("ITEM_SOUR_FOOD", "ASPEARBERRY.png"),
@@ -106,6 +106,11 @@ ITEMS = [
     ("ITEM_NUGGET", "NUGGET.png"),
     ("ITEM_BIG_PEARL", "BIGPEARL.png"),
     ("ITEM_STAR_PIECE", "STARPIECE.png"),
+]
+
+# New kinds that must not renumber existing resource-pack frame ids.
+LATE_ITEMS = [
+    ("ITEM_HEART_SCALE", "HEARTSCALE.png"),
 ]
 
 SHOWER_ASSETS = [
@@ -284,6 +289,7 @@ KIND_ORDER.append("EGG")
 KIND_ORDER.extend(kind for kind, _ in STATUS_ICONS)
 KIND_ORDER.extend(kind for kind, _ in EXPLORE_PICKUP_MARKERS)
 KIND_ORDER.extend(kind for kind, _ in EVOLUTION_BACKGROUNDS)
+KIND_ORDER.extend(kind for kind, _ in LATE_ITEMS)
 KIND_IDS = {kind: index for index, kind in enumerate(KIND_ORDER)}
 
 
@@ -667,7 +673,7 @@ def build_assets():
         "hatch": Writer(),
     }
 
-    for kind, filename in ITEMS:
+    for kind, filename in ITEMS + LATE_ITEMS:
         image = load_rgba(GRAPHICS / "Items" / filename)
         image = image.resize((ITEM_SIZE, ITEM_SIZE), Image.Resampling.NEAREST)
         writers["ui"].add(kind, quantize_rgba(image, 15))

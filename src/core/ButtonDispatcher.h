@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include "platform/api/PlatformServices.h"
 
 enum class BtnAction : uint8_t {
     DOWN,
@@ -21,6 +22,7 @@ public:
     static ButtonDispatcher& ins();
     void setLongPressMs(uint16_t value) { longPressMs = value; }
     uint8_t poll(ButtonEvent* events, uint8_t maxEvents);
+    bool isDown(Platform::InputButton button) const;
 
 private:
     struct BtnState {

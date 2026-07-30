@@ -96,6 +96,7 @@ class ItemSystemTests(unittest.TestCase):
             "NUGGET",
             "BIG_PEARL",
             "STAR_PIECE",
+            "HEART_SCALE",
         ]
         for name in item_names:
             self.assertRegex(
@@ -103,22 +104,30 @@ class ItemSystemTests(unittest.TestCase):
                 rf"case Game::ItemId::{name}:\s*return Kind::ITEM_{name};",
             )
 
-    def test_cancelled_stone_evolution_refunds_the_item(self):
+    def test_stone_is_consumed_only_after_evolution_animation(self):
         header = (ROOT / "src" / "core" / "GameEngine.h").read_text()
         source = (ROOT / "src" / "core" / "GameEngine.cpp").read_text()
         self.assertIn(
             "Game::ItemId consumedItem = Game::ItemId::COUNT;", header
         )
-        cancel = re.search(
-            r"bool GameEngine::cancelPendingEvolution\(\).*?"
-            r"bool GameEngine::queueEvolutionEvent",
+        use_stone = re.search(
+            r"bool GameEngine::useEvolutionStone\(.*?"
+            r"uint8_t GameEngine::grantBathReward",
             source,
             re.S,
         )
-        self.assertIsNotNone(cancel)
+        acknowledge = re.search(
+            r"bool GameEngine::acknowledgePendingEvolution\(\).*?"
+            r"bool GameEngine::cancelPendingEvolution",
+            source,
+            re.S,
+        )
+        self.assertIsNotNone(use_stone)
+        self.assertIsNotNone(acknowledge)
+        self.assertNotIn("removeItem(", use_stone.group(0))
         self.assertIn(
-            "addItem(event.consumedItem, 1, SaveUrgency::IMMEDIATE);",
-            cancel.group(0),
+            "removeItem(event.consumedItem, 1, SaveUrgency::SOON)",
+            acknowledge.group(0),
         )
 
     def test_first_release_save_format_has_no_migrations(self):

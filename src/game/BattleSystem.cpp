@@ -1,5 +1,6 @@
 #include "game/BattleSystem.h"
-#include <Arduino.h>
+#include <algorithm>
+#include "game/GameRandom.h"
 
 namespace {
 
@@ -128,18 +129,20 @@ bool majorStatusImmune(Game::MajorStatus status, const Species& species, TypeId 
 uint8_t randomTurns(uint8_t minimum, uint8_t maximum) {
     if (minimum == 0) minimum = 1;
     if (maximum < minimum) maximum = minimum;
-    return static_cast<uint8_t>(random(minimum, static_cast<long>(maximum) + 1L));
+    return static_cast<uint8_t>(
+        GameRandom::range(minimum, static_cast<uint32_t>(maximum) + 1U));
 }
 
 bool rollChance(uint8_t chance) {
-    return chance >= 100 || (chance > 0 && random(0, 100) < chance);
+    return chance >= 100 ||
+           (chance > 0 && GameRandom::range(0, 100) < chance);
 }
 
 uint8_t rollHitCount(uint8_t minimum, uint8_t maximum) {
     if (minimum == 0) minimum = 1;
     if (maximum < minimum) maximum = minimum;
     if (minimum == 2 && maximum == 5) {
-        uint8_t roll = static_cast<uint8_t>(random(0, 8));
+        uint8_t roll = static_cast<uint8_t>(GameRandom::range(0, 8));
         if (roll < 3) return 2;
         if (roll < 6) return 3;
         return roll == 6 ? 4 : 5;
@@ -159,9 +162,15 @@ uint16_t confusionSelfDamage(const Game::MonsterRuntime& monster,
                                   state.statStages[static_cast<uint8_t>(BattleStat::ATTACK)]);
     uint16_t def = applyStatStage(statFor(species, monster, 2),
                                   state.statStages[static_cast<uint8_t>(BattleStat::DEFENSE)]);
-    if (monster.majorStatus == Game::MajorStatus::BURN) atk = max<uint16_t>(1, atk / 2);
-    uint32_t base = (((2UL * monster.level / 5 + 2) * 40UL * atk / max<uint16_t>(1, def)) / 50) + 2;
-    base = base * static_cast<uint8_t>(random(85, 101)) / 100;
+    if (monster.majorStatus == Game::MajorStatus::BURN) {
+        atk = std::max<uint16_t>(1, atk / 2);
+    }
+    uint32_t base =
+        (((2UL * monster.level / 5 + 2) * 40UL * atk /
+          std::max<uint16_t>(1, def)) /
+         50) +
+        2;
+    base = base * static_cast<uint8_t>(GameRandom::range(85, 101)) / 100;
     return static_cast<uint16_t>(base > 0 ? base : 1);
 }
 
@@ -175,6 +184,91 @@ void addHpOutcome(BattleSystem::EffectResolution& result,
     outcome.target = target;
     outcome.amount = amount;
     result.add(outcome);
+}
+
+bool aiEffectUseful(
+    const MoveInfo& move,
+    const MoveEffectSpec& effect,
+    const Game::MonsterRuntime& attacker,
+    const Species& attackerSpecies,
+    const BattleSystem::BattleActorState& attackerState,
+    const Game::MonsterRuntime& defender,
+    const Species& defenderSpecies,
+    const BattleSystem::BattleActorState& defenderState) {
+    const Game::MonsterRuntime& targetMon =
+        effect.target == MoveEffectTarget::ATTACKER ? attacker : defender;
+    const Species& targetSpecies =
+        effect.target == MoveEffectTarget::ATTACKER
+            ? attackerSpecies
+            : defenderSpecies;
+    const BattleSystem::BattleActorState& targetState =
+        effect.target == MoveEffectTarget::ATTACKER
+            ? attackerState
+            : defenderState;
+    switch (effect.kind) {
+    case MoveEffectKind::MAJOR_STATUS:
+        return targetMon.majorStatus == Game::MajorStatus::NONE &&
+               !majorStatusImmune(
+                   static_cast<Game::MajorStatus>(effect.value),
+                   targetSpecies, move.type);
+    case MoveEffectKind::CONFUSION:
+        return targetState.confusionTurns == 0;
+    case MoveEffectKind::FLINCH:
+        return true;
+    case MoveEffectKind::BIND:
+        return targetState.bindTurns == 0;
+    case MoveEffectKind::STAT_STAGE: {
+        if (effect.aux >= static_cast<uint8_t>(BattleStat::COUNT)) return false;
+        int8_t before = targetState.statStages[effect.aux];
+        return clampStage(static_cast<int8_t>(before + effect.value)) != before;
+    }
+    case MoveEffectKind::DRAIN:
+    case MoveEffectKind::HEAL:
+        return targetMon.hpCur < targetMon.hpMax;
+    case MoveEffectKind::RECOIL:
+        return true;
+    case MoveEffectKind::REST:
+        return attacker.hpCur < attacker.hpMax;
+    case MoveEffectKind::CURE_STATUS:
+        return targetMon.majorStatus != Game::MajorStatus::NONE;
+    case MoveEffectKind::CLEAR_BIND:
+        return targetState.bindTurns > 0;
+    case MoveEffectKind::YAWN:
+        return targetMon.majorStatus == Game::MajorStatus::NONE &&
+               targetState.yawnTurns == 0;
+    }
+    return false;
+}
+
+bool aiStatusMoveUseful(
+    const MoveInfo& move,
+    const Game::MonsterRuntime& attacker,
+    const Species& attackerSpecies,
+    const BattleSystem::BattleActorState& attackerState,
+    const Game::MonsterRuntime& defender,
+    const Species& defenderSpecies,
+    const BattleSystem::BattleActorState& defenderState) {
+    for (uint8_t index = 0; index < move.effectCount; ++index) {
+        const MoveEffectSpec* effect = moveEffectFor(move, index);
+        if (effect && aiEffectUseful(
+                move, *effect, attacker, attackerSpecies, attackerState,
+                defender, defenderSpecies, defenderState)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool isDamagingMove(const MoveInfo* move) {
+    return move && move->battleSupported && move->power > 0 &&
+           move->damageClass != DamageClass::STATUS;
+}
+
+uint16_t scaleAiMoveWeight(uint16_t weight, uint16_t numerator,
+                           uint16_t denominator) {
+    if (weight == 0 || denominator == 0) return 0;
+    uint32_t scaled = static_cast<uint32_t>(weight) * numerator / denominator;
+    return static_cast<uint16_t>(std::max<uint32_t>(1, scaled));
 }
 
 } // namespace
@@ -195,7 +289,7 @@ uint8_t specialTriggerChance(const Game::MonsterRuntime& attacker, uint8_t speci
     if (attacker.hpMax > 0 && attacker.hpCur * 100UL < attacker.hpMax * 30UL) {
         chance += SPECIAL_LOW_HP_BONUS;
     }
-    return min<uint16_t>(chance, SPECIAL_CHANCE_MAX);
+    return std::min<uint16_t>(chance, SPECIAL_CHANCE_MAX);
 }
 
 bool rollSpecialMove(const Game::MonsterRuntime& attacker) {
@@ -211,13 +305,140 @@ uint8_t rollSpecialMoveSlot(const Game::MonsterRuntime& attacker) {
     }
     if (totalChance == 0) return SPECIAL_SLOT_NONE;
 
-    uint8_t roll = static_cast<uint8_t>(random(0, 100));
+    uint8_t roll = static_cast<uint8_t>(GameRandom::range(0, 100));
     uint8_t threshold = 0;
     for (uint8_t specialSlot = 0; specialSlot < SPECIAL_MOVE_SLOT_COUNT; ++specialSlot) {
         threshold += chances[specialSlot];
         if (roll < threshold) return specialSlot;
     }
     return SPECIAL_SLOT_NONE;
+}
+
+BattleMoveWeights aiMoveWeights(
+    const Game::MonsterRuntime& attacker,
+    const Species& attackerSpecies,
+    const BattleActorState& attackerState,
+    const Game::MonsterRuntime& defender,
+    const Species& defenderSpecies,
+    const BattleActorState& defenderState,
+    const BattleAiMemory& memory) {
+    BattleMoveWeights result;
+    uint16_t specialChanceTotal = 0;
+    for (uint8_t slot = 0; slot < SPECIAL_MOVE_SLOT_COUNT; ++slot) {
+        result.special[slot] = specialTriggerChance(attacker, slot);
+        specialChanceTotal += result.special[slot];
+    }
+    result.basic = specialChanceTotal < 80
+        ? static_cast<uint16_t>(100 - specialChanceTotal)
+        : 20;
+
+    const MoveInfo* moves[Game::MOVE_SLOT_COUNT] = {
+        findMove(moveIdForAction(attacker, attackerSpecies, SPECIAL_SLOT_NONE)),
+        findMove(specialMoveIdForMonster(attacker, 0)),
+        findMove(specialMoveIdForMonster(attacker, 1)),
+    };
+    uint16_t* weights[Game::MOVE_SLOT_COUNT] = {
+        &result.basic,
+        &result.special[0],
+        &result.special[1],
+    };
+    bool defenderIsGhost = hasType(defenderSpecies, TypeId::GHOST);
+    bool hasUsableDamage = false;
+
+    for (uint8_t index = 0; index < Game::MOVE_SLOT_COUNT; ++index) {
+        const MoveInfo* move = moves[index];
+        uint16_t& weight = *weights[index];
+        if (!move || !move->battleSupported || weight == 0) {
+            weight = 0;
+            continue;
+        }
+        if (isDamagingMove(move)) {
+            uint16_t effectiveness = typeEffectiveness(
+                move->type, defenderSpecies.type1, defenderSpecies.type2);
+            if (effectiveness == 0) {
+                weight = 0;
+                continue;
+            }
+            hasUsableDamage = true;
+            if (effectiveness >= 200) {
+                weight = scaleAiMoveWeight(weight, 3, 2);
+            } else if (effectiveness < 100) {
+                weight = scaleAiMoveWeight(weight, 1, 2);
+            }
+            if (defenderIsGhost && index > 0) {
+                weight = scaleAiMoveWeight(weight, 2, 1);
+            }
+            continue;
+        }
+
+        if (move->damageClass != DamageClass::STATUS ||
+            !aiStatusMoveUseful(
+                *move, attacker, attackerSpecies, attackerState,
+                defender, defenderSpecies, defenderState)) {
+            weight = 0;
+            continue;
+        }
+        if (memory.consecutiveStatusMoves > 0) {
+            weight = scaleAiMoveWeight(weight, 1, 4);
+        }
+    }
+
+    if (hasUsableDamage) {
+        for (uint8_t index = 0; index < Game::MOVE_SLOT_COUNT; ++index) {
+            const MoveInfo* move = moves[index];
+            if (!move || move->damageClass != DamageClass::STATUS) continue;
+            if (memory.consecutiveStatusMoves >= 2 ||
+                move->id == memory.lastMoveId) {
+                *weights[index] = 0;
+            }
+        }
+    }
+    return result;
+}
+
+uint8_t chooseAiMoveSlot(
+    const Game::MonsterRuntime& attacker,
+    const Species& attackerSpecies,
+    const BattleActorState& attackerState,
+    const Game::MonsterRuntime& defender,
+    const Species& defenderSpecies,
+    const BattleActorState& defenderState,
+    BattleAiMemory& memory) {
+    BattleMoveWeights weights = aiMoveWeights(
+        attacker, attackerSpecies, attackerState,
+        defender, defenderSpecies, defenderState, memory);
+    uint32_t total = weights.basic;
+    for (uint8_t slot = 0; slot < SPECIAL_MOVE_SLOT_COUNT; ++slot) {
+        total += weights.special[slot];
+    }
+
+    uint8_t selected = SPECIAL_SLOT_NONE;
+    if (total > 0) {
+        uint32_t roll = GameRandom::range(0, total);
+        if (roll >= weights.basic) {
+            roll -= weights.basic;
+            for (uint8_t slot = 0; slot < SPECIAL_MOVE_SLOT_COUNT; ++slot) {
+                if (roll < weights.special[slot]) {
+                    selected = slot;
+                    break;
+                }
+                roll -= weights.special[slot];
+            }
+        }
+    }
+
+    Game::MoveId selectedMoveId = moveIdForAction(
+        attacker, attackerSpecies, selected);
+    const MoveInfo* selectedMove = findMove(selectedMoveId);
+    memory.lastMoveId = selectedMoveId;
+    if (selectedMove && selectedMove->damageClass == DamageClass::STATUS) {
+        if (memory.consecutiveStatusMoves < 0xFF) {
+            ++memory.consecutiveStatusMoves;
+        }
+    } else {
+        memory.consecutiveStatusMoves = 0;
+    }
+    return selected;
 }
 
 Game::MoveId moveIdForAction(const Game::MonsterRuntime& attacker,
@@ -242,7 +463,7 @@ uint16_t effectiveSpeed(const Game::MonsterRuntime& monster,
         statFor(species, monster, 5),
         battleState.statStages[static_cast<uint8_t>(BattleStat::SPEED)]);
     if (monster.majorStatus == Game::MajorStatus::PARALYSIS) {
-        speed = max<uint16_t>(1, speed / 4);
+        speed = std::max<uint16_t>(1, speed / 4);
     }
     return speed;
 }
@@ -273,7 +494,7 @@ ActionCheckResult checkAction(Game::MonsterRuntime& attacker,
     }
 
     if (attacker.majorStatus == Game::MajorStatus::FREEZE) {
-        if (random(0, 100) < 20) {
+        if (GameRandom::range(0, 100) < 20) {
             attacker.majorStatus = Game::MajorStatus::NONE;
             result.thawed = true;
         } else {
@@ -288,7 +509,7 @@ ActionCheckResult checkAction(Game::MonsterRuntime& attacker,
             result.confusionEnded = true;
         } else {
             battleState.confusionTurns--;
-            if (random(0, 100) < 50) {
+            if (GameRandom::range(0, 100) < 50) {
                 result.blockReason = ActionBlockReason::CONFUSION_SELF_HIT;
                 result.selfDamage = confusionSelfDamage(attacker, attackerSpecies, battleState);
                 return result;
@@ -296,7 +517,8 @@ ActionCheckResult checkAction(Game::MonsterRuntime& attacker,
         }
     }
 
-    if (attacker.majorStatus == Game::MajorStatus::PARALYSIS && random(0, 100) < 25) {
+    if (attacker.majorStatus == Game::MajorStatus::PARALYSIS &&
+        GameRandom::range(0, 100) < 25) {
         result.blockReason = ActionBlockReason::PARALYSIS;
     }
     return result;
@@ -321,7 +543,7 @@ DamageResult calcBasicDamage(const Game::MonsterRuntime& attacker,
         move->accuracy,
         attackerState.statStages[static_cast<uint8_t>(BattleStat::ACCURACY)],
         defenderState.statStages[static_cast<uint8_t>(BattleStat::EVASION)]);
-    if (move->accuracy > 0 && random(0, 100) >= accuracy) {
+    if (move->accuracy > 0 && GameRandom::range(0, 100) >= accuracy) {
         result.missed = true;
         return result;
     }
@@ -340,7 +562,7 @@ DamageResult calcBasicDamage(const Game::MonsterRuntime& attacker,
     atk = applyStatStage(atk, attackerState.statStages[static_cast<uint8_t>(attackStat)]);
     def = applyStatStage(def, defenderState.statStages[static_cast<uint8_t>(defenseStat)]);
     if (!usesSpecialStat && attacker.majorStatus == Game::MajorStatus::BURN) {
-        atk = max<uint16_t>(1, atk / 2);
+        atk = std::max<uint16_t>(1, atk / 2);
     }
 
     uint16_t effectiveness = typeEffectiveness(
@@ -353,13 +575,19 @@ DamageResult calcBasicDamage(const Game::MonsterRuntime& attacker,
     uint32_t totalDamage = 0;
     for (uint8_t hit = 0; hit < hits; ++hit) {
         uint32_t base = (((2UL * attacker.level / 5 + 2) * move->power *
-                          max<uint16_t>(1, atk) / max<uint16_t>(1, def)) / 50) + 2;
+                          std::max<uint16_t>(1, atk) /
+                          std::max<uint16_t>(1, def)) /
+                         50) +
+                        2;
         uint8_t stab = (move->type == attackerSpecies.type1 ||
                         move->type == attackerSpecies.type2) ? 150 : 100;
         uint32_t damage = base * stab / 100;
         damage = damage * effectiveness / 100;
-        damage = damage * static_cast<uint8_t>(random(85, 101)) / 100;
-        bool critical = random(0, criticalDenominator(move->criticalStage)) == 0;
+        damage =
+            damage * static_cast<uint8_t>(GameRandom::range(85, 101)) / 100;
+        bool critical =
+            GameRandom::range(0, criticalDenominator(move->criticalStage)) ==
+            0;
         if (critical) {
             damage = damage * 3 / 2;
             result.critical = true;
@@ -477,7 +705,8 @@ EffectResolution applyMoveEffects(const MoveInfo& move,
         case MoveEffectKind::DRAIN: {
             uint16_t amount = static_cast<uint32_t>(damageDealt) * effect->value / 100;
             if (amount == 0 && damageDealt > 0) amount = 1;
-            amount = min<uint16_t>(amount, attacker.hpMax - attacker.hpCur);
+            amount = std::min<uint16_t>(
+                amount, attacker.hpMax - attacker.hpCur);
             attacker.hpCur += amount;
             addHpOutcome(result, EffectOutcomeKind::DRAINED,
                          MoveEffectTarget::ATTACKER, amount);
@@ -486,16 +715,17 @@ EffectResolution applyMoveEffects(const MoveInfo& move,
         case MoveEffectKind::RECOIL: {
             uint16_t amount = static_cast<uint32_t>(damageDealt) * effect->value / 100;
             if (amount == 0 && damageDealt > 0) amount = 1;
-            amount = min<uint16_t>(amount, attacker.hpCur);
+            amount = std::min<uint16_t>(amount, attacker.hpCur);
             attacker.hpCur -= amount;
             addHpOutcome(result, EffectOutcomeKind::RECOIL,
                          MoveEffectTarget::ATTACKER, amount);
             break;
         }
         case MoveEffectKind::HEAL: {
-            uint16_t amount = max<uint16_t>(1,
+            uint16_t amount = std::max<uint16_t>(1,
                 static_cast<uint32_t>(targetMon.hpMax) * effect->value / 100);
-            amount = min<uint16_t>(amount, targetMon.hpMax - targetMon.hpCur);
+            amount = std::min<uint16_t>(
+                amount, targetMon.hpMax - targetMon.hpCur);
             targetMon.hpCur += amount;
             addHpOutcome(result, EffectOutcomeKind::HEALED, effect->target, amount);
             break;
@@ -564,14 +794,14 @@ EffectResolution resolveEndTurn(Game::MonsterRuntime& monster,
     uint16_t statusDamage = 0;
     if (monster.majorStatus == Game::MajorStatus::POISON ||
         monster.majorStatus == Game::MajorStatus::BURN) {
-        statusDamage = max<uint16_t>(1, monster.hpMax / 8);
+        statusDamage = std::max<uint16_t>(1, monster.hpMax / 8);
     } else if (monster.majorStatus == Game::MajorStatus::TOXIC) {
         if (battleState.toxicCounter < 15) battleState.toxicCounter++;
-        statusDamage = max<uint16_t>(1,
+        statusDamage = std::max<uint16_t>(1,
             static_cast<uint32_t>(monster.hpMax) * battleState.toxicCounter / 16);
     }
     if (statusDamage > 0) {
-        statusDamage = min<uint16_t>(statusDamage, monster.hpCur);
+        statusDamage = std::min<uint16_t>(statusDamage, monster.hpCur);
         monster.hpCur -= statusDamage;
         EffectOutcome outcome;
         outcome.kind = EffectOutcomeKind::STATUS_DAMAGE;
@@ -581,7 +811,8 @@ EffectResolution resolveEndTurn(Game::MonsterRuntime& monster,
     }
 
     if (monster.hpCur > 0 && battleState.bindTurns > 0) {
-        uint16_t damage = min<uint16_t>(max<uint16_t>(1, monster.hpMax / 16), monster.hpCur);
+        uint16_t damage = std::min<uint16_t>(
+            std::max<uint16_t>(1, monster.hpMax / 16), monster.hpCur);
         monster.hpCur -= damage;
         EffectOutcome outcome;
         outcome.kind = EffectOutcomeKind::BIND_DAMAGE;

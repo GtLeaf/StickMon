@@ -6,7 +6,7 @@
 #include "core/UiStrings.h"
 #include "core/UiMotion.h"
 #include "hardware/Hal.h"
-#include "hardware/PixelRenderer.h"
+#include "presentation/PixelRenderer.h"
 
 // Out-of-class definitions required by C++11 for odr-used constexpr arrays.
 constexpr ShopScene::Item ShopScene::EXPLORE_ITEMS[];

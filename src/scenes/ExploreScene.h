@@ -153,6 +153,8 @@ private:
     BattleSystem::EffectResolution battleEffectResolution;
     BattleSystem::BattleActorState playerBattleState;
     BattleSystem::BattleActorState wildBattleState;
+    BattleSystem::BattleAiMemory playerAiMemory;
+    BattleSystem::BattleAiMemory wildAiMemory;
     uint8_t battleTurnSpecialSlots[2] = {
         BattleSystem::SPECIAL_SLOT_NONE,
         BattleSystem::SPECIAL_SLOT_NONE,
@@ -207,6 +209,7 @@ private:
     uint8_t routePickupIndex = 0;
     uint8_t routePickupItem = 0;
     bool routePickupAvailable = false;
+    bool routePickupFinalReward = false;
     uint8_t routeGuaranteedEncounterIndex = 0;
     bool routeGuaranteedEncounterPending = false;
     bool expeditionBossScheduled = false;
@@ -236,6 +239,7 @@ private:
     void placeRouteBoss();
     void placeRoutePickup();
     bool collectRoutePickup();
+    void recoverTeamForCompletedSteps();
     void advanceMapBlock(uint8_t nextMap);
     int8_t currentDepthLevelOffset(uint8_t spread) const;
     void beginEncounter(const Species& species, uint8_t level, bool boss = false);

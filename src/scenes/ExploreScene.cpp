@@ -13,10 +13,11 @@
 #include "game/ExploreBoss.h"
 #include "game/ExploreEncounters.h"
 #include "game/ExplorePool.h"
+#include "game/ExploreRunRules.h"
 #include "game/FriendshipPity.h"
 #include "game/FriendshipSystem.h"
 #include "hardware/Hal.h"
-#include "hardware/PixelRenderer.h"
+#include "presentation/PixelRenderer.h"
 
 namespace {
 enum PickupId : uint8_t {
@@ -35,6 +36,7 @@ enum PickupId : uint8_t {
     PICKUP_NUGGET,
     PICKUP_BIG_PEARL,
     PICKUP_STAR_PIECE,
+    PICKUP_HEART_SCALE,
 };
 
 // 分地图捡拾池：每张 RouteMap 挂一张 {pickupId, weight} 小表，
@@ -439,17 +441,17 @@ static constexpr PickupEntry TALL_GRASS_PARK_PICKUPS[] = {
 static constexpr PickupEntry FROST_CRYSTAL_CAVE_PICKUPS[] = {
     {PICKUP_COIN, 36}, {PICKUP_SUPER_POTION, 18}, {PICKUP_FULL_HEAL, 8},
     {PICKUP_REVIVE, 6}, {PICKUP_MAX_REPEL, 6}, {PICKUP_NUGGET, 4},
-    {PICKUP_BIG_PEARL, 6}, {PICKUP_RARE_CANDY, 2},
+    {PICKUP_BIG_PEARL, 6}, {PICKUP_HEART_SCALE, 2}, {PICKUP_RARE_CANDY, 2},
 };
 static constexpr PickupEntry MIST_FOREST_PATH_PICKUPS[] = {
     {PICKUP_COIN, 34}, {PICKUP_MAX_POTION, 15}, {PICKUP_FULL_HEAL, 8},
     {PICKUP_REVIVE, 7}, {PICKUP_BIG_PEARL, 7}, {PICKUP_STAR_PIECE, 4},
-    {PICKUP_RARE_CANDY, 2},
+    {PICKUP_HEART_SCALE, 2}, {PICKUP_RARE_CANDY, 2},
 };
 static constexpr PickupEntry ANCIENT_WATERFALL_VALLEY_PICKUPS[] = {
     {PICKUP_COIN, 32}, {PICKUP_MAX_POTION, 15}, {PICKUP_FULL_RESTORE, 6},
     {PICKUP_REVIVE, 8}, {PICKUP_BIG_PEARL, 5}, {PICKUP_STAR_PIECE, 7},
-    {PICKUP_RARE_CANDY, 2},
+    {PICKUP_HEART_SCALE, 2}, {PICKUP_RARE_CANDY, 2},
 };
 
 static constexpr RouteMap ROUTE_MAPS[] = {
@@ -765,10 +767,26 @@ constexpr uint8_t routeFollowerTargetIndex(uint8_t leaderIndex) {
         : 0;
 }
 
+bool routeMonsterHealthy(const Game::MonsterRuntime& monster) {
+    return !monster.fainted && monster.hpCur > 0;
+}
+
+uint8_t routeLeaderSlot(const Game::GameState& state) {
+    bool firstHealthy = state.teamCount > 0 &&
+                        routeMonsterHealthy(state.team[0]);
+    bool secondHealthy = state.teamCount > 1 &&
+                         routeMonsterHealthy(state.team[1]);
+    return ExploreRunRules::leaderSlotForHealth(
+        firstHealthy, secondHealthy);
+}
+
 bool hasHealthyRouteFollower(const Game::GameState& state) {
-    if (state.teamCount <= 1) return false;
-    const Game::MonsterRuntime& follower = state.team[1];
-    return !follower.fainted && follower.hpCur > 0;
+    bool firstHealthy = state.teamCount > 0 &&
+                        routeMonsterHealthy(state.team[0]);
+    bool secondHealthy = state.teamCount > 1 &&
+                         routeMonsterHealthy(state.team[1]);
+    return ExploreRunRules::showsHealthyFollower(
+        firstHealthy, secondHealthy);
 }
 
 uint16_t routeStepDurationForSpecies(uint16_t speciesId) {
@@ -845,6 +863,19 @@ PokemonSprites::WalkDirection inwardDirection(ExploreMapGenerator::Edge edge) {
     return PokemonSprites::WalkDirection::DOWN;
 }
 
+constexpr bool isFrostForegroundWallTile(uint16_t tileId) {
+    return (tileId >= 4517 && tileId <= 4519) ||
+           tileId == 4522 || tileId == 4523;
+}
+
+static_assert(isFrostForegroundWallTile(4517) &&
+              isFrostForegroundWallTile(4518) &&
+              isFrostForegroundWallTile(4519) &&
+              isFrostForegroundWallTile(4522) &&
+              isFrostForegroundWallTile(4523));
+static_assert(!isFrostForegroundWallTile(4516) &&
+              !isFrostForegroundWallTile(4520));
+
 void drawGeneratedTileFallback(uint16_t tileId, int x, int y, uint8_t layer,
                                uint16_t fieldColor) {
     auto& canvas = PixelRenderer::canvas();
@@ -897,6 +928,31 @@ void drawGeneratedMapViewport(const ExploreMapGenerator::Map& generated,
                 if (!GameAssets::drawExploreTile(tileId, x, y, animationFrame)) {
                     drawGeneratedTileFallback(tileId, x, y, layer, fieldColor);
                 }
+            }
+        }
+    }
+}
+
+void drawGeneratedMapForegroundViewport(
+    const ExploreMapGenerator::Map& generated,
+    int cameraX, int cameraY, uint16_t fieldColor,
+    uint8_t animationFrame) {
+    int firstX = max(0, cameraX / static_cast<int>(EXPLORE_TILE_SIZE));
+    int firstY = max(0, cameraY / static_cast<int>(EXPLORE_TILE_SIZE));
+    int lastX = min<int>(ExploreMapGenerator::WIDTH - 1,
+                         (cameraX + Hal::DISPLAY_W - 1) / EXPLORE_TILE_SIZE);
+    int lastY = min<int>(ExploreMapGenerator::HEIGHT - 1,
+                         (cameraY + Hal::DISPLAY_H - 1) / EXPLORE_TILE_SIZE);
+    constexpr uint8_t layer = 1;
+    for (int tileY = firstY; tileY <= lastY; ++tileY) {
+        for (int tileX = firstX; tileX <= lastX; ++tileX) {
+            uint16_t tileId = generated.layers[layer]
+                [tileY * ExploreMapGenerator::WIDTH + tileX];
+            if (!isFrostForegroundWallTile(tileId)) continue;
+            int x = tileX * EXPLORE_TILE_SIZE - cameraX;
+            int y = tileY * EXPLORE_TILE_SIZE - cameraY;
+            if (!GameAssets::drawExploreTile(tileId, x, y, animationFrame)) {
+                drawGeneratedTileFallback(tileId, x, y, layer, fieldColor);
             }
         }
     }
@@ -1494,14 +1550,15 @@ void ExploreScene::beginRouteExit() {
         routeFollowerWalkDirection);
 
     auto& engine = GameEngine::ins();
+    const Game::GameState& state = engine.gameState();
+    uint8_t leaderSlot = routeLeaderSlot(state);
     uint16_t leaderStepDuration = routeStepDurationForSpecies(
-        engine.activeSpecies().id);
+        engine.speciesFor(state.team[leaderSlot]).id);
     routeLeaderMoveDurationMs = routeDurationForDistance(
         routeFromX, routeFromY, routeTargetX, routeTargetY, leaderStepDuration);
     routeMoveDurationMs = routeLeaderMoveDurationMs;
     routeFollowerMoveDurationMs = routeLeaderMoveDurationMs;
     routeFollowerMoving = false;
-    const Game::GameState& state = engine.gameState();
     if (hasHealthyRouteFollower(state)) {
         uint16_t followerStepDuration = routeStepDurationForSpecies(
             engine.speciesFor(state.team[1]).id);
@@ -1623,11 +1680,12 @@ void ExploreScene::walk() {
                           fabsf(routeFollowerTargetY - routeFollowerFromY) >= 0.01f;
     routeMoveStarted = Hal::ins().millis();
     auto& engine = GameEngine::ins();
+    const Game::GameState& state = engine.gameState();
+    uint8_t leaderSlot = routeLeaderSlot(state);
     routeLeaderMoveDurationMs = routeStepDurationForSpecies(
-        engine.activeSpecies().id);
+        engine.speciesFor(state.team[leaderSlot]).id);
     routeFollowerMoveDurationMs = routeLeaderMoveDurationMs;
     routeMoveDurationMs = routeLeaderMoveDurationMs;
-    const Game::GameState& state = engine.gameState();
     if (hasHealthyRouteFollower(state)) {
         routeFollowerMoveDurationMs = routeStepDurationForSpecies(
             engine.speciesFor(state.team[1]).id);
@@ -1659,8 +1717,11 @@ bool ExploreScene::updateRouteMovement(uint32_t nowMs) {
     uint16_t leaderDurationMs = max<uint16_t>(1, routeLeaderMoveDurationMs);
     float leaderProgress = min(
         1.0f, elapsed / static_cast<float>(leaderDurationMs));
+    const Game::GameState& state = GameEngine::ins().gameState();
+    uint8_t leaderSlot = routeLeaderSlot(state);
     const PokemonMotion::Behavior leaderMotion =
-        PokemonMotion::behaviorForSpecies(GameEngine::ins().activeSpecies().id);
+        PokemonMotion::behaviorForSpecies(
+            GameEngine::ins().speciesFor(state.team[leaderSlot]).id);
     float leaderEased = phase == Phase::EXITING
         ? leaderProgress
         : PokemonMotion::stepPosition(leaderMotion, leaderProgress);
@@ -1675,7 +1736,6 @@ bool ExploreScene::updateRouteMovement(uint32_t nowMs) {
         float followerProgress = elapsed > ROUTE_FOLLOWER_DELAY_MS
             ? min(1.0f, followerElapsed / static_cast<float>(followerDurationMs))
             : 0.0f;
-        const Game::GameState& state = GameEngine::ins().gameState();
         const PokemonMotion::Behavior followerMotion =
             PokemonMotion::behaviorForSpecies(
                 GameEngine::ins().speciesFor(state.team[1]).id);
@@ -1717,6 +1777,7 @@ void ExploreScene::finishCompletedWalkStep() {
     auto& engine = GameEngine::ins();
     bool repelActiveThisStep = engine.repelStepsRemaining() > 0;
     engine.tickRepelStep();
+    recoverTeamForCompletedSteps();
 
     const ExploreMapGenerator::Path& path = generatedMap.paths[currentRoutePath];
     if (exploreMenuOpen) return;
@@ -1753,6 +1814,27 @@ void ExploreScene::finishCompletedWalkStep() {
         return;
     }
     if (autoWalkActive && phase == Phase::WALKING) walk();
+}
+
+void ExploreScene::recoverTeamForCompletedSteps() {
+    if (!ExploreRunRules::isRecoveryStep(steps)) return;
+
+    auto& engine = GameEngine::ins();
+    Game::GameState& state = engine.gameState();
+    bool recovered = false;
+    for (uint8_t slot = 0;
+         slot < state.teamCount && slot < Game::TEAM_CAP; ++slot) {
+        Game::MonsterRuntime& monster = state.team[slot];
+        if (monster.fainted || monster.hpCur == 0 ||
+            monster.hpMax == 0 || monster.hpCur >= monster.hpMax) {
+            continue;
+        }
+        uint16_t amount = ExploreRunRules::recoveryAmount(monster.hpMax);
+        monster.hpCur = static_cast<uint16_t>(min<uint32_t>(
+            monster.hpMax, static_cast<uint32_t>(monster.hpCur) + amount));
+        recovered = true;
+    }
+    if (recovered) engine.markDirty(SaveUrgency::DEFERRED);
 }
 
 void ExploreScene::finishProgression() {
@@ -1847,6 +1929,10 @@ void ExploreScene::resolvePickup(uint8_t pickupId) {
         itemId = Game::ItemId::STAR_PIECE;
         itemName = Ui::STAR_PIECE;
         break;
+    case PICKUP_HEART_SCALE:
+        itemId = Game::ItemId::HEART_SCALE;
+        itemName = Ui::HEART_SCALE;
+        break;
     default:
         return;
     }
@@ -1855,6 +1941,13 @@ void ExploreScene::resolvePickup(uint8_t pickupId) {
         if (stored) {
             snprintf(resultBuf, sizeof(resultBuf), Ui::Explore::PICKUP_FMT,
                      itemName);
+        } else if (routePickupFinalReward) {
+            const RouteMap& map = routeMap(mapBlocks[currentMapBlock]);
+            uint32_t coins = random(map.minCoin, (uint32_t)map.maxCoin + 1);
+            GameEngine::ins().addCoins(coins);
+            snprintf(resultBuf, sizeof(resultBuf),
+                     Ui::Explore::PICKUP_COIN_FMT,
+                     static_cast<unsigned long>(coins));
         } else {
             snprintf(resultBuf, sizeof(resultBuf), "%s", Ui::Shop::BAG_FULL);
         }
@@ -1888,10 +1981,12 @@ void ExploreScene::beginEncounter(const Species& species, uint8_t level, bool bo
     battleFoodBond = 0;
     clearFriendshipFlow();
     defeatAwaitInput = false;
-    battlePlayerSlot = 0;
+    battlePlayerSlot = routeLeaderSlot(GameEngine::ins().gameState());
     pendingBattleSwitchSlot = 0xFF;
     BattleSystem::resetVolatile(playerBattleState);
     BattleSystem::resetVolatile(wildBattleState);
+    playerAiMemory = BattleSystem::BattleAiMemory{};
+    wildAiMemory = BattleSystem::BattleAiMemory{};
     fleeAttempts = 0;
     autoWalkActive = false;
     phase = Phase::ENCOUNTER;
@@ -2716,8 +2811,12 @@ void ExploreScene::attackWild() {
     }
 
     const Species& activeSpecies = battlePlayerSpecies();
-    battleTurnSpecialSlots[0] = BattleSystem::rollSpecialMoveSlot(activeMon);
-    battleTurnSpecialSlots[1] = BattleSystem::rollSpecialMoveSlot(wildRuntime);
+    battleTurnSpecialSlots[0] = BattleSystem::chooseAiMoveSlot(
+        activeMon, activeSpecies, playerBattleState,
+        wildRuntime, *wild, wildBattleState, playerAiMemory);
+    battleTurnSpecialSlots[1] = BattleSystem::chooseAiMoveSlot(
+        wildRuntime, *wild, wildBattleState,
+        activeMon, activeSpecies, playerBattleState, wildAiMemory);
     Game::MoveId playerMove = BattleSystem::moveIdForAction(
         activeMon, activeSpecies, battleTurnSpecialSlots[0]);
     Game::MoveId wildMove = BattleSystem::moveIdForAction(
@@ -2748,7 +2847,9 @@ void ExploreScene::wildCounterattack() {
         return;
     }
     battleTurnSpecialSlots[0] = BattleSystem::SPECIAL_SLOT_NONE;
-    battleTurnSpecialSlots[1] = BattleSystem::rollSpecialMoveSlot(wildRuntime);
+    battleTurnSpecialSlots[1] = BattleSystem::chooseAiMoveSlot(
+        wildRuntime, *wild, wildBattleState,
+        activeMon, battlePlayerSpecies(), playerBattleState, wildAiMemory);
     battleActionOrder[0] = true;
     battleActionCount = 1;
     battleActionIndex = 0;
@@ -2843,6 +2944,7 @@ void ExploreScene::updateBattleSwitch(uint32_t nowMs) {
             return;
         }
         battlePlayerSlot = slot;
+        playerAiMemory = BattleSystem::BattleAiMemory{};
         pendingBattleSwitchSlot = 0xFF;
         BattleSystem::resetVolatile(playerBattleState);
         battleSwitchStage = BattleSwitchStage::ENTERING;
@@ -3276,7 +3378,11 @@ void ExploreScene::generateMapBlocks() {
     if (selectedMap >= ROUTE_MAP_COUNT) selectedMap = 0;
     const RouteMap& map = routeMap(selectedMap);
     mapBlockCount = mapCountForRoll(map, static_cast<uint8_t>(random(0, 100)));
-    expeditionSpecialKind = specialKindForArea(selectedMap);
+    bool bossLengthEligible = ExploreRunRules::allowsRegionalBoss(
+        mapBlockCount, map.maxMapCount);
+    expeditionSpecialKind = bossLengthEligible
+        ? specialKindForArea(selectedMap)
+        : ExploreSpecial::Kind::NONE;
     specialRelocationHandled = false;
     if (expeditionSpecialKind != ExploreSpecial::Kind::NONE) {
         ExploreSpecial::Config special =
@@ -3285,7 +3391,7 @@ void ExploreScene::generateMapBlocks() {
         expeditionBossSpeciesId = special.speciesId;
         expeditionBossLevel = special.level;
         expeditionBossExperiencePercent = special.experiencePercent;
-    } else {
+    } else if (bossLengthEligible) {
         expeditionBossScheduled =
             random(0, ExploreBoss::SPAWN_ROLL_MAX) <
             ExploreBoss::SPAWN_CHANCE;
@@ -3299,6 +3405,11 @@ void ExploreScene::generateMapBlocks() {
             ExploreBoss::configForArea(selectedMap);
         expeditionBossLevel = normal.level;
         expeditionBossExperiencePercent = normal.experiencePercent;
+    } else {
+        expeditionBossScheduled = false;
+        expeditionBossSpeciesId = 0;
+        expeditionBossLevel = 0;
+        expeditionBossExperiencePercent = 100;
     }
     for (uint8_t i = 0; i < MAP_BLOCK_CAP; ++i) {
         mapBlocks[i] = i < mapBlockCount ? selectedMap : 0xFF;
@@ -3308,9 +3419,11 @@ void ExploreScene::generateMapBlocks() {
     currentRoutePath = 0;
     activeExitMask = 0;
     for (uint8_t i = 0; i < MAP_EXIT_CAP; ++i) exitNextMaps[i] = 0xFF;
-    Serial.printf("[ExploreRun] area=%u maps=%u boss=%u bossSpecies=%u "
-                  "bossLevel=%u special=%u seed=%08lx\n",
+    Serial.printf("[ExploreRun] area=%u maps=%u maxMaps=%u bossEligible=%u "
+                  "boss=%u bossSpecies=%u bossLevel=%u special=%u seed=%08lx\n",
                   selectedMap, mapBlockCount,
+                  map.maxMapCount,
+                  bossLengthEligible ? 1 : 0,
                   expeditionBossScheduled ? 1 : 0,
                   expeditionBossSpeciesId,
                   expeditionBossLevel,
@@ -3372,6 +3485,7 @@ void ExploreScene::placeRouteBoss() {
 
 void ExploreScene::placeRoutePickup() {
     routePickupAvailable = false;
+    routePickupFinalReward = false;
     routePickupIndex = 0;
     routePickupItem = PICKUP_NONE;
     routeGuaranteedEncounterIndex = 0;
@@ -3381,6 +3495,21 @@ void ExploreScene::placeRoutePickup() {
     if (routeBossPending) {
         Serial.printf("[ExploreEvent] block=%u type=boss index=%u\n",
                       currentMapBlock, routeBossIndex);
+        return;
+    }
+
+    if (ExploreRunRules::shouldPlaceFinalReward(
+            currentMapBlock, mapBlockCount, routeBossPending)) {
+        routePickupFinalReward = true;
+        routePickupIndex = path.pointCount >= 3
+            ? static_cast<uint8_t>(path.pointCount - 2)
+            : static_cast<uint8_t>(path.pointCount - 1);
+        routePickupItem = rollPickupId(
+            routeMap(mapBlocks[currentMapBlock]));
+        if (routePickupItem == PICKUP_NONE) routePickupItem = PICKUP_COIN;
+        routePickupAvailable = true;
+        Serial.printf("[ExploreEvent] block=%u type=final-reward index=%u item=%u\n",
+                      currentMapBlock, routePickupIndex, routePickupItem);
         return;
     }
 
@@ -3816,8 +3945,9 @@ void ExploreScene::renderWalking() {
     if (bossBehindTeam) renderRouteBoss(cameraX, cameraY);
 
     auto& engine = GameEngine::ins();
-    const Species& activeSpecies = engine.activeSpecies();
     const Game::GameState& state = engine.gameState();
+    uint8_t leaderSlot = routeLeaderSlot(state);
+    const Species& activeSpecies = engine.speciesFor(state.team[leaderSlot]);
     if (hasHealthyRouteFollower(state)) {
         const Species& followerSpecies = engine.speciesFor(state.team[1]);
         if (routeFollowerWorldY <= routeWorldY) {
@@ -3838,6 +3968,9 @@ void ExploreScene::renderWalking() {
                          routeWalkDirection, false, cameraX, cameraY);
     }
     if (routeBossPending && !bossBehindTeam) renderRouteBoss(cameraX, cameraY);
+
+    drawGeneratedMapForegroundViewport(
+        generatedMap, cameraX, cameraY, map.fieldColor, mapAnimationFrame);
 
     const uint16_t panel = PixelRenderer::rgb(8, 10, 14);
     PixelRenderer::fillRectAlpha(156, 2, 80, 22, panel, EXPLORE_HUD_ALPHA);

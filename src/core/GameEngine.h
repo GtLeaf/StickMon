@@ -69,6 +69,13 @@ enum class ContactVisitKind : uint8_t {
     EXPLORE,
 };
 
+enum class VisitHostResult : uint8_t {
+    ACCEPTED = 0,
+    STORAGE_FULL = 1,
+    NO_MONSTER = 2,
+    TEAM_NOT_SOLO = 3,
+};
+
 enum class ExploreTravelPhase : uint8_t {
     NONE,
     DEPARTING,
@@ -142,6 +149,7 @@ public:
     uint8_t nuggetCount() const { return state.bag.nugget; }
     uint8_t bigPearlCount() const { return state.bag.bigPearl; }
     uint8_t starPieceCount() const { return state.bag.starPiece; }
+    uint8_t heartScaleCount() const { return state.bag.heartScale; }
     uint8_t soapCount(uint8_t soapIndex) const {
         return soapIndex < Game::SOAP_VARIANT_COUNT ? state.bag.soap[soapIndex] : 0;
     }
@@ -188,12 +196,13 @@ public:
         return contactVisit.active &&
                contactVisit.storageSlot == storageSlot;
     }
+    bool canDeleteContact(uint8_t slot) const;
     bool deleteContact(uint8_t slot);
     bool addFood(uint8_t amount = 1);
     bool addFoodStock(uint8_t foodIndex, uint8_t amount = 1);
     bool selectFood(uint8_t foodIndex);
     FoodPlacementResult placeSelectedFoodInBowl();
-    FoodConsumeResult consumeBowlFood();
+    FoodConsumeResult consumeBowlFood(uint8_t teamSlot = 0);
     bool addCandy(uint8_t amount);
     bool addPotion(uint8_t amount);
     bool addSuperPotion(uint8_t amount);
@@ -230,6 +239,11 @@ public:
                  SaveUrgency urgency = SaveUrgency::SOON);
     bool removeItem(Game::ItemId item, uint8_t amount = 1,
                     SaveUrgency urgency = SaveUrgency::SOON);
+    uint8_t collectRecallableMoves(uint8_t teamSlot,
+                                   Game::MoveId* outMoves,
+                                   uint8_t capacity) const;
+    bool recallMove(uint8_t teamSlot, Game::MoveId moveId,
+                    uint8_t replacementSlot);
     uint8_t grantBathReward(BathRewardStage stage);
     bool spendCoins(uint32_t amount);
     void addCoins(uint32_t amount);
@@ -269,7 +283,7 @@ public:
     }
     uint8_t grantAdventureBond(uint16_t steps);
     void addWalkSteps(uint16_t steps);
-    void debugRecoverActiveMonster();
+    void debugRecoverTeam();
     bool debugLevelUpActiveMonster();
     bool debugSetActiveSpecies(uint16_t speciesId);
     uint32_t debugAdvanceToTimeOfDay(uint16_t targetMinutesOfDay);
@@ -313,8 +327,10 @@ public:
     bool consumeDebugMenuReturnRequest();
     bool visitActive() const { return visitSession.active; }
     bool visitAsHost() const { return visitSession.asHost; }
-    uint8_t beginVisitAsHost(uint16_t speciesId, uint8_t level, uint8_t nature,
-                             uint8_t satiety, uint8_t mood, uint8_t affection);
+    bool canHostVisit() const { return state.teamCount == 1; }
+    VisitHostResult beginVisitAsHost(uint16_t speciesId, uint8_t level,
+                                     uint8_t nature, uint8_t satiety,
+                                     uint8_t mood, uint8_t affection);
     void beginVisitAsVisitor();
     void endVisit();
     bool takeVisitLinkLost();
@@ -347,7 +363,8 @@ private:
     void tickCare(uint32_t nowMs);
     void updateVisit(uint32_t nowMs);
     void resetDailyCountersIfNeeded();
-    void grantCareExperience(uint8_t baseAmount, bool weakGain = false);
+    void grantCareExperience(uint8_t baseAmount, bool weakGain = false,
+                             uint8_t teamSlot = 0);
     bool syncSpriteCache(uint8_t loadBudget = 0xFF);
     uint32_t randomIvPacked() const;
     bool queueNextPendingMove(Game::MonsterRuntime& mon, const Species& species,
@@ -360,7 +377,6 @@ private:
                                 bool notify, uint8_t oldLevel);
     bool queueEvolutionEvent(uint8_t teamSlot, uint16_t fromSpeciesId,
                              uint16_t toSpeciesId,
-                             const Game::MonsterRuntime& beforeEvolution,
                              uint8_t oldLevel,
                              Game::ItemId consumedItem = Game::ItemId::COUNT);
     void removeEvolutionEventsForSlot(uint8_t teamSlot);
@@ -381,26 +397,12 @@ private:
         IN,
     };
 
-    struct EvolutionSnapshot {
-        uint16_t speciesId = 0;
-        uint16_t hpCur = 0;
-        uint16_t hpMax = 0;
-        Game::MoveId move1Id = 0;
-        Game::MoveId move2Id = 0;
-        Game::MoveId move3Id = 0;
-        uint8_t moveProficiency[Game::MOVE_SLOT_COUNT] = {};
-        bool pendingMoveLearn = false;
-        Game::MoveId pendingMoveId = 0;
-        uint16_t pendingMoveCursor = 0;
-    };
-
     struct EvolutionEvent {
         uint8_t teamSlot = 0;
         uint8_t oldLevel = 0;
         uint16_t fromSpeciesId = 0;
         uint16_t toSpeciesId = 0;
         Game::ItemId consumedItem = Game::ItemId::COUNT;
-        EvolutionSnapshot before;
     };
 
     struct MoveReplacementEvent {

@@ -6,7 +6,7 @@
 #include <FS.h>
 #include <cstdlib>
 #include <cstring>
-#include "hardware/PixelRenderer.h"
+#include "presentation/PixelRenderer.h"
 
 namespace PokemonSprites {
 

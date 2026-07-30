@@ -5,12 +5,12 @@ from PIL import Image
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / "origin_asset" / "icon" / "icon_hun.png"
+SOURCE = ROOT / "origin_asset" / "icon" / "home" / "icon_hun.png"
 HEADER_OUT = ROOT / "src" / "assets" / "HudAssets.h"
 CPP_OUT = ROOT / "src" / "assets" / "HudAssets.cpp"
 
-TARGET_W = 18
-TARGET_H = 18
+TARGET_W = 14
+TARGET_H = 14
 ALPHA_THRESHOLD = 64
 
 

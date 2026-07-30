@@ -1,11 +1,11 @@
 #pragma once
 
-#include <M5Unified.h>
+#include "presentation/Canvas565.h"
 
 class PixelRenderer {
 public:
-    static void bind(LGFX_Sprite* target);
-    static LGFX_Sprite& canvas();
+    static void bind(const Platform::FrameBuffer565& target);
+    static Canvas565& canvas();
 
     static uint16_t rgb(uint8_t r, uint8_t g, uint8_t b);
     static void clear(uint16_t color);

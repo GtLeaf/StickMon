@@ -9,7 +9,7 @@
 #include "core/UiStrings.h"
 #include "game/Species.h"
 #include "hardware/Hal.h"
-#include "hardware/PixelRenderer.h"
+#include "presentation/PixelRenderer.h"
 
 namespace {
 

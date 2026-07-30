@@ -267,6 +267,25 @@ bool canLearnAsSpecialMove(const Species& species, Game::MoveId moveId) {
 }
 
 namespace {
+bool isDirectEvolutionPredecessor(const Species& candidate,
+                                  const Species& target) {
+    if (candidate.evolveTo == target.id) return true;
+    if (candidate.evolveMethod != EvolutionMethod::BRANCH ||
+        candidate.id != 133) {
+        return false;
+    }
+    switch (target.id) {
+    case 134:  // Vaporeon
+    case 135:  // Jolteon
+    case 136:  // Flareon
+    case 196:  // Espeon
+    case 197:  // Umbreon
+        return true;
+    default:
+        return false;
+    }
+}
+
 bool canRetainSpecialMoveFromLine(const Species& species, Game::MoveId moveId,
                                   uint8_t level, uint8_t depth) {
     uint8_t learnLevel = moveLearnLevelForSpecies(species, moveId);
@@ -277,7 +296,8 @@ bool canRetainSpecialMoveFromLine(const Species& species, Game::MoveId moveId,
 
     for (uint8_t index = 0; index < speciesCount(); ++index) {
         const Species& candidate = speciesTable()[index];
-        if (candidate.evolveTo == species.id && candidate.id != species.id &&
+        if (candidate.id != species.id &&
+            isDirectEvolutionPredecessor(candidate, species) &&
             canRetainSpecialMoveFromLine(candidate, moveId, level, depth + 1)) {
             return true;
         }
@@ -289,6 +309,43 @@ bool canRetainSpecialMoveFromLine(const Species& species, Game::MoveId moveId,
 bool canRetainSpecialMove(const Species& species, Game::MoveId moveId, uint8_t level) {
     return moveId != 0 && isMoveBattleSupported(moveId) &&
            canRetainSpecialMoveFromLine(species, moveId, level, 0);
+}
+
+uint8_t collectRecallableMoves(const Species& species,
+                               const Game::MonsterRuntime& monster,
+                               Game::MoveId* outMoves,
+                               uint8_t capacity) {
+    if (!outMoves || capacity == 0) return 0;
+
+    uint8_t count = 0;
+    for (uint8_t speciesIndex = 0; speciesIndex < speciesCount();
+         ++speciesIndex) {
+        const Species& sourceSpecies = speciesTable()[speciesIndex];
+        const uint16_t learnsetCount = learnsetEntryCountForSpecies(sourceSpecies);
+        for (uint16_t entryIndex = 0; entryIndex < learnsetCount; ++entryIndex) {
+            const LearnsetEntry* entry =
+                learnsetEntryForSpecies(sourceSpecies, entryIndex);
+            if (!entry ||
+                !canRetainSpecialMove(species, entry->moveId, monster.level) ||
+                entry->moveId == monster.move1Id ||
+                entry->moveId == monster.move2Id ||
+                entry->moveId == monster.move3Id) {
+                continue;
+            }
+
+            bool duplicate = false;
+            for (uint8_t known = 0; known < count; ++known) {
+                if (outMoves[known] == entry->moveId) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (duplicate) continue;
+            if (count >= capacity) return count;
+            outMoves[count++] = entry->moveId;
+        }
+    }
+    return count;
 }
 
 void resetMovesForLevel(Game::MonsterRuntime& monster, const Species& species) {
