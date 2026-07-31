@@ -409,7 +409,11 @@ static constexpr const char* CATEGORY_RESOURCE = "资源";
 static constexpr const char* CATEGORY_ENV = "环境";
 static constexpr const char* CATEGORY_MOTION = "运动";
 static constexpr const char* CATEGORY_BATTLE = "战斗";
+static constexpr const char* CATEGORY_CONTACT_EVENT = "好友事件";
 static constexpr const char* RANDOM_BATTLE = "随机对战";
+static constexpr const char* CONTACT_PLAY = "好友来访";
+static constexpr const char* CONTACT_GIFT = "好友送礼";
+static constexpr const char* CONTACT_EXPLORE = "邀请探险";
 static constexpr const char* RECOVER = "一键康复";
 static constexpr const char* LEVEL_UP = "升级一级";
 static constexpr const char* SWITCH_MON = "切换精灵";
@@ -432,6 +436,8 @@ static constexpr const char* SWITCHED = "已切换";
 static constexpr const char* COINS_ADDED = "金币+1000";
 static constexpr const char* TIME_SET = "时间已推进";
 static constexpr const char* INVALID_ID = "编号无效";
+static constexpr const char* EVENT_BUSY = "当前无法开始";
+static constexpr const char* NO_CONTACT = "没有可来访好友";
 static constexpr const char* CURRENT_ID_FMT = "当前:%03u";
 static constexpr const char* CURRENT_TIME_FMT = "当前:%02u:%02u";
 static constexpr const char* TARGET_TIME = "目标时间";
@@ -452,6 +458,7 @@ static constexpr const char* ROOT_ITEMS[] = {
     CATEGORY_ENV,
     CATEGORY_MOTION,
     CATEGORY_BATTLE,
+    CATEGORY_CONTACT_EVENT,
     Ui::BACK,
 };
 static constexpr const char* MONSTER_ITEMS[] = {
@@ -477,6 +484,12 @@ static constexpr const char* MOTION_ITEMS[] = {
 static constexpr const char* BATTLE_ITEMS[] = {
     RANDOM_BATTLE,
     BATTLE_DRAW_BOUNDS,
+    Ui::BACK,
+};
+static constexpr const char* CONTACT_EVENT_ITEMS[] = {
+    CONTACT_PLAY,
+    CONTACT_GIFT,
+    CONTACT_EXPLORE,
     Ui::BACK,
 };
 }
@@ -905,7 +918,7 @@ static constexpr const char* DESCS[] = {
 namespace Explore {
 static constexpr const char* CONTINUE = "继续前进...";
 static constexpr const char* WILD_APPEARED = "野生精灵出现!";
-static constexpr const char* FRIEND_RECOGNIZES_FMT = "%s认可了你的实力";
+static constexpr const char* FRIEND_RECOGNIZES_FMT = "%s认可了你";
 static constexpr const char* FRIEND_CONTACT_QUESTION = "是否交换联系方式?";
 static constexpr const char* FRIEND_CONTACT_ACQUIRED_FMT = "获得%s联系方式";
 static constexpr const char* FRIEND_TEAM_QUESTION = "是否允许加入队伍?";

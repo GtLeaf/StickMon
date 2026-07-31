@@ -1274,7 +1274,7 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
             friendshipStep == FriendshipStep::TEAM_CONFIRM;
         if (event.btn == 1 && confirmationStep) {
             friendshipConfirmYes = !friendshipConfirmYes;
-        } else if (event.btn == 0) {
+        } else if (event.btn == 0 && confirmationStep) {
             resolveFriendshipOffer();
         }
         return true;
@@ -2149,10 +2149,41 @@ bool ExploreScene::serviceBattleLog(uint32_t nowMs) {
             if (friendshipOfferPending) {
                 clearFriendshipFlow();
                 phase = Phase::FRIENDSHIP;
+                char logBuf[BATTLE_LOG_LEN];
+                snprintf(logBuf, sizeof(logBuf),
+                         Ui::Explore::FRIEND_RECOGNIZES_FMT,
+                         wild ? wild->name : "");
+                enqueueBattleLog(logBuf);
+                enqueueBattleLog(Ui::Explore::FRIEND_CONTACT_QUESTION);
                 return true;
             }
             finishBattleVictoryFlow();
             return true;
+        }
+        if (phase == Phase::FRIENDSHIP) {
+            switch (friendshipStep) {
+            case FriendshipStep::CONTACT_INTRO:
+                friendshipStep = FriendshipStep::CONTACT_CONFIRM;
+                friendshipConfirmYes = true;
+                return true;
+            case FriendshipStep::CONTACT_ACQUIRED:
+                if (GameEngine::ins().gameState().teamCount < Game::TEAM_CAP) {
+                    friendshipStep = FriendshipStep::TEAM_CONFIRM;
+                    friendshipConfirmYes = true;
+                } else {
+                    clearFriendshipFlow();
+                    finishBattleVictoryFlow();
+                }
+                return true;
+            case FriendshipStep::TEAM_JOINED:
+            case FriendshipStep::FINISHING:
+                clearFriendshipFlow();
+                finishBattleVictoryFlow();
+                return true;
+            case FriendshipStep::CONTACT_CONFIRM:
+            case FriendshipStep::TEAM_CONFIRM:
+                break;
+            }
         }
         return changed;
     }
@@ -3069,7 +3100,7 @@ void ExploreScene::finishBattleVictoryFlow() {
 void ExploreScene::clearFriendshipFlow() {
     friendshipOfferPending = false;
     friendshipConfirmYes = true;
-    friendshipStep = FriendshipStep::CONTACT_CONFIRM;
+    friendshipStep = FriendshipStep::CONTACT_INTRO;
     friendshipContactIndex = 0xFF;
 }
 
@@ -3082,6 +3113,8 @@ void ExploreScene::resolveFriendshipOffer() {
     }
 
     switch (friendshipStep) {
+    case FriendshipStep::CONTACT_INTRO:
+        return;
     case FriendshipStep::CONTACT_CONFIRM: {
         if (!friendshipConfirmYes) {
             clearFriendshipFlow();
@@ -3093,9 +3126,8 @@ void ExploreScene::resolveFriendshipOffer() {
             ? Game::MET_AREA_UNKNOWN
             : mapBlocks[currentMapBlock];
         if (!engine.recordFriendContact(wildRuntime, metArea, &contactSlot)) {
-            clearFriendshipFlow();
-            resultMessage = Ui::Explore::FRIEND_CONTACTS_FULL;
-            phase = Phase::RESULT;
+            friendshipStep = FriendshipStep::FINISHING;
+            enqueueBattleLog(Ui::Explore::FRIEND_CONTACTS_FULL);
             return;
         }
         friendshipContactIndex = contactSlot;
@@ -3112,17 +3144,13 @@ void ExploreScene::resolveFriendshipOffer() {
         }
         snprintf(resultBuf, sizeof(resultBuf),
                  Ui::Explore::FRIEND_CONTACT_ACQUIRED_FMT, wild->name);
-        resultMessage = resultBuf;
+        enqueueBattleLog(resultBuf);
+        if (engine.gameState().teamCount < Game::TEAM_CAP) {
+            enqueueBattleLog(Ui::Explore::FRIEND_TEAM_QUESTION);
+        }
         return;
     }
     case FriendshipStep::CONTACT_ACQUIRED:
-        if (engine.gameState().teamCount < Game::TEAM_CAP) {
-            friendshipStep = FriendshipStep::TEAM_CONFIRM;
-            friendshipConfirmYes = true;
-            return;
-        }
-        clearFriendshipFlow();
-        finishBattleVictoryFlow();
         return;
     case FriendshipStep::TEAM_CONFIRM:
         if (!friendshipConfirmYes) {
@@ -3138,16 +3166,14 @@ void ExploreScene::resolveFriendshipOffer() {
             friendshipStep = FriendshipStep::TEAM_JOINED;
             snprintf(resultBuf, sizeof(resultBuf),
                      Ui::Explore::FRIEND_TEAM_JOINED_FMT, wild->name);
-            resultMessage = resultBuf;
+            enqueueBattleLog(resultBuf);
             return;
         }
-        clearFriendshipFlow();
-        resultMessage = Ui::Storage::TEAM_FULL_TOAST;
-        phase = Phase::RESULT;
+        friendshipStep = FriendshipStep::FINISHING;
+        enqueueBattleLog(Ui::Storage::TEAM_FULL_TOAST);
         return;
     case FriendshipStep::TEAM_JOINED:
-        clearFriendshipFlow();
-        finishBattleVictoryFlow();
+    case FriendshipStep::FINISHING:
         return;
     }
 }
@@ -4332,60 +4358,39 @@ void ExploreScene::renderResult() {
 }
 
 void ExploreScene::renderFriendshipPrompt() {
+    if (friendshipStep != FriendshipStep::CONTACT_CONFIRM &&
+        friendshipStep != FriendshipStep::TEAM_CONFIRM) {
+        return;
+    }
+
     auto& c = PixelRenderer::canvas();
-    static constexpr int PANEL_X = 12;
-    static constexpr int PANEL_Y = 14;
-    static constexpr int PANEL_W = 216;
-    static constexpr int PANEL_H = 108;
+    static constexpr int PANEL_W = 60;
+    static constexpr int PANEL_X = Hal::DISPLAY_W - PANEL_W;
+    static constexpr int PANEL_Y = 34;
+    static constexpr int PANEL_H = 67;
+    static constexpr int ROW_H = 28;
     c.fillRect(PANEL_X, PANEL_Y, PANEL_W, PANEL_H,
-               PixelRenderer::rgb(24, 28, 36));
+               PixelRenderer::rgb(20, 25, 32));
     c.drawRect(PANEL_X, PANEL_Y, PANEL_W, PANEL_H,
-               PixelRenderer::rgb(241, 242, 232));
+               PixelRenderer::rgb(190, 200, 205));
 
-    char line[64] = {};
-    const char* secondLine = nullptr;
-    bool showChoice = false;
-    switch (friendshipStep) {
-    case FriendshipStep::CONTACT_CONFIRM:
-        snprintf(line, sizeof(line), Ui::Explore::FRIEND_RECOGNIZES_FMT,
-                 wild ? wild->name : "");
-        secondLine = Ui::Explore::FRIEND_CONTACT_QUESTION;
-        showChoice = true;
-        break;
-    case FriendshipStep::CONTACT_ACQUIRED:
-        snprintf(line, sizeof(line), Ui::Explore::FRIEND_CONTACT_ACQUIRED_FMT,
-                 wild ? wild->name : "");
-        break;
-    case FriendshipStep::TEAM_CONFIRM:
-        snprintf(line, sizeof(line), "%s", wild ? wild->name : "");
-        secondLine = Ui::Explore::FRIEND_TEAM_QUESTION;
-        showChoice = true;
-        break;
-    case FriendshipStep::TEAM_JOINED:
-        snprintf(line, sizeof(line), Ui::Explore::FRIEND_TEAM_JOINED_FMT,
-                 wild ? wild->name : "");
-        break;
+    static constexpr const char* ITEMS[] = {
+        Ui::Explore::FRIEND_YES,
+        Ui::Explore::FRIEND_NO,
+    };
+    for (uint8_t i = 0; i < 2; ++i) {
+        bool selected = friendshipConfirmYes == (i == 0);
+        int y = PANEL_Y + 7 + i * ROW_H;
+        if (selected) {
+            c.fillRect(PANEL_X + 5, y, 3, 18,
+                       PixelRenderer::rgb(255, 216, 72));
+        }
+        PixelRenderer::text(
+            PANEL_X + 17, y, ITEMS[i],
+            selected ? PixelRenderer::rgb(255, 216, 72)
+                     : PixelRenderer::rgb(235, 239, 232),
+            1);
     }
-
-    int firstLineY = secondLine ? PANEL_Y + 17 : PANEL_Y + 43;
-    PixelRenderer::text(PANEL_X + 12, firstLineY, line,
-                        PixelRenderer::rgb(241, 242, 232), 1);
-    if (secondLine) {
-        PixelRenderer::text(PANEL_X + 28, PANEL_Y + 43, secondLine,
-                            PixelRenderer::rgb(255, 216, 72), 1);
-    }
-    if (!showChoice) return;
-
-    uint16_t yesColor = friendshipConfirmYes
-        ? PixelRenderer::rgb(255, 216, 72)
-        : PixelRenderer::rgb(156, 164, 176);
-    uint16_t noColor = friendshipConfirmYes
-        ? PixelRenderer::rgb(156, 164, 176)
-        : PixelRenderer::rgb(255, 216, 72);
-    PixelRenderer::text(PANEL_X + 58, PANEL_Y + 75,
-                        Ui::Explore::FRIEND_YES, yesColor, 1);
-    PixelRenderer::text(PANEL_X + 146, PANEL_Y + 75,
-                        Ui::Explore::FRIEND_NO, noColor, 1);
 }
 
 void ExploreScene::renderSpecialPrompt() {
@@ -4570,13 +4575,13 @@ void ExploreScene::renderCommandBox() {
     c.drawRect(0, BattleLayout::FOOTER_Y, Hal::DISPLAY_W, BattleLayout::FOOTER_H,
                PixelRenderer::rgb(74, 91, 75));
 
-    if (phase != Phase::ENCOUNTER) return;
     if (battleLogActive || battleLogVisibleCount > 0) {
         for (uint8_t i = 0; i < battleLogVisibleCount; ++i) {
             drawBattleFooterDarkText(12, 101 + i * 16, battleLogVisible[i]);
         }
         return;
     }
+    if (phase != Phase::ENCOUNTER) return;
     if (defeatAwaitInput) {
         drawBattleFooterDarkText(72, 109, Ui::Explore::ANY_KEY_RETURN);
         return;

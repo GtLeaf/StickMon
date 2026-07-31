@@ -72,6 +72,14 @@ enum class ContactVisitKind : uint8_t {
     EXPLORE,
 };
 
+enum class DebugContactEventResult : uint8_t {
+    STARTED,
+    TEAM_NOT_SOLO,
+    NO_CONTACT,
+    BUSY,
+    INVALID,
+};
+
 enum class VisitHostResult : uint8_t {
     ACCEPTED = 0,
     STORAGE_FULL = 1,
@@ -180,6 +188,7 @@ public:
     bool contactInviteLocked(uint8_t slot) const;
     uint8_t contactInviteChance(uint8_t slot) const;
     bool prepareDailyContactVisit();
+    DebugContactEventResult debugTriggerContactVisit(ContactVisitKind kind);
     bool contactKnockPending() const { return contactVisit.pendingKnock; }
     bool localContactVisitActive() const { return contactVisit.active; }
     ContactVisitKind contactVisitKind() const { return contactVisit.kind; }

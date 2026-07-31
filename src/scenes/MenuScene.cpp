@@ -2616,6 +2616,10 @@ uint8_t MenuScene::debugItemCount() const {
                       sizeof(Ui::Debug::BATTLE_ITEMS) /
                           sizeof(Ui::Debug::BATTLE_ITEMS[0]),
                   "debug battle labels must match the item count");
+    static_assert(DEBUG_CONTACT_EVENT_ITEM_COUNT ==
+                      sizeof(Ui::Debug::CONTACT_EVENT_ITEMS) /
+                          sizeof(Ui::Debug::CONTACT_EVENT_ITEMS[0]),
+                  "debug contact event labels must match the item count");
     static_assert(DEBUG_RESOURCE_ITEM_COUNT ==
                       sizeof(Ui::Debug::RESOURCE_ITEMS) /
                           sizeof(Ui::Debug::RESOURCE_ITEMS[0]) &&
@@ -2632,6 +2636,7 @@ uint8_t MenuScene::debugItemCount() const {
     case DebugCategory::ENV: return DEBUG_ENV_ITEM_COUNT;
     case DebugCategory::MOTION: return DEBUG_MOTION_ITEM_COUNT;
     case DebugCategory::BATTLE: return DEBUG_BATTLE_ITEM_COUNT;
+    case DebugCategory::CONTACT_EVENT: return DEBUG_CONTACT_EVENT_ITEM_COUNT;
     case DebugCategory::ROOT:
     default:
         return DEBUG_ROOT_ITEM_COUNT;
@@ -2646,6 +2651,8 @@ const char* MenuScene::debugItemLabel(uint8_t index) const {
     case DebugCategory::ENV: return Ui::Debug::ENV_ITEMS[index];
     case DebugCategory::MOTION: return Ui::Debug::MOTION_ITEMS[index];
     case DebugCategory::BATTLE: return Ui::Debug::BATTLE_ITEMS[index];
+    case DebugCategory::CONTACT_EVENT:
+        return Ui::Debug::CONTACT_EVENT_ITEMS[index];
     case DebugCategory::ROOT:
     default:
         return Ui::Debug::ROOT_ITEMS[index];
@@ -2661,6 +2668,9 @@ void MenuScene::handleDebugAction() {
         case 3: debugCategory = DebugCategory::MOTION; break;
         case DEBUG_BATTLE_ROOT_INDEX:
             debugCategory = DebugCategory::BATTLE;
+            break;
+        case DEBUG_CONTACT_EVENT_ROOT_INDEX:
+            debugCategory = DebugCategory::CONTACT_EVENT;
             break;
         default:
             popView();
@@ -2749,6 +2759,32 @@ void MenuScene::handleDebugAction() {
         } else if (debugCursor == DEBUG_BATTLE_DRAW_BOUNDS_INDEX) {
             engine.toggleDebugBattleDrawBounds();
         }
+        break;
+    }
+    case DebugCategory::CONTACT_EVENT: {
+        ContactVisitKind kind = debugCursor == 0
+            ? ContactVisitKind::PLAY
+            : (debugCursor == 1 ? ContactVisitKind::GIFT
+                                : ContactVisitKind::EXPLORE);
+        DebugContactEventResult result =
+            GameEngine::ins().debugTriggerContactVisit(kind);
+        switch (result) {
+        case DebugContactEventResult::STARTED:
+            GameEngine::ins().requestScene(SceneID::MAIN);
+            return;
+        case DebugContactEventResult::TEAM_NOT_SOLO:
+            toast = Ui::Social::HOST_TEAM_REQUIRED;
+            break;
+        case DebugContactEventResult::NO_CONTACT:
+            toast = Ui::Debug::NO_CONTACT;
+            break;
+        case DebugContactEventResult::BUSY:
+        case DebugContactEventResult::INVALID:
+        default:
+            toast = Ui::Debug::EVENT_BUSY;
+            break;
+        }
+        toastUntil = Hal::ins().millis() + 1400;
         break;
     }
     case DebugCategory::ROOT:

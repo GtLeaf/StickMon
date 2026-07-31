@@ -737,6 +737,43 @@ bool GameEngine::prepareDailyContactVisit() {
     return true;
 }
 
+DebugContactEventResult GameEngine::debugTriggerContactVisit(
+    ContactVisitKind kind) {
+    if (kind != ContactVisitKind::PLAY && kind != ContactVisitKind::GIFT &&
+        kind != ContactVisitKind::EXPLORE) {
+        return DebugContactEventResult::INVALID;
+    }
+    if (state.teamCount != 1) {
+        return DebugContactEventResult::TEAM_NOT_SOLO;
+    }
+    if (contactVisit.pendingKnock || contactVisit.active ||
+        visitSession.active || exploreTravel != ExploreTravelPhase::NONE) {
+        return DebugContactEventResult::BUSY;
+    }
+
+    uint8_t selected = 0xFF;
+    for (uint8_t slot = 0;
+         slot < state.storageCount && slot < Game::STORAGE_CAP; ++slot) {
+        const Game::MonsterRuntime& mon = state.storage[slot];
+        if (mon.fainted || mon.hpCur == 0 ||
+            mon.origin == Game::Origin::VISITOR) {
+            continue;
+        }
+        if (selected == 0xFF || mon.bond > state.storage[selected].bond) {
+            selected = slot;
+        }
+    }
+    if (selected == 0xFF) return DebugContactEventResult::NO_CONTACT;
+
+    contactVisit.pendingKnock = true;
+    contactVisit.storageSlot = selected;
+    contactVisit.kind = kind;
+    state.storage[selected].lastSeenAt =
+        gameSecondsForMinutes(gameMinutesTotal());
+    markDirty(SaveUrgency::IMMEDIATE);
+    return DebugContactEventResult::STARTED;
+}
+
 bool GameEngine::acceptContactKnock() {
     if (!contactVisit.pendingKnock || contactVisit.active ||
         state.teamCount != 1 ||
