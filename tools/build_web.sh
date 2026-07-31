@@ -10,7 +10,7 @@ OBJ_DIR="$ROOT/build/web-obj"
 
 mkdir -p "$OUT_DIR" "$OBJ_DIR"
 
-CFLAGS="-I$SRC_DIR -O2 -DNDEBUG -DSTICKMON_ENABLE_TRACE_LOGS=0"
+CFLAGS="-I$SRC_DIR -O2 -DNDEBUG -DSTICKMON_ENABLE_TRACE_LOGS=0 -MMD -MP"
 CXXFLAGS="$CFLAGS -std=c++17"
 
 echo "[build_web] Collecting sources..."
@@ -32,9 +32,29 @@ echo "[build_web] $(echo "$CPP_SOURCES" | wc -l) C++ files, $(echo "$C_SOURCES" 
 echo "[build_web] Compiling..."
 OBJECTS=""
 
+# Header dependency tracking: -MMD -MP emits .d files next to .o; an object is
+# rebuilt when its source OR any header it includes is newer than the object.
+needs_rebuild() {
+    local src="$1" obj="$2" dep="${2%.o}.d"
+    [ ! -f "$obj" ] && return 0
+    [ "$src" -nt "$obj" ] && return 0
+    if [ -f "$dep" ]; then
+        # .d format: obj: src header1 header2 ... (with line continuations)
+        local headers
+        headers=$(sed -e ':a' -e 'N' -e '$!ba' -e 's/\\\n/ /g' "$dep" | cut -d: -f2-)
+        for h in $headers; do
+            [ "$h" -nt "$obj" ] && return 0
+        done
+    else
+        # No dependency info yet -> rebuild once to generate it
+        return 0
+    fi
+    return 1
+}
+
 for src in $C_SOURCES; do
     obj="$OBJ_DIR/$(echo "$src" | sed "s|$SRC_DIR/||; s|/|_|g; s|\.c$|.o|")"
-    if [ ! -f "$obj" ] || [ "$src" -nt "$obj" ]; then
+    if needs_rebuild "$src" "$obj"; then
         emcc -c "$src" $CFLAGS -o "$obj"
     fi
     OBJECTS="$OBJECTS $obj"
@@ -42,7 +62,7 @@ done
 
 for src in $CPP_SOURCES; do
     obj="$OBJ_DIR/$(echo "$src" | sed "s|$SRC_DIR/||; s|/|_|g; s|\.cpp$|.o|")"
-    if [ ! -f "$obj" ] || [ "$src" -nt "$obj" ]; then
+    if needs_rebuild "$src" "$obj"; then
         em++ -c "$src" $CXXFLAGS -o "$obj"
     fi
     OBJECTS="$OBJECTS $obj"
