@@ -29,7 +29,7 @@ body {
   position: relative;
   width: 100%;
   aspect-ratio: 334 / 166;
-  background: url('device-body.webp?v=4') no-repeat center / 100% 100%;
+  background: url('device-body.webp') no-repeat center / 100% 100%;
   border-radius: 6% / 12%;
   overflow: hidden;
   box-shadow: 0 8px 32px rgba(0,0,0,0.5);
@@ -158,8 +158,8 @@ document.addEventListener('keyup', (e) => {
 // ── Emscripten Module config ─────────────────────────────────────────
 var Module = {
   canvas: document.getElementById('stickmon-canvas'),
-  // 带版本查询串加载 wasm/data，跳出旧 1h 强缓存条目
-  locateFile: function(path) { return path + '?v=4'; },
+  // 部署到 flasher 时由 scripts/hash-sim-assets.js 自动改写为内容哈希清单映射，请勿手改
+  locateFile: function(path) { return path; },
   onRuntimeInitialized: function() {
     document.getElementById('loading').classList.add('done');
     bindButton(document.getElementById('btn-a'), 0);
@@ -170,7 +170,7 @@ var Module = {
   printErr: function(text) { console.warn('[StickMon]', text); },
 };
 </script>
-<script src="stickmon.js?v=4"></script>
+<script src="stickmon.js"></script>
 
 </body>
 </html>

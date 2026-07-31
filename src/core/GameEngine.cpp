@@ -1996,6 +1996,15 @@ void GameEngine::markDirty(SaveUrgency urgency) {
 
 void GameEngine::enterDeepSleep() {
     saveNow();
+#if defined(__EMSCRIPTEN__)
+    // Web 模拟器没有深睡：平台的 enterDeepSleep 是 no-op，继续往下会
+    // 坠入"等待松手"（JS keyup 事件无法派进被占用的 wasm 主线程，永远
+    // 检测不到释放）和 while(true) 永久睡眠两个死循环，阻塞 Emscripten
+    // 主循环导致页面冻结崩溃。存档后直接返回，模拟器照常运行。
+    // 此兜底覆盖所有可能触达本函数的路径（如用户自行设置了休眠超时）。
+    Platform::logLine("[Power] web simulator: deep sleep skipped");
+    return;
+#endif
     VoiceCallService::ins().stopListening();
     Hal::ins().stopAudio();
     Hal::ins().setBrightness(0);
@@ -2205,6 +2214,13 @@ void GameEngine::processInput(uint32_t nowMs) {
     if (resourceAlertVisible()) return;
     for (uint8_t i = 0; i < count; ++i) {
         const ButtonEvent& event = events[i];
+#if defined(__EMSCRIPTEN__)
+        // Web 模拟器整体忽略 B 键长按：真机上它用于主场景触发深睡，
+        // 而 Web 无深睡概念且该路径会坠入死循环卡死页面（详见
+        // enterDeepSleep 的 Emscripten 分支）；各场景内的长按 B
+        // 快捷操作也一并屏蔽，保证行为一致。A 键长按回主页保留。
+        if (event.btn == 1 && event.action == BtnAction::LONG_PRESS) continue;
+#endif
         if (event.btn == 0 && event.action == BtnAction::LONG_PRESS &&
             supportsLongPressHome(currentId)) {
             requestScene(homeScene());
