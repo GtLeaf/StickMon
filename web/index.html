@@ -169,6 +169,8 @@ document.addEventListener('keyup', (e) => {
 // ── Emscripten Module config ─────────────────────────────────────────
 var Module = {
   canvas: document.getElementById('stickmon-canvas'),
+  // 带版本查询串加载 wasm/data，跳出旧 1h 强缓存条目
+  locateFile: function(path) { return path + '?v=2'; },
   onRuntimeInitialized: function() {
     document.getElementById('loading').classList.add('done');
     bindButton(document.getElementById('btn-a'), 0);
@@ -179,7 +181,7 @@ var Module = {
   printErr: function(text) { console.warn('[StickMon]', text); },
 };
 </script>
-<script src="stickmon.js"></script>
+<script src="stickmon.js?v=2"></script>
 
 </body>
 </html>
