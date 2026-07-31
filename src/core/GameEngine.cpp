@@ -2214,13 +2214,6 @@ void GameEngine::processInput(uint32_t nowMs) {
     if (resourceAlertVisible()) return;
     for (uint8_t i = 0; i < count; ++i) {
         const ButtonEvent& event = events[i];
-#if defined(__EMSCRIPTEN__)
-        // Web 模拟器整体忽略 B 键长按：真机上它用于主场景触发深睡，
-        // 而 Web 无深睡概念且该路径会坠入死循环卡死页面（详见
-        // enterDeepSleep 的 Emscripten 分支）；各场景内的长按 B
-        // 快捷操作也一并屏蔽，保证行为一致。A 键长按回主页保留。
-        if (event.btn == 1 && event.action == BtnAction::LONG_PRESS) continue;
-#endif
         if (event.btn == 0 && event.action == BtnAction::LONG_PRESS &&
             supportsLongPressHome(currentId)) {
             requestScene(homeScene());
@@ -2234,8 +2227,14 @@ void GameEngine::processInput(uint32_t nowMs) {
         }
         if (currentId == SceneID::MAIN && event.btn == 1 &&
             event.action == BtnAction::LONG_PRESS) {
+            // Web 模拟器仅屏蔽主菜单长按 B 进休眠这一条路径（Web 无深睡
+            // 概念，且 enterDeepSleep 在 Web 下会坠入死循环卡死页面，详见
+            // 其 Emscripten 分支）；各场景内的长按 B 快捷操作正常响应。
+            // 真机行为不变：主菜单长按 B 进深睡。
+#if !defined(__EMSCRIPTEN__)
             enterDeepSleep();
             return;
+#endif
         }
     }
 }
