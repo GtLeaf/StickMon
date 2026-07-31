@@ -4,6 +4,7 @@
 #include <cstdio>
 #include "core/CryPlayer.h"
 #include "core/GameEngine.h"
+#include "core/MathUtil.h"
 #include "core/TraceLog.h"
 #include "core/UiStrings.h"
 #include "core/UiMotion.h"
@@ -53,7 +54,7 @@ SceneUpdateResult SettingsScene::update(uint32_t nowMs, float dtSeconds) {
             contentH > Hal::DISPLAY_H ? contentH - Hal::DISPLAY_H : 0;
         int targetScroll =
             START_Y + cursor * ROW_H + ROW_H / 2 - Hal::DISPLAY_H / 2;
-        targetScroll = constrain(targetScroll, 0, maxScroll);
+        targetScroll = MathUtil::clamp(targetScroll, 0, maxScroll);
         UiMotion::StepResult step = UiMotion::lerp(
             menuScroll, static_cast<float>(targetScroll), 0.25f, 0.5f);
         demand.changed(step.changed);

@@ -7,12 +7,14 @@
 #include "assets/PokemonSprites.h"
 #include "core/UiStrings.h"
 #include "core/GameEngine.h"
+#include "core/MathUtil.h"
 #include "core/UiMotion.h"
 #include "core/VoiceCallService.h"
 #include "game/BondSystem.h"
 #include "game/Species.h"
 #include "hardware/Hal.h"
 #include "presentation/PixelRenderer.h"
+#include "platform/api/FlashStorage.h"
 
 namespace {
 const char* originName(Game::Origin origin) {
@@ -475,8 +477,8 @@ void drawStatusMonsterIcon(const Species& species, int x, int y) {
     const PokemonSprites::SpriteFrame* frame = PokemonSprites::findSpeciesSprite(
         species.id, PokemonSprites::SpriteKind::STATUS);
     if (frame) {
-        uint8_t w = pgm_read_byte(&frame->width);
-        uint8_t h = pgm_read_byte(&frame->height);
+        uint8_t w = FlashStorage::readByte(&frame->width);
+        uint8_t h = FlashStorage::readByte(&frame->height);
         int drawX = x + (PANEL_W - w) / 2;
         int drawY = y + (PANEL_H - h) / 2;
         if (PokemonSprites::drawFrame(frame, drawX, drawY)) return;
@@ -672,7 +674,7 @@ SceneUpdateResult MenuScene::update(uint32_t nowMs, float dtSeconds) {
                                   int width, int key) {
         int maxLineW = 0;
         for (uint8_t i = 0; i < count; ++i) {
-            maxLineW = max(maxLineW, textPixelWidth(lines[i]));
+            maxLineW = MathUtil::max(maxLineW, textPixelWidth(lines[i]));
         }
         int maxScroll = maxLineW > width ? maxLineW - width + 4 : 0;
         demand.changed(updateDescriptionScroll(key, maxScroll));
@@ -693,9 +695,9 @@ SceneUpdateResult MenuScene::update(uint32_t nowMs, float dtSeconds) {
     } else if (viewMode == ViewMode::FOOD) {
         static constexpr int VISIBLE_H = Hal::DISPLAY_H - 12;
         static constexpr int ROW_H = 22;
-        int maxScroll = max(0, FOOD_ITEM_COUNT * ROW_H - VISIBLE_H);
+        int maxScroll = MathUtil::max(0, FOOD_ITEM_COUNT * ROW_H - VISIBLE_H);
         int target = foodCursor * ROW_H - VISIBLE_H / 2 + ROW_H / 2;
-        animateScroll(foodScroll, constrain(target, 0, maxScroll));
+        animateScroll(foodScroll, MathUtil::clamp(target, 0, maxScroll));
         if (!isFoodBackIndex(foodCursor)) {
             const char* lines[3] = {
                 Ui::Room::FOOD_DESCS[foodCursor][0],
@@ -710,28 +712,28 @@ SceneUpdateResult MenuScene::update(uint32_t nowMs, float dtSeconds) {
         static constexpr int VISIBLE_H = Hal::DISPLAY_H - 12;
         static constexpr int ROW_H = 24;
         uint8_t rows = GameEngine::ins().gameState().storageCount + 1;
-        int maxScroll = max(0, static_cast<int>(rows) * ROW_H - VISIBLE_H);
+        int maxScroll = MathUtil::max(0, static_cast<int>(rows) * ROW_H - VISIBLE_H);
         int target =
             storageCursor * ROW_H - VISIBLE_H / 2 + ROW_H / 2;
-        animateScroll(storageScroll, constrain(target, 0, maxScroll));
+        animateScroll(storageScroll, MathUtil::clamp(target, 0, maxScroll));
     } else if (viewMode == ViewMode::DEBUG) {
         static constexpr int ROW_Y = 6;
         static constexpr int ROW_H = 24;
-        int maxScroll = max(
+        int maxScroll = MathUtil::max(
             0, ROW_Y * 2 + static_cast<int>(debugItemCount()) * ROW_H -
                    Hal::DISPLAY_H);
         int target =
             ROW_Y + debugCursor * ROW_H + ROW_H / 2 - Hal::DISPLAY_H / 2;
-        animateScroll(debugScroll, constrain(target, 0, maxScroll));
+        animateScroll(debugScroll, MathUtil::clamp(target, 0, maxScroll));
     } else if (viewMode == ViewMode::BAG) {
         BagRow rows[BAG_ITEM_COUNT] = {};
         uint8_t count = collectVisibleBagRows(rows, BAG_ITEM_COUNT);
         static constexpr int VISIBLE_H = Hal::DISPLAY_H - 12;
         static constexpr int ROW_H = 22;
         int maxScroll =
-            max(0, static_cast<int>(count) * ROW_H - VISIBLE_H);
+            MathUtil::max(0, static_cast<int>(count) * ROW_H - VISIBLE_H);
         int target = bagCursor * ROW_H - VISIBLE_H / 2 + ROW_H / 2;
-        animateScroll(bagScroll, constrain(target, 0, maxScroll));
+        animateScroll(bagScroll, MathUtil::clamp(target, 0, maxScroll));
         // Item descriptions may marquee horizontally when they exceed the
         // detail column, so only that state keeps the page animated.
         if (count > 0 && bagCursor < count &&
@@ -755,10 +757,10 @@ SceneUpdateResult MenuScene::update(uint32_t nowMs, float dtSeconds) {
             static constexpr int LIST_Y = 6;
             static constexpr int ROW_H = 24;
             static constexpr int VISIBLE_H = Hal::DISPLAY_H - LIST_Y * 2;
-            int maxScroll = max(
+            int maxScroll = MathUtil::max(
                 0, static_cast<int>(rowCount) * ROW_H - VISIBLE_H);
             int target = moveCursor * ROW_H - VISIBLE_H / 2 + ROW_H / 2;
-            animateScroll(moveListScroll, constrain(target, 0, maxScroll));
+            animateScroll(moveListScroll, MathUtil::clamp(target, 0, maxScroll));
 
             const MoveInfo* move = nullptr;
             int descriptionKey = -1;
@@ -807,11 +809,11 @@ SceneUpdateResult MenuScene::update(uint32_t nowMs, float dtSeconds) {
                     }
                     int lines =
                         wrappedTextLineCount(move->description, MOVE_DESC_W);
-                    contentH += 74 + max(1, lines) * 16;
+                    contentH += 74 + MathUtil::max(1, lines) * 16;
                 }
-                contentH = max(contentH, Hal::DISPLAY_H);
+                contentH = MathUtil::max(contentH, Hal::DISPLAY_H);
             }
-            int maxScroll = max(0, contentH - Hal::DISPLAY_H);
+            int maxScroll = MathUtil::max(0, contentH - Hal::DISPLAY_H);
             int key =
                 (statusFromStorage ? 0x4000 : 0) |
                 (static_cast<int>(statusMonsterIndex) << 8) | statusPage;
@@ -1361,7 +1363,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                         uint8_t newCount =
                             GameEngine::ins().gameState().storageCount;
                         storageCursor =
-                            newCount == 0 ? 0 : min<uint8_t>(storageCursor,
+                            newCount == 0 ? 0 : MathUtil::min<uint8_t>(storageCursor,
                                                             newCount - 1);
                         toast = Ui::Storage::INVITE_ACCEPTED;
                         storageActionOpen = false;
@@ -1664,8 +1666,8 @@ void MenuScene::renderMenu() {
                 c.fillRect(boxX - 4, y - boxH / 2, 2, boxH, 0xFFE0);
             }
 
-            uint16_t offset = pgm_read_word(&MenuAssets::MAIN_ICON_FRAMES[iconIndex].offset);
-            uint16_t length = pgm_read_word(&MenuAssets::MAIN_ICON_FRAMES[iconIndex].length);
+            uint16_t offset = FlashStorage::readWord(&MenuAssets::MAIN_ICON_FRAMES[iconIndex].offset);
+            uint16_t length = FlashStorage::readWord(&MenuAssets::MAIN_ICON_FRAMES[iconIndex].length);
             int scaledIconW = (int)(MenuAssets::FRAME_W * relScale);
             int scaledIconH = (int)(MenuAssets::FRAME_H * relScale);
             int iconX = boxX + (iconSlotW - scaledIconW) / 2;
@@ -1938,7 +1940,7 @@ void MenuScene::renderMovesPage() {
             PixelRenderer::rgb(255, 218, 178), descriptionKey);
     } else if (emptyHint) {
         int detailWidth = Hal::DISPLAY_W - RIGHT_X;
-        int hintX = RIGHT_X + max(
+        int hintX = RIGHT_X + MathUtil::max(
             2, (detailWidth - textPixelWidth(emptyHint)) / 2);
         PixelRenderer::text(hintX, 58, emptyHint,
                             PixelRenderer::rgb(156, 164, 176), 1);
@@ -2085,11 +2087,11 @@ void MenuScene::renderStatusPage() {
             ? activeMon.exp
             : minimumExpForLevel(mon.growthRate, activeMon.level + 1);
         uint8_t expPct = nextExp > levelExp
-            ? (uint8_t)min<uint32_t>(100, (activeMon.exp - levelExp) * 100UL / (nextExp - levelExp))
+            ? (uint8_t)MathUtil::min<uint32_t>(100, (activeMon.exp - levelExp) * 100UL / (nextExp - levelExp))
             : 100;
         uint32_t maxExp = minimumExpForLevel(mon.growthRate, Game::LEVEL_MAX);
         uint8_t totalPct = maxExp > 0
-            ? (uint8_t)min<uint32_t>(100, activeMon.exp * 100UL / maxExp)
+            ? (uint8_t)MathUtil::min<uint32_t>(100, activeMon.exp * 100UL / maxExp)
             : 100;
         static constexpr int BAR_X = 14;
         static constexpr int BAR_Y = 118;
@@ -2418,7 +2420,7 @@ void MenuScene::renderStoragePage() {
 
             const char* bondLabel = bondLevelName(mon.bond);
             int bondX = Hal::DISPLAY_W - textPixelWidth(bondLabel) - 10;
-            PixelRenderer::text(max(TEXT_X + 82, bondX), y + 3,
+            PixelRenderer::text(MathUtil::max(TEXT_X + 82, bondX), y + 3,
                                 bondLabel,
                                 unavailable ? color
                                             : bondLevelColor(mon.bond),
@@ -2458,7 +2460,7 @@ void MenuScene::renderStorageInviteConfirmPopup() {
     char line[48];
     snprintf(line, sizeof(line), Ui::Storage::INVITE_CONFIRM_FMT,
              species.name);
-    int lineX = POP_X + max(6, (POP_W - textPixelWidth(line)) / 2);
+    int lineX = POP_X + MathUtil::max(6, (POP_W - textPixelWidth(line)) / 2);
     PixelRenderer::text(lineX, POP_Y + 17, line,
                         PixelRenderer::rgb(241, 242, 232), 1);
 

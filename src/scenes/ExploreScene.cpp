@@ -7,6 +7,7 @@
 #include "assets/PokemonMotion.h"
 #include "assets/PokemonSprites.h"
 #include "core/GameEngine.h"
+#include "core/MathUtil.h"
 #include "core/ProgressionUi.h"
 #include "core/UiStrings.h"
 #include "game/BattleSystem.h"
@@ -16,8 +17,11 @@
 #include "game/ExploreRunRules.h"
 #include "game/FriendshipPity.h"
 #include "game/FriendshipSystem.h"
+#include "game/GameRandom.h"
 #include "hardware/Hal.h"
 #include "presentation/PixelRenderer.h"
+#include "platform/api/FlashStorage.h"
+#include "platform/api/PlatformServices.h"
 
 namespace {
 enum PickupId : uint8_t {
@@ -556,7 +560,7 @@ static_assert(ROUTE_MAP_COUNT == Game::EXPLORE_AREA_COUNT,
 // 从区域遭遇表提取活跃池源视图。
 uint8_t buildPoolSource(const RouteMap& map, ExplorePool::SourceEntry* out,
                         uint8_t cap) {
-    uint8_t count = min<uint8_t>(cap, map.encounterCount);
+    uint8_t count = MathUtil::min<uint8_t>(cap, map.encounterCount);
     for (uint8_t i = 0; i < count; ++i) {
         out[i] = ExplorePool::SourceEntry{
             map.encounters[i].speciesId,
@@ -744,7 +748,7 @@ struct RouteWorldPoint {
 RouteWorldPoint routePathPointWorld(const ExploreMapGenerator::Path& path,
                                     uint8_t index) {
     if (path.pointCount == 0) return {0.0f, 0.0f};
-    index = min<uint8_t>(index, path.pointCount - 1);
+    index = MathUtil::min<uint8_t>(index, path.pointCount - 1);
     const ExploreMapGenerator::Point& point = path.points[index];
     RouteWorldPoint world{
         routeWorldCoordinate(point.x),
@@ -824,7 +828,7 @@ uint16_t routeDurationForDistance(float fromX, float fromY, float toX, float toY
     float stepCount = hypotf(toX - fromX, toY - fromY) / EXPLORE_TILE_SIZE;
     if (stepCount < 1.0f) stepCount = 1.0f;
     uint32_t duration = static_cast<uint32_t>(ceilf(stepCount * stepDurationMs));
-    return static_cast<uint16_t>(min<uint32_t>(duration, 60000U));
+    return static_cast<uint16_t>(MathUtil::min<uint32_t>(duration, 60000U));
 }
 
 const RouteMap& routeMap(uint8_t index) {
@@ -842,7 +846,7 @@ uint8_t rollPickupId(const RouteMap& map) {
     }
     if (total == 0) return PICKUP_NONE;
 
-    uint16_t roll = static_cast<uint16_t>(random(0, total));
+    uint16_t roll = static_cast<uint16_t>(GameRandom::random(0, total));
     for (uint8_t i = 0; i < map.pickupEntryCount; ++i) {
         if (map.pickupTable[i].pickupId == PICKUP_RARE_CANDY && !candyAvailable) {
             continue;
@@ -912,11 +916,11 @@ void drawGeneratedTileFallback(uint16_t tileId, int x, int y, uint8_t layer,
 void drawGeneratedMapViewport(const ExploreMapGenerator::Map& generated,
                               int cameraX, int cameraY, uint16_t fieldColor,
                               uint8_t animationFrame) {
-    int firstX = max(0, cameraX / static_cast<int>(EXPLORE_TILE_SIZE));
-    int firstY = max(0, cameraY / static_cast<int>(EXPLORE_TILE_SIZE));
-    int lastX = min<int>(ExploreMapGenerator::WIDTH - 1,
+    int firstX = MathUtil::max(0, cameraX / static_cast<int>(EXPLORE_TILE_SIZE));
+    int firstY = MathUtil::max(0, cameraY / static_cast<int>(EXPLORE_TILE_SIZE));
+    int lastX = MathUtil::min<int>(ExploreMapGenerator::WIDTH - 1,
                          (cameraX + Hal::DISPLAY_W - 1) / EXPLORE_TILE_SIZE);
-    int lastY = min<int>(ExploreMapGenerator::HEIGHT - 1,
+    int lastY = MathUtil::min<int>(ExploreMapGenerator::HEIGHT - 1,
                          (cameraY + Hal::DISPLAY_H - 1) / EXPLORE_TILE_SIZE);
     for (uint8_t layer = 0; layer < ExploreMapGenerator::LAYER_COUNT; ++layer) {
         for (int tileY = firstY; tileY <= lastY; ++tileY) {
@@ -937,11 +941,11 @@ void drawGeneratedMapForegroundViewport(
     const ExploreMapGenerator::Map& generated,
     int cameraX, int cameraY, uint16_t fieldColor,
     uint8_t animationFrame) {
-    int firstX = max(0, cameraX / static_cast<int>(EXPLORE_TILE_SIZE));
-    int firstY = max(0, cameraY / static_cast<int>(EXPLORE_TILE_SIZE));
-    int lastX = min<int>(ExploreMapGenerator::WIDTH - 1,
+    int firstX = MathUtil::max(0, cameraX / static_cast<int>(EXPLORE_TILE_SIZE));
+    int firstY = MathUtil::max(0, cameraY / static_cast<int>(EXPLORE_TILE_SIZE));
+    int lastX = MathUtil::min<int>(ExploreMapGenerator::WIDTH - 1,
                          (cameraX + Hal::DISPLAY_W - 1) / EXPLORE_TILE_SIZE);
-    int lastY = min<int>(ExploreMapGenerator::HEIGHT - 1,
+    int lastY = MathUtil::min<int>(ExploreMapGenerator::HEIGHT - 1,
                          (cameraY + Hal::DISPLAY_H - 1) / EXPLORE_TILE_SIZE);
     constexpr uint8_t layer = 1;
     for (int tileY = firstY; tileY <= lastY; ++tileY) {
@@ -966,7 +970,7 @@ const EncounterEntry* rollEncounterEntry(const RouteMap& map) {
     }
     if (total == 0) return nullptr;
 
-    uint32_t roll = static_cast<uint32_t>(random(static_cast<long>(total)));
+    uint32_t roll = static_cast<uint32_t>(GameRandom::random(static_cast<long>(total)));
     for (uint8_t i = 0; i < map.encounterCount; ++i) {
         if (roll < map.encounters[i].weight) return &map.encounters[i];
         roll -= map.encounters[i].weight;
@@ -979,7 +983,7 @@ const ExplorePool::PoolEntry* rollPoolEntry(const ExplorePool::Pool& pool) {
     uint32_t total = ExplorePool::poolWeightTotal(pool);
     if (total == 0) return nullptr;
 
-    uint32_t roll = static_cast<uint32_t>(random(static_cast<long>(total)));
+    uint32_t roll = static_cast<uint32_t>(GameRandom::random(static_cast<long>(total)));
     for (uint8_t i = 0; i < pool.count; ++i) {
         uint32_t weight = ExplorePool::rollWeightOf(pool.entries[i]);
         if (roll < weight) return &pool.entries[i];
@@ -995,7 +999,7 @@ uint8_t rollWildLevel(uint8_t minLevel, uint8_t maxLevel, uint8_t targetLevel) {
     if (targetLevel < minLevel) targetLevel = minLevel;
     if (targetLevel > maxLevel) targetLevel = maxLevel;
 
-    uint8_t roll = static_cast<uint8_t>(random(0, 100));
+    uint8_t roll = static_cast<uint8_t>(GameRandom::random(0, 100));
     int16_t level = targetLevel;
     if (roll < 10) level -= 2;
     else if (roll < 30) --level;
@@ -1178,7 +1182,7 @@ SceneUpdateResult ExploreScene::update(uint32_t nowMs, float dtSeconds) {
         areaCursor < ROUTE_MAP_COUNT && areaPreviewPool.count > 0) {
         uint32_t cycleElapsed =
             (nowMs - areaPreviewStartedAt) % AREA_PREVIEW_CYCLE_MS;
-        demand.wakeIn(max<uint32_t>(
+        demand.wakeIn(MathUtil::max<uint32_t>(
             1, AREA_PREVIEW_HOLD_MS - cycleElapsed + 1));
     }
     if (areaPreviewLoadPending) {
@@ -1567,7 +1571,7 @@ void ExploreScene::beginRouteExit() {
             routeFollowerTargetX, routeFollowerTargetY,
             followerStepDuration);
         routeFollowerMoving = true;
-        routeMoveDurationMs = max<uint16_t>(
+        routeMoveDurationMs = MathUtil::max<uint16_t>(
             routeLeaderMoveDurationMs,
             ROUTE_FOLLOWER_DELAY_MS + routeFollowerMoveDurationMs);
     } else {
@@ -1690,7 +1694,7 @@ void ExploreScene::walk() {
         routeFollowerMoveDurationMs = routeStepDurationForSpecies(
             engine.speciesFor(state.team[1]).id);
         if (routeFollowerMoving) {
-            routeMoveDurationMs = max<uint16_t>(
+            routeMoveDurationMs = MathUtil::max<uint16_t>(
                 routeLeaderMoveDurationMs,
                 ROUTE_FOLLOWER_DELAY_MS + routeFollowerMoveDurationMs);
         }
@@ -1714,8 +1718,8 @@ bool ExploreScene::updateRouteMovement(uint32_t nowMs) {
     if (!routeMoving || exploreMenuOpen) return false;
     uint32_t elapsed = nowMs - routeMoveStarted;
     uint32_t completedAt = routeMoveStarted + routeMoveDurationMs;
-    uint16_t leaderDurationMs = max<uint16_t>(1, routeLeaderMoveDurationMs);
-    float leaderProgress = min(
+    uint16_t leaderDurationMs = MathUtil::max<uint16_t>(1, routeLeaderMoveDurationMs);
+    float leaderProgress = MathUtil::min(
         1.0f, elapsed / static_cast<float>(leaderDurationMs));
     const Game::GameState& state = GameEngine::ins().gameState();
     uint8_t leaderSlot = routeLeaderSlot(state);
@@ -1732,9 +1736,9 @@ bool ExploreScene::updateRouteMovement(uint32_t nowMs) {
         uint32_t followerElapsed = elapsed > ROUTE_FOLLOWER_DELAY_MS
             ? elapsed - ROUTE_FOLLOWER_DELAY_MS
             : 0;
-        uint16_t followerDurationMs = max<uint16_t>(1, routeFollowerMoveDurationMs);
+        uint16_t followerDurationMs = MathUtil::max<uint16_t>(1, routeFollowerMoveDurationMs);
         float followerProgress = elapsed > ROUTE_FOLLOWER_DELAY_MS
-            ? min(1.0f, followerElapsed / static_cast<float>(followerDurationMs))
+            ? MathUtil::min(1.0f, followerElapsed / static_cast<float>(followerDurationMs))
             : 0.0f;
         const PokemonMotion::Behavior followerMotion =
             PokemonMotion::behaviorForSpecies(
@@ -1830,7 +1834,7 @@ void ExploreScene::recoverTeamForCompletedSteps() {
             continue;
         }
         uint16_t amount = ExploreRunRules::recoveryAmount(monster.hpMax);
-        monster.hpCur = static_cast<uint16_t>(min<uint32_t>(
+        monster.hpCur = static_cast<uint16_t>(MathUtil::min<uint32_t>(
             monster.hpMax, static_cast<uint32_t>(monster.hpCur) + amount));
         recovered = true;
     }
@@ -1853,7 +1857,7 @@ bool ExploreScene::rollRandomEncounter(bool guaranteed, bool bypassGate,
     const RouteMap& map = routeMap(mapBlocks[currentMapBlock]);
     // 黄金喷雾生效中：非保底随机遇敌不触发（保底/BOSS 不受影响）。
     if (!repelAllowsEncounter(guaranteed, repelActiveThisStep)) return false;
-    if (!guaranteed && random(0, 10000) >= map.encounterChance) return false;
+    if (!guaranteed && GameRandom::random(0, 10000) >= map.encounterChance) return false;
     ++mapEncounterCount;
     encounterCooldownSteps = ENCOUNTER_COOLDOWN_STEP_COUNT;
     routeGuaranteedEncounterPending = false;
@@ -1864,7 +1868,7 @@ bool ExploreScene::rollRandomEncounter(bool guaranteed, bool bypassGate,
 void ExploreScene::resolvePickup(uint8_t pickupId) {
     if (pickupId == PICKUP_COIN) {
         const RouteMap& map = routeMap(mapBlocks[currentMapBlock]);
-        uint32_t coins = random(map.minCoin, (uint32_t)map.maxCoin + 1);
+        uint32_t coins = GameRandom::random(map.minCoin, (uint32_t)map.maxCoin + 1);
         GameEngine::ins().addCoins(coins);
         snprintf(resultBuf, sizeof(resultBuf), Ui::Explore::PICKUP_COIN_FMT,
                  (unsigned long)coins);
@@ -1943,7 +1947,7 @@ void ExploreScene::resolvePickup(uint8_t pickupId) {
                      itemName);
         } else if (routePickupFinalReward) {
             const RouteMap& map = routeMap(mapBlocks[currentMapBlock]);
-            uint32_t coins = random(map.minCoin, (uint32_t)map.maxCoin + 1);
+            uint32_t coins = GameRandom::random(map.minCoin, (uint32_t)map.maxCoin + 1);
             GameEngine::ins().addCoins(coins);
             snprintf(resultBuf, sizeof(resultBuf),
                      Ui::Explore::PICKUP_COIN_FMT,
@@ -1961,7 +1965,7 @@ int8_t ExploreScene::currentDepthLevelOffset(uint8_t spread) const {
     if (mapBlockCount == 0 || currentMapBlock >= mapBlockCount) return 0;
     const ExploreMapGenerator::Path& path = generatedMap.paths[currentRoutePath];
     uint16_t routeLength = path.pointCount > 1 ? path.pointCount - 1 : 1;
-    uint16_t localProgress = min<uint16_t>(
+    uint16_t localProgress = MathUtil::min<uint16_t>(
         1000, static_cast<uint32_t>(routeIndex) * 1000U / routeLength);
     uint16_t expeditionProgress = static_cast<uint16_t>(
         (static_cast<uint32_t>(currentMapBlock) * 1000U + localProgress) /
@@ -2012,12 +2016,12 @@ void ExploreScene::beginRouteBossEncounter() {
     const Species* boss = findSpecies(expeditionBossSpeciesId);
     routeBossPending = false;
     if (!boss) {
-        Serial.printf("[ExploreBoss] missing species=%u area=%u\n",
+        Platform::logf("[ExploreBoss] missing species=%u area=%u\n",
                       expeditionBossSpeciesId, mapBlocks[currentMapBlock]);
         return;
     }
     encounterCooldownSteps = ENCOUNTER_COOLDOWN_STEP_COUNT;
-    Serial.printf("[ExploreBoss] encounter area=%u species=%u level=%u "
+    Platform::logf("[ExploreBoss] encounter area=%u species=%u level=%u "
                   "exp=%u%% special=%u\n",
                   mapBlocks[currentMapBlock], expeditionBossSpeciesId,
                   expeditionBossLevel, expeditionBossExperiencePercent,
@@ -2033,11 +2037,11 @@ void ExploreScene::beginDebugEncounter() {
     const Species* table = speciesTable();
     uint8_t count = speciesCount();
     const Species& opponent = count > 0
-        ? table[static_cast<uint8_t>(random(0, count))]
+        ? table[static_cast<uint8_t>(GameRandom::random(0, count))]
         : starterSpecies();
     uint8_t level = rollWildLevel(
         WILD_LEVEL_MIN, WILD_LEVEL_MAX, GameEngine::ins().activeMonster().level);
-    Serial.printf("[DebugBattle] opponent=%u level=%u\n", opponent.id, level);
+    Platform::logf("[DebugBattle] opponent=%u level=%u\n", opponent.id, level);
     beginEncounter(opponent, level);
 }
 
@@ -2056,12 +2060,12 @@ void ExploreScene::rollEncounter() {
     int16_t target = static_cast<int16_t>(map.averageLevel) +
                      currentDepthLevelOffset(map.depthSpread);
     uint8_t targetLevel = static_cast<uint8_t>(
-        constrain(target, WILD_LEVEL_MIN, WILD_LEVEL_MAX));
+        MathUtil::clamp(target, WILD_LEVEL_MIN, WILD_LEVEL_MAX));
     uint8_t wildLevel = encounter
         ? rollWildLevel(encounter->minLevel, encounter->maxLevel, targetLevel)
         : targetLevel;
     if (!encounter) {
-        Serial.printf("[Explore] empty encounter table area=%u\n",
+        Platform::logf("[Explore] empty encounter table area=%u\n",
                       static_cast<unsigned>(activeArea));
     }
     beginEncounter(*opponent, wildLevel);
@@ -2217,7 +2221,7 @@ uint32_t ExploreScene::battleExpForRender(uint32_t nowMs) const {
     if (!expAnimationActive || nowMs <= expAnimationStarted) {
         return expAnimationActive ? expAnimationFrom : battlePlayerMonster().exp;
     }
-    uint32_t elapsed = min<uint32_t>(EXP_ANIMATION_MS, nowMs - expAnimationStarted);
+    uint32_t elapsed = MathUtil::min<uint32_t>(EXP_ANIMATION_MS, nowMs - expAnimationStarted);
     uint64_t distance = static_cast<uint64_t>(expAnimationTo - expAnimationFrom) * elapsed;
     return expAnimationFrom + static_cast<uint32_t>(distance / EXP_ANIMATION_MS);
 }
@@ -2764,18 +2768,18 @@ void ExploreScene::finishWildFaint() {
             for (uint8_t check = 0;
                  check < FriendshipSystem::SHAKE_CHECK_COUNT; ++check) {
                 friendshipShakeRolls[check] = static_cast<uint16_t>(
-                    random(0, 65536));
+                    GameRandom::random(0, 65536));
             }
             bool baseOfferPassed = FriendshipSystem::passesOfferChecks(
                 *wild, wildRuntime, battleIsBoss,
-                static_cast<uint16_t>(random(0, 1000)),
+                static_cast<uint16_t>(GameRandom::random(0, 1000)),
                 friendshipShakeRolls, battleFoodBond);
             uint16_t conditionalBonus =
                 FriendshipPity::conditionalBonusPermille(
                     baseOfferChance, offerChance);
             bool pityOfferPassed =
                 !baseOfferPassed && conditionalBonus > 0 &&
-                static_cast<uint16_t>(random(0, 1000)) < conditionalBonus;
+                static_cast<uint16_t>(GameRandom::random(0, 1000)) < conditionalBonus;
             friendshipOfferPending = baseOfferPassed || pityOfferPassed;
         }
     }
@@ -2833,7 +2837,7 @@ void ExploreScene::attackWild() {
     bool playerFirst = playerPriority > wildPriority ||
                        (playerPriority == wildPriority &&
                         (playerSpeed > wildSpeed ||
-                         (playerSpeed == wildSpeed && random(0, 2) == 0)));
+                         (playerSpeed == wildSpeed && GameRandom::random(0, 2) == 0)));
     battleActionOrder[0] = !playerFirst;
     battleActionOrder[1] = playerFirst;
     battleActionCount = 2;
@@ -2872,7 +2876,7 @@ void ExploreScene::throwFood(uint8_t foodIndex) {
     FoodTuning::ThrowClass throwClass =
         FriendshipSystem::classifyFoodThrow(foodIndex, wildRuntime.nature);
     bool accepted = FriendshipSystem::acceptsFoodThrow(
-        battleIsBoss, throwClass, static_cast<uint8_t>(random(0, 100)));
+        battleIsBoss, throwClass, static_cast<uint8_t>(GameRandom::random(0, 100)));
     if (!accepted) {
         snprintf(logBuf, sizeof(logBuf),
                  throwClass == FoodTuning::ThrowClass::DISLIKED
@@ -2968,7 +2972,7 @@ void ExploreScene::updateBattleSwitch(uint32_t nowMs) {
 
 int ExploreScene::battleSwitchOffsetX(uint32_t nowMs) const {
     if (battleSwitchStage == BattleSwitchStage::NONE) return 0;
-    float progress = min<uint32_t>(
+    float progress = MathUtil::min<uint32_t>(
         BATTLE_SWITCH_PHASE_MS, nowMs - battleSwitchStarted) /
         static_cast<float>(BATTLE_SWITCH_PHASE_MS);
     if (battleSwitchStage == BattleSwitchStage::RETREATING) {
@@ -3010,7 +3014,7 @@ int ExploreScene::battleHitShakeX(bool wildSide, uint32_t nowMs) const {
     }
     static constexpr int8_t OFFSETS[] = {-3, 4, -4, 3, -2, 2, 0};
     uint32_t local = elapsed - BATTLE_HIT_DELAY_MS;
-    size_t index = min<size_t>(sizeof(OFFSETS) - 1,
+    size_t index = MathUtil::min<size_t>(sizeof(OFFSETS) - 1,
                                local * sizeof(OFFSETS) / BATTLE_HIT_SHAKE_MS);
     return OFFSETS[index];
 }
@@ -3165,7 +3169,7 @@ void ExploreScene::fleeEncounter() {
     if (!escaped) {
         fleeAttempts++;
         uint32_t odds = ((uint32_t)activeSpeed * 128) / wildSpeed + 30UL * fleeAttempts;
-        escaped = odds >= 256 || random(0, 256) < odds;
+        escaped = odds >= 256 || GameRandom::random(0, 256) < odds;
     }
 
     if (!escaped) {
@@ -3339,12 +3343,12 @@ bool ExploreScene::resetRouteSegment() {
             MAP_GENERATION_SAFE_SEED, pendingEntryEdge, mapIndex, generatedMap);
     }
     if (!generated) {
-        Serial.printf("[ExploreMap] generation failed block=%u area=%u entry=%u\n",
+        Platform::logf("[ExploreMap] generation failed block=%u area=%u entry=%u\n",
                       currentMapBlock, mapIndex,
                       static_cast<unsigned>(pendingEntryEdge));
         return false;
     }
-    Serial.printf("[ExploreMap] block=%u area=%u seed=%08lx fingerprint=%08lx "
+    Platform::logf("[ExploreMap] block=%u area=%u seed=%08lx fingerprint=%08lx "
                   "entry=%u coast=%u forest=%u creek=%u cliff=%u waterfall=%u\n",
                   currentMapBlock,
                   mapIndex,
@@ -3364,7 +3368,7 @@ bool ExploreScene::resetRouteSegment() {
     routeMoving = false;
     routeWalkDirection = static_cast<uint8_t>(inwardDirection(generatedMap.entry.edge));
     routeVisualWalkDirection = routeWalkDirection;
-    mapTargetSteps = max<uint16_t>(1, path.pointCount - 1);
+    mapTargetSteps = MathUtil::max<uint16_t>(1, path.pointCount - 1);
     RouteWorldPoint start = routePathPointWorld(path, 0);
     routeWorldX = start.x;
     routeWorldY = start.y;
@@ -3380,7 +3384,7 @@ void ExploreScene::generateMapBlocks() {
     uint8_t selectedMap = static_cast<uint8_t>(activeArea);
     if (selectedMap >= ROUTE_MAP_COUNT) selectedMap = 0;
     const RouteMap& map = routeMap(selectedMap);
-    mapBlockCount = mapCountForRoll(map, static_cast<uint8_t>(random(0, 100)));
+    mapBlockCount = mapCountForRoll(map, static_cast<uint8_t>(GameRandom::random(0, 100)));
     bool bossLengthEligible = ExploreRunRules::allowsRegionalBoss(
         mapBlockCount, map.maxMapCount);
     expeditionSpecialKind = bossLengthEligible
@@ -3398,13 +3402,13 @@ void ExploreScene::generateMapBlocks() {
         expeditionBossExperiencePercent = special.experiencePercent;
     } else if (bossLengthEligible) {
         expeditionBossScheduled =
-            random(0, ExploreBoss::SPAWN_ROLL_MAX) <
+            GameRandom::random(0, ExploreBoss::SPAWN_ROLL_MAX) <
             ExploreBoss::SPAWN_CHANCE;
         expeditionBossSpeciesId = expeditionBossScheduled
             ? ExploreBoss::speciesForRoll(
                   selectedMap,
                   static_cast<uint32_t>(
-                      random(0, ExploreBoss::CANDIDATE_COUNT)))
+                      GameRandom::random(0, ExploreBoss::CANDIDATE_COUNT)))
             : 0;
         const ExploreBoss::Config& normal =
             ExploreBoss::configForArea(selectedMap);
@@ -3419,12 +3423,12 @@ void ExploreScene::generateMapBlocks() {
     for (uint8_t i = 0; i < MAP_BLOCK_CAP; ++i) {
         mapBlocks[i] = i < mapBlockCount ? selectedMap : 0xFF;
     }
-    expeditionSeed = static_cast<uint32_t>(random(1, 0x7FFFFFFF));
+    expeditionSeed = static_cast<uint32_t>(GameRandom::random(1, 0x7FFFFFFF));
     pendingEntryEdge = static_cast<ExploreMapGenerator::Edge>((expeditionSeed >> 8) & 0x03);
     currentRoutePath = 0;
     activeExitMask = 0;
     for (uint8_t i = 0; i < MAP_EXIT_CAP; ++i) exitNextMaps[i] = 0xFF;
-    Serial.printf("[ExploreRun] area=%u maps=%u maxMaps=%u bossEligible=%u "
+    Platform::logf("[ExploreRun] area=%u maps=%u maxMaps=%u bossEligible=%u "
                   "boss=%u bossSpecies=%u bossLevel=%u special=%u seed=%08lx\n",
                   selectedMap, mapBlockCount,
                   map.maxMapCount,
@@ -3437,7 +3441,7 @@ void ExploreScene::generateMapBlocks() {
 }
 
 void ExploreScene::prepareMapRoutes() {
-    uint8_t pathCount = min<uint8_t>(MAP_EXIT_CAP, generatedMap.pathCount);
+    uint8_t pathCount = MathUtil::min<uint8_t>(MAP_EXIT_CAP, generatedMap.pathCount);
     activeExitMask = 0;
     currentRoutePath = 0;
     for (uint8_t i = 0; i < MAP_EXIT_CAP; ++i) exitNextMaps[i] = 0xFF;
@@ -3457,11 +3461,11 @@ void ExploreScene::prepareMapRoutes() {
             }
         }
         if (bossPathCount > 0) {
-            currentRoutePath = bossPaths[random(0, bossPathCount)];
+            currentRoutePath = bossPaths[GameRandom::random(0, bossPathCount)];
             return;
         }
     }
-    currentRoutePath = random(0, pathCount);
+    currentRoutePath = GameRandom::random(0, pathCount);
 }
 
 void ExploreScene::placeRouteBoss() {
@@ -3474,14 +3478,14 @@ void ExploreScene::placeRouteBoss() {
 
     const ExploreMapGenerator::Path& path = generatedMap.paths[currentRoutePath];
     if (!ExploreBoss::canPlaceOnPath(path.pointCount)) {
-        Serial.printf("[ExploreBoss] no placement block=%u path=%u points=%u\n",
+        Platform::logf("[ExploreBoss] no placement block=%u path=%u points=%u\n",
                       currentMapBlock, currentRoutePath, path.pointCount);
         return;
     }
 
     routeBossIndex = ExploreBoss::routeIndex(path.pointCount);
     routeBossPending = true;
-    Serial.printf("[ExploreBoss] placed area=%u path=%u index=%u species=%u "
+    Platform::logf("[ExploreBoss] placed area=%u path=%u index=%u species=%u "
                   "level=%u exp=%u%%\n",
                   mapBlocks[currentMapBlock], currentRoutePath, routeBossIndex,
                   expeditionBossSpeciesId, expeditionBossLevel,
@@ -3498,7 +3502,7 @@ void ExploreScene::placeRoutePickup() {
     const ExploreMapGenerator::Path& path = generatedMap.paths[currentRoutePath];
     if (path.pointCount < 2) return;
     if (routeBossPending) {
-        Serial.printf("[ExploreEvent] block=%u type=boss index=%u\n",
+        Platform::logf("[ExploreEvent] block=%u type=boss index=%u\n",
                       currentMapBlock, routeBossIndex);
         return;
     }
@@ -3513,7 +3517,7 @@ void ExploreScene::placeRoutePickup() {
             routeMap(mapBlocks[currentMapBlock]));
         if (routePickupItem == PICKUP_NONE) routePickupItem = PICKUP_COIN;
         routePickupAvailable = true;
-        Serial.printf("[ExploreEvent] block=%u type=final-reward index=%u item=%u\n",
+        Platform::logf("[ExploreEvent] block=%u type=final-reward index=%u item=%u\n",
                       currentMapBlock, routePickupIndex, routePickupItem);
         return;
     }
@@ -3525,25 +3529,25 @@ void ExploreScene::placeRoutePickup() {
         return;
     }
 
-    bool choosePickup = random(0, 10000) < MAP_PICKUP_CHANCE;
+    bool choosePickup = GameRandom::random(0, 10000) < MAP_PICKUP_CHANCE;
     if (!choosePickup &&
         canScheduleGuaranteedEncounter(path.pointCount, encounterCooldownSteps)) {
         routeGuaranteedEncounterIndex = guaranteedEncounterIndex(
             path.pointCount, encounterCooldownSteps);
         routeGuaranteedEncounterPending = true;
-        Serial.printf("[ExploreEvent] block=%u type=battle index=%u cooldown=%u\n",
+        Platform::logf("[ExploreEvent] block=%u type=battle index=%u cooldown=%u\n",
                       currentMapBlock, routeGuaranteedEncounterIndex,
                       encounterCooldownSteps);
         return;
     }
 
-    uint8_t first = max<uint8_t>(1, path.pointCount / 3);
-    uint8_t last = min<uint8_t>(path.pointCount - 2, path.pointCount * 3 / 4);
+    uint8_t first = MathUtil::max<uint8_t>(1, path.pointCount / 3);
+    uint8_t last = MathUtil::min<uint8_t>(path.pointCount - 2, path.pointCount * 3 / 4);
     if (first > last) first = last = path.pointCount / 2;
-    routePickupIndex = static_cast<uint8_t>(random(first, last + 1));
+    routePickupIndex = static_cast<uint8_t>(GameRandom::random(first, last + 1));
     routePickupItem = rollPickupId(routeMap(mapBlocks[currentMapBlock]));
     routePickupAvailable = routePickupItem != PICKUP_NONE;
-    Serial.printf("[ExploreEvent] block=%u type=item index=%u cooldown=%u\n",
+    Platform::logf("[ExploreEvent] block=%u type=item index=%u cooldown=%u\n",
                   currentMapBlock, routePickupIndex, encounterCooldownSteps);
 }
 
@@ -3694,7 +3698,7 @@ bool ExploreScene::serviceAreaPoolCache(uint8_t loadBudget) {
         cacheSignatureValid = true;
         firstPoolReadyLogged = false;
         allPoolsReadyLogged = false;
-        Serial.printf(
+        Platform::logf(
             "[ExplorePreload] pools reset slot=%lu species=%u rerolls=%u,%u,%u,%u,%u,%u\n",
             static_cast<unsigned long>(slotIndex), speciesCount,
             cachedRerollCounts[0], cachedRerollCounts[1],
@@ -3710,7 +3714,7 @@ bool ExploreScene::serviceAreaPoolCache(uint8_t loadBudget) {
         speciesIds, firstPoolSpeciesCount, 0);
     if (firstPoolReady && !firstPoolReadyLogged) {
         firstPoolReadyLogged = true;
-        Serial.printf(
+        Platform::logf(
             "[ExplorePreload] first_pool ready slot=%lu reroll=%u species=%u\n",
             static_cast<unsigned long>(slotIndex),
             cachedRerollCounts[0], firstPoolSpeciesCount);
@@ -3718,7 +3722,7 @@ bool ExploreScene::serviceAreaPoolCache(uint8_t loadBudget) {
     if (ready && !allPoolsReadyLogged) {
         allPoolsReadyLogged = true;
         const auto& stats = PokemonSprites::cacheStats();
-        Serial.printf(
+        Platform::logf(
             "[ExplorePreload] all_pools ready slot=%lu species=%u decoded=%lu free=%lu\n",
             static_cast<unsigned long>(slotIndex), speciesCount,
             static_cast<unsigned long>(stats.decodedBytes),
@@ -3864,7 +3868,7 @@ void ExploreScene::renderAreaMenu() {
         ? 0.0f
         : (cycleElapsed - AREA_PREVIEW_HOLD_MS) /
               static_cast<float>(AREA_PREVIEW_MOVE_MS);
-    progress = min(1.0f, progress);
+    progress = MathUtil::min(1.0f, progress);
     progress = progress * progress * (3.0f - 2.0f * progress);
 
     auto frameWidth = [](const PokemonSprites::SpriteFrame* frame) {
@@ -3928,9 +3932,9 @@ void ExploreScene::renderAreaMenu() {
 
 void ExploreScene::renderWalking() {
     auto& c = PixelRenderer::canvas();
-    int cameraX = constrain(static_cast<int>(roundf(routeWorldX)) - Hal::DISPLAY_W / 2,
+    int cameraX = MathUtil::clamp(static_cast<int>(roundf(routeWorldX)) - Hal::DISPLAY_W / 2,
                             0, static_cast<int>(EXPLORE_MAP_W) - Hal::DISPLAY_W);
-    int cameraY = constrain(static_cast<int>(roundf(routeWorldY)) - Hal::DISPLAY_H / 2,
+    int cameraY = MathUtil::clamp(static_cast<int>(roundf(routeWorldY)) - Hal::DISPLAY_H / 2,
                             0, static_cast<int>(EXPLORE_MAP_H) - Hal::DISPLAY_H);
     const RouteMap& map = routeMap(mapBlocks[currentMapBlock]);
     uint8_t mapAnimationFrame = static_cast<uint8_t>((Hal::ins().millis() / 140U) % 8U);
@@ -4060,8 +4064,8 @@ void ExploreScene::renderRouteBoss(int cameraX, int cameraY) {
     if (!frame) return;
 
     constexpr float scale = 0.8f;
-    int drawW = max<int>(1, static_cast<int>(roundf(frame->width * scale)));
-    int drawH = max<int>(1, static_cast<int>(roundf(frame->height * scale)));
+    int drawW = MathUtil::max<int>(1, static_cast<int>(roundf(frame->width * scale)));
+    int drawH = MathUtil::max<int>(1, static_cast<int>(roundf(frame->height * scale)));
     int centerX = static_cast<int>(roundf(worldX)) - cameraX;
     int centerY = static_cast<int>(roundf(worldY)) - cameraY;
     int drawX = centerX - drawW / 2;
@@ -4101,17 +4105,17 @@ void ExploreScene::drawRouteMonster(const Species& species, float worldX,
         if (!follower || elapsed > ROUTE_FOLLOWER_DELAY_MS) {
             if (follower) elapsed -= ROUTE_FOLLOWER_DELAY_MS;
             animationActive = true;
-            stepDurationMs = max<uint16_t>(
+            stepDurationMs = MathUtil::max<uint16_t>(
                 1, follower ? routeFollowerMoveDurationMs
                             : routeLeaderMoveDurationMs);
             stepElapsedMs = elapsed;
             movementElapsedMs = elapsed;
             if (phase == Phase::EXITING) {
-                stepDurationMs = max<uint16_t>(
+                stepDurationMs = MathUtil::max<uint16_t>(
                     1, routeStepDurationForSpecies(species.id));
                 stepElapsedMs %= stepDurationMs;
             } else {
-                stepElapsedMs = min<uint32_t>(stepElapsedMs, stepDurationMs - 1);
+                stepElapsedMs = MathUtil::min<uint32_t>(stepElapsedMs, stepDurationMs - 1);
                 uint32_t completedSteps = routeIndex > 0 ? routeIndex - 1 : 0;
                 if (follower) {
                     uint8_t followerTargetIndex = routeFollowerTargetIndex(routeIndex);
@@ -4465,14 +4469,14 @@ void ExploreScene::drawMonsterSprite(const Species& species, int x, int groundY,
         species.id, back ? PokemonSprites::SpriteKind::BACK : PokemonSprites::SpriteKind::FRONT);
     if (!frame) return;
 
-    uint8_t w = pgm_read_byte(&frame->width);
-    uint8_t h = pgm_read_byte(&frame->height);
+    uint8_t w = FlashStorage::readByte(&frame->width);
+    uint8_t h = FlashStorage::readByte(&frame->height);
     float scale = 1.0f;
     if (w * scale > maxWidth) scale = static_cast<float>(maxWidth) / w;
     if (h * scale > maxHeight) scale = static_cast<float>(maxHeight) / h;
 
-    int drawW = max<int>(1, static_cast<int>(roundf(w * scale)));
-    int drawH = max<int>(1, static_cast<int>(roundf(h * scale)));
+    int drawW = MathUtil::max<int>(1, static_cast<int>(roundf(w * scale)));
+    int drawH = MathUtil::max<int>(1, static_cast<int>(roundf(h * scale)));
     int drawX = x - drawW / 2 + spriteOffsetX;
     int drawY = groundY - drawH;
 
@@ -4538,9 +4542,9 @@ void ExploreScene::renderBattleHud() {
         : minimumExpForLevel(species.growthRate, shownLevel + 1);
     uint8_t expPercent = shownLevel >= Game::LEVEL_MAX
         ? 100
-        : static_cast<uint8_t>(min<uint32_t>(
+        : static_cast<uint8_t>(MathUtil::min<uint32_t>(
             100,
-            (shownExp - levelFloor) * 100UL / max<uint32_t>(1, levelCeiling - levelFloor)));
+            (shownExp - levelFloor) * 100UL / MathUtil::max<uint32_t>(1, levelCeiling - levelFloor)));
     drawBattleCompactExpLabel(
         BattleLayout::EXP_LABEL_X, BattleLayout::EXP_LABEL_Y,
         PixelRenderer::rgb(35, 86, 126));

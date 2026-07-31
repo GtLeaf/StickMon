@@ -1,5 +1,4 @@
 #include "scenes/MainScene.h"
-#include <Arduino.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -10,14 +9,18 @@
 #include "core/ButtonDispatcher.h"
 #include "core/CryPlayer.h"
 #include "core/GameEngine.h"
+#include "core/MathUtil.h"
 #include "core/ProgressionUi.h"
 #include "core/RoomRenderer.h"
 #include "core/RoomResource.h"
 #include "core/UiStrings.h"
 #include "core/VoiceCallService.h"
 #include "game/SpeciesBehavior.h"
+#include "game/GameRandom.h"
 #include "hardware/Hal.h"
 #include "presentation/PixelRenderer.h"
+#include "platform/api/FlashStorage.h"
+#include "platform/api/PlatformServices.h"
 
 namespace {
 static constexpr uint16_t PMD_IDLE_FRAME_MS = 520;
@@ -158,7 +161,7 @@ bool ensureNavScratch() {
     size_t parentBytes = sizeof(int16_t) * NAV_MAX_NODES;
     size_t queueBytes = sizeof(uint16_t) * NAV_MAX_NODES;
     size_t totalBytes = parentBytes + queueBytes;
-    gNavScratch = psramFound() ? ps_malloc(totalBytes) : malloc(totalBytes);
+    gNavScratch = Platform::memory().allocate(totalBytes, true);
     if (!gNavScratch) return false;
     gNavParent = static_cast<int16_t*>(gNavScratch);
     gNavQueue = reinterpret_cast<uint16_t*>(static_cast<uint8_t*>(gNavScratch) + parentBytes);
@@ -319,7 +322,7 @@ void fillRoundRectAlpha(int x, int y, int w, int h, int radius,
                         uint16_t color, uint8_t alpha) {
     if (w <= 0 || h <= 0 || alpha == 0) return;
     auto& c = PixelRenderer::canvas();
-    radius = max(0, min(radius, min(w, h) / 2));
+    radius = MathUtil::max(0, MathUtil::min(radius, MathUtil::min(w, h) / 2));
     for (int py = y; py < y + h; ++py) {
         if (py < 0 || py >= Hal::DISPLAY_H) continue;
         for (int px = x; px < x + w; ++px) {
@@ -477,8 +480,8 @@ bool roomBedContains(float x, float y) {
 
 bool randomRoomWalkPoint(float& x, float& y) {
     for (uint8_t tries = 0; tries < 48; ++tries) {
-        float px = (float)random(roomWalkMinX(), roomWalkMaxX() + 1);
-        float py = (float)random(roomWalkMinY(), roomWalkMaxY() + 1);
+        float px = (float)GameRandom::random(roomWalkMinX(), roomWalkMaxX() + 1);
+        float py = (float)GameRandom::random(roomWalkMinY(), roomWalkMaxY() + 1);
         if (roomWalkContains(px, py)) {
             x = px;
             y = py;
@@ -541,10 +544,10 @@ bool randomRoomWalkPointNear(float centerX, float centerY, float radiusX, float 
     if (spanX < 1) spanX = 1;
     if (spanY < 1) spanY = 1;
     for (uint8_t tries = 0; tries < 32; ++tries) {
-        float px = clampf(centerX + (float)random(-spanX, spanX + 1),
+        float px = clampf(centerX + (float)GameRandom::random(-spanX, spanX + 1),
                           (float)roomWalkMinX(),
                           (float)roomWalkMaxX());
-        float py = clampf(centerY + (float)random(-spanY, spanY + 1),
+        float py = clampf(centerY + (float)GameRandom::random(-spanY, spanY + 1),
                           (float)roomWalkMinY(),
                           (float)roomWalkMaxY());
         if (roomWalkContains(px, py)) {
@@ -647,7 +650,7 @@ void drawHungerIcon(int x, int y, uint8_t hunger) {
     uint32_t idx = 0;
     uint32_t pixel = 0;
     while (idx < HudAssets::HUNGER_ICON_RLE_LEN && pixel < total) {
-        uint16_t token = pgm_read_word(&HudAssets::HUNGER_ICON_RLE[idx++]);
+        uint16_t token = FlashStorage::readWord(&HudAssets::HUNGER_ICON_RLE[idx++]);
         uint16_t run = token & 0x7FFF;
         if (run == 0) continue;
 
@@ -658,7 +661,7 @@ void drawHungerIcon(int x, int y, uint8_t hunger) {
         }
 
         for (uint16_t i = 0; i < run && idx < HudAssets::HUNGER_ICON_RLE_LEN && pixel < total; ++i, ++pixel) {
-            uint16_t color = pgm_read_word(&HudAssets::HUNGER_ICON_RLE[idx++]);
+            uint16_t color = FlashStorage::readWord(&HudAssets::HUNGER_ICON_RLE[idx++]);
             uint8_t row = (uint8_t)(pixel / HudAssets::HUNGER_ICON_W);
             uint8_t col = (uint8_t)(pixel % HudAssets::HUNGER_ICON_W);
             int cutRow = hiddenRows == 0 ? 0 : (int)hiddenRows + CUT_JITTER[col];
@@ -694,6 +697,7 @@ void MainScene::onEnter() {
     bowlEaterSlot = -1;
     visitorFeedingBiteMs = 0;
     visitorFeedingUntilMs = 0;
+    visitorBedYieldHandled = false;
     progressionModal = ProgressionModal::NONE;
     progressionCancelledSpeciesId = 0;
     ProgressionUi::resetMoveLearnState(progressionMoveLearn);
@@ -768,6 +772,9 @@ void MainScene::onEnter() {
             restFaintedVisitor(nowMs);
         }
     }
+    visitorBedYieldHandled =
+        aiMode == AiMode::RESTING || aiMode == AiMode::WAKING ||
+        monsterAtBedSleepPose();
     beginDoorTransition(nowMs);
     if (GameEngine::ins().localContactVisitActive() &&
         GameEngine::ins().contactVisitExploring() &&
@@ -1088,7 +1095,7 @@ void MainScene::beginDoorTransition(uint32_t nowMs) {
         }
 
         if (!mainRouteReady || !visitorRouteReady) {
-            Serial.printf("[DoorDeparture] route failed main=%u visitor=%u paired=%u\n",
+            Platform::logf("[DoorDeparture] route failed main=%u visitor=%u paired=%u\n",
                           mainRouteReady ? 1 : 0, visitorRouteReady ? 1 : 0,
                           doorDepartureHasVisitor ? 1 : 0);
             finishDoorDeparture();
@@ -1132,7 +1139,7 @@ void MainScene::updateDoorTransition(uint32_t nowMs) {
         ? 0
         : nowMs - doorLastUpdateMs;
     doorLastUpdateMs = nowMs;
-    float dtSeconds = min<uint32_t>(120, elapsedMs) / 1000.0f;
+    float dtSeconds = MathUtil::min<uint32_t>(120, elapsedMs) / 1000.0f;
 
     switch (doorTransition) {
     case DoorTransitionMode::EXIT_ROUTE:
@@ -1263,7 +1270,7 @@ void MainScene::updateDoorTransition(uint32_t nowMs) {
             targetX = monsterX;
             targetY = monsterY;
             aiMode = AiMode::IDLE;
-            nextAiDecisionMs = nowMs + random(900, 1601);
+            nextAiDecisionMs = nowMs + GameRandom::random(900, 1601);
             mind.onActivity(nowMs);
             doorTransition = DoorTransitionMode::NONE;
             GameEngine::ins().finishExploreReturn();
@@ -1297,7 +1304,7 @@ void MainScene::updateDoorTransition(uint32_t nowMs) {
             targetX = monsterX;
             targetY = monsterY;
             aiMode = AiMode::IDLE;
-            nextAiDecisionMs = nowMs + random(900, 1601);
+            nextAiDecisionMs = nowMs + GameRandom::random(900, 1601);
             mind.onActivity(nowMs);
             doorTransition = DoorTransitionMode::NONE;
             GameEngine::ins().finishExploreReturn();
@@ -1355,7 +1362,7 @@ void MainScene::beginSecondDoorExit(uint32_t nowMs) {
     }
 
     if (!routeReady) {
-        Serial.printf("[DoorDeparture] second route failed actor=%u\n",
+        Platform::logf("[DoorDeparture] second route failed actor=%u\n",
                       secondActor == DoorActor::MAIN ? 0 : 1);
         finishDoorDeparture();
         return;
@@ -1415,7 +1422,7 @@ bool MainScene::chooseDoorWaitPose(float actorX, float actorY, float& x, float& 
     inwardY /= inwardLength;
     float tangentX = -inwardY;
     float tangentY = inwardX;
-    float sideOffset = max(DOOR_WAIT_SIDE_OFFSET, doorActorMinSeparation());
+    float sideOffset = MathUtil::max(DOOR_WAIT_SIDE_OFFSET, doorActorMinSeparation());
 
     struct Candidate {
         float x;
@@ -1578,14 +1585,14 @@ bool MainScene::doorStepKeepsSpacing(float currentX, float currentY,
 float MainScene::doorActorMinSeparation() const {
     float mainRadius = 12.0f;
     if (const PokemonSprites::SpriteFrame* frame = movementBoundsFrame()) {
-        mainRadius = constrain(pgm_read_byte(&frame->width) * 0.24f, 10.0f, 20.0f);
+        mainRadius = MathUtil::clamp(FlashStorage::readByte(&frame->width) * 0.24f, 10.0f, 20.0f);
     }
     float visitorRadius = 12.0f;
     bool flipX = false;
     if (const PokemonSprites::SpriteFrame* frame = visitorCurrentFrame(flipX)) {
-        visitorRadius = constrain(pgm_read_byte(&frame->width) * 0.24f, 10.0f, 20.0f);
+        visitorRadius = MathUtil::clamp(FlashStorage::readByte(&frame->width) * 0.24f, 10.0f, 20.0f);
     }
-    return constrain(mainRadius + visitorRadius + 8.0f, 28.0f, 44.0f);
+    return MathUtil::clamp(mainRadius + visitorRadius + 8.0f, 28.0f, 44.0f);
 }
 
 void MainScene::updateCamera() {
@@ -1612,17 +1619,17 @@ float MainScene::walkBoundaryOffsetY() const {
 float MainScene::walkFootprintRadiusX() const {
     uint8_t frameW = 38;
     if (const PokemonSprites::SpriteFrame* frame = movementBoundsFrame()) {
-        frameW = pgm_read_byte(&frame->width);
+        frameW = FlashStorage::readByte(&frame->width);
     }
-    return (float)constrain((int)(frameW * 0.24f), 7, 16);
+    return (float)MathUtil::clamp((int)(frameW * 0.24f), 7, 16);
 }
 
 float MainScene::walkFootprintRadiusY() const {
     uint8_t frameH = 42;
     if (const PokemonSprites::SpriteFrame* frame = movementBoundsFrame()) {
-        frameH = pgm_read_byte(&frame->height);
+        frameH = FlashStorage::readByte(&frame->height);
     }
-    return (float)constrain((int)(frameH * 0.10f), 4, 8);
+    return (float)MathUtil::clamp((int)(frameH * 0.10f), 4, 8);
 }
 
 bool MainScene::monsterFootprintInsideWalkArea(float x, float y) const {
@@ -1644,8 +1651,8 @@ bool MainScene::randomMonsterCenterWalkPoint(float& x, float& y) const {
     float offsetY = walkBoundaryOffsetY();
     float rx = walkFootprintRadiusX();
     for (uint8_t tries = 0; tries < 64; ++tries) {
-        float px = (float)random(roomWalkMinX(), roomWalkMaxX() + 1);
-        float py = (float)random(roomWalkMinY(), roomWalkMaxY() + 1);
+        float px = (float)GameRandom::random(roomWalkMinX(), roomWalkMaxX() + 1);
+        float py = (float)GameRandom::random(roomWalkMinY(), roomWalkMaxY() + 1);
         float centerY = py - offsetY;
         if (px - rx < (float)roomWalkMinX() ||
             px + rx > (float)roomWalkMaxX()) {
@@ -1759,8 +1766,8 @@ bool MainScene::buildMoveRouteFrom(float startX, float startY,
     float minY = (float)roomWalkMinY() - offsetY;
     float maxX = (float)roomWalkMaxX();
     float maxY = (float)roomWalkMaxY() - offsetY;
-    uint8_t cols = (uint8_t)min<int>(NAV_MAX_COLS, (int)ceilf((maxX - minX) / NAV_CELL_PX) + 1);
-    uint8_t rows = (uint8_t)min<int>(NAV_MAX_ROWS, (int)ceilf((maxY - minY) / NAV_CELL_PX) + 1);
+    uint8_t cols = (uint8_t)MathUtil::min<int>(NAV_MAX_COLS, (int)ceilf((maxX - minX) / NAV_CELL_PX) + 1);
+    uint8_t rows = (uint8_t)MathUtil::min<int>(NAV_MAX_ROWS, (int)ceilf((maxY - minY) / NAV_CELL_PX) + 1);
     uint16_t nodeCount = (uint16_t)cols * rows;
     if (cols < 2 || rows < 2 || nodeCount > NAV_MAX_NODES) return false;
 
@@ -1881,7 +1888,7 @@ void MainScene::updateStuckWatchdog(uint32_t nowMs, float distanceToWaypoint) {
     if (nowMs - lastMoveProgressMs < MOVE_STUCK_MS) return;
 
     stuckRecoveryCount++;
-    Serial.printf("[MonsterAI] stuck mode=%u count=%u pos=%.1f,%.1f target=%.1f,%.1f\n",
+    Platform::logf("[MonsterAI] stuck mode=%u count=%u pos=%.1f,%.1f target=%.1f,%.1f\n",
                   (unsigned)aiMode, stuckRecoveryCount, monsterX, monsterY, targetX, targetY);
     if (stuckRecoveryCount <= 2 && buildMoveRoute(targetX, targetY)) {
         lastWaypointDistance = 1000000.0f;
@@ -1892,7 +1899,7 @@ void MainScene::updateStuckWatchdog(uint32_t nowMs, float distanceToWaypoint) {
     velocityX = 0.0f;
     velocityY = 0.0f;
     aiMode = AiMode::IDLE;
-    nextAiDecisionMs = nowMs + random(1200, 2601);
+    nextAiDecisionMs = nowMs + GameRandom::random(1200, 2601);
     lastMoveProgressMs = nowMs;
 }
 
@@ -1909,7 +1916,7 @@ bool MainScene::chooseFoodApproachPose(float& x, float& y) const {
 
     if (tryCandidate(0, 0)) return true;
     for (int radius = 2; radius <= 36; radius += 2) {
-        int yRadius = min(radius, 24);
+        int yRadius = MathUtil::min(radius, 24);
         for (int dy = -yRadius; dy <= yRadius; dy += 2) {
             if (tryCandidate(radius, dy)) return true;
             if (tryCandidate(-radius, dy)) return true;
@@ -2005,7 +2012,7 @@ bool MainScene::chooseBedSleepPose(float& x, float& y) const {
 void MainScene::scheduleAttention(uint32_t nowMs, bool initial) {
     uint32_t minDelay = initial ? ATTENTION_INITIAL_MIN_MS : ATTENTION_MIN_MS;
     uint32_t maxDelay = initial ? ATTENTION_INITIAL_MAX_MS : ATTENTION_MAX_MS;
-    uint32_t delayMs = (uint32_t)random((long)minDelay, (long)maxDelay + 1L);
+    uint32_t delayMs = (uint32_t)GameRandom::random((long)minDelay, (long)maxDelay + 1L);
     int8_t bias = behaviorProfile.sociabilityBias;
     if (bias > 0) {
         delayMs = delayMs * (uint32_t)(100 - bias * 14) / 100UL;
@@ -2016,7 +2023,7 @@ void MainScene::scheduleAttention(uint32_t nowMs, bool initial) {
 }
 
 void MainScene::scheduleSpecialAction(uint32_t nowMs) {
-    uint32_t delayMs = (uint32_t)random((long)SPECIAL_ACTION_MIN_MS,
+    uint32_t delayMs = (uint32_t)GameRandom::random((long)SPECIAL_ACTION_MIN_MS,
                                         (long)SPECIAL_ACTION_MAX_MS + 1L);
     int8_t bias = behaviorProfile.activityBias;
     if (bias > 0) {
@@ -2049,10 +2056,10 @@ bool MainScene::chooseNearbyPose(float originX, float originY, float minDistance
                                  float maxDistance, float preferredAngle,
                                  float angleSpread, float& x, float& y) const {
     for (uint8_t tries = 0; tries < 18; ++tries) {
-        float unit = (float)random(-1000, 1001) / 1000.0f;
+        float unit = (float)GameRandom::random(-1000, 1001) / 1000.0f;
         float angle = preferredAngle + unit * angleSpread;
         float distance = minDistance + (maxDistance - minDistance) *
-                         ((float)random(0, 1001) / 1000.0f);
+                         ((float)GameRandom::random(0, 1001) / 1000.0f);
         float candidateX = originX + cosf(angle) * distance;
         float candidateY = originY + sinf(angle) * distance;
         if (!monsterFootprintInsideWalkArea(candidateX, candidateY)) continue;
@@ -2165,7 +2172,7 @@ void MainScene::finishRoomAction(uint32_t nowMs) {
     }
     targetX = monsterX;
     targetY = monsterY;
-    nextAiDecisionMs = nowMs + (uint32_t)random(650, 1201);
+    nextAiDecisionMs = nowMs + (uint32_t)GameRandom::random(650, 1201);
     if (completed == RoomAction::FEED_FINISH) {
         feedingHadTastyBite = false;
         feedingHadDislikedBite = false;
@@ -2258,7 +2265,7 @@ bool MainScene::startAutonomousAction(uint32_t nowMs) {
     bool energeticAllowed =
         behaviorProfile.movementMode != MonsterMovementMode::STATIONARY &&
         (!config || config->walkingFrames >= 2);
-    int roll = (int)random(100);
+    int roll = (int)GameRandom::random(100);
     RoomAction selected = RoomAction::LOOK_AROUND;
     if (behaviorProfile.activityBias >= 1) {
         if (energeticAllowed && roll < 26) selected = RoomAction::DASH;
@@ -2285,19 +2292,19 @@ bool MainScene::startAutonomousAction(uint32_t nowMs) {
     if (selected == RoomAction::LOOK_AROUND) {
         roomAction = selected;
         roomActionPhase = 0;
-        roomActionUntilMs = nowMs + (uint32_t)random(1100, 1801);
+        roomActionUntilMs = nowMs + (uint32_t)GameRandom::random(1100, 1801);
         return true;
     }
     if (selected == RoomAction::QUIET_GAZE) {
         roomAction = selected;
         pmdDirection = PmdDirection::FRONT;
-        roomActionUntilMs = nowMs + (uint32_t)random(1400, 2801);
+        roomActionUntilMs = nowMs + (uint32_t)GameRandom::random(1400, 2801);
         return true;
     }
     if (selected == RoomAction::DASH) {
         float x = 0.0f;
         float y = 0.0f;
-        float preferred = (float)random(0, 6284) / 1000.0f;
+        float preferred = (float)GameRandom::random(0, 6284) / 1000.0f;
         if (chooseNearbyPose(monsterX, monsterY, 20.0f, 32.0f,
                              preferred, PI_F * 0.75f, x, y) &&
             beginScriptedMove(RoomAction::DASH, x, y, nowMs)) {
@@ -2368,7 +2375,7 @@ void MainScene::finishScriptedMovement(uint32_t nowMs) {
     case RoomAction::WINDOW_APPROACH:
         roomAction = RoomAction::WINDOW_WAIT;
         roomActionStartedMs = nowMs;
-        roomActionUntilMs = nowMs + (uint32_t)random((long)WINDOW_GAZE_MIN_MS,
+        roomActionUntilMs = nowMs + (uint32_t)GameRandom::random((long)WINDOW_GAZE_MIN_MS,
                                                       (long)WINDOW_GAZE_MAX_MS + 1L);
         aiMode = AiMode::IDLE;
         pmdDirection = windowGazeDirection;
@@ -2416,7 +2423,7 @@ bool MainScene::updateRoomAction(uint32_t nowMs) {
     case RoomAction::LOOK_AROUND: {
         velocityX = 0.0f;
         velocityY = 0.0f;
-        uint8_t phase = (uint8_t)min<uint32_t>(2, (nowMs - roomActionStartedMs) / 380UL);
+        uint8_t phase = (uint8_t)MathUtil::min<uint32_t>(2, (nowMs - roomActionStartedMs) / 380UL);
         if (phase != roomActionPhase) roomActionPhase = phase;
         static constexpr int8_t STEPS[] = {-1, 1, 0};
         pmdDirection = (PmdDirection)wrappedDirectionValue(
@@ -2618,7 +2625,7 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
         velocityX = 0.0f;
         velocityY = 0.0f;
         aiMode = AiMode::IDLE;
-        nextAiDecisionMs = nowMs + random(700, 1401);
+        nextAiDecisionMs = nowMs + GameRandom::random(700, 1401);
         mind.onActivity(nowMs);
         return;
     }
@@ -2682,7 +2689,7 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
             setFoodTarget(nowMs);
         } else {
             aiMode = AiMode::IDLE;
-            nextAiDecisionMs = nowMs + random(700, 1401);
+            nextAiDecisionMs = nowMs + GameRandom::random(700, 1401);
         }
         return;
     }
@@ -2708,8 +2715,6 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
                          mon.satiety < MONSTER_FEED_TARGET_SATIETY;
         if (wantsFood) {
             beginWaking(nowMs, true);
-        } else if (!monsterNeedsBedRest()) {
-            beginWaking(nowMs, false);
         }
         return;
     }
@@ -2818,7 +2823,7 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
         velocityY = 0.0f;
         if (!buildMoveRoute(targetX, targetY)) {
             aiMode = AiMode::IDLE;
-            nextAiDecisionMs = nowMs + random(1200, 2601);
+            nextAiDecisionMs = nowMs + GameRandom::random(1200, 2601);
         }
         return;
     }
@@ -2828,8 +2833,8 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
 
 bool MainScene::monsterNearFood() const {
     float walkY = monsterY + walkBoundaryOffsetY();
-    float toleranceX = max(9.0f, walkFootprintRadiusX() + 8.0f);
-    float toleranceY = max(7.0f, walkFootprintRadiusY() + 6.0f);
+    float toleranceX = MathUtil::max(9.0f, walkFootprintRadiusX() + 8.0f);
+    float toleranceY = MathUtil::max(7.0f, walkFootprintRadiusY() + 6.0f);
     return fabsf(monsterX - foodFeedX()) <= toleranceX &&
            fabsf(walkY - foodFeedY()) <= toleranceY;
 }
@@ -2870,7 +2875,7 @@ void MainScene::updateMind(uint32_t nowMs) {
 void MainScene::beginMovement(AiMode mode, uint32_t nowMs) {
     if (!buildMoveRoute(targetX, targetY)) {
         aiMode = AiMode::IDLE;
-        nextAiDecisionMs = nowMs + random(1200, 2601);
+        nextAiDecisionMs = nowMs + GameRandom::random(1200, 2601);
         return;
     }
     float waypointX = targetX;
@@ -2903,8 +2908,8 @@ void MainScene::beginWaking(uint32_t nowMs, bool forFood) {
     velocityY = 0.0f;
     wakingForFood = forFood;
     uint16_t delayMs = mainSceneIsSleepTime()
-        ? (uint16_t)random(NIGHT_FEED_WAKE_DELAY_MIN_MS, NIGHT_FEED_WAKE_DELAY_MAX_MS + 1)
-        : (uint16_t)random(DAY_WAKE_DELAY_MIN_MS, DAY_WAKE_DELAY_MAX_MS + 1);
+        ? (uint16_t)GameRandom::random(NIGHT_FEED_WAKE_DELAY_MIN_MS, NIGHT_FEED_WAKE_DELAY_MAX_MS + 1)
+        : (uint16_t)GameRandom::random(DAY_WAKE_DELAY_MIN_MS, DAY_WAKE_DELAY_MAX_MS + 1);
     stateUntilMs = nowMs + delayMs;
     aiMode = AiMode::WAKING;
 }
@@ -2951,14 +2956,14 @@ void MainScene::finishMovement(uint32_t nowMs) {
             aiMode = AiMode::IDLE;
             targetX = monsterX;
             targetY = monsterY;
-            nextAiDecisionMs = nowMs + random(700, 1401);
+            nextAiDecisionMs = nowMs + GameRandom::random(700, 1401);
         }
         return;
     }
     aiMode = AiMode::IDLE;
     targetX = monsterX;
     targetY = monsterY;
-    nextAiDecisionMs = nowMs + random(behaviorProfile.idleMinMs, behaviorProfile.idleMaxMs + 1);
+    nextAiDecisionMs = nowMs + GameRandom::random(behaviorProfile.idleMinMs, behaviorProfile.idleMaxMs + 1);
     mind.onActivity(nowMs);
 }
 
@@ -3009,8 +3014,8 @@ void MainScene::enterFeeding(uint32_t nowMs) {
     feedingHadDislikedBite = false;
     feedingBecameFull = false;
     feedingMoodAfter = GameEngine::ins().activeMonster().mood;
-    feedingBiteMs = nowMs + (uint32_t)random(FEED_BITE_DELAY_MIN_MS, FEED_BITE_DELAY_MAX_MS + 1);
-    feedingUntilMs = nowMs + (uint32_t)random(FEED_SESSION_MIN_MS, FEED_SESSION_MAX_MS + 1);
+    feedingBiteMs = nowMs + (uint32_t)GameRandom::random(FEED_BITE_DELAY_MIN_MS, FEED_BITE_DELAY_MAX_MS + 1);
+    feedingUntilMs = nowMs + (uint32_t)GameRandom::random(FEED_SESSION_MIN_MS, FEED_SESSION_MAX_MS + 1);
     velocityX = 0.0f;
     velocityY = 0.0f;
     targetX = monsterX;
@@ -3040,7 +3045,7 @@ void MainScene::updateFeeding(uint32_t nowMs) {
         GameEngine::ins().bowlHasFood() && mon.satiety < MONSTER_FEED_TARGET_SATIETY) {
         FoodConsumeResult result = GameEngine::ins().consumeBowlFood(0);
         feedingConsumed = feedingConsumed || result.consumed;
-        feedingBiteMs = nowMs + (uint32_t)random(FEED_BITE_INTERVAL_MIN_MS,
+        feedingBiteMs = nowMs + (uint32_t)GameRandom::random(FEED_BITE_INTERVAL_MIN_MS,
                                                    FEED_BITE_INTERVAL_MAX_MS + 1);
         if (result.consumed) {
             hungerAnimFrom = result.satietyBefore;
@@ -3059,7 +3064,7 @@ void MainScene::updateFeeding(uint32_t nowMs) {
                 showHearts(HeartEffect::ONE, nowMs, 900);
             } else if (result.reaction == FoodReaction::DISLIKED) {
                 // 不合口味：没有爱心，下一口停顿更久，肉眼可见的犹豫。
-                feedingBiteMs = nowMs + (uint32_t)random(FEED_BITE_INTERVAL_MIN_MS,
+                feedingBiteMs = nowMs + (uint32_t)GameRandom::random(FEED_BITE_INTERVAL_MIN_MS,
                                                          FEED_BITE_INTERVAL_MAX_MS + 1) + 900;
             }
         } else {
@@ -3073,7 +3078,7 @@ void MainScene::updateFeeding(uint32_t nowMs) {
     if ((int32_t)(nowMs - feedingUntilMs) < 0) return;
 
     if (feedingConsumed) {
-        postFeedAwakeUntilMs = nowMs + (uint32_t)random(POST_FEED_AWAKE_MIN_MS, POST_FEED_AWAKE_MAX_MS + 1);
+        postFeedAwakeUntilMs = nowMs + (uint32_t)GameRandom::random(POST_FEED_AWAKE_MIN_MS, POST_FEED_AWAKE_MAX_MS + 1);
     }
     mind.onAte(nowMs);
     releaseBowl(0);
@@ -3083,7 +3088,7 @@ void MainScene::updateFeeding(uint32_t nowMs) {
         return;
     }
     aiMode = AiMode::IDLE;
-    nextAiDecisionMs = nowMs + random(behaviorProfile.idleMinMs, behaviorProfile.idleMaxMs + 1);
+    nextAiDecisionMs = nowMs + GameRandom::random(behaviorProfile.idleMinMs, behaviorProfile.idleMaxMs + 1);
 }
 
 void MainScene::updateDebugTiltControl(uint32_t nowMs, float dtSeconds) {
@@ -3406,11 +3411,11 @@ void MainScene::chooseAiGoal(uint32_t nowMs) {
         if (startWander(nowMs)) return;
         break;
     case MonsterDesire::STARE:
-        if (random(100) < 32) {
-            int direction = (int)pmdDirection + (random(2) == 0 ? -1 : 1);
+        if (GameRandom::random(100) < 32) {
+            int direction = (int)pmdDirection + (GameRandom::random(2) == 0 ? -1 : 1);
             if (direction < 0) direction += 8;
             if (direction >= 8) direction -= 8;
-            nextAiDecisionMs = nowMs + random(behaviorProfile.idleMinMs, behaviorProfile.idleMaxMs + 1);
+            nextAiDecisionMs = nowMs + GameRandom::random(behaviorProfile.idleMinMs, behaviorProfile.idleMaxMs + 1);
             beginTurn(AiMode::IDLE, (PmdDirection)direction, nowMs);
             mind.onActivity(nowMs);
             return;
@@ -3421,7 +3426,7 @@ void MainScene::chooseAiGoal(uint32_t nowMs) {
     aiMode = AiMode::IDLE;
     targetX = monsterX;
     targetY = monsterY;
-    nextAiDecisionMs = nowMs + random(behaviorProfile.idleMinMs, behaviorProfile.idleMaxMs + 1);
+    nextAiDecisionMs = nowMs + GameRandom::random(behaviorProfile.idleMinMs, behaviorProfile.idleMaxMs + 1);
     if (mind.topDesire() != MonsterDesire::STARE) {
         mind.onActivity(nowMs);
     }
@@ -3436,10 +3441,10 @@ bool MainScene::startWander(uint32_t nowMs) {
     for (uint8_t tries = 0; tries < 18; ++tries) {
         int radiusX = behaviorProfile.wanderRadiusX;
         int radiusY = behaviorProfile.wanderRadiusY;
-        float candidateX = clampf(monsterX + (float)random(-radiusX, radiusX + 1),
+        float candidateX = clampf(monsterX + (float)GameRandom::random(-radiusX, radiusX + 1),
                                   (float)roomWalkMinX(),
                                   (float)roomWalkMaxX());
-        float candidateY = clampf(monsterY + (float)random(-radiusY, radiusY + 1),
+        float candidateY = clampf(monsterY + (float)GameRandom::random(-radiusY, radiusY + 1),
                                   (float)roomWalkMinY() - walkOffsetY,
                                   (float)roomWalkMaxY() - walkOffsetY);
         if (!monsterFootprintInsideWalkArea(candidateX, candidateY)) continue;
@@ -3478,7 +3483,7 @@ bool MainScene::openPendingProgression() {
 void MainScene::schedulePairInteraction(uint32_t nowMs, bool immediate) {
     nextPairInteractionMs = immediate
         ? nowMs + 300
-        : nowMs + static_cast<uint32_t>(random(
+        : nowMs + static_cast<uint32_t>(GameRandom::random(
               PAIR_INTERACTION_MIN_INTERVAL_MS,
               PAIR_INTERACTION_MAX_INTERVAL_MS + 1));
 }
@@ -3691,7 +3696,7 @@ bool MainScene::startPairInteraction(uint32_t nowMs) {
     bool guestCanMove =
         Game::speciesCareProfileFor(state.team[1].speciesId).canMove;
     bool forcedPlay = pairForcedPlay;
-    uint8_t roll = static_cast<uint8_t>(random(100));
+    uint8_t roll = static_cast<uint8_t>(GameRandom::random(100));
     if (!mainCanMove || !guestCanMove) {
         pairInteraction = PairInteraction::GREET;
     } else if (forcedPlay) {
@@ -3703,7 +3708,7 @@ bool MainScene::startPairInteraction(uint32_t nowMs) {
             : (roll < 70 ? PairInteraction::CHASE
                          : PairInteraction::FOLLOW);
     }
-    pairLeaderMain = random(2) == 0;
+    pairLeaderMain = GameRandom::random(2) == 0;
     if (!mainCanMove) pairLeaderMain = false;
     if (!guestCanMove) pairLeaderMain = true;
 
@@ -3818,12 +3823,12 @@ void MainScene::finishPairInteraction(uint32_t nowMs, bool reward) {
     visitor.targetY = visitor.y;
     visitor.state = VisitorState::IDLE;
     visitor.stateUntilMs =
-        nowMs + static_cast<uint32_t>(random(
+        nowMs + static_cast<uint32_t>(GameRandom::random(
             VISITOR_IDLE_MIN_MS, VISITOR_IDLE_MAX_MS + 1));
     visitor.frameStartedMs = nowMs;
     visitor.frameIndex = 0;
     aiMode = AiMode::IDLE;
-    nextAiDecisionMs = nowMs + static_cast<uint32_t>(random(700, 1401));
+    nextAiDecisionMs = nowMs + static_cast<uint32_t>(GameRandom::random(700, 1401));
     mind.onActivity(nowMs);
     if (reward) GameEngine::ins().rewardPairInteractionMood();
     pairInteraction = PairInteraction::NONE;
@@ -4247,7 +4252,7 @@ void MainScene::drawContactDialog() {
                     PixelRenderer::rgb(20, 24, 31));
     c.drawRoundRect(BOX_X, BOX_Y, BOX_W, BOX_H, 4,
                     PixelRenderer::rgb(236, 239, 230));
-    int textX = BOX_X + max(6, (BOX_W - mainTextPixelWidth(text)) / 2);
+    int textX = BOX_X + MathUtil::max(6, (BOX_W - mainTextPixelWidth(text)) / 2);
     PixelRenderer::text(textX, BOX_Y + 7, text,
                         PixelRenderer::rgb(241, 242, 232), 1);
 
@@ -4397,10 +4402,10 @@ void MainScene::enterVisitorFeeding(uint32_t nowMs) {
     visitor.frameStartedMs = nowMs;
     visitor.frameIndex = 0;
     visitorFeedingBiteMs =
-        nowMs + (uint32_t)random(FEED_BITE_DELAY_MIN_MS,
+        nowMs + (uint32_t)GameRandom::random(FEED_BITE_DELAY_MIN_MS,
                                  FEED_BITE_DELAY_MAX_MS + 1);
     visitorFeedingUntilMs =
-        nowMs + (uint32_t)random(FEED_SESSION_MIN_MS,
+        nowMs + (uint32_t)GameRandom::random(FEED_SESSION_MIN_MS,
                                  FEED_SESSION_MAX_MS + 1);
 }
 
@@ -4452,7 +4457,7 @@ void MainScene::updateVisitorFeeding(uint32_t nowMs) {
         mon.satiety < MONSTER_FEED_TARGET_SATIETY) {
         FoodConsumeResult result = GameEngine::ins().consumeBowlFood(1);
         visitorFeedingBiteMs =
-            nowMs + (uint32_t)random(FEED_BITE_INTERVAL_MIN_MS,
+            nowMs + (uint32_t)GameRandom::random(FEED_BITE_INTERVAL_MIN_MS,
                                      FEED_BITE_INTERVAL_MAX_MS + 1);
         if (!result.consumed) visitorFeedingUntilMs = nowMs + 600;
         if (result.reaction == FoodReaction::DISLIKED) {
@@ -4473,7 +4478,7 @@ void MainScene::updateVisitorFeeding(uint32_t nowMs) {
     releaseBowl(1);
     visitor.state = VisitorState::IDLE;
     visitor.stateUntilMs =
-        nowMs + (uint32_t)random(VISITOR_IDLE_MIN_MS,
+        nowMs + (uint32_t)GameRandom::random(VISITOR_IDLE_MIN_MS,
                                  VISITOR_IDLE_MAX_MS + 1);
     visitor.frameStartedMs = nowMs;
     visitor.frameIndex = 0;
@@ -4524,7 +4529,7 @@ void MainScene::spawnVisitor(uint32_t nowMs, bool dropIn) {
     visitor.sleepX = x;
     visitor.sleepY = y;
     visitor.state = VisitorState::IDLE;
-    visitor.stateUntilMs = nowMs + (uint32_t)random(VISITOR_IDLE_MIN_MS, VISITOR_IDLE_MAX_MS + 1);
+    visitor.stateUntilMs = nowMs + (uint32_t)GameRandom::random(VISITOR_IDLE_MIN_MS, VISITOR_IDLE_MAX_MS + 1);
     visitor.frameStartedMs = nowMs;
     visitor.frameIndex = 0;
     visitor.direction = PokemonSprites::WalkDirection::DOWN;
@@ -4566,8 +4571,8 @@ bool MainScene::pickVisitorSleepSpot(float& x, float& y) const {
     }
     int radius = (int)VISITOR_SLEEP_SPOT_RETRY_RADIUS;
     for (uint8_t tries = 0; tries < VISITOR_SLEEP_SPOT_RETRIES; ++tries) {
-        float px = baseX + (float)random(40, 40 + radius);
-        float py = baseY + (float)random(-radius / 2, radius / 2 + 1);
+        float px = baseX + (float)GameRandom::random(40, 40 + radius);
+        float py = baseY + (float)GameRandom::random(-radius / 2, radius / 2 + 1);
         if (monsterFootprintInsideWalkArea(px, py) && !roomBedContains(px, py)) {
             x = px;
             y = py;
@@ -4701,10 +4706,19 @@ void MainScene::updateVisitor(uint32_t nowMs, float dtSeconds) {
 
     bool mainSeekingBed = aiMode == AiMode::SEEK_BED ||
         (aiMode == AiMode::TURNING && turnNextMode == AiMode::SEEK_BED);
+    bool mainOccupyingBed = aiMode == AiMode::RESTING ||
+        aiMode == AiMode::WAKING || monsterAtBedSleepPose();
+    if (mainOccupyingBed) {
+        visitorBedYieldHandled = true;
+    } else if (!mainSeekingBed) {
+        visitorBedYieldHandled = false;
+    }
     if (visitor.state == VisitorState::SLEEPING && mainSeekingBed &&
+        !visitorBedYieldHandled && !monsterAtBedSleepPose() &&
         visitorMonster.majorStatus != Game::MajorStatus::SLEEP &&
         visitorPointBlocksBedRoute(visitor.x, visitor.y) &&
         startVisitorBedYield(nowMs)) {
+        visitorBedYieldHandled = true;
         return;
     }
 
@@ -4720,7 +4734,7 @@ void MainScene::updateVisitor(uint32_t nowMs, float dtSeconds) {
     if (visitor.state == VisitorState::SLEEPING) {
         if (!night) {
             visitor.state = VisitorState::IDLE;
-            visitor.stateUntilMs = nowMs + (uint32_t)random(VISITOR_IDLE_MIN_MS, VISITOR_IDLE_MAX_MS + 1);
+            visitor.stateUntilMs = nowMs + (uint32_t)GameRandom::random(VISITOR_IDLE_MIN_MS, VISITOR_IDLE_MAX_MS + 1);
             visitor.frameStartedMs = nowMs;
             visitor.frameIndex = 0;
             return;
@@ -4753,7 +4767,7 @@ void MainScene::updateVisitor(uint32_t nowMs, float dtSeconds) {
         visitor.frameIndex = 0;
     } else if (!night && visitor.state == VisitorState::GO_TO_SLEEP) {
         visitor.state = VisitorState::IDLE;
-        visitor.stateUntilMs = nowMs + (uint32_t)random(VISITOR_IDLE_MIN_MS, VISITOR_IDLE_MAX_MS + 1);
+        visitor.stateUntilMs = nowMs + (uint32_t)GameRandom::random(VISITOR_IDLE_MIN_MS, VISITOR_IDLE_MAX_MS + 1);
         visitor.frameStartedMs = nowMs;
         visitor.frameIndex = 0;
         return;
@@ -4809,11 +4823,11 @@ void MainScene::updateVisitor(uint32_t nowMs, float dtSeconds) {
             }
             visitor.state = VisitorState::SLEEPING;
             visitor.stateUntilMs =
-                nowMs + (uint32_t)random(NIGHT_FEED_WAKE_DELAY_MIN_MS,
+                nowMs + (uint32_t)GameRandom::random(NIGHT_FEED_WAKE_DELAY_MIN_MS,
                                          NIGHT_FEED_WAKE_DELAY_MAX_MS + 1);
         } else {
             visitor.state = VisitorState::IDLE;
-            visitor.stateUntilMs = nowMs + (uint32_t)random(VISITOR_IDLE_MIN_MS, VISITOR_IDLE_MAX_MS + 1);
+            visitor.stateUntilMs = nowMs + (uint32_t)GameRandom::random(VISITOR_IDLE_MIN_MS, VISITOR_IDLE_MAX_MS + 1);
         }
         visitor.frameStartedMs = nowMs;
         visitor.frameIndex = 0;
@@ -4831,7 +4845,7 @@ void MainScene::updateVisitor(uint32_t nowMs, float dtSeconds) {
             }
             visitor.state = VisitorState::SLEEPING;
             visitor.stateUntilMs =
-                nowMs + (uint32_t)random(NIGHT_FEED_WAKE_DELAY_MIN_MS,
+                nowMs + (uint32_t)GameRandom::random(NIGHT_FEED_WAKE_DELAY_MIN_MS,
                                          NIGHT_FEED_WAKE_DELAY_MAX_MS + 1);
             visitor.frameStartedMs = nowMs;
             visitor.frameIndex = 0;
@@ -4910,12 +4924,12 @@ void MainScene::drawVisitorShadow() {
     const PmdSpriteConfig* config =
         pmdSpriteConfigForSpecies(visitor.speciesId);
     bool floating = config && config->airHeight > 0.0f;
-    uint8_t frameW = pgm_read_byte(&frame->width);
-    uint8_t frameH = pgm_read_byte(&frame->height);
-    int rx = constrain(
+    uint8_t frameW = FlashStorage::readByte(&frame->width);
+    uint8_t frameH = FlashStorage::readByte(&frame->height);
+    int rx = MathUtil::clamp(
         static_cast<int>(frameW * (floating ? 0.25f : 0.44f)),
         floating ? 10 : 16, floating ? 22 : 40);
-    int ry = constrain(
+    int ry = MathUtil::clamp(
         static_cast<int>(frameH * (floating ? 0.055f : 0.14f)),
         floating ? 3 : 6, floating ? 6 : 14);
     if (night) {
@@ -4931,8 +4945,8 @@ void MainScene::drawVisitorShadow() {
         night ? (floating ? 0 : 92) : (floating ? 0 : 86);
     fillSoftEllipseAlpha(shadowX, shadowY, rx, ry, shadowColor, outerAlpha);
     if (!floating) {
-        fillEllipseAlpha(shadowX, shadowY, max(5, rx / 2),
-                         max(2, ry / 2), shadowColor, coreAlpha);
+        fillEllipseAlpha(shadowX, shadowY, MathUtil::max(5, rx / 2),
+                         MathUtil::max(2, ry / 2), shadowColor, coreAlpha);
     }
 }
 
@@ -4953,8 +4967,8 @@ void MainScene::drawVisitor() {
         sleeping || visitor.dropOffsetY > 0.0f);
     int y = worldToScreenY(
         visitor.y - visitor.dropOffsetY - floatOffset);
-    uint8_t w = pgm_read_byte(&frame->width);
-    uint8_t h = pgm_read_byte(&frame->height);
+    uint8_t w = FlashStorage::readByte(&frame->width);
+    uint8_t h = FlashStorage::readByte(&frame->height);
     PokemonSprites::drawFrame(frame, x - w / 2, y - h / 2, flipX);
     if (sleeping) {
         drawVisitorSleepZz(x, y - h / 2);
@@ -5167,7 +5181,7 @@ void MainScene::drawFood() {
     auto& c = PixelRenderer::canvas();
     uint8_t foodIndex = GameEngine::ins().bowlFoodIndex();
     uint8_t maxBites = Game::roomFoodBitesPerServing(foodIndex);
-    uint8_t remainingBites = min<uint8_t>(
+    uint8_t remainingBites = MathUtil::min<uint8_t>(
         maxBites,
         GameEngine::ins().bowlFoodBitesRemaining());
     int cx = (int)foodCenterX();
@@ -5197,11 +5211,11 @@ void MainScene::drawShadow() {
     bool night = mainSceneIsNight();
     const PmdSpriteConfig* config = active ? pmdSpriteConfigForSpecies(active->id) : nullptr;
     bool floating = config && config->airHeight > 0.0f;
-    uint8_t frameW = pgm_read_byte(&frame->width);
-    uint8_t frameH = pgm_read_byte(&frame->height);
+    uint8_t frameW = FlashStorage::readByte(&frame->width);
+    uint8_t frameH = FlashStorage::readByte(&frame->height);
 
-    int rx = constrain((int)(frameW * (floating ? 0.25f : 0.44f)), floating ? 10 : 16, floating ? 22 : 40);
-    int ry = constrain((int)(frameH * (floating ? 0.055f : 0.14f)), floating ? 3 : 6, floating ? 6 : 14);
+    int rx = MathUtil::clamp((int)(frameW * (floating ? 0.25f : 0.44f)), floating ? 10 : 16, floating ? 22 : 40);
+    int ry = MathUtil::clamp((int)(frameH * (floating ? 0.055f : 0.14f)), floating ? 3 : 6, floating ? 6 : 14);
     if (night) {
         rx = (rx * 11 + 5) / 10;
         ry = (ry * 11 + 5) / 10;
@@ -5215,7 +5229,7 @@ void MainScene::drawShadow() {
     uint8_t coreAlpha = night ? (floating ? 0 : 92) : (floating ? 0 : 86);
     fillSoftEllipseAlpha(shadowX, shadowY, rx, ry, shadowColor, outerAlpha);
     if (!floating) {
-        fillEllipseAlpha(shadowX, shadowY, max(5, rx / 2), max(2, ry / 2),
+        fillEllipseAlpha(shadowX, shadowY, MathUtil::max(5, rx / 2), MathUtil::max(2, ry / 2),
                          shadowColor, coreAlpha);
     }
 }
@@ -5235,8 +5249,8 @@ void MainScene::drawMonster() {
 
     const PokemonSprites::SpriteFrame* frame = currentMonsterFrame();
     if (frame) {
-        uint8_t w = pgm_read_byte(&frame->width);
-        uint8_t h = pgm_read_byte(&frame->height);
+        uint8_t w = FlashStorage::readByte(&frame->width);
+        uint8_t h = FlashStorage::readByte(&frame->height);
         if (PokemonSprites::drawFrame(frame, x - w / 2, y - h / 2, facingRight)) {
             return;
         }
@@ -5250,8 +5264,8 @@ bool MainScene::drawPmdMonster(int x, int y) {
 
     x += pmdRenderOffsetX;
     y += pmdRenderOffsetY;
-    uint8_t w = pgm_read_byte(&frame->width);
-    uint8_t h = pgm_read_byte(&frame->height);
+    uint8_t w = FlashStorage::readByte(&frame->width);
+    uint8_t h = FlashStorage::readByte(&frame->height);
     if (PokemonSprites::drawFrame(frame, x - w / 2, y - h / 2,
                                   pmdAction == PmdAction::SLEEPING ? false : pmdDirectionFlipX())) {
         return true;
@@ -5454,7 +5468,7 @@ void MainScene::drawHud() {
             uint32_t duration = hungerAnimUntilMs - hungerAnimStartedMs;
             if (elapsed > duration) elapsed = duration;
             int delta = (int)hungerAnimTo - (int)hungerAnimFrom;
-            hunger = (uint8_t)constrain(
+            hunger = (uint8_t)MathUtil::clamp(
                 (int)hungerAnimFrom +
                     (int)((int64_t)delta * elapsed / duration),
                 0, 100);

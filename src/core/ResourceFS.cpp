@@ -1,5 +1,4 @@
 #include "core/ResourceFS.h"
-#include <Arduino.h>
 #include "platform/api/PlatformServices.h"
 
 ResourceFS& ResourceFS::ins() {
@@ -11,12 +10,12 @@ bool ResourceFS::begin() {
     if (mounted_) return true;
 
     if (!Platform::resources().mount()) {
-        Serial.println("[ResourceFS] resource store mount failed");
+        Platform::logLine("[ResourceFS] resource store mount failed");
         return false;
     }
 
     mounted_ = true;
-    Serial.printf("[ResourceFS] LittleFS mounted total=%u used=%u\n",
+    Platform::logf("[ResourceFS] LittleFS mounted total=%u used=%u\n",
                   (unsigned)Platform::resources().totalBytes(),
                   (unsigned)Platform::resources().usedBytes());
     return true;

@@ -1,16 +1,18 @@
 #include "scenes/ShowerScene.h"
 
-#include <Arduino.h>
 #include <cmath>
 
 #include "assets/GameAssets.h"
 #include "assets/PokemonSprites.h"
 #include "core/CryPlayer.h"
 #include "core/GameEngine.h"
+#include "core/MathUtil.h"
 #include "core/UiStrings.h"
 #include "core/UiMotion.h"
+#include "game/GameRandom.h"
 #include "hardware/Hal.h"
 #include "presentation/PixelRenderer.h"
+#include "platform/api/FlashStorage.h"
 
 namespace {
 constexpr int MONSTER_CENTER_X = 99;
@@ -390,12 +392,12 @@ void ShowerScene::updateBrushing(uint32_t nowMs, float dtSeconds,
         if (!bubble.active) continue;
         float restY = foamRestY(bubble.stage) + bubble.restYOffset;
         if (bubble.stage == 2 && bubble.y < restY) {
-            bubble.y = min(restY,
+            bubble.y = MathUtil::min(restY,
                            bubble.y + UPPER_FOAM_FALL_SPEED * dt);
             bubble.x += clampFloat(bubble.restX - bubble.x, -18.0f * dt,
                                    18.0f * dt);
         } else if (bubble.stage == 3) {
-            bubble.y = min(restY,
+            bubble.y = MathUtil::min(restY,
                            bubble.y + LOWER_FOAM_FALL_SPEED * dt);
             bubble.x += clampFloat(bubble.restX - bubble.x, -12.0f * dt,
                                    12.0f * dt);
@@ -471,9 +473,9 @@ void ShowerScene::updateAtmosphere(float dtSeconds) {
         ? 300.0f
         : static_cast<float>(ATMOSPHERE_FADE_OUT_PER_SECOND);
     if (atmosphereAlpha < target) {
-        atmosphereAlpha = min(target, atmosphereAlpha + speed * dt);
+        atmosphereAlpha = MathUtil::min(target, atmosphereAlpha + speed * dt);
     } else if (atmosphereAlpha > target) {
-        atmosphereAlpha = max(target, atmosphereAlpha - speed * dt);
+        atmosphereAlpha = MathUtil::max(target, atmosphereAlpha - speed * dt);
     }
 }
 
@@ -484,7 +486,7 @@ void ShowerScene::spawnFoam() {
         {-24, 8}, {8, 16}, {-14, 26}, {20, 28},
     };
     uint32_t nowMs = Hal::ins().millis();
-    uint8_t count = 1 + (uint8_t)random(2);
+    uint8_t count = 1 + (uint8_t)GameRandom::random(2);
     for (uint8_t spawned = 0; spawned < count; ++spawned) {
         Foam* target = nullptr;
         for (Foam& bubble : foam) {
@@ -497,14 +499,14 @@ void ShowerScene::spawnFoam() {
         const int8_t* spot = SPOTS[foamSpawnCursor %
             (sizeof(SPOTS) / sizeof(SPOTS[0]))];
         target->x = clampFloat(
-            MONSTER_CENTER_X + spot[0] + static_cast<float>(random(-3, 4)),
+            MONSTER_CENTER_X + spot[0] + static_cast<float>(GameRandom::random(-3, 4)),
             47.0f, 151.0f);
         target->y = clampFloat(
-            MONSTER_CENTER_Y + spot[1] + static_cast<float>(random(-3, 4)),
+            MONSTER_CENTER_Y + spot[1] + static_cast<float>(GameRandom::random(-3, 4)),
             34.0f, 113.0f);
         target->restX = target->x;
         target->restYOffset = 0.0f;
-        target->stage = random(3) == 0 ? 1 : 0;
+        target->stage = GameRandom::random(3) == 0 ? 1 : 0;
         target->brushProgress = 0;
         target->bornMs = nowMs;
         target->active = true;
@@ -532,7 +534,7 @@ void ShowerScene::rubFoamAt(float x, float y, uint32_t nowMs) {
     tryMergeFoam(*nearest, nowMs);
     if (nowMs - lastRubReactionMs >= RUB_REACTION_COOLDOWN_MS) {
         lastRubReactionMs = nowMs;
-        if (random(100) < 35) startTurn(nowMs);
+        if (GameRandom::random(100) < 35) startTurn(nowMs);
     }
 }
 
@@ -681,12 +683,12 @@ int ShowerScene::monsterBottomY() const {
         GameEngine::ins().activeSpecies().id,
         PokemonSprites::SpriteKind::FRONT);
     if (!frame) return MONSTER_CENTER_Y + 42;
-    uint8_t width = pgm_read_byte(&frame->width);
-    uint8_t height = pgm_read_byte(&frame->height);
+    uint8_t width = FlashStorage::readByte(&frame->width);
+    uint8_t height = FlashStorage::readByte(&frame->height);
     if (width == 0 || height == 0) return MONSTER_CENTER_Y + 42;
-    float scale = min(108.0f / width, 112.0f / height);
+    float scale = MathUtil::min(108.0f / width, 112.0f / height);
     if (scale > 1.4f) scale = 1.4f;
-    return min(Hal::DISPLAY_H - 1,
+    return MathUtil::min(Hal::DISPLAY_H - 1,
                MONSTER_CENTER_Y + static_cast<int>(height * scale) / 2);
 }
 
@@ -834,10 +836,10 @@ void ShowerScene::drawMonster() const {
     } else if (nowMs < turnUntilMs) {
         flip = turnFlip;
     }
-    uint8_t width = pgm_read_byte(&frame->width);
-    uint8_t height = pgm_read_byte(&frame->height);
+    uint8_t width = FlashStorage::readByte(&frame->width);
+    uint8_t height = FlashStorage::readByte(&frame->height);
     if (width == 0 || height == 0) return;
-    float scale = min(108.0f / width, 112.0f / height);
+    float scale = MathUtil::min(108.0f / width, 112.0f / height);
     if (scale > 1.4f) scale = 1.4f;
     int drawW = static_cast<int>(width * scale);
     int drawH = static_cast<int>(height * scale);
@@ -973,7 +975,7 @@ void ShowerScene::drawHearts() const {
     auto& c = PixelRenderer::canvas();
     uint16_t color = PixelRenderer::rgb(242, 74, 97);
     uint32_t elapsed = Hal::ins().millis() - modeStartedMs;
-    uint8_t count = min<uint8_t>(completionHearts, 3);
+    uint8_t count = MathUtil::min<uint8_t>(completionHearts, 3);
     if (count == 0) return;
     int startX = 88 - (count - 1) * 18;
     for (uint8_t i = 0; i < count; ++i) {

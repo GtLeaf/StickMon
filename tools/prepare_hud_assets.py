@@ -78,7 +78,7 @@ def main():
     rle = rle_rgba565(icon)
 
     HEADER_OUT.write_text(f"""#pragma once
-#include <Arduino.h>
+#include "platform/api/FlashStorage.h"
 #include <cstdint>
 
 namespace HudAssets {{
@@ -87,7 +87,7 @@ static constexpr uint8_t HUNGER_ICON_W = {TARGET_W};
 static constexpr uint8_t HUNGER_ICON_H = {TARGET_H};
 static constexpr uint16_t HUNGER_ICON_RLE_LEN = {len(rle)};
 
-extern const uint16_t HUNGER_ICON_RLE[] PROGMEM;
+extern const uint16_t HUNGER_ICON_RLE[] STICKMON_FLASH_DATA;
 
 }}
 """, encoding="utf-8")
@@ -96,7 +96,7 @@ extern const uint16_t HUNGER_ICON_RLE[] PROGMEM;
 
 namespace HudAssets {{
 
-const uint16_t HUNGER_ICON_RLE[] PROGMEM = {{
+const uint16_t HUNGER_ICON_RLE[] STICKMON_FLASH_DATA = {{
 {format_words(rle)}
 }};
 

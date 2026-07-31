@@ -1,18 +1,19 @@
 #include "core/GameEngine.h"
 #include "core/CryPlayer.h"
 #include "core/VoiceCallService.h"
-#include <Arduino.h>
 #include <algorithm>
 #include <cstdio>
 #include <new>
 #include "assets/PokemonSprites.h"
 #include "core/ButtonDispatcher.h"
 #include "core/FontResource.h"
+#include "core/MathUtil.h"
 #include "core/RoomResource.h"
 #include "core/TraceLog.h"
 #include "core/UiStrings.h"
 #include "game/BondSystem.h"
 #include "game/FoodTuning.h"
+#include "game/GameRandom.h"
 #include "game/SpeciesBehavior.h"
 #include "hardware/EspNowLink.h"
 #include "hardware/Hal.h"
@@ -156,12 +157,12 @@ GameEngine& GameEngine::ins() {
 bool GameEngine::begin() {
     bootStartedMs = Platform::clock().millis();
     if (!Hal::ins().begin()) {
-        Serial.println("[GameEngine] Hal init failed");
+        Platform::logLine("[GameEngine] Hal init failed");
         return false;
     }
     PixelRenderer::bind(Hal::ins().frameBuffer());
     if (!resourceService.begin()) {
-        Serial.println("[GameEngine] external resource FS unavailable");
+        Platform::logLine("[GameEngine] external resource FS unavailable");
     }
     saveManager.begin();
     bool normalizedState = false;
@@ -213,7 +214,7 @@ bool GameEngine::begin() {
     sceneDirty = true;
     resourceAlertWasVisible = resourceAlertVisible();
     renderStatsStartedMs = now;
-    Serial.printf("[BootTiming] init_ms=%u sprites_ready=%u\n",
+    Platform::logf("[BootTiming] init_ms=%u sprites_ready=%u\n",
                   now - bootStartedMs, startupSpriteCacheReady ? 1 : 0);
     return true;
 }
@@ -263,7 +264,7 @@ void GameEngine::requestScene(SceneID id, bool saveBeforeSwitch) {
 bool GameEngine::fadeToScene(SceneID id, uint16_t durationMs) {
     if (id == currentId || sceneFade != SceneFadePhase::NONE) return false;
     sceneFadeTarget = id;
-    sceneFadeDurationMs = max<uint16_t>(1, durationMs);
+    sceneFadeDurationMs = MathUtil::max<uint16_t>(1, durationMs);
     sceneFadeStartedMs = Hal::ins().millis();
     sceneFadeLastStepMs = sceneFadeStartedMs;
     sceneFadeProgressMs = 0;
@@ -438,7 +439,7 @@ Game::MonsterRuntime GameEngine::createMonster(uint16_t speciesId, uint8_t level
     mon.exp = minimumExpForLevel(species->growthRate, level);
     resetMovesForLevel(mon, *species);
     mon.ivPacked = randomIvPacked();
-    mon.nature = random(0, Game::NATURE_COUNT);
+    mon.nature = GameRandom::random(0, Game::NATURE_COUNT);
     mon.hpMax = maxHpFor(*species, mon);
     mon.hpCur = mon.hpMax;
     mon.metAt = gameSecondsForMinutes(gameMinutesTotal());
@@ -656,7 +657,7 @@ ContactInviteResult GameEngine::inviteContactToTeam(uint8_t slot) {
     if (contactInviteLocked(slot)) return ContactInviteResult::LOCKED;
 
     uint8_t chance = contactInviteChance(slot);
-    if (random(100) >= chance) {
+    if (GameRandom::random(100) >= chance) {
         state.storage[slot].petCountToday = Game::Bond::inviteLockMarker(
             Game::Bond::invitationDay(gameMinutesTotal()));
         markDirty(SaveUrgency::IMMEDIATE);
@@ -916,7 +917,7 @@ bool GameEngine::addFoodStock(uint8_t foodIndex, uint8_t amount) {
     uint8_t& count = state.room.food[foodIndex];
     if (count >= Game::ITEM_STACK_CAP) return false;
     bool hadFood = foodCount() > 0;
-    count = (uint8_t)min<uint16_t>(Game::ITEM_STACK_CAP, (uint16_t)count + amount);
+    count = (uint8_t)MathUtil::min<uint16_t>(Game::ITEM_STACK_CAP, (uint16_t)count + amount);
     if (!hadFood) state.room.selectedFood = foodIndex;
     markDirty(SaveUrgency::SOON);
     return true;
@@ -995,8 +996,8 @@ FoodConsumeResult GameEngine::consumeBowlFood(uint8_t teamSlot) {
             result.reaction = FoodReaction::DISLIKED;
         }
     }
-    mon.satiety = (uint8_t)min<uint16_t>(100, (uint16_t)mon.satiety + profile.satietyGain);
-    mon.mood = (uint8_t)min<uint16_t>(100, (uint16_t)mon.mood + moodGain);
+    mon.satiety = (uint8_t)MathUtil::min<uint16_t>(100, (uint16_t)mon.satiety + profile.satietyGain);
+    mon.mood = (uint8_t)MathUtil::min<uint16_t>(100, (uint16_t)mon.mood + moodGain);
     result.consumed = true;
     result.satietyAfter = mon.satiety;
     result.moodAfter = mon.mood;
@@ -1027,7 +1028,7 @@ bool GameEngine::usePotion(uint8_t teamSlot) {
     Game::MonsterRuntime& mon = state.team[teamSlot];
     if (mon.fainted || mon.hpCur == 0 || mon.hpCur >= mon.hpMax) return false;
     state.bag.potion--;
-    mon.hpCur = min<uint16_t>(mon.hpMax, mon.hpCur + 20);
+    mon.hpCur = MathUtil::min<uint16_t>(mon.hpMax, mon.hpCur + 20);
     markDirty(SaveUrgency::SOON);
     return true;
 }
@@ -1040,7 +1041,7 @@ bool GameEngine::useSuperPotion(uint8_t teamSlot) {
     Game::MonsterRuntime& mon = state.team[teamSlot];
     if (mon.fainted || mon.hpCur == 0 || mon.hpCur >= mon.hpMax) return false;
     state.bag.superPotion--;
-    mon.hpCur = min<uint16_t>(mon.hpMax, mon.hpCur + 50);
+    mon.hpCur = MathUtil::min<uint16_t>(mon.hpMax, mon.hpCur + 50);
     markDirty(SaveUrgency::SOON);
     return true;
 }
@@ -1174,7 +1175,7 @@ bool GameEngine::useRevive(uint8_t teamSlot) {
     if (!mon.fainted) return false;
     state.bag.revive--;
     mon.fainted = false;
-    mon.hpCur = max<uint16_t>(1, mon.hpMax / 2);
+    mon.hpCur = MathUtil::max<uint16_t>(1, mon.hpMax / 2);
     markDirty(SaveUrgency::SOON);
     return true;
 }
@@ -1239,7 +1240,7 @@ bool GameEngine::addItem(Game::ItemId item, uint8_t amount, SaveUrgency urgency)
     uint8_t* count = itemStockPointer(state, item);
     if (!count) return false;
     if (*count >= Game::ITEM_STACK_CAP) return false;
-    *count = static_cast<uint8_t>(min<uint16_t>(
+    *count = static_cast<uint8_t>(MathUtil::min<uint16_t>(
         Game::ITEM_STACK_CAP, static_cast<uint16_t>(*count) + amount));
     if (Game::foodIndexForItemId(item) >= 0 && foodCount() == amount) {
         state.room.selectedFood = (uint8_t)Game::foodIndexForItemId(item);
@@ -1343,14 +1344,14 @@ uint8_t GameEngine::grantBathReward(BathRewardStage stage) {
     uint16_t available = state.careExpToday < cap
         ? cap - state.careExpToday
         : 0;
-    expGain = static_cast<uint8_t>(min<uint16_t>(expGain, available));
+    expGain = static_cast<uint8_t>(MathUtil::min<uint16_t>(expGain, available));
     if (expGain > 0) {
         state.careExpToday += expGain;
         addExperience(expGain);
     }
     if (moodGain > 0) {
         mon.mood = static_cast<uint8_t>(
-            min<uint16_t>(100, static_cast<uint16_t>(mon.mood) + moodGain));
+            MathUtil::min<uint16_t>(100, static_cast<uint16_t>(mon.mood) + moodGain));
     }
     markDirty(SaveUrgency::SOON);
     return expGain;
@@ -1431,7 +1432,7 @@ void GameEngine::grantEffortToTeamMember(uint8_t teamSlot,
 
         uint8_t roomByStat = Game::EV_MAX - *value;
         uint16_t roomByTotal = Game::EV_TOTAL_MAX - total;
-        uint8_t gain = min<uint16_t>(amount, min<uint16_t>(roomByStat, roomByTotal));
+        uint8_t gain = MathUtil::min<uint16_t>(amount, MathUtil::min<uint16_t>(roomByStat, roomByTotal));
         if (gain == 0) continue;
         *value += gain;
         changed = true;
@@ -1441,7 +1442,7 @@ void GameEngine::grantEffortToTeamMember(uint8_t teamSlot,
         const Species& species = speciesFor(mon);
         uint16_t oldMax = mon.hpMax;
         mon.hpMax = maxHpFor(species, mon);
-        if (mon.hpMax > oldMax) mon.hpCur = min<uint16_t>(mon.hpMax, mon.hpCur + (mon.hpMax - oldMax));
+        if (mon.hpMax > oldMax) mon.hpCur = MathUtil::min<uint16_t>(mon.hpMax, mon.hpCur + (mon.hpMax - oldMax));
         markDirty(SaveUrgency::DEFERRED);
     }
 }
@@ -1486,8 +1487,8 @@ PetResult GameEngine::petMonster() {
     uint8_t oldMood = mon.mood;
     uint8_t oldAffection = mon.affection;
     mon.petCountToday++;
-    mon.mood = (uint8_t)min<uint16_t>(100, (uint16_t)mon.mood + 5);
-    mon.affection = (uint8_t)min<uint16_t>(255, (uint16_t)mon.affection + 2);
+    mon.mood = (uint8_t)MathUtil::min<uint16_t>(100, (uint16_t)mon.mood + 5);
+    mon.affection = (uint8_t)MathUtil::min<uint16_t>(255, (uint16_t)mon.affection + 2);
     result.outcome = PetOutcome::REWARDED;
     result.moodGain = mon.mood - oldMood;
     result.affectionGain = mon.affection - oldAffection;
@@ -1538,7 +1539,7 @@ uint32_t GameEngine::addExperienceToTeamMember(uint8_t teamSlot, uint32_t amount
     mon.level = levelForExp(beforeSpecies.growthRate, mon.exp);
     mon.hpMax = maxHpFor(beforeSpecies, mon);
     if (mon.hpMax > oldHpMax) {
-        mon.hpCur = min<uint16_t>(mon.hpMax, mon.hpCur + (mon.hpMax - oldHpMax));
+        mon.hpCur = MathUtil::min<uint16_t>(mon.hpMax, mon.hpCur + (mon.hpMax - oldHpMax));
     }
     if (mon.level < oldLevel) mon.level = oldLevel;
     bool leveledUp = mon.level > oldLevel;
@@ -1663,7 +1664,7 @@ void GameEngine::queueMoveReplacementEvent(uint8_t teamSlot,
                                            Game::MoveId oldMoveId,
                                            Game::MoveId newMoveId) {
     if (moveReplacementEventCount >= MOVE_REPLACEMENT_EVENT_CAP) {
-        Serial.printf("[MoveLearn] replacement queue full; dropped slot=%u %u->%u\n",
+        Platform::logf("[MoveLearn] replacement queue full; dropped slot=%u %u->%u\n",
                       teamSlot, oldMoveId, newMoveId);
         return;
     }
@@ -1717,10 +1718,10 @@ bool GameEngine::acknowledgePendingEvolution() {
     sanitizeMonsterMovesForSpecies(mon, *target);
     mon.hpMax = maxHpFor(*target, mon);
     if (canReceiveHpGain && mon.hpMax > oldHpMax) {
-        mon.hpCur = min<uint16_t>(
+        mon.hpCur = MathUtil::min<uint16_t>(
             mon.hpMax, mon.hpCur + (mon.hpMax - oldHpMax));
     } else {
-        mon.hpCur = min<uint16_t>(mon.hpCur, mon.hpMax);
+        mon.hpCur = MathUtil::min<uint16_t>(mon.hpCur, mon.hpMax);
     }
 
     evolutionEventHead = (evolutionEventHead + 1) % EVOLUTION_EVENT_CAP;
@@ -1735,7 +1736,7 @@ bool GameEngine::acknowledgePendingEvolution() {
     if (event.teamSlot == 0) clearMainSceneViewState();
     syncSpriteCache();
     markDirty(SaveUrgency::IMMEDIATE);
-    Serial.printf(
+    Platform::logf(
         "[Evolution] committed slot=%u species=%u->%u level=%u hp=%u/%u\n",
         event.teamSlot, event.fromSpeciesId, event.toSpeciesId,
         mon.level, mon.hpCur, mon.hpMax);
@@ -1755,7 +1756,7 @@ bool GameEngine::cancelPendingEvolution() {
             mon, speciesFor(mon), event.oldLevel, event.teamSlot);
         markDirty(SaveUrgency::IMMEDIATE);
     }
-    Serial.printf(
+    Platform::logf(
         "[Evolution] cancelled slot=%u species=%u retained level=%u hp=%u/%u\n",
         event.teamSlot, event.fromSpeciesId,
         validTeamSlot ? state.team[event.teamSlot].level : 0,
@@ -1770,7 +1771,7 @@ bool GameEngine::queueEvolutionEvent(
     uint8_t oldLevel,
     Game::ItemId consumedItem) {
     if (evolutionEventCount >= EVOLUTION_EVENT_CAP) {
-        Serial.printf("[Evolution] notification queue full; dropped slot=%u %u->%u\n",
+        Platform::logf("[Evolution] notification queue full; dropped slot=%u %u->%u\n",
                       teamSlot, fromSpeciesId, toSpeciesId);
         return false;
     }
@@ -1847,7 +1848,7 @@ uint32_t GameEngine::applyFaintPenaltyToTeamMember(uint8_t teamSlot) {
     const Species& species = speciesFor(mon);
     uint32_t levelFloor = minimumExpForLevel(species.growthRate, mon.level);
     uint32_t availableLoss = mon.exp > levelFloor ? mon.exp - levelFloor : 0;
-    uint32_t loss = mon.exp == 0 ? 0 : max<uint32_t>(1, mon.exp / 10);
+    uint32_t loss = mon.exp == 0 ? 0 : MathUtil::max<uint32_t>(1, mon.exp / 10);
     if (loss > availableLoss) loss = availableLoss;
     mon.exp -= loss;
     mon.hpCur = 0;
@@ -1886,8 +1887,8 @@ uint8_t GameEngine::grantAdventureBond(uint16_t steps) {
 void GameEngine::addWalkSteps(uint16_t steps) {
     syncGameClock(Hal::ins().millis());
     resetDailyCountersIfNeeded();
-    state.stepsToday = (uint16_t)min<uint32_t>(60000, (uint32_t)state.stepsToday + steps);
-    uint16_t earnedWalkExp = min<uint16_t>(50, state.stepsToday / 100);
+    state.stepsToday = (uint16_t)MathUtil::min<uint32_t>(60000, (uint32_t)state.stepsToday + steps);
+    uint16_t earnedWalkExp = MathUtil::min<uint16_t>(50, state.stepsToday / 100);
     if (earnedWalkExp > state.walkExpToday) {
         uint16_t expGain = earnedWalkExp - state.walkExpToday;
         state.walkExpToday = earnedWalkExp;
@@ -2000,8 +2001,8 @@ void GameEngine::enterDeepSleep() {
     Hal::ins().setBrightness(0);
     Platform::display().sleep();
 
-    Serial.println("[Power] Long-press B: waiting for release");
-    Serial.flush();
+    Platform::logLine("[Power] Long-press B: waiting for release");
+    Platform::logger().flush();
 
     // GPIO12 is active-low. Arming it while B is still held would wake the
     // device immediately, so wait until the long-press has been released.
@@ -2010,8 +2011,8 @@ void GameEngine::enterDeepSleep() {
         Platform::clock().sleepMs(10);
     } while (Platform::input().pressed(Platform::InputButton::SECONDARY));
 
-    Serial.println("[Power] entering deep sleep; wake=B/timer");
-    Serial.flush();
+    Platform::logLine("[Power] entering deep sleep; wake=B/timer");
+    Platform::logger().flush();
     Platform::power().enterDeepSleep(
         SILENT_CARE_WAKE_INTERVAL_US, true);
     while (true) {
@@ -2038,12 +2039,12 @@ void GameEngine::runSilentCareWake() {
         uint8_t revivals = Game::applyCareMinutes(
             state, acc, SILENT_CARE_WAKE_MINUTES, gameSpeed(), true);
         saveManager.saveSnapshot(state, mainViewState);
-        Serial.printf("[Power] silent care wake: elapsed=%umin revivals=%u\n",
+        Platform::logf("[Power] silent care wake: elapsed=%umin revivals=%u\n",
                       (unsigned)SILENT_CARE_WAKE_MINUTES, revivals);
     } else {
-        Serial.println("[Power] silent care wake: no save loaded, skip care");
+        Platform::logLine("[Power] silent care wake: no save loaded, skip care");
     }
-    Serial.flush();
+    Platform::logger().flush();
     Platform::power().enterDeepSleep(
         SILENT_CARE_WAKE_INTERVAL_US, true);
     while (true) {
@@ -2067,7 +2068,7 @@ bool GameEngine::saveNow() {
 
 bool GameEngine::resetGame() {
     if (!saveManager.clearAll()) {
-        Serial.println("[GameEngine] failed to clear game data");
+        Platform::logLine("[GameEngine] failed to clear game data");
         return false;
     }
     VoiceCallService::ins().clearCachedProfile();
@@ -2094,7 +2095,7 @@ bool GameEngine::resetGame() {
     syncSpriteCache();
 
     if (!saveNow()) {
-        Serial.println("[GameEngine] reset completed but default save failed");
+        Platform::logLine("[GameEngine] reset completed but default save failed");
     }
     return true;
 }
@@ -2113,7 +2114,7 @@ bool GameEngine::hasEncounteredSpecies(uint16_t speciesId) const {
 bool GameEngine::recordEncounteredSpecies(uint16_t speciesId) {
     if (!encounterHistory.add(speciesId)) return false;
     encounterHistoryDirty = true;
-    Serial.printf("[EncounterHistory] unlocked species=%u total=%u\n",
+    Platform::logf("[EncounterHistory] unlocked species=%u total=%u\n",
                   speciesId, encounterHistory.count);
     markDirty(SaveUrgency::SOON);
     return true;
@@ -2147,7 +2148,7 @@ void GameEngine::switchScene(SceneID id, bool saveBeforeSwitch) {
     SceneID fromId = currentId;
     resetIdle(now);
     if (saveBeforeSwitch && saveCoordinator.dirty() && !saveNow()) {
-        Serial.println("[GameEngine] save before scene switch failed");
+        Platform::logLine("[GameEngine] save before scene switch failed");
     }
     if (currentScene) {
         currentScene->onExit();
@@ -2159,14 +2160,14 @@ void GameEngine::switchScene(SceneID id, bool saveBeforeSwitch) {
     currentScene.reset(allocateScene(actualId));
     if (!currentScene) {
         SceneID fallback = homeScene();
-        Serial.printf("[GameEngine] scene allocation failed id=%u fallback=%u\n",
+        Platform::logf("[GameEngine] scene allocation failed id=%u fallback=%u\n",
                       static_cast<unsigned>(id),
                       static_cast<unsigned>(fallback));
         actualId = fallback;
         currentScene.reset(allocateScene(actualId));
     }
     if (!currentScene) {
-        Serial.println("[GameEngine] fatal scene allocation failure; restarting");
+        Platform::logLine("[GameEngine] fatal scene allocation failure; restarting");
         Platform::clock().sleepMs(50);
         Platform::power().restart();
         return;
@@ -2244,7 +2245,7 @@ void GameEngine::update(uint32_t nowMs) {
         startupSpriteCacheReady = syncSpriteCache(1);
         if (startupSpriteCacheReady) {
             PokemonSprites::setDynamicLoadingEnabled(true);
-            Serial.printf("[BootTiming] sprites_ready_ms=%u\n", nowMs - bootStartedMs);
+            Platform::logf("[BootTiming] sprites_ready_ms=%u\n", nowMs - bootStartedMs);
         }
     } else {
         syncSpriteCache(startupFirstFrameRendered ? 0xFF : 0);
@@ -2272,7 +2273,7 @@ void GameEngine::update(uint32_t nowMs) {
             logSceneDemand(result, nowMs);
             sceneDirty = sceneDirty || result.redraw;
             if (result.nextUpdateDelayMs != SceneUpdateResult::NO_UPDATE) {
-                nextSceneUpdateMs = nowMs + max<uint32_t>(
+                nextSceneUpdateMs = nowMs + MathUtil::max<uint32_t>(
                     1, result.nextUpdateDelayMs);
                 sceneUpdateScheduled = true;
             }
@@ -2403,10 +2404,10 @@ void GameEngine::updateSceneFade(uint32_t nowMs) {
 
     uint32_t stepMs = 0;
     if (nowMs >= sceneFadeLastStepMs) {
-        stepMs = min<uint32_t>(FRAME_MS, nowMs - sceneFadeLastStepMs);
+        stepMs = MathUtil::min<uint32_t>(FRAME_MS, nowMs - sceneFadeLastStepMs);
         sceneFadeLastStepMs = nowMs;
     }
-    sceneFadeProgressMs = static_cast<uint16_t>(min<uint32_t>(
+    sceneFadeProgressMs = static_cast<uint16_t>(MathUtil::min<uint32_t>(
         sceneFadeDurationMs,
         static_cast<uint32_t>(sceneFadeProgressMs) + stepMs));
     if (sceneFadeProgressMs < sceneFadeDurationMs) return;
@@ -2420,28 +2421,28 @@ void GameEngine::updateSceneFade(uint32_t nowMs) {
 }
 
 void GameEngine::render(uint32_t nowMs) {
-    uint32_t drawStartedUs = micros();
+    uint32_t drawStartedUs = Platform::clock().micros();
     PokemonSprites::beginRenderFrame();
     if (currentScene) currentScene->render();
     renderResourceAlert();
     renderSceneFade(Hal::ins().millis());
-    uint32_t flushStartedUs = micros();
+    uint32_t flushStartedUs = Platform::clock().micros();
     Hal::ins().flush();
     if (currentId == SceneID::MAIN) {
         mainSceneFirstFrameRendered = true;
     }
-    uint32_t flushedUs = micros();
+    uint32_t flushedUs = Platform::clock().micros();
     uint32_t drawUs = flushStartedUs - drawStartedUs;
     uint32_t flushUs = flushedUs - flushStartedUs;
     ++renderStatsFlushes;
     renderStatsDrawUs += drawUs;
     renderStatsFlushUs += flushUs;
-    renderStatsMaxDrawUs = max(renderStatsMaxDrawUs, drawUs);
-    renderStatsMaxFlushUs = max(renderStatsMaxFlushUs, flushUs);
+    renderStatsMaxDrawUs = MathUtil::max(renderStatsMaxDrawUs, drawUs);
+    renderStatsMaxFlushUs = MathUtil::max(renderStatsMaxFlushUs, flushUs);
     if (!startupFirstFrameRendered) {
         startupFirstFrameRendered = true;
         if (startupSpriteCacheReady) PokemonSprites::setDynamicLoadingEnabled(true);
-        Serial.printf("[BootTiming] first_frame_ms=%u sprites_ready=%u\n",
+        Platform::logf("[BootTiming] first_frame_ms=%u sprites_ready=%u\n",
                       Hal::ins().millis() - bootStartedMs, startupSpriteCacheReady ? 1 : 0);
     }
 }
@@ -2453,7 +2454,7 @@ void GameEngine::renderSceneFade(uint32_t nowMs) {
         PixelRenderer::darken(255);
         return;
     }
-    uint32_t progress = min<uint32_t>(sceneFadeDurationMs, sceneFadeProgressMs);
+    uint32_t progress = MathUtil::min<uint32_t>(sceneFadeDurationMs, sceneFadeProgressMs);
     uint8_t amount = sceneFade == SceneFadePhase::OUT
         ? (uint8_t)(progress * 255UL / sceneFadeDurationMs)
         : (uint8_t)(255UL - progress * 255UL / sceneFadeDurationMs);
@@ -2522,7 +2523,7 @@ void GameEngine::updateIdle(uint32_t nowMs) {
     int32_t elapsed = (int32_t)(nowMs - lastActivityMs);
     if (elapsed < 0 || (uint32_t)elapsed < timeout) return;
     if (saveCoordinator.dirty() && !saveNow()) {
-        Serial.println("[GameEngine] save before idle failed");
+        Platform::logLine("[GameEngine] save before idle failed");
     }
     idleActive = true;
     VoiceCallService::ins().stopListening();
@@ -2610,7 +2611,7 @@ bool GameEngine::sanitizeMonsterMovesForSpecies(Game::MonsterRuntime& mon,
             ? Game::MOVE_PROFICIENCY_MAX
             : (moves[slot] == 0
                 ? 0
-                : min<uint8_t>(mon.moveProficiency[slot], Game::MOVE_PROFICIENCY_MAX));
+                : MathUtil::min<uint8_t>(mon.moveProficiency[slot], Game::MOVE_PROFICIENCY_MAX));
         if (mon.moveProficiency[slot] != normalized) {
             mon.moveProficiency[slot] = normalized;
             changed = true;
@@ -2653,7 +2654,7 @@ void GameEngine::grantCareExperience(uint8_t baseAmount, bool weakGain,
     uint16_t amount = weakGain || mon.level > 15
         ? 1
         : (uint16_t)baseAmount * careExpMultiplierForLevel(mon.level);
-    amount = min<uint16_t>(amount, cap - state.careExpToday);
+    amount = MathUtil::min<uint16_t>(amount, cap - state.careExpToday);
     if (amount == 0) return;
 
     state.careExpToday += amount;
@@ -2672,7 +2673,7 @@ void GameEngine::tickCare(uint32_t nowMs) {
     uint8_t revivals = Game::applyCareMinutes(state, careAcc, elapsedMin,
                                               gameSpeed(), homeRecoveryActive);
     if (revivals > 0) {
-        Serial.printf("[Care] faint rest complete for %u monster(s)\n", revivals);
+        Platform::logf("[Care] faint rest complete for %u monster(s)\n", revivals);
     }
     markDirty(SaveUrgency::DEFERRED);
 }
@@ -2690,7 +2691,7 @@ bool GameEngine::syncSpriteCache(uint8_t loadBudget) {
 uint32_t GameEngine::randomIvPacked() const {
     uint32_t packed = 0;
     for (uint8_t i = 0; i < Game::STAT_COUNT; ++i) {
-        Game::setIv(packed, i, random(0, Game::IV_MAX + 1));
+        Game::setIv(packed, i, GameRandom::random(0, Game::IV_MAX + 1));
     }
     return packed;
 }

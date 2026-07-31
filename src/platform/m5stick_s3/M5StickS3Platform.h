@@ -4,6 +4,7 @@
 
 class M5StickS3Platform final : public Platform::IPlatformLifecycle,
                                 public Platform::IClock,
+                                public Platform::ILogger,
                                 public Platform::IInputDevice,
                                 public Platform::IDisplayDevice,
                                 public Platform::IAudioDevice,
@@ -20,7 +21,11 @@ public:
     bool begin() override;
 
     uint32_t millis() const override;
+    uint32_t micros() const override;
     void sleepMs(uint32_t durationMs) override;
+
+    void write(const char* text, size_t length) override;
+    void flush() override;
 
     void update() override;
     bool pressed(Platform::InputButton button) const override;

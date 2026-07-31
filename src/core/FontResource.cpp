@@ -1,8 +1,8 @@
 #include "core/FontResource.h"
 
 #include "core/ResourcePack.h"
+#include "platform/api/PlatformServices.h"
 
-#include <Arduino.h>
 #include <cstdlib>
 
 namespace {
@@ -57,13 +57,13 @@ bool FontResource::begin() {
     initialized_ = true;
 
     if (!ResourcePack::ins().begin()) {
-        Serial.println("[FontResource] resource pack unavailable");
+        Platform::logLine("[FontResource] resource pack unavailable");
         return false;
     }
 
     loadExternal(FontFace::SARASA_CJK, sarasaCjk_);
     loadExternal(FontFace::UNSCII_ASCII, unsciiAscii_);
-    Serial.printf("[FontResource] source=%s sarasaCjk=%u unsciiAscii=%u\n",
+    Platform::logf("[FontResource] source=%s sarasaCjk=%u unsciiAscii=%u\n",
                   source(), sarasaCjk_.glyphCount, unsciiAscii_.glyphCount);
     return loaded();
 }
@@ -117,19 +117,19 @@ bool FontResource::loadExternal(FontFace face, FontData& data) {
         ? pack.openFont(UNSCII_ASCII_FONT_ID, file)
         : pack.openDefaultFont(file);
     if (!opened) {
-        Serial.printf("[FontResource] %s font file unavailable\n",
+        Platform::logf("[FontResource] %s font file unavailable\n",
                       faceName(face));
         return false;
     }
 
     PackedFontHeader header{};
     if (!readExact(file, &header, sizeof(header))) {
-        Serial.printf("[FontResource] %s font header truncated\n",
+        Platform::logf("[FontResource] %s font header truncated\n",
                       faceName(face));
         return false;
     }
     if (!validHeader(header)) {
-        Serial.printf("[FontResource] %s font header invalid magic=%08lx version=%u glyphs=%u size=%ux%u bytes=%u\n",
+        Platform::logf("[FontResource] %s font header invalid magic=%08lx version=%u glyphs=%u size=%ux%u bytes=%u\n",
                       faceName(face),
                       static_cast<unsigned long>(header.magic),
                       header.version,
@@ -143,7 +143,7 @@ bool FontResource::loadExternal(FontFace face, FontData& data) {
     size_t bytes = sizeof(Glyph) * header.glyphCount;
     size_t expectedSize = sizeof(PackedFontHeader) + bytes;
     if (file.size() != expectedSize) {
-        Serial.printf("[FontResource] %s font size invalid actual=%u expected=%u\n",
+        Platform::logf("[FontResource] %s font size invalid actual=%u expected=%u\n",
                       faceName(face),
                       static_cast<unsigned>(file.size()),
                       static_cast<unsigned>(expectedSize));
@@ -152,14 +152,14 @@ bool FontResource::loadExternal(FontFace face, FontData& data) {
     Glyph* glyphs = static_cast<Glyph*>(
         Platform::memory().allocate(bytes, true));
     if (!glyphs) {
-        Serial.printf("[FontResource] %s font allocation failed bytes=%u\n",
+        Platform::logf("[FontResource] %s font allocation failed bytes=%u\n",
                       faceName(face),
                       static_cast<unsigned>(bytes));
         return false;
     }
 
     if (!readExact(file, glyphs, bytes)) {
-        Serial.printf("[FontResource] %s font glyph payload truncated\n",
+        Platform::logf("[FontResource] %s font glyph payload truncated\n",
                       faceName(face));
         Platform::memory().release(glyphs);
         return false;
@@ -169,14 +169,14 @@ bool FontResource::loadExternal(FontFace face, FontData& data) {
     for (uint16_t i = 0; i < header.glyphCount; ++i) {
         uint32_t codepoint = glyphs[i].codepoint;
         if (!validCodepoint(codepoint)) {
-            Serial.printf("[FontResource] %s font codepoint invalid index=%u value=U+%04lX\n",
+            Platform::logf("[FontResource] %s font codepoint invalid index=%u value=U+%04lX\n",
                           faceName(face), i,
                           static_cast<unsigned long>(codepoint));
             Platform::memory().release(glyphs);
             return false;
         }
         if (i > 0 && codepoint <= previous) {
-            Serial.printf("[FontResource] %s font codepoints unsorted index=%u previous=U+%04lX value=U+%04lX\n",
+            Platform::logf("[FontResource] %s font codepoints unsorted index=%u previous=U+%04lX value=U+%04lX\n",
                           faceName(face),
                           i,
                           static_cast<unsigned long>(previous),

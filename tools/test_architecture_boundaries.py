@@ -63,6 +63,34 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                     violations.append(str(relative))
         self.assertEqual([], violations, "\n" + "\n".join(violations))
 
+    def test_arduino_header_is_confined_to_entrypoint_and_platform_adapter(self):
+        allowed = {
+            Path("src/main.cpp"),
+            Path("src/platform/m5stick_s3/M5StickS3Platform.cpp"),
+        }
+        violations = []
+        for path in source_files(ROOT / "src"):
+            text = path.read_text(encoding="utf-8")
+            if re.search(r"#\s*include\s*[<\"]Arduino\.h[>\"]", text):
+                relative = path.relative_to(ROOT)
+                if relative not in allowed:
+                    violations.append(str(relative))
+        self.assertEqual([], violations, "\n" + "\n".join(violations))
+
+    def test_sprite_generator_uses_platform_services(self):
+        generator = (
+            ROOT / "tools" / "generate_pokemon_sprites.py"
+        ).read_text(encoding="utf-8")
+        forbidden = (
+            "#include <Arduino.h>",
+            "Serial.",
+            "ESP.",
+            "psramFound()",
+            "ps_malloc(",
+            "fs::File",
+        )
+        self.assertEqual([], [token for token in forbidden if token in generator])
+
     def test_core_storage_and_resources_use_platform_services(self):
         self.assert_no_patterns(
             ROOT / "src" / "core",

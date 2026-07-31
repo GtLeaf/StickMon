@@ -1,8 +1,8 @@
 #include "core/ResourcePack.h"
 
 #include "core/ResourceFS.h"
+#include "platform/api/PlatformServices.h"
 
-#include <Arduino.h>
 #include <cstdio>
 #include <cstring>
 
@@ -291,17 +291,17 @@ bool ResourcePack::begin() {
     setDefaultRoot();
 
     if (!ResourceFS::ins().begin()) {
-        Serial.println("[ResourcePack] resource FS unavailable");
+        Platform::logLine("[ResourcePack] resource FS unavailable");
         return false;
     }
 
     loadActiveConfig();
     active_ = loadManifest();
     if (active_) {
-        Serial.printf("[ResourcePack] active id=%s version=%s schema=%u root=%s\n",
+        Platform::logf("[ResourcePack] active id=%s version=%s schema=%u root=%s\n",
                       id_, version_, schema_, root_);
     } else {
-        Serial.printf("[ResourcePack] no active pack root=%s\n", root_);
+        Platform::logf("[ResourcePack] no active pack root=%s\n", root_);
     }
     return active_;
 }
@@ -391,12 +391,12 @@ bool ResourcePack::loadActiveConfig() {
     JsonStringStatus pathStatus =
         extractJsonStringAlias(json, "packPath", "path", path, sizeof(path));
     if (pathStatus == JsonStringStatus::INVALID) {
-        Serial.println("[ResourcePack] invalid pack root config");
+        Platform::logLine("[ResourcePack] invalid pack root config");
         return false;
     }
     if (pathStatus == JsonStringStatus::VALID) {
         if (!isSafePathText(path, true)) {
-            Serial.printf("[ResourcePack] invalid pack root: %s\n", path);
+            Platform::logf("[ResourcePack] invalid pack root: %s\n", path);
             return false;
         }
         copyText(root_, sizeof(root_), path);
@@ -408,12 +408,12 @@ bool ResourcePack::loadActiveConfig() {
         extractJsonStringAlias(json, "activePack", "pack",
                                packName, sizeof(packName));
     if (packStatus == JsonStringStatus::INVALID) {
-        Serial.println("[ResourcePack] invalid active pack config");
+        Platform::logLine("[ResourcePack] invalid active pack config");
         return false;
     }
     if (packStatus == JsonStringStatus::VALID) {
         if (!isSafePackName(packName)) {
-            Serial.printf("[ResourcePack] invalid pack id: %s\n", packName);
+            Platform::logf("[ResourcePack] invalid pack id: %s\n", packName);
             return false;
         }
         int written = std::snprintf(root_, sizeof(root_), "/packs/%s", packName);
@@ -434,18 +434,18 @@ bool ResourcePack::loadManifest() {
 
     char format[40] = {};
     if (!extractJsonString(json, "format", format, sizeof(format))) {
-        Serial.printf("[ResourcePack] manifest format missing path=%s\n", path);
+        Platform::logf("[ResourcePack] manifest format missing path=%s\n", path);
         return false;
     }
     if (std::strcmp(format, PACK_FORMAT) != 0) {
-        Serial.printf("[ResourcePack] unsupported manifest format=%s expected=%s path=%s\n",
+        Platform::logf("[ResourcePack] unsupported manifest format=%s expected=%s path=%s\n",
                       format,
                       PACK_FORMAT,
                       path);
         return false;
     }
     if (!extractJsonUint16(json, "schema", schema_) || schema_ != SUPPORTED_SCHEMA) {
-        Serial.printf("[ResourcePack] unsupported schema=%u\n", schema_);
+        Platform::logf("[ResourcePack] unsupported schema=%u\n", schema_);
         return false;
     }
 
@@ -453,13 +453,13 @@ bool ResourcePack::loadManifest() {
     bool hasVersion = findJsonValue(json, "version") != nullptr;
     if ((hasId && !extractJsonString(json, "id", id_, sizeof(id_))) ||
         (hasVersion && !extractJsonString(json, "version", version_, sizeof(version_)))) {
-        Serial.println("[ResourcePack] invalid manifest metadata");
+        Platform::logLine("[ResourcePack] invalid manifest metadata");
         return false;
     }
     if (id_[0] == '\0') copyText(id_, sizeof(id_), "dev");
     if (version_[0] == '\0') copyText(version_, sizeof(version_), "0.0.0");
     if (!isSafePackName(id_) || !isSafeVersionText(version_)) {
-        Serial.println("[ResourcePack] unsafe manifest metadata");
+        Platform::logLine("[ResourcePack] unsafe manifest metadata");
         return false;
     }
 
@@ -473,7 +473,7 @@ bool ResourcePack::loadManifest() {
         !copyOptionalPath(json, "battleAssets", battleAssetsPath_, sizeof(battleAssetsPath_)) ||
         !copyOptionalPath(json, "mapAssets", mapAssetsPath_, sizeof(mapAssetsPath_)) ||
         !copyOptionalPath(json, "hatchAssets", hatchAssetsPath_, sizeof(hatchAssetsPath_))) {
-        Serial.println("[ResourcePack] invalid resource path in manifest");
+        Platform::logLine("[ResourcePack] invalid resource path in manifest");
         return false;
     }
     return true;

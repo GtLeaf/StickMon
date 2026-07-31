@@ -1,6 +1,6 @@
 #pragma once
-#include <Arduino.h>
 #include <cstdint>
+#include "platform/api/FlashStorage.h"
 
 namespace MenuAssets {
 
@@ -14,9 +14,9 @@ struct RleFrame {
     uint16_t length;
 };
 
-extern const RleFrame MAIN_ICON_FRAMES[] PROGMEM;
-extern const uint16_t MAIN_ICON_RLE[] PROGMEM;
-extern const RleFrame BOX_ICON_FRAMES[] PROGMEM;
-extern const uint16_t BOX_ICON_RLE[] PROGMEM;
+extern const RleFrame MAIN_ICON_FRAMES[] STICKMON_FLASH_DATA;
+extern const uint16_t MAIN_ICON_RLE[] STICKMON_FLASH_DATA;
+extern const RleFrame BOX_ICON_FRAMES[] STICKMON_FLASH_DATA;
+extern const uint16_t BOX_ICON_RLE[] STICKMON_FLASH_DATA;
 
 }

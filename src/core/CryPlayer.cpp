@@ -4,7 +4,6 @@
 #include "core/ResourcePack.h"
 #include "platform/api/PlatformServices.h"
 
-#include <Arduino.h>
 #include <cstdlib>
 
 namespace {
@@ -52,7 +51,7 @@ bool CryPlayer::play(uint16_t speciesId) {
     if (!pack.begin()) return false;
     Platform::ResourceFile file;
     if (!pack.openCry(speciesId, file)) {
-        Serial.printf("[CryPlayer] missing species=%u\n", speciesId);
+        Platform::logf("[CryPlayer] missing species=%u\n", speciesId);
         return false;
     }
 
@@ -70,7 +69,7 @@ bool CryPlayer::play(uint16_t speciesId) {
         header.reserved != 0 ||
         static_cast<uint64_t>(sizeof(header)) + header.payloadCompressedBytes !=
             file.size()) {
-        Serial.printf("[CryPlayer] invalid species=%u bytes=%u\n",
+        Platform::logf("[CryPlayer] invalid species=%u bytes=%u\n",
                       speciesId, static_cast<unsigned>(file.size()));
         return false;
     }
@@ -78,7 +77,7 @@ bool CryPlayer::play(uint16_t speciesId) {
     uint8_t* pcm = static_cast<uint8_t*>(
         Platform::memory().allocate(header.payloadRawBytes, true));
     if (!pcm) {
-        Serial.printf("[CryPlayer] allocation failed species=%u bytes=%u\n",
+        Platform::logf("[CryPlayer] allocation failed species=%u bytes=%u\n",
                       speciesId, header.payloadRawBytes);
         return false;
     }
@@ -91,7 +90,7 @@ bool CryPlayer::play(uint16_t speciesId) {
                                      header.payloadCrc32,
                                      &stats)) {
         Platform::memory().release(pcm);
-        Serial.printf("[CryPlayer] decode failed species=%u read=%u inflate=%u\n",
+        Platform::logf("[CryPlayer] decode failed species=%u read=%u inflate=%u\n",
                       speciesId, stats.readMs, stats.inflateMs);
         return false;
     }
@@ -101,11 +100,11 @@ bool CryPlayer::play(uint16_t speciesId) {
     speciesId_ = speciesId;
     if (!Platform::audio().playPcmU8(pcm_, pcmBytes_, header.sampleRate)) {
         releaseBuffer();
-        Serial.printf("[CryPlayer] playback failed species=%u\n", speciesId);
+        Platform::logf("[CryPlayer] playback failed species=%u\n", speciesId);
         return false;
     }
 
-    Serial.printf(
+    Platform::logf(
         "[CryPlayer] play species=%u compressed=%u decoded=%u read=%u inflate=%u\n",
         speciesId, header.payloadCompressedBytes, header.payloadRawBytes,
         stats.readMs, stats.inflateMs);

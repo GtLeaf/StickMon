@@ -2,7 +2,6 @@
 
 #include "platform/api/PlatformServices.h"
 
-#include <Arduino.h>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -114,7 +113,7 @@ bool VoiceCallService::begin() {
     if (initialized_) return true;
     initialized_ = true;
     profileReady_ = loadProfile();
-    Serial.printf("[VoiceCall] profile=%s bytes=%u\n",
+    Platform::logf("[VoiceCall] profile=%s bytes=%u\n",
                   profileReady_ ? "ready" : "missing",
                   static_cast<unsigned>(sizeof(VoiceProfile)));
     return true;
@@ -187,7 +186,7 @@ bool VoiceCallService::saveCandidate() {
         NVS_NAMESPACE, PROFILE_KEY, &verify, sizeof(verify));
     bool valid = read && validProfile(verify);
     if (!written || stored != sizeof(verify) || !valid) {
-        Serial.printf(
+        Platform::logf(
             "[VoiceCall] save failed stage=profile written=%u stored=%u read=%u valid=%u\n",
             written ? static_cast<unsigned>(sizeof(candidate_)) : 0U,
             static_cast<unsigned>(stored),
@@ -197,7 +196,7 @@ bool VoiceCallService::saveCandidate() {
     }
     profile_ = candidate_;
     profileReady_ = true;
-    Serial.printf("[VoiceCall] profile saved bytes=%u\n",
+    Platform::logf("[VoiceCall] profile saved bytes=%u\n",
                   static_cast<unsigned>(sizeof(candidate_)));
     return true;
 }
@@ -415,7 +414,7 @@ bool VoiceCallService::profileMatches(const VoiceTemplate& sample) const {
     }
     std::sort(distance, distance + TEMPLATE_COUNT);
     uint32_t score = (distance[0] + distance[1]) / 2;
-    Serial.printf("[VoiceCall] score=%lu threshold=%lu distances=%lu,%lu,%lu "
+    Platform::logf("[VoiceCall] score=%lu threshold=%lu distances=%lu,%lu,%lu "
                   "frames=%u dynamics=%u speech=%u%%\n",
                   static_cast<unsigned long>(score),
                   static_cast<unsigned long>(profile_.threshold),
@@ -504,14 +503,14 @@ void VoiceCallService::updateEnrollment(uint32_t nowMs) {
 
     EnrollmentError error = EnrollmentError::NONE;
     if (!extractTemplate(capture_, ENROLL_SAMPLES, candidate_.templates[enrollmentTake_], error)) {
-        Serial.printf("[VoiceCall] enrollment take=%u rejected error=%u\n",
+        Platform::logf("[VoiceCall] enrollment take=%u rejected error=%u\n",
                       enrollmentTake_ + 1, static_cast<unsigned>(error));
         enrollmentError_ = error;
         enrollmentState_ = EnrollmentState::ERROR;
         stateStartedMs_ = nowMs;
         return;
     }
-    Serial.printf("[VoiceCall] enrollment take=%u accepted frames=%u duration=%u "
+    Platform::logf("[VoiceCall] enrollment take=%u accepted frames=%u duration=%u "
                   "dynamics=%u speech=%u%%\n",
                   enrollmentTake_ + 1,
                   candidate_.templates[enrollmentTake_].frameCount,
@@ -548,7 +547,7 @@ void VoiceCallService::updateEnrollment(uint32_t nowMs) {
         finishAudioMode();
         return;
     }
-    Serial.printf("[VoiceCall] enrolled threshold=%lu pair=%lu,%lu,%lu\n",
+    Platform::logf("[VoiceCall] enrolled threshold=%lu pair=%lu,%lu,%lu\n",
                   static_cast<unsigned long>(candidate_.threshold),
                   static_cast<unsigned long>(pairwise[0]),
                   static_cast<unsigned long>(pairwise[1]),
@@ -666,7 +665,7 @@ void VoiceCallService::updateListening(uint32_t nowMs) {
             uint32_t recognizeStartedMs = Platform::clock().millis();
             if (extractTemplate(rolling_, rollingCount_, sample, error, true)) {
                 bool matched = profileMatches(sample);
-                Serial.printf("[VoiceCall] recognize cost=%lums matched=%u\n",
+                Platform::logf("[VoiceCall] recognize cost=%lums matched=%u\n",
                               static_cast<unsigned long>(Platform::clock().millis() -
                                                          recognizeStartedMs),
                               matched ? 1 : 0);

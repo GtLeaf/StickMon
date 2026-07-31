@@ -368,6 +368,7 @@ private:
     int8_t bowlEaterSlot = -1;
     uint32_t visitorFeedingBiteMs = 0;
     uint32_t visitorFeedingUntilMs = 0;
+    bool visitorBedYieldHandled = false;
     uint32_t hungerAnimStartedMs = 0;
     uint32_t hungerAnimUntilMs = 0;
     uint8_t hungerAnimFrom = 0;

@@ -8,16 +8,16 @@
 #define STICKMON_ENABLE_RENDER_STATS 0
 #endif
 
+#include "platform/api/PlatformServices.h"
+
 #if STICKMON_ENABLE_TRACE_LOGS
-#include <Arduino.h>
-#define STICKMON_TRACEF(...) Serial.printf(__VA_ARGS__)
+#define STICKMON_TRACEF(...) Platform::logf(__VA_ARGS__)
 #else
 #define STICKMON_TRACEF(...) do { } while (0)
 #endif
 
 #if STICKMON_ENABLE_RENDER_STATS
-#include <Arduino.h>
-#define STICKMON_RENDER_STATSF(...) Serial.printf(__VA_ARGS__)
+#define STICKMON_RENDER_STATSF(...) Platform::logf(__VA_ARGS__)
 #else
 #define STICKMON_RENDER_STATSF(...) do { } while (0)
 #endif

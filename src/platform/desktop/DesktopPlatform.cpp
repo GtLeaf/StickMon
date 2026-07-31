@@ -47,7 +47,7 @@ private:
 }  // namespace
 
 DesktopPlatform::DesktopPlatform(std::string resourceRoot)
-    : services_{*this, *this, *this, *this, *this, *this, *this,
+    : services_{*this, *this, *this, *this, *this, *this, *this, *this,
                 *this, *this, *this, *this},
       resourceRoot_(std::move(resourceRoot)),
       frameBuffer_(static_cast<size_t>(Platform::LOGICAL_DISPLAY_W) *
@@ -61,6 +61,10 @@ bool DesktopPlatform::begin() {
 uint32_t DesktopPlatform::millis() const { return nowMs_; }
 
 void DesktopPlatform::sleepMs(uint32_t durationMs) { nowMs_ += durationMs; }
+
+void DesktopPlatform::write(const char* text, size_t length) {
+    if (text && length > 0) logs_.append(text, length);
+}
 
 bool DesktopPlatform::pressed(Platform::InputButton button) const {
     size_t index = static_cast<size_t>(button);

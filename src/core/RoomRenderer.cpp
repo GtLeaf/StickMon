@@ -5,7 +5,6 @@
 #include "platform/api/PlatformServices.h"
 #include "presentation/PixelRenderer.h"
 
-#include <Arduino.h>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -94,19 +93,19 @@ void applyNightPatch() {
 bool prepare(bool night) {
     if (!ensureRoomBuffer()) return false;
     if (roomBufferValid && roomBufferNight == night) return true;
-    uint32_t started = millis();
+    uint32_t started = Platform::clock().millis();
     if (!decodeBase()) {
-        Serial.println("[RoomRenderer] base decode failed");
+        Platform::logLine("[RoomRenderer] base decode failed");
         roomBufferValid = false;
         return false;
     }
     if (night) applyNightPatch();
     roomBufferNight = night;
     roomBufferValid = true;
-    Serial.printf("[RoomRenderer] prepared mode=%s bytes=%u ms=%u\n",
+    Platform::logf("[RoomRenderer] prepared mode=%s bytes=%u ms=%u\n",
                   night ? "night" : "day",
                   static_cast<unsigned>(roomBufferPixels * sizeof(uint16_t)),
-                  millis() - started);
+                  Platform::clock().millis() - started);
     return true;
 }
 

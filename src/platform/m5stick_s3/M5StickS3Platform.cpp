@@ -78,7 +78,7 @@ void receivePeerPacket(const uint8_t* mac, const uint8_t* data, int length) {
 }  // namespace
 
 M5StickS3Platform::M5StickS3Platform()
-    : services_{*this, *this, *this, *this, *this, *this, *this,
+    : services_{*this, *this, *this, *this, *this, *this, *this, *this,
                 *this, *this, *this, *this} {}
 
 M5StickS3Platform& M5StickS3Platform::instance() {
@@ -133,8 +133,21 @@ uint32_t M5StickS3Platform::millis() const {
     return M5.millis();
 }
 
+uint32_t M5StickS3Platform::micros() const {
+    return ::micros();
+}
+
 void M5StickS3Platform::sleepMs(uint32_t durationMs) {
     delay(durationMs);
+}
+
+void M5StickS3Platform::write(const char* text, size_t length) {
+    if (text && length > 0) Serial.write(
+        reinterpret_cast<const uint8_t*>(text), length);
+}
+
+void M5StickS3Platform::flush() {
+    Serial.flush();
 }
 
 void M5StickS3Platform::update() {

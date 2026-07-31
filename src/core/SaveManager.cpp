@@ -1,5 +1,5 @@
 #include "core/SaveManager.h"
-#include <Arduino.h>
+#include "core/MathUtil.h"
 #include <cmath>
 #include <cstring>
 #include <new>
@@ -346,7 +346,7 @@ bool sanitizeState(Game::GameState& state) {
     if (state.room.bowlCount > Game::ROOM_BOWL_CAPACITY) {
         uint8_t extraServings = state.room.bowlCount - Game::ROOM_BOWL_CAPACITY;
         uint8_t foodIndex = state.room.bowlFood;
-        state.room.food[foodIndex] = static_cast<uint8_t>(min<uint16_t>(
+        state.room.food[foodIndex] = static_cast<uint8_t>(MathUtil::min<uint16_t>(
             Game::ITEM_STACK_CAP,
             static_cast<uint16_t>(state.room.food[foodIndex]) + extraServings));
         state.room.bowlCount = Game::ROOM_BOWL_CAPACITY;
@@ -378,7 +378,7 @@ bool sanitizeState(Game::GameState& state) {
         state.stepsToday = 60000;
         changed = true;
     }
-    uint16_t maxWalkExp = min<uint16_t>(50, state.stepsToday / 100);
+    uint16_t maxWalkExp = MathUtil::min<uint16_t>(50, state.stepsToday / 100);
     if (state.walkExpToday > maxWalkExp) {
         state.walkExpToday = maxWalkExp;
         changed = true;
@@ -404,7 +404,7 @@ bool sanitizeState(Game::GameState& state) {
         uint8_t highestTeamLevel = 0;
         for (uint8_t slot = 0;
              slot < state.teamCount && slot < Game::TEAM_CAP; ++slot) {
-            highestTeamLevel = max(highestTeamLevel, state.team[slot].level);
+            highestTeamLevel = MathUtil::max(highestTeamLevel, state.team[slot].level);
         }
         if (state.teamCount == 0 ||
             state.pendingLevelUpLevel == 0 ||
@@ -501,7 +501,7 @@ bool SaveManager::load(Game::GameState& state,
     viewState = MainSceneViewState{};
     size_t len = Platform::blobs().blobSize(NVS_NS, NVS_KEY);
     if (len != sizeof(SaveRecord)) {
-        Serial.printf("[SaveManager] unsupported state size=%u expected=%u; reset to v%u\n",
+        Platform::logf("[SaveManager] unsupported state size=%u expected=%u; reset to v%u\n",
                       (unsigned)len,
                       (unsigned)sizeof(SaveRecord),
                       Game::SAVE_VERSION);
@@ -511,14 +511,14 @@ bool SaveManager::load(Game::GameState& state,
 
     auto* raw = new (std::nothrow) uint8_t[len];
     if (!raw) {
-        Serial.println("[SaveManager] state load allocation failed");
+        Platform::logLine("[SaveManager] state load allocation failed");
         reset(state);
         return false;
     }
     bool readOk = Platform::blobs().readBlob(NVS_NS, NVS_KEY, raw, len);
     size_t read = readOk ? len : 0;
     if (!readOk) {
-        Serial.printf("[SaveManager] state read failed read=%u expected=%u\n",
+        Platform::logf("[SaveManager] state read failed read=%u expected=%u\n",
                       (unsigned)read,
                       (unsigned)len);
         delete[] raw;
@@ -529,7 +529,7 @@ bool SaveManager::load(Game::GameState& state,
     SaveRecordHeader header{};
     memcpy(&header, raw, sizeof(header));
     if (header.magic != SAVE_RECORD_MAGIC || header.reserved != 0) {
-        Serial.printf("[SaveManager] invalid state header magic=%08lx version=%u reserved=%u\n",
+        Platform::logf("[SaveManager] invalid state header magic=%08lx version=%u reserved=%u\n",
                       (unsigned long)header.magic,
                       header.version,
                       header.reserved);
@@ -539,7 +539,7 @@ bool SaveManager::load(Game::GameState& state,
     }
 
     if (header.version != SAVE_RECORD_VERSION || len != sizeof(SaveRecord)) {
-        Serial.printf("[SaveManager] unsupported state version=%u size=%u expected=v%u/%u\n",
+        Platform::logf("[SaveManager] unsupported state version=%u size=%u expected=v%u/%u\n",
                       header.version,
                       (unsigned)len,
                       Game::SAVE_VERSION,
@@ -552,7 +552,7 @@ bool SaveManager::load(Game::GameState& state,
     auto* record = new (std::nothrow) SaveRecord{};
     if (!record) {
         delete[] raw;
-        Serial.println("[SaveManager] state load allocation failed");
+        Platform::logLine("[SaveManager] state load allocation failed");
         reset(state);
         return false;
     }
@@ -565,7 +565,7 @@ bool SaveManager::load(Game::GameState& state,
         record->state.magic != Game::SAVE_MAGIC ||
         record->state.version != Game::SAVE_VERSION ||
         record->state.checksum != expectedChecksum) {
-        Serial.printf("[SaveManager] unsupported/invalid state read=%u magic=%08lx version=%u checksum=%04x/%04x; reset to v%u\n",
+        Platform::logf("[SaveManager] unsupported/invalid state read=%u magic=%08lx version=%u checksum=%04x/%04x; reset to v%u\n",
                       (unsigned)read,
                       (unsigned long)record->state.magic,
                       record->state.version,
@@ -582,13 +582,13 @@ bool SaveManager::load(Game::GameState& state,
     if (viewValid) {
         loadMainSceneViewRecord(record->view, viewState);
     } else {
-        Serial.println("[SaveManager] invalid main scene view state; reset view");
+        Platform::logLine("[SaveManager] invalid main scene view state; reset view");
     }
     delete record;
 
     bool changed = sanitizeState(state);
     if (changed) {
-        Serial.println("[SaveManager] normalized state fields");
+        Platform::logLine("[SaveManager] normalized state fields");
     }
     if (normalized) *normalized = changed || !viewValid;
     return true;
@@ -598,11 +598,11 @@ bool SaveManager::saveSnapshot(const Game::GameState& state,
                                const MainSceneViewState& viewState) {
     auto* record = new (std::nothrow) SaveRecord{};
     if (!record) {
-        Serial.println("[SaveManager] snapshot allocation failed");
+        Platform::logLine("[SaveManager] snapshot allocation failed");
         return false;
     }
     if (!makeMainSceneViewRecord(viewState, record->view)) {
-        Serial.println("[SaveManager] refused invalid main scene view state");
+        Platform::logLine("[SaveManager] refused invalid main scene view state");
         delete record;
         return false;
     }
@@ -616,7 +616,7 @@ bool SaveManager::saveSnapshot(const Game::GameState& state,
     delete record;
 
     if (!result) {
-        Serial.println("[SaveManager] snapshot write failed");
+        Platform::logLine("[SaveManager] snapshot write failed");
     }
     return result;
 }
@@ -631,7 +631,7 @@ bool SaveManager::loadEncounterHistory(Game::EncounterHistory& history,
         return false;
     }
     if (len != sizeof(EncounterRecord)) {
-        Serial.printf("[SaveManager] invalid encounter history size=%u expected=%u\n",
+        Platform::logf("[SaveManager] invalid encounter history size=%u expected=%u\n",
                       static_cast<unsigned>(len),
                       static_cast<unsigned>(sizeof(EncounterRecord)));
         return false;
@@ -646,7 +646,7 @@ bool SaveManager::loadEncounterHistory(Game::EncounterHistory& history,
         record.magic != ENCOUNTER_RECORD_MAGIC ||
         record.version != ENCOUNTER_RECORD_VERSION ||
         record.checksum != expectedChecksum) {
-        Serial.println("[SaveManager] invalid encounter history; reset history");
+        Platform::logLine("[SaveManager] invalid encounter history; reset history");
         return false;
     }
 
@@ -667,7 +667,7 @@ bool SaveManager::saveEncounterHistory(
         NVS_NS, ENCOUNTER_KEY, &record, sizeof(record))
         ? sizeof(record) : 0;
     if (written != sizeof(record)) {
-        Serial.printf(
+        Platform::logf(
             "[SaveManager] encounter history write failed written=%u expected=%u\n",
             static_cast<unsigned>(written),
             static_cast<unsigned>(sizeof(record)));

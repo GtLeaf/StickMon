@@ -1,8 +1,9 @@
 #include "core/RoomResource.h"
 
 #include "core/ResourcePack.h"
+#include "core/MathUtil.h"
+#include "platform/api/PlatformServices.h"
 
-#include <Arduino.h>
 #include <cstdlib>
 #include <cstring>
 
@@ -142,10 +143,10 @@ bool validPayload(const PackedRoomHeader& h, const RoomResource::PatchRun* runs,
                 point.x >= static_cast<int16_t>(h.width) || point.y >= static_cast<int16_t>(h.height)) {
                 return false;
             }
-            minX = min(minX, point.x);
-            minY = min(minY, point.y);
-            maxX = max(maxX, point.x);
-            maxY = max(maxY, point.y);
+            minX = MathUtil::min(minX, point.x);
+            minY = MathUtil::min(minY, point.y);
+            maxX = MathUtil::max(maxX, point.x);
+            maxY = MathUtil::max(maxY, point.y);
         }
         return minX == expectedMinX && minY == expectedMinY && maxX == expectedMaxX && maxY == expectedMaxY;
     };
@@ -182,7 +183,7 @@ bool RoomResource::begin() {
     initialized_ = true;
     clearMeta();
     loaded_ = loadExternal();
-    Serial.printf("[RoomResource] source=%s size=%ux%u base=%u patchRuns=%u patchPixels=%u "
+    Platform::logf("[RoomResource] source=%s size=%ux%u base=%u patchRuns=%u patchPixels=%u "
                   "door=%u inside=%d,%d outside=%d,%d anchors=%u\n",
                   source(), width_, height_, baseCompressedLen_,
                   nightPatchRunCount_, nightPatchPixelCount_, doorwayPolygonCount_,
@@ -246,7 +247,7 @@ bool RoomResource::loadExternal() {
 
     PackedRoomHeader header{};
     if (!readExact(file, &header, sizeof(header)) || !validHeader(header)) {
-        Serial.println("[RoomResource] invalid room header");
+        Platform::logLine("[RoomResource] invalid room header");
         return false;
     }
 
@@ -257,7 +258,7 @@ bool RoomResource::loadExternal() {
                                                   header.doorwayPolygonCount) * sizeof(Point) +
                             static_cast<uint64_t>(header.behaviorAnchorCount) * sizeof(BehaviorAnchor);
     if (expectedSize != file.size()) {
-        Serial.println("[RoomResource] room payload size mismatch");
+        Platform::logLine("[RoomResource] room payload size mismatch");
         return false;
     }
 
@@ -313,7 +314,7 @@ bool RoomResource::loadExternal() {
         if (bed) Platform::memory().release(bed);
         if (doorway) Platform::memory().release(doorway);
         if (anchors) Platform::memory().release(anchors);
-        Serial.println("[RoomResource] invalid room metadata");
+        Platform::logLine("[RoomResource] invalid room metadata");
         return false;
     }
 

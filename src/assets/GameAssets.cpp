@@ -1,11 +1,11 @@
 #include "assets/GameAssets.h"
 
 #include "core/DeflateDecoder.h"
+#include "core/MathUtil.h"
 #include "core/ResourcePack.h"
 #include "hardware/Hal.h"
 #include "presentation/PixelRenderer.h"
 
-#include <Arduino.h>
 #include <cstdlib>
 #include <cstring>
 
@@ -151,7 +151,7 @@ bool loadPack(PackSlot slot) {
     ResourcePack& resourcePack = ResourcePack::ins();
     Platform::ResourceFile file;
     if (!openPackFile(resourcePack, slot, file)) {
-        Serial.printf("[GameAssets] pack=%s missing\n", packName(slot));
+        Platform::logf("[GameAssets] pack=%s missing\n", packName(slot));
         return false;
     }
 
@@ -164,7 +164,7 @@ bool loadPack(PackSlot slot) {
         header.flags != FLAG_RAW_DEFLATE ||
         header.payloadRawBytes == 0 || header.payloadRawBytes > MAX_PAYLOAD_BYTES ||
         header.payloadCompressedBytes == 0) {
-        Serial.printf("[GameAssets] pack=%s invalid header\n", packName(slot));
+        Platform::logf("[GameAssets] pack=%s invalid header\n", packName(slot));
         return false;
     }
 
@@ -172,13 +172,13 @@ bool loadPack(PackSlot slot) {
                            static_cast<uint64_t>(header.dataWords + header.paletteWords) * sizeof(uint16_t);
     uint64_t expectedFile = sizeof(Header) + static_cast<uint64_t>(header.payloadCompressedBytes);
     if (expectedRaw != header.payloadRawBytes || expectedFile != file.size()) {
-        Serial.printf("[GameAssets] pack=%s size mismatch\n", packName(slot));
+        Platform::logf("[GameAssets] pack=%s size mismatch\n", packName(slot));
         return false;
     }
 
     uint8_t* payload = allocate<uint8_t>(header.payloadRawBytes);
     if (!payload) {
-        Serial.printf("[GameAssets] pack=%s allocation failed bytes=%u\n",
+        Platform::logf("[GameAssets] pack=%s allocation failed bytes=%u\n",
                       packName(slot), header.payloadRawBytes);
         return false;
     }
@@ -207,7 +207,7 @@ bool loadPack(PackSlot slot) {
     }
     if (!ok) {
         Platform::memory().release(payload);
-        Serial.printf("[GameAssets] pack=%s invalid payload read=%u inflate=%u total=%u\n",
+        Platform::logf("[GameAssets] pack=%s invalid payload read=%u inflate=%u total=%u\n",
                       packName(slot), stats.readMs, stats.inflateMs, stats.totalMs);
         return false;
     }
@@ -225,7 +225,7 @@ bool loadPack(PackSlot slot) {
         frameIndices[loadedFrames[i].kind] = i;
     }
     loadedPack.loaded = true;
-    Serial.printf(
+    Platform::logf(
         "[GameAssets] pack=%s frames=%u compressed=%u decoded=%u read=%u inflate=%u total=%u psram=%u\n",
         packName(slot), header.frameCount, loadedPack.packedBytes, header.payloadRawBytes,
         stats.readMs, stats.inflateMs, stats.totalMs,
@@ -264,20 +264,20 @@ bool decodeBackgroundViewport(const FrameRef& ref, int cameraX, int cameraY) {
         uint16_t run = token & 0x7FFF;
         if (run == 0) continue;
         if (token & 0x8000) {
-            pixel += min<uint32_t>(run, total - pixel);
+            pixel += MathUtil::min<uint32_t>(run, total - pixel);
             continue;
         }
 
         uint32_t runStart = pixel;
-        uint32_t runLength = min<uint32_t>(run, total - pixel);
+        uint32_t runLength = MathUtil::min<uint32_t>(run, total - pixel);
         uint32_t packedWords = (static_cast<uint32_t>(run) + 3) / 4;
         if (source + packedWords > frame.length) return false;
         uint32_t runEnd = runStart + runLength;
 
         for (int destY = 0; destY < Hal::DISPLAY_H; ++destY) {
             uint32_t rowStart = static_cast<uint32_t>(cameraY + destY) * frame.width + cameraX;
-            uint32_t visibleStart = max(runStart, rowStart);
-            uint32_t visibleEnd = min(runEnd, rowStart + Hal::DISPLAY_W);
+            uint32_t visibleStart = MathUtil::max(runStart, rowStart);
+            uint32_t visibleEnd = MathUtil::min(runEnd, rowStart + Hal::DISPLAY_W);
             for (uint32_t absolute = visibleStart; absolute < visibleEnd; ++absolute) {
                 uint32_t runOffset = absolute - runStart;
                 uint16_t packed = pack.data[frame.offset + source + runOffset / 4];
@@ -361,10 +361,10 @@ bool drawBattleBackground(Kind kind) {
 bool drawBackgroundViewport(Kind kind, int cameraX, int cameraY) {
     FrameRef ref = findFrame(kind);
     if (!ref.frame) return false;
-    int maxCameraX = max(0, static_cast<int>(ref.frame->width) - Hal::DISPLAY_W);
-    int maxCameraY = max(0, static_cast<int>(ref.frame->height) - Hal::DISPLAY_H);
-    cameraX = constrain(cameraX, 0, maxCameraX);
-    cameraY = constrain(cameraY, 0, maxCameraY);
+    int maxCameraX = MathUtil::max(0, static_cast<int>(ref.frame->width) - Hal::DISPLAY_W);
+    int maxCameraY = MathUtil::max(0, static_cast<int>(ref.frame->height) - Hal::DISPLAY_H);
+    cameraX = MathUtil::clamp(cameraX, 0, maxCameraX);
+    cameraY = MathUtil::clamp(cameraY, 0, maxCameraY);
     if (cachedBackground != kind || cachedBackgroundX != cameraX || cachedBackgroundY != cameraY) {
         if (!decodeBackgroundViewport(ref, cameraX, cameraY)) return false;
         cachedBackground = kind;

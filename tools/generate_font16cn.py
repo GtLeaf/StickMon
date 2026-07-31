@@ -232,9 +232,9 @@ const FontFallbackCNGlyph* findFontFallbackCNGlyph(uint32_t codepoint);
 
     FALLBACK_CPP_OUT.write_text(
         """#include "assets/FontFallbackCN.h"
-#include <Arduino.h>
+#include "platform/api/FlashStorage.h"
 
-const FontFallbackCNGlyph FONT_FALLBACK_CN_GLYPHS[] PROGMEM = {
+const FontFallbackCNGlyph FONT_FALLBACK_CN_GLYPHS[] STICKMON_FLASH_DATA = {
 """
         + "\n".join(rows)
         + f"""
@@ -252,7 +252,7 @@ const FontFallbackCNGlyph* findFontFallbackCNGlyph(uint32_t codepoint) {{
     int hi = FONT_FALLBACK_CN_COUNT - 1;
     while (lo <= hi) {{
         int mid = (lo + hi) / 2;
-        uint32_t value = pgm_read_dword(&FONT_FALLBACK_CN_GLYPHS[mid].codepoint);
+        uint32_t value = FlashStorage::readDword(&FONT_FALLBACK_CN_GLYPHS[mid].codepoint);
         if (value == codepoint) return &FONT_FALLBACK_CN_GLYPHS[mid];
         if (value < codepoint) lo = mid + 1;
         else hi = mid - 1;

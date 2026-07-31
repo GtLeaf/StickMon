@@ -324,17 +324,17 @@ def update_cpp(cpp_path: Path, sheet: Image.Image) -> tuple[int, list[int]]:
         f"    {{ {offset}, {len(frame)} }}," for offset, frame in zip(offsets, frames)
     )
     generated = (
-        "const RleFrame MAIN_ICON_FRAMES[] PROGMEM = {\n"
+        "const RleFrame MAIN_ICON_FRAMES[] STICKMON_FLASH_DATA = {\n"
         f"{frame_lines}\n"
         "};\n\n"
-        "const uint16_t MAIN_ICON_RLE[] PROGMEM = {\n"
+        "const uint16_t MAIN_ICON_RLE[] STICKMON_FLASH_DATA = {\n"
         f"{format_words(words)}\n"
         "};\n\n"
     )
 
     existing = cpp_path.read_text(encoding="utf-8")
-    start = existing.index("const RleFrame MAIN_ICON_FRAMES[] PROGMEM = {")
-    end = existing.index("const RleFrame BOX_ICON_FRAMES[] PROGMEM = {")
+    start = existing.index("const RleFrame MAIN_ICON_FRAMES[] STICKMON_FLASH_DATA = {")
+    end = existing.index("const RleFrame BOX_ICON_FRAMES[] STICKMON_FLASH_DATA = {")
     cpp_path.write_text(existing[:start] + generated + existing[end:], encoding="utf-8")
     return len(words), [len(frame) for frame in frames]
 

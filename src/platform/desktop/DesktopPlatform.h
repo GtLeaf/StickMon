@@ -11,6 +11,7 @@
 
 class DesktopPlatform final : public Platform::IPlatformLifecycle,
                               public Platform::IClock,
+                              public Platform::ILogger,
                               public Platform::IInputDevice,
                               public Platform::IDisplayDevice,
                               public Platform::IAudioDevice,
@@ -26,8 +27,12 @@ public:
 
     bool begin() override;
     uint32_t millis() const override;
+    uint32_t micros() const override { return nowMs_ * 1000U; }
     void sleepMs(uint32_t durationMs) override;
     void advanceMs(uint32_t durationMs) { nowMs_ += durationMs; }
+
+    void write(const char* text, size_t length) override;
+    void flush() override {}
 
     void update() override {}
     bool pressed(Platform::InputButton button) const override;
@@ -91,6 +96,7 @@ public:
     size_t presentCount() const { return presentCount_; }
     size_t audioPlayCount() const { return audioPlayCount_; }
     const std::vector<uint8_t>& lastAudio() const { return lastAudio_; }
+    const std::string& logs() const { return logs_; }
 
 private:
     static std::string blobKey(const char* nameSpace, const char* key);
@@ -102,6 +108,7 @@ private:
     std::unordered_map<std::string, std::vector<uint8_t>> blobs_;
     std::deque<Platform::PeerPacket> peerQueue_;
     std::vector<uint8_t> lastAudio_;
+    std::string logs_;
     uint32_t nowMs_ = 0;
     uint32_t randomState_ = 0x12345678UL;
     size_t resourceBytes_ = 0;

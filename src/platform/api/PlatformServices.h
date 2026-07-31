@@ -38,7 +38,15 @@ class IClock {
 public:
     virtual ~IClock() = default;
     virtual uint32_t millis() const = 0;
+    virtual uint32_t micros() const = 0;
     virtual void sleepMs(uint32_t durationMs) = 0;
+};
+
+class ILogger {
+public:
+    virtual ~ILogger() = default;
+    virtual void write(const char* text, size_t length) = 0;
+    virtual void flush() = 0;
 };
 
 class IInputDevice {
@@ -209,6 +217,7 @@ public:
 struct Services {
     IPlatformLifecycle& lifecycle;
     IClock& clock;
+    ILogger& logger;
     IInputDevice& input;
     IDisplayDevice& display;
     IAudioDevice& audio;
@@ -225,6 +234,7 @@ bool bound();
 Services& services();
 
 inline IClock& clock() { return services().clock; }
+inline ILogger& logger() { return services().logger; }
 inline IInputDevice& input() { return services().input; }
 inline IDisplayDevice& display() { return services().display; }
 inline IAudioDevice& audio() { return services().audio; }
@@ -234,5 +244,8 @@ inline IBlobStore& blobs() { return services().blobs; }
 inline IResourceStore& resources() { return services().resources; }
 inline IMemoryAllocator& memory() { return services().memory; }
 inline IPeerTransport& peers() { return services().peers; }
+
+void logf(const char* format, ...);
+void logLine(const char* text);
 
 }  // namespace Platform

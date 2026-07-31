@@ -9,6 +9,8 @@
 #include "core/UiStrings.h"
 #include "game/Species.h"
 #include "hardware/Hal.h"
+#include "platform/api/FlashStorage.h"
+#include "platform/api/PlatformServices.h"
 #include "presentation/PixelRenderer.h"
 
 namespace {
@@ -142,7 +144,7 @@ void ensureEvolutionAnimation(uint16_t fromSpeciesId,
 
     const uint16_t species[] = {fromSpeciesId, toSpeciesId};
     PokemonSprites::preloadDynamicSpecies(species, 2, 2);
-    Serial.printf("[EvolutionUi] begin from=%u to=%u\n",
+    Platform::logf("[EvolutionUi] begin from=%u to=%u\n",
                   fromSpeciesId, toSpeciesId);
 }
 
@@ -187,8 +189,8 @@ void drawCenteredEvolutionSprite(const PokemonSprites::SpriteFrame* frame,
                                  bool silhouette,
                                  uint16_t color = 0xFFFF) {
     if (!frame) return;
-    int width = pgm_read_byte(&frame->width);
-    int height = pgm_read_byte(&frame->height);
+    int width = FlashStorage::readByte(&frame->width);
+    int height = FlashStorage::readByte(&frame->height);
     int x = EVOLUTION_CENTER_X - width / 2;
     int y = EVOLUTION_CENTER_Y - height / 2;
     if (silhouette) {

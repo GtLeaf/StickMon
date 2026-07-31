@@ -585,7 +585,7 @@ def write_room_assets(day_img, night_img, walk_polygon, food_x, food_y,
     patch_pixel_words = format_words(patch_pixels or [0])
 
     HEADER_OUT.write_text("""#pragma once
-#include <Arduino.h>
+#include "platform/api/FlashStorage.h"
 #include <cstdint>
 
 namespace RoomAssets {
