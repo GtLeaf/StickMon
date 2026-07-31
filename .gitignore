@@ -4,3 +4,9 @@
 tools/out/
 __pycache__/
 *.pyc
+
+# Web simulator build artifacts
+build/
+web/stickmon.js
+web/stickmon.wasm
+web/stickmon.data
