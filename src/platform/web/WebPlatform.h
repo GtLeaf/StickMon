@@ -118,7 +118,7 @@ private:
     std::vector<uint8_t> pendingAudio_;
     uint32_t pendingAudioRate_ = 0;
     size_t resourceBytes_ = 0;
-    uint8_t brightness_ = 128;
+    uint8_t brightness_ = 255;
     uint8_t volume_ = 50;
     bool initialized_ = false;
     bool resourcesMounted_ = false;

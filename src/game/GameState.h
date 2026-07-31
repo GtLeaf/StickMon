@@ -259,14 +259,22 @@ struct RoomState {
 };
 
 struct PlayerSettings {
+#ifdef __EMSCRIPTEN__
+    uint8_t brightness = 255; // Web 模拟器默认最高亮度
+#else
     uint8_t brightness = 128;
+#endif
     uint8_t speedIndex = 0; // 1x, 2x, 4x, 8x
     uint16_t longPressMs = 500;
     uint16_t doubleClickMs = 300;
     uint8_t volume = 50;
     bool voiceCallEnabled = false;
     bool vibrationOn = false;
+#ifdef __EMSCRIPTEN__
+    uint8_t idleTimeoutIndex = 4; // Web 模拟器默认永不休眠
+#else
     uint8_t idleTimeoutIndex = 2; // 0=30s, 1=2min, 2=5min, 3=10min, 4=never
+#endif
     bool leftHanded = false;
     uint8_t language = 0; // 0 = zh-CN
 };
