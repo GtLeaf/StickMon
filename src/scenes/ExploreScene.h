@@ -112,14 +112,16 @@ private:
     uint32_t expAnimationTo = 0;
     uint32_t expAnimationStarted = 0;
     enum class FriendshipStep : uint8_t {
+        CONTACT_INTRO,
         CONTACT_CONFIRM,
         CONTACT_ACQUIRED,
         TEAM_CONFIRM,
         TEAM_JOINED,
+        FINISHING,
     };
     bool friendshipOfferPending = false;
     bool friendshipConfirmYes = true;
-    FriendshipStep friendshipStep = FriendshipStep::CONTACT_CONFIRM;
+    FriendshipStep friendshipStep = FriendshipStep::CONTACT_INTRO;
     uint8_t friendshipContactIndex = 0xFF;
     uint8_t battleCursor = 0;
     bool battleIsBoss = false;

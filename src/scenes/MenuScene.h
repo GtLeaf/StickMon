@@ -73,6 +73,7 @@ private:
         ENV,
         MOTION,
         BATTLE,
+        CONTACT_EVENT,
     };
 
     enum class MovePageMode : uint8_t {
@@ -95,8 +96,9 @@ private:
     static constexpr uint8_t ROOM_ITEM_COUNT = 3;
     static constexpr uint8_t FOOD_ITEM_COUNT = Game::ROOM_FOOD_COUNT + 1;
     static constexpr uint8_t COMPUTER_ITEM_COUNT = 3;
-    static constexpr uint8_t DEBUG_ROOT_ITEM_COUNT = 6;
+    static constexpr uint8_t DEBUG_ROOT_ITEM_COUNT = 7;
     static constexpr uint8_t DEBUG_BATTLE_ROOT_INDEX = 4;
+    static constexpr uint8_t DEBUG_CONTACT_EVENT_ROOT_INDEX = 5;
     static constexpr uint8_t DEBUG_MONSTER_ITEM_COUNT = 4;
     static constexpr uint8_t DEBUG_MONSTER_RECOVER_INDEX = 0;
     static constexpr uint8_t DEBUG_MONSTER_LEVEL_UP_INDEX = 1;
@@ -107,6 +109,7 @@ private:
     static constexpr uint8_t DEBUG_BATTLE_ITEM_COUNT = 3;
     static constexpr uint8_t DEBUG_BATTLE_RANDOM_INDEX = 0;
     static constexpr uint8_t DEBUG_BATTLE_DRAW_BOUNDS_INDEX = 1;
+    static constexpr uint8_t DEBUG_CONTACT_EVENT_ITEM_COUNT = 4;
     static constexpr uint8_t DEBUG_SWITCH_FOCUS_COUNT = 5;
     static constexpr uint8_t DEBUG_TIME_FOCUS_COUNT = 6;
     static constexpr uint8_t NAV_STACK_CAP = 8;
