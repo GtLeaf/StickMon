@@ -199,6 +199,7 @@ public:
     bool contactVisitExploring() const {
         return contactVisit.active && contactVisit.exploring;
     }
+    bool exploreBlockedByGuest() const;
     bool contactVisitFarewellPending() const {
         return contactVisit.active && contactVisit.farewellPending;
     }
@@ -379,7 +380,8 @@ private:
     void resetDailyCountersIfNeeded();
     void grantCareExperience(uint8_t baseAmount, bool weakGain = false,
                              uint8_t teamSlot = 0);
-    bool syncSpriteCache(uint8_t loadBudget = 0xFF);
+    bool syncSpriteCache(uint8_t loadBudget = 0xFF,
+                         bool* cacheChanged = nullptr);
     uint32_t randomIvPacked() const;
     bool queueNextPendingMove(Game::MonsterRuntime& mon, const Species& species,
                               uint8_t teamSlot, uint16_t startIndex);

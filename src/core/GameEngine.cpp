@@ -284,6 +284,10 @@ bool GameEngine::sceneFadeInActive() const {
 }
 
 void GameEngine::beginExploreDeparture(uint8_t area) {
+    if (exploreBlockedByGuest()) {
+        Platform::logLine("[Explore] blocked while guest is at home");
+        return;
+    }
     exploreArea = area;
     exploreTravel = ExploreTravelPhase::DEPARTING;
     requestScene(SceneID::MAIN);
@@ -823,6 +827,12 @@ void GameEngine::acceptContactExploreInvitation() {
     contactVisit.exploring = true;
     contactVisit.farewellPending = false;
     requestScene(SceneID::EXPLORE);
+}
+
+bool GameEngine::exploreBlockedByGuest() const {
+    bool localGuestAtHome = contactVisit.active && !contactVisit.exploring;
+    bool linkedGuestAtHome = visitSession.active && visitSession.asHost;
+    return localGuestAtHome || linkedGuestAtHome;
 }
 
 bool GameEngine::contactVisitTimedOut(uint32_t nowMs) const {
@@ -2278,14 +2288,22 @@ void GameEngine::update(uint32_t nowMs) {
         return;
     }
     syncGameClock(nowMs);
+    bool spriteCacheChanged = false;
     if (startupFirstFrameRendered && !startupSpriteCacheReady) {
-        startupSpriteCacheReady = syncSpriteCache(1);
+        startupSpriteCacheReady = syncSpriteCache(1, &spriteCacheChanged);
         if (startupSpriteCacheReady) {
             PokemonSprites::setDynamicLoadingEnabled(true);
             Platform::logf("[BootTiming] sprites_ready_ms=%u\n", nowMs - bootStartedMs);
         }
     } else {
-        syncSpriteCache(startupFirstFrameRendered ? 0xFF : 0);
+        syncSpriteCache(startupFirstFrameRendered ? 0xFF : 0,
+                        &spriteCacheChanged);
+    }
+    if (spriteCacheChanged) {
+        invalidateScene();
+        scheduleSceneUpdate(nowMs);
+        Platform::logf("[SpriteCache] scene wake t=%u ready=%u\n",
+                      nowMs, startupSpriteCacheReady ? 1 : 0);
     }
     if (mainSceneFirstFrameRendered && startupSpriteCacheReady &&
         currentId == SceneID::MAIN &&
@@ -2715,14 +2733,15 @@ void GameEngine::tickCare(uint32_t nowMs) {
     markDirty(SaveUrgency::DEFERRED);
 }
 
-bool GameEngine::syncSpriteCache(uint8_t loadBudget) {
+bool GameEngine::syncSpriteCache(uint8_t loadBudget, bool* cacheChanged) {
     uint16_t teamSpecies[Game::TEAM_CAP] = {};
     uint8_t count = state.teamCount;
     if (count > Game::TEAM_CAP) count = Game::TEAM_CAP;
     for (uint8_t i = 0; i < count; ++i) {
         teamSpecies[i] = state.team[i].speciesId;
     }
-    return PokemonSprites::syncTeamCache(teamSpecies, count, loadBudget);
+    return PokemonSprites::syncTeamCache(
+        teamSpecies, count, loadBudget, cacheChanged);
 }
 
 uint32_t GameEngine::randomIvPacked() const {

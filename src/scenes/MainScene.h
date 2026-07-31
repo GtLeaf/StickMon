@@ -301,6 +301,10 @@ private:
     void restFaintedVisitor(uint32_t nowMs);
     void spawnVisitor(uint32_t nowMs, bool dropIn);
     bool pickVisitorPoint(float& x, float& y) const;
+    float visitorSleepMinDistance() const;
+    bool visitorSleepSpotUsableWithDistance(float x, float y,
+                                            float minDistance) const;
+    bool visitorSleepSpotUsable(float x, float y) const;
     bool pickVisitorSleepSpot(float& x, float& y) const;
     bool visitorPointBlocksBedRoute(float x, float y) const;
     bool startVisitorBedYield(uint32_t nowMs);

@@ -322,6 +322,7 @@ static constexpr const char* SWITCH_TOAST = "已切换伙伴";
 static constexpr const char* NO_RESERVE = "没有替补";
 static constexpr const char* FAINTED_TOAST = "精灵濒死";
 static constexpr const char* HATCH_FIRST = "请先完成孵化";
+static constexpr const char* GUEST_AT_HOME = "有客人在家";
 static constexpr const char* STORAGE_HINT = "A查看 B翻页";
 static constexpr const char* TITLE_BATTERY_FMT = "%d%%";
 static constexpr const char* ITEMS[] = {

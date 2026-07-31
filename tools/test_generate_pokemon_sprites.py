@@ -223,7 +223,6 @@ class GeneratePokemonSpritesTests(unittest.TestCase):
             "containsSpecies(gPinnedSpecies, gPinnedSpeciesCount, speciesId)",
             source,
         )
-
         explore_source = (
             ROOT / "src" / "scenes" / "ExploreScene.cpp"
         ).read_text()
@@ -238,6 +237,14 @@ class GeneratePokemonSpritesTests(unittest.TestCase):
         self.assertIn("serviceAreaPoolCache", explore_source)
         self.assertIn("collectAreaPoolSpecies", explore_source)
         self.assertIn("all_pools ready", explore_source)
+
+    def test_team_cache_reports_visual_changes(self):
+        source = (ROOT / "src" / "assets" / "PokemonSprites.cpp").read_text()
+
+        self.assertIn("bool* cacheChanged", source)
+        self.assertIn("if (cacheChanged) *cacheChanged = false;", source)
+        self.assertIn("changed = true;", source)
+        self.assertIn("if (cacheChanged) *cacheChanged = changed;", source)
 
     @unittest.skipUnless(shutil.which("c++"), "host C++ compiler is unavailable")
     def test_route_motion_timing(self):

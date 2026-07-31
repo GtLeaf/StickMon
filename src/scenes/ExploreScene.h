@@ -127,6 +127,9 @@ private:
     bool battleIsBoss = false;
     bool battleAllowsFriendship = true;
     uint8_t battleFoodBond = 0;
+    bool foodThrowActive = false;
+    uint8_t foodThrowIndex = 0;
+    uint32_t foodThrowStarted = 0;
     uint8_t pendingBattleSwitchSlot = 0xFF;
     uint8_t battlePlayerSlot = 0;
     enum class BattleSwitchStage : uint8_t {
@@ -284,6 +287,8 @@ private:
     void enqueueBattleProgressionLogs(uint8_t teamSlot);
     void attackWild();
     void throwFood(uint8_t foodIndex);
+    bool updateFoodThrow(uint32_t nowMs);
+    void finishFoodThrow();
     void switchBattleMonster();
     void wildCounterattack();
     void finishPlayerFaint();
@@ -311,6 +316,7 @@ private:
     void snapshotActivePool();
     void renderWalking();
     void renderEncounter();
+    void renderFoodThrow();
     void renderFriendshipPrompt();
     void renderSpecialPrompt();
     void renderPickupPrompt();
