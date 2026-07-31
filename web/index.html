@@ -26,7 +26,7 @@ body {
   padding: 18px 22px 24px;
   box-shadow: 0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.15);
   position: relative;
-  width: fit-content;
+  width: 100%; max-width: 640px;
 }
 .device-frame::before {
   content: '';
@@ -42,10 +42,12 @@ body {
   border-radius: 6px;
   padding: 6px;
   box-shadow: inset 0 2px 8px rgba(0,0,0,0.6);
+  flex: 1 1 auto; min-width: 0;
 }
 canvas#stickmon-canvas {
   display: block;
-  width: 480px; height: 270px;
+  width: 100%; height: auto;
+  aspect-ratio: 240 / 135;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
   border-radius: 2px;
@@ -102,17 +104,15 @@ canvas#stickmon-canvas {
   animation: pulse 1.5s ease-in-out infinite;
 }
 @keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
-@media (max-width: 640px) {
-  canvas#stickmon-canvas { width: 320px; height: 180px; }
+@media (max-width: 560px) {
   .device-frame { padding: 12px 14px 16px; }
   .device-body { gap: 12px; }
   .sim-btn { width: 44px; height: 44px; font-size: 14px; }
   .buttons-col { gap: 14px; }
 }
-@media (max-width: 430px) {
-  canvas#stickmon-canvas { width: 240px; height: 135px; }
+@media (max-width: 380px) {
   .device-body { gap: 10px; }
-  .sim-btn { width: 40px; height: 40px; font-size: 13px; }
+  .sim-btn { width: 38px; height: 38px; font-size: 12px; }
 }
 </style>
 </head>

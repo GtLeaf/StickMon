@@ -70,8 +70,10 @@ public:
         return Platform::WakeReason::NORMAL;
     }
     uint32_t hardwareRandom() override;
-    size_t externalMemorySize() const override { return 0; }
-    size_t externalMemoryFree() const override { return 0; }
+    // 浏览器堆内存充足，向游戏层报告与真机 PSRAM 等量的外部内存，
+    // 使 RoomRenderer 等按 externalMemorySize()>0 门控的缓冲分配路径生效
+    size_t externalMemorySize() const override { return kExternalMemSize; }
+    size_t externalMemoryFree() const override;
     void restart() override {}
     void enterDeepSleep(uint64_t, bool) override {}
 
@@ -104,12 +106,15 @@ public:
     bool receive(Platform::PeerPacket&) override { return false; }
 
 private:
+    static constexpr size_t kExternalMemSize = 8u * 1024u * 1024u;
     static std::string blobKey(const char* nameSpace, const char* key);
 
     Platform::Services services_;
     std::vector<uint16_t> frameBuffer_;
     std::array<bool, static_cast<size_t>(Platform::InputButton::COUNT)> buttons_{};
     std::unordered_map<std::string, std::vector<uint8_t>> blobs_;
+    std::unordered_map<void*, size_t> externalAllocs_;
+    size_t externalUsed_ = 0;
     std::vector<uint8_t> pendingAudio_;
     uint32_t pendingAudioRate_ = 0;
     size_t resourceBytes_ = 0;

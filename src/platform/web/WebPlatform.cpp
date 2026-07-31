@@ -364,10 +364,29 @@ Platform::ResourceFile WebPlatform::open(const char* path) {
 }
 
 // Memory
-void* WebPlatform::allocate(size_t bytes, bool) {
-    return bytes > 0 ? std::malloc(bytes) : nullptr;
+size_t WebPlatform::externalMemoryFree() const {
+    return externalUsed_ < kExternalMemSize ? kExternalMemSize - externalUsed_ : 0;
+}
+
+void* WebPlatform::allocate(size_t bytes, bool preferExternal) {
+    if (bytes == 0) return nullptr;
+    if (preferExternal && externalUsed_ + bytes > kExternalMemSize) {
+        return nullptr;
+    }
+    void* ptr = std::malloc(bytes);
+    if (ptr && preferExternal) {
+        externalAllocs_[ptr] = bytes;
+        externalUsed_ += bytes;
+    }
+    return ptr;
 }
 
 void WebPlatform::release(void* memory) {
+    if (!memory) return;
+    auto it = externalAllocs_.find(memory);
+    if (it != externalAllocs_.end()) {
+        externalUsed_ -= it->second;
+        externalAllocs_.erase(it);
+    }
     std::free(memory);
 }
