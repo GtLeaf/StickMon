@@ -34,6 +34,9 @@ body {
   width: 40px; height: 4px; border-radius: 2px;
   background: rgba(0,0,0,0.3);
 }
+.device-body {
+  display: flex; align-items: center; gap: 20px;
+}
 .screen-bezel {
   background: #1a1a1a;
   border-radius: 6px;
@@ -53,8 +56,8 @@ canvas#stickmon-canvas {
   font-size: 10px; color: rgba(255,255,255,0.4);
   letter-spacing: 3px; text-transform: uppercase;
 }
-.buttons-row {
-  display: flex; justify-content: center; gap: 20px; margin-top: 14px;
+.buttons-col {
+  display: flex; flex-direction: column; justify-content: center; gap: 22px;
 }
 .sim-btn {
   width: 52px; height: 52px; border-radius: 50%;
@@ -99,9 +102,17 @@ canvas#stickmon-canvas {
   animation: pulse 1.5s ease-in-out infinite;
 }
 @keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
-@media (max-width: 560px) {
+@media (max-width: 640px) {
   canvas#stickmon-canvas { width: 320px; height: 180px; }
   .device-frame { padding: 12px 14px 16px; }
+  .device-body { gap: 12px; }
+  .sim-btn { width: 44px; height: 44px; font-size: 14px; }
+  .buttons-col { gap: 14px; }
+}
+@media (max-width: 430px) {
+  canvas#stickmon-canvas { width: 240px; height: 135px; }
+  .device-body { gap: 10px; }
+  .sim-btn { width: 40px; height: 40px; font-size: 13px; }
 }
 </style>
 </head>
@@ -111,12 +122,14 @@ canvas#stickmon-canvas {
   <div class="loading-overlay" id="loading">
     <div class="loading-text">LOADING...</div>
   </div>
-  <div class="screen-bezel">
-    <canvas id="stickmon-canvas" width="240" height="135"></canvas>
-  </div>
-  <div class="buttons-row">
-    <button class="sim-btn btn-a" id="btn-a" title="A - 确认/互动">A</button>
-    <button class="sim-btn btn-b" id="btn-b" title="B - 取消/返回">B</button>
+  <div class="device-body">
+    <div class="screen-bezel">
+      <canvas id="stickmon-canvas" width="240" height="135"></canvas>
+    </div>
+    <div class="buttons-col">
+      <button class="sim-btn btn-a" id="btn-a" title="A - 确认/互动">A</button>
+      <button class="sim-btn btn-b" id="btn-b" title="B - 取消/返回">B</button>
+    </div>
   </div>
   <div class="device-label">M5StickS3</div>
   <div class="controls-hint">
