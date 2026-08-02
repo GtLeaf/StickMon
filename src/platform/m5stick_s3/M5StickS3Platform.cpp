@@ -219,6 +219,13 @@ bool M5StickS3Platform::playPcmU8Channel(const uint8_t* data,
         data, sampleCount, sampleRate, false, 1, channel, stopCurrent);
 }
 
+void M5StickS3Platform::setChannelVolume(uint8_t channel, uint8_t percent) {
+    if (!initialized_ || channel >= Platform::IAudioDevice::CHANNEL_COUNT) return;
+    uint8_t clamped = percent > 100 ? 100 : percent;
+    M5.Speaker.setChannelVolume(
+        channel, static_cast<uint8_t>((clamped * 255U + 50U) / 100U));
+}
+
 bool M5StickS3Platform::playing() const {
     return initialized_ && M5.Speaker.isPlaying();
 }

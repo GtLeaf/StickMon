@@ -78,6 +78,7 @@ public:
     virtual bool playPcmU8Channel(const uint8_t* data, size_t sampleCount,
                                   uint32_t sampleRate, uint8_t channel,
                                   bool stopCurrent) = 0;
+    virtual void setChannelVolume(uint8_t channel, uint8_t percent) = 0;
     virtual bool playing() const = 0;
     virtual uint8_t queuedPcm(uint8_t channel) const = 0;
     virtual void stop() = 0;

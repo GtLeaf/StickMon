@@ -43,6 +43,7 @@ public:
     bool playPcmU8Channel(const uint8_t* data, size_t sampleCount,
                           uint32_t sampleRate, uint8_t channel,
                           bool stopCurrent) override;
+    void setChannelVolume(uint8_t channel, uint8_t percent) override;
     bool playing() const override;
     uint8_t queuedPcm(uint8_t channel) const override;
     void stop() override;

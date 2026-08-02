@@ -41,12 +41,16 @@ public:
 
     void setMusic(MusicTrack track);
     void stopMusic();
+    void setPowerSave(bool active);
     bool playSfx(SfxCue cue);
     void update();
     void stopAll();
 
     MusicTrack requestedMusic() const { return requestedMusic_; }
     MusicTrack playingMusic() const { return playingMusic_; }
+    bool musicFadeActive() const {
+        return musicChannelVolume_ != musicFadeTargetVolume_;
+    }
 
 private:
     AudioManager() = default;
@@ -69,6 +73,7 @@ private:
     bool queueNextMusicBlock(bool stopCurrent);
     void releaseMusic();
     void releaseSfx();
+    void updateMusicFade(uint32_t nowMs);
 
     Platform::ResourceFile musicFile_;
     AudioHeader musicHeader_{};
@@ -84,4 +89,10 @@ private:
 
     MusicTrack requestedMusic_ = MusicTrack::NONE;
     MusicTrack playingMusic_ = MusicTrack::NONE;
+    uint32_t musicFadeStartedMs_ = 0;
+    uint8_t musicFadeStartVolume_ = 100;
+    uint8_t musicChannelVolume_ = 100;
+    uint8_t musicFadeTargetVolume_ = 100;
+    bool powerSaveActive_ = false;
+    bool musicPaused_ = false;
 };
