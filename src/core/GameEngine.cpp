@@ -12,6 +12,7 @@
 #include "core/TraceLog.h"
 #include "core/UiStrings.h"
 #include "game/BondSystem.h"
+#include "game/ExploreItemProgression.h"
 #include "game/FoodTuning.h"
 #include "game/GameRandom.h"
 #include "game/SpeciesBehavior.h"
@@ -287,14 +288,20 @@ bool GameEngine::sceneFadeInActive() const {
     return sceneFade == SceneFadePhase::IN;
 }
 
-void GameEngine::beginExploreDeparture(uint8_t area) {
+bool GameEngine::beginExploreDeparture(uint8_t area) {
     if (exploreBlockedByGuest()) {
         Platform::logLine("[Explore] blocked while guest is at home");
-        return;
+        return false;
+    }
+    if (!ExploreItemProgression::isAreaUnlocked(area, state)) {
+        Platform::logf("[Explore] blocked locked area=%u unlocked=%u\n",
+                       area, ExploreItemProgression::unlockedArea(state));
+        return false;
     }
     exploreArea = area;
     exploreTravel = ExploreTravelPhase::DEPARTING;
     requestScene(SceneID::MAIN);
+    return true;
 }
 
 void GameEngine::markExploreActive() {
@@ -2698,6 +2705,7 @@ void GameEngine::initDefaultState() {
     state.bag = Game::BagState{};
     state.bag.potion = 0;
     state.bag.candy = 0;
+    state.bag.revive = 0;
     state.room = Game::RoomState{};
     for (uint8_t i = 0; i < Game::ROOM_FOOD_COUNT; ++i) state.room.food[i] = 0;
     state.coins = 0;

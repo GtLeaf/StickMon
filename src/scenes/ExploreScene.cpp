@@ -13,6 +13,7 @@
 #include "game/BattleSystem.h"
 #include "game/ExploreBoss.h"
 #include "game/ExploreEncounters.h"
+#include "game/ExploreItemProgression.h"
 #include "game/ExplorePool.h"
 #include "game/ExploreRunRules.h"
 #include "game/FriendshipPity.h"
@@ -1363,8 +1364,9 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
             if (areaCursor >= static_cast<uint8_t>(Area::COUNT)) {
                 GameEngine::ins().requestScene(SceneID::MENU);
             } else {
-                activeArea = static_cast<Area>(areaCursor);
-                GameEngine::ins().beginExploreDeparture(areaCursor);
+                if (GameEngine::ins().beginExploreDeparture(areaCursor)) {
+                    activeArea = static_cast<Area>(areaCursor);
+                }
             }
             return true;
         }
@@ -3744,12 +3746,15 @@ uint8_t ExploreScene::collectAreaPoolSpecies(uint16_t* speciesIds,
                                              uint8_t capacity,
                                              uint8_t priorityArea) {
     if (!speciesIds || capacity == 0) return 0;
+    const auto& state = GameEngine::ins().gameState();
+    uint8_t unlockedArea = ExploreItemProgression::unlockedArea(state);
     uint8_t count = 0;
-    if (priorityArea < ROUTE_MAP_COUNT) {
+    if (priorityArea < ROUTE_MAP_COUNT && priorityArea <= unlockedArea) {
         count = ExplorePool::appendUniqueSpecies(
             buildAreaPool(priorityArea), speciesIds, count, capacity);
     }
-    for (uint8_t area = 0; area < ROUTE_MAP_COUNT; ++area) {
+    for (uint8_t area = 0;
+         area < ROUTE_MAP_COUNT && area <= unlockedArea; ++area) {
         if (area == priorityArea) continue;
         count = ExplorePool::appendUniqueSpecies(
             buildAreaPool(area), speciesIds, count, capacity);
@@ -3844,6 +3849,11 @@ void ExploreScene::loadAreaPreview() {
         PokemonSprites::setDynamicSceneSpecies(nullptr, 0);
         return;
     }
+    if (!ExploreItemProgression::isAreaUnlocked(
+            areaCursor, GameEngine::ins().gameState())) {
+        PokemonSprites::setDynamicSceneSpecies(nullptr, 0);
+        return;
+    }
 
     // 预览展示当前时段种子的活跃池全成员：所见即本趟可遭遇（§7.1/§7.5）
     areaPreviewPool = buildAreaPool(areaCursor);
@@ -3916,17 +3926,24 @@ void ExploreScene::renderAreaMenu() {
         int y = CENTER_Y + static_cast<int>(roundf(offset * AREA_SPACING));
         bool active = fabsf(offset) < 0.5f;
         const char* name = i < ROUTE_MAP_COUNT ? routeMap(i).name : Ui::BACK;
+        bool unlocked = i >= ROUTE_MAP_COUNT ||
+            ExploreItemProgression::isAreaUnlocked(
+                i, GameEngine::ins().gameState());
         bool specialActive =
-            i < ROUTE_MAP_COUNT &&
+            unlocked && i < ROUTE_MAP_COUNT &&
             specialKindForArea(i) != ExploreSpecial::Kind::NONE;
-        uint16_t color = specialActive
+        uint16_t color = !unlocked
+            ? PixelRenderer::rgb(82, 88, 96)
+            : specialActive
             ? PixelRenderer::rgb(72, 220, 255)
             : (active
                 ? PixelRenderer::rgb(255, 216, 72)
                 : PixelRenderer::rgb(156, 164, 176));
         if (active) {
             c.fillRect(5, y - 6, 3, 12,
-                       PixelRenderer::rgb(255, 216, 72));
+                       unlocked
+                           ? PixelRenderer::rgb(255, 216, 72)
+                           : PixelRenderer::rgb(82, 88, 96));
         }
         int textX = (LEFT_W - uiTextWidth(name)) / 2 + 4;
         PixelRenderer::text(textX, y - 8, name, color, 1);
@@ -3936,7 +3953,13 @@ void ExploreScene::renderAreaMenu() {
     c.drawFastVLine(LEFT_W, 4, Hal::DISPLAY_H - 8,
                     PixelRenderer::rgb(241, 242, 232));
     // 池内有稀有成员时标题换成「大量出现!」提示玩家时间窗口（§7.5）
+    bool selectedAreaUnlocked = areaCursor < ROUTE_MAP_COUNT &&
+        ExploreItemProgression::isAreaUnlocked(
+            areaCursor, GameEngine::ins().gameState());
     const char* title = areaCursor < ROUTE_MAP_COUNT &&
+                                !selectedAreaUnlocked
+                            ? Ui::Explore::AREA_LOCKED
+                            : areaCursor < ROUTE_MAP_COUNT &&
                                 ExplorePool::poolHasRare(areaPreviewPool)
                             ? Ui::Explore::MASS_OUTBREAK
                             : Ui::Explore::HABITAT_MONSTERS;
@@ -3946,6 +3969,13 @@ void ExploreScene::renderAreaMenu() {
                     PixelRenderer::rgb(241, 242, 232));
 
     if (areaCursor >= ROUTE_MAP_COUNT) return;
+    if (!selectedAreaUnlocked) {
+        const char* message = Ui::Explore::DEFEAT_PREVIOUS_BOSS;
+        int messageX = PREVIEW_CENTER_X - uiTextWidth(message) / 2;
+        PixelRenderer::text(messageX, PREVIEW_CENTER_Y - 8, message,
+                            PixelRenderer::rgb(156, 164, 176), 1);
+        return;
+    }
 
     // 轮播活跃池全成员；稀有成员以黑色剪影隐藏身份（§7.5）
     const uint8_t poolCount = areaPreviewPool.count;

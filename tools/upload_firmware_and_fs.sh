@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ENV_NAME="m5stick-s3"
+ENV_NAME="m5stick-s3-debug"
 UPLOAD_PORT=""
 DRY_RUN=0
 # 编译产物导出目录（供 tools/web-flasher 上传固件用），可用 OUT_DIR 覆盖
@@ -30,7 +30,9 @@ littlefs .bin) are exported to tools/out/.
 Options:
   -p, --port PORT          Upload port, for example /dev/cu.usbmodem2101.
                            Omit this option to let PlatformIO auto-detect it.
-  -e, --environment NAME   PlatformIO environment. Default: m5stick-s3.
+      --release            Build and upload the m5stick-s3 release environment.
+                           Default: m5stick-s3-debug.
+  -e, --environment NAME   Override the PlatformIO environment.
   -o, --out DIR            Export directory for build artifacts.
                            Default: tools/out.
       --dry-run            Print the commands without executing them.
@@ -54,6 +56,10 @@ while [[ $# -gt 0 ]]; do
             [[ $# -ge 2 ]] || { echo "[flash] Missing value for $1" >&2; exit 2; }
             ENV_NAME="$2"
             shift 2
+            ;;
+        --release)
+            ENV_NAME="m5stick-s3"
+            shift
             ;;
         -o|--out)
             [[ $# -ge 2 ]] || { echo "[flash] Missing value for $1" >&2; exit 2; }

@@ -27,6 +27,8 @@ int main() {
         Game::ItemId::FULL_RESTORE) == 4);
 
     assert(ExploreItemProgression::unlockedArea(state) == 0);
+    assert(ExploreItemProgression::isAreaUnlocked(0, state));
+    assert(!ExploreItemProgression::isAreaUnlocked(1, state));
     assert(ExploreItemProgression::isShopItemUnlocked(
         Game::ItemId::POTION, state));
     assert(!ExploreItemProgression::isShopItemUnlocked(
@@ -34,6 +36,8 @@ int main() {
 
     state.explorePoolRerollCounts[0] = 1;
     assert(ExploreItemProgression::unlockedArea(state) == 1);
+    assert(ExploreItemProgression::isAreaUnlocked(1, state));
+    assert(!ExploreItemProgression::isAreaUnlocked(2, state));
     assert(ExploreItemProgression::isShopItemUnlocked(
         Game::ItemId::MAX_REPEL, state));
     assert(!ExploreItemProgression::isShopItemUnlocked(
@@ -42,17 +46,25 @@ int main() {
         Game::ItemId::CANDY, state));
 
     state.explorePoolRerollCounts[2] = 1;
+    assert(ExploreItemProgression::unlockedArea(state) == 1);
+    assert(!ExploreItemProgression::isShopItemUnlocked(
+        Game::ItemId::CANDY, state));
+
+    state.explorePoolRerollCounts[1] = 1;
+    assert(ExploreItemProgression::unlockedArea(state) == 3);
     assert(ExploreItemProgression::isShopItemUnlocked(
         Game::ItemId::CANDY, state));
 
     state.explorePoolRerollCounts[0] = 0;
     state.explorePoolRerollCounts[3] = 1;
-    assert(ExploreItemProgression::unlockedArea(state) == 4);
-    assert(ExploreItemProgression::isShopItemUnlocked(
+    assert(ExploreItemProgression::unlockedArea(state) == 0);
+    assert(!ExploreItemProgression::isShopItemUnlocked(
         Game::ItemId::MAX_POTION, state));
-    assert(ExploreItemProgression::isShopItemUnlocked(
+    assert(!ExploreItemProgression::isShopItemUnlocked(
         Game::ItemId::FULL_RESTORE, state));
 
+    state.explorePoolRerollCounts[0] = 1;
+    state.explorePoolRerollCounts[4] = 1;
     state.explorePoolRerollCounts[5] = 1;
     assert(ExploreItemProgression::unlockedArea(state) == 5);
     assert(ExploreItemProgression::isShopItemUnlocked(

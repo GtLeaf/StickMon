@@ -345,7 +345,7 @@ public:
     bool loadHatchProgress(Game::HatchProgress& progress);
     bool saveHatchProgress(const Game::HatchProgress& progress);
     void clearHatchProgress();
-    void beginExploreDeparture(uint8_t area);
+    bool beginExploreDeparture(uint8_t area);
     void markExploreActive();
     void beginExploreReturn(bool fainted);
     void finishExploreReturn();

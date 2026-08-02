@@ -6,21 +6,19 @@
 
 namespace ExploreItemProgression {
 
-// Area 0 goods are available after hatching. Defeating a boss unlocks the
-// shop tier for the following area; clearing a deeper boss also implies the
-// lower shop tiers so players are not forced to replay easier routes.
+// Area 0 is always available. Each following area requires every preceding
+// boss to be defeated, so corrupted/debug progress cannot skip a locked area.
 inline uint8_t unlockedArea(const Game::GameState& state) {
     uint8_t area = 0;
-    for (uint8_t defeatedArea = 0;
-         defeatedArea < Game::EXPLORE_AREA_COUNT; ++defeatedArea) {
-        if (state.explorePoolRerollCounts[defeatedArea] == 0) continue;
-        uint8_t nextArea = static_cast<uint8_t>(defeatedArea + 1);
-        if (nextArea >= Game::EXPLORE_AREA_COUNT) {
-            nextArea = Game::EXPLORE_AREA_COUNT - 1;
-        }
-        if (nextArea > area) area = nextArea;
+    while (area + 1 < Game::EXPLORE_AREA_COUNT &&
+           state.explorePoolRerollCounts[area] > 0) {
+        ++area;
     }
     return area;
+}
+
+inline bool isAreaUnlocked(uint8_t area, const Game::GameState& state) {
+    return area < Game::EXPLORE_AREA_COUNT && area <= unlockedArea(state);
 }
 
 // Pickup-backed products use the first area whose pickup pool contains them.
