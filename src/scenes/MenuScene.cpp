@@ -1547,6 +1547,11 @@ bool MenuScene::onButton(const ButtonEvent& event) {
             toastUntil = Hal::ins().millis() + 1100;
             return true;
         }
+        if (GameEngine::ins().exploreBlockedByGuest()) {
+            toast = Ui::Menu::GUEST_AT_HOME;
+            toastUntil = Hal::ins().millis() + 1100;
+            return true;
+        }
         const auto& mon = GameEngine::ins().activeMonster();
         if (mon.fainted || mon.hpCur == 0) {
             toast = Ui::Menu::FAINTED_TOAST;

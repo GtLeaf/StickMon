@@ -125,6 +125,12 @@ static constexpr uint32_t BATTLE_HP_DRAIN_MS = 420;
 static constexpr uint32_t BATTLE_ACTION_MS =
     BATTLE_HIT_DELAY_MS + BATTLE_HIT_SHAKE_MS + BATTLE_HP_DRAIN_MS;
 static constexpr uint32_t BATTLE_SWITCH_PHASE_MS = 360;
+static constexpr uint32_t FOOD_THROW_DURATION_MS = 700;
+static constexpr int FOOD_THROW_START_X = 78;
+static constexpr int FOOD_THROW_START_Y = 83;
+static constexpr int FOOD_THROW_END_X = 166;
+static constexpr int FOOD_THROW_END_Y = 48;
+static constexpr int FOOD_THROW_ARC_HEIGHT = 34;
 static constexpr int BATTLE_SWITCH_TRAVEL_X = 120;
 static constexpr uint8_t EXPLORE_MAP_TILES_W = 16;
 static constexpr uint8_t EXPLORE_MAP_TILES_H = 12;
@@ -1131,6 +1137,7 @@ SceneUpdateResult ExploreScene::update(uint32_t nowMs, float dtSeconds) {
     bool expWasActive = expAnimationActive;
     updateExpAnimation(nowMs);
     demand.changed(expWasActive != expAnimationActive);
+    demand.changed(updateFoodThrow(nowMs));
     demand.changed(serviceBattleLog(nowMs));
 
     BattleSwitchStage switchStageBefore = battleSwitchStage;
@@ -2098,6 +2105,9 @@ void ExploreScene::clearBattleLogs() {
     battleHpFrom = 0;
     battleHpTo = 0;
     battleActionStarted = 0;
+    foodThrowActive = false;
+    foodThrowIndex = 0;
+    foodThrowStarted = 0;
     pendingBattleSwitchSlot = 0xFF;
     battleSwitchStage = BattleSwitchStage::NONE;
     battleSwitchStarted = 0;
@@ -2215,7 +2225,7 @@ bool ExploreScene::serviceBattleLog(uint32_t nowMs) {
 bool ExploreScene::battleLogBusy() const {
     return battleLogActive || battleLogCount > 0 || battleResultPending ||
            fleeExitPending || expAnimationPending ||
-           expAnimationActive ||
+           expAnimationActive || foodThrowActive ||
            battleSwitchStage != BattleSwitchStage::NONE ||
            battleTurnStage != BattleTurnStage::IDLE;
 }
@@ -2896,18 +2906,43 @@ void ExploreScene::wildCounterattack() {
 }
 
 void ExploreScene::throwFood(uint8_t foodIndex) {
-    if (!wild || wildHp == 0 || battleTurnStage != BattleTurnStage::IDLE) return;
+    if (!wild || wildHp == 0 || battleTurnStage != BattleTurnStage::IDLE ||
+        foodThrowActive) {
+        return;
+    }
     if (foodIndex >= Game::ROOM_FOOD_COUNT) foodIndex = 0;
+
+    foodThrowActive = true;
+    foodThrowIndex = foodIndex;
+    foodThrowStarted = Hal::ins().millis();
 
     char logBuf[BATTLE_LOG_LEN];
     snprintf(logBuf, sizeof(logBuf), Ui::Explore::FOOD_THROW_FMT,
              wild->name, Ui::Room::FOOD_NAMES[foodIndex]);
     enqueueBattleLog(logBuf);
+}
+
+bool ExploreScene::updateFoodThrow(uint32_t nowMs) {
+    if (!foodThrowActive) return false;
+    if (phase != Phase::ENCOUNTER || !wild || wildHp == 0) {
+        foodThrowActive = false;
+        return true;
+    }
+    if (nowMs - foodThrowStarted < FOOD_THROW_DURATION_MS) return false;
+
+    foodThrowActive = false;
+    finishFoodThrow();
+    return true;
+}
+
+void ExploreScene::finishFoodThrow() {
+    if (!wild || wildHp == 0) return;
 
     FoodTuning::ThrowClass throwClass =
-        FriendshipSystem::classifyFoodThrow(foodIndex, wildRuntime.nature);
+        FriendshipSystem::classifyFoodThrow(foodThrowIndex, wildRuntime.nature);
     bool accepted = FriendshipSystem::acceptsFoodThrow(
         battleIsBoss, throwClass, static_cast<uint8_t>(GameRandom::random(0, 100)));
+    char logBuf[BATTLE_LOG_LEN];
     if (!accepted) {
         snprintf(logBuf, sizeof(logBuf),
                  throwClass == FoodTuning::ThrowClass::DISLIKED
@@ -4330,6 +4365,7 @@ void ExploreScene::renderEncounter() {
                                    activeMonster.majorStatus,
                                    playerBattleState, nowMs);
     }
+    renderFoodThrow();
     renderBattleHud();
     renderCommandBox();
     if (GameEngine::ins().debugBattleDrawBoundsVisible()) {
@@ -4341,6 +4377,29 @@ void ExploreScene::renderEncounter() {
                    BattleLayout::PLAYER_GROUND_Y - BattleLayout::PLAYER_MAX_H,
                    BattleLayout::PLAYER_MAX_W, BattleLayout::PLAYER_MAX_H,
                    PixelRenderer::rgb(0, 220, 255));
+    }
+}
+
+void ExploreScene::renderFoodThrow() {
+    if (!foodThrowActive) return;
+
+    uint32_t elapsed = Hal::ins().millis() - foodThrowStarted;
+    float progress = MathUtil::min<uint32_t>(elapsed, FOOD_THROW_DURATION_MS) /
+                     static_cast<float>(FOOD_THROW_DURATION_MS);
+    float inverse = 1.0f - progress;
+    float x = FOOD_THROW_START_X +
+              (FOOD_THROW_END_X - FOOD_THROW_START_X) * progress;
+    float y = FOOD_THROW_START_Y +
+              (FOOD_THROW_END_Y - FOOD_THROW_START_Y) * progress -
+              FOOD_THROW_ARC_HEIGHT * 4.0f * progress * inverse;
+    GameAssets::Kind kind = GameAssets::itemKind(
+        Game::itemIdForFoodIndex(foodThrowIndex));
+    if (!GameAssets::drawCentered(
+            kind, static_cast<int>(roundf(x)), static_cast<int>(roundf(y)),
+            0.55f)) {
+        PixelRenderer::canvas().fillCircle(
+            static_cast<int>(roundf(x)), static_cast<int>(roundf(y)), 4,
+            PixelRenderer::rgb(240, 174, 76));
     }
 }
 

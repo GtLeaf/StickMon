@@ -11,6 +11,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RenderDemandTests(unittest.TestCase):
+    def test_startup_sprite_load_wakes_render_demand(self):
+        source = (ROOT / "src" / "core" / "GameEngine.cpp").read_text()
+
+        self.assertIn("syncSpriteCache(1, &spriteCacheChanged)", source)
+        wake = source.index("if (spriteCacheChanged) {")
+        self.assertIn("invalidateScene();", source[wake:wake + 240])
+        self.assertIn("scheduleSceneUpdate(nowMs);", source[wake:wake + 240])
+
     @unittest.skipUnless(shutil.which("c++"), "host C++ compiler is unavailable")
     def test_render_demand_and_ui_motion_contracts(self):
         with tempfile.TemporaryDirectory() as temp_dir:

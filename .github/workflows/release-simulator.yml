@@ -1,0 +1,74 @@
+# 发布网页模拟器：main 推送或手动触发 → 合并到 web-simulator → Emscripten 编译 → 推送产物到 flasher 仓库
+# 前置：仓库 Secret FLASHER_PUSH_TOKEN（可推送 GtLeaf/stickmon-flasher 的 PAT）
+# emsdk 缓存：emsdk 更新后把 key 里 v1 递增以强制重装
+name: 发布网页模拟器
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write  # GITHUB_TOKEN 推回 web-simulator 的 merge 提交
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout web-simulator（完整历史）
+        uses: actions/checkout@v4
+        with:
+          ref: web-simulator
+          fetch-depth: 0
+
+      - name: 合并 main 最新改动
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          if ! git merge origin/main --no-edit; then
+            git merge --abort
+            echo "::error::main 与 web-simulator 合并冲突，需人工处理后重新触发"
+            exit 1
+          fi
+
+      - name: 缓存 emsdk
+        id: cache-emsdk
+        uses: actions/cache@v4
+        with:
+          path: emsdk
+          key: emsdk-v1
+
+      - name: 安装 emsdk（缓存未命中时）
+        if: steps.cache-emsdk.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git emsdk
+          ./emsdk/emsdk install latest
+          ./emsdk/emsdk activate latest
+
+      - name: 构建 WASM 产物
+        run: |
+          source emsdk/emsdk_env.sh
+          tools/build_web.sh
+
+      - name: 发布产物到 flasher 仓库
+        env:
+          FLASHER_TOKEN: ${{ secrets.FLASHER_PUSH_TOKEN }}
+        run: |
+          SRC_SHA=$(git rev-parse --short HEAD)
+          git clone "https://x-access-token:${FLASHER_TOKEN}@github.com/GtLeaf/stickmon-flasher.git" flasher
+          cp web/stickmon.js web/stickmon.wasm web/stickmon.data web/index.html web/device-body.webp flasher/public/sim/
+          cd flasher
+          node scripts/hash-sim-assets.js
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/sim
+          if git diff --cached --quiet; then
+            echo "产物无变化，跳过提交"
+          else
+            git commit -m "chore: 模拟器产物更新（Actions 自动发布，源 ${SRC_SHA}）"
+            git push
+          fi
+
+      - name: 推回 web-simulator 的 merge 提交
+        run: git push origin web-simulator

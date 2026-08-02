@@ -1658,7 +1658,9 @@ const SpriteFrame* findSpeciesSprite(uint16_t speciesId, SpriteKind kind);
 const SpriteFrame* findCachedSpeciesSprite(uint16_t speciesId, SpriteKind kind);
 int16_t frameGroundOffsetY(const SpriteFrame* frame);
 bool walkingAnimation(uint16_t speciesId, WalkDirection direction, WalkingAnimation& animation);
-bool syncTeamCache(const uint16_t* speciesIds, uint8_t count, uint8_t loadBudget = 0xFF);
+bool syncTeamCache(const uint16_t* speciesIds, uint8_t count,
+                   uint8_t loadBudget = 0xFF,
+                   bool* cacheChanged = nullptr);
 bool preloadDynamicSpecies(const uint16_t* speciesIds, uint8_t count,
                            uint8_t loadBudget = 0xFF);
 void setDynamicSceneSpecies(const uint16_t* speciesIds, uint8_t count);

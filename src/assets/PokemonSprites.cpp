@@ -546,7 +546,9 @@ int16_t frameGroundOffsetY(const SpriteFrame* frame) {
     return static_cast<int16_t>(MathUtil::clamp((int)(height * 0.42f), 16, 32));
 }
 
-bool syncTeamCache(const uint16_t* speciesIds, uint8_t count, uint8_t loadBudget) {
+bool syncTeamCache(const uint16_t* speciesIds, uint8_t count,
+                   uint8_t loadBudget, bool* cacheChanged) {
+    if (cacheChanged) *cacheChanged = false;
     if (!speciesIds) count = 0;
     if (count > TEAM_CACHE_CAP) count = TEAM_CACHE_CAP;
 
@@ -563,6 +565,7 @@ bool syncTeamCache(const uint16_t* speciesIds, uint8_t count, uint8_t loadBudget
     }
 
     uint32_t start = Platform::clock().millis();
+    bool changed = signatureChanged;
     if (signatureChanged) {
         for (uint8_t i = 0; i < TEAM_CACHE_CAP; ++i) {
             uint16_t oldSpecies = gCache[i].speciesId;
@@ -606,6 +609,8 @@ bool syncTeamCache(const uint16_t* speciesIds, uint8_t count, uint8_t loadBudget
         if (loadedThisCall >= loadBudget) continue;
         if (!loadSpeciesIntoCache(i, next[i])) {
             Platform::logf("[PokemonSprites] cache miss species=%u\n", next[i]);
+        } else {
+            changed = true;
         }
         ++loadedThisCall;
     }
@@ -617,7 +622,9 @@ bool syncTeamCache(const uint16_t* speciesIds, uint8_t count, uint8_t loadBudget
             break;
         }
     }
-    if (!signatureChanged && loadedThisCall == 0 && movedThisCall == 0) return ready;
+    changed = changed || movedThisCall > 0;
+    if (cacheChanged) *cacheChanged = changed;
+    if (!changed && loadedThisCall == 0) return ready;
 
     gStats.lastReloadMs = Platform::clock().millis() - start;
     gStats.freePsram = Platform::memory().externalFree();
