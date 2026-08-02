@@ -53,8 +53,14 @@ public:
     uint8_t volume() const override { return volume_; }
     bool playPcmU8(const uint8_t* data, size_t sampleCount,
                    uint32_t sampleRate) override;
-    bool playing() const override { return playing_; }
+    bool playPcmU8Channel(const uint8_t* data, size_t sampleCount,
+                          uint32_t sampleRate, uint8_t channel,
+                          bool stopCurrent) override;
+    void setChannelVolume(uint8_t channel, uint8_t percent) override;
+    bool playing() const override;
+    uint8_t queuedPcm(uint8_t channel) const override;
     void stop() override;
+    void stopChannel(uint8_t channel) override;
     bool beginMicrophone() override { return false; }
     void endMicrophone() override {}
     bool recordMicrophone(int16_t*, size_t, uint32_t) override { return false; }
@@ -115,13 +121,14 @@ private:
     std::unordered_map<std::string, std::vector<uint8_t>> blobs_;
     std::unordered_map<void*, size_t> externalAllocs_;
     size_t externalUsed_ = 0;
-    std::vector<uint8_t> pendingAudio_;
-    uint32_t pendingAudioRate_ = 0;
     size_t resourceBytes_ = 0;
     uint8_t brightness_ = 255;
     uint8_t volume_ = 50;
     bool initialized_ = false;
     bool resourcesMounted_ = false;
     bool displaySleeping_ = false;
-    bool playing_ = false;
+    std::array<uint8_t, Platform::IAudioDevice::CHANNEL_COUNT>
+        audioQueueDepth_{};
+    std::array<uint8_t, Platform::IAudioDevice::CHANNEL_COUNT>
+        audioChannelVolume_{{100, 100, 100}};
 };

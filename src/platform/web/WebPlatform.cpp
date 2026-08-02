@@ -40,31 +40,124 @@ EM_JS(void, js_present_frame, (const uint16_t* pixels, int w, int h, int brightn
     ctx.putImageData(img, 0, 0);
 });
 
-EM_JS(void, js_play_pcm, (const uint8_t* data, int len, int sampleRate, int volPercent), {
-    if (!window._stickmonAudioCtx) {
-        window._stickmonAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+EM_JS(void, js_audio_init, (int channelCount, int volumePercent), {
+    if (window._stickmonAudio) return;
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+    const context = new AudioContextClass();
+    const masterGain = context.createGain();
+    masterGain.gain.value = volumePercent / 100.0;
+    masterGain.connect(context.destination);
+    const channels = [];
+    for (let i = 0; i < channelCount; ++i) {
+        const gain = context.createGain();
+        gain.gain.value = 1.0;
+        gain.connect(masterGain);
+        channels.push({gain: gain, queue: [], nextStartTime: 0});
     }
-    const actx = window._stickmonAudioCtx;
-    if (actx.state === 'suspended') actx.resume();
+    window._stickmonAudio = {
+        context: context,
+        masterGain: masterGain,
+        channels: channels
+    };
+});
+
+EM_JS(void, js_audio_resume, (), {
+    const audio = window._stickmonAudio;
+    if (audio && audio.context.state === 'suspended') {
+        audio.context.resume();
+    }
+});
+
+EM_JS(void, js_set_audio_volume, (int volumePercent), {
+    const audio = window._stickmonAudio;
+    if (!audio) return;
+    audio.masterGain.gain.setValueAtTime(
+        volumePercent / 100.0, audio.context.currentTime);
+});
+
+EM_JS(int, js_play_pcm_channel,
+      (const uint8_t* data, int len, int sampleRate, int channel,
+       int stopCurrent), {
+    const audio = window._stickmonAudio;
+    if (!audio || channel < 0 || channel >= audio.channels.length) return 0;
+    const actx = audio.context;
+    const state = audio.channels[channel];
+    if (stopCurrent) {
+        for (const entry of state.queue) {
+            entry.source.onended = null;
+            try { entry.source.stop(); } catch (e) {}
+        }
+        state.queue = [];
+        state.nextStartTime = actx.currentTime;
+    } else if (state.queue.length >= 2) {
+        return 0;
+    }
     const bytes = new Uint8Array(HEAPU8.buffer.slice(data, data + len));
     const float32 = new Float32Array(len);
-    const vol = volPercent / 100.0;
     for (let i = 0; i < len; i++) {
-        float32[i] = ((bytes[i] - 128) / 128.0) * vol;
+        float32[i] = (bytes[i] - 128) / 128.0;
     }
     const buf = actx.createBuffer(1, len, sampleRate);
     buf.copyToChannel(float32, 0);
     const src = actx.createBufferSource();
     src.buffer = buf;
-    src.connect(actx.destination);
-    src.start();
-    window._stickmonAudioSrc = src;
+    src.connect(state.gain);
+    const startTime = Math.max(actx.currentTime, state.nextStartTime);
+    const entry = {source: src, endTime: startTime + buf.duration};
+    state.queue.push(entry);
+    state.nextStartTime = entry.endTime;
+    src.onended = function() {
+        const index = state.queue.indexOf(entry);
+        if (index >= 0) state.queue.splice(index, 1);
+        if (state.queue.length === 0) state.nextStartTime = actx.currentTime;
+    };
+    src.start(startTime);
+    if (actx.state === 'suspended') actx.resume();
+    return 1;
+});
+
+EM_JS(void, js_set_channel_volume, (int channel, int volumePercent), {
+    const audio = window._stickmonAudio;
+    if (!audio || channel < 0 || channel >= audio.channels.length) return;
+    audio.channels[channel].gain.gain.setValueAtTime(
+        volumePercent / 100.0, audio.context.currentTime);
+});
+
+EM_JS(int, js_audio_playing, (), {
+    const audio = window._stickmonAudio;
+    if (!audio) return 0;
+    return audio.channels.some(channel => channel.queue.length > 0) ? 1 : 0;
+});
+
+EM_JS(int, js_queued_pcm, (int channel), {
+    const audio = window._stickmonAudio;
+    if (!audio || channel < 0 || channel >= audio.channels.length) return 0;
+    return audio.channels[channel].queue.length;
+});
+
+EM_JS(void, js_stop_audio_channel, (int channel), {
+    const audio = window._stickmonAudio;
+    if (!audio || channel < 0 || channel >= audio.channels.length) return;
+    const state = audio.channels[channel];
+    for (const entry of state.queue) {
+        entry.source.onended = null;
+        try { entry.source.stop(); } catch (e) {}
+    }
+    state.queue = [];
+    state.nextStartTime = audio.context.currentTime;
 });
 
 EM_JS(void, js_stop_audio, (), {
-    if (window._stickmonAudioSrc) {
-        try { window._stickmonAudioSrc.stop(); } catch(e) {}
-        window._stickmonAudioSrc = null;
+    const audio = window._stickmonAudio;
+    if (!audio) return;
+    for (const state of audio.channels) {
+        for (const entry of state.queue) {
+            entry.source.onended = null;
+            try { entry.source.stop(); } catch (e) {}
+        }
+        state.queue = [];
+        state.nextStartTime = audio.context.currentTime;
     }
 });
 
@@ -163,6 +256,9 @@ WebPlatform::WebPlatform()
 
 bool WebPlatform::begin() {
     initialized_ = true;
+#ifdef __EMSCRIPTEN__
+    js_audio_init(Platform::IAudioDevice::CHANNEL_COUNT, volume_);
+#endif
     return true;
 }
 
@@ -216,6 +312,9 @@ bool WebPlatform::pressed(Platform::InputButton button) const {
 void WebPlatform::setPressed(Platform::InputButton button, bool value) {
     size_t index = static_cast<size_t>(button);
     if (index < buttons_.size()) buttons_[index] = value;
+#ifdef __EMSCRIPTEN__
+    if (value) js_audio_resume();
+#endif
 }
 
 // Display
@@ -237,25 +336,73 @@ void WebPlatform::present() {
 // Audio
 void WebPlatform::setVolume(uint8_t percent) {
     volume_ = std::min<uint8_t>(percent, 100);
+#ifdef __EMSCRIPTEN__
+    js_set_audio_volume(volume_);
+#endif
 }
 
 bool WebPlatform::playPcmU8(const uint8_t* data, size_t sampleCount,
                             uint32_t sampleRate) {
+    return playPcmU8Channel(data, sampleCount, sampleRate, 0, true);
+}
+
+bool WebPlatform::playPcmU8Channel(const uint8_t* data, size_t sampleCount,
+                                   uint32_t sampleRate, uint8_t channel,
+                                   bool stopCurrent) {
     if (!initialized_ || !data || sampleCount == 0 || sampleRate == 0 ||
-        volume_ == 0) return false;
+        volume_ == 0 || channel >= audioQueueDepth_.size()) return false;
 #ifdef __EMSCRIPTEN__
-    js_play_pcm(data, static_cast<int>(sampleCount),
-                static_cast<int>(sampleRate), volume_);
-#endif
-    playing_ = true;
+    return js_play_pcm_channel(
+        data, static_cast<int>(sampleCount), static_cast<int>(sampleRate),
+        channel, stopCurrent ? 1 : 0) != 0;
+#else
+    if (!stopCurrent && audioQueueDepth_[channel] >= 2) return false;
+    audioQueueDepth_[channel] = stopCurrent
+        ? 1
+        : static_cast<uint8_t>(audioQueueDepth_[channel] + 1);
     return true;
+#endif
+}
+
+void WebPlatform::setChannelVolume(uint8_t channel, uint8_t percent) {
+    if (channel >= audioChannelVolume_.size()) return;
+    audioChannelVolume_[channel] = std::min<uint8_t>(percent, 100);
+#ifdef __EMSCRIPTEN__
+    js_set_channel_volume(channel, audioChannelVolume_[channel]);
+#endif
+}
+
+bool WebPlatform::playing() const {
+#ifdef __EMSCRIPTEN__
+    return js_audio_playing() != 0;
+#else
+    return std::any_of(audioQueueDepth_.begin(), audioQueueDepth_.end(),
+                       [](uint8_t depth) { return depth > 0; });
+#endif
+}
+
+uint8_t WebPlatform::queuedPcm(uint8_t channel) const {
+    if (channel >= audioQueueDepth_.size()) return 0;
+#ifdef __EMSCRIPTEN__
+    return static_cast<uint8_t>(js_queued_pcm(channel));
+#else
+    return audioQueueDepth_[channel];
+#endif
 }
 
 void WebPlatform::stop() {
 #ifdef __EMSCRIPTEN__
     js_stop_audio();
 #endif
-    playing_ = false;
+    audioQueueDepth_.fill(0);
+}
+
+void WebPlatform::stopChannel(uint8_t channel) {
+    if (channel >= audioQueueDepth_.size()) return;
+#ifdef __EMSCRIPTEN__
+    js_stop_audio_channel(channel);
+#endif
+    audioQueueDepth_[channel] = 0;
 }
 
 // IMU
