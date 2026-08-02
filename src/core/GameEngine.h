@@ -62,6 +62,7 @@ enum class ContactInviteResult : uint8_t {
     JOINED,
     REFUSED,
     LOCKED,
+    ALREADY_IN_TEAM,
     TEAM_FULL,
     INVALID,
 };
@@ -165,7 +166,7 @@ public:
     uint8_t soapCount(uint8_t soapIndex) const {
         return soapIndex < Game::SOAP_VARIANT_COUNT ? state.bag.soap[soapIndex] : 0;
     }
-    uint8_t companionCount() const { return state.teamCount + state.storageCount; }
+    uint8_t companionCount() const;
     uint32_t coinCount() const { return state.coins; }
     bool candyPurchaseAvailable();
     bool recordCandyPurchase();
@@ -188,6 +189,12 @@ public:
     ContactInviteResult inviteContactToTeam(uint8_t slot);
     bool contactInviteLocked(uint8_t slot) const;
     uint8_t contactInviteChance(uint8_t slot) const;
+    int8_t teamSlotForContact(uint8_t slot) const;
+    bool contactIsInTeam(uint8_t slot) const {
+        return teamSlotForContact(slot) >= 0;
+    }
+    void requestTeamMemberArrival() { teamMemberArrivalPending = true; }
+    bool consumeTeamMemberArrivalRequest();
     bool prepareDailyContactVisit();
     DebugContactEventResult debugTriggerContactVisit(ContactVisitKind kind);
     bool contactKnockPending() const { return contactVisit.pendingKnock; }
@@ -518,6 +525,7 @@ private:
         uint32_t startedMs = 0;
         uint32_t checkedDay = 0xFFFFFFFFUL;
     } contactVisit;
+    bool teamMemberArrivalPending = false;
     bool visitLinkLost = false;
 
     Game::GameState state;

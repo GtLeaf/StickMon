@@ -87,16 +87,47 @@ void DesktopPlatform::setVolume(uint8_t percent) {
 
 bool DesktopPlatform::playPcmU8(const uint8_t* data, size_t sampleCount,
                                 uint32_t sampleRate) {
+    return playPcmU8Channel(data, sampleCount, sampleRate, 0, true);
+}
+
+bool DesktopPlatform::playPcmU8Channel(const uint8_t* data,
+                                       size_t sampleCount,
+                                       uint32_t sampleRate,
+                                       uint8_t channel,
+                                       bool stopCurrent) {
     if (!initialized_ || !data || sampleCount == 0 || sampleRate == 0 ||
-        volume_ == 0 || microphoneActive_) return false;
+        volume_ == 0 || microphoneActive_ ||
+        channel >= audioQueueDepth_.size()) return false;
+    if (!stopCurrent && audioQueueDepth_[channel] >= 2) return false;
     lastAudio_.assign(data, data + sampleCount);
     ++audioPlayCount_;
-    playing_ = true;
+    audioQueueDepth_[channel] = stopCurrent
+        ? 1
+        : static_cast<uint8_t>(audioQueueDepth_[channel] + 1);
     return true;
 }
 
+bool DesktopPlatform::playing() const {
+    for (uint8_t depth : audioQueueDepth_) {
+        if (depth > 0) return true;
+    }
+    return false;
+}
+
+uint8_t DesktopPlatform::queuedPcm(uint8_t channel) const {
+    return channel < audioQueueDepth_.size() ? audioQueueDepth_[channel] : 0;
+}
+
+void DesktopPlatform::stop() {
+    audioQueueDepth_.fill(0);
+}
+
+void DesktopPlatform::stopChannel(uint8_t channel) {
+    if (channel < audioQueueDepth_.size()) audioQueueDepth_[channel] = 0;
+}
+
 bool DesktopPlatform::beginMicrophone() {
-    playing_ = false;
+    stop();
     microphoneActive_ = initialized_;
     return microphoneActive_;
 }

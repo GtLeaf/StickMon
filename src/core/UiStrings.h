@@ -535,6 +535,7 @@ static constexpr const char* INVITE_CONFIRM_FMT = "邀请%s同行吗？";
 static constexpr const char* INVITE_ACCEPTED = "它开心地答应了";
 static constexpr const char* INVITE_REFUSED = "它婉拒了邀请";
 static constexpr const char* INVITE_LOCKED = "今天不能再邀请";
+static constexpr const char* IN_TEAM = "队伍中";
 static constexpr const char* VISITING = "正在房间做客";
 static constexpr const char* TEAM_FULL_TOAST = "队伍已满";
 static constexpr const char* DELETE_CONFIRM = "删除";
@@ -1063,7 +1064,7 @@ static constexpr const char* PICKUP_SUPER_POTION = "高级伤药";
 static constexpr const char* PICKUP_ANTIDOTE = "解毒药";
 static constexpr const char* PICKUP_CANDY = "神奇糖果";
 static constexpr const char* RESULT_END = "探索结束";
-static constexpr const char* BOND_GAIN_FMT = "羁绊 +%u";
+static constexpr const char* BOND_GAIN_FMT = "羁绊值 +%u";
 static constexpr const char* A_CONTINUE = "A 继续探索";
 }
 

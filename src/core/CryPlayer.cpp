@@ -1,5 +1,6 @@
 #include "core/CryPlayer.h"
 
+#include "core/AudioManager.h"
 #include "core/DeflateDecoder.h"
 #include "core/ResourcePack.h"
 #include "platform/api/PlatformServices.h"
@@ -45,7 +46,8 @@ CryPlayer& CryPlayer::ins() {
 bool CryPlayer::play(uint16_t speciesId) {
     update();
     if (speciesId == 0 || Platform::audio().volume() == 0) return false;
-    if (pcm_ || Platform::audio().playing()) return false;
+    if (pcm_ ||
+        Platform::audio().queuedPcm(AudioManager::CRY_CHANNEL) > 0) return false;
 
     ResourcePack& pack = ResourcePack::ins();
     if (!pack.begin()) return false;
@@ -98,7 +100,9 @@ bool CryPlayer::play(uint16_t speciesId) {
     pcm_ = pcm;
     pcmBytes_ = header.payloadRawBytes;
     speciesId_ = speciesId;
-    if (!Platform::audio().playPcmU8(pcm_, pcmBytes_, header.sampleRate)) {
+    if (!Platform::audio().playPcmU8Channel(
+            pcm_, pcmBytes_, header.sampleRate,
+            AudioManager::CRY_CHANNEL, true)) {
         releaseBuffer();
         Platform::logf("[CryPlayer] playback failed species=%u\n", speciesId);
         return false;
@@ -114,17 +118,22 @@ bool CryPlayer::play(uint16_t speciesId) {
 bool CryPlayer::replay(uint16_t speciesId) {
     if (speciesId == 0 || Platform::audio().volume() == 0) return false;
     if (pcm_ && speciesId_ == speciesId) {
-        return Platform::audio().playPcmU8(pcm_, pcmBytes_, CRY_SAMPLE_RATE);
+        return Platform::audio().playPcmU8Channel(
+            pcm_, pcmBytes_, CRY_SAMPLE_RATE,
+            AudioManager::CRY_CHANNEL, true);
     }
     return play(speciesId);
 }
 
 void CryPlayer::update() {
-    if (pcm_ && !Platform::audio().playing()) releaseBuffer();
+    if (pcm_ &&
+        Platform::audio().queuedPcm(AudioManager::CRY_CHANNEL) == 0) {
+        releaseBuffer();
+    }
 }
 
 void CryPlayer::stop() {
-    if (pcm_) Platform::audio().stop();
+    if (pcm_) Platform::audio().stopChannel(AudioManager::CRY_CHANNEL);
 }
 
 void CryPlayer::releaseBuffer() {

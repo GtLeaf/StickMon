@@ -13,6 +13,7 @@ constexpr const char* PACK_ROOT_PREFIX = "/packs/";
 constexpr const char* PACK_FORMAT = "smon-resource-pack-v1";
 constexpr const char* DEFAULT_SPRITES_DIR = "sprites";
 constexpr const char* DEFAULT_CRIES_DIR = "cries";
+constexpr const char* DEFAULT_AUDIO_DIR = "audio";
 constexpr const char* DEFAULT_ROOMS_DIR = "rooms";
 constexpr const char* DEFAULT_FONTS_DIR = "fonts";
 constexpr const char* DEFAULT_ROOM_PATH = "rooms/standard.smonroom";
@@ -322,6 +323,16 @@ bool ResourcePack::openCry(uint16_t speciesId, Platform::ResourceFile& file) con
            openRelative(relative, file);
 }
 
+bool ResourcePack::openAudio(const char* audioId,
+                             Platform::ResourceFile& file) const {
+    if (!active_ || !isSafePackName(audioId)) return false;
+    char relative[64];
+    int written = std::snprintf(
+        relative, sizeof(relative), "%s/%s.smonaudio", audioDir_, audioId);
+    return written > 0 && static_cast<size_t>(written) < sizeof(relative) &&
+           openRelative(relative, file);
+}
+
 bool ResourcePack::openRoom(const char* roomId, Platform::ResourceFile& file) const {
     if (!active_ || !isSafePackName(roomId)) return false;
     if (std::strcmp(roomId, "standard") == 0) return openRelative(defaultRoomPath_, file);
@@ -373,6 +384,7 @@ void ResourcePack::setDefaultRoot() {
     version_[0] = '\0';
     copyText(spritesDir_, sizeof(spritesDir_), DEFAULT_SPRITES_DIR);
     copyText(criesDir_, sizeof(criesDir_), DEFAULT_CRIES_DIR);
+    copyText(audioDir_, sizeof(audioDir_), DEFAULT_AUDIO_DIR);
     copyText(roomsDir_, sizeof(roomsDir_), DEFAULT_ROOMS_DIR);
     copyText(fontsDir_, sizeof(fontsDir_), DEFAULT_FONTS_DIR);
     copyText(defaultRoomPath_, sizeof(defaultRoomPath_), DEFAULT_ROOM_PATH);
@@ -465,6 +477,7 @@ bool ResourcePack::loadManifest() {
 
     if (!copyOptionalPath(json, "sprites", spritesDir_, sizeof(spritesDir_)) ||
         !copyOptionalPath(json, "cries", criesDir_, sizeof(criesDir_)) ||
+        !copyOptionalPath(json, "audio", audioDir_, sizeof(audioDir_)) ||
         !copyOptionalPath(json, "rooms", roomsDir_, sizeof(roomsDir_)) ||
         !copyOptionalPath(json, "fonts", fontsDir_, sizeof(fontsDir_)) ||
         !copyOptionalPath(json, "room", defaultRoomPath_, sizeof(defaultRoomPath_)) ||

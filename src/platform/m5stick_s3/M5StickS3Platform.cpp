@@ -202,20 +202,48 @@ uint8_t M5StickS3Platform::volume() const {
 
 bool M5StickS3Platform::playPcmU8(const uint8_t* data, size_t sampleCount,
                                   uint32_t sampleRate) {
+    return playPcmU8Channel(data, sampleCount, sampleRate, 0, true);
+}
+
+bool M5StickS3Platform::playPcmU8Channel(const uint8_t* data,
+                                         size_t sampleCount,
+                                         uint32_t sampleRate,
+                                         uint8_t channel,
+                                         bool stopCurrent) {
     if (!initialized_ || audioVolume_ == 0 || !data || sampleCount == 0 ||
-        sampleRate == 0 || microphoneMode_ || !M5.Speaker.isEnabled()) {
+        sampleRate == 0 || channel >= Platform::IAudioDevice::CHANNEL_COUNT ||
+        microphoneMode_ || !M5.Speaker.isEnabled()) {
         return false;
     }
     return M5.Speaker.playRaw(
-        data, sampleCount, sampleRate, false, 1, 0, true);
+        data, sampleCount, sampleRate, false, 1, channel, stopCurrent);
 }
 
 bool M5StickS3Platform::playing() const {
-    return initialized_ && M5.Speaker.isPlaying(0) != 0;
+    return initialized_ && M5.Speaker.isPlaying();
+}
+
+uint8_t M5StickS3Platform::queuedPcm(uint8_t channel) const {
+    return initialized_ && channel < Platform::IAudioDevice::CHANNEL_COUNT
+        ? static_cast<uint8_t>(M5.Speaker.isPlaying(channel))
+        : 0;
 }
 
 void M5StickS3Platform::stop() {
-    if (initialized_) M5.Speaker.stop(0);
+    if (!initialized_) return;
+    M5.Speaker.stop();
+    while (M5.Speaker.isPlaying()) {
+        delay(1);
+    }
+}
+
+void M5StickS3Platform::stopChannel(uint8_t channel) {
+    if (initialized_ && channel < Platform::IAudioDevice::CHANNEL_COUNT) {
+        M5.Speaker.stop(channel);
+        while (M5.Speaker.isPlaying(channel) != 0) {
+            delay(1);
+        }
+    }
 }
 
 bool M5StickS3Platform::beginMicrophone() {

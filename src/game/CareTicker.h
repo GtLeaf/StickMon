@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include "game/BondSystem.h"
+#include "game/ContactRoster.h"
 #include "game/GameState.h"
 #include "game/Species.h"
 #include "game/SpeciesBehavior.h"
@@ -105,6 +106,7 @@ inline bool resetDailyCareCounters(GameState& state) {
         state.team[i].petCountToday = 0;
     }
     for (uint8_t i = 0; i < state.storageCount && i < Game::STORAGE_CAP; ++i) {
+        if (ContactRoster::teamSlotForContact(state, i) >= 0) continue;
         if ((state.storage[i].petCountToday & Bond::INVITE_LOCK_FLAG) == 0) {
             state.storage[i].petCountToday = 0;
         }
@@ -206,6 +208,7 @@ inline uint8_t applyCareMinutes(GameState& state, CareTickAccumulators& acc,
         updateHealthRecovery(mon);
     }
     for (uint8_t i = 0; i < state.storageCount && i < Game::STORAGE_CAP; ++i) {
+        if (ContactRoster::teamSlotForContact(state, i) >= 0) continue;
         updateHealthRecovery(state.storage[i]);
     }
     return faintRevivals;

@@ -671,6 +671,32 @@ const char* MenuScene::teamActionLabel(uint8_t index) const {
     }
 }
 
+uint8_t MenuScene::storageActionCount() const {
+    bool inTeam = GameEngine::ins().contactIsInTeam(storageCursor);
+    bool canDelete = GameEngine::ins().canDeleteContact(storageCursor);
+    return 2 + (inTeam ? 0 : 1) + (canDelete ? 1 : 0);
+}
+
+MenuScene::StorageAction MenuScene::storageActionAt(uint8_t index) const {
+    bool inTeam = GameEngine::ins().contactIsInTeam(storageCursor);
+    bool canDelete = GameEngine::ins().canDeleteContact(storageCursor);
+    uint8_t actionIndex = 0;
+    if (index == actionIndex++) return StorageAction::STATUS;
+    if (!inTeam && index == actionIndex++) return StorageAction::INVITE;
+    if (canDelete && index == actionIndex) return StorageAction::DELETE;
+    return StorageAction::BACK;
+}
+
+const char* MenuScene::storageActionLabel(uint8_t index) const {
+    switch (storageActionAt(index)) {
+    case StorageAction::STATUS: return Ui::Storage::ACTION_STATUS;
+    case StorageAction::INVITE: return Ui::Storage::ACTION_INVITE;
+    case StorageAction::DELETE: return Ui::Storage::ACTION_DELETE;
+    case StorageAction::BACK:
+    default: return Ui::Storage::ACTION_BACK;
+    }
+}
+
 SceneUpdateResult MenuScene::update(uint32_t nowMs, float dtSeconds) {
     (void)dtSeconds;
     RenderDemand demand;
@@ -1356,10 +1382,8 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                 return true;
             }
             if (storageActionOpen) {
-                bool canDelete = GameEngine::ins().canDeleteContact(storageCursor);
-                uint8_t actionCount = canDelete ? STORAGE_ACTION_COUNT
-                                                : STORAGE_ACTION_COUNT - 1;
-                storageActionCursor = (storageActionCursor + 1) % actionCount;
+                storageActionCursor =
+                    (storageActionCursor + 1) % storageActionCount();
                 return true;
             }
             uint8_t count = GameEngine::ins().gameState().storageCount + 1;
@@ -1374,18 +1398,18 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                     ContactInviteResult result =
                         GameEngine::ins().inviteContactToTeam(storageCursor);
                     if (result == ContactInviteResult::JOINED) {
-                        uint8_t newCount =
-                            GameEngine::ins().gameState().storageCount;
-                        storageCursor =
-                            newCount == 0 ? 0 : MathUtil::min<uint8_t>(storageCursor,
-                                                            newCount - 1);
-                        toast = Ui::Storage::INVITE_ACCEPTED;
                         storageActionOpen = false;
+                        GameEngine::ins().requestTeamMemberArrival();
+                        GameEngine::ins().requestScene(SceneID::MAIN);
+                        return true;
                     } else if (result == ContactInviteResult::REFUSED) {
                         toast = Ui::Storage::INVITE_REFUSED;
                         storageActionOpen = false;
                     } else if (result == ContactInviteResult::LOCKED) {
                         toast = Ui::Storage::INVITE_LOCKED;
+                    } else if (result == ContactInviteResult::ALREADY_IN_TEAM) {
+                        toast = Ui::Storage::IN_TEAM;
+                        storageActionOpen = false;
                     } else if (result == ContactInviteResult::TEAM_FULL) {
                         toast = Ui::Storage::TEAM_FULL_TOAST;
                     }
@@ -1417,15 +1441,19 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                     storageActionOpen = false;
                     return true;
                 }
-                if (storageActionCursor == 0) {
-                    statusMonsterIndex = storageCursor;
-                    statusFromStorage = true;
+                StorageAction action = storageActionAt(storageActionCursor);
+                if (action == StorageAction::STATUS) {
+                    int8_t teamSlot =
+                        GameEngine::ins().teamSlotForContact(storageCursor);
+                    statusMonsterIndex = teamSlot >= 0
+                        ? static_cast<uint8_t>(teamSlot) : storageCursor;
+                    statusFromStorage = teamSlot < 0;
                     statusPage = 0;
                     statusScrollKey = -1;
                     statusScroll = 0.0f;
                     storageActionOpen = false;
                     pushView(ViewMode::STATUS);
-                } else if (storageActionCursor == 1) {
+                } else if (action == StorageAction::INVITE) {
                     if (GameEngine::ins().gameState().teamCount >= Game::TEAM_CAP) {
                         toast = Ui::Storage::TEAM_FULL_TOAST;
                         toastUntil = Hal::ins().millis() + 1100;
@@ -1443,8 +1471,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                     }
                     storageInviteConfirmOpen = true;
                     storageInviteConfirmYes = true;
-                } else if (storageActionCursor == 2 &&
-                           GameEngine::ins().canDeleteContact(storageCursor)) {
+                } else if (action == StorageAction::DELETE) {
                     storageReleaseConfirmOpen = true;
                     storageReleaseConfirmYes = false;
                 } else {
@@ -2427,8 +2454,10 @@ void MenuScene::renderStoragePage() {
         int y = LIST_Y_START + i * ROW_H - (int)storageScroll;
         if (y + ROW_H < LIST_Y_START || y > LIST_BOTTOM) continue;
         bool selected = i == storageCursor;
+        bool inTeam = i < state.storageCount &&
+            GameEngine::ins().contactIsInTeam(i);
         bool unavailable = i < state.storageCount &&
-            (GameEngine::ins().contactInviteLocked(i) ||
+            (inTeam || GameEngine::ins().contactInviteLocked(i) ||
              GameEngine::ins().contactIsVisiting(i));
         uint16_t color = unavailable
             ? PixelRenderer::rgb(92, 98, 108)
@@ -2439,12 +2468,22 @@ void MenuScene::renderStoragePage() {
         }
 
         if (i < state.storageCount) {
-            const Game::MonsterRuntime& mon = state.storage[i];
+            int8_t teamSlot = GameEngine::ins().teamSlotForContact(i);
+            const Game::MonsterRuntime& mon = teamSlot >= 0
+                ? state.team[teamSlot] : state.storage[i];
             const Species& species = GameEngine::ins().speciesFor(mon);
             PixelRenderer::text(TEXT_X, y + 3, species.name, color, 1);
 
             const char* bondLabel = bondLevelName(mon.bond);
             int bondX = Hal::DISPLAY_W - textPixelWidth(bondLabel) - 10;
+            if (inTeam) {
+                int statusX = TEXT_X + textPixelWidth(species.name) + 7;
+                int statusW = textPixelWidth(Ui::Storage::IN_TEAM);
+                if (statusX + statusW + 4 < bondX) {
+                    PixelRenderer::text(statusX, y + 3,
+                                        Ui::Storage::IN_TEAM, color, 1);
+                }
+            }
             PixelRenderer::text(MathUtil::max(TEXT_X + 82, bondX), y + 3,
                                 bondLabel,
                                 unavailable ? color
@@ -2503,9 +2542,7 @@ void MenuScene::renderStorageInviteConfirmPopup() {
 
 void MenuScene::renderStorageActionPopup() {
     auto& c = PixelRenderer::canvas();
-    bool canDelete = GameEngine::ins().canDeleteContact(storageCursor);
-    uint8_t actionCount = canDelete ? STORAGE_ACTION_COUNT
-                                    : STORAGE_ACTION_COUNT - 1;
+    uint8_t actionCount = storageActionCount();
     static constexpr int POP_X = 142;
     static constexpr int POP_Y = 20;
     static constexpr int POP_W = 78;
@@ -2517,8 +2554,7 @@ void MenuScene::renderStorageActionPopup() {
         int y = POP_Y + 9 + i * 21;
         bool selected = i == storageActionCursor;
         if (selected) c.fillRect(POP_X + 5, y - 2, 4, 18, PixelRenderer::rgb(255, 216, 72));
-        uint8_t actionIndex = !canDelete && i == 2 ? 3 : i;
-        PixelRenderer::text(POP_X + 16, y, Ui::Storage::ACTIONS[actionIndex],
+        PixelRenderer::text(POP_X + 16, y, storageActionLabel(i),
                             selected ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232),
                             1);
     }
