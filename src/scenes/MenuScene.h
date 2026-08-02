@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/BuildConfig.h"
 #include "core/Scene.h"
 #include "game/GameState.h"
 #include "game/Species.h"
@@ -48,7 +49,9 @@ private:
         ITEM_SHOP,
         ITEM_COMPUTER,
         ITEM_SETTINGS,
+#if STICKMON_ENABLE_DEBUG_FEATURES
         ITEM_DEBUG,
+#endif
         ITEM_BACK,
         ITEM_COUNT,
     };
@@ -63,9 +66,12 @@ private:
         BAG,
         COMPUTER,
         STORAGE,
+#if STICKMON_ENABLE_DEBUG_FEATURES
         DEBUG,
+#endif
     };
 
+#if STICKMON_ENABLE_DEBUG_FEATURES
     enum class DebugCategory : uint8_t {
         ROOT,
         MONSTER,
@@ -75,6 +81,7 @@ private:
         BATTLE,
         CONTACT_EVENT,
     };
+#endif
 
     enum class MovePageMode : uint8_t {
         MANAGE,
@@ -96,6 +103,7 @@ private:
     static constexpr uint8_t ROOM_ITEM_COUNT = 3;
     static constexpr uint8_t FOOD_ITEM_COUNT = Game::ROOM_FOOD_COUNT + 1;
     static constexpr uint8_t COMPUTER_ITEM_COUNT = 3;
+#if STICKMON_ENABLE_DEBUG_FEATURES
     static constexpr uint8_t DEBUG_ROOT_ITEM_COUNT = 7;
     static constexpr uint8_t DEBUG_BATTLE_ROOT_INDEX = 4;
     static constexpr uint8_t DEBUG_CONTACT_EVENT_ROOT_INDEX = 5;
@@ -112,6 +120,7 @@ private:
     static constexpr uint8_t DEBUG_CONTACT_EVENT_ITEM_COUNT = 4;
     static constexpr uint8_t DEBUG_SWITCH_FOCUS_COUNT = 5;
     static constexpr uint8_t DEBUG_TIME_FOCUS_COUNT = 6;
+#endif
     static constexpr uint8_t NAV_STACK_CAP = 8;
 
     static int8_t lastCursor;
@@ -160,6 +169,7 @@ private:
     bool storageReleaseConfirmOpen = false;
     bool storageReleaseConfirmYes = false;
     float storageScroll = 0.0f;
+#if STICKMON_ENABLE_DEBUG_FEATURES
     DebugCategory debugCategory = DebugCategory::ROOT;
     uint8_t debugCursor = 0;
     bool debugSwitchOpen = false;
@@ -169,6 +179,7 @@ private:
     uint8_t debugTimeFocus = 0;
     uint8_t debugTimeDigits[4] = {0, 0, 0, 0};
     float debugScroll = 0.0f;
+#endif
     int descScrollKey = -1;
     float descScroll = 0.0f;
     uint32_t descScrollLastMs = 0;
@@ -196,6 +207,7 @@ private:
     void renderStorageActionPopup();
     void renderStorageInviteConfirmPopup();
     void renderStorageReleaseConfirmPopup();
+#if STICKMON_ENABLE_DEBUG_FEATURES
     void renderDebugPage();
     void renderDebugSwitchPopup();
     void renderDebugTimePopup();
@@ -207,6 +219,7 @@ private:
     uint16_t debugSwitchTargetId() const;
     uint16_t debugTimeTargetMinutes() const;
     void incrementDebugTimeDigit();
+#endif
     void resetNavigation();
     void openExploreView(ViewMode next);
     void pushView(ViewMode next);

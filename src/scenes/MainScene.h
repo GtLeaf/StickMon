@@ -2,6 +2,7 @@
 
 #include "assets/PokemonMotion.h"
 #include "assets/PokemonSprites.h"
+#include "core/BuildConfig.h"
 #include "core/ProgressionUi.h"
 #include "core/RoomResource.h"
 #include "core/Scene.h"
@@ -322,7 +323,9 @@ private:
     bool drawPmdMonster(int x, int y);
     void drawStateEffect();
     void drawNightOverlay();
+#if STICKMON_ENABLE_DEBUG_FEATURES
     void drawWalkBoundary();
+#endif
     void drawHud();
     void drawToast();
     void drawProgressionPopup();
@@ -442,7 +445,9 @@ private:
     uint32_t heartEffectUntilMs = 0;
     uint32_t nextAttentionMs = 0;
     uint32_t nextSpecialActionMs = 0;
+#if STICKMON_ENABLE_DEBUG_FEATURES
     uint32_t comboStartMs = 0;
     bool comboSaved = false;
+#endif
     VisitorActor visitor;
 };

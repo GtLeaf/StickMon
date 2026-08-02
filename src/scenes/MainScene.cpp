@@ -964,6 +964,7 @@ SceneUpdateResult MainScene::update(uint32_t nowMs, float dtSeconds) {
     if (doorTransition != DoorTransitionMode::NONE) {
         return SceneUpdateResult::animate(66);
     }
+#if STICKMON_ENABLE_DEBUG_FEATURES
     bool combo =
         ButtonDispatcher::ins().isDown(Platform::InputButton::PRIMARY) &&
         ButtonDispatcher::ins().isDown(Platform::InputButton::SECONDARY);
@@ -978,6 +979,7 @@ SceneUpdateResult MainScene::update(uint32_t nowMs, float dtSeconds) {
         toastUntil = nowMs + 1200;
         comboSaved = true;
     }
+#endif
     if (toast && static_cast<int32_t>(nowMs - toastUntil) >= 0) {
         toast = nullptr;
     }
@@ -5061,7 +5063,9 @@ void MainScene::render() {
         {(int16_t)(30 + visitorDepthZ), &MainScene::drawVisitor},
         {(int16_t)(40 + depthZ), &MainScene::drawStateEffect},
         {85, &MainScene::drawNightOverlay},
+#if STICKMON_ENABLE_DEBUG_FEATURES
         {88, &MainScene::drawWalkBoundary},
+#endif
         {90, &MainScene::drawHud},
         {100, &MainScene::drawToast},
         {105, &MainScene::drawContactDialog},
@@ -5434,6 +5438,7 @@ void MainScene::drawNightOverlay() {
     }
 }
 
+#if STICKMON_ENABLE_DEBUG_FEATURES
 void MainScene::drawWalkBoundary() {
     if (!GameEngine::ins().debugWalkBoundaryVisible()) return;
 
@@ -5483,6 +5488,7 @@ void MainScene::drawWalkBoundary() {
              (unsigned)GameEngine::ins().bowlFoodCount());
     PixelRenderer::text(2, 2, debugText, 0xFFFF, 1);
 }
+#endif
 
 void MainScene::drawHud() {
     auto& c = PixelRenderer::canvas();

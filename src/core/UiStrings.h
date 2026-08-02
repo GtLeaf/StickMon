@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/BuildConfig.h"
+
 namespace Ui {
 static constexpr const char* TITLE = "StickMon";
 static constexpr const char* ROOM = "房间";
@@ -333,7 +335,9 @@ static constexpr const char* ITEMS[] = {
     Ui::SHOP,
     Ui::COMPUTER,
     Ui::SETTINGS,
+#if STICKMON_ENABLE_DEBUG_FEATURES
     Ui::DEBUG,
+#endif
     Ui::BACK,
 };
 }
@@ -938,6 +942,8 @@ static constexpr const char* MAP_BLOCK_FMT = "%u/%u区";
 static constexpr const char* END = "结束";
 static constexpr const char* HABITAT_MONSTERS = "栖息精灵";
 static constexpr const char* MASS_OUTBREAK = "大量出现!";
+static constexpr const char* AREA_LOCKED = "区域未解锁";
+static constexpr const char* DEFEAT_PREVIOUS_BOSS = "击败前一区域头目";
 static constexpr const char* SIDE_MENU_ITEMS[] = {
     Ui::TEAM,
     Ui::BAG,

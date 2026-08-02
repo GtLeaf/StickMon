@@ -12,6 +12,7 @@
 #include "core/TraceLog.h"
 #include "core/UiStrings.h"
 #include "game/BondSystem.h"
+#include "game/ExploreItemProgression.h"
 #include "game/FoodTuning.h"
 #include "game/GameRandom.h"
 #include "game/SpeciesBehavior.h"
@@ -213,7 +214,9 @@ bool GameEngine::begin() {
     sceneUpdateScheduled = true;
     sceneDirty = true;
     resourceAlertWasVisible = resourceAlertVisible();
+#if STICKMON_ENABLE_RENDER_STATS
     renderStatsStartedMs = now;
+#endif
     Platform::logf("[BootTiming] init_ms=%u sprites_ready=%u\n",
                   now - bootStartedMs, startupSpriteCacheReady ? 1 : 0);
     return true;
@@ -252,7 +255,9 @@ void GameEngine::run() {
         didWork = true;
     }
 
+#if STICKMON_ENABLE_RENDER_STATS
     emitRenderStats(Hal::ins().millis());
+#endif
     if (!didWork) Platform::clock().sleepMs(1);
 }
 
@@ -283,14 +288,20 @@ bool GameEngine::sceneFadeInActive() const {
     return sceneFade == SceneFadePhase::IN;
 }
 
-void GameEngine::beginExploreDeparture(uint8_t area) {
+bool GameEngine::beginExploreDeparture(uint8_t area) {
     if (exploreBlockedByGuest()) {
         Platform::logLine("[Explore] blocked while guest is at home");
-        return;
+        return false;
+    }
+    if (!ExploreItemProgression::isAreaUnlocked(area, state)) {
+        Platform::logf("[Explore] blocked locked area=%u unlocked=%u\n",
+                       area, ExploreItemProgression::unlockedArea(state));
+        return false;
     }
     exploreArea = area;
     exploreTravel = ExploreTravelPhase::DEPARTING;
     requestScene(SceneID::MAIN);
+    return true;
 }
 
 void GameEngine::markExploreActive() {
@@ -331,27 +342,39 @@ void GameEngine::finishExploreReturn() {
 }
 
 void GameEngine::beginDebugBattle() {
+#if STICKMON_ENABLE_DEBUG_FEATURES
     debugBattleRequested = true;
     debugMenuReturnRequested = false;
     requestScene(SceneID::EXPLORE);
+#endif
 }
 
 bool GameEngine::consumeDebugBattleRequest() {
+#if STICKMON_ENABLE_DEBUG_FEATURES
     bool requested = debugBattleRequested;
     debugBattleRequested = false;
     return requested;
+#else
+    return false;
+#endif
 }
 
 void GameEngine::endDebugBattle() {
+#if STICKMON_ENABLE_DEBUG_FEATURES
     debugBattleRequested = false;
     debugMenuReturnRequested = true;
     requestScene(SceneID::MENU);
+#endif
 }
 
 bool GameEngine::consumeDebugMenuReturnRequest() {
+#if STICKMON_ENABLE_DEBUG_FEATURES
     bool requested = debugMenuReturnRequested;
     debugMenuReturnRequested = false;
     return requested;
+#else
+    return false;
+#endif
 }
 
 float GameEngine::gameSpeed() const {
@@ -743,6 +766,10 @@ bool GameEngine::prepareDailyContactVisit() {
 
 DebugContactEventResult GameEngine::debugTriggerContactVisit(
     ContactVisitKind kind) {
+#if !STICKMON_ENABLE_DEBUG_FEATURES
+    (void)kind;
+    return DebugContactEventResult::INVALID;
+#else
     if (kind != ContactVisitKind::PLAY && kind != ContactVisitKind::GIFT &&
         kind != ContactVisitKind::EXPLORE) {
         return DebugContactEventResult::INVALID;
@@ -776,6 +803,7 @@ DebugContactEventResult GameEngine::debugTriggerContactVisit(
         gameSecondsForMinutes(gameMinutesTotal());
     markDirty(SaveUrgency::IMMEDIATE);
     return DebugContactEventResult::STARTED;
+#endif
 }
 
 bool GameEngine::acceptContactKnock() {
@@ -1945,6 +1973,7 @@ void GameEngine::addWalkSteps(uint16_t steps) {
 }
 
 void GameEngine::debugRecoverTeam() {
+#if STICKMON_ENABLE_DEBUG_FEATURES
     if (state.teamCount == 0) return;
     for (uint8_t slot = 0;
          slot < state.teamCount && slot < Game::TEAM_CAP;
@@ -1958,9 +1987,13 @@ void GameEngine::debugRecoverTeam() {
         mon.mood = 100;
     }
     markDirty(SaveUrgency::SOON);
+#endif
 }
 
 bool GameEngine::debugLevelUpActiveMonster() {
+#if !STICKMON_ENABLE_DEBUG_FEATURES
+    return false;
+#else
     if (state.teamCount == 0 || activeMonster().level >= Game::LEVEL_MAX) {
         return false;
     }
@@ -1973,9 +2006,14 @@ bool GameEngine::debugLevelUpActiveMonster() {
     uint8_t oldLevel = mon.level;
     addExperience(requiredExp);
     return activeMonster().level > oldLevel;
+#endif
 }
 
 bool GameEngine::debugSetActiveSpecies(uint16_t speciesId) {
+#if !STICKMON_ENABLE_DEBUG_FEATURES
+    (void)speciesId;
+    return false;
+#else
     const Species* species = findSpecies(speciesId);
     if (!species) return false;
 
@@ -1989,9 +2027,14 @@ bool GameEngine::debugSetActiveSpecies(uint16_t speciesId) {
     syncSpriteCache();
     markDirty(SaveUrgency::SOON);
     return true;
+#endif
 }
 
 uint32_t GameEngine::debugAdvanceToTimeOfDay(uint16_t targetMinutesOfDay) {
+#if !STICKMON_ENABLE_DEBUG_FEATURES
+    (void)targetMinutesOfDay;
+    return 0;
+#else
     uint32_t now = Hal::ins().millis();
     syncGameClock(now);
 
@@ -2005,16 +2048,23 @@ uint32_t GameEngine::debugAdvanceToTimeOfDay(uint16_t targetMinutesOfDay) {
     gameClock.set(now, state.gameMinutesTotal);
     saveNow();
     return delta;
+#endif
 }
 
 const char* GameEngine::debugLightSourceLabel() const {
+#if STICKMON_ENABLE_DEBUG_FEATURES
     uint8_t index = debugLightSource;
     if (index >= DEBUG_LIGHT_SOURCE_COUNT) index = 0;
     return Ui::Debug::LIGHT_SOURCE_ITEMS[index];
+#else
+    return "";
+#endif
 }
 
 void GameEngine::cycleDebugLightSource() {
+#if STICKMON_ENABLE_DEBUG_FEATURES
     debugLightSource = (uint8_t)((debugLightSource + 1) % DEBUG_LIGHT_SOURCE_COUNT);
+#endif
 }
 
 void GameEngine::wakeFromIdle() {
@@ -2023,7 +2073,9 @@ void GameEngine::wakeFromIdle() {
 
 void GameEngine::invalidateScene() {
     sceneDirty = true;
+#if STICKMON_ENABLE_RENDER_STATS
     ++renderStatsStateWakes;
+#endif
 }
 
 void GameEngine::markSaveDirty(SaveUrgency urgency) {
@@ -2234,6 +2286,7 @@ void GameEngine::switchScene(SceneID id, bool saveBeforeSwitch) {
     lastSceneUpdateMs = enteredAt;
     sceneDirty = true;
     scheduleSceneUpdate(enteredAt);
+#if STICKMON_ENABLE_RENDER_STATS
     ++renderStatsSceneSwitches;
     lastLoggedDemandMode = 0xFF;
     STICKMON_RENDER_STATSF(
@@ -2241,6 +2294,7 @@ void GameEngine::switchScene(SceneID id, bool saveBeforeSwitch) {
         static_cast<unsigned long>(enteredAt),
         sceneLogName(fromId), sceneLogName(currentId),
         static_cast<unsigned long>(enteredAt - now));
+#endif
 }
 
 void GameEngine::scheduleSceneUpdate(uint32_t nowMs) {
@@ -2269,7 +2323,9 @@ void GameEngine::processInput(uint32_t nowMs) {
         if (currentScene && currentScene->onButton(event)) {
             sceneDirty = true;
             scheduleSceneUpdate(nowMs);
+#if STICKMON_ENABLE_RENDER_STATS
             ++renderStatsInputWakes;
+#endif
             continue;
         }
         if (currentId == SceneID::MAIN && event.btn == 1 &&
@@ -2288,7 +2344,9 @@ void GameEngine::processInput(uint32_t nowMs) {
 
 void GameEngine::update(uint32_t nowMs) {
     lastUpdateMs = nowMs;
+#if STICKMON_ENABLE_RENDER_STATS
     ++renderStatsCoreUpdates;
+#endif
     CryPlayer::ins().update();
     bool alertVisible = resourceAlertVisible();
     if (alertVisible != resourceAlertWasVisible) {
@@ -2338,9 +2396,11 @@ void GameEngine::update(uint32_t nowMs) {
         sceneUpdateScheduled = false;
         SceneUpdateResult result = updatingScene->update(nowMs, dt);
         if (currentScene.get() == updatingScene) {
+#if STICKMON_ENABLE_RENDER_STATS
             ++renderStatsSceneUpdates;
             if (result.redraw) ++renderStatsRedrawRequests;
             logSceneDemand(result, nowMs);
+#endif
             sceneDirty = sceneDirty || result.redraw;
             if (result.nextUpdateDelayMs != SceneUpdateResult::NO_UPDATE) {
                 nextSceneUpdateMs = nowMs + MathUtil::max<uint32_t>(
@@ -2363,6 +2423,7 @@ void GameEngine::update(uint32_t nowMs) {
 
 void GameEngine::logSceneDemand(const SceneUpdateResult& result,
                                 uint32_t nowMs) {
+#if STICKMON_ENABLE_RENDER_STATS
     uint8_t mode = 0;
     const char* modeName = "parked";
     if (result.nextUpdateDelayMs != SceneUpdateResult::NO_UPDATE) {
@@ -2391,9 +2452,14 @@ void GameEngine::logSceneDemand(const SceneUpdateResult& result,
             modeName, result.redraw ? 1 : 0,
             static_cast<unsigned long>(result.nextUpdateDelayMs));
     }
+#else
+    (void)result;
+    (void)nowMs;
+#endif
 }
 
 void GameEngine::emitRenderStats(uint32_t nowMs) {
+#if STICKMON_ENABLE_RENDER_STATS
     uint32_t elapsed = nowMs - renderStatsStartedMs;
     if (elapsed < RENDER_STATS_INTERVAL_MS) return;
 
@@ -2456,6 +2522,9 @@ void GameEngine::emitRenderStats(uint32_t nowMs) {
     renderStatsFlushUs = 0;
     renderStatsMaxDrawUs = 0;
     renderStatsMaxFlushUs = 0;
+#else
+    (void)nowMs;
+#endif
 }
 
 void GameEngine::updateSceneFade(uint32_t nowMs) {
@@ -2491,16 +2560,23 @@ void GameEngine::updateSceneFade(uint32_t nowMs) {
 }
 
 void GameEngine::render(uint32_t nowMs) {
+#if STICKMON_ENABLE_RENDER_STATS
     uint32_t drawStartedUs = Platform::clock().micros();
+#else
+    (void)nowMs;
+#endif
     PokemonSprites::beginRenderFrame();
     if (currentScene) currentScene->render();
     renderResourceAlert();
     renderSceneFade(Hal::ins().millis());
+#if STICKMON_ENABLE_RENDER_STATS
     uint32_t flushStartedUs = Platform::clock().micros();
+#endif
     Hal::ins().flush();
     if (currentId == SceneID::MAIN) {
         mainSceneFirstFrameRendered = true;
     }
+#if STICKMON_ENABLE_RENDER_STATS
     uint32_t flushedUs = Platform::clock().micros();
     uint32_t drawUs = flushStartedUs - drawStartedUs;
     uint32_t flushUs = flushedUs - flushStartedUs;
@@ -2509,6 +2585,7 @@ void GameEngine::render(uint32_t nowMs) {
     renderStatsFlushUs += flushUs;
     renderStatsMaxDrawUs = MathUtil::max(renderStatsMaxDrawUs, drawUs);
     renderStatsMaxFlushUs = MathUtil::max(renderStatsMaxFlushUs, flushUs);
+#endif
     if (!startupFirstFrameRendered) {
         startupFirstFrameRendered = true;
         if (startupSpriteCacheReady) PokemonSprites::setDynamicLoadingEnabled(true);
@@ -2643,6 +2720,7 @@ void GameEngine::initDefaultState() {
     state.bag = Game::BagState{};
     state.bag.potion = 0;
     state.bag.candy = 0;
+    state.bag.revive = 0;
     state.room = Game::RoomState{};
     for (uint8_t i = 0; i < Game::ROOM_FOOD_COUNT; ++i) state.room.food[i] = 0;
     state.coins = 0;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/BuildConfig.h"
 #include "core/Scene.h"
 #include "core/ProgressionUi.h"
 #include "game/BattleSystem.h"
@@ -173,7 +174,9 @@ private:
     bool walkStepResolutionPending = false;
     uint8_t fleeAttempts = 0;
     bool defeatAwaitInput = false;
+#if STICKMON_ENABLE_DEBUG_FEATURES
     bool debugBattleMode = false;
+#endif
     static constexpr uint8_t MAP_BLOCK_CAP = 9;
     static constexpr uint8_t MAP_EXIT_CAP = 2;
     uint8_t mapBlocks[MAP_BLOCK_CAP] = {};
@@ -255,7 +258,9 @@ private:
     void promptOrBeginRouteBoss();
     void finishRoamingEncounter();
     void markFirstSpecialVictory();
+#if STICKMON_ENABLE_DEBUG_FEATURES
     void beginDebugEncounter();
+#endif
     void rollEncounter();
     bool rollRandomEncounter(bool guaranteed, bool bypassGate,
                              bool repelActiveThisStep);
@@ -299,7 +304,9 @@ private:
     void fleeEncounter();
     void resetWalk();
     bool resetRouteSegment();
+#if STICKMON_ENABLE_DEBUG_FEATURES
     void returnToDebugMenu();
+#endif
     void beginRouteExit();
     void settleAdventureBond();
     void completeExploreReturn(bool fainted);

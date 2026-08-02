@@ -234,7 +234,7 @@ struct BagState {
     uint8_t fireStone = 0;
     uint8_t waterStone = 0;
     uint8_t thunderStone = 0;
-    uint8_t revive = 0;
+    uint8_t revive = 2;
     uint8_t maxRepel = 0;
     uint8_t honey = 0;
     uint8_t nugget = 0;

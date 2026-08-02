@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include "core/BuildConfig.h"
 #include "core/MainSceneViewState.h"
 #include "core/GameClockService.h"
 #include "core/ResourceService.h"
@@ -302,16 +303,30 @@ public:
     bool debugLevelUpActiveMonster();
     bool debugSetActiveSpecies(uint16_t speciesId);
     uint32_t debugAdvanceToTimeOfDay(uint16_t targetMinutesOfDay);
-    uint8_t debugLightSourceIndex() const { return debugLightSource; }
+    uint8_t debugLightSourceIndex() const {
+        return BuildConfig::DEBUG_FEATURES ? debugLightSource : 0;
+    }
     const char* debugLightSourceLabel() const;
     void cycleDebugLightSource();
-    bool debugWalkBoundaryVisible() const { return debugShowWalkBoundary; }
-    void toggleDebugWalkBoundary() { debugShowWalkBoundary = !debugShowWalkBoundary; }
-    bool debugTiltControlEnabled() const { return debugTiltControl; }
-    void toggleDebugTiltControl() { debugTiltControl = !debugTiltControl; }
-    bool debugBattleDrawBoundsVisible() const { return debugShowBattleDrawBounds; }
+    bool debugWalkBoundaryVisible() const {
+        return BuildConfig::DEBUG_FEATURES && debugShowWalkBoundary;
+    }
+    void toggleDebugWalkBoundary() {
+        if (BuildConfig::DEBUG_FEATURES) debugShowWalkBoundary = !debugShowWalkBoundary;
+    }
+    bool debugTiltControlEnabled() const {
+        return BuildConfig::DEBUG_FEATURES && debugTiltControl;
+    }
+    void toggleDebugTiltControl() {
+        if (BuildConfig::DEBUG_FEATURES) debugTiltControl = !debugTiltControl;
+    }
+    bool debugBattleDrawBoundsVisible() const {
+        return BuildConfig::DEBUG_FEATURES && debugShowBattleDrawBounds;
+    }
     void toggleDebugBattleDrawBounds() {
-        debugShowBattleDrawBounds = !debugShowBattleDrawBounds;
+        if (BuildConfig::DEBUG_FEATURES) {
+            debugShowBattleDrawBounds = !debugShowBattleDrawBounds;
+        }
     }
     void wakeFromIdle();
     bool idleModeActive() const { return idleActive; }
@@ -330,7 +345,7 @@ public:
     bool loadHatchProgress(Game::HatchProgress& progress);
     bool saveHatchProgress(const Game::HatchProgress& progress);
     void clearHatchProgress();
-    void beginExploreDeparture(uint8_t area);
+    bool beginExploreDeparture(uint8_t area);
     void markExploreActive();
     void beginExploreReturn(bool fainted);
     void finishExploreReturn();
@@ -456,6 +471,7 @@ private:
     bool sceneDirty = true;
     bool sceneUpdateScheduled = true;
     bool resourceAlertWasVisible = false;
+#if STICKMON_ENABLE_RENDER_STATS
     uint32_t renderStatsStartedMs = 0;
     uint32_t renderStatsCoreUpdates = 0;
     uint32_t renderStatsSceneUpdates = 0;
@@ -470,6 +486,7 @@ private:
     uint32_t renderStatsMaxFlushUs = 0;
     uint8_t lastLoggedDemandMode = 0xFF;
     SceneID lastLoggedDemandScene = SceneID::MAIN;
+#endif
     uint32_t bootStartedMs = 0;
     SceneFadePhase sceneFade = SceneFadePhase::NONE;
     SceneID sceneFadeTarget = SceneID::MAIN;
