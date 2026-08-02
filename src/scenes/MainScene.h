@@ -290,6 +290,7 @@ private:
     void beginContactGuestExit(uint32_t nowMs);
     bool handleContactDialogButton(const ButtonEvent& event);
     void drawContactDialog();
+    void drawTutorial();
     bool visitorHostActive() const;
     bool visitorCanUseDoor() const;
     bool teamMemberCanEatFromBowl(uint8_t teamSlot) const;

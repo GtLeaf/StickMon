@@ -85,6 +85,17 @@ static constexpr const char* EVOLUTION_CANCELLED_FMT = "%s停止进化!";
 static constexpr const char* A_CONTINUE = "A 继续";
 }
 
+namespace Tutorial {
+static constexpr const char* ROOM_FEED = "把食物放进碗里";
+static constexpr const char* ROOM_PET_FMT = "和%s互动";
+static constexpr const char* OPEN_MENU = "长按A 打开主菜单";
+static constexpr const char* MENU_NAV = "B切换项目  A确认";
+static constexpr const char* MENU_BACK = "长按B 返回上一层";
+static constexpr const char* EXPLORE_WALK = "开始前进";
+static constexpr const char* EXPLORE_MENU = "打开探索菜单";
+static constexpr const char* BATTLE_ACTION = "B选择行动  A确认";
+}
+
 namespace SpeciesName {
 static constexpr const char* BULBASAUR = "妙蛙种子";
 static constexpr const char* IVYSAUR = "妙蛙草";
@@ -785,12 +796,26 @@ static constexpr const char* IDLE_5MIN = "5m";
 static constexpr const char* IDLE_10MIN = "10m";
 static constexpr const char* IDLE_NEVER = "永不";
 static constexpr const char* HELP = "操作说明";
-static constexpr const char* HELP_TITLE = "操作说明";
-static constexpr const char* HELP_A_KEY = "A:屏幕底部按键";
-static constexpr const char* HELP_B_KEY = "B:机身侧面按键";
-static constexpr const char* HELP_ROOM_A = "房间长按A进菜单";
-static constexpr const char* HELP_MENU_B = "菜单长按B返回";
-static constexpr const char* HELP_BASIC = "A确认  B移动";
+static constexpr const char* HELP_PAGE_TITLES[] = {
+    "按键说明", "房间操作", "菜单操作", "探索操作", "其他操作",
+    "重新引导",
+};
+static constexpr const char* HELP_PAGE_LINES[][4] = {
+    {"A 屏幕底部按键", "B 机身侧面按键", "短按执行当前操作",
+     "长按触发快捷操作"},
+    {"A 和首位精灵互动", "B 将食物放进碗里", "长按A 打开主菜单",
+     "长按B 进入深度休眠"},
+    {"A 确认或进入", "B 切换选项", "长按B 返回上一层",
+     "长按A 返回主界面"},
+    {"选择区域：B切换 A出发", "行走中：A开始前进",
+     "行走中：B打开探索菜单", "战斗中：B选择 A确认"},
+    {"弹窗中：B切换 A确认", "洗澡中：B切换 A使用",
+     "刷洗时倾斜设备操作", "省电时按任意键唤醒"},
+    {"重播房间和菜单提示", "重播探索和首次战斗提示",
+     "A 重新开始引导", "长按B 返回设置"},
+};
+static constexpr const char* HELP_NEXT = "B 下一页";
+static constexpr const char* HELP_REPLAY = "A 开始";
 static constexpr const char* RESET_GAME = "重置游戏";
 static constexpr const char* RESET_WARNING = "会清除所有游戏数据";
 static constexpr const char* RESET_QUESTION = "确定继续吗?";

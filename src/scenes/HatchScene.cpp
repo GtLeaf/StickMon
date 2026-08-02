@@ -1,6 +1,8 @@
 #include "scenes/HatchScene.h"
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
+#include <cstring>
 #include "assets/GameAssets.h"
 #include "core/GameEngine.h"
 #include "core/RoomRenderer.h"
@@ -48,6 +50,7 @@ void HatchScene::onEnter() {
         wipeCount = savedWipeCount;
     }
     lastSavedSecond = (uint16_t)elapsed;
+    lastRemainingSecond = hatchSecondsRemaining();
     uint32_t nowMs = Hal::ins().millis();
     lastEggOffset = eggShakeOffset(nowMs);
     lastNight = hatchSceneIsNight();
@@ -85,6 +88,14 @@ SceneUpdateResult HatchScene::update(uint32_t nowMs, float dtSeconds) {
 
     float remaining =
         GameEngine::ins().gameState().hatchSeconds - elapsed;
+    uint16_t remainingSecond = hatchSecondsRemaining();
+    demand.changed(remainingSecond != lastRemainingSecond);
+    lastRemainingSecond = remainingSecond;
+
+    float nextSecond = remaining - floorf(remaining);
+    if (nextSecond < 0.001f) nextSecond = 1.0f;
+    demand.wakeIn(static_cast<uint32_t>(ceilf(nextSecond * 1000.0f)));
+
     float speed = GameEngine::ins().gameSpeed();
     uint32_t completionDelay = static_cast<uint32_t>(
         std::max(1.0f, remaining * 1000.0f /
@@ -157,6 +168,13 @@ uint8_t HatchScene::hatchProgress() const {
     return value > 100 ? 100 : (uint8_t)value;
 }
 
+uint16_t HatchScene::hatchSecondsRemaining() const {
+    uint16_t total = GameEngine::ins().gameState().hatchSeconds;
+    float remaining = static_cast<float>(total) - elapsed;
+    if (remaining <= 0.0f) return 0;
+    return static_cast<uint16_t>(ceilf(remaining));
+}
+
 int8_t HatchScene::eggShakeOffset(uint32_t nowMs) const {
     uint8_t progress = hatchProgress();
     uint16_t interval = 2400 - (uint16_t)progress * 19;
@@ -187,9 +205,23 @@ void HatchScene::drawEgg() {
 
 void HatchScene::drawHud() {
     auto& c = PixelRenderer::canvas();
-    c.fillRect(168, 2, 68, 22, PixelRenderer::rgb(34, 39, 47));
-    c.drawRect(168, 2, 68, 22, PixelRenderer::rgb(72, 83, 98));
-    PixelRenderer::text(176, 5, Ui::Hatch::TITLE, PixelRenderer::rgb(245, 246, 232));
+    static constexpr int PANEL_X = 168;
+    static constexpr int PANEL_Y = 2;
+    static constexpr int PANEL_W = 68;
+    static constexpr int ASCII_ADVANCE = 8;
+    c.fillRect(PANEL_X, PANEL_Y, PANEL_W, 22,
+               PixelRenderer::rgb(34, 39, 47));
+    c.drawRect(PANEL_X, PANEL_Y, PANEL_W, 22,
+               PixelRenderer::rgb(72, 83, 98));
+
+    uint16_t remaining = hatchSecondsRemaining();
+    char countdown[8];
+    snprintf(countdown, sizeof(countdown), "%02u:%02u",
+             remaining / 60, remaining % 60);
+    int textX = PANEL_X +
+        (PANEL_W - static_cast<int>(strlen(countdown)) * ASCII_ADVANCE) / 2;
+    PixelRenderer::text(textX, PANEL_Y + 3, countdown,
+                        PixelRenderer::rgb(245, 246, 232));
 }
 
 void HatchScene::drawToast() {

@@ -38,6 +38,7 @@ private:
     bool resetConfirmYes = false;
     float menuScroll = 0.0f;
     uint8_t voiceCursor = 0;
+    uint8_t helpPage = 0;
     uint32_t enrollmentFinishedAt = 0;
 
     void activateCurrent();

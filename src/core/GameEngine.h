@@ -306,6 +306,11 @@ public:
     }
     uint8_t grantAdventureBond(uint16_t steps);
     void addWalkSteps(uint16_t steps);
+    bool tutorialComplete(Game::TutorialStep step) const {
+        return (state.tutorialFlags & Game::tutorialMask(step)) != 0;
+    }
+    void completeTutorial(Game::TutorialStep step);
+    void resetTutorial();
     void debugRecoverTeam();
     bool debugLevelUpActiveMonster();
     bool debugSetActiveSpecies(uint16_t speciesId);

@@ -22,6 +22,7 @@
 #include "game/GameRandom.h"
 #include "hardware/Hal.h"
 #include "presentation/PixelRenderer.h"
+#include "presentation/TutorialOverlay.h"
 #include "platform/api/FlashStorage.h"
 #include "platform/api/PlatformServices.h"
 
@@ -1356,6 +1357,8 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
         exploreMenuOpen = true;
         exploreMenuCursor = 0;
         exploreMenuOpenedAt = Hal::ins().millis();
+        GameEngine::ins().completeTutorial(
+            Game::TutorialStep::EXPLORE_MENU);
         return true;
     }
 
@@ -1397,6 +1400,8 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
     if (phase == Phase::WALKING) {
         if (event.btn == 0) {
             beginAutoWalk();
+            GameEngine::ins().completeTutorial(
+                Game::TutorialStep::EXPLORE_WALK);
             return true;
         }
     }
@@ -1413,6 +1418,8 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
             return true;
         }
         if (event.btn == 0) {
+            GameEngine::ins().completeTutorial(
+                Game::TutorialStep::BATTLE_ACTION);
             AudioManager::ins().playSfx(SfxCue::UI_CONFIRM);
             if (battleCursor == 0) {
                 attackWild();
@@ -3763,6 +3770,25 @@ void ExploreScene::render() {
         renderEndPrompt();
         break;
     }
+    renderTutorial();
+}
+
+void ExploreScene::renderTutorial() {
+    GameEngine& engine = GameEngine::ins();
+    if (!engine.gameState().oobeDone || exploreSubViewOpen) return;
+
+    if (phase == Phase::WALKING && !exploreMenuOpen) {
+        if (!engine.tutorialComplete(Game::TutorialStep::EXPLORE_WALK)) {
+            TutorialOverlay::draw(
+                TutorialOverlay::Button::A, Ui::Tutorial::EXPLORE_WALK);
+        } else if (!engine.tutorialComplete(
+                       Game::TutorialStep::EXPLORE_MENU)) {
+            TutorialOverlay::draw(
+                TutorialOverlay::Button::B, Ui::Tutorial::EXPLORE_MENU);
+        }
+        return;
+    }
+
 }
 
 ExplorePool::Pool ExploreScene::buildAreaPool(uint8_t areaIndex) {
@@ -4764,8 +4790,14 @@ void ExploreScene::renderCommandBox() {
         return;
     }
 
+    bool showTutorial =
+        !GameEngine::ins().tutorialComplete(
+            Game::TutorialStep::BATTLE_ACTION);
+    int commandY = showTutorial ? 116 : 109;
+    if (showTutorial) {
+        drawBattleFooterDarkText(72, 98, Ui::Tutorial::BATTLE_ACTION);
+    }
     static constexpr int xs[] = {18, 74, 126, 190};
-    static constexpr int ys[] = {109, 109, 109, 109};
     static constexpr const char* items[] = {
         Ui::Explore::CMD_BATTLE,
         Ui::Explore::CMD_BAG,
@@ -4774,8 +4806,8 @@ void ExploreScene::renderCommandBox() {
     };
     for (uint8_t i = 0; i < 4; ++i) {
         if (battleCursor == i) {
-            drawBattleFooterDarkText(xs[i] - 10, ys[i], ">");
+            drawBattleFooterDarkText(xs[i] - 10, commandY, ">");
         }
-        drawBattleFooterDarkText(xs[i], ys[i], items[i]);
+        drawBattleFooterDarkText(xs[i], commandY, items[i]);
     }
 }

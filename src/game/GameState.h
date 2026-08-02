@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include "game/Tutorial.h"
 
 namespace Game {
 
@@ -315,11 +316,15 @@ struct GameState {
     uint8_t specialBossDefeatedMask = 0;
     // [0]=拉帝亚斯，[1]=拉帝欧斯；游荡战结束后递增
     uint8_t roamingRerollCounts[2] = {};
+    // 复用原 GameState 尾部对齐字节，保持首版存档尺寸不变。
+    uint8_t tutorialFlags = 0;
 };
 static_assert(sizeof(GameState) == 1560,
               "v1 save size changed; update the save contract deliberately");
 static_assert(offsetof(GameState, room) == 1452,
               "BagState must not shift the v1 room/save layout");
+static_assert(offsetof(GameState, tutorialFlags) == 1559,
+              "tutorial flags must remain in the v1 tail padding byte");
 
 struct HatchProgress {
     uint32_t magic = HATCH_MAGIC;

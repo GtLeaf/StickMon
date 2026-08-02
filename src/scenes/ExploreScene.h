@@ -318,6 +318,7 @@ private:
     void requestExploreExit(bool fainted = false, bool showEndPrompt = true);
     void closeExploreMenu();
     void renderAreaMenu();
+    void renderTutorial();
     static ExplorePool::Pool buildAreaPool(uint8_t areaIndex);
     static uint8_t collectAreaPoolSpecies(uint16_t* speciesIds,
                                           uint8_t capacity,
