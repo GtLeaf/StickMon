@@ -51,6 +51,7 @@ public:
     bool playPcmU8Channel(const uint8_t* data, size_t sampleCount,
                           uint32_t sampleRate, uint8_t channel,
                           bool stopCurrent) override;
+    void setChannelVolume(uint8_t channel, uint8_t percent) override;
     bool playing() const override;
     uint8_t queuedPcm(uint8_t channel) const override;
     void stop() override;
@@ -101,6 +102,10 @@ public:
     size_t presentCount() const { return presentCount_; }
     size_t audioPlayCount() const { return audioPlayCount_; }
     const std::vector<uint8_t>& lastAudio() const { return lastAudio_; }
+    uint8_t channelVolume(uint8_t channel) const {
+        return channel < audioChannelVolume_.size()
+            ? audioChannelVolume_[channel] : 0;
+    }
     const std::string& logs() const { return logs_; }
 
 private:
@@ -126,6 +131,8 @@ private:
     bool resourcesMounted_ = false;
     bool displaySleeping_ = false;
     std::array<uint8_t, Platform::IAudioDevice::CHANNEL_COUNT> audioQueueDepth_{};
+    std::array<uint8_t, Platform::IAudioDevice::CHANNEL_COUNT>
+        audioChannelVolume_{{100, 100, 100}};
     bool microphoneActive_ = false;
     bool restartRequested_ = false;
     bool deepSleepRequested_ = false;

@@ -107,6 +107,12 @@ bool DesktopPlatform::playPcmU8Channel(const uint8_t* data,
     return true;
 }
 
+void DesktopPlatform::setChannelVolume(uint8_t channel, uint8_t percent) {
+    if (channel < audioChannelVolume_.size()) {
+        audioChannelVolume_[channel] = std::min<uint8_t>(percent, 100);
+    }
+}
+
 bool DesktopPlatform::playing() const {
     for (uint8_t depth : audioQueueDepth_) {
         if (depth > 0) return true;

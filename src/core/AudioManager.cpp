@@ -20,6 +20,7 @@ constexpr uint32_t MAX_SAMPLE_RATE = 24000;
 constexpr uint16_t MAX_BLOCK_BYTES = 2048;
 constexpr uint16_t MAX_BLOCK_SAMPLES = 4096;
 constexpr uint32_t MAX_SFX_SAMPLES = 22050U * 5U;
+constexpr uint32_t MUSIC_FADE_MS = 1000;
 
 struct __attribute__((packed)) PackedAudioHeader {
     uint32_t magic;
@@ -148,7 +149,8 @@ void AudioManager::setMusic(MusicTrack track) {
     }
     requestedMusic_ = track;
     if (playingMusic_ != track) releaseMusic();
-    if (track != MusicTrack::NONE && Platform::audio().volume() > 0) {
+    if (track != MusicTrack::NONE && Platform::audio().volume() > 0 &&
+        !(powerSaveActive_ && musicChannelVolume_ == 0)) {
         startRequestedMusic();
     }
 }
@@ -156,6 +158,14 @@ void AudioManager::setMusic(MusicTrack track) {
 void AudioManager::stopMusic() {
     requestedMusic_ = MusicTrack::NONE;
     releaseMusic();
+}
+
+void AudioManager::setPowerSave(bool active) {
+    if (powerSaveActive_ == active) return;
+    powerSaveActive_ = active;
+    musicFadeStartVolume_ = musicChannelVolume_;
+    musicFadeTargetVolume_ = active ? 0 : 100;
+    musicFadeStartedMs_ = Platform::clock().millis();
 }
 
 bool AudioManager::openAudio(const char* id, Platform::ResourceFile& file,
@@ -350,12 +360,20 @@ bool AudioManager::playSfx(SfxCue cue) {
 }
 
 void AudioManager::update() {
+    updateMusicFade(Platform::clock().millis());
     if (sfxPcm_ && Platform::audio().queuedPcm(SFX_CHANNEL) == 0) {
         releaseSfx();
     }
     if (requestedMusic_ == MusicTrack::NONE ||
         Platform::audio().volume() == 0) {
         if (playingMusic_ != MusicTrack::NONE) releaseMusic();
+        return;
+    }
+    if (powerSaveActive_ && musicChannelVolume_ == 0) {
+        if (playingMusic_ != MusicTrack::NONE && !musicPaused_) {
+            Platform::audio().stopChannel(MUSIC_CHANNEL);
+            musicPaused_ = true;
+        }
         return;
     }
     if (playingMusic_ != requestedMusic_) {
@@ -367,6 +385,7 @@ void AudioManager::update() {
         startRequestedMusic();
         return;
     }
+    musicPaused_ = false;
     while (Platform::audio().queuedPcm(MUSIC_CHANNEL) < 2) {
         if (!queueNextMusicBlock(false)) {
             Platform::logLine("[Audio] music stream stopped");
@@ -374,6 +393,22 @@ void AudioManager::update() {
             break;
         }
     }
+}
+
+void AudioManager::updateMusicFade(uint32_t nowMs) {
+    if (musicChannelVolume_ == musicFadeTargetVolume_) return;
+    uint32_t elapsed = nowMs - musicFadeStartedMs_;
+    uint8_t next = musicFadeTargetVolume_;
+    if (elapsed < MUSIC_FADE_MS) {
+        int32_t delta = static_cast<int32_t>(musicFadeTargetVolume_) -
+                        static_cast<int32_t>(musicFadeStartVolume_);
+        next = static_cast<uint8_t>(static_cast<int32_t>(musicFadeStartVolume_) +
+            delta * static_cast<int32_t>(elapsed) /
+                static_cast<int32_t>(MUSIC_FADE_MS));
+    }
+    if (next == musicChannelVolume_) return;
+    musicChannelVolume_ = next;
+    Platform::audio().setChannelVolume(MUSIC_CHANNEL, musicChannelVolume_);
 }
 
 void AudioManager::releaseMusic() {
@@ -392,6 +427,7 @@ void AudioManager::releaseMusic() {
     nextMusicBlock_ = 0;
     nextMusicSkipSamples_ = 0;
     playingMusic_ = MusicTrack::NONE;
+    musicPaused_ = false;
 }
 
 void AudioManager::releaseSfx() {

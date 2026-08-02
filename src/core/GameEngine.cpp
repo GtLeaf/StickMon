@@ -248,7 +248,8 @@ void GameEngine::run() {
     }
 
     updateIdle(now);
-    uint32_t frameMs = idleActive ? IDLE_FRAME_MS : FRAME_MS;
+    uint32_t frameMs = idleActive && !AudioManager::ins().musicFadeActive()
+        ? IDLE_FRAME_MS : FRAME_MS;
     if (now - lastUpdateMs >= frameMs) {
         update(now);
         now = Hal::ins().millis();
@@ -2727,6 +2728,7 @@ void GameEngine::resetIdle(uint32_t nowMs) {
     Hal::ins().setIdleBrightness(false);
     if (idleActive) {
         idleActive = false;
+        AudioManager::ins().setPowerSave(false);
     }
 }
 
@@ -2741,6 +2743,7 @@ void GameEngine::updateIdle(uint32_t nowMs) {
     idleActive = true;
     VoiceCallService::ins().stopListening();
     Hal::ins().setIdleBrightness(true);
+    AudioManager::ins().setPowerSave(true);
 }
 
 uint32_t GameEngine::idleTimeoutMs() const {

@@ -51,6 +51,8 @@ int main(int argc, char** argv) {
     assert(Platform::audio().playPcmU8(pcm, sizeof(pcm), 8000));
     assert(desktop.audioPlayCount() == 1);
     assert(desktop.lastAudio().size() == sizeof(pcm));
+    Platform::audio().setChannelVolume(0, 37);
+    assert(desktop.channelVolume(0) == 37);
     Platform::audio().stop();
 
     const uint8_t destination[6] = {1, 2, 3, 4, 5, 6};
