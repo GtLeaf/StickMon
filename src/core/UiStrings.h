@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/BuildConfig.h"
+
 namespace Ui {
 static constexpr const char* TITLE = "StickMon";
 static constexpr const char* ROOM = "房间";
@@ -333,7 +335,9 @@ static constexpr const char* ITEMS[] = {
     Ui::SHOP,
     Ui::COMPUTER,
     Ui::SETTINGS,
+#if STICKMON_ENABLE_DEBUG_FEATURES
     Ui::DEBUG,
+#endif
     Ui::BACK,
 };
 }

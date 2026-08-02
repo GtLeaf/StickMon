@@ -1046,6 +1046,7 @@ void ExploreScene::onEnter() {
     specialRelocationHandled = false;
     specialChallengeYes = true;
     routeBossPending = false;
+#if STICKMON_ENABLE_DEBUG_FEATURES
     debugBattleMode = engine.consumeDebugBattleRequest();
     if (debugBattleMode) {
         activeArea = Area::GRASS_PATH;
@@ -1056,6 +1057,7 @@ void ExploreScene::onEnter() {
         beginDebugEncounter();
         return;
     }
+#endif
     if (engine.exploreTravelPhase() == ExploreTravelPhase::DEPARTING) {
         uint8_t area = engine.pendingExploreArea();
         if (area >= static_cast<uint8_t>(Area::COUNT)) area = 0;
@@ -1387,8 +1389,12 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
     if (phase == Phase::ENCOUNTER) {
         if (battleLogBusy()) return true;
         if (defeatAwaitInput) {
+#if STICKMON_ENABLE_DEBUG_FEATURES
             if (debugBattleMode) returnToDebugMenu();
             else requestExploreExit(true);
+#else
+            requestExploreExit(true);
+#endif
             return true;
         }
         if (event.btn == 0) {
@@ -1499,10 +1505,12 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
     }
 
     if (phase == Phase::RESULT) {
+#if STICKMON_ENABLE_DEBUG_FEATURES
         if (debugBattleMode && (event.btn == 0 || event.btn == 1)) {
             returnToDebugMenu();
             return true;
         }
+#endif
         if (event.btn == 0) {
             const ExploreMapGenerator::Path& path = generatedMap.paths[currentRoutePath];
             if (routeIndex + 1 >= path.pointCount) beginRouteExit();
@@ -1521,10 +1529,12 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
     return false;
 }
 
+#if STICKMON_ENABLE_DEBUG_FEATURES
 void ExploreScene::returnToDebugMenu() {
     debugBattleMode = false;
     GameEngine::ins().endDebugBattle();
 }
+#endif
 
 void ExploreScene::beginRouteExit() {
     if (phase == Phase::EXITING || phase == Phase::ENDING) return;
@@ -1598,10 +1608,12 @@ void ExploreScene::beginRouteExit() {
 }
 
 void ExploreScene::requestExploreExit(bool fainted, bool showEndPrompt) {
+#if STICKMON_ENABLE_DEBUG_FEATURES
     if (debugBattleMode) {
         returnToDebugMenu();
         return;
     }
+#endif
     if (phase == Phase::SELECT &&
         GameEngine::ins().exploreTravelPhase() != ExploreTravelPhase::ACTIVE) {
         if (GameEngine::ins().contactVisitExploring()) {
@@ -1632,7 +1644,10 @@ void ExploreScene::requestExploreExit(bool fainted, bool showEndPrompt) {
 }
 
 void ExploreScene::settleAdventureBond() {
-    if (adventureBondSettled || debugBattleMode) return;
+    if (adventureBondSettled) return;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    if (debugBattleMode) return;
+#endif
     adventureBondSettled = true;
     adventureBondGain = GameEngine::ins().grantAdventureBond(steps);
 }
@@ -2040,6 +2055,7 @@ void ExploreScene::beginRouteBossEncounter() {
     }
 }
 
+#if STICKMON_ENABLE_DEBUG_FEATURES
 void ExploreScene::beginDebugEncounter() {
     const Species* table = speciesTable();
     uint8_t count = speciesCount();
@@ -2051,6 +2067,7 @@ void ExploreScene::beginDebugEncounter() {
     Platform::logf("[DebugBattle] opponent=%u level=%u\n", opponent.id, level);
     beginEncounter(opponent, level);
 }
+#endif
 
 void ExploreScene::rollEncounter() {
     const RouteMap& map = routeMap(mapBlocks[currentMapBlock]);
@@ -2150,8 +2167,12 @@ bool ExploreScene::serviceBattleLog(uint32_t nowMs) {
         if (fleeExitPending) {
             fleeExitPending = false;
             clearFriendshipFlow();
+#if STICKMON_ENABLE_DEBUG_FEATURES
             if (debugBattleMode) returnToDebugMenu();
             else resumeWalk();
+#else
+            resumeWalk();
+#endif
             return true;
         }
         if (battleResultPending) {
@@ -2802,9 +2823,11 @@ void ExploreScene::finishWildFaint() {
         baseOfferChance, pityTier, pityFailCount);
     friendshipOfferPending = false;
     if (battleAllowsFriendship && hasRoom) {
+#if STICKMON_ENABLE_DEBUG_FEATURES
         if (debugBattleMode) {
             friendshipOfferPending = true;
         } else {
+#endif
             uint16_t friendshipShakeRolls[FriendshipSystem::SHAKE_CHECK_COUNT];
             for (uint8_t check = 0;
                  check < FriendshipSystem::SHAKE_CHECK_COUNT; ++check) {
@@ -2822,7 +2845,9 @@ void ExploreScene::finishWildFaint() {
                 !baseOfferPassed && conditionalBonus > 0 &&
                 static_cast<uint16_t>(GameRandom::random(0, 1000)) < conditionalBonus;
             friendshipOfferPending = baseOfferPassed || pityOfferPassed;
+#if STICKMON_ENABLE_DEBUG_FEATURES
         }
+#endif
     }
 
     // 栖息地轮换：击败区域头目 → 该区域重抽计数 +1 并立即重建活跃池（§7.2）
@@ -2839,8 +2864,12 @@ void ExploreScene::finishWildFaint() {
     }
 
     // 按物种独立累计失败层数；加成已叠加在最终结交概率上（§7.9.4）。
-    if (battleAllowsFriendship && hasRoom && !debugBattleMode &&
-        pityIndex >= 0 && !friendshipOfferPending) {
+    if (battleAllowsFriendship && hasRoom && pityIndex >= 0 &&
+        !friendshipOfferPending
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        && !debugBattleMode
+#endif
+    ) {
         Game::GameState& save = engine.gameState();
         uint8_t& failCount = save.friendshipPityFailCounts[pityIndex];
         if (failCount < FriendshipPity::MAX_FAIL_COUNT) {
@@ -3122,12 +3151,14 @@ void ExploreScene::finishPlayerFaint() {
 }
 
 void ExploreScene::finishBattleVictoryFlow() {
+#if STICKMON_ENABLE_DEBUG_FEATURES
     if (debugBattleMode) {
         phase = Phase::RESULT;
         resultMessage = Ui::Explore::BATTLE_WIN;
         enterPendingProgression(Phase::RESULT);
         return;
     }
+#endif
     resumeWalk();
     enterPendingProgression(Phase::WALKING);
 }
@@ -3157,9 +3188,13 @@ void ExploreScene::resolveFriendshipOffer() {
             return;
         }
         uint8_t contactSlot = 0xFF;
+#if STICKMON_ENABLE_DEBUG_FEATURES
         uint8_t metArea = debugBattleMode
             ? Game::MET_AREA_UNKNOWN
             : mapBlocks[currentMapBlock];
+#else
+        uint8_t metArea = mapBlocks[currentMapBlock];
+#endif
         if (!engine.recordFriendContact(wildRuntime, metArea, &contactSlot)) {
             friendshipStep = FriendshipStep::FINISHING;
             enqueueBattleLog(Ui::Explore::FRIEND_CONTACTS_FULL);
@@ -4368,6 +4403,7 @@ void ExploreScene::renderEncounter() {
     renderFoodThrow();
     renderBattleHud();
     renderCommandBox();
+#if STICKMON_ENABLE_DEBUG_FEATURES
     if (GameEngine::ins().debugBattleDrawBoundsVisible()) {
         c.drawRect(BattleLayout::WILD_X - BattleLayout::WILD_MAX_W / 2,
                    BattleLayout::WILD_GROUND_Y - BattleLayout::WILD_MAX_H,
@@ -4378,6 +4414,7 @@ void ExploreScene::renderEncounter() {
                    BattleLayout::PLAYER_MAX_W, BattleLayout::PLAYER_MAX_H,
                    PixelRenderer::rgb(0, 220, 255));
     }
+#endif
 }
 
 void ExploreScene::renderFoodThrow() {

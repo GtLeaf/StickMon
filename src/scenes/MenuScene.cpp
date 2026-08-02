@@ -161,8 +161,12 @@ int statusPageContentHeight(uint8_t page) {
 }
 
 int menuIconIndex(uint8_t item) {
-    // The standalone icon pack (main/1.png..9.png) is numbered in MenuItem order.
+    // The asset pack keeps the debug icon at index 7 and back at index 8.
+#if STICKMON_ENABLE_DEBUG_FEATURES
     static constexpr uint8_t ICON_BY_MENU_ITEM[] = {0, 1, 2, 3, 4, 5, 6, 7, 8};
+#else
+    static constexpr uint8_t ICON_BY_MENU_ITEM[] = {0, 1, 2, 3, 4, 5, 6, 8};
+#endif
     return item < sizeof(ICON_BY_MENU_ITEM) ? ICON_BY_MENU_ITEM[item] : -1;
 }
 
@@ -529,6 +533,7 @@ void MenuScene::onEnter() {
     storageReleaseConfirmOpen = false;
     storageReleaseConfirmYes = false;
     storageScroll = 0.0f;
+#if STICKMON_ENABLE_DEBUG_FEATURES
     debugCategory = DebugCategory::ROOT;
     debugCursor = 0;
     debugSwitchOpen = false;
@@ -536,6 +541,7 @@ void MenuScene::onEnter() {
     debugTimeOpen = false;
     debugTimeFocus = 0;
     debugScroll = 0.0f;
+#endif
     if (GameEngine::ins().previousScene() == GameEngine::ins().homeScene()) {
         cursor = 0;
     } else {
@@ -543,11 +549,13 @@ void MenuScene::onEnter() {
     }
     animCursor = (float)cursor;
     lastBatteryLevel = Hal::ins().filteredBatteryLevel();
+#if STICKMON_ENABLE_DEBUG_FEATURES
     if (GameEngine::ins().consumeDebugMenuReturnRequest()) {
         pushView(ViewMode::DEBUG);
         debugCategory = DebugCategory::BATTLE;
         debugCursor = DEBUG_BATTLE_RANDOM_INDEX;
     }
+#endif
 }
 
 void MenuScene::openExploreTeamView() {
@@ -614,8 +622,10 @@ void MenuScene::popView() {
     storageInviteConfirmOpen = false;
     storageReleaseConfirmOpen = false;
     bagConfirmOpen = false;
+#if STICKMON_ENABLE_DEBUG_FEATURES
     debugSwitchOpen = false;
     debugTimeOpen = false;
+#endif
 
     if (navDepth > 0) {
         viewMode = navStack[--navDepth];
@@ -716,6 +726,7 @@ SceneUpdateResult MenuScene::update(uint32_t nowMs, float dtSeconds) {
         int target =
             storageCursor * ROW_H - VISIBLE_H / 2 + ROW_H / 2;
         animateScroll(storageScroll, MathUtil::clamp(target, 0, maxScroll));
+#if STICKMON_ENABLE_DEBUG_FEATURES
     } else if (viewMode == ViewMode::DEBUG) {
         static constexpr int ROW_Y = 6;
         static constexpr int ROW_H = 24;
@@ -725,6 +736,7 @@ SceneUpdateResult MenuScene::update(uint32_t nowMs, float dtSeconds) {
         int target =
             ROW_Y + debugCursor * ROW_H + ROW_H / 2 - Hal::DISPLAY_H / 2;
         animateScroll(debugScroll, MathUtil::clamp(target, 0, maxScroll));
+#endif
     } else if (viewMode == ViewMode::BAG) {
         BagRow rows[BAG_ITEM_COUNT] = {};
         uint8_t count = collectVisibleBagRows(rows, BAG_ITEM_COUNT);
@@ -871,6 +883,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                 bagConfirmOpen = false;
                 return true;
             }
+#if STICKMON_ENABLE_DEBUG_FEATURES
             if (viewMode == ViewMode::DEBUG && debugSwitchOpen) {
                 debugSwitchOpen = false;
                 return true;
@@ -885,6 +898,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                 debugScroll = 0.0f;
                 return true;
             }
+#endif
             popView();
             return true;
         }
@@ -1450,6 +1464,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
             }
             return true;
         }
+#if STICKMON_ENABLE_DEBUG_FEATURES
         if (viewMode == ViewMode::DEBUG && debugSwitchOpen && event.btn == 1 && event.action == BtnAction::PRESSED) {
             debugSwitchFocus = (debugSwitchFocus + 1) % DEBUG_SWITCH_FOCUS_COUNT;
             return true;
@@ -1497,6 +1512,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
             handleDebugAction();
             return true;
         }
+#endif
         if (event.btn == 0 && event.action == BtnAction::PRESSED) {
             popView();
             return true;
@@ -1571,6 +1587,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
     case ITEM_SETTINGS:
         GameEngine::ins().requestScene(SceneID::SETTINGS);
         return true;
+#if STICKMON_ENABLE_DEBUG_FEATURES
     case ITEM_DEBUG:
         pushView(ViewMode::DEBUG);
         debugCategory = DebugCategory::ROOT;
@@ -1579,6 +1596,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
         debugSwitchOpen = false;
         debugTimeOpen = false;
         return true;
+#endif
     case ITEM_BACK:
         GameEngine::ins().requestScene(GameEngine::ins().homeScene());
         return true;
@@ -1623,10 +1641,12 @@ void MenuScene::render() {
         renderStoragePage();
         return;
     }
+#if STICKMON_ENABLE_DEBUG_FEATURES
     if (viewMode == ViewMode::DEBUG) {
         renderDebugPage();
         return;
     }
+#endif
 
     renderMenu();
     renderToast();
@@ -2525,6 +2545,7 @@ void MenuScene::renderStorageReleaseConfirmPopup() {
     PixelRenderer::text(POP_X + 130, POP_Y + 49, Ui::Storage::NO, noColor, 1);
 }
 
+#if STICKMON_ENABLE_DEBUG_FEATURES
 void MenuScene::renderDebugPage() {
     auto& c = PixelRenderer::canvas();
     c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, 0x0000);
@@ -2854,6 +2875,7 @@ void MenuScene::incrementDebugTimeDigit() {
         debugTimeDigits[3] = (debugTimeDigits[3] + 1) % 10;
     }
 }
+#endif
 
 uint8_t MenuScene::visibleFoodIndexOf(uint8_t foodIndex) const {
     return foodIndex < Game::ROOM_FOOD_COUNT ? foodIndex : 0;
@@ -2869,6 +2891,7 @@ void MenuScene::drawSelectionDiamond(int cx, int cy, uint16_t color) {
     c.fillTriangle(cx, cy - 3, cx, cy + 3, cx - 3, cy, color);
 }
 
+#if STICKMON_ENABLE_DEBUG_FEATURES
 void MenuScene::renderDebugSwitchPopup() {
     auto& c = PixelRenderer::canvas();
     static constexpr int POP_X = 34;
@@ -2939,6 +2962,7 @@ void MenuScene::renderDebugTimePopup() {
     PixelRenderer::text(POP_X + 48, POP_Y + 60, Ui::Debug::YES, yesColor, 1);
     PixelRenderer::text(POP_X + 104, POP_Y + 60, Ui::Debug::CANCEL, cancelColor, 1);
 }
+#endif
 
 uint8_t MenuScene::collectVisibleBagRows(BagRow* rows, uint8_t maxRows) const {
     if (!rows || maxRows == 0) return 0;

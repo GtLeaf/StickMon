@@ -1,13 +1,6 @@
 #pragma once
 
-#ifndef STICKMON_ENABLE_TRACE_LOGS
-#define STICKMON_ENABLE_TRACE_LOGS 0
-#endif
-
-#ifndef STICKMON_ENABLE_RENDER_STATS
-#define STICKMON_ENABLE_RENDER_STATS 0
-#endif
-
+#include "core/BuildConfig.h"
 #include "platform/api/PlatformServices.h"
 
 #if STICKMON_ENABLE_TRACE_LOGS
