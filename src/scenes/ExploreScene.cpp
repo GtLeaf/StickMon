@@ -6,6 +6,7 @@
 #include "assets/GameAssets.h"
 #include "assets/PokemonMotion.h"
 #include "assets/PokemonSprites.h"
+#include "core/AudioManager.h"
 #include "core/GameEngine.h"
 #include "core/MathUtil.h"
 #include "core/ProgressionUi.h"
@@ -58,6 +59,10 @@ constexpr uint16_t pickupWeightTotal(const PickupEntry* table, uint8_t count) {
     return count == 0
         ? 0
         : table[0].weight + pickupWeightTotal(table + 1, count - 1);
+}
+
+constexpr bool pickupAvailable(uint8_t pickupId, uint16_t stepsToday) {
+    return pickupId != PICKUP_RARE_CANDY || stepsToday >= 5000;
 }
 
 static constexpr uint8_t WILD_LEVEL_MIN = 1;
@@ -843,26 +848,27 @@ const RouteMap& routeMap(uint8_t index) {
 }
 
 uint8_t rollPickupId(const RouteMap& map) {
-    bool candyAvailable = GameEngine::ins().gameState().stepsToday >= 5000;
+    uint16_t stepsToday = GameEngine::ins().gameState().stepsToday;
     uint16_t total = 0;
     for (uint8_t i = 0; i < map.pickupEntryCount; ++i) {
-        if (map.pickupTable[i].pickupId == PICKUP_RARE_CANDY && !candyAvailable) {
-            continue;
-        }
+        if (!pickupAvailable(map.pickupTable[i].pickupId, stepsToday)) continue;
         total += map.pickupTable[i].weight;
     }
     if (total == 0) return PICKUP_NONE;
 
     uint16_t roll = static_cast<uint16_t>(GameRandom::random(0, total));
     for (uint8_t i = 0; i < map.pickupEntryCount; ++i) {
-        if (map.pickupTable[i].pickupId == PICKUP_RARE_CANDY && !candyAvailable) {
-            continue;
-        }
+        if (!pickupAvailable(map.pickupTable[i].pickupId, stepsToday)) continue;
         if (roll < map.pickupTable[i].weight) return map.pickupTable[i].pickupId;
         roll -= map.pickupTable[i].weight;
     }
     return PICKUP_NONE;
 }
+
+static_assert(!pickupAvailable(PICKUP_RARE_CANDY, 4999) &&
+                  pickupAvailable(PICKUP_RARE_CANDY, 5000) &&
+                  pickupAvailable(PICKUP_POTION, 0),
+              "only rare candy pickups require 5000 daily steps");
 
 PokemonSprites::WalkDirection inwardDirection(ExploreMapGenerator::Edge edge) {
     switch (edge) {
@@ -1098,7 +1104,10 @@ SceneUpdateResult ExploreScene::update(uint32_t nowMs, float dtSeconds) {
     bool areaCursorAnimating = false;
     bool areaCursorMoved = false;
     if (phase == Phase::SELECT) {
-        float target = static_cast<float>(areaCursor);
+        uint8_t visibleAreaCount = ExploreItemProgression::visibleAreaCount(
+            GameEngine::ins().gameState());
+        float target = static_cast<float>(
+            areaCursor < ROUTE_MAP_COUNT ? areaCursor : visibleAreaCount);
         float diff = target - areaAnimCursor;
         if (fabsf(diff) < 0.05f) {
             if (areaAnimCursor != target) {
@@ -1359,7 +1368,8 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
     if (event.action != BtnAction::PRESSED) return false;
 
     if (phase == Phase::SELECT) {
-        uint8_t optionCount = static_cast<uint8_t>(Area::COUNT) + 1;
+        uint8_t visibleAreaCount = ExploreItemProgression::visibleAreaCount(
+            GameEngine::ins().gameState());
         if (event.btn == 0) {
             if (areaCursor >= static_cast<uint8_t>(Area::COUNT)) {
                 GameEngine::ins().requestScene(SceneID::MENU);
@@ -1371,10 +1381,13 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
             return true;
         }
         if (event.btn == 1) {
-            areaCursor++;
-            if (areaCursor >= optionCount) {
+            if (areaCursor >= static_cast<uint8_t>(Area::COUNT)) {
                 areaCursor = 0;
                 areaAnimCursor = 0.0f;
+            } else if (areaCursor + 1 < visibleAreaCount) {
+                ++areaCursor;
+            } else {
+                areaCursor = static_cast<uint8_t>(Area::COUNT);
             }
             loadAreaPreview();
             return true;
@@ -1400,6 +1413,7 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
             return true;
         }
         if (event.btn == 0) {
+            AudioManager::ins().playSfx(SfxCue::UI_CONFIRM);
             if (battleCursor == 0) {
                 attackWild();
             } else if (battleCursor == 1) {
@@ -1414,6 +1428,7 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
             return true;
         }
         if (event.btn == 1) {
+            AudioManager::ins().playSfx(SfxCue::UI_CURSOR);
             battleCursor = (battleCursor + 1) % 4;
             return true;
         }
@@ -1630,7 +1645,6 @@ void ExploreScene::requestExploreExit(bool fainted, bool showEndPrompt) {
     bool returnFainted = fainted || mon.fainted || mon.hpCur == 0;
     routeMoving = false;
     autoWalkActive = false;
-    settleAdventureBond();
     if (returnFainted || !showEndPrompt) {
         exploreMenuOpen = false;
         exploreSubViewOpen = false;
@@ -1642,6 +1656,11 @@ void ExploreScene::requestExploreExit(bool fainted, bool showEndPrompt) {
     exploreMenuOpen = false;
     exploreSubViewOpen = false;
     exploreMenuOpenedAt = 0;
+    beginExploreEnding();
+}
+
+void ExploreScene::beginExploreEnding() {
+    settleAdventureBond();
     phase = Phase::ENDING;
 }
 
@@ -1784,7 +1803,7 @@ bool ExploreScene::updateRouteMovement(uint32_t nowMs) {
     routeMoving = false;
     routeFollowerMoving = false;
     if (phase == Phase::EXITING) {
-        phase = Phase::ENDING;
+        beginExploreEnding();
         return true;
     }
     if (enterPendingProgression(Phase::WALKING)) {
@@ -2018,6 +2037,8 @@ void ExploreScene::beginEncounter(const Species& species, uint8_t level, bool bo
     fleeAttempts = 0;
     autoWalkActive = false;
     phase = Phase::ENCOUNTER;
+    AudioManager::ins().setMusic(
+        boss ? MusicTrack::BATTLE_SPECIAL : MusicTrack::BATTLE);
     clearBattleLogs();
     enqueueBattleLog(battleIsBoss ? Ui::Explore::BOSS_APPEARED
                                   : Ui::Explore::WILD_APPEARED);
@@ -2239,6 +2260,14 @@ bool ExploreScene::serviceBattleLog(uint32_t nowMs) {
     battleLogCount--;
     if (cue == BattleLogCue::EXP_GAIN) {
         startExpAnimation(nowMs);
+    } else if (cue == BattleLogCue::LEVEL_UP) {
+        AudioManager::ins().playSfx(SfxCue::LEVEL_UP);
+    } else if (cue == BattleLogCue::MOVE_LEARNT) {
+        AudioManager::ins().playSfx(SfxCue::MOVE_LEARNT);
+    } else if (cue == BattleLogCue::FAINT) {
+        AudioManager::ins().playSfx(SfxCue::FAINT);
+    } else if (cue == BattleLogCue::CONTACT) {
+        AudioManager::ins().playSfx(SfxCue::CONTACT);
     }
     battleLogActive = true;
     battleLogUntil = nowMs + 1000;
@@ -2267,6 +2296,7 @@ void ExploreScene::prepareExpAnimation(uint32_t fromExp, uint32_t toExp) {
 
 void ExploreScene::startExpAnimation(uint32_t nowMs) {
     battleExpVisible = true;
+    AudioManager::ins().playSfx(SfxCue::EXP_GAIN);
     if (!expAnimationPending) return;
     expAnimationPending = false;
     expAnimationActive = true;
@@ -2277,6 +2307,7 @@ void ExploreScene::updateExpAnimation(uint32_t nowMs) {
     if (!expAnimationActive || nowMs < expAnimationStarted) return;
     if (nowMs - expAnimationStarted >= EXP_ANIMATION_MS) {
         expAnimationActive = false;
+        AudioManager::ins().playSfx(SfxCue::EXP_FULL);
     }
 }
 
@@ -2324,7 +2355,7 @@ void ExploreScene::enqueueBattleProgressionLogs(uint8_t teamSlot) {
         engine.acknowledgePendingLevelUp();
         snprintf(logBuf, sizeof(logBuf), Ui::Explore::LEVEL_UP_LOG_FMT,
                  species.name, level);
-        enqueueBattleLog(logBuf);
+        enqueueBattleLog(logBuf, BattleLogCue::LEVEL_UP);
     }
 
     while (engine.hasPendingMoveLearn()) {
@@ -2342,7 +2373,7 @@ void ExploreScene::enqueueBattleProgressionLogs(uint8_t teamSlot) {
         if (!learned || !move) continue;
         snprintf(logBuf, sizeof(logBuf), Ui::Explore::MOVE_LEARNED_LOG_FMT,
                  learnerSpecies.name, move->name);
-        enqueueBattleLog(logBuf);
+        enqueueBattleLog(logBuf, BattleLogCue::MOVE_LEARNT);
     }
 }
 
@@ -2609,6 +2640,7 @@ void ExploreScene::applyBattleDamage() {
     wildRuntime.hpCur = wildHp;
 
     if (battleActionSelfHit) {
+        AudioManager::ins().playSfx(SfxCue::DAMAGE_NORMAL);
         if (battleActionAttackerWild) {
             wildHp = battleHpTo;
             wildRuntime.hpCur = wildHp;
@@ -2620,6 +2652,11 @@ void ExploreScene::applyBattleDamage() {
     }
 
     if (battleActionResult.damage > 0) {
+        SfxCue damageCue = battleActionResult.effectiveness > 100
+            ? SfxCue::DAMAGE_SUPER
+            : (battleActionResult.effectiveness < 100
+                ? SfxCue::DAMAGE_WEAK : SfxCue::DAMAGE_NORMAL);
+        AudioManager::ins().playSfx(damageCue);
         if (battleActionAttackerWild) {
             activeMon.hpCur = battleHpTo;
         } else {
@@ -2946,6 +2983,7 @@ void ExploreScene::throwFood(uint8_t foodIndex) {
     foodThrowActive = true;
     foodThrowIndex = foodIndex;
     foodThrowStarted = Hal::ins().millis();
+    AudioManager::ins().playSfx(SfxCue::THROW);
 
     char logBuf[BATTLE_LOG_LEN];
     snprintf(logBuf, sizeof(logBuf), Ui::Explore::FOOD_THROW_FMT,
@@ -3125,7 +3163,7 @@ void ExploreScene::finishPlayerFaint() {
     char logBuf[BATTLE_LOG_LEN];
     snprintf(logBuf, sizeof(logBuf), Ui::Explore::FAINTED_FMT,
              faintedName);
-    enqueueBattleLog(logBuf);
+    enqueueBattleLog(logBuf, BattleLogCue::FAINT);
     snprintf(resultBuf, sizeof(resultBuf), Ui::Explore::FAINTED_EXP_LOSS_FMT, (unsigned long)loss);
     enqueueBattleLog(resultBuf);
     resultMessage = resultBuf;
@@ -3216,7 +3254,7 @@ void ExploreScene::resolveFriendshipOffer() {
         }
         snprintf(resultBuf, sizeof(resultBuf),
                  Ui::Explore::FRIEND_CONTACT_ACQUIRED_FMT, wild->name);
-        enqueueBattleLog(resultBuf);
+        enqueueBattleLog(resultBuf, BattleLogCue::CONTACT);
         if (engine.gameState().teamCount < Game::TEAM_CAP) {
             enqueueBattleLog(Ui::Explore::FRIEND_TEAM_QUESTION);
         }
@@ -3356,6 +3394,7 @@ void ExploreScene::resetWalk() {
 
 void ExploreScene::resumeWalk() {
     phase = Phase::WALKING;
+    AudioManager::ins().setMusic(MusicTrack::EXPLORE);
     battleIsBoss = false;
     wild = nullptr;
     wildHp = wildHpMax = 0;
@@ -3918,20 +3957,24 @@ void ExploreScene::renderAreaMenu() {
     static constexpr int PREVIEW_CENTER_Y =
         26 + (Hal::DISPLAY_H - 26) / 2;
     static constexpr int PREVIEW_GAP = 10;
-    uint8_t count = static_cast<uint8_t>(Area::COUNT) + 1;
+    uint8_t visibleAreaCount = ExploreItemProgression::visibleAreaCount(
+        GameEngine::ins().gameState());
+    uint8_t count = static_cast<uint8_t>(visibleAreaCount + 1);
     c.setClipRect(0, 0, LEFT_W, Hal::DISPLAY_H);
     for (uint8_t i = 0; i < count; ++i) {
         float offset = static_cast<float>(i) - areaAnimCursor;
         if (fabsf(offset) > 2.25f) continue;
         int y = CENTER_Y + static_cast<int>(roundf(offset * AREA_SPACING));
         bool active = fabsf(offset) < 0.5f;
-        const char* name = i < ROUTE_MAP_COUNT ? routeMap(i).name : Ui::BACK;
-        bool unlocked = i >= ROUTE_MAP_COUNT ||
+        uint8_t areaIndex = i < visibleAreaCount ? i : ROUTE_MAP_COUNT;
+        const char* name = areaIndex < ROUTE_MAP_COUNT
+            ? routeMap(areaIndex).name : Ui::BACK;
+        bool unlocked = areaIndex >= ROUTE_MAP_COUNT ||
             ExploreItemProgression::isAreaUnlocked(
-                i, GameEngine::ins().gameState());
+                areaIndex, GameEngine::ins().gameState());
         bool specialActive =
-            unlocked && i < ROUTE_MAP_COUNT &&
-            specialKindForArea(i) != ExploreSpecial::Kind::NONE;
+            unlocked && areaIndex < ROUTE_MAP_COUNT &&
+            specialKindForArea(areaIndex) != ExploreSpecial::Kind::NONE;
         uint16_t color = !unlocked
             ? PixelRenderer::rgb(82, 88, 96)
             : specialActive
@@ -4108,9 +4151,13 @@ void ExploreScene::renderWalking() {
         generatedMap, cameraX, cameraY, map.fieldColor, mapAnimationFrame);
 
     const uint16_t panel = PixelRenderer::rgb(8, 10, 14);
-    PixelRenderer::fillRectAlpha(156, 2, 80, 22, panel, EXPLORE_HUD_ALPHA);
-    c.drawRect(156, 2, 80, 22, PixelRenderer::rgb(72, 83, 98));
-    PixelRenderer::text(162, 5, map.name, PixelRenderer::rgb(245, 246, 232), 1);
+    int hudW = MathUtil::max(60, uiTextWidth(map.name) + 12);
+    int hudX = Hal::DISPLAY_W - hudW - 4;
+    PixelRenderer::fillRectAlpha(
+        hudX, 2, hudW, 22, panel, EXPLORE_HUD_ALPHA);
+    c.drawRect(hudX, 2, hudW, 22, PixelRenderer::rgb(72, 83, 98));
+    PixelRenderer::text(
+        hudX + 6, 5, map.name, PixelRenderer::rgb(245, 246, 232), 1);
     if (exploreMenuOpen) renderExploreMenu();
 }
 

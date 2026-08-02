@@ -97,8 +97,14 @@ private:
         BACK,
     };
 
+    enum class StorageAction : uint8_t {
+        STATUS,
+        INVITE,
+        DELETE,
+        BACK,
+    };
+
     static constexpr uint8_t STATUS_PAGE_COUNT = 5;
-    static constexpr uint8_t STORAGE_ACTION_COUNT = 4;
     static constexpr uint8_t BAG_ITEM_COUNT = 26;
     static constexpr uint8_t ROOM_ITEM_COUNT = 3;
     static constexpr uint8_t FOOD_ITEM_COUNT = Game::ROOM_FOOD_COUNT + 1;
@@ -227,6 +233,9 @@ private:
     uint8_t teamActionCount() const;
     TeamAction teamActionAt(uint8_t index) const;
     const char* teamActionLabel(uint8_t index) const;
+    uint8_t storageActionCount() const;
+    StorageAction storageActionAt(uint8_t index) const;
+    const char* storageActionLabel(uint8_t index) const;
     uint8_t collectVisibleBagRows(BagRow* rows, uint8_t maxRows) const;
     uint8_t visibleFoodIndexOf(uint8_t foodIndex) const;
     bool isFoodBackIndex(uint8_t index) const;

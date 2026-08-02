@@ -1,4 +1,5 @@
 #include "core/GameEngine.h"
+#include "core/AudioManager.h"
 #include "core/CryPlayer.h"
 #include "core/VoiceCallService.h"
 #include <algorithm>
@@ -12,6 +13,7 @@
 #include "core/TraceLog.h"
 #include "core/UiStrings.h"
 #include "game/BondSystem.h"
+#include "game/ContactRoster.h"
 #include "game/ExploreItemProgression.h"
 #include "game/FoodTuning.h"
 #include "game/GameRandom.h"
@@ -63,6 +65,17 @@ const char* sceneLogName(SceneID scene) {
     case SceneID::SHOWER: return "shower";
     default: return "unknown";
     }
+}
+
+MusicTrack musicForScene(SceneID scene) {
+    return scene == SceneID::EXPLORE
+        ? MusicTrack::EXPLORE
+        : MusicTrack::HOME;
+}
+
+constexpr bool usesMenuSounds(SceneID scene) {
+    return scene == SceneID::MENU || scene == SceneID::SOCIAL ||
+           scene == SceneID::SHOP || scene == SceneID::SETTINGS;
 }
 
 constexpr bool supportsLongPressHome(SceneID scene) {
@@ -454,6 +467,25 @@ const Species& GameEngine::speciesFor(const Game::MonsterRuntime& monster) const
     return species ? *species : starterSpecies();
 }
 
+uint8_t GameEngine::companionCount() const {
+    uint8_t count = state.storageCount;
+    for (uint8_t teamSlot = 0;
+         teamSlot < state.teamCount && teamSlot < Game::TEAM_CAP; ++teamSlot) {
+        bool representedByContact = false;
+        for (uint8_t contactSlot = 0;
+             contactSlot < state.storageCount &&
+             contactSlot < Game::STORAGE_CAP; ++contactSlot) {
+            if (ContactRoster::sameMonster(
+                    state.team[teamSlot], state.storage[contactSlot])) {
+                representedByContact = true;
+                break;
+            }
+        }
+        if (!representedByContact && count < UINT8_MAX) ++count;
+    }
+    return count;
+}
+
 Game::MonsterRuntime GameEngine::createMonster(uint16_t speciesId, uint8_t level) const {
     const Species* species = findSpecies(speciesId);
     if (!species) species = &starterSpecies();
@@ -520,9 +552,21 @@ bool GameEngine::moveTeamMemberToContacts(uint8_t slot) {
     if (contactVisit.active) return false;
     if (slot >= state.teamCount || slot >= Game::TEAM_CAP) return false;
     if (state.team[slot].origin == Game::Origin::VISITOR) return false;
-    if (state.storageCount >= Game::STORAGE_CAP) return false;
 
-    state.storage[state.storageCount++] = state.team[slot];
+    int8_t contactSlot = -1;
+    for (uint8_t i = 0;
+         i < state.storageCount && i < Game::STORAGE_CAP; ++i) {
+        if (ContactRoster::sameMonster(state.storage[i], state.team[slot])) {
+            contactSlot = static_cast<int8_t>(i);
+            break;
+        }
+    }
+    if (contactSlot >= 0) {
+        state.storage[contactSlot] = state.team[slot];
+    } else {
+        if (state.storageCount >= Game::STORAGE_CAP) return false;
+        state.storage[state.storageCount++] = state.team[slot];
+    }
     for (uint8_t i = slot; i + 1 < state.teamCount && i + 1 < Game::TEAM_CAP; ++i) {
         state.team[i] = state.team[i + 1];
     }
@@ -674,12 +718,25 @@ uint8_t GameEngine::contactInviteChance(uint8_t slot) const {
     return Game::Bond::inviteChance(mon.bond, firstInvitation);
 }
 
+int8_t GameEngine::teamSlotForContact(uint8_t slot) const {
+    return ContactRoster::teamSlotForContact(state, slot);
+}
+
+bool GameEngine::consumeTeamMemberArrivalRequest() {
+    bool pending = teamMemberArrivalPending;
+    teamMemberArrivalPending = false;
+    return pending;
+}
+
 ContactInviteResult GameEngine::inviteContactToTeam(uint8_t slot) {
-    if (state.teamCount >= Game::TEAM_CAP) {
-        return ContactInviteResult::TEAM_FULL;
-    }
     if (slot >= state.storageCount || slot >= Game::STORAGE_CAP) {
         return ContactInviteResult::INVALID;
+    }
+    if (contactIsInTeam(slot)) {
+        return ContactInviteResult::ALREADY_IN_TEAM;
+    }
+    if (state.teamCount >= Game::TEAM_CAP) {
+        return ContactInviteResult::TEAM_FULL;
     }
     if (contactInviteLocked(slot)) return ContactInviteResult::LOCKED;
 
@@ -693,13 +750,6 @@ ContactInviteResult GameEngine::inviteContactToTeam(uint8_t slot) {
 
     state.storage[slot].petCountToday = 0;
     state.team[state.teamCount++] = state.storage[slot];
-    for (uint8_t i = slot; i + 1 < state.storageCount && i + 1 < Game::STORAGE_CAP; ++i) {
-        state.storage[i] = state.storage[i + 1];
-    }
-    state.storageCount--;
-    if (state.storageCount < Game::STORAGE_CAP) {
-        state.storage[state.storageCount] = Game::MonsterRuntime{};
-    }
     syncSpriteCache();
     markDirty(SaveUrgency::IMMEDIATE);
     return ContactInviteResult::JOINED;
@@ -731,6 +781,7 @@ bool GameEngine::prepareDailyContactVisit() {
     uint32_t seed = day * 2654435761UL + state.team[0].speciesId * 97UL;
     for (uint8_t slot = 0;
          slot < state.storageCount && slot < Game::STORAGE_CAP; ++slot) {
+        if (contactIsInTeam(slot)) continue;
         const Game::MonsterRuntime& mon = state.storage[slot];
         if (mon.bond < 75 || mon.fainted || mon.hpCur == 0 ||
             mon.origin == Game::Origin::VISITOR) {
@@ -785,6 +836,7 @@ DebugContactEventResult GameEngine::debugTriggerContactVisit(
     uint8_t selected = 0xFF;
     for (uint8_t slot = 0;
          slot < state.storageCount && slot < Game::STORAGE_CAP; ++slot) {
+        if (contactIsInTeam(slot)) continue;
         const Game::MonsterRuntime& mon = state.storage[slot];
         if (mon.fainted || mon.hpCur == 0 ||
             mon.origin == Game::Origin::VISITOR) {
@@ -932,6 +984,7 @@ void GameEngine::completeContactVisit() {
 bool GameEngine::canDeleteContact(uint8_t slot) const {
     return slot < state.storageCount && slot < Game::STORAGE_CAP &&
            state.storage[slot].origin != Game::Origin::HATCHED &&
+           !contactIsInTeam(slot) &&
            !contactIsVisiting(slot);
 }
 
@@ -2105,7 +2158,7 @@ void GameEngine::enterDeepSleep() {
     return;
 #endif
     VoiceCallService::ins().stopListening();
-    Hal::ins().stopAudio();
+    AudioManager::ins().stopAll();
     Hal::ins().setBrightness(0);
     Platform::display().sleep();
 
@@ -2146,6 +2199,7 @@ void GameEngine::runSilentCareWake() {
         Game::resetDailyCareCounters(state);
         uint8_t revivals = Game::applyCareMinutes(
             state, acc, SILENT_CARE_WAKE_MINUTES, gameSpeed(), true);
+        ContactRoster::syncTeamContacts(state);
         saveManager.saveSnapshot(state, mainViewState);
         Platform::logf("[Power] silent care wake: elapsed=%umin revivals=%u\n",
                       (unsigned)SILENT_CARE_WAKE_MINUTES, revivals);
@@ -2164,6 +2218,7 @@ bool GameEngine::saveNow() {
     uint32_t now = Hal::ins().millis();
     if (currentScene) currentScene->onBeforeSave();
     syncGameClock(now);
+    ContactRoster::syncTeamContacts(state);
     if (syncOwnedSpeciesToEncounterHistory()) encounterHistoryDirty = true;
     bool stateOk = saveManager.saveSnapshot(state, mainViewState);
     bool historyOk = !encounterHistoryDirty ||
@@ -2282,6 +2337,12 @@ void GameEngine::switchScene(SceneID id, bool saveBeforeSwitch) {
     }
     currentId = actualId;
     currentScene->onEnter();
+    AudioManager::ins().setMusic(musicForScene(currentId));
+    if (currentId == SceneID::MENU && fromId != SceneID::MENU) {
+        AudioManager::ins().playSfx(SfxCue::MENU_OPEN);
+    } else if (fromId == SceneID::MENU && currentId == homeScene()) {
+        AudioManager::ins().playSfx(SfxCue::MENU_CLOSE);
+    }
     uint32_t enteredAt = Hal::ins().millis();
     lastSceneUpdateMs = enteredAt;
     sceneDirty = true;
@@ -2315,6 +2376,10 @@ void GameEngine::processInput(uint32_t nowMs) {
     if (resourceAlertVisible()) return;
     for (uint8_t i = 0; i < count; ++i) {
         const ButtonEvent& event = events[i];
+        if (event.action == BtnAction::PRESSED && usesMenuSounds(currentId)) {
+            AudioManager::ins().playSfx(
+                event.btn == 0 ? SfxCue::UI_CONFIRM : SfxCue::UI_CURSOR);
+        }
         if (event.btn == 0 && event.action == BtnAction::LONG_PRESS &&
             supportsLongPressHome(currentId)) {
             requestScene(homeScene());
@@ -2347,6 +2412,7 @@ void GameEngine::update(uint32_t nowMs) {
 #if STICKMON_ENABLE_RENDER_STATS
     ++renderStatsCoreUpdates;
 #endif
+    AudioManager::ins().update();
     CryPlayer::ins().update();
     bool alertVisible = resourceAlertVisible();
     if (alertVisible != resourceAlertWasVisible) {
@@ -2707,6 +2773,7 @@ void GameEngine::initDefaultState() {
     saveManager.reset(state);
     exploreItemEffects.reset();
     contactVisit = ContactVisitSession{};
+    teamMemberArrivalPending = false;
     evolutionEventHead = 0;
     evolutionEventCount = 0;
     moveReplacementEventHead = 0;

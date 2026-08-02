@@ -24,6 +24,7 @@ constexpr uint32_t EVOLUTION_CANCEL_MORPH_MS = 650;
 constexpr uint32_t EVOLUTION_CANCEL_COMPLETE_MS = 1000;
 constexpr int EVOLUTION_CENTER_X = Hal::DISPLAY_W / 2;
 constexpr int EVOLUTION_CENTER_Y = 61;
+constexpr uint8_t MOVE_LEARN_NEW_SLOT = Game::MOVE_SLOT_COUNT;
 
 struct EvolutionAnimationState {
     uint16_t fromSpeciesId = 0;
@@ -510,9 +511,11 @@ bool handleMoveLearnInput(MoveLearnState& state, uint8_t button) {
     }
 
     if (button == 1) {
-        state.replacementSlot =
-            state.replacementSlot == 1 ? 2 : 1;
+        state.replacementSlot = state.replacementSlot == MOVE_LEARN_NEW_SLOT
+            ? 1
+            : state.replacementSlot + 1;
     } else if (button == 0) {
+        if (state.replacementSlot == MOVE_LEARN_NEW_SLOT) return false;
         state.confirmOpen = true;
         state.confirmYes = false;
     }
@@ -585,31 +588,39 @@ void renderMoveLearnReplacementChoice(const MoveLearnState& uiState) {
     canvas.drawFastVLine(LEFT_W, 6, Hal::DISPLAY_H - 12,
                         PixelRenderer::rgb(123, 125, 123));
 
+    const MoveInfo* newMove =
+        findMove(GameEngine::ins().pendingMoveLearnId());
     for (uint8_t moveSlot = 0;
-         moveSlot < Game::MOVE_SLOT_COUNT; ++moveSlot) {
+         moveSlot <= MOVE_LEARN_NEW_SLOT; ++moveSlot) {
         int y = LIST_Y + moveSlot * ROW_H;
         bool selected = moveSlot == uiState.replacementSlot;
-        uint16_t color = moveSlot == 0
-            ? PixelRenderer::rgb(104, 111, 122)
-            : (selected ? PixelRenderer::rgb(255, 216, 72)
-                        : PixelRenderer::rgb(241, 242, 232));
+        bool pendingMove = moveSlot == MOVE_LEARN_NEW_SLOT;
+        uint16_t color = selected
+            ? PixelRenderer::rgb(255, 216, 72)
+            : (moveSlot == 0
+                   ? PixelRenderer::rgb(104, 111, 122)
+                   : (pendingMove ? PixelRenderer::rgb(135, 214, 238)
+                                  : PixelRenderer::rgb(241, 242, 232)));
         if (selected) {
             canvas.fillRect(2, y + 2, 3, 18,
                             PixelRenderer::rgb(255, 216, 72));
         }
-        const MoveInfo* move =
-            moveLearnInfoForSlot(species, mon, moveSlot);
+        const MoveInfo* move = pendingMove
+            ? newMove
+            : moveLearnInfoForSlot(species, mon, moveSlot);
         if (move) {
             PixelRenderer::text(TEXT_X, y + 3, move->name, color, 1);
         }
-        if (moveSlot + 1 < Game::MOVE_SLOT_COUNT) {
+        if (moveSlot < MOVE_LEARN_NEW_SLOT) {
             canvas.drawFastHLine(5, y + ROW_H - 1, LEFT_W - 10,
                                  PixelRenderer::rgb(55, 63, 76));
         }
     }
 
-    const MoveInfo* selectedMove = moveLearnInfoForSlot(
-        species, mon, uiState.replacementSlot);
+    bool showingNewMove = uiState.replacementSlot == MOVE_LEARN_NEW_SLOT;
+    const MoveInfo* selectedMove = showingNewMove
+        ? newMove
+        : moveLearnInfoForSlot(species, mon, uiState.replacementSlot);
     if (selectedMove) {
         int moveNameX = drawMoveLearnTypeBracket(
             RIGHT_X + 2, 7, selectedMove->type);
@@ -634,12 +645,18 @@ void renderMoveLearnReplacementChoice(const MoveLearnState& uiState) {
                  power, accuracy);
         PixelRenderer::text(RIGHT_X + 2, 31, line,
                             PixelRenderer::rgb(255, 216, 72), 1);
-        PixelRenderer::text(RIGHT_X + 2, 52,
-                            Ui::Team::MOVE_PROFICIENCY,
-                            PixelRenderer::rgb(135, 214, 238), 1);
-        drawMoveLearnProficiencyBar(
-            RIGHT_X + 48, 56, 86, 9,
-            mon.moveProficiency[uiState.replacementSlot]);
+        if (showingNewMove) {
+            PixelRenderer::text(RIGHT_X + 2, 52,
+                                Ui::Team::MOVE_UNLEARNED,
+                                PixelRenderer::rgb(135, 214, 238), 1);
+        } else {
+            PixelRenderer::text(RIGHT_X + 2, 52,
+                                Ui::Team::MOVE_PROFICIENCY,
+                                PixelRenderer::rgb(135, 214, 238), 1);
+            drawMoveLearnProficiencyBar(
+                RIGHT_X + 48, 56, 86, 9,
+                mon.moveProficiency[uiState.replacementSlot]);
+        }
 
         static constexpr int DESC_X = RIGHT_X + 2;
         static constexpr int DESC_Y = 76;
@@ -670,16 +687,7 @@ void renderMoveLearnReplacementChoice(const MoveLearnState& uiState) {
         canvas.clearClipRect();
     }
 
-    const MoveInfo* newMove =
-        findMove(GameEngine::ins().pendingMoveLearnId());
-    char learnLine[48];
-    snprintf(learnLine, sizeof(learnLine),
-             Ui::Explore::LEARN_WILL_LEARN_FMT,
-             newMove ? newMove->name : Ui::Status::MOVE_UNKNOWN);
-    PixelRenderer::text(RIGHT_X + 2, 111, learnLine,
-                        PixelRenderer::rgb(135, 214, 238), 1);
-
-    if (!uiState.confirmOpen || !selectedMove) return;
+    if (!uiState.confirmOpen || !selectedMove || showingNewMove) return;
 
     static constexpr int POP_X = 18;
     static constexpr int POP_Y = 24;

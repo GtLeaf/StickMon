@@ -91,6 +91,10 @@ private:
     enum class BattleLogCue : uint8_t {
         NONE,
         EXP_GAIN,
+        LEVEL_UP,
+        MOVE_LEARNT,
+        FAINT,
+        CONTACT,
     };
     // Holds a complete two-sided turn plus faint and defeat messages.
     static constexpr uint8_t BATTLE_LOG_QUEUE_CAP = 24;
@@ -308,6 +312,7 @@ private:
     void returnToDebugMenu();
 #endif
     void beginRouteExit();
+    void beginExploreEnding();
     void settleAdventureBond();
     void completeExploreReturn(bool fainted);
     void requestExploreExit(bool fainted = false, bool showEndPrompt = true);

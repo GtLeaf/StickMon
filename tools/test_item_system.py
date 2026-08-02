@@ -22,6 +22,23 @@ def array_items(source, name):
     return re.findall(r"\b[A-Z][A-Z0-9_]*\b", match.group(1))
 
 
+def pickup_entries(source, name):
+    match = re.search(
+        rf"static constexpr PickupEntry {name}\[\]\s*=\s*\{{(.*?)\}};",
+        source,
+        re.S,
+    )
+    if not match:
+        raise AssertionError(f"missing {name}")
+    return {
+        pickup: int(weight)
+        for pickup, weight in re.findall(
+            r"\{\s*(PICKUP_[A-Z0-9_]+)\s*,\s*(\d+)\s*\}",
+            match.group(1),
+        )
+    }
+
+
 class ItemSystemTests(unittest.TestCase):
     def compile_and_run_host(self, source_name):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -76,6 +93,92 @@ class ItemSystemTests(unittest.TestCase):
             "BACK",
         ]
         self.assertEqual(expected, items)
+
+    def test_explore_pickup_distribution_matches_item_design(self):
+        source = (ROOT / "src" / "scenes" / "ExploreScene.cpp").read_text()
+        expected = {
+            "GRASS_PATH_PICKUPS": {
+                "PICKUP_COIN": 40,
+                "PICKUP_POTION": 25,
+                "PICKUP_ANTIDOTE": 10,
+                "PICKUP_HONEY": 10,
+                "PICKUP_NUGGET": 3,
+                "PICKUP_RARE_CANDY": 2,
+            },
+            "CREEK_SLOPE_PICKUPS": {
+                "PICKUP_COIN": 40,
+                "PICKUP_POTION": 20,
+                "PICKUP_ANTIDOTE": 10,
+                "PICKUP_MAX_REPEL": 8,
+                "PICKUP_HONEY": 8,
+                "PICKUP_NUGGET": 5,
+                "PICKUP_RARE_CANDY": 2,
+            },
+            "TALL_GRASS_PARK_PICKUPS": {
+                "PICKUP_COIN": 38,
+                "PICKUP_SUPER_POTION": 20,
+                "PICKUP_ANTIDOTE": 8,
+                "PICKUP_REVIVE": 5,
+                "PICKUP_MAX_REPEL": 8,
+                "PICKUP_NUGGET": 6,
+                "PICKUP_BIG_PEARL": 3,
+                "PICKUP_RARE_CANDY": 2,
+            },
+            "FROST_CRYSTAL_CAVE_PICKUPS": {
+                "PICKUP_COIN": 36,
+                "PICKUP_SUPER_POTION": 18,
+                "PICKUP_FULL_HEAL": 8,
+                "PICKUP_REVIVE": 6,
+                "PICKUP_MAX_REPEL": 6,
+                "PICKUP_NUGGET": 4,
+                "PICKUP_BIG_PEARL": 6,
+                "PICKUP_HEART_SCALE": 2,
+                "PICKUP_RARE_CANDY": 2,
+            },
+            "MIST_FOREST_PATH_PICKUPS": {
+                "PICKUP_COIN": 34,
+                "PICKUP_MAX_POTION": 15,
+                "PICKUP_FULL_HEAL": 8,
+                "PICKUP_REVIVE": 7,
+                "PICKUP_BIG_PEARL": 7,
+                "PICKUP_STAR_PIECE": 4,
+                "PICKUP_HEART_SCALE": 2,
+                "PICKUP_RARE_CANDY": 2,
+            },
+            "ANCIENT_WATERFALL_VALLEY_PICKUPS": {
+                "PICKUP_COIN": 32,
+                "PICKUP_MAX_POTION": 15,
+                "PICKUP_FULL_RESTORE": 6,
+                "PICKUP_REVIVE": 8,
+                "PICKUP_BIG_PEARL": 5,
+                "PICKUP_STAR_PIECE": 7,
+                "PICKUP_HEART_SCALE": 2,
+                "PICKUP_RARE_CANDY": 2,
+            },
+        }
+        coin_ranges = {
+            "GRASS_PATH_PICKUPS": (10, 30),
+            "CREEK_SLOPE_PICKUPS": (15, 40),
+            "TALL_GRASS_PARK_PICKUPS": (20, 60),
+            "FROST_CRYSTAL_CAVE_PICKUPS": (30, 80),
+            "MIST_FOREST_PATH_PICKUPS": (40, 110),
+            "ANCIENT_WATERFALL_VALLEY_PICKUPS": (50, 150),
+        }
+
+        for table_name, entries in expected.items():
+            self.assertEqual(entries, pickup_entries(source, table_name))
+            range_match = re.search(
+                rf"{table_name},\s*ENTRY_COUNT\({table_name}\),\s*"
+                rf"(\d+),\s*(\d+)",
+                source,
+            )
+            self.assertIsNotNone(range_match, table_name)
+            self.assertEqual(
+                coin_ranges[table_name],
+                tuple(int(value) for value in range_match.groups()),
+            )
+
+        self.assertIn("stepsToday >= 5000", source)
 
     def test_new_battle_medicines_have_results(self):
         source = (ROOT / "src" / "scenes" / "MenuScene.h").read_text()

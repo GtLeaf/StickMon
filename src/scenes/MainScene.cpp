@@ -68,6 +68,7 @@ static constexpr uint16_t HUNGER_ANIM_MS = 360;
 static constexpr float DOOR_ROUTE_SPEED = 42.0f;
 static constexpr float DOOR_CROSS_SPEED = 28.0f;
 static constexpr uint32_t DOOR_ROUTE_TIMEOUT_MS = 8000UL;
+static constexpr uint32_t DOOR_STALL_TIMEOUT_MS = 700UL;
 static constexpr float DOOR_WAIT_INWARD_OFFSET = 8.0f;
 static constexpr float DOOR_WAIT_SIDE_OFFSET = 34.0f;
 static constexpr int NAV_CELL_PX = 8;
@@ -773,7 +774,12 @@ void MainScene::onEnter() {
     visitorBedYieldHandled =
         aiMode == AiMode::RESTING || aiMode == AiMode::WAKING ||
         monsterAtBedSleepPose();
+    bool teamMemberArrival =
+        GameEngine::ins().consumeTeamMemberArrivalRequest();
     beginDoorTransition(nowMs);
+    if (teamMemberArrival && doorTransition == DoorTransitionMode::NONE) {
+        beginTeamMemberEntry(nowMs);
+    }
     if (GameEngine::ins().localContactVisitActive() &&
         GameEngine::ins().contactVisitExploring() &&
         GameEngine::ins().exploreTravelPhase() == ExploreTravelPhase::NONE &&
@@ -1006,9 +1012,11 @@ void MainScene::beginDoorTransition(uint32_t nowMs) {
     aiMode = AiMode::IDLE;
     doorLastUpdateMs = nowMs;
     doorPhaseStartedMs = nowMs;
+    doorLastProgressMs = nowMs;
     doorRouteEnteringWalkArea = false;
     visitorDoorRouteEnteringWalkArea = false;
     doorDepartureHasVisitor = false;
+    doorWaitingActorReady = false;
     doorMainHidden = false;
     doorVisitorHidden = false;
     doorFirstActor = DoorActor::MAIN;
@@ -1094,12 +1102,21 @@ void MainScene::beginDoorTransition(uint32_t nowMs) {
             visitorRouteReady = buildVisitorMoveRoute(visitor.targetX, visitor.targetY);
         }
 
+        if (!mainRouteReady) {
+            monsterX = mainGoalX;
+            monsterY = mainGoalY;
+            clearMoveRoute();
+        }
+        if (!visitorRouteReady) {
+            visitor.x = visitor.targetX;
+            visitor.y = visitor.targetY;
+            clearVisitorMoveRoute();
+        }
         if (!mainRouteReady || !visitorRouteReady) {
-            Platform::logf("[DoorDeparture] route failed main=%u visitor=%u paired=%u\n",
-                          mainRouteReady ? 1 : 0, visitorRouteReady ? 1 : 0,
-                          doorDepartureHasVisitor ? 1 : 0);
-            finishDoorDeparture();
-            return;
+            Platform::logf(
+                "[DoorDeparture] route fallback main=%u visitor=%u paired=%u\n",
+                mainRouteReady ? 1 : 0, visitorRouteReady ? 1 : 0,
+                doorDepartureHasVisitor ? 1 : 0);
         }
 
         doorRouteEnteringWalkArea = !monsterFootprintInsideWalkArea(monsterX, monsterY);
@@ -1144,18 +1161,121 @@ void MainScene::updateDoorTransition(uint32_t nowMs) {
     switch (doorTransition) {
     case DoorTransitionMode::EXIT_ROUTE:
         if (nowMs - doorPhaseStartedMs >= DOOR_ROUTE_TIMEOUT_MS) {
-            clearMoveRoute();
-            clearVisitorMoveRoute();
-            velocityX = velocityY = 0.0f;
-            finishDoorDeparture();
+            if (doorDepartureHasVisitor && !doorWaitingActorReady) {
+                DoorActor waitingActor = doorFirstActor == DoorActor::MAIN
+                    ? DoorActor::VISITOR
+                    : DoorActor::MAIN;
+                if (waitingActor == DoorActor::MAIN) {
+                    monsterX = doorWaitX;
+                    monsterY = doorWaitY;
+                    clearMoveRoute();
+                } else {
+                    visitor.x = doorWaitX;
+                    visitor.y = doorWaitY;
+                    clearVisitorMoveRoute();
+                }
+                doorWaitingActorReady = true;
+                doorPhaseStartedMs = nowMs;
+                doorLastProgressMs = nowMs;
+                Platform::logLine(
+                    "[DoorDeparture] waiting route timeout fallback=wait_pose");
+                return;
+            }
+            if (doorFirstActor == DoorActor::MAIN) {
+                monsterX = doorInsideX;
+                monsterY = doorInsideY;
+                targetX = doorOutsideX;
+                targetY = doorOutsideY;
+                clearMoveRoute();
+            } else {
+                visitor.x = doorInsideX;
+                visitor.y = doorInsideY;
+                visitor.targetX = doorOutsideX;
+                visitor.targetY = doorOutsideY;
+                clearVisitorMoveRoute();
+            }
+            Platform::logLine(
+                "[DoorDeparture] first route timeout fallback=cross");
+            doorTransition = DoorTransitionMode::EXIT_CROSS;
+            doorPhaseStartedMs = nowMs;
             return;
         }
 
-        if (doorDepartureHasVisitor) updateDoorWaitingActor(dtSeconds);
+        if (doorDepartureHasVisitor && !doorWaitingActorReady) {
+            DoorActor waitingActor = doorFirstActor == DoorActor::MAIN
+                ? DoorActor::VISITOR
+                : DoorActor::MAIN;
+            float beforeX = waitingActor == DoorActor::MAIN
+                ? monsterX : visitor.x;
+            float beforeY = waitingActor == DoorActor::MAIN
+                ? monsterY : visitor.y;
+            doorWaitingActorReady = updateDoorWaitingActor(dtSeconds);
+            float afterX = waitingActor == DoorActor::MAIN
+                ? monsterX : visitor.x;
+            float afterY = waitingActor == DoorActor::MAIN
+                ? monsterY : visitor.y;
+            if (fabsf(afterX - beforeX) > 0.01f ||
+                fabsf(afterY - beforeY) > 0.01f) {
+                doorLastProgressMs = nowMs;
+            }
+            if (!doorWaitingActorReady &&
+                nowMs - doorLastProgressMs >= DOOR_STALL_TIMEOUT_MS) {
+                if (waitingActor == DoorActor::MAIN) {
+                    monsterX = doorWaitX;
+                    monsterY = doorWaitY;
+                    clearMoveRoute();
+                } else {
+                    visitor.x = doorWaitX;
+                    visitor.y = doorWaitY;
+                    clearVisitorMoveRoute();
+                }
+                doorWaitingActorReady = true;
+                Platform::logLine(
+                    "[DoorDeparture] waiting route stalled fallback=wait_pose");
+            }
+            if (!doorWaitingActorReady) return;
+            // The first actor gets its own timeout budget after the waiting
+            // actor has cleared the doorway.
+            doorPhaseStartedMs = nowMs;
+            doorLastProgressMs = nowMs;
+        }
         {
+            float beforeX = doorFirstActor == DoorActor::MAIN
+                ? monsterX : visitor.x;
+            float beforeY = doorFirstActor == DoorActor::MAIN
+                ? monsterY : visitor.y;
             bool firstReady = doorFirstActor == DoorActor::MAIN
                 ? updateDoorRoute(dtSeconds)
                 : updateVisitorDoorRoute(dtSeconds);
+            float afterX = doorFirstActor == DoorActor::MAIN
+                ? monsterX : visitor.x;
+            float afterY = doorFirstActor == DoorActor::MAIN
+                ? monsterY : visitor.y;
+            if (fabsf(afterX - beforeX) > 0.01f ||
+                fabsf(afterY - beforeY) > 0.01f) {
+                doorLastProgressMs = nowMs;
+            }
+            if (!firstReady &&
+                nowMs - doorLastProgressMs >= DOOR_STALL_TIMEOUT_MS) {
+                if (doorFirstActor == DoorActor::MAIN) {
+                    monsterX = doorInsideX;
+                    monsterY = doorInsideY;
+                    targetX = doorOutsideX;
+                    targetY = doorOutsideY;
+                    clearMoveRoute();
+                } else {
+                    visitor.x = doorInsideX;
+                    visitor.y = doorInsideY;
+                    visitor.targetX = doorOutsideX;
+                    visitor.targetY = doorOutsideY;
+                    clearVisitorMoveRoute();
+                }
+                Platform::logLine(
+                    "[DoorDeparture] first route stalled fallback=cross");
+                doorTransition = DoorTransitionMode::EXIT_CROSS;
+                doorPhaseStartedMs = nowMs;
+                return;
+            }
             if (!firstReady) return;
             if (doorFirstActor == DoorActor::MAIN) {
                 targetX = doorOutsideX;
@@ -1169,7 +1289,6 @@ void MainScene::updateDoorTransition(uint32_t nowMs) {
         }
         return;
     case DoorTransitionMode::EXIT_CROSS:
-        if (doorDepartureHasVisitor) updateDoorWaitingActor(dtSeconds);
         {
             bool firstOutside = doorFirstActor == DoorActor::MAIN
                 ? moveDoorToward(doorOutsideX, doorOutsideY, DOOR_CROSS_SPEED,
@@ -1188,15 +1307,67 @@ void MainScene::updateDoorTransition(uint32_t nowMs) {
         return;
     case DoorTransitionMode::EXIT_SECOND_ROUTE: {
         if (nowMs - doorPhaseStartedMs >= DOOR_ROUTE_TIMEOUT_MS) {
-            finishDoorDeparture();
+            DoorActor secondActor = doorFirstActor == DoorActor::MAIN
+                ? DoorActor::VISITOR
+                : DoorActor::MAIN;
+            if (secondActor == DoorActor::MAIN) {
+                monsterX = doorInsideX;
+                monsterY = doorInsideY;
+                targetX = doorOutsideX;
+                targetY = doorOutsideY;
+                clearMoveRoute();
+            } else {
+                visitor.x = doorInsideX;
+                visitor.y = doorInsideY;
+                visitor.targetX = doorOutsideX;
+                visitor.targetY = doorOutsideY;
+                clearVisitorMoveRoute();
+            }
+            Platform::logLine(
+                "[DoorDeparture] second route timeout fallback=cross");
+            doorTransition = DoorTransitionMode::EXIT_SECOND_CROSS;
+            doorPhaseStartedMs = nowMs;
             return;
         }
         DoorActor secondActor = doorFirstActor == DoorActor::MAIN
             ? DoorActor::VISITOR
             : DoorActor::MAIN;
+        float beforeX = secondActor == DoorActor::MAIN
+            ? monsterX : visitor.x;
+        float beforeY = secondActor == DoorActor::MAIN
+            ? monsterY : visitor.y;
         bool secondReady = secondActor == DoorActor::MAIN
             ? updateDoorRoute(dtSeconds)
             : updateVisitorDoorRoute(dtSeconds);
+        float afterX = secondActor == DoorActor::MAIN
+            ? monsterX : visitor.x;
+        float afterY = secondActor == DoorActor::MAIN
+            ? monsterY : visitor.y;
+        if (fabsf(afterX - beforeX) > 0.01f ||
+            fabsf(afterY - beforeY) > 0.01f) {
+            doorLastProgressMs = nowMs;
+        }
+        if (!secondReady &&
+            nowMs - doorLastProgressMs >= DOOR_STALL_TIMEOUT_MS) {
+            if (secondActor == DoorActor::MAIN) {
+                monsterX = doorInsideX;
+                monsterY = doorInsideY;
+                targetX = doorOutsideX;
+                targetY = doorOutsideY;
+                clearMoveRoute();
+            } else {
+                visitor.x = doorInsideX;
+                visitor.y = doorInsideY;
+                visitor.targetX = doorOutsideX;
+                visitor.targetY = doorOutsideY;
+                clearVisitorMoveRoute();
+            }
+            Platform::logLine(
+                "[DoorDeparture] second route stalled fallback=cross");
+            doorTransition = DoorTransitionMode::EXIT_SECOND_CROSS;
+            doorPhaseStartedMs = nowMs;
+            return;
+        }
         if (!secondReady) return;
         if (secondActor == DoorActor::MAIN) {
             targetX = doorOutsideX;
@@ -1322,17 +1493,20 @@ void MainScene::updateDoorTransition(uint32_t nowMs) {
     }
 }
 
-void MainScene::updateDoorWaitingActor(float dtSeconds) {
+bool MainScene::updateDoorWaitingActor(float dtSeconds) {
     DoorActor waitingActor = doorFirstActor == DoorActor::MAIN
         ? DoorActor::VISITOR
         : DoorActor::MAIN;
     if (waitingActor == DoorActor::MAIN) {
         if (updateDoorRoute(dtSeconds)) {
             velocityX = velocityY = 0.0f;
+            return true;
         }
     } else if (updateVisitorDoorRoute(dtSeconds)) {
         visitor.state = VisitorState::IDLE;
+        return true;
     }
+    return false;
 }
 
 void MainScene::beginSecondDoorExit(uint32_t nowMs) {
@@ -1362,13 +1536,29 @@ void MainScene::beginSecondDoorExit(uint32_t nowMs) {
     }
 
     if (!routeReady) {
-        Platform::logf("[DoorDeparture] second route failed actor=%u\n",
-                      secondActor == DoorActor::MAIN ? 0 : 1);
-        finishDoorDeparture();
+        if (secondActor == DoorActor::MAIN) {
+            monsterX = doorInsideX;
+            monsterY = doorInsideY;
+            targetX = doorOutsideX;
+            targetY = doorOutsideY;
+            clearMoveRoute();
+        } else {
+            visitor.x = doorInsideX;
+            visitor.y = doorInsideY;
+            visitor.targetX = doorOutsideX;
+            visitor.targetY = doorOutsideY;
+            clearVisitorMoveRoute();
+        }
+        Platform::logf(
+            "[DoorDeparture] second route fallback actor=%u mode=cross\n",
+            secondActor == DoorActor::MAIN ? 0 : 1);
+        doorTransition = DoorTransitionMode::EXIT_SECOND_CROSS;
+        doorPhaseStartedMs = nowMs;
         return;
     }
     doorTransition = DoorTransitionMode::EXIT_SECOND_ROUTE;
     doorPhaseStartedMs = nowMs;
+    doorLastProgressMs = nowMs;
 }
 
 void MainScene::finishDoorDeparture() {
@@ -3995,6 +4185,16 @@ void MainScene::updateContactVisit(uint32_t nowMs, float dtSeconds) {
     if (contactGuestMotion != ContactGuestMotion::NONE &&
         nowMs - contactGuestMotionStartedMs >=
             CONTACT_GUEST_MOTION_TIMEOUT_MS) {
+        if (contactGuestMotion == ContactGuestMotion::TEAM_ENTER_CROSS) {
+            visitor.x = doorInsideX;
+            visitor.y = doorInsideY;
+            visitor.targetX = visitor.x;
+            visitor.targetY = visitor.y;
+            visitor.state = VisitorState::IDLE;
+            visitor.stateUntilMs = nowMs + VISITOR_IDLE_MIN_MS;
+            contactGuestMotion = ContactGuestMotion::NONE;
+            return;
+        }
         clearVisitorMoveRoute();
         visitor.active = false;
         savedVisitorValid = false;
@@ -4004,6 +4204,23 @@ void MainScene::updateContactVisit(uint32_t nowMs, float dtSeconds) {
     }
 
     switch (contactGuestMotion) {
+    case ContactGuestMotion::TEAM_ENTER_CROSS:
+        doorLastUpdateMs = nowMs;
+        if (!moveVisitorDoorToward(
+                doorInsideX, doorInsideY, DOOR_CROSS_SPEED,
+                dtSeconds, false)) {
+            return;
+        }
+        visitor.x = doorInsideX;
+        visitor.y = doorInsideY;
+        visitor.targetX = visitor.x;
+        visitor.targetY = visitor.y;
+        visitor.state = VisitorState::IDLE;
+        visitor.stateUntilMs = nowMs + VISITOR_IDLE_MIN_MS;
+        visitor.frameStartedMs = nowMs;
+        visitor.frameIndex = 0;
+        contactGuestMotion = ContactGuestMotion::NONE;
+        return;
     case ContactGuestMotion::ENTER_CROSS:
         doorLastUpdateMs = nowMs;
         if (!moveVisitorDoorToward(
@@ -4107,6 +4324,23 @@ void MainScene::beginContactGuestEntry(uint32_t nowMs) {
     visitor.frameIndex = 0;
     visitorDoorRouteEnteringWalkArea = true;
     contactGuestMotion = ContactGuestMotion::ENTER_CROSS;
+    contactGuestMotionStartedMs = nowMs;
+}
+
+void MainScene::beginTeamMemberEntry(uint32_t nowMs) {
+    if (!visitorCanUseDoor() || !prepareDoorAnchors()) return;
+
+    visitor.x = doorOutsideX;
+    visitor.y = doorOutsideY;
+    visitor.targetX = doorInsideX;
+    visitor.targetY = doorInsideY;
+    visitor.state = VisitorState::WALK;
+    visitor.frameStartedMs = nowMs;
+    visitor.frameIndex = 0;
+    visitor.direction = visitorWalkDirectionForDelta(
+        doorInsideX - doorOutsideX, doorInsideY - doorOutsideY);
+    doorLastUpdateMs = nowMs;
+    contactGuestMotion = ContactGuestMotion::TEAM_ENTER_CROSS;
     contactGuestMotionStartedMs = nowMs;
 }
 

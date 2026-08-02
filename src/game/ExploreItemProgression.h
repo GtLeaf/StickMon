@@ -21,6 +21,30 @@ inline bool isAreaUnlocked(uint8_t area, const Game::GameState& state) {
     return area < Game::EXPLORE_AREA_COUNT && area <= unlockedArea(state);
 }
 
+inline uint8_t visibleAreaCount(const Game::GameState& state) {
+    uint8_t count = static_cast<uint8_t>(unlockedArea(state) + 1);
+    return count < Game::EXPLORE_AREA_COUNT
+        ? static_cast<uint8_t>(count + 1)
+        : count;
+}
+
+// Shop tiers follow the deepest defeated boss. This deliberately differs from
+// route access: maps stay sequential, while a debug/imported deeper clear also
+// unlocks every earlier product tier as specified by the item progression.
+inline uint8_t shopUnlockedArea(const Game::GameState& state) {
+    uint8_t area = 0;
+    for (uint8_t defeatedArea = 0;
+         defeatedArea < Game::EXPLORE_AREA_COUNT; ++defeatedArea) {
+        if (state.explorePoolRerollCounts[defeatedArea] == 0) continue;
+        uint8_t nextArea = static_cast<uint8_t>(defeatedArea + 1);
+        if (nextArea >= Game::EXPLORE_AREA_COUNT) {
+            nextArea = Game::EXPLORE_AREA_COUNT - 1;
+        }
+        if (nextArea > area) area = nextArea;
+    }
+    return area;
+}
+
 // Pickup-backed products use the first area whose pickup pool contains them.
 // Care essentials stay in tier 0; other shop-only products fill thematic gaps.
 inline uint8_t unlockAreaForItem(Game::ItemId item) {
@@ -76,7 +100,7 @@ inline uint8_t unlockAreaForItem(Game::ItemId item) {
 
 inline bool isShopItemUnlocked(Game::ItemId item,
                                const Game::GameState& state) {
-    return unlockAreaForItem(item) <= unlockedArea(state);
+    return unlockAreaForItem(item) <= shopUnlockedArea(state);
 }
 
 } // namespace ExploreItemProgression

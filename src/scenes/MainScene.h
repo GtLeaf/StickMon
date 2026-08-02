@@ -119,6 +119,7 @@ private:
 
     enum class ContactGuestMotion : uint8_t {
         NONE,
+        TEAM_ENTER_CROSS,
         ENTER_CROSS,
         EXIT_ROUTE,
         EXIT_CROSS,
@@ -215,7 +216,7 @@ private:
                         bool enforceWalkArea, bool avoidVisitor = false);
     bool moveVisitorDoorToward(float x, float y, float speed, float dtSeconds,
                                bool enforceWalkArea, bool avoidMain = false);
-    void updateDoorWaitingActor(float dtSeconds);
+    bool updateDoorWaitingActor(float dtSeconds);
     void beginSecondDoorExit(uint32_t nowMs);
     void finishDoorDeparture();
     bool doorStepKeepsSpacing(float currentX, float currentY,
@@ -285,6 +286,7 @@ private:
     void facePairActors();
     void updateContactVisit(uint32_t nowMs, float dtSeconds);
     void beginContactGuestEntry(uint32_t nowMs);
+    void beginTeamMemberEntry(uint32_t nowMs);
     void beginContactGuestExit(uint32_t nowMs);
     bool handleContactDialogButton(const ButtonEvent& event);
     void drawContactDialog();
@@ -408,9 +410,11 @@ private:
     float doorOutsideY = 0.0f;
     uint32_t doorLastUpdateMs = 0;
     uint32_t doorPhaseStartedMs = 0;
+    uint32_t doorLastProgressMs = 0;
     bool doorRouteEnteringWalkArea = false;
     bool visitorDoorRouteEnteringWalkArea = false;
     bool doorDepartureHasVisitor = false;
+    bool doorWaitingActorReady = false;
     bool doorMainHidden = false;
     bool doorVisitorHidden = false;
     DoorActor doorFirstActor = DoorActor::MAIN;

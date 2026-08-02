@@ -48,8 +48,13 @@ public:
     uint8_t volume() const override { return volume_; }
     bool playPcmU8(const uint8_t* data, size_t sampleCount,
                    uint32_t sampleRate) override;
-    bool playing() const override { return playing_; }
-    void stop() override { playing_ = false; }
+    bool playPcmU8Channel(const uint8_t* data, size_t sampleCount,
+                          uint32_t sampleRate, uint8_t channel,
+                          bool stopCurrent) override;
+    bool playing() const override;
+    uint8_t queuedPcm(uint8_t channel) const override;
+    void stop() override;
+    void stopChannel(uint8_t channel) override;
     bool beginMicrophone() override;
     void endMicrophone() override { microphoneActive_ = false; }
     bool recordMicrophone(int16_t* data, size_t sampleCount,
@@ -120,7 +125,7 @@ private:
     bool initialized_ = false;
     bool resourcesMounted_ = false;
     bool displaySleeping_ = false;
-    bool playing_ = false;
+    std::array<uint8_t, Platform::IAudioDevice::CHANNEL_COUNT> audioQueueDepth_{};
     bool microphoneActive_ = false;
     bool restartRequested_ = false;
     bool deepSleepRequested_ = false;

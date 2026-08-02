@@ -68,13 +68,20 @@ public:
 
 class IAudioDevice {
 public:
+    static constexpr uint8_t CHANNEL_COUNT = 3;
+
     virtual ~IAudioDevice() = default;
     virtual void setVolume(uint8_t percent) = 0;
     virtual uint8_t volume() const = 0;
     virtual bool playPcmU8(const uint8_t* data, size_t sampleCount,
                            uint32_t sampleRate) = 0;
+    virtual bool playPcmU8Channel(const uint8_t* data, size_t sampleCount,
+                                  uint32_t sampleRate, uint8_t channel,
+                                  bool stopCurrent) = 0;
     virtual bool playing() const = 0;
+    virtual uint8_t queuedPcm(uint8_t channel) const = 0;
     virtual void stop() = 0;
+    virtual void stopChannel(uint8_t channel) = 0;
     virtual bool beginMicrophone() = 0;
     virtual void endMicrophone() = 0;
     virtual bool recordMicrophone(int16_t* data, size_t sampleCount,
