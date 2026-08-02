@@ -21,10 +21,12 @@ private:
     const char* toast = nullptr;
     int8_t lastEggOffset = 0;
     bool lastNight = false;
+    uint16_t lastRemainingSecond = 0;
 
     void complete();
     void persistProgress(bool force);
     uint8_t hatchProgress() const;
+    uint16_t hatchSecondsRemaining() const;
     int8_t eggShakeOffset(uint32_t nowMs) const;
     void drawRoom();
     void drawEgg();

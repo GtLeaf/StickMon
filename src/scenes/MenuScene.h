@@ -197,6 +197,7 @@ private:
     uint8_t navDepth = 0;
 
     void renderMenu();
+    void renderTutorial();
     void renderToast();
     void renderTeamPage();
     void renderTeamActionPopup();

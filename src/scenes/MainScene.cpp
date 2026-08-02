@@ -19,6 +19,7 @@
 #include "game/GameRandom.h"
 #include "hardware/Hal.h"
 #include "presentation/PixelRenderer.h"
+#include "presentation/TutorialOverlay.h"
 #include "platform/api/FlashStorage.h"
 #include "platform/api/PlatformServices.h"
 
@@ -5303,6 +5304,7 @@ void MainScene::render() {
         {90, &MainScene::drawHud},
         {100, &MainScene::drawToast},
         {105, &MainScene::drawContactDialog},
+        {107, &MainScene::drawTutorial},
         {110, &MainScene::drawProgressionPopup},
     };
     sortAndDraw(items, sizeof(items) / sizeof(items[0]));
@@ -5396,6 +5398,9 @@ bool MainScene::onButton(const ButtonEvent& event) {
         uint32_t nowMs = Hal::ins().millis();
         PetResult result = GameEngine::ins().petMonster();
         startPetReaction(nowMs, result);
+        if (result.outcome == PetOutcome::REWARDED) {
+            GameEngine::ins().completeTutorial(Game::TutorialStep::ROOM_PET);
+        }
         switch (result.outcome) {
         case PetOutcome::REWARDED:
             toast = Ui::Menu::PET_TOAST;
@@ -5415,6 +5420,9 @@ bool MainScene::onButton(const ButtonEvent& event) {
         uint32_t nowMs = Hal::ins().millis();
         cancelRoomAction(nowMs);
         FoodPlacementResult result = GameEngine::ins().placeSelectedFoodInBowl();
+        if (result == FoodPlacementResult::ADDED) {
+            GameEngine::ins().completeTutorial(Game::TutorialStep::ROOM_FEED);
+        }
         switch (result) {
         case FoodPlacementResult::ADDED:
             toast = Ui::Menu::FOOD_ADDED;
@@ -5440,6 +5448,7 @@ bool MainScene::onButton(const ButtonEvent& event) {
 
     if (event.btn == 0 && event.action == BtnAction::LONG_PRESS) {
         cancelRoomAction(Hal::ins().millis());
+        GameEngine::ins().completeTutorial(Game::TutorialStep::OPEN_MENU);
         GameEngine::ins().requestScene(SceneID::MENU);
         return true;
     }
@@ -5802,6 +5811,35 @@ void MainScene::drawToast() {
     auto& c = PixelRenderer::canvas();
     c.fillRect(68, 6, 96, 20, PixelRenderer::rgb(41, 45, 55));
     PixelRenderer::text(76, 8, toast, PixelRenderer::rgb(255, 255, 255));
+}
+
+void MainScene::drawTutorial() {
+    GameEngine& engine = GameEngine::ins();
+    if (!engine.gameState().oobeDone || engine.idleModeActive() ||
+        doorTransition != DoorTransitionMode::NONE ||
+        progressionModal != ProgressionModal::NONE ||
+        contactDialog != ContactDialog::NONE ||
+        contactGuestMotion != ContactGuestMotion::NONE ||
+        roomAction != RoomAction::NONE) {
+        return;
+    }
+
+    if (!engine.tutorialComplete(Game::TutorialStep::ROOM_FEED)) {
+        TutorialOverlay::draw(
+            TutorialOverlay::Button::B, Ui::Tutorial::ROOM_FEED);
+        return;
+    }
+    if (!engine.tutorialComplete(Game::TutorialStep::ROOM_PET)) {
+        char line[48];
+        snprintf(line, sizeof(line), Ui::Tutorial::ROOM_PET_FMT,
+                 active ? active->name : "");
+        TutorialOverlay::draw(TutorialOverlay::Button::A, line);
+        return;
+    }
+    if (!engine.tutorialComplete(Game::TutorialStep::OPEN_MENU)) {
+        TutorialOverlay::draw(
+            TutorialOverlay::Button::A, Ui::Tutorial::OPEN_MENU, true);
+    }
 }
 
 void MainScene::sortAndDraw(RenderItem* items, uint8_t count) {

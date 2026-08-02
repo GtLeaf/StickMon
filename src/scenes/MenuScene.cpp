@@ -14,6 +14,7 @@
 #include "game/Species.h"
 #include "hardware/Hal.h"
 #include "presentation/PixelRenderer.h"
+#include "presentation/TutorialOverlay.h"
 #include "platform/api/FlashStorage.h"
 
 namespace {
@@ -866,6 +867,10 @@ SceneUpdateResult MenuScene::update(uint32_t nowMs, float dtSeconds) {
 
 bool MenuScene::onButton(const ButtonEvent& event) {
     if (viewMode != ViewMode::MENU) {
+        if (!exploreContextMode && event.btn == 1 &&
+            event.action == BtnAction::LONG_PRESS) {
+            GameEngine::ins().completeTutorial(Game::TutorialStep::MENU_BACK);
+        }
         if (event.btn == 0 && event.action == BtnAction::LONG_PRESS) {
             if (exploreContextMode) {
                 resetNavigation();
@@ -1548,6 +1553,9 @@ bool MenuScene::onButton(const ButtonEvent& event) {
     }
 
     if (event.btn == 1 && event.action == BtnAction::PRESSED) {
+        if (!exploreContextMode) {
+            GameEngine::ins().completeTutorial(Game::TutorialStep::MENU_NAV);
+        }
         cursor++;
         if (cursor >= ITEM_COUNT) {
             cursor = 0;
@@ -1638,45 +1646,72 @@ void MenuScene::render() {
 
     if (viewMode == ViewMode::STATUS) {
         renderStatusPage();
+        renderTutorial();
         return;
     }
     if (viewMode == ViewMode::MOVES) {
         renderMovesPage();
+        renderTutorial();
         return;
     }
     if (viewMode == ViewMode::TEAM) {
         renderTeamPage();
+        renderTutorial();
         return;
     }
     if (viewMode == ViewMode::ROOM) {
         renderRoomPage();
+        renderTutorial();
         return;
     }
     if (viewMode == ViewMode::FOOD) {
         renderFoodPage();
+        renderTutorial();
         return;
     }
     if (viewMode == ViewMode::BAG) {
         renderBagPage();
+        renderTutorial();
         return;
     }
     if (viewMode == ViewMode::COMPUTER) {
         renderComputerPage();
+        renderTutorial();
         return;
     }
     if (viewMode == ViewMode::STORAGE) {
         renderStoragePage();
+        renderTutorial();
         return;
     }
 #if STICKMON_ENABLE_DEBUG_FEATURES
     if (viewMode == ViewMode::DEBUG) {
         renderDebugPage();
+        renderTutorial();
         return;
     }
 #endif
 
     renderMenu();
     renderToast();
+    renderTutorial();
+}
+
+void MenuScene::renderTutorial() {
+    if (exploreContextMode) return;
+    GameEngine& engine = GameEngine::ins();
+    if (!engine.gameState().oobeDone) return;
+
+    if (viewMode == ViewMode::MENU &&
+        !engine.tutorialComplete(Game::TutorialStep::MENU_NAV)) {
+        TutorialOverlay::draw(
+            TutorialOverlay::Button::B, Ui::Tutorial::MENU_NAV);
+    } else if (viewMode != ViewMode::MENU &&
+               engine.tutorialComplete(Game::TutorialStep::MENU_NAV) &&
+               !engine.tutorialComplete(Game::TutorialStep::MENU_BACK)) {
+        TutorialOverlay::draw(
+            TutorialOverlay::Button::B, Ui::Tutorial::MENU_BACK, true);
+    }
 }
 
 void MenuScene::renderMenu() {

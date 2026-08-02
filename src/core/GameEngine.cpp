@@ -2026,6 +2026,19 @@ void GameEngine::addWalkSteps(uint16_t steps) {
     markDirty(SaveUrgency::DEFERRED);
 }
 
+void GameEngine::completeTutorial(Game::TutorialStep step) {
+    uint8_t mask = Game::tutorialMask(step);
+    if ((state.tutorialFlags & mask) != 0) return;
+    state.tutorialFlags |= mask;
+    markDirty(SaveUrgency::SOON);
+}
+
+void GameEngine::resetTutorial() {
+    if (state.tutorialFlags == 0) return;
+    state.tutorialFlags = 0;
+    markDirty(SaveUrgency::IMMEDIATE);
+}
+
 void GameEngine::debugRecoverTeam() {
 #if STICKMON_ENABLE_DEBUG_FEATURES
     if (state.teamCount == 0) return;

@@ -19,6 +19,7 @@ void SettingsScene::onEnter() {
     resetConfirmYes = false;
     menuScroll = 0.0f;
     voiceCursor = 0;
+    helpPage = 0;
     enrollmentFinishedAt = 0;
     VoiceCallService::ins().begin();
     normalizeVolumeSetting();
@@ -130,12 +131,22 @@ bool SettingsScene::onButton(const ButtonEvent& event) {
     }
 
     if (viewMode == ViewMode::HELP) {
-        if ((event.btn == 0 || event.btn == 1) && event.action == BtnAction::PRESSED) {
-            viewMode = ViewMode::MENU;
+        static constexpr uint8_t HELP_PAGE_COUNT =
+            sizeof(Ui::Settings::HELP_PAGE_TITLES) /
+            sizeof(Ui::Settings::HELP_PAGE_TITLES[0]);
+        if (event.btn == 1 && event.action == BtnAction::PRESSED) {
+            helpPage = (helpPage + 1) % HELP_PAGE_COUNT;
             return true;
         }
-        if ((event.btn == 0 || event.btn == 1) && event.action == BtnAction::LONG_PRESS) {
-            GameEngine::ins().requestScene(SceneID::MENU);
+        if (event.btn == 0 && event.action == BtnAction::PRESSED) {
+            if (helpPage + 1 == HELP_PAGE_COUNT) {
+                GameEngine::ins().resetTutorial();
+                GameEngine::ins().requestScene(SceneID::MAIN);
+            }
+            return true;
+        }
+        if (event.btn == 1 && event.action == BtnAction::LONG_PRESS) {
+            viewMode = ViewMode::MENU;
             return true;
         }
         return false;
@@ -194,6 +205,7 @@ void SettingsScene::activateCurrent() {
         break;
     case HELP:
         viewMode = ViewMode::HELP;
+        helpPage = 0;
         toast = nullptr;
         return;
     case RESET_GAME:
@@ -413,14 +425,41 @@ void SettingsScene::renderVoiceEnrollment() {
 
 void SettingsScene::renderHelp() {
     auto& c = PixelRenderer::canvas();
+    static constexpr uint8_t HELP_PAGE_COUNT =
+        sizeof(Ui::Settings::HELP_PAGE_TITLES) /
+        sizeof(Ui::Settings::HELP_PAGE_TITLES[0]);
+    static constexpr uint8_t HELP_LINE_COUNT =
+        sizeof(Ui::Settings::HELP_PAGE_LINES[0]) /
+        sizeof(Ui::Settings::HELP_PAGE_LINES[0][0]);
+    static_assert(
+        sizeof(Ui::Settings::HELP_PAGE_LINES) /
+                sizeof(Ui::Settings::HELP_PAGE_LINES[0]) ==
+            HELP_PAGE_COUNT,
+        "help page titles and content must match");
+    if (helpPage >= HELP_PAGE_COUNT) helpPage = 0;
+
     c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, PixelRenderer::rgb(10, 14, 20));
-    PixelRenderer::text(12, 10, Ui::Settings::HELP_TITLE, PixelRenderer::rgb(67, 213, 224), 1);
-    c.drawFastHLine(8, 32, 216, PixelRenderer::rgb(55, 63, 76));
-    PixelRenderer::text(18, 44, Ui::Settings::HELP_A_KEY, PixelRenderer::rgb(241, 242, 232), 1);
-    PixelRenderer::text(18, 66, Ui::Settings::HELP_B_KEY, PixelRenderer::rgb(241, 242, 232), 1);
-    PixelRenderer::text(128, 44, Ui::Settings::HELP_ROOM_A, PixelRenderer::rgb(241, 242, 232), 1);
-    PixelRenderer::text(128, 66, Ui::Settings::HELP_MENU_B, PixelRenderer::rgb(241, 242, 232), 1);
-    PixelRenderer::text(18, 100, Ui::Settings::HELP_BASIC, PixelRenderer::rgb(156, 164, 176), 1);
+    PixelRenderer::text(12, 8, Ui::Settings::HELP_PAGE_TITLES[helpPage],
+                        PixelRenderer::rgb(67, 213, 224), 1);
+    char page[12];
+    snprintf(page, sizeof(page), "%u/%u", helpPage + 1, HELP_PAGE_COUNT);
+    PixelRenderer::text(198, 8, page,
+                        PixelRenderer::rgb(156, 164, 176), 1);
+    c.drawFastHLine(8, 27, 216, PixelRenderer::rgb(55, 63, 76));
+    for (uint8_t line = 0; line < HELP_LINE_COUNT; ++line) {
+        PixelRenderer::text(
+            12, 31 + line * 19,
+            Ui::Settings::HELP_PAGE_LINES[helpPage][line],
+            line == 2 && helpPage + 1 == HELP_PAGE_COUNT
+                ? PixelRenderer::rgb(255, 216, 72)
+                : PixelRenderer::rgb(241, 242, 232),
+            1);
+    }
+    const char* footer = helpPage + 1 == HELP_PAGE_COUNT
+        ? Ui::Settings::HELP_REPLAY
+        : Ui::Settings::HELP_NEXT;
+    PixelRenderer::text(88, 114, footer,
+                        PixelRenderer::rgb(135, 214, 238), 1);
 }
 
 void SettingsScene::renderResetConfirm() {
