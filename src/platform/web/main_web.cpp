@@ -40,6 +40,11 @@ void stickmon_button_up(int button) {
     else if (button == 1) webPlatform.setPressed(Platform::InputButton::SECONDARY, false);
 }
 
+EMSCRIPTEN_KEEPALIVE
+void stickmon_set_acceleration(float x, float y, float z) {
+    webPlatform.setAcceleration(x, y, z);
+}
+
 } // extern "C"
 #endif
 

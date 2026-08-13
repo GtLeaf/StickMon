@@ -407,10 +407,16 @@ void WebPlatform::stopChannel(uint8_t channel) {
 
 // IMU
 bool WebPlatform::readAcceleration(float& x, float& y, float& z) {
-    x = 0.0f;
-    y = 0.0f;
-    z = 1.0f;
+    x = accelerationX_;
+    y = accelerationY_;
+    z = accelerationZ_;
     return true;
+}
+
+void WebPlatform::setAcceleration(float x, float y, float z) {
+    accelerationX_ = x;
+    accelerationY_ = y;
+    accelerationZ_ = z;
 }
 
 // Power

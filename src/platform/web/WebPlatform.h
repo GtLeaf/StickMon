@@ -69,6 +69,7 @@ public:
 
     // IImuDevice
     bool readAcceleration(float& x, float& y, float& z) override;
+    void setAcceleration(float x, float y, float z);
 
     // IPowerDevice
     int batteryLevel() override { return 100; }
@@ -124,6 +125,9 @@ private:
     size_t resourceBytes_ = 0;
     uint8_t brightness_ = 255;
     uint8_t volume_ = 50;
+    float accelerationX_ = 0.0f;
+    float accelerationY_ = 0.0f;
+    float accelerationZ_ = 1.0f;
     bool initialized_ = false;
     bool resourcesMounted_ = false;
     bool displaySleeping_ = false;

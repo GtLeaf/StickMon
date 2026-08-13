@@ -33,7 +33,10 @@ body {
   border-radius: 6% / 12%;
   overflow: hidden;
   box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  transition: transform 0.12s ease-out;
+  will-change: transform;
 }
+.device-body.shaking { transition: none; }
 /* 屏幕窗口（图片镂空区）：实测相对面板 left 8.98% top 18.07% w 52.40% h 63.25% */
 .screen-window {
   position: absolute;
@@ -50,6 +53,21 @@ canvas#stickmon-canvas {
   image-rendering: crisp-edges;
   background: #000;
 }
+.shake-control {
+  position: absolute; left: 68.5%; top: 50%;
+  transform: translate(-50%, -50%);
+  width: 74px; height: 32px; border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 4px; padding: 0; z-index: 5;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  background: rgba(0,0,0,0.68); color: rgba(255,255,255,0.9);
+  font-family: inherit; font-size: 11px; font-weight: 700; line-height: 1;
+  cursor: grab; user-select: none; touch-action: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+}
+.shake-control:hover { background: rgba(0,0,0,0.82); }
+.shake-control:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.shake-control.active { cursor: grabbing; background: rgba(0,0,0,0.9); }
+.shake-control .shake-icon { font-size: 15px; line-height: 1; }
 /* 右侧按钮区：面板右侧空白面（窗口右缘 208px 到机身右缘 334px 的中线 ≈ 81%） */
 .buttons-col {
   position: absolute;
@@ -99,6 +117,9 @@ canvas#stickmon-canvas {
 @media (max-width: 560px) {
   .sim-btn { width: 40px; height: 40px; font-size: 13px; }
   .buttons-col { gap: 12px; }
+  .shake-control { width: 36px; height: 27px; gap: 0; }
+  .shake-control .shake-icon { font-size: 14px; }
+  .shake-control span:last-child { display: none; }
 }
 @media (max-width: 380px) {
   .sim-btn { width: 34px; height: 34px; font-size: 11px; }
@@ -116,6 +137,10 @@ canvas#stickmon-canvas {
     <div class="screen-window">
       <canvas id="stickmon-canvas" width="240" height="135"></canvas>
     </div>
+    <button type="button" class="shake-control" id="shake-control"
+            title="按住拖拽，模拟设备摇晃" aria-label="按住拖拽，模拟设备摇晃">
+      <span class="shake-icon" aria-hidden="true">↔</span><span>摇晃</span>
+    </button>
     <div class="buttons-col">
       <button class="sim-btn btn-a" id="btn-a" title="A - 确认/互动">A</button>
       <button class="sim-btn btn-b" id="btn-b" title="B - 取消/返回">B</button>
@@ -137,6 +162,59 @@ function bindButton(el, btnIdx) {
   el.addEventListener('mouseleave', up);
   el.addEventListener('touchstart', down, { passive: false });
   el.addEventListener('touchend', up, { passive: false });
+}
+
+function bindShakeControl(el) {
+  const body = document.querySelector('.device-body');
+  let pointerId = null;
+  let startX = 0;
+  let startY = 0;
+  let lastX = 0;
+  let lastY = 0;
+  let restTimer = 0;
+  const clamp = (value, limit) => Math.max(-limit, Math.min(limit, value));
+  const setAcceleration = (x, y, z = 1) => Module._stickmon_set_acceleration(x, y, z);
+  const rest = () => {
+    clearTimeout(restTimer);
+    restTimer = 0;
+    setAcceleration(0, 0, 1);
+  };
+
+  el.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    pointerId = e.pointerId;
+    startX = lastX = e.clientX;
+    startY = lastY = e.clientY;
+    el.setPointerCapture(pointerId);
+    el.classList.add('active');
+    body.classList.add('shaking');
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (e.pointerId !== pointerId) return;
+    e.preventDefault();
+    const dx = e.clientX - lastX;
+    const dy = e.clientY - lastY;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    const scale = 640 / body.getBoundingClientRect().width;
+    setAcceleration(clamp(dx * scale / 10, 2.5), clamp(dy * scale / 10, 2.5));
+    body.style.transform = `translate3d(${clamp((e.clientX - startX) * 0.18, 14)}px, ${clamp((e.clientY - startY) * 0.18, 10)}px, 0) rotate(${clamp((e.clientX - startX) * 0.06, 3)}deg)`;
+    clearTimeout(restTimer);
+    restTimer = setTimeout(rest, 70);
+  });
+  const end = (e) => {
+    if (e.pointerId !== pointerId) return;
+    const capturedId = pointerId;
+    pointerId = null;
+    if (el.hasPointerCapture(capturedId)) el.releasePointerCapture(capturedId);
+    rest();
+    el.classList.remove('active');
+    body.classList.remove('shaking');
+    body.style.transform = '';
+  };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', end);
+  el.addEventListener('lostpointercapture', end);
 }
 
 document.addEventListener('keydown', (e) => {
@@ -161,9 +239,14 @@ var Module = {
   // 部署到 flasher 时由 scripts/hash-sim-assets.js 自动改写为内容哈希清单映射，请勿手改
   locateFile: function(path) { return path; },
   onRuntimeInitialized: function() {
+    // 兼容直接替换 WASM、尚未由 Emscripten 胶水自动挂载的新导出。
+    if (!Module._stickmon_set_acceleration && typeof wasmExports !== 'undefined') {
+      Module._stickmon_set_acceleration = wasmExports.stickmon_set_acceleration;
+    }
     document.getElementById('loading').classList.add('done');
     bindButton(document.getElementById('btn-a'), 0);
     bindButton(document.getElementById('btn-b'), 1);
+    bindShakeControl(document.getElementById('shake-control'));
     console.log('[StickMon Web] Runtime initialized');
   },
   print: function(text) { console.log('[StickMon]', text); },

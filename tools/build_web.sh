@@ -76,7 +76,7 @@ em++ $OBJECTS \
     -s INITIAL_MEMORY=67108864 \
     -s ALLOW_MEMORY_GROWTH=1 \
     -s MAXIMUM_MEMORY=268435456 \
-    -s EXPORTED_FUNCTIONS='["_main","_stickmon_button_down","_stickmon_button_up"]' \
+    -s EXPORTED_FUNCTIONS='["_main","_stickmon_button_down","_stickmon_button_up","_stickmon_set_acceleration"]' \
     -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap"]' \
     -s FORCE_FILESYSTEM=1 \
     -s EXIT_RUNTIME=0 \
