@@ -4,6 +4,11 @@
 
 from math import ceil, floor
 
+from cave_tile_semantics import (
+    CAVE_RUNTIME_FLIP_Y_IDS,
+    CAVE_RUNTIME_TILE_SOURCES,
+)
+
 
 FOREST_BODY_IDS = frozenset(range(800, 804)) | frozenset(range(808, 812)) | frozenset(range(816, 820))
 FOREST_CROWN_IDS = (804, 805)
@@ -79,7 +84,13 @@ CUSTOM_TILE_SOURCES = {
     4542: ("Caves.png", 1349),  # large snow boulder
     4543: ("Caves.png", 1351),  # large snow boulder alt
     4544: ("Caves.png", 1367),  # small snow boulder alt
+    **{
+        runtime_id: ("Caves.png", source_id)
+        for runtime_id, source_id in CAVE_RUNTIME_TILE_SOURCES
+    },
 }
+
+CUSTOM_TILE_SOURCE_FLIP_Y = CAVE_RUNTIME_FLIP_Y_IDS
 
 LIGHTHOUSE_TILE_ROWS = (
     (3941, 3942, 3943),

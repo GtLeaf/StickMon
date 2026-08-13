@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/BuildConfig.h"
+#include "core/AppSceneFlow.h"
 #include "core/Scene.h"
 #include "core/ProgressionUi.h"
 #include "game/BattleSystem.h"
@@ -75,6 +76,7 @@ private:
     const PokemonSprites::SpriteFrame*
         areaPreviewFrames[AREA_PREVIEW_COUNT] = {};
     ExplorePool::Pool areaPreviewPool{};
+    bool areaBackgroundTraced = false;
     // 趟内活跃池快照：探险开始时按种子重建，趟内遭遇只在池内滚点（§7.8）
     ExplorePool::Pool activePool{};
     Area activeArea = Area::GRASS_PATH;
@@ -158,6 +160,9 @@ private:
     uint8_t battleActionIndex = 0;
     bool battleActionAttackerWild = false;
     bool battleActionSelfHit = false;
+    bool battleActionReleasingCharge = false;
+    bool battleTurnDamaged[2] = {};
+    bool forcedBattleEndPending = false;
     BattleSystem::DamageResult battleActionResult;
     BattleSystem::ActionCheckResult battleActionCheck;
     BattleSystem::EffectResolution battleEffectResolution;
@@ -218,6 +223,9 @@ private:
     uint16_t routeFollowerMoveDurationMs = 0;
     bool routeFollowerMoving = false;
     bool autoWalkActive = false;
+    bool iceSliding = false;
+    int8_t iceSlideDx = 0;
+    int8_t iceSlideDy = 0;
     uint8_t routePickupIndex = 0;
     uint8_t routePickupItem = 0;
     bool routePickupAvailable = false;
@@ -225,6 +233,10 @@ private:
     uint8_t routeGuaranteedEncounterIndex = 0;
     bool routeGuaranteedEncounterPending = false;
     bool expeditionBossScheduled = false;
+    bool expeditionNormalBossScheduled = false;
+    bool naturalRunCompletionPending = false;
+    bool normalBossPitySettled = false;
+    uint32_t expeditionPitySlotIndex = 0;
     uint16_t expeditionBossSpeciesId = 0;
     uint8_t expeditionBossLevel = 0;
     uint16_t expeditionBossExperiencePercent = 100;
@@ -233,7 +245,8 @@ private:
     bool specialChallengeYes = true;
     uint8_t routeBossIndex = 0;
     bool routeBossPending = false;
-    static constexpr uint8_t EXPLORE_MENU_ITEM_COUNT = 4;
+    static constexpr uint8_t EXPLORE_MENU_ITEM_COUNT =
+        AppSceneFlow::exploreMenuItemCount();
     bool exploreMenuOpen = false;
     bool exploreSubViewOpen = false;
     uint8_t exploreMenuCursor = 0;
@@ -279,6 +292,7 @@ private:
     void beginBattleSwitch(uint8_t slot, bool consumesTurn);
     int battleSwitchOffsetX(uint32_t nowMs) const;
     void beginBattleAction();
+    void beginChargedBattleTurn();
     void finishBattleAction();
     void applyBattleDamage();
     void resolveBattleEndTurn();
@@ -314,6 +328,7 @@ private:
     void beginRouteExit();
     void beginExploreEnding();
     void settleAdventureBond();
+    void settleNormalBossPity();
     void completeExploreReturn(bool fainted);
     void requestExploreExit(bool fainted = false, bool showEndPrompt = true);
     void closeExploreMenu();

@@ -500,6 +500,10 @@ bool handleMoveLearnInput(MoveLearnState& state, uint8_t button) {
             state.confirmOpen = false;
             return false;
         }
+        if (state.replacementSlot == MOVE_LEARN_NEW_SLOT) {
+            engine.resolvePendingMoveLearn(false);
+            return true;
+        }
         bool replaced = engine.resolvePendingMoveLearnReplacing(
             state.replacementSlot);
         if (!replaced && engine.hasPendingMoveLearn()) {
@@ -515,7 +519,6 @@ bool handleMoveLearnInput(MoveLearnState& state, uint8_t button) {
             ? 1
             : state.replacementSlot + 1;
     } else if (button == 0) {
-        if (state.replacementSlot == MOVE_LEARN_NEW_SLOT) return false;
         state.confirmOpen = true;
         state.confirmYes = false;
     }
@@ -687,7 +690,7 @@ void renderMoveLearnReplacementChoice(const MoveLearnState& uiState) {
         canvas.clearClipRect();
     }
 
-    if (!uiState.confirmOpen || !selectedMove || showingNewMove) return;
+    if (!uiState.confirmOpen || !selectedMove) return;
 
     static constexpr int POP_X = 18;
     static constexpr int POP_Y = 24;
@@ -699,21 +702,25 @@ void renderMoveLearnReplacementChoice(const MoveLearnState& uiState) {
                     PixelRenderer::rgb(241, 242, 232));
     char forgetLine[48];
     snprintf(forgetLine, sizeof(forgetLine),
-             Ui::Explore::LEARN_FORGET_FMT, selectedMove->name);
+             showingNewMove ? Ui::Explore::LEARN_GIVE_UP_FMT
+                            : Ui::Explore::LEARN_FORGET_FMT,
+             selectedMove->name);
     int forgetX =
         POP_X + (POP_W - moveLearnTextPixelWidth(forgetLine)) / 2;
     PixelRenderer::text(std::max(POP_X + 4, forgetX), POP_Y + 13,
                         forgetLine,
                         PixelRenderer::rgb(241, 242, 232), 1);
-    char replaceLine[48];
-    snprintf(replaceLine, sizeof(replaceLine),
-             Ui::Explore::LEARN_WILL_LEARN_FMT,
-             newMove ? newMove->name : Ui::Status::MOVE_UNKNOWN);
-    int replaceX =
-        POP_X + (POP_W - moveLearnTextPixelWidth(replaceLine)) / 2;
-    PixelRenderer::text(std::max(POP_X + 4, replaceX), POP_Y + 34,
-                        replaceLine,
-                        PixelRenderer::rgb(135, 214, 238), 1);
+    if (!showingNewMove) {
+        char replaceLine[48];
+        snprintf(replaceLine, sizeof(replaceLine),
+                 Ui::Explore::LEARN_WILL_LEARN_FMT,
+                 newMove ? newMove->name : Ui::Status::MOVE_UNKNOWN);
+        int replaceX =
+            POP_X + (POP_W - moveLearnTextPixelWidth(replaceLine)) / 2;
+        PixelRenderer::text(std::max(POP_X + 4, replaceX), POP_Y + 34,
+                            replaceLine,
+                            PixelRenderer::rgb(135, 214, 238), 1);
+    }
     PixelRenderer::text(
         POP_X + 67, POP_Y + 61, Ui::Team::YES,
         uiState.confirmYes ? PixelRenderer::rgb(255, 216, 72)

@@ -6,6 +6,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from cave_tile_semantics import (
+    CAVE_RUNTIME_FLIP_Y_IDS,
+    CAVE_RUNTIME_TILE_SOURCES,
+    FROST_BROKEN_ICE_HOLE_RUNTIME_TILE,
+    FROST_CAVE_EXIT_RUNTIME_TILES,
+    FROST_CAVE_HOLE_RUNTIME_TILE,
+    FROST_DOWNWARD_STAIRS_RUNTIME_TILE,
+)
+
 from generate_runtime_tile_map import (
     ANCIENT_WATERFALL_VALLEY_AREA,
     BOULDER_TILE,
@@ -54,6 +63,8 @@ from generate_runtime_tile_map import (
     derive_seed,
     fingerprint,
     generate_map,
+    is_smooth_ice_tile,
+    route_crosses_ice_straight,
 )
 
 
@@ -235,6 +246,8 @@ class RuntimeTileMapTests(unittest.TestCase):
             self.assertTrue(set(runtime_map.layers[0]).issubset(ground_ids))
             self.assertTrue(set(runtime_map.layers[1]).issubset({
                 0, *wall_ids, *rock_hill_ids, *scenery_ids,
+                *FROST_CAVE_EXIT_RUNTIME_TILES,
+                FROST_DOWNWARD_STAIRS_RUNTIME_TILE,
             }))
             self.assertEqual(runtime_map.layers[2].count(FROST_CRYSTAL_TOP_TILE), 2)
             self.assertTrue(set(runtime_map.layers[2]).issubset({
@@ -248,7 +261,11 @@ class RuntimeTileMapTests(unittest.TestCase):
                     self.assertIn(runtime_map.layers[0][index], {
                         FROST_FLOOR_TILE, *ice_ids,
                     })
-                    self.assertEqual(runtime_map.layers[1][index], 0)
+                    self.assertIn(runtime_map.layers[1][index], {
+                        0,
+                        FROST_CAVE_EXIT_RUNTIME_TILES[1],
+                        FROST_DOWNWARD_STAIRS_RUNTIME_TILE,
+                    })
 
         for seed in range(1, 65):
             for edge in Edge:
@@ -264,6 +281,77 @@ class RuntimeTileMapTests(unittest.TestCase):
             observed_profiles,
             {(False, False), (False, True), (True, False)},
         )
+
+    def test_frost_ice_routes_slide_straight_and_fork_on_dry_ground(self):
+        observed_ice_profiles = set()
+        for seed in range(1, 65):
+            for edge in Edge:
+                runtime_map = generate_map(seed, edge, FROST_CRYSTAL_CAVE_AREA)
+                route_ice_counts = []
+                for path in runtime_map.paths:
+                    self.assertTrue(route_crosses_ice_straight(runtime_map, path))
+                    route_ice_counts.append(sum(
+                        is_smooth_ice_tile(
+                            runtime_map.layers[0][y * 16 + x]
+                        )
+                        for x, y in path.points
+                    ))
+                junction_index = runtime_map.junction[1] * 16 + runtime_map.junction[0]
+                self.assertFalse(is_smooth_ice_tile(
+                    runtime_map.layers[0][junction_index]
+                ))
+                if any(route_ice_counts):
+                    self.assertTrue(all(count > 0 for count in route_ice_counts))
+                observed_ice_profiles.add(tuple(count > 0 for count in route_ice_counts))
+        self.assertEqual(observed_ice_profiles, {(False, False), (True, True)})
+
+    def test_cave_runtime_aliases_are_complete_and_portals_are_atomic(self):
+        runtime_ids = [runtime_id for runtime_id, _source_id in CAVE_RUNTIME_TILE_SOURCES]
+        self.assertEqual(runtime_ids, list(range(4700, 4758)))
+        self.assertEqual(CAVE_RUNTIME_FLIP_Y_IDS, frozenset((4738, 4739, 4740)))
+
+        observed_edges = set()
+        for edge in Edge:
+            runtime_map = generate_map(0x20260713, edge, FROST_CRYSTAL_CAVE_AREA)
+            endpoints = (runtime_map.entry, *(path.exit for path in runtime_map.paths))
+            route_anchors = (
+                runtime_map.paths[0].points[0],
+                *(path.points[-1] for path in runtime_map.paths),
+            )
+            for endpoint, route_anchor in zip(endpoints, route_anchors):
+                observed_edges.add(endpoint.edge)
+                x, y = route_anchor
+                if endpoint.edge == Edge.TOP:
+                    route_cells = {
+                        point
+                        for path in runtime_map.paths
+                        for point in path.points
+                    }
+                    portal_tiles = runtime_map.layers[1][
+                        y * 16 + x - 1:y * 16 + x + 2
+                    ]
+                    if {(x - 1, y), (x + 1, y)} & route_cells:
+                        self.assertNotEqual(
+                            portal_tiles,
+                            list(FROST_CAVE_EXIT_RUNTIME_TILES),
+                        )
+                    else:
+                        self.assertEqual(
+                            portal_tiles,
+                            list(FROST_CAVE_EXIT_RUNTIME_TILES),
+                        )
+                elif endpoint.edge == Edge.BOTTOM:
+                    self.assertEqual(
+                        runtime_map.layers[1][y * 16 + x],
+                        FROST_DOWNWARD_STAIRS_RUNTIME_TILE,
+                    )
+        self.assertEqual(observed_edges, set(Edge))
+
+        for seed in range(1, 65):
+            runtime_map = generate_map(seed, Edge.TOP, FROST_CRYSTAL_CAVE_AREA)
+            all_tiles = set().union(*map(set, runtime_map.layers))
+            self.assertNotIn(FROST_BROKEN_ICE_HOLE_RUNTIME_TILE, all_tiles)
+            self.assertNotIn(FROST_CAVE_HOLE_RUNTIME_TILE, all_tiles)
 
     def test_creek_maps_keep_routes_on_bridges_and_transitions_away_from_bridges(self):
         transition_count = 0

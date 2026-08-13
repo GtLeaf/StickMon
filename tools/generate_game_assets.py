@@ -11,7 +11,7 @@ from pathlib import Path
 from PIL import Image
 
 from generate_explore_map import autotile_variant, regular_tile
-from map_generation_rules import CUSTOM_TILE_SOURCES
+from map_generation_rules import CUSTOM_TILE_SOURCES, CUSTOM_TILE_SOURCE_FLIP_Y
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -291,6 +291,36 @@ KIND_ORDER.extend(kind for kind, _ in EXPLORE_PICKUP_MARKERS)
 KIND_ORDER.extend(kind for kind, _ in EVOLUTION_BACKGROUNDS)
 KIND_ORDER.extend(kind for kind, _ in LATE_ITEMS)
 KIND_IDS = {kind: index for index, kind in enumerate(KIND_ORDER)}
+
+
+def expected_pack_kind_names():
+    battle_balls = []
+    for kind_prefix, _filename in BALLS:
+        battle_balls.extend(
+            f"BALL_{kind_prefix}_{index}" for index in range(8)
+        )
+        battle_balls.append(f"BALL_{kind_prefix}_OPEN")
+    return {
+        "ui": (
+            [kind for kind, _filename in ITEMS + LATE_ITEMS]
+            + list(SHOWER_ASSETS)
+            + [kind for kind, _filename in EXPLORE_PICKUP_MARKERS]
+        ),
+        "battle": (
+            battle_balls
+            + ["BALL_BURST_STAR"]
+            + [kind for kind, _filename in BACKGROUNDS]
+            + [kind for kind, _path in MENU_BACKGROUNDS]
+            + [kind for kind, _path in EVOLUTION_BACKGROUNDS]
+            + [kind for kind, _filename in STATUS_ICONS]
+        ),
+        "map": (
+            [kind for kind, _tile_id in EXPLORE_TILES]
+            + [kind for kind, *_rest in EXTERNAL_EXPLORE_TILES]
+            + [kind for kind, *_rest in ANIMATED_EXPLORE_FRAMES]
+        ),
+        "hatch": ["EGG"],
+    }
 
 
 def validate_kind_order():
@@ -737,6 +767,8 @@ def build_assets():
     }
     for kind, _runtime_id, tileset_name, source_id in EXTERNAL_EXPLORE_TILES:
         tile = prepare_explore_tile(source_id, external_tilesets[tileset_name], ())
+        if _runtime_id in CUSTOM_TILE_SOURCE_FLIP_Y:
+            tile = tile.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
         writers["map"].add(kind, quantize_rgba(tile, 16))
     animated_sources = {
         name: load_rgba(GRAPHICS / "Autotiles" / f"{name}.png")
@@ -763,6 +795,62 @@ def words_to_bytes(words):
 def raw_deflate(payload):
     compressor = zlib.compressobj(level=6, wbits=-15)
     return compressor.compress(payload) + compressor.flush()
+
+
+def read_pack_kind_ids(path):
+    data = Path(path).read_bytes()
+    if len(data) < 32:
+        raise ValueError(f"asset pack header is truncated: {path}")
+    header = struct.unpack_from("<IHHIIIIII", data)
+    magic, version, frame_count = header[:3]
+    compressed_bytes = header[7]
+    if magic != MAGIC or version != VERSION or len(data) != 32 + compressed_bytes:
+        raise ValueError(f"asset pack header is incompatible: {path}")
+    payload = zlib.decompress(data[32:], wbits=-15)
+    expected_frame_bytes = frame_count * 22
+    if len(payload) < expected_frame_bytes:
+        raise ValueError(f"asset pack frame table is truncated: {path}")
+    return [
+        struct.unpack_from("<H", payload, index * 22)[0]
+        for index in range(frame_count)
+    ]
+
+
+def expected_writer_kind_ids(writer):
+    return [KIND_IDS[frame["kind"]] for frame in writer.frames]
+
+
+def validate_writer_pack_kinds(writers):
+    for name, expected in expected_pack_kind_names().items():
+        actual = [frame["kind"] for frame in writers[name].frames]
+        if actual != expected:
+            raise ValueError(f"{name} writer contains kinds assigned to another pack")
+
+
+def expand_stale_pack_selection(selected, writers):
+    selected = set(selected)
+    stale = []
+    for name, output in OUTPUTS.items():
+        if name in selected:
+            continue
+        try:
+            actual = read_pack_kind_ids(output)
+        except (OSError, ValueError, zlib.error):
+            actual = None
+        if actual != expected_writer_kind_ids(writers[name]):
+            selected.add(name)
+            stale.append(name)
+    return tuple(name for name in OUTPUTS if name in selected), tuple(stale)
+
+
+def validate_committed_pack_kind_ids():
+    for name, kinds in expected_pack_kind_names().items():
+        expected = [KIND_IDS[kind] for kind in kinds]
+        actual = read_pack_kind_ids(OUTPUTS[name])
+        if actual != expected:
+            raise ValueError(
+                f"{name} asset pack ids are stale; regenerate all game assets"
+            )
 
 
 def write_pack(name, writer):
@@ -864,17 +952,34 @@ def main():
         default="ui,battle,map,hatch",
         help="comma-separated packs to write (ui,battle,map,hatch)",
     )
+    parser.add_argument(
+        "--validate-packs",
+        action="store_true",
+        help="validate existing pack ids without rebuilding assets",
+    )
     args = parser.parse_args()
-    selected = tuple(name.strip() for name in args.only.split(",") if name.strip())
-    if not selected or any(name not in OUTPUTS for name in selected):
-        raise ValueError("--only must contain ui,battle,map,hatch")
-
     validate_kind_order()
     validate_runtime_pack_limit()
     validate_explore_tile_mapping()
     validate_explore_pickup_pack_mapping()
     validate_shower_pack_mapping()
+    if args.validate_packs:
+        validate_committed_pack_kind_ids()
+        print("game asset pack ids are current")
+        return
+
+    selected = tuple(name.strip() for name in args.only.split(",") if name.strip())
+    if not selected or any(name not in OUTPUTS for name in selected):
+        raise ValueError("--only must contain ui,battle,map,hatch")
+
     writers = build_assets()
+    validate_writer_pack_kinds(writers)
+    selected, stale = expand_stale_pack_selection(selected, writers)
+    if stale:
+        print(
+            "stale asset pack ids detected; also rebuilding: "
+            + ",".join(stale)
+        )
     results = [write_pack(name, writers[name]) for name in selected]
     write_manifest(writers)
     for result in results:

@@ -59,6 +59,55 @@ int main() {
         return fail(4, "bond-scaled invitation chance");
     }
 
+    if (Game::Bond::naturalVisitEligible(-1) ||
+        !Game::Bond::naturalVisitEligible(0) ||
+        Game::Bond::naturalVisitDailyChance(Level::ACQUAINTED) != 4 ||
+        Game::Bond::naturalVisitDailyChance(Level::FAMILIAR) != 8 ||
+        Game::Bond::naturalVisitDailyChance(Level::TRUSTED) != 14 ||
+        Game::Bond::naturalVisitDailyChance(Level::CLOSE) != 20 ||
+        Game::Bond::naturalVisitDailyChance(Level::DISTANT) != 0 ||
+        Game::Bond::naturalVisitLevelWeight(Level::ACQUAINTED) != 1 ||
+        Game::Bond::naturalVisitLevelWeight(Level::FAMILIAR) != 4 ||
+        Game::Bond::naturalVisitLevelWeight(Level::TRUSTED) != 12 ||
+        Game::Bond::naturalVisitLevelWeight(Level::CLOSE) != 36) {
+        return fail(5, "bond-scaled natural visit chance and weight");
+    }
+
+    uint8_t allVisitLevels =
+        Game::Bond::naturalVisitLevelMask(Level::ACQUAINTED) |
+        Game::Bond::naturalVisitLevelMask(Level::FAMILIAR) |
+        Game::Bond::naturalVisitLevelMask(Level::TRUSTED) |
+        Game::Bond::naturalVisitLevelMask(Level::CLOSE);
+    if (Game::Bond::naturalVisitTotalWeight(allVisitLevels) != 53 ||
+        Game::Bond::naturalVisitLevelForRoll(allVisitLevels, 0) !=
+            Level::ACQUAINTED ||
+        Game::Bond::naturalVisitLevelForRoll(allVisitLevels, 1) !=
+            Level::FAMILIAR ||
+        Game::Bond::naturalVisitLevelForRoll(allVisitLevels, 5) !=
+            Level::TRUSTED ||
+        Game::Bond::naturalVisitLevelForRoll(allVisitLevels, 17) !=
+            Level::CLOSE) {
+        return fail(6, "natural visit tier lottery");
+    }
+
+    using Game::Bond::NaturalVisitEvent;
+    if (Game::Bond::naturalVisitEvent(Level::ACQUAINTED, 99) !=
+            NaturalVisitEvent::PLAY ||
+        Game::Bond::naturalVisitEvent(Level::FAMILIAR, 79) !=
+            NaturalVisitEvent::PLAY ||
+        Game::Bond::naturalVisitEvent(Level::FAMILIAR, 80) !=
+            NaturalVisitEvent::GIFT ||
+        Game::Bond::naturalVisitEvent(Level::TRUSTED, 89) !=
+            NaturalVisitEvent::GIFT ||
+        Game::Bond::naturalVisitEvent(Level::TRUSTED, 90) !=
+            NaturalVisitEvent::EXPLORE ||
+        Game::Bond::naturalVisitEvent(Level::CLOSE, 79) !=
+            NaturalVisitEvent::GIFT ||
+        Game::Bond::naturalVisitEvent(Level::CLOSE, 80) !=
+            NaturalVisitEvent::EXPLORE) {
+        return fail(7, "bond-scaled natural visit event table");
+    }
+
     uint32_t beforeSeven = 6U * 60U + 59U;
     uint32_t afterSeven = 7U * 60U;
     uint32_t nextDay = afterSeven + 24U * 60U;
@@ -69,14 +118,14 @@ int main() {
         Game::Bond::invitationDay(nextDay) != 2 ||
         !Game::Bond::inviteLockedToday(marker, 1) ||
         Game::Bond::inviteLockedToday(marker, 2)) {
-        return fail(5, "07:00 invitation lock boundary");
+        return fail(8, "07:00 invitation lock boundary");
     }
 
     Game::MonsterRuntime monster;
     if (monster.bond != Game::Bond::MAX_VALUE ||
         sizeof(Game::MonsterRuntime) != 64 ||
         offsetof(Game::MonsterRuntime, bond) != 43) {
-        return fail(6, "v1 save layout and defaults");
+        return fail(9, "v1 save layout and defaults");
     }
 
     std::printf("[bond_system_host] all tests passed\n");

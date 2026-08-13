@@ -4,6 +4,7 @@
 #include <cstring>
 #include <new>
 #include "game/BondSystem.h"
+#include "game/ExploreBossPity.h"
 #include "game/ExploreSpecialEncounter.h"
 #include "game/FriendshipPity.h"
 #include "game/Species.h"
@@ -16,16 +17,24 @@ constexpr const char* HATCH_KEY = "hatch";
 constexpr const char* ENCOUNTER_KEY = "encounters";
 constexpr uint32_t SAVE_RECORD_MAGIC = 0x3156534D; // MSV1
 constexpr uint16_t SAVE_RECORD_VERSION = Game::SAVE_VERSION;
+constexpr uint16_t LEGACY_SAVE_RECORD_VERSION_V1 = 1;
+constexpr uint16_t LEGACY_SAVE_RECORD_VERSION_V2 = 2;
 constexpr uint32_t ENCOUNTER_RECORD_MAGIC = 0x31454D53; // SME1
 constexpr uint16_t ENCOUNTER_RECORD_VERSION = 1;
 static_assert(SAVE_RECORD_VERSION == Game::SAVE_VERSION,
               "save record and game-state versions must advance together");
 constexpr uint32_t MAIN_SCENE_VIEW_MAGIC = 0x4D565354; // MVST
-constexpr uint16_t MAIN_SCENE_VIEW_VERSION = 1;
+constexpr uint16_t MAIN_SCENE_VIEW_VERSION = 2;
 constexpr uint32_t MAIN_SCENE_VIEW_MAX_REMAINING_MS = 24UL * 60UL * 60UL * 1000UL;
 constexpr float MAIN_SCENE_VIEW_COORD_LIMIT = 8192.0f;
+constexpr size_t LEGACY_GAME_STATE_V1_V2_SIZE = 1560;
+constexpr uint8_t MAIN_SCENE_AI_MODE_MAX = 8; // RESTING
+constexpr uint8_t MAIN_SCENE_PMD_ACTION_MAX = 3; // SLEEPING
+constexpr uint8_t MAIN_SCENE_PMD_DIRECTION_MAX = 7; // DOWN_RIGHT
+constexpr uint8_t SECONDARY_SCENE_STATE_MAX = 6; // SLEEPING
+constexpr uint8_t SECONDARY_SCENE_DIRECTION_MAX = 3; // RIGHT
 
-struct MainSceneViewRecord {
+struct MainSceneViewRecordV1 {
     uint32_t magic;
     uint16_t version;
     uint16_t checksum;
@@ -46,12 +55,73 @@ struct MainSceneViewRecord {
     uint32_t postFeedAwakeRemainingMs;
 };
 
+struct MainSceneViewRecord {
+    uint32_t magic;
+    uint16_t version;
+    uint16_t checksum;
+    uint16_t speciesId;
+    uint8_t valid;
+    uint8_t aiMode;
+    uint8_t pmdAction;
+    uint8_t pmdDirection;
+    uint8_t pmdFrame;
+    uint8_t facingRight;
+    uint8_t faintRestActive;
+    uint8_t reserved;
+    float monsterX;
+    float monsterY;
+    float targetX;
+    float targetY;
+    uint32_t nextDecisionRemainingMs;
+    uint32_t postFeedAwakeRemainingMs;
+    uint16_t secondarySpeciesId;
+    uint8_t secondaryValid;
+    uint8_t secondaryState;
+    uint32_t secondaryIvPacked;
+    uint32_t secondaryMetAt;
+    uint8_t secondaryNature;
+    uint8_t secondaryMetArea;
+    uint8_t secondaryOrigin;
+    uint8_t secondaryDirection;
+    uint8_t secondaryFrameIndex;
+    uint8_t secondaryFacingRight;
+    uint8_t secondarySleepSpotValid;
+    uint8_t secondaryReserved;
+    float secondaryX;
+    float secondaryY;
+    float secondaryTargetX;
+    float secondaryTargetY;
+    float secondarySleepX;
+    float secondarySleepY;
+    uint32_t secondaryStateRemainingMs;
+    uint32_t secondaryFoodRetryRemainingMs;
+};
+
 struct SaveRecord {
     uint32_t magic = SAVE_RECORD_MAGIC;
     uint16_t version = SAVE_RECORD_VERSION;
     uint16_t reserved = 0;
     Game::GameState state;
     MainSceneViewRecord view{};
+};
+
+// v1 used the same GameState byte layout as v2. These two envelopes freeze
+// both v1 variants that reached development devices: the original view record
+// and the transitional view-v2 record produced before the outer version bump.
+struct SaveRecordV1 {
+    uint32_t magic;
+    uint16_t version;
+    uint16_t reserved;
+    uint8_t stateBytes[LEGACY_GAME_STATE_V1_V2_SIZE];
+    MainSceneViewRecordV1 view;
+};
+
+struct SaveRecordV1WithViewV2 {
+    uint32_t magic;
+    uint16_t version;
+    uint16_t reserved;
+    uint8_t stateBytes[LEGACY_GAME_STATE_V1_V2_SIZE];
+    MainSceneViewRecord view;
 };
 
 struct SaveRecordHeader {
@@ -68,6 +138,15 @@ struct EncounterRecord {
 };
 
 static_assert(sizeof(SaveRecordHeader) == 8, "unexpected save record header size");
+static_assert(offsetof(Game::GameState, normalBossPitySlotIndex) ==
+                  LEGACY_GAME_STATE_V1_V2_SIZE,
+              "v3 fields must be appended after the frozen v1/v2 state");
+static_assert(sizeof(MainSceneViewRecordV1) == 44,
+              "v1 main-scene view layout changed");
+static_assert(sizeof(SaveRecordV1) == 1612,
+              "v1 save envelope layout changed");
+static_assert(sizeof(SaveRecordV1WithViewV2) == 1664,
+              "v1/v2 view-v2 save envelope layout changed");
 
 template <typename T>
 uint16_t checksumObject(const T& object) {
@@ -85,17 +164,63 @@ uint16_t checksumObject(const T& object) {
     return crc;
 }
 
+uint16_t checksumBytes(const uint8_t* bytes, size_t length,
+                       size_t checksumOffset) {
+    uint16_t crc = 0xFFFF;
+    for (size_t i = 0; i < length; ++i) {
+        uint8_t value =
+            (i == checksumOffset || i == checksumOffset + 1) ? 0 : bytes[i];
+        crc ^= value;
+        for (uint8_t bit = 0; bit < 8; ++bit) {
+            crc = (crc & 1) ? (crc >> 1) ^ 0xA001 : (crc >> 1);
+        }
+    }
+    return crc;
+}
+
 bool mainSceneCoordinateValid(float value) {
     return std::isfinite(value) && std::fabs(value) <= MAIN_SCENE_VIEW_COORD_LIMIT;
 }
 
+bool monsterIdentityFieldsValid(uint32_t ivPacked, uint8_t nature,
+                                uint8_t metArea, uint8_t origin) {
+    bool validMetArea = metArea < Game::EXPLORE_AREA_COUNT ||
+                        metArea == Game::MET_AREA_STARTER ||
+                        metArea == Game::MET_AREA_HATCHED ||
+                        metArea == Game::MET_AREA_UNKNOWN;
+    bool validOrigin = origin <= static_cast<uint8_t>(Game::Origin::VISITOR) ||
+                       origin == static_cast<uint8_t>(Game::Origin::UNKNOWN);
+    return (ivPacked & ~0x3FFFFFFFUL) == 0 &&
+           nature < Game::NATURE_COUNT && validMetArea && validOrigin;
+}
+
 bool mainSceneViewValuesValid(const MainSceneViewState& viewState) {
-    if (!viewState.valid) return true;
-    return findSpecies(viewState.speciesId) != nullptr &&
-           mainSceneCoordinateValid(viewState.monsterX) &&
-           mainSceneCoordinateValid(viewState.monsterY) &&
-           mainSceneCoordinateValid(viewState.targetX) &&
-           mainSceneCoordinateValid(viewState.targetY);
+    if (viewState.secondary.valid && !viewState.valid) return false;
+    if (viewState.valid &&
+        (findSpecies(viewState.speciesId) == nullptr ||
+         viewState.aiMode > MAIN_SCENE_AI_MODE_MAX ||
+         viewState.pmdAction > MAIN_SCENE_PMD_ACTION_MAX ||
+         viewState.pmdDirection > MAIN_SCENE_PMD_DIRECTION_MAX ||
+         !mainSceneCoordinateValid(viewState.monsterX) ||
+         !mainSceneCoordinateValid(viewState.monsterY) ||
+         !mainSceneCoordinateValid(viewState.targetX) ||
+         !mainSceneCoordinateValid(viewState.targetY))) {
+        return false;
+    }
+    const SecondarySceneViewState& secondary = viewState.secondary;
+    return !secondary.valid ||
+           (findSpecies(secondary.speciesId) != nullptr &&
+            secondary.state <= SECONDARY_SCENE_STATE_MAX &&
+            secondary.direction <= SECONDARY_SCENE_DIRECTION_MAX &&
+            monsterIdentityFieldsValid(
+                secondary.ivPacked, secondary.nature,
+                secondary.metArea, secondary.origin) &&
+            mainSceneCoordinateValid(secondary.x) &&
+            mainSceneCoordinateValid(secondary.y) &&
+            mainSceneCoordinateValid(secondary.targetX) &&
+            mainSceneCoordinateValid(secondary.targetY) &&
+            mainSceneCoordinateValid(secondary.sleepX) &&
+            mainSceneCoordinateValid(secondary.sleepY));
 }
 
 bool makeMainSceneViewRecord(const MainSceneViewState& viewState,
@@ -118,6 +243,27 @@ bool makeMainSceneViewRecord(const MainSceneViewState& viewState,
     record.targetY = viewState.targetY;
     record.nextDecisionRemainingMs = viewState.nextDecisionRemainingMs;
     record.postFeedAwakeRemainingMs = viewState.postFeedAwakeRemainingMs;
+    const SecondarySceneViewState& secondary = viewState.secondary;
+    record.secondarySpeciesId = secondary.speciesId;
+    record.secondaryValid = secondary.valid ? 1 : 0;
+    record.secondaryState = secondary.state;
+    record.secondaryIvPacked = secondary.ivPacked;
+    record.secondaryMetAt = secondary.metAt;
+    record.secondaryNature = secondary.nature;
+    record.secondaryMetArea = secondary.metArea;
+    record.secondaryOrigin = secondary.origin;
+    record.secondaryDirection = secondary.direction;
+    record.secondaryFrameIndex = secondary.frameIndex;
+    record.secondaryFacingRight = secondary.facingRight ? 1 : 0;
+    record.secondarySleepSpotValid = secondary.sleepSpotValid ? 1 : 0;
+    record.secondaryX = secondary.x;
+    record.secondaryY = secondary.y;
+    record.secondaryTargetX = secondary.targetX;
+    record.secondaryTargetY = secondary.targetY;
+    record.secondarySleepX = secondary.sleepX;
+    record.secondarySleepY = secondary.sleepY;
+    record.secondaryStateRemainingMs = secondary.stateRemainingMs;
+    record.secondaryFoodRetryRemainingMs = secondary.foodRetryRemainingMs;
     record.checksum = checksumObject(record);
     return true;
 }
@@ -126,11 +272,50 @@ bool mainSceneViewRecordValid(const MainSceneViewRecord& record) {
     if (record.magic != MAIN_SCENE_VIEW_MAGIC ||
         record.version != MAIN_SCENE_VIEW_VERSION ||
         record.checksum != checksumObject(record) ||
-        record.valid > 1 || record.facingRight > 1 || record.faintRestActive > 1) {
+        record.valid > 1 || record.facingRight > 1 || record.faintRestActive > 1 ||
+        record.secondaryValid > 1 || record.secondaryFacingRight > 1 ||
+        record.secondarySleepSpotValid > 1) {
+        return false;
+    }
+    if (record.secondaryValid && !record.valid) return false;
+    if (record.valid &&
+        (findSpecies(record.speciesId) == nullptr ||
+         record.aiMode > MAIN_SCENE_AI_MODE_MAX ||
+         record.pmdAction > MAIN_SCENE_PMD_ACTION_MAX ||
+         record.pmdDirection > MAIN_SCENE_PMD_DIRECTION_MAX ||
+         !mainSceneCoordinateValid(record.monsterX) ||
+         !mainSceneCoordinateValid(record.monsterY) ||
+         !mainSceneCoordinateValid(record.targetX) ||
+         !mainSceneCoordinateValid(record.targetY))) {
+        return false;
+    }
+    return !record.secondaryValid ||
+           (findSpecies(record.secondarySpeciesId) != nullptr &&
+            record.secondaryState <= SECONDARY_SCENE_STATE_MAX &&
+            record.secondaryDirection <= SECONDARY_SCENE_DIRECTION_MAX &&
+            monsterIdentityFieldsValid(
+                record.secondaryIvPacked, record.secondaryNature,
+                record.secondaryMetArea, record.secondaryOrigin) &&
+            mainSceneCoordinateValid(record.secondaryX) &&
+            mainSceneCoordinateValid(record.secondaryY) &&
+            mainSceneCoordinateValid(record.secondaryTargetX) &&
+            mainSceneCoordinateValid(record.secondaryTargetY) &&
+            mainSceneCoordinateValid(record.secondarySleepX) &&
+            mainSceneCoordinateValid(record.secondarySleepY));
+}
+
+bool mainSceneViewRecordV1Valid(const MainSceneViewRecordV1& record) {
+    if (record.magic != MAIN_SCENE_VIEW_MAGIC || record.version != 1 ||
+        record.checksum != checksumObject(record) ||
+        record.valid > 1 || record.facingRight > 1 ||
+        record.faintRestActive > 1) {
         return false;
     }
     if (!record.valid) return true;
     return findSpecies(record.speciesId) != nullptr &&
+           record.aiMode <= MAIN_SCENE_AI_MODE_MAX &&
+           record.pmdAction <= MAIN_SCENE_PMD_ACTION_MAX &&
+           record.pmdDirection <= MAIN_SCENE_PMD_DIRECTION_MAX &&
            mainSceneCoordinateValid(record.monsterX) &&
            mainSceneCoordinateValid(record.monsterY) &&
            mainSceneCoordinateValid(record.targetX) &&
@@ -161,6 +346,120 @@ void loadMainSceneViewRecord(const MainSceneViewRecord& record,
         record.postFeedAwakeRemainingMs > MAIN_SCENE_VIEW_MAX_REMAINING_MS
             ? MAIN_SCENE_VIEW_MAX_REMAINING_MS
             : record.postFeedAwakeRemainingMs;
+    if (!record.secondaryValid) return;
+    SecondarySceneViewState& secondary = viewState.secondary;
+    secondary.valid = true;
+    secondary.speciesId = record.secondarySpeciesId;
+    secondary.ivPacked = record.secondaryIvPacked;
+    secondary.metAt = record.secondaryMetAt;
+    secondary.nature = record.secondaryNature;
+    secondary.metArea = record.secondaryMetArea;
+    secondary.origin = record.secondaryOrigin;
+    secondary.x = record.secondaryX;
+    secondary.y = record.secondaryY;
+    secondary.targetX = record.secondaryTargetX;
+    secondary.targetY = record.secondaryTargetY;
+    secondary.sleepX = record.secondarySleepX;
+    secondary.sleepY = record.secondarySleepY;
+    secondary.state = record.secondaryState;
+    secondary.direction = record.secondaryDirection;
+    secondary.frameIndex = record.secondaryFrameIndex;
+    secondary.facingRight = record.secondaryFacingRight != 0;
+    secondary.sleepSpotValid = record.secondarySleepSpotValid != 0;
+    secondary.stateRemainingMs =
+        record.secondaryStateRemainingMs > MAIN_SCENE_VIEW_MAX_REMAINING_MS
+            ? MAIN_SCENE_VIEW_MAX_REMAINING_MS
+            : record.secondaryStateRemainingMs;
+    secondary.foodRetryRemainingMs =
+        record.secondaryFoodRetryRemainingMs > MAIN_SCENE_VIEW_MAX_REMAINING_MS
+            ? MAIN_SCENE_VIEW_MAX_REMAINING_MS
+            : record.secondaryFoodRetryRemainingMs;
+}
+
+void loadMainSceneViewRecordV1(const MainSceneViewRecordV1& record,
+                               MainSceneViewState& viewState) {
+    viewState = MainSceneViewState{};
+    if (!record.valid) return;
+    viewState.valid = true;
+    viewState.speciesId = record.speciesId;
+    viewState.monsterX = record.monsterX;
+    viewState.monsterY = record.monsterY;
+    viewState.targetX = record.targetX;
+    viewState.targetY = record.targetY;
+    viewState.aiMode = record.aiMode;
+    viewState.pmdAction = record.pmdAction;
+    viewState.pmdDirection = record.pmdDirection;
+    viewState.pmdFrame = record.pmdFrame;
+    viewState.facingRight = record.facingRight != 0;
+    viewState.faintRestActive = record.faintRestActive != 0;
+    viewState.nextDecisionRemainingMs =
+        record.nextDecisionRemainingMs > MAIN_SCENE_VIEW_MAX_REMAINING_MS
+            ? MAIN_SCENE_VIEW_MAX_REMAINING_MS
+            : record.nextDecisionRemainingMs;
+    viewState.postFeedAwakeRemainingMs =
+        record.postFeedAwakeRemainingMs > MAIN_SCENE_VIEW_MAX_REMAINING_MS
+            ? MAIN_SCENE_VIEW_MAX_REMAINING_MS
+            : record.postFeedAwakeRemainingMs;
+}
+
+bool loadLegacyGameState(const uint8_t* stateBytes, uint16_t version,
+                         Game::GameState& state) {
+    uint32_t magic = 0;
+    uint16_t stateVersion = 0;
+    uint16_t storedChecksum = 0;
+    memcpy(&magic, stateBytes + offsetof(Game::GameState, magic), sizeof(magic));
+    memcpy(&stateVersion, stateBytes + offsetof(Game::GameState, version),
+           sizeof(stateVersion));
+    memcpy(&storedChecksum, stateBytes + offsetof(Game::GameState, checksum),
+           sizeof(storedChecksum));
+    uint16_t expectedChecksum = checksumBytes(
+        stateBytes, LEGACY_GAME_STATE_V1_V2_SIZE,
+        offsetof(Game::GameState, checksum));
+    if (magic != Game::SAVE_MAGIC || stateVersion != version ||
+        storedChecksum != expectedChecksum) {
+        return false;
+    }
+
+    state = Game::GameState{};
+    memcpy(&state, stateBytes, LEGACY_GAME_STATE_V1_V2_SIZE);
+    state.version = Game::SAVE_VERSION;
+    state.checksum = 0;
+    state.normalBossPitySlotIndex = ExploreSpecial::slotIndexFor(
+        state.gameMinutesTotal);
+    memset(state.normalBossMissCount, 0,
+           sizeof(state.normalBossMissCount));
+    return true;
+}
+
+bool migrateLegacySaveRecord(const uint8_t* raw, size_t len,
+                             uint16_t version,
+                             Game::GameState& state,
+                             MainSceneViewState& viewState,
+                             bool& viewValid) {
+    viewState = MainSceneViewState{};
+    viewValid = false;
+    if (version == LEGACY_SAVE_RECORD_VERSION_V1 &&
+        len == sizeof(SaveRecordV1)) {
+        const uint8_t* stateBytes = raw + offsetof(SaveRecordV1, stateBytes);
+        if (!loadLegacyGameState(stateBytes, version, state)) return false;
+        MainSceneViewRecordV1 view{};
+        memcpy(&view, raw + offsetof(SaveRecordV1, view), sizeof(view));
+        viewValid = mainSceneViewRecordV1Valid(view);
+        if (viewValid) loadMainSceneViewRecordV1(view, viewState);
+        return true;
+    }
+    if (len == sizeof(SaveRecordV1WithViewV2)) {
+        const uint8_t* stateBytes =
+            raw + offsetof(SaveRecordV1WithViewV2, stateBytes);
+        if (!loadLegacyGameState(stateBytes, version, state)) return false;
+        MainSceneViewRecord view{};
+        memcpy(&view, raw + offsetof(SaveRecordV1WithViewV2, view),
+               sizeof(view));
+        viewValid = mainSceneViewRecordValid(view);
+        if (viewValid) loadMainSceneViewRecord(view, viewState);
+        return true;
+    }
+    return false;
 }
 
 void resetGameState(Game::GameState& state) {
@@ -307,6 +606,10 @@ bool sanitizeState(Game::GameState& state) {
             changed = true;
         }
     };
+    for (uint8_t area = 0; area < Game::EXPLORE_AREA_COUNT; ++area) {
+        clampU8(state.normalBossMissCount[area],
+                ExploreBossPity::MAX_MISSES);
+    }
     clampU8(state.bag.potion, Game::ITEM_STACK_CAP);
     clampU8(state.bag.superPotion, Game::ITEM_STACK_CAP);
     clampU8(state.bag.antidote, Game::ITEM_STACK_CAP);
@@ -496,15 +799,18 @@ bool SaveManager::begin() {
 
 bool SaveManager::load(Game::GameState& state,
                        MainSceneViewState& viewState,
-                       bool* normalized) {
+                       bool* normalized,
+                       LoadStatus* status) {
     if (normalized) *normalized = false;
+    if (status) *status = LoadStatus::NOT_FOUND;
     viewState = MainSceneViewState{};
     size_t len = Platform::blobs().blobSize(NVS_NS, NVS_KEY);
-    if (len != sizeof(SaveRecord)) {
-        Platform::logf("[SaveManager] unsupported state size=%u expected=%u; reset to v%u\n",
-                      (unsigned)len,
-                      (unsigned)sizeof(SaveRecord),
-                      Game::SAVE_VERSION);
+    if (len < sizeof(SaveRecordHeader)) {
+        if (len != 0) {
+            Platform::logf("[SaveManager] truncated state size=%u\n",
+                           static_cast<unsigned>(len));
+            if (status) *status = LoadStatus::INVALID;
+        }
         reset(state);
         return false;
     }
@@ -512,6 +818,7 @@ bool SaveManager::load(Game::GameState& state,
     auto* raw = new (std::nothrow) uint8_t[len];
     if (!raw) {
         Platform::logLine("[SaveManager] state load allocation failed");
+        if (status) *status = LoadStatus::INVALID;
         reset(state);
         return false;
     }
@@ -522,6 +829,7 @@ bool SaveManager::load(Game::GameState& state,
                       (unsigned)read,
                       (unsigned)len);
         delete[] raw;
+        if (status) *status = LoadStatus::INVALID;
         reset(state);
         return false;
     }
@@ -534,63 +842,89 @@ bool SaveManager::load(Game::GameState& state,
                       header.version,
                       header.reserved);
         delete[] raw;
+        if (status) *status = LoadStatus::INVALID;
         reset(state);
         return false;
     }
 
-    if (header.version != SAVE_RECORD_VERSION || len != sizeof(SaveRecord)) {
-        Platform::logf("[SaveManager] unsupported state version=%u size=%u expected=v%u/%u\n",
-                      header.version,
-                      (unsigned)len,
-                      Game::SAVE_VERSION,
-                      (unsigned)sizeof(SaveRecord));
+    if (header.version > SAVE_RECORD_VERSION) {
+        Platform::logf(
+            "[SaveManager] state v%u is newer than firmware v%u; write protection required\n",
+            header.version, Game::SAVE_VERSION);
         delete[] raw;
+        if (status) *status = LoadStatus::NEWER_VERSION;
         reset(state);
         return false;
     }
 
-    auto* record = new (std::nothrow) SaveRecord{};
-    if (!record) {
-        delete[] raw;
-        Platform::logLine("[SaveManager] state load allocation failed");
-        reset(state);
-        return false;
-    }
-    memcpy(record, raw, sizeof(*record));
-    delete[] raw;
-    uint16_t expectedChecksum = checksum(record->state);
-    if (record->magic != SAVE_RECORD_MAGIC ||
-        record->version != SAVE_RECORD_VERSION ||
-        record->reserved != 0 ||
-        record->state.magic != Game::SAVE_MAGIC ||
-        record->state.version != Game::SAVE_VERSION ||
-        record->state.checksum != expectedChecksum) {
-        Platform::logf("[SaveManager] unsupported/invalid state read=%u magic=%08lx version=%u checksum=%04x/%04x; reset to v%u\n",
-                      (unsigned)read,
-                      (unsigned long)record->state.magic,
-                      record->state.version,
-                      record->state.checksum,
-                      expectedChecksum,
-                      Game::SAVE_VERSION);
-        delete record;
-        reset(state);
-        return false;
-    }
-
-    state = record->state;
-    bool viewValid = mainSceneViewRecordValid(record->view);
-    if (viewValid) {
-        loadMainSceneViewRecord(record->view, viewState);
+    bool migrated = false;
+    bool viewValid = false;
+    bool loaded = false;
+    if (header.version == LEGACY_SAVE_RECORD_VERSION_V1 ||
+        header.version == LEGACY_SAVE_RECORD_VERSION_V2) {
+        loaded = migrateLegacySaveRecord(
+            raw, len, header.version, state, viewState, viewValid);
+        migrated = loaded;
+    } else if (header.version == SAVE_RECORD_VERSION &&
+               len == sizeof(SaveRecord)) {
+        auto* record = new (std::nothrow) SaveRecord{};
+        if (record) {
+            memcpy(record, raw, sizeof(*record));
+            uint16_t expectedChecksum = checksum(record->state);
+            loaded = record->state.magic == Game::SAVE_MAGIC &&
+                     record->state.version == Game::SAVE_VERSION &&
+                     record->state.checksum == expectedChecksum;
+            if (loaded) {
+                state = record->state;
+                viewValid = mainSceneViewRecordValid(record->view);
+                if (viewValid) {
+                    loadMainSceneViewRecord(record->view, viewState);
+                }
+            }
+            delete record;
+        } else {
+            Platform::logLine("[SaveManager] state load allocation failed");
+        }
     } else {
+        Platform::logf(
+            "[SaveManager] unsupported state version=%u size=%u supported=%u-%u\n",
+            header.version, static_cast<unsigned>(len),
+            Game::MIN_SUPPORTED_SAVE_VERSION, Game::SAVE_VERSION);
+    }
+    delete[] raw;
+
+    if (!loaded) {
+        Platform::logf(
+            "[SaveManager] invalid state version=%u size=%u; keeping blob and resetting runtime\n",
+            header.version, static_cast<unsigned>(len));
+        reset(state);
+        if (status) *status = LoadStatus::INVALID;
+        return false;
+    }
+    if (migrated) {
+        Platform::logf("[SaveManager] migrated state v%u -> v%u\n",
+                       header.version, Game::SAVE_VERSION);
+    }
+    if (!viewValid) {
         Platform::logLine("[SaveManager] invalid main scene view state; reset view");
     }
-    delete record;
 
     bool changed = sanitizeState(state);
     if (changed) {
         Platform::logLine("[SaveManager] normalized state fields");
     }
-    if (normalized) *normalized = changed || !viewValid;
+    bool needsRewrite = migrated || changed || !viewValid;
+    if (migrated) {
+        if (saveSnapshot(state, viewState)) {
+            Platform::logLine("[SaveManager] migration committed");
+            needsRewrite = false;
+        } else {
+            Platform::logLine(
+                "[SaveManager] migration commit failed; legacy blob retained for retry");
+        }
+    }
+    if (normalized) *normalized = needsRewrite;
+    if (status) *status = LoadStatus::LOADED;
     return true;
 }
 

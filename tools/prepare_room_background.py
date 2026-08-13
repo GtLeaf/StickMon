@@ -38,6 +38,7 @@ ROOM_PACK_VERSION = 3
 ROOM_PACK_HEADER_FORMAT = "<IHHHhIIIIBBBBhhhhhhhhhhhhhhhhhhhhHH"
 ROOM_BEHAVIOR_ANCHOR_FORMAT = "<BBhh"
 ROOM_ANCHOR_WINDOW_GAZE = 1
+ROOM_ANCHOR_VISITOR_SLEEP = 2
 ROOM_FACING_BACK = 4
 
 
@@ -268,34 +269,61 @@ def generic_monster_footprint_inside(x, foot_y, walk_polygon):
 
 
 def behavior_anchors_for_layout(layout, room_w, room_h, walk_polygon):
+    anchors = []
     window = furniture_item(layout, "window", "窗")
-    if not window or len(walk_polygon) < 3:
-        return []
+    if window and len(walk_polygon) >= 3:
+        manual = window.get("interactionFoot")
+        if isinstance(manual, list) and len(manual) == 2:
+            foot_x, foot_y = clamp_room_point(
+                manual[0], manual[1], room_w, room_h)
+            if generic_monster_footprint_inside(
+                    foot_x, foot_y, walk_polygon):
+                anchors.append((
+                    ROOM_ANCHOR_WINDOW_GAZE,
+                    ROOM_FACING_BACK,
+                    foot_x,
+                    foot_y,
+                ))
+        if not anchors:
+            window_x = (
+                float(window.get("x", 0)) +
+                float(window.get("targetWidth") or 0) * 0.5)
+            window_y = (
+                float(window.get("y", 0)) +
+                float(window.get("targetHeight") or 0) * 0.5)
+            best = None
+            for foot_y in range(room_h):
+                for foot_x in range(room_w):
+                    if not generic_monster_footprint_inside(
+                            foot_x, foot_y, walk_polygon):
+                        continue
+                    # Prefer standing horizontally in front of the window.
+                    distance = (
+                        4.0 * (foot_x - window_x) ** 2 +
+                        (foot_y - window_y) ** 2)
+                    if foot_y < window_y + 20:
+                        distance += 10000
+                    candidate = (distance, foot_x, foot_y)
+                    if best is None or candidate < best:
+                        best = candidate
+            if best is not None:
+                anchors.append((
+                    ROOM_ANCHOR_WINDOW_GAZE,
+                    ROOM_FACING_BACK,
+                    best[1],
+                    best[2],
+                ))
 
-    manual = window.get("interactionFoot")
-    if isinstance(manual, list) and len(manual) == 2:
-        foot_x, foot_y = clamp_room_point(manual[0], manual[1], room_w, room_h)
-        if generic_monster_footprint_inside(foot_x, foot_y, walk_polygon):
-            return [(ROOM_ANCHOR_WINDOW_GAZE, ROOM_FACING_BACK, foot_x, foot_y)]
-
-    window_x = float(window.get("x", 0)) + float(window.get("targetWidth") or 0) * 0.5
-    window_y = float(window.get("y", 0)) + float(window.get("targetHeight") or 0) * 0.5
-    best = None
-    for foot_y in range(room_h):
-        for foot_x in range(room_w):
-            if not generic_monster_footprint_inside(foot_x, foot_y, walk_polygon):
-                continue
-            # Prefer standing horizontally in front of the window instead of
-            # selecting a much lower point that merely has a similar distance.
-            distance = 4.0 * (foot_x - window_x) ** 2 + (foot_y - window_y) ** 2
-            if foot_y < window_y + 20:
-                distance += 10000
-            candidate = (distance, foot_x, foot_y)
-            if best is None or candidate < best:
-                best = candidate
-    if best is None:
-        return []
-    return [(ROOM_ANCHOR_WINDOW_GAZE, ROOM_FACING_BACK, best[1], best[2])]
+    sleep_point = visitor_sleep_anchor_for_layout(
+        layout, room_w, room_h, walk_polygon)
+    if sleep_point:
+        anchors.append((
+            ROOM_ANCHOR_VISITOR_SLEEP,
+            0,
+            sleep_point[0],
+            sleep_point[1],
+        ))
+    return anchors
 
 
 def furniture_polygon(item, key, room_w, room_h):
@@ -360,6 +388,100 @@ def bed_region(layout, room_w, room_h, walk_polygon):
     bed_x, bed_y = polygon_anchor(points)
     bed_x, bed_y = clamp_room_point(bed_x, bed_y, room_w, room_h)
     return points, bed_x, bed_y
+
+
+def furniture_obstacle_polygons(layout, room_w, room_h):
+    polygons = []
+    for item in layout.get("furniture", []):
+        if item.get("source", "furniture") != "furniture" or not item.get("visible", True):
+            continue
+        label = furniture_label(item)
+        if any(keyword in label for keyword in ("carpet", "rug", "地毯")):
+            continue
+        kind = str(item.get("kind", "")).lower()
+        if item.get("footprint") == "none" or kind in ("wall_flat", "wall_mounted"):
+            continue
+
+        points = furniture_polygon(item, "footprintPolygon", room_w, room_h)
+        if not points:
+            x = float(item.get("x", 0))
+            y = float(item.get("y", 0))
+            width = float(item.get("targetWidth") or item.get("width") or 0)
+            height = float(item.get("targetHeight") or item.get("height") or 0)
+            if width <= 0 or height <= 0:
+                continue
+            points = [
+                clamp_room_point(x, y + height * 0.55, room_w, room_h),
+                clamp_room_point(x + width, y + height * 0.55, room_w, room_h),
+                clamp_room_point(x + width, y + height, room_w, room_h),
+                clamp_room_point(x, y + height, room_w, room_h),
+            ]
+        if len(points) >= 3:
+            polygons.append(points)
+    return polygons
+
+
+def point_segment_distance_squared(px, py, ax, ay, bx, by):
+    dx = bx - ax
+    dy = by - ay
+    length_squared = dx * dx + dy * dy
+    if length_squared <= 0.0001:
+        return (px - ax) ** 2 + (py - ay) ** 2
+    progress = ((px - ax) * dx + (py - ay) * dy) / length_squared
+    progress = max(0.0, min(1.0, progress))
+    nearest_x = ax + dx * progress
+    nearest_y = ay + dy * progress
+    return (px - nearest_x) ** 2 + (py - nearest_y) ** 2
+
+
+def point_polygon_distance_squared(x, y, points):
+    if point_in_polygon(x, y, points):
+        return 0.0
+    return min(
+        point_segment_distance_squared(
+            x, y, points[index][0], points[index][1],
+            points[(index + 1) % len(points)][0],
+            points[(index + 1) % len(points)][1],
+        )
+        for index in range(len(points))
+    )
+
+
+def visitor_sleep_anchor_for_layout(layout, room_w, room_h, walk_polygon):
+    if len(walk_polygon) < 3:
+        return None
+
+    carpet = furniture_item(layout, "carpet", "rug", "地毯")
+    if carpet:
+        target_x = (
+            float(carpet.get("x", 0)) +
+            float(carpet.get("targetWidth") or carpet.get("width") or 0) * 0.5)
+        target_y = (
+            float(carpet.get("y", 0)) +
+            float(carpet.get("targetHeight") or carpet.get("height") or 0) * 0.5)
+    else:
+        target_x, target_y = polygon_anchor(walk_polygon)
+
+    obstacle_polygons = furniture_obstacle_polygons(
+        layout, room_w, room_h)
+    furniture_clearance_squared = 18.0 ** 2
+    best = None
+    for foot_y in range(room_h):
+        for foot_x in range(room_w):
+            if not generic_monster_footprint_inside(
+                    foot_x, foot_y, walk_polygon):
+                continue
+            if any(point_polygon_distance_squared(
+                    foot_x, foot_y, polygon) < furniture_clearance_squared
+                   for polygon in obstacle_polygons):
+                continue
+            distance = (foot_x - target_x) ** 2 + (foot_y - target_y) ** 2
+            candidate = (distance, foot_y, foot_x)
+            if best is None or candidate < best:
+                best = candidate
+    if best is None:
+        return None
+    return best[2], best[1]
 
 
 def rle_rgb565_image(img):
@@ -585,7 +707,6 @@ def write_room_assets(day_img, night_img, walk_polygon, food_x, food_y,
     patch_pixel_words = format_words(patch_pixels or [0])
 
     HEADER_OUT.write_text("""#pragma once
-#include "platform/api/FlashStorage.h"
 #include <cstdint>
 
 namespace RoomAssets {

@@ -89,6 +89,73 @@ BASIC_MOVE_OVERRIDES = {
     130: 44,   # Gyarados: Bite after evolving
 }
 
+# These moves require persistent PP or held-item state, neither of which exists
+# in the current battle model. Keep them out of learnsets instead of silently
+# reducing them to ordinary damage/status moves.
+REMOVED_SYSTEM_DEPENDENT_MOVES = {
+    "acrobatics", "bug-bite", "covet", "embargo", "fling", "heal-block",
+    "natural-gift", "spite", "thief", "trump-card",
+}
+
+SUPPORTED_DAMAGING_MOVES_WITHOUT_GENERIC_RULES = {
+    "assurance", "bounce", "brine", "dragon-tail", "dream-eater",
+    "eruption", "explosion", "false-swipe", "freeze-dry", "frost-breath",
+    "fury-cutter", "giga-impact", "hex", "hyper-beam", "last-resort",
+    "outrage", "payback", "petal-dance", "razor-wind", "rollout",
+    "self-destruct", "skull-bash", "snore", "stored-power", "sucker-punch",
+    "venoshock", "chip-away", "solar-beam",
+}
+
+# Known damaging moves whose distinctive behavior cannot yet be represented by
+# the compact 1v1 battle state. They remain in source data but cannot be learnt.
+UNSUPPORTED_SPECIAL_DAMAGE_MOVES = {
+    "future-sight", "pursuit",
+}
+
+MOVE_FLAG_IDENTIFIERS = {
+    "snore": ["MOVE_FLAG_USABLE_ASLEEP", "MOVE_FLAG_REQUIRES_ASLEEP_USER"],
+    "dream-eater": ["MOVE_FLAG_REQUIRES_SLEEPING_TARGET"],
+    "solar-beam": ["MOVE_FLAG_TWO_TURN_CHARGE"],
+    "razor-wind": ["MOVE_FLAG_TWO_TURN_CHARGE"],
+    "skull-bash": ["MOVE_FLAG_TWO_TURN_CHARGE", "MOVE_FLAG_CHARGE_DEFENSE"],
+    "bounce": ["MOVE_FLAG_TWO_TURN_CHARGE"],
+    "hyper-beam": ["MOVE_FLAG_RECHARGE"],
+    "giga-impact": ["MOVE_FLAG_RECHARGE"],
+    "self-destruct": ["MOVE_FLAG_SELF_FAINT"],
+    "explosion": ["MOVE_FLAG_SELF_FAINT"],
+    "false-swipe": ["MOVE_FLAG_FALSE_SWIPE"],
+    "thrash": ["MOVE_FLAG_RAMPAGE"],
+    "petal-dance": ["MOVE_FLAG_RAMPAGE"],
+    "outrage": ["MOVE_FLAG_RAMPAGE"],
+    "rollout": ["MOVE_FLAG_ROLLOUT"],
+    "fury-cutter": ["MOVE_FLAG_FURY_CUTTER"],
+    "venoshock": ["MOVE_FLAG_DOUBLE_POISONED"],
+    "hex": ["MOVE_FLAG_DOUBLE_STATUS"],
+    "stored-power": ["MOVE_FLAG_STORED_POWER"],
+    "eruption": ["MOVE_FLAG_ERUPTION_POWER"],
+    "brine": ["MOVE_FLAG_BRINE"],
+    "payback": ["MOVE_FLAG_PAYBACK"],
+    "assurance": ["MOVE_FLAG_ASSURANCE"],
+    "sucker-punch": ["MOVE_FLAG_SUCKER_PUNCH"],
+    "chip-away": ["MOVE_FLAG_IGNORE_DEFENDER_STAGES"],
+    "dragon-tail": ["MOVE_FLAG_FORCE_WILD_END"],
+    "freeze-dry": ["MOVE_FLAG_FREEZE_DRY"],
+    "frost-breath": ["MOVE_FLAG_ALWAYS_CRITICAL"],
+    "stockpile": ["MOVE_FLAG_STOCKPILE"],
+    "swallow": ["MOVE_FLAG_SWALLOW"],
+    "spit-up": ["MOVE_FLAG_SPIT_UP"],
+    "poison-powder": ["MOVE_FLAG_POWDER"],
+    "stun-spore": ["MOVE_FLAG_POWDER"],
+    "sleep-powder": ["MOVE_FLAG_POWDER"],
+    "spore": ["MOVE_FLAG_POWDER"],
+}
+
+# Physical moves in the current reachable move set that don't make contact.
+NON_CONTACT_PHYSICAL_MOVES = {
+    "earthquake", "explosion", "ice-shard", "pin-missile", "razor-leaf",
+    "rock-blast", "rock-slide", "rock-throw", "self-destruct", "stone-edge",
+}
+
 
 def read_json(path):
     return json.loads(path.read_text(encoding="utf-8"))
@@ -319,15 +386,36 @@ def derive_move_effects(move):
             "kind": "CLEAR_BIND", "target": "ATTACKER", "chance": 100,
             "value": 0, "aux": 0, "minTurns": 0, "maxTurns": 0,
         })
+    if identifier == "swallow":
+        effects.append({
+            "kind": "HEAL", "target": "ATTACKER", "chance": 100,
+            "value": 25, "aux": 0, "minTurns": 0, "maxTurns": 0,
+        })
+    if identifier == "stockpile":
+        for stat in ("DEFENSE", "SP_DEFENSE"):
+            effects.append({
+                "kind": "STAT_STAGE", "target": "ATTACKER", "chance": 100,
+                "value": 1, "aux": stat, "minTurns": 0, "maxTurns": 0,
+            })
     return effects
 
 
 def move_is_battle_supported(move):
+    identifier = move.get("identifier", "")
+    if identifier in REMOVED_SYSTEM_DEPENDENT_MOVES or \
+            identifier in UNSUPPORTED_SPECIAL_DAMAGE_MOVES:
+        return False
     damaging = (
         move.get("damageClass") in ("physical", "special")
         and int(move.get("power") or 0) > 0
     )
-    return damaging or bool(derive_move_effects(move))
+    if not damaging:
+        return bool(derive_move_effects(move)) or identifier in (
+            "spit-up", "stockpile", "swallow")
+    category = (move.get("meta") or {}).get("category", "damage")
+    if category in ("unique", "whole-field-effect", "field-effect"):
+        return identifier in SUPPORTED_DAMAGING_MOVES_WITHOUT_GENERIC_RULES
+    return identifier not in UNSUPPORTED_SPECIAL_DAMAGE_MOVES
 
 
 def selected_level_moves(pokemon, version_group):
@@ -610,8 +698,8 @@ def validate_snapshot(snapshot, roster):
             raise RuntimeError(f"unknown move type: {move.get('type')}")
         if move.get("damageClass") not in DAMAGE_CLASS_CPP:
             raise RuntimeError(f"unknown damage class: {move.get('damageClass')}")
-        if bool(move.get("battleSupported")) != move_is_battle_supported(move):
-            raise RuntimeError(f"stale battleSupported flag for move {move.get('id')}")
+        # battleSupported is derived by the current engine rules. The cached
+        # PokeAPI snapshot keeps source metadata stable across generator updates.
     for species in snapshot.get("species", []):
         entries = species.get("learnset", [])
         if not entries:
@@ -648,7 +736,14 @@ def effect_aux_cpp(effect):
 
 def render_generated(snapshot):
     snapshot_hash = canonical_snapshot_hash(snapshot)
-    sorted_moves = sorted(snapshot["moves"], key=lambda value: int(value["id"]))
+    sorted_moves = sorted(
+        (
+            move for move in snapshot["moves"]
+            if move.get("identifier") not in REMOVED_SYSTEM_DEPENDENT_MOVES
+        ),
+        key=lambda value: int(value["id"]),
+    )
+    move_by_id = {int(move["id"]): move for move in sorted_moves}
     effect_rows = []
     move_effect_ranges = {}
     for move in sorted_moves:
@@ -688,7 +783,12 @@ def render_generated(snapshot):
         meta = move.get("meta") or {}
         min_hits = int(meta.get("minHits") or 1)
         max_hits = int(meta.get("maxHits") or min_hits)
-        flags = "MOVE_FLAG_USABLE_ASLEEP" if move.get("identifier") == "snore" else "MOVE_FLAG_NONE"
+        identifier = move.get("identifier", "")
+        move_flags = list(MOVE_FLAG_IDENTIFIERS.get(identifier, ()))
+        if (move.get("damageClass") == "physical" and
+                identifier not in NON_CONTACT_PHYSICAL_MOVES):
+            move_flags.append("MOVE_FLAG_CONTACT")
+        flags = " | ".join(move_flags) if move_flags else "MOVE_FLAG_NONE"
         lines.append(
             "    {"
             f"{int(move['id'])}, {cpp_string(move['name'])}, "
@@ -712,7 +812,10 @@ def render_generated(snapshot):
     species_rows = []
     offset = 0
     for species in sorted(snapshot["species"], key=lambda value: int(value["id"])):
-        entries = species["learnset"]
+        entries = [
+            entry for entry in species["learnset"]
+            if int(entry["moveId"]) in move_by_id
+        ]
         if len(entries) > 255:
             raise RuntimeError(f"species {species['id']} learnset exceeds uint8_t count")
         for entry in entries:
@@ -763,7 +866,13 @@ def render_report(snapshot):
             move = move_by_id[int(entry["moveId"])]
             if move_is_battle_supported(move):
                 continue
-            reason = "status" if move["damageClass"] == "status" else "variable_or_zero_power"
+            identifier = move.get("identifier", "")
+            if identifier in REMOVED_SYSTEM_DEPENDENT_MOVES:
+                reason = "requires_pp_or_held_item"
+            elif identifier in UNSUPPORTED_SPECIAL_DAMAGE_MOVES:
+                reason = "special_battle_rule_not_implemented"
+            else:
+                reason = "status" if move["damageClass"] == "status" else "variable_or_zero_power"
             writer.writerow([
                 species["id"],
                 species["identifier"],

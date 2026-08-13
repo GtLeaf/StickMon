@@ -11,7 +11,11 @@ int main() {
     assert(state.gameMinutesTotal == Game::INITIAL_GAME_MINUTES);
     assert(state.bag.revive == 2);
     assert(state.tutorialFlags == 0);
-    static_assert(sizeof(Game::GameState) == 1560);
+    assert(state.normalBossPitySlotIndex == 0);
+    for (uint8_t area = 0; area < Game::EXPLORE_AREA_COUNT; ++area) {
+        assert(state.normalBossMissCount[area] == 0);
+    }
+    static_assert(sizeof(Game::GameState) == 1572);
     static_assert(offsetof(Game::GameState, tutorialFlags) == 1559);
     static_assert(Game::tutorialMask(Game::TutorialStep::ROOM_FEED) == (1U << 0));
     static_assert(Game::tutorialMask(Game::TutorialStep::ROOM_PET) == (1U << 1));

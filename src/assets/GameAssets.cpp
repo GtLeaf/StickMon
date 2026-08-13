@@ -195,10 +195,20 @@ bool loadPack(PackSlot slot) {
     if (ok) {
         for (uint16_t i = 0; i < header.frameCount; ++i) {
             uint16_t kindValue = loadedFrames[i].kind;
-            if (!validFrame(loadedFrames[i], header) ||
-                packSlotFor(static_cast<Kind>(kindValue)) != slot ||
-                seenKinds[kindValue] ||
-                frameIndices[kindValue] != INVALID_FRAME_INDEX) {
+            bool frameValid = validFrame(loadedFrames[i], header);
+            PackSlot actualSlot = frameValid
+                ? packSlotFor(static_cast<Kind>(kindValue)) : PackSlot::COUNT;
+            bool duplicateInPack = frameValid && seenKinds[kindValue];
+            bool duplicateLoaded = frameValid &&
+                frameIndices[kindValue] != INVALID_FRAME_INDEX;
+            if (!frameValid || actualSlot != slot || duplicateInPack ||
+                duplicateLoaded) {
+                Platform::logf(
+                    "[GameAssets] pack=%s invalid frame index=%u kind=%u valid=%u expectedSlot=%u actualSlot=%u duplicate=%u/%u\n",
+                    packName(slot), i, kindValue, frameValid ? 1U : 0U,
+                    static_cast<unsigned>(slot),
+                    static_cast<unsigned>(actualSlot),
+                    duplicateInPack ? 1U : 0U, duplicateLoaded ? 1U : 0U);
                 ok = false;
                 break;
             }
@@ -521,6 +531,64 @@ bool drawExploreTile(uint16_t tileId, int x, int y, uint8_t animationFrame) {
     case 4542: kind = Kind::EXPLORE_TILE_4542; break;
     case 4543: kind = Kind::EXPLORE_TILE_4543; break;
     case 4544: kind = Kind::EXPLORE_TILE_4544; break;
+    case 4700: kind = Kind::EXPLORE_TILE_4700; break;
+    case 4701: kind = Kind::EXPLORE_TILE_4701; break;
+    case 4702: kind = Kind::EXPLORE_TILE_4702; break;
+    case 4703: kind = Kind::EXPLORE_TILE_4703; break;
+    case 4704: kind = Kind::EXPLORE_TILE_4704; break;
+    case 4705: kind = Kind::EXPLORE_TILE_4705; break;
+    case 4706: kind = Kind::EXPLORE_TILE_4706; break;
+    case 4707: kind = Kind::EXPLORE_TILE_4707; break;
+    case 4708: kind = Kind::EXPLORE_TILE_4708; break;
+    case 4709: kind = Kind::EXPLORE_TILE_4709; break;
+    case 4710: kind = Kind::EXPLORE_TILE_4710; break;
+    case 4711: kind = Kind::EXPLORE_TILE_4711; break;
+    case 4712: kind = Kind::EXPLORE_TILE_4712; break;
+    case 4713: kind = Kind::EXPLORE_TILE_4713; break;
+    case 4714: kind = Kind::EXPLORE_TILE_4714; break;
+    case 4715: kind = Kind::EXPLORE_TILE_4715; break;
+    case 4716: kind = Kind::EXPLORE_TILE_4716; break;
+    case 4717: kind = Kind::EXPLORE_TILE_4717; break;
+    case 4718: kind = Kind::EXPLORE_TILE_4718; break;
+    case 4719: kind = Kind::EXPLORE_TILE_4719; break;
+    case 4720: kind = Kind::EXPLORE_TILE_4720; break;
+    case 4721: kind = Kind::EXPLORE_TILE_4721; break;
+    case 4722: kind = Kind::EXPLORE_TILE_4722; break;
+    case 4723: kind = Kind::EXPLORE_TILE_4723; break;
+    case 4724: kind = Kind::EXPLORE_TILE_4724; break;
+    case 4725: kind = Kind::EXPLORE_TILE_4725; break;
+    case 4726: kind = Kind::EXPLORE_TILE_4726; break;
+    case 4727: kind = Kind::EXPLORE_TILE_4727; break;
+    case 4728: kind = Kind::EXPLORE_TILE_4728; break;
+    case 4729: kind = Kind::EXPLORE_TILE_4729; break;
+    case 4730: kind = Kind::EXPLORE_TILE_4730; break;
+    case 4731: kind = Kind::EXPLORE_TILE_4731; break;
+    case 4732: kind = Kind::EXPLORE_TILE_4732; break;
+    case 4733: kind = Kind::EXPLORE_TILE_4733; break;
+    case 4734: kind = Kind::EXPLORE_TILE_4734; break;
+    case 4735: kind = Kind::EXPLORE_TILE_4735; break;
+    case 4736: kind = Kind::EXPLORE_TILE_4736; break;
+    case 4737: kind = Kind::EXPLORE_TILE_4737; break;
+    case 4738: kind = Kind::EXPLORE_TILE_4738; break;
+    case 4739: kind = Kind::EXPLORE_TILE_4739; break;
+    case 4740: kind = Kind::EXPLORE_TILE_4740; break;
+    case 4741: kind = Kind::EXPLORE_TILE_4741; break;
+    case 4742: kind = Kind::EXPLORE_TILE_4742; break;
+    case 4743: kind = Kind::EXPLORE_TILE_4743; break;
+    case 4744: kind = Kind::EXPLORE_TILE_4744; break;
+    case 4745: kind = Kind::EXPLORE_TILE_4745; break;
+    case 4746: kind = Kind::EXPLORE_TILE_4746; break;
+    case 4747: kind = Kind::EXPLORE_TILE_4747; break;
+    case 4748: kind = Kind::EXPLORE_TILE_4748; break;
+    case 4749: kind = Kind::EXPLORE_TILE_4749; break;
+    case 4750: kind = Kind::EXPLORE_TILE_4750; break;
+    case 4751: kind = Kind::EXPLORE_TILE_4751; break;
+    case 4752: kind = Kind::EXPLORE_TILE_4752; break;
+    case 4753: kind = Kind::EXPLORE_TILE_4753; break;
+    case 4754: kind = Kind::EXPLORE_TILE_4754; break;
+    case 4755: kind = Kind::EXPLORE_TILE_4755; break;
+    case 4756: kind = Kind::EXPLORE_TILE_4756; break;
+    case 4757: kind = Kind::EXPLORE_TILE_4757; break;
     default: return false;
     }
     return draw(kind, x, y);

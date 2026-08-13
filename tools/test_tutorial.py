@@ -44,11 +44,11 @@ class TutorialTests(unittest.TestCase):
         )
         self.assertRegex(source, replay)
 
-    def test_battle_help_stays_in_command_footer(self):
+    def test_battle_command_footer_has_no_operation_hint(self):
         source = self.read("src/scenes/ExploreScene.cpp")
         command_box = source[source.index("void ExploreScene::renderCommandBox()") :]
         command_box = command_box[: command_box.index("\n}") + 2]
-        self.assertIn("Ui::Tutorial::BATTLE_ACTION", command_box)
+        self.assertNotIn("Ui::Tutorial::BATTLE_ACTION", command_box)
         self.assertNotIn("TutorialOverlay::draw", command_box)
 
 

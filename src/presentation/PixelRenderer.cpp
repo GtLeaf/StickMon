@@ -356,32 +356,7 @@ void PixelRenderer::bar(int x, int y, int w, int h, uint8_t value, uint16_t fill
 void PixelRenderer::drawRgb565Rle(int x, int y, int w, int h,
                                   const uint16_t* data, uint32_t offset,
                                   uint32_t length, bool flipX) {
-    if (!gCanvas.attached() || !data || w <= 0 || h <= 0) return;
-
-    const uint32_t total = (uint32_t)(w * h);
-    uint32_t idx = 0;
-    uint32_t pixel = 0;
-    while (idx < length && pixel < total) {
-        uint16_t token =
-            Platform::readProgramWord(&data[offset + idx++]);
-        uint16_t run = token & 0x7FFF;
-        if (run == 0) continue;
-
-        if (token & 0x8000) {
-            pixel += run;
-            if (pixel > total) pixel = total;
-            continue;
-        }
-
-        for (uint16_t i = 0; i < run && idx < length && pixel < total; ++i, ++pixel) {
-            uint16_t color =
-                Platform::readProgramWord(&data[offset + idx++]);
-            int col = pixel % w;
-            int row = pixel / w;
-            if (flipX) col = w - 1 - col;
-            gCanvas.drawPixel(x + col, y + row, color);
-        }
-    }
+    gCanvas.drawRgb565Rle(x, y, w, h, data, offset, length, flipX);
 }
 
 void PixelRenderer::drawIndexed4Rle(int x, int y, int w, int h,

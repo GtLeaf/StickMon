@@ -1,5 +1,8 @@
 #include "game/ExploreMapGenerator.h"
 
+#include "game/ExploreCaveTiles.h"
+#include "game/ExploreIceSlide.h"
+
 #include <cstring>
 
 namespace ExploreMapGenerator {
@@ -325,7 +328,7 @@ constexpr Point FROST_V0_ROUTE1[] = {
     {8, 11}, {8, 4}, {15, 4},
 };
 constexpr FrostRect FROST_V0_ICE[] = {
-    {6, 1, 10, 7},
+    {6, 5, 10, 9},
 };
 constexpr FrostScenerySpec FROST_V0_CRYSTALS[] = {
     {{2, 7}, 4509}, {{10, 2}, 4508},
@@ -338,10 +341,10 @@ constexpr FrostRect FROST_V1_RECTS[] = {
     {2, 0, 13, 4}, {0, 2, 5, 10}, {10, 2, 15, 10}, {4, 7, 11, 11},
 };
 constexpr Point FROST_V1_ROUTE0[] = {
-    {7, 11}, {7, 8}, {11, 8}, {11, 4}, {15, 4},
+    {7, 11}, {7, 8}, {4, 8}, {4, 2}, {11, 2}, {11, 4}, {15, 4},
 };
 constexpr Point FROST_V1_ROUTE1[] = {
-    {7, 11}, {7, 8}, {4, 8}, {0, 8},
+    {7, 11}, {7, 8}, {4, 8}, {4, 2}, {11, 2}, {11, 8}, {0, 8},
 };
 constexpr FrostRect FROST_V1_ICE[] = {
     {5, 1, 10, 3},
@@ -428,7 +431,7 @@ constexpr FrostTemplate FROST_VERTICAL_TEMPLATES[] = {
         static_cast<uint8_t>(sizeof(FROST_V1_RECTS) / sizeof(FROST_V1_RECTS[0])),
         {{7, 11}, Edge::BOTTOM},
         {{{15, 4}, Edge::RIGHT}, {{0, 8}, Edge::LEFT}},
-        {7, 8},
+        {11, 4},
         {FROST_V1_ROUTE0, FROST_V1_ROUTE1},
         {
             static_cast<uint8_t>(sizeof(FROST_V1_ROUTE0) / sizeof(FROST_V1_ROUTE0[0])),
@@ -1967,6 +1970,32 @@ uint16_t frostIceTile(const CellMask& ice, uint8_t x, uint8_t y) {
     return FROST_ICE_CENTER_TILE;
 }
 
+void stampFrostPortal(Map& map, const Endpoint& endpoint, const Point& routeAnchor,
+                      const CellMask& route) {
+    uint8_t x = routeAnchor.x;
+    uint8_t y = routeAnchor.y;
+    if (endpoint.edge == Edge::TOP && x > 0 && x + 1 < WIDTH &&
+        !route.contains(x - 1, y) && !route.contains(x + 1, y)) {
+        for (uint8_t offset = 0; offset < 3; ++offset) {
+            map.layers[1][y * WIDTH + x + offset - 1] =
+                ExploreCaveTiles::FROST_EXIT[offset];
+        }
+    } else if (endpoint.edge == Edge::BOTTOM) {
+        map.layers[1][y * WIDTH + x] =
+            ExploreCaveTiles::FROST_DOWNWARD_STAIRS;
+    }
+}
+
+void stampFrostPortals(Map& map, const CellMask& route) {
+    if (map.pathCount == 0 || map.paths[0].pointCount == 0) return;
+    stampFrostPortal(map, map.entry, map.paths[0].points[0], route);
+    for (uint8_t i = 0; i < map.pathCount; ++i) {
+        const Path& path = map.paths[i];
+        if (path.pointCount == 0) continue;
+        stampFrostPortal(map, path.exit, path.points[path.pointCount - 1], route);
+    }
+}
+
 bool generateFrostCave(uint32_t seed, Edge entryEdge, Map& out) {
     bool horizontal = entryEdge == Edge::LEFT || entryEdge == Edge::RIGHT;
     uint8_t variant = static_cast<uint8_t>((seed >> 5) & 1U);
@@ -2059,6 +2088,8 @@ bool generateFrostCave(uint32_t seed, Edge entryEdge, Map& out) {
     }
     blocked.unite(walls);
 
+    stampFrostPortals(out, route);
+
     for (uint8_t i = 0; i < spec.iceRectCount; ++i) {
         addFrostRect(ice, spec.iceRects[i], mirrorX, mirrorY);
     }
@@ -2112,6 +2143,7 @@ bool generateFrostCave(uint32_t seed, Edge entryEdge, Map& out) {
 
     for (uint8_t i = 0; i < out.pathCount; ++i) {
         const Path& path = out.paths[i];
+        if (!ExploreIceSlide::routeCrossesIceStraight(out, path)) return false;
         for (uint8_t p = 0; p < path.pointCount; ++p) {
             const Point& point = path.points[p];
             if (!floor.contains(point.x, point.y) || blocked.contains(point.x, point.y)) {

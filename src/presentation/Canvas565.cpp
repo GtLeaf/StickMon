@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstdlib>
 
+#include "platform/api/ProgramMemory.h"
+
 namespace {
 
 void swapInt(int& a, int& b) {
@@ -255,6 +257,35 @@ void Canvas565::pushImage(int x, int y, int w, int h,
         for (int px = 0; px < w; ++px) {
             drawPixel(x + px, y + py,
                       source[static_cast<uint32_t>(py) * w + px]);
+        }
+    }
+}
+
+void Canvas565::drawRgb565Rle(int x, int y, int w, int h,
+                              const uint16_t* data, uint32_t offset,
+                              uint32_t length, bool flipX) {
+    if (!pixels_ || !data || w <= 0 || h <= 0) return;
+
+    const uint32_t total = static_cast<uint32_t>(w * h);
+    uint32_t index = 0;
+    uint32_t pixel = 0;
+    while (index < length && pixel < total) {
+        uint16_t token = Platform::readProgramWord(&data[offset + index++]);
+        uint16_t run = token & 0x7FFF;
+        if (run == 0) continue;
+        if (token & 0x8000) {
+            pixel = std::min<uint32_t>(total, pixel + run);
+            continue;
+        }
+        for (uint16_t runIndex = 0;
+             runIndex < run && index < length && pixel < total;
+             ++runIndex, ++pixel) {
+            uint16_t color =
+                Platform::readProgramWord(&data[offset + index++]);
+            int column = static_cast<int>(pixel % w);
+            int row = static_cast<int>(pixel / w);
+            if (flipX) column = w - 1 - column;
+            drawPixel(x + column, y + row, color);
         }
     }
 }

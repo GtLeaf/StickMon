@@ -240,12 +240,23 @@ class ItemSystemTests(unittest.TestCase):
             acknowledge.group(0),
         )
 
-    def test_first_release_save_format_has_no_migrations(self):
+    def test_save_format_keeps_v1_v2_to_v3_migration(self):
         state = (ROOT / "src" / "game" / "GameState.h").read_text()
         manager = (ROOT / "src" / "core" / "SaveManager.cpp").read_text()
-        self.assertRegex(state, r"SAVE_VERSION\s*=\s*1\s*;")
-        self.assertNotIn("LEGACY_SAVE_RECORD_VERSION", manager)
-        self.assertNotRegex(manager, r"\bmigrat(?:e|ed|ion)")
+        self.assertRegex(state, r"SAVE_VERSION\s*=\s*3\s*;")
+        self.assertRegex(state, r"MIN_SUPPORTED_SAVE_VERSION\s*=\s*1\s*;")
+        self.assertIn("LEGACY_SAVE_RECORD_VERSION_V1", manager)
+        self.assertIn("struct SaveRecordV1", manager)
+        self.assertIn("struct SaveRecordV1WithViewV2", manager)
+        self.assertIn("migrateLegacySaveRecord", manager)
+        self.assertIn("migration committed", manager)
+        self.assertIn("legacy blob retained for retry", manager)
+        self.assertIn("sizeof(SaveRecordV1) == 1612", manager)
+        engine = (ROOT / "src" / "core" / "GameEngine.cpp").read_text()
+        self.assertIn("SaveManager::LoadStatus::NEWER_VERSION", engine)
+        self.assertIn("SaveManager::LoadStatus::INVALID", engine)
+        self.assertIn("saveWritesBlocked", engine)
+        self.assertIn("!loadedState && !saveWritesBlocked", engine)
 
 
 if __name__ == "__main__":

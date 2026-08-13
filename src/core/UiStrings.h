@@ -438,6 +438,7 @@ static constexpr const char* SET_TIME = "设置时间";
 static constexpr const char* LIGHT_SOURCE = "光源位置";
 static constexpr const char* TILT_CONTROL = "倾斜控制";
 static constexpr const char* WALK_BOUNDARY = "运动边界";
+static constexpr const char* PAIR_INTERACTION = "追逐触发";
 static constexpr const char* BATTLE_DRAW_BOUNDS = "双方绘制框";
 static constexpr const char* LIGHT_FOLLOW = "跟随";
 static constexpr const char* LIGHT_TOP_LEFT = "左上";
@@ -454,6 +455,7 @@ static constexpr const char* TIME_SET = "时间已推进";
 static constexpr const char* INVALID_ID = "编号无效";
 static constexpr const char* EVENT_BUSY = "当前无法开始";
 static constexpr const char* NO_CONTACT = "没有可来访好友";
+static constexpr const char* PAIR_NEEDS_TWO = "需要两只精灵";
 static constexpr const char* CURRENT_ID_FMT = "当前:%03u";
 static constexpr const char* CURRENT_TIME_FMT = "当前:%02u:%02u";
 static constexpr const char* TARGET_TIME = "目标时间";
@@ -495,6 +497,7 @@ static constexpr const char* ENV_ITEMS[] = {
 static constexpr const char* MOTION_ITEMS[] = {
     TILT_CONTROL,
     WALK_BOUNDARY,
+    PAIR_INTERACTION,
     Ui::BACK,
 };
 static constexpr const char* BATTLE_ITEMS[] = {
@@ -1013,6 +1016,14 @@ static constexpr const char* SPECIAL_DAMAGE_FMT = "%s %u伤害";
 static constexpr const char* WILD_DAMAGE_FMT = "受到%u伤害";
 static constexpr const char* MOVE_USED_FMT = "%s使用了%s!";
 static constexpr const char* WILD_MOVE_USED_FMT = "对手使用了%s!";
+static constexpr const char* SOLAR_BEAM_CHARGE_FMT = "%s正在聚集日光!";
+static constexpr const char* MOVE_CHARGE_FMT = "%s正在蓄力!";
+static constexpr const char* RECHARGING_FMT = "%s正在休息!";
+static constexpr const char* MOVE_FAILED = "但是失败了!";
+static constexpr const char* RAMPAGE_CONFUSED_FMT = "%s陷入了混乱!";
+static constexpr const char* ABILITY_ACTIVATED_FMT = "%s的%s发动了!";
+static constexpr const char* ABSORB_HEAL_FMT = "%s回复了%uHP!";
+static constexpr const char* DRAGON_TAIL_END = "对手被赶走了!";
 static constexpr const char* BOSS_BADGE = "头目";
 static constexpr const char* BOSS_APPEARED = "区域头目出现了!";
 static constexpr const char* BOSS_DEFEATED = "区域头目被击败!";
@@ -1078,6 +1089,7 @@ static constexpr const char* LEARN_EMPTY_SLOT = "放入技能2";
 static constexpr const char* LEARN_EMPTY_SLOT_2 = "放入技能3";
 static constexpr const char* LEARN_CHOOSE_REPLACEMENT = "选择要遗忘的技能";
 static constexpr const char* LEARN_FORGET_FMT = "遗忘%s";
+static constexpr const char* LEARN_GIVE_UP_FMT = "放弃学习%s?";
 static constexpr const char* LEARN_WILL_LEARN_FMT = "将学习%s";
 static constexpr const char* MOVE_REPLACED_TITLE = "招式已替换";
 static constexpr const char* MOVE_FORGOT_FMT = "忘记了%s";

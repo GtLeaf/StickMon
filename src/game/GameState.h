@@ -12,7 +12,8 @@ static constexpr uint8_t TEAM_CAP = 2;
 static constexpr uint8_t STORAGE_CAP = 20;
 static constexpr uint8_t ITEM_STACK_CAP = 99;
 static constexpr uint32_t SAVE_MAGIC = 0x534D4F4E; // SMON
-static constexpr uint16_t SAVE_VERSION = 1;
+static constexpr uint16_t SAVE_VERSION = 3;
+static constexpr uint16_t MIN_SUPPORTED_SAVE_VERSION = 1;
 static constexpr uint8_t STAT_COUNT = 6;
 static constexpr uint8_t NATURE_COUNT = 25;
 static constexpr uint8_t LEVEL_MAX = 100;
@@ -215,7 +216,7 @@ struct MonsterRuntime {
 };
 
 static_assert(sizeof(MonsterRuntime) == 64,
-              "MonsterRuntime layout is part of the v1 save format");
+              "MonsterRuntime layout is part of the v1/v2 save formats");
 static_assert(offsetof(MonsterRuntime, bond) == 43,
               "bond must reuse the v1 padding byte to preserve save size");
 
@@ -318,13 +319,18 @@ struct GameState {
     uint8_t roamingRerollCounts[2] = {};
     // 复用原 GameState 尾部对齐字节，保持首版存档尺寸不变。
     uint8_t tutorialFlags = 0;
+    // 普通区域头目保底：同一栖息地轮换时段内按区域累计失败次数。
+    uint32_t normalBossPitySlotIndex = 0;
+    uint8_t normalBossMissCount[EXPLORE_AREA_COUNT] = {};
 };
-static_assert(sizeof(GameState) == 1560,
-              "v1 save size changed; update the save contract deliberately");
+static_assert(sizeof(GameState) == 1572,
+              "v3 save size changed; add a schema version and migration");
 static_assert(offsetof(GameState, room) == 1452,
               "BagState must not shift the v1 room/save layout");
 static_assert(offsetof(GameState, tutorialFlags) == 1559,
-              "tutorial flags must remain in the v1 tail padding byte");
+              "tutorial flags must remain in the v1/v2 tail padding byte");
+static_assert(offsetof(GameState, normalBossPitySlotIndex) == 1560,
+              "v3 fields must remain append-only for v1/v2 migration");
 
 struct HatchProgress {
     uint32_t magic = HATCH_MAGIC;

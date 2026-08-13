@@ -10,3 +10,9 @@ build/
 web/stickmon.js
 web/stickmon.wasm
 web/stickmon.data
+
+# ESP-IDF firmware outputs
+firmware/**/build*/
+firmware/**/managed_components/
+firmware/**/sdkconfig
+firmware/**/sdkconfig.old

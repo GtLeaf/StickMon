@@ -22,6 +22,12 @@ enum class Level : uint8_t {
     CLOSE,
 };
 
+enum class NaturalVisitEvent : uint8_t {
+    PLAY,
+    GIFT,
+    EXPLORE,
+};
+
 constexpr Level levelFor(Value value) {
     return value >= 75 ? Level::CLOSE
         : value >= 50 ? Level::TRUSTED
@@ -59,6 +65,81 @@ constexpr uint8_t inviteChance(Value value, bool firstInvitation) {
         : value >= 0 ? 35
         : value >= -50 ? 15
                        : 5;
+}
+
+constexpr bool naturalVisitEligible(Value value) {
+    return value >= 0;
+}
+
+constexpr uint8_t naturalVisitDailyChance(Level highestLevel) {
+    return highestLevel == Level::CLOSE ? 20
+        : highestLevel == Level::TRUSTED ? 14
+        : highestLevel == Level::FAMILIAR ? 8
+        : highestLevel == Level::ACQUAINTED ? 4
+                                           : 0;
+}
+
+constexpr uint8_t naturalVisitLevelWeight(Level level) {
+    return level == Level::CLOSE ? 36
+        : level == Level::TRUSTED ? 12
+        : level == Level::FAMILIAR ? 4
+        : level == Level::ACQUAINTED ? 1
+                                    : 0;
+}
+
+constexpr uint8_t naturalVisitLevelMask(Level level) {
+    return level >= Level::ACQUAINTED && level <= Level::CLOSE
+        ? static_cast<uint8_t>(
+              1U << (static_cast<uint8_t>(level) -
+                     static_cast<uint8_t>(Level::ACQUAINTED)))
+        : 0;
+}
+
+inline uint8_t naturalVisitTotalWeight(uint8_t levelMask) {
+    uint8_t total = 0;
+    for (uint8_t raw = static_cast<uint8_t>(Level::ACQUAINTED);
+         raw <= static_cast<uint8_t>(Level::CLOSE); ++raw) {
+        Level level = static_cast<Level>(raw);
+        if ((levelMask & naturalVisitLevelMask(level)) != 0) {
+            total = static_cast<uint8_t>(
+                total + naturalVisitLevelWeight(level));
+        }
+    }
+    return total;
+}
+
+inline Level naturalVisitLevelForRoll(uint8_t levelMask, uint16_t roll) {
+    uint8_t total = naturalVisitTotalWeight(levelMask);
+    if (total == 0) return Level::ACQUAINTED;
+    roll %= total;
+    for (uint8_t raw = static_cast<uint8_t>(Level::ACQUAINTED);
+         raw <= static_cast<uint8_t>(Level::CLOSE); ++raw) {
+        Level level = static_cast<Level>(raw);
+        if ((levelMask & naturalVisitLevelMask(level)) == 0) continue;
+        uint8_t weight = naturalVisitLevelWeight(level);
+        if (roll < weight) return level;
+        roll -= weight;
+    }
+    return Level::CLOSE;
+}
+
+inline NaturalVisitEvent naturalVisitEvent(Level level, uint8_t roll) {
+    roll %= 100;
+    if (level == Level::CLOSE) {
+        return roll < 45 ? NaturalVisitEvent::PLAY
+            : roll < 80 ? NaturalVisitEvent::GIFT
+                        : NaturalVisitEvent::EXPLORE;
+    }
+    if (level == Level::TRUSTED) {
+        return roll < 55 ? NaturalVisitEvent::PLAY
+            : roll < 90 ? NaturalVisitEvent::GIFT
+                        : NaturalVisitEvent::EXPLORE;
+    }
+    if (level == Level::FAMILIAR) {
+        return roll < 80 ? NaturalVisitEvent::PLAY
+                         : NaturalVisitEvent::GIFT;
+    }
+    return NaturalVisitEvent::PLAY;
 }
 
 constexpr uint32_t invitationDay(uint32_t gameMinutesTotal) {

@@ -122,6 +122,15 @@ echo "[flash] Port: ${UPLOAD_PORT:-auto-detect}"
 echo "[flash] PlatformIO: $PIO_BIN"
 echo "[flash] Close any running 'pio device monitor' before continuing."
 
+echo "[flash] Checking resource pack compatibility..."
+if [[ "$DRY_RUN" == "1" ]]; then
+    printf '[flash] Would run: %q %q --validate-packs\n' \
+        python3 "$ROOT_DIR/tools/generate_game_assets.py"
+else
+    (cd "$ROOT_DIR" && PYTHONDONTWRITEBYTECODE=1 \
+        python3 tools/generate_game_assets.py --validate-packs)
+fi
+
 echo "[flash] 1/5 Building firmware..."
 run_pio
 

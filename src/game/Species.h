@@ -77,6 +77,33 @@ enum class DamageClass : uint8_t {
     STATUS,
 };
 
+enum class AbilityId : uint8_t {
+    NONE = 0,
+    OVERGROW,
+    BLAZE,
+    TORRENT,
+    SHIELD_DUST,
+    SHED_SKIN,
+    COMPOUND_EYES,
+    STATIC,
+    STURDY,
+    LEVITATE,
+    ADAPTABILITY,
+    WATER_ABSORB,
+    VOLT_ABSORB,
+    FLASH_FIRE,
+    HUGE_POWER,
+    EFFECT_SPORE,
+    SIMPLE,
+    SOLID_ROCK,
+    INNER_FOCUS,
+    TECHNICIAN,
+    SWIFT_SWIM,
+    INTIMIDATE,
+    THICK_FAT,
+    SYNCHRONIZE,
+};
+
 enum class BattleStat : uint8_t {
     ATTACK = 0,
     DEFENSE,
@@ -120,9 +147,36 @@ struct MoveEffectSpec {
 
 static_assert(sizeof(MoveEffectSpec) == 7, "move effects must remain flash compact");
 
-enum MoveFlags : uint8_t {
+enum MoveFlags : uint32_t {
     MOVE_FLAG_NONE = 0,
-    MOVE_FLAG_USABLE_ASLEEP = 1 << 0,
+    MOVE_FLAG_USABLE_ASLEEP = 1UL << 0,
+    MOVE_FLAG_TWO_TURN_CHARGE = 1UL << 1,
+    MOVE_FLAG_CHARGE_DEFENSE = 1UL << 2,
+    MOVE_FLAG_RECHARGE = 1UL << 3,
+    MOVE_FLAG_SELF_FAINT = 1UL << 4,
+    MOVE_FLAG_FALSE_SWIPE = 1UL << 5,
+    MOVE_FLAG_RAMPAGE = 1UL << 6,
+    MOVE_FLAG_ROLLOUT = 1UL << 7,
+    MOVE_FLAG_FURY_CUTTER = 1UL << 8,
+    MOVE_FLAG_DOUBLE_POISONED = 1UL << 9,
+    MOVE_FLAG_DOUBLE_STATUS = 1UL << 10,
+    MOVE_FLAG_STORED_POWER = 1UL << 11,
+    MOVE_FLAG_ERUPTION_POWER = 1UL << 12,
+    MOVE_FLAG_BRINE = 1UL << 13,
+    MOVE_FLAG_PAYBACK = 1UL << 14,
+    MOVE_FLAG_ASSURANCE = 1UL << 15,
+    MOVE_FLAG_SUCKER_PUNCH = 1UL << 16,
+    MOVE_FLAG_IGNORE_DEFENDER_STAGES = 1UL << 17,
+    MOVE_FLAG_FORCE_WILD_END = 1UL << 18,
+    MOVE_FLAG_FREEZE_DRY = 1UL << 19,
+    MOVE_FLAG_ALWAYS_CRITICAL = 1UL << 20,
+    MOVE_FLAG_STOCKPILE = 1UL << 21,
+    MOVE_FLAG_SWALLOW = 1UL << 22,
+    MOVE_FLAG_SPIT_UP = 1UL << 23,
+    MOVE_FLAG_CONTACT = 1UL << 24,
+    MOVE_FLAG_POWDER = 1UL << 25,
+    MOVE_FLAG_REQUIRES_SLEEPING_TARGET = 1UL << 26,
+    MOVE_FLAG_REQUIRES_ASLEEP_USER = 1UL << 27,
 };
 
 struct MoveInfo {
@@ -141,7 +195,7 @@ struct MoveInfo {
     uint8_t minHits;
     uint8_t maxHits;
     uint8_t criticalStage;
-    uint8_t flags;
+    uint32_t flags;
 };
 
 struct LearnsetEntry {
@@ -160,6 +214,8 @@ const Species& starterSpecies();
 const Species* speciesTable();
 uint8_t speciesCount();
 const Species* findSpecies(uint16_t speciesId);
+AbilityId abilityForSpecies(const Species& species);
+const char* abilityName(AbilityId ability);
 const Species* levelUpEvolutionTarget(const Species& species,
                                       const Game::MonsterRuntime& monster);
 // 进化石触发的目标；石头无效或不匹配时返回 nullptr。

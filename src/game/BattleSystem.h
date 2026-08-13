@@ -21,7 +21,18 @@ struct BattleActorState {
     uint8_t bindTurns = 0;
     uint8_t toxicCounter = 0;
     uint8_t yawnTurns = 0;
+    Game::MoveId chargingMoveId = 0;
+    uint8_t chargingSpecialSlot = SPECIAL_SLOT_NONE;
+    Game::MoveId lockedMoveId = 0;
+    uint8_t lockedSpecialSlot = SPECIAL_SLOT_NONE;
+    uint8_t lockedTurns = 0;
+    Game::MoveId consecutiveMoveId = 0;
+    uint8_t consecutiveHits = 0;
+    uint8_t usedMoveMask = 0;
+    uint8_t stockpileCount = 0;
     bool flinched = false;
+    bool recharging = false;
+    bool flashFireBoost = false;
 };
 
 struct BattleAiMemory {
@@ -41,6 +52,8 @@ enum class ActionBlockReason : uint8_t {
     FREEZE,
     PARALYSIS,
     CONFUSION_SELF_HIT,
+    RECHARGE,
+    MOVE_FAILED,
 };
 
 struct ActionCheckResult {
@@ -70,6 +83,7 @@ enum class EffectOutcomeKind : uint8_t {
     BIND_DAMAGE,
     BIND_ENDED,
     YAWN_SLEEP,
+    ABILITY_ACTIVATED,
 };
 
 struct EffectOutcome {
@@ -79,6 +93,7 @@ struct EffectOutcome {
     BattleStat stat = BattleStat::ATTACK;
     int8_t stageDelta = 0;
     uint16_t amount = 0;
+    AbilityId ability = AbilityId::NONE;
 };
 
 struct EffectResolution {
@@ -99,6 +114,19 @@ struct DamageResult {
     Game::MoveId moveId = 0;
     uint8_t hitCount = 1;
     bool missed = false;
+    bool failed = false;
+    bool absorbed = false;
+    bool sturdyActivated = false;
+    bool forceWildEnd = false;
+    AbilityId activatedAbility = AbilityId::NONE;
+    uint16_t absorbedAmount = 0;
+};
+
+struct DamageContext {
+    bool attackerMovesSecond = false;
+    bool defenderDamagedThisTurn = false;
+    bool defenderMoveIsDamaging = true;
+    bool allowForceWildEnd = true;
 };
 
 inline uint16_t experienceReward(const Species& defeatedSpecies, uint8_t defeatedLevel) {
@@ -144,21 +172,44 @@ uint8_t chooseAiMoveSlot(
 Game::MoveId moveIdForAction(const Game::MonsterRuntime& attacker,
                              const Species& attackerSpecies,
                              uint8_t specialSlot);
+bool moveRequiresCharge(Game::MoveId moveId);
+bool moveLocksUser(Game::MoveId moveId);
+bool moveCausesRecharge(Game::MoveId moveId);
+bool moveForcesWildBattleEnd(Game::MoveId moveId);
+uint8_t moveSlotIndex(const Game::MonsterRuntime& monster,
+                      const Species& species,
+                      Game::MoveId moveId);
+bool canUseLastResort(const Game::MonsterRuntime& monster,
+                      const Species& species,
+                      const BattleActorState& state,
+                      Game::MoveId moveId);
+bool isChargingMove(const BattleActorState& battleState);
+void beginChargingMove(BattleActorState& battleState,
+                       Game::MoveId moveId,
+                       uint8_t specialSlot);
+void clearChargingMove(BattleActorState& battleState);
 int8_t movePriority(Game::MoveId moveId);
 uint16_t effectiveSpeed(const Game::MonsterRuntime& monster,
                         const Species& species,
                         const BattleActorState& battleState);
+void applyEntryAbility(const Species& entrantSpecies,
+                       BattleActorState& entrantState,
+                       const Species& opponentSpecies,
+                       BattleActorState& opponentState,
+                       EffectResolution& result);
 ActionCheckResult checkAction(Game::MonsterRuntime& attacker,
                               const Species& attackerSpecies,
                               BattleActorState& battleState,
-                              Game::MoveId moveId);
+                              Game::MoveId moveId,
+                              bool defenderMoveIsDamaging = true);
 DamageResult calcBasicDamage(const Game::MonsterRuntime& attacker,
                              const Species& attackerSpecies,
                              const Game::MonsterRuntime& defender,
                              const Species& defenderSpecies,
                              uint8_t specialSlot,
                              const BattleActorState& attackerState,
-                             const BattleActorState& defenderState);
+                             const BattleActorState& defenderState,
+                             const DamageContext& context = {});
 EffectResolution applyMoveEffects(const MoveInfo& move,
                                   Game::MonsterRuntime& attacker,
                                   const Species& attackerSpecies,
@@ -168,6 +219,25 @@ EffectResolution applyMoveEffects(const MoveInfo& move,
                                   BattleActorState& defenderState,
                                   uint16_t damageDealt,
                                   bool allowFlinch);
+EffectResolution applyPostDamageAbilities(
+    const MoveInfo& move,
+    Game::MonsterRuntime& attacker,
+    const Species& attackerSpecies,
+    BattleActorState& attackerState,
+    Game::MonsterRuntime& defender,
+    const Species& defenderSpecies,
+    BattleActorState& defenderState,
+    uint16_t damageDealt);
+EffectResolution applyAbsorbAbility(const DamageResult& damage,
+                                    Game::MonsterRuntime& defender,
+                                    const Species& defenderSpecies,
+                                    BattleActorState& defenderState);
+bool recordMoveResult(BattleActorState& state,
+                      Game::MonsterRuntime& monster,
+                      const Species& species,
+                      const MoveInfo& move,
+                      bool hit,
+                      uint8_t specialSlot);
 EffectResolution resolveEndTurn(Game::MonsterRuntime& monster,
                                 const Species& species,
                                 BattleActorState& battleState);

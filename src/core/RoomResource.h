@@ -7,6 +7,7 @@ class RoomResource {
 public:
     enum class BehaviorAnchorType : uint8_t {
         WINDOW_GAZE = 1,
+        VISITOR_SLEEP = 2,
     };
 
     struct Point {
@@ -54,6 +55,9 @@ public:
     int16_t walkMinY() const { return walkMinY_; }
     int16_t walkMaxX() const { return walkMaxX_; }
     int16_t walkMaxY() const { return walkMaxY_; }
+    const Point* walkPolygon() const {
+        return loaded_ ? walkPolygon_ : nullptr;
+    }
     Point walkPoint(uint8_t index) const;
 
     int16_t foodX() const { return foodX_; }

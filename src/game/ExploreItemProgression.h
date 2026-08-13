@@ -45,35 +45,36 @@ inline uint8_t shopUnlockedArea(const Game::GameState& state) {
     return area;
 }
 
-// Pickup-backed products use the first area whose pickup pool contains them.
-// Care essentials stay in tier 0; other shop-only products fill thematic gaps.
+// The first shop tier contains only the care essentials needed to sustain a
+// new save. Food variety and optional care products follow exploration
+// progress instead of flooding the daily shelf on day one.
 inline uint8_t unlockAreaForItem(Game::ItemId item) {
     switch (item) {
     case Game::ItemId::NORMAL_FOOD:
-    case Game::ItemId::TASTY_FOOD:
-    case Game::ItemId::SWEET_FOOD:
-    case Game::ItemId::SPICY_FOOD:
-    case Game::ItemId::SOUR_FOOD:
-    case Game::ItemId::BITTER_FOOD:
-    case Game::ItemId::DRY_FOOD:
     case Game::ItemId::POTION:
     case Game::ItemId::ANTIDOTE:
     case Game::ItemId::HONEY:
     case Game::ItemId::SOAP_0:
-    case Game::ItemId::SOAP_1:
-    case Game::ItemId::SOAP_2:
         return 0;
 
+    case Game::ItemId::TASTY_FOOD:
+    case Game::ItemId::SWEET_FOOD:
+    case Game::ItemId::SPICY_FOOD:
     case Game::ItemId::PARALYZE_HEAL:
     case Game::ItemId::AWAKENING:
     case Game::ItemId::WATER_STONE:
     case Game::ItemId::MAX_REPEL:
+    case Game::ItemId::SOAP_1:
         return 1;
 
+    case Game::ItemId::SOUR_FOOD:
+    case Game::ItemId::BITTER_FOOD:
+    case Game::ItemId::DRY_FOOD:
     case Game::ItemId::SUPER_POTION:
     case Game::ItemId::BURN_HEAL:
     case Game::ItemId::THUNDER_STONE:
     case Game::ItemId::REVIVE:
+    case Game::ItemId::SOAP_2:
         return 2;
 
     case Game::ItemId::ICE_HEAL:

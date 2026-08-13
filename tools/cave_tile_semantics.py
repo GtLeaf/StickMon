@@ -82,3 +82,80 @@ ICE_ROCK_ISLAND_BACKGROUND_TILES = (
     (1131, 1132, 1133),
     (1139, 1140, 1141),
 )
+
+# Runtime IDs are deliberately outside the regular Outside.png range. The
+# firmware renders generated maps from one shared atlas, so raw Caves.png IDs
+# such as 515 and 552 would otherwise resolve to unrelated Outside.png tiles.
+CAVE_RUNTIME_TILE_SOURCES = (
+    (4700, 515),   # entrance facing left
+    (4701, 517),   # entrance facing right
+    (4702, 524),   # entrance facing screen, upper half
+    (4703, 532),   # entrance facing screen, lower half
+    (4704, 526),   # entrance facing away from screen
+    (4705, 539),   # rock steps
+    (4706, 540),   # upward ladder, upper half
+    (4707, 548),   # upward ladder, lower half
+    (4708, 541),   # downward ladder overlay
+    (4709, 552), (4710, 553), (4711, 554),
+    (4712, 560), (4713, 561), (4714, 562),
+    (4715, 568), (4716, 569), (4717, 570),
+    (4718, 571), (4719, 572),
+    (4720, 579), (4721, 580), (4722, 588),
+    (4723, 596), (4724, 597), (4725, 598),
+    (4726, 590), (4727, 582), (4728, 583),
+    (4729, 601), (4730, 602), (4731, 603),
+    (4732, 609), (4733, 610), (4734, 611),
+    (4735, 617), (4736, 618), (4737, 619),
+    (4738, 617), (4739, 618), (4740, 619),  # Y-flipped open top
+    (4741, 1299), (4742, 1300), (4743, 1301),
+    (4744, 1322),
+    (4745, 1326), (4746, 1327),
+    (4747, 1333),
+    (4748, 1341),
+    (4749, 1344), (4750, 1345), (4751, 1353),
+    (4752, 1361), (4753, 1362), (4754, 1363),
+    (4755, 1355), (4756, 1347), (4757, 1348),
+)
+CAVE_RUNTIME_FLIP_Y_IDS = frozenset((4738, 4739, 4740))
+
+CAVE_ENTRANCE_RUNTIME_TILES = {
+    "left": (4700,),
+    "right": (4701,),
+    "front": (4702, 4703),
+    "back": (4704,),
+}
+CAVE_ROCK_STEP_RUNTIME_TILE = 4705
+CAVE_UP_LADDER_RUNTIME_TILES = (4706, 4707)
+CAVE_DOWN_LADDER_RUNTIME_TILE = 4708
+CAVE_ROCK_ISLAND_RUNTIME_TILES = (
+    (4709, 4710, 4711),
+    (4712, 4713, 4714),
+    (4715, 4716, 4717),
+)
+CAVE_CLIFF_TURN_RUNTIME_TILES = (4718, 4719)
+CAVE_EDGE_TRACE_RUNTIME_TILES = (
+    4720, 4721, 4722, 4723, 4724, 4725, 4726, 4727, 4728,
+)
+CAVE_DOWN_LADDER_ROCK_BASE_RUNTIME_TILES = (
+    (4729, 4730, 4731),
+    (4732, 4733, 4734),
+    (4735, 4736, 4737),
+)
+CAVE_DOWN_LADDER_OPEN_BASE_RUNTIME_TILES = (
+    (4738, 4739, 4740),
+    (4732, 4733, 4734),
+    (4735, 4736, 4737),
+)
+
+FROST_CAVE_EXIT_RUNTIME_TILES = (4741, 4742, 4743)
+FROST_BROKEN_ICE_HOLE_RUNTIME_TILE = 4744
+FROST_ROUND_WATER_BOTTOM_RUNTIME_TILES = (4745, 4746)
+FROST_DOWNWARD_STAIRS_RUNTIME_TILE = 4747
+FROST_CAVE_HOLE_RUNTIME_TILE = 4748
+FROST_EDGE_TRACE_RUNTIME_TILES = (
+    4749, 4750, 4751, 4752, 4753, 4754, 4755, 4756, 4757,
+)
+
+assert tuple(runtime_id for runtime_id, _source_id in CAVE_RUNTIME_TILE_SOURCES) == tuple(
+    range(4700, 4758)
+)

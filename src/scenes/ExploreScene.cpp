@@ -12,10 +12,14 @@
 #include "core/ProgressionUi.h"
 #include "core/UiStrings.h"
 #include "game/BattleSystem.h"
+#include "game/ExploreAreaCatalog.h"
 #include "game/ExploreBoss.h"
+#include "game/ExploreBossPity.h"
 #include "game/ExploreEncounters.h"
+#include "game/ExploreIceSlide.h"
 #include "game/ExploreItemProgression.h"
 #include "game/ExplorePool.h"
+#include "game/ExploreRouteGeometry.h"
 #include "game/ExploreRunRules.h"
 #include "game/FriendshipPity.h"
 #include "game/FriendshipSystem.h"
@@ -73,6 +77,7 @@ static constexpr uint16_t DEPTH_MIDDLE_START_PERMILLE = 333;
 static constexpr uint16_t DEPTH_DEEP_START_PERMILLE = 667;
 static constexpr uint8_t ENCOUNTER_COOLDOWN_STEP_COUNT = 5;
 static constexpr uint8_t MAX_ENCOUNTERS_PER_MAP = 2;
+static constexpr uint16_t ICE_SLIDE_STEP_MS = 180;
 static constexpr uint16_t MAP_PICKUP_CHANCE = 6500;
 static constexpr uint32_t MAP_GENERATION_SAFE_SEED = 1;
 static constexpr uint32_t MAP_GENERATION_RETRY_SALTS[] = {
@@ -141,7 +146,8 @@ static constexpr int FOOD_THROW_ARC_HEIGHT = 34;
 static constexpr int BATTLE_SWITCH_TRAVEL_X = 120;
 static constexpr uint8_t EXPLORE_MAP_TILES_W = 16;
 static constexpr uint8_t EXPLORE_MAP_TILES_H = 12;
-static constexpr uint16_t EXPLORE_TILE_SIZE = 26;
+static constexpr uint16_t EXPLORE_TILE_SIZE =
+    ExploreRouteGeometry::TILE_SIZE;
 static constexpr uint16_t EXPLORE_MAP_W = EXPLORE_MAP_TILES_W * EXPLORE_TILE_SIZE;
 static constexpr uint16_t EXPLORE_MAP_H = EXPLORE_MAP_TILES_H * EXPLORE_TILE_SIZE;
 static constexpr float ROUTE_FOLLOWER_START_OFFSET = EXPLORE_TILE_SIZE;
@@ -476,7 +482,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         Ui::Explore::GRASS_PATH,
         Ui::Explore::AREA_DESCS[0],
         GameAssets::Kind::BATTLE_BG_GRASS,
-        5,
+        ExploreAreaCatalog::recommendedLevel(0),
         2,
         3,
         4,
@@ -484,14 +490,14 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         GRASS_PATH_PICKUPS, ENTRY_COUNT(GRASS_PATH_PICKUPS), 10, 30,
         GRASS_PATH_ENCOUNTERS,
         ENTRY_COUNT(GRASS_PATH_ENCOUNTERS),
-        0x2227,
+        ExploreAreaCatalog::fieldColor(0),
         0x5EEE,
     },
     {
         Ui::Explore::CREEK_SLOPE,
         Ui::Explore::AREA_DESCS[1],
         GameAssets::Kind::BATTLE_BG_RIVERSIDE,
-        12,
+        ExploreAreaCatalog::recommendedLevel(1),
         3,
         4,
         5,
@@ -499,14 +505,14 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         CREEK_SLOPE_PICKUPS, ENTRY_COUNT(CREEK_SLOPE_PICKUPS), 15, 40,
         CREEK_SLOPE_ENCOUNTERS,
         ENTRY_COUNT(CREEK_SLOPE_ENCOUNTERS),
-        0x224A,
+        ExploreAreaCatalog::fieldColor(1),
         0x4D38,
     },
     {
         Ui::Explore::TALL_GRASS_PARK,
         Ui::Explore::AREA_DESCS[2],
         GameAssets::Kind::BATTLE_BG_GRASS,
-        22,
+        ExploreAreaCatalog::recommendedLevel(2),
         3,
         4,
         6,
@@ -514,14 +520,14 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         TALL_GRASS_PARK_PICKUPS, ENTRY_COUNT(TALL_GRASS_PARK_PICKUPS), 20, 60,
         TALL_GRASS_PARK_ENCOUNTERS,
         ENTRY_COUNT(TALL_GRASS_PARK_ENCOUNTERS),
-        0x2A66,
+        ExploreAreaCatalog::fieldColor(2),
         0x8EA9,
     },
     {
         Ui::Explore::FROST_CRYSTAL_CAVE,
         Ui::Explore::AREA_DESCS[3],
         GameAssets::Kind::BATTLE_BG_SNOW,
-        34,
+        ExploreAreaCatalog::recommendedLevel(3),
         4,
         5,
         7,
@@ -529,14 +535,14 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         FROST_CRYSTAL_CAVE_PICKUPS, ENTRY_COUNT(FROST_CRYSTAL_CAVE_PICKUPS), 30, 80,
         FROST_CRYSTAL_CAVE_ENCOUNTERS,
         ENTRY_COUNT(FROST_CRYSTAL_CAVE_ENCOUNTERS),
-        0xB6DB,
+        ExploreAreaCatalog::fieldColor(3),
         0x5D7F,
     },
     {
         Ui::Explore::MIST_FOREST_PATH,
         Ui::Explore::AREA_DESCS[4],
         GameAssets::Kind::BATTLE_BG_DEEP_FOREST,
-        47,
+        ExploreAreaCatalog::recommendedLevel(4),
         4,
         6,
         8,
@@ -544,14 +550,14 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         MIST_FOREST_PATH_PICKUPS, ENTRY_COUNT(MIST_FOREST_PATH_PICKUPS), 40, 110,
         MIST_FOREST_PATH_ENCOUNTERS,
         ENTRY_COUNT(MIST_FOREST_PATH_ENCOUNTERS),
-        0x1945,
+        ExploreAreaCatalog::fieldColor(4),
         0x644D,
     },
     {
         Ui::Explore::ANCIENT_WATERFALL_VALLEY,
         Ui::Explore::AREA_DESCS[5],
         GameAssets::Kind::BATTLE_BG_RIVERSIDE,
-        60,
+        ExploreAreaCatalog::recommendedLevel(5),
         5,
         7,
         9,
@@ -560,7 +566,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         ENTRY_COUNT(ANCIENT_WATERFALL_VALLEY_PICKUPS), 50, 150,
         ANCIENT_WATERFALL_VALLEY_ENCOUNTERS,
         ENTRY_COUNT(ANCIENT_WATERFALL_VALLEY_ENCOUNTERS),
-        0x1987,
+        ExploreAreaCatalog::fieldColor(5),
         0x54F7,
     },
 };
@@ -749,33 +755,11 @@ static_assert(static_cast<uint8_t>(ExploreScene::Area::MIST_FOREST_PATH) ==
 static_assert(static_cast<uint8_t>(ExploreScene::Area::ANCIENT_WATERFALL_VALLEY) ==
                   ExploreMapGenerator::ANCIENT_WATERFALL_VALLEY_AREA,
               "ancient valley area index must follow menu order");
-float routeWorldCoordinate(uint8_t tile) {
-    return tile * EXPLORE_TILE_SIZE + EXPLORE_TILE_SIZE * 0.5f;
-}
-
-struct RouteWorldPoint {
-    float x;
-    float y;
-};
+using RouteWorldPoint = ExploreRouteGeometry::WorldPoint;
 
 RouteWorldPoint routePathPointWorld(const ExploreMapGenerator::Path& path,
                                     uint8_t index) {
-    if (path.pointCount == 0) return {0.0f, 0.0f};
-    index = MathUtil::min<uint8_t>(index, path.pointCount - 1);
-    const ExploreMapGenerator::Point& point = path.points[index];
-    RouteWorldPoint world{
-        routeWorldCoordinate(point.x),
-        routeWorldCoordinate(point.y),
-    };
-    if (path.pointCount == 1) return world;
-
-    // Vertical roads use two tile columns; horizontal art already uses the base row.
-    uint8_t neighborIndex = index == 0 ? 1 : index - 1;
-    const ExploreMapGenerator::Point& neighbor = path.points[neighborIndex];
-    if (neighbor.x == point.x) {
-        world.x += EXPLORE_TILE_SIZE * 0.5f;
-    }
-    return world;
+    return ExploreRouteGeometry::pathPoint(path, index);
 }
 
 constexpr uint8_t routeFollowerTargetIndex(uint8_t leaderIndex) {
@@ -1035,6 +1019,7 @@ void ExploreScene::onEnter() {
     ProgressionUi::resetMoveLearnState(moveLearnState);
     areaCursor = 0;
     areaAnimCursor = 0.0f;
+    areaBackgroundTraced = false;
     resultMessage = nullptr;
     defeatAwaitInput = false;
     clearFriendshipFlow();
@@ -1042,11 +1027,18 @@ void ExploreScene::onEnter() {
     exploreSubViewOpen = false;
     exploreMenuOpenedAt = 0;
     autoWalkActive = false;
+    iceSliding = false;
+    iceSlideDx = 0;
+    iceSlideDy = 0;
     walkStepResolutionPending = false;
     battleIsBoss = false;
     battleAllowsFriendship = true;
     battleFoodBond = 0;
     expeditionBossScheduled = false;
+    expeditionNormalBossScheduled = false;
+    naturalRunCompletionPending = false;
+    normalBossPitySettled = false;
+    expeditionPitySlotIndex = 0;
     expeditionBossSpeciesId = 0;
     expeditionBossLevel = 0;
     expeditionBossExperiencePercent = 100;
@@ -1328,17 +1320,24 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
         return true;
     }
 
+    if (phase == Phase::WALKING && iceSliding &&
+        (event.btn == 0 || event.btn == 1)) {
+        return true;
+    }
+
     if (phase == Phase::WALKING && exploreMenuOpen) {
         if (event.action == BtnAction::LONG_PRESS) return true;
         if (event.action != BtnAction::PRESSED) return false;
         if (event.btn == 0) {
-            if (exploreMenuCursor == 0) {
+            AppSceneFlow::ExploreMenuItem item =
+                AppSceneFlow::exploreMenuEntry(exploreMenuCursor).item;
+            if (item == AppSceneFlow::ExploreMenuItem::TEAM) {
                 exploreSubView.openExploreTeamView();
                 exploreSubViewOpen = true;
-            } else if (exploreMenuCursor == 1) {
+            } else if (item == AppSceneFlow::ExploreMenuItem::BAG) {
                 exploreSubView.openExploreBagView();
                 exploreSubViewOpen = true;
-            } else if (exploreMenuCursor == 2) {
+            } else if (item == AppSceneFlow::ExploreMenuItem::END) {
                 requestExploreExit(false, false);
             } else {
                 closeExploreMenu();
@@ -1563,6 +1562,10 @@ void ExploreScene::returnToDebugMenu() {
 void ExploreScene::beginRouteExit() {
     if (phase == Phase::EXITING || phase == Phase::ENDING) return;
     const ExploreMapGenerator::Path& path = generatedMap.paths[currentRoutePath];
+    if (currentMapBlock + 1 == mapBlockCount &&
+        routeIndex + 1 >= path.pointCount) {
+        naturalRunCompletionPending = true;
+    }
 
     routeFromX = routeWorldX;
     routeFromY = routeWorldY;
@@ -1626,6 +1629,9 @@ void ExploreScene::beginRouteExit() {
     routePickupAvailable = false;
     routeGuaranteedEncounterPending = false;
     autoWalkActive = false;
+    iceSliding = false;
+    iceSlideDx = 0;
+    iceSlideDy = 0;
     routeMoveStarted = Hal::ins().millis();
     routeMoving = true;
     phase = Phase::EXITING;
@@ -1652,6 +1658,9 @@ void ExploreScene::requestExploreExit(bool fainted, bool showEndPrompt) {
     bool returnFainted = fainted || mon.fainted || mon.hpCur == 0;
     routeMoving = false;
     autoWalkActive = false;
+    iceSliding = false;
+    iceSlideDx = 0;
+    iceSlideDy = 0;
     if (returnFainted || !showEndPrompt) {
         exploreMenuOpen = false;
         exploreSubViewOpen = false;
@@ -1682,7 +1691,27 @@ void ExploreScene::settleAdventureBond() {
 
 void ExploreScene::completeExploreReturn(bool fainted) {
     settleAdventureBond();
+    settleNormalBossPity();
     GameEngine::ins().beginExploreReturn(fainted);
+}
+
+void ExploreScene::settleNormalBossPity() {
+    if (normalBossPitySettled || !naturalRunCompletionPending) return;
+    normalBossPitySettled = true;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    if (debugBattleMode) return;
+#endif
+    auto& engine = GameEngine::ins();
+    Game::GameState& state = engine.gameState();
+    uint32_t currentSlot = ExploreSpecial::slotIndexFor(
+        engine.gameMinutesTotal());
+    bool changed = ExploreBossPity::syncSlot(state, currentSlot);
+    if (currentSlot == expeditionPitySlotIndex &&
+        !expeditionBossScheduled) {
+        ExploreBossPity::increment(state, static_cast<uint8_t>(activeArea));
+        changed = true;
+    }
+    if (changed) engine.markDirty(SaveUrgency::SOON);
 }
 
 void ExploreScene::closeExploreMenu() {
@@ -1705,6 +1734,17 @@ void ExploreScene::walk() {
             beginRouteExit();
         }
         return;
+    }
+
+    if (!iceSliding) {
+        int8_t dx = 0;
+        int8_t dy = 0;
+        if (ExploreIceSlide::begins(
+                generatedMap, path, routeIndex, dx, dy)) {
+            iceSliding = true;
+            iceSlideDx = dx;
+            iceSlideDy = dy;
+        }
     }
 
     routeFollowerFromX = routeFollowerWorldX;
@@ -1736,11 +1776,21 @@ void ExploreScene::walk() {
     auto& engine = GameEngine::ins();
     const Game::GameState& state = engine.gameState();
     uint8_t leaderSlot = routeLeaderSlot(state);
+    bool hasFollower = hasHealthyRouteFollower(state);
     routeLeaderMoveDurationMs = routeStepDurationForSpecies(
         engine.speciesFor(state.team[leaderSlot]).id);
     routeFollowerMoveDurationMs = routeLeaderMoveDurationMs;
     routeMoveDurationMs = routeLeaderMoveDurationMs;
-    if (hasHealthyRouteFollower(state)) {
+    if (iceSliding) {
+        routeLeaderMoveDurationMs = ICE_SLIDE_STEP_MS;
+        routeFollowerMoveDurationMs = ICE_SLIDE_STEP_MS;
+        routeMoveDurationMs = ICE_SLIDE_STEP_MS;
+        if (!hasFollower) {
+            routeFollowerTargetX = routeFollowerFromX;
+            routeFollowerTargetY = routeFollowerFromY;
+            routeFollowerMoving = false;
+        }
+    } else if (hasFollower) {
         routeFollowerMoveDurationMs = routeStepDurationForSpecies(
             engine.speciesFor(state.team[1]).id);
         if (routeFollowerMoving) {
@@ -1776,24 +1826,25 @@ bool ExploreScene::updateRouteMovement(uint32_t nowMs) {
     const PokemonMotion::Behavior leaderMotion =
         PokemonMotion::behaviorForSpecies(
             GameEngine::ins().speciesFor(state.team[leaderSlot]).id);
-    float leaderEased = phase == Phase::EXITING
+    float leaderEased = phase == Phase::EXITING || iceSliding
         ? leaderProgress
         : PokemonMotion::stepPosition(leaderMotion, leaderProgress);
     routeWorldX = routeFromX + (routeTargetX - routeFromX) * leaderEased;
     routeWorldY = routeFromY + (routeTargetY - routeFromY) * leaderEased;
 
     if (routeFollowerMoving) {
-        uint32_t followerElapsed = elapsed > ROUTE_FOLLOWER_DELAY_MS
-            ? elapsed - ROUTE_FOLLOWER_DELAY_MS
+        uint16_t followerDelayMs = iceSliding ? 0 : ROUTE_FOLLOWER_DELAY_MS;
+        uint32_t followerElapsed = elapsed > followerDelayMs
+            ? elapsed - followerDelayMs
             : 0;
         uint16_t followerDurationMs = MathUtil::max<uint16_t>(1, routeFollowerMoveDurationMs);
-        float followerProgress = elapsed > ROUTE_FOLLOWER_DELAY_MS
+        float followerProgress = elapsed > followerDelayMs
             ? MathUtil::min(1.0f, followerElapsed / static_cast<float>(followerDurationMs))
             : 0.0f;
         const PokemonMotion::Behavior followerMotion =
             PokemonMotion::behaviorForSpecies(
                 GameEngine::ins().speciesFor(state.team[1]).id);
-        float followerEased = phase == Phase::EXITING
+        float followerEased = phase == Phase::EXITING || iceSliding
             ? followerProgress
             : PokemonMotion::stepPosition(followerMotion, followerProgress);
         routeFollowerWorldX = routeFollowerFromX +
@@ -1813,12 +1864,13 @@ bool ExploreScene::updateRouteMovement(uint32_t nowMs) {
         beginExploreEnding();
         return true;
     }
-    if (enterPendingProgression(Phase::WALKING)) {
+    if (!iceSliding && enterPendingProgression(Phase::WALKING)) {
         walkStepResolutionPending = true;
         return true;
     }
     finishCompletedWalkStep();
-    if (routeMoving && autoWalkActive && phase == Phase::WALKING &&
+    if (routeMoving && (autoWalkActive || iceSliding) &&
+        phase == Phase::WALKING &&
         static_cast<int32_t>(nowMs - completedAt) >= 0) {
         routeMoveStarted = completedAt;
     }
@@ -1835,6 +1887,21 @@ void ExploreScene::finishCompletedWalkStep() {
 
     const ExploreMapGenerator::Path& path = generatedMap.paths[currentRoutePath];
     if (exploreMenuOpen) return;
+    if (iceSliding) {
+        if (ExploreIceSlide::continues(
+                generatedMap, path, routeIndex,
+                iceSlideDx, iceSlideDy)) {
+            walk();
+            return;
+        }
+        bool stoppedOnIce = ExploreIceSlide::indexIsSmoothIce(
+            generatedMap, path, routeIndex);
+        iceSliding = false;
+        iceSlideDx = 0;
+        iceSlideDy = 0;
+        autoWalkActive = false;
+        if (stoppedOnIce) return;
+    }
     if (routeBossPending && routeIndex == routeBossIndex) {
         promptOrBeginRouteBoss();
         return;
@@ -2039,6 +2106,9 @@ void ExploreScene::beginEncounter(const Species& species, uint8_t level, bool bo
     pendingBattleSwitchSlot = 0xFF;
     BattleSystem::resetVolatile(playerBattleState);
     BattleSystem::resetVolatile(wildBattleState);
+    battleTurnDamaged[0] = false;
+    battleTurnDamaged[1] = false;
+    forcedBattleEndPending = false;
     playerAiMemory = BattleSystem::BattleAiMemory{};
     wildAiMemory = BattleSystem::BattleAiMemory{};
     fleeAttempts = 0;
@@ -2049,6 +2119,16 @@ void ExploreScene::beginEncounter(const Species& species, uint8_t level, bool bo
     clearBattleLogs();
     enqueueBattleLog(battleIsBoss ? Ui::Explore::BOSS_APPEARED
                                   : Ui::Explore::WILD_APPEARED);
+    BattleSystem::EffectResolution entryEffects;
+    BattleSystem::applyEntryAbility(
+        battlePlayerSpecies(), playerBattleState, *wild, wildBattleState,
+        entryEffects);
+    enqueueBattleEffectLogs(entryEffects, false);
+    entryEffects = BattleSystem::EffectResolution{};
+    BattleSystem::applyEntryAbility(
+        *wild, wildBattleState, battlePlayerSpecies(), playerBattleState,
+        entryEffects);
+    enqueueBattleEffectLogs(entryEffects, true);
 }
 
 void ExploreScene::promptOrBeginRouteBoss() {
@@ -2144,6 +2224,7 @@ void ExploreScene::clearBattleLogs() {
     battleActionIndex = 0;
     battleActionAttackerWild = false;
     battleActionSelfHit = false;
+    battleActionReleasingCharge = false;
     battleActionResult = BattleSystem::DamageResult{};
     battleActionCheck = BattleSystem::ActionCheckResult{};
     battleEffectResolution = BattleSystem::EffectResolution{};
@@ -2188,8 +2269,34 @@ void ExploreScene::enqueueBattleLog(const char* text, BattleLogCue cue) {
 bool ExploreScene::serviceBattleLog(uint32_t nowMs) {
     if (battleLogActive && (int32_t)(nowMs - battleLogUntil) < 0) return false;
     if (battleLogCount == 0) {
+        bool playbackEnded = battleLogActive;
         bool changed = battleLogActive || battleLogVisibleCount > 0;
         battleLogActive = false;
+
+        // Keep the two-line context visible while the player answers a
+        // friendship question. The next queued message will scroll it out.
+        if (phase == Phase::FRIENDSHIP) {
+            switch (friendshipStep) {
+            case FriendshipStep::CONTACT_INTRO:
+                friendshipStep = FriendshipStep::CONTACT_CONFIRM;
+                friendshipConfirmYes = true;
+                return true;
+            case FriendshipStep::CONTACT_ACQUIRED:
+                if (GameEngine::ins().gameState().teamCount < Game::TEAM_CAP) {
+                    friendshipStep = FriendshipStep::TEAM_CONFIRM;
+                    friendshipConfirmYes = true;
+                    return true;
+                }
+                break;
+            case FriendshipStep::CONTACT_CONFIRM:
+            case FriendshipStep::TEAM_CONFIRM:
+                return playbackEnded;
+            case FriendshipStep::TEAM_JOINED:
+            case FriendshipStep::FINISHING:
+                break;
+            }
+        }
+
         battleLogVisibleCount = 0;
         for (uint8_t i = 0; i < BATTLE_LOG_VISIBLE_CAP; ++i) {
             battleLogVisible[i][0] = '\0';
@@ -2223,24 +2330,16 @@ bool ExploreScene::serviceBattleLog(uint32_t nowMs) {
         }
         if (phase == Phase::FRIENDSHIP) {
             switch (friendshipStep) {
-            case FriendshipStep::CONTACT_INTRO:
-                friendshipStep = FriendshipStep::CONTACT_CONFIRM;
-                friendshipConfirmYes = true;
-                return true;
             case FriendshipStep::CONTACT_ACQUIRED:
-                if (GameEngine::ins().gameState().teamCount < Game::TEAM_CAP) {
-                    friendshipStep = FriendshipStep::TEAM_CONFIRM;
-                    friendshipConfirmYes = true;
-                } else {
-                    clearFriendshipFlow();
-                    finishBattleVictoryFlow();
-                }
+                clearFriendshipFlow();
+                finishBattleVictoryFlow();
                 return true;
             case FriendshipStep::TEAM_JOINED:
             case FriendshipStep::FINISHING:
                 clearFriendshipFlow();
                 finishBattleVictoryFlow();
                 return true;
+            case FriendshipStep::CONTACT_INTRO:
             case FriendshipStep::CONTACT_CONFIRM:
             case FriendshipStep::TEAM_CONFIRM:
                 break;
@@ -2410,6 +2509,11 @@ void ExploreScene::enqueueBattleEffectLogs(const BattleSystem::EffectResolution&
         switch (outcome.kind) {
         case BattleSystem::EffectOutcomeKind::STATUS_APPLIED:
         case BattleSystem::EffectOutcomeKind::YAWN_SLEEP:
+            if (outcome.ability != AbilityId::NONE) {
+                snprintf(logBuf, sizeof(logBuf), Ui::Explore::ABILITY_ACTIVATED_FMT,
+                         targetName, abilityName(outcome.ability));
+                enqueueBattleLog(logBuf);
+            }
             snprintf(logBuf, sizeof(logBuf), Ui::Explore::STATUS_APPLIED_FMT,
                      targetName, statusLabel(outcome.status));
             enqueueBattleLog(logBuf);
@@ -2430,6 +2534,14 @@ void ExploreScene::enqueueBattleEffectLogs(const BattleSystem::EffectResolution&
         case BattleSystem::EffectOutcomeKind::STAT_CHANGED: {
             uint8_t statIndex = static_cast<uint8_t>(outcome.stat);
             if (statIndex >= static_cast<uint8_t>(BattleStat::COUNT)) break;
+            if (outcome.ability != AbilityId::NONE) {
+                snprintf(logBuf, sizeof(logBuf), Ui::Explore::ABILITY_ACTIVATED_FMT,
+                         outcome.ability == AbilityId::INTIMIDATE
+                             ? (attackerWild ? wild->name : playerSpecies.name)
+                             : targetName,
+                         abilityName(outcome.ability));
+                enqueueBattleLog(logBuf);
+            }
             snprintf(logBuf, sizeof(logBuf), outcome.stageDelta > 0
                          ? Ui::Explore::STAT_ROSE_FMT
                          : Ui::Explore::STAT_FELL_FMT,
@@ -2452,6 +2564,11 @@ void ExploreScene::enqueueBattleEffectLogs(const BattleSystem::EffectResolution&
             enqueueBattleLog(logBuf);
             break;
         case BattleSystem::EffectOutcomeKind::CURED:
+            if (outcome.ability != AbilityId::NONE) {
+                snprintf(logBuf, sizeof(logBuf), Ui::Explore::ABILITY_ACTIVATED_FMT,
+                         targetName, abilityName(outcome.ability));
+                enqueueBattleLog(logBuf);
+            }
             snprintf(logBuf, sizeof(logBuf), Ui::Explore::CURED_FMT, targetName);
             enqueueBattleLog(logBuf);
             break;
@@ -2473,6 +2590,16 @@ void ExploreScene::enqueueBattleEffectLogs(const BattleSystem::EffectResolution&
             snprintf(logBuf, sizeof(logBuf), Ui::Explore::BIND_DAMAGE_FMT,
                      targetName, outcome.amount);
             enqueueBattleLog(logBuf);
+            break;
+        case BattleSystem::EffectOutcomeKind::ABILITY_ACTIVATED:
+            snprintf(logBuf, sizeof(logBuf), Ui::Explore::ABILITY_ACTIVATED_FMT,
+                     targetName, abilityName(outcome.ability));
+            enqueueBattleLog(logBuf);
+            if (outcome.amount > 0) {
+                snprintf(logBuf, sizeof(logBuf), Ui::Explore::ABSORB_HEAL_FMT,
+                         targetName, outcome.amount);
+                enqueueBattleLog(logBuf);
+            }
             break;
         }
     }
@@ -2511,6 +2638,7 @@ void ExploreScene::beginBattleAction() {
     const Species& activeSpecies = battlePlayerSpecies();
     battleActionAttackerWild = battleActionOrder[battleActionIndex];
     battleActionSelfHit = false;
+    battleActionReleasingCharge = false;
     battleActionResult = BattleSystem::DamageResult{};
     battleActionCheck = BattleSystem::ActionCheckResult{};
     battleEffectResolution = BattleSystem::EffectResolution{};
@@ -2526,11 +2654,35 @@ void ExploreScene::beginBattleAction() {
     uint8_t specialSlot = battleTurnSpecialSlots[sideIndex];
     Game::MoveId moveId = BattleSystem::moveIdForAction(
         attacker, attackerSpecies, specialSlot);
+    if (BattleSystem::isChargingMove(attackerState)) {
+        moveId = attackerState.chargingMoveId;
+        specialSlot = attackerState.chargingSpecialSlot;
+        battleActionReleasingCharge = true;
+    } else if (attackerState.lockedMoveId != 0) {
+        moveId = attackerState.lockedMoveId;
+        specialSlot = attackerState.lockedSpecialSlot;
+    }
+    const MoveInfo* move = findMove(moveId);
     const char* attackerName = attackerSpecies.name;
     char logBuf[BATTLE_LOG_LEN];
 
+    uint8_t opponentIndex = sideIndex == 0 ? 1 : 0;
+    Game::MonsterRuntime& opponent = battleActionAttackerWild ? activeMon : wildRuntime;
+    const Species& opponentSpecies = battleActionAttackerWild ? activeSpecies : *wild;
+    Game::MoveId opponentMoveId = BattleSystem::moveIdForAction(
+        opponent, opponentSpecies, battleTurnSpecialSlots[opponentIndex]);
+    BattleSystem::BattleActorState& opponentState = battleActionAttackerWild
+        ? playerBattleState : wildBattleState;
+    if (BattleSystem::isChargingMove(opponentState)) {
+        opponentMoveId = opponentState.chargingMoveId;
+    } else if (opponentState.lockedMoveId != 0) {
+        opponentMoveId = opponentState.lockedMoveId;
+    }
+    const MoveInfo* opponentMove = findMove(opponentMoveId);
     battleActionCheck = BattleSystem::checkAction(
-        attacker, attackerSpecies, attackerState, moveId);
+        attacker, attackerSpecies, attackerState, moveId,
+        opponentMove && opponentMove->power > 0 &&
+            opponentMove->damageClass != DamageClass::STATUS);
     if (!battleActionAttackerWild) engine.markDirty(SaveUrgency::DEFERRED);
     if (battleActionCheck.wokeUp) {
         snprintf(logBuf, sizeof(logBuf), Ui::Explore::WOKE_UP_FMT, attackerName);
@@ -2546,6 +2698,10 @@ void ExploreScene::beginBattleAction() {
     }
 
     if (!battleActionCheck.canAct()) {
+        if (battleActionReleasingCharge) {
+            BattleSystem::clearChargingMove(attackerState);
+            battleActionReleasingCharge = false;
+        }
         switch (battleActionCheck.blockReason) {
         case BattleSystem::ActionBlockReason::FLINCH:
             snprintf(logBuf, sizeof(logBuf), Ui::Explore::FLINCHED_FMT, attackerName);
@@ -2561,6 +2717,13 @@ void ExploreScene::beginBattleAction() {
             break;
         case BattleSystem::ActionBlockReason::CONFUSION_SELF_HIT:
             snprintf(logBuf, sizeof(logBuf), Ui::Explore::CONFUSION_HIT_FMT, attackerName);
+            break;
+        case BattleSystem::ActionBlockReason::RECHARGE:
+            snprintf(logBuf, sizeof(logBuf), Ui::Explore::RECHARGING_FMT,
+                     attackerName);
+            break;
+        case BattleSystem::ActionBlockReason::MOVE_FAILED:
+            snprintf(logBuf, sizeof(logBuf), "%s", Ui::Explore::MOVE_FAILED);
             break;
         default:
             snprintf(logBuf, sizeof(logBuf), "%s", battleActionAttackerWild
@@ -2585,12 +2748,46 @@ void ExploreScene::beginBattleAction() {
         return;
     }
 
-    const Game::MonsterRuntime& defender = battleActionAttackerWild ? activeMon : wildRuntime;
+    if (!battleActionReleasingCharge &&
+        BattleSystem::moveRequiresCharge(moveId)) {
+        BattleSystem::beginChargingMove(attackerState, moveId, specialSlot);
+        if (moveId == 76) {
+            snprintf(logBuf, sizeof(logBuf), Ui::Explore::SOLAR_BEAM_CHARGE_FMT,
+                     attackerName);
+        } else {
+            snprintf(logBuf, sizeof(logBuf), Ui::Explore::MOVE_CHARGE_FMT,
+                     attackerName);
+        }
+        enqueueBattleLog(logBuf);
+        if (move && (move->flags & MOVE_FLAG_CHARGE_DEFENSE)) {
+            uint8_t defense = static_cast<uint8_t>(BattleStat::DEFENSE);
+            int8_t before = attackerState.statStages[defense];
+            attackerState.statStages[defense] = std::min<int8_t>(6, before + 1);
+            if (attackerState.statStages[defense] != before) {
+                snprintf(logBuf, sizeof(logBuf), Ui::Explore::STAT_ROSE_FMT,
+                         attackerName, Ui::Explore::STAT_NAMES[defense]);
+                enqueueBattleLog(logBuf);
+            }
+        }
+        battleTurnStage = BattleTurnStage::WAIT_ACTION_LOGS;
+        return;
+    }
+    if (battleActionReleasingCharge) {
+        BattleSystem::clearChargingMove(attackerState);
+    }
+
+    Game::MonsterRuntime& defender = battleActionAttackerWild ? activeMon : wildRuntime;
     const Species& defenderSpecies = battleActionAttackerWild ? activeSpecies : *wild;
+    BattleSystem::DamageContext damageContext;
+    damageContext.attackerMovesSecond = battleActionIndex > 0;
+    damageContext.defenderDamagedThisTurn = battleTurnDamaged[opponentIndex];
+    damageContext.defenderMoveIsDamaging = opponentMove && opponentMove->power > 0 &&
+        opponentMove->damageClass != DamageClass::STATUS;
+    damageContext.allowForceWildEnd = !battleActionAttackerWild;
     battleActionResult = BattleSystem::calcBasicDamage(
         attacker, attackerSpecies, defender, defenderSpecies, specialSlot,
-        attackerState, defenderState);
-    const MoveInfo* move = findMove(battleActionResult.moveId);
+        attackerState, defenderState, damageContext);
+    move = findMove(battleActionResult.moveId);
     if (battleActionAttackerWild) {
         snprintf(logBuf, sizeof(logBuf), Ui::Explore::WILD_MOVE_USED_FMT,
                  move ? move->name : Ui::Status::MOVE_UNKNOWN);
@@ -2600,12 +2797,45 @@ void ExploreScene::beginBattleAction() {
     }
     enqueueBattleLog(logBuf);
 
+    if (battleActionResult.failed && move) {
+        BattleSystem::recordMoveResult(
+            attackerState, attacker, attackerSpecies, *move, false, specialSlot);
+        enqueueBattleLog(Ui::Explore::MOVE_FAILED);
+        battleTurnStage = BattleTurnStage::WAIT_ACTION_LOGS;
+        return;
+    }
+
     if (battleActionResult.missed) {
+        if (move) BattleSystem::recordMoveResult(
+            attackerState, attacker, attackerSpecies, *move, false, specialSlot);
         enqueueBattleLog(Ui::Explore::MOVE_MISSED);
         battleTurnStage = BattleTurnStage::WAIT_ACTION_LOGS;
         return;
     }
     if (battleActionResult.effectiveness == 0) {
+        if (move) BattleSystem::recordMoveResult(
+            attackerState, attacker, attackerSpecies, *move, true, specialSlot);
+        if (!battleActionResult.absorbed &&
+            battleActionResult.activatedAbility != AbilityId::NONE) {
+            snprintf(logBuf, sizeof(logBuf), Ui::Explore::ABILITY_ACTIVATED_FMT,
+                     defenderSpecies.name,
+                     abilityName(battleActionResult.activatedAbility));
+            enqueueBattleLog(logBuf);
+        }
+        if (battleActionResult.absorbed) {
+            uint16_t beforeHp = defender.hpCur;
+            BattleSystem::EffectResolution absorb = BattleSystem::applyAbsorbAbility(
+                battleActionResult,
+                defender, defenderSpecies,
+                defenderState);
+            if (battleActionAttackerWild) activeMon.hpCur = defender.hpCur;
+            else {
+                wildHp = defender.hpCur;
+                wildRuntime.hpCur = wildHp;
+            }
+            enqueueBattleEffectLogs(absorb, battleActionAttackerWild);
+            if (defender.hpCur != beforeHp) engine.markDirty(SaveUrgency::DEFERRED);
+        }
         enqueueBattleLog(Ui::Explore::NO_EFFECT);
         battleTurnStage = BattleTurnStage::WAIT_ACTION_LOGS;
         return;
@@ -2651,8 +2881,10 @@ void ExploreScene::applyBattleDamage() {
         if (battleActionAttackerWild) {
             wildHp = battleHpTo;
             wildRuntime.hpCur = wildHp;
+            battleTurnDamaged[1] = true;
         } else {
             activeMon.hpCur = battleHpTo;
+            battleTurnDamaged[0] = true;
             engine.markDirty(SaveUrgency::DEFERRED);
         }
         return;
@@ -2666,9 +2898,11 @@ void ExploreScene::applyBattleDamage() {
         AudioManager::ins().playSfx(damageCue);
         if (battleActionAttackerWild) {
             activeMon.hpCur = battleHpTo;
+            battleTurnDamaged[0] = true;
         } else {
             wildHp = battleHpTo;
             wildRuntime.hpCur = wildHp;
+            battleTurnDamaged[1] = true;
         }
     }
 
@@ -2695,6 +2929,43 @@ void ExploreScene::applyBattleDamage() {
         }
         wildHp = wildRuntime.hpCur;
         enqueueBattleEffectLogs(battleEffectResolution, battleActionAttackerWild);
+
+        BattleSystem::EffectResolution abilityEffects =
+            BattleSystem::applyPostDamageAbilities(
+                *move,
+                battleActionAttackerWild ? wildRuntime : activeMon,
+                battleActionAttackerWild ? *wild : activeSpecies,
+                battleActionAttackerWild ? wildBattleState : playerBattleState,
+                battleActionAttackerWild ? activeMon : wildRuntime,
+                battleActionAttackerWild ? activeSpecies : *wild,
+                battleActionAttackerWild ? playerBattleState : wildBattleState,
+                actualDamage);
+        wildHp = wildRuntime.hpCur;
+        enqueueBattleEffectLogs(abilityEffects, battleActionAttackerWild);
+
+        bool rampageEnded = BattleSystem::recordMoveResult(
+            battleActionAttackerWild ? wildBattleState : playerBattleState,
+            battleActionAttackerWild ? wildRuntime : activeMon,
+            battleActionAttackerWild ? *wild : activeSpecies,
+            *move, true, battleActionResult.specialSlot);
+        wildHp = wildRuntime.hpCur;
+        if (rampageEnded) {
+            char logBuf[BATTLE_LOG_LEN];
+            snprintf(logBuf, sizeof(logBuf), Ui::Explore::RAMPAGE_CONFUSED_FMT,
+                     battleActionAttackerWild ? wild->name : activeSpecies.name);
+            enqueueBattleLog(logBuf);
+        }
+        if (battleActionResult.sturdyActivated) {
+            char logBuf[BATTLE_LOG_LEN];
+            snprintf(logBuf, sizeof(logBuf), Ui::Explore::ABILITY_ACTIVATED_FMT,
+                     battleActionAttackerWild ? activeSpecies.name : wild->name,
+                     abilityName(AbilityId::STURDY));
+            enqueueBattleLog(logBuf);
+        }
+        if (battleActionResult.forceWildEnd && wildHp > 0) {
+            forcedBattleEndPending = true;
+            enqueueBattleLog(Ui::Explore::DRAGON_TAIL_END);
+        }
     }
 
     if (!battleActionAttackerWild && move) {
@@ -2716,8 +2987,15 @@ void ExploreScene::finishBattleAction() {
         battleTurnStage = BattleTurnStage::IDLE;
         battleActionCount = 0;
         battleActionIndex = 0;
-        if (wildFainted) finishWildFaint();
-        else finishPlayerFaint();
+        if (playerFainted) finishPlayerFaint();
+        else finishWildFaint();
+        return;
+    }
+    if (forcedBattleEndPending) {
+        forcedBattleEndPending = false;
+        clearFriendshipFlow();
+        finishRoamingEncounter();
+        resumeWalk();
         return;
     }
 
@@ -2750,6 +3028,8 @@ void ExploreScene::resolveBattleEndTurn() {
 
     battleActionCount = 0;
     battleActionIndex = 0;
+    battleTurnDamaged[0] = false;
+    battleTurnDamaged[1] = false;
     if (battleLogPlaybackBusy()) {
         battleTurnStage = BattleTurnStage::WAIT_END_TURN_LOGS;
     } else {
@@ -2763,7 +3043,56 @@ void ExploreScene::finishBattleEndTurn() {
         finishWildFaint();
     } else if (battlePlayerMonster().hpCur == 0) {
         finishPlayerFaint();
+    } else if (BattleSystem::isChargingMove(playerBattleState)) {
+        beginChargedBattleTurn();
+    } else if (playerBattleState.lockedMoveId != 0) {
+        beginChargedBattleTurn();
     }
+}
+
+void ExploreScene::beginChargedBattleTurn() {
+    if (!wild || wildHp == 0 || battlePlayerMonster().hpCur == 0) return;
+    auto& activeMon = battlePlayerMonster();
+    const Species& activeSpecies = battlePlayerSpecies();
+
+    battleTurnSpecialSlots[0] = BattleSystem::isChargingMove(playerBattleState)
+        ? playerBattleState.chargingSpecialSlot
+        : playerBattleState.lockedSpecialSlot;
+    battleTurnSpecialSlots[1] = BattleSystem::isChargingMove(wildBattleState)
+        ? wildBattleState.chargingSpecialSlot
+        : BattleSystem::chooseAiMoveSlot(
+              wildRuntime, *wild, wildBattleState,
+              activeMon, activeSpecies, playerBattleState, wildAiMemory);
+
+    Game::MoveId playerMove = BattleSystem::isChargingMove(playerBattleState)
+        ? playerBattleState.chargingMoveId
+        : (playerBattleState.lockedMoveId != 0
+            ? playerBattleState.lockedMoveId
+            : BattleSystem::moveIdForAction(
+                  activeMon, activeSpecies, battleTurnSpecialSlots[0]));
+    Game::MoveId wildMove = BattleSystem::isChargingMove(wildBattleState)
+        ? wildBattleState.chargingMoveId
+        : (wildBattleState.lockedMoveId != 0
+            ? wildBattleState.lockedMoveId
+            : BattleSystem::moveIdForAction(
+                  wildRuntime, *wild, battleTurnSpecialSlots[1]));
+    int8_t playerPriority = BattleSystem::movePriority(playerMove);
+    int8_t wildPriority = BattleSystem::movePriority(wildMove);
+    uint16_t playerSpeed = BattleSystem::effectiveSpeed(
+        activeMon, activeSpecies, playerBattleState);
+    uint16_t wildSpeed = BattleSystem::effectiveSpeed(
+        wildRuntime, *wild, wildBattleState);
+    bool playerFirst = playerPriority > wildPriority ||
+                       (playerPriority == wildPriority &&
+                        (playerSpeed > wildSpeed ||
+                         (playerSpeed == wildSpeed &&
+                          GameRandom::random(0, 2) == 0)));
+    battleActionOrder[0] = !playerFirst;
+    battleActionOrder[1] = playerFirst;
+    battleActionCount = 2;
+    battleActionIndex = 0;
+    battleTurnStage = BattleTurnStage::WAIT_ACTION_START;
+    updateBattleTurn(Hal::ins().millis());
 }
 
 void ExploreScene::markFirstSpecialVictory() {
@@ -2904,6 +3233,9 @@ void ExploreScene::finishWildFaint() {
                 engine.gameState().explorePoolRerollCounts[bossArea];
             rerollCount = rerollCount == UINT8_MAX
                 ? 1 : static_cast<uint8_t>(rerollCount + 1);
+            if (expeditionNormalBossScheduled) {
+                ExploreBossPity::resetArea(engine.gameState(), bossArea);
+            }
             engine.markDirty(SaveUrgency::DEFERRED);
             snapshotActivePool();
         }
@@ -2934,16 +3266,24 @@ void ExploreScene::attackWild() {
     }
 
     const Species& activeSpecies = battlePlayerSpecies();
-    battleTurnSpecialSlots[0] = BattleSystem::chooseAiMoveSlot(
-        activeMon, activeSpecies, playerBattleState,
-        wildRuntime, *wild, wildBattleState, playerAiMemory);
-    battleTurnSpecialSlots[1] = BattleSystem::chooseAiMoveSlot(
-        wildRuntime, *wild, wildBattleState,
-        activeMon, activeSpecies, playerBattleState, wildAiMemory);
+    battleTurnSpecialSlots[0] = playerBattleState.lockedMoveId != 0
+        ? playerBattleState.lockedSpecialSlot
+        : BattleSystem::chooseAiMoveSlot(
+              activeMon, activeSpecies, playerBattleState,
+              wildRuntime, *wild, wildBattleState, playerAiMemory);
+    battleTurnSpecialSlots[1] = BattleSystem::isChargingMove(wildBattleState)
+        ? wildBattleState.chargingSpecialSlot
+        : (wildBattleState.lockedMoveId != 0
+            ? wildBattleState.lockedSpecialSlot
+            : BattleSystem::chooseAiMoveSlot(
+                  wildRuntime, *wild, wildBattleState,
+                  activeMon, activeSpecies, playerBattleState, wildAiMemory));
     Game::MoveId playerMove = BattleSystem::moveIdForAction(
         activeMon, activeSpecies, battleTurnSpecialSlots[0]);
     Game::MoveId wildMove = BattleSystem::moveIdForAction(
         wildRuntime, *wild, battleTurnSpecialSlots[1]);
+    if (playerBattleState.lockedMoveId != 0) playerMove = playerBattleState.lockedMoveId;
+    if (wildBattleState.lockedMoveId != 0) wildMove = wildBattleState.lockedMoveId;
     int8_t playerPriority = BattleSystem::movePriority(playerMove);
     int8_t wildPriority = BattleSystem::movePriority(wildMove);
     uint16_t playerSpeed = BattleSystem::effectiveSpeed(
@@ -2970,9 +3310,14 @@ void ExploreScene::wildCounterattack() {
         return;
     }
     battleTurnSpecialSlots[0] = BattleSystem::SPECIAL_SLOT_NONE;
-    battleTurnSpecialSlots[1] = BattleSystem::chooseAiMoveSlot(
-        wildRuntime, *wild, wildBattleState,
-        activeMon, battlePlayerSpecies(), playerBattleState, wildAiMemory);
+    battleTurnSpecialSlots[1] = BattleSystem::isChargingMove(wildBattleState)
+        ? wildBattleState.chargingSpecialSlot
+        : (wildBattleState.lockedMoveId != 0
+            ? wildBattleState.lockedSpecialSlot
+            : BattleSystem::chooseAiMoveSlot(
+                  wildRuntime, *wild, wildBattleState,
+                  activeMon, battlePlayerSpecies(), playerBattleState,
+                  wildAiMemory));
     battleActionOrder[0] = true;
     battleActionCount = 1;
     battleActionIndex = 0;
@@ -3096,6 +3441,11 @@ void ExploreScene::updateBattleSwitch(uint32_t nowMs) {
         playerAiMemory = BattleSystem::BattleAiMemory{};
         pendingBattleSwitchSlot = 0xFF;
         BattleSystem::resetVolatile(playerBattleState);
+        BattleSystem::EffectResolution entryEffects;
+        BattleSystem::applyEntryAbility(
+            battlePlayerSpecies(), playerBattleState, *wild, wildBattleState,
+            entryEffects);
+        enqueueBattleEffectLogs(entryEffects, false);
         battleSwitchStage = BattleSwitchStage::ENTERING;
         battleSwitchStarted = nowMs;
         return;
@@ -3415,6 +3765,9 @@ void ExploreScene::resumeWalk() {
     exploreMenuOpenedAt = 0;
     routeMoving = false;
     autoWalkActive = false;
+    iceSliding = false;
+    iceSlideDx = 0;
+    iceSlideDy = 0;
 }
 
 void ExploreScene::initializeRouteFollowerPosition(bool useTrailPosition) {
@@ -3510,6 +3863,9 @@ bool ExploreScene::resetRouteSegment() {
     const ExploreMapGenerator::Path& path = generatedMap.paths[currentRoutePath];
     routeIndex = 0;
     routeMoving = false;
+    iceSliding = false;
+    iceSlideDx = 0;
+    iceSlideDy = 0;
     routeWalkDirection = static_cast<uint8_t>(inwardDirection(generatedMap.entry.edge));
     routeVisualWalkDirection = routeWalkDirection;
     mapTargetSteps = MathUtil::max<uint16_t>(1, path.pointCount - 1);
@@ -3528,13 +3884,26 @@ void ExploreScene::generateMapBlocks() {
     uint8_t selectedMap = static_cast<uint8_t>(activeArea);
     if (selectedMap >= ROUTE_MAP_COUNT) selectedMap = 0;
     const RouteMap& map = routeMap(selectedMap);
-    mapBlockCount = mapCountForRoll(map, static_cast<uint8_t>(GameRandom::random(0, 100)));
+    auto& engine = GameEngine::ins();
+    Game::GameState& state = engine.gameState();
+    uint32_t currentPitySlot = ExploreSpecial::slotIndexFor(
+        engine.gameMinutesTotal());
+    if (ExploreBossPity::syncSlot(state, currentPitySlot)) {
+        engine.markDirty(SaveUrgency::SOON);
+    }
+    expeditionPitySlotIndex = currentPitySlot;
+    uint8_t pityMisses = state.normalBossMissCount[selectedMap];
+    mapBlockCount = ExploreBossPity::requiresGuaranteedEligibleRun(pityMisses)
+        ? map.maxMapCount
+        : mapCountForRoll(
+              map, static_cast<uint8_t>(GameRandom::random(0, 100)));
     bool bossLengthEligible = ExploreRunRules::allowsRegionalBoss(
         mapBlockCount, map.maxMapCount);
     expeditionSpecialKind = bossLengthEligible
         ? specialKindForArea(selectedMap)
         : ExploreSpecial::Kind::NONE;
     specialRelocationHandled = false;
+    expeditionNormalBossScheduled = false;
     if (expeditionSpecialKind != ExploreSpecial::Kind::NONE) {
         ExploreSpecial::Config special =
             ExploreSpecial::configFor(expeditionSpecialKind);
@@ -3547,7 +3916,8 @@ void ExploreScene::generateMapBlocks() {
     } else if (bossLengthEligible) {
         expeditionBossScheduled =
             GameRandom::random(0, ExploreBoss::SPAWN_ROLL_MAX) <
-            ExploreBoss::SPAWN_CHANCE;
+            ExploreBossPity::chanceForMisses(pityMisses);
+        expeditionNormalBossScheduled = expeditionBossScheduled;
         expeditionBossSpeciesId = expeditionBossScheduled
             ? ExploreBoss::speciesForRoll(
                   selectedMap,
@@ -3573,11 +3943,15 @@ void ExploreScene::generateMapBlocks() {
     activeExitMask = 0;
     for (uint8_t i = 0; i < MAP_EXIT_CAP; ++i) exitNextMaps[i] = 0xFF;
     Platform::logf("[ExploreRun] area=%u maps=%u maxMaps=%u bossEligible=%u "
-                  "boss=%u bossSpecies=%u bossLevel=%u special=%u seed=%08lx\n",
+                  "boss=%u normalBoss=%u pity=%u chance=%u bossSpecies=%u "
+                  "bossLevel=%u special=%u seed=%08lx\n",
                   selectedMap, mapBlockCount,
                   map.maxMapCount,
                   bossLengthEligible ? 1 : 0,
                   expeditionBossScheduled ? 1 : 0,
+                  expeditionNormalBossScheduled ? 1 : 0,
+                  pityMisses,
+                  ExploreBossPity::chanceForMisses(pityMisses),
                   expeditionBossSpeciesId,
                   expeditionBossLevel,
                   static_cast<unsigned>(expeditionSpecialKind),
@@ -3627,7 +4001,16 @@ void ExploreScene::placeRouteBoss() {
         return;
     }
 
-    routeBossIndex = ExploreBoss::routeIndex(path.pointCount);
+    uint8_t preferred = ExploreBoss::routeIndex(path.pointCount);
+    routeBossIndex = ExploreIceSlide::nearestNonIceIndex(
+        generatedMap, path, preferred, 1,
+        static_cast<uint8_t>(path.pointCount - 2));
+    if (routeBossIndex == ExploreIceSlide::INVALID_INDEX) {
+        Platform::logf("[ExploreBoss] no non-ice placement block=%u path=%u points=%u\n",
+                      currentMapBlock, currentRoutePath, path.pointCount);
+        routeBossIndex = 0;
+        return;
+    }
     routeBossPending = true;
     Platform::logf("[ExploreBoss] placed area=%u path=%u index=%u species=%u "
                   "level=%u exp=%u%%\n",
@@ -3654,9 +4037,20 @@ void ExploreScene::placeRoutePickup() {
     if (ExploreRunRules::shouldPlaceFinalReward(
             currentMapBlock, mapBlockCount, routeBossPending)) {
         routePickupFinalReward = true;
-        routePickupIndex = path.pointCount >= 3
+        uint8_t preferred = path.pointCount >= 3
             ? static_cast<uint8_t>(path.pointCount - 2)
             : static_cast<uint8_t>(path.pointCount - 1);
+        uint8_t last = path.pointCount >= 3
+            ? static_cast<uint8_t>(path.pointCount - 2)
+            : static_cast<uint8_t>(path.pointCount - 1);
+        routePickupIndex = ExploreIceSlide::nearestNonIceIndex(
+            generatedMap, path, preferred, 1, last);
+        if (routePickupIndex == ExploreIceSlide::INVALID_INDEX) {
+            routePickupIndex = ExploreIceSlide::nearestNonIceIndex(
+                generatedMap, path, preferred, 1,
+                static_cast<uint8_t>(path.pointCount - 1));
+        }
+        if (routePickupIndex == ExploreIceSlide::INVALID_INDEX) return;
         routePickupItem = rollPickupId(
             routeMap(mapBlocks[currentMapBlock]));
         if (routePickupItem == PICKUP_NONE) routePickupItem = PICKUP_COIN;
@@ -3667,7 +4061,10 @@ void ExploreScene::placeRoutePickup() {
     }
 
     if (path.pointCount < 3) {
-        routePickupIndex = path.pointCount - 1;
+        routePickupIndex = ExploreIceSlide::nearestNonIceIndex(
+            generatedMap, path, static_cast<uint8_t>(path.pointCount - 1),
+            1, static_cast<uint8_t>(path.pointCount - 1));
+        if (routePickupIndex == ExploreIceSlide::INVALID_INDEX) return;
         routePickupItem = rollPickupId(routeMap(mapBlocks[currentMapBlock]));
         routePickupAvailable = routePickupItem != PICKUP_NONE;
         return;
@@ -3676,19 +4073,33 @@ void ExploreScene::placeRoutePickup() {
     bool choosePickup = GameRandom::random(0, 10000) < MAP_PICKUP_CHANCE;
     if (!choosePickup &&
         canScheduleGuaranteedEncounter(path.pointCount, encounterCooldownSteps)) {
-        routeGuaranteedEncounterIndex = guaranteedEncounterIndex(
-            path.pointCount, encounterCooldownSteps);
-        routeGuaranteedEncounterPending = true;
-        Platform::logf("[ExploreEvent] block=%u type=battle index=%u cooldown=%u\n",
-                      currentMapBlock, routeGuaranteedEncounterIndex,
-                      encounterCooldownSteps);
-        return;
+        uint8_t first = static_cast<uint8_t>(encounterCooldownSteps + 1);
+        uint8_t last = static_cast<uint8_t>(path.pointCount - 2);
+        routeGuaranteedEncounterIndex = ExploreIceSlide::nearestNonIceIndex(
+            generatedMap, path,
+            guaranteedEncounterIndex(path.pointCount, encounterCooldownSteps),
+            first, last);
+        if (routeGuaranteedEncounterIndex != ExploreIceSlide::INVALID_INDEX) {
+            routeGuaranteedEncounterPending = true;
+            Platform::logf("[ExploreEvent] block=%u type=battle index=%u cooldown=%u\n",
+                          currentMapBlock, routeGuaranteedEncounterIndex,
+                          encounterCooldownSteps);
+            return;
+        }
     }
 
     uint8_t first = MathUtil::max<uint8_t>(1, path.pointCount / 3);
     uint8_t last = MathUtil::min<uint8_t>(path.pointCount - 2, path.pointCount * 3 / 4);
     if (first > last) first = last = path.pointCount / 2;
-    routePickupIndex = static_cast<uint8_t>(GameRandom::random(first, last + 1));
+    uint8_t preferred = static_cast<uint8_t>(GameRandom::random(first, last + 1));
+    routePickupIndex = ExploreIceSlide::nearestNonIceIndex(
+        generatedMap, path, preferred, first, last);
+    if (routePickupIndex == ExploreIceSlide::INVALID_INDEX) {
+        routePickupIndex = ExploreIceSlide::nearestNonIceIndex(
+            generatedMap, path, preferred, 1,
+            static_cast<uint8_t>(path.pointCount - 2));
+    }
+    if (routePickupIndex == ExploreIceSlide::INVALID_INDEX) return;
     routePickupItem = rollPickupId(routeMap(mapBlocks[currentMapBlock]));
     routePickupAvailable = routePickupItem != PICKUP_NONE;
     Platform::logf("[ExploreEvent] block=%u type=item index=%u cooldown=%u\n",
@@ -3971,7 +4382,17 @@ void ExploreScene::refreshAreaPreviewFrames() {
 
 void ExploreScene::renderAreaMenu() {
     auto& c = PixelRenderer::canvas();
-    if (!GameAssets::drawBattleBackground(GameAssets::Kind::EXPLORE_MENU_BACKGROUND)) {
+    bool backgroundDrawn = GameAssets::drawBattleBackground(
+        GameAssets::Kind::EXPLORE_MENU_BACKGROUND);
+    if (!areaBackgroundTraced) {
+        areaBackgroundTraced = true;
+        Platform::logf(
+            "[ExploreMenuBg] kind=%u drawn=%u assets=%u cursor=%u phase=%u\n",
+            static_cast<unsigned>(GameAssets::Kind::EXPLORE_MENU_BACKGROUND),
+            backgroundDrawn ? 1U : 0U, GameAssets::available() ? 1U : 0U,
+            areaCursor, static_cast<unsigned>(phase));
+    }
+    if (!backgroundDrawn) {
         c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, 0x0000);
     }
     static constexpr int LEFT_W = 70;
@@ -4301,8 +4722,9 @@ void ExploreScene::drawRouteMonster(const Species& species, float worldX,
     if (routeMoving && (!follower || routeFollowerMoving)) {
         uint32_t animationNow = exploreMenuOpen ? exploreMenuOpenedAt : Hal::ins().millis();
         uint32_t elapsed = animationNow - routeMoveStarted;
-        if (!follower || elapsed > ROUTE_FOLLOWER_DELAY_MS) {
-            if (follower) elapsed -= ROUTE_FOLLOWER_DELAY_MS;
+        uint16_t followerDelayMs = iceSliding ? 0 : ROUTE_FOLLOWER_DELAY_MS;
+        if (!follower || elapsed > followerDelayMs) {
+            if (follower) elapsed -= followerDelayMs;
             animationActive = true;
             stepDurationMs = MathUtil::max<uint16_t>(
                 1, follower ? routeFollowerMoveDurationMs
@@ -4790,13 +5212,7 @@ void ExploreScene::renderCommandBox() {
         return;
     }
 
-    bool showTutorial =
-        !GameEngine::ins().tutorialComplete(
-            Game::TutorialStep::BATTLE_ACTION);
-    int commandY = showTutorial ? 116 : 109;
-    if (showTutorial) {
-        drawBattleFooterDarkText(72, 98, Ui::Tutorial::BATTLE_ACTION);
-    }
+    static constexpr int commandY = 109;
     static constexpr int xs[] = {18, 74, 126, 190};
     static constexpr const char* items[] = {
         Ui::Explore::CMD_BATTLE,

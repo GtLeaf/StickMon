@@ -37,6 +37,9 @@ public:
     void drawRoundRect(int x, int y, int w, int h,
                        int radius, uint16_t color);
     void pushImage(int x, int y, int w, int h, const uint16_t* source);
+    void drawRgb565Rle(int x, int y, int w, int h,
+                       const uint16_t* data, uint32_t offset,
+                       uint32_t length, bool flipX = false);
 
     void setClipRect(int x, int y, int w, int h);
     void clearClipRect();
