@@ -16,10 +16,13 @@ int main() {
     assert(Game::ShopService::sellPrice(ItemId::NUGGET) == 500);
 
     uint8_t dailyCount = Game::ShopService::buyItemCount(Category::DAILY, state);
-    assert(dailyCount > 0);
+    assert(dailyCount == 2);
+    const ItemId expectedDaily[] = {
+        ItemId::NORMAL_FOOD, ItemId::SOAP_0,
+    };
     for (uint8_t i = 0; i < dailyCount; ++i) {
-        assert(Game::ShopService::buyItemAt(Category::DAILY, state, i) !=
-               ItemId::CANDY);
+        assert(Game::ShopService::buyItemAt(Category::DAILY, state, i) ==
+               expectedDaily[i]);
     }
 
     uint8_t foodBefore = state.room.food[0];
@@ -41,7 +44,18 @@ int main() {
            BuyResult::BAG_FULL);
     assert(state.coins == 99999);
 
+    state.explorePoolRerollCounts[0] = 1;
+    assert(Game::ShopService::buyItemCount(Category::DAILY, state) == 6);
+    assert(Game::ShopService::buyItemAt(Category::DAILY, state, 1) ==
+           ItemId::TASTY_FOOD);
+    state.explorePoolRerollCounts[1] = 1;
+    assert(Game::ShopService::buyItemCount(Category::DAILY, state) == 10);
+    assert(Game::ShopService::buyItemAt(Category::DAILY, state, 9) ==
+           ItemId::SOAP_2);
     state.explorePoolRerollCounts[2] = 1;
+    assert(Game::ShopService::buyItemCount(Category::DAILY, state) == 12);
+    assert(Game::ShopService::buyItemAt(Category::DAILY, state, 7) ==
+           ItemId::CANDY);
     state.coins = 5000;
     state.candyPurchasesToday = Game::DAILY_CANDY_PURCHASE_CAP;
     assert(Game::ShopService::buy(state, ItemId::CANDY) ==

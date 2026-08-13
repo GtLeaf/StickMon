@@ -103,6 +103,20 @@ void drawWrappedText(const char* value, int x, int y, int maxWidth,
     }
     flushLine();
 }
+
+uint32_t canvasFingerprint(int centerX, int centerY, int halfSize) {
+    auto& canvas = PixelRenderer::canvas();
+    uint32_t hash = 2166136261UL;
+    for (int y = centerY - halfSize; y <= centerY + halfSize; ++y) {
+        for (int x = centerX - halfSize; x <= centerX + halfSize; ++x) {
+            uint16_t pixel = (x >= 0 && y >= 0 &&
+                              x < canvas.width() && y < canvas.height())
+                ? static_cast<uint16_t>(canvas.readPixel(x, y)) : 0;
+            hash = (hash ^ pixel) * 16777619UL;
+        }
+    }
+    return hash;
+}
 }
 
 void ShopScene::onEnter() {
@@ -113,6 +127,17 @@ void ShopScene::onEnter() {
     itemAnimCursor = 0.0f;
     toast = nullptr;
     toastUntil = 0;
+    columnTraceMask = 0;
+    iconTraceMask = 0;
+
+    const Game::GameState& state = GameEngine::ins().gameState();
+    Platform::logf(
+        "[ShopIcon] enter daily=%u explore=%u sell=%u shopArea=%u assets=%u\n",
+        Game::ShopService::buyItemCount(Game::ShopService::Category::DAILY, state),
+        Game::ShopService::buyItemCount(Game::ShopService::Category::EXPLORE, state),
+        Game::ShopService::sellItemCount(state),
+        ExploreItemProgression::shopUnlockedArea(state),
+        GameAssets::available() ? 1U : 0U);
 }
 
 SceneUpdateResult ShopScene::update(uint32_t nowMs, float dtSeconds) {
@@ -267,16 +292,56 @@ ShopScene::Item ShopScene::itemForCategory(Category category, uint8_t index) con
     if (category == CATEGORY_SELL) return sellItemAtIndex(index);
     if (category == CATEGORY_BACK) return BACK;
 
-    const Item* items = category == CATEGORY_DAILY
-        ? DAILY_ITEMS : EXPLORE_ITEMS;
-    uint8_t itemCount = category == CATEGORY_DAILY
-        ? DAILY_ITEM_COUNT : EXPLORE_ITEM_COUNT;
-    uint8_t visible = 0;
-    for (uint8_t i = 0; i < itemCount; ++i) {
-        Item item = items[i];
-        if (item == BACK || !itemUnlocked(item)) continue;
-        if (visible == index) return item;
-        ++visible;
+    // ShopService owns the catalog and progression rules. Keep this scene's
+    // enum only as a presentation detail and convert the visible game item.
+    Game::ShopService::Category serviceCategory =
+        category == CATEGORY_DAILY
+            ? Game::ShopService::Category::DAILY
+            : Game::ShopService::Category::EXPLORE;
+    uint8_t visibleCount = Game::ShopService::buyItemCount(
+        serviceCategory, GameEngine::ins().gameState());
+    if (index < visibleCount) {
+        return itemFromGameItemId(Game::ShopService::buyItemAt(
+            serviceCategory, GameEngine::ins().gameState(), index));
+    }
+    return BACK;
+}
+
+ShopScene::Item ShopScene::itemFromGameItemId(Game::ItemId item) {
+    switch (item) {
+    case Game::ItemId::POTION: return POTION;
+    case Game::ItemId::SUPER_POTION: return SUPER_POTION;
+    case Game::ItemId::ANTIDOTE: return ANTIDOTE;
+    case Game::ItemId::PARALYZE_HEAL: return PARALYZE_HEAL;
+    case Game::ItemId::AWAKENING: return AWAKENING;
+    case Game::ItemId::BURN_HEAL: return BURN_HEAL;
+    case Game::ItemId::ICE_HEAL: return ICE_HEAL;
+    case Game::ItemId::NORMAL_FOOD: return FOOD;
+    case Game::ItemId::TASTY_FOOD: return TASTY_FOOD;
+    case Game::ItemId::SWEET_FOOD: return SWEET_FOOD;
+    case Game::ItemId::SPICY_FOOD: return SPICY_FOOD;
+    case Game::ItemId::SOUR_FOOD: return SOUR_FOOD;
+    case Game::ItemId::BITTER_FOOD: return BITTER_FOOD;
+    case Game::ItemId::DRY_FOOD: return DRY_FOOD;
+    case Game::ItemId::CANDY: return CANDY;
+    case Game::ItemId::MAX_POTION: return MAX_POTION;
+    case Game::ItemId::FULL_RESTORE: return FULL_RESTORE;
+    case Game::ItemId::FULL_HEAL: return FULL_HEAL;
+    case Game::ItemId::FIRE_STONE: return FIRE_STONE;
+    case Game::ItemId::WATER_STONE: return WATER_STONE;
+    case Game::ItemId::THUNDER_STONE: return THUNDER_STONE;
+    case Game::ItemId::REVIVE: return REVIVE;
+    case Game::ItemId::MAX_REPEL: return MAX_REPEL;
+    case Game::ItemId::HONEY: return HONEY;
+    case Game::ItemId::NUGGET: return NUGGET;
+    case Game::ItemId::BIG_PEARL: return BIG_PEARL;
+    case Game::ItemId::STAR_PIECE: return STAR_PIECE;
+    case Game::ItemId::SOAP_0: return SOAP_0;
+    case Game::ItemId::SOAP_1: return SOAP_1;
+    case Game::ItemId::SOAP_2: return SOAP_2;
+    case Game::ItemId::HEART_SCALE:
+    case Game::ItemId::COUNT:
+        return BACK;
     }
     return BACK;
 }
@@ -293,11 +358,10 @@ ShopScene::Item ShopScene::itemAtIndex(uint8_t index) const {
 }
 
 ShopScene::Item ShopScene::sellItemAtIndex(uint8_t index) const {
-    uint8_t visible = 0;
-    for (Item item : SELL_ITEMS) {
-        if (ownedCountFor(item) == 0) continue;
-        if (visible == index) return item;
-        ++visible;
+    const Game::GameState& state = GameEngine::ins().gameState();
+    uint8_t visibleCount = Game::ShopService::sellItemCount(state);
+    if (index < visibleCount) {
+        return itemFromGameItemId(Game::ShopService::sellItemAt(state, index));
     }
     return BACK;
 }
@@ -309,28 +373,24 @@ uint8_t ShopScene::currentItemCount() const {
 
 uint8_t ShopScene::itemCountForCategory(Category category, bool includeBack) const {
     if (category == CATEGORY_SELL) {
-        uint8_t count = sellItemCount();
-        return !includeBack && count > 0 ? static_cast<uint8_t>(count - 1) : count;
+        uint8_t count = Game::ShopService::sellItemCount(
+            GameEngine::ins().gameState());
+        return includeBack ? static_cast<uint8_t>(count + 1) : count;
     }
     if (category != CATEGORY_DAILY && category != CATEGORY_EXPLORE) return 0;
 
-    const Item* items = category == CATEGORY_DAILY
-        ? DAILY_ITEMS : EXPLORE_ITEMS;
-    uint8_t itemCount = category == CATEGORY_DAILY
-        ? DAILY_ITEM_COUNT : EXPLORE_ITEM_COUNT;
-    uint8_t count = includeBack ? 1 : 0;
-    for (uint8_t i = 0; i < itemCount; ++i) {
-        if (items[i] != BACK && itemUnlocked(items[i])) ++count;
-    }
-    return count;
+    Game::ShopService::Category serviceCategory =
+        category == CATEGORY_DAILY
+            ? Game::ShopService::Category::DAILY
+            : Game::ShopService::Category::EXPLORE;
+    uint8_t count = Game::ShopService::buyItemCount(
+        serviceCategory, GameEngine::ins().gameState());
+    return includeBack ? static_cast<uint8_t>(count + 1) : count;
 }
 
 uint8_t ShopScene::sellItemCount() const {
-    uint8_t count = 1; // Back is always visible.
-    for (Item item : SELL_ITEMS) {
-        if (ownedCountFor(item) > 0) ++count;
-    }
-    return count;
+    return static_cast<uint8_t>(
+        Game::ShopService::sellItemCount(GameEngine::ins().gameState()) + 1);
 }
 
 uint8_t ShopScene::ownedCountFor(Item item) const {
@@ -412,6 +472,16 @@ void ShopScene::renderIconColumn(int centerX, bool dimmed, bool selectable) {
     Category category = viewMode == ViewMode::CATEGORY
         ? (Category)cursor : activeCategory;
     uint8_t itemCount = itemCountForCategory(category, viewMode != ViewMode::CATEGORY);
+    uint8_t traceIndex = static_cast<uint8_t>(viewMode) * CATEGORY_COUNT +
+                         static_cast<uint8_t>(category);
+    uint16_t traceBit = traceIndex < 16 ? static_cast<uint16_t>(1U << traceIndex) : 0;
+    if (traceBit != 0 && (columnTraceMask & traceBit) == 0) {
+        columnTraceMask |= traceBit;
+        Platform::logf(
+            "[ShopIcon] column mode=%u category=%u count=%u cursor=%u center=%d dim=%u selectable=%u\n",
+            static_cast<unsigned>(viewMode), static_cast<unsigned>(category),
+            itemCount, cursor, centerX, dimmed ? 1U : 0U, selectable ? 1U : 0U);
+    }
     if (itemCount == 0) return;
 
     c.setClipRect(centerX - 29, CONTENT_TOP, 58, Hal::DISPLAY_H - CONTENT_TOP);
@@ -465,9 +535,57 @@ void ShopScene::drawItemIcon(Item item, int centerX, int centerY, float scale,
         c.drawLine(centerX - halfW, centerY, centerX - 1, centerY + halfH, fallbackColor);
         return;
     }
-    if (GameAssets::drawCentered(GameAssets::itemKind(gameItemIdFor(item)),
-                                 centerX, centerY, scale)) return;
-    PixelRenderer::text(centerX - 4, centerY - 8, "?", fallbackColor, 1);
+    Game::ItemId gameItem = gameItemIdFor(item);
+    GameAssets::Kind kind = GameAssets::itemKind(gameItem);
+    uint8_t itemIndex = static_cast<uint8_t>(item);
+    uint32_t traceBit = itemIndex < 32 ? (1UL << itemIndex) : 0;
+    bool shouldTrace = traceBit != 0 && (iconTraceMask & traceBit) == 0;
+    uint32_t before = shouldTrace ? canvasFingerprint(centerX, centerY, 22) : 0;
+    bool drawn = GameAssets::drawCentered(kind, centerX, centerY, scale);
+    if (shouldTrace) {
+        iconTraceMask |= traceBit;
+        uint32_t after = canvasFingerprint(centerX, centerY, 22);
+        Platform::logf(
+            "[ShopIcon] item=%u gameItem=%u kind=%u drawn=%u changed=%u before=%08lx after=%08lx pos=%d,%d scale=%u\n",
+            itemIndex, static_cast<unsigned>(gameItem),
+            static_cast<unsigned>(kind), drawn ? 1U : 0U,
+            before != after ? 1U : 0U,
+            static_cast<unsigned long>(before), static_cast<unsigned long>(after),
+            centerX, centerY, static_cast<unsigned>(scale * 100.0f + 0.5f));
+    }
+    if (drawn) return;
+
+    // A stale or incomplete resource pack must not turn a valid product into
+    // an unknown-item marker. Keep a small deterministic glyph so the item
+    // remains identifiable and purchasable until the pack is updated.
+    int half = (int)roundf(7.0f * scale);
+    c.drawRect(centerX - half, centerY - half, half * 2 + 1, half * 2 + 1,
+               fallbackColor);
+    switch (item) {
+    case FOOD:
+    case TASTY_FOOD:
+    case SWEET_FOOD:
+    case SPICY_FOOD:
+    case SOUR_FOOD:
+    case BITTER_FOOD:
+    case DRY_FOOD:
+        c.fillRect(centerX - half + 3, centerY - half + 3,
+                   half * 2 - 5, half * 2 - 5, fallbackColor);
+        c.drawFastHLine(centerX - half + 4, centerY,
+                        half * 2 - 7, PixelRenderer::rgb(7, 9, 14));
+        break;
+    case SOAP_0:
+    case SOAP_1:
+    case SOAP_2:
+        c.drawFastHLine(centerX - half + 3, centerY,
+                        half * 2 - 5, fallbackColor);
+        c.drawFastVLine(centerX, centerY - half + 3,
+                        half * 2 - 5, fallbackColor);
+        break;
+    default:
+        c.fillRect(centerX - 3, centerY - 3, 7, 7, fallbackColor);
+        break;
+    }
 }
 
 void ShopScene::renderItemDetail() {

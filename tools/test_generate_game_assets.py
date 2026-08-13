@@ -12,6 +12,7 @@ from generate_game_assets import (
     EXPLORE_PICKUP_SIZE,
     ITEMS,
     MAX_PACK_FRAMES,
+    OUTPUTS,
     SHOWER_BRUSH_SIZE,
     SHOWER_BACKGROUND_SIZE,
     SHOWER_BUBBLE_SIZES,
@@ -21,9 +22,14 @@ from generate_game_assets import (
     SHOWER_MENU_BRUSH_SIZE,
     SHOWER_MENU_SPRINKLER_SIZE,
     SHOWER_SOAP_COUNT,
+    expand_stale_pack_selection,
+    expected_pack_kind_names,
+    expected_writer_kind_ids,
     prepare_shower_assets,
     prepare_explore_pickup_marker,
+    read_pack_kind_ids,
     validate_explore_pickup_pack_mapping,
+    validate_committed_pack_kind_ids,
     validate_runtime_pack_limit,
     validate_shower_pack_mapping,
     write_pack,
@@ -90,6 +96,22 @@ class GenerateGameAssetsTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "frames; limit"):
             write_pack("map", writer)
+
+    def test_writer_kind_ids_follow_current_enum(self):
+        writer = SimpleNamespace(frames=[{"kind": "ITEM_NORMAL_FOOD"}])
+        self.assertEqual(expected_writer_kind_ids(writer), [4])
+
+    def test_committed_packs_match_current_kind_ids(self):
+        validate_committed_pack_kind_ids()
+        expected = expected_pack_kind_names()
+        for name, kinds in expected.items():
+            with self.subTest(pack=name):
+                self.assertEqual(
+                    read_pack_kind_ids(OUTPUTS[name]),
+                    [expected_writer_kind_ids(
+                        SimpleNamespace(frames=[{"kind": kind}])
+                     )[0] for kind in kinds],
+                )
 
     def test_explore_pickup_marker_is_generated_at_native_render_size(self):
         with TemporaryDirectory() as temp_dir:

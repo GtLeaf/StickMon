@@ -69,6 +69,8 @@ private:
     float itemAnimCursor = 0.0f;
     const char* toast = nullptr;
     uint32_t toastUntil = 0;
+    uint16_t columnTraceMask = 0;
+    mutable uint32_t iconTraceMask = 0;
 
     void activateCategory();
     void returnToCategories();
@@ -78,6 +80,7 @@ private:
     Item selectedItem() const;
     Item itemAtIndex(uint8_t index) const;
     Item itemForCategory(Category category, uint8_t index) const;
+    static Item itemFromGameItemId(Game::ItemId item);
     bool itemUnlocked(Item item) const;
     Item sellItemAtIndex(uint8_t index) const;
     uint8_t currentItemCount() const;

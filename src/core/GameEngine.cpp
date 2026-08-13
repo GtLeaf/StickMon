@@ -917,7 +917,8 @@ bool GameEngine::acceptContactKnock() {
     contactVisit.active = true;
     contactVisit.exploring = false;
     contactVisit.farewellPending = false;
-    contactVisit.startedMs = Hal::ins().millis();
+    contactVisit.stayTimerStarted = false;
+    contactVisit.startedMs = 0;
 
     if (contactVisit.kind == ContactVisitKind::PLAY) {
         Game::MonsterRuntime& original =
@@ -956,9 +957,18 @@ bool GameEngine::exploreBlockedByGuest() const {
     return localGuestAtHome || linkedGuestAtHome;
 }
 
+void GameEngine::beginContactVisitStay(uint32_t nowMs) {
+    if (!contactVisit.active || contactVisit.exploring ||
+        contactVisit.farewellPending) {
+        return;
+    }
+    contactVisit.startedMs = nowMs;
+    contactVisit.stayTimerStarted = true;
+}
+
 bool GameEngine::contactVisitTimedOut(uint32_t nowMs) const {
     return contactVisit.active && !contactVisit.exploring &&
-           !contactVisit.farewellPending &&
+           !contactVisit.farewellPending && contactVisit.stayTimerStarted &&
            nowMs - contactVisit.startedMs >= CONTACT_VISIT_PLAY_MS;
 }
 
@@ -1016,6 +1026,7 @@ void GameEngine::completeContactVisit() {
     contactVisit.active = false;
     contactVisit.exploring = false;
     contactVisit.farewellPending = false;
+    contactVisit.stayTimerStarted = false;
     contactVisit.storageSlot = 0xFF;
     contactVisit.kind = ContactVisitKind::NONE;
     syncSpriteCache();

@@ -195,10 +195,20 @@ bool loadPack(PackSlot slot) {
     if (ok) {
         for (uint16_t i = 0; i < header.frameCount; ++i) {
             uint16_t kindValue = loadedFrames[i].kind;
-            if (!validFrame(loadedFrames[i], header) ||
-                packSlotFor(static_cast<Kind>(kindValue)) != slot ||
-                seenKinds[kindValue] ||
-                frameIndices[kindValue] != INVALID_FRAME_INDEX) {
+            bool frameValid = validFrame(loadedFrames[i], header);
+            PackSlot actualSlot = frameValid
+                ? packSlotFor(static_cast<Kind>(kindValue)) : PackSlot::COUNT;
+            bool duplicateInPack = frameValid && seenKinds[kindValue];
+            bool duplicateLoaded = frameValid &&
+                frameIndices[kindValue] != INVALID_FRAME_INDEX;
+            if (!frameValid || actualSlot != slot || duplicateInPack ||
+                duplicateLoaded) {
+                Platform::logf(
+                    "[GameAssets] pack=%s invalid frame index=%u kind=%u valid=%u expectedSlot=%u actualSlot=%u duplicate=%u/%u\n",
+                    packName(slot), i, kindValue, frameValid ? 1U : 0U,
+                    static_cast<unsigned>(slot),
+                    static_cast<unsigned>(actualSlot),
+                    duplicateInPack ? 1U : 0U, duplicateLoaded ? 1U : 0U);
                 ok = false;
                 break;
             }

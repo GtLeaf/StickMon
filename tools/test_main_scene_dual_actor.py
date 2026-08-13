@@ -30,7 +30,7 @@ class MainSceneDualActorTests(unittest.TestCase):
     def test_routes_treat_the_other_actor_as_an_obstacle(self):
         self.assertIn("routeSegmentKeepsSpacing", self.source)
         self.assertIn("otherGroundOffsetY", self.source)
-        self.assertIn("visitorNextReplanMs = nowMs + 350", self.source)
+        self.assertIn("visitor.nextReplanMs = nowMs + 350", self.source)
         self.assertIn("handleVisitorMoveBlocked", self.source)
         begin = self.source.index("bool MainScene::doorStepKeepsSpacing")
         end = self.source.index("float MainScene::doorActorMinSeparation", begin)
@@ -38,7 +38,7 @@ class MainSceneDualActorTests(unittest.TestCase):
 
     def test_final_waypoint_snap_also_preserves_actor_spacing(self):
         main_arrival = self.source.index("if (dist < 1.2f || step >= dist)")
-        main_snap = self.source.index("monsterX = waypointX", main_arrival)
+        main_snap = self.source.index("mainActor.x = waypointX", main_arrival)
         self.assertIn(
             "doorStepKeepsSpacing",
             self.source[main_arrival:main_snap],
@@ -74,9 +74,24 @@ class MainSceneDualActorTests(unittest.TestCase):
         begin = self.source.index("bool MainScene::restoreVisitorViewState")
         end = self.source.index("void MainScene::persistVisitorViewState", begin)
         body = self.source[begin:end]
-        self.assertIn("visitor.state == VisitorState::SEEK_FOOD", body)
-        self.assertIn("visitor.state == VisitorState::FEEDING", body)
-        self.assertIn("visitor.state = VisitorState::IDLE", body)
+        self.assertIn("visitor.task == VisitorState::SEEK_FOOD", body)
+        self.assertIn("visitor.task == VisitorState::FEEDING", body)
+        self.assertIn("visitor.task = VisitorState::IDLE", body)
+
+    def test_bed_yield_persists_its_stable_resume_state(self):
+        begin = self.source.index("bool MainScene::restoreVisitorViewState")
+        end = self.source.index("void MainScene::persistVisitorViewState", begin)
+        restore_body = self.source[begin:end]
+        self.assertIn(
+            "visitor.resumeTask = VisitorState::SLEEPING", restore_body)
+
+        begin = end
+        end = self.source.index("void MainScene::persistViewState", begin)
+        persist_body = self.source[begin:end]
+        self.assertIn(
+            "storedState == VisitorState::YIELDING_BED", persist_body)
+        self.assertIn(
+            "actor.resumeTask == VisitorState::SLEEPING", persist_body)
 
     def test_secondary_actor_is_part_of_persistent_view_state(self):
         view_header = (

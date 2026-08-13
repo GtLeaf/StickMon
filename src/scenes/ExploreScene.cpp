@@ -1019,6 +1019,7 @@ void ExploreScene::onEnter() {
     ProgressionUi::resetMoveLearnState(moveLearnState);
     areaCursor = 0;
     areaAnimCursor = 0.0f;
+    areaBackgroundTraced = false;
     resultMessage = nullptr;
     defeatAwaitInput = false;
     clearFriendshipFlow();
@@ -4381,7 +4382,17 @@ void ExploreScene::refreshAreaPreviewFrames() {
 
 void ExploreScene::renderAreaMenu() {
     auto& c = PixelRenderer::canvas();
-    if (!GameAssets::drawBattleBackground(GameAssets::Kind::EXPLORE_MENU_BACKGROUND)) {
+    bool backgroundDrawn = GameAssets::drawBattleBackground(
+        GameAssets::Kind::EXPLORE_MENU_BACKGROUND);
+    if (!areaBackgroundTraced) {
+        areaBackgroundTraced = true;
+        Platform::logf(
+            "[ExploreMenuBg] kind=%u drawn=%u assets=%u cursor=%u phase=%u\n",
+            static_cast<unsigned>(GameAssets::Kind::EXPLORE_MENU_BACKGROUND),
+            backgroundDrawn ? 1U : 0U, GameAssets::available() ? 1U : 0U,
+            areaCursor, static_cast<unsigned>(phase));
+    }
+    if (!backgroundDrawn) {
         c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, 0x0000);
     }
     static constexpr int LEFT_W = 70;

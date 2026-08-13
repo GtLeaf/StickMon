@@ -41,11 +41,11 @@ class MainSceneSleepTests(unittest.TestCase):
             "wake_food_check",
             "wake_food_seek",
             "yield_bed",
-            "heartbeat",
             "resume_wake_schedule",
         ):
             self.assertIn(f'"{event}"', self.source)
         self.assertIn("[VisitorSleep] event=%s", self.source)
+        self.assertNotIn('logVisitorSleepEvent("heartbeat"', self.source)
 
     def test_normal_hunger_does_not_interrupt_scheduled_sleep(self):
         self.assertIn(
@@ -65,6 +65,38 @@ class MainSceneSleepTests(unittest.TestCase):
         self.assertIn("monsterIsSleepTime(mainMon)", body)
         self.assertIn("monsterIsSleepTime(guestMon)", body)
         self.assertNotIn("mainSceneIsSleepTime()", body)
+
+    def test_awake_teammate_can_yield_the_bed_corridor(self):
+        begin = self.source.index("bool MainScene::startVisitorBedYield")
+        end = self.source.index("void MainScene::finishVisitorBedYield", begin)
+        body = self.source[begin:end]
+        self.assertIn("visitor.task != VisitorState::IDLE", body)
+        self.assertIn("visitor.task != VisitorState::SLEEPING", body)
+        self.assertIn("visitor.resumeTask = visitor.task", body)
+        self.assertIn("pickVisitorSleepSpot(candidateX, candidateY, true)", body)
+
+        begin = self.source.index("void MainScene::setBedTarget")
+        end = self.source.index("void MainScene::snapMonsterToBed", begin)
+        body = self.source[begin:end]
+        self.assertIn("startVisitorBedYield(nowMs)", body)
+        self.assertIn("startVisitorBedYield(nowMs)", body)
+        self.assertIn("mainActor.nextDecisionMs = nowMs + 350", body)
+
+    def test_bed_yield_restores_the_teammates_previous_state(self):
+        begin = self.source.index("void MainScene::finishVisitorBedYield")
+        end = self.source.index("void MainScene::logVisitorSleepEvent", begin)
+        body = self.source[begin:end]
+        self.assertIn(
+            "visitor.resumeTask == VisitorState::SLEEPING", body)
+        self.assertIn("visitor.task = VisitorState::SLEEPING", body)
+        self.assertIn("visitor.task = VisitorState::IDLE", body)
+        self.assertIn("mainActor.nextDecisionMs =", body)
+        self.assertIn("Home::WorldEvent::ACTOR_MOVED", body)
+
+        begin = self.source.index("void MainScene::handleVisitorMoveBlocked")
+        end = self.source.index("bool MainScene::buildFoodApproachRoute", begin)
+        body = self.source[begin:end]
+        self.assertIn("finishVisitorBedYield(nowMs, false)", body)
 
 
 if __name__ == "__main__":

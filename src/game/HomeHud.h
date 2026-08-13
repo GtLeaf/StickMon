@@ -9,11 +9,13 @@ namespace Game {
 namespace HomeHud {
 
 inline uint8_t visibleTeamSlots(const GameState& state,
-                                uint8_t slots[TEAM_CAP]) {
+                                uint8_t slots[TEAM_CAP],
+                                bool includeVisitingGuests = false) {
     uint8_t count = 0;
     for (uint8_t slot = 0;
          slot < state.teamCount && slot < TEAM_CAP; ++slot) {
-        if (slot == 0 || state.team[slot].origin != Origin::VISITOR) {
+        if (slot == 0 || state.team[slot].origin != Origin::VISITOR ||
+            includeVisitingGuests) {
             slots[count++] = slot;
         }
     }

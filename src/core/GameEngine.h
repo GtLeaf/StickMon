@@ -169,6 +169,7 @@ public:
         return contactVisit.active && contactVisit.exploring;
     }
     bool exploreBlockedByGuest() const;
+    void beginContactVisitStay(uint32_t nowMs);
     bool contactVisitFarewellPending() const {
         return contactVisit.active && contactVisit.farewellPending;
     }
@@ -490,6 +491,7 @@ private:
         bool active = false;
         bool exploring = false;
         bool farewellPending = false;
+        bool stayTimerStarted = false;
         uint8_t storageSlot = 0xFF;
         ContactVisitKind kind = ContactVisitKind::NONE;
         uint32_t startedMs = 0;

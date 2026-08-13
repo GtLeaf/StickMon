@@ -76,6 +76,7 @@ private:
     const PokemonSprites::SpriteFrame*
         areaPreviewFrames[AREA_PREVIEW_COUNT] = {};
     ExplorePool::Pool areaPreviewPool{};
+    bool areaBackgroundTraced = false;
     // 趟内活跃池快照：探险开始时按种子重建，趟内遭遇只在池内滚点（§7.8）
     ExplorePool::Pool activePool{};
     Area activeArea = Area::GRASS_PATH;

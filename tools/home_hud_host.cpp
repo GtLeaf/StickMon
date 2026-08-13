@@ -17,6 +17,9 @@ int main() {
     state.team[1].origin = Game::Origin::VISITOR;
     assert(Game::HomeHud::visibleTeamSlots(state, slots) == 1);
     assert(slots[0] == 0);
+    assert(Game::HomeHud::visibleTeamSlots(state, slots, true) == 2);
+    assert(slots[0] == 0);
+    assert(slots[1] == 1);
 
     state.team[0].origin = Game::Origin::VISITOR;
     state.team[1].origin = Game::Origin::STARTER;

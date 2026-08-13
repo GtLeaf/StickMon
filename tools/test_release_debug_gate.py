@@ -20,6 +20,8 @@ class ReleaseDebugGateTests(unittest.TestCase):
         self.assertIn("-DSTICKMON_ENABLE_DEBUG_FEATURES=0", release)
         self.assertIn("-DSTICKMON_ENABLE_TRACE_LOGS=0", release)
         self.assertIn("-DSTICKMON_ENABLE_RENDER_STATS=0", release)
+        debug = config.split("[env:m5stick-s3-debug]", 1)[1]
+        self.assertIn("-DSTICKMON_ENABLE_RENDER_STATS=0", debug)
 
     @unittest.skipUnless(shutil.which("c++"), "host C++ compiler is unavailable")
     def test_release_and_debug_menu_contracts(self):
