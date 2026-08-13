@@ -5,10 +5,40 @@ StickS3 electronic pet prototype for M5Stack StickS3 / ESP32-S3.
 ## Build
 
 ```bash
-pio run
+# Debug firmware (includes the Debug menu and diagnostics)
+pio run -e m5stick-s3-debug
+
+# Release firmware
+pio run -e m5stick-s3
 ```
 
 The project follows the PokeBug StickS3 PlatformIO baseline and enables PSRAM through `BOARD_HAS_PSRAM`.
+
+## Flash Firmware and LittleFS
+
+`tools/upload_firmware_and_fs.sh` builds and uploads both the firmware and the
+complete `data/` directory as a LittleFS image. Close any running PlatformIO
+serial monitor before flashing so it does not occupy the device port.
+
+```bash
+# Build and upload Debug firmware plus LittleFS (default)
+./tools/upload_firmware_and_fs.sh
+
+# Build and upload Release firmware plus LittleFS
+./tools/upload_firmware_and_fs.sh --release
+
+# Use a specific serial port
+./tools/upload_firmware_and_fs.sh --port /dev/cu.usbmodem2101
+
+# Preview all commands without building or uploading
+./tools/upload_firmware_and_fs.sh --dry-run
+```
+
+The script auto-detects the serial port when `--port` is omitted. It also
+exports `bootloader.bin`, `partitions.bin`, `boot_app0.bin`, `firmware.bin`,
+and `littlefs.bin` to `tools/out/` for the web flasher. Run
+`./tools/upload_firmware_and_fs.sh --help` for all options and environment
+overrides.
 
 ## Current Prototype
 

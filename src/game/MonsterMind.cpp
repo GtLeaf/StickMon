@@ -45,7 +45,7 @@ void MonsterMind::update(const Game::MonsterRuntime& monster, bool sleepTime,
     if (bowlHasFood && monster.satiety < MONSTER_FEED_TARGET_SATIETY) {
         base[static_cast<uint8_t>(MonsterDesire::EAT)] =
             55 + static_cast<uint16_t>(MONSTER_FEED_TARGET_SATIETY - monster.satiety) * 2 +
-            (monster.satiety < 35 ? 40 : 0);
+            (monsterShouldWakeForFood(monster.satiety) ? 40 : 0);
     }
 
     uint16_t rest = sleepTime ? 150 : 15;

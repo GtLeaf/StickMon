@@ -6,6 +6,7 @@
 #include "core/UiStrings.h"
 #include "core/UiMotion.h"
 #include "game/ExploreItemProgression.h"
+#include "game/ShopService.h"
 #include "hardware/Hal.h"
 #include "presentation/PixelRenderer.h"
 
@@ -513,52 +514,11 @@ void ShopScene::renderToast() {
 }
 
 uint16_t ShopScene::priceFor(Item item) {
-    switch (item) {
-    case FOOD: return 20;
-    case TASTY_FOOD: return 60;
-    case SWEET_FOOD: return 45;
-    case SPICY_FOOD: return 45;
-    case SOUR_FOOD: return 45;
-    case BITTER_FOOD: return 45;
-    case DRY_FOOD: return 45;
-    case POTION: return 60;
-    case SUPER_POTION: return 120;
-    case ANTIDOTE: return 40;
-    case PARALYZE_HEAL: return 40;
-    case AWAKENING: return 40;
-    case BURN_HEAL: return 40;
-    case ICE_HEAL: return 40;
-    case CANDY: return 2000;
-    case MAX_POTION: return 300;
-    case FULL_RESTORE: return 400;
-    case FULL_HEAL: return 150;
-    case FIRE_STONE:
-    case WATER_STONE:
-    case THUNDER_STONE:
-        return 1000;
-    case REVIVE: return 300;
-    case MAX_REPEL: return 150;
-    case HONEY: return 100;
-    case NUGGET:
-    case BIG_PEARL:
-    case STAR_PIECE:
-        return 0; // 仅捡拾获得，不进购买货架
-    case SOAP_0:
-    case SOAP_1:
-    case SOAP_2:
-        return 25;
-    default: return 0;
-    }
+    return Game::ShopService::buyPrice(gameItemIdFor(item));
 }
 
 uint16_t ShopScene::sellPriceFor(Item item) {
-    switch (item) {
-    case NUGGET: return 500;
-    case BIG_PEARL: return 1000;
-    case STAR_PIECE: return 2500;
-    default: break;
-    }
-    return priceFor(item) / 2;
+    return Game::ShopService::sellPrice(gameItemIdFor(item));
 }
 
 Game::ItemId ShopScene::gameItemIdFor(Item item) {

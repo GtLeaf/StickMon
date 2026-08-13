@@ -12,6 +12,11 @@ enum class MonsterDesire : uint8_t {
 };
 
 static constexpr uint8_t MONSTER_FEED_TARGET_SATIETY = 85;
+static constexpr uint8_t MONSTER_SLEEP_FOOD_WAKE_SATIETY = 35;
+
+constexpr bool monsterShouldWakeForFood(uint8_t satiety) {
+    return satiety <= MONSTER_SLEEP_FOOD_WAKE_SATIETY;
+}
 
 enum class MonsterMovementMode : uint8_t {
     NORMAL,

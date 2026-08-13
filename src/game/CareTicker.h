@@ -8,14 +8,14 @@
 #include "game/SpeciesBehavior.h"
 
 // 照护逻辑（HP 恢复 / 饥饿衰减 / 濒死休息 / 日计数重置）的纯逻辑实现。
-// 由 GameEngine::tickCare（清醒时逐真实分钟）与深度睡眠定时静默唤醒路径
+// 由 GameEngine::tickCare（清醒时分别推进现实/游戏分钟）与深度睡眠定时静默唤醒路径
 // （main.cpp → GameEngine::runSilentCareWake）共用；不依赖 Hal/显示/Arduino
 // min/max，可直接对 GameState 调用，也可被 host 测试包含。
 namespace Game {
 
 constexpr uint16_t GAME_MINUTES_PER_DAY = 24U * 60U;
 constexpr uint16_t HP_RECOVERY_INTERVAL_MIN = 1;
-constexpr uint8_t HP_RECOVERY_PERCENT_PER_TICK = 5;
+constexpr uint8_t HP_RECOVERY_PERCENT_PER_TICK = 1;
 constexpr uint8_t HP_RECOVERY_EMPTY_GAIN_PER_TICK = 1;
 constexpr uint32_t FAINT_REST_SECONDS = 60UL * 60UL;
 constexpr uint8_t SATIETY_DECAY_AWAKE_INTERVAL_MIN = 1;
@@ -90,6 +90,12 @@ struct CareTickAccumulators {
     bool satietyDecayWasSleeping[TEAM_CAP] = {};
 };
 
+struct CareTickResult {
+    uint8_t faintRevivals = 0;
+    bool stateChanged = false;
+    bool hpChanged = false;
+};
+
 // 日计数重置（careDay/stepsToday 等）；返回是否有字段变化。
 inline bool resetDailyCareCounters(GameState& state) {
     uint32_t day = state.gameMinutesTotal / GAME_MINUTES_PER_DAY;
@@ -114,32 +120,37 @@ inline bool resetDailyCareCounters(GameState& state) {
     return true;
 }
 
-// 对 state 应用 elapsedMin（真实流逝分钟）的照护推进。
+// 对 state 应用现实时间与游戏时间增量的照护推进。
 // homeRecovery=true 时进行居家 HP 恢复与濒死休息结算；false 时濒死精灵只刷新
-// lastSeenAt（探索中不休息）。gameSpeed 用于 HP 恢复的游戏时间缩放（与清醒
-// tickCare 一致）。返回本次濒死休息完成（复活）的精灵数，供调用方记日志。
-inline uint8_t applyCareMinutes(GameState& state, CareTickAccumulators& acc,
-                                uint32_t elapsedMin, float gameSpeed,
-                                bool homeRecovery) {
+// lastSeenAt（探索中不休息）。HP 每经过一个游戏分钟结算一次；饥饿等日常照护
+// 仍按现实分钟推进。
+inline CareTickResult applyCareMinutes(GameState& state,
+                                       CareTickAccumulators& acc,
+                                       uint32_t realElapsedMin,
+                                       uint32_t gameElapsedMin,
+                                       bool homeRecovery) {
+    CareTickResult result{};
     uint16_t hpRecoveryTicks = 0;
     if (homeRecovery) {
-        uint32_t scaledHpRecoveryMin = (uint32_t)((float)elapsedMin * gameSpeed);
-        uint32_t total = (uint32_t)acc.hpRecoveryMinuteAcc + scaledHpRecoveryMin;
+        uint32_t total = (uint32_t)acc.hpRecoveryMinuteAcc + gameElapsedMin;
         if (total > 60000UL) total = 60000UL;
         hpRecoveryTicks = (uint16_t)(total / HP_RECOVERY_INTERVAL_MIN);
         acc.hpRecoveryMinuteAcc = (uint16_t)(total % HP_RECOVERY_INTERVAL_MIN);
     }
     uint32_t nowGameSec = gameSecondsForMinutes(state.gameMinutesTotal);
-    uint8_t faintRevivals = 0;
 
     auto updateHealthRecovery = [&](MonsterRuntime& mon) {
         if (!homeRecovery) {
-            if (mon.fainted) mon.lastSeenAt = nowGameSec;
+            if (mon.fainted && mon.lastSeenAt != nowGameSec) {
+                mon.lastSeenAt = nowGameSec;
+                result.stateChanged = true;
+            }
             return;
         }
         if (mon.fainted) {
             if (mon.lastSeenAt == 0 || mon.lastSeenAt > nowGameSec) {
                 mon.lastSeenAt = nowGameSec;
+                result.stateChanged = true;
             }
             uint32_t elapsedFaintSec = nowGameSec - mon.lastSeenAt;
             if (elapsedFaintSec >= FAINT_REST_SECONDS) {
@@ -150,7 +161,9 @@ inline uint8_t applyCareMinutes(GameState& state, CareTickAccumulators& acc,
                     (uint16_t)((mon.hpMax * HP_RECOVERY_PERCENT_PER_TICK + 99) / 100);
                 mon.hpCur = restHp > 1 ? restHp : 1;
                 mon.lastSeenAt = nowGameSec;
-                ++faintRevivals;
+                ++result.faintRevivals;
+                result.stateChanged = true;
+                result.hpChanged = true;
             }
             return;
         }
@@ -164,7 +177,12 @@ inline uint8_t applyCareMinutes(GameState& state, CareTickAccumulators& acc,
             }
             uint32_t gain = (uint32_t)gainPerTick * hpRecoveryTicks;
             uint32_t healed = (uint32_t)mon.hpCur + gain;
-            mon.hpCur = healed > mon.hpMax ? mon.hpMax : (uint16_t)healed;
+            uint16_t nextHp = healed > mon.hpMax ? mon.hpMax : (uint16_t)healed;
+            if (nextHp != mon.hpCur) {
+                mon.hpCur = nextHp;
+                result.stateChanged = true;
+                result.hpChanged = true;
+            }
         }
     };
 
@@ -175,7 +193,10 @@ inline uint8_t applyCareMinutes(GameState& state, CareTickAccumulators& acc,
             if (!careProfile.satietyDecays) {
                 acc.satietyDecayMinuteAcc[i] = 0;
                 acc.satietyDecayWasSleeping[i] = false;
-                mon.satiety = 100;
+                if (mon.satiety != 100) {
+                    mon.satiety = 100;
+                    result.stateChanged = true;
+                }
             } else {
                 bool sleeping =
                     mon.majorStatus == MajorStatus::SLEEP ||
@@ -188,7 +209,7 @@ inline uint8_t applyCareMinutes(GameState& state, CareTickAccumulators& acc,
                     acc.satietyDecayWasSleeping[i] = sleeping;
                 }
                 uint32_t decayTotal =
-                    (uint32_t)acc.satietyDecayMinuteAcc[i] + elapsedMin;
+                    (uint32_t)acc.satietyDecayMinuteAcc[i] + realElapsedMin;
                 if (decayTotal > 60000UL) decayTotal = 60000UL;
                 uint32_t drop = decayTotal / decayInterval;
                 if (drop > SATIETY_DECAY_MAX_DROP_PER_TICK) {
@@ -196,22 +217,30 @@ inline uint8_t applyCareMinutes(GameState& state, CareTickAccumulators& acc,
                 }
                 acc.satietyDecayMinuteAcc[i] =
                     (uint16_t)(decayTotal % decayInterval);
-                mon.satiety = mon.satiety > drop
+                uint8_t nextSatiety = mon.satiety > drop
                     ? (uint8_t)(mon.satiety - drop)
                     : 0;
+                if (nextSatiety != mon.satiety) {
+                    mon.satiety = nextSatiety;
+                    result.stateChanged = true;
+                }
             }
         }
         uint8_t targetMood = mon.satiety > 60 ? 75 : (mon.satiety > 25 ? 55 : 35);
         if (mon.fainted) targetMood = 20;
-        if (mon.mood < targetMood) mon.mood++;
-        else if (mon.mood > targetMood) mon.mood--;
+        if (realElapsedMin > 0) {
+            uint8_t oldMood = mon.mood;
+            if (mon.mood < targetMood) mon.mood++;
+            else if (mon.mood > targetMood) mon.mood--;
+            if (mon.mood != oldMood) result.stateChanged = true;
+        }
         updateHealthRecovery(mon);
     }
     for (uint8_t i = 0; i < state.storageCount && i < Game::STORAGE_CAP; ++i) {
         if (ContactRoster::teamSlotForContact(state, i) >= 0) continue;
         updateHealthRecovery(state.storage[i]);
     }
-    return faintRevivals;
+    return result;
 }
 
 }  // namespace Game

@@ -36,15 +36,16 @@ class MoveLearnComparisonTests(unittest.TestCase):
             encoding="utf-8"
         )
 
-    def test_pending_move_is_a_selectable_read_only_comparison_row(self):
+    def test_selecting_pending_move_can_decline_it_after_confirmation(self):
         self.assertIn(
             "MOVE_LEARN_NEW_SLOT = Game::MOVE_SLOT_COUNT", self.source
         )
         self.assertIn("moveSlot <= MOVE_LEARN_NEW_SLOT", self.source)
+        self.assertIn("state.confirmOpen = true", self.source)
         self.assertIn(
-            "state.replacementSlot == MOVE_LEARN_NEW_SLOT) return false",
-            self.source,
+            "state.replacementSlot == MOVE_LEARN_NEW_SLOT", self.source
         )
+        self.assertIn("engine.resolvePendingMoveLearn(false)", self.source)
         self.assertIn(
             "bool showingNewMove = uiState.replacementSlot == "
             "MOVE_LEARN_NEW_SLOT",
@@ -52,6 +53,7 @@ class MoveLearnComparisonTests(unittest.TestCase):
         )
         self.assertIn("? newMove", self.source)
         self.assertIn("Ui::Team::MOVE_UNLEARNED", self.source)
+        self.assertIn("Ui::Explore::LEARN_GIVE_UP_FMT", self.source)
 
 
 if __name__ == "__main__":

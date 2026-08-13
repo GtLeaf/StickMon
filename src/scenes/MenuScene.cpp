@@ -161,16 +161,6 @@ int statusPageContentHeight(uint8_t page) {
     }
 }
 
-int menuIconIndex(uint8_t item) {
-    // The asset pack keeps the debug icon at index 7 and back at index 8.
-#if STICKMON_ENABLE_DEBUG_FEATURES
-    static constexpr uint8_t ICON_BY_MENU_ITEM[] = {0, 1, 2, 3, 4, 5, 6, 7, 8};
-#else
-    static constexpr uint8_t ICON_BY_MENU_ITEM[] = {0, 1, 2, 3, 4, 5, 6, 8};
-#endif
-    return item < sizeof(ICON_BY_MENU_ITEM) ? ICON_BY_MENU_ITEM[item] : -1;
-}
-
 // 背包源索引：0~3 伤药/糖果，4~10 七种食物（仅战斗模式可见），11~14 状态药，
 // 15~24 全满药/全复药/全愈药/火之石/水之石/雷之石/复活草/黄金喷雾/甜甜蜜/心之鳞片，25 返回。
 static constexpr uint8_t BAG_SOURCE_FOOD_BASE = 4;
@@ -321,67 +311,6 @@ uint16_t typeColor(TypeId type) {
     case TypeId::FAIRY: return PixelRenderer::rgb(232, 138, 202);
     case TypeId::NORMAL:
     default: return PixelRenderer::rgb(154, 158, 132);
-    }
-}
-
-const char* abilityName(const Species& species) {
-    switch (species.id) {
-    case 1:
-    case 2:
-    case 3: return Ui::Status::ABILITY_OVERGROW;
-    case 4:
-    case 5:
-    case 6: return Ui::Status::ABILITY_BLAZE;
-    case 7:
-    case 8:
-    case 9: return Ui::Status::ABILITY_TORRENT;
-    case 10: return Ui::Status::ABILITY_SHIELD_DUST;
-    case 11: return Ui::Status::ABILITY_SHED_SKIN;
-    case 12: return Ui::Status::ABILITY_COMPOUND_EYES;
-    case 25:
-    case 26:
-    case 172: return Ui::Status::ABILITY_STATIC;
-    case 74:
-    case 75:
-    case 76: return Ui::Status::ABILITY_STURDY;
-    case 92:
-    case 93:
-    case 94:
-    case 380:
-    case 381: return Ui::Status::ABILITY_LEVITATE;
-    case 133: return Ui::Status::ABILITY_ADAPTABILITY;
-    case 134: return Ui::Status::ABILITY_WATER_ABSORB;
-    case 135: return Ui::Status::ABILITY_VOLT_ABSORB;
-    case 136: return Ui::Status::ABILITY_FLASH_FIRE;
-    case 298:
-    case 183:
-    case 184: return Ui::Status::ABILITY_HUGE_POWER;
-    case 194:
-    case 195: return Ui::Status::ABILITY_WATER_ABSORB;
-    case 285:
-    case 286: return Ui::Status::ABILITY_EFFECT_SPORE;
-    case 322: return Ui::Status::ABILITY_SIMPLE;
-    case 323: return Ui::Status::ABILITY_SOLID_ROCK;
-    case 361:
-    case 362: return Ui::Status::ABILITY_INNER_FOCUS;
-    case 41:
-    case 42:
-    case 169: return Ui::Status::ABILITY_INNER_FOCUS;
-    case 123:
-    case 212: return Ui::Status::ABILITY_TECHNICIAN;
-    case 129: return Ui::Status::ABILITY_SWIFT_SWIM;
-    case 130: return Ui::Status::ABILITY_INTIMIDATE;
-    case 143: return Ui::Status::ABILITY_THICK_FAT;
-    case 147:
-    case 148: return Ui::Status::ABILITY_SHED_SKIN;
-    case 149: return Ui::Status::ABILITY_INNER_FOCUS;
-    case 280:
-    case 281:
-    case 282:
-    case 151:
-    case 196:
-    case 197:
-    default: return Ui::Status::ABILITY_SYNCHRONIZE;
     }
 }
 
@@ -1573,25 +1502,29 @@ bool MenuScene::onButton(const ButtonEvent& event) {
         return false;
     }
 
-    switch (cursor) {
-    case ITEM_TEAM:
+    AppSceneFlow::MainMenuEntry menuEntry =
+        AppSceneFlow::mainMenuEntry(
+            static_cast<uint8_t>(cursor),
+            STICKMON_ENABLE_DEBUG_FEATURES != 0);
+    switch (menuEntry.target) {
+    case AppSceneFlow::Scene::TEAM:
         pushView(ViewMode::TEAM);
         statusFromStorage = false;
         teamCursor = 0;
         teamActionCursor = 0;
         teamActionOpen = false;
         return true;
-    case ITEM_ROOM:
+    case AppSceneFlow::Scene::ROOM:
         pushView(ViewMode::ROOM);
         roomCursor = 0;
         return true;
-    case ITEM_BAG:
+    case AppSceneFlow::Scene::BAG:
         pushView(ViewMode::BAG);
         bagCursor = 0;
         bagConfirmOpen = false;
         bagScroll = 0.0f;
         return true;
-    case ITEM_EXPLORE: {
+    case AppSceneFlow::Scene::EXPLORE_AREAS: {
         const auto& state = GameEngine::ins().gameState();
         if (!state.oobeDone || state.teamCount == 0) {
             toast = Ui::Menu::HATCH_FIRST;
@@ -1612,18 +1545,18 @@ bool MenuScene::onButton(const ButtonEvent& event) {
         GameEngine::ins().requestScene(SceneID::EXPLORE);
         return true;
     }
-    case ITEM_SHOP:
+    case AppSceneFlow::Scene::SHOP:
         GameEngine::ins().requestScene(SceneID::SHOP);
         return true;
-    case ITEM_COMPUTER:
+    case AppSceneFlow::Scene::COMPUTER:
         pushView(ViewMode::COMPUTER);
         computerCursor = 0;
         return true;
-    case ITEM_SETTINGS:
+    case AppSceneFlow::Scene::SETTINGS:
         GameEngine::ins().requestScene(SceneID::SETTINGS);
         return true;
 #if STICKMON_ENABLE_DEBUG_FEATURES
-    case ITEM_DEBUG:
+    case AppSceneFlow::Scene::DEBUG:
         pushView(ViewMode::DEBUG);
         debugCategory = DebugCategory::ROOT;
         debugCursor = 0;
@@ -1632,7 +1565,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
         debugTimeOpen = false;
         return true;
 #endif
-    case ITEM_BACK:
+    case AppSceneFlow::Scene::HOME:
         GameEngine::ins().requestScene(GameEngine::ins().homeScene());
         return true;
     default:
@@ -1747,7 +1680,9 @@ void MenuScene::renderMenu() {
         uint16_t descColor = isSelected ? 0xFFFF : 0x7BEF;
         int leftW = boxW;
 
-        int iconIndex = menuIconIndex((uint8_t)i);
+        int iconIndex = AppSceneFlow::mainMenuEntry(
+            static_cast<uint8_t>(i),
+            STICKMON_ENABLE_DEBUG_FEATURES != 0).iconIndex;
         if (iconIndex >= 0 && iconIndex < MenuAssets::MAIN_ICON_COUNT) {
             if (isSelected) {
                 c.fillRect(boxX - 4, y - boxH / 2, 2, boxH, 0xFFE0);
@@ -2120,7 +2055,7 @@ void MenuScene::renderStatusPage() {
         PixelRenderer::text(infoX, sy(38), buf, PixelRenderer::rgb(255, 216, 72), 1);
 
         PixelRenderer::text(infoX, sy(60), Ui::Status::ABILITY, PixelRenderer::rgb(67, 213, 224), 1);
-        PixelRenderer::text(infoX + 42, sy(60), abilityName(mon), PixelRenderer::rgb(241, 242, 232), 1);
+        PixelRenderer::text(infoX + 42, sy(60), abilityName(abilityForSpecies(mon)), PixelRenderer::rgb(241, 242, 232), 1);
         int8_t likedFood = natureLikedFoodIndex(activeMon.nature);
         int8_t dislikedFood = natureDislikedFoodIndex(activeMon.nature);
         if (likedFood >= 0 && dislikedFood >= 0) {
@@ -2835,6 +2770,15 @@ void MenuScene::handleDebugAction() {
             GameEngine::ins().toggleDebugTiltControl();
         } else if (debugCursor == 1) {
             GameEngine::ins().toggleDebugWalkBoundary();
+        } else if (debugCursor == DEBUG_MOTION_PAIR_INTERACTION_INDEX) {
+            auto& engine = GameEngine::ins();
+            if (!engine.gameState().oobeDone ||
+                engine.gameState().teamCount < 2) {
+                toast = Ui::Debug::PAIR_NEEDS_TWO;
+                toastUntil = Hal::ins().millis() + 1400;
+            } else {
+                engine.requestDebugPairInteraction();
+            }
         }
         break;
     case DebugCategory::BATTLE: {

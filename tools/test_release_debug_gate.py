@@ -29,6 +29,10 @@ class ReleaseDebugGateTests(unittest.TestCase):
 
 constexpr unsigned menuItemCount =
     sizeof(Ui::Menu::ITEMS) / sizeof(Ui::Menu::ITEMS[0]);
+constexpr unsigned debugMotionItemCount =
+    sizeof(Ui::Debug::MOTION_ITEMS) / sizeof(Ui::Debug::MOTION_ITEMS[0]);
+static_assert(debugMotionItemCount == 4,
+              "debug motion menu must include pair interaction and back");
 
 #if EXPECT_DEBUG
 static_assert(BuildConfig::DEBUG_FEATURES, "debug build must enable features");

@@ -42,21 +42,84 @@ class RoomPackTests(unittest.TestCase):
         self.assertEqual(values[0], room_assets.ROOM_PACK_MAGIC)
         self.assertEqual(values[1], room_assets.ROOM_PACK_VERSION)
         self.assertEqual(values[11], 4)
-        self.assertEqual(values[12], 1)
+        self.assertEqual(values[12], 2)
         self.assertEqual(values[25:29], (41, 127, 79, 155))
         self.assertEqual(values[29:31], (68, 132))
         self.assertEqual(values[31:33], (53, 150))
-        anchor = struct.unpack_from(
+        anchor_size = struct.calcsize(room_assets.ROOM_BEHAVIOR_ANCHOR_FORMAT)
+        window_anchor = struct.unpack_from(
             room_assets.ROOM_BEHAVIOR_ANCHOR_FORMAT,
             data,
-            len(data) - struct.calcsize(room_assets.ROOM_BEHAVIOR_ANCHOR_FORMAT),
+            len(data) - anchor_size * 2,
         )
-        self.assertEqual(anchor, (
+        sleep_anchor = struct.unpack_from(
+            room_assets.ROOM_BEHAVIOR_ANCHOR_FORMAT,
+            data,
+            len(data) - anchor_size,
+        )
+        self.assertEqual(window_anchor, (
             room_assets.ROOM_ANCHOR_WINDOW_GAZE,
             room_assets.ROOM_FACING_BACK,
             159,
             93,
         ))
+        self.assertEqual(sleep_anchor, (
+            room_assets.ROOM_ANCHOR_VISITOR_SLEEP,
+            0,
+            132,
+            117,
+        ))
+
+    def test_visitor_sleep_anchor_prefers_carpet_center(self):
+        layout = {
+            "furniture": [{
+                "name": "carpet",
+                "source": "furniture",
+                "visible": True,
+                "kind": "floor_flat",
+                "x": 30,
+                "y": 30,
+                "targetWidth": 40,
+                "targetHeight": 40,
+            }],
+        }
+        walk = [(0, 0), (99, 0), (99, 99), (0, 99)]
+
+        self.assertEqual(
+            room_assets.visitor_sleep_anchor_for_layout(
+                layout, 100, 100, walk),
+            (50, 50),
+        )
+
+    def test_visitor_sleep_anchor_avoids_furniture_without_carpet(self):
+        layout = {
+            "furniture": [{
+                "name": "table",
+                "source": "furniture",
+                "visible": True,
+                "kind": "floor_furniture",
+                "footprint": "polygon",
+                "x": 45,
+                "y": 40,
+                "targetWidth": 30,
+                "targetHeight": 30,
+                "footprintPolygon": [
+                    [0, 0], [1, 0], [1, 1], [0, 1],
+                ],
+            }],
+        }
+        walk = [(0, 0), (119, 0), (119, 99), (0, 99)]
+        point = room_assets.visitor_sleep_anchor_for_layout(
+            layout, 120, 100, walk)
+        obstacle = room_assets.furniture_obstacle_polygons(
+            layout, 120, 100)[0]
+
+        self.assertIsNotNone(point)
+        self.assertGreaterEqual(
+            room_assets.point_polygon_distance_squared(
+                point[0], point[1], obstacle),
+            18.0 ** 2,
+        )
 
 
 if __name__ == "__main__":

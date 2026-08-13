@@ -3,7 +3,9 @@
 #include "assets/PokemonMotion.h"
 #include "assets/PokemonSprites.h"
 #include "core/BuildConfig.h"
+#include "core/MainSceneViewState.h"
 #include "core/ProgressionUi.h"
+#include "core/RoomMovementArea.h"
 #include "core/RoomResource.h"
 #include "core/Scene.h"
 #include "game/MonsterMind.h"
@@ -127,18 +129,42 @@ private:
 
     enum class PairInteraction : uint8_t {
         NONE,
-        GREET,
+        TALK,
         CHASE,
-        FOLLOW,
     };
 
     enum class PairInteractionPhase : uint8_t {
         NONE,
         APPROACH,
         INVITE,
+        CONVERSATION,
         ACTIVE,
         SETTLE,
         CELEBRATE,
+    };
+
+    enum class MainAiTraceGate : uint8_t {
+        UPDATE,
+        PROGRESSION,
+        CONTACT,
+        PAIR,
+        DOOR_TRANSITION,
+        STATIONARY_SPECIES,
+        FAINTED_OR_STATUS_SLEEP,
+        FAINT_WAKE,
+        SCHEDULE_WAKE,
+        CANCEL_BED_ROUTE,
+        DEBUG_TILT,
+        FEEDING,
+        WAKING,
+        TURNING,
+        RESTING,
+        ROOM_ACTION,
+        IDLE_WAIT,
+        ROUTE_FAILED,
+        BLOCKED_BY_SECONDARY,
+        OUTSIDE_WALK_AREA,
+        MOVING,
     };
 
     struct RenderItem {
@@ -168,19 +194,36 @@ private:
         float sleepX = 0.0f;
         float sleepY = 0.0f;
         bool sleepSpotValid = false;
+        uint32_t foodRetryAfterMs = 0;
         uint32_t stateUntilMs = 0;
         uint32_t frameStartedMs = 0;
         uint8_t frameIndex = 0;
         PokemonSprites::WalkDirection direction = PokemonSprites::WalkDirection::DOWN;
         bool facingRight = true;
+        int8_t renderOffsetX = 0;
+        int8_t renderOffsetY = 0;
+        uint16_t motionCycleMs = 0;
     };
 
-    // Persists the visitor across scene switches (e.g. opening the menu) so it
-    // does not teleport when returning to the room.
-    static VisitorActor savedVisitor;
-    static bool savedVisitorValid;
+    struct FoodRouteFailure {
+        bool valid = false;
+        uint8_t bowlFood = 0;
+        uint8_t bowlCount = 0;
+        uint8_t bowlBites = 0;
+        int16_t mainCellX = 0;
+        int16_t mainCellY = 0;
+        int16_t visitorCellX = 0;
+        int16_t visitorCellY = 0;
+    };
+
+    struct ActorGeometry {
+        float groundOffsetY = 18.0f;
+        RoomMovementArea::Footprint footprint = {9.0f, 5.0f};
+    };
 
     void updateMonsterAi(uint32_t nowMs, float dtSeconds);
+    void traceMainAi(uint32_t nowMs, MainAiTraceGate gate,
+                     bool force = false);
     bool updateRoomAction(uint32_t nowMs);
     void cancelRoomAction(uint32_t nowMs);
     void finishScriptedMovement(uint32_t nowMs);
@@ -209,7 +252,9 @@ private:
     void updateDoorTransition(uint32_t nowMs);
     bool prepareDoorAnchors();
     bool chooseDoorInsidePose(float& x, float& y) const;
-    bool chooseDoorWaitPose(float actorX, float actorY, float& x, float& y) const;
+    bool chooseDoorWaitPose(float actorX, float actorY,
+                            const ActorGeometry& geometry,
+                            float& x, float& y) const;
     bool updateDoorRoute(float dtSeconds);
     bool updateVisitorDoorRoute(float dtSeconds);
     bool moveDoorToward(float x, float y, float speed, float dtSeconds,
@@ -221,7 +266,8 @@ private:
     void finishDoorDeparture();
     bool doorStepKeepsSpacing(float currentX, float currentY,
                               float nextX, float nextY,
-                              float otherX, float otherY) const;
+                              float otherX, float otherY,
+                              bool movingVisitor) const;
     float doorActorMinSeparation() const;
     void updateDebugTiltControl(uint32_t nowMs, float dtSeconds);
     void updateCamera();
@@ -231,16 +277,24 @@ private:
     float walkFootprintRadiusY() const;
     bool monsterFootprintInsideWalkArea(float x, float y) const;
     bool randomMonsterCenterWalkPoint(float& x, float& y) const;
+    ActorGeometry geometryForSpecies(uint16_t speciesId) const;
+    ActorGeometry mainGeometry() const;
+    ActorGeometry visitorGeometry() const;
+    bool actorFootprintInsideWalkArea(float x, float y,
+                                      const ActorGeometry& geometry) const;
+    bool randomActorCenterWalkPoint(const ActorGeometry& geometry,
+                                    float& x, float& y) const;
     bool monsterCanUseBedSleepPose(float x, float y) const;
     bool chooseBedApproachPose(float& x, float& y) const;
     bool chooseBedSleepPose(float& x, float& y) const;
-    bool chooseFoodApproachPose(float& x, float& y) const;
+    bool buildFoodApproachRoute(bool movingMain, float& x, float& y);
     bool monsterNearFood() const;
     bool monsterNearBed() const;
     bool monsterAtBedSleepPose() const;
     bool monsterNeedsBedRest() const;
     void updateMind(uint32_t nowMs);
     void beginMovement(AiMode mode, uint32_t nowMs);
+    void beginPreparedMovement(AiMode mode, uint32_t nowMs);
     void beginTurn(AiMode nextMode, PmdDirection direction, uint32_t nowMs);
     void beginWaking(uint32_t nowMs, bool forFood);
     void enterResting(uint32_t nowMs);
@@ -255,16 +309,41 @@ private:
     bool buildMoveRouteFrom(float startX, float startY, float goalX, float goalY,
                             float* routeX, float* routeY,
                             uint8_t& routeCount, uint8_t& routeIndex,
-                            bool allowOutsideStart);
+                            bool allowOutsideStart,
+                            const ActorGeometry& geometry,
+                            bool avoidOther, float otherX, float otherY,
+                            float otherGroundOffsetY);
     bool pathSegmentInsideWalkArea(float fromX, float fromY, float toX, float toY,
                                    bool allowOutsideStart = false) const;
+    bool actorPathSegmentInsideWalkArea(float fromX, float fromY,
+                                        float toX, float toY,
+                                        const ActorGeometry& geometry,
+                                        bool allowOutsideStart = false) const;
+    bool routeSegmentKeepsSpacing(float fromX, float fromY,
+                                  float toX, float toY,
+                                  float otherX, float otherY,
+                                  float minSeparation) const;
+    bool mainTargetKeepsVisitorSpacing(float targetX, float targetY) const;
+    bool actorTargetsKeepSpacing(float targetX, float targetY,
+                                 const ActorGeometry& movingGeometry,
+                                 float otherX, float otherY,
+                                 const ActorGeometry& otherGeometry) const;
     void clearMoveRoute();
     void clearVisitorMoveRoute();
     bool currentWaypoint(float& x, float& y) const;
     bool currentVisitorWaypoint(float& x, float& y) const;
     void updateStuckWatchdog(uint32_t nowMs, float distanceToWaypoint);
+    void abortMovement(uint32_t nowMs, uint32_t retryDelayMs);
+    void handleVisitorMoveBlocked(uint32_t nowMs, bool movingToSleep);
     void restoreViewState(uint32_t nowMs);
     void persistViewState(uint32_t nowMs);
+    bool restoreVisitorViewState(const SecondarySceneViewState& saved,
+                                 const Game::MonsterRuntime& monster,
+                                 uint32_t nowMs);
+    void persistVisitorViewState(SecondarySceneViewState& saved,
+                                 const VisitorActor& actor,
+                                 const Game::MonsterRuntime& monster,
+                                 uint32_t nowMs) const;
     void updatePmdSpriteState(uint32_t nowMs);
     void chooseAiGoal(uint32_t nowMs);
     bool startWander(uint32_t nowMs);
@@ -280,10 +359,14 @@ private:
     void cancelPairInteraction(uint32_t nowMs);
     bool choosePairApproachPose(bool moverMain, float& x, float& y) const;
     bool choosePairLeaderGoal(bool leaderMain, float& x, float& y) const;
-    bool buildPairActorRoute(bool mainActor, float x, float y);
+    bool buildPairActorRoute(bool mainActor, float x, float y,
+                             bool avoidOther = true);
+    bool beginPairChaseLeg(uint32_t nowMs);
     bool updatePairActorRoute(bool mainActor, float speed, float dtSeconds,
                               uint32_t nowMs, bool keepSpacing);
     void facePairActors();
+    float pairConversationHopOffset(bool mainActor,
+                                    uint32_t nowMs) const;
     void updateContactVisit(uint32_t nowMs, float dtSeconds);
     void beginContactGuestEntry(uint32_t nowMs);
     void beginTeamMemberEntry(uint32_t nowMs);
@@ -298,7 +381,12 @@ private:
     int8_t preferredBowlEater() const;
     bool claimBowl(uint8_t teamSlot);
     void releaseBowl(uint8_t teamSlot);
+    bool startMainFoodYield(uint32_t nowMs);
     bool startVisitorFoodSeek(uint32_t nowMs);
+    bool startVisitorFoodYield(uint32_t nowMs);
+    bool visitorFoodRouteFailureStillValid() const;
+    void clearVisitorFoodRouteFailure();
+    void rememberVisitorFoodRouteFailure();
     void enterVisitorFeeding(uint32_t nowMs);
     void updateVisitorFoodSeek(uint32_t nowMs, float dtSeconds);
     void updateVisitorFeeding(uint32_t nowMs);
@@ -312,8 +400,14 @@ private:
     bool pickVisitorSleepSpot(float& x, float& y) const;
     bool visitorPointBlocksBedRoute(float x, float y) const;
     bool startVisitorBedYield(uint32_t nowMs);
+    void logVisitorSleepEvent(const char* event, uint32_t nowMs,
+                              const Game::MonsterRuntime& mon) const;
     void updateVisitor(uint32_t nowMs, float dtSeconds);
     void advanceVisitorFrames(uint32_t nowMs, bool walking);
+    MonsterBehaviorProfile visitorBehaviorProfile() const;
+    uint32_t visitorIdleDelayMs(const MonsterBehaviorProfile& profile) const;
+    float visitorMoveSpeed(const MonsterBehaviorProfile& profile,
+                           bool purposeful) const;
     const PokemonSprites::SpriteFrame* visitorCurrentFrame(bool& flipX) const;
     void drawVisitorShadow();
     void drawVisitor();
@@ -378,6 +472,11 @@ private:
     int8_t bowlEaterSlot = -1;
     uint32_t visitorFeedingBiteMs = 0;
     uint32_t visitorFeedingUntilMs = 0;
+    FoodRouteFailure visitorFoodRouteFailure;
+    bool mainYieldingForVisitorFood = false;
+    uint32_t nextVisitorSleepTraceMs = 0;
+    uint32_t visitorMoveBlockedSinceMs = 0;
+    uint32_t visitorNextReplanMs = 0;
     bool visitorBedYieldHandled = false;
     uint32_t hungerAnimStartedMs = 0;
     uint32_t hungerAnimUntilMs = 0;
@@ -394,12 +493,14 @@ private:
         PairInteractionPhase::NONE;
     bool pairLeaderMain = true;
     bool pairForcedPlay = false;
+    bool pairForcedChase = false;
     uint8_t pairLegsRemaining = 0;
     uint32_t nextPairInteractionMs = 0;
     uint32_t pairPhaseStartedMs = 0;
     uint32_t pairPhaseUntilMs = 0;
     uint32_t pairInteractionUntilMs = 0;
     uint32_t pairFollowerDelayUntilMs = 0;
+    uint32_t pairNextRouteAttemptMs = 0;
     float pairTrailX = 0.0f;
     float pairTrailY = 0.0f;
     uint16_t progressionCancelledSpeciesId = 0;
@@ -409,6 +510,8 @@ private:
     float doorInsideY = 0.0f;
     float doorOutsideX = 0.0f;
     float doorOutsideY = 0.0f;
+    float visitorDoorInsideY = 0.0f;
+    float visitorDoorOutsideY = 0.0f;
     uint32_t doorLastUpdateMs = 0;
     uint32_t doorPhaseStartedMs = 0;
     uint32_t doorLastProgressMs = 0;
@@ -437,6 +540,12 @@ private:
     float lastWaypointDistance = 0.0f;
     uint32_t lastMoveProgressMs = 0;
     uint8_t stuckRecoveryCount = 0;
+#if STICKMON_ENABLE_TRACE_LOGS
+    uint32_t nextMainAiTraceMs = 0;
+    MainAiTraceGate lastMainAiTraceGate = MainAiTraceGate::UPDATE;
+    AiMode lastMainAiTraceMode = AiMode::IDLE;
+    bool mainAiTraceInitialized = false;
+#endif
     RoomAction roomAction = RoomAction::NONE;
     uint8_t roomActionPhase = 0;
     uint32_t roomActionStartedMs = 0;

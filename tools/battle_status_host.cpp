@@ -65,6 +65,23 @@ int main() {
     BattleSystem::BattleActorState attackerState;
     BattleSystem::BattleActorState defenderState;
 
+    const MoveInfo& solarBeam = *findMove(76);
+    if (!BattleSystem::moveRequiresCharge(solarBeam.id) ||
+        (solarBeam.flags & MOVE_FLAG_TWO_TURN_CHARGE) == 0) {
+        return 50;
+    }
+    BattleSystem::beginChargingMove(attackerState, solarBeam.id, 0);
+    if (!BattleSystem::isChargingMove(attackerState) ||
+        attackerState.chargingMoveId != solarBeam.id ||
+        attackerState.chargingSpecialSlot != 0) {
+        return 51;
+    }
+    BattleSystem::clearChargingMove(attackerState);
+    if (BattleSystem::isChargingMove(attackerState) ||
+        attackerState.chargingSpecialSlot != BattleSystem::SPECIAL_SLOT_NONE) {
+        return 52;
+    }
+
     const MoveInfo& fireFang = *findMove(424);
     setRandom({0, 0});
     auto fireEffects = BattleSystem::applyMoveEffects(
@@ -152,7 +169,7 @@ int main() {
     attackerState = {};
     attackerState.bindTurns = 1;
     auto bind = BattleSystem::resolveEndTurn(attacker, bulbasaur, attackerState);
-    if (attacker.hpCur != 150 || attackerState.bindTurns != 0 ||
+    if (attacker.hpCur != 140 || attackerState.bindTurns != 0 ||
         !hasOutcome(bind, BattleSystem::EffectOutcomeKind::BIND_ENDED)) {
         return 12;
     }
@@ -286,6 +303,94 @@ int main() {
         aiMemory.lastMoveId != 52 || aiMemory.consecutiveStatusMoves != 0) {
         return 31;
     }
+
+    // Conditional damage and special move rules must not degrade to plain power.
+    attacker = monster(92, 50);
+    defender = monster(1, 50);
+    attacker.move2Id = 506;  // Hex
+    attackerState = {};
+    defenderState = {};
+    setRandom({15, 100});
+    auto hexNormal = BattleSystem::calcBasicDamage(
+        attacker, gastly, defender, bulbasaur, 0, attackerState, defenderState);
+    defender.majorStatus = Game::MajorStatus::POISON;
+    setRandom({15, 100});
+    auto hexStatus = BattleSystem::calcBasicDamage(
+        attacker, gastly, defender, bulbasaur, 0, attackerState, defenderState);
+    if (hexStatus.damage < hexNormal.damage * 19 / 10) return 60;
+
+    attacker = monster(123, 30);
+    defender = monster(7, 30);
+    attacker.move2Id = 206;  // False Swipe
+    defender.hpCur = 5;
+    setRandom({15, 100});
+    auto falseSwipe = BattleSystem::calcBasicDamage(
+        attacker, *findSpecies(123), defender, squirtle, 0,
+        attackerState, defenderState);
+    if (falseSwipe.damage != 4) return 61;
+
+    attacker = monster(7, 30);
+    defender = monster(92, 30);
+    attacker.move2Id = 89;  // Earthquake, injected for battle-rule test
+    setRandom({15, 100});
+    auto levitate = BattleSystem::calcBasicDamage(
+        attacker, squirtle, defender, gastly, 0, attackerState, defenderState);
+    if (levitate.effectiveness != 0 || levitate.damage != 0 ||
+        levitate.activatedAbility != AbilityId::LEVITATE) return 62;
+
+    attacker = monster(7, 30);
+    defender = monster(134, 30);
+    attacker.move2Id = 55;  // Water Gun
+    defender.hpCur = defender.hpMax / 2;
+    setRandom({15, 100});
+    auto absorbed = BattleSystem::calcBasicDamage(
+        attacker, squirtle, defender, *findSpecies(134), 0,
+        attackerState, defenderState);
+    auto absorbEffect = BattleSystem::applyAbsorbAbility(
+        absorbed, defender, *findSpecies(134), defenderState);
+    if (!absorbed.absorbed || absorbed.damage != 0 || absorbEffect.count != 1 ||
+        defender.hpCur <= defender.hpMax / 2) return 63;
+
+    attacker = monster(4, 50);
+    defender = monster(143, 50);
+    attacker.move2Id = 63;  // Hyper Beam
+    const MoveInfo& hyperBeam = *findMove(63);
+    BattleSystem::recordMoveResult(
+        attackerState, attacker, charmander, hyperBeam, true, 0);
+    auto recharge = BattleSystem::checkAction(
+        attacker, charmander, attackerState, 10);
+    if (recharge.blockReason != BattleSystem::ActionBlockReason::RECHARGE ||
+        attackerState.recharging) return 64;
+
+    defender = monster(74, 30);
+    defender.hpCur = defender.hpMax;
+    attacker = monster(7, 80);
+    attacker.move2Id = 55;
+    setRandom({15, 100});
+    auto sturdy = BattleSystem::calcBasicDamage(
+        attacker, squirtle, defender, *findSpecies(74), 0,
+        attackerState, defenderState);
+    if (!sturdy.sturdyActivated || sturdy.damage != defender.hpCur - 1) return 65;
+
+    if (findMove(168) || findMove(343) || findMove(450) || findMove(512)) return 66;
+
+    attacker = monster(7, 30);
+    defender = monster(134, 30);
+    attacker.move2Id = 56;  // Hydro Pump can miss before Water Absorb triggers
+    setRandom({99});
+    auto missedAbsorb = BattleSystem::calcBasicDamage(
+        attacker, squirtle, defender, *findSpecies(134), 0,
+        attackerState, defenderState);
+    if (!missedAbsorb.missed || missedAbsorb.absorbed) return 67;
+
+    attacker = monster(123, 80);
+    defender = monster(74, 30);
+    attacker.move2Id = 42;  // Pin Missile
+    setRandom({15, 7, 100, 100, 100, 100, 100});
+    auto multiHitSturdy = BattleSystem::calcBasicDamage(
+        attacker, *findSpecies(123), defender, *findSpecies(74), 0,
+        attackerState, defenderState);
+    if (multiHitSturdy.sturdyActivated) return 68;
 
     return 0;
 }

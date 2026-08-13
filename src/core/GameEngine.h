@@ -10,53 +10,14 @@
 #include "core/SaveManager.h"
 #include "core/Scene.h"
 #include "game/GameState.h"
+#include "game/BathService.h"
+#include "game/HomeCare.h"
 #include "game/CareTicker.h"
 #include "game/ExploreItemEffects.h"
 #include "game/EncounterHistory.h"
 #include "game/Species.h"
 
-enum class FoodPlacementResult : uint8_t {
-    ADDED,
-    NO_STOCK,
-    BOWL_FULL,
-    DIFFERENT_FOOD,
-};
-
-enum class FoodReaction : uint8_t {
-    NORMAL,
-    LIKED,
-    DISLIKED,
-};
-
-enum class BathRewardStage : uint8_t {
-    SOAP,
-    BRUSH,
-    RINSE,
-};
-
-struct FoodConsumeResult {
-    bool consumed = false;
-    uint8_t foodIndex = 0;
-    uint8_t satietyBefore = 0;
-    uint8_t satietyAfter = 0;
-    uint8_t moodBefore = 0;
-    uint8_t moodAfter = 0;
-    bool lastBite = false;
-    bool becameFull = false;
-    FoodReaction reaction = FoodReaction::NORMAL;
-};
-
-enum class PetOutcome : uint8_t {
-    REWARDED,
-    DAILY_LIMIT,
-    NEEDS_REST,
-};
-
-struct PetResult {
-    PetOutcome outcome = PetOutcome::DAILY_LIMIT;
-    uint8_t moodGain = 0;
-    uint8_t affectionGain = 0;
-};
+using BathRewardStage = Game::BathService::Stage;
 
 enum class ContactInviteResult : uint8_t {
     JOINED,
@@ -367,6 +328,8 @@ public:
     bool consumeDebugBattleRequest();
     void endDebugBattle();
     bool consumeDebugMenuReturnRequest();
+    void requestDebugPairInteraction();
+    bool consumeDebugPairInteractionRequest();
     bool visitActive() const { return visitSession.active; }
     bool visitAsHost() const { return visitSession.asHost; }
     bool canHostVisit() const { return state.teamCount == 1; }
@@ -468,6 +431,7 @@ private:
     uint32_t lastSceneUpdateMs = 0;
     uint32_t nextSceneUpdateMs = 0;
     uint32_t lastCareMs = 0;
+    uint32_t lastCareGameMinutes = 0;
     uint32_t lastActivityMs = 0;
     // 跨 tickCare 调用保留的会话型照护累加器（不持久化），见 game/CareTicker.h。
     Game::CareTickAccumulators careAcc = {};
@@ -510,6 +474,7 @@ private:
     uint8_t exploreArea = 0;
     bool debugBattleRequested = false;
     bool debugMenuReturnRequested = false;
+    bool debugPairInteractionRequested = false;
     // 会话级道具效果（黄金喷雾/甜甜蜜），不进存档，重启失效。
     Game::ExploreItemEffects exploreItemEffects;
     EvolutionEvent evolutionEvents[EVOLUTION_EVENT_CAP] = {};
@@ -538,6 +503,7 @@ private:
     bool encounterHistoryDirty = false;
     SaveManager saveManager;
     SaveCoordinator saveCoordinator;
+    bool saveWritesBlocked = false;
     GameClockService gameClock;
     ResourceService resourceService;
 

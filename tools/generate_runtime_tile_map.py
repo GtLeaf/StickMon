@@ -8,6 +8,11 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
+from cave_tile_semantics import (
+    FROST_CAVE_EXIT_RUNTIME_TILES,
+    FROST_DOWNWARD_STAIRS_RUNTIME_TILE,
+)
+
 from generate_map_rule_preview import (
     GAME_TILE,
     MAP_H,
@@ -17,10 +22,10 @@ from generate_map_rule_preview import (
     load_autotiles,
     render_layer,
 )
-from map_generation_rules import CUSTOM_TILE_SOURCES
+from map_generation_rules import CUSTOM_TILE_SOURCES, CUSTOM_TILE_SOURCE_FLIP_Y
 
 
-ALGORITHM_VERSION = 6
+ALGORITHM_VERSION = 8
 MASK32 = 0xFFFFFFFF
 MAX_PATH_POINTS = 48
 PATH_COUNT = 2
@@ -136,6 +141,7 @@ FROST_ICE_TILES = {
     "bottom": 4530,
     "bottom_right": 4531,
 }
+SMOOTH_ICE_TILE_IDS = frozenset(FROST_ICE_TILES.values())
 FROST_ROCK_HILL_TILES = (
     (4532, 4533, 4534),
     (4535, 4536, 4537),
@@ -190,7 +196,7 @@ FROST_VERTICAL_TEMPLATES = (
             ((8, 11), (8, 4), (1, 4), (1, 5), (0, 5)),
             ((8, 11), (8, 4), (15, 4)),
         ),
-        "ice_rects": ((6, 1, 10, 7),),
+        "ice_rects": ((6, 5, 10, 9),),
         "rock_hill": None,
         "crystals": ((2, 7, 4509), (10, 2, 4508)),
         "boulders": ((3, 6, 4543), (10, 9, 4510)),
@@ -199,10 +205,10 @@ FROST_VERTICAL_TEMPLATES = (
         "rects": ((2, 0, 13, 4), (0, 2, 5, 10), (10, 2, 15, 10), (4, 7, 11, 11)),
         "entry": ((7, 11), Edge.BOTTOM),
         "exits": (((15, 4), Edge.RIGHT), ((0, 8), Edge.LEFT)),
-        "junction": (7, 8),
+        "junction": (11, 4),
         "routes": (
-            ((7, 11), (7, 8), (11, 8), (11, 4), (15, 4)),
-            ((7, 11), (7, 8), (4, 8), (0, 8)),
+            ((7, 11), (7, 8), (4, 8), (4, 2), (11, 2), (11, 4), (15, 4)),
+            ((7, 11), (7, 8), (4, 8), (4, 2), (11, 2), (11, 8), (0, 8)),
         ),
         "ice_rects": ((5, 1, 10, 3),),
         "rock_hill": None,
@@ -1428,6 +1434,51 @@ def frost_boundary_tile(floor, openings, x, y):
     raise ValueError(f"unsupported frost wall boundary at {(x, y)}: {sorted(outside)}")
 
 
+def stamp_frost_portals(runtime_map):
+    route_cells = {
+        point
+        for path in runtime_map.paths
+        for point in path.points
+    }
+    portals = [(runtime_map.entry, runtime_map.paths[0].points[0])]
+    portals.extend((path.exit, path.points[-1]) for path in runtime_map.paths)
+    for endpoint, route_anchor in portals:
+        x, y = route_anchor
+        side_cells = {(x - 1, y), (x + 1, y)}
+        if (
+            endpoint.edge == Edge.TOP
+            and 0 < x < MAP_W - 1
+            and not side_cells & route_cells
+        ):
+            for offset, tile_id in enumerate(FROST_CAVE_EXIT_RUNTIME_TILES, -1):
+                runtime_map.layers[1][y * MAP_W + x + offset] = tile_id
+        elif endpoint.edge == Edge.BOTTOM:
+            runtime_map.layers[1][y * MAP_W + x] = (
+                FROST_DOWNWARD_STAIRS_RUNTIME_TILE
+            )
+
+
+def is_smooth_ice_tile(tile_id):
+    return tile_id in SMOOTH_ICE_TILE_IDS
+
+
+def route_crosses_ice_straight(runtime_map, path):
+    for index, (x, y) in enumerate(path.points):
+        if not is_smooth_ice_tile(runtime_map.layers[0][y * MAP_W + x]):
+            continue
+        if index == 0 or index + 1 >= len(path.points):
+            return False
+        previous = path.points[index - 1]
+        following = path.points[index + 1]
+        incoming = (x - previous[0], y - previous[1])
+        outgoing = (following[0] - x, following[1] - y)
+        if incoming not in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            return False
+        if incoming != outgoing:
+            return False
+    return True
+
+
 def generate_frost_cave_map(seed, entry_edge):
     horizontal = entry_edge in (Edge.LEFT, Edge.RIGHT)
     templates = FROST_HORIZONTAL_TEMPLATES if horizontal else FROST_VERTICAL_TEMPLATES
@@ -1514,6 +1565,8 @@ def generate_frost_cave_map(seed, entry_edge):
             runtime_map.layers[1][index] = FROST_INNER_CORNER_TILES[matches[0]]
             walls.add((x, y))
 
+    stamp_frost_portals(runtime_map)
+
     ice = set()
     for left, top, right, bottom in spec["ice_rects"]:
         for y in range(top, bottom + 1):
@@ -1594,6 +1647,8 @@ def generate_frost_cave_map(seed, entry_edge):
     for path in paths:
         if len(path.points) < 2:
             raise ValueError("frost route is too short")
+        if not route_crosses_ice_straight(runtime_map, path):
+            raise ValueError("frost route turns or stops on smooth ice")
         for point in path.points:
             if point not in floor or point in blocked:
                 raise ValueError(f"frost route crosses blocked terrain: {point}")
@@ -1822,10 +1877,27 @@ def render(runtime_map, frame_index=0):
                 CUSTOM_TILE_SOURCES[tile_id][1]
                 if tile_id in CUSTOM_TILE_SOURCES
                 and CUSTOM_TILE_SOURCES[tile_id][0] == tileset_name
+                and tile_id not in CUSTOM_TILE_SOURCE_FLIP_Y
                 else 0
                 for tile_id in layer
             ]
             rendered.alpha_composite(render_layer(external_ids, external_tileset))
+            for index, tile_id in enumerate(layer):
+                if (
+                    tile_id not in CUSTOM_TILE_SOURCE_FLIP_Y
+                    or CUSTOM_TILE_SOURCES[tile_id][0] != tileset_name
+                ):
+                    continue
+                source_id = CUSTOM_TILE_SOURCES[tile_id][1]
+                source_index = source_id - 384
+                source_x = (source_index % 8) * 32
+                source_y = (source_index // 8) * 32
+                tile = external_tileset.crop(
+                    (source_x, source_y, source_x + 32, source_y + 32)
+                ).transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+                rendered.alpha_composite(
+                    tile, ((index % MAP_W) * 32, (index // MAP_W) * 32)
+                )
         rendered_layers.append(rendered)
     combined = Image.new("RGBA", rendered_layers[0].size, (0, 0, 0, 255))
     for layer in rendered_layers:

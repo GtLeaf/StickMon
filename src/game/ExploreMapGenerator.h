@@ -10,7 +10,7 @@ constexpr uint8_t LAYER_COUNT = 3;
 constexpr uint8_t PATH_COUNT = 2;
 constexpr uint8_t MAX_PATH_POINTS = 48;
 constexpr uint16_t CELL_COUNT = WIDTH * HEIGHT;
-constexpr uint16_t ALGORITHM_VERSION = 6;
+constexpr uint16_t ALGORITHM_VERSION = 8;
 constexpr uint8_t GRASS_PATH_AREA = 0;
 constexpr uint8_t CREEK_BRIDGE_SLOPE_AREA = 1;
 constexpr uint8_t TALL_GRASS_PARK_AREA = 2;
@@ -64,5 +64,9 @@ uint32_t fingerprint(const Map& map);
 bool isRoadTile(uint16_t tileId);
 bool isWaterTile(uint16_t tileId);
 bool isForestTile(uint16_t tileId);
+
+constexpr bool isSmoothIceTile(uint16_t tileId) {
+    return tileId == 4504 || (tileId >= 4524 && tileId <= 4531);
+}
 
 }  // namespace ExploreMapGenerator

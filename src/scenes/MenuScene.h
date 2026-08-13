@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/BuildConfig.h"
+#include "core/AppSceneFlow.h"
 #include "core/Scene.h"
 #include "game/GameState.h"
 #include "game/Species.h"
@@ -39,21 +40,6 @@ private:
     struct BagRow {
         uint8_t source;
         uint8_t count;
-    };
-
-    enum MenuItem : uint8_t {
-        ITEM_EXPLORE = 0,
-        ITEM_TEAM,
-        ITEM_ROOM,
-        ITEM_BAG,
-        ITEM_SHOP,
-        ITEM_COMPUTER,
-        ITEM_SETTINGS,
-#if STICKMON_ENABLE_DEBUG_FEATURES
-        ITEM_DEBUG,
-#endif
-        ITEM_BACK,
-        ITEM_COUNT,
     };
 
     enum class ViewMode : uint8_t {
@@ -105,6 +91,9 @@ private:
     };
 
     static constexpr uint8_t STATUS_PAGE_COUNT = 5;
+    static constexpr uint8_t ITEM_COUNT =
+        AppSceneFlow::mainMenuItemCount(
+            STICKMON_ENABLE_DEBUG_FEATURES != 0);
     static constexpr uint8_t BAG_ITEM_COUNT = 26;
     static constexpr uint8_t ROOM_ITEM_COUNT = 3;
     static constexpr uint8_t FOOD_ITEM_COUNT = Game::ROOM_FOOD_COUNT + 1;
@@ -119,7 +108,8 @@ private:
     static constexpr uint8_t DEBUG_MONSTER_SWITCH_INDEX = 2;
     static constexpr uint8_t DEBUG_RESOURCE_ITEM_COUNT = 2;
     static constexpr uint8_t DEBUG_ENV_ITEM_COUNT = 3;
-    static constexpr uint8_t DEBUG_MOTION_ITEM_COUNT = 3;
+    static constexpr uint8_t DEBUG_MOTION_ITEM_COUNT = 4;
+    static constexpr uint8_t DEBUG_MOTION_PAIR_INTERACTION_INDEX = 2;
     static constexpr uint8_t DEBUG_BATTLE_ITEM_COUNT = 3;
     static constexpr uint8_t DEBUG_BATTLE_RANDOM_INDEX = 0;
     static constexpr uint8_t DEBUG_BATTLE_DRAW_BOUNDS_INDEX = 1;

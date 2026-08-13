@@ -1,0 +1,51 @@
+set(STICKMON_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../..")
+
+idf_component_register(
+    SRCS
+        "main.cpp"
+        "AmoledApp.cpp"
+        "AmoledPlatform.cpp"
+        "HomeScreen.cpp"
+        "TouchInput.cpp"
+        "${STICKMON_ROOT}/src/assets/FontFallbackCN.cpp"
+        "${STICKMON_ROOT}/src/assets/GameAssets.cpp"
+        "${STICKMON_ROOT}/src/assets/HudAssets.cpp"
+        "${STICKMON_ROOT}/src/assets/MenuAssets.cpp"
+        "${STICKMON_ROOT}/src/assets/PokemonSprites.cpp"
+        "${STICKMON_ROOT}/src/core/DeflateDecoder.cpp"
+        "${STICKMON_ROOT}/src/core/FontResource.cpp"
+        "${STICKMON_ROOT}/src/core/GameClockService.cpp"
+        "${STICKMON_ROOT}/src/core/ResourceFS.cpp"
+        "${STICKMON_ROOT}/src/core/ResourcePack.cpp"
+        "${STICKMON_ROOT}/src/core/RoomMovementArea.cpp"
+        "${STICKMON_ROOT}/src/core/RoomRenderer.cpp"
+        "${STICKMON_ROOT}/src/core/RoomResource.cpp"
+        "${STICKMON_ROOT}/src/core/SaveManager.cpp"
+        "${STICKMON_ROOT}/src/game/HomeCare.cpp"
+        "${STICKMON_ROOT}/src/game/BathService.cpp"
+        "${STICKMON_ROOT}/src/game/ItemInventory.cpp"
+        "${STICKMON_ROOT}/src/game/ShopService.cpp"
+        "${STICKMON_ROOT}/src/game/ExploreMapGenerator.cpp"
+        "${STICKMON_ROOT}/src/game/GameRandom.cpp"
+        "${STICKMON_ROOT}/src/game/MonsterMind.cpp"
+        "${STICKMON_ROOT}/src/game/Species.cpp"
+        "${STICKMON_ROOT}/src/platform/api/PlatformServices.cpp"
+        "${STICKMON_ROOT}/src/presentation/Canvas565.cpp"
+        "${STICKMON_ROOT}/src/presentation/HudRenderer.cpp"
+        "${STICKMON_ROOT}/src/presentation/PixelRenderer.cpp"
+        "${STICKMON_ROOT}/src/third_party/uzlib/tinflate.c"
+    INCLUDE_DIRS
+        "."
+        "${STICKMON_ROOT}/src"
+    REQUIRES
+        esp_lcd
+        esp_psram
+        esp_system
+        esp_timer
+        nvs_flash
+        spiffs
+        espressif__esp_lcd_touch
+        waveshare__esp32_s3_touch_amoled_1_8
+)
+
+target_compile_features(${COMPONENT_LIB} PUBLIC cxx_std_17)

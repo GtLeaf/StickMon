@@ -11,7 +11,7 @@ from pathlib import Path
 from PIL import Image
 
 from generate_explore_map import autotile_variant, regular_tile
-from map_generation_rules import CUSTOM_TILE_SOURCES
+from map_generation_rules import CUSTOM_TILE_SOURCES, CUSTOM_TILE_SOURCE_FLIP_Y
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -737,6 +737,8 @@ def build_assets():
     }
     for kind, _runtime_id, tileset_name, source_id in EXTERNAL_EXPLORE_TILES:
         tile = prepare_explore_tile(source_id, external_tilesets[tileset_name], ())
+        if _runtime_id in CUSTOM_TILE_SOURCE_FLIP_Y:
+            tile = tile.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
         writers["map"].add(kind, quantize_rgba(tile, 16))
     animated_sources = {
         name: load_rgba(GRAPHICS / "Autotiles" / f"{name}.png")

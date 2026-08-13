@@ -1,0 +1,94 @@
+{
+  "algorithmVersion": 7,
+  "expeditionSeed": 2,
+  "maps": [
+    {
+      "index": 0,
+      "area": 3,
+      "selectedExit": 0,
+      "image": "runtime_tile_map_01_aed452fc.png",
+      "debug": "runtime_tile_map_01_aed452fc_debug.png",
+      "data": "runtime_tile_map_01_aed452fc.json",
+      "seed": 2933150460,
+      "fingerprint": "fdf3eaad",
+      "entry": {
+        "point": [
+          0,
+          6
+        ],
+        "edge": "left"
+      },
+      "hasCoast": false,
+      "hasForest": false,
+      "hasCreek": false,
+      "hasCliff": false,
+      "hasWaterfall": false
+    },
+    {
+      "index": 1,
+      "area": 3,
+      "selectedExit": 1,
+      "image": "runtime_tile_map_02_5c6f5506.png",
+      "debug": "runtime_tile_map_02_5c6f5506_debug.png",
+      "data": "runtime_tile_map_02_5c6f5506.json",
+      "seed": 1550800134,
+      "fingerprint": "d7ebbaa2",
+      "entry": {
+        "point": [
+          8,
+          0
+        ],
+        "edge": "top"
+      },
+      "hasCoast": false,
+      "hasForest": false,
+      "hasCreek": false,
+      "hasCliff": false,
+      "hasWaterfall": false
+    },
+    {
+      "index": 2,
+      "area": 3,
+      "selectedExit": 0,
+      "image": "runtime_tile_map_03_8430f79e.png",
+      "debug": "runtime_tile_map_03_8430f79e_debug.png",
+      "data": "runtime_tile_map_03_8430f79e.json",
+      "seed": 2217801630,
+      "fingerprint": "33903817",
+      "entry": {
+        "point": [
+          0,
+          9
+        ],
+        "edge": "left"
+      },
+      "hasCoast": false,
+      "hasForest": false,
+      "hasCreek": false,
+      "hasCliff": false,
+      "hasWaterfall": false
+    },
+    {
+      "index": 3,
+      "area": 3,
+      "selectedExit": 1,
+      "image": "runtime_tile_map_04_9a3546ec.png",
+      "debug": "runtime_tile_map_04_9a3546ec_debug.png",
+      "data": "runtime_tile_map_04_9a3546ec.json",
+      "seed": 2587182828,
+      "fingerprint": "5234d456",
+      "entry": {
+        "point": [
+          7,
+          11
+        ],
+        "edge": "bottom"
+      },
+      "hasCoast": false,
+      "hasForest": false,
+      "hasCreek": false,
+      "hasCliff": false,
+      "hasWaterfall": false
+    }
+  ]
+}

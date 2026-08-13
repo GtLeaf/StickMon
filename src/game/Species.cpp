@@ -144,6 +144,66 @@ const Species* findSpecies(uint16_t speciesId) {
     return nullptr;
 }
 
+AbilityId abilityForSpecies(const Species& species) {
+    switch (species.id) {
+    case 1: case 2: case 3: return AbilityId::OVERGROW;
+    case 4: case 5: case 6: return AbilityId::BLAZE;
+    case 7: case 8: case 9: return AbilityId::TORRENT;
+    case 10: return AbilityId::SHIELD_DUST;
+    case 11: case 147: case 148: return AbilityId::SHED_SKIN;
+    case 12: return AbilityId::COMPOUND_EYES;
+    case 25: case 26: case 172: return AbilityId::STATIC;
+    case 74: case 75: case 76: return AbilityId::STURDY;
+    case 92: case 93: case 94: case 380: case 381: return AbilityId::LEVITATE;
+    case 133: return AbilityId::ADAPTABILITY;
+    case 134: case 194: case 195: return AbilityId::WATER_ABSORB;
+    case 135: return AbilityId::VOLT_ABSORB;
+    case 136: return AbilityId::FLASH_FIRE;
+    case 183: case 184: case 298: return AbilityId::HUGE_POWER;
+    case 285: case 286: return AbilityId::EFFECT_SPORE;
+    case 322: return AbilityId::SIMPLE;
+    case 323: return AbilityId::SOLID_ROCK;
+    case 41: case 42: case 169: case 361: case 362: case 149:
+        return AbilityId::INNER_FOCUS;
+    case 123: case 212: return AbilityId::TECHNICIAN;
+    case 129: return AbilityId::SWIFT_SWIM;
+    case 130: case 262: return AbilityId::INTIMIDATE;
+    case 143: return AbilityId::THICK_FAT;
+    case 151: case 196: case 197: case 280: case 281: case 282:
+        return AbilityId::SYNCHRONIZE;
+    default: return AbilityId::NONE;
+    }
+}
+
+const char* abilityName(AbilityId ability) {
+    switch (ability) {
+    case AbilityId::OVERGROW: return Ui::Status::ABILITY_OVERGROW;
+    case AbilityId::BLAZE: return Ui::Status::ABILITY_BLAZE;
+    case AbilityId::TORRENT: return Ui::Status::ABILITY_TORRENT;
+    case AbilityId::SHIELD_DUST: return Ui::Status::ABILITY_SHIELD_DUST;
+    case AbilityId::SHED_SKIN: return Ui::Status::ABILITY_SHED_SKIN;
+    case AbilityId::COMPOUND_EYES: return Ui::Status::ABILITY_COMPOUND_EYES;
+    case AbilityId::STATIC: return Ui::Status::ABILITY_STATIC;
+    case AbilityId::STURDY: return Ui::Status::ABILITY_STURDY;
+    case AbilityId::LEVITATE: return Ui::Status::ABILITY_LEVITATE;
+    case AbilityId::ADAPTABILITY: return Ui::Status::ABILITY_ADAPTABILITY;
+    case AbilityId::WATER_ABSORB: return Ui::Status::ABILITY_WATER_ABSORB;
+    case AbilityId::VOLT_ABSORB: return Ui::Status::ABILITY_VOLT_ABSORB;
+    case AbilityId::FLASH_FIRE: return Ui::Status::ABILITY_FLASH_FIRE;
+    case AbilityId::HUGE_POWER: return Ui::Status::ABILITY_HUGE_POWER;
+    case AbilityId::EFFECT_SPORE: return Ui::Status::ABILITY_EFFECT_SPORE;
+    case AbilityId::SIMPLE: return Ui::Status::ABILITY_SIMPLE;
+    case AbilityId::SOLID_ROCK: return Ui::Status::ABILITY_SOLID_ROCK;
+    case AbilityId::INNER_FOCUS: return Ui::Status::ABILITY_INNER_FOCUS;
+    case AbilityId::TECHNICIAN: return Ui::Status::ABILITY_TECHNICIAN;
+    case AbilityId::SWIFT_SWIM: return Ui::Status::ABILITY_SWIFT_SWIM;
+    case AbilityId::INTIMIDATE: return Ui::Status::ABILITY_INTIMIDATE;
+    case AbilityId::THICK_FAT: return Ui::Status::ABILITY_THICK_FAT;
+    case AbilityId::SYNCHRONIZE: return Ui::Status::ABILITY_SYNCHRONIZE;
+    case AbilityId::NONE: default: return "--";
+    }
+}
+
 const Species* levelUpEvolutionTarget(const Species& species,
                                       const Game::MonsterRuntime& monster) {
     if (species.evolveTo == 0 || species.evolveTo == species.id) return nullptr;

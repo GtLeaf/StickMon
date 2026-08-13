@@ -39,15 +39,34 @@ class BattleStatusTests(unittest.TestCase):
         attack_start = source.index("void ExploreScene::attackWild()")
         attack_end = source.index("void ExploreScene::wildCounterattack()")
         attack = source[attack_start:attack_end]
+        self.assertIn("playerBattleState.lockedMoveId", attack)
+        self.assertIn("BattleSystem::chooseAiMoveSlot(", attack)
+        self.assertIn("battleTurnSpecialSlots[1] =", attack)
+        self.assertIn("BattleSystem::isChargingMove(wildBattleState)", attack)
         self.assertIn(
-            "battleTurnSpecialSlots[0] = BattleSystem::chooseAiMoveSlot(",
-            attack,
-        )
-        self.assertIn(
-            "battleTurnSpecialSlots[1] = BattleSystem::chooseAiMoveSlot(",
+            ": BattleSystem::chooseAiMoveSlot(",
             attack,
         )
         self.assertNotIn("rollSpecialMoveSlot", attack)
+
+    def test_solar_beam_charges_then_releases_automatically(self):
+        source = (ROOT / "src" / "scenes" / "ExploreScene.cpp").read_text()
+        action_start = source.index("void ExploreScene::beginBattleAction()")
+        action_end = source.index("void ExploreScene::applyBattleDamage()")
+        action = source[action_start:action_end]
+        charge = action.index("BattleSystem::beginChargingMove")
+        damage = action.index("BattleSystem::calcBasicDamage")
+        self.assertLess(charge, damage)
+        self.assertIn("battleTurnStage = BattleTurnStage::WAIT_ACTION_LOGS", action)
+        self.assertIn("battleActionReleasingCharge", action)
+        self.assertIn("void ExploreScene::beginChargedBattleTurn()", source)
+        self.assertIn("BattleSystem::isChargingMove(playerBattleState)", source)
+        finish_turn = source.index("void ExploreScene::finishBattleEndTurn()")
+        charged_turn = source.index("void ExploreScene::beginChargedBattleTurn()")
+        finish = source[finish_turn:charged_turn]
+        self.assertIn("BattleSystem::isChargingMove(playerBattleState)", finish)
+        self.assertNotIn("BattleSystem::isChargingMove(wildBattleState)", finish)
+        self.assertIn("BattleSystem::isChargingMove(wildBattleState)", source)
 
 
 if __name__ == "__main__":

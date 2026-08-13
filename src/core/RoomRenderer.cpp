@@ -1,5 +1,6 @@
 #include "core/RoomRenderer.h"
 
+#include "core/MathUtil.h"
 #include "core/RoomResource.h"
 #include "hardware/Hal.h"
 #include "platform/api/PlatformServices.h"
@@ -127,6 +128,33 @@ void drawBuffer(float cameraY) {
         &roomBuffer[static_cast<uint32_t>(srcY) * room.width()]);
 }
 
+bool drawViewportBuffer(int16_t destinationX, int16_t destinationY,
+                        uint16_t viewportWidth, uint16_t viewportHeight,
+                        int16_t cameraX, int16_t cameraY) {
+    RoomResource& room = RoomResource::ins();
+    if (!roomBuffer || viewportWidth == 0 || viewportHeight == 0) return false;
+
+    int sourceX = cameraX;
+    int sourceY = cameraY - room.roomY();
+    int maximumX = MathUtil::max<int>(0, room.width() - viewportWidth);
+    int maximumY = MathUtil::max<int>(0, room.height() - viewportHeight);
+    sourceX = MathUtil::clamp(sourceX, 0, maximumX);
+    sourceY = MathUtil::clamp(sourceY, 0, maximumY);
+    int drawWidth = MathUtil::min<int>(viewportWidth, room.width() - sourceX);
+    int drawHeight = MathUtil::min<int>(viewportHeight, room.height() - sourceY);
+    if (drawWidth <= 0 || drawHeight <= 0) return false;
+
+    Canvas565& canvas = PixelRenderer::canvas();
+    for (int row = 0; row < drawHeight; ++row) {
+        const uint16_t* source =
+            &roomBuffer[static_cast<uint32_t>(sourceY + row) * room.width() +
+                        sourceX];
+        canvas.pushImage(destinationX, destinationY + row,
+                         drawWidth, 1, source);
+    }
+    return true;
+}
+
 }  // namespace
 
 bool draw(float cameraY, bool night) {
@@ -137,6 +165,16 @@ bool draw(float cameraY, bool night) {
     }
     drawBuffer(cameraY);
     return true;
+}
+
+bool drawViewport(int16_t destinationX, int16_t destinationY,
+                  uint16_t viewportWidth, uint16_t viewportHeight,
+                  int16_t cameraX, int16_t cameraY, bool night) {
+    RoomResource::ins().begin();
+    if (!prepare(night)) return false;
+    return drawViewportBuffer(destinationX, destinationY,
+                              viewportWidth, viewportHeight,
+                              cameraX, cameraY);
 }
 
 }  // namespace RoomRenderer

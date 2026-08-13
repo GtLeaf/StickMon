@@ -7,10 +7,18 @@
 
 class SaveManager {
 public:
+    enum class LoadStatus : uint8_t {
+        LOADED,
+        NOT_FOUND,
+        INVALID,
+        NEWER_VERSION,
+    };
+
     bool begin();
     bool load(Game::GameState& state,
               MainSceneViewState& viewState,
-              bool* normalized = nullptr);
+              bool* normalized = nullptr,
+              LoadStatus* status = nullptr);
     bool saveSnapshot(const Game::GameState& state,
                       const MainSceneViewState& viewState);
     bool loadEncounterHistory(Game::EncounterHistory& history,
