@@ -12,7 +12,7 @@ ESP32-S3（M5StickS3）电子宠物游戏。PlatformIO + Arduino 框架，屏幕
 
 - 游戏资源（道具/球/战斗背景/探索 tile/浴室等）：`python3 tools/generate_game_assets.py`，输出 `data/packs/dev/game/{ui,battle,maps,hatch}.smonfx`。
 - 精灵图：`python3 tools/generate_pokemon_sprites.py`，输出 `data/packs/dev/sprites/*.smonsp` 并重写 `src/assets/PokemonSprites.h/.cpp`。
-- 两条管线都依赖 Essentials 源图，路径由 `ESSENTIALS_DIR` 环境变量覆盖，默认 `${ESSENTIALS_DIR}`。
+- 两条管线都依赖 Essentials 源图。默认从未跟踪的 `external/pokemon-essentials` 读取，也可通过 `ESSENTIALS_DIR` 环境变量指定外部目录。
 - 测试：在 `tools/` 目录下跑 `python3 -m unittest test_generate_game_assets` / `test_generate_pokemon_sprites`（系统 python3 已装 PIL）。
 
 ### 必须遵守的不变量

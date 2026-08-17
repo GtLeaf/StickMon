@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import argparse
 import json
-import os
 import struct
 import subprocess
 from collections import deque
@@ -9,14 +8,12 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
+from asset_paths import essentials_dir
 from map_generation_rules import CUSTOM_TILE_VERTICAL_FLIPS
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ESSENTIALS = Path(os.environ.get(
-    "ESSENTIALS_DIR",
-    "${ESSENTIALS_DIR}",
-))
+ESSENTIALS = essentials_dir()
 EXPORTER = ROOT / "tools" / "export_rmxp_map.rb"
 OUTPUT_DIR = ROOT / "origin_asset" / "generated" / "game"
 MAP_DATA_DIR = OUTPUT_DIR / "maps"

@@ -7,11 +7,10 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
+from asset_paths import essentials_dir, portable_asset_path
 
 ROOT = Path(__file__).resolve().parents[1]
-ESSENTIALS = Path(
-    "${ESSENTIALS_DIR}"
-)
+ESSENTIALS = essentials_dir()
 DEFAULT_TILESET = ESSENTIALS / "Graphics" / "Tilesets" / "Caves.png"
 DEFAULT_OUTPUT_DIR = (
     ROOT / "origin_asset" / "generated" / "game" / "tileset_reference" / "caves"
@@ -184,7 +183,7 @@ def generate_catalog(tileset_path, output_dir, rows_per_page=ROWS_PER_PAGE):
     contact_path = output_dir / "caves_tiles_ids_contact_sheet.png"
     make_contact_sheet(page_records, contact_path)
     manifest = {
-        "tileset": str(tileset_path),
+        "tileset": portable_asset_path(tileset_path, ESSENTIALS),
         "tileSize": TILE_SIZE,
         "columns": columns,
         "rows": total_rows,

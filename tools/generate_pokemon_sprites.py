@@ -2,11 +2,12 @@
 from dataclasses import dataclass
 from pathlib import Path
 import json
-import os
 import re
 import struct
 import zlib
 from PIL import Image
+
+from asset_paths import essentials_dir
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -18,10 +19,7 @@ DATA_DIR = ROOT / "data"
 PACK_OUT = DATA_DIR / "packs" / "dev"
 PACK_SPRITE_OUT = PACK_OUT / "sprites"
 
-ESSENTIALS = Path(os.environ.get(
-    "ESSENTIALS_DIR",
-    "${ESSENTIALS_DIR}",
-))
+ESSENTIALS = essentials_dir()
 GRAPHICS = ESSENTIALS / "Graphics" / "Pokemon"
 
 ICON_SIZE = 64

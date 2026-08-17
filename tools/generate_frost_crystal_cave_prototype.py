@@ -8,6 +8,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
+from asset_paths import essentials_dir, portable_asset_path
 from cave_tile_semantics import (
     FROST_INNER_WALL_CORNER_TILES,
     ICE_ROCK_ISLAND_BACKGROUND_TILES,
@@ -16,9 +17,7 @@ from cave_tile_semantics import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ESSENTIALS = Path(
-    "${ESSENTIALS_DIR}"
-)
+ESSENTIALS = essentials_dir()
 CAVES_TILESET = ESSENTIALS / "Graphics" / "Tilesets" / "Caves.png"
 DEFAULT_OUTPUT_DIR = (
     ROOT
@@ -699,7 +698,7 @@ def main():
 
     manifest = {
         "status": "prototype-only",
-        "sourceTileset": str(CAVES_TILESET),
+        "sourceTileset": portable_asset_path(CAVES_TILESET, ESSENTIALS),
         "referenceMap": "Map034 Ice Cave",
         "tileCatalog": str(guide_path.relative_to(ROOT)),
         "tileCatalogPages": [

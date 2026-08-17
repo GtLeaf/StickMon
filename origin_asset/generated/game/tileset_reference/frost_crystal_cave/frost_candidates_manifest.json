@@ -1,5 +1,5 @@
 {
-  "tileset": "${ESSENTIALS_DIR}/Graphics/Tilesets/Caves.png",
+  "tileset": "Graphics/Tilesets/Caves.png",
   "referenceMap": "Map034 Ice Cave",
   "candidateRange": [
     1120,

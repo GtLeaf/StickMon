@@ -14,6 +14,16 @@ pio run -e m5stick-s3
 
 The project follows the PokeBug StickS3 PlatformIO baseline and enables PSRAM through `BOARD_HAS_PSRAM`.
 
+## External Assets
+
+Asset generation tools look for Pokemon Essentials under the ignored
+`external/pokemon-essentials` directory by default. To keep those files outside
+the repository, point the tools at another location:
+
+```bash
+export ESSENTIALS_DIR=/path/to/pokemon-essentials
+```
+
 ## Flash Firmware and LittleFS
 
 `tools/upload_firmware_and_fs.sh` builds and uploads both the firmware and the

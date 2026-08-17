@@ -1,6 +1,6 @@
 {
   "status": "prototype-only",
-  "sourceTileset": "${ESSENTIALS_DIR}/Graphics/Tilesets/Caves.png",
+  "sourceTileset": "Graphics/Tilesets/Caves.png",
   "referenceMap": "Map034 Ice Cave",
   "tileCatalog": "origin_asset/generated/game/tileset_reference/frost_crystal_cave/frost_candidates_contact_sheet.png",
   "tileCatalogPages": [

@@ -11,6 +11,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
+from asset_paths import portable_asset_path
 from generate_explore_map import ESSENTIALS, export_map
 
 
@@ -438,7 +439,7 @@ def main():
     make_contact_sheet(page_paths, contact_path)
     status_counts = Counter(record["status"] for record in records)
     manifest = {
-        "tileset": str(TILESET_PATH),
+        "tileset": portable_asset_path(TILESET_PATH, ESSENTIALS),
         "referenceMap": "Map034 Ice Cave",
         "candidateRange": [FIRST_TILE_ID, LAST_TILE_ID],
         "iceRockCandidateRange": [FIRST_TILE_ID, CORE_SNOW_FIRST_TILE_ID - 1],
