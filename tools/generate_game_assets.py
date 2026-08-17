@@ -2,7 +2,6 @@
 import argparse
 from collections import deque
 import json
-import os
 import re
 import struct
 import zlib
@@ -10,15 +9,13 @@ from pathlib import Path
 
 from PIL import Image
 
+from asset_paths import essentials_dir
 from generate_explore_map import autotile_variant, regular_tile
 from map_generation_rules import CUSTOM_TILE_SOURCES, CUSTOM_TILE_SOURCE_FLIP_Y
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ESSENTIALS = Path(os.environ.get(
-    "ESSENTIALS_DIR",
-    "${ESSENTIALS_DIR}",
-))
+ESSENTIALS = essentials_dir()
 GRAPHICS = ESSENTIALS / "Graphics"
 DATA_DIR = ROOT / "data"
 PACK_OUT = DATA_DIR / "packs" / "dev"

@@ -2,6 +2,7 @@
 .vscode/
 .DS_Store
 tools/out/
+external/
 __pycache__/
 *.pyc
 

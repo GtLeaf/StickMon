@@ -1,5 +1,5 @@
 {
-  "tileset": "${ESSENTIALS_DIR}/Graphics/Tilesets/Caves.png",
+  "tileset": "Graphics/Tilesets/Caves.png",
   "tileSize": 32,
   "columns": 8,
   "rows": 199,

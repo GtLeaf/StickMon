@@ -12,11 +12,10 @@ import wave
 import zlib
 from pathlib import Path
 
+from asset_paths import essentials_dir
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_ESSENTIALS = (
-    ROOT.parent.parent / "poke" / "Pokemon Essentials v21.1 2023-07-30"
-)
+DEFAULT_ESSENTIALS = essentials_dir()
 PACK_OUT = ROOT / "data" / "packs" / "dev"
 AUDIO_OUT = PACK_OUT / "audio"
 

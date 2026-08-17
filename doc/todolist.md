@@ -6,7 +6,7 @@
 赤之救助队神兽移动：https://www.bilibili.com/video/BV1Ux4y1e7yM/?spm_id_from=333.337.search-card.all.click&vd_source=1cd465352ac4284ef51b32cc833ad6f5
 时间线：固拉多：00:44:01
 
-./origin_asset/source_sheets/low/Game Boy Advance - Pokemon Mystery Dungeon_ Red Rescue Team - Pokemon (1st Generation) - Pokemon (#001-025).png，处理错误，我告诉你每只精灵占的行数
+origin_asset/source_sheets/low/Game Boy Advance - Pokemon Mystery Dungeon_ Red Rescue Team - Pokemon (1st Generation) - Pokemon (#001-025).png，处理错误，我告诉你每只精灵占的行数
 从上到下依次为：
 3，2，2，
 3，2，3，
@@ -71,18 +71,18 @@ Game Boy Advance - Pokemon Mystery Dungeon_ Red Rescue Team - Pokemon (1st Gener
 009_blastoise最后一行被切掉了
 040_wigglytuff
 
-./origin_asset/source_sheets/low/中，123_scyther，094_gengar，093_haunter，092_gastly做进一步处理：
+origin_asset/source_sheets/low/中，123_scyther，094_gengar，093_haunter，092_gastly做进一步处理：
 1. 四只精灵的walk有3帧，前15个图是walk0~walk4, 3帧一组，共5个朝向，从左到右依次为：正面，左下，左，左上，背面
 2. 123_scyther第二行倒数第7，6是两帧sleeping
 3. 094_gengar第二行倒数第10，9是两帧sleeping
 4. 093_haunter第二行正数第10，9是两帧sleeping
 5. 092_gastly第二行正数第7，8是两帧sleeping
 
-./origin_asset/source_sheets/low/中，026_raichu拆分写入项目，图片描述如下：
+origin_asset/source_sheets/low/中，026_raichu拆分写入项目，图片描述如下：
 1. walk有3帧，3帧一组，共8个朝向，24个图由第一行21个+第二行3个。从左到右依次为：正面，右下，右，右上，背面，左上，左，左下（在第二行）。8个朝向不可用镜像
 2. 第二行倒数第3，2为两帧sleep
 
-./origin_asset/source_sheets/low/中，007_squirtle，009_blastoise拆分写入项目，图片描述如下：
+origin_asset/source_sheets/low/中，007_squirtle，009_blastoise拆分写入项目，图片描述如下：
 1. walk有3帧，前15个图是walk0~walk4, 3帧一组，共5个朝向，从左到右依次为：正面，左下，左，左上，背面，其他方向用镜像
 2. 007_squirtle第二行正数第15，16为两帧sleep
 3. 009_blastoise第二行正数第4，5为两帧sleep
@@ -92,7 +92,7 @@ Game Boy Advance - Pokemon Mystery Dungeon_ Red Rescue Team - Pokemon (1st Gener
 2. 第二行倒数第6，7是两帧sleeping
 
 
-处理下：./origin_asset/source_sheets/low/split_by_species/016_pidgey.png,017_pidgeotto,018_pidgeot.png,
+处理下：origin_asset/source_sheets/low/split_by_species/016_pidgey.png,017_pidgeotto,018_pidgeot.png,
 1. walk有3帧，3帧一组，共5个朝向，从左到右，正面，左下，左，左上，背面
 2. 016的第一行最后俩帧是sleep
 3. 017的第二行的6，7是sleep
@@ -138,34 +138,34 @@ hp: 19/19   特攻：xx
 
 其他页保持不变
 
-处理./origin_asset/source_sheets/medium/261_poochyena_262_mightyena.png描述如下：
+处理origin_asset/source_sheets/medium/261_poochyena_262_mightyena.png描述如下：
 1.poochyena和mightyena第二行为move，3帧，5个方向，从左到右是正面，左下，左，左上，背面。其他方向用镜像
 2.poochyena和mightyena第四行，倒数2，3为sleep
 
-处理./origin_asset/source_sheets/medium/278_wingull_279_pelipper.png描述如下：
+处理origin_asset/source_sheets/medium/278_wingull_279_pelipper.png描述如下：
 1.wingull和pelipper第一行为move，3帧，5个方向，从左到右是正面，左下，左，左上，背面。其他方向用镜像
 2.wingull第二行倒数2，3为sleep
 3.pelipper第四行倒数2，3为sleep
 
-处理./origin_asset/source_sheets/medium/276_taillow_277_swellow.png
+处理origin_asset/source_sheets/medium/276_taillow_277_swellow.png
 1.taillow和swellow第一行为move，3帧，5个方向，从左到右是正面，左下，左，左上，背面。其他方向用镜像
 2.taillow和swellow第三行倒数2，3，为sleep
 
-./origin_asset/source_sheets/low/012_butterfree.png裁剪错误，第二行被裁掉了
+origin_asset/source_sheets/low/012_butterfree.png裁剪错误，第二行被裁掉了
 
 
-处理./origin_asset/source_sheets/low/010_caterpie.png,011_metapod,012_butterfree。先生成预览图，等我确认后再写人
+处理origin_asset/source_sheets/low/010_caterpie.png,011_metapod,012_butterfree。先生成预览图，等我确认后再写人
 1. 第一行前15帧为move，3帧，5个方向，从左到右是正面，左下，左，左上，背面。其他方向用镜像
 2. 010_caterpie第一行倒数3，4为sleep
 3. 011_metapod第一行倒数2，3为sleep
 4. 012_butterfree第二行2，3为sleep
 
-处理./origin_asset/source_sheets/low/074_geodude.png，075_graveler，076_golem先生成预览图，等我确认后再写人
+处理origin_asset/source_sheets/low/074_geodude.png，075_graveler，076_golem先生成预览图，等我确认后再写人
 1. 第一行前15帧为move，3帧，5个方向，从左到右是正面，左下，左，左上，背面。其他方向用镜像
 2. 074_geodude,075_graveler的第二行倒数6，7为sleep
 3. 076_golem的第二行倒数8，9为sleep
 
-处理./origin_asset/source_sheets/medium/183_marill_184_azumarill.png,先生成预览图，等我确认后再写入
+处理origin_asset/source_sheets/medium/183_marill_184_azumarill.png,先生成预览图，等我确认后再写入
 1. marill和azumarill第一行为move，3帧，5个方向，从左到右是正面，左下，左，左上，背面。其他方向用镜像
 2. marill第三行倒数2，3，为sleep
 3. azumarill第四行倒数2，3，为sleep
@@ -173,49 +173,49 @@ hp: 19/19   特攻：xx
 5. azumarill 第三行为跳跃动画，1帧，8个方向从左到右是正面，左下，左，左上，背面，右上，右，右下
 6. 攻击和和跳跃动画先解析出来，留着后续备用
 
-处理./origin_asset/source_sheets/medium/194_wooper_195_quagsire.png,先生成预览图，等我确认后再写入
+处理origin_asset/source_sheets/medium/194_wooper_195_quagsire.png,先生成预览图，等我确认后再写入
 1. wooper第一行为move，3帧，5个方向，从左到右是正面，左下，左，左上，背面。其他方向用镜像
 2. wooper第二行为攻击动画，2帧一组，5个方向同move
 3. quagsire第二行为move,2帧，5个方向,从左到右是正面，左下，左，左上，背面。其他方向用镜像
 4. quagsire第一行为攻击动画，2帧一组，5个方向同move
 5. 两者的第三行倒数2，3为sleep
 
-./origin_asset/source_sheets/medium/285_shroomish_286_breloom.png，先生成预览图，等我确认后再写入
+origin_asset/source_sheets/medium/285_shroomish_286_breloom.png，先生成预览图，等我确认后再写入
 1. shroomish和breloom第一行为move，3帧，5个方向，从左到右是正面，左下，左，左上，背面。其他方向用镜像
 2. shroomish第二行倒数2，3为sleep
 3. breloom第三行倒数2，3为sleep
 
-./origin_asset/source_sheets/medium/298_azurill.png处理下，先生成预览图，等我确认后再写入
+origin_asset/source_sheets/medium/298_azurill.png处理下，先生成预览图，等我确认后再写入
 1. 第一行为move，3帧，5个方向，从左到右是正面，左下，左，左上，背面。其他方向用镜像
 2. 第三行倒数2，3为sleep
 3. 第二行为jump，3帧，5个方向，从左到右是正面，左下，左，左上，背面。其他方向用镜像
 
-./origin_asset/source_sheets/medium/362_glalie.png处理下，先生成预览图，等我确认后再写入
+origin_asset/source_sheets/medium/362_glalie.png处理下，先生成预览图，等我确认后再写入
 1. 左边3列为move，每一行的3帧为一组，5个方向从上到下分别为：左，左上 正面，左下，背面，其他用镜像
 2. 第一行最后2帧为sleep
 
-./origin_asset/source_sheets/high/361_snorunt.png处理下
+origin_asset/source_sheets/high/361_snorunt.png处理下
 1. 左侧4帧为move，中间「sleeping」字样上面2帧是sleep
 
-./origin_asset/source_sheets/high/322_numel_323_camerupt.png 处理下
+origin_asset/source_sheets/high/322_numel_323_camerupt.png 处理下
 1. 对应的帧在描述文字的左边
 
 
-./origin_asset/source_sheets/high/280_ralts.png，281_kirlia处理一下，先生成预览图，等我确认后再写入
+origin_asset/source_sheets/high/280_ralts.png，281_kirlia处理一下，先生成预览图，等我确认后再写入
 1. 280_ralts的idle，walking方向从上往下依次为正面，右下，右，右上，背面，其他用镜像
 2. 281_kirlia walk 2帧，第1行代表第1帧的朝向，方向从左到右为正面，左下，左，左上，背面，其他用镜像
 2. 281_kirlia attacking也解析出来，3帧，按行排列。方向从上到下为：正面，右下，右，右上，背面，其他用镜像
 
-./origin_asset/source_sheets/medium/282_gardevoir.png处理一下，先生成预览图，等我确认后再写入
+origin_asset/source_sheets/medium/282_gardevoir.png处理一下，先生成预览图，等我确认后再写入
 1. 第一行为walking, 3帧一组，从左到右为：正面，左下，左，左上，背面。运动方式类似鬼斯通
 2. 第二第三行都为3帧一组，方向与第一帧一样。暂时认定为两种idle动作帧
 3. 第四行倒数2,3是sleep，
 4. 倒数第1个是濒死，先解析出来
 
-./origin_asset/source_sheets/low/041_zubat.png，042_golbat处理一下，先生成预览图，等我确认后再写入
+origin_asset/source_sheets/low/041_zubat.png，042_golbat处理一下，先生成预览图，等我确认后再写入
 1. walking, 3帧一组，从左到右为：正面，左下，左，左上，背面
 2. 倒数第6，7为sleep
-./origin_asset/source_sheets/medium/169_crobat.png处理下
+origin_asset/source_sheets/medium/169_crobat.png处理下
 1. 第一行为walking, 3帧一组，从左到右为：正面，左下，左，左上，背面
 2. 第三行第1，2为sleep
 

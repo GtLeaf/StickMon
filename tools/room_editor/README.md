@@ -15,7 +15,7 @@ Use a static Web tool for this workflow:
 Open:
 
 ```bash
-open ./tools/room_editor/index.html
+open tools/room_editor/index.html
 ```
 
 The left sidebar remembers which sections you opened in this browser. With a
@@ -318,8 +318,7 @@ Pillow:
 
 ```bash
 python3 -m pip install pillow
-python3 \
-  ./tools/room_editor/generate_sprite_previews.py
+python3 tools/room_editor/generate_sprite_previews.py
 ```
 
 The script writes:
@@ -436,7 +435,7 @@ The fixed `compose_room.py` expects Pillow:
 
 ```bash
 python3 -m pip install pillow
-python3 ./tools/room_editor/compose_room.py \
+python3 tools/room_editor/compose_room.py \
   --layout room_layout.json \
   --furniture-dir furniture \
   --out room_preview
@@ -464,15 +463,15 @@ Use `tools/prepare_room_background.py` to write the active room background into
 for Day/Night plus furniture from `room_layout.json`:
 
 ```bash
-python3 ./tools/prepare_room_background.py
+python3 tools/prepare_room_background.py
 ```
 
 When testing a fully composed room image, bypass furniture composition so
 objects are not drawn twice:
 
 ```bash
-python3 ./tools/prepare_room_background.py \
-  --direct-room-image ./origin_asset/room/standar/room_preview.png
+python3 tools/prepare_room_background.py \
+  --direct-room-image origin_asset/room/standar/room_preview.png
 ```
 
 `--direct-room-image` uses the same image for day and night. Use

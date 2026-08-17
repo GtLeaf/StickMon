@@ -6,6 +6,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
+from asset_paths import essentials_dir
 from generate_explore_map import autotile_variant
 from map_generation_rules import (
     CUSTOM_TILE_VERTICAL_FLIPS,
@@ -18,9 +19,7 @@ from map_generation_rules import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ESSENTIALS = Path(
-    "${ESSENTIALS_DIR}"
-)
+ESSENTIALS = essentials_dir()
 TILESET = ESSENTIALS / "Graphics" / "Tilesets" / "Outside.png"
 AUTOTILE_NAMES = (
     "Sea",

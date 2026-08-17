@@ -10,15 +10,13 @@ missing. Existing files are left untouched, so it is safe to re-run.
 from pathlib import Path
 import re
 import shutil
-import os
+
+from asset_paths import essentials_dir
 
 ROOT = Path(__file__).resolve().parents[1]
 SPECIES_CPP = ROOT / "src" / "game" / "Species.cpp"
 MIRROR = ROOT / "origin_asset" / "essentials_graphics" / "Graphics" / "Pokemon"
-ESSENTIALS = Path(os.environ.get(
-    "ESSENTIALS_DIR",
-    "${ESSENTIALS_DIR}",
-)) / "Graphics" / "Pokemon"
+ESSENTIALS = essentials_dir() / "Graphics" / "Pokemon"
 
 SUBDIRS = ("Front", "Back", "Icons")
 
