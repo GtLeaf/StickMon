@@ -44,6 +44,20 @@ int main() {
     assert(state.team[0].hpCur == state.team[0].hpMax);
     assert(state.team[0].majorStatus == Game::MajorStatus::NONE);
 
+    state.bag.maxPotion = 1;
+    state.team[0].hpCur = 12;
+    assert(Game::ItemInventory::useOnTeam(state, ItemId::MAX_POTION, 0) ==
+           UseResult::USED);
+    assert(state.team[0].hpCur == state.team[0].hpMax);
+    assert(state.bag.maxPotion == 0);
+
+    state.bag.maxPotion = 1;
+    state.team[0].majorStatus = Game::MajorStatus::BURN;
+    assert(Game::ItemInventory::useOnTeam(state, ItemId::MAX_POTION, 0) ==
+           UseResult::HP_FULL);
+    assert(state.team[0].majorStatus == Game::MajorStatus::BURN);
+    assert(state.bag.maxPotion == 1);
+
     state.bag.antidote = 1;
     state.team[0].majorStatus = Game::MajorStatus::TOXIC;
     assert(Game::ItemInventory::useOnTeam(state, ItemId::ANTIDOTE, 0) ==

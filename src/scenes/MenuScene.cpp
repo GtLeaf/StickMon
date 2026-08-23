@@ -1172,7 +1172,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                         } else {
                             used = GameEngine::ins().useMaxPotion(targetSlot);
                             toast = used ? Ui::Bag::USED_MAX_POTION : Ui::Bag::HP_FULL;
-                            result = BattleBagResult::MAX_POTION;
+                            if (used) result = BattleBagResult::MAX_POTION;
                         }
                     } else if (bagConfirmSource == BAG_SOURCE_EXTRA_BASE + 1) {
                         const auto& mon = state.team[targetSlot];
@@ -1182,7 +1182,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                             used = GameEngine::ins().useFullRestore(targetSlot);
                             toast = used ? Ui::Bag::USED_FULL_RESTORE
                                          : Ui::Bag::FULL_RESTORE_NOT_NEEDED;
-                            result = BattleBagResult::FULL_RESTORE;
+                            if (used) result = BattleBagResult::FULL_RESTORE;
                         }
                     } else if (bagConfirmSource == BAG_SOURCE_EXTRA_BASE + 2) {
                         used = GameEngine::ins().useFullHeal(targetSlot);
@@ -1252,8 +1252,13 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                 bagConfirmSource = source;
                 bagConfirmYes = true;
                 bagConfirmOpen = true;
-            } else if (!battleBagMode && source >= BAG_SOURCE_EXTRA_BASE &&
-                       source < BAG_SOURCE_EXTRA_BASE + BAG_SOURCE_EXTRA_COUNT) {
+            } else if (source >= BAG_SOURCE_EXTRA_BASE &&
+                       source < BAG_SOURCE_EXTRA_BASE + BAG_SOURCE_EXTRA_COUNT &&
+                       (!battleBagMode ||
+                        source == BAG_SOURCE_EXTRA_BASE + 0 ||
+                        source == BAG_SOURCE_EXTRA_BASE + 1 ||
+                        source == BAG_SOURCE_EXTRA_BASE + 2 ||
+                        source == BAG_SOURCE_EXTRA_BASE + 6)) {
                 if (source == BAG_SOURCE_HEART_SCALE) {
                     moveMonsterIndex = 0;
                     recallMoveCount = GameEngine::ins().collectRecallableMoves(

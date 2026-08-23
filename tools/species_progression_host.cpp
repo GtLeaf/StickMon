@@ -127,11 +127,10 @@ int main() {
     uint16_t easyFedChance = FriendshipSystem::offerChancePermille(
         *magikarp, friendshipTarget, false,
         FriendshipSystem::FOOD_BOND_MAX);
-    if (normalChance < 24 || normalChance > 30 ||
-        sleepChance <= normalChance || sleepChance > 60 ||
-        bossChance >= normalChance || legendaryChance > 3 ||
-        fedChance < normalChance * 2 - 1 ||
-        fedChance > normalChance * 2 + 1 ||
+    if (normalChance < 100 || normalChance > 115 ||
+        sleepChance < 205 || sleepChance > 220 ||
+        bossChance >= normalChance || legendaryChance > 10 ||
+        fedChance < 170 || fedChance > 185 ||
         easyFedChance != FriendshipSystem::OFFER_CHANCE_MAX_PERMILLE) {
         return 63;
     }
@@ -143,7 +142,7 @@ int main() {
             *magikarp, friendshipTarget, false, 0, lowRolls) ||
         FriendshipSystem::passesOfferChecks(
             *magikarp, friendshipTarget, false,
-            FriendshipSystem::OFFER_GATE_PERMILLE, lowRolls) ||
+            FriendshipSystem::FOOD_BOND_FACTOR_MIN_PERMILLE, lowRolls) ||
         !FriendshipSystem::passesOfferChecks(
             *magikarp, friendshipTarget, false, 200, lowRolls,
             FriendshipSystem::FOOD_BOND_MAX) ||
@@ -155,7 +154,12 @@ int main() {
             *bulbasaur, friendshipTarget, false, 0, highRolls)) {
         return 64;
     }
-    if (FriendshipSystem::addFoodBond(0, FriendshipSystem::NORMAL_FOOD_BOND_GAIN) != 30 ||
+    if (FriendshipSystem::foodBondFactorPermille(0) !=
+            FriendshipSystem::FOOD_BOND_FACTOR_MIN_PERMILLE ||
+        FriendshipSystem::foodBondFactorPermille(
+            FriendshipSystem::FOOD_BOND_MAX) !=
+            FriendshipSystem::FOOD_BOND_FACTOR_MAX_PERMILLE ||
+        FriendshipSystem::addFoodBond(0, FriendshipSystem::NORMAL_FOOD_BOND_GAIN) != 30 ||
         FriendshipSystem::addFoodBond(90, FriendshipSystem::NORMAL_FOOD_BOND_GAIN) !=
             FriendshipSystem::FOOD_BOND_MAX ||
         !FriendshipSystem::acceptsNormalFood(false, 49) ||

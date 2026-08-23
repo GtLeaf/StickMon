@@ -29,6 +29,33 @@ class ExploreEndBondTests(unittest.TestCase):
         self.assertIn('BOND_GAIN_FMT = "羁绊值 +%u"', self.strings)
 
 
+class ExploreReturnStatusTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.engine = (ROOT / "src/core/GameEngine.cpp").read_text(
+            encoding="utf-8"
+        )
+
+    def test_battle_statuses_clear_before_returning_to_main(self):
+        begin = self.engine.index("void GameEngine::beginExploreReturn")
+        finish = self.engine.index("void GameEngine::finishExploreReturn", begin)
+        body = self.engine[begin:finish]
+        clear = body.index("clearExploreBattleStatuses()")
+        returning = body.index("exploreTravel = fainted")
+        scene_switch = body.index("fadeToScene(SceneID::MAIN)")
+        self.assertLess(clear, returning)
+        self.assertLess(clear, scene_switch)
+
+    def test_status_cleanup_covers_every_team_member(self):
+        begin = self.engine.index("bool GameEngine::clearExploreBattleStatuses")
+        end = self.engine.index("void GameEngine::beginDebugBattle", begin)
+        body = self.engine[begin:end]
+        self.assertIn("slot < state.teamCount", body)
+        self.assertIn("slot < Game::TEAM_CAP", body)
+        self.assertIn("mon.majorStatus = Game::MajorStatus::NONE", body)
+        self.assertIn("mon.majorStatusTurns = 0", body)
+
+
 class MoveLearnComparisonTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

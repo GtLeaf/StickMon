@@ -400,6 +400,7 @@ static constexpr const char* EXIT_FOAM = "身上还有泡沫";
 static constexpr const char* EXIT_QUESTION = "要结束吗?";
 static constexpr const char* INCOMPLETE = "洗澡没有完成";
 static constexpr const char* EXP_GAIN_FMT = "+%u exp";
+static constexpr const char* COMPLETE_MESSAGE_FMT = "%s变得更有活力了";
 static constexpr const char* YES = "yes";
 static constexpr const char* NO = "no";
 static constexpr const char* SOAP_NAMES[] = {

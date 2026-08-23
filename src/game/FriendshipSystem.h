@@ -8,8 +8,10 @@
 
 namespace FriendshipSystem {
 
-static constexpr uint16_t OFFER_GATE_PERMILLE = 150;
-static constexpr uint16_t OFFER_GATE_MAX_PERMILLE = 300;
+// Food bond directly scales the GBA shake result:
+// bond 0 => 0.6x, bond 100 => 1.0x.
+static constexpr uint16_t FOOD_BOND_FACTOR_MIN_PERMILLE = 600;
+static constexpr uint16_t FOOD_BOND_FACTOR_MAX_PERMILLE = 1000;
 static constexpr uint16_t OFFER_CHANCE_MAX_PERMILLE = 250;
 static constexpr uint8_t BOSS_ODDS_PERCENT = 60;
 static constexpr uint8_t SHAKE_CHECK_COUNT = 4;
@@ -65,10 +67,13 @@ constexpr uint8_t addFoodBond(uint8_t current, uint8_t gain) {
         : static_cast<uint8_t>(current + gain);
 }
 
-constexpr uint16_t offerGatePermille(uint8_t foodBond) {
+constexpr uint16_t foodBondFactorPermille(uint8_t foodBond) {
     return static_cast<uint16_t>(
-        static_cast<uint32_t>(OFFER_GATE_PERMILLE) *
-        (100U + (foodBond > FOOD_BOND_MAX ? FOOD_BOND_MAX : foodBond)) / 100U);
+        FOOD_BOND_FACTOR_MIN_PERMILLE +
+        static_cast<uint32_t>(
+            foodBond > FOOD_BOND_MAX ? FOOD_BOND_MAX : foodBond) *
+            (FOOD_BOND_FACTOR_MAX_PERMILLE -
+             FOOD_BOND_FACTOR_MIN_PERMILLE) / FOOD_BOND_MAX);
 }
 
 constexpr uint8_t normalFoodAcceptancePercent(bool boss) {

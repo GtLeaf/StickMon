@@ -7,6 +7,37 @@
 namespace Game {
 namespace BathService {
 
+uint8_t hpRecoveryPercentForScore(uint8_t score) {
+    switch (score) {
+    case 1: return 45;
+    case 2: return 70;
+    case 3: return 100;
+    default: return 0;
+    }
+}
+
+uint16_t applyCompletionRecovery(GameState& state, uint8_t score,
+                                 uint8_t teamSlot) {
+    if (teamSlot >= state.teamCount || teamSlot >= TEAM_CAP) return 0;
+
+    MonsterRuntime& monster = state.team[teamSlot];
+    if (monster.fainted || monster.hpCur == 0 || monster.hpCur >= monster.hpMax) {
+        return 0;
+    }
+
+    uint8_t percent = hpRecoveryPercentForScore(score);
+    if (percent == 0) return 0;
+
+    uint16_t amount = static_cast<uint16_t>(
+        (static_cast<uint32_t>(monster.hpMax) * percent + 99) / 100);
+    if (amount < 1) amount = 1;
+    uint16_t nextHp = static_cast<uint16_t>(std::min<uint32_t>(
+        monster.hpMax, static_cast<uint32_t>(monster.hpCur) + amount));
+    uint16_t recovered = nextHp - monster.hpCur;
+    monster.hpCur = nextHp;
+    return recovered;
+}
+
 uint16_t careDailyCapForLevel(uint8_t level) {
     if (level <= 10) return 60;
     if (level <= 20) return 35;

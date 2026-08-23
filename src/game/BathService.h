@@ -18,6 +18,11 @@ struct RewardResult {
     uint8_t moodGain = 0;
 };
 
+// Completion healing scales with the final bath score: one star restores 45%,
+// two stars 70%, and three stars restores the monster to full HP.
+uint8_t hpRecoveryPercentForScore(uint8_t score);
+uint16_t applyCompletionRecovery(GameState& state, uint8_t score,
+                                 uint8_t teamSlot = 0);
 uint16_t careDailyCapForLevel(uint8_t level);
 uint8_t fullBathExperienceForLevel(uint8_t level);
 int8_t nextOwnedSoap(const GameState& state, int8_t from,

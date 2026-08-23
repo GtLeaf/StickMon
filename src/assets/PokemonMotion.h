@@ -17,6 +17,14 @@ struct Behavior {
     bool registeredSlither;
 };
 
+// Airborne species share the same ground anchor as walking species. The
+// renderer applies height/bobbing to the body only, leaving the shadow on the
+// route or room floor.
+struct AirProfile {
+    float height;
+    float bobAmplitude;
+};
+
 enum class PlaybackContext : uint8_t {
     ROUTE,
     AMBIENT,
@@ -72,6 +80,24 @@ inline Behavior behaviorForSpecies(uint16_t speciesId) {
     // Dratini's extracted frames need their original per-phase registration restored.
     behavior.registeredSlither = speciesId == 147;
     return behavior;
+}
+
+inline AirProfile airProfileForSpecies(uint16_t speciesId) {
+    switch (speciesId) {
+    case 12:  return {10.0f, 2.5f}; // Butterfree
+    case 41:  return {12.0f, 2.0f}; // Zubat
+    case 42:  return {14.0f, 2.0f}; // Golbat
+    case 92:  return {12.0f, 2.0f}; // Gastly
+    case 93:  return {10.0f, 2.0f}; // Haunter
+    case 151: return {14.0f, 3.0f}; // Mew
+    case 169: return {14.0f, 2.0f}; // Crobat
+    case 278: return {10.0f, 2.0f}; // Wingull
+    case 279: return {8.0f, 1.5f};  // Pelipper
+    case 362: return {10.0f, 2.0f}; // Glalie
+    case 380: return {18.0f, 2.0f}; // Latias
+    case 381: return {18.0f, 2.0f}; // Latios
+    default:  return {0.0f, 0.0f};
+    }
 }
 
 inline uint16_t routeStepDurationMs(const Behavior& behavior,

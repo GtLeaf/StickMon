@@ -191,6 +191,19 @@ class ItemSystemTests(unittest.TestCase):
             {"MAX_POTION", "FULL_RESTORE", "FULL_HEAL", "REVIVE"} <= values
         )
 
+    def test_battle_bag_can_open_extra_medicine_confirmation(self):
+        source = (ROOT / "src" / "scenes" / "MenuScene.cpp").read_text()
+        self.assertIn(
+            "source >= BAG_SOURCE_EXTRA_BASE &&\n"
+            "                       source < BAG_SOURCE_EXTRA_BASE + BAG_SOURCE_EXTRA_COUNT &&\n"
+            "                       (!battleBagMode ||",
+            source,
+        )
+        self.assertIn(
+            "source == BAG_SOURCE_EXTRA_BASE + 0 ||",
+            source,
+        )
+
     def test_new_items_use_dedicated_assets(self):
         source = (ROOT / "src" / "assets" / "GameAssets.cpp").read_text()
         item_names = [

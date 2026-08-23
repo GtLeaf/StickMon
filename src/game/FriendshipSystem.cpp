@@ -23,14 +23,14 @@ float shakeSuccessChance(uint16_t odds) {
     return shakeChance * shakeChance * shakeChance * shakeChance;
 }
 
-uint16_t effectiveOfferGatePermille(uint16_t odds, uint8_t foodBond) {
-    uint16_t gate = offerGatePermille(foodBond);
+uint16_t effectiveFoodBondFactorPermille(uint16_t odds, uint8_t foodBond) {
+    uint16_t factor = foodBondFactorPermille(foodBond);
     float shakeChance = shakeSuccessChance(odds);
     if (shakeChance <= 0.0f) return 0;
-    if (shakeChance * gate <= OFFER_CHANCE_MAX_PERMILLE) return gate;
-    uint16_t cappedGate = static_cast<uint16_t>(
+    if (shakeChance * factor <= OFFER_CHANCE_MAX_PERMILLE) return factor;
+    uint16_t cappedFactor = static_cast<uint16_t>(
         static_cast<float>(OFFER_CHANCE_MAX_PERMILLE) / shakeChance);
-    return gate < cappedGate ? gate : cappedGate;
+    return factor < cappedFactor ? factor : cappedFactor;
 }
 
 } // namespace
@@ -42,10 +42,10 @@ uint16_t offerChancePermille(const Species& species,
         species.catchRate, monster.level, monster.majorStatus, boss);
     if (odds == 0) return 0;
 
-    uint16_t gate = effectiveOfferGatePermille(odds, foodBond);
+    uint16_t factor = effectiveFoodBondFactorPermille(odds, foodBond);
     float gbaChance = shakeSuccessChance(odds);
     uint32_t chance = static_cast<uint32_t>(
-        roundf(gbaChance * gate));
+        roundf(gbaChance * factor));
     return static_cast<uint16_t>(
         chance > OFFER_CHANCE_MAX_PERMILLE
             ? OFFER_CHANCE_MAX_PERMILLE : chance);
@@ -59,7 +59,7 @@ bool passesOfferChecks(const Species& species,
     uint16_t odds = adjustedCatchOdds(
         species.catchRate, monster.level, monster.majorStatus, boss);
     if (!shakeRolls ||
-        gateRoll >= effectiveOfferGatePermille(odds, foodBond)) {
+        gateRoll >= effectiveFoodBondFactorPermille(odds, foodBond)) {
         return false;
     }
     if (odds >= 255) return true;
@@ -88,8 +88,10 @@ static_assert(adjustedCatchOdds(
               "friendship odds must include status and boss modifiers");
 static_assert(addFoodBond(0, NORMAL_FOOD_BOND_GAIN) == 30 &&
                   addFoodBond(90, NORMAL_FOOD_BOND_GAIN) == FOOD_BOND_MAX &&
-                  offerGatePermille(0) == OFFER_GATE_PERMILLE &&
-                  offerGatePermille(FOOD_BOND_MAX) == OFFER_GATE_MAX_PERMILLE &&
+                  foodBondFactorPermille(0) ==
+                      FOOD_BOND_FACTOR_MIN_PERMILLE &&
+                  foodBondFactorPermille(FOOD_BOND_MAX) ==
+                      FOOD_BOND_FACTOR_MAX_PERMILLE &&
                   acceptsNormalFood(false, NORMAL_FOOD_ACCEPT_PERCENT - 1) &&
                   !acceptsNormalFood(false, NORMAL_FOOD_ACCEPT_PERCENT),
               "food friendship tuning must remain bounded");

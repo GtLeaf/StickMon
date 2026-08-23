@@ -230,6 +230,7 @@ public:
     bool recallMove(uint8_t teamSlot, Game::MoveId moveId,
                     uint8_t replacementSlot);
     uint8_t grantBathReward(BathRewardStage stage);
+    uint16_t applyBathCompletionRecovery(uint8_t score);
     bool spendCoins(uint32_t amount);
     void addCoins(uint32_t amount);
     bool recordFriendContact(const Game::MonsterRuntime& monster,
@@ -364,6 +365,7 @@ private:
     void markSaveDirty(SaveUrgency urgency);
     void initDefaultState();
     void sanitizeMonsterMoves();
+    bool clearExploreBattleStatuses();
     bool sanitizeMonsterMovesForSpecies(Game::MonsterRuntime& mon,
                                         const Species& species);
     void tickCare(uint32_t nowMs);
