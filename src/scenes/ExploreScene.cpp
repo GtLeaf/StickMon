@@ -94,6 +94,15 @@ static constexpr float AREA_CURSOR_LERP = 0.5f;
 static constexpr uint32_t PREVIEW_LOAD_AFTER_CURSOR_MS = 80;
 static constexpr uint32_t PREVIEW_BACKGROUND_LOAD_INTERVAL_MS = 80;
 
+float routeAirOffsetY(uint16_t speciesId, uint32_t nowMs, float scale) {
+    const PokemonMotion::AirProfile air =
+        PokemonMotion::airProfileForSpecies(speciesId);
+    if (air.height <= 0.0f) return 0.0f;
+    float phase = static_cast<float>((nowMs + speciesId * 97U) % 1600U) *
+                  0.00392699f;
+    return (air.height + sinf(phase) * air.bobAmplitude) * scale;
+}
+
 constexpr uint8_t cooldownAfterCompletedStep(uint8_t cooldown) {
     return cooldown > 0 ? cooldown - 1 : 0;
 }
@@ -4687,7 +4696,8 @@ void ExploreScene::renderRouteBoss(int cameraX, int cameraY) {
     int drawW = MathUtil::max<int>(1, static_cast<int>(roundf(frame->width * scale)));
     int drawH = MathUtil::max<int>(1, static_cast<int>(roundf(frame->height * scale)));
     int centerX = static_cast<int>(roundf(worldX)) - cameraX;
-    int centerY = static_cast<int>(roundf(worldY)) - cameraY;
+    float airOffsetY = routeAirOffsetY(species->id, Hal::ins().millis(), scale);
+    int centerY = static_cast<int>(roundf(worldY - airOffsetY)) - cameraY;
     int drawX = centerX - drawW / 2;
     int drawY = centerY - drawH / 2;
     if (drawX + drawW < -8 || drawX >= Hal::DISPLAY_W + 8 ||
@@ -4696,7 +4706,9 @@ void ExploreScene::renderRouteBoss(int cameraX, int cameraY) {
     }
 
     auto& c = PixelRenderer::canvas();
-    c.fillEllipse(centerX, drawY + drawH - 10, 10, 3,
+    // Keep the shadow at the unshifted ground anchor while the body floats.
+    int shadowY = static_cast<int>(roundf(worldY)) - cameraY + drawH / 2 - 10;
+    c.fillEllipse(centerX, shadowY, 10, 3,
                   PixelRenderer::rgb(68, 87, 74));
     PokemonSprites::drawFrameScaled(frame, drawX, drawY, scale, flipX);
 }
@@ -4817,8 +4829,10 @@ void ExploreScene::drawRouteMonster(const Species& species, float worldX,
         int markerW = static_cast<int>(marker->width * scale);
         int markerH = static_cast<int>(marker->height * scale);
         int markerX = static_cast<int>(roundf(worldX)) - cameraX - markerW / 2;
-        int markerY = static_cast<int>(roundf(worldY)) - cameraY - markerH / 2;
-        c.fillEllipse(markerX + markerW / 2, markerY + markerH - 10,
+        float airOffsetY = routeAirOffsetY(species.id, Hal::ins().millis(), scale);
+        int markerY = static_cast<int>(roundf(worldY - airOffsetY)) - cameraY - markerH / 2;
+        int shadowY = static_cast<int>(roundf(worldY)) - cameraY + markerH / 2 - 10;
+        c.fillEllipse(markerX + markerW / 2, shadowY,
                       10, 3,
                       PixelRenderer::rgb(68, 87, 74));
         markerX += static_cast<int>(roundf(poseOffsetX * scale));

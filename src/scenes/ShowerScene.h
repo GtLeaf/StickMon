@@ -100,6 +100,7 @@ private:
     bool brushRewarded = false;
     bool rinseRewarded = false;
     uint8_t completionHearts = 0;
+    char completionMessage[64] = {};
     bool exitConfirmYes = false;
 
     void enterMode(Mode next, uint32_t nowMs);

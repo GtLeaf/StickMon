@@ -69,6 +69,27 @@ static_assert(
         Game::SOAP_VARIANT_COUNT,
     "shower soap assets must stay contiguous");
 
+int textPixelWidth(const char* value) {
+    int width = 0;
+    const uint8_t* p = reinterpret_cast<const uint8_t*>(value);
+    while (*p) {
+        if (*p < 0x80) {
+            width += *p == ' ' ? 5 : 8;
+            ++p;
+        } else if ((*p & 0xE0) == 0xC0) {
+            width += 16;
+            p += 2;
+        } else if ((*p & 0xF0) == 0xE0) {
+            width += 16;
+            p += 3;
+        } else {
+            width += 8;
+            ++p;
+        }
+    }
+    return width;
+}
+
 GameAssets::Kind showerKind(GameAssets::Kind first, uint8_t offset) {
     return static_cast<GameAssets::Kind>(
         static_cast<uint16_t>(first) + offset);
@@ -119,6 +140,7 @@ void ShowerScene::resetBathSession() {
     brushRewarded = false;
     rinseRewarded = false;
     completionHearts = 0;
+    completionMessage[0] = '\0';
     exitConfirmYes = false;
 }
 
@@ -455,6 +477,10 @@ void ShowerScene::updateRinsing(uint32_t nowMs, float dtSeconds) {
         completionHearts = static_cast<uint8_t>(
             (soapRewarded ? 1 : 0) + (brushRewarded ? 1 : 0) +
             (rinseRewarded ? 1 : 0));
+        GameEngine::ins().applyBathCompletionRecovery(completionHearts);
+        snprintf(completionMessage, sizeof(completionMessage),
+                 Ui::Shower::COMPLETE_MESSAGE_FMT,
+                 GameEngine::ins().activeSpecies().name);
         enterMode(Mode::COMPLETE, nowMs);
         // 收尾反应由爱心数决定:3 个叫声、2 个跳一下、1 个无动作
         hopStartMs = 0;
@@ -808,7 +834,13 @@ void ShowerScene::render() {
     drawTool();
     drawMenu();
     if (mode == Mode::SOAP_SELECT) drawSoapPicker();
-    if (mode == Mode::COMPLETE) drawHearts();
+    if (mode == Mode::COMPLETE) {
+        drawHearts();
+        int messageX = (Hal::DISPLAY_W - textPixelWidth(completionMessage)) / 2;
+        if (messageX < 0) messageX = 0;
+        PixelRenderer::text(messageX, 92, completionMessage,
+                            PixelRenderer::rgb(241, 242, 232), 1);
+    }
     if (mode == Mode::EXIT_CONFIRM) drawExitConfirm();
     if (mode == Mode::INCOMPLETE) drawIncomplete();
     drawExpFloats();

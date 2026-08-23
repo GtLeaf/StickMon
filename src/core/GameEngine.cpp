@@ -16,6 +16,7 @@
 #include "game/ContactRoster.h"
 #include "game/ExploreItemProgression.h"
 #include "game/GameRandom.h"
+#include "game/ItemInventory.h"
 #include "game/SpeciesBehavior.h"
 #include "game/TeamRoster.h"
 #include "hardware/EspNowLink.h"
@@ -329,6 +330,7 @@ void GameEngine::markExploreActive() {
 
 void GameEngine::beginExploreReturn(bool fainted) {
     restoreContactHostToFront();
+    if (clearExploreBattleStatuses()) markDirty(SaveUrgency::SOON);
     exploreTravel = fainted ? ExploreTravelPhase::RETURNING_FAINTED
                             : ExploreTravelPhase::RETURNING;
     if (!fadeToScene(SceneID::MAIN)) requestScene(SceneID::MAIN);
@@ -336,18 +338,21 @@ void GameEngine::beginExploreReturn(bool fainted) {
 
 void GameEngine::finishExploreReturn() {
     exploreTravel = ExploreTravelPhase::NONE;
-    bool statusCleared = false;
+    if (contactVisit.active && contactVisit.exploring) {
+        contactVisit.farewellPending = true;
+    }
+}
+
+bool GameEngine::clearExploreBattleStatuses() {
+    bool changed = false;
     for (uint8_t slot = 0; slot < state.teamCount && slot < Game::TEAM_CAP; ++slot) {
         Game::MonsterRuntime& mon = state.team[slot];
         if (mon.majorStatus == Game::MajorStatus::NONE && mon.majorStatusTurns == 0) continue;
         mon.majorStatus = Game::MajorStatus::NONE;
         mon.majorStatusTurns = 0;
-        statusCleared = true;
+        changed = true;
     }
-    if (contactVisit.active && contactVisit.exploring) {
-        contactVisit.farewellPending = true;
-    }
-    if (statusCleared) markDirty(SaveUrgency::SOON);
+    return changed;
 }
 
 void GameEngine::beginDebugBattle() {
@@ -1245,34 +1250,19 @@ bool GameEngine::useIceHeal(uint8_t teamSlot) {
 }
 
 bool GameEngine::useMaxPotion(uint8_t teamSlot) {
-    if (state.bag.maxPotion == 0 || teamSlot >= state.teamCount ||
-        teamSlot >= Game::TEAM_CAP) {
-        return false;
-    }
-    Game::MonsterRuntime& mon = state.team[teamSlot];
-    if (mon.fainted || mon.hpCur == 0 || mon.hpCur >= mon.hpMax) return false;
-    state.bag.maxPotion--;
-    mon.hpCur = mon.hpMax;
-    markDirty(SaveUrgency::SOON);
-    return true;
+    bool used = Game::ItemInventory::useOnTeam(
+                    state, Game::ItemId::MAX_POTION, teamSlot) ==
+                Game::ItemInventory::UseResult::USED;
+    if (used) markDirty(SaveUrgency::SOON);
+    return used;
 }
 
 bool GameEngine::useFullRestore(uint8_t teamSlot) {
-    if (state.bag.fullRestore == 0 || teamSlot >= state.teamCount ||
-        teamSlot >= Game::TEAM_CAP) {
-        return false;
-    }
-    Game::MonsterRuntime& mon = state.team[teamSlot];
-    if (mon.fainted || mon.hpCur == 0) return false;
-    if (mon.hpCur >= mon.hpMax && mon.majorStatus == Game::MajorStatus::NONE) {
-        return false;
-    }
-    state.bag.fullRestore--;
-    mon.hpCur = mon.hpMax;
-    mon.majorStatus = Game::MajorStatus::NONE;
-    mon.majorStatusTurns = 0;
-    markDirty(SaveUrgency::SOON);
-    return true;
+    bool used = Game::ItemInventory::useOnTeam(
+                    state, Game::ItemId::FULL_RESTORE, teamSlot) ==
+                Game::ItemInventory::UseResult::USED;
+    if (used) markDirty(SaveUrgency::SOON);
+    return used;
 }
 
 bool GameEngine::useFullHeal(uint8_t teamSlot) {
@@ -1447,6 +1437,14 @@ uint8_t GameEngine::grantBathReward(BathRewardStage stage) {
     if (reward.experience > 0) addExperience(reward.experience);
     markDirty(SaveUrgency::SOON);
     return reward.experience;
+}
+
+uint16_t GameEngine::applyBathCompletionRecovery(uint8_t score) {
+    if (state.teamCount == 0) return 0;
+    uint16_t recovered = Game::BathService::applyCompletionRecovery(
+        state, score);
+    if (recovered > 0) markDirty(SaveUrgency::SOON);
+    return recovered;
 }
 
 bool GameEngine::spendCoins(uint32_t amount) {
