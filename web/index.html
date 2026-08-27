@@ -120,6 +120,8 @@ canvas#stickmon-canvas {
   .shake-control { width: 36px; height: 27px; gap: 0; }
   .shake-control .shake-icon { font-size: 14px; }
   .shake-control span:last-child { display: none; }
+  /* 窄屏下气泡改向右对齐「?」，避免溢出视口右缘 */
+  .help-panel { left: auto; right: -6px; transform: none; }
 }
 @media (max-width: 380px) {
   .sim-btn { width: 34px; height: 34px; font-size: 11px; }
@@ -153,9 +155,31 @@ canvas#stickmon-canvas {
 </div>
 
 <script>
+let runtimeReady = false;
+function notifyParent(type, data = {}) {
+  if (window.parent === window) return;
+  try {
+    window.parent.postMessage({ source: 'stickmon-simulator', type, ...data }, location.origin);
+  } catch { /* 父页面已销毁时忽略 */ }
+}
+function notifyInput(inputType) {
+  notifyParent('input', { inputType });
+}
+window.addEventListener('error', () => {
+  if (!runtimeReady) notifyParent('load_failed');
+});
+window.addEventListener('unhandledrejection', () => {
+  if (!runtimeReady) notifyParent('load_failed');
+});
+
 // ── Button / keyboard input ──────────────────────────────────────────
 function bindButton(el, btnIdx) {
-  const down = (e) => { e.preventDefault(); Module._stickmon_button_down(btnIdx); };
+  const down = (e) => {
+    e.preventDefault();
+    if (!Module || typeof Module._stickmon_button_down !== 'function') return;
+    notifyInput('button');
+    Module._stickmon_button_down(btnIdx);
+  };
   const up   = (e) => { e.preventDefault(); Module._stickmon_button_up(btnIdx); };
   el.addEventListener('mousedown', down);
   el.addEventListener('mouseup', up);
@@ -182,6 +206,7 @@ function bindShakeControl(el) {
 
   el.addEventListener('pointerdown', (e) => {
     e.preventDefault();
+    notifyInput('shake');
     pointerId = e.pointerId;
     startX = lastX = e.clientX;
     startY = lastY = e.clientY;
@@ -220,15 +245,21 @@ function bindShakeControl(el) {
 document.addEventListener('keydown', (e) => {
   if (e.repeat) return;
   if (e.key === 'z' || e.key === 'Z' || e.key === 'Enter') {
+    if (!Module || typeof Module._stickmon_button_down !== 'function') return;
+    notifyInput('keyboard');
     Module._stickmon_button_down(0);
   } else if (e.key === 'x' || e.key === 'X' || e.key === 'Escape') {
+    if (!Module || typeof Module._stickmon_button_down !== 'function') return;
+    notifyInput('keyboard');
     Module._stickmon_button_down(1);
   }
 });
 document.addEventListener('keyup', (e) => {
   if (e.key === 'z' || e.key === 'Z' || e.key === 'Enter') {
+    if (!Module || typeof Module._stickmon_button_up !== 'function') return;
     Module._stickmon_button_up(0);
   } else if (e.key === 'x' || e.key === 'X' || e.key === 'Escape') {
+    if (!Module || typeof Module._stickmon_button_up !== 'function') return;
     Module._stickmon_button_up(1);
   }
 });
@@ -244,6 +275,8 @@ var Module = {
       Module._stickmon_set_acceleration = wasmExports.stickmon_set_acceleration;
     }
     document.getElementById('loading').classList.add('done');
+    runtimeReady = true;
+    notifyParent('ready', { simulatorVersion: (typeof SIM_ASSETS !== 'undefined' && SIM_ASSETS['stickmon.wasm']) || 'web' });
     bindButton(document.getElementById('btn-a'), 0);
     bindButton(document.getElementById('btn-b'), 1);
     bindShakeControl(document.getElementById('shake-control'));
