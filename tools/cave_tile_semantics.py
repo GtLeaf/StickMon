@@ -115,6 +115,10 @@ CAVE_RUNTIME_TILE_SOURCES = (
     (4749, 1344), (4750, 1345), (4751, 1353),
     (4752, 1361), (4753, 1362), (4754, 1363),
     (4755, 1355), (4756, 1347), (4757, 1348),
+    (4758, 513),  # Cave floor / rock plateau center
+    (4759, 576),  # Cave cliff left edge
+    (4760, 577),  # Cave cliff middle
+    (4761, 578),  # Cave cliff right edge
 )
 CAVE_RUNTIME_FLIP_Y_IDS = frozenset((4738, 4739, 4740))
 
@@ -156,6 +160,9 @@ FROST_EDGE_TRACE_RUNTIME_TILES = (
     4749, 4750, 4751, 4752, 4753, 4754, 4755, 4756, 4757,
 )
 
+CAVE_FLOOR_RUNTIME_TILE = 4758
+CAVE_CLIFF_RUNTIME_TILES = (4759, 4760, 4761)
+
 assert tuple(runtime_id for runtime_id, _source_id in CAVE_RUNTIME_TILE_SOURCES) == tuple(
-    range(4700, 4758)
+    range(4700, 4762)
 )

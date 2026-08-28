@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 
+#include "core/UiStrings.h"
 #include "game/ExploreItemProgression.h"
 #include "game/ItemInventory.h"
 
@@ -76,6 +77,42 @@ bool sellable(ItemId item) {
     return false;
 }
 
+int itemTextIndex(ItemId item) {
+    switch (item) {
+    case ItemId::POTION: return 0;
+    case ItemId::SUPER_POTION: return 1;
+    case ItemId::ANTIDOTE: return 2;
+    case ItemId::PARALYZE_HEAL: return 3;
+    case ItemId::AWAKENING: return 4;
+    case ItemId::BURN_HEAL: return 5;
+    case ItemId::ICE_HEAL: return 6;
+    case ItemId::NORMAL_FOOD: return 7;
+    case ItemId::TASTY_FOOD: return 8;
+    case ItemId::SWEET_FOOD: return 9;
+    case ItemId::SPICY_FOOD: return 10;
+    case ItemId::SOUR_FOOD: return 11;
+    case ItemId::BITTER_FOOD: return 12;
+    case ItemId::DRY_FOOD: return 13;
+    case ItemId::CANDY: return 14;
+    case ItemId::SOAP_0: return 15;
+    case ItemId::SOAP_1: return 16;
+    case ItemId::SOAP_2: return 17;
+    case ItemId::MAX_POTION: return 18;
+    case ItemId::FULL_RESTORE: return 19;
+    case ItemId::FULL_HEAL: return 20;
+    case ItemId::FIRE_STONE: return 21;
+    case ItemId::WATER_STONE: return 22;
+    case ItemId::THUNDER_STONE: return 23;
+    case ItemId::REVIVE: return 24;
+    case ItemId::MAX_REPEL: return 25;
+    case ItemId::HONEY: return 26;
+    case ItemId::NUGGET: return 27;
+    case ItemId::BIG_PEARL: return 28;
+    case ItemId::STAR_PIECE: return 29;
+    default: return -1;
+    }
+}
+
 }  // namespace
 
 uint16_t buyPrice(ItemId item) {
@@ -121,65 +158,17 @@ uint16_t sellPrice(ItemId item) {
 }
 
 const char* shortName(ItemId item) {
-    switch (item) {
-    case ItemId::NORMAL_FOOD: return "FOOD";
-    case ItemId::TASTY_FOOD: return "TASTY FOOD";
-    case ItemId::SWEET_FOOD: return "SWEET FOOD";
-    case ItemId::SPICY_FOOD: return "SPICY FOOD";
-    case ItemId::SOUR_FOOD: return "SOUR FOOD";
-    case ItemId::BITTER_FOOD: return "BITTER FOOD";
-    case ItemId::DRY_FOOD: return "DRY FOOD";
-    case ItemId::POTION: return "POTION";
-    case ItemId::SUPER_POTION: return "SUPER POTION";
-    case ItemId::ANTIDOTE: return "ANTIDOTE";
-    case ItemId::CANDY: return "CANDY";
-    case ItemId::PARALYZE_HEAL: return "PARALYZE HEAL";
-    case ItemId::AWAKENING: return "AWAKENING";
-    case ItemId::BURN_HEAL: return "BURN HEAL";
-    case ItemId::ICE_HEAL: return "ICE HEAL";
-    case ItemId::MAX_POTION: return "MAX POTION";
-    case ItemId::FULL_RESTORE: return "FULL RESTORE";
-    case ItemId::FULL_HEAL: return "FULL HEAL";
-    case ItemId::FIRE_STONE: return "FIRE STONE";
-    case ItemId::WATER_STONE: return "WATER STONE";
-    case ItemId::THUNDER_STONE: return "THUNDER STONE";
-    case ItemId::REVIVE: return "REVIVE";
-    case ItemId::MAX_REPEL: return "MAX REPEL";
-    case ItemId::HONEY: return "HONEY";
-    case ItemId::NUGGET: return "NUGGET";
-    case ItemId::BIG_PEARL: return "BIG PEARL";
-    case ItemId::STAR_PIECE: return "STAR PIECE";
-    case ItemId::SOAP_0: return "BABY SOAP";
-    case ItemId::SOAP_1: return "LEAF SOAP";
-    case ItemId::SOAP_2: return "MINT SOAP";
-    case ItemId::HEART_SCALE: return "HEART SCALE";
-    default: return "ITEM";
-    }
+    int index = itemTextIndex(item);
+    if (index >= 0) return Ui::Shop::NAMES[index];
+    if (item == ItemId::HEART_SCALE) return Ui::HEART_SCALE;
+    return Ui::Amoled::ITEM;
 }
 
 const char* shortDescription(ItemId item) {
-    switch (item) {
-    case ItemId::POTION: return "RESTORES 20 HP";
-    case ItemId::SUPER_POTION: return "RESTORES 50 HP";
-    case ItemId::MAX_POTION: return "RESTORES ALL HP";
-    case ItemId::FULL_RESTORE: return "HP AND STATUS";
-    case ItemId::FULL_HEAL: return "CLEARS STATUS";
-    case ItemId::REVIVE: return "REVIVES AT HALF HP";
-    case ItemId::ANTIDOTE: return "CURES POISON";
-    case ItemId::PARALYZE_HEAL: return "CURES PARALYSIS";
-    case ItemId::AWAKENING: return "CURES SLEEP";
-    case ItemId::BURN_HEAL: return "CURES BURN";
-    case ItemId::ICE_HEAL: return "CURES FREEZE";
-    case ItemId::MAX_REPEL: return "AVOIDS ENCOUNTERS";
-    case ItemId::HONEY: return "DRAWS ENCOUNTERS";
-    case ItemId::CANDY: return "RARE GROWTH ITEM";
-    case ItemId::FIRE_STONE:
-    case ItemId::WATER_STONE:
-    case ItemId::THUNDER_STONE: return "EVOLUTION ITEM";
-    case ItemId::HEART_SCALE: return "RECALLS A MOVE";
-    default:
-        return foodIndexForItemId(item) >= 0 ? "ROOM FOOD" : "CARE ITEM";
-    }
+    int index = itemTextIndex(item);
+    if (index >= 0) return Ui::Shop::DESCS[index];
+    if (item == ItemId::HEART_SCALE) return Ui::Bag::DESCS[24][0];
+    return Ui::Amoled::ITEM;
 }
 
 uint8_t buyItemCount(Category category, const GameState& state) {

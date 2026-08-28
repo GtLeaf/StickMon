@@ -4,14 +4,21 @@
 #include <cstring>
 #include <new>
 
+#include "bsp/esp32_s3_touch_amoled_1_8.h"
 #include "esp_heap_caps.h"
+#include "esp_event.h"
+#include "esp_netif.h"
+#include "esp_now.h"
 #include "esp_psram.h"
 #include "esp_random.h"
 #include "esp_sleep.h"
 #include "esp_spiffs.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "esp_wifi.h"
+#include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/portmacro.h"
 #include "freertos/task.h"
 #include "nvs.h"
 #include "nvs_flash.h"
@@ -21,6 +28,41 @@ namespace {
 
 constexpr char RESOURCE_BASE_PATH[] = "/assets";
 constexpr char RESOURCE_PARTITION[] = "resources";
+constexpr gpio_num_t TOUCH_WAKE_GPIO = GPIO_NUM_21;
+constexpr uint8_t PEER_QUEUE_CAPACITY = 8;
+constexpr uint8_t AUDIO_QUEUE_CAPACITY = 4;
+
+Platform::PeerPacket peerQueue[PEER_QUEUE_CAPACITY];
+volatile uint8_t peerQueueHead = 0;
+volatile uint8_t peerQueueTail = 0;
+portMUX_TYPE peerQueueMux = portMUX_INITIALIZER_UNLOCKED;
+
+void receivePeerPacket(const esp_now_recv_info_t* info,
+                       const uint8_t* data,
+                       int length) {
+    if (!info || !info->src_addr || !data || length <= 0 ||
+        static_cast<size_t>(length) > Platform::PeerPacket::MAX_PAYLOAD_BYTES) {
+        return;
+    }
+    portENTER_CRITICAL(&peerQueueMux);
+    uint8_t next = static_cast<uint8_t>(
+        (peerQueueHead + 1U) % PEER_QUEUE_CAPACITY);
+    if (next != peerQueueTail) {
+        Platform::PeerPacket& packet = peerQueue[peerQueueHead];
+        std::memcpy(packet.source, info->src_addr, sizeof(packet.source));
+        std::memcpy(packet.payload, data, static_cast<size_t>(length));
+        packet.length = static_cast<size_t>(length);
+        peerQueueHead = next;
+    }
+    portEXIT_CRITICAL(&peerQueueMux);
+}
+
+void resetPeerQueue() {
+    portENTER_CRITICAL(&peerQueueMux);
+    peerQueueHead = 0;
+    peerQueueTail = 0;
+    portEXIT_CRITICAL(&peerQueueMux);
+}
 
 class SpiffsResourceFile final : public Platform::IResourceFile {
 public:
@@ -77,7 +119,121 @@ void bindAmoledPlatform() {
     Platform::bind(AmoledPlatform::instance().serviceBundle());
 }
 
-bool AmoledPlatform::begin() { return true; }
+bool AmoledPlatform::begin() {
+    if (initialized_) return true;
+    if (bsp_i2c_init() != ESP_OK) return false;
+    audioQueue_ = xQueueCreate(AUDIO_QUEUE_CAPACITY, sizeof(AudioChunk*));
+    audioMutex_ = xSemaphoreCreateMutex();
+    if (!audioQueue_ || !audioMutex_ ||
+        xTaskCreatePinnedToCore(audioTaskEntry, "amoled_audio", 4096, this, 2,
+                                nullptr, 1) != pdPASS) {
+        if (audioQueue_) vQueueDelete(audioQueue_);
+        if (audioMutex_) vSemaphoreDelete(audioMutex_);
+        audioQueue_ = nullptr;
+        audioMutex_ = nullptr;
+        return false;
+    }
+    initialized_ = true;
+    return true;
+}
+
+void AmoledPlatform::audioTaskEntry(void* context) {
+    static_cast<AmoledPlatform*>(context)->audioTask();
+    vTaskDelete(nullptr);
+}
+
+void AmoledPlatform::audioTask() {
+    AudioChunk* chunk = nullptr;
+    int16_t pcm[256];
+    while (true) {
+        // Codec setup and writes stay on this task so UI-side audio submission
+        // never waits for an active PCM chunk to finish.
+        if (xQueueReceive(audioQueue_, &chunk, portMAX_DELAY) != pdTRUE) {
+            continue;
+        }
+        xSemaphoreTake(audioMutex_, portMAX_DELAY);
+        if (chunk->generation == audioGeneration_.load() &&
+            !microphoneMode_) {
+            if (!speakerCodec_) speakerCodec_ = bsp_audio_codec_speaker_init();
+            if (speakerOpen_ && speakerSampleRate_ != chunk->sampleRate) {
+                esp_codec_dev_close(speakerCodec_);
+                speakerOpen_ = false;
+            }
+            if (speakerCodec_ && !speakerOpen_) {
+                esp_codec_dev_sample_info_t sampleInfo = {
+                    .bits_per_sample = 16,
+                    .channel = 1,
+                    .channel_mask = 0,
+                    .sample_rate = chunk->sampleRate,
+                    .mclk_multiple = 0,
+                };
+                speakerOpen_ =
+                    esp_codec_dev_open(speakerCodec_, &sampleInfo) ==
+                    ESP_CODEC_DEV_OK;
+                if (speakerOpen_) speakerSampleRate_ = chunk->sampleRate;
+            }
+        }
+        if (chunk->generation == audioGeneration_.load() &&
+            speakerCodec_ && speakerOpen_ && !microphoneMode_) {
+            audioPlaying_ = true;
+            applySpeakerVolumeLocked(chunk->channel);
+            size_t offset = 0;
+            while (offset < chunk->sampleCount &&
+                   chunk->generation == audioGeneration_.load()) {
+                size_t count = chunk->sampleCount - offset;
+                if (count > sizeof(pcm) / sizeof(pcm[0])) {
+                    count = sizeof(pcm) / sizeof(pcm[0]);
+                }
+                for (size_t index = 0; index < count; ++index) {
+                    pcm[index] = static_cast<int16_t>(
+                        (static_cast<int>(chunk->samples[offset + index]) -
+                         128) << 8);
+                }
+                if (esp_codec_dev_write(
+                        speakerCodec_, pcm,
+                        static_cast<int>(count * sizeof(pcm[0]))) < 0) {
+                    break;
+                }
+                offset += count;
+                // The codec write can complete without blocking when DMA has
+                // room. Always give CPU1's idle task a scheduling point.
+                vTaskDelay(1);
+            }
+            audioPlaying_ = false;
+        }
+        if (chunk->channel < Platform::IAudioDevice::CHANNEL_COUNT &&
+            queuedPcm_[chunk->channel].load() > 0) {
+            queuedPcm_[chunk->channel].fetch_sub(1);
+        }
+        heap_caps_free(chunk->samples);
+        heap_caps_free(chunk);
+        chunk = nullptr;
+        xSemaphoreGive(audioMutex_);
+    }
+}
+
+void AmoledPlatform::clearAudioQueue() {
+    if (!audioQueue_) return;
+    AudioChunk* chunk = nullptr;
+    while (xQueueReceive(audioQueue_, &chunk, 0) == pdTRUE) {
+        if (chunk->channel < Platform::IAudioDevice::CHANNEL_COUNT &&
+            queuedPcm_[chunk->channel].load() > 0) {
+            queuedPcm_[chunk->channel].fetch_sub(1);
+        }
+        heap_caps_free(chunk->samples);
+        heap_caps_free(chunk);
+        chunk = nullptr;
+    }
+}
+
+void AmoledPlatform::applySpeakerVolumeLocked(uint8_t channel) {
+    if (!speakerCodec_ || !speakerOpen_) return;
+    uint32_t channelVolume = channel < Platform::IAudioDevice::CHANNEL_COUNT
+        ? channelVolumes_[channel] : 100;
+    uint8_t effective = static_cast<uint8_t>(
+        (static_cast<uint32_t>(volume_) * channelVolume) / 100U);
+    esp_codec_dev_set_out_vol(speakerCodec_, effective);
+}
 
 uint32_t AmoledPlatform::millis() const {
     return static_cast<uint32_t>(esp_timer_get_time() / 1000ULL);
@@ -100,27 +256,151 @@ void AmoledPlatform::update() {}
 bool AmoledPlatform::pressed(Platform::InputButton) const { return false; }
 Platform::FrameBuffer565 AmoledPlatform::frameBuffer() { return {}; }
 void AmoledPlatform::present() {}
-void AmoledPlatform::setBrightness(uint8_t value) { brightness_ = value; }
+void AmoledPlatform::setBrightness(uint8_t value) {
+    brightness_ = value;
+    if (initialized_) {
+        bsp_display_brightness_set(value);
+    }
+}
 uint8_t AmoledPlatform::brightness() const { return brightness_; }
 void AmoledPlatform::sleep() {}
 
 void AmoledPlatform::setVolume(uint8_t percent) {
     volume_ = percent > 100 ? 100 : percent;
+    if (audioMutex_) {
+        xSemaphoreTake(audioMutex_, portMAX_DELAY);
+        applySpeakerVolumeLocked(0);
+        xSemaphoreGive(audioMutex_);
+    }
 }
 uint8_t AmoledPlatform::volume() const { return volume_; }
-bool AmoledPlatform::playPcmU8(const uint8_t*, size_t, uint32_t) { return false; }
-bool AmoledPlatform::playPcmU8Channel(const uint8_t*, size_t, uint32_t,
-                                      uint8_t, bool) { return false; }
-void AmoledPlatform::setChannelVolume(uint8_t, uint8_t) {}
-bool AmoledPlatform::playing() const { return false; }
-uint8_t AmoledPlatform::queuedPcm(uint8_t) const { return 0; }
-void AmoledPlatform::stop() {}
-void AmoledPlatform::stopChannel(uint8_t) {}
-bool AmoledPlatform::beginMicrophone() { return false; }
-void AmoledPlatform::endMicrophone() {}
-bool AmoledPlatform::recordMicrophone(int16_t*, size_t, uint32_t) { return false; }
-bool AmoledPlatform::microphoneRecording() const { return false; }
-bool AmoledPlatform::microphoneActive() const { return false; }
+bool AmoledPlatform::playPcmU8(const uint8_t* data, size_t sampleCount,
+                               uint32_t sampleRate) {
+    return playPcmU8Channel(data, sampleCount, sampleRate, 0, true);
+}
+bool AmoledPlatform::playPcmU8Channel(const uint8_t* data, size_t sampleCount,
+                                      uint32_t sampleRate, uint8_t channel,
+                                      bool stopCurrent) {
+    if (!initialized_ || !data || sampleCount == 0 || sampleRate == 0 ||
+        channel >= Platform::IAudioDevice::CHANNEL_COUNT || volume_ == 0 ||
+        !audioQueue_ || !audioMutex_) {
+        return false;
+    }
+    if (microphoneMode_) endMicrophone();
+    AudioChunk* chunk = static_cast<AudioChunk*>(
+        heap_caps_calloc(1, sizeof(AudioChunk), MALLOC_CAP_8BIT));
+    if (!chunk) return false;
+    chunk->samples = static_cast<uint8_t*>(
+        heap_caps_malloc(sampleCount, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!chunk->samples) {
+        heap_caps_free(chunk);
+        return false;
+    }
+    std::memcpy(chunk->samples, data, sampleCount);
+    chunk->channel = channel;
+    chunk->sampleRate = sampleRate;
+    chunk->sampleCount = sampleCount;
+    if (stopCurrent) {
+        chunk->generation = audioGeneration_.fetch_add(1) + 1;
+        clearAudioQueue();
+    } else {
+        chunk->generation = audioGeneration_.load();
+    }
+    queuedPcm_[channel].fetch_add(1);
+    if (xQueueSend(audioQueue_, &chunk, 0) != pdTRUE) {
+        queuedPcm_[channel].fetch_sub(1);
+        heap_caps_free(chunk->samples);
+        heap_caps_free(chunk);
+        return false;
+    }
+    return true;
+}
+void AmoledPlatform::setChannelVolume(uint8_t channel, uint8_t percent) {
+    if (channel >= Platform::IAudioDevice::CHANNEL_COUNT) return;
+    channelVolumes_[channel] = percent > 100 ? 100 : percent;
+}
+bool AmoledPlatform::playing() const {
+    return audioPlaying_.load() || queuedPcm_[0].load() > 0 ||
+           queuedPcm_[1].load() > 0 || queuedPcm_[2].load() > 0;
+}
+uint8_t AmoledPlatform::queuedPcm(uint8_t channel) const {
+    return channel < Platform::IAudioDevice::CHANNEL_COUNT
+        ? queuedPcm_[channel].load() : 0;
+}
+void AmoledPlatform::stop() {
+    if (!audioMutex_) return;
+    audioGeneration_.fetch_add(1);
+    clearAudioQueue();
+    xSemaphoreTake(audioMutex_, portMAX_DELAY);
+    if (speakerCodec_ && speakerOpen_) esp_codec_dev_close(speakerCodec_);
+    speakerOpen_ = false;
+    audioPlaying_.store(false);
+    xSemaphoreGive(audioMutex_);
+}
+void AmoledPlatform::stopChannel(uint8_t channel) {
+    if (channel >= Platform::IAudioDevice::CHANNEL_COUNT) return;
+    audioGeneration_.fetch_add(1);
+    clearAudioQueue();
+}
+bool AmoledPlatform::beginMicrophone() {
+    if (!initialized_) return false;
+    stop();
+    if (!microphoneCodec_) {
+        microphoneCodec_ = bsp_audio_codec_microphone_init();
+    }
+    if (!microphoneCodec_) return false;
+    if (!microphoneOpen_) {
+        esp_codec_dev_sample_info_t sampleInfo = {
+            .bits_per_sample = 16,
+            .channel = 1,
+            .channel_mask = 0,
+            .sample_rate = 16000,
+            .mclk_multiple = 0,
+        };
+        if (esp_codec_dev_open(microphoneCodec_, &sampleInfo) != ESP_CODEC_DEV_OK) {
+            return false;
+        }
+        microphoneSampleRate_ = 16000;
+        microphoneOpen_ = true;
+    }
+    microphoneMode_ = true;
+    return true;
+}
+void AmoledPlatform::endMicrophone() {
+    microphoneMode_ = false;
+    if (microphoneCodec_ && microphoneOpen_) {
+        esp_codec_dev_close(microphoneCodec_);
+    }
+    microphoneOpen_ = false;
+}
+bool AmoledPlatform::recordMicrophone(int16_t* data, size_t sampleCount,
+                                      uint32_t sampleRate) {
+    if (!microphoneMode_ || !microphoneCodec_ || !data || sampleCount == 0 ||
+        sampleRate == 0) return false;
+    if (microphoneOpen_ && microphoneSampleRate_ != sampleRate) {
+        esp_codec_dev_close(microphoneCodec_);
+        microphoneOpen_ = false;
+    }
+    if (!microphoneOpen_) {
+        esp_codec_dev_sample_info_t sampleInfo = {
+            .bits_per_sample = 16,
+            .channel = 1,
+            .channel_mask = 0,
+            .sample_rate = sampleRate,
+            .mclk_multiple = 0,
+        };
+        if (esp_codec_dev_open(microphoneCodec_, &sampleInfo) != ESP_CODEC_DEV_OK) {
+            return false;
+        }
+        microphoneSampleRate_ = sampleRate;
+        microphoneOpen_ = true;
+    }
+    return esp_codec_dev_read(
+               microphoneCodec_, data,
+               static_cast<int>(sampleCount * sizeof(int16_t))) >= 0;
+}
+bool AmoledPlatform::microphoneRecording() const { return microphoneMode_; }
+bool AmoledPlatform::microphoneActive() const { return microphoneMode_; }
 
 bool AmoledPlatform::readAcceleration(float& x, float& y, float& z) {
     x = 0.0f;
@@ -129,9 +409,22 @@ bool AmoledPlatform::readAcceleration(float& x, float& y, float& z) {
     return false;
 }
 
-int AmoledPlatform::batteryLevel() { return -1; }
+int AmoledPlatform::batteryLevel() {
+    // The V1 BSP exposes no PMU/ADC battery channel. Keep this unknown until
+    // the board revision supplies an AXP2101 driver and calibrated divider.
+    return -1;
+}
+Platform::PowerCapabilities AmoledPlatform::capabilities() const {
+    // V1 has the power hardware, but this firmware does not yet ship a
+    // calibrated AXP2101/RTC driver. Report only the sleep path we can verify.
+    return {false, false, true, true};
+}
 Platform::WakeReason AmoledPlatform::wakeReason() const {
-    return Platform::WakeReason::NORMAL;
+    switch (esp_sleep_get_wakeup_cause()) {
+    case ESP_SLEEP_WAKEUP_TIMER: return Platform::WakeReason::TIMER;
+    case ESP_SLEEP_WAKEUP_UNDEFINED: return Platform::WakeReason::NORMAL;
+    default: return Platform::WakeReason::EXTERNAL_SIGNAL;
+    }
 }
 uint32_t AmoledPlatform::hardwareRandom() { return esp_random(); }
 size_t AmoledPlatform::externalMemorySize() const { return esp_psram_get_size(); }
@@ -139,7 +432,16 @@ size_t AmoledPlatform::externalMemoryFree() const {
     return heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
 }
 void AmoledPlatform::restart() { esp_restart(); }
-void AmoledPlatform::enterDeepSleep(uint64_t timerWakeUs, bool) {
+void AmoledPlatform::enterDeepSleep(uint64_t timerWakeUs,
+                                    bool wakeOnSecondaryButton) {
+    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+    if (wakeOnSecondaryButton) {
+        gpio_set_direction(TOUCH_WAKE_GPIO, GPIO_MODE_INPUT);
+        gpio_set_pull_mode(TOUCH_WAKE_GPIO, GPIO_PULLUP_ONLY);
+        esp_sleep_enable_ext1_wakeup(
+            1ULL << static_cast<uint8_t>(TOUCH_WAKE_GPIO),
+            ESP_EXT1_WAKEUP_ANY_LOW);
+    }
     if (timerWakeUs > 0) esp_sleep_enable_timer_wakeup(timerWakeUs);
     esp_deep_sleep_start();
 }
@@ -267,10 +569,68 @@ void* AmoledPlatform::allocate(size_t bytes, bool preferExternal) {
 void AmoledPlatform::release(void* memory) { heap_caps_free(memory); }
 size_t AmoledPlatform::externalFree() const { return externalMemoryFree(); }
 
-bool AmoledPlatform::enable() { return false; }
-void AmoledPlatform::end() {}
-bool AmoledPlatform::active() const { return false; }
-bool AmoledPlatform::send(const uint8_t[6], const void*, size_t) { return false; }
-bool AmoledPlatform::receive(Platform::PeerPacket&) { return false; }
+bool AmoledPlatform::enable() {
+    if (peerTransportActive_) return true;
+    if (!wifiInitialized_) {
+        if (esp_netif_init() != ESP_OK &&
+            esp_netif_init() != ESP_ERR_INVALID_STATE) return false;
+        esp_err_t eventResult = esp_event_loop_create_default();
+        if (eventResult != ESP_OK && eventResult != ESP_ERR_INVALID_STATE) return false;
+        wifi_init_config_t config = WIFI_INIT_CONFIG_DEFAULT();
+        if (esp_wifi_init(&config) != ESP_OK) return false;
+        wifiInitialized_ = true;
+    }
+    if (esp_wifi_set_mode(WIFI_MODE_STA) != ESP_OK ||
+        esp_wifi_start() != ESP_OK ||
+        esp_wifi_set_ps(WIFI_PS_MIN_MODEM) != ESP_OK) {
+        return false;
+    }
+    if (esp_now_init() != ESP_OK ||
+        esp_now_register_recv_cb(receivePeerPacket) != ESP_OK) {
+        esp_now_deinit();
+        esp_wifi_stop();
+        return false;
+    }
+    resetPeerQueue();
+    peerTransportActive_ = true;
+    return true;
+}
+void AmoledPlatform::end() {
+    if (!peerTransportActive_) return;
+    esp_now_unregister_recv_cb();
+    esp_now_deinit();
+    esp_wifi_stop();
+    peerTransportActive_ = false;
+    resetPeerQueue();
+}
+bool AmoledPlatform::active() const { return peerTransportActive_; }
+bool AmoledPlatform::send(const uint8_t destination[6], const void* data,
+                          size_t length) {
+    if (!peerTransportActive_ || !destination || !data || length == 0 ||
+        length > Platform::PeerPacket::MAX_PAYLOAD_BYTES) return false;
+    if (!esp_now_is_peer_exist(destination)) {
+        esp_now_peer_info_t peer{};
+        std::memcpy(peer.peer_addr, destination, sizeof(peer.peer_addr));
+        peer.channel = 0;
+        peer.ifidx = WIFI_IF_STA;
+        peer.encrypt = false;
+        if (esp_now_add_peer(&peer) != ESP_OK) return false;
+    }
+    return esp_now_send(destination, static_cast<const uint8_t*>(data), length) ==
+           ESP_OK;
+}
+bool AmoledPlatform::receive(Platform::PeerPacket& packet) {
+    if (!peerTransportActive_) return false;
+    portENTER_CRITICAL(&peerQueueMux);
+    if (peerQueueTail == peerQueueHead) {
+        portEXIT_CRITICAL(&peerQueueMux);
+        return false;
+    }
+    packet = peerQueue[peerQueueTail];
+    peerQueueTail = static_cast<uint8_t>(
+        (peerQueueTail + 1U) % PEER_QUEUE_CAPACITY);
+    portEXIT_CRITICAL(&peerQueueMux);
+    return true;
+}
 
 }  // namespace AmoledV1

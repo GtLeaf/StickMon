@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include "core/UiStrings.h"
+
 namespace AppSceneFlow {
 
 enum class Scene : uint8_t {
@@ -12,11 +14,15 @@ enum class Scene : uint8_t {
     EXPLORE_MENU,
     TEAM,
     ROOM,
+    ROOM_FOOD,
     SHOWER,
     BAG,
     SHOP,
     COMPUTER,
     SETTINGS,
+    COMMUNICATION,
+    PROGRESSION,
+    BATTLE,
     DEBUG,
 };
 
@@ -39,13 +45,14 @@ inline constexpr uint8_t exploreMenuItemCount() { return 4; }
 inline ExploreMenuEntry exploreMenuEntry(uint8_t index) {
     switch (index) {
     case 0:
-        return {ExploreMenuItem::TEAM, Scene::TEAM, 1, "TEAM"};
+        return {ExploreMenuItem::TEAM, Scene::TEAM, 1, Ui::TEAM};
     case 1:
-        return {ExploreMenuItem::BAG, Scene::BAG, 3, "BAG"};
+        return {ExploreMenuItem::BAG, Scene::BAG, 3, Ui::BAG};
     case 2:
-        return {ExploreMenuItem::END, Scene::EXPLORE_AREAS, 0, "END"};
+        return {ExploreMenuItem::END, Scene::EXPLORE_AREAS, 0,
+                Ui::Explore::END};
     default:
-        return {ExploreMenuItem::BACK, Scene::EXPLORE_ROUTE, 8, "BACK"};
+        return {ExploreMenuItem::BACK, Scene::EXPLORE_ROUTE, 8, Ui::BACK};
     }
 }
 
@@ -74,28 +81,28 @@ inline constexpr uint8_t mainMenuItemCount(bool debugEnabled) {
 
 inline MainMenuEntry mainMenuEntry(uint8_t index, bool debugEnabled) {
     if (debugEnabled && index == 7) {
-        return {MainMenuItem::DEBUG, Scene::DEBUG, 7, "DEBUG"};
+        return {MainMenuItem::DEBUG, Scene::DEBUG, 7, Ui::DEBUG};
     }
     if ((!debugEnabled && index == 7) || (debugEnabled && index == 8)) {
         return {MainMenuItem::BACK, Scene::HOME, 8, "BACK"};
     }
     switch (index) {
     case 0:
-        return {MainMenuItem::EXPLORE, Scene::EXPLORE_AREAS, 0, "EXPLORE"};
+        return {MainMenuItem::EXPLORE, Scene::EXPLORE_AREAS, 0, Ui::EXPLORE};
     case 1:
-        return {MainMenuItem::TEAM, Scene::TEAM, 1, "TEAM"};
+        return {MainMenuItem::TEAM, Scene::TEAM, 1, Ui::TEAM};
     case 2:
-        return {MainMenuItem::ROOM, Scene::ROOM, 2, "ROOM"};
+        return {MainMenuItem::ROOM, Scene::ROOM, 2, Ui::ROOM};
     case 3:
-        return {MainMenuItem::BAG, Scene::BAG, 3, "BAG"};
+        return {MainMenuItem::BAG, Scene::BAG, 3, Ui::BAG};
     case 4:
-        return {MainMenuItem::SHOP, Scene::SHOP, 4, "SHOP"};
+        return {MainMenuItem::SHOP, Scene::SHOP, 4, Ui::SHOP};
     case 5:
-        return {MainMenuItem::COMPUTER, Scene::COMPUTER, 5, "COMPUTER"};
+        return {MainMenuItem::COMPUTER, Scene::COMPUTER, 5, Ui::COMPUTER};
     case 6:
-        return {MainMenuItem::SETTINGS, Scene::SETTINGS, 6, "SETTINGS"};
+        return {MainMenuItem::SETTINGS, Scene::SETTINGS, 6, Ui::SETTINGS};
     default:
-        return {MainMenuItem::BACK, Scene::HOME, 8, "BACK"};
+        return {MainMenuItem::BACK, Scene::HOME, 8, Ui::BACK};
     }
 }
 

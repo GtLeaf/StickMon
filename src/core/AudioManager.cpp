@@ -150,6 +150,7 @@ void AudioManager::setMusic(MusicTrack track) {
     requestedMusic_ = track;
     if (playingMusic_ != track) releaseMusic();
     if (track != MusicTrack::NONE && Platform::audio().volume() > 0 &&
+        !musicSuspended_ &&
         !(powerSaveActive_ && musicChannelVolume_ == 0)) {
         startRequestedMusic();
     }
@@ -158,6 +159,12 @@ void AudioManager::setMusic(MusicTrack track) {
 void AudioManager::stopMusic() {
     requestedMusic_ = MusicTrack::NONE;
     releaseMusic();
+}
+
+void AudioManager::setMusicSuspended(bool suspended) {
+    if (musicSuspended_ == suspended) return;
+    musicSuspended_ = suspended;
+    if (suspended) releaseMusic();
 }
 
 void AudioManager::setPowerSave(bool active) {
@@ -360,6 +367,10 @@ bool AudioManager::playSfx(SfxCue cue) {
 }
 
 void AudioManager::update() {
+    if (musicSuspended_) {
+        if (playingMusic_ != MusicTrack::NONE) releaseMusic();
+        return;
+    }
     updateMusicFade(Platform::clock().millis());
     if (sfxPcm_ && Platform::audio().queuedPcm(SFX_CHANNEL) == 0) {
         releaseSfx();
@@ -386,11 +397,13 @@ void AudioManager::update() {
         return;
     }
     musicPaused_ = false;
-    while (Platform::audio().queuedPcm(MUSIC_CHANNEL) < 2) {
+    // Refill at most one block per update. Platform audio backends may report
+    // a conservative queue depth, and streaming must never monopolize the UI
+    // task when that happens.
+    if (Platform::audio().queuedPcm(MUSIC_CHANNEL) < 2) {
         if (!queueNextMusicBlock(false)) {
             Platform::logLine("[Audio] music stream stopped");
             releaseMusic();
-            break;
         }
     }
 }

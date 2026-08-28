@@ -85,6 +85,198 @@ static constexpr const char* EVOLUTION_CANCELLED_FMT = "%s停止进化!";
 static constexpr const char* A_CONTINUE = "A 继续";
 }
 
+namespace Amoled {
+static constexpr const char* REC_LEVEL_FMT = "推荐Lv.%u";
+static constexpr const char* STEPS_FMT = "步数:%u";
+static constexpr const char* ROUTE_END = "路线结束";
+static constexpr const char* BLOCKED = "受阻";
+static constexpr const char* SLIDING = "滑行";
+static constexpr const char* WALKING = "前进中";
+static constexpr const char* PAUSED = "已暂停";
+static constexpr const char* LEAVE_ROUTE = "离开路线";
+static constexpr const char* STAY = "继续";
+static constexpr const char* EXIT = "退出";
+static constexpr const char* PATH_PUZZLE = "路线谜题";
+static constexpr const char* PATH_BLOCKED = "路线受阻";
+static constexpr const char* SOLVE = "解谜";
+static constexpr const char* OPEN = "打开";
+static constexpr const char* TURN = "转向";
+
+static constexpr const char* HOST = "创建房间";
+static constexpr const char* SEARCH = "搜索房间";
+static constexpr const char* NO_ROOM = "没有房间";
+static constexpr const char* VISIT_ROOM = "访问房间";
+static constexpr const char* JOIN = "加入";
+static constexpr const char* WAITING = "等待中";
+static constexpr const char* ROOM_OPEN = "房间已开放";
+static constexpr const char* INCOMING = "收到请求";
+static constexpr const char* ACCEPT = "接受";
+static constexpr const char* DECLINE = "拒绝";
+static constexpr const char* WAIT_ACCEPT = "等待接受";
+static constexpr const char* JOINING = "加入中";
+static constexpr const char* SYNCING = "同步中";
+static constexpr const char* VISITING = "访问中";
+static constexpr const char* ENDING = "结束中";
+static constexpr const char* FAILED = "失败";
+static constexpr const char* ENDED = "已结束";
+static constexpr const char* END_VISIT = "结束访问";
+static constexpr const char* AFFECTION = "亲密";
+static constexpr const char* REMAINING = "剩余";
+
+static constexpr const char* MONSTER = "精灵";
+static constexpr const char* CHANGE_LEADER = "切换队首";
+static constexpr const char* SET_FIRST = "设为首位";
+static constexpr const char* LEAD = "首位";
+static constexpr const char* MOVES = "技能";
+static constexpr const char* EMPTY_MOVE_SLOT = "空技能位";
+static constexpr const char* MOVE_DETAIL_FMT = "威力%u 命中%u 熟练%u";
+static constexpr const char* HEART_COUNT_FMT = "鳞片x%u";
+static constexpr const char* RECALL_MOVE = "回忆招式";
+static constexpr const char* MOVE_RECALLED = "已回忆招式";
+static constexpr const char* CANNOT_FORGET = "无法遗忘招式";
+static constexpr const char* SOAP_FIRST = "请先使用肥皂";
+static constexpr const char* BRUSH_FIRST = "请先使用刷子";
+static constexpr const char* REPLACE_SPECIAL_1 = "替换特殊1";
+static constexpr const char* REPLACE_SPECIAL_2 = "替换特殊2";
+static constexpr const char* FORGET_MOVE = "遗忘招式?";
+static constexpr const char* YES = "是";
+static constexpr const char* NO = "否";
+
+static constexpr const char* BUY = "购买";
+static constexpr const char* SELL = "出售";
+static constexpr const char* USE = "使用";
+static constexpr const char* RETURN = "返回";
+static constexpr const char* NOTHING = "没有物品";
+static constexpr const char* NOTHING_TO_SELL = "没有可出售物品";
+static constexpr const char* ROOM_SUPPLIES = "房间补给";
+static constexpr const char* WASH_PET = "给精灵洗澡";
+static constexpr const char* STATUS_PAGE = "状态";
+static constexpr const char* STORAGE_PAGE = "通讯录";
+static constexpr const char* CURRENT_TEAM = "当前队伍";
+static constexpr const char* CONTACT_BOX = "通讯录精灵";
+static constexpr const char* TEAM_EMPTY = "队伍为空";
+static constexpr const char* STORAGE_EMPTY = "通讯录为空";
+static constexpr const char* HUNGER_FMT = "饱食%u";
+static constexpr const char* STATUS_LINE_FMT = "Lv%u 体力%u/%u";
+static constexpr const char* NEED_HEART_SCALE = "需要心之鳞片";
+static constexpr const char* CURRENT_LEADER = "当前就是队首";
+static constexpr const char* VISITOR_LOCKED = "访客不能切换";
+static constexpr const char* STORAGE_READ_ONLY = "通讯录只读";
+static constexpr const char* SELL_IN_SHOP = "请在商店出售";
+static constexpr const char* MIGRATION_NEXT = "功能迁移中";
+static constexpr const char* MAP_FAILED = "地图生成失败";
+static constexpr const char* FOUND_FMT = "发现%s";
+static constexpr const char* COINS_GAIN_FMT = "金币+%lu";
+static constexpr const char* WILD_FMT = "野生%s出现";
+static constexpr const char* ACTION_BLOCKED = "无法行动";
+static constexpr const char* CHARGING = "正在蓄力";
+static constexpr const char* ATTACK_MISSED = "没有命中";
+static constexpr const char* HIT_FMT = "造成%u伤害";
+static constexpr const char* CHOOSE_NEXT = "请选择替补";
+static constexpr const char* PET_FAINTED = "精灵濒死";
+static constexpr const char* VICTORY_FMT = "胜利! +%u经验";
+static constexpr const char* CHOOSE_OTHER = "请选择其他精灵";
+static constexpr const char* SWITCHED_IN = "已替换上场";
+static constexpr const char* WILD_CHARGE = "野生精灵蓄力";
+static constexpr const char* WILD_MISSED = "对手没有命中";
+static constexpr const char* WILD_HIT_FMT = "对手造成%u伤害";
+static constexpr const char* WILD_BLOCKED = "对手无法行动";
+static constexpr const char* NO_MEDICINE = "没有可用药品";
+static constexpr const char* CANNOT_USE = "现在不能使用";
+static constexpr const char* GOT_AWAY = "成功逃走";
+static constexpr const char* CANNOT_ESCAPE = "没能逃走";
+static constexpr const char* BECOME_FRIEND = "要成为伙伴吗?";
+static constexpr const char* BOX_FULL = "通讯录已满";
+static constexpr const char* ADD_TO_TEAM = "加入队伍吗?";
+static constexpr const char* FRIEND_ADDED = "已加入通讯录";
+static constexpr const char* TEAM_MEMBER_ADDED = "已加入队伍";
+static constexpr const char* BATTLE_COMPLETE = "对战完成";
+static constexpr const char* REST_AT_HOME = "回房休息";
+static constexpr const char* YUM = "真好吃";
+static constexpr const char* GROWTH_COMPLETE = "成长完成";
+static constexpr const char* CARE_LIMIT = "今日照顾次数已用完";
+static constexpr const char* NO_TEAM_MEMBER = "没有队伍成员";
+static constexpr const char* CANNOT_SWITCH = "无法切换";
+static constexpr const char* LEADER_CHANGED = "队首已切换";
+static constexpr const char* NO_EFFECT = "没有效果";
+static constexpr const char* ITEM_BOUGHT = "已购买";
+static constexpr const char* ITEM_LOCKED = "物品未解锁";
+static constexpr const char* NOT_ENOUGH_COINS = "金币不够";
+static constexpr const char* BAG_FULL = "背包已满";
+static constexpr const char* DAILY_LIMIT = "今日限购";
+static constexpr const char* INVALID_ITEM = "物品无效";
+static constexpr const char* ITEM_SOLD = "已出售";
+static constexpr const char* NO_STOCK = "没有库存";
+static constexpr const char* ITEM_NOT_READY = "物品尚未准备好";
+static constexpr const char* EXPLORE_ONLY = "只能在探索中使用";
+static constexpr const char* ITEM_USED = "物品已使用";
+static constexpr const char* NO_TARGET = "没有目标";
+static constexpr const char* MON_FAINTED = "精灵已濒死";
+static constexpr const char* HP_FULL = "体力已满";
+static constexpr const char* STATUS_NORMAL = "状态正常";
+static constexpr const char* NO_FAINTED_MON = "没有濒死精灵";
+static constexpr const char* NOT_READY = "现在不能使用";
+static constexpr const char* SHOWER_EXP_MOOD_FMT = "+%u经验 +%u心情";
+static constexpr const char* SHOWER_EXP_FMT = "+%u经验";
+static constexpr const char* SHOWER_MOOD_FMT = "+%u心情";
+
+static constexpr const char* VOLUME = "音量";
+static constexpr const char* GAME_SPEED = "游戏速度";
+static constexpr const char* POWER_SAVE = "省电模式";
+static constexpr const char* VOICE_CALL = "语音呼唤";
+static constexpr const char* VALUE_ON = "开";
+static constexpr const char* VALUE_OFF = "关";
+static constexpr const char* IDLE_30S = "30秒";
+static constexpr const char* IDLE_2MIN = "2分钟";
+static constexpr const char* IDLE_5MIN = "5分钟";
+static constexpr const char* IDLE_10MIN = "10分钟";
+
+static constexpr const char* GROWTH = "成长";
+static constexpr const char* LEVEL_UP = "升级";
+static constexpr const char* NEW_MOVE = "新招式";
+static constexpr const char* REPLACE_MOVE = "替换招式";
+static constexpr const char* LEVEL_FMT = "等级%u";
+static constexpr const char* READY = "准备好";
+static constexpr const char* TAP_TO_EVOLVE = "点击进化";
+static constexpr const char* CHOOSE_OLD_MOVE = "选择旧招式";
+static constexpr const char* CONTINUE = "继续";
+static constexpr const char* SKIP = "跳过";
+
+static constexpr const char* BATTLE_MOVE = "招式";
+static constexpr const char* BATTLE_BAG = "道具";
+static constexpr const char* BATTLE_SWAP = "替换";
+static constexpr const char* BATTLE_FLEE = "逃跑";
+static constexpr const char* BATTLE_BASIC = "普通";
+static constexpr const char* BATTLE_SPECIAL_1 = "特殊1";
+static constexpr const char* BATTLE_SPECIAL_2 = "特殊2";
+static constexpr const char* ACTIVE = "首位";
+static constexpr const char* FAINT = "濒死";
+static constexpr const char* LATER = "稍后";
+static constexpr const char* ADD = "加入";
+static constexpr const char* REST_HOME = "回房";
+static constexpr const char* ITEM = "道具";
+static constexpr const char* ITEM_POTION = "伤药";
+static constexpr const char* ITEM_SUPER = "高级";
+static constexpr const char* ITEM_MAX = "全满";
+static constexpr const char* ITEM_RESTORE = "全复";
+static constexpr const char* ITEM_FULL_HEAL = "全愈";
+static constexpr const char* ITEM_REVIVE = "复活";
+static constexpr const char* ITEM_ANTIDOTE = "解毒";
+static constexpr const char* ITEM_PARALYZE = "解麻";
+static constexpr const char* ITEM_SLEEP = "解眠";
+static constexpr const char* ITEM_BURN = "灼伤";
+static constexpr const char* ITEM_FREEZE = "解冻";
+
+static constexpr const char* SOAP = "肥皂";
+static constexpr const char* BRUSH = "刷子";
+static constexpr const char* RINSE = "冲洗";
+static constexpr const char* CHOOSE_SOAP = "选择肥皂";
+static constexpr const char* FOAM_REMAINS = "还有泡沫";
+static constexpr const char* LEAVE_BATH = "结束洗澡?";
+static constexpr const char* ALL_CLEAN = "洗澡完成";
+static constexpr const char* COUNT_FMT = "x%u";
+}
+
 namespace Tutorial {
 static constexpr const char* ROOM_FEED = "把食物放进碗里";
 static constexpr const char* ROOM_PET_FMT = "和%s互动";
@@ -346,6 +538,7 @@ static constexpr const char* ITEMS[] = {
     Ui::SHOP,
     Ui::COMPUTER,
     Ui::SETTINGS,
+    Ui::SOCIAL,
 #if STICKMON_ENABLE_DEBUG_FEATURES
     Ui::DEBUG,
 #endif

@@ -36,17 +36,16 @@ class BattleStatusTests(unittest.TestCase):
 
     def test_player_and_wild_both_use_tactical_move_selection(self):
         source = (ROOT / "src" / "scenes" / "ExploreScene.cpp").read_text()
+        controller = (
+            ROOT / "src" / "game" / "BattleTurnController.cpp"
+        ).read_text()
         attack_start = source.index("void ExploreScene::attackWild()")
         attack_end = source.index("void ExploreScene::wildCounterattack()")
         attack = source[attack_start:attack_end]
-        self.assertIn("playerBattleState.lockedMoveId", attack)
-        self.assertIn("BattleSystem::chooseAiMoveSlot(", attack)
-        self.assertIn("battleTurnSpecialSlots[1] =", attack)
-        self.assertIn("BattleSystem::isChargingMove(wildBattleState)", attack)
-        self.assertIn(
-            ": BattleSystem::chooseAiMoveSlot(",
-            attack,
-        )
+        self.assertIn("battleTurnController.planAiTurn(", attack)
+        self.assertIn("BattleSystem::isChargingMove(attackerState)", controller)
+        self.assertIn("attackerState.lockedMoveId", controller)
+        self.assertIn("BattleSystem::chooseAiMoveSlot(", controller)
         self.assertNotIn("rollSpecialMoveSlot", attack)
 
     def test_solar_beam_charges_then_releases_automatically(self):
@@ -66,7 +65,10 @@ class BattleStatusTests(unittest.TestCase):
         finish = source[finish_turn:charged_turn]
         self.assertIn("BattleSystem::isChargingMove(playerBattleState)", finish)
         self.assertNotIn("BattleSystem::isChargingMove(wildBattleState)", finish)
-        self.assertIn("BattleSystem::isChargingMove(wildBattleState)", source)
+        controller = (
+            ROOT / "src" / "game" / "BattleTurnController.cpp"
+        ).read_text()
+        self.assertIn("BattleSystem::isChargingMove(attackerState)", controller)
 
 
 if __name__ == "__main__":

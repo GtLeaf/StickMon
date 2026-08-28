@@ -189,7 +189,8 @@ int glyphAdvance(uint32_t codepoint) {
     return usesUnscii(codepoint) ? ASCII_CELL_WIDTH : NATIVE_TEXT_HEIGHT;
 }
 
-void drawTextPass(int x, int y, const char* value, uint16_t color,
+void drawTextPass(Canvas565& target, int x, int y, const char* value,
+                  uint16_t color,
                   uint8_t outlineWidth = 0) {
     int cursor = x;
     const char* p = value;
@@ -213,15 +214,15 @@ void drawTextPass(int x, int y, const char* value, uint16_t color,
         const uint8_t* bitmap =
             FontResource::ins().findGlyphBitmap(codepoint, face);
         if (bitmap) {
-            drawGlyphPass(PixelRenderer::canvas(), cursor, y, bitmap, color,
+            drawGlyphPass(target, cursor, y, bitmap, color,
                           false, glyphWidth, outlineWidth);
         } else if (!unscii) {
             const FontFallbackCNGlyph* glyph = findFontFallbackCNGlyph(codepoint);
             if (glyph) {
-                drawGlyphPass(PixelRenderer::canvas(), cursor, y, glyph->bitmap,
+                drawGlyphPass(target, cursor, y, glyph->bitmap,
                               color, true, glyphWidth, outlineWidth);
             } else {
-                PixelRenderer::canvas().drawRect(cursor + 1, y + 2, 12, 12, color);
+                target.drawRect(cursor + 1, y + 2, 12, 12, color);
             }
         } else {
             static constexpr int boxWidth = 6;
@@ -229,13 +230,13 @@ void drawTextPass(int x, int y, const char* value, uint16_t color,
             static constexpr int boxY = 2;
             if (outlineWidth > 0) {
                 for (int offset = -outlineWidth; offset <= outlineWidth; ++offset) {
-                    PixelRenderer::canvas().drawRect(cursor + 1 + offset, y + boxY,
+                    target.drawRect(cursor + 1 + offset, y + boxY,
                                                      boxWidth, boxHeight, color);
-                    PixelRenderer::canvas().drawRect(cursor + 1, y + boxY + offset,
+                    target.drawRect(cursor + 1, y + boxY + offset,
                                                      boxWidth, boxHeight, color);
                 }
             } else {
-                PixelRenderer::canvas().drawRect(cursor + 1, y + boxY,
+                target.drawRect(cursor + 1, y + boxY,
                                                  boxWidth, boxHeight, color);
             }
         }
@@ -328,7 +329,13 @@ void PixelRenderer::fillRectAlpha(int x, int y, int w, int h,
 void PixelRenderer::text(int x, int y, const char* value, uint16_t color,
                          uint8_t size) {
     (void)size;
-    drawTextPass(x, y, value, color);
+    drawTextPass(gCanvas, x, y, value, color);
+}
+
+void PixelRenderer::text(Canvas565& target, int x, int y, const char* value,
+                         uint16_t color, uint8_t size) {
+    (void)size;
+    drawTextPass(target, x, y, value, color);
 }
 
 void PixelRenderer::textOutlined(int x, int y, const char* value, uint16_t color,
@@ -336,12 +343,12 @@ void PixelRenderer::textOutlined(int x, int y, const char* value, uint16_t color
                                  uint8_t size) {
     (void)size;
     if (outlineWidth == 0) {
-        drawTextPass(x, y, value, color);
+        drawTextPass(gCanvas, x, y, value, color);
         return;
     }
     if (outlineWidth > MAX_TEXT_OUTLINE_WIDTH) outlineWidth = MAX_TEXT_OUTLINE_WIDTH;
-    drawTextPass(x, y, value, outline, outlineWidth);
-    drawTextPass(x, y, value, color);
+    drawTextPass(gCanvas, x, y, value, outline, outlineWidth);
+    drawTextPass(gCanvas, x, y, value, color);
 }
 
 void PixelRenderer::bar(int x, int y, int w, int h, uint8_t value, uint16_t fill, uint16_t bg) {
@@ -531,8 +538,6 @@ void PixelRenderer::drawIndexed4RleScaled(int x, int y, int w, int h,
     const uint32_t total = (uint32_t)(w * h);
     uint32_t idx = 0;
     uint32_t pixel = 0;
-    int drawW = (int)ceilf(scale);
-    int drawH = (int)ceilf(scale);
     while (idx < length && pixel < total) {
         uint16_t token =
             Platform::readProgramWord(&data[offset + idx++]);
@@ -559,8 +564,15 @@ void PixelRenderer::drawIndexed4RleScaled(int x, int y, int w, int h,
             int col = pixel % w;
             int row = pixel / w;
             if (flipX) col = w - 1 - col;
-            int drawX = (int)(x + col * scale);
-            int drawY = (int)(y + row * scale);
+            // Map each source pixel to its exact destination interval. Using
+            // ceil(scale) for every pixel makes 1.66x backgrounds expand to
+            // 2x and breaks the intended crop on the portrait display.
+            int drawX = x + static_cast<int>(std::floor(col * scale));
+            int drawY = y + static_cast<int>(std::floor(row * scale));
+            int nextX = x + static_cast<int>(std::ceil((col + 1) * scale));
+            int nextY = y + static_cast<int>(std::ceil((row + 1) * scale));
+            int drawW = std::max(1, nextX - drawX);
+            int drawH = std::max(1, nextY - drawY);
             if (alpha == 255) {
                 gCanvas.fillRect(drawX, drawY, drawW, drawH, color);
             } else {

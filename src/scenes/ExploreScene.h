@@ -5,6 +5,7 @@
 #include "core/Scene.h"
 #include "core/ProgressionUi.h"
 #include "game/BattleSystem.h"
+#include "game/BattleTurnController.h"
 #include "game/ExploreMapGenerator.h"
 #include "game/ExplorePool.h"
 #include "game/ExploreSpecialEncounter.h"
@@ -155,8 +156,8 @@ private:
         WAIT_END_TURN_LOGS,
     };
     BattleTurnStage battleTurnStage = BattleTurnStage::IDLE;
-    bool battleActionOrder[2] = {};
-    uint8_t battleActionCount = 0;
+    BattleTurnController battleTurnController;
+    BattleTurnController::TurnPlan battleTurnPlan;
     uint8_t battleActionIndex = 0;
     bool battleActionAttackerWild = false;
     bool battleActionSelfHit = false;
@@ -168,12 +169,6 @@ private:
     BattleSystem::EffectResolution battleEffectResolution;
     BattleSystem::BattleActorState playerBattleState;
     BattleSystem::BattleActorState wildBattleState;
-    BattleSystem::BattleAiMemory playerAiMemory;
-    BattleSystem::BattleAiMemory wildAiMemory;
-    uint8_t battleTurnSpecialSlots[2] = {
-        BattleSystem::SPECIAL_SLOT_NONE,
-        BattleSystem::SPECIAL_SLOT_NONE,
-    };
     uint16_t battleHpFrom = 0;
     uint16_t battleHpTo = 0;
     uint32_t battleActionStarted = 0;

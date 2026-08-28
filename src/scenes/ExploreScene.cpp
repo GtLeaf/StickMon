@@ -22,6 +22,7 @@
 #include "game/ExploreRouteGeometry.h"
 #include "game/ExploreRunRules.h"
 #include "game/FriendshipPity.h"
+#include "game/FriendshipService.h"
 #include "game/FriendshipSystem.h"
 #include "game/GameRandom.h"
 #include "hardware/Hal.h"
@@ -2118,8 +2119,7 @@ void ExploreScene::beginEncounter(const Species& species, uint8_t level, bool bo
     battleTurnDamaged[0] = false;
     battleTurnDamaged[1] = false;
     forcedBattleEndPending = false;
-    playerAiMemory = BattleSystem::BattleAiMemory{};
-    wildAiMemory = BattleSystem::BattleAiMemory{};
+    battleTurnController.reset();
     fleeAttempts = 0;
     autoWalkActive = false;
     phase = Phase::ENCOUNTER;
@@ -2229,7 +2229,7 @@ void ExploreScene::clearBattleLogs() {
     expAnimationTo = 0;
     expAnimationStarted = 0;
     battleTurnStage = BattleTurnStage::IDLE;
-    battleActionCount = 0;
+    battleTurnPlan = BattleTurnController::TurnPlan{};
     battleActionIndex = 0;
     battleActionAttackerWild = false;
     battleActionSelfHit = false;
@@ -2237,8 +2237,6 @@ void ExploreScene::clearBattleLogs() {
     battleActionResult = BattleSystem::DamageResult{};
     battleActionCheck = BattleSystem::ActionCheckResult{};
     battleEffectResolution = BattleSystem::EffectResolution{};
-    battleTurnSpecialSlots[0] = BattleSystem::SPECIAL_SLOT_NONE;
-    battleTurnSpecialSlots[1] = BattleSystem::SPECIAL_SLOT_NONE;
     battleHpFrom = 0;
     battleHpTo = 0;
     battleActionStarted = 0;
@@ -2637,7 +2635,7 @@ void ExploreScene::updateBattleTurn(uint32_t nowMs) {
 }
 
 void ExploreScene::beginBattleAction() {
-    if (!wild || battleActionIndex >= battleActionCount) {
+    if (!wild || battleActionIndex >= battleTurnPlan.count) {
         battleTurnStage = BattleTurnStage::IDLE;
         return;
     }
@@ -2645,7 +2643,10 @@ void ExploreScene::beginBattleAction() {
     auto& engine = GameEngine::ins();
     auto& activeMon = battlePlayerMonster();
     const Species& activeSpecies = battlePlayerSpecies();
-    battleActionAttackerWild = battleActionOrder[battleActionIndex];
+    const BattleTurnController::Action& plannedAction =
+        battleTurnPlan.actions[battleActionIndex];
+    battleActionAttackerWild =
+        plannedAction.side == BattleTurnController::Side::WILD;
     battleActionSelfHit = false;
     battleActionReleasingCharge = false;
     battleActionResult = BattleSystem::DamageResult{};
@@ -2660,33 +2661,21 @@ void ExploreScene::beginBattleAction() {
     BattleSystem::BattleActorState& defenderState = battleActionAttackerWild
         ? playerBattleState : wildBattleState;
     uint8_t sideIndex = battleActionAttackerWild ? 1 : 0;
-    uint8_t specialSlot = battleTurnSpecialSlots[sideIndex];
-    Game::MoveId moveId = BattleSystem::moveIdForAction(
-        attacker, attackerSpecies, specialSlot);
+    uint8_t specialSlot = plannedAction.specialSlot;
+    Game::MoveId moveId = plannedAction.moveId;
     if (BattleSystem::isChargingMove(attackerState)) {
-        moveId = attackerState.chargingMoveId;
-        specialSlot = attackerState.chargingSpecialSlot;
         battleActionReleasingCharge = true;
-    } else if (attackerState.lockedMoveId != 0) {
-        moveId = attackerState.lockedMoveId;
-        specialSlot = attackerState.lockedSpecialSlot;
     }
     const MoveInfo* move = findMove(moveId);
     const char* attackerName = attackerSpecies.name;
     char logBuf[BATTLE_LOG_LEN];
 
     uint8_t opponentIndex = sideIndex == 0 ? 1 : 0;
-    Game::MonsterRuntime& opponent = battleActionAttackerWild ? activeMon : wildRuntime;
-    const Species& opponentSpecies = battleActionAttackerWild ? activeSpecies : *wild;
-    Game::MoveId opponentMoveId = BattleSystem::moveIdForAction(
-        opponent, opponentSpecies, battleTurnSpecialSlots[opponentIndex]);
-    BattleSystem::BattleActorState& opponentState = battleActionAttackerWild
-        ? playerBattleState : wildBattleState;
-    if (BattleSystem::isChargingMove(opponentState)) {
-        opponentMoveId = opponentState.chargingMoveId;
-    } else if (opponentState.lockedMoveId != 0) {
-        opponentMoveId = opponentState.lockedMoveId;
-    }
+    const BattleTurnController::Action* opponentAction =
+        battleTurnPlan.actionFor(battleActionAttackerWild
+            ? BattleTurnController::Side::PLAYER
+            : BattleTurnController::Side::WILD);
+    Game::MoveId opponentMoveId = opponentAction ? opponentAction->moveId : 0;
     const MoveInfo* opponentMove = findMove(opponentMoveId);
     battleActionCheck = BattleSystem::checkAction(
         attacker, attackerSpecies, attackerState, moveId,
@@ -2917,13 +2906,10 @@ void ExploreScene::applyBattleDamage() {
 
     const MoveInfo* move = findMove(battleActionResult.moveId);
     if (move) {
-        bool defenderCanStillAct = false;
-        for (uint8_t index = battleActionIndex + 1; index < battleActionCount; ++index) {
-            if (battleActionOrder[index] != battleActionAttackerWild) {
-                defenderCanStillAct = true;
-                break;
-            }
-        }
+        bool defenderCanStillAct = battleTurnPlan.hasActionAfter(
+            battleActionIndex,
+            battleActionAttackerWild ? BattleTurnController::Side::PLAYER
+                                     : BattleTurnController::Side::WILD);
         uint16_t actualDamage = battleHpFrom >= battleHpTo ? battleHpFrom - battleHpTo : 0;
         if (battleActionAttackerWild) {
             battleEffectResolution = BattleSystem::applyMoveEffects(
@@ -2994,7 +2980,7 @@ void ExploreScene::finishBattleAction() {
     bool wildFainted = wildHp == 0;
     if (playerFainted || wildFainted) {
         battleTurnStage = BattleTurnStage::IDLE;
-        battleActionCount = 0;
+        battleTurnPlan = BattleTurnController::TurnPlan{};
         battleActionIndex = 0;
         if (playerFainted) finishPlayerFaint();
         else finishWildFaint();
@@ -3009,7 +2995,7 @@ void ExploreScene::finishBattleAction() {
     }
 
     ++battleActionIndex;
-    if (battleActionIndex < battleActionCount) {
+    if (battleActionIndex < battleTurnPlan.count) {
         battleTurnStage = BattleTurnStage::WAIT_ACTION_START;
     } else {
         resolveBattleEndTurn();
@@ -3035,7 +3021,7 @@ void ExploreScene::resolveBattleEndTurn() {
     enqueueBattleEffectLogs(wildEffects, true);
     engine.markDirty(SaveUrgency::DEFERRED);
 
-    battleActionCount = 0;
+    battleTurnPlan = BattleTurnController::TurnPlan{};
     battleActionIndex = 0;
     battleTurnDamaged[0] = false;
     battleTurnDamaged[1] = false;
@@ -3063,42 +3049,9 @@ void ExploreScene::beginChargedBattleTurn() {
     if (!wild || wildHp == 0 || battlePlayerMonster().hpCur == 0) return;
     auto& activeMon = battlePlayerMonster();
     const Species& activeSpecies = battlePlayerSpecies();
-
-    battleTurnSpecialSlots[0] = BattleSystem::isChargingMove(playerBattleState)
-        ? playerBattleState.chargingSpecialSlot
-        : playerBattleState.lockedSpecialSlot;
-    battleTurnSpecialSlots[1] = BattleSystem::isChargingMove(wildBattleState)
-        ? wildBattleState.chargingSpecialSlot
-        : BattleSystem::chooseAiMoveSlot(
-              wildRuntime, *wild, wildBattleState,
-              activeMon, activeSpecies, playerBattleState, wildAiMemory);
-
-    Game::MoveId playerMove = BattleSystem::isChargingMove(playerBattleState)
-        ? playerBattleState.chargingMoveId
-        : (playerBattleState.lockedMoveId != 0
-            ? playerBattleState.lockedMoveId
-            : BattleSystem::moveIdForAction(
-                  activeMon, activeSpecies, battleTurnSpecialSlots[0]));
-    Game::MoveId wildMove = BattleSystem::isChargingMove(wildBattleState)
-        ? wildBattleState.chargingMoveId
-        : (wildBattleState.lockedMoveId != 0
-            ? wildBattleState.lockedMoveId
-            : BattleSystem::moveIdForAction(
-                  wildRuntime, *wild, battleTurnSpecialSlots[1]));
-    int8_t playerPriority = BattleSystem::movePriority(playerMove);
-    int8_t wildPriority = BattleSystem::movePriority(wildMove);
-    uint16_t playerSpeed = BattleSystem::effectiveSpeed(
-        activeMon, activeSpecies, playerBattleState);
-    uint16_t wildSpeed = BattleSystem::effectiveSpeed(
+    battleTurnPlan = battleTurnController.planAiTurn(
+        activeMon, activeSpecies, playerBattleState,
         wildRuntime, *wild, wildBattleState);
-    bool playerFirst = playerPriority > wildPriority ||
-                       (playerPriority == wildPriority &&
-                        (playerSpeed > wildSpeed ||
-                         (playerSpeed == wildSpeed &&
-                          GameRandom::random(0, 2) == 0)));
-    battleActionOrder[0] = !playerFirst;
-    battleActionOrder[1] = playerFirst;
-    battleActionCount = 2;
     battleActionIndex = 0;
     battleTurnStage = BattleTurnStage::WAIT_ACTION_START;
     updateBattleTurn(Hal::ins().millis());
@@ -3193,46 +3146,17 @@ void ExploreScene::finishWildFaint() {
     }
     markFirstSpecialVictory();
     finishRoamingEncounter();
-    bool hasRoom = state.storageCount < Game::STORAGE_CAP;
-    int8_t pityIndex = FriendshipPity::indexFor(wild->id);
-    uint8_t pityFailCount = pityIndex >= 0
-        ? engine.gameState().friendshipPityFailCounts[pityIndex]
-        : 0;
-    FriendshipPity::Tier pityTier = pityIndex >= 0
-        ? FriendshipPity::tierAt(static_cast<uint8_t>(pityIndex))
-        : FriendshipPity::Tier::NONE;
-    uint16_t baseOfferChance = FriendshipSystem::offerChancePermille(
-        *wild, wildRuntime, battleIsBoss, battleFoodBond);
-    uint16_t offerChance = FriendshipPity::chanceWithBonus(
-        baseOfferChance, pityTier, pityFailCount);
-    friendshipOfferPending = false;
-    if (battleAllowsFriendship && hasRoom) {
+    Game::FriendshipService::OfferResult friendshipOffer =
+        Game::FriendshipService::evaluateOffer(
+            state, *wild, wildRuntime, battleIsBoss,
+            battleAllowsFriendship, battleFoodBond,
 #if STICKMON_ENABLE_DEBUG_FEATURES
-        if (debugBattleMode) {
-            friendshipOfferPending = true;
-        } else {
+            debugBattleMode
+#else
+            false
 #endif
-            uint16_t friendshipShakeRolls[FriendshipSystem::SHAKE_CHECK_COUNT];
-            for (uint8_t check = 0;
-                 check < FriendshipSystem::SHAKE_CHECK_COUNT; ++check) {
-                friendshipShakeRolls[check] = static_cast<uint16_t>(
-                    GameRandom::random(0, 65536));
-            }
-            bool baseOfferPassed = FriendshipSystem::passesOfferChecks(
-                *wild, wildRuntime, battleIsBoss,
-                static_cast<uint16_t>(GameRandom::random(0, 1000)),
-                friendshipShakeRolls, battleFoodBond);
-            uint16_t conditionalBonus =
-                FriendshipPity::conditionalBonusPermille(
-                    baseOfferChance, offerChance);
-            bool pityOfferPassed =
-                !baseOfferPassed && conditionalBonus > 0 &&
-                static_cast<uint16_t>(GameRandom::random(0, 1000)) < conditionalBonus;
-            friendshipOfferPending = baseOfferPassed || pityOfferPassed;
-#if STICKMON_ENABLE_DEBUG_FEATURES
-        }
-#endif
-    }
+        );
+    friendshipOfferPending = friendshipOffer.offered;
 
     // 栖息地轮换：击败区域头目 → 该区域重抽计数 +1 并立即重建活跃池（§7.2）
     if (battleIsBoss) {
@@ -3251,18 +3175,10 @@ void ExploreScene::finishWildFaint() {
     }
 
     // 按物种独立累计失败层数；加成已叠加在最终结交概率上（§7.9.4）。
-    if (battleAllowsFriendship && hasRoom && pityIndex >= 0 &&
-        !friendshipOfferPending
-#if STICKMON_ENABLE_DEBUG_FEATURES
-        && !debugBattleMode
-#endif
-    ) {
-        Game::GameState& save = engine.gameState();
-        uint8_t& failCount = save.friendshipPityFailCounts[pityIndex];
-        if (failCount < FriendshipPity::MAX_FAIL_COUNT) {
-            ++failCount;
-            engine.markDirty(SaveUrgency::DEFERRED);
-        }
+    if (friendshipOffer.eligible && !friendshipOfferPending) {
+        Game::FriendshipService::recordFailure(
+            engine.gameState(), wild->id);
+        engine.markDirty(SaveUrgency::DEFERRED);
     }
 }
 
@@ -3275,37 +3191,9 @@ void ExploreScene::attackWild() {
     }
 
     const Species& activeSpecies = battlePlayerSpecies();
-    battleTurnSpecialSlots[0] = playerBattleState.lockedMoveId != 0
-        ? playerBattleState.lockedSpecialSlot
-        : BattleSystem::chooseAiMoveSlot(
-              activeMon, activeSpecies, playerBattleState,
-              wildRuntime, *wild, wildBattleState, playerAiMemory);
-    battleTurnSpecialSlots[1] = BattleSystem::isChargingMove(wildBattleState)
-        ? wildBattleState.chargingSpecialSlot
-        : (wildBattleState.lockedMoveId != 0
-            ? wildBattleState.lockedSpecialSlot
-            : BattleSystem::chooseAiMoveSlot(
-                  wildRuntime, *wild, wildBattleState,
-                  activeMon, activeSpecies, playerBattleState, wildAiMemory));
-    Game::MoveId playerMove = BattleSystem::moveIdForAction(
-        activeMon, activeSpecies, battleTurnSpecialSlots[0]);
-    Game::MoveId wildMove = BattleSystem::moveIdForAction(
-        wildRuntime, *wild, battleTurnSpecialSlots[1]);
-    if (playerBattleState.lockedMoveId != 0) playerMove = playerBattleState.lockedMoveId;
-    if (wildBattleState.lockedMoveId != 0) wildMove = wildBattleState.lockedMoveId;
-    int8_t playerPriority = BattleSystem::movePriority(playerMove);
-    int8_t wildPriority = BattleSystem::movePriority(wildMove);
-    uint16_t playerSpeed = BattleSystem::effectiveSpeed(
-        activeMon, activeSpecies, playerBattleState);
-    uint16_t wildSpeed = BattleSystem::effectiveSpeed(
+    battleTurnPlan = battleTurnController.planAiTurn(
+        activeMon, activeSpecies, playerBattleState,
         wildRuntime, *wild, wildBattleState);
-    bool playerFirst = playerPriority > wildPriority ||
-                       (playerPriority == wildPriority &&
-                        (playerSpeed > wildSpeed ||
-                         (playerSpeed == wildSpeed && GameRandom::random(0, 2) == 0)));
-    battleActionOrder[0] = !playerFirst;
-    battleActionOrder[1] = playerFirst;
-    battleActionCount = 2;
     battleActionIndex = 0;
     battleTurnStage = BattleTurnStage::WAIT_ACTION_START;
     updateBattleTurn(Hal::ins().millis());
@@ -3318,17 +3206,9 @@ void ExploreScene::wildCounterattack() {
         finishPlayerFaint();
         return;
     }
-    battleTurnSpecialSlots[0] = BattleSystem::SPECIAL_SLOT_NONE;
-    battleTurnSpecialSlots[1] = BattleSystem::isChargingMove(wildBattleState)
-        ? wildBattleState.chargingSpecialSlot
-        : (wildBattleState.lockedMoveId != 0
-            ? wildBattleState.lockedSpecialSlot
-            : BattleSystem::chooseAiMoveSlot(
-                  wildRuntime, *wild, wildBattleState,
-                  activeMon, battlePlayerSpecies(), playerBattleState,
-                  wildAiMemory));
-    battleActionOrder[0] = true;
-    battleActionCount = 1;
+    battleTurnPlan = battleTurnController.planWildOnly(
+        activeMon, battlePlayerSpecies(), playerBattleState,
+        wildRuntime, *wild, wildBattleState);
     battleActionIndex = 0;
     battleTurnStage = BattleTurnStage::WAIT_ACTION_START;
     updateBattleTurn(Hal::ins().millis());
@@ -3447,7 +3327,7 @@ void ExploreScene::updateBattleSwitch(uint32_t nowMs) {
             return;
         }
         battlePlayerSlot = slot;
-        playerAiMemory = BattleSystem::BattleAiMemory{};
+        battleTurnController.resetPlayerAi();
         pendingBattleSwitchSlot = 0xFF;
         BattleSystem::resetVolatile(playerBattleState);
         BattleSystem::EffectResolution entryEffects;
@@ -3614,7 +3494,7 @@ void ExploreScene::resolveFriendshipOffer() {
             int8_t pityIndex = FriendshipPity::indexFor(wild->id);
             if (pityIndex >= 0 &&
                 save.friendshipPityFailCounts[pityIndex] != 0) {
-                save.friendshipPityFailCounts[pityIndex] = 0;
+                Game::FriendshipService::recordSuccess(save, wild->id);
                 engine.markDirty(SaveUrgency::DEFERRED);
             }
         }

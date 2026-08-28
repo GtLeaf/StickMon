@@ -1628,6 +1628,29 @@ struct WalkingAnimation {
     bool flipX;
 };
 
+enum class PetMotionMode : uint8_t {
+    LOOP,
+    START_HOLD_END,
+    PINGPONG,
+};
+
+// Shared presentation metadata used by Stick and the AMOLED firmware. The
+// resource pack keeps each species' idle, walking, and sleeping frames in one
+// contiguous block, so both renderers can select the same frame without
+// carrying platform-specific sprite tables.
+struct PetAnimationProfile {
+    uint16_t speciesId = 0;
+    uint8_t idleFrames = 1;
+    uint16_t idleFrameMs = 520;
+    uint8_t walkingFrames = 1;
+    uint8_t sleepingFrames = 2;
+    PetMotionMode motionMode = PetMotionMode::LOOP;
+    SpriteKind idleBase = SpriteKind::FRONT;
+    SpriteKind walkingBase = SpriteKind::FRONT;
+    SpriteKind sleepingBase = SpriteKind::FRONT;
+    bool mirrorRightDirections = true;
+};
+
 struct SpriteFrame {
     uint16_t speciesId;
     uint16_t kind;
@@ -1658,6 +1681,7 @@ const SpriteFrame* findSpeciesSprite(uint16_t speciesId, SpriteKind kind);
 const SpriteFrame* findCachedSpeciesSprite(uint16_t speciesId, SpriteKind kind);
 int16_t frameGroundOffsetY(const SpriteFrame* frame);
 bool walkingAnimation(uint16_t speciesId, WalkDirection direction, WalkingAnimation& animation);
+bool petAnimationProfile(uint16_t speciesId, PetAnimationProfile& profile);
 bool syncTeamCache(const uint16_t* speciesIds, uint8_t count,
                    uint8_t loadBudget = 0xFF,
                    bool* cacheChanged = nullptr);

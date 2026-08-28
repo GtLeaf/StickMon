@@ -95,6 +95,13 @@ constexpr uint16_t FROST_ROCK_HILL_TILES[3][3] = {
 };
 constexpr uint16_t FROST_CRYSTAL_TOP_TILE = 4541;
 
+constexpr uint16_t CAVE_FLOOR_TILE = ExploreCaveTiles::CAVE_FLOOR;
+constexpr uint16_t CAVE_CLIFF_TILES[3] = {
+    ExploreCaveTiles::CAVE_CLIFF_LEFT,
+    ExploreCaveTiles::CAVE_CLIFF_MIDDLE,
+    ExploreCaveTiles::CAVE_CLIFF_RIGHT,
+};
+
 constexpr uint16_t TOP_EDGE_FOREST_TILE_ROWS[3][2] = {
     {800, 801},
     {808, 809},
@@ -370,7 +377,7 @@ constexpr FrostTemplate FROST_HORIZONTAL_TEMPLATES[] = {
         },
         nullptr,
         0,
-        true,
+        false,
         {2, 6},
         FROST_H0_CRYSTALS,
         static_cast<uint8_t>(
@@ -898,12 +905,12 @@ void stampWaterfallWall(Map& map, uint8_t top, uint8_t bottom,
             if (inFirstGap || inSecondGap) continue;
             cliff.add(x, y);
             if (x == stairLeft || x == stairLeft + 1) {
-                map.layers[0][y * WIDTH + x] =
-                    x == stairLeft ? CLIFF_STAIR_LEFT_TILE : CLIFF_STAIR_RIGHT_TILE;
+                map.layers[0][y * WIDTH + x] = ExploreCaveTiles::ROCK_STEP;
                 map.layers[1][y * WIDTH + x] = 0;
                 stairs.add(x, y);
             } else {
-                map.layers[0][y * WIDTH + x] = CLIFF_TOP_TILE;
+                uint8_t cliffEdge = x == 0 ? 0 : (x == WIDTH - 1 ? 2 : 1);
+                map.layers[0][y * WIDTH + x] = CAVE_CLIFF_TILES[cliffEdge];
                 map.layers[1][y * WIDTH + x] = 0;
             }
         }
@@ -939,9 +946,40 @@ void stampBoulder(Map& map, uint8_t x, uint8_t y, CellMask& scenery) {
     scenery.add(x, y);
 }
 
+void stampCaveEntrance(Map& map, const Endpoint& endpoint) {
+    const uint8_t x = endpoint.point.x;
+    const uint8_t y = endpoint.point.y;
+    switch (endpoint.edge) {
+    case Edge::LEFT:
+        map.layers[1][y * WIDTH + x] = ExploreCaveTiles::ENTRANCE_LEFT;
+        break;
+    case Edge::RIGHT:
+        map.layers[1][y * WIDTH + x] = ExploreCaveTiles::ENTRANCE_RIGHT;
+        break;
+    case Edge::TOP:
+        map.layers[1][y * WIDTH + x] = ExploreCaveTiles::ENTRANCE_BACK;
+        break;
+    case Edge::BOTTOM:
+        if (y > 0) {
+            map.layers[1][(y - 1) * WIDTH + x] =
+                ExploreCaveTiles::ENTRANCE_FRONT_TOP;
+        }
+        map.layers[1][y * WIDTH + x] = ExploreCaveTiles::ENTRANCE_FRONT_BOTTOM;
+        break;
+    }
+}
+
+void stampAncientCaveEntrances(Map& map) {
+    stampCaveEntrance(map, map.entry);
+    for (uint8_t i = 0; i < map.pathCount; ++i) {
+        stampCaveEntrance(map, map.paths[i].exit);
+    }
+}
+
 void stampAncientWaterfallValley(Map& map, CellMask& water, CellMask& forest,
                                  CellMask& cliff, CellMask& stairs,
                                  CellMask& scenery) {
+    (void)forest;
     switch (map.entry.edge) {
     case Edge::BOTTOM:
         stampSeaChannel(map, 4, 0, 4, 3, 0, 0, water);
@@ -949,10 +987,6 @@ void stampAncientWaterfallValley(Map& map, CellMask& water, CellMask& forest,
         stampWaterfall(map, 4, 4, 3, 3, water);
         stampWaterfallWall(map, 3, 8, 4, 4, 0, 0, 11, cliff, stairs);
         stampSmallWaterRock(map, 6, 9);
-        stampTopEdgeForestCluster(map, 0, 4, forest);
-        stampTopEdgeForestCluster(map, 13, 2, forest);
-        stampBoulder(map, 9, 1, scenery);
-        stampBoulder(map, 14, 11, scenery);
         break;
     case Edge::LEFT:
         stampSeaChannel(map, 10, 0, 4, 4, 0, 0, water);
@@ -960,10 +994,6 @@ void stampAncientWaterfallValley(Map& map, CellMask& water, CellMask& forest,
         stampWaterfall(map, 10, 4, 4, 3, water);
         stampWaterfallWall(map, 4, 9, 10, 4, 0, 0, 4, cliff, stairs);
         stampSmallWaterRock(map, 11, 10);
-        stampTopEdgeForestCluster(map, 6, 4, forest);
-        stampTopEdgeForestCluster(map, 14, 2, forest);
-        stampBoulder(map, 7, 3, scenery);
-        stampBoulder(map, 8, 10, scenery);
         break;
     case Edge::TOP:
         stampSeaChannel(map, 10, 0, 4, 3, 0, 0, water);
@@ -971,11 +1001,6 @@ void stampAncientWaterfallValley(Map& map, CellMask& water, CellMask& forest,
         stampWaterfall(map, 10, 4, 3, 3, water);
         stampWaterfallWall(map, 3, 8, 10, 4, 0, 0, 5, cliff, stairs);
         stampSmallWaterRock(map, 11, 9);
-        stampTopEdgeForestCluster(map, 0, 4, forest);
-        stampTopEdgeForestCluster(map, 7, 2, forest);
-        stampTopEdgeForestCluster(map, 14, 2, forest);
-        stampBoulder(map, 2, 8, scenery);
-        stampBoulder(map, 15, 9, scenery);
         break;
     case Edge::RIGHT:
         stampSeaChannel(map, 2, 0, 3, 3, 0, 0, water);
@@ -988,13 +1013,9 @@ void stampAncientWaterfallValley(Map& map, CellMask& water, CellMask& forest,
         stampWaterfallWall(map, 3, 8, 2, 3, 7, 3, 12, cliff, stairs);
         stampLargeWaterRock(map, 5, 9);
         stampSmallWaterRock(map, 3, 10);
-        stampTopEdgeForestCluster(map, 0, 2, forest);
-        stampTopEdgeForestCluster(map, 10, 2, forest);
-        stampTopEdgeForestCluster(map, 14, 2, forest);
-        stampBoulder(map, 6, 1, scenery);
-        stampBoulder(map, 11, 9, scenery);
         break;
     }
+    stampAncientCaveEntrances(map);
 }
 
 bool creekCandidateFits(const CellMask& road, uint8_t left, uint8_t width,
@@ -2257,6 +2278,8 @@ bool generate(uint32_t seed, Edge entryEdge, uint8_t areaIndex, Map& out) {
         if (hasSnow) {
             out.layers[0][index] = SNOW_GROUND_TILES[
                 terrain.bounded(sizeof(SNOW_GROUND_TILES) / sizeof(SNOW_GROUND_TILES[0]))];
+        } else if (hasWaterfall) {
+            out.layers[0][index] = CAVE_FLOOR_TILE;
         } else {
             out.layers[0][index] =
                 GRASS_TILES[terrain.bounded(sizeof(GRASS_TILES) / sizeof(GRASS_TILES[0]))];
@@ -2266,7 +2289,7 @@ bool generate(uint32_t seed, Edge entryEdge, uint8_t areaIndex, Map& out) {
 
     if (hasWaterfall) {
         stampAncientWaterfallValley(out, water, forest, cliff, stairs, scenery);
-        out.hasForest = true;
+        out.hasForest = false;
         out.hasCliff = true;
     }
 
@@ -2289,7 +2312,7 @@ bool generate(uint32_t seed, Edge entryEdge, uint8_t areaIndex, Map& out) {
 
     for (uint8_t y = 0; y < HEIGHT; ++y) {
         for (uint8_t x = 0; x < WIDTH; ++x) {
-            if (road.contains(x, y) && !water.contains(x, y) &&
+            if (!hasWaterfall && road.contains(x, y) && !water.contains(x, y) &&
                 !cliff.contains(x, y) && !forest.contains(x, y)) {
                 out.layers[0][y * WIDTH + x] =
                     hasSnow ? SNOW_PATH_TILE : roadTile(out, road, x, y);
@@ -2320,7 +2343,7 @@ bool generate(uint32_t seed, Edge entryEdge, uint8_t areaIndex, Map& out) {
     decorationBlocked.unite(scenery);
     if (hasSnow) {
         stampSnowDecorations(out, terrain, road, scenery);
-    } else {
+    } else if (!hasWaterfall) {
         stampGroundDecorations(out, terrain, road, water, decorationBlocked, profile);
     }
 

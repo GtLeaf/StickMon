@@ -21,6 +21,13 @@ enum class WakeReason : uint8_t {
     EXTERNAL_SIGNAL,
 };
 
+struct PowerCapabilities {
+    bool batteryGauge = false;
+    bool rtc = false;
+    bool deepSleep = false;
+    bool externalWake = false;
+};
+
 struct FrameBuffer565 {
     uint16_t* pixels = nullptr;
     uint16_t width = 0;
@@ -101,6 +108,7 @@ class IPowerDevice {
 public:
     virtual ~IPowerDevice() = default;
     virtual int batteryLevel() = 0;
+    virtual PowerCapabilities capabilities() const { return {}; }
     virtual WakeReason wakeReason() const = 0;
     virtual uint32_t hardwareRandom() = 0;
     virtual size_t externalMemorySize() const = 0;

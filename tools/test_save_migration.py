@@ -22,6 +22,7 @@ class SaveMigrationTests(unittest.TestCase):
                     "-Werror",
                     "-Isrc",
                     "tools/save_migration_host.cpp",
+                    "src/core/SaveCodec.cpp",
                     "src/core/SaveManager.cpp",
                     "src/game/Species.cpp",
                     "src/platform/api/PlatformServices.cpp",
