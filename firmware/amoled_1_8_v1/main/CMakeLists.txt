@@ -13,6 +13,8 @@ idf_component_register(
         "${STICKMON_ROOT}/src/assets/MenuAssets.cpp"
         "${STICKMON_ROOT}/src/assets/PokemonSprites.cpp"
         "${STICKMON_ROOT}/src/core/DeflateDecoder.cpp"
+        "${STICKMON_ROOT}/src/core/AudioManager.cpp"
+        "${STICKMON_ROOT}/src/core/CryPlayer.cpp"
         "${STICKMON_ROOT}/src/core/FontResource.cpp"
         "${STICKMON_ROOT}/src/core/GameClockService.cpp"
         "${STICKMON_ROOT}/src/core/ResourceFS.cpp"
@@ -20,15 +22,26 @@ idf_component_register(
         "${STICKMON_ROOT}/src/core/RoomMovementArea.cpp"
         "${STICKMON_ROOT}/src/core/RoomRenderer.cpp"
         "${STICKMON_ROOT}/src/core/RoomResource.cpp"
+        "${STICKMON_ROOT}/src/core/SaveCodec.cpp"
         "${STICKMON_ROOT}/src/core/SaveManager.cpp"
+        "${STICKMON_ROOT}/src/core/VisitSessionService.cpp"
         "${STICKMON_ROOT}/src/game/HomeCare.cpp"
+        "${STICKMON_ROOT}/src/game/HomeChase.cpp"
         "${STICKMON_ROOT}/src/game/BathService.cpp"
+        "${STICKMON_ROOT}/src/game/BattleSystem.cpp"
+        "${STICKMON_ROOT}/src/game/BattleTurnController.cpp"
+        "${STICKMON_ROOT}/src/game/ExperienceService.cpp"
+        "${STICKMON_ROOT}/src/game/FriendshipService.cpp"
+        "${STICKMON_ROOT}/src/game/FriendshipSystem.cpp"
         "${STICKMON_ROOT}/src/game/ItemInventory.cpp"
+        "${STICKMON_ROOT}/src/game/MonsterFactory.cpp"
+        "${STICKMON_ROOT}/src/game/MoveManagementService.cpp"
         "${STICKMON_ROOT}/src/game/ShopService.cpp"
         "${STICKMON_ROOT}/src/game/ExploreMapGenerator.cpp"
         "${STICKMON_ROOT}/src/game/GameRandom.cpp"
         "${STICKMON_ROOT}/src/game/MonsterMind.cpp"
         "${STICKMON_ROOT}/src/game/Species.cpp"
+        "${STICKMON_ROOT}/src/hardware/EspNowLink.cpp"
         "${STICKMON_ROOT}/src/platform/api/PlatformServices.cpp"
         "${STICKMON_ROOT}/src/presentation/Canvas565.cpp"
         "${STICKMON_ROOT}/src/presentation/HudRenderer.cpp"
@@ -39,9 +52,13 @@ idf_component_register(
         "${STICKMON_ROOT}/src"
     REQUIRES
         esp_lcd
+        esp_codec_dev
+        esp_event
+        esp_netif
         esp_psram
         esp_system
         esp_timer
+        esp_wifi
         nvs_flash
         spiffs
         espressif__esp_lcd_touch

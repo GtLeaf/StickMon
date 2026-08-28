@@ -2,11 +2,13 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cmath>
 
 #include "AmoledApp.h"
 #include "AmoledPlatform.h"
 #include "HomeScreen.h"
 #include "TouchInput.h"
+#include "core/AudioManager.h"
 #include "bsp/esp-bsp.h"
 #include "esp_check.h"
 #include "esp_heap_caps.h"
@@ -14,6 +16,7 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_log.h"
 #include "esp_psram.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -31,6 +34,11 @@ constexpr uint16_t PHYSICAL_HEIGHT = 448;
 constexpr uint16_t TRANSFER_LOGICAL_ROWS = 32;
 constexpr uint16_t TRANSFER_PHYSICAL_ROWS = TRANSFER_LOGICAL_ROWS * 2;
 constexpr size_t TRANSFER_BUFFER_COUNT = 2;
+constexpr uint32_t LOCK_ANIMATION_MS = 1000;
+constexpr uint32_t LOCK_WAKE_GRACE_MS = 1200;
+constexpr int LOCK_START_RADIUS = 260;
+constexpr int LOCK_FINAL_RADIUS = 33;
+enum class LockPhase : uint8_t { OPEN, CLOSING, LOCKED, OPENING };
 constexpr size_t LOGICAL_PIXELS =
     static_cast<size_t>(LOGICAL_WIDTH) * LOGICAL_HEIGHT;
 constexpr size_t TRANSFER_PIXELS =
@@ -90,6 +98,28 @@ void scaleStripe2x(const uint16_t* source, uint16_t sourceY,
     }
 }
 
+void scaleStripe2xRegion(const uint16_t* source, uint16_t sourceY,
+                         uint16_t logicalRows, uint16_t xBegin,
+                         uint16_t xEnd, uint16_t* destination) {
+    uint16_t regionWidth = xEnd - xBegin;
+    uint16_t physicalRegionWidth = regionWidth * 2U;
+    for (uint16_t row = 0; row < logicalRows; ++row) {
+        const uint16_t* sourceRow =
+            source + static_cast<size_t>(sourceY + row) * LOGICAL_WIDTH + xBegin;
+        uint16_t* top = destination +
+            static_cast<size_t>(row * 2U) * physicalRegionWidth;
+        uint16_t* bottom = top + physicalRegionWidth;
+        for (uint16_t x = 0; x < regionWidth; ++x) {
+            uint16_t pixel = sourceRow[x];
+            size_t outputX = static_cast<size_t>(x) * 2U;
+            top[outputX] = pixel;
+            top[outputX + 1U] = pixel;
+            bottom[outputX] = pixel;
+            bottom[outputX + 1U] = pixel;
+        }
+    }
+}
+
 bool onColorTransferDone(esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_data_t*,
                          void* userContext) {
     BaseType_t higherPriorityTaskWoken = pdFALSE;
@@ -105,11 +135,22 @@ esp_err_t startDisplay(esp_lcd_panel_handle_t* panel,
     bsp_display_config_t config{};
     config.max_transfer_sz = TRANSFER_PIXELS * sizeof(uint16_t);
 
-    ESP_RETURN_ON_ERROR(bsp_display_new(&config, panel, io), TAG,
-                        "SH8601 initialization failed");
-    ESP_RETURN_ON_ERROR(bsp_display_brightness_init(), TAG,
-                        "brightness initialization failed");
-    return bsp_display_brightness_set(72);
+    ESP_LOGI(TAG, "Display: creating SH8601 panel");
+    esp_err_t result = bsp_display_new(&config, panel, io);
+    ESP_LOGI(TAG, "Display: bsp_display_new returned %s",
+             esp_err_to_name(result));
+    ESP_RETURN_ON_ERROR(result, TAG, "SH8601 initialization failed");
+
+    ESP_LOGI(TAG, "Display: initializing brightness");
+    result = bsp_display_brightness_init();
+    ESP_LOGI(TAG, "Display: brightness init returned %s",
+             esp_err_to_name(result));
+    ESP_RETURN_ON_ERROR(result, TAG, "brightness initialization failed");
+
+    result = bsp_display_brightness_set(72);
+    ESP_LOGI(TAG, "Display: brightness set returned %s",
+             esp_err_to_name(result));
+    return result;
 }
 
 esp_err_t submitFrame(esp_lcd_panel_handle_t panel,
@@ -164,14 +205,144 @@ esp_err_t submitFrame(esp_lcd_panel_handle_t panel,
     return result;
 }
 
+esp_err_t submitFrameRegion(esp_lcd_panel_handle_t panel,
+                            const uint16_t* logicalPixels,
+                            const TransferBuffers& transferBuffers,
+                            SemaphoreHandle_t transferDone,
+                            uint16_t xBegin, uint16_t xEnd,
+                            uint16_t sourceBegin, uint16_t sourceEnd) {
+    if (!transferDone) return ESP_ERR_INVALID_ARG;
+    xBegin = std::min<uint16_t>(xBegin, LOGICAL_WIDTH);
+    xEnd = std::min<uint16_t>(xEnd, LOGICAL_WIDTH);
+    sourceBegin = std::min<uint16_t>(sourceBegin, LOGICAL_HEIGHT);
+    sourceEnd = std::min<uint16_t>(sourceEnd, LOGICAL_HEIGHT);
+    if (xBegin >= xEnd || sourceBegin >= sourceEnd) return ESP_OK;
+
+    uint16_t physicalXBegin = xBegin * 2U;
+    uint16_t physicalXEnd = xEnd * 2U;
+    esp_err_t result = ESP_OK;
+    size_t pendingTransfers = 0;
+    size_t nextBuffer = 0;
+    for (uint16_t sourceY = sourceBegin;
+         result == ESP_OK && sourceY < sourceEnd;
+         sourceY += TRANSFER_LOGICAL_ROWS) {
+        if (pendingTransfers == TRANSFER_BUFFER_COUNT) {
+            if (xSemaphoreTake(transferDone, pdMS_TO_TICKS(1000)) != pdTRUE) {
+                result = ESP_ERR_TIMEOUT;
+                break;
+            }
+            --pendingTransfers;
+        }
+        uint16_t logicalRows = static_cast<uint16_t>(std::min<uint16_t>(
+            TRANSFER_LOGICAL_ROWS, sourceEnd - sourceY));
+        uint16_t physicalY = sourceY * 2U;
+        uint16_t physicalRows = logicalRows * 2U;
+        scaleStripe2xRegion(logicalPixels, sourceY, logicalRows,
+                            xBegin, xEnd, transferBuffers[nextBuffer]);
+        result = esp_lcd_panel_draw_bitmap(
+            panel, physicalXBegin, physicalY, physicalXEnd,
+            physicalY + physicalRows, transferBuffers[nextBuffer]);
+        if (result == ESP_OK) {
+            ++pendingTransfers;
+            nextBuffer = (nextBuffer + 1U) % TRANSFER_BUFFER_COUNT;
+        }
+    }
+    while (pendingTransfers > 0) {
+        if (xSemaphoreTake(transferDone, pdMS_TO_TICKS(1000)) != pdTRUE) {
+            if (result == ESP_OK) result = ESP_ERR_TIMEOUT;
+            break;
+        }
+        --pendingTransfers;
+    }
+    return result;
+}
+
 uint32_t millisNow() {
     return static_cast<uint32_t>(esp_timer_get_time() / 1000ULL);
+}
+
+void drawLockMask(Canvas565& canvas, int centerX, int centerY, int radius,
+                  int xBegin, int xEnd, int yBegin, int yEnd) {
+    canvas.clearClipRect();
+    xBegin = std::clamp(xBegin, 0, canvas.width());
+    xEnd = std::clamp(xEnd, xBegin, canvas.width());
+    yBegin = std::clamp(yBegin, 0, canvas.height());
+    yEnd = std::clamp(yEnd, yBegin, canvas.height());
+    radius = std::max(0, radius);
+    constexpr int FEATHER_PIXELS = 4;
+    int innerRadius = std::max(0, radius - FEATHER_PIXELS);
+    int64_t outerRadiusSquared = static_cast<int64_t>(radius) * radius;
+    int64_t innerRadiusSquared = static_cast<int64_t>(innerRadius) * innerRadius;
+    for (int y = yBegin; y < yEnd; ++y) {
+        int dy = y - centerY;
+        if (std::abs(dy) > radius) {
+            canvas.fillRect(xBegin, y, xEnd - xBegin, 1, 0);
+            continue;
+        }
+        int span = static_cast<int>(std::sqrt(static_cast<float>(
+            radius * radius - dy * dy)));
+        int circleLeft = std::max(0, centerX - span);
+        int circleRight = std::min(canvas.width() - 1, centerX + span);
+        int left = std::max(xBegin, circleLeft);
+        int right = std::min(xEnd - 1, circleRight);
+        if (circleLeft > xBegin) {
+            canvas.fillRect(xBegin, y, circleLeft - xBegin, 1, 0);
+        }
+        if (circleRight + 1 < xEnd) {
+            canvas.fillRect(circleRight + 1, y,
+                            xEnd - circleRight - 1, 1, 0);
+        }
+        if (left > right) continue;
+        for (int x = left; x <= right; ++x) {
+            int dx = x - centerX;
+            int64_t distanceSquared = static_cast<int64_t>(dx) * dx +
+                                      static_cast<int64_t>(dy) * dy;
+            if (distanceSquared <= innerRadiusSquared) {
+                continue;
+            }
+            if (distanceSquared >= outerRadiusSquared) {
+                canvas.drawPixel(x, y, 0);
+                continue;
+            }
+            uint16_t color = canvas.readPixel(x, y);
+            int64_t distanceInside = outerRadiusSquared - distanceSquared;
+            int factor = static_cast<int>(
+                distanceInside * 255 /
+                std::max<int64_t>(1, outerRadiusSquared - innerRadiusSquared));
+            int red = ((color >> 11) & 0x1F) * factor / 255;
+            int green = ((color >> 5) & 0x3F) * factor / 255;
+            int blue = (color & 0x1F) * factor / 255;
+            canvas.drawPixel(x, y, static_cast<uint16_t>(
+                (red << 11) | (green << 5) | blue));
+        }
+    }
+}
+
+int lockRadius(LockPhase phase, uint32_t nowMs,
+               uint32_t animationStartedMs, bool preserveFocus) {
+    int finalRadius = preserveFocus ? LOCK_FINAL_RADIUS : 0;
+    if (phase == LockPhase::LOCKED) return finalRadius;
+    uint32_t elapsed = nowMs - animationStartedMs;
+    float progress = std::min(
+        1.0f, static_cast<float>(elapsed) / LOCK_ANIMATION_MS);
+    // Smoothstep gives both lock and wake animations a symmetric
+    // ease-in/ease-out profile without adding a floating-point dependency.
+    float eased = progress * progress * (3.0f - 2.0f * progress);
+    if (phase == LockPhase::OPENING) {
+        return static_cast<int>(std::lround(
+            finalRadius +
+            (LOCK_START_RADIUS - finalRadius) * eased));
+    }
+    return static_cast<int>(std::lround(
+        LOCK_START_RADIUS -
+        (LOCK_START_RADIUS - finalRadius) * eased));
 }
 
 }  // namespace
 
 extern "C" void app_main(void) {
     ESP_LOGI(TAG, "Starting AMOLED V1 display milestone");
+    ESP_LOGI(TAG, "Reset reason: %d", static_cast<int>(esp_reset_reason()));
     ESP_LOGI(TAG, "PSRAM size: %u bytes",
              static_cast<unsigned>(esp_psram_get_size()));
 
@@ -215,10 +386,13 @@ extern "C" void app_main(void) {
         ESP_LOGE(TAG, "Unable to allocate display transfer semaphore");
         return;
     }
+    ESP_LOGI(TAG, "Display: transfer semaphore ready");
     esp_lcd_panel_io_callbacks_t callbacks{};
     callbacks.on_color_trans_done = onColorTransferDone;
     result = esp_lcd_panel_io_register_event_callbacks(
         io, &callbacks, transferDone);
+    ESP_LOGI(TAG, "Display: transfer callback returned %s",
+             esp_err_to_name(result));
     if (result != ESP_OK) {
         ESP_LOGE(TAG, "Display callback setup failed: %s",
                  esp_err_to_name(result));
@@ -229,12 +403,28 @@ extern "C" void app_main(void) {
         logicalPixels, LOGICAL_WIDTH, LOGICAL_HEIGHT, true};
     Canvas565 canvas;
     canvas.attach(frameBuffer);
+    ESP_LOGI(TAG, "Platform: binding services");
     AmoledV1::bindAmoledPlatform();
+    if (!AmoledV1::AmoledPlatform::instance().begin()) {
+        ESP_LOGW(TAG, "AMOLED platform peripheral init incomplete");
+    }
+    ESP_LOGI(TAG, "Platform: ready");
     PixelRenderer::bind(frameBuffer);
+    ESP_LOGI(TAG, "App: creating home application (object=%u bytes, stack-free=%u)",
+             static_cast<unsigned>(sizeof(AmoledV1::AmoledApp)),
+             static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
     AmoledV1::AmoledApp app;
+    ESP_LOGI(TAG, "App: loading state and resources (stack-free=%u)",
+             static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
     app.begin(millisNow());
+    ESP_LOGI(TAG, "App: state and resources ready (stack-free=%u)",
+             static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
+    ESP_LOGI(TAG, "App: rendering initial frame (stack-free=%u)",
+             static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
     app.render(canvas);
     app.markRendered();
+    ESP_LOGI(TAG, "App: initial frame rendered (stack-free=%u)",
+             static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
 
     ESP_LOGI(TAG, "Display pipeline: %u physical rows, %u DMA buffers",
              static_cast<unsigned>(TRANSFER_PHYSICAL_ROWS),
@@ -254,7 +444,16 @@ extern "C" void app_main(void) {
         ESP_LOGE(TAG, "FT3168 touch initialization failed");
     }
 
-    bool locked = false;
+    LockPhase lockPhase = LockPhase::OPEN;
+    uint32_t lockAnimationStartedMs = 0;
+    uint32_t lockWakeGraceUntilMs = 0;
+    int16_t lastLockFocusX = 92;
+    int16_t lastLockFocusY = 112;
+    int lastLockRadius = LOCK_FINAL_RADIUS;
+    bool lockVisualValid = false;
+    bool lockHasFocus = false;
+    uint8_t lockedBrightness =
+        AmoledV1::AmoledPlatform::instance().brightness();
     ESP_LOGI(TAG, "Interactive home screen presented at 368x448");
     while (true) {
         uint32_t nowMs = millisNow();
@@ -263,14 +462,17 @@ extern "C" void app_main(void) {
             if (event.type == AmoledV1::TouchEventType::DOWN) {
                 ESP_LOGI(TAG, "Touch down logical=(%d,%d)", event.x, event.y);
             }
-            if (locked) {
+            if (lockPhase != LockPhase::OPEN) {
                 if (event.type == AmoledV1::TouchEventType::DOWN) {
                     ESP_ERROR_CHECK_WITHOUT_ABORT(
-                        esp_lcd_panel_disp_on_off(panel, true));
-                    ESP_ERROR_CHECK_WITHOUT_ABORT(
-                        bsp_display_brightness_set(72));
-                    locked = false;
-                    app.onWake();
+                        bsp_display_brightness_set(lockedBrightness));
+                    if (lockPhase != LockPhase::OPENING) {
+                        lockPhase = LockPhase::OPENING;
+                        lockAnimationStartedMs = nowMs;
+                        AudioManager::ins().setMusicSuspended(false);
+                    }
+                    app.onWake(nowMs);
+                    lockWakeGraceUntilMs = nowMs + LOCK_WAKE_GRACE_MS;
                     ESP_LOGI(TAG, "Display unlocked by touch");
                 }
             } else {
@@ -279,28 +481,120 @@ extern "C" void app_main(void) {
         }
 
         app.update(nowMs);
-        if (!locked && app.consumeLockRequest()) {
-            ESP_ERROR_CHECK_WITHOUT_ABORT(bsp_display_brightness_set(0));
-            ESP_ERROR_CHECK_WITHOUT_ABORT(
-                esp_lcd_panel_disp_on_off(panel, false));
-            locked = true;
+        bool lockRequest = app.consumeLockRequest();
+        if (lockPhase == LockPhase::OPEN && lockRequest &&
+            static_cast<int32_t>(nowMs - lockWakeGraceUntilMs) >= 0) {
+            lockedBrightness =
+                AmoledV1::AmoledPlatform::instance().brightness();
+            lockAnimationStartedMs = nowMs;
+            lockPhase = LockPhase::CLOSING;
+            lockVisualValid = false;
+            int16_t focusX = 92;
+            int16_t focusY = 112;
+            lockHasFocus = app.lockFocusPoint(focusX, focusY);
+            AudioManager::ins().setMusicSuspended(true);
+            app.forceFullRender();
+            ESP_LOGI(TAG, "Display lock animation started");
+        }
+        if (lockPhase == LockPhase::CLOSING &&
+            nowMs - lockAnimationStartedMs >= LOCK_ANIMATION_MS) {
+            lockPhase = LockPhase::LOCKED;
             ESP_LOGI(TAG, "Display locked; touch to wake");
         }
+        if (lockPhase == LockPhase::OPENING &&
+            nowMs - lockAnimationStartedMs >= LOCK_ANIMATION_MS) {
+            lockPhase = LockPhase::OPEN;
+            lockVisualValid = false;
+            lockHasFocus = false;
+            app.forceFullRender();
+            ESP_LOGI(TAG, "Display fully unlocked");
+        }
 
-        if (!locked && app.needsRender()) {
+        bool lockedWithoutFocus =
+            lockPhase == LockPhase::LOCKED && !lockHasFocus;
+        bool renderNeeded = (!lockedWithoutFocus && app.needsRender()) ||
+                            lockPhase == LockPhase::CLOSING ||
+                            lockPhase == LockPhase::OPENING;
+        if (lockPhase != LockPhase::OPEN) {
+            int16_t focusX = 92;
+            int16_t focusY = 112;
+            if (lockHasFocus) app.lockFocusPoint(focusX, focusY);
+            int radius = lockRadius(lockPhase, nowMs,
+                                    lockAnimationStartedMs, lockHasFocus);
+            renderNeeded = renderNeeded || !lockVisualValid ||
+                           focusX != lastLockFocusX ||
+                           focusY != lastLockFocusY || radius != lastLockRadius;
+        }
+        if (renderNeeded) {
+            bool lockFrame = lockPhase != LockPhase::OPEN;
             uint16_t renderBegin = app.renderRowBegin();
             uint16_t renderEnd = app.renderRowEnd();
+            uint16_t renderXBegin = 0;
+            uint16_t renderXEnd = LOGICAL_WIDTH;
+            if (lockFrame) {
+                int16_t focusX = 92;
+                int16_t focusY = 112;
+                if (lockHasFocus) app.lockFocusPoint(focusX, focusY);
+                int radius = lockRadius(lockPhase, nowMs,
+                                        lockAnimationStartedMs, lockHasFocus);
+                int oldLeft = lockVisualValid
+                    ? lastLockFocusX - lastLockRadius : focusX - radius;
+                int oldRight = lockVisualValid
+                    ? lastLockFocusX + lastLockRadius : focusX + radius;
+                int oldTop = lockVisualValid
+                    ? lastLockFocusY - lastLockRadius : focusY - radius;
+                int oldBottom = lockVisualValid
+                    ? lastLockFocusY + lastLockRadius : focusY + radius;
+                renderXBegin = static_cast<uint16_t>(std::clamp(
+                    std::min(oldLeft, static_cast<int>(focusX - radius)),
+                    0, static_cast<int>(LOGICAL_WIDTH)));
+                renderXEnd = static_cast<uint16_t>(std::clamp(
+                    std::max(oldRight, static_cast<int>(focusX + radius)) + 1,
+                    0, static_cast<int>(LOGICAL_WIDTH)));
+                renderBegin = static_cast<uint16_t>(std::clamp(
+                    std::min(oldTop, static_cast<int>(focusY - radius)),
+                    0, static_cast<int>(LOGICAL_HEIGHT)));
+                renderEnd = static_cast<uint16_t>(std::clamp(
+                    std::max(oldBottom, static_cast<int>(focusY + radius)) + 1,
+                    0, static_cast<int>(LOGICAL_HEIGHT)));
+                app.forceRenderRows(renderBegin, renderEnd);
+            }
             app.render(canvas);
-            result = submitFrame(
-                panel, logicalPixels, transferBuffers, transferDone,
-                renderBegin, renderEnd);
+            if (lockFrame) {
+                int16_t focusX = 92;
+                int16_t focusY = 112;
+                if (lockHasFocus) app.lockFocusPoint(focusX, focusY);
+                int radius = lockRadius(lockPhase, nowMs,
+                                        lockAnimationStartedMs, lockHasFocus);
+                drawLockMask(canvas, focusX, focusY, radius,
+                             renderXBegin, renderXEnd,
+                             renderBegin, renderEnd);
+                result = submitFrameRegion(
+                    panel, logicalPixels, transferBuffers, transferDone,
+                    renderXBegin, renderXEnd, renderBegin, renderEnd);
+            } else {
+                result = submitFrame(
+                    panel, logicalPixels, transferBuffers, transferDone,
+                    renderBegin, renderEnd);
+            }
             if (result != ESP_OK) {
                 ESP_LOGE(TAG, "Frame update failed: %s",
                          esp_err_to_name(result));
             } else {
                 app.markRendered();
+                if (lockFrame) {
+                    lastLockFocusX = 92;
+                    lastLockFocusY = 112;
+                    if (lockHasFocus) {
+                        app.lockFocusPoint(lastLockFocusX, lastLockFocusY);
+                    }
+                    lastLockRadius = lockRadius(lockPhase, nowMs,
+                                                lockAnimationStartedMs,
+                                                lockHasFocus);
+                    lockVisualValid = true;
+                }
             }
         }
-        vTaskDelay(pdMS_TO_TICKS(locked ? 60 : 20));
+        vTaskDelay(pdMS_TO_TICKS(lockPhase == LockPhase::OPEN ? 20 : 16));
     }
 }

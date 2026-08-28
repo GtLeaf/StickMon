@@ -1,35 +1,185 @@
 # StickMon 项目记忆
 
-ESP32-S3（M5StickS3）电子宠物游戏。PlatformIO + Arduino 框架，屏幕 240×135（`Hal::DISPLAY_W/H`），资源经 LittleFS 加载，PSRAM 可用时优先用 PSRAM。
+更新日期：2026-08-27。
 
-## 构建与上传
+StickMon 是运行在 ESP32-S3 掌机上的电子宠物游戏。同一仓库维护
+M5StickS3、AMOLED 1.8 V1、AMOLED 1.8 V2 三个固件目标；玩法、存档、
+资源格式和 ESP-NOW 协议必须共用，硬件差异只留在平台层与表现层。
 
-- 编译：`~/.platformio/penv/bin/pio run`（系统无全局 pio，penv 里有；环境名 `m5stick-s3`）。
-- 上传固件 + 文件系统：`bash tools/upload_firmware_and_fs.sh`；只改固件用 `pio run -t upload`，只改资源用 `pio run -t uploadfs`。
-- 串口 `/dev/cu.usbmodem2101`。若 esptool 报 "the port doesn't exist"，先 `lsof /dev/cu.usbmodem2101` —— 常见原因是 Chrome 的 Web Serial 页面（web-flasher 等）占用端口，真实错误是 Resource busy，关掉对应标签页即可。
+## 开发原则
 
-## 资源管线（origin_asset → data/packs/dev → LittleFS）
+- 修改前先读工作区状态。仓库经常有用户未提交的功能，不得回退、覆盖或
+  顺手格式化无关文件。
+- 优先修改 `src/game/` 的共享规则或已有共享服务，不在场景或 AMOLED 工程
+  中复制一份业务逻辑。
+- StickS3 与 AMOLED 使用不同 UI 和输入状态机，但相同操作必须得到相同的
+  GameState 结果。
+- 当前 AMOLED 迁移仍在开发中：已通过编译不等于通过实机验收，尤其不能把
+  V2、低功耗、音频和 ESP-NOW 联调描述为稳定能力。
+- 项目默认使用 ASCII 代码与注释；已有中文 UI、文档和资源名称可保持中文。
 
-- 游戏资源（道具/球/战斗背景/探索 tile/浴室等）：`python3 tools/generate_game_assets.py`，输出 `data/packs/dev/game/{ui,battle,maps,hatch}.smonfx`。
-- 精灵图：`python3 tools/generate_pokemon_sprites.py`，输出 `data/packs/dev/sprites/*.smonsp` 并重写 `src/assets/PokemonSprites.h/.cpp`。
-- 两条管线都依赖 Essentials 源图。默认从未跟踪的 `external/pokemon-essentials` 读取，也可通过 `ESSENTIALS_DIR` 环境变量指定外部目录。
-- 测试：在 `tools/` 目录下跑 `python3 -m unittest test_generate_game_assets` / `test_generate_pokemon_sprites`（系统 python3 已装 PIL）。
+## 硬件与构建
 
-### 必须遵守的不变量
+### M5StickS3
 
-- `src/assets/GameAssets.h` 的 `Kind` 枚举顺序与 `generate_game_assets.py` 的 `KIND_ORDER` 一一对应（生成器会校验）。**在枚举中间插入新 Kind 会使后续所有 Kind 的编号后移，必须全量重新生成四个包**（ui 包含末尾的 EXPLORE_PICKUP_BALL，也受影响）。
-- 包上限（256 帧、200000 data words、2048 palette words、384000 payload）生成器和 `GameAssets.cpp` 双侧校验，改一侧必须同步另一侧。
-- pack 路由在 `GameAssets.cpp::packSlotFor`：`<= SHOWER_BACKGROUND` 和 EXPLORE_PICKUP_BALL 走 UI 包；EXPLORE_TILE_* 段走 MAP；EGG 走 HATCH；其余默认 BATTLE。新增 Kind 落在哪段就进哪个包。
-- 背景类资源统一 240×135、LANCZOS 缩放、量化 16 色，运行时用 `GameAssets::drawBattleBackground(kind)` 全屏绘制。
+- PlatformIO + Arduino-ESP32，240x135，M5Unified/M5GFX。
+- 8 MB Flash，LittleFS 资源，Preferences/NVS 存档；运行时优先使用 PSRAM。
+- `m5stick-s3` 是 release：关闭 Debug 菜单、trace 和渲染统计。
+- `m5stick-s3-debug` 开启 Debug 菜单与 trace 日志。
+- 构建：`pio run -e m5stick-s3` 或 `pio run -e m5stick-s3-debug`。
+- 固件和 LittleFS 一起刷入：`bash tools/upload_firmware_and_fs.sh`。
+- 只刷固件或资源分别使用 `pio run -e m5stick-s3 -t upload`、
+  `pio run -e m5stick-s3 -t uploadfs`。
+- 若上传口被占用，先检查串口监视器、Chrome Web Serial 等进程；不要用提高
+  上传速度掩盖连接问题，当前上传速度有意固定为 115200。
 
-## 关键设计决定（勿回退）
+### AMOLED 1.8 V1
 
-- **探索菜单背景**：`EXPLORE_MENU_BACKGROUND`（BATTLE 包，枚举在 `BATTLE_BG_SNOW` 之后），源图 `origin_asset/mainScreen/menu/explore/bg_explore.png`，由 `ExploreScene::renderAreaMenu()` 绘制，加载失败回退黑色。
-- **精灵 FRONT 不放大名单**：`generate_pokemon_sprites.py::ENEMY_FRONT_NO_UPSCALE_SPECIES`（妙蛙种子/杰尼龟/绿毛虫/铁甲蛹/波波/小拳石/皮丘/玛力露/乌波/土狼犬/拉鲁拉丝/蘑蘑菇/雪童子）。这些精灵基准高不足 48px 时需 1.33 倍以上 NEAREST 放大，与源图 2px 像素网格错位导致肉眼发糊，故保持 0.45 倍网格对齐基准尺寸。战斗/洗澡/探索预览共用同一 FRONT 帧，自动同步生效；副作用是这些精灵显示偏小。
-- **洗澡爱心**：`ShowerScene` 冲水结束按已完成步骤（肥皂/刷出全身泡沫/冲水）计 1~3 个 `completionHearts`；3 个播放精灵叫声（CryPlayer）、2 个跳一下、1 个无动作。无肥皂冲水也能完成（1 爱心），且会照常发 RINSE 阶段 EXP/心情奖励——这是有意放宽的。
+- 工程：`firmware/amoled_1_8_v1`，ESP-IDF 5.5.x。
+- SH8601 + FT3168，物理 368x448；使用 184x224 RGB565 逻辑画布并 2x 输出。
+- 使用 SPIFFS 资源、PSRAM、NVS A/B 存档和共享 ESP-NOW 协议。
+- 构建：在工程目录加载 ESP-IDF 后执行 `idf.py -B build build`。
+- 刷入：`./flash.sh --port PORT`；应用、bootloader、分区表和 resources.bin
+  必须来自同一 build 目录。
 
-## 代码结构速查
+### AMOLED 1.8 V2
 
-- 场景在 `src/scenes/`（Main/Menu/Explore/Shower/Shop/HatchScene），统一 `Scene` 基类 + `GameEngine` 调度。
-- 探索区域配置在 `ExploreScene.cpp` 的 `ROUTE_MAPS` 表（名称字符串在 `UiStrings.h::Ui::Explore`，顺序有 static_assert 保证一致）。
-- 设计文档：`doc/StickMon-开发计划.md`（含资源管线详细说明，§6.1.2）。
+- 工程：`firmware/amoled_1_8_v2`，ESP-IDF 5.5.x。
+- CO5300 + CST820，物理/逻辑分辨率与 V1 相同。
+- 应用与渲染复用 V1 的 `AmoledApp`、`HomeScreen`；V2 只保留 `main.cpp`、
+  `AmoledPlatform.*`、`TouchInput.*` 等板级差异。
+- 构建：`idf.py set-target esp32s3 && idf.py build`。
+- 当前状态是可编译、待 V2 实机验收，不能凭 V1 结果推断 V2 硬件正确。
+
+## 架构边界
+
+- `src/game/`：纯玩法、数值和状态变更，不能依赖 Arduino、M5 或 ESP-IDF。
+- `src/core/`：应用协调、存档、场景流程和跨平台会话。
+- `src/platform/api/PlatformServices.h`：硬件服务边界。
+- `src/platform/m5stick_s3/`：StickS3 平台实现。
+- `src/scenes/`：StickS3 横屏场景和交互，不应拥有可共享的业务规则。
+- `firmware/amoled_1_8_v1/main/`：AMOLED 竖屏 UI、触摸状态机和 V1 平台层。
+- `firmware/amoled_1_8_v2/main/`：V2 板级适配，应用代码通过 V1 工程复用。
+- `src/presentation/`：Canvas565、像素绘制和可跨目标使用的表现工具。
+
+优先复用的共享服务包括：
+
+- `ExperienceService`：经验、等级和 HP 成长；进化、学招式、存档和 UI 由调用方负责。
+- `FriendshipService`：战后结交、保底、通讯录和邀请判定。
+- `MonsterFactory`：新精灵的统一运行时状态。
+- `MoveManagementService`：技能读取、遗忘和心之鳞片回忆。
+- `BathService`：洗澡阶段奖励、肥皂消耗和按评分恢复 HP。
+- `ItemInventory`、`ShopService`、`TeamRoster`、`HomeCare`、`CareTicker`。
+- `VisitSessionService`：拜访会话；`AppSceneFlow`：跨固件语义场景与菜单顺序。
+
+增加新流程时，先问“状态变更能否做成不依赖 UI 的共享服务”；可以的话先写
+共享服务与 host 测试，再接 StickS3/AMOLED 表现。
+
+## 存档兼容
+
+- 当前 `Game::SAVE_VERSION = 3`，以源码为准；
+  `doc/存档兼容与迁移规则.md` 可能落后，修改前必须同时读
+  `GameState.h`、`SaveCodec.*`、`SaveManager.*`。
+- 新写入使用 `SaveCodec` 显式小端字段编码，不允许直接把 C++ struct 布局当作
+  新格式持久化。
+- 快照带 schema、sequence 和 CRC；NVS 使用 `state_a`/`state_b` 双槽，读取
+  sequence 最大且校验通过的记录，同时保留 `state` 兼容镜像。
+- 当前支持 v1/v2/v3 读取和迁移。迁移必须先成功写入新格式，才能视为完成；
+  写入失败时保留旧 blob 以便下次重试。
+- 遇到高于当前固件版本的存档必须返回 `NEWER_VERSION` 并写保护，绝不能把
+  默认状态覆盖回去。
+- `GameState` 字段变化必须显式评估 schema 和迁移。不要依赖 padding 偷塞字段，
+  不要仅修改 `sizeof` static_assert 让构建通过。
+- M5StickS3 与 AMOLED 必须能读写同一种逻辑快照。平台只实现 blob 存储，
+  不得各自定义存档结构。
+
+## 绘制与性能契约
+
+### StickS3
+
+- 场景使用 `SceneUpdateResult` 与 `RenderDemand` 上报真实需求。
+- `parked()`：无重绘、无定时更新，等待输入、切场景或外部状态唤醒。
+- `frame()`：只重绘当前一帧，不自动安排下一次更新。
+- `animate(delay)`：当前帧重绘，并按 delay 持续调度。
+- `pollAfter(delay)`/`wakeIn()`：只安排逻辑检查，不代表需要重绘。
+- 重绘请求与下一次更新时间是两个独立维度。静态菜单、设置和弹窗不得用
+  持续动画掩盖漏掉的状态通知。
+- 主界面、探索移动等动态场景可持续刷新，但路径规划、资源解码和全池扫描
+  不能放进逐帧热路径。
+
+### AMOLED
+
+- 使用纵向脏区传屏；`AmoledApp::needsRender()` 与 dirty row 范围决定传输。
+- 静止页面、暂停探索和静止洗澡页面不得持续全屏刷新。
+- 页面切换/唤醒可全帧刷新，局部交互应只标记受影响行。
+- 184x224 是 UI 坐标空间，368x448 只用于板级 2x 传输，业务布局不得混用
+  物理坐标。
+
+## 关键玩法不变量
+
+- 队伍上限为 2，仓库上限为 20；`activeSlot` 是当前出战位，不等于永久队序。
+- 战斗中“替换”只改变本场出战精灵，不改变队伍顺序；队伍页的“首位”才会
+  调整正式队序。
+- 访客可临时进入队伍/房间，但 `Origin::VISITOR` 的邀请、喂食、首位和离队
+  行为必须走现有访客规则，不能按永久成员处理。
+- 游戏初始时间为 07:00，初始金币 1000。
+- 普通粮每份 3 口；碗容量为一份。具体饱腹、口味和经验使用 `HomeCare` 与
+  食物 profile，不要在场景中重复常量。
+- 居家 HP 每个游戏内分钟恢复最大 HP 的 1%；饥饿为 0 时每 tick 只恢复 1 HP。
+  濒死休息按游戏时间 60 分钟结算，并清除 major status。
+- 精灵技能共 3 槽：第 1 槽不可替换，两个特殊槽可遗忘/替换。学新招式、
+  升级、进化等队列事件必须由所有经验来源统一触发。
+- 洗澡完成按 1/2/3 星恢复 45%/70%/100% HP；阶段经验和心情奖励统一走
+  `BathService`。
+- 区域按击败前一区域头目顺序解锁；探索精灵池缓存直到时间轮换或头目刷新，
+  不应在每次进入菜单时重新解码。
+
+## 资源管线
+
+- 源资源：`origin_asset/`；开发包输出：`data/packs/dev/`。
+- StickS3 从 LittleFS 读取，AMOLED 从 SPIFFS 读取；资源格式和 pack 内容共用。
+- 精灵图：`python3 tools/generate_pokemon_sprites.py`，输出
+  `data/packs/dev/sprites/*.smonsp` 并更新 `PokemonSprites.h/.cpp`。
+- 游戏资源：`python3 tools/generate_game_assets.py`，输出
+  `data/packs/dev/game/{ui,battle,maps,hatch}.smonfx`。
+- 字体：`tools/generate_font16cn.py`，共享 `zh16.smonfont` 与
+  `ascii16-unscii.smonfont`。
+- 外部 Pokemon Essentials 通过 `ESSENTIALS_DIR` 指定，或放在 git 忽略的
+  `external/pokemon-essentials`；禁止提交个人绝对路径和受版权保护的外部仓库。
+- 地图使用运行时 tile atlas，不要恢复为整张地图位图缓存。
+
+### GameAssets 不变量
+
+- `GameAssets.h::Kind` 与 `generate_game_assets.py::KIND_ORDER` 必须逐项同序；
+  在枚举中间插入 Kind 后必须全量重生成四个包。
+- 生成器与 `GameAssets.cpp` 两侧共同校验上限：256 帧、200000 data words、
+  2048 palette words、384000 payload；修改时必须同步。
+- `GameAssets.cpp::packSlotFor` 决定路由：UI 段与探索拾取球进 UI，
+  `EXPLORE_TILE_*` 进 MAP，蛋进 HATCH，其余默认 BATTLE。
+- 背景类 StickS3 资源为 240x135、LANCZOS 缩放、16 色量化；AMOLED 竖屏
+  表现可裁切/重排，但不能修改共享 Kind 语义。
+- 精灵 FRONT 的不放大名单在
+  `generate_pokemon_sprites.py::ENEMY_FRONT_NO_UPSCALE_SPECIES`；修改会同时影响
+  战斗、洗澡和探索预览，必须用真实设备或导出图检查像素清晰度。
+
+## 验证
+
+- 窄改动优先运行对应 `tools/test_*.py`，这些测试会按需编译相邻 `*_host.cpp`。
+- 共享玩法/存档修改至少运行相关 host 测试；存档修改必须运行：
+  `python3 tools/test_save_codec.py` 和 `python3 tools/test_save_migration.py`。
+- 场景调度修改运行 `python3 tools/test_render_demand.py`；共享边界修改运行
+  `python3 tools/test_architecture_boundaries.py`。
+- 资源修改运行对应生成器测试，并重新生成受影响 pack；地图算法的 Python/C++
+  顺序、PRNG 调用和指纹必须保持一致。
+- 合并前至少构建受影响固件目标。触及共享源码时应构建 StickS3 和 AMOLED V1；
+  若 V2 板级/共享 AMOLED 代码受影响，也构建 V2。
+- 不能运行实机测试时必须明确记录。V2 显示/触摸、三目标 ESP-NOW、音频、
+  PMU 深睡、电池/IMU/RTC 仍属于重点实机风险。
+
+## 参考文档
+
+- `doc/StickMon-开发计划.md`：总体玩法与资源方案，部分早期参数可能落后。
+- `doc/ESP32-S3-Touch-AMOLED-1.8迁移与双版本兼容方案.md`：三目标架构与迁移状态。
+- `firmware/amoled_1_8_v1/README.md`、`firmware/amoled_1_8_v2/README.md`：
+  AMOLED 当前能力、构建和待验收项。
+- 任何文档与源码冲突时，以代码、测试和最新实机日志为准，并同步修正文档。

@@ -1,5 +1,11 @@
 #pragma once
 
+#include <atomic>
+
+#include "esp_codec_dev.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "platform/api/PlatformServices.h"
 
 namespace AmoledV1 {
@@ -51,6 +57,7 @@ public:
     bool readAcceleration(float& x, float& y, float& z) override;
 
     int batteryLevel() override;
+    Platform::PowerCapabilities capabilities() const override;
     Platform::WakeReason wakeReason() const override;
     uint32_t hardwareRandom() override;
     size_t externalMemorySize() const override;
@@ -80,12 +87,43 @@ public:
     bool receive(Platform::PeerPacket& packet) override;
 
 private:
+    struct AudioChunk {
+        uint8_t channel = 0;
+        uint32_t sampleRate = 0;
+        uint32_t generation = 0;
+        size_t sampleCount = 0;
+        uint8_t* samples = nullptr;
+    };
+
     AmoledPlatform();
+
+    static void audioTaskEntry(void* context);
+    void audioTask();
+    void clearAudioQueue();
+    void applySpeakerVolumeLocked(uint8_t channel);
 
     Platform::Services services_;
     bool resourcesMounted_ = false;
+    bool initialized_ = false;
+    bool peerTransportActive_ = false;
+    bool wifiInitialized_ = false;
+    bool speakerOpen_ = false;
+    bool microphoneOpen_ = false;
+    bool microphoneMode_ = false;
+    std::atomic<bool> audioPlaying_{false};
+    std::atomic<uint32_t> audioGeneration_{1};
+    std::atomic<uint8_t>
+        queuedPcm_[Platform::IAudioDevice::CHANNEL_COUNT]{};
+    QueueHandle_t audioQueue_ = nullptr;
+    SemaphoreHandle_t audioMutex_ = nullptr;
+    uint32_t speakerSampleRate_ = 0;
+    uint32_t microphoneSampleRate_ = 0;
+    esp_codec_dev_handle_t speakerCodec_ = nullptr;
+    esp_codec_dev_handle_t microphoneCodec_ = nullptr;
     uint8_t brightness_ = 72;
     uint8_t volume_ = 50;
+    uint8_t channelVolumes_[Platform::IAudioDevice::CHANNEL_COUNT] = {
+        100, 100, 100};
 };
 
 void bindAmoledPlatform();

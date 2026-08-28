@@ -7,6 +7,10 @@ import unittest
 from pathlib import Path
 
 from cave_tile_semantics import (
+    CAVE_CLIFF_RUNTIME_TILES,
+    CAVE_ENTRANCE_RUNTIME_TILES,
+    CAVE_FLOOR_RUNTIME_TILE,
+    CAVE_ROCK_STEP_RUNTIME_TILE,
     CAVE_RUNTIME_FLIP_Y_IDS,
     CAVE_RUNTIME_TILE_SOURCES,
     FROST_BROKEN_ICE_HOLE_RUNTIME_TILE,
@@ -36,11 +40,14 @@ from generate_runtime_tile_map import (
     FROST_ICE_TILES,
     FROST_INNER_CORNER_TILES,
     FROST_OUTSIDE_TILE,
-    FROST_ROCK_HILL_TILES,
     FROST_WALL_TILES,
     MIST_FOREST_PATH_AREA,
     SEA_SHORE_TILE,
     SEA_CORNER_UNDERLAY_TILE,
+    SEA_LEFT_SHORE_TILE,
+    SEA_RIGHT_SHORE_TILE,
+    SEA_TOP_SHORE_TILE,
+    SEA_WATER_TILE,
     SEA_TOP_LEFT_CORNER_TILE,
     SEA_TOP_RIGHT_CORNER_TILE,
     SHRUB_TILE,
@@ -58,6 +65,9 @@ from generate_runtime_tile_map import (
     WATER_ROCK_LARGE_TILES,
     WATER_ROCK_SMALL_TILE,
     WATERFALL_BOTTOM_TILE,
+    WATERFALL_BODY_LOWER_TILES,
+    WATERFALL_BODY_MIDDLE_TILES,
+    WATERFALL_BODY_TOP_TILES,
     WATERFALL_CREST_TILES,
     connected_components,
     derive_seed,
@@ -229,11 +239,6 @@ class RuntimeTileMapTests(unittest.TestCase):
         wall_ids = set(FROST_WALL_TILES.values()) | set(
             FROST_INNER_CORNER_TILES.values()
         )
-        rock_hill_ids = {
-            tile_id
-            for row in FROST_ROCK_HILL_TILES
-            for tile_id in row
-        }
         scenery_ids = {4508, 4509, 4510, 4542, 4543, 4544}
         observed_profiles = set()
         for edge in Edge:
@@ -245,10 +250,14 @@ class RuntimeTileMapTests(unittest.TestCase):
             self.assertFalse(runtime_map.has_waterfall)
             self.assertTrue(set(runtime_map.layers[0]).issubset(ground_ids))
             self.assertTrue(set(runtime_map.layers[1]).issubset({
-                0, *wall_ids, *rock_hill_ids, *scenery_ids,
+                0, *wall_ids, *scenery_ids,
                 *FROST_CAVE_EXIT_RUNTIME_TILES,
                 FROST_DOWNWARD_STAIRS_RUNTIME_TILE,
             }))
+            self.assertFalse(any(4532 <= tile_id <= 4540 for layer in runtime_map.layers
+                                 for tile_id in layer))
+            self.assertFalse(any(4700 <= tile_id <= 4740 for layer in runtime_map.layers
+                                 for tile_id in layer))
             self.assertEqual(runtime_map.layers[2].count(FROST_CRYSTAL_TOP_TILE), 2)
             self.assertTrue(set(runtime_map.layers[2]).issubset({
                 0, FROST_CRYSTAL_TOP_TILE,
@@ -271,15 +280,13 @@ class RuntimeTileMapTests(unittest.TestCase):
             for edge in Edge:
                 runtime_map = generate_map(seed, edge, FROST_CRYSTAL_CAVE_AREA)
                 has_ice = any(tile_id in ice_ids for tile_id in runtime_map.layers[0])
-                hill_count = sum(
-                    tile_id in rock_hill_ids for tile_id in runtime_map.layers[1]
-                )
-                self.assertIn(hill_count, (0, 9))
-                self.assertFalse(has_ice and hill_count)
-                observed_profiles.add((has_ice, hill_count == 9))
+                self.assertFalse(any(4532 <= tile_id <= 4540
+                                     for layer in runtime_map.layers
+                                     for tile_id in layer))
+                observed_profiles.add(has_ice)
         self.assertEqual(
             observed_profiles,
-            {(False, False), (False, True), (True, False)},
+            {False, True},
         )
 
     def test_frost_ice_routes_slide_straight_and_fork_on_dry_ground(self):
@@ -307,7 +314,7 @@ class RuntimeTileMapTests(unittest.TestCase):
 
     def test_cave_runtime_aliases_are_complete_and_portals_are_atomic(self):
         runtime_ids = [runtime_id for runtime_id, _source_id in CAVE_RUNTIME_TILE_SOURCES]
-        self.assertEqual(runtime_ids, list(range(4700, 4758)))
+        self.assertEqual(runtime_ids, list(range(4700, 4762)))
         self.assertEqual(CAVE_RUNTIME_FLIP_Y_IDS, frozenset((4738, 4739, 4740)))
 
         observed_edges = set()
@@ -462,7 +469,7 @@ class RuntimeTileMapTests(unittest.TestCase):
         self.assertGreater(transition_count, 0)
         self.assertGreater(cliff_count, 0)
 
-    def test_ancient_waterfall_maps_keep_layered_corners_and_top_edge_forest(self):
+    def test_ancient_waterfall_maps_use_cave_ground_cliffs_and_portals(self):
         fingerprints = set()
         for edge in Edge:
             runtime_map = generate_map(
@@ -471,9 +478,40 @@ class RuntimeTileMapTests(unittest.TestCase):
             fingerprints.add(fingerprint(runtime_map))
             self.assertTrue(runtime_map.has_waterfall)
             self.assertTrue(runtime_map.has_cliff)
-            self.assertTrue(runtime_map.has_forest)
+            self.assertFalse(runtime_map.has_forest)
             self.assertFalse(runtime_map.has_coast)
             self.assertFalse(runtime_map.has_creek)
+
+            waterfall_tiles = (
+                set(WATERFALL_CREST_TILES)
+                | set(WATERFALL_BODY_TOP_TILES)
+                | set(WATERFALL_BODY_MIDDLE_TILES)
+                | set(WATERFALL_BODY_LOWER_TILES)
+                | {WATERFALL_BOTTOM_TILE}
+            )
+            cave_ground_tiles = {
+                CAVE_FLOOR_RUNTIME_TILE,
+                CAVE_ROCK_STEP_RUNTIME_TILE,
+                *CAVE_CLIFF_RUNTIME_TILES,
+            }
+            self.assertTrue(set(runtime_map.layers[0]).issubset(
+                cave_ground_tiles
+                | waterfall_tiles
+                | {SEA_WATER_TILE, SEA_LEFT_SHORE_TILE, SEA_TOP_SHORE_TILE,
+                   SEA_RIGHT_SHORE_TILE, SEA_TOP_LEFT_CORNER_TILE,
+                   SEA_TOP_RIGHT_CORNER_TILE, SEA_CORNER_UNDERLAY_TILE}
+            ))
+            self.assertNotIn(BOULDER_TILE, runtime_map.layers[2])
+            self.assertTrue(any(tile_id in CAVE_CLIFF_RUNTIME_TILES
+                                for tile_id in runtime_map.layers[0]))
+            self.assertTrue(any(tile_id == CAVE_FLOOR_RUNTIME_TILE
+                                for tile_id in runtime_map.layers[0]))
+            entrance_tiles = {
+                tile_id
+                for tiles in CAVE_ENTRANCE_RUNTIME_TILES.values()
+                for tile_id in tiles
+            }
+            self.assertTrue(entrance_tiles & set(runtime_map.layers[1]))
 
             corner_indexes = {
                 index
@@ -489,24 +527,14 @@ class RuntimeTileMapTests(unittest.TestCase):
                 for index in corner_indexes
             ))
 
-            waterfall_tiles = set(WATERFALL_CREST_TILES) | {WATERFALL_BOTTOM_TILE}
             self.assertTrue(any(
                 tile_id in waterfall_tiles for tile_id in runtime_map.layers[0]
             ))
-            self.assertIn(BOULDER_TILE, runtime_map.layers[2])
-
-            top_forest_indexes = {
-                index
-                for index, tile_id in enumerate(runtime_map.layers[0])
-                if tile_id in {800, 801, 808, 809, 818, 819}
-            }
-            self.assertTrue(top_forest_indexes)
-            self.assertTrue(all(index // 16 <= 2 for index in top_forest_indexes))
 
             stair_cells = {
                 (index % 16, index // 16)
                 for index, tile_id in enumerate(runtime_map.layers[0])
-                if tile_id in {CLIFF_STAIR_LEFT_TILE, CLIFF_STAIR_RIGHT_TILE}
+                if tile_id == CAVE_ROCK_STEP_RUNTIME_TILE
             }
             self.assertEqual(len(stair_cells), 10)
             for path in runtime_map.paths:

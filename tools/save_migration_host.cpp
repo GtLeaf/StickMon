@@ -1,4 +1,5 @@
 #include "core/SaveManager.h"
+#include "core/SaveCodec.h"
 #include "platform/api/PlatformServices.h"
 #include "platform/desktop/DesktopPlatform.h"
 
@@ -152,6 +153,7 @@ ViewV1 legacyViewV1() {
 }
 
 void verifyV1Migration(DesktopPlatform& desktop) {
+    assert(Platform::blobs().clearNamespace("stickmon"));
     LegacyRecord<ViewV1> legacy{};
     legacy.magic = SAVE_RECORD_MAGIC;
     legacy.version = 1;
@@ -172,7 +174,9 @@ void verifyV1Migration(DesktopPlatform& desktop) {
     assert(loaded.teamCount == 2 && loaded.team[1].speciesId == 4);
     assert(view.valid && view.monsterX == 84.0f && view.monsterY == 73.0f);
     assert(!view.secondary.valid);
-    assert(Platform::blobs().blobSize("stickmon", "state") > sizeof(legacy));
+    size_t migratedLength = Platform::blobs().blobSize("stickmon", "state");
+    assert(migratedLength >= SaveCodec::HEADER_BYTES &&
+           migratedLength <= SaveCodec::MAX_ENCODED_BYTES);
 
     Game::GameState reloaded;
     MainSceneViewState reloadedView;
@@ -186,6 +190,7 @@ void verifyV1Migration(DesktopPlatform& desktop) {
 }
 
 void verifyTransitionalMigration() {
+    assert(Platform::blobs().clearNamespace("stickmon"));
     LegacyRecord<ViewV2> legacy{};
     legacy.magic = SAVE_RECORD_MAGIC;
     legacy.version = 1;
@@ -226,6 +231,7 @@ void verifyTransitionalMigration() {
 }
 
 void verifyV2Migration(DesktopPlatform& desktop) {
+    assert(Platform::blobs().clearNamespace("stickmon"));
     LegacyRecord<ViewV2> legacy{};
     legacy.magic = SAVE_RECORD_MAGIC;
     legacy.version = 2;
@@ -254,6 +260,7 @@ void verifyV2Migration(DesktopPlatform& desktop) {
 }
 
 void verifyInvalidLegacyViewKeepsGameState() {
+    assert(Platform::blobs().clearNamespace("stickmon"));
     LegacyRecord<ViewV1> legacy{};
     legacy.magic = SAVE_RECORD_MAGIC;
     legacy.version = 1;
@@ -272,6 +279,7 @@ void verifyInvalidLegacyViewKeepsGameState() {
 }
 
 void verifyNewerVersionIsPreserved() {
+    assert(Platform::blobs().clearNamespace("stickmon"));
     struct FutureHeader {
         uint32_t magic = SAVE_RECORD_MAGIC;
         uint16_t version = 99;
@@ -293,6 +301,45 @@ void verifyNewerVersionIsPreserved() {
         "stickmon", "state", &preserved, sizeof(preserved)));
     assert(preserved.version == 99 && preserved.sentinel == future.sentinel);
 }
+
+void verifyCodecAbRecovery() {
+    assert(Platform::blobs().clearNamespace("stickmon"));
+    SaveManager manager;
+    Game::GameState state;
+    MainSceneViewState view;
+    state.coins = 111;
+    assert(manager.saveSnapshot(state, view));
+    state.coins = 222;
+    assert(manager.saveSnapshot(state, view));
+
+    size_t slotBLength = Platform::blobs().blobSize("stickmon", "state_b");
+    assert(slotBLength > SaveCodec::HEADER_BYTES);
+    uint8_t* corrupted = new uint8_t[slotBLength];
+    assert(Platform::blobs().readBlob(
+        "stickmon", "state_b", corrupted, slotBLength));
+    corrupted[slotBLength - 1] ^= 0x80;
+    assert(Platform::blobs().writeBlob(
+        "stickmon", "state_b", corrupted, slotBLength));
+    delete[] corrupted;
+
+    Game::GameState loaded;
+    MainSceneViewState loadedView;
+    assert(manager.load(loaded, loadedView));
+    assert(loaded.coins == 222);
+
+    size_t mirrorLength = Platform::blobs().blobSize("stickmon", "state");
+    assert(mirrorLength == slotBLength);
+    uint8_t* corruptedMirror = new uint8_t[mirrorLength];
+    assert(Platform::blobs().readBlob(
+        "stickmon", "state", corruptedMirror, mirrorLength));
+    corruptedMirror[mirrorLength - 1] ^= 0x40;
+    assert(Platform::blobs().writeBlob(
+        "stickmon", "state", corruptedMirror, mirrorLength));
+    delete[] corruptedMirror;
+
+    assert(manager.load(loaded, loadedView));
+    assert(loaded.coins == 111);
+}
 }  // namespace
 
 int main() {
@@ -304,5 +351,6 @@ int main() {
     verifyV2Migration(desktop);
     verifyInvalidLegacyViewKeepsGameState();
     verifyNewerVersionIsPreserved();
+    verifyCodecAbRecovery();
     return 0;
 }

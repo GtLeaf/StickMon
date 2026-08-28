@@ -9,6 +9,10 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 from cave_tile_semantics import (
+    CAVE_CLIFF_RUNTIME_TILES,
+    CAVE_ENTRANCE_RUNTIME_TILES,
+    CAVE_FLOOR_RUNTIME_TILE,
+    CAVE_ROCK_STEP_RUNTIME_TILE,
     FROST_CAVE_EXIT_RUNTIME_TILES,
     FROST_DOWNWARD_STAIRS_RUNTIME_TILE,
 )
@@ -25,7 +29,7 @@ from generate_map_rule_preview import (
 from map_generation_rules import CUSTOM_TILE_SOURCES, CUSTOM_TILE_SOURCE_FLIP_Y
 
 
-ALGORITHM_VERSION = 8
+ALGORITHM_VERSION = 9
 MASK32 = 0xFFFFFFFF
 MAX_PATH_POINTS = 48
 PATH_COUNT = 2
@@ -160,7 +164,7 @@ FROST_HORIZONTAL_TEMPLATES = (
             ((0, 9), (7, 9), (7, 6), (15, 6)),
         ),
         "ice_rects": (),
-        "rock_hill": (2, 6),
+        "rock_hill": None,
         "crystals": ((6, 5, 4508), (13, 5, 4509)),
         "boulders": ((8, 10, 4542), (11, 7, 4510)),
     },
@@ -572,13 +576,12 @@ def stamp_waterfall_wall(
                 continue
             cliff.add(point)
             if x in (stair_left, stair_left + 1):
-                runtime_map.layers[0][y * MAP_W + x] = (
-                    CLIFF_STAIR_LEFT_TILE if x == stair_left else CLIFF_STAIR_RIGHT_TILE
-                )
+                runtime_map.layers[0][y * MAP_W + x] = CAVE_ROCK_STEP_RUNTIME_TILE
                 runtime_map.layers[1][y * MAP_W + x] = 0
                 stairs.add(point)
             else:
-                runtime_map.layers[0][y * MAP_W + x] = CLIFF_TOP_TILE
+                cliff_edge = 0 if x == 0 else 2 if x == MAP_W - 1 else 1
+                runtime_map.layers[0][y * MAP_W + x] = CAVE_CLIFF_RUNTIME_TILES[cliff_edge]
                 runtime_map.layers[1][y * MAP_W + x] = 0
     return cliff, stairs
 
@@ -606,6 +609,26 @@ def stamp_large_water_rock(runtime_map, left, top):
 def stamp_boulder(runtime_map, x, y, scenery):
     runtime_map.layers[2][y * MAP_W + x] = BOULDER_TILE
     scenery.add((x, y))
+
+
+def stamp_cave_entrance(runtime_map, endpoint):
+    x, y = endpoint.point
+    if endpoint.edge == Edge.LEFT:
+        runtime_map.layers[1][y * MAP_W + x] = CAVE_ENTRANCE_RUNTIME_TILES["left"][0]
+    elif endpoint.edge == Edge.RIGHT:
+        runtime_map.layers[1][y * MAP_W + x] = CAVE_ENTRANCE_RUNTIME_TILES["right"][0]
+    elif endpoint.edge == Edge.TOP:
+        runtime_map.layers[1][y * MAP_W + x] = CAVE_ENTRANCE_RUNTIME_TILES["back"][0]
+    elif endpoint.edge == Edge.BOTTOM:
+        if y > 0:
+            runtime_map.layers[1][(y - 1) * MAP_W + x] = CAVE_ENTRANCE_RUNTIME_TILES["front"][0]
+        runtime_map.layers[1][y * MAP_W + x] = CAVE_ENTRANCE_RUNTIME_TILES["front"][1]
+
+
+def stamp_ancient_cave_entrances(runtime_map):
+    stamp_cave_entrance(runtime_map, runtime_map.entry)
+    for path in runtime_map.paths:
+        stamp_cave_entrance(runtime_map, path.exit)
 
 
 def stamp_ancient_waterfall_valley(runtime_map):
@@ -636,31 +659,18 @@ def stamp_ancient_waterfall_valley(runtime_map):
         waterfall(4, 4, 3, 3)
         wall(3, 8, (4, 4), 11)
         stamp_small_water_rock(runtime_map, 6, 9)
-        top_forest(0, 4)
-        top_forest(13, 2)
-        stamp_boulder(runtime_map, 9, 1, scenery)
-        stamp_boulder(runtime_map, 14, 11, scenery)
     elif edge == Edge.LEFT:
         sea(10, 0, 4, 4)
         sea(9, 9, 6, MAP_H, 10, 4)
         waterfall(10, 4, 4, 3)
         wall(4, 9, (10, 4), 4)
         stamp_small_water_rock(runtime_map, 11, 10)
-        top_forest(6, 4)
-        top_forest(14, 2)
-        stamp_boulder(runtime_map, 7, 3, scenery)
-        stamp_boulder(runtime_map, 8, 10, scenery)
     elif edge == Edge.TOP:
         sea(10, 0, 4, 3)
         sea(9, 8, 6, MAP_H, 10, 4)
         waterfall(10, 4, 3, 3)
         wall(3, 8, (10, 4), 5)
         stamp_small_water_rock(runtime_map, 11, 9)
-        top_forest(0, 4)
-        top_forest(7, 2)
-        top_forest(14, 2)
-        stamp_boulder(runtime_map, 2, 8, scenery)
-        stamp_boulder(runtime_map, 15, 9, scenery)
     else:
         sea(2, 0, 3, 3)
         sea(7, 0, 3, 3)
@@ -672,12 +682,8 @@ def stamp_ancient_waterfall_valley(runtime_map):
         wall(3, 8, (2, 3), 12, second_gap=(7, 3))
         stamp_large_water_rock(runtime_map, 5, 9)
         stamp_small_water_rock(runtime_map, 3, 10)
-        top_forest(0, 2)
-        top_forest(10, 2)
-        top_forest(14, 2)
-        stamp_boulder(runtime_map, 6, 1, scenery)
-        stamp_boulder(runtime_map, 11, 9, scenery)
 
+    stamp_ancient_cave_entrances(runtime_map)
     return water, forest, cliff, stairs, scenery
 
 
@@ -1725,7 +1731,11 @@ def generate_map(seed, entry_edge, area_index=0):
     scenery = set()
 
     for index in range(MAP_W * MAP_H):
-        tiles = SNOW_GROUND_TILES if has_snow else GRASS_TILES
+        tiles = (
+            SNOW_GROUND_TILES
+            if has_snow
+            else (CAVE_FLOOR_RUNTIME_TILE,) if has_waterfall else GRASS_TILES
+        )
         runtime_map.layers[0][index] = tiles[terrain.bounded(len(tiles))]
     if has_coast:
         stamp_coast(runtime_map, water)
@@ -1734,7 +1744,7 @@ def generate_map(seed, entry_edge, area_index=0):
         water, forest, cliff, stairs, scenery = stamp_ancient_waterfall_valley(
             runtime_map
         )
-        runtime_map.has_forest = True
+        runtime_map.has_forest = False
         runtime_map.has_cliff = True
 
     if creek is not None:
@@ -1752,7 +1762,12 @@ def generate_map(seed, entry_edge, area_index=0):
         )
 
     for x, y in road:
-        if (x, y) not in water and (x, y) not in cliff and (x, y) not in forest:
+        if (
+            not has_waterfall
+            and (x, y) not in water
+            and (x, y) not in cliff
+            and (x, y) not in forest
+        ):
             runtime_map.layers[0][y * MAP_W + x] = (
                 SNOW_PATH_TILE if has_snow else road_tile(runtime_map, road, x, y)
             )
@@ -1778,7 +1793,7 @@ def generate_map(seed, entry_edge, area_index=0):
 
     if has_snow:
         stamp_snow_decorations(runtime_map, terrain, road, scenery)
-    else:
+    elif not has_waterfall:
         stamp_ground_decorations(
             runtime_map, terrain, road, water, forest | cliff | scenery, profile
         )

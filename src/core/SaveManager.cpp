@@ -1,5 +1,6 @@
 #include "core/SaveManager.h"
 #include "core/MathUtil.h"
+#include "core/SaveCodec.h"
 #include <cmath>
 #include <cstring>
 #include <new>
@@ -13,6 +14,8 @@
 namespace {
 constexpr const char* NVS_NS = "stickmon";
 constexpr const char* NVS_KEY = "state";
+constexpr const char* NVS_KEY_A = "state_a";
+constexpr const char* NVS_KEY_B = "state_b";
 constexpr const char* HATCH_KEY = "hatch";
 constexpr const char* ENCOUNTER_KEY = "encounters";
 constexpr uint32_t SAVE_RECORD_MAGIC = 0x3156534D; // MSV1
@@ -462,6 +465,59 @@ bool migrateLegacySaveRecord(const uint8_t* raw, size_t len,
     return false;
 }
 
+struct CodecLoadResult {
+    bool found = false;
+    bool newerVersion = false;
+    SaveCodec::Snapshot snapshot;
+    uint32_t sequence = 0;
+};
+
+bool sequenceIsNewer(uint32_t candidate, uint32_t current) {
+    return static_cast<int32_t>(candidate - current) > 0;
+}
+
+CodecLoadResult loadLatestCodecSnapshot() {
+    CodecLoadResult result;
+    constexpr const char* KEYS[] = {NVS_KEY_A, NVS_KEY_B, NVS_KEY};
+    for (const char* key : KEYS) {
+        size_t length = Platform::blobs().blobSize(NVS_NS, key);
+        if (length < SaveCodec::HEADER_BYTES ||
+            length > SaveCodec::MAX_ENCODED_BYTES) {
+            continue;
+        }
+        auto* raw = new (std::nothrow) uint8_t[length];
+        if (!raw) continue;
+        bool readOk = Platform::blobs().readBlob(NVS_NS, key, raw, length);
+        if (!readOk) {
+            delete[] raw;
+            continue;
+        }
+        uint32_t magic = 0;
+        std::memcpy(&magic, raw, sizeof(magic));
+        if (magic != SaveCodec::MAGIC) {
+            delete[] raw;
+            continue;
+        }
+        uint16_t schema = static_cast<uint16_t>(raw[4]) |
+                          static_cast<uint16_t>(raw[5]) << 8;
+        if (schema > SaveCodec::SCHEMA_VERSION) {
+            result.newerVersion = true;
+            delete[] raw;
+            continue;
+        }
+        SaveCodec::Snapshot snapshot;
+        uint32_t sequence = 0;
+        if (SaveCodec::decode(raw, length, snapshot, &sequence) &&
+            (!result.found || sequenceIsNewer(sequence, result.sequence))) {
+            result.found = true;
+            result.sequence = sequence;
+            result.snapshot = snapshot;
+        }
+        delete[] raw;
+    }
+    return result;
+}
+
 void resetGameState(Game::GameState& state) {
     state = Game::GameState{};
 }
@@ -804,6 +860,25 @@ bool SaveManager::load(Game::GameState& state,
     if (normalized) *normalized = false;
     if (status) *status = LoadStatus::NOT_FOUND;
     viewState = MainSceneViewState{};
+
+    CodecLoadResult codec = loadLatestCodecSnapshot();
+    if (codec.found) {
+        state = codec.snapshot.state;
+        viewState = codec.snapshot.view;
+        bool changed = sanitizeState(state);
+        state.checksum = checksum(state);
+        if (changed && normalized) *normalized = true;
+        if (status) *status = LoadStatus::LOADED;
+        return true;
+    }
+    if (codec.newerVersion) {
+        Platform::logLine(
+            "[SaveManager] codec snapshot is newer than this firmware; write protection required");
+        reset(state);
+        if (status) *status = LoadStatus::NEWER_VERSION;
+        return false;
+    }
+
     size_t len = Platform::blobs().blobSize(NVS_NS, NVS_KEY);
     if (len < sizeof(SaveRecordHeader)) {
         if (len != 0) {
@@ -930,29 +1005,42 @@ bool SaveManager::load(Game::GameState& state,
 
 bool SaveManager::saveSnapshot(const Game::GameState& state,
                                const MainSceneViewState& viewState) {
-    auto* record = new (std::nothrow) SaveRecord{};
-    if (!record) {
+    MainSceneViewRecord viewRecord{};
+    if (!makeMainSceneViewRecord(viewState, viewRecord)) {
+        Platform::logLine("[SaveManager] refused invalid main scene view state");
+        return false;
+    }
+
+    auto* encoded = new (std::nothrow) uint8_t[SaveCodec::MAX_ENCODED_BYTES];
+    if (!encoded) {
         Platform::logLine("[SaveManager] snapshot allocation failed");
         return false;
     }
-    if (!makeMainSceneViewRecord(viewState, record->view)) {
-        Platform::logLine("[SaveManager] refused invalid main scene view state");
-        delete record;
+    CodecLoadResult previous = loadLatestCodecSnapshot();
+    uint32_t sequence = previous.found ? previous.sequence + 1U : 1U;
+    Game::GameState copy = state;
+    copy.magic = Game::SAVE_MAGIC;
+    copy.version = Game::SAVE_VERSION;
+    copy.checksum = checksum(copy);
+    size_t encodedLength = 0;
+    if (!SaveCodec::encode(copy, viewState, sequence, encoded,
+                           SaveCodec::MAX_ENCODED_BYTES, encodedLength)) {
+        delete[] encoded;
+        Platform::logLine("[SaveManager] snapshot encode failed");
         return false;
     }
-    record->state = state;
-    record->state.magic = Game::SAVE_MAGIC;
-    record->state.version = Game::SAVE_VERSION;
-    record->state.checksum = checksum(record->state);
 
-    bool result = Platform::blobs().writeBlob(
-        NVS_NS, NVS_KEY, record, sizeof(*record));
-    delete record;
+    const char* slotKey = (sequence & 1U) != 0 ? NVS_KEY_A : NVS_KEY_B;
+    bool slotResult = Platform::blobs().writeBlob(
+        NVS_NS, slotKey, encoded, encodedLength);
+    bool mirrorResult = Platform::blobs().writeBlob(
+        NVS_NS, NVS_KEY, encoded, encodedLength);
+    delete[] encoded;
 
-    if (!result) {
+    if (!slotResult || !mirrorResult) {
         Platform::logLine("[SaveManager] snapshot write failed");
     }
-    return result;
+    return slotResult && mirrorResult;
 }
 
 bool SaveManager::loadEncounterHistory(Game::EncounterHistory& history,

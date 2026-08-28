@@ -41,6 +41,7 @@ public:
 
     void setMusic(MusicTrack track);
     void stopMusic();
+    void setMusicSuspended(bool suspended);
     void setPowerSave(bool active);
     bool playSfx(SfxCue cue);
     void update();
@@ -94,5 +95,6 @@ private:
     uint8_t musicChannelVolume_ = 100;
     uint8_t musicFadeTargetVolume_ = 100;
     bool powerSaveActive_ = false;
+    bool musicSuspended_ = false;
     bool musicPaused_ = false;
 };

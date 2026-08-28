@@ -1,6 +1,7 @@
 #include <cassert>
 
 #include "game/ItemInventory.h"
+#include "game/Species.h"
 
 int main() {
     using Game::ItemId;
@@ -75,14 +76,30 @@ int main() {
     assert(!state.team[1].fainted && state.team[1].hpCur == 15);
 
     state.bag.candy = 1;
-    assert(!Game::ItemInventory::usableFromHomeBag(ItemId::CANDY));
+    assert(Game::ItemInventory::usableFromHomeBag(ItemId::CANDY));
+    state.team[0].speciesId = 1;
+    state.team[0].level = 5;
+    state.team[0].exp = minimumExpForLevel(
+        findSpecies(state.team[0].speciesId)->growthRate,
+        state.team[0].level);
     assert(Game::ItemInventory::useOnTeam(state, ItemId::CANDY, 0) ==
-           UseResult::NOT_USABLE);
-    assert(state.bag.candy == 1);
+           UseResult::USED);
+    assert(state.team[0].level == 6 && state.bag.candy == 0);
+
+    state.bag.thunderStone = 1;
+    state.team[0].speciesId = 25;
+    state.team[0].level = 20;
+    state.team[0].hpMax = 40;
+    state.team[0].hpCur = 20;
+    assert(Game::ItemInventory::usableFromHomeBag(ItemId::THUNDER_STONE));
+    assert(Game::ItemInventory::useOnTeam(
+               state, ItemId::THUNDER_STONE, 0) == UseResult::USED);
+    assert(state.team[0].speciesId == 26 && state.bag.thunderStone == 0);
 
     state.bag.potion = 1;
     state.bag.antidote = 1;
     state.bag.paralyzeHeal = 1;
+    state.bag.candy = 1;
     state.bag.revive = 1;
     assert(Game::ItemInventory::homeBagItemAt(state, 0) == ItemId::POTION);
     assert(Game::ItemInventory::homeBagItemAt(state, 1) == ItemId::ANTIDOTE);

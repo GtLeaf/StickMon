@@ -46,8 +46,13 @@ constexpr uint16_t FROST_EDGE_TRACE[9] = {
     4749, 4750, 4751, 4752, 4753, 4754, 4755, 4756, 4757,
 };
 
+constexpr uint16_t CAVE_FLOOR = 4758;
+constexpr uint16_t CAVE_CLIFF_LEFT = 4759;
+constexpr uint16_t CAVE_CLIFF_MIDDLE = 4760;
+constexpr uint16_t CAVE_CLIFF_RIGHT = 4761;
+
 constexpr bool isRuntimeTile(uint16_t tileId) {
-    return tileId >= ENTRANCE_LEFT && tileId <= FROST_EDGE_TRACE[8];
+    return tileId >= ENTRANCE_LEFT && tileId <= CAVE_CLIFF_RIGHT;
 }
 
 constexpr bool isStatefulFrostTile(uint16_t tileId) {
@@ -55,7 +60,7 @@ constexpr bool isStatefulFrostTile(uint16_t tileId) {
            tileId == FROST_CAVE_HOLE;
 }
 
-static_assert(FROST_EDGE_TRACE[8] - ENTRANCE_LEFT + 1 == 58,
+static_assert(CAVE_CLIFF_RIGHT - ENTRANCE_LEFT + 1 == 62,
               "Cave runtime tile aliases must remain contiguous");
 
 }  // namespace ExploreCaveTiles

@@ -589,6 +589,10 @@ bool drawExploreTile(uint16_t tileId, int x, int y, uint8_t animationFrame) {
     case 4755: kind = Kind::EXPLORE_TILE_4755; break;
     case 4756: kind = Kind::EXPLORE_TILE_4756; break;
     case 4757: kind = Kind::EXPLORE_TILE_4757; break;
+    case 4758: kind = Kind::EXPLORE_TILE_4758; break;
+    case 4759: kind = Kind::EXPLORE_TILE_4759; break;
+    case 4760: kind = Kind::EXPLORE_TILE_4760; break;
+    case 4761: kind = Kind::EXPLORE_TILE_4761; break;
     default: return false;
     }
     return draw(kind, x, y);

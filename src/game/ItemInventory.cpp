@@ -2,6 +2,9 @@
 
 #include <algorithm>
 
+#include "game/ExperienceService.h"
+#include "game/Species.h"
+
 namespace Game {
 namespace ItemInventory {
 namespace {
@@ -84,6 +87,9 @@ constexpr ItemId HOME_BAG_ITEMS[] = {
     ItemId::REVIVE,
     ItemId::MAX_REPEL,
     ItemId::HONEY,
+    ItemId::NUGGET,
+    ItemId::BIG_PEARL,
+    ItemId::STAR_PIECE,
     ItemId::HEART_SCALE,
 };
 
@@ -135,6 +141,10 @@ bool usableFromHomeBag(ItemId item) {
     case ItemId::MAX_POTION:
     case ItemId::FULL_RESTORE:
     case ItemId::FULL_HEAL:
+    case ItemId::CANDY:
+    case ItemId::FIRE_STONE:
+    case ItemId::WATER_STONE:
+    case ItemId::THUNDER_STONE:
     case ItemId::REVIVE:
         return true;
     default:
@@ -235,6 +245,48 @@ UseResult useOnTeam(GameState& state, ItemId item, uint8_t teamSlot) {
         monster.fainted = false;
         monster.hpCur = std::max<uint16_t>(1, monster.hpMax / 2);
         return UseResult::USED;
+
+    case ItemId::CANDY: {
+        if (monster.fainted || monster.hpCur == 0) return UseResult::FAINTED;
+        if (monster.level >= LEVEL_MAX) return UseResult::NOT_USABLE;
+        const Species* species = findSpecies(monster.speciesId);
+        if (!species) return UseResult::INVALID_TARGET;
+        uint32_t nextExp = minimumExpForLevel(
+            species->growthRate, static_cast<uint8_t>(monster.level + 1));
+        if (monster.exp >= nextExp) return UseResult::NOT_USABLE;
+        remove(state, item);
+        ExperienceService::add(monster, *species, nextExp - monster.exp);
+        return UseResult::USED;
+    }
+
+    case ItemId::FIRE_STONE:
+    case ItemId::WATER_STONE:
+    case ItemId::THUNDER_STONE: {
+        const Species* species = findSpecies(monster.speciesId);
+        const Species* target = species ? stoneEvolutionTarget(*species, item) : nullptr;
+        if (!target) return UseResult::NOT_USABLE;
+        remove(state, item);
+        uint16_t oldHpMax = monster.hpMax;
+        bool canReceiveHpGain = !monster.fainted && monster.hpCur > 0;
+        monster.speciesId = target->id;
+        if (!canRetainSpecialMove(*target, monster.move2Id, monster.level)) {
+            monster.move2Id = 0;
+            monster.moveProficiency[1] = 0;
+        }
+        if (!canRetainSpecialMove(*target, monster.move3Id, monster.level)) {
+            monster.move3Id = 0;
+            monster.moveProficiency[2] = 0;
+        }
+        monster.hpMax = maxHpFor(*target, monster);
+        if (canReceiveHpGain && monster.hpMax > oldHpMax) {
+            monster.hpCur = std::min<uint16_t>(
+                monster.hpMax, static_cast<uint16_t>(monster.hpCur +
+                                                      monster.hpMax - oldHpMax));
+        } else {
+            monster.hpCur = std::min(monster.hpCur, monster.hpMax);
+        }
+        return UseResult::USED;
+    }
     default:
         return UseResult::NOT_USABLE;
     }

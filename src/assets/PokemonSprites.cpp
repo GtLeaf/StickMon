@@ -517,6 +517,65 @@ bool walkingAnimation(uint16_t speciesId, WalkDirection direction, WalkingAnimat
     return false;
 }
 
+bool petAnimationProfile(uint16_t speciesId, PetAnimationProfile& profile) {
+    WalkingAnimation walking{};
+    if (!walkingAnimation(speciesId, WalkDirection::DOWN, walking) ||
+        walking.frameCount == 0) {
+        return false;
+    }
+
+    WalkingAnimation right{};
+    if (!walkingAnimation(speciesId, WalkDirection::RIGHT, right)) {
+        right = walking;
+    }
+
+    const bool mirrorRight = right.flipX;
+    const uint8_t directionCount = mirrorRight ? 5 : 8;
+    uint8_t idleFrames = 1;
+    switch (speciesId) {
+    case 129:
+    case 133:
+    case 136:
+    case 151:
+    case 212:
+    case 280:
+    case 281:
+    case 282:
+    case 322:
+        idleFrames = speciesId == 136 || speciesId == 151 ||
+                         speciesId == 282
+            ? 3
+            : 2;
+        break;
+    default:
+        break;
+    }
+
+    PetMotionMode motionMode = PetMotionMode::LOOP;
+    if (speciesId == 11 || speciesId == 93 || speciesId == 282) {
+        motionMode = PetMotionMode::START_HOLD_END;
+    } else if (speciesId == 147 || speciesId == 148) {
+        motionMode = PetMotionMode::PINGPONG;
+    }
+
+    const uint16_t walkingBase = static_cast<uint16_t>(walking.base);
+    const uint16_t idleBlockSize =
+        static_cast<uint16_t>(directionCount) * idleFrames;
+    const uint16_t sleepingBlockSize =
+        static_cast<uint16_t>(directionCount) * walking.frameCount;
+    profile.speciesId = speciesId;
+    profile.idleFrames = idleFrames;
+    profile.idleFrameMs = speciesId == 151 ? 360 : 520;
+    profile.walkingFrames = walking.frameCount;
+    profile.sleepingFrames = 2;
+    profile.motionMode = motionMode;
+    profile.idleBase = static_cast<SpriteKind>(walkingBase - idleBlockSize);
+    profile.walkingBase = walking.base;
+    profile.sleepingBase = static_cast<SpriteKind>(walkingBase + sleepingBlockSize);
+    profile.mirrorRightDirections = mirrorRight;
+    return true;
+}
+
 const SpriteFrame* findSpeciesSprite(uint16_t speciesId, SpriteKind kind) {
     CachedSpecies* cached = ensureSpeciesLoaded(speciesId);
     const SpriteFrame* frame = findFrame(cached, kind);

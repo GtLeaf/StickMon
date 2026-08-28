@@ -15,8 +15,12 @@
 #include "game/BondSystem.h"
 #include "game/ContactRoster.h"
 #include "game/ExploreItemProgression.h"
+#include "game/ExperienceService.h"
+#include "game/FriendshipService.h"
 #include "game/GameRandom.h"
 #include "game/ItemInventory.h"
+#include "game/MonsterFactory.h"
+#include "game/MoveManagementService.h"
 #include "game/SpeciesBehavior.h"
 #include "game/TeamRoster.h"
 #include "hardware/EspNowLink.h"
@@ -507,18 +511,8 @@ uint8_t GameEngine::companionCount() const {
 Game::MonsterRuntime GameEngine::createMonster(uint16_t speciesId, uint8_t level) const {
     const Species* species = findSpecies(speciesId);
     if (!species) species = &starterSpecies();
-    if (level < 1) level = 1;
-    if (level > Game::LEVEL_MAX) level = Game::LEVEL_MAX;
-
-    Game::MonsterRuntime mon;
-    mon.speciesId = species->id;
-    mon.level = level;
-    mon.exp = minimumExpForLevel(species->growthRate, level);
-    resetMovesForLevel(mon, *species);
-    mon.ivPacked = randomIvPacked();
-    mon.nature = GameRandom::random(0, Game::NATURE_COUNT);
-    mon.hpMax = maxHpFor(*species, mon);
-    mon.hpCur = mon.hpMax;
+    Game::MonsterRuntime mon = Game::MonsterFactory::create(
+        species->id, level);
     mon.metAt = gameSecondsForMinutes(gameMinutesTotal());
     mon.lastSeenAt = mon.metAt;
     mon.lastExploredAt = mon.metAt;
@@ -543,15 +537,8 @@ bool GameEngine::moveTeamMemberToFront(uint8_t slot) {
 }
 
 bool GameEngine::forgetTeamMemberMove(uint8_t teamSlot, uint8_t moveSlot) {
-    if (teamSlot >= state.teamCount || teamSlot >= Game::TEAM_CAP) return false;
-    if (moveSlot == 0 || moveSlot >= Game::MOVE_SLOT_COUNT) return false;
-
-    Game::MonsterRuntime& mon = state.team[teamSlot];
-    Game::MoveId* moveId = moveSlot == 1 ? &mon.move2Id : &mon.move3Id;
-    if (*moveId == 0) return false;
-
-    *moveId = 0;
-    mon.moveProficiency[moveSlot] = 0;
+    if (!Game::MoveManagementService::forgetSpecialMove(
+            state, teamSlot, moveSlot)) return false;
     markDirty(SaveUrgency::IMMEDIATE);
     return true;
 }
@@ -738,30 +725,27 @@ bool GameEngine::consumeTeamMemberArrivalRequest() {
 }
 
 ContactInviteResult GameEngine::inviteContactToTeam(uint8_t slot) {
-    if (slot >= state.storageCount || slot >= Game::STORAGE_CAP) {
-        return ContactInviteResult::INVALID;
-    }
-    if (contactIsInTeam(slot)) {
-        return ContactInviteResult::ALREADY_IN_TEAM;
-    }
-    if (state.teamCount >= Game::TEAM_CAP) {
-        return ContactInviteResult::TEAM_FULL;
-    }
-    if (contactInviteLocked(slot)) return ContactInviteResult::LOCKED;
-
-    uint8_t chance = contactInviteChance(slot);
-    if (GameRandom::random(100) >= chance) {
-        state.storage[slot].petCountToday = Game::Bond::inviteLockMarker(
-            Game::Bond::invitationDay(gameMinutesTotal()));
+    Game::FriendshipService::InviteResult result =
+        Game::FriendshipService::inviteContact(
+            state, slot, gameMinutesTotal());
+    switch (result) {
+    case Game::FriendshipService::InviteResult::JOINED:
+        syncSpriteCache();
+        markDirty(SaveUrgency::IMMEDIATE);
+        return ContactInviteResult::JOINED;
+    case Game::FriendshipService::InviteResult::REFUSED:
         markDirty(SaveUrgency::IMMEDIATE);
         return ContactInviteResult::REFUSED;
+    case Game::FriendshipService::InviteResult::LOCKED:
+        return ContactInviteResult::LOCKED;
+    case Game::FriendshipService::InviteResult::ALREADY_IN_TEAM:
+        return ContactInviteResult::ALREADY_IN_TEAM;
+    case Game::FriendshipService::InviteResult::TEAM_FULL:
+        return ContactInviteResult::TEAM_FULL;
+    case Game::FriendshipService::InviteResult::INVALID:
+        return ContactInviteResult::INVALID;
     }
-
-    state.storage[slot].petCountToday = 0;
-    state.team[state.teamCount++] = state.storage[slot];
-    syncSpriteCache();
-    markDirty(SaveUrgency::IMMEDIATE);
-    return ContactInviteResult::JOINED;
+    return ContactInviteResult::INVALID;
 }
 
 uint16_t GameEngine::contactVisitSpeciesId() const {
@@ -1294,16 +1278,28 @@ bool GameEngine::useRevive(uint8_t teamSlot) {
 
 bool GameEngine::useMaxRepel() {
     if (state.bag.maxRepel == 0) return false;
-    if (!exploreItemEffects.activateMaxRepel()) return false;
-    state.bag.maxRepel--;
+    if (exploreItemEffects.repelStepsRemaining() > 0) return false;
+    if (!Game::ItemInventory::remove(state, Game::ItemId::MAX_REPEL)) {
+        return false;
+    }
+    if (!exploreItemEffects.activateMaxRepel()) {
+        Game::ItemInventory::add(state, Game::ItemId::MAX_REPEL);
+        return false;
+    }
     markDirty(SaveUrgency::SOON);
     return true;
 }
 
 bool GameEngine::useHoney() {
     if (state.bag.honey == 0) return false;
-    if (!exploreItemEffects.activateHoney()) return false;
-    state.bag.honey--;
+    if (exploreItemEffects.honeyEncounterPending()) return false;
+    if (!Game::ItemInventory::remove(state, Game::ItemId::HONEY)) {
+        return false;
+    }
+    if (!exploreItemEffects.activateHoney()) {
+        Game::ItemInventory::add(state, Game::ItemId::HONEY);
+        return false;
+    }
     markDirty(SaveUrgency::SOON);
     return true;
 }
@@ -1381,37 +1377,14 @@ uint8_t GameEngine::collectRecallableMoves(uint8_t teamSlot,
                                            uint8_t capacity) const {
     if (teamSlot >= state.teamCount || teamSlot >= Game::TEAM_CAP) return 0;
     const Game::MonsterRuntime& mon = state.team[teamSlot];
-    return ::collectRecallableMoves(
+    return Game::MoveManagementService::collectRecallable(
         speciesFor(mon), mon, outMoves, capacity);
 }
 
 bool GameEngine::recallMove(uint8_t teamSlot, Game::MoveId moveId,
                             uint8_t replacementSlot) {
-    if (teamSlot >= state.teamCount || teamSlot >= Game::TEAM_CAP ||
-        replacementSlot == 0 || replacementSlot >= Game::MOVE_SLOT_COUNT ||
-        itemCount(Game::ItemId::HEART_SCALE) == 0) {
-        return false;
-    }
-
-    Game::MoveId recallable[MAX_RECALLABLE_MOVE_COUNT] = {};
-    uint8_t recallableCount = collectRecallableMoves(
-        teamSlot, recallable, MAX_RECALLABLE_MOVE_COUNT);
-    bool validMove = false;
-    for (uint8_t index = 0; index < recallableCount; ++index) {
-        if (recallable[index] == moveId) {
-            validMove = true;
-            break;
-        }
-    }
-    if (!validMove ||
-        !removeItem(Game::ItemId::HEART_SCALE, 1, SaveUrgency::DEFERRED)) {
-        return false;
-    }
-
-    Game::MonsterRuntime& mon = state.team[teamSlot];
-    Game::MoveId& target = replacementSlot == 1 ? mon.move2Id : mon.move3Id;
-    target = moveId;
-    mon.moveProficiency[replacementSlot] = 0;
+    if (!Game::MoveManagementService::recallMove(
+            state, teamSlot, moveId, replacementSlot)) return false;
     markDirty(SaveUrgency::IMMEDIATE);
     return true;
 }
@@ -1480,24 +1453,11 @@ bool GameEngine::recordCandyPurchase() {
 bool GameEngine::recordFriendContact(const Game::MonsterRuntime& monster,
                                      uint8_t metArea,
                                      uint8_t* contactSlot) {
-    const Species* species = findSpecies(monster.speciesId);
-    if (!species || state.storageCount >= Game::STORAGE_CAP) return false;
-
-    Game::MonsterRuntime mon = monster;
-    mon.hpMax = maxHpFor(*species, mon);
-    mon.hpCur = mon.hpMax;
-    resetMovesForLevel(mon, *species);
-    mon.origin = Game::Origin::BEFRIENDED;
-    mon.bond = Game::Bond::NEW_CONTACT_VALUE;
-    mon.metArea = metArea;
-    mon.metAt = gameSecondsForMinutes(gameMinutesTotal());
-    mon.lastSeenAt = mon.metAt;
-    mon.lastExploredAt = mon.metAt;
-    mon.lastWindowGazeAt = mon.metAt;
-
-    uint8_t slot = state.storageCount;
-    state.storage[state.storageCount++] = mon;
-    if (contactSlot) *contactSlot = slot;
+    if (!Game::FriendshipService::recordContact(
+            state, monster, metArea,
+            gameSecondsForMinutes(gameMinutesTotal()), contactSlot)) {
+        return false;
+    }
     markDirty(SaveUrgency::IMMEDIATE);
     return true;
 }
@@ -1606,30 +1566,21 @@ uint32_t GameEngine::addExperienceToTeamMember(uint8_t teamSlot, uint32_t amount
     if (amount == 0 || teamSlot >= state.teamCount || teamSlot >= Game::TEAM_CAP) return 0;
     Game::MonsterRuntime& mon = state.team[teamSlot];
     const Species& beforeSpecies = speciesFor(mon);
-    uint8_t oldLevel = mon.level;
-    uint16_t oldHpMax = mon.hpMax;
-    uint32_t oldExp = mon.exp;
-    uint32_t maxExp = minimumExpForLevel(beforeSpecies.growthRate, Game::LEVEL_MAX);
-    uint64_t totalExp = static_cast<uint64_t>(mon.exp) + amount;
-    mon.exp = totalExp > maxExp ? maxExp : static_cast<uint32_t>(totalExp);
-    mon.level = levelForExp(beforeSpecies.growthRate, mon.exp);
-    mon.hpMax = maxHpFor(beforeSpecies, mon);
-    if (mon.hpMax > oldHpMax) {
-        mon.hpCur = MathUtil::min<uint16_t>(mon.hpMax, mon.hpCur + (mon.hpMax - oldHpMax));
-    }
-    if (mon.level < oldLevel) mon.level = oldLevel;
-    bool leveledUp = mon.level > oldLevel;
-    if (leveledUp) {
+    Game::ExperienceService::Result experience =
+        Game::ExperienceService::add(mon, beforeSpecies, amount);
+    if (experience.leveledUp) {
         bool evolutionQueued = applyLevelUpEvolutions(
-            mon, teamSlot, true, oldLevel);
+            mon, teamSlot, true, experience.oldLevel);
         state.pendingLevelUp = true;
         state.pendingLevelUpLevel = mon.level;
         if (!evolutionQueued) {
-            queueMoveLearnIfReady(mon, speciesFor(mon), oldLevel, teamSlot);
+            queueMoveLearnIfReady(
+                mon, speciesFor(mon), experience.oldLevel, teamSlot);
         }
     }
-    markDirty(leveledUp ? SaveUrgency::IMMEDIATE : SaveUrgency::DEFERRED);
-    return mon.exp > oldExp ? mon.exp - oldExp : 0;
+    markDirty(experience.leveledUp ? SaveUrgency::IMMEDIATE
+                                  : SaveUrgency::DEFERRED);
+    return experience.awarded;
 }
 
 bool GameEngine::acknowledgePendingLevelUp() {
@@ -2870,14 +2821,6 @@ bool GameEngine::syncSpriteCache(uint8_t loadBudget, bool* cacheChanged) {
     }
     return PokemonSprites::syncTeamCache(
         teamSpecies, count, loadBudget, cacheChanged);
-}
-
-uint32_t GameEngine::randomIvPacked() const {
-    uint32_t packed = 0;
-    for (uint8_t i = 0; i < Game::STAT_COUNT; ++i) {
-        Game::setIv(packed, i, GameRandom::random(0, Game::IV_MAX + 1));
-    }
-    return packed;
 }
 
 bool GameEngine::queueNextPendingMove(Game::MonsterRuntime& mon, const Species& species,
