@@ -312,8 +312,6 @@ private:
     Game::ShopService::Category shopCategory =
         Game::ShopService::Category::DAILY;
     float shopDetailProgress = 0.0f;
-    bool shopDetailClosing = false;
-    uint32_t shopDetailAnimationStartedMs = 0;
     int shopDetailItemIndex = -1;
     bool itemConfirmOpen = false;
     Game::ItemId pendingItem = Game::ItemId::COUNT;

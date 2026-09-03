@@ -80,7 +80,6 @@ constexpr float FALLBACK_FOOD_APPROACH_X = 121.0f;
 constexpr float FALLBACK_FOOD_APPROACH_Y = 149.0f;
 constexpr uint32_t MOOD_BURST_DURATION_MS = 420;
 constexpr uint32_t MOOD_BURST_FRAME_MS = 50;
-constexpr uint32_t SHOP_DETAIL_ANIMATION_MS = 300;
 #if STICKMON_ENABLE_DEBUG_FEATURES
 constexpr uint32_t DEBUG_PAIR_CHASE_DURATION_MS = 8000;
 constexpr float DEBUG_PAIR_FOLLOW_DISTANCE = 22.0f;
@@ -864,9 +863,14 @@ void AmoledApp::handleTouch(const TouchEvent& event) {
                 clawLogVelocity = 0.0f;
             }
 #endif
+            bool aiClawEnabled = false;
+#if STICKMON_HAS_CLAW
+            aiClawEnabled = Stickmon::ClawRuntime::instance().enabled();
+#endif
             computerPressedItem = static_cast<uint8_t>(std::max(
                 -1, computerItemAt(event.x, event.y, computerPage,
-                                   computerScroll, gameState.storageCount)));
+                                   computerScroll, gameState.storageCount,
+                                   aiClawEnabled)));
             requestRenderRows(MENU_HEADER_HEIGHT, 224);
         } else if (sceneFlow.current() == AppSceneFlow::Scene::SETTINGS &&
                    event.y >= MENU_HEADER_HEIGHT) {
@@ -910,7 +914,7 @@ void AmoledApp::handleTouch(const TouchEvent& event) {
             itemVelocity = 0.0f;
             if (itemConfirmOpen) {
                 pressedShopDetailAction =
-                    shopDetailProgress >= 1.0f && !shopDetailClosing
+                    shopDetailProgress >= 1.0f
                         ? itemConfirmChoiceAt(event.x, event.y) : -1;
             } else {
                 ShopViewModel::Mode mode =
@@ -1593,7 +1597,9 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
                     Stickmon::ClawRuntime::instance().stopSetupPortal();
                 }
 #endif
-                computerPage = ComputerViewModel::Page::MENU;
+                computerPage = computerPage == ComputerViewModel::Page::CLAW_SETUP
+                    ? ComputerViewModel::Page::AI_HOSTING
+                    : ComputerViewModel::Page::MENU;
                 computerScroll = 0.0f;
                 computerVelocity = 0.0f;
                 computerPressedItem = 0xFF;
@@ -1619,8 +1625,12 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             }
         }
 #endif
+        bool aiClawEnabled = false;
+#if STICKMON_HAS_CLAW
+        aiClawEnabled = Stickmon::ClawRuntime::instance().enabled();
+#endif
         int item = computerItemAt(x, y, computerPage, computerScroll,
-                                  gameState.storageCount);
+                                  gameState.storageCount, aiClawEnabled);
         if (item < 0) return;
         if (computerPage == ComputerViewModel::Page::MENU) {
             if (item == 0) {
@@ -1638,11 +1648,40 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             }
 #if STICKMON_HAS_CLAW
             else if (item == 2) {
+                computerPage = ComputerViewModel::Page::AI_HOSTING;
+                computerPressedItem = 0xFF;
+                computerScroll = 0.0f;
+                computerVelocity = 0.0f;
+                toast = nullptr;
+                requestFullRender();
+            }
+#else
+            else if (item == 2) {
+                closeUtilityScene();
+            }
+#endif
+            else {
+                closeUtilityScene();
+            }
+        } else if (computerPage == ComputerViewModel::Page::AI_HOSTING) {
+#if STICKMON_HAS_CLAW
+            Stickmon::ClawRuntime& claw = Stickmon::ClawRuntime::instance();
+            if (item == 0) {
+                claw.setWifiEnabled(!claw.wifiEnabled());
+                computerPressedItem = 0xFF;
+                requestFullRender();
+            } else if (item == 1) {
+                claw.setEnabled(!claw.enabled());
+                computerPressedItem = 0xFF;
+                requestFullRender();
+            } else if (item == 2) {
+                if (!claw.wifiEnabled()) {
+                    setToast(Ui::Amoled::CLAW_WIFI_REQUIRED, nowMs);
+                    return;
+                }
                 char ssid[33] = {};
                 char password[65] = {};
                 char ip[16] = {};
-                Stickmon::ClawRuntime& claw =
-                    Stickmon::ClawRuntime::instance();
                 if (claw.startSetupPortal() &&
                     claw.setupPortalInfo(ssid, sizeof(ssid), password,
                                          sizeof(password), ip, sizeof(ip))) {
@@ -1659,15 +1698,14 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
                 } else {
                     setToast(Ui::Amoled::CLAW_PORTAL_FAILED, nowMs);
                 }
+            } else {
+                computerPage = ComputerViewModel::Page::MENU;
+                computerPressedItem = 0xFF;
+                requestFullRender();
             }
 #else
-            else if (item == 2) {
-                closeUtilityScene();
-            }
+            (void)item;
 #endif
-            else {
-                closeUtilityScene();
-            }
         } else if (computerPage == ComputerViewModel::Page::STATUS) {
             setToast(Ui::Amoled::READY, nowMs);
         } else {
@@ -1818,13 +1856,16 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
 
     if (sceneFlow.current() == AppSceneFlow::Scene::SHOP) {
         if (itemConfirmOpen) {
-            if (shopDetailProgress < 1.0f || shopDetailClosing) return;
+            if (shopDetailProgress < 1.0f) return;
             int choice = itemConfirmChoiceAt(x, y);
             if (choice == 0) {
                 performPendingItemAction(nowMs);
             } else if (choice == 1) {
-                shopDetailClosing = true;
-                shopDetailAnimationStartedMs = nowMs;
+                itemConfirmOpen = false;
+                pendingItem = Game::ItemId::COUNT;
+                pendingItemAction = PendingItemAction::NONE;
+                shopDetailProgress = 0.0f;
+                shopDetailItemIndex = -1;
                 pressedShopDetailAction = -1;
                 toast = nullptr;
                 requestFullRender();
@@ -1862,9 +1903,7 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             ? PendingItemAction::SELL : PendingItemAction::BUY;
         itemConfirmOpen = pendingItem != Game::ItemId::COUNT;
         shopDetailItemIndex = index;
-        shopDetailProgress = 0.0f;
-        shopDetailClosing = false;
-        shopDetailAnimationStartedMs = nowMs;
+        shopDetailProgress = 1.0f;
         toast = nullptr;
         requestFullRender();
         return;
@@ -2068,25 +2107,6 @@ void AmoledApp::update(uint32_t nowMs) {
         updatePet(nowMs);
     }
     updateExploreRoute(nowMs);
-
-    if (sceneFlow.current() == AppSceneFlow::Scene::SHOP &&
-        itemConfirmOpen &&
-        (shopDetailProgress < 1.0f || shopDetailClosing)) {
-        uint32_t elapsed = nowMs - shopDetailAnimationStartedMs;
-        float phase = std::min(1.0f,
-            static_cast<float>(elapsed) / SHOP_DETAIL_ANIMATION_MS);
-        shopDetailProgress = shopDetailClosing ? 1.0f - phase : phase;
-        requestRenderRows(MENU_HEADER_HEIGHT, 224);
-        if (shopDetailClosing && phase >= 1.0f) {
-            itemConfirmOpen = false;
-            pendingItem = Game::ItemId::COUNT;
-            pendingItemAction = PendingItemAction::NONE;
-            shopDetailClosing = false;
-            shopDetailProgress = 0.0f;
-            shopDetailItemIndex = -1;
-            clampItemScroll();
-        }
-    }
 
     bool exploreAreaAnimating = false;
     bool explorePreviewMoving = false;
@@ -4679,12 +4699,15 @@ void AmoledApp::render(Canvas565& canvas) const {
         model.pressedItem = computerPressedItem == 0xFF
             ? -1 : computerPressedItem;
 #if STICKMON_HAS_CLAW
+        Stickmon::ClawRuntime& clawRuntime =
+            Stickmon::ClawRuntime::instance();
+        model.clawEnabled = clawRuntime.enabled();
+        model.wifiEnabled = clawRuntime.wifiEnabled();
         char clawSsid[33] = {};
         char clawPassword[65] = {};
         char clawIp[16] = {};
         if (computerPage == ComputerViewModel::Page::CLAW_SETUP) {
-            Stickmon::ClawRuntime& claw = Stickmon::ClawRuntime::instance();
-            claw.setupPortalInfo(
+            clawRuntime.setupPortalInfo(
                 clawSsid, sizeof(clawSsid), clawPassword,
                 sizeof(clawPassword), clawIp, sizeof(clawIp));
             model.clawSsid = clawSsid;
@@ -4692,7 +4715,7 @@ void AmoledApp::render(Canvas565& canvas) const {
             model.clawIp = clawIp;
             model.clawLogView = clawLogView;
             Stickmon::ClawStatus status;
-            claw.statusSnapshot(status);
+            clawRuntime.statusSnapshot(status);
             model.clawStaConnected = status.staConnected;
             std::memcpy(model.clawStaIp, status.staIp,
                         sizeof(model.clawStaIp));
@@ -5461,8 +5484,6 @@ void AmoledApp::openItemScene(AppSceneFlow::Scene target) {
     pendingItem = Game::ItemId::COUNT;
     pendingItemAction = PendingItemAction::NONE;
     shopDetailProgress = 0.0f;
-    shopDetailClosing = false;
-    shopDetailAnimationStartedMs = 0;
     shopDetailItemIndex = -1;
     teamConfirmOpen = false;
     toast = nullptr;
@@ -5476,7 +5497,6 @@ void AmoledApp::closeItemScene() {
     pendingItemAction = PendingItemAction::NONE;
     pressedShopDetailAction = -1;
     shopDetailProgress = 0.0f;
-    shopDetailClosing = false;
     shopDetailItemIndex = -1;
     teamConfirmOpen = false;
     pressedTeamSlot = -1;

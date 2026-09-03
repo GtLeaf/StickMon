@@ -49,6 +49,10 @@ constexpr int MENU_GRID_LEFT = 4;
 constexpr int MENU_GRID_GAP = 8;
 constexpr int MENU_VIEWPORT_HEIGHT = 224 - MENU_CONTENT_TOP;
 constexpr int MAIN_MENU_VIEWPORT_HEIGHT = 224 - MAIN_MENU_CONTENT_TOP;
+// The computer page is a compact vertical list. Keep its geometry separate
+// from the two-column main menu so all four entries fit on one screen.
+constexpr int COMPUTER_MENU_ROW_HEIGHT = 43;
+constexpr int COMPUTER_MENU_CELL_HEIGHT = 39;
 constexpr int ITEM_ROW_HEIGHT = 48;
 constexpr int EXPLORE_MENU_PANEL_WIDTH = 60;
 constexpr int EXPLORE_MENU_PANEL_ROW_TOP = 9;
@@ -57,10 +61,14 @@ constexpr int SHOP_RAIL_DIVIDER_X = SHOP_LEFT_PANEL_WIDTH;
 constexpr int SHOP_GRID_LEFT = 61;
 constexpr int SHOP_GRID_COLUMN_WIDTH = 58;
 constexpr int SHOP_GRID_ROW_HEIGHT = 50;
-constexpr int SHOP_SECTION_HEADER_HEIGHT = 22;
+constexpr int SHOP_SECTION_HEADER_HEIGHT = 24;
 constexpr int SHOP_SECTION_GAP = 4;
 constexpr int SHOP_DETAIL_BUTTON_Y = 174;
 constexpr int SHOP_DETAIL_BUTTON_HEIGHT = 36;
+// Product cells show the 36x36 source art at native logical size. AMOLED's
+// 2x canvas mapping presents it at 72x72 physical pixels.
+constexpr float SHOP_GRID_ICON_SCALE = 1.0f;
+constexpr float SHOP_DETAIL_ICON_END_SCALE = 1.4f;
 constexpr uint32_t EXPLORE_PREVIEW_CYCLE_MS = 2800;
 constexpr uint32_t EXPLORE_PREVIEW_MOVE_MS = 500;
 constexpr uint32_t EXPLORE_PREVIEW_HOLD_MS =
@@ -88,19 +96,22 @@ int cachedBattleBackgroundHeight = 0;
 
 bool drawBattleBackgroundLayer(Canvas565& canvas, GameAssets::Kind kind,
                                uint16_t rowBegin, uint16_t rowEnd) {
-    size_t pixels = static_cast<size_t>(canvas.width()) * canvas.height();
+    const size_t pixels = static_cast<size_t>(canvas.physicalWidth()) *
+                          canvas.physicalHeight();
     bool cacheMatches = battleBackgroundCache &&
         battleBackgroundCachePixels == pixels &&
         cachedBattleBackground == kind &&
-        cachedBattleBackgroundWidth == canvas.width() &&
-        cachedBattleBackgroundHeight == canvas.height();
+        cachedBattleBackgroundWidth == canvas.physicalWidth() &&
+        cachedBattleBackgroundHeight == canvas.physicalHeight();
     if (cacheMatches) {
-        size_t rowBytes = static_cast<size_t>(canvas.width()) * sizeof(uint16_t);
-        for (uint16_t row = rowBegin; row < rowEnd; ++row) {
+        const int scale = canvas.coordinateScale();
+        const size_t rowBytes = static_cast<size_t>(canvas.physicalWidth()) *
+                                sizeof(uint16_t);
+        for (uint16_t row = rowBegin * scale; row < rowEnd * scale; ++row) {
             std::memcpy(canvas.rawPixels() +
-                            static_cast<size_t>(row) * canvas.width(),
+                            static_cast<size_t>(row) * canvas.physicalWidth(),
                         battleBackgroundCache +
-                            static_cast<size_t>(row) * canvas.width(),
+                            static_cast<size_t>(row) * canvas.physicalWidth(),
                         rowBytes);
         }
         return true;
@@ -127,8 +138,8 @@ bool drawBattleBackgroundLayer(Canvas565& canvas, GameAssets::Kind kind,
         std::memcpy(battleBackgroundCache, canvas.rawPixels(),
                     pixels * sizeof(uint16_t));
         cachedBattleBackground = kind;
-        cachedBattleBackgroundWidth = canvas.width();
-        cachedBattleBackgroundHeight = canvas.height();
+        cachedBattleBackgroundWidth = canvas.physicalWidth();
+        cachedBattleBackgroundHeight = canvas.physicalHeight();
     }
     return drawn;
 }
@@ -226,6 +237,9 @@ int textWidth(const char* value) {
             }
         }
     }
+    if (!hasNonAscii && PixelRenderer::canvas().coordinateScale() >= 2) {
+        return static_cast<int>(std::strlen(value)) * 8;
+    }
     if (!compactSupported && !hasNonAscii) {
         return static_cast<int>(std::strlen(value)) * 8;
     }
@@ -247,6 +261,12 @@ int textWidth(const char* value) {
 void text(Canvas565& canvas, int x, int y, const char* value,
           uint16_t color, int scale = 1) {
     if (!value || scale <= 0) return;
+    // AMOLED uses the native 32px font for both CJK and ASCII. The legacy
+    // 5x7 path remains for the 1x Stick S3 canvas.
+    if (canvas.coordinateScale() >= 2) {
+        PixelRenderer::text(canvas, x, y, value, color, 1);
+        return;
+    }
     bool compactSupported = true;
     for (const uint8_t* it = reinterpret_cast<const uint8_t*>(value);
          *it; ++it) {
@@ -1305,12 +1325,14 @@ namespace {
 
 constexpr int DEBUG_CONTENT_TOP = 28;
 constexpr int DEBUG_ROW_HEIGHT = 32;
+constexpr int DEBUG_TEXT_Y_OFFSET = 8;
 constexpr int DEBUG_ROW_LEFT = 6;
 constexpr int DEBUG_ROW_WIDTH = 172;
 constexpr int DEBUG_POPUP_X = 10;
 constexpr int DEBUG_POPUP_Y = 42;
 constexpr int DEBUG_POPUP_W = 164;
 constexpr int DEBUG_POPUP_H = 140;
+constexpr int DEBUG_POPUP_CONTROL_TEXT_OFFSET = 8;
 
 uint8_t debugItemCount(DebugViewModel::Category category) {
     switch (category) {
@@ -1379,16 +1401,20 @@ void drawDebugPopup(Canvas565& canvas, const DebugViewModel& model) {
         canvas.drawRoundRect(x, DEBUG_POPUP_Y + 34, 26, 32, 4,
                              focused ? rgb(248, 210, 105) : rgb(67, 97, 101));
         char digit[2] = {static_cast<char>('0' + model.digits[index]), '\0'};
-        text(canvas, x + 9, DEBUG_POPUP_Y + 45, digit,
+        text(canvas, x + 9,
+             DEBUG_POPUP_Y + 34 + DEBUG_POPUP_CONTROL_TEXT_OFFSET, digit,
              focused ? rgb(248, 210, 105) : rgb(226, 238, 233));
     }
     canvas.fillRoundRect(DEBUG_POPUP_X + 18, DEBUG_POPUP_Y + 88, 60, 32, 4,
                          rgb(36, 54, 61));
     canvas.fillRoundRect(DEBUG_POPUP_X + 86, DEBUG_POPUP_Y + 88, 60, 32, 4,
                          rgb(91, 49, 55));
-    text(canvas, DEBUG_POPUP_X + 37, DEBUG_POPUP_Y + 99, Ui::Debug::YES,
+    text(canvas, DEBUG_POPUP_X + 37,
+         DEBUG_POPUP_Y + 88 + DEBUG_POPUP_CONTROL_TEXT_OFFSET, Ui::Debug::YES,
          rgb(115, 226, 183));
-    text(canvas, DEBUG_POPUP_X + 96, DEBUG_POPUP_Y + 99, Ui::Debug::CANCEL,
+    text(canvas, DEBUG_POPUP_X + 96,
+         DEBUG_POPUP_Y + 88 + DEBUG_POPUP_CONTROL_TEXT_OFFSET,
+         Ui::Debug::CANCEL,
          rgb(239, 143, 148));
 }
 
@@ -1456,7 +1482,7 @@ void renderDebugScreen(Canvas565& canvas, const DebugViewModel& model,
                              DEBUG_ROW_HEIGHT - 5, 4, background);
         if (selected) canvas.fillRect(DEBUG_ROW_LEFT, y + 7, 3,
                                       DEBUG_ROW_HEIGHT - 15, rgb(248, 210, 105));
-        text(canvas, DEBUG_ROW_LEFT + 10, y + 11,
+        text(canvas, DEBUG_ROW_LEFT + 10, y + DEBUG_TEXT_Y_OFFSET,
              debugItemLabel(model.category, index),
              selected ? rgb(248, 210, 105) : rgb(226, 238, 233));
 
@@ -1486,7 +1512,7 @@ void renderDebugScreen(Canvas565& canvas, const DebugViewModel& model,
             value = model.battleBoundsVisible ? Ui::Settings::ON : Ui::Settings::OFF;
         }
         if (value) {
-            text(canvas, 174 - textWidth(value), y + 11, value,
+            text(canvas, 174 - textWidth(value), y + DEBUG_TEXT_Y_OFFSET, value,
                  selected ? rgb(255, 218, 178) : rgb(126, 175, 175));
         }
     }
@@ -2604,11 +2630,6 @@ uint16_t shopFadeColor(uint16_t foreground, uint8_t alpha,
     return static_cast<uint16_t>((red << 11) | (green << 5) | blue);
 }
 
-float shopEase(float progress) {
-    progress = std::max(0.0f, std::min(progress, 1.0f));
-    return progress * progress * (3.0f - 2.0f * progress);
-}
-
 }  // namespace
 
 void renderShopScreen(Canvas565& canvas, const ShopViewModel& model,
@@ -2644,61 +2665,58 @@ void renderShopScreen(Canvas565& canvas, const ShopViewModel& model,
     canvas.fillRect(0, MENU_CONTENT_TOP, canvas.width(),
                     canvas.height() - MENU_CONTENT_TOP, rgb(12, 18, 25));
 
-    float eased = shopEase(model.detailProgress);
-    int railOffset = -static_cast<int>(std::lround(60.0f * eased));
-    canvas.fillRect(railOffset, MENU_CONTENT_TOP, SHOP_RAIL_DIVIDER_X,
-                    canvas.height() - MENU_CONTENT_TOP, rgb(17, 24, 31));
-    canvas.drawFastVLine(SHOP_RAIL_DIVIDER_X + railOffset,
-                         MENU_CONTENT_TOP,
-                         canvas.height() - MENU_CONTENT_TOP,
-                         rgb(67, 74, 84));
+    const bool detailOpen = model.detailItem != Game::ItemId::COUNT;
+    const bool showRail = !detailOpen;
+    if (showRail) {
+        canvas.fillRect(0, MENU_CONTENT_TOP, SHOP_RAIL_DIVIDER_X,
+                        canvas.height() - MENU_CONTENT_TOP, rgb(17, 24, 31));
+        canvas.drawFastVLine(SHOP_RAIL_DIVIDER_X, MENU_CONTENT_TOP,
+                             canvas.height() - MENU_CONTENT_TOP,
+                             rgb(67, 74, 84));
 
-    static constexpr const char* MENU_LABELS[] = {
-        Ui::Amoled::BUY, Ui::Amoled::SELL, Ui::Amoled::LEAVE,
-    };
-    int selectedMenu = model.mode == ShopViewModel::Mode::BUY ? 0 : 1;
-    for (int index = 0; index < 3; ++index) {
-        int x = 5 + railOffset;
-        int y = 44 + index * 54;
-        bool selected = index == selectedMenu;
-        bool pressed = index == model.pressedMenuItem;
-        uint16_t fill = pressed ? rgb(47, 64, 69)
-                                : selected ? rgb(31, 42, 49)
-                                           : rgb(21, 29, 36);
-        canvas.fillRoundRect(x, y, 46, 42, 4, fill);
-        if (selected) {
-            canvas.fillRect(x, y + 8, 3, 26, rgb(248, 210, 105));
+        static constexpr const char* MENU_LABELS[] = {
+            Ui::Amoled::BUY, Ui::Amoled::SELL, Ui::Amoled::LEAVE,
+        };
+        int selectedMenu = model.mode == ShopViewModel::Mode::BUY ? 0 : 1;
+        for (int index = 0; index < 3; ++index) {
+            int x = 5;
+            int y = 44 + index * 54;
+            bool selected = index == selectedMenu;
+            if (selected) {
+                canvas.fillRect(x, y + 20, 3, 8, rgb(248, 210, 105));
+            }
+            const char* label = MENU_LABELS[index];
+            text(canvas, x + (46 - textWidth(label)) / 2, y + 16, label,
+                 index == 2 ? rgb(115, 226, 183)
+                            : selected ? rgb(248, 210, 105)
+                                       : rgb(194, 210, 207));
         }
-        const char* label = MENU_LABELS[index];
-        text(canvas, x + (46 - textWidth(label)) / 2, y + 16, label,
-             index == 2 ? rgb(115, 226, 183)
-                        : selected ? rgb(248, 210, 105)
-                                   : rgb(194, 210, 207));
     }
 
-    int scrollPixels = static_cast<int>(std::lround(model.scroll));
-    auto drawSectionHeader = [&](int localY, const char* label) {
+    if (!detailOpen) {
+        int scrollPixels = static_cast<int>(std::lround(model.scroll));
+        auto drawSectionHeader = [&](int localY, const char* label) {
         int y = MENU_CONTENT_TOP + localY - scrollPixels;
         if (y + SHOP_SECTION_HEADER_HEIGHT <= MENU_CONTENT_TOP || y >= 224) {
             return;
         }
         canvas.fillRect(SHOP_GRID_LEFT, y, 116,
                         SHOP_SECTION_HEADER_HEIGHT, rgb(20, 31, 38));
-        text(canvas, SHOP_GRID_LEFT + 4, y + 7, label,
+        text(canvas, SHOP_GRID_LEFT + 4, y + 3, label,
              rgb(126, 175, 175));
         canvas.drawFastHLine(SHOP_GRID_LEFT + 4,
-                             y + SHOP_SECTION_HEADER_HEIGHT - 2,
+                             y + SHOP_SECTION_HEADER_HEIGHT - 1,
                              108, rgb(56, 87, 89));
-    };
-    if (model.mode == ShopViewModel::Mode::BUY) {
-        drawSectionHeader(0, Ui::Shop::CATEGORY_DAILY);
-        drawSectionHeader(shopExploreSectionTop(model.dailyItemCount),
-                          Ui::Shop::CATEGORY_EXPLORE);
-    } else {
-        drawSectionHeader(0, Ui::BAG);
-    }
+        };
+        if (model.mode == ShopViewModel::Mode::BUY) {
+            drawSectionHeader(0, Ui::Shop::CATEGORY_DAILY);
+            drawSectionHeader(shopExploreSectionTop(model.dailyItemCount),
+                              Ui::Shop::CATEGORY_EXPLORE);
+        } else {
+            drawSectionHeader(0, Ui::BAG);
+        }
 
-    for (uint8_t index = 0; index < model.itemCount; ++index) {
+        for (uint8_t index = 0; index < model.itemCount; ++index) {
         int centerX = 0;
         int centerY = 0;
         if (!shopGridItemCenter(index, model.scroll, model.mode,
@@ -2708,68 +2726,49 @@ void renderShopScreen(Canvas565& canvas, const ShopViewModel& model,
             centerY - SHOP_GRID_ROW_HEIGHT / 2 >= 224) {
             continue;
         }
-        bool selected = index == model.detailItemIndex &&
-                        model.detailItem != Game::ItemId::COUNT;
-        if (selected && model.detailProgress > 0.0f) continue;
         bool pressed = index == model.pressedItem;
         canvas.fillRoundRect(centerX - 27, centerY - 23, 54, 46, 4,
                              pressed ? rgb(42, 61, 68) : rgb(24, 34, 42));
         Game::ItemId item = shopItemForIndex(model, index);
-        uint8_t itemAlpha = selected
-            ? 255 : static_cast<uint8_t>(255 - 190 * eased);
         if (!GameAssets::drawCenteredAlpha(
-                GameAssets::itemKind(item), centerX, centerY - 5, 0.72f,
-                itemAlpha)) {
-            text(canvas, centerX - 3, centerY - 10, "?",
+                GameAssets::itemKind(item), centerX, centerY,
+                SHOP_GRID_ICON_SCALE,
+                255)) {
+            text(canvas, centerX - 3, centerY - 7, "?",
                  rgb(248, 210, 105));
         }
-        const char* name = Game::ShopService::shortName(item);
-        text(canvas, centerX - textWidth(name) / 2, centerY + 12, name,
-             shopFadeColor(rgb(226, 238, 233), itemAlpha,
-                           rgb(24, 34, 42)));
+        }
+
+        if (model.itemCount == 0) {
+            const char* empty = model.mode == ShopViewModel::Mode::SELL
+                ? Ui::Amoled::NOTHING_TO_SELL : Ui::Amoled::NOTHING;
+            text(canvas, 67, 108, empty, rgb(126, 145, 145));
+        }
     }
 
-    if (model.itemCount == 0) {
-        const char* empty = model.mode == ShopViewModel::Mode::SELL
-            ? Ui::Amoled::NOTHING_TO_SELL : Ui::Amoled::NOTHING;
-        text(canvas, 67, 108, empty, rgb(126, 145, 145));
-    }
-
-    if (model.detailItem != Game::ItemId::COUNT && eased > 0.0f) {
-        PixelRenderer::fillRectAlpha(
-            0, MENU_CONTENT_TOP, canvas.width(),
-            canvas.height() - MENU_CONTENT_TOP, 0,
-            static_cast<uint8_t>(205 * eased));
-
-        int originX = 31;
-        int originY = 62;
-        int gridX = originX;
-        int gridY = originY;
-        shopGridItemCenter(model.detailItemIndex, model.scroll, model.mode,
-                           model.dailyItemCount, model.itemCount,
-                           gridX, gridY);
-        int iconX = static_cast<int>(std::lround(
-            gridX + (originX - gridX) * eased));
-        int iconY = static_cast<int>(std::lround(
-            gridY + (originY - gridY) * eased));
-        float iconScale = 0.72f + 0.68f * eased;
+    if (detailOpen) {
+        int originX = 40;
+        int originY = 72;
+        int iconX = originX;
+        int iconY = originY;
+        float iconScale = SHOP_DETAIL_ICON_END_SCALE;
         if (!GameAssets::drawCenteredAlpha(
                 GameAssets::itemKind(model.detailItem), iconX, iconY,
                 iconScale, 255)) {
             text(canvas, iconX - 3, iconY - 5, "?", rgb(248, 210, 105));
         }
 
-        uint8_t detailAlpha = static_cast<uint8_t>(255 * eased);
+        constexpr uint8_t detailAlpha = 255;
         const uint16_t detailBackground = rgb(12, 18, 25);
         const char* name = Game::ShopService::shortName(model.detailItem);
-        text(canvas, 62, 45, name,
+        text(canvas, 84, 42, name,
              shopFadeColor(rgb(226, 238, 233), detailAlpha,
                            detailBackground));
         char owned[16];
         std::snprintf(owned, sizeof(owned), Ui::Shop::OWNED_FMT,
                       model.state ? Game::ItemInventory::count(
                                         *model.state, model.detailItem) : 0);
-        text(canvas, 62, 70, owned,
+        text(canvas, 84, 68, owned,
              shopFadeColor(rgb(239, 196, 154), detailAlpha,
                            detailBackground));
         char price[20];
@@ -2779,7 +2778,7 @@ void renderShopScreen(Canvas565& canvas, const ShopViewModel& model,
                       model.mode == ShopViewModel::Mode::SELL
                           ? Game::ShopService::sellPrice(model.detailItem)
                           : Game::ShopService::buyPrice(model.detailItem));
-        text(canvas, 62, 91, price,
+        text(canvas, 84, 94, price,
              shopFadeColor(rgb(248, 210, 105), detailAlpha,
                            detailBackground));
         text(canvas, 12, 124,
@@ -2953,14 +2952,24 @@ int clawTabAt(int x, int y) {
 }
 
 int computerItemAt(int x, int y, ComputerViewModel::Page page,
-                   float storageScroll, uint8_t storageCount) {
+                   float storageScroll, uint8_t storageCount,
+                   bool clawEnabled) {
     if (x < 6 || x >= 178 || y < MENU_CONTENT_TOP || y >= 224) return -1;
     if (page == ComputerViewModel::Page::MENU) {
-        int row = (y - MENU_CONTENT_TOP) / MENU_ROW_HEIGHT;
+        int row = (y - MENU_CONTENT_TOP) / COMPUTER_MENU_ROW_HEIGHT;
 #if STICKMON_HAS_CLAW
         return row < 4 ? row : -1;
 #else
         return row < 3 ? row : -1;
+#endif
+    }
+    if (page == ComputerViewModel::Page::AI_HOSTING) {
+#if STICKMON_HAS_CLAW
+        const int row = (y - MENU_CONTENT_TOP) / COMPUTER_MENU_ROW_HEIGHT;
+        const int rowCount = clawEnabled ? 4 : 3;
+        return row < rowCount ? row : -1;
+#else
+        return -1;
 #endif
     }
     if (page != ComputerViewModel::Page::STORAGE || storageCount == 0) {
@@ -2970,6 +2979,18 @@ int computerItemAt(int x, int y, ComputerViewModel::Page page,
                    static_cast<int>(std::lround(storageScroll));
     int row = contentY / 43;
     return row >= 0 && row < storageCount ? row : -1;
+}
+
+void drawAiToggle(Canvas565& canvas, int centerX, int centerY, bool on,
+                  bool pressed) {
+    const uint16_t track = on ? rgb(62, 124, 105) : rgb(60, 72, 80);
+    const uint16_t knob = on ? rgb(226, 255, 234) : rgb(168, 181, 184);
+    canvas.fillRoundRect(centerX - 18, centerY - 7, 36, 14, 7, track);
+    if (pressed) {
+        canvas.drawRoundRect(centerX - 18, centerY - 7, 36, 14, 7,
+                             rgb(248, 210, 105));
+    }
+    canvas.fillCircle(centerX + (on ? 10 : -10), centerY, 6, knob);
 }
 
 void renderComputerScreen(Canvas565& canvas, const ComputerViewModel& model,
@@ -2986,8 +3007,10 @@ void renderComputerScreen(Canvas565& canvas, const ComputerViewModel& model,
     drawBackIcon(canvas);
     const char* title = model.page == ComputerViewModel::Page::STATUS
         ? Ui::Amoled::STATUS_PAGE
+        : model.page == ComputerViewModel::Page::AI_HOSTING
+            ? Ui::Amoled::AI_HOSTING
         : model.page == ComputerViewModel::Page::CLAW_SETUP
-            ? Ui::Amoled::ESP_CLAW : Ui::COMPUTER;
+            ? Ui::Amoled::BACKEND : Ui::COMPUTER;
     text(canvas, 36, 8, title, rgb(115, 226, 183));
 #if STICKMON_HAS_CLAW
     if (model.page == ComputerViewModel::Page::CLAW_SETUP) {
@@ -2999,27 +3022,52 @@ void renderComputerScreen(Canvas565& canvas, const ComputerViewModel& model,
         static constexpr const char* ITEMS[] = {
             Ui::Amoled::STATUS_PAGE, Ui::Amoled::STORAGE_PAGE,
 #if STICKMON_HAS_CLAW
-            Ui::Amoled::ESP_CLAW, Ui::BACK,
+            Ui::Amoled::AI_HOSTING, Ui::BACK,
 #else
             Ui::BACK,
 #endif
         };
         constexpr int ITEM_COUNT = sizeof(ITEMS) / sizeof(ITEMS[0]);
         for (int index = 0; index < ITEM_COUNT; ++index) {
-            int y = MENU_CONTENT_TOP + index * MENU_ROW_HEIGHT;
+            int y = MENU_CONTENT_TOP + index * COMPUTER_MENU_ROW_HEIGHT;
             bool selected = index == model.pressedItem;
-            canvas.fillRoundRect(6, y + 2, 172, MENU_ROW_HEIGHT - 4, 4,
+            canvas.fillRoundRect(6, y + 2, 172, COMPUTER_MENU_CELL_HEIGHT, 4,
                                  selected ? rgb(42, 61, 68) : rgb(24, 34, 42));
-            text(canvas, 20, y + 16, ITEMS[index],
+            text(canvas, 20, y + 13, ITEMS[index],
                  index == ITEM_COUNT - 1 ? rgb(115, 226, 183)
                                          : rgb(226, 238, 233));
             if (index == 1 && model.state) {
                 char count[12];
                 std::snprintf(count, sizeof(count), "%u/20",
                               model.state->storageCount);
-                text(canvas, 136, y + 16, count, rgb(248, 210, 105));
+                text(canvas, 136, y + 13, count, rgb(248, 210, 105));
             }
         }
+    } else if (model.page == ComputerViewModel::Page::AI_HOSTING) {
+#if STICKMON_HAS_CLAW
+        static constexpr int AI_ROW_COUNT = 4;
+        int rowCount = model.clawEnabled ? AI_ROW_COUNT : 3;
+        const char* labels[AI_ROW_COUNT] = {
+            Ui::Amoled::WIFI, Ui::Amoled::ESP_CLAW,
+            Ui::Amoled::BACKEND, Ui::BACK,
+        };
+        const bool values[AI_ROW_COUNT] = {
+            model.wifiEnabled, model.clawEnabled, false, false,
+        };
+        for (int index = 0; index < rowCount; ++index) {
+            int y = MENU_CONTENT_TOP + index * COMPUTER_MENU_ROW_HEIGHT;
+            bool selected = index == model.pressedItem;
+            canvas.fillRoundRect(6, y + 2, 172, COMPUTER_MENU_CELL_HEIGHT, 4,
+                                 selected ? rgb(42, 61, 68)
+                                          : rgb(24, 34, 42));
+            text(canvas, 20, y + 13, labels[index],
+                 index == rowCount - 1 ? rgb(115, 226, 183)
+                                       : rgb(226, 238, 233));
+            if (index < 2) {
+                drawAiToggle(canvas, 142, y + 21, values[index], selected);
+            }
+        }
+#endif
     } else if (model.page == ComputerViewModel::Page::STATUS) {
         uint8_t count = model.state
             ? Game::TeamRoster::memberCount(*model.state) : 0;

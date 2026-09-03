@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cmath>
+#include <cstring>
 
 #include "AmoledApp.h"
 #include "AmoledPlatform.h"
@@ -42,15 +43,15 @@ constexpr uint32_t LOCK_WAKE_GRACE_MS = 1200;
 constexpr int LOCK_START_RADIUS = 260;
 constexpr int LOCK_FINAL_RADIUS = 33;
 enum class LockPhase : uint8_t { OPEN, CLOSING, LOCKED, OPENING };
-constexpr size_t LOGICAL_PIXELS =
-    static_cast<size_t>(LOGICAL_WIDTH) * LOGICAL_HEIGHT;
+constexpr size_t PHYSICAL_PIXELS =
+    static_cast<size_t>(PHYSICAL_WIDTH) * PHYSICAL_HEIGHT;
 constexpr size_t TRANSFER_PIXELS =
     static_cast<size_t>(PHYSICAL_WIDTH) * TRANSFER_PHYSICAL_ROWS;
 using TransferBuffers = std::array<uint16_t*, TRANSFER_BUFFER_COUNT>;
 
-uint16_t* allocateLogicalPixels() {
+uint16_t* allocatePhysicalPixels() {
     return static_cast<uint16_t*>(heap_caps_calloc(
-        LOGICAL_PIXELS, sizeof(uint16_t),
+        PHYSICAL_PIXELS, sizeof(uint16_t),
         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
 }
 
@@ -82,47 +83,6 @@ esp_err_t resetBoardPeripherals() {
     return ESP_OK;
 }
 
-void scaleStripe2x(const uint16_t* source, uint16_t sourceY,
-                   uint16_t logicalRows, uint16_t* destination) {
-    for (uint16_t row = 0; row < logicalRows; ++row) {
-        const uint16_t* sourceRow =
-            source + static_cast<size_t>(sourceY + row) * LOGICAL_WIDTH;
-        uint16_t* top =
-            destination + static_cast<size_t>(row * 2U) * PHYSICAL_WIDTH;
-        uint16_t* bottom = top + PHYSICAL_WIDTH;
-        for (uint16_t x = 0; x < LOGICAL_WIDTH; ++x) {
-            uint16_t pixel = sourceRow[x];
-            size_t outputX = static_cast<size_t>(x) * 2U;
-            top[outputX] = pixel;
-            top[outputX + 1U] = pixel;
-            bottom[outputX] = pixel;
-            bottom[outputX + 1U] = pixel;
-        }
-    }
-}
-
-void scaleStripe2xRegion(const uint16_t* source, uint16_t sourceY,
-                         uint16_t logicalRows, uint16_t xBegin,
-                         uint16_t xEnd, uint16_t* destination) {
-    uint16_t regionWidth = xEnd - xBegin;
-    uint16_t physicalRegionWidth = regionWidth * 2U;
-    for (uint16_t row = 0; row < logicalRows; ++row) {
-        const uint16_t* sourceRow =
-            source + static_cast<size_t>(sourceY + row) * LOGICAL_WIDTH + xBegin;
-        uint16_t* top = destination +
-            static_cast<size_t>(row * 2U) * physicalRegionWidth;
-        uint16_t* bottom = top + physicalRegionWidth;
-        for (uint16_t x = 0; x < regionWidth; ++x) {
-            uint16_t pixel = sourceRow[x];
-            size_t outputX = static_cast<size_t>(x) * 2U;
-            top[outputX] = pixel;
-            top[outputX + 1U] = pixel;
-            bottom[outputX] = pixel;
-            bottom[outputX + 1U] = pixel;
-        }
-    }
-}
-
 bool onColorTransferDone(esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_data_t*,
                          void* userContext) {
     BaseType_t higherPriorityTaskWoken = pdFALSE;
@@ -146,7 +106,7 @@ esp_err_t startDisplay(esp_lcd_panel_handle_t* panel,
 }
 
 esp_err_t submitFrame(esp_lcd_panel_handle_t panel,
-                      const uint16_t* logicalPixels,
+                      const uint16_t* physicalPixels,
                       const TransferBuffers& transferBuffers,
                       SemaphoreHandle_t transferDone,
                       uint16_t sourceBegin = 0,
@@ -175,8 +135,13 @@ esp_err_t submitFrame(esp_lcd_panel_handle_t panel,
         uint16_t physicalY = sourceY * 2U;
         uint16_t physicalRows = logicalRows * 2U;
 
-        scaleStripe2x(logicalPixels, sourceY, logicalRows,
-                      transferBuffers[nextBuffer]);
+        for (uint16_t row = 0; row < physicalRows; ++row) {
+            const uint16_t* source = physicalPixels +
+                static_cast<size_t>(physicalY + row) * PHYSICAL_WIDTH;
+            std::memcpy(transferBuffers[nextBuffer] +
+                            static_cast<size_t>(row) * PHYSICAL_WIDTH,
+                        source, PHYSICAL_WIDTH * sizeof(uint16_t));
+        }
         result = esp_lcd_panel_draw_bitmap(
             panel, 0, physicalY, PHYSICAL_WIDTH,
             physicalY + physicalRows, transferBuffers[nextBuffer]);
@@ -198,7 +163,7 @@ esp_err_t submitFrame(esp_lcd_panel_handle_t panel,
 }
 
 esp_err_t submitFrameRegion(esp_lcd_panel_handle_t panel,
-                            const uint16_t* logicalPixels,
+                            const uint16_t* physicalPixels,
                             const TransferBuffers& transferBuffers,
                             SemaphoreHandle_t transferDone,
                             uint16_t xBegin, uint16_t xEnd,
@@ -229,8 +194,15 @@ esp_err_t submitFrameRegion(esp_lcd_panel_handle_t panel,
             TRANSFER_LOGICAL_ROWS, sourceEnd - sourceY));
         uint16_t physicalY = sourceY * 2U;
         uint16_t physicalRows = logicalRows * 2U;
-        scaleStripe2xRegion(logicalPixels, sourceY, logicalRows,
-                            xBegin, xEnd, transferBuffers[nextBuffer]);
+        const uint16_t physicalRegionWidth = physicalXEnd - physicalXBegin;
+        for (uint16_t row = 0; row < physicalRows; ++row) {
+            const uint16_t* source = physicalPixels +
+                static_cast<size_t>(physicalY + row) * PHYSICAL_WIDTH +
+                physicalXBegin;
+            std::memcpy(transferBuffers[nextBuffer] +
+                            static_cast<size_t>(row) * physicalRegionWidth,
+                        source, physicalRegionWidth * sizeof(uint16_t));
+        }
         result = esp_lcd_panel_draw_bitmap(
             panel, physicalXBegin, physicalY, physicalXEnd,
             physicalY + physicalRows, transferBuffers[nextBuffer]);
@@ -393,16 +365,16 @@ extern "C" void app_main(void) {
     ESP_LOGI(TAG, "PSRAM size: %u bytes",
              static_cast<unsigned>(esp_psram_get_size()));
 
-    uint16_t* logicalPixels = allocateLogicalPixels();
+    uint16_t* physicalPixels = allocatePhysicalPixels();
     TransferBuffers transferBuffers{};
     bool transferBuffersReady = true;
     for (uint16_t*& buffer : transferBuffers) {
         buffer = allocateTransferPixels();
         transferBuffersReady = transferBuffersReady && buffer != nullptr;
     }
-    if (!logicalPixels || !transferBuffersReady) {
+    if (!physicalPixels || !transferBuffersReady) {
         ESP_LOGE(TAG, "Unable to allocate RGB565 framebuffers");
-        heap_caps_free(logicalPixels);
+        heap_caps_free(physicalPixels);
         for (uint16_t* buffer : transferBuffers) heap_caps_free(buffer);
         return;
     }
@@ -444,14 +416,16 @@ extern "C" void app_main(void) {
     }
 
     const Platform::FrameBuffer565 frameBuffer{
-        logicalPixels, LOGICAL_WIDTH, LOGICAL_HEIGHT, true};
+        physicalPixels, PHYSICAL_WIDTH, PHYSICAL_HEIGHT, true};
     Canvas565 canvas;
     canvas.attach(frameBuffer);
+    canvas.setCoordinateScale(2);
     AmoledV2::bindAmoledPlatform();
     if (!AmoledV2::AmoledPlatform::instance().begin()) {
         ESP_LOGW(TAG, "AMOLED platform peripheral init incomplete");
     }
     PixelRenderer::bind(frameBuffer);
+    PixelRenderer::setCoordinateScale(2);
     AmoledV1::AmoledApp app;
     app.begin(millisNow());
 #if STICKMON_HAS_CLAW
@@ -473,7 +447,7 @@ extern "C" void app_main(void) {
              static_cast<unsigned>(TRANSFER_PHYSICAL_ROWS),
              static_cast<unsigned>(TRANSFER_BUFFER_COUNT));
     int64_t firstFrameStartedUs = esp_timer_get_time();
-    result = submitFrame(panel, logicalPixels, transferBuffers, transferDone);
+    result = submitFrame(panel, physicalPixels, transferBuffers, transferDone);
     ESP_LOGI(TAG, "Initial full-frame transfer: %lld us",
              static_cast<long long>(esp_timer_get_time() - firstFrameStartedUs));
     if (result != ESP_OK) {
@@ -622,11 +596,11 @@ extern "C" void app_main(void) {
                              renderXBegin, renderXEnd,
                              renderBegin, renderEnd);
                 result = submitFrameRegion(
-                    panel, logicalPixels, transferBuffers, transferDone,
+                    panel, physicalPixels, transferBuffers, transferDone,
                     renderXBegin, renderXEnd, renderBegin, renderEnd);
             } else {
                 result = submitFrame(
-                    panel, logicalPixels, transferBuffers, transferDone,
+                    panel, physicalPixels, transferBuffers, transferDone,
                     renderBegin, renderEnd);
             }
             if (result != ESP_OK) {

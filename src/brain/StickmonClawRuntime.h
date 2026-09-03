@@ -33,6 +33,10 @@ public:
     bool playerActive(uint32_t nowMs) const;
     uint32_t idleSeconds(uint32_t nowMs) const;
     bool agentAllowed(uint32_t nowMs) const;
+    bool enabled() const;
+    bool wifiEnabled() const;
+    void setEnabled(bool enabled);
+    void setWifiEnabled(bool enabled);
     bool started() const;
     bool networkConnected() const;
     // An autonomous request is queued or being processed by ESP-Claw.
@@ -76,9 +80,17 @@ private:
     void beginTask();
     bool startSetupPortalImpl();
     void pollWechatLogin(uint32_t nowMs);
+    void loadRuntimeSettings();
+    void stopDisabledRuntime();
+    void stopWifi();
 
     bool started_ = false;
     bool initializing_ = false;
+    bool settingsLoaded_ = false;
+    bool enabled_ = true;
+    bool wifiEnabled_ = true;
+    bool stopRequested_ = false;
+    bool coreInitialized_ = false;
     bool networkConnected_ = false;
     bool setupPortalActive_ = false;
     bool phoneJoined_ = false;

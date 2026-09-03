@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "firmware" / "amoled_1_8_v1" / "main" / "AmoledApp.cpp"
 APP_HEADER = ROOT / "firmware" / "amoled_1_8_v1" / "main" / "AmoledApp.h"
 HOME = ROOT / "firmware" / "amoled_1_8_v1" / "main" / "HomeScreen.cpp"
+RUNTIME = ROOT / "src" / "brain" / "StickmonClawRuntime.cpp"
 FLOW = ROOT / "src" / "core" / "AppSceneFlow.h"
 BUILD = ROOT / "tools" / "build_amoled_variant.sh"
 
@@ -18,6 +19,7 @@ class AmoledDebugMigrationTests(unittest.TestCase):
         cls.app = APP.read_text(encoding="utf-8")
         cls.app_header = APP_HEADER.read_text(encoding="utf-8")
         cls.home = HOME.read_text(encoding="utf-8")
+        cls.runtime = RUNTIME.read_text(encoding="utf-8")
         cls.flow = FLOW.read_text(encoding="utf-8")
         cls.build = BUILD.read_text(encoding="utf-8")
 
@@ -77,6 +79,40 @@ class AmoledDebugMigrationTests(unittest.TestCase):
     def test_battle_bounds_toggle_is_consumed_by_renderer(self):
         self.assertIn("model.debugDrawBounds = debugBattleDrawBoundsVisible", self.app)
         self.assertIn("if (model.debugDrawBounds)", self.home)
+
+    def test_amoled_debug_text_uses_native_font_and_row_centering(self):
+        start = self.home.index("void renderDebugScreen(")
+        end = self.home.index("#endif", start)
+        render = self.home[start:end]
+        self.assertIn("DEBUG_TEXT_Y_OFFSET = 8", self.home)
+        self.assertIn("y + DEBUG_TEXT_Y_OFFSET", render)
+        self.assertIn("canvas.coordinateScale() >= 2", self.home)
+        self.assertIn("PixelRenderer::text(canvas, x, y, value, color, 1);", self.home)
+
+    def test_computer_menu_has_compact_geometry(self):
+        start = self.home.index("int computerItemAt(")
+        end = self.home.index("}  // namespace AmoledV1", start)
+        computer = self.home[start:end]
+        self.assertIn("COMPUTER_MENU_ROW_HEIGHT = 43", self.home)
+        self.assertIn("COMPUTER_MENU_CELL_HEIGHT = 39", self.home)
+        self.assertIn("/ COMPUTER_MENU_ROW_HEIGHT", computer)
+        self.assertIn("index * COMPUTER_MENU_ROW_HEIGHT", computer)
+        self.assertNotIn("index * MENU_ROW_HEIGHT", computer)
+
+    def test_ai_hosting_menu_owns_claw_and_wifi_controls(self):
+        self.assertIn('Ui::Amoled::AI_HOSTING, Ui::BACK', self.home)
+        self.assertIn('Ui::Amoled::WIFI, Ui::Amoled::ESP_CLAW', self.home)
+        self.assertIn('Ui::Amoled::BACKEND, Ui::BACK', self.home)
+        self.assertIn('Page::AI_HOSTING', self.app)
+        self.assertIn('if (item == 0)', self.app)
+        self.assertIn('claw.setWifiEnabled(!claw.wifiEnabled())', self.app)
+        self.assertIn('claw.setEnabled(!claw.enabled())', self.app)
+        self.assertIn('claw.wifiEnabled()', self.app)
+
+    def test_backend_requires_wifi_and_uses_backend_title(self):
+        self.assertIn('Ui::Amoled::BACKEND : Ui::COMPUTER', self.home)
+        self.assertIn('Ui::Amoled::CLAW_WIFI_REQUIRED', self.app)
+        self.assertIn('后台需要启用 ESP-Claw 和 Wi-Fi', self.runtime)
 
 
 if __name__ == "__main__":

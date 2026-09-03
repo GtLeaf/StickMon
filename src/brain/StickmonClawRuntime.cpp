@@ -20,6 +20,7 @@
 #include "claw_paths.h"
 #include "claw_memory.h"
 #include "claw_core.h"
+#include "claw_event_router.h"
 #include "esp_event.h"
 #include "esp_heap_caps.h"
 #include "esp_http_server.h"
@@ -42,6 +43,8 @@ constexpr char BRAINFS_BASE[] = "/brain";
 constexpr char BRAINFS_PARTITION[] = "brainfs";
 constexpr char NVS_WIFI_NAMESPACE[] = "wifi";
 constexpr char NVS_CLAW_NAMESPACE[] = "claw";
+constexpr char NVS_CLAW_ENABLED_KEY[] = "runtime_enabled";
+constexpr char NVS_WIFI_ENABLED_KEY[] = "runtime_enabled";
 // The initialization path peaks at about 12 KB of stack on AMOLED V1. Keep
 // enough margin for filesystem and network setup while returning 12 KB of
 // internal RAM to the root agent's internal-only worker stack.
@@ -54,6 +57,7 @@ httpd_handle_t s_setupServer = nullptr;
 bool s_wifiInitialized = false;
 bool s_wifiEventsRegistered = false;
 volatile bool s_wifiConnected = false;
+volatile bool s_wifiStopping = false;
 portMUX_TYPE s_wifiMux = portMUX_INITIALIZER_UNLOCKED;
 wl_handle_t s_brainWlHandle = WL_INVALID_HANDLE;
 
@@ -76,6 +80,24 @@ bool readText(const char* nameSpace, const char* key, char* output,
 void copyText(char* destination, size_t destinationSize, const char* source) {
     if (!destination || destinationSize == 0) return;
     std::snprintf(destination, destinationSize, "%s", source ? source : "");
+}
+
+bool readRuntimeFlag(const char* nameSpace, const char* key,
+                     bool defaultValue) {
+    uint8_t value = 0;
+    if (Platform::blobs().blobSize(nameSpace, key) != sizeof(value) ||
+        !Platform::blobs().readBlob(nameSpace, key, &value, sizeof(value))) {
+        return defaultValue;
+    }
+    return value != 0;
+}
+
+void writeRuntimeFlag(const char* nameSpace, const char* key, bool value) {
+    const uint8_t encoded = value ? 1 : 0;
+    if (!Platform::blobs().writeBlob(nameSpace, key, &encoded,
+                                     sizeof(encoded))) {
+        ESP_LOGW(TAG, "Failed to persist runtime flag %s/%s", nameSpace, key);
+    }
 }
 
 struct SetupValues {
@@ -1110,9 +1132,11 @@ void wifiEventHandler(void*, esp_event_base_t eventBase, int32_t eventId,
         portENTER_CRITICAL(&s_wifiMux);
         s_wifiConnected = false;
         portEXIT_CRITICAL(&s_wifiMux);
-        ClawRuntime::instance().logf(ClawStatusLog::Level::WARN,
-                                     "Wi-Fi 断开，重连中");
-        esp_wifi_connect();
+        if (!s_wifiStopping) {
+            ClawRuntime::instance().logf(ClawStatusLog::Level::WARN,
+                                         "Wi-Fi 断开，重连中");
+            esp_wifi_connect();
+        }
     } else if (eventBase == IP_EVENT && eventId == IP_EVENT_STA_GOT_IP) {
         portENTER_CRITICAL(&s_wifiMux);
         s_wifiConnected = true;
@@ -1166,6 +1190,7 @@ bool startWifi(const char* ssid, const char* password, bool keepAp) {
     }
 
     wifi_config_t config{};
+    s_wifiStopping = false;
     copyText(reinterpret_cast<char*>(config.sta.ssid), sizeof(config.sta.ssid), ssid);
     copyText(reinterpret_cast<char*>(config.sta.password), sizeof(config.sta.password), password);
     wifi_mode_t mode = keepAp && s_apNetif ? WIFI_MODE_APSTA : WIFI_MODE_STA;
@@ -1368,12 +1393,34 @@ void ClawRuntime::beginTask() {
     }
 }
 
+void ClawRuntime::loadRuntimeSettings() {
+    portENTER_CRITICAL(&mux_);
+    if (settingsLoaded_) {
+        portEXIT_CRITICAL(&mux_);
+        return;
+    }
+    portEXIT_CRITICAL(&mux_);
+
+    const bool enabled = readRuntimeFlag(
+        NVS_CLAW_NAMESPACE, NVS_CLAW_ENABLED_KEY, true);
+    const bool wifiEnabled = readRuntimeFlag(
+        NVS_WIFI_NAMESPACE, NVS_WIFI_ENABLED_KEY, true);
+    portENTER_CRITICAL(&mux_);
+    if (!settingsLoaded_) {
+        enabled_ = enabled;
+        wifiEnabled_ = wifiEnabled;
+        settingsLoaded_ = true;
+    }
+    portEXIT_CRITICAL(&mux_);
+}
+
 void ClawRuntime::beginAsync() {
 #if !CONFIG_STICKMON_CLAW_ENABLE
     return;
 #else
+    loadRuntimeSettings();
     portENTER_CRITICAL(&mux_);
-    if (started_ || initializing_) {
+    if (!enabled_ || !wifiEnabled_ || started_ || initializing_) {
         portEXIT_CRITICAL(&mux_);
         return;
     }
@@ -1406,6 +1453,86 @@ bool ClawRuntime::started() const {
     return value;
 }
 
+bool ClawRuntime::enabled() const {
+    bool value = true;
+    portENTER_CRITICAL(&mux_);
+    value = enabled_;
+    portEXIT_CRITICAL(&mux_);
+    return value;
+}
+
+bool ClawRuntime::wifiEnabled() const {
+    bool value = true;
+    portENTER_CRITICAL(&mux_);
+    value = wifiEnabled_;
+    portEXIT_CRITICAL(&mux_);
+    return value;
+}
+
+void ClawRuntime::setEnabled(bool enabled) {
+#if !CONFIG_STICKMON_CLAW_ENABLE
+    (void)enabled;
+    return;
+#else
+    loadRuntimeSettings();
+    bool changed = false;
+    portENTER_CRITICAL(&mux_);
+    if (enabled_ != enabled) {
+        enabled_ = enabled;
+        stopRequested_ = !enabled;
+        changed = true;
+        if (!enabled) {
+            activeAutonomyRequestId_ = 0;
+            autonomySubmitInFlight_ = false;
+        }
+    }
+    const bool wantStart = enabled_ && wifiEnabled_;
+    portEXIT_CRITICAL(&mux_);
+    if (!changed) return;
+
+    writeRuntimeFlag(NVS_CLAW_NAMESPACE, NVS_CLAW_ENABLED_KEY, enabled);
+    if (!enabled) {
+        BrainBridge::instance().setAgentAllowed(false);
+        BrainBridge::instance().setRuntimeState(true, 0, false);
+        claw_core_handle_t core = app_claw_get_core();
+        if (core) (void)claw_core_cancel_request(core, 0);
+        logf(ClawStatusLog::Level::INFO, "ESP-Claw 已关闭");
+    } else if (wantStart) {
+        beginAsync();
+    }
+#endif
+}
+
+void ClawRuntime::setWifiEnabled(bool enabled) {
+#if !CONFIG_STICKMON_CLAW_ENABLE
+    (void)enabled;
+    return;
+#else
+    loadRuntimeSettings();
+    bool changed = false;
+    bool wantStart = false;
+    portENTER_CRITICAL(&mux_);
+    if (wifiEnabled_ != enabled) {
+        wifiEnabled_ = enabled;
+        stopRequested_ = !enabled;
+        changed = true;
+    }
+    wantStart = enabled_ && wifiEnabled_;
+    portEXIT_CRITICAL(&mux_);
+    if (!changed) return;
+
+    writeRuntimeFlag(NVS_WIFI_NAMESPACE, NVS_WIFI_ENABLED_KEY, enabled);
+    if (!enabled) {
+        BrainBridge::instance().setAgentAllowed(false);
+        claw_core_handle_t core = app_claw_get_core();
+        if (core) (void)claw_core_cancel_request(core, 0);
+        logf(ClawStatusLog::Level::INFO, "Wi-Fi 已关闭");
+    } else if (wantStart) {
+        beginAsync();
+    }
+#endif
+}
+
 bool ClawRuntime::networkConnected() const {
     bool value = false;
     portENTER_CRITICAL(&mux_);
@@ -1427,8 +1554,12 @@ bool ClawRuntime::begin() {
     ESP_LOGI(TAG, "ESP-Claw disabled at build time");
     return true;
 #else
+    loadRuntimeSettings();
     portENTER_CRITICAL(&mux_);
-    if (started_) {
+    const bool enabled = enabled_;
+    const bool wifiEnabled = wifiEnabled_;
+    const bool coreInitialized = coreInitialized_;
+    if (started_ || !enabled || !wifiEnabled) {
         portEXIT_CRITICAL(&mux_);
         return true;
     }
@@ -1454,7 +1585,7 @@ bool ClawRuntime::begin() {
     readText(NVS_CLAW_NAMESPACE, "coze_base_url", cozeBaseUrl, sizeof(cozeBaseUrl));
     loadSetupValues(setupValues);
 
-    if (!ssid[0] || !cozeToken[0]) {
+    if (!ssid[0] || (!coreInitialized && !cozeToken[0])) {
         ESP_LOGI(TAG, "ESP-Claw waiting for NVS credentials (wifi, coze_token)");
         logf(ClawStatusLog::Level::INFO, "ESP-Claw 等待凭据配置");
         return true;
@@ -1463,7 +1594,7 @@ bool ClawRuntime::begin() {
     if (!cozeBotId[0]) copyText(cozeBotId, sizeof(cozeBotId), "7679649015453597711");
 
     logf(ClawStatusLog::Level::INFO, "连接 Wi-Fi %s", ssid);
-    if (!mountBrainFs() || !startWifi(ssid, password, false)) {
+    if ((!coreInitialized && !mountBrainFs()) || !startWifi(ssid, password, false)) {
         ESP_LOGW(TAG, "ESP-Claw network/storage prerequisites unavailable");
         logf(ClawStatusLog::Level::ERROR, "Wi-Fi 或存储不可用，ESP-Claw 未启动");
         return true;
@@ -1485,6 +1616,24 @@ bool ClawRuntime::begin() {
              static_cast<unsigned long>(CLAW_WIFI_CONNECT_TIMEOUT_MS / 1000));
         return true;
     }
+    if (coreInitialized) {
+        claw_core_handle_t core = app_claw_get_core();
+        esp_err_t result = core ? claw_event_router_start() : ESP_ERR_INVALID_STATE;
+        if (result == ESP_OK && core) result = claw_core_start(core);
+        if (result != ESP_OK) {
+            ESP_LOGE(TAG, "ESP-Claw resume failed: %s", esp_err_to_name(result));
+            logf(ClawStatusLog::Level::ERROR, "ESP-Claw 恢复失败");
+            return false;
+        }
+        portENTER_CRITICAL(&mux_);
+        started_ = true;
+        stopRequested_ = false;
+        networkConnected_ = wifiConnected();
+        portEXIT_CRITICAL(&mux_);
+        logf(ClawStatusLog::Level::OK, "ESP-Claw 已恢复");
+        return true;
+    }
+
     ESP_LOGI(TAG, "Wi-Fi ready; starting ESP-Claw services");
     logf(ClawStatusLog::Level::OK, "Wi-Fi 已就绪，启动 ESP-Claw 服务");
     if (claw_paths_set(CLAW_PATH_DATA, BRAINFS_BASE) != ESP_OK ||
@@ -1531,6 +1680,8 @@ bool ClawRuntime::begin() {
     // team[0] changes the speaking pet on the next turn without restarting.
     portENTER_CRITICAL(&mux_);
     started_ = true;
+    coreInitialized_ = true;
+    stopRequested_ = false;
     networkConnected_ = wifiConnected();
     portEXIT_CRITICAL(&mux_);
     ESP_LOGI(TAG, "ESP-Claw remote chat started");
@@ -1695,6 +1846,11 @@ bool ClawRuntime::startSetupPortalImpl() {
 }
 
 bool ClawRuntime::startSetupPortal() {
+    loadRuntimeSettings();
+    if (!enabled() || !wifiEnabled()) {
+        logf(ClawStatusLog::Level::WARN, "后台需要启用 ESP-Claw 和 Wi-Fi");
+        return false;
+    }
     if (setupPortalActive()) return true;
     if (!startSetupPortalImpl()) {
         logf(ClawStatusLog::Level::ERROR, "热点启动失败");
@@ -1732,6 +1888,56 @@ void ClawRuntime::stopSetupPortal() {
     setupIp_[0] = '\0';
     portEXIT_CRITICAL(&mux_);
     logf(ClawStatusLog::Level::INFO, "热点已关闭");
+#endif
+}
+
+void ClawRuntime::stopWifi() {
+#if !CONFIG_STICKMON_CLAW_ENABLE
+    return;
+#else
+    if (s_wifiInitialized) {
+        s_wifiStopping = true;
+        (void)esp_wifi_disconnect();
+        (void)esp_wifi_stop();
+        s_wifiStopping = false;
+    }
+    portENTER_CRITICAL(&s_wifiMux);
+    s_wifiConnected = false;
+    portEXIT_CRITICAL(&s_wifiMux);
+    portENTER_CRITICAL(&mux_);
+    networkConnected_ = false;
+    staIp_[0] = '\0';
+    portEXIT_CRITICAL(&mux_);
+#endif
+}
+
+void ClawRuntime::stopDisabledRuntime() {
+#if !CONFIG_STICKMON_CLAW_ENABLE
+    return;
+#else
+    if (setupPortalActive()) stopSetupPortal();
+
+    claw_core_handle_t core = app_claw_get_core();
+    if (core) {
+        (void)claw_core_cancel_request(core, 0);
+        const claw_core_agent_loop_phase_t phase =
+            claw_core_get_agent_loop_phase(core);
+        if (phase != CLAW_CORE_AGENT_LOOP_PHASE_IDLE) return;
+    }
+
+    // Stop ingress before stopping the worker so a queued WeChat event cannot
+    // race the user turning AI hosting off.
+    if (claw_event_router_stop() != ESP_OK) return;
+    if (core && claw_core_stop(core, 1000) != ESP_OK) return;
+
+    portENTER_CRITICAL(&mux_);
+    started_ = false;
+    stopRequested_ = false;
+    activeAutonomyRequestId_ = 0;
+    autonomySubmitInFlight_ = false;
+    portEXIT_CRITICAL(&mux_);
+    if (!wifiEnabled()) stopWifi();
+    logf(ClawStatusLog::Level::INFO, "ESP-Claw 服务已停止");
 #endif
 }
 
@@ -1840,11 +2046,18 @@ void ClawRuntime::update(uint32_t nowMs) {
     portENTER_CRITICAL(&mux_);
     networkConnected_ = wifiConnected();
     bool running = started_;
+    bool enabled = enabled_;
+    bool wifiEnabled = wifiEnabled_;
 #if CONFIG_APP_CLAW_CAP_IM_WECHAT
     bool portal = setupPortalActive_;
     uint32_t lastWechatPoll = lastWechatPollMs_;
 #endif
     portEXIT_CRITICAL(&mux_);
+
+    if (!enabled || !wifiEnabled) {
+        if (running || !wifiEnabled) stopDisabledRuntime();
+        return;
+    }
 
 #if CONFIG_APP_CLAW_CAP_IM_WECHAT
     // The QR login flow runs on the setup portal even before ESP-Claw itself

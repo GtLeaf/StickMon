@@ -11,6 +11,8 @@ DATA_DIR = ROOT / "data"
 PACK_OUT = DATA_DIR / "packs" / "dev"
 PACK_FONT_REGULAR_OUT = PACK_OUT / "fonts" / "zh16.smonfont"
 PACK_FONT_UNSCII_ASCII_OUT = PACK_OUT / "fonts" / "ascii16-unscii.smonfont"
+PACK_FONT_LARGE_REGULAR_OUT = PACK_OUT / "fonts" / "zh32.smonfont"
+PACK_FONT_LARGE_ASCII_OUT = PACK_OUT / "fonts" / "ascii32.smonfont"
 FALLBACK_H_OUT = SRC / "assets" / "FontFallbackCN.h"
 FALLBACK_CPP_OUT = SRC / "assets" / "FontFallbackCN.cpp"
 SARASA_FONT_PATH = (
@@ -25,6 +27,11 @@ FONT_PACK_VERSION = 1
 FONT_GLYPH_W = 16
 FONT_GLYPH_H = 16
 FONT_GLYPH_BYTES = 32
+LARGE_FONT_GLYPH_W = 32
+LARGE_FONT_GLYPH_H = 32
+LARGE_FONT_GLYPH_BYTES = 128
+LARGE_ASCII_DRAW_W = 15
+LARGE_ASCII_DRAW_H = 28
 ASCII_CELL_W = 8
 # Keep one logical pixel of side bearing on both sides of the normal ASCII
 # cell. Wide glyphs are narrowed offline before they enter the binary font.
@@ -154,6 +161,38 @@ def normalize_unscii_glyph(bitmap):
     return bytes(out)
 
 
+def upscale_unscii_glyph(bitmap):
+    """Upscale the normalized 16x16 Unscii cell to a 32x32 bitmap.
+
+    The AMOLED renderer uses a 16px physical ASCII cell inside the 32px
+    storage cell. Keeping this as an integer nearest-neighbor upscale makes
+    its glyph shape and baseline identical to StickS3's Unscii rendering.
+    """
+    source = Image.new("L", (FONT_GLYPH_W, FONT_GLYPH_H), 0)
+    for row in range(FONT_GLYPH_H):
+        left = bitmap[row * 2]
+        right = bitmap[row * 2 + 1]
+        for col in range(FONT_GLYPH_W):
+            byte = left if col < 8 else right
+            bit = col if col < 8 else col - 8
+            if byte & (1 << (7 - bit)):
+                source.putpixel((col, row), 255)
+
+    output = bytearray(LARGE_FONT_GLYPH_BYTES)
+    for source_row in range(FONT_GLYPH_H):
+        for source_col in range(FONT_GLYPH_W):
+            if source.getpixel((source_col, source_row)) == 0:
+                continue
+            physical_x = source_col * 2
+            physical_y = source_row * 2
+            for dy in range(2):
+                row_offset = (physical_y + dy) * 4
+                for dx in range(2):
+                    col = physical_x + dx
+                    output[row_offset + col // 8] |= 1 << (7 - col % 8)
+    return bytes(output)
+
+
 def glyph_bytes(font, ch):
     # Render against a shared baseline, then threshold once into a binary
     # bitmap. This is offline rasterization; firmware never blends glyphs.
@@ -230,7 +269,8 @@ def write_active_config():
     })
 
 
-def write_pack_font(path, chars, glyph_for_char):
+def write_pack_font(path, chars, glyph_for_char, glyph_w=FONT_GLYPH_W,
+                    glyph_h=FONT_GLYPH_H, glyph_bytes=FONT_GLYPH_BYTES):
     path.parent.mkdir(parents=True, exist_ok=True)
     glyph_rows = bytearray()
     for ch in sorted_chars(chars):
@@ -242,13 +282,61 @@ def write_pack_font(path, chars, glyph_for_char):
         FONT_PACK_MAGIC,
         FONT_PACK_VERSION,
         len(chars),
-        FONT_GLYPH_W,
-        FONT_GLYPH_H,
-        FONT_GLYPH_BYTES,
+        glyph_w,
+        glyph_h,
+        glyph_bytes,
         0,
         0,
     )
     path.write_bytes(header + glyph_rows)
+
+
+def glyph_bytes_large(font, ch):
+    """Rasterize a 32px glyph into a 32x32 physical bitmap."""
+    draw = ImageDraw.Draw(Image.new(
+        "L", (LARGE_FONT_GLYPH_W, LARGE_FONT_GLYPH_H), 0))
+    bbox = draw.textbbox((0, 0), ch, font=font, anchor="ls")
+    w = bbox[2] - bbox[0]
+    h = bbox[3] - bbox[1]
+    if w <= 0 or h <= 0:
+        return bytes(LARGE_FONT_GLYPH_BYTES)
+
+    glyph = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(glyph).text((-bbox[0], -bbox[1]), ch, font=font,
+                               fill=255, anchor="ls")
+    compact = ord(ch) < 0x80 or ch in {"♀", "♂"}
+    cell_w = 16 if compact else 32
+    if compact and (ch.isalnum() or ch in {"♀", "♂"}):
+        scaled_h = LARGE_ASCII_DRAW_H
+        scaled_w = min(
+            LARGE_ASCII_DRAW_W,
+            max(1, round(w * scaled_h / h)),
+        )
+    else:
+        max_draw_w = LARGE_ASCII_DRAW_W if compact else 32
+        scale = min(1.0, max_draw_w / w, 30 / h)
+        scaled_w = max(1, round(w * scale))
+        scaled_h = max(1, round(h * scale))
+    if (scaled_w, scaled_h) != glyph.size:
+        glyph = glyph.resize(
+            (scaled_w, scaled_h), Image.Resampling.LANCZOS)
+    w, h = glyph.size
+
+    img = Image.new("L", (LARGE_FONT_GLYPH_W, LARGE_FONT_GLYPH_H), 0)
+    x = (cell_w - w) // 2
+    y = (LARGE_FONT_GLYPH_H - h) // 2
+    img.paste(glyph, (x, y))
+
+    out = bytearray()
+    for row in range(LARGE_FONT_GLYPH_H):
+        for byte_index in range(4):
+            value = 0
+            for bit in range(8):
+                col = byte_index * 8 + bit
+                if img.getpixel((col, row)) > BITMAP_THRESHOLD:
+                    value |= 1 << (7 - bit)
+            out.append(value)
+    return bytes(out)
 
 
 def write_firmware_fallback(chars, font):
@@ -317,6 +405,7 @@ def main():
             raise FileNotFoundError(f"{name} font not found: {path}")
 
     regular_font = ImageFont.truetype(str(SARASA_FONT_PATH), 16)
+    large_font = ImageFont.truetype(str(SARASA_FONT_PATH), 32)
     unscii_glyphs = load_unscii_glyphs(UNSCII_FONT_PATH)
     fallback_chars = collect_fallback_chars()
     pack_chars = collect_ui_chars()
@@ -335,12 +424,32 @@ def main():
         UNSCII_CHARS,
         lambda ch: normalize_unscii_glyph(unscii_glyphs[ch]),
     )
+    write_pack_font(
+        PACK_FONT_LARGE_REGULAR_OUT,
+        pack_chars,
+        lambda ch: glyph_bytes_large(large_font, ch),
+        LARGE_FONT_GLYPH_W,
+        LARGE_FONT_GLYPH_H,
+        LARGE_FONT_GLYPH_BYTES,
+    )
+    write_pack_font(
+        PACK_FONT_LARGE_ASCII_OUT,
+        UNSCII_CHARS,
+        lambda ch: upscale_unscii_glyph(
+            normalize_unscii_glyph(unscii_glyphs[ch])
+        ),
+        LARGE_FONT_GLYPH_W,
+        LARGE_FONT_GLYPH_H,
+        LARGE_FONT_GLYPH_BYTES,
+    )
     write_active_config()
     merge_pack_manifest(
         format="smon-resource-pack-v1",
         font="fonts/zh16.smonfont",
         fontCount=2,
         fonts="fonts",
+        fontLarge="fonts/zh32.smonfont",
+        fontLargeCount=2,
     )
     print(
         f"Generated Sarasa Gothic SC CJK firmware fallback glyphs={len(fallback_chars)} "

@@ -8,10 +8,16 @@ public:
     void attach(const Platform::FrameBuffer565& frameBuffer);
     bool attached() const { return pixels_ != nullptr; }
 
+    // Page layout stays in the game's logical coordinate system while the
+    // backing store can use a higher-resolution physical framebuffer.
+    void setCoordinateScale(uint8_t scale);
+    uint8_t coordinateScale() const { return coordinateScale_; }
     int width() const { return width_; }
     int height() const { return height_; }
+    int physicalWidth() const { return physicalWidth_; }
+    int physicalHeight() const { return physicalHeight_; }
     uint32_t pixelCount() const {
-        return static_cast<uint32_t>(width_) * height_;
+        return static_cast<uint32_t>(physicalWidth_) * physicalHeight_;
     }
 
     uint16_t* rawPixels() { return pixels_; }
@@ -21,6 +27,7 @@ public:
 
     void fillSprite(uint16_t color);
     void drawPixel(int x, int y, uint16_t color);
+    void drawPhysicalPixel(int x, int y, uint16_t color);
     uint16_t readPixel(int x, int y) const;
     void drawFastHLine(int x, int y, int w, uint16_t color);
     void drawFastVLine(int x, int y, int h, uint16_t color);
@@ -50,6 +57,9 @@ private:
     uint16_t* pixels_ = nullptr;
     int width_ = 0;
     int height_ = 0;
+    int physicalWidth_ = 0;
+    int physicalHeight_ = 0;
+    uint8_t coordinateScale_ = 1;
     bool byteSwapped_ = false;
     int clipLeft_ = 0;
     int clipTop_ = 0;

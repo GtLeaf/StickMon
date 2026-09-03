@@ -5,6 +5,7 @@
 class PixelRenderer {
 public:
     static void bind(const Platform::FrameBuffer565& target);
+    static void setCoordinateScale(uint8_t scale);
     static Canvas565& canvas();
 
     static uint16_t rgb(uint8_t r, uint8_t g, uint8_t b);
@@ -12,8 +13,10 @@ public:
     static void darken(uint8_t amount);
     static void fillRectAlpha(int x, int y, int w, int h,
                               uint16_t color, uint8_t alpha);
-    // Text is always rendered at the native 16px height. The final argument is
-    // retained for compatibility with existing call sites and does not scale.
+    // Stick and desktop targets use the 16px font path. AMOLED targets use a
+    // dedicated physical 32px font when the canvas coordinate scale is 2.
+    // The final argument is retained for compatibility with existing call
+    // sites and does not control the physical font size.
     static void text(int x, int y, const char* value, uint16_t color,
                      uint8_t size = 1);
     static void text(Canvas565& target, int x, int y, const char* value,

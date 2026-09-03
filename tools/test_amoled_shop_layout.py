@@ -39,14 +39,25 @@ class AmoledShopLayoutTests(unittest.TestCase):
         self.assertIn("shopDailyItemCount() +", count)
         self.assertIn("shopExploreItemCount()", count)
 
-    def test_detail_uses_reversible_eased_animation(self):
+    def test_detail_is_static_and_uses_native_icon_scale(self):
         render = self._function(self.screen, "void renderShopScreen(",
                                 "int roomMenuItemAt(")
-        self.assertIn("progress * progress * (3.0f - 2.0f * progress)",
-                      self.screen)
-        self.assertIn("railOffset", render)
-        self.assertIn("iconScale = 0.72f + 0.68f * eased", render)
-        self.assertIn("shopDetailClosing ? 1.0f - phase : phase", self.app)
+        self.assertIn("showRail", render)
+        self.assertIn("const bool detailOpen", render)
+        self.assertNotIn("shopEase", render)
+        self.assertIn("SHOP_GRID_ICON_SCALE = 1.0f", self.screen)
+        self.assertIn("SHOP_DETAIL_ICON_END_SCALE = 1.4f", self.screen)
+        self.assertIn("float iconScale = SHOP_DETAIL_ICON_END_SCALE", render)
+        self.assertIn("shopDetailProgress = 1.0f", self.app)
+        self.assertIn("shopDetailProgress = 0.0f", self.app)
+
+    def test_grid_cells_render_native_icons_without_labels(self):
+        render = self._function(self.screen, "void renderShopScreen(",
+                                "int roomMenuItemAt(")
+        grid = render[render.index("for (uint8_t index = 0;"):
+                      render.index("if (model.itemCount == 0)")]
+        self.assertIn("SHOP_GRID_ICON_SCALE", grid)
+        self.assertNotIn("Game::ShopService::shortName", grid)
 
     def test_successful_shop_transaction_stays_in_detail(self):
         action = self._function(

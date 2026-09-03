@@ -244,6 +244,112 @@ void drawTextPass(Canvas565& target, int x, int y, const char* value,
     }
 }
 
+uint32_t readLargeGlyphRow(const uint8_t* bitmap, int row) {
+    const uint8_t* bytes = bitmap + row * 4;
+    return (static_cast<uint32_t>(bytes[0]) << 24) |
+           (static_cast<uint32_t>(bytes[1]) << 16) |
+           (static_cast<uint32_t>(bytes[2]) << 8) |
+           bytes[3];
+}
+
+void drawNativeGlyphBitmap(Canvas565& canvas, int x, int y,
+                           const uint8_t* bitmap, uint16_t color,
+                           int glyphWidth) {
+    if (!bitmap) return;
+    const int originX = x * canvas.coordinateScale();
+    const int originY = y * canvas.coordinateScale();
+    for (int row = 0; row < FontResource::LARGE_GLYPH_H; ++row) {
+        const uint32_t bits = readLargeGlyphRow(bitmap, row);
+        for (int col = 0; col < glyphWidth; ++col) {
+            if (bits & (1UL << (31 - col))) {
+                canvas.drawPhysicalPixel(originX + col, originY + row, color);
+            }
+        }
+    }
+}
+
+void drawNativeLegacyGlyph(Canvas565& canvas, int x, int y,
+                           const uint8_t* bitmap, uint16_t color,
+                           int glyphWidth) {
+    if (!bitmap) return;
+    const int scale = canvas.coordinateScale();
+    const int originX = x * scale;
+    const int originY = y * scale;
+    for (int row = 0; row < NATIVE_TEXT_HEIGHT; ++row) {
+        const uint16_t bits = readGlyphRow(bitmap, row, false);
+        for (int col = 0; col < glyphWidth; ++col) {
+            if ((bits & (1U << (15 - col))) == 0) continue;
+            for (int dy = 0; dy < scale; ++dy) {
+                for (int dx = 0; dx < scale; ++dx) {
+                    canvas.drawPhysicalPixel(originX + col * scale + dx,
+                                             originY + row * scale + dy,
+                                             color);
+                }
+            }
+        }
+    }
+}
+
+void drawNativeFallbackBox(Canvas565& canvas, int x, int y,
+                           uint16_t color, int width, int height) {
+    const int scale = canvas.coordinateScale();
+    const int originX = x * scale;
+    const int originY = y * scale;
+    for (int row = 0; row < height * scale; ++row) {
+        for (int col = 0; col < width * scale; ++col) {
+            if (row == 0 || row == height * scale - 1 ||
+                col == 0 || col == width * scale - 1) {
+                canvas.drawPhysicalPixel(originX + col, originY + row, color);
+            }
+        }
+    }
+}
+
+void drawNativeTextPass(Canvas565& target, int x, int y, const char* value,
+                        uint16_t color, int offsetX = 0, int offsetY = 0) {
+    int cursor = x;
+    const char* p = value;
+    while (*p) {
+        const uint32_t codepoint = readUtf8(p);
+        if (codepoint == '\n') {
+            cursor = x;
+            y += NATIVE_TEXT_HEIGHT;
+            continue;
+        }
+        if (codepoint == ' ') {
+            cursor += glyphAdvance(codepoint);
+            continue;
+        }
+
+        const bool unscii = usesUnscii(codepoint);
+        const int glyphWidth = unscii ? ASCII_CELL_WIDTH * 2
+                                      : FontResource::LARGE_GLYPH_W;
+        const FontFace face = unscii
+            ? FontFace::UNSCII_ASCII
+            : FontFace::SARASA_CJK;
+        const uint8_t* bitmap = FontResource::ins().findLargeGlyphBitmap(
+            codepoint, face);
+        if (bitmap) {
+            drawNativeGlyphBitmap(target, cursor + offsetX, y + offsetY,
+                                  bitmap, color, glyphWidth);
+        } else if (!unscii) {
+            const FontFallbackCNGlyph* fallback =
+                findFontFallbackCNGlyph(codepoint);
+            if (fallback) {
+                drawNativeLegacyGlyph(target, cursor + offsetX, y + offsetY,
+                                      fallback->bitmap, color, NATIVE_TEXT_HEIGHT);
+            } else {
+                drawNativeFallbackBox(target, cursor + offsetX + 1,
+                                      y + offsetY + 2, color, 12, 12);
+            }
+        } else {
+            drawNativeFallbackBox(target, cursor + offsetX + 1,
+                                  y + offsetY + 2, color, 6, 12);
+        }
+        cursor += glyphAdvance(codepoint);
+    }
+}
+
 uint8_t rgb565R(uint16_t color) {
     return static_cast<uint8_t>(((color >> 11) & 0x1F) * 255 / 31);
 }
@@ -270,6 +376,10 @@ uint16_t blendRgb565(uint16_t dst, uint16_t src, uint8_t alpha) {
 
 void PixelRenderer::bind(const Platform::FrameBuffer565& target) {
     gCanvas.attach(target);
+}
+
+void PixelRenderer::setCoordinateScale(uint8_t scale) {
+    gCanvas.setCoordinateScale(scale);
 }
 
 Canvas565& PixelRenderer::canvas() {
@@ -329,19 +439,45 @@ void PixelRenderer::fillRectAlpha(int x, int y, int w, int h,
 void PixelRenderer::text(int x, int y, const char* value, uint16_t color,
                          uint8_t size) {
     (void)size;
-    drawTextPass(gCanvas, x, y, value, color);
+    if (gCanvas.coordinateScale() >= 2) {
+        drawNativeTextPass(gCanvas, x, y, value, color);
+    } else {
+        drawTextPass(gCanvas, x, y, value, color);
+    }
 }
 
 void PixelRenderer::text(Canvas565& target, int x, int y, const char* value,
                          uint16_t color, uint8_t size) {
     (void)size;
-    drawTextPass(target, x, y, value, color);
+    if (target.coordinateScale() >= 2) {
+        drawNativeTextPass(target, x, y, value, color);
+    } else {
+        drawTextPass(target, x, y, value, color);
+    }
 }
 
 void PixelRenderer::textOutlined(int x, int y, const char* value, uint16_t color,
                                  uint16_t outline, uint8_t outlineWidth,
                                  uint8_t size) {
     (void)size;
+    if (gCanvas.coordinateScale() >= 2) {
+        if (outlineWidth == 0) {
+            drawNativeTextPass(gCanvas, x, y, value, color);
+            return;
+        }
+        if (outlineWidth > MAX_TEXT_OUTLINE_WIDTH) {
+            outlineWidth = MAX_TEXT_OUTLINE_WIDTH;
+        }
+        for (int offsetY = -outlineWidth; offsetY <= outlineWidth; ++offsetY) {
+            for (int offsetX = -outlineWidth; offsetX <= outlineWidth; ++offsetX) {
+                if (offsetX == 0 && offsetY == 0) continue;
+                drawNativeTextPass(gCanvas, x, y, value, outline,
+                                   offsetX, offsetY);
+            }
+        }
+        drawNativeTextPass(gCanvas, x, y, value, color);
+        return;
+    }
     if (outlineWidth == 0) {
         drawTextPass(gCanvas, x, y, value, color);
         return;

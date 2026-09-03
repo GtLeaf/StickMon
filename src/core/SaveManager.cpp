@@ -486,9 +486,15 @@ bool sequenceIsNewer(uint32_t candidate, uint32_t current) {
     return static_cast<int32_t>(candidate - current) > 0;
 }
 
-CodecLoadResult loadLatestCodecSnapshot() {
-    CodecLoadResult result;
+void loadLatestCodecSnapshot(CodecLoadResult& result) {
     constexpr const char* KEYS[] = {NVS_KEY_A, NVS_KEY_B, NVS_KEY};
+    // Scratch snapshot lives on the heap: this function is called from
+    // saveSnapshot() during legacy migration, deep inside SaveManager::load's
+    // call chain on the 8KB Arduino loopTask stack. Two on-stack Snapshot
+    // instances (~1.7KB each) plus the printf error path were enough to
+    // overflow it on devices without state_a/state_b slots.
+    auto* scratch = new (std::nothrow) SaveCodec::Snapshot;
+    if (!scratch) return;
     for (const char* key : KEYS) {
         size_t length = Platform::blobs().blobSize(NVS_NS, key);
         if (length < SaveCodec::HEADER_BYTES ||
@@ -515,17 +521,16 @@ CodecLoadResult loadLatestCodecSnapshot() {
             delete[] raw;
             continue;
         }
-        SaveCodec::Snapshot snapshot;
         uint32_t sequence = 0;
-        if (SaveCodec::decode(raw, length, snapshot, &sequence) &&
+        if (SaveCodec::decode(raw, length, *scratch, &sequence) &&
             (!result.found || sequenceIsNewer(sequence, result.sequence))) {
             result.found = true;
             result.sequence = sequence;
-            result.snapshot = snapshot;
+            result.snapshot = *scratch;
         }
         delete[] raw;
     }
-    return result;
+    delete scratch;
 }
 
 void resetGameState(Game::GameState& state) {
@@ -878,23 +883,35 @@ bool SaveManager::load(Game::GameState& state,
     if (status) *status = LoadStatus::NOT_FOUND;
     viewState = MainSceneViewState{};
 
-    CodecLoadResult codec = loadLatestCodecSnapshot();
-    if (codec.found) {
-        state = codec.snapshot.state;
-        viewState = codec.snapshot.view;
+    // Heap-allocated: CodecLoadResult embeds a full Snapshot (~1.7KB) and the
+    // migration path below chains into saveSnapshot on the 8KB loopTask stack.
+    auto* codecHeap = new (std::nothrow) CodecLoadResult;
+    if (!codecHeap) {
+        Platform::logLine("[SaveManager] codec snapshot allocation failed");
+        reset(state);
+        if (status) *status = LoadStatus::INVALID;
+        return false;
+    }
+    loadLatestCodecSnapshot(*codecHeap);
+    if (codecHeap->found) {
+        state = codecHeap->snapshot.state;
+        viewState = codecHeap->snapshot.view;
         bool changed = sanitizeState(state);
         state.checksum = checksum(state);
         if (changed && normalized) *normalized = true;
         if (status) *status = LoadStatus::LOADED;
+        delete codecHeap;
         return true;
     }
-    if (codec.newerVersion) {
+    if (codecHeap->newerVersion) {
         Platform::logLine(
             "[SaveManager] codec snapshot is newer than this firmware; write protection required");
         reset(state);
         if (status) *status = LoadStatus::NEWER_VERSION;
+        delete codecHeap;
         return false;
     }
+    delete codecHeap;
 
     size_t len = Platform::blobs().blobSize(NVS_NS, NVS_KEY);
     if (len < sizeof(SaveRecordHeader)) {
@@ -1029,20 +1046,27 @@ bool SaveManager::saveSnapshot(const Game::GameState& state,
     }
 
     auto* encoded = new (std::nothrow) uint8_t[SaveCodec::MAX_ENCODED_BYTES];
-    if (!encoded) {
+    auto* previous = new (std::nothrow) CodecLoadResult;
+    auto* copy = new (std::nothrow) Game::GameState;
+    if (!encoded || !previous || !copy) {
+        delete[] encoded;
+        delete previous;
+        delete copy;
         Platform::logLine("[SaveManager] snapshot allocation failed");
         return false;
     }
-    CodecLoadResult previous = loadLatestCodecSnapshot();
-    uint32_t sequence = previous.found ? previous.sequence + 1U : 1U;
-    Game::GameState copy = state;
-    copy.magic = Game::SAVE_MAGIC;
-    copy.version = Game::SAVE_VERSION;
-    copy.checksum = checksum(copy);
+    loadLatestCodecSnapshot(*previous);
+    uint32_t sequence = previous->found ? previous->sequence + 1U : 1U;
+    *copy = state;
+    copy->magic = Game::SAVE_MAGIC;
+    copy->version = Game::SAVE_VERSION;
+    copy->checksum = checksum(*copy);
     size_t encodedLength = 0;
-    if (!SaveCodec::encode(copy, viewState, sequence, encoded,
+    if (!SaveCodec::encode(*copy, viewState, sequence, encoded,
                            SaveCodec::MAX_ENCODED_BYTES, encodedLength)) {
         delete[] encoded;
+        delete previous;
+        delete copy;
         Platform::logLine("[SaveManager] snapshot encode failed");
         return false;
     }
@@ -1053,6 +1077,8 @@ bool SaveManager::saveSnapshot(const Game::GameState& state,
     bool mirrorResult = Platform::blobs().writeBlob(
         NVS_NS, NVS_KEY, encoded, encodedLength);
     delete[] encoded;
+    delete previous;
+    delete copy;
 
     if (!slotResult || !mirrorResult) {
         Platform::logLine("[SaveManager] snapshot write failed");

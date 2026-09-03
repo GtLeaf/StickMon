@@ -223,7 +223,9 @@ struct RoomFoodViewModel {
 };
 
 struct ComputerViewModel {
-    enum class Page : uint8_t { MENU = 0, STATUS, STORAGE, CLAW_SETUP };
+    enum class Page : uint8_t {
+        MENU = 0, STATUS, STORAGE, AI_HOSTING, CLAW_SETUP
+    };
     const Game::GameState* state = nullptr;
     Page page = Page::MENU;
     float storageScroll = 0.0f;
@@ -243,6 +245,8 @@ struct ComputerViewModel {
     char clawStaIp[16] = {};
     bool clawPhoneJoined = false;
     bool clawStarted = false;
+    bool clawEnabled = false;
+    bool wifiEnabled = false;
     char clawWechatPhase[16] = {};
     bool clawWechatPersisted = false;
     const char* toast = nullptr;
@@ -485,7 +489,8 @@ void renderComputerScreen(Canvas565& canvas, const ComputerViewModel& model,
 bool computerBackAt(int x, int y);
 int computerItemAt(int x, int y, ComputerViewModel::Page page,
                    float storageScroll = 0.0f,
-                   uint8_t storageCount = Game::STORAGE_CAP);
+                   uint8_t storageCount = Game::STORAGE_CAP,
+                   bool clawEnabled = false);
 // Header tabs on the CLAW_SETUP page: 0 = 连接 (QR), 1 = 日志 (status log).
 int clawTabAt(int x, int y);
 

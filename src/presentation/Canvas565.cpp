@@ -18,9 +18,18 @@ void swapInt(int& a, int& b) {
 
 void Canvas565::attach(const Platform::FrameBuffer565& frameBuffer) {
     pixels_ = frameBuffer.pixels;
-    width_ = frameBuffer.width;
-    height_ = frameBuffer.height;
+    physicalWidth_ = frameBuffer.width;
+    physicalHeight_ = frameBuffer.height;
+    width_ = physicalWidth_ / coordinateScale_;
+    height_ = physicalHeight_ / coordinateScale_;
     byteSwapped_ = frameBuffer.byteSwapped;
+    clearClipRect();
+}
+
+void Canvas565::setCoordinateScale(uint8_t scale) {
+    coordinateScale_ = scale == 0 ? 1 : scale;
+    width_ = physicalWidth_ / coordinateScale_;
+    height_ = physicalHeight_ / coordinateScale_;
     clearClipRect();
 }
 
@@ -49,14 +58,32 @@ void Canvas565::fillSprite(uint16_t color) {
 
 void Canvas565::drawPixel(int x, int y, uint16_t color) {
     if (!visible(x, y)) return;
-    pixels_[static_cast<uint32_t>(y) * width_ + x] = encodeColor(color);
+    const int physicalX = x * coordinateScale_;
+    const int physicalY = y * coordinateScale_;
+    for (int row = 0; row < coordinateScale_; ++row) {
+        for (int column = 0; column < coordinateScale_; ++column) {
+            drawPhysicalPixel(physicalX + column, physicalY + row, color);
+        }
+    }
+}
+
+void Canvas565::drawPhysicalPixel(int x, int y, uint16_t color) {
+    if (!pixels_ || x < clipLeft_ * coordinateScale_ ||
+        x >= clipRight_ * coordinateScale_ ||
+        y < clipTop_ * coordinateScale_ ||
+        y >= clipBottom_ * coordinateScale_ ||
+        x < 0 || x >= physicalWidth_ || y < 0 || y >= physicalHeight_) {
+        return;
+    }
+    pixels_[static_cast<uint32_t>(y) * physicalWidth_ + x] = encodeColor(color);
 }
 
 uint16_t Canvas565::readPixel(int x, int y) const {
     if (!pixels_ || x < 0 || x >= width_ || y < 0 || y >= height_) {
         return 0;
     }
-    return decodeColor(pixels_[static_cast<uint32_t>(y) * width_ + x]);
+    return decodeColor(pixels_[static_cast<uint32_t>(y * coordinateScale_) *
+                               physicalWidth_ + x * coordinateScale_]);
 }
 
 void Canvas565::drawFastHLine(int x, int y, int w, uint16_t color) {
@@ -96,9 +123,13 @@ void Canvas565::fillRect(int x, int y, int w, int h, uint16_t color) {
     int bottom = std::min(y + h, clipBottom_);
     if (left >= right || top >= bottom) return;
     const uint16_t stored = encodeColor(color);
-    for (int py = top; py < bottom; ++py) {
-        uint16_t* row = pixels_ + static_cast<uint32_t>(py) * width_;
-        std::fill(row + left, row + right, stored);
+    const int physicalLeft = left * coordinateScale_;
+    const int physicalRight = right * coordinateScale_;
+    const int physicalTop = top * coordinateScale_;
+    const int physicalBottom = bottom * coordinateScale_;
+    for (int py = physicalTop; py < physicalBottom; ++py) {
+        uint16_t* row = pixels_ + static_cast<uint32_t>(py) * physicalWidth_;
+        std::fill(row + physicalLeft, row + physicalRight, stored);
     }
 }
 

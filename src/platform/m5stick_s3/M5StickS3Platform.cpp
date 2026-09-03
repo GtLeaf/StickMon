@@ -366,6 +366,14 @@ bool M5StickS3Platform::initialize() {
 size_t M5StickS3Platform::blobSize(const char* nameSpace, const char* key) {
     Preferences preferences;
     if (!nameSpace || !key || !preferences.begin(nameSpace, true)) return 0;
+    // getBytesLength() error-logs through the Arduino printf path for missing
+    // keys; that printf has a large stack footprint and once overflowed the
+    // 8KB loopTask during legacy save migration. Probe the key type first so
+    // absent slots stay silent.
+    if (preferences.getType(key) != PT_BLOB) {
+        preferences.end();
+        return 0;
+    }
     size_t result = preferences.getBytesLength(key);
     preferences.end();
     return result;
