@@ -129,6 +129,8 @@ void makeLegacyState(uint8_t stateBytes[1560], uint16_t version) {
     state.team[1].metAt = 9876;
     state.team[1].metArea = 2;
     state.team[1].origin = Game::Origin::BEFRIENDED;
+    state.storageCount = 1;
+    state.storage[0] = state.team[0];
     state.checksum = 0;
     memcpy(stateBytes, &state, 1560);
     uint16_t checksum = checksumBytes(
@@ -172,6 +174,12 @@ void verifyV1Migration(DesktopPlatform& desktop) {
     assert(loaded.version == Game::SAVE_VERSION);
     assert(loaded.coins == 4321);
     assert(loaded.teamCount == 2 && loaded.team[1].speciesId == 4);
+    assert(loaded.team[0].gender ==
+           static_cast<uint8_t>(Game::Gender::MALE));
+    assert(loaded.team[1].gender ==
+           static_cast<uint8_t>(Game::Gender::MALE));
+    assert(loaded.storage[0].gender ==
+           static_cast<uint8_t>(Game::Gender::MALE));
     assert(view.valid && view.monsterX == 84.0f && view.monsterY == 73.0f);
     assert(!view.secondary.valid);
     size_t migratedLength = Platform::blobs().blobSize("stickmon", "state");

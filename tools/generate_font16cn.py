@@ -26,7 +26,13 @@ FONT_GLYPH_W = 16
 FONT_GLYPH_H = 16
 FONT_GLYPH_BYTES = 32
 ASCII_CELL_W = 8
-ASCII_DRAW_W = 7
+# Keep one logical pixel of side bearing on both sides of the normal ASCII
+# cell. Wide glyphs are narrowed offline before they enter the binary font.
+ASCII_DRAW_W = 6
+# Pillow's baseline anchor keeps glyphs with different bbox heights aligned.
+# Row 15 is the last row of the 16-pixel logical text cell.
+FONT_BASELINE_ROW = 15
+BITMAP_THRESHOLD = 64
 PRINTABLE_ASCII = frozenset(chr(codepoint) for codepoint in range(0x21, 0x7F))
 UNSCII_CHARS = PRINTABLE_ASCII.union({"♀", "♂"})
 TEXT_EXTENSIONS = {".json", ".txt", ".md"}
@@ -113,17 +119,55 @@ def load_unscii_glyphs(path):
     return glyphs
 
 
+def normalize_unscii_glyph(bitmap):
+    """Center Unscii ink in an 8-pixel cell with a stable max width."""
+    img = Image.new("L", (FONT_GLYPH_W, FONT_GLYPH_H), 0)
+    for row, value in enumerate(bitmap[::2]):
+        for col in range(8):
+            if value & (1 << (7 - col)):
+                img.putpixel((col, row), 255)
+
+    bbox = img.getbbox()
+    if not bbox:
+        return bytes(FONT_GLYPH_BYTES)
+
+    left, _, right, _ = bbox
+    ink = img.crop((left, 0, right, FONT_GLYPH_H))
+    if ink.width > ASCII_DRAW_W:
+        ink = ink.resize((ASCII_DRAW_W, FONT_GLYPH_H), Image.Resampling.NEAREST)
+
+    normalized = Image.new("L", (FONT_GLYPH_W, FONT_GLYPH_H), 0)
+    x = (ASCII_CELL_W - ink.width) // 2
+    normalized.paste(ink, (x, 0))
+
+    out = bytearray()
+    for row in range(FONT_GLYPH_H):
+        left_bits = 0
+        right_bits = 0
+        for col in range(8):
+            if normalized.getpixel((col, row)) > 0:
+                left_bits |= 1 << (7 - col)
+        for col in range(8, FONT_GLYPH_W):
+            if normalized.getpixel((col, row)) > 0:
+                right_bits |= 1 << (15 - col)
+        out.extend((left_bits, right_bits))
+    return bytes(out)
+
+
 def glyph_bytes(font, ch):
-    scratch = Image.new("L", (FONT_GLYPH_W, FONT_GLYPH_H), 0)
-    draw = ImageDraw.Draw(scratch)
-    bbox = draw.textbbox((0, 0), ch, font=font)
+    # Render against a shared baseline, then threshold once into a binary
+    # bitmap. This is offline rasterization; firmware never blends glyphs.
+    draw = ImageDraw.Draw(Image.new("L", (FONT_GLYPH_W, FONT_GLYPH_H), 0))
+    bbox = draw.textbbox((0, 0), ch, font=font, anchor="ls")
     w = bbox[2] - bbox[0]
     h = bbox[3] - bbox[1]
     if w <= 0 or h <= 0:
         return [0] * FONT_GLYPH_BYTES
 
     glyph = Image.new("L", (w, h), 0)
-    ImageDraw.Draw(glyph).text((-bbox[0], -bbox[1]), ch, font=font, fill=255)
+    ImageDraw.Draw(glyph).text((-bbox[0], -bbox[1]), ch, font=font,
+                               fill=255, anchor="ls")
+    baseline_offset = -bbox[1]
 
     cell_w = ASCII_CELL_W if ord(ch) < 0x80 else FONT_GLYPH_W
     max_draw_w = ASCII_DRAW_W if ord(ch) < 0x80 else FONT_GLYPH_W
@@ -132,11 +176,12 @@ def glyph_bytes(font, ch):
         scaled_w = max(1, round(w * scale))
         scaled_h = max(1, round(h * scale))
         glyph = glyph.resize((scaled_w, scaled_h), Image.Resampling.LANCZOS)
+        baseline_offset = round(baseline_offset * scale)
         w, h = glyph.size
 
     img = Image.new("L", (FONT_GLYPH_W, FONT_GLYPH_H), 0)
     x = (cell_w - w) // 2
-    y = (FONT_GLYPH_H - h) // 2
+    y = FONT_BASELINE_ROW - baseline_offset
     img.paste(glyph, (x, y))
 
     out = []
@@ -144,10 +189,10 @@ def glyph_bytes(font, ch):
         left = 0
         right = 0
         for col in range(8):
-            if img.getpixel((col, row)) > 64:
+            if img.getpixel((col, row)) > BITMAP_THRESHOLD:
                 left |= 1 << (7 - col)
         for col in range(8, 16):
-            if img.getpixel((col, row)) > 64:
+            if img.getpixel((col, row)) > BITMAP_THRESHOLD:
                 right |= 1 << (15 - col)
         out.extend([left, right])
     return out
@@ -288,7 +333,7 @@ def main():
     write_pack_font(
         PACK_FONT_UNSCII_ASCII_OUT,
         UNSCII_CHARS,
-        lambda ch: unscii_glyphs[ch],
+        lambda ch: normalize_unscii_glyph(unscii_glyphs[ch]),
     )
     write_active_config()
     merge_pack_manifest(

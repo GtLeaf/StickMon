@@ -20,12 +20,15 @@ Game::GameState makeState() {
     state.team[0].hpMax = 88;
     state.team[0].ivPacked = 0x01234567;
     state.team[0].majorStatus = Game::MajorStatus::PARALYSIS;
+    state.team[0].gender = static_cast<uint8_t>(Game::Gender::FEMALE);
     state.team[0].bond = -12;
     state.team[0].metAt = 0x01020304;
     state.team[1].speciesId = 133;
     state.team[1].origin = Game::Origin::BEFRIENDED;
+    state.team[1].gender = static_cast<uint8_t>(Game::Gender::MALE);
     state.storageCount = 1;
     state.storage[0].speciesId = 4;
+    state.storage[0].gender = static_cast<uint8_t>(Game::Gender::FEMALE);
     state.bag.candy = 7;
     state.bag.thunderStone = 2;
     state.bag.soap[2] = 3;
@@ -121,6 +124,12 @@ void verifyRoundTrip() {
     assert(sequence == 0x12345678);
     assert(decoded.state.oobeDone && decoded.state.teamCount == 2);
     assert(decoded.state.team[0].speciesId == 25);
+    assert(decoded.state.team[0].gender ==
+           static_cast<uint8_t>(Game::Gender::FEMALE));
+    assert(decoded.state.team[1].gender ==
+           static_cast<uint8_t>(Game::Gender::MALE));
+    assert(decoded.state.storage[0].gender ==
+           static_cast<uint8_t>(Game::Gender::FEMALE));
     assert(decoded.state.team[0].ivPacked == 0x01234567);
     assert(decoded.state.team[0].bond == -12);
     assert(decoded.state.bag.candy == 7 && decoded.state.bag.soap[2] == 3);

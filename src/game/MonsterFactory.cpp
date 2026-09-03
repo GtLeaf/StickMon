@@ -23,6 +23,9 @@ MonsterRuntime create(uint16_t speciesId, uint8_t level) {
     }
     monster.nature = static_cast<uint8_t>(
         GameRandom::range(0, NATURE_COUNT));
+    monster.gender = static_cast<uint8_t>(
+        GameRandom::range(static_cast<int32_t>(Gender::MALE),
+                          static_cast<int32_t>(Gender::FEMALE) + 1));
     monster.hpMax = maxHpFor(*species, monster);
     monster.hpCur = monster.hpMax;
     return monster;

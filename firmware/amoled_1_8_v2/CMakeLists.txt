@@ -1,10 +1,40 @@
 cmake_minimum_required(VERSION 3.16)
 
-set(IDF_TARGET "esp32s3")
-include($ENV{IDF_PATH}/tools/cmake/project.cmake)
-project(stickmon_amoled_1_8_v2)
+option(STICKMON_ENABLE_CLAW "Build the ESP-Claw integration" ON)
+option(STICKMON_ENABLE_DEBUG_FEATURES "Expose the StickMon debug menu" OFF)
 
 set(STICKMON_ROOT "${CMAKE_CURRENT_LIST_DIR}/../..")
+set(STICKMON_ESPCLAW_ROOT "$ENV{STICKMON_ESPCLAW_ROOT}")
+if(NOT STICKMON_ESPCLAW_ROOT)
+    set(STICKMON_ESPCLAW_ROOT "${STICKMON_ROOT}/../espclaw/esp-claw-master")
+endif()
+if(STICKMON_ENABLE_CLAW AND EXISTS "${STICKMON_ESPCLAW_ROOT}/components")
+    set(EXTRA_COMPONENT_DIRS
+        "${STICKMON_ROOT}/firmware/common/components"
+        "${STICKMON_ESPCLAW_ROOT}/components/claw_modules/claw_utils"
+        "${STICKMON_ESPCLAW_ROOT}/components/claw_modules/claw_core"
+        "${STICKMON_ESPCLAW_ROOT}/components/claw_modules/claw_cap"
+        "${STICKMON_ESPCLAW_ROOT}/components/claw_modules/claw_event_router"
+        "${STICKMON_ESPCLAW_ROOT}/components/claw_modules/claw_manager"
+        "${STICKMON_ESPCLAW_ROOT}/components/claw_modules/claw_memory"
+        "${STICKMON_ESPCLAW_ROOT}/components/claw_modules/claw_skill"
+        "${STICKMON_ESPCLAW_ROOT}/components/claw_capabilities/cap_im_platform"
+        "${STICKMON_ESPCLAW_ROOT}/components/claw_capabilities/cap_llm_config"
+        "${STICKMON_ESPCLAW_ROOT}/components/claw_capabilities/cap_skill_mgr"
+        "${STICKMON_ESPCLAW_ROOT}/components/common/http_reuse"
+    )
+elseif(STICKMON_ENABLE_CLAW)
+    message(WARNING "ESP-Claw source not found at ${STICKMON_ESPCLAW_ROOT}; remote chat is unavailable")
+endif()
+
+set(IDF_TARGET "esp32s3")
+include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+# Keep dependency resolution isolated per build variant. Claw's local
+# component paths are machine-specific and must not be committed.
+idf_build_set_property(DEPENDENCIES_LOCK
+                       "${CMAKE_BINARY_DIR}/dependencies.lock")
+project(stickmon_amoled_1_8_v2)
+
 set(RESOURCE_STAGE_DIR "${CMAKE_BINARY_DIR}/stickmon_resources")
 set(RESOURCE_ACTIVE "${STICKMON_ROOT}/data/active.json")
 set(RESOURCE_MANIFEST "${STICKMON_ROOT}/data/packs/dev/manifest.json")

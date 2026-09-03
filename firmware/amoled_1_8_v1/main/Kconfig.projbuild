@@ -1,0 +1,23 @@
+config STICKMON_CLAW_ENABLE
+    bool "Enable StickMon ESP-Claw bridge"
+    default y
+
+config ESP_BOARD_DEV_DISPLAY_LCD_SUPPORT
+    bool
+    default n
+
+config ESP_BOARD_DEV_LCD_TOUCH_SUPPORT
+    bool
+    default n
+
+config ESP_BOARD_DEV_LCD_TOUCH_SUB_I2C_SUPPORT
+    bool
+    default n
+
+config ESP_BOARD_DEV_AUDIO_CODEC_SUPPORT
+    bool
+    default n
+
+config ESP_BOARD_DEV_CAMERA_SUPPORT
+    bool
+    default n

@@ -144,7 +144,7 @@ void writeMonster(Writer& writer, const Game::MonsterRuntime& monster) {
     writer.u8(monster.metArea);
     writer.u8(monster.petCountToday);
     writer.u8(static_cast<uint8_t>(monster.origin));
-    writer.u8(monster.fainted ? 1 : 0);
+    writer.u8(static_cast<uint8_t>(monster.statusFlags & 0x07U));
     writer.i8(monster.bond);
     writer.u32(monster.metAt);
     writer.u32(monster.lastSeenAt);
@@ -179,7 +179,7 @@ void readMonster(Reader& reader, Game::MonsterRuntime& monster) {
     monster.metArea = reader.u8();
     monster.petCountToday = reader.u8();
     monster.origin = static_cast<Game::Origin>(reader.u8());
-    monster.fainted = reader.u8() != 0;
+    monster.statusFlags = reader.u8() & 0x07U;
     monster.bond = reader.i8();
     monster.metAt = reader.u32();
     monster.lastSeenAt = reader.u32();

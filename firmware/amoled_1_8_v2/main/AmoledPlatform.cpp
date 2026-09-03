@@ -26,6 +26,12 @@
 namespace AmoledV2 {
 namespace {
 
+// The shared game model stores brightness as an 8-bit level, while the
+// Waveshare BSP accepts a percentage.
+int brightnessPercent(uint8_t value) {
+    return (static_cast<unsigned>(value) * 100U + 127U) / 255U;
+}
+
 constexpr char RESOURCE_BASE_PATH[] = "/assets";
 constexpr char RESOURCE_PARTITION[] = "resources";
 constexpr gpio_num_t TOUCH_WAKE_GPIO = GPIO_NUM_21;
@@ -259,7 +265,7 @@ void AmoledPlatform::present() {}
 void AmoledPlatform::setBrightness(uint8_t value) {
     brightness_ = value;
     if (initialized_) {
-        bsp_display_brightness_set(value);
+        bsp_display_brightness_set(brightnessPercent(value));
     }
 }
 uint8_t AmoledPlatform::brightness() const { return brightness_; }
@@ -577,7 +583,8 @@ bool AmoledPlatform::enable() {
         esp_err_t eventResult = esp_event_loop_create_default();
         if (eventResult != ESP_OK && eventResult != ESP_ERR_INVALID_STATE) return false;
         wifi_init_config_t config = WIFI_INIT_CONFIG_DEFAULT();
-        if (esp_wifi_init(&config) != ESP_OK) return false;
+        esp_err_t wifiInit = esp_wifi_init(&config);
+        if (wifiInit != ESP_OK && wifiInit != ESP_ERR_WIFI_STATE) return false;
         wifiInitialized_ = true;
     }
     if (esp_wifi_set_mode(WIFI_MODE_STA) != ESP_OK ||
@@ -588,7 +595,6 @@ bool AmoledPlatform::enable() {
     if (esp_now_init() != ESP_OK ||
         esp_now_register_recv_cb(receivePeerPacket) != ESP_OK) {
         esp_now_deinit();
-        esp_wifi_stop();
         return false;
     }
     resetPeerQueue();
@@ -599,7 +605,8 @@ void AmoledPlatform::end() {
     if (!peerTransportActive_) return;
     esp_now_unregister_recv_cb();
     esp_now_deinit();
-    esp_wifi_stop();
+    // Wi-Fi is shared with the remote ESP-Claw runtime. ESP-NOW may be
+    // disabled here, but the station must remain alive for remote chat.
     peerTransportActive_ = false;
     resetPeerQueue();
 }

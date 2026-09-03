@@ -491,7 +491,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
     {
         Ui::Explore::GRASS_PATH,
         Ui::Explore::AREA_DESCS[0],
-        GameAssets::Kind::BATTLE_BG_GRASS,
+        ExploreAreaCatalog::battleBackground(0),
         ExploreAreaCatalog::recommendedLevel(0),
         2,
         3,
@@ -506,7 +506,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
     {
         Ui::Explore::CREEK_SLOPE,
         Ui::Explore::AREA_DESCS[1],
-        GameAssets::Kind::BATTLE_BG_RIVERSIDE,
+        ExploreAreaCatalog::battleBackground(1),
         ExploreAreaCatalog::recommendedLevel(1),
         3,
         4,
@@ -521,7 +521,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
     {
         Ui::Explore::TALL_GRASS_PARK,
         Ui::Explore::AREA_DESCS[2],
-        GameAssets::Kind::BATTLE_BG_GRASS,
+        ExploreAreaCatalog::battleBackground(2),
         ExploreAreaCatalog::recommendedLevel(2),
         3,
         4,
@@ -536,7 +536,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
     {
         Ui::Explore::FROST_CRYSTAL_CAVE,
         Ui::Explore::AREA_DESCS[3],
-        GameAssets::Kind::BATTLE_BG_SNOW,
+        ExploreAreaCatalog::battleBackground(3),
         ExploreAreaCatalog::recommendedLevel(3),
         4,
         5,
@@ -551,7 +551,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
     {
         Ui::Explore::MIST_FOREST_PATH,
         Ui::Explore::AREA_DESCS[4],
-        GameAssets::Kind::BATTLE_BG_DEEP_FOREST,
+        ExploreAreaCatalog::battleBackground(4),
         ExploreAreaCatalog::recommendedLevel(4),
         4,
         6,
@@ -566,7 +566,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
     {
         Ui::Explore::ANCIENT_WATERFALL_VALLEY,
         Ui::Explore::AREA_DESCS[5],
-        GameAssets::Kind::BATTLE_BG_RIVERSIDE,
+        ExploreAreaCatalog::battleBackground(5),
         ExploreAreaCatalog::recommendedLevel(5),
         5,
         7,

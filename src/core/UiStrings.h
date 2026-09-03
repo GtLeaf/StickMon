@@ -144,6 +144,7 @@ static constexpr const char* NO = "否";
 
 static constexpr const char* BUY = "购买";
 static constexpr const char* SELL = "出售";
+static constexpr const char* LEAVE = "离开";
 static constexpr const char* USE = "使用";
 static constexpr const char* RETURN = "返回";
 static constexpr const char* NOTHING = "没有物品";
@@ -152,6 +153,7 @@ static constexpr const char* ROOM_SUPPLIES = "房间补给";
 static constexpr const char* WASH_PET = "给精灵洗澡";
 static constexpr const char* STATUS_PAGE = "状态";
 static constexpr const char* STORAGE_PAGE = "通讯录";
+static constexpr const char* ESP_CLAW = "ESP-Claw";
 static constexpr const char* CURRENT_TEAM = "当前队伍";
 static constexpr const char* CONTACT_BOX = "通讯录精灵";
 static constexpr const char* TEAM_EMPTY = "队伍为空";
@@ -162,6 +164,25 @@ static constexpr const char* NEED_HEART_SCALE = "需要心之鳞片";
 static constexpr const char* CURRENT_LEADER = "当前就是队首";
 static constexpr const char* VISITOR_LOCKED = "访客不能切换";
 static constexpr const char* STORAGE_READ_ONLY = "通讯录只读";
+static constexpr const char* CLAW_PORTAL_FAILED = "热点启动失败";
+static constexpr const char* CLAW_WIFI = "WIFI";
+static constexpr const char* CLAW_PASSWORD = "PASS";
+static constexpr const char* CLAW_TAB_CONNECT = "连接";
+static constexpr const char* CLAW_TAB_LOG = "日志";
+static constexpr const char* CLAW_LOG_EMPTY = "暂无日志";
+static constexpr const char* CLAW_WIFI_ON = "Wi-Fi 已连接";
+static constexpr const char* CLAW_WIFI_OFF = "Wi-Fi 未连接";
+static constexpr const char* CLAW_WECHAT_LABEL = "微信";
+static constexpr const char* CLAW_AGENT_ON = "已启动";
+static constexpr const char* CLAW_AGENT_OFF = "未启动";
+static constexpr const char* CLAW_WECHAT_IDLE = "空闲";
+static constexpr const char* CLAW_WECHAT_WAITING = "待扫码";
+static constexpr const char* CLAW_WECHAT_SCANNED = "待确认";
+static constexpr const char* CLAW_WECHAT_LOGGED_IN = "已登录";
+static constexpr const char* CLAW_WECHAT_SAVED = "已保存";
+static constexpr const char* CLAW_WECHAT_EXPIRED = "已过期";
+static constexpr const char* CLAW_WECHAT_CANCELLED = "已取消";
+static constexpr const char* CLAW_WECHAT_FAILED = "失败";
 static constexpr const char* SELL_IN_SHOP = "请在商店出售";
 static constexpr const char* MIGRATION_NEXT = "功能迁移中";
 static constexpr const char* MAP_FAILED = "地图生成失败";
@@ -538,7 +559,6 @@ static constexpr const char* ITEMS[] = {
     Ui::SHOP,
     Ui::COMPUTER,
     Ui::SETTINGS,
-    Ui::SOCIAL,
 #if STICKMON_ENABLE_DEBUG_FEATURES
     Ui::DEBUG,
 #endif

@@ -1,11 +1,14 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
+#include "core/BuildConfig.h"
 #include "core/AppSceneFlow.h"
 #include "core/VisitSessionService.h"
 #include "assets/GameAssets.h"
 #include "assets/PokemonSprites.h"
+#include "brain/ClawStatusLog.h"
 #include "game/BattleSystem.h"
 #include "game/ExplorePool.h"
 #include "game/ExploreMapGenerator.h"
@@ -22,6 +25,7 @@ namespace AmoledV1 {
 
 inline constexpr int HOME_HEADER_HEIGHT = 24;
 inline constexpr int HOME_ROOM_TOP = HOME_HEADER_HEIGHT;
+inline constexpr int MAIN_MENU_CONTENT_TOP = 0;
 inline constexpr int HOME_ROOM_WIDTH = 184;
 inline constexpr int HOME_ROOM_HEIGHT = 148;
 inline constexpr int HOME_STATUS_TOP = HOME_ROOM_TOP + HOME_ROOM_HEIGHT;
@@ -31,6 +35,15 @@ inline constexpr int SETTINGS_SLIDER_OFFSET_Y = 24;
 inline constexpr int EXPLORE_SELECTOR_LEFT_WIDTH = 64;
 inline constexpr int EXPLORE_SELECTOR_CENTER_Y = 124;
 inline constexpr int EXPLORE_SELECTOR_AREA_SPACING = 32;
+inline constexpr int SHOP_LEFT_PANEL_WIDTH = 56;
+// ESP-Claw setup page: header tabs and the log window geometry (UI space).
+inline constexpr int CLAW_TAB_CONNECT_LEFT = 102;
+inline constexpr int CLAW_TAB_LOG_LEFT = 143;
+inline constexpr int CLAW_TAB_WIDTH = 39;
+inline constexpr int CLAW_LOG_TOP = 78;
+inline constexpr int CLAW_LOG_HEIGHT = 140;
+inline constexpr int CLAW_LOG_ROW_HEIGHT = 16;
+inline constexpr int CLAW_LOG_VIEWPORT = 136;
 
 enum class HomeHitTarget {
     NONE,
@@ -68,9 +81,27 @@ struct HomeViewModel {
     bool petLongMove = true;
     bool petResting = false;
     bool night = false;
+    uint8_t moodHearts = 0;
+    uint8_t moodBurstHeart = 0xFF;
+    uint16_t moodBurstAgeMs = 0;
     bool showHearts = false;
     bool bowlFilled = false;
     const char* toast = nullptr;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    bool debugContactPrompt = false;
+    bool debugContactActive = false;
+    uint16_t debugContactSpeciesId = 0;
+    uint8_t debugContactKind = 0;
+    bool debugPairChaseActive = false;
+    uint16_t debugPairSpeciesId = 0;
+    int16_t debugPairCenterX = 92;
+    int16_t debugPairGroundY = 151;
+    uint8_t debugPairFrame = 0;
+    PokemonSprites::WalkDirection debugPairDirection =
+        PokemonSprites::WalkDirection::DOWN;
+    uint8_t debugLightSource = 0;
+    bool debugBoundaryVisible = false;
+#endif
 };
 
 struct MenuViewModel {
@@ -78,6 +109,35 @@ struct MenuViewModel {
     int pressedItem = -1;
     const char* toast = nullptr;
 };
+
+#if STICKMON_ENABLE_DEBUG_FEATURES
+struct DebugViewModel {
+    enum class Category : uint8_t {
+        ROOT = 0,
+        MONSTER,
+        RESOURCE,
+        ENV,
+        MOTION,
+        BATTLE,
+        CONTACT_EVENT,
+    };
+    enum class Popup : uint8_t { NONE = 0, SWITCH_MONSTER, SET_TIME };
+    Category category = Category::ROOT;
+    uint8_t cursor = 0;
+    float scroll = 0.0f;
+    int pressedItem = -1;
+    Popup popup = Popup::NONE;
+    uint8_t focus = 0;
+    uint8_t digits[4] = {};
+    const Game::GameState* state = nullptr;
+    const char* toast = nullptr;
+    const char* currentTime = nullptr;
+    const char* lightSource = nullptr;
+    bool tiltEnabled = false;
+    bool boundaryVisible = false;
+    bool battleBoundsVisible = false;
+};
+#endif
 
 struct ExploreViewModel {
     uint8_t visibleAreaCount = 1;
@@ -113,6 +173,9 @@ struct ExploreRouteViewModel {
     bool sliding = false;
     bool complete = false;
     bool exitConfirm = false;
+    uint8_t pickupIndex = 0;
+    uint8_t pickupItem = 0;
+    bool pickupAvailable = false;
     Prompt prompt = Prompt::NONE;
 };
 
@@ -123,15 +186,6 @@ struct ExploreMenuViewModel {
 };
 
 using CommunicationViewModel = Communication::VisitSessionService::ViewModel;
-
-struct ShopCategoryViewModel {
-    const Game::GameState* state = nullptr;
-    uint32_t coins = 0;
-    Game::ShopService::Category category =
-        Game::ShopService::Category::DAILY;
-    int pressedItem = -1;
-    const char* toast = nullptr;
-};
 
 struct TeamViewModel {
     const Game::GameState* state = nullptr;
@@ -169,12 +223,28 @@ struct RoomFoodViewModel {
 };
 
 struct ComputerViewModel {
-    enum class Page : uint8_t { MENU = 0, STATUS, STORAGE };
+    enum class Page : uint8_t { MENU = 0, STATUS, STORAGE, CLAW_SETUP };
     const Game::GameState* state = nullptr;
     Page page = Page::MENU;
     float storageScroll = 0.0f;
     uint8_t selectedItem = 0;
     int pressedItem = -1;
+    const char* clawSsid = nullptr;
+    const char* clawPassword = nullptr;
+    const char* clawIp = nullptr;
+    // CLAW_SETUP log view (second header tab). clawLog points at a snapshot
+    // buffer owned by the caller and stays valid only during the render call.
+    bool clawLogView = false;
+    float clawLogScroll = 0.0f;
+    bool clawLogPinned = true;
+    const Stickmon::ClawStatusLog::Entry* clawLog = nullptr;
+    size_t clawLogCount = 0;
+    bool clawStaConnected = false;
+    char clawStaIp[16] = {};
+    bool clawPhoneJoined = false;
+    bool clawStarted = false;
+    char clawWechatPhase[16] = {};
+    bool clawWechatPersisted = false;
     const char* toast = nullptr;
 };
 
@@ -233,6 +303,9 @@ struct BattleViewModel {
     bool animationHit = false;
     uint16_t animationDamage = 0;
     uint8_t animationFrame = 0;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    bool debugDrawBounds = false;
+#endif
     Game::MajorStatus playerStatus = Game::MajorStatus::NONE;
     Game::MajorStatus wildStatus = Game::MajorStatus::NONE;
     BattleSystem::BattleActorState playerBattleState;
@@ -291,8 +364,26 @@ struct ItemListViewModel {
     const char* toast = nullptr;
 };
 
+struct ShopViewModel {
+    enum class Mode : uint8_t { BUY = 0, SELL };
+    const Game::GameState* state = nullptr;
+    Mode mode = Mode::BUY;
+    float scroll = 0.0f;
+    uint8_t dailyItemCount = 0;
+    uint8_t exploreItemCount = 0;
+    uint8_t itemCount = 0;
+    uint32_t coins = 0;
+    int pressedMenuItem = -1;
+    int pressedItem = -1;
+    int pressedDetailAction = -1;
+    int detailItemIndex = -1;
+    Game::ItemId detailItem = Game::ItemId::COUNT;
+    float detailProgress = 0.0f;
+    const char* toast = nullptr;
+};
+
 inline constexpr int MAIN_MENU_ITEM_COUNT =
-    AppSceneFlow::mainMenuItemCount(false);
+    AppSceneFlow::mainMenuItemCount(STICKMON_ENABLE_DEBUG_FEATURES != 0);
 
 void renderHomeScreen(Canvas565& canvas, const HomeViewModel& model,
                       uint16_t rowBegin = 0, uint16_t rowEnd = 224);
@@ -306,6 +397,18 @@ void renderMainMenu(Canvas565& canvas, const MenuViewModel& model,
 bool mainMenuBackAt(int x, int y);
 int mainMenuItemAt(int x, int y, float scroll);
 float mainMenuMaxScroll();
+
+#if STICKMON_ENABLE_DEBUG_FEATURES
+void renderDebugScreen(Canvas565& canvas, const DebugViewModel& model,
+                       uint16_t rowBegin = 0, uint16_t rowEnd = 224);
+bool debugBackAt(int x, int y);
+int debugItemAt(int x, int y, DebugViewModel::Category category,
+                float scroll);
+float debugMaxScroll(DebugViewModel::Category category);
+int debugPopupChoiceAt(int x, int y);
+int debugPopupDigitAt(int x, int y, uint8_t digitCount);
+int debugContactChoiceAt(int x, int y);
+#endif
 
 void renderExploreScreen(Canvas565& canvas, const ExploreViewModel& model,
                          uint16_t rowBegin = 0, uint16_t rowEnd = 224);
@@ -339,28 +442,21 @@ bool communicationBackAt(int x, int y);
 int communicationItemAt(int x, int y,
                         const CommunicationViewModel& model);
 
-void renderShopCategoryScreen(Canvas565& canvas,
-                              const ShopCategoryViewModel& model,
-                              uint16_t rowBegin = 0,
-                              uint16_t rowEnd = 224);
-int shopCategoryItemAt(int x, int y);
-
 void renderItemListScreen(Canvas565& canvas,
                           const ItemListViewModel& model,
                           uint16_t rowBegin = 0,
                           uint16_t rowEnd = 224);
-void renderShopItemScreen(Canvas565& canvas,
-                          const ItemListViewModel& model,
-                          uint16_t rowBegin = 0,
-                          uint16_t rowEnd = 224);
+void renderShopScreen(Canvas565& canvas, const ShopViewModel& model,
+                      uint16_t rowBegin = 0, uint16_t rowEnd = 224);
 bool itemListBackAt(int x, int y);
 int itemListItemAt(int x, int y, float scroll, uint8_t itemCount);
 float itemListMaxScroll(uint8_t itemCount);
-int shopItemAt(int x, int y, float scroll, uint8_t itemCount);
-int shopSelectedItem(float scroll, uint8_t itemCount);
-float shopItemScrollForIndex(uint8_t index);
-float shopItemMaxScroll(uint8_t itemCount);
-bool shopActionAt(int x, int y);
+int shopMenuItemAt(int x, int y);
+int shopGridItemAt(int x, int y, float scroll,
+                   ShopViewModel::Mode mode, uint8_t dailyItemCount,
+                   uint8_t exploreItemCount, uint8_t itemCount);
+float shopGridMaxScroll(ShopViewModel::Mode mode, uint8_t dailyItemCount,
+                        uint8_t exploreItemCount, uint8_t itemCount);
 int itemConfirmChoiceAt(int x, int y);
 
 void renderTeamScreen(Canvas565& canvas, const TeamViewModel& model,
@@ -390,6 +486,8 @@ bool computerBackAt(int x, int y);
 int computerItemAt(int x, int y, ComputerViewModel::Page page,
                    float storageScroll = 0.0f,
                    uint8_t storageCount = Game::STORAGE_CAP);
+// Header tabs on the CLAW_SETUP page: 0 = 连接 (QR), 1 = 日志 (status log).
+int clawTabAt(int x, int y);
 
 void renderSettingsScreen(Canvas565& canvas, const SettingsViewModel& model,
                           uint16_t rowBegin = 0, uint16_t rowEnd = 224);

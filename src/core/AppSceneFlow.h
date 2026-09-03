@@ -84,7 +84,7 @@ inline MainMenuEntry mainMenuEntry(uint8_t index, bool debugEnabled) {
         return {MainMenuItem::DEBUG, Scene::DEBUG, 7, Ui::DEBUG};
     }
     if ((!debugEnabled && index == 7) || (debugEnabled && index == 8)) {
-        return {MainMenuItem::BACK, Scene::HOME, 8, "BACK"};
+        return {MainMenuItem::BACK, Scene::HOME, 8, Ui::BACK};
     }
     switch (index) {
     case 0:

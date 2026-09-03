@@ -144,6 +144,24 @@ enum class Origin : uint8_t {
     UNKNOWN = 0xFF,
 };
 
+// Gender is deliberately compact because MonsterRuntime is part of the
+// legacy on-device save layout. UNKNOWN is reserved for transient or
+// unassigned runtime values; persisted historical values are normalized.
+enum class Gender : uint8_t {
+    UNKNOWN = 0,
+    MALE = 1,
+    FEMALE = 2,
+};
+
+inline const char* genderName(uint8_t gender) {
+    switch (static_cast<Gender>(gender)) {
+    case Gender::MALE: return "male";
+    case Gender::FEMALE: return "female";
+    case Gender::UNKNOWN:
+    default: return "unknown";
+    }
+}
+
 struct StatLine {
     uint8_t hp = 0;
     uint8_t atk = 0;
@@ -206,7 +224,16 @@ struct MonsterRuntime {
     uint8_t metArea = MET_AREA_UNKNOWN;
     uint8_t petCountToday = 0;
     Origin origin = Origin::STARTER;
-    bool fainted = false;
+    // Offset 42 was a single legacy bool. Keep it byte-compatible while
+    // storing the per-monster gender beside the fainted flag.
+    union {
+        struct {
+            uint8_t fainted : 1;
+            uint8_t gender : 2;
+            uint8_t reservedStatusBits : 5;
+        };
+        uint8_t statusFlags = 0;
+    };
     int8_t bond = 100;
     uint32_t metAt = 0;
     uint32_t lastSeenAt = 0;
@@ -217,6 +244,8 @@ struct MonsterRuntime {
 
 static_assert(sizeof(MonsterRuntime) == 64,
               "MonsterRuntime layout is part of the v1/v2 save formats");
+static_assert(offsetof(MonsterRuntime, statusFlags) == 42,
+              "status flags must reuse the legacy fainted byte");
 static_assert(offsetof(MonsterRuntime, bond) == 43,
               "bond must reuse the v1 padding byte to preserve save size");
 

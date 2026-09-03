@@ -1,0 +1,2 @@
+# Keep the game, ESP-NOW and save system; remove only ESP-Claw remote chat.
+CONFIG_STICKMON_CLAW_ENABLE=n

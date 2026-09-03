@@ -1,0 +1,109 @@
+menu "StickMon ESP-Claw runtime"
+
+config APP_CLAW_ENABLE_CLI
+    bool "Enable App Claw CLI"
+    default n
+
+config APP_CLAW_SYSTEM_UI_ENABLE
+    bool "Enable ESP-Claw system UI"
+    default n
+
+choice APP_CLAW_MEMORY_MODE
+    prompt "App Claw memory mode"
+    depends on APP_CLAW_CAP_MEMORY
+    default APP_CLAW_MEMORY_MODE_LIGHTWEIGHT
+
+config APP_CLAW_MEMORY_MODE_FULL
+    bool "Structured memory"
+
+config APP_CLAW_MEMORY_MODE_LIGHTWEIGHT
+    bool "Lightweight memory"
+
+endchoice
+
+config APP_CLAW_CAP_FILES
+    bool "Enable files capability"
+    default n
+
+config APP_CLAW_CAP_MEMORY
+    bool "Enable memory"
+    default y
+
+config APP_CLAW_CAP_EVENT_ROUTER
+    bool "Enable event router"
+    default y
+
+config APP_CLAW_CAP_CORE
+    bool "Enable agent core"
+    default y
+
+config APP_CLAW_CAP_IM_QQ
+    bool "Enable QQ"
+    default n
+
+config APP_CLAW_CAP_IM_FEISHU
+    bool "Enable Feishu"
+    default n
+
+config APP_CLAW_CAP_IM_TG
+    bool "Enable Telegram"
+    select APP_CLAW_CAP_EVENT_ROUTER
+    default y
+
+config APP_CLAW_CAP_IM_WECHAT
+    bool "Enable WeChat"
+    default n
+
+config APP_CLAW_CAP_IM_LOCAL
+    bool "Enable local IM"
+    default n
+
+config APP_CLAW_CAP_SCHEDULER
+    bool "Enable scheduler"
+    default n
+
+config APP_CLAW_CAP_LUA
+    bool "Enable Lua"
+    default n
+
+config APP_CLAW_CAP_MCP_CLIENT
+    bool "Enable MCP client"
+    default n
+
+config APP_CLAW_CAP_MCP_SERVER
+    bool "Enable MCP server"
+    default n
+
+config APP_CLAW_CAP_SKILL_MGR
+    bool "Enable skill manager"
+    default y
+
+config APP_CLAW_CAP_SYSTEM
+    bool "Enable system capability"
+    default n
+
+config APP_CLAW_CAP_LLM_INSPECT
+    bool "Enable LLM inspection"
+    default n
+
+config APP_CLAW_CAP_HTTP_REQUEST
+    bool "Enable HTTP request capability"
+    default n
+
+config APP_CLAW_CAP_WEB_SEARCH
+    bool "Enable web search"
+    default n
+
+config APP_CLAW_CAP_ROUTER_MGR
+    bool "Enable router manager"
+    default n
+
+config APP_CLAW_CAP_SESSION_MGR
+    bool "Enable session manager"
+    default n
+
+config APP_CLAW_CAP_AGENT_MGR
+    bool "Enable agent manager"
+    default n
+
+endmenu

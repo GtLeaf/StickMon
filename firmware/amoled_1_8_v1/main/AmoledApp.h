@@ -3,8 +3,15 @@
 #include <algorithm>
 #include <cstdint>
 
+#ifndef STICKMON_HAS_CLAW
+#define STICKMON_HAS_CLAW 0
+#endif
+
 #include "TouchInput.h"
 #include "HomeScreen.h"
+#if STICKMON_HAS_CLAW
+#include "brain/BrainBridge.h"
+#endif
 #include "core/AppSceneFlow.h"
 #include "core/GameClockService.h"
 #include "core/MainSceneViewState.h"
@@ -53,6 +60,16 @@ public:
     void onWake(uint32_t nowMs);
     bool lockFocusPoint(int16_t& x, int16_t& y) const;
 
+#if STICKMON_HAS_CLAW
+    bool brainSnapshot(Stickmon::BrainBridge::Snapshot& out) const;
+    bool brainStartExpedition(uint8_t area);
+    bool brainReturnHome();
+    bool brainInviteFriend();
+    bool brainEat();
+    bool brainBuyFood(uint8_t foodIndex);
+    bool brainSay(const char* text);
+#endif
+
 private:
     enum class PetMotion : uint8_t {
         IDLE,
@@ -70,12 +87,32 @@ private:
         USE,
     };
 
+    enum class ExpeditionDeparturePhase : uint8_t {
+        NONE = 0,
+        WALK_TO_DOOR,
+        CROSS_DOOR,
+    };
+
     void handleTap(int x, int y, uint32_t nowMs);
     void setToast(const char* value, uint32_t nowMs,
                   uint32_t durationMs = 1100);
     void clampMenuScroll();
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    void clampDebugScroll();
+    void handleDebugTap(int x, int y, uint32_t nowMs);
+    void handleDebugPopupTap(int x, int y, uint32_t nowMs);
+    void executeDebugAction(uint32_t nowMs);
+    void acceptDebugContact(uint32_t nowMs);
+    void completeDebugContact(uint32_t nowMs);
+    void startDebugPairChase(uint32_t nowMs);
+    void updateDebugPairChase(uint32_t nowMs, float elapsedSeconds);
+    void stopDebugPairChase(uint32_t nowMs, bool reward);
+    void openDebugSwitchPopup();
+    void openDebugTimePopup();
+#endif
     void clampItemScroll();
-    void snapShopItemScroll();
+    uint8_t shopDailyItemCount() const;
+    uint8_t shopExploreItemCount() const;
     uint8_t currentItemCount() const;
     Game::ItemId currentItemAt(uint8_t index) const;
     void openItemScene(AppSceneFlow::Scene target);
@@ -85,9 +122,17 @@ private:
     void openRoomFoodScene();
     void openComputerScene();
     void openSettingsScene();
-    void setSettingsSliderValue(uint8_t item, int x, uint32_t nowMs);
     void closeUtilityScene();
     void clampComputerScroll();
+    void clampClawLogScroll();
+#if STICKMON_HAS_CLAW
+    // Copies the shared ClawStatusLog into the render snapshot buffer and
+    // reclamps the scroll offset. Called from update/tap paths only.
+    void refreshClawLogSnapshot();
+#endif
+    void setSettingsSliderValue(uint8_t item, int x, uint32_t nowMs);
+    void placeExploreRoutePickup();
+    void resolveExploreRoutePickup(uint32_t nowMs);
     void openShowerScene(uint32_t nowMs);
     void closeShowerScene();
     void startShowerSoap(uint8_t soapIndex, uint32_t nowMs);
@@ -111,6 +156,9 @@ private:
     void openTeamMoves(uint8_t teamSlot, uint32_t nowMs);
     void refreshTeamMoveRecallable();
     void switchTeamLeader(uint32_t nowMs);
+    bool queueExploreDeparture(uint8_t area, bool autoWalk);
+    bool updateExploreDeparture(uint32_t nowMs);
+    void cancelExploreDeparture();
     bool startExploreRoute(uint32_t nowMs);
     bool beginExploreRouteStep(uint32_t nowMs);
     void updateExploreRoute(uint32_t nowMs);
@@ -156,6 +204,7 @@ private:
     void settleExploreReturn();
     void leaveExploreRoute();
     void updateClockAndCare(uint32_t nowMs);
+    void updateMoodHearts(uint32_t nowMs);
     void updatePet(uint32_t nowMs);
     bool beginPetMove(PetMotion motion, float x, float y,
                       uint32_t nowMs);
@@ -192,6 +241,36 @@ private:
     float menuScroll = 0.0f;
     float menuVelocity = 0.0f;
     int pressedMenuItem = -1;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    DebugViewModel::Category debugCategory = DebugViewModel::Category::ROOT;
+    uint8_t debugCursor = 0;
+    float debugScroll = 0.0f;
+    float debugVelocity = 0.0f;
+    int debugPressedItem = -1;
+    DebugViewModel::Popup debugPopup = DebugViewModel::Popup::NONE;
+    uint8_t debugFocus = 0;
+    uint8_t debugDigits[4] = {};
+    bool debugBattleActive = false;
+    bool debugBattleRequested = false;
+    bool debugTiltControl = false;
+    bool debugWalkBoundaryVisible = false;
+    bool debugBattleDrawBoundsVisible = false;
+    uint8_t debugLightSource = 0;
+    char debugToastBuffer[48] = {};
+    bool debugContactPending = false;
+    bool debugContactActive = false;
+    uint8_t debugContactKind = 0;
+    uint8_t debugContactStorageSlot = 0xFF;
+    uint32_t debugContactStartedMs = 0;
+    bool debugPairChaseActive = false;
+    float debugPairX = 92.0f;
+    float debugPairY = 151.0f;
+    uint8_t debugPairFrame = 0;
+    PokemonSprites::WalkDirection debugPairDirection =
+        PokemonSprites::WalkDirection::DOWN;
+    uint32_t debugPairChaseUntilMs = 0;
+    uint32_t debugPairNextFrameMs = 0;
+#endif
     int pressedExploreArea = -1;
     int exploreDragStartArea = -1;
     float exploreAreaAnimCursor = 0.0f;
@@ -214,6 +293,7 @@ private:
     float itemVelocity = 0.0f;
     int pressedItemRow = -1;
     int pressedShopCategory = -1;
+    int pressedShopDetailAction = -1;
     int pressedTeamSlot = -1;
     bool teamMovesOpen = false;
     uint8_t teamMovesSlot = 0;
@@ -229,9 +309,12 @@ private:
     int pressedShowerItem = -1;
     bool teamConfirmOpen = false;
     uint8_t pendingTeamSlot = 0;
-    bool shopCategoryView = true;
     Game::ShopService::Category shopCategory =
         Game::ShopService::Category::DAILY;
+    float shopDetailProgress = 0.0f;
+    bool shopDetailClosing = false;
+    uint32_t shopDetailAnimationStartedMs = 0;
+    int shopDetailItemIndex = -1;
     bool itemConfirmOpen = false;
     Game::ItemId pendingItem = Game::ItemId::COUNT;
     PendingItemAction pendingItemAction = PendingItemAction::NONE;
@@ -240,6 +323,15 @@ private:
     float computerScroll = 0.0f;
     float computerVelocity = 0.0f;
     uint8_t computerPressedItem = 0xFF;
+    // CLAW_SETUP log view state. Entries themselves are copied into a
+    // file-scope buffer at render time (this object lives on the app_main
+    // stack, so a 64-entry array must not be a member).
+    bool clawLogView = false;
+    float clawLogScroll = 0.0f;
+    float clawLogVelocity = 0.0f;
+    bool clawLogPinned = true;
+    uint32_t clawLogGen = 0;
+    size_t clawLogCount = 0;
     uint8_t settingsPressedItem = 0xFF;
     bool settingsSliderDragging = false;
     bool settingsSliderChanged = false;
@@ -305,6 +397,9 @@ private:
     bool exploreRouteIceSliding = false;
     int8_t exploreRouteIceDx = 0;
     int8_t exploreRouteIceDy = 0;
+    uint8_t exploreRoutePickupIndex = 0;
+    uint8_t exploreRoutePickupItem = 0;
+    bool exploreRoutePickupAvailable = false;
     bool exploreRouteBossPending = false;
     bool exploreRoutePityEligible = false;
     uint16_t exploreRouteBossSpeciesId = 0;
@@ -388,12 +483,30 @@ private:
     bool petResting = false;
     bool petStoppingToEat = false;
     bool petLongMove = true;
+    bool autonomousExpedition = false;
+    ExpeditionDeparturePhase expeditionDeparturePhase =
+        ExpeditionDeparturePhase::NONE;
+    bool pendingExpedition = false;
+    bool pendingExpeditionAutoWalk = false;
+    uint8_t pendingExpeditionArea = 0;
+    uint32_t expeditionDepartureStartedMs = 0;
+    float expeditionDoorInsideX = 0.0f;
+    float expeditionDoorInsideY = 0.0f;
+    float expeditionDoorOutsideX = 0.0f;
+    float expeditionDoorOutsideY = 0.0f;
     uint32_t petTurnUntilMs = 0;
     uint32_t nextPetDebugLogMs = 0;
 
     uint32_t heartsUntil = 0;
+    uint8_t moodHeartCount = 0;
+    uint8_t moodBurstHeart = 0xFF;
+    uint32_t moodBurstStartedMs = 0;
+    uint32_t moodBurstUntilMs = 0;
+    uint32_t nextMoodBurstFrameMs = 0;
     const char* toast = nullptr;
     uint32_t toastUntil = 0;
+    char brainMessage[161] = {};
+    char clawSetupMessage[96] = {};
 };
 
 }  // namespace AmoledV1

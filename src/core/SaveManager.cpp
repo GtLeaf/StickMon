@@ -425,6 +425,16 @@ bool loadLegacyGameState(const uint8_t* stateBytes, uint16_t version,
 
     state = Game::GameState{};
     memcpy(&state, stateBytes, LEGACY_GAME_STATE_V1_V2_SIZE);
+    // Legacy v1/v2 records did not define gender. Use the requested stable
+    // migration default for every team and storage monster.
+    constexpr uint8_t LEGACY_GENDER =
+        static_cast<uint8_t>(Game::Gender::MALE);
+    for (Game::MonsterRuntime& monster : state.team) {
+        monster.gender = LEGACY_GENDER;
+    }
+    for (Game::MonsterRuntime& monster : state.storage) {
+        monster.gender = LEGACY_GENDER;
+    }
     state.version = Game::SAVE_VERSION;
     state.checksum = 0;
     state.normalBossPitySlotIndex = ExploreSpecial::slotIndexFor(
@@ -566,6 +576,13 @@ bool sanitizeMonster(Game::MonsterRuntime& mon) {
     sanitizeEv(mon.ev.spe);
 
     if (mon.nature >= Game::NATURE_COUNT) mon.nature = 0;
+    if (mon.gender == static_cast<uint8_t>(Game::Gender::UNKNOWN) ||
+        mon.gender > static_cast<uint8_t>(Game::Gender::FEMALE)) {
+        // Records written before gender support decode as UNKNOWN. Treat
+        // those historical values as the migration default as well.
+        mon.gender = static_cast<uint8_t>(Game::Gender::MALE);
+    }
+    mon.statusFlags &= 0x07U;
     if (mon.bond > Game::Bond::MAX_VALUE) mon.bond = Game::Bond::MAX_VALUE;
     if (mon.bond < Game::Bond::MIN_VALUE) mon.bond = Game::Bond::MIN_VALUE;
     if (mon.mood > 100) mon.mood = 100;

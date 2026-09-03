@@ -12,11 +12,21 @@ int main() {
     const uint16_t expectedFieldColors[] = {
         0x2227, 0x224A, 0x2A66, 0xB6DB, 0x1945, 0x1987,
     };
+    const GameAssets::Kind expectedBattleBackgrounds[] = {
+        GameAssets::Kind::BATTLE_BG_GRASS,
+        GameAssets::Kind::BATTLE_BG_RIVERSIDE,
+        GameAssets::Kind::BATTLE_BG_GRASS,
+        GameAssets::Kind::BATTLE_BG_SNOW,
+        GameAssets::Kind::BATTLE_BG_DEEP_FOREST,
+        GameAssets::Kind::BATTLE_BG_RIVERSIDE,
+    };
     for (uint8_t area = 0; area < Game::EXPLORE_AREA_COUNT; ++area) {
         assert(ExploreAreaCatalog::recommendedLevel(area) ==
                expectedLevels[area]);
         assert(ExploreAreaCatalog::fieldColor(area) ==
                expectedFieldColors[area]);
+        assert(ExploreAreaCatalog::battleBackground(area) ==
+               expectedBattleBackgrounds[area]);
     }
     assert(ExploreAreaCatalog::recommendedLevel(255) == expectedLevels[0]);
 

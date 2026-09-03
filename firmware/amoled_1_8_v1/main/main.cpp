@@ -9,6 +9,10 @@
 #include "HomeScreen.h"
 #include "TouchInput.h"
 #include "core/AudioManager.h"
+#if STICKMON_HAS_CLAW
+#include "brain/BrainBridge.h"
+#include "brain/StickmonClawRuntime.h"
+#endif
 #include "bsp/esp-bsp.h"
 #include "esp_check.h"
 #include "esp_heap_caps.h"
@@ -338,6 +342,43 @@ int lockRadius(LockPhase phase, uint32_t nowMs,
         (LOCK_START_RADIUS - finalRadius) * eased));
 }
 
+#if STICKMON_HAS_CLAW
+bool brainSnapshot(Stickmon::BrainBridge::Snapshot& out, void* userCtx) {
+    auto* app = static_cast<AmoledV1::AmoledApp*>(userCtx);
+    return app && app->brainSnapshot(out);
+}
+
+bool brainStartExpedition(uint8_t area, void* userCtx) {
+    auto* app = static_cast<AmoledV1::AmoledApp*>(userCtx);
+    return app && app->brainStartExpedition(area);
+}
+
+bool brainReturnHome(void* userCtx) {
+    auto* app = static_cast<AmoledV1::AmoledApp*>(userCtx);
+    return app && app->brainReturnHome();
+}
+
+bool brainInviteFriend(void* userCtx) {
+    auto* app = static_cast<AmoledV1::AmoledApp*>(userCtx);
+    return app && app->brainInviteFriend();
+}
+
+bool brainEat(void* userCtx) {
+    auto* app = static_cast<AmoledV1::AmoledApp*>(userCtx);
+    return app && app->brainEat();
+}
+
+bool brainBuyFood(uint8_t foodIndex, void* userCtx) {
+    auto* app = static_cast<AmoledV1::AmoledApp*>(userCtx);
+    return app && app->brainBuyFood(foodIndex);
+}
+
+bool brainSay(const char* text, void* userCtx) {
+    auto* app = static_cast<AmoledV1::AmoledApp*>(userCtx);
+    return app && app->brainSay(text);
+}
+#endif
+
 }  // namespace
 
 extern "C" void app_main(void) {
@@ -417,6 +458,18 @@ extern "C" void app_main(void) {
     ESP_LOGI(TAG, "App: loading state and resources (stack-free=%u)",
              static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
     app.begin(millisNow());
+#if STICKMON_HAS_CLAW
+    Stickmon::BrainBridge::HostAdapter brainHost{};
+    brainHost.snapshot = &brainSnapshot;
+    brainHost.startExpedition = &brainStartExpedition;
+    brainHost.returnHome = &brainReturnHome;
+    brainHost.inviteFriend = &brainInviteFriend;
+    brainHost.eat = &brainEat;
+    brainHost.buyFood = &brainBuyFood;
+    brainHost.say = &brainSay;
+    brainHost.userCtx = &app;
+    Stickmon::BrainBridge::instance().setHost(brainHost);
+#endif
     ESP_LOGI(TAG, "App: state and resources ready (stack-free=%u)",
              static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
     ESP_LOGI(TAG, "App: rendering initial frame (stack-free=%u)",
@@ -455,17 +508,23 @@ extern "C" void app_main(void) {
     uint8_t lockedBrightness =
         AmoledV1::AmoledPlatform::instance().brightness();
     ESP_LOGI(TAG, "Interactive home screen presented at 368x448");
+#if STICKMON_HAS_CLAW
+    Stickmon::ClawRuntime::instance().beginAsync();
+#endif
     while (true) {
         uint32_t nowMs = millisNow();
         AmoledV1::TouchEvent event;
         if (touchReady && touch.poll(nowMs, event)) {
+#if STICKMON_HAS_CLAW
+            Stickmon::ClawRuntime::instance().notePlayerActivity(nowMs);
+#endif
             if (event.type == AmoledV1::TouchEventType::DOWN) {
                 ESP_LOGI(TAG, "Touch down logical=(%d,%d)", event.x, event.y);
             }
             if (lockPhase != LockPhase::OPEN) {
                 if (event.type == AmoledV1::TouchEventType::DOWN) {
-                    ESP_ERROR_CHECK_WITHOUT_ABORT(
-                        bsp_display_brightness_set(lockedBrightness));
+                    AmoledV1::AmoledPlatform::instance().setBrightness(
+                        lockedBrightness);
                     if (lockPhase != LockPhase::OPENING) {
                         lockPhase = LockPhase::OPENING;
                         lockAnimationStartedMs = nowMs;
@@ -481,6 +540,9 @@ extern "C" void app_main(void) {
         }
 
         app.update(nowMs);
+#if STICKMON_HAS_CLAW
+        Stickmon::ClawRuntime::instance().update(nowMs);
+#endif
         bool lockRequest = app.consumeLockRequest();
         if (lockPhase == LockPhase::OPEN && lockRequest &&
             static_cast<int32_t>(nowMs - lockWakeGraceUntilMs) >= 0) {
