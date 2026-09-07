@@ -26,7 +26,8 @@ class AmoledExploreStepTests(unittest.TestCase):
         map_start = touch.index("if (exploreRouteMapAt(x, y))")
         map_branch = touch[map_start:]
 
-        self.assertIn("exploreRouteAutoWalk = true;", map_branch)
+        self.assertIn("exploreRoutePlayerWalkActive = true;", map_branch)
+        self.assertIn("exploreRouteAutoWalk = false;", map_branch)
         self.assertIn("if (!exploreRouteMoving)", map_branch)
         self.assertIn("beginExploreRouteStep(nowMs);", map_branch)
         self.assertNotIn("exploreRouteAutoWalk = !exploreRouteAutoWalk", map_branch)
@@ -52,7 +53,8 @@ class AmoledExploreStepTests(unittest.TestCase):
         )
         end = self.app_source.index("if (exploreRouteExitConfirm)", start)
         prompt = self.app_source[start:end]
-        self.assertIn("exploreRouteAutoWalk = true;", prompt)
+        self.assertIn("exploreRoutePlayerWalkActive = true;", prompt)
+        self.assertIn("exploreRouteAutoWalk = false;", prompt)
         self.assertIn("beginExploreRouteStep(nowMs);", prompt)
 
     def test_agent_mode_keeps_route_auto_walk_in_update_loop(self):
@@ -60,7 +62,19 @@ class AmoledExploreStepTests(unittest.TestCase):
         end = self.app_source.index("bool AmoledApp::finishExploreRouteAtEnd(", start)
         update = self.app_source[start:end]
         self.assertIn("if (autonomousExpedition", update)
-        self.assertIn("if (exploreRouteAutoWalk) beginExploreRouteStep(nowMs);", update)
+        self.assertIn("if (exploreRouteAutoWalk || exploreRoutePlayerWalkActive)", update)
+
+    def test_player_walk_stops_before_regional_boss(self):
+        update_start = self.app_source.index("void AmoledApp::updateExploreRoute(")
+        start = self.app_source.index(
+            "if (exploreRouteIndex + 1 >= path.pointCount)", update_start
+        )
+        end = self.app_source.index("requestExploreRouteDynamicRender();", start)
+        resolution = self.app_source[start:end]
+        self.assertIn("exploreRoutePlayerWalkActive", resolution)
+        self.assertIn("exploreRouteBossPending", resolution)
+        self.assertIn("exploreRouteIndex + 2 >= path.pointCount", resolution)
+        self.assertIn("exploreRoutePlayerWalkActive = false;", resolution)
 
     def test_pickup_stops_the_current_walk_run(self):
         start = self.app_source.index("void AmoledApp::resolveExploreRoutePickup(")
@@ -93,6 +107,46 @@ class AmoledExploreStepTests(unittest.TestCase):
             self.assertIn(f"{pickup_name}[]", self.app_source)
             self.assertIn(f"{pickup_name}[]", self.stick_source)
         self.assertIn("stepsToday >= 5000", self.app_source)
+
+    def test_route_generation_matches_stick_map_count_ranges(self):
+        self.assertIn(
+            "EXPLORE_MAP_MIN_COUNT[] = {3, 4, 4, 5, 6, 7}",
+            self.app_source,
+        )
+        self.assertIn(
+            "EXPLORE_MAP_MAX_COUNT[] = {4, 5, 6, 7, 8, 9}",
+            self.app_source,
+        )
+        self.assertIn("exploreMapCountForRoll(", self.app_source)
+        self.assertIn("exploreRouteMapBlockCount", self.app_source)
+        self.assertIn("generateExploreRouteMap(nowMs)", self.app_source)
+
+    def test_route_event_frequency_matches_stick(self):
+        self.assertIn(
+            "EXPLORE_ENCOUNTER_CHANCE[] = {\n"
+            "    500, 600, 700, 900, 1100, 1300,\n"
+            "}",
+            self.app_source,
+        )
+        self.assertIn("EXPLORE_ENCOUNTER_COOLDOWN_STEPS = 5", self.app_source)
+        self.assertIn("EXPLORE_MAX_ENCOUNTERS_PER_MAP = 2", self.app_source)
+        self.assertIn("exploreRouteEncounterCooldownSteps", self.app_source)
+        self.assertIn("exploreRouteMapEncounterCount", self.app_source)
+        self.assertIn("exploreItemEffects.completeWalkStep();", self.app_source)
+
+    def test_pickup_roll_is_per_map_and_keeps_guaranteed_battle_slot(self):
+        self.assertIn("EXPLORE_MAP_PICKUP_CHANCE = 6500", self.app_source)
+        self.assertIn(
+            "exploreCanScheduleGuaranteedEncounter(", self.app_source
+        )
+        self.assertIn(
+            "exploreRouteGuaranteedEncounterPending = true;",
+            self.app_source,
+        )
+        self.assertIn(
+            "exploreRouteMapBlock + 1 == exploreRouteMapBlockCount",
+            self.app_source,
+        )
 
 
 if __name__ == "__main__":

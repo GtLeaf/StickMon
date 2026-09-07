@@ -10,6 +10,7 @@ Canvas565 gCanvas;
 static constexpr uint8_t MAX_TEXT_OUTLINE_WIDTH = 2;
 static constexpr uint8_t NATIVE_TEXT_HEIGHT = 16;
 static constexpr uint8_t ASCII_CELL_WIDTH = 8;
+static constexpr uint8_t NATIVE_FONT_SCALE = 2;
 static constexpr int MAX_OUTLINE_GLYPH_WIDTH = 16;
 static constexpr int MAX_OUTLINE_MASK_WIDTH =
     MAX_OUTLINE_GLYPH_WIDTH + MAX_TEXT_OUTLINE_WIDTH * 2;
@@ -189,6 +190,18 @@ int glyphAdvance(uint32_t codepoint) {
     return usesUnscii(codepoint) ? ASCII_CELL_WIDTH : NATIVE_TEXT_HEIGHT;
 }
 
+// AMOLED native-text coordinates are physical; the legacy layoutScale path
+// still receives logical coordinates and lets Canvas565 apply its raster
+// scale. Keep both callers on the same large-font geometry.
+int nativeGlyphAdvance(const Canvas565& canvas, uint32_t codepoint) {
+    const int glyphWidth = usesUnscii(codepoint)
+        ? ASCII_CELL_WIDTH * NATIVE_FONT_SCALE
+        : FontResource::LARGE_GLYPH_W;
+    return canvas.nativeText()
+        ? glyphWidth
+        : std::max(1, glyphWidth / canvas.renderScale());
+}
+
 void drawTextPass(Canvas565& target, int x, int y, const char* value,
                   uint16_t color,
                   uint8_t outlineWidth = 0) {
@@ -256,8 +269,8 @@ void drawNativeGlyphBitmap(Canvas565& canvas, int x, int y,
                            const uint8_t* bitmap, uint16_t color,
                            int glyphWidth) {
     if (!bitmap) return;
-    const int originX = x * canvas.coordinateScale();
-    const int originY = y * canvas.coordinateScale();
+    const int originX = x * canvas.renderScale();
+    const int originY = y * canvas.renderScale();
     for (int row = 0; row < FontResource::LARGE_GLYPH_H; ++row) {
         const uint32_t bits = readLargeGlyphRow(bitmap, row);
         for (int col = 0; col < glyphWidth; ++col) {
@@ -272,17 +285,22 @@ void drawNativeLegacyGlyph(Canvas565& canvas, int x, int y,
                            const uint8_t* bitmap, uint16_t color,
                            int glyphWidth) {
     if (!bitmap) return;
-    const int scale = canvas.coordinateScale();
-    const int originX = x * scale;
-    const int originY = y * scale;
+    // The fallback bitmap is the legacy 16px asset, while x/y are already
+    // native framebuffer coordinates in this path.
+    const int coordinateScale = canvas.renderScale();
+    const int pixelScale = canvas.nativeText()
+        ? NATIVE_FONT_SCALE : coordinateScale;
+    const int originX = x * coordinateScale;
+    const int originY = y * coordinateScale;
     for (int row = 0; row < NATIVE_TEXT_HEIGHT; ++row) {
         const uint16_t bits = readGlyphRow(bitmap, row, false);
         for (int col = 0; col < glyphWidth; ++col) {
             if ((bits & (1U << (15 - col))) == 0) continue;
-            for (int dy = 0; dy < scale; ++dy) {
-                for (int dx = 0; dx < scale; ++dx) {
-                    canvas.drawPhysicalPixel(originX + col * scale + dx,
-                                             originY + row * scale + dy,
+            for (int dy = 0; dy < pixelScale; ++dy) {
+                for (int dx = 0; dx < pixelScale; ++dx) {
+                    canvas.drawPhysicalPixel(
+                        originX + col * pixelScale + dx,
+                        originY + row * pixelScale + dy,
                                              color);
                 }
             }
@@ -292,13 +310,17 @@ void drawNativeLegacyGlyph(Canvas565& canvas, int x, int y,
 
 void drawNativeFallbackBox(Canvas565& canvas, int x, int y,
                            uint16_t color, int width, int height) {
-    const int scale = canvas.coordinateScale();
-    const int originX = x * scale;
-    const int originY = y * scale;
-    for (int row = 0; row < height * scale; ++row) {
-        for (int col = 0; col < width * scale; ++col) {
-            if (row == 0 || row == height * scale - 1 ||
-                col == 0 || col == width * scale - 1) {
+    const int coordinateScale = canvas.renderScale();
+    const int pixelScale = canvas.nativeText()
+        ? NATIVE_FONT_SCALE : coordinateScale;
+    const int originX = x * coordinateScale;
+    const int originY = y * coordinateScale;
+    const int nativeWidth = width * pixelScale;
+    const int nativeHeight = height * pixelScale;
+    for (int row = 0; row < nativeHeight; ++row) {
+        for (int col = 0; col < nativeWidth; ++col) {
+            if (row == 0 || row == nativeHeight - 1 ||
+                col == 0 || col == nativeWidth - 1) {
                 canvas.drawPhysicalPixel(originX + col, originY + row, color);
             }
         }
@@ -313,11 +335,11 @@ void drawNativeTextPass(Canvas565& target, int x, int y, const char* value,
         const uint32_t codepoint = readUtf8(p);
         if (codepoint == '\n') {
             cursor = x;
-            y += NATIVE_TEXT_HEIGHT;
+            y += FontResource::LARGE_GLYPH_H;
             continue;
         }
         if (codepoint == ' ') {
-            cursor += glyphAdvance(codepoint);
+            cursor += nativeGlyphAdvance(target, codepoint);
             continue;
         }
 
@@ -346,7 +368,7 @@ void drawNativeTextPass(Canvas565& target, int x, int y, const char* value,
             drawNativeFallbackBox(target, cursor + offsetX + 1,
                                   y + offsetY + 2, color, 6, 12);
         }
-        cursor += glyphAdvance(codepoint);
+        cursor += nativeGlyphAdvance(target, codepoint);
     }
 }
 
@@ -439,7 +461,7 @@ void PixelRenderer::fillRectAlpha(int x, int y, int w, int h,
 void PixelRenderer::text(int x, int y, const char* value, uint16_t color,
                          uint8_t size) {
     (void)size;
-    if (gCanvas.coordinateScale() >= 2) {
+    if (gCanvas.layoutScale() >= 2 || gCanvas.nativeText()) {
         drawNativeTextPass(gCanvas, x, y, value, color);
     } else {
         drawTextPass(gCanvas, x, y, value, color);
@@ -449,7 +471,7 @@ void PixelRenderer::text(int x, int y, const char* value, uint16_t color,
 void PixelRenderer::text(Canvas565& target, int x, int y, const char* value,
                          uint16_t color, uint8_t size) {
     (void)size;
-    if (target.coordinateScale() >= 2) {
+    if (target.layoutScale() >= 2 || target.nativeText()) {
         drawNativeTextPass(target, x, y, value, color);
     } else {
         drawTextPass(target, x, y, value, color);
@@ -460,7 +482,7 @@ void PixelRenderer::textOutlined(int x, int y, const char* value, uint16_t color
                                  uint16_t outline, uint8_t outlineWidth,
                                  uint8_t size) {
     (void)size;
-    if (gCanvas.coordinateScale() >= 2) {
+    if (gCanvas.layoutScale() >= 2 || gCanvas.nativeText()) {
         if (outlineWidth == 0) {
             drawNativeTextPass(gCanvas, x, y, value, color);
             return;
@@ -539,7 +561,7 @@ void PixelRenderer::drawIndexed4Rle(int x, int y, int w, int h,
             int col = pixel % w;
             int row = pixel / w;
             if (flipX) col = w - 1 - col;
-            gCanvas.drawPixel(x + col, y + row, color);
+            gCanvas.drawAssetPixel(x + col, y + row, color);
         }
     }
 }
@@ -569,7 +591,7 @@ void PixelRenderer::drawRgb565RleSolid(int x, int y, int w, int h,
             int col = static_cast<int>(pixel % w);
             int row = static_cast<int>(pixel / w);
             if (flipX) col = w - 1 - col;
-            gCanvas.drawPixel(x + col, y + row, color);
+            gCanvas.drawAssetPixel(x + col, y + row, color);
         }
     }
 }
@@ -599,7 +621,7 @@ void PixelRenderer::drawIndexed4RleSolid(int x, int y, int w, int h,
             int col = static_cast<int>(pixel % w);
             int row = static_cast<int>(pixel / w);
             if (flipX) col = w - 1 - col;
-            gCanvas.drawPixel(x + col, y + row, color);
+            gCanvas.drawAssetPixel(x + col, y + row, color);
         }
         idx += packedPixels;
     }
@@ -658,13 +680,18 @@ void PixelRenderer::drawIndexed4RleScaled(int x, int y, int w, int h,
                 int drawX = x + drawCol;
                 int drawY = y + drawRow;
                 if (alpha == 255) {
-                    gCanvas.drawPixel(drawX, drawY, color);
+                    gCanvas.drawAssetPixel(drawX, drawY, color);
                 } else if (drawX >= 0 && drawY >= 0 &&
-                           drawX < gCanvas.width() && drawY < gCanvas.height()) {
+                           drawX < gCanvas.width() / gCanvas.assetScale() &&
+                           drawY < gCanvas.height() / gCanvas.assetScale()) {
+                    const int assetScale = gCanvas.assetScale();
+                    const int physicalX = drawX * assetScale;
+                    const int physicalY = drawY * assetScale;
                     uint16_t background =
-                        gCanvas.readPixel(drawX, drawY);
-                    gCanvas.drawPixel(
-                        drawX, drawY, blendRgb565(background, color, alpha));
+                        gCanvas.readPixel(physicalX, physicalY);
+                    gCanvas.fillRect(
+                        physicalX, physicalY, assetScale, assetScale,
+                        blendRgb565(background, color, alpha));
                 }
             }
         }
@@ -710,9 +737,12 @@ void PixelRenderer::drawIndexed4RleScaled(int x, int y, int w, int h,
             int drawW = std::max(1, nextX - drawX);
             int drawH = std::max(1, nextY - drawY);
             if (alpha == 255) {
-                gCanvas.fillRect(drawX, drawY, drawW, drawH, color);
+                gCanvas.fillAssetRect(drawX, drawY, drawW, drawH, color);
             } else {
-                fillRectAlpha(drawX, drawY, drawW, drawH, color, alpha);
+                const int assetScale = gCanvas.assetScale();
+                fillRectAlpha(drawX * assetScale, drawY * assetScale,
+                              drawW * assetScale, drawH * assetScale,
+                              color, alpha);
             }
         }
     }
@@ -754,7 +784,7 @@ void PixelRenderer::drawRgb565RleScaled(int x, int y, int w, int h,
                 int drawY = (int)(y + row * scale);
                 int drawW = (int)ceilf(scale);
                 int drawH = (int)ceilf(scale);
-                gCanvas.fillRect(drawX, drawY, drawW, drawH, color);
+                gCanvas.fillAssetRect(drawX, drawY, drawW, drawH, color);
             }
         }
         return;
@@ -789,7 +819,7 @@ void PixelRenderer::drawRgb565RleScaled(int x, int y, int w, int h,
             int drawRow = 0;
             if (mapDownscaledCoordinate(sampledCol, scale, outW, drawCol) &&
                 mapDownscaledCoordinate(sourceRow, scale, outH, drawRow)) {
-                gCanvas.drawPixel(x + drawCol, y + drawRow, color);
+                gCanvas.drawAssetPixel(x + drawCol, y + drawRow, color);
             }
         }
     }

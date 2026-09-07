@@ -14,7 +14,7 @@ public:
     static void fillRectAlpha(int x, int y, int w, int h,
                               uint16_t color, uint8_t alpha);
     // Stick and desktop targets use the 16px font path. AMOLED targets use a
-    // dedicated physical 32px font when the canvas coordinate scale is 2.
+    // dedicated physical 32px font when the canvas layout scale is 2.
     // The final argument is retained for compatibility with existing call
     // sites and does not control the physical font size.
     static void text(int x, int y, const char* value, uint16_t color,

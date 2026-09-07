@@ -25,9 +25,22 @@ inline WorldPoint pathPoint(const ExploreMapGenerator::Path& path,
     WorldPoint world{tileCenter(point.x), tileCenter(point.y)};
     if (path.pointCount == 1) return world;
 
-    uint8_t neighborIndex = index == 0 ? 1 : index - 1;
-    const ExploreMapGenerator::Point& neighbor = path.points[neighborIndex];
-    if (neighbor.x == point.x) world.x += TILE_SIZE * 0.5f;
+    // Roads are two tiles wide. Their centerline therefore sits halfway
+    // between the paired cells; at a turn, both axes need that offset.
+    bool vertical = false;
+    bool horizontal = false;
+    if (index > 0) {
+        const ExploreMapGenerator::Point& previous = path.points[index - 1];
+        vertical = vertical || previous.x == point.x;
+        horizontal = horizontal || previous.y == point.y;
+    }
+    if (index + 1 < path.pointCount) {
+        const ExploreMapGenerator::Point& next = path.points[index + 1];
+        vertical = vertical || next.x == point.x;
+        horizontal = horizontal || next.y == point.y;
+    }
+    if (vertical) world.x += TILE_SIZE * 0.5f;
+    if (horizontal) world.y += TILE_SIZE * 0.5f;
     return world;
 }
 

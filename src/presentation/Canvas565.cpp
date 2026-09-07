@@ -20,17 +20,28 @@ void Canvas565::attach(const Platform::FrameBuffer565& frameBuffer) {
     pixels_ = frameBuffer.pixels;
     physicalWidth_ = frameBuffer.width;
     physicalHeight_ = frameBuffer.height;
-    width_ = physicalWidth_ / coordinateScale_;
-    height_ = physicalHeight_ / coordinateScale_;
+    width_ = physicalWidth_ / renderScale();
+    height_ = physicalHeight_ / renderScale();
     byteSwapped_ = frameBuffer.byteSwapped;
     clearClipRect();
 }
 
 void Canvas565::setCoordinateScale(uint8_t scale) {
     coordinateScale_ = scale == 0 ? 1 : scale;
-    width_ = physicalWidth_ / coordinateScale_;
-    height_ = physicalHeight_ / coordinateScale_;
+    width_ = physicalWidth_ / renderScale();
+    height_ = physicalHeight_ / renderScale();
     clearClipRect();
+}
+
+void Canvas565::setLayoutScale(uint8_t scale) {
+    layoutScale_ = scale == 0 ? 1 : scale;
+    width_ = physicalWidth_ / renderScale();
+    height_ = physicalHeight_ / renderScale();
+    clearClipRect();
+}
+
+void Canvas565::setAssetScale(uint8_t scale) {
+    assetScale_ = scale == 0 ? 1 : scale;
 }
 
 uint16_t Canvas565::encodeColor(uint16_t color) const {
@@ -58,20 +69,22 @@ void Canvas565::fillSprite(uint16_t color) {
 
 void Canvas565::drawPixel(int x, int y, uint16_t color) {
     if (!visible(x, y)) return;
-    const int physicalX = x * coordinateScale_;
-    const int physicalY = y * coordinateScale_;
-    for (int row = 0; row < coordinateScale_; ++row) {
-        for (int column = 0; column < coordinateScale_; ++column) {
+    const int scale = renderScale();
+    const int physicalX = x * scale;
+    const int physicalY = y * scale;
+    for (int row = 0; row < scale; ++row) {
+        for (int column = 0; column < scale; ++column) {
             drawPhysicalPixel(physicalX + column, physicalY + row, color);
         }
     }
 }
 
 void Canvas565::drawPhysicalPixel(int x, int y, uint16_t color) {
-    if (!pixels_ || x < clipLeft_ * coordinateScale_ ||
-        x >= clipRight_ * coordinateScale_ ||
-        y < clipTop_ * coordinateScale_ ||
-        y >= clipBottom_ * coordinateScale_ ||
+    const int scale = renderScale();
+    if (!pixels_ || x < clipLeft_ * scale ||
+        x >= clipRight_ * scale ||
+        y < clipTop_ * scale ||
+        y >= clipBottom_ * scale ||
         x < 0 || x >= physicalWidth_ || y < 0 || y >= physicalHeight_) {
         return;
     }
@@ -82,8 +95,9 @@ uint16_t Canvas565::readPixel(int x, int y) const {
     if (!pixels_ || x < 0 || x >= width_ || y < 0 || y >= height_) {
         return 0;
     }
-    return decodeColor(pixels_[static_cast<uint32_t>(y * coordinateScale_) *
-                               physicalWidth_ + x * coordinateScale_]);
+    const int scale = renderScale();
+    return decodeColor(pixels_[static_cast<uint32_t>(y * scale) *
+                               physicalWidth_ + x * scale]);
 }
 
 void Canvas565::drawFastHLine(int x, int y, int w, uint16_t color) {
@@ -123,14 +137,33 @@ void Canvas565::fillRect(int x, int y, int w, int h, uint16_t color) {
     int bottom = std::min(y + h, clipBottom_);
     if (left >= right || top >= bottom) return;
     const uint16_t stored = encodeColor(color);
-    const int physicalLeft = left * coordinateScale_;
-    const int physicalRight = right * coordinateScale_;
-    const int physicalTop = top * coordinateScale_;
-    const int physicalBottom = bottom * coordinateScale_;
+    const int scale = renderScale();
+    const int physicalLeft = left * scale;
+    const int physicalRight = right * scale;
+    const int physicalTop = top * scale;
+    const int physicalBottom = bottom * scale;
     for (int py = physicalTop; py < physicalBottom; ++py) {
         uint16_t* row = pixels_ + static_cast<uint32_t>(py) * physicalWidth_;
         std::fill(row + physicalLeft, row + physicalRight, stored);
     }
+}
+
+void Canvas565::drawAssetPixel(int x, int y, uint16_t color) {
+    const int scale = assetScale_;
+    if (scale <= 1) {
+        drawPixel(x, y, color);
+        return;
+    }
+    fillRect(x * scale, y * scale, scale, scale, color);
+}
+
+void Canvas565::fillAssetRect(int x, int y, int w, int h, uint16_t color) {
+    const int scale = assetScale_;
+    if (scale <= 1) {
+        fillRect(x, y, w, h, color);
+        return;
+    }
+    fillRect(x * scale, y * scale, w * scale, h * scale, color);
 }
 
 void Canvas565::drawRect(int x, int y, int w, int h, uint16_t color) {
@@ -286,8 +319,112 @@ void Canvas565::pushImage(int x, int y, int w, int h,
     if (!source || w <= 0 || h <= 0) return;
     for (int py = 0; py < h; ++py) {
         for (int px = 0; px < w; ++px) {
-            drawPixel(x + px, y + py,
-                      source[static_cast<uint32_t>(py) * w + px]);
+            drawAssetPixel(x + px, y + py,
+                           source[static_cast<uint32_t>(py) * w + px]);
+        }
+    }
+}
+
+void Canvas565::drawMaskedAssetImage(int x, int y, int w, int h,
+                                     const uint16_t* pixels,
+                                     const uint8_t* opaqueMask) {
+    if (!pixels || !opaqueMask || w <= 0 || h <= 0) return;
+    const int assetScale = assetScale_;
+    const int renderScale = this->renderScale();
+    const int logicalLeft = x * assetScale;
+    const int logicalTop = y * assetScale;
+    const int physicalScale = assetScale * renderScale;
+    const int physicalWidth = physicalWidth_;
+    const int physicalHeight = physicalHeight_;
+
+    // The AMOLED profile uses 2x asset pixels directly in a 1x framebuffer.
+    // Avoid calling fillRect for every source pixel in this hot path.
+    if (assetScale == 2 && renderScale == 1) {
+        for (int sourceRow = 0; sourceRow < h; ++sourceRow) {
+            const int logicalY = logicalTop + sourceRow * assetScale;
+            if (logicalY >= clipBottom_ ||
+                logicalY + assetScale <= clipTop_) {
+                continue;
+            }
+            const int clippedTop = std::max(logicalY, clipTop_);
+            const int clippedBottom = std::min(
+                logicalY + assetScale, clipBottom_);
+            for (int sourceCol = 0; sourceCol < w; ++sourceCol) {
+                const uint32_t pixelIndex =
+                    static_cast<uint32_t>(sourceRow) * w + sourceCol;
+                if ((opaqueMask[pixelIndex >> 3] &
+                     (1U << (pixelIndex & 7))) == 0) {
+                    continue;
+                }
+                const int logicalX = logicalLeft + sourceCol * assetScale;
+                if (logicalX >= clipRight_ ||
+                    logicalX + assetScale <= clipLeft_) {
+                    continue;
+                }
+                const int clippedLeft = std::max(logicalX, clipLeft_);
+                const int clippedRight = std::min(
+                    logicalX + assetScale, clipRight_);
+                if (clippedLeft >= clippedRight) continue;
+                const uint16_t stored = encodeColor(pixels[pixelIndex]);
+                for (int physicalY = clippedTop;
+                     physicalY < clippedBottom; ++physicalY) {
+                    uint16_t* row = pixels_ +
+                        static_cast<uint32_t>(physicalY) * physicalWidth;
+                    row[clippedLeft] = stored;
+                    if (clippedLeft + 1 < clippedRight) {
+                        row[clippedLeft + 1] = stored;
+                    }
+                }
+            }
+        }
+        return;
+    }
+
+    for (int sourceRow = 0; sourceRow < h; ++sourceRow) {
+        const int logicalY = logicalTop + sourceRow * assetScale;
+        if (logicalY >= clipBottom_ ||
+            logicalY + assetScale <= clipTop_) {
+            continue;
+        }
+        for (int sourceCol = 0; sourceCol < w; ++sourceCol) {
+            const uint32_t pixelIndex =
+                static_cast<uint32_t>(sourceRow) * w + sourceCol;
+            if ((opaqueMask[pixelIndex >> 3] &
+                 (1U << (pixelIndex & 7))) == 0) {
+                continue;
+            }
+            const int logicalX = logicalLeft + sourceCol * assetScale;
+            if (logicalX >= clipRight_ ||
+                logicalX + assetScale <= clipLeft_) {
+                continue;
+            }
+            const int physicalLeft = logicalX * renderScale;
+            const int physicalTop = logicalY * renderScale;
+            const int physicalRight = std::min(
+                physicalWidth, physicalLeft + physicalScale);
+            const int physicalBottom = std::min(
+                physicalHeight, physicalTop + physicalScale);
+            const int clippedLeft = std::max(
+                physicalLeft, clipLeft_ * renderScale);
+            const int clippedTop = std::max(
+                physicalTop, clipTop_ * renderScale);
+            const int clippedRight = std::min(
+                physicalRight, clipRight_ * renderScale);
+            const int clippedBottom = std::min(
+                physicalBottom, clipBottom_ * renderScale);
+            if (clippedLeft >= clippedRight || clippedTop >= clippedBottom) {
+                continue;
+            }
+            const uint16_t stored = encodeColor(pixels[pixelIndex]);
+            for (int physicalY = clippedTop; physicalY < clippedBottom;
+                 ++physicalY) {
+                std::fill(
+                    pixels_ + static_cast<uint32_t>(physicalY) * physicalWidth +
+                        clippedLeft,
+                    pixels_ + static_cast<uint32_t>(physicalY) * physicalWidth +
+                        clippedRight,
+                    stored);
+            }
         }
     }
 }
@@ -316,7 +453,7 @@ void Canvas565::drawRgb565Rle(int x, int y, int w, int h,
             int column = static_cast<int>(pixel % w);
             int row = static_cast<int>(pixel / w);
             if (flipX) column = w - 1 - column;
-            drawPixel(x + column, y + row, color);
+            drawAssetPixel(x + column, y + row, color);
         }
     }
 }

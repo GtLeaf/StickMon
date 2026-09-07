@@ -1,4 +1,5 @@
 #include "HomeScreen.h"
+#include "AmoledGeometry.h"
 
 #include <algorithm>
 #include <cmath>
@@ -6,6 +7,10 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+
+#if defined(ESP_PLATFORM) && STICKMON_ENABLE_DEBUG_FEATURES
+#include "esp_timer.h"
+#endif
 
 #include "assets/PokemonSprites.h"
 #include "assets/GameAssets.h"
@@ -65,6 +70,21 @@ constexpr int SHOP_SECTION_HEADER_HEIGHT = 24;
 constexpr int SHOP_SECTION_GAP = 4;
 constexpr int SHOP_DETAIL_BUTTON_Y = 174;
 constexpr int SHOP_DETAIL_BUTTON_HEIGHT = 36;
+constexpr int EXPLORE_ROUTE_MAP_TOP = 0;
+constexpr int EXPLORE_ROUTE_MAP_BOTTOM = HOME_STATUS_TOP;
+constexpr int EXPLORE_ROUTE_WORLD_WIDTH =
+    ExploreMapGenerator::WIDTH * ExploreRouteGeometry::TILE_SIZE;
+constexpr int EXPLORE_ROUTE_WORLD_HEIGHT =
+    ExploreMapGenerator::HEIGHT * ExploreRouteGeometry::TILE_SIZE;
+constexpr int EXPLORE_ROUTE_WORLD_PHYSICAL_WIDTH =
+    EXPLORE_ROUTE_WORLD_WIDTH * AmoledUi::RESOURCE_SCALE;
+constexpr int EXPLORE_ROUTE_WORLD_PHYSICAL_HEIGHT =
+    EXPLORE_ROUTE_WORLD_HEIGHT * AmoledUi::RESOURCE_SCALE;
+constexpr int EXPLORE_ROUTE_HUD_X = 4;
+constexpr int EXPLORE_ROUTE_HUD_Y = 3;
+constexpr int EXPLORE_ROUTE_HUD_HEIGHT = 23;
+constexpr int EXPLORE_ROUTE_BAG_BUTTON_X = HOME_LOCK_BUTTON_X;
+constexpr int EXPLORE_ROUTE_MENU_BUTTON_X = HOME_MENU_BUTTON_X;
 // Product cells show the 36x36 source art at native logical size. AMOLED's
 // 2x canvas mapping presents it at 72x72 physical pixels.
 constexpr float SHOP_GRID_ICON_SCALE = 1.0f;
@@ -73,10 +93,14 @@ constexpr uint32_t EXPLORE_PREVIEW_CYCLE_MS = 2800;
 constexpr uint32_t EXPLORE_PREVIEW_MOVE_MS = 500;
 constexpr uint32_t EXPLORE_PREVIEW_HOLD_MS =
     EXPLORE_PREVIEW_CYCLE_MS - EXPLORE_PREVIEW_MOVE_MS;
-constexpr int EXPLORE_PREVIEW_CENTER_Y = 126;
-constexpr int EXPLORE_PREVIEW_GAP = 5;
-constexpr int EXPLORE_PREVIEW_MAX_WIDTH = 34;
-constexpr int EXPLORE_PREVIEW_MAX_HEIGHT = 56;
+constexpr int EXPLORE_PREVIEW_CENTER_Y =
+    (EXPLORE_PREVIEW_TOP + EXPLORE_PREVIEW_BOTTOM) / 2;
+constexpr int EXPLORE_PREVIEW_SLOT_SPACING = 124;
+// Explore previews use the high-resolution FRONT pilot assets directly in
+// the AMOLED framebuffer. The larger box makes small species readable while
+// retaining a hard bound for wide/tall species in the three-item carousel.
+constexpr int EXPLORE_PREVIEW_NATIVE_MAX_WIDTH = 104;
+constexpr int EXPLORE_PREVIEW_NATIVE_MAX_HEIGHT = 160;
 // The shared explore artwork is authored at 240x135. Cover the portrait
 // AMOLED canvas and crop the horizontal sides so the scene fills the page.
 constexpr float EXPLORE_BACKGROUND_SCALE = 224.0f / 135.0f;
@@ -94,6 +118,61 @@ GameAssets::Kind cachedBattleBackground = GameAssets::Kind::COUNT;
 int cachedBattleBackgroundWidth = 0;
 int cachedBattleBackgroundHeight = 0;
 
+uint16_t* exploreBackgroundCache = nullptr;
+size_t exploreBackgroundCachePixels = 0;
+GameAssets::Kind cachedExploreBackground = GameAssets::Kind::COUNT;
+int cachedExploreBackgroundWidth = 0;
+int cachedExploreBackgroundHeight = 0;
+bool cachedExploreBackgroundByteSwapped = false;
+
+uint16_t* exploreRouteWorldCache = nullptr;
+size_t exploreRouteWorldCachePixels = 0;
+uint32_t cachedExploreRouteWorldSeed = 0;
+uint8_t cachedExploreRouteWorldArea = 0xFF;
+bool cachedExploreRouteWorldByteSwapped = false;
+
+#if defined(ESP_PLATFORM) && STICKMON_ENABLE_DEBUG_FEATURES
+struct ExploreMapPerf {
+    int64_t windowStartedUs = 0;
+    uint32_t frames = 0;
+    uint32_t cacheHits = 0;
+    uint32_t rows = 0;
+    uint64_t baseTotalUs = 0;
+    uint32_t baseMaxUs = 0;
+    uint64_t animationTotalUs = 0;
+    uint32_t animationMaxUs = 0;
+
+    void record(bool cacheHit, uint16_t rowCount, uint32_t baseUs,
+                uint32_t animationUs) {
+        const int64_t nowUs = esp_timer_get_time();
+        if (windowStartedUs == 0) windowStartedUs = nowUs;
+        ++frames;
+        if (cacheHit) ++cacheHits;
+        rows += rowCount;
+        baseTotalUs += baseUs;
+        baseMaxUs = std::max(baseMaxUs, baseUs);
+        animationTotalUs += animationUs;
+        animationMaxUs = std::max(animationMaxUs, animationUs);
+        if (nowUs - windowStartedUs < 1000000 || frames == 0) return;
+
+        Platform::logf(
+            "[ExploreMapPerf] frames=%lu cacheHit=%lu rows(avg)=%lu "
+            "base(avg/max)=%lu/%lu us anim(avg/max)=%lu/%lu us\n",
+            static_cast<unsigned long>(frames),
+            static_cast<unsigned long>(cacheHits),
+            static_cast<unsigned long>(rows / frames),
+            static_cast<unsigned long>(baseTotalUs / frames),
+            static_cast<unsigned long>(baseMaxUs),
+            static_cast<unsigned long>(animationTotalUs / frames),
+            static_cast<unsigned long>(animationMaxUs));
+        *this = ExploreMapPerf{};
+        windowStartedUs = nowUs;
+    }
+};
+
+ExploreMapPerf exploreMapPerf;
+#endif
+
 bool drawBattleBackgroundLayer(Canvas565& canvas, GameAssets::Kind kind,
                                uint16_t rowBegin, uint16_t rowEnd) {
     const size_t pixels = static_cast<size_t>(canvas.physicalWidth()) *
@@ -104,7 +183,7 @@ bool drawBattleBackgroundLayer(Canvas565& canvas, GameAssets::Kind kind,
         cachedBattleBackgroundWidth == canvas.physicalWidth() &&
         cachedBattleBackgroundHeight == canvas.physicalHeight();
     if (cacheMatches) {
-        const int scale = canvas.coordinateScale();
+        const int scale = AmoledUi::RESOURCE_SCALE;
         const size_t rowBytes = static_cast<size_t>(canvas.physicalWidth()) *
                                 sizeof(uint16_t);
         for (uint16_t row = rowBegin * scale; row < rowEnd * scale; ++row) {
@@ -120,11 +199,10 @@ bool drawBattleBackgroundLayer(Canvas565& canvas, GameAssets::Kind kind,
     bool drawn = GameAssets::draw(
         kind, BATTLE_BACKGROUND_X, 0, BATTLE_BACKGROUND_SCALE);
     if (!drawn) {
-        canvas.fillRect(0, 0, canvas.width(), canvas.height(),
-                        rgb(12, 18, 25));
+        canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(0), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(AmoledUi::LEGACY_HEIGHT), rgb(12, 18, 25));
     }
 
-    bool fullFrame = rowBegin == 0 && rowEnd == canvas.height();
+    bool fullFrame = rowBegin == 0 && rowEnd == AmoledUi::LEGACY_HEIGHT;
     if (!fullFrame) return drawn;
     if (battleBackgroundCachePixels != pixels) {
         if (battleBackgroundCache) {
@@ -140,6 +218,76 @@ bool drawBattleBackgroundLayer(Canvas565& canvas, GameAssets::Kind kind,
         cachedBattleBackground = kind;
         cachedBattleBackgroundWidth = canvas.physicalWidth();
         cachedBattleBackgroundHeight = canvas.physicalHeight();
+    }
+    return drawn;
+}
+
+bool drawExploreBackgroundLayer(Canvas565& canvas, uint16_t rowBegin,
+                                uint16_t rowEnd) {
+    const size_t pixels = static_cast<size_t>(canvas.physicalWidth()) *
+                          canvas.physicalHeight();
+    bool cacheMatches = exploreBackgroundCache &&
+        exploreBackgroundCachePixels == pixels &&
+        cachedExploreBackground == GameAssets::Kind::EXPLORE_MENU_BACKGROUND &&
+        cachedExploreBackgroundWidth == canvas.physicalWidth() &&
+        cachedExploreBackgroundHeight == canvas.physicalHeight() &&
+        cachedExploreBackgroundByteSwapped == canvas.byteSwapped();
+    if (cacheMatches) {
+        const int scale = AmoledUi::RESOURCE_SCALE;
+        const size_t rowBytes = static_cast<size_t>(canvas.physicalWidth()) *
+                                sizeof(uint16_t);
+        for (uint16_t row = rowBegin * scale; row < rowEnd * scale; ++row) {
+            std::memcpy(
+                canvas.rawPixels() +
+                    static_cast<size_t>(row) * canvas.physicalWidth(),
+                exploreBackgroundCache +
+                    static_cast<size_t>(row) * canvas.physicalWidth(),
+                rowBytes);
+        }
+        return true;
+    }
+
+    bool drawn = GameAssets::draw(GameAssets::Kind::EXPLORE_MENU_BACKGROUND,
+                                  EXPLORE_BACKGROUND_X, 0,
+                                  EXPLORE_BACKGROUND_SCALE);
+    if (!drawn) {
+        canvas.fillRect(
+            AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(0),
+            AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH),
+            AmoledUi::nativeExtent(AmoledUi::LEGACY_HEIGHT),
+            rgb(12, 18, 25));
+    }
+
+    // Cache the static tint together with the artwork. Partial-frame fallback
+    // must only blend the restored rows, otherwise the tint accumulates.
+    const int bandEdges[] = {0, EXPLORE_SELECTOR_TOP_HEIGHT,
+                            EXPLORE_SELECTOR_BUTTON_TOP, AmoledUi::LEGACY_HEIGHT};
+    const uint8_t bandAlpha[] = {148, 96, 178};
+    for (int band = 0; band < 3; ++band) {
+        const int top = std::max<int>(rowBegin, bandEdges[band]);
+        const int bottom = std::min<int>(rowEnd, bandEdges[band + 1]);
+        if (top >= bottom) continue;
+        PixelRenderer::fillRectAlpha(
+            0, AmoledUi::nativeCoordinate(top),
+            AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH),
+            AmoledUi::nativeExtent(bottom - top), rgb(8, 17, 22), bandAlpha[band]);
+    }
+    if (rowBegin != 0 || rowEnd != AmoledUi::LEGACY_HEIGHT) return drawn;
+    if (exploreBackgroundCachePixels != pixels) {
+        if (exploreBackgroundCache) {
+            Platform::memory().release(exploreBackgroundCache);
+        }
+        exploreBackgroundCache = static_cast<uint16_t*>(
+            Platform::memory().allocate(pixels * sizeof(uint16_t), true));
+        exploreBackgroundCachePixels = exploreBackgroundCache ? pixels : 0;
+    }
+    if (exploreBackgroundCache) {
+        std::memcpy(exploreBackgroundCache, canvas.rawPixels(),
+                    pixels * sizeof(uint16_t));
+        cachedExploreBackground = GameAssets::Kind::EXPLORE_MENU_BACKGROUND;
+        cachedExploreBackgroundWidth = canvas.physicalWidth();
+        cachedExploreBackgroundHeight = canvas.physicalHeight();
+        cachedExploreBackgroundByteSwapped = canvas.byteSwapped();
     }
     return drawn;
 }
@@ -237,7 +385,7 @@ int textWidth(const char* value) {
             }
         }
     }
-    if (!hasNonAscii && PixelRenderer::canvas().coordinateScale() >= 2) {
+    if (!hasNonAscii && PixelRenderer::canvas().nativeText()) {
         return static_cast<int>(std::strlen(value)) * 8;
     }
     if (!compactSupported && !hasNonAscii) {
@@ -263,8 +411,8 @@ void text(Canvas565& canvas, int x, int y, const char* value,
     if (!value || scale <= 0) return;
     // AMOLED uses the native 32px font for both CJK and ASCII. The legacy
     // 5x7 path remains for the 1x Stick S3 canvas.
-    if (canvas.coordinateScale() >= 2) {
-        PixelRenderer::text(canvas, x, y, value, color, 1);
+    if (canvas.nativeText()) {
+        PixelRenderer::text(canvas, AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y), value, color, 1);
         return;
     }
     bool compactSupported = true;
@@ -276,7 +424,7 @@ void text(Canvas565& canvas, int x, int y, const char* value,
         }
     }
     if (containsNonAscii(value) || !compactSupported) {
-        PixelRenderer::text(canvas, x, y, value, color, 1);
+        PixelRenderer::text(canvas, AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y), value, color, 1);
         return;
     }
     int cursor = x;
@@ -286,9 +434,7 @@ void text(Canvas565& canvas, int x, int y, const char* value,
         for (int row = 0; row < 7; ++row) {
             for (int column = 0; column < 5; ++column) {
                 if ((glyph->rows[row] & (1U << (4 - column))) != 0) {
-                    canvas.fillRect(cursor + column * scale,
-                                    y + row * scale,
-                                    scale, scale, color);
+                    canvas.fillRect(AmoledUi::nativeCoordinate(cursor + column * scale), AmoledUi::nativeCoordinate(y + row * scale), AmoledUi::nativeExtent(scale), AmoledUi::nativeExtent(scale), color);
                 }
             }
         }
@@ -316,15 +462,13 @@ int drawClawQr(Canvas565& canvas, const char* ssid, const char* password) {
         Stickmon::QrCodeGen::encode(payload, modules, sizeof(modules));
     if (size <= 0) return QR_TOP;
     const int block = (size + 2 * QUIET_MODULES) * QR_MODULE;
-    const int blockX = (canvas.width() - block) / 2;
-    canvas.fillRect(blockX, QR_TOP, block, block, rgb(255, 255, 255));
+    const int blockX = (AmoledUi::LEGACY_WIDTH - block) / 2;
+    canvas.fillRect(AmoledUi::nativeCoordinate(blockX), AmoledUi::nativeCoordinate(QR_TOP), AmoledUi::nativeExtent(block), AmoledUi::nativeExtent(block), rgb(255, 255, 255));
     const uint16_t black = rgb(0, 0, 0);
     for (int row = 0; row < size; ++row) {
         for (int column = 0; column < size; ++column) {
             if (!modules[row * size + column]) continue;
-            canvas.fillRect(blockX + (column + QUIET_MODULES) * QR_MODULE,
-                            QR_TOP + (row + QUIET_MODULES) * QR_MODULE,
-                            QR_MODULE, QR_MODULE, black);
+            canvas.fillRect(AmoledUi::nativeCoordinate(blockX + (column + QUIET_MODULES) * QR_MODULE), AmoledUi::nativeCoordinate(QR_TOP + (row + QUIET_MODULES) * QR_MODULE), AmoledUi::nativeExtent(QR_MODULE), AmoledUi::nativeExtent(QR_MODULE), black);
         }
     }
     return QR_TOP + block;
@@ -376,8 +520,7 @@ void drawClawTabs(Canvas565& canvas, bool logView) {
     for (int tab = 0; tab < 2; ++tab) {
         const bool active = (tab == 1) == logView;
         const int x = tab == 0 ? CLAW_TAB_CONNECT_LEFT : CLAW_TAB_LOG_LEFT;
-        canvas.fillRoundRect(x, 2, CLAW_TAB_WIDTH, HEADER_HEIGHT - 4, 3,
-                             active ? rgb(42, 61, 68) : rgb(24, 34, 42));
+        canvas.fillRoundRect(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(2), AmoledUi::nativeExtent(CLAW_TAB_WIDTH), AmoledUi::nativeExtent(HEADER_HEIGHT - 4), AmoledUi::nativeExtent(3), active ? rgb(42, 61, 68) : rgb(24, 34, 42));
         const char* label = tab == 0 ? Ui::Amoled::CLAW_TAB_CONNECT
                                      : Ui::Amoled::CLAW_TAB_LOG;
         text(canvas, x + (CLAW_TAB_WIDTH - textWidth(label)) / 2, 4, label,
@@ -387,81 +530,88 @@ void drawClawTabs(Canvas565& canvas, bool logView) {
 #endif
 
 void drawHeaderButton(Canvas565& canvas, int x, bool pressed = false) {
-    canvas.fillRoundRect(x + 2, 2, HEADER_BUTTON_WIDTH - 4,
-                         HEADER_HEIGHT - 4, 4,
-                         pressed ? rgb(53, 76, 83) : rgb(27, 43, 51));
-    canvas.drawRoundRect(x + 2, 2, HEADER_BUTTON_WIDTH - 4,
-                         HEADER_HEIGHT - 4, 4, rgb(67, 97, 101));
-}
-
-void drawMenuIcon(Canvas565& canvas) {
-    drawHeaderButton(canvas, MENU_BUTTON_X);
-    const uint16_t color = rgb(222, 234, 229);
-    for (int row = 0; row < 3; ++row) {
-        canvas.drawFastHLine(MENU_BUTTON_X + 8, 8 + row * 4, 10, color);
-    }
+    canvas.fillRoundRect(AmoledUi::nativeCoordinate(x + 2), AmoledUi::nativeCoordinate(2), AmoledUi::nativeExtent(HEADER_BUTTON_WIDTH - 4), AmoledUi::nativeExtent(HEADER_HEIGHT - 4), AmoledUi::nativeExtent(4), pressed ? rgb(53, 76, 83) : rgb(27, 43, 51));
+    canvas.drawRoundRect(AmoledUi::nativeCoordinate(x + 2), AmoledUi::nativeCoordinate(2), AmoledUi::nativeExtent(HEADER_BUTTON_WIDTH - 4), AmoledUi::nativeExtent(HEADER_HEIGHT - 4), AmoledUi::nativeExtent(4), rgb(67, 97, 101));
 }
 
 void drawHomeHudButton(Canvas565& canvas, int x) {
-    canvas.fillRoundRect(x, HOME_HUD_BUTTON_Y,
-                         HOME_HUD_BUTTON_SIZE, HOME_HUD_BUTTON_SIZE, 4,
-                         rgb(27, 43, 51));
-    canvas.drawRoundRect(x, HOME_HUD_BUTTON_Y,
-                         HOME_HUD_BUTTON_SIZE, HOME_HUD_BUTTON_SIZE, 4,
-                         rgb(67, 97, 101));
+    canvas.fillRoundRect(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(HOME_HUD_BUTTON_Y), AmoledUi::nativeExtent(HOME_HUD_BUTTON_SIZE), AmoledUi::nativeExtent(HOME_HUD_BUTTON_SIZE), AmoledUi::nativeExtent(4), rgb(27, 43, 51));
+    canvas.drawRoundRect(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(HOME_HUD_BUTTON_Y), AmoledUi::nativeExtent(HOME_HUD_BUTTON_SIZE), AmoledUi::nativeExtent(HOME_HUD_BUTTON_SIZE), AmoledUi::nativeExtent(4), rgb(67, 97, 101));
 }
 
 void drawHomeLockIcon(Canvas565& canvas) {
     drawHomeHudButton(canvas, HOME_LOCK_BUTTON_X);
     const uint16_t color = rgb(222, 234, 229);
-    canvas.drawRoundRect(HOME_LOCK_BUTTON_X + 12,
-                         HOME_HUD_BUTTON_Y + 7, 8, 9, 4, color);
-    canvas.fillRoundRect(HOME_LOCK_BUTTON_X + 10,
-                         HOME_HUD_BUTTON_Y + 14, 12, 10, 2, color);
-    canvas.fillCircle(HOME_LOCK_BUTTON_X + 16,
-                      HOME_HUD_BUTTON_Y + 18, 1, rgb(27, 43, 51));
+    canvas.drawRoundRect(AmoledUi::nativeCoordinate(HOME_LOCK_BUTTON_X + 12), AmoledUi::nativeCoordinate(HOME_HUD_BUTTON_Y + 7), AmoledUi::nativeExtent(8), AmoledUi::nativeExtent(9), AmoledUi::nativeExtent(4), color);
+    canvas.fillRoundRect(AmoledUi::nativeCoordinate(HOME_LOCK_BUTTON_X + 10), AmoledUi::nativeCoordinate(HOME_HUD_BUTTON_Y + 14), AmoledUi::nativeExtent(12), AmoledUi::nativeExtent(10), AmoledUi::nativeExtent(2), color);
+    canvas.fillCircle(AmoledUi::nativeCoordinate(HOME_LOCK_BUTTON_X + 16), AmoledUi::nativeCoordinate(HOME_HUD_BUTTON_Y + 18), AmoledUi::nativeExtent(1), rgb(27, 43, 51));
 }
 
 void drawHomeMenuIcon(Canvas565& canvas) {
     drawHomeHudButton(canvas, HOME_MENU_BUTTON_X);
     const uint16_t color = rgb(222, 234, 229);
     for (int row = 0; row < 3; ++row) {
-        canvas.drawFastHLine(HOME_MENU_BUTTON_X + 10,
-                             HOME_HUD_BUTTON_Y + 10 + row * 5,
-                             12, color);
+        canvas.drawFastHLine(AmoledUi::nativeCoordinate(HOME_MENU_BUTTON_X + 10), AmoledUi::nativeCoordinate(HOME_HUD_BUTTON_Y + 10 + row * 5), AmoledUi::nativeExtent(12), color);
+    }
+}
+
+void drawExploreBagIcon(Canvas565& canvas) {
+    drawHomeHudButton(canvas, EXPLORE_ROUTE_BAG_BUTTON_X);
+    constexpr uint8_t bagIconIndex = 3;
+    const uint16_t offset = FlashStorage::readWord(
+        &MenuAssets::MAIN_ICON_FRAMES[bagIconIndex].offset);
+    const uint16_t length = FlashStorage::readWord(
+        &MenuAssets::MAIN_ICON_FRAMES[bagIconIndex].length);
+    constexpr float scale = 0.55f;
+    constexpr int iconSize = 22;
+    PixelRenderer::drawRgb565RleScaled(
+        EXPLORE_ROUTE_BAG_BUTTON_X +
+            (HOME_HUD_BUTTON_SIZE - iconSize) / 2,
+        HOME_HUD_BUTTON_Y + (HOME_HUD_BUTTON_SIZE - iconSize) / 2,
+        MenuAssets::FRAME_W, MenuAssets::FRAME_H,
+        MenuAssets::MAIN_ICON_RLE, offset, length, scale);
+}
+
+void drawExploreMenuIcon(Canvas565& canvas) {
+    drawHomeHudButton(canvas, EXPLORE_ROUTE_MENU_BUTTON_X);
+    const uint16_t color = rgb(222, 234, 229);
+    for (int row = 0; row < 3; ++row) {
+        canvas.drawFastHLine(
+            AmoledUi::nativeCoordinate(EXPLORE_ROUTE_MENU_BUTTON_X + 10),
+            AmoledUi::nativeCoordinate(HOME_HUD_BUTTON_Y + 10 + row * 5),
+            AmoledUi::nativeExtent(12), color);
     }
 }
 
 void drawBackIcon(Canvas565& canvas) {
     drawHeaderButton(canvas, 0);
     const uint16_t color = rgb(222, 234, 229);
-    canvas.drawLine(16, 7, 9, 12, color);
-    canvas.drawLine(9, 12, 16, 17, color);
+    canvas.drawLine(AmoledUi::nativeCoordinate(16), AmoledUi::nativeCoordinate(7), AmoledUi::nativeCoordinate(9), AmoledUi::nativeCoordinate(12), color);
+    canvas.drawLine(AmoledUi::nativeCoordinate(9), AmoledUi::nativeCoordinate(12), AmoledUi::nativeCoordinate(16), AmoledUi::nativeCoordinate(17), color);
 }
 
 void drawToast(Canvas565& canvas, const char* value) {
     if (!value || !*value) return;
     int width = textWidth(value) + 14;
-    width = std::min(width, canvas.width() - 16);
-    int x = (canvas.width() - width) / 2;
-    canvas.fillRoundRect(x, 149, width, 18, 4, rgb(20, 31, 38));
-    canvas.drawRoundRect(x, 149, width, 18, 4, rgb(92, 139, 137));
+    width = std::min(width, AmoledUi::LEGACY_WIDTH - 16);
+    int x = (AmoledUi::LEGACY_WIDTH - width) / 2;
+    canvas.fillRoundRect(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(149), AmoledUi::nativeExtent(width), AmoledUi::nativeExtent(18), AmoledUi::nativeExtent(4), rgb(20, 31, 38));
+    canvas.drawRoundRect(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(149), AmoledUi::nativeExtent(width), AmoledUi::nativeExtent(18), AmoledUi::nativeExtent(4), rgb(92, 139, 137));
     text(canvas, x + 7, 155, value, rgb(234, 240, 235));
 }
 
 void drawBattery(Canvas565& canvas, int x, int y, uint8_t percent) {
     const uint16_t outline = rgb(222, 234, 229);
-    canvas.drawRoundRect(x, y, 16, 8, 2, outline);
-    canvas.fillRect(x + 16, y + 2, 2, 4, outline);
+    canvas.drawRoundRect(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y), AmoledUi::nativeExtent(16), AmoledUi::nativeExtent(8), AmoledUi::nativeExtent(2), outline);
+    canvas.fillRect(AmoledUi::nativeCoordinate(x + 16), AmoledUi::nativeCoordinate(y + 2), AmoledUi::nativeExtent(2), AmoledUi::nativeExtent(4), outline);
     int fillWidth = static_cast<int>(percent) * 12 / 100;
-    canvas.fillRect(x + 2, y + 2, fillWidth, 4,
-                    percent < 20 ? rgb(238, 91, 91) : rgb(92, 213, 139));
+    canvas.fillRect(AmoledUi::nativeCoordinate(x + 2), AmoledUi::nativeCoordinate(y + 2), AmoledUi::nativeExtent(fillWidth), AmoledUi::nativeExtent(4), percent < 20 ? rgb(238, 91, 91) : rgb(92, 213, 139));
 }
 
 void drawHeart(Canvas565& canvas, int x, int y, uint16_t color) {
-    canvas.fillCircle(x - 2, y - 1, 3, color);
-    canvas.fillCircle(x + 2, y - 1, 3, color);
-    canvas.fillTriangle(x - 5, y, x + 5, y, x, y + 6, color);
+    canvas.fillCircle(AmoledUi::nativeCoordinate(x - 2), AmoledUi::nativeCoordinate(y - 1), AmoledUi::nativeExtent(3), color);
+    canvas.fillCircle(AmoledUi::nativeCoordinate(x + 2), AmoledUi::nativeCoordinate(y - 1), AmoledUi::nativeExtent(3), color);
+    canvas.fillTriangle(AmoledUi::nativeCoordinate(x - 5), AmoledUi::nativeCoordinate(y), AmoledUi::nativeCoordinate(x + 5), AmoledUi::nativeCoordinate(y), AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y + 6), color);
 }
 
 void drawHeartBurst(Canvas565& canvas, int x, int y, uint16_t ageMs) {
@@ -469,43 +619,38 @@ void drawHeartBurst(Canvas565& canvas, int x, int y, uint16_t ageMs) {
     int phase = std::min<int>(8, ageMs / 50);
     int radius = 5 + phase * 2;
     int length = 3 + phase;
-    canvas.drawLine(x - radius, y, x - radius - length, y, burstColor);
-    canvas.drawLine(x + radius, y, x + radius + length, y, burstColor);
-    canvas.drawLine(x, y - radius, x, y - radius - length, burstColor);
-    canvas.drawLine(x, y + radius, x, y + radius + length, burstColor);
+    canvas.drawLine(AmoledUi::nativeCoordinate(x - radius), AmoledUi::nativeCoordinate(y), AmoledUi::nativeCoordinate(x - radius - length), AmoledUi::nativeCoordinate(y), burstColor);
+    canvas.drawLine(AmoledUi::nativeCoordinate(x + radius), AmoledUi::nativeCoordinate(y), AmoledUi::nativeCoordinate(x + radius + length), AmoledUi::nativeCoordinate(y), burstColor);
+    canvas.drawLine(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y - radius), AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y - radius - length), burstColor);
+    canvas.drawLine(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y + radius), AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y + radius + length), burstColor);
     if (phase >= 2) {
-        canvas.drawLine(x - radius + 1, y - radius + 1,
-                        x - radius - length + 2, y - radius - length + 2,
-                        burstColor);
-        canvas.drawLine(x + radius - 1, y + radius - 1,
-                        x + radius + length - 2, y + radius + length - 2,
-                        burstColor);
+        canvas.drawLine(AmoledUi::nativeCoordinate(x - radius + 1), AmoledUi::nativeCoordinate(y - radius + 1), AmoledUi::nativeCoordinate(x - radius - length + 2), AmoledUi::nativeCoordinate(y - radius - length + 2), burstColor);
+        canvas.drawLine(AmoledUi::nativeCoordinate(x + radius - 1), AmoledUi::nativeCoordinate(y + radius - 1), AmoledUi::nativeCoordinate(x + radius + length - 2), AmoledUi::nativeCoordinate(y + radius + length - 2), burstColor);
     }
 }
 
 void drawPlant(Canvas565& canvas) {
     const uint16_t pot = rgb(197, 104, 76);
     const uint16_t leaf = rgb(60, 139, 94);
-    canvas.fillRoundRect(18, 105, 22, 15, 3, pot);
-    canvas.fillEllipse(24, 102, 5, 13, leaf);
-    canvas.fillEllipse(34, 99, 6, 15, rgb(76, 165, 105));
-    canvas.fillEllipse(29, 92, 5, 13, rgb(92, 182, 116));
+    canvas.fillRoundRect(AmoledUi::nativeCoordinate(18), AmoledUi::nativeCoordinate(105), AmoledUi::nativeExtent(22), AmoledUi::nativeExtent(15), AmoledUi::nativeExtent(3), pot);
+    canvas.fillEllipse(AmoledUi::nativeCoordinate(24), AmoledUi::nativeCoordinate(102), AmoledUi::nativeExtent(5), AmoledUi::nativeExtent(13), leaf);
+    canvas.fillEllipse(AmoledUi::nativeCoordinate(34), AmoledUi::nativeCoordinate(99), AmoledUi::nativeExtent(6), AmoledUi::nativeExtent(15), rgb(76, 165, 105));
+    canvas.fillEllipse(AmoledUi::nativeCoordinate(29), AmoledUi::nativeCoordinate(92), AmoledUi::nativeExtent(5), AmoledUi::nativeExtent(13), rgb(92, 182, 116));
 }
 
 void drawBowl(Canvas565& canvas, bool filled) {
     const uint16_t rim = rgb(222, 229, 218);
     const uint16_t bowl = rgb(76, 137, 166);
-    canvas.fillEllipse(145, 143, 17, 6,
-                       filled ? rgb(176, 113, 62) : rgb(42, 55, 60));
-    canvas.drawFastHLine(128, 143, 35, rim);
-    canvas.fillRoundRect(131, 144, 29, 11, 5, bowl);
-    canvas.drawFastHLine(135, 154, 21, rgb(43, 88, 112));
+    canvas.fillEllipse(AmoledUi::nativeCoordinate(145), AmoledUi::nativeCoordinate(143), AmoledUi::nativeExtent(17), AmoledUi::nativeExtent(6), filled ? rgb(176, 113, 62) : rgb(42, 55, 60));
+    canvas.drawFastHLine(AmoledUi::nativeCoordinate(128), AmoledUi::nativeCoordinate(143), AmoledUi::nativeExtent(35), rim);
+    canvas.fillRoundRect(AmoledUi::nativeCoordinate(131), AmoledUi::nativeCoordinate(144), AmoledUi::nativeExtent(29), AmoledUi::nativeExtent(11), AmoledUi::nativeExtent(5), bowl);
+    canvas.drawFastHLine(AmoledUi::nativeCoordinate(135), AmoledUi::nativeCoordinate(154), AmoledUi::nativeExtent(21), rgb(43, 88, 112));
 }
 
 void drawFoodContent(Canvas565& canvas, int centerX, int centerY) {
-    canvas.fillEllipse(centerX, centerY, 9, 4, rgb(176, 113, 62));
-    canvas.fillEllipse(centerX - 3, centerY - 2, 4, 2, rgb(221, 155, 77));
-    canvas.fillEllipse(centerX + 4, centerY - 1, 3, 2, rgb(205, 91, 66));
+    canvas.fillEllipse(AmoledUi::nativeCoordinate(centerX), AmoledUi::nativeCoordinate(centerY), AmoledUi::nativeExtent(9), AmoledUi::nativeExtent(4), rgb(176, 113, 62));
+    canvas.fillEllipse(AmoledUi::nativeCoordinate(centerX - 3), AmoledUi::nativeCoordinate(centerY - 2), AmoledUi::nativeExtent(4), AmoledUi::nativeExtent(2), rgb(221, 155, 77));
+    canvas.fillEllipse(AmoledUi::nativeCoordinate(centerX + 4), AmoledUi::nativeCoordinate(centerY - 1), AmoledUi::nativeExtent(3), AmoledUi::nativeExtent(2), rgb(205, 91, 66));
 }
 
 #if STICKMON_ENABLE_DEBUG_FEATURES
@@ -519,12 +664,8 @@ constexpr int DEBUG_CONTACT_PROMPT_W = 168;
 constexpr int DEBUG_CONTACT_PROMPT_H = 58;
 
 void drawDebugContactPrompt(Canvas565& canvas) {
-    canvas.fillRoundRect(DEBUG_CONTACT_PROMPT_X, DEBUG_CONTACT_PROMPT_Y,
-                         DEBUG_CONTACT_PROMPT_W, DEBUG_CONTACT_PROMPT_H, 5,
-                         rgb(17, 27, 34));
-    canvas.drawRoundRect(DEBUG_CONTACT_PROMPT_X, DEBUG_CONTACT_PROMPT_Y,
-                         DEBUG_CONTACT_PROMPT_W, DEBUG_CONTACT_PROMPT_H, 5,
-                         rgb(115, 226, 183));
+    canvas.fillRoundRect(AmoledUi::nativeCoordinate(DEBUG_CONTACT_PROMPT_X), AmoledUi::nativeCoordinate(DEBUG_CONTACT_PROMPT_Y), AmoledUi::nativeExtent(DEBUG_CONTACT_PROMPT_W), AmoledUi::nativeExtent(DEBUG_CONTACT_PROMPT_H), AmoledUi::nativeExtent(5), rgb(17, 27, 34));
+    canvas.drawRoundRect(AmoledUi::nativeCoordinate(DEBUG_CONTACT_PROMPT_X), AmoledUi::nativeCoordinate(DEBUG_CONTACT_PROMPT_Y), AmoledUi::nativeExtent(DEBUG_CONTACT_PROMPT_W), AmoledUi::nativeExtent(DEBUG_CONTACT_PROMPT_H), AmoledUi::nativeExtent(5), rgb(115, 226, 183));
     text(canvas, DEBUG_CONTACT_PROMPT_X +
              (DEBUG_CONTACT_PROMPT_W - textWidth(Ui::ContactVisit::KNOCK)) / 2,
          DEBUG_CONTACT_PROMPT_Y + 9, Ui::ContactVisit::KNOCK,
@@ -575,9 +716,13 @@ void fillRadialDebugLight(Canvas565& canvas, int centerX, int centerY,
             uint8_t alpha = static_cast<uint8_t>(
                 maxAlpha * (1.0f - distanceSq));
             if (alpha == 0) continue;
-            canvas.drawPixel(x, y,
-                             blendShadowRgb565(canvas.readPixel(x, y),
-                                               color, alpha));
+            canvas.drawPixel(
+                AmoledUi::nativeCoordinate(x),
+                AmoledUi::nativeCoordinate(y),
+                blendShadowRgb565(
+                    canvas.readPixel(AmoledUi::nativeCoordinate(x),
+                                     AmoledUi::nativeCoordinate(y)),
+                    color, alpha));
         }
     }
 }
@@ -588,10 +733,10 @@ void drawDebugLight(Canvas565& canvas, const HomeViewModel& model) {
     int lightY = model.petGroundY - 32;
     switch (model.debugLightSource) {
     case 1: lightX = 44; lightY = HOME_ROOM_TOP + 30; break;
-    case 2: lightX = canvas.width() / 2; lightY = HOME_ROOM_TOP + 20; break;
-    case 3: lightX = canvas.width() - 44; lightY = HOME_ROOM_TOP + 30; break;
+    case 2: lightX = AmoledUi::LEGACY_WIDTH / 2; lightY = HOME_ROOM_TOP + 20; break;
+    case 3: lightX = AmoledUi::LEGACY_WIDTH - 44; lightY = HOME_ROOM_TOP + 30; break;
     case 4: lightX = 34; lightY = HOME_ROOM_TOP + HOME_ROOM_HEIGHT / 2; break;
-    case 5: lightX = canvas.width() - 34;
+    case 5: lightX = AmoledUi::LEGACY_WIDTH - 34;
             lightY = HOME_ROOM_TOP + HOME_ROOM_HEIGHT / 2; break;
     default: break;
     }
@@ -606,8 +751,8 @@ void drawDebugLight(Canvas565& canvas, const HomeViewModel& model) {
         fillRadialDebugLight(canvas, lightX, lightY, 118, 76,
                              rgb(255, 176, 96), 10);
     }
-    canvas.fillCircle(lightX, lightY, 3, rgb(255, 236, 158));
-    canvas.drawCircle(lightX, lightY, 5, rgb(255, 169, 79));
+    canvas.fillCircle(AmoledUi::nativeCoordinate(lightX), AmoledUi::nativeCoordinate(lightY), AmoledUi::nativeExtent(3), rgb(255, 236, 158));
+    canvas.drawCircle(AmoledUi::nativeCoordinate(lightX), AmoledUi::nativeCoordinate(lightY), AmoledUi::nativeExtent(5), rgb(255, 169, 79));
 }
 
 void drawDebugWalkBoundary(Canvas565& canvas, const HomeViewModel& model) {
@@ -632,12 +777,12 @@ void drawDebugWalkBoundary(Canvas565& canvas, const HomeViewModel& model) {
         uint8_t index = i == count ? 0 : i;
         int x = pointX(index);
         int y = pointY(index);
-        canvas.drawLine(previousX - 1, previousY, x - 1, y, outline);
-        canvas.drawLine(previousX + 1, previousY, x + 1, y, outline);
-        canvas.drawLine(previousX, previousY - 1, x, y - 1, outline);
-        canvas.drawLine(previousX, previousY + 1, x, y + 1, outline);
-        canvas.drawLine(previousX, previousY, x, y, red);
-        canvas.fillCircle(x, y, 2, red);
+        canvas.drawLine(AmoledUi::nativeCoordinate(previousX - 1), AmoledUi::nativeCoordinate(previousY), AmoledUi::nativeCoordinate(x - 1), AmoledUi::nativeCoordinate(y), outline);
+        canvas.drawLine(AmoledUi::nativeCoordinate(previousX + 1), AmoledUi::nativeCoordinate(previousY), AmoledUi::nativeCoordinate(x + 1), AmoledUi::nativeCoordinate(y), outline);
+        canvas.drawLine(AmoledUi::nativeCoordinate(previousX), AmoledUi::nativeCoordinate(previousY - 1), AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y - 1), outline);
+        canvas.drawLine(AmoledUi::nativeCoordinate(previousX), AmoledUi::nativeCoordinate(previousY + 1), AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y + 1), outline);
+        canvas.drawLine(AmoledUi::nativeCoordinate(previousX), AmoledUi::nativeCoordinate(previousY), AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y), red);
+        canvas.fillCircle(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y), AmoledUi::nativeExtent(2), red);
         previousX = x;
         previousY = y;
     }
@@ -654,24 +799,22 @@ void drawFallbackPet(Canvas565& canvas, int centerX, int groundY) {
     const uint16_t dark = rgb(22, 38, 44);
     const uint16_t cheek = rgb(242, 112, 103);
 
-    canvas.fillEllipse(92 + dx, 149 + dy, 31, 8, shadow);
-    canvas.fillTriangle(69 + dx, 94 + dy, 79 + dx, 74 + dy,
-                        86 + dx, 99 + dy, body);
-    canvas.fillTriangle(98 + dx, 99 + dy, 106 + dx, 74 + dy,
-                        116 + dx, 95 + dy, body);
-    canvas.fillEllipse(92 + dx, 116 + dy, 30, 35, body);
-    canvas.fillEllipse(92 + dx, 128 + dy, 20, 21, belly);
-    canvas.fillEllipse(84 + dx, 104 + dy, 5, 7, dark);
-    canvas.fillEllipse(101 + dx, 104 + dy, 5, 7, dark);
-    canvas.fillRect(83 + dx, 102 + dy, 2, 2, bodyLight);
-    canvas.fillRect(100 + dx, 102 + dy, 2, 2, bodyLight);
-    canvas.fillEllipse(75 + dx, 115 + dy, 6, 4, cheek);
-    canvas.fillEllipse(109 + dx, 115 + dy, 6, 4, cheek);
-    canvas.drawFastHLine(88 + dx, 116 + dy, 9, dark);
-    canvas.drawPixel(87 + dx, 115 + dy, dark);
-    canvas.drawPixel(97 + dx, 115 + dy, dark);
-    canvas.fillRoundRect(67 + dx, 132 + dy, 16, 10, 4, body);
-    canvas.fillRoundRect(102 + dx, 132 + dy, 16, 10, 4, body);
+    canvas.fillEllipse(AmoledUi::nativeCoordinate(92 + dx), AmoledUi::nativeCoordinate(149 + dy), AmoledUi::nativeExtent(31), AmoledUi::nativeExtent(8), shadow);
+    canvas.fillTriangle(AmoledUi::nativeCoordinate(69 + dx), AmoledUi::nativeCoordinate(94 + dy), AmoledUi::nativeCoordinate(79 + dx), AmoledUi::nativeCoordinate(74 + dy), AmoledUi::nativeCoordinate(86 + dx), AmoledUi::nativeCoordinate(99 + dy), body);
+    canvas.fillTriangle(AmoledUi::nativeCoordinate(98 + dx), AmoledUi::nativeCoordinate(99 + dy), AmoledUi::nativeCoordinate(106 + dx), AmoledUi::nativeCoordinate(74 + dy), AmoledUi::nativeCoordinate(116 + dx), AmoledUi::nativeCoordinate(95 + dy), body);
+    canvas.fillEllipse(AmoledUi::nativeCoordinate(92 + dx), AmoledUi::nativeCoordinate(116 + dy), AmoledUi::nativeExtent(30), AmoledUi::nativeExtent(35), body);
+    canvas.fillEllipse(AmoledUi::nativeCoordinate(92 + dx), AmoledUi::nativeCoordinate(128 + dy), AmoledUi::nativeExtent(20), AmoledUi::nativeExtent(21), belly);
+    canvas.fillEllipse(AmoledUi::nativeCoordinate(84 + dx), AmoledUi::nativeCoordinate(104 + dy), AmoledUi::nativeExtent(5), AmoledUi::nativeExtent(7), dark);
+    canvas.fillEllipse(AmoledUi::nativeCoordinate(101 + dx), AmoledUi::nativeCoordinate(104 + dy), AmoledUi::nativeExtent(5), AmoledUi::nativeExtent(7), dark);
+    canvas.fillRect(AmoledUi::nativeCoordinate(83 + dx), AmoledUi::nativeCoordinate(102 + dy), AmoledUi::nativeExtent(2), AmoledUi::nativeExtent(2), bodyLight);
+    canvas.fillRect(AmoledUi::nativeCoordinate(100 + dx), AmoledUi::nativeCoordinate(102 + dy), AmoledUi::nativeExtent(2), AmoledUi::nativeExtent(2), bodyLight);
+    canvas.fillEllipse(AmoledUi::nativeCoordinate(75 + dx), AmoledUi::nativeCoordinate(115 + dy), AmoledUi::nativeExtent(6), AmoledUi::nativeExtent(4), cheek);
+    canvas.fillEllipse(AmoledUi::nativeCoordinate(109 + dx), AmoledUi::nativeCoordinate(115 + dy), AmoledUi::nativeExtent(6), AmoledUi::nativeExtent(4), cheek);
+    canvas.drawFastHLine(AmoledUi::nativeCoordinate(88 + dx), AmoledUi::nativeCoordinate(116 + dy), AmoledUi::nativeExtent(9), dark);
+    canvas.drawPixel(AmoledUi::nativeCoordinate(87 + dx), AmoledUi::nativeCoordinate(115 + dy), dark);
+    canvas.drawPixel(AmoledUi::nativeCoordinate(97 + dx), AmoledUi::nativeCoordinate(115 + dy), dark);
+    canvas.fillRoundRect(AmoledUi::nativeCoordinate(67 + dx), AmoledUi::nativeCoordinate(132 + dy), AmoledUi::nativeExtent(16), AmoledUi::nativeExtent(10), AmoledUi::nativeExtent(4), body);
+    canvas.fillRoundRect(AmoledUi::nativeCoordinate(102 + dx), AmoledUi::nativeCoordinate(132 + dy), AmoledUi::nativeExtent(16), AmoledUi::nativeExtent(10), AmoledUi::nativeExtent(4), body);
 }
 
 uint8_t shadowRgb565R(uint16_t color) {
@@ -698,6 +841,30 @@ uint16_t blendShadowRgb565(uint16_t background, uint16_t color,
                               shadowRgb565B(background) * inverse) / 255));
 }
 
+void fillRoundRectAlpha(Canvas565& canvas, int x, int y, int width, int height,
+                        int radius, uint16_t color, uint8_t alpha) {
+    if (width <= 0 || height <= 0 || radius < 0 || alpha == 0) return;
+    radius = std::min(radius, std::min(width, height) / 2);
+    for (int py = y; py < y + height; ++py) {
+        for (int px = x; px < x + width; ++px) {
+            int cornerX = px < x + radius ? x + radius
+                          : px >= x + width - radius ? x + width - radius - 1
+                                                     : px;
+            int cornerY = py < y + radius ? y + radius
+                          : py >= y + height - radius ? y + height - radius - 1
+                                                       : py;
+            int dx = px - cornerX;
+            int dy = py - cornerY;
+            if (dx * dx + dy * dy > radius * radius) continue;
+            uint16_t background = canvas.readPixel(
+                AmoledUi::nativeCoordinate(px), AmoledUi::nativeCoordinate(py));
+            canvas.drawPixel(
+                AmoledUi::nativeCoordinate(px), AmoledUi::nativeCoordinate(py),
+                blendShadowRgb565(background, color, alpha));
+        }
+    }
+}
+
 void fillSoftShadow(Canvas565& canvas, int centerX, int centerY,
                     int radiusX, int radiusY, uint16_t color,
                     uint8_t maxAlpha) {
@@ -711,9 +878,8 @@ void fillSoftShadow(Canvas565& canvas, int centerX, int centerY,
             uint8_t alpha = static_cast<uint8_t>(
                 maxAlpha * (1.0f - distanceSq));
             if (alpha == 0) continue;
-            uint16_t background = canvas.readPixel(px, py);
-            canvas.drawPixel(px, py,
-                             blendShadowRgb565(background, color, alpha));
+            uint16_t background = canvas.readPixel(AmoledUi::nativeCoordinate(px), AmoledUi::nativeCoordinate(py));
+            canvas.drawPixel(AmoledUi::nativeCoordinate(px), AmoledUi::nativeCoordinate(py), blendShadowRgb565(background, color, alpha));
         }
     }
 }
@@ -727,9 +893,8 @@ void fillShadowCore(Canvas565& canvas, int centerX, int centerY,
         for (int px = centerX - radiusX; px <= centerX + radiusX; ++px) {
             float dx = static_cast<float>(px - centerX) / radiusX;
             if (dx * dx + dy * dy > 1.0f) continue;
-            uint16_t background = canvas.readPixel(px, py);
-            canvas.drawPixel(px, py,
-                             blendShadowRgb565(background, color, alpha));
+            uint16_t background = canvas.readPixel(AmoledUi::nativeCoordinate(px), AmoledUi::nativeCoordinate(py));
+            canvas.drawPixel(AmoledUi::nativeCoordinate(px), AmoledUi::nativeCoordinate(py), blendShadowRgb565(background, color, alpha));
         }
     }
 }
@@ -855,30 +1020,32 @@ void drawPet(Canvas565& canvas, const HomeViewModel& model) {
 
 void drawHomeHpBar(Canvas565& canvas, int x, int y, int width,
                    uint8_t percent) {
-    canvas.fillRect(x, y, width, 6, rgb(39, 45, 50));
+    canvas.fillRect(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y), AmoledUi::nativeExtent(width), AmoledUi::nativeExtent(6), rgb(39, 45, 50));
     int filled = (width - 2) * percent / 100;
     uint16_t fillColor = percent > 50
         ? rgb(92, 222, 112)
         : (percent > 20 ? rgb(246, 204, 72) : rgb(232, 80, 84));
-    if (filled > 0) canvas.fillRect(x + 1, y + 1, filled, 4, fillColor);
-    canvas.drawRect(x, y, width, 6, rgb(220, 224, 218));
+    if (filled > 0) canvas.fillRect(AmoledUi::nativeCoordinate(x + 1), AmoledUi::nativeCoordinate(y + 1), AmoledUi::nativeExtent(filled), AmoledUi::nativeExtent(4), fillColor);
+    canvas.drawRect(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y), AmoledUi::nativeExtent(width), AmoledUi::nativeExtent(6), rgb(220, 224, 218));
 }
 
 void drawBattleHpBar(Canvas565& canvas, int x, int y, int width,
                      uint8_t percent) {
-    canvas.fillRect(x, y, width, 6, rgb(39, 45, 50));
+    canvas.fillRect(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y), AmoledUi::nativeExtent(width), AmoledUi::nativeExtent(6), rgb(39, 45, 50));
     int filled = (width - 2) * percent / 100;
     uint16_t fillColor = percent > 50
         ? rgb(92, 222, 112)
         : (percent > 20 ? rgb(246, 204, 72) : rgb(232, 80, 84));
-    if (filled > 0) canvas.fillRect(x + 1, y + 1, filled, 4, fillColor);
-    canvas.drawRect(x, y, width, 6, rgb(0, 0, 0));
+    if (filled > 0) canvas.fillRect(AmoledUi::nativeCoordinate(x + 1), AmoledUi::nativeCoordinate(y + 1), AmoledUi::nativeExtent(filled), AmoledUi::nativeExtent(4), fillColor);
+    canvas.drawRect(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y), AmoledUi::nativeExtent(width), AmoledUi::nativeExtent(6), rgb(0, 0, 0));
 }
 
 void drawExploreTileFallback(Canvas565& canvas, uint16_t tileId,
                              int x, int y, uint8_t layer,
-                             uint16_t fieldColor) {
+                             uint16_t fieldColor, int outputScale =
+                                 AmoledUi::RESOURCE_SCALE) {
     constexpr int tileSize = ExploreRouteGeometry::TILE_SIZE;
+    auto scaled = [outputScale](int value) { return value * outputScale; };
     if (layer == 0) {
         uint16_t color = fieldColor;
         if (ExploreMapGenerator::isWaterTile(tileId)) {
@@ -893,16 +1060,124 @@ void drawExploreTileFallback(Canvas565& canvas, uint16_t tileId,
             color = tileId == 4511 ? rgb(203, 202, 218)
                                    : rgb(181, 218, 232);
         }
-        canvas.fillRect(x, y, tileSize, tileSize, color);
+        canvas.fillRect(scaled(x), scaled(y), scaled(tileSize),
+                        scaled(tileSize), color);
         return;
     }
     if (ExploreMapGenerator::isForestTile(tileId)) {
-        canvas.fillRect(x + 3, y + 3, tileSize - 6, tileSize - 3,
+        canvas.fillRect(scaled(x + 3), scaled(y + 3),
+                        scaled(tileSize - 6), scaled(tileSize - 3),
                         rgb(24, 73, 42));
     } else if (tileId >= 4500 && tileId <= 4544) {
-        canvas.fillTriangle(x + 5, y + 22, x + 13, y + 4,
-                            x + 21, y + 22, rgb(112, 198, 232));
+        canvas.fillTriangle(scaled(x + 5), scaled(y + 22),
+                            scaled(x + 13), scaled(y + 4),
+                            scaled(x + 21), scaled(y + 22),
+                            rgb(112, 198, 232));
     }
+}
+
+bool prepareExploreRouteWorldCache(Canvas565& canvas,
+                                   const ExploreRouteViewModel& model) {
+    if (!model.map) return false;
+    constexpr size_t worldPixels =
+        static_cast<size_t>(EXPLORE_ROUTE_WORLD_PHYSICAL_WIDTH) *
+        EXPLORE_ROUTE_WORLD_PHYSICAL_HEIGHT;
+    const bool cacheMatches = exploreRouteWorldCache &&
+        exploreRouteWorldCachePixels == worldPixels &&
+        cachedExploreRouteWorldSeed == model.map->seed &&
+        cachedExploreRouteWorldArea == model.area &&
+        cachedExploreRouteWorldByteSwapped == canvas.byteSwapped();
+    if (cacheMatches) return true;
+
+    if (exploreRouteWorldCachePixels != worldPixels) {
+        if (exploreRouteWorldCache) {
+            Platform::memory().release(exploreRouteWorldCache);
+        }
+        exploreRouteWorldCache = static_cast<uint16_t*>(
+            Platform::memory().allocate(worldPixels * sizeof(uint16_t), true));
+        exploreRouteWorldCachePixels = exploreRouteWorldCache
+            ? worldPixels : 0;
+    }
+    if (!exploreRouteWorldCache) return false;
+
+    const Platform::FrameBuffer565 worldFrameBuffer{
+        exploreRouteWorldCache, EXPLORE_ROUTE_WORLD_PHYSICAL_WIDTH,
+        EXPLORE_ROUTE_WORLD_PHYSICAL_HEIGHT, canvas.byteSwapped()};
+    Canvas565 worldCanvas;
+    worldCanvas.attach(worldFrameBuffer);
+    worldCanvas.setCoordinateScale(1);
+    worldCanvas.setLayoutScale(1);
+    worldCanvas.setAssetScale(AmoledUi::RESOURCE_SCALE);
+    const uint16_t fieldColor = ExploreAreaCatalog::fieldColor(model.area);
+    worldCanvas.fillSprite(fieldColor);
+
+    constexpr int tileSize = ExploreRouteGeometry::TILE_SIZE;
+    for (uint8_t layer = 0; layer < ExploreMapGenerator::LAYER_COUNT;
+         ++layer) {
+        for (uint8_t tileY = 0; tileY < ExploreMapGenerator::HEIGHT;
+             ++tileY) {
+            for (uint8_t tileX = 0; tileX < ExploreMapGenerator::WIDTH;
+                 ++tileX) {
+                uint16_t tileId = model.map->layers[layer]
+                    [tileY * ExploreMapGenerator::WIDTH + tileX];
+                if (tileId == 0) continue;
+                int x = tileX * tileSize;
+                int y = tileY * tileSize;
+                if (!GameAssets::drawExploreTileTo(
+                        worldCanvas, tileId, x, y, 0)) {
+                    drawExploreTileFallback(
+                        worldCanvas, tileId, x, y, layer, fieldColor,
+                        AmoledUi::RESOURCE_SCALE);
+                }
+            }
+        }
+    }
+
+    cachedExploreRouteWorldSeed = model.map->seed;
+    cachedExploreRouteWorldArea = model.area;
+    cachedExploreRouteWorldByteSwapped = canvas.byteSwapped();
+    return true;
+}
+
+bool drawExploreRouteWorldViewport(Canvas565& canvas,
+                                   const ExploreRouteViewModel& model,
+                                   uint16_t rowBegin, uint16_t rowEnd,
+                                   bool* worldCacheHit = nullptr) {
+    const bool cacheWasReady = model.map && exploreRouteWorldCache &&
+        exploreRouteWorldCachePixels ==
+            static_cast<size_t>(EXPLORE_ROUTE_WORLD_PHYSICAL_WIDTH) *
+            EXPLORE_ROUTE_WORLD_PHYSICAL_HEIGHT &&
+        cachedExploreRouteWorldSeed == model.map->seed &&
+        cachedExploreRouteWorldArea == model.area &&
+        cachedExploreRouteWorldByteSwapped == canvas.byteSwapped();
+    if (canvas.physicalWidth() != AmoledUi::WIDTH ||
+        canvas.physicalHeight() != AmoledUi::HEIGHT ||
+        !prepareExploreRouteWorldCache(canvas, model)) {
+        if (worldCacheHit) *worldCacheHit = false;
+        return false;
+    }
+
+    if (worldCacheHit) {
+        *worldCacheHit = cacheWasReady;
+    }
+
+    const int top = std::max<int>(rowBegin, EXPLORE_ROUTE_MAP_TOP);
+    const int bottom = std::min<int>(rowEnd, EXPLORE_ROUTE_MAP_BOTTOM);
+    for (int row = top; row < bottom; ++row) {
+        const uint16_t* source = exploreRouteWorldCache +
+            static_cast<size_t>((model.cameraY + row) *
+                                AmoledUi::RESOURCE_SCALE) *
+                EXPLORE_ROUTE_WORLD_PHYSICAL_WIDTH +
+            model.cameraX * AmoledUi::RESOURCE_SCALE;
+        uint16_t* firstOutput = canvas.rawPixels() +
+            static_cast<size_t>(row * AmoledUi::RESOURCE_SCALE) *
+                canvas.physicalWidth();
+        std::memcpy(firstOutput, source,
+                    static_cast<size_t>(AmoledUi::WIDTH) * sizeof(uint16_t));
+        std::memcpy(firstOutput + canvas.physicalWidth(), firstOutput,
+                    canvas.physicalWidth() * sizeof(uint16_t));
+    }
+    return true;
 }
 
 void drawExploreMap(Canvas565& canvas,
@@ -914,10 +1189,11 @@ void drawExploreMap(Canvas565& canvas,
     int firstY = std::max(0, cameraY / tileSize);
     int lastX = std::min<int>(
         ExploreMapGenerator::WIDTH - 1,
-        (cameraX + canvas.width() - 1) / tileSize);
+        (cameraX + AmoledUi::LEGACY_WIDTH - 1) / tileSize);
     int lastY = std::min<int>(
         ExploreMapGenerator::HEIGHT - 1,
-        (cameraY + (canvas.height() - HOME_HEADER_HEIGHT) - 1) / tileSize);
+        (cameraY + (AmoledUi::LEGACY_HEIGHT - EXPLORE_ROUTE_MAP_TOP) - 1) /
+            tileSize);
 
     for (uint8_t layer = 0; layer < ExploreMapGenerator::LAYER_COUNT;
          ++layer) {
@@ -927,7 +1203,7 @@ void drawExploreMap(Canvas565& canvas,
                     [tileY * ExploreMapGenerator::WIDTH + tileX];
                 if (tileId == 0) continue;
                 int x = tileX * tileSize - cameraX;
-                int y = HOME_HEADER_HEIGHT + tileY * tileSize - cameraY;
+                int y = EXPLORE_ROUTE_MAP_TOP + tileY * tileSize - cameraY;
                 if (!GameAssets::drawExploreTile(
                         tileId, x, y, animationFrame)) {
                     drawExploreTileFallback(
@@ -936,6 +1212,109 @@ void drawExploreMap(Canvas565& canvas,
             }
         }
     }
+}
+
+void drawExploreMapAnimations(Canvas565& canvas,
+                              const ExploreMapGenerator::Map& map,
+                              int cameraX, int cameraY,
+                              uint8_t animationFrame,
+                              uint16_t rowBegin, uint16_t rowEnd,
+                              uint16_t fieldColor) {
+    constexpr int tileSize = ExploreRouteGeometry::TILE_SIZE;
+    int firstX = std::max(0, cameraX / tileSize);
+    int firstY = std::max(0, cameraY / tileSize);
+    int lastX = std::min<int>(
+        ExploreMapGenerator::WIDTH - 1,
+        (cameraX + AmoledUi::LEGACY_WIDTH - 1) / tileSize);
+    int lastY = std::min<int>(
+        ExploreMapGenerator::HEIGHT - 1,
+        (cameraY + (AmoledUi::LEGACY_HEIGHT - EXPLORE_ROUTE_MAP_TOP) - 1) /
+            tileSize);
+
+    for (uint8_t layer = 0; layer < ExploreMapGenerator::LAYER_COUNT;
+         ++layer) {
+        for (int tileY = firstY; tileY <= lastY; ++tileY) {
+            int y = EXPLORE_ROUTE_MAP_TOP + tileY * tileSize - cameraY;
+            if (y + tileSize <= rowBegin || y >= rowEnd) continue;
+            for (int tileX = firstX; tileX <= lastX; ++tileX) {
+                uint16_t tileId = map.layers[layer]
+                    [tileY * ExploreMapGenerator::WIDTH + tileX];
+                if (!GameAssets::isExploreTileAnimated(tileId)) continue;
+                int x = tileX * tileSize - cameraX;
+                if (!GameAssets::drawExploreTile(
+                        tileId, x, y, animationFrame)) {
+                    drawExploreTileFallback(
+                        canvas, tileId, x, y, layer, fieldColor);
+                }
+            }
+        }
+    }
+}
+
+bool drawExploreRouteMapLayer(Canvas565& canvas,
+                              const ExploreRouteViewModel& model,
+                              uint16_t rowBegin, uint16_t rowEnd) {
+    if (!model.map) return false;
+#if defined(ESP_PLATFORM) && STICKMON_ENABLE_DEBUG_FEATURES
+    const int64_t baseStartedUs = esp_timer_get_time();
+#endif
+
+    const int mapTop = EXPLORE_ROUTE_MAP_TOP;
+    const int mapBottom = EXPLORE_ROUTE_MAP_BOTTOM;
+    const int copyTop = std::max<int>(rowBegin, mapTop);
+    const int copyBottom = std::min<int>(rowEnd, mapBottom);
+    bool worldCacheHit = false;
+    if (drawExploreRouteWorldViewport(
+            canvas, model, rowBegin, rowEnd, &worldCacheHit)) {
+#if defined(ESP_PLATFORM) && STICKMON_ENABLE_DEBUG_FEATURES
+        const int64_t animationStartedUs = esp_timer_get_time();
+#endif
+        drawExploreMapAnimations(
+            canvas, *model.map, model.cameraX, model.cameraY, model.mapFrame,
+            rowBegin, rowEnd, ExploreAreaCatalog::fieldColor(model.area));
+#if defined(ESP_PLATFORM) && STICKMON_ENABLE_DEBUG_FEATURES
+        if (model.walking) {
+            const int64_t finishedUs = esp_timer_get_time();
+            exploreMapPerf.record(
+                worldCacheHit, static_cast<uint16_t>(copyBottom - copyTop),
+                static_cast<uint32_t>(animationStartedUs - baseStartedUs),
+                static_cast<uint32_t>(finishedUs - animationStartedUs));
+        }
+#endif
+        return true;
+    }
+
+    canvas.fillRect(
+        AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(mapTop),
+        AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH),
+        AmoledUi::nativeExtent(mapBottom - mapTop),
+        ExploreAreaCatalog::fieldColor(model.area));
+    drawExploreMap(canvas, *model.map, model.cameraX, model.cameraY,
+                   ExploreAreaCatalog::fieldColor(model.area), 0);
+
+#if defined(ESP_PLATFORM) && STICKMON_ENABLE_DEBUG_FEATURES
+    if (model.walking) {
+        exploreMapPerf.record(
+            false, static_cast<uint16_t>(copyBottom - copyTop),
+            static_cast<uint32_t>(esp_timer_get_time() - baseStartedUs), 0);
+    }
+#endif
+#if defined(ESP_PLATFORM) && STICKMON_ENABLE_DEBUG_FEATURES
+    const int64_t animationStartedUs = esp_timer_get_time();
+#endif
+    drawExploreMapAnimations(
+        canvas, *model.map, model.cameraX, model.cameraY, model.mapFrame,
+        rowBegin, rowEnd, ExploreAreaCatalog::fieldColor(model.area));
+#if defined(ESP_PLATFORM) && STICKMON_ENABLE_DEBUG_FEATURES
+    if (model.walking) {
+        const int64_t finishedUs = esp_timer_get_time();
+        exploreMapPerf.record(
+            false, static_cast<uint16_t>(copyBottom - copyTop),
+            static_cast<uint32_t>(animationStartedUs - baseStartedUs),
+            static_cast<uint32_t>(finishedUs - animationStartedUs));
+    }
+#endif
+    return true;
 }
 
 void drawExploreRoutePickup(Canvas565& canvas,
@@ -950,10 +1329,11 @@ void drawExploreRoutePickup(Canvas565& canvas,
         ExploreRouteGeometry::pathPoint(path, model.pickupIndex);
     int x = static_cast<int>(std::lround(point.x)) - model.cameraX;
     int y = static_cast<int>(std::lround(point.y)) - model.cameraY + 3;
-    if (x < -13 || x >= canvas.width() + 13 ||
-        y < HOME_HEADER_HEIGHT - 13 || y >= canvas.height() + 13) return;
+    if (x < -13 || x >= AmoledUi::LEGACY_WIDTH + 13 ||
+        y < EXPLORE_ROUTE_MAP_TOP - 13 ||
+        y >= EXPLORE_ROUTE_MAP_BOTTOM + 13) return;
 
-    canvas.fillEllipse(x, y + 6, 7, 2, rgb(55, 68, 59));
+    canvas.fillEllipse(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y + 6), AmoledUi::nativeExtent(7), AmoledUi::nativeExtent(2), rgb(55, 68, 59));
     if (GameAssets::drawCentered(
             GameAssets::Kind::EXPLORE_PICKUP_BALL, x, y - 4)) {
         return;
@@ -962,17 +1342,67 @@ void drawExploreRoutePickup(Canvas565& canvas,
             GameAssets::Kind::ITEM_POKE_BALL, x, y - 4, 0.62f)) {
         return;
     }
-    canvas.fillCircle(x, y - 4, 7, rgb(224, 69, 65));
+    canvas.fillCircle(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y - 4), AmoledUi::nativeExtent(7), rgb(224, 69, 65));
     for (int row = 0; row <= 6; ++row) {
         int halfWidth = static_cast<int>(std::sqrt(
             49.0f - static_cast<float>(row * row)));
-        canvas.drawFastHLine(x - halfWidth, y - 4 + row,
-                             halfWidth * 2 + 1, 0xFFFF);
+        canvas.drawFastHLine(AmoledUi::nativeCoordinate(x - halfWidth), AmoledUi::nativeCoordinate(y - 4 + row), AmoledUi::nativeExtent(halfWidth * 2 + 1), 0xFFFF);
     }
-    canvas.drawCircle(x, y - 4, 7, rgb(35, 39, 44));
-    canvas.drawFastHLine(x - 7, y - 4, 14, rgb(35, 39, 44));
-    canvas.fillCircle(x, y - 4, 2, 0xFFFF);
-    canvas.drawCircle(x, y - 4, 2, rgb(35, 39, 44));
+    canvas.drawCircle(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y - 4), AmoledUi::nativeExtent(7), rgb(35, 39, 44));
+    canvas.drawFastHLine(AmoledUi::nativeCoordinate(x - 7), AmoledUi::nativeCoordinate(y - 4), AmoledUi::nativeExtent(14), rgb(35, 39, 44));
+    canvas.fillCircle(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y - 4), AmoledUi::nativeExtent(2), 0xFFFF);
+    canvas.drawCircle(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y - 4), AmoledUi::nativeExtent(2), rgb(35, 39, 44));
+}
+
+void drawExploreRouteBoss(Canvas565& canvas,
+                          const ExploreRouteViewModel& model) {
+    if (!model.bossPending || model.bossSpeciesId == 0 || !model.map ||
+        model.pathIndex >= model.map->pathCount) {
+        return;
+    }
+    const ExploreMapGenerator::Path& path = model.map->paths[model.pathIndex];
+    if (model.bossIndex >= path.pointCount) return;
+
+    PokemonSprites::WalkingAnimation animation{};
+    const PokemonSprites::SpriteFrame* frame = nullptr;
+    bool flipX = false;
+    if (PokemonSprites::walkingAnimation(
+            model.bossSpeciesId, PokemonSprites::WalkDirection::DOWN,
+            animation) && animation.frameCount > 0) {
+        frame = PokemonSprites::findSpeciesSprite(
+            model.bossSpeciesId, animation.base);
+        flipX = animation.flipX;
+    }
+    if (!frame) {
+        frame = PokemonSprites::findSpeciesSprite(
+            model.bossSpeciesId, PokemonSprites::SpriteKind::ICON_0);
+    }
+    if (!frame) return;
+
+    ExploreRouteGeometry::WorldPoint point =
+        ExploreRouteGeometry::pathPoint(path, model.bossIndex);
+    constexpr float scale = 0.8f;
+    int width = std::max(1, static_cast<int>(std::lround(
+        FlashStorage::readByte(&frame->width) * scale)));
+    int height = std::max(1, static_cast<int>(std::lround(
+        FlashStorage::readByte(&frame->height) * scale)));
+    int centerX = static_cast<int>(std::lround(point.x)) - model.cameraX;
+    int centerY = EXPLORE_ROUTE_MAP_TOP +
+        static_cast<int>(std::lround(point.y)) - model.cameraY;
+    int x = centerX - width / 2;
+    int y = centerY - height / 2;
+    if (x + width < -8 || x >= AmoledUi::LEGACY_WIDTH + 8 ||
+        y + height < EXPLORE_ROUTE_MAP_TOP - 16 ||
+        y >= EXPLORE_ROUTE_MAP_BOTTOM + 8) {
+        return;
+    }
+
+    canvas.fillEllipse(
+        AmoledUi::nativeCoordinate(centerX),
+        AmoledUi::nativeCoordinate(centerY + height / 2 - 10),
+        AmoledUi::nativeExtent(10), AmoledUi::nativeExtent(3),
+        rgb(68, 87, 74));
+    PokemonSprites::drawFrameScaled(frame, x, y, scale, flipX);
 }
 
 void drawExploreRoutePet(Canvas565& canvas,
@@ -998,7 +1428,7 @@ void drawExploreRoutePet(Canvas565& canvas,
     }
 
     int screenX = static_cast<int>(std::lround(model.worldX)) - model.cameraX;
-    int groundY = HOME_HEADER_HEIGHT +
+    int groundY = EXPLORE_ROUTE_MAP_TOP +
                   static_cast<int>(std::lround(model.worldY)) - model.cameraY;
     if (!frame) {
         drawFallbackPet(canvas, screenX, groundY);
@@ -1006,12 +1436,30 @@ void drawExploreRoutePet(Canvas565& canvas,
     }
     int width = FlashStorage::readByte(&frame->width);
     int height = FlashStorage::readByte(&frame->height);
-    canvas.fillEllipse(screenX, groundY, std::max(10, width / 2 - 4), 5,
-                       rgb(27, 48, 48));
+    canvas.fillEllipse(AmoledUi::nativeCoordinate(screenX), AmoledUi::nativeCoordinate(groundY), AmoledUi::nativeExtent(std::max(10, width / 2 - 4)), AmoledUi::nativeExtent(5), rgb(27, 48, 48));
     if (!PokemonSprites::drawFrame(
             frame, screenX - width / 2, groundY - height, flipX)) {
         drawFallbackPet(canvas, screenX, groundY);
     }
+}
+
+bool exploreRouteBossBehindPlayer(const ExploreRouteViewModel& model) {
+    if (!model.bossPending || !model.map ||
+        model.pathIndex >= model.map->pathCount) {
+        return false;
+    }
+    const ExploreMapGenerator::Path& path = model.map->paths[model.pathIndex];
+    if (model.bossIndex >= path.pointCount) return false;
+    return ExploreRouteGeometry::pathPoint(path, model.bossIndex).y <=
+           model.worldY;
+}
+
+void drawSceneFadeOverlay(Canvas565& canvas, uint8_t alpha) {
+    if (alpha == 0) return;
+    PixelRenderer::fillRectAlpha(
+        AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(0),
+        AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH),
+        AmoledUi::nativeExtent(AmoledUi::LEGACY_HEIGHT), 0, alpha);
 }
 
 void drawExplorePreviewMember(Canvas565& canvas,
@@ -1028,18 +1476,24 @@ void drawExplorePreviewMember(Canvas565& canvas,
     if (width <= 0 || height <= 0) return;
     float scale = std::min(
         1.0f,
-        std::min(static_cast<float>(EXPLORE_PREVIEW_MAX_WIDTH) / width,
-                 static_cast<float>(EXPLORE_PREVIEW_MAX_HEIGHT) / height));
+        std::min(static_cast<float>(EXPLORE_PREVIEW_NATIVE_MAX_WIDTH) / width,
+                 static_cast<float>(EXPLORE_PREVIEW_NATIVE_MAX_HEIGHT) / height));
     int drawnWidth = std::max(1, static_cast<int>(std::lround(width * scale)));
     int drawnHeight = std::max(1, static_cast<int>(std::lround(height * scale)));
     int x = centerX - drawnWidth / 2;
     int y = centerY - drawnHeight / 2;
+    // PokemonSprites draws through PixelRenderer's bound canvas rather than
+    // the page canvas reference, so switch the actual sprite target here.
+    Canvas565& spriteCanvas = PixelRenderer::canvas();
+    const uint8_t previousAssetScale = spriteCanvas.assetScale();
+    spriteCanvas.setAssetScale(1);
     if (hidden) {
         PokemonSprites::drawFrameSilhouette(
             frame, x, y, rgb(5, 10, 14));
     } else {
         PokemonSprites::drawFrameScaled(frame, x, y, scale, false);
     }
+    spriteCanvas.setAssetScale(previousAssetScale);
 }
 
 void drawExplorePreviewSlot(Canvas565& canvas,
@@ -1047,7 +1501,7 @@ void drawExplorePreviewSlot(Canvas565& canvas,
                             int centerX) {
     if (index >= model.previewPool.count) return;
     drawExplorePreviewMember(canvas, model.previewFrames[index], centerX,
-                             EXPLORE_PREVIEW_CENTER_Y,
+                             AmoledUi::nativeCoordinate(EXPLORE_PREVIEW_CENTER_Y),
                              model.previewHidden[index]);
 }
 
@@ -1056,29 +1510,31 @@ void drawExplorePreviewSlot(Canvas565& canvas,
 void renderHomeScreen(Canvas565& canvas, const HomeViewModel& model,
                       uint16_t rowBegin, uint16_t rowEnd) {
     const uint16_t ink = rgb(226, 238, 233);
-    rowBegin = std::min<uint16_t>(rowBegin, canvas.height());
-    rowEnd = std::min<uint16_t>(rowEnd, canvas.height());
+    rowBegin = std::min<uint16_t>(rowBegin, AmoledUi::LEGACY_HEIGHT);
+    rowEnd = std::min<uint16_t>(rowEnd, AmoledUi::LEGACY_HEIGHT);
     if (rowBegin >= rowEnd) return;
 
     if (rowBegin < HOME_HEADER_HEIGHT) {
         int top = rowBegin;
         int bottom = std::min<int>(rowEnd, HOME_HEADER_HEIGHT);
-        canvas.setClipRect(0, top, canvas.width(), bottom - top);
-        canvas.fillRect(0, 0, canvas.width(), HEADER_HEIGHT,
-                        rgb(19, 31, 39));
-        canvas.fillRect(0, HEADER_HEIGHT - 1, canvas.width(), 1,
-                        rgb(56, 87, 89));
+        canvas.setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(top), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(bottom - top));
+        canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(0), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(HEADER_HEIGHT), rgb(19, 31, 39));
+        canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(HEADER_HEIGHT - 1), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(1), rgb(56, 87, 89));
         constexpr int MOOD_HEART_START_X = 10;
         constexpr int MOOD_HEART_GAP = 14;
+        constexpr int headerCenterY = HOME_HEADER_HEIGHT / 2;
+        // The heart spans y - 4 through y + 6 around its drawing anchor.
+        constexpr int heartAnchorY = headerCenterY - 1;
+        const int clockHeight = canvas.nativeText() ? 16 : 7;
         for (uint8_t index = 0; index < model.moodHearts; ++index) {
             drawHeart(canvas, MOOD_HEART_START_X + index * MOOD_HEART_GAP,
-                      13, rgb(239, 103, 113));
+                      heartAnchorY, rgb(239, 103, 113));
         }
         if (model.moodBurstHeart < 5 && model.moodBurstAgeMs > 0) {
             drawHeartBurst(
                 canvas,
                 MOOD_HEART_START_X + model.moodBurstHeart * MOOD_HEART_GAP,
-                13, model.moodBurstAgeMs);
+                headerCenterY, model.moodBurstAgeMs);
         }
         char clockText[6] = {};
         uint16_t minuteOfDay = model.gameMinutesOfDay % (24U * 60U);
@@ -1089,46 +1545,46 @@ void renderHomeScreen(Canvas565& canvas, const HomeViewModel& model,
         clockText[2] = ':';
         clockText[3] = static_cast<char>('0' + minute / 10);
         clockText[4] = static_cast<char>('0' + minute % 10);
-        text(canvas, 116, 8, clockText, ink);
-        drawBattery(canvas, 160, 8, 82);
+        text(canvas, 116, (HOME_HEADER_HEIGHT - clockHeight) / 2,
+             clockText, ink);
+        drawBattery(canvas, 160, headerCenterY - 8 / 2, 82);
         canvas.clearClipRect();
     }
 
     if (rowBegin < HOME_STATUS_TOP && rowEnd > HOME_ROOM_TOP) {
         int top = std::max<int>(rowBegin, HOME_ROOM_TOP);
         int bottom = std::min<int>(rowEnd, HOME_STATUS_TOP);
-        canvas.setClipRect(0, top, HOME_ROOM_WIDTH, bottom - top);
+        canvas.setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(top), AmoledUi::nativeExtent(HOME_ROOM_WIDTH), AmoledUi::nativeExtent(bottom - top));
         bool roomDrawn = RoomRenderer::drawViewport(
-            0, HOME_ROOM_TOP, canvas.width(), HOME_ROOM_HEIGHT,
+            0, HOME_ROOM_TOP, AmoledUi::LEGACY_WIDTH, HOME_ROOM_HEIGHT,
             model.cameraX, model.cameraY, model.night);
         if (!roomDrawn) {
-            canvas.fillRect(0, HEADER_HEIGHT, canvas.width(), 100,
-                            rgb(218, 204, 173));
-            canvas.fillRect(0, 124, canvas.width(), 48, rgb(122, 86, 68));
+            canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(HEADER_HEIGHT), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(100), rgb(218, 204, 173));
+            canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(124), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(48), rgb(122, 86, 68));
             for (int y = 127; y < 172; y += 8) {
-                canvas.drawFastHLine(0, y, canvas.width(), rgb(105, 72, 58));
+                canvas.drawFastHLine(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(y), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), rgb(105, 72, 58));
             }
-            for (int x = 8; x < canvas.width(); x += 24) {
-                canvas.drawFastVLine(x, 124, 48, rgb(112, 77, 61));
+            for (int x = 8; x < AmoledUi::LEGACY_WIDTH; x += 24) {
+                canvas.drawFastVLine(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(124), AmoledUi::nativeExtent(48), rgb(112, 77, 61));
             }
 
-            canvas.fillRoundRect(17, 36, 55, 47, 3, rgb(67, 74, 75));
-            canvas.fillRect(21, 40, 47, 39, rgb(93, 174, 196));
-            canvas.fillCircle(58, 50, 7, rgb(246, 213, 116));
-            canvas.fillRect(21, 68, 47, 11, rgb(101, 153, 119));
-            canvas.drawFastVLine(44, 40, 39, rgb(67, 74, 75));
-            canvas.drawFastHLine(21, 59, 47, rgb(67, 74, 75));
+            canvas.fillRoundRect(AmoledUi::nativeCoordinate(17), AmoledUi::nativeCoordinate(36), AmoledUi::nativeExtent(55), AmoledUi::nativeExtent(47), AmoledUi::nativeExtent(3), rgb(67, 74, 75));
+            canvas.fillRect(AmoledUi::nativeCoordinate(21), AmoledUi::nativeCoordinate(40), AmoledUi::nativeExtent(47), AmoledUi::nativeExtent(39), rgb(93, 174, 196));
+            canvas.fillCircle(AmoledUi::nativeCoordinate(58), AmoledUi::nativeCoordinate(50), AmoledUi::nativeExtent(7), rgb(246, 213, 116));
+            canvas.fillRect(AmoledUi::nativeCoordinate(21), AmoledUi::nativeCoordinate(68), AmoledUi::nativeExtent(47), AmoledUi::nativeExtent(11), rgb(101, 153, 119));
+            canvas.drawFastVLine(AmoledUi::nativeCoordinate(44), AmoledUi::nativeCoordinate(40), AmoledUi::nativeExtent(39), rgb(67, 74, 75));
+            canvas.drawFastHLine(AmoledUi::nativeCoordinate(21), AmoledUi::nativeCoordinate(59), AmoledUi::nativeExtent(47), rgb(67, 74, 75));
 
-            canvas.fillRoundRect(132, 44, 37, 62, 3, rgb(92, 69, 59));
-            canvas.fillRect(136, 50, 29, 4, rgb(184, 133, 81));
-            canvas.fillRect(136, 71, 29, 4, rgb(184, 133, 81));
-            canvas.fillRect(139, 59, 6, 12, rgb(87, 140, 157));
-            canvas.fillRect(147, 57, 7, 14, rgb(205, 104, 83));
-            canvas.fillRect(156, 61, 6, 10, rgb(220, 183, 91));
-            canvas.fillRoundRect(140, 83, 21, 18, 3, rgb(65, 113, 105));
+            canvas.fillRoundRect(AmoledUi::nativeCoordinate(132), AmoledUi::nativeCoordinate(44), AmoledUi::nativeExtent(37), AmoledUi::nativeExtent(62), AmoledUi::nativeExtent(3), rgb(92, 69, 59));
+            canvas.fillRect(AmoledUi::nativeCoordinate(136), AmoledUi::nativeCoordinate(50), AmoledUi::nativeExtent(29), AmoledUi::nativeExtent(4), rgb(184, 133, 81));
+            canvas.fillRect(AmoledUi::nativeCoordinate(136), AmoledUi::nativeCoordinate(71), AmoledUi::nativeExtent(29), AmoledUi::nativeExtent(4), rgb(184, 133, 81));
+            canvas.fillRect(AmoledUi::nativeCoordinate(139), AmoledUi::nativeCoordinate(59), AmoledUi::nativeExtent(6), AmoledUi::nativeExtent(12), rgb(87, 140, 157));
+            canvas.fillRect(AmoledUi::nativeCoordinate(147), AmoledUi::nativeCoordinate(57), AmoledUi::nativeExtent(7), AmoledUi::nativeExtent(14), rgb(205, 104, 83));
+            canvas.fillRect(AmoledUi::nativeCoordinate(156), AmoledUi::nativeCoordinate(61), AmoledUi::nativeExtent(6), AmoledUi::nativeExtent(10), rgb(220, 183, 91));
+            canvas.fillRoundRect(AmoledUi::nativeCoordinate(140), AmoledUi::nativeCoordinate(83), AmoledUi::nativeExtent(21), AmoledUi::nativeExtent(18), AmoledUi::nativeExtent(3), rgb(65, 113, 105));
             drawPlant(canvas);
-            canvas.fillEllipse(92, 151, 53, 17, rgb(49, 112, 111));
-            canvas.fillEllipse(92, 149, 45, 12, rgb(71, 151, 139));
+            canvas.fillEllipse(AmoledUi::nativeCoordinate(92), AmoledUi::nativeCoordinate(151), AmoledUi::nativeExtent(53), AmoledUi::nativeExtent(17), rgb(49, 112, 111));
+            canvas.fillEllipse(AmoledUi::nativeCoordinate(92), AmoledUi::nativeCoordinate(149), AmoledUi::nativeExtent(45), AmoledUi::nativeExtent(12), rgb(71, 151, 139));
         }
 #if STICKMON_ENABLE_DEBUG_FEATURES
         if (model.debugPairChaseActive &&
@@ -1173,18 +1629,14 @@ void renderHomeScreen(Canvas565& canvas, const HomeViewModel& model,
     if (rowEnd > HOME_STATUS_TOP) {
         int top = std::max<int>(rowBegin, HOME_STATUS_TOP);
         int bottom = rowEnd;
-        canvas.setClipRect(0, top, canvas.width(), bottom - top);
-        canvas.fillRect(0, 172, canvas.width(), 52, rgb(18, 27, 35));
-        canvas.drawFastHLine(0, 172, canvas.width(), rgb(71, 108, 108));
+        canvas.setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(top), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(bottom - top));
+        canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(172), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(52), rgb(18, 27, 35));
+        canvas.drawFastHLine(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(172), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), rgb(71, 108, 108));
         drawHomeLockIcon(canvas);
         drawHomeMenuIcon(canvas);
 
-        canvas.fillRoundRect(HOME_MONSTER_PANEL_X, 176,
-                             HOME_MONSTER_PANEL_W, 44, 4,
-                             rgb(24, 34, 42));
-        canvas.drawRoundRect(HOME_MONSTER_PANEL_X, 176,
-                             HOME_MONSTER_PANEL_W, 44, 4,
-                             rgb(72, 83, 98));
+        canvas.fillRoundRect(AmoledUi::nativeCoordinate(HOME_MONSTER_PANEL_X), AmoledUi::nativeCoordinate(176), AmoledUi::nativeExtent(HOME_MONSTER_PANEL_W), AmoledUi::nativeExtent(44), AmoledUi::nativeExtent(4), rgb(24, 34, 42));
+        canvas.drawRoundRect(AmoledUi::nativeCoordinate(HOME_MONSTER_PANEL_X), AmoledUi::nativeCoordinate(176), AmoledUi::nativeExtent(HOME_MONSTER_PANEL_W), AmoledUi::nativeExtent(44), AmoledUi::nativeExtent(4), rgb(72, 83, 98));
         uint8_t count = std::min<uint8_t>(model.monsterCount,
                                           Game::TEAM_CAP);
         for (uint8_t index = 0; index < count; ++index) {
@@ -1197,6 +1649,7 @@ void renderHomeScreen(Canvas565& canvas, const HomeViewModel& model,
         }
         canvas.clearClipRect();
     }
+    drawSceneFadeOverlay(canvas, model.fadeAlpha);
 }
 
 HomeHitTarget homeHitTargetAt(int x, int y, int petCenterX,
@@ -1270,14 +1723,13 @@ int debugContactChoiceAt(int x, int y) {
 void renderMainMenu(Canvas565& canvas, const MenuViewModel& model,
                     uint16_t rowBegin, uint16_t rowEnd) {
     const uint16_t ink = rgb(226, 238, 233);
-    rowBegin = std::min<uint16_t>(rowBegin, canvas.height());
-    rowEnd = std::min<uint16_t>(rowEnd, canvas.height());
+    rowBegin = std::min<uint16_t>(rowBegin, AmoledUi::LEGACY_HEIGHT);
+    rowEnd = std::min<uint16_t>(rowEnd, AmoledUi::LEGACY_HEIGHT);
     if (rowBegin >= rowEnd) return;
 
     int contentTop = std::max<int>(rowBegin, MAIN_MENU_CONTENT_TOP);
-    canvas.setClipRect(0, contentTop, canvas.width(), rowEnd - contentTop);
-    canvas.fillRect(0, MAIN_MENU_CONTENT_TOP, canvas.width(),
-                    canvas.height() - MAIN_MENU_CONTENT_TOP, rgb(12, 18, 25));
+    canvas.setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(contentTop), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - contentTop));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(MAIN_MENU_CONTENT_TOP), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(AmoledUi::LEGACY_HEIGHT - MAIN_MENU_CONTENT_TOP), rgb(12, 18, 25));
 
     int scroll = static_cast<int>(std::lround(model.scroll));
     int rowCount = (MAIN_MENU_ITEM_COUNT + 1) / 2;
@@ -1298,10 +1750,8 @@ void renderMainMenu(Canvas565& canvas, const MenuViewModel& model,
                                           : rgb(24, 34, 42);
             uint16_t border = pressed ? rgb(115, 226, 183)
                                       : rgb(56, 75, 84);
-            canvas.fillRoundRect(x, y + 1, MENU_CELL_WIDTH,
-                                 MENU_CELL_HEIGHT, 4, background);
-            canvas.drawRoundRect(x, y + 1, MENU_CELL_WIDTH,
-                                 MENU_CELL_HEIGHT, 4, border);
+            canvas.fillRoundRect(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y + 1), AmoledUi::nativeExtent(MENU_CELL_WIDTH), AmoledUi::nativeExtent(MENU_CELL_HEIGHT), AmoledUi::nativeExtent(4), background);
+            canvas.drawRoundRect(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y + 1), AmoledUi::nativeExtent(MENU_CELL_WIDTH), AmoledUi::nativeExtent(MENU_CELL_HEIGHT), AmoledUi::nativeExtent(4), border);
             if (entry.iconIndex < MenuAssets::MAIN_ICON_COUNT) {
                 uint16_t offset = FlashStorage::readWord(
                     &MenuAssets::MAIN_ICON_FRAMES[entry.iconIndex].offset);
@@ -1383,10 +1833,8 @@ const char* debugCategoryTitle(DebugViewModel::Category category) {
 }
 
 void drawDebugPopup(Canvas565& canvas, const DebugViewModel& model) {
-    canvas.fillRoundRect(DEBUG_POPUP_X, DEBUG_POPUP_Y, DEBUG_POPUP_W,
-                         DEBUG_POPUP_H, 6, rgb(17, 27, 34));
-    canvas.drawRoundRect(DEBUG_POPUP_X, DEBUG_POPUP_Y, DEBUG_POPUP_W,
-                         DEBUG_POPUP_H, 6, rgb(115, 226, 183));
+    canvas.fillRoundRect(AmoledUi::nativeCoordinate(DEBUG_POPUP_X), AmoledUi::nativeCoordinate(DEBUG_POPUP_Y), AmoledUi::nativeExtent(DEBUG_POPUP_W), AmoledUi::nativeExtent(DEBUG_POPUP_H), AmoledUi::nativeExtent(6), rgb(17, 27, 34));
+    canvas.drawRoundRect(AmoledUi::nativeCoordinate(DEBUG_POPUP_X), AmoledUi::nativeCoordinate(DEBUG_POPUP_Y), AmoledUi::nativeExtent(DEBUG_POPUP_W), AmoledUi::nativeExtent(DEBUG_POPUP_H), AmoledUi::nativeExtent(6), rgb(115, 226, 183));
     const bool timePopup = model.popup == DebugViewModel::Popup::SET_TIME;
     const char* title = timePopup ? Ui::Debug::TARGET_TIME : Ui::Debug::INPUT_ID;
     text(canvas, DEBUG_POPUP_X + (DEBUG_POPUP_W - textWidth(title)) / 2,
@@ -1396,19 +1844,15 @@ void drawDebugPopup(Canvas565& canvas, const DebugViewModel& model) {
     for (uint8_t index = 0; index < digitCount; ++index) {
         int x = DEBUG_POPUP_X + 18 + index * 34;
         bool focused = index == model.focus;
-        canvas.fillRoundRect(x, DEBUG_POPUP_Y + 34, 26, 32, 4,
-                             focused ? rgb(42, 61, 68) : rgb(24, 34, 42));
-        canvas.drawRoundRect(x, DEBUG_POPUP_Y + 34, 26, 32, 4,
-                             focused ? rgb(248, 210, 105) : rgb(67, 97, 101));
+        canvas.fillRoundRect(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(DEBUG_POPUP_Y + 34), AmoledUi::nativeExtent(26), AmoledUi::nativeExtent(32), AmoledUi::nativeExtent(4), focused ? rgb(42, 61, 68) : rgb(24, 34, 42));
+        canvas.drawRoundRect(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(DEBUG_POPUP_Y + 34), AmoledUi::nativeExtent(26), AmoledUi::nativeExtent(32), AmoledUi::nativeExtent(4), focused ? rgb(248, 210, 105) : rgb(67, 97, 101));
         char digit[2] = {static_cast<char>('0' + model.digits[index]), '\0'};
         text(canvas, x + 9,
              DEBUG_POPUP_Y + 34 + DEBUG_POPUP_CONTROL_TEXT_OFFSET, digit,
              focused ? rgb(248, 210, 105) : rgb(226, 238, 233));
     }
-    canvas.fillRoundRect(DEBUG_POPUP_X + 18, DEBUG_POPUP_Y + 88, 60, 32, 4,
-                         rgb(36, 54, 61));
-    canvas.fillRoundRect(DEBUG_POPUP_X + 86, DEBUG_POPUP_Y + 88, 60, 32, 4,
-                         rgb(91, 49, 55));
+    canvas.fillRoundRect(AmoledUi::nativeCoordinate(DEBUG_POPUP_X + 18), AmoledUi::nativeCoordinate(DEBUG_POPUP_Y + 88), AmoledUi::nativeExtent(60), AmoledUi::nativeExtent(32), AmoledUi::nativeExtent(4), rgb(36, 54, 61));
+    canvas.fillRoundRect(AmoledUi::nativeCoordinate(DEBUG_POPUP_X + 86), AmoledUi::nativeCoordinate(DEBUG_POPUP_Y + 88), AmoledUi::nativeExtent(60), AmoledUi::nativeExtent(32), AmoledUi::nativeExtent(4), rgb(91, 49, 55));
     text(canvas, DEBUG_POPUP_X + 37,
          DEBUG_POPUP_Y + 88 + DEBUG_POPUP_CONTROL_TEXT_OFFSET, Ui::Debug::YES,
          rgb(115, 226, 183));
@@ -1457,16 +1901,14 @@ int debugPopupDigitAt(int x, int y, uint8_t digitCount) {
 
 void renderDebugScreen(Canvas565& canvas, const DebugViewModel& model,
                        uint16_t rowBegin, uint16_t rowEnd) {
-    rowBegin = std::min<uint16_t>(rowBegin, canvas.height());
-    rowEnd = std::min<uint16_t>(rowEnd, canvas.height());
+    rowBegin = std::min<uint16_t>(rowBegin, AmoledUi::LEGACY_HEIGHT);
+    rowEnd = std::min<uint16_t>(rowEnd, AmoledUi::LEGACY_HEIGHT);
     if (rowBegin >= rowEnd) return;
 
-    canvas.setClipRect(0, rowBegin, canvas.width(), rowEnd - rowBegin);
-    canvas.fillRect(0, 0, canvas.width(), canvas.height(), rgb(12, 18, 25));
-    canvas.fillRect(0, 0, canvas.width(), DEBUG_CONTENT_TOP,
-                    rgb(19, 31, 39));
-    canvas.fillRect(0, DEBUG_CONTENT_TOP - 1, canvas.width(), 1,
-                    rgb(56, 87, 89));
+    canvas.setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(rowBegin), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - rowBegin));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(0), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(AmoledUi::LEGACY_HEIGHT), rgb(12, 18, 25));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(0), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(DEBUG_CONTENT_TOP), rgb(19, 31, 39));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(DEBUG_CONTENT_TOP - 1), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(1), rgb(56, 87, 89));
     drawBackIcon(canvas);
     text(canvas, 36, 8, debugCategoryTitle(model.category),
          rgb(115, 226, 183));
@@ -1478,10 +1920,8 @@ void renderDebugScreen(Canvas565& canvas, const DebugViewModel& model,
         if (y + DEBUG_ROW_HEIGHT <= DEBUG_CONTENT_TOP || y >= 224) continue;
         bool selected = index == model.cursor;
         uint16_t background = selected ? rgb(42, 61, 68) : rgb(24, 34, 42);
-        canvas.fillRoundRect(DEBUG_ROW_LEFT, y + 2, DEBUG_ROW_WIDTH,
-                             DEBUG_ROW_HEIGHT - 5, 4, background);
-        if (selected) canvas.fillRect(DEBUG_ROW_LEFT, y + 7, 3,
-                                      DEBUG_ROW_HEIGHT - 15, rgb(248, 210, 105));
+        canvas.fillRoundRect(AmoledUi::nativeCoordinate(DEBUG_ROW_LEFT), AmoledUi::nativeCoordinate(y + 2), AmoledUi::nativeExtent(DEBUG_ROW_WIDTH), AmoledUi::nativeExtent(DEBUG_ROW_HEIGHT - 5), AmoledUi::nativeExtent(4), background);
+        if (selected) canvas.fillRect(AmoledUi::nativeCoordinate(DEBUG_ROW_LEFT), AmoledUi::nativeCoordinate(y + 7), AmoledUi::nativeExtent(3), AmoledUi::nativeExtent(DEBUG_ROW_HEIGHT - 15), rgb(248, 210, 105));
         text(canvas, DEBUG_ROW_LEFT + 10, y + DEBUG_TEXT_Y_OFFSET,
              debugItemLabel(model.category, index),
              selected ? rgb(248, 210, 105) : rgb(226, 238, 233));
@@ -1522,120 +1962,126 @@ void renderDebugScreen(Canvas565& canvas, const DebugViewModel& model,
 }
 #endif
 
-bool exploreBackAt(int x, int y) {
-    return x >= 0 && x < 30 && y >= 0 && y < HEADER_HEIGHT;
-}
-
-bool exploreMenuAt(int x, int y) {
-    return x >= MENU_BUTTON_X && x < 184 &&
-           y >= 0 && y < HEADER_HEIGHT;
-}
-
 int exploreAreaAt(int x, int y, uint8_t selectedArea,
                   uint8_t visibleAreaCount) {
-    if (x < 2 || x >= EXPLORE_SELECTOR_LEFT_WIDTH ||
-        y < HEADER_HEIGHT || y >= 224) return -1;
+    if (y < 0 || y >= EXPLORE_SELECTOR_TOP_HEIGHT) return -1;
     int count = std::min<int>(visibleAreaCount, Game::EXPLORE_AREA_COUNT);
     if (count <= 0) return -1;
     int index = selectedArea + static_cast<int>(std::lround(
-        (y - EXPLORE_SELECTOR_CENTER_Y) /
+        (x - EXPLORE_SELECTOR_CENTER_X) /
         static_cast<float>(EXPLORE_SELECTOR_AREA_SPACING)));
     if (index < 0 || index >= count) return -1;
-    int expectedY = EXPLORE_SELECTOR_CENTER_Y +
+    int expectedX = EXPLORE_SELECTOR_CENTER_X +
         (index - static_cast<int>(selectedArea)) *
             EXPLORE_SELECTOR_AREA_SPACING;
-    return std::abs(y - expectedY) <= 15 ? index : -1;
+    return std::abs(x - expectedX) <= 34 ? index : -1;
+}
+
+bool exploreStartAt(int x, int y) {
+    return x >= 10 && x < 88 && y >= EXPLORE_SELECTOR_BUTTON_TOP &&
+           y < 224;
+}
+
+bool exploreSelectionBackAt(int x, int y) {
+    return x >= 96 && x < 174 && y >= EXPLORE_SELECTOR_BUTTON_TOP &&
+           y < 224;
 }
 
 void renderExploreScreen(Canvas565& canvas, const ExploreViewModel& model,
                          uint16_t rowBegin, uint16_t rowEnd) {
     const uint16_t ink = rgb(226, 238, 233);
     const uint16_t muted = rgb(137, 155, 158);
-    rowBegin = std::min<uint16_t>(rowBegin, canvas.height());
-    rowEnd = std::min<uint16_t>(rowEnd, canvas.height());
+    rowBegin = std::min<uint16_t>(rowBegin, AmoledUi::LEGACY_HEIGHT);
+    rowEnd = std::min<uint16_t>(rowEnd, AmoledUi::LEGACY_HEIGHT);
     if (rowBegin >= rowEnd) return;
 
-    canvas.setClipRect(0, rowBegin, canvas.width(), rowEnd - rowBegin);
-    if (!GameAssets::draw(GameAssets::Kind::EXPLORE_MENU_BACKGROUND,
-                          EXPLORE_BACKGROUND_X, 0,
-                          EXPLORE_BACKGROUND_SCALE)) {
-        canvas.fillRect(0, 0, canvas.width(), canvas.height(),
-                        rgb(12, 18, 25));
-    }
+    canvas.setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(rowBegin), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - rowBegin));
+    drawExploreBackgroundLayer(canvas, rowBegin, rowEnd);
     canvas.clearClipRect();
 
-    if (rowBegin < HEADER_HEIGHT) {
+    const int count = std::min<int>(model.visibleAreaCount,
+                                    Game::EXPLORE_AREA_COUNT);
+    const int centerX = EXPLORE_SELECTOR_CENTER_X;
+    const int selectorBottom = EXPLORE_SELECTOR_TOP_HEIGHT;
+    const int buttonTop = EXPLORE_SELECTOR_BUTTON_TOP;
+    const bool selectedLocked = model.selectedArea > model.unlockedArea;
+
+    if (rowBegin < selectorBottom) {
         int top = rowBegin;
-        int bottom = std::min<int>(rowEnd, HEADER_HEIGHT);
-        canvas.setClipRect(0, top, canvas.width(), bottom - top);
-        canvas.fillRect(0, 0, canvas.width(), HEADER_HEIGHT,
-                        rgb(19, 31, 39));
-        canvas.fillRect(0, HEADER_HEIGHT - 1, canvas.width(), 1,
-                        rgb(56, 87, 89));
-        drawBackIcon(canvas);
-        text(canvas, 36, 8, Ui::EXPLORE, rgb(115, 226, 183));
-        drawMenuIcon(canvas);
+        int bottom = std::min<int>(rowEnd, selectorBottom);
+        canvas.setClipRect(AmoledUi::nativeCoordinate(0),
+                           AmoledUi::nativeCoordinate(top),
+                           AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH),
+                           AmoledUi::nativeExtent(bottom - top));
+        if (count > 0) {
+            for (int index = 0; index < count; ++index) {
+                float offset = static_cast<float>(index) -
+                               model.areaAnimCursor;
+                if (std::fabs(offset) > 1.35f) continue;
+                int x = centerX + static_cast<int>(std::lround(
+                    offset * EXPLORE_SELECTOR_AREA_SPACING));
+                bool active = std::fabs(offset) < 0.5f;
+                uint16_t color = active ? ink : muted;
+                text(canvas, x - textWidth(EXPLORE_AREA_NAMES[index]) / 2,
+                     22, EXPLORE_AREA_NAMES[index], color);
+                if (active) {
+                    canvas.drawFastHLine(
+                        AmoledUi::nativeCoordinate(x - 22),
+                        AmoledUi::nativeCoordinate(56),
+                        AmoledUi::nativeExtent(44),
+                        ink);
+                }
+            }
+        }
+        canvas.drawLine(AmoledUi::nativeCoordinate(9),
+                        AmoledUi::nativeCoordinate(18),
+                        AmoledUi::nativeCoordinate(3),
+                        AmoledUi::nativeCoordinate(24), muted);
+        canvas.drawLine(AmoledUi::nativeCoordinate(3),
+                        AmoledUi::nativeCoordinate(24),
+                        AmoledUi::nativeCoordinate(9),
+                        AmoledUi::nativeCoordinate(30), muted);
+        canvas.drawLine(AmoledUi::nativeCoordinate(175),
+                        AmoledUi::nativeCoordinate(18),
+                        AmoledUi::nativeCoordinate(181),
+                        AmoledUi::nativeCoordinate(24), muted);
+        canvas.drawLine(AmoledUi::nativeCoordinate(181),
+                        AmoledUi::nativeCoordinate(24),
+                        AmoledUi::nativeCoordinate(175),
+                        AmoledUi::nativeCoordinate(30), muted);
+        canvas.drawFastHLine(AmoledUi::nativeCoordinate(8),
+                             AmoledUi::nativeCoordinate(selectorBottom - 1),
+                             AmoledUi::nativeExtent(168),
+                             rgb(77, 105, 106));
         canvas.clearClipRect();
     }
 
-    if (rowEnd <= HEADER_HEIGHT) return;
-    int contentTop = std::max<int>(rowBegin, HEADER_HEIGHT);
-    canvas.setClipRect(0, contentTop, canvas.width(), rowEnd - contentTop);
-
-    const int leftWidth = EXPLORE_SELECTOR_LEFT_WIDTH;
-    const int centerY = EXPLORE_SELECTOR_CENTER_Y;
-    const int count = std::min<int>(model.visibleAreaCount,
-                                    Game::EXPLORE_AREA_COUNT);
-    PixelRenderer::fillRectAlpha(
-        0, HEADER_HEIGHT, leftWidth - 1,
-        canvas.height() - HEADER_HEIGHT, rgb(8, 17, 22), 132);
-    canvas.drawFastVLine(leftWidth - 1, HEADER_HEIGHT + 4,
-                         canvas.height() - HEADER_HEIGHT - 8,
-                         rgb(77, 105, 106));
-
-    for (int index = 0; index < count; ++index) {
-        float offset = static_cast<float>(index) - model.areaAnimCursor;
-        if (std::fabs(offset) > 2.25f) continue;
-        int y = centerY + static_cast<int>(std::lround(
-            offset * EXPLORE_SELECTOR_AREA_SPACING));
-        bool active = std::fabs(offset) < 0.5f;
-        bool locked = index > model.unlockedArea;
-        bool pressed = index == model.pressedArea;
-        uint16_t color = locked
-            ? rgb(78, 91, 96)
-            : active
-                ? rgb(248, 210, 105)
-                : rgb(170, 185, 181);
-        if (pressed) color = rgb(115, 226, 183);
-        if (active) {
-            canvas.fillRoundRect(5, y - 8, 3, 16, 1,
-                                 locked ? rgb(78, 91, 96)
-                                        : rgb(248, 210, 105));
-        }
-        int textX = (leftWidth - textWidth(EXPLORE_AREA_NAMES[index])) / 2;
-        text(canvas, textX, y - 8, EXPLORE_AREA_NAMES[index], color);
-    }
-
-    int rightCenterX = leftWidth + (canvas.width() - leftWidth) / 2;
-    bool selectedLocked = model.selectedArea > model.unlockedArea;
+    if (rowEnd > selectorBottom && rowBegin < buttonTop) {
+        int top = std::max<int>(rowBegin, selectorBottom);
+        int bottom = std::min<int>(rowEnd, buttonTop);
+        canvas.setClipRect(AmoledUi::nativeCoordinate(0),
+                           AmoledUi::nativeCoordinate(top),
+                           AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH),
+                           AmoledUi::nativeExtent(bottom - top));
+        const int previewCenterX = AmoledUi::LEGACY_WIDTH / 2;
     const char* title = selectedLocked
         ? Ui::Explore::AREA_LOCKED
         : model.previewPool.count > 0 && ExplorePool::poolHasRare(
               model.previewPool)
             ? Ui::Explore::MASS_OUTBREAK
             : Ui::Explore::HABITAT_MONSTERS;
-    text(canvas, rightCenterX - textWidth(title) / 2, HEADER_HEIGHT + 7,
+    text(canvas, previewCenterX - textWidth(title) / 2, selectorBottom + 8,
          title, selectedLocked ? rgb(137, 155, 158) : ink);
-    canvas.drawFastHLine(leftWidth + 8, HEADER_HEIGHT + 26,
-                         canvas.width() - leftWidth - 16,
-                         rgb(77, 105, 106));
 
-    canvas.setClipRect(leftWidth, HEADER_HEIGHT + 28,
-                       canvas.width() - leftWidth,
-                       canvas.height() - HEADER_HEIGHT - 28);
+    canvas.setClipRect(AmoledUi::nativeCoordinate(0),
+                       AmoledUi::nativeCoordinate(std::max(top, EXPLORE_PREVIEW_TOP)),
+                       AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH),
+                       AmoledUi::nativeExtent(std::max(0,
+                           std::min(bottom, EXPLORE_PREVIEW_BOTTOM) -
+                           std::max(top, EXPLORE_PREVIEW_TOP))));
     if (selectedLocked) {
         const char* message = Ui::Explore::DEFEAT_PREVIOUS_BOSS;
-        text(canvas, rightCenterX - textWidth(message) / 2,
+        text(canvas, previewCenterX - textWidth(message) / 2,
              EXPLORE_PREVIEW_CENTER_Y - 8, message, muted);
     } else if (model.previewPool.count > 0) {
         uint8_t poolCount = model.previewPool.count;
@@ -1643,9 +2089,6 @@ void renderExploreScreen(Canvas565& canvas, const ExploreViewModel& model,
                            model.previewStartedAt;
         uint8_t current = static_cast<uint8_t>(
             (elapsed / EXPLORE_PREVIEW_CYCLE_MS + 1) % poolCount);
-        uint8_t next = static_cast<uint8_t>((current + 1) % poolCount);
-        uint8_t previous = static_cast<uint8_t>(
-            (current + poolCount - 1) % poolCount);
         uint32_t cycleElapsed = elapsed % EXPLORE_PREVIEW_CYCLE_MS;
         float progress = cycleElapsed <= EXPLORE_PREVIEW_HOLD_MS
             ? 0.0f
@@ -1654,75 +2097,93 @@ void renderExploreScreen(Canvas565& canvas, const ExploreViewModel& model,
         progress = std::min(1.0f, progress);
         progress = progress * progress * (3.0f - 2.0f * progress);
 
-        auto frameWidth = [](const PokemonSprites::SpriteFrame* frame) {
-            return frame ? static_cast<int>(FlashStorage::readByte(
-                &frame->width)) : EXPLORE_PREVIEW_MAX_WIDTH;
-        };
-        auto scaledWidth = [&](const PokemonSprites::SpriteFrame* frame) {
-            int width = frameWidth(frame);
-            int height = frame ? static_cast<int>(FlashStorage::readByte(
-                &frame->height)) : EXPLORE_PREVIEW_MAX_HEIGHT;
-            float scale = std::min(
-                1.0f,
-                std::min(static_cast<float>(EXPLORE_PREVIEW_MAX_WIDTH) /
-                             std::max(1, width),
-                         static_cast<float>(EXPLORE_PREVIEW_MAX_HEIGHT) /
-                             std::max(1, height)));
-            return std::max(1, static_cast<int>(std::lround(width * scale)));
-        };
-        int currentWidth = scaledWidth(model.previewFrames[current]);
-        int nextWidth = scaledWidth(model.previewFrames[next]);
-        int previousWidth = scaledWidth(model.previewFrames[previous]);
-        int currentX = rightCenterX;
-        int nextX = rightCenterX + currentWidth / 2 +
-                    EXPLORE_PREVIEW_GAP + nextWidth / 2;
-        int previousX = rightCenterX - currentWidth / 2 -
-                        EXPLORE_PREVIEW_GAP - previousWidth / 2;
-        if (progress <= 0.0f) {
-            drawExplorePreviewSlot(canvas, model, previous, previousX);
-            drawExplorePreviewSlot(canvas, model, current, currentX);
-            drawExplorePreviewSlot(canvas, model, next, nextX);
+        const int previewCenterNativeX =
+            AmoledUi::nativeCoordinate(previewCenterX);
+        if (poolCount == 1) {
+            drawExplorePreviewSlot(canvas, model, current, previewCenterNativeX);
         } else {
-            uint8_t entering = static_cast<uint8_t>((next + 1) % poolCount);
-            int enteringWidth = scaledWidth(model.previewFrames[entering]);
-            int currentNewX = rightCenterX - nextWidth / 2 -
-                              EXPLORE_PREVIEW_GAP - currentWidth / 2;
-            int nextNewX = rightCenterX;
-            int enteringOldX = canvas.width() + enteringWidth / 2 + 4;
-            int enteringNewX = rightCenterX + nextWidth / 2 +
-                               EXPLORE_PREVIEW_GAP + enteringWidth / 2;
-            int currentAnimatedX = currentX + static_cast<int>(std::lround(
-                (currentNewX - currentX) * progress));
-            int nextAnimatedX = nextX + static_cast<int>(std::lround(
-                (nextNewX - nextX) * progress));
-            int enteringAnimatedX = enteringOldX +
-                static_cast<int>(std::lround(
-                    (enteringNewX - enteringOldX) * progress));
-            drawExplorePreviewSlot(canvas, model, current,
-                                   currentAnimatedX);
-            drawExplorePreviewSlot(canvas, model, next, nextAnimatedX);
-            drawExplorePreviewSlot(canvas, model, entering,
-                                   enteringAnimatedX);
+            // Keep both edge members until they have fully crossed the clip.
+            // All slots share one translation, including at cycle rollover.
+            const int translation = static_cast<int>(std::lround(
+                progress * EXPLORE_PREVIEW_SLOT_SPACING));
+            for (int slot = -1; slot <= 2; ++slot) {
+                const int x = previewCenterNativeX +
+                    slot * EXPLORE_PREVIEW_SLOT_SPACING - translation;
+                if (x + EXPLORE_PREVIEW_NATIVE_MAX_WIDTH / 2 <= 0 ||
+                    x - EXPLORE_PREVIEW_NATIVE_MAX_WIDTH / 2 >= AmoledUi::WIDTH) {
+                    continue;
+                }
+                const uint8_t index = static_cast<uint8_t>(
+                    (current + poolCount + slot) % poolCount);
+                drawExplorePreviewSlot(canvas, model, index, x);
+            }
         }
     }
     canvas.clearClipRect();
 
-    char levelText[24] = {};
-    std::snprintf(levelText, sizeof(levelText), Ui::Amoled::REC_LEVEL_FMT,
-                  ExploreAreaCatalog::recommendedLevel(model.selectedArea));
-    text(canvas, rightCenterX - textWidth(levelText) / 2, 204, levelText,
-         selectedLocked ? rgb(88, 98, 104) : rgb(137, 175, 166));
+    }
+
+    if (rowEnd > buttonTop && rowBegin < AmoledUi::LEGACY_HEIGHT) {
+        int top = std::max<int>(rowBegin, buttonTop);
+        canvas.setClipRect(AmoledUi::nativeCoordinate(0),
+                           AmoledUi::nativeCoordinate(top),
+                           AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH),
+                           AmoledUi::nativeExtent(rowEnd - top));
+        canvas.drawFastHLine(AmoledUi::nativeCoordinate(8),
+                             AmoledUi::nativeCoordinate(buttonTop),
+                             AmoledUi::nativeExtent(168),
+                             rgb(77, 105, 106));
+        const uint16_t startFill = selectedLocked
+            ? rgb(78, 91, 96) : rgb(42, 61, 68);
+        canvas.fillRoundRect(AmoledUi::nativeCoordinate(10),
+                             AmoledUi::nativeCoordinate(buttonTop + 3),
+                             AmoledUi::nativeExtent(78),
+                             AmoledUi::nativeExtent(24),
+                             AmoledUi::nativeExtent(4), startFill);
+        canvas.drawRoundRect(AmoledUi::nativeCoordinate(10),
+                             AmoledUi::nativeCoordinate(buttonTop + 3),
+                             AmoledUi::nativeExtent(78),
+                             AmoledUi::nativeExtent(24),
+                             AmoledUi::nativeExtent(4),
+                             selectedLocked ? rgb(78, 91, 96)
+                                            : rgb(115, 226, 183));
+        canvas.fillRoundRect(AmoledUi::nativeCoordinate(96),
+                             AmoledUi::nativeCoordinate(buttonTop + 3),
+                             AmoledUi::nativeExtent(78),
+                             AmoledUi::nativeExtent(24),
+                             AmoledUi::nativeExtent(4), rgb(27, 43, 51));
+        canvas.drawRoundRect(AmoledUi::nativeCoordinate(96),
+                             AmoledUi::nativeCoordinate(buttonTop + 3),
+                             AmoledUi::nativeExtent(78),
+                             AmoledUi::nativeExtent(24),
+                             AmoledUi::nativeExtent(4), rgb(67, 97, 101));
+        text(canvas, 49 - textWidth(Ui::Explore::DEPART) / 2,
+             buttonTop + 7, Ui::Explore::DEPART,
+             selectedLocked ? rgb(126, 145, 145) : rgb(226, 238, 233));
+        text(canvas, 135 - textWidth(Ui::BACK) / 2, buttonTop + 7,
+             Ui::BACK, rgb(226, 238, 233));
+        canvas.clearClipRect();
+    }
     drawToast(canvas, model.toast);
     canvas.clearClipRect();
 }
 
 bool exploreRouteBackAt(int x, int y) {
-    return x >= 0 && x < 30 && y >= 0 && y < HEADER_HEIGHT;
+    (void)x;
+    (void)y;
+    return false;
+}
+
+bool exploreRouteBagAt(int x, int y) {
+    return x >= EXPLORE_ROUTE_BAG_BUTTON_X - 4 &&
+           x < EXPLORE_ROUTE_BAG_BUTTON_X + HOME_HUD_BUTTON_SIZE + 4 &&
+           y >= HOME_STATUS_TOP && y < AmoledUi::LEGACY_HEIGHT;
 }
 
 bool exploreRouteMenuAt(int x, int y) {
-    return x >= MENU_BUTTON_X && x < 184 &&
-           y >= 0 && y < HEADER_HEIGHT;
+    return x >= EXPLORE_ROUTE_MENU_BUTTON_X - 4 &&
+           x < EXPLORE_ROUTE_MENU_BUTTON_X + HOME_HUD_BUTTON_SIZE + 4 &&
+           y >= HOME_STATUS_TOP && y < AmoledUi::LEGACY_HEIGHT;
 }
 
 int exploreRouteExitChoiceAt(int x, int y) {
@@ -1740,70 +2201,176 @@ int exploreRoutePromptChoiceAt(int x, int y) {
 }
 
 bool exploreRouteMapAt(int x, int y) {
-    return x >= 0 && x < 184 && y >= HEADER_HEIGHT && y < 224;
+    return x >= 0 && x < AmoledUi::LEGACY_WIDTH &&
+           y >= EXPLORE_ROUTE_MAP_TOP && y < EXPLORE_ROUTE_MAP_BOTTOM;
+}
+
+void drawExploreRouteHud(Canvas565& canvas,
+                         const ExploreRouteViewModel& model) {
+    const uint16_t panelColor = rgb(8, 17, 22);
+    const char* name = EXPLORE_AREA_NAMES[
+        model.area < Game::EXPLORE_AREA_COUNT ? model.area : 0];
+    const int namePanelWidth = std::min(
+        AmoledUi::LEGACY_WIDTH - EXPLORE_ROUTE_HUD_X * 2,
+        textWidth(name) + 14);
+    fillRoundRectAlpha(canvas, EXPLORE_ROUTE_HUD_X, EXPLORE_ROUTE_HUD_Y,
+                       namePanelWidth, EXPLORE_ROUTE_HUD_HEIGHT, 7,
+                       panelColor, 168);
+    canvas.drawRoundRect(
+        AmoledUi::nativeCoordinate(EXPLORE_ROUTE_HUD_X),
+        AmoledUi::nativeCoordinate(EXPLORE_ROUTE_HUD_Y),
+        AmoledUi::nativeExtent(namePanelWidth),
+        AmoledUi::nativeExtent(EXPLORE_ROUTE_HUD_HEIGHT),
+        AmoledUi::nativeExtent(7), rgb(87, 121, 119));
+    text(canvas, EXPLORE_ROUTE_HUD_X + 7, EXPLORE_ROUTE_HUD_Y + 3,
+         name, rgb(226, 238, 233));
+}
+
+void drawExploreRouteBottomHud(Canvas565& canvas,
+                               const ExploreRouteViewModel& model) {
+    canvas.fillRect(
+        AmoledUi::nativeCoordinate(0),
+        AmoledUi::nativeCoordinate(HOME_STATUS_TOP),
+        AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH),
+        AmoledUi::nativeExtent(AmoledUi::LEGACY_HEIGHT - HOME_STATUS_TOP),
+        rgb(18, 27, 35));
+    canvas.drawFastHLine(
+        AmoledUi::nativeCoordinate(0),
+        AmoledUi::nativeCoordinate(HOME_STATUS_TOP),
+        AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), rgb(71, 108, 108));
+    drawExploreBagIcon(canvas);
+    drawExploreMenuIcon(canvas);
+
+    canvas.fillRoundRect(
+        AmoledUi::nativeCoordinate(HOME_MONSTER_PANEL_X),
+        AmoledUi::nativeCoordinate(176),
+        AmoledUi::nativeExtent(HOME_MONSTER_PANEL_W),
+        AmoledUi::nativeExtent(44), AmoledUi::nativeExtent(4),
+        rgb(24, 34, 42));
+    canvas.drawRoundRect(
+        AmoledUi::nativeCoordinate(HOME_MONSTER_PANEL_X),
+        AmoledUi::nativeCoordinate(176),
+        AmoledUi::nativeExtent(HOME_MONSTER_PANEL_W),
+        AmoledUi::nativeExtent(44), AmoledUi::nativeExtent(4),
+        rgb(72, 83, 98));
+
+    uint8_t count = model.state
+        ? std::min<uint8_t>(model.state->teamCount, 2) : 0;
+    for (uint8_t index = 0; index < count; ++index) {
+        const Game::MonsterRuntime& monster = model.state->team[index];
+        uint8_t percent = monster.hpMax == 0 ? 0
+            : static_cast<uint8_t>(std::min<uint32_t>(
+                100, static_cast<uint32_t>(monster.hpCur) * 100 /
+                    monster.hpMax));
+        const int rowY = 177 + index * 21;
+        drawHomeHpBar(canvas, HOME_MONSTER_PANEL_X + 7, rowY + 7,
+                      49, percent);
+        GameAssets::Kind status = GameAssets::statusKind(monster.majorStatus);
+        if (status != GameAssets::Kind::COUNT) {
+            GameAssets::draw(status, HOME_MONSTER_PANEL_X + 63, rowY + 1);
+        }
+    }
 }
 
 void renderExploreRouteScreen(Canvas565& canvas,
                               const ExploreRouteViewModel& model,
                               uint16_t rowBegin, uint16_t rowEnd) {
-    rowBegin = std::min<uint16_t>(rowBegin, canvas.height());
-    rowEnd = std::min<uint16_t>(rowEnd, canvas.height());
+    rowBegin = std::min<uint16_t>(rowBegin, AmoledUi::LEGACY_HEIGHT);
+    rowEnd = std::min<uint16_t>(rowEnd, AmoledUi::LEGACY_HEIGHT);
     if (rowBegin >= rowEnd) return;
 
-    if (rowEnd > HOME_HEADER_HEIGHT) {
-        int top = std::max<int>(rowBegin, HOME_HEADER_HEIGHT);
-        canvas.setClipRect(0, top, canvas.width(), rowEnd - top);
-        canvas.fillRect(0, HOME_HEADER_HEIGHT, canvas.width(),
-                        canvas.height() - HOME_HEADER_HEIGHT,
-                        ExploreAreaCatalog::fieldColor(model.area));
+    if (rowBegin < EXPLORE_ROUTE_MAP_BOTTOM &&
+        rowEnd > EXPLORE_ROUTE_MAP_TOP) {
+        int top = std::max<int>(rowBegin, EXPLORE_ROUTE_MAP_TOP);
+        int bottom = std::min<int>(rowEnd, EXPLORE_ROUTE_MAP_BOTTOM);
+        canvas.setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(top), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(bottom - top));
         if (model.map) {
-            drawExploreMap(canvas, *model.map,
-                           model.cameraX, model.cameraY,
-                           ExploreAreaCatalog::fieldColor(model.area),
-                           model.petFrame);
+            drawExploreRouteMapLayer(canvas, model, top, bottom);
             drawExploreRoutePickup(canvas, model);
+            bool bossBehindPlayer = exploreRouteBossBehindPlayer(model);
+            if (bossBehindPlayer) drawExploreRouteBoss(canvas, model);
             drawExploreRoutePet(canvas, model);
+            if (!bossBehindPlayer) drawExploreRouteBoss(canvas, model);
+        } else {
+            canvas.fillRect(
+                AmoledUi::nativeCoordinate(0),
+                AmoledUi::nativeCoordinate(EXPLORE_ROUTE_MAP_TOP),
+                AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH),
+                AmoledUi::nativeExtent(EXPLORE_ROUTE_MAP_BOTTOM -
+                                       EXPLORE_ROUTE_MAP_TOP),
+                ExploreAreaCatalog::fieldColor(model.area));
         }
+        canvas.clearClipRect();
+    }
 
-        canvas.fillRect(0, 200, canvas.width(), 24, rgb(10, 18, 23));
-        canvas.drawFastHLine(0, 200, canvas.width(), rgb(68, 99, 101));
-        char stepsText[16] = {};
-        std::snprintf(stepsText, sizeof(stepsText), Ui::Amoled::STEPS_FMT,
-                      model.steps);
-        text(canvas, 7, 208, stepsText, rgb(226, 238, 233));
-        const char* status = model.complete
-            ? Ui::Amoled::ROUTE_END
-            : model.prompt != ExploreRouteViewModel::Prompt::NONE
-                ? Ui::Amoled::BLOCKED
-            : model.sliding ? Ui::Amoled::SLIDING
-            : model.walking || model.autoWalk ? Ui::Amoled::WALKING
-                                               : Ui::Amoled::PAUSED;
-        int statusX = 177 - textWidth(status);
-        text(canvas, statusX, 208, status,
-             model.complete ? rgb(248, 210, 105)
-                            : rgb(115, 226, 183));
+    if (model.complete && rowBegin < 140 && rowEnd > 65) {
+        int top = std::max<int>(rowBegin, 65);
+        int bottom = std::min<int>(rowEnd, 140);
+        canvas.setClipRect(
+            AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(top),
+            AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH),
+            AmoledUi::nativeExtent(bottom - top));
+        canvas.fillRoundRect(
+            AmoledUi::nativeCoordinate(20), AmoledUi::nativeCoordinate(68),
+            AmoledUi::nativeExtent(144), AmoledUi::nativeExtent(66),
+            AmoledUi::nativeExtent(6), rgb(17, 27, 34));
+        canvas.drawRoundRect(
+            AmoledUi::nativeCoordinate(20), AmoledUi::nativeCoordinate(68),
+            AmoledUi::nativeExtent(144), AmoledUi::nativeExtent(66),
+            AmoledUi::nativeExtent(6), rgb(82, 117, 117));
+        text(canvas,
+             (AmoledUi::LEGACY_WIDTH -
+              textWidth(Ui::Explore::RESULT_END)) / 2,
+             80, Ui::Explore::RESULT_END, rgb(248, 210, 105));
+        text(canvas,
+             (AmoledUi::LEGACY_WIDTH -
+              textWidth(Ui::Explore::ANY_KEY_RETURN)) / 2,
+             106, Ui::Explore::ANY_KEY_RETURN, rgb(226, 238, 233));
+        canvas.clearClipRect();
+    }
 
+    if (rowBegin < EXPLORE_ROUTE_HUD_Y + EXPLORE_ROUTE_HUD_HEIGHT &&
+        rowEnd > EXPLORE_ROUTE_HUD_Y) {
+        int top = std::max<int>(rowBegin, EXPLORE_ROUTE_HUD_Y);
+        int bottom = std::min<int>(
+            rowEnd, EXPLORE_ROUTE_HUD_Y + EXPLORE_ROUTE_HUD_HEIGHT);
+        canvas.setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(top), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(bottom - top));
+        drawExploreRouteHud(canvas, model);
+        canvas.clearClipRect();
+    }
+
+    if (rowEnd > HOME_STATUS_TOP) {
+        int top = std::max<int>(rowBegin, HOME_STATUS_TOP);
+        canvas.setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(top), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - top));
+        drawExploreRouteBottomHud(canvas, model);
+        canvas.clearClipRect();
+    }
+
+    if ((model.exitConfirm ||
+         model.prompt != ExploreRouteViewModel::Prompt::NONE) &&
+        rowBegin < 214 && rowEnd > 145) {
+        int top = std::max<int>(rowBegin, 145);
+        int bottom = std::min<int>(rowEnd, 214);
+        canvas.setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(top), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(bottom - top));
         if (model.exitConfirm) {
-            canvas.fillRoundRect(10, 145, 164, 69, 6, rgb(17, 27, 34));
-            canvas.drawRoundRect(10, 145, 164, 69, 6,
-                                 rgb(82, 117, 117));
+            canvas.fillRoundRect(AmoledUi::nativeCoordinate(10), AmoledUi::nativeCoordinate(145), AmoledUi::nativeExtent(164), AmoledUi::nativeExtent(69), AmoledUi::nativeExtent(6), rgb(17, 27, 34));
+            canvas.drawRoundRect(AmoledUi::nativeCoordinate(10), AmoledUi::nativeCoordinate(145), AmoledUi::nativeExtent(164), AmoledUi::nativeExtent(69), AmoledUi::nativeExtent(6), rgb(82, 117, 117));
             text(canvas, 49, 154, Ui::Amoled::LEAVE_ROUTE,
                  rgb(226, 238, 233));
-            canvas.fillRoundRect(18, 167, 70, 37, 4, rgb(36, 54, 61));
-            canvas.fillRoundRect(96, 167, 70, 37, 4, rgb(91, 49, 55));
+            canvas.fillRoundRect(AmoledUi::nativeCoordinate(18), AmoledUi::nativeCoordinate(167), AmoledUi::nativeExtent(70), AmoledUi::nativeExtent(37), AmoledUi::nativeExtent(4), rgb(36, 54, 61));
+            canvas.fillRoundRect(AmoledUi::nativeCoordinate(96), AmoledUi::nativeCoordinate(167), AmoledUi::nativeExtent(70), AmoledUi::nativeExtent(37), AmoledUi::nativeExtent(4), rgb(91, 49, 55));
             text(canvas, 36, 182, Ui::Amoled::STAY, rgb(115, 226, 183));
             text(canvas, 117, 182, Ui::Amoled::EXIT, rgb(239, 143, 148));
         }
         if (model.prompt != ExploreRouteViewModel::Prompt::NONE) {
-            canvas.fillRoundRect(10, 145, 164, 69, 6, rgb(17, 27, 34));
-            canvas.drawRoundRect(10, 145, 164, 69, 6,
-                                 rgb(82, 117, 117));
+            canvas.fillRoundRect(AmoledUi::nativeCoordinate(10), AmoledUi::nativeCoordinate(145), AmoledUi::nativeExtent(164), AmoledUi::nativeExtent(69), AmoledUi::nativeExtent(6), rgb(17, 27, 34));
+            canvas.drawRoundRect(AmoledUi::nativeCoordinate(10), AmoledUi::nativeCoordinate(145), AmoledUi::nativeExtent(164), AmoledUi::nativeExtent(69), AmoledUi::nativeExtent(6), rgb(82, 117, 117));
             text(canvas, 43, 154,
                  model.prompt == ExploreRouteViewModel::Prompt::PUZZLE
                      ? Ui::Amoled::PATH_PUZZLE : Ui::Amoled::PATH_BLOCKED,
                  rgb(226, 238, 233));
-            canvas.fillRoundRect(18, 167, 70, 37, 4, rgb(36, 54, 61));
-            canvas.fillRoundRect(96, 167, 70, 37, 4, rgb(91, 49, 55));
+            canvas.fillRoundRect(AmoledUi::nativeCoordinate(18), AmoledUi::nativeCoordinate(167), AmoledUi::nativeExtent(70), AmoledUi::nativeExtent(37), AmoledUi::nativeExtent(4), rgb(36, 54, 61));
+            canvas.fillRoundRect(AmoledUi::nativeCoordinate(96), AmoledUi::nativeCoordinate(167), AmoledUi::nativeExtent(70), AmoledUi::nativeExtent(37), AmoledUi::nativeExtent(4), rgb(91, 49, 55));
             text(canvas, 33, 182,
                  model.prompt == ExploreRouteViewModel::Prompt::PUZZLE
                      ? Ui::Amoled::SOLVE : Ui::Amoled::OPEN,
@@ -1812,21 +2379,7 @@ void renderExploreRouteScreen(Canvas565& canvas,
         }
         canvas.clearClipRect();
     }
-
-    if (rowBegin < HOME_HEADER_HEIGHT) {
-        int bottom = std::min<int>(rowEnd, HOME_HEADER_HEIGHT);
-        canvas.setClipRect(0, rowBegin, canvas.width(), bottom - rowBegin);
-        canvas.fillRect(0, 0, canvas.width(), HOME_HEADER_HEIGHT,
-                        rgb(19, 31, 39));
-        canvas.fillRect(0, HOME_HEADER_HEIGHT - 1,
-                        canvas.width(), 1, rgb(56, 87, 89));
-        drawBackIcon(canvas);
-        const char* name = EXPLORE_AREA_NAMES[
-            model.area < Game::EXPLORE_AREA_COUNT ? model.area : 0];
-        text(canvas, 36, 8, name, rgb(115, 226, 183));
-        drawMenuIcon(canvas);
-        canvas.clearClipRect();
-    }
+    drawSceneFadeOverlay(canvas, model.fadeAlpha);
 }
 
 bool exploreRouteMenuBackAt(int x, int y) {
@@ -1849,17 +2402,14 @@ int exploreRouteMenuItemAt(int x, int y) {
 void renderExploreMenuScreen(Canvas565& canvas,
                              const ExploreMenuViewModel& model,
                              uint16_t rowBegin, uint16_t rowEnd) {
-    rowBegin = std::min<uint16_t>(rowBegin, canvas.height());
-    rowEnd = std::min<uint16_t>(rowEnd, canvas.height());
+    rowBegin = std::min<uint16_t>(rowBegin, AmoledUi::LEGACY_HEIGHT);
+    rowEnd = std::min<uint16_t>(rowEnd, AmoledUi::LEGACY_HEIGHT);
     if (rowBegin >= rowEnd) return;
 
-    const int panelX = canvas.width() - EXPLORE_MENU_PANEL_WIDTH;
-    canvas.setClipRect(panelX, rowBegin, EXPLORE_MENU_PANEL_WIDTH,
-                       rowEnd - rowBegin);
-    canvas.fillRect(panelX, 0, EXPLORE_MENU_PANEL_WIDTH, canvas.height(),
-                    rgb(20, 25, 32));
-    canvas.drawRect(panelX, 0, EXPLORE_MENU_PANEL_WIDTH, canvas.height(),
-                    rgb(190, 200, 205));
+    const int panelX = AmoledUi::LEGACY_WIDTH - EXPLORE_MENU_PANEL_WIDTH;
+    canvas.setClipRect(AmoledUi::nativeCoordinate(panelX), AmoledUi::nativeCoordinate(rowBegin), AmoledUi::nativeExtent(EXPLORE_MENU_PANEL_WIDTH), AmoledUi::nativeExtent(rowEnd - rowBegin));
+    canvas.fillRect(AmoledUi::nativeCoordinate(panelX), AmoledUi::nativeCoordinate(0), AmoledUi::nativeExtent(EXPLORE_MENU_PANEL_WIDTH), AmoledUi::nativeExtent(AmoledUi::LEGACY_HEIGHT), rgb(20, 25, 32));
+    canvas.drawRect(AmoledUi::nativeCoordinate(panelX), AmoledUi::nativeCoordinate(0), AmoledUi::nativeExtent(EXPLORE_MENU_PANEL_WIDTH), AmoledUi::nativeExtent(AmoledUi::LEGACY_HEIGHT), rgb(190, 200, 205));
 
     for (uint8_t index = 0; index < AppSceneFlow::exploreMenuItemCount();
          ++index) {
@@ -1871,13 +2421,10 @@ void renderExploreMenuScreen(Canvas565& canvas,
         bool selected = index == model.cursor;
         bool pressed = index == model.pressedItem;
         if (pressed) {
-            canvas.fillRect(panelX + 2, y + 2,
-                            EXPLORE_MENU_PANEL_WIDTH - 4,
-                            EXPLORE_MENU_PANEL_ROW_HEIGHT - 4,
-                            rgb(33, 43, 48));
+            canvas.fillRect(AmoledUi::nativeCoordinate(panelX + 2), AmoledUi::nativeCoordinate(y + 2), AmoledUi::nativeExtent(EXPLORE_MENU_PANEL_WIDTH - 4), AmoledUi::nativeExtent(EXPLORE_MENU_PANEL_ROW_HEIGHT - 4), rgb(33, 43, 48));
         }
         if (selected) {
-            canvas.fillRect(panelX + 5, y, 3, 18, rgb(255, 216, 72));
+            canvas.fillRect(AmoledUi::nativeCoordinate(panelX + 5), AmoledUi::nativeCoordinate(y), AmoledUi::nativeExtent(3), AmoledUi::nativeExtent(18), rgb(255, 216, 72));
         }
         uint16_t color = selected ? rgb(255, 216, 72)
                                   : rgb(235, 239, 232);
@@ -1886,7 +2433,7 @@ void renderExploreMenuScreen(Canvas565& canvas,
     }
     canvas.clearClipRect();
     if (model.toast && rowBegin < 167 && rowEnd > 149) {
-        canvas.setClipRect(0, rowBegin, canvas.width(), rowEnd - rowBegin);
+        canvas.setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(rowBegin), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - rowBegin));
         drawToast(canvas, model.toast);
         canvas.clearClipRect();
     }
@@ -1918,8 +2465,8 @@ const char* communicationStateLabel(
 
 void drawCommunicationButton(Canvas565& canvas, int y, const char* label,
                              uint16_t color) {
-    canvas.fillRoundRect(10, y, 164, 36, 4, rgb(24, 38, 45));
-    canvas.drawRoundRect(10, y, 164, 36, 4, rgb(68, 100, 102));
+    canvas.fillRoundRect(AmoledUi::nativeCoordinate(10), AmoledUi::nativeCoordinate(y), AmoledUi::nativeExtent(164), AmoledUi::nativeExtent(36), AmoledUi::nativeExtent(4), rgb(24, 38, 45));
+    canvas.drawRoundRect(AmoledUi::nativeCoordinate(10), AmoledUi::nativeCoordinate(y), AmoledUi::nativeExtent(164), AmoledUi::nativeExtent(36), AmoledUi::nativeExtent(4), rgb(68, 100, 102));
     text(canvas, (184 - textWidth(label)) / 2, y + 14, label, color);
 }
 
@@ -1928,27 +2475,24 @@ void drawCommunicationButton(Canvas565& canvas, int y, const char* label,
 void renderCommunicationScreen(Canvas565& canvas,
                                const CommunicationViewModel& model,
                                uint16_t rowBegin, uint16_t rowEnd) {
-    rowBegin = std::min<uint16_t>(rowBegin, canvas.height());
-    rowEnd = std::min<uint16_t>(rowEnd, canvas.height());
+    rowBegin = std::min<uint16_t>(rowBegin, AmoledUi::LEGACY_HEIGHT);
+    rowEnd = std::min<uint16_t>(rowEnd, AmoledUi::LEGACY_HEIGHT);
     if (rowBegin >= rowEnd) return;
     using State = Communication::VisitSessionService::State;
 
     if (rowBegin < MENU_CONTENT_TOP) {
         int bottom = std::min<int>(rowEnd, MENU_CONTENT_TOP);
-        canvas.setClipRect(0, rowBegin, canvas.width(), bottom - rowBegin);
-        canvas.fillRect(0, 0, canvas.width(), MENU_CONTENT_TOP,
-                        rgb(19, 31, 39));
-        canvas.fillRect(0, HEADER_HEIGHT - 1, canvas.width(), 1,
-                        rgb(56, 87, 89));
+        canvas.setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(rowBegin), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(bottom - rowBegin));
+        canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(0), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(MENU_CONTENT_TOP), rgb(19, 31, 39));
+        canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(HEADER_HEIGHT - 1), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(1), rgb(56, 87, 89));
         drawBackIcon(canvas);
         text(canvas, 36, 8, Ui::SOCIAL, rgb(115, 226, 183));
         canvas.clearClipRect();
     }
     if (rowEnd <= MENU_CONTENT_TOP) return;
     int top = std::max<int>(rowBegin, MENU_CONTENT_TOP);
-    canvas.setClipRect(0, top, canvas.width(), rowEnd - top);
-    canvas.fillRect(0, MENU_CONTENT_TOP, canvas.width(),
-                    canvas.height() - MENU_CONTENT_TOP, rgb(12, 18, 25));
+    canvas.setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(top), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - top));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(MENU_CONTENT_TOP), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(AmoledUi::LEGACY_HEIGHT - MENU_CONTENT_TOP), rgb(12, 18, 25));
 
     if (model.state == State::IDLE) {
         drawCommunicationButton(canvas, 42, Ui::Amoled::HOST,
@@ -1964,8 +2508,7 @@ void renderCommunicationScreen(Canvas565& canvas,
         } else {
             for (uint8_t index = 0; index < model.roomCount; ++index) {
                 int y = 54 + index * 40;
-                canvas.fillRoundRect(8, y, 168, 32, 4,
-                                     index == 0 && model.state == State::JOINING
+                canvas.fillRoundRect(AmoledUi::nativeCoordinate(8), AmoledUi::nativeCoordinate(y), AmoledUi::nativeExtent(168), AmoledUi::nativeExtent(32), AmoledUi::nativeExtent(4), index == 0 && model.state == State::JOINING
                                          ? rgb(47, 68, 73) : rgb(24, 38, 45));
                 text(canvas, 18, y + 12, Ui::Amoled::VISIT_ROOM,
                      rgb(226, 238, 233));
@@ -2074,7 +2617,7 @@ void drawTeamSprite(Canvas565& canvas, uint16_t speciesId,
         PokemonSprites::findSpeciesSprite(
             speciesId, PokemonSprites::SpriteKind::FRONT);
     if (!frame) {
-        canvas.fillCircle(centerX, centerY, 19, rgb(42, 61, 68));
+        canvas.fillCircle(AmoledUi::nativeCoordinate(centerX), AmoledUi::nativeCoordinate(centerY), AmoledUi::nativeExtent(19), rgb(42, 61, 68));
         text(canvas, centerX - 16, centerY - 8, Ui::Amoled::MONSTER,
              rgb(115, 226, 183));
         return;
@@ -2088,18 +2631,18 @@ void drawTeamSprite(Canvas565& canvas, uint16_t speciesId,
     if (!PokemonSprites::drawFrameScaled(
             frame, centerX - drawnWidth / 2,
             centerY - drawnHeight / 2, scale)) {
-        canvas.fillCircle(centerX, centerY, 19, rgb(42, 61, 68));
+        canvas.fillCircle(AmoledUi::nativeCoordinate(centerX), AmoledUi::nativeCoordinate(centerY), AmoledUi::nativeExtent(19), rgb(42, 61, 68));
     }
 }
 
 void drawTeamConfirm(Canvas565& canvas) {
-    canvas.fillRoundRect(10, 132, 164, 82, 6, rgb(17, 27, 34));
-    canvas.drawRoundRect(10, 132, 164, 82, 6, rgb(82, 117, 117));
+    canvas.fillRoundRect(AmoledUi::nativeCoordinate(10), AmoledUi::nativeCoordinate(132), AmoledUi::nativeExtent(164), AmoledUi::nativeExtent(82), AmoledUi::nativeExtent(6), rgb(17, 27, 34));
+    canvas.drawRoundRect(AmoledUi::nativeCoordinate(10), AmoledUi::nativeCoordinate(132), AmoledUi::nativeExtent(164), AmoledUi::nativeExtent(82), AmoledUi::nativeExtent(6), rgb(82, 117, 117));
     text(canvas, 50, 145, Ui::Amoled::CHANGE_LEADER,
          rgb(226, 238, 233));
     text(canvas, 62, 160, Ui::Amoled::SET_FIRST, rgb(248, 210, 105));
-    canvas.fillRoundRect(18, 174, 70, 36, 4, rgb(36, 54, 61));
-    canvas.fillRoundRect(96, 174, 70, 36, 4, rgb(91, 49, 55));
+    canvas.fillRoundRect(AmoledUi::nativeCoordinate(18), AmoledUi::nativeCoordinate(174), AmoledUi::nativeExtent(70), AmoledUi::nativeExtent(36), AmoledUi::nativeExtent(4), rgb(36, 54, 61));
+    canvas.fillRoundRect(AmoledUi::nativeCoordinate(96), AmoledUi::nativeCoordinate(174), AmoledUi::nativeExtent(70), AmoledUi::nativeExtent(36), AmoledUi::nativeExtent(4), rgb(91, 49, 55));
     text(canvas, 39, 188, Ui::Amoled::YES, rgb(115, 226, 183));
     text(canvas, 113, 188, Ui::BACK, rgb(239, 143, 148));
 }
@@ -2163,19 +2706,16 @@ int teamConfirmChoiceAt(int x, int y) {
 
 void renderTeamScreen(Canvas565& canvas, const TeamViewModel& model,
                       uint16_t rowBegin, uint16_t rowEnd) {
-    rowBegin = std::min<uint16_t>(rowBegin, canvas.height());
-    rowEnd = std::min<uint16_t>(rowEnd, canvas.height());
+    rowBegin = std::min<uint16_t>(rowBegin, AmoledUi::LEGACY_HEIGHT);
+    rowEnd = std::min<uint16_t>(rowEnd, AmoledUi::LEGACY_HEIGHT);
     if (rowBegin >= rowEnd || !model.state) return;
 
     if (rowBegin < MENU_CONTENT_TOP) {
         int bottom = std::min<int>(rowEnd, MENU_CONTENT_TOP);
-        canvas.setClipRect(0, rowBegin, canvas.width(), bottom - rowBegin);
-        canvas.fillRect(0, 0, canvas.width(), MENU_CONTENT_TOP,
-                        rgb(12, 18, 25));
-        canvas.fillRect(0, 0, canvas.width(), HEADER_HEIGHT,
-                        rgb(19, 31, 39));
-        canvas.fillRect(0, HEADER_HEIGHT - 1, canvas.width(), 1,
-                        rgb(56, 87, 89));
+        canvas.setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(rowBegin), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(bottom - rowBegin));
+        canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(0), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(MENU_CONTENT_TOP), rgb(12, 18, 25));
+        canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(0), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(HEADER_HEIGHT), rgb(19, 31, 39));
+        canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(HEADER_HEIGHT - 1), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(1), rgb(56, 87, 89));
         drawBackIcon(canvas);
         text(canvas, 36, 8, Ui::TEAM, rgb(115, 226, 183));
         canvas.clearClipRect();
@@ -2183,11 +2723,9 @@ void renderTeamScreen(Canvas565& canvas, const TeamViewModel& model,
 
     if (rowEnd <= MENU_CONTENT_TOP) return;
     int contentTop = std::max<int>(rowBegin, MENU_CONTENT_TOP);
-    canvas.setClipRect(0, contentTop, canvas.width(), rowEnd - contentTop);
-    PixelRenderer::canvas().setClipRect(
-        0, contentTop, canvas.width(), rowEnd - contentTop);
-    canvas.fillRect(0, MENU_CONTENT_TOP, canvas.width(),
-                    canvas.height() - MENU_CONTENT_TOP, rgb(12, 18, 25));
+    canvas.setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(contentTop), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - contentTop));
+    PixelRenderer::canvas().setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(contentTop), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - contentTop));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(MENU_CONTENT_TOP), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(AmoledUi::LEGACY_HEIGHT - MENU_CONTENT_TOP), rgb(12, 18, 25));
 
     uint8_t teamCount = std::min<uint8_t>(model.state->teamCount,
                                            Game::TEAM_CAP);
@@ -2198,14 +2736,12 @@ void renderTeamScreen(Canvas565& canvas, const TeamViewModel& model,
             ? rgb(42, 61, 68) : rgb(24, 34, 42);
         uint16_t border = slot == 0 ? rgb(115, 226, 183)
                                     : rgb(67, 97, 101);
-        canvas.fillRoundRect(6, y, 172, TEAM_CARD_HEIGHT, 5, background);
-        canvas.drawRoundRect(6, y, 172, TEAM_CARD_HEIGHT, 5, border);
+        canvas.fillRoundRect(AmoledUi::nativeCoordinate(6), AmoledUi::nativeCoordinate(y), AmoledUi::nativeExtent(172), AmoledUi::nativeExtent(TEAM_CARD_HEIGHT), AmoledUi::nativeExtent(5), background);
+        canvas.drawRoundRect(AmoledUi::nativeCoordinate(6), AmoledUi::nativeCoordinate(y), AmoledUi::nativeExtent(172), AmoledUi::nativeExtent(TEAM_CARD_HEIGHT), AmoledUi::nativeExtent(5), border);
         drawTeamSprite(canvas, monster.speciesId, 35, y + 36);
 
         const Species* species = findSpecies(monster.speciesId);
-        PixelRenderer::text(64, y + 6,
-                            species ? species->name : Ui::Amoled::MONSTER,
-                            rgb(226, 238, 233), 1);
+        PixelRenderer::text(AmoledUi::nativeCoordinate(64), AmoledUi::nativeCoordinate(y + 6), species ? species->name : Ui::Amoled::MONSTER, rgb(226, 238, 233), 1);
         char level[12];
         std::snprintf(level, sizeof(level), "LV%u", monster.level);
         text(canvas, 64, y + 28, level, rgb(126, 175, 175));
@@ -2227,18 +2763,14 @@ void renderTeamScreen(Canvas565& canvas, const TeamViewModel& model,
              monster.majorStatus == Game::MajorStatus::NONE
                  ? rgb(126, 145, 145) : rgb(239, 143, 148));
         if (slot == 0) {
-            canvas.fillRoundRect(139, y + 5, 31, 14, 3,
-                                 rgb(43, 94, 79));
+            canvas.fillRoundRect(AmoledUi::nativeCoordinate(139), AmoledUi::nativeCoordinate(y + 5), AmoledUi::nativeExtent(31), AmoledUi::nativeExtent(14), AmoledUi::nativeExtent(3), rgb(43, 94, 79));
             text(canvas, 143, y + 9, Ui::Amoled::LEAD,
                  rgb(194, 242, 216));
         } else if (monster.origin != Game::Origin::VISITOR) {
-            canvas.drawLine(164, y + 9, 169, y + 13,
-                            rgb(115, 226, 183));
-            canvas.drawLine(169, y + 13, 164, y + 17,
-                            rgb(115, 226, 183));
+            canvas.drawLine(AmoledUi::nativeCoordinate(164), AmoledUi::nativeCoordinate(y + 9), AmoledUi::nativeCoordinate(169), AmoledUi::nativeCoordinate(y + 13), rgb(115, 226, 183));
+            canvas.drawLine(AmoledUi::nativeCoordinate(169), AmoledUi::nativeCoordinate(y + 13), AmoledUi::nativeCoordinate(164), AmoledUi::nativeCoordinate(y + 17), rgb(115, 226, 183));
         }
-        canvas.fillRoundRect(122, y + 48, 48, 22, 3,
-                             model.pressedSlot == slot
+        canvas.fillRoundRect(AmoledUi::nativeCoordinate(122), AmoledUi::nativeCoordinate(y + 48), AmoledUi::nativeExtent(48), AmoledUi::nativeExtent(22), AmoledUi::nativeExtent(3), model.pressedSlot == slot
                                  ? rgb(48, 74, 68) : rgb(36, 54, 61));
         text(canvas, 131, y + 56, Ui::Amoled::MOVES,
              rgb(115, 226, 183));
@@ -2269,16 +2801,15 @@ int teamMovesItemAt(int x, int y, TeamMovesViewModel::Mode mode,
 void renderTeamMovesScreen(Canvas565& canvas,
                            const TeamMovesViewModel& model,
                            uint16_t rowBegin, uint16_t rowEnd) {
-    rowBegin = std::min<uint16_t>(rowBegin, canvas.height());
-    rowEnd = std::min<uint16_t>(rowEnd, canvas.height());
+    rowBegin = std::min<uint16_t>(rowBegin, AmoledUi::LEGACY_HEIGHT);
+    rowEnd = std::min<uint16_t>(rowEnd, AmoledUi::LEGACY_HEIGHT);
     if (rowBegin >= rowEnd || !model.state ||
         model.teamSlot >= model.state->teamCount) return;
 
-    canvas.setClipRect(0, rowBegin, canvas.width(), rowEnd - rowBegin);
-    canvas.fillRect(0, 0, canvas.width(), canvas.height(), rgb(12, 18, 25));
-    canvas.fillRect(0, 0, canvas.width(), HEADER_HEIGHT, rgb(19, 31, 39));
-    canvas.fillRect(0, HEADER_HEIGHT - 1, canvas.width(), 1,
-                    rgb(56, 87, 89));
+    canvas.setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(rowBegin), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - rowBegin));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(0), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(AmoledUi::LEGACY_HEIGHT), rgb(12, 18, 25));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(0), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(HEADER_HEIGHT), rgb(19, 31, 39));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(HEADER_HEIGHT - 1), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(1), rgb(56, 87, 89));
     drawBackIcon(canvas);
     text(canvas, 36, 8, Ui::Amoled::MOVES, rgb(115, 226, 183));
 
@@ -2313,8 +2844,7 @@ void renderTeamMovesScreen(Canvas565& canvas,
     for (uint8_t index = 0; index < rowCount; ++index) {
         int y = 52 + index * 31;
         bool selected = index == model.selectedItem;
-        canvas.fillRoundRect(6, y, 172, 27, 4,
-                             selected ? rgb(42, 61, 68)
+        canvas.fillRoundRect(AmoledUi::nativeCoordinate(6), AmoledUi::nativeCoordinate(y), AmoledUi::nativeExtent(172), AmoledUi::nativeExtent(27), AmoledUi::nativeExtent(4), selected ? rgb(42, 61, 68)
                                       : rgb(24, 34, 42));
         const char* label = Ui::BACK;
         uint16_t color = rgb(115, 226, 183);
@@ -2345,16 +2875,16 @@ void renderTeamMovesScreen(Canvas565& canvas,
     }
     drawToast(canvas, model.toast);
     if (model.forgetConfirmOpen) {
-        canvas.fillRoundRect(10, 132, 164, 82, 6, rgb(17, 27, 34));
-        canvas.drawRoundRect(10, 132, 164, 82, 6, rgb(82, 117, 117));
+        canvas.fillRoundRect(AmoledUi::nativeCoordinate(10), AmoledUi::nativeCoordinate(132), AmoledUi::nativeExtent(164), AmoledUi::nativeExtent(82), AmoledUi::nativeExtent(6), rgb(17, 27, 34));
+        canvas.drawRoundRect(AmoledUi::nativeCoordinate(10), AmoledUi::nativeCoordinate(132), AmoledUi::nativeExtent(164), AmoledUi::nativeExtent(82), AmoledUi::nativeExtent(6), rgb(82, 117, 117));
         const MoveInfo* move = species
             ? Game::MoveManagementService::learnedMove(
                   *species, monster, model.forgetSlot) : nullptr;
         text(canvas, 27, 145, Ui::Amoled::FORGET_MOVE,
              rgb(226, 238, 233));
         if (move) text(canvas, 27, 158, move->name, rgb(248, 210, 105));
-        canvas.fillRoundRect(18, 174, 70, 36, 4, rgb(36, 54, 61));
-        canvas.fillRoundRect(96, 174, 70, 36, 4, rgb(91, 49, 55));
+        canvas.fillRoundRect(AmoledUi::nativeCoordinate(18), AmoledUi::nativeCoordinate(174), AmoledUi::nativeExtent(70), AmoledUi::nativeExtent(36), AmoledUi::nativeExtent(4), rgb(36, 54, 61));
+        canvas.fillRoundRect(AmoledUi::nativeCoordinate(96), AmoledUi::nativeCoordinate(174), AmoledUi::nativeExtent(70), AmoledUi::nativeExtent(36), AmoledUi::nativeExtent(4), rgb(91, 49, 55));
         text(canvas, 39, 188, Ui::Amoled::YES, rgb(115, 226, 183));
         text(canvas, 113, 188, Ui::BACK, rgb(239, 143, 148));
     }
@@ -2495,8 +3025,8 @@ Game::ItemId itemForRow(const ItemListViewModel& model, uint8_t index) {
 
 void drawItemConfirm(Canvas565& canvas, const ItemListViewModel& model) {
     if (!model.confirmOpen || model.pendingItem == Game::ItemId::COUNT) return;
-    canvas.fillRoundRect(10, 132, 164, 82, 6, rgb(17, 27, 34));
-    canvas.drawRoundRect(10, 132, 164, 82, 6, rgb(82, 117, 117));
+    canvas.fillRoundRect(AmoledUi::nativeCoordinate(10), AmoledUi::nativeCoordinate(132), AmoledUi::nativeExtent(164), AmoledUi::nativeExtent(82), AmoledUi::nativeExtent(6), rgb(17, 27, 34));
+    canvas.drawRoundRect(AmoledUi::nativeCoordinate(10), AmoledUi::nativeCoordinate(132), AmoledUi::nativeExtent(164), AmoledUi::nativeExtent(82), AmoledUi::nativeExtent(6), rgb(82, 117, 117));
     const char* action = model.mode == ItemListMode::BAG
         ? Ui::Amoled::USE : model.mode == ItemListMode::SELL
             ? Ui::Amoled::SELL : Ui::Amoled::BUY;
@@ -2505,8 +3035,8 @@ void drawItemConfirm(Canvas565& canvas, const ItemListViewModel& model) {
     const char* name = Game::ShopService::shortName(model.pendingItem);
     text(canvas, std::max(16, (184 - textWidth(name)) / 2),
          157, name, rgb(248, 210, 105));
-    canvas.fillRoundRect(18, 174, 70, 36, 4, rgb(36, 54, 61));
-    canvas.fillRoundRect(96, 174, 70, 36, 4, rgb(91, 49, 55));
+    canvas.fillRoundRect(AmoledUi::nativeCoordinate(18), AmoledUi::nativeCoordinate(174), AmoledUi::nativeExtent(70), AmoledUi::nativeExtent(36), AmoledUi::nativeExtent(4), rgb(36, 54, 61));
+    canvas.fillRoundRect(AmoledUi::nativeCoordinate(96), AmoledUi::nativeCoordinate(174), AmoledUi::nativeExtent(70), AmoledUi::nativeExtent(36), AmoledUi::nativeExtent(4), rgb(91, 49, 55));
     text(canvas, 39, 188, Ui::Amoled::YES, rgb(115, 226, 183));
     text(canvas, 113, 188, Ui::BACK, rgb(239, 143, 148));
 }
@@ -2516,19 +3046,16 @@ void drawItemConfirm(Canvas565& canvas, const ItemListViewModel& model) {
 void renderItemListScreen(Canvas565& canvas,
                           const ItemListViewModel& model,
                           uint16_t rowBegin, uint16_t rowEnd) {
-    rowBegin = std::min<uint16_t>(rowBegin, canvas.height());
-    rowEnd = std::min<uint16_t>(rowEnd, canvas.height());
+    rowBegin = std::min<uint16_t>(rowBegin, AmoledUi::LEGACY_HEIGHT);
+    rowEnd = std::min<uint16_t>(rowEnd, AmoledUi::LEGACY_HEIGHT);
     if (rowBegin >= rowEnd) return;
 
     if (rowBegin < MENU_CONTENT_TOP) {
         int bottom = std::min<int>(rowEnd, MENU_CONTENT_TOP);
-        canvas.setClipRect(0, rowBegin, canvas.width(), bottom - rowBegin);
-        canvas.fillRect(0, 0, canvas.width(), MENU_CONTENT_TOP,
-                        rgb(12, 18, 25));
-        canvas.fillRect(0, 0, canvas.width(), HEADER_HEIGHT,
-                        rgb(19, 31, 39));
-        canvas.fillRect(0, HEADER_HEIGHT - 1, canvas.width(), 1,
-                        rgb(56, 87, 89));
+        canvas.setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(rowBegin), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(bottom - rowBegin));
+        canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(0), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(MENU_CONTENT_TOP), rgb(12, 18, 25));
+        canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(0), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(HEADER_HEIGHT), rgb(19, 31, 39));
+        canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(HEADER_HEIGHT - 1), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(1), rgb(56, 87, 89));
         drawBackIcon(canvas);
         text(canvas, 36, 8,
              model.mode == ItemListMode::BAG ? Ui::BAG : Ui::SHOP,
@@ -2545,11 +3072,9 @@ void renderItemListScreen(Canvas565& canvas,
 
     if (rowEnd <= MENU_CONTENT_TOP) return;
     int contentTop = std::max<int>(rowBegin, MENU_CONTENT_TOP);
-    canvas.setClipRect(0, contentTop, canvas.width(), rowEnd - contentTop);
-    PixelRenderer::canvas().setClipRect(
-        0, contentTop, canvas.width(), rowEnd - contentTop);
-    canvas.fillRect(0, MENU_CONTENT_TOP, canvas.width(),
-                    canvas.height() - MENU_CONTENT_TOP, rgb(12, 18, 25));
+    canvas.setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(contentTop), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - contentTop));
+    PixelRenderer::canvas().setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(contentTop), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - contentTop));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(MENU_CONTENT_TOP), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(AmoledUi::LEGACY_HEIGHT - MENU_CONTENT_TOP), rgb(12, 18, 25));
 
     if (model.itemCount == 0) {
         text(canvas, 50, 105,
@@ -2565,8 +3090,7 @@ void renderItemListScreen(Canvas565& canvas,
         if (item == Game::ItemId::COUNT) continue;
         uint16_t background = index == model.pressedItem
             ? rgb(42, 61, 68) : rgb(24, 34, 42);
-        canvas.fillRoundRect(6, y + 2, 172, ITEM_ROW_HEIGHT - 4, 4,
-                             background);
+        canvas.fillRoundRect(AmoledUi::nativeCoordinate(6), AmoledUi::nativeCoordinate(y + 2), AmoledUi::nativeExtent(172), AmoledUi::nativeExtent(ITEM_ROW_HEIGHT - 4), AmoledUi::nativeExtent(4), background);
         if (!GameAssets::drawCentered(GameAssets::itemKind(item),
                                       27, y + 21, 0.72f)) {
                         text(canvas, 24, y + 16, "?", rgb(248, 210, 105));
@@ -2587,9 +3111,7 @@ void renderItemListScreen(Canvas565& canvas,
             char priceText[10];
             std::snprintf(priceText, sizeof(priceText), "C%u", price);
             int priceX = 172 - textWidth(priceText);
-            canvas.fillRect(priceX - 2, y + 5,
-                            textWidth(priceText) + 4,
-                            13, background);
+            canvas.fillRect(AmoledUi::nativeCoordinate(priceX - 2), AmoledUi::nativeCoordinate(y + 5), AmoledUi::nativeExtent(textWidth(priceText) + 4), AmoledUi::nativeExtent(13), background);
             text(canvas, priceX, y + 8, priceText, rgb(248, 210, 105));
         }
     }
@@ -2634,19 +3156,16 @@ uint16_t shopFadeColor(uint16_t foreground, uint8_t alpha,
 
 void renderShopScreen(Canvas565& canvas, const ShopViewModel& model,
                       uint16_t rowBegin, uint16_t rowEnd) {
-    rowBegin = std::min<uint16_t>(rowBegin, canvas.height());
-    rowEnd = std::min<uint16_t>(rowEnd, canvas.height());
+    rowBegin = std::min<uint16_t>(rowBegin, AmoledUi::LEGACY_HEIGHT);
+    rowEnd = std::min<uint16_t>(rowEnd, AmoledUi::LEGACY_HEIGHT);
     if (rowBegin >= rowEnd) return;
 
     if (rowBegin < MENU_CONTENT_TOP) {
         int bottom = std::min<int>(rowEnd, MENU_CONTENT_TOP);
-        canvas.setClipRect(0, rowBegin, canvas.width(), bottom - rowBegin);
-        canvas.fillRect(0, 0, canvas.width(), MENU_CONTENT_TOP,
-                        rgb(12, 18, 25));
-        canvas.fillRect(0, 0, canvas.width(), HEADER_HEIGHT,
-                        rgb(19, 31, 39));
-        canvas.fillRect(0, HEADER_HEIGHT - 1, canvas.width(), 1,
-                        rgb(56, 87, 89));
+        canvas.setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(rowBegin), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(bottom - rowBegin));
+        canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(0), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(MENU_CONTENT_TOP), rgb(12, 18, 25));
+        canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(0), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(HEADER_HEIGHT), rgb(19, 31, 39));
+        canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(HEADER_HEIGHT - 1), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(1), rgb(56, 87, 89));
         drawBackIcon(canvas);
         text(canvas, 36, 8, Ui::SHOP, rgb(115, 226, 183));
         char coins[16];
@@ -2659,20 +3178,15 @@ void renderShopScreen(Canvas565& canvas, const ShopViewModel& model,
 
     if (rowEnd <= MENU_CONTENT_TOP) return;
     int contentTop = std::max<int>(rowBegin, MENU_CONTENT_TOP);
-    canvas.setClipRect(0, contentTop, canvas.width(), rowEnd - contentTop);
-    PixelRenderer::canvas().setClipRect(
-        0, contentTop, canvas.width(), rowEnd - contentTop);
-    canvas.fillRect(0, MENU_CONTENT_TOP, canvas.width(),
-                    canvas.height() - MENU_CONTENT_TOP, rgb(12, 18, 25));
+    canvas.setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(contentTop), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - contentTop));
+    PixelRenderer::canvas().setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(contentTop), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - contentTop));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(MENU_CONTENT_TOP), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(AmoledUi::LEGACY_HEIGHT - MENU_CONTENT_TOP), rgb(12, 18, 25));
 
     const bool detailOpen = model.detailItem != Game::ItemId::COUNT;
     const bool showRail = !detailOpen;
     if (showRail) {
-        canvas.fillRect(0, MENU_CONTENT_TOP, SHOP_RAIL_DIVIDER_X,
-                        canvas.height() - MENU_CONTENT_TOP, rgb(17, 24, 31));
-        canvas.drawFastVLine(SHOP_RAIL_DIVIDER_X, MENU_CONTENT_TOP,
-                             canvas.height() - MENU_CONTENT_TOP,
-                             rgb(67, 74, 84));
+        canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(MENU_CONTENT_TOP), AmoledUi::nativeExtent(SHOP_RAIL_DIVIDER_X), AmoledUi::nativeExtent(AmoledUi::LEGACY_HEIGHT - MENU_CONTENT_TOP), rgb(17, 24, 31));
+        canvas.drawFastVLine(AmoledUi::nativeCoordinate(SHOP_RAIL_DIVIDER_X), AmoledUi::nativeCoordinate(MENU_CONTENT_TOP), AmoledUi::nativeExtent(AmoledUi::LEGACY_HEIGHT - MENU_CONTENT_TOP), rgb(67, 74, 84));
 
         static constexpr const char* MENU_LABELS[] = {
             Ui::Amoled::BUY, Ui::Amoled::SELL, Ui::Amoled::LEAVE,
@@ -2683,7 +3197,7 @@ void renderShopScreen(Canvas565& canvas, const ShopViewModel& model,
             int y = 44 + index * 54;
             bool selected = index == selectedMenu;
             if (selected) {
-                canvas.fillRect(x, y + 20, 3, 8, rgb(248, 210, 105));
+                canvas.fillRect(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y + 20), AmoledUi::nativeExtent(3), AmoledUi::nativeExtent(8), rgb(248, 210, 105));
             }
             const char* label = MENU_LABELS[index];
             text(canvas, x + (46 - textWidth(label)) / 2, y + 16, label,
@@ -2700,13 +3214,10 @@ void renderShopScreen(Canvas565& canvas, const ShopViewModel& model,
         if (y + SHOP_SECTION_HEADER_HEIGHT <= MENU_CONTENT_TOP || y >= 224) {
             return;
         }
-        canvas.fillRect(SHOP_GRID_LEFT, y, 116,
-                        SHOP_SECTION_HEADER_HEIGHT, rgb(20, 31, 38));
+        canvas.fillRect(AmoledUi::nativeCoordinate(SHOP_GRID_LEFT), AmoledUi::nativeCoordinate(y), AmoledUi::nativeExtent(116), AmoledUi::nativeExtent(SHOP_SECTION_HEADER_HEIGHT), rgb(20, 31, 38));
         text(canvas, SHOP_GRID_LEFT + 4, y + 3, label,
              rgb(126, 175, 175));
-        canvas.drawFastHLine(SHOP_GRID_LEFT + 4,
-                             y + SHOP_SECTION_HEADER_HEIGHT - 1,
-                             108, rgb(56, 87, 89));
+        canvas.drawFastHLine(AmoledUi::nativeCoordinate(SHOP_GRID_LEFT + 4), AmoledUi::nativeCoordinate(y + SHOP_SECTION_HEADER_HEIGHT - 1), AmoledUi::nativeExtent(108), rgb(56, 87, 89));
         };
         if (model.mode == ShopViewModel::Mode::BUY) {
             drawSectionHeader(0, Ui::Shop::CATEGORY_DAILY);
@@ -2727,8 +3238,7 @@ void renderShopScreen(Canvas565& canvas, const ShopViewModel& model,
             continue;
         }
         bool pressed = index == model.pressedItem;
-        canvas.fillRoundRect(centerX - 27, centerY - 23, 54, 46, 4,
-                             pressed ? rgb(42, 61, 68) : rgb(24, 34, 42));
+        canvas.fillRoundRect(AmoledUi::nativeCoordinate(centerX - 27), AmoledUi::nativeCoordinate(centerY - 23), AmoledUi::nativeExtent(54), AmoledUi::nativeExtent(46), AmoledUi::nativeExtent(4), pressed ? rgb(42, 61, 68) : rgb(24, 34, 42));
         Game::ItemId item = shopItemForIndex(model, index);
         if (!GameAssets::drawCenteredAlpha(
                 GameAssets::itemKind(item), centerX, centerY,
@@ -2794,10 +3304,8 @@ void renderShopScreen(Canvas565& canvas, const ShopViewModel& model,
             model.pressedDetailAction == 1 ? rgb(91, 49, 55)
                                            : rgb(46, 37, 44),
             detailAlpha, detailBackground);
-        canvas.fillRoundRect(18, SHOP_DETAIL_BUTTON_Y, 70,
-                             SHOP_DETAIL_BUTTON_HEIGHT, 4, actionFill);
-        canvas.fillRoundRect(96, SHOP_DETAIL_BUTTON_Y, 70,
-                             SHOP_DETAIL_BUTTON_HEIGHT, 4, backFill);
+        canvas.fillRoundRect(AmoledUi::nativeCoordinate(18), AmoledUi::nativeCoordinate(SHOP_DETAIL_BUTTON_Y), AmoledUi::nativeExtent(70), AmoledUi::nativeExtent(SHOP_DETAIL_BUTTON_HEIGHT), AmoledUi::nativeExtent(4), actionFill);
+        canvas.fillRoundRect(AmoledUi::nativeCoordinate(96), AmoledUi::nativeCoordinate(SHOP_DETAIL_BUTTON_Y), AmoledUi::nativeExtent(70), AmoledUi::nativeExtent(SHOP_DETAIL_BUTTON_HEIGHT), AmoledUi::nativeExtent(4), backFill);
         const char* action = model.mode == ShopViewModel::Mode::SELL
             ? Ui::Amoled::SELL : Ui::Amoled::BUY;
         text(canvas, 18 + (70 - textWidth(action)) / 2,
@@ -2830,16 +3338,15 @@ void renderRoomMenuScreen(Canvas565& canvas, const RoomMenuViewModel& model,
     static constexpr const char* DETAILS[] = {
         Ui::Amoled::ROOM_SUPPLIES, Ui::Amoled::WASH_PET, Ui::Amoled::RETURN,
     };
-    rowBegin = std::min<uint16_t>(rowBegin, canvas.height());
-    rowEnd = std::min<uint16_t>(rowEnd, canvas.height());
+    rowBegin = std::min<uint16_t>(rowBegin, AmoledUi::LEGACY_HEIGHT);
+    rowEnd = std::min<uint16_t>(rowEnd, AmoledUi::LEGACY_HEIGHT);
     if (rowBegin >= rowEnd) return;
 
-    canvas.setClipRect(0, rowBegin, canvas.width(), rowEnd - rowBegin);
-    PixelRenderer::canvas().setClipRect(
-        0, rowBegin, canvas.width(), rowEnd - rowBegin);
-    canvas.fillRect(0, 0, canvas.width(), canvas.height(), rgb(12, 18, 25));
-    canvas.fillRect(0, 0, canvas.width(), HEADER_HEIGHT, rgb(19, 31, 39));
-    canvas.fillRect(0, HEADER_HEIGHT - 1, canvas.width(), 1, rgb(56, 87, 89));
+    canvas.setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(rowBegin), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - rowBegin));
+    PixelRenderer::canvas().setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(rowBegin), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - rowBegin));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(0), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(AmoledUi::LEGACY_HEIGHT), rgb(12, 18, 25));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(0), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(HEADER_HEIGHT), rgb(19, 31, 39));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(HEADER_HEIGHT - 1), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(1), rgb(56, 87, 89));
     drawBackIcon(canvas);
     text(canvas, 36, 8, Ui::ROOM, rgb(115, 226, 183));
 
@@ -2851,7 +3358,7 @@ void renderRoomMenuScreen(Canvas565& canvas, const RoomMenuViewModel& model,
         int y = MENU_CONTENT_TOP + index * 60;
         uint16_t background = index == model.pressedItem
             ? rgb(42, 61, 68) : rgb(24, 34, 42);
-        canvas.fillRoundRect(6, y + 3, 172, 54, 4, background);
+        canvas.fillRoundRect(AmoledUi::nativeCoordinate(6), AmoledUi::nativeCoordinate(y + 3), AmoledUi::nativeExtent(172), AmoledUi::nativeExtent(54), AmoledUi::nativeExtent(4), background);
         if (index == 0) {
             if (!GameAssets::drawCentered(
                     GameAssets::Kind::ITEM_NORMAL_FOOD, 31, y + 28, 0.9f)) {
@@ -2864,9 +3371,9 @@ void renderRoomMenuScreen(Canvas565& canvas, const RoomMenuViewModel& model,
                 text(canvas, 28, y + 24, "?", rgb(126, 175, 175));
             }
         } else {
-            canvas.drawFastHLine(19, y + 28, 23, rgb(115, 226, 183));
-            canvas.drawLine(19, y + 28, 27, y + 20, rgb(115, 226, 183));
-            canvas.drawLine(19, y + 28, 27, y + 36, rgb(115, 226, 183));
+            canvas.drawFastHLine(AmoledUi::nativeCoordinate(19), AmoledUi::nativeCoordinate(y + 28), AmoledUi::nativeExtent(23), rgb(115, 226, 183));
+            canvas.drawLine(AmoledUi::nativeCoordinate(19), AmoledUi::nativeCoordinate(y + 28), AmoledUi::nativeCoordinate(27), AmoledUi::nativeCoordinate(y + 20), rgb(115, 226, 183));
+            canvas.drawLine(AmoledUi::nativeCoordinate(19), AmoledUi::nativeCoordinate(y + 28), AmoledUi::nativeCoordinate(27), AmoledUi::nativeCoordinate(y + 36), rgb(115, 226, 183));
         }
         text(canvas, 58, y + 13, LABELS[index],
              index == 2 ? rgb(115, 226, 183) : rgb(226, 238, 233));
@@ -2899,15 +3406,14 @@ void renderRoomFoodScreen(Canvas565& canvas, const RoomFoodViewModel& model,
         Ui::NORMAL_FOOD, Ui::TASTY_FOOD, Ui::SWEET_FOOD, Ui::SPICY_FOOD,
         Ui::SOUR_FOOD, Ui::BITTER_FOOD, Ui::DRY_FOOD,
     };
-    rowBegin = std::min<uint16_t>(rowBegin, canvas.height());
-    rowEnd = std::min<uint16_t>(rowEnd, canvas.height());
+    rowBegin = std::min<uint16_t>(rowBegin, AmoledUi::LEGACY_HEIGHT);
+    rowEnd = std::min<uint16_t>(rowEnd, AmoledUi::LEGACY_HEIGHT);
     if (rowBegin >= rowEnd) return;
-    canvas.setClipRect(0, rowBegin, canvas.width(), rowEnd - rowBegin);
-    PixelRenderer::canvas().setClipRect(
-        0, rowBegin, canvas.width(), rowEnd - rowBegin);
-    canvas.fillRect(0, 0, canvas.width(), canvas.height(), rgb(12, 18, 25));
-    canvas.fillRect(0, 0, canvas.width(), HEADER_HEIGHT, rgb(19, 31, 39));
-    canvas.fillRect(0, HEADER_HEIGHT - 1, canvas.width(), 1, rgb(56, 87, 89));
+    canvas.setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(rowBegin), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - rowBegin));
+    PixelRenderer::canvas().setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(rowBegin), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - rowBegin));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(0), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(AmoledUi::LEGACY_HEIGHT), rgb(12, 18, 25));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(0), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(HEADER_HEIGHT), rgb(19, 31, 39));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(HEADER_HEIGHT - 1), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(1), rgb(56, 87, 89));
     drawBackIcon(canvas);
     text(canvas, 36, 8, Ui::FOOD, rgb(115, 226, 183));
 
@@ -2918,8 +3424,8 @@ void renderRoomFoodScreen(Canvas565& canvas, const RoomFoodViewModel& model,
         uint16_t background = pressed ? rgb(48, 74, 68)
                                       : (selected ? rgb(31, 49, 53)
                                                   : rgb(20, 29, 36));
-        canvas.fillRoundRect(6, y + 2, 172, 25, 3, background);
-        if (selected) canvas.fillRect(9, y + 7, 3, 15, rgb(248, 210, 105));
+        canvas.fillRoundRect(AmoledUi::nativeCoordinate(6), AmoledUi::nativeCoordinate(y + 2), AmoledUi::nativeExtent(172), AmoledUi::nativeExtent(25), AmoledUi::nativeExtent(3), background);
+        if (selected) canvas.fillRect(AmoledUi::nativeCoordinate(9), AmoledUi::nativeCoordinate(y + 7), AmoledUi::nativeExtent(3), AmoledUi::nativeExtent(15), rgb(248, 210, 105));
         Game::ItemId item = Game::itemIdForFoodIndex(index);
         GameAssets::drawCentered(GameAssets::itemKind(item), 25, y + 14, 0.48f);
         text(canvas, 42, y + 9, NAMES[index],
@@ -2985,25 +3491,23 @@ void drawAiToggle(Canvas565& canvas, int centerX, int centerY, bool on,
                   bool pressed) {
     const uint16_t track = on ? rgb(62, 124, 105) : rgb(60, 72, 80);
     const uint16_t knob = on ? rgb(226, 255, 234) : rgb(168, 181, 184);
-    canvas.fillRoundRect(centerX - 18, centerY - 7, 36, 14, 7, track);
+    canvas.fillRoundRect(AmoledUi::nativeCoordinate(centerX - 18), AmoledUi::nativeCoordinate(centerY - 7), AmoledUi::nativeExtent(36), AmoledUi::nativeExtent(14), AmoledUi::nativeExtent(7), track);
     if (pressed) {
-        canvas.drawRoundRect(centerX - 18, centerY - 7, 36, 14, 7,
-                             rgb(248, 210, 105));
+        canvas.drawRoundRect(AmoledUi::nativeCoordinate(centerX - 18), AmoledUi::nativeCoordinate(centerY - 7), AmoledUi::nativeExtent(36), AmoledUi::nativeExtent(14), AmoledUi::nativeExtent(7), rgb(248, 210, 105));
     }
-    canvas.fillCircle(centerX + (on ? 10 : -10), centerY, 6, knob);
+    canvas.fillCircle(AmoledUi::nativeCoordinate(centerX + (on ? 10 : -10)), AmoledUi::nativeCoordinate(centerY), AmoledUi::nativeExtent(6), knob);
 }
 
 void renderComputerScreen(Canvas565& canvas, const ComputerViewModel& model,
                           uint16_t rowBegin, uint16_t rowEnd) {
-    rowBegin = std::min<uint16_t>(rowBegin, canvas.height());
-    rowEnd = std::min<uint16_t>(rowEnd, canvas.height());
+    rowBegin = std::min<uint16_t>(rowBegin, AmoledUi::LEGACY_HEIGHT);
+    rowEnd = std::min<uint16_t>(rowEnd, AmoledUi::LEGACY_HEIGHT);
     if (rowBegin >= rowEnd) return;
-    canvas.setClipRect(0, rowBegin, canvas.width(), rowEnd - rowBegin);
-    PixelRenderer::canvas().setClipRect(
-        0, rowBegin, canvas.width(), rowEnd - rowBegin);
-    canvas.fillRect(0, 0, canvas.width(), canvas.height(), rgb(12, 18, 25));
-    canvas.fillRect(0, 0, canvas.width(), HEADER_HEIGHT, rgb(19, 31, 39));
-    canvas.fillRect(0, HEADER_HEIGHT - 1, canvas.width(), 1, rgb(56, 87, 89));
+    canvas.setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(rowBegin), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - rowBegin));
+    PixelRenderer::canvas().setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(rowBegin), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - rowBegin));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(0), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(AmoledUi::LEGACY_HEIGHT), rgb(12, 18, 25));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(0), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(HEADER_HEIGHT), rgb(19, 31, 39));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(HEADER_HEIGHT - 1), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(1), rgb(56, 87, 89));
     drawBackIcon(canvas);
     const char* title = model.page == ComputerViewModel::Page::STATUS
         ? Ui::Amoled::STATUS_PAGE
@@ -3031,8 +3535,7 @@ void renderComputerScreen(Canvas565& canvas, const ComputerViewModel& model,
         for (int index = 0; index < ITEM_COUNT; ++index) {
             int y = MENU_CONTENT_TOP + index * COMPUTER_MENU_ROW_HEIGHT;
             bool selected = index == model.pressedItem;
-            canvas.fillRoundRect(6, y + 2, 172, COMPUTER_MENU_CELL_HEIGHT, 4,
-                                 selected ? rgb(42, 61, 68) : rgb(24, 34, 42));
+            canvas.fillRoundRect(AmoledUi::nativeCoordinate(6), AmoledUi::nativeCoordinate(y + 2), AmoledUi::nativeExtent(172), AmoledUi::nativeExtent(COMPUTER_MENU_CELL_HEIGHT), AmoledUi::nativeExtent(4), selected ? rgb(42, 61, 68) : rgb(24, 34, 42));
             text(canvas, 20, y + 13, ITEMS[index],
                  index == ITEM_COUNT - 1 ? rgb(115, 226, 183)
                                          : rgb(226, 238, 233));
@@ -3057,8 +3560,7 @@ void renderComputerScreen(Canvas565& canvas, const ComputerViewModel& model,
         for (int index = 0; index < rowCount; ++index) {
             int y = MENU_CONTENT_TOP + index * COMPUTER_MENU_ROW_HEIGHT;
             bool selected = index == model.pressedItem;
-            canvas.fillRoundRect(6, y + 2, 172, COMPUTER_MENU_CELL_HEIGHT, 4,
-                                 selected ? rgb(42, 61, 68)
+            canvas.fillRoundRect(AmoledUi::nativeCoordinate(6), AmoledUi::nativeCoordinate(y + 2), AmoledUi::nativeExtent(172), AmoledUi::nativeExtent(COMPUTER_MENU_CELL_HEIGHT), AmoledUi::nativeExtent(4), selected ? rgb(42, 61, 68)
                                           : rgb(24, 34, 42));
             text(canvas, 20, y + 13, labels[index],
                  index == rowCount - 1 ? rgb(115, 226, 183)
@@ -3079,7 +3581,7 @@ void renderComputerScreen(Canvas565& canvas, const ComputerViewModel& model,
             const Game::MonsterRuntime& monster = model.state->team[index];
             const Species* species = findSpecies(monster.speciesId);
             int y = MENU_CONTENT_TOP + index * 78;
-            canvas.fillRoundRect(6, y + 3, 172, 70, 4, rgb(24, 34, 42));
+            canvas.fillRoundRect(AmoledUi::nativeCoordinate(6), AmoledUi::nativeCoordinate(y + 3), AmoledUi::nativeExtent(172), AmoledUi::nativeExtent(70), AmoledUi::nativeExtent(4), rgb(24, 34, 42));
             if (species) {
                 const PokemonSprites::SpriteFrame* frame =
                     PokemonSprites::findSpeciesSprite(
@@ -3110,8 +3612,7 @@ void renderComputerScreen(Canvas565& canvas, const ComputerViewModel& model,
             const Game::MonsterRuntime& monster = model.state->storage[index];
             const Species* species = findSpecies(monster.speciesId);
             bool selected = index == model.pressedItem;
-            if (selected) canvas.fillRoundRect(6, y + 2, 172, 39, 4,
-                                               rgb(42, 61, 68));
+            if (selected) canvas.fillRoundRect(AmoledUi::nativeCoordinate(6), AmoledUi::nativeCoordinate(y + 2), AmoledUi::nativeExtent(172), AmoledUi::nativeExtent(39), AmoledUi::nativeExtent(4), rgb(42, 61, 68));
             if (species) {
                 const PokemonSprites::SpriteFrame* frame =
                     PokemonSprites::findSpeciesSprite(
@@ -3129,12 +3630,10 @@ void renderComputerScreen(Canvas565& canvas, const ComputerViewModel& model,
         int maxScroll = std::max(
             0, static_cast<int>(count) * 43 - (224 - MENU_CONTENT_TOP));
         if (model.storageScroll > 0.5f) {
-            canvas.fillTriangle(164, 34, 170, 34, 167, 30,
-                                rgb(126, 175, 175));
+            canvas.fillTriangle(AmoledUi::nativeCoordinate(164), AmoledUi::nativeCoordinate(34), AmoledUi::nativeCoordinate(170), AmoledUi::nativeCoordinate(34), AmoledUi::nativeCoordinate(167), AmoledUi::nativeCoordinate(30), rgb(126, 175, 175));
         }
         if (model.storageScroll < maxScroll - 0.5f) {
-            canvas.fillTriangle(164, 215, 170, 215, 167, 219,
-                                rgb(126, 175, 175));
+            canvas.fillTriangle(AmoledUi::nativeCoordinate(164), AmoledUi::nativeCoordinate(215), AmoledUi::nativeCoordinate(170), AmoledUi::nativeCoordinate(215), AmoledUi::nativeCoordinate(167), AmoledUi::nativeCoordinate(219), rgb(126, 175, 175));
         }
 #if STICKMON_HAS_CLAW
     } else if (!model.clawLogView) {
@@ -3155,20 +3654,14 @@ void renderComputerScreen(Canvas565& canvas, const ComputerViewModel& model,
         std::snprintf(address, sizeof(address), "http://%s", ip);
         const int urlY = contentBottom + 6;
         const int addressX =
-            std::max(0, (canvas.width() - textWidth(address)) / 2);
-        PixelRenderer::text(canvas, addressX, urlY, address, valueColor);
+            std::max(0, (AmoledUi::LEGACY_WIDTH - textWidth(address)) / 2);
+        PixelRenderer::text(canvas, AmoledUi::nativeCoordinate(addressX), AmoledUi::nativeCoordinate(urlY), address, valueColor);
         const int wifiY = urlY + 20;
         const int passY = wifiY + 20;
-        PixelRenderer::text(canvas, 4, wifiY, Ui::Amoled::CLAW_WIFI,
-                            labelColor);
-        PixelRenderer::text(canvas,
-                            4 + textWidth(Ui::Amoled::CLAW_WIFI) + 8, wifiY,
-                            ssid, valueColor);
-        PixelRenderer::text(canvas, 4, passY, Ui::Amoled::CLAW_PASSWORD,
-                            labelColor);
-        PixelRenderer::text(canvas,
-                            4 + textWidth(Ui::Amoled::CLAW_PASSWORD) + 8,
-                            passY, password, valueColor);
+        PixelRenderer::text(canvas, AmoledUi::nativeCoordinate(4), AmoledUi::nativeCoordinate(wifiY), Ui::Amoled::CLAW_WIFI, labelColor);
+        PixelRenderer::text(canvas, AmoledUi::nativeCoordinate(4 + textWidth(Ui::Amoled::CLAW_WIFI) + 8), AmoledUi::nativeCoordinate(wifiY), ssid, valueColor);
+        PixelRenderer::text(canvas, AmoledUi::nativeCoordinate(4), AmoledUi::nativeCoordinate(passY), Ui::Amoled::CLAW_PASSWORD, labelColor);
+        PixelRenderer::text(canvas, AmoledUi::nativeCoordinate(4 + textWidth(Ui::Amoled::CLAW_PASSWORD) + 8), AmoledUi::nativeCoordinate(passY), password, valueColor);
     } else {
         // Log view: keep each service status on its own row above the log.
         // The log window starts below all three rows so values cannot overlap.
@@ -3189,16 +3682,14 @@ void renderComputerScreen(Canvas565& canvas, const ComputerViewModel& model,
              model.clawStarted ? Ui::Amoled::CLAW_AGENT_ON
                                : Ui::Amoled::CLAW_AGENT_OFF,
              model.clawStarted ? rgb(115, 226, 183) : rgb(248, 210, 105));
-        canvas.drawRect(4, CLAW_LOG_TOP, 176, CLAW_LOG_HEIGHT,
-                        rgb(56, 87, 89));
+        canvas.drawRect(AmoledUi::nativeCoordinate(4), AmoledUi::nativeCoordinate(CLAW_LOG_TOP), AmoledUi::nativeExtent(176), AmoledUi::nativeExtent(CLAW_LOG_HEIGHT), rgb(56, 87, 89));
         if (model.clawLogCount == 0 || !model.clawLog) {
             text(canvas, 60, CLAW_LOG_TOP + (CLAW_LOG_HEIGHT - 16) / 2,
                  Ui::Amoled::CLAW_LOG_EMPTY,
                  rgb(126, 145, 145));
         } else {
-            canvas.setClipRect(5, CLAW_LOG_TOP + 1, 174, CLAW_LOG_HEIGHT - 2);
-            PixelRenderer::canvas().setClipRect(5, CLAW_LOG_TOP + 1, 174,
-                                                CLAW_LOG_HEIGHT - 2);
+            canvas.setClipRect(AmoledUi::nativeCoordinate(5), AmoledUi::nativeCoordinate(CLAW_LOG_TOP + 1), AmoledUi::nativeExtent(174), AmoledUi::nativeExtent(CLAW_LOG_HEIGHT - 2));
+            PixelRenderer::canvas().setClipRect(AmoledUi::nativeCoordinate(5), AmoledUi::nativeCoordinate(CLAW_LOG_TOP + 1), AmoledUi::nativeExtent(174), AmoledUi::nativeExtent(CLAW_LOG_HEIGHT - 2));
             const int scroll =
                 std::max(0, static_cast<int>(std::lround(model.clawLogScroll)));
             const size_t first =
@@ -3210,21 +3701,16 @@ void renderComputerScreen(Canvas565& canvas, const ComputerViewModel& model,
                 text(canvas, 10, y, model.clawLog[i].text,
                      clawLogLevelColor(model.clawLog[i].level));
             }
-            canvas.setClipRect(0, rowBegin, canvas.width(),
-                               rowEnd - rowBegin);
-            PixelRenderer::canvas().setClipRect(0, rowBegin, canvas.width(),
-                                                rowEnd - rowBegin);
+            canvas.setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(rowBegin), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - rowBegin));
+            PixelRenderer::canvas().setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(rowBegin), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - rowBegin));
             const int maxScroll = std::max(
                 0, static_cast<int>(model.clawLogCount) * CLAW_LOG_ROW_HEIGHT -
                        CLAW_LOG_VIEWPORT);
             if (model.clawLogScroll > 0.5f) {
-                canvas.fillTriangle(164, CLAW_LOG_TOP + 8, 170,
-                                    CLAW_LOG_TOP + 8, 167, CLAW_LOG_TOP + 4,
-                                    rgb(126, 175, 175));
+                canvas.fillTriangle(AmoledUi::nativeCoordinate(164), AmoledUi::nativeCoordinate(CLAW_LOG_TOP + 8), AmoledUi::nativeCoordinate(170), AmoledUi::nativeCoordinate(CLAW_LOG_TOP + 8), AmoledUi::nativeCoordinate(167), AmoledUi::nativeCoordinate(CLAW_LOG_TOP + 4), rgb(126, 175, 175));
             }
             if (model.clawLogScroll < maxScroll - 0.5f) {
-                canvas.fillTriangle(164, 211, 170, 211, 167, 215,
-                                    rgb(126, 175, 175));
+                canvas.fillTriangle(AmoledUi::nativeCoordinate(164), AmoledUi::nativeCoordinate(211), AmoledUi::nativeCoordinate(170), AmoledUi::nativeCoordinate(211), AmoledUi::nativeCoordinate(167), AmoledUi::nativeCoordinate(215), rgb(126, 175, 175));
             }
         }
 #endif
@@ -3254,14 +3740,12 @@ void drawSettingsSlider(Canvas565& canvas, int y, uint8_t value,
         (clamped - minimum) * trackWidth / range;
     const uint16_t track = pressed ? rgb(64, 83, 88) : rgb(48, 63, 70);
     const uint16_t active = pressed ? rgb(115, 226, 183) : rgb(83, 184, 157);
-    canvas.fillRoundRect(SETTINGS_SLIDER_LEFT, trackY - 4,
-                         trackWidth, 8, 4, track);
+    canvas.fillRoundRect(AmoledUi::nativeCoordinate(SETTINGS_SLIDER_LEFT), AmoledUi::nativeCoordinate(trackY - 4), AmoledUi::nativeExtent(trackWidth), AmoledUi::nativeExtent(8), AmoledUi::nativeExtent(4), track);
     if (knobX > SETTINGS_SLIDER_LEFT) {
-        canvas.fillRoundRect(SETTINGS_SLIDER_LEFT, trackY - 4,
-                             knobX - SETTINGS_SLIDER_LEFT, 8, 4, active);
+        canvas.fillRoundRect(AmoledUi::nativeCoordinate(SETTINGS_SLIDER_LEFT), AmoledUi::nativeCoordinate(trackY - 4), AmoledUi::nativeExtent(knobX - SETTINGS_SLIDER_LEFT), AmoledUi::nativeExtent(8), AmoledUi::nativeExtent(4), active);
     }
-    canvas.fillCircle(knobX, trackY, pressed ? 7 : 6, rgb(226, 238, 233));
-    canvas.fillCircle(knobX, trackY, pressed ? 4 : 3, active);
+    canvas.fillCircle(AmoledUi::nativeCoordinate(knobX), AmoledUi::nativeCoordinate(trackY), AmoledUi::nativeExtent(pressed ? 7 : 6), rgb(226, 238, 233));
+    canvas.fillCircle(AmoledUi::nativeCoordinate(knobX), AmoledUi::nativeCoordinate(trackY), AmoledUi::nativeExtent(pressed ? 4 : 3), active);
 }
 
 void renderSettingsScreen(Canvas565& canvas, const SettingsViewModel& model,
@@ -3270,21 +3754,20 @@ void renderSettingsScreen(Canvas565& canvas, const SettingsViewModel& model,
         Ui::BRIGHTNESS, Ui::Amoled::VOLUME, Ui::Amoled::GAME_SPEED,
         Ui::Amoled::POWER_SAVE, Ui::Amoled::VOICE_CALL, Ui::BACK,
     };
-    rowBegin = std::min<uint16_t>(rowBegin, canvas.height());
-    rowEnd = std::min<uint16_t>(rowEnd, canvas.height());
+    rowBegin = std::min<uint16_t>(rowBegin, AmoledUi::LEGACY_HEIGHT);
+    rowEnd = std::min<uint16_t>(rowEnd, AmoledUi::LEGACY_HEIGHT);
     if (rowBegin >= rowEnd) return;
-    canvas.setClipRect(0, rowBegin, canvas.width(), rowEnd - rowBegin);
-    PixelRenderer::canvas().setClipRect(
-        0, rowBegin, canvas.width(), rowEnd - rowBegin);
-    canvas.fillRect(0, 0, canvas.width(), canvas.height(), rgb(12, 18, 25));
-    canvas.fillRect(0, 0, canvas.width(), HEADER_HEIGHT, rgb(19, 31, 39));
-    canvas.fillRect(0, HEADER_HEIGHT - 1, canvas.width(), 1, rgb(56, 87, 89));
+    canvas.setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(rowBegin), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - rowBegin));
+    PixelRenderer::canvas().setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(rowBegin), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - rowBegin));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(0), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(AmoledUi::LEGACY_HEIGHT), rgb(12, 18, 25));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(0), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(HEADER_HEIGHT), rgb(19, 31, 39));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(HEADER_HEIGHT - 1), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(1), rgb(56, 87, 89));
     drawBackIcon(canvas);
     text(canvas, 36, 8, Ui::SETTINGS, rgb(115, 226, 183));
     for (int index = 0; index < 6; ++index) {
         int y = MENU_CONTENT_TOP + index * 32;
         bool pressed = index == model.pressedItem;
-        if (pressed) canvas.fillRect(6, y + 2, 172, 28, rgb(42, 61, 68));
+        if (pressed) canvas.fillRect(AmoledUi::nativeCoordinate(6), AmoledUi::nativeCoordinate(y + 2), AmoledUi::nativeExtent(172), AmoledUi::nativeExtent(28), rgb(42, 61, 68));
         text(canvas, 14, y + 10, LABELS[index],
              index == 5 ? rgb(115, 226, 183) : rgb(226, 238, 233));
         char value[20] = {};
@@ -3331,15 +3814,14 @@ int progressionItemAt(int x, int y, ProgressionViewModel::Mode mode) {
 void renderProgressionScreen(Canvas565& canvas,
                              const ProgressionViewModel& model,
                              uint16_t rowBegin, uint16_t rowEnd) {
-    rowBegin = std::min<uint16_t>(rowBegin, canvas.height());
-    rowEnd = std::min<uint16_t>(rowEnd, canvas.height());
+    rowBegin = std::min<uint16_t>(rowBegin, AmoledUi::LEGACY_HEIGHT);
+    rowEnd = std::min<uint16_t>(rowEnd, AmoledUi::LEGACY_HEIGHT);
     if (rowBegin >= rowEnd) return;
-    canvas.setClipRect(0, rowBegin, canvas.width(), rowEnd - rowBegin);
-    PixelRenderer::canvas().setClipRect(
-        0, rowBegin, canvas.width(), rowEnd - rowBegin);
-    canvas.fillRect(0, 0, canvas.width(), canvas.height(), rgb(12, 18, 25));
-    canvas.fillRect(0, 0, canvas.width(), HEADER_HEIGHT, rgb(19, 31, 39));
-    canvas.fillRect(0, HEADER_HEIGHT - 1, canvas.width(), 1, rgb(56, 87, 89));
+    canvas.setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(rowBegin), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - rowBegin));
+    PixelRenderer::canvas().setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(rowBegin), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - rowBegin));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(0), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(AmoledUi::LEGACY_HEIGHT), rgb(12, 18, 25));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(0), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(HEADER_HEIGHT), rgb(19, 31, 39));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(HEADER_HEIGHT - 1), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(1), rgb(56, 87, 89));
     text(canvas, 26, 8, Ui::Amoled::GROWTH, rgb(115, 226, 183));
     const Game::MonsterRuntime* monster = model.state &&
         model.teamSlot < Game::TEAM_CAP ? &model.state->team[model.teamSlot] : nullptr;
@@ -3378,10 +3860,8 @@ void renderProgressionScreen(Canvas565& canvas,
         if (model.mode == ProgressionViewModel::Mode::MOVE_REPLACE) {
             text(canvas, 34, 134, Ui::Amoled::CHOOSE_OLD_MOVE,
                  rgb(126, 175, 175));
-            canvas.fillRoundRect(20, 106, 144, 32, 4,
-                                 model.pressedItem == 1 ? rgb(48, 74, 68) : rgb(24, 34, 42));
-            canvas.fillRoundRect(20, 146, 144, 32, 4,
-                                 model.pressedItem == 2 ? rgb(48, 74, 68) : rgb(24, 34, 42));
+            canvas.fillRoundRect(AmoledUi::nativeCoordinate(20), AmoledUi::nativeCoordinate(106), AmoledUi::nativeExtent(144), AmoledUi::nativeExtent(32), AmoledUi::nativeExtent(4), model.pressedItem == 1 ? rgb(48, 74, 68) : rgb(24, 34, 42));
+            canvas.fillRoundRect(AmoledUi::nativeCoordinate(20), AmoledUi::nativeCoordinate(146), AmoledUi::nativeExtent(144), AmoledUi::nativeExtent(32), AmoledUi::nativeExtent(4), model.pressedItem == 2 ? rgb(48, 74, 68) : rgb(24, 34, 42));
             const MoveInfo* move2 = findMove(model.oldMove2);
             const MoveInfo* move3 = findMove(model.oldMove3);
             text(canvas, 30, 117, move2 ? move2->name : Ui::EMPTY,
@@ -3390,8 +3870,7 @@ void renderProgressionScreen(Canvas565& canvas,
                  rgb(226, 238, 233));
         }
     }
-    canvas.fillRoundRect(20, 174, 144, 40, 4,
-                         model.pressedItem == 0 ? rgb(48, 74, 68) : rgb(24, 34, 42));
+    canvas.fillRoundRect(AmoledUi::nativeCoordinate(20), AmoledUi::nativeCoordinate(174), AmoledUi::nativeExtent(144), AmoledUi::nativeExtent(40), AmoledUi::nativeExtent(4), model.pressedItem == 0 ? rgb(48, 74, 68) : rgb(24, 34, 42));
     text(canvas, 65, 190,
          model.mode == ProgressionViewModel::Mode::MOVE_REPLACE
              ? Ui::Amoled::SKIP : Ui::Amoled::CONTINUE,
@@ -3454,8 +3933,8 @@ void drawBattleConditionEffects(Canvas565& canvas, int centerX, int groundY,
             int x = centerX - 16 + i * 15;
             int y = groundY - 8 - ((pulse + i) % 4) * 4;
             int radius = 2 + ((pulse + i) & 1);
-            canvas.fillCircle(x, y, radius + 1, outline);
-            canvas.fillCircle(x, y, radius, color);
+            canvas.fillCircle(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y), AmoledUi::nativeExtent(radius + 1), outline);
+            canvas.fillCircle(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y), AmoledUi::nativeExtent(radius), color);
         }
         break;
     }
@@ -3465,22 +3944,20 @@ void drawBattleConditionEffects(Canvas565& canvas, int centerX, int groundY,
         for (int side = -1; side <= 1; side += 2) {
             int x = centerX + side * (23 + jitter);
             int y = groundY - 35 + (side > 0 ? 5 : 0);
-            canvas.drawLine(x, y, x - side * 5, y + 6, outline);
-            canvas.drawLine(x - side * 5, y + 6, x + side, y + 6, outline);
-            canvas.drawLine(x + side, y + 6, x - side * 4, y + 13, outline);
-            canvas.drawLine(x, y, x - side * 4, y + 6, color);
-            canvas.drawLine(x - side * 4, y + 6, x + side * 2, y + 6, color);
-            canvas.drawLine(x + side * 2, y + 6, x - side * 3, y + 13, color);
+            canvas.drawLine(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y), AmoledUi::nativeCoordinate(x - side * 5), AmoledUi::nativeCoordinate(y + 6), outline);
+            canvas.drawLine(AmoledUi::nativeCoordinate(x - side * 5), AmoledUi::nativeCoordinate(y + 6), AmoledUi::nativeCoordinate(x + side), AmoledUi::nativeCoordinate(y + 6), outline);
+            canvas.drawLine(AmoledUi::nativeCoordinate(x + side), AmoledUi::nativeCoordinate(y + 6), AmoledUi::nativeCoordinate(x - side * 4), AmoledUi::nativeCoordinate(y + 13), outline);
+            canvas.drawLine(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y), AmoledUi::nativeCoordinate(x - side * 4), AmoledUi::nativeCoordinate(y + 6), color);
+            canvas.drawLine(AmoledUi::nativeCoordinate(x - side * 4), AmoledUi::nativeCoordinate(y + 6), AmoledUi::nativeCoordinate(x + side * 2), AmoledUi::nativeCoordinate(y + 6), color);
+            canvas.drawLine(AmoledUi::nativeCoordinate(x + side * 2), AmoledUi::nativeCoordinate(y + 6), AmoledUi::nativeCoordinate(x - side * 3), AmoledUi::nativeCoordinate(y + 13), color);
         }
         break;
     }
     case Game::MajorStatus::SLEEP: {
         const uint16_t color = rgb(116, 169, 232);
         int rise = static_cast<int>((nowMs / 240U) % 3U);
-        PixelRenderer::textOutlined(centerX + 18, groundY - 45 - rise * 2,
-                                    "Z", color, outline, 1);
-        PixelRenderer::textOutlined(centerX + 28, groundY - 55 - rise * 2,
-                                    "Z", color, outline, 1);
+        PixelRenderer::textOutlined(AmoledUi::nativeCoordinate(centerX + 18), AmoledUi::nativeCoordinate(groundY - 45 - rise * 2), "Z", color, outline, 1);
+        PixelRenderer::textOutlined(AmoledUi::nativeCoordinate(centerX + 28), AmoledUi::nativeCoordinate(groundY - 55 - rise * 2), "Z", color, outline, 1);
         break;
     }
     case Game::MajorStatus::BURN: {
@@ -3490,12 +3967,9 @@ void drawBattleConditionEffects(Canvas565& canvas, int centerX, int groundY,
         for (int side = -1; side <= 1; side += 2) {
             int x = centerX + side * 19;
             int y = groundY - 10;
-            canvas.fillTriangle(x - 5, y + 7, x + 5, y + 7,
-                                x + sway * side, y - 7, outline);
-            canvas.fillTriangle(x - 4, y + 6, x + 4, y + 6,
-                                x + sway * side, y - 6, red);
-            canvas.fillTriangle(x - 2, y + 5, x + 2, y + 5,
-                                x - sway * side, y, yellow);
+            canvas.fillTriangle(AmoledUi::nativeCoordinate(x - 5), AmoledUi::nativeCoordinate(y + 7), AmoledUi::nativeCoordinate(x + 5), AmoledUi::nativeCoordinate(y + 7), AmoledUi::nativeCoordinate(x + sway * side), AmoledUi::nativeCoordinate(y - 7), outline);
+            canvas.fillTriangle(AmoledUi::nativeCoordinate(x - 4), AmoledUi::nativeCoordinate(y + 6), AmoledUi::nativeCoordinate(x + 4), AmoledUi::nativeCoordinate(y + 6), AmoledUi::nativeCoordinate(x + sway * side), AmoledUi::nativeCoordinate(y - 6), red);
+            canvas.fillTriangle(AmoledUi::nativeCoordinate(x - 2), AmoledUi::nativeCoordinate(y + 5), AmoledUi::nativeCoordinate(x + 2), AmoledUi::nativeCoordinate(y + 5), AmoledUi::nativeCoordinate(x - sway * side), AmoledUi::nativeCoordinate(y), yellow);
         }
         break;
     }
@@ -3504,12 +3978,12 @@ void drawBattleConditionEffects(Canvas565& canvas, int centerX, int groundY,
         for (uint8_t i = 0; i < 3; ++i) {
             int x = centerX - 20 + i * 20;
             int y = groundY - 13 - ((pulse + i) & 1) * 5;
-            canvas.drawLine(x - 4, y, x + 4, y, outline);
-            canvas.drawLine(x, y - 4, x, y + 4, outline);
-            canvas.drawLine(x - 3, y - 3, x + 3, y + 3, outline);
-            canvas.drawLine(x - 3, y + 3, x + 3, y - 3, outline);
-            canvas.drawLine(x - 3, y, x + 3, y, color);
-            canvas.drawLine(x, y - 3, x, y + 3, color);
+            canvas.drawLine(AmoledUi::nativeCoordinate(x - 4), AmoledUi::nativeCoordinate(y), AmoledUi::nativeCoordinate(x + 4), AmoledUi::nativeCoordinate(y), outline);
+            canvas.drawLine(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y - 4), AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y + 4), outline);
+            canvas.drawLine(AmoledUi::nativeCoordinate(x - 3), AmoledUi::nativeCoordinate(y - 3), AmoledUi::nativeCoordinate(x + 3), AmoledUi::nativeCoordinate(y + 3), outline);
+            canvas.drawLine(AmoledUi::nativeCoordinate(x - 3), AmoledUi::nativeCoordinate(y + 3), AmoledUi::nativeCoordinate(x + 3), AmoledUi::nativeCoordinate(y - 3), outline);
+            canvas.drawLine(AmoledUi::nativeCoordinate(x - 3), AmoledUi::nativeCoordinate(y), AmoledUi::nativeCoordinate(x + 3), AmoledUi::nativeCoordinate(y), color);
+            canvas.drawLine(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y - 3), AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y + 3), color);
         }
         break;
     }
@@ -3527,17 +4001,17 @@ void drawBattleConditionEffects(Canvas565& canvas, int centerX, int groundY,
                 std::cos(pointAngle) * 17.0f));
             int y = groundY - 50 + static_cast<int>(std::lround(
                 std::sin(pointAngle) * 4.0f));
-            canvas.fillCircle(x, y, 3, outline);
-            canvas.fillCircle(x, y, 2, colors[i]);
+            canvas.fillCircle(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y), AmoledUi::nativeExtent(3), outline);
+            canvas.fillCircle(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y), AmoledUi::nativeExtent(2), colors[i]);
         }
     }
     if (state.bindTurns > 0) {
         const uint16_t color = rgb(205, 154, 86);
         int y = groundY - 22 + ((pulse & 1) ? 1 : -1);
-        canvas.drawFastHLine(centerX - 24, y, 48, outline);
-        canvas.drawFastHLine(centerX - 24, y + 5, 48, outline);
-        canvas.drawFastHLine(centerX - 23, y + 1, 46, color);
-        canvas.drawFastHLine(centerX - 23, y + 4, 46, color);
+        canvas.drawFastHLine(AmoledUi::nativeCoordinate(centerX - 24), AmoledUi::nativeCoordinate(y), AmoledUi::nativeExtent(48), outline);
+        canvas.drawFastHLine(AmoledUi::nativeCoordinate(centerX - 24), AmoledUi::nativeCoordinate(y + 5), AmoledUi::nativeExtent(48), outline);
+        canvas.drawFastHLine(AmoledUi::nativeCoordinate(centerX - 23), AmoledUi::nativeCoordinate(y + 1), AmoledUi::nativeExtent(46), color);
+        canvas.drawFastHLine(AmoledUi::nativeCoordinate(centerX - 23), AmoledUi::nativeCoordinate(y + 4), AmoledUi::nativeExtent(46), color);
     }
     if (state.yawnTurns > 0 && majorStatus != Game::MajorStatus::SLEEP) {
         const uint16_t color = rgb(181, 202, 225);
@@ -3545,8 +4019,8 @@ void drawBattleConditionEffects(Canvas565& canvas, int centerX, int groundY,
         for (uint8_t i = 0; i < 3; ++i) {
             int x = centerX + 15 + i * 6;
             int y = groundY - 45 - i * 2 - drift;
-            canvas.fillCircle(x, y, 2, outline);
-            canvas.fillCircle(x, y, 1, color);
+            canvas.fillCircle(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y), AmoledUi::nativeExtent(2), outline);
+            canvas.fillCircle(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y), AmoledUi::nativeExtent(1), color);
         }
     }
 }
@@ -3570,8 +4044,7 @@ void drawBattleSprite(Canvas565& canvas, uint16_t speciesId,
     scale = std::min(1.0f, scale);
     int drawWidth = std::max(1, static_cast<int>(width * scale));
     int drawHeight = std::max(1, static_cast<int>(height * scale));
-    canvas.fillEllipse(centerX, groundY, std::max(12, drawWidth / 2 - 4),
-                       5, rgb(27, 48, 48));
+    canvas.fillEllipse(AmoledUi::nativeCoordinate(centerX), AmoledUi::nativeCoordinate(groundY), AmoledUi::nativeExtent(std::max(12, drawWidth / 2 - 4)), AmoledUi::nativeExtent(5), rgb(27, 48, 48));
     PokemonSprites::drawFrameScaled(
         frame, centerX - drawWidth / 2, groundY - drawHeight, scale, false);
 }
@@ -3591,19 +4064,15 @@ void drawBattleHitEffect(Canvas565& canvas, int centerX, int centerY,
     const uint16_t flash = animationFrame == 2
         ? rgb(239, 143, 148) : rgb(248, 210, 105);
     int radius = animationFrame == 2 ? 15 : 10;
-    canvas.drawCircle(centerX, centerY, radius + 2, outline);
-    canvas.drawCircle(centerX, centerY, radius, flash);
-    canvas.drawLine(centerX - radius - 5, centerY,
-                    centerX - radius + 1, centerY, flash);
-    canvas.drawLine(centerX + radius - 1, centerY,
-                    centerX + radius + 5, centerY, flash);
-    canvas.drawLine(centerX, centerY - radius - 5,
-                    centerX, centerY - radius + 1, flash);
-    canvas.drawLine(centerX, centerY + radius - 1,
-                    centerX, centerY + radius + 5, flash);
+    canvas.drawCircle(AmoledUi::nativeCoordinate(centerX), AmoledUi::nativeCoordinate(centerY), AmoledUi::nativeExtent(radius + 2), outline);
+    canvas.drawCircle(AmoledUi::nativeCoordinate(centerX), AmoledUi::nativeCoordinate(centerY), AmoledUi::nativeExtent(radius), flash);
+    canvas.drawLine(AmoledUi::nativeCoordinate(centerX - radius - 5), AmoledUi::nativeCoordinate(centerY), AmoledUi::nativeCoordinate(centerX - radius + 1), AmoledUi::nativeCoordinate(centerY), flash);
+    canvas.drawLine(AmoledUi::nativeCoordinate(centerX + radius - 1), AmoledUi::nativeCoordinate(centerY), AmoledUi::nativeCoordinate(centerX + radius + 5), AmoledUi::nativeCoordinate(centerY), flash);
+    canvas.drawLine(AmoledUi::nativeCoordinate(centerX), AmoledUi::nativeCoordinate(centerY - radius - 5), AmoledUi::nativeCoordinate(centerX), AmoledUi::nativeCoordinate(centerY - radius + 1), flash);
+    canvas.drawLine(AmoledUi::nativeCoordinate(centerX), AmoledUi::nativeCoordinate(centerY + radius - 1), AmoledUi::nativeCoordinate(centerX), AmoledUi::nativeCoordinate(centerY + radius + 5), flash);
     if (animationFrame == 2) {
-        canvas.fillCircle(centerX - 9, centerY - 8, 2, flash);
-        canvas.fillCircle(centerX + 10, centerY + 7, 2, flash);
+        canvas.fillCircle(AmoledUi::nativeCoordinate(centerX - 9), AmoledUi::nativeCoordinate(centerY - 8), AmoledUi::nativeExtent(2), flash);
+        canvas.fillCircle(AmoledUi::nativeCoordinate(centerX + 10), AmoledUi::nativeCoordinate(centerY + 7), AmoledUi::nativeExtent(2), flash);
     }
     if (damage > 0) {
         char damageText[8] = {};
@@ -3614,43 +4083,32 @@ void drawBattleHitEffect(Canvas565& canvas, int centerX, int centerY,
 }
 
 void drawBattleSceneText(int x, int y, const char* value) {
-    PixelRenderer::textOutlined(x, y, value, rgb(25, 31, 40),
-                                rgb(241, 242, 232), 1);
+    PixelRenderer::textOutlined(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(y), value, rgb(25, 31, 40), rgb(241, 242, 232), 1);
 }
 
 void drawBattleFooter(Canvas565& canvas) {
-    PixelRenderer::fillRectAlpha(
-        0, BATTLE_FOOTER_Y, canvas.width(), BATTLE_FOOTER_HEIGHT,
-        rgb(204, 204, 204), 153);
-    canvas.drawRect(0, BATTLE_FOOTER_Y, canvas.width(),
-                    BATTLE_FOOTER_HEIGHT, rgb(74, 91, 75));
+    PixelRenderer::fillRectAlpha(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(BATTLE_FOOTER_Y), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(BATTLE_FOOTER_HEIGHT), rgb(204, 204, 204), 153);
+    canvas.drawRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(BATTLE_FOOTER_Y), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(BATTLE_FOOTER_HEIGHT), rgb(74, 91, 75));
 }
 
 void drawBattleBackIcon(Canvas565& canvas) {
     drawHeaderButton(canvas, 158);
     const uint16_t color = rgb(222, 234, 229);
-    canvas.drawLine(174, 7, 167, 12, color);
-    canvas.drawLine(167, 12, 174, 17, color);
+    canvas.drawLine(AmoledUi::nativeCoordinate(174), AmoledUi::nativeCoordinate(7), AmoledUi::nativeCoordinate(167), AmoledUi::nativeCoordinate(12), color);
+    canvas.drawLine(AmoledUi::nativeCoordinate(167), AmoledUi::nativeCoordinate(12), AmoledUi::nativeCoordinate(174), AmoledUi::nativeCoordinate(17), color);
 }
 
 void drawBattleFooterChoice(Canvas565& canvas, int index, int count,
                             const char* label, bool pressed, bool enabled) {
     if (count <= 0 || index < 0 || index >= count) return;
-    int left = index * canvas.width() / count;
-    int right = (index + 1) * canvas.width() / count;
+    int left = index * AmoledUi::LEGACY_WIDTH / count;
+    int right = (index + 1) * AmoledUi::LEGACY_WIDTH / count;
     if (pressed) {
-        PixelRenderer::fillRectAlpha(left + 1, BATTLE_FOOTER_Y + 1,
-                                    right - left - 1,
-                                    BATTLE_FOOTER_HEIGHT - 2,
-                                    rgb(54, 111, 94), 96);
-        canvas.fillRect(left + 4, BATTLE_FOOTER_Y + 3,
-                        std::max(1, right - left - 8), 2,
-                        rgb(62, 150, 124));
+        PixelRenderer::fillRectAlpha(AmoledUi::nativeCoordinate(left + 1), AmoledUi::nativeCoordinate(BATTLE_FOOTER_Y + 1), AmoledUi::nativeExtent(right - left - 1), AmoledUi::nativeExtent(BATTLE_FOOTER_HEIGHT - 2), rgb(54, 111, 94), 96);
+        canvas.fillRect(AmoledUi::nativeCoordinate(left + 4), AmoledUi::nativeCoordinate(BATTLE_FOOTER_Y + 3), AmoledUi::nativeExtent(std::max(1, right - left - 8)), AmoledUi::nativeExtent(2), rgb(62, 150, 124));
     }
     if (index > 0) {
-        canvas.drawFastVLine(left, BATTLE_FOOTER_Y + 9,
-                            BATTLE_FOOTER_HEIGHT - 18,
-                            rgb(105, 116, 108));
+        canvas.drawFastVLine(AmoledUi::nativeCoordinate(left), AmoledUi::nativeCoordinate(BATTLE_FOOTER_Y + 9), AmoledUi::nativeExtent(BATTLE_FOOTER_HEIGHT - 18), rgb(105, 116, 108));
     }
     const uint16_t color = enabled ? rgb(25, 31, 40) : rgb(102, 108, 108);
     int labelX = left + (right - left - textWidth(label)) / 2;
@@ -3661,12 +4119,11 @@ void drawBattleFooterChoice(Canvas565& canvas, int index, int count,
 
 void renderBattleScreen(Canvas565& canvas, const BattleViewModel& model,
                         uint16_t rowBegin, uint16_t rowEnd) {
-    rowBegin = std::min<uint16_t>(rowBegin, canvas.height());
-    rowEnd = std::min<uint16_t>(rowEnd, canvas.height());
+    rowBegin = std::min<uint16_t>(rowBegin, AmoledUi::LEGACY_HEIGHT);
+    rowEnd = std::min<uint16_t>(rowEnd, AmoledUi::LEGACY_HEIGHT);
     if (rowBegin >= rowEnd) return;
-    canvas.setClipRect(0, rowBegin, canvas.width(), rowEnd - rowBegin);
-    PixelRenderer::canvas().setClipRect(
-        0, rowBegin, canvas.width(), rowEnd - rowBegin);
+    canvas.setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(rowBegin), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - rowBegin));
+    PixelRenderer::canvas().setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(rowBegin), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - rowBegin));
     drawBattleBackgroundLayer(
         canvas, model.battleBackground, rowBegin, rowEnd);
     const Species* wild = findSpecies(model.wildSpeciesId);
@@ -3702,10 +4159,8 @@ void renderBattleScreen(Canvas565& canvas, const BattleViewModel& model,
 
 #if STICKMON_ENABLE_DEBUG_FEATURES
     if (model.debugDrawBounds) {
-        canvas.drawRect(wildX - 46, 117 - 112, 92, 112,
-                        rgb(255, 32, 32));
-        canvas.drawRect(playerX - 41, 190 - 116, 82, 116,
-                        rgb(0, 220, 255));
+        canvas.drawRect(AmoledUi::nativeCoordinate(wildX - 46), AmoledUi::nativeCoordinate(117 - 112), AmoledUi::nativeExtent(92), AmoledUi::nativeExtent(112), rgb(255, 32, 32));
+        canvas.drawRect(AmoledUi::nativeCoordinate(playerX - 41), AmoledUi::nativeCoordinate(190 - 116), AmoledUi::nativeExtent(82), AmoledUi::nativeExtent(116), rgb(0, 220, 255));
     }
 #endif
 
@@ -3880,22 +4335,15 @@ void drawShowerToolbar(Canvas565& canvas, const ShowerViewModel& model) {
     for (int index = 0; index < 4; ++index) {
         int x = 3 + index * 45;
         bool selected = index == model.pressedItem;
-        canvas.fillRoundRect(x, SHOWER_TOOLBAR_Y, SHOWER_TOOL_BUTTON_W, 44, 4,
-                             selected ? rgb(48, 74, 68) : rgb(24, 34, 42));
-        canvas.drawRoundRect(x, SHOWER_TOOLBAR_Y, SHOWER_TOOL_BUTTON_W, 44, 4,
-                             rgb(67, 97, 101));
+        canvas.fillRoundRect(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(SHOWER_TOOLBAR_Y), AmoledUi::nativeExtent(SHOWER_TOOL_BUTTON_W), AmoledUi::nativeExtent(44), AmoledUi::nativeExtent(4), selected ? rgb(48, 74, 68) : rgb(24, 34, 42));
+        canvas.drawRoundRect(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(SHOWER_TOOLBAR_Y), AmoledUi::nativeExtent(SHOWER_TOOL_BUTTON_W), AmoledUi::nativeExtent(44), AmoledUi::nativeExtent(4), rgb(67, 97, 101));
         if (index < 3) {
             GameAssets::drawCentered(ICONS[index], x + 21,
                                      SHOWER_TOOLBAR_Y + 18, 0.56f);
         } else {
-            canvas.drawFastHLine(x + 12, SHOWER_TOOLBAR_Y + 17, 18,
-                                 rgb(239, 143, 148));
-            canvas.drawLine(x + 12, SHOWER_TOOLBAR_Y + 17,
-                            x + 19, SHOWER_TOOLBAR_Y + 10,
-                            rgb(239, 143, 148));
-            canvas.drawLine(x + 12, SHOWER_TOOLBAR_Y + 17,
-                            x + 19, SHOWER_TOOLBAR_Y + 24,
-                            rgb(239, 143, 148));
+            canvas.drawFastHLine(AmoledUi::nativeCoordinate(x + 12), AmoledUi::nativeCoordinate(SHOWER_TOOLBAR_Y + 17), AmoledUi::nativeExtent(18), rgb(239, 143, 148));
+            canvas.drawLine(AmoledUi::nativeCoordinate(x + 12), AmoledUi::nativeCoordinate(SHOWER_TOOLBAR_Y + 17), AmoledUi::nativeCoordinate(x + 19), AmoledUi::nativeCoordinate(SHOWER_TOOLBAR_Y + 10), rgb(239, 143, 148));
+            canvas.drawLine(AmoledUi::nativeCoordinate(x + 12), AmoledUi::nativeCoordinate(SHOWER_TOOLBAR_Y + 17), AmoledUi::nativeCoordinate(x + 19), AmoledUi::nativeCoordinate(SHOWER_TOOLBAR_Y + 24), rgb(239, 143, 148));
         }
         int labelX = x + (SHOWER_TOOL_BUTTON_W - textWidth(LABELS[index])) / 2;
         text(canvas, labelX, SHOWER_TOOLBAR_Y + 33, LABELS[index],
@@ -3904,14 +4352,13 @@ void drawShowerToolbar(Canvas565& canvas, const ShowerViewModel& model) {
 }
 
 void drawShowerSoapPicker(Canvas565& canvas, const ShowerViewModel& model) {
-    canvas.fillRoundRect(8, 66, 168, 98, 6, rgb(17, 27, 34));
-    canvas.drawRoundRect(8, 66, 168, 98, 6, rgb(82, 117, 117));
+    canvas.fillRoundRect(AmoledUi::nativeCoordinate(8), AmoledUi::nativeCoordinate(66), AmoledUi::nativeExtent(168), AmoledUi::nativeExtent(98), AmoledUi::nativeExtent(6), rgb(17, 27, 34));
+    canvas.drawRoundRect(AmoledUi::nativeCoordinate(8), AmoledUi::nativeCoordinate(66), AmoledUi::nativeExtent(168), AmoledUi::nativeExtent(98), AmoledUi::nativeExtent(6), rgb(82, 117, 117));
     text(canvas, 58, 75, Ui::Amoled::CHOOSE_SOAP, rgb(226, 238, 233));
     for (uint8_t index = 0; index < Game::SOAP_VARIANT_COUNT; ++index) {
         int x = 13 + index * 55;
         uint8_t count = model.state ? model.state->bag.soap[index] : 0;
-        canvas.fillRoundRect(x, 94, 49, 59, 4,
-                             count > 0 ? rgb(28, 42, 48) : rgb(20, 27, 31));
+        canvas.fillRoundRect(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(94), AmoledUi::nativeExtent(49), AmoledUi::nativeExtent(59), AmoledUi::nativeExtent(4), count > 0 ? rgb(28, 42, 48) : rgb(20, 27, 31));
         GameAssets::Kind kind = static_cast<GameAssets::Kind>(
             static_cast<uint16_t>(GameAssets::Kind::SHOWER_SOAP_0) + index);
         GameAssets::drawCenteredAlpha(kind, x + 24, 116, 0.82f,
@@ -3924,17 +4371,15 @@ void drawShowerSoapPicker(Canvas565& canvas, const ShowerViewModel& model) {
 }
 
 void drawShowerExitConfirm(Canvas565& canvas, const ShowerViewModel& model) {
-    canvas.fillRoundRect(10, 116, 164, 98, 6, rgb(17, 27, 34));
-    canvas.drawRoundRect(10, 116, 164, 98, 6, rgb(82, 117, 117));
+    canvas.fillRoundRect(AmoledUi::nativeCoordinate(10), AmoledUi::nativeCoordinate(116), AmoledUi::nativeExtent(164), AmoledUi::nativeExtent(98), AmoledUi::nativeExtent(6), rgb(17, 27, 34));
+    canvas.drawRoundRect(AmoledUi::nativeCoordinate(10), AmoledUi::nativeCoordinate(116), AmoledUi::nativeExtent(164), AmoledUi::nativeExtent(98), AmoledUi::nativeExtent(6), rgb(82, 117, 117));
     text(canvas, 43, 129, Ui::Amoled::FOAM_REMAINS,
          rgb(248, 210, 105));
     text(canvas, 58, 148, Ui::Amoled::LEAVE_BATH,
          rgb(226, 238, 233));
-    canvas.fillRoundRect(18, 174, 70, 36, 4,
-                         model.exitConfirmYes ? rgb(48, 74, 68)
+    canvas.fillRoundRect(AmoledUi::nativeCoordinate(18), AmoledUi::nativeCoordinate(174), AmoledUi::nativeExtent(70), AmoledUi::nativeExtent(36), AmoledUi::nativeExtent(4), model.exitConfirmYes ? rgb(48, 74, 68)
                                               : rgb(36, 54, 61));
-    canvas.fillRoundRect(96, 174, 70, 36, 4,
-                         !model.exitConfirmYes ? rgb(76, 48, 54)
+    canvas.fillRoundRect(AmoledUi::nativeCoordinate(96), AmoledUi::nativeCoordinate(174), AmoledUi::nativeExtent(70), AmoledUi::nativeExtent(36), AmoledUi::nativeExtent(4), !model.exitConfirmYes ? rgb(76, 48, 54)
                                                : rgb(46, 39, 43));
     text(canvas, 39, 188, Ui::Amoled::EXIT, rgb(115, 226, 183));
     text(canvas, 116, 188, Ui::Amoled::STAY, rgb(239, 143, 148));
@@ -3973,19 +4418,18 @@ bool showerToolAt(int x, int y, int toolX, int toolY) {
 
 void renderShowerScreen(Canvas565& canvas, const ShowerViewModel& model,
                         uint16_t rowBegin, uint16_t rowEnd) {
-    rowBegin = std::min<uint16_t>(rowBegin, canvas.height());
-    rowEnd = std::min<uint16_t>(rowEnd, canvas.height());
+    rowBegin = std::min<uint16_t>(rowBegin, AmoledUi::LEGACY_HEIGHT);
+    rowEnd = std::min<uint16_t>(rowEnd, AmoledUi::LEGACY_HEIGHT);
     if (rowBegin >= rowEnd) return;
 
-    canvas.setClipRect(0, rowBegin, canvas.width(), rowEnd - rowBegin);
-    PixelRenderer::canvas().setClipRect(
-        0, rowBegin, canvas.width(), rowEnd - rowBegin);
-    canvas.fillRect(0, 0, canvas.width(), canvas.height(), rgb(24, 43, 37));
+    canvas.setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(rowBegin), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - rowBegin));
+    PixelRenderer::canvas().setClipRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(rowBegin), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(rowEnd - rowBegin));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(0), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(AmoledUi::LEGACY_HEIGHT), rgb(24, 43, 37));
     if (!GameAssets::draw(GameAssets::Kind::SHOWER_BACKGROUND, -28, 28)) {
-        canvas.fillRect(0, 28, canvas.width(), 135, rgb(178, 116, 57));
+        canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(28), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(135), rgb(178, 116, 57));
     }
-    canvas.fillRect(0, 0, canvas.width(), HEADER_HEIGHT, rgb(19, 31, 39));
-    canvas.fillRect(0, HEADER_HEIGHT - 1, canvas.width(), 1, rgb(56, 87, 89));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(0), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(HEADER_HEIGHT), rgb(19, 31, 39));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(HEADER_HEIGHT - 1), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(1), rgb(56, 87, 89));
     drawBackIcon(canvas);
     text(canvas, 36, 8, Ui::Amoled::WASH_PET, rgb(115, 226, 183));
 
@@ -3994,19 +4438,17 @@ void renderShowerScreen(Canvas565& canvas, const ShowerViewModel& model,
 
     if (model.mode == ShowerMode::RINSING) {
         uint8_t alpha = static_cast<uint8_t>(70 + model.rinseProgress / 2);
-        PixelRenderer::fillRectAlpha(18, 28, 148, 135,
-                                     rgb(74, 190, 232), alpha);
+        PixelRenderer::fillRectAlpha(AmoledUi::nativeCoordinate(18), AmoledUi::nativeCoordinate(28), AmoledUi::nativeExtent(148), AmoledUi::nativeExtent(135), rgb(74, 190, 232), alpha);
         for (int stream = 0; stream < 10; ++stream) {
             int x = 24 + stream * 15;
             int phase = (model.rinseProgress * 3 + stream * 17) % 44;
-            canvas.drawFastVLine(x, 28 + phase, 55,
-                                 rgb(184, 236, 249));
+            canvas.drawFastVLine(AmoledUi::nativeCoordinate(x), AmoledUi::nativeCoordinate(28 + phase), AmoledUi::nativeExtent(55), rgb(184, 236, 249));
         }
         GameAssets::drawCentered(GameAssets::Kind::SHOWER_SPRINKLER,
                                  92, 43, 0.8f);
     }
 
-    canvas.fillRect(0, 164, canvas.width(), 60, rgb(12, 18, 25));
+    canvas.fillRect(AmoledUi::nativeCoordinate(0), AmoledUi::nativeCoordinate(164), AmoledUi::nativeExtent(AmoledUi::LEGACY_WIDTH), AmoledUi::nativeExtent(60), rgb(12, 18, 25));
     drawShowerToolbar(canvas, model);
 
     if (model.mode == ShowerMode::SOAPING ||
@@ -4020,9 +4462,8 @@ void renderShowerScreen(Canvas565& canvas, const ShowerViewModel& model,
                                  model.toolDragging ? 1.0f : 0.9f);
         uint8_t progress = model.mode == ShowerMode::SOAPING
             ? model.soapProgress : model.brushProgress;
-        canvas.fillRect(48, 167, 88, 5, rgb(39, 45, 50));
-        canvas.fillRect(49, 168, 86 * progress / 8, 3,
-                        rgb(115, 226, 183));
+        canvas.fillRect(AmoledUi::nativeCoordinate(48), AmoledUi::nativeCoordinate(167), AmoledUi::nativeExtent(88), AmoledUi::nativeExtent(5), rgb(39, 45, 50));
+        canvas.fillRect(AmoledUi::nativeCoordinate(49), AmoledUi::nativeCoordinate(168), AmoledUi::nativeExtent(86 * progress / 8), AmoledUi::nativeExtent(3), rgb(115, 226, 183));
     }
 
     if (model.mode == ShowerMode::SOAP_SELECT) {

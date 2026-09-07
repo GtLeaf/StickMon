@@ -59,7 +59,12 @@ class AmoledBattleTests(unittest.TestCase):
             self.assertIn(
                 "battleAnimationStartedMs = Platform::clock().millis();", attack
             )
-            self.assertIn("requestFullRender();", attack)
+            self.assertIn(
+                "pushBattleLog(nowMs, false);", attack
+            )
+            self.assertIn(
+                "requestRenderRows(0, BATTLE_ANIMATION_RENDER_END);", attack
+            )
             self.assertIn("battleAudioPending = true;", attack)
             self.assertIn("battleAudioReady = false;", attack)
             self.assertNotIn("CryPlayer::ins().replay(", attack)
@@ -165,7 +170,13 @@ class AmoledBattleTests(unittest.TestCase):
         start = self.screen_source.index("void drawBattleHpBar(")
         end = self.screen_source.index("void ", start + 10)
         battle_hp = self.screen_source[start:end]
-        self.assertIn("canvas.drawRect(x, y, width, 6, rgb(0, 0, 0));", battle_hp)
+        self.assertIn(
+            "canvas.drawRect(AmoledUi::nativeCoordinate(x),"
+            " AmoledUi::nativeCoordinate(y),"
+            " AmoledUi::nativeExtent(width),"
+            " AmoledUi::nativeExtent(6), rgb(0, 0, 0));",
+            battle_hp,
+        )
         self.assertIn("drawBattleHpBar(canvas, 22, 36", self.screen_source)
         self.assertIn("drawBattleHpBar(canvas, 108, 145", self.screen_source)
 

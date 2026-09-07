@@ -59,6 +59,24 @@ class AmoledShopLayoutTests(unittest.TestCase):
         self.assertIn("SHOP_GRID_ICON_SCALE", grid)
         self.assertNotIn("Game::ShopService::shortName", grid)
 
+    def test_static_detail_does_not_wait_for_animation_to_accept_touch(self):
+        touch = self._function(self.app, "void AmoledApp::handleTouch(",
+                               "void AmoledApp::handleTap(")
+        tap = self._function(self.app, "void AmoledApp::handleTap(",
+                             "void AmoledApp::update(")
+        self.assertNotIn("shopDetailProgress >= 1.0f", touch)
+        self.assertNotIn("if (shopDetailProgress < 1.0f) return;", tap)
+
+    def test_detail_release_requires_same_button_before_generic_tap_slop(self):
+        touch = self._function(self.app, "void AmoledApp::handleTouch(",
+                               "void AmoledApp::handleTap(")
+        release = touch[touch.index("case TouchEventType::UP:"):]
+        self.assertIn("itemConfirmChoiceAt(touchStartX, touchStartY)", release)
+        self.assertIn("startChoice >= 0", release)
+        self.assertIn("startChoice == itemConfirmChoiceAt(event.x, event.y)", release)
+        self.assertLess(release.index("const int startChoice"),
+                        release.index("distance <= TAP_SLOP"))
+
     def test_successful_shop_transaction_stays_in_detail(self):
         action = self._function(
             self.app,

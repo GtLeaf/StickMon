@@ -30,7 +30,12 @@ class AmoledSettingsTests(unittest.TestCase):
         end = source.index("int progressionItemAt(", start)
         settings = source[start:end]
 
-        self.assertIn("trackWidth, 8, 4, track", settings)
+        self.assertIn(
+            "AmoledUi::nativeExtent(trackWidth),"
+            " AmoledUi::nativeExtent(8),"
+            " AmoledUi::nativeExtent(4), track",
+            settings,
+        )
         self.assertIn("pressed ? 7 : 6", settings)
         self.assertNotIn('"%u", model.brightness', settings)
         self.assertNotIn('"%u%%", model.volume', settings)

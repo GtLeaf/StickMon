@@ -63,7 +63,7 @@ int main() {
     ExploreRouteGeometry::WorldPoint third =
         ExploreRouteGeometry::pathPoint(path, 2);
     assert(first.x == 78.0f && first.y == 39.0f);
-    assert(second.x == 78.0f && second.y == 65.0f);
-    assert(third.x == 91.0f && third.y == 65.0f);
+    assert(second.x == 78.0f && second.y == 78.0f);
+    assert(third.x == 91.0f && third.y == 78.0f);
     return 0;
 }

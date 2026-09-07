@@ -50,8 +50,8 @@ void drawHungerIcon(Canvas565& canvas, int x, int y, uint8_t hunger) {
             if (cutRow > HudAssets::HUNGER_ICON_H) {
                 cutRow = HudAssets::HUNGER_ICON_H;
             }
-            canvas.drawPixel(x + column, y + row,
-                             row < cutRow ? emptyColor : color);
+            canvas.drawAssetPixel(x + column, y + row,
+                                  row < cutRow ? emptyColor : color);
         }
     }
 }

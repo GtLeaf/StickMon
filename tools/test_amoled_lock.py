@@ -39,6 +39,27 @@ class AmoledLockTests(unittest.TestCase):
                     "(!lockedWithoutFocus && app.needsRender())", source
                 )
 
+    def test_sleeping_lock_breathes_only_when_pet_has_focus(self):
+        for path in MAIN_FILES:
+            with self.subTest(version=path.parents[1].name):
+                source = path.read_text()
+                self.assertIn("LOCK_SLEEP_BREATH_AMPLITUDE", source)
+                self.assertIn("LOCK_SLEEP_BREATH_PERIOD_MS", source)
+                self.assertIn("!preserveFocus || !sleeping", source)
+                self.assertIn("std::cos(cycle * 6.2831853f)", source)
+                self.assertIn("app.petIsSleeping()", source)
+                self.assertIn("lockSleeping != lastLockSleeping", source)
+
+    def test_app_sleep_state_is_home_and_schedule_aware(self):
+        source = APP.read_text()
+        start = source.index("bool AmoledApp::petIsSleeping() const")
+        end = source.index("void AmoledApp::setSettingsSliderValue(", start)
+        sleep = source[start:end]
+        self.assertIn("Scene::HOME", sleep)
+        self.assertIn("gameState.teamCount == 0", sleep)
+        self.assertIn("petResting", sleep)
+        self.assertIn("Game::isSleepCareTime", sleep)
+
 
 if __name__ == "__main__":
     unittest.main()

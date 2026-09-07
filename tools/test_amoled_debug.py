@@ -86,8 +86,21 @@ class AmoledDebugMigrationTests(unittest.TestCase):
         render = self.home[start:end]
         self.assertIn("DEBUG_TEXT_Y_OFFSET = 8", self.home)
         self.assertIn("y + DEBUG_TEXT_Y_OFFSET", render)
-        self.assertIn("canvas.coordinateScale() >= 2", self.home)
-        self.assertIn("PixelRenderer::text(canvas, x, y, value, color, 1);", self.home)
+        self.assertIn("canvas.nativeText()", self.home)
+        self.assertIn("AmoledUi::nativeCoordinate(x)", self.home)
+
+    def test_native_text_uses_large_glyph_advances(self):
+        renderer = (ROOT / "src" / "presentation" / "PixelRenderer.cpp").read_text(
+            encoding="utf-8"
+        )
+        start = renderer.index("int nativeGlyphAdvance(")
+        end = renderer.index("void drawTextPass(", start)
+        advance = renderer[start:end]
+        self.assertIn("ASCII_CELL_WIDTH * NATIVE_FONT_SCALE", advance)
+        self.assertIn("FontResource::LARGE_GLYPH_W", advance)
+        native_pass = renderer[renderer.index("void drawNativeTextPass(") :]
+        self.assertIn("FontResource::LARGE_GLYPH_H", native_pass)
+        self.assertIn("nativeGlyphAdvance(target, codepoint)", native_pass)
 
     def test_computer_menu_has_compact_geometry(self):
         start = self.home.index("int computerItemAt(")

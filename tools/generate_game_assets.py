@@ -486,12 +486,13 @@ def prepare_shower_assets():
 def validate_explore_tile_mapping():
     source = GAME_ASSETS_SOURCE.read_text(encoding="utf-8")
     match = re.search(
-        r"bool drawExploreTile\(.*?\)\s*\{(.*?)\n\}\n\nKind itemKind",
+        r"bool drawExploreTileTo\(.*?\)\s*\{(.*?)\n\}\n\n"
+        r"bool drawExploreTile\(",
         source,
         re.S,
     )
     if not match:
-        raise ValueError("unable to parse GameAssets::drawExploreTile")
+        raise ValueError("unable to parse GameAssets::drawExploreTileTo")
     mapped_ids = {int(tile_id) for tile_id in re.findall(r"case\s+(\d+)\s*:", match.group(1))}
     expected_ids = (
         {tile_id for _kind, tile_id in EXPLORE_TILES}
@@ -499,7 +500,9 @@ def validate_explore_tile_mapping():
         | ANIMATED_EXPLORE_TILE_IDS
     )
     if mapped_ids != expected_ids:
-        raise ValueError("GameAssets::drawExploreTile mapping does not match EXPLORE_TILES")
+        raise ValueError(
+            "GameAssets::drawExploreTileTo mapping does not match EXPLORE_TILES"
+        )
 
 
 def validate_explore_pickup_pack_mapping():

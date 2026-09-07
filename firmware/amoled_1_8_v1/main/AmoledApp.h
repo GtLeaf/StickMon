@@ -8,6 +8,7 @@
 #endif
 
 #include "TouchInput.h"
+#include "AmoledGeometry.h"
 #include "HomeScreen.h"
 #if STICKMON_HAS_CLAW
 #include "brain/BrainBridge.h"
@@ -50,8 +51,9 @@ public:
     void markRendered();
     void forceFullRender() { requestFullRender(); }
     void forceRenderRows(uint16_t begin, uint16_t end) {
-        begin = std::min<uint16_t>(begin, 224);
-        end = std::min<uint16_t>(std::max<uint16_t>(end, begin), 224);
+        begin = std::min<uint16_t>(begin, AmoledUi::HEIGHT);
+        end = std::min<uint16_t>(std::max<uint16_t>(end, begin),
+                                 AmoledUi::HEIGHT);
         dirtyRowBegin = begin;
         dirtyRowEnd = end;
         dirtyRowsValid = begin < end;
@@ -59,6 +61,13 @@ public:
     bool consumeLockRequest();
     void onWake(uint32_t nowMs);
     bool lockFocusPoint(int16_t& x, int16_t& y) const;
+    bool petIsSleeping() const;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    bool exploreRouteMovingForDiagnostics() const {
+        return sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_ROUTE &&
+               exploreRouteMoving && !exploreRoutePaused;
+    }
+#endif
 
 #if STICKMON_HAS_CLAW
     bool brainSnapshot(Stickmon::BrainBridge::Snapshot& out) const;
@@ -91,6 +100,8 @@ private:
         NONE = 0,
         WALK_TO_DOOR,
         CROSS_DOOR,
+        FADE_OUT,
+        FADE_IN,
     };
 
     void handleTap(int x, int y, uint32_t nowMs);
@@ -160,10 +171,15 @@ private:
     bool updateExploreDeparture(uint32_t nowMs);
     void cancelExploreDeparture();
     bool startExploreRoute(uint32_t nowMs);
+    bool generateExploreRouteMap(uint32_t nowMs);
     bool beginExploreRouteStep(uint32_t nowMs);
     void updateExploreRoute(uint32_t nowMs);
+    void requestExploreRouteDynamicRender();
+    void requestExploreRouteMapAnimationRender();
     bool finishExploreRouteAtEnd(uint32_t nowMs);
-    void resolveExploreStepEvent(uint32_t nowMs);
+    void resolveExploreStepEvent(uint32_t nowMs,
+                                 bool encounterBlockedThisStep,
+                                 bool repelActiveThisStep);
     bool beginExploreEncounter(
         uint32_t nowMs, bool boss = false, uint16_t speciesOverride = 0,
         uint8_t levelOverride = 0, uint16_t experiencePercent = 100,
@@ -183,7 +199,7 @@ private:
     void performBattleBag(uint32_t nowMs);
     void performBattleBagItem(Game::ItemId item, uint32_t nowMs);
     void performBattleFlee(uint32_t nowMs);
-    void pushBattleLog(uint32_t nowMs);
+    void pushBattleLog(uint32_t nowMs, bool invalidate = true);
     void clearBattleLog();
     void finishBattleVictory(uint32_t nowMs);
     void resolveBattleFriendship(uint8_t choice, uint32_t nowMs);
@@ -287,6 +303,7 @@ private:
     bool explorePreviewHidden[ExplorePool::POOL_CAP] = {};
     bool explorePreviewLoadPending = false;
     uint32_t explorePreviewVisualCycle = UINT32_MAX;
+    uint32_t explorePreviewLastRenderRequestMs = 0;
     uint8_t exploreMenuCursor = 0;
     int pressedExploreMenuItem = -1;
     float itemScroll = 0.0f;
@@ -369,6 +386,14 @@ private:
     char showerToast[64] = {};
 
     ExploreMapGenerator::Map exploreRouteMap;
+    uint8_t exploreRouteMapBlock = 0;
+    uint8_t exploreRouteMapBlockCount = 1;
+    uint8_t exploreRouteMapEncounterCount = 0;
+    uint8_t exploreRouteEncounterCooldownSteps = 0;
+    uint8_t exploreRouteGuaranteedEncounterIndex = 0;
+    uint32_t exploreRouteExpeditionSeed = 0;
+    ExploreMapGenerator::Edge exploreRoutePendingEntryEdge =
+        ExploreMapGenerator::Edge::TOP;
     uint8_t exploreRoutePath = 0;
     uint8_t exploreRouteIndex = 0;
     uint8_t exploreRouteDirection = 0;
@@ -385,8 +410,13 @@ private:
     uint32_t exploreRouteMoveStartedMs = 0;
     uint32_t exploreRoutePausedAtMs = 0;
     uint32_t nextExploreRouteFrameMs = 0;
+    uint32_t nextExploreRouteMapFrameMs = 0;
+    uint8_t exploreRouteMapFrame = 0;
     bool exploreRouteMoving = false;
     bool exploreRouteAutoWalk = false;
+    // A player tap is a one-shot command: keep walking until the next
+    // interaction, then stop. This must remain separate from Agent mode.
+    bool exploreRoutePlayerWalkActive = false;
     bool exploreRoutePaused = false;
     bool exploreRouteComplete = false;
     bool exploreRouteExitConfirm = false;
@@ -398,7 +428,10 @@ private:
     uint8_t exploreRoutePickupIndex = 0;
     uint8_t exploreRoutePickupItem = 0;
     bool exploreRoutePickupAvailable = false;
+    bool exploreRouteGuaranteedEncounterPending = false;
+    bool exploreRouteBossScheduled = false;
     bool exploreRouteBossPending = false;
+    uint8_t exploreRouteBossIndex = 0;
     bool exploreRoutePityEligible = false;
     uint16_t exploreRouteBossSpeciesId = 0;
     uint8_t exploreRouteBossLevel = 0;

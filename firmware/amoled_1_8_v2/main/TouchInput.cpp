@@ -11,15 +11,13 @@
 namespace AmoledV2 {
 namespace {
 
-constexpr int PHYSICAL_SCALE = 2;
-constexpr int LOGICAL_WIDTH = 184;
-constexpr int LOGICAL_HEIGHT = 224;
+constexpr int DISPLAY_WIDTH = 368;
+constexpr int DISPLAY_HEIGHT = 448;
 constexpr uint32_t RELEASE_TIMEOUT_MS = 120;
 constexpr char TAG[] = "TouchInput";
 
-int16_t toLogical(uint16_t value, int limit) {
-    return static_cast<int16_t>(
-        std::clamp<int>(value / PHYSICAL_SCALE, 0, limit - 1));
+int16_t toDisplayCoordinate(uint16_t value, int limit) {
+    return static_cast<int16_t>(std::clamp<int>(value, 0, limit - 1));
 }
 
 }  // namespace
@@ -63,8 +61,8 @@ bool TouchInput::poll(uint32_t nowMs, TouchEvent& event) {
 
     if (pointCount > 0) {
         lastTouchMs = nowMs;
-        int16_t x = toLogical(point.x, LOGICAL_WIDTH);
-        int16_t y = toLogical(point.y, LOGICAL_HEIGHT);
+        int16_t x = toDisplayCoordinate(point.x, DISPLAY_WIDTH);
+        int16_t y = toDisplayCoordinate(point.y, DISPLAY_HEIGHT);
         if (!pointerDown) {
             pointerDown = true;
             lastX = x;

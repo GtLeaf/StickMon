@@ -20,6 +20,9 @@ struct TouchEvent {
     uint32_t timestampMs = 0;
 };
 
+// Touch events use the panel's native 368x448 coordinate space. The shared
+// AMOLED application normalizes them at its input boundary for now.
+
 class TouchInput {
 public:
     esp_err_t begin();

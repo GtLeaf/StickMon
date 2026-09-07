@@ -36,6 +36,12 @@ ENEMY_FRONT_MAX_UPSCALE = 1.75
 ENEMY_FRONT_NO_UPSCALE_SPECIES = frozenset({
     1, 7, 10, 11, 16, 74, 172, 183, 194, 261, 280, 285, 361,
 })
+# Pilot set for the first explore area (GRASS_PATH). These species use a
+# higher-resolution FRONT frame while the rest of the roster keeps the
+# existing battle-sized asset until the preview layout is approved.
+EXPLORE_FRONT_2X_SPECIES = frozenset({
+    1, 4, 10, 11, 16, 133, 161, 172, 261, 280,
+})
 PLAYER_BACK_MAX_WIDTH = 105
 PLAYER_BACK_MAX_HEIGHT = 65
 STATUS_PORTRAIT_MAX_WIDTH = 70
@@ -156,7 +162,7 @@ def trim_alpha_padding(img, alpha_threshold=16):
     return img.crop(bounds) if bounds else img
 
 
-def prepare_enemy_battle_front(img, allow_upscale=True):
+def prepare_enemy_battle_front(img, allow_upscale=True, output_scale=1.0):
     trimmed = trim_alpha_padding(img)
     base_width = trimmed.width * BATTLE_SIZE / max(1, img.width)
     base_height = trimmed.height * BATTLE_SIZE / max(1, img.height)
@@ -180,9 +186,10 @@ def prepare_enemy_battle_front(img, allow_upscale=True):
         ENEMY_FRONT_MAX_HEIGHT,
         max(1, int(base_height * scale + 0.5)),
     )
-    return trimmed.resize(
-        (target_width, target_height), Image.Resampling.NEAREST
-    )
+    if output_scale != 1.0:
+        target_width = max(1, int(target_width * output_scale + 0.5))
+        target_height = max(1, int(target_height * output_scale + 0.5))
+    return trimmed.resize((target_width, target_height), Image.Resampling.NEAREST)
 
 
 def prepare_player_battle_back(img):
@@ -409,6 +416,7 @@ def add_base_frames(writer, species_id, ident, missing):
     front = prepare_enemy_battle_front(
         front_source,
         allow_upscale=species_id not in ENEMY_FRONT_NO_UPSCALE_SPECIES,
+        output_scale=2.0 if species_id in EXPLORE_FRONT_2X_SPECIES else 1.0,
     )
     writer.add_frame(species_id, ident, "FRONT", front)
     writer.add_frame(

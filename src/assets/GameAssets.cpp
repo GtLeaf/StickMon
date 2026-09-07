@@ -5,7 +5,9 @@
 #include "core/ResourcePack.h"
 #include "hardware/Hal.h"
 #include "presentation/PixelRenderer.h"
+#include "platform/api/ProgramMemory.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 
@@ -75,10 +77,19 @@ struct FrameRef {
     const Frame* frame = nullptr;
 };
 
+struct DecodedTile {
+    uint16_t* pixels = nullptr;
+    uint8_t* opaqueMask = nullptr;
+    uint16_t width = 0;
+    uint16_t height = 0;
+    bool attempted = false;
+};
+
 bool initialized = false;
 bool resourcePackReady = false;
 AssetPack packs[static_cast<uint8_t>(PackSlot::COUNT)];
 uint16_t frameIndices[static_cast<uint16_t>(Kind::COUNT)];
+DecodedTile decodedTiles[static_cast<uint16_t>(Kind::COUNT)];
 uint16_t* background = nullptr;
 Kind cachedBackground = Kind::COUNT;
 int cachedBackgroundX = -1;
@@ -257,6 +268,95 @@ FrameRef findFrame(Kind kind) {
     return ref;
 }
 
+bool decodeTile(const FrameRef& ref, DecodedTile& tile) {
+    if (!ref.pack || !ref.frame || ref.frame->width == 0 ||
+        ref.frame->height == 0) {
+        return false;
+    }
+    const Frame& frame = *ref.frame;
+    const uint32_t pixelCount = static_cast<uint32_t>(frame.width) *
+                                frame.height;
+    const size_t maskBytes = (pixelCount + 7U) / 8U;
+    tile.pixels = static_cast<uint16_t*>(
+        Platform::memory().allocate(pixelCount * sizeof(uint16_t), true));
+    tile.opaqueMask = static_cast<uint8_t*>(
+        Platform::memory().allocate(maskBytes, true));
+    if (!tile.pixels || !tile.opaqueMask) {
+        if (tile.pixels) Platform::memory().release(tile.pixels);
+        if (tile.opaqueMask) Platform::memory().release(tile.opaqueMask);
+        tile.pixels = nullptr;
+        tile.opaqueMask = nullptr;
+        return false;
+    }
+    // Transparent RLE runs do not write either buffer. PSRAM allocations are
+    // not guaranteed to be zeroed, so stale mask bits would expose stale
+    // colors around transparent tile edges.
+    std::memset(tile.pixels, 0, pixelCount * sizeof(uint16_t));
+    std::memset(tile.opaqueMask, 0, maskBytes);
+
+    auto fail = [&]() {
+        Platform::memory().release(tile.pixels);
+        Platform::memory().release(tile.opaqueMask);
+        tile.pixels = nullptr;
+        tile.opaqueMask = nullptr;
+        return false;
+    };
+
+    const AssetPack& pack = *ref.pack;
+    uint32_t source = 0;
+    uint32_t pixel = 0;
+    while (source < frame.length && pixel < pixelCount) {
+        uint16_t token = Platform::readProgramWord(
+            &pack.data[frame.offset + source++]);
+        uint16_t run = token & 0x7FFF;
+        if (run == 0) continue;
+        if (token & 0x8000) {
+            pixel += std::min<uint32_t>(run, pixelCount - pixel);
+            continue;
+        }
+
+        uint32_t packedWords = (static_cast<uint32_t>(run) + 3U) / 4U;
+        if (source + packedWords > frame.length) return fail();
+        uint16_t packed = 0;
+        uint32_t consumedWords = 0;
+        for (uint16_t index = 0; index < run && pixel < pixelCount;
+             ++index, ++pixel) {
+            if ((index & 0x03) == 0) {
+                packed = Platform::readProgramWord(
+                    &pack.data[frame.offset + source++]);
+                ++consumedWords;
+            }
+            uint8_t paletteIndex =
+                (packed >> ((index & 0x03) * 4)) & 0x0F;
+            if (paletteIndex >= frame.paletteSize) continue;
+            tile.pixels[pixel] = Platform::readProgramWord(
+                &pack.palettes[frame.paletteOffset + paletteIndex]);
+            tile.opaqueMask[pixel >> 3] |=
+                static_cast<uint8_t>(1U << (pixel & 7));
+        }
+        source += packedWords - consumedWords;
+    }
+    if (pixel != pixelCount) return fail();
+    tile.width = frame.width;
+    tile.height = frame.height;
+    return true;
+}
+
+bool drawDecodedTile(Canvas565& canvas, Kind kind, const FrameRef& ref,
+                     int x, int y) {
+    const uint16_t kindIndex = static_cast<uint16_t>(kind);
+    if (kindIndex >= static_cast<uint16_t>(Kind::COUNT)) return false;
+    DecodedTile& tile = decodedTiles[kindIndex];
+    if (!tile.attempted) {
+        tile.attempted = true;
+        if (!decodeTile(ref, tile)) return false;
+    }
+    if (!tile.pixels || !tile.opaqueMask) return false;
+    canvas.drawMaskedAssetImage(
+        x, y, tile.width, tile.height, tile.pixels, tile.opaqueMask);
+    return true;
+}
+
 bool decodeBackgroundViewport(const FrameRef& ref, int cameraX, int cameraY) {
     if (!ref.pack || !ref.frame) return false;
     const Frame& frame = *ref.frame;
@@ -385,7 +485,35 @@ bool drawBackgroundViewport(Kind kind, int cameraX, int cameraY) {
     return true;
 }
 
-bool drawExploreTile(uint16_t tileId, int x, int y, uint8_t animationFrame) {
+bool isExploreTileAnimated(uint16_t tileId) {
+    switch (tileId) {
+    case 48:
+    case 64:
+    case 68:
+    case 72:
+    case 80:
+    case 84:
+    case 273:
+    case 283:
+    case 285:
+    case 288:
+    case 304:
+    case 308:
+    case 312:
+    case 316:
+    case 322:
+    case 324:
+    case 326:
+    case 328:
+    case 336:
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool drawExploreTileTo(Canvas565& canvas, uint16_t tileId, int x, int y,
+                       uint8_t animationFrame) {
     Kind kind = Kind::COUNT;
     uint8_t seaFrame = animationFrame % 8;
     uint8_t waterfallFrame = animationFrame % 4;
@@ -595,7 +723,24 @@ bool drawExploreTile(uint16_t tileId, int x, int y, uint8_t animationFrame) {
     case 4761: kind = Kind::EXPLORE_TILE_4761; break;
     default: return false;
     }
-    return draw(kind, x, y);
+    FrameRef ref = findFrame(kind);
+    if (!ref.frame) return false;
+    if (drawDecodedTile(canvas, kind, ref, x, y)) return true;
+    // Keep the packed path as a graceful fallback if PSRAM is exhausted or a
+    // malformed tile cannot be decoded into the cache.
+    if (&canvas != &PixelRenderer::canvas()) return false;
+    PixelRenderer::drawIndexed4RleScaled(
+        x, y, ref.frame->width, ref.frame->height,
+        ref.pack->data, ref.frame->offset, ref.frame->length,
+        ref.pack->palettes, ref.frame->paletteOffset, ref.frame->paletteSize,
+        1.0f);
+    return true;
+}
+
+bool drawExploreTile(uint16_t tileId, int x, int y,
+                     uint8_t animationFrame) {
+    return drawExploreTileTo(
+        PixelRenderer::canvas(), tileId, x, y, animationFrame);
 }
 
 Kind itemKind(Game::ItemId item) {

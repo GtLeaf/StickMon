@@ -29,6 +29,16 @@ class AmoledDebugNavigationTests(unittest.TestCase):
             "debugCategory = DebugViewModel::Category::ROOT;", handler
         )
 
+    def test_root_bottom_back_returns_to_main_menu(self):
+        source = APP.read_text(encoding="utf-8")
+        start = source.index("void AmoledApp::executeDebugAction(")
+        end = source.index("#endif", start)
+        action = source[start:end]
+        self.assertIn(
+            "sceneFlow.enter(AppSceneFlow::Scene::MAIN_MENU);", action
+        )
+        self.assertNotIn("sceneFlow.closeMenu();", action[action.index("default:") :])
+
 
 if __name__ == "__main__":
     unittest.main()

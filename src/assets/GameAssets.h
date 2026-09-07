@@ -3,6 +3,8 @@
 #include <cstdint>
 #include "game/GameState.h"
 
+class Canvas565;
+
 namespace GameAssets {
 
 enum class Kind : uint16_t {
@@ -345,7 +347,10 @@ bool drawCenteredAlpha(Kind kind, int centerX, int centerY,
                        float scale, uint8_t alpha);
 bool drawBattleBackground(Kind kind);
 bool drawBackgroundViewport(Kind kind, int cameraX, int cameraY);
+bool isExploreTileAnimated(uint16_t tileId);
 bool drawExploreTile(uint16_t tileId, int x, int y, uint8_t animationFrame = 0);
+bool drawExploreTileTo(Canvas565& canvas, uint16_t tileId, int x, int y,
+                       uint8_t animationFrame = 0);
 
 Kind itemKind(Game::ItemId item);
 Kind statusKind(Game::MajorStatus status);

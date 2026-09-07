@@ -24,6 +24,7 @@
 #include "game/ContactRoster.h"
 #include "game/ExploreRouteGeometry.h"
 #include "game/ExploreIceSlide.h"
+#include "game/ExploreRunRules.h"
 #include "game/ExperienceService.h"
 #include "game/FriendshipService.h"
 #include "game/GameRandom.h"
@@ -59,7 +60,24 @@ constexpr uint32_t CARE_TICK_MS = 60000;
 constexpr uint32_t PERIODIC_SAVE_MS = 5UL * 60UL * 1000UL;
 constexpr uint16_t EXPLORE_ROUTE_STEP_MS = 360;
 constexpr uint16_t EXPLORE_ROUTE_FRAME_MS = 90;
-constexpr int EXPLORE_ROUTE_VIEW_HEIGHT = 224 - HOME_HEADER_HEIGHT;
+constexpr uint16_t EXPLORE_ROUTE_MAP_FRAME_MS = 280;
+constexpr uint16_t EXPLORE_SCENE_FADE_MS = 300;
+constexpr uint8_t EXPLORE_MAP_MIN_COUNT[] = {3, 4, 4, 5, 6, 7};
+constexpr uint8_t EXPLORE_MAP_MAX_COUNT[] = {4, 5, 6, 7, 8, 9};
+constexpr uint16_t EXPLORE_ENCOUNTER_CHANCE[] = {
+    500, 600, 700, 900, 1100, 1300,
+};
+constexpr uint8_t EXPLORE_ENCOUNTER_COOLDOWN_STEPS = 5;
+constexpr uint8_t EXPLORE_MAX_ENCOUNTERS_PER_MAP = 2;
+constexpr uint16_t EXPLORE_MAP_PICKUP_CHANCE = 6500;
+constexpr uint32_t EXPLORE_MAP_GENERATION_SAFE_SEED = 1;
+constexpr uint32_t EXPLORE_MAP_GENERATION_RETRY_SALTS[] = {
+    0,
+    0x6D2B79F5U,
+    0x9E3779B9U,
+    0x85EBCA6BU,
+};
+constexpr int EXPLORE_ROUTE_VIEW_HEIGHT = HOME_STATUS_TOP;
 constexpr int EXPLORE_ROUTE_WORLD_WIDTH =
     ExploreMapGenerator::WIDTH * ExploreRouteGeometry::TILE_SIZE;
 constexpr int EXPLORE_ROUTE_WORLD_HEIGHT =
@@ -71,6 +89,10 @@ constexpr uint32_t EXPLORE_PREVIEW_HOLD_MS =
 constexpr float EXPLORE_AREA_CURSOR_LERP = 0.5f;
 constexpr uint32_t EXPLORE_PREVIEW_LOAD_DELAY_MS = 80;
 constexpr uint32_t EXPLORE_PREVIEW_BACKGROUND_LOAD_MS = 80;
+// During the carousel only the three preview sprites change. Keep their
+// invalidation band separate from the full page used by area changes.
+constexpr uint16_t EXPLORE_PREVIEW_RENDER_TOP = EXPLORE_PREVIEW_TOP;
+constexpr uint16_t EXPLORE_PREVIEW_RENDER_BOTTOM = EXPLORE_PREVIEW_BOTTOM;
 constexpr uint16_t BATTLE_ANIMATION_RENDER_END = 192;
 constexpr float FALLBACK_ROOM_MIN_X = 56.0f;
 constexpr float FALLBACK_ROOM_MAX_X = 122.0f;
@@ -115,6 +137,52 @@ constexpr int SHOWER_TOOL_MIN_Y = 36;
 constexpr int SHOWER_TOOL_MAX_Y = 210;
 constexpr float SHOWER_PROGRESS_DISTANCE = 20.0f;
 constexpr uint8_t SHOWER_PROGRESS_MAX = 8;
+
+uint16_t pageRowBegin(uint16_t nativeRow) {
+    return static_cast<uint16_t>(nativeRow / AmoledUi::RESOURCE_SCALE);
+}
+
+uint16_t pageRowEnd(uint16_t nativeRow) {
+    return static_cast<uint16_t>(
+        (nativeRow + AmoledUi::RESOURCE_SCALE - 1) /
+        AmoledUi::RESOURCE_SCALE);
+}
+
+constexpr uint8_t exploreMapCountForRoll(uint8_t area, uint8_t roll) {
+    uint8_t minCount = EXPLORE_MAP_MIN_COUNT[area];
+    uint8_t maxCount = EXPLORE_MAP_MAX_COUNT[area];
+    return maxCount == minCount
+        ? minCount
+        : (maxCount == minCount + 1
+            ? (roll < 50 ? minCount : maxCount)
+            : (roll < 25
+                ? minCount
+                : (roll < 75 ? minCount + 1 : maxCount)));
+}
+
+constexpr uint8_t exploreCooldownAfterStep(uint8_t cooldown) {
+    return cooldown > 0 ? cooldown - 1 : 0;
+}
+
+constexpr bool exploreEncounterGateOpen(uint8_t cooldown,
+                                        uint8_t encounterCount) {
+    return cooldown == 0 &&
+           encounterCount < EXPLORE_MAX_ENCOUNTERS_PER_MAP;
+}
+
+constexpr bool exploreCanScheduleGuaranteedEncounter(uint8_t pointCount,
+                                                     uint8_t cooldown) {
+    return pointCount >= 3 && cooldown + 1 <= pointCount - 2;
+}
+
+constexpr uint8_t exploreGuaranteedEncounterIndex(uint8_t pointCount,
+                                                  uint8_t cooldown) {
+    return pointCount * 2 / 3 < cooldown + 1
+        ? cooldown + 1
+        : (pointCount * 2 / 3 > pointCount - 2
+            ? pointCount - 2
+            : pointCount * 2 / 3);
+}
 constexpr RoomResource::Point FALLBACK_WALK_POLYGON[] = {
     {static_cast<int16_t>(FALLBACK_ROOM_MIN_X),
      static_cast<int16_t>(FALLBACK_ROOM_MIN_Y)},
@@ -557,21 +625,59 @@ bool AmoledApp::updateExploreDeparture(uint32_t nowMs) {
         expeditionDeparturePhase == ExpeditionDeparturePhase::NONE) {
         return false;
     }
-    if (sceneFlow.current() != AppSceneFlow::Scene::HOME) {
+    if (expeditionDeparturePhase != ExpeditionDeparturePhase::FADE_IN &&
+        sceneFlow.current() != AppSceneFlow::Scene::HOME) {
         sceneFlow.goHome();
         requestFullRender();
+    }
+
+    if (expeditionDeparturePhase == ExpeditionDeparturePhase::FADE_OUT) {
+        uint32_t elapsed = nowMs - expeditionDepartureStartedMs;
+        if (elapsed < EXPLORE_SCENE_FADE_MS) {
+            requestFullRender();
+            return true;
+        }
+
+        uint8_t area = pendingExpeditionArea;
+        bool autoWalk = pendingExpeditionAutoWalk;
+        bool started = false;
+        if (area < Game::EXPLORE_AREA_COUNT) {
+            if (area != selectedExploreArea) selectExploreArea(area, nowMs);
+            started = startExploreRoute(nowMs);
+        }
+        pendingExpedition = false;
+        exploreRouteAutoWalk = started && autoWalk;
+        autonomousExpedition = started && autoWalk;
+        expeditionDeparturePhase = started
+            ? ExpeditionDeparturePhase::FADE_IN
+            : ExpeditionDeparturePhase::NONE;
+        expeditionDepartureStartedMs = nowMs;
+        Platform::logf(
+            "[AmoledExplore] departure complete area=%u route=%u auto=%u\n",
+            static_cast<unsigned>(area), started ? 1U : 0U,
+            autoWalk ? 1U : 0U);
+        requestFullRender();
+        return true;
+    }
+
+    if (expeditionDeparturePhase == ExpeditionDeparturePhase::FADE_IN) {
+        uint32_t elapsed = nowMs - expeditionDepartureStartedMs;
+        if (elapsed >= EXPLORE_SCENE_FADE_MS) {
+            expeditionDeparturePhase = ExpeditionDeparturePhase::NONE;
+            expeditionDepartureStartedMs = 0;
+        }
+        requestFullRender();
+        return true;
     }
 
     if (expeditionDeparturePhase == ExpeditionDeparturePhase::NONE) {
         RoomResource& room = RoomResource::ins();
         if (!room.available() || room.doorwayPolygonCount() < 3) {
-            // A malformed/missing room pack must not strand the Agent. Keep
-            // the route functional and log why the visual transition was
-            // skipped.
-            pendingExpedition = false;
-            bool started = startExploreRoute(nowMs);
-            exploreRouteAutoWalk = started && pendingExpeditionAutoWalk;
-            autonomousExpedition = started && pendingExpeditionAutoWalk;
+            // A malformed room pack cannot provide a doorway path, but the
+            // scene transition must still remain coherent.
+            expeditionDeparturePhase = ExpeditionDeparturePhase::FADE_OUT;
+            expeditionDepartureStartedMs = nowMs;
+            requestFullRender();
             return true;
         }
         expeditionDoorInsideX = static_cast<float>(room.doorwayInsideX());
@@ -621,23 +727,11 @@ bool AmoledApp::updateExploreDeparture(uint32_t nowMs) {
             return true;
         }
 
-        uint8_t area = pendingExpeditionArea;
-        bool autoWalk = pendingExpeditionAutoWalk;
-        pendingExpedition = false;
-        expeditionDeparturePhase = ExpeditionDeparturePhase::NONE;
         petMotion = PetMotion::IDLE;
         petTargetX = petX;
         petTargetY = petY;
-        bool started = false;
-        if (area < Game::EXPLORE_AREA_COUNT) {
-            if (area != selectedExploreArea) selectExploreArea(area, nowMs);
-            started = startExploreRoute(nowMs);
-        }
-        exploreRouteAutoWalk = started && autoWalk;
-        autonomousExpedition = started && autoWalk;
-        Platform::logf("[AmoledExplore] departure complete area=%u route=%u auto=%u\n",
-                       static_cast<unsigned>(area), started ? 1U : 0U,
-                       autoWalk ? 1U : 0U);
+        expeditionDeparturePhase = ExpeditionDeparturePhase::FADE_OUT;
+        expeditionDepartureStartedMs = nowMs;
         requestFullRender();
         return true;
     }
@@ -783,7 +877,35 @@ bool AmoledApp::brainSay(const char* text) {
 }
 #endif
 
-void AmoledApp::handleTouch(const TouchEvent& event) {
+void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
+    // TouchInput exposes native 368x448 coordinates. The current shared page
+    // profile remains 184x224, so normalize once at the application boundary.
+    const TouchEvent event{
+        physicalEvent.type,
+        static_cast<int16_t>(physicalEvent.x / 2),
+        static_cast<int16_t>(physicalEvent.y / 2),
+        physicalEvent.timestampMs};
+    // Temporary shop diagnostics also run in release builds. Skip MOVE to
+    // avoid serial traffic affecting touch responsiveness.
+    const bool shopTouch = sceneFlow.current() == AppSceneFlow::Scene::SHOP;
+    if (shopTouch && event.type != TouchEventType::MOVE) {
+        Platform::logf(
+            "[ShopTouch] t=%lu event=%s raw=%d,%d ui=%d,%d hit=%d "
+            "detail=%d item=%d pointer=%d dragging=%d fade=%d\n",
+            static_cast<unsigned long>(event.timestampMs),
+            event.type == TouchEventType::DOWN ? "DOWN" : "UP",
+            physicalEvent.x, physicalEvent.y, event.x, event.y,
+            itemConfirmChoiceAt(event.x, event.y), itemConfirmOpen,
+            static_cast<int>(pendingItem), pointerDown, dragging,
+            static_cast<int>(expeditionDeparturePhase));
+    }
+    if (expeditionDeparturePhase == ExpeditionDeparturePhase::FADE_OUT ||
+        expeditionDeparturePhase == ExpeditionDeparturePhase::FADE_IN) {
+        if (shopTouch && event.type != TouchEventType::MOVE) {
+            Platform::logLine("[ShopTouch] rejected=departure_fade");
+        }
+        return;
+    }
     switch (event.type) {
     case TouchEventType::DOWN:
         if (pendingExpedition ||
@@ -797,6 +919,9 @@ void AmoledApp::handleTouch(const TouchEvent& event) {
         autonomousExpedition = false;
         exploreRouteAutoWalk = false;
 #endif
+        // A touch cancels the current one-shot player walk. A route tap below
+        // may start a new walk-to-interaction command.
+        exploreRoutePlayerWalkActive = false;
         pointerDown = true;
         lastInteractionMs = event.timestampMs;
         dragging = false;
@@ -816,13 +941,12 @@ void AmoledApp::handleTouch(const TouchEvent& event) {
             }
             requestRenderRows(0, 224);
 #endif
-        } else if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_AREAS &&
-                   event.y >= MENU_HEADER_HEIGHT) {
+        } else if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_AREAS) {
             pressedExploreArea = exploreAreaAt(
                 event.x, event.y, selectedExploreArea,
                 ExploreItemProgression::visibleAreaCount(gameState));
             exploreDragStartArea = selectedExploreArea;
-            requestRenderRows(MENU_HEADER_HEIGHT, 224);
+            requestRenderRows(0, EXPLORE_SELECTOR_TOP_HEIGHT);
         } else if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_MENU) {
             pressedExploreMenuItem = exploreRouteMenuItemAt(event.x, event.y);
             requestRenderRows(0, 224);
@@ -914,8 +1038,7 @@ void AmoledApp::handleTouch(const TouchEvent& event) {
             itemVelocity = 0.0f;
             if (itemConfirmOpen) {
                 pressedShopDetailAction =
-                    shopDetailProgress >= 1.0f
-                        ? itemConfirmChoiceAt(event.x, event.y) : -1;
+                    itemConfirmChoiceAt(event.x, event.y);
             } else {
                 ShopViewModel::Mode mode =
                     shopCategory == Game::ShopService::Category::SELL
@@ -980,8 +1103,18 @@ void AmoledApp::handleTouch(const TouchEvent& event) {
             }
 #endif
         } else if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_AREAS &&
-                   touchStartY >= MENU_HEADER_HEIGHT) {
+                   touchStartY < EXPLORE_SELECTOR_TOP_HEIGHT) {
             if (std::abs(event.y - touchStartY) > DRAG_START_SLOP) {
+                // Scene selection is a horizontal carousel. A vertical move
+                // still cancels the press, but does not select an area.
+                if (std::abs(event.x - touchStartX) <= DRAG_START_SLOP) {
+                    pressedExploreArea = -1;
+                    dragging = true;
+                    requestRenderRows(0, EXPLORE_SELECTOR_TOP_HEIGHT);
+                    break;
+                }
+            }
+            if (std::abs(event.x - touchStartX) > DRAG_START_SLOP) {
                 dragging = true;
                 pressedExploreArea = -1;
             }
@@ -991,15 +1124,15 @@ void AmoledApp::handleTouch(const TouchEvent& event) {
                     Game::EXPLORE_AREA_COUNT);
                 int startArea = exploreDragStartArea >= 0
                     ? exploreDragStartArea : selectedExploreArea;
-                int candidate = startArea - static_cast<int>(std::lround(
-                    (event.y - touchStartY) /
+                int candidate = startArea + static_cast<int>(std::lround(
+                    (event.x - touchStartX) /
                     static_cast<float>(EXPLORE_SELECTOR_AREA_SPACING)));
                 candidate = std::clamp(candidate, 0, std::max(0, count - 1));
                 if (candidate != selectedExploreArea) {
                     selectExploreArea(static_cast<uint8_t>(candidate),
                                       event.timestampMs);
                 }
-                requestRenderRows(MENU_HEADER_HEIGHT, 224);
+                requestRenderRows(0, EXPLORE_PREVIEW_RENDER_BOTTOM);
             }
         } else if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_MENU &&
                    std::max(std::abs(event.x - touchStartX),
@@ -1093,11 +1226,17 @@ void AmoledApp::handleTouch(const TouchEvent& event) {
         break;
 
     case TouchEventType::UP: {
-        if (!pointerDown) break;
+        if (!pointerDown) {
+            if (shopTouch) Platform::logLine("[ShopTouch] rejected=no_down");
+            break;
+        }
         int distance = std::max(std::abs(event.x - touchStartX),
                                 std::abs(event.y - touchStartY));
         bool settingsSliderWasDragging = settingsSliderDragging;
         if (settingsSliderWasDragging) {
+            if (shopTouch) {
+                Platform::logLine("[ShopTouch] intercepted=settings_slider");
+            }
             setSettingsSliderValue(settingsPressedItem, event.x,
                                    event.timestampMs);
             if (settingsSliderChanged) {
@@ -1110,8 +1249,32 @@ void AmoledApp::handleTouch(const TouchEvent& event) {
                              event.timestampMs);
                 }
             }
+        } else if (sceneFlow.current() == AppSceneFlow::Scene::SHOP &&
+                   itemConfirmOpen) {
+            // Detail buttons are not scrollable. A release inside the same
+            // button remains a tap even if the finger drifted beyond TAP_SLOP.
+            const int startChoice = itemConfirmChoiceAt(touchStartX, touchStartY);
+            const int endChoice = itemConfirmChoiceAt(event.x, event.y);
+            const char* decision = dragging ? "rejected=dragging"
+                : startChoice < 0 ? "rejected=start_outside"
+                : endChoice < 0 ? "rejected=end_outside"
+                : startChoice != endChoice ? "rejected=different_button"
+                : "accepted";
+            Platform::logf(
+                "[ShopTouch] %s start=%d,%d start_hit=%d end_hit=%d "
+                "distance=%d\n",
+                decision, touchStartX, touchStartY, startChoice, endChoice,
+                distance);
+            if (!dragging && startChoice >= 0 &&
+                startChoice == itemConfirmChoiceAt(event.x, event.y)) {
+                handleTap(event.x, event.y, event.timestampMs);
+            }
         } else if (!dragging && distance <= TAP_SLOP) {
+            if (shopTouch) Platform::logLine("[ShopTouch] list_tap=accepted");
             handleTap(event.x, event.y, event.timestampMs);
+        } else if (shopTouch) {
+            Platform::logf("[ShopTouch] list_tap=rejected dragging=%d distance=%d\n",
+                           dragging, distance);
         }
         pointerDown = false;
         dragging = false;
@@ -1281,15 +1444,24 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
 
     if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_ROUTE) {
         if (exploreRouteIceSliding) return;
+        if (exploreRouteComplete) {
+            leaveExploreRoute();
+            return;
+        }
         if (exploreRoutePrompt != ExploreRouteViewModel::Prompt::NONE) {
             int choice = exploreRoutePromptChoiceAt(x, y);
             if (choice == 0) {
                 exploreRoutePrompt = ExploreRouteViewModel::Prompt::NONE;
-                // Match Stick's resume flow: continue walking until the next
-                // route interaction stops the player-controlled run.
-                exploreRouteAutoWalk = true;
+                // Continue the same one-shot player command. Agent mode keeps
+                // its persistent auto-walk flag independently.
+                if (autonomousExpedition) {
+                    exploreRouteAutoWalk = true;
+                } else {
+                    exploreRoutePlayerWalkActive = true;
+                    exploreRouteAutoWalk = false;
+                }
                 setToast(Ui::Amoled::OPEN, nowMs);
-                beginExploreRouteStep(nowMs);
+                if (!exploreRouteMoving) beginExploreRouteStep(nowMs);
                 requestRenderRows(HOME_HEADER_HEIGHT, 224);
             } else if (choice == 1) {
                 exploreRoutePrompt = ExploreRouteViewModel::Prompt::NONE;
@@ -1314,6 +1486,11 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             requestRenderRows(HOME_HEADER_HEIGHT, 224);
             return;
         }
+        if (exploreRouteBagAt(x, y)) {
+            pauseExploreRoute(nowMs);
+            openItemScene(AppSceneFlow::Scene::BAG);
+            return;
+        }
         if (exploreRouteMenuAt(x, y)) {
             pauseExploreRoute(nowMs);
             sceneFlow.openExploreMenu();
@@ -1323,18 +1500,15 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             return;
         }
         if (exploreRouteMapAt(x, y)) {
-            if (exploreRouteComplete) {
-                leaveExploreRoute();
-            } else {
-                // Match Stick's beginAutoWalk(): one player tap walks through
-                // route points until the next interaction. It is a command,
-                // not a toggle; menu/back remain the explicit pause controls.
-                exploreRouteAutoWalk = true;
-                if (!exploreRouteMoving) {
-                    beginExploreRouteStep(nowMs);
-                }
-                requestRenderRows(200, 224);
+            // Match Stick's beginAutoWalk(): one player tap walks through
+            // route points until the next interaction. It is not Agent
+            // mode and must not leave automatic exploration enabled.
+            exploreRoutePlayerWalkActive = true;
+            exploreRouteAutoWalk = false;
+            if (!exploreRouteMoving) {
+                beginExploreRouteStep(nowMs);
             }
+            requestRenderRows(0, EXPLORE_ROUTE_VIEW_HEIGHT);
         }
         return;
     }
@@ -1856,8 +2030,11 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
 
     if (sceneFlow.current() == AppSceneFlow::Scene::SHOP) {
         if (itemConfirmOpen) {
-            if (shopDetailProgress < 1.0f) return;
             int choice = itemConfirmChoiceAt(x, y);
+            Platform::logf("[ShopAction] t=%lu tap=%s item=%d\n",
+                           static_cast<unsigned long>(nowMs),
+                           choice == 0 ? "transaction" : choice == 1 ? "back" : "outside",
+                           static_cast<int>(pendingItem));
             if (choice == 0) {
                 performPendingItemAction(nowMs);
             } else if (choice == 1) {
@@ -1869,6 +2046,7 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
                 pressedShopDetailAction = -1;
                 toast = nullptr;
                 requestFullRender();
+                Platform::logLine("[ShopAction] detail_closed render_requested");
             }
             return;
         }
@@ -1904,46 +2082,46 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
         itemConfirmOpen = pendingItem != Game::ItemId::COUNT;
         shopDetailItemIndex = index;
         shopDetailProgress = 1.0f;
+        Platform::logf("[ShopAction] detail_open=%d item=%d action=%s\n",
+                       itemConfirmOpen, static_cast<int>(pendingItem),
+                       pendingItemAction == PendingItemAction::SELL ? "sell" : "buy");
+        Platform::logLine(
+            "[ShopTouch] ui_rects: hit=0 x=[18,88) y=[174,210); "
+            "hit=1 x=[96,166) y=[174,210); hit=-1 outside");
         toast = nullptr;
         requestFullRender();
         return;
     }
 
     if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_AREAS) {
-        if (exploreBackAt(x, y)) {
+        if (exploreSelectionBackAt(x, y)) {
             clearExplorePreview();
             sceneFlow.openMenu(AppSceneFlow::Scene::HOME);
             toast = nullptr;
             requestFullRender();
             return;
         }
-        if (exploreMenuAt(x, y)) {
-            sceneFlow.openMenu();
-            menuScroll = 0.0f;
-            menuVelocity = 0.0f;
-            toast = nullptr;
+        if (exploreStartAt(x, y)) {
+            if (!ExploreItemProgression::isAreaUnlocked(
+                    selectedExploreArea, gameState)) {
+                setToast(Ui::Explore::AREA_LOCKED, nowMs);
+            } else {
+                queueExploreDeparture(selectedExploreArea, false);
+            }
             requestFullRender();
             return;
         }
         int area = exploreAreaAt(
             x, y, selectedExploreArea,
             ExploreItemProgression::visibleAreaCount(gameState));
-        if (area < 0 && x >= EXPLORE_SELECTOR_LEFT_WIDTH &&
-            y >= MENU_HEADER_HEIGHT && y < 224) {
-            area = selectedExploreArea;
-        }
         if (area >= 0) {
-            if (ExploreItemProgression::isAreaUnlocked(area, gameState)) {
-                if (selectedExploreArea == static_cast<uint8_t>(area)) {
-                    queueExploreDeparture(static_cast<uint8_t>(area), false);
-                } else {
-                    selectExploreArea(static_cast<uint8_t>(area), nowMs);
-                    toast = nullptr;
-                }
-            } else {
-                setToast(Ui::Explore::AREA_LOCKED, nowMs);
+            // Visible areas can be selected before they are unlocked. The
+            // locked state is communicated by the disabled departure button.
+            if (selectedExploreArea != static_cast<uint8_t>(area)) {
+                selectExploreArea(static_cast<uint8_t>(area), nowMs);
+                toast = nullptr;
             }
-            requestRenderRows(MENU_HEADER_HEIGHT, 224);
+            requestRenderRows(0, EXPLORE_SELECTOR_BUTTON_TOP);
         }
         return;
     }
@@ -2003,6 +2181,7 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
         } else if (entry.target == AppSceneFlow::Scene::HOME) {
             exploreRouteMoving = false;
             exploreRouteAutoWalk = false;
+            exploreRoutePlayerWalkActive = false;
             exploreRoutePaused = false;
             exploreRouteExitConfirm = false;
             sceneFlow.goHome();
@@ -2121,14 +2300,14 @@ void AmoledApp::update(uint32_t nowMs) {
         if (std::fabs(difference) < 0.05f) {
             if (exploreAreaAnimCursor != target) {
                 exploreAreaAnimCursor = target;
-                requestRenderRows(MENU_HEADER_HEIGHT, 224);
+                requestRenderRows(0, EXPLORE_SELECTOR_TOP_HEIGHT);
             }
         } else {
             exploreAreaAnimCursor += difference * EXPLORE_AREA_CURSOR_LERP;
             if (std::fabs(target - exploreAreaAnimCursor) < 0.05f) {
                 exploreAreaAnimCursor = target;
             }
-            requestRenderRows(MENU_HEADER_HEIGHT, 224);
+            requestRenderRows(0, EXPLORE_SELECTOR_TOP_HEIGHT);
         }
         exploreAreaAnimating = std::fabs(target - exploreAreaAnimCursor) >= 0.05f;
 
@@ -2136,14 +2315,16 @@ void AmoledApp::update(uint32_t nowMs) {
             static_cast<int32_t>(nowMs - explorePreviewNextLoadAt) >= 0;
         updateExplorePreviewLoading(nowMs);
         if (previewLoadWasDue) {
-            requestRenderRows(MENU_HEADER_HEIGHT, 224);
+            requestRenderRows(EXPLORE_PREVIEW_RENDER_TOP,
+                              EXPLORE_PREVIEW_RENDER_BOTTOM);
         }
         if (explorePreviewPool.count > 0) {
             uint32_t elapsed = nowMs - explorePreviewStartedAt;
             uint32_t visualCycle = elapsed / EXPLORE_PREVIEW_CYCLE_MS;
             if (visualCycle != explorePreviewVisualCycle) {
                 explorePreviewVisualCycle = visualCycle;
-                requestRenderRows(MENU_HEADER_HEIGHT, 224);
+                requestRenderRows(EXPLORE_PREVIEW_RENDER_TOP,
+                                  EXPLORE_PREVIEW_RENDER_BOTTOM);
             }
             explorePreviewMoving =
                 elapsed % EXPLORE_PREVIEW_CYCLE_MS >
@@ -2332,9 +2513,15 @@ void AmoledApp::update(uint32_t nowMs) {
         }
     }
 
-    if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_AREAS &&
-        (exploreAreaAnimating || explorePreviewMoving)) {
-        requestRenderRows(MENU_HEADER_HEIGHT, 224);
+    if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_AREAS) {
+        if (exploreAreaAnimating) {
+            requestRenderRows(0, EXPLORE_SELECTOR_TOP_HEIGHT);
+        } else if (explorePreviewMoving &&
+                   nowMs - explorePreviewLastRenderRequestMs >= 33) {
+            explorePreviewLastRenderRequestMs = nowMs;
+            requestRenderRows(EXPLORE_PREVIEW_RENDER_TOP,
+                              EXPLORE_PREVIEW_RENDER_BOTTOM);
+        }
     }
     uint32_t idleTimeoutMs = 0;
     switch (gameState.settings.idleTimeoutIndex) {
@@ -2467,34 +2654,46 @@ bool AmoledApp::startExploreRoute(uint32_t nowMs) {
         return false;
     }
 
-    uint32_t baseSeed = gameState.gameMinutesTotal * 2654435761UL;
-    baseSeed ^= static_cast<uint32_t>(gameState.team[0].speciesId) * 97UL;
-    baseSeed ^= static_cast<uint32_t>(selectedExploreArea + 1) * 2246822519UL;
-    static constexpr uint32_t RETRY_SALTS[] = {
-        0x00000000UL, 0x9E3779B9UL, 0xA341316CUL, 0xC8013EA4UL,
-    };
-    bool generated = false;
-    for (uint32_t salt : RETRY_SALTS) {
-        uint32_t seed = baseSeed ^ salt;
-        if (seed == 0) seed = 1;
-        if (ExploreMapGenerator::generate(
-                seed, ExploreMapGenerator::Edge::TOP,
-                selectedExploreArea, exploreRouteMap)) {
-            generated = true;
-            break;
+    // Keep every possible encounter for this area resident before walking
+    // starts. This moves sprite decompression to route entry instead of a
+    // random encounter frame.
+    AmoledEncounterTable encounterTable =
+        encounterTableForArea(selectedExploreArea);
+    uint16_t routeSpecies[ExplorePool::MAX_SOURCE_ENTRIES + 1] = {};
+    uint8_t routeSpeciesCount = 0;
+    for (uint8_t index = 0; index < encounterTable.count; ++index) {
+        uint16_t speciesId = encounterTable.entries[index].speciesId;
+        if (speciesId == 0) continue;
+        bool duplicate = false;
+        for (uint8_t previous = 0; previous < routeSpeciesCount; ++previous) {
+            if (routeSpecies[previous] == speciesId) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (!duplicate && routeSpeciesCount <
+            ExplorePool::MAX_SOURCE_ENTRIES) {
+            routeSpecies[routeSpeciesCount++] = speciesId;
         }
     }
-    if (!generated || exploreRouteMap.pathCount == 0 ||
-        exploreRouteMap.paths[0].pointCount == 0) {
-        setToast(Ui::Amoled::MAP_FAILED, nowMs);
-        return false;
-    }
+    exploreRouteMapBlock = 0;
+    exploreRouteMapBlockCount = exploreMapCountForRoll(
+        selectedExploreArea,
+        static_cast<uint8_t>(GameRandom::range(0, 100)));
+    exploreRouteMapEncounterCount = 0;
+    exploreRouteEncounterCooldownSteps = 0;
+    exploreRouteGuaranteedEncounterIndex = 0;
+    exploreRouteGuaranteedEncounterPending = false;
+    exploreRouteExpeditionSeed = static_cast<uint32_t>(
+        GameRandom::range(1, 0x7FFFFFFFU));
+    exploreRoutePendingEntryEdge = static_cast<ExploreMapGenerator::Edge>(
+        (exploreRouteExpeditionSeed >> 8) & 0x03U);
 
-    exploreRoutePath = 0;
     exploreRouteIndex = 0;
     exploreRouteSteps = 0;
     exploreRouteMoving = false;
     exploreRouteAutoWalk = false;
+    exploreRoutePlayerWalkActive = false;
     exploreRoutePaused = false;
     exploreRouteComplete = false;
     exploreRouteExitConfirm = false;
@@ -2505,6 +2704,8 @@ bool AmoledApp::startExploreRoute(uint32_t nowMs) {
     exploreRoutePickupIndex = 0;
     exploreRoutePickupItem = EXPLORE_PICKUP_NONE;
     exploreRoutePickupAvailable = false;
+    exploreRouteBossScheduled = false;
+    exploreRouteBossIndex = 0;
     exploreRouteBossPending = false;
     exploreRoutePityEligible = false;
     exploreRouteBossSpeciesId = 0;
@@ -2512,9 +2713,10 @@ bool AmoledApp::startExploreRoute(uint32_t nowMs) {
     exploreRouteBossExperiencePercent = 100;
     exploreRouteSpecialKind = ExploreSpecial::Kind::NONE;
     exploreItemEffects.reset();
-    const ExploreMapGenerator::Path& initialPath =
-        exploreRouteMap.paths[exploreRoutePath];
-    if (ExploreBoss::canPlaceOnPath(initialPath.pointCount)) {
+    bool bossLengthEligible = ExploreRunRules::allowsRegionalBoss(
+        exploreRouteMapBlockCount,
+        EXPLORE_MAP_MAX_COUNT[selectedExploreArea]);
+    if (bossLengthEligible) {
         uint32_t slotIndex = ExploreSpecial::slotIndexFor(
             gameState.gameMinutesTotal);
         if (ExploreBossPity::syncSlot(gameState, slotIndex)) saveState();
@@ -2535,7 +2737,7 @@ bool AmoledApp::startExploreRoute(uint32_t nowMs) {
         if (exploreRouteSpecialKind != ExploreSpecial::Kind::NONE) {
             ExploreSpecial::Config config = ExploreSpecial::configFor(
                 exploreRouteSpecialKind);
-            exploreRouteBossPending = true;
+            exploreRouteBossScheduled = true;
             exploreRouteBossSpeciesId = config.speciesId;
             exploreRouteBossLevel = ExploreSpecial::encounterLevel(
                 exploreRouteSpecialKind,
@@ -2543,12 +2745,12 @@ bool AmoledApp::startExploreRoute(uint32_t nowMs) {
             exploreRouteBossExperiencePercent = config.experiencePercent;
         } else {
             uint8_t misses = gameState.normalBossMissCount[selectedExploreArea];
-            bool guaranteed = ExploreBossPity::requiresGuaranteedEligibleRun(misses);
             uint32_t chance = ExploreBossPity::chanceForMisses(misses);
-            if (guaranteed || GameRandom::range(0, ExploreBoss::SPAWN_ROLL_MAX) < chance) {
+            if (ExploreBossPity::requiresGuaranteedEligibleRun(misses) ||
+                GameRandom::range(0, ExploreBoss::SPAWN_ROLL_MAX) < chance) {
                 const ExploreBoss::Config& config =
                     ExploreBoss::configForArea(selectedExploreArea);
-                exploreRouteBossPending = true;
+                exploreRouteBossScheduled = true;
                 exploreRouteBossSpeciesId = ExploreBoss::speciesForRoll(
                     selectedExploreArea,
                     GameRandom::range(0, ExploreBoss::CANDIDATE_COUNT));
@@ -2559,24 +2761,113 @@ bool AmoledApp::startExploreRoute(uint32_t nowMs) {
             }
         }
     }
-    exploreRouteDirection = exploreInwardDirection(exploreRouteMap.entry.edge);
+
+    if (exploreRouteBossScheduled && exploreRouteBossSpeciesId != 0) {
+        bool bossAlreadyIncluded = false;
+        for (uint8_t index = 0; index < routeSpeciesCount; ++index) {
+            if (routeSpecies[index] == exploreRouteBossSpeciesId) {
+                bossAlreadyIncluded = true;
+                break;
+            }
+        }
+        if (!bossAlreadyIncluded &&
+            routeSpeciesCount < ExplorePool::MAX_SOURCE_ENTRIES + 1) {
+            routeSpecies[routeSpeciesCount++] = exploreRouteBossSpeciesId;
+        }
+    }
+    PokemonSprites::setPinnedDynamicSpecies(routeSpecies, routeSpeciesCount);
+    PokemonSprites::preloadDynamicSpecies(routeSpecies, routeSpeciesCount);
+
+    if (!generateExploreRouteMap(nowMs)) return false;
     exploreRoutePetFrame = 0;
-    ExploreRouteGeometry::WorldPoint start =
-        ExploreRouteGeometry::pathPoint(exploreRouteMap.paths[0], 0);
-    exploreRouteWorldX = exploreRouteFromX = exploreRouteTargetX = start.x;
-    exploreRouteWorldY = exploreRouteFromY = exploreRouteTargetY = start.y;
+    exploreRouteMapFrame = 0;
     nextExploreRouteFrameMs = nowMs;
-    updateExploreRouteCamera();
-    placeExploreRoutePickup();
+    nextExploreRouteMapFrameMs = nowMs + EXPLORE_ROUTE_MAP_FRAME_MS;
     sceneFlow.enterExploreRoute();
     toast = nullptr;
-    Platform::logf(
-        "[AmoledExplore] area=%u seed=%08lx fingerprint=%08lx points=%u\n",
-        static_cast<unsigned>(selectedExploreArea),
-        static_cast<unsigned long>(exploreRouteMap.seed),
-        static_cast<unsigned long>(
-            ExploreMapGenerator::fingerprint(exploreRouteMap)),
-        static_cast<unsigned>(exploreRouteMap.paths[0].pointCount));
+    requestFullRender();
+    return true;
+}
+
+bool AmoledApp::generateExploreRouteMap(uint32_t nowMs) {
+    uint32_t mapSeed = ExploreMapGenerator::deriveSeed(
+        exploreRouteExpeditionSeed, exploreRouteMapBlock,
+        selectedExploreArea);
+    bool generated = false;
+    for (uint32_t salt : EXPLORE_MAP_GENERATION_RETRY_SALTS) {
+        uint32_t candidateSeed = mapSeed ^ salt;
+        if (candidateSeed == 0) candidateSeed = EXPLORE_MAP_GENERATION_SAFE_SEED;
+        if (ExploreMapGenerator::generate(
+                candidateSeed, exploreRoutePendingEntryEdge,
+                selectedExploreArea, exploreRouteMap)) {
+            generated = true;
+            break;
+        }
+    }
+    if (!generated) {
+        generated = ExploreMapGenerator::generate(
+            EXPLORE_MAP_GENERATION_SAFE_SEED,
+            exploreRoutePendingEntryEdge, selectedExploreArea,
+            exploreRouteMap);
+    }
+    if (!generated || exploreRouteMap.pathCount == 0) {
+        setToast(Ui::Amoled::MAP_FAILED, nowMs);
+        return false;
+    }
+
+    exploreRoutePath = 0;
+    if (exploreRouteMapBlock + 1 == exploreRouteMapBlockCount &&
+        exploreRouteBossScheduled) {
+        uint8_t bossPaths[ExploreMapGenerator::PATH_COUNT] = {};
+        uint8_t bossPathCount = 0;
+        for (uint8_t path = 0; path < exploreRouteMap.pathCount; ++path) {
+            if (ExploreBoss::canPlaceOnPath(
+                    exploreRouteMap.paths[path].pointCount)) {
+                bossPaths[bossPathCount++] = path;
+            }
+        }
+        if (bossPathCount > 0) {
+            exploreRoutePath = bossPaths[
+                GameRandom::range(0, bossPathCount)];
+        }
+    } else if (exploreRouteMap.pathCount > 1) {
+        exploreRoutePath = static_cast<uint8_t>(
+            GameRandom::range(0, exploreRouteMap.pathCount));
+    }
+
+    const ExploreMapGenerator::Path& path =
+        exploreRouteMap.paths[exploreRoutePath];
+    if (path.pointCount == 0) {
+        setToast(Ui::Amoled::MAP_FAILED, nowMs);
+        return false;
+    }
+    exploreRouteMapEncounterCount = 0;
+    exploreRouteBossPending = false;
+    exploreRouteBossIndex = 0;
+    if (exploreRouteMapBlock + 1 == exploreRouteMapBlockCount &&
+        exploreRouteBossScheduled && ExploreBoss::canPlaceOnPath(
+            path.pointCount)) {
+        uint8_t preferred = ExploreBoss::routeIndex(path.pointCount);
+        exploreRouteBossIndex = ExploreIceSlide::nearestNonIceIndex(
+            exploreRouteMap, path, preferred, 1,
+            static_cast<uint8_t>(path.pointCount - 2));
+        if (exploreRouteBossIndex != ExploreIceSlide::INVALID_INDEX) {
+            exploreRouteBossPending = true;
+        }
+    }
+
+    exploreRouteIndex = 0;
+    exploreRouteMoving = false;
+    exploreRouteIceSliding = false;
+    exploreRouteIceDx = 0;
+    exploreRouteIceDy = 0;
+    exploreRouteDirection = exploreInwardDirection(exploreRouteMap.entry.edge);
+    ExploreRouteGeometry::WorldPoint start =
+        ExploreRouteGeometry::pathPoint(path, 0);
+    exploreRouteWorldX = exploreRouteFromX = exploreRouteTargetX = start.x;
+    exploreRouteWorldY = exploreRouteFromY = exploreRouteTargetY = start.y;
+    updateExploreRouteCamera();
+    placeExploreRoutePickup();
     requestFullRender();
     return true;
 }
@@ -2585,26 +2876,79 @@ void AmoledApp::placeExploreRoutePickup() {
     exploreRoutePickupIndex = 0;
     exploreRoutePickupItem = EXPLORE_PICKUP_NONE;
     exploreRoutePickupAvailable = false;
+    exploreRouteGuaranteedEncounterIndex = 0;
+    exploreRouteGuaranteedEncounterPending = false;
 
-    if (exploreRouteMap.pathCount == 0 || exploreRouteBossPending) return;
+    if (exploreRouteMap.pathCount == 0) return;
     const ExploreMapGenerator::Path& path =
         exploreRouteMap.paths[exploreRoutePath];
     if (path.pointCount < 2) return;
 
+    if (exploreRouteBossPending) return;
+
+    if (exploreRouteMapBlock + 1 == exploreRouteMapBlockCount) {
+        uint8_t preferred = path.pointCount >= 3
+            ? static_cast<uint8_t>(path.pointCount - 2)
+            : static_cast<uint8_t>(path.pointCount - 1);
+        uint8_t last = preferred;
+        exploreRoutePickupIndex = ExploreIceSlide::nearestNonIceIndex(
+            exploreRouteMap, path, preferred, 1, last);
+        if (exploreRoutePickupIndex == ExploreIceSlide::INVALID_INDEX) {
+            exploreRoutePickupIndex = ExploreIceSlide::nearestNonIceIndex(
+                exploreRouteMap, path, preferred, 1,
+                static_cast<uint8_t>(path.pointCount - 1));
+        }
+        if (exploreRoutePickupIndex == ExploreIceSlide::INVALID_INDEX) return;
+        exploreRoutePickupItem = rollExplorePickup(
+            selectedExploreArea, gameState.stepsToday);
+        if (exploreRoutePickupItem == EXPLORE_PICKUP_NONE) {
+            exploreRoutePickupItem = EXPLORE_PICKUP_COIN;
+        }
+        exploreRoutePickupAvailable = true;
+        return;
+    }
+
     // Match Stick: place the pickup in the middle portion of the route and
     // move it to the nearest non-ice point so sliding cannot skip it.
-    uint8_t first = path.pointCount < 3
-        ? 1 : std::max<uint8_t>(1, path.pointCount / 3);
-    uint8_t last = path.pointCount < 3
-        ? static_cast<uint8_t>(path.pointCount - 1)
-        : std::min<uint8_t>(path.pointCount - 2,
-                            static_cast<uint8_t>(path.pointCount * 3 / 4));
-    if (first > last) first = last = static_cast<uint8_t>(path.pointCount / 2);
+    if (path.pointCount < 3) {
+        exploreRoutePickupIndex = ExploreIceSlide::nearestNonIceIndex(
+            exploreRouteMap, path,
+            static_cast<uint8_t>(path.pointCount - 1),
+            1, static_cast<uint8_t>(path.pointCount - 1));
+        if (exploreRoutePickupIndex == ExploreIceSlide::INVALID_INDEX) return;
+        exploreRoutePickupItem = rollExplorePickup(
+            selectedExploreArea, gameState.stepsToday);
+        exploreRoutePickupAvailable =
+            exploreRoutePickupItem != EXPLORE_PICKUP_NONE;
+        return;
+    }
 
-    // Stick's 35% non-pickup roll is reserved for a guaranteed encounter.
-    // AMOLED has no separately scheduled guaranteed encounter, so keep the
-    // same event slot as a pickup rather than silently dropping the reward.
-    uint8_t preferred = static_cast<uint8_t>(GameRandom::range(first, last + 1));
+    bool choosePickup = GameRandom::range(0, 10000) <
+                        EXPLORE_MAP_PICKUP_CHANCE;
+    if (!choosePickup && exploreCanScheduleGuaranteedEncounter(
+            path.pointCount, exploreRouteEncounterCooldownSteps)) {
+        uint8_t first = static_cast<uint8_t>(
+            exploreRouteEncounterCooldownSteps + 1);
+        uint8_t last = static_cast<uint8_t>(path.pointCount - 2);
+        exploreRouteGuaranteedEncounterIndex = ExploreIceSlide::nearestNonIceIndex(
+            exploreRouteMap, path,
+            exploreGuaranteedEncounterIndex(
+                path.pointCount, exploreRouteEncounterCooldownSteps),
+            first, last);
+        if (exploreRouteGuaranteedEncounterIndex !=
+            ExploreIceSlide::INVALID_INDEX) {
+            exploreRouteGuaranteedEncounterPending = true;
+            return;
+        }
+    }
+
+    uint8_t first = std::max<uint8_t>(1, path.pointCount / 3);
+    uint8_t last = std::min<uint8_t>(path.pointCount - 2,
+                                     path.pointCount * 3 / 4);
+    if (first > last) first = last = path.pointCount / 2;
+
+    uint8_t preferred = static_cast<uint8_t>(
+        GameRandom::range(first, static_cast<uint32_t>(last) + 1));
     exploreRoutePickupIndex = ExploreIceSlide::nearestNonIceIndex(
         exploreRouteMap, path, preferred, first, last);
     if (exploreRoutePickupIndex == ExploreIceSlide::INVALID_INDEX) {
@@ -2618,9 +2962,6 @@ void AmoledApp::placeExploreRoutePickup() {
         selectedExploreArea, gameState.stepsToday);
     exploreRoutePickupAvailable =
         exploreRoutePickupItem != EXPLORE_PICKUP_NONE;
-    Platform::logf("[AmoledExplore] pickup index=%u item=%u\n",
-                   static_cast<unsigned>(exploreRoutePickupIndex),
-                   static_cast<unsigned>(exploreRoutePickupItem));
 }
 
 bool AmoledApp::beginExploreRouteStep(uint32_t nowMs) {
@@ -2682,7 +3023,9 @@ void AmoledApp::updateExploreRoute(uint32_t nowMs) {
         return;
     }
     if (!exploreRouteMoving) {
-        if (exploreRouteAutoWalk) beginExploreRouteStep(nowMs);
+        if (exploreRouteAutoWalk || exploreRoutePlayerWalkActive) {
+            beginExploreRouteStep(nowMs);
+        }
         return;
     }
 
@@ -2693,13 +3036,38 @@ void AmoledApp::updateExploreRoute(uint32_t nowMs) {
         (exploreRouteTargetX - exploreRouteFromX) * progress;
     exploreRouteWorldY = exploreRouteFromY +
         (exploreRouteTargetY - exploreRouteFromY) * progress;
+    int16_t previousCameraX = exploreRouteCameraX;
+    int16_t previousCameraY = exploreRouteCameraY;
     updateExploreRouteCamera();
+    bool cameraMoved = previousCameraX != exploreRouteCameraX ||
+                       previousCameraY != exploreRouteCameraY;
+    if (cameraMoved) {
+        // The cached map is keyed by viewport. Rebuild the complete map band
+        // when the camera scrolls instead of compositing two viewports.
+        requestRenderRows(0, EXPLORE_ROUTE_VIEW_HEIGHT);
+    }
 
     if (static_cast<int32_t>(nowMs - nextExploreRouteFrameMs) >= 0) {
         exploreRoutePetFrame = static_cast<uint8_t>(
             exploreRoutePetFrame + 1);
         nextExploreRouteFrameMs = nowMs + EXPLORE_ROUTE_FRAME_MS;
-        requestRenderRows(HOME_HEADER_HEIGHT, 224);
+        if (cameraMoved) {
+            requestRenderRows(0, EXPLORE_ROUTE_VIEW_HEIGHT);
+        } else {
+            requestExploreRouteDynamicRender();
+        }
+    }
+
+    if (static_cast<int32_t>(nowMs - nextExploreRouteMapFrameMs) >= 0) {
+        do {
+            exploreRouteMapFrame = static_cast<uint8_t>(
+                exploreRouteMapFrame + 1);
+            nextExploreRouteMapFrameMs += EXPLORE_ROUTE_MAP_FRAME_MS;
+        } while (static_cast<int32_t>(nowMs - nextExploreRouteMapFrameMs) >= 0);
+        if (exploreRouteMap.hasCreek || exploreRouteMap.hasWaterfall ||
+            exploreRouteMap.hasCoast) {
+            requestExploreRouteMapAnimationRender();
+        }
     }
 
     if (progress < 1.0f) return;
@@ -2707,6 +3075,14 @@ void AmoledApp::updateExploreRoute(uint32_t nowMs) {
     exploreRouteWorldY = exploreRouteTargetY;
     exploreRouteMoving = false;
     ++exploreRouteSteps;
+    bool encounterBlockedThisStep =
+        exploreRouteEncounterCooldownSteps > 0;
+    bool repelActiveThisStep = exploreItemEffects.repelStepsRemaining() > 0;
+    exploreRouteEncounterCooldownSteps = exploreCooldownAfterStep(
+        exploreRouteEncounterCooldownSteps);
+    exploreItemEffects.completeWalkStep();
+    gameState.stepsToday = static_cast<uint16_t>(std::min<uint32_t>(
+        60000, static_cast<uint32_t>(gameState.stepsToday) + 1));
     const ExploreMapGenerator::Path& path =
         exploreRouteMap.paths[exploreRoutePath];
     bool continueIce = exploreRouteIceSliding && ExploreIceSlide::continues(
@@ -2716,7 +3092,8 @@ void AmoledApp::updateExploreRoute(uint32_t nowMs) {
         exploreRouteIceSliding = false;
         exploreRouteIceDx = 0;
         exploreRouteIceDy = 0;
-        resolveExploreStepEvent(nowMs);
+        resolveExploreStepEvent(nowMs, encounterBlockedThisStep,
+                                repelActiveThisStep);
     }
     if (sceneFlow.current() != AppSceneFlow::Scene::EXPLORE_ROUTE) {
         requestFullRender();
@@ -2724,10 +3101,68 @@ void AmoledApp::updateExploreRoute(uint32_t nowMs) {
     }
     if (exploreRouteIndex + 1 >= path.pointCount) {
         if (finishExploreRouteAtEnd(nowMs)) return;
-    } else if (continueIce || exploreRouteAutoWalk) {
+    } else if (exploreRoutePlayerWalkActive &&
+               exploreRouteBossPending &&
+               exploreRouteIndex + 2 >= path.pointCount) {
+        // Stick stops one route point before the regional boss. The next tap
+        // enters the boss point; Agent mode continues without this pause.
+        exploreRoutePlayerWalkActive = false;
+    } else if (continueIce || exploreRouteAutoWalk ||
+               exploreRoutePlayerWalkActive) {
         beginExploreRouteStep(nowMs);
     }
-    requestRenderRows(HOME_HEADER_HEIGHT, 224);
+    requestExploreRouteDynamicRender();
+}
+
+void AmoledApp::requestExploreRouteDynamicRender() {
+    if (sceneFlow.current() != AppSceneFlow::Scene::EXPLORE_ROUTE) return;
+
+    // The route renderer restores the cached full-screen map underneath this
+    // band before drawing the previous/current pet position.
+    constexpr int PET_TOP_MARGIN = 60;
+    constexpr int PET_BOTTOM_MARGIN = 10;
+    int previousY = static_cast<int>(std::lround(exploreRouteFromY)) -
+        exploreRouteCameraY;
+    int currentY = static_cast<int>(std::lround(exploreRouteWorldY)) -
+        exploreRouteCameraY;
+    int top = std::min(previousY, currentY) - PET_TOP_MARGIN;
+    int bottom = std::max(previousY, currentY) + PET_BOTTOM_MARGIN;
+    top = std::clamp(top, 0, EXPLORE_ROUTE_VIEW_HEIGHT - 1);
+    bottom = std::clamp(bottom, top + 1, EXPLORE_ROUTE_VIEW_HEIGHT);
+    requestRenderRows(static_cast<uint16_t>(top),
+                      static_cast<uint16_t>(bottom));
+}
+
+void AmoledApp::requestExploreRouteMapAnimationRender() {
+    constexpr int tileSize = ExploreRouteGeometry::TILE_SIZE;
+    constexpr int mapTop = 0;
+    constexpr int mapBottom = EXPLORE_ROUTE_VIEW_HEIGHT;
+    int top = mapBottom;
+    int bottom = mapTop;
+
+    for (uint8_t layer = 0;
+         layer < ExploreMapGenerator::LAYER_COUNT; ++layer) {
+        for (uint8_t tileY = 0; tileY < ExploreMapGenerator::HEIGHT; ++tileY) {
+            for (uint8_t tileX = 0; tileX < ExploreMapGenerator::WIDTH;
+                 ++tileX) {
+                uint16_t tileId = exploreRouteMap.layers[layer]
+                    [tileY * ExploreMapGenerator::WIDTH + tileX];
+                if (!GameAssets::isExploreTileAnimated(tileId)) continue;
+                int tileTop = mapTop + static_cast<int>(tileY) * tileSize -
+                              exploreRouteCameraY;
+                int tileBottom = tileTop + tileSize;
+                top = std::min(top, tileTop);
+                bottom = std::max(bottom, tileBottom);
+            }
+        }
+    }
+
+    top = std::clamp(top, mapTop, mapBottom);
+    bottom = std::clamp(bottom, top, mapBottom);
+    if (top < bottom) {
+        requestRenderRows(static_cast<uint16_t>(top),
+                          static_cast<uint16_t>(bottom));
+    }
 }
 
 bool AmoledApp::finishExploreRouteAtEnd(uint32_t nowMs) {
@@ -2738,12 +3173,30 @@ bool AmoledApp::finishExploreRouteAtEnd(uint32_t nowMs) {
                 exploreRouteSpecialKind)) {
             exploreRouteBossPending = false;
             exploreRouteAutoWalk = false;
+            exploreRoutePlayerWalkActive = false;
             return true;
         }
         // Keep the pending boss at the route end when the active team cannot
         // enter battle yet; a later tap can retry after the player recovers.
         exploreRouteAutoWalk = false;
+        exploreRoutePlayerWalkActive = false;
         return false;
+    }
+    if (exploreRouteMapBlock + 1 < exploreRouteMapBlockCount) {
+        const ExploreMapGenerator::Path& path =
+            exploreRouteMap.paths[exploreRoutePath];
+        exploreRoutePendingEntryEdge = ExploreMapGenerator::opposite(
+            path.exit.edge);
+        ++exploreRouteMapBlock;
+        if (!generateExploreRouteMap(nowMs)) {
+            exploreRouteAutoWalk = false;
+            exploreRoutePlayerWalkActive = false;
+            return false;
+        }
+        if (exploreRouteAutoWalk || exploreRoutePlayerWalkActive) {
+            beginExploreRouteStep(nowMs);
+        }
+        return true;
     }
     if (exploreRoutePityEligible) {
         ExploreBossPity::increment(gameState, selectedExploreArea);
@@ -2752,30 +3205,43 @@ bool AmoledApp::finishExploreRouteAtEnd(uint32_t nowMs) {
     }
     exploreRouteComplete = true;
     exploreRouteAutoWalk = false;
+    exploreRoutePlayerWalkActive = false;
     if (autonomousExpedition) {
         // A completed autonomous expedition has no player-facing route screen
         // to acknowledge. Return home so the normal care loop can continue.
         leaveExploreRoute();
         return true;
     }
+    requestFullRender();
     return false;
 }
 
-void AmoledApp::resolveExploreStepEvent(uint32_t nowMs) {
-    gameState.stepsToday = static_cast<uint16_t>(std::min<uint32_t>(
-        60000, static_cast<uint32_t>(gameState.stepsToday) + 1));
-
+void AmoledApp::resolveExploreStepEvent(
+    uint32_t nowMs, bool encounterBlockedThisStep,
+    bool repelActiveThisStep) {
     bool honeyEncounter = exploreItemEffects.honeyEncounterPending();
-    bool repelActive = exploreItemEffects.repelStepsRemaining() > 0;
 
-    // The completed step consumes one repel charge before resolving the
-    // interaction at this route point, matching Stick's ordering.
-    exploreItemEffects.completeWalkStep();
+    if (exploreRouteBossPending &&
+        exploreRouteIndex == exploreRouteBossIndex) {
+        if (beginExploreEncounter(
+                nowMs, true, exploreRouteBossSpeciesId,
+                exploreRouteBossLevel, exploreRouteBossExperiencePercent,
+                exploreRouteSpecialKind)) {
+            exploreRouteBossPending = false;
+            exploreRouteAutoWalk = false;
+            exploreRoutePlayerWalkActive = false;
+        }
+        return;
+    }
     if (exploreRoutePickupAvailable &&
         exploreRouteIndex == exploreRoutePickupIndex) {
         resolveExploreRoutePickup(nowMs);
         return;
     }
+
+    const ExploreMapGenerator::Path& path =
+        exploreRouteMap.paths[exploreRoutePath];
+    if (exploreRouteIndex + 1 >= path.pointCount) return;
 
     if (exploreRouteSteps > 0 &&
         exploreRouteSteps % 9 == 0 &&
@@ -2784,6 +3250,7 @@ void AmoledApp::resolveExploreStepEvent(uint32_t nowMs) {
             ? ExploreRouteViewModel::Prompt::PUZZLE
             : ExploreRouteViewModel::Prompt::BLOCKED;
         exploreRouteAutoWalk = false;
+        exploreRoutePlayerWalkActive = false;
         saveState();
         setToast(exploreRoutePrompt == ExploreRouteViewModel::Prompt::PUZZLE
                      ? Ui::Amoled::SOLVE : Ui::Amoled::PATH_BLOCKED,
@@ -2792,9 +3259,29 @@ void AmoledApp::resolveExploreStepEvent(uint32_t nowMs) {
         return;
     }
 
-    uint32_t roll = GameRandom::range(0, 10000);
-    if ((honeyEncounter || (!repelActive && roll < 1400)) &&
+    bool guaranteedEncounter = exploreRouteGuaranteedEncounterPending &&
+        exploreRouteIndex >= exploreRouteGuaranteedEncounterIndex;
+    bool encounterGateBypassed = honeyEncounter;
+    bool encounterGateOpen = encounterGateBypassed ||
+        exploreEncounterGateOpen(encounterBlockedThisStep,
+                                 exploreRouteMapEncounterCount);
+    bool repelAllowsEncounter = !repelActiveThisStep ||
+                                guaranteedEncounter || honeyEncounter;
+    uint16_t encounterChance = EXPLORE_ENCOUNTER_CHANCE[
+        std::min<uint8_t>(selectedExploreArea,
+                          static_cast<uint8_t>(Game::EXPLORE_AREA_COUNT - 1))];
+    bool randomEncounter = false;
+    if (encounterGateOpen && repelAllowsEncounter &&
+        !guaranteedEncounter && !honeyEncounter) {
+        randomEncounter = GameRandom::range(0, 10000) < encounterChance;
+    }
+    if (encounterGateOpen && repelAllowsEncounter &&
+        (guaranteedEncounter || honeyEncounter || randomEncounter) &&
         beginExploreEncounter(nowMs)) {
+        ++exploreRouteMapEncounterCount;
+        exploreRouteEncounterCooldownSteps =
+            EXPLORE_ENCOUNTER_COOLDOWN_STEPS;
+        exploreRouteGuaranteedEncounterPending = false;
         if (honeyEncounter) exploreItemEffects.consumeHoneyEncounter();
         return;
     }
@@ -2805,6 +3292,7 @@ void AmoledApp::resolveExploreRoutePickup(uint32_t nowMs) {
     if (!exploreRoutePickupAvailable) return;
     exploreRoutePickupAvailable = false;
     exploreRouteAutoWalk = false;
+    exploreRoutePlayerWalkActive = false;
 
     const ExplorePickupTable& table =
         explorePickupTableForArea(selectedExploreArea);
@@ -2955,13 +3443,14 @@ bool AmoledApp::beginExploreEncounter(
                   species->name);
     pushBattleLog(nowMs);
     toast = nullptr;
+    exploreRoutePlayerWalkActive = false;
     exploreRouteAutoWalk = false;
     sceneFlow.enter(AppSceneFlow::Scene::BATTLE);
     requestFullRender();
     return true;
 }
 
-void AmoledApp::pushBattleLog(uint32_t nowMs) {
+void AmoledApp::pushBattleLog(uint32_t nowMs, bool invalidate) {
     if (!battleMessage[0]) return;
     uint8_t line = battleLogCount;
     if (battleLogCount < 2) {
@@ -2974,7 +3463,7 @@ void AmoledApp::pushBattleLog(uint32_t nowMs) {
     std::snprintf(battleLogLines[line], sizeof(battleLogLines[line]), "%s",
                   battleMessage);
     battleLogUntil = nowMs + 1000;
-    requestRenderRows(176, 224);
+    if (invalidate) requestRenderRows(176, 224);
 }
 
 void AmoledApp::clearBattleLog() {
@@ -3088,7 +3577,10 @@ void AmoledApp::performBattlePlayerAction(
             std::snprintf(battleMessage, sizeof(battleMessage),
                           Ui::Amoled::HIT_FMT, dealt);
         }
-        pushBattleLog(nowMs);
+        // The footer log can wait until the action animation finishes. Keeping
+        // it out of this invalidation lets each animation frame use only the
+        // upper dynamic battle region.
+        pushBattleLog(nowMs, false);
         battleAnimationActive = true;
         battleAnimationAttackerWild = false;
         battleAnimationHit = !damage.missed && !damage.failed && dealt > 0;
@@ -3107,7 +3599,7 @@ void AmoledApp::performBattlePlayerAction(
         battlePendingCrySpecies = player.speciesId;
         Platform::logf("[BattleAnim] start side=player hit=%u damage=%u\n",
                        battleAnimationHit ? 1 : 0, dealt);
-        requestFullRender();
+        requestRenderRows(0, BATTLE_ANIMATION_RENDER_END);
         return;
     }
     advanceBattleTurn(nowMs);
@@ -3291,7 +3783,8 @@ void AmoledApp::performBattleWildAction(
             std::snprintf(battleMessage, sizeof(battleMessage),
                           Ui::Amoled::WILD_HIT_FMT, dealt);
         }
-        pushBattleLog(nowMs);
+        // Defer the footer update while this attack animation is running.
+        pushBattleLog(nowMs, false);
         battleAnimationActive = true;
         battleAnimationAttackerWild = true;
         battleAnimationHit = !damage.missed && !damage.failed && dealt > 0;
@@ -3310,7 +3803,7 @@ void AmoledApp::performBattleWildAction(
         battlePendingCrySpecies = battleWild.speciesId;
         Platform::logf("[BattleAnim] start side=wild hit=%u damage=%u\n",
                        battleAnimationHit ? 1 : 0, dealt);
-        requestFullRender();
+        requestRenderRows(0, BATTLE_ANIMATION_RENDER_END);
         return;
     } else {
         if (releasingCharge) {
@@ -3719,6 +4212,7 @@ void AmoledApp::settleExploreReturn() {
 
 void AmoledApp::leaveExploreRoute() {
     autonomousExpedition = false;
+    PokemonSprites::setPinnedDynamicSpecies(nullptr, 0);
     settleExploreReturn();
 #if STICKMON_ENABLE_DEBUG_FEATURES
     if (debugContactActive && debugContactKind == 3) {
@@ -3727,6 +4221,7 @@ void AmoledApp::leaveExploreRoute() {
 #endif
     exploreRouteMoving = false;
     exploreRouteAutoWalk = false;
+    exploreRoutePlayerWalkActive = false;
     exploreRoutePaused = false;
     exploreRouteExitConfirm = false;
     sceneFlow.leaveExploreRoute();
@@ -4382,8 +4877,17 @@ int AmoledApp::worldToScreenY(float worldY) const {
 }
 
 void AmoledApp::requestRenderRows(uint16_t begin, uint16_t end) {
-    begin = std::min<uint16_t>(begin, 224);
-    end = std::min<uint16_t>(std::max<uint16_t>(end, begin), 224);
+    // Existing gameplay state changes report rows in the legacy page grid.
+    // Store the invalidation rectangle in native framebuffer rows so the
+    // display transport can submit exact 368x448 regions.
+    begin = std::min<uint16_t>(
+        static_cast<uint16_t>(begin * AmoledUi::RESOURCE_SCALE),
+        AmoledUi::HEIGHT);
+    end = std::min<uint16_t>(
+        static_cast<uint16_t>(std::max<uint16_t>(end, begin /
+                                                    AmoledUi::RESOURCE_SCALE) *
+                                AmoledUi::RESOURCE_SCALE),
+        AmoledUi::HEIGHT);
     if (begin == end) return;
     if (!dirtyRowsValid) {
         dirtyRowBegin = begin;
@@ -4463,6 +4967,13 @@ void AmoledApp::render(Canvas565& canvas) const {
         }
         model.showHearts = heartsUntil != 0;
         model.bowlFilled = gameState.room.bowlCount > 0;
+        if (expeditionDeparturePhase == ExpeditionDeparturePhase::FADE_OUT) {
+            uint32_t elapsed = std::min<uint32_t>(
+                EXPLORE_SCENE_FADE_MS,
+                Platform::clock().millis() - expeditionDepartureStartedMs);
+            model.fadeAlpha = static_cast<uint8_t>(
+                elapsed * 255UL / EXPLORE_SCENE_FADE_MS);
+        }
 #if STICKMON_ENABLE_DEBUG_FEATURES
         model.debugContactPrompt = debugContactPending;
         model.debugContactActive = debugContactActive;
@@ -4483,7 +4994,7 @@ void AmoledApp::render(Canvas565& canvas) const {
         model.debugBoundaryVisible = debugWalkBoundaryVisible;
 #endif
         model.toast = toast;
-        renderHomeScreen(canvas, model, dirtyRowBegin, dirtyRowEnd);
+        renderHomeScreen(canvas, model, pageRowBegin(dirtyRowBegin), pageRowEnd(dirtyRowEnd));
         return;
     }
 
@@ -4511,7 +5022,7 @@ void AmoledApp::render(Canvas565& canvas) const {
         model.tiltEnabled = debugTiltControl;
         model.boundaryVisible = debugWalkBoundaryVisible;
         model.battleBoundsVisible = debugBattleDrawBoundsVisible;
-        renderDebugScreen(canvas, model, dirtyRowBegin, dirtyRowEnd);
+        renderDebugScreen(canvas, model, pageRowBegin(dirtyRowBegin), pageRowEnd(dirtyRowEnd));
         return;
     }
 #endif
@@ -4532,7 +5043,7 @@ void AmoledApp::render(Canvas565& canvas) const {
         }
         model.pressedArea = pressedExploreArea;
         model.toast = toast;
-        renderExploreScreen(canvas, model, dirtyRowBegin, dirtyRowEnd);
+        renderExploreScreen(canvas, model, pageRowBegin(dirtyRowBegin), pageRowEnd(dirtyRowEnd));
         return;
     }
 
@@ -4540,6 +5051,7 @@ void AmoledApp::render(Canvas565& canvas) const {
         sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_MENU) {
         ExploreRouteViewModel model;
         model.map = &exploreRouteMap;
+        model.state = &gameState;
         model.speciesId = gameState.team[0].speciesId;
         model.area = selectedExploreArea;
         model.pathIndex = exploreRoutePath;
@@ -4550,6 +5062,7 @@ void AmoledApp::render(Canvas565& canvas) const {
         }
         model.walkDirection = exploreRouteDirection;
         model.petFrame = exploreRoutePetFrame;
+        model.mapFrame = exploreRouteMapFrame;
         model.steps = exploreRouteSteps;
         model.worldX = exploreRouteWorldX;
         model.worldY = exploreRouteWorldY;
@@ -4559,20 +5072,30 @@ void AmoledApp::render(Canvas565& canvas) const {
         model.autoWalk = exploreRouteAutoWalk && !exploreRoutePaused;
         model.sliding = exploreRouteIceSliding;
         model.complete = exploreRouteComplete;
+        model.bossPending = exploreRouteBossPending;
+        model.bossIndex = exploreRouteBossIndex;
+        model.bossSpeciesId = exploreRouteBossSpeciesId;
+        if (expeditionDeparturePhase == ExpeditionDeparturePhase::FADE_IN) {
+            uint32_t elapsed = std::min<uint32_t>(
+                EXPLORE_SCENE_FADE_MS,
+                Platform::clock().millis() - expeditionDepartureStartedMs);
+            model.fadeAlpha = static_cast<uint8_t>(
+                255UL - elapsed * 255UL / EXPLORE_SCENE_FADE_MS);
+        }
         model.exitConfirm = exploreRouteExitConfirm;
         model.pickupIndex = exploreRoutePickupIndex;
         model.pickupItem = exploreRoutePickupItem;
         model.pickupAvailable = exploreRoutePickupAvailable;
         model.prompt = exploreRoutePrompt;
         renderExploreRouteScreen(
-            canvas, model, dirtyRowBegin, dirtyRowEnd);
+            canvas, model, pageRowBegin(dirtyRowBegin), pageRowEnd(dirtyRowEnd));
         if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_MENU) {
             ExploreMenuViewModel menuModel;
             menuModel.cursor = exploreMenuCursor;
             menuModel.pressedItem = pressedExploreMenuItem;
             menuModel.toast = toast;
             renderExploreMenuScreen(
-                canvas, menuModel, dirtyRowBegin, dirtyRowEnd);
+                canvas, menuModel, pageRowBegin(dirtyRowBegin), pageRowEnd(dirtyRowEnd));
         }
         return;
     }
@@ -4631,13 +5154,13 @@ void AmoledApp::render(Canvas565& canvas) const {
         for (uint8_t line = 0; line < model.logCount && line < 2; ++line) {
             model.logLines[line] = battleLogLines[line];
         }
-        renderBattleScreen(canvas, model, dirtyRowBegin, dirtyRowEnd);
+        renderBattleScreen(canvas, model, pageRowBegin(dirtyRowBegin), pageRowEnd(dirtyRowEnd));
         return;
     }
 
     if (sceneFlow.current() == AppSceneFlow::Scene::COMMUNICATION) {
         renderCommunicationScreen(canvas, visitSession.viewModel(),
-                                  dirtyRowBegin, dirtyRowEnd);
+                                  pageRowBegin(dirtyRowBegin), pageRowEnd(dirtyRowEnd));
         return;
     }
 
@@ -4659,7 +5182,7 @@ void AmoledApp::render(Canvas565& canvas) const {
             model.forgetSlot = teamMovesForgetSlot;
             model.forgetConfirmOpen = teamMovesForgetConfirm;
             model.toast = toast;
-            renderTeamMovesScreen(canvas, model, dirtyRowBegin, dirtyRowEnd);
+            renderTeamMovesScreen(canvas, model, pageRowBegin(dirtyRowBegin), pageRowEnd(dirtyRowEnd));
             return;
         }
         TeamViewModel model;
@@ -4668,7 +5191,7 @@ void AmoledApp::render(Canvas565& canvas) const {
         model.confirmOpen = teamConfirmOpen;
         model.pendingSlot = pendingTeamSlot;
         model.toast = toast;
-        renderTeamScreen(canvas, model, dirtyRowBegin, dirtyRowEnd);
+        renderTeamScreen(canvas, model, pageRowBegin(dirtyRowBegin), pageRowEnd(dirtyRowEnd));
         return;
     }
 
@@ -4677,7 +5200,7 @@ void AmoledApp::render(Canvas565& canvas) const {
         model.state = &gameState;
         model.pressedItem = pressedRoomItem;
         model.toast = toast;
-        renderRoomMenuScreen(canvas, model, dirtyRowBegin, dirtyRowEnd);
+        renderRoomMenuScreen(canvas, model, pageRowBegin(dirtyRowBegin), pageRowEnd(dirtyRowEnd));
         return;
     }
 
@@ -4687,7 +5210,7 @@ void AmoledApp::render(Canvas565& canvas) const {
         model.selectedFood = gameState.room.selectedFood;
         model.pressedItem = pressedRoomItem;
         model.toast = toast;
-        renderRoomFoodScreen(canvas, model, dirtyRowBegin, dirtyRowEnd);
+        renderRoomFoodScreen(canvas, model, pageRowBegin(dirtyRowBegin), pageRowEnd(dirtyRowEnd));
         return;
     }
 
@@ -4733,7 +5256,7 @@ void AmoledApp::render(Canvas565& canvas) const {
         }
 #endif
         model.toast = toast;
-        renderComputerScreen(canvas, model, dirtyRowBegin, dirtyRowEnd);
+        renderComputerScreen(canvas, model, pageRowBegin(dirtyRowBegin), pageRowEnd(dirtyRowEnd));
         return;
     }
 
@@ -4744,7 +5267,7 @@ void AmoledApp::render(Canvas565& canvas) const {
         model.volume = gameState.settings.volume;
         model.pressedItem = settingsPressedItem;
         model.toast = toast;
-        renderSettingsScreen(canvas, model, dirtyRowBegin, dirtyRowEnd);
+        renderSettingsScreen(canvas, model, pageRowBegin(dirtyRowBegin), pageRowEnd(dirtyRowEnd));
         return;
     }
 
@@ -4761,7 +5284,7 @@ void AmoledApp::render(Canvas565& canvas) const {
         model.oldMove3 = progressionOldMove3;
         model.pressedItem = progressionPressedItem;
         model.toast = toast;
-        renderProgressionScreen(canvas, model, dirtyRowBegin, dirtyRowEnd);
+        renderProgressionScreen(canvas, model, pageRowBegin(dirtyRowBegin), pageRowEnd(dirtyRowEnd));
         return;
     }
 
@@ -4781,7 +5304,7 @@ void AmoledApp::render(Canvas565& canvas) const {
         model.toolDragging = showerToolDragging;
         model.exitConfirmYes = showerExitConfirmYes;
         model.toast = toast;
-        renderShowerScreen(canvas, model, dirtyRowBegin, dirtyRowEnd);
+        renderShowerScreen(canvas, model, pageRowBegin(dirtyRowBegin), pageRowEnd(dirtyRowEnd));
         return;
     }
 
@@ -4802,7 +5325,7 @@ void AmoledApp::render(Canvas565& canvas) const {
         model.detailItemIndex = shopDetailItemIndex;
         model.detailProgress = shopDetailProgress;
         model.toast = toast;
-        renderShopScreen(canvas, model, dirtyRowBegin, dirtyRowEnd);
+        renderShopScreen(canvas, model, pageRowBegin(dirtyRowBegin), pageRowEnd(dirtyRowEnd));
         return;
     }
 
@@ -4818,7 +5341,7 @@ void AmoledApp::render(Canvas565& canvas) const {
         model.confirmOpen = itemConfirmOpen;
         model.pendingItem = pendingItem;
         model.toast = toast;
-        renderItemListScreen(canvas, model, dirtyRowBegin, dirtyRowEnd);
+        renderItemListScreen(canvas, model, pageRowBegin(dirtyRowBegin), pageRowEnd(dirtyRowEnd));
         return;
     }
 
@@ -4826,7 +5349,7 @@ void AmoledApp::render(Canvas565& canvas) const {
     model.scroll = menuScroll;
     model.pressedItem = pressedMenuItem;
     model.toast = toast;
-    renderMainMenu(canvas, model, dirtyRowBegin, dirtyRowEnd);
+    renderMainMenu(canvas, model, pageRowBegin(dirtyRowBegin), pageRowEnd(dirtyRowEnd));
 }
 
 bool AmoledApp::consumeLockRequest() {
@@ -4852,6 +5375,21 @@ bool AmoledApp::lockFocusPoint(int16_t& x, int16_t& y) const {
         return true;
     }
     return false;
+}
+
+bool AmoledApp::petIsSleeping() const {
+    if (sceneFlow.current() != AppSceneFlow::Scene::HOME ||
+        gameState.teamCount == 0) {
+        return false;
+    }
+
+    const Game::MonsterRuntime& monster = gameState.team[0];
+    if (monster.fainted || monster.hpCur == 0) return petResting;
+
+    const Game::SpeciesCareProfile care =
+        Game::speciesCareProfileFor(monster.speciesId);
+    return care.usesBed && Game::isSleepCareTime(
+        gameState.gameMinutesTotal, monster.nature);
 }
 
 void AmoledApp::setSettingsSliderValue(uint8_t item, int x,
@@ -5191,7 +5729,9 @@ void AmoledApp::executeDebugAction(uint32_t nowMs) {
         case 4: debugCategory = DebugViewModel::Category::BATTLE; break;
         case 5: debugCategory = DebugViewModel::Category::CONTACT_EVENT; break;
         default:
-            sceneFlow.closeMenu();
+            // The Debug page is entered as a standalone scene, so there is
+            // no menu stack entry for closeMenu() to pop here.
+            sceneFlow.enter(AppSceneFlow::Scene::MAIN_MENU);
             requestFullRender();
             return;
         }
@@ -5501,7 +6041,10 @@ void AmoledApp::closeItemScene() {
     teamConfirmOpen = false;
     pressedTeamSlot = -1;
     toast = nullptr;
-    sceneFlow.closeSubScene();
+    AppSceneFlow::Scene destination = sceneFlow.closeSubScene();
+    if (destination == AppSceneFlow::Scene::EXPLORE_ROUTE) {
+        resumeExploreRoute(Platform::clock().millis());
+    }
     requestFullRender();
 }
 
@@ -5794,6 +6337,9 @@ void AmoledApp::completeProgression(uint32_t nowMs) {
     progressionPressedItem = 0xFF;
     saveState();
     sceneFlow.enter(progressionReturnScene);
+    if (progressionReturnScene == AppSceneFlow::Scene::EXPLORE_ROUTE) {
+        resumeExploreRoute(nowMs);
+    }
     setToast(Ui::Amoled::GROWTH_COMPLETE, nowMs, 1200);
     requestFullRender();
 }
@@ -6072,6 +6618,9 @@ void AmoledApp::switchTeamLeader(uint32_t nowMs) {
 }
 
 void AmoledApp::performPendingItemAction(uint32_t nowMs) {
+    const uint32_t actionStartMs = Platform::clock().millis();
+    const uint32_t coinsBefore = gameState.coins;
+    const unsigned stockBefore = Game::ItemInventory::count(gameState, pendingItem);
     const char* resultText = Ui::Amoled::NO_EFFECT;
     bool changed = false;
     if (pendingItemAction == PendingItemAction::BUY) {
@@ -6112,8 +6661,10 @@ void AmoledApp::performPendingItemAction(uint32_t nowMs) {
     } else if (pendingItemAction == PendingItemAction::USE) {
         bool explorationItem = pendingItem == Game::ItemId::MAX_REPEL ||
                                pendingItem == Game::ItemId::HONEY;
-        if (explorationItem &&
-            sceneFlow.subSceneReturn() == AppSceneFlow::Scene::EXPLORE_MENU) {
+        AppSceneFlow::Scene itemReturn = sceneFlow.subSceneReturn();
+        bool exploring = itemReturn == AppSceneFlow::Scene::EXPLORE_MENU ||
+                         itemReturn == AppSceneFlow::Scene::EXPLORE_ROUTE;
+        if (explorationItem && exploring) {
             bool activated = false;
             if (pendingItem == Game::ItemId::MAX_REPEL) {
                 activated = exploreItemEffects.repelStepsRemaining() == 0 &&
@@ -6183,18 +6734,14 @@ void AmoledApp::performPendingItemAction(uint32_t nowMs) {
                 if (oldLevel != gameState.team[0].level) {
                     saveState();
                     openProgressionScene(
-                        sceneFlow.subSceneReturn() == AppSceneFlow::Scene::EXPLORE_MENU
-                            ? AppSceneFlow::Scene::EXPLORE_MENU
-                            : AppSceneFlow::Scene::HOME,
+                        exploring ? itemReturn : AppSceneFlow::Scene::HOME,
                         0, oldLevel, nowMs);
                     return;
                 }
                 if (oldSpeciesId != gameState.team[0].speciesId) {
                     saveState();
                     openEvolutionProgression(
-                        sceneFlow.subSceneReturn() == AppSceneFlow::Scene::EXPLORE_MENU
-                            ? AppSceneFlow::Scene::EXPLORE_MENU
-                            : AppSceneFlow::Scene::HOME,
+                        exploring ? itemReturn : AppSceneFlow::Scene::HOME,
                         0, oldSpeciesId, gameState.team[0].speciesId, nowMs);
                     return;
                 }
@@ -6206,13 +6753,26 @@ void AmoledApp::performPendingItemAction(uint32_t nowMs) {
         (pendingItemAction == PendingItemAction::BUY ||
          pendingItemAction == PendingItemAction::SELL);
     if (shopTransaction) {
+        Platform::logf(
+            "[ShopAction] action=%s item=%d changed=%d result=%s "
+            "coins=%lu->%lu stock=%u->%u elapsed_ms=%lu\n",
+            pendingItemAction == PendingItemAction::BUY ? "buy" : "sell",
+            static_cast<int>(pendingItem), changed, resultText,
+            static_cast<unsigned long>(coinsBefore),
+            static_cast<unsigned long>(gameState.coins), stockBefore,
+            static_cast<unsigned>(Game::ItemInventory::count(gameState, pendingItem)),
+            static_cast<unsigned long>(Platform::clock().millis() - actionStartMs));
         if (changed) {
-            saveState();
+            const uint32_t saveStartMs = Platform::clock().millis();
+            const bool saved = saveState();
+            Platform::logf("[ShopAction] saved=%d save_ms=%lu\n", saved,
+                           static_cast<unsigned long>(Platform::clock().millis() - saveStartMs));
             toast = nullptr;
             requestFullRender();
         } else {
             setToast(resultText, nowMs);
         }
+        Platform::logLine("[ShopAction] feedback_render_requested");
         return;
     }
 

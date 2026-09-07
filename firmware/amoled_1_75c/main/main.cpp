@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "AmoledApp.h"
+#include "AmoledGeometry.h"
 #include "AmoledPlatform.h"
 #include "HomeScreen.h"
 #include "TouchInput.h"
@@ -561,8 +562,13 @@ extern "C" void app_main(void) {
         }
         if (renderNeeded) {
             bool lockFrame = lockPhase != LockPhase::OPEN;
-            uint16_t renderBegin = app.renderRowBegin();
-            uint16_t renderEnd = app.renderRowEnd();
+            const uint16_t nativeRenderBegin = app.renderRowBegin();
+            const uint16_t nativeRenderEnd = app.renderRowEnd();
+            uint16_t renderBegin = static_cast<uint16_t>(
+                nativeRenderBegin / AmoledUi::RESOURCE_SCALE);
+            uint16_t renderEnd = static_cast<uint16_t>(
+                (nativeRenderEnd + AmoledUi::RESOURCE_SCALE - 1) /
+                AmoledUi::RESOURCE_SCALE);
             uint16_t renderXBegin = 0;
             uint16_t renderXEnd = LOGICAL_WIDTH;
             if (lockFrame) {
@@ -591,7 +597,8 @@ extern "C" void app_main(void) {
                 renderEnd = static_cast<uint16_t>(std::clamp(
                     std::max(oldBottom, static_cast<int>(focusY + radius)) + 1,
                     0, static_cast<int>(LOGICAL_HEIGHT)));
-                app.forceRenderRows(renderBegin, renderEnd);
+                app.forceRenderRows(AmoledUi::nativeRow(renderBegin),
+                                    AmoledUi::nativeRow(renderEnd));
             }
             app.render(canvas);
             if (lockFrame) {

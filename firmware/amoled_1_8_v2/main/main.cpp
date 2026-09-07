@@ -7,6 +7,7 @@
 
 #include "AmoledApp.h"
 #include "AmoledPlatform.h"
+#include "AmoledGeometry.h"
 #include "HomeScreen.h"
 #include "TouchInput.h"
 #include "core/AudioManager.h"
@@ -31,17 +32,19 @@
 namespace {
 
 constexpr char TAG[] = "StickMon";
-constexpr uint16_t LOGICAL_WIDTH = 184;
-constexpr uint16_t LOGICAL_HEIGHT = 224;
-constexpr uint16_t PHYSICAL_WIDTH = 368;
-constexpr uint16_t PHYSICAL_HEIGHT = 448;
+constexpr uint16_t LOGICAL_WIDTH = AmoledUi::WIDTH;
+constexpr uint16_t LOGICAL_HEIGHT = AmoledUi::HEIGHT;
+constexpr uint16_t PHYSICAL_WIDTH = AmoledUi::WIDTH;
+constexpr uint16_t PHYSICAL_HEIGHT = AmoledUi::HEIGHT;
 constexpr uint16_t TRANSFER_LOGICAL_ROWS = 32;
-constexpr uint16_t TRANSFER_PHYSICAL_ROWS = TRANSFER_LOGICAL_ROWS * 2;
+constexpr uint16_t TRANSFER_PHYSICAL_ROWS = TRANSFER_LOGICAL_ROWS;
 constexpr size_t TRANSFER_BUFFER_COUNT = 2;
 constexpr uint32_t LOCK_ANIMATION_MS = 1000;
 constexpr uint32_t LOCK_WAKE_GRACE_MS = 1200;
 constexpr int LOCK_START_RADIUS = 260;
 constexpr int LOCK_FINAL_RADIUS = 33;
+constexpr int LOCK_SLEEP_BREATH_AMPLITUDE = 4;
+constexpr uint32_t LOCK_SLEEP_BREATH_PERIOD_MS = 2000;
 enum class LockPhase : uint8_t { OPEN, CLOSING, LOCKED, OPENING };
 constexpr size_t PHYSICAL_PIXELS =
     static_cast<size_t>(PHYSICAL_WIDTH) * PHYSICAL_HEIGHT;
@@ -132,8 +135,8 @@ esp_err_t submitFrame(esp_lcd_panel_handle_t panel,
 
         uint16_t logicalRows = static_cast<uint16_t>(
             std::min<uint16_t>(TRANSFER_LOGICAL_ROWS, sourceEnd - sourceY));
-        uint16_t physicalY = sourceY * 2U;
-        uint16_t physicalRows = logicalRows * 2U;
+        uint16_t physicalY = sourceY;
+        uint16_t physicalRows = logicalRows;
 
         for (uint16_t row = 0; row < physicalRows; ++row) {
             const uint16_t* source = physicalPixels +
@@ -175,8 +178,8 @@ esp_err_t submitFrameRegion(esp_lcd_panel_handle_t panel,
     sourceEnd = std::min<uint16_t>(sourceEnd, LOGICAL_HEIGHT);
     if (xBegin >= xEnd || sourceBegin >= sourceEnd) return ESP_OK;
 
-    uint16_t physicalXBegin = xBegin * 2U;
-    uint16_t physicalXEnd = xEnd * 2U;
+    uint16_t physicalXBegin = xBegin;
+    uint16_t physicalXEnd = xEnd;
     esp_err_t result = ESP_OK;
     size_t pendingTransfers = 0;
     size_t nextBuffer = 0;
@@ -192,8 +195,8 @@ esp_err_t submitFrameRegion(esp_lcd_panel_handle_t panel,
         }
         uint16_t logicalRows = static_cast<uint16_t>(std::min<uint16_t>(
             TRANSFER_LOGICAL_ROWS, sourceEnd - sourceY));
-        uint16_t physicalY = sourceY * 2U;
-        uint16_t physicalRows = logicalRows * 2U;
+        uint16_t physicalY = sourceY;
+        uint16_t physicalRows = logicalRows;
         const uint16_t physicalRegionWidth = physicalXEnd - physicalXBegin;
         for (uint16_t row = 0; row < physicalRows; ++row) {
             const uint16_t* source = physicalPixels +
@@ -233,7 +236,7 @@ void drawLockMask(Canvas565& canvas, int centerX, int centerY, int radius,
     yBegin = std::clamp(yBegin, 0, canvas.height());
     yEnd = std::clamp(yEnd, yBegin, canvas.height());
     radius = std::max(0, radius);
-    constexpr int FEATHER_PIXELS = 4;
+    constexpr int FEATHER_PIXELS = 8;
     int innerRadius = std::max(0, radius - FEATHER_PIXELS);
     int64_t outerRadiusSquared = static_cast<int64_t>(radius) * radius;
     int64_t innerRadiusSquared = static_cast<int64_t>(innerRadius) * innerRadius;
@@ -283,9 +286,19 @@ void drawLockMask(Canvas565& canvas, int centerX, int centerY, int radius,
 }
 
 int lockRadius(LockPhase phase, uint32_t nowMs,
-               uint32_t animationStartedMs, bool preserveFocus) {
+               uint32_t animationStartedMs, bool preserveFocus,
+               bool sleeping) {
     int finalRadius = preserveFocus ? LOCK_FINAL_RADIUS : 0;
-    if (phase == LockPhase::LOCKED) return finalRadius;
+    if (phase == LockPhase::LOCKED) {
+        if (!preserveFocus || !sleeping) return finalRadius;
+        float cycle = static_cast<float>(nowMs %
+            LOCK_SLEEP_BREATH_PERIOD_MS) /
+            static_cast<float>(LOCK_SLEEP_BREATH_PERIOD_MS);
+        float wave = 0.5f - 0.5f * std::cos(cycle * 6.2831853f);
+        return finalRadius - LOCK_SLEEP_BREATH_AMPLITUDE +
+            static_cast<int>(std::lround(
+                wave * LOCK_SLEEP_BREATH_AMPLITUDE * 2.0f));
+    }
     uint32_t elapsed = nowMs - animationStartedMs;
     float progress = std::min(
         1.0f, static_cast<float>(elapsed) / LOCK_ANIMATION_MS);
@@ -419,13 +432,29 @@ extern "C" void app_main(void) {
         physicalPixels, PHYSICAL_WIDTH, PHYSICAL_HEIGHT, true};
     Canvas565 canvas;
     canvas.attach(frameBuffer);
-    canvas.setCoordinateScale(2);
+    canvas.setCoordinateScale(1);
+    canvas.setLayoutScale(1);
+    canvas.setAssetScale(AmoledUi::RESOURCE_SCALE);
+    canvas.setNativeText(true);
     AmoledV2::bindAmoledPlatform();
     if (!AmoledV2::AmoledPlatform::instance().begin()) {
         ESP_LOGW(TAG, "AMOLED platform peripheral init incomplete");
     }
+
+    // The V2 BSP applies the CO5300 x-gap after it detects the touch
+    // controller. Initialize touch before the first frame so that the initial
+    // draw uses the same panel coordinates as every later redraw.
+    AmoledV2::TouchInput touch;
+    bool touchReady = touch.begin() == ESP_OK;
+    if (!touchReady) {
+        ESP_LOGE(TAG, "CST820 touch initialization failed");
+    }
+
     PixelRenderer::bind(frameBuffer);
-    PixelRenderer::setCoordinateScale(2);
+    PixelRenderer::setCoordinateScale(1);
+    PixelRenderer::canvas().setLayoutScale(1);
+    PixelRenderer::canvas().setAssetScale(AmoledUi::RESOURCE_SCALE);
+    PixelRenderer::canvas().setNativeText(true);
     AmoledV1::AmoledApp app;
     app.begin(millisNow());
 #if STICKMON_HAS_CLAW
@@ -455,10 +484,19 @@ extern "C" void app_main(void) {
         return;
     }
 
-    AmoledV2::TouchInput touch;
-    bool touchReady = touch.begin() == ESP_OK;
-    if (!touchReady) {
-        ESP_LOGE(TAG, "CST820 touch initialization failed");
+    // CO5300 can retain a stale edge column on the first GRAM write after
+    // reset. A second complete transfer lets the panel settle before touch
+    // and background services start, without changing the normal frame path.
+    vTaskDelay(pdMS_TO_TICKS(30));
+    ESP_LOGI(TAG, "Initial frame transfer complete; repeating for panel settle");
+    int64_t settleFrameStartedUs = esp_timer_get_time();
+    result = submitFrame(panel, physicalPixels, transferBuffers, transferDone);
+    ESP_LOGI(TAG, "Initial settle-frame transfer: %lld us",
+             static_cast<long long>(esp_timer_get_time() - settleFrameStartedUs));
+    if (result != ESP_OK) {
+        ESP_LOGE(TAG, "Initial settle-frame transfer failed: %s",
+                 esp_err_to_name(result));
+        return;
     }
 
     LockPhase lockPhase = LockPhase::OPEN;
@@ -469,6 +507,7 @@ extern "C" void app_main(void) {
     int lastLockRadius = LOCK_FINAL_RADIUS;
     bool lockVisualValid = false;
     bool lockHasFocus = false;
+    bool lastLockSleeping = false;
     uint8_t lockedBrightness =
         AmoledV2::AmoledPlatform::instance().brightness();
     ESP_LOGI(TAG, "Interactive home screen presented at 368x448");
@@ -483,7 +522,7 @@ extern "C" void app_main(void) {
             Stickmon::ClawRuntime::instance().notePlayerActivity(nowMs);
 #endif
             if (event.type == AmoledV2::TouchEventType::DOWN) {
-                ESP_LOGI(TAG, "Touch down logical=(%d,%d)", event.x, event.y);
+                ESP_LOGI(TAG, "Touch down display=(%d,%d)", event.x, event.y);
             }
             if (lockPhase != LockPhase::OPEN) {
                 if (event.type == AmoledV2::TouchEventType::DOWN) {
@@ -538,6 +577,7 @@ extern "C" void app_main(void) {
 
         bool lockedWithoutFocus =
             lockPhase == LockPhase::LOCKED && !lockHasFocus;
+        bool lockSleeping = lockHasFocus && app.petIsSleeping();
         bool renderNeeded = (!lockedWithoutFocus && app.needsRender()) ||
                             lockPhase == LockPhase::CLOSING ||
                             lockPhase == LockPhase::OPENING;
@@ -546,10 +586,12 @@ extern "C" void app_main(void) {
             int16_t focusY = 112;
             if (lockHasFocus) app.lockFocusPoint(focusX, focusY);
             int radius = lockRadius(lockPhase, nowMs,
-                                    lockAnimationStartedMs, lockHasFocus);
+                                    lockAnimationStartedMs, lockHasFocus,
+                                    lockSleeping);
             renderNeeded = renderNeeded || !lockVisualValid ||
                            focusX != lastLockFocusX ||
-                           focusY != lastLockFocusY || radius != lastLockRadius;
+                           focusY != lastLockFocusY || radius != lastLockRadius ||
+                           lockSleeping != lastLockSleeping;
         }
         if (renderNeeded) {
             bool lockFrame = lockPhase != LockPhase::OPEN;
@@ -562,7 +604,8 @@ extern "C" void app_main(void) {
                 int16_t focusY = 112;
                 if (lockHasFocus) app.lockFocusPoint(focusX, focusY);
                 int radius = lockRadius(lockPhase, nowMs,
-                                        lockAnimationStartedMs, lockHasFocus);
+                                        lockAnimationStartedMs, lockHasFocus,
+                                        lockSleeping);
                 int oldLeft = lockVisualValid
                     ? lastLockFocusX - lastLockRadius : focusX - radius;
                 int oldRight = lockVisualValid
@@ -583,7 +626,8 @@ extern "C" void app_main(void) {
                 renderEnd = static_cast<uint16_t>(std::clamp(
                     std::max(oldBottom, static_cast<int>(focusY + radius)) + 1,
                     0, static_cast<int>(LOGICAL_HEIGHT)));
-                app.forceRenderRows(renderBegin, renderEnd);
+                app.forceRenderRows(AmoledUi::nativeRow(renderBegin),
+                                    AmoledUi::nativeRow(renderEnd));
             }
             app.render(canvas);
             if (lockFrame) {
@@ -591,13 +635,22 @@ extern "C" void app_main(void) {
                 int16_t focusY = 112;
                 if (lockHasFocus) app.lockFocusPoint(focusX, focusY);
                 int radius = lockRadius(lockPhase, nowMs,
-                                        lockAnimationStartedMs, lockHasFocus);
-                drawLockMask(canvas, focusX, focusY, radius,
-                             renderXBegin, renderXEnd,
-                             renderBegin, renderEnd);
+                                        lockAnimationStartedMs, lockHasFocus,
+                                        lockSleeping);
+                drawLockMask(canvas,
+                             AmoledUi::nativeCoordinate(focusX),
+                             AmoledUi::nativeCoordinate(focusY),
+                             AmoledUi::nativeExtent(radius),
+                             AmoledUi::nativeCoordinate(renderXBegin),
+                             AmoledUi::nativeCoordinate(renderXEnd),
+                             AmoledUi::nativeCoordinate(renderBegin),
+                             AmoledUi::nativeCoordinate(renderEnd));
                 result = submitFrameRegion(
                     panel, physicalPixels, transferBuffers, transferDone,
-                    renderXBegin, renderXEnd, renderBegin, renderEnd);
+                    AmoledUi::nativeCoordinate(renderXBegin),
+                    AmoledUi::nativeCoordinate(renderXEnd),
+                    AmoledUi::nativeRow(renderBegin),
+                    AmoledUi::nativeRow(renderEnd));
             } else {
                 result = submitFrame(
                     panel, physicalPixels, transferBuffers, transferDone,
@@ -616,11 +669,19 @@ extern "C" void app_main(void) {
                     }
                     lastLockRadius = lockRadius(lockPhase, nowMs,
                                                 lockAnimationStartedMs,
-                                                lockHasFocus);
+                                                lockHasFocus, lockSleeping);
+                    lastLockSleeping = lockSleeping;
                     lockVisualValid = true;
                 }
             }
         }
-        vTaskDelay(pdMS_TO_TICKS(lockPhase == LockPhase::OPEN ? 20 : 16));
+        const uint32_t targetLoopMs =
+            lockPhase == LockPhase::OPEN ? 20U : 16U;
+        const uint32_t loopElapsedMs = millisNow() - nowMs;
+        if (loopElapsedMs < targetLoopMs) {
+            vTaskDelay(pdMS_TO_TICKS(targetLoopMs - loopElapsedMs));
+        } else {
+            taskYIELD();
+        }
     }
 }

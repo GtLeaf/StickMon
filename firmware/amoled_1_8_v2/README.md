@@ -34,6 +34,19 @@ cd /Users/gtleaf/project/esp/StickMon
 ./tools/build_amoled_variant.sh v2 lite
 ```
 
+Flash V2 from its own target directory so the board selection cannot fall
+back to the V1 display and touch drivers:
+
+```sh
+./firmware/amoled_1_8_v2/flash.sh \\
+  --port /dev/cu.usbmodemXXXX \\
+  --variant claw \\
+  --debug
+```
+
+Use `--variant lite` for the firmware without ESP-Claw. Add `--erase` once
+when recovering from a previously mixed V1/V2 image.
+
 The Claw and Lite builds resolve dependencies into their own isolated
 `build-claw` and `build-lite` directories, keeping machine-specific
 ESP-Claw paths out of the shared source tree.

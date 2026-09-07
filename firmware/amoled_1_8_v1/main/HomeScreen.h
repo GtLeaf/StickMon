@@ -32,9 +32,12 @@ inline constexpr int HOME_STATUS_TOP = HOME_ROOM_TOP + HOME_ROOM_HEIGHT;
 inline constexpr int SETTINGS_SLIDER_LEFT = 74;
 inline constexpr int SETTINGS_SLIDER_RIGHT = 166;
 inline constexpr int SETTINGS_SLIDER_OFFSET_Y = 24;
-inline constexpr int EXPLORE_SELECTOR_LEFT_WIDTH = 64;
-inline constexpr int EXPLORE_SELECTOR_CENTER_Y = 124;
-inline constexpr int EXPLORE_SELECTOR_AREA_SPACING = 32;
+inline constexpr int EXPLORE_SELECTOR_TOP_HEIGHT = 52;
+inline constexpr int EXPLORE_SELECTOR_CENTER_X = 92;
+inline constexpr int EXPLORE_SELECTOR_AREA_SPACING = 72;
+inline constexpr int EXPLORE_SELECTOR_BUTTON_TOP = 174;
+inline constexpr int EXPLORE_PREVIEW_TOP = 84;
+inline constexpr int EXPLORE_PREVIEW_BOTTOM = 164;
 inline constexpr int SHOP_LEFT_PANEL_WIDTH = 56;
 // ESP-Claw setup page: header tabs and the log window geometry (UI space).
 inline constexpr int CLAW_TAB_CONNECT_LEFT = 102;
@@ -86,6 +89,7 @@ struct HomeViewModel {
     uint16_t moodBurstAgeMs = 0;
     bool showHearts = false;
     bool bowlFilled = false;
+    uint8_t fadeAlpha = 0;
     const char* toast = nullptr;
 #if STICKMON_ENABLE_DEBUG_FEATURES
     bool debugContactPrompt = false;
@@ -156,6 +160,7 @@ struct ExploreViewModel {
 struct ExploreRouteViewModel {
     enum class Prompt : uint8_t { NONE = 0, BLOCKED, PUZZLE };
     const ExploreMapGenerator::Map* map = nullptr;
+    const Game::GameState* state = nullptr;
     uint16_t speciesId = 1;
     uint8_t area = 0;
     uint8_t pathIndex = 0;
@@ -163,6 +168,7 @@ struct ExploreRouteViewModel {
     uint8_t routePointCount = 0;
     uint8_t walkDirection = 0;
     uint8_t petFrame = 0;
+    uint8_t mapFrame = 0;
     uint16_t steps = 0;
     float worldX = 0.0f;
     float worldY = 0.0f;
@@ -172,6 +178,10 @@ struct ExploreRouteViewModel {
     bool autoWalk = false;
     bool sliding = false;
     bool complete = false;
+    bool bossPending = false;
+    uint8_t bossIndex = 0;
+    uint16_t bossSpeciesId = 0;
+    uint8_t fadeAlpha = 0;
     bool exitConfirm = false;
     uint8_t pickupIndex = 0;
     uint8_t pickupItem = 0;
@@ -416,16 +426,17 @@ int debugContactChoiceAt(int x, int y);
 
 void renderExploreScreen(Canvas565& canvas, const ExploreViewModel& model,
                          uint16_t rowBegin = 0, uint16_t rowEnd = 224);
-bool exploreBackAt(int x, int y);
-bool exploreMenuAt(int x, int y);
 int exploreAreaAt(int x, int y, uint8_t selectedArea,
                   uint8_t visibleAreaCount);
+bool exploreStartAt(int x, int y);
+bool exploreSelectionBackAt(int x, int y);
 
 void renderExploreRouteScreen(Canvas565& canvas,
                               const ExploreRouteViewModel& model,
                               uint16_t rowBegin = 0,
                               uint16_t rowEnd = 224);
 bool exploreRouteBackAt(int x, int y);
+bool exploreRouteBagAt(int x, int y);
 bool exploreRouteMenuAt(int x, int y);
 int exploreRouteExitChoiceAt(int x, int y);
 int exploreRoutePromptChoiceAt(int x, int y);

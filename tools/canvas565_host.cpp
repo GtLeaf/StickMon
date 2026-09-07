@@ -78,5 +78,21 @@ int main() {
         }
     }
     assert(scaledCanvas.readPixel(1, 1) == 0x07E0);
+
+    std::array<uint16_t, 8 * 6> assetPixels{};
+    frame.pixels = assetPixels.data();
+    frame.width = 8;
+    frame.height = 6;
+    Canvas565 assetCanvas;
+    assetCanvas.attach(frame);
+    assetCanvas.setAssetScale(2);
+    assetCanvas.drawAssetPixel(1, 1, 0xF800);
+    for (int y = 0; y < 6; ++y) {
+        for (int x = 0; x < 8; ++x) {
+            const bool inside = x >= 2 && x < 4 && y >= 2 && y < 4;
+            assert(assetPixels[static_cast<size_t>(y) * 8 + x] ==
+                   (inside ? swapped(0xF800) : 0));
+        }
+    }
     return 0;
 }
