@@ -327,12 +327,13 @@ void Canvas565::pushImage(int x, int y, int w, int h,
 
 void Canvas565::drawMaskedAssetImage(int x, int y, int w, int h,
                                      const uint16_t* pixels,
-                                     const uint8_t* opaqueMask) {
+                                     const uint8_t* opaqueMask,
+                                     uint8_t pixelScale) {
     if (!pixels || !opaqueMask || w <= 0 || h <= 0) return;
-    const int assetScale = assetScale_;
+    const int assetScale = assetScale_ * std::max<int>(1, pixelScale);
     const int renderScale = this->renderScale();
-    const int logicalLeft = x * assetScale;
-    const int logicalTop = y * assetScale;
+    const int logicalLeft = x * assetScale_;
+    const int logicalTop = y * assetScale_;
     const int physicalScale = assetScale * renderScale;
     const int physicalWidth = physicalWidth_;
     const int physicalHeight = physicalHeight_;

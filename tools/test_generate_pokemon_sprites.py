@@ -132,7 +132,7 @@ class GeneratePokemonSpritesTests(unittest.TestCase):
             self.assertEqual((64, 64), dimensions["ICON_0"])
             self.assertEqual((70, 70), dimensions["STATUS"])
 
-    def test_no_upscale_species_keeps_grid_aligned_front_size(self):
+    def test_no_upscale_species_uses_explore_scale_when_configured(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             graphics = Path(temp_dir)
             for folder in ("Icons", "Front", "Back"):
@@ -156,8 +156,8 @@ class GeneratePokemonSpritesTests(unittest.TestCase):
                 for frame in writer.frames
             }
             self.assertEqual([], missing)
-            # 乌波等易糊精灵不强制放大:80x80 内容保持 72/160 基准比例
-            self.assertEqual((36, 36), dimensions["FRONT"])
+            # 乌波属于前两个探索场景的 2x FRONT 资源集合。
+            self.assertEqual((72, 72), dimensions["FRONT"])
 
     def test_all_configured_walking_frames_exist_and_are_visible(self):
         checked = 0

@@ -853,7 +853,7 @@ def validate_committed_pack_kind_ids():
             )
 
 
-def write_pack(name, writer):
+def write_pack(name, writer, output=None):
     if len(writer.frames) > MAX_PACK_FRAMES:
         raise ValueError(
             f"{name} pack has {len(writer.frames)} frames; limit is {MAX_PACK_FRAMES}"
@@ -903,7 +903,7 @@ def write_pack(name, writer):
         len(compressed),
         zlib.crc32(payload) & 0xFFFFFFFF,
     )
-    output = OUTPUTS[name]
+    output = output or OUTPUTS[name]
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_bytes(header + compressed)
     return {

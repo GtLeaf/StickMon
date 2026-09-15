@@ -343,7 +343,7 @@ bool decodeTile(const FrameRef& ref, DecodedTile& tile) {
 }
 
 bool drawDecodedTile(Canvas565& canvas, Kind kind, const FrameRef& ref,
-                     int x, int y) {
+                     int x, int y, uint8_t pixelScale) {
     const uint16_t kindIndex = static_cast<uint16_t>(kind);
     if (kindIndex >= static_cast<uint16_t>(Kind::COUNT)) return false;
     DecodedTile& tile = decodedTiles[kindIndex];
@@ -353,7 +353,7 @@ bool drawDecodedTile(Canvas565& canvas, Kind kind, const FrameRef& ref,
     }
     if (!tile.pixels || !tile.opaqueMask) return false;
     canvas.drawMaskedAssetImage(
-        x, y, tile.width, tile.height, tile.pixels, tile.opaqueMask);
+        x, y, tile.width, tile.height, tile.pixels, tile.opaqueMask, pixelScale);
     return true;
 }
 
@@ -513,7 +513,7 @@ bool isExploreTileAnimated(uint16_t tileId) {
 }
 
 bool drawExploreTileTo(Canvas565& canvas, uint16_t tileId, int x, int y,
-                       uint8_t animationFrame) {
+                       uint8_t animationFrame, uint8_t pixelScale) {
     Kind kind = Kind::COUNT;
     uint8_t seaFrame = animationFrame % 8;
     uint8_t waterfallFrame = animationFrame % 4;
@@ -725,7 +725,7 @@ bool drawExploreTileTo(Canvas565& canvas, uint16_t tileId, int x, int y,
     }
     FrameRef ref = findFrame(kind);
     if (!ref.frame) return false;
-    if (drawDecodedTile(canvas, kind, ref, x, y)) return true;
+    if (drawDecodedTile(canvas, kind, ref, x, y, pixelScale)) return true;
     // Keep the packed path as a graceful fallback if PSRAM is exhausted or a
     // malformed tile cannot be decoded into the cache.
     if (&canvas != &PixelRenderer::canvas()) return false;
@@ -733,14 +733,14 @@ bool drawExploreTileTo(Canvas565& canvas, uint16_t tileId, int x, int y,
         x, y, ref.frame->width, ref.frame->height,
         ref.pack->data, ref.frame->offset, ref.frame->length,
         ref.pack->palettes, ref.frame->paletteOffset, ref.frame->paletteSize,
-        1.0f);
+        static_cast<float>(pixelScale));
     return true;
 }
 
 bool drawExploreTile(uint16_t tileId, int x, int y,
-                     uint8_t animationFrame) {
+                     uint8_t animationFrame, uint8_t pixelScale) {
     return drawExploreTileTo(
-        PixelRenderer::canvas(), tileId, x, y, animationFrame);
+        PixelRenderer::canvas(), tileId, x, y, animationFrame, pixelScale);
 }
 
 Kind itemKind(Game::ItemId item) {

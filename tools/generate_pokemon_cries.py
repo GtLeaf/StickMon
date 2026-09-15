@@ -19,7 +19,7 @@ CRY_OUT = PACK_OUT / "cries"
 MANIFEST_PATH = PACK_OUT / "manifest.json"
 
 SOURCE_SAMPLE_RATE = 44100
-TARGET_SAMPLE_RATE = 22050
+TARGET_SAMPLE_RATE = 16000
 TARGET_RMS_DBFS = -16.0
 PEAK_LIMIT_DBFS = -1.0
 MAX_GAIN_DB = 6.0
@@ -73,17 +73,27 @@ def _load_and_downsample(path):
     if len(samples) != frame_count * 2:
         raise ValueError(f"{path.name}: truncated PCM payload")
 
-    downsampled = []
-    for frame in range(0, frame_count, 2):
-        first = frame * 2
-        total = samples[first] + samples[first + 1]
-        count = 2
-        if frame + 1 < frame_count:
-            second = first + 2
-            total += samples[second] + samples[second + 1]
-            count += 2
-        downsampled.append(total / count)
-    return downsampled
+    mono = [
+        (samples[frame * 2] + samples[frame * 2 + 1]) / 2.0
+        for frame in range(frame_count)
+    ]
+    output_count = max(
+        1, int(round(frame_count * TARGET_SAMPLE_RATE / SOURCE_SAMPLE_RATE))
+    )
+    if output_count == 1:
+        return [mono[0]]
+
+    # Linear interpolation preserves the full cry duration while converting
+    # 44.1 kHz source audio to the mixer rate without device-side resampling.
+    result = []
+    scale = (frame_count - 1) / (output_count - 1)
+    for output_index in range(output_count):
+        position = output_index * scale
+        lower = min(frame_count - 1, int(position))
+        upper = min(frame_count - 1, lower + 1)
+        fraction = position - lower
+        result.append(mono[lower] + (mono[upper] - mono[lower]) * fraction)
+    return result
 
 
 def _normalize_and_quantize(samples):
@@ -143,7 +153,7 @@ def merge_manifest(cry_count, pack_out=PACK_OUT):
     payload.update({
         "cries": "cries",
         "cryCount": cry_count,
-        "cryEncoding": "raw-deflate-pcm-u8-mono-22050",
+        "cryEncoding": "raw-deflate-pcm-u8-mono-16000",
         "format": "smon-resource-pack-v1",
         "id": payload.get("id", "dev"),
         "schema": 1,

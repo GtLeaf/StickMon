@@ -36,6 +36,21 @@ class DoorDepartureTests(unittest.TestCase):
         self.assertIn("first route stalled fallback=cross", self.source)
         self.assertIn("second route stalled fallback=cross", self.source)
 
+    def test_pair_departure_finishes_only_after_second_actor_crosses(self):
+        transition = self.source[
+            self.source.index("case DoorTransitionMode::EXIT_CROSS"):
+            self.source.index("case DoorTransitionMode::EXIT_FADE")
+        ]
+        self.assertIn("beginSecondDoorExit(nowMs);", transition)
+        self.assertLess(
+            transition.index("beginSecondDoorExit(nowMs);"),
+            transition.index("case DoorTransitionMode::EXIT_SECOND_CROSS"),
+        )
+        second = transition[transition.index("case DoorTransitionMode::EXIT_SECOND_CROSS"):]
+        self.assertIn("if (!secondOutside) return;", second)
+        self.assertLess(second.index("if (!secondOutside) return;"),
+                        second.index("finishDoorDeparture();"))
+
 
 if __name__ == "__main__":
     unittest.main()

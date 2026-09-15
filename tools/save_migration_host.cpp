@@ -348,6 +348,28 @@ void verifyCodecAbRecovery() {
     assert(manager.load(loaded, loadedView));
     assert(loaded.coins == 111);
 }
+
+void verifyVisitorIsNotPersisted() {
+    assert(Platform::blobs().clearNamespace("stickmon"));
+    SaveManager manager;
+    Game::GameState state;
+    MainSceneViewState view;
+    state.teamCount = 2;
+    state.team[1].speciesId = 25;
+    state.team[1].origin = Game::Origin::VISITOR;
+    assert(manager.saveSnapshot(state, view));
+    assert(state.teamCount == 2);
+
+    size_t length = Platform::blobs().blobSize("stickmon", "state");
+    assert(length > SaveCodec::HEADER_BYTES);
+    uint8_t* bytes = new uint8_t[length];
+    assert(Platform::blobs().readBlob("stickmon", "state", bytes, length));
+    SaveCodec::Snapshot snapshot;
+    assert(SaveCodec::decode(bytes, length, snapshot));
+    delete[] bytes;
+    assert(snapshot.state.teamCount == 1);
+    assert(snapshot.state.team[0].origin != Game::Origin::VISITOR);
+}
 }  // namespace
 
 int main() {
@@ -360,5 +382,6 @@ int main() {
     verifyInvalidLegacyViewKeepsGameState();
     verifyNewerVersionIsPreserved();
     verifyCodecAbRecovery();
+    verifyVisitorIsNotPersisted();
     return 0;
 }

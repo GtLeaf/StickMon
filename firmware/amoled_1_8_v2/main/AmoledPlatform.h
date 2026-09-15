@@ -1,8 +1,10 @@
 #pragma once
 
+#include <array>
 #include <atomic>
 
 #include "esp_codec_dev.h"
+#include "core/PcmMixer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
@@ -93,6 +95,7 @@ private:
         uint32_t generation = 0;
         size_t sampleCount = 0;
         uint8_t* samples = nullptr;
+        bool replace = false;
     };
 
     AmoledPlatform();
@@ -100,7 +103,7 @@ private:
     static void audioTaskEntry(void* context);
     void audioTask();
     void clearAudioQueue();
-    void applySpeakerVolumeLocked(uint8_t channel);
+    void applySpeakerVolumeLocked();
 
     Platform::Services services_;
     bool resourcesMounted_ = false;
@@ -111,11 +114,15 @@ private:
     bool microphoneOpen_ = false;
     bool microphoneMode_ = false;
     std::atomic<bool> audioPlaying_{false};
-    std::atomic<uint32_t> audioGeneration_{1};
+    std::array<std::atomic<uint32_t>,
+               Platform::IAudioDevice::CHANNEL_COUNT> audioGeneration_{};
+    std::array<uint32_t, Platform::IAudioDevice::CHANNEL_COUNT>
+        mixerGeneration_{};
     std::atomic<uint8_t>
         queuedPcm_[Platform::IAudioDevice::CHANNEL_COUNT]{};
     QueueHandle_t audioQueue_ = nullptr;
     SemaphoreHandle_t audioMutex_ = nullptr;
+    PcmMixer mixer_;
     uint32_t speakerSampleRate_ = 0;
     uint32_t microphoneSampleRate_ = 0;
     esp_codec_dev_handle_t speakerCodec_ = nullptr;

@@ -36,7 +36,7 @@ class GeneratePokemonCriesTests(unittest.TestCase):
 
             pcm, compressed, gain = generator.encode_source(source)
 
-            self.assertEqual(2205, len(pcm))
+            self.assertEqual(1600, len(pcm))
             self.assertEqual(pcm, zlib.decompress(compressed, wbits=-15))
             self.assertGreater(gain, 0.0)
             self.assertNotEqual({128}, set(pcm))
@@ -80,6 +80,7 @@ class GeneratePokemonCriesTests(unittest.TestCase):
             )
             pcm = zlib.decompress(payload[generator.CRY_HEADER_SIZE:], -15)
             self.assertEqual(species_id, header[2])
+            self.assertEqual(generator.TARGET_SAMPLE_RATE, header[3])
             self.assertEqual(len(payload) - generator.CRY_HEADER_SIZE, header[6])
             self.assertEqual(header[5], len(pcm))
             self.assertEqual(header[7], zlib.crc32(pcm) & 0xFFFFFFFF)

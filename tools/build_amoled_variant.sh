@@ -75,8 +75,31 @@ if [[ -f "$SDKCONFIG" ]]; then
     fi
 fi
 
+ASSET_PYTHON=""
+for CANDIDATE in "${STICKMON_ASSET_PYTHON:-}" \
+                 /opt/homebrew/bin/python3 /usr/local/bin/python3 python3; do
+    if [[ -n "$CANDIDATE" ]] && command -v "$CANDIDATE" >/dev/null 2>&1 \
+       && "$CANDIDATE" -c 'import PIL' >/dev/null 2>&1; then
+        ASSET_PYTHON="$(command -v "$CANDIDATE")"
+        break
+    fi
+done
+if [[ -z "$ASSET_PYTHON" ]]; then
+    printf '%s\n' "A Python interpreter with Pillow is required to build AMOLED assets." >&2
+    exit 1
+fi
+
 source "$IDF_PATH/export.sh"
 cd "$PROJECT_DIR"
+
+AMOLED_ITEMS_DIR="${STICKMON_ESSENTIALS_DIR:-${ESSENTIALS_DIR:-}}/Graphics/Items"
+if [[ -d "$AMOLED_ITEMS_DIR" ]]; then
+    "$ASSET_PYTHON" "$REPO_DIR/tools/generate_amoled_ui_assets.py" \
+        --items-dir "$AMOLED_ITEMS_DIR"
+elif [[ ! -f "$REPO_DIR/data/packs/dev/game/ui_amoled.smonfx" ]]; then
+    printf '%s\n' "AMOLED item sources are missing; set ESSENTIALS_DIR or STICKMON_ESSENTIALS_DIR." >&2
+    exit 1
+fi
 
 idf.py -B "$BUILD_DIR" \
     "-DSDKCONFIG=$SDKCONFIG" \

@@ -130,9 +130,12 @@ void drawBuffer(float cameraY) {
 
 bool drawViewportBuffer(int16_t destinationX, int16_t destinationY,
                         uint16_t viewportWidth, uint16_t viewportHeight,
-                        int16_t cameraX, int16_t cameraY) {
+                        int16_t cameraX, int16_t cameraY, uint8_t pixelScale) {
     RoomResource& room = RoomResource::ins();
-    if (!roomBuffer || viewportWidth == 0 || viewportHeight == 0) return false;
+    if (!roomBuffer || pixelScale == 0 ||
+        viewportWidth == 0 || viewportHeight == 0) return false;
+    viewportWidth /= pixelScale;
+    viewportHeight /= pixelScale;
 
     int sourceX = cameraX;
     int sourceY = cameraY - room.roomY();
@@ -149,8 +152,16 @@ bool drawViewportBuffer(int16_t destinationX, int16_t destinationY,
         const uint16_t* source =
             &roomBuffer[static_cast<uint32_t>(sourceY + row) * room.width() +
                         sourceX];
-        canvas.pushImage(destinationX, destinationY + row,
-                         drawWidth, 1, source);
+        if (pixelScale == 1) {
+            canvas.pushImage(destinationX, destinationY + row,
+                             drawWidth, 1, source);
+        } else {
+            for (int column = 0; column < drawWidth; ++column) {
+                canvas.fillRect(destinationX + column * pixelScale,
+                                destinationY + row * pixelScale,
+                                pixelScale, pixelScale, source[column]);
+            }
+        }
     }
     return true;
 }
@@ -169,12 +180,13 @@ bool draw(float cameraY, bool night) {
 
 bool drawViewport(int16_t destinationX, int16_t destinationY,
                   uint16_t viewportWidth, uint16_t viewportHeight,
-                  int16_t cameraX, int16_t cameraY, bool night) {
+                  int16_t cameraX, int16_t cameraY, bool night,
+                  uint8_t pixelScale) {
     RoomResource::ins().begin();
     if (!prepare(night)) return false;
     return drawViewportBuffer(destinationX, destinationY,
                               viewportWidth, viewportHeight,
-                              cameraX, cameraY);
+                              cameraX, cameraY, pixelScale);
 }
 
 }  // namespace RoomRenderer

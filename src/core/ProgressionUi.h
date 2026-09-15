@@ -17,7 +17,7 @@ struct MoveLearnState {
     bool confirmYes = false;
 };
 
-void renderLevelUp(uint8_t level);
+void renderLevelUp(const char* speciesName, uint8_t level);
 bool evolutionAnimationComplete(uint16_t fromSpeciesId,
                                 uint16_t toSpeciesId,
                                 uint32_t nowMs);

@@ -4,6 +4,9 @@
 #include <cstdint>
 #include <utility>
 
+static_assert(__cplusplus >= 201703L,
+              "StickMon requires C++17 or newer");
+
 namespace Platform {
 
 static constexpr uint16_t LOGICAL_DISPLAY_W = 240;

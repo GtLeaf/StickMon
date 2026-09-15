@@ -10,8 +10,9 @@
 #include "core/Scene.h"
 #include "game/MonsterMind.h"
 #include "game/HomeActor.h"
+#include "game/HomeActorController.h"
 #include "game/HomeChase.h"
-#include "game/HomeCoordinator.h"
+#include "game/HomeSimulation.h"
 #include "game/Species.h"
 
 struct PetResult;
@@ -359,10 +360,14 @@ private:
     void drawTutorial();
     bool visitorHostActive() const;
     bool visitorCanUseDoor() const;
-    bool teamMemberCanEatFromBowl(uint8_t teamSlot) const;
-    bool visitorCanSeekFood() const;
-    int8_t preferredBowlEater() const;
-    bool claimBowl(uint8_t teamSlot);
+    Home::ActorObservation homeActorObservation(
+        uint8_t teamSlot, uint32_t nowMs) const;
+    Home::HouseholdObservation homeHouseholdObservation(
+        uint32_t nowMs) const;
+    bool teamMemberCanEatFromBowl(uint8_t teamSlot,
+                                  uint32_t nowMs) const;
+    int8_t preferredBowlEater(uint32_t nowMs) const;
+    bool claimBowl(uint8_t teamSlot, uint32_t nowMs);
     void releaseBowl(uint8_t teamSlot);
     bool startMainFoodYield(uint32_t nowMs);
     bool startVisitorFoodSeek(uint32_t nowMs);
@@ -516,5 +521,5 @@ private:
 #endif
     VisitorActor visitor;
     Home::Actor mainActor;
-    Home::Coordinator homeCoordinator;
+    Home::Simulation homeCoordinator;
 };

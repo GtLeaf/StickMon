@@ -1058,6 +1058,18 @@ bool SaveManager::saveSnapshot(const Game::GameState& state,
     loadLatestCodecSnapshot(*previous);
     uint32_t sequence = previous->found ? previous->sequence + 1U : 1U;
     *copy = state;
+    for (uint8_t slot = 0; slot < copy->teamCount;) {
+        if (copy->team[slot].origin != Game::Origin::VISITOR) {
+            ++slot;
+            continue;
+        }
+        for (uint8_t next = slot + 1; next < copy->teamCount; ++next) {
+            copy->team[next - 1] = copy->team[next];
+        }
+        --copy->teamCount;
+        copy->team[copy->teamCount] = Game::MonsterRuntime{};
+    }
+    if (copy->activeSlot >= copy->teamCount) copy->activeSlot = 0;
     copy->magic = Game::SAVE_MAGIC;
     copy->version = Game::SAVE_VERSION;
     copy->checksum = checksum(*copy);

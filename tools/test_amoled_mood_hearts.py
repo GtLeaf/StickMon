@@ -3,6 +3,8 @@
 import unittest
 from pathlib import Path
 
+from amoled_source import read_home_source
+
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "firmware" / "amoled_1_8_v1" / "main" / "AmoledApp.cpp"
@@ -16,8 +18,8 @@ class AmoledMoodHeartTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app = APP.read_text(encoding="utf-8")
         cls.app_header = APP_HEADER.read_text(encoding="utf-8")
-        cls.screen = SCREEN.read_text(encoding="utf-8")
-        cls.screen_header = SCREEN_HEADER.read_text(encoding="utf-8")
+        cls.screen = read_home_source(ROOT)
+        cls.screen_header = (ROOT / "firmware" / "amoled_1_8_v1" / "main" / "ui" / "models" / "ScreenModels.h").read_text(encoding="utf-8")
 
     def test_mood_maps_to_five_twenty_point_hearts(self):
         start = self.app.index("uint8_t moodHeartCountFor(")

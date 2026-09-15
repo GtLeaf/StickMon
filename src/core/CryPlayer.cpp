@@ -14,7 +14,7 @@ constexpr uint16_t CRY_PACK_FLAG_RAW_DEFLATE = 1 << 0;
 constexpr uint16_t CRY_PACK_FLAG_PCM_U8_MONO = 1 << 1;
 constexpr uint16_t CRY_PACK_FLAGS =
     CRY_PACK_FLAG_RAW_DEFLATE | CRY_PACK_FLAG_PCM_U8_MONO;
-constexpr uint32_t CRY_SAMPLE_RATE = 22050;
+constexpr uint32_t CRY_SAMPLE_RATE = PcmMixer::OUTPUT_SAMPLE_RATE;
 constexpr uint32_t MAX_CRY_PCM_BYTES = CRY_SAMPLE_RATE * 4U;
 
 struct __attribute__((packed)) PackedCryHeader {
@@ -33,8 +33,17 @@ struct __attribute__((packed)) PackedCryHeader {
 static_assert(sizeof(PackedCryHeader) == 32, "Unexpected cry pack header layout");
 
 bool readExact(Platform::ResourceFile& file, void* output, size_t length) {
-    return length == 0 ||
-           file.read(reinterpret_cast<uint8_t*>(output), length) == length;
+    if (length == 0) return true;
+    if (!output) return false;
+    auto* bytes = static_cast<uint8_t*>(output);
+    size_t remaining = length;
+    while (remaining > 0) {
+        size_t received = file.read(bytes, remaining);
+        if (received == 0 || received > remaining) return false;
+        bytes += received;
+        remaining -= received;
+    }
+    return true;
 }
 }  // namespace
 

@@ -1,5 +1,7 @@
 set(STICKMON_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../..")
 
+include("${STICKMON_ROOT}/firmware/common/amoled_sources.cmake")
+
 set(STICKMON_MAIN_REQUIRES
     esp_lcd
     esp_codec_dev
@@ -24,9 +26,9 @@ endif()
 idf_component_register(
     SRCS
         "main.cpp"
-        "../../amoled_1_8_v1/main/AmoledApp.cpp"
+        "${STICKMON_AMOLED_APP_SOURCE}"
         "AmoledPlatform.cpp"
-        "../../amoled_1_8_v1/main/HomeScreen.cpp"
+        ${STICKMON_AMOLED_UI_SOURCES}
         "TouchInput.cpp"
         "${STICKMON_ROOT}/src/assets/FontFallbackCN.cpp"
         "${STICKMON_ROOT}/src/assets/GameAssets.cpp"
@@ -35,19 +37,26 @@ idf_component_register(
         "${STICKMON_ROOT}/src/assets/PokemonSprites.cpp"
         "${STICKMON_ROOT}/src/core/DeflateDecoder.cpp"
         "${STICKMON_ROOT}/src/core/AudioManager.cpp"
+        "${STICKMON_ROOT}/src/core/PcmMixer.cpp"
         "${STICKMON_ROOT}/src/core/CryPlayer.cpp"
         "${STICKMON_ROOT}/src/core/FontResource.cpp"
         "${STICKMON_ROOT}/src/core/GameClockService.cpp"
         "${STICKMON_ROOT}/src/core/ResourceFS.cpp"
         "${STICKMON_ROOT}/src/core/ResourcePack.cpp"
         "${STICKMON_ROOT}/src/core/RoomMovementArea.cpp"
+        "${STICKMON_ROOT}/src/core/RoomNavigator.cpp"
         "${STICKMON_ROOT}/src/core/RoomRenderer.cpp"
         "${STICKMON_ROOT}/src/core/RoomResource.cpp"
         "${STICKMON_ROOT}/src/core/SaveCodec.cpp"
         "${STICKMON_ROOT}/src/core/SaveManager.cpp"
         "${STICKMON_ROOT}/src/core/VisitSessionService.cpp"
         "${STICKMON_ROOT}/src/game/HomeCare.cpp"
+        "${STICKMON_ROOT}/src/game/HomeActor.cpp"
+        "${STICKMON_ROOT}/src/game/HomeActorController.cpp"
         "${STICKMON_ROOT}/src/game/HomeChase.cpp"
+        "${STICKMON_ROOT}/src/game/HomeCoordinator.cpp"
+        "${STICKMON_ROOT}/src/game/HomeRuntime.cpp"
+        "${STICKMON_ROOT}/src/game/HomeSimulation.cpp"
         "${STICKMON_ROOT}/src/game/BathService.cpp"
         "${STICKMON_ROOT}/src/game/BattleSystem.cpp"
         "${STICKMON_ROOT}/src/game/BattleTurnController.cpp"

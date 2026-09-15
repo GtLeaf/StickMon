@@ -9,6 +9,7 @@
 #include "core/SaveCoordinator.h"
 #include "core/SaveManager.h"
 #include "core/Scene.h"
+#include "core/VisitTypes.h"
 #include "game/GameState.h"
 #include "game/BathService.h"
 #include "game/HomeCare.h"
@@ -41,13 +42,6 @@ enum class DebugContactEventResult : uint8_t {
     NO_CONTACT,
     BUSY,
     INVALID,
-};
-
-enum class VisitHostResult : uint8_t {
-    ACCEPTED = 0,
-    STORAGE_FULL = 1,
-    NO_MONSTER = 2,
-    TEAM_NOT_SOLO = 3,
 };
 
 enum class ExploreTravelPhase : uint8_t {

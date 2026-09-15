@@ -38,6 +38,9 @@ void Actor::beginTask(Task nextTask, uint32_t nowMs,
     taskUntilMs = durationMs == 0 ? 0 : nowMs + durationMs;
     blockedSinceMs = 0;
     nextReplanMs = nowMs;
+    lastWaypointDistance = 1000000.0f;
+    lastMoveProgressMs = nowMs;
+    stuckRecoveryCount = 0;
 }
 
 void Actor::stop(uint32_t nowMs, uint32_t idleDelayMs) {
@@ -52,6 +55,9 @@ void Actor::stop(uint32_t nowMs, uint32_t idleDelayMs) {
     taskUntilMs = 0;
     blockedSinceMs = 0;
     nextReplanMs = nowMs;
+    lastWaypointDistance = 1000000.0f;
+    lastMoveProgressMs = nowMs;
+    stuckRecoveryCount = 0;
     nextDecisionMs = nowMs + idleDelayMs;
 }
 

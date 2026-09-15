@@ -29,11 +29,71 @@ bool Coordinator::validActor(uint8_t actorId) const {
 
 bool Coordinator::transition(uint8_t actorId, Task task, uint32_t nowMs,
                              uint32_t durationMs, bool force) {
+    return transitionInternal(actorId, task, nowMs, durationMs, force,
+                              false);
+}
+
+bool Coordinator::transitionPreparedRoute(uint8_t actorId, Task task,
+                                          uint32_t nowMs,
+                                          uint32_t durationMs,
+                                          bool force) {
+    if (!validActor(actorId) || !taskUsesRoute(task) ||
+        actors_[actorId]->route.empty()) {
+        return false;
+    }
+    return transitionInternal(actorId, task, nowMs, durationMs, force,
+                              true);
+}
+
+bool Coordinator::beginTurn(uint8_t actorId, Task resumeTask,
+                            uint32_t nowMs, uint32_t durationMs,
+                            bool force) {
     if (!validActor(actorId)) return false;
     Actor& actor = *actors_[actorId];
-    if (!force && pairActive() && task != Task::PAIR_ACTION &&
-        taskPriority(task) < taskPriority(actor.task)) {
+    if (pairActive()) return false;
+    if (!force && taskPriority(resumeTask) < taskPriority(actor.task) &&
+        actor.task != Task::IDLE && actor.task != Task::WANDER) {
         return false;
+    }
+
+    for (uint8_t value = 0;
+         value < static_cast<uint8_t>(Resource::COUNT); ++value) {
+        Resource resource = static_cast<Resource>(value);
+        if (!taskUsesResource(resumeTask, resource)) {
+            release(resource, actorId);
+        }
+    }
+    actor.beginTask(Task::TURNING, nowMs, durationMs);
+    actor.resumeTask = resumeTask;
+    actor.motion = MotionPhase::TURNING;
+    return true;
+}
+
+bool Coordinator::finishTurn(uint8_t actorId, uint32_t nowMs,
+                             bool force) {
+    if (!validActor(actorId) ||
+        actors_[actorId]->task != Task::TURNING) {
+        return false;
+    }
+    const Task resumeTask = actors_[actorId]->resumeTask;
+    return transitionInternal(actorId, resumeTask, nowMs, 0, force, true);
+}
+
+bool Coordinator::transitionInternal(uint8_t actorId, Task task,
+                                     uint32_t nowMs,
+                                     uint32_t durationMs, bool force,
+                                     bool preservePreparedRoute) {
+    if (!validActor(actorId)) return false;
+    Actor& actor = *actors_[actorId];
+    const Task previousTask = actor.task;
+    const Task previousResumeTask = actor.resumeTask;
+    if (pairActive() && task != Task::PAIR_ACTION) {
+        if (!force && taskPriority(task) <= taskPriority(Task::PAIR_ACTION)) {
+            return false;
+        }
+        // Survival and door transitions preempt the pair as one atomic state;
+        // leaving the other actor in PAIR_ACTION would strand the pair lock.
+        endPair(nowMs);
     }
     if (!force && taskPriority(task) < taskPriority(actor.task) &&
         actor.task != Task::IDLE && actor.task != Task::WANDER) {
@@ -49,7 +109,15 @@ bool Coordinator::transition(uint8_t actorId, Task task, uint32_t nowMs,
             release(resource, actorId);
         }
     }
-    if (!taskUsesRoute(task)) actor.route.clear();
+    // A route belongs to an intent, not to the actor forever. Preserve it
+    // only while an identical task is refreshed or a TURNING pause resumes
+    // the task that created the route; every other transition starts with a
+    // clean route and must explicitly plan a new one.
+    const bool resumeExistingRoute = preservePreparedRoute ||
+        previousTask == task ||
+        (previousTask == Task::TURNING && previousResumeTask == task) ||
+        task == Task::TURNING;
+    if (!resumeExistingRoute) actor.route.clear();
     actor.beginTask(task, nowMs, durationMs);
     return true;
 }
@@ -190,7 +258,9 @@ uint16_t Coordinator::validate() const {
         for (uint8_t actorId = 0; actorId < actorCount_; ++actorId) {
             const Actor& actor = *actors_[actorId];
             if (!actor.active) continue;
-            if (actor.task == Task::IDLE && !actor.route.empty()) {
+            const bool preservesRoute = actor.task == Task::TURNING;
+            if (!preservesRoute && !taskUsesRoute(actor.task) &&
+                !actor.route.empty()) {
                 errors |= IDLE_ACTOR_HAS_ROUTE;
             }
             if (actor.hidden &&
@@ -209,12 +279,14 @@ uint16_t Coordinator::repair(uint32_t nowMs) {
          value < static_cast<uint8_t>(Resource::COUNT); ++value) {
         Lease& lease = leases_[value];
         if (lease.owner == NO_ACTOR) continue;
-        if (lease.owner < 0 || !validActor(static_cast<uint8_t>(lease.owner)) ||
-            !taskUsesResource(
-                actors_[lease.owner]->task, static_cast<Resource>(value)) &&
-            !(actors_[lease.owner]->task == Task::TURNING &&
-              taskUsesResource(actors_[lease.owner]->resumeTask,
-                               static_cast<Resource>(value)))) {
+        if (lease.owner < 0 ||
+            !validActor(static_cast<uint8_t>(lease.owner)) ||
+            (!taskUsesResource(
+                 actors_[lease.owner]->task,
+                 static_cast<Resource>(value)) &&
+             !(actors_[lease.owner]->task == Task::TURNING &&
+               taskUsesResource(actors_[lease.owner]->resumeTask,
+                                static_cast<Resource>(value))))) {
             lease = Lease{};
         }
     }
@@ -223,7 +295,10 @@ uint16_t Coordinator::repair(uint32_t nowMs) {
         for (uint8_t actorId = 0; actorId < actorCount_; ++actorId) {
             Actor& actor = *actors_[actorId];
             if (!actor.active) continue;
-            if (actor.task == Task::IDLE) actor.route.clear();
+            if (actor.task != Task::TURNING &&
+                !taskUsesRoute(actor.task)) {
+                actor.route.clear();
+            }
             if (actor.hidden) {
                 actor.velocityX = 0.0f;
                 actor.velocityY = 0.0f;

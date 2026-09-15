@@ -6,7 +6,9 @@
 
 namespace HudRenderer {
 
-void drawHungerIcon(Canvas565& canvas, int x, int y, uint8_t hunger) {
+void drawHungerIcon(Canvas565& canvas, int x, int y, uint8_t hunger,
+                    uint8_t pixelScale) {
+    if (pixelScale == 0) return;
     uint8_t visibleRows = static_cast<uint8_t>(
         (static_cast<uint16_t>(HudAssets::HUNGER_ICON_H) * hunger + 99) /
         100);
@@ -50,8 +52,10 @@ void drawHungerIcon(Canvas565& canvas, int x, int y, uint8_t hunger) {
             if (cutRow > HudAssets::HUNGER_ICON_H) {
                 cutRow = HudAssets::HUNGER_ICON_H;
             }
-            canvas.drawAssetPixel(x + column, y + row,
-                                  row < cutRow ? emptyColor : color);
+            canvas.fillAssetRect(x + column * pixelScale,
+                                 y + row * pixelScale,
+                                 pixelScale, pixelScale,
+                                 row < cutRow ? emptyColor : color);
         }
     }
 }

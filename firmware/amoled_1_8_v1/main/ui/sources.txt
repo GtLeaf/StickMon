@@ -1,0 +1,8 @@
+# Shared AMOLED renderer sources, relative to the V1 main directory.
+# Consumed by V1, V2 and the native host renderer build.
+HomeScreen.cpp
+ui/UiCommon.cpp
+ui/RoomScreens.cpp
+ui/SettingsScreens.cpp
+ui/ExploreMapRenderer.cpp
+ui/RenderCaches.cpp

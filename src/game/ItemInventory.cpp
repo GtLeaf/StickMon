@@ -69,18 +69,21 @@ bool cureStatus(MonsterRuntime& monster, MajorStatus first,
     return true;
 }
 
-constexpr ItemId HOME_BAG_ITEMS[] = {
+constexpr ItemId HOME_BAG_DAILY_ITEMS[] = {
+    ItemId::CANDY,
+    ItemId::FULL_HEAL,
+};
+
+constexpr ItemId HOME_BAG_EXPLORE_ITEMS[] = {
     ItemId::POTION,
     ItemId::SUPER_POTION,
     ItemId::ANTIDOTE,
-    ItemId::CANDY,
     ItemId::PARALYZE_HEAL,
     ItemId::AWAKENING,
     ItemId::BURN_HEAL,
     ItemId::ICE_HEAL,
     ItemId::MAX_POTION,
     ItemId::FULL_RESTORE,
-    ItemId::FULL_HEAL,
     ItemId::FIRE_STONE,
     ItemId::WATER_STONE,
     ItemId::THUNDER_STONE,
@@ -92,6 +95,27 @@ constexpr ItemId HOME_BAG_ITEMS[] = {
     ItemId::STAR_PIECE,
     ItemId::HEART_SCALE,
 };
+
+template <size_t N>
+uint8_t visibleHomeBagCount(const ItemId (&items)[N],
+                            const GameState& state) {
+    uint8_t visible = 0;
+    for (ItemId item : items) {
+        if (count(state, item) > 0) ++visible;
+    }
+    return visible;
+}
+
+template <size_t N>
+ItemId visibleHomeBagItemAt(const ItemId (&items)[N],
+                            const GameState& state, uint8_t visibleIndex) {
+    uint8_t visible = 0;
+    for (ItemId item : items) {
+        if (count(state, item) == 0) continue;
+        if (visible++ == visibleIndex) return item;
+    }
+    return ItemId::COUNT;
+}
 
 }  // namespace
 
@@ -146,6 +170,25 @@ bool usableFromHomeBag(ItemId item) {
     case ItemId::WATER_STONE:
     case ItemId::THUNDER_STONE:
     case ItemId::REVIVE:
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool usableInBattle(ItemId item) {
+    switch (item) {
+    case ItemId::POTION:
+    case ItemId::SUPER_POTION:
+    case ItemId::MAX_POTION:
+    case ItemId::FULL_RESTORE:
+    case ItemId::FULL_HEAL:
+    case ItemId::REVIVE:
+    case ItemId::ANTIDOTE:
+    case ItemId::PARALYZE_HEAL:
+    case ItemId::AWAKENING:
+    case ItemId::BURN_HEAL:
+    case ItemId::ICE_HEAL:
         return true;
     default:
         return false;
@@ -293,20 +336,33 @@ UseResult useOnTeam(GameState& state, ItemId item, uint8_t teamSlot) {
 }
 
 uint8_t homeBagItemCount(const GameState& state) {
-    uint8_t visible = 0;
-    for (ItemId item : HOME_BAG_ITEMS) {
-        if (count(state, item) > 0) ++visible;
-    }
-    return visible;
+    return static_cast<uint8_t>(homeBagDailyItemCount(state) +
+                                homeBagExploreItemCount(state));
 }
 
 ItemId homeBagItemAt(const GameState& state, uint8_t visibleIndex) {
-    uint8_t visible = 0;
-    for (ItemId item : HOME_BAG_ITEMS) {
-        if (count(state, item) == 0) continue;
-        if (visible++ == visibleIndex) return item;
+    const uint8_t dailyCount = homeBagDailyItemCount(state);
+    if (visibleIndex < dailyCount) {
+        return homeBagDailyItemAt(state, visibleIndex);
     }
-    return ItemId::COUNT;
+    return homeBagExploreItemAt(
+        state, static_cast<uint8_t>(visibleIndex - dailyCount));
+}
+
+uint8_t homeBagDailyItemCount(const GameState& state) {
+    return visibleHomeBagCount(HOME_BAG_DAILY_ITEMS, state);
+}
+
+ItemId homeBagDailyItemAt(const GameState& state, uint8_t visibleIndex) {
+    return visibleHomeBagItemAt(HOME_BAG_DAILY_ITEMS, state, visibleIndex);
+}
+
+uint8_t homeBagExploreItemCount(const GameState& state) {
+    return visibleHomeBagCount(HOME_BAG_EXPLORE_ITEMS, state);
+}
+
+ItemId homeBagExploreItemAt(const GameState& state, uint8_t visibleIndex) {
+    return visibleHomeBagItemAt(HOME_BAG_EXPLORE_ITEMS, state, visibleIndex);
 }
 
 }  // namespace ItemInventory

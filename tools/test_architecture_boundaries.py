@@ -41,6 +41,90 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             ],
         )
 
+    def test_home_simulation_is_shared_by_stick_and_amoled(self):
+        stick_header = (ROOT / "src/scenes/MainScene.h").read_text(
+            encoding="utf-8"
+        )
+        amoled_header = (
+            ROOT / "firmware/amoled_1_8_v1/main/AmoledApp.h"
+        ).read_text(encoding="utf-8")
+        self.assertIn("Home::Simulation homeCoordinator;", stick_header)
+        self.assertIn("Home::Simulation homeRuntime;", amoled_header)
+
+        simulation = "\n".join(
+            (ROOT / "src/game" / name).read_text(encoding="utf-8")
+            for name in ("HomeSimulation.h", "HomeSimulation.cpp")
+        )
+        for forbidden in (
+            "Arduino.h",
+            "M5Unified",
+            "M5GFX",
+            "esp_",
+            "driver/",
+            "freertos/",
+        ):
+            self.assertNotIn(forbidden, simulation)
+
+    def test_home_actor_policy_is_shared_and_platform_independent(self):
+        stick = (ROOT / "src/scenes/MainScene.cpp").read_text(
+            encoding="utf-8"
+        )
+        amoled = (
+            ROOT / "firmware/amoled_1_8_v1/main/AmoledApp.cpp"
+        ).read_text(encoding="utf-8")
+        for source in (stick, amoled):
+            self.assertIn("Home::ActorController::selectBowlActor(", source)
+            self.assertIn("Home::ActorController::survivalIntent(", source)
+
+        controller = "\n".join(
+            (ROOT / "src/game" / name).read_text(encoding="utf-8")
+            for name in ("HomeActorController.h", "HomeActorController.cpp")
+        )
+        for forbidden in (
+            "Arduino.h",
+            "M5Unified",
+            "M5GFX",
+            "esp_",
+            "driver/",
+            "freertos/",
+        ):
+            self.assertNotIn(forbidden, controller)
+
+    def test_room_survival_tasks_use_home_simulation(self):
+        sources = {
+            "Stick": ROOT / "src/scenes/MainScene.cpp",
+            "AMOLED": ROOT / "firmware/amoled_1_8_v1/main/AmoledApp.cpp",
+        }
+        task_names = (
+            "SEEK_FOOD",
+            "FEEDING",
+            "SEEK_SLEEP",
+            "SEEK_BED",
+            "GO_TO_SLEEP",
+            "SLEEPING",
+            "RESTING",
+            "WAKING",
+            "LEAVING_SLEEP",
+            "LEAVING_BED",
+            "YIELDING",
+            "YIELDING_BED",
+            "FAINTED",
+        )
+        pattern = re.compile(
+            rf"\.(?:task)\s*=\s*(?:Home::Task|AiMode|VisitorState)::"
+            rf"(?:{'|'.join(task_names)})\b"
+        )
+        violations = []
+        for platform, path in sources.items():
+            for line_number, line in enumerate(
+                path.read_text(encoding="utf-8").splitlines(), start=1
+            ):
+                if pattern.search(line):
+                    violations.append(
+                        f"{platform} {path.relative_to(ROOT)}:{line_number}"
+                    )
+        self.assertEqual([], violations, "\n" + "\n".join(violations))
+
     def test_presentation_is_device_independent(self):
         self.assert_no_patterns(
             ROOT / "src" / "presentation",

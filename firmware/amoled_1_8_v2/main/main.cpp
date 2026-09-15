@@ -41,9 +41,9 @@ constexpr uint16_t TRANSFER_PHYSICAL_ROWS = TRANSFER_LOGICAL_ROWS;
 constexpr size_t TRANSFER_BUFFER_COUNT = 2;
 constexpr uint32_t LOCK_ANIMATION_MS = 1000;
 constexpr uint32_t LOCK_WAKE_GRACE_MS = 1200;
-constexpr int LOCK_START_RADIUS = 260;
-constexpr int LOCK_FINAL_RADIUS = 33;
-constexpr int LOCK_SLEEP_BREATH_AMPLITUDE = 4;
+constexpr int LOCK_START_RADIUS = 520;
+constexpr int LOCK_FINAL_RADIUS = 66;
+constexpr int LOCK_SLEEP_BREATH_AMPLITUDE = 8;
 constexpr uint32_t LOCK_SLEEP_BREATH_PERIOD_MS = 2000;
 enum class LockPhase : uint8_t { OPEN, CLOSING, LOCKED, OPENING };
 constexpr size_t PHYSICAL_PIXELS =
@@ -319,6 +319,8 @@ AmoledV1::TouchEvent toAppTouchEvent(const AmoledV2::TouchEvent& event) {
     AmoledV1::TouchEvent appEvent{};
     appEvent.x = event.x;
     appEvent.y = event.y;
+    appEvent.rawX = event.rawX;
+    appEvent.rawY = event.rawY;
     appEvent.timestampMs = event.timestampMs;
     switch (event.type) {
     case AmoledV2::TouchEventType::DOWN:
@@ -375,6 +377,7 @@ bool brainSay(const char* text, void* userCtx) {
 
 extern "C" void app_main(void) {
     ESP_LOGI(TAG, "Starting AMOLED V1 display milestone");
+    ESP_LOGI(TAG, "Reset reason: %d", static_cast<int>(esp_reset_reason()));
     ESP_LOGI(TAG, "PSRAM size: %u bytes",
              static_cast<unsigned>(esp_psram_get_size()));
 
@@ -434,7 +437,7 @@ extern "C" void app_main(void) {
     canvas.attach(frameBuffer);
     canvas.setCoordinateScale(1);
     canvas.setLayoutScale(1);
-    canvas.setAssetScale(AmoledUi::RESOURCE_SCALE);
+    canvas.setAssetScale(1);
     canvas.setNativeText(true);
     AmoledV2::bindAmoledPlatform();
     if (!AmoledV2::AmoledPlatform::instance().begin()) {
@@ -453,10 +456,20 @@ extern "C" void app_main(void) {
     PixelRenderer::bind(frameBuffer);
     PixelRenderer::setCoordinateScale(1);
     PixelRenderer::canvas().setLayoutScale(1);
-    PixelRenderer::canvas().setAssetScale(AmoledUi::RESOURCE_SCALE);
+    PixelRenderer::canvas().setAssetScale(1);
     PixelRenderer::canvas().setNativeText(true);
-    AmoledV1::AmoledApp app;
+    ESP_LOGI(TAG, "App: creating home application (object=%u bytes, stack-free=%u)",
+             static_cast<unsigned>(sizeof(AmoledV1::AmoledApp)),
+             static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
+    // AmoledApp contains the complete UI/game state. Keep it in static
+    // storage so deep begin/render calls cannot consume the app_main stack.
+    static AmoledV1::AmoledApp app;
+    ESP_LOGI(TAG, "App: loading state and resources (stack-free=%u)",
+             static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
     app.begin(millisNow());
+    // Scene transitions use the AMOLED brightness register. Intermediate
+    // shades therefore avoid a full redraw, per-pixel blend and GRAM upload.
+    app.setExternalSceneFade(true);
 #if STICKMON_HAS_CLAW
     Stickmon::BrainBridge::HostAdapter brainHost{};
     brainHost.snapshot = &brainSnapshot;
@@ -470,6 +483,9 @@ extern "C" void app_main(void) {
     Stickmon::BrainBridge::instance().setHost(brainHost);
 #endif
     app.render(canvas);
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    app.renderDebugTouchOverlay(canvas);
+#endif
     app.markRendered();
 
     ESP_LOGI(TAG, "Display pipeline: %u physical rows, %u DMA buffers",
@@ -510,6 +526,10 @@ extern "C" void app_main(void) {
     bool lastLockSleeping = false;
     uint8_t lockedBrightness =
         AmoledV2::AmoledPlatform::instance().brightness();
+    bool sceneFadeWasActive = false;
+    bool sceneFadeWasInward = false;
+    uint8_t sceneFadeBaseBrightness = lockedBrightness;
+    uint8_t sceneFadeBrightness = lockedBrightness;
     ESP_LOGI(TAG, "Interactive home screen presented at 368x448");
 #if STICKMON_HAS_CLAW
     Stickmon::ClawRuntime::instance().beginAsync();
@@ -546,6 +566,31 @@ extern "C" void app_main(void) {
 #if STICKMON_HAS_CLAW
         Stickmon::ClawRuntime::instance().update(nowMs);
 #endif
+        const bool sceneFadeActive = app.sceneFadeActive();
+        const bool sceneFadePhaseChanged = sceneFadeActive &&
+            (!sceneFadeWasActive ||
+             app.sceneFadeInward() != sceneFadeWasInward);
+        if (lockPhase == LockPhase::OPEN && sceneFadeActive) {
+            if (!sceneFadeWasActive) {
+                sceneFadeBaseBrightness =
+                    AmoledV2::AmoledPlatform::instance().brightness();
+                sceneFadeBrightness = sceneFadeBaseBrightness;
+            }
+            const uint8_t brightness = static_cast<uint8_t>(
+                (static_cast<uint32_t>(sceneFadeBaseBrightness) *
+                 (255U - app.sceneFadeAlpha()) + 127U) / 255U);
+            if (brightness != sceneFadeBrightness) {
+                AmoledV2::AmoledPlatform::instance().setBrightness(brightness);
+                sceneFadeBrightness = brightness;
+            }
+        } else if (sceneFadeWasActive && !sceneFadeActive) {
+            AmoledV2::AmoledPlatform::instance().setBrightness(
+                sceneFadeBaseBrightness);
+            sceneFadeBrightness = sceneFadeBaseBrightness;
+        }
+        sceneFadeWasActive = sceneFadeActive;
+        if (sceneFadeActive) sceneFadeWasInward = app.sceneFadeInward();
+
         bool lockRequest = app.consumeLockRequest();
         if (lockPhase == LockPhase::OPEN && lockRequest &&
             static_cast<int32_t>(nowMs - lockWakeGraceUntilMs) >= 0) {
@@ -554,8 +599,8 @@ extern "C" void app_main(void) {
             lockAnimationStartedMs = nowMs;
             lockPhase = LockPhase::CLOSING;
             lockVisualValid = false;
-            int16_t focusX = 92;
-            int16_t focusY = 112;
+            int16_t focusX = AmoledUi::WIDTH / 2;
+            int16_t focusY = AmoledUi::HEIGHT / 2;
             lockHasFocus = app.lockFocusPoint(focusX, focusY);
             AudioManager::ins().setMusicSuspended(true);
             app.forceFullRender();
@@ -578,12 +623,22 @@ extern "C" void app_main(void) {
         bool lockedWithoutFocus =
             lockPhase == LockPhase::LOCKED && !lockHasFocus;
         bool lockSleeping = lockHasFocus && app.petIsSleeping();
-        bool renderNeeded = (!lockedWithoutFocus && app.needsRender()) ||
+        const bool sceneFadeBrightnessOnly =
+            lockPhase == LockPhase::OPEN && sceneFadeActive &&
+            !sceneFadePhaseChanged;
+        if (sceneFadeBrightnessOnly && app.needsRender()) {
+            // A brightness update is the presented fade frame. Clearing the
+            // dirty request lets SceneFade advance on the next loop without
+            // redrawing the unchanged scene underneath it.
+            app.markRendered();
+        }
+        bool renderNeeded =
+                            (!lockedWithoutFocus && app.needsRender()) ||
                             lockPhase == LockPhase::CLOSING ||
                             lockPhase == LockPhase::OPENING;
         if (lockPhase != LockPhase::OPEN) {
-            int16_t focusX = 92;
-            int16_t focusY = 112;
+            int16_t focusX = AmoledUi::WIDTH / 2;
+            int16_t focusY = AmoledUi::HEIGHT / 2;
             if (lockHasFocus) app.lockFocusPoint(focusX, focusY);
             int radius = lockRadius(lockPhase, nowMs,
                                     lockAnimationStartedMs, lockHasFocus,
@@ -599,14 +654,15 @@ extern "C" void app_main(void) {
             uint16_t renderEnd = app.renderRowEnd();
             uint16_t renderXBegin = 0;
             uint16_t renderXEnd = LOGICAL_WIDTH;
+            uint16_t nativeRenderBegin = renderBegin;
+            uint16_t nativeRenderEnd = renderEnd;
+            uint16_t nativeRenderXBegin = renderXBegin;
+            uint16_t nativeRenderXEnd = renderXEnd;
             if (lockFrame) {
-                int16_t focusX = 92;
-                int16_t focusY = 112;
+                int16_t focusX = AmoledUi::WIDTH / 2;
+                int16_t focusY = AmoledUi::HEIGHT / 2;
                 if (lockHasFocus) app.lockFocusPoint(focusX, focusY);
-                int radius = lockRadius(lockPhase, nowMs,
-                                        lockAnimationStartedMs, lockHasFocus,
-                                        lockSleeping);
-                int oldLeft = lockVisualValid
+                /* int oldLeft = lockVisualValid
                     ? lastLockFocusX - lastLockRadius : focusX - radius;
                 int oldRight = lockVisualValid
                     ? lastLockFocusX + lastLockRadius : focusX + radius;
@@ -625,32 +681,50 @@ extern "C" void app_main(void) {
                     0, static_cast<int>(LOGICAL_HEIGHT)));
                 renderEnd = static_cast<uint16_t>(std::clamp(
                     std::max(oldBottom, static_cast<int>(focusY + radius)) + 1,
-                    0, static_cast<int>(LOGICAL_HEIGHT)));
-                app.forceRenderRows(AmoledUi::nativeRow(renderBegin),
-                                    AmoledUi::nativeRow(renderEnd));
+                    0, static_cast<int>(LOGICAL_HEIGHT))); */
+                renderXBegin = nativeRenderXBegin = 0;
+                renderXEnd = nativeRenderXEnd = LOGICAL_WIDTH;
+                renderBegin = nativeRenderBegin = 0;
+                renderEnd = nativeRenderEnd = LOGICAL_HEIGHT;
+                nativeRenderBegin = static_cast<uint16_t>(
+                    renderBegin);
+                nativeRenderEnd = static_cast<uint16_t>(
+                    renderEnd);
+                nativeRenderXBegin = static_cast<uint16_t>(
+                    renderXBegin);
+                nativeRenderXEnd = static_cast<uint16_t>(
+                    renderXEnd);
+                // The final lock frame must clear the whole panel. Otherwise
+                // pixels outside the shrinking mask retain the previous frame.
+                if (lockPhase == LockPhase::LOCKED) {
+                    renderXBegin = nativeRenderXBegin = 0;
+                    renderXEnd = nativeRenderXEnd = LOGICAL_WIDTH;
+                    renderBegin = nativeRenderBegin = 0;
+                    renderEnd = nativeRenderEnd = LOGICAL_HEIGHT;
+                }
+                app.forceRenderRows(nativeRenderBegin, nativeRenderEnd);
             }
             app.render(canvas);
+#if STICKMON_ENABLE_DEBUG_FEATURES
+            app.renderDebugTouchOverlay(canvas);
+#endif
             if (lockFrame) {
-                int16_t focusX = 92;
-                int16_t focusY = 112;
+                int16_t focusX = AmoledUi::WIDTH / 2;
+                int16_t focusY = AmoledUi::HEIGHT / 2;
                 if (lockHasFocus) app.lockFocusPoint(focusX, focusY);
                 int radius = lockRadius(lockPhase, nowMs,
                                         lockAnimationStartedMs, lockHasFocus,
                                         lockSleeping);
                 drawLockMask(canvas,
-                             AmoledUi::nativeCoordinate(focusX),
-                             AmoledUi::nativeCoordinate(focusY),
-                             AmoledUi::nativeExtent(radius),
-                             AmoledUi::nativeCoordinate(renderXBegin),
-                             AmoledUi::nativeCoordinate(renderXEnd),
-                             AmoledUi::nativeCoordinate(renderBegin),
-                             AmoledUi::nativeCoordinate(renderEnd));
+                             focusX,
+                             focusY,
+                             radius,
+                             nativeRenderXBegin, nativeRenderXEnd,
+                             nativeRenderBegin, nativeRenderEnd);
                 result = submitFrameRegion(
                     panel, physicalPixels, transferBuffers, transferDone,
-                    AmoledUi::nativeCoordinate(renderXBegin),
-                    AmoledUi::nativeCoordinate(renderXEnd),
-                    AmoledUi::nativeRow(renderBegin),
-                    AmoledUi::nativeRow(renderEnd));
+                    nativeRenderXBegin, nativeRenderXEnd,
+                    nativeRenderBegin, nativeRenderEnd);
             } else {
                 result = submitFrame(
                     panel, physicalPixels, transferBuffers, transferDone,

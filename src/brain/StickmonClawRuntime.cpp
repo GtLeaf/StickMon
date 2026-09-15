@@ -58,6 +58,7 @@ bool s_wifiInitialized = false;
 bool s_wifiEventsRegistered = false;
 volatile bool s_wifiConnected = false;
 volatile bool s_wifiStopping = false;
+volatile bool s_wifiReconnectSuppressed = false;
 portMUX_TYPE s_wifiMux = portMUX_INITIALIZER_UNLOCKED;
 wl_handle_t s_brainWlHandle = WL_INVALID_HANDLE;
 
@@ -65,6 +66,20 @@ constexpr size_t SETUP_MAX_BODY = 4096;
 
 bool wifiConnected();
 bool startWifi(const char* ssid, const char* password, bool keepAp);
+
+bool wifiReconnectSuppressed() {
+    portENTER_CRITICAL(&s_wifiMux);
+    const bool suppressed = s_wifiReconnectSuppressed;
+    portEXIT_CRITICAL(&s_wifiMux);
+    return suppressed;
+}
+
+void suppressWifiReconnect(bool suppressed) {
+    portENTER_CRITICAL(&s_wifiMux);
+    s_wifiReconnectSuppressed = suppressed;
+    if (suppressed) s_wifiConnected = false;
+    portEXIT_CRITICAL(&s_wifiMux);
+}
 
 bool readText(const char* nameSpace, const char* key, char* output,
               size_t outputSize) {
@@ -1131,16 +1146,23 @@ void wifiEventHandler(void*, esp_event_base_t eventBase, int32_t eventId,
     if (eventBase == WIFI_EVENT && eventId == WIFI_EVENT_STA_DISCONNECTED) {
         portENTER_CRITICAL(&s_wifiMux);
         s_wifiConnected = false;
+        const bool reconnect = !s_wifiStopping &&
+                               !s_wifiReconnectSuppressed;
         portEXIT_CRITICAL(&s_wifiMux);
-        if (!s_wifiStopping) {
+        if (reconnect) {
             ClawRuntime::instance().logf(ClawStatusLog::Level::WARN,
                                          "Wi-Fi 断开，重连中");
             esp_wifi_connect();
         }
     } else if (eventBase == IP_EVENT && eventId == IP_EVENT_STA_GOT_IP) {
         portENTER_CRITICAL(&s_wifiMux);
-        s_wifiConnected = true;
+        const bool suppressed = s_wifiReconnectSuppressed;
+        s_wifiConnected = !suppressed;
         portEXIT_CRITICAL(&s_wifiMux);
+        if (suppressed) {
+            (void)esp_wifi_disconnect();
+            return;
+        }
         const auto* gotIp =
             static_cast<const ip_event_got_ip_t*>(eventData);
         char ip[16] = {};
@@ -1165,6 +1187,7 @@ bool wifiConnected() {
 
 bool startWifi(const char* ssid, const char* password, bool keepAp) {
     if (!ssid || !ssid[0]) return false;
+    if (wifiReconnectSuppressed()) return false;
     esp_err_t result = esp_netif_init();
     if (result != ESP_OK && result != ESP_ERR_INVALID_STATE) return false;
     result = esp_event_loop_create_default();
@@ -1200,6 +1223,7 @@ bool startWifi(const char* ssid, const char* password, bool keepAp) {
     result = esp_wifi_start();
     if (result != ESP_OK && result != ESP_ERR_WIFI_STATE) return false;
     esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+    if (wifiReconnectSuppressed()) return false;
     return esp_wifi_connect() == ESP_OK || wifiConnected();
 }
 
@@ -1380,6 +1404,8 @@ void ClawRuntime::beginTask() {
     const uint32_t elapsed = Platform::clock().millis() - startedAt;
     portENTER_CRITICAL(&mux_);
     initializing_ = false;
+    const bool resume = resumeAfterPeerSession_ && !peerSessionActive_;
+    resumeAfterPeerSession_ = false;
     portEXIT_CRITICAL(&mux_);
     if (started()) {
         ESP_LOGI(TAG, "ESP-Claw background initialization completed in %lu ms",
@@ -1391,6 +1417,7 @@ void ClawRuntime::beginTask() {
         ESP_LOGW(TAG, "ESP-Claw background initialization failed in %lu ms",
                  static_cast<unsigned long>(elapsed));
     }
+    if (resume) beginAsync();
 }
 
 void ClawRuntime::loadRuntimeSettings() {
@@ -1420,7 +1447,8 @@ void ClawRuntime::beginAsync() {
 #else
     loadRuntimeSettings();
     portENTER_CRITICAL(&mux_);
-    if (!enabled_ || !wifiEnabled_ || started_ || initializing_) {
+    if (!enabled_ || !wifiEnabled_ || started_ || initializing_ ||
+        peerSessionActive_) {
         portEXIT_CRITICAL(&mux_);
         return;
     }
@@ -1541,6 +1569,84 @@ bool ClawRuntime::networkConnected() const {
     return value;
 }
 
+bool ClawRuntime::peerSessionActive() const {
+    portENTER_CRITICAL(&mux_);
+    const bool active = peerSessionActive_;
+    portEXIT_CRITICAL(&mux_);
+    return active;
+}
+
+void ClawRuntime::enterPeerSession() {
+#if !CONFIG_STICKMON_CLAW_ENABLE
+    return;
+#else
+    loadRuntimeSettings();
+    portENTER_CRITICAL(&mux_);
+    if (peerSessionActive_) {
+        portEXIT_CRITICAL(&mux_);
+        return;
+    }
+    peerSessionActive_ = true;
+    resumeAfterPeerSession_ = false;
+    networkConnected_ = false;
+    activeAutonomyRequestId_ = 0;
+    autonomySubmitInFlight_ = false;
+    ++activityGeneration_;
+    portEXIT_CRITICAL(&mux_);
+
+    suppressWifiReconnect(true);
+    BrainBridge::instance().setAgentAllowed(false);
+    BrainBridge::instance().setRuntimeState(true, 0, false);
+    if (setupPortalActive()) stopSetupPortal();
+    if (claw_core_handle_t core = app_claw_get_core()) {
+        (void)claw_core_cancel_request(core, 0);
+    }
+    if (s_wifiInitialized) (void)esp_wifi_disconnect();
+    logf(ClawStatusLog::Level::INFO, "玩家联机，Wi-Fi 网络已暂停");
+#endif
+}
+
+void ClawRuntime::leavePeerSession() {
+#if !CONFIG_STICKMON_CLAW_ENABLE
+    return;
+#else
+    loadRuntimeSettings();
+    portENTER_CRITICAL(&mux_);
+    if (!peerSessionActive_) {
+        portEXIT_CRITICAL(&mux_);
+        return;
+    }
+    peerSessionActive_ = false;
+    const bool shouldResume = enabled_ && wifiEnabled_;
+    const bool initializing = initializing_;
+    const bool running = started_;
+    resumeAfterPeerSession_ = shouldResume && initializing;
+    portEXIT_CRITICAL(&mux_);
+
+    suppressWifiReconnect(false);
+    if (!shouldResume) return;
+    if (initializing) {
+        logf(ClawStatusLog::Level::INFO,
+             "玩家联机结束，等待 Wi-Fi 后台恢复");
+        return;
+    }
+    if (!running) {
+        beginAsync();
+        return;
+    }
+
+    char ssid[65] = {};
+    char password[65] = {};
+    readText(NVS_WIFI_NAMESPACE, "ssid", ssid, sizeof(ssid));
+    readText(NVS_WIFI_NAMESPACE, "password", password, sizeof(password));
+    if (startWifi(ssid, password, false)) {
+        logf(ClawStatusLog::Level::INFO, "玩家联机结束，Wi-Fi 重连中");
+    } else {
+        logf(ClawStatusLog::Level::WARN, "玩家联机结束，Wi-Fi 恢复失败");
+    }
+#endif
+}
+
 bool ClawRuntime::autonomyActive() const {
     bool active = false;
     portENTER_CRITICAL(&mux_);
@@ -1559,7 +1665,8 @@ bool ClawRuntime::begin() {
     const bool enabled = enabled_;
     const bool wifiEnabled = wifiEnabled_;
     const bool coreInitialized = coreInitialized_;
-    if (started_ || !enabled || !wifiEnabled) {
+    const bool peerSession = peerSessionActive_;
+    if (started_ || !enabled || !wifiEnabled || peerSession) {
         portEXIT_CRITICAL(&mux_);
         return true;
     }
@@ -1605,10 +1712,12 @@ bool ClawRuntime::begin() {
     // DNS request fail and can prevent the root agent from being created.
     const uint32_t wifiWaitStarted = Platform::clock().millis();
     while (!wifiConnected() &&
+           !peerSessionActive() &&
            (Platform::clock().millis() - wifiWaitStarted) <
                CLAW_WIFI_CONNECT_TIMEOUT_MS) {
         vTaskDelay(pdMS_TO_TICKS(250));
     }
+    if (peerSessionActive()) return true;
     if (!wifiConnected()) {
         ESP_LOGW(TAG, "Wi-Fi did not obtain an IP before ESP-Claw startup");
         logf(ClawStatusLog::Level::ERROR,
@@ -2048,11 +2157,18 @@ void ClawRuntime::update(uint32_t nowMs) {
     bool running = started_;
     bool enabled = enabled_;
     bool wifiEnabled = wifiEnabled_;
+    bool peerSession = peerSessionActive_;
 #if CONFIG_APP_CLAW_CAP_IM_WECHAT
     bool portal = setupPortalActive_;
     uint32_t lastWechatPoll = lastWechatPollMs_;
 #endif
     portEXIT_CRITICAL(&mux_);
+
+    if (peerSession) {
+        BrainBridge::instance().setAgentAllowed(false);
+        BrainBridge::instance().setRuntimeState(true, 0, false);
+        return;
+    }
 
     if (!enabled || !wifiEnabled) {
         if (running || !wifiEnabled) stopDisabledRuntime();

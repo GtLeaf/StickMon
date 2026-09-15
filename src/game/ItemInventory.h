@@ -23,11 +23,16 @@ bool add(GameState& state, ItemId item, uint8_t amount = 1);
 bool remove(GameState& state, ItemId item, uint8_t amount = 1);
 
 bool usableFromHomeBag(ItemId item);
+bool usableInBattle(ItemId item);
 uint8_t preferredTarget(const GameState& state, ItemId item);
 UseResult useOnTeam(GameState& state, ItemId item, uint8_t teamSlot);
 
 uint8_t homeBagItemCount(const GameState& state);
 ItemId homeBagItemAt(const GameState& state, uint8_t visibleIndex);
+uint8_t homeBagDailyItemCount(const GameState& state);
+ItemId homeBagDailyItemAt(const GameState& state, uint8_t visibleIndex);
+uint8_t homeBagExploreItemCount(const GameState& state);
+ItemId homeBagExploreItemAt(const GameState& state, uint8_t visibleIndex);
 
 }  // namespace ItemInventory
 }  // namespace Game

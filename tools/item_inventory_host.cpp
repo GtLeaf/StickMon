@@ -77,6 +77,9 @@ int main() {
 
     state.bag.candy = 1;
     assert(Game::ItemInventory::usableFromHomeBag(ItemId::CANDY));
+    assert(!Game::ItemInventory::usableInBattle(ItemId::CANDY));
+    assert(Game::ItemInventory::usableInBattle(ItemId::POTION));
+    assert(Game::ItemInventory::usableInBattle(ItemId::FULL_RESTORE));
     state.team[0].speciesId = 1;
     state.team[0].level = 5;
     state.team[0].exp = minimumExpForLevel(
@@ -92,6 +95,7 @@ int main() {
     state.team[0].hpMax = 40;
     state.team[0].hpCur = 20;
     assert(Game::ItemInventory::usableFromHomeBag(ItemId::THUNDER_STONE));
+    assert(!Game::ItemInventory::usableInBattle(ItemId::THUNDER_STONE));
     assert(Game::ItemInventory::useOnTeam(
                state, ItemId::THUNDER_STONE, 0) == UseResult::USED);
     assert(state.team[0].speciesId == 26 && state.bag.thunderStone == 0);
@@ -101,10 +105,14 @@ int main() {
     state.bag.paralyzeHeal = 1;
     state.bag.candy = 1;
     state.bag.revive = 1;
-    assert(Game::ItemInventory::homeBagItemAt(state, 0) == ItemId::POTION);
-    assert(Game::ItemInventory::homeBagItemAt(state, 1) == ItemId::ANTIDOTE);
-    assert(Game::ItemInventory::homeBagItemAt(state, 2) == ItemId::CANDY);
+    assert(Game::ItemInventory::homeBagDailyItemCount(state) == 1);
+    assert(Game::ItemInventory::homeBagExploreItemCount(state) == 5);
+    assert(Game::ItemInventory::homeBagItemAt(state, 0) == ItemId::CANDY);
+    assert(Game::ItemInventory::homeBagItemAt(state, 1) == ItemId::POTION);
+    assert(Game::ItemInventory::homeBagItemAt(state, 2) == ItemId::ANTIDOTE);
     assert(Game::ItemInventory::homeBagItemAt(state, 3) ==
            ItemId::PARALYZE_HEAL);
+    assert(Game::ItemInventory::homeBagItemAt(state, 4) == ItemId::MAX_POTION);
+    assert(Game::ItemInventory::homeBagItemAt(state, 5) == ItemId::REVIVE);
     return 0;
 }

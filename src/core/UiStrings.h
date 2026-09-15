@@ -78,6 +78,7 @@ static constexpr const char* SAVED = "已保存";
 static constexpr const char* LEVEL_FMT = "Lv%u";
 static constexpr const char* LEVEL_UP_TITLE = "升级!";
 static constexpr const char* LEVEL_UP_FMT = "升到Lv%u";
+static constexpr const char* LEVEL_UP_DIALOG_FMT = "%s等级提升到%u";
 static constexpr const char* EVOLUTION_TITLE = "进化!";
 static constexpr const char* EVOLUTION_FMT = "%s进化!";
 static constexpr const char* EVOLUTION_COMPLETE_FMT = "%s进化完成!";
@@ -130,6 +131,10 @@ static constexpr const char* LEAD = "首位";
 static constexpr const char* MOVES = "技能";
 static constexpr const char* EMPTY_MOVE_SLOT = "空技能位";
 static constexpr const char* MOVE_DETAIL_FMT = "威力%u 命中%u 熟练%u";
+static constexpr const char* MOVE_PROF_BEGINNER = "入门";
+static constexpr const char* MOVE_PROF_FAMILIAR = "熟悉";
+static constexpr const char* MOVE_PROF_SKILLED = "熟练";
+static constexpr const char* MOVE_PROF_MASTERED = "精通";
 static constexpr const char* HEART_COUNT_FMT = "鳞片x%u";
 static constexpr const char* RECALL_MOVE = "回忆招式";
 static constexpr const char* MOVE_RECALLED = "已回忆招式";
@@ -658,6 +663,8 @@ static constexpr const char* TILT_CONTROL = "倾斜控制";
 static constexpr const char* WALK_BOUNDARY = "运动边界";
 static constexpr const char* PAIR_INTERACTION = "追逐触发";
 static constexpr const char* BATTLE_DRAW_BOUNDS = "双方绘制框";
+static constexpr const char* TOUCH_DISPLAY = "点击显示";
+static constexpr const char* TOUCH_TEST = "触摸";
 static constexpr const char* LIGHT_FOLLOW = "跟随";
 static constexpr const char* LIGHT_TOP_LEFT = "左上";
 static constexpr const char* LIGHT_TOP = "上方";
@@ -695,6 +702,7 @@ static constexpr const char* ROOT_ITEMS[] = {
     CATEGORY_MOTION,
     CATEGORY_BATTLE,
     CATEGORY_CONTACT_EVENT,
+    TOUCH_DISPLAY,
     Ui::BACK,
 };
 static constexpr const char* MONSTER_ITEMS[] = {

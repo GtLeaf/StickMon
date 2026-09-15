@@ -291,27 +291,48 @@ void drawEvolutionMessage(const char* text) {
     PixelRenderer::text(20, 108, text, border, 1);
 }
 
+int textPixelWidth(const char* text) {
+    if (!text) return 0;
+    int width = 0;
+    for (const uint8_t* it = reinterpret_cast<const uint8_t*>(text); *it;) {
+        if (*it < 0x80) {
+            width += 8;
+            ++it;
+        } else {
+            width += 16;
+            ++it;
+            while (*it && (*it & 0xC0) == 0x80) ++it;
+        }
+    }
+    return width;
+}
+
 }  // namespace
 
 namespace ProgressionUi {
 
-void renderLevelUp(uint8_t level) {
+void renderLevelUp(const char* speciesName, uint8_t level) {
     auto& canvas = PixelRenderer::canvas();
-    const uint16_t background = PixelRenderer::rgb(18, 24, 32);
-    const uint16_t panel = PixelRenderer::rgb(35, 42, 50);
     const uint16_t border = PixelRenderer::rgb(241, 242, 232);
-    const uint16_t accent = PixelRenderer::rgb(255, 216, 72);
+    const uint16_t text = PixelRenderer::rgb(241, 242, 232);
     const uint16_t hint = PixelRenderer::rgb(135, 214, 238);
+    constexpr int PANEL_X = 8;
+    constexpr int PANEL_Y = 78;
+    constexpr int PANEL_W = Hal::DISPLAY_W - PANEL_X * 2;
+    constexpr int PANEL_H = 46;
 
-    canvas.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, background);
-    canvas.fillRect(24, 26, 192, 86, panel);
-    canvas.drawRect(24, 26, 192, 86, border);
-    PixelRenderer::text(96, 40, Ui::Common::LEVEL_UP_TITLE, accent, 1);
+    PixelRenderer::fillRectAlpha(PANEL_X, PANEL_Y, PANEL_W, PANEL_H,
+                                 PixelRenderer::rgb(4, 7, 10), 210);
+    canvas.drawRect(PANEL_X, PANEL_Y, PANEL_W, PANEL_H, border);
 
-    char line[32];
-    snprintf(line, sizeof(line), Ui::Common::LEVEL_UP_FMT, level);
-    PixelRenderer::text(82, 64, line, border, 1);
-    PixelRenderer::text(92, 92, Ui::Common::A_CONTINUE, hint, 1);
+    char line[96];
+    snprintf(line, sizeof(line), Ui::Common::LEVEL_UP_DIALOG_FMT,
+             speciesName ? speciesName : "精灵", level);
+    const int lineX = (Hal::DISPLAY_W - textPixelWidth(line)) / 2;
+    PixelRenderer::text(lineX < PANEL_X + 4 ? PANEL_X + 4 : lineX,
+                        PANEL_Y + 8, line, text, 1);
+    PixelRenderer::text(PANEL_X + PANEL_W - 54, PANEL_Y + 28,
+                        Ui::Common::A_CONTINUE, hint, 1);
 }
 
 bool evolutionAnimationComplete(uint16_t fromSpeciesId,

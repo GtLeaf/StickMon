@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""Remaining source integration checks; pixel/hit contracts live in test_amoled_native_render."""
 
 import unittest
 from pathlib import Path
@@ -6,7 +7,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 AMOLED_APP = ROOT / "firmware" / "amoled_1_8_v1" / "main" / "AmoledApp.cpp"
-HOME_SCREEN = ROOT / "firmware" / "amoled_1_8_v1" / "main" / "HomeScreen.cpp"
 
 
 class AmoledSettingsTests(unittest.TestCase):
@@ -23,22 +23,6 @@ class AmoledSettingsTests(unittest.TestCase):
         first_render = begin.index("requestFullRender();")
         self.assertLess(load, brightness)
         self.assertLess(brightness, first_render)
-
-    def test_brightness_and_volume_use_thick_sliders_without_values(self):
-        source = HOME_SCREEN.read_text()
-        start = source.index("void drawSettingsSlider(")
-        end = source.index("int progressionItemAt(", start)
-        settings = source[start:end]
-
-        self.assertIn(
-            "AmoledUi::nativeExtent(trackWidth),"
-            " AmoledUi::nativeExtent(8),"
-            " AmoledUi::nativeExtent(4), track",
-            settings,
-        )
-        self.assertIn("pressed ? 7 : 6", settings)
-        self.assertNotIn('"%u", model.brightness', settings)
-        self.assertNotIn('"%u%%", model.volume', settings)
 
 
 if __name__ == "__main__":

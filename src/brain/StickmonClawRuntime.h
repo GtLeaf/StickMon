@@ -39,6 +39,9 @@ public:
     void setWifiEnabled(bool enabled);
     bool started() const;
     bool networkConnected() const;
+    void enterPeerSession();
+    void leavePeerSession();
+    bool peerSessionActive() const;
     // An autonomous request is queued or being processed by ESP-Claw.
     bool autonomyActive() const;
     bool startSetupPortal();
@@ -92,6 +95,8 @@ private:
     bool stopRequested_ = false;
     bool coreInitialized_ = false;
     bool networkConnected_ = false;
+    bool peerSessionActive_ = false;
+    bool resumeAfterPeerSession_ = false;
     bool setupPortalActive_ = false;
     bool phoneJoined_ = false;
     uint32_t lastPlayerActivityMs_ = 0;

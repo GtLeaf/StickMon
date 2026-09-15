@@ -73,7 +73,7 @@ class AmoledExploreStepTests(unittest.TestCase):
         resolution = self.app_source[start:end]
         self.assertIn("exploreRoutePlayerWalkActive", resolution)
         self.assertIn("exploreRouteBossPending", resolution)
-        self.assertIn("exploreRouteIndex + 2 >= path.pointCount", resolution)
+        self.assertIn("exploreRouteIndex + 1 == exploreRouteBossIndex", resolution)
         self.assertIn("exploreRoutePlayerWalkActive = false;", resolution)
 
     def test_pickup_stops_the_current_walk_run(self):

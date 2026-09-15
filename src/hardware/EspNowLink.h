@@ -113,6 +113,7 @@ public:
     void update();
 
     uint8_t roomCount() const;
+    uint8_t currentRoomId() const { return roomId; }
     bool copyRoomAt(uint8_t index, RoomEntry& out) const;
     bool sendJoinRequest(uint8_t index);
     bool takeJoinRequest(uint8_t outMac[6], RoomPurpose& outPurpose, uint16_t& outRequestSeq);

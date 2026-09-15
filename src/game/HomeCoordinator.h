@@ -38,6 +38,14 @@ public:
 
     bool transition(uint8_t actorId, Task task, uint32_t nowMs,
                     uint32_t durationMs = 0, bool force = false);
+    bool transitionPreparedRoute(uint8_t actorId, Task task,
+                                 uint32_t nowMs,
+                                 uint32_t durationMs = 0,
+                                 bool force = false);
+    bool beginTurn(uint8_t actorId, Task resumeTask, uint32_t nowMs,
+                   uint32_t durationMs, bool force = false);
+    bool finishTurn(uint8_t actorId, uint32_t nowMs,
+                    bool force = false);
     void stop(uint8_t actorId, uint32_t nowMs,
               uint32_t idleDelayMs = 0);
 
@@ -77,6 +85,9 @@ private:
     };
 
     bool validActor(uint8_t actorId) const;
+    bool transitionInternal(uint8_t actorId, Task task, uint32_t nowMs,
+                            uint32_t durationMs, bool force,
+                            bool preservePreparedRoute);
 
     Actor* actors_[ACTOR_CAP] = {};
     uint8_t actorCount_ = 0;

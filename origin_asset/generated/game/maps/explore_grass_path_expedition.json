@@ -10,6 +10,7 @@
       "key": "grass_path_01",
       "map": "origin_asset/generated/game/explore_grass_path_01_416.png",
       "semantic": "origin_asset/generated/game/maps/explore_grass_path_01.smonmap",
+      "animation": null,
       "entry": [
         7,
         11
@@ -30,6 +31,7 @@
       "key": "grass_path_02",
       "map": "origin_asset/generated/game/explore_grass_path_02_416.png",
       "semantic": "origin_asset/generated/game/maps/explore_grass_path_02.smonmap",
+      "animation": null,
       "entry": [
         0,
         6
@@ -50,6 +52,7 @@
       "key": "grass_path_03",
       "map": "origin_asset/generated/game/explore_grass_path_03_416.png",
       "semantic": "origin_asset/generated/game/maps/explore_grass_path_03.smonmap",
+      "animation": null,
       "entry": [
         10,
         0
@@ -70,6 +73,7 @@
       "key": "grass_path_04",
       "map": "origin_asset/generated/game/explore_grass_path_04_416.png",
       "semantic": "origin_asset/generated/game/maps/explore_grass_path_04.smonmap",
+      "animation": null,
       "entry": [
         0,
         8

@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "core/PcmMixer.h"
 #include "platform/api/PlatformServices.h"
 
 enum class MusicTrack : uint8_t {
@@ -33,9 +34,15 @@ enum class SfxCue : uint8_t {
 
 class AudioManager {
 public:
-    static constexpr uint8_t MUSIC_CHANNEL = 0;
-    static constexpr uint8_t SFX_CHANNEL = 1;
-    static constexpr uint8_t CRY_CHANNEL = 2;
+    static constexpr uint8_t MUSIC_CHANNEL =
+        PcmMixer::channelIndex(PcmMixer::Channel::MUSIC);
+    static constexpr uint8_t SFX_CHANNEL =
+        PcmMixer::channelIndex(PcmMixer::Channel::SFX);
+    static constexpr uint8_t CRY_CHANNEL =
+        PcmMixer::channelIndex(PcmMixer::Channel::CRY);
+    static_assert(PcmMixer::CHANNEL_COUNT ==
+                      Platform::IAudioDevice::CHANNEL_COUNT,
+                  "PCM mixer and platform channel counts must match");
 
     static AudioManager& ins();
 
@@ -44,6 +51,7 @@ public:
     void setMusicSuspended(bool suspended);
     void setPowerSave(bool active);
     bool playSfx(SfxCue cue);
+    bool preloadSfx(SfxCue cue);
     void update();
     void stopAll();
 
@@ -70,6 +78,7 @@ private:
     bool startRequestedMusic();
     bool openAudio(const char* id, Platform::ResourceFile& file,
                    AudioHeader& header);
+    bool loadSfxCache(SfxCue cue);
     bool decodeMusicBlock(uint8_t bufferIndex);
     bool queueNextMusicBlock(bool stopCurrent);
     void releaseMusic();
@@ -87,6 +96,14 @@ private:
 
     uint8_t* sfxPcm_ = nullptr;
     size_t sfxPcmBytes_ = 0;
+    struct SfxCacheEntry {
+        uint8_t* pcm = nullptr;
+        size_t bytes = 0;
+        uint32_t sampleRate = 0;
+    };
+    static constexpr size_t SFX_CACHE_COUNT =
+        static_cast<size_t>(SfxCue::CONTACT) + 1;
+    SfxCacheEntry sfxCache_[SFX_CACHE_COUNT] = {};
 
     MusicTrack requestedMusic_ = MusicTrack::NONE;
     MusicTrack playingMusic_ = MusicTrack::NONE;

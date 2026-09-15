@@ -60,7 +60,7 @@ layer:
   Soap consumption, care-experience caps, stage experience, mood rewards, and
   unfinished-bath exit confirmation follow the shared StickS3 rules. The
   AMOLED interaction does not use the IMU.
-- Open `COMM` from the main menu to host a visit room or search for an available
+- Open `COMPUTER -> SOCIAL` to host a visit room or search for an available
   room. The visit page supports join confirmation, remote pet sync, a timed
   visit with heartbeat/status exchange, explicit end, timeout and link-failure
   states through the shared `VisitSessionService`.
@@ -109,9 +109,10 @@ layer:
 - Open `ROOM / FOOD` to choose one of the seven shared food types and inspect
   stock. The bowl on the home screen places the selected food using the shared
   `HomeCare` rules.
-- Open `COMPUTER` for a read-only `STATUS` page and a draggable/inertial
-  `STORAGE` list with up to 20 stored monsters. The `ESP-Claw` item starts a
-  local Wi-Fi setup hotspot and configuration page on demand. Open `SETTINGS` to cycle
+- Open `COMPUTER` for `SOCIAL` (invite or visit), and, in the Claw build,
+  `AI_HOSTING`. Social reuses the shared visit-session page and returns to the
+  computer menu after an idle session ends. The Claw item starts a local Wi-Fi
+  setup hotspot and configuration page on demand. Open `SETTINGS` to cycle
   brightness, volume, game speed, power-save timeout, and voice-call settings;
   each change is persisted immediately.
 - Exploration steps resolve shared area encounters, pickups, ordinary regional

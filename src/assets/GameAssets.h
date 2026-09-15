@@ -348,9 +348,10 @@ bool drawCenteredAlpha(Kind kind, int centerX, int centerY,
 bool drawBattleBackground(Kind kind);
 bool drawBackgroundViewport(Kind kind, int cameraX, int cameraY);
 bool isExploreTileAnimated(uint16_t tileId);
-bool drawExploreTile(uint16_t tileId, int x, int y, uint8_t animationFrame = 0);
+bool drawExploreTile(uint16_t tileId, int x, int y, uint8_t animationFrame = 0,
+                     uint8_t pixelScale = 1);
 bool drawExploreTileTo(Canvas565& canvas, uint16_t tileId, int x, int y,
-                       uint8_t animationFrame = 0);
+                       uint8_t animationFrame = 0, uint8_t pixelScale = 1);
 
 Kind itemKind(Game::ItemId item);
 Kind statusKind(Game::MajorStatus status);

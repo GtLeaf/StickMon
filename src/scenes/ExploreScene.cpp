@@ -170,7 +170,8 @@ static constexpr uint32_t ROUTE_BOSS_PATROL_OUT_START_MS = 1600;
 static constexpr uint32_t ROUTE_BOSS_PATROL_OUT_END_MS = 2300;
 static constexpr uint32_t ROUTE_BOSS_PATROL_RETURN_START_MS = 3800;
 static constexpr uint32_t ROUTE_BOSS_PATROL_RETURN_END_MS = 4500;
-static constexpr float ROUTE_EXIT_MARGIN = EXPLORE_TILE_SIZE * 2.0f;
+// Leave enough room for the widest scaled sprite to clear the viewport.
+static constexpr float ROUTE_EXIT_MARGIN = EXPLORE_TILE_SIZE * 3.0f;
 static constexpr uint8_t EXPLORE_HUD_ALPHA = 150;
 static constexpr int BATTLE_ASCII_ADVANCE = 8;
 static constexpr uint8_t BATTLE_FOOTER_ALPHA = 153;
@@ -4035,7 +4036,9 @@ void ExploreScene::render() {
     case Phase::WALKING: renderWalking(); break;
     case Phase::ENCOUNTER: renderEncounter(); break;
     case Phase::LEVEL_UP:
-        ProgressionUi::renderLevelUp(GameEngine::ins().pendingLevelUpLevel());
+        ProgressionUi::renderLevelUp(
+            GameEngine::ins().speciesFor(GameEngine::ins().activeMonster()).name,
+            GameEngine::ins().pendingLevelUpLevel());
         break;
     case Phase::EVOLUTION:
         ProgressionUi::renderEvolution(

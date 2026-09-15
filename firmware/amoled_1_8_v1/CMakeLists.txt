@@ -28,6 +28,9 @@ elseif(STICKMON_ENABLE_CLAW)
 endif()
 
 set(IDF_TARGET "esp32s3")
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS ON)
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 # Keep dependency resolution isolated per build variant. Claw's local
 # component paths are machine-specific and must not be committed.
@@ -35,13 +38,17 @@ idf_build_set_property(DEPENDENCIES_LOCK
                        "${CMAKE_BINARY_DIR}/dependencies.lock")
 project(stickmon_amoled_1_8_v1)
 
+# ESP-IDF appends its default C++ standard during project setup. Append the
+# project standard afterward so the final compiler option is unambiguous.
+idf_build_set_property(CXX_COMPILE_OPTIONS "-std=gnu++17" APPEND)
+
 set(RESOURCE_STAGE_DIR "${CMAKE_BINARY_DIR}/stickmon_resources")
 set(RESOURCE_ACTIVE "${STICKMON_ROOT}/data/active.json")
 set(RESOURCE_MANIFEST "${STICKMON_ROOT}/data/packs/dev/manifest.json")
 set(RESOURCE_SPRITES_DIR "${STICKMON_ROOT}/data/packs/dev/sprites")
 set(RESOURCE_ROOM "${STICKMON_ROOT}/data/packs/dev/rooms/standard.smonroom")
 set(RESOURCE_MAPS "${STICKMON_ROOT}/data/packs/dev/game/maps.smonfx")
-set(RESOURCE_UI "${STICKMON_ROOT}/data/packs/dev/game/ui.smonfx")
+set(RESOURCE_UI "${STICKMON_ROOT}/data/packs/dev/game/ui_amoled.smonfx")
 set(RESOURCE_BATTLE "${STICKMON_ROOT}/data/packs/dev/game/battle.smonfx")
 set(RESOURCE_HATCH "${STICKMON_ROOT}/data/packs/dev/game/hatch.smonfx")
 set(RESOURCE_FONTS_DIR "${STICKMON_ROOT}/data/packs/dev/fonts")

@@ -11,6 +11,8 @@
 #include <esp_wifi.h>
 #include <new>
 
+#include "hardware/EspNowRadioConfig.h"
+
 namespace {
 
 LGFX_Sprite gFrameBuffer;
@@ -463,7 +465,12 @@ bool M5StickS3Platform::enable() {
     if (peerTransportActive_) return true;
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
-    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+    if (esp_wifi_set_ps(WIFI_PS_NONE) != ESP_OK ||
+        esp_wifi_set_channel(EspNowRadioConfig::CHANNEL,
+                             WIFI_SECOND_CHAN_NONE) != ESP_OK) {
+        WiFi.mode(WIFI_OFF);
+        return false;
+    }
     if (esp_now_init() != ESP_OK ||
         esp_now_register_recv_cb(receivePeerPacket) != ESP_OK) {
         esp_now_deinit();

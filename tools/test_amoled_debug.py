@@ -3,6 +3,8 @@
 import unittest
 from pathlib import Path
 
+from amoled_source import read_home_source
+
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "firmware" / "amoled_1_8_v1" / "main" / "AmoledApp.cpp"
@@ -18,7 +20,7 @@ class AmoledDebugMigrationTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app = APP.read_text(encoding="utf-8")
         cls.app_header = APP_HEADER.read_text(encoding="utf-8")
-        cls.home = HOME.read_text(encoding="utf-8")
+        cls.home = read_home_source(ROOT)
         cls.runtime = RUNTIME.read_text(encoding="utf-8")
         cls.flow = FLOW.read_text(encoding="utf-8")
         cls.build = BUILD.read_text(encoding="utf-8")
@@ -80,14 +82,48 @@ class AmoledDebugMigrationTests(unittest.TestCase):
         self.assertIn("model.debugDrawBounds = debugBattleDrawBoundsVisible", self.app)
         self.assertIn("if (model.debugDrawBounds)", self.home)
 
+    def test_touch_display_keeps_only_latest_native_touch(self):
+        strings = (ROOT / "src" / "core" / "UiStrings.h").read_text(
+            encoding="utf-8"
+        )
+        v1_main = (ROOT / "firmware" / "amoled_1_8_v1" / "main" / "main.cpp").read_text(
+            encoding="utf-8"
+        )
+        v2_main = (ROOT / "firmware" / "amoled_1_8_v2" / "main" / "main.cpp").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('TOUCH_DISPLAY = "点击显示"', strings)
+        self.assertIn("debugTouchDisplayEnabled = !debugTouchDisplayEnabled", self.app)
+        self.assertIn("debugTouchX = std::clamp<int16_t>(event.x", self.app)
+        self.assertIn("debugTouchY = std::clamp<int16_t>(event.y", self.app)
+        self.assertIn("[TouchDisplay] x=%d y=%d", self.app)
+        self.assertIn("void AmoledApp::renderDebugTouchOverlay", self.app)
+        self.assertNotIn("debugTouchPoints[", self.app_header)
+        for main in (v1_main, v2_main):
+            self.assertIn("app.renderDebugTouchOverlay(canvas);", main)
+
+    def test_touch_diagnostic_page_records_down_up_without_calibrating(self):
+        touch_test = (ROOT / "firmware" / "amoled_1_8_v1" / "main" / "TouchTest.h").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("TARGETS[]", touch_test)
+        self.assertIn("Point down", touch_test)
+        self.assertIn("Point up", touch_test)
+        self.assertIn("distance", self.app)
+        self.assertIn("diagnostic_only=1", self.app)
+        self.assertIn("handleDebugTouchTest", self.app)
+        self.assertNotIn("correctedX", touch_test)
+        self.assertNotIn("NVS", touch_test)
+
     def test_amoled_debug_text_uses_native_font_and_row_centering(self):
         start = self.home.index("void renderDebugScreen(")
         end = self.home.index("#endif", start)
         render = self.home[start:end]
-        self.assertIn("DEBUG_TEXT_Y_OFFSET = 8", self.home)
+        self.assertIn("DEBUG_TEXT_Y_OFFSET = 16", self.home)
         self.assertIn("y + DEBUG_TEXT_Y_OFFSET", render)
-        self.assertIn("canvas.nativeText()", self.home)
-        self.assertIn("AmoledUi::nativeCoordinate(x)", self.home)
+        common = (HOME.parent / "ui" / "UiCommon.cpp").read_text(encoding="utf-8")
+        self.assertIn("PixelRenderer::text(canvas, x, y, value, color, scale);", common)
+        self.assertNotIn("((x) * AmoledUi::RESOURCE_SCALE)", self.home)
 
     def test_native_text_uses_large_glyph_advances(self):
         renderer = (ROOT / "src" / "presentation" / "PixelRenderer.cpp").read_text(
@@ -106,8 +142,8 @@ class AmoledDebugMigrationTests(unittest.TestCase):
         start = self.home.index("int computerItemAt(")
         end = self.home.index("}  // namespace AmoledV1", start)
         computer = self.home[start:end]
-        self.assertIn("COMPUTER_MENU_ROW_HEIGHT = 43", self.home)
-        self.assertIn("COMPUTER_MENU_CELL_HEIGHT = 39", self.home)
+        self.assertIn("COMPUTER_MENU_ROW_HEIGHT = 86", self.home)
+        self.assertIn("COMPUTER_MENU_CELL_HEIGHT = 78", self.home)
         self.assertIn("/ COMPUTER_MENU_ROW_HEIGHT", computer)
         self.assertIn("index * COMPUTER_MENU_ROW_HEIGHT", computer)
         self.assertNotIn("index * MENU_ROW_HEIGHT", computer)

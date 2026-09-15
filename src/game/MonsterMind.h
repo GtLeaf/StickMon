@@ -11,7 +11,9 @@ enum class MonsterDesire : uint8_t {
     STARE,
 };
 
-static constexpr uint8_t MONSTER_FEED_TARGET_SATIETY = 85;
+// Start seeking food only once satiety drops below 70. The same target is
+// used when ending a feeding session so the room and Stick behavior agree.
+static constexpr uint8_t MONSTER_FEED_TARGET_SATIETY = 70;
 static constexpr uint8_t MONSTER_SLEEP_FOOD_WAKE_SATIETY = 35;
 
 constexpr bool monsterShouldWakeForFood(uint8_t satiety) {

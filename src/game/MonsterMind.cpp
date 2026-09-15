@@ -53,7 +53,17 @@ void MonsterMind::update(const Game::MonsterRuntime& monster, bool sleepTime,
     base[static_cast<uint8_t>(MonsterDesire::REST)] = rest;
 
     uint16_t wander = (sleepTime ? 15 : 42) + monster.mood / 3 + boredom;
-    if (monster.satiety < 25) wander /= 2;
+    if (monster.satiety < 25) {
+        if (bowlHasFood) {
+            // When food is available, hunger should keep the actor focused on
+            // the bowl instead of making it wander away from the approach.
+            wander /= 2;
+        } else {
+            // With an empty bowl, severe hunger is a search behavior. Keep a
+            // hungry actor from remaining in STARE inertia indefinitely.
+            wander += 35;
+        }
+    }
     base[static_cast<uint8_t>(MonsterDesire::WANDER)] = wander;
     base[static_cast<uint8_t>(MonsterDesire::STARE)] = 50 + (sleepTime ? 20 : 0);
 

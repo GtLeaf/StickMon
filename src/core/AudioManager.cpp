@@ -19,8 +19,11 @@ constexpr uint32_t MIN_SAMPLE_RATE = 8000;
 constexpr uint32_t MAX_SAMPLE_RATE = 24000;
 constexpr uint16_t MAX_BLOCK_BYTES = 2048;
 constexpr uint16_t MAX_BLOCK_SAMPLES = 4096;
-constexpr uint32_t MAX_SFX_SAMPLES = 22050U * 5U;
+constexpr uint32_t MAX_SFX_SAMPLES = PcmMixer::OUTPUT_SAMPLE_RATE * 5U;
 constexpr uint32_t MUSIC_FADE_MS = 1000;
+constexpr uint8_t MUSIC_PREFILL_BLOCKS = 2;
+constexpr uint8_t MUSIC_QUEUE_TARGET_BLOCKS = 2;
+constexpr uint8_t MUSIC_REFILL_BLOCKS = 1;
 
 struct __attribute__((packed)) PackedAudioHeader {
     uint32_t magic;
@@ -133,7 +136,17 @@ size_t decodeImaBlock(const uint8_t* input, size_t inputBytes,
 }
 
 bool readExact(Platform::ResourceFile& file, void* output, size_t length) {
-    return length == 0 || file.read(output, length) == length;
+    if (length == 0) return true;
+    if (!output) return false;
+    auto* bytes = static_cast<uint8_t*>(output);
+    size_t remaining = length;
+    while (remaining > 0) {
+        size_t received = file.read(bytes, remaining);
+        if (received == 0 || received > remaining) return false;
+        bytes += received;
+        remaining -= received;
+    }
+    return true;
 }
 }  // namespace
 
@@ -226,7 +239,11 @@ bool AudioManager::startRequestedMusic() {
 
     AudioHeader header{};
     Platform::ResourceFile file;
-    if (!openAudio(id, file, header) || !header.looping) return false;
+    if (!openAudio(id, file, header) || !header.looping ||
+        header.sampleRate != PcmMixer::OUTPUT_SAMPLE_RATE) {
+        if (file) file.close();
+        return false;
+    }
 
     uint8_t* compressed = static_cast<uint8_t*>(
         Platform::memory().allocate(header.blockBytes, true));
@@ -251,12 +268,16 @@ bool AudioManager::startRequestedMusic() {
     nextMusicBlock_ = 0;
     nextMusicSkipSamples_ = 0;
     playingMusic_ = requestedMusic_;
-    if (!queueNextMusicBlock(true) || !queueNextMusicBlock(false)) {
-        releaseMusic();
-        return false;
+    for (uint8_t block = 0; block < MUSIC_PREFILL_BLOCKS; ++block) {
+        if (!queueNextMusicBlock(block == 0)) {
+            releaseMusic();
+            return false;
+        }
     }
-    Platform::logf("[Audio] music=%s rate=%u samples=%u blocks=%u\n",
-                  id, header.sampleRate, header.sampleCount, header.blockCount);
+    Platform::logf(
+        "[Audio] music=%s rate=%u samples=%u blocks=%u prefill=%u stream=1\n",
+        id, header.sampleRate, header.sampleCount, header.blockCount,
+        MUSIC_PREFILL_BLOCKS);
     return true;
 }
 
@@ -267,16 +288,19 @@ bool AudioManager::decodeMusicBlock(uint8_t bufferIndex) {
     }
     if (nextMusicBlock_ >= musicHeader_.blockCount) {
         if (!musicHeader_.looping) return false;
-        nextMusicBlock_ =
+        const uint32_t loopBlock =
             musicHeader_.loopStartSample / musicHeader_.blockSamples;
+        size_t loopOffset = sizeof(PackedAudioHeader) +
+            static_cast<size_t>(loopBlock) * musicHeader_.blockBytes;
+        if (!musicFile_.seek(loopOffset)) return false;
+        nextMusicBlock_ = loopBlock;
         nextMusicSkipSamples_ = static_cast<uint16_t>(
             musicHeader_.loopStartSample % musicHeader_.blockSamples);
     }
 
-    size_t offset = sizeof(PackedAudioHeader) +
-        static_cast<size_t>(nextMusicBlock_) * musicHeader_.blockBytes;
-    if (!musicFile_.seek(offset) ||
-        !readExact(musicFile_, musicCompressed_, musicHeader_.blockBytes)) {
+    // Blocks are laid out consecutively. Keep the resource cursor moving
+    // forward and seek only when the loop wraps back to loopStartSample.
+    if (!readExact(musicFile_, musicCompressed_, musicHeader_.blockBytes)) {
         return false;
     }
     uint32_t blockStart = nextMusicBlock_ * musicHeader_.blockSamples;
@@ -322,16 +346,40 @@ bool AudioManager::queueNextMusicBlock(bool stopCurrent) {
 
 bool AudioManager::playSfx(SfxCue cue) {
     if (Platform::audio().volume() == 0) return false;
+    Platform::audio().stopChannel(SFX_CHANNEL);
+    releaseSfx();
+    if (!loadSfxCache(cue)) return false;
+
+    const size_t cacheIndex = static_cast<size_t>(cue);
+    const SfxCacheEntry& cached = sfxCache_[cacheIndex];
+    if (!Platform::audio().playPcmU8Channel(
+            cached.pcm, cached.bytes, cached.sampleRate, SFX_CHANNEL, true)) {
+        return false;
+    }
+    sfxPcm_ = cached.pcm;
+    sfxPcmBytes_ = cached.bytes;
+    return true;
+}
+
+bool AudioManager::preloadSfx(SfxCue cue) {
+    if (Platform::audio().volume() == 0) return false;
+    return loadSfxCache(cue);
+}
+
+bool AudioManager::loadSfxCache(SfxCue cue) {
+    const size_t cacheIndex = static_cast<size_t>(cue);
+    if (cacheIndex >= SFX_CACHE_COUNT) return false;
+    if (sfxCache_[cacheIndex].pcm) return true;
+
     const char* id = sfxId(cue);
     AudioHeader header{};
     Platform::ResourceFile file;
-    if (!openAudio(id, file, header) || header.looping ||
+    if (!openAudio(id, file, header) ||
+        header.sampleRate != PcmMixer::OUTPUT_SAMPLE_RATE || header.looping ||
         header.sampleCount > MAX_SFX_SAMPLES) {
         return false;
     }
 
-    Platform::audio().stopChannel(SFX_CHANNEL);
-    releaseSfx();
     uint8_t* compressed = static_cast<uint8_t*>(
         Platform::memory().allocate(header.blockBytes, true));
     uint8_t* pcm = static_cast<uint8_t*>(
@@ -354,15 +402,12 @@ bool AudioManager::playSfx(SfxCue cue) {
         produced += decoded;
     }
     Platform::memory().release(compressed);
-    if (produced != header.sampleCount ||
-        !Platform::audio().playPcmU8Channel(
-            pcm, produced, header.sampleRate, SFX_CHANNEL, true)) {
+    if (produced != header.sampleCount) {
         Platform::memory().release(pcm);
         return false;
     }
 
-    sfxPcm_ = pcm;
-    sfxPcmBytes_ = produced;
+    sfxCache_[cacheIndex] = SfxCacheEntry{pcm, produced, header.sampleRate};
     return true;
 }
 
@@ -400,10 +445,15 @@ void AudioManager::update() {
     // Refill at most one block per update. Platform audio backends may report
     // a conservative queue depth, and streaming must never monopolize the UI
     // task when that happens.
-    if (Platform::audio().queuedPcm(MUSIC_CHANNEL) < 2) {
+    uint8_t queued = Platform::audio().queuedPcm(MUSIC_CHANNEL);
+    uint8_t refill = queued < MUSIC_QUEUE_TARGET_BLOCKS
+        ? static_cast<uint8_t>(MUSIC_QUEUE_TARGET_BLOCKS - queued) : 0;
+    if (refill > MUSIC_REFILL_BLOCKS) refill = MUSIC_REFILL_BLOCKS;
+    for (uint8_t block = 0; block < refill; ++block) {
         if (!queueNextMusicBlock(false)) {
             Platform::logLine("[Audio] music stream stopped");
             releaseMusic();
+            break;
         }
     }
 }
@@ -444,7 +494,6 @@ void AudioManager::releaseMusic() {
 }
 
 void AudioManager::releaseSfx() {
-    if (sfxPcm_) Platform::memory().release(sfxPcm_);
     sfxPcm_ = nullptr;
     sfxPcmBytes_ = 0;
 }

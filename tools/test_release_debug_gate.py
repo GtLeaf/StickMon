@@ -23,6 +23,28 @@ class ReleaseDebugGateTests(unittest.TestCase):
         debug = config.split("[env:m5stick-s3-debug]", 1)[1]
         self.assertIn("-DSTICKMON_ENABLE_RENDER_STATS=0", debug)
 
+    def test_all_firmware_targets_require_cxx17(self):
+        config = (ROOT / "platformio.ini").read_text(encoding="utf-8")
+        release = config.split("[env:m5stick-s3]", 1)[1].split(
+            "[env:m5stick-s3-debug]", 1
+        )[0]
+        debug = config.split("[env:m5stick-s3-debug]", 1)[1]
+        self.assertIn("-std=gnu++17", release)
+        self.assertIn("-std=gnu++17", debug)
+        self.assertIn("-std=gnu++11", release.split("build_unflags", 1)[1])
+        self.assertNotIn("-std=gnu++11", release.split("build_flags", 1)[1].split(
+            "build_unflags", 1
+        )[0])
+
+        for board in ("amoled_1_8_v1", "amoled_1_8_v2"):
+            cmake = (ROOT / "firmware" / board / "CMakeLists.txt").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("set(CMAKE_CXX_STANDARD 17)", cmake)
+            self.assertIn("set(CMAKE_CXX_STANDARD_REQUIRED ON)", cmake)
+            self.assertIn('idf_build_set_property(CXX_COMPILE_OPTIONS "-std=gnu++17" APPEND)',
+                          cmake)
+
     @unittest.skipUnless(shutil.which("c++"), "host C++ compiler is unavailable")
     def test_release_and_debug_menu_contracts(self):
         source_text = r'''

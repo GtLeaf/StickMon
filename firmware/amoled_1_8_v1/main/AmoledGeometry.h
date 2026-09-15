@@ -2,28 +2,24 @@
 
 #include <cstdint>
 
-// AMOLED pages use the panel's native coordinate space. Gameplay and packed
-// pixel assets still originate from the 184x224 profile, so their conversion
-// is explicit at the page/resource boundary instead of being hidden in the
-// framebuffer rasterizer.
+// All AMOLED layout, touch events and dirty rectangles use panel pixels.
 namespace AmoledUi {
+
+struct Rect {
+    int x;
+    int y;
+    int width;
+    int height;
+
+    constexpr bool contains(int px, int py) const {
+        return px >= x && px < x + width &&
+               py >= y && py < y + height;
+    }
+};
 
 inline constexpr int WIDTH = 368;
 inline constexpr int HEIGHT = 448;
-inline constexpr int LEGACY_WIDTH = 184;
-inline constexpr int LEGACY_HEIGHT = 224;
+// Source artwork and shared world geometry keep their authored resolution.
 inline constexpr int RESOURCE_SCALE = 2;
-
-constexpr int nativeCoordinate(int value) {
-    return value * RESOURCE_SCALE;
-}
-
-constexpr int nativeExtent(int value) {
-    return value * RESOURCE_SCALE;
-}
-
-constexpr int nativeRow(int value) {
-    return value * RESOURCE_SCALE;
-}
 
 }  // namespace AmoledUi

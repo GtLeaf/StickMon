@@ -59,7 +59,8 @@ public:
     void pushImage(int x, int y, int w, int h, const uint16_t* source);
     void drawMaskedAssetImage(int x, int y, int w, int h,
                               const uint16_t* pixels,
-                              const uint8_t* opaqueMask);
+                              const uint8_t* opaqueMask,
+                              uint8_t pixelScale = 1);
     void drawAssetPixel(int x, int y, uint16_t color);
     void fillAssetRect(int x, int y, int w, int h, uint16_t color);
     void drawRgb565Rle(int x, int y, int w, int h,

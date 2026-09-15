@@ -48,6 +48,23 @@ class AudioAssetGeneratorTests(unittest.TestCase):
         self.assertEqual(0, len(prepared) % audio.IMA_BLOCK_SAMPLES)
         self.assertEqual(0, loop_start)
 
+    def test_music_pack_is_block_addressable_for_streaming(self):
+        samples = list(range(audio.IMA_BLOCK_SAMPLES * 2 + 17))
+        pack = audio.make_audio_pack(samples, audio.MUSIC_SAMPLE_RATE, True, 17)
+        header = struct.unpack(
+            audio.AUDIO_HEADER_FORMAT, pack[:audio.AUDIO_HEADER_SIZE]
+        )
+        payload = pack[audio.AUDIO_HEADER_SIZE:]
+        block_bytes = header[5]
+        block_count = header[7]
+        loop_block = header[8] // header[6]
+        self.assertEqual(0, loop_block)
+        self.assertEqual(block_count * block_bytes, len(payload))
+        self.assertEqual(
+            payload[loop_block * block_bytes:(loop_block + 1) * block_bytes],
+            payload[:block_bytes],
+        )
+
     def test_tagged_music_keeps_intro_and_exact_loop_range(self):
         samples = list(range(10000))
         prepared, loop_start = audio.prepare_music(
@@ -74,6 +91,7 @@ class AudioAssetGeneratorTests(unittest.TestCase):
             self.assertEqual(header[7] * header[5], len(payload), audio_id)
             self.assertEqual(header[9], len(payload), audio_id)
             self.assertEqual(header[10], binascii.crc32(payload), audio_id)
+            self.assertEqual(audio.MUSIC_SAMPLE_RATE, header[3], audio_id)
             if audio_id in audio.MUSIC_SOURCES:
                 self.assertLess(header[8], header[4], audio_id)
                 if audio_id == "bgm_battle":

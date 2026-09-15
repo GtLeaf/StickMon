@@ -3,6 +3,8 @@
 import unittest
 from pathlib import Path
 
+from amoled_source import read_home_source
+
 
 ROOT = Path(__file__).resolve().parents[1]
 HOME_SCREEN = ROOT / "firmware" / "amoled_1_8_v1" / "main" / "HomeScreen.cpp"
@@ -12,16 +14,20 @@ AMOLED_APP = ROOT / "firmware" / "amoled_1_8_v1" / "main" / "AmoledApp.cpp"
 class AmoledShopLayoutTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.screen = HOME_SCREEN.read_text(encoding="utf-8")
+        cls.screen = read_home_source(ROOT)
         cls.app = AMOLED_APP.read_text(encoding="utf-8")
 
-    def test_left_rail_has_buy_sell_and_leave(self):
+    def test_left_rail_only_has_buy_and_sell(self):
         render = self._function(self.screen, "void renderShopScreen(",
                                 "int roomMenuItemAt(")
         self.assertIn(
-            "Ui::Amoled::BUY, Ui::Amoled::SELL, Ui::Amoled::LEAVE",
+            "Ui::Amoled::BUY, Ui::Amoled::SELL",
             render,
         )
+        rail = render[render.index("MENU_LABELS"):
+                      render.index("if (!detailOpen)")]
+        self.assertNotIn("Ui::Amoled::LEAVE", rail)
+        self.assertIn("index < 2", rail)
         self.assertIn("SHOP_RAIL_DIVIDER_X", render)
 
     def test_buy_grid_has_daily_then_explore_sections(self):
@@ -45,11 +51,24 @@ class AmoledShopLayoutTests(unittest.TestCase):
         self.assertIn("showRail", render)
         self.assertIn("const bool detailOpen", render)
         self.assertNotIn("shopEase", render)
-        self.assertIn("SHOP_GRID_ICON_SCALE = 1.0f", self.screen)
-        self.assertIn("SHOP_DETAIL_ICON_END_SCALE = 1.4f", self.screen)
+        self.assertIn("SHOP_GRID_ICON_SCALE = 1.5f", self.screen)
+        self.assertIn("SHOP_DETAIL_ICON_END_SCALE = 1.5f", self.screen)
         self.assertIn("float iconScale = SHOP_DETAIL_ICON_END_SCALE", render)
         self.assertIn("shopDetailProgress = 1.0f", self.app)
         self.assertIn("shopDetailProgress = 0.0f", self.app)
+
+    def test_shop_header_has_back_title_right_and_centered_coins(self):
+        render = self._function(self.screen, "void renderShopScreen(",
+                                "int roomMenuItemAt(")
+        header = render[:render.index("if (rowEnd <= MENU_CONTENT_TOP)")]
+        self.assertIn("drawPageHeader(canvas, Ui::SHOP);", header)
+        self.assertIn("drawPageHeaderCenteredText(canvas, coins", header)
+        tap = self._function(self.app, "void AmoledApp::handleTap(",
+                             "void AmoledApp::update(")
+        shop = tap[tap.index("if (sceneFlow.current() == AppSceneFlow::Scene::SHOP)"):]
+        shop = shop[:shop.index("if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_AREAS)")]
+        self.assertIn("itemListBackAt(x, y)", shop)
+        self.assertIn("closeItemScene();", shop)
 
     def test_grid_cells_render_native_icons_without_labels(self):
         render = self._function(self.screen, "void renderShopScreen(",
@@ -75,7 +94,7 @@ class AmoledShopLayoutTests(unittest.TestCase):
         self.assertIn("startChoice >= 0", release)
         self.assertIn("startChoice == itemConfirmChoiceAt(event.x, event.y)", release)
         self.assertLess(release.index("const int startChoice"),
-                        release.index("distance <= TAP_SLOP"))
+                        release.index("} else if (!dragging && distance <= TAP_SLOP)"))
 
     def test_successful_shop_transaction_stays_in_detail(self):
         action = self._function(

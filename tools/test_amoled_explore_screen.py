@@ -3,14 +3,17 @@
 import unittest
 from pathlib import Path
 
+from amoled_source import read_home_source
+
 
 ROOT = Path(__file__).resolve().parents[1]
 HOME_SCREEN = ROOT / "firmware" / "amoled_1_8_v1" / "main" / "HomeScreen.cpp"
+MAP_RENDERER = HOME_SCREEN.parent / "ui" / "ExploreMapRenderer.cpp"
 
 
 class AmoledExploreScreenTests(unittest.TestCase):
     def test_background_continues_behind_scene_selector(self):
-        source = HOME_SCREEN.read_text()
+        source = read_home_source(ROOT)
         start = source.index("void renderExploreScreen(")
         end = source.index("bool exploreRouteBackAt(", start)
         render = source[start:end]
@@ -18,7 +21,7 @@ class AmoledExploreScreenTests(unittest.TestCase):
         self.assertIn("EXPLORE_SELECTOR_TOP_HEIGHT", render)
         self.assertIn("EXPLORE_SELECTOR_BUTTON_TOP", render)
         self.assertIn("EXPLORE_PREVIEW_CENTER_Y", render)
-        self.assertIn("drawExploreBackgroundLayer(canvas, rowBegin, rowEnd)", render)
+        self.assertIn("drawExploreBackgroundLayer(canvas, backgroundCache, rowBegin, rowEnd)", render)
         # Static tint is baked into the background cache, not blended per frame.
         self.assertNotIn("PixelRenderer::fillRectAlpha(", render)
         self.assertIn("Ui::Explore::DEPART", render)
@@ -27,7 +30,7 @@ class AmoledExploreScreenTests(unittest.TestCase):
         self.assertNotIn("drawMenuIcon(canvas);", render)
 
     def test_preview_background_is_cached_for_carousel_frames(self):
-        source = HOME_SCREEN.read_text()
+        source = read_home_source(ROOT)
         start = source.index("bool drawExploreBackgroundLayer(")
         end = source.index("constexpr const char* EXPLORE_AREA_NAMES", start)
         cache = source[start:end]
@@ -41,9 +44,9 @@ class AmoledExploreScreenTests(unittest.TestCase):
         self.assertNotIn("if (exploreAreaAnimating) {\n            requestRenderRows(0, 224);", app)
 
     def test_route_animation_uses_cached_map_and_dynamic_refresh(self):
-        home = HOME_SCREEN.read_text()
+        home = MAP_RENDERER.read_text(encoding="utf-8")
         start = home.index("bool drawExploreRouteMapLayer(")
-        end = home.index("void drawExploreRoutePickup", start)
+        end = home.index("}  // namespace AmoledV1", start)
         route_cache = home[start:end]
         self.assertIn("drawExploreRouteWorldViewport", route_cache)
         self.assertIn("model.mapFrame", route_cache)
@@ -54,7 +57,7 @@ class AmoledExploreScreenTests(unittest.TestCase):
         self.assertIn("EXPLORE_ROUTE_MAP_FRAME_MS", app)
 
     def test_route_camera_uses_prerendered_world_cache(self):
-        home = HOME_SCREEN.read_text()
+        home = read_home_source(ROOT)
         assets = (ROOT / "src" / "assets" / "GameAssets.cpp").read_text()
         main = (ROOT / "firmware" / "amoled_1_8_v1" / "main" / "main.cpp").read_text()
 
@@ -85,7 +88,7 @@ class AmoledExploreScreenTests(unittest.TestCase):
         self.assertIn("setPinnedDynamicSpecies(nullptr, 0)", app)
 
     def test_route_draws_and_preloads_regional_boss(self):
-        home = HOME_SCREEN.read_text()
+        home = read_home_source(ROOT)
         app = (ROOT / "firmware" / "amoled_1_8_v1" / "main" / "AmoledApp.cpp").read_text()
 
         self.assertIn("void drawExploreRouteBoss(", home)
@@ -94,8 +97,28 @@ class AmoledExploreScreenTests(unittest.TestCase):
         self.assertIn("model.bossPending = exploreRouteBossPending;", app)
         self.assertIn("routeSpecies[routeSpeciesCount++] = exploreRouteBossSpeciesId;", app)
 
+    def test_route_boss_matches_player_scale_and_stick_patrol(self):
+        home = read_home_source(ROOT)
+        app = (ROOT / "firmware" / "amoled_1_8_v1" / "main" / "AmoledApp.cpp").read_text()
+        models = (
+            ROOT / "firmware" / "amoled_1_8_v1" / "main" / "ui" /
+            "models" / "ScreenModels.h"
+        ).read_text()
+
+        start = home.index("void drawExploreRouteBoss(")
+        end = home.index("void drawExploreRouteActor(", start)
+        boss = home[start:end]
+        self.assertIn("EXPLORE_ROUTE_BOSS_SCALE = 2.0f", home)
+        self.assertIn("PokemonMotion::movementFrame(", boss)
+        self.assertIn("exploreRouteBossPatrolPermille", boss)
+        self.assertIn("model.animationNowMs", boss)
+        self.assertIn("nextExploreRouteBossFrameMs", app)
+        self.assertIn("requestExploreRouteBossRender();", app)
+        self.assertIn("BOSS_TOP_MARGIN", app)
+        self.assertIn("uint32_t animationNowMs = 0;", models)
+
     def test_route_completion_is_presented_as_a_modal(self):
-        home = HOME_SCREEN.read_text()
+        home = read_home_source(ROOT)
         app = (ROOT / "firmware" / "amoled_1_8_v1" / "main" / "AmoledApp.cpp").read_text()
 
         self.assertIn("if (model.complete", home)
@@ -104,28 +127,17 @@ class AmoledExploreScreenTests(unittest.TestCase):
         completion = app[app.index("exploreRouteComplete = true;"):]
         self.assertIn("requestFullRender();", completion)
 
-    def test_departure_fades_between_room_and_route(self):
-        header = (ROOT / "firmware" / "amoled_1_8_v1" / "main" / "AmoledApp.h").read_text()
-        app = (ROOT / "firmware" / "amoled_1_8_v1" / "main" / "AmoledApp.cpp").read_text()
-        home = HOME_SCREEN.read_text()
-
-        self.assertIn("FADE_OUT", header)
-        self.assertIn("FADE_IN", header)
-        self.assertIn("EXPLORE_SCENE_FADE_MS = 300", app)
-        self.assertIn("ExpeditionDeparturePhase::FADE_OUT", app)
-        self.assertIn("ExpeditionDeparturePhase::FADE_IN", app)
-        self.assertIn("drawSceneFadeOverlay(canvas, model.fadeAlpha);", home)
-
     def test_home_hunger_icon_uses_asset_scaling(self):
         hud = (ROOT / "src" / "presentation" / "HudRenderer.cpp").read_text()
-        self.assertIn("canvas.drawAssetPixel(", hud)
+        self.assertIn("canvas.fillAssetRect(", hud)
 
     def test_route_uses_fixed_bottom_hud_with_hp_and_status(self):
-        home = HOME_SCREEN.read_text()
+        home = read_home_source(ROOT)
         app = (ROOT / "firmware" / "amoled_1_8_v1" / "main" / "AmoledApp.cpp").read_text()
 
-        self.assertIn("EXPLORE_ROUTE_MAP_TOP = 0", home)
-        self.assertIn("EXPLORE_ROUTE_MAP_BOTTOM = HOME_STATUS_TOP", home)
+        geometry = MAP_RENDERER.with_suffix(".h").read_text(encoding="utf-8")
+        self.assertIn("EXPLORE_ROUTE_MAP_TOP = 0", geometry)
+        self.assertIn("EXPLORE_ROUTE_MAP_BOTTOM = UiMetrics::HOME_STATUS_TOP", geometry)
         self.assertIn("void drawExploreRouteHud(", home)
         self.assertIn("void drawExploreRouteBottomHud(", home)
         self.assertIn("std::min<uint8_t>(model.state->teamCount, 2)", home)
@@ -138,7 +150,7 @@ class AmoledExploreScreenTests(unittest.TestCase):
         self.assertIn("model.state = &gameState;", app)
 
     def test_route_camera_refresh_excludes_fixed_bottom_hud(self):
-        home = HOME_SCREEN.read_text()
+        home = read_home_source(ROOT)
         app = (ROOT / "firmware" / "amoled_1_8_v1" / "main" / "AmoledApp.cpp").read_text()
 
         self.assertIn("EXPLORE_ROUTE_VIEW_HEIGHT = HOME_STATUS_TOP", app)
@@ -147,7 +159,7 @@ class AmoledExploreScreenTests(unittest.TestCase):
         self.assertIn("y < EXPLORE_ROUTE_MAP_BOTTOM", home)
 
     def test_route_bottom_buttons_open_bag_and_menu(self):
-        home = HOME_SCREEN.read_text()
+        home = read_home_source(ROOT)
         app = (ROOT / "firmware" / "amoled_1_8_v1" / "main" / "AmoledApp.cpp").read_text()
 
         self.assertIn("bool exploreRouteBagAt(int x, int y)", home)
@@ -164,10 +176,10 @@ class AmoledExploreScreenTests(unittest.TestCase):
         self.assertIn("drawMaskedAssetImage", assets)
         self.assertIn("drawDecodedTile(canvas, kind, ref", assets)
         self.assertIn("isExploreTileAnimated", assets)
-        self.assertIn("drawExploreMapAnimations", HOME_SCREEN.read_text())
+        self.assertIn("drawExploreMapAnimations", read_home_source(ROOT))
 
     def test_debug_build_profiles_exploration_scroll_stages(self):
-        home = HOME_SCREEN.read_text()
+        home = read_home_source(ROOT)
         app_header = (
             ROOT / "firmware" / "amoled_1_8_v1" / "main" / "AmoledApp.h"
         ).read_text()

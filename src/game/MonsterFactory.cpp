@@ -6,6 +6,14 @@
 namespace Game {
 namespace MonsterFactory {
 
+void rollIndividualValues(MonsterRuntime& monster) {
+    monster.ivPacked = 0;
+    for (uint8_t index = 0; index < STAT_COUNT; ++index) {
+        setIv(monster.ivPacked, index,
+              static_cast<uint8_t>(GameRandom::range(0, IV_MAX + 1)));
+    }
+}
+
 MonsterRuntime create(uint16_t speciesId, uint8_t level) {
     const Species* species = findSpecies(speciesId);
     if (!species) species = &starterSpecies();
@@ -17,10 +25,7 @@ MonsterRuntime create(uint16_t speciesId, uint8_t level) {
     monster.level = level;
     monster.exp = minimumExpForLevel(species->growthRate, level);
     resetMovesForLevel(monster, *species);
-    for (uint8_t index = 0; index < STAT_COUNT; ++index) {
-        setIv(monster.ivPacked, index,
-              static_cast<uint8_t>(GameRandom::range(0, IV_MAX + 1)));
-    }
+    rollIndividualValues(monster);
     monster.nature = static_cast<uint8_t>(
         GameRandom::range(0, NATURE_COUNT));
     monster.gender = static_cast<uint8_t>(
