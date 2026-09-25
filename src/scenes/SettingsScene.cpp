@@ -213,9 +213,6 @@ void SettingsScene::activateCurrent() {
         resetConfirmYes = false;
         toast = nullptr;
         return;
-    case BACK:
-        GameEngine::ins().requestScene(SceneID::MENU, false);
-        return;
     default:
         break;
     }

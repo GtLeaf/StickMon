@@ -3,10 +3,45 @@
 #include <cstdint>
 
 #include "game/ExploreMapGenerator.h"
+#include "game/ExploreCaveTiles.h"
 
 namespace ExploreIceSlide {
 
 constexpr uint8_t INVALID_INDEX = 0xFF;
+
+inline bool isCrackedIce(const ExploreMapGenerator::Map& map,
+                         const ExploreMapGenerator::Path& path,
+                         uint8_t index) {
+    if (index >= path.pointCount) return false;
+    const auto& point = path.points[index];
+    return map.layers[0][point.y * ExploreMapGenerator::WIDTH + point.x] == 4506;
+}
+
+inline void breakIce(ExploreMapGenerator::Map& map,
+                     const ExploreMapGenerator::Path& path,
+                     uint8_t index) {
+    const auto& point = path.points[index];
+    map.layers[0][point.y * ExploreMapGenerator::WIDTH + point.x] =
+        ExploreCaveTiles::FROST_BROKEN_ICE_HOLE;
+}
+
+inline uint8_t landingIndex(const ExploreMapGenerator::Map& map,
+                            const ExploreMapGenerator::Path& path,
+                            uint32_t seed) {
+    uint8_t candidates[ExploreMapGenerator::MAX_PATH_POINTS] = {};
+    uint8_t count = 0;
+    uint8_t limit = path.pointCount > 3
+        ? static_cast<uint8_t>(path.pointCount - 3) : 0;
+    for (uint8_t index = 1; index <= limit; ++index) {
+        const auto& point = path.points[index];
+        uint16_t cell = point.y * ExploreMapGenerator::WIDTH + point.x;
+        if (map.layers[0][cell] == 4511 &&
+            map.layers[1][cell] == 0 && map.layers[2][cell] == 0) {
+            candidates[count++] = index;
+        }
+    }
+    return count ? candidates[seed % count] : 0;
+}
 
 inline bool pointIsSmoothIce(const ExploreMapGenerator::Map& map,
                              const ExploreMapGenerator::Point& point) {
@@ -97,12 +132,14 @@ inline uint8_t nearestNonIceIndex(const ExploreMapGenerator::Map& map,
     for (uint8_t distance = 0; distance <= last - first; ++distance) {
         int16_t lower = static_cast<int16_t>(preferred) - distance;
         if (lower >= first &&
-            !indexIsSmoothIce(map, path, static_cast<uint8_t>(lower))) {
+            !indexIsSmoothIce(map, path, static_cast<uint8_t>(lower)) &&
+            !isCrackedIce(map, path, static_cast<uint8_t>(lower))) {
             return static_cast<uint8_t>(lower);
         }
         uint16_t upper = static_cast<uint16_t>(preferred) + distance;
         if (distance > 0 && upper <= last &&
-            !indexIsSmoothIce(map, path, static_cast<uint8_t>(upper))) {
+            !indexIsSmoothIce(map, path, static_cast<uint8_t>(upper)) &&
+            !isCrackedIce(map, path, static_cast<uint8_t>(upper))) {
             return static_cast<uint8_t>(upper);
         }
     }

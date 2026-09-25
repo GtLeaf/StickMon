@@ -151,4 +151,43 @@ static_assert(levelRangesValid(GRASS_PATH) &&
                   levelRangesValid(ANCIENT_WATERFALL_VALLEY),
               "explore encounter level range");
 
+struct Table {
+    const Entry* entries = nullptr;
+    uint8_t count = 0;
+};
+
+template <size_t N>
+constexpr Table table(const Entry (&entries)[N]) {
+    return {entries, static_cast<uint8_t>(N)};
+}
+
+inline Table tableForArea(uint8_t area) {
+    switch (area) {
+    case 0: return table(GRASS_PATH);
+    case 1: return table(CREEK_SLOPE);
+    case 2: return table(TALL_GRASS_PARK);
+    case 3: return table(FROST_CRYSTAL_CAVE);
+    case 4: return table(MIST_FOREST_PATH);
+    case 5: return table(ANCIENT_WATERFALL_VALLEY);
+    default: return {};
+    }
+}
+
+inline ExplorePool::Pool poolForArea(uint8_t area, uint32_t gameMinutesTotal,
+                                     uint8_t rerollCount) {
+    const Table encounterTable = tableForArea(area);
+    if (!encounterTable.entries || encounterTable.count == 0) return {};
+    ExplorePool::SourceEntry source[ExplorePool::MAX_SOURCE_ENTRIES] = {};
+    const uint8_t count = encounterTable.count < ExplorePool::MAX_SOURCE_ENTRIES
+        ? encounterTable.count : ExplorePool::MAX_SOURCE_ENTRIES;
+    for (uint8_t index = 0; index < count; ++index) {
+        const Entry& entry = encounterTable.entries[index];
+        source[index] = {entry.speciesId, entry.weight, entry.rarity};
+    }
+    return ExplorePool::buildPool(
+        source, count,
+        ExplorePool::mixSeed(ExplorePool::slotIndexFor(gameMinutesTotal),
+                             area, rerollCount));
+}
+
 } // namespace ExploreEncounters

@@ -25,6 +25,11 @@ int main() {
 
     assert(ContactRoster::teamSlotForContact(state, 0) == 1);
     assert(ContactRoster::teamSlotForContact(state, 1) == -1);
+    assert(ContactRoster::liveMonsterForContact(state, 0) == &state.team[1]);
+    assert(ContactRoster::liveMonsterForContact(state, 1) == &state.storage[1]);
+    assert(!ContactRoster::canDelete(state, 0));
+    assert(ContactRoster::canDelete(state, 1));
+    assert(!ContactRoster::canDelete(state, 1, true));
 
     state.team[1].speciesId = 2;
     state.team[1].level = 18;
@@ -34,5 +39,13 @@ int main() {
     assert(state.storage[0].level == 18);
     assert(state.storage[0].bond == 83);
     assert(state.storage[1].ivPacked == 5678);
+
+    state.teamCount = 1;
+    state.storage[0].origin = Game::Origin::HATCHED;
+    assert(!ContactRoster::canDelete(state, 0));
+    assert(ContactRoster::deleteContact(state, 1));
+    assert(state.storageCount == 1);
+    assert(state.storage[0].ivPacked == 1234);
+    assert(state.storage[1].ivPacked == 0);
     return 0;
 }

@@ -266,9 +266,10 @@ void writeState(Writer& writer, const Game::GameState& state) {
     writer.u8(state.tutorialFlags);
     writer.u32(state.normalBossPitySlotIndex);
     for (uint8_t value : state.normalBossMissCount) writer.u8(value);
+    writer.u8(state.debugMotionFlags);
 }
 
-void readState(Reader& reader, Game::GameState& state) {
+void readState(Reader& reader, uint16_t schema, Game::GameState& state) {
     state = Game::GameState{};
     uint32_t magic = reader.u32();
     uint16_t version = reader.u16();
@@ -349,6 +350,7 @@ void readState(Reader& reader, Game::GameState& state) {
     state.tutorialFlags = reader.u8();
     state.normalBossPitySlotIndex = reader.u32();
     for (uint8_t& value : state.normalBossMissCount) value = reader.u8();
+    if (schema >= 2) state.debugMotionFlags = reader.u8();
     state.checksum = 0;
 }
 
@@ -474,8 +476,9 @@ bool decode(const uint8_t* input,
     }
 
     Reader header(input, length);
-    if (header.u32() != MAGIC || header.u16() != SCHEMA_VERSION ||
-        header.u16() != 0) {
+    uint16_t schema = 0;
+    if (header.u32() != MAGIC || (schema = header.u16()) > SCHEMA_VERSION ||
+        schema < MIN_SUPPORTED_SCHEMA_VERSION || header.u16() != 0) {
         return false;
     }
     uint32_t storedSequence = header.u32();
@@ -484,15 +487,20 @@ bool decode(const uint8_t* input,
     if (!header.ok() || payloadLength != length - HEADER_BYTES) return false;
 
     Reader reader(input + HEADER_BYTES, payloadLength);
-    readState(reader, snapshot.state);
+    readState(reader, schema, snapshot.state);
     readView(reader, snapshot.view);
+    const uint16_t expectedStateVersion =
+        schema == SCHEMA_VERSION ? Game::SAVE_VERSION : SCHEMA_1_STATE_VERSION;
     if (!reader.ok() || reader.position() != payloadLength ||
         snapshot.state.magic != Game::SAVE_MAGIC ||
-        snapshot.state.version != Game::SAVE_VERSION ||
+        snapshot.state.version != expectedStateVersion ||
         snapshot.state.teamCount > Game::TEAM_CAP ||
         snapshot.state.storageCount > Game::STORAGE_CAP) {
         return false;
     }
+    // Older schemas decode into defaults; present the current state version so
+    // callers treat the snapshot as migrated.
+    snapshot.state.version = Game::SAVE_VERSION;
     if (sequence) *sequence = storedSequence;
     return true;
 }

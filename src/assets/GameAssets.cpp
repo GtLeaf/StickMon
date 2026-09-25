@@ -124,7 +124,8 @@ PackSlot packSlotFor(Kind kind) {
         return PackSlot::UI;
     }
     if (kind == Kind::EGG) return PackSlot::HATCH;
-    if (kind >= Kind::EXPLORE_TILE_0072 && kind <= Kind::EXPLORE_WATERFALL_BOTTOM_F3) {
+    if ((kind >= Kind::EXPLORE_TILE_0072 && kind <= Kind::EXPLORE_WATERFALL_BOTTOM_F3) ||
+        (kind >= Kind::EXPLORE_TILE_4762 && kind <= Kind::EXPLORE_TILE_4773)) {
         return PackSlot::MAP;
     }
     if (kind < Kind::COUNT) return PackSlot::BATTLE;
@@ -721,6 +722,18 @@ bool drawExploreTileTo(Canvas565& canvas, uint16_t tileId, int x, int y,
     case 4759: kind = Kind::EXPLORE_TILE_4759; break;
     case 4760: kind = Kind::EXPLORE_TILE_4760; break;
     case 4761: kind = Kind::EXPLORE_TILE_4761; break;
+    case 4762: kind = Kind::EXPLORE_TILE_4762; break;
+    case 4763: kind = Kind::EXPLORE_TILE_4763; break;
+    case 4764: kind = Kind::EXPLORE_TILE_4764; break;
+    case 4765: kind = Kind::EXPLORE_TILE_4765; break;
+    case 4766: kind = Kind::EXPLORE_TILE_4766; break;
+    case 4767: kind = Kind::EXPLORE_TILE_4767; break;
+    case 4768: kind = Kind::EXPLORE_TILE_4768; break;
+    case 4769: kind = Kind::EXPLORE_TILE_4769; break;
+    case 4770: kind = Kind::EXPLORE_TILE_4770; break;
+    case 4771: kind = Kind::EXPLORE_TILE_4771; break;
+    case 4772: kind = Kind::EXPLORE_TILE_4772; break;
+    case 4773: kind = Kind::EXPLORE_TILE_4773; break;
     default: return false;
     }
     FrameRef ref = findFrame(kind);

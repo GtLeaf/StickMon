@@ -1,6 +1,7 @@
 #include "HomeScreen.h"
 #include "core/FontResource.h"
 #include "core/RoomResource.h"
+#include "game/ContactRoster.h"
 #include "game/MonsterFactory.h"
 #include "game/ItemInventory.h"
 #include "platform/desktop/DesktopPlatform.h"
@@ -20,6 +21,14 @@ using namespace AmoledV1;
 
 void checkExpeditionTransitions(DesktopPlatform& desktop, Canvas565& canvas,
                                const Game::GameState& state);
+void checkProgressionReplacement(DesktopPlatform& desktop,
+                                 const Game::GameState& state);
+#if STICKMON_ENABLE_DEBUG_FEATURES
+void checkVisitorInvalidHostEntry(DesktopPlatform& desktop,
+                                  const Game::GameState& state);
+void checkVisitorDiagnostics(DesktopPlatform& desktop,
+                             const Game::GameState& state);
+#endif
 
 bool runUiBehaviorCase(const char* name, Canvas565& canvas, Game::GameState& state);
 
@@ -127,12 +136,62 @@ void checkCacheOwnership() {
         assert(caches.battleBackground.data() && caches.exploreWorld.data());
         assert(!caches.exploreBackground.data());
         caches.retainForScene(AppSceneFlow::Scene::EXPLORE_MENU);
-        assert(!caches.battleBackground.data() && caches.exploreWorld.data());
+        assert(caches.battleBackground.data() && caches.exploreWorld.data());
+        caches.retainForScene(AppSceneFlow::Scene::EXPLORE_ROUTE);
+        assert(caches.battleBackground.data());
         caches.retainForScene(AppSceneFlow::Scene::HOME);
         assert(first.live.empty());
         assert(caches.exploreWorld.begin(key, first));
         caches.retainForScene(AppSceneFlow::Scene::EXPLORE_AREAS);
         assert(!caches.exploreWorld.data());
+    }
+}
+
+void checkNativeAlphaBlend() {
+    constexpr int width = 8;
+    constexpr int height = 7;
+    constexpr uint16_t color = 0xD3AE;
+    for (bool swapped : {false, true}) {
+        for (uint8_t alpha : {0U, 1U, 96U, 153U, 254U, 255U}) {
+            std::vector<uint16_t> actual(width * height);
+            std::vector<uint16_t> expected(width * height);
+            for (size_t index = 0; index < actual.size(); ++index) {
+                uint16_t value = static_cast<uint16_t>((index * 977 + 0x1234) & 0xFFFF);
+                actual[index] = swapped
+                    ? static_cast<uint16_t>((value << 8) | (value >> 8)) : value;
+            }
+            expected = actual;
+            PixelRenderer::bind({actual.data(), width, height, swapped});
+            Canvas565& canvas = PixelRenderer::canvas();
+            canvas.setClipRect(2, 2, 4, 3);
+            PixelRenderer::fillRectAlpha(-1, 1, 8, 5, color, alpha);
+            for (int y = 2; y < 5; ++y) {
+                for (int x = 2; x < 6; ++x) {
+                    const size_t index = y * width + x;
+                    uint16_t previous = expected[index];
+                    if (swapped) previous = static_cast<uint16_t>(
+                        (previous << 8) | (previous >> 8));
+                    auto blendChannel = [alpha](int source, int destination,
+                                                int maximum) {
+                        const int src = source * 255 / maximum;
+                        const int dst = destination * 255 / maximum;
+                        return ((src * alpha + dst * (255 - alpha)) / 255) >>
+                            (maximum == 63 ? 2 : 3);
+                    };
+                    // Match the old 8-bit blend followed by RGB565 truncation.
+                    const int red = blendChannel((color >> 11) & 31,
+                                                 (previous >> 11) & 31, 31);
+                    const int green = blendChannel((color >> 5) & 63,
+                                                   (previous >> 5) & 63, 63);
+                    const int blue = blendChannel(color & 31, previous & 31, 31);
+                    uint16_t result = static_cast<uint16_t>(
+                        (red << 11) | (green << 5) | blue);
+                    expected[index] = swapped
+                        ? static_cast<uint16_t>((result << 8) | (result >> 8)) : result;
+                }
+            }
+            assert(actual == expected);
+        }
     }
 }
 
@@ -239,6 +298,10 @@ int main(int argc, char** argv) {
         checkCacheOwnership();
         return 0;
     }
+    if (selectedCase && std::strcmp(selectedCase, "alpha-blend-native") == 0) {
+        checkNativeAlphaBlend();
+        return 0;
+    }
     DesktopPlatform desktop(argv[1]);
     Platform::bind(desktop.serviceBundle());
     desktop.begin();
@@ -275,10 +338,46 @@ int main(int argc, char** argv) {
     state.storage[0] = state.team[0];
     state.storage[1] = state.team[1];
 
+    if (selectedCase && std::strcmp(selectedCase, "battle-prewarm") == 0) {
+        BattleViewModel model{};
+        model.state = &state;
+        model.battleBackground = GameAssets::Kind::BATTLE_BG_GRASS;
+        model.playerSpeciesId = state.team[0].speciesId;
+        model.wildSpeciesId = state.team[1].speciesId;
+        model.playerLevel = model.wildLevel = 5;
+        model.playerHp = model.wildHp = 100;
+        std::fill(pixels.begin(), pixels.end(), 0x1234);
+        renderBattleScreen(canvas, model, caches.battleBackground, 0, AmoledUi::HEIGHT);
+        const auto coldPixels = pixels;
+        caches.battleBackground.release();
+        std::fill(pixels.begin(), pixels.end(), 0xF81F);
+        assert(prepareBattleBackground(canvas, caches.battleBackground,
+                                       model.battleBackground));
+        caches.retainForScene(AppSceneFlow::Scene::EXPLORE_ROUTE);
+        assert(caches.battleBackground.data());
+        renderBattleScreen(canvas, model, caches.battleBackground, 0, AmoledUi::HEIGHT);
+        assert(pixels == coldPixels);
+        return 0;
+    }
+
     if (selectedCase && std::strcmp(selectedCase, "expedition-transition") == 0) {
         checkExpeditionTransitions(desktop, canvas, state);
         return 0;
     }
+    if (selectedCase && std::strcmp(selectedCase, "progression-replace") == 0) {
+        checkProgressionReplacement(desktop, state);
+        return 0;
+    }
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    if (selectedCase && std::strcmp(selectedCase, "visitor-invalid-entry") == 0) {
+        checkVisitorInvalidHostEntry(desktop, state);
+        return 0;
+    }
+    if (selectedCase && std::strcmp(selectedCase, "visitor-diagnostics") == 0) {
+        checkVisitorDiagnostics(desktop, state);
+        return 0;
+    }
+#endif
     if (selectedCase) {
         if (runUiBehaviorCase(selectedCase, canvas, state)) return 0;
         std::fprintf(stderr, "unknown behavior case: %s\n", selectedCase);
@@ -349,7 +448,117 @@ int main(int argc, char** argv) {
     checkPage("computer", computer, renderComputerScreen);
     computer.page = ComputerViewModel::Page::STORAGE;
     checkPage("storage", computer, renderComputerScreen);
+    Game::GameState contactState = state;
+    contactState.teamCount = 1;
+    contactState.storage[1].level = 8;
+    contactState.storage[1].bond = 52;
+    computer.state = &contactState;
+    computer.contactActionOpen = true;
+    computer.contactActionSlot = 1;
+    computer.contactCanDelete = true;
+    checkPage("storage-action", computer, renderComputerScreen);
+    computer.storageScroll = CONTACT_ROW_HEIGHT;
+    checkPage("storage-scrolled-action", computer, renderComputerScreen);
+    computer.storageScroll = 0.0f;
+    computer.contactConfirmOpen = true;
+    computer.contactConfirmYes = true;
+    checkPage("storage-confirm", computer, renderComputerScreen);
+    computer.contactConfirmOpen = false;
+    computer.contactActionOpen = false;
+    computer.state = &state;
+    assert(ContactRoster::teamSlotForContact(state, 0) >= 0);
+    int capacityPixels = 0;
+    for (int y = 22; y < 54; ++y) {
+        for (int x = 144; x < 224; ++x) {
+            if (canvas.readPixel(x, y) == PixelRenderer::rgb(126, 175, 175)) {
+                ++capacityPixels;
+            }
+        }
+    }
+    assert(capacityPixels > 0);
+    assert(computerItemAt(200, 166, ComputerViewModel::Page::STORAGE,
+                          CONTACT_ROW_HEIGHT, 20) == 2);
     checkPage("settings", SettingsViewModel{}, renderSettingsScreen);
+    ProgressionViewModel progression{};
+    progression.state = &state;
+    progression.mode = ProgressionViewModel::Mode::LEVEL_UP;
+    progression.teamSlot = 0;
+    progression.oldLevel = 4;
+    progression.level = 5;
+    progression.levelUpElapsedMs = 0;
+    checkPage("progression-level-up-entrance", progression,
+              renderProgressionScreen);
+    progression.levelUpElapsedMs = 800;
+    checkPage("progression-level-up-ready", progression,
+              renderProgressionScreen);
+    assert(progressionItemAt(0, 0,
+                             ProgressionViewModel::Mode::LEVEL_UP) == 0);
+    assert(progressionItemAt(367, 447,
+                             ProgressionViewModel::Mode::LEVEL_UP) == 0);
+    assert(progressionItemAt(368, 447,
+                             ProgressionViewModel::Mode::LEVEL_UP) == -1);
+    assert(progressionItemAt(0, 448,
+                             ProgressionViewModel::Mode::LEVEL_UP) == -1);
+    progression.mode = ProgressionViewModel::Mode::EVOLUTION;
+    progression.teamSlot = 0;
+    progression.fromSpeciesId = 1;
+    progression.toSpeciesId = 2;
+    progression.evolutionPhase = Game::EvolutionSequence::Phase::INTRO;
+    checkPage("progression-evolution-intro", progression,
+              renderProgressionScreen);
+    progression.evolutionCancelHoldProgress = 50;
+    checkPage("progression-evolution-hold", progression,
+              renderProgressionScreen);
+    progression.evolutionCancelHoldProgress = 0;
+    progression.evolutionPhase = Game::EvolutionSequence::Phase::MORPH;
+    progression.evolutionElapsedMs =
+        Game::EvolutionSequence::INTRO_MS + 500;
+    checkPage("progression-evolution-morph", progression,
+              renderProgressionScreen);
+    progression.evolutionPhase = Game::EvolutionSequence::Phase::COMPLETE;
+    progression.evolutionElapsedMs = Game::EvolutionSequence::COMPLETE_MS;
+    progression.evolutionReady = true;
+    checkPage("progression-evolution-complete", progression,
+              renderProgressionScreen);
+    progression.evolutionPhase = Game::EvolutionSequence::Phase::CANCELLED;
+    progression.evolutionElapsedMs =
+        Game::EvolutionSequence::CANCEL_COMPLETE_MS;
+    progression.evolutionReady = false;
+    checkPage("progression-evolution-cancelled", progression,
+              renderProgressionScreen);
+    progression.mode = ProgressionViewModel::Mode::MOVE_REPLACE;
+    progression.moveId = 22;
+    progression.oldMove2 = 33;
+    progression.oldMove3 = 44;
+    checkPage("progression-move-list", progression,
+              renderProgressionScreen);
+    assert(PixelRenderer::canvas().readPixel(328, 38) ==
+           UiCommon::rgb(27, 43, 51));
+    assert(progressionReplaceItemAt(20, 76, 0, 0xFF, 0) == 0);
+    assert(progressionReplaceItemAt(20, 142, 0, 0xFF, 0) == 1);
+    assert(progressionReplaceItemAt(20, 208, 0, 0xFF, 0) == 2);
+    assert(progressionReplaceItemAt(328, 38, 0, 0xFF, 0) == -1);
+    progression.selectedItem = 1;
+    progression.detailProgress = 0.5f;
+    checkPage("progression-move-detail-opening", progression,
+              renderProgressionScreen);
+    progression.detailProgress = 1.0f;
+    checkPage("progression-move-detail-open", progression,
+              renderProgressionScreen);
+    assert(PixelRenderer::canvas().readPixel(328, 38) ==
+           UiCommon::rgb(27, 62, 53));
+    assert(progressionReplaceItemAt(20, 320, 0, 1, 1.0f) == -1);
+    progression.selectedItem = 2;
+    progression.scrollOffsetY = 50;
+    checkPage("progression-move-last-detail", progression,
+              renderProgressionScreen);
+    assert(progressionReplaceItemAt(20, 158, 50, 2, 1.0f) == 2);
+    assert(progressionItemAt(40, 348,
+                             ProgressionViewModel::Mode::EVOLUTION) == -1);
+    assert(progressionItemAt(184, 388,
+                             ProgressionViewModel::Mode::EVOLUTION) == -1);
+    assert(progressionItemAt(367, 447,
+                             ProgressionViewModel::Mode::EVOLUTION) == -1);
     ShowerViewModel shower{}; shower.state = &state;
     checkPage("shower", shower, renderShowerScreen);
     BattleViewModel battle{}; battle.state = &state;
@@ -359,6 +568,10 @@ int main(int argc, char** argv) {
     battle.playerExperience = 50;
     checkPage("battle-exp", battle, renderBattleScreenCached);
     assert(canvas.readPixel(240, 294) == PixelRenderer::rgb(35, 118, 184));
+    battle.showPlayerExperience = false;
+    battle.wildSpeciesId = 278;
+    battle.playerSpeciesId = 380;
+    checkPage("battle-floating", battle, renderBattleScreenCached);
     ExploreViewModel explore{};
     explore.previewPool.count = 1;
     explore.previewFrames[0] = PokemonSprites::findSpeciesSprite(
@@ -424,14 +637,26 @@ int main(int argc, char** argv) {
     }
 
     assert(mainMenuItemAt(100, 350, 0) == 4);
-    assert(roomMenuItemAt(200, 350) == 2);
+    assert(roomMenuBackAt(40, 38));
+    assert(roomMenuItemAt(200, 350) == -1);
     assert(roomFoodItemAt(200, 350) == 5);
-    assert(showerMenuItemAt(320, 410) == 3);
+    assert(showerMenuItemAt(320, 410) == 2);
+    assert(showerMenuItemAt(364, 410) == -1);
     assert(teamMovesItemAt(200, 240, TeamMovesViewModel::Mode::MANAGE, 0) == 2);
     assert(teamMovesItemAt(200, 267, TeamMovesViewModel::Mode::MANAGE, 0) == 2);
     assert(teamMovesItemAt(200, 274, TeamMovesViewModel::Mode::MANAGE, 0) == -1);
     assert(teamMovesBackAt(79, 38));
     assert(!teamMovesBackAt(80, 38));
-    assert(computerItemAt(200, 200, ComputerViewModel::Page::STORAGE, 0, 20) == 1);
+    assert(computerItemAt(200, 90, ComputerViewModel::Page::MENU) == 0);
+    assert(computerItemAt(200, 176, ComputerViewModel::Page::MENU) == 1);
+    assert(computerItemAt(200, 262, ComputerViewModel::Page::MENU) == -1);
+    assert(computerItemAt(200, 348, ComputerViewModel::Page::MENU) == -1);
+    assert(settingsItemAt(200, 90) == 0);
+    assert(settingsItemAt(200, 338) == 4);
+    assert(settingsItemAt(200, 400) == -1);
+    assert(computerItemAt(0, 165, ComputerViewModel::Page::STORAGE, 0, 20) == 0);
+    assert(computerItemAt(367, 166, ComputerViewModel::Page::STORAGE, 0, 20) == 1);
+    assert(computerItemAt(200, 255, ComputerViewModel::Page::STORAGE, 0, 20) == 1);
+    assert(computerItemAt(200, 256, ComputerViewModel::Page::STORAGE, 0, 20) == 2);
     std::puts("Native geometry and framebuffer checks passed");
 }

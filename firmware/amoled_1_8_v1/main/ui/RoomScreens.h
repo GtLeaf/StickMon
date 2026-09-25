@@ -13,6 +13,7 @@ struct RoomFoodViewModel;
 
 void renderRoomMenuScreen(Canvas565& canvas, const RoomMenuViewModel& model,
                           uint16_t rowBegin = 0, uint16_t rowEnd = AmoledUi::HEIGHT);
+bool roomMenuBackAt(int x, int y);
 int roomMenuItemAt(int x, int y);
 void renderRoomFoodScreen(Canvas565& canvas, const RoomFoodViewModel& model,
                           uint16_t rowBegin = 0, uint16_t rowEnd = AmoledUi::HEIGHT);

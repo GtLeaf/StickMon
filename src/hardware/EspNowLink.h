@@ -28,6 +28,7 @@ enum class LinkMessageType : uint8_t {
     VISIT_STATUS = 0x53,
     VISIT_RECALL = 0x54,
     VISIT_END = 0x55,
+    VISIT_DEPARTED = 0x56,
     SESSION_ACK = 0x5F,
 };
 
@@ -48,6 +49,8 @@ struct __attribute__((packed)) VisitAcceptPayload {
 struct __attribute__((packed)) VisitPingPayload {
     uint8_t satiety;
     uint8_t mood;
+    uint16_t hpCur;
+    uint16_t hpMax;
 };
 
 struct __attribute__((packed)) VisitStatusPayload {
@@ -116,6 +119,7 @@ public:
     uint8_t currentRoomId() const { return roomId; }
     bool copyRoomAt(uint8_t index, RoomEntry& out) const;
     bool sendJoinRequest(uint8_t index);
+    void cancelJoinRequest();
     bool takeJoinRequest(uint8_t outMac[6], RoomPurpose& outPurpose, uint16_t& outRequestSeq);
     bool sendJoinAck(const uint8_t mac[6], bool accepted, uint16_t requestSeq);
     bool takeJoinAck(bool& accepted);

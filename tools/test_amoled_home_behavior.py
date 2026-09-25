@@ -11,9 +11,35 @@ APP = (ROOT / "firmware/amoled_1_8_v1/main/AmoledApp.cpp").read_text(
 HEADER = (ROOT / "firmware/amoled_1_8_v1/main/AmoledApp.h").read_text(
     encoding="utf-8"
 )
+HOME_SCREEN = (
+    ROOT / "firmware/amoled_1_8_v1/main/HomeScreen.cpp"
+).read_text(encoding="utf-8")
 
 
 class AmoledHomeBehaviorTests(unittest.TestCase):
+    def test_room_food_renders_below_all_pets(self):
+        start = HOME_SCREEN.index("void renderHomeScreen(")
+        end = HOME_SCREEN.index("void renderDebugScreen(", start)
+        render = HOME_SCREEN[start:end]
+        food = render.index("drawFoodContent(canvas")
+        fallback_bowl = render.index("drawBowl(canvas")
+        companion = render.index("drawHomeCompanion(canvas")
+        main_pet = render.index("drawPet(canvas, model)")
+        self.assertLess(food, companion)
+        self.assertLess(food, main_pet)
+        self.assertLess(fallback_bowl, companion)
+        self.assertLess(fallback_bowl, main_pet)
+
+    def test_successful_pet_does_not_show_a_toast(self):
+        pet = APP[APP.index("case PetOutcome::REWARDED:"):APP.index(
+            "case PetOutcome::DAILY_LIMIT:", APP.index("case PetOutcome::REWARDED:"))]
+        self.assertNotIn("setToast(", pet)
+
+    def test_auto_feed_does_not_show_yum_toast(self):
+        start = APP.index('"[AmoledApp] auto-feed satiety=')
+        end = APP.index("saveState();", start)
+        self.assertNotIn("setToast(", APP[start:end])
+
     def test_both_actors_have_survival_states(self):
         for token in (
             "PetMotion::SEEKING_SLEEP",
@@ -170,9 +196,38 @@ class AmoledHomeBehaviorTests(unittest.TestCase):
             "homeRuntime.beginPair(pairActivity, nowMs)",
             "homeRuntime.advanceRoute(\n                0,",
             "homeRuntime.advanceRoute(\n                1,",
+            "PokemonSprites::frameVisibleWidth(frame)",
             "gameState.pairMoodRewardsToday < 3",
         ):
             self.assertIn(token, APP)
+
+    def test_pair_talk_budget_uses_route_length_and_accepts_near_goal(self):
+        for token in (
+            "float pairRouteDistance(const Home::Actor& actor)",
+            "uint32_t pairApproachBudgetMs(const Home::Actor& actor)",
+            "index < actor.route.count",
+            "routeDistance += std::hypot",
+            "pairPhaseUntilMs = nowMs + pairApproachBudgetMs(movingActor);",
+            "goalDistance <= PAIR_APPROACH_GOAL_TOLERANCE",
+            '"[FriendDiag] talk approach-near-goal',
+        ):
+            self.assertIn(token, APP)
+
+    def test_pair_talk_moves_both_actors_to_fixed_points_together(self):
+        for token in (
+            "pairTalkParallelApproach = true",
+            "pairTalkMainApproachSpeed",
+            "pairTalkCompanionApproachSpeed",
+            "sharedDurationSeconds",
+            "0, nowMs, std::max(0.1f, pairTalkMainApproachSpeed)",
+            "std::max(0.1f, pairTalkCompanionApproachSpeed)",
+            '"[FriendDiag] talk positioned kind=%u parallel=1',
+            '"[FriendDiag] talk approach-parallel kind=%u',
+            '"[FriendDiag] talk active kind=%u',
+        ):
+            self.assertIn(token, APP)
+        self.assertNotIn("pairTalkSecondPending", APP)
+        self.assertIn("talk configured-gap", APP)
 
     def test_visitors_enter_and_leave_through_room_door(self):
         for token in (
@@ -184,6 +239,24 @@ class AmoledHomeBehaviorTests(unittest.TestCase):
         ):
             self.assertIn(token, APP)
         self.assertIn("VisitorMotion visitorMotion", HEADER)
+
+    def test_visitor_exit_route_advances_walk_presentation(self):
+        start = APP.index(
+            "if (visitorMotion == VisitorMotion::EXITING && !visitorCrossingDoor)"
+        )
+        end = APP.index("const float targetX", start)
+        route = APP[start:end]
+        for token in (
+            "const float previousX = homeCompanionActor.x;",
+            "const float movedX = homeCompanionActor.x - previousX;",
+            "companionDirection = petDirectionForDelta(movedX, movedY);",
+            "++companionFrame;",
+            "nextCompanionFrameMs = nowMs + MOTION_FRAME_MS;",
+            "outsideX - homeCompanionActor.x",
+            '"frame=%u dir=%u moved=%u\\n"',
+        ):
+            self.assertIn(token, route)
+        self.assertIn('"[FriendDiag] visitor-exit cross kind=%u', APP)
 
     def test_temporary_visitors_are_always_removed_from_saves(self):
         self.assertIn("Game::GameState persistentState = gameState;", APP)

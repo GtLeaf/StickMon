@@ -79,22 +79,6 @@ void renderExploreScreen(Canvas565& canvas, const ExploreViewModel& model,
                 }
             }
         }
-        canvas.drawLine((18),
-                        (36),
-                        (6),
-                        (48), muted);
-        canvas.drawLine((6),
-                        (48),
-                        (18),
-                        (60), muted);
-        canvas.drawLine((350),
-                        (36),
-                        (362),
-                        (48), muted);
-        canvas.drawLine((362),
-                        (48),
-                        (350),
-                        (60), muted);
         canvas.drawFastHLine((16),
                              (selectorBottom - 2),
                              (336),
@@ -237,13 +221,6 @@ int exploreRouteExitChoiceAt(int x, int y) {
     return -1;
 }
 
-int exploreRoutePromptChoiceAt(int x, int y) {
-    if (y < 334 || y >= 408) return -1;
-    if (x >= 36 && x < 176) return 0;
-    if (x >= 192 && x < 332) return 1;
-    return -1;
-}
-
 bool exploreRouteMapAt(int x, int y) {
     return x >= 0 && x < AmoledUi::WIDTH &&
            y >= EXPLORE_ROUTE_MAP_TOP && y < EXPLORE_ROUTE_MAP_BOTTOM;
@@ -345,6 +322,7 @@ void renderExploreRouteScreen(Canvas565& canvas,
                 drawExploreRouteCompanion(canvas, model);
             }
             if (!bossBehindPlayer) drawExploreRouteBoss(canvas, model);
+            drawExploreRouteMapForegroundLayer(canvas, model, top, bottom);
         } else {
             canvas.fillRect(
                 (0),
@@ -357,9 +335,9 @@ void renderExploreRouteScreen(Canvas565& canvas,
         pageClip.reset();
     }
 
-    if (model.complete && rowBegin < 280 && rowEnd > 130) {
-        int top = std::max<int>(rowBegin, 65);
-        int bottom = std::min<int>(rowEnd, 140);
+    if (model.complete && rowBegin < 268 && rowEnd > 136) {
+        int top = std::max<int>(rowBegin, 136);
+        int bottom = std::min<int>(rowEnd, 268);
         pageClip.setRect(
             (0), (top),
             (AmoledUi::WIDTH),
@@ -400,11 +378,10 @@ void renderExploreRouteScreen(Canvas565& canvas,
         pageClip.reset();
     }
 
-    if ((model.exitConfirm ||
-         model.prompt != ExploreRouteViewModel::Prompt::NONE) &&
+    if (model.exitConfirm &&
         rowBegin < 428 && rowEnd > 290) {
-        int top = std::max<int>(rowBegin, 145);
-        int bottom = std::min<int>(rowEnd, 214);
+        int top = std::max<int>(rowBegin, 290);
+        int bottom = std::min<int>(rowEnd, 428);
         pageClip.setRect((0), (top), (AmoledUi::WIDTH), (bottom - top));
         if (model.exitConfirm) {
             canvas.fillRoundRect((20), (290), (328), (138), (12), rgb(17, 27, 34));
@@ -416,25 +393,11 @@ void renderExploreRouteScreen(Canvas565& canvas,
             text(canvas, 72, 364, Ui::Amoled::STAY, rgb(115, 226, 183));
             text(canvas, 234, 364, Ui::Amoled::EXIT, rgb(239, 143, 148));
         }
-        if (model.prompt != ExploreRouteViewModel::Prompt::NONE) {
-            canvas.fillRoundRect((20), (290), (328), (138), (12), rgb(17, 27, 34));
-            canvas.drawRoundRect((20), (290), (328), (138), (12), rgb(82, 117, 117));
-            text(canvas, 86, 308,
-                 model.prompt == ExploreRouteViewModel::Prompt::PUZZLE
-                     ? Ui::Amoled::PATH_PUZZLE : Ui::Amoled::PATH_BLOCKED,
-                 rgb(226, 238, 233));
-            canvas.fillRoundRect((36), (334), (140), (74), (8), rgb(36, 54, 61));
-            canvas.fillRoundRect((192), (334), (140), (74), (8), rgb(91, 49, 55));
-            text(canvas, 66, 364,
-                 model.prompt == ExploreRouteViewModel::Prompt::PUZZLE
-                     ? Ui::Amoled::SOLVE : Ui::Amoled::OPEN,
-                 rgb(115, 226, 183));
-            text(canvas, 234, 364, Ui::Amoled::TURN, rgb(239, 143, 148));
-        }
         pageClip.reset();
     }
 
-    if (model.toast && rowBegin < 334 && rowEnd > 298) {
+    if (model.toast && rowBegin < UiCommon::TOAST_BOTTOM &&
+        rowEnd > UiCommon::TOAST_TOP) {
         pageClip.setRect((0), (rowBegin), (AmoledUi::WIDTH), (rowEnd - rowBegin));
         drawToast(canvas, model.toast);
         pageClip.reset();
@@ -447,14 +410,13 @@ bool exploreRouteMenuBackAt(int x, int y) {
 }
 
 int exploreRouteMenuItemAt(int x, int y) {
-    int panelX = 368 - EXPLORE_MENU_PANEL_WIDTH;
-    if (x < panelX || x >= 368 || y < EXPLORE_MENU_PANEL_ROW_TOP ||
-        y >= EXPLORE_MENU_PANEL_ROW_TOP +
-                 AppSceneFlow::exploreMenuItemCount() *
-                     EXPLORE_MENU_PANEL_ROW_HEIGHT) {
+    const int panelX = AmoledUi::WIDTH - EXPLORE_MENU_PANEL_WIDTH;
+    if (x < panelX || x >= AmoledUi::WIDTH ||
+        y < EXPLORE_MENU_PANEL_TOP ||
+        y >= EXPLORE_MENU_PANEL_TOP + EXPLORE_MENU_PANEL_HEIGHT) {
         return -1;
     }
-    int index = (y - EXPLORE_MENU_PANEL_ROW_TOP) /
+    int index = (y - EXPLORE_MENU_PANEL_TOP) /
                 EXPLORE_MENU_PANEL_ROW_HEIGHT;
     return index < AppSceneFlow::exploreMenuItemCount() ? index : -1;
 }
@@ -469,12 +431,16 @@ void renderExploreMenuScreen(Canvas565& canvas,
 
     const int panelX = AmoledUi::WIDTH - EXPLORE_MENU_PANEL_WIDTH;
     pageClip.setRect((panelX), (rowBegin), (EXPLORE_MENU_PANEL_WIDTH), (rowEnd - rowBegin));
-    canvas.fillRect((panelX), (0), (EXPLORE_MENU_PANEL_WIDTH), (AmoledUi::HEIGHT), rgb(20, 25, 32));
-    canvas.drawRect((panelX), (0), (EXPLORE_MENU_PANEL_WIDTH), (AmoledUi::HEIGHT), rgb(190, 200, 205));
+    canvas.fillRoundRect(panelX, EXPLORE_MENU_PANEL_TOP,
+                         EXPLORE_MENU_PANEL_WIDTH, EXPLORE_MENU_PANEL_HEIGHT,
+                         8, rgb(20, 25, 32));
+    canvas.drawRoundRect(panelX, EXPLORE_MENU_PANEL_TOP,
+                         EXPLORE_MENU_PANEL_WIDTH, EXPLORE_MENU_PANEL_HEIGHT,
+                         8, rgb(190, 200, 205));
 
     for (uint8_t index = 0; index < AppSceneFlow::exploreMenuItemCount();
          ++index) {
-        int y = EXPLORE_MENU_PANEL_ROW_TOP +
+        int y = EXPLORE_MENU_PANEL_TOP +
                 index * EXPLORE_MENU_PANEL_ROW_HEIGHT;
         if (y + EXPLORE_MENU_PANEL_ROW_HEIGHT <= rowBegin || y >= rowEnd) {
             continue;
@@ -482,18 +448,24 @@ void renderExploreMenuScreen(Canvas565& canvas,
         bool selected = index == model.cursor;
         bool pressed = index == model.pressedItem;
         if (pressed) {
-            canvas.fillRect((panelX + 4), (y + 4), (EXPLORE_MENU_PANEL_WIDTH - 8), (EXPLORE_MENU_PANEL_ROW_HEIGHT - 8), rgb(33, 43, 48));
+            canvas.fillRoundRect(panelX + 4, y + 4,
+                                 EXPLORE_MENU_PANEL_WIDTH - 8,
+                                 EXPLORE_MENU_PANEL_ROW_HEIGHT - 8,
+                                 4, rgb(33, 43, 48));
         }
         if (selected) {
-            canvas.fillRect((panelX + 10), (y), (6), (36), rgb(255, 216, 72));
+            canvas.fillRect(panelX + 10,
+                            y + (EXPLORE_MENU_PANEL_ROW_HEIGHT - 36) / 2,
+                            6, 36, rgb(255, 216, 72));
         }
         uint16_t color = selected ? rgb(255, 216, 72)
                                   : rgb(235, 239, 232);
-        text(canvas, panelX + 26, y,
+        text(canvas, panelX + 26, y + EXPLORE_MENU_TEXT_INSET,
              Ui::Explore::SIDE_MENU_ITEMS[index], color);
     }
     pageClip.reset();
-    if (model.toast && rowBegin < 334 && rowEnd > 298) {
+    if (model.toast && rowBegin < UiCommon::TOAST_BOTTOM &&
+        rowEnd > UiCommon::TOAST_TOP) {
         pageClip.setRect((0), (rowBegin), (AmoledUi::WIDTH), (rowEnd - rowBegin));
         drawToast(canvas, model.toast);
         pageClip.reset();

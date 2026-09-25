@@ -19,6 +19,21 @@ class AmoledExpeditionDepartureTests(unittest.TestCase):
         cls.header = (ROOT / "firmware/amoled_1_8_v1/main/AmoledApp.h").read_text(
             encoding="utf-8"
         )
+        cls.v1_main = (
+            ROOT / "firmware/amoled_1_8_v1/main/main.cpp"
+        ).read_text(encoding="utf-8")
+        cls.v2_main = (
+            ROOT / "firmware/amoled_1_8_v2/main/main.cpp"
+        ).read_text(encoding="utf-8")
+
+    def test_scene_transition_blocks_display_lock_on_both_boards(self):
+        self.assertIn("bool displayLockAllowed() const;", self.header)
+        for main in (self.v1_main, self.v2_main):
+            lock_start = main.index(
+                "if (lockPhase == LockPhase::OPEN && lockRequest"
+            )
+            lock_body = main[lock_start : lock_start + 240]
+            self.assertIn("app.displayLockAllowed()", lock_body)
 
     def test_pair_departure_has_serial_companion_phases(self):
         self.assertIn("WALK_COMPANION_TO_DOOR", self.header)
@@ -92,6 +107,8 @@ class AmoledExpeditionDepartureTests(unittest.TestCase):
         update = self.app.index("void AmoledApp::updateExploreRoute")
         finish = self.app.index("finishExploreRouteAtEnd(nowMs);", update)
         self.assertIn("if (exploreRouteExiting)", self.app[update:finish])
+        self.assertIn("advanceExploreRouteWalkFrames(nowMs);",
+                      self.app[update:finish])
 
     def test_departure_keeps_render_actor_in_sync_with_pet_coordinates(self):
         begin = self.app.index("bool AmoledApp::updateExploreDeparture")

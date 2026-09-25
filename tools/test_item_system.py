@@ -84,6 +84,7 @@ class ItemSystemTests(unittest.TestCase):
             "ICE_HEAL",
             "MAX_POTION",
             "FULL_RESTORE",
+            "FULL_HEAL",
             "FIRE_STONE",
             "WATER_STONE",
             "THUNDER_STONE",
@@ -253,10 +254,10 @@ class ItemSystemTests(unittest.TestCase):
             acknowledge.group(0),
         )
 
-    def test_save_format_keeps_v1_v2_to_v3_migration(self):
+    def test_save_format_keeps_legacy_migration(self):
         state = (ROOT / "src" / "game" / "GameState.h").read_text()
         manager = (ROOT / "src" / "core" / "SaveManager.cpp").read_text()
-        self.assertRegex(state, r"SAVE_VERSION\s*=\s*3\s*;")
+        self.assertRegex(state, r"SAVE_VERSION\s*=\s*4\s*;")
         self.assertRegex(state, r"MIN_SUPPORTED_SAVE_VERSION\s*=\s*1\s*;")
         self.assertIn("LEGACY_SAVE_RECORD_VERSION_V1", manager)
         self.assertIn("struct SaveRecordV1", manager)

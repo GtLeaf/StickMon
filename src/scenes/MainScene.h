@@ -25,6 +25,9 @@ public:
     SceneUpdateResult update(uint32_t nowMs, float dtSeconds) override;
     void render() override;
     bool onButton(const ButtonEvent& event) override;
+    void beginLinkedGuestExit(uint32_t nowMs,
+                              const Game::MonsterRuntime& guest,
+                              const SecondarySceneViewState& saved);
 
 private:
     // Legacy values are retained only for save compatibility and sprite
@@ -105,6 +108,7 @@ private:
     enum class ContactDialog : uint8_t {
         NONE,
         KNOCK,
+        LINK_ARRIVAL,
         PLAY_ARRIVAL,
         GIFT_ARRIVAL,
         EXPLORE_INVITE,
@@ -345,6 +349,8 @@ private:
     float pairConversationHopOffset(bool mainActor,
                                     uint32_t nowMs) const;
     void updateContactVisit(uint32_t nowMs, float dtSeconds);
+    void beginVisitDeparture(uint32_t nowMs);
+    bool updateVisitDeparture(uint32_t nowMs, float dtSeconds);
     void beginContactGuestEntry(uint32_t nowMs);
     bool beginContactHostClearDoor(uint32_t nowMs);
     bool beginContactMeetingArrangement(uint32_t nowMs);
@@ -457,6 +463,14 @@ private:
     uint8_t hungerAnimTo = 0;
     ProgressionModal progressionModal = ProgressionModal::NONE;
     ContactDialog contactDialog = ContactDialog::NONE;
+    enum class VisitDeparture : uint8_t {
+        NONE,
+        WALK_TO_DOOR,
+        CROSS_DOOR,
+        AWAY,
+    } visitDeparture = VisitDeparture::NONE;
+    uint32_t visitDepartureStartedMs = 0;
+    bool linkedArrivalInProgress = false;
     ContactGuestMotion contactGuestMotion = ContactGuestMotion::NONE;
     uint32_t contactGuestMotionStartedMs = 0;
     uint32_t contactNextRouteAttemptMs = 0;

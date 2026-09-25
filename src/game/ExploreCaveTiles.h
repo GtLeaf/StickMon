@@ -37,7 +37,7 @@ constexpr uint16_t DOWN_LADDER_OPEN_BASE[3][3] = {
     {4735, 4736, 4737},
 };
 
-constexpr uint16_t FROST_EXIT[3] = {4741, 4742, 4743};
+constexpr uint16_t FROST_EXIT[3] = {4743, 4742, 4741};
 constexpr uint16_t FROST_BROKEN_ICE_HOLE = 4744;
 constexpr uint16_t FROST_ROUND_WATER_BOTTOM[2] = {4745, 4746};
 constexpr uint16_t FROST_DOWNWARD_STAIRS = 4747;
@@ -50,9 +50,14 @@ constexpr uint16_t CAVE_FLOOR = 4758;
 constexpr uint16_t CAVE_CLIFF_LEFT = 4759;
 constexpr uint16_t CAVE_CLIFF_MIDDLE = 4760;
 constexpr uint16_t CAVE_CLIFF_RIGHT = 4761;
+constexpr uint16_t FROST_EXIT_LEFT[3] = {4764, 4763, 4762};
+constexpr uint16_t FROST_EXIT_BOTTOM[3] = {4767, 4766, 4765};
+constexpr uint16_t FROST_EXIT_RIGHT[3] = {4768, 4769, 4770};
+constexpr uint16_t FROST_DEEP_ENTRANCE_CENTER_LEGACY = 4771;
+constexpr uint16_t FROST_UP_LADDER[2] = {4772, 4773};
 
 constexpr bool isRuntimeTile(uint16_t tileId) {
-    return tileId >= ENTRANCE_LEFT && tileId <= CAVE_CLIFF_RIGHT;
+    return tileId >= ENTRANCE_LEFT && tileId <= FROST_UP_LADDER[1];
 }
 
 constexpr bool isStatefulFrostTile(uint16_t tileId) {
@@ -60,7 +65,7 @@ constexpr bool isStatefulFrostTile(uint16_t tileId) {
            tileId == FROST_CAVE_HOLE;
 }
 
-static_assert(CAVE_CLIFF_RIGHT - ENTRANCE_LEFT + 1 == 62,
+static_assert(FROST_UP_LADDER[1] - ENTRANCE_LEFT + 1 == 74,
               "Cave runtime tile aliases must remain contiguous");
 
 }  // namespace ExploreCaveTiles

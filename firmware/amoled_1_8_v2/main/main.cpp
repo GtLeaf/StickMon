@@ -23,6 +23,9 @@
 #include "esp_log.h"
 #include "esp_psram.h"
 #include "esp_timer.h"
+#if STICKMON_ENABLE_DEBUG_FEATURES
+#include "driver/usb_serial_jtag.h"
+#endif
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -40,9 +43,13 @@ constexpr uint16_t TRANSFER_LOGICAL_ROWS = 32;
 constexpr uint16_t TRANSFER_PHYSICAL_ROWS = TRANSFER_LOGICAL_ROWS;
 constexpr size_t TRANSFER_BUFFER_COUNT = 2;
 constexpr uint32_t LOCK_ANIMATION_MS = 1000;
+constexpr uint32_t LOCK_ANIMATION_FRAME_MS = 33;
 constexpr uint32_t LOCK_WAKE_GRACE_MS = 1200;
-constexpr int LOCK_START_RADIUS = 520;
+constexpr uint32_t LOCK_FINAL_CLEANUP_DELAY_MS = 180;
 constexpr int LOCK_FINAL_RADIUS = 66;
+constexpr int LOCK_FEATHER_PIXELS = 8;
+constexpr int LOCK_COVER_MARGIN = LOCK_FEATHER_PIXELS + 2;
+constexpr int LOCK_UPDATE_ALIGNMENT = 2;
 constexpr int LOCK_SLEEP_BREATH_AMPLITUDE = 8;
 constexpr uint32_t LOCK_SLEEP_BREATH_PERIOD_MS = 2000;
 enum class LockPhase : uint8_t { OPEN, CLOSING, LOCKED, OPENING };
@@ -51,6 +58,161 @@ constexpr size_t PHYSICAL_PIXELS =
 constexpr size_t TRANSFER_PIXELS =
     static_cast<size_t>(PHYSICAL_WIDTH) * TRANSFER_PHYSICAL_ROWS;
 using TransferBuffers = std::array<uint16_t*, TRANSFER_BUFFER_COUNT>;
+
+#if STICKMON_ENABLE_DEBUG_FEATURES
+struct ExploreFramePerf {
+    int64_t windowStartedUs = 0;
+    int64_t lastFrameStartedUs = 0;
+    uint32_t frames = 0;
+    uint32_t rows = 0;
+    uint32_t maxRows = 0;
+    uint32_t overBudgetFrames = 0;
+    uint64_t updateTotalUs = 0;
+    uint32_t updateMaxUs = 0;
+    uint64_t clawTotalUs = 0;
+    uint32_t clawMaxUs = 0;
+    uint64_t drawTotalUs = 0;
+    uint32_t drawMaxUs = 0;
+    uint64_t lcdTotalUs = 0;
+    uint32_t lcdMaxUs = 0;
+    uint64_t totalUs = 0;
+    uint32_t totalMaxUs = 0;
+    uint32_t gapMaxUs = 0;
+
+    void flush(int64_t nowUs, bool force) {
+        if (frames == 0) return;
+        const int64_t elapsedUs = nowUs - windowStartedUs;
+        if (!force && elapsedUs < 1000000) return;
+        const uint32_t fps10 = elapsedUs > 0
+            ? static_cast<uint32_t>(frames * 10000000ULL / elapsedUs) : 0;
+        ESP_LOGI(TAG,
+                 "[ExplorePerf] fps=%lu.%lu frames=%lu rows(avg/max)=%lu/%lu "
+                 "update(avg/max)=%lu/%lu us claw(avg/max)=%lu/%lu us "
+                 "draw(avg/max)=%lu/%lu us lcd(avg/max)=%lu/%lu us "
+                 "total(avg/max)=%lu/%lu us gapMax=%lu us over20ms=%lu",
+                 static_cast<unsigned long>(fps10 / 10),
+                 static_cast<unsigned long>(fps10 % 10),
+                 static_cast<unsigned long>(frames),
+                 static_cast<unsigned long>(rows / frames),
+                 static_cast<unsigned long>(maxRows),
+                 static_cast<unsigned long>(updateTotalUs / frames),
+                 static_cast<unsigned long>(updateMaxUs),
+                 static_cast<unsigned long>(clawTotalUs / frames),
+                 static_cast<unsigned long>(clawMaxUs),
+                 static_cast<unsigned long>(drawTotalUs / frames),
+                 static_cast<unsigned long>(drawMaxUs),
+                 static_cast<unsigned long>(lcdTotalUs / frames),
+                 static_cast<unsigned long>(lcdMaxUs),
+                 static_cast<unsigned long>(totalUs / frames),
+                 static_cast<unsigned long>(totalMaxUs),
+                 static_cast<unsigned long>(gapMaxUs),
+                 static_cast<unsigned long>(overBudgetFrames));
+        const int64_t previousFrameStartedUs = lastFrameStartedUs;
+        *this = ExploreFramePerf{};
+        if (!force) {
+            windowStartedUs = nowUs;
+            lastFrameStartedUs = previousFrameStartedUs;
+        }
+    }
+
+    void record(int64_t startedUs, int64_t finishedUs, uint32_t updateUs,
+                uint32_t clawUs, uint32_t drawUs, uint32_t lcdUs,
+                uint16_t rowCount) {
+        if (windowStartedUs == 0) windowStartedUs = startedUs;
+        if (lastFrameStartedUs != 0) {
+            gapMaxUs = std::max(gapMaxUs, static_cast<uint32_t>(
+                startedUs - lastFrameStartedUs));
+        }
+        lastFrameStartedUs = startedUs;
+        const uint32_t frameUs = static_cast<uint32_t>(finishedUs - startedUs);
+        ++frames;
+        rows += rowCount;
+        maxRows = std::max(maxRows, static_cast<uint32_t>(rowCount));
+        if (frameUs > 20000) ++overBudgetFrames;
+        updateTotalUs += updateUs;
+        updateMaxUs = std::max(updateMaxUs, updateUs);
+        clawTotalUs += clawUs;
+        clawMaxUs = std::max(clawMaxUs, clawUs);
+        drawTotalUs += drawUs;
+        drawMaxUs = std::max(drawMaxUs, drawUs);
+        lcdTotalUs += lcdUs;
+        lcdMaxUs = std::max(lcdMaxUs, lcdUs);
+        totalUs += frameUs;
+        totalMaxUs = std::max(totalMaxUs, frameUs);
+        flush(finishedUs, false);
+    }
+};
+
+struct ExploreSerialCommand {
+    char line[32] = {};
+    uint8_t length = 0;
+    bool discard = false;
+    bool ready = false;
+
+    void begin() {
+        usb_serial_jtag_driver_config_t config =
+            USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
+        ready = usb_serial_jtag_driver_install(&config) == ESP_OK;
+        ESP_LOGI(TAG, "[DiagCmd] usb=%s", ready ? "ready" : "unavailable");
+    }
+
+    void poll(AmoledV1::AmoledApp& app) {
+        if (!ready) return;
+        char bytes[64];
+        const int count = usb_serial_jtag_read_bytes(bytes, sizeof(bytes), 0);
+        for (int index = 0; index < count; ++index) {
+            const char ch = bytes[index];
+            if (ch == '\n' || ch == '\r') {
+                if (!discard && length > 0) {
+                    line[length] = '\0';
+                    if (std::strcmp(line, "diag ping") == 0) {
+                        ESP_LOGI(TAG, "[DiagCmd] pong");
+                    } else if (std::strncmp(line, "diag explore ", 13) == 0 &&
+                               line[13] >= '0' && line[13] <= '5' &&
+                               line[14] == '\0') {
+                        const uint8_t area = static_cast<uint8_t>(line[13] - '0');
+                        ESP_LOGI(TAG, "[DiagCmd] explore area=%u result=%s",
+                                 static_cast<unsigned>(area),
+                                 app.debugStartExplore(area) ? "started" : "rejected");
+                    } else if (std::strncmp(line, "diag contact ", 13) == 0 &&
+                               line[13] >= '1' && line[13] <= '3' &&
+                               line[14] == '\0') {
+                        const uint8_t kind = static_cast<uint8_t>(line[13] - '0');
+                        ESP_LOGI(TAG, "[DiagCmd] contact kind=%u result=%s",
+                                 static_cast<unsigned>(kind),
+                                 app.debugTriggerContact(kind) ? "started" : "rejected");
+                    } else if (std::strncmp(line, "diag prompt ", 12) == 0 &&
+                               line[12] >= '1' && line[12] <= '3' &&
+                               line[13] == '\0') {
+                        const uint8_t kind = static_cast<uint8_t>(line[12] - '0');
+                        ESP_LOGI(TAG, "[DiagCmd] prompt kind=%u result=%s",
+                                 static_cast<unsigned>(kind),
+                                 app.debugPromptContact(kind) ? "started" : "rejected");
+                    } else if (std::strcmp(line, "diag accept") == 0) {
+                        ESP_LOGI(TAG, "[DiagCmd] accept result=%s",
+                                 app.debugAcceptContact() ? "started" : "rejected");
+                    } else if (std::strcmp(line, "diag pair talk") == 0) {
+                        ESP_LOGI(TAG, "[DiagCmd] pair talk result=%s",
+                                 app.debugStartPairTalk() ? "started" : "rejected");
+                    } else if (std::strcmp(line, "diag contact return") == 0) {
+                        ESP_LOGI(TAG, "[DiagCmd] contact return result=%s",
+                                 app.debugReturnContactExplore() ? "started" : "rejected");
+                    } else {
+                        ESP_LOGW(TAG, "[DiagCmd] unknown command");
+                    }
+                }
+                length = 0;
+                discard = false;
+            } else if (!discard) {
+                if (length + 1 < sizeof(line)) line[length++] = ch;
+                else discard = true;
+            }
+        }
+    }
+};
+
+ExploreFramePerf exploreFramePerf;
+#endif
 
 uint16_t* allocatePhysicalPixels() {
     return static_cast<uint16_t*>(heap_caps_calloc(
@@ -236,10 +398,39 @@ void drawLockMask(Canvas565& canvas, int centerX, int centerY, int radius,
     yBegin = std::clamp(yBegin, 0, canvas.height());
     yEnd = std::clamp(yEnd, yBegin, canvas.height());
     radius = std::max(0, radius);
-    constexpr int FEATHER_PIXELS = 8;
-    int innerRadius = std::max(0, radius - FEATHER_PIXELS);
+    if (radius == 0) {
+        canvas.fillRect(xBegin, yBegin, xEnd - xBegin, yEnd - yBegin, 0);
+        return;
+    }
+    int innerRadius = std::max(0, radius - LOCK_FEATHER_PIXELS);
     int64_t outerRadiusSquared = static_cast<int64_t>(radius) * radius;
     int64_t innerRadiusSquared = static_cast<int64_t>(innerRadius) * innerRadius;
+    auto shadeRange = [&](int y, int dy, int left, int right) {
+        left = std::max(left, xBegin);
+        right = std::min(right, xEnd - 1);
+        for (int x = left; x <= right; ++x) {
+            const int dx = x - centerX;
+            const int64_t distanceSquared = static_cast<int64_t>(dx) * dx +
+                                            static_cast<int64_t>(dy) * dy;
+            if (distanceSquared <= innerRadiusSquared) continue;
+            if (distanceSquared >= outerRadiusSquared) {
+                canvas.drawPixel(x, y, 0);
+                continue;
+            }
+            const uint16_t color = canvas.readPixel(x, y);
+            const int64_t distanceInside =
+                outerRadiusSquared - distanceSquared;
+            const int factor = static_cast<int>(
+                distanceInside * 255 /
+                std::max<int64_t>(1,
+                    outerRadiusSquared - innerRadiusSquared));
+            const int red = ((color >> 11) & 0x1F) * factor / 255;
+            const int green = ((color >> 5) & 0x3F) * factor / 255;
+            const int blue = (color & 0x1F) * factor / 255;
+            canvas.drawPixel(x, y, static_cast<uint16_t>(
+                (red << 11) | (green << 5) | blue));
+        }
+    };
     for (int y = yBegin; y < yEnd; ++y) {
         int dy = y - centerY;
         if (std::abs(dy) > radius) {
@@ -260,34 +451,57 @@ void drawLockMask(Canvas565& canvas, int centerX, int centerY, int radius,
                             xEnd - circleRight - 1, 1, 0);
         }
         if (left > right) continue;
-        for (int x = left; x <= right; ++x) {
-            int dx = x - centerX;
-            int64_t distanceSquared = static_cast<int64_t>(dx) * dx +
-                                      static_cast<int64_t>(dy) * dy;
-            if (distanceSquared <= innerRadiusSquared) {
-                continue;
-            }
-            if (distanceSquared >= outerRadiusSquared) {
-                canvas.drawPixel(x, y, 0);
-                continue;
-            }
-            uint16_t color = canvas.readPixel(x, y);
-            int64_t distanceInside = outerRadiusSquared - distanceSquared;
-            int factor = static_cast<int>(
-                distanceInside * 255 /
-                std::max<int64_t>(1, outerRadiusSquared - innerRadiusSquared));
-            int red = ((color >> 11) & 0x1F) * factor / 255;
-            int green = ((color >> 5) & 0x3F) * factor / 255;
-            int blue = (color & 0x1F) * factor / 255;
-            canvas.drawPixel(x, y, static_cast<uint16_t>(
-                (red << 11) | (green << 5) | blue));
+        if (std::abs(dy) > innerRadius) {
+            shadeRange(y, dy, left, right);
+            continue;
         }
+        const int innerSpan = static_cast<int>(std::sqrt(static_cast<float>(
+            innerRadius * innerRadius - dy * dy)));
+        shadeRange(y, dy, left, centerX - innerSpan - 1);
+        shadeRange(y, dy, centerX + innerSpan + 1, right);
     }
 }
 
+void restoreFrameRegion(uint16_t* destination, const uint16_t* snapshot,
+                        uint16_t xBegin, uint16_t xEnd,
+                        uint16_t yBegin, uint16_t yEnd) {
+    if (!destination || !snapshot || xBegin >= xEnd || yBegin >= yEnd) return;
+    const size_t rowBytes = static_cast<size_t>(xEnd - xBegin) *
+                            sizeof(uint16_t);
+    for (uint16_t y = yBegin; y < yEnd; ++y) {
+        const size_t offset = static_cast<size_t>(y) * PHYSICAL_WIDTH + xBegin;
+        std::memcpy(destination + offset, snapshot + offset, rowBytes);
+    }
+}
+
+void alignLockUpdateRegion(uint16_t& xBegin, uint16_t& xEnd,
+                           uint16_t& yBegin, uint16_t& yEnd) {
+    xBegin = static_cast<uint16_t>(
+        xBegin / LOCK_UPDATE_ALIGNMENT * LOCK_UPDATE_ALIGNMENT);
+    yBegin = static_cast<uint16_t>(
+        yBegin / LOCK_UPDATE_ALIGNMENT * LOCK_UPDATE_ALIGNMENT);
+    xEnd = static_cast<uint16_t>(std::min<int>(
+        LOGICAL_WIDTH,
+        ((xEnd + LOCK_UPDATE_ALIGNMENT - 1) / LOCK_UPDATE_ALIGNMENT) *
+            LOCK_UPDATE_ALIGNMENT));
+    yEnd = static_cast<uint16_t>(std::min<int>(
+        LOGICAL_HEIGHT,
+        ((yEnd + LOCK_UPDATE_ALIGNMENT - 1) / LOCK_UPDATE_ALIGNMENT) *
+            LOCK_UPDATE_ALIGNMENT));
+}
+
+int lockCoverRadius(int centerX, int centerY) {
+    const int farX = std::max(centerX, static_cast<int>(LOGICAL_WIDTH) - 1 -
+                                          centerX);
+    const int farY = std::max(centerY, static_cast<int>(LOGICAL_HEIGHT) - 1 -
+                                          centerY);
+    return static_cast<int>(std::ceil(std::sqrt(static_cast<float>(
+        farX * farX + farY * farY)))) + LOCK_COVER_MARGIN;
+}
+
 int lockRadius(LockPhase phase, uint32_t nowMs,
-               uint32_t animationStartedMs, bool preserveFocus,
-               bool sleeping) {
+               uint32_t animationStartedMs, int startRadius,
+               bool preserveFocus, bool sleeping) {
     int finalRadius = preserveFocus ? LOCK_FINAL_RADIUS : 0;
     if (phase == LockPhase::LOCKED) {
         if (!preserveFocus || !sleeping) return finalRadius;
@@ -308,11 +522,10 @@ int lockRadius(LockPhase phase, uint32_t nowMs,
     if (phase == LockPhase::OPENING) {
         return static_cast<int>(std::lround(
             finalRadius +
-            (LOCK_START_RADIUS - finalRadius) * eased));
+            (startRadius - finalRadius) * eased));
     }
     return static_cast<int>(std::lround(
-        LOCK_START_RADIUS -
-        (LOCK_START_RADIUS - finalRadius) * eased));
+        startRadius - (startRadius - finalRadius) * eased));
 }
 
 AmoledV1::TouchEvent toAppTouchEvent(const AmoledV2::TouchEvent& event) {
@@ -382,6 +595,7 @@ extern "C" void app_main(void) {
              static_cast<unsigned>(esp_psram_get_size()));
 
     uint16_t* physicalPixels = allocatePhysicalPixels();
+    uint16_t* lockSnapshot = allocatePhysicalPixels();
     TransferBuffers transferBuffers{};
     bool transferBuffersReady = true;
     for (uint16_t*& buffer : transferBuffers) {
@@ -391,8 +605,12 @@ extern "C" void app_main(void) {
     if (!physicalPixels || !transferBuffersReady) {
         ESP_LOGE(TAG, "Unable to allocate RGB565 framebuffers");
         heap_caps_free(physicalPixels);
+        heap_caps_free(lockSnapshot);
         for (uint16_t* buffer : transferBuffers) heap_caps_free(buffer);
         return;
+    }
+    if (!lockSnapshot) {
+        ESP_LOGW(TAG, "Lock snapshot unavailable; using live scene rendering");
     }
     ESP_LOGI(TAG, "DMA buffers: %u bytes, free DMA memory: %u bytes",
              static_cast<unsigned>(TRANSFER_PIXELS * sizeof(uint16_t) *
@@ -517,13 +735,18 @@ extern "C" void app_main(void) {
 
     LockPhase lockPhase = LockPhase::OPEN;
     uint32_t lockAnimationStartedMs = 0;
+    int lockAnimationStartRadius = lockCoverRadius(
+        AmoledUi::WIDTH / 2, AmoledUi::HEIGHT / 2);
     uint32_t lockWakeGraceUntilMs = 0;
+    uint32_t lockFinalCleanupAtMs = 0;
     int16_t lastLockFocusX = 92;
     int16_t lastLockFocusY = 112;
     int lastLockRadius = LOCK_FINAL_RADIUS;
     bool lockVisualValid = false;
     bool lockHasFocus = false;
     bool lastLockSleeping = false;
+    bool lockFinalCleanupPending = false;
+    bool lockSnapshotValid = false;
     uint8_t lockedBrightness =
         AmoledV2::AmoledPlatform::instance().brightness();
     bool sceneFadeWasActive = false;
@@ -531,11 +754,21 @@ extern "C" void app_main(void) {
     uint8_t sceneFadeBaseBrightness = lockedBrightness;
     uint8_t sceneFadeBrightness = lockedBrightness;
     ESP_LOGI(TAG, "Interactive home screen presented at 368x448");
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    ExploreSerialCommand exploreCommand;
+    exploreCommand.begin();
+#endif
 #if STICKMON_HAS_CLAW
     Stickmon::ClawRuntime::instance().beginAsync();
 #endif
     while (true) {
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        const int64_t loopStartedUs = esp_timer_get_time();
+#endif
         uint32_t nowMs = millisNow();
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        exploreCommand.poll(app);
+#endif
         AmoledV2::TouchEvent event;
         if (touchReady && touch.poll(nowMs, event)) {
 #if STICKMON_HAS_CLAW
@@ -549,9 +782,15 @@ extern "C" void app_main(void) {
                     AmoledV2::AmoledPlatform::instance().setBrightness(
                         lockedBrightness);
                     if (lockPhase != LockPhase::OPENING) {
+                        int16_t focusX = AmoledUi::WIDTH / 2;
+                        int16_t focusY = AmoledUi::HEIGHT / 2;
+                        if (lockHasFocus) app.lockFocusPoint(focusX, focusY);
+                        lockAnimationStartRadius =
+                            lockCoverRadius(focusX, focusY);
                         lockPhase = LockPhase::OPENING;
                         lockAnimationStartedMs = nowMs;
-                        AudioManager::ins().setMusicSuspended(false);
+                        lockFinalCleanupPending = false;
+                        lockSnapshotValid = false;
                     }
                     app.onWake(nowMs);
                     lockWakeGraceUntilMs = nowMs + LOCK_WAKE_GRACE_MS;
@@ -562,9 +801,23 @@ extern "C" void app_main(void) {
             }
         }
 
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        const int64_t updateStartedUs = esp_timer_get_time();
+#endif
         app.update(nowMs);
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        const uint32_t updateUs = static_cast<uint32_t>(
+            esp_timer_get_time() - updateStartedUs);
+        uint32_t clawUs = 0;
+#endif
 #if STICKMON_HAS_CLAW
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        const int64_t clawStartedUs = esp_timer_get_time();
+#endif
         Stickmon::ClawRuntime::instance().update(nowMs);
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        clawUs = static_cast<uint32_t>(esp_timer_get_time() - clawStartedUs);
+#endif
 #endif
         const bool sceneFadeActive = app.sceneFadeActive();
         const bool sceneFadePhaseChanged = sceneFadeActive &&
@@ -593,22 +846,36 @@ extern "C" void app_main(void) {
 
         bool lockRequest = app.consumeLockRequest();
         if (lockPhase == LockPhase::OPEN && lockRequest &&
+            app.displayLockAllowed() &&
             static_cast<int32_t>(nowMs - lockWakeGraceUntilMs) >= 0) {
             lockedBrightness =
                 AmoledV2::AmoledPlatform::instance().brightness();
             lockAnimationStartedMs = nowMs;
             lockPhase = LockPhase::CLOSING;
             lockVisualValid = false;
+            lockFinalCleanupPending = false;
             int16_t focusX = AmoledUi::WIDTH / 2;
             int16_t focusY = AmoledUi::HEIGHT / 2;
             lockHasFocus = app.lockFocusPoint(focusX, focusY);
+            lockAnimationStartRadius = lockCoverRadius(focusX, focusY);
             AudioManager::ins().setMusicSuspended(true);
-            app.forceFullRender();
+            if (lockSnapshot) {
+                std::memcpy(lockSnapshot, physicalPixels,
+                            PHYSICAL_PIXELS * sizeof(uint16_t));
+                lockSnapshotValid = true;
+            } else {
+                lockSnapshotValid = false;
+                app.forceFullRender();
+            }
             ESP_LOGI(TAG, "Display lock animation started");
         }
         if (lockPhase == LockPhase::CLOSING &&
             nowMs - lockAnimationStartedMs >= LOCK_ANIMATION_MS) {
             lockPhase = LockPhase::LOCKED;
+            // Keep the animation-completion frame partial. The full cleanup
+            // runs after motion has stopped so it cannot stall the transition.
+            lockFinalCleanupAtMs = nowMs + LOCK_FINAL_CLEANUP_DELAY_MS;
+            lockFinalCleanupPending = true;
             ESP_LOGI(TAG, "Display locked; touch to wake");
         }
         if (lockPhase == LockPhase::OPENING &&
@@ -616,13 +883,39 @@ extern "C" void app_main(void) {
             lockPhase = LockPhase::OPEN;
             lockVisualValid = false;
             lockHasFocus = false;
+            lockFinalCleanupPending = false;
+            lockSnapshotValid = false;
             app.forceFullRender();
+            AudioManager::ins().setMusicSuspended(false);
             ESP_LOGI(TAG, "Display fully unlocked");
         }
 
         bool lockedWithoutFocus =
             lockPhase == LockPhase::LOCKED && !lockHasFocus;
         bool lockSleeping = lockHasFocus && app.petIsSleeping();
+        const bool lockFinalCleanupDue =
+            lockFinalCleanupPending && lockPhase == LockPhase::LOCKED &&
+            static_cast<int32_t>(nowMs - lockFinalCleanupAtMs) >= 0;
+        if (lockFinalCleanupDue) {
+            lockVisualValid = false;
+            app.forceFullRender();
+        }
+        const bool lockAnimating = lockPhase == LockPhase::CLOSING ||
+                                   lockPhase == LockPhase::OPENING;
+        if (lockPhase == LockPhase::OPENING && lockSnapshot &&
+            !lockSnapshotValid) {
+            // Build one clean wake snapshot. Expansion frames restore from it
+            // instead of rerendering the complete room every 33 ms.
+            app.forceFullRender();
+            app.render(canvas);
+#if STICKMON_ENABLE_DEBUG_FEATURES
+            app.renderDebugTouchOverlay(canvas);
+#endif
+            app.markRendered();
+            std::memcpy(lockSnapshot, physicalPixels,
+                        PHYSICAL_PIXELS * sizeof(uint16_t));
+            lockSnapshotValid = true;
+        }
         const bool sceneFadeBrightnessOnly =
             lockPhase == LockPhase::OPEN && sceneFadeActive &&
             !sceneFadePhaseChanged;
@@ -641,84 +934,124 @@ extern "C" void app_main(void) {
             int16_t focusY = AmoledUi::HEIGHT / 2;
             if (lockHasFocus) app.lockFocusPoint(focusX, focusY);
             int radius = lockRadius(lockPhase, nowMs,
-                                    lockAnimationStartedMs, lockHasFocus,
-                                    lockSleeping);
+                                    lockAnimationStartedMs,
+                                    lockAnimationStartRadius,
+                                    lockHasFocus, lockSleeping);
             renderNeeded = renderNeeded || !lockVisualValid ||
                            focusX != lastLockFocusX ||
                            focusY != lastLockFocusY || radius != lastLockRadius ||
                            lockSleeping != lastLockSleeping;
         }
         if (renderNeeded) {
+            const bool appRenderRequested = app.needsRender();
             bool lockFrame = lockPhase != LockPhase::OPEN;
             uint16_t renderBegin = app.renderRowBegin();
             uint16_t renderEnd = app.renderRowEnd();
             uint16_t renderXBegin = 0;
             uint16_t renderXEnd = LOGICAL_WIDTH;
-            uint16_t nativeRenderBegin = renderBegin;
+            uint16_t nativeRenderBegin = static_cast<uint16_t>(renderBegin);
             uint16_t nativeRenderEnd = renderEnd;
             uint16_t nativeRenderXBegin = renderXBegin;
             uint16_t nativeRenderXEnd = renderXEnd;
+            int16_t lockFrameFocusX = AmoledUi::WIDTH / 2;
+            int16_t lockFrameFocusY = AmoledUi::HEIGHT / 2;
+            int lockFrameRadius = 0;
             if (lockFrame) {
-                int16_t focusX = AmoledUi::WIDTH / 2;
-                int16_t focusY = AmoledUi::HEIGHT / 2;
-                if (lockHasFocus) app.lockFocusPoint(focusX, focusY);
-                /* int oldLeft = lockVisualValid
-                    ? lastLockFocusX - lastLockRadius : focusX - radius;
-                int oldRight = lockVisualValid
-                    ? lastLockFocusX + lastLockRadius : focusX + radius;
-                int oldTop = lockVisualValid
-                    ? lastLockFocusY - lastLockRadius : focusY - radius;
-                int oldBottom = lockVisualValid
-                    ? lastLockFocusY + lastLockRadius : focusY + radius;
-                renderXBegin = static_cast<uint16_t>(std::clamp(
-                    std::min(oldLeft, static_cast<int>(focusX - radius)),
-                    0, static_cast<int>(LOGICAL_WIDTH)));
-                renderXEnd = static_cast<uint16_t>(std::clamp(
-                    std::max(oldRight, static_cast<int>(focusX + radius)) + 1,
-                    0, static_cast<int>(LOGICAL_WIDTH)));
-                renderBegin = static_cast<uint16_t>(std::clamp(
-                    std::min(oldTop, static_cast<int>(focusY - radius)),
-                    0, static_cast<int>(LOGICAL_HEIGHT)));
-                renderEnd = static_cast<uint16_t>(std::clamp(
-                    std::max(oldBottom, static_cast<int>(focusY + radius)) + 1,
-                    0, static_cast<int>(LOGICAL_HEIGHT))); */
-                renderXBegin = nativeRenderXBegin = 0;
-                renderXEnd = nativeRenderXEnd = LOGICAL_WIDTH;
-                renderBegin = nativeRenderBegin = 0;
-                renderEnd = nativeRenderEnd = LOGICAL_HEIGHT;
-                nativeRenderBegin = static_cast<uint16_t>(
-                    renderBegin);
-                nativeRenderEnd = static_cast<uint16_t>(
-                    renderEnd);
-                nativeRenderXBegin = static_cast<uint16_t>(
-                    renderXBegin);
-                nativeRenderXEnd = static_cast<uint16_t>(
-                    renderXEnd);
-                // The final lock frame must clear the whole panel. Otherwise
-                // pixels outside the shrinking mask retain the previous frame.
-                if (lockPhase == LockPhase::LOCKED) {
+                if (lockHasFocus) {
+                    app.lockFocusPoint(lockFrameFocusX, lockFrameFocusY);
+                }
+                lockFrameRadius = lockRadius(lockPhase, nowMs,
+                                             lockAnimationStartedMs,
+                                             lockAnimationStartRadius,
+                                             lockHasFocus, lockSleeping);
+                const int currentLeft = lockFrameFocusX - lockFrameRadius -
+                    LOCK_FEATHER_PIXELS;
+                const int currentRight = lockFrameFocusX + lockFrameRadius +
+                    LOCK_FEATHER_PIXELS + 1;
+                const int currentTop = lockFrameFocusY - lockFrameRadius -
+                    LOCK_FEATHER_PIXELS;
+                const int currentBottom = lockFrameFocusY + lockFrameRadius +
+                    LOCK_FEATHER_PIXELS + 1;
+                if (!lockVisualValid) {
+                    // The first mask replaces the previously visible scene, so
+                    // it must cover the whole panel once.
                     renderXBegin = nativeRenderXBegin = 0;
                     renderXEnd = nativeRenderXEnd = LOGICAL_WIDTH;
                     renderBegin = nativeRenderBegin = 0;
                     renderEnd = nativeRenderEnd = LOGICAL_HEIGHT;
+                } else {
+                    // The panel is already black outside the previous circle.
+                    // Redraw only the union of old and new circles, including
+                    // the feather band, so movement and breathing leave no
+                    // stale pixels behind.
+                    const int oldLeft = lastLockFocusX - lastLockRadius -
+                        LOCK_FEATHER_PIXELS;
+                    const int oldRight = lastLockFocusX + lastLockRadius +
+                        LOCK_FEATHER_PIXELS + 1;
+                    const int oldTop = lastLockFocusY - lastLockRadius -
+                        LOCK_FEATHER_PIXELS;
+                    const int oldBottom = lastLockFocusY + lastLockRadius +
+                        LOCK_FEATHER_PIXELS + 1;
+                    renderXBegin = static_cast<uint16_t>(std::clamp(
+                        std::min(oldLeft, currentLeft),
+                        0, static_cast<int>(LOGICAL_WIDTH)));
+                    renderXEnd = static_cast<uint16_t>(std::clamp(
+                        std::max(oldRight, currentRight),
+                        0, static_cast<int>(LOGICAL_WIDTH)));
+                    renderBegin = static_cast<uint16_t>(std::clamp(
+                        std::min(oldTop, currentTop),
+                        0, static_cast<int>(LOGICAL_HEIGHT)));
+                    renderEnd = static_cast<uint16_t>(std::clamp(
+                        std::max(oldBottom, currentBottom),
+                        0, static_cast<int>(LOGICAL_HEIGHT)));
+                    nativeRenderXBegin = renderXBegin;
+                    nativeRenderXEnd = renderXEnd;
+                    nativeRenderBegin = renderBegin;
+                    nativeRenderEnd = renderEnd;
                 }
+                alignLockUpdateRegion(nativeRenderXBegin, nativeRenderXEnd,
+                                      nativeRenderBegin, nativeRenderEnd);
+                renderXBegin = nativeRenderXBegin;
+                renderXEnd = nativeRenderXEnd;
+                renderBegin = nativeRenderBegin;
+                renderEnd = nativeRenderEnd;
                 app.forceRenderRows(nativeRenderBegin, nativeRenderEnd);
             }
-            app.render(canvas);
+            const bool useLockSnapshot = lockFrame && lockSnapshotValid &&
+                (lockAnimating ||
+                 (lockPhase == LockPhase::LOCKED && !appRenderRequested));
 #if STICKMON_ENABLE_DEBUG_FEATURES
-            app.renderDebugTouchOverlay(canvas);
+            const bool profileExploreFrame =
+                !lockFrame && app.exploreRouteMovingForDiagnostics();
+            const int64_t renderStartedUs = esp_timer_get_time();
+#endif
+            if (useLockSnapshot) {
+                restoreFrameRegion(physicalPixels, lockSnapshot,
+                                   nativeRenderXBegin, nativeRenderXEnd,
+                                   nativeRenderBegin, nativeRenderEnd);
+            } else {
+                app.render(canvas);
+#if STICKMON_ENABLE_DEBUG_FEATURES
+                app.renderDebugTouchOverlay(canvas);
+#endif
+                if (lockFrame && lockSnapshot &&
+                    lockPhase == LockPhase::LOCKED) {
+                    // Preserve the newly rendered visible content before the
+                    // mask modifies the framebuffer for the panel.
+                    restoreFrameRegion(lockSnapshot, physicalPixels,
+                                       nativeRenderXBegin, nativeRenderXEnd,
+                                       nativeRenderBegin, nativeRenderEnd);
+                    lockSnapshotValid = true;
+                }
+            }
+#if STICKMON_ENABLE_DEBUG_FEATURES
+            const int64_t renderFinishedUs = esp_timer_get_time();
 #endif
             if (lockFrame) {
-                int16_t focusX = AmoledUi::WIDTH / 2;
-                int16_t focusY = AmoledUi::HEIGHT / 2;
-                if (lockHasFocus) app.lockFocusPoint(focusX, focusY);
-                int radius = lockRadius(lockPhase, nowMs,
-                                        lockAnimationStartedMs, lockHasFocus,
-                                        lockSleeping);
                 drawLockMask(canvas,
-                             focusX,
-                             focusY,
-                             radius,
+                             lockFrameFocusX,
+                             lockFrameFocusY,
+                             lockFrameRadius,
                              nativeRenderXBegin, nativeRenderXEnd,
                              nativeRenderBegin, nativeRenderEnd);
                 result = submitFrameRegion(
@@ -730,27 +1063,53 @@ extern "C" void app_main(void) {
                     panel, physicalPixels, transferBuffers, transferDone,
                     renderBegin, renderEnd);
             }
+#if STICKMON_ENABLE_DEBUG_FEATURES
+            const int64_t transferFinishedUs = esp_timer_get_time();
+            if (profileExploreFrame && result == ESP_OK) {
+                exploreFramePerf.record(
+                    loopStartedUs, transferFinishedUs, updateUs, clawUs,
+                    static_cast<uint32_t>(renderFinishedUs - renderStartedUs),
+                    static_cast<uint32_t>(transferFinishedUs - renderFinishedUs),
+                    static_cast<uint16_t>(renderEnd - renderBegin));
+            }
+#endif
             if (result != ESP_OK) {
                 ESP_LOGE(TAG, "Frame update failed: %s",
                          esp_err_to_name(result));
             } else {
                 app.markRendered();
+#if STICKMON_ENABLE_DEBUG_FEATURES
+                if (!lockFrame &&
+                    app.encounterFirstFramePendingForDiagnostics()) {
+                    app.markEncounterFirstFramePresented(
+                        static_cast<uint32_t>(renderFinishedUs - renderStartedUs),
+                        static_cast<uint32_t>(transferFinishedUs - renderFinishedUs));
+                }
+#endif
                 if (lockFrame) {
-                    lastLockFocusX = 92;
-                    lastLockFocusY = 112;
-                    if (lockHasFocus) {
-                        app.lockFocusPoint(lastLockFocusX, lastLockFocusY);
-                    }
-                    lastLockRadius = lockRadius(lockPhase, nowMs,
-                                                lockAnimationStartedMs,
-                                                lockHasFocus, lockSleeping);
+                    // Keep the exact center used to draw this frame. The
+                    // next dirty region is the union of the old and new
+                    // circles, so a fixed fallback center would overdraw
+                    // needlessly and could leave a stale edge when the pet
+                    // moves during the lock animation.
+                    lastLockFocusX = lockFrameFocusX;
+                    lastLockFocusY = lockFrameFocusY;
+                    lastLockRadius = lockFrameRadius;
                     lastLockSleeping = lockSleeping;
                     lockVisualValid = true;
+                    if (lockFinalCleanupDue) {
+                        lockFinalCleanupPending = false;
+                    }
                 }
             }
         }
-        const uint32_t targetLoopMs =
-            lockPhase == LockPhase::OPEN ? 20U : 16U;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        if (!app.exploreRouteMovingForDiagnostics()) {
+            exploreFramePerf.flush(esp_timer_get_time(), true);
+        }
+#endif
+        const uint32_t targetLoopMs = lockAnimating
+            ? LOCK_ANIMATION_FRAME_MS : 20U;
         const uint32_t loopElapsedMs = millisNow() - nowMs;
         if (loopElapsedMs < targetLoopMs) {
             vTaskDelay(pdMS_TO_TICKS(targetLoopMs - loopElapsedMs));

@@ -30,6 +30,17 @@ class AmoledDebugMigrationTests(unittest.TestCase):
         self.assertIn("STICKMON_ENABLE_DEBUG_FEATURES", self.home)
         self.assertIn('"-DSTICKMON_ENABLE_DEBUG_FEATURES=$DEBUG_FEATURES"', self.build)
 
+    def test_prebuilt_amoled_assets_do_not_require_pillow(self):
+        items_check = self.build.index('if [[ -d "$AMOLED_ITEMS_DIR" ]]')
+        pillow_check = self.build.index('ASSET_PYTHON=""')
+        prebuilt_check = self.build.index(
+            'elif [[ ! -f "$REPO_DIR/data/packs/dev/game/ui_amoled.smonfx" ]]'
+        )
+        self.assertLess(items_check, pillow_check)
+        self.assertLess(pillow_check, prebuilt_check)
+        self.assertIn("/usr/bin/python3", self.build)
+        self.assertIn("STICKMON_ASSET_PYTHON", self.build)
+
     def test_main_menu_exposes_debug_entry(self):
         self.assertIn("MainMenuItem::DEBUG", self.flow)
         self.assertIn("Scene::DEBUG", self.flow)
@@ -61,16 +72,78 @@ class AmoledDebugMigrationTests(unittest.TestCase):
     def test_debug_contact_uses_visitor_lifecycle(self):
         self.assertIn("Origin::VISITOR", self.app)
         self.assertIn("ContactRoster::sameMonster", self.app)
-        self.assertIn("Ui::ContactVisit::KNOCK", self.app)
+        self.assertIn("Ui::ContactVisit::PLAY_FMT", self.app)
+        self.assertIn("debugPromptBuffer", self.app)
+        self.assertIn("debugContactPromptFade", self.app)
         self.assertIn("debugContactChoiceAt", self.app)
         self.assertIn("Game::GameState persistentState = gameState", self.app)
         self.assertIn("persistentState.team[slot].origin", self.app)
+
+    def test_contact_copy_follows_stick_dialog_order(self):
+        begin = self.app[self.app.index("bool AmoledApp::beginDebugContactEvent"):
+                         self.app.index("void AmoledApp::renderDebugTouchOverlay")]
+        self.assertIn("Ui::ContactVisit::KNOCK", begin)
+        accept = self.app[self.app.index("void AmoledApp::acceptDebugContact"):
+                          self.app.index("void AmoledApp::completeDebugContact")]
+        self.assertIn("debugContactEventWaitingForEntry = !autoResolve", accept)
+        self.assertIn("Ui::ContactVisit::EXPLORE_FMT", accept)
+        home_tap = self.app[self.app.index("void AmoledApp::handleTap"):
+                            self.app.index("void AmoledApp::handleDebugTap")]
+        self.assertNotIn("setToast(Ui::ContactVisit::BYE_VISIT", home_tap)
+        self.assertIn("if (choice == 0 && debugContactKind == 3)", home_tap)
+
+    def test_contact_choice_bubbles_only_render_while_choosing(self):
+        self.assertIn("debugContactChoiceVisible", self.app)
+        self.assertIn("debugContactSelectedChoice", self.app)
+        self.assertIn("debugContactChoiceConfirmUntilMs = nowMs + 100", self.app)
+        self.assertIn("PROMPT_FADE_STEP = 40", self.app)
+        prompt = self.home[
+            self.home.index("void drawDebugContactPrompt"):
+            self.home.index("void drawDebugContactGuest")
+        ]
+        self.assertIn("if (!model.debugContactChoiceVisible) return;", prompt)
+        self.assertIn("model.debugContactSelectedChoice != index", prompt)
+
+    def test_serial_contact_diagnostics_follow_debug_events(self):
+        main = (ROOT / "firmware/amoled_1_8_v2/main/main.cpp").read_text(
+            encoding="utf-8")
+        visitor_capture = (ROOT / "tools/capture_amoled_v2_visitor.py").read_text(
+            encoding="utf-8")
+        self.assertIn("beginDebugContactEvent(static_cast<uint8_t>(debugCursor + 1)",
+                      self.app)
+        self.assertIn("if (!beginDebugContactEvent(kind, nowMs)) return false;",
+                      self.app)
+        self.assertIn("sleepSafeScene = sleepSafeScene && !debugContactPending &&",
+                      self.app)
+        self.assertIn("onWake(nowMs);\n    acceptDebugContact(nowMs, true);", self.app)
+        self.assertIn("[FriendDiag] route kind=3 started=", self.app)
+        self.assertIn("[FriendDiag] complete kind=", self.app)
+        self.assertIn('"diag contact return"', main)
+        self.assertIn("app.debugTriggerContact(kind)", main)
+        self.assertIn("app.debugPromptContact(kind)", main)
+        self.assertIn("app.debugAcceptContact()", main)
+        self.assertIn("app.debugStartPairTalk()", main)
+        self.assertNotIn('"talk": "diag pair talk\\n"', visitor_capture)
+        self.assertIn('phase = "waiting-talk"', visitor_capture)
+        self.assertIn("[FriendDiag] visitor-exit route-fallback", self.app)
+        self.assertIn("[FriendDiag] visitor-exit route-end", self.app)
+        self.assertIn("[FriendDiag] talk positioned", self.app)
 
     def test_environment_and_boundary_debug_are_rendered(self):
         self.assertIn("drawDebugLight", self.home)
         self.assertIn("drawDebugWalkBoundary", self.home)
         self.assertIn("model.debugLightSource", self.app)
         self.assertIn("model.debugBoundaryVisible", self.app)
+
+    def test_talk_debug_marks_bottom_center_without_labels(self):
+        start = self.home.index("void drawDebugTalkPoints(")
+        end = self.home.index("#endif", start)
+        markers = self.home[start:end]
+        self.assertIn("model.debugWelcomeCenterX", markers)
+        self.assertIn("model.debugWelcomeGroundY", markers)
+        self.assertNotIn("text(canvas", markers)
+        self.assertIn("anchor=bottom-center", self.app)
+        self.assertIn("errorPx=%.2f", self.app)
 
     def test_motion_debug_is_connected_to_runtime_behavior(self):
         self.assertIn("Platform::imu().readAcceleration", self.app)
@@ -149,9 +222,11 @@ class AmoledDebugMigrationTests(unittest.TestCase):
         self.assertNotIn("index * MENU_ROW_HEIGHT", computer)
 
     def test_ai_hosting_menu_owns_claw_and_wifi_controls(self):
-        self.assertIn('Ui::Amoled::AI_HOSTING, Ui::BACK', self.home)
+        self.assertIn('Ui::SOCIAL, Ui::Amoled::STORAGE_PAGE', self.home)
+        self.assertIn('Ui::Amoled::AI_HOSTING,', self.home)
         self.assertIn('Ui::Amoled::WIFI, Ui::Amoled::ESP_CLAW', self.home)
         self.assertIn('Ui::Amoled::BACKEND, Ui::BACK', self.home)
+        self.assertIn('computerPage = ComputerViewModel::Page::STORAGE', self.app)
         self.assertIn('Page::AI_HOSTING', self.app)
         self.assertIn('if (item == 0)', self.app)
         self.assertIn('claw.setWifiEnabled(!claw.wifiEnabled())', self.app)

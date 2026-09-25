@@ -126,9 +126,9 @@ PROVISIONAL_TILE_GROUPS = (
     (
         "Confirmed exits and state tiles",
         (
-            (1299, "cave exit left"),
-            (1300, "cave exit center"),
-            (1301, "cave exit right"),
+            (1299, "cave exit right"),
+            (1300, "cave exit center with exterior light"),
+            (1301, "cave exit left"),
             (1322, "broken-ice hole"),
             (1326, "round water SW"),
             (1327, "round water SE"),

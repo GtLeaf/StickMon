@@ -25,6 +25,8 @@ DAY_SOURCE_OUT = GENERATED_ROOM_DIR / "standard_room_day_source.png"
 NIGHT_SOURCE_OUT = GENERATED_ROOM_DIR / "standard_room_night_source.png"
 DAY_PNG_OUT = GENERATED_ROOM_DIR / "standard_room_day_240.png"
 NIGHT_PNG_OUT = GENERATED_ROOM_DIR / "standard_room_night_240.png"
+DAY_ART_PNG_OUT = GENERATED_ROOM_DIR / "standard_room_day_480.png"
+NIGHT_ART_PNG_OUT = GENERATED_ROOM_DIR / "standard_room_night_480.png"
 LEGACY_PNG_OUT = GENERATED_ROOM_DIR / "standard_room_240.png"
 HEADER_OUT = ROOT / "src" / "assets" / "RoomAssets.h"
 CPP_OUT = ROOT / "src" / "assets" / "RoomAssets.cpp"
@@ -34,12 +36,15 @@ PACK_ROOM_OUT = PACK_OUT / "rooms"
 
 DISPLAY_H = 135
 ROOM_PACK_MAGIC = 0x4D4F5253
-ROOM_PACK_VERSION = 3
-ROOM_PACK_HEADER_FORMAT = "<IHHHhIIIIBBBBhhhhhhhhhhhhhhhhhhhhHH"
+ROOM_PACK_VERSION = 4
+ROOM_PACK_VERSION_V3 = 3
+ROOM_PACK_HEADER_FORMAT_V3 = "<IHHHhIIIIBBBBhhhhhhhhhhhhhhhhhhhhHH"
+ROOM_PACK_HEADER_FORMAT = ROOM_PACK_HEADER_FORMAT_V3 + "HH"
 ROOM_BEHAVIOR_ANCHOR_FORMAT = "<BBhh"
 ROOM_ANCHOR_WINDOW_GAZE = 1
 ROOM_ANCHOR_VISITOR_SLEEP = 2
 ROOM_FACING_BACK = 4
+ROOM_ART_SCALE = 2
 
 
 def rgb565(r, g, b):
@@ -110,6 +115,56 @@ def compose_room_image(layout, background, furniture_dir, mode, layout_dir):
         include_lighting=False,
         layout_dir=layout_dir,
     ).convert("RGB")
+
+
+def scale_room_layout_for_art(layout, scale):
+    """Scale target-space geometry while keeping source asset metadata intact."""
+    if scale == 1:
+        return deepcopy(layout)
+    scaled = deepcopy(layout)
+    geometry = scaled.get("roomGeometry") or {}
+    for section_name in ("room", "viewport", "canvas", "prepared"):
+        section = geometry.get(section_name)
+        if not isinstance(section, dict):
+            continue
+        for key in ("width", "height", "y"):
+            if key in section and isinstance(section[key], (int, float)):
+                section[key] = round(section[key] * scale)
+
+    projection = geometry.get("projection") or {}
+    for key in ("origin", "axisU", "axisV", "axisZ"):
+        value = projection.get(key)
+        if isinstance(value, list) and len(value) == 2:
+            projection[key] = [round(float(value[0]) * scale),
+                               round(float(value[1]) * scale)]
+
+    for face in geometry.get("faces", []):
+        points = face.get("points") or []
+        face["points"] = [[round(float(x) * scale), round(float(y) * scale)]
+                           for x, y in points]
+
+    def scale_polygon(value):
+        if not isinstance(value, list):
+            return value
+        normalized = all(
+            isinstance(point, (list, tuple)) and len(point) == 2 and
+            -0.1 <= float(point[0]) <= 1.1 and
+            -0.1 <= float(point[1]) <= 1.1
+            for point in value
+        )
+        if normalized:
+            return value
+        return [[round(float(x) * scale), round(float(y) * scale)]
+                for x, y in value]
+
+    for item in scaled.get("furniture", []):
+        for key in ("x", "y", "targetWidth", "targetHeight", "width", "height"):
+            if key in item and isinstance(item[key], (int, float)):
+                item[key] = item[key] * scale
+        for key in ("footprintPolygon", "shadowPolygon"):
+            if key in item:
+                item[key] = scale_polygon(item[key])
+    return scaled
 
 
 def expected_background_size(layout, mode):
@@ -609,7 +664,7 @@ def merge_pack_manifest(**updates):
     })
 
 
-def write_room_pack(width, height, room_y, base_raw, base_compressed,
+def write_room_pack(width, height, art_width, art_height, room_y, base_raw, base_compressed,
                     patch_runs, patch_pixels, walk_polygon, food_x, food_y,
                     bed_polygon, bed_x, bed_y, doorway_polygon,
                     doorway_inside, doorway_outside, behavior_anchors):
@@ -661,6 +716,8 @@ def write_room_pack(width, height, room_y, base_raw, base_compressed,
         doorway_outside[1],
         1 if not patch_runs else 0,
         0,
+        art_width,
+        art_height,
     ))
     payload.extend(base_compressed)
     for y, x, length, offset in patch_runs:
@@ -688,17 +745,29 @@ def write_room_pack(width, height, room_y, base_raw, base_compressed,
     return len(payload)
 
 
+def upscale_room_art(image, scale):
+    if scale < 1:
+        raise ValueError("room art scale must be positive")
+    return image.resize((image.width * scale, image.height * scale), Image.Resampling.NEAREST)
+
+
 def write_room_assets(day_img, night_img, walk_polygon, food_x, food_y,
                       bed_polygon, bed_x, bed_y, doorway_polygon,
-                      doorway_inside, doorway_outside, behavior_anchors):
+                      doorway_inside, doorway_outside, behavior_anchors,
+                      art_scale=ROOM_ART_SCALE, day_art=None, night_art=None):
     if day_img.size != night_img.size:
         raise ValueError(f"day/night room sizes differ: {day_img.size} vs {night_img.size}")
 
     width, height = day_img.size
+    day_art = day_art or upscale_room_art(day_img, art_scale)
+    night_art = night_art or upscale_room_art(night_img, art_scale)
+    if day_art.size != night_art.size:
+        raise ValueError(f"day/night art sizes differ: {day_art.size} vs {night_art.size}")
+    art_width, art_height = day_art.size
     room_y = max(0, (DISPLAY_H - height) // 2)
-    base_raw = rgb565_bytes(day_img)
+    base_raw = rgb565_bytes(day_art)
     base_compressed = raw_deflate(base_raw)
-    patch_runs, patch_pixels = night_patch_runs(day_img, night_img)
+    patch_runs, patch_pixels = night_patch_runs(day_art, night_art)
     shared_rle = len(patch_runs) == 0
     min_x, min_y, max_x, max_y = bounds_for(walk_polygon, width, height)
     polygon_count = len(walk_polygon)
@@ -733,7 +802,7 @@ namespace RoomAssets {
 """, encoding="utf-8")
 
     room_pack_bytes = write_room_pack(
-        width, height, room_y, base_raw, base_compressed,
+        width, height, art_width, art_height, room_y, base_raw, base_compressed,
         patch_runs, patch_pixels, walk_polygon, food_x, food_y,
         bed_polygon, bed_x, bed_y, doorway_polygon,
         doorway_inside, doorway_outside, behavior_anchors)
@@ -756,6 +825,8 @@ def main():
     parser.add_argument("--day-png-out", default=str(DAY_PNG_OUT), help="Composed day room PNG")
     parser.add_argument("--night-png-out", default=str(NIGHT_PNG_OUT), help="Composed night room PNG")
     parser.add_argument("--png-out", default=str(LEGACY_PNG_OUT), help="Legacy composed day PNG copy")
+    parser.add_argument("--day-art-out", default=str(DAY_ART_PNG_OUT), help="Native-resolution day room art")
+    parser.add_argument("--night-art-out", default=str(NIGHT_ART_PNG_OUT), help="Native-resolution night room art")
     args = parser.parse_args()
 
     layout_path = Path(args.layout)
@@ -773,7 +844,10 @@ def main():
     day_png_out = Path(args.day_png_out)
     night_png_out = Path(args.night_png_out)
     legacy_png_out = Path(args.png_out)
-    for path in (day_source_out, night_source_out, day_png_out, night_png_out, legacy_png_out):
+    day_art_out = Path(args.day_art_out)
+    night_art_out = Path(args.night_art_out)
+    for path in (day_source_out, night_source_out, day_png_out, night_png_out,
+                 legacy_png_out, day_art_out, night_art_out):
         path.parent.mkdir(parents=True, exist_ok=True)
 
     if direct_day:
@@ -800,6 +874,17 @@ def main():
     day_img.save(day_png_out)
     night_img.save(night_png_out)
     day_img.save(legacy_png_out)
+    if direct_day or direct_night:
+        day_art = upscale_room_art(day_img, ROOM_ART_SCALE)
+        night_art = upscale_room_art(night_img, ROOM_ART_SCALE)
+    else:
+        art_layout = scale_room_layout_for_art(layout, ROOM_ART_SCALE)
+        day_art = compose_room_image(
+            art_layout, day_base, furniture_dir, "day", layout_path.parent)
+        night_art = compose_room_image(
+            art_layout, night_base, furniture_dir, "night", layout_path.parent)
+    day_art.save(day_art_out)
+    night_art.save(night_art_out)
 
     width, height = room_size(layout)
     walk_polygon = load_walk_polygon(layout, width, height)
@@ -812,7 +897,8 @@ def main():
     base_raw_bytes, base_compressed_len, patch_run_count, patch_pixel_count, room_y, shared_rle, room_pack_bytes = write_room_assets(
         day_img, night_img, walk_polygon, food_x, food_y,
         bed_polygon, bed_x, bed_y, doorway_polygon,
-        doorway_inside, doorway_outside, behavior_anchors
+        doorway_inside, doorway_outside, behavior_anchors,
+        day_art=day_art, night_art=night_art
     )
 
     print(f"layout={layout_path}")
@@ -824,6 +910,8 @@ def main():
     print(f"furniture_dir={furniture_dir}")
     print(f"day_png={day_png_out} size={day_img.width}x{day_img.height}")
     print(f"night_png={night_png_out} size={night_img.width}x{night_img.height}")
+    print(f"day_art={day_art_out} size={day_art.width}x{day_art.height}")
+    print(f"night_art={night_art_out} size={night_art.width}x{night_art.height}")
     print(f"legacy_png={legacy_png_out}")
     print(f"room_y={room_y}")
     print(f"walk_polygon_points={len(walk_polygon)}")

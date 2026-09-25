@@ -1,7 +1,9 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 
+#include "game/CareTicker.h"
 #include "game/GameState.h"
 #include "game/SpeciesBehavior.h"
 
@@ -33,6 +35,17 @@ inline uint8_t hpPercent(const MonsterRuntime& monster) {
     uint32_t percent = static_cast<uint32_t>(monster.hpCur) * 100U /
                        monster.hpMax;
     return static_cast<uint8_t>(percent > 100U ? 100U : percent);
+}
+
+inline uint8_t faintRestPercent(const MonsterRuntime& monster,
+                                uint32_t gameMinutesTotal) {
+    if (!monster.fainted || monster.lastSeenAt == 0) return 0;
+    const uint32_t nowGameSec = gameSecondsForMinutes(gameMinutesTotal);
+    if (nowGameSec <= monster.lastSeenAt) return 0;
+    const uint32_t elapsed = std::min<uint32_t>(
+        nowGameSec - monster.lastSeenAt, FAINT_REST_SECONDS);
+    const uint32_t percent = elapsed * 100U / FAINT_REST_SECONDS;
+    return static_cast<uint8_t>(percent < 100U ? percent : 99U);
 }
 
 }  // namespace HomeHud

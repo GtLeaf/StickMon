@@ -8,6 +8,10 @@ class Canvas565;
 
 namespace AmoledV1::UiCommon {
 
+inline constexpr int TOAST_TOP = 282;
+inline constexpr int TOAST_HEIGHT = 52;
+inline constexpr int TOAST_BOTTOM = TOAST_TOP + TOAST_HEIGHT;
+
 // A top-level page owns clipping for its render call. Local clips are always
 // intersected with the requested rows; returning from the page clears both
 // the supplied canvas and the shared asset canvas, including early returns.

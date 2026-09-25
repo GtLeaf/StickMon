@@ -16,6 +16,13 @@ inline constexpr uint8_t recommendedLevel(uint8_t area) {
                      : 5;
 }
 
+inline constexpr uint8_t depthSpread(uint8_t area) {
+    return area == 1 || area == 2 ? 3
+         : area == 3 || area == 4 ? 4
+         : area == 5 ? 5
+                     : 2;
+}
+
 inline constexpr uint16_t fieldColor(uint8_t area) {
     return area == 1 ? 0x224A
          : area == 2 ? 0x2A66
@@ -37,6 +44,10 @@ inline constexpr GameAssets::Kind battleBackground(uint8_t area) {
 
 static_assert(recommendedLevel(0) == 5 && recommendedLevel(5) == 60,
               "explore area levels must match progression tuning");
+static_assert(depthSpread(0) == 2 && depthSpread(1) == 3 &&
+                  depthSpread(2) == 3 && depthSpread(3) == 4 &&
+                  depthSpread(4) == 4 && depthSpread(5) == 5,
+              "explore area depth spreads must match progression tuning");
 static_assert(fieldColor(0) == 0x2227 && fieldColor(5) == 0x1987,
               "explore field colors must match route rendering");
 static_assert(battleBackground(0) == GameAssets::Kind::BATTLE_BG_GRASS &&

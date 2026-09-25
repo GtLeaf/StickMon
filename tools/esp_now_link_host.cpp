@@ -72,7 +72,7 @@ int main() {
     bool accepted = false;
     assert(link.takeJoinAck(accepted) && accepted && link.connected());
 
-    VisitPingPayload ping{73, 88};
+    VisitPingPayload ping{73, 88, 35, 50};
     assert(link.sendSessionMessage(LinkMessageType::VISIT_PING,
                                    &ping, sizeof(ping)));
     Platform::PeerPacket session;
@@ -85,6 +85,8 @@ int main() {
     assert(session.payload[8] == sizeof(ping));
     assert(session.payload[9] == ping.satiety &&
            session.payload[10] == ping.mood);
+    assert(get16(session.payload + 11) == ping.hpCur);
+    assert(get16(session.payload + 13) == ping.hpMax);
 
     uint8_t ack[33] = {};
     put16(ack, 0x5AA5);

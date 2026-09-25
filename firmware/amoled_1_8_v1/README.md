@@ -29,7 +29,11 @@ layer:
   map to start or pause automatic walking; the portrait camera follows the pet
   across the shared 16x12 tile world. The top-right menu pauses route time,
   back opens a stay/exit confirmation, and tapping at the route end returns to
-  the area selector.
+  the area selector. Wild encounters use the same area pool snapshot, route
+  depth levels, and species level ranges as M5StickS3; bosses keep their fixed
+  shared levels. In battle, the bag also lists daily food and soap: food can
+  be thrown to a wild monster using the shared friendship rules, while
+  unusable items show a warning without consuming a turn.
 - Use the route's portrait exploration menu for `TEAM`, `BAG`, `END`, and
   `BACK`. Its semantic order, destinations, and `MenuAssets` icon indices are
   shared with the M5StickS3 firmware. Header back and `BACK` resume from the
@@ -88,9 +92,11 @@ layer:
 - Reuse `MonsterMind` for lightweight autonomous movement. When the pet is
   hungry and food is available, it walks to the bowl and consumes food using
   the same bite, taste, satiety, and mood rules as the M5StickS3 firmware.
-- Reuse the shared `240x161` `standard.smonroom` world. The portrait home view
-  renders a `184x148` camera viewport that follows the pet while retaining the
-  original walk polygon, bowl anchor, and world-coordinate interactions.
+- Reuse the shared `240x161` `standard.smonroom` world. Its v4 room pack stores
+  a separately composed `480x322` art surface. The portrait home view directly
+  crops that art surface into the `368x296` room viewport while retaining the
+  original walk polygon, bowl anchor, camera scroll, and world-coordinate
+  interactions. Legacy v3 room packs remain readable.
 - Use the shared `RoomMovementArea` rules for the home pet. Its footprint is
   derived from the current sprite dimensions; initial placement, wandering,
   food approach, and every movement segment stay inside the room polygon,

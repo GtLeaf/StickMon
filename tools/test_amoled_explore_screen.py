@@ -82,7 +82,7 @@ class AmoledExploreScreenTests(unittest.TestCase):
         end = app.index("bool AmoledApp::generateExploreRouteMap(", start)
         route_start = app[start:end]
 
-        self.assertIn("encounterTableForArea(selectedExploreArea)", route_start)
+        self.assertIn("ExploreEncounters::tableForArea(selectedExploreArea)", route_start)
         self.assertIn("setPinnedDynamicSpecies(", route_start)
         self.assertIn("preloadDynamicSpecies(", route_start)
         self.assertIn("setPinnedDynamicSpecies(nullptr, 0)", app)
@@ -116,6 +116,43 @@ class AmoledExploreScreenTests(unittest.TestCase):
         self.assertIn("requestExploreRouteBossRender();", app)
         self.assertIn("BOSS_TOP_MARGIN", app)
         self.assertIn("uint32_t animationNowMs = 0;", models)
+
+    def test_route_actor_uses_ground_anchor_for_road_alignment(self):
+        home = read_home_source(ROOT)
+        start = home.index("void drawExploreRouteActor(")
+        end = home.index("void drawExploreRoutePet(", start)
+        actor = home[start:end]
+        self.assertIn("uint32_t animationNowMs", actor)
+        self.assertIn("bool companion", actor)
+        self.assertIn("spriteGroundTopY", actor)
+        self.assertIn("exploreRouteAirOffsetY(speciesId, animationNowMs", actor)
+        self.assertIn("routeGroundY - height / 2 - groundOffset", actor)
+        self.assertIn("frame, screenX - width / 2, drawY", actor)
+        self.assertNotIn("groundY - height", actor)
+
+    def test_home_actor_uses_frame_ground_anchor_for_room_alignment(self):
+        home = HOME_SCREEN.read_text(encoding="utf-8")
+        start = home.index("void drawPet(")
+        end = home.index("void drawHomeCompanion(", start)
+        actor = home[start:end]
+
+        # Room/debug coordinates are logical ground points, not the bottom of
+        # the transparent sprite canvas. Keep this conversion in lockstep with
+        # the route renderer and keep the shadow on the unshifted ground point.
+        self.assertIn("frameGroundOffsetY(frame)", actor)
+        self.assertIn("renderGroundY - height / 2 - groundOffset", actor)
+        self.assertIn("const int shadowY = model.petGroundY;", actor)
+        self.assertNotIn("const int y = renderGroundY - height;", actor)
+        self.assertNotIn("model.petGroundY - height / 2 +", actor)
+
+    def test_route_diagnostics_log_geometry_when_debug_is_enabled(self):
+        home = read_home_source(ROOT)
+        app = (ROOT / "firmware" / "amoled_1_8_v1" / "main" /
+               "AmoledApp.cpp").read_text()
+        self.assertIn("[AmoledExploreDiag] draw", home)
+        self.assertIn("frameGroundOffsetY", home)
+        self.assertIn("[AmoledExploreDiag] step", app)
+        self.assertIn("[AmoledExploreDiag] camera", app)
 
     def test_route_completion_is_presented_as_a_modal(self):
         home = read_home_source(ROOT)
@@ -196,6 +233,26 @@ class AmoledExploreScreenTests(unittest.TestCase):
         self.assertIn("gapMax", main)
         self.assertIn("exploreRouteMovingForDiagnostics", app_header)
         self.assertIn("#if STICKMON_ENABLE_DEBUG_FEATURES", main)
+
+    def test_encounter_profile_covers_prep_and_presented_battle_frame(self):
+        app = (
+            ROOT / "firmware" / "amoled_1_8_v1" / "main" / "AmoledApp.cpp"
+        ).read_text()
+        main = (
+            ROOT / "firmware" / "amoled_1_8_v1" / "main" / "main.cpp"
+        ).read_text()
+        route = app[app.index("bool AmoledApp::startExploreRoute("):]
+        encounter = app[app.index("bool AmoledApp::beginExploreEncounter("):]
+
+        self.assertIn("preloadSfx(SfxCue::DAMAGE_NORMAL)", route.split(
+            "bool AmoledApp::beginExploreEncounter(")[0])
+        self.assertIn("encounterSpritePrepMs = spritePrepMs", encounter)
+        self.assertIn("encounterSfxPrepMs = sfxPrepMs", encounter)
+        self.assertIn("[EncounterPerf] triggerToFirstBattleFrame=", app)
+        submitted = main[main.index("if (result != ESP_OK) {", main.index(
+            "const int64_t transferFinishedUs")):]
+        self.assertLess(submitted.index("app.markRendered();"), submitted.index(
+            "app.markEncounterFirstFramePresented("))
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ constexpr uint8_t LAYER_COUNT = 3;
 constexpr uint8_t PATH_COUNT = 2;
 constexpr uint8_t MAX_PATH_POINTS = 48;
 constexpr uint16_t CELL_COUNT = WIDTH * HEIGHT;
-constexpr uint16_t ALGORITHM_VERSION = 9;
+constexpr uint16_t ALGORITHM_VERSION = 11;
 constexpr uint8_t GRASS_PATH_AREA = 0;
 constexpr uint8_t CREEK_BRIDGE_SLOPE_AREA = 1;
 constexpr uint8_t TALL_GRASS_PARK_AREA = 2;
@@ -35,10 +35,17 @@ struct Endpoint {
     Edge edge;
 };
 
+struct FrostContext {
+    uint8_t level = 0;
+    uint8_t levelCount = 1;
+    bool enteredByLadder = false;
+};
+
 struct Path {
     Point points[MAX_PATH_POINTS] = {};
     uint8_t pointCount = 0;
     Endpoint exit = {};
+    bool fallsToNextLevel = false;
 };
 
 struct Map {
@@ -58,7 +65,8 @@ struct Map {
 
 uint32_t deriveSeed(uint32_t expeditionSeed, uint8_t blockIndex, uint8_t areaIndex);
 Edge opposite(Edge edge);
-bool generate(uint32_t seed, Edge entryEdge, uint8_t areaIndex, Map& out);
+bool generate(uint32_t seed, Edge entryEdge, uint8_t areaIndex, Map& out,
+              FrostContext frost = {});
 uint32_t fingerprint(const Map& map);
 
 bool isRoadTile(uint16_t tileId);

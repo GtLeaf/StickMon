@@ -9,7 +9,7 @@
 #include "core/SaveCoordinator.h"
 #include "core/SaveManager.h"
 #include "core/Scene.h"
-#include "core/VisitTypes.h"
+#include "core/VisitSessionService.h"
 #include "game/GameState.h"
 #include "game/BathService.h"
 #include "game/HomeCare.h"
@@ -56,16 +56,6 @@ enum class SaveUrgency : uint8_t {
     DEFERRED,
     SOON,
     IMMEDIATE,
-};
-
-struct VisitSessionState {
-    bool active = false;
-    bool asHost = false;
-    uint32_t startedMs = 0;
-    uint32_t lastPingSentMs = 0;
-    uint32_t lastStatusSentMs = 0;
-    uint32_t lastPeerMessageMs = 0;
-    uint8_t peerMac[6] = {};
 };
 
 class GameEngine {
@@ -326,15 +316,13 @@ public:
     bool consumeDebugMenuReturnRequest();
     void requestDebugPairInteraction();
     bool consumeDebugPairInteractionRequest();
-    bool visitActive() const { return visitSession.active; }
-    bool visitAsHost() const { return visitSession.asHost; }
+    bool visitActive() const { return visitSession.active(); }
+    bool visitAsHost() const { return visitSession.viewModel().localIsHost; }
     bool canHostVisit() const { return state.teamCount == 1; }
-    VisitHostResult beginVisitAsHost(uint16_t speciesId, uint8_t level,
-                                     uint8_t nature, uint8_t satiety,
-                                     uint8_t mood, uint8_t affection);
-    void beginVisitAsVisitor();
-    void endVisit();
-    bool takeVisitLinkLost();
+    Communication::VisitSessionService& visitService() { return visitSession; }
+    const Communication::VisitSessionService& visitService() const {
+        return visitSession;
+    }
 
 private:
     GameEngine() = default;
@@ -480,7 +468,7 @@ private:
     uint8_t moveReplacementEventHead = 0;
     uint8_t moveReplacementEventCount = 0;
     MainSceneViewState mainViewState;
-    VisitSessionState visitSession;
+    Communication::VisitSessionService visitSession;
     struct ContactVisitSession {
         bool pendingKnock = false;
         bool active = false;
@@ -493,7 +481,6 @@ private:
         uint32_t checkedDay = 0xFFFFFFFFUL;
     } contactVisit;
     bool teamMemberArrivalPending = false;
-    bool visitLinkLost = false;
 
     Game::GameState state;
     Game::EncounterHistory encounterHistory;

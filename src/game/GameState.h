@@ -12,8 +12,14 @@ static constexpr uint8_t TEAM_CAP = 2;
 static constexpr uint8_t STORAGE_CAP = 20;
 static constexpr uint8_t ITEM_STACK_CAP = 99;
 static constexpr uint32_t SAVE_MAGIC = 0x534D4F4E; // SMON
-static constexpr uint16_t SAVE_VERSION = 3;
+static constexpr uint16_t SAVE_VERSION = 4;
 static constexpr uint16_t MIN_SUPPORTED_SAVE_VERSION = 1;
+// debugMotionFlags 位定义：AMOLED debug 菜单「运动」分类下的开关，
+// release 固件忽略这些位但必须原样保留。
+static constexpr uint8_t DEBUG_MOTION_TILT = 0x01;
+static constexpr uint8_t DEBUG_MOTION_WALK_BOUNDARY = 0x02;
+static constexpr uint8_t DEBUG_MOTION_TALK_POINTS = 0x04;
+static constexpr uint8_t DEBUG_MOTION_KNOWN_MASK = 0x07;
 static constexpr uint8_t STAT_COUNT = 6;
 static constexpr uint8_t NATURE_COUNT = 25;
 static constexpr uint8_t LEVEL_MAX = 100;
@@ -343,15 +349,20 @@ struct GameState {
     // 普通区域头目保底：同一栖息地轮换时段内按区域累计失败次数。
     uint32_t normalBossPitySlotIndex = 0;
     uint8_t normalBossMissCount[EXPLORE_AREA_COUNT] = {};
+    // v4：debug「运动」开关（位定义见 DEBUG_MOTION_*），落尾部对齐字节，
+    // 存档尺寸不变。
+    uint8_t debugMotionFlags = 0;
 };
 static_assert(sizeof(GameState) == 1572,
-              "v3 save size changed; add a schema version and migration");
+              "v4 save size changed; add a schema version and migration");
 static_assert(offsetof(GameState, room) == 1452,
               "BagState must not shift the v1 room/save layout");
 static_assert(offsetof(GameState, tutorialFlags) == 1559,
               "tutorial flags must remain in the v1/v2 tail padding byte");
 static_assert(offsetof(GameState, normalBossPitySlotIndex) == 1560,
               "v3 fields must remain append-only for v1/v2 migration");
+static_assert(offsetof(GameState, debugMotionFlags) == 1570,
+              "v4 flags must reuse the tail alignment byte after v3 fields");
 
 struct HatchProgress {
     uint32_t magic = HATCH_MAGIC;

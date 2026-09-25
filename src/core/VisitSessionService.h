@@ -13,14 +13,15 @@ public:
     static constexpr uint16_t VISIT_DURATION_SEC = 1800;
     static constexpr uint32_t HOST_TIMEOUT_MS = 30000;
     static constexpr uint32_t SEARCH_TIMEOUT_MS = 8000;
-    static constexpr uint32_t JOIN_TIMEOUT_MS = 3000;
-    static constexpr uint32_t HANDSHAKE_TIMEOUT_MS = 5000;
     static constexpr uint32_t HOST_DECISION_TIMEOUT_MS = 30000;
+    static constexpr uint32_t JOIN_TIMEOUT_MS = HOST_DECISION_TIMEOUT_MS + 5000;
+    static constexpr uint32_t HANDSHAKE_TIMEOUT_MS = 5000;
 
     enum class State : uint8_t {
         IDLE = 0,
         HOSTING,
         SEARCHING,
+        ROOM_LIST,
         JOINING,
         WAITING_HOST_DECISION,
         SYNCING,
@@ -39,6 +40,8 @@ public:
         uint8_t satiety = 0;
         uint8_t mood = 0;
         uint8_t affection = 0;
+        uint16_t hpCur = 0;
+        uint16_t hpMax = 0;
     };
 
     struct ViewModel {
@@ -60,10 +63,21 @@ public:
     bool selectRoom(uint8_t index);
     void acceptIncoming(bool accepted);
     void endVisit();
+    void markVisitorDeparted();
     void stop();
     void update(uint32_t nowMs);
 
     bool active() const { return state_ == State::ACTIVE; }
+    bool visitorHealthKnown() const { return remote_.hpMax > 0; }
+    bool visitorArrivalReady() const {
+        return active() && localIsHost_ && visitorArrived_;
+    }
+    bool visitorDeparted() const { return visitorDeparted_; }
+    bool takeHostRecall() {
+        bool recalled = hostRecallPending_;
+        hostRecallPending_ = false;
+        return recalled;
+    }
     bool busy() const { return state_ != State::IDLE && state_ != State::ENDED; }
     State state() const { return state_; }
     ViewModel viewModel() const;
@@ -102,6 +116,10 @@ private:
     bool incomingRequest_ = false;
     bool localIsHost_ = false;
     bool visitorAttached_ = false;
+    bool visitorDeparted_ = false;
+    bool visitorArrived_ = false;
+    bool hostRecallPending_ = false;
+    bool departureMessagePending_ = false;
     bool queuedMessage_ = false;
     LinkMessageType queuedType_ = LinkMessageType::PING;
     uint8_t queuedPayloadLen_ = 0;

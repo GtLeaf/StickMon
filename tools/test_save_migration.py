@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class SaveMigrationTests(unittest.TestCase):
-    def test_v1_v2_records_migrate_and_are_rewritten_as_v3(self):
+    def test_legacy_records_migrate_and_are_rewritten_current(self):
         with tempfile.TemporaryDirectory() as temporary:
             executable = Path(temporary) / "save_migration_host"
             subprocess.run(

@@ -48,14 +48,14 @@ bool settingsBackAt(int x, int y) {
 int settingsItemAt(int x, int y) {
     if (x < 12 || x >= 356 || y < MENU_CONTENT_TOP || y >= 448) return -1;
     int index = (y - MENU_CONTENT_TOP) / SETTINGS_ROW_HEIGHT;
-    return index < 6 ? index : -1;
+    return index < 5 ? index : -1;
 }
 
 void renderSettingsScreen(Canvas565& canvas, const SettingsViewModel& model,
                           uint16_t rowBegin, uint16_t rowEnd) {
     static constexpr const char* LABELS[] = {
         Ui::BRIGHTNESS, Ui::Amoled::VOLUME, Ui::Amoled::GAME_SPEED,
-        Ui::Amoled::POWER_SAVE, Ui::Amoled::VOICE_CALL, Ui::BACK,
+        Ui::Amoled::POWER_SAVE, Ui::Amoled::VOICE_CALL,
     };
     rowBegin = std::min<uint16_t>(rowBegin, AmoledUi::HEIGHT);
     rowEnd = std::min<uint16_t>(rowEnd, AmoledUi::HEIGHT);
@@ -64,12 +64,11 @@ void renderSettingsScreen(Canvas565& canvas, const SettingsViewModel& model,
     pageClip.setRect((0), (rowBegin), (AmoledUi::WIDTH), (rowEnd - rowBegin));
     canvas.fillRect((0), (0), (AmoledUi::WIDTH), (AmoledUi::HEIGHT), UiMetrics::PAGE_BACKGROUND);
     UiCommon::drawPageHeader(canvas, Ui::SETTINGS);
-    for (int index = 0; index < 6; ++index) {
+    for (int index = 0; index < 5; ++index) {
         int y = MENU_CONTENT_TOP + index * SETTINGS_ROW_HEIGHT;
         bool pressed = index == model.pressedItem;
         if (pressed) canvas.fillRect((12), (y + 4), (344), (54), rgb(42, 61, 68));
-        text(canvas, 28, y + 19, LABELS[index],
-             index == 5 ? rgb(115, 226, 183) : rgb(226, 238, 233));
+        text(canvas, 28, y + 19, LABELS[index], rgb(226, 238, 233));
         char value[20] = {};
         if (model.state) {
             const auto& settings = model.state->settings;

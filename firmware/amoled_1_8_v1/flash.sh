@@ -7,6 +7,10 @@ PROJECT_DIR="$SCRIPT_DIR"
 PROFILE="claw"
 BUILD_DIR="$PROJECT_DIR/build-$PROFILE"
 IDF_PATH="${IDF_PATH:-$HOME/.espressif/v5.5.4/esp-idf}"
+if [[ -z "${IDF_PYTHON_ENV_PATH:-}" &&
+      -x "$HOME/.espressif/python_env/idf5.5_py3.11_env/bin/python" ]]; then
+    export IDF_PYTHON_ENV_PATH="$HOME/.espressif/python_env/idf5.5_py3.11_env"
+fi
 PORT=""
 ERASE=0
 DEBUG=0

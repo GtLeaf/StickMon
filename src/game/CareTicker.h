@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include "game/BondSystem.h"
 #include "game/ContactRoster.h"
@@ -18,9 +19,12 @@ constexpr uint16_t HP_RECOVERY_INTERVAL_MIN = 1;
 constexpr uint8_t HP_RECOVERY_PERCENT_PER_TICK = 1;
 constexpr uint8_t HP_RECOVERY_EMPTY_GAIN_PER_TICK = 1;
 constexpr uint32_t FAINT_REST_SECONDS = 60UL * 60UL;
-constexpr uint8_t SATIETY_DECAY_AWAKE_INTERVAL_MIN = 1;
-constexpr uint8_t SATIETY_DECAY_SLEEP_INTERVAL_MIN = 3;
-constexpr uint8_t SATIETY_DECAY_MAX_DROP_PER_TICK = 4;
+// Five fixed-point units accrue per real minute. These thresholds produce
+// exactly 100 points per 12 awake hours and 50 points per 12 sleeping hours
+// without rounding either rate to a whole-minute interval.
+constexpr uint8_t SATIETY_DECAY_UNITS_PER_REAL_MIN = 5;
+constexpr uint8_t SATIETY_DECAY_AWAKE_UNITS_PER_POINT = 36;
+constexpr uint8_t SATIETY_DECAY_SLEEP_UNITS_PER_POINT = 72;
 constexpr uint16_t BASE_SLEEP_START_MINUTE = 22U * 60U;
 constexpr uint16_t BASE_SLEEP_END_MINUTE = 6U * 60U;
 constexpr int16_t NATURE_SLEEP_OFFSET_MINUTE = 30;
@@ -82,11 +86,11 @@ inline uint32_t gameSecondsForMinutes(uint32_t minutes) {
     return seconds > 0xFFFFFFFFULL ? 0xFFFFFFFFUL : static_cast<uint32_t>(seconds);
 }
 
-// 跨 tickCare 调用保留的会话型累加器（不持久化）。
-// 静默唤醒路径每次从 0 开始：单块内的间隔取整会有轻微近似，但不影响长期行为。
+// 跨 tickCare 调用保留的会话型累加器（不写入存档）。Stick 深睡期间由
+// GameEngine 放入 RTC 保留内存，避免静默唤醒时丢失不足 1 点的衰减进度。
 struct CareTickAccumulators {
     uint16_t hpRecoveryMinuteAcc = 0;
-    uint16_t satietyDecayMinuteAcc[TEAM_CAP] = {};
+    uint16_t satietyDecayUnitAcc[TEAM_CAP] = {};
     bool satietyDecayWasSleeping[TEAM_CAP] = {};
 };
 
@@ -191,7 +195,7 @@ inline CareTickResult applyCareMinutes(GameState& state,
         const SpeciesCareProfile careProfile = speciesCareProfileFor(mon.speciesId);
         if (mon.origin != Origin::VISITOR) {
             if (!careProfile.satietyDecays) {
-                acc.satietyDecayMinuteAcc[i] = 0;
+                acc.satietyDecayUnitAcc[i] = 0;
                 acc.satietyDecayWasSleeping[i] = false;
                 if (mon.satiety != 100) {
                     mon.satiety = 100;
@@ -201,22 +205,21 @@ inline CareTickResult applyCareMinutes(GameState& state,
                 bool sleeping =
                     mon.majorStatus == MajorStatus::SLEEP ||
                     isSleepCareTime(state.gameMinutesTotal, mon.nature);
-                uint8_t decayInterval =
-                    sleeping ? SATIETY_DECAY_SLEEP_INTERVAL_MIN
-                             : SATIETY_DECAY_AWAKE_INTERVAL_MIN;
+                uint8_t unitsPerPoint =
+                    sleeping ? SATIETY_DECAY_SLEEP_UNITS_PER_POINT
+                             : SATIETY_DECAY_AWAKE_UNITS_PER_POINT;
                 if (sleeping != acc.satietyDecayWasSleeping[i]) {
-                    acc.satietyDecayMinuteAcc[i] = 0;
+                    acc.satietyDecayUnitAcc[i] = 0;
                     acc.satietyDecayWasSleeping[i] = sleeping;
                 }
-                uint32_t decayTotal =
-                    (uint32_t)acc.satietyDecayMinuteAcc[i] + realElapsedMin;
-                if (decayTotal > 60000UL) decayTotal = 60000UL;
-                uint32_t drop = decayTotal / decayInterval;
-                if (drop > SATIETY_DECAY_MAX_DROP_PER_TICK) {
-                    drop = SATIETY_DECAY_MAX_DROP_PER_TICK;
-                }
-                acc.satietyDecayMinuteAcc[i] =
-                    (uint16_t)(decayTotal % decayInterval);
+                uint64_t decayUnits =
+                    static_cast<uint64_t>(acc.satietyDecayUnitAcc[i]) +
+                    static_cast<uint64_t>(realElapsedMin) *
+                        SATIETY_DECAY_UNITS_PER_REAL_MIN;
+                uint32_t drop = static_cast<uint32_t>(std::min<uint64_t>(
+                    100, decayUnits / unitsPerPoint));
+                acc.satietyDecayUnitAcc[i] =
+                    static_cast<uint16_t>(decayUnits % unitsPerPoint);
                 uint8_t nextSatiety = mon.satiety > drop
                     ? (uint8_t)(mon.satiety - drop)
                     : 0;

@@ -2,11 +2,14 @@
 #include "core/SaveCodec.h"
 #include "platform/api/PlatformServices.h"
 #include "platform/desktop/DesktopPlatform.h"
+#include "save_schema1_fabricator.h"
 
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <string>
+#include <vector>
 
 namespace {
 constexpr uint32_t SAVE_RECORD_MAGIC = 0x3156534D;
@@ -193,8 +196,9 @@ void verifyV1Migration(DesktopPlatform& desktop) {
     assert(reloadedView.monsterX == view.monsterX);
     assert(loaded.normalBossPitySlotIndex ==
            loaded.gameMinutesTotal / 480);
-    assert(desktop.logs().find("migrated state v1 -> v3") !=
-           std::string::npos);
+    assert(desktop.logs().find(
+               "migrated state v1 -> v" +
+               std::to_string(Game::SAVE_VERSION)) != std::string::npos);
 }
 
 void verifyTransitionalMigration() {
@@ -263,8 +267,9 @@ void verifyV2Migration(DesktopPlatform& desktop) {
     for (uint8_t area = 0; area < Game::EXPLORE_AREA_COUNT; ++area) {
         assert(loaded.normalBossMissCount[area] == 0);
     }
-    assert(desktop.logs().find("migrated state v2 -> v3") !=
-           std::string::npos);
+    assert(desktop.logs().find(
+               "migrated state v2 -> v" +
+               std::to_string(Game::SAVE_VERSION)) != std::string::npos);
 }
 
 void verifyInvalidLegacyViewKeepsGameState() {
@@ -370,6 +375,49 @@ void verifyVisitorIsNotPersisted() {
     assert(snapshot.state.teamCount == 1);
     assert(snapshot.state.team[0].origin != Game::Origin::VISITOR);
 }
+void verifyCodecSchema1Migration(DesktopPlatform& desktop) {
+    assert(Platform::blobs().clearNamespace("stickmon"));
+    SaveManager manager;
+    Game::GameState state;
+    MainSceneViewState view;
+    state.coins = 7777;
+    uint8_t encoded[SaveCodec::MAX_ENCODED_BYTES] = {};
+    size_t length = 0;
+    assert(SaveCodec::encode(state, view, 5, encoded, sizeof(encoded), length));
+    std::vector<uint8_t> legacy;
+    assert(SaveTestUtil::fabricateSchema1Blob(encoded, length, legacy));
+    assert(Platform::blobs().writeBlob(
+        "stickmon", "state_a", legacy.data(), legacy.size()));
+
+    Game::GameState loaded;
+    MainSceneViewState loadedView;
+    assert(manager.load(loaded, loadedView));
+    assert(loaded.coins == 7777);
+    assert(loaded.version == Game::SAVE_VERSION);
+    assert(loaded.debugMotionFlags == 0);
+    assert(desktop.logs().find(
+               "migrated state v3 -> v" +
+               std::to_string(Game::SAVE_VERSION)) != std::string::npos);
+
+    // The mirror blob was rewritten in the current schema.
+    size_t mirrorLength = Platform::blobs().blobSize("stickmon", "state");
+    assert(mirrorLength == length);
+    std::vector<uint8_t> mirror(mirrorLength);
+    assert(Platform::blobs().readBlob(
+        "stickmon", "state", mirror.data(), mirror.size()));
+    assert(mirror[4] == SaveCodec::SCHEMA_VERSION);
+
+    // The new field survives a save/load round trip.
+    loaded.debugMotionFlags =
+        Game::DEBUG_MOTION_TILT | Game::DEBUG_MOTION_WALK_BOUNDARY;
+    assert(manager.saveSnapshot(loaded, loadedView));
+    Game::GameState reloaded;
+    MainSceneViewState reloadedView;
+    assert(manager.load(reloaded, reloadedView));
+    assert(reloaded.debugMotionFlags ==
+           (Game::DEBUG_MOTION_TILT | Game::DEBUG_MOTION_WALK_BOUNDARY));
+}
+
 }  // namespace
 
 int main() {
@@ -379,6 +427,7 @@ int main() {
     verifyV1Migration(desktop);
     verifyTransitionalMigration();
     verifyV2Migration(desktop);
+    verifyCodecSchema1Migration(desktop);
     verifyInvalidLegacyViewKeepsGameState();
     verifyNewerVersionIsPreserved();
     verifyCodecAbRecovery();

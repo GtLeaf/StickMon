@@ -1,5 +1,6 @@
 // Extracted screen rendering and hit testing.
-bool itemListBackAt(int x, int y) {
+bool itemListBackAt(int x, int y, bool detailOpen) {
+    if (detailOpen) return false;
     return UiCommon::pageHeaderBackAt(x, y);
 }
 
@@ -212,10 +213,11 @@ void drawItemConfirm(Canvas565& canvas, const ItemListViewModel& model) {
     text(canvas, 168, 136, owned, rgb(239, 196, 154));
     text(canvas, 24, 248, Game::ShopService::shortDescription(model.pendingItem),
          rgb(126, 175, 175));
-    const bool usable = Game::ItemInventory::usableFromHomeBag(
-        model.pendingItem) &&
-        (!model.exploreOnly ||
-         Game::ItemInventory::usableInBattle(model.pendingItem));
+    const bool feeding = model.battleMode &&
+        Game::foodIndexForItemId(model.pendingItem) >= 0;
+    const bool usable = feeding || (model.battleMode
+        ? Game::ItemInventory::usableInBattle(model.pendingItem)
+        : Game::ItemInventory::usableFromHomeBag(model.pendingItem));
     if (model.mode == ItemListMode::BAG && !usable) {
         canvas.fillRoundRect(SHOP_DETAIL_BACK_RECT.x,
                              SHOP_DETAIL_BACK_RECT.y,
@@ -234,14 +236,15 @@ void drawItemConfirm(Canvas565& canvas, const ItemListViewModel& model) {
                          SHOP_DETAIL_BACK_RECT.y,
                          SHOP_DETAIL_BACK_RECT.width,
                          SHOP_DETAIL_BACK_RECT.height, 8, rgb(91, 49, 55));
+    const char* actionLabel = feeding ? Ui::Amoled::FEED : Ui::Amoled::USE;
     PixelRenderer::text(
         canvas,
         SHOP_DETAIL_ACTION_RECT.x +
             (SHOP_DETAIL_ACTION_RECT.width -
-             textWidth(Ui::Amoled::YES)) / 2,
+             textWidth(actionLabel)) / 2,
         SHOP_DETAIL_ACTION_RECT.y +
             (SHOP_DETAIL_ACTION_RECT.height - FontResource::LARGE_GLYPH_H) / 2,
-        Ui::Amoled::USE,
+        actionLabel,
         rgb(115, 226, 183));
     PixelRenderer::text(
         canvas,
@@ -263,6 +266,9 @@ void renderItemListScreen(Canvas565& canvas,
     UiCommon::PageClip pageClip(canvas, rowBegin, rowEnd);
     if (rowBegin >= rowEnd) return;
 
+    const bool detailOpen = model.confirmOpen &&
+                             model.pendingItem != Game::ItemId::COUNT;
+
     if (rowBegin < MENU_CONTENT_TOP) {
         int bottom = std::min<int>(rowEnd, MENU_CONTENT_TOP);
         pageClip.setRect((0), (rowBegin), (AmoledUi::WIDTH), (bottom - rowBegin));
@@ -271,9 +277,11 @@ void renderItemListScreen(Canvas565& canvas,
             char coins[16];
             std::snprintf(coins, sizeof(coins), "C%lu",
                           static_cast<unsigned long>(model.coins));
-            UiCommon::drawPageHeader(canvas, Ui::SHOP, coins);
+            UiCommon::drawPageHeader(canvas, Ui::SHOP, coins,
+                                     !detailOpen);
         } else {
-            UiCommon::drawPageHeader(canvas, Ui::BAG);
+            UiCommon::drawPageHeader(canvas, Ui::BAG, nullptr,
+                                     !detailOpen);
         }
         pageClip.reset();
     }
@@ -428,6 +436,8 @@ void renderShopScreen(Canvas565& canvas, const ShopViewModel& model,
     UiCommon::PageClip pageClip(canvas, rowBegin, rowEnd);
     if (rowBegin >= rowEnd) return;
 
+    const bool detailOpen = model.detailItem != Game::ItemId::COUNT;
+
     if (rowBegin < MENU_CONTENT_TOP) {
         int bottom = std::min<int>(rowEnd, MENU_CONTENT_TOP);
         pageClip.setRect((0), (rowBegin), (AmoledUi::WIDTH), (bottom - rowBegin));
@@ -435,7 +445,7 @@ void renderShopScreen(Canvas565& canvas, const ShopViewModel& model,
         char coins[16];
         std::snprintf(coins, sizeof(coins), "C%lu",
                       static_cast<unsigned long>(model.coins));
-        UiCommon::drawPageHeader(canvas, Ui::SHOP);
+        UiCommon::drawPageHeader(canvas, Ui::SHOP, nullptr, !detailOpen);
         UiCommon::drawPageHeaderCenteredText(canvas, coins,
                                              rgb(248, 210, 105));
         pageClip.reset();
@@ -446,7 +456,6 @@ void renderShopScreen(Canvas565& canvas, const ShopViewModel& model,
     pageClip.setRect((0), (contentTop), (AmoledUi::WIDTH), (rowEnd - contentTop));
     canvas.fillRect((0), (MENU_CONTENT_TOP), (AmoledUi::WIDTH), (AmoledUi::HEIGHT - MENU_CONTENT_TOP), UiMetrics::PAGE_BACKGROUND);
 
-    const bool detailOpen = model.detailItem != Game::ItemId::COUNT;
     const bool showRail = !detailOpen;
     if (showRail) {
         canvas.fillRect((0), (MENU_CONTENT_TOP), (SHOP_RAIL_DIVIDER_X), (AmoledUi::HEIGHT - MENU_CONTENT_TOP), rgb(17, 24, 31));

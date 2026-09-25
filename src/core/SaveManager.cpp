@@ -480,6 +480,7 @@ struct CodecLoadResult {
     bool newerVersion = false;
     SaveCodec::Snapshot snapshot;
     uint32_t sequence = 0;
+    uint16_t schema = 0;
 };
 
 bool sequenceIsNewer(uint32_t candidate, uint32_t current) {
@@ -526,6 +527,7 @@ void loadLatestCodecSnapshot(CodecLoadResult& result) {
             (!result.found || sequenceIsNewer(sequence, result.sequence))) {
             result.found = true;
             result.sequence = sequence;
+            result.schema = schema;
             result.snapshot = *scratch;
         }
         delete[] raw;
@@ -866,6 +868,12 @@ bool sanitizeState(Game::GameState& state) {
         state.specialBossDefeatedMask = specialMask;
         changed = true;
     }
+    uint8_t motionFlags = static_cast<uint8_t>(
+        state.debugMotionFlags & Game::DEBUG_MOTION_KNOWN_MASK);
+    if (motionFlags != state.debugMotionFlags) {
+        state.debugMotionFlags = motionFlags;
+        changed = true;
+    }
     return changed;
 }
 
@@ -896,9 +904,23 @@ bool SaveManager::load(Game::GameState& state,
     if (codecHeap->found) {
         state = codecHeap->snapshot.state;
         viewState = codecHeap->snapshot.view;
+        bool migrated = codecHeap->schema < SaveCodec::SCHEMA_VERSION;
         bool changed = sanitizeState(state);
         state.checksum = checksum(state);
-        if (changed && normalized) *normalized = true;
+        bool migrationPending = false;
+        if (migrated) {
+            Platform::logf("[SaveManager] migrated state v%u -> v%u\n",
+                           SaveCodec::SCHEMA_1_STATE_VERSION,
+                           Game::SAVE_VERSION);
+            if (saveSnapshot(state, viewState)) {
+                Platform::logLine("[SaveManager] migration committed");
+            } else {
+                Platform::logLine(
+                    "[SaveManager] migration commit failed; legacy blob retained for retry");
+                migrationPending = true;
+            }
+        }
+        if ((changed || migrationPending) && normalized) *normalized = true;
         if (status) *status = LoadStatus::LOADED;
         delete codecHeap;
         return true;

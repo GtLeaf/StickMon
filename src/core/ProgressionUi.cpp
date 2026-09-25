@@ -7,6 +7,7 @@
 #include "core/CryPlayer.h"
 #include "core/GameEngine.h"
 #include "core/UiStrings.h"
+#include "game/EvolutionSequence.h"
 #include "game/Species.h"
 #include "hardware/Hal.h"
 #include "platform/api/FlashStorage.h"
@@ -15,28 +16,18 @@
 
 namespace {
 
-constexpr uint32_t EVOLUTION_INTRO_MS = 600;
-constexpr uint32_t EVOLUTION_MORPH_END_MS = 2840;
-constexpr uint32_t EVOLUTION_FLASH_END_MS = 3180;
-constexpr uint32_t EVOLUTION_REVEAL_END_MS = 3580;
-constexpr uint32_t EVOLUTION_COMPLETE_MS = 4000;
-constexpr uint32_t EVOLUTION_CANCEL_MORPH_MS = 650;
-constexpr uint32_t EVOLUTION_CANCEL_COMPLETE_MS = 1000;
+constexpr uint32_t EVOLUTION_INTRO_MS = Game::EvolutionSequence::INTRO_MS;
+constexpr uint32_t EVOLUTION_MORPH_END_MS = Game::EvolutionSequence::MORPH_END_MS;
+constexpr uint32_t EVOLUTION_FLASH_END_MS = Game::EvolutionSequence::FLASH_END_MS;
+constexpr uint32_t EVOLUTION_REVEAL_END_MS = Game::EvolutionSequence::REVEAL_END_MS;
+constexpr uint32_t EVOLUTION_COMPLETE_MS = Game::EvolutionSequence::COMPLETE_MS;
+constexpr uint32_t EVOLUTION_CANCEL_MORPH_MS = Game::EvolutionSequence::CANCEL_MORPH_MS;
+constexpr uint32_t EVOLUTION_CANCEL_COMPLETE_MS = Game::EvolutionSequence::CANCEL_COMPLETE_MS;
 constexpr int EVOLUTION_CENTER_X = Hal::DISPLAY_W / 2;
 constexpr int EVOLUTION_CENTER_Y = 61;
 constexpr uint8_t MOVE_LEARN_NEW_SLOT = Game::MOVE_SLOT_COUNT;
 
-struct EvolutionAnimationState {
-    uint16_t fromSpeciesId = 0;
-    uint16_t toSpeciesId = 0;
-    uint32_t startedAt = 0;
-    uint32_t cancellationStartedAt = 0;
-    bool initialized = false;
-    bool cryPlayed = false;
-    bool cancelling = false;
-};
-
-EvolutionAnimationState evolutionAnimation;
+Game::EvolutionSequence evolutionAnimation;
 
 int moveLearnTextPixelWidth(const char* value) {
     int width = 0;
@@ -131,17 +122,11 @@ int drawMoveLearnTypeBracket(int x, int y, TypeId type) {
 void ensureEvolutionAnimation(uint16_t fromSpeciesId,
                               uint16_t toSpeciesId,
                               uint32_t nowMs) {
-    if (evolutionAnimation.initialized &&
-        evolutionAnimation.fromSpeciesId == fromSpeciesId &&
-        evolutionAnimation.toSpeciesId == toSpeciesId) {
+    if (evolutionAnimation.matches(fromSpeciesId, toSpeciesId)) {
         return;
     }
 
-    evolutionAnimation = {};
-    evolutionAnimation.fromSpeciesId = fromSpeciesId;
-    evolutionAnimation.toSpeciesId = toSpeciesId;
-    evolutionAnimation.startedAt = nowMs;
-    evolutionAnimation.initialized = true;
+    evolutionAnimation.begin(fromSpeciesId, toSpeciesId, nowMs);
 
     const uint16_t species[] = {fromSpeciesId, toSpeciesId};
     PokemonSprites::preloadDynamicSpecies(species, 2, 2);
@@ -150,9 +135,7 @@ void ensureEvolutionAnimation(uint16_t fromSpeciesId,
 }
 
 uint32_t evolutionElapsed(uint32_t nowMs) {
-    return nowMs >= evolutionAnimation.startedAt
-        ? nowMs - evolutionAnimation.startedAt
-        : 0;
+    return evolutionAnimation.elapsed(nowMs);
 }
 
 const PokemonSprites::SpriteFrame* evolutionFrame(uint16_t speciesId) {
@@ -339,11 +322,11 @@ bool evolutionAnimationComplete(uint16_t fromSpeciesId,
                                 uint16_t toSpeciesId,
                                 uint32_t nowMs) {
     ensureEvolutionAnimation(fromSpeciesId, toSpeciesId, nowMs);
-    return evolutionElapsed(nowMs) >= EVOLUTION_COMPLETE_MS;
+    return evolutionAnimation.animationComplete(nowMs);
 }
 
 void resetEvolutionAnimation() {
-    evolutionAnimation = {};
+    evolutionAnimation.reset();
 }
 
 void beginEvolutionCancellation(uint16_t fromSpeciesId,
@@ -351,17 +334,15 @@ void beginEvolutionCancellation(uint16_t fromSpeciesId,
                                 uint32_t nowMs) {
     ensureEvolutionAnimation(fromSpeciesId, toSpeciesId, nowMs);
     CryPlayer::ins().stop();
-    evolutionAnimation.cancelling = true;
-    evolutionAnimation.cancellationStartedAt = nowMs;
+    evolutionAnimation.beginCancellation(nowMs);
 }
 
 bool evolutionCancellationComplete(uint32_t nowMs) {
-    if (!evolutionAnimation.initialized ||
-        !evolutionAnimation.cancelling) {
+    if (!evolutionAnimation.initialized() ||
+        !evolutionAnimation.cancelling()) {
         return true;
     }
-    return nowMs - evolutionAnimation.cancellationStartedAt >=
-           EVOLUTION_CANCEL_COMPLETE_MS;
+    return evolutionAnimation.cancellationComplete(nowMs);
 }
 
 void renderEvolution(uint16_t fromSpeciesId,
@@ -422,9 +403,9 @@ void renderEvolution(uint16_t fromSpeciesId,
     }
     drawEvolutionSparkles(revealElapsed);
 
-    if (!evolutionAnimation.cryPlayed &&
+    if (!evolutionAnimation.cryPlayed() &&
         elapsed >= EVOLUTION_REVEAL_END_MS) {
-        evolutionAnimation.cryPlayed = true;
+        evolutionAnimation.markCryPlayed();
         CryPlayer::ins().replay(toSpeciesId);
     }
 
@@ -442,9 +423,9 @@ void renderEvolution(uint16_t fromSpeciesId,
 void renderEvolutionCancelled(uint16_t speciesId, uint32_t nowMs) {
     const Species* species = findSpecies(speciesId);
     const auto* fromFrame = evolutionFrame(speciesId);
-    const auto* toFrame = evolutionFrame(evolutionAnimation.toSpeciesId);
-    uint32_t elapsed = evolutionAnimation.cancelling
-        ? nowMs - evolutionAnimation.cancellationStartedAt
+    const auto* toFrame = evolutionFrame(evolutionAnimation.toSpeciesId());
+    uint32_t elapsed = evolutionAnimation.cancelling()
+        ? evolutionAnimation.cancellationElapsed(nowMs)
         : EVOLUTION_CANCEL_COMPLETE_MS;
     drawEvolutionBackground();
 

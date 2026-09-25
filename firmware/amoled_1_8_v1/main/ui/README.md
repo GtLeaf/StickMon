@@ -11,9 +11,10 @@ preserve existing callers. New page implementations should include their own
 header, required models and shared helpers, without including `HomeScreen.h`.
 
 `ExploreMapRenderer.cpp` handles exploration world cache construction, viewport copying,
-tile fallback rendering, animated tiles and ESP Debug performance statistics.
-Only `drawExploreRouteMapLayer` and the map viewport bounds are public. The
-route screen keeps responsibility for actors, pickups, the HUD and overlays.
+tile fallback rendering, animated tiles, foreground tile rendering and ESP Debug
+performance statistics. `drawExploreRouteMapLayer` renders the actor-underlay;
+`drawExploreRouteMapForegroundLayer` renders tiles such as crystal tops after actors.
+The route screen keeps responsibility for actors, pickups, the HUD and overlays.
 
 `AmoledApp` owns a `RenderCaches` instance and passes the required `PixelCache565`
 explicitly to battle, explore-selector and route renderers. Renderers no longer

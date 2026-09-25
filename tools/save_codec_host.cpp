@@ -1,9 +1,11 @@
 #include "core/SaveCodec.h"
+#include "save_schema1_fabricator.h"
 
 #include <cassert>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <vector>
 
 namespace {
 
@@ -59,6 +61,8 @@ Game::GameState makeState() {
     state.tutorialFlags = 0xA5;
     state.normalBossPitySlotIndex = 33;
     state.normalBossMissCount[4] = 9;
+    state.debugMotionFlags =
+        Game::DEBUG_MOTION_TILT | Game::DEBUG_MOTION_TALK_POINTS;
     return state;
 }
 
@@ -111,7 +115,7 @@ void verifyRoundTrip() {
     assert(length > SaveCodec::HEADER_BYTES);
     assert(encoded[0] == 'S' && encoded[1] == 'V' &&
            encoded[2] == 'C' && encoded[3] == '2');
-    assert(encoded[4] == 1 && encoded[5] == 0);
+    assert(encoded[4] == SaveCodec::SCHEMA_VERSION && encoded[5] == 0);
     assert(encoded[8] == 0x78 && encoded[9] == 0x56 &&
            encoded[10] == 0x34 && encoded[11] == 0x12);
     uint16_t payloadLength = static_cast<uint16_t>(encoded[12]) |
@@ -137,6 +141,8 @@ void verifyRoundTrip() {
     assert(decoded.state.pendingMoveId == 85);
     assert(decoded.state.settings.voiceCallEnabled);
     assert(decoded.state.normalBossMissCount[4] == 9);
+    assert(decoded.state.debugMotionFlags ==
+           (Game::DEBUG_MOTION_TILT | Game::DEBUG_MOTION_TALK_POINTS));
     assert(decoded.view.valid && decoded.view.speciesId == 25);
     assert(std::fabs(decoded.view.monsterX - 71.5f) < 0.001f);
     assert(decoded.view.secondary.valid &&
@@ -170,10 +176,52 @@ void verifyRejectsCorruptionAndBadCapacity() {
                               snapshot));
 }
 
+void verifySchema1DecodesWithDefaults() {
+    Game::GameState state = makeState();
+    MainSceneViewState view = makeView();
+    uint8_t encoded[SaveCodec::MAX_ENCODED_BYTES] = {};
+    size_t length = 0;
+    assert(SaveCodec::encode(state, view, 7, encoded, sizeof(encoded), length));
+
+    std::vector<uint8_t> legacy;
+    assert(SaveTestUtil::fabricateSchema1Blob(encoded, length, legacy));
+
+    SaveCodec::Snapshot decoded;
+    uint32_t sequence = 0;
+    assert(SaveCodec::decode(legacy.data(), legacy.size(), decoded, &sequence));
+    assert(sequence == 7);
+    assert(decoded.state.version == Game::SAVE_VERSION);
+    assert(decoded.state.coins == state.coins);
+    assert(decoded.state.tutorialFlags == 0xA5);
+    assert(decoded.state.normalBossMissCount[4] == 9);
+    // The v4 field did not exist in schema 1; it must default to zero.
+    assert(decoded.state.debugMotionFlags == 0);
+    assert(decoded.view.valid && decoded.view.secondary.valid);
+    assert(decoded.view.secondary.foodRetryRemainingMs == 9999);
+
+    // The migrated snapshot re-encodes as a valid current-schema blob.
+    uint8_t reencoded[SaveCodec::MAX_ENCODED_BYTES] = {};
+    size_t reencodedLength = 0;
+    assert(SaveCodec::encode(decoded.state, decoded.view, sequence + 1,
+                             reencoded, sizeof(reencoded), reencodedLength));
+    SaveCodec::Snapshot redecoded;
+    assert(SaveCodec::decode(reencoded, reencodedLength, redecoded));
+    assert(redecoded.state.coins == state.coins);
+
+    // A schema newer than this firmware must be rejected.
+    std::vector<uint8_t> future(encoded, encoded + length);
+    future[4] = SaveCodec::SCHEMA_VERSION + 1;
+    uint16_t checksum = SaveTestUtil::blobCrc16(future.data(), future.size());
+    future[14] = static_cast<uint8_t>(checksum);
+    future[15] = static_cast<uint8_t>(checksum >> 8);
+    assert(!SaveCodec::decode(future.data(), future.size(), decoded));
+}
+
 }  // namespace
 
 int main() {
     verifyRoundTrip();
     verifyRejectsCorruptionAndBadCapacity();
+    verifySchema1DecodesWithDefaults();
     return 0;
 }

@@ -28,6 +28,28 @@ from generate_pokemon_sprites import (
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def configured_explore_species():
+    encounters = (ROOT / "src" / "game" / "ExploreEncounters.h").read_text()
+    bosses = (ROOT / "src" / "game" / "ExploreBoss.h").read_text()
+
+    species = set()
+    for block in re.findall(
+            r"static constexpr Entry [A-Z_]+\[\] = \{(.*?)\n\};",
+            encounters,
+            flags=re.DOTALL):
+        species.update(int(value) for value in re.findall(r"\{(\d+),", block))
+
+    boss_block = re.search(
+        r"static constexpr Config CONFIGS\[AREA_COUNT\] = \{(.*?)\n\};",
+        bosses,
+        flags=re.DOTALL,
+    )
+    if boss_block:
+        for candidates in re.findall(r"\{\{([^}]+)\}", boss_block.group(1)):
+            species.update(int(value) for value in re.findall(r"\d+", candidates))
+    return frozenset(species)
+
+
 class GeneratePokemonSpritesTests(unittest.TestCase):
     def test_asset_writer_records_visible_bottom_padding(self):
         image = Image.new("RGBA", (12, 16), (0, 0, 0, 0))
@@ -120,7 +142,7 @@ class GeneratePokemonSpritesTests(unittest.TestCase):
             writer = generator.AssetWriter()
             missing = []
             with mock.patch.object(generator, "GRAPHICS", graphics):
-                generator.add_base_frames(writer, 3, "TEST", missing)
+                generator.add_base_frames(writer, 151, "TEST", missing)
 
             dimensions = {
                 frame["kind"]: (frame["width"], frame["height"])
@@ -156,8 +178,46 @@ class GeneratePokemonSpritesTests(unittest.TestCase):
                 for frame in writer.frames
             }
             self.assertEqual([], missing)
-            # 乌波属于前两个探索场景的 2x FRONT 资源集合。
+            # 乌波属于探索场景的 2x FRONT 资源集合。
             self.assertEqual((72, 72), dimensions["FRONT"])
+
+    def test_all_explore_encounters_and_bosses_use_2x_front(self):
+        self.assertEqual(
+            configured_explore_species(),
+            generator.EXPLORE_FRONT_2X_SPECIES,
+        )
+
+    def test_late_area_species_front_is_generated_at_2x(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            graphics = Path(temp_dir)
+            for folder in ("Icons", "Front", "Back"):
+                (graphics / folder).mkdir()
+
+            icon = Image.new("RGBA", (64, 64), (255, 0, 0, 255))
+            front = Image.new("RGBA", (160, 160), (0, 0, 0, 0))
+            front.paste((0, 255, 0, 255), (40, 40, 120, 120))
+            back = Image.new("RGBA", (160, 160), (0, 0, 255, 255))
+            icon.save(graphics / "Icons" / "TEST.png")
+            front.save(graphics / "Front" / "TEST.png")
+            back.save(graphics / "Back" / "TEST.png")
+
+            for species_id in (149, 323, 362):
+                with self.subTest(species=species_id):
+                    writer = generator.AssetWriter()
+                    missing = []
+                    with mock.patch.object(generator, "GRAPHICS", graphics):
+                        generator.add_base_frames(
+                            writer, species_id, "TEST", missing)
+
+                    front_frame = next(
+                        frame for frame in writer.frames
+                        if frame["kind"] == "FRONT"
+                    )
+                    self.assertEqual([], missing)
+                    self.assertEqual(
+                        (96, 96),
+                        (front_frame["width"], front_frame["height"]),
+                    )
 
     def test_all_configured_walking_frames_exist_and_are_visible(self):
         checked = 0

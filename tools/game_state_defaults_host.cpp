@@ -17,6 +17,8 @@ int main() {
     }
     static_assert(sizeof(Game::GameState) == 1572);
     static_assert(offsetof(Game::GameState, tutorialFlags) == 1559);
+    static_assert(offsetof(Game::GameState, debugMotionFlags) == 1570);
+    assert(state.debugMotionFlags == 0);
     static_assert(Game::tutorialMask(Game::TutorialStep::ROOM_FEED) == (1U << 0));
     static_assert(Game::tutorialMask(Game::TutorialStep::ROOM_PET) == (1U << 1));
     static_assert(Game::tutorialMask(Game::TutorialStep::OPEN_MENU) == (1U << 2));

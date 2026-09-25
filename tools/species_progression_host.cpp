@@ -2,6 +2,7 @@
 #include <cstdint>
 
 #include "game/BattleSystem.h"
+#include "game/EffortService.h"
 #include "game/ExploreBoss.h"
 #include "game/FriendshipSystem.h"
 #include "game/Species.h"
@@ -181,6 +182,16 @@ int main() {
         return 40;
     }
     if (basicMoveIdForSpecies(*bulbasaur) != 33) return 13;
+    Game::MonsterRuntime effortMonster{};
+    effortMonster.speciesId = bulbasaur->id;
+    effortMonster.level = 5;
+    effortMonster.hpMax = maxHpFor(*bulbasaur, effortMonster);
+    effortMonster.hpCur = effortMonster.hpMax;
+    if (!Game::EffortService::grant(
+            effortMonster, *magikarp, *bulbasaur) ||
+        Game::evTotal(effortMonster.ev) == 0) {
+        return 66;
+    }
     if (!hasLearnsetEntry(*bulbasaur, 7, 73)) return 14;   // Leech Seed
     if (!hasLearnsetEntry(*bulbasaur, 9, 22)) return 15;   // Vine Whip
     if (!hasLearnsetEntry(*bulbasaur, 37, 402)) return 16; // Seed Bomb

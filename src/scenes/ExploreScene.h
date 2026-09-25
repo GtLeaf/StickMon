@@ -194,6 +194,9 @@ private:
     ExploreMapGenerator::Map generatedMap;
     uint32_t expeditionSeed = 0;
     ExploreMapGenerator::Edge pendingEntryEdge = ExploreMapGenerator::Edge::TOP;
+    bool pendingFrostLadder = false;
+    bool pendingFrostFall = false;
+    uint32_t frostFallAtMs = 0;
     uint8_t routeIndex = 0;
     bool routeMoving = false;
     uint8_t routeWalkDirection = 0;
@@ -260,8 +263,7 @@ private:
     void placeRoutePickup();
     bool collectRoutePickup();
     void recoverTeamForCompletedSteps();
-    void advanceMapBlock(uint8_t nextMap);
-    int8_t currentDepthLevelOffset(uint8_t spread) const;
+    void advanceMapBlock(uint8_t nextMap, bool fell = false);
     void beginEncounter(const Species& species, uint8_t level, bool boss = false);
     Game::MonsterRuntime& battlePlayerMonster();
     const Game::MonsterRuntime& battlePlayerMonster() const;

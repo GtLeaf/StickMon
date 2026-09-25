@@ -2,6 +2,9 @@
 #include "core/AudioManager.h"
 #include "core/CryPlayer.h"
 #include "core/VoiceCallService.h"
+#if defined(ESP32)
+#include "esp_attr.h"
+#endif
 #include <algorithm>
 #include <cstdio>
 #include <new>
@@ -15,6 +18,7 @@
 #include "game/BondSystem.h"
 #include "game/ContactRoster.h"
 #include "game/ExploreItemProgression.h"
+#include "game/EffortService.h"
 #include "game/ExperienceService.h"
 #include "game/FriendshipService.h"
 #include "game/GameRandom.h"
@@ -41,21 +45,40 @@ namespace {
 // 供 GameEngine（清醒 tick）与深度睡眠定时静默唤醒路径共用。
 static constexpr uint8_t DEBUG_LIGHT_SOURCE_COUNT = 6;
 static constexpr uint16_t SCENE_FADE_HOLD_MS = 500;
-static constexpr uint32_t VISIT_PING_INTERVAL_MS = 5000UL;
-static constexpr uint32_t VISIT_STATUS_INTERVAL_MS = 3000UL;
-static constexpr uint32_t VISIT_PEER_TIMEOUT_MS = 12000UL;
-static constexpr uint32_t VISIT_DURATION_SEC = 1800UL;
 static constexpr uint32_t CONTACT_VISIT_COOLDOWN_SEC = 3UL * 24UL * 60UL * 60UL;
 static constexpr uint32_t CONTACT_VISIT_PLAY_MS = 30000UL;
 // 深度睡眠期间的定时静默唤醒周期：到点静默跑一遍照护逻辑再自动深睡。
 static constexpr uint32_t SILENT_CARE_WAKE_MINUTES = 10;
 static constexpr uint64_t SILENT_CARE_WAKE_INTERVAL_US =
     (uint64_t)SILENT_CARE_WAKE_MINUTES * 60ULL * 1000000ULL;
+static constexpr uint32_t RETAINED_CARE_MAGIC = 0x43415245UL; // CARE
+#if defined(ESP32)
+RTC_DATA_ATTR uint32_t retainedCareMagic = 0;
+RTC_DATA_ATTR Game::CareTickAccumulators retainedCareAccumulators{};
+#else
+uint32_t retainedCareMagic = 0;
+Game::CareTickAccumulators retainedCareAccumulators{};
+#endif
 static constexpr uint32_t FULL_FRAME_BYTES =
     Hal::DISPLAY_W * Hal::DISPLAY_H * 2UL;
 
 using Game::gameSecondsForMinutes;
 using Game::isScheduledSleepMinute;
+
+void retainCareAccumulators(const Game::CareTickAccumulators& acc) {
+    retainedCareAccumulators = acc;
+    retainedCareMagic = RETAINED_CARE_MAGIC;
+}
+
+Game::CareTickAccumulators takeRetainedCareAccumulators(bool restore) {
+    Game::CareTickAccumulators result{};
+    if (restore && retainedCareMagic == RETAINED_CARE_MAGIC) {
+        result = retainedCareAccumulators;
+    }
+    retainedCareAccumulators = Game::CareTickAccumulators{};
+    retainedCareMagic = 0;
+    return result;
+}
 
 uint32_t nextContactVisitRandom(uint32_t& state) {
     if (state == 0) state = 0x9E3779B9UL;
@@ -110,18 +133,6 @@ uint8_t careExpMultiplierForLevel(uint8_t level) {
     return 1;
 }
 
-uint8_t* effortField(Game::StatLine& ev, uint8_t statIndex) {
-    switch (statIndex) {
-    case 0: return &ev.hp;
-    case 1: return &ev.atk;
-    case 2: return &ev.def;
-    case 3: return &ev.spa;
-    case 4: return &ev.spd;
-    case 5: return &ev.spe;
-    default: return nullptr;
-    }
-}
-
 uint8_t clampFoodIndex(uint8_t foodIndex) {
     return foodIndex < Game::ROOM_FOOD_COUNT ? foodIndex : 0;
 }
@@ -163,6 +174,8 @@ bool GameEngine::begin() {
         Platform::logLine("[GameEngine] Hal init failed");
         return false;
     }
+    careAcc = takeRetainedCareAccumulators(
+        Platform::power().wakeReason() == Platform::WakeReason::EXTERNAL_SIGNAL);
     PixelRenderer::bind(Hal::ins().frameBuffer());
     if (!resourceService.begin()) {
         Platform::logLine("[GameEngine] external resource FS unavailable");
@@ -212,6 +225,7 @@ bool GameEngine::begin() {
     Hal::ins().setAudioVolume(state.settings.volume);
     ButtonDispatcher::ins().setLongPressMs(state.settings.longPressMs);
     EspNowLink::ins().beginStub();
+    visitSession.attach(&state);
     startupFirstFrameRendered = false;
     mainSceneFirstFrameRendered = false;
     nextExplorePoolPreloadMs = 0;
@@ -577,124 +591,29 @@ bool GameEngine::moveTeamMemberToContacts(uint8_t slot) {
     return true;
 }
 
-VisitHostResult GameEngine::beginVisitAsHost(
-    uint16_t speciesId, uint8_t level, uint8_t nature,
-    uint8_t satiety, uint8_t mood, uint8_t affection) {
-    if (!state.oobeDone || state.teamCount == 0) {
-        return VisitHostResult::NO_MONSTER;
-    }
-    if (!canHostVisit()) return VisitHostResult::TEAM_NOT_SOLO;
-
-    state.team[1] = createMonster(speciesId, level);
-    Game::MonsterRuntime& guest = state.team[1];
-    guest.nature = nature;
-    guest.satiety = satiety;
-    guest.mood = mood;
-    guest.affection = affection;
-    guest.origin = Game::Origin::VISITOR;
-    state.teamCount = 2;
-    state.activeSlot = 0;
-    syncSpriteCache();
-
-    uint32_t now = Hal::ins().millis();
-    visitSession.active = true;
-    visitSession.asHost = true;
-    visitSession.startedMs = now;
-    visitSession.lastPingSentMs = now;
-    visitSession.lastStatusSentMs = now;
-    visitSession.lastPeerMessageMs = now;
-    EspNowLink::ins().copyPeerMac(visitSession.peerMac);
-    markDirty(SaveUrgency::IMMEDIATE);
-    return VisitHostResult::ACCEPTED;
-}
-
-void GameEngine::beginVisitAsVisitor() {
-    uint32_t now = Hal::ins().millis();
-    visitSession.active = true;
-    visitSession.asHost = false;
-    visitSession.startedMs = now;
-    visitSession.lastPingSentMs = now;
-    visitSession.lastStatusSentMs = now;
-    visitSession.lastPeerMessageMs = now;
-    EspNowLink::ins().copyPeerMac(visitSession.peerMac);
-}
-
-void GameEngine::endVisit() {
-    if (!visitSession.active) return;
-    if (visitSession.asHost && state.teamCount >= 2 &&
-        state.team[1].origin == Game::Origin::VISITOR) {
-        state.team[1] = Game::MonsterRuntime{};
-        state.teamCount = 1;
-        state.activeSlot = 0;
+void GameEngine::updateVisit(uint32_t nowMs) {
+    const uint8_t teamCountBefore = state.teamCount;
+    const Game::MonsterRuntime guest = teamCountBefore > 1
+        ? state.team[1] : Game::MonsterRuntime{};
+    const SecondarySceneViewState guestView = currentId == SceneID::MAIN
+        ? SecondarySceneViewState{} : mainViewState.secondary;
+    visitSession.update(nowMs);
+    const bool hostRecall = visitSession.takeHostRecall();
+    if (state.teamCount != teamCountBefore) {
         syncSpriteCache();
         markDirty(SaveUrgency::IMMEDIATE);
     }
-    visitSession = VisitSessionState{};
-}
-
-bool GameEngine::takeVisitLinkLost() {
-    bool value = visitLinkLost;
-    visitLinkLost = false;
-    return value;
-}
-
-void GameEngine::updateVisit(uint32_t nowMs) {
-    EspNowLink& link = EspNowLink::ins();
-    link.update();
-
-    if (visitSession.asHost) {
-        if (nowMs - visitSession.lastStatusSentMs >= VISIT_STATUS_INTERVAL_MS) {
-            uint32_t elapsedSec = (nowMs - visitSession.startedMs) / 1000;
-            VisitStatusPayload status{};
-            status.active = 1;
-            status.remainSec = elapsedSec >= VISIT_DURATION_SEC
-                                   ? 0
-                                   : (uint16_t)(VISIT_DURATION_SEC - elapsedSec);
-            if (link.sendSessionMessage(LinkMessageType::VISIT_STATUS, &status, sizeof(status))) {
-                visitSession.lastStatusSentMs = nowMs;
-            }
-        }
-    } else {
-        if (nowMs - visitSession.lastPingSentMs >= VISIT_PING_INTERVAL_MS) {
-            VisitPingPayload ping{};
-            ping.satiety = activeMonster().satiety;
-            ping.mood = activeMonster().mood;
-            if (link.sendSessionMessage(LinkMessageType::VISIT_PING, &ping, sizeof(ping))) {
-                visitSession.lastPingSentMs = nowMs;
-            }
+    if (hostRecall && guest.origin == Game::Origin::VISITOR) {
+        if (currentId != SceneID::MAIN) switchScene(SceneID::MAIN);
+        if (currentId == SceneID::MAIN) {
+            static_cast<MainScene*>(currentScene.get())->beginLinkedGuestExit(
+                nowMs, guest, guestView);
+            invalidateScene();
+            scheduleSceneUpdate(nowMs);
         }
     }
-
-    LinkMessageType type;
-    uint8_t payload[24];
-    uint8_t payloadLen = 0;
-    if (link.takeSessionMessage(type, payload, payloadLen)) {
-        visitSession.lastPeerMessageMs = nowMs;
-        if (visitSession.asHost) {
-            if (type == LinkMessageType::VISIT_PING && payloadLen >= sizeof(VisitPingPayload) &&
-                state.teamCount >= 2 && state.team[1].origin == Game::Origin::VISITOR) {
-                VisitPingPayload ping{};
-                memcpy(&ping, payload, sizeof(ping));
-                if (state.team[1].satiety != ping.satiety || state.team[1].mood != ping.mood) {
-                    state.team[1].satiety = ping.satiety;
-                    state.team[1].mood = ping.mood;
-                    markDirty(SaveUrgency::DEFERRED);
-                }
-            } else if (type == LinkMessageType::VISIT_RECALL) {
-                VisitEndPayload end{0};
-                link.sendSessionMessage(LinkMessageType::VISIT_END, &end, sizeof(end));
-                endVisit();
-                return;
-            }
-        } else if (type == LinkMessageType::VISIT_END) {
-            endVisit();
-            return;
-        }
-    }
-
-    if (nowMs - visitSession.lastPeerMessageMs > VISIT_PEER_TIMEOUT_MS) {
-        visitLinkLost = true;
-        endVisit();
+    if (!visitSession.busy() && currentId != SceneID::SOCIAL) {
+        EspNowLink::ins().end();
     }
 }
 
@@ -763,7 +682,7 @@ bool GameEngine::prepareDailyContactVisit() {
     if (contactVisit.pendingKnock || contactVisit.active) return true;
     uint32_t day = Game::Bond::invitationDay(gameMinutesTotal());
     if (state.teamCount != 1 || state.storageCount == 0 ||
-        visitSession.active || exploreTravel != ExploreTravelPhase::NONE) {
+        visitSession.active() || exploreTravel != ExploreTravelPhase::NONE) {
         return false;
     }
     if (contactVisit.checkedDay == day) return false;
@@ -859,7 +778,7 @@ DebugContactEventResult GameEngine::debugTriggerContactVisit(
         return DebugContactEventResult::TEAM_NOT_SOLO;
     }
     if (contactVisit.pendingKnock || contactVisit.active ||
-        visitSession.active || exploreTravel != ExploreTravelPhase::NONE) {
+        visitSession.active() || exploreTravel != ExploreTravelPhase::NONE) {
         return DebugContactEventResult::BUSY;
     }
 
@@ -942,7 +861,7 @@ void GameEngine::acceptContactExploreInvitation() {
 
 bool GameEngine::exploreBlockedByGuest() const {
     bool localGuestAtHome = contactVisit.active && !contactVisit.exploring;
-    bool linkedGuestAtHome = visitSession.active && visitSession.asHost;
+    bool linkedGuestAtHome = visitActive() && visitAsHost();
     return localGuestAtHome || linkedGuestAtHome;
 }
 
@@ -1023,25 +942,17 @@ void GameEngine::completeContactVisit() {
 }
 
 bool GameEngine::canDeleteContact(uint8_t slot) const {
-    return slot < state.storageCount && slot < Game::STORAGE_CAP &&
-           state.storage[slot].origin != Game::Origin::HATCHED &&
-           !contactIsInTeam(slot) &&
-           !contactIsVisiting(slot);
+    return ContactRoster::canDelete(state, slot, contactIsVisiting(slot));
 }
 
 bool GameEngine::deleteContact(uint8_t slot) {
     if (slot >= state.storageCount || slot >= Game::STORAGE_CAP) return false;
     if (!canDeleteContact(slot)) return false;
+    if (!ContactRoster::deleteContact(state, slot, contactIsVisiting(slot))) {
+        return false;
+    }
     if (contactVisit.active && slot < contactVisit.storageSlot) {
         --contactVisit.storageSlot;
-    }
-
-    for (uint8_t i = slot; i + 1 < state.storageCount && i + 1 < Game::STORAGE_CAP; ++i) {
-        state.storage[i] = state.storage[i + 1];
-    }
-    state.storageCount--;
-    if (state.storageCount < Game::STORAGE_CAP) {
-        state.storage[state.storageCount] = Game::MonsterRuntime{};
     }
     markDirty(SaveUrgency::IMMEDIATE);
     return true;
@@ -1470,29 +1381,8 @@ void GameEngine::grantEffortToTeamMember(uint8_t teamSlot,
                                          const Species& defeatedSpecies) {
     if (teamSlot >= state.teamCount || teamSlot >= Game::TEAM_CAP) return;
     Game::MonsterRuntime& mon = state.team[teamSlot];
-    bool changed = false;
-    for (uint8_t i = 0; i < Game::STAT_COUNT; ++i) {
-        uint8_t amount = evYieldAt(defeatedSpecies, i);
-        if (amount == 0) continue;
-
-        uint8_t* value = effortField(mon.ev, i);
-        if (!value || *value >= Game::EV_MAX) continue;
-        uint16_t total = Game::evTotal(mon.ev);
-        if (total >= Game::EV_TOTAL_MAX) break;
-
-        uint8_t roomByStat = Game::EV_MAX - *value;
-        uint16_t roomByTotal = Game::EV_TOTAL_MAX - total;
-        uint8_t gain = MathUtil::min<uint16_t>(amount, MathUtil::min<uint16_t>(roomByStat, roomByTotal));
-        if (gain == 0) continue;
-        *value += gain;
-        changed = true;
-    }
-
-    if (changed) {
-        const Species& species = speciesFor(mon);
-        uint16_t oldMax = mon.hpMax;
-        mon.hpMax = maxHpFor(species, mon);
-        if (mon.hpMax > oldMax) mon.hpCur = MathUtil::min<uint16_t>(mon.hpMax, mon.hpCur + (mon.hpMax - oldMax));
+    if (Game::EffortService::grant(
+            mon, defeatedSpecies, speciesFor(mon))) {
         markDirty(SaveUrgency::DEFERRED);
     }
 }
@@ -2061,6 +1951,7 @@ void GameEngine::markDirty(SaveUrgency urgency) {
 
 void GameEngine::enterDeepSleep() {
     saveNow();
+    retainCareAccumulators(careAcc);
     VoiceCallService::ins().stopListening();
     AudioManager::ins().stopAll();
     Hal::ins().setBrightness(0);
@@ -2097,14 +1988,14 @@ void GameEngine::runSilentCareWake() {
         // 深睡期间游戏时钟不走，这里一次性补上这段流逝的游戏分钟。
         state.gameMinutesTotal +=
             (uint32_t)(SILENT_CARE_WAKE_MINUTES * gameSpeed());
-        // 会话累加器每次静默唤醒从 0 开始：单块内的间隔取整有轻微近似，
-        // 不影响长期行为。
-        Game::CareTickAccumulators acc{};
+        Game::CareTickAccumulators acc =
+            takeRetainedCareAccumulators(true);
         Game::resetDailyCareCounters(state);
         uint32_t gameElapsedMin =
             (uint32_t)(SILENT_CARE_WAKE_MINUTES * gameSpeed());
         Game::CareTickResult care = Game::applyCareMinutes(
             state, acc, SILENT_CARE_WAKE_MINUTES, gameElapsedMin, true);
+        retainCareAccumulators(acc);
         ContactRoster::syncTeamContacts(state);
         saveManager.saveSnapshot(state, mainViewState);
         Platform::logf("[Power] silent care wake: elapsed=%umin revivals=%u\n",
@@ -2147,6 +2038,7 @@ bool GameEngine::resetGame() {
         return false;
     }
     saveWritesBlocked = false;
+    visitSession.stop();
     VoiceCallService::ins().clearCachedProfile();
 
     uint32_t now = Hal::ins().millis();
@@ -2157,6 +2049,7 @@ bool GameEngine::resetGame() {
     HatchScene::clearRuntimeProgress();
     clearMainSceneViewState();
     careAcc = Game::CareTickAccumulators{};
+    takeRetainedCareAccumulators(false);
     debugShowWalkBoundary = false;
     debugTiltControl = false;
     debugShowBattleDrawBounds = false;
@@ -2363,7 +2256,7 @@ void GameEngine::update(uint32_t nowMs) {
         nextExplorePoolPreloadMs = nowMs + (ready ? 1000UL : 250UL);
     }
     tickCare(nowMs);
-    if (visitSession.active) updateVisit(nowMs);
+    if (visitSession.busy()) updateVisit(nowMs);
     bool sceneUpdateDue =
         sceneUpdateScheduled &&
         static_cast<int32_t>(nowMs - nextSceneUpdateMs) >= 0;

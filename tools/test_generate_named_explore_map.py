@@ -829,7 +829,7 @@ class NamedExploreMapTests(unittest.TestCase):
                 "up_to_right": 582,
             },
         )
-        self.assertEqual(FROST_CAVE_EXIT_TILES, (1299, 1300, 1301))
+        self.assertEqual(FROST_CAVE_EXIT_TILES, (1301, 1300, 1299))
         self.assertEqual(
             FROST_BLOCKED_SNOW_MASS_TILES,
             ((1296, 1297, 1298), (1304, 1305, 1306), (1312, 1313, 1314)),

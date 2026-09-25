@@ -85,6 +85,18 @@ class AmoledNativeRenderTests(unittest.TestCase):
     def test_shared_page_header_pixels_and_hit_boundaries(self):
         self.run_case("page-header")
 
+    def test_battle_sprite_fit_and_no_floating_damage_numbers(self):
+        self.run_case("battle-sprite-presentation")
+
+    def test_home_faint_rest_progress_reuses_hp_bar(self):
+        self.run_case("home-faint-hp-hud")
+
+    def test_home_visit_recall_icon_and_confirmation(self):
+        self.run_case("home-visit-recall")
+
+    def test_explore_toast_and_completion_overlays_are_not_clipped(self):
+        self.run_case("explore-overlay-geometry")
+
     def test_shop_detail_pressed_buttons_and_static_frame(self):
         self.run_case("shop-detail")
 
@@ -100,8 +112,14 @@ class AmoledNativeRenderTests(unittest.TestCase):
     def test_team_status_formats_values_and_labels(self):
         self.run_case("team-status-values")
 
+    def test_team_status_hp_and_experience_segmented_bars(self):
+        self.run_case("team-status-segmented-bars")
+
     def test_team_moves_show_type_name_and_proficiency_grades(self):
         self.run_case("team-moves-list")
+
+    def test_computer_contacts_popup_confirm_and_status_geometry(self):
+        self.run_case("computer-contacts")
 
     def test_main_menu_grid_scrolling_and_pressed_cell(self):
         self.run_case("main-menu-grid")
@@ -109,11 +127,28 @@ class AmoledNativeRenderTests(unittest.TestCase):
     def test_cache_ownership_invalidation_and_scene_lifecycle(self):
         self.run_case("cache-lifecycle")
 
+    def test_native_alpha_blend_matches_old_pixels_and_clip(self):
+        self.run_case("alpha-blend-native")
+
+    def test_prewarmed_battle_background_matches_cold_render(self):
+        self.run_case("battle-prewarm")
+
     def test_page_clip_intersection_and_early_return(self):
         self.run_case("page-clip")
 
+    def test_progression_replacement_requires_selection_and_confirmation(self):
+        self.run_case("progression-replace")
+
     def test_expedition_black_frames_and_direct_home_return(self):
         self.run_case("expedition-transition")
+
+    def test_debug_visitor_prompt_talk_and_exit(self):
+        if os.environ.get("AMOLED_RENDER_DEBUG") == "1":
+            self.run_case("visitor-diagnostics")
+
+    def test_debug_visitor_recovers_invalid_host_door_pose(self):
+        if os.environ.get("AMOLED_RENDER_DEBUG") == "1":
+            self.run_case("visitor-invalid-entry")
 
     def test_unknown_behavior_case_is_rejected(self):
         result = subprocess.run(

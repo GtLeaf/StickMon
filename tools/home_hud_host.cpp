@@ -34,5 +34,18 @@ int main() {
     assert(Game::HomeHud::hpPercent(state.team[0]) == 50);
     state.team[0].fainted = true;
     assert(Game::HomeHud::hpPercent(state.team[0]) == 0);
+    state.gameMinutesTotal = 12U * 60U;
+    state.team[0].lastSeenAt = Game::gameSecondsForMinutes(11U * 60U + 30U);
+    assert(Game::HomeHud::faintRestPercent(
+        state.team[0], state.gameMinutesTotal) == 50);
+    assert(Game::HomeHud::faintRestPercent(state.team[0], 11U * 60U) == 0);
+    assert(Game::HomeHud::faintRestPercent(state.team[0], 13U * 60U) == 99);
+    state.team[0].lastSeenAt = 0;
+    assert(Game::HomeHud::faintRestPercent(
+        state.team[0], state.gameMinutesTotal) == 0);
+    state.team[0].fainted = false;
+    state.team[0].lastSeenAt = Game::gameSecondsForMinutes(11U * 60U);
+    assert(Game::HomeHud::faintRestPercent(
+        state.team[0], state.gameMinutesTotal) == 0);
     return 0;
 }

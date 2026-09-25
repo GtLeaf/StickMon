@@ -310,7 +310,7 @@ constexpr FrostScenerySpec FROST_H0_BOULDERS[] = {
 };
 
 constexpr FrostRect FROST_H1_RECTS[] = {
-    {0, 1, 6, 8}, {5, 4, 10, 7}, {9, 2, 15, 10}, {11, 8, 14, 11}, {2, 0, 5, 3},
+    {0, 1, 6, 8}, {5, 4, 10, 7}, {9, 2, 15, 10}, {10, 8, 14, 11}, {1, 0, 5, 3},
 };
 constexpr Point FROST_H1_ROUTE0[] = {
     {0, 6}, {7, 6}, {13, 6}, {13, 11}, {12, 11},
@@ -1828,7 +1828,7 @@ void stampGroundDecorations(Map& map, Rng& rng, const CellMask& road,
 }
 
 void stampSnowDecorations(Map& map, Rng& rng, const CellMask& road,
-                          CellMask& scenery) {
+                          CellMask& scenery, bool allowCracks = true) {
     uint8_t groundTarget = 10 + rng.bounded(7);
     uint8_t groundPlaced = 0;
     for (uint16_t attempt = 0; attempt < groundTarget * 16U && groundPlaced < groundTarget;
@@ -1836,10 +1836,10 @@ void stampSnowDecorations(Map& map, Rng& rng, const CellMask& road,
         uint8_t x = rng.bounded(WIDTH);
         uint8_t y = rng.bounded(HEIGHT);
         if (road.contains(x, y) || scenery.contains(x, y)) continue;
+        uint8_t variant = rng.bounded(sizeof(SNOW_GROUND_DECOR_TILES) /
+                                      sizeof(SNOW_GROUND_DECOR_TILES[0]));
         map.layers[0][y * WIDTH + x] =
-            SNOW_GROUND_DECOR_TILES[
-                rng.bounded(sizeof(SNOW_GROUND_DECOR_TILES) /
-                            sizeof(SNOW_GROUND_DECOR_TILES[0]))];
+            SNOW_GROUND_DECOR_TILES[!allowCracks && variant == 2 ? 1 : variant];
         scenery.add(x, y);
         ++groundPlaced;
     }
@@ -1885,9 +1885,6 @@ Endpoint transformFrostEndpoint(const Endpoint& endpoint, bool mirrorX, bool mir
     if (mirrorX && (endpoint.edge == Edge::TOP || endpoint.edge == Edge::BOTTOM)) {
         --transformed.point.x;
     }
-    if (mirrorY && (endpoint.edge == Edge::LEFT || endpoint.edge == Edge::RIGHT)) {
-        --transformed.point.y;
-    }
     transformed.edge = transformFrostEdge(endpoint.edge, mirrorX, mirrorY);
     return transformed;
 }
@@ -1917,12 +1914,14 @@ bool buildFrostPath(Path& path, const Point* controls, uint8_t controlCount,
 }
 
 bool frostEndpointContains(const Endpoint& endpoint, uint8_t x, uint8_t y) {
+    int pointX = endpoint.point.x;
+    int pointY = endpoint.point.y;
+    int cellX = x;
+    int cellY = y;
     if (endpoint.edge == Edge::TOP || endpoint.edge == Edge::BOTTOM) {
-        return y == endpoint.point.y &&
-               (x == endpoint.point.x || x == endpoint.point.x + 1);
+        return cellY == pointY && cellX >= pointX - 1 && cellX <= pointX + 1;
     }
-    return x == endpoint.point.x &&
-           (y == endpoint.point.y || y == endpoint.point.y + 1);
+    return cellX == pointX && cellY >= pointY - 1 && cellY <= pointY + 1;
 }
 
 bool frostPortalOpening(const Map& map, uint8_t x, uint8_t y, Edge edge) {
@@ -1935,11 +1934,14 @@ bool frostPortalOpening(const Map& map, uint8_t x, uint8_t y, Edge edge) {
 }
 
 bool frostEndpointFits(const Endpoint& endpoint, const CellMask& floor) {
-    if (!floor.contains(endpoint.point.x, endpoint.point.y)) return false;
     if (endpoint.edge == Edge::TOP || endpoint.edge == Edge::BOTTOM) {
-        return floor.contains(endpoint.point.x + 1, endpoint.point.y);
+        return floor.contains(endpoint.point.x - 1, endpoint.point.y) &&
+               floor.contains(endpoint.point.x, endpoint.point.y) &&
+               floor.contains(endpoint.point.x + 1, endpoint.point.y);
     }
-    return floor.contains(endpoint.point.x, endpoint.point.y + 1);
+    return floor.contains(endpoint.point.x, endpoint.point.y - 1) &&
+           floor.contains(endpoint.point.x, endpoint.point.y) &&
+           floor.contains(endpoint.point.x, endpoint.point.y + 1);
 }
 
 bool frostBoundaryTile(const Map& map, const CellMask& floor,
@@ -1991,40 +1993,126 @@ uint16_t frostIceTile(const CellMask& ice, uint8_t x, uint8_t y) {
     return FROST_ICE_CENTER_TILE;
 }
 
-void stampFrostPortal(Map& map, const Endpoint& endpoint, const Point& routeAnchor,
-                      const CellMask& route) {
-    uint8_t x = routeAnchor.x;
-    uint8_t y = routeAnchor.y;
-    if (endpoint.edge == Edge::TOP && x > 0 && x + 1 < WIDTH &&
-        !route.contains(x - 1, y) && !route.contains(x + 1, y)) {
-        for (uint8_t offset = 0; offset < 3; ++offset) {
-            map.layers[1][y * WIDTH + x + offset - 1] =
-                ExploreCaveTiles::FROST_EXIT[offset];
+bool frostInterior(Point point) {
+    return point.x > 0 && point.x + 1 < WIDTH &&
+           point.y > 0 && point.y + 1 < HEIGHT;
+}
+
+void trimFrostEntry(Map& map) {
+    for (uint8_t i = 0; i < map.pathCount; ++i) {
+        Path& path = map.paths[i];
+        uint8_t first = 0;
+        while (first + 2 < path.pointCount &&
+               !frostInterior(path.points[first])) ++first;
+        for (uint8_t j = first; j < path.pointCount; ++j) {
+            path.points[j - first] = path.points[j];
         }
-    } else if (endpoint.edge == Edge::BOTTOM) {
-        map.layers[1][y * WIDTH + x] =
-            ExploreCaveTiles::FROST_DOWNWARD_STAIRS;
+        path.pointCount -= first;
+    }
+    map.entry.point = map.paths[0].points[0];
+}
+
+void trimFrostExits(Map& map) {
+    for (uint8_t i = 0; i < map.pathCount; ++i) {
+        Path& path = map.paths[i];
+        while (path.pointCount > 2 &&
+               !frostInterior(path.points[path.pointCount - 1])) {
+            --path.pointCount;
+        }
+        path.exit.point = path.points[path.pointCount - 1];
     }
 }
 
-void stampFrostPortals(Map& map, const CellMask& route) {
-    if (map.pathCount == 0 || map.paths[0].pointCount == 0) return;
-    stampFrostPortal(map, map.entry, map.paths[0].points[0], route);
+void stampFrostExterior(Map& map, const Endpoint& endpoint) {
+    const uint16_t* tiles = nullptr;
+    int x = endpoint.point.x;
+    int y = endpoint.point.y;
+    switch (endpoint.edge) {
+    case Edge::TOP:
+        tiles = ExploreCaveTiles::FROST_EXIT;
+        --x;
+        break;
+    case Edge::RIGHT:
+        tiles = ExploreCaveTiles::FROST_EXIT_RIGHT;
+        --y;
+        break;
+    case Edge::BOTTOM:
+        tiles = ExploreCaveTiles::FROST_EXIT_BOTTOM;
+        --x;
+        break;
+    case Edge::LEFT:
+        tiles = ExploreCaveTiles::FROST_EXIT_LEFT;
+        --y;
+        break;
+    }
+    for (int i = 0; i < 3; ++i) {
+        int column = x + ((endpoint.edge == Edge::TOP || endpoint.edge == Edge::BOTTOM) ? i : 0);
+        int row = y + ((endpoint.edge == Edge::LEFT || endpoint.edge == Edge::RIGHT) ? i : 0);
+        if (column >= 0 && column < WIDTH && row >= 0 && row < HEIGHT) {
+            map.layers[1][row * WIDTH + column] = tiles[i];
+        }
+    }
+}
+
+bool frostPortalTouchesScene(const Map& map, const Endpoint& endpoint) {
+    int x = endpoint.point.x;
+    int y = endpoint.point.y;
+    switch (endpoint.edge) {
+    case Edge::TOP: --y; break;
+    case Edge::RIGHT: ++x; break;
+    case Edge::BOTTOM: ++y; break;
+    case Edge::LEFT: --x; break;
+    }
+    if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT) return true;
+    uint16_t index = static_cast<uint16_t>(y * WIDTH + x);
+    return map.layers[1][index] != 0 || map.layers[2][index] != 0;
+}
+
+bool stampFrostPortals(Map& map, FrostContext frost) {
+    if (map.pathCount == 0 || map.paths[0].pointCount == 0) return false;
+    if (frost.level == 0) {
+        stampFrostExterior(map, map.entry);
+    } else if (frost.enteredByLadder) {
+        Point point = map.entry.point;
+        if (!frostPortalTouchesScene(map, map.entry)) return false;
+        map.layers[1][point.y * WIDTH + point.x] =
+            ExploreCaveTiles::FROST_DOWNWARD_STAIRS;
+    }
     for (uint8_t i = 0; i < map.pathCount; ++i) {
         const Path& path = map.paths[i];
         if (path.pointCount == 0) continue;
-        stampFrostPortal(map, path.exit, path.points[path.pointCount - 1], route);
+        if (frost.level + 1 >= frost.levelCount) {
+            stampFrostExterior(map, path.exit);
+        } else if (i == 0) {
+            Point point = path.exit.point;
+            map.layers[1][point.y * WIDTH + point.x] =
+                ExploreCaveTiles::FROST_DOWNWARD_STAIRS;
+        } else if (i == 1) {
+            Point point = path.exit.point;
+            if (point.y == 0 || map.layers[2][(point.y - 1) * WIDTH + point.x] != 0 ||
+                !frostPortalTouchesScene(map, path.exit)) return false;
+            map.layers[2][(point.y - 1) * WIDTH + point.x] =
+                ExploreCaveTiles::FROST_UP_LADDER[0];
+            map.layers[1][point.y * WIDTH + point.x] =
+                ExploreCaveTiles::FROST_UP_LADDER[1];
+        } else {
+            return false;
+        }
     }
+    return true;
 }
 
-bool generateFrostCave(uint32_t seed, Edge entryEdge, Map& out) {
+bool generateFrostCave(uint32_t seed, Edge entryEdge, Map& out,
+                       FrostContext frost) {
     bool horizontal = entryEdge == Edge::LEFT || entryEdge == Edge::RIGHT;
     uint8_t variant = static_cast<uint8_t>((seed >> 5) & 1U);
     const FrostTemplate& spec = horizontal
         ? FROST_HORIZONTAL_TEMPLATES[variant]
         : FROST_VERTICAL_TEMPLATES[variant];
-    bool mirrorX = entryEdge == Edge::RIGHT;
-    bool mirrorY = entryEdge == Edge::TOP;
+    bool mirrorX = entryEdge == Edge::RIGHT ||
+                   (!horizontal && (seed & 0x80U) != 0);
+    bool mirrorY = entryEdge == Edge::TOP ||
+                   (horizontal && (seed & 0x80U) != 0);
 
     out.seed = seed;
     out.areaIndex = FROST_CRYSTAL_CAVE_AREA;
@@ -2038,6 +2126,8 @@ bool generateFrostCave(uint32_t seed, Edge entryEdge, Map& out) {
             return false;
         }
     }
+    if (frost.level > 0) trimFrostEntry(out);
+    if (frost.level + 1 < frost.levelCount) trimFrostExits(out);
 
     CellMask floor;
     CellMask walls;
@@ -2109,8 +2199,6 @@ bool generateFrostCave(uint32_t seed, Edge entryEdge, Map& out) {
     }
     blocked.unite(walls);
 
-    stampFrostPortals(out, route);
-
     for (uint8_t i = 0; i < spec.iceRectCount; ++i) {
         addFrostRect(ice, spec.iceRects[i], mirrorX, mirrorY);
     }
@@ -2162,6 +2250,19 @@ bool generateFrostCave(uint32_t seed, Edge entryEdge, Map& out) {
         blocked.add(point.x, point.y);
     }
 
+    CellMask scenery = blocked;
+    scenery.unite(ice);
+    for (uint8_t y = 0; y < HEIGHT; ++y) {
+        for (uint8_t x = 0; x < WIDTH; ++x) {
+            if (!floor.contains(x, y)) scenery.add(x, y);
+        }
+    }
+    Rng decorations(seed ^ 0xA5F1537DU);
+    stampSnowDecorations(out, decorations, route, scenery,
+                         false);
+
+    if (!stampFrostPortals(out, frost)) return false;
+
     for (uint8_t i = 0; i < out.pathCount; ++i) {
         const Path& path = out.paths[i];
         if (!ExploreIceSlide::routeCrossesIceStraight(out, path)) return false;
@@ -2207,7 +2308,10 @@ Edge opposite(Edge edge) {
     return Edge::TOP;
 }
 
-bool generate(uint32_t seed, Edge entryEdge, uint8_t areaIndex, Map& out) {
+bool generate(uint32_t seed, Edge entryEdge, uint8_t areaIndex, Map& out,
+              FrostContext frost) {
+    if (areaIndex == FROST_CRYSTAL_CAVE_AREA &&
+        (frost.levelCount == 0 || frost.level >= frost.levelCount)) return false;
     std::memset(&out, 0, sizeof(out));
     out.seed = seed;
     out.areaIndex = areaIndex;
@@ -2215,7 +2319,7 @@ bool generate(uint32_t seed, Edge entryEdge, uint8_t areaIndex, Map& out) {
     Rng features(seed ^ 0xC2B2AE35U);
     const AreaProfile& profile = profileFor(areaIndex);
     bool hasSnow = areaIndex == FROST_CRYSTAL_CAVE_AREA;
-    if (hasSnow) return generateFrostCave(seed, entryEdge, out);
+    if (hasSnow) return generateFrostCave(seed, entryEdge, out, frost);
 
     CellMask road;
     road.clear();
@@ -2376,6 +2480,7 @@ uint32_t fingerprint(const Map& map) {
     for (uint8_t i = 0; i < map.pathCount; ++i) {
         const Path& path = map.paths[i];
         hash = fnvByte(hash, path.pointCount);
+        hash = fnvByte(hash, path.fallsToNextLevel ? 1 : 0);
         hash = fnvByte(hash, static_cast<uint8_t>(path.exit.edge));
         hash = fnvByte(hash, path.exit.point.x);
         hash = fnvByte(hash, path.exit.point.y);

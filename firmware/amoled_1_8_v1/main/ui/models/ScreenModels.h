@@ -13,6 +13,7 @@
 #include "game/BattleSystem.h"
 #include "game/ExplorePool.h"
 #include "game/ExploreMapGenerator.h"
+#include "game/EvolutionSequence.h"
 #include "game/GameState.h"
 #include "game/ShopService.h"
 namespace AmoledV1 {
@@ -21,6 +22,8 @@ struct HomeViewModel {
     struct MonsterHud {
         uint8_t hp = 0;
         uint8_t hunger = 0;
+        uint8_t faintRest = 0;
+        bool fainted = false;
         bool hpKnown = true;
     };
 
@@ -34,6 +37,8 @@ struct HomeViewModel {
     int16_t petGroundY = 302;
     int8_t petRenderOffsetY = 0;
     bool petVisible = true;
+    bool visitAway = false;
+    bool recallConfirm = false;
     int16_t bowlCenterX = 290;
     int16_t bowlCenterY = 286;
     uint8_t petFrame = 0;
@@ -68,6 +73,10 @@ struct HomeViewModel {
     const char* toast = nullptr;
 #if STICKMON_ENABLE_DEBUG_FEATURES
     bool debugContactPrompt = false;
+    uint8_t debugContactPromptFade = 0;
+    const char* debugContactPromptText = nullptr;
+    bool debugContactChoiceVisible = false;
+    int8_t debugContactSelectedChoice = -1;
     bool debugContactActive = false;
     uint16_t debugContactSpeciesId = 0;
     uint8_t debugContactKind = 0;
@@ -80,6 +89,13 @@ struct HomeViewModel {
         PokemonSprites::WalkDirection::DOWN;
     uint8_t debugLightSource = 0;
     bool debugBoundaryVisible = false;
+    bool debugTalkPointsVisible = false;
+    int16_t debugTalkCompanionX = 0;
+    int16_t debugTalkCompanionY = 0;
+    int16_t debugTalkMainX = 0;
+    int16_t debugTalkMainY = 0;
+    int16_t debugWelcomeCenterX = 0;
+    int16_t debugWelcomeGroundY = 0;
 #endif
 };
 
@@ -119,6 +135,7 @@ struct DebugViewModel {
     const char* lightSource = nullptr;
     bool tiltEnabled = false;
     bool boundaryVisible = false;
+    bool talkPointsVisible = false;
     bool battleBoundsVisible = false;
     bool touchDisplayEnabled = false;
     const TouchTest::State* touchTest = nullptr;
@@ -140,7 +157,6 @@ struct ExploreViewModel {
 };
 
 struct ExploreRouteViewModel {
-    enum class Prompt : uint8_t { NONE = 0, BLOCKED, PUZZLE };
     const ExploreMapGenerator::Map* map = nullptr;
     const Game::GameState* state = nullptr;
     uint16_t speciesId = 1;
@@ -176,7 +192,6 @@ struct ExploreRouteViewModel {
     uint8_t pickupIndex = 0;
     uint8_t pickupItem = 0;
     bool pickupAvailable = false;
-    Prompt prompt = Prompt::NONE;
     const char* toast = nullptr;
 };
 
@@ -201,6 +216,9 @@ struct TeamViewModel {
 struct TeamStatusViewModel {
     const Game::GameState* state = nullptr;
     uint8_t teamSlot = 0;
+    // Optional live object used by the contacts page. When set, the status
+    // renderer uses this object instead of indexing the active team.
+    const Game::MonsterRuntime* monster = nullptr;
     uint8_t page = 0;
     // Horizontal slide offset of the current page in pixels. Non-zero while
     // dragging or snapping; the neighbor page is drawn beside it.
@@ -243,6 +261,17 @@ struct ComputerViewModel {
     float storageScroll = 0.0f;
     uint8_t selectedItem = 0;
     int pressedItem = -1;
+    bool contactActionOpen = false;
+    uint8_t contactActionSlot = 0xFF;
+    uint8_t contactVisitingSlot = 0xFF;
+    int contactActionPressedItem = -1;
+    bool contactInTeam = false;
+    bool contactVisiting = false;
+    bool contactInviteLocked = false;
+    bool contactCanDelete = false;
+    bool contactConfirmOpen = false;
+    bool contactConfirmYes = false;
+    bool contactConfirmDelete = false;
     const char* clawSsid = nullptr;
     const char* clawPassword = nullptr;
     const char* clawIp = nullptr;
@@ -277,13 +306,23 @@ struct ProgressionViewModel {
     const Game::GameState* state = nullptr;
     Mode mode = Mode::LEVEL_UP;
     uint8_t teamSlot = 0;
+    uint8_t oldLevel = 1;
     uint8_t level = 1;
+    uint32_t levelUpElapsedMs = 0;
     uint16_t fromSpeciesId = 0;
     uint16_t toSpeciesId = 0;
+    Game::EvolutionSequence::Phase evolutionPhase =
+        Game::EvolutionSequence::Phase::IDLE;
+    uint32_t evolutionElapsedMs = 0;
+    bool evolutionReady = false;
+    uint8_t evolutionCancelHoldProgress = 0;
     Game::MoveId moveId = 0;
     Game::MoveId oldMove2 = 0;
     Game::MoveId oldMove3 = 0;
     uint8_t pressedItem = 0xFF;
+    uint8_t selectedItem = 0xFF;
+    int16_t scrollOffsetY = 0;
+    float detailProgress = 0.0f;
     const char* toast = nullptr;
 };
 
@@ -321,6 +360,7 @@ struct BattleViewModel {
     bool animationHit = false;
     uint16_t animationDamage = 0;
     uint8_t animationFrame = 0;
+    int16_t playerSwitchOffsetX = 0;
 #if STICKMON_ENABLE_DEBUG_FEATURES
     bool debugDrawBounds = false;
 #endif
@@ -345,14 +385,25 @@ enum class ShowerMode : uint8_t {
     EXIT_CONFIRM,
 };
 
+struct ShowerFoamState {
+    int16_t x = 0;
+    int16_t y = 0;
+    int16_t restX = 0;
+    int8_t restYOffset = 0;
+    uint8_t stage = 0;
+    uint8_t brushProgress = 0;
+    bool active = false;
+};
+
 struct ShowerViewModel {
     const Game::GameState* state = nullptr;
     ShowerMode mode = ShowerMode::MENU;
     uint16_t speciesId = 1;
     uint8_t soapIndex = 0;
-    uint8_t soapProgress = 0;
-    uint8_t brushProgress = 0;
     uint8_t rinseProgress = 0;
+    const ShowerFoamState* foam = nullptr;
+    uint8_t foamCount = 0;
+    uint8_t atmosphereAlpha = 0;
     uint8_t completionHearts = 0;
     int16_t toolX = 48;
     int16_t toolY = 392;
@@ -378,6 +429,7 @@ struct ItemListViewModel {
     uint8_t exploreItemCount = 0;
     uint8_t itemCount = 0;
     bool exploreOnly = false;
+    bool battleMode = false;
     uint32_t coins = 0;
     int pressedItem = -1;
     bool confirmOpen = false;

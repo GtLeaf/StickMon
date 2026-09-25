@@ -34,6 +34,24 @@ cd /Users/gtleaf/project/esp/StickMon
 ./tools/build_amoled_variant.sh v2 lite
 ```
 
+Each successful non-debug V2 build also creates `build-claw/out/` or
+`build-lite/out/` with the five files expected by the web flasher upload
+form: `bootloader.bin`, `partitions.bin`, `boot_app0.bin`, `firmware.bin`,
+and `littlefs.bin`. The `boot_app0.bin` and `littlefs.bin` slot names refer
+to V2's OTA initialization data and SPIFFS resources, respectively.
+Choose all five files from one variant; do not mix Claw and Lite builds.
+The packager checks `flasher_args.json` against the V2 offsets before copying.
+To export an existing build without rebuilding, run:
+
+```sh
+python3 tools/package_amoled_v2_release.py firmware/amoled_1_8_v2/build-lite
+```
+
+Configure the Waveshare V2 device in the web flasher for 16MB ESP32-S3 with
+offsets `0x0`, `0x8000`, `0xf000`, `0x20000`, and `0x620000` in that order.
+After upload, inspect the generated manifest: a server-wide `PARTITIONS_CSV`
+setting can override the device's application and resource offsets.
+
 Flash V2 from its own target directory so the board selection cannot fall
 back to the V1 display and touch drivers:
 
@@ -51,5 +69,24 @@ The Claw and Lite builds resolve dependencies into their own isolated
 `build-claw` and `build-lite` directories, keeping machine-specific
 ESP-Claw paths out of the shared source tree.
 
-This target is compile-ready. Hardware acceptance is still pending because a
-V2 board is not currently available in the lab.
+## Explore performance capture (debug build)
+
+The V2 debug firmware accepts `diag ping` and `diag explore 0` through its
+USB Serial/JTAG port. The latter starts the normal departure and auto-walks
+area 0; it does not bypass encounter rules. The command is absent from
+non-debug builds. Close `idf.py monitor` before running the capture script,
+since only one process can own the serial port at a time:
+
+```sh
+/Users/gtleaf/.espressif/python_env/idf5.5_py3.11_env/bin/python \
+  tools/capture_amoled_v2_explore.py --port /dev/cu.usbmodemXXXX
+```
+
+Run this from the repository root with a living leader on the home screen.
+The script prints its log path under `tools/out/` and exits after the first
+`[EncounterPerf]` line (or a 180-second timeout). Flashing without `--erase`
+preserves NVS, but the expedition itself can update the game save.
+
+The V2 Lite debug build has been flashed and exercised on hardware for an
+automatic exploration and wild encounter. Full hardware acceptance, including
+Claw connectivity, remains pending.

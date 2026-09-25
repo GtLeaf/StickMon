@@ -30,6 +30,39 @@ inline int8_t teamSlotForContact(const Game::GameState& state,
     return -1;
 }
 
+inline const Game::MonsterRuntime* liveMonsterForContact(
+    const Game::GameState& state, uint8_t contactSlot) {
+    if (contactSlot >= state.storageCount ||
+        contactSlot >= Game::STORAGE_CAP) {
+        return nullptr;
+    }
+    int8_t teamSlot = teamSlotForContact(state, contactSlot);
+    return teamSlot >= 0 ? &state.team[teamSlot] : &state.storage[contactSlot];
+}
+
+inline bool canDelete(const Game::GameState& state, uint8_t contactSlot,
+                      bool visiting = false) {
+    if (contactSlot >= state.storageCount ||
+        contactSlot >= Game::STORAGE_CAP) {
+        return false;
+    }
+    return state.storage[contactSlot].origin != Game::Origin::HATCHED &&
+           teamSlotForContact(state, contactSlot) < 0 && !visiting;
+}
+
+inline bool deleteContact(Game::GameState& state, uint8_t contactSlot,
+                          bool visiting = false) {
+    if (!canDelete(state, contactSlot, visiting)) return false;
+    for (uint8_t index = contactSlot;
+         index + 1 < state.storageCount && index + 1 < Game::STORAGE_CAP;
+         ++index) {
+        state.storage[index] = state.storage[index + 1];
+    }
+    --state.storageCount;
+    state.storage[state.storageCount] = Game::MonsterRuntime{};
+    return true;
+}
+
 inline void syncTeamContacts(Game::GameState& state) {
     for (uint8_t contact = 0;
          contact < state.storageCount && contact < Game::STORAGE_CAP;

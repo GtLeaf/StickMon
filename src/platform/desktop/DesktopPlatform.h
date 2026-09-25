@@ -101,6 +101,11 @@ public:
 
     size_t presentCount() const { return presentCount_; }
     size_t audioPlayCount() const { return audioPlayCount_; }
+    void consumeQueuedPcm(uint8_t channel) {
+        if (channel < audioQueueDepth_.size() && audioQueueDepth_[channel] > 0) {
+            --audioQueueDepth_[channel];
+        }
+    }
     const std::vector<uint8_t>& lastAudio() const { return lastAudio_; }
     uint8_t channelVolume(uint8_t channel) const {
         return channel < audioChannelVolume_.size()

@@ -18,15 +18,18 @@
 #include "game/ExploreItemProgression.h"
 #include "game/ExploreAreaCatalog.h"
 #include "game/ExploreEncounters.h"
+#include "game/ExploreEncounterRules.h"
 #include "game/BathService.h"
 #include "game/BattleSystem.h"
 #include "game/BondSystem.h"
 #include "game/ContactRoster.h"
+#include "game/EffortService.h"
 #include "game/ExploreRouteGeometry.h"
 #include "game/ExploreIceSlide.h"
 #include "game/ExploreRunRules.h"
 #include "game/ExperienceService.h"
 #include "game/FriendshipService.h"
+#include "game/FriendshipSystem.h"
 #include "game/GameRandom.h"
 #include "game/HomeCare.h"
 #include "game/HomeHud.h"
@@ -61,12 +64,22 @@ constexpr uint32_t TURN_PAUSE_MS = 160;
 constexpr uint32_t PET_WANDER_RETRY_MIN_MS = 700;
 constexpr uint32_t PET_WANDER_RETRY_MAX_MS = 1400;
 constexpr uint32_t PET_DEBUG_LOG_INTERVAL_MS = 10000;
+constexpr uint32_t PROGRESSION_ANIMATION_FRAME_MS = 50;
+constexpr uint32_t LEVEL_UP_ANIMATION_MS = 800;
+constexpr uint32_t EVOLUTION_CANCEL_HOLD_MS = 600;
+constexpr uint32_t EVOLUTION_TOUCH_GAP_MS = 50;
 constexpr uint32_t COMPANION_NIGHT_FOOD_RETRY_MS = 60000UL;
 constexpr uint16_t HOME_SLEEP_FRAME_MS = 800;
 constexpr uint32_t ATTENTION_INITIAL_MIN_MS = 25000UL;
 constexpr uint32_t ATTENTION_INITIAL_MAX_MS = 45000UL;
 constexpr uint32_t ATTENTION_MIN_MS = 90000UL;
 constexpr uint32_t ATTENTION_MAX_MS = 180000UL;
+
+bool isEvolutionStone(Game::ItemId item) {
+    return item == Game::ItemId::FIRE_STONE ||
+           item == Game::ItemId::WATER_STONE ||
+           item == Game::ItemId::THUNDER_STONE;
+}
 constexpr uint32_t SPECIAL_ACTION_MIN_MS = 20000UL;
 constexpr uint32_t SPECIAL_ACTION_MAX_MS = 40000UL;
 constexpr uint32_t ATTENTION_WAIT_MS = 6000UL;
@@ -87,12 +100,88 @@ constexpr uint16_t PAIR_TALK_END_PAUSE_MS = 240;
 constexpr uint16_t PAIR_TALK_TOTAL_MS =
     PAIR_TALK_HOP_MS * 2 + PAIR_TALK_GAP_MS + PAIR_TALK_END_PAUSE_MS;
 constexpr uint8_t PAIR_CHASE_LEGS = 4;
-constexpr float PAIR_APPROACH_DISTANCE = 30.0f;
+constexpr float PAIR_APPROACH_DISTANCE = 20.0f;
+constexpr int PAIR_TALK_MIN_GAP_PX = 20;
+// The rug is the room's visual stage for conversations. Keep these points
+// explicit so the pair does not drift into furniture or crowd the doorway.
+constexpr float PAIR_TALK_COMPANION_X = 97.0f;
+constexpr float PAIR_TALK_MAIN_X = 149.0f;
+constexpr float PAIR_TALK_STAGE_Y = 118.0f;
+// Actor x/y is rendered as the sprite rectangle's bottom-center anchor.
+// Keep the host close to the doorway while leaving its full footprint inside
+// the room walk polygon.
+constexpr float VISITOR_WELCOME_OFFSET_X = 10.0f;
+constexpr float VISITOR_WELCOME_OFFSET_Y = -5.0f;
 constexpr float PAIR_APPROACH_SPEED = 12.5f;
+constexpr float PAIR_APPROACH_GOAL_TOLERANCE = 1.0f;
 constexpr float PAIR_CHASE_LEADER_SPEED = 18.0f;
 constexpr float PAIR_CHASE_FOLLOWER_SPEED = 17.0f;
 constexpr float VISITOR_DOOR_SPEED = 18.0f;
 constexpr uint32_t VISITOR_MOTION_TIMEOUT_MS = 8000UL;
+constexpr uint32_t VISITOR_DOOR_OPEN_PAUSE_MS = 420UL;
+constexpr float VISITOR_DOOR_CLEAR_DISTANCE = 28.0f;
+
+bool exploreRouteMonsterHealthy(const Game::MonsterRuntime& monster) {
+    return !monster.fainted && monster.hpCur > 0;
+}
+
+uint8_t exploreRouteLeaderSlot(const Game::GameState& state) {
+    const bool firstHealthy = state.teamCount > 0 &&
+        exploreRouteMonsterHealthy(state.team[0]);
+    const bool secondHealthy = state.teamCount > 1 &&
+        exploreRouteMonsterHealthy(state.team[1]);
+    return ExploreRunRules::leaderSlotForHealth(firstHealthy, secondHealthy);
+}
+
+bool exploreRouteHasCompanion(const Game::GameState& state) {
+    return exploreRouteLeaderSlot(state) == 0 && state.teamCount > 1 &&
+           state.team[1].speciesId != 0 &&
+           exploreRouteMonsterHealthy(state.team[1]);
+}
+
+int pairIdleWidthPx(uint16_t speciesId) {
+    PokemonSprites::PetAnimationProfile profile{};
+    if (!PokemonSprites::petAnimationProfile(speciesId, profile)) return 80;
+    int widest = 0;
+    for (uint16_t direction = 0; direction < 4; ++direction) {
+        for (uint8_t index = 0; index < profile.idleFrames; ++index) {
+            const auto kind = static_cast<PokemonSprites::SpriteKind>(
+                static_cast<uint16_t>(profile.idleBase) +
+                direction * profile.idleFrames + index);
+            const auto* frame = PokemonSprites::findSpeciesSprite(speciesId, kind);
+            if (frame) widest = std::max<int>(
+                widest, PokemonSprites::frameVisibleWidth(frame) *
+                            AmoledUi::RESOURCE_SCALE);
+        }
+    }
+    return widest > 0 ? widest : 80;
+}
+
+float pairRouteDistance(const Home::Actor& actor) {
+    float routeDistance = 0.0f;
+    float fromX = actor.x;
+    float fromY = actor.y;
+    for (uint8_t index = actor.route.index;
+         index < actor.route.count; ++index) {
+        const float toX = actor.route.x[index];
+        const float toY = actor.route.y[index];
+        routeDistance += std::hypot(toX - fromX, toY - fromY);
+        fromX = toX;
+        fromY = toY;
+    }
+    if (actor.route.index >= actor.route.count) {
+        routeDistance = std::hypot(
+            actor.targetX - actor.x, actor.targetY - actor.y);
+    }
+    return routeDistance;
+}
+
+uint32_t pairApproachBudgetMs(const Home::Actor& actor) {
+    const float routeDistance = pairRouteDistance(actor);
+    return static_cast<uint32_t>(std::clamp(
+        routeDistance / PAIR_APPROACH_SPEED * 1000.0f + 1800.0f,
+        4000.0f, 20000.0f));
+}
 constexpr uint32_t CARE_TICK_MS = 60000;
 constexpr uint32_t PERIODIC_SAVE_MS = 5UL * 60UL * 1000UL;
 constexpr uint16_t EXPLORE_ROUTE_STEP_MS = 360;
@@ -144,11 +233,16 @@ constexpr uint32_t EXPLORE_PREVIEW_BACKGROUND_LOAD_MS = 80;
 constexpr uint16_t EXPLORE_PREVIEW_RENDER_TOP = EXPLORE_PREVIEW_TOP;
 constexpr uint16_t EXPLORE_PREVIEW_RENDER_BOTTOM = EXPLORE_PREVIEW_BOTTOM;
 constexpr uint16_t BATTLE_ANIMATION_RENDER_END = 384;
-constexpr uint32_t BATTLE_LOG_LINE_MS = 1000;
+constexpr uint16_t BATTLE_LOG_DEFAULT_MS = 700;
+constexpr uint16_t BATTLE_ATTACK_LOG_MS = 700;
+constexpr uint16_t BATTLE_RESULT_LOG_MS = 650;
 constexpr uint32_t BATTLE_HP_ANIMATION_MS = 420;
 constexpr uint32_t BATTLE_HP_DAMAGE_DELAY_MS = 280;
 constexpr uint32_t BATTLE_EXP_ANIMATION_MS = 900;
 constexpr uint32_t BATTLE_GAUGE_FRAME_MS = 40;
+constexpr uint32_t BATTLE_SWITCH_PHASE_MS = 360;
+constexpr uint32_t BATTLE_SWITCH_FRAME_MS = 40;
+constexpr int BATTLE_SWITCH_TRAVEL_X = 180;
 constexpr float FALLBACK_ROOM_MIN_X = 56.0f;
 constexpr float FALLBACK_ROOM_MAX_X = 122.0f;
 constexpr float FALLBACK_ROOM_MIN_Y = 126.0f;
@@ -175,6 +269,7 @@ Stickmon::ClawStatusLog::Entry s_clawLogEntries[Stickmon::ClawStatusLog::CAPACIT
 constexpr uint8_t BATTLE_LOG_QUEUE_CAP = 24;
 constexpr uint8_t BATTLE_LOG_LEN = 64;
 char s_battleLogQueue[BATTLE_LOG_QUEUE_CAP][BATTLE_LOG_LEN] = {};
+uint16_t s_battleLogDurations[BATTLE_LOG_QUEUE_CAP] = {};
 
 uint8_t moodHeartCountFor(uint8_t mood) {
     return std::min<uint8_t>(5, static_cast<uint8_t>(mood / 20));
@@ -190,12 +285,16 @@ constexpr int SHOWER_BODY_LEFT = 84;
 constexpr int SHOWER_BODY_RIGHT = 284;
 constexpr int SHOWER_BODY_TOP = 96;
 constexpr int SHOWER_BODY_BOTTOM = 316;
+constexpr int SHOWER_PET_X = 184;
+constexpr int SHOWER_PET_Y = 212;
 constexpr int SHOWER_TOOL_MIN_X = 24;
 constexpr int SHOWER_TOOL_MAX_X = 344;
 constexpr int SHOWER_TOOL_MIN_Y = 72;
 constexpr int SHOWER_TOOL_MAX_Y = 420;
-constexpr float SHOWER_PROGRESS_DISTANCE = 40.0f;
-constexpr uint8_t SHOWER_PROGRESS_MAX = 8;
+constexpr float SHOWER_FOAM_DISTANCE = 24.0f;
+constexpr float SHOWER_BRUSH_DISTANCE = 8.0f;
+constexpr uint32_t SHOWER_BRUSH_INTERVAL_MS = 110;
+constexpr uint8_t SHOWER_FOAM_CAP = 8;
 
 constexpr uint8_t exploreMapCountForRoll(uint8_t area, uint8_t roll) {
     uint8_t minCount = EXPLORE_MAP_MIN_COUNT[area];
@@ -514,52 +613,16 @@ PokemonSprites::WalkDirection rotatePetDirection(
     return static_cast<PokemonSprites::WalkDirection>(value);
 }
 
-struct AmoledEncounterTable {
-    const ExploreEncounters::Entry* entries = nullptr;
-    uint8_t count = 0;
-};
-
-template <size_t N>
-AmoledEncounterTable encounterTable(const ExploreEncounters::Entry (&entries)[N]) {
-    return {entries, static_cast<uint8_t>(N)};
-}
-
-AmoledEncounterTable encounterTableForArea(uint8_t area) {
-    switch (area) {
-    case 0: return encounterTable(ExploreEncounters::GRASS_PATH);
-    case 1: return encounterTable(ExploreEncounters::CREEK_SLOPE);
-    case 2: return encounterTable(ExploreEncounters::TALL_GRASS_PARK);
-    case 3: return encounterTable(ExploreEncounters::FROST_CRYSTAL_CAVE);
-    case 4: return encounterTable(ExploreEncounters::MIST_FOREST_PATH);
-    case 5: return encounterTable(ExploreEncounters::ANCIENT_WATERFALL_VALLEY);
-    default: return {};
-    }
-}
-
 GameAssets::Kind battleBackgroundForArea(uint8_t area) {
     return ExploreAreaCatalog::battleBackground(area);
 }
 
 ExplorePool::Pool buildExplorePreviewPool(const Game::GameState& state,
                                           uint8_t area) {
-    ExplorePool::Pool pool{};
-    AmoledEncounterTable table = encounterTableForArea(area);
-    if (!table.entries || table.count == 0) return pool;
-
-    ExplorePool::SourceEntry source[ExplorePool::MAX_SOURCE_ENTRIES] = {};
-    uint8_t sourceCount = std::min<uint8_t>(
-        table.count, ExplorePool::MAX_SOURCE_ENTRIES);
-    for (uint8_t index = 0; index < sourceCount; ++index) {
-        const ExploreEncounters::Entry& entry = table.entries[index];
-        source[index] = ExplorePool::SourceEntry{
-            entry.speciesId, entry.weight, entry.rarity};
-    }
-    return ExplorePool::buildPool(
-        source, sourceCount,
-        ExplorePool::mixSeed(
-            ExplorePool::slotIndexFor(state.gameMinutesTotal), area,
-            area < Game::EXPLORE_AREA_COUNT
-                ? state.explorePoolRerollCounts[area] : 0));
+    return ExploreEncounters::poolForArea(
+        area, state.gameMinutesTotal,
+        area < Game::EXPLORE_AREA_COUNT
+            ? state.explorePoolRerollCounts[area] : 0);
 }
 
 uint8_t collectExplorePreviewSpecies(const Game::GameState& state,
@@ -716,6 +779,15 @@ void AmoledApp::begin(uint32_t nowMs) {
     if (!loadedEncounterHistory) encounterHistory.clear();
     encounterHistoryDirty = normalizedEncounterHistory ||
                             syncOwnedSpeciesToEncounterHistory();
+
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    debugTiltControl =
+        (gameState.debugMotionFlags & Game::DEBUG_MOTION_TILT) != 0;
+    debugWalkBoundaryVisible =
+        (gameState.debugMotionFlags & Game::DEBUG_MOTION_WALK_BOUNDARY) != 0;
+    debugTalkPointsVisible =
+        (gameState.debugMotionFlags & Game::DEBUG_MOTION_TALK_POINTS) != 0;
+#endif
 
     if (storageReady && (!loaded || normalized || encounterHistoryDirty)) {
         saveState();
@@ -947,13 +1019,29 @@ bool AmoledApp::queueExploreDeparture(uint8_t area, bool autoWalk) {
     pendingExpeditionArea = area;
     pendingExpeditionAutoWalk = autoWalk;
     pendingExpedition = true;
+    exploreSessionActive = true;
     expeditionMainHidden = false;
     expeditionCompanionDeparting = false;
     expeditionCompanionHidden = false;
     expeditionDeparturePhase = ExpeditionDeparturePhase::NONE;
     const uint32_t nowMs = Platform::clock().millis();
+    lockRequested = false;
     cancelRoomAction(nowMs);
     cancelPairInteraction(nowMs);
+    // Attach/initialize the companion actor now. The departure phase machine
+    // short-circuits updatePet (and therefore syncHomeActors), so without
+    // this a freshly joined visitor is never active when the departure
+    // evaluates expeditionCompanionDeparting and never walks to the door.
+    syncHomeActors(nowMs);
+    if (visitorMotion == VisitorMotion::HOST_APPROACH ||
+        visitorMotion == VisitorMotion::ENTERING) {
+        // A mid-entry visitor joins the departure from wherever they are.
+        visitorMotion = VisitorMotion::NONE;
+        visitorCrossingDoor = false;
+        visitorMotionUntilMs = 0;
+        homeRuntime.release(Home::Resource::DOOR, 0);
+        homeRuntime.release(Home::Resource::DOOR, 1);
+    }
     lastInteractionMs = nowMs;
     // The departure animation always starts from the room, regardless of the
     // page that was visible when the request arrived.
@@ -961,6 +1049,60 @@ bool AmoledApp::queueExploreDeparture(uint8_t area, bool autoWalk) {
     requestFullRender();
     return true;
 }
+
+#if STICKMON_ENABLE_DEBUG_FEATURES
+bool AmoledApp::debugStartExplore(uint8_t area) {
+    if (sceneFlow.current() != AppSceneFlow::Scene::HOME ||
+        pendingExpedition || expeditionDeparturePhase != ExpeditionDeparturePhase::NONE ||
+        gameState.teamCount == 0 || gameState.team[0].fainted ||
+        gameState.team[0].hpCur == 0) return false;
+    return queueExploreDeparture(area, true);
+}
+
+bool AmoledApp::debugTriggerContact(uint8_t kind) {
+    if (kind < 1 || kind > 3 ||
+        sceneFlow.current() != AppSceneFlow::Scene::HOME) return false;
+    const uint32_t nowMs = Platform::clock().millis();
+    if (!beginDebugContactEvent(kind, nowMs)) return false;
+    onWake(nowMs);
+    acceptDebugContact(nowMs, true);
+    return debugContactActive;
+}
+
+bool AmoledApp::debugPromptContact(uint8_t kind) {
+    if (kind < 1 || kind > 3 ||
+        sceneFlow.current() != AppSceneFlow::Scene::HOME) return false;
+    const uint32_t nowMs = Platform::clock().millis();
+    if (!beginDebugContactEvent(kind, nowMs)) return false;
+    onWake(nowMs);
+    return true;
+}
+
+bool AmoledApp::debugAcceptContact() {
+    if (!debugContactPending ||
+        sceneFlow.current() != AppSceneFlow::Scene::HOME) return false;
+    acceptDebugContact(Platform::clock().millis(), true);
+    return debugContactActive;
+}
+
+bool AmoledApp::debugStartPairTalk() {
+    if (!debugContactActive ||
+        sceneFlow.current() != AppSceneFlow::Scene::HOME ||
+        visitorMotion != VisitorMotion::ACTIVE) return false;
+    const uint32_t nowMs = Platform::clock().millis();
+    return startPairInteraction(nowMs, false, true);
+}
+
+bool AmoledApp::debugReturnContactExplore() {
+    if (!debugContactActive || debugContactKind != 3 ||
+        sceneFlow.current() != AppSceneFlow::Scene::EXPLORE_ROUTE ||
+        expeditionDeparturePhase != ExpeditionDeparturePhase::NONE) return false;
+    Platform::logf("[FriendDiag] return requested kind=3 team=%u\n",
+                   static_cast<unsigned>(gameState.teamCount));
+    leaveExploreRoute();
+    return expeditionDeparturePhase == ExpeditionDeparturePhase::RETURN_FADE_OUT;
+}
+#endif
 
 void AmoledApp::cancelExploreDeparture() {
     expeditionFade.reset();
@@ -977,6 +1119,7 @@ void AmoledApp::cancelExploreDeparture() {
     }
     expeditionCompanionDeparting = false;
     pendingExpedition = false;
+    exploreSessionActive = false;
     expeditionDeparturePhase = ExpeditionDeparturePhase::NONE;
     petMotion = PetMotion::IDLE;
     petTargetX = petX;
@@ -1060,19 +1203,25 @@ bool AmoledApp::updateExploreDeparture(uint32_t nowMs) {
         chooseInsidePose(homeMainActor,
                          expeditionDoorInsideX,
                          expeditionDoorInsideY);
-        petX = outsideX;
-        petY = outsideY;
-        petTargetX = expeditionDoorInsideX;
-        petTargetY = expeditionDoorInsideY;
-        petDirection = petDirectionForDelta(petTargetX - petX, petTargetY - petY);
-        homeMainActor.x = petX;
-        homeMainActor.y = petY;
-        homeMainActor.targetX = petTargetX;
-        homeMainActor.targetY = petTargetY;
-        homeMainActor.route.clear();
-        homeMainActor.velocityX = 0.0f;
-        homeMainActor.velocityY = 0.0f;
-        homeRuntime.transition(0, Home::Task::DOOR_ACTION, nowMs, 0, true);
+        const bool mainFainted = gameState.team[0].fainted ||
+                                 gameState.team[0].hpCur == 0;
+        if (!mainFainted) {
+            petResting = false;
+            petX = outsideX;
+            petY = outsideY;
+            petTargetX = expeditionDoorInsideX;
+            petTargetY = expeditionDoorInsideY;
+            petDirection = petDirectionForDelta(
+                petTargetX - petX, petTargetY - petY);
+            homeMainActor.x = petX;
+            homeMainActor.y = petY;
+            homeMainActor.targetX = petTargetX;
+            homeMainActor.targetY = petTargetY;
+            homeMainActor.route.clear();
+            homeMainActor.velocityX = 0.0f;
+            homeMainActor.velocityY = 0.0f;
+            homeRuntime.transition(0, Home::Task::DOOR_ACTION, nowMs, 0, true);
+        }
         const bool hasCompanion = gameState.teamCount > 1 &&
             homeCompanionActor.active && gameState.team[1].speciesId != 0 &&
             !gameState.team[1].fainted && gameState.team[1].hpCur > 0;
@@ -1101,11 +1250,14 @@ bool AmoledApp::updateExploreDeparture(uint32_t nowMs) {
             nextCompanionFrameMs = nowMs;
         }
         expeditionCompanionDeparting = hasCompanion;
+        placeFaintedHomeActors(nowMs);
         // Stick serializes the doorway: keep the companion hidden outside
         // until the leader has entered and cleared the door.
         expeditionCompanionHidden = hasCompanion;
-        petMotion = PetMotion::WANDERING;
-        petFrame = 0;
+        if (!mainFainted) {
+            petMotion = PetMotion::WANDERING;
+            petFrame = 0;
+        }
         expeditionDeparturePhase = ExpeditionDeparturePhase::RETURN_FADE_IN;
         expeditionDoorPhaseStartedMs = nowMs;
         expeditionFade.beginIn();
@@ -1159,6 +1311,8 @@ bool AmoledApp::updateExploreDeparture(uint32_t nowMs) {
             petMotion = PetMotion::IDLE;
             homeRuntime.stop(0, nowMs, 700);
             expeditionDeparturePhase = ExpeditionDeparturePhase::NONE;
+            exploreSessionActive = false;
+            lastInteractionMs = nowMs;
             monsterMind.onActivity(nowMs);
             schedulePetDecision(nowMs);
             Platform::logf(
@@ -1332,6 +1486,8 @@ bool AmoledApp::updateExploreDeparture(uint32_t nowMs) {
             stopCompanion(nowMs, 700);
             expeditionCompanionDeparting = false;
             expeditionDeparturePhase = ExpeditionDeparturePhase::NONE;
+            exploreSessionActive = false;
+            lastInteractionMs = nowMs;
             monsterMind.onActivity(nowMs);
             schedulePetDecision(nowMs);
             schedulePairInteraction(nowMs, true);
@@ -1347,7 +1503,20 @@ bool AmoledApp::updateExploreDeparture(uint32_t nowMs) {
     if (expeditionDeparturePhase == ExpeditionDeparturePhase::RETURN_FADE_IN) {
         if (expeditionFade.complete()) {
             expeditionFade.reset();
-            expeditionDeparturePhase = ExpeditionDeparturePhase::RETURN_WALK_IN;
+            const bool mainFainted = gameState.team[0].fainted ||
+                                     gameState.team[0].hpCur == 0;
+            if (mainFainted) {
+                expeditionCompanionHidden = false;
+                expeditionDeparturePhase = expeditionCompanionDeparting
+                    ? ExpeditionDeparturePhase::RETURN_COMPANION_WALK_IN
+                    : ExpeditionDeparturePhase::NONE;
+                if (!expeditionCompanionDeparting) {
+                    exploreSessionActive = false;
+                    lastInteractionMs = nowMs;
+                }
+            } else {
+                expeditionDeparturePhase = ExpeditionDeparturePhase::RETURN_WALK_IN;
+            }
             lastPetUpdateMs = nowMs;
             nextPetFrameMs = nowMs;
             expeditionDoorPhaseStartedMs = nowMs;
@@ -1372,6 +1541,14 @@ bool AmoledApp::updateExploreDeparture(uint32_t nowMs) {
         pendingExpedition = false;
         exploreRouteAutoWalk = started && autoWalk;
         autonomousExpedition = started && autoWalk;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        if (debugContactActive && debugContactKind == 3) {
+            Platform::logf("[FriendDiag] route kind=3 started=%u team=%u auto=%u\n",
+                           started ? 1U : 0U,
+                           static_cast<unsigned>(gameState.teamCount),
+                           autoWalk ? 1U : 0U);
+        }
+#endif
         // Start at black after loading, including the failure path back to home.
         expeditionDeparturePhase = ExpeditionDeparturePhase::FADE_IN;
         expeditionFade.beginIn();
@@ -1394,6 +1571,10 @@ bool AmoledApp::updateExploreDeparture(uint32_t nowMs) {
         if (expeditionFade.complete()) {
             expeditionFade.reset();
             expeditionDeparturePhase = ExpeditionDeparturePhase::NONE;
+            lastInteractionMs = nowMs;
+            if (sceneFlow.current() == AppSceneFlow::Scene::HOME) {
+                exploreSessionActive = false;
+            }
         }
         requestFullRender();
         return true;
@@ -1416,6 +1597,20 @@ bool AmoledApp::updateExploreDeparture(uint32_t nowMs) {
         expeditionCompanionDeparting = gameState.teamCount > 1 &&
             homeCompanionActor.active && gameState.team[1].speciesId != 0 &&
             !gameState.team[1].fainted && gameState.team[1].hpCur > 0;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        Platform::logf(
+            "[HomeDiag] departure companion departing=%d team=%u active=%d "
+            "species=%u fainted=%d hp=%u visitorMotion=%d\n",
+            expeditionCompanionDeparting ? 1 : 0,
+            static_cast<unsigned>(gameState.teamCount),
+            homeCompanionActor.active ? 1 : 0,
+            gameState.teamCount > 1
+                ? static_cast<unsigned>(gameState.team[1].speciesId) : 0U,
+            gameState.teamCount > 1 && gameState.team[1].fainted ? 1 : 0,
+            gameState.teamCount > 1
+                ? static_cast<unsigned>(gameState.team[1].hpCur) : 0U,
+            static_cast<int>(visitorMotion));
+#endif
         if (expeditionCompanionDeparting) {
             expeditionCompanionDoorInsideX = expeditionDoorInsideX;
             expeditionCompanionDoorInsideY = expeditionDoorInsideY;
@@ -1544,6 +1739,12 @@ bool AmoledApp::updateExploreDeparture(uint32_t nowMs) {
             companionFrame = 0;
             nextCompanionFrameMs = nowMs;
             expeditionDeparturePhase = ExpeditionDeparturePhase::WALK_COMPANION_TO_DOOR;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+            Platform::logf("[HomeDiag] companion walk-to-door from=%.1f,%.1f to=%.1f,%.1f\n",
+                           homeCompanionActor.x, homeCompanionActor.y,
+                           homeCompanionActor.targetX,
+                           homeCompanionActor.targetY);
+#endif
             requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
         } else {
             expeditionDeparturePhase = ExpeditionDeparturePhase::FADE_OUT;
@@ -1577,6 +1778,7 @@ bool AmoledApp::updateExploreDeparture(uint32_t nowMs) {
 
 void AmoledApp::beginExploreReturn(uint32_t nowMs) {
     if (expeditionDeparturePhase != ExpeditionDeparturePhase::NONE) return;
+    lockRequested = false;
     lastInteractionMs = nowMs;
     // Close route menus before fading; never expose the area selector on return.
     sceneFlow.enterExploreRoute();
@@ -1585,7 +1787,6 @@ void AmoledApp::beginExploreReturn(uint32_t nowMs) {
     autonomousExpedition = false;
     exploreRouteMoving = false;
     exploreRouteExitConfirm = false;
-    exploreRoutePrompt = ExploreRouteViewModel::Prompt::NONE;
     toast = nullptr;
     exploreRouteAutoWalk = false;
     exploreRoutePlayerWalkActive = false;
@@ -1728,6 +1929,12 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
     // hardware boundary. The application consumes one stable page-space
     // event and performs no second coordinate conversion.
     const TouchEvent& event = physicalEvent;
+    if (event.type == TouchEventType::DOWN) {
+        // A real interaction supersedes an idle request that the display task
+        // has not consumed yet. Explicit lock taps set a fresh request on UP.
+        lockRequested = false;
+        lastInteractionMs = event.timestampMs;
+    }
 #if STICKMON_ENABLE_DEBUG_FEATURES
     if (sceneFlow.current() == AppSceneFlow::Scene::DEBUG &&
         debugCategory == DebugViewModel::Category::TOUCH_TEST) {
@@ -1838,10 +2045,10 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
                 event.x, event.y,
                 Game::TeamRoster::memberCount(gameState));
             requestRenderRows(MENU_HEADER_HEIGHT, 448);
-        } else if (sceneFlow.current() == AppSceneFlow::Scene::ROOM &&
-                   event.y >= MENU_HEADER_HEIGHT) {
-            pressedRoomItem = roomMenuItemAt(event.x, event.y);
-            requestRenderRows(MENU_HEADER_HEIGHT, 448);
+        } else if (sceneFlow.current() == AppSceneFlow::Scene::ROOM) {
+            pressedRoomItem = event.y >= MENU_HEADER_HEIGHT
+                ? roomMenuItemAt(event.x, event.y) : -1;
+            requestRenderRows(0, 448);
         } else if (sceneFlow.current() == AppSceneFlow::Scene::ROOM_FOOD &&
                    event.y >= MENU_HEADER_HEIGHT) {
             pressedRoomItem = roomFoodItemAt(event.x, event.y);
@@ -1861,6 +2068,22 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
             requestRenderRows(352, 448);
         } else if (sceneFlow.current() == AppSceneFlow::Scene::COMPUTER &&
                    event.y >= MENU_HEADER_HEIGHT) {
+            if (computerPage == ComputerViewModel::Page::STORAGE &&
+                (contactActionOpen || contactConfirmOpen)) {
+                computerPressedItem = 0xFF;
+                contactActionPressedItem = contactActionOpen
+                    ? computerContactActionItemAt(
+                          event.x, event.y, contactActionCount(contactActionSlot),
+                          contactActionSlot, computerScroll)
+                    : -1;
+                requestRenderRows(MENU_HEADER_HEIGHT, AmoledUi::HEIGHT);
+                break;
+            }
+            if (computerPage == ComputerViewModel::Page::STATUS) {
+                teamStatusDragging = false;
+                requestRenderRows(0, 448);
+                break;
+            }
             if (computerPage == ComputerViewModel::Page::STORAGE) {
                 computerVelocity = 0.0f;
             }
@@ -1894,9 +2117,43 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
             }
             requestRenderRows(MENU_HEADER_HEIGHT, 448);
         } else if (sceneFlow.current() == AppSceneFlow::Scene::PROGRESSION) {
-            progressionPressedItem = static_cast<uint8_t>(std::max(
-                -1, progressionItemAt(event.x, event.y, progressionMode)));
-            requestRenderRows(MENU_HEADER_HEIGHT, 448);
+            if (progressionMode == ProgressionViewModel::Mode::EVOLUTION) {
+                const bool cancellable = progressionEvolution.initialized() &&
+                    !progressionEvolution.cancelling() &&
+                    !progressionEvolution.animationComplete(event.timestampMs);
+                const bool cancellationAnimating =
+                    progressionEvolution.cancelling() &&
+                    !progressionEvolution.cancellationComplete(
+                        event.timestampMs);
+                const bool resumeGesture =
+                    progressionEvolutionTouchStartedMs != 0 &&
+                    progressionEvolutionTouchResumeUntilMs != 0 &&
+                    static_cast<int32_t>(event.timestampMs -
+                                         progressionEvolutionTouchResumeUntilMs) <= 0;
+                progressionEvolutionTouchHeld = cancellable;
+                progressionEvolutionTouchConsumed =
+                    resumeGesture || cancellable || cancellationAnimating;
+                progressionEvolutionTouchStartedMs = cancellable
+                    ? (resumeGesture ? progressionEvolutionTouchStartedMs
+                                     : event.timestampMs)
+                    : 0;
+                progressionEvolutionTouchResumeUntilMs = 0;
+                if (cancellable) requestRenderRows(330, 348);
+            } else {
+                if (progressionMode == ProgressionViewModel::Mode::LEVEL_UP) {
+                    progressionLevelUpTouchAllowed =
+                        event.timestampMs - progressionLevelUpStartedMs >=
+                            LEVEL_UP_ANIMATION_MS;
+                }
+                const int hit = progressionMode == ProgressionViewModel::Mode::MOVE_REPLACE
+                    ? progressionReplaceItemAt(event.x, event.y,
+                          progressionScroll, progressionSelectedItem,
+                          progressionDetailProgress)
+                    : progressionItemAt(event.x, event.y, progressionMode);
+                progressionPressedItem = hit < 0 ? 0xFF
+                                                 : static_cast<uint8_t>(hit);
+                requestRenderRows(MENU_HEADER_HEIGHT, 448);
+            }
         } else if (sceneFlow.current() == AppSceneFlow::Scene::SHOWER) {
             if ((showerMode == ShowerMode::SOAPING ||
                  showerMode == ShowerMode::BRUSHING) &&
@@ -1911,7 +2168,9 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
                     ? showerSoapItemAt(event.x, event.y)
                     : showerMode == ShowerMode::EXIT_CONFIRM
                         ? showerExitChoiceAt(event.x, event.y)
-                        : showerMode == ShowerMode::MENU
+                        : (showerMode == ShowerMode::MENU ||
+                           showerMode == ShowerMode::SOAPING ||
+                           showerMode == ShowerMode::BRUSHING)
                             ? showerMenuItemAt(event.x, event.y) : -1;
                 requestRenderRows(MENU_HEADER_HEIGHT, 448);
             }
@@ -1936,13 +2195,13 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
         } else if (sceneFlow.current() == AppSceneFlow::Scene::BAG &&
                    !itemConfirmOpen && event.y >= MENU_HEADER_HEIGHT) {
             itemVelocity = 0.0f;
-            const uint8_t dailyCount = battleBagMode
-                ? 0 : Game::ItemInventory::homeBagDailyItemCount(gameState);
+            const uint8_t dailyCount =
+                Game::ItemInventory::homeBagDailyItemCount(gameState);
             pressedItemRow = itemListItemAt(
                 event.x, event.y, itemScroll,
                 dailyCount,
                 Game::ItemInventory::homeBagExploreItemCount(gameState),
-                currentItemCount(), battleBagMode);
+                currentItemCount(), false);
             requestRenderRows(MENU_HEADER_HEIGHT, 448);
         }
         break;
@@ -2034,6 +2293,23 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
                 clampTeamMovesScroll();
                 requestRenderRows(MENU_HEADER_HEIGHT, 448);
             }
+        } else if (sceneFlow.current() == AppSceneFlow::Scene::PROGRESSION &&
+                   progressionMode == ProgressionViewModel::Mode::MOVE_REPLACE &&
+                   touchStartY >= TEAM_MOVES_HEADER_HEIGHT) {
+            if (std::abs(event.y - touchStartY) > DRAG_START_SLOP) {
+                dragging = true;
+                progressionPressedItem = 0xFF;
+            }
+            if (dragging) {
+                progressionScroll -= static_cast<int16_t>(event.y - touchLastY);
+                const int maxScroll = progressionSelectedItem < 3
+                    ? std::max(0, static_cast<int>(std::lround(
+                          (AmoledUi::HEIGHT / 2) * progressionDetailProgress)) - 174)
+                    : 0;
+                progressionScroll = std::clamp<int16_t>(progressionScroll, 0,
+                    static_cast<int16_t>(maxScroll));
+                requestRenderRows(TEAM_MOVES_HEADER_HEIGHT, 448);
+            }
         } else if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_MENU &&
                    std::max(std::abs(event.x - touchStartX),
                             std::abs(event.y - touchStartY)) > TAP_SLOP &&
@@ -2072,8 +2348,32 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
             pressedTeamSlot = -1;
             requestRenderRows(MENU_HEADER_HEIGHT, 448);
         } else if (sceneFlow.current() == AppSceneFlow::Scene::COMPUTER &&
+                   computerPage == ComputerViewModel::Page::STATUS) {
+            const int deltaX = event.x - touchStartX;
+            const int deltaY = event.y - touchStartY;
+            if (!teamStatusDragging &&
+                std::abs(deltaX) > DRAG_START_SLOP &&
+                std::abs(deltaX) > std::abs(deltaY)) {
+                teamStatusDragging = true;
+                dragging = true;
+            }
+            if (teamStatusDragging) {
+                int slide = deltaX;
+                if ((teamStatusPage == 0 && slide > 0) ||
+                    (teamStatusPage + 1 >= TEAM_STATUS_PAGE_COUNT && slide < 0)) {
+                    slide /= 3;
+                }
+                teamStatusSlideX = static_cast<int16_t>(std::clamp(
+                    slide, -AmoledUi::WIDTH, AmoledUi::WIDTH));
+                requestRenderRows(MENU_HEADER_HEIGHT, 448);
+            }
+        } else if (sceneFlow.current() == AppSceneFlow::Scene::COMPUTER &&
                    computerPage == ComputerViewModel::Page::STORAGE &&
                    touchStartY >= MENU_HEADER_HEIGHT) {
+            if (contactActionOpen || contactConfirmOpen) {
+                computerPressedItem = 0xFF;
+                break;
+            }
             if (std::abs(event.y - touchStartY) > DRAG_START_SLOP) {
                 dragging = true;
                 computerPressedItem = 0xFF;
@@ -2156,6 +2456,30 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
         }
         int distance = std::max(std::abs(event.x - touchStartX),
                                 std::abs(event.y - touchStartY));
+        const bool evolutionTouchWasConsumed =
+            sceneFlow.current() == AppSceneFlow::Scene::PROGRESSION &&
+            progressionMode == ProgressionViewModel::Mode::EVOLUTION &&
+            progressionEvolutionTouchConsumed;
+        const bool evolutionCompletedAtRelease =
+            evolutionTouchWasConsumed &&
+            progressionEvolution.animationComplete(event.timestampMs);
+        const bool evolutionHoldReached =
+            evolutionTouchWasConsumed && progressionEvolutionTouchHeld &&
+            !evolutionCompletedAtRelease &&
+            !progressionEvolution.cancelling() &&
+            event.timestampMs - progressionEvolutionTouchStartedMs >=
+                EVOLUTION_CANCEL_HOLD_MS;
+        if (evolutionHoldReached &&
+            progressionEvolution.beginCancellation(event.timestampMs)) {
+            CryPlayer::ins().stop();
+            nextProgressionAnimationFrameMs = event.timestampMs;
+            requestFullRender();
+        }
+        const bool evolutionTouchCanResume =
+            evolutionTouchWasConsumed && progressionEvolutionTouchHeld &&
+            !evolutionCompletedAtRelease && !evolutionHoldReached &&
+            !progressionEvolution.cancelling();
+        progressionEvolutionTouchHeld = false;
         bool settingsSliderWasDragging = settingsSliderDragging;
         if (settingsSliderWasDragging) {
             if (shopTouch) {
@@ -2173,7 +2497,15 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
                              event.timestampMs);
                 }
             }
+        } else if (evolutionTouchWasConsumed) {
+            // A touch that began while evolution was running cannot cross the
+            // completion boundary and acknowledge the completed evolution.
+        } else if (sceneFlow.current() == AppSceneFlow::Scene::PROGRESSION &&
+                   progressionMode == ProgressionViewModel::Mode::LEVEL_UP &&
+                   !progressionLevelUpTouchAllowed) {
+            // A gesture begun during the entrance animation stays consumed.
         } else if (sceneFlow.current() == AppSceneFlow::Scene::TEAM &&
+                   !selectingItemTarget &&
                    pressedTeamSlot >= 0 && !dragging && distance <= TAP_SLOP) {
             teamActionPopupOpen = true;
             teamActionPopupSlot = static_cast<uint8_t>(pressedTeamSlot);
@@ -2199,6 +2531,20 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
                 handleTap(event.x, event.y, event.timestampMs);
             }
         } else if (sceneFlow.current() == AppSceneFlow::Scene::TEAM &&
+                   teamStatusDragging) {
+            teamStatusDragging = false;
+            int target = teamStatusPage;
+            if (teamStatusSlideX <= -TEAM_STATUS_SNAP_THRESHOLD &&
+                teamStatusPage + 1 < TEAM_STATUS_PAGE_COUNT) {
+                target = teamStatusPage + 1;
+            } else if (teamStatusSlideX >= TEAM_STATUS_SNAP_THRESHOLD &&
+                       teamStatusPage > 0) {
+                target = teamStatusPage - 1;
+            }
+            beginTeamStatusSlide(static_cast<uint8_t>(target),
+                                 event.timestampMs);
+        } else if (sceneFlow.current() == AppSceneFlow::Scene::COMPUTER &&
+                   computerPage == ComputerViewModel::Page::STATUS &&
                    teamStatusDragging) {
             teamStatusDragging = false;
             int target = teamStatusPage;
@@ -2238,10 +2584,20 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
         pressedCommunicationItem = -1;
         pressedShowerItem = -1;
         computerPressedItem = 0xFF;
+        contactActionPressedItem = -1;
         settingsPressedItem = 0xFF;
         settingsSliderDragging = false;
         settingsSliderChanged = false;
         progressionPressedItem = 0xFF;
+        progressionLevelUpTouchAllowed = false;
+        progressionEvolutionTouchConsumed = false;
+        if (evolutionTouchCanResume) {
+            progressionEvolutionTouchResumeUntilMs =
+                event.timestampMs + EVOLUTION_TOUCH_GAP_MS;
+        } else {
+            progressionEvolutionTouchStartedMs = 0;
+            progressionEvolutionTouchResumeUntilMs = 0;
+        }
         battlePressedItem = 0xFF;
         showerToolDragging = false;
         requestRenderRows(
@@ -2277,19 +2633,65 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
 
 void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
     if (sceneFlow.current() == AppSceneFlow::Scene::HOME) {
+        if (visitDeparture == VisitDeparture::WALK_TO_DOOR ||
+            visitDeparture == VisitDeparture::CROSS_DOOR) return;
+        if (visitRecallConfirm) {
+            const int choice = recallConfirmChoiceAt(x, y);
+            if (choice == 0 && visitSession.active() &&
+                !visitSession.viewModel().localIsHost) {
+                visitRecallConfirm = false;
+                requestVisitEnd(nowMs);
+            } else if (choice == 1) {
+                visitRecallConfirm = false;
+            }
+            requestFullRender();
+            return;
+        }
 #if STICKMON_ENABLE_DEBUG_FEATURES
         if (debugContactPending) {
             int choice = debugContactChoiceAt(x, y);
             if (choice == 0) {
-                acceptDebugContact(nowMs);
+                debugContactSelectedChoice = 0;
+                debugContactChoiceConfirmUntilMs = nowMs + 100;
+                acceptDebugContact(nowMs, false);
             } else if (choice == 1) {
+                debugContactSelectedChoice = 1;
+                debugContactChoiceConfirmUntilMs = nowMs + 100;
                 debugContactPending = false;
+                debugContactEventPending = false;
+                debugContactEventWaitingForEntry = false;
                 debugContactStorageSlot = 0xFF;
                 debugContactKind = 0;
-                setToast(Ui::ContactVisit::BYE_VISIT, nowMs);
                 requestFullRender();
             }
-            if (choice >= 0) return;
+            // Modal while the prompt is up: swallow any tap outside the bubbles
+            // since the HUD is faded out and its hit areas must stay inactive.
+            return;
+        }
+        if (debugContactEventPending) {
+            int choice = debugContactChoiceAt(x, y);
+            if (choice < 0) return;
+            debugContactSelectedChoice = static_cast<int8_t>(choice);
+            debugContactChoiceConfirmUntilMs = nowMs + 100;
+            debugContactEventPending = false;
+            if (choice == 0 && debugContactKind == 3) {
+                uint8_t unlocked = ExploreItemProgression::unlockedArea(gameState);
+                selectedExploreArea = std::min<uint8_t>(selectedExploreArea, unlocked);
+                if (!queueExploreDeparture(selectedExploreArea, false)) {
+                    completeDebugContact(nowMs);
+                    setToast(Ui::Debug::EVENT_BUSY, nowMs, 1400);
+                }
+            } else if (choice == 1) {
+                completeDebugContact(nowMs);
+            }
+            requestFullRender();
+            return;
+        }
+        // The strip message fades the HUD out as well; keep its hidden hit
+        // areas inert while the message is up.
+        if (debugContactMessageUntilMs != 0 &&
+            static_cast<int32_t>(nowMs - debugContactMessageUntilMs) < 0) {
+            return;
         }
 #endif
         RoomResource& room = RoomResource::ins();
@@ -2302,6 +2704,14 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
         switch (homeHitTargetAt(x, y, worldToScreenX(petX),
                                worldToScreenY(petY), bowlX, bowlY)) {
         case HomeHitTarget::MENU:
+            if (visitDeparture == VisitDeparture::AWAY) {
+                if (visitSession.active() &&
+                    !visitSession.viewModel().localIsHost) {
+                    visitRecallConfirm = true;
+                    requestFullRender();
+                }
+                break;
+            }
             sceneFlow.openMenu();
             menuScroll = 0.0f;
             menuVelocity = 0.0f;
@@ -2317,7 +2727,6 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
                 gameState, 0, gameState.gameMinutesTotal * 60UL).outcome) {
             case PetOutcome::REWARDED:
                 heartsUntil = nowMs + 1000;
-                setToast(Ui::Menu::PET_TOAST, nowMs);
                 saveState();
                 break;
             case PetOutcome::DAILY_LIMIT:
@@ -2397,8 +2806,7 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
         if (model.state == CommState::IDLE) {
             if (item == 0) startVisitHost();
             else if (item == 1) startVisitSearch();
-        } else if ((model.state == CommState::SEARCHING ||
-                    model.state == CommState::JOINING) && item >= 0) {
+        } else if (model.state == CommState::ROOM_LIST && item >= 0) {
             visitSession.selectRoom(static_cast<uint8_t>(item));
         } else if (model.state == CommState::WAITING_HOST_DECISION) {
             if (item == 0) visitSession.acceptIncoming(true);
@@ -2418,27 +2826,6 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
         if (exploreRouteIceSliding) return;
         if (exploreRouteComplete) {
             leaveExploreRoute();
-            return;
-        }
-        if (exploreRoutePrompt != ExploreRouteViewModel::Prompt::NONE) {
-            int choice = exploreRoutePromptChoiceAt(x, y);
-            if (choice == 0) {
-                exploreRoutePrompt = ExploreRouteViewModel::Prompt::NONE;
-                // Continue the same one-shot player command. Agent mode keeps
-                // its persistent auto-walk flag independently.
-                if (autonomousExpedition) {
-                    exploreRouteAutoWalk = true;
-                } else {
-                    exploreRoutePlayerWalkActive = true;
-                    exploreRouteAutoWalk = false;
-                }
-                setToast(Ui::Amoled::OPEN, nowMs);
-                if (!exploreRouteMoving) beginExploreRouteStep(nowMs);
-                requestRenderRows(HOME_HEADER_HEIGHT, 448);
-            } else if (choice == 1) {
-                exploreRoutePrompt = ExploreRouteViewModel::Prompt::NONE;
-                leaveExploreRoute();
-            }
             return;
         }
         if (exploreRouteExitConfirm) {
@@ -2487,8 +2874,10 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
 
     if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE) {
         if (battleAnimationActive || battleHpAnimationActive ||
+            battleSwitchStage != BattleSwitchStage::NONE ||
             battleExperienceAnimationActive ||
-            battleLogPlaybackBusy()) return;
+            battleLogPlaybackBusy() ||
+            battleContinuation != BattleContinuation::NONE) return;
         if (battleBackAt(x, y)) {
             if (battlePhase == BattleViewModel::Phase::BAG_SELECT ||
                 battlePhase == BattleViewModel::Phase::SWITCH_SELECT) {
@@ -2503,7 +2892,7 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
         if (battlePhase == BattleViewModel::Phase::FRIENDSHIP) {
             resolveBattleFriendship(static_cast<uint8_t>(item), nowMs);
         } else if (battlePhase == BattleViewModel::Phase::VICTORY) {
-            finishBattleVictory(nowMs);
+            return;
         } else if (battlePhase == BattleViewModel::Phase::DEFEAT) {
             finishBattleDefeat(nowMs);
         } else if (battlePhase == BattleViewModel::Phase::BAG_SELECT) {
@@ -2533,15 +2922,14 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
     }
 
     if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_MENU) {
-        if (exploreRouteMenuBackAt(x, y)) {
+        int itemIndex = exploreRouteMenuItemAt(x, y);
+        if (exploreRouteMenuBackAt(x, y) || itemIndex < 0) {
             sceneFlow.closeExploreMenu();
             resumeExploreRoute(nowMs);
             toast = nullptr;
             requestFullRender();
             return;
         }
-        int itemIndex = exploreRouteMenuItemAt(x, y);
-        if (itemIndex < 0) return;
         exploreMenuCursor = static_cast<uint8_t>(itemIndex);
         AppSceneFlow::ExploreMenuEntry entry =
             AppSceneFlow::exploreMenuEntry(static_cast<uint8_t>(itemIndex));
@@ -2686,7 +3074,11 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
         if (teamBackAt(x, y)) {
             if (selectingItemTarget) {
                 selectingItemTarget = false;
-                sceneFlow.openSubScene(AppSceneFlow::Scene::BAG);
+                pendingItem = Game::ItemId::COUNT;
+                pendingItemAction = PendingItemAction::NONE;
+                itemConfirmOpen = false;
+                teamActionPopupOpen = false;
+                sceneFlow.enter(AppSceneFlow::Scene::BAG);
                 requestFullRender();
             } else closeItemScene();
             return;
@@ -2699,15 +3091,44 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             if (Game::ItemInventory::count(gameState, pendingItem) == 0) {
                 setToast(Ui::Amoled::NO_STOCK, nowMs);
             } else {
+                const Species* source = findSpecies(
+                    gameState.team[target].speciesId);
+                const Species* evolutionTarget =
+                    source && isEvolutionStone(pendingItem)
+                        ? stoneEvolutionTarget(*source, pendingItem) : nullptr;
+                if (isEvolutionStone(pendingItem)) {
+                    if (!evolutionTarget) {
+                        setToast(Ui::Amoled::NO_EFFECT, nowMs);
+                        requestFullRender();
+                        return;
+                    }
+                    const Game::ItemId stone = pendingItem;
+                    const uint16_t fromSpeciesId =
+                        gameState.team[target].speciesId;
+                    selectingItemTarget = false;
+                    pendingItem = Game::ItemId::COUNT;
+                    pendingItemAction = PendingItemAction::NONE;
+                    itemConfirmOpen = false;
+                    openEvolutionProgression(
+                        itemTargetReturnScene, target, fromSpeciesId,
+                        evolutionTarget->id, nowMs, stone);
+                    return;
+                }
+                const uint8_t oldLevel = gameState.team[target].level;
                 Game::ItemInventory::UseResult used =
                     Game::ItemInventory::useOnTeam(gameState, pendingItem, target);
                 if (used == Game::ItemInventory::UseResult::USED) {
                     saveState();
-                    setToast(Ui::Amoled::ITEM_USED, nowMs);
                     selectingItemTarget = false;
                     pendingItem = Game::ItemId::COUNT;
                     pendingItemAction = PendingItemAction::NONE;
-                    sceneFlow.openSubScene(AppSceneFlow::Scene::BAG);
+                    if (gameState.team[target].level != oldLevel) {
+                        openProgressionScene(
+                            itemTargetReturnScene, target, oldLevel, nowMs);
+                        return;
+                    }
+                    setToast(Ui::Amoled::ITEM_USED, nowMs);
+                    sceneFlow.enter(AppSceneFlow::Scene::BAG);
                 } else setToast(Ui::Amoled::NO_EFFECT, nowMs);
             }
             requestFullRender();
@@ -2728,7 +3149,7 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
     }
 
     if (sceneFlow.current() == AppSceneFlow::Scene::ROOM) {
-        if (itemListBackAt(x, y)) {
+        if (roomMenuBackAt(x, y)) {
             closeItemScene();
             return;
         }
@@ -2737,8 +3158,6 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             openRoomFoodScene();
         } else if (item == 1) {
             openShowerScene(nowMs);
-        } else if (item == 2) {
-            closeItemScene();
         }
         return;
     }
@@ -2758,28 +3177,103 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
 
     if (sceneFlow.current() == AppSceneFlow::Scene::PROGRESSION) {
         if (progressionMode == ProgressionViewModel::Mode::MOVE_REPLACE) {
-            int choice = progressionItemAt(x, y, progressionMode);
-            if (choice == 1 || choice == 2) {
-                Game::MonsterRuntime& monster =
-                    gameState.team[progressionTeamSlot];
-                Game::MoveId& slot = choice == 1
-                    ? monster.move2Id : monster.move3Id;
-                slot = progressionMoveId;
+            if (x >= 300 && x < 356 && y >= 10 && y < 66) {
+                if (progressionSelectedItem >= 3) return;
+                if (progressionSelectedItem == 0) {
+                    progressionMode = ProgressionViewModel::Mode::MOVE_LEARN;
+                } else {
+                    Game::MonsterRuntime& monster =
+                        gameState.team[progressionTeamSlot];
+                    Game::MoveId& slot = progressionSelectedItem == 1
+                        ? monster.move2Id : monster.move3Id;
+                    slot = progressionMoveId;
+                    if (progressionSelectedItem == 1) {
+                        monster.moveProficiency[1] = 0;
+                    } else {
+                        monster.moveProficiency[2] = 0;
+                    }
+                    saveState();
+                }
                 progressionPressedItem = 0xFF;
-                saveState();
                 advanceProgression(nowMs);
-            } else if (choice == 0) {
-                completeProgression(nowMs);
+                return;
+            }
+            const int choice = progressionReplaceItemAt(
+                x, y, progressionScroll, progressionSelectedItem,
+                progressionDetailProgress);
+            if (choice >= 0) {
+                if (progressionSelectedItem == choice &&
+                    !progressionDetailAnimating &&
+                    progressionDetailProgress >= 0.99f) {
+                    progressionDetailTargetVisible = false;
+                    progressionDetailAnimStartMs = nowMs;
+                    progressionDetailAnimating = true;
+                } else if (progressionSelectedItem != choice) {
+                    progressionSelectedItem = static_cast<uint8_t>(choice);
+                    if (progressionDetailProgress > 0.0f) {
+                        progressionDetailProgress = 1.0f;
+                        progressionDetailAnimating = false;
+                        progressionDetailTargetVisible = true;
+                    } else {
+                        progressionDetailTargetVisible = true;
+                        progressionDetailAnimStartMs = nowMs;
+                        progressionDetailAnimating = true;
+                    }
+                }
+                requestRenderRows(0, 448);
             }
             return;
         }
-        if (progressionItemAt(x, y, progressionMode) == 0) {
-            advanceProgression(nowMs);
+        if (progressionMode == ProgressionViewModel::Mode::EVOLUTION) {
+            if (progressionEvolution.cancelling()) {
+                if (!progressionEvolution.cancellationComplete(nowMs)) return;
+                progressionEvolution.reset();
+                progressionEvolutionItem = Game::ItemId::COUNT;
+                progressionToSpeciesId = 0;
+                progressionMoveCursor = 0;
+                progressionMode = ProgressionViewModel::Mode::MOVE_LEARN;
+                advanceProgression(nowMs);
+            } else if (progressionEvolution.animationComplete(nowMs)) {
+                advanceProgression(nowMs);
+            } else if (progressionEvolution.beginCancellation(nowMs)) {
+                CryPlayer::ins().stop();
+                progressionPressedItem = 0xFF;
+                nextProgressionAnimationFrameMs = nowMs;
+                requestFullRender();
+            }
+            return;
         }
+        if (progressionMode == ProgressionViewModel::Mode::LEVEL_UP &&
+            nowMs - progressionLevelUpStartedMs < LEVEL_UP_ANIMATION_MS) return;
+        if (progressionItemAt(x, y, progressionMode) != 0) return;
+        advanceProgression(nowMs);
         return;
     }
 
     if (sceneFlow.current() == AppSceneFlow::Scene::COMPUTER) {
+        if (computerPage == ComputerViewModel::Page::STORAGE &&
+            contactConfirmOpen) {
+            handleContactConfirmTap(x, y, nowMs);
+            return;
+        }
+        if (computerPage == ComputerViewModel::Page::STORAGE &&
+            contactActionOpen) {
+            handleContactActionTap(x, y, nowMs);
+            return;
+        }
+        if (computerPage == ComputerViewModel::Page::STATUS &&
+            computerBackAt(x, y, computerPage)) {
+            computerPage = ComputerViewModel::Page::STORAGE;
+            teamStatusFromContact = false;
+            teamStatusContactSlot = 0xFF;
+            teamStatusPage = 0;
+            teamStatusSlideX = 0;
+            teamStatusAnimating = false;
+            teamStatusDragging = false;
+            computerPressedItem = 0xFF;
+            requestFullRender();
+            return;
+        }
         if (computerBackAt(x, y, computerPage)) {
             if (computerPage != ComputerViewModel::Page::MENU) {
 #if STICKMON_HAS_CLAW
@@ -2830,9 +3324,16 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
                 pressedCommunicationItem = -1;
                 toast = nullptr;
                 requestFullRender();
+            } else if (item == 1) {
+                computerPage = ComputerViewModel::Page::STORAGE;
+                computerPressedItem = 0xFF;
+                computerScroll = 0.0f;
+                computerVelocity = 0.0f;
+                toast = nullptr;
+                requestFullRender();
             }
 #if STICKMON_HAS_CLAW
-            else if (item == 1) {
+            else if (item == 2) {
                 computerPage = ComputerViewModel::Page::AI_HOSTING;
                 computerPressedItem = 0xFF;
                 computerScroll = 0.0f;
@@ -2840,14 +3341,7 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
                 toast = nullptr;
                 requestFullRender();
             }
-#else
-            else if (item == 1) {
-                closeUtilityScene();
-            }
 #endif
-            else {
-                closeUtilityScene();
-            }
         } else if (computerPage == ComputerViewModel::Page::AI_HOSTING) {
 #if STICKMON_HAS_CLAW
             Stickmon::ClawRuntime& claw = Stickmon::ClawRuntime::instance();
@@ -2892,9 +3386,9 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             (void)item;
 #endif
         } else if (computerPage == ComputerViewModel::Page::STATUS) {
-            setToast(Ui::Amoled::READY, nowMs);
+            return;
         } else {
-            setToast(Ui::Amoled::STORAGE_READ_ONLY, nowMs);
+            openContactAction(static_cast<uint8_t>(item));
         }
         return;
     }
@@ -2929,9 +3423,6 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
                 !gameState.settings.voiceCallEnabled;
             setToast(Ui::Settings::VOICE_CALL, nowMs);
             break;
-        case 5:
-            closeUtilityScene();
-            return;
         default:
             return;
         }
@@ -2969,6 +3460,19 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             requestShowerExit();
             return;
         }
+        if (showerMode == ShowerMode::SOAPING ||
+            showerMode == ShowerMode::BRUSHING) {
+            const int item = showerMenuItemAt(x, y);
+            if (item == 1 && showerMode == ShowerMode::SOAPING) {
+                if (showerSoapRewarded) startShowerTool(ShowerMode::BRUSHING, nowMs);
+                else setToast(Ui::Amoled::SOAP_FIRST, nowMs);
+            } else if (item == 2) {
+                if (!showerSoapRewarded) setToast(Ui::Amoled::SOAP_FIRST, nowMs);
+                else if (!showerBrushRewarded) setToast(Ui::Amoled::BRUSH_FIRST, nowMs);
+                else startShowerRinse(nowMs);
+            }
+            return;
+        }
         if (showerMode != ShowerMode::MENU) return;
 
         int item = showerMenuItemAt(x, y);
@@ -2996,8 +3500,6 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             } else {
                 startShowerRinse(nowMs);
             }
-        } else if (item == 3) {
-            requestShowerExit();
         }
         return;
     }
@@ -3011,30 +3513,35 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
                 } else if (Game::ItemInventory::usableFromHomeBag(pendingItem) &&
                     pendingItem != Game::ItemId::MAX_REPEL &&
                     pendingItem != Game::ItemId::HONEY) {
+                    itemTargetReturnScene = sceneFlow.subSceneReturn();
                     itemConfirmOpen = false;
                     selectingItemTarget = true;
-                    openTeamScene();
+                    openTeamScene(true);
                 } else performPendingItemAction(nowMs);
-            } else if (choice == 1) {
-                itemConfirmOpen = false;
-                pendingItem = Game::ItemId::COUNT;
-                pendingItemAction = PendingItemAction::NONE;
-                requestRenderRows(MENU_HEADER_HEIGHT, 448);
-            }
-            return;
+                } else if (choice == 1) {
+                    itemConfirmOpen = false;
+                    pendingItem = Game::ItemId::COUNT;
+                    pendingItemAction = PendingItemAction::NONE;
+                    requestFullRender();
+                }
+                return;
         }
-        if (itemListBackAt(x, y)) {
+        if (itemListBackAt(x, y, itemConfirmOpen)) {
             closeItemScene();
             return;
         }
         int index = itemListItemAt(
             x, y, itemScroll,
-            battleBagMode
-                ? 0 : Game::ItemInventory::homeBagDailyItemCount(gameState),
+            Game::ItemInventory::homeBagDailyItemCount(gameState),
             Game::ItemInventory::homeBagExploreItemCount(gameState),
-            currentItemCount(), battleBagMode);
+            currentItemCount(), false);
         if (index < 0) return;
         Game::ItemId item = currentItemAt(static_cast<uint8_t>(index));
+        if (battleBagMode && Game::foodIndexForItemId(item) < 0 &&
+            !Game::ItemInventory::usableInBattle(item)) {
+            setToast(Ui::Amoled::CANNOT_USE, nowMs);
+            return;
+        }
         if (!battleBagMode && item == Game::ItemId::HEART_SCALE) {
             openTeamScene();
             openTeamMoves(0, nowMs);
@@ -3044,12 +3551,12 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
         pendingItemAction = PendingItemAction::USE;
         itemConfirmOpen = true;
         toast = nullptr;
-        requestRenderRows(MENU_HEADER_HEIGHT, 448);
+        requestFullRender();
         return;
     }
 
     if (sceneFlow.current() == AppSceneFlow::Scene::SHOP) {
-        if (itemListBackAt(x, y)) {
+        if (itemListBackAt(x, y, itemConfirmOpen)) {
             closeItemScene();
             return;
         }
@@ -3254,10 +3761,93 @@ void AmoledApp::update(uint32_t nowMs) {
 #endif
     AudioManager::ins().update();
     CryPlayer::ins().update();
+    if (sceneFlow.current() == AppSceneFlow::Scene::PROGRESSION &&
+        progressionMode == ProgressionViewModel::Mode::EVOLUTION &&
+        progressionEvolution.initialized()) {
+        if (progressionEvolutionTouchHeld) {
+            if (progressionEvolution.animationComplete(nowMs)) {
+                // Completion wins when it reaches its deadline before the
+                // hold. The gesture remains consumed until the finger lifts.
+                progressionEvolutionTouchHeld = false;
+                requestRenderRows(330, 348);
+            } else if (nowMs - progressionEvolutionTouchStartedMs >=
+                       EVOLUTION_CANCEL_HOLD_MS) {
+                progressionEvolutionTouchHeld = false;
+                if (progressionEvolution.beginCancellation(nowMs)) {
+                    CryPlayer::ins().stop();
+                    nextProgressionAnimationFrameMs = nowMs;
+                    requestFullRender();
+                }
+            }
+        }
+        if (!progressionEvolution.cancelling() &&
+            !progressionEvolution.cryPlayed() &&
+            progressionEvolution.elapsed(nowMs) >=
+                Game::EvolutionSequence::REVEAL_END_MS) {
+            progressionEvolution.markCryPlayed();
+            CryPlayer::ins().replay(progressionToSpeciesId);
+        }
+        const bool animating = progressionEvolution.cancelling()
+            ? !progressionEvolution.cancellationComplete(nowMs)
+            : !progressionEvolution.animationComplete(nowMs);
+        if (animating &&
+            static_cast<int32_t>(nowMs - nextProgressionAnimationFrameMs) >= 0) {
+            nextProgressionAnimationFrameMs =
+                nowMs + PROGRESSION_ANIMATION_FRAME_MS;
+            requestRenderRows(0, 348);
+        } else if (!animating && nextProgressionAnimationFrameMs != 0) {
+            nextProgressionAnimationFrameMs = 0;
+            requestFullRender();
+        }
+    }
+    if (sceneFlow.current() == AppSceneFlow::Scene::PROGRESSION &&
+        progressionMode == ProgressionViewModel::Mode::LEVEL_UP &&
+        nextProgressionAnimationFrameMs != 0 &&
+        static_cast<int32_t>(nowMs - nextProgressionAnimationFrameMs) >= 0) {
+        if (nowMs - progressionLevelUpStartedMs < LEVEL_UP_ANIMATION_MS) {
+            nextProgressionAnimationFrameMs =
+                nowMs + PROGRESSION_ANIMATION_FRAME_MS;
+        } else {
+            nextProgressionAnimationFrameMs = 0;
+        }
+        requestFullRender();
+    }
 #if STICKMON_ENABLE_DEBUG_FEATURES
     if (debugContactActive && debugContactKind != 3 &&
+        !debugContactEventPending && !debugContactEventWaitingForEntry &&
         nowMs - debugContactStartedMs >= 30000UL) {
         completeDebugContact(nowMs);
+    }
+    if (debugContactSelectedChoice >= 0 &&
+        static_cast<int32_t>(nowMs - debugContactChoiceConfirmUntilMs) >= 0) {
+        debugContactSelectedChoice = -1;
+        debugContactChoiceConfirmUntilMs = 0;
+        debugContactChoiceVisible = false;
+        requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
+    }
+    // Ease the visitor prompt in/out: the bottom HUD fades away while the
+    // message and the yes/no bubbles appear, and comes back after a choice.
+    const bool stripMessageActive = debugContactMessageUntilMs != 0 &&
+        static_cast<int32_t>(nowMs - debugContactMessageUntilMs) < 0;
+    const uint8_t promptFadeTarget =
+        (debugContactPending || debugContactEventPending ||
+         stripMessageActive) ? 255 : 0;
+    if (debugContactPromptFade != promptFadeTarget &&
+        sceneFlow.current() == AppSceneFlow::Scene::HOME) {
+        // Keep the bottom HUD/message swap brisk. Choice bubbles are hidden
+        // independently as soon as the tap is accepted.
+        constexpr uint8_t PROMPT_FADE_STEP = 40;
+        debugContactPromptFade = debugContactPromptFade < promptFadeTarget
+            ? static_cast<uint8_t>(std::min<int>(
+                  255, debugContactPromptFade + PROMPT_FADE_STEP))
+            : static_cast<uint8_t>(std::max<int>(
+                  0, debugContactPromptFade - PROMPT_FADE_STEP));
+        if ((debugContactPending || debugContactEventPending) &&
+            debugContactPromptFade == 255) {
+            Platform::logf("[FriendDiag] prompt ready kind=%u\n",
+                           static_cast<unsigned>(debugContactKind));
+        }
+        requestRenderRows(HOME_ROOM_TOP, 448);
     }
     if (debugBattleRequested) {
         debugBattleRequested = false;
@@ -3292,13 +3882,23 @@ void AmoledApp::update(uint32_t nowMs) {
     visitSession.update(nowMs);
     CommunicationViewModel communicationAfter = visitSession.viewModel();
     if (hadAttachedVisitor && gameState.teamCount < 2 &&
-        visitorMotion != VisitorMotion::EXITING) {
+        homeCompanionActor.hidden) {
+        cancelPairInteraction(nowMs);
+        homeRuntime.releaseAll(0);
+        homeRuntime.stop(0, nowMs);
+        visitorMotion = VisitorMotion::NONE;
+        syncHomeActors(nowMs);
+        sceneFlow.goHome();
+        requestFullRender();
+    } else if (hadAttachedVisitor && gameState.teamCount < 2 &&
+               visitorMotion != VisitorMotion::EXITING) {
         gameState.team[1] = detachedVisitor;
         gameState.teamCount = 2;
         gameState.activeSlot = 0;
         syncHomeActors(nowMs);
         beginVisitorExit(nowMs, false);
         sceneFlow.goHome();
+        requestFullRender();
     }
     using VisitState = Communication::VisitSessionService::State;
     if (visitRadioExclusive &&
@@ -3311,15 +3911,17 @@ void AmoledApp::update(uint32_t nowMs) {
             Communication::VisitSessionService::State::ACTIVE &&
         communicationAfter.state ==
             Communication::VisitSessionService::State::ACTIVE &&
-        communicationAfter.localIsHost &&
         sceneFlow.current() == AppSceneFlow::Scene::COMMUNICATION) {
         sceneFlow.goHome();
+        if (!communicationAfter.localIsHost) beginVisitDeparture(nowMs);
     }
     if (communicationBefore.state != communicationAfter.state ||
         communicationBefore.roomCount != communicationAfter.roomCount ||
         communicationBefore.remote.speciesId != communicationAfter.remote.speciesId ||
         communicationBefore.remote.mood != communicationAfter.remote.mood ||
         communicationBefore.remote.satiety != communicationAfter.remote.satiety ||
+        communicationBefore.remote.hpCur != communicationAfter.remote.hpCur ||
+        communicationBefore.remote.hpMax != communicationAfter.remote.hpMax ||
         communicationBefore.remainSec != communicationAfter.remainSec) {
         requestFullRender();
     }
@@ -3412,6 +4014,31 @@ void AmoledApp::update(uint32_t nowMs) {
             requestRenderRows(TEAM_MOVES_HEADER_HEIGHT, 448);
         }
     }
+    if (sceneFlow.current() == AppSceneFlow::Scene::PROGRESSION &&
+        progressionMode == ProgressionViewModel::Mode::MOVE_REPLACE &&
+        progressionDetailAnimating) {
+        const float raw = std::min(1.0f,
+            static_cast<float>(nowMs - progressionDetailAnimStartMs) /
+            static_cast<float>(TEAM_MOVES_DETAIL_ANIM_MS));
+        const float eased = progressionDetailTargetVisible
+            ? 1.0f - (1.0f - raw) * (1.0f - raw) : raw * raw;
+        progressionDetailProgress = progressionDetailTargetVisible
+            ? eased : 1.0f - eased;
+        if (raw >= 1.0f) {
+            progressionDetailAnimating = false;
+            progressionDetailProgress = progressionDetailTargetVisible ? 1.0f : 0.0f;
+            if (!progressionDetailTargetVisible) progressionSelectedItem = 0xFF;
+        }
+        const int maxScroll = std::max(0,
+            static_cast<int>(std::lround(
+                (AmoledUi::HEIGHT / 2) * progressionDetailProgress)) - 174);
+        progressionScroll = std::clamp<int16_t>(progressionScroll, 0,
+            static_cast<int16_t>(maxScroll));
+        if (progressionSelectedItem == 2 && progressionDetailTargetVisible) {
+            progressionScroll = static_cast<int16_t>(maxScroll);
+        }
+        requestRenderRows(0, 448);
+    }
 
     if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE &&
         battleHpAnimationActive) {
@@ -3424,15 +4051,12 @@ void AmoledApp::update(uint32_t nowMs) {
                               battleHpAnimationWild ? 88 : 306);
         }
         if (static_cast<int32_t>(
-                gaugeNowMs - battleHpAnimationStartedMs) >=
-            static_cast<int32_t>(BATTLE_HP_ANIMATION_MS)) {
+                gaugeNowMs - battleHpAnimationStartedMs) >= 0 &&
+            gaugeNowMs - battleHpAnimationStartedMs >=
+                BATTLE_HP_ANIMATION_MS) {
             battleHpAnimationActive = false;
-            const bool continueWithWildTurn =
-                battleWildTurnAfterHpAnimation;
-            battleWildTurnAfterHpAnimation = false;
             requestRenderRows(battleHpAnimationWild ? 48 : 266,
                               battleHpAnimationWild ? 88 : 306);
-            if (continueWithWildTurn) performBattleWildTurn(gaugeNowMs);
         }
     }
     if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE &&
@@ -3458,6 +4082,14 @@ void AmoledApp::update(uint32_t nowMs) {
         // fresh monotonic value so the first frame cannot underflow and skip.
         uint32_t animationNowMs = Platform::clock().millis();
         uint32_t elapsed = animationNowMs - battleAnimationStartedMs;
+        if (!battleImpactAudioPlayed &&
+            elapsed >= BATTLE_HP_DAMAGE_DELAY_MS) {
+            battleImpactAudioPlayed = true;
+            if (battleImpactSfx != 0xFF) {
+                AudioManager::ins().playSfx(
+                    static_cast<SfxCue>(battleImpactSfx));
+            }
+        }
         uint8_t frame = elapsed < battleAnimationDurationMs
             ? static_cast<uint8_t>(std::min<uint32_t>(
                   6, elapsed / 80U + 1U))
@@ -3470,23 +4102,55 @@ void AmoledApp::update(uint32_t nowMs) {
             battleAnimationActive = false;
             battleAnimationFrame = 0;
             battleAnimationDamage = 0;
+            battleAttackLogHeld = false;
+            battleImpactSfx = 0xFF;
             requestRenderRows(0, BATTLE_ANIMATION_RENDER_END);
             Platform::logf("[BattleAnim] complete side=%s elapsed=%lu\n",
                            battleAnimationAttackerWild ? "wild" : "player",
                            static_cast<unsigned long>(elapsed));
-            advanceBattleTurn(animationNowMs);
         }
     }
     if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE &&
         serviceBattleLog(nowMs)) {
         requestRenderRows(352, 448);
     }
+    if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE &&
+        battleSwitchStage != BattleSwitchStage::NONE) {
+        updateBattleSwitch(Platform::clock().millis());
+    }
+    if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE &&
+        battleContinuation != BattleContinuation::NONE &&
+        battleSwitchStage == BattleSwitchStage::NONE &&
+        !battleAnimationActive && !battleHpAnimationActive &&
+        !battleLogPlaybackBusy()) {
+        const BattleContinuation continuation = battleContinuation;
+        battleContinuation = BattleContinuation::NONE;
+        if (continuation == BattleContinuation::WILD_TURN) {
+            performBattleWildTurn(nowMs);
+        } else {
+            advanceBattleTurn(nowMs);
+        }
+    }
+    if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE &&
+        battlePhase == BattleViewModel::Phase::VICTORY &&
+        !battleExperienceAnimationActive && !battleLogPlaybackBusy() &&
+        !battleVictoryFinalizePending &&
+        battleContinuation == BattleContinuation::NONE) {
+        finishBattleVictory(nowMs);
+    }
+    if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE &&
+        battleVictoryFinalizePending && !battleLogPlaybackBusy()) {
+        battleVictoryFinalizePending = false;
+        finishBattleAfterFriendship(nowMs);
+    }
 
 #if STICKMON_HAS_CLAW
     if (autonomousExpedition &&
         sceneFlow.current() == AppSceneFlow::Scene::BATTLE &&
         !battleAnimationActive && !battleHpAnimationActive &&
-        !battleExperienceAnimationActive && !battleLogPlaybackBusy()) {
+        battleSwitchStage == BattleSwitchStage::NONE &&
+        !battleExperienceAnimationActive && !battleLogPlaybackBusy() &&
+        battleContinuation == BattleContinuation::NONE) {
         // Reuse the game's deterministic battle AI for autonomous routes.
         // Existing animation and log gates keep each action interruptible.
         switch (battlePhase) {
@@ -3494,7 +4158,6 @@ void AmoledApp::update(uint32_t nowMs) {
             performBattleAttack(nowMs);
             break;
         case BattleViewModel::Phase::VICTORY:
-            finishBattleVictory(nowMs);
             break;
         case BattleViewModel::Phase::FRIENDSHIP:
             // Do not silently add a wild monster to the player's team. The
@@ -3522,14 +4185,23 @@ void AmoledApp::update(uint32_t nowMs) {
 #endif
 
     if (sceneFlow.current() == AppSceneFlow::Scene::SHOWER) {
+        updateShowerFoamMotion(0.08f);
+        const float atmosphereStep = showerAtmosphereTarget ? 24.0f : -34.0f;
+        showerAtmosphereAlpha = std::clamp(
+            showerAtmosphereAlpha + atmosphereStep, 0.0f, 255.0f);
         if (showerMode == ShowerMode::RINSING &&
             nowMs - showerLastFrameMs >= 80) {
             showerLastFrameMs = nowMs;
             uint32_t elapsed = nowMs - showerModeStartedMs;
             showerRinseProgress = static_cast<uint8_t>(
                 std::min<uint32_t>(100, elapsed * 100 / 1800));
+            if (nowMs - showerLastRinseFoamMs >= 350) {
+                showerLastRinseFoamMs = nowMs;
+                rinseShowerFoamOneStage();
+            }
             requestRenderRows(MENU_HEADER_HEIGHT, 352);
-            if (elapsed >= 1800) {
+            if (elapsed >= 1800 && !anyShowerFoam() &&
+                showerAtmosphereAlpha <= 1.0f) {
                 grantShowerStage(Game::BathService::Stage::RINSE, nowMs);
                 showerCompletionHearts = static_cast<uint8_t>(
                     (showerSoapRewarded ? 1 : 0) +
@@ -3650,10 +4322,19 @@ void AmoledApp::update(uint32_t nowMs) {
     case 3: idleTimeoutMs = 10UL * 60UL * 1000UL; break;
     default: break;
     }
-    bool sleepSafeScene = sceneFlow.current() != AppSceneFlow::Scene::BATTLE &&
+    bool sleepSafeScene = displayLockAllowed() &&
+                          sceneFlow.current() != AppSceneFlow::Scene::BATTLE &&
                           sceneFlow.current() != AppSceneFlow::Scene::SHOWER &&
                           sceneFlow.current() != AppSceneFlow::Scene::PROGRESSION &&
                           !visitSession.busy();
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    sleepSafeScene = sleepSafeScene && !debugContactPending &&
+                     !debugContactEventPending &&
+                     !debugContactEventWaitingForEntry &&
+                     !debugContactActive &&
+                     (debugContactMessageUntilMs == 0 ||
+                      static_cast<int32_t>(nowMs - debugContactMessageUntilMs) >= 0);
+#endif
     if (!lockRequested && !pointerDown && idleTimeoutMs > 0 &&
         sleepSafeScene && nowMs - lastInteractionMs >= idleTimeoutMs) {
         saveState();
@@ -3772,12 +4453,15 @@ bool AmoledApp::startExploreRoute(uint32_t nowMs) {
             selectedExploreArea, gameState)) {
         return false;
     }
+    exploreSessionActive = true;
+    exploreRecoveryPendingSave = false;
+    exploreRoutePool = buildExplorePreviewPool(gameState, selectedExploreArea);
 
     // Keep every possible encounter for this area resident before walking
     // starts. This moves sprite decompression to route entry instead of a
     // random encounter frame.
-    AmoledEncounterTable encounterTable =
-        encounterTableForArea(selectedExploreArea);
+    ExploreEncounters::Table encounterTable =
+        ExploreEncounters::tableForArea(selectedExploreArea);
     uint16_t routeSpecies[ExplorePool::MAX_SOURCE_ENTRIES + 1] = {};
     uint8_t routeSpeciesCount = 0;
     for (uint8_t index = 0; index < encounterTable.count; ++index) {
@@ -3807,6 +4491,9 @@ bool AmoledApp::startExploreRoute(uint32_t nowMs) {
         GameRandom::range(1, 0x7FFFFFFFU));
     exploreRoutePendingEntryEdge = static_cast<ExploreMapGenerator::Edge>(
         (exploreRouteExpeditionSeed >> 8) & 0x03U);
+    exploreRoutePendingFrostLadder = false;
+    exploreRoutePendingFrostFall = false;
+    exploreRouteFrostFallAtMs = 0;
 
     exploreRouteIndex = 0;
     exploreRouteSteps = 0;
@@ -3819,7 +4506,6 @@ bool AmoledApp::startExploreRoute(uint32_t nowMs) {
     exploreRoutePaused = false;
     exploreRouteComplete = false;
     exploreRouteExitConfirm = false;
-    exploreRoutePrompt = ExploreRouteViewModel::Prompt::NONE;
     exploreRouteIceSliding = false;
     exploreRouteIceDx = 0;
     exploreRouteIceDy = 0;
@@ -3899,6 +4585,12 @@ bool AmoledApp::startExploreRoute(uint32_t nowMs) {
     }
     PokemonSprites::setPinnedDynamicSpecies(routeSpecies, routeSpeciesCount);
     PokemonSprites::preloadDynamicSpecies(routeSpecies, routeSpeciesCount);
+    // Route entry runs under the departure black frame. Warm battle sounds
+    // here so a random encounter cannot decode them before its first frame.
+    AudioManager::ins().preloadSfx(SfxCue::DAMAGE_NORMAL);
+    AudioManager::ins().preloadSfx(SfxCue::DAMAGE_SUPER);
+    AudioManager::ins().preloadSfx(SfxCue::DAMAGE_WEAK);
+    AudioManager::ins().preloadSfx(SfxCue::UI_CANCEL);
 
     if (!generateExploreRouteMap(nowMs)) return false;
     exploreRoutePetFrame = 0;
@@ -3933,7 +4625,9 @@ bool AmoledApp::generateExploreRouteMap(uint32_t nowMs) {
         if (candidateSeed == 0) candidateSeed = EXPLORE_MAP_GENERATION_SAFE_SEED;
         if (ExploreMapGenerator::generate(
                 candidateSeed, exploreRoutePendingEntryEdge,
-                selectedExploreArea, exploreRouteMap)) {
+                selectedExploreArea, exploreRouteMap,
+                {exploreRouteMapBlock, exploreRouteMapBlockCount,
+                 exploreRoutePendingFrostLadder})) {
             generated = true;
             break;
         }
@@ -3942,7 +4636,9 @@ bool AmoledApp::generateExploreRouteMap(uint32_t nowMs) {
         generated = ExploreMapGenerator::generate(
             EXPLORE_MAP_GENERATION_SAFE_SEED,
             exploreRoutePendingEntryEdge, selectedExploreArea,
-            exploreRouteMap);
+            exploreRouteMap,
+            {exploreRouteMapBlock, exploreRouteMapBlockCount,
+             exploreRoutePendingFrostLadder});
     }
     if (!generated || exploreRouteMap.pathCount == 0) {
         setToast(Ui::Amoled::MAP_FAILED, nowMs);
@@ -4001,6 +4697,16 @@ bool AmoledApp::generateExploreRouteMap(uint32_t nowMs) {
         ExploreRouteGeometry::pathPoint(path, 0);
     exploreRouteWorldX = exploreRouteFromX = exploreRouteTargetX = start.x;
     exploreRouteWorldY = exploreRouteFromY = exploreRouteTargetY = start.y;
+    if (exploreRoutePendingFrostFall) {
+        exploreRouteIndex = ExploreIceSlide::landingIndex(
+            exploreRouteMap, path,
+            exploreRouteMap.seed ^ exploreRouteExpeditionSeed);
+        ExploreRouteGeometry::WorldPoint landing =
+            ExploreRouteGeometry::pathPoint(path, exploreRouteIndex);
+        exploreRouteWorldX = exploreRouteFromX = exploreRouteTargetX = landing.x;
+        exploreRouteWorldY = exploreRouteFromY = exploreRouteTargetY = landing.y;
+        exploreRoutePendingFrostFall = false;
+    }
     exploreRouteFollowerWorldX = exploreRouteFollowerFromX =
         exploreRouteFollowerTargetX = start.x;
     exploreRouteFollowerWorldY = exploreRouteFollowerFromY =
@@ -4139,6 +4845,7 @@ void AmoledApp::placeExploreRoutePickup() {
 
 bool AmoledApp::beginExploreRouteStep(uint32_t nowMs) {
     if (exploreRouteMoving || exploreRoutePaused || exploreRouteComplete ||
+        exploreRoutePendingFrostFall ||
         exploreRouteMap.pathCount == 0 ||
         exploreRoutePath >= exploreRouteMap.pathCount) {
         return false;
@@ -4199,6 +4906,37 @@ bool AmoledApp::beginExploreRouteStep(uint32_t nowMs) {
     exploreRouteFollowerMoving =
         std::fabs(exploreRouteFollowerTargetX - exploreRouteFollowerFromX) >= 0.01f ||
         std::fabs(exploreRouteFollowerTargetY - exploreRouteFollowerFromY) >= 0.01f;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    const ExploreMapGenerator::Point& fromPoint =
+        path.points[exploreRouteIndex - 1];
+    const ExploreMapGenerator::Point& targetPoint =
+        path.points[exploreRouteIndex];
+    Platform::logf(
+        "[AmoledExploreDiag] step block=%u path=%u index=%u/%u "
+        "tileFrom=(%u,%u) tileTarget=(%u,%u) "
+        "from=(%.2f,%.2f) target=(%.2f,%.2f) delta=(%.2f,%.2f) "
+        "dir=%u followerFrom=(%.2f,%.2f) followerTarget=(%.2f,%.2f) "
+        "followerDir=%u\n",
+        static_cast<unsigned>(exploreRouteMapBlock),
+        static_cast<unsigned>(exploreRoutePath),
+        static_cast<unsigned>(exploreRouteIndex),
+        static_cast<unsigned>(path.pointCount),
+        static_cast<unsigned>(fromPoint.x), static_cast<unsigned>(fromPoint.y),
+        static_cast<unsigned>(targetPoint.x),
+        static_cast<unsigned>(targetPoint.y),
+        static_cast<double>(exploreRouteFromX),
+        static_cast<double>(exploreRouteFromY),
+        static_cast<double>(exploreRouteTargetX),
+        static_cast<double>(exploreRouteTargetY),
+        static_cast<double>(exploreRouteTargetX - exploreRouteFromX),
+        static_cast<double>(exploreRouteTargetY - exploreRouteFromY),
+        static_cast<unsigned>(exploreRouteDirection),
+        static_cast<double>(exploreRouteFollowerFromX),
+        static_cast<double>(exploreRouteFollowerFromY),
+        static_cast<double>(exploreRouteFollowerTargetX),
+        static_cast<double>(exploreRouteFollowerTargetY),
+        static_cast<unsigned>(exploreRouteFollowerDirection));
+#endif
     return true;
 }
 
@@ -4245,15 +4983,14 @@ void AmoledApp::beginExploreRouteExit(uint32_t nowMs) {
     const float followerDistance = std::hypot(
         exploreRouteFollowerTargetX - exploreRouteFollowerFromX,
         exploreRouteFollowerTargetY - exploreRouteFollowerFromY);
-    const bool hasFollower = gameState.teamCount > 1 &&
-        gameState.team[1].speciesId != 0 &&
-        !gameState.team[1].fainted && gameState.team[1].hpCur > 0;
+    const bool hasFollower = exploreRouteHasCompanion(gameState);
     const float longestDistance = hasFollower
         ? std::max(leaderDistance, followerDistance) : leaderDistance;
     exploreRouteExitDurationMs = static_cast<uint32_t>(std::max(
         500.0f, longestDistance / EXPLORE_ROUTE_EXIT_SPEED * 1000.0f));
     exploreRouteExitStartedMs = nowMs;
     exploreRouteMoveStartedMs = nowMs;
+    nextExploreRouteFrameMs = nowMs;
     exploreRouteMoving = true;
     exploreRouteFollowerMoving = hasFollower && followerDistance > 0.01f;
     exploreRouteExiting = true;
@@ -4262,13 +4999,35 @@ void AmoledApp::beginExploreRouteExit(uint32_t nowMs) {
     requestFullRender();
 }
 
+bool AmoledApp::advanceExploreRouteWalkFrames(uint32_t nowMs) {
+    if (!exploreRouteMoving ||
+        static_cast<int32_t>(nowMs - nextExploreRouteFrameMs) < 0) {
+        return false;
+    }
+    exploreRoutePetFrame = static_cast<uint8_t>(exploreRoutePetFrame + 1);
+    if (exploreRouteFollowerMoving) {
+        exploreRouteFollowerFrame = static_cast<uint8_t>(
+            exploreRouteFollowerFrame + 1);
+    }
+    nextExploreRouteFrameMs = nowMs + EXPLORE_ROUTE_FRAME_MS;
+    return true;
+}
+
 void AmoledApp::updateExploreRoute(uint32_t nowMs) {
     if (sceneFlow.current() != AppSceneFlow::Scene::EXPLORE_ROUTE ||
         exploreRoutePaused ||
         exploreRouteComplete) {
         return;
     }
+    if (exploreRoutePendingFrostFall) {
+        if (static_cast<int32_t>(nowMs - exploreRouteFrostFallAtMs) >= 0) {
+            finishExploreRouteAtEnd(nowMs);
+            requestFullRender();
+        }
+        return;
+    }
     if (exploreRouteExiting) {
+        advanceExploreRouteWalkFrames(nowMs);
         const uint32_t elapsed = nowMs - exploreRouteExitStartedMs;
         const float progress = std::min(
             1.0f, elapsed / static_cast<float>(
@@ -4313,16 +5072,6 @@ void AmoledApp::updateExploreRoute(uint32_t nowMs) {
         exploreRouteBossWasMoving = bossMoving;
         nextExploreRouteBossFrameMs = nowMs + EXPLORE_ROUTE_BOSS_FRAME_MS;
     }
-    if (autonomousExpedition &&
-        exploreRoutePrompt != ExploreRouteViewModel::Prompt::NONE) {
-        // Route prompts are player choices in the normal UI. Autonomous life
-        // takes the low-risk "continue" branch and keeps the route moving.
-        exploreRoutePrompt = ExploreRouteViewModel::Prompt::NONE;
-        exploreRouteAutoWalk = true;
-        beginExploreRouteStep(nowMs);
-        requestRenderRows(HOME_HEADER_HEIGHT, 448);
-        return;
-    }
     if (!exploreRouteMoving) {
         if (exploreRouteAutoWalk || exploreRoutePlayerWalkActive) {
             beginExploreRouteStep(nowMs);
@@ -4361,14 +5110,7 @@ void AmoledApp::updateExploreRoute(uint32_t nowMs) {
         requestRenderRows(0, EXPLORE_ROUTE_VIEW_HEIGHT);
     }
 
-    if (static_cast<int32_t>(nowMs - nextExploreRouteFrameMs) >= 0) {
-        exploreRoutePetFrame = static_cast<uint8_t>(
-            exploreRoutePetFrame + 1);
-        if (exploreRouteFollowerMoving) {
-            exploreRouteFollowerFrame = static_cast<uint8_t>(
-                exploreRouteFollowerFrame + 1);
-        }
-        nextExploreRouteFrameMs = nowMs + EXPLORE_ROUTE_FRAME_MS;
+    if (advanceExploreRouteWalkFrames(nowMs)) {
         if (cameraMoved) {
             requestRenderRows(0, EXPLORE_ROUTE_VIEW_HEIGHT);
         } else {
@@ -4396,6 +5138,7 @@ void AmoledApp::updateExploreRoute(uint32_t nowMs) {
     exploreRouteMoving = false;
     exploreRouteFollowerMoving = false;
     ++exploreRouteSteps;
+    recoverExploreTeamForCompletedSteps();
     bool encounterBlockedThisStep =
         exploreRouteEncounterCooldownSteps > 0;
     bool repelActiveThisStep = exploreItemEffects.repelStepsRemaining() > 0;
@@ -4406,6 +5149,19 @@ void AmoledApp::updateExploreRoute(uint32_t nowMs) {
         60000, static_cast<uint32_t>(gameState.stepsToday) + 1));
     const ExploreMapGenerator::Path& path =
         exploreRouteMap.paths[exploreRoutePath];
+    if (selectedExploreArea == ExploreMapGenerator::FROST_CRYSTAL_CAVE_AREA &&
+        exploreRouteMapBlock + 1 < exploreRouteMapBlockCount &&
+        ExploreIceSlide::isCrackedIce(exploreRouteMap, path, exploreRouteIndex)) {
+        ExploreIceSlide::breakIce(exploreRouteMap, path, exploreRouteIndex);
+        renderCaches_.exploreWorld.invalidate();
+        exploreRoutePendingFrostFall = true;
+        exploreRouteFrostFallAtMs = nowMs + 240;
+        exploreRouteIceSliding = false;
+        exploreRouteIceDx = 0;
+        exploreRouteIceDy = 0;
+        requestFullRender();
+        return;
+    }
     bool continueIce = exploreRouteIceSliding && ExploreIceSlide::continues(
         exploreRouteMap, path, exploreRouteIndex,
         exploreRouteIceDx, exploreRouteIceDy);
@@ -4439,13 +5195,37 @@ void AmoledApp::updateExploreRoute(uint32_t nowMs) {
     requestExploreRouteDynamicRender();
 }
 
+bool AmoledApp::recoverExploreTeamForCompletedSteps() {
+    if (!ExploreRunRules::isRecoveryStep(exploreRouteSteps)) return false;
+
+    bool recovered = false;
+    for (uint8_t slot = 0;
+         slot < gameState.teamCount && slot < Game::TEAM_CAP; ++slot) {
+        Game::MonsterRuntime& monster = gameState.team[slot];
+        if (monster.fainted || monster.hpCur == 0 || monster.hpMax == 0 ||
+            monster.hpCur >= monster.hpMax) {
+            continue;
+        }
+        const uint16_t amount =
+            ExploreRunRules::recoveryAmount(monster.hpMax);
+        monster.hpCur = static_cast<uint16_t>(std::min<uint32_t>(
+            monster.hpMax,
+            static_cast<uint32_t>(monster.hpCur) + amount));
+        recovered = true;
+    }
+    if (recovered) exploreRecoveryPendingSave = true;
+    return recovered;
+}
+
 void AmoledApp::requestExploreRouteDynamicRender() {
     if (sceneFlow.current() != AppSceneFlow::Scene::EXPLORE_ROUTE) return;
 
     // The route renderer restores the cached full-screen map underneath this
     // band before drawing the previous/current pet position.
     constexpr int PET_TOP_MARGIN = 120;
-    constexpr int PET_BOTTOM_MARGIN = 20;
+    // Route points are now sprite centers, so the dynamic band must cover the
+    // same-sized lower half as the upper half to avoid stale trailing pixels.
+    constexpr int PET_BOTTOM_MARGIN = 120;
     int previousY = static_cast<int>(std::lround((exploreRouteFromY -
         exploreRouteCameraY) * AmoledUi::RESOURCE_SCALE));
     int currentY = static_cast<int>(std::lround((exploreRouteWorldY -
@@ -4552,8 +5332,10 @@ bool AmoledApp::finishExploreRouteAtEnd(uint32_t nowMs) {
     if (exploreRouteMapBlock + 1 < exploreRouteMapBlockCount) {
         const ExploreMapGenerator::Path& path =
             exploreRouteMap.paths[exploreRoutePath];
-        exploreRoutePendingEntryEdge = ExploreMapGenerator::opposite(
+    exploreRoutePendingEntryEdge = ExploreMapGenerator::opposite(
             path.exit.edge);
+        exploreRoutePendingFrostLadder =
+            !exploreRoutePendingFrostFall && exploreRoutePath == 1;
         ++exploreRouteMapBlock;
         if (!generateExploreRouteMap(nowMs)) {
             exploreRouteAutoWalk = false;
@@ -4610,21 +5392,6 @@ void AmoledApp::resolveExploreStepEvent(
         exploreRouteMap.paths[exploreRoutePath];
     if (exploreRouteIndex + 1 >= path.pointCount) return;
 
-    if (exploreRouteSteps > 0 &&
-        exploreRouteSteps % 9 == 0 &&
-        selectedExploreArea > 0) {
-        exploreRoutePrompt = selectedExploreArea >= 3
-            ? ExploreRouteViewModel::Prompt::PUZZLE
-            : ExploreRouteViewModel::Prompt::BLOCKED;
-        exploreRouteAutoWalk = false;
-        exploreRoutePlayerWalkActive = false;
-        saveState();
-        setToast(exploreRoutePrompt == ExploreRouteViewModel::Prompt::PUZZLE
-                     ? Ui::Amoled::SOLVE : Ui::Amoled::PATH_BLOCKED,
-                 nowMs, 1300);
-        requestFullRender();
-        return;
-    }
 
     bool guaranteedEncounter = exploreRouteGuaranteedEncounterPending &&
         exploreRouteIndex >= exploreRouteGuaranteedEncounterIndex;
@@ -4657,9 +5424,14 @@ void AmoledApp::resolveExploreStepEvent(
 
 void AmoledApp::resolveExploreRoutePickup(uint32_t nowMs) {
     if (!exploreRoutePickupAvailable) return;
+    // Manual route walking pauses at a pickup so the next tap controls when
+    // movement resumes. Autonomous departures must keep their route running;
+    // otherwise collecting one item permanently strands the expedition.
+    const bool resumeAutoWalk = exploreRouteAutoWalk;
     exploreRoutePickupAvailable = false;
     exploreRouteAutoWalk = false;
     exploreRoutePlayerWalkActive = false;
+    exploreRouteAutoWalk = resumeAutoWalk;
 
     const ExplorePickupTable& table =
         explorePickupTableForArea(selectedExploreArea);
@@ -4713,6 +5485,9 @@ bool AmoledApp::beginExploreEncounter(
     uint32_t nowMs, bool boss, uint16_t speciesOverride,
     uint8_t levelOverride, uint16_t experiencePercent,
     ExploreSpecial::Kind specialKind) {
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    const uint32_t encounterStartMs = Platform::clock().millis();
+#endif
     if (gameState.teamCount == 0 || gameState.team[0].fainted ||
         gameState.team[0].hpCur == 0) {
         setToast(Ui::Menu::PET_REST, nowMs);
@@ -4724,22 +5499,39 @@ bool AmoledApp::beginExploreEncounter(
     if (boss && speciesOverride != 0) {
         species = findSpecies(speciesOverride);
     } else {
-        AmoledEncounterTable table = encounterTableForArea(selectedExploreArea);
+        ExploreEncounters::Table table =
+            ExploreEncounters::tableForArea(selectedExploreArea);
         if (!table.entries || table.count == 0) return false;
-        uint32_t totalWeight = 0;
-        for (uint8_t index = 0; index < table.count; ++index) {
-            totalWeight += table.entries[index].weight;
-        }
-        if (totalWeight == 0) return false;
-        uint32_t roll = GameRandom::range(0, totalWeight);
-        const ExploreEncounters::Entry* picked = &table.entries[0];
-        for (uint8_t index = 0; index < table.count; ++index) {
-            if (roll < table.entries[index].weight) {
-                picked = &table.entries[index];
-                break;
+        const ExploreEncounters::Entry* picked = nullptr;
+        if (exploreRoutePool.count > 0) {
+            const uint32_t totalWeight =
+                ExplorePool::poolWeightTotal(exploreRoutePool);
+            if (totalWeight == 0) return false;
+            const ExplorePool::PoolEntry* poolEntry = ExplorePool::entryForRoll(
+                exploreRoutePool, GameRandom::range(0, totalWeight));
+            if (!poolEntry) return false;
+            for (uint8_t index = 0; index < table.count; ++index) {
+                if (table.entries[index].speciesId == poolEntry->speciesId) {
+                    picked = &table.entries[index];
+                    break;
+                }
             }
-            roll -= table.entries[index].weight;
+        } else {
+            uint32_t totalWeight = 0;
+            for (uint8_t index = 0; index < table.count; ++index) {
+                totalWeight += table.entries[index].weight;
+            }
+            if (totalWeight == 0) return false;
+            uint32_t roll = GameRandom::range(0, totalWeight);
+            for (uint8_t index = 0; index < table.count; ++index) {
+                if (roll < table.entries[index].weight) {
+                    picked = &table.entries[index];
+                    break;
+                }
+                roll -= table.entries[index].weight;
+            }
         }
+        if (!picked) return false;
         species = findSpecies(picked->speciesId);
         levelMinimum = picked->minLevel;
         levelMaximum = picked->maxLevel;
@@ -4748,10 +5540,16 @@ bool AmoledApp::beginExploreEncounter(
     recordEncounteredSpecies(species->id);
     uint8_t level = levelOverride;
     if (level == 0) {
-        int16_t targetLevel = gameState.team[0].level;
-        targetLevel += static_cast<int16_t>(GameRandom::range(0, 3)) - 1;
-        level = static_cast<uint8_t>(std::clamp<int16_t>(
-            targetLevel, levelMinimum, levelMaximum));
+        const ExploreMapGenerator::Path& path =
+            exploreRouteMap.paths[exploreRoutePath];
+        const uint8_t targetLevel = ExploreEncounterRules::targetLevel(
+            ExploreAreaCatalog::recommendedLevel(selectedExploreArea),
+            ExploreAreaCatalog::depthSpread(selectedExploreArea),
+            exploreRouteMapBlock, exploreRouteMapBlockCount,
+            exploreRouteIndex, path.pointCount);
+        level = ExploreEncounterRules::levelForRoll(
+            levelMinimum, levelMaximum, targetLevel,
+            static_cast<uint8_t>(GameRandom::range(0, 100)));
     }
 
     battleWild = Game::MonsterFactory::create(species->id, level);
@@ -4766,8 +5564,15 @@ bool AmoledApp::beginExploreEncounter(
     uint16_t dynamicSpecies[] = {
         gameState.team[0].speciesId, battleWild.speciesId,
     };
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    const uint32_t spritePrepStartedMs = Platform::clock().millis();
+#endif
     PokemonSprites::setDynamicSceneSpecies(dynamicSpecies, 2);
     PokemonSprites::preloadDynamicSpecies(dynamicSpecies, 2);
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    const uint32_t spritePrepMs =
+        Platform::clock().millis() - spritePrepStartedMs;
+#endif
     BattleSystem::resetVolatile(battlePlayerState);
     BattleSystem::resetVolatile(battleWildState);
     battleTurnController.reset();
@@ -4775,6 +5580,7 @@ bool AmoledApp::beginExploreEncounter(
     battleTurnActionIndex = 0;
     battleTurnDamaged[0] = false;
     battleTurnDamaged[1] = false;
+    battleContinuation = BattleContinuation::NONE;
     BattleSystem::EffectResolution effects;
     battlePlayerSlot = 0;
     const Species* playerSpecies = findSpecies(
@@ -4792,34 +5598,44 @@ bool AmoledApp::beginExploreEncounter(
     battlePressedItem = 0xFF;
     battleFriendshipPrompt = BattleViewModel::FriendshipPrompt::OFFER;
     battleFriendshipContactSlot = 0xFF;
-    battleVictoryOldLevel = 1;
-    battleVictoryLeveledUp = false;
+    resetBattleProgressionQueue();
     battleAnimationActive = false;
+    battleSwitchStage = BattleSwitchStage::NONE;
+    pendingBattleSwitchSlot = 0xFF;
+    battleSwitchConsumesTurn = false;
     battleAnimationAttackerWild = false;
     battleAnimationHit = false;
     battleAnimationDamage = 0;
     battleAnimationFrame = 0;
+    battleAttackLogHeld = false;
+    battleImpactAudioPlayed = false;
+    battleImpactSfx = 0xFF;
     battleHpAnimationActive = false;
-    battleWildTurnAfterHpAnimation = false;
     battleExperienceVisible = false;
     battleExperienceAnimationActive = false;
     battleExperienceAnimationFrom = 0;
     battleExperienceAnimationTo = 0;
     battleBagMode = false;
+    battleFoodBond = 0;
     battleAudioPending = false;
     battleAudioReady = false;
     battlePendingSfx = 0xFF;
     battlePendingCrySpecies = 0;
     battleRewardExp = 0;
     battleRewardCoins = 0;
+    battleVictoryFinalizePending = false;
     clearBattleLog();
-    // Warm battle cues before the first attack reaches the animation path.
-    // The decoded samples stay in PSRAM, so attacks do not block the UI task
-    // on filesystem reads and IMA-ADPCM decoding.
+    // Also cover debug battles, which can start without entering a route.
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    const uint32_t sfxPrepStartedMs = Platform::clock().millis();
+#endif
     AudioManager::ins().preloadSfx(SfxCue::DAMAGE_NORMAL);
     AudioManager::ins().preloadSfx(SfxCue::DAMAGE_SUPER);
     AudioManager::ins().preloadSfx(SfxCue::DAMAGE_WEAK);
     AudioManager::ins().preloadSfx(SfxCue::UI_CANCEL);
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    const uint32_t sfxPrepMs = Platform::clock().millis() - sfxPrepStartedMs;
+#endif
     std::snprintf(battleMessage, sizeof(battleMessage), Ui::Amoled::WILD_FMT,
                   species->name);
     pushBattleLog(nowMs);
@@ -4830,12 +5646,21 @@ bool AmoledApp::beginExploreEncounter(
     setMusicContext(boss ? MusicContext::BATTLE_SPECIAL
                          : MusicContext::BATTLE);
     requestFullRender();
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    encounterStartedMs = encounterStartMs;
+    encounterPreparedMs = Platform::clock().millis() - encounterStartMs;
+    encounterSpritePrepMs = spritePrepMs;
+    encounterSfxPrepMs = sfxPrepMs;
+    encounterFirstFramePending = true;
+#endif
     return true;
 }
 
-void AmoledApp::pushBattleLog(uint32_t nowMs, bool invalidate) {
+void AmoledApp::pushBattleLog(uint32_t nowMs, bool invalidate,
+                              uint16_t durationMs) {
     if (!battleMessage[0]) return;
     if (battleLogQueueCount >= BATTLE_LOG_QUEUE_CAP) {
+        s_battleLogDurations[battleLogHead] = 0;
         battleLogHead = static_cast<uint8_t>(
             (battleLogHead + 1) % BATTLE_LOG_QUEUE_CAP);
         --battleLogQueueCount;
@@ -4844,6 +5669,8 @@ void AmoledApp::pushBattleLog(uint32_t nowMs, bool invalidate) {
         (battleLogHead + battleLogQueueCount) % BATTLE_LOG_QUEUE_CAP);
     std::snprintf(s_battleLogQueue[tail], sizeof(s_battleLogQueue[tail]), "%s",
                   battleMessage);
+    s_battleLogDurations[tail] = durationMs == 0
+        ? BATTLE_LOG_DEFAULT_MS : durationMs;
     ++battleLogQueueCount;
     if (invalidate && serviceBattleLog(nowMs)) {
         requestRenderRows(352, 448);
@@ -4851,6 +5678,7 @@ void AmoledApp::pushBattleLog(uint32_t nowMs, bool invalidate) {
 }
 
 bool AmoledApp::serviceBattleLog(uint32_t nowMs) {
+    if (battleAttackLogHeld && battleAnimationActive) return false;
     if (battleLogActive &&
         static_cast<int32_t>(nowMs - battleLogUntil) < 0) {
         return false;
@@ -4878,11 +5706,14 @@ bool AmoledApp::serviceBattleLog(uint32_t nowMs) {
                 BATTLE_LOG_LEN);
     battleLogLines[line][BATTLE_LOG_LEN - 1] = '\0';
     s_battleLogQueue[battleLogHead][0] = '\0';
+    const uint16_t durationMs = s_battleLogDurations[battleLogHead] == 0
+        ? BATTLE_LOG_DEFAULT_MS : s_battleLogDurations[battleLogHead];
+    s_battleLogDurations[battleLogHead] = 0;
     battleLogHead = static_cast<uint8_t>(
         (battleLogHead + 1) % BATTLE_LOG_QUEUE_CAP);
     --battleLogQueueCount;
     battleLogActive = true;
-    battleLogUntil = nowMs + BATTLE_LOG_LINE_MS;
+    battleLogUntil = nowMs + durationMs;
     return true;
 }
 
@@ -4898,7 +5729,118 @@ void AmoledApp::clearBattleLog() {
     battleLogActive = false;
     battleMessage[0] = '\0';
     for (auto& line : s_battleLogQueue) line[0] = '\0';
+    for (auto& duration : s_battleLogDurations) duration = 0;
     for (auto& line : battleLogLines) line[0] = '\0';
+}
+
+void AmoledApp::enqueueBattleEffectLogs(
+    const BattleSystem::EffectResolution& effects, bool attackerWild,
+    uint32_t nowMs) {
+    const Species* playerSpecies = battlePlayerSlot < gameState.teamCount
+        ? findSpecies(gameState.team[battlePlayerSlot].speciesId) : nullptr;
+    const Species* wildSpecies = findSpecies(battleWild.speciesId);
+    if (!playerSpecies || !wildSpecies) return;
+    auto statusLabel = [](Game::MajorStatus status) -> const char* {
+        switch (status) {
+        case Game::MajorStatus::POISON: return Ui::Status::STATUS_POISON;
+        case Game::MajorStatus::TOXIC: return Ui::Status::STATUS_TOXIC;
+        case Game::MajorStatus::PARALYSIS: return Ui::Status::STATUS_PARALYSIS;
+        case Game::MajorStatus::SLEEP: return Ui::Status::STATUS_SLEEP;
+        case Game::MajorStatus::BURN: return Ui::Status::STATUS_BURN;
+        case Game::MajorStatus::FREEZE: return Ui::Status::STATUS_FREEZE;
+        default: return Ui::Status::STATUS_OK;
+        }
+    };
+    for (uint8_t index = 0; index < effects.count; ++index) {
+        const auto& outcome = effects.outcomes[index];
+        const bool targetWild = outcome.target == MoveEffectTarget::ATTACKER
+            ? attackerWild : !attackerWild;
+        const char* targetName = targetWild
+            ? wildSpecies->name : playerSpecies->name;
+        const char* attackerName = attackerWild
+            ? wildSpecies->name : playerSpecies->name;
+        if (outcome.ability != AbilityId::NONE) {
+            std::snprintf(battleMessage, sizeof(battleMessage),
+                          Ui::Explore::ABILITY_ACTIVATED_FMT,
+                          outcome.ability == AbilityId::INTIMIDATE
+                              ? attackerName : targetName,
+                          abilityName(outcome.ability));
+            pushBattleLog(nowMs, false);
+        }
+        switch (outcome.kind) {
+        case BattleSystem::EffectOutcomeKind::STATUS_APPLIED:
+        case BattleSystem::EffectOutcomeKind::YAWN_SLEEP:
+            std::snprintf(battleMessage, sizeof(battleMessage),
+                          Ui::Explore::STATUS_APPLIED_FMT, targetName,
+                          statusLabel(outcome.status));
+            break;
+        case BattleSystem::EffectOutcomeKind::STATUS_FAILED:
+            std::snprintf(battleMessage, sizeof(battleMessage), "%s",
+                          Ui::Explore::NO_EFFECT);
+            break;
+        case BattleSystem::EffectOutcomeKind::CONFUSED:
+            std::snprintf(battleMessage, sizeof(battleMessage),
+                          Ui::Explore::CONFUSED_FMT, targetName);
+            break;
+        case BattleSystem::EffectOutcomeKind::BOUND:
+            std::snprintf(battleMessage, sizeof(battleMessage),
+                          Ui::Explore::BOUND_FMT, targetName);
+            break;
+        case BattleSystem::EffectOutcomeKind::STAT_CHANGED: {
+            const uint8_t stat = static_cast<uint8_t>(outcome.stat);
+            if (stat >= static_cast<uint8_t>(BattleStat::COUNT)) continue;
+            std::snprintf(battleMessage, sizeof(battleMessage),
+                          outcome.stageDelta > 0 ? Ui::Explore::STAT_ROSE_FMT
+                                                 : Ui::Explore::STAT_FELL_FMT,
+                          targetName, Ui::Explore::STAT_NAMES[stat]);
+            break;
+        }
+        case BattleSystem::EffectOutcomeKind::DRAINED:
+            std::snprintf(battleMessage, sizeof(battleMessage),
+                          Ui::Explore::DRAINED_FMT, outcome.amount);
+            break;
+        case BattleSystem::EffectOutcomeKind::RECOIL:
+            std::snprintf(battleMessage, sizeof(battleMessage),
+                          Ui::Explore::RECOIL_FMT, targetName, outcome.amount);
+            break;
+        case BattleSystem::EffectOutcomeKind::HEALED:
+            std::snprintf(battleMessage, sizeof(battleMessage),
+                          Ui::Explore::HEALED_FMT, targetName, outcome.amount);
+            break;
+        case BattleSystem::EffectOutcomeKind::CURED:
+            std::snprintf(battleMessage, sizeof(battleMessage),
+                          Ui::Explore::CURED_FMT, targetName);
+            break;
+        case BattleSystem::EffectOutcomeKind::BIND_CLEARED:
+        case BattleSystem::EffectOutcomeKind::BIND_ENDED:
+            std::snprintf(battleMessage, sizeof(battleMessage),
+                          Ui::Explore::BIND_ENDED_FMT, targetName);
+            break;
+        case BattleSystem::EffectOutcomeKind::YAWNED:
+            std::snprintf(battleMessage, sizeof(battleMessage),
+                          Ui::Explore::YAWNED_FMT, targetName);
+            break;
+        case BattleSystem::EffectOutcomeKind::STATUS_DAMAGE:
+            std::snprintf(battleMessage, sizeof(battleMessage),
+                          Ui::Explore::STATUS_DAMAGE_FMT, targetName,
+                          outcome.amount);
+            break;
+        case BattleSystem::EffectOutcomeKind::BIND_DAMAGE:
+            std::snprintf(battleMessage, sizeof(battleMessage),
+                          Ui::Explore::BIND_DAMAGE_FMT, targetName,
+                          outcome.amount);
+            break;
+        case BattleSystem::EffectOutcomeKind::ABILITY_ACTIVATED:
+            if (outcome.amount == 0) continue;
+            std::snprintf(battleMessage, sizeof(battleMessage),
+                          Ui::Explore::ABSORB_HEAL_FMT, targetName,
+                          outcome.amount);
+            break;
+        case BattleSystem::EffectOutcomeKind::FLINCHED:
+            continue;
+        }
+        pushBattleLog(nowMs, false);
+    }
 }
 
 void AmoledApp::performBattleAttack(uint32_t nowMs) {
@@ -4953,6 +5895,8 @@ void AmoledApp::performBattlePlayerAction(
         std::snprintf(battleMessage, sizeof(battleMessage), "%s",
                       Ui::Amoled::ACTION_BLOCKED);
         pushBattleLog(nowMs);
+        battleContinuation = BattleContinuation::ADVANCE_TURN;
+        return;
     } else {
         const MoveInfo* selectedMove = findMove(moveId);
         if (selectedMove && BattleSystem::moveRequiresCharge(moveId) &&
@@ -4968,7 +5912,7 @@ void AmoledApp::performBattlePlayerAction(
             std::snprintf(battleMessage, sizeof(battleMessage), "%s",
                           Ui::Amoled::CHARGING);
             pushBattleLog(nowMs);
-            advanceBattleTurn(nowMs);
+            battleContinuation = BattleContinuation::ADVANCE_TURN;
             return;
         }
         if (releasingCharge) BattleSystem::clearChargingMove(battlePlayerState);
@@ -4989,7 +5933,8 @@ void AmoledApp::performBattlePlayerAction(
         const MoveInfo* move = findMove(damage.moveId);
         formatBattleMoveUsed(battleMessage, sizeof(battleMessage),
                              *playerSpecies, move, false);
-        pushBattleLog(nowMs);
+        battleAttackLogHeld = true;
+        pushBattleLog(nowMs, true, BATTLE_ATTACK_LOG_MS);
         BattleSystem::EffectResolution moveEffects{};
         if (move) {
             BattleSystem::recordMoveResult(
@@ -5007,10 +5952,10 @@ void AmoledApp::performBattlePlayerAction(
         }
         formatBattleOutcome(battleMessage, sizeof(battleMessage), damage,
                             dealt, moveEffects, move, false);
-        // The footer log can wait until the action animation finishes. Keeping
-        // it out of this invalidation lets each animation frame use only the
-        // upper dynamic battle region.
-        pushBattleLog(nowMs, false);
+        // Keep the move line visible through the attack; the result line is
+        // presented after the animation releases the log queue.
+        pushBattleLog(nowMs, false, BATTLE_RESULT_LOG_MS);
+        enqueueBattleEffectLogs(moveEffects, false, nowMs);
         battleAnimationActive = true;
         battleAnimationAttackerWild = false;
         battleAnimationHit = !damage.missed && !damage.failed && dealt > 0;
@@ -5020,6 +5965,7 @@ void AmoledApp::performBattlePlayerAction(
             BATTLE_GAUGE_FRAME_MS;
         battleAnimationFrame = 1;
         battleAnimationStartedMs = Platform::clock().millis();
+        battleContinuation = BattleContinuation::ADVANCE_TURN;
         if (battleAnimationHit && battleWild.hpCur != wildHpBefore) {
             startBattleHpAnimation(
                 true, wildHpBefore, battleWild.hpCur, battleWild.hpMax,
@@ -5027,7 +5973,9 @@ void AmoledApp::performBattlePlayerAction(
         }
         battleAudioPending = true;
         battleAudioReady = false;
-        battlePendingSfx = static_cast<uint8_t>(
+        battlePendingSfx = 0xFF;
+        battleImpactAudioPlayed = false;
+        battleImpactSfx = static_cast<uint8_t>(
             battleAnimationHit
                 ? (damage.effectiveness > 100 ? SfxCue::DAMAGE_SUPER
                    : damage.effectiveness < 100 ? SfxCue::DAMAGE_WEAK
@@ -5039,7 +5987,6 @@ void AmoledApp::performBattlePlayerAction(
         requestRenderRows(0, BATTLE_ANIMATION_RENDER_END);
         return;
     }
-    advanceBattleTurn(nowMs);
 }
 
 bool AmoledApp::resolveBattleFaint(uint32_t nowMs) {
@@ -5108,24 +6055,76 @@ void AmoledApp::performBattleSwitch(uint8_t teamSlot, bool consumesTurn,
     const Species* candidateSpecies = findSpecies(candidate.speciesId);
     const Species* wildSpecies = findSpecies(battleWild.speciesId);
     if (!candidateSpecies || !wildSpecies) return;
-    battlePlayerSlot = teamSlot;
-    BattleSystem::resetVolatile(battlePlayerState);
-    battleTurnController.resetPlayerAi();
-    BattleSystem::EffectResolution effects;
-    BattleSystem::applyEntryAbility(
-        *candidateSpecies, battlePlayerState, *wildSpecies,
-        battleWildState, effects);
-    uint16_t dynamicSpecies[] = {candidate.speciesId, battleWild.speciesId};
-    PokemonSprites::setDynamicSceneSpecies(dynamicSpecies, 2);
-    PokemonSprites::preloadDynamicSpecies(dynamicSpecies, 2);
+    pendingBattleSwitchSlot = teamSlot;
+    battleSwitchConsumesTurn = consumesTurn;
+    battleSwitchStage = BattleSwitchStage::RETREATING;
+    battleSwitchStartedMs = Platform::clock().millis();
+    nextBattleSwitchFrameMs = battleSwitchStartedMs;
     battlePhase = BattleViewModel::Phase::ACTION;
     battlePressedItem = 0xFF;
-    std::snprintf(battleMessage, sizeof(battleMessage), "%s",
-                  Ui::Amoled::SWITCHED_IN);
-    pushBattleLog(nowMs);
+    requestRenderRows(0, BATTLE_ANIMATION_RENDER_END);
+}
+
+void AmoledApp::updateBattleSwitch(uint32_t nowMs) {
+    if (battleSwitchStage == BattleSwitchStage::NONE) return;
+    if (static_cast<int32_t>(nowMs - nextBattleSwitchFrameMs) >= 0) {
+        nextBattleSwitchFrameMs = nowMs + BATTLE_SWITCH_FRAME_MS;
+        requestRenderRows(0, BATTLE_ANIMATION_RENDER_END);
+    }
+    if (nowMs - battleSwitchStartedMs < BATTLE_SWITCH_PHASE_MS) return;
+    if (battleSwitchStage == BattleSwitchStage::RETREATING) {
+        if (pendingBattleSwitchSlot >= gameState.teamCount ||
+            pendingBattleSwitchSlot >= Game::TEAM_CAP ||
+            gameState.team[pendingBattleSwitchSlot].fainted ||
+            gameState.team[pendingBattleSwitchSlot].hpCur == 0) {
+            battleSwitchStage = BattleSwitchStage::NONE;
+            pendingBattleSwitchSlot = 0xFF;
+            battleSwitchConsumesTurn = false;
+            requestRenderRows(0, BATTLE_ANIMATION_RENDER_END);
+            return;
+        }
+        battlePlayerSlot = pendingBattleSwitchSlot;
+        pendingBattleSwitchSlot = 0xFF;
+        const Species* candidateSpecies = findSpecies(
+            gameState.team[battlePlayerSlot].speciesId);
+        const Species* wildSpecies = findSpecies(battleWild.speciesId);
+        if (!candidateSpecies || !wildSpecies) {
+            battleSwitchStage = BattleSwitchStage::NONE;
+            battleSwitchConsumesTurn = false;
+            return;
+        }
+        BattleSystem::resetVolatile(battlePlayerState);
+        battleTurnController.resetPlayerAi();
+        BattleSystem::EffectResolution effects;
+        BattleSystem::applyEntryAbility(
+            *candidateSpecies, battlePlayerState, *wildSpecies,
+            battleWildState, effects);
+        uint16_t dynamicSpecies[] = {
+            gameState.team[battlePlayerSlot].speciesId, battleWild.speciesId};
+        PokemonSprites::setDynamicSceneSpecies(dynamicSpecies, 2);
+        PokemonSprites::preloadDynamicSpecies(dynamicSpecies, 2);
+        enqueueBattleEffectLogs(effects, false, nowMs);
+        battleSwitchStage = BattleSwitchStage::ENTERING;
+        battleSwitchStartedMs = Platform::clock().millis();
+        nextBattleSwitchFrameMs = battleSwitchStartedMs;
+        requestRenderRows(0, BATTLE_ANIMATION_RENDER_END);
+        return;
+    }
+    battleSwitchStage = BattleSwitchStage::NONE;
+    battleSwitchStartedMs = 0;
+    const Species* candidateSpecies = findSpecies(
+        gameState.team[battlePlayerSlot].speciesId);
+    if (candidateSpecies) {
+        std::snprintf(battleMessage, sizeof(battleMessage),
+                      Ui::Explore::SWITCH_IN_FMT, candidateSpecies->name);
+        pushBattleLog(nowMs);
+    }
     saveState();
-    if (consumesTurn) performBattleWildTurn(nowMs);
-    else requestFullRender();
+    if (battleSwitchConsumesTurn) {
+        battleContinuation = BattleContinuation::WILD_TURN;
+    }
+    battleSwitchConsumesTurn = false;
+    requestRenderRows(0, BATTLE_ANIMATION_RENDER_END);
 }
 
 void AmoledApp::performBattleWildTurn(uint32_t nowMs) {
@@ -5183,7 +6182,7 @@ void AmoledApp::performBattleWildAction(
             std::snprintf(battleMessage, sizeof(battleMessage), "%s",
                           Ui::Amoled::WILD_CHARGE);
             pushBattleLog(nowMs);
-            advanceBattleTurn(nowMs);
+            battleContinuation = BattleContinuation::ADVANCE_TURN;
             return;
         }
         if (releasingCharge) BattleSystem::clearChargingMove(battleWildState);
@@ -5203,7 +6202,8 @@ void AmoledApp::performBattleWildAction(
         const MoveInfo* move = findMove(damage.moveId);
         formatBattleMoveUsed(battleMessage, sizeof(battleMessage),
                              *wildSpecies, move, true);
-        pushBattleLog(nowMs);
+        battleAttackLogHeld = true;
+        pushBattleLog(nowMs, true, BATTLE_ATTACK_LOG_MS);
         BattleSystem::EffectResolution moveEffects{};
         if (move) {
             BattleSystem::recordMoveResult(
@@ -5221,7 +6221,8 @@ void AmoledApp::performBattleWildAction(
         formatBattleOutcome(battleMessage, sizeof(battleMessage), damage,
                             dealt, moveEffects, move, true);
         // Defer the footer update while this attack animation is running.
-        pushBattleLog(nowMs, false);
+        pushBattleLog(nowMs, false, BATTLE_RESULT_LOG_MS);
+        enqueueBattleEffectLogs(moveEffects, true, nowMs);
         battleAnimationActive = true;
         battleAnimationAttackerWild = true;
         battleAnimationHit = !damage.missed && !damage.failed && dealt > 0;
@@ -5231,6 +6232,7 @@ void AmoledApp::performBattleWildAction(
             BATTLE_GAUGE_FRAME_MS;
         battleAnimationFrame = 1;
         battleAnimationStartedMs = Platform::clock().millis();
+        battleContinuation = BattleContinuation::ADVANCE_TURN;
         if (battleAnimationHit && player.hpCur != playerHpBefore) {
             startBattleHpAnimation(
                 false, playerHpBefore, player.hpCur, player.hpMax,
@@ -5238,7 +6240,9 @@ void AmoledApp::performBattleWildAction(
         }
         battleAudioPending = true;
         battleAudioReady = false;
-        battlePendingSfx = static_cast<uint8_t>(
+        battlePendingSfx = 0xFF;
+        battleImpactAudioPlayed = false;
+        battleImpactSfx = static_cast<uint8_t>(
             battleAnimationHit
                 ? (damage.effectiveness > 100 ? SfxCue::DAMAGE_SUPER
                    : damage.effectiveness < 100 ? SfxCue::DAMAGE_WEAK
@@ -5262,8 +6266,8 @@ void AmoledApp::performBattleWildAction(
         std::snprintf(battleMessage, sizeof(battleMessage), "%s",
                       Ui::Amoled::WILD_BLOCKED);
         pushBattleLog(nowMs);
+        battleContinuation = BattleContinuation::ADVANCE_TURN;
     }
-    advanceBattleTurn(nowMs);
 }
 
 void AmoledApp::performBattlePlannedAction(uint32_t nowMs) {
@@ -5329,8 +6333,7 @@ int8_t AmoledApp::availableBattleSwitchSlot() const {
 
 void AmoledApp::startBattleHpAnimation(bool wildSide, uint16_t fromHp,
                                        uint16_t toHp, uint16_t maxHp,
-                                       uint32_t startedMs,
-                                       bool wildTurnAfter) {
+                                       uint32_t startedMs) {
     battleHpAnimationWild = wildSide;
     battleHpAnimationFrom = fromHp;
     battleHpAnimationTo = toHp;
@@ -5338,8 +6341,6 @@ void AmoledApp::startBattleHpAnimation(bool wildSide, uint16_t fromHp,
     battleHpAnimationStartedMs = startedMs;
     nextBattleHpAnimationFrameMs = startedMs;
     battleHpAnimationActive = fromHp != toHp;
-    battleWildTurnAfterHpAnimation =
-        battleHpAnimationActive && wildTurnAfter;
 }
 
 uint8_t AmoledApp::battleHpPercentForRender(
@@ -5385,8 +6386,20 @@ void AmoledApp::startBattleExperienceAnimation(uint32_t nowMs) {
     const Game::MonsterRuntime& player = gameState.team[battlePlayerSlot];
     const Species* species = findSpecies(player.speciesId);
     if (!species) return;
+    bool hasReserve = false;
+    for (uint8_t slot = 0; slot < gameState.teamCount &&
+         slot < Game::TEAM_CAP; ++slot) {
+        if (slot == battlePlayerSlot) continue;
+        const Game::MonsterRuntime& reserve = gameState.team[slot];
+        if (!reserve.fainted && reserve.hpCur > 0) {
+            hasReserve = true;
+            break;
+        }
+    }
+    const BattleSystem::ExperienceAwards awards =
+        BattleSystem::experienceAwards(battleRewardExp, hasReserve);
     Game::MonsterRuntime preview = player;
-    Game::ExperienceService::add(preview, *species, battleRewardExp);
+    Game::ExperienceService::add(preview, *species, awards.active);
     battleExperienceAnimationFrom = player.exp;
     battleExperienceAnimationTo = preview.exp;
     battleExperienceAnimationActive =
@@ -5418,8 +6431,8 @@ uint32_t AmoledApp::battleExperienceForRender(uint32_t nowMs) const {
 }
 
 void AmoledApp::performBattleBag(uint32_t nowMs) {
-    if (Game::ItemInventory::homeBagExploreItemCount(gameState) == 0) {
-        setToast(Ui::Amoled::NO_MEDICINE, nowMs);
+    if (Game::ItemInventory::homeBagItemCount(gameState) == 0) {
+        setToast(Ui::Amoled::NOTHING, nowMs);
         return;
     }
     battlePhase = BattleViewModel::Phase::ACTION;
@@ -5432,8 +6445,54 @@ void AmoledApp::performBattleBagItem(Game::ItemId item, uint32_t nowMs) {
     if (!battleBagMode || sceneFlow.current() != AppSceneFlow::Scene::BAG) {
         return;
     }
-    if (!Game::ItemInventory::usableInBattle(item)) {
+    const int8_t foodIndex = Game::foodIndexForItemId(item);
+    if (foodIndex < 0 && !Game::ItemInventory::usableInBattle(item)) {
         setToast(Ui::Amoled::CANNOT_USE, nowMs);
+        return;
+    }
+    if (foodIndex >= 0) {
+        const Species* wildSpecies = findSpecies(battleWild.speciesId);
+        if (!wildSpecies) return;
+        if (!Game::ItemInventory::remove(gameState, item)) {
+            setToast(Ui::Room::FOOD_NO_STOCK, nowMs);
+            return;
+        }
+        saveState();
+        itemVelocity = 0.0f;
+        itemConfirmOpen = false;
+        pendingItem = Game::ItemId::COUNT;
+        pendingItemAction = PendingItemAction::NONE;
+        pressedItemRow = -1;
+        battleBagMode = false;
+        sceneFlow.closeSubScene();
+        std::snprintf(battleMessage, sizeof(battleMessage),
+                      Ui::Explore::FOOD_THROW_FMT, wildSpecies->name,
+                      Ui::Room::FOOD_NAMES[foodIndex]);
+        pushBattleLog(nowMs);
+        const FoodTuning::ThrowClass throwClass =
+            FriendshipSystem::classifyFoodThrow(
+                static_cast<uint8_t>(foodIndex), battleWild.nature);
+        const bool accepted = FriendshipSystem::acceptsFoodThrow(
+            battleIsBoss, throwClass,
+            static_cast<uint8_t>(GameRandom::range(0, 100)));
+        std::snprintf(battleMessage, sizeof(battleMessage),
+                      accepted
+                          ? (throwClass == FoodTuning::ThrowClass::LIKED
+                                 ? Ui::Explore::FOOD_ACCEPTED_LIKED_FMT
+                                 : Ui::Explore::FOOD_ACCEPTED_FMT)
+                          : (throwClass == FoodTuning::ThrowClass::DISLIKED
+                                 ? Ui::Explore::FOOD_REFUSED_DISLIKED_FMT
+                                 : Ui::Explore::FOOD_REFUSED_FMT),
+                      wildSpecies->name);
+        pushBattleLog(nowMs);
+        if (accepted) {
+            battleFoodBond = FriendshipSystem::addFoodBond(
+                battleFoodBond, FriendshipSystem::throwBondGain(throwClass));
+        }
+        battleContinuation = accepted ? BattleContinuation::ADVANCE_TURN
+                                      : BattleContinuation::WILD_TURN;
+        AudioManager::ins().playSfx(SfxCue::THROW);
+        requestFullRender();
         return;
     }
     if (battlePlayerSlot >= gameState.teamCount ||
@@ -5462,12 +6521,10 @@ void AmoledApp::performBattleBagItem(Game::ItemId item, uint32_t nowMs) {
     battlePhase = BattleViewModel::Phase::ACTION;
     if (hpAfter != hpBefore) {
         startBattleHpAnimation(false, hpBefore, hpAfter, player.hpMax,
-                               animationNowMs, true);
-        requestFullRender();
-    } else {
-        requestFullRender();
-        performBattleWildTurn(animationNowMs);
+                               animationNowMs);
     }
+    battleContinuation = BattleContinuation::WILD_TURN;
+    requestFullRender();
 }
 
 void AmoledApp::performBattleFlee(uint32_t nowMs) {
@@ -5480,7 +6537,7 @@ void AmoledApp::performBattleFlee(uint32_t nowMs) {
     std::snprintf(battleMessage, sizeof(battleMessage), "%s",
                   Ui::Amoled::CANNOT_ESCAPE);
     pushBattleLog(nowMs);
-    performBattleWildTurn(nowMs);
+    battleContinuation = BattleContinuation::WILD_TURN;
 }
 
 void AmoledApp::finishBattleVictory(uint32_t nowMs) {
@@ -5492,24 +6549,65 @@ void AmoledApp::finishBattleVictory(uint32_t nowMs) {
     }
     Game::MonsterRuntime& player = gameState.team[battlePlayerSlot];
     const Species* species = findSpecies(player.speciesId);
-    if (!species) {
+    const Species* wildSpecies = findSpecies(battleWild.speciesId);
+    if (!species || !wildSpecies) {
         closeBattle(nowMs);
         return;
     }
-    Game::ExperienceService::Result playerExperience =
-        Game::ExperienceService::add(player, *species, battleRewardExp);
-    battleVictoryOldLevel = playerExperience.oldLevel;
-    battleVictoryLeveledUp = playerExperience.leveledUp;
+    uint8_t reserveSlot = 0xFF;
     for (uint8_t slot = 0; slot < gameState.teamCount &&
          slot < Game::TEAM_CAP; ++slot) {
         if (slot == battlePlayerSlot) continue;
-        Game::MonsterRuntime& reserve = gameState.team[slot];
-        if (reserve.fainted || reserve.hpCur == 0) continue;
+        const Game::MonsterRuntime& reserve = gameState.team[slot];
+        if (!reserve.fainted && reserve.hpCur > 0) {
+            reserveSlot = slot;
+            break;
+        }
+    }
+    const BattleSystem::ExperienceAwards awards =
+        BattleSystem::experienceAwards(
+            battleRewardExp, reserveSlot != 0xFF);
+
+    Game::EffortService::grant(player, *wildSpecies, *species);
+    const Game::ExperienceService::Result playerExperience =
+        Game::ExperienceService::add(player, *species, awards.active);
+    queueBattleProgression(battlePlayerSlot, playerExperience.oldLevel,
+                           playerExperience.leveledUp);
+    if (playerExperience.leveledUp) {
+        std::snprintf(battleMessage, sizeof(battleMessage),
+                      Ui::Explore::LEVEL_UP_LOG_FMT, species->name,
+                      playerExperience.newLevel);
+        pushBattleLog(nowMs);
+    }
+
+    if (reserveSlot != 0xFF && awards.reserve > 0) {
+        Game::MonsterRuntime& reserve = gameState.team[reserveSlot];
         const Species* reserveSpecies = findSpecies(reserve.speciesId);
-        if (!reserveSpecies) continue;
-        uint16_t reserveReward = BattleSystem::scaledExperienceReward(
-            battleRewardExp, BattleSystem::RESERVE_EXP_PERCENT);
-        Game::ExperienceService::add(reserve, *reserveSpecies, reserveReward);
+        if (reserveSpecies) {
+            Game::EffortService::grant(
+                reserve, *wildSpecies, *reserveSpecies);
+            const Game::ExperienceService::Result reserveExperience =
+                Game::ExperienceService::add(
+                    reserve, *reserveSpecies, awards.reserve);
+            if (reserveExperience.awarded > 0) {
+                std::snprintf(battleMessage, sizeof(battleMessage),
+                              Ui::Explore::SHARED_EXP_GAIN_FMT,
+                              reserveSpecies->name,
+                              static_cast<unsigned>(
+                                  reserveExperience.awarded));
+                pushBattleLog(nowMs);
+            }
+            queueBattleProgression(
+                reserveSlot, reserveExperience.oldLevel,
+                reserveExperience.leveledUp);
+            if (reserveExperience.leveledUp) {
+                std::snprintf(battleMessage, sizeof(battleMessage),
+                              Ui::Explore::LEVEL_UP_LOG_FMT,
+                              reserveSpecies->name,
+                              reserveExperience.newLevel);
+                pushBattleLog(nowMs);
+            }
+        }
     }
     gameState.coins += battleRewardCoins;
     if (battleIsBoss) {
@@ -5530,23 +6628,21 @@ void AmoledApp::finishBattleVictory(uint32_t nowMs) {
     }
     bool allowsFriendship = battleSpecialKind == ExploreSpecial::Kind::NONE ||
         ExploreSpecial::configFor(battleSpecialKind).allowsFriendship;
-    const Species* wildSpecies = findSpecies(battleWild.speciesId);
-    if (!wildSpecies) {
-        saveState();
-        finishBattleAfterFriendship(nowMs);
-        return;
-    }
     Game::FriendshipService::OfferResult offer =
         Game::FriendshipService::evaluateOffer(
             gameState, *wildSpecies, battleWild,
-            battleIsBoss, allowsFriendship, 0);
+            battleIsBoss, allowsFriendship, battleFoodBond);
     if (offer.offered) {
         battleFriendshipPrompt = BattleViewModel::FriendshipPrompt::OFFER;
         battleFriendshipContactSlot = 0xFF;
         battlePhase = BattleViewModel::Phase::FRIENDSHIP;
         battlePressedItem = 0xFF;
+        std::snprintf(battleMessage, sizeof(battleMessage),
+                      Ui::Explore::FRIEND_RECOGNIZES_FMT,
+                      wildSpecies->name);
+        pushBattleLog(nowMs);
         std::snprintf(battleMessage, sizeof(battleMessage), "%s",
-                      Ui::Amoled::BECOME_FRIEND);
+                      Ui::Explore::FRIEND_CONTACT_QUESTION);
         pushBattleLog(nowMs);
         saveState();
         requestFullRender();
@@ -5557,6 +6653,11 @@ void AmoledApp::finishBattleVictory(uint32_t nowMs) {
             gameState, battleWild.speciesId);
     }
     saveState();
+    if (battleLogPlaybackBusy()) {
+        battleVictoryFinalizePending = true;
+        requestRenderRows(352, 448);
+        return;
+    }
     finishBattleAfterFriendship(nowMs);
 }
 
@@ -5636,15 +6737,53 @@ void AmoledApp::resolveBattleFriendship(uint8_t choice, uint32_t nowMs) {
 
 void AmoledApp::finishBattleAfterFriendship(uint32_t nowMs) {
     saveState();
-    if (battleVictoryLeveledUp) {
+    if (battleProgressionCount > battleProgressionIndex) {
         autonomousExpedition = false;
-        openProgressionScene(AppSceneFlow::Scene::EXPLORE_ROUTE,
-                             battlePlayerSlot, battleVictoryOldLevel, nowMs);
-        return;
+        battleProgressionSequenceActive = true;
+        if (startNextBattleProgression(nowMs)) return;
     }
     closeBattle(nowMs);
     if (autonomousExpedition) exploreRouteAutoWalk = true;
-    setToast(Ui::Amoled::BATTLE_COMPLETE, nowMs);
+}
+
+void AmoledApp::resetBattleProgressionQueue() {
+    for (uint8_t slot = 0; slot < Game::TEAM_CAP; ++slot) {
+        battleProgressionSlots[slot] = 0;
+        battleProgressionOldLevels[slot] = 0;
+    }
+    battleProgressionCount = 0;
+    battleProgressionIndex = 0;
+    battleProgressionSequenceActive = false;
+    battleVictoryFinalizePending = false;
+}
+
+void AmoledApp::queueBattleProgression(uint8_t teamSlot, uint8_t oldLevel,
+                                       bool leveledUp) {
+    if (!leveledUp || teamSlot >= gameState.teamCount ||
+        teamSlot >= Game::TEAM_CAP ||
+        battleProgressionCount >= Game::TEAM_CAP) {
+        return;
+    }
+    battleProgressionSlots[battleProgressionCount] = teamSlot;
+    battleProgressionOldLevels[battleProgressionCount] = oldLevel;
+    ++battleProgressionCount;
+}
+
+bool AmoledApp::startNextBattleProgression(uint32_t nowMs) {
+    while (battleProgressionIndex < battleProgressionCount) {
+        const uint8_t index = battleProgressionIndex++;
+        const uint8_t teamSlot = battleProgressionSlots[index];
+        const uint8_t oldLevel = battleProgressionOldLevels[index];
+        if (teamSlot >= gameState.teamCount || teamSlot >= Game::TEAM_CAP ||
+            gameState.team[teamSlot].level <= oldLevel) {
+            continue;
+        }
+        openProgressionScene(AppSceneFlow::Scene::EXPLORE_ROUTE,
+                             teamSlot, oldLevel, nowMs);
+        return true;
+    }
+    battleProgressionSequenceActive = false;
+    return false;
 }
 
 void AmoledApp::finishBattleDefeat(uint32_t nowMs) {
@@ -5658,6 +6797,8 @@ void AmoledApp::finishBattleDefeat(uint32_t nowMs) {
             gameState.gameMinutesTotal);
     }
     saveState();
+    exploreRecoveryPendingSave = false;
+    exploreSessionActive = false;
     autonomousExpedition = false;
     PokemonSprites::setDynamicSceneSpecies(nullptr, 0);
     // Defeat returns directly from battle to the room instead of using the
@@ -5666,6 +6807,7 @@ void AmoledApp::finishBattleDefeat(uint32_t nowMs) {
     expeditionMainHidden = false;
     expeditionCompanionHidden = false;
     expeditionCompanionDeparting = false;
+    placeFaintedHomeActors(nowMs);
 #if STICKMON_ENABLE_DEBUG_FEATURES
     if (debugBattleActive) {
         debugBattleActive = false;
@@ -5699,20 +6841,25 @@ void AmoledApp::closeBattle(uint32_t nowMs) {
     battleSpecialKind = ExploreSpecial::Kind::NONE;
     battleFriendshipPrompt = BattleViewModel::FriendshipPrompt::OFFER;
     battleFriendshipContactSlot = 0xFF;
-    battleVictoryOldLevel = 1;
-    battleVictoryLeveledUp = false;
+    resetBattleProgressionQueue();
     battleAnimationActive = false;
+    battleSwitchStage = BattleSwitchStage::NONE;
+    pendingBattleSwitchSlot = 0xFF;
+    battleSwitchConsumesTurn = false;
     battleAnimationAttackerWild = false;
     battleAnimationHit = false;
     battleAnimationDamage = 0;
     battleAnimationFrame = 0;
+    battleAttackLogHeld = false;
+    battleImpactAudioPlayed = false;
+    battleImpactSfx = 0xFF;
     battleHpAnimationActive = false;
-    battleWildTurnAfterHpAnimation = false;
     battleExperienceVisible = false;
     battleExperienceAnimationActive = false;
     battleExperienceAnimationFrom = 0;
     battleExperienceAnimationTo = 0;
     battleBagMode = false;
+    battleFoodBond = 0;
     battleAudioPending = false;
     battleAudioReady = false;
     battlePendingSfx = 0xFF;
@@ -5721,6 +6868,7 @@ void AmoledApp::closeBattle(uint32_t nowMs) {
     battleTurnActionIndex = 0;
     battleTurnDamaged[0] = false;
     battleTurnDamaged[1] = false;
+    battleContinuation = BattleContinuation::NONE;
     clearBattleLog();
     battlePhase = BattleViewModel::Phase::ACTION;
     exploreRouteAutoWalk = false;
@@ -5739,10 +6887,25 @@ void AmoledApp::updateExploreRouteCamera() {
     int cameraX = static_cast<int>(std::lround(exploreRouteWorldX)) - 92;
     int cameraY = static_cast<int>(std::lround(exploreRouteWorldY)) -
                   EXPLORE_ROUTE_VIEW_HEIGHT / (2 * AmoledUi::RESOURCE_SCALE);
-    exploreRouteCameraX = static_cast<int16_t>(
+    const int16_t nextCameraX = static_cast<int16_t>(
         std::clamp(cameraX, 0, maximumX));
-    exploreRouteCameraY = static_cast<int16_t>(
+    const int16_t nextCameraY = static_cast<int16_t>(
         std::clamp(cameraY, 0, maximumY));
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    if (nextCameraX != exploreRouteCameraX || nextCameraY != exploreRouteCameraY) {
+        Platform::logf(
+            "[AmoledExploreDiag] camera world=(%.2f,%.2f) old=(%d,%d) "
+            "next=(%d,%d) max=(%d,%d)\n",
+            static_cast<double>(exploreRouteWorldX),
+            static_cast<double>(exploreRouteWorldY),
+            static_cast<int>(exploreRouteCameraX),
+            static_cast<int>(exploreRouteCameraY),
+            static_cast<int>(nextCameraX), static_cast<int>(nextCameraY),
+            maximumX, maximumY);
+    }
+#endif
+    exploreRouteCameraX = nextCameraX;
+    exploreRouteCameraY = nextCameraY;
 }
 
 void AmoledApp::pauseExploreRoute(uint32_t nowMs) {
@@ -5763,7 +6926,7 @@ void AmoledApp::resumeExploreRoute(uint32_t nowMs) {
 
 void AmoledApp::settleExploreReturn() {
     const uint8_t bondGain = Game::Bond::adventureGain(exploreRouteSteps);
-    bool stateChanged = false;
+    bool stateChanged = exploreRecoveryPendingSave;
     for (uint8_t slot = 0;
          slot < gameState.teamCount && slot < Game::TEAM_CAP; ++slot) {
         Game::MonsterRuntime& monster = gameState.team[slot];
@@ -5784,7 +6947,7 @@ void AmoledApp::settleExploreReturn() {
         stateChanged = true;
     }
     exploreItemEffects.reset();
-    if (stateChanged) saveState();
+    if (stateChanged && saveState()) exploreRecoveryPendingSave = false;
 }
 
 void AmoledApp::leaveExploreRoute() {
@@ -5798,10 +6961,14 @@ void AmoledApp::leaveExploreRoute() {
 
 void AmoledApp::completeExploreReturn() {
     autonomousExpedition = false;
+    exploreRoutePool = ExplorePool::Pool{};
     PokemonSprites::setPinnedDynamicSpecies(nullptr, 0);
     settleExploreReturn();
 #if STICKMON_ENABLE_DEBUG_FEATURES
     if (debugContactActive && debugContactKind == 3) {
+        Platform::logf("[FriendDiag] home-return kind=3 team=%u phase=%u\n",
+                       static_cast<unsigned>(gameState.teamCount),
+                       static_cast<unsigned>(expeditionDeparturePhase));
         completeDebugContact(Platform::clock().millis());
     }
 #endif
@@ -5813,6 +6980,45 @@ void AmoledApp::completeExploreReturn() {
     sceneFlow.goHome();
     setMusicContext(MusicContext::HOME);
     requestFullRender();
+}
+
+void AmoledApp::placeFaintedHomeActors(uint32_t nowMs) {
+    RoomResource& room = RoomResource::ins();
+    if (gameState.teamCount > 0 &&
+        (gameState.team[0].fainted || gameState.team[0].hpCur == 0)) {
+        petX = petTargetX = room.available()
+            ? static_cast<float>(room.bedX()) : 76.0f;
+        petY = petTargetY = room.available()
+            ? static_cast<float>(room.bedY()) : 99.0f;
+        petResting = true;
+        petScheduledSleeping = false;
+        petMotion = PetMotion::IDLE;
+        petDirection = PokemonSprites::WalkDirection::DOWN;
+        petFrame = 0;
+        nextPetFrameMs = nowMs + 700;
+        homeMainActor.x = homeMainActor.targetX = petX;
+        homeMainActor.y = homeMainActor.targetY = petY;
+        homeMainActor.route.clear();
+        homeMainActor.velocityX = homeMainActor.velocityY = 0.0f;
+        homeRuntime.transition(0, Home::Task::FAINTED, nowMs, 0, true);
+    }
+    if (gameState.teamCount > 1 && homeCompanionActor.active &&
+        (gameState.team[1].fainted || gameState.team[1].hpCur == 0)) {
+        float sleepX = homeCompanionActor.x;
+        float sleepY = homeCompanionActor.y;
+        if (chooseCompanionSleepSpot(sleepX, sleepY)) {
+            homeCompanionActor.x = sleepX;
+            homeCompanionActor.y = sleepY;
+        }
+        homeCompanionActor.targetX = homeCompanionActor.x;
+        homeCompanionActor.targetY = homeCompanionActor.y;
+        homeCompanionActor.route.clear();
+        homeCompanionActor.velocityX = homeCompanionActor.velocityY = 0.0f;
+        homeCompanionActor.faintRestActive = true;
+        homeRuntime.transition(1, Home::Task::FAINTED, nowMs, 0, true);
+        companionFrame = 0;
+        nextCompanionFrameMs = nowMs + HOME_SLEEP_FRAME_MS;
+    }
 }
 
 void AmoledApp::updateClockAndCare(uint32_t nowMs) {
@@ -5837,8 +7043,11 @@ void AmoledApp::updateClockAndCare(uint32_t nowMs) {
     if (elapsedMs >= CARE_TICK_MS) {
         uint32_t elapsedMinutes = elapsedMs / CARE_TICK_MS;
         lastCareMs += elapsedMinutes * CARE_TICK_MS;
+        const bool homeRecoveryActive =
+            !exploreSessionActive &&
+            sceneFlow.current() != AppSceneFlow::Scene::BATTLE;
         Game::applyCareMinutes(gameState, careAcc, elapsedMinutes,
-                               gameSpeed(), true);
+                               gameSpeed(), homeRecoveryActive);
         requestRenderRows(HOME_STATUS_TOP, 448);
     }
 
@@ -5888,6 +7097,20 @@ void AmoledApp::updatePet(uint32_t nowMs) {
     // scene transitions, save restore, and visitor teardown. Repair stale
     // leases/routes before the next decision is allowed to claim a resource.
     homeRuntime.beginTick(nowMs);
+    if (visitDeparture != VisitDeparture::NONE &&
+        updateVisitDeparture(nowMs)) {
+        lastPetUpdateMs = nowMs;
+        return;
+    }
+    if (visitSession.visitorArrivalReady() &&
+        homeCompanionActor.active && homeCompanionActor.hidden &&
+        visitorMotion == VisitorMotion::NONE &&
+        gameState.teamCount > 1 &&
+        gameState.team[1].origin == Game::Origin::VISITOR) {
+        Platform::logf("[VisitArrival] departed species=%u\n",
+                       static_cast<unsigned>(homeCompanionActor.speciesId));
+        beginVisitorEntry(nowMs);
+    }
 #if STICKMON_HAS_CLAW
     // External ownership must be visible to the shared policy before food
     // arbitration. An already committed feeding transaction may still finish.
@@ -5908,6 +7131,12 @@ void AmoledApp::updatePet(uint32_t nowMs) {
     }
     serviceHomeFoodArbitration(nowMs);
     updateCompanion(nowMs);
+    if (visitorMotion == VisitorMotion::HOST_APPROACH ||
+        visitorMotion == VisitorMotion::ENTERING ||
+        visitorMotion == VisitorMotion::EXITING) {
+        lastPetUpdateMs = nowMs;
+        return;
+    }
     float elapsedSeconds = static_cast<float>(nowMs - lastPetUpdateMs) / 1000.0f;
     lastPetUpdateMs = nowMs;
     elapsedSeconds = std::min(elapsedSeconds, 0.1f);
@@ -6157,7 +7386,6 @@ void AmoledApp::updatePet(uint32_t nowMs) {
                     static_cast<unsigned>(result.satietyBefore),
                     static_cast<unsigned>(result.satietyAfter),
                     static_cast<unsigned>(gameState.room.bowlBitesRemaining));
-                setToast(Ui::Amoled::YUM, nowMs, 800);
                 if (result.reaction == FoodReaction::LIKED ||
                     result.foodIndex == Game::ROOM_TASTY_FOOD_INDEX) {
                     heartsUntil = nowMs + 900;
@@ -6326,6 +7554,29 @@ void AmoledApp::updatePet(uint32_t nowMs) {
             // clock has not reached its next frame yet.
             requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
         }
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        {
+            static uint32_t s_petMoveSampleMs = 0;
+            static float s_petSampleX = -1.0f;
+            static float s_petSampleY = -1.0f;
+            if (static_cast<int32_t>(nowMs - s_petMoveSampleMs) >= 0) {
+                s_petMoveSampleMs = nowMs + 500;
+                const bool moved = s_petSampleX >= 0.0f &&
+                    (std::fabs(petX - s_petSampleX) > 0.5f ||
+                     std::fabs(petY - s_petSampleY) > 0.5f);
+                Platform::logf(
+                    "[HomeDiag] pet-moving motion=%d pos=%.1f,%.1f frame=%u "
+                    "frameIn=%ld moved=%d route=%d\n",
+                    static_cast<int>(petMotion), petX, petY,
+                    static_cast<unsigned>(petFrame),
+                    static_cast<long>(static_cast<int32_t>(
+                        nextPetFrameMs - nowMs)),
+                    moved ? 1 : 0, static_cast<int>(routeStep));
+                s_petSampleX = petX;
+                s_petSampleY = petY;
+            }
+        }
+#endif
         if (static_cast<int32_t>(nowMs - nextPetFrameMs) >= 0) {
             PokemonSprites::PetAnimationProfile profile{};
             uint8_t frameCount = 3;
@@ -6663,6 +7914,7 @@ void AmoledApp::scheduleSpecialAction(uint32_t nowMs) {
 bool AmoledApp::ambientActionAllowed() const {
     if (roomAction != RoomAction::NONE || petMotion != PetMotion::IDLE ||
         homeMainActor.task != Home::Task::IDLE || homeRuntime.pairActive() ||
+        visitorMotion == VisitorMotion::HOST_APPROACH ||
         visitorMotion == VisitorMotion::ENTERING ||
         visitorMotion == VisitorMotion::EXITING || pendingExpedition ||
         expeditionDeparturePhase != ExpeditionDeparturePhase::NONE) {
@@ -7239,6 +8491,36 @@ void AmoledApp::initializeCompanionActor(uint32_t nowMs) {
     configureHomeRuntime();
 
     if (guest) {
+        if (visitSession.active() && visitSession.viewModel().localIsHost &&
+            !pendingExpedition &&
+            expeditionDeparturePhase == ExpeditionDeparturePhase::NONE) {
+            expeditionCompanionHidden = false;
+        }
+        if (visitSession.active() && visitSession.viewModel().localIsHost &&
+            !visitSession.visitorArrivalReady()) {
+            homeCompanionActor.hidden = true;
+            homeCompanionActor.stop(nowMs, 0);
+            Platform::logf("[VisitArrival] waiting species=%u\n",
+                           static_cast<unsigned>(monster.speciesId));
+            return;
+        }
+        if (pendingExpedition ||
+            expeditionDeparturePhase != ExpeditionDeparturePhase::NONE) {
+            // A departure is already queued: skip the door-entry animation
+            // and spawn inside the room so the companion can join the
+            // departure door walk.
+            float spawnX = homeCompanionActor.x;
+            float spawnY = homeCompanionActor.y;
+            if (chooseCompanionTarget(spawnX, spawnY)) {
+                homeCompanionActor.x = spawnX;
+                homeCompanionActor.y = spawnY;
+                homeCompanionActor.targetX = spawnX;
+                homeCompanionActor.targetY = spawnY;
+                homeCompanionActor.route.clear();
+            }
+            homeCompanionActor.stop(nowMs, 0);
+            return;
+        }
         beginVisitorEntry(nowMs);
         return;
     }
@@ -7380,7 +8662,7 @@ Home::ActorObservation AmoledApp::homeActorObservation(
     const Game::MonsterRuntime& monster = gameState.team[teamSlot];
     const Game::SpeciesCareProfile care =
         Game::speciesCareProfileFor(monster.speciesId);
-    observation.active = actor && actor->active;
+    observation.active = actor && actor->active && !actor->hidden;
     observation.controlAvailable = homeRuntime.autonomousAllowed(teamSlot);
     observation.visitor = monster.origin == Game::Origin::VISITOR;
     observation.canMove = care.canMove;
@@ -8066,6 +9348,14 @@ bool AmoledApp::beginCompanionMove(Home::Task task, float x, float y,
         !homeRuntime.transition(1, task, nowMs)) {
         return false;
     }
+    // The visitor entry ends on the doorway point, which sits outside the
+    // walk polygon. Routing out of it needs the ingress allowance, otherwise
+    // every wander/seek plan fails and the visitor stays frozen at the door.
+    if (!allowOutsideStart &&
+        !companionFootprintInsideWalkArea(
+            homeCompanionActor.x, homeCompanionActor.y)) {
+        allowOutsideStart = true;
+    }
     if (!homeRuntime.planRoute(
             1, x, y, allowOutsideStart, avoidOther)) {
         homeRuntime.stop(1, nowMs, 700);
@@ -8127,10 +9417,36 @@ void AmoledApp::updateCompanion(uint32_t nowMs) {
     elapsedSeconds = std::min(elapsedSeconds, 0.1f);
 
     updateVisitorMotion(nowMs, elapsedSeconds);
-    if (visitorMotion == VisitorMotion::ENTERING ||
+    if (homeCompanionActor.hidden && visitSession.active() &&
+        visitSession.viewModel().localIsHost &&
+        !visitSession.visitorArrivalReady()) return;
+    if (visitorMotion == VisitorMotion::HOST_APPROACH ||
+        visitorMotion == VisitorMotion::ENTERING ||
         visitorMotion == VisitorMotion::EXITING) {
         return;
     }
+
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    {
+        static uint32_t s_companionSampleMs = 0;
+        if (static_cast<int32_t>(nowMs - s_companionSampleMs) >= 0) {
+            s_companionSampleMs = nowMs + 1000;
+            Platform::logf(
+                "[HomeDiag] companion task=%d motion=%d pos=%.1f,%.1f "
+                "target=%.1f,%.1f decisionIn=%ld moveMode=%d pair=%d "
+                "visitor=%d\n",
+                static_cast<int>(homeCompanionActor.task),
+                static_cast<int>(homeCompanionActor.motion),
+                homeCompanionActor.x, homeCompanionActor.y,
+                homeCompanionActor.targetX, homeCompanionActor.targetY,
+                static_cast<long>(static_cast<int32_t>(
+                    homeCompanionActor.nextDecisionMs - nowMs)),
+                static_cast<int>(homeCompanionActor.behavior.movementMode),
+                static_cast<int>(pairPhase),
+                static_cast<int>(visitorMotion));
+        }
+    }
+#endif
 
     Game::MonsterRuntime& monster = gameState.team[1];
     const Home::ActorIntent initialCompanionIntent =
@@ -8385,14 +9701,27 @@ void AmoledApp::updateCompanion(uint32_t nowMs) {
         homeCompanionActor.motion = Home::MotionPhase::ROUTE;
         companionFrame = 0;
         nextCompanionFrameMs = nowMs;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        Platform::logf("[HomeDiag] companion wander from=%.1f,%.1f to=%.1f,%.1f\n",
+                       homeCompanionActor.x, homeCompanionActor.y,
+                       targetX, targetY);
+#endif
     } else {
         homeCompanionActor.nextDecisionMs = nowMs + 700;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        Platform::logf("[HomeDiag] companion decision failed pos=%.1f,%.1f "
+                       "target=%.1f,%.1f intent=%d\n",
+                       homeCompanionActor.x, homeCompanionActor.y,
+                       targetX, targetY,
+                       static_cast<int>(companionIntent));
+#endif
     }
 }
 
 bool AmoledApp::pairInteractionAllowed() const {
     if (sceneFlow.current() != AppSceneFlow::Scene::HOME ||
         gameState.teamCount < 2 || !homeCompanionActor.active ||
+        visitorMotion == VisitorMotion::HOST_APPROACH ||
         visitorMotion == VisitorMotion::ENTERING ||
         visitorMotion == VisitorMotion::EXITING ||
         roomAction != RoomAction::NONE ||
@@ -8432,8 +9761,18 @@ void AmoledApp::schedulePairInteraction(uint32_t nowMs, bool immediate) {
               PAIR_INTERACTION_MAX_INTERVAL_MS + 1));
 }
 
-bool AmoledApp::startPairInteraction(uint32_t nowMs, bool forceChase) {
-    if (!pairInteractionAllowed()) return false;
+bool AmoledApp::startPairInteraction(uint32_t nowMs, bool forceChase,
+                                     bool forceTalk) {
+    if (!forceTalk) {
+        if (!pairInteractionAllowed()) return false;
+    } else if (sceneFlow.current() != AppSceneFlow::Scene::HOME ||
+               gameState.teamCount < 2 || !homeCompanionActor.active ||
+               visitorMotion != VisitorMotion::ACTIVE ||
+               roomAction != RoomAction::NONE ||
+               gameState.team[0].fainted || gameState.team[0].hpCur == 0 ||
+               gameState.team[1].fainted || gameState.team[1].hpCur == 0) {
+        return false;
+    }
     const Game::SpeciesCareProfile first =
         Game::speciesCareProfileFor(gameState.team[0].speciesId);
     const Game::SpeciesCareProfile second =
@@ -8441,7 +9780,7 @@ bool AmoledApp::startPairInteraction(uint32_t nowMs, bool forceChase) {
     if (!first.canMove || !second.canMove) {
         pairActivity = Home::PairActivity::TALK;
     } else {
-        pairActivity = forceChase || GameRandom::random(100) >= 45
+        pairActivity = !forceTalk && (forceChase || GameRandom::random(100) >= 45)
             ? Home::PairActivity::CHASE : Home::PairActivity::TALK;
     }
     if (!homeRuntime.beginPair(pairActivity, nowMs)) {
@@ -8453,24 +9792,107 @@ bool AmoledApp::startPairInteraction(uint32_t nowMs, bool forceChase) {
     pairLeaderMain = GameRandom::random(2) == 0;
     if (!first.canMove) pairLeaderMain = false;
     if (!second.canMove) pairLeaderMain = true;
-    const uint8_t mover = pairLeaderMain ? 0 : 1;
-    const Home::Actor& other = pairLeaderMain
-        ? homeCompanionActor : homeMainActor;
-    static const float OFFSETS[][2] = {
-        {-PAIR_APPROACH_DISTANCE, 0.0f},
-        {PAIR_APPROACH_DISTANCE, 0.0f},
-        {0.0f, -PAIR_APPROACH_DISTANCE},
-        {0.0f, PAIR_APPROACH_DISTANCE},
-    };
+    const float talkDistance = (pairIdleWidthPx(gameState.team[0].speciesId) +
+                                pairIdleWidthPx(gameState.team[1].speciesId)) /
+                                   (2.0f * AmoledUi::RESOURCE_SCALE) +
+                               PAIR_TALK_MIN_GAP_PX /
+                                   static_cast<float>(AmoledUi::RESOURCE_SCALE);
+    const float approachDistance = pairActivity == Home::PairActivity::TALK
+        ? talkDistance : PAIR_APPROACH_DISTANCE;
+    pairTalkParallelApproach = false;
+    pairTalkMainArrived = false;
+    pairTalkCompanionArrived = false;
+    pairTalkMainApproachSpeed = 0.0f;
+    pairTalkCompanionApproachSpeed = 0.0f;
     bool planned = false;
-    for (const auto& offset : OFFSETS) {
-        if (homeRuntime.planRoute(
-                mover, other.x + offset[0], other.y + offset[1])) {
+    if (pairActivity == Home::PairActivity::TALK &&
+        first.canMove && second.canMove) {
+        // The two fixed talk points are a coordinated choreography. Plan both
+        // paths without treating the other actor's starting pose as a static
+        // obstacle, then scale their speeds to reach the stage together.
+        pairLeaderMain = true;
+        auto planFixedRoute = [&](uint8_t actorId, Home::Actor& actor,
+                                  float targetX, float targetY,
+                                  bool& arrived) {
+            actor.targetX = targetX;
+            actor.targetY = targetY;
+            arrived = std::hypot(targetX - actor.x, targetY - actor.y) <=
+                PAIR_APPROACH_GOAL_TOLERANCE;
+            if (arrived) {
+                actor.route.clear();
+                return true;
+            }
+            return homeRuntime.planRoute(
+                actorId, targetX, targetY, false, false);
+        };
+        const bool mainPlanned = planFixedRoute(
+            0, homeMainActor, PAIR_TALK_MAIN_X, PAIR_TALK_STAGE_Y,
+            pairTalkMainArrived);
+        const bool companionPlanned = mainPlanned && planFixedRoute(
+            1, homeCompanionActor, PAIR_TALK_COMPANION_X,
+            PAIR_TALK_STAGE_Y, pairTalkCompanionArrived);
+        if (mainPlanned && companionPlanned) {
+            const float mainDistance = pairRouteDistance(homeMainActor);
+            const float companionDistance = pairRouteDistance(homeCompanionActor);
+            const float sharedDurationSeconds = std::max(
+                0.1f, std::max(mainDistance, companionDistance) /
+                          PAIR_APPROACH_SPEED);
+            pairTalkMainApproachSpeed = pairTalkMainArrived
+                ? 0.0f : mainDistance / sharedDurationSeconds;
+            pairTalkCompanionApproachSpeed = pairTalkCompanionArrived
+                ? 0.0f : companionDistance / sharedDurationSeconds;
+            pairTalkParallelApproach = true;
             planned = true;
-            break;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+            Platform::logf("[FriendDiag] talk fixed-stage companion=%.1f,%.1f "
+                           "main=%.1f,%.1f speeds=%.2f,%.2f\n",
+                           PAIR_TALK_COMPANION_X, PAIR_TALK_STAGE_Y,
+                           PAIR_TALK_MAIN_X, PAIR_TALK_STAGE_Y,
+                           pairTalkCompanionApproachSpeed,
+                           pairTalkMainApproachSpeed);
+#endif
+        } else {
+            homeMainActor.route.clear();
+            homeCompanionActor.route.clear();
+        }
+    }
+    const uint8_t firstMover = pairLeaderMain ? 0 : 1;
+    const bool fixedTalk = pairActivity == Home::PairActivity::TALK &&
+        first.canMove && second.canMove;
+    for (int attempt = 0;
+         attempt < ((!fixedTalk && pairActivity == Home::PairActivity::TALK) ? 2 : 1) &&
+         !planned; ++attempt) {
+        if (fixedTalk) break;
+        const uint8_t mover = attempt == 0 ? firstMover : 1 - firstMover;
+        const Home::Actor& other = mover == 0
+            ? homeCompanionActor : homeMainActor;
+        const float offsets[][2] = {
+            {-approachDistance, 0.0f}, {approachDistance, 0.0f},
+            {0.0f, -approachDistance}, {0.0f, approachDistance},
+        };
+        for (const auto& offset : offsets) {
+            // Vertical separation must account for the full sprite height;
+            // only horizontal destinations guarantee the requested visual gap.
+            if (pairActivity == Home::PairActivity::TALK && offset[0] == 0.0f) {
+                continue;
+            }
+            if (homeRuntime.planRoute(
+                    mover, other.x + offset[0], other.y + offset[1])) {
+                pairLeaderMain = mover == 0;
+                planned = true;
+                break;
+            }
         }
     }
     if (!planned) {
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        Platform::logf("[FriendDiag] talk route-failed kind=%u main=%.1f,%.1f "
+                       "companion=%.1f,%.1f offset=%.1f\n",
+                       static_cast<unsigned>(debugContactKind),
+                       homeMainActor.x, homeMainActor.y,
+                       homeCompanionActor.x, homeCompanionActor.y,
+                       approachDistance);
+#endif
         homeRuntime.endPair(nowMs);
         pairActivity = Home::PairActivity::NONE;
         schedulePairInteraction(nowMs);
@@ -8479,13 +9901,28 @@ bool AmoledApp::startPairInteraction(uint32_t nowMs, bool forceChase) {
 
     pairPhase = PairPhase::APPROACH;
     pairPhaseStartedMs = nowMs;
-    pairPhaseUntilMs = nowMs + 4000;
+    if (pairTalkParallelApproach) {
+        pairPhaseUntilMs = nowMs + std::max(
+            pairApproachBudgetMs(homeMainActor),
+            pairApproachBudgetMs(homeCompanionActor));
+    } else {
+        const Home::Actor& movingActor = pairLeaderMain
+            ? homeMainActor : homeCompanionActor;
+        pairPhaseUntilMs = nowMs + pairApproachBudgetMs(movingActor);
+    }
     pairInteractionUntilMs = nowMs +
         (pairActivity == Home::PairActivity::CHASE
              ? PAIR_CHASE_TIMEOUT_MS : PAIR_TALK_TIMEOUT_MS);
     pairChaseLegsRemaining = PAIR_CHASE_LEGS;
     pairMainRenderOffsetY = 0.0f;
     pairCompanionRenderOffsetY = 0.0f;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    Platform::logf("[HomeDiag] pair start activity=%d leaderMain=%d "
+                   "main=%.1f,%.1f companion=%.1f,%.1f\n",
+                   static_cast<int>(pairActivity), pairLeaderMain ? 1 : 0,
+                   homeMainActor.x, homeMainActor.y,
+                   homeCompanionActor.x, homeCompanionActor.y);
+#endif
     return true;
 }
 
@@ -8510,7 +9947,7 @@ bool AmoledApp::updatePairInteraction(uint32_t nowMs,
         cancelPairInteraction(nowMs);
         return false;
     }
-    for (uint8_t slot = 0; slot < 2; ++slot) {
+    for (uint8_t slot = 0; slot < 2 && !pairArrivalTalk; ++slot) {
         const Game::MonsterRuntime& monster = gameState.team[slot];
         const Game::SpeciesCareProfile care =
             Game::speciesCareProfileFor(monster.speciesId);
@@ -8578,6 +10015,158 @@ bool AmoledApp::updatePairInteraction(uint32_t nowMs,
 
     switch (pairPhase) {
     case PairPhase::APPROACH: {
+        if (pairTalkParallelApproach) {
+            if (!pairTalkMainArrived) {
+                float waypointX = homeMainActor.targetX;
+                float waypointY = homeMainActor.targetY;
+                homeMainActor.route.current(waypointX, waypointY);
+                petDirection = petDirectionForDelta(
+                    waypointX - homeMainActor.x,
+                    waypointY - homeMainActor.y);
+            }
+            if (!pairTalkCompanionArrived) {
+                float waypointX = homeCompanionActor.targetX;
+                float waypointY = homeCompanionActor.targetY;
+                homeCompanionActor.route.current(waypointX, waypointY);
+                companionDirection = petDirectionForDelta(
+                    waypointX - homeCompanionActor.x,
+                    waypointY - homeCompanionActor.y);
+            }
+
+            Home::RouteStep mainStep = Home::RouteStep::ARRIVED;
+            Home::RouteStep companionStep = Home::RouteStep::ARRIVED;
+            if (!pairTalkMainArrived) {
+                mainStep = homeRuntime.advanceRoute(
+                    0, nowMs, std::max(0.1f, pairTalkMainApproachSpeed),
+                    elapsedSeconds, 1.0f, false);
+            }
+            if (!pairTalkCompanionArrived) {
+                companionStep = homeRuntime.advanceRoute(
+                    1, nowMs,
+                    std::max(0.1f, pairTalkCompanionApproachSpeed),
+                    elapsedSeconds, 1.0f, false);
+            }
+            syncMainPose();
+#if STICKMON_ENABLE_DEBUG_FEATURES
+            if (static_cast<int32_t>(nowMs - visitorDiagNextLogMs) >= 0) {
+                visitorDiagNextLogMs = nowMs + 300;
+                Platform::logf(
+                    "[FriendDiag] talk approach-parallel kind=%u "
+                    "main=%.1f,%.1f companion=%.1f,%.1f arrived=%u,%u\n",
+                    static_cast<unsigned>(debugContactKind),
+                    homeMainActor.x, homeMainActor.y,
+                    homeCompanionActor.x, homeCompanionActor.y,
+                    pairTalkMainArrived ? 1U : 0U,
+                    pairTalkCompanionArrived ? 1U : 0U);
+            }
+#endif
+            if (!pairTalkMainArrived &&
+                static_cast<int32_t>(nowMs - nextPetFrameMs) >= 0) {
+                ++petFrame;
+                nextPetFrameMs = nowMs + MOTION_FRAME_MS;
+            }
+            if (!pairTalkCompanionArrived &&
+                static_cast<int32_t>(nowMs - nextCompanionFrameMs) >= 0) {
+                ++companionFrame;
+                nextCompanionFrameMs = nowMs + MOTION_FRAME_MS;
+            }
+            requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
+
+            const bool phaseTimedOut =
+                static_cast<int32_t>(nowMs - pairPhaseUntilMs) >= 0;
+            auto resolveArrival = [&](Home::Actor& actor,
+                                      Home::RouteStep step,
+                                      bool& arrived,
+                                      const char* role) {
+                if (arrived) return true;
+                const bool terminal = step == Home::RouteStep::ARRIVED ||
+                    step == Home::RouteStep::BLOCKED ||
+                    step == Home::RouteStep::NO_ROUTE || phaseTimedOut;
+                if (!terminal) return true;
+                const float goalDistance = std::hypot(
+                    actor.targetX - actor.x, actor.targetY - actor.y);
+                if (step == Home::RouteStep::ARRIVED ||
+                    goalDistance <= PAIR_APPROACH_GOAL_TOLERANCE) {
+                    actor.x = actor.targetX;
+                    actor.y = actor.targetY;
+                    actor.velocityX = 0.0f;
+                    actor.velocityY = 0.0f;
+                    actor.route.clear();
+                    arrived = true;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+                    if (step != Home::RouteStep::ARRIVED) {
+                        Platform::logf(
+                            "[FriendDiag] talk approach-near-goal "
+                            "kind=%u role=%s distance=%.2f timeout=%u\n",
+                            static_cast<unsigned>(debugContactKind), role,
+                            static_cast<double>(goalDistance),
+                            phaseTimedOut ? 1U : 0U);
+                    }
+#endif
+                    return true;
+                }
+#if STICKMON_ENABLE_DEBUG_FEATURES
+                Platform::logf(
+                    "[FriendDiag] talk approach-failed kind=%u role=%s "
+                    "step=%d distance=%.2f timeout=%u\n",
+                    static_cast<unsigned>(debugContactKind), role,
+                    static_cast<int>(step),
+                    static_cast<double>(goalDistance),
+                    phaseTimedOut ? 1U : 0U);
+#else
+                (void)role;
+#endif
+                return false;
+            };
+            if (!resolveArrival(homeMainActor, mainStep,
+                                pairTalkMainArrived, "main") ||
+                !resolveArrival(homeCompanionActor, companionStep,
+                                pairTalkCompanionArrived, "companion")) {
+                finishPairInteraction(nowMs, false);
+                return false;
+            }
+            syncMainPose();
+            if (!pairTalkMainArrived || !pairTalkCompanionArrived) {
+                return true;
+            }
+
+            faceActors();
+#if STICKMON_ENABLE_DEBUG_FEATURES
+            const int dxPx = std::abs(worldToScreenX(homeMainActor.x) -
+                                      worldToScreenX(homeCompanionActor.x));
+            const int mainWidth = pairIdleWidthPx(gameState.team[0].speciesId);
+            const int companionWidth =
+                pairIdleWidthPx(gameState.team[1].speciesId);
+            const int visibleGapPx = dxPx -
+                (mainWidth + companionWidth) / 2;
+            if (visibleGapPx < PAIR_TALK_MIN_GAP_PX) {
+                Platform::logf(
+                    "[FriendDiag] talk configured-gap kind=%u gapXpx=%d "
+                    "minimum=%d (fixed points kept)\n",
+                    static_cast<unsigned>(debugContactKind), visibleGapPx,
+                    PAIR_TALK_MIN_GAP_PX);
+            }
+            const int dy = std::abs(worldToScreenY(homeMainActor.y) -
+                                    worldToScreenY(homeCompanionActor.y));
+            Platform::logf("[FriendDiag] talk positioned kind=%u parallel=1 "
+                           "dxPx=%d dyPx=%d widths=%d,%d gapXpx=%d "
+                           "main=%.1f,%.1f companion=%.1f,%.1f\n",
+                           static_cast<unsigned>(debugContactKind), dxPx, dy,
+                           mainWidth, companionWidth, visibleGapPx,
+                           homeMainActor.x, homeMainActor.y,
+                           homeCompanionActor.x, homeCompanionActor.y);
+            Platform::logf("[FriendDiag] arrival talk-ready kind=%u "
+                           "mainDir=%u guestDir=%u\n",
+                           static_cast<unsigned>(debugContactKind),
+                           static_cast<unsigned>(petDirection),
+                           static_cast<unsigned>(companionDirection));
+#endif
+            pairPhase = PairPhase::INVITE;
+            pairPhaseStartedMs = nowMs;
+            pairPhaseUntilMs = nowMs + PAIR_INVITE_MS;
+            return true;
+        }
+
         const uint8_t mover = pairLeaderMain ? 0 : 1;
         Home::Actor& movingActor = pairLeaderMain
             ? homeMainActor : homeCompanionActor;
@@ -8595,14 +10184,103 @@ bool AmoledApp::updatePairInteraction(uint32_t nowMs,
         Home::RouteStep step = homeRuntime.advanceRoute(
             mover, nowMs, PAIR_APPROACH_SPEED, elapsedSeconds, 1.0f, true);
         syncMainPose();
+        // The mover walks during APPROACH too; without frame advancement the
+        // sprite slides across the room in a static pose.
+        if (mover == 0) {
+            if (static_cast<int32_t>(nowMs - nextPetFrameMs) >= 0) {
+                petFrame = static_cast<uint8_t>(petFrame + 1);
+                nextPetFrameMs = nowMs + MOTION_FRAME_MS;
+            }
+        } else if (static_cast<int32_t>(nowMs - nextCompanionFrameMs) >= 0) {
+            companionFrame = static_cast<uint8_t>(companionFrame + 1);
+            nextCompanionFrameMs = nowMs + MOTION_FRAME_MS;
+        }
         requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
-        if (step == Home::RouteStep::ARRIVED ||
+        const bool phaseTimedOut =
+            static_cast<int32_t>(nowMs - pairPhaseUntilMs) >= 0;
+        const bool terminalStep = step == Home::RouteStep::ARRIVED ||
             step == Home::RouteStep::BLOCKED ||
-            step == Home::RouteStep::NO_ROUTE ||
-            static_cast<int32_t>(nowMs - pairPhaseUntilMs) >= 0) {
+            step == Home::RouteStep::NO_ROUTE || phaseTimedOut;
+        if (terminalStep) {
+            const float goalDistance = std::hypot(
+                movingActor.targetX - movingActor.x,
+                movingActor.targetY - movingActor.y);
+            bool reachedGoal = step == Home::RouteStep::ARRIVED;
+            if (!reachedGoal &&
+                goalDistance <= PAIR_APPROACH_GOAL_TOLERANCE) {
+                // A frame can hit the deadline after movement reaches the
+                // target but before advanceRoute reports ARRIVED. Snap only
+                // within the normal arrival tolerance so the scripted talk
+                // is not cancelled one frame before completion.
+                movingActor.x = movingActor.targetX;
+                movingActor.y = movingActor.targetY;
+                movingActor.velocityX = 0.0f;
+                movingActor.velocityY = 0.0f;
+                movingActor.route.clear();
+                syncMainPose();
+                reachedGoal = true;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+                if (pairActivity == Home::PairActivity::TALK) {
+                    Platform::logf(
+                        "[FriendDiag] talk approach-near-goal kind=%u "
+                        "distance=%.2f timeout=%u\n",
+                        static_cast<unsigned>(debugContactKind),
+                        static_cast<double>(goalDistance),
+                        phaseTimedOut ? 1U : 0U);
+                }
+#endif
+            }
+            if (pairActivity == Home::PairActivity::TALK && !reachedGoal) {
+#if STICKMON_ENABLE_DEBUG_FEATURES
+                Platform::logf(
+                    "[FriendDiag] talk approach-failed kind=%u step=%d "
+                    "distance=%.2f timeout=%u\n",
+                    static_cast<unsigned>(debugContactKind),
+                    static_cast<int>(step),
+                    static_cast<double>(goalDistance),
+                    phaseTimedOut ? 1U : 0U);
+#endif
+                finishPairInteraction(nowMs, false);
+                return false;
+            }
             homeMainActor.route.clear();
             homeCompanionActor.route.clear();
+#if STICKMON_ENABLE_DEBUG_FEATURES
+            const int dxPx = std::abs(worldToScreenX(homeMainActor.x) -
+                                      worldToScreenX(homeCompanionActor.x));
+            const int visibleGapPx = dxPx -
+                (pairIdleWidthPx(gameState.team[0].speciesId) +
+                 pairIdleWidthPx(gameState.team[1].speciesId)) / 2;
+            if (pairActivity == Home::PairActivity::TALK) {
+                Platform::logf("[FriendDiag] talk approach kind=%u step=%d "
+                               "gapXpx=%d dxPx=%d\n",
+                               static_cast<unsigned>(debugContactKind),
+                               static_cast<int>(step), visibleGapPx, dxPx);
+            }
+#endif
             faceActors();
+#if STICKMON_ENABLE_DEBUG_FEATURES
+            if (pairActivity == Home::PairActivity::TALK) {
+                const int mainWidth = pairIdleWidthPx(gameState.team[0].speciesId);
+                const int companionWidth = pairIdleWidthPx(gameState.team[1].speciesId);
+                const int dy = std::abs(worldToScreenY(homeMainActor.y) -
+                                        worldToScreenY(homeCompanionActor.y));
+                Platform::logf("[FriendDiag] talk positioned kind=%u step=%d "
+                               "dxPx=%d dyPx=%d widths=%d,%d gapXpx=%d "
+                               "main=%.1f,%.1f companion=%.1f,%.1f\n",
+                               static_cast<unsigned>(debugContactKind),
+                               static_cast<int>(step), dxPx, dy,
+                               mainWidth, companionWidth,
+                               visibleGapPx,
+                               homeMainActor.x, homeMainActor.y,
+                               homeCompanionActor.x, homeCompanionActor.y);
+                Platform::logf("[FriendDiag] arrival talk-ready kind=%u "
+                               "mainDir=%u guestDir=%u\n",
+                               static_cast<unsigned>(debugContactKind),
+                               static_cast<unsigned>(petDirection),
+                               static_cast<unsigned>(companionDirection));
+            }
+#endif
             pairPhase = PairPhase::INVITE;
             pairPhaseStartedMs = nowMs;
             pairPhaseUntilMs = nowMs + PAIR_INVITE_MS;
@@ -8616,6 +10294,12 @@ bool AmoledApp::updatePairInteraction(uint32_t nowMs,
             pairPhaseStartedMs = nowMs;
             if (pairActivity == Home::PairActivity::TALK) {
                 pairPhaseUntilMs = nowMs + PAIR_TALK_TOTAL_MS;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+                Platform::logf(
+                    "[FriendDiag] talk active kind=%u durationMs=%u\n",
+                    static_cast<unsigned>(debugContactKind),
+                    static_cast<unsigned>(PAIR_TALK_TOTAL_MS));
+#endif
             } else if (!planChaseLeg()) {
                 pairActivity = Home::PairActivity::TALK;
                 pairPhaseUntilMs = nowMs + PAIR_TALK_TOTAL_MS;
@@ -8706,6 +10390,10 @@ bool AmoledApp::updatePairInteraction(uint32_t nowMs,
 
 void AmoledApp::finishPairInteraction(uint32_t nowMs, bool reward) {
     if (pairPhase == PairPhase::NONE && !homeRuntime.pairActive()) return;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    Platform::logf("[HomeDiag] pair finish phase=%d reward=%d\n",
+                   static_cast<int>(pairPhase), reward ? 1 : 0);
+#endif
     homeMainActor.route.clear();
     homeCompanionActor.route.clear();
     homeRuntime.endPair(nowMs, 700);
@@ -8716,6 +10404,12 @@ void AmoledApp::finishPairInteraction(uint32_t nowMs, bool reward) {
     petMotion = PetMotion::IDLE;
     pairPhase = PairPhase::NONE;
     pairActivity = Home::PairActivity::NONE;
+    pairArrivalTalk = false;
+    pairTalkParallelApproach = false;
+    pairTalkMainArrived = false;
+    pairTalkCompanionArrived = false;
+    pairTalkMainApproachSpeed = 0.0f;
+    pairTalkCompanionApproachSpeed = 0.0f;
     pairChaseLegsRemaining = 0;
     pairMainRenderOffsetY = 0.0f;
     pairCompanionRenderOffsetY = 0.0f;
@@ -8741,6 +10435,212 @@ void AmoledApp::cancelPairInteraction(uint32_t nowMs) {
     heartsUntil = 0;
 }
 
+void AmoledApp::beginVisitDeparture(uint32_t nowMs) {
+    visitRecallConfirm = false;
+    cancelPairInteraction(nowMs);
+    cancelRoomAction(nowMs);
+    homeRuntime.releaseAll(0);
+    homeRuntime.transition(0, Home::Task::DOOR_ACTION, nowMs, 0, true);
+    RoomResource& room = RoomResource::ins();
+    visitDoorInsideX = room.available()
+        ? static_cast<float>(room.doorwayInsideX())
+        : FALLBACK_ROOM_MAX_X - 8.0f;
+    visitDoorInsideY = room.available()
+        ? static_cast<float>(room.doorwayInsideY())
+        : FALLBACK_ROOM_MAX_Y;
+    visitDoorOutsideX = room.available()
+        ? static_cast<float>(room.doorwayOutsideX())
+        : visitDoorInsideX + 12.0f;
+    visitDoorOutsideY = room.available()
+        ? static_cast<float>(room.doorwayOutsideY())
+        : visitDoorInsideY + 10.0f;
+    homeMainActor.hidden = false;
+    homeMainActor.x = petX;
+    homeMainActor.y = petY;
+    petResting = false;
+    petMotion = PetMotion::IDLE;
+    homeMainActor.route.clear();
+    if (!room.available() ||
+        !homeRuntime.planRoute(0, visitDoorInsideX, visitDoorInsideY,
+                               false, false)) {
+        homeMainActor.targetX = visitDoorInsideX;
+        homeMainActor.targetY = visitDoorInsideY;
+    }
+    visitDeparture = VisitDeparture::WALK_TO_DOOR;
+    visitDepartureStartedMs = nowMs;
+    nextPetFrameMs = nowMs;
+    requestFullRender();
+}
+
+bool AmoledApp::updateVisitDeparture(uint32_t nowMs) {
+    if (!visitSession.active()) {
+        visitRecallConfirm = false;
+        if (visitDeparture == VisitDeparture::AWAY ||
+            visitDeparture == VisitDeparture::CROSS_DOOR) {
+            petX = visitDoorInsideX;
+            petY = visitDoorInsideY;
+        }
+        homeMainActor.x = petX;
+        homeMainActor.y = petY;
+        homeMainActor.hidden = false;
+        homeRuntime.stop(0, nowMs, 0);
+        petMotion = PetMotion::IDLE;
+        visitDeparture = VisitDeparture::NONE;
+        updateCamera();
+        requestFullRender();
+        return false;
+    }
+    if (visitDeparture == VisitDeparture::AWAY) return true;
+    float elapsedSeconds = lastPetUpdateMs == 0 || nowMs < lastPetUpdateMs
+        ? 0.0f
+        : std::min<uint32_t>(nowMs - lastPetUpdateMs, 120U) / 1000.0f;
+    const float previousY = petY;
+    bool arrived = false;
+    if (visitDeparture == VisitDeparture::WALK_TO_DOOR &&
+        !homeMainActor.route.empty()) {
+        const Home::RouteStep step = homeRuntime.advanceRoute(
+            0, nowMs, VISITOR_DOOR_SPEED, elapsedSeconds, 1.0f, false);
+        arrived = step == Home::RouteStep::ARRIVED;
+        if (step == Home::RouteStep::BLOCKED ||
+            step == Home::RouteStep::NO_ROUTE) homeMainActor.route.clear();
+    } else {
+        const float targetX = visitDeparture == VisitDeparture::WALK_TO_DOOR
+            ? visitDoorInsideX : visitDoorOutsideX;
+        const float targetY = visitDeparture == VisitDeparture::WALK_TO_DOOR
+            ? visitDoorInsideY : visitDoorOutsideY;
+        const float distance = std::hypot(targetX - homeMainActor.x,
+                                          targetY - homeMainActor.y);
+        const float step = VISITOR_DOOR_SPEED * elapsedSeconds;
+        arrived = distance <= std::max(0.8f, step);
+        if (arrived) {
+            homeMainActor.x = targetX;
+            homeMainActor.y = targetY;
+        } else if (step > 0.0f) {
+            homeMainActor.x += (targetX - homeMainActor.x) / distance * step;
+            homeMainActor.y += (targetY - homeMainActor.y) / distance * step;
+        }
+    }
+    petDirection = petDirectionForDelta(homeMainActor.x - petX,
+                                         homeMainActor.y - petY);
+    petX = homeMainActor.x;
+    petY = homeMainActor.y;
+    petTargetX = homeMainActor.targetX;
+    petTargetY = homeMainActor.targetY;
+    if (static_cast<int32_t>(nowMs - nextPetFrameMs) >= 0) {
+        ++petFrame;
+        nextPetFrameMs = nowMs + MOTION_FRAME_MS;
+    }
+    updateCamera();
+    requestHomeActorRows(previousY, petY);
+    if (arrived || nowMs - visitDepartureStartedMs >
+                       (visitDeparture == VisitDeparture::WALK_TO_DOOR
+                            ? 12000U : 5000U)) {
+        if (visitDeparture == VisitDeparture::WALK_TO_DOOR) {
+            homeMainActor.x = petX = visitDoorInsideX;
+            homeMainActor.y = petY = visitDoorInsideY;
+            homeMainActor.route.clear();
+            visitDeparture = VisitDeparture::CROSS_DOOR;
+            visitDepartureStartedMs = nowMs;
+        } else {
+            homeMainActor.hidden = true;
+            visitDeparture = VisitDeparture::AWAY;
+            visitSession.markVisitorDeparted();
+            requestFullRender();
+        }
+    }
+    return true;
+}
+
+bool AmoledApp::chooseVisitorDoorPose(const Home::Actor& actor,
+                                      float& x, float& y) const {
+    RoomResource& room = RoomResource::ins();
+    if (!room.available() || room.walkPolygonCount() < 3) return false;
+    const float anchorX = static_cast<float>(room.doorwayInsideX());
+    const float anchorY = static_cast<float>(room.doorwayInsideY());
+    auto valid = [&](float candidateX, float candidateY) {
+        return RoomMovementArea::containsFootprint(
+            room.walkPolygon(), room.walkPolygonCount(),
+            candidateX, candidateY + actor.geometry.groundOffsetY,
+            actor.geometry.footprint);
+    };
+    auto tryCandidate = [&](int dx, int dy) {
+        float candidateX = anchorX + static_cast<float>(dx);
+        float candidateY = anchorY + static_cast<float>(dy) -
+            actor.geometry.groundOffsetY;
+        if (!valid(candidateX, candidateY)) return false;
+        x = candidateX;
+        y = candidateY;
+        return true;
+    };
+    if (tryCandidate(0, 0)) return true;
+    for (int radius = 2; radius <= 48; radius += 2) {
+        for (int offset = -radius; offset <= radius; offset += 2) {
+            if (tryCandidate(radius, offset) ||
+                tryCandidate(-radius, offset) ||
+                tryCandidate(offset, radius) ||
+                tryCandidate(offset, -radius)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool AmoledApp::beginVisitorHostClear(uint32_t nowMs) {
+    RoomResource& room = RoomResource::ins();
+    const float centerX = room.available()
+        ? (static_cast<float>(room.walkMinX()) +
+           static_cast<float>(room.walkMaxX())) * 0.5f
+        : (FALLBACK_ROOM_MIN_X + FALLBACK_ROOM_MAX_X) * 0.5f;
+    const float centerY = room.available()
+        ? (static_cast<float>(room.walkMinY()) +
+           static_cast<float>(room.walkMaxY())) * 0.5f
+        : (FALLBACK_ROOM_MIN_Y + FALLBACK_ROOM_MAX_Y) * 0.5f;
+    static constexpr int8_t OFFSETS[][2] = {
+        {0, 0}, {-18, 0}, {18, 0}, {0, -14}, {0, 14},
+        {-18, -12}, {18, -12}, {-18, 12}, {18, 12},
+        {-30, 0}, {30, 0}, {0, -24}, {0, 24},
+    };
+    for (const auto& offset : OFFSETS) {
+        const float candidateX = centerX + offset[0];
+        const float candidateY = centerY + offset[1] -
+            homeMainActor.geometry.groundOffsetY;
+        if (!RoomMovementArea::containsFootprint(
+                room.walkPolygon(), room.walkPolygonCount(),
+                candidateX,
+                candidateY + homeMainActor.geometry.groundOffsetY,
+                homeMainActor.geometry.footprint)) {
+            continue;
+        }
+        const float dx = candidateX - visitorDoorInsideX;
+        const float dy = candidateY - visitorDoorInsideY;
+        if (dx * dx + dy * dy <
+                VISITOR_DOOR_CLEAR_DISTANCE * VISITOR_DOOR_CLEAR_DISTANCE) {
+            continue;
+        }
+        if (!homeRuntime.planRoute(0, candidateX, candidateY, false, false)) {
+            continue;
+        }
+        if (!homeRuntime.transitionPreparedRoute(
+                0, Home::Task::DOOR_ACTION, nowMs, 0, true)) {
+            continue;
+        }
+        visitorHostDoorPhase = 2;
+        visitorRouteBlockedSinceMs = 0;
+        visitorMotionUntilMs = nowMs + VISITOR_MOTION_TIMEOUT_MS;
+        Platform::logf("[VisitArrival] host_clear_begin host=%.1f,%.1f "
+                       "goal=%.1f,%.1f route=%u\n",
+                       petX, petY, candidateX, candidateY,
+                       static_cast<unsigned>(homeMainActor.route.count));
+        return true;
+    }
+    Platform::logf("[VisitArrival] host_clear_unavailable host=%.1f,%.1f "
+                   "door=%.1f,%.1f walk=%u\n",
+                   petX, petY, visitorDoorInsideX, visitorDoorInsideY,
+                   petFootprintInsideWalkArea(petX, petY) ? 1U : 0U);
+    return false;
+}
+
 void AmoledApp::beginVisitorEntry(uint32_t nowMs) {
     if (!homeCompanionActor.active || gameState.teamCount < 2 ||
         gameState.team[1].origin != Game::Origin::VISITOR) {
@@ -8754,11 +10654,177 @@ void AmoledApp::beginVisitorEntry(uint32_t nowMs) {
     const float insideY = room.available()
         ? static_cast<float>(room.doorwayInsideY())
         : FALLBACK_ROOM_MAX_Y;
-    const float outsideX = room.available()
+    visitorDoorInsideX = insideX;
+    visitorDoorInsideY = insideY;
+    visitorDoorOutsideX = room.available()
         ? static_cast<float>(room.doorwayOutsideX()) : insideX + 12.0f;
-    const float outsideY = room.available()
+    visitorDoorOutsideY = room.available()
         ? static_cast<float>(room.doorwayOutsideY()) : insideY + 10.0f;
     cancelPairInteraction(nowMs);
+    homeRuntime.transition(0, Home::Task::DOOR_ACTION, nowMs, 0, true);
+    homeRuntime.acquire(Home::Resource::DOOR, 0,
+                        Home::Task::DOOR_ACTION, nowMs);
+    // The temporary team member already exists in game state, but keep its
+    // actor offstage until the host has reached a clear waiting point by the
+    // door. This mirrors Stick's host-to-door arrival phase.
+    homeCompanionActor.hidden = true;
+    homeCompanionActor.route.clear();
+    visitorRouteBlockedSinceMs = 0;
+    visitorWelcomeValid = false;
+    float welcomeX = insideX;
+    float welcomeY = insideY;
+    if (!chooseVisitorDoorPose(homeMainActor, welcomeX, welcomeY)) {
+        Platform::logf(
+            "[VisitArrival] welcome pose unavailable inside=%.1f,%.1f\n",
+            insideX, insideY);
+        startVisitorDoorEntry(nowMs);
+        return;
+    }
+    visitorDoorInsideX = welcomeX;
+    visitorDoorInsideY = welcomeY;
+    const bool hostStartsOutside = !petFootprintInsideWalkArea(petX, petY);
+    if (hostStartsOutside) {
+        const float originalX = petX;
+        const float originalY = petY;
+        RoomMovementArea::Footprint footprint = {
+            petFootprintRadiusX, petFootprintRadiusY};
+        bool recovered = false;
+        for (int radius = 2; radius <= 48 && !recovered; radius += 2) {
+            for (int offset = -radius; offset <= radius; offset += 2) {
+                const float candidates[][2] = {
+                    {originalX + radius, originalY + offset},
+                    {originalX - radius, originalY + offset},
+                    {originalX + offset, originalY + radius},
+                    {originalX + offset, originalY - radius},
+                };
+                for (const auto& candidate : candidates) {
+                    if (!RoomMovementArea::containsFootprint(
+                            room.walkPolygon(), room.walkPolygonCount(),
+                            candidate[0], candidate[1], footprint)) {
+                        continue;
+                    }
+                    petX = candidate[0];
+                    petY = candidate[1];
+                    recovered = true;
+                    break;
+                }
+                if (recovered) break;
+            }
+        }
+        if (!recovered) {
+            petX = welcomeX;
+            petY = welcomeY;
+        }
+        homeMainActor.x = petX;
+        homeMainActor.y = petY;
+        homeMainActor.targetX = petX;
+        homeMainActor.targetY = petY;
+        homeMainActor.route.clear();
+        petTargetX = petX;
+        petTargetY = petY;
+        Platform::logf("[VisitArrival] host_recover from=%.1f,%.1f "
+                       "to=%.1f,%.1f nearby=%u walk=%u\n",
+                       originalX, originalY, petX, petY,
+                       recovered ? 1U : 0U,
+                       petFootprintInsideWalkArea(petX, petY) ? 1U : 0U);
+        requestFullRender();
+    }
+    const bool routePlanned = homeRuntime.planRoute(
+        0, welcomeX, welcomeY, false, false);
+    if (visitSession.active() && visitSession.viewModel().localIsHost) {
+        Platform::logf("[VisitArrival] welcome route=%u host=%.1f,%.1f "
+                       "goal=%.1f,%.1f startWalk=%u goalWalk=%u "
+                       "routePoints=%u\n",
+                       routePlanned ? 1U : 0U, homeMainActor.x,
+                       homeMainActor.y, welcomeX, welcomeY,
+                       petFootprintInsideWalkArea(petX, petY) ? 1U : 0U,
+                       petFootprintInsideWalkArea(welcomeX, welcomeY) ? 1U : 0U,
+                       static_cast<unsigned>(homeMainActor.route.count));
+    }
+    if (routePlanned) {
+        // Runtime actor x/y and the renderer's petCenterX/petGroundY are
+        // the same bottom-center anchor. Preserve the fixed goal so the
+        // debug marker remains exact after the visitor is revealed.
+        visitorWelcomeX = homeMainActor.targetX;
+        visitorWelcomeY = homeMainActor.targetY;
+        visitorWelcomeValid = true;
+    }
+    visitorHostDoorPhase = 0;
+    visitorHostPauseUntilMs = 0;
+    if (!routePlanned) {
+        Platform::logf("[VisitArrival] host_to_door_fallback "
+                       "from=%.1f,%.1f door=%.1f,%.1f\n",
+                       petX, petY, welcomeX, welcomeY);
+        homeMainActor.x = welcomeX;
+        homeMainActor.y = welcomeY;
+        homeMainActor.targetX = welcomeX;
+        homeMainActor.targetY = welcomeY;
+        petX = welcomeX;
+        petY = welcomeY;
+        petTargetX = welcomeX;
+        petTargetY = welcomeY;
+        homeRuntime.stop(0, nowMs, 0);
+        visitorHostDoorPhase = 1;
+        visitorHostPauseUntilMs = nowMs + VISITOR_DOOR_OPEN_PAUSE_MS;
+        visitorMotion = VisitorMotion::HOST_APPROACH;
+        visitorMotionUntilMs = visitorHostPauseUntilMs +
+            VISITOR_MOTION_TIMEOUT_MS;
+        visitorArrivalNextLogMs = nowMs;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        Platform::logf("[FriendDiag] arrival host-route-failed kind=%u "
+                       "from=%.1f,%.1f door=%.1f,%.1f\n",
+                       static_cast<unsigned>(debugContactKind),
+                       homeMainActor.x, homeMainActor.y, insideX, insideY);
+#endif
+        return;
+    }
+    visitorMotion = VisitorMotion::HOST_APPROACH;
+    visitorArrivalNextLogMs = nowMs;
+    visitorCrossingDoor = false;
+    const float distance = std::hypot(
+        homeMainActor.targetX - homeMainActor.x,
+        homeMainActor.targetY - homeMainActor.y);
+    visitorMotionUntilMs = nowMs + static_cast<uint32_t>(std::clamp(
+        distance / VISITOR_DOOR_SPEED * 1000.0f + 2500.0f,
+        6000.0f, 15000.0f));
+    petDirection = petDirectionForDelta(
+        homeMainActor.targetX - homeMainActor.x,
+        homeMainActor.targetY - homeMainActor.y);
+    petFrame = 0;
+    nextPetFrameMs = nowMs;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    visitorDiagNextLogMs = nowMs;
+    Platform::logf("[FriendDiag] arrival host-approach kind=%u "
+                   "from=%.1f,%.1f goal=%.1f,%.1f visitorHidden=1\n",
+                   static_cast<unsigned>(debugContactKind),
+                   homeMainActor.x, homeMainActor.y,
+                   homeMainActor.targetX, homeMainActor.targetY);
+#endif
+    requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
+}
+
+void AmoledApp::startVisitorDoorEntry(uint32_t nowMs) {
+    if (!homeCompanionActor.active || gameState.teamCount < 2 ||
+        gameState.team[1].origin != Game::Origin::VISITOR) {
+        return;
+    }
+    float insideX = visitorDoorInsideX;
+    float insideY = visitorDoorInsideY;
+    const bool guestDoorPoseReady =
+        chooseVisitorDoorPose(homeCompanionActor, insideX, insideY);
+    visitorGuestDoorInsideX = insideX;
+    visitorGuestDoorInsideY = insideY;
+    const float outsideX = visitorDoorOutsideX;
+    const float outsideY = visitorDoorOutsideY;
+
+    homeRuntime.release(Home::Resource::DOOR, 0);
+    homeRuntime.stop(0, nowMs, 700);
+    petX = homeMainActor.x;
+    petY = homeMainActor.y;
+    petTargetX = petX;
+    petTargetY = petY;
+    petMotion = PetMotion::IDLE;
+
     homeRuntime.transition(1, Home::Task::DOOR_ACTION, nowMs, 0, true);
     homeRuntime.acquire(Home::Resource::DOOR, 1,
                         Home::Task::DOOR_ACTION, nowMs);
@@ -8769,13 +10835,53 @@ void AmoledApp::beginVisitorEntry(uint32_t nowMs) {
     homeCompanionActor.route.clear();
     homeCompanionActor.hidden = false;
     visitorMotion = VisitorMotion::ENTERING;
+    visitorHostDoorPhase = 0;
     visitorCrossingDoor = true;
     visitorMotionUntilMs = nowMs + VISITOR_MOTION_TIMEOUT_MS;
+    const float landingGoals[][2] = {
+        {insideX + 12.0f, insideY - 12.0f},
+        {insideX + 24.0f, insideY - 12.0f},
+        {insideX + 12.0f, insideY - 24.0f},
+    };
+    visitorLandingValid = false;
+    for (const auto& goal : landingGoals) {
+        if (!companionFootprintInsideWalkArea(goal[0], goal[1])) continue;
+        visitorLandingX = goal[0];
+        visitorLandingY = goal[1];
+        visitorLandingValid = true;
+        break;
+    }
+    if (!visitorLandingValid) {
+        visitorLandingValid = chooseCompanionTarget(
+            visitorLandingX, visitorLandingY);
+    }
+    Platform::logf("[VisitArrival] guest_enter_begin host=%.1f,%.1f "
+                   "hostWalk=%u guestDoor=%.1f,%.1f guestDoorValid=%u "
+                   "landing=%.1f,%.1f landingValid=%u\n",
+                   petX, petY, petFootprintInsideWalkArea(petX, petY) ? 1U : 0U,
+                   insideX, insideY, guestDoorPoseReady ? 1U : 0U,
+                   visitorLandingX, visitorLandingY,
+                   visitorLandingValid ? 1U : 0U);
     companionDirection = petDirectionForDelta(
         insideX - outsideX, insideY - outsideY);
     companionFrame = 0;
     nextCompanionFrameMs = nowMs;
-    requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
+    if (visitSession.active() && visitSession.viewModel().localIsHost) {
+        Platform::logf("[VisitArrival] visible species=%u outside=%.1f,%.1f inside=%.1f,%.1f\n",
+                       static_cast<unsigned>(homeCompanionActor.speciesId),
+                       outsideX, outsideY, insideX, insideY);
+    }
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    Platform::logf("[FriendDiag] arrival visitor-visible kind=%u "
+                   "host=%.1f,%.1f from=%.1f,%.1f to=%.1f,%.1f "
+                   "landing=%.1f,%.1f valid=%u\n",
+                   static_cast<unsigned>(debugContactKind),
+                   homeMainActor.x, homeMainActor.y,
+                   outsideX, outsideY, insideX, insideY,
+                   visitorLandingX, visitorLandingY,
+                   visitorLandingValid ? 1U : 0U);
+#endif
+    requestFullRender();
 }
 
 void AmoledApp::beginVisitorExit(uint32_t nowMs, bool debugVisitor) {
@@ -8789,7 +10895,6 @@ void AmoledApp::beginVisitorExit(uint32_t nowMs, bool debugVisitor) {
     visitorExitIsDebug = debugVisitor;
     visitorMotion = VisitorMotion::EXITING;
     visitorCrossingDoor = false;
-    visitorMotionUntilMs = nowMs + VISITOR_MOTION_TIMEOUT_MS;
     homeRuntime.transition(1, Home::Task::DOOR_ACTION, nowMs, 0, true);
     homeRuntime.acquire(Home::Resource::DOOR, 1,
                         Home::Task::DOOR_ACTION, nowMs);
@@ -8800,29 +10905,276 @@ void AmoledApp::beginVisitorExit(uint32_t nowMs, bool debugVisitor) {
     const float insideY = room.available()
         ? static_cast<float>(room.doorwayInsideY())
         : FALLBACK_ROOM_MAX_Y;
-    if (!homeRuntime.planRoute(1, insideX, insideY, false, true)) {
-        homeCompanionActor.x = insideX;
-        homeCompanionActor.y = insideY;
+    const float fromX = homeCompanionActor.x;
+    const float fromY = homeCompanionActor.y;
+    const uint32_t travelBudgetMs = static_cast<uint32_t>(std::clamp(
+        std::hypot(insideX - fromX, insideY - fromY) /
+            VISITOR_DOOR_SPEED * 2200.0f + 3000.0f,
+        static_cast<float>(VISITOR_MOTION_TIMEOUT_MS), 20000.0f));
+    visitorMotionUntilMs = nowMs + travelBudgetMs;
+    const float doorwayGoals[][2] = {
+        {insideX, insideY}, {insideX + 12.0f, insideY - 12.0f},
+        {insideX - 12.0f, insideY - 12.0f},
+        {insideX + 24.0f, insideY - 12.0f},
+        {insideX - 24.0f, insideY - 12.0f},
+        {insideX, insideY - 24.0f},
+        {insideX + 24.0f, insideY - 24.0f},
+        {insideX - 24.0f, insideY - 24.0f},
+    };
+    bool routePlanned = false;
+    for (const auto& goal : doorwayGoals) {
+        if (homeRuntime.planRoute(1, goal[0], goal[1], false, true)) {
+            routePlanned = true;
+            break;
+        }
+    }
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    visitorDiagNextLogMs = nowMs;
+    Platform::logf("[FriendDiag] visitor-exit begin kind=%u debug=%u "
+                   "from=%.1f,%.1f door=%.1f,%.1f route=%u goal=%.1f,%.1f "
+                   "timeoutMs=%lu\n",
+                   static_cast<unsigned>(debugContactKind),
+                   debugVisitor ? 1U : 0U, fromX, fromY, insideX, insideY,
+                   routePlanned ? 1U : 0U,
+                   homeCompanionActor.targetX, homeCompanionActor.targetY,
+                   static_cast<unsigned long>(travelBudgetMs));
+#endif
+    if (!routePlanned) {
         homeCompanionActor.route.clear();
         visitorCrossingDoor = true;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        Platform::logf("[FriendDiag] visitor-exit route-fallback kind=%u "
+                       "direct-distancePx=%.1f\n",
+                       static_cast<unsigned>(debugContactKind),
+                       std::hypot(insideX - fromX, insideY - fromY) *
+                           AmoledUi::RESOURCE_SCALE);
+#endif
     }
     companionFrame = 0;
     nextCompanionFrameMs = nowMs;
     requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
 }
 
+void AmoledApp::finishVisitorEntry(uint32_t nowMs, bool timedOut) {
+    visitorMotion = VisitorMotion::ACTIVE;
+    visitorHostDoorPhase = 0;
+    visitorCrossingDoor = false;
+    homeRuntime.release(Home::Resource::DOOR, 1);
+    stopCompanion(nowMs, 700);
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    showDebugContactEventPrompt(nowMs);
+    Platform::logf("[FriendDiag] arrival visitor-entered kind=%u "
+                   "pos=%.1f,%.1f timeout=%u\n",
+                   static_cast<unsigned>(debugContactKind),
+                   homeCompanionActor.x, homeCompanionActor.y,
+                   timedOut ? 1U : 0U);
+#else
+    (void)timedOut;
+#endif
+    // Arrival conversation is a scripted beat. Start it before autonomous
+    // hunger/sleep decisions can claim either actor; normal pair rules resume
+    // after this one forced talk completes.
+    pairArrivalTalk = true;
+    const bool talkStarted = startPairInteraction(nowMs, false, true);
+    Platform::logf("[VisitArrival] guest_enter_end host=%.1f,%.1f "
+                   "guest=%.1f,%.1f hostWalk=%u guestWalk=%u "
+                   "timeout=%u talkStarted=%u\n",
+                   petX, petY, homeCompanionActor.x, homeCompanionActor.y,
+                   petFootprintInsideWalkArea(petX, petY) ? 1U : 0U,
+                   companionFootprintInsideWalkArea(
+                       homeCompanionActor.x, homeCompanionActor.y) ? 1U : 0U,
+                   timedOut ? 1U : 0U, talkStarted ? 1U : 0U);
+    if (!talkStarted) {
+        pairArrivalTalk = false;
+        schedulePairInteraction(nowMs, true);
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        Platform::logf("[FriendDiag] arrival talk-start-failed kind=%u\n",
+                       static_cast<unsigned>(debugContactKind));
+#endif
+    }
+}
+
 void AmoledApp::updateVisitorMotion(uint32_t nowMs,
                                     float elapsedSeconds) {
-    if (visitorMotion != VisitorMotion::ENTERING &&
+    if (visitorMotion != VisitorMotion::HOST_APPROACH &&
+        visitorMotion != VisitorMotion::ENTERING &&
         visitorMotion != VisitorMotion::EXITING) {
         return;
     }
+    if (visitorMotion == VisitorMotion::HOST_APPROACH) {
+        if (visitorHostDoorPhase == 1) {
+            if (static_cast<int32_t>(nowMs - visitorHostPauseUntilMs) < 0) {
+                requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
+                return;
+            }
+            Platform::logf("[VisitArrival] host_open_done pos=%.1f,%.1f "
+                           "walk=%u\n", petX, petY,
+                           petFootprintInsideWalkArea(petX, petY) ? 1U : 0U);
+            if (!beginVisitorHostClear(nowMs)) {
+                homeRuntime.stop(0, nowMs, 0);
+                startVisitorDoorEntry(nowMs);
+            }
+            return;
+        }
+        if (visitorHostDoorPhase == 2) {
+            if (elapsedSeconds <= 0.0f) return;
+            const float previousY = homeMainActor.y;
+            const Home::RouteStep clearStep = homeRuntime.advanceRoute(
+                0, nowMs, VISITOR_DOOR_SPEED, elapsedSeconds, 1.0f, false);
+            petX = homeMainActor.x;
+            petY = homeMainActor.y;
+            petTargetX = homeMainActor.targetX;
+            petTargetY = homeMainActor.targetY;
+            float waypointX = petTargetX;
+            float waypointY = petTargetY;
+            homeMainActor.route.current(waypointX, waypointY);
+            petDirection = petDirectionForDelta(
+                waypointX - petX, waypointY - petY);
+            if (static_cast<int32_t>(nowMs - nextPetFrameMs) >= 0) {
+                ++petFrame;
+                nextPetFrameMs = nowMs + MOTION_FRAME_MS;
+            }
+            updateCamera();
+            requestHomeActorRows(previousY, homeMainActor.y);
+            if (static_cast<int32_t>(nowMs - visitorArrivalNextLogMs) >= 0) {
+                visitorArrivalNextLogMs = nowMs + 600;
+                Platform::logf("[VisitArrival] host_clear_step step=%u "
+                               "pos=%.1f,%.1f goal=%.1f,%.1f walk=%u\n",
+                               static_cast<unsigned>(clearStep), petX, petY,
+                               petTargetX, petTargetY,
+                               petFootprintInsideWalkArea(petX, petY) ? 1U : 0U);
+            }
+            if (clearStep == Home::RouteStep::ARRIVED ||
+                clearStep == Home::RouteStep::BLOCKED ||
+                clearStep == Home::RouteStep::NO_ROUTE ||
+                static_cast<int32_t>(nowMs - visitorMotionUntilMs) >= 0) {
+                if (clearStep != Home::RouteStep::ARRIVED &&
+                    petFootprintInsideWalkArea(
+                        homeMainActor.targetX, homeMainActor.targetY)) {
+                    homeMainActor.x = petX = homeMainActor.targetX;
+                    homeMainActor.y = petY = homeMainActor.targetY;
+                }
+                Platform::logf("[VisitArrival] host_clear_end step=%u "
+                               "pos=%.1f,%.1f walk=%u\n",
+                               static_cast<unsigned>(clearStep), petX, petY,
+                               petFootprintInsideWalkArea(petX, petY) ? 1U : 0U);
+                homeRuntime.stop(0, nowMs, 0);
+                startVisitorDoorEntry(nowMs);
+            }
+            return;
+        }
+        // The companion actor can be attached during this same update tick.
+        // A zero-duration first sample is not a routing failure and must not
+        // reveal the visitor before the host has actually moved.
+        if (elapsedSeconds <= 0.0f) return;
+        const float previousY = homeMainActor.y;
+        const Home::RouteStep step = homeRuntime.advanceRoute(
+            0, nowMs, VISITOR_DOOR_SPEED, elapsedSeconds, 1.0f, false);
+        petX = homeMainActor.x;
+        petY = homeMainActor.y;
+        petTargetX = homeMainActor.targetX;
+        petTargetY = homeMainActor.targetY;
+        float waypointX = petTargetX;
+        float waypointY = petTargetY;
+        homeMainActor.route.current(waypointX, waypointY);
+        petDirection = petDirectionForDelta(
+            waypointX - petX, waypointY - petY);
+        if (static_cast<int32_t>(nowMs - nextPetFrameMs) >= 0) {
+            ++petFrame;
+            nextPetFrameMs = nowMs + MOTION_FRAME_MS;
+        }
+        updateCamera();
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        if (static_cast<int32_t>(nowMs - visitorDiagNextLogMs) >= 0) {
+            visitorDiagNextLogMs = nowMs + 300;
+            Platform::logf("[FriendDiag] arrival host-moving kind=%u "
+                           "step=%d pos=%.1f,%.1f visitorHidden=%u\n",
+                           static_cast<unsigned>(debugContactKind),
+                           static_cast<int>(step), petX, petY,
+                           homeCompanionActor.hidden ? 1U : 0U);
+        }
+#endif
+        requestHomeActorRows(previousY, homeMainActor.y);
+        if (static_cast<int32_t>(nowMs - visitorArrivalNextLogMs) >= 0) {
+            visitorArrivalNextLogMs = nowMs + 600;
+            Platform::logf("[VisitArrival] host_approach_step step=%u "
+                           "pos=%.1f,%.1f goal=%.1f,%.1f walk=%u\n",
+                           static_cast<unsigned>(step), petX, petY,
+                           petTargetX, petTargetY,
+                           petFootprintInsideWalkArea(petX, petY) ? 1U : 0U);
+        }
+        const bool timedOut =
+            static_cast<int32_t>(nowMs - visitorMotionUntilMs) >= 0;
+        if (step == Home::RouteStep::BLOCKED ||
+            step == Home::RouteStep::NO_ROUTE) {
+            if (visitorRouteBlockedSinceMs == 0) {
+                visitorRouteBlockedSinceMs = nowMs;
+            }
+        } else {
+            visitorRouteBlockedSinceMs = 0;
+        }
+        const bool routeStalled = visitorRouteBlockedSinceMs != 0 &&
+            nowMs - visitorRouteBlockedSinceMs >= 1200;
+        if (step == Home::RouteStep::ARRIVED || timedOut || routeStalled) {
+            if (step != Home::RouteStep::ARRIVED && visitorWelcomeValid) {
+                homeMainActor.x = petX = visitorWelcomeX;
+                homeMainActor.y = petY = visitorWelcomeY;
+                homeMainActor.targetX = petTargetX = petX;
+                homeMainActor.targetY = petTargetY = petY;
+            }
+            if (visitSession.active() && visitSession.viewModel().localIsHost) {
+                Platform::logf("[VisitArrival] host_approach_end step=%d "
+                               "timeout=%u stalled=%u pos=%.1f,%.1f walk=%u\n",
+                               static_cast<int>(step), timedOut ? 1U : 0U,
+                               routeStalled ? 1U : 0U, petX, petY,
+                               petFootprintInsideWalkArea(petX, petY) ? 1U : 0U);
+            }
+#if STICKMON_ENABLE_DEBUG_FEATURES
+            const float welcomeErrorPx = visitorWelcomeValid
+                ? std::hypot(petX - visitorWelcomeX,
+                             petY - visitorWelcomeY) *
+                      AmoledUi::RESOURCE_SCALE
+                : -1.0f;
+            Platform::logf("[FriendDiag] arrival host-ready kind=%u "
+                           "step=%d anchor=bottom-center pos=%.1f,%.1f "
+                           "goal=%.1f,%.1f errorPx=%.2f timeout=%u\n",
+                           static_cast<unsigned>(debugContactKind),
+                           static_cast<int>(step), petX, petY,
+                           visitorWelcomeX, visitorWelcomeY,
+                           static_cast<double>(welcomeErrorPx),
+                           timedOut ? 1U : 0U);
+#endif
+            visitorHostDoorPhase = 1;
+            visitorHostPauseUntilMs = nowMs + VISITOR_DOOR_OPEN_PAUSE_MS;
+            homeRuntime.stop(0, nowMs, 0);
+        } else if (step == Home::RouteStep::BLOCKED ||
+                   step == Home::RouteStep::NO_ROUTE) {
+#if STICKMON_ENABLE_DEBUG_FEATURES
+            Platform::logf("[FriendDiag] arrival host-route-wait kind=%u "
+                           "step=%d pos=%.1f,%.1f\n",
+                           static_cast<unsigned>(debugContactKind),
+                           static_cast<int>(step), petX, petY);
+#endif
+        }
+        return;
+    }
     if (static_cast<int32_t>(nowMs - visitorMotionUntilMs) >= 0) {
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        Platform::logf("[FriendDiag] visitor-motion timeout kind=%u "
+                       "motion=%d crossing=%u pos=%.1f,%.1f\n",
+                       static_cast<unsigned>(debugContactKind),
+                       static_cast<int>(visitorMotion),
+                       visitorCrossingDoor ? 1U : 0U,
+                       homeCompanionActor.x, homeCompanionActor.y);
+#endif
         if (visitorMotion == VisitorMotion::ENTERING) {
-            visitorMotion = VisitorMotion::ACTIVE;
-            homeRuntime.release(Home::Resource::DOOR, 1);
-            stopCompanion(nowMs, 700);
-            schedulePairInteraction(nowMs, true);
+            if (visitorLandingValid) {
+                homeCompanionActor.x = visitorLandingX;
+                homeCompanionActor.y = visitorLandingY;
+                homeCompanionActor.targetX = visitorLandingX;
+                homeCompanionActor.targetY = visitorLandingY;
+            }
+            finishVisitorEntry(nowMs, true);
         } else {
             finishVisitorExit(nowMs);
         }
@@ -8830,37 +11182,81 @@ void AmoledApp::updateVisitorMotion(uint32_t nowMs,
     }
 
     RoomResource& room = RoomResource::ins();
-    const float insideX = room.available()
-        ? static_cast<float>(room.doorwayInsideX())
-        : FALLBACK_ROOM_MAX_X - 8.0f;
-    const float insideY = room.available()
-        ? static_cast<float>(room.doorwayInsideY())
-        : FALLBACK_ROOM_MAX_Y;
+    const float insideX = visitorMotion == VisitorMotion::ENTERING
+        ? visitorGuestDoorInsideX
+        : (room.available() ? static_cast<float>(room.doorwayInsideX())
+                            : FALLBACK_ROOM_MAX_X - 8.0f);
+    const float insideY = visitorMotion == VisitorMotion::ENTERING
+        ? visitorGuestDoorInsideY
+        : (room.available() ? static_cast<float>(room.doorwayInsideY())
+                            : FALLBACK_ROOM_MAX_Y);
     const float outsideX = room.available()
         ? static_cast<float>(room.doorwayOutsideX()) : insideX + 12.0f;
     const float outsideY = room.available()
         ? static_cast<float>(room.doorwayOutsideY()) : insideY + 10.0f;
 
     if (visitorMotion == VisitorMotion::EXITING && !visitorCrossingDoor) {
+        const float previousX = homeCompanionActor.x;
         const float previousY = homeCompanionActor.y;
         const Home::RouteStep step = homeRuntime.advanceRoute(
             1, nowMs, VISITOR_DOOR_SPEED, elapsedSeconds, 1.0f, true);
+        const float movedX = homeCompanionActor.x - previousX;
+        const float movedY = homeCompanionActor.y - previousY;
+        const bool moved = std::hypot(movedX, movedY) > 0.001f;
+        if (moved) {
+            companionDirection = petDirectionForDelta(movedX, movedY);
+            if (static_cast<int32_t>(nowMs - nextCompanionFrameMs) >= 0) {
+                ++companionFrame;
+                nextCompanionFrameMs = nowMs + MOTION_FRAME_MS;
+            }
+        }
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        if (static_cast<int32_t>(nowMs - visitorDiagNextLogMs) >= 0) {
+            visitorDiagNextLogMs = nowMs + 300;
+            Platform::logf("[FriendDiag] visitor-exit route kind=%u "
+                           "step=%d pos=%.1f,%.1f distancePx=%.1f "
+                           "frame=%u dir=%u moved=%u\n",
+                           static_cast<unsigned>(debugContactKind),
+                           static_cast<int>(step), homeCompanionActor.x,
+                           homeCompanionActor.y,
+                           std::hypot(insideX - homeCompanionActor.x,
+                                      insideY - homeCompanionActor.y) *
+                               AmoledUi::RESOURCE_SCALE,
+                           static_cast<unsigned>(companionFrame),
+                           static_cast<unsigned>(companionDirection),
+                           moved ? 1U : 0U);
+        }
+#endif
         if (step == Home::RouteStep::ARRIVED ||
             step == Home::RouteStep::BLOCKED ||
             step == Home::RouteStep::NO_ROUTE) {
-            homeCompanionActor.x = insideX;
-            homeCompanionActor.y = insideY;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+            Platform::logf("[FriendDiag] visitor-exit route-end kind=%u "
+                           "step=%d doorDistancePx=%.1f\n",
+                           static_cast<unsigned>(debugContactKind),
+                           static_cast<int>(step),
+                           std::hypot(insideX - homeCompanionActor.x,
+                                      insideY - homeCompanionActor.y) *
+                               AmoledUi::RESOURCE_SCALE);
+#endif
             homeCompanionActor.route.clear();
             visitorCrossingDoor = true;
+            companionDirection = petDirectionForDelta(
+                outsideX - homeCompanionActor.x,
+                outsideY - homeCompanionActor.y);
         }
         requestHomeActorRows(previousY, homeCompanionActor.y);
         return;
     }
 
     const float targetX = visitorMotion == VisitorMotion::ENTERING
-        ? insideX : outsideX;
+        ? (visitorCrossingDoor || !visitorLandingValid
+               ? insideX : visitorLandingX)
+        : outsideX;
     const float targetY = visitorMotion == VisitorMotion::ENTERING
-        ? insideY : outsideY;
+        ? (visitorCrossingDoor || !visitorLandingValid
+               ? insideY : visitorLandingY)
+        : outsideY;
     const float dx = targetX - homeCompanionActor.x;
     const float dy = targetY - homeCompanionActor.y;
     const float distance = std::sqrt(dx * dx + dy * dy);
@@ -8870,11 +11266,14 @@ void AmoledApp::updateVisitorMotion(uint32_t nowMs,
         homeCompanionActor.x = targetX;
         homeCompanionActor.y = targetY;
         if (visitorMotion == VisitorMotion::ENTERING) {
-            visitorMotion = VisitorMotion::ACTIVE;
-            visitorCrossingDoor = false;
-            homeRuntime.release(Home::Resource::DOOR, 1);
-            stopCompanion(nowMs, 700);
-            schedulePairInteraction(nowMs, true);
+            if (visitorCrossingDoor && visitorLandingValid) {
+                // Doorway crossed; continue to the walkable landing spot.
+                visitorCrossingDoor = false;
+                companionDirection = petDirectionForDelta(
+                    visitorLandingX - insideX, visitorLandingY - insideY);
+            } else {
+                finishVisitorEntry(nowMs, false);
+            }
         } else {
             finishVisitorExit(nowMs);
         }
@@ -8882,16 +11281,49 @@ void AmoledApp::updateVisitorMotion(uint32_t nowMs,
         homeCompanionActor.x += dx / distance * step;
         homeCompanionActor.y += dy / distance * step;
         companionDirection = petDirectionForDelta(dx, dy);
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        if (visitorMotion == VisitorMotion::EXITING &&
+            static_cast<int32_t>(nowMs - visitorDiagNextLogMs) >= 0) {
+            visitorDiagNextLogMs = nowMs + 300;
+            Platform::logf(
+                "[FriendDiag] visitor-exit cross kind=%u pos=%.1f,%.1f "
+                "remainingPx=%.1f frame=%u dir=%u\n",
+                static_cast<unsigned>(debugContactKind),
+                homeCompanionActor.x, homeCompanionActor.y,
+                std::hypot(targetX - homeCompanionActor.x,
+                           targetY - homeCompanionActor.y) *
+                    AmoledUi::RESOURCE_SCALE,
+                static_cast<unsigned>(companionFrame),
+                static_cast<unsigned>(companionDirection));
+        }
+#endif
     }
     if (static_cast<int32_t>(nowMs - nextCompanionFrameMs) >= 0) {
         ++companionFrame;
         nextCompanionFrameMs = nowMs + MOTION_FRAME_MS;
+    }
+    if (visitorMotion == VisitorMotion::ENTERING &&
+        static_cast<int32_t>(nowMs - visitorArrivalNextLogMs) >= 0) {
+        visitorArrivalNextLogMs = nowMs + 600;
+        Platform::logf("[VisitArrival] guest_enter_step pos=%.1f,%.1f "
+                       "goal=%.1f,%.1f crossing=%u hidden=%u frame=%u\n",
+                       homeCompanionActor.x, homeCompanionActor.y,
+                       targetX, targetY, visitorCrossingDoor ? 1U : 0U,
+                       homeCompanionActor.hidden ? 1U : 0U,
+                       static_cast<unsigned>(companionFrame));
     }
     requestHomeActorRows(previousY, homeCompanionActor.y);
 }
 
 void AmoledApp::finishVisitorExit(uint32_t nowMs) {
     const bool debugVisitor = visitorExitIsDebug;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    Platform::logf("[FriendDiag] visitor-exit finish kind=%u "
+                   "pos=%.1f,%.1f debug=%u\n",
+                   static_cast<unsigned>(debugContactKind),
+                   homeCompanionActor.x, homeCompanionActor.y,
+                   debugVisitor ? 1U : 0U);
+#endif
     visitorMotion = VisitorMotion::NONE;
     visitorExitIsDebug = false;
     visitorCrossingDoor = false;
@@ -8949,6 +11381,18 @@ bool AmoledApp::petFootprintInsideWalkArea(float x, float y) const {
         petFootprintRadiusX, petFootprintRadiusY};
     return RoomMovementArea::containsFootprint(
         polygon, count, x, y, footprint);
+}
+
+bool AmoledApp::companionFootprintInsideWalkArea(float x, float y) const {
+    RoomResource& room = RoomResource::ins();
+    const RoomResource::Point* polygon = room.available()
+        ? room.walkPolygon() : FALLBACK_WALK_POLYGON;
+    uint8_t count = room.available()
+        ? room.walkPolygonCount()
+        : static_cast<uint8_t>(sizeof(FALLBACK_WALK_POLYGON) /
+                               sizeof(FALLBACK_WALK_POLYGON[0]));
+    return RoomMovementArea::containsFootprint(
+        polygon, count, x, y, homeCompanionActor.geometry.footprint);
 }
 
 bool AmoledApp::petPathInsideWalkArea(float fromX, float fromY,
@@ -9141,6 +11585,25 @@ void AmoledApp::markRendered() {
     }
 }
 
+#if STICKMON_ENABLE_DEBUG_FEATURES
+void AmoledApp::markEncounterFirstFramePresented(uint32_t drawUs,
+                                                 uint32_t lcdUs) {
+    if (!encounterFirstFramePending) return;
+    encounterFirstFramePending = false;
+    if (sceneFlow.current() != AppSceneFlow::Scene::BATTLE) return;
+    Platform::logf(
+        "[EncounterPerf] triggerToFirstBattleFrame=%lu ms prep=%lu ms "
+        "sprite=%lu ms sfx=%lu ms draw=%lu us lcd=%lu us\n",
+        static_cast<unsigned long>(
+            Platform::clock().millis() - encounterStartedMs),
+        static_cast<unsigned long>(encounterPreparedMs),
+        static_cast<unsigned long>(encounterSpritePrepMs),
+        static_cast<unsigned long>(encounterSfxPrepMs),
+        static_cast<unsigned long>(drawUs),
+        static_cast<unsigned long>(lcdUs));
+}
+#endif
+
 float AmoledApp::gameSpeed() const {
     static constexpr float SPEEDS[] = {1.0f, 2.0f, 4.0f, 8.0f};
     uint8_t index = gameState.settings.speedIndex;
@@ -9155,6 +11618,8 @@ void AmoledApp::render(Canvas565& canvas) const {
         const Game::MonsterRuntime& monster = gameState.team[0];
         HomeViewModel model;
         model.speciesId = monster.speciesId;
+        model.visitAway = visitDeparture == VisitDeparture::AWAY;
+        model.recallConfirm = visitRecallConfirm && model.visitAway;
         uint8_t visibleSlots[Game::TEAM_CAP] = {};
         model.monsterCount = Game::HomeHud::visibleTeamSlots(
             gameState, visibleSlots, visitSession.active());
@@ -9163,10 +11628,15 @@ void AmoledApp::render(Canvas565& canvas) const {
                 gameState.team[visibleSlots[index]];
             model.monsters[index].hp =
                 Game::HomeHud::hpPercent(hudMonster);
+            model.monsters[index].fainted = hudMonster.fainted;
+            model.monsters[index].faintRest =
+                Game::HomeHud::faintRestPercent(
+                    hudMonster, gameState.gameMinutesTotal);
             model.monsters[index].hunger =
                 Game::HomeHud::hungerPercent(hudMonster);
             model.monsters[index].hpKnown =
-                hudMonster.origin != Game::Origin::VISITOR;
+                hudMonster.origin != Game::Origin::VISITOR ||
+                !visitSession.active() || visitSession.visitorHealthKnown();
         }
         model.gameMinutesOfDay = static_cast<uint16_t>(
             gameState.gameMinutesTotal % Game::GAME_MINUTES_PER_DAY);
@@ -9190,11 +11660,25 @@ void AmoledApp::render(Canvas565& canvas) const {
         model.petFrame = petFrame;
         model.petDirection = petDirection;
         model.petLongMove = petLongMove;
+        // The main pet stays in PetMotion::IDLE while a pair interaction
+        // moves it (approach leader or chase); present that as walking so
+        // the sprite does not slide in its idle pose.
+        const bool mainPairMoving =
+            (pairPhase == PairPhase::APPROACH &&
+             (pairTalkParallelApproach
+                  ? !pairTalkMainArrived : pairLeaderMain)) ||
+            (pairPhase == PairPhase::ACTIVE &&
+             pairActivity == Home::PairActivity::CHASE);
+        const bool mainWelcomingVisitor =
+            visitorMotion == VisitorMotion::HOST_APPROACH;
         model.petAction = petMotion == PetMotion::STOPPING
             ? HomeViewModel::PetVisualAction::STOPPING
             : (petMotion == PetMotion::WANDERING ||
                petMotion == PetMotion::SEEKING_FOOD ||
-               petMotion == PetMotion::SEEKING_SLEEP)
+               petMotion == PetMotion::SEEKING_SLEEP ||
+               mainPairMoving || mainWelcomingVisitor ||
+               visitDeparture == VisitDeparture::WALK_TO_DOOR ||
+               visitDeparture == VisitDeparture::CROSS_DOOR)
                 ? HomeViewModel::PetVisualAction::WALKING
                 : HomeViewModel::PetVisualAction::IDLE;
         model.petResting = petResting;
@@ -9247,7 +11731,13 @@ void AmoledApp::render(Canvas565& canvas) const {
         model.bowlFilled = gameState.room.bowlCount > 0;
         model.fadeAlpha = externalSceneFade ? 0 : expeditionFade.alpha();
 #if STICKMON_ENABLE_DEBUG_FEATURES
-        model.debugContactPrompt = debugContactPending;
+        model.debugContactPrompt = debugContactPending ||
+            debugContactEventPending;
+        model.debugContactPromptFade = debugContactPromptFade;
+        model.debugContactPromptText =
+            debugContactPromptFade > 0 ? debugPromptBuffer : nullptr;
+        model.debugContactChoiceVisible = debugContactChoiceVisible;
+        model.debugContactSelectedChoice = debugContactSelectedChoice;
         // Contact visitors now use the same independent secondary actor.
         model.debugContactActive = false;
         model.debugContactKind = debugContactKind;
@@ -9265,6 +11755,43 @@ void AmoledApp::render(Canvas565& canvas) const {
         model.debugPairDirection = debugPairDirection;
         model.debugLightSource = debugLightSource;
         model.debugBoundaryVisible = debugWalkBoundaryVisible;
+        model.debugTalkPointsVisible = debugTalkPointsVisible;
+        float debugTalkCompanionX = PAIR_TALK_COMPANION_X;
+        float debugTalkCompanionY = PAIR_TALK_STAGE_Y;
+        float debugTalkMainX = PAIR_TALK_MAIN_X;
+        float debugTalkMainY = PAIR_TALK_STAGE_Y;
+        if (pairActivity == Home::PairActivity::TALK &&
+            pairPhase != PairPhase::NONE) {
+            debugTalkMainX = homeMainActor.targetX;
+            debugTalkMainY = homeMainActor.targetY;
+            debugTalkCompanionX = homeCompanionActor.targetX;
+            debugTalkCompanionY = homeCompanionActor.targetY;
+        }
+        model.debugTalkCompanionX = static_cast<int16_t>(
+            std::lround(debugTalkCompanionX));
+        model.debugTalkCompanionY = static_cast<int16_t>(
+            std::lround(debugTalkCompanionY));
+        model.debugTalkMainX = static_cast<int16_t>(
+            std::lround(debugTalkMainX));
+        model.debugTalkMainY = static_cast<int16_t>(
+            std::lround(debugTalkMainY));
+        RoomResource& debugRoom = RoomResource::ins();
+        float welcomeX = debugRoom.available()
+            ? static_cast<float>(debugRoom.doorwayInsideX()) +
+                  VISITOR_WELCOME_OFFSET_X
+            : FALLBACK_ROOM_MAX_X - 8.0f + VISITOR_WELCOME_OFFSET_X;
+        float welcomeY = debugRoom.available()
+            ? static_cast<float>(debugRoom.doorwayInsideY()) +
+                  VISITOR_WELCOME_OFFSET_Y
+            : FALLBACK_ROOM_MAX_Y + VISITOR_WELCOME_OFFSET_Y;
+        if (visitorWelcomeValid) {
+            welcomeX = visitorWelcomeX;
+            welcomeY = visitorWelcomeY;
+        }
+        model.debugWelcomeCenterX = static_cast<int16_t>(
+            worldToScreenX(welcomeX));
+        model.debugWelcomeGroundY = static_cast<int16_t>(
+            worldToScreenY(welcomeY));
 #endif
         model.toast = toast;
         renderHomeScreen(canvas, model, dirtyRowBegin, dirtyRowEnd);
@@ -9294,6 +11821,7 @@ void AmoledApp::render(Canvas565& canvas) const {
         model.lightSource = Ui::Debug::LIGHT_SOURCE_ITEMS[debugLightSource];
         model.tiltEnabled = debugTiltControl;
         model.boundaryVisible = debugWalkBoundaryVisible;
+        model.talkPointsVisible = debugTalkPointsVisible;
         model.battleBoundsVisible = debugBattleDrawBoundsVisible;
             model.touchDisplayEnabled = debugTouchDisplayEnabled;
         model.touchTest = &debugTouchTest;
@@ -9328,7 +11856,8 @@ void AmoledApp::render(Canvas565& canvas) const {
         ExploreRouteViewModel model;
         model.map = &exploreRouteMap;
         model.state = &gameState;
-        model.speciesId = gameState.team[0].speciesId;
+        const uint8_t leaderSlot = exploreRouteLeaderSlot(gameState);
+        model.speciesId = gameState.team[leaderSlot].speciesId;
         model.area = selectedExploreArea;
         model.pathIndex = exploreRoutePath;
         model.routeIndex = exploreRouteIndex;
@@ -9343,9 +11872,7 @@ void AmoledApp::render(Canvas565& canvas) const {
         model.steps = exploreRouteSteps;
         model.worldX = exploreRouteWorldX;
         model.worldY = exploreRouteWorldY;
-        model.companionVisible = gameState.teamCount > 1 &&
-            gameState.team[1].speciesId != 0 &&
-            !gameState.team[1].fainted && gameState.team[1].hpCur > 0;
+        model.companionVisible = exploreRouteHasCompanion(gameState);
         model.companionSpeciesId = model.companionVisible
             ? gameState.team[1].speciesId : 0;
         model.companionWorldX = exploreRouteFollowerWorldX;
@@ -9367,8 +11894,15 @@ void AmoledApp::render(Canvas565& canvas) const {
         model.pickupIndex = exploreRoutePickupIndex;
         model.pickupItem = exploreRoutePickupItem;
         model.pickupAvailable = exploreRoutePickupAvailable;
-        model.prompt = exploreRoutePrompt;
         model.toast = toast;
+        if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_ROUTE &&
+            exploreRouteSteps == 0 && dirtyRowBegin == 0 &&
+            dirtyRowEnd == AmoledUi::HEIGHT) {
+            // The departure fade is black here. Build the static battle layer
+            // before the route redraws the same full framebuffer.
+            prepareBattleBackground(canvas, renderCaches_.battleBackground,
+                                    battleBackgroundForArea(selectedExploreArea));
+        }
         renderExploreRouteScreen(
             canvas, model, renderCaches_.exploreWorld, dirtyRowBegin, dirtyRowEnd);
         if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_MENU) {
@@ -9445,6 +11979,17 @@ void AmoledApp::render(Canvas565& canvas) const {
         model.animationHit = battleAnimationHit;
         model.animationDamage = battleAnimationDamage;
         model.animationFrame = battleAnimationFrame;
+        if (battleSwitchStage != BattleSwitchStage::NONE) {
+            const uint32_t elapsed = std::min<uint32_t>(
+                BATTLE_SWITCH_PHASE_MS,
+                battleRenderNowMs - battleSwitchStartedMs);
+            const uint32_t progress = battleSwitchStage ==
+                BattleSwitchStage::RETREATING ? elapsed
+                : BATTLE_SWITCH_PHASE_MS - elapsed;
+            model.playerSwitchOffsetX = static_cast<int16_t>(
+                -static_cast<int32_t>(BATTLE_SWITCH_TRAVEL_X * progress * progress /
+                                      (BATTLE_SWITCH_PHASE_MS * BATTLE_SWITCH_PHASE_MS)));
+        }
 #if STICKMON_ENABLE_DEBUG_FEATURES
         model.debugDrawBounds = debugBattleDrawBoundsVisible;
 #endif
@@ -9529,12 +12074,42 @@ void AmoledApp::render(Canvas565& canvas) const {
     }
 
     if (sceneFlow.current() == AppSceneFlow::Scene::COMPUTER) {
+        if (computerPage == ComputerViewModel::Page::STATUS) {
+            TeamStatusViewModel model;
+            model.state = &gameState;
+            model.teamSlot = teamStatusFromContact
+                ? 0 : teamStatusSlot;
+            model.monster = teamStatusFromContact
+                ? contactMonster(teamStatusContactSlot) : nullptr;
+            model.page = teamStatusPage;
+            model.slideOffsetX = teamStatusSlideX;
+            renderTeamStatusScreen(canvas, model, dirtyRowBegin, dirtyRowEnd);
+            return;
+        }
         ComputerViewModel model;
         model.state = &gameState;
         model.page = computerPage;
         model.storageScroll = computerScroll;
         model.pressedItem = computerPressedItem == 0xFF
             ? -1 : computerPressedItem;
+        model.contactActionOpen = contactActionOpen;
+        model.contactActionSlot = contactActionSlot;
+        for (uint8_t slot = 0;
+             slot < gameState.storageCount && slot < Game::STORAGE_CAP;
+             ++slot) {
+            if (contactIsVisiting(slot)) {
+                model.contactVisitingSlot = slot;
+                break;
+            }
+        }
+        model.contactActionPressedItem = contactActionPressedItem;
+        model.contactConfirmOpen = contactConfirmOpen;
+        model.contactConfirmYes = contactConfirmYes;
+        model.contactConfirmDelete = contactConfirmDelete;
+        model.contactInTeam = contactIsInTeam(contactActionSlot);
+        model.contactVisiting = contactIsVisiting(contactActionSlot);
+        model.contactInviteLocked = contactInviteLocked(contactActionSlot);
+        model.contactCanDelete = contactCanDelete(contactActionSlot);
 #if STICKMON_HAS_CLAW
         Stickmon::ClawRuntime& clawRuntime =
             Stickmon::ClawRuntime::instance();
@@ -9590,13 +12165,32 @@ void AmoledApp::render(Canvas565& canvas) const {
         model.state = &gameState;
         model.mode = progressionMode;
         model.teamSlot = progressionTeamSlot;
+        model.oldLevel = progressionOldLevel;
         model.level = progressionLevel;
         model.fromSpeciesId = progressionFromSpeciesId;
         model.toSpeciesId = progressionToSpeciesId;
+        const uint32_t progressionNowMs = Platform::clock().millis();
+        model.levelUpElapsedMs = progressionNowMs - progressionLevelUpStartedMs;
+        model.evolutionPhase = progressionEvolution.phase(progressionNowMs);
+        model.evolutionElapsedMs = progressionEvolution.cancelling()
+            ? progressionEvolution.cancellationElapsed(progressionNowMs)
+            : progressionEvolution.elapsed(progressionNowMs);
+        model.evolutionReady =
+            progressionEvolution.animationComplete(progressionNowMs);
+        model.evolutionCancelHoldProgress = progressionEvolutionTouchHeld
+            ? static_cast<uint8_t>(std::max<uint32_t>(
+                  1, std::min<uint32_t>(
+                         99, (progressionNowMs -
+                              progressionEvolutionTouchStartedMs) * 100U /
+                                 EVOLUTION_CANCEL_HOLD_MS)))
+            : 0;
         model.moveId = progressionMoveId;
         model.oldMove2 = progressionOldMove2;
         model.oldMove3 = progressionOldMove3;
         model.pressedItem = progressionPressedItem;
+        model.selectedItem = progressionSelectedItem;
+        model.scrollOffsetY = progressionScroll;
+        model.detailProgress = progressionDetailProgress;
         model.toast = toast;
         renderProgressionScreen(canvas, model, dirtyRowBegin, dirtyRowEnd);
         return;
@@ -9608,9 +12202,11 @@ void AmoledApp::render(Canvas565& canvas) const {
         model.mode = showerMode;
         model.speciesId = gameState.team[0].speciesId;
         model.soapIndex = showerSoapIndex;
-        model.soapProgress = showerSoapProgress;
-        model.brushProgress = showerBrushProgress;
         model.rinseProgress = showerRinseProgress;
+        model.foam = showerFoam;
+        model.foamCount = SHOWER_FOAM_CAP;
+        model.atmosphereAlpha = static_cast<uint8_t>(std::clamp(
+            showerAtmosphereAlpha, 0.0f, 255.0f));
         model.completionHearts = showerCompletionHearts;
         model.toolX = showerToolX;
         model.toolY = showerToolY;
@@ -9649,9 +12245,10 @@ void AmoledApp::render(Canvas565& canvas) const {
         model.mode = ItemListMode::BAG;
         model.category = shopCategory;
         model.scroll = itemScroll;
-        model.exploreOnly = battleBagMode;
-        model.dailyItemCount = battleBagMode
-            ? 0 : Game::ItemInventory::homeBagDailyItemCount(gameState);
+        model.exploreOnly = false;
+        model.battleMode = battleBagMode;
+        model.dailyItemCount =
+            Game::ItemInventory::homeBagDailyItemCount(gameState);
         model.exploreItemCount =
             Game::ItemInventory::homeBagExploreItemCount(gameState);
         model.itemCount = currentItemCount();
@@ -9675,6 +12272,14 @@ bool AmoledApp::consumeLockRequest() {
     bool requested = lockRequested;
     lockRequested = false;
     return requested;
+}
+
+bool AmoledApp::displayLockAllowed() const {
+    return !pendingExpedition &&
+           (visitDeparture == VisitDeparture::NONE ||
+            visitDeparture == VisitDeparture::AWAY) &&
+           expeditionDeparturePhase == ExpeditionDeparturePhase::NONE &&
+           !expeditionFade.active();
 }
 
 void AmoledApp::onWake(uint32_t nowMs) {
@@ -9764,11 +12369,16 @@ void AmoledApp::clampDebugScroll() {
     }
 }
 
-void AmoledApp::acceptDebugContact(uint32_t nowMs) {
+void AmoledApp::acceptDebugContact(uint32_t nowMs, bool autoResolve) {
     if (!debugContactPending ||
         debugContactStorageSlot >= gameState.storageCount ||
         gameState.teamCount != 1) {
         debugContactPending = false;
+        debugContactEventPending = false;
+        debugContactEventWaitingForEntry = false;
+        debugContactChoiceVisible = false;
+        debugContactSelectedChoice = -1;
+        debugContactChoiceConfirmUntilMs = 0;
         debugContactStorageSlot = 0xFF;
         debugContactKind = 0;
         return;
@@ -9782,6 +12392,9 @@ void AmoledApp::acceptDebugContact(uint32_t nowMs) {
     gameState.teamCount = 2;
     gameState.activeSlot = 0;
     debugContactPending = false;
+    debugContactEventPending = false;
+    debugContactEventWaitingForEntry = !autoResolve;
+    debugContactChoiceVisible = debugContactSelectedChoice >= 0;
     debugContactActive = true;
     debugContactStartedMs = nowMs;
 
@@ -9809,25 +12422,70 @@ void AmoledApp::acceptDebugContact(uint32_t nowMs) {
         : debugContactKind == 2
             ? Ui::ContactVisit::GIFT_FMT : Ui::ContactVisit::EXPLORE_FMT;
     std::snprintf(debugToastBuffer, sizeof(debugToastBuffer), format, name);
-    if (debugContactKind == 3) {
+    Platform::logf("[FriendDiag] accepted kind=%u slot=%u species=%u team=%u\n",
+                   static_cast<unsigned>(debugContactKind),
+                   static_cast<unsigned>(storageSlot),
+                   static_cast<unsigned>(guest.speciesId),
+                   static_cast<unsigned>(gameState.teamCount));
+    if (autoResolve && debugContactKind == 3) {
         uint8_t unlocked = ExploreItemProgression::unlockedArea(gameState);
         selectedExploreArea = std::min<uint8_t>(selectedExploreArea, unlocked);
         if (!queueExploreDeparture(selectedExploreArea, false)) {
+            Platform::logLine("[FriendDiag] departure rejected kind=3");
             completeDebugContact(nowMs);
             setToast(Ui::Debug::EVENT_BUSY, nowMs, 1400);
             return;
         }
+        Platform::logf("[FriendDiag] departure queued kind=3 area=%u\n",
+                       static_cast<unsigned>(selectedExploreArea));
     }
-    setToast(debugToastBuffer, nowMs, 1400);
+    if (autoResolve) showDebugContactStripMessage(debugToastBuffer, nowMs, 2000);
+    requestFullRender();
+}
+
+void AmoledApp::showDebugContactEventPrompt(uint32_t nowMs) {
+    if (!debugContactActive || !debugContactEventWaitingForEntry) return;
+    debugContactEventWaitingForEntry = false;
+    debugContactStartedMs = nowMs;
+    if (debugContactKind == 3) {
+        debugContactEventPending = true;
+        debugContactChoiceVisible = true;
+        debugContactSelectedChoice = -1;
+        debugContactChoiceConfirmUntilMs = 0;
+        debugContactMessageUntilMs = 0;
+        const Species* species = findSpecies(gameState.team[1].speciesId);
+        const char* name = species && species->name ? species->name : "";
+        // The strip prompt wraps after the visitor name (EXPLORE_FMT = "%s" +
+        // EXPLORE_SUFFIX).
+        std::snprintf(debugPromptBuffer, sizeof(debugPromptBuffer), "%s\n%s",
+                      name, Ui::ContactVisit::EXPLORE_SUFFIX);
+    } else {
+        debugContactEventPending = false;
+        debugContactChoiceVisible = false;
+        showDebugContactStripMessage(debugToastBuffer, nowMs, 2000);
+    }
+    requestFullRender();
+}
+
+void AmoledApp::showDebugContactStripMessage(const char* text,
+                                             uint32_t nowMs,
+                                             uint32_t durationMs) {
+    if (!text) return;
+    debugContactChoiceVisible = false;
+    debugContactSelectedChoice = -1;
+    debugContactChoiceConfirmUntilMs = 0;
+    std::snprintf(debugPromptBuffer, sizeof(debugPromptBuffer), "%s", text);
+    debugContactMessageUntilMs = nowMs + durationMs;
     requestFullRender();
 }
 
 void AmoledApp::completeDebugContact(uint32_t nowMs) {
     if (!debugContactActive) return;
     if (sceneFlow.current() == AppSceneFlow::Scene::HOME &&
-        visitorMotion != VisitorMotion::EXITING &&
         homeCompanionActor.active) {
-        beginVisitorExit(nowMs, true);
+        if (visitorMotion != VisitorMotion::EXITING) {
+            beginVisitorExit(nowMs, true);
+        }
         return;
     }
     finalizeDebugContact(nowMs);
@@ -9868,6 +12526,11 @@ void AmoledApp::finalizeDebugContact(uint32_t nowMs) {
 
     uint8_t kind = debugContactKind;
     debugContactActive = false;
+    debugContactEventPending = false;
+    debugContactEventWaitingForEntry = false;
+    debugContactChoiceVisible = false;
+    debugContactSelectedChoice = -1;
+    debugContactChoiceConfirmUntilMs = 0;
     debugContactStorageSlot = 0xFF;
     debugContactKind = 0;
     debugContactStartedMs = 0;
@@ -9878,9 +12541,15 @@ void AmoledApp::finalizeDebugContact(uint32_t nowMs) {
     }
     PokemonSprites::syncTeamCache(speciesIds, gameState.teamCount);
     saveState();
-    setToast(kind == 3 ? Ui::ContactVisit::HAPPY_RETURN
-                       : Ui::ContactVisit::HAPPY_VISIT,
-             nowMs, 1400);
+    Platform::logf("[FriendDiag] complete kind=%u team=%u slot=%u scene=%u phase=%u\n",
+                   static_cast<unsigned>(kind),
+                   static_cast<unsigned>(gameState.teamCount),
+                   static_cast<unsigned>(visitorSlot),
+                   static_cast<unsigned>(sceneFlow.current()),
+                   static_cast<unsigned>(expeditionDeparturePhase));
+    showDebugContactStripMessage(kind == 3 ? Ui::ContactVisit::HAPPY_RETURN
+                                           : Ui::ContactVisit::HAPPY_VISIT,
+                                 nowMs, 2000);
     requestFullRender();
 }
 
@@ -9943,6 +12612,16 @@ void AmoledApp::openDebugTimePopup() {
     debugPopup = DebugViewModel::Popup::SET_TIME;
     toast = nullptr;
     requestRenderRows(0, 448);
+}
+
+void AmoledApp::persistDebugMotionFlags() {
+    uint8_t flags = 0;
+    if (debugTiltControl) flags |= Game::DEBUG_MOTION_TILT;
+    if (debugWalkBoundaryVisible) flags |= Game::DEBUG_MOTION_WALK_BOUNDARY;
+    if (debugTalkPointsVisible) flags |= Game::DEBUG_MOTION_TALK_POINTS;
+    if (gameState.debugMotionFlags == flags) return;
+    gameState.debugMotionFlags = flags;
+    saveState();
 }
 
 void AmoledApp::handleDebugPopupTap(int x, int y, uint32_t nowMs) {
@@ -10044,7 +12723,7 @@ void AmoledApp::executeDebugAction(uint32_t nowMs) {
         : debugCategory == DebugViewModel::Category::MONSTER ? 3
         : debugCategory == DebugViewModel::Category::RESOURCE ? 1
         : debugCategory == DebugViewModel::Category::ENV ? 2
-        : debugCategory == DebugViewModel::Category::MOTION ? 3
+        : debugCategory == DebugViewModel::Category::MOTION ? 4
         : debugCategory == DebugViewModel::Category::BATTLE ? 2 : 3;
     if (debugCursor == backIndex) {
         debugCategory = DebugViewModel::Category::ROOT;
@@ -10128,12 +12807,14 @@ void AmoledApp::executeDebugAction(uint32_t nowMs) {
         if (debugCursor == 0) {
             if (debugTiltControl) {
                 debugTiltControl = false;
+                persistDebugMotionFlags();
             } else {
                 float ax = 0.0f;
                 float ay = 0.0f;
                 float az = 0.0f;
                 if (Platform::imu().readAcceleration(ax, ay, az)) {
                     debugTiltControl = true;
+                    persistDebugMotionFlags();
                     stopDebugPairChase(nowMs, false);
                     sceneFlow.goHome();
                     requestFullRender();
@@ -10142,8 +12823,14 @@ void AmoledApp::executeDebugAction(uint32_t nowMs) {
                 setToast(Ui::Debug::EVENT_BUSY, nowMs, 1400);
             }
         }
-        else if (debugCursor == 1) debugWalkBoundaryVisible = !debugWalkBoundaryVisible;
+        else if (debugCursor == 1) {
+            debugWalkBoundaryVisible = !debugWalkBoundaryVisible;
+            persistDebugMotionFlags();
+        }
         else if (debugCursor == 2) {
+            debugTalkPointsVisible = !debugTalkPointsVisible;
+            persistDebugMotionFlags();
+        } else if (debugCursor == 3) {
             if (!gameState.oobeDone || gameState.teamCount < 2) {
                 setToast(Ui::Debug::PAIR_NEEDS_TWO, nowMs, 1400);
             } else {
@@ -10165,56 +12852,79 @@ void AmoledApp::executeDebugAction(uint32_t nowMs) {
             debugBattleDrawBoundsVisible = !debugBattleDrawBoundsVisible;
         }
         break;
-    case DebugViewModel::Category::CONTACT_EVENT: {
-        if (gameState.teamCount != 1) {
-            setToast(Ui::Social::HOST_TEAM_REQUIRED, nowMs, 1400);
-            break;
-        }
-        if (debugContactPending || debugContactActive) {
-            setToast(Ui::Debug::EVENT_BUSY, nowMs, 1400);
-            break;
-        }
-        uint8_t selected = 0xFF;
-        for (uint8_t slot = 0; slot < gameState.storageCount &&
-             slot < Game::STORAGE_CAP; ++slot) {
-            const Game::MonsterRuntime& contact = gameState.storage[slot];
-            bool representedByTeam = false;
-            for (uint8_t teamSlot = 0; teamSlot < gameState.teamCount &&
-                 teamSlot < Game::TEAM_CAP; ++teamSlot) {
-                if (ContactRoster::sameMonster(
-                        contact, gameState.team[teamSlot])) {
-                    representedByTeam = true;
-                    break;
-                }
-            }
-            if (representedByTeam || contact.fainted || contact.hpCur == 0 ||
-                contact.origin == Game::Origin::VISITOR) {
-                continue;
-            }
-            if (selected == 0xFF ||
-                contact.bond > gameState.storage[selected].bond) {
-                selected = slot;
-            }
-        }
-        if (selected == 0xFF) {
-            setToast(Ui::Debug::NO_CONTACT, nowMs, 1400);
-            break;
-        }
-        debugContactStorageSlot = selected;
-        debugContactKind = static_cast<uint8_t>(debugCursor + 1);
-        debugContactPending = true;
-        gameState.storage[selected].lastSeenAt =
-            static_cast<uint32_t>(gameState.gameMinutesTotal * 60UL);
-        saveState();
-        sceneFlow.enter(AppSceneFlow::Scene::HOME);
-        setToast(Ui::ContactVisit::KNOCK, nowMs, 1400);
-        requestFullRender();
+    case DebugViewModel::Category::CONTACT_EVENT:
+        beginDebugContactEvent(static_cast<uint8_t>(debugCursor + 1), nowMs);
         return;
-    }
     case DebugViewModel::Category::ROOT:
     default: break;
     }
     requestRenderRows(0, 448);
+}
+
+bool AmoledApp::beginDebugContactEvent(uint8_t kind, uint32_t nowMs) {
+    if (kind < 1 || kind > 3) return false;
+    if (gameState.teamCount != 1) {
+        setToast(Ui::Social::HOST_TEAM_REQUIRED, nowMs, 1400);
+        Platform::logf("[FriendDiag] rejected kind=%u reason=team team=%u\n",
+                       static_cast<unsigned>(kind),
+                       static_cast<unsigned>(gameState.teamCount));
+        return false;
+    }
+    if (debugContactPending || debugContactEventPending || debugContactActive) {
+        setToast(Ui::Debug::EVENT_BUSY, nowMs, 1400);
+        Platform::logf("[FriendDiag] rejected kind=%u reason=busy\n",
+                       static_cast<unsigned>(kind));
+        return false;
+    }
+    uint8_t selected = 0xFF;
+    for (uint8_t slot = 0; slot < gameState.storageCount &&
+         slot < Game::STORAGE_CAP; ++slot) {
+        const Game::MonsterRuntime& contact = gameState.storage[slot];
+        bool representedByTeam = false;
+        for (uint8_t teamSlot = 0; teamSlot < gameState.teamCount &&
+             teamSlot < Game::TEAM_CAP; ++teamSlot) {
+            if (ContactRoster::sameMonster(
+                    contact, gameState.team[teamSlot])) {
+                representedByTeam = true;
+                break;
+            }
+        }
+        if (representedByTeam || contact.fainted || contact.hpCur == 0 ||
+            contact.origin == Game::Origin::VISITOR) {
+            continue;
+        }
+        if (selected == 0xFF ||
+            contact.bond > gameState.storage[selected].bond) {
+            selected = slot;
+        }
+    }
+    if (selected == 0xFF) {
+        setToast(Ui::Debug::NO_CONTACT, nowMs, 1400);
+        Platform::logf("[FriendDiag] rejected kind=%u reason=no-contact\n",
+                       static_cast<unsigned>(kind));
+        return false;
+    }
+    debugContactStorageSlot = selected;
+    debugContactKind = kind;
+    debugContactPending = true;
+    debugContactEventPending = false;
+    debugContactEventWaitingForEntry = false;
+    debugContactChoiceVisible = true;
+    debugContactSelectedChoice = -1;
+    debugContactChoiceConfirmUntilMs = 0;
+    debugContactMessageUntilMs = 0;
+    gameState.storage[selected].lastSeenAt =
+        static_cast<uint32_t>(gameState.gameMinutesTotal * 60UL);
+    saveState();
+    sceneFlow.enter(AppSceneFlow::Scene::HOME);
+    std::snprintf(debugPromptBuffer, sizeof(debugPromptBuffer), "%s",
+                  Ui::ContactVisit::KNOCK_LINES);
+    Platform::logf("[FriendDiag] begin kind=%u slot=%u species=%u bond=%u\n",
+                   static_cast<unsigned>(kind), static_cast<unsigned>(selected),
+                   static_cast<unsigned>(gameState.storage[selected].speciesId),
+                   static_cast<unsigned>(gameState.storage[selected].bond));
+    requestFullRender();
+    return true;
 }
 
 void AmoledApp::renderDebugTouchOverlay(Canvas565& canvas) const {
@@ -10332,12 +13042,12 @@ void AmoledApp::clampMenuScroll() {
 }
 
 void AmoledApp::clampItemScroll() {
-    const uint8_t dailyCount = battleBagMode
-        ? 0 : Game::ItemInventory::homeBagDailyItemCount(gameState);
+    const uint8_t dailyCount =
+        Game::ItemInventory::homeBagDailyItemCount(gameState);
     float maximum = itemListMaxScroll(
         dailyCount,
         Game::ItemInventory::homeBagExploreItemCount(gameState),
-        currentItemCount(), battleBagMode);
+        currentItemCount(), false);
     if (sceneFlow.current() == AppSceneFlow::Scene::SHOP) {
         ShopViewModel::Mode mode =
             shopCategory == Game::ShopService::Category::SELL
@@ -10367,9 +13077,7 @@ uint8_t AmoledApp::shopExploreItemCount() const {
 
 uint8_t AmoledApp::currentItemCount() const {
     if (sceneFlow.current() == AppSceneFlow::Scene::BAG) {
-        return battleBagMode
-            ? Game::ItemInventory::homeBagExploreItemCount(gameState)
-            : Game::ItemInventory::homeBagItemCount(gameState);
+        return Game::ItemInventory::homeBagItemCount(gameState);
     }
     if (sceneFlow.current() != AppSceneFlow::Scene::SHOP) {
         return 0;
@@ -10382,9 +13090,7 @@ uint8_t AmoledApp::currentItemCount() const {
 
 Game::ItemId AmoledApp::currentItemAt(uint8_t index) const {
     if (sceneFlow.current() == AppSceneFlow::Scene::BAG) {
-        return battleBagMode
-            ? Game::ItemInventory::homeBagExploreItemAt(gameState, index)
-            : Game::ItemInventory::homeBagItemAt(gameState, index);
+        return Game::ItemInventory::homeBagItemAt(gameState, index);
     }
     if (sceneFlow.current() != AppSceneFlow::Scene::SHOP) {
         return Game::ItemId::COUNT;
@@ -10412,6 +13118,7 @@ void AmoledApp::openItemScene(AppSceneFlow::Scene target) {
     itemConfirmOpen = false;
     pendingItem = Game::ItemId::COUNT;
     pendingItemAction = PendingItemAction::NONE;
+    selectingItemTarget = false;
     shopDetailProgress = 0.0f;
     shopDetailItemIndex = -1;
     teamConfirmOpen = false;
@@ -10424,6 +13131,7 @@ void AmoledApp::closeItemScene() {
     itemConfirmOpen = false;
     pendingItem = Game::ItemId::COUNT;
     pendingItemAction = PendingItemAction::NONE;
+    selectingItemTarget = false;
     pressedShopDetailAction = -1;
     shopDetailProgress = 0.0f;
     shopDetailItemIndex = -1;
@@ -10458,6 +13166,18 @@ void AmoledApp::openComputerScene() {
     computerScroll = 0.0f;
     computerVelocity = 0.0f;
     computerPressedItem = 0xFF;
+    contactActionOpen = false;
+    contactActionSlot = 0xFF;
+    contactActionPressedItem = -1;
+    contactConfirmOpen = false;
+    contactConfirmYes = false;
+    contactConfirmDelete = false;
+    teamStatusFromContact = false;
+    teamStatusContactSlot = 0xFF;
+    teamStatusPage = 0;
+    teamStatusSlideX = 0;
+    teamStatusAnimating = false;
+    teamStatusDragging = false;
     clawLogView = false;
     clawLogScroll = 0.0f;
     clawLogVelocity = 0.0f;
@@ -10465,6 +13185,199 @@ void AmoledApp::openComputerScene() {
     clawLogCount = 0;
     toast = nullptr;
     requestFullRender();
+}
+
+const Game::MonsterRuntime* AmoledApp::contactMonster(uint8_t slot) const {
+    return ContactRoster::liveMonsterForContact(gameState, slot);
+}
+
+bool AmoledApp::contactIsInTeam(uint8_t slot) const {
+    return ContactRoster::teamSlotForContact(gameState, slot) >= 0;
+}
+
+bool AmoledApp::contactIsVisiting(uint8_t slot) const {
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    if ((debugContactActive || debugContactPending || debugContactEventPending) &&
+        debugContactStorageSlot == slot) return true;
+#endif
+    const int8_t teamSlot = ContactRoster::teamSlotForContact(gameState, slot);
+    return teamSlot >= 0 &&
+           gameState.team[teamSlot].origin == Game::Origin::VISITOR;
+}
+
+bool AmoledApp::contactInviteLocked(uint8_t slot) const {
+    const Game::MonsterRuntime* monster = contactMonster(slot);
+    return monster && Game::Bond::inviteLockedToday(
+        monster->petCountToday,
+        Game::Bond::invitationDay(gameState.gameMinutesTotal));
+}
+
+bool AmoledApp::contactCanDelete(uint8_t slot) const {
+    return ContactRoster::canDelete(gameState, slot, contactIsVisiting(slot));
+}
+
+uint8_t AmoledApp::contactActionCount(uint8_t slot) const {
+    if (!contactMonster(slot)) return 0;
+    return static_cast<uint8_t>(1 + (contactIsInTeam(slot) ? 0 : 1) +
+                               (contactCanDelete(slot) ? 1 : 0));
+}
+
+void AmoledApp::openContactAction(uint8_t slot) {
+    if (!contactMonster(slot)) return;
+    contactActionOpen = true;
+    contactActionSlot = slot;
+    contactActionPressedItem = -1;
+    contactConfirmOpen = false;
+    contactConfirmYes = false;
+    contactConfirmDelete = false;
+    computerPressedItem = 0xFF;
+    requestFullRender();
+}
+
+void AmoledApp::openContactStatus(uint8_t slot) {
+    if (!contactMonster(slot)) return;
+    contactActionOpen = false;
+    contactActionPressedItem = -1;
+    contactConfirmOpen = false;
+    teamStatusFromContact = true;
+    teamStatusContactSlot = slot;
+    teamStatusPage = 0;
+    teamStatusSlideX = 0;
+    teamStatusAnimating = false;
+    teamStatusDragging = false;
+    computerPage = ComputerViewModel::Page::STATUS;
+    computerPressedItem = 0xFF;
+    requestFullRender();
+}
+
+void AmoledApp::closeContactOverlay() {
+    contactActionOpen = false;
+    contactConfirmOpen = false;
+    contactActionPressedItem = -1;
+    contactConfirmYes = false;
+    contactConfirmDelete = false;
+    requestFullRender();
+}
+
+void AmoledApp::handleContactActionTap(int x, int y, uint32_t nowMs) {
+    const uint8_t actionCount = contactActionCount(contactActionSlot);
+    const int action = computerContactActionItemAt(
+        x, y, actionCount, contactActionSlot, computerScroll);
+    if (action < 0) {
+        if (!computerContactMenuAt(
+                x, y, actionCount, contactActionSlot, computerScroll)) {
+            closeContactOverlay();
+        }
+        return;
+    }
+    contactActionPressedItem = action;
+    int cursor = 0;
+    if (action == cursor) {
+        openContactStatus(contactActionSlot);
+        return;
+    }
+    ++cursor;
+    if (!contactIsInTeam(contactActionSlot) && action == cursor) {
+        if (contactInviteLocked(contactActionSlot)) {
+            setToast(Ui::Storage::INVITE_LOCKED, nowMs);
+            closeContactOverlay();
+        } else if (contactIsVisiting(contactActionSlot)) {
+            setToast(Ui::Storage::VISITING, nowMs);
+            closeContactOverlay();
+        } else if (gameState.teamCount >= Game::TEAM_CAP) {
+            setToast(Ui::Storage::TEAM_FULL_TOAST, nowMs);
+            closeContactOverlay();
+        } else {
+            contactConfirmOpen = true;
+            contactConfirmYes = true;
+            contactConfirmDelete = false;
+            requestFullRender();
+        }
+        return;
+    }
+    if (!contactIsInTeam(contactActionSlot)) ++cursor;
+    if (contactCanDelete(contactActionSlot) && action == cursor) {
+        contactConfirmOpen = true;
+        contactConfirmYes = true;
+        contactConfirmDelete = true;
+        requestFullRender();
+        return;
+    }
+    closeContactOverlay();
+}
+
+void AmoledApp::handleContactConfirmTap(int x, int y, uint32_t nowMs) {
+    const int choice = computerContactConfirmChoiceAt(x, y);
+    if (choice < 0) {
+        closeContactOverlay();
+        return;
+    }
+    if (choice == 1) {
+        closeContactOverlay();
+        return;
+    }
+    if (contactConfirmDelete) {
+        if (ContactRoster::deleteContact(gameState, contactActionSlot,
+                                         contactIsVisiting(contactActionSlot))) {
+#if STICKMON_ENABLE_DEBUG_FEATURES
+            if ((debugContactActive || debugContactPending || debugContactEventPending) &&
+                contactActionSlot < debugContactStorageSlot) {
+                --debugContactStorageSlot;
+            }
+#endif
+            if (computerScroll > 0.0f) clampComputerScroll();
+            setToast(Ui::Storage::DELETE_TOAST, nowMs);
+            saveState();
+            contactActionOpen = false;
+            contactConfirmOpen = false;
+            contactActionSlot = 0xFF;
+            requestFullRender();
+        } else {
+            setToast(Ui::Storage::VISITING, nowMs);
+            closeContactOverlay();
+        }
+        return;
+    }
+
+    const Game::FriendshipService::InviteResult result =
+        Game::FriendshipService::inviteContact(
+            gameState, contactActionSlot, gameState.gameMinutesTotal);
+    switch (result) {
+    case Game::FriendshipService::InviteResult::JOINED: {
+        uint16_t speciesIds[Game::TEAM_CAP] = {};
+        for (uint8_t slot = 0; slot < gameState.teamCount &&
+             slot < Game::TEAM_CAP; ++slot) {
+            speciesIds[slot] = gameState.team[slot].speciesId;
+        }
+        PokemonSprites::syncTeamCache(speciesIds, gameState.teamCount);
+        syncHomeActors(nowMs);
+        saveState();
+        setToast(Ui::Storage::INVITE_ACCEPTED, nowMs);
+        closeContactOverlay();
+        break;
+    }
+    case Game::FriendshipService::InviteResult::REFUSED:
+        saveState();
+        setToast(Ui::Storage::INVITE_REFUSED, nowMs);
+        closeContactOverlay();
+        break;
+    case Game::FriendshipService::InviteResult::LOCKED:
+        setToast(Ui::Storage::INVITE_LOCKED, nowMs);
+        closeContactOverlay();
+        break;
+    case Game::FriendshipService::InviteResult::ALREADY_IN_TEAM:
+        setToast(Ui::Storage::IN_TEAM, nowMs);
+        closeContactOverlay();
+        break;
+    case Game::FriendshipService::InviteResult::TEAM_FULL:
+        setToast(Ui::Storage::TEAM_FULL_TOAST, nowMs);
+        closeContactOverlay();
+        break;
+    case Game::FriendshipService::InviteResult::INVALID:
+    default:
+        closeContactOverlay();
+        break;
+    }
 }
 
 void AmoledApp::openSettingsScene() {
@@ -10493,9 +13406,8 @@ void AmoledApp::closeUtilityScene() {
 }
 
 void AmoledApp::clampComputerScroll() {
-    int contentHeight = static_cast<int>(gameState.storageCount) * 86;
-    float maximum = static_cast<float>(std::max(
-        0, contentHeight - (AmoledUi::HEIGHT - MENU_HEADER_HEIGHT)));
+    const float maximum = static_cast<float>(
+        computerMaxStorageScroll(gameState.storageCount));
     if (computerScroll <= 0.0f) {
         computerScroll = 0.0f;
         if (computerVelocity < 0.0f) computerVelocity = 0.0f;
@@ -10582,6 +13494,8 @@ void AmoledApp::openProgressionScene(AppSceneFlow::Scene returnScene,
     progressionTeamSlot = teamSlot;
     progressionOldLevel = oldLevel;
     progressionLevel = monster.level;
+    progressionLevelUpStartedMs = nowMs;
+    progressionLevelUpTouchAllowed = false;
     progressionFromSpeciesId = monster.speciesId;
     progressionToSpeciesId = 0;
     progressionMoveId = 0;
@@ -10589,20 +13503,47 @@ void AmoledApp::openProgressionScene(AppSceneFlow::Scene returnScene,
     progressionOldMove3 = 0;
     progressionMoveCursor = 0;
     progressionPressedItem = 0xFF;
+    progressionEvolution.reset();
+    progressionEvolutionItem = Game::ItemId::COUNT;
+    nextProgressionAnimationFrameMs = nowMs + PROGRESSION_ANIMATION_FRAME_MS;
+    progressionEvolutionTouchStartedMs = 0;
+    progressionEvolutionTouchResumeUntilMs = 0;
+    progressionEvolutionTouchHeld = false;
+    progressionEvolutionTouchConsumed = false;
     progressionMode = ProgressionViewModel::Mode::LEVEL_UP;
     toast = nullptr;
     sceneFlow.enter(AppSceneFlow::Scene::PROGRESSION);
     setMusicContext(returnScene == AppSceneFlow::Scene::EXPLORE_ROUTE
                         ? MusicContext::EXPLORE : MusicContext::HOME);
     requestFullRender();
-    (void)nowMs;
+}
+
+void AmoledApp::beginEvolutionSequence(uint16_t fromSpeciesId,
+                                       uint16_t toSpeciesId,
+                                       uint32_t nowMs,
+                                       Game::ItemId consumedItem) {
+    progressionFromSpeciesId = fromSpeciesId;
+    progressionToSpeciesId = toSpeciesId;
+    progressionEvolutionItem = consumedItem;
+    progressionEvolution.begin(fromSpeciesId, toSpeciesId, nowMs);
+    nextProgressionAnimationFrameMs = nowMs;
+    progressionEvolutionTouchStartedMs = 0;
+    progressionEvolutionTouchResumeUntilMs = 0;
+    progressionEvolutionTouchHeld = false;
+    progressionEvolutionTouchConsumed = false;
+    const uint16_t species[] = {fromSpeciesId, toSpeciesId};
+    PokemonSprites::preloadDynamicSpecies(species, 2, 2);
+    Platform::logf("[AmoledEvolution] begin slot=%u from=%u to=%u item=%u\n",
+                   progressionTeamSlot, fromSpeciesId, toSpeciesId,
+                   static_cast<unsigned>(consumedItem));
 }
 
 void AmoledApp::openEvolutionProgression(AppSceneFlow::Scene returnScene,
                                           uint8_t teamSlot,
                                           uint16_t fromSpeciesId,
                                           uint16_t toSpeciesId,
-                                          uint32_t nowMs) {
+                                          uint32_t nowMs,
+                                          Game::ItemId consumedItem) {
     if (teamSlot >= gameState.teamCount || teamSlot >= Game::TEAM_CAP ||
         fromSpeciesId == 0 || toSpeciesId == 0 ||
         fromSpeciesId == toSpeciesId) return;
@@ -10610,20 +13551,18 @@ void AmoledApp::openEvolutionProgression(AppSceneFlow::Scene returnScene,
     progressionTeamSlot = teamSlot;
     progressionOldLevel = gameState.team[teamSlot].level;
     progressionLevel = gameState.team[teamSlot].level;
-    progressionFromSpeciesId = fromSpeciesId;
-    progressionToSpeciesId = toSpeciesId;
     progressionMoveId = 0;
     progressionOldMove2 = 0;
     progressionOldMove3 = 0;
     progressionMoveCursor = 0;
     progressionPressedItem = 0xFF;
     progressionMode = ProgressionViewModel::Mode::EVOLUTION;
+    beginEvolutionSequence(fromSpeciesId, toSpeciesId, nowMs, consumedItem);
     toast = nullptr;
     sceneFlow.enter(AppSceneFlow::Scene::PROGRESSION);
     setMusicContext(returnScene == AppSceneFlow::Scene::EXPLORE_ROUTE
                         ? MusicContext::EXPLORE : MusicContext::HOME);
     requestFullRender();
-    (void)nowMs;
 }
 
 bool AmoledApp::findNextProgressionMove(uint8_t teamSlot,
@@ -10675,10 +13614,9 @@ void AmoledApp::advanceProgression(uint32_t nowMs) {
         gameState.pendingLevelUpLevel = 0;
         const Species* target = levelUpEvolutionTarget(*species, monster);
         if (target) {
-            progressionFromSpeciesId = monster.speciesId;
-            progressionToSpeciesId = target->id;
             progressionMode = ProgressionViewModel::Mode::EVOLUTION;
             progressionPressedItem = 0xFF;
+            beginEvolutionSequence(monster.speciesId, target->id, nowMs);
             saveState();
             requestFullRender();
             return;
@@ -10686,8 +13624,15 @@ void AmoledApp::advanceProgression(uint32_t nowMs) {
         progressionMode = ProgressionViewModel::Mode::MOVE_LEARN;
         progressionMoveCursor = 0;
     } else if (progressionMode == ProgressionViewModel::Mode::EVOLUTION) {
+        if (!progressionEvolution.animationComplete(nowMs)) return;
         const Species* target = findSpecies(progressionToSpeciesId);
         if (target && target->id != monster.speciesId) {
+            if (progressionEvolutionItem != Game::ItemId::COUNT &&
+                !Game::ItemInventory::remove(
+                    gameState, progressionEvolutionItem, 1)) {
+                setToast(Ui::Amoled::NO_STOCK, nowMs);
+                return;
+            }
             uint16_t oldHpMax = monster.hpMax;
             monster.speciesId = target->id;
             monster.hpMax = maxHpFor(*target, monster);
@@ -10723,7 +13668,23 @@ void AmoledApp::advanceProgression(uint32_t nowMs) {
                     behaviorProfile = behaviorProfileFor(*leader, monster);
                 }
             }
+            syncHomeActors(nowMs);
+            saveState();
+
+            const Species* nextTarget =
+                progressionEvolutionItem == Game::ItemId::COUNT
+                    ? levelUpEvolutionTarget(*target, monster) : nullptr;
+            if (nextTarget && nextTarget->id != monster.speciesId) {
+                progressionPressedItem = 0xFF;
+                beginEvolutionSequence(
+                    monster.speciesId, nextTarget->id, nowMs);
+                requestFullRender();
+                return;
+            }
         }
+        progressionEvolution.reset();
+        progressionEvolutionItem = Game::ItemId::COUNT;
+        nextProgressionAnimationFrameMs = 0;
         progressionMode = ProgressionViewModel::Mode::MOVE_LEARN;
     } else if (progressionMode == ProgressionViewModel::Mode::MOVE_LEARN) {
         // The button is also the skip action when a move is not wanted.
@@ -10754,6 +13715,11 @@ void AmoledApp::advanceProgression(uint32_t nowMs) {
     progressionOldMove3 = monster.move3Id;
     progressionMode = ProgressionViewModel::Mode::MOVE_REPLACE;
     progressionPressedItem = 0xFF;
+    progressionSelectedItem = 0xFF;
+    progressionScroll = 0;
+    progressionDetailProgress = 0.0f;
+    progressionDetailAnimating = false;
+    progressionDetailTargetVisible = false;
     saveState();
     requestFullRender();
 }
@@ -10766,12 +13732,23 @@ void AmoledApp::completeProgression(uint32_t nowMs) {
     gameState.pendingMoveId = 0;
     gameState.pendingMoveCursor = 0;
     progressionPressedItem = 0xFF;
+    progressionEvolution.reset();
+    progressionEvolutionItem = Game::ItemId::COUNT;
+    nextProgressionAnimationFrameMs = 0;
+    progressionEvolutionTouchStartedMs = 0;
+    progressionEvolutionTouchResumeUntilMs = 0;
+    progressionEvolutionTouchHeld = false;
+    progressionEvolutionTouchConsumed = false;
     saveState();
+    if (battleProgressionSequenceActive) {
+        if (startNextBattleProgression(nowMs)) return;
+        closeBattle(nowMs);
+        return;
+    }
     sceneFlow.enter(progressionReturnScene);
     if (progressionReturnScene == AppSceneFlow::Scene::EXPLORE_ROUTE) {
         resumeExploreRoute(nowMs);
     }
-    setToast(Ui::Amoled::GROWTH_COMPLETE, nowMs, 1200);
     requestFullRender();
 }
 
@@ -10809,8 +13786,8 @@ void AmoledApp::startShowerTool(ShowerMode mode, uint32_t nowMs) {
     showerModeStartedMs = nowMs;
     showerToolDragging = false;
     showerStrokeCarry = 0.0f;
-    showerToolX = mode == ShowerMode::SOAPING ? 48 : 138;
-    showerToolY = 392;
+    showerToolX = SHOWER_PET_X;
+    showerToolY = SHOWER_PET_Y;
     showerLastStrokeX = showerToolX;
     showerLastStrokeY = showerToolY;
     pressedShowerItem = -1;
@@ -10844,25 +13821,154 @@ void AmoledApp::updateShowerToolDrag(int x, int y, uint32_t nowMs) {
     showerLastStrokeX = showerToolX;
     showerLastStrokeY = showerToolY;
 
-    uint8_t& progress = showerMode == ShowerMode::SOAPING
-        ? showerSoapProgress : showerBrushProgress;
-    while (showerStrokeCarry >= SHOWER_PROGRESS_DISTANCE &&
-           progress < SHOWER_PROGRESS_MAX) {
-        showerStrokeCarry -= SHOWER_PROGRESS_DISTANCE;
-        ++progress;
+    if (showerMode == ShowerMode::SOAPING) {
+        while (showerStrokeCarry >= SHOWER_FOAM_DISTANCE) {
+            showerStrokeCarry -= SHOWER_FOAM_DISTANCE;
+            spawnShowerFoam(nowMs);
+        }
+    } else if (showerMode == ShowerMode::BRUSHING) {
+        if (showerStrokeCarry >= SHOWER_BRUSH_DISTANCE ||
+            nowMs - showerLastRubMs >= SHOWER_BRUSH_INTERVAL_MS) {
+            showerStrokeCarry = 0.0f;
+            showerLastRubMs = nowMs;
+            rubShowerFoamAt(x, y, nowMs);
+        }
     }
 
     requestRenderRows(MENU_HEADER_HEIGHT, 448);
-    if (progress < SHOWER_PROGRESS_MAX) return;
+}
 
-    ShowerMode completedMode = showerMode;
-    showerToolDragging = false;
-    grantShowerStage(completedMode == ShowerMode::SOAPING
-                         ? Game::BathService::Stage::SOAP
-                         : Game::BathService::Stage::BRUSH,
-                     nowMs);
-    showerMode = ShowerMode::MENU;
-    requestRenderRows(MENU_HEADER_HEIGHT, 448);
+void AmoledApp::spawnShowerFoam(uint32_t nowMs) {
+    static constexpr int8_t OFFSETS[][2] = {
+        {-48, -60}, {40, -50}, {-16, -28}, {50, 0},
+        {-50, 8}, {16, 28}, {-32, 58}, {40, 56},
+    };
+    for (uint8_t i = 0; i < SHOWER_FOAM_CAP; ++i) {
+        const uint8_t index = static_cast<uint8_t>(
+            (showerFoamSpawnCursor + i) % SHOWER_FOAM_CAP);
+        ShowerFoamState& foam = showerFoam[index];
+        if (foam.active) continue;
+        const int8_t* offset = OFFSETS[index];
+        foam.restX = static_cast<int16_t>(SHOWER_PET_X + offset[0]);
+        foam.restYOffset = static_cast<int8_t>(offset[1]);
+        foam.x = static_cast<int16_t>(foam.restX + GameRandom::random(-3, 4));
+        foam.y = static_cast<int16_t>(SHOWER_PET_Y + foam.restYOffset +
+                                       GameRandom::random(-3, 4));
+        foam.stage = 0;
+        foam.brushProgress = 0;
+        foam.active = true;
+        showerFoamSpawnCursor = static_cast<uint8_t>((index + 1) % SHOWER_FOAM_CAP);
+        showerLastFoamGrowthMs = nowMs;
+        if (!showerSoapRewarded) {
+            grantShowerStage(Game::BathService::Stage::SOAP, nowMs);
+        }
+        requestRenderRows(MENU_HEADER_HEIGHT, 328);
+        return;
+    }
+}
+
+ShowerFoamState* AmoledApp::findShowerFoamPartner(
+    const ShowerFoamState& source) {
+    for (uint8_t i = 0; i < SHOWER_FOAM_CAP; ++i) {
+        ShowerFoamState& candidate = showerFoam[i];
+        if (&candidate == &source || !candidate.active ||
+            candidate.stage != source.stage) {
+            continue;
+        }
+        const int dx = candidate.x - source.x;
+        const int dy = candidate.y - source.y;
+        if (dx * dx + dy * dy <= 48 * 48) return &candidate;
+    }
+    return nullptr;
+}
+
+bool AmoledApp::tryMergeShowerFoam(ShowerFoamState& source,
+                                   uint32_t nowMs) {
+    if (!source.active || source.stage < 1 || source.stage >= 3) return false;
+    ShowerFoamState* partner = findShowerFoamPartner(source);
+    if (!partner) return false;
+    partner->stage = std::min<uint8_t>(3, static_cast<uint8_t>(source.stage + 1));
+    partner->brushProgress = 0;
+    source.active = false;
+    source.brushProgress = 0;
+    showerLastFoamGrowthMs = nowMs;
+    checkShowerAtmosphereThreshold(nowMs);
+    return true;
+}
+
+void AmoledApp::rubShowerFoamAt(int x, int y, uint32_t nowMs) {
+    ShowerFoamState* nearest = nullptr;
+    int nearestDistance = 25 * 25;
+    for (uint8_t i = 0; i < SHOWER_FOAM_CAP; ++i) {
+        ShowerFoamState& foam = showerFoam[i];
+        if (!foam.active) continue;
+        const int dx = foam.x - x;
+        const int dy = foam.y - y;
+        const int distance = dx * dx + dy * dy;
+        if (distance < nearestDistance) {
+            nearestDistance = distance;
+            nearest = &foam;
+        }
+    }
+    if (!nearest) return;
+    ++nearest->brushProgress;
+    const uint8_t threshold = nearest->stage < 2 ? 2 : 4;
+    if (nearest->brushProgress >= threshold) {
+        nearest->brushProgress = 0;
+        if (nearest->stage < 3) ++nearest->stage;
+        tryMergeShowerFoam(*nearest, nowMs);
+        checkShowerAtmosphereThreshold(nowMs);
+    }
+    requestRenderRows(MENU_HEADER_HEIGHT, 328);
+}
+
+void AmoledApp::checkShowerAtmosphereThreshold(uint32_t nowMs) {
+    if (showerAtmosphereTarget) return;
+    bool largeFoam = false;
+    for (const ShowerFoamState& foam : showerFoam) {
+        if (!foam.active) continue;
+        largeFoam = largeFoam || foam.stage >= 3;
+    }
+    if (largeFoam && showerFoamLevelTotal() >= 6) {
+        for (ShowerFoamState& foam : showerFoam) foam.active = false;
+        showerAtmosphereTarget = true;
+        grantShowerStage(Game::BathService::Stage::BRUSH, nowMs);
+    }
+}
+
+uint8_t AmoledApp::showerFoamLevelTotal() const {
+    uint8_t total = 0;
+    for (const ShowerFoamState& foam : showerFoam) {
+        if (foam.active) total = static_cast<uint8_t>(
+            std::min<int>(255, total + foam.stage + 1));
+    }
+    return total;
+}
+
+bool AmoledApp::anyShowerFoam() const {
+    for (const ShowerFoamState& foam : showerFoam) {
+        if (foam.active) return true;
+    }
+    return false;
+}
+
+void AmoledApp::rinseShowerFoamOneStage() {
+    for (ShowerFoamState& foam : showerFoam) {
+        if (!foam.active) continue;
+        if (foam.stage > 0) --foam.stage;
+        else foam.active = false;
+    }
+    if (!anyShowerFoam()) showerAtmosphereTarget = false;
+}
+
+void AmoledApp::updateShowerFoamMotion(float dtSeconds) {
+    (void)dtSeconds;
+    for (ShowerFoamState& foam : showerFoam) {
+        if (!foam.active) continue;
+        const int targetY = SHOWER_PET_Y + foam.restYOffset;
+        if (foam.y < targetY) ++foam.y;
+        else if (foam.y > targetY) --foam.y;
+    }
 }
 
 void AmoledApp::grantShowerStage(Game::BathService::Stage stage,
@@ -10925,7 +14031,9 @@ void AmoledApp::startShowerRinse(uint32_t nowMs) {
     showerMode = ShowerMode::RINSING;
     showerModeStartedMs = nowMs;
     showerLastFrameMs = nowMs;
+    showerLastRinseFoamMs = nowMs;
     showerRinseProgress = 0;
+    showerAtmosphereTarget = false;
     showerToolDragging = false;
     pressedShowerItem = -1;
     toast = nullptr;
@@ -10948,12 +14056,10 @@ void AmoledApp::requestShowerExit() {
 void AmoledApp::resetShowerSession(uint32_t nowMs) {
     showerMode = ShowerMode::MENU;
     showerSoapIndex = 0;
-    showerSoapProgress = 0;
-    showerBrushProgress = 0;
     showerRinseProgress = 0;
     showerCompletionHearts = 0;
-    showerToolX = 24;
-    showerToolY = 392;
+    showerToolX = SHOWER_PET_X;
+    showerToolY = SHOWER_PET_Y;
     showerLastStrokeX = showerToolX;
     showerLastStrokeY = showerToolY;
     showerStrokeCarry = 0.0f;
@@ -10965,6 +14071,14 @@ void AmoledApp::resetShowerSession(uint32_t nowMs) {
     showerExitConfirmYes = false;
     showerModeStartedMs = nowMs;
     showerLastFrameMs = nowMs;
+    showerLastRubMs = 0;
+    showerLastFoamGrowthMs = 0;
+    showerLastRinseFoamMs = nowMs;
+    showerFoamSpawnCursor = 0;
+    showerFoamRestSlot = 0;
+    showerAtmosphereAlpha = 0.0f;
+    showerAtmosphereTarget = false;
+    for (ShowerFoamState& foam : showerFoam) foam = ShowerFoamState{};
     pressedShowerItem = -1;
     showerToast[0] = '\0';
     toast = nullptr;
@@ -10981,8 +14095,12 @@ void AmoledApp::beginTeamStatusSlide(uint8_t targetPage, uint32_t nowMs) {
     requestRenderRows(MENU_HEADER_HEIGHT, 448);
 }
 
-void AmoledApp::openTeamScene() {
-    sceneFlow.openSubScene(AppSceneFlow::Scene::TEAM);
+void AmoledApp::openTeamScene(bool preserveSubSceneReturn) {
+    if (preserveSubSceneReturn) {
+        sceneFlow.enter(AppSceneFlow::Scene::TEAM);
+    } else {
+        sceneFlow.openSubScene(AppSceneFlow::Scene::TEAM);
+    }
     uint16_t speciesIds[Game::TEAM_CAP] = {};
     uint8_t count = Game::TeamRoster::memberCount(gameState);
     for (uint8_t slot = 0; slot < count; ++slot) {
@@ -10990,6 +14108,7 @@ void AmoledApp::openTeamScene() {
     }
     PokemonSprites::syncTeamCache(speciesIds, count);
     pressedTeamSlot = -1;
+    teamActionPopupOpen = false;
     pendingTeamSlot = 0;
     teamConfirmOpen = false;
     teamStatusOpen = false;
@@ -11313,6 +14432,7 @@ void AmoledApp::persistHomeViewState(uint32_t nowMs) {
         gameState.gameMinutesTotal, mainMonster.nature);
     const bool transientMain = roomAction != RoomAction::NONE ||
         homeRuntime.pairActive() ||
+        visitorMotion == VisitorMotion::HOST_APPROACH ||
         visitorMotion == VisitorMotion::ENTERING ||
         visitorMotion == VisitorMotion::EXITING || pendingExpedition ||
         expeditionDeparturePhase != ExpeditionDeparturePhase::NONE ||

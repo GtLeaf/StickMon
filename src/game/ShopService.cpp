@@ -14,7 +14,7 @@ namespace {
 constexpr ItemId DAILY_ITEMS[] = {
     ItemId::NORMAL_FOOD, ItemId::TASTY_FOOD, ItemId::SWEET_FOOD,
     ItemId::SPICY_FOOD, ItemId::SOUR_FOOD, ItemId::BITTER_FOOD,
-    ItemId::DRY_FOOD, ItemId::CANDY, ItemId::FULL_HEAL,
+    ItemId::DRY_FOOD, ItemId::CANDY,
     ItemId::SOAP_0, ItemId::SOAP_1, ItemId::SOAP_2,
 };
 
@@ -22,6 +22,7 @@ constexpr ItemId EXPLORE_ITEMS[] = {
     ItemId::POTION, ItemId::SUPER_POTION, ItemId::ANTIDOTE,
     ItemId::PARALYZE_HEAL, ItemId::AWAKENING, ItemId::BURN_HEAL,
     ItemId::ICE_HEAL, ItemId::MAX_POTION, ItemId::FULL_RESTORE,
+    ItemId::FULL_HEAL,
     ItemId::FIRE_STONE, ItemId::WATER_STONE, ItemId::THUNDER_STONE,
     ItemId::REVIVE, ItemId::MAX_REPEL, ItemId::HONEY,
 };

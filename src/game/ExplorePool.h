@@ -95,6 +95,15 @@ inline uint32_t poolWeightTotal(const Pool& pool) {
     return total;
 }
 
+inline const PoolEntry* entryForRoll(const Pool& pool, uint32_t roll) {
+    for (uint8_t index = 0; index < pool.count; ++index) {
+        const uint32_t weight = rollWeightOf(pool.entries[index]);
+        if (roll < weight) return &pool.entries[index];
+        roll -= weight;
+    }
+    return nullptr;
+}
+
 inline bool poolHasRare(const Pool& pool) {
     for (uint8_t i = 0; i < pool.count; ++i) {
         if (isRare(pool.entries[i].rarity)) return true;

@@ -743,6 +743,8 @@ void MainScene::onEnter() {
     progressionCancelledSpeciesId = 0;
     ProgressionUi::resetMoveLearnState(progressionMoveLearn);
     contactDialog = ContactDialog::NONE;
+    linkedArrivalInProgress = false;
+    visitDeparture = VisitDeparture::NONE;
     contactGuestMotion = ContactGuestMotion::NONE;
     contactGuestMotionStartedMs = 0;
     contactNextRouteAttemptMs = 0;
@@ -840,6 +842,16 @@ void MainScene::onEnter() {
     bool teamMemberArrival =
         GameEngine::ins().consumeTeamMemberArrivalRequest();
     beginDoorTransition(nowMs);
+    if (GameEngine::ins().visitActive() &&
+        !GameEngine::ins().visitAsHost() &&
+        doorTransition == DoorTransitionMode::NONE) {
+        if (GameEngine::ins().visitService().visitorDeparted()) {
+            visitDeparture = VisitDeparture::AWAY;
+            doorMainHidden = true;
+        } else {
+            beginVisitDeparture(nowMs);
+        }
+    }
     if (teamMemberArrival && doorTransition == DoorTransitionMode::NONE) {
         beginTeamMemberEntry(nowMs);
     }
@@ -1077,6 +1089,19 @@ SceneUpdateResult MainScene::update(uint32_t nowMs, float dtSeconds) {
     homeCoordinator.beginTick(nowMs);
     homeCoordinator.setControlOwner(0, Home::ControlOwner::AUTONOMOUS);
     homeCoordinator.setControlOwner(1, Home::ControlOwner::AUTONOMOUS);
+    if (visitDeparture != VisitDeparture::NONE &&
+        updateVisitDeparture(nowMs, dtSeconds)) {
+        updateCamera();
+        updatePmdSpriteState(nowMs);
+        return SceneUpdateResult::animate(66);
+    }
+    if (doorTransition == DoorTransitionMode::NONE &&
+        GameEngine::ins().visitActive() &&
+        GameEngine::ins().visitAsHost() &&
+        GameEngine::ins().visitService().visitorArrivalReady() &&
+        !visitor.active && contactGuestMotion == ContactGuestMotion::NONE) {
+        beginContactGuestEntry(nowMs);
+    }
     if (doorTransition == DoorTransitionMode::NONE &&
         contactGuestMotion == ContactGuestMotion::NONE &&
         pairInteraction == PairInteraction::NONE) {
@@ -1360,6 +1385,72 @@ void MainScene::beginDoorTransition(uint32_t nowMs) {
         }
     }
     doorTransition = DoorTransitionMode::ENTER_WAIT_FADE;
+}
+
+void MainScene::beginVisitDeparture(uint32_t nowMs) {
+    cancelPairInteraction(nowMs);
+    cancelRoomAction(nowMs);
+    clearMoveRoute();
+    homeCoordinator.releaseAll(0);
+    homeCoordinator.transition(0, AiMode::DOOR_ACTION, nowMs, 0, true);
+    visitDepartureStartedMs = nowMs;
+    if (!prepareDoorAnchors()) {
+        doorInsideX = mainActor.x;
+        doorInsideY = mainActor.y;
+        visitDeparture = VisitDeparture::AWAY;
+        doorMainHidden = true;
+        GameEngine::ins().visitService().markVisitorDeparted();
+        return;
+    }
+    mainActor.targetX = doorInsideX;
+    mainActor.targetY = doorInsideY;
+    buildMoveRouteFrom(
+        mainActor.x, mainActor.y, doorInsideX, doorInsideY,
+        mainActor.route.x, mainActor.route.y,
+        mainActor.route.count, mainActor.route.index,
+        monsterAtBedSleepPose(), mainGeometry(), false,
+        visitor.x, visitor.y, visitorGeometry().groundOffsetY);
+    doorRouteEnteringWalkArea =
+        !monsterFootprintInsideWalkArea(mainActor.x, mainActor.y);
+    visitDeparture = VisitDeparture::WALK_TO_DOOR;
+}
+
+bool MainScene::updateVisitDeparture(uint32_t nowMs, float dtSeconds) {
+    auto& service = GameEngine::ins().visitService();
+    if (!service.active()) {
+        if (visitDeparture == VisitDeparture::AWAY ||
+            visitDeparture == VisitDeparture::CROSS_DOOR) {
+            mainActor.x = doorInsideX;
+            mainActor.y = doorInsideY;
+        }
+        doorMainHidden = false;
+        clearMoveRoute();
+        homeCoordinator.stop(0, nowMs);
+        visitDeparture = VisitDeparture::NONE;
+        return false;
+    }
+    if (visitDeparture == VisitDeparture::WALK_TO_DOOR) {
+        const bool arrived = mainActor.route.count > 0
+            ? updateDoorRoute(dtSeconds)
+            : moveDoorToward(doorInsideX, doorInsideY,
+                             DOOR_ROUTE_SPEED, dtSeconds, true);
+        if (arrived || nowMs - visitDepartureStartedMs > 12000) {
+            mainActor.x = doorInsideX;
+            mainActor.y = doorInsideY;
+            clearMoveRoute();
+            visitDeparture = VisitDeparture::CROSS_DOOR;
+            visitDepartureStartedMs = nowMs;
+        }
+    } else if (visitDeparture == VisitDeparture::CROSS_DOOR) {
+        if (moveDoorToward(doorOutsideX, doorOutsideY,
+                           DOOR_CROSS_SPEED, dtSeconds, false) ||
+            nowMs - visitDepartureStartedMs > 5000) {
+            doorMainHidden = true;
+            visitDeparture = VisitDeparture::AWAY;
+            service.markVisitorDeparted();
+        }
+    }
+    return true;
 }
 
 void MainScene::updateDoorTransition(uint32_t nowMs) {
@@ -4967,6 +5058,19 @@ bool MainScene::updatePairInteraction(uint32_t nowMs,
 void MainScene::updateContactVisit(uint32_t nowMs, float dtSeconds) {
     GameEngine& engine = GameEngine::ins();
 
+    if (linkedArrivalInProgress && !engine.visitActive()) {
+        linkedArrivalInProgress = false;
+        contactGuestMotion = ContactGuestMotion::NONE;
+        contactDialog = ContactDialog::NONE;
+        deactivateVisitor();
+        return;
+    }
+    if (contactDialog == ContactDialog::LINK_ARRIVAL &&
+        !engine.visitActive()) {
+        contactDialog = ContactDialog::NONE;
+        deactivateVisitor();
+    }
+
     if (contactGuestMotion != ContactGuestMotion::NONE &&
         nowMs - contactGuestMotionStartedMs >=
             CONTACT_GUEST_MOTION_TIMEOUT_MS) {
@@ -5020,6 +5124,13 @@ void MainScene::updateContactVisit(uint32_t nowMs, float dtSeconds) {
         if (timedOut == ContactGuestMotion::MEETING_RETRY) {
             if (!beginContactMeetingArrangement(nowMs) &&
                 !beginContactGuestApproach(nowMs)) {
+                if (linkedArrivalInProgress) {
+                    spawnVisitor(nowMs, false);
+                    contactGuestMotion = ContactGuestMotion::NONE;
+                    linkedArrivalInProgress = false;
+                    contactDialog = ContactDialog::LINK_ARRIVAL;
+                    return;
+                }
                 STICKMON_TRACEF(
                     "[ContactArrival] event=meeting_aborted t=%lu\n",
                     static_cast<unsigned long>(nowMs));
@@ -5274,8 +5385,15 @@ void MainScene::updateContactVisit(uint32_t nowMs, float dtSeconds) {
 }
 
 void MainScene::beginContactGuestEntry(uint32_t nowMs) {
+    linkedArrivalInProgress = GameEngine::ins().visitActive() &&
+        GameEngine::ins().visitAsHost();
     spawnVisitor(nowMs, false);
     if (!prepareDoorAnchors()) {
+        if (linkedArrivalInProgress) {
+            linkedArrivalInProgress = false;
+            contactDialog = ContactDialog::LINK_ARRIVAL;
+            return;
+        }
         switch (GameEngine::ins().contactVisitKind()) {
         case ContactVisitKind::PLAY:
             contactDialog = ContactDialog::PLAY_ARRIVAL;
@@ -5601,6 +5719,11 @@ void MainScene::finishContactArrivalConversation(uint32_t nowMs) {
 
 void MainScene::showContactArrivalDialog() {
     GameEngine& engine = GameEngine::ins();
+    if (linkedArrivalInProgress) {
+        linkedArrivalInProgress = false;
+        contactDialog = ContactDialog::LINK_ARRIVAL;
+        return;
+    }
     switch (engine.contactVisitKind()) {
     case ContactVisitKind::PLAY:
         contactDialog = ContactDialog::PLAY_ARRIVAL;
@@ -5686,6 +5809,29 @@ void MainScene::beginContactGuestExit(uint32_t nowMs) {
     contactGuestMotionStartedMs = nowMs;
 }
 
+void MainScene::beginLinkedGuestExit(
+    uint32_t nowMs, const Game::MonsterRuntime& guest,
+    const SecondarySceneViewState& saved) {
+    if (!visitor.active) {
+        if (!restoreVisitorViewState(saved, guest, nowMs)) return;
+        homeCoordinator.attach(mainActor, &visitor);
+    }
+    if (doorVisitorHidden) {
+        clearMoveRoute();
+        homeCoordinator.releaseAll(0);
+        homeCoordinator.stop(0, nowMs);
+        deactivateVisitor();
+        doorVisitorHidden = false;
+        contactGuestMotion = ContactGuestMotion::NONE;
+        linkedArrivalInProgress = false;
+        contactDialog = ContactDialog::NONE;
+        return;
+    }
+    linkedArrivalInProgress = false;
+    contactDialog = ContactDialog::NONE;
+    beginContactGuestExit(nowMs);
+}
+
 bool MainScene::handleContactDialogButton(const ButtonEvent& event) {
     if (contactGuestMotion != ContactGuestMotion::NONE) return true;
     if (contactDialog == ContactDialog::NONE) return false;
@@ -5703,6 +5849,9 @@ bool MainScene::handleContactDialogButton(const ButtonEvent& event) {
     GameEngine& engine = GameEngine::ins();
     uint32_t nowMs = Hal::ins().millis();
     switch (contactDialog) {
+    case ContactDialog::LINK_ARRIVAL:
+        contactDialog = ContactDialog::NONE;
+        return true;
     case ContactDialog::KNOCK:
         contactDialog = ContactDialog::NONE;
         if (contactDialogYes && engine.acceptContactKnock()) {
@@ -5753,7 +5902,8 @@ bool MainScene::handleContactDialogButton(const ButtonEvent& event) {
 }
 
 void MainScene::drawContactDialog() {
-    if (contactDialog == ContactDialog::NONE) return;
+    if (contactDialog == ContactDialog::NONE &&
+        visitDeparture != VisitDeparture::AWAY) return;
 
     char line[64] = {};
     const char* text = nullptr;
@@ -5761,6 +5911,13 @@ void MainScene::drawContactDialog() {
         findSpecies(GameEngine::ins().contactVisitSpeciesId());
     const char* guestName = guest ? guest->name : "";
     switch (contactDialog) {
+    case ContactDialog::NONE:
+        if (visitDeparture != VisitDeparture::AWAY) return;
+        text = Ui::Social::VISIT_AWAY;
+        break;
+    case ContactDialog::LINK_ARRIVAL:
+        text = Ui::Social::LINK_WELCOME;
+        break;
     case ContactDialog::KNOCK:
         text = Ui::ContactVisit::KNOCK;
         break;
@@ -5788,8 +5945,6 @@ void MainScene::drawContactDialog() {
     case ContactDialog::BYE_VISIT:
         text = Ui::ContactVisit::BYE_VISIT;
         break;
-    case ContactDialog::NONE:
-        return;
     }
 
     bool choiceDialog =
@@ -5830,7 +5985,8 @@ bool MainScene::visitorHostActive() const {
     const Game::GameState& state = engine.gameState();
     if (state.teamCount < 2) return false;
     if (state.team[1].origin != Game::Origin::VISITOR) return true;
-    return (engine.visitActive() && engine.visitAsHost()) ||
+    return (engine.visitActive() && engine.visitAsHost() &&
+            engine.visitService().visitorArrivalReady()) ||
            engine.localContactVisitActive();
 }
 
@@ -7109,6 +7265,14 @@ void MainScene::render() {
 }
 
 bool MainScene::onButton(const ButtonEvent& event) {
+    if (visitDeparture != VisitDeparture::NONE) {
+        if (event.action == BtnAction::PRESSED &&
+            visitDeparture == VisitDeparture::AWAY) {
+            if (event.btn == 0) GameEngine::ins().visitService().endVisit();
+            else if (event.btn == 1) GameEngine::ins().requestScene(SceneID::MENU);
+        }
+        return true;
+    }
     if (contactDialog != ContactDialog::NONE ||
         contactGuestMotion != ContactGuestMotion::NONE) {
         return handleContactDialogButton(event);

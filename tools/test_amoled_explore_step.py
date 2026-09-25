@@ -44,25 +44,42 @@ class AmoledExploreStepTests(unittest.TestCase):
             "void ExploreScene::beginAutoWalk()", stick_start
         )
         stick_walk = self.stick_source[stick_start:stick_end]
-        self.assertIn("if (routeMoving) return;", stick_walk)
+        self.assertIn("if (routeMoving || pendingFrostFall) return;", stick_walk)
+        self.assertIn("exploreRoutePendingFrostFall", amoled_step)
         self.assertIn("++routeIndex;", stick_walk)
 
-    def test_prompt_continue_is_also_one_step(self):
-        start = self.app_source.index(
-            "if (exploreRoutePrompt != ExploreRouteViewModel::Prompt::NONE)"
+    def test_wild_encounters_share_route_pool_and_level_rules(self):
+        route_start = self.app_source.index("bool AmoledApp::startExploreRoute(")
+        route_end = self.app_source.index("bool AmoledApp::", route_start + 10)
+        self.assertIn(
+            "exploreRoutePool = buildExplorePreviewPool(gameState, selectedExploreArea);",
+            self.app_source[route_start:route_end],
         )
-        end = self.app_source.index("if (exploreRouteExitConfirm)", start)
-        prompt = self.app_source[start:end]
-        self.assertIn("exploreRoutePlayerWalkActive = true;", prompt)
-        self.assertIn("exploreRouteAutoWalk = false;", prompt)
-        self.assertIn("beginExploreRouteStep(nowMs);", prompt)
 
-    def test_agent_mode_keeps_route_auto_walk_in_update_loop(self):
+        start = self.app_source.index("bool AmoledApp::beginExploreEncounter(")
+        end = self.app_source.index("\nvoid AmoledApp::", start)
+        encounter = self.app_source[start:end]
+        self.assertIn("ExplorePool::entryForRoll(", encounter)
+        self.assertIn("exploreRoutePool, GameRandom::range(0, totalWeight)", encounter)
+        self.assertIn("ExploreEncounterRules::targetLevel(", encounter)
+        self.assertIn("ExploreEncounterRules::levelForRoll(", encounter)
+        self.assertNotIn("gameState.team[0].level", encounter)
+
+        stick_start = self.stick_source.index("void ExploreScene::rollEncounter()")
+        stick_end = self.stick_source.index("\nvoid ExploreScene::", stick_start + 10)
+        stick_encounter = self.stick_source[stick_start:stick_end]
+        self.assertIn("rollPoolEntry(activePool)", stick_encounter)
+        self.assertIn("ExploreEncounterRules::targetLevel(", stick_encounter)
+        self.assertIn("ExploreEncounterRules::levelForRoll(", stick_encounter)
+        self.assertIn("ExploreEncounters::poolForArea(", self.app_source)
+        self.assertIn("ExploreEncounters::poolForArea(", self.stick_source)
+
+    def test_route_update_keeps_auto_walk_and_player_walk_independent(self):
         start = self.app_source.index("void AmoledApp::updateExploreRoute(")
         end = self.app_source.index("bool AmoledApp::finishExploreRouteAtEnd(", start)
         update = self.app_source[start:end]
-        self.assertIn("if (autonomousExpedition", update)
         self.assertIn("if (exploreRouteAutoWalk || exploreRoutePlayerWalkActive)", update)
+        self.assertNotIn("exploreRoutePrompt", update)
 
     def test_player_walk_stops_before_regional_boss(self):
         update_start = self.app_source.index("void AmoledApp::updateExploreRoute(")
@@ -76,11 +93,14 @@ class AmoledExploreStepTests(unittest.TestCase):
         self.assertIn("exploreRouteIndex + 1 == exploreRouteBossIndex", resolution)
         self.assertIn("exploreRoutePlayerWalkActive = false;", resolution)
 
-    def test_pickup_stops_the_current_walk_run(self):
+    def test_pickup_preserves_automatic_walk_but_stops_manual_walk(self):
         start = self.app_source.index("void AmoledApp::resolveExploreRoutePickup(")
         end = self.app_source.index("void AmoledApp::", start + 10)
         pickup = self.app_source[start:end]
+        self.assertIn("const bool resumeAutoWalk = exploreRouteAutoWalk;", pickup)
         self.assertIn("exploreRouteAutoWalk = false;", pickup)
+        self.assertIn("exploreRouteAutoWalk = resumeAutoWalk;", pickup)
+        self.assertIn("exploreRoutePlayerWalkActive = false;", pickup)
 
         stick_start = self.stick_source.index("void ExploreScene::finishCompletedWalkStep()")
         stick_end = self.stick_source.index(
@@ -133,6 +153,87 @@ class AmoledExploreStepTests(unittest.TestCase):
         self.assertIn("exploreRouteEncounterCooldownSteps", self.app_source)
         self.assertIn("exploreRouteMapEncounterCount", self.app_source)
         self.assertIn("exploreItemEffects.completeWalkStep();", self.app_source)
+
+    def test_completed_tenth_step_recovers_team_before_events(self):
+        update_start = self.app_source.index("void AmoledApp::updateExploreRoute(")
+        update_end = self.app_source.index(
+            "void AmoledApp::requestExploreRouteDynamicRender()", update_start
+        )
+        update = self.app_source[update_start:update_end]
+        step_increment = update.index("++exploreRouteSteps;")
+        recovery = update.index("recoverExploreTeamForCompletedSteps();")
+        event_resolution = update.index("resolveExploreStepEvent(")
+        self.assertLess(step_increment, recovery)
+        self.assertLess(recovery, event_resolution)
+
+        recover_start = self.app_source.index(
+            "bool AmoledApp::recoverExploreTeamForCompletedSteps()"
+        )
+        recover_end = self.app_source.index(
+            "void AmoledApp::requestExploreRouteDynamicRender()", recover_start
+        )
+        recover = self.app_source[recover_start:recover_end]
+        self.assertIn(
+            "ExploreRunRules::isRecoveryStep(exploreRouteSteps)", recover
+        )
+        self.assertIn("slot < gameState.teamCount", recover)
+        self.assertIn("monster.fainted", recover)
+        self.assertIn("monster.hpCur == 0", recover)
+        self.assertIn("ExploreRunRules::recoveryAmount(monster.hpMax)", recover)
+        self.assertIn("monster.hpMax", recover)
+
+    def test_home_recovery_is_paused_for_the_full_explore_session(self):
+        care_start = self.app_source.index("void AmoledApp::updateClockAndCare(")
+        care_end = self.app_source.index(
+            "void AmoledApp::updateMoodHearts(", care_start
+        )
+        care = self.app_source[care_start:care_end]
+        self.assertIn("!exploreSessionActive", care)
+        self.assertIn(
+            "sceneFlow.current() != AppSceneFlow::Scene::BATTLE", care
+        )
+        self.assertIn("gameSpeed(), homeRecoveryActive", care)
+
+        queue_start = self.app_source.index("bool AmoledApp::queueExploreDeparture(")
+        queue_end = self.app_source.index(
+            "void AmoledApp::cancelExploreDeparture()", queue_start
+        )
+        self.assertIn(
+            "exploreSessionActive = true;",
+            self.app_source[queue_start:queue_end],
+        )
+
+        return_update_start = self.app_source.index(
+            "bool AmoledApp::updateExploreDeparture("
+        )
+        return_update_end = self.app_source.index(
+            "void AmoledApp::beginExploreReturn(", return_update_start
+        )
+        return_update = self.app_source[return_update_start:return_update_end]
+        self.assertGreaterEqual(
+            return_update.count("exploreSessionActive = false;"), 2
+        )
+
+        defeat_start = self.app_source.index("void AmoledApp::finishBattleDefeat(")
+        defeat_end = self.app_source.index(
+            "void AmoledApp::closeBattle(", defeat_start
+        )
+        self.assertIn(
+            "exploreSessionActive = false;",
+            self.app_source[defeat_start:defeat_end],
+        )
+
+    def test_step_recovery_is_persisted_when_the_expedition_settles(self):
+        settle_start = self.app_source.index("void AmoledApp::settleExploreReturn()")
+        settle_end = self.app_source.index(
+            "void AmoledApp::leaveExploreRoute()", settle_start
+        )
+        settle = self.app_source[settle_start:settle_end]
+        self.assertIn("bool stateChanged = exploreRecoveryPendingSave;", settle)
+        self.assertIn(
+            "if (stateChanged && saveState()) exploreRecoveryPendingSave = false;",
+            settle,
+        )
 
     def test_pickup_roll_is_per_map_and_keeps_guaranteed_battle_slot(self):
         self.assertIn("EXPLORE_MAP_PICKUP_CHANCE = 6500", self.app_source)

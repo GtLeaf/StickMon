@@ -1680,6 +1680,7 @@ struct SpriteCacheStats {
 const SpriteFrame* findSpeciesSprite(uint16_t speciesId, SpriteKind kind);
 const SpriteFrame* findCachedSpeciesSprite(uint16_t speciesId, SpriteKind kind);
 int16_t frameGroundOffsetY(const SpriteFrame* frame);
+uint8_t frameVisibleWidth(const SpriteFrame* frame);
 bool walkingAnimation(uint16_t speciesId, WalkDirection direction, WalkingAnimation& animation);
 bool petAnimationProfile(uint16_t speciesId, PetAnimationProfile& profile);
 bool syncTeamCache(const uint16_t* speciesIds, uint8_t count,

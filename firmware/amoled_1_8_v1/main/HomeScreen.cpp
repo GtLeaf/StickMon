@@ -4,6 +4,7 @@
 #include "ui/UiCommon.h"
 #include "ui/RenderCaches.h"
 #include "ui/ExploreMapRenderer.h"
+#include "ui/BattleSpriteLayout.h"
 
 #include <algorithm>
 #include <cmath>
@@ -23,6 +24,8 @@
 #include "core/UiStrings.h"
 #include "game/ExploreAreaCatalog.h"
 #include "game/ExploreRouteGeometry.h"
+#include "game/BondSystem.h"
+#include "game/ContactRoster.h"
 #include "game/HomeHud.h"
 #include "game/ItemInventory.h"
 #include "game/MoveManagementService.h"
@@ -68,8 +71,13 @@ constexpr int COMPUTER_MENU_CELL_HEIGHT = 78;
 constexpr int ITEM_ROW_HEIGHT = 96;
 constexpr float BAG_ITEM_ICON_SCALE = 1.5f;
 constexpr int EXPLORE_MENU_PANEL_WIDTH = 120;
-constexpr int EXPLORE_MENU_PANEL_ROW_TOP = 18;
 constexpr int EXPLORE_MENU_PANEL_ROW_HEIGHT = 60;
+constexpr int EXPLORE_MENU_TEXT_INSET =
+    (EXPLORE_MENU_PANEL_ROW_HEIGHT - FontResource::LARGE_GLYPH_H) / 2;
+constexpr int EXPLORE_MENU_PANEL_HEIGHT =
+    AppSceneFlow::exploreMenuItemCount() * EXPLORE_MENU_PANEL_ROW_HEIGHT;
+constexpr int EXPLORE_MENU_PANEL_TOP =
+    (HOME_STATUS_TOP - EXPLORE_MENU_PANEL_HEIGHT) / 2;
 constexpr int SHOP_RAIL_DIVIDER_X = SHOP_LEFT_PANEL_WIDTH;
 constexpr int SHOP_GRID_LEFT = 122;
 constexpr int SHOP_GRID_COLUMN_WIDTH = 116;
@@ -181,25 +189,41 @@ float exploreRouteAirOffsetY(uint16_t speciesId, uint32_t nowMs,
 bool drawBattleBackgroundLayer(Canvas565& canvas,
                                PixelCache565& battleBackgroundCache,
                                GameAssets::Kind kind,
-                               uint16_t rowBegin, uint16_t rowEnd) {
+                               uint16_t rowBegin, uint16_t rowEnd
+#if STICKMON_ENABLE_DEBUG_FEATURES
+                               , uint32_t* assetDrawUs, uint32_t* cacheStoreUs
+#endif
+                               ) {
     const RenderCacheKey key{static_cast<uint32_t>(kind), 0,
                              canvas.physicalWidth(), canvas.physicalHeight(),
                              canvas.byteSwapped()};
     if (battleBackgroundCache.copyRowsTo(canvas, key, rowBegin, rowEnd)) return true;
     battleBackgroundCache.invalidate();
 
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    const uint32_t drawStartedUs = assetDrawUs ? Platform::clock().micros() : 0;
+#endif
     bool drawn = GameAssets::draw(
         kind, BATTLE_BACKGROUND_X, 0, BATTLE_BACKGROUND_SCALE);
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    if (assetDrawUs) *assetDrawUs = Platform::clock().micros() - drawStartedUs;
+#endif
     if (!drawn) {
         canvas.fillRect((0), (0), (AmoledUi::WIDTH), (AmoledUi::HEIGHT), rgb(12, 18, 25));
     }
 
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    const uint32_t cacheStartedUs = cacheStoreUs ? Platform::clock().micros() : 0;
+#endif
     if (drawn && rowBegin == 0 && rowEnd == AmoledUi::HEIGHT) {
         if (uint16_t* pixels = battleBackgroundCache.begin(key, Platform::memory())) {
             std::memcpy(pixels, canvas.rawPixels(), battleBackgroundCache.allocatedBytes());
             battleBackgroundCache.commit();
         }
     }
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    if (cacheStoreUs) *cacheStoreUs = Platform::clock().micros() - cacheStartedUs;
+#endif
     return drawn;
 }
 
@@ -364,6 +388,21 @@ void drawHomeMenuIcon(Canvas565& canvas) {
     }
 }
 
+void drawHomeRecallIcon(Canvas565& canvas) {
+    drawHomeHudButton(canvas, HOME_MENU_BUTTON_X);
+    const uint16_t color = rgb(222, 234, 229);
+    const int x = HOME_MENU_BUTTON_X;
+    const int y = HOME_HUD_BUTTON_Y;
+    canvas.drawLine(x + 25, y + 25, x + 37, y + 15, color);
+    canvas.drawLine(x + 37, y + 15, x + 49, y + 25, color);
+    canvas.drawRect(x + 28, y + 25, 18, 16, color);
+    canvas.drawFastHLine(x + 35, y + 30, 5, color);
+    canvas.drawLine(x + 46, y + 46, x + 22, y + 46, color);
+    canvas.drawLine(x + 22, y + 46, x + 22, y + 37, color);
+    canvas.drawLine(x + 22, y + 37, x + 17, y + 42, color);
+    canvas.drawLine(x + 22, y + 37, x + 27, y + 42, color);
+}
+
 void drawExploreBagIcon(Canvas565& canvas) {
     drawHomeHudButton(canvas, EXPLORE_ROUTE_BAG_BUTTON_X);
     constexpr uint8_t bagIconIndex = 3;
@@ -403,7 +442,15 @@ void drawBattery(Canvas565& canvas, int x, int y, uint8_t percent) {
     canvas.fillRect((x + 4), (y + 4), (fillWidth), (8), percent < 20 ? rgb(238, 91, 91) : rgb(92, 213, 139));
 }
 
-void drawHeart(Canvas565& canvas, int x, int y, uint16_t color) {
+void drawHeart(Canvas565& canvas, int x, int y, uint16_t color,
+               bool whiteOutline = false) {
+    if (whiteOutline) {
+        constexpr uint16_t outline = 0xFFFF;
+        canvas.fillCircle((x - 4), (y - 2), (7), outline);
+        canvas.fillCircle((x + 4), (y - 2), (7), outline);
+        canvas.fillTriangle((x - 11), (y), (x + 11), (y),
+                            (x), (y + 13), outline);
+    }
     canvas.fillCircle((x - 4), (y - 2), (6), color);
     canvas.fillCircle((x + 4), (y - 2), (6), color);
     canvas.fillTriangle((x - 10), (y), (x + 10), (y), (x), (y + 12), color);
@@ -453,22 +500,45 @@ void drawPet(Canvas565& canvas, const HomeViewModel& model);
 uint16_t blendShadowRgb565(uint16_t background, uint16_t color,
                            uint8_t alpha);
 
-constexpr int DEBUG_CONTACT_PROMPT_X = 16;
-constexpr int DEBUG_CONTACT_PROMPT_Y = 224;
-constexpr int DEBUG_CONTACT_PROMPT_W = 336;
-constexpr int DEBUG_CONTACT_PROMPT_H = 116;
+constexpr int DEBUG_CONTACT_BUBBLE_Y = 262;
+constexpr int DEBUG_CONTACT_BUBBLE_YES_X = 108;
+constexpr int DEBUG_CONTACT_BUBBLE_NO_X = 260;
+constexpr int DEBUG_CONTACT_BUBBLE_RADIUS = 38;
+constexpr int DEBUG_CONTACT_BUBBLE_HIT_RADIUS = 52;
 
-void drawDebugContactPrompt(Canvas565& canvas) {
-    canvas.fillRoundRect((DEBUG_CONTACT_PROMPT_X), (DEBUG_CONTACT_PROMPT_Y), (DEBUG_CONTACT_PROMPT_W), (DEBUG_CONTACT_PROMPT_H), (10), rgb(17, 27, 34));
-    canvas.drawRoundRect((DEBUG_CONTACT_PROMPT_X), (DEBUG_CONTACT_PROMPT_Y), (DEBUG_CONTACT_PROMPT_W), (DEBUG_CONTACT_PROMPT_H), (10), rgb(115, 226, 183));
-    text(canvas, DEBUG_CONTACT_PROMPT_X +
-             (DEBUG_CONTACT_PROMPT_W - textWidth(Ui::ContactVisit::KNOCK)) / 2,
-         DEBUG_CONTACT_PROMPT_Y + 18, Ui::ContactVisit::KNOCK,
-         rgb(226, 238, 233));
-    text(canvas, DEBUG_CONTACT_PROMPT_X + 94, DEBUG_CONTACT_PROMPT_Y + 72,
-         Ui::ContactVisit::YES, rgb(248, 210, 105));
-    text(canvas, DEBUG_CONTACT_PROMPT_X + 224, DEBUG_CONTACT_PROMPT_Y + 72,
-         Ui::ContactVisit::NO, rgb(239, 143, 148));
+// Two white bubbles pop up over the room while the bottom HUD fades out and
+// shows the visitor message instead.
+void drawDebugContactPrompt(Canvas565& canvas, const HomeViewModel& model) {
+    if (!model.debugContactChoiceVisible) return;
+    const float progress =
+        static_cast<float>(model.debugContactPromptFade) / 255.0f;
+    if (progress <= 0.0f) return;
+    const float clamped = std::min(1.0f, progress * 1.15f);
+    const float eased = 1.0f - (1.0f - clamped) * (1.0f - clamped) *
+                            (1.0f - clamped);
+    const int radius = static_cast<int>(DEBUG_CONTACT_BUBBLE_RADIUS * eased);
+    if (radius <= 0) return;
+    const uint16_t bubble = rgb(248, 248, 244);
+    const uint16_t edge = rgb(122, 134, 130);
+    const uint16_t ink = rgb(38, 48, 52);
+    const int centers[] = {DEBUG_CONTACT_BUBBLE_YES_X,
+                           DEBUG_CONTACT_BUBBLE_NO_X};
+    const char* labels[] = {Ui::ContactVisit::YES, Ui::ContactVisit::NO};
+    for (int index = 0; index < 2; ++index) {
+        if (model.debugContactSelectedChoice >= 0 &&
+            model.debugContactSelectedChoice != index) {
+            continue;
+        }
+        canvas.fillCircle(centers[index], DEBUG_CONTACT_BUBBLE_Y, radius,
+                          bubble);
+        canvas.drawCircle(centers[index], DEBUG_CONTACT_BUBBLE_Y, radius,
+                          edge);
+        if (progress > 0.55f) {
+            text(canvas,
+                 centers[index] - textWidth(labels[index]) / 2,
+                 DEBUG_CONTACT_BUBBLE_Y - 8, labels[index], ink);
+        }
+    }
 }
 
 void drawDebugContactGuest(Canvas565& canvas, const HomeViewModel& model) {
@@ -582,9 +652,45 @@ void drawDebugWalkBoundary(Canvas565& canvas, const HomeViewModel& model) {
         previousY = y;
     }
 }
+
+void drawDebugTalkPoints(Canvas565& canvas, const HomeViewModel& model) {
+    if (!model.debugTalkPointsVisible) return;
+
+    const int leftX = (model.debugTalkCompanionX - model.cameraX) *
+        AmoledUi::RESOURCE_SCALE;
+    const int rightX = (model.debugTalkMainX - model.cameraX) *
+        AmoledUi::RESOURCE_SCALE;
+    const int leftY = HOME_ROOM_TOP +
+        (model.debugTalkCompanionY - model.cameraY) *
+            AmoledUi::RESOURCE_SCALE;
+    const int rightY = HOME_ROOM_TOP +
+        (model.debugTalkMainY - model.cameraY) *
+            AmoledUi::RESOURCE_SCALE;
+    const uint16_t outline = rgb(12, 18, 25);
+    const uint16_t left = rgb(102, 205, 240);
+    const uint16_t right = rgb(248, 210, 105);
+    const uint16_t welcome = rgb(235, 104, 184);
+
+    canvas.drawFastHLine(leftX - 12, leftY, 25, outline);
+    canvas.drawFastVLine(leftX, leftY - 12, 25, outline);
+    canvas.fillCircle(leftX, leftY, 7, left);
+    canvas.drawCircle(leftX, leftY, 10, outline);
+    canvas.drawFastHLine(rightX - 12, rightY, 25, outline);
+    canvas.drawFastVLine(rightX, rightY - 12, 25, outline);
+    canvas.fillCircle(rightX, rightY, 7, right);
+    canvas.drawCircle(rightX, rightY, 10, outline);
+
+    const int welcomeX = model.debugWelcomeCenterX;
+    const int welcomeY = model.debugWelcomeGroundY;
+    canvas.drawFastHLine(welcomeX - 12, welcomeY, 25, outline);
+    canvas.drawFastVLine(welcomeX, welcomeY - 12, 25, outline);
+    canvas.fillCircle(welcomeX, welcomeY, 7, welcome);
+    canvas.drawCircle(welcomeX, welcomeY, 10, outline);
+}
 #endif
 
-void drawFallbackPet(Canvas565& canvas, int centerX, int groundY) {
+void drawFallbackPet(Canvas565& canvas, int centerX, int groundY,
+                     bool drawShadow = true) {
     const int dx = centerX - 184;
     const int dy = groundY - 302;
     const uint16_t shadow = rgb(39, 57, 63);
@@ -594,7 +700,9 @@ void drawFallbackPet(Canvas565& canvas, int centerX, int groundY) {
     const uint16_t dark = rgb(22, 38, 44);
     const uint16_t cheek = rgb(242, 112, 103);
 
-    canvas.fillEllipse((184 + dx), (298 + dy), (62), (16), shadow);
+    if (drawShadow) {
+        canvas.fillEllipse((184 + dx), (298 + dy), (62), (16), shadow);
+    }
     canvas.fillTriangle((138 + dx), (188 + dy), (158 + dx), (148 + dy), (172 + dx), (198 + dy), body);
     canvas.fillTriangle((196 + dx), (198 + dy), (212 + dx), (148 + dy), (232 + dx), (190 + dy), body);
     canvas.fillEllipse((184 + dx), (232 + dy), (60), (70), body);
@@ -781,8 +889,18 @@ void drawPet(Canvas565& canvas, const HomeViewModel& model) {
     const int width = (FlashStorage::readByte(&frame->width) * AmoledUi::RESOURCE_SCALE);
     const int height = (FlashStorage::readByte(&frame->height) * AmoledUi::RESOURCE_SCALE);
     const int x = model.petCenterX - width / 2;
+    // Home actor coordinates are bottom-center ground anchors.  The sprite
+    // frame itself is a centered canvas with transparent padding below the
+    // visible feet, so using `ground - height` lifts the artwork above the
+    // route/debug point.  Keep the anchor conversion identical to the
+    // exploration renderer: center the canvas, then subtract the frame's
+    // encoded ground offset.  Pair hops are body-only offsets and must not
+    // move the logical ground or its shadow.
+    const int groundOffset = static_cast<int>(std::lround(
+        PokemonSprites::frameGroundOffsetY(frame) *
+        AmoledUi::RESOURCE_SCALE));
     const int renderGroundY = model.petGroundY + model.petRenderOffsetY;
-    const int y = renderGroundY - height;
+    const int y = renderGroundY - height / 2 - groundOffset;
     const PokemonMotion::AirProfile air =
         PokemonMotion::airProfileForSpecies(model.speciesId);
     const bool floating = air.height > 0.0f;
@@ -796,8 +914,10 @@ void drawPet(Canvas565& canvas, const HomeViewModel& model) {
         radiusX = (radiusX * 11 + 10) / 10;
         radiusY = (radiusY * 11 + 10) / 10;
     }
-    const int shadowY = model.petGroundY - height / 2 +
-        PokemonSprites::frameGroundOffsetY(frame) * AmoledUi::RESOURCE_SCALE;
+    // Shadows belong to the unshifted logical ground point.  In particular,
+    // a conversation hop moves only the body, and floating species keep their
+    // shadow on the floor instead of following the sprite canvas padding.
+    const int shadowY = model.petGroundY;
     const uint16_t shadowColor = model.night
         ? rgb(18, 16, 24) : rgb(36, 29, 24);
     const uint8_t outerAlpha = model.night
@@ -839,11 +959,12 @@ void drawHomeCompanion(Canvas565& canvas, const HomeViewModel& model) {
 }
 
 void drawHomeHpBar(Canvas565& canvas, int x, int y, int width,
-                   uint8_t percent) {
+                   uint8_t percent, bool fainted = false) {
     canvas.fillRect((x), (y), (width), (12), rgb(39, 45, 50));
-    int filled = (width - 4) * percent / 100;
-    uint16_t fillColor = percent > 50
-        ? rgb(92, 222, 112)
+    int filled = percent > 0
+        ? std::max(2, (width - 4) * percent / 100) : 0;
+    uint16_t fillColor = fainted ? rgb(156, 174, 181)
+        : percent > 50 ? rgb(92, 222, 112)
         : (percent > 20 ? rgb(246, 204, 72) : rgb(232, 80, 84));
     if (filled > 0) canvas.fillRect((x + 2), (y + 2), (filled), (8), fillColor);
     canvas.drawRect((x), (y), (width), (12), rgb(220, 224, 218));
@@ -1026,18 +1147,21 @@ void drawExploreRouteBoss(Canvas565& canvas,
     int centerX = static_cast<int>(std::lround((point.x - model.cameraX) * AmoledUi::RESOURCE_SCALE));
     int groundCenterY = EXPLORE_ROUTE_MAP_TOP +
         static_cast<int>(std::lround((point.y - model.cameraY) * AmoledUi::RESOURCE_SCALE));
-    const int bodyCenterY = groundCenterY - static_cast<int>(std::lround(
+    const int groundOffset = static_cast<int>(std::lround(
+        PokemonSprites::frameGroundOffsetY(frame) * scale));
+    const int spriteGroundTopY = groundCenterY - height / 2 - groundOffset;
+    const int bodyTopY = spriteGroundTopY - static_cast<int>(std::lround(
         exploreRouteAirOffsetY(model.bossSpeciesId, model.animationNowMs,
                                scale)));
     int x = centerX - width / 2;
-    int y = bodyCenterY - height / 2;
+    int y = bodyTopY;
     if (x + width < -8 || x >= AmoledUi::WIDTH + 8 ||
         y + height < EXPLORE_ROUTE_MAP_TOP - 32 ||
         y >= EXPLORE_ROUTE_MAP_BOTTOM + 16) {
         return;
     }
 
-    drawExploreRouteShadow(canvas, frame, centerX, groundCenterY - height / 2,
+    drawExploreRouteShadow(canvas, frame, centerX, spriteGroundTopY,
                            width, height, scale);
     PokemonSprites::drawFrameScaled(frame, x, y, scale, flipX);
 }
@@ -1045,7 +1169,9 @@ void drawExploreRouteBoss(Canvas565& canvas,
 void drawExploreRouteActor(Canvas565& canvas, uint16_t speciesId,
                            float worldX, float worldY,
                            uint8_t walkDirection, uint8_t petFrame,
-                           bool walking, int16_t cameraX, int16_t cameraY) {
+                           bool walking, uint32_t animationNowMs,
+                           bool companion,
+                           int16_t cameraX, int16_t cameraY) {
     auto direction = static_cast<PokemonSprites::WalkDirection>(
         walkDirection <=
                 static_cast<uint8_t>(PokemonSprites::WalkDirection::RIGHT)
@@ -1066,23 +1192,99 @@ void drawExploreRouteActor(Canvas565& canvas, uint16_t speciesId,
         flipX = animation.flipX;
     }
 
-    int screenX = static_cast<int>(std::lround(
+    constexpr float scale = static_cast<float>(AmoledUi::RESOURCE_SCALE);
+    const int screenX = static_cast<int>(std::lround(
         worldX * AmoledUi::RESOURCE_SCALE)) - cameraX * AmoledUi::RESOURCE_SCALE;
-    int groundY = EXPLORE_ROUTE_MAP_TOP +
-                  static_cast<int>(std::lround(
-                      worldY * AmoledUi::RESOURCE_SCALE)) -
-                  cameraY * AmoledUi::RESOURCE_SCALE;
+    const int routeGroundY = EXPLORE_ROUTE_MAP_TOP +
+        static_cast<int>(std::lround(worldY * AmoledUi::RESOURCE_SCALE)) -
+        cameraY * AmoledUi::RESOURCE_SCALE;
     if (!frame) {
-        drawFallbackPet(canvas, screenX, groundY);
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        Platform::logf(
+            "[AmoledExploreDiag] draw missing species=%u dir=%u walking=%u "
+            "world=(%.2f,%.2f) camera=(%d,%d) screenCenter=(%d,%d)\n",
+            static_cast<unsigned>(speciesId),
+            static_cast<unsigned>(walkDirection), walking ? 1U : 0U,
+            static_cast<double>(worldX), static_cast<double>(worldY),
+            static_cast<int>(cameraX), static_cast<int>(cameraY), screenX,
+            routeGroundY);
+#endif
+        // The fallback art is authored around a ground anchor. Keep its feet
+        // on the same route point as regular walking frames.
+        drawFallbackPet(canvas, screenX, routeGroundY);
         return;
     }
-    int width = (FlashStorage::readByte(&frame->width) * AmoledUi::RESOURCE_SCALE);
-    int height = (FlashStorage::readByte(&frame->height) * AmoledUi::RESOURCE_SCALE);
+    const int width = static_cast<int>(std::lround(
+        FlashStorage::readByte(&frame->width) * scale));
+    const int height = static_cast<int>(std::lround(
+        FlashStorage::readByte(&frame->height) * scale));
+    // Route points are ground anchors: the frame's feet and shadow must land
+    // on the road centerline. The encoded offset describes how far the frame's
+    // ground is below its pixel center; floating species lift only the body.
+    const int groundOffset = static_cast<int>(std::lround(
+        PokemonSprites::frameGroundOffsetY(frame) * scale));
+    const int spriteGroundTopY = routeGroundY - height / 2 - groundOffset;
+    const int bodyLift = static_cast<int>(std::lround(
+        exploreRouteAirOffsetY(speciesId, animationNowMs, scale)));
+    const int drawY = spriteGroundTopY - bodyLift;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    struct RouteActorLogState {
+        uint32_t lastMs = 0;
+        uint8_t direction = 0xFF;
+        bool walking = false;
+    };
+    static RouteActorLogState leaderLog;
+    static RouteActorLogState companionLog;
+    RouteActorLogState& logState = companion ? companionLog : leaderLog;
+    // The renderer is called for partial dirty bands as well as full frames.
+    // Log state changes immediately, then sample positions every 500ms.
+    const bool stateChanged = logState.direction != walkDirection ||
+                              logState.walking != walking;
+    if (stateChanged || logState.lastMs == 0 ||
+        animationNowMs - logState.lastMs >= 500U) {
+        const char* directionName = "other";
+        if (walkDirection == static_cast<uint8_t>(
+                PokemonSprites::WalkDirection::LEFT)) {
+            directionName = "left";
+        } else if (walkDirection == static_cast<uint8_t>(
+                         PokemonSprites::WalkDirection::RIGHT)) {
+            directionName = "right";
+        } else if (walkDirection == static_cast<uint8_t>(
+                         PokemonSprites::WalkDirection::UP)) {
+            directionName = "up";
+        } else if (walkDirection == static_cast<uint8_t>(
+                         PokemonSprites::WalkDirection::DOWN)) {
+            directionName = "down";
+        }
+        const int frameKind = static_cast<int>(
+            static_cast<uint16_t>(animation.base) +
+            (walking ? petFrame % animation.frameCount : 0));
+        const int frameGroundOffset = PokemonSprites::frameGroundOffsetY(frame);
+        Platform::logf(
+            "[AmoledExploreDiag] draw role=%s species=%u dir=%u(%s) "
+            "walking=%u frame=%d size=%dx%d groundOffsetRaw=%d "
+            "groundOffsetPx=%d "
+            "world=(%.2f,%.2f) camera=(%d,%d) ground=(%d,%d) "
+            "bodyLift=%d groundTop=%d shadow=(%d,%d) "
+            "rect=(%d,%d,%d,%d)\n",
+            companion ? "companion" : "leader",
+            static_cast<unsigned>(speciesId), static_cast<unsigned>(walkDirection),
+            directionName, walking ? 1U : 0U, frameKind, width, height,
+            frameGroundOffset, groundOffset, static_cast<double>(worldX),
+            static_cast<double>(worldY), static_cast<int>(cameraX),
+            static_cast<int>(cameraY), screenX, routeGroundY, bodyLift,
+            spriteGroundTopY, screenX, routeGroundY - 1,
+            screenX - width / 2, drawY, width, height);
+        logState.lastMs = animationNowMs;
+        logState.direction = walkDirection;
+        logState.walking = walking;
+    }
+#endif
     drawExploreRouteShadow(canvas, frame, screenX,
-                           groundY - height, width, height, 2.0f);
+                           spriteGroundTopY, width, height, scale);
     if (!PokemonSprites::drawFrameScaled(
-            frame, screenX - width / 2, groundY - height, 2.0f, flipX)) {
-        drawFallbackPet(canvas, screenX, groundY);
+            frame, screenX - width / 2, drawY, scale, flipX)) {
+        drawFallbackPet(canvas, screenX, routeGroundY);
     }
 }
 
@@ -1090,6 +1292,7 @@ void drawExploreRoutePet(Canvas565& canvas,
                          const ExploreRouteViewModel& model) {
     drawExploreRouteActor(canvas, model.speciesId, model.worldX, model.worldY,
                           model.walkDirection, model.petFrame, model.walking,
+                          model.animationNowMs, false,
                           model.cameraX, model.cameraY);
 }
 
@@ -1099,7 +1302,8 @@ void drawExploreRouteCompanion(Canvas565& canvas,
     drawExploreRouteActor(
         canvas, model.companionSpeciesId, model.companionWorldX,
         model.companionWorldY, model.companionWalkDirection,
-        model.companionFrame, model.companionWalking,
+        model.companionFrame, model.companionWalking, model.animationNowMs,
+        true,
         model.cameraX, model.cameraY);
 }
 
@@ -1181,7 +1385,7 @@ void renderHomeScreen(Canvas565& canvas, const HomeViewModel& model,
         const int clockHeight = canvas.nativeText() ? 32 : 14;
         for (uint8_t index = 0; index < model.moodHearts; ++index) {
             drawHeart(canvas, MOOD_HEART_START_X + index * MOOD_HEART_GAP,
-                      heartAnchorY, rgb(239, 103, 113));
+                      heartAnchorY, rgb(239, 103, 113), true);
         }
         if (model.moodBurstHeart < 5 && model.moodBurstAgeMs > 0) {
             drawHeartBurst(
@@ -1240,6 +1444,15 @@ void renderHomeScreen(Canvas565& canvas, const HomeViewModel& model,
             canvas.fillEllipse((184), (302), (106), (34), rgb(49, 112, 111));
             canvas.fillEllipse((184), (298), (90), (24), rgb(71, 151, 139));
         }
+        // Food is part of the room surface. Draw it after the room art but
+        // before every actor so a pet standing over the bowl occludes it.
+        if (roomDrawn) {
+            if (model.bowlFilled) {
+                drawFoodContent(canvas, model.bowlCenterX, model.bowlCenterY);
+            }
+        } else {
+            drawBowl(canvas, model.bowlFilled);
+        }
         if (model.companionVisible &&
             model.companionGroundY < model.petGroundY) {
             drawHomeCompanion(canvas, model);
@@ -1262,27 +1475,21 @@ void renderHomeScreen(Canvas565& canvas, const HomeViewModel& model,
         }
         drawDebugContactGuest(canvas, model);
 #endif
-        if (roomDrawn) {
-            if (model.bowlFilled) {
-                drawFoodContent(canvas, model.bowlCenterX, model.bowlCenterY);
-            }
-        } else {
-            drawBowl(canvas, model.bowlFilled);
-        }
 #if STICKMON_ENABLE_DEBUG_FEATURES
         if (model.debugLightSource != 0) {
             drawDebugLight(canvas, model);
         }
         drawDebugWalkBoundary(canvas, model);
-        if (model.debugContactPrompt) {
-            drawDebugContactPrompt(canvas);
+        drawDebugTalkPoints(canvas, model);
+        if (model.debugContactPromptFade > 0) {
+            drawDebugContactPrompt(canvas, model);
         }
 #endif
         if (model.showHearts) {
             drawHeart(canvas, model.petCenterX - 68, model.petGroundY - 116,
-                      rgb(239, 103, 113));
+                      rgb(239, 103, 113), true);
             drawHeart(canvas, model.petCenterX + 62, model.petGroundY - 128,
-                      rgb(239, 103, 113));
+                      rgb(239, 103, 113), true);
         }
         drawToast(canvas, model.toast);
         pageClip.reset();
@@ -1295,28 +1502,97 @@ void renderHomeScreen(Canvas565& canvas, const HomeViewModel& model,
         canvas.fillRect((0), (344), (AmoledUi::WIDTH), (104), rgb(18, 27, 35));
         canvas.drawFastHLine((0), (344), (AmoledUi::WIDTH), rgb(71, 108, 108));
         drawHomeLockIcon(canvas);
-        drawHomeMenuIcon(canvas);
+        if (model.visitAway) drawHomeRecallIcon(canvas);
+        else drawHomeMenuIcon(canvas);
 
         canvas.fillRoundRect((HOME_MONSTER_PANEL_X), (352), (HOME_MONSTER_PANEL_W), (88), (8), rgb(24, 34, 42));
         canvas.drawRoundRect((HOME_MONSTER_PANEL_X), (352), (HOME_MONSTER_PANEL_W), (88), (8), rgb(72, 83, 98));
-        uint8_t count = std::min<uint8_t>(model.monsterCount,
-                                          Game::TEAM_CAP);
-        for (uint8_t index = 0; index < count; ++index) {
-            int rowY = 354 + index * 42;
-            HudRenderer::drawHungerIcon(
-                canvas, HOME_MONSTER_PANEL_X + 14, rowY + 6,
-                model.monsters[index].hunger, AmoledUi::RESOURCE_SCALE);
-            if (model.monsters[index].hpKnown) {
-                drawHomeHpBar(canvas, HOME_MONSTER_PANEL_X + 58,
-                              rowY + 14, 90, model.monsters[index].hp);
-            } else {
-                text(canvas, HOME_MONSTER_PANEL_X + 72, rowY + 5,
-                     "HP --", rgb(151, 168, 166));
+        if (model.visitAway) {
+            text(canvas, HOME_MONSTER_PANEL_X + 2, 376,
+                 Ui::Social::VISIT_AWAY_HUD, rgb(226, 238, 233));
+        } else {
+            uint8_t count = std::min<uint8_t>(model.monsterCount,
+                                              Game::TEAM_CAP);
+            for (uint8_t index = 0; index < count; ++index) {
+                int rowY = 354 + index * 42;
+                HudRenderer::drawHungerIcon(
+                    canvas, HOME_MONSTER_PANEL_X + 14, rowY + 6,
+                    model.monsters[index].hunger, AmoledUi::RESOURCE_SCALE);
+                if (model.monsters[index].hpKnown) {
+                    drawHomeHpBar(canvas, HOME_MONSTER_PANEL_X + 58,
+                                  rowY + 14, 90,
+                                  model.monsters[index].fainted
+                                      ? model.monsters[index].faintRest
+                                      : model.monsters[index].hp,
+                                  model.monsters[index].fainted);
+                } else {
+                    text(canvas, HOME_MONSTER_PANEL_X + 72, rowY + 5,
+                         "HP --", rgb(151, 168, 166));
+                }
             }
         }
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        if (model.debugContactPromptFade > 0) {
+            // The visitor prompt owns the bottom strip: fade the HUD widgets
+            // into the strip background and show the visitor message there.
+            const uint16_t strip = rgb(18, 27, 35);
+            PixelRenderer::fillRectAlpha(0, 344, AmoledUi::WIDTH, 104,
+                                         strip, model.debugContactPromptFade);
+            if (model.debugContactPromptText) {
+                const uint16_t ink = blendShadowRgb565(
+                    strip, rgb(226, 238, 233), model.debugContactPromptFade);
+                const char* message = model.debugContactPromptText;
+                const char* newline = std::strchr(message, '\n');
+                if (!newline) {
+                    text(canvas,
+                         (AmoledUi::WIDTH - textWidth(message)) / 2,
+                         384, message, ink);
+                } else {
+                    // Two-line prompt (32px glyphs): centered as a 68px block
+                    // inside the 344..448 strip.
+                    char firstLine[28];
+                    const size_t firstLength = std::min<size_t>(
+                        static_cast<size_t>(newline - message),
+                        sizeof(firstLine) - 1);
+                    std::memcpy(firstLine, message, firstLength);
+                    firstLine[firstLength] = '\0';
+                    const char* secondLine = newline + 1;
+                    text(canvas,
+                         (AmoledUi::WIDTH - textWidth(firstLine)) / 2,
+                         362, firstLine, ink);
+                    text(canvas,
+                         (AmoledUi::WIDTH - textWidth(secondLine)) / 2,
+                         398, secondLine, ink);
+                }
+            }
+        }
+#endif
+        pageClip.reset();
+    }
+    if (model.recallConfirm && rowBegin < HOME_STATUS_TOP &&
+        rowEnd > HOME_ROOM_TOP) {
+        const int top = std::max<int>(rowBegin, HOME_ROOM_TOP);
+        const int bottom = std::min<int>(rowEnd, HOME_STATUS_TOP);
+        pageClip.setRect(0, top, AmoledUi::WIDTH, bottom - top);
+        canvas.fillRoundRect(34, 150, 300, 148, 10, rgb(20, 31, 38));
+        canvas.drawRoundRect(34, 150, 300, 148, 10, rgb(112, 151, 151));
+        text(canvas, (AmoledUi::WIDTH - textWidth(Ui::Social::RECALL_CONFIRM)) / 2,
+             174, Ui::Social::RECALL_CONFIRM, rgb(226, 238, 233));
+        canvas.fillRoundRect(54, 226, 116, 56, 8, rgb(46, 106, 92));
+        canvas.fillRoundRect(198, 226, 116, 56, 8, rgb(47, 65, 73));
+        text(canvas, 80, 238, Ui::Social::RECALL, rgb(226, 238, 233));
+        text(canvas, 224, 238, Ui::Social::RECALL_CANCEL,
+             rgb(226, 238, 233));
         pageClip.reset();
     }
     drawSceneFadeOverlay(canvas, model.fadeAlpha, rowBegin, rowEnd);
+}
+
+int recallConfirmChoiceAt(int x, int y) {
+    if (y < 226 || y >= 282) return -1;
+    if (x >= 54 && x < 170) return 0;
+    if (x >= 198 && x < 314) return 1;
+    return -1;
 }
 
 HomeHitTarget homeHitTargetAt(int x, int y, int petCenterX,
@@ -1377,13 +1653,18 @@ int mainMenuItemAt(int x, int y, float scroll) {
 
 #if STICKMON_ENABLE_DEBUG_FEATURES
 int debugContactChoiceAt(int x, int y) {
-    if (y < DEBUG_CONTACT_PROMPT_Y + 56 ||
-        y >= DEBUG_CONTACT_PROMPT_Y + DEBUG_CONTACT_PROMPT_H ||
-        x < DEBUG_CONTACT_PROMPT_X ||
-        x >= DEBUG_CONTACT_PROMPT_X + DEBUG_CONTACT_PROMPT_W) {
-        return -1;
+    const int dy = y - DEBUG_CONTACT_BUBBLE_Y;
+    const int yesDx = x - DEBUG_CONTACT_BUBBLE_YES_X;
+    if (yesDx * yesDx + dy * dy <=
+        DEBUG_CONTACT_BUBBLE_HIT_RADIUS * DEBUG_CONTACT_BUBBLE_HIT_RADIUS) {
+        return 0;
     }
-    return x < DEBUG_CONTACT_PROMPT_X + DEBUG_CONTACT_PROMPT_W / 2 ? 0 : 1;
+    const int noDx = x - DEBUG_CONTACT_BUBBLE_NO_X;
+    if (noDx * noDx + dy * dy <=
+        DEBUG_CONTACT_BUBBLE_HIT_RADIUS * DEBUG_CONTACT_BUBBLE_HIT_RADIUS) {
+        return 1;
+    }
+    return -1;
 }
 #endif
 
@@ -1457,7 +1738,7 @@ uint8_t debugItemCount(DebugViewModel::Category category) {
     case DebugViewModel::Category::MONSTER: return 4;
     case DebugViewModel::Category::RESOURCE: return 2;
     case DebugViewModel::Category::ENV: return 3;
-    case DebugViewModel::Category::MOTION: return 4;
+    case DebugViewModel::Category::MOTION: return 5;
     case DebugViewModel::Category::BATTLE: return 3;
     case DebugViewModel::Category::CONTACT_EVENT: return 4;
     case DebugViewModel::Category::TOUCH_TEST: return 1;
@@ -1687,6 +1968,8 @@ void renderDebugScreen(Canvas565& canvas, const DebugViewModel& model,
             value = model.tiltEnabled ? Ui::Settings::ON : Ui::Settings::OFF;
         } else if (model.category == DebugViewModel::Category::MOTION && index == 1) {
             value = model.boundaryVisible ? Ui::Settings::ON : Ui::Settings::OFF;
+        } else if (model.category == DebugViewModel::Category::MOTION && index == 2) {
+            value = model.talkPointsVisible ? Ui::Settings::ON : Ui::Settings::OFF;
         } else if (model.category == DebugViewModel::Category::BATTLE && index == 1) {
             value = model.battleBoundsVisible ? Ui::Settings::ON : Ui::Settings::OFF;
         } else if (model.category == DebugViewModel::Category::ROOT && index == 6) {
@@ -1715,7 +1998,8 @@ const char* communicationStateLabel(
     switch (state) {
     case State::HOSTING: return Ui::HOSTING;
     case State::SEARCHING: return Ui::SEARCHING;
-    case State::JOINING: return Ui::Amoled::JOINING;
+    case State::ROOM_LIST: return Ui::Social::SELECT_ROOM;
+    case State::JOINING: return Ui::Social::WAIT_HOST_DECISION;
     case State::WAITING_HOST_DECISION: return Ui::Amoled::INCOMING;
     case State::SYNCING: return Ui::Amoled::SYNCING;
     case State::WAITING_ACCEPT: return Ui::Amoled::WAIT_ACCEPT;
@@ -1763,16 +2047,22 @@ void renderCommunicationScreen(Canvas565& canvas,
         drawCommunicationButton(canvas, 180, Ui::Amoled::SEARCH,
                                 rgb(226, 238, 233));
     } else if (model.state == State::SEARCHING ||
-               model.state == State::JOINING) {
-        text(canvas, 28, 84, communicationStateLabel(model.state),
+               model.state == State::ROOM_LIST) {
+        const char* title = communicationStateLabel(model.state);
+        if (model.error && std::strcmp(model.error, "JOIN DECLINED") == 0) {
+            title = Ui::Social::JOIN_REJECTED;
+        } else if (model.error &&
+                   std::strcmp(model.error, "JOIN TIMEOUT") == 0) {
+            title = Ui::Social::JOIN_TIMED_OUT;
+        }
+        text(canvas, 28, 84, title,
              rgb(115, 226, 183));
         if (model.roomCount == 0) {
             text(canvas, 96, 172, Ui::Amoled::NO_ROOM, rgb(151, 168, 166));
         } else {
             for (uint8_t index = 0; index < model.roomCount; ++index) {
                 int y = 108 + index * 80;
-                canvas.fillRoundRect((16), (y), (336), (64), (8), index == 0 && model.state == State::JOINING
-                                         ? rgb(47, 68, 73) : rgb(24, 38, 45));
+                canvas.fillRoundRect((16), (y), (336), (64), (8), rgb(24, 38, 45));
                 char room[24] = {};
                 std::snprintf(room, sizeof(room), Ui::Social::ROOM_ROW_FMT,
                               static_cast<unsigned>(model.rooms[index].roomId));
@@ -1795,7 +2085,8 @@ void renderCommunicationScreen(Canvas565& canvas,
                                 rgb(115, 226, 183));
         drawCommunicationButton(canvas, 224, Ui::Amoled::DECLINE,
                                 rgb(239, 143, 148));
-    } else if (model.state == State::SYNCING ||
+    } else if (model.state == State::JOINING ||
+               model.state == State::SYNCING ||
                model.state == State::WAITING_ACCEPT) {
         text(canvas, 112, 96, communicationStateLabel(model.state),
              rgb(115, 226, 183));
@@ -1850,8 +2141,7 @@ int communicationItemAt(int x, int y,
     if (model.state == State::IDLE) {
         if (y >= 84 && y < 156) return 0;
         if (y >= 180 && y < 252) return 1;
-    } else if (model.state == State::SEARCHING ||
-               model.state == State::JOINING) {
+    } else if (model.state == State::ROOM_LIST) {
         if (y >= 108 && y < 108 + model.roomCount * 80) {
             return (y - 108) / 80;
         }
@@ -1875,11 +2165,27 @@ int communicationItemAt(int x, int y,
 #include "ui/ComputerScreens.inc"
 
 int progressionItemAt(int x, int y, ProgressionViewModel::Mode mode) {
-    if (mode == ProgressionViewModel::Mode::MOVE_REPLACE) {
-        if (y >= 212 && y < 284) return 1;
-        if (y >= 292 && y < 364) return 2;
+    if (mode == ProgressionViewModel::Mode::EVOLUTION) return -1;
+    if (mode == ProgressionViewModel::Mode::LEVEL_UP) {
+        return x >= 0 && x < AmoledUi::WIDTH &&
+               y >= 0 && y < AmoledUi::HEIGHT ? 0 : -1;
     }
+    if (mode == ProgressionViewModel::Mode::MOVE_REPLACE) return -1;
     return x >= 40 && x < 328 && y >= 348 && y < 428 ? 0 : -1;
+}
+
+int progressionReplaceItemAt(int x, int y, int16_t scrollOffsetY,
+                             uint8_t selectedItem, float detailProgress) {
+    if (x < 12 || x >= 356 || y < TEAM_MOVES_HEADER_HEIGHT ||
+        y >= AmoledUi::HEIGHT) return -1;
+    const int push = selectedItem < 3 ? static_cast<int>(std::lround(
+        (AmoledUi::HEIGHT / 2) * std::clamp(detailProgress, 0.0f, 1.0f))) : 0;
+    for (int index = 0; index < 3; ++index) {
+        const int rowY = TEAM_MOVES_HEADER_HEIGHT + index * 66 - scrollOffsetY +
+                         (index > selectedItem ? push : 0);
+        if (y >= rowY && y < rowY + 60) return index;
+    }
+    return -1;
 }
 
 void drawLevelUpDialog(Canvas565& canvas, const Species* species,
@@ -1890,7 +2196,6 @@ void drawLevelUpDialog(Canvas565& canvas, const Species* species,
     constexpr int DIALOG_H = 100;
     const uint16_t border = rgb(126, 175, 175);
     const uint16_t body = rgb(226, 238, 233);
-    const uint16_t hint = rgb(115, 226, 183);
 
     PixelRenderer::fillRectAlpha(DIALOG_X, DIALOG_Y, DIALOG_W, DIALOG_H,
                                  rgb(0, 0, 0), 190);
@@ -1913,8 +2218,278 @@ void drawLevelUpDialog(Canvas565& canvas, const Species* species,
         text(canvas, (AmoledUi::WIDTH - textWidth(secondLine)) / 2,
              DIALOG_Y + 40, secondLine, body);
     }
-    text(canvas, DIALOG_X + DIALOG_W - 104, DIALOG_Y + 72,
-         Ui::Amoled::CONTINUE, hint);
+}
+
+void drawLevelUpScene(Canvas565& canvas, const Species* species,
+                      const ProgressionViewModel& model) {
+    constexpr uint32_t DURATION_MS = 800;
+    const float progress = std::min(model.levelUpElapsedMs, DURATION_MS) /
+                           static_cast<float>(DURATION_MS);
+    const float ease = 1.0f - (1.0f - progress) * (1.0f - progress);
+    canvas.fillRect(0, 0, AmoledUi::WIDTH, AmoledUi::HEIGHT,
+                    rgb(12, 26, 31));
+    text(canvas, (AmoledUi::WIDTH - textWidth(Ui::Amoled::LEVEL_UP)) / 2,
+         38, Ui::Amoled::LEVEL_UP, rgb(115, 226, 183));
+
+    if (species) {
+        const PokemonSprites::SpriteFrame* frame =
+            PokemonSprites::findSpeciesSprite(
+                species->id, PokemonSprites::SpriteKind::FRONT);
+        if (frame) {
+            const int width = FlashStorage::readByte(&frame->width);
+            const int height = FlashStorage::readByte(&frame->height);
+            if (width > 0 && height > 0) {
+                const float fit = std::min(
+                    1.8f, std::min(224.0f / width, 196.0f / height));
+                const float scale = fit * (0.88f + 0.12f * ease);
+                const int drawnWidth = std::max(1, static_cast<int>(std::lround(width * scale)));
+                const int drawnHeight = std::max(1, static_cast<int>(std::lround(height * scale)));
+                PokemonSprites::drawFrameScaled(
+                    frame, (AmoledUi::WIDTH - drawnWidth) / 2,
+                    178 - drawnHeight / 2 + static_cast<int>(std::lround(12 * (1 - ease))),
+                    scale, false);
+            }
+        }
+    }
+
+    char oldLabel[20];
+    char newLabel[20];
+    std::snprintf(oldLabel, sizeof(oldLabel), "Lv.%u", model.oldLevel);
+    std::snprintf(newLabel, sizeof(newLabel), "Lv.%u", model.level);
+    const int gap = 22;
+    const int totalWidth = textWidth(oldLabel) + gap + textWidth(newLabel);
+    const int left = (AmoledUi::WIDTH - totalWidth) / 2;
+    text(canvas, left, 278, oldLabel, rgb(126, 175, 175));
+    text(canvas, left + textWidth(oldLabel) + (gap - textWidth(">")) / 2,
+         278, ">", rgb(126, 175, 175));
+    text(canvas, left + textWidth(oldLabel) + gap, 278, newLabel,
+         progress < 0.55f ? rgb(126, 175, 175) : rgb(248, 210, 105));
+    drawLevelUpDialog(canvas, species, model.level);
+}
+
+const PokemonSprites::SpriteFrame* evolutionFrame(uint16_t speciesId) {
+    const PokemonSprites::SpriteFrame* frame =
+        PokemonSprites::findCachedSpeciesSprite(
+            speciesId, PokemonSprites::SpriteKind::FRONT);
+    return frame ? frame : PokemonSprites::findSpeciesSprite(
+                               speciesId, PokemonSprites::SpriteKind::FRONT);
+}
+
+void drawEvolutionBackground(Canvas565& canvas) {
+    canvas.fillRect(0, 0, AmoledUi::WIDTH, AmoledUi::HEIGHT,
+                    rgb(10, 25, 31));
+    if (!GameAssets::draw(GameAssets::Kind::EVOLUTION_BACKGROUND,
+                          -56, 0, 2.0f)) {
+        const uint16_t bands[] = {
+            rgb(20, 58, 64), rgb(28, 91, 88), rgb(44, 128, 113),
+            rgb(76, 164, 137), rgb(133, 202, 171),
+        };
+        constexpr int bandCount = sizeof(bands) / sizeof(bands[0]);
+        for (int index = 0; index < bandCount; ++index) {
+            const int top = index * 280 / bandCount;
+            const int bottom = (index + 1) * 280 / bandCount;
+            canvas.fillRect(0, top, AmoledUi::WIDTH, bottom - top,
+                            bands[index]);
+        }
+    }
+    PixelRenderer::fillRectAlpha(0, 0, AmoledUi::WIDTH, 292,
+                                 rgb(3, 12, 18), 70);
+}
+
+void drawCenteredEvolutionText(Canvas565& canvas, int y, const char* value,
+                               uint16_t color) {
+    const int width = textWidth(value);
+    text(canvas, std::max(8, (AmoledUi::WIDTH - width) / 2), y, value, color);
+}
+
+void drawEvolutionSprite(const PokemonSprites::SpriteFrame* frame,
+                         bool silhouette, uint16_t silhouetteColor) {
+    if (!frame) return;
+    const int width = FlashStorage::readByte(&frame->width);
+    const int height = FlashStorage::readByte(&frame->height);
+    if (width <= 0 || height <= 0) return;
+    const float scale = std::min(
+        1.5f, std::min(184.0f / static_cast<float>(width),
+                       184.0f / static_cast<float>(height)));
+    const int drawnWidth = std::max(1, static_cast<int>(std::lround(width * scale)));
+    const int drawnHeight = std::max(1, static_cast<int>(std::lround(height * scale)));
+    const int x = 184 - drawnWidth / 2;
+    const int y = 168 - drawnHeight / 2;
+    if (silhouette && std::fabs(scale - 1.0f) < 0.01f) {
+        PokemonSprites::drawFrameSilhouette(frame, x, y, silhouetteColor);
+    } else if (silhouette) {
+        // FRONT resources generated at 2x already fit this page. Keep the
+        // silhouette centered when a larger legacy frame has to be fitted.
+        const int nativeX = 184 - width / 2;
+        const int nativeY = 168 - height / 2;
+        PokemonSprites::drawFrameSilhouette(
+            frame, nativeX, nativeY, silhouetteColor);
+    } else {
+        PokemonSprites::drawFrameScaled(frame, x, y, scale, false);
+    }
+}
+
+bool evolutionMorphShowsTarget(uint32_t elapsed) {
+    static constexpr uint16_t intervals[] = {
+        280, 260, 230, 210, 190, 170, 150, 130,
+        115, 100, 90, 80, 70, 60, 55, 50,
+    };
+    uint32_t cursor = 0;
+    for (uint8_t index = 0;
+         index < sizeof(intervals) / sizeof(intervals[0]); ++index) {
+        cursor += intervals[index];
+        if (elapsed < cursor) return (index & 1U) != 0;
+    }
+    return true;
+}
+
+void drawEvolutionRays(Canvas565& canvas, uint32_t elapsed, bool inward) {
+    static constexpr int8_t directions[][2] = {
+        {0, -10}, {5, -9}, {9, -5}, {10, 0}, {9, 5}, {5, 9},
+        {0, 10}, {-5, 9}, {-9, 5}, {-10, 0}, {-9, -5}, {-5, -9},
+    };
+    const uint16_t color = rgb(220, 255, 244);
+    for (uint8_t index = 0;
+         index < sizeof(directions) / sizeof(directions[0]); ++index) {
+        int inner = 52 + static_cast<int>((elapsed / 22U + index * 5U) % 24U);
+        int outer = inner + 24 + (index & 3U) * 3;
+        if (inward) {
+            const uint32_t remaining =
+                elapsed < Game::EvolutionSequence::CANCEL_MORPH_MS
+                    ? Game::EvolutionSequence::CANCEL_MORPH_MS - elapsed : 0;
+            outer = 58 + static_cast<int>(remaining * 58U /
+                Game::EvolutionSequence::CANCEL_MORPH_MS);
+            inner = std::max(36, outer - 28);
+        }
+        canvas.drawLine(
+            184 + directions[index][0] * inner / 10,
+            168 + directions[index][1] * inner / 10,
+            184 + directions[index][0] * outer / 10,
+            168 + directions[index][1] * outer / 10, color);
+    }
+}
+
+void drawEvolutionSparkles(Canvas565& canvas, uint32_t elapsed) {
+    static constexpr int8_t offsets[][2] = {
+        {-116, -62}, {-78, 70}, {-34, -104}, {22, 92},
+        {68, -86}, {108, 48}, {126, -20}, {-126, 18},
+    };
+    const uint16_t color = rgb(244, 255, 226);
+    for (uint8_t index = 0;
+         index < sizeof(offsets) / sizeof(offsets[0]); ++index) {
+        if (((elapsed / 90U) + index) % 3U == 0) continue;
+        const int x = 184 + offsets[index][0];
+        const int y = 168 + offsets[index][1];
+        const int radius = 2 + static_cast<int>((elapsed / 120U + index) & 1U);
+        canvas.drawFastHLine(x - radius, y, radius * 2 + 1, color);
+        canvas.drawFastVLine(x, y - radius, radius * 2 + 1, color);
+    }
+}
+
+void renderEvolutionProgression(Canvas565& canvas,
+                                const ProgressionViewModel& model) {
+    using Phase = Game::EvolutionSequence::Phase;
+    drawEvolutionBackground(canvas);
+
+    const Species* from = findSpecies(model.fromSpeciesId);
+    const Species* target = findSpecies(model.toSpeciesId);
+    const auto* fromFrame = evolutionFrame(model.fromSpeciesId);
+    const auto* targetFrame = evolutionFrame(model.toSpeciesId);
+    const Phase phase = model.evolutionPhase;
+    const uint32_t elapsed = model.evolutionElapsedMs;
+    const uint16_t silhouette = rgb(236, 255, 247);
+
+    if (phase == Phase::INTRO || phase == Phase::IDLE) {
+        drawEvolutionSprite(fromFrame, false, silhouette);
+    } else if (phase == Phase::MORPH) {
+        PixelRenderer::fillRectAlpha(0, 0, AmoledUi::WIDTH, 292,
+                                     rgb(0, 8, 12), 80);
+        const uint32_t morphElapsed = elapsed - Game::EvolutionSequence::INTRO_MS;
+        drawEvolutionRays(canvas, morphElapsed, false);
+        drawEvolutionSprite(
+            evolutionMorphShowsTarget(morphElapsed) ? targetFrame : fromFrame,
+            true, silhouette);
+        canvas.drawCircle(184, 168,
+                          72 + static_cast<int>((morphElapsed / 20U) % 28U),
+                          rgb(201, 255, 238));
+        drawEvolutionSparkles(canvas, morphElapsed);
+    } else if (phase == Phase::FLASH) {
+        drawEvolutionSprite(targetFrame, true, silhouette);
+        const uint32_t flashElapsed = elapsed - Game::EvolutionSequence::MORPH_END_MS;
+        const uint8_t alpha = flashElapsed < 170U
+            ? static_cast<uint8_t>(flashElapsed * 255U / 170U)
+            : static_cast<uint8_t>(
+                  (Game::EvolutionSequence::FLASH_END_MS - elapsed) * 255U /
+                  (Game::EvolutionSequence::FLASH_END_MS -
+                   Game::EvolutionSequence::MORPH_END_MS - 170U));
+        PixelRenderer::fillRectAlpha(0, 0, AmoledUi::WIDTH, 292,
+                                     rgb(255, 255, 255), alpha);
+    } else if (phase == Phase::CANCEL_MORPH) {
+        drawEvolutionRays(canvas, elapsed, true);
+        const bool showOld = elapsed >= 420U || ((elapsed / 90U) & 1U) == 0;
+        drawEvolutionSprite(showOld ? fromFrame : targetFrame, true, silhouette);
+        drawEvolutionSparkles(canvas, elapsed);
+    } else {
+        const bool cancelled = phase == Phase::CANCEL_REVEAL ||
+                               phase == Phase::CANCELLED;
+        drawEvolutionSprite(cancelled ? fromFrame : targetFrame, false,
+                            silhouette);
+        if (phase == Phase::REVEAL) {
+            const uint8_t alpha = static_cast<uint8_t>(
+                (Game::EvolutionSequence::REVEAL_END_MS - elapsed) * 220U /
+                (Game::EvolutionSequence::REVEAL_END_MS -
+                 Game::EvolutionSequence::FLASH_END_MS));
+            PixelRenderer::fillRectAlpha(0, 0, AmoledUi::WIDTH, 292,
+                                         rgb(255, 255, 255), alpha);
+        } else if (phase == Phase::CANCEL_REVEAL) {
+            const uint32_t remaining =
+                Game::EvolutionSequence::CANCEL_COMPLETE_MS - elapsed;
+            const uint8_t alpha = static_cast<uint8_t>(
+                remaining * 180U /
+                (Game::EvolutionSequence::CANCEL_COMPLETE_MS -
+                 Game::EvolutionSequence::CANCEL_MORPH_MS));
+            PixelRenderer::fillRectAlpha(0, 0, AmoledUi::WIDTH, 292,
+                                         rgb(255, 255, 255), alpha);
+        }
+        drawEvolutionSparkles(canvas, elapsed);
+    }
+
+    char message[64];
+    if (phase == Phase::CANCELLED) {
+        std::snprintf(message, sizeof(message),
+                      Ui::Common::EVOLUTION_CANCELLED_FMT,
+                      from ? from->name : Ui::Status::MOVE_UNKNOWN);
+    } else if (model.evolutionReady) {
+        std::snprintf(message, sizeof(message),
+                      Ui::Common::EVOLUTION_COMPLETE_FMT,
+                      target ? target->name : Ui::Status::MOVE_UNKNOWN);
+    } else {
+        std::snprintf(message, sizeof(message), Ui::Common::EVOLUTION_FMT,
+                      from ? from->name : Ui::Status::MOVE_UNKNOWN);
+    }
+    drawCenteredEvolutionText(canvas, 270, message, rgb(239, 246, 240));
+
+    const bool cancelling = phase == Phase::CANCEL_MORPH ||
+                            phase == Phase::CANCEL_REVEAL;
+    if (!model.evolutionReady && phase != Phase::CANCELLED) {
+        drawCenteredEvolutionText(
+            canvas, 388,
+            cancelling ? Ui::Amoled::CANCELLING_EVOLUTION
+                       : Ui::Amoled::HOLD_TO_CANCEL_EVOLUTION,
+            rgb(175, 204, 198));
+        if (!cancelling && model.evolutionCancelHoldProgress > 0) {
+            constexpr int HOLD_BAR_X = 104;
+            constexpr int HOLD_BAR_Y = 340;
+            constexpr int HOLD_BAR_WIDTH = 160;
+            constexpr int HOLD_BAR_HEIGHT = 6;
+            canvas.fillRoundRect(HOLD_BAR_X, HOLD_BAR_Y, HOLD_BAR_WIDTH,
+                                 HOLD_BAR_HEIGHT, 3, rgb(39, 58, 62));
+            canvas.fillRoundRect(
+                HOLD_BAR_X, HOLD_BAR_Y,
+                HOLD_BAR_WIDTH * model.evolutionCancelHoldProgress / 100,
+                HOLD_BAR_HEIGHT, 3, rgb(115, 226, 183));
+        }
+    }
 }
 
 void renderProgressionScreen(Canvas565& canvas,
@@ -1926,6 +2501,88 @@ void renderProgressionScreen(Canvas565& canvas,
     if (rowBegin >= rowEnd) return;
     pageClip.setRect((0), (rowBegin), (AmoledUi::WIDTH), (rowEnd - rowBegin));
     canvas.fillRect((0), (0), (AmoledUi::WIDTH), (AmoledUi::HEIGHT), UiMetrics::PAGE_BACKGROUND);
+    if (model.mode == ProgressionViewModel::Mode::EVOLUTION) {
+        renderEvolutionProgression(canvas, model);
+        drawToast(canvas, model.toast);
+        pageClip.reset();
+        return;
+    }
+    if (model.mode == ProgressionViewModel::Mode::MOVE_REPLACE) {
+        constexpr int listTop = TEAM_MOVES_HEADER_HEIGHT;
+        constexpr int detailSize = AmoledUi::HEIGHT / 2;
+        const MoveInfo* moves[] = {
+            findMove(model.moveId), findMove(model.oldMove2),
+            findMove(model.oldMove3)};
+        const float progress = std::clamp(model.detailProgress, 0.0f, 1.0f);
+        const int push = model.selectedItem < 3
+            ? static_cast<int>(std::lround(detailSize * progress)) : 0;
+        const int detailTop = listTop + (model.selectedItem + 1) * 66 -
+                              model.scrollOffsetY;
+        if (model.selectedItem < 3 && moves[model.selectedItem] && push > 0) {
+            UiCommon::PageClip detailClip(canvas,
+                static_cast<uint16_t>(std::clamp(std::max<int>(rowBegin, detailTop),
+                                                 listTop, AmoledUi::HEIGHT)),
+                static_cast<uint16_t>(std::clamp(std::min<int>(rowEnd, detailTop + push),
+                                                 listTop, AmoledUi::HEIGHT)));
+            canvas.fillRect(0, detailTop, AmoledUi::WIDTH, push,
+                            rgb(17, 27, 34));
+            canvas.fillRect(0, detailTop, AmoledUi::WIDTH, 2,
+                            rgb(56, 87, 89));
+            drawMoveDetailContent(canvas, *moves[model.selectedItem], detailTop,
+                static_cast<uint8_t>(std::lround(255.0f * progress)));
+            detailClip.reset();
+        }
+        pageClip.setRect(0, listTop, AmoledUi::WIDTH,
+                         AmoledUi::HEIGHT - listTop);
+        for (int index = 0; index < 3; ++index) {
+            const int y = listTop + index * 66 - model.scrollOffsetY +
+                          (index > model.selectedItem ? push : 0);
+            if (y + 60 <= listTop || y >= AmoledUi::HEIGHT) continue;
+            canvas.fillRoundRect(12, y, 344, 60, 8,
+                model.selectedItem == index ? rgb(42, 61, 68)
+                                            : rgb(24, 34, 42));
+            if (moves[index]) {
+                drawTeamMoveTypeBadge(canvas, 20, y + 8, moves[index]->type);
+            }
+            const char* name = moves[index] ? moves[index]->name
+                                            : Ui::Status::MOVE_UNKNOWN;
+            text(canvas, 108, y + 14, name, rgb(226, 238, 233));
+            if (index == 0 && textWidth(name) <= 200) {
+                text(canvas, 316, y + 14, "新", rgb(115, 226, 183));
+            }
+        }
+        pageClip.setRect(0, rowBegin, AmoledUi::WIDTH, rowEnd - rowBegin);
+        if (model.scrollOffsetY > 0) {
+            const int strength = std::min<int>(255, model.scrollOffsetY * 18);
+            for (int y = 0; y < 28; y += 4) {
+                PixelRenderer::fillRectAlpha(0, listTop + y, AmoledUi::WIDTH,
+                    4, rgb(0, 0, 0), static_cast<uint8_t>(
+                        strength * (28 - y) / 28));
+            }
+        }
+        UiCommon::drawPageHeader(canvas, nullptr, nullptr, false);
+        UiCommon::drawHeaderText(canvas, 28, Ui::Amoled::MOVE_LIST,
+                                  rgb(102, 176, 245), listTop);
+        const bool enabled = model.selectedItem < 3;
+        const uint16_t iconColor = enabled ? rgb(115, 226, 183)
+                                           : rgb(91, 104, 104);
+        canvas.fillCircle(328, 38, 26,
+                          enabled ? rgb(27, 62, 53) : rgb(27, 43, 51));
+        canvas.drawCircle(328, 38, 26, iconColor);
+        canvas.drawLine(315, 38, 324, 47, iconColor);
+        canvas.drawLine(324, 47, 342, 28, iconColor);
+        drawToast(canvas, model.toast);
+        pageClip.reset();
+        return;
+    }
+    if (model.mode == ProgressionViewModel::Mode::LEVEL_UP) {
+        drawLevelUpScene(canvas, model.state && model.teamSlot < Game::TEAM_CAP
+                        ? findSpecies(model.state->team[model.teamSlot].speciesId)
+                        : nullptr, model);
+        drawToast(canvas, model.toast);
+        pageClip.reset();
+        return;
+    }
     UiCommon::drawHeader(canvas, HEADER_HEIGHT);
     UiCommon::drawHeaderText(canvas, 52, Ui::Amoled::GROWTH, rgb(115, 226, 183), HEADER_HEIGHT);
     const Game::MonsterRuntime* monster = model.state &&
@@ -1936,50 +2593,18 @@ void renderProgressionScreen(Canvas565& canvas,
             PokemonSprites::findSpeciesSprite(species->id, PokemonSprites::SpriteKind::FRONT);
         if (frame) PokemonSprites::drawFrameScaled(frame, 104, 88, 1.5f, false);
     }
-    if (model.mode == ProgressionViewModel::Mode::LEVEL_UP) {
-        drawLevelUpDialog(canvas, species, model.level);
-        drawToast(canvas, model.toast);
-        pageClip.reset();
-        return;
-    }
     const char* title = Ui::Amoled::LEVEL_UP;
-    if (model.mode == ProgressionViewModel::Mode::EVOLUTION) {
-        title = Ui::Common::EVOLUTION_TITLE;
-    }
     if (model.mode == ProgressionViewModel::Mode::MOVE_LEARN) {
         title = Ui::Amoled::NEW_MOVE;
     }
-    if (model.mode == ProgressionViewModel::Mode::MOVE_REPLACE) {
-        title = Ui::Amoled::REPLACE_MOVE;
-    }
     text(canvas, 144, 80, title, rgb(248, 210, 105));
-    if (model.mode == ProgressionViewModel::Mode::EVOLUTION) {
-        const Species* target = findSpecies(model.toSpeciesId);
-        text(canvas, 108, 224, target ? target->name : Ui::Amoled::READY,
-             rgb(226, 238, 233));
-        text(canvas, 84, 264, Ui::Amoled::TAP_TO_EVOLVE,
-             rgb(126, 175, 175));
-    } else {
+    {
         const MoveInfo* move = findMove(model.moveId);
         text(canvas, 88, 224, move ? move->name : Ui::Status::MOVE_UNKNOWN,
              rgb(226, 238, 233));
-        if (model.mode == ProgressionViewModel::Mode::MOVE_REPLACE) {
-            text(canvas, 68, 268, Ui::Amoled::CHOOSE_OLD_MOVE,
-                 rgb(126, 175, 175));
-            canvas.fillRoundRect((40), (212), (288), (64), (8), model.pressedItem == 1 ? rgb(48, 74, 68) : rgb(24, 34, 42));
-            canvas.fillRoundRect((40), (292), (288), (64), (8), model.pressedItem == 2 ? rgb(48, 74, 68) : rgb(24, 34, 42));
-            const MoveInfo* move2 = findMove(model.oldMove2);
-            const MoveInfo* move3 = findMove(model.oldMove3);
-            text(canvas, 60, 234, move2 ? move2->name : Ui::EMPTY,
-                 rgb(226, 238, 233));
-            text(canvas, 60, 314, move3 ? move3->name : Ui::EMPTY,
-                 rgb(226, 238, 233));
-        }
     }
     canvas.fillRoundRect((40), (348), (288), (80), (8), model.pressedItem == 0 ? rgb(48, 74, 68) : rgb(24, 34, 42));
-    text(canvas, 130, 380,
-         model.mode == ProgressionViewModel::Mode::MOVE_REPLACE
-             ? Ui::Amoled::SKIP : Ui::Amoled::CONTINUE,
+    text(canvas, 130, 380, Ui::Amoled::CONTINUE,
          rgb(115, 226, 183));
     drawToast(canvas, model.toast);
     pageClip.reset();
@@ -1996,6 +2621,7 @@ int battleItemAt(int x, int y, BattleViewModel::Phase phase) {
     if (phase == BattleViewModel::Phase::FRIENDSHIP) {
         return x < 184 ? 0 : 1;
     }
+    if (phase == BattleViewModel::Phase::VICTORY) return -1;
     if (phase != BattleViewModel::Phase::ACTION) return 0;
     return std::min(3, x * 4 / AmoledUi::WIDTH);
 }
@@ -2130,29 +2756,32 @@ void drawBattleConditionEffects(Canvas565& canvas, int centerX, int groundY,
     }
 }
 
-void drawBattleSprite(Canvas565& canvas, uint16_t speciesId,
-                      int centerX, int groundY, int maxWidth, int maxHeight,
-                      bool back) {
-    static constexpr float MAX_BATTLE_SPRITE_SCALE = 1.5f;
+int drawBattleSprite(Canvas565& canvas, uint16_t speciesId,
+                     int centerX, int groundY, int maxWidth, int maxHeight,
+                     bool back) {
     const PokemonSprites::SpriteFrame* frame =
         PokemonSprites::findSpeciesSprite(
             speciesId, back ? PokemonSprites::SpriteKind::BACK
                             : PokemonSprites::SpriteKind::FRONT);
     if (!frame) {
-        drawFallbackPet(canvas, centerX, groundY);
-        return;
+        drawFallbackPet(canvas, centerX, groundY, false);
+        return 0;
     }
     int width = FlashStorage::readByte(&frame->width);
     int height = FlashStorage::readByte(&frame->height);
-    if (width <= 0 || height <= 0) return;
-    float scale = std::min(static_cast<float>(maxWidth) / width,
-                           static_cast<float>(maxHeight) / height);
-    scale = std::min(MAX_BATTLE_SPRITE_SCALE, scale);
-    int drawWidth = std::max(1, static_cast<int>(width * scale));
-    int drawHeight = std::max(1, static_cast<int>(height * scale));
-    canvas.fillEllipse((centerX), (groundY), ((std::max(12, drawWidth / 2 - 4))), (10), rgb(27, 48, 48));
+    if (width <= 0 || height <= 0) return 0;
+    const uint8_t encodedPadding =
+        FlashStorage::readByte(&frame->groundPaddingPlusOne);
+    const int groundPadding = encodedPadding > 0 ? encodedPadding - 1 : 0;
+    const int targetHeight = back ? PLAYER_SPRITE_TARGET_HEIGHT
+                                  : WILD_SPRITE_TARGET_HEIGHT;
+    const auto layout = fitBattleSprite(width, height, groundPadding,
+                                        centerX, groundY, maxWidth, maxHeight,
+                                        targetHeight);
+    const int airLift = back ? 0 : battleSpriteAirLift(speciesId);
     PokemonSprites::drawFrameScaled(
-        frame, centerX - drawWidth / 2, groundY - drawHeight, scale, false);
+        frame, layout.rect.x, layout.rect.y - airLift, layout.scale, false);
+    return airLift;
 }
 
 void drawBattleStatusIcon(Canvas565& canvas, Game::MajorStatus status,
@@ -2164,7 +2793,7 @@ void drawBattleStatusIcon(Canvas565& canvas, Game::MajorStatus status,
 }
 
 void drawBattleHitEffect(Canvas565& canvas, int centerX, int centerY,
-                         uint8_t animationFrame, uint16_t damage) {
+                         uint8_t animationFrame) {
     if (animationFrame == 0) return;
     const uint16_t outline = rgb(43, 39, 44);
     const uint16_t flash = animationFrame == 2
@@ -2179,12 +2808,6 @@ void drawBattleHitEffect(Canvas565& canvas, int centerX, int centerY,
     if (animationFrame == 2) {
         canvas.fillCircle((centerX - 18), (centerY - 16), (4), flash);
         canvas.fillCircle((centerX + 20), (centerY + 14), (4), flash);
-    }
-    if (damage > 0) {
-        char damageText[8] = {};
-        std::snprintf(damageText, sizeof(damageText), "-%u", damage);
-        text(canvas, centerX - textWidth(damageText) / 2,
-             centerY - radius - 26, damageText, flash);
     }
 }
 
@@ -2223,6 +2846,28 @@ void drawBattleFooterChoice(Canvas565& canvas, int index, int count,
 
 }  // namespace
 
+bool prepareBattleBackground(Canvas565& canvas, PixelCache565& backgroundCache,
+                             GameAssets::Kind kind) {
+    const RenderCacheKey key{static_cast<uint32_t>(kind), 0,
+                             canvas.physicalWidth(), canvas.physicalHeight(),
+                             canvas.byteSwapped()};
+    if (backgroundCache.matches(key)) return true;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    const uint32_t startedUs = Platform::clock().micros();
+#endif
+    drawBattleBackgroundLayer(canvas, backgroundCache, kind, 0, AmoledUi::HEIGHT
+#if STICKMON_ENABLE_DEBUG_FEATURES
+                              , nullptr, nullptr
+#endif
+                              );
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    Platform::logf("[BattleBgPrewarm] ready=%u elapsed=%lu us\n",
+                   backgroundCache.matches(key) ? 1U : 0U,
+                   static_cast<unsigned long>(Platform::clock().micros() - startedUs));
+#endif
+    return backgroundCache.matches(key);
+}
+
 void renderBattleScreen(Canvas565& canvas, const BattleViewModel& model,
                         PixelCache565& backgroundCache,
                         uint16_t rowBegin, uint16_t rowEnd) {
@@ -2231,8 +2876,30 @@ void renderBattleScreen(Canvas565& canvas, const BattleViewModel& model,
     UiCommon::PageClip pageClip(canvas, rowBegin, rowEnd);
     if (rowBegin >= rowEnd) return;
     pageClip.setRect((0), (rowBegin), (AmoledUi::WIDTH), (rowEnd - rowBegin));
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    static bool coldBattleProfiled = false;
+    static bool warmBattleProfiled = false;
+    const RenderCacheKey backgroundKey{
+        static_cast<uint32_t>(model.battleBackground), 0,
+        canvas.physicalWidth(), canvas.physicalHeight(), canvas.byteSwapped()};
+    const bool cacheHit = backgroundCache.matches(backgroundKey);
+    const bool profileBattle = rowBegin == 0 && rowEnd == AmoledUi::HEIGHT &&
+        (cacheHit ? !warmBattleProfiled : !coldBattleProfiled);
+    uint32_t stamps[11] = {};
+    uint32_t backgroundAssetUs = 0;
+    uint32_t backgroundCacheUs = 0;
+    if (profileBattle) stamps[0] = Platform::clock().micros();
+#endif
     drawBattleBackgroundLayer(
-        canvas, backgroundCache, model.battleBackground, rowBegin, rowEnd);
+        canvas, backgroundCache, model.battleBackground, rowBegin, rowEnd
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        , profileBattle ? &backgroundAssetUs : nullptr,
+          profileBattle ? &backgroundCacheUs : nullptr
+#endif
+        );
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    if (profileBattle) stamps[1] = Platform::clock().micros();
+#endif
     const Species* wild = findSpecies(model.wildSpeciesId);
     const Species* player = findSpecies(model.playerSpeciesId);
     static constexpr int WILD_NAME_X = 17;
@@ -2249,8 +2916,11 @@ void renderBattleScreen(Canvas565& canvas, const BattleViewModel& model,
     char level[10];
     std::snprintf(level, sizeof(level), "LV%u", model.wildLevel);
     drawBattleSceneText(WILD_LEVEL_X, 16, level);
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    if (profileBattle) stamps[2] = Platform::clock().micros();
+#endif
     static constexpr int WILD_GROUND_Y = 229;
-    static constexpr int PLAYER_GROUND_Y = 360;
+    static constexpr int PLAYER_GROUND_Y = 344;
     int wildX = 272;
     int playerX = 80;
     if (model.animationActive) {
@@ -2265,10 +2935,18 @@ void renderBattleScreen(Canvas565& canvas, const BattleViewModel& model,
             else wildX += shake;
         }
     }
-    drawBattleSprite(canvas, model.wildSpeciesId, wildX, WILD_GROUND_Y,
-                     184, 224, false);
-    drawBattleStatusIcon(canvas, model.wildStatus, 12, 50);
+    playerX += model.playerSwitchOffsetX;
+    const int wildAirLift = drawBattleSprite(
+        canvas, model.wildSpeciesId, wildX, WILD_GROUND_Y,
+        WILD_SPRITE_AREA_WIDTH, BATTLE_SPRITE_AREA_HEIGHT, false);
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    if (profileBattle) stamps[3] = Platform::clock().micros();
+#endif
+    drawBattleStatusIcon(canvas, model.wildStatus, 12, 66);
     drawBattleHpBar(canvas, 44, 72, 128, model.wildHp);
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    if (profileBattle) stamps[4] = Platform::clock().micros();
+#endif
 
     if (player) {
         const int nameX = std::min(
@@ -2278,46 +2956,69 @@ void renderBattleScreen(Canvas565& canvas, const BattleViewModel& model,
     }
     std::snprintf(level, sizeof(level), "LV%u", model.playerLevel);
     drawBattleSceneText(PLAYER_LEVEL_X, 234, level);
-    drawBattleSprite(canvas, model.playerSpeciesId, playerX, PLAYER_GROUND_Y,
-                     164, 232, true);
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    if (profileBattle) stamps[5] = Platform::clock().micros();
+#endif
+    const int playerAirLift = drawBattleSprite(
+        canvas, model.playerSpeciesId, playerX, PLAYER_GROUND_Y,
+        PLAYER_SPRITE_AREA_WIDTH, BATTLE_SPRITE_AREA_HEIGHT, true);
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    if (profileBattle) stamps[6] = Platform::clock().micros();
+#endif
     if (model.showPlayerExperience) {
         drawBattleExperienceBar(canvas, 184, 290, 168,
                                 model.playerExperience);
     } else {
-        drawBattleStatusIcon(canvas, model.playerStatus, 184, 268);
+        drawBattleStatusIcon(canvas, model.playerStatus, 184, 284);
         drawBattleHpBar(canvas, 216, 290, 136, model.playerHp);
     }
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    if (profileBattle) stamps[7] = Platform::clock().micros();
+#endif
 
 #if STICKMON_ENABLE_DEBUG_FEATURES
     if (model.debugDrawBounds) {
-        canvas.drawRect((wildX - 92), (WILD_GROUND_Y - 224), (184), (224), rgb(255, 32, 32));
-        canvas.drawRect((playerX - 82), (PLAYER_GROUND_Y - 232), (164), (232), rgb(0, 220, 255));
+        canvas.drawRect(wildX - WILD_SPRITE_AREA_WIDTH / 2,
+                        WILD_GROUND_Y - BATTLE_SPRITE_AREA_HEIGHT,
+                        WILD_SPRITE_AREA_WIDTH, BATTLE_SPRITE_AREA_HEIGHT,
+                        rgb(255, 32, 32));
+        canvas.drawRect(playerX - PLAYER_SPRITE_AREA_WIDTH / 2,
+                        PLAYER_GROUND_Y - BATTLE_SPRITE_AREA_HEIGHT,
+                        PLAYER_SPRITE_AREA_WIDTH, BATTLE_SPRITE_AREA_HEIGHT,
+                        rgb(0, 220, 255));
     }
 #endif
 
     uint32_t nowMs = Platform::clock().millis();
     if (model.wildHp > 0) {
-        drawBattleConditionEffects(canvas, wildX, WILD_GROUND_Y, model.wildStatus,
+        drawBattleConditionEffects(canvas, wildX, WILD_GROUND_Y - wildAirLift,
+                                   model.wildStatus,
                                    model.wildBattleState, nowMs);
     }
     if (model.playerHp > 0) {
-        drawBattleConditionEffects(canvas, playerX, PLAYER_GROUND_Y, model.playerStatus,
+        drawBattleConditionEffects(canvas, playerX, PLAYER_GROUND_Y - playerAirLift,
+                                   model.playerStatus,
                                    model.playerBattleState, nowMs);
     }
     if (model.animationActive && model.animationHit) {
         int hitX = model.animationAttackerWild ? playerX : wildX;
         int hitY = model.animationAttackerWild
-                       ? PLAYER_GROUND_Y - 44
-                       : WILD_GROUND_Y - 42;
+                       ? PLAYER_GROUND_Y - playerAirLift - 44
+                       : WILD_GROUND_Y - wildAirLift - 42;
         if (model.animationFrame >= 3 && model.animationFrame <= 5) {
             drawBattleHitEffect(
                 canvas, hitX, hitY,
-                static_cast<uint8_t>(model.animationFrame - 2),
-                model.animationDamage);
+                static_cast<uint8_t>(model.animationFrame - 2));
         }
     }
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    if (profileBattle) stamps[8] = Platform::clock().micros();
+#endif
 
     drawBattleFooter(canvas);
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    if (profileBattle) stamps[9] = Platform::clock().micros();
+#endif
     if (model.phase == BattleViewModel::Phase::BAG_SELECT ||
         model.phase == BattleViewModel::Phase::SWITCH_SELECT) {
         drawBattleBackIcon(canvas);
@@ -2389,13 +3090,37 @@ void renderBattleScreen(Canvas565& canvas, const BattleViewModel& model,
             drawBattleFooterChoice(canvas, 0, 1, Ui::Amoled::CONTINUE,
                                    model.pressedItem == 0, true);
         }
-    } else {
-        const char* label = model.phase == BattleViewModel::Phase::VICTORY
-            ? Ui::Amoled::CONTINUE : Ui::Amoled::REST_HOME;
-        drawBattleFooterChoice(canvas, 0, 1, label,
+    } else if (model.phase == BattleViewModel::Phase::DEFEAT) {
+        drawBattleFooterChoice(canvas, 0, 1, Ui::Amoled::REST_HOME,
                                model.pressedItem == 0, true);
     }
     pageClip.reset();
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    if (profileBattle) {
+        stamps[10] = Platform::clock().micros();
+        Platform::logf(
+            "[BattleDrawPerf] cacheHit=%u background=%lu asset=%lu cache=%lu "
+            "wildText=%lu "
+            "wildSprite=%lu wildHud=%lu playerText=%lu playerSprite=%lu "
+            "playerHud=%lu effects=%lu footerBase=%lu footerItems=%lu "
+            "total=%lu us\n",
+            cacheHit ? 1U : 0U,
+            static_cast<unsigned long>(stamps[1] - stamps[0]),
+            static_cast<unsigned long>(backgroundAssetUs),
+            static_cast<unsigned long>(backgroundCacheUs),
+            static_cast<unsigned long>(stamps[2] - stamps[1]),
+            static_cast<unsigned long>(stamps[3] - stamps[2]),
+            static_cast<unsigned long>(stamps[4] - stamps[3]),
+            static_cast<unsigned long>(stamps[5] - stamps[4]),
+            static_cast<unsigned long>(stamps[6] - stamps[5]),
+            static_cast<unsigned long>(stamps[7] - stamps[6]),
+            static_cast<unsigned long>(stamps[8] - stamps[7]),
+            static_cast<unsigned long>(stamps[9] - stamps[8]),
+            static_cast<unsigned long>(stamps[10] - stamps[9]),
+            static_cast<unsigned long>(stamps[10] - stamps[0]));
+        (cacheHit ? warmBattleProfiled : coldBattleProfiled) = true;
+    }
+#endif
 }
 
 namespace {
@@ -2403,7 +3128,8 @@ namespace {
 constexpr int SHOWER_PET_X = 184;
 constexpr int SHOWER_PET_Y = 212;
 constexpr int SHOWER_TOOLBAR_Y = 352;
-constexpr int SHOWER_TOOL_BUTTON_W = 84;
+constexpr int SHOWER_TOOL_BUTTON_W = 116;
+constexpr int SHOWER_TOOL_BUTTON_PITCH = 120;
 
 void drawShowerPet(Canvas565& canvas, uint16_t speciesId) {
     const PokemonSprites::SpriteFrame* frame =
@@ -2426,30 +3152,22 @@ void drawShowerPet(Canvas565& canvas, uint16_t speciesId) {
 }
 
 void drawShowerBubbles(const ShowerViewModel& model) {
-    static constexpr int8_t SPOTS[][2] = {
-        {-48, -60}, {40, -50}, {-16, -28}, {50, 0},
-        {-50, 8}, {16, 28}, {-32, 58}, {40, 56},
-    };
-    uint8_t count = std::min<uint8_t>(model.soapProgress, 8);
     if (model.rinseProgress >= 100) return;
-    if (model.rinseProgress > 0) {
-        count = static_cast<uint8_t>(
-            count * (100 - model.rinseProgress) / 100);
-    }
-    uint8_t stage = model.brushProgress == 0
-        ? 0 : std::min<uint8_t>(4, 1 + model.brushProgress / 2);
-    for (uint8_t index = 0; index < count; ++index) {
+    for (uint8_t index = 0; index < model.foamCount; ++index) {
+        const ShowerFoamState& foam = model.foam[index];
+        if (!foam.active) continue;
         GameAssets::Kind kind = static_cast<GameAssets::Kind>(
-            static_cast<uint16_t>(GameAssets::Kind::SHOWER_BUBBLE_0) + stage);
+            static_cast<uint16_t>(GameAssets::Kind::SHOWER_BUBBLE_0) +
+            std::min<uint8_t>(4, foam.stage));
         GameAssets::drawCentered(kind,
-                                 SHOWER_PET_X + SPOTS[index][0],
-                                 SHOWER_PET_Y + SPOTS[index][1],
-                                 stage >= 3 ? 1.64f : 1.44f);
+                                 foam.x, foam.y,
+                                 foam.stage >= 3 ? 1.64f : 1.44f);
     }
-    if (model.brushProgress >= 8 && model.rinseProgress == 0) {
+    if (model.atmosphereAlpha > 0 && model.rinseProgress == 0) {
         GameAssets::drawCenteredAlpha(
             GameAssets::Kind::SHOWER_BUBBLE_5,
-            SHOWER_PET_X, SHOWER_PET_Y + 24, 1.8f, 210);
+            SHOWER_PET_X, SHOWER_PET_Y + 24, 1.8f,
+            model.atmosphereAlpha);
     }
 }
 
@@ -2458,28 +3176,21 @@ void drawShowerToolbar(Canvas565& canvas, const ShowerViewModel& model) {
         GameAssets::Kind::SHOWER_MENU_SOAP,
         GameAssets::Kind::SHOWER_MENU_BRUSH,
         GameAssets::Kind::SHOWER_MENU_SPRINKLER,
-        GameAssets::Kind::COUNT,
     };
     static constexpr const char* LABELS[] = {
         Ui::Amoled::SOAP, Ui::Amoled::BRUSH, Ui::Amoled::RINSE,
-        Ui::Amoled::EXIT,
     };
-    for (int index = 0; index < 4; ++index) {
-        int x = 6 + index * 90;
+    for (int index = 0; index < 3; ++index) {
+        int x = 6 + index * SHOWER_TOOL_BUTTON_PITCH;
         bool selected = index == model.pressedItem;
         canvas.fillRoundRect((x), (SHOWER_TOOLBAR_Y), (SHOWER_TOOL_BUTTON_W), (88), (8), selected ? rgb(48, 74, 68) : rgb(24, 34, 42));
         canvas.drawRoundRect((x), (SHOWER_TOOLBAR_Y), (SHOWER_TOOL_BUTTON_W), (88), (8), rgb(67, 97, 101));
-        if (index < 3) {
-            GameAssets::drawCentered(ICONS[index], x + 42,
-                                     SHOWER_TOOLBAR_Y + 36, 1.12f);
-        } else {
-            canvas.drawFastHLine((x + 24), (SHOWER_TOOLBAR_Y + 34), (36), rgb(239, 143, 148));
-            canvas.drawLine((x + 24), (SHOWER_TOOLBAR_Y + 34), (x + 38), (SHOWER_TOOLBAR_Y + 20), rgb(239, 143, 148));
-            canvas.drawLine((x + 24), (SHOWER_TOOLBAR_Y + 34), (x + 38), (SHOWER_TOOLBAR_Y + 48), rgb(239, 143, 148));
-        }
+        GameAssets::drawCentered(ICONS[index],
+                                 x + SHOWER_TOOL_BUTTON_W / 2,
+                                 SHOWER_TOOLBAR_Y + 36, 1.12f);
         int labelX = x + (SHOWER_TOOL_BUTTON_W - textWidth(LABELS[index])) / 2;
         text(canvas, labelX, SHOWER_TOOLBAR_Y + 62, LABELS[index],
-             index == 3 ? rgb(239, 143, 148) : rgb(126, 175, 175));
+             rgb(126, 175, 175));
     }
 }
 
@@ -2524,9 +3235,12 @@ bool showerBackAt(int x, int y) {
 }
 
 int showerMenuItemAt(int x, int y) {
-    if (x < 6 || x >= 366 || y < SHOWER_TOOLBAR_Y || y >= 448) return -1;
-    int index = (x - 6) / 90;
-    return index < 4 ? index : -1;
+    if (y < SHOWER_TOOLBAR_Y || y >= 440) return -1;
+    for (int index = 0; index < 3; ++index) {
+        const int left = 6 + index * SHOWER_TOOL_BUTTON_PITCH;
+        if (x >= left && x < left + SHOWER_TOOL_BUTTON_W) return index;
+    }
+    return -1;
 }
 
 int showerSoapItemAt(int x, int y) {
@@ -2598,10 +3312,6 @@ void renderShowerScreen(Canvas565& canvas, const ShowerViewModel& model,
             : GameAssets::Kind::SHOWER_BRUSH;
         GameAssets::drawCentered(tool, model.toolX, model.toolY,
                                  model.toolDragging ? 2.0f : 1.8f);
-        uint8_t progress = model.mode == ShowerMode::SOAPING
-            ? model.soapProgress : model.brushProgress;
-        canvas.fillRect((96), (334), (176), (10), rgb(39, 45, 50));
-        canvas.fillRect((98), (336), (172 * progress / 8), (6), rgb(115, 226, 183));
     }
 
     if (model.mode == ShowerMode::SOAP_SELECT) {

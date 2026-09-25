@@ -33,6 +33,7 @@
 #include "game/GameState.h"
 #include "game/ExploreMapGenerator.h"
 #include "game/ExplorePool.h"
+#include "game/EvolutionSequence.h"
 #include "game/HomeActorController.h"
 #include "game/HomeSimulation.h"
 #include "game/MonsterMind.h"
@@ -58,6 +59,7 @@ public:
     bool sceneFadeActive() const { return expeditionFade.active(); }
     bool sceneFadeInward() const { return expeditionFade.inward(); }
     uint8_t sceneFadeAlpha() const { return expeditionFade.alpha(); }
+    bool displayLockAllowed() const;
     void forceFullRender() { requestFullRender(); }
     void forceRenderRows(uint16_t begin, uint16_t end) {
         begin = std::min<uint16_t>(begin, AmoledUi::HEIGHT);
@@ -73,10 +75,20 @@ public:
     bool petIsSleeping() const;
 #if STICKMON_ENABLE_DEBUG_FEATURES
     void renderDebugTouchOverlay(Canvas565& canvas) const;
+    bool debugStartExplore(uint8_t area);
+    bool debugTriggerContact(uint8_t kind);
+    bool debugPromptContact(uint8_t kind);
+    bool debugAcceptContact();
+    bool debugStartPairTalk();
+    bool debugReturnContactExplore();
     bool exploreRouteMovingForDiagnostics() const {
         return sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_ROUTE &&
                exploreRouteMoving && !exploreRoutePaused;
     }
+    bool encounterFirstFramePendingForDiagnostics() const {
+        return encounterFirstFramePending;
+    }
+    void markEncounterFirstFramePresented(uint32_t drawUs, uint32_t lcdUs);
 #endif
 
 #if STICKMON_HAS_CLAW
@@ -103,6 +115,13 @@ private:
     void startVisitSearch();
     void releaseVisitRadioSession();
     mutable RenderCaches renderCaches_;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    uint32_t encounterStartedMs = 0;
+    uint32_t encounterPreparedMs = 0;
+    uint32_t encounterSpritePrepMs = 0;
+    uint32_t encounterSfxPrepMs = 0;
+    bool encounterFirstFramePending = false;
+#endif
     enum class PetMotion : uint8_t {
         IDLE,
         TURNING,
@@ -138,6 +157,7 @@ private:
 
     enum class VisitorMotion : uint8_t {
         NONE,
+        HOST_APPROACH,
         ENTERING,
         ACTIVE,
         EXITING,
@@ -174,7 +194,11 @@ private:
     void handleDebugTap(int x, int y, uint32_t nowMs);
     void handleDebugPopupTap(int x, int y, uint32_t nowMs);
     void executeDebugAction(uint32_t nowMs);
-    void acceptDebugContact(uint32_t nowMs);
+    bool beginDebugContactEvent(uint8_t kind, uint32_t nowMs);
+    void acceptDebugContact(uint32_t nowMs, bool autoResolve = false);
+    void showDebugContactEventPrompt(uint32_t nowMs);
+    void showDebugContactStripMessage(const char* text, uint32_t nowMs,
+                                      uint32_t durationMs);
     void completeDebugContact(uint32_t nowMs);
     void finalizeDebugContact(uint32_t nowMs);
     void startDebugPairChase(uint32_t nowMs);
@@ -182,6 +206,7 @@ private:
     void stopDebugPairChase(uint32_t nowMs, bool reward);
     void openDebugSwitchPopup();
     void openDebugTimePopup();
+    void persistDebugMotionFlags();
     void handleDebugTouchTest(const TouchEvent& event);
 #endif
     void clampItemScroll();
@@ -195,6 +220,17 @@ private:
     void openRoomScene();
     void openRoomFoodScene();
     void openComputerScene();
+    const Game::MonsterRuntime* contactMonster(uint8_t slot) const;
+    bool contactIsInTeam(uint8_t slot) const;
+    bool contactIsVisiting(uint8_t slot) const;
+    bool contactInviteLocked(uint8_t slot) const;
+    bool contactCanDelete(uint8_t slot) const;
+    uint8_t contactActionCount(uint8_t slot) const;
+    void openContactAction(uint8_t slot);
+    void openContactStatus(uint8_t slot);
+    void handleContactActionTap(int x, int y, uint32_t nowMs);
+    void handleContactConfirmTap(int x, int y, uint32_t nowMs);
+    void closeContactOverlay();
     void openSettingsScene();
     void closeUtilityScene();
     void clampComputerScroll();
@@ -214,6 +250,15 @@ private:
     void startShowerSoap(uint8_t soapIndex, uint32_t nowMs);
     void startShowerTool(ShowerMode mode, uint32_t nowMs);
     void updateShowerToolDrag(int x, int y, uint32_t nowMs);
+    void spawnShowerFoam(uint32_t nowMs);
+    void rubShowerFoamAt(int x, int y, uint32_t nowMs);
+    bool tryMergeShowerFoam(ShowerFoamState& source, uint32_t nowMs);
+    ShowerFoamState* findShowerFoamPartner(const ShowerFoamState& source);
+    void rinseShowerFoamOneStage();
+    bool anyShowerFoam() const;
+    uint8_t showerFoamLevelTotal() const;
+    void checkShowerAtmosphereThreshold(uint32_t nowMs);
+    void updateShowerFoamMotion(float dtSeconds);
     void grantShowerStage(Game::BathService::Stage stage, uint32_t nowMs);
     void startShowerRinse(uint32_t nowMs);
     void requestShowerExit();
@@ -223,12 +268,16 @@ private:
                               uint32_t nowMs);
     void openEvolutionProgression(AppSceneFlow::Scene returnScene,
                                   uint8_t teamSlot, uint16_t fromSpeciesId,
-                                  uint16_t toSpeciesId, uint32_t nowMs);
+                                  uint16_t toSpeciesId, uint32_t nowMs,
+                                  Game::ItemId consumedItem = Game::ItemId::COUNT);
+    void beginEvolutionSequence(uint16_t fromSpeciesId,
+                                uint16_t toSpeciesId, uint32_t nowMs,
+                                Game::ItemId consumedItem = Game::ItemId::COUNT);
     void advanceProgression(uint32_t nowMs);
     bool findNextProgressionMove(uint8_t teamSlot, uint8_t oldLevel,
                                  uint16_t& cursor, Game::MoveId& moveId) const;
     void completeProgression(uint32_t nowMs);
-    void openTeamScene();
+    void openTeamScene(bool preserveSubSceneReturn = false);
     void openTeamMoves(uint8_t teamSlot, uint32_t nowMs);
     void beginTeamStatusSlide(uint8_t targetPage, uint32_t nowMs);
     void refreshTeamMoveRecallable();
@@ -242,7 +291,9 @@ private:
     bool generateExploreRouteMap(uint32_t nowMs);
     bool beginExploreRouteStep(uint32_t nowMs);
     void beginExploreRouteExit(uint32_t nowMs);
+    bool advanceExploreRouteWalkFrames(uint32_t nowMs);
     void updateExploreRoute(uint32_t nowMs);
+    bool recoverExploreTeamForCompletedSteps();
     void requestExploreRouteDynamicRender();
     void requestExploreRouteBossRender();
     void requestExploreRouteMapAnimationRender();
@@ -259,6 +310,9 @@ private:
         const BattleTurnController::Action& action, uint32_t nowMs);
     void performBattleSwitch(uint8_t teamSlot, bool consumesTurn,
                              uint32_t nowMs);
+    void updateBattleSwitch(uint32_t nowMs);
+    void enqueueBattleEffectLogs(const BattleSystem::EffectResolution& effects,
+                                 bool attackerWild, uint32_t nowMs);
     void performBattleWildTurn(uint32_t nowMs);
     void performBattleWildAction(
         const BattleTurnController::Action& action, uint32_t nowMs);
@@ -268,8 +322,7 @@ private:
     bool resolveBattleFaint(uint32_t nowMs);
     void startBattleHpAnimation(bool wildSide, uint16_t fromHp,
                                 uint16_t toHp, uint16_t maxHp,
-                                uint32_t startedMs,
-                                bool wildTurnAfter = false);
+                                uint32_t startedMs);
     uint8_t battleHpPercentForRender(bool wildSide, uint16_t currentHp,
                                      uint16_t maxHp, uint32_t nowMs) const;
     void startBattleExperienceAnimation(uint32_t nowMs);
@@ -277,13 +330,18 @@ private:
     void performBattleBag(uint32_t nowMs);
     void performBattleBagItem(Game::ItemId item, uint32_t nowMs);
     void performBattleFlee(uint32_t nowMs);
-    void pushBattleLog(uint32_t nowMs, bool invalidate = true);
+    void pushBattleLog(uint32_t nowMs, bool invalidate = true,
+                       uint16_t durationMs = 0);
     bool serviceBattleLog(uint32_t nowMs);
     bool battleLogPlaybackBusy() const;
     void clearBattleLog();
     void finishBattleVictory(uint32_t nowMs);
     void resolveBattleFriendship(uint8_t choice, uint32_t nowMs);
     void finishBattleAfterFriendship(uint32_t nowMs);
+    void resetBattleProgressionQueue();
+    void queueBattleProgression(uint8_t teamSlot, uint8_t oldLevel,
+                                bool leveledUp);
+    bool startNextBattleProgression(uint32_t nowMs);
     void finishBattleDefeat(uint32_t nowMs);
     void closeBattle(uint32_t nowMs);
     void updateExploreRouteCamera();
@@ -299,10 +357,13 @@ private:
     void resumeExploreRoute(uint32_t nowMs);
     void settleExploreReturn();
     void completeExploreReturn();
+    void placeFaintedHomeActors(uint32_t nowMs);
     void leaveExploreRoute();
     void updateClockAndCare(uint32_t nowMs);
     void updateMoodHearts(uint32_t nowMs);
     void updatePet(uint32_t nowMs);
+    void beginVisitDeparture(uint32_t nowMs);
+    bool updateVisitDeparture(uint32_t nowMs);
     void scheduleAttention(uint32_t nowMs, bool initial = false);
     void scheduleSpecialAction(uint32_t nowMs);
     bool ambientActionAllowed() const;
@@ -360,12 +421,18 @@ private:
     void stopCompanion(uint32_t nowMs, uint32_t idleDelayMs = 0);
     bool pairInteractionAllowed() const;
     void schedulePairInteraction(uint32_t nowMs, bool immediate = false);
-    bool startPairInteraction(uint32_t nowMs, bool forceChase = false);
+    bool startPairInteraction(uint32_t nowMs, bool forceChase = false,
+                              bool forceTalk = false);
     bool updatePairInteraction(uint32_t nowMs, float elapsedSeconds);
     void finishPairInteraction(uint32_t nowMs, bool reward);
     void cancelPairInteraction(uint32_t nowMs);
     void updateVisitorMotion(uint32_t nowMs, float elapsedSeconds);
     void beginVisitorEntry(uint32_t nowMs);
+    bool chooseVisitorDoorPose(const Home::Actor& actor,
+                               float& x, float& y) const;
+    bool beginVisitorHostClear(uint32_t nowMs);
+    void startVisitorDoorEntry(uint32_t nowMs);
+    void finishVisitorEntry(uint32_t nowMs, bool timedOut);
     void beginVisitorExit(uint32_t nowMs, bool debugVisitor);
     void finishVisitorExit(uint32_t nowMs);
     void requestVisitEnd(uint32_t nowMs);
@@ -377,6 +444,7 @@ private:
     void schedulePetDecision(uint32_t nowMs);
     void updatePetFootprint();
     bool petFootprintInsideWalkArea(float x, float y) const;
+    bool companionFootprintInsideWalkArea(float x, float y) const;
     bool petPathInsideWalkArea(float fromX, float fromY,
                                float toX, float toY) const;
     bool chooseWanderTarget(float& x, float& y,
@@ -423,6 +491,7 @@ private:
     bool debugBattleRequested = false;
     bool debugTiltControl = false;
     bool debugWalkBoundaryVisible = false;
+    bool debugTalkPointsVisible = false;
     bool debugBattleDrawBoundsVisible = false;
     bool debugTouchDisplayEnabled = false;
     bool debugTouchPointValid = false;
@@ -432,10 +501,19 @@ private:
     uint8_t debugLightSource = 0;
     char debugToastBuffer[48] = {};
     bool debugContactPending = false;
+    bool debugContactEventPending = false;
+    bool debugContactEventWaitingForEntry = false;
+    uint8_t debugContactPromptFade = 0;
+    char debugPromptBuffer[64] = {};
+    uint32_t debugContactMessageUntilMs = 0;
+    bool debugContactChoiceVisible = false;
+    int8_t debugContactSelectedChoice = -1;
+    uint32_t debugContactChoiceConfirmUntilMs = 0;
     bool debugContactActive = false;
     uint8_t debugContactKind = 0;
     uint8_t debugContactStorageSlot = 0xFF;
     uint32_t debugContactStartedMs = 0;
+    uint32_t visitorDiagNextLogMs = 0;
     bool debugPairChaseActive = false;
     float debugPairX = 92.0f;
     float debugPairY = 151.0f;
@@ -471,6 +549,8 @@ private:
     int pressedShopDetailAction = -1;
     int pressedTeamSlot = -1;
     bool teamStatusOpen = false;
+    bool teamStatusFromContact = false;
+    uint8_t teamStatusContactSlot = 0xFF;
     uint8_t teamStatusSlot = 0;
     uint8_t teamStatusPage = 0;
     // Horizontal page swipe: drag offset in pixels, then a snap animation
@@ -507,6 +587,7 @@ private:
     int shopDetailItemIndex = -1;
     bool itemConfirmOpen = false;
     bool battleBagMode = false;
+    uint8_t battleFoodBond = 0;
     MusicContext musicContext = MusicContext::HOME;
     Game::ItemId pendingItem = Game::ItemId::COUNT;
     PendingItemAction pendingItemAction = PendingItemAction::NONE;
@@ -520,6 +601,12 @@ private:
     float computerScroll = 0.0f;
     float computerVelocity = 0.0f;
     uint8_t computerPressedItem = 0xFF;
+    bool contactActionOpen = false;
+    uint8_t contactActionSlot = 0xFF;
+    int contactActionPressedItem = -1;
+    bool contactConfirmOpen = false;
+    bool contactConfirmYes = false;
+    bool contactConfirmDelete = false;
     // CLAW_SETUP log view state. Entries themselves are copied into a
     // file-scope buffer at render time (this object lives on the app_main
     // stack, so a 64-entry array must not be a member).
@@ -538,24 +625,38 @@ private:
     uint8_t progressionTeamSlot = 0;
     uint8_t progressionOldLevel = 1;
     uint8_t progressionLevel = 1;
+    uint32_t progressionLevelUpStartedMs = 0;
+    bool progressionLevelUpTouchAllowed = false;
     uint16_t progressionFromSpeciesId = 0;
     uint16_t progressionToSpeciesId = 0;
+    Game::EvolutionSequence progressionEvolution;
+    Game::ItemId progressionEvolutionItem = Game::ItemId::COUNT;
+    uint32_t nextProgressionAnimationFrameMs = 0;
+    uint32_t progressionEvolutionTouchStartedMs = 0;
+    uint32_t progressionEvolutionTouchResumeUntilMs = 0;
+    bool progressionEvolutionTouchHeld = false;
+    bool progressionEvolutionTouchConsumed = false;
+    AppSceneFlow::Scene itemTargetReturnScene = AppSceneFlow::Scene::HOME;
     Game::MoveId progressionMoveId = 0;
     Game::MoveId progressionOldMove2 = 0;
     Game::MoveId progressionOldMove3 = 0;
     uint16_t progressionMoveCursor = 0;
     uint8_t progressionPressedItem = 0xFF;
+    uint8_t progressionSelectedItem = 0xFF;
+    int16_t progressionScroll = 0;
+    float progressionDetailProgress = 0.0f;
+    bool progressionDetailAnimating = false;
+    bool progressionDetailTargetVisible = false;
+    uint32_t progressionDetailAnimStartMs = 0;
 
     ShowerMode showerMode = ShowerMode::MENU;
     uint8_t showerSoapIndex = 0;
-    uint8_t showerSoapProgress = 0;
-    uint8_t showerBrushProgress = 0;
     uint8_t showerRinseProgress = 0;
     uint8_t showerCompletionHearts = 0;
-    int16_t showerToolX = 48;
-    int16_t showerToolY = 392;
-    int16_t showerLastStrokeX = 48;
-    int16_t showerLastStrokeY = 392;
+    int16_t showerToolX = 184;
+    int16_t showerToolY = 212;
+    int16_t showerLastStrokeX = 184;
+    int16_t showerLastStrokeY = 212;
     float showerStrokeCarry = 0.0f;
     bool showerToolDragging = false;
     bool showerSoapConsumed = false;
@@ -565,9 +666,18 @@ private:
     bool showerExitConfirmYes = false;
     uint32_t showerModeStartedMs = 0;
     uint32_t showerLastFrameMs = 0;
+    uint32_t showerLastRubMs = 0;
+    uint32_t showerLastFoamGrowthMs = 0;
+    uint32_t showerLastRinseFoamMs = 0;
+    uint8_t showerFoamSpawnCursor = 0;
+    uint8_t showerFoamRestSlot = 0;
+    float showerAtmosphereAlpha = 0.0f;
+    bool showerAtmosphereTarget = false;
+    ShowerFoamState showerFoam[8] = {};
     char showerToast[64] = {};
 
     ExploreMapGenerator::Map exploreRouteMap;
+    ExplorePool::Pool exploreRoutePool{};
     uint8_t exploreRouteMapBlock = 0;
     uint8_t exploreRouteMapBlockCount = 1;
     uint8_t exploreRouteMapEncounterCount = 0;
@@ -576,6 +686,9 @@ private:
     uint32_t exploreRouteExpeditionSeed = 0;
     ExploreMapGenerator::Edge exploreRoutePendingEntryEdge =
         ExploreMapGenerator::Edge::TOP;
+    bool exploreRoutePendingFrostLadder = false;
+    bool exploreRoutePendingFrostFall = false;
+    uint32_t exploreRouteFrostFallAtMs = 0;
     uint8_t exploreRoutePath = 0;
     uint8_t exploreRouteIndex = 0;
     uint8_t exploreRouteDirection = 0;
@@ -614,9 +727,8 @@ private:
     bool exploreRoutePlayerWalkActive = false;
     bool exploreRoutePaused = false;
     bool exploreRouteComplete = false;
+    bool exploreRecoveryPendingSave = false;
     bool exploreRouteExitConfirm = false;
-    ExploreRouteViewModel::Prompt exploreRoutePrompt =
-        ExploreRouteViewModel::Prompt::NONE;
     bool exploreRouteIceSliding = false;
     int8_t exploreRouteIceDx = 0;
     int8_t exploreRouteIceDy = 0;
@@ -643,6 +755,18 @@ private:
     BattleTurnController::TurnPlan battleTurnPlan;
     uint8_t battleTurnActionIndex = 0;
     bool battleTurnDamaged[2] = {};
+    enum class BattleContinuation : uint8_t {
+        NONE,
+        ADVANCE_TURN,
+        WILD_TURN,
+    };
+    BattleContinuation battleContinuation = BattleContinuation::NONE;
+    enum class BattleSwitchStage : uint8_t { NONE, RETREATING, ENTERING };
+    BattleSwitchStage battleSwitchStage = BattleSwitchStage::NONE;
+    uint8_t pendingBattleSwitchSlot = 0xFF;
+    bool battleSwitchConsumesTurn = false;
+    uint32_t battleSwitchStartedMs = 0;
+    uint32_t nextBattleSwitchFrameMs = 0;
     BattleViewModel::Phase battlePhase = BattleViewModel::Phase::ACTION;
     uint8_t battlePressedItem = 0xFF;
     Game::ItemId battleBagItems[4] = {};
@@ -655,8 +779,12 @@ private:
     BattleViewModel::FriendshipPrompt battleFriendshipPrompt =
         BattleViewModel::FriendshipPrompt::OFFER;
     uint8_t battleFriendshipContactSlot = 0xFF;
-    uint8_t battleVictoryOldLevel = 1;
-    bool battleVictoryLeveledUp = false;
+    uint8_t battleProgressionSlots[Game::TEAM_CAP] = {};
+    uint8_t battleProgressionOldLevels[Game::TEAM_CAP] = {};
+    uint8_t battleProgressionCount = 0;
+    uint8_t battleProgressionIndex = 0;
+    bool battleProgressionSequenceActive = false;
+    bool battleVictoryFinalizePending = false;
     bool battleAnimationActive = false;
     bool battleAnimationAttackerWild = false;
     bool battleAnimationHit = false;
@@ -664,9 +792,11 @@ private:
     uint32_t battleAnimationStartedMs = 0;
     uint32_t battleAnimationDurationMs = 240;
     uint8_t battleAnimationFrame = 0;
+    bool battleAttackLogHeld = false;
+    bool battleImpactAudioPlayed = false;
+    uint8_t battleImpactSfx = 0xFF;
     bool battleHpAnimationActive = false;
     bool battleHpAnimationWild = false;
-    bool battleWildTurnAfterHpAnimation = false;
     uint16_t battleHpAnimationFrom = 0;
     uint16_t battleHpAnimationTo = 0;
     uint16_t battleHpAnimationMax = 1;
@@ -711,6 +841,19 @@ private:
     uint32_t lastInteractionMs = 0;
     bool encounterHistoryDirty = false;
     Communication::VisitSessionService visitSession;
+    enum class VisitDeparture : uint8_t {
+        NONE,
+        WALK_TO_DOOR,
+        CROSS_DOOR,
+        AWAY,
+    } visitDeparture = VisitDeparture::NONE;
+    bool visitRecallConfirm = false;
+    uint32_t visitorRouteBlockedSinceMs = 0;
+    uint32_t visitDepartureStartedMs = 0;
+    float visitDoorInsideX = 0.0f;
+    float visitDoorInsideY = 0.0f;
+    float visitDoorOutsideX = 0.0f;
+    float visitDoorOutsideY = 0.0f;
     bool visitRadioExclusive = false;
 
     PetMotion petMotion = PetMotion::IDLE;
@@ -750,6 +893,7 @@ private:
     PokemonSprites::WalkDirection windowGazeDirection =
         PokemonSprites::WalkDirection::UP;
     bool autonomousExpedition = false;
+    bool exploreSessionActive = false;
     ExpeditionDeparturePhase expeditionDeparturePhase =
         ExpeditionDeparturePhase::NONE;
     SceneFade expeditionFade;
@@ -784,6 +928,12 @@ private:
     PairPhase pairPhase = PairPhase::NONE;
     Home::PairActivity pairActivity = Home::PairActivity::NONE;
     bool pairLeaderMain = true;
+    bool pairArrivalTalk = false;
+    bool pairTalkParallelApproach = false;
+    bool pairTalkMainArrived = false;
+    bool pairTalkCompanionArrived = false;
+    float pairTalkMainApproachSpeed = 0.0f;
+    float pairTalkCompanionApproachSpeed = 0.0f;
     uint32_t nextPairInteractionMs = 0;
     uint32_t pairPhaseStartedMs = 0;
     uint32_t pairPhaseUntilMs = 0;
@@ -795,7 +945,22 @@ private:
     VisitorMotion visitorMotion = VisitorMotion::NONE;
     bool visitorExitIsDebug = false;
     bool visitorCrossingDoor = false;
+    uint8_t visitorHostDoorPhase = 0;
     uint32_t visitorMotionUntilMs = 0;
+    uint32_t visitorHostPauseUntilMs = 0;
+    uint32_t visitorArrivalNextLogMs = 0;
+    float visitorDoorInsideX = 0.0f;
+    float visitorDoorInsideY = 0.0f;
+    float visitorDoorOutsideX = 0.0f;
+    float visitorDoorOutsideY = 0.0f;
+    float visitorGuestDoorInsideX = 0.0f;
+    float visitorGuestDoorInsideY = 0.0f;
+    float visitorWelcomeX = 0.0f;
+    float visitorWelcomeY = 0.0f;
+    bool visitorWelcomeValid = false;
+    float visitorLandingX = 0.0f;
+    float visitorLandingY = 0.0f;
+    bool visitorLandingValid = false;
 
     uint32_t heartsUntil = 0;
     uint8_t moodHeartCount = 0;

@@ -3,13 +3,17 @@ import struct
 import unittest
 from pathlib import Path
 
+from PIL import Image
+
 import prepare_room_background as room_assets
 
 
 class RoomPackTests(unittest.TestCase):
-    def test_room_pack_v3_header_size(self):
-        self.assertEqual(room_assets.ROOM_PACK_VERSION, 3)
-        self.assertEqual(struct.calcsize(room_assets.ROOM_PACK_HEADER_FORMAT), 76)
+    def test_room_pack_header_sizes(self):
+        self.assertEqual(room_assets.ROOM_PACK_VERSION_V3, 3)
+        self.assertEqual(struct.calcsize(room_assets.ROOM_PACK_HEADER_FORMAT_V3), 76)
+        self.assertEqual(room_assets.ROOM_PACK_VERSION, 4)
+        self.assertEqual(struct.calcsize(room_assets.ROOM_PACK_HEADER_FORMAT), 80)
         self.assertEqual(struct.calcsize(room_assets.ROOM_BEHAVIOR_ANCHOR_FORMAT), 6)
 
     def test_doorway_anchors_follow_walk_area_direction(self):
@@ -41,6 +45,8 @@ class RoomPackTests(unittest.TestCase):
 
         self.assertEqual(values[0], room_assets.ROOM_PACK_MAGIC)
         self.assertEqual(values[1], room_assets.ROOM_PACK_VERSION)
+        self.assertEqual(values[2:4], (240, 161))
+        self.assertEqual(values[35:37], (480, 322))
         self.assertEqual(values[11], 4)
         self.assertEqual(values[12], 2)
         self.assertEqual(values[25:29], (41, 127, 79, 155))
@@ -69,6 +75,13 @@ class RoomPackTests(unittest.TestCase):
             132,
             117,
         ))
+
+    def test_generated_art_surface_is_native_resolution(self):
+        root = Path(__file__).resolve().parents[1] / "origin_asset/generated/room"
+        with Image.open(root / "standard_room_day_480.png") as day:
+            self.assertEqual(day.size, (480, 322))
+        with Image.open(root / "standard_room_night_480.png") as night:
+            self.assertEqual(night.size, (480, 322))
 
     def test_visitor_sleep_anchor_prefers_carpet_center(self):
         layout = {

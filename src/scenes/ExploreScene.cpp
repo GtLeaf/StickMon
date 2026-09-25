@@ -16,6 +16,7 @@
 #include "game/ExploreBoss.h"
 #include "game/ExploreBossPity.h"
 #include "game/ExploreEncounters.h"
+#include "game/ExploreEncounterRules.h"
 #include "game/ExploreIceSlide.h"
 #include "game/ExploreItemProgression.h"
 #include "game/ExplorePool.h"
@@ -71,11 +72,10 @@ constexpr bool pickupAvailable(uint8_t pickupId, uint16_t stepsToday) {
     return pickupId != PICKUP_RARE_CANDY || stepsToday >= 5000;
 }
 
-static constexpr uint8_t WILD_LEVEL_MIN = 1;
+static constexpr uint8_t WILD_LEVEL_MIN = ExploreEncounterRules::WILD_LEVEL_MIN;
 static constexpr uint8_t WILD_LEVEL_MAX = Game::LEVEL_MAX;
-static constexpr uint8_t WILD_LEVEL_VARIANCE = 2;
-static constexpr uint16_t DEPTH_MIDDLE_START_PERMILLE = 333;
-static constexpr uint16_t DEPTH_DEEP_START_PERMILLE = 667;
+static constexpr uint8_t WILD_LEVEL_VARIANCE =
+    ExploreEncounterRules::WILD_LEVEL_VARIANCE;
 static constexpr uint8_t ENCOUNTER_COOLDOWN_STEP_COUNT = 5;
 static constexpr uint8_t MAX_ENCOUNTERS_PER_MAP = 2;
 static constexpr uint16_t ICE_SLIDE_STEP_MS = 180;
@@ -494,7 +494,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         Ui::Explore::AREA_DESCS[0],
         ExploreAreaCatalog::battleBackground(0),
         ExploreAreaCatalog::recommendedLevel(0),
-        2,
+        ExploreAreaCatalog::depthSpread(0),
         3,
         4,
         500,
@@ -509,7 +509,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         Ui::Explore::AREA_DESCS[1],
         ExploreAreaCatalog::battleBackground(1),
         ExploreAreaCatalog::recommendedLevel(1),
-        3,
+        ExploreAreaCatalog::depthSpread(1),
         4,
         5,
         600,
@@ -524,7 +524,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         Ui::Explore::AREA_DESCS[2],
         ExploreAreaCatalog::battleBackground(2),
         ExploreAreaCatalog::recommendedLevel(2),
-        3,
+        ExploreAreaCatalog::depthSpread(2),
         4,
         6,
         700,
@@ -539,7 +539,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         Ui::Explore::AREA_DESCS[3],
         ExploreAreaCatalog::battleBackground(3),
         ExploreAreaCatalog::recommendedLevel(3),
-        4,
+        ExploreAreaCatalog::depthSpread(3),
         5,
         7,
         900,
@@ -554,7 +554,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         Ui::Explore::AREA_DESCS[4],
         ExploreAreaCatalog::battleBackground(4),
         ExploreAreaCatalog::recommendedLevel(4),
-        4,
+        ExploreAreaCatalog::depthSpread(4),
         6,
         8,
         1100,
@@ -569,7 +569,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         Ui::Explore::AREA_DESCS[5],
         ExploreAreaCatalog::battleBackground(5),
         ExploreAreaCatalog::recommendedLevel(5),
-        5,
+        ExploreAreaCatalog::depthSpread(5),
         7,
         9,
         1300,
@@ -586,20 +586,6 @@ static constexpr RouteMap ROUTE_MAPS[] = {
 static constexpr uint8_t ROUTE_MAP_COUNT = sizeof(ROUTE_MAPS) / sizeof(ROUTE_MAPS[0]);
 static_assert(ROUTE_MAP_COUNT == Game::EXPLORE_AREA_COUNT,
               "route tables and persistent pool counters must stay aligned");
-
-// 从区域遭遇表提取活跃池源视图。
-uint8_t buildPoolSource(const RouteMap& map, ExplorePool::SourceEntry* out,
-                        uint8_t cap) {
-    uint8_t count = MathUtil::min<uint8_t>(cap, map.encounterCount);
-    for (uint8_t i = 0; i < count; ++i) {
-        out[i] = ExplorePool::SourceEntry{
-            map.encounters[i].speciesId,
-            map.encounters[i].weight,
-            map.encounters[i].rarity,
-        };
-    }
-    return count;
-}
 
 const EncounterEntry* findEncounterEntry(const RouteMap& map, uint16_t speciesId) {
     for (uint8_t i = 0; i < map.encounterCount; ++i) {
@@ -685,14 +671,6 @@ constexpr bool routeTuningValid(const RouteMap (&maps)[N], size_t index = 0) {
             routeTuningValid(maps, index + 1));
 }
 
-constexpr int8_t depthLevelOffset(uint16_t progressPermille, uint8_t spread) {
-    return progressPermille >= DEPTH_DEEP_START_PERMILLE
-        ? static_cast<int8_t>(spread)
-        : (progressPermille >= DEPTH_MIDDLE_START_PERMILLE
-            ? 0
-            : -static_cast<int8_t>(spread));
-}
-
 static_assert(ROUTE_MAP_COUNT == Ui::Explore::AREA_COUNT,
               "explore area strings and route maps must stay aligned");
 static_assert(ROUTE_MAP_COUNT == Game::EXPLORE_AREA_COUNT,
@@ -745,8 +723,10 @@ static_assert(ROUTE_MAPS[ROUTE_MAP_COUNT - 1].averageLevel +
                   ROUTE_MAPS[ROUTE_MAP_COUNT - 1].depthSpread +
                   WILD_LEVEL_VARIANCE <= WILD_LEVEL_MAX,
               "deepest area level must stay within the wild level cap");
-static_assert(depthLevelOffset(332, 4) == -4 && depthLevelOffset(333, 4) == 0 &&
-                  depthLevelOffset(666, 4) == 0 && depthLevelOffset(667, 4) == 4,
+static_assert(ExploreEncounterRules::depthLevelOffset(332, 4) == -4 &&
+                  ExploreEncounterRules::depthLevelOffset(333, 4) == 0 &&
+                  ExploreEncounterRules::depthLevelOffset(666, 4) == 0 &&
+                  ExploreEncounterRules::depthLevelOffset(667, 4) == 4,
               "exploration depth thresholds must cover three progress bands");
 static_assert(static_cast<uint8_t>(ExploreScene::Area::GRASS_PATH) ==
                   ExploreMapGenerator::GRASS_PATH_AREA,
@@ -993,30 +973,7 @@ const ExplorePool::PoolEntry* rollPoolEntry(const ExplorePool::Pool& pool) {
     if (total == 0) return nullptr;
 
     uint32_t roll = static_cast<uint32_t>(GameRandom::random(static_cast<long>(total)));
-    for (uint8_t i = 0; i < pool.count; ++i) {
-        uint32_t weight = ExplorePool::rollWeightOf(pool.entries[i]);
-        if (roll < weight) return &pool.entries[i];
-        roll -= weight;
-    }
-    return nullptr;
-}
-
-uint8_t rollWildLevel(uint8_t minLevel, uint8_t maxLevel, uint8_t targetLevel) {
-    if (minLevel < WILD_LEVEL_MIN) minLevel = WILD_LEVEL_MIN;
-    if (maxLevel > WILD_LEVEL_MAX) maxLevel = WILD_LEVEL_MAX;
-    if (maxLevel < minLevel) maxLevel = minLevel;
-    if (targetLevel < minLevel) targetLevel = minLevel;
-    if (targetLevel > maxLevel) targetLevel = maxLevel;
-
-    uint8_t roll = static_cast<uint8_t>(GameRandom::random(0, 100));
-    int16_t level = targetLevel;
-    if (roll < 10) level -= 2;
-    else if (roll < 30) --level;
-    else if (roll >= 90) level += 2;
-    else if (roll >= 70) ++level;
-    if (level < minLevel) level = minLevel;
-    if (level > maxLevel) level = maxLevel;
-    return static_cast<uint8_t>(level);
+    return ExplorePool::entryForRoll(pool, roll);
 }
 }
 
@@ -1103,6 +1060,11 @@ const Species& ExploreScene::battlePlayerSpecies() const {
 SceneUpdateResult ExploreScene::update(uint32_t nowMs, float dtSeconds) {
     if (exploreSubViewOpen) {
         return exploreSubView.update(nowMs, dtSeconds);
+    }
+    if (phase == Phase::WALKING && pendingFrostFall &&
+        static_cast<int32_t>(nowMs - frostFallAtMs) >= 0) {
+        advanceMapBlock(exitNextMaps[currentRoutePath], true);
+        return SceneUpdateResult::frame();
     }
     RenderDemand demand;
     bool areaCursorAnimating = false;
@@ -1736,7 +1698,7 @@ void ExploreScene::closeExploreMenu() {
 }
 
 void ExploreScene::walk() {
-    if (routeMoving) return;
+    if (routeMoving || pendingFrostFall) return;
     const ExploreMapGenerator::Path& path = generatedMap.paths[currentRoutePath];
     if (routeIndex + 1 >= path.pointCount) {
         if (currentMapBlock + 1 < mapBlockCount) {
@@ -1898,6 +1860,17 @@ void ExploreScene::finishCompletedWalkStep() {
 
     const ExploreMapGenerator::Path& path = generatedMap.paths[currentRoutePath];
     if (exploreMenuOpen) return;
+    if (currentMapBlock + 1 < mapBlockCount &&
+        generatedMap.areaIndex == ExploreMapGenerator::FROST_CRYSTAL_CAVE_AREA &&
+        path.fallsToNextLevel && routeIndex + 1 == path.pointCount &&
+        ExploreIceSlide::isCrackedIce(generatedMap, path, routeIndex)) {
+        ExploreIceSlide::breakIce(generatedMap, path, routeIndex);
+        iceSliding = false;
+        autoWalkActive = false;
+        pendingFrostFall = true;
+        frostFallAtMs = Hal::ins().millis() + 240;
+        return;
+    }
     if (iceSliding) {
         if (ExploreIceSlide::continues(
                 generatedMap, path, routeIndex,
@@ -2089,18 +2062,6 @@ void ExploreScene::resolvePickup(uint8_t pickupId) {
     phase = Phase::PICKUP;
 }
 
-int8_t ExploreScene::currentDepthLevelOffset(uint8_t spread) const {
-    if (mapBlockCount == 0 || currentMapBlock >= mapBlockCount) return 0;
-    const ExploreMapGenerator::Path& path = generatedMap.paths[currentRoutePath];
-    uint16_t routeLength = path.pointCount > 1 ? path.pointCount - 1 : 1;
-    uint16_t localProgress = MathUtil::min<uint16_t>(
-        1000, static_cast<uint32_t>(routeIndex) * 1000U / routeLength);
-    uint16_t expeditionProgress = static_cast<uint16_t>(
-        (static_cast<uint32_t>(currentMapBlock) * 1000U + localProgress) /
-        mapBlockCount);
-    return depthLevelOffset(expeditionProgress, spread);
-}
-
 void ExploreScene::beginEncounter(const Species& species, uint8_t level, bool boss) {
     GameEngine::ins().recordEncounteredSpecies(species.id);
     wild = &species;
@@ -2182,8 +2143,9 @@ void ExploreScene::beginDebugEncounter() {
     const Species& opponent = count > 0
         ? table[static_cast<uint8_t>(GameRandom::random(0, count))]
         : starterSpecies();
-    uint8_t level = rollWildLevel(
-        WILD_LEVEL_MIN, WILD_LEVEL_MAX, GameEngine::ins().activeMonster().level);
+    uint8_t level = ExploreEncounterRules::levelForRoll(
+        WILD_LEVEL_MIN, WILD_LEVEL_MAX, GameEngine::ins().activeMonster().level,
+        static_cast<uint8_t>(GameRandom::random(0, 100)));
     Platform::logf("[DebugBattle] opponent=%u level=%u\n", opponent.id, level);
     beginEncounter(opponent, level);
 }
@@ -2201,12 +2163,14 @@ void ExploreScene::rollEncounter() {
     }
     const Species* opponent = encounter ? findSpecies(encounter->speciesId) : nullptr;
     if (!opponent) opponent = &starterSpecies();
-    int16_t target = static_cast<int16_t>(map.averageLevel) +
-                     currentDepthLevelOffset(map.depthSpread);
-    uint8_t targetLevel = static_cast<uint8_t>(
-        MathUtil::clamp(target, WILD_LEVEL_MIN, WILD_LEVEL_MAX));
+    const ExploreMapGenerator::Path& path = generatedMap.paths[currentRoutePath];
+    uint8_t targetLevel = ExploreEncounterRules::targetLevel(
+        map.averageLevel, map.depthSpread, currentMapBlock, mapBlockCount,
+        routeIndex, path.pointCount);
     uint8_t wildLevel = encounter
-        ? rollWildLevel(encounter->minLevel, encounter->maxLevel, targetLevel)
+        ? ExploreEncounterRules::levelForRoll(
+            encounter->minLevel, encounter->maxLevel, targetLevel,
+            static_cast<uint8_t>(GameRandom::random(0, 100)))
         : targetLevel;
     if (!encounter) {
         Platform::logf("[Explore] empty encounter table area=%u\n",
@@ -3629,6 +3593,9 @@ void ExploreScene::resetWalk() {
     generateMapBlocks();
     snapshotActivePool();
     currentMapBlock = 0;
+    pendingFrostLadder = false;
+    pendingFrostFall = false;
+    frostFallAtMs = 0;
     steps = 0;
     mapEncounterCount = 0;
     encounterCooldownSteps = 0;
@@ -3719,7 +3686,8 @@ bool ExploreScene::resetRouteSegment() {
         uint32_t candidateSeed = mapSeed ^ MAP_GENERATION_RETRY_SALTS[attempt];
         if (candidateSeed == 0) candidateSeed = MAP_GENERATION_SAFE_SEED;
         if (!ExploreMapGenerator::generate(
-                candidateSeed, pendingEntryEdge, mapIndex, generatedMap)) {
+                candidateSeed, pendingEntryEdge, mapIndex, generatedMap,
+                {currentMapBlock, mapBlockCount, pendingFrostLadder})) {
             continue;
         }
         generated = true;
@@ -3727,7 +3695,8 @@ bool ExploreScene::resetRouteSegment() {
     }
     if (!generated) {
         generated = ExploreMapGenerator::generate(
-            MAP_GENERATION_SAFE_SEED, pendingEntryEdge, mapIndex, generatedMap);
+            MAP_GENERATION_SAFE_SEED, pendingEntryEdge, mapIndex, generatedMap,
+            {currentMapBlock, mapBlockCount, pendingFrostLadder});
     }
     if (!generated) {
         Platform::logf("[ExploreMap] generation failed block=%u area=%u entry=%u\n",
@@ -3762,6 +3731,14 @@ bool ExploreScene::resetRouteSegment() {
     RouteWorldPoint start = routePathPointWorld(path, 0);
     routeWorldX = start.x;
     routeWorldY = start.y;
+    if (pendingFrostFall) {
+        routeIndex = ExploreIceSlide::landingIndex(
+            generatedMap, path, generatedMap.seed ^ expeditionSeed);
+        RouteWorldPoint landing = routePathPointWorld(path, routeIndex);
+        routeWorldX = landing.x;
+        routeWorldY = landing.y;
+        pendingFrostFall = false;
+    }
     routeFromX = routeTargetX = routeWorldX;
     routeFromY = routeTargetY = routeWorldY;
     initializeRouteFollowerPosition(false);
@@ -4003,7 +3980,7 @@ bool ExploreScene::collectRoutePickup() {
     return true;
 }
 
-void ExploreScene::advanceMapBlock(uint8_t nextMap) {
+void ExploreScene::advanceMapBlock(uint8_t nextMap, bool fell) {
     if (currentMapBlock + 1 >= mapBlockCount) {
         requestExploreExit();
         return;
@@ -4014,6 +3991,8 @@ void ExploreScene::advanceMapBlock(uint8_t nextMap) {
     }
     pendingEntryEdge = ExploreMapGenerator::opposite(
         generatedMap.paths[currentRoutePath].exit.edge);
+    pendingFrostLadder = !fell && currentRoutePath == 1;
+    pendingFrostFall = fell;
     ++currentMapBlock;
     if (!resetRouteSegment()) {
         requestExploreExit(false, false);
@@ -4097,17 +4076,10 @@ void ExploreScene::renderTutorial() {
 ExplorePool::Pool ExploreScene::buildAreaPool(uint8_t areaIndex) {
     if (areaIndex >= ROUTE_MAP_COUNT) return ExplorePool::Pool{};
 
-    const RouteMap& map = routeMap(areaIndex);
-    ExplorePool::SourceEntry source[ExplorePool::MAX_SOURCE_ENTRIES];
-    uint8_t sourceCount = buildPoolSource(
-        map, source, ExplorePool::MAX_SOURCE_ENTRIES);
     const auto& engine = GameEngine::ins();
-    uint32_t slotIndex = ExplorePool::slotIndexFor(engine.gameMinutesTotal());
-    uint8_t rerollCount =
-        engine.gameState().explorePoolRerollCounts[areaIndex];
-    return ExplorePool::buildPool(
-        source, sourceCount,
-        ExplorePool::mixSeed(slotIndex, areaIndex, rerollCount));
+    return ExploreEncounters::poolForArea(
+        areaIndex, engine.gameMinutesTotal(),
+        engine.gameState().explorePoolRerollCounts[areaIndex]);
 }
 
 uint8_t ExploreScene::collectAreaPoolSpecies(uint16_t* speciesIds,

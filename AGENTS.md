@@ -130,14 +130,15 @@ Coze Agent 远程读取/操作游戏状态），只接入 AMOLED V1/V2。
 
 ## 存档兼容
 
-- 当前 `Game::SAVE_VERSION = 3`，以源码为准；
+- 当前 `Game::SAVE_VERSION = 4`，以源码为准；
   `doc/存档兼容与迁移规则.md` 可能落后，修改前必须同时读
   `GameState.h`、`SaveCodec.*`、`SaveManager.*`。
 - 新写入使用 `SaveCodec` 显式小端字段编码，不允许直接把 C++ struct 布局当作
   新格式持久化。
 - 快照带 schema、sequence 和 CRC；NVS 使用 `state_a`/`state_b` 双槽，读取
   sequence 最大且校验通过的记录，同时保留 `state` 兼容镜像。
-- 当前支持 v1/v2/v3 读取和迁移。迁移必须先成功写入新格式，才能视为完成；
+- 当前支持 v1/v2/v3/v4 读取和迁移（SaveCodec schema 1=v3 载荷、schema 2=v4
+  载荷，按 schema 兼容解码）。迁移必须先成功写入新格式，才能视为完成；
   写入失败时保留旧 blob 以便下次重试。
 - 遇到高于当前固件版本的存档必须返回 `NEWER_VERSION` 并写保护，绝不能把
   默认状态覆盖回去。

@@ -3,6 +3,7 @@
 #include "core/DeflateDecoder.h"
 #include "core/MathUtil.h"
 #include "core/ResourcePack.h"
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include "platform/api/FlashStorage.h"
@@ -603,6 +604,57 @@ int16_t frameGroundOffsetY(const SpriteFrame* frame) {
         return static_cast<int16_t>(height / 2 - bottomPadding);
     }
     return static_cast<int16_t>(MathUtil::clamp((int)(height * 0.42f), 16, 32));
+}
+
+uint8_t frameVisibleWidth(const SpriteFrame* frame) {
+    if (!frame) return 0;
+    const uint8_t width = FlashStorage::readByte(&frame->width);
+    const uint8_t height = FlashStorage::readByte(&frame->height);
+    const uint32_t offset = FlashStorage::readDword(&frame->offset);
+    const uint32_t length = FlashStorage::readDword(&frame->length);
+    const uint8_t format = FlashStorage::readByte(&frame->format);
+    const uint8_t source = FlashStorage::readByte(&frame->source);
+    if (width == 0 || height == 0 || length == 0 ||
+        source != SPRITE_SOURCE_FILE_BLOCK ||
+        (format != static_cast<uint8_t>(SpriteFormat::RGB565_RLE) &&
+         format != static_cast<uint8_t>(SpriteFormat::INDEXED4_RLE))) {
+        return width;
+    }
+
+    const uint16_t speciesId = FlashStorage::readWord(&frame->speciesId);
+    CachedSpecies* cached = cachedSpeciesFor(speciesId);
+    if (!cached || offset + length > cached->rleWords) return width;
+
+    const uint32_t total = static_cast<uint32_t>(width) * height;
+    uint32_t wordIndex = 0;
+    uint32_t pixelIndex = 0;
+    uint8_t left = width;
+    uint8_t right = 0;
+    bool visible = false;
+    while (wordIndex < length && pixelIndex < total) {
+        const uint16_t token = FlashStorage::readWord(
+            &cached->data[offset + wordIndex++]);
+        const uint16_t run = token & 0x7FFFU;
+        if (run == 0) continue;
+        const uint32_t runEnd = std::min<uint32_t>(
+            total, pixelIndex + run);
+        if ((token & 0x8000U) == 0) {
+            for (uint32_t pixel = pixelIndex; pixel < runEnd; ++pixel) {
+                const uint8_t column = static_cast<uint8_t>(pixel % width);
+                left = std::min(left, column);
+                right = std::max(right, column);
+            }
+            const uint32_t payloadWords =
+                format == static_cast<uint8_t>(SpriteFormat::INDEXED4_RLE)
+                    ? (static_cast<uint32_t>(run) + 3U) / 4U
+                    : static_cast<uint32_t>(run);
+            if (payloadWords > length - wordIndex) return width;
+            wordIndex += payloadWords;
+            visible = true;
+        }
+        pixelIndex = runEnd;
+    }
+    return visible ? static_cast<uint8_t>(right - left + 1U) : 0;
 }
 
 bool syncTeamCache(const uint16_t* speciesIds, uint8_t count,

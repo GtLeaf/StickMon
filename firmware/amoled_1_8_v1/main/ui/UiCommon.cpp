@@ -148,9 +148,13 @@ void drawToast(Canvas565& canvas, const char* value) {
     int width = textWidth(value) + 28;
     width = std::min(width, AmoledUi::WIDTH - 16);
     int x = (AmoledUi::WIDTH - width) / 2;
-    canvas.fillRoundRect(x, 298, width, 36, 8, rgb(20, 31, 38));
-    canvas.drawRoundRect(x, 298, width, 36, 8, rgb(92, 139, 137));
-    text(canvas, x + 14, 310, value, rgb(234, 240, 235));
+    canvas.fillRoundRect(x, TOAST_TOP, width, TOAST_HEIGHT, 8,
+                         rgb(20, 31, 38));
+    canvas.drawRoundRect(x, TOAST_TOP, width, TOAST_HEIGHT, 8,
+                         rgb(92, 139, 137));
+    text(canvas, x + 14,
+         TOAST_TOP + (TOAST_HEIGHT - FontResource::LARGE_GLYPH_H) / 2,
+         value, rgb(234, 240, 235));
 }
 
 }  // namespace AmoledV1::UiCommon

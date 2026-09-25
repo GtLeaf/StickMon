@@ -24,6 +24,8 @@ constexpr uint32_t MUSIC_FADE_MS = 1000;
 constexpr uint8_t MUSIC_PREFILL_BLOCKS = 2;
 constexpr uint8_t MUSIC_QUEUE_TARGET_BLOCKS = 2;
 constexpr uint8_t MUSIC_REFILL_BLOCKS = 1;
+constexpr uint32_t HOME_MUSIC_SILENCE_MIN_MS = 2UL * 60UL * 1000UL;
+constexpr uint32_t HOME_MUSIC_SILENCE_MAX_MS = 4UL * 60UL * 1000UL;
 
 struct __attribute__((packed)) PackedAudioHeader {
     uint32_t magic;
@@ -157,9 +159,11 @@ AudioManager& AudioManager::ins() {
 
 void AudioManager::setMusic(MusicTrack track) {
     if (requestedMusic_ == track &&
-        (track == MusicTrack::NONE || playingMusic_ == track)) {
+        (track == MusicTrack::NONE || playingMusic_ == track ||
+         (track == MusicTrack::HOME && homeMusicResumeAtMs_ != 0))) {
         return;
     }
+    if (requestedMusic_ != track) homeMusicResumeAtMs_ = 0;
     requestedMusic_ = track;
     if (playingMusic_ != track) releaseMusic();
     if (track != MusicTrack::NONE && Platform::audio().volume() > 0 &&
@@ -171,6 +175,7 @@ void AudioManager::setMusic(MusicTrack track) {
 
 void AudioManager::stopMusic() {
     requestedMusic_ = MusicTrack::NONE;
+    homeMusicResumeAtMs_ = 0;
     releaseMusic();
 }
 
@@ -273,6 +278,7 @@ bool AudioManager::startRequestedMusic() {
             releaseMusic();
             return false;
         }
+        if (homeMusicCycleComplete_) break;
     }
     Platform::logf(
         "[Audio] music=%s rate=%u samples=%u blocks=%u prefill=%u stream=1\n",
@@ -328,6 +334,12 @@ bool AudioManager::decodeMusicBlock(uint8_t bufferIndex) {
     }
     musicPcmSamples_[bufferIndex] = static_cast<uint16_t>(decoded);
     ++nextMusicBlock_;
+    if (playingMusic_ == MusicTrack::HOME &&
+        nextMusicBlock_ >= musicHeader_.blockCount) {
+        // HOME plays the packed track once. Let the already queued tail drain
+        // before starting the quiet interval instead of wrapping immediately.
+        homeMusicCycleComplete_ = true;
+    }
     return true;
 }
 
@@ -416,7 +428,8 @@ void AudioManager::update() {
         if (playingMusic_ != MusicTrack::NONE) releaseMusic();
         return;
     }
-    updateMusicFade(Platform::clock().millis());
+    const uint32_t nowMs = Platform::clock().millis();
+    updateMusicFade(nowMs);
     if (sfxPcm_ && Platform::audio().queuedPcm(SFX_CHANNEL) == 0) {
         releaseSfx();
     }
@@ -432,12 +445,23 @@ void AudioManager::update() {
         }
         return;
     }
-    if (playingMusic_ != requestedMusic_) {
-        releaseMusic();
-        startRequestedMusic();
+    if (playingMusic_ == MusicTrack::HOME && homeMusicCycleComplete_) {
+        if (Platform::audio().queuedPcm(MUSIC_CHANNEL) == 0) {
+            beginHomeMusicSilence(nowMs);
+        }
         return;
     }
     if (playingMusic_ == MusicTrack::NONE) {
+        if (requestedMusic_ == MusicTrack::HOME &&
+            homeMusicResumeAtMs_ != 0) {
+            if (static_cast<int32_t>(nowMs - homeMusicResumeAtMs_) < 0) return;
+            homeMusicResumeAtMs_ = 0;
+        }
+        startRequestedMusic();
+        return;
+    }
+    if (playingMusic_ != requestedMusic_) {
+        releaseMusic();
         startRequestedMusic();
         return;
     }
@@ -456,6 +480,18 @@ void AudioManager::update() {
             break;
         }
     }
+}
+
+void AudioManager::beginHomeMusicSilence(uint32_t nowMs) {
+    releaseMusic();
+    const uint32_t span = HOME_MUSIC_SILENCE_MAX_MS -
+                          HOME_MUSIC_SILENCE_MIN_MS + 1UL;
+    const uint32_t durationMs = HOME_MUSIC_SILENCE_MIN_MS +
+        Platform::power().hardwareRandom() % span;
+    homeMusicResumeAtMs_ = nowMs + durationMs;
+    if (homeMusicResumeAtMs_ == 0) homeMusicResumeAtMs_ = 1;
+    Platform::logf("[Audio] home silence=%lu ms\n",
+                   static_cast<unsigned long>(durationMs));
 }
 
 void AudioManager::updateMusicFade(uint32_t nowMs) {
@@ -489,6 +525,7 @@ void AudioManager::releaseMusic() {
     nextMusicBuffer_ = 0;
     nextMusicBlock_ = 0;
     nextMusicSkipSamples_ = 0;
+    homeMusicCycleComplete_ = false;
     playingMusic_ = MusicTrack::NONE;
     musicPaused_ = false;
 }
@@ -500,6 +537,7 @@ void AudioManager::releaseSfx() {
 
 void AudioManager::stopAll() {
     requestedMusic_ = MusicTrack::NONE;
+    homeMusicResumeAtMs_ = 0;
     Platform::audio().stop();
     releaseMusic();
     releaseSfx();

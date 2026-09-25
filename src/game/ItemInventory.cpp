@@ -70,8 +70,17 @@ bool cureStatus(MonsterRuntime& monster, MajorStatus first,
 }
 
 constexpr ItemId HOME_BAG_DAILY_ITEMS[] = {
+    ItemId::NORMAL_FOOD,
+    ItemId::TASTY_FOOD,
+    ItemId::SWEET_FOOD,
+    ItemId::SPICY_FOOD,
+    ItemId::SOUR_FOOD,
+    ItemId::BITTER_FOOD,
+    ItemId::DRY_FOOD,
     ItemId::CANDY,
-    ItemId::FULL_HEAL,
+    ItemId::SOAP_0,
+    ItemId::SOAP_1,
+    ItemId::SOAP_2,
 };
 
 constexpr ItemId HOME_BAG_EXPLORE_ITEMS[] = {
@@ -84,6 +93,7 @@ constexpr ItemId HOME_BAG_EXPLORE_ITEMS[] = {
     ItemId::ICE_HEAL,
     ItemId::MAX_POTION,
     ItemId::FULL_RESTORE,
+    ItemId::FULL_HEAL,
     ItemId::FIRE_STONE,
     ItemId::WATER_STONE,
     ItemId::THUNDER_STONE,

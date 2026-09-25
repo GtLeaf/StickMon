@@ -19,7 +19,6 @@ private:
         POWER_SAVE,
         HELP,
         RESET_GAME,
-        BACK,
         COUNT,
     };
 

@@ -188,71 +188,122 @@ void drawTeamMoveTypeBadge(Canvas565& canvas, int x, int y, TypeId type) {
     text(canvas, labelX, labelY, label, rgb(248, 248, 240));
 }
 
+void drawTeamStatusSegmentedBar(Canvas565& canvas, int x, int y,
+                                uint32_t value, uint32_t maximum,
+                                uint16_t fillColor) {
+    constexpr int width = 336;
+    constexpr int height = 18;
+    constexpr int segments = 10;
+    constexpr int gap = 3;
+    const uint32_t progress = maximum > 0
+        ? static_cast<uint32_t>(1000ULL * std::min(value, maximum) / maximum)
+        : 0;
+    canvas.fillRoundRect(x, y, width, height, 4, rgb(12, 27, 38));
+    for (int segment = 0; segment < segments; ++segment) {
+        const int left = x + 2 + segment * (width - 4) / segments;
+        const int right = x + 2 + (segment + 1) * (width - 4) / segments -
+                          (segment == segments - 1 ? 0 : gap);
+        const int segmentWidth = right - left;
+        canvas.fillRect(left, y + 2, segmentWidth, height - 4,
+                        rgb(41, 73, 91));
+        const int portion = std::clamp<int>(
+            static_cast<int>(progress) * segments - segment * 1000, 0, 1000);
+        const int fillWidth = segmentWidth * portion / 1000;
+        if (fillWidth > 0) {
+            canvas.fillRect(left, y + 2, fillWidth, height - 4, fillColor);
+        }
+    }
+    canvas.drawRoundRect(x, y, width, height, 4, rgb(16, 37, 49));
+}
+
 void drawTeamStatusPageContent(Canvas565& canvas,
                                const Game::MonsterRuntime& monster,
                                const Species& species, uint8_t page,
                                int baseX) {
     char line[64] = {};
     if (page == 0) {
+        const uint16_t labelColor = rgb(126, 175, 175);
+        const uint16_t valueColor = rgb(226, 238, 233);
+        const uint16_t separator = rgb(43, 72, 77);
         const PokemonSprites::SpriteFrame* frame =
             PokemonSprites::findSpeciesSprite(
                 monster.speciesId, PokemonSprites::SpriteKind::STATUS);
         if (frame) {
             uint8_t width = FlashStorage::readByte(&frame->width);
             uint8_t height = FlashStorage::readByte(&frame->height);
-            int x = baseX + 52 - width / 2;
-            int y = 126 + TEAM_STATUS_CONTENT_SHIFT - height / 2;
-            PokemonSprites::drawFrame(frame, x, y);
+            const float scale = std::min(2.5f, std::min(
+                128.0f / std::max(1, static_cast<int>(width)),
+                128.0f / std::max(1, static_cast<int>(height))));
+            const int drawnWidth = static_cast<int>(std::lround(width * scale));
+            const int drawnHeight = static_cast<int>(std::lround(height * scale));
+            PokemonSprites::drawFrameScaled(
+                frame, baseX + 80 - drawnWidth / 2,
+                140 - drawnHeight / 2, scale);
         }
-        text(canvas, baseX + 112, 64 + TEAM_STATUS_CONTENT_SHIFT, species.name,
-             rgb(226, 238, 233));
-        std::snprintf(line, sizeof(line), "Lv%u %s", monster.level,
-                      teamStatusGender(monster));
-        text(canvas, baseX + 112, 104 + TEAM_STATUS_CONTENT_SHIFT, line, rgb(226, 238, 233));
-        std::snprintf(line, sizeof(line), "%s%s/%s", "属性:",
-                      typeName(species.type1), typeName(species.type2));
-        text(canvas, baseX + 112, 144 + TEAM_STATUS_CONTENT_SHIFT, line, rgb(248, 210, 105));
-        std::snprintf(line, sizeof(line), "%s%s", Ui::Status::ABILITY,
-                      abilityName(abilityForSpecies(species)));
-        text(canvas, baseX + 112, 184 + TEAM_STATUS_CONTENT_SHIFT, line, rgb(115, 226, 183));
-        std::snprintf(line, sizeof(line), "%s%s", "性格:",
-                      natureName(monster.nature));
-        text(canvas, baseX + 112, 224 + TEAM_STATUS_CONTENT_SHIFT, line, rgb(226, 238, 233));
-        int8_t liked = natureLikedFoodIndex(monster.nature);
-        int8_t disliked = natureDislikedFoodIndex(monster.nature);
-        if (liked >= 0 && disliked >= 0) {
-            std::snprintf(line, sizeof(line), "喜%s 厌%s",
-                          Ui::Status::FLAVOR_NAMES[liked],
-                          Ui::Status::FLAVOR_NAMES[disliked]);
-            text(canvas, baseX + 112, 264 + TEAM_STATUS_CONTENT_SHIFT, line, rgb(126, 175, 175));
+        constexpr int identityX = 160;
+        text(canvas, baseX + identityX, 83, species.name, valueColor);
+        std::snprintf(line, sizeof(line), "Lv.%u", monster.level);
+        text(canvas, baseX + identityX, 121, line, rgb(248, 210, 105));
+        const auto gender = static_cast<Game::Gender>(monster.gender);
+        const uint16_t genderColor = gender == Game::Gender::MALE
+            ? rgb(102, 176, 245)
+            : gender == Game::Gender::FEMALE
+                ? rgb(239, 143, 188) : labelColor;
+        const int genderY = gender == Game::Gender::MALE
+            ? 120 : gender == Game::Gender::FEMALE ? 114 : 121;
+        text(canvas, baseX + identityX + textWidth(line) + 8, genderY,
+             teamStatusGender(monster), genderColor);
+        drawTeamMoveTypeBadge(canvas, baseX + identityX, 158, species.type1);
+        if (species.type2 != TypeId::NONE &&
+            species.type2 != species.type1) {
+            drawTeamMoveTypeBadge(canvas, baseX + identityX + 88, 158,
+                                  species.type2);
         }
-        std::snprintf(line, sizeof(line), "%s%s", Ui::Status::SOURCE_INFO,
-                      teamStatusOrigin(monster.origin));
-        text(canvas, baseX + 16, 312 + TEAM_STATUS_CONTENT_SHIFT, line, rgb(226, 238, 233));
+
+        canvas.fillRect(baseX + 16, 219, 336, 1, separator);
+        text(canvas, baseX + 24, 226, Ui::Status::ABILITY, labelColor);
+        text(canvas, baseX + 132, 226,
+             abilityName(abilityForSpecies(species)), valueColor);
+        canvas.fillRect(baseX + 24, 262, 320, 1, separator);
+        text(canvas, baseX + 24, 268, "性格", labelColor);
+        text(canvas, baseX + 132, 268, natureName(monster.nature), valueColor);
+        canvas.fillRect(baseX + 24, 304, 320, 1, separator);
+        text(canvas, baseX + 24, 310, Ui::Status::SOURCE_INFO, labelColor);
+        text(canvas, baseX + 132, 310,
+             teamStatusOrigin(monster.origin), valueColor);
         if (monster.origin == Game::Origin::BEFRIENDED &&
             monster.metArea < Ui::Explore::AREA_COUNT) {
             std::snprintf(line, sizeof(line), "地点:%s",
                           Ui::Explore::AREA_ITEMS[monster.metArea]);
-            text(canvas, baseX + 16, 352 + TEAM_STATUS_CONTENT_SHIFT, line, rgb(248, 210, 105));
+            text(canvas, baseX + 132, 338, line, labelColor);
+        }
+
+        canvas.fillRect(baseX + 16, 366, 336, 1, separator);
+        int8_t liked = natureLikedFoodIndex(monster.nature);
+        int8_t disliked = natureDislikedFoodIndex(monster.nature);
+        if (liked >= 0 && disliked >= 0) {
+            std::snprintf(line, sizeof(line), "喜欢%s味",
+                          Ui::Status::FLAVOR_NAMES[liked]);
+            text(canvas, baseX + 24, 375, line, rgb(115, 226, 183));
+            std::snprintf(line, sizeof(line), "%s%s味",
+                          Ui::Status::FLAVOR_DISLIKE_PREFIX,
+                          Ui::Status::FLAVOR_NAMES[disliked]);
+            text(canvas, baseX + 184, 375, line, rgb(239, 143, 148));
+        } else {
+            text(canvas, baseX + 24, 375, "喜欢 -", labelColor);
+            text(canvas, baseX + 184, 375,
+                 Ui::Status::FLAVOR_DISLIKE_EMPTY, labelColor);
         }
     } else if (page == 1) {
-        std::snprintf(line, sizeof(line), Ui::Status::HP_FMT,
-                      monster.hpCur, monster.hpMax);
-        text(canvas, baseX + 16, 72 + TEAM_STATUS_CONTENT_SHIFT, line, rgb(92, 222, 112));
-        const int barX = baseX + 16;
-        const int barY = 108 + TEAM_STATUS_CONTENT_SHIFT;
-        const int barW = 336;
-        const int barH = 14;
-        canvas.fillRoundRect(barX, barY, barW, barH, 4, rgb(29, 34, 42));
-        int hpWidth = monster.hpMax > 0
-            ? (barW - 2) * std::min<uint16_t>(monster.hpCur, monster.hpMax) /
-                  monster.hpMax
-            : 0;
-        if (hpWidth > 0) {
-            canvas.fillRoundRect(barX + 1, barY + 1, hpWidth, barH - 2,
-                                 3, rgb(92, 222, 112));
-        }
-        canvas.drawRoundRect(barX, barY, barW, barH, 4, rgb(67, 97, 101));
+        text(canvas, baseX + 16, 72 + TEAM_STATUS_CONTENT_SHIFT,
+             "HP", rgb(226, 238, 233));
+        std::snprintf(line, sizeof(line), "%u/%u", monster.hpCur, monster.hpMax);
+        text(canvas, baseX + 352 - textWidth(line),
+             72 + TEAM_STATUS_CONTENT_SHIFT, line, rgb(248, 210, 105));
+        drawTeamStatusSegmentedBar(canvas, baseX + 16,
+                                   108 + TEAM_STATUS_CONTENT_SHIFT,
+                                   monster.hpCur, monster.hpMax,
+                                   rgb(100, 230, 185));
         drawTeamStatusStat(canvas, baseX + 16, 152 + TEAM_STATUS_CONTENT_SHIFT, Ui::Status::STAT_ATK,
                            statFor(species, monster, 1));
         drawTeamStatusStat(canvas, baseX + 192, 152 + TEAM_STATUS_CONTENT_SHIFT, Ui::Status::STAT_SPA,
@@ -263,29 +314,23 @@ void drawTeamStatusPageContent(Canvas565& canvas,
                            statFor(species, monster, 4));
         drawTeamStatusStat(canvas, baseX + 16, 232 + TEAM_STATUS_CONTENT_SHIFT, Ui::Status::STAT_SPE,
                            statFor(species, monster, 5));
-        std::snprintf(line, sizeof(line), Ui::Status::EXP_VALUE_FMT,
-                      static_cast<unsigned long>(monster.exp));
-        text(canvas, baseX + 16, 276 + TEAM_STATUS_CONTENT_SHIFT, line, rgb(226, 238, 233));
-        std::snprintf(line, sizeof(line), Ui::Status::EXP_NEXT_FMT,
-                      static_cast<unsigned long>(
-                          expToNextLevel(species.growthRate, monster.level,
-                                         monster.exp)));
-        text(canvas, baseX + 192, 276 + TEAM_STATUS_CONTENT_SHIFT, line, rgb(226, 238, 233));
+        text(canvas, baseX + 16, 276 + TEAM_STATUS_CONTENT_SHIFT,
+             Ui::Status::EXP_REMAINING, rgb(226, 238, 233));
+        std::snprintf(line, sizeof(line), "%lu",
+                      static_cast<unsigned long>(expToNextLevel(
+                          species.growthRate, monster.level, monster.exp)));
+        text(canvas,
+             baseX + 16 + textWidth(Ui::Status::EXP_REMAINING) + 12,
+             276 + TEAM_STATUS_CONTENT_SHIFT, line, rgb(248, 210, 105));
         uint32_t floor = minimumExpForLevel(species.growthRate, monster.level);
         uint32_t next = monster.level >= Game::LEVEL_MAX
             ? monster.exp
             : minimumExpForLevel(species.growthRate, monster.level + 1);
-        uint8_t progress = next > floor
-            ? static_cast<uint8_t>(std::min<uint32_t>(100,
-                  (monster.exp > floor ? monster.exp - floor : 0) * 100 /
-                  (next - floor))) : 100;
-        canvas.fillRoundRect(baseX + 16, 320 + TEAM_STATUS_CONTENT_SHIFT, 336, 14, 4, rgb(29, 34, 42));
-        int progressWidth = (334 * progress) / 100;
-        if (progressWidth > 0) {
-            canvas.fillRoundRect(baseX + 17, 321 + TEAM_STATUS_CONTENT_SHIFT, progressWidth, 12, 3,
-                                 rgb(255, 216, 72));
-        }
-        canvas.drawRoundRect(baseX + 16, 320 + TEAM_STATUS_CONTENT_SHIFT, 336, 14, 4, rgb(67, 97, 101));
+        drawTeamStatusSegmentedBar(
+            canvas, baseX + 16, 320 + TEAM_STATUS_CONTENT_SHIFT,
+            next > floor ? std::clamp(monster.exp, floor, next) - floor : 1U,
+            next > floor ? next - floor : 1U,
+            rgb(52, 188, 225));
     } else if (page == 2) {
         drawTeamStatusMove(canvas, monster, species, 0, 72 + TEAM_STATUS_CONTENT_SHIFT, baseX);
         drawTeamStatusMove(canvas, monster, species, 1, 152 + TEAM_STATUS_CONTENT_SHIFT, baseX);
@@ -363,12 +408,15 @@ void renderTeamStatusScreen(Canvas565& canvas,
     rowBegin = std::min<uint16_t>(rowBegin, AmoledUi::HEIGHT);
     rowEnd = std::min<uint16_t>(rowEnd, AmoledUi::HEIGHT);
     UiCommon::PageClip pageClip(canvas, rowBegin, rowEnd);
-    if (rowBegin >= rowEnd || !model.state ||
-        model.teamSlot >= model.state->teamCount ||
-        model.teamSlot >= Game::TEAM_CAP) return;
+    if (rowBegin >= rowEnd || !model.state) return;
 
-    const Game::MonsterRuntime& monster = model.state->team[model.teamSlot];
-    const Species* species = findSpecies(monster.speciesId);
+    const Game::MonsterRuntime* monster = model.monster;
+    if (!monster) {
+        if (model.teamSlot >= model.state->teamCount ||
+            model.teamSlot >= Game::TEAM_CAP) return;
+        monster = &model.state->team[model.teamSlot];
+    }
+    const Species* species = findSpecies(monster->speciesId);
     if (!species) return;
     const uint8_t page = model.page < TEAM_STATUS_PAGE_COUNT ? model.page : 0;
 
@@ -383,12 +431,12 @@ void renderTeamStatusScreen(Canvas565& canvas,
     UiCommon::drawPageHeader(canvas, title);
 
     const int slideOffset = model.slideOffsetX;
-    drawTeamStatusPageContent(canvas, monster, *species, page, slideOffset);
+    drawTeamStatusPageContent(canvas, *monster, *species, page, slideOffset);
     if (slideOffset < 0 && page + 1 < TEAM_STATUS_PAGE_COUNT) {
-        drawTeamStatusPageContent(canvas, monster, *species, page + 1,
+        drawTeamStatusPageContent(canvas, *monster, *species, page + 1,
                                   slideOffset + AmoledUi::WIDTH);
     } else if (slideOffset > 0 && page > 0) {
-        drawTeamStatusPageContent(canvas, monster, *species, page - 1,
+        drawTeamStatusPageContent(canvas, *monster, *species, page - 1,
                                   slideOffset - AmoledUi::WIDTH);
     }
 
@@ -432,14 +480,14 @@ void renderTeamScreen(Canvas565& canvas, const TeamViewModel& model,
         const Species* species = findSpecies(monster.speciesId);
         PixelRenderer::text((128), (y + 12), species ? species->name : Ui::Amoled::MONSTER, rgb(226, 238, 233), 1);
         char level[12];
-        std::snprintf(level, sizeof(level), "LV%u", monster.level);
+        std::snprintf(level, sizeof(level), "Lv%u", monster.level);
         text(canvas, 128, y + 56, level, rgb(126, 175, 175));
         char hp[20];
         std::snprintf(hp, sizeof(hp), "%u/%u",
                       monster.hpCur, monster.hpMax);
         text(canvas, 344 - textWidth(hp),
              y + 56, hp, rgb(226, 238, 233));
-        drawHomeHpBar(canvas, 128, y + 84, 208,
+        drawHomeHpBar(canvas, 128, y + 100, 208,
                       Game::HomeHud::hpPercent(monster));
 
         if (monster.majorStatus != Game::MajorStatus::NONE) {
@@ -503,6 +551,54 @@ void renderTeamScreen(Canvas565& canvas, const TeamViewModel& model,
 
 bool teamMovesBackAt(int x, int y) {
     return UiCommon::pageHeaderBackAt(x, y);
+}
+
+void drawMoveDetailContent(Canvas565& canvas, const MoveInfo& move,
+                           int detailBase, uint8_t fade) {
+    auto fadeColor = [fade](uint16_t color) {
+        const uint16_t r = static_cast<uint16_t>((color >> 11) & 0x1F);
+        const uint16_t g = static_cast<uint16_t>((color >> 5) & 0x3F);
+        const uint16_t b = static_cast<uint16_t>(color & 0x1F);
+        return static_cast<uint16_t>(((r * fade / 255) << 11) |
+                                     ((g * fade / 255) << 5) |
+                                     (b * fade / 255));
+    };
+    char detail[64] = {};
+    std::snprintf(detail, sizeof(detail), "威力:%u  命中:%u",
+                  move.power, move.accuracy);
+    text(canvas, 24, detailBase + 20, detail,
+         fadeColor(rgb(226, 238, 233)));
+    const char* description = move.description;
+    if (!description || !description[0]) return;
+    char line[80] = {};
+    size_t lineLength = 0;
+    int lineWidth = 0;
+    int lineIndex = 0;
+    const uint8_t* cursor = reinterpret_cast<const uint8_t*>(description);
+    while (*cursor && lineIndex < 5) {
+        size_t bytes = 1;
+        while (cursor[bytes] && (cursor[bytes] & 0xC0) == 0x80) ++bytes;
+        const int glyphWidth = *cursor < 0x80 ? 16 : 32;
+        if (lineLength > 0 && lineWidth + glyphWidth > 320) {
+            line[lineLength] = '\0';
+            text(canvas, 24, detailBase + 64 + lineIndex * 28,
+                 line, fadeColor(rgb(178, 194, 190)));
+            ++lineIndex;
+            lineLength = 0;
+            lineWidth = 0;
+            if (lineIndex >= 5) break;
+        }
+        if (lineLength + bytes >= sizeof(line)) break;
+        std::memcpy(line + lineLength, cursor, bytes);
+        lineLength += bytes;
+        lineWidth += glyphWidth;
+        cursor += bytes;
+    }
+    if (lineLength > 0 && lineIndex < 5) {
+        line[lineLength] = '\0';
+        text(canvas, 24, detailBase + 64 + lineIndex * 28,
+             line, fadeColor(rgb(178, 194, 190)));
+    }
 }
 
 int teamMovesItemAt(int x, int y, TeamMovesViewModel::Mode mode,
@@ -639,14 +735,6 @@ void renderTeamMovesScreen(Canvas565& canvas,
         const int detailBase = detailTop;
         const uint8_t fade = static_cast<uint8_t>(std::lround(
             255.0f * detailProgress));
-        auto fadeColor = [fade](uint16_t color) {
-            const uint16_t r = static_cast<uint16_t>((color >> 11) & 0x1F);
-            const uint16_t g = static_cast<uint16_t>((color >> 5) & 0x3F);
-            const uint16_t b = static_cast<uint16_t>(color & 0x1F);
-            return static_cast<uint16_t>(((r * fade / 255) << 11) |
-                                         ((g * fade / 255) << 5) |
-                                         (b * fade / 255));
-        };
         const int visibleDetailTop = std::max(LIST_TOP, detailBase);
         const int visibleDetailBottom = std::min(
             AmoledUi::HEIGHT, detailBase + detailHeight);
@@ -658,43 +746,7 @@ void renderTeamMovesScreen(Canvas565& canvas,
         detailClip.setRect(0, detailBase, AmoledUi::WIDTH,
                            std::max(0, std::min(AmoledUi::HEIGHT,
                                                 detailBase + detailHeight) - detailBase));
-        char detail[64] = {};
-        std::snprintf(detail, sizeof(detail), "威力:%u  命中:%u",
-                      selectedMove->power, selectedMove->accuracy);
-        text(canvas, 24, detailBase + 20, detail,
-             fadeColor(rgb(226, 238, 233)));
-        const char* description = selectedMove->description;
-        if (description && description[0]) {
-            char line[80] = {};
-            size_t lineLength = 0;
-            int lineWidth = 0;
-            int lineIndex = 0;
-            const uint8_t* cursor = reinterpret_cast<const uint8_t*>(description);
-            while (*cursor && lineIndex < 5) {
-                size_t bytes = 1;
-                while (cursor[bytes] && (cursor[bytes] & 0xC0) == 0x80) ++bytes;
-                const int glyphWidth = *cursor < 0x80 ? 16 : 32;
-                if (lineLength > 0 && lineWidth + glyphWidth > 320) {
-                    line[lineLength] = '\0';
-                    text(canvas, 24, detailBase + 64 + lineIndex * 28,
-                         line, fadeColor(rgb(178, 194, 190)));
-                    ++lineIndex;
-                    lineLength = 0;
-                    lineWidth = 0;
-                    if (lineIndex >= 5) break;
-                }
-                if (lineLength + bytes >= sizeof(line)) break;
-                std::memcpy(line + lineLength, cursor, bytes);
-                lineLength += bytes;
-                lineWidth += glyphWidth;
-                cursor += bytes;
-            }
-            if (lineLength > 0 && lineIndex < 5) {
-                line[lineLength] = '\0';
-                text(canvas, 24, detailBase + 64 + lineIndex * 28,
-                     line, fadeColor(rgb(178, 194, 190)));
-            }
-        }
+        drawMoveDetailContent(canvas, *selectedMove, detailBase, fade);
         detailClip.reset();
     }
     pageClip.setRect(0, rowBegin, AmoledUi::WIDTH, rowEnd - rowBegin);

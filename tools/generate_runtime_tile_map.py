@@ -15,6 +15,8 @@ from cave_tile_semantics import (
     CAVE_ROCK_STEP_RUNTIME_TILE,
     FROST_CAVE_EXIT_RUNTIME_TILES,
     FROST_DOWNWARD_STAIRS_RUNTIME_TILE,
+    FROST_EXIT_DIRECTIONAL_RUNTIME_TILES,
+    FROST_UP_LADDER_RUNTIME_TILES,
 )
 
 from generate_map_rule_preview import (
@@ -26,10 +28,10 @@ from generate_map_rule_preview import (
     load_autotiles,
     render_layer,
 )
-from map_generation_rules import CUSTOM_TILE_SOURCES, CUSTOM_TILE_SOURCE_FLIP_Y
+from map_generation_rules import CUSTOM_TILE_SOURCES, CUSTOM_TILE_SOURCE_FLIP_Y, CUSTOM_TILE_SOURCE_ROTATIONS
 
 
-ALGORITHM_VERSION = 9
+ALGORITHM_VERSION = 11
 MASK32 = 0xFFFFFFFF
 MAX_PATH_POINTS = 48
 PATH_COUNT = 2
@@ -173,8 +175,8 @@ FROST_HORIZONTAL_TEMPLATES = (
             (0, 1, 6, 8),
             (5, 4, 10, 7),
             (9, 2, 15, 10),
-            (11, 8, 14, 11),
-            (2, 0, 5, 3),
+            (10, 8, 14, 11),
+            (1, 0, 5, 3),
         ),
         "entry": ((0, 6), Edge.LEFT),
         "exits": (((12, 11), Edge.BOTTOM), ((3, 0), Edge.TOP)),
@@ -258,6 +260,7 @@ class Endpoint:
 class RoutePath:
     points: list[tuple[int, int]]
     exit: Endpoint
+    falls_to_next_level: bool = False
 
 
 @dataclass
@@ -409,6 +412,13 @@ def endpoint_edge_cells(endpoint):
     if endpoint.edge in (Edge.TOP, Edge.BOTTOM):
         return {(x, y), (x + 1, y)}
     return {(x, y), (x, y + 1)}
+
+
+def frost_endpoint_edge_cells(endpoint):
+    x, y = endpoint.point
+    if endpoint.edge in (Edge.TOP, Edge.BOTTOM):
+        return {(x - 1, y), (x, y), (x + 1, y)}
+    return {(x, y - 1), (x, y), (x, y + 1)}
 
 
 def validate_border_road(entry, paths, road):
@@ -996,7 +1006,7 @@ def stamp_ground_decorations(runtime_map, rng, road, water, forest, profile):
     return shrubs, dense_grass, flowers
 
 
-def stamp_snow_decorations(runtime_map, rng, road, scenery):
+def stamp_snow_decorations(runtime_map, rng, road, scenery, allow_cracks=True):
     ground_target = 10 + rng.bounded(7)
     ground_placed = 0
     for _attempt in range(ground_target * 16):
@@ -1006,9 +1016,10 @@ def stamp_snow_decorations(runtime_map, rng, road, scenery):
         y = rng.bounded(MAP_H)
         if (x, y) in road or (x, y) in scenery:
             continue
-        runtime_map.layers[0][y * MAP_W + x] = (
-            SNOW_GROUND_DECOR_TILES[rng.bounded(len(SNOW_GROUND_DECOR_TILES))]
-        )
+        variant = rng.bounded(len(SNOW_GROUND_DECOR_TILES))
+        runtime_map.layers[0][y * MAP_W + x] = SNOW_GROUND_DECOR_TILES[
+            1 if not allow_cracks and variant == 2 else variant
+        ]
         scenery.add((x, y))
         ground_placed += 1
 
@@ -1394,8 +1405,6 @@ def transform_frost_endpoint(value, mirror_x, mirror_y):
     transformed_point = transform_frost_point(point, mirror_x, mirror_y)
     if mirror_x and edge in (Edge.TOP, Edge.BOTTOM):
         transformed_point = (transformed_point[0] - 1, transformed_point[1])
-    if mirror_y and edge in (Edge.LEFT, Edge.RIGHT):
-        transformed_point = (transformed_point[0], transformed_point[1] - 1)
     return Endpoint(
         transformed_point,
         transform_frost_edge(edge, mirror_x, mirror_y),
@@ -1440,28 +1449,63 @@ def frost_boundary_tile(floor, openings, x, y):
     raise ValueError(f"unsupported frost wall boundary at {(x, y)}: {sorted(outside)}")
 
 
-def stamp_frost_portals(runtime_map):
-    route_cells = {
-        point
-        for path in runtime_map.paths
-        for point in path.points
-    }
-    portals = [(runtime_map.entry, runtime_map.paths[0].points[0])]
-    portals.extend((path.exit, path.points[-1]) for path in runtime_map.paths)
-    for endpoint, route_anchor in portals:
-        x, y = route_anchor
-        side_cells = {(x - 1, y), (x + 1, y)}
-        if (
-            endpoint.edge == Edge.TOP
-            and 0 < x < MAP_W - 1
-            and not side_cells & route_cells
-        ):
-            for offset, tile_id in enumerate(FROST_CAVE_EXIT_RUNTIME_TILES, -1):
-                runtime_map.layers[1][y * MAP_W + x + offset] = tile_id
-        elif endpoint.edge == Edge.BOTTOM:
-            runtime_map.layers[1][y * MAP_W + x] = (
-                FROST_DOWNWARD_STAIRS_RUNTIME_TILE
-            )
+def frost_interior(point):
+    x, y = point
+    return 0 < x < MAP_W - 1 and 0 < y < MAP_H - 1
+
+
+def stamp_frost_exterior(runtime_map, endpoint):
+    x, y = endpoint.point
+    tiles = FROST_EXIT_DIRECTIONAL_RUNTIME_TILES[EDGE_NAMES[endpoint.edge]]
+    if endpoint.edge in (Edge.TOP, Edge.BOTTOM):
+        x -= 1
+    else:
+        y -= 1
+    for index, tile_id in enumerate(tiles):
+        column = x + (index if endpoint.edge in (Edge.TOP, Edge.BOTTOM) else 0)
+        row = y + (index if endpoint.edge in (Edge.LEFT, Edge.RIGHT) else 0)
+        if 0 <= column < MAP_W and 0 <= row < MAP_H:
+            runtime_map.layers[1][row * MAP_W + column] = tile_id
+
+
+def frost_portal_touches_scene(runtime_map, endpoint):
+    x, y = endpoint.point
+    outward = {
+        Edge.TOP: (0, -1),
+        Edge.RIGHT: (1, 0),
+        Edge.BOTTOM: (0, 1),
+        Edge.LEFT: (-1, 0),
+    }[endpoint.edge]
+    neighbor_x = x + outward[0]
+    neighbor_y = y + outward[1]
+    if not (0 <= neighbor_x < MAP_W and 0 <= neighbor_y < MAP_H):
+        return True
+    index = neighbor_y * MAP_W + neighbor_x
+    return runtime_map.layers[1][index] != 0 or runtime_map.layers[2][index] != 0
+
+
+def stamp_frost_portals(runtime_map, level, level_count, entered_by_ladder):
+    if level == 0:
+        stamp_frost_exterior(runtime_map, runtime_map.entry)
+    elif entered_by_ladder:
+        x, y = runtime_map.entry.point
+        if not frost_portal_touches_scene(runtime_map, runtime_map.entry):
+            return False
+        runtime_map.layers[1][y * MAP_W + x] = FROST_DOWNWARD_STAIRS_RUNTIME_TILE
+    for index, path in enumerate(runtime_map.paths):
+        x, y = path.exit.point
+        if level + 1 >= level_count:
+            stamp_frost_exterior(runtime_map, path.exit)
+        elif index == 0:
+            runtime_map.layers[1][y * MAP_W + x] = FROST_DOWNWARD_STAIRS_RUNTIME_TILE
+        elif index == 1:
+            if y == 0 or runtime_map.layers[2][(y - 1) * MAP_W + x] != 0:
+                return False
+            runtime_map.layers[2][(y - 1) * MAP_W + x] = FROST_UP_LADDER_RUNTIME_TILES[0]
+            runtime_map.layers[1][y * MAP_W + x] = FROST_UP_LADDER_RUNTIME_TILES[1]
+        else:
+            return False
+    return True
 
 
 def is_smooth_ice_tile(tile_id):
@@ -1485,12 +1529,14 @@ def route_crosses_ice_straight(runtime_map, path):
     return True
 
 
-def generate_frost_cave_map(seed, entry_edge):
+def generate_frost_cave_map(seed, entry_edge, level=0, level_count=1, entered_by_ladder=False):
+    if level_count == 0 or not 0 <= level < level_count:
+        raise ValueError("invalid frost cave level")
     horizontal = entry_edge in (Edge.LEFT, Edge.RIGHT)
     templates = FROST_HORIZONTAL_TEMPLATES if horizontal else FROST_VERTICAL_TEMPLATES
     spec = templates[(seed >> 5) & 1]
-    mirror_x = entry_edge == Edge.RIGHT
-    mirror_y = entry_edge == Edge.TOP
+    mirror_x = entry_edge == Edge.RIGHT or (not horizontal and bool(seed & 0x80))
+    mirror_y = entry_edge == Edge.TOP or (horizontal and bool(seed & 0x80))
 
     entry = transform_frost_endpoint(spec["entry"], mirror_x, mirror_y)
     exits = [
@@ -1502,6 +1548,16 @@ def generate_frost_cave_map(seed, entry_edge):
         points = expand_frost_route(control_points, mirror_x, mirror_y)
         append_line(points, *exits[index].point)
         paths.append(RoutePath(points, exits[index]))
+    if level > 0:
+        for path in paths:
+            while len(path.points) > 2 and not frost_interior(path.points[0]):
+                path.points.pop(0)
+        entry = Endpoint(paths[0].points[0], entry.edge)
+    if level + 1 < level_count:
+        for path in paths:
+            while len(path.points) > 2 and not frost_interior(path.points[-1]):
+                path.points.pop()
+            path.exit = Endpoint(path.points[-1], path.exit.edge)
     runtime_map = RuntimeMap(
         seed=seed,
         area_index=FROST_CRYSTAL_CAVE_AREA,
@@ -1528,13 +1584,13 @@ def generate_frost_cave_map(seed, entry_edge):
     for x, y in floor:
         runtime_map.layers[0][y * MAP_W + x] = FROST_FLOOR_TILE
 
-    portals = (entry, *exits)
+    portals = (entry, *(path.exit for path in paths))
     openings = {
         (cell, endpoint.edge)
         for endpoint in portals
-        for cell in endpoint_edge_cells(endpoint)
+        for cell in frost_endpoint_edge_cells(endpoint)
     }
-    if any(not endpoint_edge_cells(endpoint) <= floor for endpoint in portals):
+    if any(not frost_endpoint_edge_cells(endpoint) <= floor for endpoint in portals):
         raise ValueError("frost cave portal leaves its floor mask")
 
     walls = set()
@@ -1570,8 +1626,6 @@ def generate_frost_cave_map(seed, entry_edge):
         if matches:
             runtime_map.layers[1][index] = FROST_INNER_CORNER_TILES[matches[0]]
             walls.add((x, y))
-
-    stamp_frost_portals(runtime_map)
 
     ice = set()
     for left, top, right, bottom in spec["ice_rects"]:
@@ -1650,6 +1704,20 @@ def generate_frost_cave_map(seed, entry_edge):
         runtime_map.layers[1][y * MAP_W + x] = tile_id
         blocked.add((x, y))
 
+    scenery = set(blocked) | ice
+    scenery.update(
+        (x, y)
+        for y in range(MAP_H)
+        for x in range(MAP_W)
+        if (x, y) not in floor
+    )
+    decorations = XorShift32(seed ^ 0xA5F1537D)
+    stamp_snow_decorations(runtime_map, decorations, route_cells, scenery,
+                           allow_cracks=False)
+
+    if not stamp_frost_portals(runtime_map, level, level_count, entered_by_ladder):
+        raise ValueError("frost portal is not attached to scene geometry")
+
     for path in paths:
         if len(path.points) < 2:
             raise ValueError("frost route is too short")
@@ -1661,7 +1729,8 @@ def generate_frost_cave_map(seed, entry_edge):
     return runtime_map
 
 
-def generate_map(seed, entry_edge, area_index=0):
+def generate_map(seed, entry_edge, area_index=0, *, frost_level=0,
+                 frost_level_count=1, frost_entered_by_ladder=False):
     seed &= MASK32
     area_index &= 0xFF
     terrain = XorShift32(seed ^ 0x63D83595)
@@ -1672,7 +1741,8 @@ def generate_map(seed, entry_edge, area_index=0):
     has_snow = area_index == FROST_CRYSTAL_CAVE_AREA
 
     if has_snow:
-        return generate_frost_cave_map(seed, entry_edge)
+        return generate_frost_cave_map(seed, entry_edge, frost_level,
+                                       frost_level_count, frost_entered_by_ladder)
 
     if has_waterfall:
         entry, junction, paths, has_coast, road = build_ancient_waterfall_topology(
@@ -1830,6 +1900,7 @@ def fingerprint(runtime_map):
     value = fnv_byte(value, len(runtime_map.paths))
     for path in runtime_map.paths:
         value = fnv_byte(value, len(path.points))
+        value = fnv_byte(value, 1 if path.falls_to_next_level else 0)
         value = fnv_byte(value, int(path.exit.edge))
         value = fnv_byte(value, path.exit.point[0])
         value = fnv_byte(value, path.exit.point[1])
@@ -1893,6 +1964,7 @@ def render(runtime_map, frame_index=0):
                 if tile_id in CUSTOM_TILE_SOURCES
                 and CUSTOM_TILE_SOURCES[tile_id][0] == tileset_name
                 and tile_id not in CUSTOM_TILE_SOURCE_FLIP_Y
+                and tile_id not in CUSTOM_TILE_SOURCE_ROTATIONS
                 else 0
                 for tile_id in layer
             ]
@@ -1900,6 +1972,7 @@ def render(runtime_map, frame_index=0):
             for index, tile_id in enumerate(layer):
                 if (
                     tile_id not in CUSTOM_TILE_SOURCE_FLIP_Y
+                    and tile_id not in CUSTOM_TILE_SOURCE_ROTATIONS
                     or CUSTOM_TILE_SOURCES[tile_id][0] != tileset_name
                 ):
                     continue
@@ -1909,7 +1982,11 @@ def render(runtime_map, frame_index=0):
                 source_y = (source_index // 8) * 32
                 tile = external_tileset.crop(
                     (source_x, source_y, source_x + 32, source_y + 32)
-                ).transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+                )
+                if tile_id in CUSTOM_TILE_SOURCE_FLIP_Y:
+                    tile = tile.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+                else:
+                    tile = tile.rotate(CUSTOM_TILE_SOURCE_ROTATIONS[tile_id])
                 rendered.alpha_composite(
                     tile, ((index % MAP_W) * 32, (index // MAP_W) * 32)
                 )
@@ -1989,6 +2066,7 @@ def main():
     areas = [int(value) for value in args.areas.split(",") if value.strip()]
     if not areas or any(area < 0 or area > 255 for area in areas):
         raise ValueError("--areas must contain comma-separated values from 0 to 255")
+    frost_run = all(area == FROST_CRYSTAL_CAVE_AREA for area in areas)
     if args.map_seed is not None and args.count not in (None, 1):
         raise ValueError("--map-seed can only generate one map")
     count = args.count if args.count is not None else (1 if args.map_seed is not None else 4)
@@ -2005,7 +2083,12 @@ def main():
     for index in range(count):
         area = areas[index % len(areas)]
         map_seed = args.map_seed if args.map_seed is not None else derive_seed(args.seed, index, area)
-        runtime_map = generate_map(map_seed, entry, area)
+        runtime_map = generate_map(
+            map_seed, entry, area,
+            frost_level=index if frost_run else 0,
+            frost_level_count=count if frost_run else 1,
+            frost_entered_by_ladder=frost_run and index > 0 and entered_by_ladder,
+        )
         clean = render(runtime_map)
         debug = render_debug(runtime_map, clean)
         stem = f"runtime_tile_map_{index + 1:02d}_{map_seed:08x}"
@@ -2017,6 +2100,7 @@ def main():
         payload = map_json(runtime_map)
         json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         selected_exit = (map_seed >> 16) % len(runtime_map.paths)
+        entered_by_ladder = frost_run and selected_exit == 1
         manifest["maps"].append({
             "index": index,
             "area": area,

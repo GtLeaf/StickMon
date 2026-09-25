@@ -46,6 +46,9 @@ public:
     void drawFastVLine(int x, int y, int h, uint16_t color);
     void drawLine(int x0, int y0, int x1, int y1, uint16_t color);
     void fillRect(int x, int y, int w, int h, uint16_t color);
+    // Returns false when the canvas needs the scaled-pixel fallback.
+    bool blendRectAlphaNative(int x, int y, int w, int h,
+                              uint16_t color, uint8_t alpha);
     void drawRect(int x, int y, int w, int h, uint16_t color);
     void drawCircle(int cx, int cy, int radius, uint16_t color);
     void fillCircle(int cx, int cy, int radius, uint16_t color);

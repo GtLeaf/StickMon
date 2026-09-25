@@ -7,6 +7,7 @@
 #include "presentation/PixelRenderer.h"
 #include "ui/RenderCaches.h"
 #include "ui/UiCommon.h"
+#include "ui/BattleSpriteLayout.h"
 
 #include <cassert>
 #include <cstdio>
@@ -245,11 +246,12 @@ void teamNavigation(Canvas565& canvas, Game::GameState& state) {
     model.slideOffsetX = -120;
     renderTeamStatusScreen(canvas, model);
     // The incoming page's HP bar track slides in from the right edge.
-    expectPixel(canvas, 300, 358, PixelRenderer::rgb(29, 34, 42));
+    expectPixel(canvas, 300, 358, PixelRenderer::rgb(41, 73, 91));
 }
 
 void teamStatusValues(Canvas565& canvas, Game::GameState& state) {
     Game::GameState local = state;
+    local.team[0].nature = 0;
     TeamStatusViewModel model;
     model.state = &local;
     const auto ink = PixelRenderer::rgb(226, 238, 233);
@@ -272,12 +274,30 @@ void teamStatusValues(Canvas565& canvas, Game::GameState& state) {
     renderTeamStatusScreen(canvas, model);
     const auto* profileSpecies = findSpecies(local.team[0].speciesId);
     assert(profileSpecies);
-    expectText(112, 92, 240, profileSpecies->name, ink);
-    expectText(16, 340, 336, "来源初始伙伴", ink);
+    expectText(160, 83, 192, profileSpecies->name, ink);
+    expectText(132, 310, 192, "初始伙伴", ink);
+    expectText(24, 310, 64, "来源", PixelRenderer::rgb(126, 175, 175));
+    expectText(24, 375, 144, "喜欢 -", PixelRenderer::rgb(126, 175, 175));
+    expectText(184, 375, 160, "讨厌 -", PixelRenderer::rgb(126, 175, 175));
+    expectPixel(canvas, 16, 219, PixelRenderer::rgb(43, 72, 77));
+    expectPixel(canvas, 16, 366, PixelRenderer::rgb(43, 72, 77));
     expectPixel(canvas, 72, 12, headerBackground);
-    expectPixel(canvas, 112, 400, background);
-    model.page = 2;
+    expectPixel(canvas, 112, 417, background);
     auto& monster = local.team[0];
+    monster.nature = 1;
+    monster.origin = Game::Origin::BEFRIENDED;
+    monster.metArea = 1;
+    renderTeamStatusScreen(canvas, model);
+    const int8_t liked = natureLikedFoodIndex(monster.nature);
+    const int8_t disliked = natureDislikedFoodIndex(monster.nature);
+    assert(liked >= 0 && disliked >= 0);
+    expectText(24, 375, 160,
+               std::string("喜欢") + Ui::Status::FLAVOR_NAMES[liked] + "味",
+               PixelRenderer::rgb(115, 226, 183));
+    expectText(184, 375, 160,
+               std::string("讨厌") + Ui::Status::FLAVOR_NAMES[disliked] + "味",
+               PixelRenderer::rgb(239, 143, 148));
+    model.page = 2;
     const auto* species = findSpecies(monster.speciesId);
     assert(species);
     const auto* basic = findMove(moveIdForMonster(*species, monster, false));
@@ -297,6 +317,63 @@ void teamStatusValues(Canvas565& canvas, Game::GameState& state) {
                        std::string("熟练度:") + grades[grade], accent);
         }
     }
+}
+
+void teamStatusSegmentedBars(Canvas565& canvas, Game::GameState& state) {
+    Game::GameState local = state;
+    auto& monster = local.team[0];
+    const Species* species = findSpecies(monster.speciesId);
+    assert(species);
+    monster.hpMax = 40;
+    monster.hpCur = 34;
+    const uint32_t floor = minimumExpForLevel(species->growthRate, monster.level);
+    const uint32_t next = minimumExpForLevel(species->growthRate, monster.level + 1);
+    monster.exp = floor + (next - floor) / 2;
+    TeamStatusViewModel model{};
+    model.state = &local;
+    model.page = 1;
+    renderTeamStatusScreen(canvas, model);
+
+    const auto hpFill = PixelRenderer::rgb(100, 230, 185);
+    const auto expFill = PixelRenderer::rgb(52, 188, 225);
+    const auto empty = PixelRenderer::rgb(41, 73, 91);
+    const auto gap = PixelRenderer::rgb(12, 27, 38);
+    expectPixel(canvas, 20, 138, hpFill);
+    expectPixel(canvas, 49, 138, gap);
+    expectPixel(canvas, 270, 138, hpFill);
+    expectPixel(canvas, 330, 138, empty);
+    expectPixel(canvas, 20, 350, expFill);
+    expectPixel(canvas, 49, 350, gap);
+    expectPixel(canvas, 180, 350, expFill);
+    expectPixel(canvas, 190, 350, empty);
+
+    char value[24];
+    std::snprintf(value, sizeof(value), "%lu",
+                  static_cast<unsigned long>(next - monster.exp));
+    const int valueX = 16 + UiCommon::textWidth(Ui::Status::EXP_REMAINING) + 12;
+    Frame expected(AmoledUi::WIDTH * AmoledUi::HEIGHT, 0);
+    Canvas565 reference;
+    reference.attach({expected.data(), AmoledUi::WIDTH, AmoledUi::HEIGHT, false});
+    reference.setNativeText(true);
+    PixelRenderer::text(reference, 16, 304, Ui::Status::EXP_REMAINING,
+                        PixelRenderer::rgb(226, 238, 233));
+    PixelRenderer::text(reference, valueX, 304, value,
+                        PixelRenderer::rgb(248, 210, 105));
+    int ink = 0;
+    for (int y = 304; y < 336; ++y) {
+        for (int x = 16; x < valueX + UiCommon::textWidth(value); ++x) {
+            if (!reference.readPixel(x, y)) continue;
+            expectPixel(canvas, x, y, reference.readPixel(x, y));
+            ++ink;
+        }
+    }
+    assert(ink > 0);
+
+    monster.hpCur = 0;
+    monster.level = Game::LEVEL_MAX;
+    renderTeamStatusScreen(canvas, model);
+    expectPixel(canvas, 20, 138, empty);
+    expectPixel(canvas, 330, 350, expFill);
 }
 
 void teamMovesList(Canvas565& canvas, Game::GameState& state) {
@@ -341,6 +418,248 @@ void teamMovesList(Canvas565& canvas, Game::GameState& state) {
         expectPixel(canvas, 24, 88, PixelRenderer::rgb(168, 168, 120));
         expectPixel(canvas, 97, 108, PixelRenderer::rgb(7, 10, 12));
     }
+}
+
+void computerContacts(Canvas565& canvas, Game::GameState& state) {
+    Game::GameState local = state;
+    local.teamCount = 1;
+    local.storageCount = 2;
+    local.storage[0] = local.team[0];
+    local.storage[1] = state.team[1];
+    local.storage[1].level = 8;
+    local.storage[1].origin = Game::Origin::BEFRIENDED;
+    local.storage[1].bond = 52;
+
+    ComputerViewModel model;
+    model.state = &local;
+    model.page = ComputerViewModel::Page::STORAGE;
+    model.contactActionOpen = true;
+    model.contactActionSlot = 1;
+    model.contactVisitingSlot = 0xFF;
+    model.contactCanDelete = true;
+    renderComputerScreen(canvas, model);
+
+    auto expectActionLabel = [&](int y, const char* label, uint16_t color) {
+        Frame pixels(AmoledUi::WIDTH * AmoledUi::HEIGHT,
+                     PixelRenderer::rgb(24, 34, 42));
+        Canvas565 reference;
+        reference.attach({pixels.data(), AmoledUi::WIDTH,
+                          AmoledUi::HEIGHT, false});
+        reference.setNativeText(true);
+        PixelRenderer::text(reference, 216, y, label, color);
+        for (int row = y; row < y + FontResource::LARGE_GLYPH_H; ++row) {
+            for (int column = 216; column < 280; ++column) {
+                expectPixel(canvas, column, row,
+                            reference.readPixel(column, row));
+            }
+        }
+    };
+    expectActionLabel(141, Ui::Storage::ACTION_STATUS,
+                      PixelRenderer::rgb(226, 238, 233));
+    expectActionLabel(195, Ui::Storage::ACTION_INVITE,
+                      PixelRenderer::rgb(226, 238, 233));
+    expectActionLabel(249, Ui::Storage::ACTION_DELETE,
+                      PixelRenderer::rgb(239, 143, 148));
+
+    // The compact menu follows the selected row and ignores outside taps.
+    assert(computerContactActionItemAt(200, 129, 3, 1, 0) == -1);
+    assert(computerContactActionItemAt(188, 130, 3, 1, 0) == 0);
+    assert(computerContactActionItemAt(355, 184, 3, 1, 0) == 1);
+    assert(computerContactActionItemAt(200, 238, 3, 1, 0) == 2);
+    assert(computerContactActionItemAt(200, 292, 3, 1, 0) == -1);
+    assert(computerContactActionItemAt(187, 184, 3, 1, 0) == -1);
+    assert(computerContactMenuAt(200, 122, 3, 1, 0));
+    assert(!computerContactMenuAt(200, 300, 3, 1, 0));
+    assert(computerContactActionItemAt(200, 92, 3, 1, 90) == 0);
+    assert(computerContactActionItemAt(200, 157, 2, 1, 0) == 0);
+    assert(computerContactActionItemAt(200, 211, 2, 1, 0) == 1);
+    assert(computerContactActionItemAt(200, 184, 1, 1, 0) == 0);
+    assert(computerContactActionItemAt(200, 238, 1, 1, 0) == -1);
+    model.contactActionOpen = false;
+    model.storageScroll = 0.0f;
+    renderComputerScreen(canvas, model);
+    const Frame headerBeforeScroll = capture(canvas);
+    model.storageScroll = 90.0f;
+    renderComputerScreen(canvas, model, UiMetrics::HEADER_HEIGHT,
+                         AmoledUi::HEIGHT);
+    for (int y = 0; y < UiMetrics::PAGE_HEADER_HEIGHT; ++y) {
+        for (int x = 0; x < AmoledUi::WIDTH; ++x) {
+            assert(canvas.readPixel(x, y) ==
+                   headerBeforeScroll[y * AmoledUi::WIDTH + x]);
+        }
+    }
+    assert(computerMaxStorageScroll(4) == 0);
+    assert(computerMaxStorageScroll(5) == 78);
+    assert(computerMaxStorageScroll(Game::STORAGE_CAP) ==
+           Game::STORAGE_CAP * CONTACT_ROW_HEIGHT -
+           (AmoledUi::HEIGHT - UiMetrics::CONTENT_TOP));
+    local.storageCount = 5;
+    for (uint8_t slot = 2; slot < local.storageCount; ++slot) {
+        local.storage[slot] = local.storage[1];
+    }
+    model.storageScroll = static_cast<float>(
+        computerMaxStorageScroll(local.storageCount));
+    model.pressedItem = local.storageCount - 1;
+    renderComputerScreen(canvas, model);
+    assert(computerItemAt(200, AmoledUi::HEIGHT - 1,
+                          ComputerViewModel::Page::STORAGE,
+                          model.storageScroll, local.storageCount) == 4);
+    expectPixel(canvas, 0, AmoledUi::HEIGHT - 1,
+                PixelRenderer::rgb(29, 43, 42));
+    expectRect([](int x, int y) {
+        return computerContactConfirmChoiceAt(x, y) == 0;
+    }, 40, 252, 176, 308);
+    expectRect([](int x, int y) {
+        return computerContactConfirmChoiceAt(x, y) == 1;
+    }, 192, 252, 328, 308);
+
+    // The team status renderer accepts a contact object without pretending it
+    // occupies a team slot, while preserving the existing page layout.
+    TeamStatusViewModel status;
+    status.state = &local;
+    status.monster = &local.storage[1];
+    renderTeamStatusScreen(canvas, status);
+    assert(canvas.readPixel(40, 38) == PixelRenderer::rgb(27, 43, 51));
+}
+
+void battleSpritePresentation(Canvas565& canvas, Game::GameState& state) {
+    assert(WILD_SPRITE_AREA_WIDTH == 176);
+    assert(PLAYER_SPRITE_AREA_WIDTH == 152);
+    assert(BATTLE_SPRITE_AREA_HEIGHT == 144);
+    for (int areaWidth : {176, 152}) {
+        for (const auto size : {AmoledUi::Rect{0, 0, 48, 48},
+                                AmoledUi::Rect{0, 0, 105, 65},
+                                AmoledUi::Rect{0, 0, 232, 132},
+                                AmoledUi::Rect{0, 0, 255, 20},
+                                AmoledUi::Rect{0, 0, 20, 255},
+                                AmoledUi::Rect{0, 0, 8, 8}}) {
+            const auto fit = fitBattleSprite(size.width, size.height, 0,
+                                             272, 229, areaWidth, 144, 96);
+            assert(fit.scale > 0.0f && fit.scale <= 2.0f);
+            assert(fit.rect.width <= areaWidth && fit.rect.height <= 144);
+            assert(fit.rect.x + fit.rect.width / 2 == 272);
+            assert(fit.rect.y + fit.rect.height == 229);
+            if (fit.scale < 2.0f) {
+                assert(fit.rect.width >= areaWidth - 1 || fit.rect.height >= 95);
+            }
+        }
+    }
+    const auto small = fitBattleSprite(48, 48, 0, 80, 344, 152, 144, 104);
+    assert(small.rect.width == 96 && small.rect.height == 96);
+    assert(small.rect.y + small.rect.height == 344);
+    const auto padded = fitBattleSprite(48, 64, 16, 80, 344, 152, 144, 104);
+    assert(padded.rect.height == 128);
+    assert(padded.rect.y + 96 == 344);
+    assert(fitBattleSprite(0, 48, 0, 80, 344, 152, 144, 104).scale == 0.0f);
+    assert(battleSpriteAirLift(5) == 0);
+    assert(battleSpriteAirLift(92) == 24);
+    assert(battleSpriteAirLift(380) == 36);
+    assert(padded.rect.y - battleSpriteAirLift(92) + 96 == 344 - 24);
+
+    BattleViewModel model;
+    model.state = &state;
+    model.playerSpeciesId = 1;
+    model.wildSpeciesId = 4;
+    model.animationActive = true;
+    model.animationHit = true;
+    PixelCache565 cache;
+    for (bool wildAttacker : {false, true}) {
+        model.animationAttackerWild = wildAttacker;
+        for (int frame : {3, 4, 5}) {
+            model.animationFrame = frame;
+            model.animationDamage = 0;
+            renderBattleScreen(canvas, model, cache);
+            const auto expected = capture(canvas);
+            for (int damage : {1, 99, 999}) {
+                model.animationDamage = damage;
+                renderBattleScreen(canvas, model, cache);
+                assert(capture(canvas) == expected);
+            }
+        }
+    }
+    model.animationActive = false;
+    model.animationFrame = 0;
+    model.playerSwitchOffsetX = 0;
+    renderBattleScreen(canvas, model, cache);
+    const auto readyFrame = capture(canvas);
+    model.playerSwitchOffsetX = -60;
+    renderBattleScreen(canvas, model, cache, 0, 384);
+    assert(capture(canvas) != readyFrame);
+    model.playerSwitchOffsetX = -180;
+    renderBattleScreen(canvas, model, cache, 0, 384);
+    model.playerSwitchOffsetX = 0;
+    renderBattleScreen(canvas, model, cache, 0, 384);
+    assert(capture(canvas) == readyFrame);
+}
+
+void homeFaintHpHud(Canvas565& canvas, Game::GameState&) {
+    HomeViewModel model;
+    model.monsterCount = 2;
+    model.monsters[0].fainted = true;
+    model.monsters[0].faintRest = 50;
+    model.monsters[1].fainted = true;
+    model.monsters[1].faintRest = 25;
+    const auto track = PixelRenderer::rgb(39, 45, 50);
+    const auto rest = PixelRenderer::rgb(156, 174, 181);
+    const auto lowHp = PixelRenderer::rgb(232, 80, 84);
+    renderHomeScreen(canvas, model, HOME_STATUS_TOP, 448);
+    expectPixel(canvas, 260, 372, rest);
+    expectPixel(canvas, 320, 372, track);
+    expectPixel(canvas, 260, 414, rest);
+    expectPixel(canvas, 300, 414, track);
+
+    model.monsters[0].fainted = false;
+    model.monsters[0].hp = 1;
+    renderHomeScreen(canvas, model, HOME_STATUS_TOP, 448);
+    expectPixel(canvas, 252, 372, lowHp);
+    expectPixel(canvas, 253, 372, lowHp);
+    expectPixel(canvas, 260, 372, track);
+    expectPixel(canvas, 260, 414, rest);
+}
+
+void homeVisitRecall(Canvas565& canvas, Game::GameState&) {
+    HomeViewModel model;
+    renderHomeScreen(canvas, model, HOME_STATUS_TOP, 448);
+    const auto menuHud = capture(canvas);
+    model.visitAway = true;
+    renderHomeScreen(canvas, model, HOME_STATUS_TOP, 448);
+    assert(capture(canvas) != menuHud);
+    assert(homeHitTargetAt(120, 396) == HomeHitTarget::MENU);
+    model.recallConfirm = true;
+    renderHomeScreen(canvas, model);
+    expectPixel(canvas, 60, 230, PixelRenderer::rgb(46, 106, 92));
+    assert(recallConfirmChoiceAt(54, 226) == 0);
+    assert(recallConfirmChoiceAt(169, 281) == 0);
+    assert(recallConfirmChoiceAt(198, 226) == 1);
+    assert(recallConfirmChoiceAt(313, 281) == 1);
+    assert(recallConfirmChoiceAt(184, 250) == -1);
+}
+
+void exploreOverlayGeometry(Canvas565& canvas, Game::GameState&) {
+    ExploreRouteViewModel model;
+    PixelCache565 cache;
+    const auto panel = PixelRenderer::rgb(17, 27, 34);
+    const auto stay = PixelRenderer::rgb(36, 54, 61);
+    const auto toastBackground = PixelRenderer::rgb(20, 31, 38);
+
+    model.complete = true;
+    renderExploreRouteScreen(canvas, model, cache, 136, 268);
+    expectPixel(canvas, 184, 250, panel);
+
+    model.complete = false;
+    model.exitConfirm = true;
+    renderExploreRouteScreen(canvas, model, cache, 290, 428);
+    expectPixel(canvas, 100, 398, stay);
+
+    model.exitConfirm = false;
+    model.toast = "捡到全愈药";
+    renderExploreRouteScreen(
+        canvas, model, cache, UiCommon::TOAST_TOP, UiCommon::TOAST_BOTTOM);
+    const int toastX = (AmoledUi::WIDTH -
+                        std::min(UiCommon::textWidth(model.toast) + 28,
+                                 AmoledUi::WIDTH - 16)) / 2;
+    expectPixel(canvas, toastX + 10, UiCommon::TOAST_BOTTOM - 6,
+                toastBackground);
 }
 
 void mainMenuGrid(Canvas565& canvas, Game::GameState&) {
@@ -402,8 +721,14 @@ bool runUiBehaviorCase(const char* name, Canvas565& canvas, Game::GameState& sta
         {"team-popup", teamPopup},
         {"team-navigation", teamNavigation},
         {"team-status-values", teamStatusValues},
+        {"team-status-segmented-bars", teamStatusSegmentedBars},
         {"team-moves-list", teamMovesList},
+        {"computer-contacts", computerContacts},
         {"main-menu-grid", mainMenuGrid},
+        {"battle-sprite-presentation", battleSpritePresentation},
+        {"home-faint-hp-hud", homeFaintHpHud},
+        {"home-visit-recall", homeVisitRecall},
+        {"explore-overlay-geometry", exploreOverlayGeometry},
     };
     for (const auto& test : cases) {
         if (std::strcmp(test.name, name) == 0) {

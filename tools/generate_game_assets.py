@@ -11,7 +11,7 @@ from PIL import Image
 
 from asset_paths import essentials_dir
 from generate_explore_map import autotile_variant, regular_tile
-from map_generation_rules import CUSTOM_TILE_SOURCES, CUSTOM_TILE_SOURCE_FLIP_Y
+from map_generation_rules import CUSTOM_TILE_SOURCES, CUSTOM_TILE_SOURCE_FLIP_Y, CUSTOM_TILE_SOURCE_ROTATIONS
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -280,13 +280,16 @@ KIND_ORDER.append("BALL_BURST_STAR")
 KIND_ORDER.extend(kind for kind, _ in BACKGROUNDS)
 KIND_ORDER.extend(kind for kind, _ in MENU_BACKGROUNDS)
 KIND_ORDER.extend(kind for kind, _ in EXPLORE_TILES)
-KIND_ORDER.extend(kind for kind, _runtime_id, _tileset, _source_id in EXTERNAL_EXPLORE_TILES)
+KIND_ORDER.extend(kind for kind, runtime_id, _tileset, _source_id in EXTERNAL_EXPLORE_TILES
+                  if runtime_id <= 4761)
 KIND_ORDER.extend(kind for kind, _tile_id, _source, _frame in ANIMATED_EXPLORE_FRAMES)
 KIND_ORDER.append("EGG")
 KIND_ORDER.extend(kind for kind, _ in STATUS_ICONS)
 KIND_ORDER.extend(kind for kind, _ in EXPLORE_PICKUP_MARKERS)
 KIND_ORDER.extend(kind for kind, _ in EVOLUTION_BACKGROUNDS)
 KIND_ORDER.extend(kind for kind, _ in LATE_ITEMS)
+KIND_ORDER.extend(kind for kind, runtime_id, _tileset, _source_id in EXTERNAL_EXPLORE_TILES
+                  if runtime_id > 4761)
 KIND_IDS = {kind: index for index, kind in enumerate(KIND_ORDER)}
 
 
@@ -769,6 +772,8 @@ def build_assets():
         tile = prepare_explore_tile(source_id, external_tilesets[tileset_name], ())
         if _runtime_id in CUSTOM_TILE_SOURCE_FLIP_Y:
             tile = tile.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+        if _runtime_id in CUSTOM_TILE_SOURCE_ROTATIONS:
+            tile = tile.rotate(CUSTOM_TILE_SOURCE_ROTATIONS[_runtime_id])
         writers["map"].add(kind, quantize_rgba(tile, 16))
     animated_sources = {
         name: load_rgba(GRAPHICS / "Autotiles" / f"{name}.png")

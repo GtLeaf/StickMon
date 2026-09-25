@@ -1,0 +1,30 @@
+[
+  {
+    "image": "/Users/gtleaf/project/esp/StickMon/output/frost_crystal_cave_previews/updated/frost_crystal_cave_01_20260713_top.png",
+    "debug": "/Users/gtleaf/project/esp/StickMon/output/frost_crystal_cave_previews/updated/frost_crystal_cave_01_20260713_top_debug.png",
+    "seed": "0x20260713",
+    "entry": "top",
+    "fingerprint": "affc4b9a"
+  },
+  {
+    "image": "/Users/gtleaf/project/esp/StickMon/output/frost_crystal_cave_previews/updated/frost_crystal_cave_02_13579bdf_right.png",
+    "debug": "/Users/gtleaf/project/esp/StickMon/output/frost_crystal_cave_previews/updated/frost_crystal_cave_02_13579bdf_right_debug.png",
+    "seed": "0x13579bdf",
+    "entry": "right",
+    "fingerprint": "d816e475"
+  },
+  {
+    "image": "/Users/gtleaf/project/esp/StickMon/output/frost_crystal_cave_previews/updated/frost_crystal_cave_03_c0ffee01_bottom.png",
+    "debug": "/Users/gtleaf/project/esp/StickMon/output/frost_crystal_cave_previews/updated/frost_crystal_cave_03_c0ffee01_bottom_debug.png",
+    "seed": "0xc0ffee01",
+    "entry": "bottom",
+    "fingerprint": "f4e61bbc"
+  },
+  {
+    "image": "/Users/gtleaf/project/esp/StickMon/output/frost_crystal_cave_previews/updated/frost_crystal_cave_04_deadbeef_left.png",
+    "debug": "/Users/gtleaf/project/esp/StickMon/output/frost_crystal_cave_previews/updated/frost_crystal_cave_04_deadbeef_left_debug.png",
+    "seed": "0xdeadbeef",
+    "entry": "left",
+    "fingerprint": "15042e47"
+  }
+]

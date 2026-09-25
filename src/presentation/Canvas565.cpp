@@ -100,6 +100,51 @@ uint16_t Canvas565::readPixel(int x, int y) const {
                                physicalWidth_ + x * scale]);
 }
 
+bool Canvas565::blendRectAlphaNative(int x, int y, int w, int h,
+                                    uint16_t color, uint8_t alpha) {
+    if (renderScale() != 1) return false;
+    if (!pixels_ || w <= 0 || h <= 0 || alpha == 0) return true;
+    if (alpha == 255) {
+        fillRect(x, y, w, h, color);
+        return true;
+    }
+
+    const int left = std::max(x, clipLeft_);
+    const int top = std::max(y, clipTop_);
+    const int right = std::min(x + w, clipRight_);
+    const int bottom = std::min(y + h, clipBottom_);
+    if (left >= right || top >= bottom) return true;
+
+    const uint8_t inverse = static_cast<uint8_t>(255 - alpha);
+    const uint8_t sourceR = static_cast<uint8_t>(((color >> 11) & 31) * 255 / 31);
+    const uint8_t sourceG = static_cast<uint8_t>(((color >> 5) & 63) * 255 / 63);
+    const uint8_t sourceB = static_cast<uint8_t>((color & 31) * 255 / 31);
+    uint16_t red[32], green[64], blue[32];
+    for (int index = 0; index < 32; ++index) {
+        const int channel = index * 255 / 31;
+        red[index] = static_cast<uint16_t>(
+            ((sourceR * alpha + channel * inverse) / 255) >> 3) << 11;
+        blue[index] = static_cast<uint16_t>(
+            ((sourceB * alpha + channel * inverse) / 255) >> 3);
+    }
+    for (int index = 0; index < 64; ++index) {
+        const int channel = index * 255 / 63;
+        green[index] = static_cast<uint16_t>(
+            ((sourceG * alpha + channel * inverse) / 255) >> 2) << 5;
+    }
+    for (int row = top; row < bottom; ++row) {
+        uint16_t* pixel = pixels_ + static_cast<size_t>(row) * physicalWidth_ + left;
+        for (int column = left; column < right; ++column, ++pixel) {
+            const uint16_t previous = decodeColor(*pixel);
+            *pixel = encodeColor(static_cast<uint16_t>(
+                red[previous >> 11] |
+                green[(previous >> 5) & 63] |
+                blue[previous & 31]));
+        }
+    }
+    return true;
+}
+
 void Canvas565::drawFastHLine(int x, int y, int w, uint16_t color) {
     fillRect(x, y, w, 1, color);
 }

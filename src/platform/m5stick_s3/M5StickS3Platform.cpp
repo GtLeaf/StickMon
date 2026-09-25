@@ -11,6 +11,7 @@
 #include <esp_wifi.h>
 #include <new>
 
+#include "core/TraceLog.h"
 #include "hardware/EspNowRadioConfig.h"
 
 namespace {
@@ -465,14 +466,28 @@ bool M5StickS3Platform::enable() {
     if (peerTransportActive_) return true;
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
-    if (esp_wifi_set_ps(WIFI_PS_NONE) != ESP_OK ||
-        esp_wifi_set_channel(EspNowRadioConfig::CHANNEL,
-                             WIFI_SECOND_CHAN_NONE) != ESP_OK) {
+    esp_err_t radioResult = esp_wifi_set_ps(WIFI_PS_NONE);
+    if (radioResult != ESP_OK) {
+        STICKMON_TRACEF("[VisitRadio] wifi power-save failed err=%s\n",
+                        esp_err_to_name(radioResult));
         WiFi.mode(WIFI_OFF);
         return false;
     }
-    if (esp_now_init() != ESP_OK ||
-        esp_now_register_recv_cb(receivePeerPacket) != ESP_OK) {
+    radioResult = esp_wifi_set_channel(EspNowRadioConfig::CHANNEL,
+                                       WIFI_SECOND_CHAN_NONE);
+    if (radioResult != ESP_OK) {
+        STICKMON_TRACEF("[VisitRadio] set channel=%u failed err=%s\n",
+                        EspNowRadioConfig::CHANNEL, esp_err_to_name(radioResult));
+        WiFi.mode(WIFI_OFF);
+        return false;
+    }
+    radioResult = esp_now_init();
+    if (radioResult == ESP_OK) {
+        radioResult = esp_now_register_recv_cb(receivePeerPacket);
+    }
+    if (radioResult != ESP_OK) {
+        STICKMON_TRACEF("[VisitRadio] esp-now init/register failed err=%s\n",
+                        esp_err_to_name(radioResult));
         esp_now_deinit();
         WiFi.mode(WIFI_OFF);
         return false;
@@ -482,11 +497,22 @@ bool M5StickS3Platform::enable() {
     gPeerQueueTail = 0;
     portEXIT_CRITICAL(&gPeerQueueMux);
     peerTransportActive_ = true;
+#if STICKMON_ENABLE_TRACE_LOGS
+    uint8_t channel = 0;
+    wifi_second_chan_t secondChannel = WIFI_SECOND_CHAN_NONE;
+    uint8_t mac[6] = {};
+    esp_wifi_get_channel(&channel, &secondChannel);
+    esp_wifi_get_mac(WIFI_IF_STA, mac);
+    STICKMON_TRACEF("[VisitRadio] ready channel=%u expected=%u mac=%02X:%02X:%02X:%02X:%02X:%02X\n",
+                    channel, EspNowRadioConfig::CHANNEL, mac[0], mac[1],
+                    mac[2], mac[3], mac[4], mac[5]);
+#endif
     return true;
 }
 
 void M5StickS3Platform::end() {
     if (!peerTransportActive_) return;
+    STICKMON_TRACEF("[VisitRadio] stopped\n");
     esp_now_unregister_recv_cb();
     esp_now_deinit();
     WiFi.mode(WIFI_OFF);
@@ -508,10 +534,31 @@ bool M5StickS3Platform::send(const uint8_t destination[6], const void* data,
         memcpy(peer.peer_addr, destination, sizeof(peer.peer_addr));
         peer.channel = 0;
         peer.encrypt = false;
-        if (esp_now_add_peer(&peer) != ESP_OK) return false;
+        esp_err_t addResult = esp_now_add_peer(&peer);
+        if (addResult != ESP_OK) {
+            STICKMON_TRACEF("[VisitRadio] add peer failed err=%s dest=%02X:%02X\n",
+                            esp_err_to_name(addResult), destination[4],
+                            destination[5]);
+            return false;
+        }
     }
-    return esp_now_send(destination, static_cast<const uint8_t*>(data), length) ==
-           ESP_OK;
+    esp_err_t sendResult = esp_now_send(
+        destination, static_cast<const uint8_t*>(data), length);
+    if (sendResult != ESP_OK) {
+#if STICKMON_ENABLE_TRACE_LOGS
+        static uint32_t lastBroadcastErrorMs = 0;
+        uint32_t nowMs = millis();
+        if (destination[0] != 0xFF || lastBroadcastErrorMs == 0 ||
+            nowMs - lastBroadcastErrorMs >= 5000) {
+            STICKMON_TRACEF("[VisitRadio] send failed err=%s len=%u dest=%02X:%02X\n",
+                            esp_err_to_name(sendResult),
+                            static_cast<unsigned>(length), destination[4],
+                            destination[5]);
+            if (destination[0] == 0xFF) lastBroadcastErrorMs = nowMs;
+        }
+#endif
+    }
+    return sendResult == ESP_OK;
 }
 
 bool M5StickS3Platform::receive(Platform::PeerPacket& packet) {

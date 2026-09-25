@@ -22,6 +22,9 @@ if(STICKMON_ENABLE_CLAW)
         claw_core
     )
 endif()
+if(STICKMON_ENABLE_DEBUG_FEATURES)
+    list(APPEND STICKMON_MAIN_REQUIRES esp_driver_usb_serial_jtag)
+endif()
 
 idf_component_register(
     SRCS

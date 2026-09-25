@@ -11,9 +11,12 @@ namespace {
 static constexpr uint32_t ROOM_PACK_MAGIC = 0x4D4F5253;
 static constexpr uint16_t ROOM_PACK_VERSION_V2 = 2;
 static constexpr uint16_t ROOM_PACK_VERSION = 3;
+static constexpr uint16_t ROOM_PACK_VERSION_HIRES = 4;
 static constexpr const char* DEFAULT_ROOM_ID = "standard";
-static constexpr uint16_t MAX_ROOM_W = 240;
-static constexpr uint16_t MAX_ROOM_H = 320;
+static constexpr uint16_t MAX_WORLD_W = 240;
+static constexpr uint16_t MAX_WORLD_H = 320;
+static constexpr uint16_t MAX_ART_W = 480;
+static constexpr uint16_t MAX_ART_H = 640;
 static constexpr uint8_t MAX_POLYGON_POINTS = 32;
 static constexpr uint8_t MAX_BEHAVIOR_ANCHORS = 8;
 static constexpr uint32_t MAX_PATCH_RUNS = 4096;
@@ -56,7 +59,103 @@ struct __attribute__((packed)) PackedRoomHeader {
     uint16_t flags;
     uint16_t reserved;
 };
-static_assert(sizeof(PackedRoomHeader) == 76, "room pack v2 header size changed");
+static_assert(sizeof(PackedRoomHeader) == 76, "room pack v3 header size changed");
+
+struct __attribute__((packed)) PackedRoomHeaderHires : PackedRoomHeader {
+    uint16_t artWidth;
+    uint16_t artHeight;
+};
+static_assert(sizeof(PackedRoomHeaderHires) == 80, "room pack v4 header size changed");
+
+struct RoomHeaderData {
+    uint32_t magic = 0;
+    uint16_t version = 0;
+    uint16_t width = 0;
+    uint16_t height = 0;
+    uint16_t artWidth = 0;
+    uint16_t artHeight = 0;
+    int16_t roomY = 0;
+    uint32_t baseRawBytes = 0;
+    uint32_t baseCompressedLen = 0;
+    uint32_t nightPatchRunCount = 0;
+    uint32_t nightPatchPixelCount = 0;
+    uint8_t walkPolygonCount = 0;
+    uint8_t bedPolygonCount = 0;
+    uint8_t doorwayPolygonCount = 0;
+    uint8_t behaviorAnchorCount = 0;
+    int16_t walkMinX = 0;
+    int16_t walkMinY = 0;
+    int16_t walkMaxX = 0;
+    int16_t walkMaxY = 0;
+    int16_t foodX = 0;
+    int16_t foodY = 0;
+    int16_t bedMinX = 0;
+    int16_t bedMinY = 0;
+    int16_t bedMaxX = 0;
+    int16_t bedMaxY = 0;
+    int16_t bedX = 0;
+    int16_t bedY = 0;
+    int16_t doorwayMinX = 0;
+    int16_t doorwayMinY = 0;
+    int16_t doorwayMaxX = 0;
+    int16_t doorwayMaxY = 0;
+    int16_t doorwayInsideX = 0;
+    int16_t doorwayInsideY = 0;
+    int16_t doorwayOutsideX = 0;
+    int16_t doorwayOutsideY = 0;
+    uint16_t flags = 0;
+    uint16_t reserved = 0;
+};
+
+RoomHeaderData normalizeHeader(const PackedRoomHeader& source) {
+    RoomHeaderData out;
+    out.magic = source.magic;
+    out.version = source.version;
+    out.width = source.width;
+    out.height = source.height;
+    out.artWidth = source.width;
+    out.artHeight = source.height;
+    out.roomY = source.roomY;
+    out.baseRawBytes = source.baseRawBytes;
+    out.baseCompressedLen = source.baseCompressedLen;
+    out.nightPatchRunCount = source.nightPatchRunCount;
+    out.nightPatchPixelCount = source.nightPatchPixelCount;
+    out.walkPolygonCount = source.walkPolygonCount;
+    out.bedPolygonCount = source.bedPolygonCount;
+    out.doorwayPolygonCount = source.doorwayPolygonCount;
+    out.behaviorAnchorCount = source.behaviorAnchorCount;
+    out.walkMinX = source.walkMinX;
+    out.walkMinY = source.walkMinY;
+    out.walkMaxX = source.walkMaxX;
+    out.walkMaxY = source.walkMaxY;
+    out.foodX = source.foodX;
+    out.foodY = source.foodY;
+    out.bedMinX = source.bedMinX;
+    out.bedMinY = source.bedMinY;
+    out.bedMaxX = source.bedMaxX;
+    out.bedMaxY = source.bedMaxY;
+    out.bedX = source.bedX;
+    out.bedY = source.bedY;
+    out.doorwayMinX = source.doorwayMinX;
+    out.doorwayMinY = source.doorwayMinY;
+    out.doorwayMaxX = source.doorwayMaxX;
+    out.doorwayMaxY = source.doorwayMaxY;
+    out.doorwayInsideX = source.doorwayInsideX;
+    out.doorwayInsideY = source.doorwayInsideY;
+    out.doorwayOutsideX = source.doorwayOutsideX;
+    out.doorwayOutsideY = source.doorwayOutsideY;
+    out.flags = source.flags;
+    out.reserved = source.reserved;
+    return out;
+}
+
+RoomHeaderData normalizeHeader(const PackedRoomHeaderHires& source) {
+    RoomHeaderData out = normalizeHeader(static_cast<const PackedRoomHeader&>(source));
+    out.artWidth = source.artWidth;
+    out.artHeight = source.artHeight;
+    return out;
+}
+
 static_assert(sizeof(RoomResource::BehaviorAnchor) == 6, "room behavior anchor layout changed");
 
 template <typename T>
@@ -71,12 +170,18 @@ bool readExact(Platform::ResourceFile& file, void* out, size_t length) {
     return file.read(reinterpret_cast<uint8_t*>(out), length) == length;
 }
 
-bool validHeader(const PackedRoomHeader& h) {
+bool validHeader(const RoomHeaderData& h) {
     if (h.magic != ROOM_PACK_MAGIC ||
-        (h.version != ROOM_PACK_VERSION_V2 && h.version != ROOM_PACK_VERSION)) return false;
-    if (h.width == 0 || h.width > MAX_ROOM_W || h.height == 0 || h.height > MAX_ROOM_H) return false;
-    if (h.roomY < 0 || h.roomY >= static_cast<int16_t>(MAX_ROOM_H)) return false;
-    if (h.baseRawBytes != (uint32_t)h.width * h.height * sizeof(uint16_t)) return false;
+        (h.version != ROOM_PACK_VERSION_V2 && h.version != ROOM_PACK_VERSION &&
+         h.version != ROOM_PACK_VERSION_HIRES)) return false;
+    if (h.width == 0 || h.width > MAX_WORLD_W || h.height == 0 || h.height > MAX_WORLD_H) return false;
+    if (h.artWidth == 0 || h.artWidth > MAX_ART_W ||
+        h.artHeight == 0 || h.artHeight > MAX_ART_H) return false;
+    if (h.artWidth < h.width || h.artHeight < h.height) return false;
+    if (h.artWidth % h.width != 0 || h.artHeight % h.height != 0) return false;
+    if (h.artWidth / h.width != h.artHeight / h.height) return false;
+    if (h.roomY < 0 || h.roomY >= static_cast<int16_t>(MAX_WORLD_H)) return false;
+    if (h.baseRawBytes != (uint32_t)h.artWidth * h.artHeight * sizeof(uint16_t)) return false;
     if (h.baseCompressedLen == 0 || h.baseCompressedLen > h.baseRawBytes) return false;
     if (h.walkPolygonCount < 3 || h.walkPolygonCount > MAX_POLYGON_POINTS ||
         h.bedPolygonCount < 3 || h.bedPolygonCount > MAX_POLYGON_POINTS) return false;
@@ -87,6 +192,9 @@ bool validHeader(const PackedRoomHeader& h) {
     if (h.flags > 1 || h.reserved != 0) return false;
     if ((h.version == ROOM_PACK_VERSION_V2 && h.behaviorAnchorCount != 0) ||
         h.behaviorAnchorCount > MAX_BEHAVIOR_ANCHORS) return false;
+
+    if (h.version != ROOM_PACK_VERSION_HIRES &&
+        (h.artWidth != h.width || h.artHeight != h.height)) return false;
 
     auto validBounds = [](int16_t minX, int16_t minY, int16_t maxX, int16_t maxY,
                           uint16_t width, uint16_t height) {
@@ -113,14 +221,15 @@ bool validHeader(const PackedRoomHeader& h) {
     return true;
 }
 
-bool validPayload(const PackedRoomHeader& h, const RoomResource::PatchRun* runs,
+bool validPayload(const RoomHeaderData& h, const RoomResource::PatchRun* runs,
                   const RoomResource::Point* walk, const RoomResource::Point* bed,
                   const RoomResource::Point* doorway,
                   const RoomResource::BehaviorAnchor* anchors) {
     uint32_t expectedColorOffset = 0;
     for (uint32_t i = 0; i < h.nightPatchRunCount; ++i) {
         const RoomResource::PatchRun& run = runs[i];
-        if (run.len == 0 || run.y >= h.height || run.x >= h.width || run.len > h.width - run.x) return false;
+        if (run.len == 0 || run.y >= h.artHeight || run.x >= h.artWidth ||
+            run.len > h.artWidth - run.x) return false;
         if (run.colorOffset != expectedColorOffset ||
             run.colorOffset > h.nightPatchPixelCount ||
             run.len > h.nightPatchPixelCount - run.colorOffset) {
@@ -183,9 +292,11 @@ bool RoomResource::begin() {
     initialized_ = true;
     clearMeta();
     loaded_ = loadExternal();
-    Platform::logf("[RoomResource] source=%s size=%ux%u base=%u patchRuns=%u patchPixels=%u "
+    Platform::logf("[RoomResource] source=%s world=%ux%u art=%ux%u scale=%u base=%u "
+                  "patchRuns=%u patchPixels=%u "
                   "door=%u inside=%d,%d outside=%d,%d anchors=%u\n",
-                  source(), width_, height_, baseCompressedLen_,
+                  source(), width_, height_, artWidth_, artHeight_, artScale_,
+                  baseCompressedLen_,
                   nightPatchRunCount_, nightPatchPixelCount_, doorwayPolygonCount_,
                   doorwayInsideX_, doorwayInsideY_, doorwayOutsideX_, doorwayOutsideY_,
                   behaviorAnchorCount_);
@@ -245,13 +356,41 @@ bool RoomResource::loadExternal() {
     Platform::ResourceFile file;
     if (!pack.openRoom(DEFAULT_ROOM_ID, file)) return false;
 
-    PackedRoomHeader header{};
-    if (!readExact(file, &header, sizeof(header)) || !validHeader(header)) {
+    struct __attribute__((packed)) HeaderPrefix {
+        uint32_t magic;
+        uint16_t version;
+    } prefix{};
+    if (!readExact(file, &prefix, sizeof(prefix)) ||
+        prefix.magic != ROOM_PACK_MAGIC ||
+        !file.seek(0)) {
         Platform::logLine("[RoomResource] invalid room header");
         return false;
     }
 
-    uint64_t expectedSize = sizeof(header) + static_cast<uint64_t>(header.baseCompressedLen) +
+    RoomHeaderData header;
+    if (prefix.version == ROOM_PACK_VERSION_HIRES) {
+        PackedRoomHeaderHires packed{};
+        if (!readExact(file, &packed, sizeof(packed))) {
+            Platform::logLine("[RoomResource] truncated v4 room header");
+            return false;
+        }
+        header = normalizeHeader(packed);
+    } else {
+        PackedRoomHeader packed{};
+        if (!readExact(file, &packed, sizeof(packed))) {
+            Platform::logLine("[RoomResource] truncated legacy room header");
+            return false;
+        }
+        header = normalizeHeader(packed);
+    }
+    if (!validHeader(header)) {
+        Platform::logLine("[RoomResource] invalid room header");
+        return false;
+    }
+
+    const size_t headerSize = header.version == ROOM_PACK_VERSION_HIRES
+        ? sizeof(PackedRoomHeaderHires) : sizeof(PackedRoomHeader);
+    uint64_t expectedSize = headerSize + static_cast<uint64_t>(header.baseCompressedLen) +
                             static_cast<uint64_t>(header.nightPatchRunCount) * sizeof(PatchRun) +
                             static_cast<uint64_t>(header.nightPatchPixelCount) * sizeof(uint16_t) +
                             static_cast<uint64_t>(header.walkPolygonCount + header.bedPolygonCount +
@@ -321,6 +460,9 @@ bool RoomResource::loadExternal() {
     releaseExternal();
     width_ = header.width;
     height_ = header.height;
+    artWidth_ = header.artWidth;
+    artHeight_ = header.artHeight;
+    artScale_ = static_cast<uint8_t>(header.artWidth / header.width);
     roomY_ = header.roomY;
     baseRawBytes_ = header.baseRawBytes;
     baseCompressedLen_ = header.baseCompressedLen;
@@ -365,6 +507,9 @@ void RoomResource::clearMeta() {
     loaded_ = false;
     width_ = 0;
     height_ = 0;
+    artWidth_ = 0;
+    artHeight_ = 0;
+    artScale_ = 1;
     roomY_ = 0;
     baseRawBytes_ = 0;
     baseCompressedLen_ = 0;

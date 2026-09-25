@@ -1,4 +1,5 @@
 #include "hardware/EspNowLink.h"
+#include "core/TraceLog.h"
 #include "platform/api/PlatformServices.h"
 
 constexpr uint8_t EspNowLink::BROADCAST_MAC[6];
@@ -126,6 +127,8 @@ void EspNowLink::update() {
 
     if (tracked.active && now - tracked.lastSendMs >= SESSION_RETRANSMIT_MS) {
         if (tracked.attempts > SESSION_MAX_ATTEMPTS) {
+            STICKMON_TRACEF("[VisitLink] session ack timeout type=%u seq=%u\n",
+                            static_cast<unsigned>(tracked.type), tracked.seq);
             tracked.active = false;
             sessionResultReady = true;
             sessionResultSuccess = false;
@@ -174,6 +177,11 @@ bool EspNowLink::sendJoinRequest(uint8_t index) {
         awaitingAck = false;
     }
     return sent;
+}
+
+void EspNowLink::cancelJoinRequest() {
+    awaitingAck = false;
+    pendingAck = false;
 }
 
 bool EspNowLink::takeJoinRequest(uint8_t outMac[6], RoomPurpose& outPurpose, uint16_t& outRequestSeq) {
@@ -240,6 +248,20 @@ void EspNowLink::handleReceive(const uint8_t* mac, const uint8_t* data, int len)
     uint32_t now = Platform::clock().millis();
     if (packet.type == LinkMessageType::HELLO && mode == Mode::SEARCHING &&
         purpose == activePurpose && packet.roomId != 0) {
+#if STICKMON_ENABLE_TRACE_LOGS
+        bool newRoom = true;
+        for (uint8_t index = 0; index < roomCountValue; ++index) {
+            if (rooms[index].roomId == packet.roomId &&
+                memcmp(rooms[index].mac, mac, 6) == 0) {
+                newRoom = false;
+                break;
+            }
+        }
+        if (newRoom) {
+            STICKMON_TRACEF("[VisitLink] discovered room=%u peer=%02X:%02X\n",
+                            packet.roomId, mac[4], mac[5]);
+        }
+#endif
         rememberRoomLocked(mac, packet.roomId, purpose, now);
     } else if (packet.type == LinkMessageType::JOIN_REQ && mode == Mode::HOSTING &&
                purpose == activePurpose && packet.roomId == roomId &&
@@ -248,6 +270,8 @@ void EspNowLink::handleReceive(const uint8_t* mac, const uint8_t* data, int len)
         pendingJoinPurpose = purpose;
         pendingJoinSeq = packet.requestSeq;
         pendingJoin = true;
+        STICKMON_TRACEF("[VisitLink] join request room=%u seq=%u peer=%02X:%02X\n",
+                        packet.roomId, packet.requestSeq, mac[4], mac[5]);
     } else if (packet.type == LinkMessageType::JOIN_ACK && mode == Mode::SEARCHING &&
                awaitingAck && purpose == activePurpose &&
                packet.roomId == expectedAckRoomId && packet.requestSeq == expectedAckSeq &&
@@ -255,6 +279,8 @@ void EspNowLink::handleReceive(const uint8_t* mac, const uint8_t* data, int len)
         pendingAck = true;
         pendingAckAccepted = packet.accepted != 0;
         awaitingAck = false;
+        STICKMON_TRACEF("[VisitLink] join ack room=%u seq=%u accepted=%u\n",
+                        packet.roomId, packet.requestSeq, packet.accepted);
         if (pendingAckAccepted) {
             memcpy(peer, mac, 6);
             sessionIdValue = expectedAckSeq;
@@ -375,6 +401,13 @@ void EspNowLink::handleSessionFrame(const uint8_t* mac, const uint8_t* data, int
     bool valid = mode == Mode::CONNECTED && sessionIdValue != 0 &&
                  frame.sessionId == sessionIdValue && memcmp(mac, peer, 6) == 0;
     if (valid) {
+        if (type == LinkMessageType::VISIT_SYNC ||
+            type == LinkMessageType::VISIT_ACCEPT ||
+            type == LinkMessageType::SESSION_ACK) {
+            STICKMON_TRACEF("[VisitLink] session rx type=%u seq=%u id=%u\n",
+                            static_cast<unsigned>(type), frame.seq,
+                            frame.sessionId);
+        }
         if (type == LinkMessageType::SESSION_ACK) {
             if (tracked.active && tracked.seq == frame.seq) {
                 tracked.active = false;

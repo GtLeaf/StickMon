@@ -79,7 +79,8 @@ bool PixelCache565::copyRowsTo(Canvas565& canvas, const RenderCacheKey& key,
 
 void RenderCaches::retainForScene(AppSceneFlow::Scene scene) {
     using AppSceneFlow::Scene;
-    if (scene != Scene::BATTLE) battleBackground.release();
+    if (scene != Scene::BATTLE && scene != Scene::EXPLORE_ROUTE &&
+        scene != Scene::EXPLORE_MENU) battleBackground.release();
     if (scene != Scene::EXPLORE_AREAS) exploreBackground.release();
     // Keep the world through route menus, battles and progression dialogs.
     if (scene == Scene::HOME || scene == Scene::EXPLORE_AREAS) exploreWorld.release();

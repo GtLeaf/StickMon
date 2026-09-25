@@ -81,6 +81,7 @@ private:
     bool loadSfxCache(SfxCue cue);
     bool decodeMusicBlock(uint8_t bufferIndex);
     bool queueNextMusicBlock(bool stopCurrent);
+    void beginHomeMusicSilence(uint32_t nowMs);
     void releaseMusic();
     void releaseSfx();
     void updateMusicFade(uint32_t nowMs);
@@ -93,6 +94,8 @@ private:
     uint8_t nextMusicBuffer_ = 0;
     uint32_t nextMusicBlock_ = 0;
     uint16_t nextMusicSkipSamples_ = 0;
+    uint32_t homeMusicResumeAtMs_ = 0;
+    bool homeMusicCycleComplete_ = false;
 
     uint8_t* sfxPcm_ = nullptr;
     size_t sfxPcmBytes_ = 0;

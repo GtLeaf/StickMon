@@ -44,7 +44,7 @@ EDGE_TRACE_TURN_TILES = {
     "up_to_right": 582,
 }
 
-FROST_CAVE_EXIT_TILES = (1299, 1300, 1301)
+FROST_CAVE_EXIT_TILES = (1301, 1300, 1299)
 FROST_BLOCKED_SNOW_MASS_TILES = (
     (1296, 1297, 1298),
     (1304, 1305, 1306),
@@ -107,7 +107,7 @@ CAVE_RUNTIME_TILE_SOURCES = (
     (4732, 609), (4733, 610), (4734, 611),
     (4735, 617), (4736, 618), (4737, 619),
     (4738, 617), (4739, 618), (4740, 619),  # Y-flipped open top
-    (4741, 1299), (4742, 1300), (4743, 1301),
+    (4741, 1301), (4742, 1300), (4743, 1299),
     (4744, 1322),
     (4745, 1326), (4746, 1327),
     (4747, 1333),
@@ -119,8 +119,17 @@ CAVE_RUNTIME_TILE_SOURCES = (
     (4759, 576),  # Cave cliff left edge
     (4760, 577),  # Cave cliff middle
     (4761, 578),  # Cave cliff right edge
+    (4762, 1301), (4763, 1300), (4764, 1299),
+    (4765, 1301), (4766, 1300), (4767, 1299),
+    (4768, 1301), (4769, 1300), (4770, 1299),
+    (4771, 1308), (4772, 1332), (4773, 1340),
 )
 CAVE_RUNTIME_FLIP_Y_IDS = frozenset((4738, 4739, 4740))
+CAVE_RUNTIME_ROTATIONS = {
+    **{tile_id: 180 for tile_id in range(4741, 4744)},
+    **{tile_id: 270 for tile_id in range(4762, 4765)},
+    **{tile_id: 90 for tile_id in range(4768, 4771)},
+}
 
 CAVE_ENTRANCE_RUNTIME_TILES = {
     "left": (4700,),
@@ -152,6 +161,14 @@ CAVE_DOWN_LADDER_OPEN_BASE_RUNTIME_TILES = (
 )
 
 FROST_CAVE_EXIT_RUNTIME_TILES = (4741, 4742, 4743)
+FROST_EXIT_DIRECTIONAL_RUNTIME_TILES = {
+    "top": tuple(reversed(FROST_CAVE_EXIT_RUNTIME_TILES)),
+    "left": (4764, 4763, 4762),
+    "bottom": (4767, 4766, 4765),
+    "right": (4768, 4769, 4770),
+}
+FROST_DEEP_ENTRANCE_RUNTIME_TILE = 4771  # legacy center alias; never place alone
+FROST_UP_LADDER_RUNTIME_TILES = (4772, 4773)
 FROST_BROKEN_ICE_HOLE_RUNTIME_TILE = 4744
 FROST_ROUND_WATER_BOTTOM_RUNTIME_TILES = (4745, 4746)
 FROST_DOWNWARD_STAIRS_RUNTIME_TILE = 4747
@@ -164,5 +181,5 @@ CAVE_FLOOR_RUNTIME_TILE = 4758
 CAVE_CLIFF_RUNTIME_TILES = (4759, 4760, 4761)
 
 assert tuple(runtime_id for runtime_id, _source_id in CAVE_RUNTIME_TILE_SOURCES) == tuple(
-    range(4700, 4762)
+    range(4700, 4774)
 )

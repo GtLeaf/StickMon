@@ -33,6 +33,10 @@ constexpr int EXPLORE_ROUTE_WORLD_PHYSICAL_WIDTH =
 constexpr int EXPLORE_ROUTE_WORLD_PHYSICAL_HEIGHT =
     EXPLORE_ROUTE_WORLD_HEIGHT * AmoledUi::RESOURCE_SCALE;
 
+bool isExploreActorForegroundTile(uint16_t tileId) {
+    return tileId == 4541 || tileId == 4772;
+}
+
 #if defined(ESP_PLATFORM) && STICKMON_ENABLE_DEBUG_FEATURES
 struct ExploreMapPerf {
     int64_t windowStartedUs = 0;
@@ -145,7 +149,7 @@ bool prepareExploreRouteWorldCache(Canvas565& canvas,
                  ++tileX) {
                 uint16_t tileId = model.map->layers[layer]
                     [tileY * ExploreMapGenerator::WIDTH + tileX];
-                if (tileId == 0) continue;
+                if (tileId == 0 || isExploreActorForegroundTile(tileId)) continue;
                 int x = tileX * tileSize;
                 int y = tileY * tileSize;
                 if (!GameAssets::drawExploreTileTo(
@@ -219,7 +223,7 @@ void drawExploreMap(Canvas565& canvas,
             for (int tileX = firstX; tileX <= lastX; ++tileX) {
                 uint16_t tileId = map.layers[layer]
                     [tileY * ExploreMapGenerator::WIDTH + tileX];
-                if (tileId == 0) continue;
+                if (tileId == 0 || isExploreActorForegroundTile(tileId)) continue;
                 int x = tileX * tileSize - cameraX;
                 int y = EXPLORE_ROUTE_MAP_TOP + tileY * tileSize - cameraY;
                 if (!GameAssets::drawExploreTile(
@@ -227,6 +231,42 @@ void drawExploreMap(Canvas565& canvas,
                     drawExploreTileFallback(
                         canvas, tileId, x, y, layer, fieldColor, 1);
                 }
+            }
+        }
+    }
+}
+
+void drawExploreMapForeground(Canvas565& canvas,
+                              const ExploreMapGenerator::Map& map,
+                              int cameraX, int cameraY,
+                              uint16_t fieldColor,
+                              uint16_t rowBegin, uint16_t rowEnd) {
+    constexpr int tileSize =
+        ExploreRouteGeometry::TILE_SIZE * AmoledUi::RESOURCE_SCALE;
+    cameraX *= AmoledUi::RESOURCE_SCALE;
+    cameraY *= AmoledUi::RESOURCE_SCALE;
+    int firstX = std::max(0, cameraX / tileSize);
+    int firstY = std::max(0, cameraY / tileSize);
+    int lastX = std::min<int>(
+        ExploreMapGenerator::WIDTH - 1,
+        (cameraX + AmoledUi::WIDTH - 1) / tileSize);
+    int lastY = std::min<int>(
+        ExploreMapGenerator::HEIGHT - 1,
+        (cameraY + (AmoledUi::HEIGHT - EXPLORE_ROUTE_MAP_TOP) - 1) /
+            tileSize);
+
+    for (int tileY = firstY; tileY <= lastY; ++tileY) {
+        int y = EXPLORE_ROUTE_MAP_TOP + tileY * tileSize - cameraY;
+        if (y + tileSize <= rowBegin || y >= rowEnd) continue;
+        for (int tileX = firstX; tileX <= lastX; ++tileX) {
+            uint16_t tileId = map.layers[2]
+                [tileY * ExploreMapGenerator::WIDTH + tileX];
+            if (tileId == 0 || !isExploreActorForegroundTile(tileId)) continue;
+            int x = tileX * tileSize - cameraX;
+            if (!GameAssets::drawExploreTile(
+                    tileId, x, y, 0, AmoledUi::RESOURCE_SCALE)) {
+                drawExploreTileFallback(
+                    canvas, tileId, x, y, 2, fieldColor);
             }
         }
     }
@@ -259,7 +299,8 @@ void drawExploreMapAnimations(Canvas565& canvas,
             for (int tileX = firstX; tileX <= lastX; ++tileX) {
                 uint16_t tileId = map.layers[layer]
                     [tileY * ExploreMapGenerator::WIDTH + tileX];
-                if (!GameAssets::isExploreTileAnimated(tileId)) continue;
+                if (isExploreActorForegroundTile(tileId) ||
+                    !GameAssets::isExploreTileAnimated(tileId)) continue;
                 int x = tileX * tileSize - cameraX;
                 if (!GameAssets::drawExploreTile(
                         tileId, x, y, animationFrame, AmoledUi::RESOURCE_SCALE)) {
@@ -330,6 +371,15 @@ bool drawExploreRouteMapLayer(Canvas565& canvas,
     }
 #endif
     return true;
+}
+
+void drawExploreRouteMapForegroundLayer(Canvas565& canvas,
+                                        const ExploreRouteViewModel& model,
+                                        uint16_t rowBegin, uint16_t rowEnd) {
+    if (!model.map) return;
+    drawExploreMapForeground(
+        canvas, *model.map, model.cameraX, model.cameraY,
+        ExploreAreaCatalog::fieldColor(model.area), rowBegin, rowEnd);
 }
 
 }  // namespace AmoledV1

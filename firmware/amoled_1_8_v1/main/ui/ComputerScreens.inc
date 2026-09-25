@@ -1,4 +1,84 @@
 // Extracted screen rendering and hit testing.
+namespace {
+
+constexpr int CONTACT_MENU_X = 188;
+constexpr int CONTACT_MENU_WIDTH = 168;
+constexpr int CONTACT_MENU_ROW_HEIGHT = 54;
+constexpr int CONTACT_MENU_PADDING = 8;
+constexpr int CONTACT_CONFIRM_Y = 164;
+constexpr int CONTACT_CONFIRM_HEIGHT = 160;
+
+int contactActionCount(const ComputerViewModel& model) {
+    return 1 + (model.contactInTeam ? 0 : 1) +
+           (model.contactCanDelete ? 1 : 0);
+}
+
+const char* contactActionLabel(const ComputerViewModel& model, int index) {
+    if (index == 0) return Ui::Storage::ACTION_STATUS;
+    int cursor = 1;
+    if (!model.contactInTeam) {
+        if (index == cursor) return Ui::Storage::ACTION_INVITE;
+        ++cursor;
+    }
+    if (model.contactCanDelete && index == cursor) {
+        return Ui::Storage::ACTION_DELETE;
+    }
+    return Ui::Storage::ACTION_STATUS;
+}
+
+const char* contactBondLabel(Game::Bond::Value value) {
+    const uint8_t level = static_cast<uint8_t>(Game::Bond::levelFor(value));
+    return Ui::Storage::BOND_LEVELS[level - 1];
+}
+
+uint16_t contactBondColor(Game::Bond::Value value) {
+    switch (Game::Bond::levelFor(value)) {
+    case Game::Bond::Level::AVERSE: return rgb(239, 143, 148);
+    case Game::Bond::Level::DISTANT: return rgb(126, 145, 145);
+    case Game::Bond::Level::ACQUAINTED: return rgb(135, 180, 198);
+    case Game::Bond::Level::FAMILIAR: return rgb(115, 226, 183);
+    case Game::Bond::Level::TRUSTED: return rgb(248, 210, 105);
+    case Game::Bond::Level::CLOSE: return rgb(255, 126, 168);
+    }
+    return rgb(226, 238, 233);
+}
+
+const Game::MonsterRuntime* liveContactMonster(
+    const ComputerViewModel& model, uint8_t slot) {
+    return model.state ? ContactRoster::liveMonsterForContact(*model.state, slot)
+                       : nullptr;
+}
+
+int contactMenuHeight(int actionCount) {
+    return actionCount * CONTACT_MENU_ROW_HEIGHT + 2 * CONTACT_MENU_PADDING;
+}
+
+int contactMenuTop(int actionCount, uint8_t slot, float scroll) {
+    const int rowCenter = MENU_CONTENT_TOP + slot * CONTACT_ROW_HEIGHT +
+                          CONTACT_ROW_HEIGHT / 2 -
+                          static_cast<int>(std::lround(scroll));
+    return std::clamp(rowCenter - contactMenuHeight(actionCount) / 2,
+                      MENU_CONTENT_TOP + 8,
+                      AmoledUi::HEIGHT - contactMenuHeight(actionCount) - 8);
+}
+
+void drawContactAvatar(const PokemonSprites::SpriteFrame* frame,
+                       int centerX, int centerY, int maxSize) {
+    if (!frame) return;
+    const int width = FlashStorage::readByte(&frame->width);
+    const int height = FlashStorage::readByte(&frame->height);
+    if (width <= 0 || height <= 0) return;
+    const float scale = std::min(4.0f,
+        std::min(static_cast<float>(maxSize) / width,
+                 static_cast<float>(maxSize) / height));
+    const int drawnWidth = static_cast<int>(std::lround(width * scale));
+    const int drawnHeight = static_cast<int>(std::lround(height * scale));
+    PokemonSprites::drawFrameScaled(frame, centerX - drawnWidth / 2,
+                                    centerY - drawnHeight / 2, scale, false);
+}
+
+}  // namespace
+
 bool computerBackAt(int x, int y, ComputerViewModel::Page page) {
     if (page == ComputerViewModel::Page::CLAW_SETUP) {
         return x >= 0 && x < 60 && y >= 0 && y < HEADER_HEIGHT;
@@ -21,7 +101,10 @@ int clawTabAt(int x, int y) {
 int computerItemAt(int x, int y, ComputerViewModel::Page page,
                    float storageScroll, uint8_t storageCount,
                    bool clawEnabled) {
-    if (x < 12 || x >= 356 || y < MENU_CONTENT_TOP || y >= 448) return -1;
+    if (x < 0 || x >= AmoledUi::WIDTH || y < MENU_CONTENT_TOP ||
+        y >= AmoledUi::HEIGHT) return -1;
+    if (page != ComputerViewModel::Page::STORAGE &&
+        (x < 12 || x >= 356)) return -1;
     if (page == ComputerViewModel::Page::MENU) {
         int row = (y - MENU_CONTENT_TOP) / COMPUTER_MENU_ROW_HEIGHT;
 #if STICKMON_HAS_CLAW
@@ -44,8 +127,42 @@ int computerItemAt(int x, int y, ComputerViewModel::Page page,
     }
     int contentY = y - MENU_CONTENT_TOP +
                    static_cast<int>(std::lround(storageScroll));
-    int row = contentY / 86;
+    int row = contentY / CONTACT_ROW_HEIGHT;
     return row >= 0 && row < storageCount ? row : -1;
+}
+
+int computerMaxStorageScroll(uint8_t storageCount) {
+    return std::max(0, static_cast<int>(storageCount) * CONTACT_ROW_HEIGHT -
+                       (AmoledUi::HEIGHT - UiMetrics::CONTENT_TOP));
+}
+
+int computerContactActionItemAt(int x, int y, uint8_t actionCount,
+                                uint8_t slot, float scroll) {
+    if (!computerContactMenuAt(x, y, actionCount, slot, scroll)) return -1;
+    const int localY = y - contactMenuTop(actionCount, slot, scroll) -
+                       CONTACT_MENU_PADDING;
+    return localY >= 0 && localY < actionCount * CONTACT_MENU_ROW_HEIGHT
+        ? localY / CONTACT_MENU_ROW_HEIGHT : -1;
+}
+
+bool computerContactMenuAt(int x, int y, uint8_t actionCount,
+                           uint8_t slot, float scroll) {
+    return actionCount > 0 && x >= CONTACT_MENU_X &&
+           x < CONTACT_MENU_X + CONTACT_MENU_WIDTH &&
+           y >= contactMenuTop(actionCount, slot, scroll) &&
+           y < contactMenuTop(actionCount, slot, scroll) +
+                   contactMenuHeight(actionCount);
+}
+
+int computerContactConfirmChoiceAt(int x, int y) {
+    if (x < 40 || x >= AmoledUi::WIDTH - 40 ||
+        y < CONTACT_CONFIRM_Y ||
+        y >= CONTACT_CONFIRM_Y + CONTACT_CONFIRM_HEIGHT) return -1;
+    if (y >= CONTACT_CONFIRM_Y + 88 && y < CONTACT_CONFIRM_Y + 144) {
+        if (x < 176) return 0;
+        if (x >= 192) return 1;
+    }
+    return -1;
 }
 
 void drawAiToggle(Canvas565& canvas, int centerX, int centerY, bool on,
@@ -66,9 +183,12 @@ void renderComputerScreen(Canvas565& canvas, const ComputerViewModel& model,
     UiCommon::PageClip pageClip(canvas, rowBegin, rowEnd);
     if (rowBegin >= rowEnd) return;
     pageClip.setRect((0), (rowBegin), (AmoledUi::WIDTH), (rowEnd - rowBegin));
-    canvas.fillRect((0), (0), (AmoledUi::WIDTH), (AmoledUi::HEIGHT), UiMetrics::PAGE_BACKGROUND);
+    canvas.fillRect(0, 0, AmoledUi::WIDTH, AmoledUi::HEIGHT,
+                    UiMetrics::PAGE_BACKGROUND);
     const char* title = model.page == ComputerViewModel::Page::STATUS
         ? Ui::Amoled::STATUS_PAGE
+        : model.page == ComputerViewModel::Page::STORAGE
+            ? Ui::Amoled::STORAGE_PAGE
         : model.page == ComputerViewModel::Page::AI_HOSTING
             ? Ui::Amoled::AI_HOSTING
         : model.page == ComputerViewModel::Page::CLAW_SETUP
@@ -78,20 +198,20 @@ void renderComputerScreen(Canvas565& canvas, const ComputerViewModel& model,
         UiCommon::drawHeader(canvas, HEADER_HEIGHT, true);
         UiCommon::drawHeaderText(canvas, 72, title, rgb(115, 226, 183), HEADER_HEIGHT);
         drawClawTabs(canvas, model.clawLogView);
-    } else {
+    } else if (model.page != ComputerViewModel::Page::STORAGE) {
         UiCommon::drawPageHeader(canvas, title);
     }
 #else
-    UiCommon::drawPageHeader(canvas, title);
+    if (model.page != ComputerViewModel::Page::STORAGE) {
+        UiCommon::drawPageHeader(canvas, title);
+    }
 #endif
 
     if (model.page == ComputerViewModel::Page::MENU) {
         static constexpr const char* ITEMS[] = {
-            Ui::SOCIAL,
+            Ui::SOCIAL, Ui::Amoled::STORAGE_PAGE,
 #if STICKMON_HAS_CLAW
-            Ui::Amoled::AI_HOSTING, Ui::BACK,
-#else
-            Ui::BACK,
+            Ui::Amoled::AI_HOSTING,
 #endif
         };
         constexpr int ITEM_COUNT = sizeof(ITEMS) / sizeof(ITEMS[0]);
@@ -99,9 +219,15 @@ void renderComputerScreen(Canvas565& canvas, const ComputerViewModel& model,
             int y = MENU_CONTENT_TOP + index * COMPUTER_MENU_ROW_HEIGHT;
             bool selected = index == model.pressedItem;
             canvas.fillRoundRect((12), (y + 4), (344), (COMPUTER_MENU_CELL_HEIGHT), (8), selected ? rgb(42, 61, 68) : rgb(24, 34, 42));
-            text(canvas, 40, y + 26, ITEMS[index],
-                 index == ITEM_COUNT - 1 ? rgb(115, 226, 183)
-                                         : rgb(226, 238, 233));
+            text(canvas, 40, y + 26, ITEMS[index], rgb(226, 238, 233));
+            if (index == 1 && model.state) {
+                char count[12];
+                std::snprintf(count, sizeof(count),
+                              Ui::Computer::STORAGE_COUNT_FMT,
+                              model.state->storageCount);
+                text(canvas, 344 - textWidth(count), y + 26, count,
+                     selected ? rgb(248, 210, 105) : rgb(126, 175, 175));
+            }
         }
     } else if (model.page == ComputerViewModel::Page::AI_HOSTING) {
 #if STICKMON_HAS_CLAW
@@ -161,37 +287,133 @@ void renderComputerScreen(Canvas565& canvas, const ComputerViewModel& model,
             text(canvas, 96, 204, Ui::Amoled::STORAGE_EMPTY,
                  rgb(126, 145, 145));
         }
+        pageClip.setRect(0, MENU_CONTENT_TOP, AmoledUi::WIDTH,
+                         AmoledUi::HEIGHT - MENU_CONTENT_TOP);
         for (uint8_t index = 0; index < count && index < Game::STORAGE_CAP;
              ++index) {
-            int y = MENU_CONTENT_TOP + index * 86 -
+            int y = MENU_CONTENT_TOP + index * CONTACT_ROW_HEIGHT -
                     static_cast<int>(std::lround(model.storageScroll));
-            if (y + 86 <= MENU_CONTENT_TOP || y >= 448) continue;
-            const Game::MonsterRuntime& monster = model.state->storage[index];
-            const Species* species = findSpecies(monster.speciesId);
-            bool selected = index == model.pressedItem;
-            if (selected) canvas.fillRoundRect((12), (y + 4), (344), (78), (8), rgb(42, 61, 68));
+            if (y + CONTACT_ROW_HEIGHT <= MENU_CONTENT_TOP || y >= 448) continue;
+            const Game::MonsterRuntime* monster = liveContactMonster(model, index);
+            const Species* species = monster ? findSpecies(monster->speciesId) : nullptr;
+            const bool selected = index == model.pressedItem ||
+                ((model.contactActionOpen || model.contactConfirmOpen) &&
+                 index == model.contactActionSlot);
+            if (selected) {
+                canvas.fillRect(0, y, AmoledUi::WIDTH, CONTACT_ROW_HEIGHT,
+                                rgb(29, 43, 42));
+            }
+            int8_t teamSlot = ContactRoster::teamSlotForContact(
+                *model.state, index);
+            const bool inTeam = teamSlot >= 0;
+            const bool visiting = index == model.contactVisitingSlot;
+            const bool inviteLocked = monster &&
+                Game::Bond::inviteLockedToday(
+                    monster->petCountToday,
+                    Game::Bond::invitationDay(model.state->gameMinutesTotal));
             if (species) {
                 const PokemonSprites::SpriteFrame* frame =
                     PokemonSprites::findSpeciesSprite(
-                        monster.speciesId, PokemonSprites::SpriteKind::ICON_0);
-                if (frame) PokemonSprites::drawFrameScaled(frame, 28, y + 12,
-                                                             1.0f, false);
-                text(canvas, 84, y + 14, species->name,
+                        monster->speciesId, PokemonSprites::SpriteKind::ICON_0);
+                drawContactAvatar(frame, 52, y + 45, 76);
+                const char* status = visiting ? Ui::Storage::VISITING_SHORT
+                    : inTeam ? Ui::Storage::IN_TEAM
+                    : inviteLocked ? Ui::Storage::INVITE_LOCKED_SHORT : nullptr;
+                const int statusX = status ? 340 - textWidth(status) : 340;
+                pageClip.setRect(104, y + 10,
+                                 std::max(0, statusX - 112), 32);
+                text(canvas, 104, y + 10, species->name,
                      selected ? rgb(248, 210, 105) : rgb(226, 238, 233));
+                pageClip.setRect(0, MENU_CONTENT_TOP, AmoledUi::WIDTH,
+                                 AmoledUi::HEIGHT - MENU_CONTENT_TOP);
+                text(canvas, 104, y + 48, contactBondLabel(monster->bond),
+                     contactBondColor(monster->bond));
+                if (status) {
+                    text(canvas, statusX, y + 10, status,
+                         rgb(126, 175, 175));
+                }
+                canvas.drawLine(350, y + 37, 357, y + 45,
+                                rgb(126, 145, 145));
+                canvas.drawLine(357, y + 45, 350, y + 53,
+                                rgb(126, 145, 145));
             }
-            char status[24];
-            std::snprintf(status, sizeof(status), Ui::Amoled::STATUS_LINE_FMT,
-                          monster.level, monster.hpCur, monster.hpMax);
-            text(canvas, 84, y + 50, status, rgb(126, 175, 175));
+            if (index + 1 < count) canvas.drawFastHLine(
+                92, y + CONTACT_ROW_HEIGHT - 1, 276, rgb(48, 62, 68));
         }
-        int maxScroll = std::max(
-            0, static_cast<int>(count) * 86 - (AmoledUi::HEIGHT - MENU_CONTENT_TOP));
-        if (model.storageScroll > 1.0f) {
-            canvas.fillTriangle((328), (68), (340), (68), (334), (60), rgb(126, 175, 175));
+        pageClip.reset();
+        if ((model.contactActionOpen || model.contactConfirmOpen) &&
+            model.contactActionSlot < count) {
+            PixelRenderer::fillRectAlpha(0, MENU_CONTENT_TOP,
+                AmoledUi::WIDTH, AmoledUi::HEIGHT - MENU_CONTENT_TOP,
+                rgb(0, 0, 0), 136);
         }
-        if (model.storageScroll < maxScroll - 1.0f) {
-            canvas.fillTriangle((328), (430), (340), (430), (334), (438), rgb(126, 175, 175));
+        if (model.contactActionOpen && !model.contactConfirmOpen &&
+            model.contactActionSlot < count) {
+            const int actionCount = contactActionCount(model);
+            const int top = contactMenuTop(
+                actionCount, model.contactActionSlot, model.storageScroll);
+            canvas.fillRoundRect(CONTACT_MENU_X, top, CONTACT_MENU_WIDTH,
+                                 contactMenuHeight(actionCount), 8,
+                                 rgb(24, 34, 42));
+            canvas.drawRoundRect(CONTACT_MENU_X, top, CONTACT_MENU_WIDTH,
+                                 contactMenuHeight(actionCount), 8,
+                                 rgb(67, 97, 101));
+            for (int action = 0; action < actionCount; ++action) {
+                const int rowTop = top + CONTACT_MENU_PADDING +
+                                   action * CONTACT_MENU_ROW_HEIGHT;
+                const bool pressed = action == model.contactActionPressedItem;
+                if (pressed) {
+                    canvas.fillRect(CONTACT_MENU_X + 4, rowTop,
+                                    CONTACT_MENU_WIDTH - 8,
+                                    CONTACT_MENU_ROW_HEIGHT,
+                                    rgb(42, 61, 68));
+                }
+                const char* label = contactActionLabel(model, action);
+                const bool isDelete = model.contactCanDelete &&
+                    action == actionCount - 1;
+                text(canvas, CONTACT_MENU_X + 28, rowTop + 11, label,
+                     isDelete ? rgb(239, 143, 148)
+                     : pressed ? rgb(248, 210, 105) : rgb(226, 238, 233));
+                if (action + 1 < actionCount) canvas.drawFastHLine(
+                    CONTACT_MENU_X + 16, rowTop + CONTACT_MENU_ROW_HEIGHT - 1,
+                    CONTACT_MENU_WIDTH - 32, rgb(48, 62, 68));
+            }
         }
+        if (model.contactConfirmOpen && model.contactActionSlot < count) {
+            const Game::MonsterRuntime* monster = liveContactMonster(
+                model, model.contactActionSlot);
+            const Species* species = monster
+                ? findSpecies(monster->speciesId) : nullptr;
+            const char* name = species ? species->name : Ui::Amoled::MONSTER;
+            char prompt[64];
+            std::snprintf(prompt, sizeof(prompt),
+                          model.contactConfirmDelete
+                              ? Ui::Storage::DELETE_CONFIRM_FMT
+                              : Ui::Storage::INVITE_CONFIRM_FMT,
+                          name);
+            canvas.fillRoundRect(28, CONTACT_CONFIRM_Y,
+                                 312, CONTACT_CONFIRM_HEIGHT,
+                                 8, rgb(28, 31, 31));
+            text(canvas, (AmoledUi::WIDTH - textWidth(prompt)) / 2,
+                 CONTACT_CONFIRM_Y + 20, prompt, rgb(226, 238, 233));
+            canvas.fillRoundRect(40, CONTACT_CONFIRM_Y + 88, 136, 56,
+                                 8, rgb(42, 61, 68));
+            canvas.fillRoundRect(192, CONTACT_CONFIRM_Y + 88, 136, 56,
+                                 8, rgb(44, 46, 47));
+            text(canvas, 76, CONTACT_CONFIRM_Y + 100, Ui::Storage::YES,
+                 rgb(115, 226, 183));
+            text(canvas, 228, CONTACT_CONFIRM_Y + 100, Ui::Storage::NO,
+                 rgb(226, 238, 233));
+        }
+        pageClip.setRect(0, 0, AmoledUi::WIDTH,
+                         UiMetrics::PAGE_HEADER_HEIGHT);
+        UiCommon::drawPageHeader(canvas, title);
+        char capacity[12];
+        std::snprintf(capacity, sizeof(capacity),
+                      Ui::Computer::STORAGE_COUNT_FMT, count);
+        UiCommon::drawPageHeaderCenteredText(canvas, capacity,
+                                              rgb(126, 175, 175));
+        pageClip.reset();
 #if STICKMON_HAS_CLAW
     } else if (!model.clawLogView) {
         const uint16_t labelColor = rgb(115, 226, 183);

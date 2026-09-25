@@ -32,6 +32,9 @@ namespace AmoledV1 {
 
 class PixelCache565;
 
+bool prepareBattleBackground(Canvas565& canvas, PixelCache565& backgroundCache,
+                             GameAssets::Kind kind);
+
 inline constexpr int HOME_HEADER_HEIGHT = UiMetrics::HOME_HEADER_HEIGHT;
 inline constexpr int HOME_ROOM_TOP = HOME_HEADER_HEIGHT;
 inline constexpr int MAIN_MENU_CONTENT_TOP = 0;
@@ -48,6 +51,7 @@ inline constexpr int EXPLORE_PREVIEW_TOP = 168;
 inline constexpr int EXPLORE_PREVIEW_BOTTOM = 328;
 inline constexpr int SHOP_LEFT_PANEL_WIDTH = 112;
 inline constexpr int TEAM_MOVES_HEADER_HEIGHT = UiMetrics::PAGE_HEADER_HEIGHT;
+inline constexpr int CONTACT_ROW_HEIGHT = 90;
 // ESP-Claw setup page: header tabs and the log window geometry (UI space).
 inline constexpr int CLAW_TAB_CONNECT_LEFT = 204;
 inline constexpr int CLAW_TAB_LOG_LEFT = 286;
@@ -74,6 +78,7 @@ HomeHitTarget homeHitTargetAt(int x, int y, int petCenterX = 184,
                               int petGroundY = 302,
                               int bowlCenterX = 290,
                               int bowlCenterY = 286);
+int recallConfirmChoiceAt(int x, int y);
 
 void renderMainMenu(Canvas565& canvas, const MenuViewModel& model,
                     uint16_t rowBegin = 0, uint16_t rowEnd = AmoledUi::HEIGHT);
@@ -110,7 +115,6 @@ bool exploreRouteBackAt(int x, int y);
 bool exploreRouteBagAt(int x, int y);
 bool exploreRouteMenuAt(int x, int y);
 int exploreRouteExitChoiceAt(int x, int y);
-int exploreRoutePromptChoiceAt(int x, int y);
 bool exploreRouteMapAt(int x, int y);
 
 void renderExploreMenuScreen(Canvas565& canvas,
@@ -134,7 +138,7 @@ void renderItemListScreen(Canvas565& canvas,
                           uint16_t rowEnd = AmoledUi::HEIGHT);
 void renderShopScreen(Canvas565& canvas, const ShopViewModel& model,
                       uint16_t rowBegin = 0, uint16_t rowEnd = AmoledUi::HEIGHT);
-bool itemListBackAt(int x, int y);
+bool itemListBackAt(int x, int y, bool detailOpen = false);
 int itemListItemAt(int x, int y, float scroll, uint8_t dailyItemCount,
                    uint8_t exploreItemCount, uint8_t itemCount,
                    bool exploreOnly = false);
@@ -178,6 +182,12 @@ int computerItemAt(int x, int y, ComputerViewModel::Page page,
                    float storageScroll = 0.0f,
                    uint8_t storageCount = Game::STORAGE_CAP,
                    bool clawEnabled = false);
+int computerMaxStorageScroll(uint8_t storageCount);
+int computerContactActionItemAt(int x, int y, uint8_t actionCount,
+                                uint8_t slot, float scroll);
+bool computerContactMenuAt(int x, int y, uint8_t actionCount,
+                           uint8_t slot, float scroll);
+int computerContactConfirmChoiceAt(int x, int y);
 // Header tabs on the CLAW_SETUP page: 0 = 连接 (QR), 1 = 日志 (status log).
 int clawTabAt(int x, int y);
 
@@ -186,6 +196,8 @@ void renderProgressionScreen(Canvas565& canvas,
                              uint16_t rowBegin = 0, uint16_t rowEnd = AmoledUi::HEIGHT);
 int progressionItemAt(int x, int y,
                       ProgressionViewModel::Mode mode);
+int progressionReplaceItemAt(int x, int y, int16_t scrollOffsetY,
+                             uint8_t selectedItem, float detailProgress);
 void renderBattleScreen(Canvas565& canvas, const BattleViewModel& model,
                         PixelCache565& backgroundCache,
                         uint16_t rowBegin = 0, uint16_t rowEnd = AmoledUi::HEIGHT);

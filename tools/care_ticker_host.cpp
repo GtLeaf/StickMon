@@ -27,9 +27,14 @@ int main() {
 
     Game::CareTickAccumulators acc{};
     Game::applyCareMinutes(state, acc, 1, 1, true);
-    if (state.team[0].satiety != 74 ||
-        state.team[1].satiety != 59) {
-        return fail(2, "both formal team members consume hunger");
+    if (state.team[0].satiety != 75 ||
+        state.team[1].satiety != 60) {
+        return fail(2, "fractional hunger must accumulate across ticks");
+    }
+    Game::applyCareMinutes(state, acc, 71, 71, true);
+    if (state.team[0].satiety != 65 ||
+        state.team[1].satiety != 50) {
+        return fail(10, "awake hunger must consume ten points in 72 minutes");
     }
 
     state.team[1].origin = Game::Origin::VISITOR;
@@ -39,6 +44,23 @@ int main() {
     if (state.team[1].satiety != 60) {
         return fail(3, "temporary visitors must not consume hunger");
     }
+
+    state.team[0].satiety = 100;
+    state.gameMinutesTotal = 12U * 60U;
+    acc = Game::CareTickAccumulators{};
+    Game::applyCareMinutes(state, acc, 12U * 60U, 12U * 60U, true);
+    if (state.team[0].satiety != 0) {
+        return fail(11, "twelve awake hours must consume 100 points");
+    }
+
+    state.team[0].satiety = 100;
+    state.team[0].majorStatus = Game::MajorStatus::SLEEP;
+    acc = Game::CareTickAccumulators{};
+    Game::applyCareMinutes(state, acc, 12U * 60U, 12U * 60U, true);
+    if (state.team[0].satiety != 50) {
+        return fail(12, "twelve sleeping hours must consume 50 points");
+    }
+    state.team[0].majorStatus = Game::MajorStatus::NONE;
 
     state.team[0].hpMax = 100;
     state.team[0].hpCur = 50;

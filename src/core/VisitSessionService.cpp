@@ -12,6 +12,11 @@ namespace {
 constexpr uint32_t PING_INTERVAL_MS = 2000;
 constexpr uint32_t PEER_TIMEOUT_MS = 7000;
 
+bool elapsedAtLeast(uint32_t nowMs, uint32_t startedMs, uint32_t durationMs) {
+    return static_cast<int32_t>(nowMs - startedMs) >=
+           static_cast<int32_t>(durationMs);
+}
+
 }  // namespace
 
 void VisitSessionService::startHost() {
@@ -51,7 +56,7 @@ void VisitSessionService::startSearch() {
 }
 
 bool VisitSessionService::selectRoom(uint8_t index) {
-    if (state_ != State::SEARCHING ||
+    if (state_ != State::ROOM_LIST ||
         !EspNowLink::ins().sendJoinRequest(index)) {
         return false;
     }
@@ -95,7 +100,16 @@ void VisitSessionService::endVisit() {
     setState(State::ENDING, Platform::clock().millis());
 }
 
+void VisitSessionService::markVisitorDeparted() {
+    if (!active() || localIsHost_ || visitorDeparted_) return;
+    visitorDeparted_ = true;
+    departureMessagePending_ = true;
+}
+
 void VisitSessionService::stop() {
+    if (state_ == State::WAITING_HOST_DECISION && incomingRequest_) {
+        EspNowLink::ins().sendJoinAck(pendingJoinMac_, false, pendingJoinSeq_);
+    }
     detachRemoteVisitor();
     EspNowLink::ins().stopRoom();
     state_ = State::IDLE;
@@ -110,6 +124,10 @@ void VisitSessionService::stop() {
     incomingRequest_ = false;
     localIsHost_ = false;
     visitorAttached_ = false;
+    visitorDeparted_ = false;
+    visitorArrived_ = false;
+    hostRecallPending_ = false;
+    departureMessagePending_ = false;
     queuedMessage_ = false;
     queuedPayloadLen_ = 0;
     queuedCompletion_ = SendCompletion::NONE;
@@ -165,6 +183,9 @@ void VisitSessionService::fail(const char* message) {
 
 void VisitSessionService::activate(uint32_t nowMs) {
     setState(State::ACTIVE, nowMs);
+    visitorDeparted_ = false;
+    if (!localIsHost_) visitorArrived_ = false;
+    departureMessagePending_ = false;
     activeUntilMs_ = localIsHost_
         ? nowMs + VISIT_DURATION_SEC * 1000UL
         : 0;
@@ -230,7 +251,9 @@ void VisitSessionService::processIncoming(uint32_t nowMs) {
     bool accepted = false;
     if (state_ == State::JOINING && link.takeJoinAck(accepted)) {
         if (!accepted) {
-            fail("JOIN DECLINED");
+            error_ = "JOIN DECLINED";
+            setState(link.roomCount() > 0 ? State::ROOM_LIST
+                                          : State::SEARCHING, nowMs);
         } else {
             queueLocalSync();
             setState(State::WAITING_ACCEPT, nowMs);
@@ -292,18 +315,32 @@ void VisitSessionService::processIncoming(uint32_t nowMs) {
                     break;
                 }
             }
+        } else if (type == LinkMessageType::VISIT_DEPARTED &&
+                   payloadLen == 0 && localIsHost_ && visitorAttached_ &&
+                   (state_ == State::SYNCING || state_ == State::ACTIVE)) {
+            visitorArrived_ = true;
         } else if (type == LinkMessageType::VISIT_PING &&
-                   payloadLen == sizeof(VisitPingPayload) && localIsHost_ &&
+                   payloadLen >= 2 && localIsHost_ &&
                    state_ == State::ACTIVE) {
             VisitPingPayload ping{};
-            std::memcpy(&ping, payload, sizeof(ping));
+            std::memcpy(&ping, payload, std::min<size_t>(payloadLen, sizeof(ping)));
             remote_.satiety = ping.satiety;
             remote_.mood = ping.mood;
+            const bool hasHealth = payloadLen >= sizeof(ping) && ping.hpMax > 0;
+            if (hasHealth) {
+                remote_.hpMax = ping.hpMax;
+                remote_.hpCur = std::min(ping.hpCur, ping.hpMax);
+            }
             if (visitorAttached_ && gameState_ &&
                 gameState_->teamCount >= 2 &&
                 gameState_->team[1].origin == Game::Origin::VISITOR) {
                 gameState_->team[1].satiety = ping.satiety;
                 gameState_->team[1].mood = ping.mood;
+                if (hasHealth) {
+                    gameState_->team[1].hpMax = remote_.hpMax;
+                    gameState_->team[1].hpCur = remote_.hpCur;
+                    gameState_->team[1].fainted = remote_.hpCur == 0;
+                }
             }
         } else if (type == LinkMessageType::VISIT_STATUS &&
                    payloadLen == sizeof(VisitStatusPayload) &&
@@ -314,6 +351,7 @@ void VisitSessionService::processIncoming(uint32_t nowMs) {
             if (status.active == 0) finish();
         } else if (type == LinkMessageType::VISIT_RECALL && localIsHost_ &&
                    state_ == State::ACTIVE) {
+            hostRecallPending_ = visitorAttached_;
             VisitEndPayload end{0};
             queueMessage(LinkMessageType::VISIT_END, &end, sizeof(end),
                          SendCompletion::FINISH);
@@ -359,7 +397,17 @@ void VisitSessionService::update(uint32_t nowMs) {
     }
 
     processIncoming(nowMs);
+    if (state_ == State::SEARCHING && EspNowLink::ins().roomCount() > 0) {
+        setState(State::ROOM_LIST, nowMs);
+    } else if (state_ == State::ROOM_LIST &&
+               EspNowLink::ins().roomCount() == 0) {
+        setState(State::SEARCHING, nowMs);
+    }
     if (state_ == State::ACTIVE) {
+        if (departureMessagePending_ && !queuedMessage_) {
+            queueMessage(LinkMessageType::VISIT_DEPARTED, nullptr, 0);
+            departureMessagePending_ = false;
+        }
         if (localIsHost_ &&
             static_cast<int32_t>(nowMs - activeUntilMs_) >= 0) {
             endVisit();
@@ -379,6 +427,8 @@ void VisitSessionService::update(uint32_t nowMs) {
                     if (gameState_ && gameState_->teamCount > 0) {
                         ping.satiety = gameState_->team[0].satiety;
                         ping.mood = gameState_->team[0].mood;
+                        ping.hpCur = gameState_->team[0].hpCur;
+                        ping.hpMax = gameState_->team[0].hpMax;
                     }
                     queueMessage(LinkMessageType::VISIT_PING, &ping,
                                  sizeof(ping));
@@ -387,7 +437,7 @@ void VisitSessionService::update(uint32_t nowMs) {
             }
         }
         if (state_ == State::ACTIVE &&
-            nowMs - lastPeerMs_ > PEER_TIMEOUT_MS) {
+            elapsedAtLeast(nowMs, lastPeerMs_, PEER_TIMEOUT_MS + 1)) {
             fail("LINK LOST");
             return;
         }
@@ -403,15 +453,23 @@ void VisitSessionService::update(uint32_t nowMs) {
             timeoutMs = SEARCH_TIMEOUT_MS;
             timeoutError = "SEARCH TIMEOUT";
             break;
+        case State::ROOM_LIST:
+            break;
         case State::JOINING:
-            timeoutMs = JOIN_TIMEOUT_MS;
+            if (elapsedAtLeast(nowMs, stateStartedMs_, JOIN_TIMEOUT_MS)) {
+                EspNowLink::ins().cancelJoinRequest();
+                error_ = "JOIN TIMEOUT";
+                setState(EspNowLink::ins().roomCount() > 0
+                             ? State::ROOM_LIST : State::SEARCHING, nowMs);
+            }
             break;
         case State::SYNCING:
         case State::WAITING_ACCEPT:
             timeoutMs = HANDSHAKE_TIMEOUT_MS;
             break;
         case State::WAITING_HOST_DECISION:
-            if (nowMs - stateStartedMs_ >= HOST_DECISION_TIMEOUT_MS) {
+            if (elapsedAtLeast(nowMs, stateStartedMs_,
+                               HOST_DECISION_TIMEOUT_MS)) {
                 EspNowLink::ins().sendJoinAck(
                     pendingJoinMac_, false, pendingJoinSeq_);
                 incomingRequest_ = false;
@@ -419,7 +477,8 @@ void VisitSessionService::update(uint32_t nowMs) {
             }
             break;
         case State::ENDING:
-            if (nowMs - stateStartedMs_ >= HANDSHAKE_TIMEOUT_MS) {
+            if (elapsedAtLeast(nowMs, stateStartedMs_,
+                               HANDSHAKE_TIMEOUT_MS)) {
                 finish();
                 return;
             }
@@ -427,7 +486,8 @@ void VisitSessionService::update(uint32_t nowMs) {
         default:
             break;
         }
-        if (timeoutMs > 0 && nowMs - stateStartedMs_ >= timeoutMs) {
+        if (timeoutMs > 0 &&
+            elapsedAtLeast(nowMs, stateStartedMs_, timeoutMs)) {
             fail(timeoutError);
             return;
         }
@@ -454,10 +514,13 @@ VisitSessionService::ViewModel VisitSessionService::viewModel() const {
         model.remote.satiety = pet.satiety;
         model.remote.mood = pet.mood;
         model.remote.affection = pet.affection;
+        model.remote.hpCur = pet.hpCur;
+        model.remote.hpMax = pet.hpMax;
     }
     model.remainSec = remainSec_;
     model.error = error_;
-    if (state_ == State::SEARCHING || state_ == State::JOINING) {
+    if (state_ == State::SEARCHING || state_ == State::ROOM_LIST ||
+        state_ == State::JOINING) {
         EspNowLink::RoomEntry room;
         for (uint8_t index = 0; index < EspNowLink::MAX_ROOMS; ++index) {
             if (!EspNowLink::ins().copyRoomAt(index, room)) break;

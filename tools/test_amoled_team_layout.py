@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Remaining source integration checks; pixel/hit contracts live in test_amoled_native_render."""
 
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -44,6 +47,97 @@ class AmoledTeamLayoutTests(unittest.TestCase):
         handler = self.app_source[start:end]
         self.assertIn("teamActionPopupItemAt(x, y, teamActionPopupSlot)", handler)
 
+    def test_item_target_tap_bypasses_regular_team_popup(self):
+        release_start = self.app_source.index(
+            "pressedTeamSlot >= 0 && !dragging && distance <= TAP_SLOP"
+        )
+        release = self.app_source[release_start - 180:release_start + 260]
+        self.assertIn("!selectingItemTarget", release)
+        self.assertIn("teamActionPopupOpen = true;", release)
+
+        team_start = self.app_source.index(
+            "if (sceneFlow.current() == AppSceneFlow::Scene::TEAM)"
+        )
+        team_end = self.app_source.index(
+            "if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE)",
+            team_start,
+        )
+        team = self.app_source[team_start:team_end]
+        target_start = team.index("if (selectingItemTarget)")
+        target = team[target_start:]
+        self.assertIn(
+            "Game::ItemInventory::useOnTeam(gameState, pendingItem, target)",
+            target,
+        )
+
+    def test_item_target_team_preserves_bag_return_chain(self):
+        bag_start = self.app_source.index(
+            "if (sceneFlow.current() == AppSceneFlow::Scene::BAG)"
+        )
+        bag_end = self.app_source.index(
+            "if (sceneFlow.current() == AppSceneFlow::Scene::SHOP)", bag_start
+        )
+        bag = self.app_source[bag_start:bag_end]
+        self.assertIn("itemTargetReturnScene = sceneFlow.subSceneReturn();", bag)
+        self.assertIn("openTeamScene(true);", bag)
+
+        open_start = self.app_source.index("void AmoledApp::openTeamScene(")
+        open_end = self.app_source.index(
+            "void AmoledApp::refreshTeamMoveRecallable", open_start
+        )
+        open_team = self.app_source[open_start:open_end]
+        self.assertIn("if (preserveSubSceneReturn)", open_team)
+        self.assertIn("sceneFlow.enter(AppSceneFlow::Scene::TEAM);", open_team)
+        self.assertIn("sceneFlow.openSubScene(AppSceneFlow::Scene::TEAM);", open_team)
+
+        team_start = self.app_source.index(
+            "if (sceneFlow.current() == AppSceneFlow::Scene::TEAM)"
+        )
+        team_end = self.app_source.index(
+            "if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE)",
+            team_start,
+        )
+        team = self.app_source[team_start:team_end]
+        self.assertGreaterEqual(
+            team.count("sceneFlow.enter(AppSceneFlow::Scene::BAG);"), 2
+        )
+        self.assertNotIn(
+            "sceneFlow.openSubScene(AppSceneFlow::Scene::BAG);", team
+        )
+
+    @unittest.skipUnless(shutil.which("c++"), "host C++ compiler is unavailable")
+    def test_item_target_return_chain_for_route_and_explore_menu(self):
+        source = r"""
+#include "core/AppSceneFlow.h"
+#include <cassert>
+#include <initializer_list>
+
+int main() {
+    using namespace AppSceneFlow;
+    for (Scene origin : {Scene::EXPLORE_ROUTE, Scene::EXPLORE_MENU,
+                         Scene::MAIN_MENU}) {
+        Controller flow(origin);
+        flow.openSubScene(Scene::BAG);
+        assert(flow.subSceneReturn() == origin);
+        flow.enter(Scene::TEAM);
+        assert(flow.subSceneReturn() == origin);
+        flow.enter(Scene::BAG);
+        assert(flow.closeSubScene() == origin);
+    }
+    Controller normalTeam(Scene::EXPLORE_MENU);
+    normalTeam.openSubScene(Scene::TEAM);
+    assert(normalTeam.closeSubScene() == Scene::EXPLORE_MENU);
+}
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            binary = Path(directory) / "item_target_return"
+            subprocess.run(
+                ["c++", "-std=c++17", f"-I{ROOT / 'src'}", "-x", "c++",
+                 "-", "-o", str(binary)],
+                input=source, text=True, capture_output=True, check=True,
+            )
+            subprocess.run([str(binary)], capture_output=True, check=True)
+
     def test_front_action_sets_popup_target_before_switching(self):
         start = self.app_source.index("if (teamActionPopupOpen)")
         end = self.app_source.index("if (teamMovesOpen)", start)
@@ -83,6 +177,19 @@ class AmoledTeamLayoutTests(unittest.TestCase):
         v2_cmake = (ROOT / "firmware" / "amoled_1_8_v2" / "main" / "CMakeLists.txt").read_text(encoding="utf-8")
         self.assertIn("${STICKMON_AMOLED_UI_SOURCES}", v2_cmake)
         self.assertIn("firmware/common/amoled_sources.cmake", v2_cmake)
+
+    def test_status_overview_sprite_identity_and_flavor_layout(self):
+        overview = self.team_source[
+            self.team_source.index("if (page == 0) {"):
+            self.team_source.index("} else if (page == 1) {")]
+        self.assertIn("128.0f / std::max(1, static_cast<int>(width))", overview)
+        self.assertIn("constexpr int identityX = 160;", overview)
+        self.assertIn("identityX + textWidth(line) + 8", overview)
+        self.assertIn("gender == Game::Gender::MALE", overview)
+        self.assertIn("gender == Game::Gender::FEMALE", overview)
+        self.assertIn('text(canvas, baseX + 24, 310, Ui::Status::SOURCE_INFO', overview)
+        self.assertIn('const int genderY = gender == Game::Gender::MALE', overview)
+        self.assertIn("Ui::Status::FLAVOR_DISLIKE_EMPTY", overview)
 
     def test_status_pages_switch_by_swipe_with_snap_animation(self):
         self.assertIn("teamStatusDragging = true;", self.app_source)
@@ -202,7 +309,7 @@ class AmoledTeamLayoutTests(unittest.TestCase):
             with self.subTest(title=title):
                 self.assertIn(f"drawPageHeader(canvas, {title}", source)
         self.assertIn("drawPageHeader(canvas, title)", self.source)
-        self.assertIn("drawPageHeader(canvas, Ui::SHOP);", self.source)
+        self.assertIn("drawPageHeader(canvas, Ui::SHOP", self.source)
         self.assertIn("drawPageHeaderCenteredText(canvas, coins",
                       self.source)
         self.assertIn("drawHeader(canvas, HEADER_HEIGHT, true)", self.source)
@@ -211,13 +318,13 @@ class AmoledTeamLayoutTests(unittest.TestCase):
                       self.source)
 
     def test_moves_expanded_detail_only_repeats_power_accuracy_and_description(self):
-        start = self.team_source.index("if (detailVisible) {")
-        end = self.team_source.index("detailClip.reset();", start)
+        start = self.team_source.index("void drawMoveDetailContent(")
+        end = self.team_source.index("\n}\n", start)
         detail = self.team_source[start:end]
         self.assertIn('"威力:%u  命中:%u"', detail)
-        self.assertIn("selectedMove->description", detail)
-        self.assertNotIn("selectedMove->name", detail)
-        self.assertNotIn("typeName(selectedMove->type)", detail)
+        self.assertIn("move.description", detail)
+        self.assertNotIn("move.name", detail)
+        self.assertNotIn("typeName(move.type)", detail)
         self.assertNotIn("moveProficiency", detail)
 
 

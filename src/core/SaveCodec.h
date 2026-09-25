@@ -12,7 +12,11 @@
 namespace SaveCodec {
 
 static constexpr uint32_t MAGIC = 0x32435653; // SVC2
-static constexpr uint16_t SCHEMA_VERSION = 1;
+// Schema 1 = v3 state payload; schema 2 appends debugMotionFlags (v4).
+static constexpr uint16_t SCHEMA_VERSION = 2;
+static constexpr uint16_t MIN_SUPPORTED_SCHEMA_VERSION = 1;
+// State version stored by schema-1 payloads (Game::SAVE_VERSION at the time).
+static constexpr uint16_t SCHEMA_1_STATE_VERSION = 3;
 static constexpr size_t HEADER_BYTES = 16;
 static constexpr size_t MAX_ENCODED_BYTES = 4096;
 

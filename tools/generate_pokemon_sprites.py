@@ -36,14 +36,29 @@ ENEMY_FRONT_MAX_UPSCALE = 1.75
 ENEMY_FRONT_NO_UPSCALE_SPECIES = frozenset({
     1, 7, 10, 11, 16, 74, 172, 183, 194, 261, 280, 285, 361,
 })
-# Pilot set for the first two explore areas (GRASS_PATH and CREEK_SLOPE).
-# These species use a higher-resolution FRONT frame while the rest of the
-# roster keeps the existing battle-sized asset until the preview layout is
-# approved.
-EXPLORE_FRONT_2X_SPECIES = frozenset({
-    1, 4, 5, 7, 10, 11, 16, 41, 74, 129, 133, 147, 161, 172, 183, 194,
-    261, 278, 280, 298, 322,
+# Keep the six explore-area previews and their possible bosses at native 2x
+# resolution. FRONT remains a single shared frame: the selector draws it
+# directly while battle rendering scales it down to the requested size.
+EXPLORE_FRONT_2X_AREA_SPECIES = (
+    frozenset({1, 4, 10, 11, 16, 133, 161, 172, 261, 280}),
+    frozenset({5, 7, 16, 41, 74, 129, 147, 161, 183, 194, 261, 278, 280,
+               298, 322}),
+    frozenset({2, 8, 12, 17, 25, 26, 92, 123, 130, 133, 147, 162, 184,
+               278, 279, 281, 285, 286, 322}),
+    frozenset({9, 17, 18, 41, 42, 75, 92, 93, 148, 281, 282, 361, 362}),
+    frozenset({3, 42, 93, 134, 135, 136, 148, 196, 197, 262, 282, 286,
+               362}),
+    frozenset({3, 6, 9, 42, 75, 93, 130, 149, 184, 195, 262, 279, 323,
+               362}),
+)
+EXPLORE_FRONT_2X_BOSS_SPECIES = frozenset({
+    3, 6, 8, 12, 17, 25, 26, 76, 94, 143, 149, 162, 169, 184, 195,
+    197, 212, 279, 282, 362,
 })
+EXPLORE_FRONT_2X_SPECIES = frozenset().union(
+    *EXPLORE_FRONT_2X_AREA_SPECIES,
+    EXPLORE_FRONT_2X_BOSS_SPECIES,
+)
 PLAYER_BACK_MAX_WIDTH = 105
 PLAYER_BACK_MAX_HEIGHT = 65
 STATUS_PORTRAIT_MAX_WIDTH = 70
@@ -710,6 +725,7 @@ struct SpriteCacheStats {{
 const SpriteFrame* findSpeciesSprite(uint16_t speciesId, SpriteKind kind);
 const SpriteFrame* findCachedSpeciesSprite(uint16_t speciesId, SpriteKind kind);
 int16_t frameGroundOffsetY(const SpriteFrame* frame);
+uint8_t frameVisibleWidth(const SpriteFrame* frame);
 bool walkingAnimation(uint16_t speciesId, WalkDirection direction, WalkingAnimation& animation);
 bool petAnimationProfile(uint16_t speciesId, PetAnimationProfile& profile);
 bool syncTeamCache(const uint16_t* speciesIds, uint8_t count,
@@ -736,6 +752,7 @@ bool drawFrameScaled(const SpriteFrame* frame, int x, int y, float scale, bool f
 #include "core/DeflateDecoder.h"
 #include "core/MathUtil.h"
 #include "core/ResourcePack.h"
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include "platform/api/FlashStorage.h"
@@ -1179,6 +1196,57 @@ int16_t frameGroundOffsetY(const SpriteFrame* frame) {
         return static_cast<int16_t>(height / 2 - bottomPadding);
     }
     return static_cast<int16_t>(MathUtil::clamp((int)(height * 0.42f), 16, 32));
+}
+
+uint8_t frameVisibleWidth(const SpriteFrame* frame) {
+    if (!frame) return 0;
+    const uint8_t width = FlashStorage::readByte(&frame->width);
+    const uint8_t height = FlashStorage::readByte(&frame->height);
+    const uint32_t offset = FlashStorage::readDword(&frame->offset);
+    const uint32_t length = FlashStorage::readDword(&frame->length);
+    const uint8_t format = FlashStorage::readByte(&frame->format);
+    const uint8_t source = FlashStorage::readByte(&frame->source);
+    if (width == 0 || height == 0 || length == 0 ||
+        source != SPRITE_SOURCE_FILE_BLOCK ||
+        (format != static_cast<uint8_t>(SpriteFormat::RGB565_RLE) &&
+         format != static_cast<uint8_t>(SpriteFormat::INDEXED4_RLE))) {
+        return width;
+    }
+
+    const uint16_t speciesId = FlashStorage::readWord(&frame->speciesId);
+    CachedSpecies* cached = cachedSpeciesFor(speciesId);
+    if (!cached || offset + length > cached->rleWords) return width;
+
+    const uint32_t total = static_cast<uint32_t>(width) * height;
+    uint32_t wordIndex = 0;
+    uint32_t pixelIndex = 0;
+    uint8_t left = width;
+    uint8_t right = 0;
+    bool visible = false;
+    while (wordIndex < length && pixelIndex < total) {
+        const uint16_t token = FlashStorage::readWord(
+            &cached->data[offset + wordIndex++]);
+        const uint16_t run = token & 0x7FFFU;
+        if (run == 0) continue;
+        const uint32_t runEnd = std::min<uint32_t>(
+            total, pixelIndex + run);
+        if ((token & 0x8000U) == 0) {
+            for (uint32_t pixel = pixelIndex; pixel < runEnd; ++pixel) {
+                const uint8_t column = static_cast<uint8_t>(pixel % width);
+                left = std::min(left, column);
+                right = std::max(right, column);
+            }
+            const uint32_t payloadWords =
+                format == static_cast<uint8_t>(SpriteFormat::INDEXED4_RLE)
+                    ? (static_cast<uint32_t>(run) + 3U) / 4U
+                    : static_cast<uint32_t>(run);
+            if (payloadWords > length - wordIndex) return width;
+            wordIndex += payloadWords;
+            visible = true;
+        }
+        pixelIndex = runEnd;
+    }
+    return visible ? static_cast<uint8_t>(right - left + 1U) : 0;
 }
 
 bool syncTeamCache(const uint16_t* speciesIds, uint8_t count,

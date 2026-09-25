@@ -441,6 +441,7 @@ void PixelRenderer::darken(uint8_t amount) {
 void PixelRenderer::fillRectAlpha(int x, int y, int w, int h,
                                   uint16_t color, uint8_t alpha) {
     if (!gCanvas.attached() || w <= 0 || h <= 0 || alpha == 0) return;
+    if (gCanvas.blendRectAlphaNative(x, y, w, h, color, alpha)) return;
     if (alpha == 255) {
         gCanvas.fillRect(x, y, w, h, color);
         return;

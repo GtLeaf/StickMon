@@ -47,5 +47,20 @@ int main() {
     assert(ExploreIceSlide::nearestNonIceIndex(map, path, 3, 2, 5) == 4);
     assert(ExploreIceSlide::nearestNonIceIndex(map, path, 2, 1, 3) ==
            ExploreIceSlide::INVALID_INDEX);
+
+    map.layers[0][4 * ExploreMapGenerator::WIDTH + 5] = 4506;
+    assert(ExploreIceSlide::isCrackedIce(map, path, 4));
+    assert(ExploreIceSlide::nearestNonIceIndex(map, path, 4, 4, 5) == 5);
+    ExploreIceSlide::breakIce(map, path, 4);
+    assert(map.layers[0][4 * ExploreMapGenerator::WIDTH + 5] ==
+           ExploreCaveTiles::FROST_BROKEN_ICE_HOLE);
+    map.layers[0][4 * ExploreMapGenerator::WIDTH + 6] = 4511;
+    assert(ExploreIceSlide::landingIndex(map, path, 7) == 0);
+
+    Path landingPath = makeStraightPath();
+    for (uint8_t index = 1; index < 4; ++index) {
+        map.layers[0][4 * ExploreMapGenerator::WIDTH + index + 1] = 4511;
+    }
+    assert(ExploreIceSlide::landingIndex(map, landingPath, 7) != 0);
     return 0;
 }

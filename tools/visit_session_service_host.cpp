@@ -142,6 +142,8 @@ uint16_t connectVisitor(DesktopPlatform& desktop,
     const uint8_t roomId = 93;
     injectWire(desktop, LinkMessageType::HELLO, roomId, 0);
     service.update(desktop.millis());
+    assert(service.state() ==
+           Communication::VisitSessionService::State::ROOM_LIST);
     assert(service.viewModel().roomCount == 1);
     assert(service.viewModel().rooms[0].roomId == roomId);
     assert(service.selectRoom(0));
@@ -165,6 +167,9 @@ uint16_t connectVisitor(DesktopPlatform& desktop,
            Communication::VisitSessionService::State::ACTIVE);
     Platform::PeerPacket ping = takeType(desktop,
                                          LinkMessageType::VISIT_PING);
+    assert(ping.payload[8] == sizeof(VisitPingPayload));
+    assert(get16(ping.payload + 11) == service.viewModel().remote.hpCur);
+    assert(get16(ping.payload + 13) == service.viewModel().remote.hpMax);
     acknowledge(desktop, ping);
     service.update(desktop.millis());
     drain(desktop);
@@ -179,6 +184,37 @@ void testHostAdmission(Communication::VisitSessionService& service,
            Communication::VisitSessionService::State::FAILED);
     assert(std::strcmp(service.viewModel().error, "TEAM NOT SOLO") == 0);
     service.stop();
+}
+
+void testTouchBeforeFrameUpdate(DesktopPlatform& desktop,
+                                Communication::VisitSessionService& service,
+                                Game::GameState& state) {
+    state.teamCount = 1;
+    uint32_t frameTime = desktop.millis();
+    desktop.advanceMs(1);
+    service.startHost();
+    service.update(frameTime);
+    assert(service.state() ==
+           Communication::VisitSessionService::State::HOSTING);
+    desktop.advanceMs(Communication::VisitSessionService::HOST_TIMEOUT_MS - 2);
+    service.update(desktop.millis());
+    assert(service.state() ==
+           Communication::VisitSessionService::State::HOSTING);
+    service.stop();
+    drain(desktop);
+
+    frameTime = desktop.millis();
+    desktop.advanceMs(1);
+    service.startSearch();
+    service.update(frameTime);
+    assert(service.state() ==
+           Communication::VisitSessionService::State::SEARCHING);
+    desktop.advanceMs(Communication::VisitSessionService::SEARCH_TIMEOUT_MS - 2);
+    service.update(desktop.millis());
+    assert(service.state() ==
+           Communication::VisitSessionService::State::SEARCHING);
+    service.stop();
+    drain(desktop);
 }
 
 void testStageTimeouts(DesktopPlatform& desktop,
@@ -238,11 +274,19 @@ void testStageTimeouts(DesktopPlatform& desktop,
     injectWire(desktop, LinkMessageType::HELLO, 31, 0);
     service.update(desktop.millis());
     assert(service.selectRoom(0));
-    takeType(desktop, LinkMessageType::JOIN_REQ);
+    Platform::PeerPacket timedRequest = takeType(desktop,
+                                                 LinkMessageType::JOIN_REQ);
     desktop.advanceMs(Communication::VisitSessionService::JOIN_TIMEOUT_MS);
     service.update(desktop.millis());
     assert(service.state() ==
-           Communication::VisitSessionService::State::FAILED);
+           Communication::VisitSessionService::State::SEARCHING);
+    assert(std::strcmp(service.viewModel().error, "JOIN TIMEOUT") == 0);
+    injectWire(desktop, LinkMessageType::JOIN_ACK, 31,
+               get16(timedRequest.payload + 6), true);
+    service.update(desktop.millis());
+    assert(!EspNowLink::ins().connected());
+    assert(service.state() ==
+           Communication::VisitSessionService::State::SEARCHING);
     service.stop();
     drain(desktop);
 
@@ -262,6 +306,81 @@ void testStageTimeouts(DesktopPlatform& desktop,
     assert(service.state() ==
            Communication::VisitSessionService::State::FAILED);
     service.stop();
+    drain(desktop);
+}
+
+void testManualDecisionAndRoomList(
+    DesktopPlatform& desktop, Communication::VisitSessionService& service,
+    Game::GameState& state) {
+    state.teamCount = 1;
+    service.startSearch();
+    injectWire(desktop, LinkMessageType::HELLO, 45, 0);
+    service.update(desktop.millis());
+    assert(service.state() ==
+           Communication::VisitSessionService::State::ROOM_LIST);
+    for (int index = 0; index < 18; ++index) {
+        desktop.advanceMs(500);
+        injectWire(desktop, LinkMessageType::HELLO, 45, 0);
+        service.update(desktop.millis());
+    }
+    assert(service.state() ==
+           Communication::VisitSessionService::State::ROOM_LIST);
+    assert(service.selectRoom(0));
+    Platform::PeerPacket request = takeType(desktop, LinkMessageType::JOIN_REQ);
+    const uint16_t requestSeq = get16(request.payload + 6);
+    desktop.advanceMs(25000);
+    service.update(desktop.millis());
+    assert(service.state() ==
+           Communication::VisitSessionService::State::JOINING);
+    injectWire(desktop, LinkMessageType::JOIN_ACK, 45, requestSeq, true);
+    service.update(desktop.millis());
+    assert(service.state() ==
+           Communication::VisitSessionService::State::WAITING_ACCEPT);
+    takeType(desktop, LinkMessageType::VISIT_SYNC);
+    service.stop();
+    drain(desktop);
+
+    service.startSearch();
+    injectWire(desktop, LinkMessageType::HELLO, 46, 0);
+    service.update(desktop.millis());
+    assert(service.selectRoom(0));
+    request = takeType(desktop, LinkMessageType::JOIN_REQ);
+    injectWire(desktop, LinkMessageType::JOIN_ACK, 46,
+               get16(request.payload + 6), false);
+    service.update(desktop.millis());
+    assert(service.state() ==
+           Communication::VisitSessionService::State::ROOM_LIST);
+    assert(std::strcmp(service.viewModel().error, "JOIN DECLINED") == 0);
+    service.stop();
+    drain(desktop);
+
+    service.startHost();
+    desktop.advanceMs(500);
+    service.update(desktop.millis());
+    Platform::PeerPacket hello = takeType(desktop, LinkMessageType::HELLO);
+    injectWire(desktop, LinkMessageType::JOIN_REQ, hello.payload[5], 99);
+    service.update(desktop.millis());
+    assert(service.state() ==
+           Communication::VisitSessionService::State::WAITING_HOST_DECISION);
+    desktop.advanceMs(25000);
+    service.update(desktop.millis());
+    assert(service.state() ==
+           Communication::VisitSessionService::State::WAITING_HOST_DECISION);
+    service.acceptIncoming(true);
+    Platform::PeerPacket ack = takeType(desktop, LinkMessageType::JOIN_ACK);
+    assert(ack.payload[8] == 1);
+    service.stop();
+    drain(desktop);
+
+    service.startHost();
+    desktop.advanceMs(500);
+    service.update(desktop.millis());
+    hello = takeType(desktop, LinkMessageType::HELLO);
+    injectWire(desktop, LinkMessageType::JOIN_REQ, hello.payload[5], 100);
+    service.update(desktop.millis());
+    service.stop();
+    ack = takeType(desktop, LinkMessageType::JOIN_ACK);
+    assert(ack.payload[8] == 0);
     drain(desktop);
 }
 
@@ -323,12 +442,15 @@ void testHostRecallAndDuration(
     assert(state.teamCount == 1);
     assert(service.state() ==
            Communication::VisitSessionService::State::ENDING);
+    assert(service.takeHostRecall());
+    assert(!service.takeHostRecall());
     Platform::PeerPacket end = takeType(desktop, LinkMessageType::VISIT_END);
     acknowledge(desktop, end);
     service.update(desktop.millis());
     assert(service.state() ==
            Communication::VisitSessionService::State::ENDED);
     service.stop();
+    assert(!service.takeHostRecall());
     drain(desktop);
 
     host = connectHost(desktop, service, state, sync);
@@ -337,7 +459,7 @@ void testHostRecallAndDuration(
     drain(desktop);
     desktop.advanceMs(
         Communication::VisitSessionService::VISIT_DURATION_SEC * 1000UL);
-    VisitPingPayload keepAlive{40, 50};
+    VisitPingPayload keepAlive{40, 50, 35, 50};
     injectSession(desktop, LinkMessageType::VISIT_PING, 504,
                   host.sessionId, &keepAlive, sizeof(keepAlive));
     service.update(desktop.millis());
@@ -351,6 +473,99 @@ void testHostRecallAndDuration(
     drain(desktop);
 }
 
+void testVisitorHealthSync(DesktopPlatform& desktop,
+                           Communication::VisitSessionService& service,
+                           Game::GameState& state) {
+    VisitSyncPayload sync{25, 18, 3, 44, 55, 66};
+    ConnectedHost host = connectHost(desktop, service, state, sync);
+    assert(!service.visitorHealthKnown());
+    acknowledge(desktop, host.firstStatus);
+    service.update(desktop.millis());
+    drain(desktop);
+
+    const uint8_t legacyPing[2] = {70, 80};
+    injectSession(desktop, LinkMessageType::VISIT_PING, 705,
+                  host.sessionId, legacyPing, sizeof(legacyPing));
+    service.update(desktop.millis());
+    assert(state.team[1].satiety == 70 && state.team[1].mood == 80);
+    assert(!service.visitorHealthKnown());
+
+    VisitPingPayload ping{71, 81, 35, 50};
+    injectSession(desktop, LinkMessageType::VISIT_PING, 706,
+                  host.sessionId, &ping, sizeof(ping));
+    service.update(desktop.millis());
+    assert(service.visitorHealthKnown());
+    assert(service.viewModel().remote.hpCur == 35);
+    assert(service.viewModel().remote.hpMax == 50);
+    assert(state.team[1].hpCur == 35 && state.team[1].hpMax == 50);
+
+    ping.hpCur = 0;
+    injectSession(desktop, LinkMessageType::VISIT_PING, 707,
+                  host.sessionId, &ping, sizeof(ping));
+    service.update(desktop.millis());
+    assert(state.team[1].hpCur == 0 && state.team[1].fainted);
+    service.stop();
+    drain(desktop);
+}
+
+void testVisitorDepartureSignal(
+    DesktopPlatform& desktop, Communication::VisitSessionService& service,
+    Game::GameState& state) {
+    VisitSyncPayload sync{25, 18, 3, 44, 55, 66};
+    state.teamCount = 1;
+    service.startHost();
+    desktop.advanceMs(500);
+    service.update(desktop.millis());
+    Platform::PeerPacket hello = takeType(desktop, LinkMessageType::HELLO);
+    const uint8_t roomId = hello.payload[5];
+    injectWire(desktop, LinkMessageType::JOIN_REQ, roomId, 707);
+    service.update(desktop.millis());
+    service.acceptIncoming(true);
+    takeType(desktop, LinkMessageType::JOIN_ACK);
+    injectSession(desktop, LinkMessageType::VISIT_SYNC, 709, 707,
+                  &sync, sizeof(sync));
+    service.update(desktop.millis());
+    Platform::PeerPacket accept = takeType(desktop,
+                                           LinkMessageType::VISIT_ACCEPT);
+    assert(service.state() ==
+           Communication::VisitSessionService::State::SYNCING);
+    injectSession(desktop, LinkMessageType::VISIT_DEPARTED, 710, 707);
+    service.update(desktop.millis());
+    assert(!service.visitorArrivalReady());
+    acknowledge(desktop, accept);
+    service.update(desktop.millis());
+    assert(service.visitorArrivalReady());
+    service.stop();
+    drain(desktop);
+
+    state.teamCount = 1;
+    ConnectedHost host = connectHost(desktop, service, state, sync);
+    assert(!service.visitorArrivalReady());
+    acknowledge(desktop, host.firstStatus);
+    service.update(desktop.millis());
+    drain(desktop);
+    injectSession(desktop, LinkMessageType::VISIT_DEPARTED, 710,
+                  host.sessionId);
+    service.update(desktop.millis());
+    assert(service.visitorArrivalReady());
+    service.stop();
+    drain(desktop);
+
+    state.teamCount = 1;
+    connectVisitor(desktop, service);
+    assert(!service.visitorDeparted());
+    service.markVisitorDeparted();
+    service.update(desktop.millis());
+    assert(service.visitorDeparted());
+    Platform::PeerPacket departure =
+        takeType(desktop, LinkMessageType::VISIT_DEPARTED);
+    assert(departure.payload[8] == 0);
+    acknowledge(desktop, departure);
+    service.update(desktop.millis());
+    service.stop();
+    drain(desktop);
+}
+
 void testVisitorAuthorityAndRecall(
     DesktopPlatform& desktop, Communication::VisitSessionService& service,
     Game::GameState& state) {
@@ -360,6 +575,8 @@ void testVisitorAuthorityAndRecall(
     state.team[0].satiety = 61;
     state.team[0].mood = 72;
     state.team[0].affection = 83;
+    state.team[0].hpCur = 35;
+    state.team[0].hpMax = 50;
     uint16_t sessionId = connectVisitor(desktop, service);
     assert(service.viewModel().remainSec ==
            Communication::VisitSessionService::VISIT_DURATION_SEC);
@@ -416,9 +633,13 @@ int main() {
     service.attach(&state);
 
     testHostAdmission(service, state);
+    testTouchBeforeFrameUpdate(desktop, service, state);
     testStageTimeouts(desktop, service, state);
+    testManualDecisionAndRoomList(desktop, service, state);
     testHostRejectsLateTeamChange(desktop, service, state);
     testHostRecallAndDuration(desktop, service, state);
+    testVisitorHealthSync(desktop, service, state);
+    testVisitorDepartureSignal(desktop, service, state);
     testVisitorAuthorityAndRecall(desktop, service, state);
     testEndingTimeout(desktop, service, state);
 

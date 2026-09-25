@@ -97,11 +97,6 @@ static constexpr const char* PAUSED = "已暂停";
 static constexpr const char* LEAVE_ROUTE = "离开路线";
 static constexpr const char* STAY = "继续";
 static constexpr const char* EXIT = "退出";
-static constexpr const char* PATH_PUZZLE = "路线谜题";
-static constexpr const char* PATH_BLOCKED = "路线受阻";
-static constexpr const char* SOLVE = "解谜";
-static constexpr const char* OPEN = "打开";
-static constexpr const char* TURN = "转向";
 
 static constexpr const char* HOST = "创建房间";
 static constexpr const char* SEARCH = "搜索房间";
@@ -155,9 +150,13 @@ static constexpr const char* RETURN = "返回";
 static constexpr const char* NOTHING = "没有物品";
 static constexpr const char* NOTHING_TO_SELL = "没有可出售物品";
 static constexpr const char* ROOM_SUPPLIES = "房间补给";
-static constexpr const char* WASH_PET = "给精灵洗澡";
+static constexpr const char* WASH_PET = "浴室";
+static constexpr const char* BATHROOM = WASH_PET;
 static constexpr const char* STATUS_PAGE = "状态";
 static constexpr const char* STORAGE_PAGE = "通讯录";
+static constexpr const char* CONTACT_VIEW_STATUS = "查看状态";
+static constexpr const char* CONTACT_INVITE = "邀请同行";
+static constexpr const char* CONTACT_DELETE = "删除好友";
 static constexpr const char* AI_HOSTING = "AI托管";
 static constexpr const char* BACKEND = "后台";
 static constexpr const char* WIFI = "Wi-Fi";
@@ -213,6 +212,7 @@ static constexpr const char* WILD_HIT_FMT = "对手造成%u伤害";
 static constexpr const char* WILD_BLOCKED = "对手无法行动";
 static constexpr const char* NO_MEDICINE = "没有可用药品";
 static constexpr const char* CANNOT_USE = "现在不能使用";
+static constexpr const char* FEED = "投喂";
 static constexpr const char* GOT_AWAY = "成功逃走";
 static constexpr const char* CANNOT_ESCAPE = "没能逃走";
 static constexpr const char* BECOME_FRIEND = "要成为伙伴吗?";
@@ -265,9 +265,14 @@ static constexpr const char* GROWTH = "成长";
 static constexpr const char* LEVEL_UP = "升级";
 static constexpr const char* NEW_MOVE = "新招式";
 static constexpr const char* REPLACE_MOVE = "替换招式";
+static constexpr const char* MOVE_LIST = "技能列表";
+static constexpr const char* EXISTING_MOVES = "已有技能";
+static constexpr const char* GIVE_UP_MOVE = "放弃学习";
 static constexpr const char* LEVEL_FMT = "等级%u";
 static constexpr const char* READY = "准备好";
 static constexpr const char* TAP_TO_EVOLVE = "点击进化";
+static constexpr const char* HOLD_TO_CANCEL_EVOLUTION = "长按取消进化";
+static constexpr const char* CANCELLING_EVOLUTION = "正在停止";
 static constexpr const char* CHOOSE_OLD_MOVE = "选择旧招式";
 static constexpr const char* CONTINUE = "继续";
 static constexpr const char* SKIP = "跳过";
@@ -577,11 +582,12 @@ static constexpr const char* ITEMS[] = {
 
 namespace Room {
 static constexpr const char* FOOD_ITEM = "食物";
+static constexpr const char* BATH = "洗澡";
 static constexpr const char* FOOD_SELECTED = "已选择食物";
 static constexpr const char* FOOD_NO_STOCK = "没有库存";
 static constexpr const char* ITEMS[] = {
     FOOD_ITEM,
-    "洗澡",
+    BATH,
     Ui::BACK,
 };
 static constexpr const char* DESCS[] = {
@@ -638,7 +644,6 @@ static constexpr const char* STORAGE_COUNT_FMT = "%u/20";
 static constexpr const char* ITEMS[] = {
     Ui::SOCIAL,
     Ui::STORAGE,
-    Ui::BACK,
 };
 }
 
@@ -661,6 +666,7 @@ static constexpr const char* SET_TIME = "设置时间";
 static constexpr const char* LIGHT_SOURCE = "光源位置";
 static constexpr const char* TILT_CONTROL = "倾斜控制";
 static constexpr const char* WALK_BOUNDARY = "运动边界";
+static constexpr const char* TALK_POINTS = "对话点";
 static constexpr const char* PAIR_INTERACTION = "追逐触发";
 static constexpr const char* BATTLE_DRAW_BOUNDS = "双方绘制框";
 static constexpr const char* TOUCH_DISPLAY = "点击显示";
@@ -723,6 +729,7 @@ static constexpr const char* ENV_ITEMS[] = {
 static constexpr const char* MOTION_ITEMS[] = {
     TILT_CONTROL,
     WALK_BOUNDARY,
+    TALK_POINTS,
     PAIR_INTERACTION,
     Ui::BACK,
 };
@@ -775,10 +782,13 @@ static constexpr const char* INVITE_CONFIRM_FMT = "邀请%s同行吗？";
 static constexpr const char* INVITE_ACCEPTED = "它开心地答应了";
 static constexpr const char* INVITE_REFUSED = "它婉拒了邀请";
 static constexpr const char* INVITE_LOCKED = "今天不能再邀请";
+static constexpr const char* INVITE_LOCKED_SHORT = "不可邀";
 static constexpr const char* IN_TEAM = "队伍中";
 static constexpr const char* VISITING = "正在房间做客";
+static constexpr const char* VISITING_SHORT = "做客";
 static constexpr const char* TEAM_FULL_TOAST = "队伍已满";
 static constexpr const char* DELETE_CONFIRM = "删除";
+static constexpr const char* DELETE_CONFIRM_FMT = "删除%s？";
 static constexpr const char* DELETE_TOAST = "删除";
 static constexpr const char* BOND_LEVELS[] = {
     "抗拒",
@@ -800,9 +810,13 @@ static constexpr const char* ACTIONS[] = {
 
 namespace ContactVisit {
 static constexpr const char* KNOCK = "好像有敲门声，要去看看吗？";
+// AMOLED 底部条宽度有限（368px 下中文 32px/字），访客提示按 \n 分两行绘制。
+static constexpr const char* KNOCK_LINES = "好像有敲门声，\n要去看看吗？";
 static constexpr const char* PLAY_FMT = "%s来找你玩了";
 static constexpr const char* GIFT_FMT = "%s送来了普通粮";
 static constexpr const char* EXPLORE_FMT = "%s想邀请你去探险";
+// EXPLORE_FMT 去掉开头 %s 的后缀，用于双行提示的第二行。
+static constexpr const char* EXPLORE_SUFFIX = "想邀请你去探险";
 static constexpr const char* HAPPY_RETURN = "今天的探险真开心！";
 static constexpr const char* BYE_RETURN = "下次再一起去吧！";
 static constexpr const char* HAPPY_VISIT = "今天玩得很开心！";
@@ -866,6 +880,8 @@ static constexpr const char* MOVE_NOT_LEARNED = "未学会";
 static constexpr const char* TYPE_FMT = "属性：%s/%s";
 static constexpr const char* NATURE_FMT = "性格:%s";
 static constexpr const char* NATURE_PREFERENCE_FMT = "性格:%s(喜%s厌%s)";
+static constexpr const char* FLAVOR_DISLIKE_PREFIX = "讨厌";
+static constexpr const char* FLAVOR_DISLIKE_EMPTY = "讨厌 -";
 // 按食物索引（2~6 为口味树果）给出单字口味名。
 static constexpr const char* FLAVOR_NAMES[] = {
     "", "", "甜", "辣", "酸", "苦", "涩",
@@ -877,6 +893,7 @@ static constexpr const char* PROFILE_LINE_FMT = "%s %s Lv%u";
 static constexpr const char* EXP_FMT = "经验:%lu";
 static constexpr const char* EXP_VALUE_FMT = "经验值:%lu";
 static constexpr const char* EXP_NEXT_FMT = "升级需要:%lu";
+static constexpr const char* EXP_REMAINING = "距升级";
 static constexpr const char* HP_FMT = "HP:%u/%u";
 static constexpr const char* TOTAL_FMT = "合计:%u/%u";
 static constexpr const char* STAT_ROW_FMT = "%s:%u";
@@ -1075,7 +1092,6 @@ static constexpr const char* ITEMS[] = {
     POWER_SAVE,
     HELP,
     RESET_GAME,
-    Ui::BACK,
 };
 static constexpr const char* ON = "开";
 static constexpr const char* OFF = "关";
@@ -1342,6 +1358,12 @@ static constexpr const char* DONE = "孵化完成";
 }
 
 namespace Social {
+static constexpr const char* VISIT_AWAY = "精灵拜访中  A召回";
+static constexpr const char* VISIT_AWAY_HUD = "精灵拜访中";
+static constexpr const char* RECALL_CONFIRM = "召回精灵？";
+static constexpr const char* RECALL = "召回";
+static constexpr const char* RECALL_CANCEL = "取消";
+static constexpr const char* LINK_WELCOME = "欢迎来到我的房间!";
 static constexpr const char* NOW = "NOW";
 static constexpr const char* OFF = "OFF";
 static constexpr const char* HOSTING_VISIT = "正在广播邀请";
@@ -1352,8 +1374,13 @@ static constexpr const char* HOST_TIMEOUT = "等待超时,没有访客加入";
 static constexpr const char* GUEST_CONNECTING = "访客连接中";
 static constexpr const char* SYNCING = "正在同步精灵数据";
 static constexpr const char* REQUESTING_JOIN = "正在请求加入";
+static constexpr const char* WAIT_HOST_DECISION = "等待房主确认";
+static constexpr const char* INCOMING_REQUEST = "有访客请求加入";
+static constexpr const char* ACCEPT = "接受";
+static constexpr const char* DECLINE = "拒绝";
 static constexpr const char* SEARCH_TIMEOUT = "没有找到邀请";
 static constexpr const char* JOIN_REJECTED = "加入被拒绝";
+static constexpr const char* JOIN_TIMED_OUT = "房主未确认,请重试";
 static constexpr const char* ROOMS_FOUND_FMT = "已发现房间:%d";
 static constexpr const char* SELECT_ROOM = "选择房间";
 static constexpr const char* ROOM_ROW_FMT = "房间 %03u";
@@ -1361,6 +1388,7 @@ static constexpr const char* CANCEL_HINT = "A:取消";
 static constexpr const char* BACK_HINT = "A:返回";
 static constexpr const char* ENTERED_ROOM = "已进入对方房间";
 static constexpr const char* VISITING_TITLE = "拜访中";
+static constexpr const char* VISIT_ENDED = "拜访已结束";
 static constexpr const char* VISITING_GUEST_HINT = "你的精灵正在对方房间";
 static constexpr const char* VISITING_HOST_HINT = "有访客在你的房间";
 static constexpr const char* REJECT_STORAGE_FULL = "对方通讯录已满";

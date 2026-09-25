@@ -39,8 +39,12 @@ public:
 
     uint16_t width() const { return width_; }
     uint16_t height() const { return height_; }
+    uint16_t artWidth() const { return artWidth_; }
+    uint16_t artHeight() const { return artHeight_; }
+    uint8_t artScale() const { return artScale_; }
     int16_t roomY() const { return roomY_; }
     uint32_t pixelCount() const { return (uint32_t)width_ * height_; }
+    uint32_t artPixelCount() const { return (uint32_t)artWidth_ * artHeight_; }
     uint32_t baseRawBytes() const { return baseRawBytes_; }
     uint32_t baseCompressedLen() const { return baseCompressedLen_; }
     uint32_t nightPatchRunCount() const { return nightPatchRunCount_; }
@@ -100,6 +104,9 @@ private:
 
     uint16_t width_ = 0;
     uint16_t height_ = 0;
+    uint16_t artWidth_ = 0;
+    uint16_t artHeight_ = 0;
+    uint8_t artScale_ = 1;
     int16_t roomY_ = 0;
     uint32_t baseRawBytes_ = 0;
     uint32_t baseCompressedLen_ = 0;

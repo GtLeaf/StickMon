@@ -61,13 +61,13 @@ class AmoledShopLayoutTests(unittest.TestCase):
         render = self._function(self.screen, "void renderShopScreen(",
                                 "int roomMenuItemAt(")
         header = render[:render.index("if (rowEnd <= MENU_CONTENT_TOP)")]
-        self.assertIn("drawPageHeader(canvas, Ui::SHOP);", header)
+        self.assertIn("drawPageHeader(canvas, Ui::SHOP", header)
         self.assertIn("drawPageHeaderCenteredText(canvas, coins", header)
         tap = self._function(self.app, "void AmoledApp::handleTap(",
                              "void AmoledApp::update(")
         shop = tap[tap.index("if (sceneFlow.current() == AppSceneFlow::Scene::SHOP)"):]
         shop = shop[:shop.index("if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_AREAS)")]
-        self.assertIn("itemListBackAt(x, y)", shop)
+        self.assertIn("itemListBackAt(x, y, itemConfirmOpen)", shop)
         self.assertIn("closeItemScene();", shop)
 
     def test_grid_cells_render_native_icons_without_labels(self):

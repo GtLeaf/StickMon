@@ -53,9 +53,17 @@ int main() {
     assert(Game::ShopService::buyItemAt(Category::DAILY, state, 9) ==
            ItemId::SOAP_2);
     state.explorePoolRerollCounts[2] = 1;
-    assert(Game::ShopService::buyItemCount(Category::DAILY, state) == 12);
+    assert(Game::ShopService::buyItemCount(Category::DAILY, state) == 11);
     assert(Game::ShopService::buyItemAt(Category::DAILY, state, 7) ==
            ItemId::CANDY);
+    const uint8_t exploreCount =
+        Game::ShopService::buyItemCount(Category::EXPLORE, state);
+    bool foundFullHeal = false;
+    for (uint8_t i = 0; i < exploreCount; ++i) {
+        foundFullHeal |= Game::ShopService::buyItemAt(
+            Category::EXPLORE, state, i) == ItemId::FULL_HEAL;
+    }
+    assert(foundFullHeal);
     state.coins = 5000;
     state.candyPurchasesToday = Game::DAILY_CANDY_PURCHASE_CAP;
     assert(Game::ShopService::buy(state, ItemId::CANDY) ==

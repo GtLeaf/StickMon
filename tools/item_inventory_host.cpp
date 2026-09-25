@@ -104,15 +104,33 @@ int main() {
     state.bag.antidote = 1;
     state.bag.paralyzeHeal = 1;
     state.bag.candy = 1;
+    state.bag.fullHeal = 1;
     state.bag.revive = 1;
     assert(Game::ItemInventory::homeBagDailyItemCount(state) == 1);
-    assert(Game::ItemInventory::homeBagExploreItemCount(state) == 5);
+    assert(Game::ItemInventory::homeBagExploreItemCount(state) == 6);
     assert(Game::ItemInventory::homeBagItemAt(state, 0) == ItemId::CANDY);
     assert(Game::ItemInventory::homeBagItemAt(state, 1) == ItemId::POTION);
     assert(Game::ItemInventory::homeBagItemAt(state, 2) == ItemId::ANTIDOTE);
     assert(Game::ItemInventory::homeBagItemAt(state, 3) ==
            ItemId::PARALYZE_HEAL);
     assert(Game::ItemInventory::homeBagItemAt(state, 4) == ItemId::MAX_POTION);
-    assert(Game::ItemInventory::homeBagItemAt(state, 5) == ItemId::REVIVE);
+    assert(Game::ItemInventory::homeBagItemAt(state, 5) == ItemId::FULL_HEAL);
+    assert(Game::ItemInventory::homeBagItemAt(state, 6) == ItemId::REVIVE);
+    bool foundFullHeal = false;
+    for (uint8_t i = 0;
+         i < Game::ItemInventory::homeBagExploreItemCount(state); ++i) {
+        foundFullHeal |= Game::ItemInventory::homeBagExploreItemAt(state, i) ==
+                         ItemId::FULL_HEAL;
+    }
+    assert(foundFullHeal);
+    assert(Game::ItemInventory::add(state, ItemId::SWEET_FOOD));
+    assert(Game::ItemInventory::add(state, ItemId::SOAP_0));
+    assert(Game::ItemInventory::homeBagDailyItemCount(state) == 3);
+    assert(Game::ItemInventory::homeBagDailyItemAt(state, 0) ==
+           ItemId::SWEET_FOOD);
+    assert(Game::ItemInventory::homeBagDailyItemAt(state, 1) == ItemId::CANDY);
+    assert(Game::ItemInventory::homeBagDailyItemAt(state, 2) == ItemId::SOAP_0);
+    assert(Game::ItemInventory::homeBagItemAt(state, 3) == ItemId::POTION);
+    assert(!Game::ItemInventory::usableInBattle(ItemId::SOAP_0));
     return 0;
 }

@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <cstdio>
 
+#include "game/ExploreAreaCatalog.h"
+#include "game/ExploreEncounterRules.h"
 #include "game/ExploreEncounters.h"
 #include "game/ExplorePool.h"
 
@@ -154,10 +156,20 @@ int main() {
     for (uint8_t area = 0; area < AREA_COUNT; ++area) {
         ExplorePool::SourceEntry source[ExplorePool::MAX_SOURCE_ENTRIES];
         uint8_t sourceCount = toSource(TABLES[area], source);
+        const ExploreEncounters::Table encounterTable =
+            ExploreEncounters::tableForArea(area);
+        if (encounterTable.entries != TABLES[area].entries ||
+            encounterTable.count != sourceCount) {
+            return fail(36, "shared encounter table selection", area);
+        }
         for (uint32_t seedIndex = 0; seedIndex < 2000; ++seedIndex) {
             uint32_t seed = ExplorePool::mixSeed(seedIndex, area, 0);
             ExplorePool::Pool pool =
                 ExplorePool::buildPool(source, sourceCount, seed);
+            if (!samePool(pool, ExploreEncounters::poolForArea(
+                    area, seedIndex * ExplorePool::SLOT_PERIOD_MINUTES, 0))) {
+                return fail(37, "shared area pool selection", area);
+            }
             if (pool.count < 4 || pool.count > ExplorePool::POOL_CAP) {
                 return fail(9, "pool size out of 4..6", area);
             }
@@ -347,6 +359,56 @@ int main() {
             ExplorePool::rollWeightOf(common) != 18) {
             return fail(30, "rare roll weight bonus/cap");
         }
+    }
+
+    for (uint8_t area = 0; area < AREA_COUNT; ++area) {
+        const uint8_t average = ExploreAreaCatalog::recommendedLevel(area);
+        const uint8_t spread = ExploreAreaCatalog::depthSpread(area);
+        if (ExploreEncounterRules::targetLevel(
+                average, spread, 0, 3, 0, 11) != average - spread ||
+            ExploreEncounterRules::targetLevel(
+                average, spread, 1, 3, 0, 11) != average ||
+            ExploreEncounterRules::targetLevel(
+                average, spread, 2, 3, 10, 11) != average + spread) {
+            return fail(31, "wild target must follow route depth", area);
+        }
+    }
+    if (ExploreEncounterRules::depthLevelOffset(332, 4) != -4 ||
+        ExploreEncounterRules::depthLevelOffset(333, 4) != 0 ||
+        ExploreEncounterRules::depthLevelOffset(666, 4) != 0 ||
+        ExploreEncounterRules::depthLevelOffset(667, 4) != 4) {
+        return fail(32, "route depth band boundaries");
+    }
+    if (ExploreEncounterRules::levelForRoll(1, 100, 10, 9) != 8 ||
+        ExploreEncounterRules::levelForRoll(1, 100, 10, 10) != 9 ||
+        ExploreEncounterRules::levelForRoll(1, 100, 10, 29) != 9 ||
+        ExploreEncounterRules::levelForRoll(1, 100, 10, 30) != 10 ||
+        ExploreEncounterRules::levelForRoll(1, 100, 10, 69) != 10 ||
+        ExploreEncounterRules::levelForRoll(1, 100, 10, 70) != 11 ||
+        ExploreEncounterRules::levelForRoll(1, 100, 10, 89) != 11 ||
+        ExploreEncounterRules::levelForRoll(1, 100, 10, 90) != 12 ||
+        ExploreEncounterRules::levelForRoll(1, 6, 50, 90) != 6 ||
+        ExploreEncounterRules::levelForRoll(28, 29, 5, 0) != 28) {
+        return fail(33, "wild level probabilities and species bounds");
+    }
+    ExplorePool::Pool rollPool{};
+    rollPool.entries[0] = {10, 2, Rarity::COMMON};
+    rollPool.entries[1] = {4, 1, Rarity::RARE};
+    rollPool.count = 2;
+    for (uint32_t roll = 0; roll < 5; ++roll) {
+        const ExplorePool::PoolEntry* picked =
+            ExplorePool::entryForRoll(rollPool, roll);
+        if (!picked || picked->speciesId != (roll < 2 ? 10 : 4)) {
+            return fail(34, "active pool weighted selection", roll);
+        }
+    }
+    if (ExplorePool::entryForRoll(rollPool, 5) ||
+        ExplorePool::entryForRoll(ExplorePool::Pool{}, 0)) {
+        return fail(35, "active pool roll must reject empty weights");
+    }
+    if (ExploreEncounters::tableForArea(AREA_COUNT).entries ||
+        ExploreEncounters::poolForArea(AREA_COUNT, 0, 0).count != 0) {
+        return fail(38, "unknown area has no encounter pool");
     }
 
     std::printf("[explore_pool_host] all tests passed\n");

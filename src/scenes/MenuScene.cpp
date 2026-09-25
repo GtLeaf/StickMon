@@ -1306,8 +1306,6 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                 storageActionOpen = false;
                 storageReleaseConfirmOpen = false;
                 storageScroll = 0.0f;
-            } else {
-                popView();
             }
             return true;
         }
