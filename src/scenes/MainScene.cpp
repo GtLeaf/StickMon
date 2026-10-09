@@ -89,8 +89,8 @@ static constexpr uint16_t VISITOR_SLEEP_ZZ_CYCLE_MS = 1600;
 static_assert(!monsterShouldWakeForFood(59) &&
               monsterShouldWakeForFood(MONSTER_SLEEP_FOOD_WAKE_SATIETY),
               "normal hunger must not interrupt scheduled sleep");
-static constexpr uint32_t CONTACT_GUEST_MOTION_TIMEOUT_MS = 8000UL;
-static constexpr uint16_t CONTACT_DOOR_OPEN_PAUSE_MS = 420;
+static constexpr uint32_t CONTACT_GUEST_MOTION_TIMEOUT_MS =
+    Home::VisitArrivalFlow::MOTION_TIMEOUT_MS;
 // Contact dialog visual tuning. Alpha 153 means 60% opacity.
 static constexpr int CONTACT_DIALOG_X = 5;
 static constexpr int CONTACT_DIALOG_BOTTOM = 131;
@@ -744,6 +744,7 @@ void MainScene::onEnter() {
     ProgressionUi::resetMoveLearnState(progressionMoveLearn);
     contactDialog = ContactDialog::NONE;
     linkedArrivalInProgress = false;
+    visitArrival.reset();
     visitDeparture = VisitDeparture::NONE;
     contactGuestMotion = ContactGuestMotion::NONE;
     contactGuestMotionStartedMs = 0;
@@ -1434,7 +1435,9 @@ bool MainScene::updateVisitDeparture(uint32_t nowMs, float dtSeconds) {
             ? updateDoorRoute(dtSeconds)
             : moveDoorToward(doorInsideX, doorInsideY,
                              DOOR_ROUTE_SPEED, dtSeconds, true);
-        if (arrived || nowMs - visitDepartureStartedMs > 12000) {
+        if (Home::VisitDepartureFlow::advance(
+                visitDeparture, arrived, nowMs - visitDepartureStartedMs) ==
+            VisitDeparture::CROSS_DOOR) {
             mainActor.x = doorInsideX;
             mainActor.y = doorInsideY;
             clearMoveRoute();
@@ -1442,9 +1445,11 @@ bool MainScene::updateVisitDeparture(uint32_t nowMs, float dtSeconds) {
             visitDepartureStartedMs = nowMs;
         }
     } else if (visitDeparture == VisitDeparture::CROSS_DOOR) {
-        if (moveDoorToward(doorOutsideX, doorOutsideY,
-                           DOOR_CROSS_SPEED, dtSeconds, false) ||
-            nowMs - visitDepartureStartedMs > 5000) {
+        const bool arrived = moveDoorToward(
+            doorOutsideX, doorOutsideY, DOOR_CROSS_SPEED, dtSeconds, false);
+        if (Home::VisitDepartureFlow::advance(
+                visitDeparture, arrived, nowMs - visitDepartureStartedMs) ==
+            VisitDeparture::AWAY) {
             doorMainHidden = true;
             visitDeparture = VisitDeparture::AWAY;
             service.markVisitorDeparted();
@@ -2328,6 +2333,7 @@ void MainScene::clearVisitorMoveRoute() {
 }
 
 void MainScene::deactivateVisitor() {
+    visitArrival.reset();
     homeCoordinator.stop(1, Hal::ins().millis());
     visitor.active = false;
     homeCoordinator.attach(mainActor, nullptr);
@@ -2665,16 +2671,9 @@ bool MainScene::ambientActionAllowed() const {
         return false;
     }
     const Game::MonsterRuntime& mon = GameEngine::ins().activeMonster();
-    if (mon.fainted || mon.hpCur == 0 || mon.majorStatus == Game::MajorStatus::SLEEP ||
-        mon.hpMax == 0 || (uint32_t)mon.hpCur * 100UL <= (uint32_t)mon.hpMax * 25UL ||
-        mon.satiety <= 25 || mainSceneIsSleepTime()) {
-        return false;
-    }
-    if (GameEngine::ins().bowlHasFood() && mon.satiety < MONSTER_FEED_TARGET_SATIETY) {
-        return false;
-    }
-    return mainActor.mind.topDesire() != MonsterDesire::EAT &&
-           mainActor.mind.topDesire() != MonsterDesire::REST;
+    return Home::ActorController::ambientEligible(
+        mon, mainActor.mind.topDesire(), mainSceneIsSleepTime(),
+        GameEngine::ins().bowlHasFood());
 }
 
 bool MainScene::chooseNearbyPose(float originX, float originY, float minDistance,
@@ -4062,32 +4061,28 @@ void MainScene::chooseAiGoal(uint32_t nowMs) {
         Home::ActorController::survivalIntent(
             homeActorObservation(0, nowMs),
             GameEngine::ins().bowlHasFood());
-    switch (mainActor.mind.topDesire()) {
-    case MonsterDesire::EAT:
-        if (survivalIntent == Home::ActorIntent::SEEK_FOOD) {
-            if (monsterNearFood()) enterFeeding(nowMs);
-            else setFoodTarget(nowMs);
-            if (mainActor.task != AiMode::IDLE ||
-                visitor.task != VisitorState::IDLE) {
-                return;
-            }
-            // A teammate can be closer to the bowl while this actor blocks
-            // its approach. Move away instead of retrying forever in place.
-            if (startWander(nowMs)) return;
-        }
-        break;
-    case MonsterDesire::REST:
-        if (survivalIntent == Home::ActorIntent::SEEK_SLEEP) {
-            if (monsterNearBed()) enterResting(nowMs);
-            else setBedTarget(nowMs);
+    const Home::IdleGoal goal = Home::ActorController::idleGoal(
+        mainActor.mind.topDesire(), survivalIntent);
+    switch (goal) {
+    case Home::IdleGoal::SEEK_FOOD:
+        if (monsterNearFood()) enterFeeding(nowMs);
+        else setFoodTarget(nowMs);
+        if (mainActor.task != AiMode::IDLE ||
+            visitor.task != VisitorState::IDLE) {
             return;
         }
+        // A teammate can be closer to the bowl while this actor blocks
+        // its approach. Move away instead of retrying forever in place.
         if (startWander(nowMs)) return;
         break;
-    case MonsterDesire::WANDER:
+    case Home::IdleGoal::SEEK_SLEEP:
+        if (monsterNearBed()) enterResting(nowMs);
+        else setBedTarget(nowMs);
+        return;
+    case Home::IdleGoal::WANDER:
         if (startWander(nowMs)) return;
         break;
-    case MonsterDesire::STARE:
+    case Home::IdleGoal::STARE:
         if (GameRandom::random(100) < 32) {
             int direction = (int)pmdDirection + (GameRandom::random(2) == 0 ? -1 : 1);
             if (direction < 0) direction += 8;
@@ -4097,6 +4092,8 @@ void MainScene::chooseAiGoal(uint32_t nowMs) {
             mainActor.mind.onActivity(nowMs);
             return;
         }
+        break;
+    case Home::IdleGoal::IDLE:
         break;
     }
 
@@ -4189,28 +4186,9 @@ bool MainScene::pairInteractionAllowed() const {
     if (state.teamCount < 2) return false;
     const Game::MonsterRuntime& mainMon = state.team[0];
     const Game::MonsterRuntime& guestMon = state.team[1];
-    if (monsterIsSleepTime(mainMon) || monsterIsSleepTime(guestMon)) {
-        return false;
-    }
-    auto ready = [](const Game::MonsterRuntime& mon) {
-        if (mon.fainted || mon.hpCur == 0 ||
-            mon.majorStatus == Game::MajorStatus::SLEEP ||
-            mon.hpMax == 0 ||
-            static_cast<uint32_t>(mon.hpCur) * 100UL <=
-                static_cast<uint32_t>(mon.hpMax) * 20UL) {
-            return false;
-        }
-        const Game::SpeciesCareProfile care =
-            Game::speciesCareProfileFor(mon.speciesId);
-        return !care.needsFood || mon.satiety > 25;
-    };
-    if (!ready(mainMon) || !ready(guestMon)) return false;
-
-    const Game::SpeciesCareProfile mainCare =
-        Game::speciesCareProfileFor(mainMon.speciesId);
-    const Game::SpeciesCareProfile guestCare =
-        Game::speciesCareProfileFor(guestMon.speciesId);
-    return mainCare.canMove || guestCare.canMove;
+    return Home::ActorController::pairEligible(
+        mainMon, guestMon, monsterIsSleepTime(mainMon),
+        monsterIsSleepTime(guestMon));
 }
 
 bool MainScene::choosePairApproachPose(bool moverMain,
@@ -4737,17 +4715,10 @@ bool MainScene::startPairInteraction(uint32_t nowMs) {
     bool forcedPlay = pairForcedPlay;
     bool forcedChase = pairForcedChase;
     uint8_t roll = static_cast<uint8_t>(GameRandom::random(100));
-    if (!mainCanMove || !guestCanMove) {
-        pairInteraction = PairInteraction::TALK;
-    } else if (forcedChase) {
-        pairInteraction = PairInteraction::CHASE;
-    } else if (forcedPlay) {
-        pairInteraction =
-            roll < 75 ? PairInteraction::CHASE : PairInteraction::TALK;
-    } else {
-        pairInteraction = roll < 45
-            ? PairInteraction::TALK : PairInteraction::CHASE;
-    }
+    pairInteraction = Home::ActorController::pairActivity(
+        mainCanMove, guestCanMove, forcedChase, forcedPlay, false, roll) ==
+            Home::PairActivity::CHASE
+        ? PairInteraction::CHASE : PairInteraction::TALK;
     Home::PairActivity activity = pairInteraction == PairInteraction::CHASE
         ? Home::PairActivity::CHASE : Home::PairActivity::TALK;
     if (!homeCoordinator.beginPair(activity, nowMs)) {
@@ -4764,9 +4735,9 @@ bool MainScene::startPairInteraction(uint32_t nowMs) {
         forcedPlay ? 1U : 0U, forcedChase ? 1U : 0U,
         static_cast<unsigned>(roll),
         mainCanMove ? 1U : 0U, guestCanMove ? 1U : 0U);
-    pairLeaderMain = GameRandom::random(2) == 0;
-    if (!mainCanMove) pairLeaderMain = false;
-    if (!guestCanMove) pairLeaderMain = true;
+    pairLeaderMain = Home::ActorController::pairLeaderMain(
+        mainCanMove, guestCanMove,
+        static_cast<uint8_t>(GameRandom::random(2)));
 
     cancelRoomAction(nowMs);
     clearMoveRoute();
@@ -5093,15 +5064,18 @@ void MainScene::updateContactVisit(uint32_t nowMs, float dtSeconds) {
             mainActor.x = doorInsideX;
             mainActor.y = doorInsideY;
             clearMoveRoute();
+            visitArrival.advance(Home::VisitArrivalEvent::HOST_READY, nowMs);
             doorVisitorHidden = false;
             contactGuestMotion = ContactGuestMotion::HOST_OPEN_DOOR;
-            contactGuestMotionStartedMs = nowMs - CONTACT_DOOR_OPEN_PAUSE_MS;
+            contactGuestMotionStartedMs = nowMs;
             return;
         }
         if (timedOut == ContactGuestMotion::HOST_CLEAR_DOOR) {
             mainActor.x = mainActor.targetX;
             mainActor.y = mainActor.targetY;
             clearMoveRoute();
+            if (!visitArrival.advance(
+                    Home::VisitArrivalEvent::GUEST_ENTERING, nowMs)) return;
             visitor.targetX = visitorDoorInsideX;
             visitor.targetY = visitorDoorInsideY;
             homeCoordinator.transition(
@@ -5115,6 +5089,7 @@ void MainScene::updateContactVisit(uint32_t nowMs, float dtSeconds) {
         if (timedOut == ContactGuestMotion::ENTER_CROSS) {
             visitor.x = visitorDoorInsideX;
             visitor.y = visitorDoorInsideY;
+            visitArrival.advance(Home::VisitArrivalEvent::GUEST_INSIDE, nowMs);
             if (!beginContactMeetingArrangement(nowMs) &&
                 !beginContactGuestApproach(nowMs)) {
                 deferContactMeeting(nowMs);
@@ -5126,6 +5101,7 @@ void MainScene::updateContactVisit(uint32_t nowMs, float dtSeconds) {
                 !beginContactGuestApproach(nowMs)) {
                 if (linkedArrivalInProgress) {
                     spawnVisitor(nowMs, false);
+                    visitArrival.advance(Home::VisitArrivalEvent::TALK_SKIPPED, nowMs);
                     contactGuestMotion = ContactGuestMotion::NONE;
                     linkedArrivalInProgress = false;
                     contactDialog = ContactDialog::LINK_ARRIVAL;
@@ -5158,7 +5134,11 @@ void MainScene::updateContactVisit(uint32_t nowMs, float dtSeconds) {
         if (timedOut == ContactGuestMotion::ARRIVAL_TALK ||
             timedOut == ContactGuestMotion::HOST_OPEN_DOOR) {
             if (timedOut == ContactGuestMotion::HOST_OPEN_DOOR) {
+                if (!visitArrival.advance(
+                        Home::VisitArrivalEvent::DOOR_OPENED, nowMs)) return;
                 if (!beginContactHostClearDoor(nowMs)) {
+                    if (!visitArrival.advance(
+                            Home::VisitArrivalEvent::GUEST_ENTERING, nowMs)) return;
                     visitor.targetX = visitorDoorInsideX;
                     visitor.targetY = visitorDoorInsideY;
                     homeCoordinator.transition(
@@ -5223,6 +5203,7 @@ void MainScene::updateContactVisit(uint32_t nowMs, float dtSeconds) {
     case ContactGuestMotion::HOST_TO_DOOR:
         doorLastUpdateMs = nowMs;
         if (!updateDoorRoute(dtSeconds)) return;
+        visitArrival.advance(Home::VisitArrivalEvent::HOST_READY, nowMs);
         mainActor.x = doorInsideX;
         mainActor.y = doorInsideY;
         mainActor.targetX = mainActor.x;
@@ -5240,11 +5221,11 @@ void MainScene::updateContactVisit(uint32_t nowMs, float dtSeconds) {
         return;
     case ContactGuestMotion::HOST_OPEN_DOOR:
         mainActor.velocityX = mainActor.velocityY = 0.0f;
-        if (nowMs - contactGuestMotionStartedMs <
-            CONTACT_DOOR_OPEN_PAUSE_MS) {
-            return;
-        }
+        if (!visitArrival.advance(
+                Home::VisitArrivalEvent::DOOR_OPENED, nowMs)) return;
         if (!beginContactHostClearDoor(nowMs)) {
+            if (!visitArrival.advance(
+                    Home::VisitArrivalEvent::GUEST_ENTERING, nowMs)) return;
             visitor.targetX = visitorDoorInsideX;
             visitor.targetY = visitorDoorInsideY;
             homeCoordinator.transition(
@@ -5258,6 +5239,8 @@ void MainScene::updateContactVisit(uint32_t nowMs, float dtSeconds) {
     case ContactGuestMotion::HOST_CLEAR_DOOR:
         doorLastUpdateMs = nowMs;
         if (!updateDoorRoute(dtSeconds)) return;
+        if (!visitArrival.advance(
+                Home::VisitArrivalEvent::GUEST_ENTERING, nowMs)) return;
         mainActor.targetX = mainActor.x;
         mainActor.targetY = mainActor.y;
         mainActor.velocityX = mainActor.velocityY = 0.0f;
@@ -5284,6 +5267,7 @@ void MainScene::updateContactVisit(uint32_t nowMs, float dtSeconds) {
         }
         visitor.x = visitorDoorInsideX;
         visitor.y = visitorDoorInsideY;
+        visitArrival.advance(Home::VisitArrivalEvent::GUEST_INSIDE, nowMs);
         if (!beginContactMeetingArrangement(nowMs) &&
             !beginContactGuestApproach(nowMs)) {
             deferContactMeeting(nowMs);
@@ -5412,6 +5396,8 @@ void MainScene::beginContactGuestEntry(uint32_t nowMs) {
         return;
     }
 
+    visitArrival.begin(nowMs);
+
     // The guest exists in the temporary team as soon as the knock is accepted,
     // but remains offstage until the host opens the door.
     doorVisitorHidden = true;
@@ -5448,6 +5434,7 @@ void MainScene::beginContactGuestEntry(uint32_t nowMs) {
         mainActor.y = doorInsideY;
         mainActor.targetX = mainActor.x;
         mainActor.targetY = mainActor.y;
+        visitArrival.advance(Home::VisitArrivalEvent::HOST_READY, nowMs);
         doorVisitorHidden = false;
         contactGuestMotion = ContactGuestMotion::HOST_OPEN_DOOR;
     } else {
@@ -5694,6 +5681,7 @@ void MainScene::beginContactArrivalConversation(uint32_t nowMs) {
         deferContactMeeting(nowMs);
         return;
     }
+    visitArrival.advance(Home::VisitArrivalEvent::TALK_STARTED, nowMs);
     facePairActors();
     contactGuestMotion = ContactGuestMotion::ARRIVAL_TALK;
     contactGuestMotionStartedMs = nowMs;
@@ -5703,6 +5691,7 @@ void MainScene::beginContactArrivalConversation(uint32_t nowMs) {
 }
 
 void MainScene::finishContactArrivalConversation(uint32_t nowMs) {
+    visitArrival.advance(Home::VisitArrivalEvent::TALK_FINISHED, nowMs);
     homeCoordinator.endPair(nowMs);
     mainActor.nextDecisionMs = nowMs + 900;
     mainActor.mind.onActivity(nowMs);
@@ -5761,6 +5750,7 @@ void MainScene::beginTeamMemberEntry(uint32_t nowMs) {
 }
 
 void MainScene::beginContactGuestExit(uint32_t nowMs) {
+    visitArrival.reset();
     cancelPairInteraction(nowMs);
     cancelRoomAction(nowMs);
     homeCoordinator.releaseAll(1);

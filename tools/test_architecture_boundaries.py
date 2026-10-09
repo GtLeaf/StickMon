@@ -75,6 +75,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         for source in (stick, amoled):
             self.assertIn("Home::ActorController::selectBowlActor(", source)
             self.assertIn("Home::ActorController::survivalIntent(", source)
+            self.assertIn("Home::ActorController::idleGoal(", source)
+            self.assertIn("Home::ActorController::ambientEligible(", source)
+            self.assertIn("Home::ActorController::pairEligible(", source)
+            self.assertIn("Home::ActorController::pairActivity(", source)
 
         controller = "\n".join(
             (ROOT / "src/game" / name).read_text(encoding="utf-8")
@@ -89,6 +93,41 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "freertos/",
         ):
             self.assertNotIn(forbidden, controller)
+
+    def test_visit_departure_phases_are_shared(self):
+        stick = (ROOT / "src/scenes/MainScene.cpp").read_text(encoding="utf-8")
+        amoled = (ROOT / "firmware/amoled_1_8_v1/main/AmoledApp.cpp").read_text(
+            encoding="utf-8"
+        )
+        for source in (stick, amoled):
+            self.assertIn("Home::VisitDepartureFlow::advance(", source)
+        self.assertIn("HomeVisitDeparture.h", (
+            ROOT / "src/scenes/MainScene.h").read_text(encoding="utf-8"))
+        self.assertIn("HomeVisitDeparture.h", (
+            ROOT / "firmware/amoled_1_8_v1/main/AmoledApp.h").read_text(
+                encoding="utf-8"))
+
+    def test_visit_arrival_events_are_shared(self):
+        headers = (
+            ROOT / "src/scenes/MainScene.h",
+            ROOT / "firmware/amoled_1_8_v1/main/AmoledApp.h",
+        )
+        sources = (
+            ROOT / "src/scenes/MainScene.cpp",
+            ROOT / "firmware/amoled_1_8_v1/main/AmoledApp.cpp",
+        )
+        for header in headers:
+            text = header.read_text(encoding="utf-8")
+            self.assertIn("HomeVisitArrival.h", text)
+            self.assertIn("Home::VisitArrivalFlow visitArrival;", text)
+        for source in sources:
+            text = source.read_text(encoding="utf-8")
+            for event in ("HOST_READY", "DOOR_OPENED", "GUEST_ENTERING",
+                          "GUEST_INSIDE", "TALK_STARTED", "TALK_FINISHED"):
+                self.assertIn(f"Home::VisitArrivalEvent::{event}", text)
+            self.assertIn("visitArrival.begin(nowMs)", text)
+            self.assertIn("visitArrival.reset()", text)
+
 
     def test_room_survival_tasks_use_home_simulation(self):
         sources = {

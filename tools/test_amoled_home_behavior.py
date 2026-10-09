@@ -192,7 +192,7 @@ class AmoledHomeBehaviorTests(unittest.TestCase):
         for token in (
             "PAIR_INTERACTION_MIN_INTERVAL_MS = 90000UL",
             "PAIR_INTERACTION_MAX_INTERVAL_MS = 180000UL",
-            "GameRandom::random(100) >= 45",
+            "Home::ActorController::pairActivity(",
             "homeRuntime.beginPair(pairActivity, nowMs)",
             "homeRuntime.advanceRoute(\n                0,",
             "homeRuntime.advanceRoute(\n                1,",

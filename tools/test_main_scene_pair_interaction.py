@@ -170,8 +170,9 @@ class MainScenePairInteractionTests(unittest.TestCase):
     def test_debug_pair_request_forces_chase(self):
         self.assertIn("pairForcedChase =", self.source)
         self.assertIn("consumeDebugPairInteractionRequest()", self.source)
-        self.assertIn("else if (forcedChase)", self.source)
-        self.assertIn("pairInteraction = PairInteraction::CHASE", self.source)
+        self.assertIn("Home::ActorController::pairActivity(\n"
+                      "        mainCanMove, guestCanMove, forcedChase, forcedPlay, false, roll)",
+                      self.source)
 
     def test_contact_arrival_uses_host_door_guest_and_talk_phases(self):
         enum_begin = self.header.index("enum class ContactGuestMotion")
@@ -261,7 +262,8 @@ class MainScenePairInteractionTests(unittest.TestCase):
         body = self.source[begin:end]
         self.assertIn("minTravel = 14.0f", body)
         self.assertIn("buildPairActorRoute(", body)
-        self.assertIn("visitor.task = VisitorState::WALK", body)
+        self.assertIn("homeCoordinator.transitionPreparedRoute(\n"
+                      "            1, VisitorState::WALK, nowMs, 0, true)", body)
         self.assertIn('event=guest_meet_failed', body)
         self.assertIn('route=%u candidates=%u', body)
         self.assertIn("!actorFootprintInsideWalkArea(", body)

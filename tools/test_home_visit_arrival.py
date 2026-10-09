@@ -1,0 +1,26 @@
+#!/usr/bin/env python3
+
+import shutil
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class HomeVisitArrivalTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("c++"), "host C++ compiler is unavailable")
+    def test_arrival_events_and_door_pause(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            binary = Path(temporary) / "home_visit_arrival_host"
+            subprocess.run([
+                "c++", "-std=c++17", "-Werror", "-Isrc",
+                "tools/home_visit_arrival_host.cpp", "-o", str(binary),
+            ], cwd=ROOT, check=True)
+            subprocess.run([str(binary)], check=True)
+
+
+if __name__ == "__main__":
+    unittest.main()

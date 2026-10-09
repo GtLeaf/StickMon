@@ -13,6 +13,8 @@
 #include "game/HomeActorController.h"
 #include "game/HomeChase.h"
 #include "game/HomeSimulation.h"
+#include "game/HomeVisitArrival.h"
+#include "game/HomeVisitDeparture.h"
 #include "game/Species.h"
 
 struct PetResult;
@@ -463,14 +465,11 @@ private:
     uint8_t hungerAnimTo = 0;
     ProgressionModal progressionModal = ProgressionModal::NONE;
     ContactDialog contactDialog = ContactDialog::NONE;
-    enum class VisitDeparture : uint8_t {
-        NONE,
-        WALK_TO_DOOR,
-        CROSS_DOOR,
-        AWAY,
-    } visitDeparture = VisitDeparture::NONE;
+    using VisitDeparture = Home::VisitDeparturePhase;
+    VisitDeparture visitDeparture = VisitDeparture::NONE;
     uint32_t visitDepartureStartedMs = 0;
     bool linkedArrivalInProgress = false;
+    Home::VisitArrivalFlow visitArrival;
     ContactGuestMotion contactGuestMotion = ContactGuestMotion::NONE;
     uint32_t contactGuestMotionStartedMs = 0;
     uint32_t contactNextRouteAttemptMs = 0;

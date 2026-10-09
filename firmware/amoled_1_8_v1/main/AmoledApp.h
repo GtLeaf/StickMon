@@ -36,6 +36,8 @@
 #include "game/EvolutionSequence.h"
 #include "game/HomeActorController.h"
 #include "game/HomeSimulation.h"
+#include "game/HomeVisitArrival.h"
+#include "game/HomeVisitDeparture.h"
 #include "game/MonsterMind.h"
 #include "game/MoveManagementService.h"
 #include "game/ShopService.h"
@@ -841,12 +843,9 @@ private:
     uint32_t lastInteractionMs = 0;
     bool encounterHistoryDirty = false;
     Communication::VisitSessionService visitSession;
-    enum class VisitDeparture : uint8_t {
-        NONE,
-        WALK_TO_DOOR,
-        CROSS_DOOR,
-        AWAY,
-    } visitDeparture = VisitDeparture::NONE;
+    Home::VisitArrivalFlow visitArrival;
+    using VisitDeparture = Home::VisitDeparturePhase;
+    VisitDeparture visitDeparture = VisitDeparture::NONE;
     bool visitRecallConfirm = false;
     uint32_t visitorRouteBlockedSinceMs = 0;
     uint32_t visitDepartureStartedMs = 0;
@@ -947,7 +946,6 @@ private:
     bool visitorCrossingDoor = false;
     uint8_t visitorHostDoorPhase = 0;
     uint32_t visitorMotionUntilMs = 0;
-    uint32_t visitorHostPauseUntilMs = 0;
     uint32_t visitorArrivalNextLogMs = 0;
     float visitorDoorInsideX = 0.0f;
     float visitorDoorInsideY = 0.0f;

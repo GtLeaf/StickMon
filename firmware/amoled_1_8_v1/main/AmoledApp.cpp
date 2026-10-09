@@ -117,8 +117,8 @@ constexpr float PAIR_APPROACH_GOAL_TOLERANCE = 1.0f;
 constexpr float PAIR_CHASE_LEADER_SPEED = 18.0f;
 constexpr float PAIR_CHASE_FOLLOWER_SPEED = 17.0f;
 constexpr float VISITOR_DOOR_SPEED = 18.0f;
-constexpr uint32_t VISITOR_MOTION_TIMEOUT_MS = 8000UL;
-constexpr uint32_t VISITOR_DOOR_OPEN_PAUSE_MS = 420UL;
+constexpr uint32_t VISITOR_MOTION_TIMEOUT_MS =
+    Home::VisitArrivalFlow::MOTION_TIMEOUT_MS;
 constexpr float VISITOR_DOOR_CLEAR_DISTANCE = 28.0f;
 
 bool exploreRouteMonsterHealthy(const Game::MonsterRuntime& monster) {
@@ -751,6 +751,7 @@ void AmoledApp::begin(uint32_t nowMs) {
     expeditionCompanionHidden = false;
     GameRandom::seed(Platform::power().hardwareRandom() ^ nowMs);
     visitSession.attach(&gameState);
+    visitArrival.reset();
     visitRadioExclusive = false;
     storageReady = saveManager.begin();
     bool normalized = false;
@@ -1037,6 +1038,7 @@ bool AmoledApp::queueExploreDeparture(uint8_t area, bool autoWalk) {
         visitorMotion == VisitorMotion::ENTERING) {
         // A mid-entry visitor joins the departure from wherever they are.
         visitorMotion = VisitorMotion::NONE;
+        visitArrival.reset();
         visitorCrossingDoor = false;
         visitorMotionUntilMs = 0;
         homeRuntime.release(Home::Resource::DOOR, 0);
@@ -3887,6 +3889,7 @@ void AmoledApp::update(uint32_t nowMs) {
         homeRuntime.releaseAll(0);
         homeRuntime.stop(0, nowMs);
         visitorMotion = VisitorMotion::NONE;
+        visitArrival.reset();
         syncHomeActors(nowMs);
         sceneFlow.goHome();
         requestFullRender();
@@ -7655,15 +7658,17 @@ void AmoledApp::updatePet(uint32_t nowMs) {
             static_cast<unsigned>(petMotion));
         nextPetDebugLogMs = nowMs + PET_DEBUG_LOG_INTERVAL_MS;
     }
-    if (mainIntent == Home::ActorIntent::SEEK_FOOD &&
+    MonsterDesire desire = monsterMind.topDesire();
+    const Home::IdleGoal goal = Home::ActorController::idleGoal(
+        desire, mainIntent);
+    if (goal == Home::IdleGoal::SEEK_FOOD &&
         preferredBowlEater(nowMs) == 0) {
         if (startMainFoodSeek(nowMs)) {
             return;
         }
     }
 
-    MonsterDesire desire = monsterMind.topDesire();
-    if (mainIntent == Home::ActorIntent::SEEK_SLEEP) {
+    if (goal == Home::IdleGoal::SEEK_SLEEP) {
         const int8_t bedOwnerBefore =
             homeRuntime.owner(Home::Resource::BED);
         if (!homeRuntime.acquire(Home::Resource::BED, 0,
@@ -7771,8 +7776,7 @@ void AmoledApp::updatePet(uint32_t nowMs) {
     // Stick uses part of its STARE decisions for a small idle turn. Most
     // species have only one idle frame, so this direction change is the
     // visible waiting animation on those species.
-    if (desire == MonsterDesire::STARE &&
-        behaviorProfile.movementMode == MonsterMovementMode::NORMAL &&
+    if (goal == Home::IdleGoal::STARE &&
         GameRandom::random(100) < 32) {
         int direction = static_cast<int>(petDirection) +
             (GameRandom::random(2) == 0 ? -1 : 1);
@@ -7791,7 +7795,7 @@ void AmoledApp::updatePet(uint32_t nowMs) {
         return;
     }
 
-    if (desire == MonsterDesire::WANDER &&
+    if (goal == Home::IdleGoal::WANDER &&
         behaviorProfile.movementMode == MonsterMovementMode::NORMAL) {
         float x = petX;
         float y = petY;
@@ -7925,19 +7929,9 @@ bool AmoledApp::ambientActionAllowed() const {
         Game::speciesCareProfileFor(monster.speciesId);
     const bool sleepTime = care.usesBed && Game::isSleepCareTime(
         gameState.gameMinutesTotal, monster.nature);
-    if (monster.fainted || monster.hpCur == 0 || monster.hpMax == 0 ||
-        monster.majorStatus == Game::MajorStatus::SLEEP ||
-        static_cast<uint32_t>(monster.hpCur) * 100UL <=
-            static_cast<uint32_t>(monster.hpMax) * 25UL ||
-        monster.satiety <= 25 || sleepTime) {
-        return false;
-    }
-    if (gameState.room.bowlCount > 0 &&
-        monster.satiety < MONSTER_FEED_TARGET_SATIETY) {
-        return false;
-    }
-    return monsterMind.topDesire() != MonsterDesire::EAT &&
-           monsterMind.topDesire() != MonsterDesire::REST;
+    return Home::ActorController::ambientEligible(
+        monster, monsterMind.topDesire(), sleepTime,
+        gameState.room.bowlCount > 0);
 }
 
 bool AmoledApp::chooseNearbyPose(float originX, float originY,
@@ -8642,6 +8636,7 @@ void AmoledApp::syncHomeActors(uint32_t nowMs) {
         homeCompanionActor = Home::Actor{};
         companionFrame = 0;
         visitorMotion = VisitorMotion::NONE;
+        visitArrival.reset();
         homeRuntime.attach(homeMainActor);
     } else {
         homeRuntime.attach(
@@ -9732,25 +9727,16 @@ bool AmoledApp::pairInteractionAllowed() const {
 #if STICKMON_HAS_CLAW
     if (Stickmon::ClawRuntime::instance().autonomyActive()) return false;
 #endif
-    for (uint8_t slot = 0; slot < 2; ++slot) {
-        const Game::MonsterRuntime& monster = gameState.team[slot];
-        const Game::SpeciesCareProfile care =
-            Game::speciesCareProfileFor(monster.speciesId);
-        if (monster.fainted || monster.hpCur == 0 || monster.hpMax == 0 ||
-            monster.majorStatus == Game::MajorStatus::SLEEP ||
-            static_cast<uint32_t>(monster.hpCur) * 100UL <=
-                static_cast<uint32_t>(monster.hpMax) * 20UL ||
-            (care.usesBed && Game::isSleepCareTime(
-                 gameState.gameMinutesTotal, monster.nature))) {
-            return false;
-        }
-        if (care.needsFood && monster.satiety <= 25) return false;
-    }
     const Game::SpeciesCareProfile first =
         Game::speciesCareProfileFor(gameState.team[0].speciesId);
     const Game::SpeciesCareProfile second =
         Game::speciesCareProfileFor(gameState.team[1].speciesId);
-    return first.canMove || second.canMove;
+    return Home::ActorController::pairEligible(
+        gameState.team[0], gameState.team[1],
+        first.usesBed && Game::isSleepCareTime(
+            gameState.gameMinutesTotal, gameState.team[0].nature),
+        second.usesBed && Game::isSleepCareTime(
+            gameState.gameMinutesTotal, gameState.team[1].nature));
 }
 
 void AmoledApp::schedulePairInteraction(uint32_t nowMs, bool immediate) {
@@ -9777,21 +9763,19 @@ bool AmoledApp::startPairInteraction(uint32_t nowMs, bool forceChase,
         Game::speciesCareProfileFor(gameState.team[0].speciesId);
     const Game::SpeciesCareProfile second =
         Game::speciesCareProfileFor(gameState.team[1].speciesId);
-    if (!first.canMove || !second.canMove) {
-        pairActivity = Home::PairActivity::TALK;
-    } else {
-        pairActivity = !forceTalk && (forceChase || GameRandom::random(100) >= 45)
-            ? Home::PairActivity::CHASE : Home::PairActivity::TALK;
-    }
+    const uint8_t roll = forceTalk
+        ? 0 : static_cast<uint8_t>(GameRandom::random(100));
+    pairActivity = Home::ActorController::pairActivity(
+        first.canMove, second.canMove, forceChase, false, forceTalk, roll);
     if (!homeRuntime.beginPair(pairActivity, nowMs)) {
         pairActivity = Home::PairActivity::NONE;
         schedulePairInteraction(nowMs);
         return false;
     }
 
-    pairLeaderMain = GameRandom::random(2) == 0;
-    if (!first.canMove) pairLeaderMain = false;
-    if (!second.canMove) pairLeaderMain = true;
+    pairLeaderMain = Home::ActorController::pairLeaderMain(
+        first.canMove, second.canMove,
+        static_cast<uint8_t>(GameRandom::random(2)));
     const float talkDistance = (pairIdleWidthPx(gameState.team[0].speciesId) +
                                 pairIdleWidthPx(gameState.team[1].speciesId)) /
                                    (2.0f * AmoledUi::RESOURCE_SCALE) +
@@ -10293,6 +10277,10 @@ bool AmoledApp::updatePairInteraction(uint32_t nowMs,
             pairPhase = PairPhase::ACTIVE;
             pairPhaseStartedMs = nowMs;
             if (pairActivity == Home::PairActivity::TALK) {
+                if (pairArrivalTalk) {
+                    visitArrival.advance(Home::VisitArrivalEvent::TALK_STARTED,
+                                         nowMs);
+                }
                 pairPhaseUntilMs = nowMs + PAIR_TALK_TOTAL_MS;
 #if STICKMON_ENABLE_DEBUG_FEATURES
                 Platform::logf(
@@ -10390,6 +10378,13 @@ bool AmoledApp::updatePairInteraction(uint32_t nowMs,
 
 void AmoledApp::finishPairInteraction(uint32_t nowMs, bool reward) {
     if (pairPhase == PairPhase::NONE && !homeRuntime.pairActive()) return;
+    if (pairArrivalTalk) {
+        const Home::VisitArrivalEvent event =
+            reward && visitArrival.phase() == Home::VisitArrivalPhase::TALK
+                ? Home::VisitArrivalEvent::TALK_FINISHED
+                : Home::VisitArrivalEvent::TALK_SKIPPED;
+        visitArrival.advance(event, nowMs);
+    }
 #if STICKMON_ENABLE_DEBUG_FEATURES
     Platform::logf("[HomeDiag] pair finish phase=%d reward=%d\n",
                    static_cast<int>(pairPhase), reward ? 1 : 0);
@@ -10532,18 +10527,18 @@ bool AmoledApp::updateVisitDeparture(uint32_t nowMs) {
     }
     updateCamera();
     requestHomeActorRows(previousY, petY);
-    if (arrived || nowMs - visitDepartureStartedMs >
-                       (visitDeparture == VisitDeparture::WALK_TO_DOOR
-                            ? 12000U : 5000U)) {
-        if (visitDeparture == VisitDeparture::WALK_TO_DOOR) {
+    const VisitDeparture nextPhase = Home::VisitDepartureFlow::advance(
+        visitDeparture, arrived, nowMs - visitDepartureStartedMs);
+    if (nextPhase != visitDeparture) {
+        if (nextPhase == VisitDeparture::CROSS_DOOR) {
             homeMainActor.x = petX = visitDoorInsideX;
             homeMainActor.y = petY = visitDoorInsideY;
             homeMainActor.route.clear();
-            visitDeparture = VisitDeparture::CROSS_DOOR;
+            visitDeparture = nextPhase;
             visitDepartureStartedMs = nowMs;
         } else {
             homeMainActor.hidden = true;
-            visitDeparture = VisitDeparture::AWAY;
+            visitDeparture = nextPhase;
             visitSession.markVisitorDeparted();
             requestFullRender();
         }
@@ -10661,6 +10656,7 @@ void AmoledApp::beginVisitorEntry(uint32_t nowMs) {
     visitorDoorOutsideY = room.available()
         ? static_cast<float>(room.doorwayOutsideY()) : insideY + 10.0f;
     cancelPairInteraction(nowMs);
+    visitArrival.begin(nowMs);
     homeRuntime.transition(0, Home::Task::DOOR_ACTION, nowMs, 0, true);
     homeRuntime.acquire(Home::Resource::DOOR, 0,
                         Home::Task::DOOR_ACTION, nowMs);
@@ -10677,7 +10673,11 @@ void AmoledApp::beginVisitorEntry(uint32_t nowMs) {
         Platform::logf(
             "[VisitArrival] welcome pose unavailable inside=%.1f,%.1f\n",
             insideX, insideY);
-        startVisitorDoorEntry(nowMs);
+        visitArrival.advance(Home::VisitArrivalEvent::HOST_READY, nowMs);
+        visitorHostDoorPhase = 1;
+        visitorMotion = VisitorMotion::HOST_APPROACH;
+        visitorMotionUntilMs = nowMs +
+            Home::VisitArrivalFlow::DOOR_OPEN_MS + VISITOR_MOTION_TIMEOUT_MS;
         return;
     }
     visitorDoorInsideX = welcomeX;
@@ -10750,7 +10750,6 @@ void AmoledApp::beginVisitorEntry(uint32_t nowMs) {
         visitorWelcomeValid = true;
     }
     visitorHostDoorPhase = 0;
-    visitorHostPauseUntilMs = 0;
     if (!routePlanned) {
         Platform::logf("[VisitArrival] host_to_door_fallback "
                        "from=%.1f,%.1f door=%.1f,%.1f\n",
@@ -10764,11 +10763,11 @@ void AmoledApp::beginVisitorEntry(uint32_t nowMs) {
         petTargetX = welcomeX;
         petTargetY = welcomeY;
         homeRuntime.stop(0, nowMs, 0);
+        visitArrival.advance(Home::VisitArrivalEvent::HOST_READY, nowMs);
         visitorHostDoorPhase = 1;
-        visitorHostPauseUntilMs = nowMs + VISITOR_DOOR_OPEN_PAUSE_MS;
         visitorMotion = VisitorMotion::HOST_APPROACH;
-        visitorMotionUntilMs = visitorHostPauseUntilMs +
-            VISITOR_MOTION_TIMEOUT_MS;
+        visitorMotionUntilMs = nowMs +
+            Home::VisitArrivalFlow::DOOR_OPEN_MS + VISITOR_MOTION_TIMEOUT_MS;
         visitorArrivalNextLogMs = nowMs;
 #if STICKMON_ENABLE_DEBUG_FEATURES
         Platform::logf("[FriendDiag] arrival host-route-failed kind=%u "
@@ -10808,6 +10807,8 @@ void AmoledApp::startVisitorDoorEntry(uint32_t nowMs) {
         gameState.team[1].origin != Game::Origin::VISITOR) {
         return;
     }
+    if (!visitArrival.advance(Home::VisitArrivalEvent::GUEST_ENTERING,
+                              nowMs)) return;
     float insideX = visitorDoorInsideX;
     float insideY = visitorDoorInsideY;
     const bool guestDoorPoseReady =
@@ -10892,6 +10893,7 @@ void AmoledApp::beginVisitorExit(uint32_t nowMs, bool debugVisitor) {
     }
     cancelRoomAction(nowMs);
     cancelPairInteraction(nowMs);
+    visitArrival.reset();
     visitorExitIsDebug = debugVisitor;
     visitorMotion = VisitorMotion::EXITING;
     visitorCrossingDoor = false;
@@ -10956,6 +10958,7 @@ void AmoledApp::beginVisitorExit(uint32_t nowMs, bool debugVisitor) {
 }
 
 void AmoledApp::finishVisitorEntry(uint32_t nowMs, bool timedOut) {
+    visitArrival.advance(Home::VisitArrivalEvent::GUEST_INSIDE, nowMs);
     visitorMotion = VisitorMotion::ACTIVE;
     visitorHostDoorPhase = 0;
     visitorCrossingDoor = false;
@@ -10985,6 +10988,7 @@ void AmoledApp::finishVisitorEntry(uint32_t nowMs, bool timedOut) {
                        homeCompanionActor.x, homeCompanionActor.y) ? 1U : 0U,
                    timedOut ? 1U : 0U, talkStarted ? 1U : 0U);
     if (!talkStarted) {
+        visitArrival.advance(Home::VisitArrivalEvent::TALK_SKIPPED, nowMs);
         pairArrivalTalk = false;
         schedulePairInteraction(nowMs, true);
 #if STICKMON_ENABLE_DEBUG_FEATURES
@@ -11003,7 +11007,8 @@ void AmoledApp::updateVisitorMotion(uint32_t nowMs,
     }
     if (visitorMotion == VisitorMotion::HOST_APPROACH) {
         if (visitorHostDoorPhase == 1) {
-            if (static_cast<int32_t>(nowMs - visitorHostPauseUntilMs) < 0) {
+            if (!visitArrival.advance(
+                    Home::VisitArrivalEvent::DOOR_OPENED, nowMs)) {
                 requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
                 return;
             }
@@ -11145,7 +11150,7 @@ void AmoledApp::updateVisitorMotion(uint32_t nowMs,
                            timedOut ? 1U : 0U);
 #endif
             visitorHostDoorPhase = 1;
-            visitorHostPauseUntilMs = nowMs + VISITOR_DOOR_OPEN_PAUSE_MS;
+            visitArrival.advance(Home::VisitArrivalEvent::HOST_READY, nowMs);
             homeRuntime.stop(0, nowMs, 0);
         } else if (step == Home::RouteStep::BLOCKED ||
                    step == Home::RouteStep::NO_ROUTE) {
@@ -11325,6 +11330,7 @@ void AmoledApp::finishVisitorExit(uint32_t nowMs) {
                    debugVisitor ? 1U : 0U);
 #endif
     visitorMotion = VisitorMotion::NONE;
+    visitArrival.reset();
     visitorExitIsDebug = false;
     visitorCrossingDoor = false;
     visitorMotionUntilMs = 0;

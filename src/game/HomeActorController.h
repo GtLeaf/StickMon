@@ -16,6 +16,14 @@ enum class ActorIntent : uint8_t {
     SEEK_SLEEP,
 };
 
+enum class IdleGoal : uint8_t {
+    IDLE,
+    SEEK_FOOD,
+    SEEK_SLEEP,
+    WANDER,
+    STARE,
+};
+
 struct ActorObservation {
     bool active = false;
     bool controlAvailable = true;
@@ -62,6 +70,18 @@ public:
         const HouseholdObservation& home);
     static ActorIntent survivalIntent(const ActorObservation& actor,
                                       bool bowlHasFood);
+    static IdleGoal idleGoal(MonsterDesire desire, ActorIntent survival);
+    static bool ambientEligible(const Game::MonsterRuntime& monster,
+                                MonsterDesire desire, bool sleepTime,
+                                bool bowlHasFood);
+    static bool pairEligible(const Game::MonsterRuntime& first,
+                             const Game::MonsterRuntime& second,
+                             bool firstSleepTime, bool secondSleepTime);
+    static PairActivity pairActivity(bool firstCanMove, bool secondCanMove,
+                                     bool forceChase, bool forcePlay,
+                                     bool forceTalk, uint8_t roll);
+    static bool pairLeaderMain(bool firstCanMove, bool secondCanMove,
+                               uint8_t roll);
 };
 
 }  // namespace Home

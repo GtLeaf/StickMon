@@ -1,5 +1,7 @@
 #include "game/HomeActorController.h"
 
+#include "game/SpeciesBehavior.h"
+
 namespace Home {
 
 bool ActorController::committedToFood(const ActorObservation& actor) {
@@ -94,6 +96,80 @@ ActorIntent ActorController::survivalIntent(
         return ActorIntent::SEEK_SLEEP;
     }
     return ActorIntent::NONE;
+}
+
+IdleGoal ActorController::idleGoal(MonsterDesire desire,
+                                   ActorIntent survival) {
+    switch (desire) {
+    case MonsterDesire::EAT:
+        return survival == ActorIntent::SEEK_FOOD
+            ? IdleGoal::SEEK_FOOD : IdleGoal::IDLE;
+    case MonsterDesire::REST:
+        return survival == ActorIntent::SEEK_SLEEP
+            ? IdleGoal::SEEK_SLEEP : IdleGoal::WANDER;
+    case MonsterDesire::WANDER:
+        return IdleGoal::WANDER;
+    case MonsterDesire::STARE:
+        return IdleGoal::STARE;
+    }
+    return IdleGoal::IDLE;
+}
+
+bool ActorController::ambientEligible(const Game::MonsterRuntime& monster,
+                                      MonsterDesire desire, bool sleepTime,
+                                      bool bowlHasFood) {
+    if (monster.fainted || monster.hpCur == 0 || monster.hpMax == 0 ||
+        monster.majorStatus == Game::MajorStatus::SLEEP ||
+        static_cast<uint32_t>(monster.hpCur) * 100UL <=
+            static_cast<uint32_t>(monster.hpMax) * 25UL ||
+        monster.satiety <= 25 || sleepTime ||
+        (bowlHasFood && monster.satiety < MONSTER_FEED_TARGET_SATIETY)) {
+        return false;
+    }
+    return desire != MonsterDesire::EAT && desire != MonsterDesire::REST;
+}
+
+bool ActorController::pairEligible(const Game::MonsterRuntime& first,
+                                    const Game::MonsterRuntime& second,
+                                    bool firstSleepTime, bool secondSleepTime) {
+    auto ready = [](const Game::MonsterRuntime& monster) {
+        if (monster.fainted || monster.hpCur == 0 || monster.hpMax == 0 ||
+            monster.majorStatus == Game::MajorStatus::SLEEP ||
+            static_cast<uint32_t>(monster.hpCur) * 100UL <=
+                static_cast<uint32_t>(monster.hpMax) * 20UL) {
+            return false;
+        }
+        const Game::SpeciesCareProfile care =
+            Game::speciesCareProfileFor(monster.speciesId);
+        return !care.needsFood || monster.satiety > 25;
+    };
+    if (firstSleepTime || secondSleepTime ||
+        !ready(first) || !ready(second)) {
+        return false;
+    }
+    return Game::speciesCareProfileFor(first.speciesId).canMove ||
+           Game::speciesCareProfileFor(second.speciesId).canMove;
+}
+
+PairActivity ActorController::pairActivity(bool firstCanMove,
+                                           bool secondCanMove,
+                                           bool forceChase, bool forcePlay,
+                                           bool forceTalk, uint8_t roll) {
+    if (!firstCanMove || !secondCanMove || forceTalk) {
+        return PairActivity::TALK;
+    }
+    if (forceChase || (forcePlay && roll < 75) ||
+        (!forcePlay && roll >= 45)) {
+        return PairActivity::CHASE;
+    }
+    return PairActivity::TALK;
+}
+
+bool ActorController::pairLeaderMain(bool firstCanMove,
+                                     bool secondCanMove, uint8_t roll) {
+    if (!secondCanMove) return true;
+    if (!firstCanMove) return false;
+    return roll == 0;
 }
 
 }  // namespace Home
