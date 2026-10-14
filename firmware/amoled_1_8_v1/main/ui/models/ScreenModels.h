@@ -16,6 +16,7 @@
 #include "game/EvolutionSequence.h"
 #include "game/GameState.h"
 #include "game/ShopService.h"
+#include "game/BathInteraction.h"
 namespace AmoledV1 {
 
 struct HomeViewModel {
@@ -38,6 +39,8 @@ struct HomeViewModel {
     int8_t petRenderOffsetY = 0;
     bool petVisible = true;
     bool visitAway = false;
+    bool hatching = false;
+    uint16_t hatchRemainingSeconds = 180;
     bool recallConfirm = false;
     int16_t bowlCenterX = 290;
     int16_t bowlCenterY = 286;
@@ -157,6 +160,8 @@ struct ExploreViewModel {
 };
 
 struct ExploreRouteViewModel {
+    uint16_t renderColumnBegin = 0;
+    uint16_t renderColumnEnd = AmoledUi::WIDTH;
     const ExploreMapGenerator::Map* map = nullptr;
     const Game::GameState* state = nullptr;
     uint16_t speciesId = 1;
@@ -293,7 +298,18 @@ struct ComputerViewModel {
     const char* toast = nullptr;
 };
 
+struct HatchViewModel {
+    uint16_t remainingSeconds = 180;
+    uint16_t gameMinutesOfDay = 7 * 60;
+    int8_t shakeOffset = 0;
+    bool showHeart = false;
+    bool night = false;
+    const char* toast = nullptr;
+};
+
 struct SettingsViewModel {
+    bool systemUpdate = false;
+    bool resetConfirm = false;
     const Game::GameState* state = nullptr;
     uint8_t brightness = 128;
     uint8_t volume = 50;
@@ -358,6 +374,8 @@ struct BattleViewModel {
     bool animationActive = false;
     bool animationAttackerWild = false;
     bool animationHit = false;
+    bool animationStatusEffect = false;
+    GameAssets::BattleFx animationFx = GameAssets::BattleFx::HIT;
     uint16_t animationDamage = 0;
     uint8_t animationFrame = 0;
     int16_t playerSwitchOffsetX = 0;
@@ -385,14 +403,18 @@ enum class ShowerMode : uint8_t {
     EXIT_CONFIRM,
 };
 
-struct ShowerFoamState {
-    int16_t x = 0;
-    int16_t y = 0;
-    int16_t restX = 0;
-    int8_t restYOffset = 0;
-    uint8_t stage = 0;
-    uint8_t brushProgress = 0;
+using ShowerFoamState = Game::BathInteraction::Foam;
+
+struct ShowerWaterState {
+    float x = 0, y = 0, vx = 0, vy = 0;
     bool active = false;
+};
+
+struct ShowerFloatState {
+    uint32_t bornMs = 0;
+    uint8_t experience = 0;
+    bool active = false;
+    uint8_t heartCount = 0;
 };
 
 struct ShowerViewModel {
@@ -411,6 +433,14 @@ struct ShowerViewModel {
     bool toolDragging = false;
     bool exitConfirmYes = false;
     const char* toast = nullptr;
+    uint16_t columnBegin = 0, columnEnd = AmoledUi::WIDTH;
+    uint32_t nowMs = 0, elapsedMs = 0;
+    int16_t petOffsetY = 0, groundY = 324;
+    bool petFlip = false;
+    const ShowerWaterState* water = nullptr;
+    uint8_t waterCount = 0;
+    const ShowerFloatState* floats = nullptr;
+    uint8_t floatCount = 0;
 };
 
 enum class ItemListMode : uint8_t {

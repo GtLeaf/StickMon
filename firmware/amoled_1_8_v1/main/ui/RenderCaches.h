@@ -40,6 +40,8 @@ public:
     size_t allocatedBytes() const { return pixelCount_ * sizeof(uint16_t); }
     bool copyRowsTo(Canvas565& canvas, const RenderCacheKey& key,
                     uint16_t rowBegin, uint16_t rowEnd) const;
+    bool copyRectTo(Canvas565& canvas, const RenderCacheKey& key,
+                    uint16_t left, uint16_t top, uint16_t right, uint16_t bottom) const;
 
 private:
     uint16_t* pixels_ = nullptr;
@@ -54,6 +56,8 @@ struct RenderCaches {
     PixelCache565 battleBackground;
     PixelCache565 exploreBackground;
     PixelCache565 exploreWorld;
+    PixelCache565 showerBackground;
+    PixelCache565 showerPet;
 
     void retainForScene(AppSceneFlow::Scene scene);
     void release();

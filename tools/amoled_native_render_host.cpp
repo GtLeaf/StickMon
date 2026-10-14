@@ -1,14 +1,19 @@
 #include "HomeScreen.h"
 #include "core/FontResource.h"
 #include "core/RoomResource.h"
+#include "core/RoomRenderer.h"
+#include "core/UiStrings.h"
+#include "core/SaveManager.h"
 #include "game/ContactRoster.h"
 #include "game/MonsterFactory.h"
 #include "game/ItemInventory.h"
+#include "game/ExploreTileSemantics.h"
 #include "platform/desktop/DesktopPlatform.h"
 #include "presentation/Canvas565.h"
 #include "presentation/PixelRenderer.h"
 #include "ui/UiCommon.h"
 #include "ui/RenderCaches.h"
+#include "ui/ExploreMapRenderer.h"
 
 #include <algorithm>
 #include <cassert>
@@ -19,10 +24,25 @@
 
 using namespace AmoledV1;
 
+void checkShowerFlow(DesktopPlatform& desktop, Canvas565& canvas,
+                     const Game::GameState& state);
+
+void checkLockFocusPixels(DesktopPlatform& desktop, Canvas565& canvas,
+                         const Game::GameState& state);
 void checkExpeditionTransitions(DesktopPlatform& desktop, Canvas565& canvas,
                                const Game::GameState& state);
+void checkExploreReserveEncounters(DesktopPlatform& desktop,
+                                   const Game::GameState& state);
+void checkExploreMotionDamage(DesktopPlatform& desktop, Canvas565& canvas,
+                             const Game::GameState& state);
+void checkExploreParkRoutes(DesktopPlatform& desktop, const Game::GameState& state);
+void checkExploreSaveBoundaries(DesktopPlatform& desktop,
+                                const Game::GameState& state);
 void checkProgressionReplacement(DesktopPlatform& desktop,
                                  const Game::GameState& state);
+void checkSettingsReset(DesktopPlatform& desktop);
+void checkHatchFlow(DesktopPlatform& desktop, Canvas565& canvas);
+void checkBattleAssetActions(DesktopPlatform& desktop, const Game::GameState& state);
 #if STICKMON_ENABLE_DEBUG_FEATURES
 void checkVisitorInvalidHostEntry(DesktopPlatform& desktop,
                                   const Game::GameState& state);
@@ -34,6 +54,22 @@ bool runUiBehaviorCase(const char* name, Canvas565& canvas, Game::GameState& sta
 
 static std::vector<uint16_t> pixels(AmoledUi::WIDTH * AmoledUi::HEIGHT);
 static const char* outputDirectory = nullptr;
+
+class RoomRenderPower final : public Platform::IPowerDevice {
+public:
+    explicit RoomRenderPower(Platform::IPowerDevice& backing) : backing_(backing) {}
+    int batteryLevel() override { return backing_.batteryLevel(); }
+    Platform::WakeReason wakeReason() const override { return backing_.wakeReason(); }
+    uint32_t hardwareRandom() override { return backing_.hardwareRandom(); }
+    size_t externalMemorySize() const override { return 8 * 1024 * 1024; }
+    size_t externalMemoryFree() const override { return externalMemorySize(); }
+    void restart() override { backing_.restart(); }
+    void enterDeepSleep(uint64_t timer, bool secondary) override {
+        backing_.enterDeepSleep(timer, secondary);
+    }
+private:
+    Platform::IPowerDevice& backing_;
+};
 
 class CacheTestAllocator : public Platform::IMemoryAllocator {
 public:
@@ -246,6 +282,97 @@ void checkPage(const char* name, const Model& model, Render render) {
     std::printf("%s: full and partial rendering agree\n", name);
 }
 
+template<class Render>
+void checkBattleFxRendering(const Game::GameState& state, Render render) {
+    Canvas565& canvas = PixelRenderer::canvas();
+    static constexpr const char* FX_NAMES[] = {"hit", "fire", "water", "electric",
+        "scratch", "bite", "leer", "growl", "sand"};
+    static constexpr Game::MoveId MOVE_IDS[] = {33, 52, 55, 84, 10, 44, 43, 45, 28};
+    static constexpr uint16_t ANIMATION_ROW_END = 384;
+    for (uint8_t fxIndex = 0; fxIndex < static_cast<uint8_t>(GameAssets::BattleFx::COUNT); ++fxIndex) {
+        const auto fx = static_cast<GameAssets::BattleFx>(fxIndex);
+        for (uint8_t fxFrame = 0; fxFrame < 4; ++fxFrame) {
+            canvas.clearClipRect();
+            std::fill(pixels.begin(), pixels.end(), 0xF81F);
+            assert(GameAssets::drawCentered(
+                GameAssets::battleFxKind(fx, fxFrame), 180, 180));
+            const auto visiblePixels = std::count_if(
+                pixels.begin(), pixels.end(), [](uint16_t pixel) {
+                    return pixel != 0xF81F;
+                });
+            assert(visiblePixels > 0);
+            std::printf("battle-fx-%s asset %u: %td visible pixels\n",
+                        FX_NAMES[fxIndex], fxFrame, visiblePixels);
+        }
+        for (bool attackerWild : {false, true}) {
+            BattleViewModel model{};
+            model.state = &state;
+            model.playerSpeciesId = state.team[0].speciesId;
+            model.wildSpeciesId = state.team[1].speciesId;
+            model.playerLevel = model.wildLevel = 5;
+            model.playerHp = model.wildHp = 100;
+            model.animationAttackerWild = attackerWild;
+            model.animationHit = !GameAssets::battleFxIsStatus(fx);
+            model.animationStatusEffect = GameAssets::battleFxIsStatus(fx);
+            model.animationFx = fx;
+            const Species* attacker = findSpecies(
+                attackerWild ? model.wildSpeciesId : model.playerSpeciesId);
+            const MoveInfo* move = findMove(MOVE_IDS[fxIndex]);
+            assert(attacker && move);
+            assert(GameAssets::battleFxForMove(move->id, move->type) == fx);
+            char attackLog[64];
+            std::snprintf(attackLog, sizeof(attackLog), "%s / %s",
+                          attacker->name, move->name);
+            model.logLines[0] = attackLog;
+            model.logCount = 1;
+            std::vector<uint16_t> idle;
+            std::vector<uint16_t> previous;
+            for (uint8_t frame = 0; frame <= 7; ++frame) {
+                model.animationActive = frame > 0 && frame < 7;
+                model.animationFrame = frame < 7 ? frame : 0;
+                char name[80];
+                std::snprintf(name, sizeof(name), "battle-fx-%s-%s-%u",
+                              FX_NAMES[fxIndex], attackerWild ? "wild" : "player",
+                              frame);
+                checkPage(name, model, render);
+                const auto expected = pixels;
+                if (frame == 0) idle = expected;
+                if (frame == 7) assert(expected == idle);
+                if (!previous.empty()) {
+                    pixels = previous;
+                    render(canvas, model, 0, ANIMATION_ROW_END);
+                    if (pixels != expected) {
+                        for (size_t index = 0; index < pixels.size(); ++index) {
+                            if (pixels[index] != expected[index]) {
+                                std::fprintf(stderr,
+                                    "%s animation dirty rows mismatch at (%zu,%zu)\n",
+                                    name, index % AmoledUi::WIDTH,
+                                    index / AmoledUi::WIDTH);
+                                std::exit(1);
+                            }
+                        }
+                    }
+                    assert(std::equal(
+                        previous.begin() + ANIMATION_ROW_END * AmoledUi::WIDTH,
+                        previous.end(), pixels.begin() +
+                            ANIMATION_ROW_END * AmoledUi::WIDTH));
+                }
+                if (frame >= 2 && frame <= 5) {
+                    auto withoutFx = model;
+                    withoutFx.animationHit = false;
+                    withoutFx.animationStatusEffect = false;
+                    render(canvas, withoutFx, 0, AmoledUi::HEIGHT);
+                    assert(pixels != expected);
+                    if (GameAssets::battleFxIsStatus(fx)) assert(pixels == idle);
+                    pixels = expected;
+                }
+                previous = expected;
+            }
+        }
+    }
+    std::puts("battle-fx: 72 key frames and 126 animation dirty-row transitions agree");
+}
+
 void checkPageClip(Canvas565& shared) {
     std::vector<uint16_t> localPixels(pixels.size());
     Canvas565 local;
@@ -289,8 +416,9 @@ int main(int argc, char** argv) {
     assert(argc >= 2);
     const char* selectedCase = nullptr;
     if (argc > 2 && std::strcmp(argv[2], "--case") == 0) {
-        if (argc != 4) return 2;
+        if (argc < 4 || argc > 5) return 2;
         selectedCase = argv[3];
+        if (argc == 5) outputDirectory = argv[4];
     } else if (argc > 2) {
         outputDirectory = argv[2];
     }
@@ -330,13 +458,156 @@ int main(int argc, char** argv) {
                                   uint16_t top, uint16_t bottom) {
         renderBattleScreen(canvas, model, caches.battleBackground, top, bottom);
     };
+    if (selectedCase && std::strcmp(selectedCase, "hatch-flow") == 0) {
+        checkHatchFlow(desktop, canvas);
+        return 0;
+    }
+    if (selectedCase && std::strcmp(selectedCase, "hatch-render") == 0) {
+        auto& original = desktop.serviceBundle();
+        RoomRenderPower power(original.power);
+        Platform::Services withPsram{
+            original.lifecycle, original.clock, original.logger, original.input,
+            original.display, original.audio, original.imu, power, original.blobs,
+            original.resources, original.memory, original.peers};
+        Platform::bind(withPsram);
+        if (!RoomResource::ins().begin()) {
+            std::fputs(desktop.logs().c_str(), stderr);
+            assert(false && "hatch render needs the real room resource");
+        }
+        assert(RoomRenderer::drawViewport(0, 56, 368, 288, 0, 0, false, 2));
+        assert(hatchMenuAt(80, 344) && hatchMenuAt(159, 447));
+        assert(!hatchMenuAt(79, 344) && !hatchMenuAt(160, 396));
+        auto renderEgg = [](Canvas565& target, const HatchViewModel& model,
+                            uint16_t begin, uint16_t end) {
+            renderHatchScreen(target, model, begin, end);
+        };
+        AmoledUi::Rect bounds{};
+        HatchViewModel baseline;
+        renderHatchScreen(canvas, baseline, 0, 448, &bounds);
+        assert(bounds.contains(184, 200));
+        assert(!bounds.contains(120, 396));
+        for (bool night : {false, true}) {
+            for (int progress : {0, 50, 99, 100}) {
+                HatchViewModel egg;
+                egg.night = night;
+                egg.remainingSeconds = 180 * (100 - progress) / 100;
+                egg.shakeOffset = progress % 7 - 3;
+                egg.showHeart = progress == 50 || progress == 99;
+                char name[48];
+                std::snprintf(name, sizeof(name), "hatch-%s-%d", night ? "night" : "day", progress);
+                checkPage(name, egg, renderEgg);
+            }
+        }
+        HatchViewModel error;
+        error.remainingSeconds = 0;
+        error.toast = Ui::Hatch::SAVE_FAILED;
+        checkPage("hatch-save-failed", error, renderEgg);
+        Platform::bind(original);
+        return 0;
+    }
+    if (selectedCase && std::strcmp(selectedCase, "pet-heart-layout") == 0) {
+        auto& original = desktop.serviceBundle();
+        RoomRenderPower power(original.power);
+        Platform::Services withPsram{
+            original.lifecycle, original.clock, original.logger, original.input,
+            original.display, original.audio, original.imu, power, original.blobs,
+            original.resources, original.memory, original.peers};
+        Platform::bind(withPsram);
+        assert(RoomResource::ins().begin());
+        for (uint16_t species : {1, 4, 7, 6, 143, 92}) {
+            PokemonSprites::PetAnimationProfile profile;
+            assert(PokemonSprites::petAnimationProfile(species, profile));
+            const auto* frame = PokemonSprites::findSpeciesSprite(species, profile.idleBase);
+            assert(frame);
+            const auto bounds = PokemonSprites::frameVisibleBounds(frame);
+            // Compare the metadata query with the actual decoded opaque pixels.
+            canvas.fillSprite(0);
+            assert(PokemonSprites::drawFrameSilhouette(frame, 0, 0, 0xFFFF));
+            int left = 368, top = 448, right = -1, bottom = -1;
+            for (int y = 0; y < 448; ++y) {
+                for (int x = 0; x < 368; ++x) {
+                    if (canvas.readPixel(x, y) != 0xFFFF) continue;
+                    left = std::min(left, x); top = std::min(top, y);
+                    right = std::max(right, x); bottom = std::max(bottom, y);
+                }
+            }
+            assert(bounds.left == left && bounds.top == top);
+            assert(bounds.width == right - left + 1 && bounds.height == bottom - top + 1);
+            assert(PokemonSprites::frameVisibleWidth(frame) == bounds.width);
+            for (auto direction : {PokemonSprites::WalkDirection::DOWN,
+                                   PokemonSprites::WalkDirection::RIGHT}) {
+                int firstHeartTop = 0;
+                for (int hop : {0, -14}) {
+                    HomeViewModel model;
+                    model.speciesId = species;
+                    model.petDirection = direction;
+                    model.petRenderOffsetY = hop;
+                    model.petVisible = false;
+                    renderHomeScreen(canvas, model);
+                    const auto emptyRoom = pixels;
+                    model.petVisible = true;
+                    renderHomeScreen(canvas, model);
+                    const auto petOnly = pixels;
+                    int petTop = 448;
+                    for (size_t i = 0; i < pixels.size(); ++i) {
+                        if (pixels[i] != emptyRoom[i]) petTop = std::min(petTop, int(i / 368));
+                    }
+                    model.showHearts = true;
+                    renderHomeScreen(canvas, model);
+                    left = 368; top = 448; right = bottom = -1;
+                    for (size_t i = 0; i < pixels.size(); ++i) {
+                        if (pixels[i] == petOnly[i]) continue;
+                        const int x = i % 368, y = i / 368;
+                        left = std::min(left, x); top = std::min(top, y);
+                        right = std::max(right, x); bottom = std::max(bottom, y);
+                    }
+                    assert(right >= left && right - left < 60);
+                    assert(bottom < petTop && petTop - bottom <= 14);
+                    assert(std::abs((left + right) / 2 - model.petCenterX) <= 20);
+                    if (hop == 0) firstHeartTop = top;
+                    else assert(top == firstHeartTop + hop);
+                    char name[72];
+                    std::snprintf(name, sizeof(name), "pet-hearts-%u-%s-hop%d", species,
+                        direction == PokemonSprites::WalkDirection::DOWN ? "down" : "right", hop);
+                    checkPage(name, model, renderHomeScreen);
+                }
+            }
+        }
+        HomeViewModel hidden;
+        hidden.petVisible = false;
+        renderHomeScreen(canvas, hidden);
+        const auto noPet = pixels;
+        hidden.showHearts = true;
+        renderHomeScreen(canvas, hidden);
+        assert(pixels == noPet);
+        Platform::bind(original);
+        return 0;
+    }
+    // Gameplay cases start with a completed save. Hatch cases above use empty NVS.
+    SaveManager fixtureSave;
+    assert(fixtureSave.begin());
+    Game::GameState fixture;
+    fixture.oobeDone = true;
+    fixture.team[0] = Game::MonsterFactory::create(1, 5);
+    assert(fixtureSave.saveSnapshot(fixture, MainSceneViewState{}));
     Game::GameState state{};
+    state.oobeDone = true;
     state.teamCount = 2;
     state.team[0] = Game::MonsterFactory::create(1, 5);
     state.team[1] = Game::MonsterFactory::create(4, 5);
     state.storageCount = 2;
     state.storage[0] = state.team[0];
     state.storage[1] = state.team[1];
+
+    if (selectedCase && std::strcmp(selectedCase, "battle-fx") == 0) {
+        checkBattleFxRendering(state, renderBattleScreenCached);
+        return 0;
+    }
+
+    if (selectedCase && std::strcmp(selectedCase, "battle-asset-actions") == 0) {
+        checkBattleAssetActions(desktop, state);
+        return 0;
+    }
 
     if (selectedCase && std::strcmp(selectedCase, "battle-prewarm") == 0) {
         BattleViewModel model{};
@@ -360,12 +631,292 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    if (selectedCase && std::strcmp(selectedCase, "explore-pickup") == 0) {
+        assert(GameAssets::drawCentered(GameAssets::Kind::EXPLORE_PICKUP_BALL,
+                                        208, 232, 2.0f));
+        ExploreMapGenerator::Map map{};
+        map.seed = 12345;
+        map.pathCount = 1;
+        map.paths[0].pointCount = 3;
+        map.paths[0].points[0] = {3, 3};
+        map.paths[0].points[1] = {3, 4};
+        map.paths[0].points[2] = {3, 5};
+        ExploreRouteViewModel model;
+        model.state = &state;
+        model.map = &map;
+        model.worldX = model.worldY = -1000;  // Keep actors away from the marker.
+        model.pickupIndex = 1;
+        renderExploreRouteScreenCached(canvas, model, 0, AmoledUi::HEIGHT);
+        const auto empty = pixels;
+        model.pickupAvailable = true;
+        checkPage("explore-pickup", model, renderExploreRouteScreenCached);
+        size_t changed = 0, red = 0;
+        for (int y = 208; y < 256; ++y) {
+            for (int x = 184; x < 232; ++x) {
+                const size_t i = y * AmoledUi::WIDTH + x;
+                if (pixels[i] == empty[i]) continue;
+                ++changed;
+                const auto c = pixels[i];
+                if (((c >> 11) & 31) > 18 && ((c >> 5) & 63) < 35) ++red;
+            }
+        }
+        std::printf("explore pickup: %zu changed pixels, %zu red pixels\n", changed, red);
+        assert(changed > 200 && red > 30);
+        return 0;
+    }
+
+    if (selectedCase && std::strcmp(selectedCase, "explore-vegetation") == 0) {
+        using ExploreTileSemantics::ActorDepth;
+        using ExploreTileSemantics::ActorRole;
+        ActorDepth order[] = {
+            {ActorRole::COMPANION, 130.0f}, {ActorRole::LEADER, 100.0f},
+            {ActorRole::BOSS, 117.0f}};
+        ExploreTileSemantics::sortActorsByGroundDepth(order, 3);
+        assert(order[0].role == ActorRole::LEADER);
+        assert(order[1].role == ActorRole::BOSS);
+        assert(order[2].role == ActorRole::COMPANION);
+        for (ActorDepth& actor : order) actor.groundWorldY = 120.0f;
+        ExploreTileSemantics::sortActorsByGroundDepth(order, 3);
+        assert(order[0].role == ActorRole::BOSS);
+        assert(order[1].role == ActorRole::COMPANION);
+        assert(order[2].role == ActorRole::LEADER);
+        ExploreMapGenerator::Map map{};
+        map.seed = 54321;
+        map.areaIndex = ExploreMapGenerator::TALL_GRASS_PARK_AREA;
+        ExploreRouteViewModel model{};
+        model.state = &state;
+        model.map = &map;
+        model.area = ExploreMapGenerator::TALL_GRASS_PARK_AREA;
+        model.worldX = model.worldY = -1000;
+        constexpr int tileSize = 52;
+        constexpr int tileX = 3;
+        constexpr uint16_t emptyColor = 0xF81F;
+        constexpr uint16_t actorColor = 0x07FF;
+        struct VegetationCase { uint16_t tileId; int tileY; float groundDepth; };
+        // Each row of a complete tree must share the same ground depth.
+        for (const VegetationCase& item : {
+                VegetationCase{391, 3, 130.0f},
+                VegetationCase{804, 3, 156.0f},
+                VegetationCase{812, 4, 156.0f},
+                VegetationCase{820, 5, 156.0f},
+                VegetationCase{824, 3, 156.0f},
+                VegetationCase{832, 4, 156.0f},
+                VegetationCase{840, 5, 156.0f}}) {
+            std::fill(std::begin(map.layers[1]), std::end(map.layers[1]), 0);
+            map.layers[1][item.tileY * ExploreMapGenerator::WIDTH + tileX] = item.tileId;
+            const int x = tileX * tileSize;
+            const int y = item.tileY * tileSize;
+            canvas.fillSprite(emptyColor);
+            assert(GameAssets::drawExploreTileTo(canvas, item.tileId, x, y, 0, 2));
+            const auto vegetation = pixels;
+            size_t restored = 0;
+            for (float actorDepth : {item.groundDepth - 0.01f, item.groundDepth}) {
+                canvas.fillSprite(actorColor);
+                drawExploreRouteMapVegetationForActor(
+                    canvas, model, actorDepth, x + 4, y + 4,
+                    x + tileSize - 4, y + tileSize - 4,
+                    0, EXPLORE_ROUTE_MAP_BOTTOM);
+                for (int py = y; py < y + tileSize; ++py) {
+                    for (int px = x; px < x + tileSize; ++px) {
+                        const size_t index = py * AmoledUi::WIDTH + px;
+                        const bool shouldRestore = actorDepth < item.groundDepth &&
+                            px >= x + 4 && px < x + tileSize - 4 &&
+                            py >= y + 4 && py < y + tileSize - 4 &&
+                            vegetation[index] != emptyColor;
+                        assert(pixels[index] == (shouldRestore
+                            ? vegetation[index] : actorColor));
+                        if (shouldRestore) ++restored;
+                    }
+                }
+                // The local actor clip must not affect the next actor.
+                canvas.drawPixel(1, 1, emptyColor);
+                assert(canvas.readPixel(1, 1) == emptyColor);
+            }
+            assert(restored > 0);
+        }
+        std::fill(std::begin(map.layers[0]), std::end(map.layers[0]), 384);
+        std::fill(std::begin(map.layers[1]), std::end(map.layers[1]), 0);
+        map.layers[1][3 * ExploreMapGenerator::WIDTH + tileX] = 391;
+        canvas.fillSprite(emptyColor);
+        assert(GameAssets::drawExploreTileTo(
+            canvas, 391, 3 * tileSize, 3 * tileSize, 0, 2));
+        const auto grass = pixels;
+        renderExploreRouteScreenCached(canvas, model, 0, AmoledUi::HEIGHT);
+        const auto empty = pixels;
+        model.worldX = 91;
+        model.worldY = 110;
+        model.speciesId = 1;
+        checkPage("explore-vegetation-behind", model, renderExploreRouteScreenCached);
+        size_t hiddenPixels = 0;
+        for (int y = 3 * tileSize; y < 4 * tileSize; ++y) {
+            for (int x = 3 * tileSize; x < 4 * tileSize; ++x) {
+                const size_t index = y * AmoledUi::WIDTH + x;
+                if (grass[index] == emptyColor) continue;
+                assert(pixels[index] == empty[index]);
+                ++hiddenPixels;
+            }
+        }
+        assert(hiddenPixels > 0);
+        model.worldY = 130;  // On the grass depth boundary: the actor is in front.
+        checkPage("explore-vegetation-front", model, renderExploreRouteScreenCached);
+        const auto frontActor = pixels;
+        model.companionVisible = true;
+        model.companionSpeciesId = 25;
+        model.companionWorldX = 91;
+        model.companionWorldY = 110;
+        checkPage("explore-vegetation-dual", model, renderExploreRouteScreenCached);
+        size_t visibleFrontPixels = 0;
+        for (int y = 3 * tileSize; y < 4 * tileSize; ++y) {
+            for (int x = 3 * tileSize; x < 4 * tileSize; ++x) {
+                const size_t index = y * AmoledUi::WIDTH + x;
+                if (frontActor[index] == empty[index]) continue;
+                assert(pixels[index] == frontActor[index]);
+                ++visibleFrontPixels;
+            }
+        }
+        assert(visibleFrontPixels > 0);
+        // A boss between the two team members must not overpaint the nearer
+        // companion. Sorting only against the leader used to draw it last.
+        model.companionVisible = false;
+        model.speciesId = 25;
+        checkPage("explore-vegetation-companion-alone", model, renderExploreRouteScreenCached);
+        const auto frontCompanion = pixels;
+        model.speciesId = 1;
+        model.worldY = 100;
+        model.companionVisible = true;
+        model.companionWorldY = 130;
+        map.pathCount = 1;
+        map.paths[0].pointCount = 1;
+        map.paths[0].points[0] = {3, 4};
+        model.bossPending = true;
+        model.bossSpeciesId = 4;
+        checkPage("explore-vegetation-three-actors", model, renderExploreRouteScreenCached);
+        visibleFrontPixels = 0;
+        for (int y = 3 * tileSize; y < 4 * tileSize; ++y) {
+            for (int x = 3 * tileSize; x < 4 * tileSize; ++x) {
+                const size_t index = y * AmoledUi::WIDTH + x;
+                if (frontCompanion[index] == empty[index]) continue;
+                assert(pixels[index] == frontCompanion[index]);
+                ++visibleFrontPixels;
+            }
+        }
+        assert(visibleFrontPixels > 0);
+        // The boss patrol reaches Y=122 from its Y=117 anchor. It must now
+        // cover a leader at Y=120 even though its original path point is behind.
+        model.worldX = model.worldY = -1000;
+        model.companionVisible = false;
+        model.animationNowMs = 2300;
+        checkPage("explore-vegetation-patrol-alone", model, renderExploreRouteScreenCached);
+        const auto frontBoss = pixels;
+        model.worldX = 91;
+        model.worldY = 120;
+        model.companionVisible = true;
+        model.companionWorldY = 110;
+        checkPage("explore-vegetation-patrol-three", model, renderExploreRouteScreenCached);
+        size_t visibleBossPixels = 0;
+        for (int y = 4 * tileSize; y < 238; ++y) {
+            for (int x = 3 * tileSize; x < 4 * tileSize; ++x) {
+                const size_t index = y * AmoledUi::WIDTH + x;
+                if (frontBoss[index] == empty[index]) continue;
+                assert(pixels[index] == frontBoss[index]);
+                ++visibleBossPixels;
+            }
+        }
+        assert(visibleBossPixels > 0);
+        // The same occlusion must be drawn when the large world cache is absent.
+        const auto cached = pixels;
+        auto& original = desktop.serviceBundle();
+        CacheFailAllocator failing(original.memory);
+        Platform::Services limited{
+            original.lifecycle, original.clock, original.logger, original.input,
+            original.display, original.audio, original.imu, original.power,
+            original.blobs, original.resources, failing, original.peers};
+        RenderCaches emptyCaches;
+        Platform::bind(limited);
+        checkPage("explore-vegetation-no-cache", model,
+            [&](Canvas565& target, const ExploreRouteViewModel& view,
+                uint16_t top, uint16_t bottom) {
+                renderExploreRouteScreen(target, view, emptyCaches.exploreWorld, top, bottom);
+            });
+        assert(pixels == cached);
+        Platform::bind(original);
+        std::puts("explore vegetation: grass/tree ground depths, actor clips, three actor depths and boss patrol, dirty rows and cache fallback agree");
+        return 0;
+    }
+
+    if (selectedCase && std::strcmp(selectedCase, "lock-focus-pixels") == 0) {
+        checkLockFocusPixels(desktop, canvas, state);
+        return 0;
+    }
+    if (selectedCase && std::strcmp(selectedCase, "explore-reserve-encounters") == 0) {
+        checkExploreReserveEncounters(desktop, state);
+        return 0;
+    }
+    if (selectedCase && std::strcmp(selectedCase, "explore-motion-damage") == 0) {
+        checkExploreMotionDamage(desktop, canvas, state);
+        return 0;
+    }
+    if (selectedCase && std::strcmp(selectedCase, "explore-park-routes") == 0) {
+        checkExploreParkRoutes(desktop, state);
+        return 0;
+    }
+    if (selectedCase && std::strcmp(selectedCase, "explore-save-boundaries") == 0) {
+        checkExploreSaveBoundaries(desktop, state);
+        return 0;
+    }
     if (selectedCase && std::strcmp(selectedCase, "expedition-transition") == 0) {
         checkExpeditionTransitions(desktop, canvas, state);
         return 0;
     }
     if (selectedCase && std::strcmp(selectedCase, "progression-replace") == 0) {
         checkProgressionReplacement(desktop, state);
+        return 0;
+    }
+    if (selectedCase && std::strcmp(selectedCase, "settings-reset") == 0) {
+        checkSettingsReset(desktop);
+        return 0;
+    }
+    if (selectedCase && std::strcmp(selectedCase, "settings-reset-render") == 0) {
+        SettingsViewModel reset{};
+        reset.state = &state;
+        reset.brightness = state.settings.brightness;
+        reset.volume = state.settings.volume;
+        checkPage("settings-reset-menu", reset, renderSettingsScreen);
+        const auto withoutUpdate = pixels;
+        reset.systemUpdate = true;
+        checkPage("settings-reset-menu-v2", reset, renderSettingsScreen);
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        assert(pixels != withoutUpdate);
+#else
+        assert(pixels == withoutUpdate);
+#endif
+        reset.systemUpdate = false;
+        reset.resetConfirm = true;
+        for (int pressed : {-1, 0, 1}) {
+            reset.pressedItem = pressed;
+            char name[64];
+            std::snprintf(name, sizeof(name), "settings-reset-confirm-%d", pressed);
+            checkPage(name, reset, renderSettingsScreen);
+            assert(canvas.readPixel(106, 418) == PixelRenderer::rgb(
+                pressed == 0 ? 53 : 36, pressed == 0 ? 76 : 54,
+                pressed == 0 ? 83 : 61));
+            assert(canvas.readPixel(262, 418) == PixelRenderer::rgb(
+                pressed == 1 ? 129 : 91, pressed == 1 ? 59 : 49,
+                pressed == 1 ? 68 : 55));
+        }
+        reset.toast = Ui::Settings::RESET_FAILED;
+        checkPage("settings-reset-failed-toast", reset, renderSettingsScreen);
+        assert(settingsResetChoiceAt(36, 354) == 0);
+        assert(settingsResetChoiceAt(175, 425) == 0);
+        assert(settingsResetChoiceAt(192, 354) == 1);
+        assert(settingsResetChoiceAt(331, 425) == 1);
+        for (int x : {35, 176, 184, 191, 332}) {
+            assert(settingsResetChoiceAt(x, 390) == -1);
+        }
+        assert(settingsResetChoiceAt(262, 353) == -1);
+        assert(settingsResetChoiceAt(262, 426) == -1);
+        assert(settingsResetChoiceAt(40, 38) == -1);
+        assert(settingsResetChoiceAt(184, 200) == -1);
         return 0;
     }
 #if STICKMON_ENABLE_DEBUG_FEATURES
@@ -378,6 +929,50 @@ int main(int argc, char** argv) {
         return 0;
     }
 #endif
+    if (selectedCase && std::strcmp(selectedCase, "shower-render") == 0) {
+        PixelCache565 cache;
+        auto render = [&](Canvas565& target, const ShowerViewModel& model, uint16_t top, uint16_t bottom) {
+            renderShowerScreenCached(target, model, cache, top, bottom);
+        };
+        ShowerFoamState foam[8] = {};
+        ShowerWaterState water[4] = {};
+        ShowerFloatState floats[2] = {};
+        ShowerViewModel shower;
+        shower.state = &state; shower.speciesId = 8;
+        shower.groundY = showerPetGroundY(8);
+        shower.mode = ShowerMode::SOAPING;
+        shower.toolX = 184; shower.toolY = 212; shower.toolDragging = true;
+        shower.foam = foam; shower.foamCount = 8;
+        for (int i = 0; i < 8; ++i) {
+            foam[i].active = true; foam[i].stage = i % 2;
+            foam[i].x = 140 + (i % 4) * 30; foam[i].y = 164 + (i / 4) * 96;
+        }
+        checkPage("shower-soap", shower, render);
+        shower.mode = ShowerMode::BRUSHING;
+        for (int i = 0; i < 4; ++i) {
+            foam[i].stage = 2; foam[i].y = shower.groundY - 24 - i * 4;
+        }
+        shower.petFlip = true; shower.petOffsetY = -12;
+        checkPage("shower-brush", shower, render);
+        shower.foamCount = 0; shower.atmosphereAlpha = 200;
+        checkPage("shower-full-foam", shower, render);
+        shower.mode = ShowerMode::RINSING; shower.toolDragging = false;
+        shower.petOffsetY = 0; shower.petFlip = false;
+        shower.rinseProgress = 35; shower.elapsedMs = 630;
+        shower.water = water; shower.waterCount = 4;
+        for (int i = 0; i < 4; ++i) water[i] = {120.0f + i * 40, 200.0f + i * 20, 0, -90, true};
+        checkPage("shower-rinse", shower, render);
+        shower.mode = ShowerMode::COMPLETE; shower.completionHearts = 3;
+        shower.atmosphereAlpha = 0; shower.nowMs = 1200;
+        floats[0] = {1000, 5, true, 0}; floats[1] = {1000, 0, true, 3};
+        shower.floats = floats; shower.floatCount = 2;
+        checkPage("shower-complete", shower, render);
+        return 0;
+    }
+    if (selectedCase && std::strcmp(selectedCase, "shower-flow") == 0) {
+        checkShowerFlow(desktop, canvas, state);
+        return 0;
+    }
     if (selectedCase) {
         if (runUiBehaviorCase(selectedCase, canvas, state)) return 0;
         std::fprintf(stderr, "unknown behavior case: %s\n", selectedCase);
@@ -478,7 +1073,20 @@ int main(int argc, char** argv) {
     assert(capacityPixels > 0);
     assert(computerItemAt(200, 166, ComputerViewModel::Page::STORAGE,
                           CONTACT_ROW_HEIGHT, 20) == 2);
-    checkPage("settings", SettingsViewModel{}, renderSettingsScreen);
+    SettingsViewModel defaultSettings{};
+    defaultSettings.state = &state;
+    defaultSettings.brightness = state.settings.brightness;
+    defaultSettings.volume = state.settings.volume;
+    checkPage("settings", defaultSettings, renderSettingsScreen);
+    SettingsViewModel otaSettings{};
+    otaSettings.state = &state;
+    otaSettings.brightness = state.settings.brightness;
+    otaSettings.volume = state.settings.volume;
+    otaSettings.systemUpdate = true;
+    checkPage("settings-v2-update", otaSettings, renderSettingsScreen);
+    SettingsViewModel resetSettings{};
+    resetSettings.resetConfirm = true;
+    checkPage("settings-reset-confirm", resetSettings, renderSettingsScreen);
     ProgressionViewModel progression{};
     progression.state = &state;
     progression.mode = ProgressionViewModel::Mode::LEVEL_UP;
@@ -629,6 +1237,13 @@ int main(int argc, char** argv) {
             [&](Canvas565& target, const BattleViewModel& model, uint16_t top, uint16_t bottom) {
                 renderBattleScreen(target, model, emptyCaches.battleBackground, top, bottom);
             });
+        checkPage("shower-no-cache", shower,
+            [&](Canvas565& target, const ShowerViewModel& model, uint16_t top, uint16_t bottom) {
+                renderShowerScreenCached(target, model, emptyCaches.showerBackground, top, bottom,
+                                        &emptyCaches.showerPet);
+            });
+        assert(emptyCaches.showerBackground.allocatedBytes() == 0);
+        assert(emptyCaches.showerPet.allocatedBytes() == 0);
         assert(failing.failures > 0);
         assert(emptyCaches.exploreWorld.allocatedBytes() == 0);
         assert(emptyCaches.exploreBackground.allocatedBytes() == 0);
@@ -652,8 +1267,21 @@ int main(int argc, char** argv) {
     assert(computerItemAt(200, 262, ComputerViewModel::Page::MENU) == -1);
     assert(computerItemAt(200, 348, ComputerViewModel::Page::MENU) == -1);
     assert(settingsItemAt(200, 90) == 0);
-    assert(settingsItemAt(200, 338) == 4);
+    assert(settingsItemAt(200, 295) == SETTINGS_POWER_SAVE_ITEM);
+    assert(settingsItemAt(200, 296) == SETTINGS_RESET_GAME_ITEM);
+    assert(settingsItemAt(200, 343) == SETTINGS_RESET_GAME_ITEM);
+    assert(settingsItemAt(200, 344) == -1);
     assert(settingsItemAt(200, 400) == -1);
+    assert(settingsItemAt(200, 296, true) == SETTINGS_RESET_GAME_ITEM);
+    assert(settingsItemAt(200, 343, true) == SETTINGS_RESET_GAME_ITEM);
+    const int updateItem = STICKMON_ENABLE_DEBUG_FEATURES
+        ? SETTINGS_SYSTEM_UPDATE_ITEM : -1;
+    assert(settingsItemAt(200, 344, true) == updateItem);
+    assert(settingsItemAt(200, 391, true) == updateItem);
+    assert(settingsItemAt(200, 392, true) == -1);
+    assert(settingsItemAt(200, 400, true) == -1);
+    assert(settingsItemAt(200, 447, true) == -1);
+    assert(settingsItemAt(200, 448, true) == -1);
     assert(computerItemAt(0, 165, ComputerViewModel::Page::STORAGE, 0, 20) == 0);
     assert(computerItemAt(367, 166, ComputerViewModel::Page::STORAGE, 0, 20) == 1);
     assert(computerItemAt(200, 255, ComputerViewModel::Page::STORAGE, 0, 20) == 1);

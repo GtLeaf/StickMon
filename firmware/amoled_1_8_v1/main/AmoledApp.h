@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <memory>
 
 #ifndef STICKMON_HAS_CLAW
 #define STICKMON_HAS_CLAW 0
@@ -20,6 +21,7 @@
 #include "core/MainSceneViewState.h"
 #include "core/RoomResource.h"
 #include "core/SaveManager.h"
+#include "game/HatchInteraction.h"
 #include "core/VisitSessionService.h"
 #include "game/CareTicker.h"
 #include "game/BathService.h"
@@ -53,10 +55,15 @@ public:
     void update(uint32_t nowMs);
     void render(Canvas565& canvas) const;
 
+    bool startupStateLoaded() const { return startupStateLoaded_; }
     bool needsRender() const { return dirtyRowsValid; }
     uint16_t renderRowBegin() const { return dirtyRowBegin; }
     uint16_t renderRowEnd() const { return dirtyRowEnd; }
+    uint16_t renderColumnBegin() const { return dirtyColumnBegin; }
+    uint16_t renderColumnEnd() const { return dirtyColumnEnd; }
     void markRendered();
+    using SystemUpdateHandler = bool (*)();
+    void setSystemUpdateHandler(SystemUpdateHandler handler) { systemUpdateHandler = handler; }
     void setExternalSceneFade(bool enabled) { externalSceneFade = enabled; }
     bool sceneFadeActive() const { return expeditionFade.active(); }
     bool sceneFadeInward() const { return expeditionFade.inward(); }
@@ -67,17 +74,30 @@ public:
         begin = std::min<uint16_t>(begin, AmoledUi::HEIGHT);
         end = std::min<uint16_t>(std::max<uint16_t>(end, begin),
                                  AmoledUi::HEIGHT);
+        dirtyColumnBegin = 0;
+        dirtyColumnEnd = AmoledUi::WIDTH;
         dirtyRowBegin = begin;
         dirtyRowEnd = end;
         dirtyRowsValid = begin < end;
     }
     bool consumeLockRequest();
+    bool prepareDisplayLock(uint32_t nowMs);
     void onWake(uint32_t nowMs);
     bool lockFocusPoint(int16_t& x, int16_t& y) const;
+    bool lockTapHitsPet(int16_t x, int16_t y) const;
     bool petIsSleeping() const;
 #if STICKMON_ENABLE_DEBUG_FEATURES
     void renderDebugTouchOverlay(Canvas565& canvas) const;
     bool debugStartExplore(uint8_t area);
+    void debugReportSaveState();
+    void debugReportHomeState() const;
+    bool debugStartShowerDrag(uint8_t tool, uint32_t nowMs);
+    bool showerDraggingForDiagnostics() const {
+        return sceneFlow.current() == AppSceneFlow::Scene::SHOWER && showerToolDragging;
+    }
+    uint8_t showerToolForDiagnostics() const {
+        return showerMode == ShowerMode::BRUSHING ? 1 : 0;
+    }
     bool debugTriggerContact(uint8_t kind);
     bool debugPromptContact(uint8_t kind);
     bool debugAcceptContact();
@@ -104,7 +124,9 @@ public:
 #endif
 
 private:
+    void fillHomePetModel(HomeViewModel& model) const;
     friend struct AmoledAppTestAccess;
+    friend struct AmoledShowerTestAccess;
     enum class MusicContext : uint8_t {
         HOME = 0,
         EXPLORE,
@@ -123,6 +145,7 @@ private:
     uint32_t encounterSpritePrepMs = 0;
     uint32_t encounterSfxPrepMs = 0;
     bool encounterFirstFramePending = false;
+    uint32_t diagnosticSaveCount = 0;
 #endif
     enum class PetMotion : uint8_t {
         IDLE,
@@ -245,6 +268,13 @@ private:
     void refreshClawLogSnapshot();
 #endif
     void setSettingsSliderValue(uint8_t item, int x, uint32_t nowMs);
+    bool resetGame();
+    void updateHatch(uint32_t nowMs);
+    void syncHatchImu(uint32_t nowMs);
+    void interactWithHatch(bool shake, uint32_t nowMs);
+    bool persistHatchProgress(bool force);
+    void completeHatch(uint32_t nowMs);
+    void handleHatchTouch(const TouchEvent& event);
     void placeExploreRoutePickup();
     void resolveExploreRoutePickup(uint32_t nowMs);
     void openShowerScene(uint32_t nowMs);
@@ -260,7 +290,13 @@ private:
     bool anyShowerFoam() const;
     uint8_t showerFoamLevelTotal() const;
     void checkShowerAtmosphereThreshold(uint32_t nowMs);
-    void updateShowerFoamMotion(float dtSeconds);
+    bool updateShowerFoamMotion(float dtSeconds);
+    Game::BathInteraction::Layout showerBathLayout() const;
+    void updateShower(uint32_t nowMs);
+    void startShowerHop(float height, uint32_t nowMs);
+    void addShowerFloat(uint8_t experience, uint8_t heartCount, uint32_t nowMs);
+    void spawnShowerWater(float x, float y, float vx, float vy);
+    void flushShowerSave(uint32_t nowMs);
     void grantShowerStage(Game::BathService::Stage stage, uint32_t nowMs);
     void startShowerRinse(uint32_t nowMs);
     void requestShowerExit();
@@ -458,14 +494,23 @@ private:
     int worldToScreenX(float worldX) const;
     int worldToScreenY(float worldY) const;
     void requestRenderRows(uint16_t begin, uint16_t end);
+    void requestRenderRect(int left, int top, int right, int bottom);
+    ExploreRouteViewModel exploreRouteModel() const;
     void requestFullRender();
     float gameSpeed() const;
+    SystemUpdateHandler systemUpdateHandler = nullptr;
     bool saveState();
 
     AppSceneFlow::Controller sceneFlow;
     bool dirtyRowsValid = true;
     uint16_t dirtyRowBegin = 0;
     uint16_t dirtyRowEnd = AmoledUi::HEIGHT;
+    uint16_t dirtyColumnBegin = 0;
+    uint16_t dirtyColumnEnd = AmoledUi::WIDTH;
+    mutable bool exploreActorBoundsValid = false;
+    mutable AmoledUi::Rect lastExploreActorBounds{};
+    mutable int16_t lastExploreCameraX = 0, lastExploreCameraY = 0;
+    mutable uint32_t lastExploreMapSeed = 0;
     bool externalSceneFade = false;
     bool lockRequested = false;
 
@@ -492,6 +537,7 @@ private:
     bool debugBattleActive = false;
     bool debugBattleRequested = false;
     bool debugTiltControl = false;
+    uint32_t nextHomeStateDiagnosticMs = 0;
     bool debugWalkBoundaryVisible = false;
     bool debugTalkPointsVisible = false;
     bool debugBattleDrawBoundsVisible = false;
@@ -619,6 +665,31 @@ private:
     uint32_t clawLogGen = 0;
     size_t clawLogCount = 0;
     uint8_t settingsPressedItem = 0xFF;
+    bool settingsResetConfirm = false;
+    bool gameResetPending = false;
+    bool saveWritesBlocked = false;
+    float hatchElapsedSeconds = 0.0f;
+    uint16_t hatchPokeCount = 0;
+    uint16_t hatchWipeCount = 0;
+    uint16_t hatchLastSavedSecond = 0;
+    uint16_t hatchLastRemainingSecond = 180;
+    uint8_t hatchLastProgress = 0;
+    int8_t hatchLastShakeOffset = 0;
+    int8_t hatchPressedItem = -1;
+    uint32_t hatchLastUpdateMs = 0;
+    uint32_t hatchCompletionRetryMs = 0;
+    bool hatchImuRequested = false;
+    bool hatchImuEnabled = false;
+    bool hatchImuStateKnown = false;
+    uint32_t hatchImuRetryMs = 0;
+    uint32_t hatchLastImuPollMs = 0;
+    Game::HatchShakeDetector hatchShakeDetector;
+    uint32_t hatchHeartStartedMs = 0;
+    uint32_t hatchShakeStartedMs = 0;
+    bool hatchHeartVisible = false;
+    bool hatchShaking = false;
+    mutable AmoledUi::Rect hatchEggHitBounds{130, 136, 108, 128};
+    std::unique_ptr<Game::GameState> hatchResult;
     bool settingsSliderDragging = false;
     bool settingsSliderChanged = false;
     AppSceneFlow::Scene progressionReturnScene = AppSceneFlow::Scene::HOME;
@@ -669,13 +740,28 @@ private:
     uint32_t showerModeStartedMs = 0;
     uint32_t showerLastFrameMs = 0;
     uint32_t showerLastRubMs = 0;
-    uint32_t showerLastFoamGrowthMs = 0;
     uint32_t showerLastRinseFoamMs = 0;
-    uint8_t showerFoamSpawnCursor = 0;
-    uint8_t showerFoamRestSlot = 0;
     float showerAtmosphereAlpha = 0.0f;
-    bool showerAtmosphereTarget = false;
-    ShowerFoamState showerFoam[8] = {};
+    Game::BathInteraction::State showerBath;
+    int16_t showerGroundY = 324;
+    uint32_t showerLastUpdateMs = 0;
+    uint32_t showerLastSoapMs = 0;
+    uint32_t showerHopStartedMs = 0;
+    float showerHopHeight = 0;
+    uint32_t showerWiggleStartedMs = 0;
+    uint32_t showerTurnUntilMs = 0;
+    bool showerTurnFlip = false;
+    uint32_t showerLastReactionMs = 0;
+    uint32_t showerLastRinseShakeMs = 0;
+    uint32_t showerNextVisualMs = 0;
+    float showerWaterCarry = 0;
+    ShowerWaterState showerWater[64] = {};
+    ShowerFloatState showerFloats[4] = {};
+    bool showerSavePending = false;
+    uint32_t showerSaveAfterMs = 0;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    uint32_t showerDiagnosticStartedMs = 0;
+#endif
     char showerToast[64] = {};
 
     ExploreMapGenerator::Map exploreRouteMap;
@@ -729,7 +815,6 @@ private:
     bool exploreRoutePlayerWalkActive = false;
     bool exploreRoutePaused = false;
     bool exploreRouteComplete = false;
-    bool exploreRecoveryPendingSave = false;
     bool exploreRouteExitConfirm = false;
     bool exploreRouteIceSliding = false;
     int8_t exploreRouteIceDx = 0;
@@ -790,6 +875,8 @@ private:
     bool battleAnimationActive = false;
     bool battleAnimationAttackerWild = false;
     bool battleAnimationHit = false;
+    bool battleAnimationStatusEffect = false;
+    GameAssets::BattleFx battleAnimationFx = GameAssets::BattleFx::HIT;
     uint16_t battleAnimationDamage = 0;
     uint32_t battleAnimationStartedMs = 0;
     uint32_t battleAnimationDurationMs = 240;
@@ -836,6 +923,7 @@ private:
     Home::Actor homeMainActor;
     Home::Actor homeCompanionActor;
     Home::Simulation homeRuntime;
+    bool startupStateLoaded_ = false;
     bool storageReady = false;
     bool homeRuntimeReady = false;
     uint32_t lastCareMs = 0;

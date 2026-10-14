@@ -1,0 +1,94 @@
+{
+  "algorithmVersion": 12,
+  "expeditionSeed": 539365395,
+  "maps": [
+    {
+      "index": 0,
+      "area": 2,
+      "selectedExit": 0,
+      "image": "runtime_tile_map_01_d91ce3c7.png",
+      "debug": "runtime_tile_map_01_d91ce3c7_debug.png",
+      "data": "runtime_tile_map_01_d91ce3c7.json",
+      "seed": 3642549191,
+      "fingerprint": "bb690bc6",
+      "entry": {
+        "point": [
+          8,
+          11
+        ],
+        "edge": "bottom"
+      },
+      "hasCoast": false,
+      "hasForest": true,
+      "hasCreek": false,
+      "hasCliff": false,
+      "hasWaterfall": false
+    },
+    {
+      "index": 1,
+      "area": 2,
+      "selectedExit": 0,
+      "image": "runtime_tile_map_02_275e3781.png",
+      "debug": "runtime_tile_map_02_275e3781_debug.png",
+      "data": "runtime_tile_map_02_275e3781.json",
+      "seed": 660486017,
+      "fingerprint": "ee679d61",
+      "entry": {
+        "point": [
+          0,
+          6
+        ],
+        "edge": "left"
+      },
+      "hasCoast": false,
+      "hasForest": true,
+      "hasCreek": false,
+      "hasCliff": false,
+      "hasWaterfall": false
+    },
+    {
+      "index": 2,
+      "area": 2,
+      "selectedExit": 1,
+      "image": "runtime_tile_map_03_456130ec.png",
+      "debug": "runtime_tile_map_03_456130ec_debug.png",
+      "data": "runtime_tile_map_03_456130ec.json",
+      "seed": 1163997420,
+      "fingerprint": "8d1ffd69",
+      "entry": {
+        "point": [
+          0,
+          4
+        ],
+        "edge": "left"
+      },
+      "hasCoast": false,
+      "hasForest": true,
+      "hasCreek": false,
+      "hasCliff": false,
+      "hasWaterfall": false
+    },
+    {
+      "index": 3,
+      "area": 2,
+      "selectedExit": 0,
+      "image": "runtime_tile_map_04_4048a45a.png",
+      "debug": "runtime_tile_map_04_4048a45a_debug.png",
+      "data": "runtime_tile_map_04_4048a45a.json",
+      "seed": 1078502490,
+      "fingerprint": "65b3cf41",
+      "entry": {
+        "point": [
+          6,
+          0
+        ],
+        "edge": "top"
+      },
+      "hasCoast": false,
+      "hasForest": true,
+      "hasCreek": false,
+      "hasCliff": false,
+      "hasWaterfall": false
+    }
+  ]
+}

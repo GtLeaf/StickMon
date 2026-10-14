@@ -1,6 +1,7 @@
 #include "core/SaveCodec.h"
 #include "save_schema1_fabricator.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstdint>
@@ -51,7 +52,7 @@ Game::GameState makeState() {
     state.settings.longPressMs = 777;
     state.settings.doubleClickMs = 222;
     state.settings.volume = 66;
-    state.settings.voiceCallEnabled = true;
+    state.settings.reservedAudioSetting = 1; // New writes must clear the retired flag.
     state.settings.vibrationOn = true;
     state.settings.leftHanded = true;
     state.explorePoolRerollCounts[2] = 4;
@@ -139,7 +140,9 @@ void verifyRoundTrip() {
     assert(decoded.state.bag.candy == 7 && decoded.state.bag.soap[2] == 3);
     assert(decoded.state.coins == 0x10203040);
     assert(decoded.state.pendingMoveId == 85);
-    assert(decoded.state.settings.voiceCallEnabled);
+    assert(decoded.state.settings.reservedAudioSetting == 0);
+    assert(decoded.state.settings.volume == 66);
+    assert(decoded.state.settings.vibrationOn && decoded.state.settings.leftHanded);
     assert(decoded.state.normalBossMissCount[4] == 9);
     assert(decoded.state.debugMotionFlags ==
            (Game::DEBUG_MOTION_TILT | Game::DEBUG_MOTION_TALK_POINTS));
@@ -155,6 +158,39 @@ void verifyRoundTrip() {
                              reencoded, sizeof(reencoded), reencodedLength));
     assert(reencodedLength == length);
     assert(std::memcmp(encoded, reencoded, length) == 0);
+}
+
+void verifyRetiredFlagIsIgnored() {
+    auto state = makeState();
+    uint8_t encoded[SaveCodec::MAX_ENCODED_BYTES] = {};
+    size_t length = 0;
+    assert(SaveCodec::encode(state, makeView(), 9, encoded,
+                             sizeof(encoded), length));
+    for (bool schema1 : {false, true}) {
+        std::vector<uint8_t> legacy(encoded, encoded + length);
+        if (schema1) {
+            assert(SaveTestUtil::fabricateSchema1Blob(encoded, length, legacy));
+        }
+        // Old firmware stored an enabled flag between volume and vibration.
+        const uint8_t settings[] = {201, 3, 9, 3, 222, 0, 66, 0, 1, 2, 1, 0};
+        auto start = std::search(legacy.begin(), legacy.end(),
+                                 std::begin(settings), std::end(settings));
+        assert(start != legacy.end());
+        const size_t flagOffset = start - legacy.begin() + 7;
+        legacy[flagOffset] = 1;
+        const uint16_t checksum = SaveTestUtil::blobCrc16(legacy.data(), legacy.size());
+        legacy[14] = static_cast<uint8_t>(checksum);
+        legacy[15] = static_cast<uint8_t>(checksum >> 8);
+        SaveCodec::Snapshot decoded;
+        assert(SaveCodec::decode(legacy.data(), legacy.size(), decoded));
+        assert(decoded.state.settings.reservedAudioSetting == 0);
+        assert(decoded.state.settings.volume == 66);
+        assert(decoded.state.settings.vibrationOn && decoded.state.settings.leftHanded);
+        assert(decoded.state.normalBossMissCount[4] == 9);
+        assert(SaveCodec::encode(decoded.state, decoded.view, 10, encoded,
+                                 sizeof(encoded), length));
+        assert(encoded[flagOffset] == 0);
+    }
 }
 
 void verifyRejectsCorruptionAndBadCapacity() {
@@ -221,6 +257,7 @@ void verifySchema1DecodesWithDefaults() {
 
 int main() {
     verifyRoundTrip();
+    verifyRetiredFlagIsIgnored();
     verifyRejectsCorruptionAndBadCapacity();
     verifySchema1DecodesWithDefaults();
     return 0;

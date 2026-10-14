@@ -55,6 +55,22 @@ set(RESOURCE_FONTS_DIR "${STICKMON_ROOT}/data/packs/dev/fonts")
 set(RESOURCE_AUDIO_DIR "${STICKMON_ROOT}/data/packs/dev/audio")
 set(RESOURCE_CRIES_DIR "${STICKMON_ROOT}/data/packs/dev/cries")
 
+# Kind ids can change when shared assets are added. Never ship a stale native
+# UI pack: the runtime rejects mismatched packs and falls back to drawn icons.
+set(RESOURCE_UI_VALIDATOR "${STICKMON_ROOT}/tools/validate_amoled_ui_assets.py")
+execute_process(
+    COMMAND "${PYTHON}" "${RESOURCE_UI_VALIDATOR}"
+            "${STICKMON_ROOT}/data/packs/dev/game/ui.smonfx" "${RESOURCE_UI}"
+    RESULT_VARIABLE RESOURCE_UI_CHECK
+    ERROR_VARIABLE RESOURCE_UI_ERROR
+)
+if(NOT RESOURCE_UI_CHECK EQUAL 0)
+    message(FATAL_ERROR "${RESOURCE_UI_ERROR}")
+endif()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${RESOURCE_UI_VALIDATOR}" "${STICKMON_ROOT}/src/assets/GameAssets.h"
+    "${STICKMON_ROOT}/data/packs/dev/game/ui.smonfx")
+
 file(GLOB RESOURCE_FONT_FILES CONFIGURE_DEPENDS
      "${RESOURCE_FONTS_DIR}/*.smonfont")
 file(GLOB RESOURCE_SPRITE_FILES CONFIGURE_DEPENDS

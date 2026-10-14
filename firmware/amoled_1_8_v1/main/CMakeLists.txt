@@ -4,6 +4,7 @@ include("${STICKMON_ROOT}/firmware/common/amoled_sources.cmake")
 
 set(STICKMON_MAIN_REQUIRES
     esp_lcd
+    esp_driver_i2c
     esp_codec_dev
     esp_event
     esp_netif
@@ -28,6 +29,7 @@ idf_component_register(
         "main.cpp"
         "${STICKMON_AMOLED_APP_SOURCE}"
         "AmoledPlatform.cpp"
+        "${STICKMON_ROOT}/firmware/common/Qmi8658.cpp"
         ${STICKMON_AMOLED_UI_SOURCES}
         "TouchInput.cpp"
         "${STICKMON_ROOT}/src/assets/FontFallbackCN.cpp"
@@ -58,6 +60,7 @@ idf_component_register(
         "${STICKMON_ROOT}/src/game/HomeRuntime.cpp"
         "${STICKMON_ROOT}/src/game/HomeSimulation.cpp"
         "${STICKMON_ROOT}/src/game/BathService.cpp"
+        "${STICKMON_ROOT}/src/game/BathInteraction.cpp"
         "${STICKMON_ROOT}/src/game/BattleSystem.cpp"
         "${STICKMON_ROOT}/src/game/BattleTurnController.cpp"
         "${STICKMON_ROOT}/src/game/ExperienceService.cpp"
@@ -65,6 +68,7 @@ idf_component_register(
         "${STICKMON_ROOT}/src/game/FriendshipSystem.cpp"
         "${STICKMON_ROOT}/src/game/ItemInventory.cpp"
         "${STICKMON_ROOT}/src/game/MonsterFactory.cpp"
+        "${STICKMON_ROOT}/src/game/HatchService.cpp"
         "${STICKMON_ROOT}/src/game/MoveManagementService.cpp"
         "${STICKMON_ROOT}/src/game/ShopService.cpp"
         "${STICKMON_ROOT}/src/game/ExploreMapGenerator.cpp"
@@ -80,6 +84,7 @@ idf_component_register(
     INCLUDE_DIRS
         "."
         "${STICKMON_ROOT}/src"
+        "${STICKMON_ROOT}/firmware/common"
     REQUIRES ${STICKMON_MAIN_REQUIRES}
 )
 

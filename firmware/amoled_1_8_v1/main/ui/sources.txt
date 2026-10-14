@@ -4,5 +4,6 @@ HomeScreen.cpp
 ui/UiCommon.cpp
 ui/RoomScreens.cpp
 ui/SettingsScreens.cpp
+ui/HatchScreens.cpp
 ui/ExploreMapRenderer.cpp
 ui/RenderCaches.cpp

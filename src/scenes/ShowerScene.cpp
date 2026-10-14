@@ -46,12 +46,6 @@ constexpr uint32_t RUB_REACTION_COOLDOWN_MS = 1500;
 constexpr uint32_t TURN_HOLD_MS = 2600;
 constexpr uint32_t SOAP_HOP_INTERVAL_MS = 900;
 constexpr uint32_t RINSE_SHAKE_INTERVAL_MS = 800;
-constexpr uint32_t FOAM_GROWTH_INTERVAL_MS = 600;
-constexpr uint8_t SMALL_FOAM_BRUSH_TARGET = 2;
-constexpr uint8_t LARGE_FOAM_BRUSH_TARGET = 4;
-constexpr float LOWER_FOAM_Y = 88.0f;
-constexpr float UPPER_FOAM_FALL_SPEED = 24.0f;
-constexpr float LOWER_FOAM_FALL_SPEED = 14.0f;
 constexpr uint8_t BODY_FOAM_STAGE_COUNT = 4;
 constexpr uint32_t RINSE_WORST_CASE_MS =
     BODY_FOAM_STAGE_COUNT * RINSE_FOAM_INTERVAL_MS +
@@ -106,7 +100,7 @@ void ShowerScene::onEnter() {
     mode = Mode::MENU;
     menuCursor = 0;
     menuAnimCursor = 0.0f;
-    foamSpawnCursor = 0;
+    bath.spawnCursor = 0;
     gravityX = 0.0f;
     gravityY = 0.0f;
     gravityZ = 0.0f;
@@ -124,16 +118,16 @@ void ShowerScene::onEnter() {
 }
 
 void ShowerScene::resetBathSession() {
-    for (Foam& bubble : foam) bubble = Foam{};
+    for (Foam& bubble : bath.foam) bubble = Foam{};
     soapUsed = false;
-    atmosphereTarget = false;
+    bath.atmosphereTarget = false;
     atmosphereAlpha = 0.0f;
-    lastFoamGrowthMs = 0;
+    bath.lastGrowthMs = 0;
     hopStartMs = 0;
     wiggleStartMs = 0;
     turnUntilMs = 0;
     turnFlip = false;
-    foamRestSlot = 0;
+    bath.restSlot = 0;
     lastRubReactionMs = 0;
     lastRinseShakeMs = 0;
     soapRewarded = false;
@@ -225,7 +219,7 @@ SceneUpdateResult ShowerScene::update(uint32_t nowMs, float dtSeconds) {
     if (demand.expired(toast != nullptr, nowMs, toastUntilMs)) toast = nullptr;
 
     bool atmosphereMoving =
-        atmosphereTarget ? atmosphereAlpha < 255.0f : atmosphereAlpha > 0.0f;
+        bath.atmosphereTarget ? atmosphereAlpha < 255.0f : atmosphereAlpha > 0.0f;
     bool timedReaction =
         (hopStartMs != 0 && nowMs - hopStartMs < HOP_DURATION_MS) ||
         (wiggleStartMs != 0 && nowMs - wiggleStartMs < WIGGLE_DURATION_MS) ||
@@ -410,21 +404,7 @@ void ShowerScene::updateBrushing(uint32_t nowMs, float dtSeconds,
         lastBrushRubMs = nowMs;
     }
 
-    for (Foam& bubble : foam) {
-        if (!bubble.active) continue;
-        float restY = foamRestY(bubble.stage) + bubble.restYOffset;
-        if (bubble.stage == 2 && bubble.y < restY) {
-            bubble.y = MathUtil::min(restY,
-                           bubble.y + UPPER_FOAM_FALL_SPEED * dt);
-            bubble.x += clampFloat(bubble.restX - bubble.x, -18.0f * dt,
-                                   18.0f * dt);
-        } else if (bubble.stage == 3) {
-            bubble.y = MathUtil::min(restY,
-                           bubble.y + LOWER_FOAM_FALL_SPEED * dt);
-            bubble.x += clampFloat(bubble.restX - bubble.x, -12.0f * dt,
-                                   12.0f * dt);
-        }
-    }
+    Game::BathInteraction::update(bath, bathLayout(), dt);
     checkAtmosphereThreshold(nowMs);
 }
 
@@ -468,7 +448,7 @@ void ShowerScene::updateRinsing(uint32_t nowMs, float dtSeconds) {
         rinseAllFoamOneStage();
         lastRinseFoamMs = nowMs;
     }
-    if (!anyFoam()) atmosphereTarget = false;
+    if (!anyFoam()) bath.atmosphereTarget = false;
     if (nowMs - modeStartedMs >= RINSE_MIN_DURATION_MS &&
         !anyFoam() && atmosphereAlpha <= 1.0f) {
         for (WaterDrop& drop : water) drop.active = false;
@@ -494,8 +474,8 @@ void ShowerScene::updateRinsing(uint32_t nowMs, float dtSeconds) {
 
 void ShowerScene::updateAtmosphere(float dtSeconds) {
     float dt = dtSeconds > 0.05f ? 0.05f : dtSeconds;
-    float target = atmosphereTarget ? 255.0f : 0.0f;
-    float speed = atmosphereTarget
+    float target = bath.atmosphereTarget ? 255.0f : 0.0f;
+    float speed = bath.atmosphereTarget
         ? 300.0f
         : static_cast<float>(ATMOSPHERE_FADE_OUT_PER_SECOND);
     if (atmosphereAlpha < target) {
@@ -506,58 +486,17 @@ void ShowerScene::updateAtmosphere(float dtSeconds) {
 }
 
 void ShowerScene::spawnFoam() {
-    // 1~2 坨泡沫,按轮询点位均匀分布在精灵身上(带小幅抖动)。
-    static constexpr int8_t SPOTS[][2] = {
-        {-20, -26}, {18, -20}, {-10, -6}, {24, 2},
-        {-24, 8}, {8, 16}, {-14, 26}, {20, 28},
-    };
-    uint32_t nowMs = Hal::ins().millis();
-    uint8_t count = 1 + (uint8_t)GameRandom::random(2);
-    for (uint8_t spawned = 0; spawned < count; ++spawned) {
-        Foam* target = nullptr;
-        for (Foam& bubble : foam) {
-            if (!bubble.active) {
-                target = &bubble;
-                break;
-            }
-        }
-        if (!target) break;
-        const int8_t* spot = SPOTS[foamSpawnCursor %
-            (sizeof(SPOTS) / sizeof(SPOTS[0]))];
-        target->x = clampFloat(
-            MONSTER_CENTER_X + spot[0] + static_cast<float>(GameRandom::random(-3, 4)),
-            47.0f, 151.0f);
-        target->y = clampFloat(
-            MONSTER_CENTER_Y + spot[1] + static_cast<float>(GameRandom::random(-3, 4)),
-            34.0f, 113.0f);
-        target->restX = target->x;
-        target->restYOffset = 0.0f;
-        target->stage = GameRandom::random(3) == 0 ? 1 : 0;
-        target->brushProgress = 0;
-        target->bornMs = nowMs;
-        target->active = true;
-        foamSpawnCursor = (foamSpawnCursor + 1) % FOAM_CAP;
-    }
+    const uint32_t nowMs = Hal::ins().millis();
+    Game::BathInteraction::spawn(bath, bathLayout(), nowMs);
     if (nowMs - hopStartMs >= SOAP_HOP_INTERVAL_MS) startHop(6.0f, nowMs);
     awardBathStage(BathRewardStage::SOAP);
 }
 
 void ShowerScene::rubFoamAt(float x, float y, uint32_t nowMs) {
-    Foam* nearest = nullptr;
-    float bestDistance = 24.0f * 24.0f;
-    for (Foam& bubble : foam) {
-        if (!bubble.active || bubble.stage >= 4) continue;
-        float dx = x - bubble.x;
-        float dy = y - bubble.y;
-        float distance = dx * dx + dy * dy;
-        if (distance < bestDistance) {
-            nearest = &bubble;
-            bestDistance = distance;
-        }
-    }
-    if (!nearest) return;
-    if (nearest->brushProgress < 255) ++nearest->brushProgress;
-    tryMergeFoam(*nearest, nowMs);
+    const auto result = Game::BathInteraction::rub(bath, bathLayout(), x, y, nowMs);
+    if (!result.touched) return;
+    if (result.merged) startHop(3.0f, nowMs);
+    checkAtmosphereThreshold(nowMs);
     if (nowMs - lastRubReactionMs >= RUB_REACTION_COOLDOWN_MS) {
         lastRubReactionMs = nowMs;
         if (GameRandom::random(100) < 35) startTurn(nowMs);
@@ -565,110 +504,29 @@ void ShowerScene::rubFoamAt(float x, float y, uint32_t nowMs) {
 }
 
 bool ShowerScene::tryMergeFoam(Foam& source, uint32_t nowMs) {
-    uint8_t requiredProgress = source.stage <= 1
-        ? SMALL_FOAM_BRUSH_TARGET
-        : LARGE_FOAM_BRUSH_TARGET;
-    if (source.brushProgress < requiredProgress ||
-        nowMs - lastFoamGrowthMs < FOAM_GROWTH_INTERVAL_MS) {
-        return false;
-    }
-    if (source.stage >= 2 &&
-        source.y + 0.5f < foamRestY(source.stage)) {
-        return false;
-    }
-
-    Foam* partner = findMergePartner(source);
-    if (!partner) return false;
-
-    if (source.stage >= 3) return false;
-
-    uint8_t nextStage = source.stage <= 1
-        ? 2
-        : static_cast<uint8_t>(source.stage + 1);
-    source.x = (source.x + partner->x) * 0.5f;
-    source.y = (source.y + partner->y) * 0.5f;
-    source.stage = nextStage;
-    source.brushProgress = 0;
-    source.bornMs = nowMs;
-    if (nextStage >= 2) {
-        // 滑落后的静止点适当错开:横向铺开,纵向离地 10px 以内
-        foamRestSlot = (foamRestSlot + 1) % 5;
-        int spread = (static_cast<int>(foamRestSlot) - 2) * 14;
-        source.restX = clampFloat(MONSTER_CENTER_X + spread, 47.0f, 151.0f);
-        source.restYOffset =
-            -static_cast<float>((foamRestSlot * 4 + nextStage * 3) % 11);
-    }
-    if (nextStage >= 3) source.y = foamRestY(nextStage) + source.restYOffset;
-    partner->active = false;
-    partner->brushProgress = 0;
-    lastFoamGrowthMs = nowMs;
+    if (!Game::BathInteraction::merge(bath, bathLayout(), source, nowMs)) return false;
     startHop(3.0f, nowMs);
     checkAtmosphereThreshold(nowMs);
     return true;
 }
 
 uint8_t ShowerScene::foamLevelTotal() const {
-    // 只统计下层的泡沫:1、2级各算 1 沱,3级算 2 沱,4级算 4 沱
-    uint8_t total = 0;
-    for (const Foam& bubble : foam) {
-        if (!bubble.active || bubble.y < LOWER_FOAM_Y) continue;
-        total += bubble.stage >= 3 ? 4 : (bubble.stage == 2 ? 2 : 1);
-    }
-    return total;
+    return Game::BathInteraction::lowerWeight(bath, bathLayout());
 }
 
 void ShowerScene::checkAtmosphereThreshold(uint32_t nowMs) {
-    if (atmosphereTarget) return;
-    if (foamLevelTotal() <= 6) return;
-    // 下层至少一沱 3 级(code stage 2)以上,且总量 >6,合成第六级全身气泡
-    bool hasLarge = false;
-    for (const Foam& bubble : foam) {
-        if (bubble.active && bubble.stage >= 2 && bubble.y >= LOWER_FOAM_Y) {
-            hasLarge = true;
-            break;
-        }
+    if (Game::BathInteraction::checkAtmosphere(bath, bathLayout())) {
+        awardBathStage(BathRewardStage::BRUSH);
+        startHop(3.0f, nowMs);
     }
-    if (!hasLarge) return;
-    for (Foam& bubble : foam) bubble = Foam{};
-    atmosphereTarget = true;
-    awardBathStage(BathRewardStage::BRUSH);
-    startHop(3.0f, nowMs);
 }
 
 ShowerScene::Foam* ShowerScene::findMergePartner(const Foam& source) {
-    Foam* nearest = nullptr;
-    float bestDistance = 1000000.0f;
-    bool sourceUpper = source.y < LOWER_FOAM_Y;
-    for (Foam& candidate : foam) {
-        if (!candidate.active || &candidate == &source) continue;
-
-        bool compatible = false;
-        if (source.stage <= 1) {
-            compatible = candidate.stage <= 1 &&
-                         (candidate.y < LOWER_FOAM_Y) == sourceUpper;
-        } else {
-            compatible = candidate.stage == source.stage &&
-                         candidate.y + 0.5f >= foamRestY(candidate.stage);
-        }
-        if (!compatible) continue;
-
-        float dx = source.x - candidate.x;
-        float dy = source.y - candidate.y;
-        float distance = dx * dx + dy * dy;
-        if (distance < bestDistance) {
-            nearest = &candidate;
-            bestDistance = distance;
-        }
-    }
-    return nearest;
+    return Game::BathInteraction::partner(bath, bathLayout(), source);
 }
 
 void ShowerScene::rinseAllFoamOneStage() {
-    for (Foam& bubble : foam) {
-        if (!bubble.active) continue;
-        if (bubble.stage > 0) --bubble.stage;
-        else bubble.active = false;
-    }
+    Game::BathInteraction::rinse(bath);
 }
 
 void ShowerScene::spawnWaterDrop() {
@@ -676,7 +534,7 @@ void ShowerScene::spawnWaterDrop() {
         WaterDrop& drop = water[i];
         if (drop.active) continue;
         drop.active = true;
-        drop.x = 22.0f + static_cast<float>((i * 29 + foamSpawnCursor * 7) % 139);
+        drop.x = 22.0f + static_cast<float>((i * 29 + bath.spawnCursor * 7) % 139);
         drop.y = -4.0f - static_cast<float>((i * 7) % 42);
         drop.vx = static_cast<float>((static_cast<int>(i) % 7) - 3) * 4.0f;
         drop.vy = 125.0f + static_cast<float>((i * 13) % 90);
@@ -698,10 +556,7 @@ void ShowerScene::spawnSplashDrop(float x, float y, float vx, float vy) {
 }
 
 bool ShowerScene::anyFoam() const {
-    for (const Foam& bubble : foam) {
-        if (bubble.active) return true;
-    }
-    return false;
+    return Game::BathInteraction::anyFoam(bath);
 }
 
 int ShowerScene::monsterBottomY() const {
@@ -718,12 +573,14 @@ int ShowerScene::monsterBottomY() const {
                MONSTER_CENTER_Y + static_cast<int>(height * scale) / 2);
 }
 
+Game::BathInteraction::Layout ShowerScene::bathLayout() const {
+    Game::BathInteraction::Layout layout;
+    layout.groundY = monsterBottomY();
+    return layout;
+}
+
 float ShowerScene::foamRestY(uint8_t stage) const {
-    static constexpr uint8_t FOAM_HEIGHTS[BODY_FOAM_STAGE_COUNT] = {
-        8, 16, 24, 32,
-    };
-    if (stage >= BODY_FOAM_STAGE_COUNT) stage = BODY_FOAM_STAGE_COUNT - 1;
-    return monsterBottomY() - FOAM_HEIGHTS[stage] * 0.5f;
+    return Game::BathInteraction::restY(bathLayout(), stage);
 }
 
 int8_t ShowerScene::nextOwnedSoap(int8_t from, int8_t direction) const {
@@ -891,7 +748,7 @@ void ShowerScene::drawMonster() const {
 
 void ShowerScene::drawFoam() const {
     for (uint8_t stage = 0; stage < BODY_FOAM_STAGE_COUNT; ++stage) {
-        for (const Foam& bubble : foam) {
+        for (const Foam& bubble : bath.foam) {
             if (!bubble.active || bubble.stage != stage) continue;
             GameAssets::drawCentered(
                 showerKind(GameAssets::Kind::SHOWER_BUBBLE_0, bubble.stage),

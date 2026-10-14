@@ -15,7 +15,7 @@ static constexpr const char* SETTINGS = "设置";
 static constexpr const char* DEBUG = "Debug";
 static constexpr const char* BACK = "返回";
 static constexpr const char* BAG = "背包";
-static constexpr const char* STORAGE = "通讯录";
+static constexpr const char* STORAGE = "伙伴";
 static constexpr const char* PET = "摸一摸";
 static constexpr const char* FOOD = "加食物";
 static constexpr const char* HUNGER = "饱食";
@@ -87,6 +87,15 @@ static constexpr const char* A_CONTINUE = "A 继续";
 }
 
 namespace Amoled {
+inline constexpr const char* SYSTEM_UPDATE = "系统更新";
+inline constexpr const char* UPDATE_BUSY = "请结束拜访或检查存档";
+inline constexpr const char* UPDATE_CONNECT = "手机连接以下热点";
+inline constexpr const char* UPDATE_PASSWORD = "密码";
+inline constexpr const char* UPDATE_OPEN = "打开 192.168.4.1";
+inline constexpr const char* UPDATE_POWER = "更新期间请接通电源";
+inline constexpr const char* UPDATE_EXIT = "返回游戏";
+inline constexpr const char* UPDATE_WORKING = "正在更新";
+
 static constexpr const char* REC_LEVEL_FMT = "推荐Lv.%u";
 static constexpr const char* STEPS_FMT = "步数:%u";
 static constexpr const char* ROUTE_END = "路线结束";
@@ -153,7 +162,7 @@ static constexpr const char* ROOM_SUPPLIES = "房间补给";
 static constexpr const char* WASH_PET = "浴室";
 static constexpr const char* BATHROOM = WASH_PET;
 static constexpr const char* STATUS_PAGE = "状态";
-static constexpr const char* STORAGE_PAGE = "通讯录";
+static constexpr const char* STORAGE_PAGE = Ui::STORAGE;
 static constexpr const char* CONTACT_VIEW_STATUS = "查看状态";
 static constexpr const char* CONTACT_INVITE = "邀请同行";
 static constexpr const char* CONTACT_DELETE = "删除好友";
@@ -246,14 +255,11 @@ static constexpr const char* HP_FULL = "体力已满";
 static constexpr const char* STATUS_NORMAL = "状态正常";
 static constexpr const char* NO_FAINTED_MON = "没有濒死精灵";
 static constexpr const char* NOT_READY = "现在不能使用";
-static constexpr const char* SHOWER_EXP_MOOD_FMT = "+%u经验 +%u心情";
 static constexpr const char* SHOWER_EXP_FMT = "+%u经验";
-static constexpr const char* SHOWER_MOOD_FMT = "+%u心情";
 
 static constexpr const char* VOLUME = "音量";
 static constexpr const char* GAME_SPEED = "游戏速度";
 static constexpr const char* POWER_SAVE = "省电模式";
-static constexpr const char* VOICE_CALL = "语音呼唤";
 static constexpr const char* VALUE_ON = "开";
 static constexpr const char* VALUE_OFF = "关";
 static constexpr const char* IDLE_30S = "30秒";
@@ -1068,27 +1074,10 @@ static constexpr const char* RESET_QUESTION = "确定继续吗?";
 static constexpr const char* RESET_YES = "确定";
 static constexpr const char* RESET_NO = "取消";
 static constexpr const char* RESET_FAILED = "重置失败";
-static constexpr const char* VOICE_CALL = "语音呼唤";
-static constexpr const char* VOICE_ENABLE = "启用呼唤";
-static constexpr const char* VOICE_ENROLL = "录入呼唤";
-static constexpr const char* VOICE_REENROLL = "重新录入";
-static constexpr const char* VOICE_PENDING = "待录入";
-static constexpr const char* VOICE_READY = "已录入";
-static constexpr const char* VOICE_PROMPT = "请呼唤精灵的名字";
-static constexpr const char* VOICE_LISTENING = "正在聆听";
-static constexpr const char* VOICE_DONE = "录入完成";
-static constexpr const char* VOICE_QUIET = "声音太小，请靠近一些";
-static constexpr const char* VOICE_SHORT = "声音太短，请完整呼唤";
-static constexpr const char* VOICE_NOISY = "环境太吵，请换安静处";
-static constexpr const char* VOICE_INCONSISTENT = "三次呼唤差异较大";
-static constexpr const char* VOICE_MIC_FAILED = "麦克风启动失败";
-static constexpr const char* VOICE_SAVE_FAILED = "录入保存失败";
-static constexpr const char* VOICE_NO_MEMORY = "内存不足";
 static constexpr const char* ITEMS[] = {
     Ui::BRIGHTNESS,
     Ui::SPEED,
     "音量",
-    VOICE_CALL,
     POWER_SAVE,
     HELP,
     RESET_GAME,
@@ -1349,6 +1338,7 @@ static constexpr const char* A_CONTINUE = "A 继续探索";
 }
 
 namespace Hatch {
+static constexpr const char* SAVE_FAILED = "保存失败";
 static constexpr const char* TITLE = "初始蛋";
 static constexpr const char* WARM = "戳一戳";
 static constexpr const char* AQUA = "擦一擦";

@@ -24,6 +24,7 @@
 #include "core/UiStrings.h"
 #include "game/ExploreAreaCatalog.h"
 #include "game/ExploreRouteGeometry.h"
+#include "game/ExploreTileSemantics.h"
 #include "game/BondSystem.h"
 #include "game/ContactRoster.h"
 #include "game/HomeHud.h"
@@ -372,9 +373,9 @@ void drawHomeHudButton(Canvas565& canvas, int x) {
     canvas.drawRoundRect((x), (HOME_HUD_BUTTON_Y), (HOME_HUD_BUTTON_SIZE), (HOME_HUD_BUTTON_SIZE), (8), rgb(67, 97, 101));
 }
 
-void drawHomeLockIcon(Canvas565& canvas) {
+void drawHomeLockIcon(Canvas565& canvas, bool enabled = true) {
     drawHomeHudButton(canvas, HOME_LOCK_BUTTON_X);
-    const uint16_t color = rgb(222, 234, 229);
+    const uint16_t color = enabled ? rgb(222, 234, 229) : rgb(87, 106, 109);
     canvas.drawRoundRect((HOME_LOCK_BUTTON_X + 24), (HOME_HUD_BUTTON_Y + 14), (16), (18), (8), color);
     canvas.fillRoundRect((HOME_LOCK_BUTTON_X + 20), (HOME_HUD_BUTTON_Y + 28), (24), (20), (4), color);
     canvas.fillCircle((HOME_LOCK_BUTTON_X + 32), (HOME_HUD_BUTTON_Y + 36), (2), rgb(27, 43, 51));
@@ -480,22 +481,28 @@ void drawPlant(Canvas565& canvas) {
     canvas.fillEllipse((58), (184), (10), (26), rgb(92, 182, 116));
 }
 
-void drawBowl(Canvas565& canvas, bool filled) {
-    const uint16_t rim = rgb(222, 229, 218);
-    const uint16_t bowl = rgb(76, 137, 166);
-    canvas.fillEllipse((290), (286), (34), (12), filled ? rgb(176, 113, 62) : rgb(42, 55, 60));
-    canvas.drawFastHLine((256), (286), (70), rim);
-    canvas.fillRoundRect((262), (288), (58), (22), (10), bowl);
-    canvas.drawFastHLine((270), (308), (42), rgb(43, 88, 112));
-}
-
 void drawFoodContent(Canvas565& canvas, int centerX, int centerY) {
+    if (GameAssets::drawCentered(GameAssets::Kind::ITEM_NORMAL_FOOD,
+                                 centerX, centerY - 6, 1.0f)) {
+        return;
+    }
     canvas.fillEllipse((centerX), (centerY), (18), (8), rgb(176, 113, 62));
     canvas.fillEllipse((centerX - 6), (centerY - 4), (8), (4), rgb(221, 155, 77));
     canvas.fillEllipse((centerX + 8), (centerY - 2), (6), (4), rgb(205, 91, 66));
 }
 
-void drawPet(Canvas565& canvas, const HomeViewModel& model);
+void drawBowl(Canvas565& canvas, bool filled) {
+    const uint16_t rim = rgb(222, 229, 218);
+    const uint16_t bowl = rgb(76, 137, 166);
+    canvas.fillEllipse((290), (286), (34), (12), rgb(42, 55, 60));
+    canvas.drawFastHLine((256), (286), (70), rim);
+    canvas.fillRoundRect((262), (288), (58), (22), (10), bowl);
+    canvas.drawFastHLine((270), (308), (42), rgb(43, 88, 112));
+    if (filled) drawFoodContent(canvas, 290, 286);
+}
+
+void drawPet(Canvas565& canvas, const HomeViewModel& model,
+             AmoledUi::Rect* visibleBounds = nullptr);
 #if STICKMON_ENABLE_DEBUG_FEATURES
 uint16_t blendShadowRgb565(uint16_t background, uint16_t color,
                            uint8_t alpha);
@@ -802,8 +809,37 @@ void fillShadowCore(Canvas565& canvas, int centerX, int centerY,
     }
 }
 
-void drawPet(Canvas565& canvas, const HomeViewModel& model) {
-    if (!model.petVisible) return;
+struct HomePetLayout {
+    const PokemonSprites::SpriteFrame* frame = nullptr;
+    bool flipX = false;
+    int x = 0, y = 0, width = 0, height = 0;
+    AmoledUi::Rect bounds{};
+};
+
+PokemonSprites::FrameBounds cachedPetFrameBounds(
+        const PokemonSprites::SpriteFrame* frame) {
+    struct Entry {
+        const PokemonSprites::SpriteFrame* frame = nullptr;
+        uint16_t species = 0, kind = 0;
+        PokemonSprites::FrameBounds bounds{};
+    };
+    // Sprite pixels are immutable. Cache per animation frame so focus queries
+    // do not scan the sprite's RLE data on every display-loop iteration.
+    static Entry entries[16];
+    const uint16_t species = FlashStorage::readWord(&frame->speciesId);
+    const uint16_t kind = FlashStorage::readWord(&frame->kind);
+    Entry& entry = entries[kind % 16];
+    if (entry.frame != frame || entry.species != species || entry.kind != kind) {
+        entry = {frame, species, kind, PokemonSprites::frameVisibleBounds(frame)};
+    }
+    return entry.bounds;
+}
+
+HomePetLayout homePetLayout(const HomeViewModel& model) {
+    HomePetLayout layout;
+    if (!model.petVisible) return layout;
+    const int renderGroundY = model.petGroundY + model.petRenderOffsetY;
+    layout.bounds = {model.petCenterX - 60, renderGroundY - 154, 120, 154};
     PokemonSprites::PetAnimationProfile profile{};
     bool hasProfile = PokemonSprites::petAnimationProfile(
         model.speciesId, profile);
@@ -880,27 +916,38 @@ void drawPet(Canvas565& canvas, const HomeViewModel& model) {
             }
         }
     }
+    if (!frame) return layout;
+    layout.frame = frame;
+    layout.flipX = flipX;
+    layout.width = FlashStorage::readByte(&frame->width) * AmoledUi::RESOURCE_SCALE;
+    layout.height = FlashStorage::readByte(&frame->height) * AmoledUi::RESOURCE_SCALE;
+    layout.x = model.petCenterX - layout.width / 2;
+    const int groundOffset = static_cast<int>(std::lround(
+        PokemonSprites::frameGroundOffsetY(frame) * AmoledUi::RESOURCE_SCALE));
+    layout.y = renderGroundY - layout.height / 2 - groundOffset;
+    const auto bounds = cachedPetFrameBounds(frame);
+    const int sourceWidth = layout.width / AmoledUi::RESOURCE_SCALE;
+    const int left = flipX ? sourceWidth - bounds.left - bounds.width : bounds.left;
+    layout.bounds = {layout.x + left * AmoledUi::RESOURCE_SCALE,
+                     layout.y + bounds.top * AmoledUi::RESOURCE_SCALE,
+                     bounds.width * AmoledUi::RESOURCE_SCALE,
+                     bounds.height * AmoledUi::RESOURCE_SCALE};
+    return layout;
+}
+
+void drawPet(Canvas565& canvas, const HomeViewModel& model,
+             AmoledUi::Rect* visibleBounds) {
+    if (!model.petVisible) return;
+    const int renderGroundY = model.petGroundY + model.petRenderOffsetY;
+    const auto layout = homePetLayout(model);
+    const auto* frame = layout.frame;
+    if (visibleBounds) *visibleBounds = layout.bounds;
     if (!frame) {
-        drawFallbackPet(canvas, model.petCenterX,
-                        model.petGroundY + model.petRenderOffsetY);
+        drawFallbackPet(canvas, model.petCenterX, renderGroundY);
         return;
     }
-
-    const int width = (FlashStorage::readByte(&frame->width) * AmoledUi::RESOURCE_SCALE);
-    const int height = (FlashStorage::readByte(&frame->height) * AmoledUi::RESOURCE_SCALE);
-    const int x = model.petCenterX - width / 2;
-    // Home actor coordinates are bottom-center ground anchors.  The sprite
-    // frame itself is a centered canvas with transparent padding below the
-    // visible feet, so using `ground - height` lifts the artwork above the
-    // route/debug point.  Keep the anchor conversion identical to the
-    // exploration renderer: center the canvas, then subtract the frame's
-    // encoded ground offset.  Pair hops are body-only offsets and must not
-    // move the logical ground or its shadow.
-    const int groundOffset = static_cast<int>(std::lround(
-        PokemonSprites::frameGroundOffsetY(frame) *
-        AmoledUi::RESOURCE_SCALE));
-    const int renderGroundY = model.petGroundY + model.petRenderOffsetY;
-    const int y = renderGroundY - height / 2 - groundOffset;
+    const int width = layout.width;
+    const int height = layout.height;
     const PokemonMotion::AirProfile air =
         PokemonMotion::airProfileForSpecies(model.speciesId);
     const bool floating = air.height > 0.0f;
@@ -931,9 +978,12 @@ void drawPet(Canvas565& canvas, const HomeViewModel& model) {
                        std::max(10, radiusX / 2),
                        std::max(4, radiusY / 2), shadowColor, coreAlpha);
     }
-    if (!PokemonSprites::drawFrameScaled(frame, x, y, 2.0f, flipX)) {
-        drawFallbackPet(canvas, model.petCenterX,
-                        model.petGroundY + model.petRenderOffsetY);
+    if (!PokemonSprites::drawFrameScaled(
+            frame, layout.x, layout.y, 2.0f, layout.flipX)) {
+        drawFallbackPet(canvas, model.petCenterX, renderGroundY);
+        if (visibleBounds) {
+            *visibleBounds = {model.petCenterX - 60, renderGroundY - 154, 120, 154};
+        }
     }
 }
 
@@ -1059,8 +1109,39 @@ void drawExploreRouteShadow(Canvas565& canvas,
                    std::max(2, radiusY / 2), shadowColor, 58);
 }
 
+struct ExploreRouteBossWorldPose {
+    ExploreRouteGeometry::WorldPoint point;
+    float tangentX;
+    float tangentY;
+};
+
+ExploreRouteBossWorldPose exploreRouteBossWorldPose(
+    const ExploreMapGenerator::Path& path, uint8_t bossIndex,
+    uint32_t animationNowMs) {
+    ExploreRouteBossWorldPose pose{
+        ExploreRouteGeometry::pathPoint(path, bossIndex), 0.0f, 1.0f};
+    if (bossIndex + 1 < path.pointCount) {
+        const ExploreRouteGeometry::WorldPoint next =
+            ExploreRouteGeometry::pathPoint(path, bossIndex + 1);
+        pose.tangentX = next.x - pose.point.x;
+        pose.tangentY = next.y - pose.point.y;
+    }
+    const float tangentLength = std::hypot(pose.tangentX, pose.tangentY);
+    if (tangentLength > 0.01f) {
+        pose.tangentX /= tangentLength;
+        pose.tangentY /= tangentLength;
+    }
+    const float patrolOffset = EXPLORE_ROUTE_BOSS_PATROL_DISTANCE *
+        exploreRouteBossPatrolPermille(
+            animationNowMs % EXPLORE_ROUTE_BOSS_PATROL_CYCLE_MS) / 1000.0f;
+    pose.point.x += pose.tangentX * patrolOffset;
+    pose.point.y += pose.tangentY * patrolOffset;
+    return pose;
+}
+
 void drawExploreRouteBoss(Canvas565& canvas,
-                          const ExploreRouteViewModel& model) {
+                          const ExploreRouteViewModel& model,
+                          uint16_t rowBegin, uint16_t rowEnd) {
     if (!model.bossPending || model.bossSpeciesId == 0 || !model.map ||
         model.pathIndex >= model.map->pathCount) {
         return;
@@ -1068,21 +1149,9 @@ void drawExploreRouteBoss(Canvas565& canvas,
     const ExploreMapGenerator::Path& path = model.map->paths[model.pathIndex];
     if (model.bossIndex >= path.pointCount) return;
 
-    ExploreRouteGeometry::WorldPoint point =
-        ExploreRouteGeometry::pathPoint(path, model.bossIndex);
-    float tangentX = 0.0f;
-    float tangentY = 1.0f;
-    if (model.bossIndex + 1 < path.pointCount) {
-        const ExploreRouteGeometry::WorldPoint next =
-            ExploreRouteGeometry::pathPoint(path, model.bossIndex + 1);
-        tangentX = next.x - point.x;
-        tangentY = next.y - point.y;
-    }
-    const float tangentLength = std::hypot(tangentX, tangentY);
-    if (tangentLength > 0.01f) {
-        tangentX /= tangentLength;
-        tangentY /= tangentLength;
-    }
+    const ExploreRouteBossWorldPose pose = exploreRouteBossWorldPose(
+        path, model.bossIndex, model.animationNowMs);
+    const ExploreRouteGeometry::WorldPoint point = pose.point;
 
     const uint32_t patrolPhase =
         model.animationNowMs % EXPLORE_ROUTE_BOSS_PATROL_CYCLE_MS;
@@ -1093,17 +1162,13 @@ void drawExploreRouteBoss(Canvas565& canvas,
         patrolPhase >= EXPLORE_ROUTE_BOSS_PATROL_RETURN_START_MS &&
         patrolPhase < EXPLORE_ROUTE_BOSS_PATROL_RETURN_END_MS;
     const bool patrolMoving = movingOut || movingBack;
-    const float patrolOffset = EXPLORE_ROUTE_BOSS_PATROL_DISTANCE *
-        exploreRouteBossPatrolPermille(patrolPhase) / 1000.0f;
-    point.x += tangentX * patrolOffset;
-    point.y += tangentY * patrolOffset;
     const bool facesOutward =
         patrolPhase >= EXPLORE_ROUTE_BOSS_PATROL_OUT_START_MS &&
         patrolPhase < EXPLORE_ROUTE_BOSS_PATROL_RETURN_START_MS;
     const PokemonSprites::WalkDirection direction =
         exploreRouteDirectionForDelta(
-            facesOutward ? tangentX : -tangentX,
-            facesOutward ? tangentY : -tangentY,
+            facesOutward ? pose.tangentX : -pose.tangentX,
+            facesOutward ? pose.tangentY : -pose.tangentY,
             PokemonSprites::WalkDirection::DOWN);
 
     PokemonSprites::WalkingAnimation animation{};
@@ -1164,6 +1229,60 @@ void drawExploreRouteBoss(Canvas565& canvas,
     drawExploreRouteShadow(canvas, frame, centerX, spriteGroundTopY,
                            width, height, scale);
     PokemonSprites::drawFrameScaled(frame, x, y, scale, flipX);
+    drawExploreRouteMapVegetationForActor(
+        canvas, model, point.y, std::min(x, centerX - 24),
+        std::min(y, groundCenterY - 7),
+        std::max(x + width, centerX + 25),
+        std::max(y + height, groundCenterY + 6), rowBegin, rowEnd);
+}
+
+AmoledUi::Rect exploreActorBounds(uint16_t speciesId, float worldX, float worldY,
+                                  uint8_t walkDirection, uint8_t petFrame,
+                                  bool walking, uint32_t animationNowMs,
+                                  int16_t cameraX, int16_t cameraY) {
+    auto direction = static_cast<PokemonSprites::WalkDirection>(
+        walkDirection <=
+                static_cast<uint8_t>(PokemonSprites::WalkDirection::RIGHT)
+            ? walkDirection
+            : static_cast<uint8_t>(PokemonSprites::WalkDirection::DOWN));
+    PokemonSprites::WalkingAnimation animation{};
+    const PokemonSprites::SpriteFrame* frame = nullptr;
+    bool flipX = false;
+    if (PokemonSprites::walkingAnimation(
+            speciesId, direction, animation) &&
+        animation.frameCount > 0) {
+        uint8_t frameIndex = walking
+            ? static_cast<uint8_t>(petFrame % animation.frameCount)
+            : 0;
+        auto kind = static_cast<PokemonSprites::SpriteKind>(
+            static_cast<uint16_t>(animation.base) + frameIndex);
+        frame = PokemonSprites::findSpeciesSprite(speciesId, kind);
+        flipX = animation.flipX;
+    }
+
+    (void)flipX;
+    constexpr float scale = AmoledUi::RESOURCE_SCALE;
+    const int x = static_cast<int>(std::lround(worldX * scale)) - cameraX * AmoledUi::RESOURCE_SCALE;
+    const int ground = EXPLORE_ROUTE_MAP_TOP + static_cast<int>(std::lround(worldY * scale)) - cameraY * AmoledUi::RESOURCE_SCALE;
+    if (!frame) return {x - 63, ground - 155, 127, 169};
+    const int width = static_cast<int>(std::lround(FlashStorage::readByte(&frame->width) * scale));
+    const int height = static_cast<int>(std::lround(FlashStorage::readByte(&frame->height) * scale));
+    const int offset = static_cast<int>(std::lround(PokemonSprites::frameGroundOffsetY(frame) * scale));
+    const int lift = static_cast<int>(std::lround(exploreRouteAirOffsetY(speciesId, animationNowMs, scale)));
+    const int drawY = ground - height / 2 - offset - lift;
+    // Include the complete frame, the soft shadow and rounding at both edges.
+    const int left = std::min(x - width / 2, x - 24) - 1;
+    const int top = std::min(drawY, ground - 7) - 1;
+    const int right = std::max(x - width / 2 + width, x + 25) + 1;
+    const int bottom = std::max(drawY + height, ground + 6) + 1;
+    return {left, top, right - left, bottom - top};
+}
+
+AmoledUi::Rect unionExploreBounds(AmoledUi::Rect a, AmoledUi::Rect b) {
+    const int left = std::min(a.x, b.x), top = std::min(a.y, b.y);
+    const int right = std::max(a.x + a.width, b.x + b.width);
+    const int bottom = std::max(a.y + a.height, b.y + b.height);
+    return {left, top, right - left, bottom - top};
 }
 
 void drawExploreRouteActor(Canvas565& canvas, uint16_t speciesId,
@@ -1171,7 +1290,9 @@ void drawExploreRouteActor(Canvas565& canvas, uint16_t speciesId,
                            uint8_t walkDirection, uint8_t petFrame,
                            bool walking, uint32_t animationNowMs,
                            bool companion,
-                           int16_t cameraX, int16_t cameraY) {
+                           int16_t cameraX, int16_t cameraY,
+                           const ExploreRouteViewModel& model,
+                           uint16_t rowBegin, uint16_t rowEnd) {
     auto direction = static_cast<PokemonSprites::WalkDirection>(
         walkDirection <=
                 static_cast<uint8_t>(PokemonSprites::WalkDirection::RIGHT)
@@ -1199,7 +1320,7 @@ void drawExploreRouteActor(Canvas565& canvas, uint16_t speciesId,
         static_cast<int>(std::lround(worldY * AmoledUi::RESOURCE_SCALE)) -
         cameraY * AmoledUi::RESOURCE_SCALE;
     if (!frame) {
-#if STICKMON_ENABLE_DEBUG_FEATURES
+#if STICKMON_ENABLE_DEBUG_FEATURES && STICKMON_ENABLE_TRACE_LOGS
         Platform::logf(
             "[AmoledExploreDiag] draw missing species=%u dir=%u walking=%u "
             "world=(%.2f,%.2f) camera=(%d,%d) screenCenter=(%d,%d)\n",
@@ -1212,6 +1333,9 @@ void drawExploreRouteActor(Canvas565& canvas, uint16_t speciesId,
         // The fallback art is authored around a ground anchor. Keep its feet
         // on the same route point as regular walking frames.
         drawFallbackPet(canvas, screenX, routeGroundY);
+        drawExploreRouteMapVegetationForActor(
+            canvas, model, worldY, screenX - 62, routeGroundY - 154,
+            screenX + 63, routeGroundY + 13, rowBegin, rowEnd);
         return;
     }
     const int width = static_cast<int>(std::lround(
@@ -1227,7 +1351,7 @@ void drawExploreRouteActor(Canvas565& canvas, uint16_t speciesId,
     const int bodyLift = static_cast<int>(std::lround(
         exploreRouteAirOffsetY(speciesId, animationNowMs, scale)));
     const int drawY = spriteGroundTopY - bodyLift;
-#if STICKMON_ENABLE_DEBUG_FEATURES
+#if STICKMON_ENABLE_DEBUG_FEATURES && STICKMON_ENABLE_TRACE_LOGS
     struct RouteActorLogState {
         uint32_t lastMs = 0;
         uint8_t direction = 0xFF;
@@ -1282,29 +1406,75 @@ void drawExploreRouteActor(Canvas565& canvas, uint16_t speciesId,
 #endif
     drawExploreRouteShadow(canvas, frame, screenX,
                            spriteGroundTopY, width, height, scale);
-    if (!PokemonSprites::drawFrameScaled(
-            frame, screenX - width / 2, drawY, scale, flipX)) {
+    const bool spriteDrawn = PokemonSprites::drawFrameScaled(
+        frame, screenX - width / 2, drawY, scale, flipX);
+    if (!spriteDrawn) {
         drawFallbackPet(canvas, screenX, routeGroundY);
     }
+    drawExploreRouteMapVegetationForActor(
+        canvas, model, worldY,
+        std::min(screenX - width / 2, screenX - (spriteDrawn ? 24 : 62)),
+        std::min(drawY, routeGroundY - (spriteDrawn ? 7 : 154)),
+        std::max(screenX - width / 2 + width,
+                 screenX + (spriteDrawn ? 25 : 63)),
+        std::max(drawY + height, routeGroundY + (spriteDrawn ? 6 : 13)),
+        rowBegin, rowEnd);
 }
 
 void drawExploreRoutePet(Canvas565& canvas,
-                         const ExploreRouteViewModel& model) {
+                         const ExploreRouteViewModel& model,
+                         uint16_t rowBegin, uint16_t rowEnd) {
     drawExploreRouteActor(canvas, model.speciesId, model.worldX, model.worldY,
                           model.walkDirection, model.petFrame, model.walking,
                           model.animationNowMs, false,
-                          model.cameraX, model.cameraY);
+                          model.cameraX, model.cameraY, model, rowBegin, rowEnd);
 }
 
 void drawExploreRouteCompanion(Canvas565& canvas,
-                               const ExploreRouteViewModel& model) {
+                               const ExploreRouteViewModel& model,
+                               uint16_t rowBegin, uint16_t rowEnd) {
     if (!model.companionVisible || model.companionSpeciesId == 0) return;
     drawExploreRouteActor(
         canvas, model.companionSpeciesId, model.companionWorldX,
         model.companionWorldY, model.companionWalkDirection,
         model.companionFrame, model.companionWalking, model.animationNowMs,
         true,
-        model.cameraX, model.cameraY);
+        model.cameraX, model.cameraY, model, rowBegin, rowEnd);
+}
+
+void drawExploreRouteParkActors(Canvas565& canvas,
+                                const ExploreRouteViewModel& model,
+                                uint16_t rowBegin, uint16_t rowEnd) {
+    ExploreTileSemantics::ActorDepth actors[3] = {
+        {ExploreTileSemantics::ActorRole::LEADER, model.worldY}};
+    uint8_t actorCount = 1;
+    if (model.companionVisible && model.companionSpeciesId != 0) {
+        actors[actorCount++] = {
+            ExploreTileSemantics::ActorRole::COMPANION, model.companionWorldY};
+    }
+    if (model.bossPending && model.bossSpeciesId != 0 && model.map &&
+        model.pathIndex < model.map->pathCount) {
+        const ExploreMapGenerator::Path& path = model.map->paths[model.pathIndex];
+        if (model.bossIndex < path.pointCount) {
+            actors[actorCount++] = {ExploreTileSemantics::ActorRole::BOSS,
+                exploreRouteBossWorldPose(
+                    path, model.bossIndex, model.animationNowMs).point.y};
+        }
+    }
+    ExploreTileSemantics::sortActorsByGroundDepth(actors, actorCount);
+    for (uint8_t index = 0; index < actorCount; ++index) {
+        switch (actors[index].role) {
+        case ExploreTileSemantics::ActorRole::BOSS:
+            drawExploreRouteBoss(canvas, model, rowBegin, rowEnd);
+            break;
+        case ExploreTileSemantics::ActorRole::COMPANION:
+            drawExploreRouteCompanion(canvas, model, rowBegin, rowEnd);
+            break;
+        case ExploreTileSemantics::ActorRole::LEADER:
+            drawExploreRoutePet(canvas, model, rowBegin, rowEnd);
+            break;
+        }
+    }
 }
 
 bool exploreRouteBossBehindPlayer(const ExploreRouteViewModel& model) {
@@ -1363,6 +1533,27 @@ void drawExplorePreviewSlot(Canvas565& canvas,
 }
 
 }  // namespace
+
+AmoledUi::Rect exploreRouteActorBounds(const ExploreRouteViewModel& model) {
+    auto bounds = exploreActorBounds(model.speciesId, model.worldX, model.worldY,
+        model.walkDirection, model.petFrame, model.walking, model.animationNowMs,
+        model.cameraX, model.cameraY);
+    if (model.companionVisible && model.companionSpeciesId != 0) {
+        bounds = unionExploreBounds(bounds, exploreActorBounds(
+            model.companionSpeciesId, model.companionWorldX, model.companionWorldY,
+            model.companionWalkDirection, model.companionFrame, model.companionWalking,
+            model.animationNowMs, model.cameraX, model.cameraY));
+    }
+    return bounds;
+}
+
+AmoledUi::Rect homePetVisibleBounds(const HomeViewModel& model) {
+    return homePetLayout(model).bounds;
+}
+
+void drawHatchHeart(Canvas565& canvas, int x, int y) {
+    drawHeart(canvas, x, y, rgb(239, 103, 113), true);
+}
 
 void renderHomeScreen(Canvas565& canvas, const HomeViewModel& model,
                       uint16_t rowBegin, uint16_t rowEnd) {
@@ -1463,7 +1654,8 @@ void renderHomeScreen(Canvas565& canvas, const HomeViewModel& model,
             drawDebugPairChaser(canvas, model);
         }
 #endif
-        drawPet(canvas, model);
+        AmoledUi::Rect petBounds{};
+        drawPet(canvas, model, model.showHearts ? &petBounds : nullptr);
         if (model.companionVisible &&
             model.companionGroundY >= model.petGroundY) {
             drawHomeCompanion(canvas, model);
@@ -1485,11 +1677,14 @@ void renderHomeScreen(Canvas565& canvas, const HomeViewModel& model,
             drawDebugContactPrompt(canvas, model);
         }
 #endif
-        if (model.showHearts) {
-            drawHeart(canvas, model.petCenterX - 68, model.petGroundY - 116,
-                      rgb(239, 103, 113), true);
-            drawHeart(canvas, model.petCenterX + 62, model.petGroundY - 128,
-                      rgb(239, 103, 113), true);
+        if (model.showHearts && model.petVisible && petBounds.height > 0) {
+            // Keep both hearts close to the visible head, including transparent
+            // canvas padding, mirrored frames and body-only hop offsets.
+            const int centerX = std::clamp(petBounds.x + petBounds.width / 2, 28,
+                                           AmoledUi::WIDTH - 28);
+            const int heartY = std::max(HOME_ROOM_TOP + 22, petBounds.y - 20);
+            drawHeart(canvas, centerX - 14, heartY, rgb(239, 103, 113), true);
+            drawHeart(canvas, centerX + 14, heartY - 6, rgb(239, 103, 113), true);
         }
         drawToast(canvas, model.toast);
         pageClip.reset();
@@ -1501,7 +1696,7 @@ void renderHomeScreen(Canvas565& canvas, const HomeViewModel& model,
         pageClip.setRect((0), (top), (AmoledUi::WIDTH), (bottom - top));
         canvas.fillRect((0), (344), (AmoledUi::WIDTH), (104), rgb(18, 27, 35));
         canvas.drawFastHLine((0), (344), (AmoledUi::WIDTH), rgb(71, 108, 108));
-        drawHomeLockIcon(canvas);
+        drawHomeLockIcon(canvas, !model.hatching);
         if (model.visitAway) drawHomeRecallIcon(canvas);
         else drawHomeMenuIcon(canvas);
 
@@ -1510,6 +1705,19 @@ void renderHomeScreen(Canvas565& canvas, const HomeViewModel& model,
         if (model.visitAway) {
             text(canvas, HOME_MONSTER_PANEL_X + 2, 376,
                  Ui::Social::VISIT_AWAY_HUD, rgb(226, 238, 233));
+        } else if (model.hatching) {
+            HudRenderer::drawHungerIcon(canvas, HOME_MONSTER_PANEL_X + 14,
+                                        360, 0, AmoledUi::RESOURCE_SCALE);
+            char countdown[12];
+            std::snprintf(countdown, sizeof(countdown), "%02u:%02u",
+                model.hatchRemainingSeconds / 60, model.hatchRemainingSeconds % 60);
+            const int height = canvas.nativeText() ? 32 : 14;
+            text(canvas, HOME_MONSTER_PANEL_X + 58 +
+                         (90 - textWidth(countdown)) / 2,
+                 374 - height / 2, countdown, rgb(115, 226, 183));
+            text(canvas, HOME_MONSTER_PANEL_X +
+                         (HOME_MONSTER_PANEL_W - textWidth(Ui::Hatch::TITLE)) / 2,
+                 400, Ui::Hatch::TITLE, rgb(151, 168, 166));
         } else {
             uint8_t count = std::min<uint8_t>(model.monsterCount,
                                               Game::TEAM_CAP);
@@ -2758,7 +2966,8 @@ void drawBattleConditionEffects(Canvas565& canvas, int centerX, int groundY,
 
 int drawBattleSprite(Canvas565& canvas, uint16_t speciesId,
                      int centerX, int groundY, int maxWidth, int maxHeight,
-                     bool back) {
+                     bool back, AmoledUi::Rect* drawnBounds = nullptr) {
+    if (drawnBounds) *drawnBounds = {centerX - 40, groundY - 96, 80, 96};
     const PokemonSprites::SpriteFrame* frame =
         PokemonSprites::findSpeciesSprite(
             speciesId, back ? PokemonSprites::SpriteKind::BACK
@@ -2779,9 +2988,49 @@ int drawBattleSprite(Canvas565& canvas, uint16_t speciesId,
                                         centerX, groundY, maxWidth, maxHeight,
                                         targetHeight);
     const int airLift = back ? 0 : battleSpriteAirLift(speciesId);
+    if (drawnBounds) {
+        *drawnBounds = layout.rect;
+        drawnBounds->y -= airLift;
+    }
     PokemonSprites::drawFrameScaled(
         frame, layout.rect.x, layout.rect.y - airLift, layout.scale, false);
     return airLift;
+}
+
+void drawBattleStatusMoveEffect(const BattleViewModel& model,
+                                const AmoledUi::Rect& playerBounds,
+                                const AmoledUi::Rect& wildBounds) {
+    if (!model.animationStatusEffect || model.animationFrame < 2 ||
+        model.animationFrame > 5) return;
+    const uint8_t frame = model.animationFrame - 2;
+    const auto& from = model.animationAttackerWild ? wildBounds : playerBounds;
+    const auto& to = model.animationAttackerWild ? playerBounds : wildBounds;
+    const int direction = model.animationAttackerWild ? -1 : 1;
+    const int sourceX = from.x + from.width / 2 + direction * from.width / 5;
+    const int sourceY = from.y + from.height / 3;
+    int x = sourceX, y = sourceY;
+    float scale = 0.85f;
+    if (model.animationFx != GameAssets::BattleFx::LEER) {
+        const int progress = (frame + 1) * 25;
+        const int targetX = to.x + to.width / 2;
+        const int targetY = to.y + to.height / 2;
+        const int startY = model.animationFx == GameAssets::BattleFx::SAND_ATTACK
+            ? from.y + from.height - 12 : sourceY;
+        // Route particles through the gap above the player's name/HP panel.
+        const int middleX = 156;
+        const int middleY = std::min(from.y, to.y) +
+            std::min(from.height, to.height) * 2 / 3;
+        if (progress <= 50) {
+            x = sourceX + (middleX - sourceX) * progress / 50;
+            y = startY + (middleY - startY) * progress / 50;
+        } else {
+            x = middleX + (targetX - middleX) * (progress - 50) / 50;
+            y = middleY + (targetY - middleY) * (progress - 50) / 50;
+        }
+        scale = 0.65f + frame * 0.18f;
+    }
+    GameAssets::drawCentered(
+        GameAssets::battleFxKind(model.animationFx, frame), x, y, scale);
 }
 
 void drawBattleStatusIcon(Canvas565& canvas, Game::MajorStatus status,
@@ -2809,6 +3058,12 @@ void drawBattleHitEffect(Canvas565& canvas, int centerX, int centerY,
         canvas.fillCircle((centerX - 18), (centerY - 16), (4), flash);
         canvas.fillCircle((centerX + 20), (centerY + 14), (4), flash);
     }
+}
+
+bool drawBattleFxEffect(int centerX, int centerY, GameAssets::BattleFx fx,
+                        uint8_t frame) {
+    const GameAssets::Kind kind = GameAssets::battleFxKind(fx, frame);
+    return GameAssets::drawCentered(kind, centerX, centerY, 1.35f);
 }
 
 void drawBattleSceneText(int x, int y, const char* value) {
@@ -2923,7 +3178,7 @@ void renderBattleScreen(Canvas565& canvas, const BattleViewModel& model,
     static constexpr int PLAYER_GROUND_Y = 344;
     int wildX = 272;
     int playerX = 80;
-    if (model.animationActive) {
+    if (model.animationActive && !GameAssets::battleFxIsStatus(model.animationFx)) {
         static constexpr int LUNGE[] = {0, 12, 26, 38, 26, 12, 0};
         uint8_t frame = std::min<uint8_t>(model.animationFrame, 6);
         int lunge = LUNGE[frame];
@@ -2936,9 +3191,10 @@ void renderBattleScreen(Canvas565& canvas, const BattleViewModel& model,
         }
     }
     playerX += model.playerSwitchOffsetX;
+    AmoledUi::Rect wildBounds{}, playerBounds{};
     const int wildAirLift = drawBattleSprite(
         canvas, model.wildSpeciesId, wildX, WILD_GROUND_Y,
-        WILD_SPRITE_AREA_WIDTH, BATTLE_SPRITE_AREA_HEIGHT, false);
+        WILD_SPRITE_AREA_WIDTH, BATTLE_SPRITE_AREA_HEIGHT, false, &wildBounds);
 #if STICKMON_ENABLE_DEBUG_FEATURES
     if (profileBattle) stamps[3] = Platform::clock().micros();
 #endif
@@ -2961,7 +3217,7 @@ void renderBattleScreen(Canvas565& canvas, const BattleViewModel& model,
 #endif
     const int playerAirLift = drawBattleSprite(
         canvas, model.playerSpeciesId, playerX, PLAYER_GROUND_Y,
-        PLAYER_SPRITE_AREA_WIDTH, BATTLE_SPRITE_AREA_HEIGHT, true);
+        PLAYER_SPRITE_AREA_WIDTH, BATTLE_SPRITE_AREA_HEIGHT, true, &playerBounds);
 #if STICKMON_ENABLE_DEBUG_FEATURES
     if (profileBattle) stamps[6] = Platform::clock().micros();
 #endif
@@ -3000,15 +3256,21 @@ void renderBattleScreen(Canvas565& canvas, const BattleViewModel& model,
                                    model.playerStatus,
                                    model.playerBattleState, nowMs);
     }
+    if (model.animationActive) {
+        drawBattleStatusMoveEffect(model, playerBounds, wildBounds);
+    }
     if (model.animationActive && model.animationHit) {
         int hitX = model.animationAttackerWild ? playerX : wildX;
         int hitY = model.animationAttackerWild
                        ? PLAYER_GROUND_Y - playerAirLift - 44
                        : WILD_GROUND_Y - wildAirLift - 42;
-        if (model.animationFrame >= 3 && model.animationFrame <= 5) {
-            drawBattleHitEffect(
-                canvas, hitX, hitY,
-                static_cast<uint8_t>(model.animationFrame - 2));
+        if (model.animationFrame >= 2 && model.animationFrame <= 5) {
+            const uint8_t fxFrame = static_cast<uint8_t>(model.animationFrame - 2);
+            if (!drawBattleFxEffect(hitX, hitY, model.animationFx, fxFrame)) {
+                drawBattleHitEffect(canvas, hitX, hitY,
+                                    static_cast<uint8_t>(std::min<uint8_t>(
+                                        2, fxFrame + 1)));
+            }
         }
     }
 #if STICKMON_ENABLE_DEBUG_FEATURES
@@ -3131,7 +3393,8 @@ constexpr int SHOWER_TOOLBAR_Y = 352;
 constexpr int SHOWER_TOOL_BUTTON_W = 116;
 constexpr int SHOWER_TOOL_BUTTON_PITCH = 120;
 
-void drawShowerPet(Canvas565& canvas, uint16_t speciesId) {
+void drawShowerPet(Canvas565& canvas, const ShowerViewModel& model) {
+    const uint16_t speciesId = model.speciesId;
     const PokemonSprites::SpriteFrame* frame =
         PokemonSprites::findSpeciesSprite(
             speciesId, PokemonSprites::SpriteKind::FRONT);
@@ -3148,26 +3411,22 @@ void drawShowerPet(Canvas565& canvas, uint16_t speciesId) {
     int drawHeight = static_cast<int>(height * scale);
     PokemonSprites::drawFrameScaled(
         frame, SHOWER_PET_X - drawWidth / 2,
-        SHOWER_PET_Y - drawHeight / 2, scale, false);
+        SHOWER_PET_Y - drawHeight / 2 + model.petOffsetY, scale, model.petFlip);
 }
 
 void drawShowerBubbles(const ShowerViewModel& model) {
-    if (model.rinseProgress >= 100) return;
-    for (uint8_t index = 0; index < model.foamCount; ++index) {
-        const ShowerFoamState& foam = model.foam[index];
-        if (!foam.active) continue;
-        GameAssets::Kind kind = static_cast<GameAssets::Kind>(
-            static_cast<uint16_t>(GameAssets::Kind::SHOWER_BUBBLE_0) +
-            std::min<uint8_t>(4, foam.stage));
-        GameAssets::drawCentered(kind,
-                                 foam.x, foam.y,
-                                 foam.stage >= 3 ? 1.64f : 1.44f);
+    for (uint8_t stage = 0; stage < 4; ++stage) {
+        for (uint8_t index = 0; index < model.foamCount; ++index) {
+            const ShowerFoamState& foam = model.foam[index];
+            if (!foam.active || foam.stage != stage) continue;
+            const auto kind = static_cast<GameAssets::Kind>(
+                static_cast<uint16_t>(GameAssets::Kind::SHOWER_BUBBLE_0) + stage);
+            GameAssets::drawCentered(kind, static_cast<int>(foam.x), static_cast<int>(foam.y), 2.0f);
+        }
     }
-    if (model.atmosphereAlpha > 0 && model.rinseProgress == 0) {
-        GameAssets::drawCenteredAlpha(
-            GameAssets::Kind::SHOWER_BUBBLE_5,
-            SHOWER_PET_X, SHOWER_PET_Y + 24, 1.8f,
-            model.atmosphereAlpha);
+    if (model.atmosphereAlpha > 0) {
+        GameAssets::drawCenteredAlpha(GameAssets::Kind::SHOWER_BUBBLE_5,
+            SHOWER_PET_X, model.groundY - 40, 2.0f, model.atmosphereAlpha);
     }
 }
 
@@ -3262,25 +3521,96 @@ bool showerToolAt(int x, int y, int toolX, int toolY) {
     return dx * dx + dy * dy <= 56 * 56;
 }
 
-void renderShowerScreen(Canvas565& canvas, const ShowerViewModel& model,
-                        uint16_t rowBegin, uint16_t rowEnd) {
+int showerPetGroundY(uint16_t speciesId) {
+    const auto* frame = PokemonSprites::findSpeciesSprite(speciesId, PokemonSprites::SpriteKind::FRONT);
+    if (!frame) return 316;
+    const int width = FlashStorage::readByte(&frame->width);
+    const int height = FlashStorage::readByte(&frame->height);
+    if (width <= 0 || height <= 0) return 316;
+    const float scale = std::min(2.8f, std::min(200.0f / width, 224.0f / height));
+    return std::min(324, SHOWER_PET_Y + static_cast<int>(height * scale) / 2);
+}
+
+namespace {
+void drawShowerStatic(Canvas565& canvas, const ShowerViewModel& model,
+                      PixelCache565* cache, uint16_t begin, uint16_t end) {
+    const RenderCacheKey key{static_cast<uint32_t>(GameAssets::Kind::SHOWER_BACKGROUND), 0,
+        canvas.physicalWidth(), canvas.physicalHeight(), canvas.byteSwapped()};
+    if (cache && cache->copyRectTo(canvas, key, model.columnBegin, begin, model.columnEnd, end)) return;
+    canvas.fillRect(0, 0, AmoledUi::WIDTH, AmoledUi::HEIGHT, rgb(24, 43, 37));
+    if (!GameAssets::draw(GameAssets::Kind::SHOWER_BACKGROUND, -56, UiMetrics::PAGE_HEADER_HEIGHT, 2.0f)) {
+        canvas.fillRect(0, UiMetrics::PAGE_HEADER_HEIGHT, AmoledUi::WIDTH,
+            328 - UiMetrics::PAGE_HEADER_HEIGHT, rgb(178, 116, 57));
+    }
+    UiCommon::drawPageHeader(canvas, Ui::Amoled::WASH_PET);
+    canvas.fillRect(0, 328, AmoledUi::WIDTH, 120, UiMetrics::PAGE_BACKGROUND);
+    ShowerViewModel idle = model;
+    idle.pressedItem = -1;
+    drawShowerToolbar(canvas, idle);
+    if (cache && begin == 0 && end == AmoledUi::HEIGHT &&
+        model.columnBegin == 0 && model.columnEnd == AmoledUi::WIDTH &&
+        !cache->matches(key)) {
+        if (auto* pixels = cache->begin(key, Platform::memory())) {
+            std::memcpy(pixels, canvas.rawPixels(), cache->allocatedBytes());
+            cache->commit();
+        }
+    }
+}
+
+void drawShowerFloats(Canvas565& canvas, const ShowerViewModel& model) {
+    for (uint8_t i = 0; i < model.floatCount; ++i) {
+        const auto& floater = model.floats[i];
+        if (!floater.active) continue;
+        const uint32_t age = model.nowMs - floater.bornMs;
+        if (age >= 1100) continue;
+        const int rise = age * 48 / 1100;
+        const uint8_t alpha = age <= 500 ? 255 : static_cast<uint8_t>((1100 - age) * 255 / 600);
+        if (floater.heartCount > 0) {
+            const uint8_t count = std::min<uint8_t>(floater.heartCount, 3);
+            for (uint8_t index = 0; index < count; ++index) {
+                const int x = SHOWER_PET_X - 6 + index * 24 - (count - 1) * 12;
+                const int y = 148 - rise - (index % 2) * 6;
+                drawHeart(canvas, x, y,
+                    rgb(242 * alpha / 255, 111 * alpha / 255, 126 * alpha / 255));
+            }
+        } else {
+            char message[16];
+            std::snprintf(message, sizeof(message), Ui::Shower::EXP_GAIN_FMT, floater.experience);
+            text(canvas, 216, 244 - rise, message,
+                 rgb(241 * alpha / 255, 242 * alpha / 255, 232 * alpha / 255));
+        }
+    }
+}
+
+void renderShowerPage(Canvas565& canvas, const ShowerViewModel& model,
+                      PixelCache565* cache, PixelCache565* petCache,
+                      uint16_t rowBegin, uint16_t rowEnd) {
     rowBegin = std::min<uint16_t>(rowBegin, AmoledUi::HEIGHT);
     rowEnd = std::min<uint16_t>(rowEnd, AmoledUi::HEIGHT);
-    UiCommon::PageClip pageClip(canvas, rowBegin, rowEnd);
+    UiCommon::PageClip pageClip(canvas, rowBegin, rowEnd, model.columnBegin, model.columnEnd);
     if (rowBegin >= rowEnd) return;
 
     pageClip.setRect((0), (rowBegin), (AmoledUi::WIDTH), (rowEnd - rowBegin));
-    canvas.fillRect((0), (0), (AmoledUi::WIDTH), (AmoledUi::HEIGHT), rgb(24, 43, 37));
-    if (!GameAssets::draw(GameAssets::Kind::SHOWER_BACKGROUND, -56,
-                          UiMetrics::PAGE_HEADER_HEIGHT, 2.0f)) {
-        canvas.fillRect((0), (UiMetrics::PAGE_HEADER_HEIGHT),
-                        (AmoledUi::WIDTH),
-                        (328 - UiMetrics::PAGE_HEADER_HEIGHT),
-                        rgb(178, 116, 57));
-    }
-    UiCommon::drawPageHeader(canvas, Ui::Amoled::WASH_PET);
+    drawShowerStatic(canvas, model, cache, rowBegin, rowEnd);
 
-    drawShowerPet(canvas, model.speciesId);
+    pageClip.setRect(0, UiMetrics::PAGE_HEADER_HEIGHT, AmoledUi::WIDTH,
+                     328 - UiMetrics::PAGE_HEADER_HEIGHT);
+    const RenderCacheKey petKey{model.speciesId, model.petFlip ? 1U : 0U,
+        canvas.physicalWidth(), canvas.physicalHeight(), canvas.byteSwapped()};
+    const uint16_t petTop = std::max<uint16_t>(rowBegin, UiMetrics::PAGE_HEADER_HEIGHT);
+    const uint16_t petBottom = std::min<uint16_t>(rowEnd, 328);
+    const bool petCached = model.petOffsetY == 0 && petCache &&
+        petCache->copyRectTo(canvas, petKey, model.columnBegin, petTop, model.columnEnd, petBottom);
+    if (!petCached) {
+        drawShowerPet(canvas, model);
+        if (model.petOffsetY == 0 && petCache && rowBegin == 0 && rowEnd == AmoledUi::HEIGHT &&
+            model.columnBegin == 0 && model.columnEnd == AmoledUi::WIDTH) {
+            if (auto* pixels = petCache->begin(petKey, Platform::memory())) {
+                std::memcpy(pixels, canvas.rawPixels(), petCache->allocatedBytes());
+                petCache->commit();
+            }
+        }
+    }
     drawShowerBubbles(model);
 
     if (model.mode == ShowerMode::RINSING) {
@@ -3291,17 +3621,23 @@ void renderShowerScreen(Canvas565& canvas, const ShowerViewModel& model,
                                      rgb(74, 190, 232), alpha);
         for (int stream = 0; stream < 10; ++stream) {
             int x = 48 + stream * 30;
-            int phase = (model.rinseProgress * 3 + stream * 17) % 44;
+            int phase = (model.elapsedMs / 3 + stream * 17) % 88;
             canvas.drawFastVLine((x),
-                                 ((UiMetrics::PAGE_HEADER_HEIGHT + (phase * 2))),
+                                 ((UiMetrics::PAGE_HEADER_HEIGHT + phase)),
                                  (110), rgb(184, 236, 249));
+        }
+        for (uint8_t i = 0; i < model.waterCount; ++i) {
+            const auto& drop = model.water[i];
+            if (!drop.active) continue;
+            canvas.drawFastVLine(static_cast<int>(drop.x), static_cast<int>(drop.y),
+                drop.vy > 360 ? 16 : 10, rgb(220, 250, 255));
         }
         GameAssets::drawCentered(GameAssets::Kind::SHOWER_SPRINKLER,
                                  184, 106, 1.6f);
     }
 
-    canvas.fillRect((0), (328), (AmoledUi::WIDTH), (120), UiMetrics::PAGE_BACKGROUND);
-    drawShowerToolbar(canvas, model);
+    pageClip.reset();
+    if (model.pressedItem >= 0) drawShowerToolbar(canvas, model);
 
     if (model.mode == ShowerMode::SOAPING ||
         model.mode == ShowerMode::BRUSHING) {
@@ -3317,8 +3653,16 @@ void renderShowerScreen(Canvas565& canvas, const ShowerViewModel& model,
     if (model.mode == ShowerMode::SOAP_SELECT) {
         drawShowerSoapPicker(canvas, model);
     } else if (model.mode == ShowerMode::COMPLETE) {
-        for (uint8_t index = 0; index < model.completionHearts; ++index) {
-            drawHeart(canvas, 152 + index * 32, 124, rgb(242, 111, 126));
+        bool rewardHeartsFloating = false;
+        for (uint8_t index = 0; index < model.floatCount; ++index) {
+            const auto& floater = model.floats[index];
+            rewardHeartsFloating = rewardHeartsFloating ||
+                (floater.active && floater.heartCount > 0 && model.nowMs - floater.bornMs < 1100);
+        }
+        if (!rewardHeartsFloating) {
+            for (uint8_t index = 0; index < model.completionHearts; ++index) {
+                drawHeart(canvas, 152 + index * 32, 124, rgb(242, 111, 126));
+            }
         }
         text(canvas, 118, 290, Ui::Amoled::ALL_CLEAN,
              rgb(115, 226, 183));
@@ -3326,8 +3670,22 @@ void renderShowerScreen(Canvas565& canvas, const ShowerViewModel& model,
         drawShowerExitConfirm(canvas, model);
     }
 
+    drawShowerFloats(canvas, model);
     drawToast(canvas, model.toast);
     pageClip.reset();
+}
+}  // namespace
+
+void renderShowerScreen(Canvas565& canvas, const ShowerViewModel& model,
+                        uint16_t rowBegin, uint16_t rowEnd) {
+    renderShowerPage(canvas, model, nullptr, nullptr, rowBegin, rowEnd);
+}
+
+void renderShowerScreenCached(Canvas565& canvas, const ShowerViewModel& model,
+                              PixelCache565& backgroundCache,
+                              uint16_t rowBegin, uint16_t rowEnd,
+                              PixelCache565* petCache) {
+    renderShowerPage(canvas, model, &backgroundCache, petCache, rowBegin, rowEnd);
 }
 
 }  // namespace AmoledV1

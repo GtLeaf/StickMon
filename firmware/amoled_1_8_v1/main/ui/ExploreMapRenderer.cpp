@@ -8,8 +8,10 @@
 #include "core/BuildConfig.h"
 #include "game/ExploreAreaCatalog.h"
 #include "game/ExploreRouteGeometry.h"
+#include "game/ExploreTileSemantics.h"
 #include "platform/api/PlatformServices.h"
 #include "presentation/Canvas565.h"
+#include "presentation/PixelRenderer.h"
 #include "ui/UiCommon.h"
 #include "ui/RenderCaches.h"
 #include "ui/models/ScreenModels.h"
@@ -186,16 +188,18 @@ bool drawExploreRouteWorldViewport(Canvas565& canvas,
 
     const int top = std::max<int>(rowBegin, EXPLORE_ROUTE_MAP_TOP);
     const int bottom = std::min<int>(rowEnd, EXPLORE_ROUTE_MAP_BOTTOM);
+    const int left = std::min<int>(model.renderColumnBegin, AmoledUi::WIDTH);
+    const int right = std::clamp<int>(model.renderColumnEnd, left, AmoledUi::WIDTH);
     for (int row = top; row < bottom; ++row) {
         const uint16_t* source = exploreRouteWorldCache.data() +
             static_cast<size_t>(model.cameraY * AmoledUi::RESOURCE_SCALE + row) *
                 EXPLORE_ROUTE_WORLD_PHYSICAL_WIDTH +
-            model.cameraX * AmoledUi::RESOURCE_SCALE;
+            model.cameraX * AmoledUi::RESOURCE_SCALE + left;
         uint16_t* firstOutput = canvas.rawPixels() +
             static_cast<size_t>(row) *
-                canvas.physicalWidth();
+                canvas.physicalWidth() + left;
         std::memcpy(firstOutput, source,
-                    static_cast<size_t>(AmoledUi::WIDTH) * sizeof(uint16_t));
+                    static_cast<size_t>(right - left) * sizeof(uint16_t));
     }
     return true;
 }
@@ -380,6 +384,62 @@ void drawExploreRouteMapForegroundLayer(Canvas565& canvas,
     drawExploreMapForeground(
         canvas, *model.map, model.cameraX, model.cameraY,
         ExploreAreaCatalog::fieldColor(model.area), rowBegin, rowEnd);
+}
+
+void drawExploreRouteMapVegetationForActor(
+    Canvas565& canvas, const ExploreRouteViewModel& model,
+    float actorFootWorldY, int actorLeft, int actorTop,
+    int actorRight, int actorBottom, uint16_t rowBegin, uint16_t rowEnd) {
+    if (!model.map || model.map->areaIndex !=
+            ExploreMapGenerator::TALL_GRASS_PARK_AREA) return;
+    const int mapTop = std::max<int>(rowBegin, EXPLORE_ROUTE_MAP_TOP);
+    const int mapBottom = std::min<int>(rowEnd, EXPLORE_ROUTE_MAP_BOTTOM);
+    const int left = std::max<int>(model.renderColumnBegin, actorLeft);
+    const int top = std::max(mapTop, actorTop);
+    const int right = std::min<int>(model.renderColumnEnd, actorRight);
+    const int bottom = std::min(mapBottom, actorBottom);
+    if (left >= right || top >= bottom) return;
+
+    Canvas565& assets = PixelRenderer::canvas();
+    canvas.setClipRect(left, top, right - left, bottom - top);
+    if (&assets != &canvas) {
+        assets.setClipRect(left, top, right - left, bottom - top);
+    }
+    constexpr int tileSize =
+        ExploreRouteGeometry::TILE_SIZE * AmoledUi::RESOURCE_SCALE;
+    const int cameraX = model.cameraX * AmoledUi::RESOURCE_SCALE;
+    const int cameraY = model.cameraY * AmoledUi::RESOURCE_SCALE;
+    const int firstX = std::max(0, (cameraX + left) / tileSize);
+    const int firstY = std::max(0,
+        (cameraY + top - EXPLORE_ROUTE_MAP_TOP) / tileSize);
+    const int lastX = std::min<int>(ExploreMapGenerator::WIDTH - 1,
+        (cameraX + right - 1) / tileSize);
+    const int lastY = std::min<int>(ExploreMapGenerator::HEIGHT - 1,
+        (cameraY + bottom - EXPLORE_ROUTE_MAP_TOP - 1) / tileSize);
+    constexpr uint8_t layer = 1;
+    const uint16_t fieldColor = ExploreAreaCatalog::fieldColor(model.area);
+    for (int tileY = firstY; tileY <= lastY; ++tileY) {
+        for (int tileX = firstX; tileX <= lastX; ++tileX) {
+            const uint16_t tileId = model.map->layers[layer]
+                [tileY * ExploreMapGenerator::WIDTH + tileX];
+            if (!ExploreTileSemantics::vegetationOccludes(
+                    tileId, layer, tileY, actorFootWorldY,
+                    ExploreRouteGeometry::TILE_SIZE)) continue;
+            const int x = tileX * tileSize - cameraX;
+            const int y = EXPLORE_ROUTE_MAP_TOP + tileY * tileSize - cameraY;
+            if (!GameAssets::drawExploreTileTo(
+                    canvas, tileId, x, y, model.mapFrame,
+                    AmoledUi::RESOURCE_SCALE)) {
+                drawExploreTileFallback(canvas, tileId, x, y, layer, fieldColor);
+            }
+        }
+    }
+    canvas.setClipRect(model.renderColumnBegin, mapTop,
+        model.renderColumnEnd - model.renderColumnBegin, mapBottom - mapTop);
+    if (&assets != &canvas) {
+        assets.setClipRect(model.renderColumnBegin, mapTop,
+        model.renderColumnEnd - model.renderColumnBegin, mapBottom - mapTop);
+    }
 }
 
 }  // namespace AmoledV1

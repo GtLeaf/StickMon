@@ -161,7 +161,7 @@ class AmoledExploreStepTests(unittest.TestCase):
         )
         update = self.app_source[update_start:update_end]
         step_increment = update.index("++exploreRouteSteps;")
-        recovery = update.index("recoverExploreTeamForCompletedSteps();")
+        recovery = update.index("recoverExploreTeamForCompletedSteps()")
         event_resolution = update.index("resolveExploreStepEvent(")
         self.assertLess(step_increment, recovery)
         self.assertLess(recovery, event_resolution)
@@ -229,11 +229,8 @@ class AmoledExploreStepTests(unittest.TestCase):
             "void AmoledApp::leaveExploreRoute()", settle_start
         )
         settle = self.app_source[settle_start:settle_end]
-        self.assertIn("bool stateChanged = exploreRecoveryPendingSave;", settle)
-        self.assertIn(
-            "if (stateChanged && saveState()) exploreRecoveryPendingSave = false;",
-            settle,
-        )
+        self.assertIn("saveState();", settle)
+        self.assertNotIn("stateChanged && saveState()", settle)
 
     def test_pickup_roll_is_per_map_and_keeps_guaranteed_battle_slot(self):
         self.assertIn("EXPLORE_MAP_PICKUP_CHANCE = 6500", self.app_source)

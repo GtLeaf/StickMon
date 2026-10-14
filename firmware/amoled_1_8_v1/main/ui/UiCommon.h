@@ -17,7 +17,8 @@ inline constexpr int TOAST_BOTTOM = TOAST_TOP + TOAST_HEIGHT;
 // the supplied canvas and the shared asset canvas, including early returns.
 class PageClip {
 public:
-    PageClip(Canvas565& canvas, uint16_t rowBegin, uint16_t rowEnd);
+    PageClip(Canvas565& canvas, uint16_t rowBegin, uint16_t rowEnd,
+             uint16_t columnBegin = 0, uint16_t columnEnd = AmoledUi::WIDTH);
     ~PageClip();
     PageClip(const PageClip&) = delete;
     PageClip& operator=(const PageClip&) = delete;
@@ -28,6 +29,8 @@ public:
 private:
     Canvas565& canvas_;
     Canvas565& assets_;
+    int left_;
+    int right_;
     int top_;
     int bottom_;
 };

@@ -64,15 +64,23 @@ void PixelCache565::release() {
 
 bool PixelCache565::copyRowsTo(Canvas565& canvas, const RenderCacheKey& key,
                               uint16_t rowBegin, uint16_t rowEnd) const {
+    return copyRectTo(canvas, key, 0, rowBegin, key.width, rowEnd);
+}
+
+bool PixelCache565::copyRectTo(Canvas565& canvas, const RenderCacheKey& key,
+                              uint16_t left, uint16_t top,
+                              uint16_t right, uint16_t bottom) const {
     if (!matches(key) || !canvas.attached() ||
         key.width != canvas.physicalWidth() ||
         key.height != canvas.physicalHeight() ||
         key.byteSwapped != canvas.byteSwapped()) return false;
-    const int bottom = std::min<int>(rowEnd, key.height);
-    for (int row = rowBegin; row < bottom; ++row) {
-        const size_t offset = static_cast<size_t>(row) * key.width;
+    right = std::min<int>(right, key.width);
+    bottom = std::min<int>(bottom, key.height);
+    if (left >= right || top >= bottom) return true;
+    for (int row = top; row < bottom; ++row) {
+        const size_t offset = static_cast<size_t>(row) * key.width + left;
         std::memcpy(canvas.rawPixels() + offset, pixels_ + offset,
-                    static_cast<size_t>(key.width) * sizeof(uint16_t));
+                    static_cast<size_t>(right - left) * sizeof(uint16_t));
     }
     return true;
 }
@@ -82,6 +90,8 @@ void RenderCaches::retainForScene(AppSceneFlow::Scene scene) {
     if (scene != Scene::BATTLE && scene != Scene::EXPLORE_ROUTE &&
         scene != Scene::EXPLORE_MENU) battleBackground.release();
     if (scene != Scene::EXPLORE_AREAS) exploreBackground.release();
+    if (scene != Scene::SHOWER && scene != Scene::PROGRESSION) showerBackground.release();
+    if (scene != Scene::SHOWER && scene != Scene::PROGRESSION) showerPet.release();
     // Keep the world through route menus, battles and progression dialogs.
     if (scene == Scene::HOME || scene == Scene::EXPLORE_AREAS) exploreWorld.release();
 }
@@ -90,6 +100,8 @@ void RenderCaches::release() {
     battleBackground.release();
     exploreBackground.release();
     exploreWorld.release();
+    showerBackground.release();
+    showerPet.release();
 }
 
 }  // namespace AmoledV1

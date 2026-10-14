@@ -93,7 +93,7 @@ class AmoledExploreScreenTests(unittest.TestCase):
 
         self.assertIn("void drawExploreRouteBoss(", home)
         self.assertIn("model.bossSpeciesId", home)
-        self.assertIn("drawExploreRouteBoss(canvas, model);", home)
+        self.assertIn("drawExploreRouteBoss(canvas, model, top, bottom);", home)
         self.assertIn("model.bossPending = exploreRouteBossPending;", app)
         self.assertIn("routeSpecies[routeSpeciesCount++] = exploreRouteBossSpeciesId;", app)
 
@@ -110,7 +110,8 @@ class AmoledExploreScreenTests(unittest.TestCase):
         boss = home[start:end]
         self.assertIn("EXPLORE_ROUTE_BOSS_SCALE = 2.0f", home)
         self.assertIn("PokemonMotion::movementFrame(", boss)
-        self.assertIn("exploreRouteBossPatrolPermille", boss)
+        self.assertIn("exploreRouteBossWorldPose", boss)
+        self.assertIn("exploreRouteBossPatrolPermille", home)
         self.assertIn("model.animationNowMs", boss)
         self.assertIn("nextExploreRouteBossFrameMs", app)
         self.assertIn("requestExploreRouteBossRender();", app)
@@ -140,7 +141,7 @@ class AmoledExploreScreenTests(unittest.TestCase):
         # the transparent sprite canvas. Keep this conversion in lockstep with
         # the route renderer and keep the shadow on the unshifted ground point.
         self.assertIn("frameGroundOffsetY(frame)", actor)
-        self.assertIn("renderGroundY - height / 2 - groundOffset", actor)
+        self.assertIn("renderGroundY - layout.height / 2 - groundOffset", actor)
         self.assertIn("const int shadowY = model.petGroundY;", actor)
         self.assertNotIn("const int y = renderGroundY - height;", actor)
         self.assertNotIn("model.petGroundY - height / 2 +", actor)

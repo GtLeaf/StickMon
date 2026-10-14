@@ -13,10 +13,68 @@ Only the board layer is V2-specific: `main.cpp`, `AmoledPlatform.*` and
 `TouchInput.*`. The V2 target uses the official Waveshare BSP `^2.0.3`,
 which provides the CO5300 panel path and V2 touch auto-detection.
 
+## Touch calibration
+
+V2 uses its own raw-to-native-pixel calibration in `main/TouchInput.cpp`:
+`x = round(rawX * 1.1179618 - 20.711235)` and
+`y = round(rawY * 1.0494687 - 21.692282)`, clamped to 368x448.
+The BSP applies no swap, mirror or coordinate scaling on this path.
+The former V1 coefficients compressed V2 touches toward the screen center.
+
+The coefficients are independent-axis least-squares fits of the user's
+2026-10-13 nine-point DOWN measurements (session timestamps 660581-668621).
+UP events retain the last sensor coordinates for diagnostics, rather than
+reporting already-calibrated coordinates as raw.
+
+| Target | Raw DOWN | Previous mapped DOWN |
+| --- | --- | --- |
+| 24,32 | 44,53 | 56,69 |
+| 184,32 | 187,42 | 184,60 |
+| 344,32 | 329,53 | 312,69 |
+| 24,224 | 43,238 | 55,232 |
+| 184,224 | 180,240 | 178,234 |
+| 344,224 | 326,237 | 309,231 |
+| 24,416 | 35,405 | 47,379 |
+| 184,416 | 179,421 | 177,393 |
+| 344,416 | 325,418 | 308,391 |
+
+Replay mean Euclidean error changes from 35.2 to 6.2 native pixels, and
+maximum error from 48.9 to 14.3 pixels. These are fit residuals on the same
+samples, not a new hardware acceptance result. A full affine fit only reduces
+mean replay error to 5.2 pixels; keep the simpler axis fit until repeat
+measurements establish a consistent skew.
+Run `python3 tools/test_amoled_v2_touch.py` for driver replay, boundaries and
+release diagnostics. After loading the firmware separately, repeat
+`Debug -> 触摸` in the same nine-point order and tap the crosshair centers
+briefly without dragging. The diagnostic page does not save calibration.
+
+## Shared application
+
 V2 packages the same SPIFFS resources as V1, including all generated `.smonsp`
 sprite packs, `zh16.smonfont` and `ascii16-unscii.smonfont`. The shared AMOLED
 renderer loads the Chinese font for UTF-8 names and prompts, so the V1/V2
 application code and font assets stay aligned.
+
+Locking returns to the room and keeps the pet visible. Double-tap the pet
+within 500 ms to unlock; taps elsewhere, single taps, holds and drags are ignored.
+An active expedition returns through the normal home transition before locking.
+
+The shared settings page includes `重置游戏` with a separate cancel/confirm page.
+Confirmed resets clear only game data and restart with a new egg;
+Wi-Fi and ESP-Claw credentials are preserved. V2 keeps `系统更新` as a separate
+settings entry. Both entries fit on screen alongside the existing controls.
+
+V1/V2 share the QMI8658 acceleration driver for egg interaction. Tap the egg
+for a heart plus a 1 second wobble, or shake the device for a 1 second wobble; the bottom HP position shows
+the numeric hatch countdown. Only hatching enables acceleration sampling;
+menus and hatch completion put the sensors and oscillator into standby.
+The gyroscope stays off. Shake sensitivity and power behavior await hardware QA.
+
+First boot without a save also starts with an egg. The shared V1/V2 hatch flow
+takes 180 seconds at 1x speed, pauses in menus, saves progress every 15 game
+seconds and after interactions, and resumes after restarting. Taps and shakes
+choose the level-5 starter using the StickS3 rules; hatching grants 1000 coins.
+Existing completed saves continue directly to the room.
 
 V2 uses the same trimmed ESP-Claw remote-chat integration and NVS keys as V1;
 see `../amoled_1_8_v1/README.md#esp-claw-remote-chat`. The V2 board layer only
@@ -71,6 +129,25 @@ ESP-Claw paths out of the shared source tree.
 
 ## Explore performance capture (debug build)
 
+`[ExplorePerf]` reports successful walking-frame transfers once per second:
+FPS, dirty rows, update/draw/LCD timings, and transfer-completion intervals
+(average, nearest-rank p95, maximum, and count above 50 ms). `windowUs` gives
+the actual sample duration; the final partial window can include scene-transition
+time and should be excluded when comparing steady walking FPS.
+`[ExploreMapPerf]` separates cached-map copies from animated tiles, and
+`[ExploreSavePerf]` measures synchronous route saves. Per-step, camera, and
+actor geometry logs require `STICKMON_ENABLE_TRACE_LOGS=1`; they are disabled
+in the normal debug build to reduce measurement overhead. Performance summaries
+still add some logging overhead and are absent from non-debug builds.
+
+Exploration writes snapshots after pickups, on battle exit (including flee
+and defeat), and on return home, rather than at every ordinary step. Ten-step
+recovery is also kept in memory until a save event. Display locking saves after
+settling any active expedition; the system-update restart saves before OTA.
+Periodic care saves pause during exploration and battle, and remain active at home.
+Item consumption and progression decisions still save immediately. Sudden
+power loss can discard steps and recovery since the last save event.
+
 The V2 debug firmware accepts `diag ping` and `diag explore 0` through its
 USB Serial/JTAG port. The latter starts the normal departure and auto-walks
 area 0; it does not bypass encounter rules. The command is absent from
@@ -86,6 +163,11 @@ Run this from the repository root with a living leader on the home screen.
 The script prints its log path under `tools/out/` and exits after the first
 `[EncounterPerf]` line (or a 180-second timeout). Flashing without `--erase`
 preserves NVS, but the expedition itself can update the game save.
+
+`diag status` compares selected in-memory game values with the stored snapshot
+and reports successful saves since boot. `diag tap X Y` sends a normal down/up
+touch through the app using native 368x448 coordinates. These commands and
+`[SaveDiag]` save-event logs are debug-only and do not bypass gameplay gates.
 
 The V2 Lite debug build has been flashed and exercised on hardware for an
 automatic exploration and wild encounter. Full hardware acceptance, including

@@ -21,6 +21,7 @@
 #include "ui/UiMetrics.h"
 #include "ui/RoomScreens.h"
 #include "ui/SettingsScreens.h"
+#include "ui/HatchScreens.h"
 
 class Canvas565;
 
@@ -31,6 +32,11 @@ struct SpriteFrame;
 namespace AmoledV1 {
 
 class PixelCache565;
+
+AmoledUi::Rect homePetVisibleBounds(const HomeViewModel& model);
+AmoledUi::Rect exploreRouteActorBounds(const ExploreRouteViewModel& model);
+
+void drawHatchHeart(Canvas565& canvas, int x, int y);
 
 bool prepareBattleBackground(Canvas565& canvas, PixelCache565& backgroundCache,
                              GameAssets::Kind kind);
@@ -206,6 +212,11 @@ int battleItemAt(int x, int y, BattleViewModel::Phase phase);
 
 void renderShowerScreen(Canvas565& canvas, const ShowerViewModel& model,
                         uint16_t rowBegin = 0, uint16_t rowEnd = AmoledUi::HEIGHT);
+void renderShowerScreenCached(Canvas565& canvas, const ShowerViewModel& model,
+                              PixelCache565& backgroundCache,
+                              uint16_t rowBegin, uint16_t rowEnd,
+                              PixelCache565* petCache = nullptr);
+int showerPetGroundY(uint16_t speciesId);
 bool showerBackAt(int x, int y);
 int showerMenuItemAt(int x, int y);
 int showerSoapItemAt(int x, int y);

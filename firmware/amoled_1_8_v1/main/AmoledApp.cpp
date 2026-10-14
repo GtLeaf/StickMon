@@ -5,8 +5,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <new>
 
 #include "HomeScreen.h"
+#include "ui/UiCommon.h"
 #include "assets/PokemonSprites.h"
 #include "core/MathUtil.h"
 #include "core/AudioManager.h"
@@ -31,6 +33,7 @@
 #include "game/FriendshipService.h"
 #include "game/FriendshipSystem.h"
 #include "game/GameRandom.h"
+#include "game/HatchService.h"
 #include "game/HomeCare.h"
 #include "game/HomeHud.h"
 #include "game/ItemInventory.h"
@@ -74,6 +77,20 @@ constexpr uint32_t ATTENTION_INITIAL_MIN_MS = 25000UL;
 constexpr uint32_t ATTENTION_INITIAL_MAX_MS = 45000UL;
 constexpr uint32_t ATTENTION_MIN_MS = 90000UL;
 constexpr uint32_t ATTENTION_MAX_MS = 180000UL;
+
+bool battleStatusEffectSucceeded(
+    GameAssets::BattleFx fx, const BattleSystem::DamageResult& damage,
+    const BattleSystem::EffectResolution& effects) {
+    if (!GameAssets::battleFxIsStatus(fx) || damage.missed || damage.failed ||
+        damage.effectiveness == 0) return false;
+    for (uint8_t i = 0; i < effects.count; ++i) {
+        const auto& outcome = effects.outcomes[i];
+        if (outcome.kind == BattleSystem::EffectOutcomeKind::STAT_CHANGED &&
+            outcome.target == MoveEffectTarget::DEFENDER &&
+            outcome.stageDelta != 0) return true;
+    }
+    return false;
+}
 
 bool isEvolutionStone(Game::ItemId item) {
     return item == Game::ItemId::FIRE_STONE ||
@@ -293,7 +310,7 @@ constexpr int SHOWER_TOOL_MIN_Y = 72;
 constexpr int SHOWER_TOOL_MAX_Y = 420;
 constexpr float SHOWER_FOAM_DISTANCE = 24.0f;
 constexpr float SHOWER_BRUSH_DISTANCE = 8.0f;
-constexpr uint32_t SHOWER_BRUSH_INTERVAL_MS = 110;
+constexpr uint32_t SHOWER_BRUSH_INTERVAL_MS = Game::BathInteraction::RUB_INTERVAL_MS;
 constexpr uint8_t SHOWER_FOAM_CAP = 8;
 
 constexpr uint8_t exploreMapCountForRoll(uint8_t area, uint8_t roll) {
@@ -755,13 +772,14 @@ void AmoledApp::begin(uint32_t nowMs) {
     visitRadioExclusive = false;
     storageReady = saveManager.begin();
     bool normalized = false;
+    SaveManager::LoadStatus loadStatus = SaveManager::LoadStatus::NOT_FOUND;
     bool loaded = storageReady &&
-                  saveManager.load(gameState, mainViewState, &normalized);
+                  saveManager.load(gameState, mainViewState, &normalized, &loadStatus);
+    startupStateLoaded_ = loaded;
+    saveWritesBlocked = loadStatus == SaveManager::LoadStatus::NEWER_VERSION ||
+                        loadStatus == SaveManager::LoadStatus::INVALID;
     if (!loaded) {
-        gameState = Game::GameState{};
-        gameState.oobeDone = true;
-        gameState.team[0] = Game::MonsterFactory::create(
-            gameState.team[0].speciesId, gameState.team[0].level);
+        Game::HatchService::initializeNewGame(gameState);
         mainViewState = MainSceneViewState{};
     } else {
         const uint8_t repaired = repairOwnedZeroIndividualValues(gameState);
@@ -771,6 +789,34 @@ void AmoledApp::begin(uint32_t nowMs) {
                 "[AmoledApp] repaired zero individual values: %u monster(s)\n",
                 repaired);
         }
+    }
+
+    hatchResult.reset();
+    hatchHeartVisible = hatchShaking = false;
+    hatchLastShakeOffset = 0;
+    hatchPressedItem = -1;
+    hatchShakeDetector.reset();
+    hatchImuRequested = hatchImuEnabled = hatchImuStateKnown = false;
+    hatchImuRetryMs = nowMs;
+    // The normal startup path also explicitly puts a previously active IMU to sleep.
+    Platform::imu().setAccelerationEnabled(false);
+    hatchLastUpdateMs = nowMs;
+    hatchCompletionRetryMs = nowMs;
+    if (!gameState.oobeDone) {
+        if (gameState.teamCount != 0) normalized = true;
+        gameState.teamCount = 0;
+        Game::HatchProgress progress;
+        if (storageReady) saveManager.loadHatchProgress(progress);
+        hatchElapsedSeconds = std::min<uint16_t>(
+            progress.elapsedSeconds, gameState.hatchSeconds);
+        hatchPokeCount = progress.pokeCount;
+        hatchWipeCount = progress.wipeCount;
+        hatchLastSavedSecond = static_cast<uint16_t>(hatchElapsedSeconds);
+        hatchLastRemainingSecond = Game::HatchService::remainingSeconds(
+            hatchElapsedSeconds, gameState.hatchSeconds);
+        hatchLastProgress = Game::HatchService::progressPercent(
+            hatchElapsedSeconds, gameState.hatchSeconds);
+        hatchLastShakeOffset = 0;
     }
 
     bool normalizedEncounterHistory = false;
@@ -814,6 +860,15 @@ void AmoledApp::begin(uint32_t nowMs) {
     lastInteractionMs = nowMs;
     lastPetUpdateMs = nowMs;
     nextMindUpdateMs = nowMs;
+    if (!gameState.oobeDone) {
+        RoomResource::ins().begin();
+        FontResource::ins().begin();
+        sceneFlow = AppSceneFlow::Controller(AppSceneFlow::Scene::HATCH);
+        syncHatchImu(nowMs);
+        requestFullRender();
+        Platform::logLine("[AmoledApp] begin: hatch pending");
+        return;
+    }
     petMotion = PetMotion::IDLE;
     petDirection = PokemonSprites::WalkDirection::DOWN;
     petStopMotion = PetMotion::IDLE;
@@ -946,9 +1001,154 @@ void AmoledApp::begin(uint32_t nowMs) {
     Platform::logf("[AmoledApp] begin: full render requested\n");
 }
 
+bool AmoledApp::persistHatchProgress(bool force) {
+    if (gameState.oobeDone) return true;
+    if (!storageReady || saveWritesBlocked || gameResetPending) return false;
+    const uint16_t seconds = static_cast<uint16_t>(hatchElapsedSeconds);
+    if (!force && static_cast<uint32_t>(seconds) <
+                      static_cast<uint32_t>(hatchLastSavedSecond) + 15) return true;
+    Game::HatchProgress progress;
+    progress.elapsedSeconds = seconds;
+    progress.pokeCount = hatchPokeCount;
+    progress.wipeCount = hatchWipeCount;
+    if (!saveManager.saveHatchProgress(progress)) return false;
+    hatchLastSavedSecond = seconds;
+    return true;
+}
+
+void AmoledApp::completeHatch(uint32_t nowMs) {
+    if (!storageReady || saveWritesBlocked || gameResetPending) return;
+    if (static_cast<int32_t>(nowMs - hatchCompletionRetryMs) < 0) return;
+    hatchCompletionRetryMs = nowMs + 1000;
+    if (!hatchResult) {
+        gameClock.sync(nowMs, gameSpeed(), gameState.gameMinutesTotal);
+        hatchResult.reset(new (std::nothrow) Game::GameState(gameState));
+        if (hatchResult) {
+            Game::HatchService::finish(*hatchResult,
+                Game::HatchService::starterStyle(hatchPokeCount, hatchWipeCount));
+        }
+    }
+    // Commit the completed game before deleting the egg's resumable progress.
+    // Keep the same rolled starter for retries after a temporary storage failure.
+    if (!hatchResult || !saveManager.saveSnapshot(*hatchResult, MainSceneViewState{})) {
+        setToast(Ui::Hatch::SAVE_FAILED, nowMs);
+        return;
+    }
+    gameState = *hatchResult;
+    hatchResult.reset();
+    mainViewState = MainSceneViewState{};
+    saveManager.clearHatchProgress();
+    sceneFlow = AppSceneFlow::Controller(AppSceneFlow::Scene::HOME);
+    pointerDown = false;
+    hatchPressedItem = -1;
+    begin(nowMs);
+    setToast(Ui::Hatch::DONE, nowMs);
+    CryPlayer::ins().replay(gameState.team[0].speciesId);
+}
+
+void AmoledApp::syncHatchImu(uint32_t nowMs) {
+    const bool enabled = !gameResetPending && !gameState.oobeDone &&
+        sceneFlow.current() == AppSceneFlow::Scene::HATCH &&
+        hatchElapsedSeconds < gameState.hatchSeconds;
+    if (hatchImuRequested != enabled) {
+        hatchImuRequested = enabled;
+        hatchImuStateKnown = false;
+        hatchImuRetryMs = nowMs;
+        hatchLastImuPollMs = nowMs;
+        hatchShakeDetector.reset();
+        if (hatchShaking || hatchHeartVisible || hatchLastShakeOffset != 0) {
+            requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
+        }
+        hatchShaking = hatchHeartVisible = false;
+        hatchLastShakeOffset = 0;
+    }
+    if (hatchImuStateKnown || static_cast<int32_t>(nowMs - hatchImuRetryMs) < 0) return;
+    hatchImuStateKnown = Platform::imu().setAccelerationEnabled(enabled);
+    hatchImuEnabled = enabled && hatchImuStateKnown;
+    hatchImuRetryMs = nowMs + 1000;
+}
+
+void AmoledApp::interactWithHatch(bool shake, uint32_t nowMs) {
+    if (hatchResult || hatchElapsedSeconds >= gameState.hatchSeconds) return;
+    uint16_t& count = shake ? hatchWipeCount : hatchPokeCount;
+    if (count < UINT16_MAX) ++count;
+    hatchShaking = true;
+    hatchShakeStartedMs = nowMs;
+    if (!shake) {
+        hatchHeartVisible = true;
+        hatchHeartStartedMs = nowMs;
+    }
+    requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
+    if (!persistHatchProgress(true)) setToast(Ui::Hatch::SAVE_FAILED, nowMs);
+}
+
+void AmoledApp::updateHatch(uint32_t nowMs) {
+    const uint32_t elapsedMs = nowMs - hatchLastUpdateMs;
+    hatchLastUpdateMs = nowMs;
+    if (gameState.oobeDone || sceneFlow.current() != AppSceneFlow::Scene::HATCH) return;
+    hatchElapsedSeconds = std::min<float>(gameState.hatchSeconds,
+        hatchElapsedSeconds + elapsedMs * gameSpeed() / 1000.0f);
+    syncHatchImu(nowMs);
+    persistHatchProgress(false);
+    if (hatchImuEnabled && nowMs - hatchLastImuPollMs >= 20) {
+        hatchLastImuPollMs = nowMs;
+        float x, y, z;
+        if (Platform::imu().readAcceleration(x, y, z) &&
+            hatchShakeDetector.sample(x, y, z, nowMs)) interactWithHatch(true, nowMs);
+    }
+    if (hatchHeartVisible && nowMs - hatchHeartStartedMs >= 700) {
+        hatchHeartVisible = false;
+        requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
+    }
+    const uint16_t remaining = Game::HatchService::remainingSeconds(
+        hatchElapsedSeconds, gameState.hatchSeconds);
+    const int8_t offset = hatchShaking ? Game::HatchShakeDetector::animationOffset(
+        nowMs - hatchShakeStartedMs) : 0;
+    if (hatchShaking && nowMs - hatchShakeStartedMs >= Game::HatchShakeDetector::ANIMATION_MS) {
+        hatchShaking = false;
+    }
+    if (remaining != hatchLastRemainingSecond) requestRenderRows(HOME_STATUS_TOP, 448);
+    if (offset != hatchLastShakeOffset) requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
+    hatchLastRemainingSecond = remaining;
+    hatchLastProgress = Game::HatchService::progressPercent(hatchElapsedSeconds, gameState.hatchSeconds);
+    hatchLastShakeOffset = offset;
+    if (hatchElapsedSeconds >= gameState.hatchSeconds) completeHatch(nowMs);
+}
+
+void AmoledApp::handleHatchTouch(const TouchEvent& event) {
+    if (event.type == TouchEventType::DOWN) {
+        pointerDown = true;
+        touchStartX = event.x;
+        touchStartY = event.y;
+        hatchPressedItem = hatchEggHitBounds.contains(event.x, event.y) ? 0 : -1;
+    } else if (event.type == TouchEventType::MOVE) {
+        if (std::max(std::abs(event.x - touchStartX),
+                     std::abs(event.y - touchStartY)) > TAP_SLOP) hatchPressedItem = -1;
+    } else if (pointerDown) {
+        const bool tap = std::max(std::abs(event.x - touchStartX),
+            std::abs(event.y - touchStartY)) <= TAP_SLOP;
+        if (tap && hatchMenuAt(touchStartX, touchStartY) && hatchMenuAt(event.x, event.y)) {
+            saveState();
+            sceneFlow.openMenu();
+            syncHatchImu(event.timestampMs);
+            menuScroll = menuVelocity = 0.0f;
+            toast = nullptr;
+            requestFullRender();
+        } else if (tap && hatchPressedItem == 0 && hatchEggHitBounds.contains(event.x, event.y)) {
+            interactWithHatch(false, event.timestampMs);
+        }
+        pointerDown = false;
+        hatchPressedItem = -1;
+    }
+}
+
 #if STICKMON_HAS_CLAW
 bool AmoledApp::brainSnapshot(Stickmon::BrainBridge::Snapshot& out) const {
     out = Stickmon::BrainBridge::Snapshot{};
+    if (gameResetPending) {
+        out.actionLocked = true;
+        return false;
+    }
     out.initialized = true;
     out.oobeDone = gameState.oobeDone;
     out.visitActive = visitSession.active();
@@ -972,7 +1172,7 @@ bool AmoledApp::brainSnapshot(Stickmon::BrainBridge::Snapshot& out) const {
     // describes ownership of the current Agent turn, not a gameplay lock;
     // including it would make the first stickmon_get_context call report a
     // locked state and the autonomous prompt would never take an action.
-    out.actionLocked = pointerDown ||
+    out.actionLocked = !gameState.oobeDone || pointerDown ||
         sceneFlow.current() != AppSceneFlow::Scene::HOME ||
         visitSession.busy() || pendingExpedition ||
         expeditionDeparturePhase != ExpeditionDeparturePhase::NONE ||
@@ -1053,6 +1253,76 @@ bool AmoledApp::queueExploreDeparture(uint8_t area, bool autoWalk) {
 }
 
 #if STICKMON_ENABLE_DEBUG_FEATURES
+void AmoledApp::debugReportSaveState() {
+    Game::GameState saved;
+    MainSceneViewState savedView;
+    const bool loaded = saveManager.load(saved, savedView);
+    const auto report = [&](const char* source, const Game::GameState& state) {
+        Platform::logf(
+            "[SaveDiag] source=%s scene=%u phase=%u saves=%lu steps=%u "
+            "coins=%lu team=%u storage=%u hp=%u/%u level=%u/%u potion=%u\n",
+            source, static_cast<unsigned>(sceneFlow.current()),
+            static_cast<unsigned>(battlePhase),
+            static_cast<unsigned long>(diagnosticSaveCount), state.stepsToday,
+            static_cast<unsigned long>(state.coins), state.teamCount,
+            state.storageCount, state.team[0].hpCur, state.team[1].hpCur,
+            state.team[0].level, state.team[1].level,
+            Game::ItemInventory::count(state, Game::ItemId::POTION));
+    };
+    debugReportHomeState();
+    report("ram", gameState);
+    if (loaded) report("disk", saved);
+    else Platform::logLine("[SaveDiag] source=disk unavailable");
+}
+
+void AmoledApp::debugReportHomeState() const {
+    const uint32_t nowMs = Platform::clock().millis();
+    const auto home = homeHouseholdObservation(nowMs);
+    const auto selected = Home::ActorController::selectBowlActor(home);
+    Platform::logf(
+        "[HomeState] now=%lu scene=%u gameMinute=%lu bowl=%u bites=%u "
+        "bowlOwner=%d bedOwner=%d clearing=%u preferred=%d "
+        "pending=%u arbitrationIn=%ld pair=%u visitorMotion=%u roomAction=%u "
+        "motion=%u sleeping=%u decisionIn=%ld\n",
+        static_cast<unsigned long>(nowMs), static_cast<unsigned>(sceneFlow.current()),
+        static_cast<unsigned long>(gameState.gameMinutesTotal % Game::GAME_MINUTES_PER_DAY),
+        gameState.room.bowlCount, gameState.room.bowlBitesRemaining,
+        static_cast<int>(homeRuntime.owner(Home::Resource::BOWL)),
+        static_cast<int>(homeRuntime.owner(Home::Resource::BED)),
+        home.bowlClearing ? 1U : 0U, static_cast<int>(selected.actorId),
+        homeFoodArbitrationPending ? 1U : 0U,
+        static_cast<long>(static_cast<int32_t>(nextHomeFoodArbitrationMs - nowMs)),
+        homeRuntime.pairActive() ? 1U : 0U, static_cast<unsigned>(visitorMotion),
+        static_cast<unsigned>(roomAction), static_cast<unsigned>(petMotion),
+        petScheduledSleeping ? 1U : 0U,
+        static_cast<long>(static_cast<int32_t>(nextPetDecisionMs - nowMs)));
+    for (uint8_t slot = 0; slot < home.actorCount; ++slot) {
+        const auto& actor = home.actors[slot];
+        const auto* runtime = homeRuntime.actor(slot);
+        const auto& monster = gameState.team[slot];
+        Platform::logf(
+            "[HomeState] actor=%u species=%u satiety=%u hp=%u/%u "
+            "task=%u resume=%u desire=%u intent=%u pos=%.1f,%.1f "
+            "active=%u control=%u foodAction=%u canEat=%u "
+            "canMove=%u needsFood=%u visitor=%u fainted=%u statusSleep=%u "
+            "sleepTime=%u sleeping=%u wakeFood=%u retryReady=%u route=%u/%u\n",
+            slot, monster.speciesId, monster.satiety, monster.hpCur, monster.hpMax,
+            static_cast<unsigned>(actor.task), static_cast<unsigned>(actor.resumeTask),
+            static_cast<unsigned>(actor.desire),
+            static_cast<unsigned>(Home::ActorController::survivalIntent(actor, home.bowlHasFood)),
+            runtime ? runtime->x : 0.0f, runtime ? runtime->y : 0.0f,
+            actor.active ? 1U : 0U, actor.controlAvailable ? 1U : 0U,
+            actor.foodActionAvailable ? 1U : 0U,
+            Home::ActorController::foodEligible(actor, home.bowlHasFood) ? 1U : 0U,
+            actor.canMove ? 1U : 0U, actor.needsFood ? 1U : 0U,
+            actor.visitor ? 1U : 0U, actor.fainted ? 1U : 0U,
+            actor.statusSleeping ? 1U : 0U, actor.sleepTime ? 1U : 0U,
+            actor.sleeping ? 1U : 0U, actor.wakeForFood ? 1U : 0U,
+            actor.foodRetryReady ? 1U : 0U,
+            runtime ? runtime->route.index : 0U, runtime ? runtime->route.count : 0U);
+    }
+}
+
 bool AmoledApp::debugStartExplore(uint8_t area) {
     if (sceneFlow.current() != AppSceneFlow::Scene::HOME ||
         pendingExpedition || expeditionDeparturePhase != ExpeditionDeparturePhase::NONE ||
@@ -1799,6 +2069,7 @@ void AmoledApp::beginExploreReturn(uint32_t nowMs) {
 #if STICKMON_HAS_CLAW
 
 bool AmoledApp::brainStartExpedition(uint8_t area) {
+    if (gameResetPending || !gameState.oobeDone) return false;
     if (gameState.teamCount == 0) {
         Stickmon::ClawRuntime::instance().logf(
             Stickmon::ClawStatusLog::Level::WARN,
@@ -1831,6 +2102,7 @@ bool AmoledApp::brainStartExpedition(uint8_t area) {
 }
 
 bool AmoledApp::brainReturnHome() {
+    if (gameResetPending || !gameState.oobeDone) return false;
     AppSceneFlow::Scene scene = sceneFlow.current();
     bool exploring = scene == AppSceneFlow::Scene::EXPLORE_ROUTE ||
                      scene == AppSceneFlow::Scene::EXPLORE_MENU ||
@@ -1845,6 +2117,7 @@ bool AmoledApp::brainReturnHome() {
 }
 
 bool AmoledApp::brainInviteFriend() {
+    if (gameResetPending || !gameState.oobeDone) return false;
     if (gameState.teamCount == 0 ||
         sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_ROUTE ||
         sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_MENU ||
@@ -1866,6 +2139,7 @@ bool AmoledApp::brainInviteFriend() {
 }
 
 bool AmoledApp::brainEat() {
+    if (gameResetPending || !gameState.oobeDone) return false;
     if (gameState.teamCount == 0 ||
         sceneFlow.current() == AppSceneFlow::Scene::BATTLE ||
         sceneFlow.current() == AppSceneFlow::Scene::SHOWER ||
@@ -1899,6 +2173,7 @@ bool AmoledApp::brainEat() {
 }
 
 bool AmoledApp::brainBuyFood(uint8_t foodIndex) {
+    if (gameResetPending || !gameState.oobeDone) return false;
     if (foodIndex >= Game::ROOM_FOOD_COUNT ||
         sceneFlow.current() == AppSceneFlow::Scene::BATTLE ||
         sceneFlow.current() == AppSceneFlow::Scene::SHOWER ||
@@ -1918,6 +2193,7 @@ bool AmoledApp::brainBuyFood(uint8_t foodIndex) {
 }
 
 bool AmoledApp::brainSay(const char* text) {
+    if (gameResetPending || !gameState.oobeDone) return false;
     if (!text || !text[0]) return false;
     std::snprintf(brainMessage, sizeof(brainMessage), "%s", text);
     setToast(brainMessage, Platform::clock().millis(), 5000);
@@ -1927,6 +2203,7 @@ bool AmoledApp::brainSay(const char* text) {
 #endif
 
 void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
+    if (gameResetPending) return;
     // TouchInput has already normalized the controller sample at the
     // hardware boundary. The application consumes one stable page-space
     // event and performs no second coordinate conversion.
@@ -1936,6 +2213,10 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
         // has not consumed yet. Explicit lock taps set a fresh request on UP.
         lockRequested = false;
         lastInteractionMs = event.timestampMs;
+    }
+    if (sceneFlow.current() == AppSceneFlow::Scene::HATCH) {
+        handleHatchTouch(event);
+        return;
     }
 #if STICKMON_ENABLE_DEBUG_FEATURES
     if (sceneFlow.current() == AppSceneFlow::Scene::DEBUG &&
@@ -2105,11 +2386,13 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
             requestRenderRows(MENU_HEADER_HEIGHT, 448);
         } else if (sceneFlow.current() == AppSceneFlow::Scene::SETTINGS &&
                    event.y >= MENU_HEADER_HEIGHT) {
-            int item = settingsItemAt(event.x, event.y);
+            int item = settingsResetConfirm
+                ? settingsResetChoiceAt(event.x, event.y)
+                : settingsItemAt(event.x, event.y, systemUpdateHandler != nullptr);
             settingsPressedItem = item < 0 ? 0xFF
                                            : static_cast<uint8_t>(item);
             settingsSliderDragging =
-                (item == 0 || item == 1) &&
+                !settingsResetConfirm && (item == 0 || item == 1) &&
                 event.x >= SETTINGS_SLIDER_LEFT - TAP_SLOP &&
                 event.x <= SETTINGS_SLIDER_RIGHT + TAP_SLOP;
             settingsSliderChanged = false;
@@ -2164,7 +2447,8 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
                 dragging = true;
                 showerLastStrokeX = event.x;
                 showerLastStrokeY = event.y;
-                requestRenderRows(MENU_HEADER_HEIGHT, 448);
+                requestRenderRect(showerToolX - 64, showerToolY - 64,
+                                  showerToolX + 65, showerToolY + 65);
             } else {
                 pressedShowerItem = showerMode == ShowerMode::SOAP_SELECT
                     ? showerSoapItemAt(event.x, event.y)
@@ -2452,6 +2736,7 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
         break;
 
     case TouchEventType::UP: {
+        const bool releasedShowerTool = sceneFlow.current() == AppSceneFlow::Scene::SHOWER && showerToolDragging;
         if (!pointerDown) {
             if (shopTouch) Platform::logLine("[ShopTouch] rejected=no_down");
             break;
@@ -2602,6 +2887,13 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
         }
         battlePressedItem = 0xFF;
         showerToolDragging = false;
+        if (releasedShowerTool) {
+            requestRenderRect(showerToolX - 64, showerToolY - 64,
+                              showerToolX + 65, showerToolY + 65);
+            showerSaveAfterMs = event.timestampMs;
+            flushShowerSave(event.timestampMs);
+            break;
+        }
         requestRenderRows(
                           sceneFlow.current() == AppSceneFlow::Scene::MAIN_MENU
                               ? MAIN_MENU_CONTENT_TOP
@@ -2721,7 +3013,6 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             requestFullRender();
             break;
         case HomeHitTarget::LOCK:
-            saveState();
             lockRequested = true;
             break;
         case HomeHitTarget::PET:
@@ -3320,6 +3611,10 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
         if (item < 0) return;
         if (computerPage == ComputerViewModel::Page::MENU) {
             if (item == 0) {
+                if (!gameState.oobeDone) {
+                    setToast(Ui::Menu::HATCH_FIRST, nowMs);
+                    return;
+                }
                 visitSession.attach(&gameState);
                 communicationReturnToComputer = true;
                 sceneFlow.enter(AppSceneFlow::Scene::COMMUNICATION);
@@ -3397,11 +3692,55 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
 
     if (sceneFlow.current() == AppSceneFlow::Scene::SETTINGS) {
         if (settingsBackAt(x, y)) {
-            closeUtilityScene();
+            if (settingsResetConfirm) {
+                settingsResetConfirm = false;
+                settingsPressedItem = 0xFF;
+                toast = nullptr;
+                requestFullRender();
+            } else {
+                closeUtilityScene();
+            }
             return;
         }
-        int item = settingsItemAt(x, y);
+        if (settingsResetConfirm) {
+            const int choice = settingsResetChoiceAt(x, y);
+            // A reset requires one deliberate press and release on the same button.
+            if (choice < 0 || settingsPressedItem != choice) return;
+            if (choice == 0) {
+                settingsResetConfirm = false;
+                settingsPressedItem = 0xFF;
+                toast = nullptr;
+                requestFullRender();
+            } else if (visitSession.busy()) {
+                setToast(Ui::Amoled::UPDATE_BUSY, nowMs);
+            } else if (!resetGame()) {
+                setToast(Ui::Settings::RESET_FAILED, nowMs);
+            }
+            return;
+        }
+        int item = settingsItemAt(x, y, systemUpdateHandler != nullptr);
         if (item < 0) return;
+        if (item == SETTINGS_RESET_GAME_ITEM) {
+            if (visitSession.busy()) {
+                setToast(Ui::Amoled::UPDATE_BUSY, nowMs);
+                return;
+            }
+            settingsResetConfirm = true;
+            settingsPressedItem = 0xFF;
+            settingsSliderDragging = false;
+            settingsSliderChanged = false;
+            toast = nullptr;
+            requestFullRender();
+            return;
+        }
+        if (item == SETTINGS_SYSTEM_UPDATE_ITEM && systemUpdateHandler) {
+            if (visitSession.busy() || !saveState()) {
+                setToast(Ui::Amoled::UPDATE_BUSY, nowMs);
+                return;
+            }
+            if (!systemUpdateHandler()) setToast(Ui::Amoled::UPDATE_BUSY, nowMs);
+            return;
+        }
         switch (item) {
         case 0:
         case 1:
@@ -3419,11 +3758,6 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             gameState.settings.idleTimeoutIndex = static_cast<uint8_t>(
                 (gameState.settings.idleTimeoutIndex + 1) % 5);
             setToast(Ui::Settings::POWER_SAVE, nowMs);
-            break;
-        case 4:
-            gameState.settings.voiceCallEnabled =
-                !gameState.settings.voiceCallEnabled;
-            setToast(Ui::Settings::VOICE_CALL, nowMs);
             break;
         default:
             return;
@@ -3462,20 +3796,8 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             requestShowerExit();
             return;
         }
-        if (showerMode == ShowerMode::SOAPING ||
-            showerMode == ShowerMode::BRUSHING) {
-            const int item = showerMenuItemAt(x, y);
-            if (item == 1 && showerMode == ShowerMode::SOAPING) {
-                if (showerSoapRewarded) startShowerTool(ShowerMode::BRUSHING, nowMs);
-                else setToast(Ui::Amoled::SOAP_FIRST, nowMs);
-            } else if (item == 2) {
-                if (!showerSoapRewarded) setToast(Ui::Amoled::SOAP_FIRST, nowMs);
-                else if (!showerBrushRewarded) setToast(Ui::Amoled::BRUSH_FIRST, nowMs);
-                else startShowerRinse(nowMs);
-            }
-            return;
-        }
-        if (showerMode != ShowerMode::MENU) return;
+        if (showerMode != ShowerMode::MENU && showerMode != ShowerMode::SOAPING &&
+            showerMode != ShowerMode::BRUSHING) return;
 
         int item = showerMenuItemAt(x, y);
         if (item == 0) {
@@ -3489,19 +3811,9 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
                 requestRenderRows(MENU_HEADER_HEIGHT, 448);
             }
         } else if (item == 1) {
-            if (!showerSoapRewarded) {
-                setToast(Ui::Amoled::SOAP_FIRST, nowMs);
-            } else {
-                startShowerTool(ShowerMode::BRUSHING, nowMs);
-            }
+            startShowerTool(ShowerMode::BRUSHING, nowMs);
         } else if (item == 2) {
-            if (!showerSoapRewarded) {
-                setToast(Ui::Amoled::SOAP_FIRST, nowMs);
-            } else if (!showerBrushRewarded) {
-                setToast(Ui::Amoled::BRUSH_FIRST, nowMs);
-            } else {
-                startShowerRinse(nowMs);
-            }
+            startShowerRinse(nowMs);
         }
         return;
     }
@@ -3660,6 +3972,10 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
 
     if (mainMenuBackAt(x, y)) {
         AppSceneFlow::Scene destination = sceneFlow.closeMenu();
+        if (destination == AppSceneFlow::Scene::HATCH) {
+            hatchLastUpdateMs = nowMs;
+            syncHatchImu(nowMs);
+        }
         if (destination == AppSceneFlow::Scene::EXPLORE_ROUTE) {
             resumeExploreRoute(nowMs);
         }
@@ -3674,6 +3990,12 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
         AppSceneFlow::MainMenuEntry entry = AppSceneFlow::mainMenuEntry(
             static_cast<uint8_t>(itemIndex),
             STICKMON_ENABLE_DEBUG_FEATURES != 0);
+        if (!gameState.oobeDone && entry.target != AppSceneFlow::Scene::SETTINGS &&
+            entry.target != AppSceneFlow::Scene::COMPUTER &&
+            entry.target != AppSceneFlow::Scene::HOME) {
+            setToast(Ui::Menu::HATCH_FIRST, nowMs);
+            return;
+        }
         if (entry.target == AppSceneFlow::Scene::EXPLORE_AREAS) {
             if (sceneFlow.menuReturn() == AppSceneFlow::Scene::EXPLORE_ROUTE) {
                 sceneFlow.enterExploreRoute();
@@ -3710,7 +4032,11 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             exploreRoutePlayerWalkActive = false;
             exploreRoutePaused = false;
             exploreRouteExitConfirm = false;
-            sceneFlow.goHome();
+            if (gameState.oobeDone) sceneFlow.goHome();
+            else {
+                sceneFlow.closeMenu();
+                hatchLastUpdateMs = nowMs;
+            }
             toast = nullptr;
             requestFullRender();
 #if STICKMON_ENABLE_DEBUG_FEATURES
@@ -3732,6 +4058,23 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
 }
 
 void AmoledApp::update(uint32_t nowMs) {
+    if (gameResetPending) return;
+    syncHatchImu(nowMs);
+    if (!gameState.oobeDone) {
+        if (sceneFlow.current() == AppSceneFlow::Scene::HATCH) {
+            AudioManager::ins().update();
+            CryPlayer::ins().update();
+            updateClockAndCare(nowMs);
+            updateHatch(nowMs);
+            if (toast && static_cast<int32_t>(nowMs - toastUntil) >= 0) {
+                toast = nullptr;
+                requestRenderRows(UiCommon::TOAST_TOP, UiCommon::TOAST_BOTTOM);
+            }
+            return;
+        }
+        // Menus pause the egg timer; keep the anchor current while they update.
+        updateHatch(nowMs);
+    }
 #if STICKMON_HAS_CLAW
     if (Stickmon::ClawRuntime::instance().playerActive(nowMs)) {
         // WeChat messages are player input too. Stop any route/battle
@@ -4103,6 +4446,7 @@ void AmoledApp::update(uint32_t nowMs) {
         }
         if (elapsed >= battleAnimationDurationMs) {
             battleAnimationActive = false;
+            battleAnimationStatusEffect = false;
             battleAnimationFrame = 0;
             battleAnimationDamage = 0;
             battleAttackLogHeld = false;
@@ -4187,39 +4531,30 @@ void AmoledApp::update(uint32_t nowMs) {
     }
 #endif
 
-    if (sceneFlow.current() == AppSceneFlow::Scene::SHOWER) {
-        updateShowerFoamMotion(0.08f);
-        const float atmosphereStep = showerAtmosphereTarget ? 24.0f : -34.0f;
-        showerAtmosphereAlpha = std::clamp(
-            showerAtmosphereAlpha + atmosphereStep, 0.0f, 255.0f);
-        if (showerMode == ShowerMode::RINSING &&
-            nowMs - showerLastFrameMs >= 80) {
-            showerLastFrameMs = nowMs;
-            uint32_t elapsed = nowMs - showerModeStartedMs;
-            showerRinseProgress = static_cast<uint8_t>(
-                std::min<uint32_t>(100, elapsed * 100 / 1800));
-            if (nowMs - showerLastRinseFoamMs >= 350) {
-                showerLastRinseFoamMs = nowMs;
-                rinseShowerFoamOneStage();
-            }
-            requestRenderRows(MENU_HEADER_HEIGHT, 352);
-            if (elapsed >= 1800 && !anyShowerFoam() &&
-                showerAtmosphereAlpha <= 1.0f) {
-                grantShowerStage(Game::BathService::Stage::RINSE, nowMs);
-                showerCompletionHearts = static_cast<uint8_t>(
-                    (showerSoapRewarded ? 1 : 0) +
-                    (showerBrushRewarded ? 1 : 0) +
-                    (showerRinseRewarded ? 1 : 0));
-                showerMode = ShowerMode::COMPLETE;
-                showerModeStartedMs = nowMs;
-                requestFullRender();
-            }
-        } else if (showerMode == ShowerMode::COMPLETE &&
-                   nowMs - showerModeStartedMs >= 1500) {
-            resetShowerSession(nowMs);
-            requestFullRender();
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    if (showerDiagnosticStartedMs != 0) {
+        const uint32_t elapsed = nowMs - showerDiagnosticStartedMs;
+        if (elapsed >= 12000 || sceneFlow.current() != AppSceneFlow::Scene::SHOWER) {
+            showerDiagnosticStartedMs = 0;
+            TouchEvent event{};
+            event.type = TouchEventType::UP;
+            event.x = showerToolX; event.y = showerToolY; event.timestampMs = nowMs;
+            handleTouch(event);
+            closeShowerScene();
+        } else {
+            const float phase = elapsed * 0.006f;
+            TouchEvent event{};
+            event.type = TouchEventType::MOVE;
+            event.x = static_cast<int16_t>(SHOWER_PET_X + std::sin(phase) * 70);
+            event.y = static_cast<int16_t>(SHOWER_PET_Y + std::cos(phase * 0.7f) * 64);
+            event.timestampMs = nowMs;
+            handleTouch(event);
         }
     }
+#endif
+
+    if (sceneFlow.current() == AppSceneFlow::Scene::SHOWER) updateShower(nowMs);
+    flushShowerSave(nowMs);
 
     if (toast && static_cast<int32_t>(nowMs - toastUntil) >= 0) {
         toast = nullptr;
@@ -4340,7 +4675,6 @@ void AmoledApp::update(uint32_t nowMs) {
 #endif
     if (!lockRequested && !pointerDown && idleTimeoutMs > 0 &&
         sleepSafeScene && nowMs - lastInteractionMs >= idleTimeoutMs) {
-        saveState();
         lockRequested = true;
         lastInteractionMs = nowMs;
     }
@@ -4457,7 +4791,6 @@ bool AmoledApp::startExploreRoute(uint32_t nowMs) {
         return false;
     }
     exploreSessionActive = true;
-    exploreRecoveryPendingSave = false;
     exploreRoutePool = buildExplorePreviewPool(gameState, selectedExploreArea);
 
     // Keep every possible encounter for this area resident before walking
@@ -4594,6 +4927,7 @@ bool AmoledApp::startExploreRoute(uint32_t nowMs) {
     AudioManager::ins().preloadSfx(SfxCue::DAMAGE_SUPER);
     AudioManager::ins().preloadSfx(SfxCue::DAMAGE_WEAK);
     AudioManager::ins().preloadSfx(SfxCue::UI_CANCEL);
+    AudioManager::ins().preloadSfx(SfxCue::UI_CONFIRM);
 
     if (!generateExploreRouteMap(nowMs)) return false;
     exploreRoutePetFrame = 0;
@@ -4651,7 +4985,7 @@ bool AmoledApp::generateExploreRouteMap(uint32_t nowMs) {
     exploreRoutePath = 0;
     if (exploreRouteMapBlock + 1 == exploreRouteMapBlockCount &&
         exploreRouteBossScheduled) {
-        uint8_t bossPaths[ExploreMapGenerator::PATH_COUNT] = {};
+        uint8_t bossPaths[ExploreMapGenerator::MAX_PATH_COUNT] = {};
         uint8_t bossPathCount = 0;
         for (uint8_t path = 0; path < exploreRouteMap.pathCount; ++path) {
             if (ExploreBoss::canPlaceOnPath(
@@ -4909,7 +5243,7 @@ bool AmoledApp::beginExploreRouteStep(uint32_t nowMs) {
     exploreRouteFollowerMoving =
         std::fabs(exploreRouteFollowerTargetX - exploreRouteFollowerFromX) >= 0.01f ||
         std::fabs(exploreRouteFollowerTargetY - exploreRouteFollowerFromY) >= 0.01f;
-#if STICKMON_ENABLE_DEBUG_FEATURES
+#if STICKMON_ENABLE_DEBUG_FEATURES && STICKMON_ENABLE_TRACE_LOGS
     const ExploreMapGenerator::Point& fromPoint =
         path.points[exploreRouteIndex - 1];
     const ExploreMapGenerator::Point& targetPoint =
@@ -5113,13 +5447,9 @@ void AmoledApp::updateExploreRoute(uint32_t nowMs) {
         requestRenderRows(0, EXPLORE_ROUTE_VIEW_HEIGHT);
     }
 
-    if (advanceExploreRouteWalkFrames(nowMs)) {
-        if (cameraMoved) {
-            requestRenderRows(0, EXPLORE_ROUTE_VIEW_HEIGHT);
-        } else {
-            requestExploreRouteDynamicRender();
-        }
-    }
+    // Position interpolation runs every UI tick; walking art retains its own cadence.
+    advanceExploreRouteWalkFrames(nowMs);
+    if (!cameraMoved) requestExploreRouteDynamicRender();
 
     if (static_cast<int32_t>(nowMs - nextExploreRouteMapFrameMs) >= 0) {
         do {
@@ -5141,7 +5471,9 @@ void AmoledApp::updateExploreRoute(uint32_t nowMs) {
     exploreRouteMoving = false;
     exploreRouteFollowerMoving = false;
     ++exploreRouteSteps;
-    recoverExploreTeamForCompletedSteps();
+    if (recoverExploreTeamForCompletedSteps()) {
+        requestRenderRows(HOME_STATUS_TOP, AmoledUi::HEIGHT);
+    }
     bool encounterBlockedThisStep =
         exploreRouteEncounterCooldownSteps > 0;
     bool repelActiveThisStep = exploreItemEffects.repelStepsRemaining() > 0;
@@ -5216,41 +5548,69 @@ bool AmoledApp::recoverExploreTeamForCompletedSteps() {
             static_cast<uint32_t>(monster.hpCur) + amount));
         recovered = true;
     }
-    if (recovered) exploreRecoveryPendingSave = true;
     return recovered;
+}
+
+ExploreRouteViewModel AmoledApp::exploreRouteModel() const {
+    ExploreRouteViewModel model;
+    model.map = &exploreRouteMap;
+    model.state = &gameState;
+    const uint8_t leaderSlot = exploreRouteLeaderSlot(gameState);
+    model.speciesId = gameState.team[leaderSlot].speciesId;
+    model.area = selectedExploreArea;
+    model.pathIndex = exploreRoutePath;
+    model.routeIndex = exploreRouteIndex;
+    if (exploreRoutePath < exploreRouteMap.pathCount) {
+        model.routePointCount =
+            exploreRouteMap.paths[exploreRoutePath].pointCount;
+    }
+    model.walkDirection = exploreRouteDirection;
+    model.petFrame = exploreRoutePetFrame;
+    model.mapFrame = exploreRouteMapFrame;
+    model.animationNowMs = Platform::clock().millis();
+    model.steps = exploreRouteSteps;
+    model.worldX = exploreRouteWorldX;
+    model.worldY = exploreRouteWorldY;
+    model.companionVisible = exploreRouteHasCompanion(gameState);
+    model.companionSpeciesId = model.companionVisible
+        ? gameState.team[1].speciesId : 0;
+    model.companionWorldX = exploreRouteFollowerWorldX;
+    model.companionWorldY = exploreRouteFollowerWorldY;
+    model.companionWalkDirection = exploreRouteFollowerDirection;
+    model.companionFrame = exploreRouteFollowerFrame;
+    model.companionWalking = exploreRouteFollowerMoving;
+    model.cameraX = exploreRouteCameraX;
+    model.cameraY = exploreRouteCameraY;
+    model.walking = exploreRouteMoving && !exploreRoutePaused;
+    model.autoWalk = exploreRouteAutoWalk && !exploreRoutePaused;
+    model.sliding = exploreRouteIceSliding;
+    model.complete = exploreRouteComplete;
+    model.bossPending = exploreRouteBossPending;
+    model.bossIndex = exploreRouteBossIndex;
+    model.bossSpeciesId = exploreRouteBossSpeciesId;
+    model.fadeAlpha = externalSceneFade ? 0 : expeditionFade.alpha();
+    model.exitConfirm = exploreRouteExitConfirm;
+    model.pickupIndex = exploreRoutePickupIndex;
+    model.pickupItem = exploreRoutePickupItem;
+    model.pickupAvailable = exploreRoutePickupAvailable;
+    model.toast = toast;
+    return model;
 }
 
 void AmoledApp::requestExploreRouteDynamicRender() {
     if (sceneFlow.current() != AppSceneFlow::Scene::EXPLORE_ROUTE) return;
-
-    // The route renderer restores the cached full-screen map underneath this
-    // band before drawing the previous/current pet position.
-    constexpr int PET_TOP_MARGIN = 120;
-    // Route points are now sprite centers, so the dynamic band must cover the
-    // same-sized lower half as the upper half to avoid stale trailing pixels.
-    constexpr int PET_BOTTOM_MARGIN = 120;
-    int previousY = static_cast<int>(std::lround((exploreRouteFromY -
-        exploreRouteCameraY) * AmoledUi::RESOURCE_SCALE));
-    int currentY = static_cast<int>(std::lround((exploreRouteWorldY -
-        exploreRouteCameraY) * AmoledUi::RESOURCE_SCALE));
-    int top = std::min(previousY, currentY) - PET_TOP_MARGIN;
-    int bottom = std::max(previousY, currentY) + PET_BOTTOM_MARGIN;
-    if (gameState.teamCount > 1 && exploreRouteFollowerMoving) {
-        int followerPreviousY = static_cast<int>(std::lround(
-            (exploreRouteFollowerFromY - exploreRouteCameraY) *
-            AmoledUi::RESOURCE_SCALE));
-        int followerCurrentY = static_cast<int>(std::lround(
-            (exploreRouteFollowerWorldY - exploreRouteCameraY) *
-            AmoledUi::RESOURCE_SCALE));
-        top = std::min(top, std::min(followerPreviousY, followerCurrentY) -
-                              PET_TOP_MARGIN);
-        bottom = std::max(bottom, std::max(followerPreviousY, followerCurrentY) +
-                                PET_BOTTOM_MARGIN);
+    if (!exploreActorBoundsValid || lastExploreCameraX != exploreRouteCameraX ||
+        lastExploreCameraY != exploreRouteCameraY || lastExploreMapSeed != exploreRouteMap.seed) {
+        requestRenderRows(0, EXPLORE_ROUTE_VIEW_HEIGHT);
+        return;
     }
-    top = std::clamp(top, 0, EXPLORE_ROUTE_VIEW_HEIGHT - 1);
-    bottom = std::clamp(bottom, top + 1, EXPLORE_ROUTE_VIEW_HEIGHT);
-    requestRenderRows(static_cast<uint16_t>(top),
-                      static_cast<uint16_t>(bottom));
+    const auto current = exploreRouteActorBounds(exploreRouteModel());
+    const auto previous = lastExploreActorBounds;
+    requestRenderRect(std::min(previous.x, current.x),
+        std::min(previous.y, current.y),
+        std::max(previous.x + previous.width, current.x + current.width),
+        std::min(EXPLORE_ROUTE_VIEW_HEIGHT,
+            std::max(previous.y + previous.height, current.y + current.height)));
 }
 
 void AmoledApp::requestExploreRouteBossRender() {
@@ -5422,7 +5782,6 @@ void AmoledApp::resolveExploreStepEvent(
         if (honeyEncounter) exploreItemEffects.consumeHoneyEncounter();
         return;
     }
-    saveState();
 }
 
 void AmoledApp::resolveExploreRoutePickup(uint32_t nowMs) {
@@ -5491,8 +5850,9 @@ bool AmoledApp::beginExploreEncounter(
 #if STICKMON_ENABLE_DEBUG_FEATURES
     const uint32_t encounterStartMs = Platform::clock().millis();
 #endif
-    if (gameState.teamCount == 0 || gameState.team[0].fainted ||
-        gameState.team[0].hpCur == 0) {
+    const uint8_t leaderSlot = exploreRouteLeaderSlot(gameState);
+    if (leaderSlot >= gameState.teamCount ||
+        !exploreRouteMonsterHealthy(gameState.team[leaderSlot])) {
         setToast(Ui::Menu::PET_REST, nowMs);
         return false;
     }
@@ -5565,7 +5925,7 @@ bool AmoledApp::beginExploreEncounter(
     battleSpecialKind = specialKind;
 
     uint16_t dynamicSpecies[] = {
-        gameState.team[0].speciesId, battleWild.speciesId,
+        gameState.team[leaderSlot].speciesId, battleWild.speciesId,
     };
 #if STICKMON_ENABLE_DEBUG_FEATURES
     const uint32_t spritePrepStartedMs = Platform::clock().millis();
@@ -5585,7 +5945,7 @@ bool AmoledApp::beginExploreEncounter(
     battleTurnDamaged[1] = false;
     battleContinuation = BattleContinuation::NONE;
     BattleSystem::EffectResolution effects;
-    battlePlayerSlot = 0;
+    battlePlayerSlot = leaderSlot;
     const Species* playerSpecies = findSpecies(
         gameState.team[battlePlayerSlot].speciesId);
     if (playerSpecies) {
@@ -5603,11 +5963,13 @@ bool AmoledApp::beginExploreEncounter(
     battleFriendshipContactSlot = 0xFF;
     resetBattleProgressionQueue();
     battleAnimationActive = false;
+    battleAnimationStatusEffect = false;
     battleSwitchStage = BattleSwitchStage::NONE;
     pendingBattleSwitchSlot = 0xFF;
     battleSwitchConsumesTurn = false;
     battleAnimationAttackerWild = false;
     battleAnimationHit = false;
+    battleAnimationFx = GameAssets::BattleFx::HIT;
     battleAnimationDamage = 0;
     battleAnimationFrame = 0;
     battleAttackLogHeld = false;
@@ -5636,6 +5998,7 @@ bool AmoledApp::beginExploreEncounter(
     AudioManager::ins().preloadSfx(SfxCue::DAMAGE_SUPER);
     AudioManager::ins().preloadSfx(SfxCue::DAMAGE_WEAK);
     AudioManager::ins().preloadSfx(SfxCue::UI_CANCEL);
+    AudioManager::ins().preloadSfx(SfxCue::UI_CONFIRM);
 #if STICKMON_ENABLE_DEBUG_FEATURES
     const uint32_t sfxPrepMs = Platform::clock().millis() - sfxPrepStartedMs;
 #endif
@@ -5962,6 +6325,11 @@ void AmoledApp::performBattlePlayerAction(
         battleAnimationActive = true;
         battleAnimationAttackerWild = false;
         battleAnimationHit = !damage.missed && !damage.failed && dealt > 0;
+        battleAnimationFx = move
+            ? GameAssets::battleFxForMove(move->id, move->type)
+            : GameAssets::BattleFx::HIT;
+        battleAnimationStatusEffect = battleStatusEffectSucceeded(
+            battleAnimationFx, damage, moveEffects);
         battleAnimationDamage = dealt;
         battleAnimationDurationMs =
             BATTLE_HP_DAMAGE_DELAY_MS + BATTLE_HP_ANIMATION_MS +
@@ -5983,7 +6351,8 @@ void AmoledApp::performBattlePlayerAction(
                 ? (damage.effectiveness > 100 ? SfxCue::DAMAGE_SUPER
                    : damage.effectiveness < 100 ? SfxCue::DAMAGE_WEAK
                                                  : SfxCue::DAMAGE_NORMAL)
-                : SfxCue::UI_CANCEL);
+                : battleAnimationStatusEffect ? SfxCue::UI_CONFIRM
+                                              : SfxCue::UI_CANCEL);
         battlePendingCrySpecies = player.speciesId;
         Platform::logf("[BattleAnim] start side=player hit=%u damage=%u\n",
                        battleAnimationHit ? 1 : 0, dealt);
@@ -6010,7 +6379,6 @@ bool AmoledApp::resolveBattleFaint(uint32_t nowMs) {
         std::snprintf(battleMessage, sizeof(battleMessage), "%s",
                       Ui::Amoled::PET_FAINTED);
         pushBattleLog(nowMs);
-        saveState();
         battleTurnPlan = BattleTurnController::TurnPlan{};
         battleTurnActionIndex = 0;
         if (hasSwitch) {
@@ -6122,7 +6490,6 @@ void AmoledApp::updateBattleSwitch(uint32_t nowMs) {
                       Ui::Explore::SWITCH_IN_FMT, candidateSpecies->name);
         pushBattleLog(nowMs);
     }
-    saveState();
     if (battleSwitchConsumesTurn) {
         battleContinuation = BattleContinuation::WILD_TURN;
     }
@@ -6229,6 +6596,11 @@ void AmoledApp::performBattleWildAction(
         battleAnimationActive = true;
         battleAnimationAttackerWild = true;
         battleAnimationHit = !damage.missed && !damage.failed && dealt > 0;
+        battleAnimationFx = move
+            ? GameAssets::battleFxForMove(move->id, move->type)
+            : GameAssets::BattleFx::HIT;
+        battleAnimationStatusEffect = battleStatusEffectSucceeded(
+            battleAnimationFx, damage, moveEffects);
         battleAnimationDamage = dealt;
         battleAnimationDurationMs =
             BATTLE_HP_DAMAGE_DELAY_MS + BATTLE_HP_ANIMATION_MS +
@@ -6250,7 +6622,8 @@ void AmoledApp::performBattleWildAction(
                 ? (damage.effectiveness > 100 ? SfxCue::DAMAGE_SUPER
                    : damage.effectiveness < 100 ? SfxCue::DAMAGE_WEAK
                                                  : SfxCue::DAMAGE_NORMAL)
-                : SfxCue::UI_CANCEL);
+                : battleAnimationStatusEffect ? SfxCue::UI_CONFIRM
+                                              : SfxCue::UI_CANCEL);
         battlePendingCrySpecies = battleWild.speciesId;
         Platform::logf("[BattleAnim] start side=wild hit=%u damage=%u\n",
                        battleAnimationHit ? 1 : 0, dealt);
@@ -6647,7 +7020,6 @@ void AmoledApp::finishBattleVictory(uint32_t nowMs) {
         std::snprintf(battleMessage, sizeof(battleMessage), "%s",
                       Ui::Explore::FRIEND_CONTACT_QUESTION);
         pushBattleLog(nowMs);
-        saveState();
         requestFullRender();
         return;
     }
@@ -6655,7 +7027,6 @@ void AmoledApp::finishBattleVictory(uint32_t nowMs) {
         Game::FriendshipService::recordFailure(
             gameState, battleWild.speciesId);
     }
-    saveState();
     if (battleLogPlaybackBusy()) {
         battleVictoryFinalizePending = true;
         requestRenderRows(352, 448);
@@ -6695,7 +7066,6 @@ void AmoledApp::resolveBattleFriendship(uint8_t choice, uint32_t nowMs) {
         Game::FriendshipService::recordSuccess(
             gameState, battleWild.speciesId);
         battleFriendshipContactSlot = contactSlot;
-        saveState();
         if (gameState.teamCount < Game::TEAM_CAP) {
             battleFriendshipPrompt = BattleViewModel::FriendshipPrompt::TEAM;
             std::snprintf(battleMessage, sizeof(battleMessage), "%s",
@@ -6727,7 +7097,6 @@ void AmoledApp::resolveBattleFriendship(uint8_t choice, uint32_t nowMs) {
                 std::snprintf(battleMessage, sizeof(battleMessage), "%s",
                               Ui::Amoled::TEAM_MEMBER_ADDED);
                 pushBattleLog(nowMs);
-                saveState();
                 requestRenderRows(MENU_HEADER_HEIGHT, 448);
                 return;
             }
@@ -6739,11 +7108,14 @@ void AmoledApp::resolveBattleFriendship(uint8_t choice, uint32_t nowMs) {
 }
 
 void AmoledApp::finishBattleAfterFriendship(uint32_t nowMs) {
-    saveState();
     if (battleProgressionCount > battleProgressionIndex) {
         autonomousExpedition = false;
         battleProgressionSequenceActive = true;
-        if (startNextBattleProgression(nowMs)) return;
+        if (startNextBattleProgression(nowMs)) {
+            // The battle screen has handed off to level/evolution choices.
+            saveState();
+            return;
+        }
     }
     closeBattle(nowMs);
     if (autonomousExpedition) exploreRouteAutoWalk = true;
@@ -6800,7 +7172,6 @@ void AmoledApp::finishBattleDefeat(uint32_t nowMs) {
             gameState.gameMinutesTotal);
     }
     saveState();
-    exploreRecoveryPendingSave = false;
     exploreSessionActive = false;
     autonomousExpedition = false;
     PokemonSprites::setDynamicSceneSpecies(nullptr, 0);
@@ -6829,6 +7200,9 @@ void AmoledApp::finishBattleDefeat(uint32_t nowMs) {
 
 void AmoledApp::closeBattle(uint32_t nowMs) {
     (void)nowMs;
+    // Persist the complete result before resuming the route, including flee
+    // damage, rewards, contacts and any completed progression choices.
+    saveState();
     bool returnToDebug = false;
 #if STICKMON_ENABLE_DEBUG_FEATURES
     if (debugBattleActive) {
@@ -6846,11 +7220,13 @@ void AmoledApp::closeBattle(uint32_t nowMs) {
     battleFriendshipContactSlot = 0xFF;
     resetBattleProgressionQueue();
     battleAnimationActive = false;
+    battleAnimationStatusEffect = false;
     battleSwitchStage = BattleSwitchStage::NONE;
     pendingBattleSwitchSlot = 0xFF;
     battleSwitchConsumesTurn = false;
     battleAnimationAttackerWild = false;
     battleAnimationHit = false;
+    battleAnimationFx = GameAssets::BattleFx::HIT;
     battleAnimationDamage = 0;
     battleAnimationFrame = 0;
     battleAttackLogHeld = false;
@@ -6894,7 +7270,7 @@ void AmoledApp::updateExploreRouteCamera() {
         std::clamp(cameraX, 0, maximumX));
     const int16_t nextCameraY = static_cast<int16_t>(
         std::clamp(cameraY, 0, maximumY));
-#if STICKMON_ENABLE_DEBUG_FEATURES
+#if STICKMON_ENABLE_DEBUG_FEATURES && STICKMON_ENABLE_TRACE_LOGS
     if (nextCameraX != exploreRouteCameraX || nextCameraY != exploreRouteCameraY) {
         Platform::logf(
             "[AmoledExploreDiag] camera world=(%.2f,%.2f) old=(%d,%d) "
@@ -6929,7 +7305,6 @@ void AmoledApp::resumeExploreRoute(uint32_t nowMs) {
 
 void AmoledApp::settleExploreReturn() {
     const uint8_t bondGain = Game::Bond::adventureGain(exploreRouteSteps);
-    bool stateChanged = exploreRecoveryPendingSave;
     for (uint8_t slot = 0;
          slot < gameState.teamCount && slot < Game::TEAM_CAP; ++slot) {
         Game::MonsterRuntime& monster = gameState.team[slot];
@@ -6937,7 +7312,6 @@ void AmoledApp::settleExploreReturn() {
             monster.majorStatusTurns != 0) {
             monster.majorStatus = Game::MajorStatus::NONE;
             monster.majorStatusTurns = 0;
-            stateChanged = true;
         }
         if (bondGain == 0 || monster.origin == Game::Origin::VISITOR ||
             monster.fainted || monster.hpCur == 0) {
@@ -6947,10 +7321,10 @@ void AmoledApp::settleExploreReturn() {
             monster.bond, bondGain);
         if (nextBond == monster.bond) continue;
         monster.bond = nextBond;
-        stateChanged = true;
     }
     exploreItemEffects.reset();
-    if (stateChanged && saveState()) exploreRecoveryPendingSave = false;
+    // Even a short, uneventful route can have unsaved steps and care changes.
+    saveState();
 }
 
 void AmoledApp::leaveExploreRoute() {
@@ -7051,10 +7425,12 @@ void AmoledApp::updateClockAndCare(uint32_t nowMs) {
             sceneFlow.current() != AppSceneFlow::Scene::BATTLE;
         Game::applyCareMinutes(gameState, careAcc, elapsedMinutes,
                                gameSpeed(), homeRecoveryActive);
-        requestRenderRows(HOME_STATUS_TOP, 448);
+        if (gameState.teamCount > 0) requestRenderRows(HOME_STATUS_TOP, 448);
     }
 
-    if ((clockChanged || elapsedMs >= CARE_TICK_MS) &&
+    if (!exploreSessionActive &&
+        sceneFlow.current() != AppSceneFlow::Scene::BATTLE &&
+        (clockChanged || elapsedMs >= CARE_TICK_MS) &&
         nowMs - lastPersistMs >= PERIODIC_SAVE_MS) {
         saveState();
         lastPersistMs = nowMs;
@@ -7121,6 +7497,12 @@ void AmoledApp::updatePet(uint32_t nowMs) {
         0, Stickmon::ClawRuntime::instance().autonomyActive()
                ? Home::ControlOwner::CLAW
                : Home::ControlOwner::AUTONOMOUS);
+#endif
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    if (static_cast<int32_t>(nowMs - nextHomeStateDiagnosticMs) >= 0) {
+        debugReportHomeState();
+        nextHomeStateDiagnosticMs = nowMs + 5000;
+    }
 #endif
     // Keep an unowned serving actionable. A route failure releases the bowl,
     // and food restored from a save has no lease; either case must return to
@@ -11563,17 +11945,27 @@ int AmoledApp::worldToScreenY(float worldY) const {
 }
 
 void AmoledApp::requestRenderRows(uint16_t begin, uint16_t end) {
-    begin = std::min<uint16_t>(begin, AmoledUi::HEIGHT);
-    end = std::clamp<uint16_t>(end, begin, AmoledUi::HEIGHT);
-    if (begin == end) return;
+    requestRenderRect(0, begin, AmoledUi::WIDTH, end);
+}
+
+void AmoledApp::requestRenderRect(int left, int top, int right, int bottom) {
+    left = std::clamp(left, 0, AmoledUi::WIDTH);
+    right = std::clamp(right, left, AmoledUi::WIDTH);
+    top = std::clamp(top, 0, AmoledUi::HEIGHT);
+    bottom = std::clamp(bottom, top, AmoledUi::HEIGHT);
+    if (left == right || top == bottom) return;
     if (!dirtyRowsValid) {
-        dirtyRowBegin = begin;
-        dirtyRowEnd = end;
+        dirtyColumnBegin = left;
+        dirtyColumnEnd = right;
+        dirtyRowBegin = top;
+        dirtyRowEnd = bottom;
         dirtyRowsValid = true;
         return;
     }
-    dirtyRowBegin = std::min(dirtyRowBegin, begin);
-    dirtyRowEnd = std::max(dirtyRowEnd, end);
+    dirtyColumnBegin = std::min<int>(dirtyColumnBegin, left);
+    dirtyColumnEnd = std::max<int>(dirtyColumnEnd, right);
+    dirtyRowBegin = std::min<int>(dirtyRowBegin, top);
+    dirtyRowEnd = std::max<int>(dirtyRowEnd, bottom);
 }
 
 void AmoledApp::requestFullRender() {
@@ -11581,9 +11973,12 @@ void AmoledApp::requestFullRender() {
 }
 
 void AmoledApp::markRendered() {
-    if (dirtyRowsValid && dirtyRowBegin == 0 && dirtyRowEnd == AmoledUi::HEIGHT) {
+    if (dirtyRowsValid && dirtyRowBegin == 0 && dirtyRowEnd == AmoledUi::HEIGHT &&
+        dirtyColumnBegin == 0 && dirtyColumnEnd == AmoledUi::WIDTH) {
         expeditionFade.markPresented(Platform::clock().millis());
     }
+    if (sceneFlow.current() != AppSceneFlow::Scene::EXPLORE_ROUTE &&
+        sceneFlow.current() != AppSceneFlow::Scene::EXPLORE_MENU) exploreActorBoundsValid = false;
     dirtyRowsValid = false;
     if (battleAnimationActive && battleAudioPending && !battleAudioReady &&
         sceneFlow.current() == AppSceneFlow::Scene::BATTLE) {
@@ -11616,8 +12011,58 @@ float AmoledApp::gameSpeed() const {
     return SPEEDS[index < 4 ? index : 0];
 }
 
+void AmoledApp::fillHomePetModel(HomeViewModel& model) const {
+    const auto homeSnapshot = homeRuntime.renderSnapshot();
+    model.speciesId = gameState.team[0].speciesId;
+    model.petCenterX = static_cast<int16_t>(worldToScreenX(
+        homeSnapshot.actors[0].x));
+    model.petGroundY = static_cast<int16_t>(worldToScreenY(
+        homeSnapshot.actors[0].y));
+    model.petVisible = homeSnapshot.actors[0].active &&
+        !homeSnapshot.actors[0].hidden && !expeditionMainHidden;
+    model.petRenderOffsetY = static_cast<int8_t>(std::lround(
+        pairMainRenderOffsetY * AmoledUi::RESOURCE_SCALE));
+    model.petFrame = petFrame;
+    model.petDirection = petDirection;
+    model.petLongMove = petLongMove;
+    // The main pet stays in PetMotion::IDLE while a pair interaction
+    // moves it (approach leader or chase); present that as walking so
+    // the sprite does not slide in its idle pose.
+    const bool mainPairMoving =
+        (pairPhase == PairPhase::APPROACH &&
+         (pairTalkParallelApproach
+              ? !pairTalkMainArrived : pairLeaderMain)) ||
+        (pairPhase == PairPhase::ACTIVE &&
+         pairActivity == Home::PairActivity::CHASE);
+    const bool mainWelcomingVisitor =
+        visitorMotion == VisitorMotion::HOST_APPROACH;
+    model.petAction = petMotion == PetMotion::STOPPING
+        ? HomeViewModel::PetVisualAction::STOPPING
+        : (petMotion == PetMotion::WANDERING ||
+           petMotion == PetMotion::SEEKING_FOOD ||
+           petMotion == PetMotion::SEEKING_SLEEP ||
+           mainPairMoving || mainWelcomingVisitor ||
+           visitDeparture == VisitDeparture::WALK_TO_DOOR ||
+           visitDeparture == VisitDeparture::CROSS_DOOR)
+            ? HomeViewModel::PetVisualAction::WALKING
+            : HomeViewModel::PetVisualAction::IDLE;
+    model.petResting = petResting;
+}
+
 void AmoledApp::render(Canvas565& canvas) const {
     renderCaches_.retainForScene(sceneFlow.current());
+    if (sceneFlow.current() == AppSceneFlow::Scene::HATCH) {
+        HatchViewModel model;
+        model.remainingSeconds = hatchLastRemainingSecond;
+        model.shakeOffset = hatchLastShakeOffset;
+        model.showHeart = hatchHeartVisible;
+        const uint16_t minutes = gameState.gameMinutesTotal % Game::GAME_MINUTES_PER_DAY;
+        model.gameMinutesOfDay = minutes;
+        model.night = minutes < 6 * 60 || minutes >= 18 * 60;
+        model.toast = toast;
+        renderHatchScreen(canvas, model, dirtyRowBegin, dirtyRowEnd, &hatchEggHitBounds);
+        return;
+    }
     if (sceneFlow.current() == AppSceneFlow::Scene::HOME) {
         const Home::RenderSnapshot homeSnapshot =
             homeRuntime.renderSnapshot();
@@ -11648,14 +12093,6 @@ void AmoledApp::render(Canvas565& canvas) const {
             gameState.gameMinutesTotal % Game::GAME_MINUTES_PER_DAY);
         model.cameraX = static_cast<int16_t>(std::lround(cameraX));
         model.cameraY = static_cast<int16_t>(std::lround(cameraY));
-        model.petCenterX = static_cast<int16_t>(worldToScreenX(
-            homeSnapshot.actors[0].x));
-        model.petGroundY = static_cast<int16_t>(worldToScreenY(
-            homeSnapshot.actors[0].y));
-        model.petVisible = homeSnapshot.actors[0].active &&
-            !homeSnapshot.actors[0].hidden && !expeditionMainHidden;
-        model.petRenderOffsetY = static_cast<int8_t>(std::lround(
-            pairMainRenderOffsetY * AmoledUi::RESOURCE_SCALE));
         RoomResource& room = RoomResource::ins();
         if (room.available()) {
             model.bowlCenterX = static_cast<int16_t>(
@@ -11663,31 +12100,7 @@ void AmoledApp::render(Canvas565& canvas) const {
             model.bowlCenterY = static_cast<int16_t>(
                 worldToScreenY(room.foodY()));
         }
-        model.petFrame = petFrame;
-        model.petDirection = petDirection;
-        model.petLongMove = petLongMove;
-        // The main pet stays in PetMotion::IDLE while a pair interaction
-        // moves it (approach leader or chase); present that as walking so
-        // the sprite does not slide in its idle pose.
-        const bool mainPairMoving =
-            (pairPhase == PairPhase::APPROACH &&
-             (pairTalkParallelApproach
-                  ? !pairTalkMainArrived : pairLeaderMain)) ||
-            (pairPhase == PairPhase::ACTIVE &&
-             pairActivity == Home::PairActivity::CHASE);
-        const bool mainWelcomingVisitor =
-            visitorMotion == VisitorMotion::HOST_APPROACH;
-        model.petAction = petMotion == PetMotion::STOPPING
-            ? HomeViewModel::PetVisualAction::STOPPING
-            : (petMotion == PetMotion::WANDERING ||
-               petMotion == PetMotion::SEEKING_FOOD ||
-               petMotion == PetMotion::SEEKING_SLEEP ||
-               mainPairMoving || mainWelcomingVisitor ||
-               visitDeparture == VisitDeparture::WALK_TO_DOOR ||
-               visitDeparture == VisitDeparture::CROSS_DOOR)
-                ? HomeViewModel::PetVisualAction::WALKING
-                : HomeViewModel::PetVisualAction::IDLE;
-        model.petResting = petResting;
+        fillHomePetModel(model);
         if (gameState.teamCount > 1 && gameState.team[1].speciesId != 0 &&
             homeSnapshot.actors[1].active &&
             !homeSnapshot.actors[1].hidden &&
@@ -11860,47 +12273,9 @@ void AmoledApp::render(Canvas565& canvas) const {
     if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_ROUTE ||
         sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_MENU) {
         ExploreRouteViewModel model;
-        model.map = &exploreRouteMap;
-        model.state = &gameState;
-        const uint8_t leaderSlot = exploreRouteLeaderSlot(gameState);
-        model.speciesId = gameState.team[leaderSlot].speciesId;
-        model.area = selectedExploreArea;
-        model.pathIndex = exploreRoutePath;
-        model.routeIndex = exploreRouteIndex;
-        if (exploreRoutePath < exploreRouteMap.pathCount) {
-            model.routePointCount =
-                exploreRouteMap.paths[exploreRoutePath].pointCount;
-        }
-        model.walkDirection = exploreRouteDirection;
-        model.petFrame = exploreRoutePetFrame;
-        model.mapFrame = exploreRouteMapFrame;
-        model.animationNowMs = Platform::clock().millis();
-        model.steps = exploreRouteSteps;
-        model.worldX = exploreRouteWorldX;
-        model.worldY = exploreRouteWorldY;
-        model.companionVisible = exploreRouteHasCompanion(gameState);
-        model.companionSpeciesId = model.companionVisible
-            ? gameState.team[1].speciesId : 0;
-        model.companionWorldX = exploreRouteFollowerWorldX;
-        model.companionWorldY = exploreRouteFollowerWorldY;
-        model.companionWalkDirection = exploreRouteFollowerDirection;
-        model.companionFrame = exploreRouteFollowerFrame;
-        model.companionWalking = exploreRouteFollowerMoving;
-        model.cameraX = exploreRouteCameraX;
-        model.cameraY = exploreRouteCameraY;
-        model.walking = exploreRouteMoving && !exploreRoutePaused;
-        model.autoWalk = exploreRouteAutoWalk && !exploreRoutePaused;
-        model.sliding = exploreRouteIceSliding;
-        model.complete = exploreRouteComplete;
-        model.bossPending = exploreRouteBossPending;
-        model.bossIndex = exploreRouteBossIndex;
-        model.bossSpeciesId = exploreRouteBossSpeciesId;
-        model.fadeAlpha = externalSceneFade ? 0 : expeditionFade.alpha();
-        model.exitConfirm = exploreRouteExitConfirm;
-        model.pickupIndex = exploreRoutePickupIndex;
-        model.pickupItem = exploreRoutePickupItem;
-        model.pickupAvailable = exploreRoutePickupAvailable;
-        model.toast = toast;
+        model = exploreRouteModel();
+        model.renderColumnBegin = dirtyColumnBegin;
+        model.renderColumnEnd = dirtyColumnEnd;
         if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_ROUTE &&
             exploreRouteSteps == 0 && dirtyRowBegin == 0 &&
             dirtyRowEnd == AmoledUi::HEIGHT) {
@@ -11911,6 +12286,11 @@ void AmoledApp::render(Canvas565& canvas) const {
         }
         renderExploreRouteScreen(
             canvas, model, renderCaches_.exploreWorld, dirtyRowBegin, dirtyRowEnd);
+        lastExploreActorBounds = exploreRouteActorBounds(model);
+        lastExploreCameraX = model.cameraX;
+        lastExploreCameraY = model.cameraY;
+        lastExploreMapSeed = exploreRouteMap.seed;
+        exploreActorBoundsValid = true;
         if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_MENU) {
             ExploreMenuViewModel menuModel;
             menuModel.cursor = exploreMenuCursor;
@@ -11983,6 +12363,8 @@ void AmoledApp::render(Canvas565& canvas) const {
         model.animationActive = battleAnimationActive;
         model.animationAttackerWild = battleAnimationAttackerWild;
         model.animationHit = battleAnimationHit;
+        model.animationStatusEffect = battleAnimationStatusEffect;
+        model.animationFx = battleAnimationFx;
         model.animationDamage = battleAnimationDamage;
         model.animationFrame = battleAnimationFrame;
         if (battleSwitchStage != BattleSwitchStage::NONE) {
@@ -12157,6 +12539,8 @@ void AmoledApp::render(Canvas565& canvas) const {
 
     if (sceneFlow.current() == AppSceneFlow::Scene::SETTINGS) {
         SettingsViewModel model;
+        model.systemUpdate = systemUpdateHandler != nullptr;
+        model.resetConfirm = settingsResetConfirm;
         model.state = &gameState;
         model.brightness = gameState.settings.brightness;
         model.volume = gameState.settings.volume;
@@ -12209,7 +12593,7 @@ void AmoledApp::render(Canvas565& canvas) const {
         model.speciesId = gameState.team[0].speciesId;
         model.soapIndex = showerSoapIndex;
         model.rinseProgress = showerRinseProgress;
-        model.foam = showerFoam;
+        model.foam = showerBath.foam;
         model.foamCount = SHOWER_FOAM_CAP;
         model.atmosphereAlpha = static_cast<uint8_t>(std::clamp(
             showerAtmosphereAlpha, 0.0f, 255.0f));
@@ -12220,7 +12604,21 @@ void AmoledApp::render(Canvas565& canvas) const {
         model.toolDragging = showerToolDragging;
         model.exitConfirmYes = showerExitConfirmYes;
         model.toast = toast;
-        renderShowerScreen(canvas, model, dirtyRowBegin, dirtyRowEnd);
+        model.columnBegin = dirtyColumnBegin; model.columnEnd = dirtyColumnEnd;
+        model.nowMs = Platform::clock().millis();
+        model.elapsedMs = model.nowMs - showerModeStartedMs;
+        model.groundY = showerGroundY;
+        if (showerHopStartedMs && model.nowMs - showerHopStartedMs < 320) {
+            const float progress = (model.nowMs - showerHopStartedMs) / 320.0f;
+            model.petOffsetY = -static_cast<int16_t>(showerHopHeight * 4 * progress * (1 - progress) + 0.5f);
+        }
+        model.petFlip = showerWiggleStartedMs && model.nowMs - showerWiggleStartedMs < 220
+            ? ((model.nowMs - showerWiggleStartedMs) / 70) % 2 == 1
+            : model.nowMs < showerTurnUntilMs && showerTurnFlip;
+        model.water = showerWater; model.waterCount = 64;
+        model.floats = showerFloats; model.floatCount = 4;
+        renderShowerScreenCached(canvas, model, renderCaches_.showerBackground,
+                                dirtyRowBegin, dirtyRowEnd, &renderCaches_.showerPet);
         return;
     }
 
@@ -12281,11 +12679,40 @@ bool AmoledApp::consumeLockRequest() {
 }
 
 bool AmoledApp::displayLockAllowed() const {
-    return !pendingExpedition &&
-           (visitDeparture == VisitDeparture::NONE ||
-            visitDeparture == VisitDeparture::AWAY) &&
+    return gameState.oobeDone && gameState.teamCount > 0 &&
+           !gameResetPending && !pendingExpedition &&
+           sceneFlow.current() != AppSceneFlow::Scene::BATTLE &&
+           sceneFlow.current() != AppSceneFlow::Scene::SHOWER &&
+           sceneFlow.current() != AppSceneFlow::Scene::PROGRESSION &&
+           visitDeparture == VisitDeparture::NONE &&
            expeditionDeparturePhase == ExpeditionDeparturePhase::NONE &&
            !expeditionFade.active();
+}
+
+bool AmoledApp::prepareDisplayLock(uint32_t nowMs) {
+    if (!displayLockAllowed()) return false;
+    if (exploreSessionActive) {
+        // Settle the expedition through its normal return, then retry locking.
+        beginExploreReturn(nowMs);
+        return false;
+    }
+    sceneFlow.goHome();
+    pointerDown = false;
+    itemConfirmOpen = false;
+    teamConfirmOpen = false;
+    contactConfirmOpen = false;
+    settingsResetConfirm = false;
+    visitRecallConfirm = false;
+    toast = nullptr;
+    setMusicContext(MusicContext::HOME);
+    syncHomeActors(nowMs);
+    updateCamera();
+    // Both manual and idle locks arrive here, after any expedition has settled.
+    saveState();
+    requestFullRender();
+    int16_t focusX = 0;
+    int16_t focusY = 0;
+    return lockFocusPoint(focusX, focusY);
 }
 
 void AmoledApp::onWake(uint32_t nowMs) {
@@ -12299,12 +12726,31 @@ bool AmoledApp::lockFocusPoint(int16_t& x, int16_t& y) const {
     x = AmoledUi::WIDTH / 2;
     y = AmoledUi::HEIGHT / 2;
     if (sceneFlow.current() == AppSceneFlow::Scene::HOME &&
-        gameState.teamCount > 0) {
-        x = static_cast<int16_t>(worldToScreenX(petX));
-        y = static_cast<int16_t>(worldToScreenY(petY) - 64);
+        gameState.teamCount > 0 && homeMainActor.active &&
+        !homeMainActor.hidden && !expeditionMainHidden) {
+        HomeViewModel model;
+        fillHomePetModel(model);
+        const auto bounds = homePetVisibleBounds(model);
+        if (bounds.width <= 0 || bounds.height <= 0) return false;
+        x = static_cast<int16_t>(bounds.x + bounds.width / 2);
+        y = static_cast<int16_t>(bounds.y + bounds.height / 2);
         return true;
     }
     return false;
+}
+
+bool AmoledApp::lockTapHitsPet(int16_t x, int16_t y) const {
+    if (sceneFlow.current() != AppSceneFlow::Scene::HOME ||
+        gameState.teamCount == 0) return false;
+    HomeViewModel model;
+    fillHomePetModel(model);
+    const auto bounds = homePetVisibleBounds(model);
+    constexpr int TAP_PADDING = 12;
+    return bounds.width > 0 && bounds.height > 0 &&
+           x >= bounds.x - TAP_PADDING &&
+           x < bounds.x + bounds.width + TAP_PADDING &&
+           y >= bounds.y - TAP_PADDING &&
+           y < bounds.y + bounds.height + TAP_PADDING;
 }
 
 bool AmoledApp::petIsSleeping() const {
@@ -13389,6 +13835,9 @@ void AmoledApp::handleContactConfirmTap(int x, int y, uint32_t nowMs) {
 void AmoledApp::openSettingsScene() {
     sceneFlow.openSubScene(AppSceneFlow::Scene::SETTINGS);
     settingsPressedItem = 0xFF;
+    settingsResetConfirm = false;
+    settingsSliderDragging = false;
+    settingsSliderChanged = false;
     Platform::display().setBrightness(gameState.settings.brightness);
     Platform::audio().setVolume(gameState.settings.volume);
     toast = nullptr;
@@ -13405,6 +13854,7 @@ void AmoledApp::closeUtilityScene() {
     clawLogPinned = true;
     clawLogCount = 0;
     settingsPressedItem = 0xFF;
+    settingsResetConfirm = false;
     pressedRoomItem = -1;
     toast = nullptr;
     sceneFlow.closeSubScene();
@@ -13758,6 +14208,139 @@ void AmoledApp::completeProgression(uint32_t nowMs) {
     requestFullRender();
 }
 
+void AmoledApp::startShowerHop(float height, uint32_t nowMs) {
+    showerHopStartedMs = nowMs;
+    showerHopHeight = height;
+}
+
+void AmoledApp::addShowerFloat(uint8_t experience, uint8_t heartCount, uint32_t nowMs) {
+    heartCount = std::min<uint8_t>(heartCount, 3);
+    if (heartCount > 0) {
+        for (auto& floater : showerFloats) {
+            if (floater.heartCount > 0) floater.active = false;
+        }
+    }
+    uint8_t slot = 0;
+    for (uint8_t i = 0; i < 4; ++i) {
+        if (!showerFloats[i].active) { slot = i; break; }
+        if (showerFloats[i].bornMs < showerFloats[slot].bornMs) slot = i;
+    }
+    showerFloats[slot] = {nowMs, experience, true, heartCount};
+}
+
+void AmoledApp::spawnShowerWater(float x, float y, float vx, float vy) {
+    for (auto& drop : showerWater) {
+        if (drop.active) continue;
+        drop = {x, y, vx, vy, true};
+        return;
+    }
+}
+
+void AmoledApp::flushShowerSave(uint32_t nowMs) {
+    if (!showerSavePending || pointerDown ||
+        static_cast<int32_t>(nowMs - showerSaveAfterMs) < 0) return;
+    if (saveState()) showerSavePending = false;
+    else showerSaveAfterMs = nowMs + 1000;
+}
+
+void AmoledApp::updateShower(uint32_t nowMs) {
+    const float dt = std::min(0.05f, (nowMs - showerLastUpdateMs) / 1000.0f);
+    showerLastUpdateMs = nowMs;
+    bool moving = false;
+    bool cleanup = false;
+    if (showerMode == ShowerMode::BRUSHING) {
+        moving = updateShowerFoamMotion(dt);
+        checkShowerAtmosphereThreshold(nowMs);
+    }
+    const float previousAlpha = showerAtmosphereAlpha;
+    showerAtmosphereAlpha = showerBath.atmosphereTarget
+        ? std::min(255.0f, showerAtmosphereAlpha + 300 * dt)
+        : std::max(0.0f, showerAtmosphereAlpha - 420 * dt);
+    moving = moving || previousAlpha != showerAtmosphereAlpha;
+    if (showerMode == ShowerMode::RINSING) {
+        const uint32_t elapsed = nowMs - showerModeStartedMs;
+        // Progress is informational; foam visibility follows the simulation.
+        showerRinseProgress = static_cast<uint8_t>(std::min<uint32_t>(100, elapsed * 100 / 1800));
+        showerWaterCarry += dt * 96;
+        while (showerWaterCarry >= 1) {
+            showerWaterCarry -= 1;
+            const int index = static_cast<int>(elapsed / 10 + showerWaterCarry * 29);
+            spawnShowerWater(44 + (index * 29) % 278, 70 - (index * 7) % 84,
+                             (index % 7 - 3) * 8, 250 + (index * 13) % 180);
+        }
+        for (auto& drop : showerWater) {
+            if (!drop.active) continue;
+            drop.vy += 520 * dt;
+            drop.x += drop.vx * dt;
+            drop.y += drop.vy * dt;
+            if (drop.y >= 322) {
+                if (std::fabs(drop.vy) > 70 && drop.x > 50 && drop.x < 310) {
+                    drop.y = 320; drop.vy *= -0.24f;
+                    drop.vx += drop.x < SHOWER_PET_X ? -36 : 36;
+                } else drop.active = false;
+            }
+            if (drop.x < 36 || drop.x >= 332) drop.active = false;
+        }
+        if (nowMs - showerLastRinseShakeMs >= 800) {
+            showerLastRinseShakeMs = nowMs;
+            showerWiggleStartedMs = nowMs;
+            for (int i = 0; i < 3; ++i) {
+                const int direction = i % 2 == 0 ? 1 : -1;
+                spawnShowerWater(SHOWER_PET_X + direction * (20 + i * 12),
+                    SHOWER_PET_Y - 24, direction * (100 + i * 40), -90);
+            }
+        }
+        if (nowMs - showerLastRinseFoamMs >= 350) {
+            showerLastRinseFoamMs = nowMs;
+            rinseShowerFoamOneStage();
+        }
+        moving = true;
+        if (elapsed >= 1800 && !anyShowerFoam() && showerAtmosphereAlpha <= 1) {
+            grantShowerStage(Game::BathService::Stage::RINSE, nowMs);
+            showerCompletionHearts = static_cast<uint8_t>(
+                (showerSoapRewarded ? 1 : 0) + (showerBrushRewarded ? 1 : 0) +
+                (showerRinseRewarded ? 1 : 0));
+            Game::BathService::applyCompletionRecovery(gameState, showerCompletionHearts, 0);
+            showerSavePending = true;
+            showerSaveAfterMs = nowMs;
+            showerSoapConsumed = false;
+            showerMode = ShowerMode::COMPLETE;
+            showerModeStartedMs = nowMs;
+            for (auto& drop : showerWater) drop = {};
+            showerHopStartedMs = 0;
+            showerWiggleStartedMs = 0;
+            if (showerCompletionHearts >= 3) CryPlayer::ins().play(gameState.team[0].speciesId);
+            else if (showerCompletionHearts == 2) startShowerHop(20, nowMs);
+            requestRenderRows(MENU_HEADER_HEIGHT, 328);
+        }
+    } else if (showerMode == ShowerMode::COMPLETE && nowMs - showerModeStartedMs >= 1500) {
+        resetShowerSession(nowMs);
+        requestRenderRows(MENU_HEADER_HEIGHT, 448);
+    }
+    if (showerHopStartedMs) {
+        moving = true;
+        if (nowMs - showerHopStartedMs >= 320) { showerHopStartedMs = 0; cleanup = true; }
+    }
+    if (showerWiggleStartedMs) {
+        moving = true;
+        if (nowMs - showerWiggleStartedMs >= 220) { showerWiggleStartedMs = 0; cleanup = true; }
+    }
+    if (showerTurnUntilMs && nowMs >= showerTurnUntilMs) {
+        showerTurnUntilMs = 0;
+        moving = cleanup = true;
+    }
+    for (auto& floater : showerFloats) {
+        if (!floater.active) continue;
+        moving = true;
+        if (nowMs - floater.bornMs >= 1100) { floater.active = false; cleanup = true; }
+    }
+    if (cleanup || (moving && (dirtyRowsValid ||
+        static_cast<int32_t>(nowMs - showerNextVisualMs) >= 0))) {
+        showerNextVisualMs = nowMs + 33;
+        requestRenderRect(36, MENU_HEADER_HEIGHT, 332, 328);
+    }
+}
+
 void AmoledApp::openShowerScene(uint32_t nowMs) {
     sceneFlow.enter(AppSceneFlow::Scene::SHOWER);
     resetShowerSession(nowMs);
@@ -13766,6 +14349,9 @@ void AmoledApp::openShowerScene(uint32_t nowMs) {
 
 void AmoledApp::closeShowerScene() {
     showerToolDragging = false;
+    pointerDown = false;
+    showerSaveAfterMs = 0;
+    flushShowerSave(Platform::clock().millis());
     pressedShowerItem = -1;
     toast = nullptr;
     sceneFlow.enter(AppSceneFlow::Scene::ROOM);
@@ -13822,18 +14408,21 @@ void AmoledApp::updateShowerToolDrag(int x, int y, uint32_t nowMs) {
         showerStrokeCarry += std::sqrt(dx * dx + dy * dy);
     }
 
+    const int oldX = showerToolX, oldY = showerToolY;
+    if (oldX == x && oldY == y) return;
     showerToolX = static_cast<int16_t>(x);
     showerToolY = static_cast<int16_t>(y);
     showerLastStrokeX = showerToolX;
     showerLastStrokeY = showerToolY;
 
     if (showerMode == ShowerMode::SOAPING) {
-        while (showerStrokeCarry >= SHOWER_FOAM_DISTANCE) {
-            showerStrokeCarry -= SHOWER_FOAM_DISTANCE;
+        if (currentInside && showerStrokeCarry >= SHOWER_FOAM_DISTANCE &&
+            nowMs - showerLastSoapMs >= Game::BathInteraction::SOAP_INTERVAL_MS) {
+            showerStrokeCarry = 0;
             spawnShowerFoam(nowMs);
         }
     } else if (showerMode == ShowerMode::BRUSHING) {
-        if (showerStrokeCarry >= SHOWER_BRUSH_DISTANCE ||
+        if (currentInside && showerStrokeCarry >= SHOWER_BRUSH_DISTANCE &&
             nowMs - showerLastRubMs >= SHOWER_BRUSH_INTERVAL_MS) {
             showerStrokeCarry = 0.0f;
             showerLastRubMs = nowMs;
@@ -13841,140 +14430,76 @@ void AmoledApp::updateShowerToolDrag(int x, int y, uint32_t nowMs) {
         }
     }
 
-    requestRenderRows(MENU_HEADER_HEIGHT, 448);
+    requestRenderRect(std::min(oldX, x) - 64, std::min(oldY, y) - 64,
+                      std::max(oldX, x) + 65, std::max(oldY, y) + 65);
 }
 
 void AmoledApp::spawnShowerFoam(uint32_t nowMs) {
-    static constexpr int8_t OFFSETS[][2] = {
-        {-48, -60}, {40, -50}, {-16, -28}, {50, 0},
-        {-50, 8}, {16, 28}, {-32, 58}, {40, 56},
-    };
-    for (uint8_t i = 0; i < SHOWER_FOAM_CAP; ++i) {
-        const uint8_t index = static_cast<uint8_t>(
-            (showerFoamSpawnCursor + i) % SHOWER_FOAM_CAP);
-        ShowerFoamState& foam = showerFoam[index];
-        if (foam.active) continue;
-        const int8_t* offset = OFFSETS[index];
-        foam.restX = static_cast<int16_t>(SHOWER_PET_X + offset[0]);
-        foam.restYOffset = static_cast<int8_t>(offset[1]);
-        foam.x = static_cast<int16_t>(foam.restX + GameRandom::random(-3, 4));
-        foam.y = static_cast<int16_t>(SHOWER_PET_Y + foam.restYOffset +
-                                       GameRandom::random(-3, 4));
-        foam.stage = 0;
-        foam.brushProgress = 0;
-        foam.active = true;
-        showerFoamSpawnCursor = static_cast<uint8_t>((index + 1) % SHOWER_FOAM_CAP);
-        showerLastFoamGrowthMs = nowMs;
-        if (!showerSoapRewarded) {
-            grantShowerStage(Game::BathService::Stage::SOAP, nowMs);
-        }
-        requestRenderRows(MENU_HEADER_HEIGHT, 328);
-        return;
-    }
+    if (showerBath.atmosphereTarget ||
+        nowMs - showerLastSoapMs < Game::BathInteraction::SOAP_INTERVAL_MS) return;
+    showerLastSoapMs = nowMs;
+    if (Game::BathInteraction::spawn(showerBath, showerBathLayout(), nowMs) == 0) return;
+    if (!showerHopStartedMs || nowMs - showerHopStartedMs >= 900) startShowerHop(12, nowMs);
+    grantShowerStage(Game::BathService::Stage::SOAP, nowMs);
+    requestRenderRect(36, MENU_HEADER_HEIGHT, 332, 328);
 }
 
-ShowerFoamState* AmoledApp::findShowerFoamPartner(
-    const ShowerFoamState& source) {
-    for (uint8_t i = 0; i < SHOWER_FOAM_CAP; ++i) {
-        ShowerFoamState& candidate = showerFoam[i];
-        if (&candidate == &source || !candidate.active ||
-            candidate.stage != source.stage) {
-            continue;
-        }
-        const int dx = candidate.x - source.x;
-        const int dy = candidate.y - source.y;
-        if (dx * dx + dy * dy <= 48 * 48) return &candidate;
-    }
-    return nullptr;
+ShowerFoamState* AmoledApp::findShowerFoamPartner(const ShowerFoamState& source) {
+    return Game::BathInteraction::partner(showerBath, showerBathLayout(), source);
 }
 
-bool AmoledApp::tryMergeShowerFoam(ShowerFoamState& source,
-                                   uint32_t nowMs) {
-    if (!source.active || source.stage < 1 || source.stage >= 3) return false;
-    ShowerFoamState* partner = findShowerFoamPartner(source);
-    if (!partner) return false;
-    partner->stage = std::min<uint8_t>(3, static_cast<uint8_t>(source.stage + 1));
-    partner->brushProgress = 0;
-    source.active = false;
-    source.brushProgress = 0;
-    showerLastFoamGrowthMs = nowMs;
+bool AmoledApp::tryMergeShowerFoam(ShowerFoamState& source, uint32_t nowMs) {
+    if (!Game::BathInteraction::merge(showerBath, showerBathLayout(), source, nowMs)) return false;
+    startShowerHop(6, nowMs);
     checkShowerAtmosphereThreshold(nowMs);
     return true;
 }
 
 void AmoledApp::rubShowerFoamAt(int x, int y, uint32_t nowMs) {
-    ShowerFoamState* nearest = nullptr;
-    int nearestDistance = 25 * 25;
-    for (uint8_t i = 0; i < SHOWER_FOAM_CAP; ++i) {
-        ShowerFoamState& foam = showerFoam[i];
-        if (!foam.active) continue;
-        const int dx = foam.x - x;
-        const int dy = foam.y - y;
-        const int distance = dx * dx + dy * dy;
-        if (distance < nearestDistance) {
-            nearestDistance = distance;
-            nearest = &foam;
+    const auto result = Game::BathInteraction::rub(showerBath, showerBathLayout(), x, y, nowMs);
+    if (!result.touched) return;
+    if (result.merged) startShowerHop(6, nowMs);
+    checkShowerAtmosphereThreshold(nowMs);
+    if (nowMs - showerLastReactionMs >= 1500) {
+        showerLastReactionMs = nowMs;
+        if (GameRandom::random(100) < 35 && nowMs >= showerTurnUntilMs) {
+            showerTurnFlip = !showerTurnFlip;
+            showerTurnUntilMs = nowMs + 2600;
         }
     }
-    if (!nearest) return;
-    ++nearest->brushProgress;
-    const uint8_t threshold = nearest->stage < 2 ? 2 : 4;
-    if (nearest->brushProgress >= threshold) {
-        nearest->brushProgress = 0;
-        if (nearest->stage < 3) ++nearest->stage;
-        tryMergeShowerFoam(*nearest, nowMs);
-        checkShowerAtmosphereThreshold(nowMs);
-    }
-    requestRenderRows(MENU_HEADER_HEIGHT, 328);
+    requestRenderRect(36, MENU_HEADER_HEIGHT, 332, 328);
 }
 
 void AmoledApp::checkShowerAtmosphereThreshold(uint32_t nowMs) {
-    if (showerAtmosphereTarget) return;
-    bool largeFoam = false;
-    for (const ShowerFoamState& foam : showerFoam) {
-        if (!foam.active) continue;
-        largeFoam = largeFoam || foam.stage >= 3;
-    }
-    if (largeFoam && showerFoamLevelTotal() >= 6) {
-        for (ShowerFoamState& foam : showerFoam) foam.active = false;
-        showerAtmosphereTarget = true;
-        grantShowerStage(Game::BathService::Stage::BRUSH, nowMs);
-    }
+    if (!Game::BathInteraction::checkAtmosphere(showerBath, showerBathLayout())) return;
+    grantShowerStage(Game::BathService::Stage::BRUSH, nowMs);
+    startShowerHop(6, nowMs);
+    requestRenderRect(36, MENU_HEADER_HEIGHT, 332, 328);
 }
 
 uint8_t AmoledApp::showerFoamLevelTotal() const {
-    uint8_t total = 0;
-    for (const ShowerFoamState& foam : showerFoam) {
-        if (foam.active) total = static_cast<uint8_t>(
-            std::min<int>(255, total + foam.stage + 1));
-    }
-    return total;
+    return Game::BathInteraction::lowerWeight(showerBath, showerBathLayout());
 }
 
 bool AmoledApp::anyShowerFoam() const {
-    for (const ShowerFoamState& foam : showerFoam) {
-        if (foam.active) return true;
-    }
-    return false;
+    return Game::BathInteraction::anyFoam(showerBath);
 }
 
 void AmoledApp::rinseShowerFoamOneStage() {
-    for (ShowerFoamState& foam : showerFoam) {
-        if (!foam.active) continue;
-        if (foam.stage > 0) --foam.stage;
-        else foam.active = false;
-    }
-    if (!anyShowerFoam()) showerAtmosphereTarget = false;
+    Game::BathInteraction::rinse(showerBath);
 }
 
-void AmoledApp::updateShowerFoamMotion(float dtSeconds) {
-    (void)dtSeconds;
-    for (ShowerFoamState& foam : showerFoam) {
-        if (!foam.active) continue;
-        const int targetY = SHOWER_PET_Y + foam.restYOffset;
-        if (foam.y < targetY) ++foam.y;
-        else if (foam.y > targetY) --foam.y;
-    }
+Game::BathInteraction::Layout AmoledApp::showerBathLayout() const {
+    Game::BathInteraction::Layout layout;
+    layout.centerX = SHOWER_PET_X; layout.centerY = SHOWER_PET_Y;
+    layout.left = 80; layout.right = 288;
+    layout.top = 124; layout.bottom = 282;
+    layout.lowerY = 232; layout.groundY = showerGroundY; layout.scale = 2;
+    return layout;
+}
+
+bool AmoledApp::updateShowerFoamMotion(float dtSeconds) {
+    return Game::BathInteraction::update(showerBath, showerBathLayout(), dtSeconds);
 }
 
 void AmoledApp::grantShowerStage(Game::BathService::Stage stage,
@@ -14010,25 +14535,32 @@ void AmoledApp::grantShowerStage(Game::BathService::Stage stage,
         }
     }
 
-    if (reward.experience > 0 && reward.moodGain > 0) {
-        std::snprintf(showerToast, sizeof(showerToast),
-                      Ui::Amoled::SHOWER_EXP_MOOD_FMT,
-                      reward.experience, reward.moodGain);
-    } else if (reward.experience > 0) {
+    if (reward.experience > 0) {
         std::snprintf(showerToast, sizeof(showerToast),
                       Ui::Amoled::SHOWER_EXP_FMT,
                       reward.experience);
+        setToast(showerToast, nowMs, 1300);
     } else if (reward.moodGain > 0) {
-        std::snprintf(showerToast, sizeof(showerToast),
-                      Ui::Amoled::SHOWER_MOOD_FMT,
-                      reward.moodGain);
+        toast = nullptr;
     } else {
         std::snprintf(showerToast, sizeof(showerToast), "%s",
                       Ui::Amoled::CARE_LIMIT);
+        setToast(showerToast, nowMs, 1300);
     }
-    setToast(showerToast, nowMs, 1300);
-    saveState();
+    showerSavePending = true;
+    showerSaveAfterMs = nowMs + 300;
+    if (reward.experience > 0) {
+        addShowerFloat(reward.experience, 0, nowMs);
+    }
+    if (reward.moodGain > 0) {
+        const uint8_t heartCount = reward.moodGain <= 2 ? 1 : reward.moodGain <= 5 ? 2 : 3;
+        addShowerFloat(0, heartCount, nowMs);
+    }
+    if (reward.experience > 0 || reward.moodGain > 0) {
+        startShowerHop(20, nowMs);
+    }
     if (experience.leveledUp) {
+        if (saveState()) showerSavePending = false;
         openProgressionScene(AppSceneFlow::Scene::SHOWER, 0, oldLevel, nowMs);
     }
 }
@@ -14038,8 +14570,11 @@ void AmoledApp::startShowerRinse(uint32_t nowMs) {
     showerModeStartedMs = nowMs;
     showerLastFrameMs = nowMs;
     showerLastRinseFoamMs = nowMs;
+    showerLastRinseShakeMs = nowMs;
+    showerWaterCarry = 0;
+    for (auto& drop : showerWater) drop = {};
     showerRinseProgress = 0;
-    showerAtmosphereTarget = false;
+    showerBath.atmosphereTarget = false;
     showerToolDragging = false;
     pressedShowerItem = -1;
     toast = nullptr;
@@ -14078,14 +14613,22 @@ void AmoledApp::resetShowerSession(uint32_t nowMs) {
     showerModeStartedMs = nowMs;
     showerLastFrameMs = nowMs;
     showerLastRubMs = 0;
-    showerLastFoamGrowthMs = 0;
     showerLastRinseFoamMs = nowMs;
-    showerFoamSpawnCursor = 0;
-    showerFoamRestSlot = 0;
+    showerBath = Game::BathInteraction::State{};
     showerAtmosphereAlpha = 0.0f;
-    showerAtmosphereTarget = false;
-    for (ShowerFoamState& foam : showerFoam) foam = ShowerFoamState{};
+    showerBath.atmosphereTarget = false;
     pressedShowerItem = -1;
+    showerGroundY = showerPetGroundY(gameState.team[0].speciesId);
+    showerLastUpdateMs = nowMs;
+    showerLastSoapMs = nowMs - Game::BathInteraction::SOAP_INTERVAL_MS;
+    showerHopStartedMs = showerWiggleStartedMs = showerTurnUntilMs = 0;
+    showerTurnFlip = false;
+    showerLastReactionMs = nowMs;
+    showerLastRinseShakeMs = nowMs;
+    showerNextVisualMs = nowMs;
+    showerWaterCarry = 0;
+    for (auto& drop : showerWater) drop = {};
+    for (auto& floater : showerFloats) floater = {};
     showerToast[0] = '\0';
     toast = nullptr;
 }
@@ -14564,9 +15107,34 @@ void AmoledApp::persistHomeViewState(uint32_t nowMs) {
             ? homeCompanionActor.foodWakeRetryAfterMs - nowMs : 0;
 }
 
+bool AmoledApp::resetGame() {
+    if (gameResetPending || !storageReady || visitSession.busy() ||
+        !saveManager.clearAll()) {
+        Platform::logLine("[AmoledApp] failed to clear game data");
+        return false;
+    }
+    // Restart through the normal new-game path. Never write the old in-memory
+    // state back if a platform's restart request returns before rebooting.
+    gameResetPending = true;
+    syncHatchImu(Platform::clock().millis());
+    storageReady = false;
+    lockRequested = false;
+    visitSession.stop();
+    releaseVisitRadioSession();
+    Platform::power().restart();
+    return true;
+}
+
 bool AmoledApp::saveState() {
-    if (!storageReady) return false;
-    persistHomeViewState(Platform::clock().millis());
+    if (gameResetPending || !storageReady || saveWritesBlocked) return false;
+    if (!persistHatchProgress(true)) return false;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    const bool profileExploreSave =
+        sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_ROUTE;
+    const uint32_t saveStartedUs = Platform::clock().micros();
+#endif
+    if (gameState.oobeDone) persistHomeViewState(Platform::clock().millis());
+    else mainViewState = MainSceneViewState{};
     Game::GameState persistentState = gameState;
     for (uint8_t slot = 0; slot < persistentState.teamCount;) {
         if (persistentState.team[slot].origin != Game::Origin::VISITOR) {
@@ -14590,6 +15158,34 @@ bool AmoledApp::saveState() {
     if (!snapshotSaved || !historySaved) {
         Platform::logLine("[AmoledApp] save failed");
     }
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    if (snapshotSaved && historySaved) ++diagnosticSaveCount;
+    Platform::logf("[SaveDiag] event=save scene=%u ok=%u saves=%lu "
+                   "steps=%u coins=%lu elapsedUs=%lu\n",
+        static_cast<unsigned>(sceneFlow.current()),
+        snapshotSaved && historySaved ? 1U : 0U,
+        static_cast<unsigned long>(diagnosticSaveCount), gameState.stepsToday,
+        static_cast<unsigned long>(gameState.coins),
+        static_cast<unsigned long>(Platform::clock().micros() - saveStartedUs));
+    if (profileExploreSave) {
+        static uint32_t lastReportMs = 0, saves = 0, maxUs = 0;
+        static uint64_t totalUs = 0;
+        const uint32_t saveUs = Platform::clock().micros() - saveStartedUs;
+        ++saves;
+        totalUs += saveUs;
+        maxUs = std::max(maxUs, saveUs);
+        const uint32_t nowMs = Platform::clock().millis();
+        if (nowMs - lastReportMs >= 1000) {
+            Platform::logf("[ExploreSavePerf] saves=%lu avg=%lu us max=%lu us\n",
+                static_cast<unsigned long>(saves),
+                static_cast<unsigned long>(totalUs / saves),
+                static_cast<unsigned long>(maxUs));
+            lastReportMs = nowMs;
+            saves = maxUs = 0;
+            totalUs = 0;
+        }
+    }
+#endif
     return snapshotSaved && historySaved;
 }
 
@@ -14629,3 +15225,22 @@ bool AmoledApp::syncOwnedSpeciesToEncounterHistory() {
 }
 
 }  // namespace AmoledV1
+
+#if STICKMON_ENABLE_DEBUG_FEATURES
+bool AmoledV1::AmoledApp::debugStartShowerDrag(uint8_t tool, uint32_t nowMs) {
+    if (!gameState.oobeDone || tool > 1 || visitSession.active()) return false;
+    openShowerScene(nowMs);
+    // Benchmark visual interaction without consuming items or granting rewards.
+    showerSoapRewarded = showerBrushRewarded = showerRinseRewarded = true;
+    if (tool == 1) {
+        for (int i = 0; i < 8; ++i) Game::BathInteraction::spawn(showerBath, showerBathLayout(), nowMs);
+    }
+    startShowerTool(tool == 0 ? ShowerMode::SOAPING : ShowerMode::BRUSHING, nowMs);
+    TouchEvent event{};
+    event.type = TouchEventType::DOWN;
+    event.x = showerToolX; event.y = showerToolY; event.timestampMs = nowMs;
+    handleTouch(event);
+    showerDiagnosticStartedMs = nowMs;
+    return true;
+}
+#endif

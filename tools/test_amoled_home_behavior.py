@@ -24,7 +24,7 @@ class AmoledHomeBehaviorTests(unittest.TestCase):
         food = render.index("drawFoodContent(canvas")
         fallback_bowl = render.index("drawBowl(canvas")
         companion = render.index("drawHomeCompanion(canvas")
-        main_pet = render.index("drawPet(canvas, model)")
+        main_pet = render.index("drawPet(canvas, model,")
         self.assertLess(food, companion)
         self.assertLess(food, main_pet)
         self.assertLess(fallback_bowl, companion)

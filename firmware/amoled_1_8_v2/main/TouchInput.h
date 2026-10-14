@@ -37,6 +37,8 @@ private:
     uint32_t lastTouchMs = 0;
     int16_t lastX = 0;
     int16_t lastY = 0;
+    int16_t lastRawX = 0;
+    int16_t lastRawY = 0;
 };
 
 }  // namespace AmoledV2

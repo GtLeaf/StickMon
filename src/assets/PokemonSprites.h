@@ -1665,6 +1665,13 @@ struct SpriteFrame {
     uint32_t paletteOffset;
 };
 
+struct FrameBounds {
+    uint8_t left = 0;
+    uint8_t top = 0;
+    uint8_t width = 0;
+    uint8_t height = 0;
+};
+
 struct SpriteCacheStats {
     uint8_t cachedSpecies;
     uint8_t missingSpecies;
@@ -1680,6 +1687,7 @@ struct SpriteCacheStats {
 const SpriteFrame* findSpeciesSprite(uint16_t speciesId, SpriteKind kind);
 const SpriteFrame* findCachedSpeciesSprite(uint16_t speciesId, SpriteKind kind);
 int16_t frameGroundOffsetY(const SpriteFrame* frame);
+FrameBounds frameVisibleBounds(const SpriteFrame* frame);
 uint8_t frameVisibleWidth(const SpriteFrame* frame);
 bool walkingAnimation(uint16_t speciesId, WalkDirection direction, WalkingAnimation& animation);
 bool petAnimationProfile(uint16_t speciesId, PetAnimationProfile& profile);

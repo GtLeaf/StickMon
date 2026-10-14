@@ -11,11 +11,32 @@ The current milestone initializes the display and FT3168 touch controller,
 mounts a SPIFFS resource partition, and runs the first portrait interaction
 layer:
 
-- Tap the pet to trigger the petting response.
+- First boot without a save starts with an egg, using the shared StickS3 hatch
+  rules. Hatching takes 180 seconds at 1x speed; menus pause the egg timer.
+  The normal room bottom HUD shows a numeric countdown in place of HP, with
+  no progress bar. Tap the egg for a 700 ms heart plus a 1 second egg wobble,
+  or shake the device for a 1 second wobble. Fewer than 10 interactions or a tie gives Bulbasaur,
+  more taps gives Charmander, and more shakes gives Squirtle. Shakes require
+  two motion samples, an 800 ms cooldown and a quiet interval before rearming.
+  Progress is saved every 15 game seconds and after interactions.
+  Restarting resumes the egg; completed saves go directly to the room.
+  V1/V2 share the QMI8658 accelerometer driver on the BSP I2C bus (GPIO14/15).
+  Only the accelerometer runs during hatching (+/-8g, 62.5 Hz; polled at 50 Hz).
+  Menus, completion (including save retries) and reset disable the sensors and
+  oscillator. Returning to the egg resumes sampling with a fresh gravity filter.
+  The gyroscope stays off, and IMU failure leaves touch hatching available.
+  The lock button is dimmed and unavailable until hatching completes.
+- Tap the pet to trigger the petting response; two hearts stay just above the
+  current visible sprite and follow its hop offsets.
 - Tap the bowl to place the selected food from the real room inventory.
 - Use the bottom-left menu button to open the main menu. The adjacent lock
   button turns off the panel.
 - Drag the menu vertically and tap the top-left back button to return.
+- Open `SETTINGS -> 重置游戏` to clear game data after a separate confirmation.
+  Cancel or header back returns to settings without clearing anything. Finish
+  any visit session first; a storage failure keeps the confirmation page open.
+  Success restarts with a new egg and 07:00 game time. Completing the hatch gives
+  a level-5 starter and 1000 coins. Wi-Fi and ESP-Claw credentials are preserved.
 - Share `AppSceneFlow` with the M5StickS3 firmware for semantic scene state,
   menu return state, item order, destination, and icon mapping. The AMOLED
   firmware no longer maintains a private view enum or numbered menu list.
@@ -68,8 +89,11 @@ layer:
   room. The visit page supports join confirmation, remote pet sync, a timed
   visit with heartbeat/status exchange, explicit end, timeout and link-failure
   states through the shared `VisitSessionService`.
-- Use the lock button beside the menu button to turn off the AMOLED; tap the
-  screen to wake it.
+- Use the lock button beside the menu button to lock the AMOLED. Idle locking
+  returns to the room (an active expedition returns normally first). The pet
+  stays visible; double-tap it within 500 ms to unlock. Single taps, holds,
+  drags and touches outside the visible pet area do not unlock the display.
+  Locking is deferred when no pet is available at home.
 - Read up to two formal team members in the bottom-right HUD. Each row uses the
   same shared hunger icon and HP percentage/color rules as M5StickS3; visitor
   monsters are excluded. `HomeHud` owns the shared roster/value rules and
@@ -119,7 +143,7 @@ layer:
   `AI_HOSTING`. Social reuses the shared visit-session page and returns to the
   computer menu after an idle session ends. The Claw item starts a local Wi-Fi
   setup hotspot and configuration page on demand. Open `SETTINGS` to cycle
-  brightness, volume, game speed, power-save timeout, and voice-call settings;
+  brightness, volume, game speed, power-save timeout, and game reset settings;
   each change is persisted immediately.
 - Exploration steps resolve shared area encounters, pickups, ordinary regional
   boss pity, and the special encounter schedule. First Snorlax, Latias, Latios,
@@ -128,11 +152,27 @@ layer:
   switching between two team members, reserve experience, medicine, and flee;
   boss victory updates regional progress and pity state. Level gains open the
   portrait progression flow for level-up, evolution, move learning, and full
-  move-slot replacement. Defeat returns home with the fainted state preserved.
+  move-slot replacement. New encounters and regional bosses use the healthy
+  exploration leader: a healthy reserve replaces a fainted first member without
+  reordering the team. Defeat returns home with the fainted state preserved.
+- Exploration saves after pickups, when leaving a settled battle (including
+  flee and defeat), and on return home. Ordinary steps and ten-step recovery
+  update memory without writing flash. Manual and idle display locks save at
+  the lock boundary; the system-update restart saves before handing off to OTA.
+  Periodic care saves pause during exploration and battle, and remain active at home.
+  Item consumption and progression decisions retain their immediate saves.
+  Sudden power loss can discard steps and recovery since the last save event.
 - Run the ESP32-S3 at 240 MHz and expand logical pixels through two alternating
   DMA buffers. Each transfer stripe contains 32 logical rows (64 physical
   rows), allowing 2x scaling for the next stripe to overlap the current QSPI
   transfer.
+
+Debug builds emit `[ExplorePerf]` once per second while walking, including
+successful transfer FPS, draw/LCD timing, and average/p95/maximum frame intervals.
+`[ExploreSavePerf]` measures synchronous exploration saves. Detailed geometry
+logs additionally require `STICKMON_ENABLE_TRACE_LOGS=1`, keeping the ordinary
+debug measurement free of per-step and per-camera logs. Summaries still add
+logging overhead; these metrics are not emitted in release builds.
 
 The AMOLED exploration loop now includes capture/friendship prompts, route
 blocks and puzzles, battle animation/audio cues, the portrait progression
@@ -146,11 +186,12 @@ The ESP-IDF platform now provides NVS A/B saves, SPIFFS resources, PSRAM
 allocation, audio codec access, and the real ESP-NOW transport used by the
 shared `EspNowLink` protocol. The communication scene starts the shared visit
 session flow, while two physical devices still need an end-to-end V1/V2
-interoperability check. The current V1 BSP does not expose calibrated battery,
-QMI8658 IMU, or PCF85063A RTC services, so those capabilities deliberately
-report unavailable instead of returning fake values.
-The lock function powers down the panel while keeping the MCU awake at a
-reduced polling rate; PMU-backed deep sleep remains a hardware validation task.
+interoperability check. Battery and PCF85063A RTC services still report unavailable until calibrated
+board drivers are validated. The QMI8658 driver now provides on-demand hatch
+acceleration; its sensitivity and standby behavior need V1/V2 hardware checks.
+The lock function masks the room around the visible pet while keeping the MCU
+awake at a reduced polling rate; PMU-backed deep sleep remains a hardware
+validation task.
 
 The V1 startup sequence resets the display and touch rails through TCA9554
 before initializing SH8601 and FT3168. Touch reads are interrupt-driven from

@@ -27,4 +27,12 @@ void drawExploreRouteMapForegroundLayer(Canvas565& canvas,
                                         const ExploreRouteViewModel& model,
                                         uint16_t rowBegin, uint16_t rowEnd);
 
+// Restore grass and tree pixels in front of one actor, using its ground depth.
+// The rectangle and dirty rows use native framebuffer coordinates. Restores
+// the caller's route-map clip after drawing.
+void drawExploreRouteMapVegetationForActor(
+    Canvas565& canvas, const ExploreRouteViewModel& model,
+    float actorFootWorldY, int actorLeft, int actorTop,
+    int actorRight, int actorBottom, uint16_t rowBegin, uint16_t rowEnd);
+
 }  // namespace AmoledV1

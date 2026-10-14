@@ -122,6 +122,9 @@ struct LegacyRecord {
 void makeLegacyState(uint8_t stateBytes[1560], uint16_t version) {
     Game::GameState state;
     state.version = version;
+    state.settings.reservedAudioSetting = 1; // Legacy saves could enable voice calling.
+    state.settings.volume = 66;
+    state.settings.vibrationOn = true;
     state.coins = 4321;
     state.teamCount = 2;
     state.team[0].speciesId = 1;
@@ -176,6 +179,8 @@ void verifyV1Migration(DesktopPlatform& desktop) {
     assert(!normalized);
     assert(loaded.version == Game::SAVE_VERSION);
     assert(loaded.coins == 4321);
+    assert(loaded.settings.reservedAudioSetting == 0);
+    assert(loaded.settings.volume == 66 && loaded.settings.vibrationOn);
     assert(loaded.teamCount == 2 && loaded.team[1].speciesId == 4);
     assert(loaded.team[0].gender ==
            static_cast<uint8_t>(Game::Gender::MALE));
@@ -236,6 +241,8 @@ void verifyTransitionalMigration() {
     MainSceneViewState view;
     assert(manager.load(loaded, view));
     assert(loaded.coins == 4321);
+    assert(loaded.settings.reservedAudioSetting == 0);
+    assert(loaded.settings.volume == 66 && loaded.settings.vibrationOn);
     assert(view.secondary.valid);
     assert(view.secondary.speciesId == 4);
     assert(view.secondary.state == 6);
@@ -262,6 +269,8 @@ void verifyV2Migration(DesktopPlatform& desktop) {
     assert(manager.load(loaded, view));
     assert(loaded.version == Game::SAVE_VERSION);
     assert(loaded.coins == 4321);
+    assert(loaded.settings.reservedAudioSetting == 0);
+    assert(loaded.settings.volume == 66 && loaded.settings.vibrationOn);
     assert(loaded.normalBossPitySlotIndex ==
            loaded.gameMinutesTotal / 480);
     for (uint8_t area = 0; area < Game::EXPLORE_AREA_COUNT; ++area) {
@@ -288,6 +297,8 @@ void verifyInvalidLegacyViewKeepsGameState() {
     MainSceneViewState view;
     assert(manager.load(loaded, view));
     assert(loaded.coins == 4321);
+    assert(loaded.settings.reservedAudioSetting == 0);
+    assert(loaded.settings.volume == 66 && loaded.settings.vibrationOn);
     assert(!view.valid && !view.secondary.valid);
 }
 

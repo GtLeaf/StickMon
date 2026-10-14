@@ -206,7 +206,7 @@ Coze Agent 远程读取/操作游戏状态），只接入 AMOLED V1/V2。
 
 - `GameAssets.h::Kind` 与 `generate_game_assets.py::KIND_ORDER` 必须逐项同序；
   在枚举中间插入 Kind 后必须全量重生成四个包。
-- 生成器与 `GameAssets.cpp` 两侧共同校验上限：256 帧、200000 data words、
+- 生成器与 `GameAssets.cpp` 两侧共同校验上限：272 帧、200000 data words、
   2048 palette words、384000 payload；修改时必须同步。
 - `GameAssets.cpp::packSlotFor` 决定路由：UI 段与探索拾取球进 UI，
   `EXPLORE_TILE_*` 进 MAP，蛋进 HATCH，其余默认 BATTLE。

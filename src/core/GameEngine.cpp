@@ -1,7 +1,6 @@
 #include "core/GameEngine.h"
 #include "core/AudioManager.h"
 #include "core/CryPlayer.h"
-#include "core/VoiceCallService.h"
 #if defined(ESP32)
 #include "esp_attr.h"
 #endif
@@ -38,6 +37,7 @@
 #include "scenes/ExploreScene.h"
 #include "scenes/SettingsScene.h"
 #include "scenes/HatchScene.h"
+#include "game/HatchService.h"
 #include "scenes/ShowerScene.h"
 
 namespace {
@@ -1424,26 +1424,9 @@ PetResult GameEngine::petMonster() {
 }
 
 void GameEngine::finishHatch(uint8_t starterStyle) {
-    uint16_t starterId = 1;
-    if (starterStyle == 1) starterId = 4;
-    else if (starterStyle == 2) starterId = 7;
-    const Species* species = findSpecies(starterId);
-    if (!species) species = &starterSpecies();
-
-    state.teamCount = 1;
-    state.activeSlot = 0;
-    state.team[0] = createMonster(species->id, 5);
+    syncGameClock(Hal::ins().millis());
+    if (!Game::HatchService::finish(state, starterStyle)) return;
     clearMainSceneViewState();
-    state.team[0].origin = Game::Origin::HATCHED;
-    state.team[0].metArea = Game::MET_AREA_HATCHED;
-    state.team[0].metAt = gameSecondsForMinutes(gameMinutesTotal());
-    state.team[0].lastSeenAt = state.team[0].metAt;
-    state.team[0].lastExploredAt = state.team[0].metAt;
-    state.team[0].lastWindowGazeAt = state.team[0].metAt;
-    state.bag = Game::BagState{};
-    state.room = Game::RoomState{};
-    state.coins = Game::INITIAL_COINS;
-    state.oobeDone = true;
     markDirty(SaveUrgency::IMMEDIATE);
     requestScene(SceneID::MAIN);
 }
@@ -1952,7 +1935,6 @@ void GameEngine::markDirty(SaveUrgency urgency) {
 void GameEngine::enterDeepSleep() {
     saveNow();
     retainCareAccumulators(careAcc);
-    VoiceCallService::ins().stopListening();
     AudioManager::ins().stopAll();
     Hal::ins().setBrightness(0);
     Platform::display().sleep();
@@ -2039,7 +2021,6 @@ bool GameEngine::resetGame() {
     }
     saveWritesBlocked = false;
     visitSession.stop();
-    VoiceCallService::ins().clearCachedProfile();
 
     uint32_t now = Hal::ins().millis();
     initDefaultState();
@@ -2545,7 +2526,6 @@ void GameEngine::updateIdle(uint32_t nowMs) {
         Platform::logLine("[GameEngine] save before idle failed");
     }
     idleActive = true;
-    VoiceCallService::ins().stopListening();
     Hal::ins().setIdleBrightness(true);
     AudioManager::ins().setPowerSave(true);
 }
@@ -2577,7 +2557,7 @@ void GameEngine::resetGameClockAnchor(uint32_t nowMs) {
 }
 
 void GameEngine::initDefaultState() {
-    saveManager.reset(state);
+    Game::HatchService::initializeNewGame(state);
     exploreItemEffects.reset();
     contactVisit = ContactVisitSession{};
     teamMemberArrivalPending = false;
@@ -2585,19 +2565,6 @@ void GameEngine::initDefaultState() {
     evolutionEventCount = 0;
     moveReplacementEventHead = 0;
     moveReplacementEventCount = 0;
-    state.teamCount = 0;
-    state.storageCount = 0;
-    state.activeSlot = 0;
-    state.gameMinutesTotal = Game::INITIAL_GAME_MINUTES;
-    state.careDay = 0;
-    state.careExpToday = 0;
-    state.bag = Game::BagState{};
-    state.bag.potion = 0;
-    state.bag.candy = 0;
-    state.bag.revive = 0;
-    state.room = Game::RoomState{};
-    for (uint8_t i = 0; i < Game::ROOM_FOOD_COUNT; ++i) state.room.food[i] = 0;
-    state.coins = 0;
 }
 
 bool GameEngine::sanitizeMonsterMovesForSpecies(Game::MonsterRuntime& mon,

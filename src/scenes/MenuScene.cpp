@@ -9,7 +9,6 @@
 #include "core/GameEngine.h"
 #include "core/MathUtil.h"
 #include "core/UiMotion.h"
-#include "core/VoiceCallService.h"
 #include "game/BondSystem.h"
 #include "game/Species.h"
 #include "hardware/Hal.h"
@@ -423,7 +422,6 @@ void drawStatusMonsterIcon(const Species& species, int x, int y) {
 int8_t MenuScene::lastCursor = 0;
 
 void MenuScene::onEnter() {
-    VoiceCallService::ins().stopListening();
     exploreContextMode = false;
     battleBagMode = false;
     battleTargetName = nullptr;

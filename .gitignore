@@ -11,3 +11,6 @@ firmware/**/build*/
 firmware/**/managed_components/
 firmware/**/sdkconfig
 firmware/**/sdkconfig.old
+
+# OTA release signing key (private; back up separately)
+.ota/

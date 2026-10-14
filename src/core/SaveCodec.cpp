@@ -253,7 +253,7 @@ void writeState(Writer& writer, const Game::GameState& state) {
     writer.u16(state.settings.longPressMs);
     writer.u16(state.settings.doubleClickMs);
     writer.u8(state.settings.volume);
-    writer.u8(state.settings.voiceCallEnabled ? 1 : 0);
+    writer.u8(0); // Reserved former voice-call flag (schemas 1/2).
     writer.u8(state.settings.vibrationOn ? 1 : 0);
     writer.u8(state.settings.idleTimeoutIndex);
     writer.u8(state.settings.leftHanded ? 1 : 0);
@@ -337,7 +337,8 @@ void readState(Reader& reader, uint16_t schema, Game::GameState& state) {
     state.settings.longPressMs = reader.u16();
     state.settings.doubleClickMs = reader.u16();
     state.settings.volume = reader.u8();
-    state.settings.voiceCallEnabled = reader.u8() != 0;
+    reader.u8(); // Consume the retired flag without enabling any behavior.
+    state.settings.reservedAudioSetting = 0;
     state.settings.vibrationOn = reader.u8() != 0;
     state.settings.idleTimeoutIndex = reader.u8();
     state.settings.leftHanded = reader.u8() != 0;

@@ -299,7 +299,8 @@ void renderExploreRouteScreen(Canvas565& canvas,
                               uint16_t rowBegin, uint16_t rowEnd) {
     rowBegin = std::min<uint16_t>(rowBegin, AmoledUi::HEIGHT);
     rowEnd = std::min<uint16_t>(rowEnd, AmoledUi::HEIGHT);
-    UiCommon::PageClip pageClip(canvas, rowBegin, rowEnd);
+    UiCommon::PageClip pageClip(canvas, rowBegin, rowEnd,
+                                model.renderColumnBegin, model.renderColumnEnd);
     if (rowBegin >= rowEnd) return;
 
     if (rowBegin < EXPLORE_ROUTE_MAP_BOTTOM &&
@@ -310,18 +311,22 @@ void renderExploreRouteScreen(Canvas565& canvas,
         if (model.map) {
             drawExploreRouteMapLayer(canvas, model, mapCache, top, bottom);
             drawExploreRoutePickup(canvas, model);
-            bool bossBehindPlayer = exploreRouteBossBehindPlayer(model);
-            if (bossBehindPlayer) drawExploreRouteBoss(canvas, model);
-            if (model.companionVisible &&
-                model.companionWorldY <= model.worldY) {
-                drawExploreRouteCompanion(canvas, model);
+            if (model.map->areaIndex == ExploreMapGenerator::TALL_GRASS_PARK_AREA) {
+                drawExploreRouteParkActors(canvas, model, top, bottom);
+            } else {
+                bool bossBehindPlayer = exploreRouteBossBehindPlayer(model);
+                if (bossBehindPlayer) drawExploreRouteBoss(canvas, model, top, bottom);
+                if (model.companionVisible &&
+                    model.companionWorldY <= model.worldY) {
+                    drawExploreRouteCompanion(canvas, model, top, bottom);
+                }
+                drawExploreRoutePet(canvas, model, top, bottom);
+                if (model.companionVisible &&
+                    model.companionWorldY > model.worldY) {
+                    drawExploreRouteCompanion(canvas, model, top, bottom);
+                }
+                if (!bossBehindPlayer) drawExploreRouteBoss(canvas, model, top, bottom);
             }
-            drawExploreRoutePet(canvas, model);
-            if (model.companionVisible &&
-                model.companionWorldY > model.worldY) {
-                drawExploreRouteCompanion(canvas, model);
-            }
-            if (!bossBehindPlayer) drawExploreRouteBoss(canvas, model);
             drawExploreRouteMapForegroundLayer(canvas, model, top, bottom);
         } else {
             canvas.fillRect(

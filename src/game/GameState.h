@@ -301,7 +301,7 @@ struct PlayerSettings {
     uint16_t longPressMs = 500;
     uint16_t doubleClickMs = 300;
     uint8_t volume = 50;
-    bool voiceCallEnabled = false;
+    uint8_t reservedAudioSetting = 0; // Former voice-call byte; keep legacy save offsets.
     bool vibrationOn = false;
     uint8_t idleTimeoutIndex = 2; // 0=30s, 1=2min, 2=5min, 3=10min, 4=never
     bool leftHanded = false;

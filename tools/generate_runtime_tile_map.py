@@ -31,10 +31,11 @@ from generate_map_rule_preview import (
 from map_generation_rules import CUSTOM_TILE_SOURCES, CUSTOM_TILE_SOURCE_FLIP_Y, CUSTOM_TILE_SOURCE_ROTATIONS
 
 
-ALGORITHM_VERSION = 11
+ALGORITHM_VERSION = 15
 MASK32 = 0xFFFFFFFF
 MAX_PATH_POINTS = 48
 PATH_COUNT = 2
+MAX_PATH_COUNT = 3
 GRASS_PATH_AREA = 0
 CREEK_BRIDGE_SLOPE_AREA = 1
 TALL_GRASS_PARK_AREA = 2
@@ -62,7 +63,7 @@ NAME_EDGES = {name: edge for edge, name in EDGE_NAMES.items()}
 AREA_PROFILES = (
     (0, 20, 24, 8, 2),
     (0, 0, 16, 8, 1),
-    (0, 25, 44, 10, 2),
+    (0, 0, 40, 10, 1),
     (0, 0, 0, 0, 0),
     (0, 100, 30, 8, 1),
     (0, 0, 18, 7, 1),
@@ -70,6 +71,11 @@ AREA_PROFILES = (
 
 GRASS_TILES = (385, 385, 385, 386, 387, 388, 389)
 DENSE_GRASS_TILE = 390
+TALL_GRASS_TOP_TILE = 391
+TALL_GRASS_BASE_TILE = 399
+PARK_BOUNDARY_TREE_TILES = ((800, 801), (808, 809), (816, 817))
+PARK_TREE_TILES = ((804, 805), (812, 813), (820, 821))
+PARK_CENTERED_TREE_TILES = ((824, 825, 826), (832, 833, 834), (840, 841, 842))
 FLOWER_TILE = 415
 SHRUB_TILE = 859
 DEEP_SEA_TILE = 144
@@ -821,14 +827,14 @@ def local_openness(point, available, radius=2):
     )
 
 
-def grow_compact_patch(rng, available, requested_size):
+def grow_compact_patch(rng, available, requested_size, *, reserve_ground=True):
     components = connected_components(available)
     if not components:
         return set()
     component = components[0]
-    reserve = 12 if len(component) >= 32 else max(4, len(component) // 4)
+    reserve = (12 if len(component) >= 32 else max(4, len(component) // 4)) if reserve_ground else 0
     target = min(requested_size, len(component) - reserve)
-    if target < 6:
+    if target < (6 if reserve_ground else 3):
         return set()
 
     scored_seeds = []
@@ -977,6 +983,384 @@ def stamp_boundary_flowers(runtime_map, rng, dense_grass, shrubs, road, water, f
         for x, y in group:
             runtime_map.layers[0][y * MAP_W + x] = FLOWER_TILE
     return flowers
+
+
+def park_grass_available(road, trees):
+    blocked = road | trees
+    return {
+        (x, y)
+        for y in range(1, MAP_H)
+        for x in range(MAP_W)
+        if (x, y) not in blocked and (x, y - 1) not in blocked
+    }
+
+
+def park_tree_candidates(road, trees, width, top_boundary, grass_target, allow_adjacent=False):
+    forbidden = road | (trees if top_boundary or allow_adjacent else expanded(trees))
+    candidates = []
+    for top in range(MAP_H - 2):
+        for left in range(MAP_W - width + 1):
+            margin = min(left, MAP_W - left - width, top, MAP_H - top - 3)
+            if top_boundary and top != 0:
+                continue
+            footprint = {
+                (left + dx, top + dy)
+                for dy in range(3)
+                for dx in range(width)
+            }
+            if footprint & forbidden:
+                continue
+            available = park_grass_available(road, trees | footprint)
+            if len(available) < grass_target + 8:
+                continue
+            distance = min(minimum_distance(footprint, trees), 6)
+            score = len(available) * 8 + distance * 2 + (0 if top_boundary else min(margin, 2) * 3)
+            candidates.append((score, left, top))
+    return candidates
+
+
+def choose_park_tree(rng, road, trees, width, top_boundary, grass_target, allow_adjacent=False):
+    candidates = park_tree_candidates(road, trees, width, top_boundary, grass_target, allow_adjacent)
+    if not candidates:
+        return None
+    best_score = max(score for score, _left, _top in candidates)
+    options = [(left, top) for score, left, top in candidates if score >= best_score - 8]
+    return options[rng.bounded(len(options))]
+
+
+def stamp_park_tree(runtime_map, trees, left, top, tiles, count=1):
+    width = len(tiles[0])
+    for tree in range(count):
+        for dy, row in enumerate(tiles):
+            for dx, tile_id in enumerate(row):
+                x, y = left + tree * width + dx, top + dy
+                runtime_map.layers[1][y * MAP_W + x] = tile_id
+                trees.add((x, y))
+
+
+def stamp_tall_grass_park(runtime_map, rng, road, profile):
+    _coast, _forest, grass_minimum, grass_variance, flower_groups = profile
+    grass_target = grass_minimum + rng.bounded(grass_variance + 1)
+    trees = set()
+    # Open canopy tiles connect only to forest beyond the top map edge.
+    boundary_tree_count = 0
+    for _group in range(2):
+        chosen = choose_park_tree(rng, road, trees, 4, True, grass_target)
+        if chosen is None:
+            break
+        stamp_park_tree(runtime_map, trees, *chosen, PARK_BOUNDARY_TREE_TILES, count=2)
+        boundary_tree_count += 2
+    # Replace unavailable top groups with complete standalone trees.
+    independent_target = 6 + rng.bounded(2) - boundary_tree_count
+    for _tree in range(independent_target):
+        tiles = PARK_CENTERED_TREE_TILES if rng.bounded(2) else PARK_TREE_TILES
+        chosen = choose_park_tree(rng, road, trees, len(tiles[0]), False, grass_target)
+        if chosen is None and len(tiles[0]) == 3:
+            tiles = PARK_TREE_TILES
+            chosen = choose_park_tree(rng, road, trees, 2, False, grass_target)
+        # Complete standalone trees may touch when the three-exit layout is tight.
+        if chosen is None:
+            tiles = PARK_TREE_TILES
+            chosen = choose_park_tree(rng, road, trees, 2, False, grass_target, allow_adjacent=True)
+        # Keep the grass target within its accepted range if more space is needed.
+        while chosen is None and grass_target > grass_minimum:
+            grass_target -= 1
+            tiles = PARK_TREE_TILES
+            chosen = choose_park_tree(rng, road, trees, 2, False, grass_target, allow_adjacent=True)
+        if chosen is None:
+            break
+        stamp_park_tree(runtime_map, trees, *chosen, tiles)
+    runtime_map.has_forest = bool(trees)
+
+    available = park_grass_available(road, trees)
+    grass = set()
+    for patch_index in range(4):
+        remaining = grass_target - len(grass)
+        requested = remaining - 18 if patch_index == 0 else (remaining + 3 - patch_index) // (4 - patch_index)
+        patch = grow_compact_patch(
+            rng, available - orthogonally_expanded(grass), requested,
+            reserve_ground=False,
+        )
+        grass.update(patch)
+    # Narrow road shapes can leave only small fragments. Grow existing patches
+    # to the target before sacrificing their separation or blocking scenery.
+    while len(grass) < grass_target:
+        components = connected_components(grass)
+        frontier = {
+            point for point in available - grass
+            if any(neighbor in grass for neighbor in neighbors4(point))
+            and sum(any(neighbor in component for neighbor in neighbors4(point))
+                    for component in components) == 1
+        }
+        if not frontier:
+            break
+        scored = [(sum(neighbor in grass for neighbor in neighbors4(point)) * 100
+                   + local_openness(point, available, radius=1) * 4, point)
+                  for point in sorted(frontier)]
+        best_score = max(score for score, _point in scored)
+        options = [point for score, point in scored if score == best_score]
+        grass.add(options[rng.bounded(len(options))])
+    for x, y in grass:
+        runtime_map.layers[0][y * MAP_W + x] = TALL_GRASS_BASE_TILE
+        runtime_map.layers[1][(y - 1) * MAP_W + x] = TALL_GRASS_TOP_TILE
+    # Sparse flowers occupy plain ground beside grass; tips are also protected.
+    grass_footprint = grass | {(x, y - 1) for x, y in grass}
+    stamp_boundary_flowers(runtime_map, rng, grass, set(), road, set(),
+                           trees | grass_footprint, flower_groups)
+    return trees, grass
+
+
+def transform_park_point(point, mirror_x, mirror_y):
+    x, y = point
+    if mirror_x:
+        x = MAP_W - 1 if x == 0 else 0 if x == MAP_W - 1 else MAP_W - 2 - x
+    if mirror_y:
+        y = MAP_H - 1 if y == 0 else 0 if y == MAP_H - 1 else MAP_H - 2 - y
+    return x, y
+
+
+def park_endpoint(point):
+    x, y = point
+    edge = (Edge.TOP if y == 0 else Edge.BOTTOM if y == MAP_H - 1
+            else Edge.LEFT if x == 0 else Edge.RIGHT)
+    return Endpoint(point, edge)
+
+
+def validate_park_topology(entry, junction, paths):
+    graph = {}
+    if not 1 <= len(paths) <= MAX_PATH_COUNT:
+        raise ValueError('invalid park exit count')
+    exits = set()
+    for path in paths:
+        if (len(path.points) < 2 or len(path.points) != len(set(path.points))
+                or path.points[0] != entry.point or path.points[-1] != path.exit.point
+                or path.exit.edge == entry.edge or path.exit.edge in exits):
+            raise ValueError('invalid park path')
+        exits.add(path.exit.edge)
+        for point in path.points:
+            if not (0 <= point[0] < MAP_W and 0 <= point[1] < MAP_H):
+                raise ValueError('park path out of bounds')
+            graph.setdefault(point, set())
+        for a, b in zip(path.points, path.points[1:]):
+            if abs(a[0] - b[0]) + abs(a[1] - b[1]) != 1:
+                raise ValueError('disconnected park path')
+            graph[a].add(b)
+            graph[b].add(a)
+    if sum(map(len, graph.values())) // 2 + 1 != len(graph):
+        raise ValueError('park route graph has a loop')
+    forks = {point for point, neighbors in graph.items() if len(neighbors) == 3}
+    if (any(not 1 <= len(neighbors) <= 3 for neighbors in graph.values())
+            or len(forks) + 1 != len(paths)
+            or sum(len(neighbors) == 1 for neighbors in graph.values()) != len(paths) + 1
+            or (len(paths) > 1 and junction not in forks)):
+        raise ValueError('invalid park fork count')
+
+
+PARK_TOPOLOGY_ATTEMPTS = 192
+PARK_FALLBACK_ATTEMPTS = 32
+PARK_DIRECTIONS = ((0, -1), (1, 0), (0, 1), (-1, 0))
+
+
+def park_append_run(points, heading, distance, width, height, terminal=False):
+    x, y = points[-1]
+    dx, dy = PARK_DIRECTIONS[heading]
+    end = x + dx * distance, y + dy * distance
+    if distance < 2 or not (0 <= end[0] < width and 0 <= end[1] < height):
+        return False
+    if not terminal and not (1 <= end[0] <= width - 3 and 1 <= end[1] <= height - 3):
+        return False
+    for step in range(1, distance + 1):
+        point = x + dx * step, y + dy * step
+        if point in points or len(points) >= MAX_PATH_POINTS:
+            return False
+        points.append(point)
+    return True
+
+
+def park_finish_run(points, heading, width, height):
+    x, y = points[-1]
+    distance = (y, width - 1 - x, height - 1 - y, x)[heading]
+    return park_append_run(points, heading, distance, width, height, True)
+
+
+def park_grow_branch(rng, start, heading, edge, width, height):
+    points = [start]
+    if heading == edge and rng.bounded(2) == 0:
+        return points if park_finish_run(points, edge, width, height) else None
+    if not park_append_run(points, heading, 2 + rng.bounded(4), width, height):
+        return None
+    if heading == edge or heading == (edge + 2) % 4:
+        heading = (heading + (1 if rng.bounded(2) else 3)) % 4
+        if not park_append_run(points, heading, 2 + rng.bounded(3), width, height):
+            return None
+    elif rng.bounded(2):
+        if not park_append_run(points, edge, 2 + rng.bounded(3), width, height):
+            return None
+        if not park_append_run(points, heading, 2 + rng.bounded(3), width, height):
+            return None
+    return points if park_finish_run(points, edge, width, height) else None
+
+
+def validate_park_wide_road(paths, road):
+    graph = {}
+    owners = {cell: set() for cell in road}
+    for path in paths:
+        for a, b in zip(path.points, path.points[1:]):
+            graph.setdefault(a, set()).add(b)
+            graph.setdefault(b, set()).add(a)
+            for point in (a, b):
+                owners[point].add(point)
+                companion = (point[0] + 1, point[1]) if a[0] == b[0] else (point[0], point[1] + 1)
+                if companion in owners:
+                    owners[companion].add(point)
+    # Width-two corners and T junctions may touch within three graph steps.
+    nearby = {}
+    for point in graph:
+        seen = {point}
+        frontier = {point}
+        for _ in range(3):
+            frontier = {n for p in frontier for n in graph[p]} - seen
+            seen.update(frontier)
+        nearby[point] = seen
+    for cell in road:
+        for neighbor in neighbors4(cell):
+            if neighbor in road and not any(nearby[a] & owners[neighbor] for a in owners[cell]):
+                raise ValueError('park road creates a shortcut between distant branches')
+
+
+def park_topology_candidate(rng, entry_edge, route_type, fallback=False):
+    vertical = entry_edge in (Edge.TOP, Edge.BOTTOM)
+    width, height = (MAP_W, MAP_H) if vertical else (MAP_H, MAP_W)
+    mirror = bool(rng.bounded(2))
+    main = [(2 + rng.bounded(width - 5), height - 1)]
+    branches = []
+    fork_indices = []
+    primary = 0
+    if fallback:
+        # A compact route still draws all of its coordinates from the seed.
+        x = 3 + rng.bounded(2)
+        middle = width - 6 + rng.bounded(2)
+        lower = height - 5 + rng.bounded(2)
+        upper = 3 + rng.bounded(2)
+        main = []
+        for point in ((x, height - 1), (x, lower), (middle, lower),
+                      (middle, upper), (middle, 0)):
+            append_line(main, *point)
+        first = height - 1 - lower
+        second = first + middle - x + lower - upper
+        if route_type:
+            fork_indices.append(first)
+            branch = [(x, lower)]
+            append_line(branch, 0, lower)
+            branches.append(branch)
+        if route_type == 2:
+            fork_indices.append(second)
+            branch = [(middle, upper)]
+            append_line(branch, width - 1, upper)
+            branches.append(branch)
+    else:
+        primary = (0, 1, 3)[rng.bounded(3)] if route_type < 2 else 0
+        shifts = 1 + rng.bounded(2)
+        for _ in range(shifts):
+            if not park_append_run(main, 0, 2 + rng.bounded(4), width, height):
+                return None
+            heading = 1 if rng.bounded(2) else 3
+            if not park_append_run(main, heading, 2 + rng.bounded(4), width, height):
+                return None
+        if primary:
+            if not park_append_run(main, 0, 2 + rng.bounded(3), width, height):
+                return None
+        if not park_finish_run(main, primary, width, height):
+            return None
+        if route_type:
+            directions = [(b[0]-a[0], b[1]-a[1]) for a,b in zip(main,main[1:])]
+            candidates = [i for i in range(3,len(main)-3) if directions[i-1] == directions[i]]
+            if not candidates:
+                return None
+            first = candidates[rng.bounded(len(candidates))]
+            fork_indices.append(first)
+            if route_type == 2:
+                later = [i for i in candidates if i >= first + 4]
+                if not later:
+                    return None
+                fork_indices.append(later[rng.bounded(len(later))])
+            edges = [e for e in (0,1,3) if e != primary]
+            if rng.bounded(2):
+                edges.reverse()
+            for i, edge in zip(fork_indices, edges):
+                heading = PARK_DIRECTIONS.index(directions[i])
+                heading = (heading + (1 if rng.bounded(2) else 3)) % 4
+                branch = park_grow_branch(rng, main[i], heading, edge, width, height)
+                if branch is None:
+                    return None
+                branches.append(branch)
+    controls = [main] + [main[:i] + branch for i,branch in zip(fork_indices,branches)]
+    if route_type == 2:
+        controls = [controls[1], controls[0], controls[2]]
+
+    def transform(point):
+        x,y = point
+        if mirror:
+            x = width-1 if x == 0 else 0 if x == width-1 else width-2-x
+        if vertical:
+            return transform_park_point((x,y), False, entry_edge == Edge.TOP)
+        return transform_park_point((y,x), entry_edge == Edge.LEFT, False)
+
+    # Reflect control segments, then refill them: reflected boundary anchors are
+    # one cell farther from the last interior anchor than a naive point mirror.
+    paths = []
+    for control in controls:
+        if len(control) > MAX_PATH_POINTS:
+            return None
+        waypoints = [control[0]]
+        for i in range(1,len(control)-1):
+            a,b,c = control[i-1:i+2]
+            if (b[0]-a[0],b[1]-a[1]) != (c[0]-b[0],c[1]-b[1]):
+                waypoints.append(b)
+        waypoints.append(control[-1])
+        points = []
+        for point in waypoints:
+            try:
+                append_line(points, *transform(point))
+            except ValueError:
+                return None
+        paths.append(RoutePath(points, park_endpoint(points[-1])))
+    entry = park_endpoint(paths[0].points[0])
+    junction = transform(main[fork_indices[0]]) if fork_indices else entry.point
+    try:
+        validate_park_topology(entry,junction,paths)
+        road = build_road(paths)
+        validate_border_road(entry,paths,road)
+        validate_park_wide_road(paths,road)
+    except ValueError:
+        return None
+    if len(road) > (64,76,84)[route_type]:
+        return None
+    return entry,junction,paths,False,road
+
+
+def generate_park_map(seed, entry_edge):
+    topology = XorShift32(seed ^ 0xA511E9B3)
+    roll = topology.bounded(100)
+    route_type = 0 if roll < 30 else 1 if roll < 80 else 2
+    for attempt in range(PARK_TOPOLOGY_ATTEMPTS + PARK_FALLBACK_ATTEMPTS):
+        result = park_topology_candidate(topology,entry_edge,route_type,
+                                         attempt >= PARK_TOPOLOGY_ATTEMPTS)
+        if result is None:
+            continue
+        entry,junction,paths,_,road = result
+        terrain = XorShift32(seed ^ 0x63D83595)
+        m = RuntimeMap(seed,TALL_GRASS_PARK_AREA,entry,junction,paths,
+                       [[0]*(MAP_W*MAP_H) for _ in range(3)],False,False,False,False,False)
+        for i in range(MAP_W*MAP_H):
+            m.layers[0][i] = GRASS_TILES[terrain.bounded(len(GRASS_TILES))]
+        for x,y in road:
+            m.layers[0][y*MAP_W+x] = road_tile(m,road,x,y)
+        _,grass = stamp_tall_grass_park(m,terrain,road,AREA_PROFILES[TALL_GRASS_PARK_AREA])
+        tree_count = sum(tile in (800,804,824) for tile in m.layers[1])
+        if 40 <= len(grass) <= 50 and 6 <= tree_count <= 7 and 3 <= len(connected_components(grass)) <= 4:
+            return m
+    raise ValueError('unable to place a complete random park within the attempt budget')
 
 
 def stamp_ground_decorations(runtime_map, rng, road, water, forest, profile):
@@ -1733,6 +2117,8 @@ def generate_map(seed, entry_edge, area_index=0, *, frost_level=0,
                  frost_level_count=1, frost_entered_by_ladder=False):
     seed &= MASK32
     area_index &= 0xFF
+    if area_index == TALL_GRASS_PARK_AREA:
+        return generate_park_map(seed, entry_edge)
     terrain = XorShift32(seed ^ 0x63D83595)
     features = XorShift32(seed ^ 0xC2B2AE35)
     profile = AREA_PROFILES[area_index] if area_index < len(AREA_PROFILES) else AREA_PROFILES[0]
@@ -1846,6 +2232,7 @@ def generate_map(seed, entry_edge, area_index=0, *, frost_level=0,
         creek is None
         and not has_waterfall
         and not has_snow
+        and area_index != TALL_GRASS_PARK_AREA
         and terrain.bounded(100) < profile[1]
     ):
         order = [0, 1, 2, 3]
@@ -1863,6 +2250,8 @@ def generate_map(seed, entry_edge, area_index=0, *, frost_level=0,
 
     if has_snow:
         stamp_snow_decorations(runtime_map, terrain, road, scenery)
+    elif area_index == TALL_GRASS_PARK_AREA:
+        forest, _grass = stamp_tall_grass_park(runtime_map, terrain, road, profile)
     elif not has_waterfall:
         stamp_ground_decorations(
             runtime_map, terrain, road, water, forest | cliff | scenery, profile
@@ -1922,6 +2311,15 @@ def endpoint_json(endpoint):
     return {"point": list(endpoint.point), "edge": EDGE_NAMES[endpoint.edge]}
 
 
+def route_junctions(paths):
+    graph = {}
+    for path in paths:
+        for a, b in zip(path.points, path.points[1:]):
+            graph.setdefault(a, set()).add(b)
+            graph.setdefault(b, set()).add(a)
+    return sorted(point for point, adjacent in graph.items() if len(adjacent) > 2)
+
+
 def map_json(runtime_map):
     return {
         "algorithmVersion": ALGORITHM_VERSION,
@@ -1931,6 +2329,7 @@ def map_json(runtime_map):
         "size": [MAP_W, MAP_H],
         "entry": endpoint_json(runtime_map.entry),
         "junction": list(runtime_map.junction),
+        "junctions": [list(point) for point in route_junctions(runtime_map.paths)],
         "paths": [
             {
                 "points": [list(point) for point in path.points],
@@ -2007,7 +2406,7 @@ def point_center(point):
 def render_debug(runtime_map, clean):
     debug = clean.copy()
     draw = ImageDraw.Draw(debug, "RGBA")
-    colors = ((62, 139, 255, 235), (244, 82, 82, 225))
+    colors = ((62, 139, 255, 235), (244, 82, 82, 225), (192, 130, 255, 235))
     for path, color in zip(runtime_map.paths, colors):
         centers = [point_center(point) for point in path.points]
         draw.line(centers, fill=color, width=4)
@@ -2017,12 +2416,16 @@ def render_debug(runtime_map, clean):
         draw.ellipse((ex - 8, ey - 8, ex + 8, ey + 8), outline=(255, 196, 76, 255), width=3)
     ix, iy = point_center(runtime_map.entry.point)
     draw.rectangle((ix - 7, iy - 7, ix + 7, iy + 7), outline=(78, 220, 117, 255), width=3)
-    jx, jy = point_center(runtime_map.junction)
-    draw.polygon(
-        ((jx, jy - 7), (jx + 7, jy), (jx, jy + 7), (jx - 7, jy)),
-        fill=(255, 255, 255, 240),
-        outline=(35, 43, 47, 255),
-    )
+    junctions = (route_junctions(runtime_map.paths)
+                 if runtime_map.area_index == TALL_GRASS_PARK_AREA
+                 else [runtime_map.junction])
+    for point in junctions:
+        jx, jy = point_center(point)
+        draw.polygon(
+            ((jx, jy - 7), (jx + 7, jy), (jx, jy + 7), (jx - 7, jy)),
+            fill=(255, 255, 255, 240),
+            outline=(35, 43, 47, 255),
+        )
     label = (
         f"v{ALGORITHM_VERSION} area={runtime_map.area_index} seed={runtime_map.seed} "
         f"fp={fingerprint(runtime_map):08x} entry={EDGE_NAMES[runtime_map.entry.edge]}"

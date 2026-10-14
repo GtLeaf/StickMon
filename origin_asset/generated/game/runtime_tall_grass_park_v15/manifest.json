@@ -1,0 +1,95 @@
+{
+  "algorithmVersion": 15,
+  "samples": [
+    {
+      "file": "park_1_exits_a_00000002",
+      "seed": 2,
+      "entry": "bottom",
+      "exits": 1,
+      "forks": 0,
+      "grassRoots": 43,
+      "trees": 6,
+      "fingerprint": "0687e3a2"
+    },
+    {
+      "file": "park_2_exits_a_00000001",
+      "seed": 1,
+      "entry": "bottom",
+      "exits": 2,
+      "forks": 1,
+      "grassRoots": 47,
+      "trees": 7,
+      "fingerprint": "bd0ad9a8"
+    },
+    {
+      "file": "park_3_exits_a_00000004",
+      "seed": 4,
+      "entry": "bottom",
+      "exits": 3,
+      "forks": 2,
+      "grassRoots": 42,
+      "trees": 7,
+      "fingerprint": "da3d9916"
+    },
+    {
+      "file": "park_1_exits_b_00000011",
+      "seed": 17,
+      "entry": "bottom",
+      "exits": 1,
+      "forks": 0,
+      "grassRoots": 50,
+      "trees": 6,
+      "fingerprint": "68cf04fe"
+    },
+    {
+      "file": "park_2_exits_b_00000003",
+      "seed": 3,
+      "entry": "bottom",
+      "exits": 2,
+      "forks": 1,
+      "grassRoots": 50,
+      "trees": 6,
+      "fingerprint": "04ffc53a"
+    },
+    {
+      "file": "park_3_exits_b_00000008",
+      "seed": 8,
+      "entry": "bottom",
+      "exits": 3,
+      "forks": 2,
+      "grassRoots": 45,
+      "trees": 7,
+      "fingerprint": "9e88a4f2"
+    },
+    {
+      "file": "park_1_exits_c_00000005",
+      "seed": 5,
+      "entry": "left",
+      "exits": 1,
+      "forks": 0,
+      "grassRoots": 45,
+      "trees": 7,
+      "fingerprint": "2f37d3e4"
+    },
+    {
+      "file": "park_2_exits_c_00000006",
+      "seed": 6,
+      "entry": "right",
+      "exits": 2,
+      "forks": 1,
+      "grassRoots": 41,
+      "trees": 6,
+      "fingerprint": "b754cd95"
+    },
+    {
+      "file": "park_3_exits_c_0000000d",
+      "seed": 13,
+      "entry": "left",
+      "exits": 3,
+      "forks": 2,
+      "grassRoots": 48,
+      "trees": 7,
+      "fingerprint": "a57146dd"
+    }
+  ]
+}

@@ -1,0 +1,65 @@
+{
+  "algorithmVersion": 14,
+  "samples": [
+    {
+      "file": "park_1_exits_a_00000005",
+      "seed": 5,
+      "entry": "bottom",
+      "exits": 1,
+      "forks": 0,
+      "grassRoots": 45,
+      "trees": 7,
+      "fingerprint": "7c2f359b"
+    },
+    {
+      "file": "park_2_exits_a_00000001",
+      "seed": 1,
+      "entry": "bottom",
+      "exits": 2,
+      "forks": 1,
+      "grassRoots": 47,
+      "trees": 7,
+      "fingerprint": "d66923c1"
+    },
+    {
+      "file": "park_3_exits_a_0000000d",
+      "seed": 13,
+      "entry": "bottom",
+      "exits": 3,
+      "forks": 2,
+      "grassRoots": 48,
+      "trees": 7,
+      "fingerprint": "0655ad8b"
+    },
+    {
+      "file": "park_1_exits_b_00000005",
+      "seed": 5,
+      "entry": "left",
+      "exits": 1,
+      "forks": 0,
+      "grassRoots": 45,
+      "trees": 7,
+      "fingerprint": "52b9feac"
+    },
+    {
+      "file": "park_2_exits_b_00000001",
+      "seed": 1,
+      "entry": "right",
+      "exits": 2,
+      "forks": 1,
+      "grassRoots": 47,
+      "trees": 7,
+      "fingerprint": "ba81ac11"
+    },
+    {
+      "file": "park_3_exits_b_0000000d",
+      "seed": 13,
+      "entry": "left",
+      "exits": 3,
+      "forks": 2,
+      "grassRoots": 47,
+      "trees": 7,
+      "fingerprint": "eb89af22"
+    }
+  ]
+}

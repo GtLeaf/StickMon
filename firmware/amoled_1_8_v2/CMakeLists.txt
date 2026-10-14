@@ -36,7 +36,11 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 # component paths are machine-specific and must not be committed.
 idf_build_set_property(DEPENDENCIES_LOCK
                        "${CMAKE_BINARY_DIR}/dependencies.lock")
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/ota-generated")
 project(stickmon_amoled_1_8_v2)
+if(NOT CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE)
+    message(FATAL_ERROR "V2 OTA requires CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y; use tools/build_amoled_variant.sh or update cached sdkconfig")
+endif()
 
 # ESP-IDF appends its default C++ standard during project setup. Append the
 # project standard afterward so the final compiler option is unambiguous.
@@ -55,6 +59,22 @@ set(RESOURCE_FONTS_DIR "${STICKMON_ROOT}/data/packs/dev/fonts")
 set(RESOURCE_AUDIO_DIR "${STICKMON_ROOT}/data/packs/dev/audio")
 set(RESOURCE_CRIES_DIR "${STICKMON_ROOT}/data/packs/dev/cries")
 
+# Kind ids can change when shared assets are added. Never ship a stale native
+# UI pack: the runtime rejects mismatched packs and falls back to drawn icons.
+set(RESOURCE_UI_VALIDATOR "${STICKMON_ROOT}/tools/validate_amoled_ui_assets.py")
+execute_process(
+    COMMAND "${PYTHON}" "${RESOURCE_UI_VALIDATOR}"
+            "${STICKMON_ROOT}/data/packs/dev/game/ui.smonfx" "${RESOURCE_UI}"
+    RESULT_VARIABLE RESOURCE_UI_CHECK
+    ERROR_VARIABLE RESOURCE_UI_ERROR
+)
+if(NOT RESOURCE_UI_CHECK EQUAL 0)
+    message(FATAL_ERROR "${RESOURCE_UI_ERROR}")
+endif()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${RESOURCE_UI_VALIDATOR}" "${STICKMON_ROOT}/src/assets/GameAssets.h"
+    "${STICKMON_ROOT}/data/packs/dev/game/ui.smonfx")
+
 file(GLOB RESOURCE_FONT_FILES CONFIGURE_DEPENDS
      "${RESOURCE_FONTS_DIR}/*.smonfont")
 file(GLOB RESOURCE_SPRITE_FILES CONFIGURE_DEPENDS
@@ -71,6 +91,7 @@ if(NOT RESOURCE_SPRITE_FILES)
     message(FATAL_ERROR "StickMon sprite resources are missing")
 endif()
 
+file(REMOVE_RECURSE "${RESOURCE_STAGE_DIR}")
 file(MAKE_DIRECTORY "${RESOURCE_STAGE_DIR}/packs/dev/sprites")
 file(MAKE_DIRECTORY "${RESOURCE_STAGE_DIR}/packs/dev/rooms")
 file(MAKE_DIRECTORY "${RESOURCE_STAGE_DIR}/packs/dev/game")
@@ -126,3 +147,21 @@ spiffs_create_partition_image(
             ${RESOURCE_FONT_FILES} ${RESOURCE_AUDIO_FILES}
             ${RESOURCE_CRY_FILES}
 )
+
+# OTA identifies the deployed resource file set, not a mutable pack version.
+set(STICKMON_OTA_ENDPOINT "" CACHE STRING "HTTPS flasher origin for OTA")
+if(STICKMON_ENABLE_CLAW)
+    set(OTA_FLAVOR claw)
+else()
+    set(OTA_FLAVOR lite)
+endif()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${STICKMON_ROOT}/tools/generate_ota_build.py"
+    "${CMAKE_CURRENT_LIST_DIR}/ota/version.json"
+    "${CMAKE_CURRENT_LIST_DIR}/ota/public-key.pem")
+execute_process(COMMAND "${PYTHON}" "${STICKMON_ROOT}/tools/generate_ota_build.py"
+    "${RESOURCE_STAGE_DIR}" "${CMAKE_BINARY_DIR}/ota-generated"
+    "${CMAKE_CURRENT_LIST_DIR}/ota/version.json" "${OTA_FLAVOR}"
+    "${STICKMON_OTA_ENDPOINT}" "${CMAKE_CURRENT_LIST_DIR}/ota/public-key.pem"
+    "${STICKMON_ENABLE_DEBUG_FEATURES}"
+    COMMAND_ERROR_IS_FATAL ANY)

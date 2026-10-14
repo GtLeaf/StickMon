@@ -1,0 +1,25 @@
+{
+  "maps": 2064,
+  "fallbackMaps": 45,
+  "counts": {
+    "2": 1008,
+    "1": 612,
+    "3": 444
+  },
+  "grassRange": [
+    40,
+    50
+  ],
+  "treeRange": [
+    6,
+    7
+  ],
+  "maxAttempts": 193,
+  "uniqueSkeletonsPerEdge": {
+    "TOP": 507,
+    "RIGHT": 502,
+    "BOTTOM": 504,
+    "LEFT": 501
+  },
+  "seconds": 28.47
+}

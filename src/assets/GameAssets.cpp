@@ -18,7 +18,7 @@ constexpr uint32_t PACK_MAGIC = 0x58464753;
 constexpr uint16_t PACK_VERSION = 2;
 constexpr uint32_t FLAG_RAW_DEFLATE = 1;
 constexpr uint8_t FORMAT_INDEXED4_RLE = 1;
-constexpr uint16_t MAX_FRAMES = 256;
+constexpr uint16_t MAX_FRAMES = 272;
 constexpr uint32_t MAX_DATA_WORDS = 200000;
 constexpr uint32_t MAX_PALETTE_WORDS = 2048;
 constexpr uint32_t MAX_PAYLOAD_BYTES = 384000;
@@ -125,7 +125,8 @@ PackSlot packSlotFor(Kind kind) {
     }
     if (kind == Kind::EGG) return PackSlot::HATCH;
     if ((kind >= Kind::EXPLORE_TILE_0072 && kind <= Kind::EXPLORE_WATERFALL_BOTTOM_F3) ||
-        (kind >= Kind::EXPLORE_TILE_4762 && kind <= Kind::EXPLORE_TILE_4773)) {
+        (kind >= Kind::EXPLORE_TILE_4762 && kind <= Kind::EXPLORE_TILE_4773) ||
+        (kind >= Kind::EXPLORE_TILE_0391 && kind <= Kind::EXPLORE_TILE_0842)) {
         return PackSlot::MAP;
     }
     if (kind < Kind::COUNT) return PackSlot::BATTLE;
@@ -465,6 +466,71 @@ bool drawCenteredAlpha(Kind kind, int centerX, int centerY,
     return true;
 }
 
+Kind battleFxKind(BattleFx fx, uint8_t frame) {
+    frame = std::min<uint8_t>(frame, 3);
+    uint16_t base = static_cast<uint16_t>(Kind::BATTLE_FX_HIT_0);
+    switch (fx) {
+    case BattleFx::FIRE:
+        base = static_cast<uint16_t>(Kind::BATTLE_FX_FIRE_0);
+        break;
+    case BattleFx::WATER:
+        base = static_cast<uint16_t>(Kind::BATTLE_FX_WATER_0);
+        break;
+    case BattleFx::ELECTRIC:
+        base = static_cast<uint16_t>(Kind::BATTLE_FX_ELECTRIC_0);
+        break;
+    case BattleFx::HIT:
+    case BattleFx::COUNT:
+        break;
+    case BattleFx::SCRATCH:
+        base = static_cast<uint16_t>(Kind::BATTLE_FX_SCRATCH_0);
+        break;
+    case BattleFx::BITE:
+        base = static_cast<uint16_t>(Kind::BATTLE_FX_BITE_0);
+        break;
+    case BattleFx::LEER:
+        base = static_cast<uint16_t>(Kind::BATTLE_FX_LEER_0);
+        break;
+    case BattleFx::GROWL:
+        base = static_cast<uint16_t>(Kind::BATTLE_FX_GROWL_0);
+        break;
+    case BattleFx::SAND_ATTACK:
+        base = static_cast<uint16_t>(Kind::BATTLE_FX_SAND_ATTACK_0);
+        break;
+    }
+    return static_cast<Kind>(base + frame);
+}
+
+BattleFx battleFxForType(TypeId type) {
+    switch (type) {
+    case TypeId::FIRE: return BattleFx::FIRE;
+    case TypeId::WATER: return BattleFx::WATER;
+    case TypeId::ELECTRIC: return BattleFx::ELECTRIC;
+    default: return BattleFx::HIT;
+    }
+}
+
+BattleFx battleFxForMove(Game::MoveId moveId, TypeId type) {
+    switch (moveId) {
+    case 10:  // Scratch
+    case 154: // Fury Swipes
+    case 163: // Slash
+        return BattleFx::SCRATCH;
+    case 44:  // Bite
+    case 242: // Crunch
+        return BattleFx::BITE;
+    case 43: return BattleFx::LEER;
+    case 45: return BattleFx::GROWL;
+    case 28: return BattleFx::SAND_ATTACK;
+    default: return battleFxForType(type);
+    }
+}
+
+bool battleFxIsStatus(BattleFx fx) {
+    return fx == BattleFx::LEER || fx == BattleFx::GROWL ||
+           fx == BattleFx::SAND_ATTACK;
+}
+
 bool drawBattleBackground(Kind kind) {
     return drawBackgroundViewport(kind, 0, 0);
 }
@@ -561,6 +627,8 @@ bool drawExploreTileTo(Canvas565& canvas, uint16_t tileId, int x, int y,
     case 388: kind = Kind::EXPLORE_TILE_0388; break;
     case 389: kind = Kind::EXPLORE_TILE_0389; break;
     case 390: kind = Kind::EXPLORE_TILE_0390; break;
+    case 391: kind = Kind::EXPLORE_TILE_0391; break;
+    case 399: kind = Kind::EXPLORE_TILE_0399; break;
     case 415: kind = Kind::EXPLORE_TILE_0415; break;
     case 537: kind = Kind::EXPLORE_TILE_0537; break;
     case 538: kind = Kind::EXPLORE_TILE_0538; break;
@@ -584,8 +652,23 @@ bool drawExploreTileTo(Canvas565& canvas, uint16_t tileId, int x, int y,
     case 809: kind = Kind::EXPLORE_TILE_0809; break;
     case 810: kind = Kind::EXPLORE_TILE_0810; break;
     case 811: kind = Kind::EXPLORE_TILE_0811; break;
+    case 812: kind = Kind::EXPLORE_TILE_0812; break;
+    case 813: kind = Kind::EXPLORE_TILE_0813; break;
+    case 816: kind = Kind::EXPLORE_TILE_0816; break;
+    case 817: kind = Kind::EXPLORE_TILE_0817; break;
     case 818: kind = Kind::EXPLORE_TILE_0818; break;
     case 819: kind = Kind::EXPLORE_TILE_0819; break;
+    case 820: kind = Kind::EXPLORE_TILE_0820; break;
+    case 821: kind = Kind::EXPLORE_TILE_0821; break;
+    case 824: kind = Kind::EXPLORE_TILE_0824; break;
+    case 825: kind = Kind::EXPLORE_TILE_0825; break;
+    case 826: kind = Kind::EXPLORE_TILE_0826; break;
+    case 832: kind = Kind::EXPLORE_TILE_0832; break;
+    case 833: kind = Kind::EXPLORE_TILE_0833; break;
+    case 834: kind = Kind::EXPLORE_TILE_0834; break;
+    case 840: kind = Kind::EXPLORE_TILE_0840; break;
+    case 841: kind = Kind::EXPLORE_TILE_0841; break;
+    case 842: kind = Kind::EXPLORE_TILE_0842; break;
     case 859: kind = Kind::EXPLORE_TILE_0859; break;
     case 1088: kind = Kind::EXPLORE_TILE_1088; break;
     case 1090: kind = Kind::EXPLORE_TILE_1090; break;

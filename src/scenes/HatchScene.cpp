@@ -9,10 +9,10 @@
 #include "core/RoomResource.h"
 #include "core/UiStrings.h"
 #include "hardware/Hal.h"
+#include "game/HatchService.h"
 #include "presentation/PixelRenderer.h"
 
 namespace {
-constexpr uint8_t INTERACTION_THRESHOLD = 10;
 float savedElapsed = 0.0f;
 uint16_t savedPokeCount = 0;
 uint16_t savedWipeCount = 0;
@@ -131,12 +131,7 @@ void HatchScene::render() {
 }
 
 void HatchScene::complete() {
-    uint8_t style = 0;
-    uint16_t totalInteraction = pokeCount + wipeCount;
-    if (totalInteraction >= INTERACTION_THRESHOLD) {
-        if (pokeCount > wipeCount) style = 1;
-        else if (wipeCount > pokeCount) style = 2;
-    }
+    const uint8_t style = Game::HatchService::starterStyle(pokeCount, wipeCount);
     savedElapsed = 0.0f;
     savedPokeCount = 0;
     savedWipeCount = 0;
@@ -162,28 +157,17 @@ void HatchScene::persistProgress(bool force) {
 }
 
 uint8_t HatchScene::hatchProgress() const {
-    uint16_t total = GameEngine::ins().gameState().hatchSeconds;
-    if (total == 0) return 100;
-    uint16_t value = (uint16_t)((elapsed * 100.0f) / total);
-    return value > 100 ? 100 : (uint8_t)value;
+    return Game::HatchService::progressPercent(
+        elapsed, GameEngine::ins().gameState().hatchSeconds);
 }
 
 uint16_t HatchScene::hatchSecondsRemaining() const {
-    uint16_t total = GameEngine::ins().gameState().hatchSeconds;
-    float remaining = static_cast<float>(total) - elapsed;
-    if (remaining <= 0.0f) return 0;
-    return static_cast<uint16_t>(ceilf(remaining));
+    return Game::HatchService::remainingSeconds(
+        elapsed, GameEngine::ins().gameState().hatchSeconds);
 }
 
 int8_t HatchScene::eggShakeOffset(uint32_t nowMs) const {
-    uint8_t progress = hatchProgress();
-    uint16_t interval = 2400 - (uint16_t)progress * 19;
-    if (interval < 360) interval = 360;
-    uint16_t phase = nowMs % interval;
-    if (phase > 230) return 0;
-    uint8_t frame = phase / 46;
-    static constexpr int8_t OFFSETS[] = {-3, 3, -2, 2, 0};
-    return OFFSETS[frame % 5];
+    return Game::HatchService::shakeOffset(hatchProgress(), nowMs);
 }
 
 void HatchScene::drawRoom() {

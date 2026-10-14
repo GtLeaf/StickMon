@@ -182,7 +182,7 @@ private:
     bool debugBattleMode = false;
 #endif
     static constexpr uint8_t MAP_BLOCK_CAP = 9;
-    static constexpr uint8_t MAP_EXIT_CAP = 2;
+    static constexpr uint8_t MAP_EXIT_CAP = ExploreMapGenerator::MAX_PATH_COUNT;
     uint8_t mapBlocks[MAP_BLOCK_CAP] = {};
     uint8_t mapBlockCount = 0;
     uint8_t currentMapBlock = 0;
@@ -190,7 +190,7 @@ private:
     uint8_t encounterCooldownSteps = 0;
     uint8_t currentRoutePath = 0;
     uint8_t activeExitMask = 0;
-    uint8_t exitNextMaps[MAP_EXIT_CAP] = {0xFF, 0xFF};
+    uint8_t exitNextMaps[MAP_EXIT_CAP] = {0xFF, 0xFF, 0xFF};
     ExploreMapGenerator::Map generatedMap;
     uint32_t expeditionSeed = 0;
     ExploreMapGenerator::Edge pendingEntryEdge = ExploreMapGenerator::Edge::TOP;
@@ -348,7 +348,7 @@ private:
     void renderResult();
     void renderEndPrompt();
     void renderExploreMenu();
-    void renderRouteBoss(int cameraX, int cameraY);
+    void renderRouteBoss(int cameraX, int cameraY, uint32_t nowMs);
     void renderRoutePickup(int cameraX, int cameraY);
     void drawRouteMonster(const Species& species, float worldX, float worldY,
                           uint8_t walkDirection, bool follower,

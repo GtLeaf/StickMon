@@ -104,6 +104,8 @@ public:
 class IImuDevice {
 public:
     virtual ~IImuDevice() = default;
+    // Optional on-demand sampling. Acceleration readings use units of g.
+    virtual bool setAccelerationEnabled(bool enabled) { return !enabled; }
     virtual bool readAcceleration(float& x, float& y, float& z) = 0;
 };
 

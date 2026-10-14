@@ -9,8 +9,11 @@
 
 namespace AmoledV1::UiCommon {
 
-PageClip::PageClip(Canvas565& canvas, uint16_t rowBegin, uint16_t rowEnd)
+PageClip::PageClip(Canvas565& canvas, uint16_t rowBegin, uint16_t rowEnd,
+                   uint16_t columnBegin, uint16_t columnEnd)
     : canvas_(canvas), assets_(PixelRenderer::canvas()),
+      left_(std::min<int>(columnBegin, AmoledUi::WIDTH)),
+      right_(std::max(left_, std::min<int>(columnEnd, AmoledUi::WIDTH))),
       top_(std::min<int>(rowBegin, AmoledUi::HEIGHT)),
       bottom_(std::max(top_, std::min<int>(rowEnd, AmoledUi::HEIGHT))) {
     reset();
@@ -22,8 +25,8 @@ PageClip::~PageClip() {
 }
 
 void PageClip::setRect(int x, int y, int width, int height) {
-    const int left = std::clamp(x, 0, AmoledUi::WIDTH);
-    const int right = std::clamp(x + std::max(0, width), left, AmoledUi::WIDTH);
+    const int left = std::clamp(x, left_, right_);
+    const int right = std::clamp(x + std::max(0, width), left, right_);
     const int top = std::clamp(y, top_, bottom_);
     const int bottom = std::clamp(y + std::max(0, height), top, bottom_);
     canvas_.setClipRect(left, top, right - left, bottom - top);

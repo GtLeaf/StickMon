@@ -105,7 +105,8 @@ class AmoledExpeditionDepartureTests(unittest.TestCase):
         self.assertIn("exploreRouteTargetX = EXPLORE_ROUTE_WORLD_WIDTH + EXPLORE_ROUTE_EXIT_MARGIN", body)
         self.assertIn("exploreRouteTargetY = EXPLORE_ROUTE_WORLD_HEIGHT + EXPLORE_ROUTE_EXIT_MARGIN", body)
         update = self.app.index("void AmoledApp::updateExploreRoute")
-        finish = self.app.index("finishExploreRouteAtEnd(nowMs);", update)
+        exit_motion = self.app.index("if (exploreRouteExiting)", update)
+        finish = self.app.index("finishExploreRouteAtEnd(nowMs);", exit_motion)
         self.assertIn("if (exploreRouteExiting)", self.app[update:finish])
         self.assertIn("advanceExploreRouteWalkFrames(nowMs);",
                       self.app[update:finish])

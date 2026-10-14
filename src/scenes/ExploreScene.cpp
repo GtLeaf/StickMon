@@ -22,6 +22,7 @@
 #include "game/ExplorePool.h"
 #include "game/ExploreRouteGeometry.h"
 #include "game/ExploreRunRules.h"
+#include "game/ExploreTileSemantics.h"
 #include "game/FriendshipPity.h"
 #include "game/FriendshipService.h"
 #include "game/FriendshipSystem.h"
@@ -753,6 +754,32 @@ RouteWorldPoint routePathPointWorld(const ExploreMapGenerator::Path& path,
     return ExploreRouteGeometry::pathPoint(path, index);
 }
 
+struct RouteBossWorldPose {
+    RouteWorldPoint point;
+    float tangentX;
+    float tangentY;
+};
+
+RouteBossWorldPose routeBossWorldPose(const ExploreMapGenerator::Path& path,
+                                     uint8_t index, uint32_t nowMs) {
+    RouteBossWorldPose pose{routePathPointWorld(path, index), 0.0f, 1.0f};
+    if (index + 1 < path.pointCount) {
+        const RouteWorldPoint next = routePathPointWorld(path, index + 1);
+        pose.tangentX = next.x - pose.point.x;
+        pose.tangentY = next.y - pose.point.y;
+    }
+    const float tangentLength = hypotf(pose.tangentX, pose.tangentY);
+    if (tangentLength > 0.01f) {
+        pose.tangentX /= tangentLength;
+        pose.tangentY /= tangentLength;
+    }
+    const float patrolOffset = ROUTE_BOSS_PATROL_DISTANCE *
+        routeBossPatrolPermille(nowMs) / 1000.0f;
+    pose.point.x += pose.tangentX * patrolOffset;
+    pose.point.y += pose.tangentY * patrolOffset;
+    return pose;
+}
+
 constexpr uint8_t routeFollowerTargetIndex(uint8_t leaderIndex) {
     return leaderIndex >= ROUTE_FOLLOWER_GAP_STEPS
         ? leaderIndex - ROUTE_FOLLOWER_GAP_STEPS
@@ -949,6 +976,46 @@ void drawGeneratedMapForegroundViewport(
             }
         }
     }
+}
+
+void drawGeneratedMapVegetationForActor(
+    const ExploreMapGenerator::Map& generated,
+    int cameraX, int cameraY, uint16_t fieldColor,
+    uint8_t animationFrame, float actorFootWorldY,
+    int actorLeft, int actorTop, int actorRight, int actorBottom) {
+    if (generated.areaIndex != ExploreMapGenerator::TALL_GRASS_PARK_AREA) return;
+    const int left = MathUtil::max(0, actorLeft);
+    const int top = MathUtil::max(0, actorTop);
+    const int right = MathUtil::min<int>(Hal::DISPLAY_W, actorRight);
+    const int bottom = MathUtil::min<int>(Hal::DISPLAY_H, actorBottom);
+    if (left >= right || top >= bottom) return;
+
+    // Restrict the restoration to this actor: an actor nearer the camera can
+    // already overlap a different part of the same tree or grass clump.
+    auto& canvas = PixelRenderer::canvas();
+    canvas.setClipRect(left, top, right - left, bottom - top);
+    const int firstX = MathUtil::max(0, (cameraX + left) / EXPLORE_TILE_SIZE);
+    const int firstY = MathUtil::max(0, (cameraY + top) / EXPLORE_TILE_SIZE);
+    const int lastX = MathUtil::min<int>(ExploreMapGenerator::WIDTH - 1,
+        (cameraX + right - 1) / EXPLORE_TILE_SIZE);
+    const int lastY = MathUtil::min<int>(ExploreMapGenerator::HEIGHT - 1,
+        (cameraY + bottom - 1) / EXPLORE_TILE_SIZE);
+    constexpr uint8_t layer = 1;
+    for (int tileY = firstY; tileY <= lastY; ++tileY) {
+        for (int tileX = firstX; tileX <= lastX; ++tileX) {
+            const uint16_t tileId = generated.layers[layer]
+                [tileY * ExploreMapGenerator::WIDTH + tileX];
+            if (!ExploreTileSemantics::vegetationOccludes(
+                    tileId, layer, tileY, actorFootWorldY,
+                    EXPLORE_TILE_SIZE)) continue;
+            const int x = tileX * EXPLORE_TILE_SIZE - cameraX;
+            const int y = tileY * EXPLORE_TILE_SIZE - cameraY;
+            if (!GameAssets::drawExploreTile(tileId, x, y, animationFrame)) {
+                drawGeneratedTileFallback(tileId, x, y, layer, fieldColor);
+            }
+        }
+    }
+    canvas.clearClipRect();
 }
 
 const EncounterEntry* rollEncounterEntry(const RouteMap& map) {
@@ -4417,46 +4484,80 @@ void ExploreScene::renderWalking() {
     int cameraY = MathUtil::clamp(static_cast<int>(roundf(routeWorldY)) - Hal::DISPLAY_H / 2,
                             0, static_cast<int>(EXPLORE_MAP_H) - Hal::DISPLAY_H);
     const RouteMap& map = routeMap(mapBlocks[currentMapBlock]);
-    uint8_t mapAnimationFrame = static_cast<uint8_t>((Hal::ins().millis() / 140U) % 8U);
+    const uint32_t nowMs = Hal::ins().millis();
+    uint8_t mapAnimationFrame = static_cast<uint8_t>((nowMs / 140U) % 8U);
     drawGeneratedMapViewport(
         generatedMap, cameraX, cameraY, map.fieldColor, mapAnimationFrame);
 
     renderRoutePickup(cameraX, cameraY);
 
-    bool bossBehindTeam = false;
-    if (routeBossPending) {
-        const ExploreMapGenerator::Path& path = generatedMap.paths[currentRoutePath];
-        if (routeBossIndex < path.pointCount) {
-            bossBehindTeam =
-                routePathPointWorld(path, routeBossIndex).y <= routeWorldY;
-        }
-    }
-    if (bossBehindTeam) renderRouteBoss(cameraX, cameraY);
-
     auto& engine = GameEngine::ins();
     const Game::GameState& state = engine.gameState();
     uint8_t leaderSlot = routeLeaderSlot(state);
     const Species& activeSpecies = engine.speciesFor(state.team[leaderSlot]);
-    if (hasHealthyRouteFollower(state)) {
-        const Species& followerSpecies = engine.speciesFor(state.team[1]);
-        if (routeFollowerWorldY <= routeWorldY) {
-            drawRouteMonster(followerSpecies, routeFollowerWorldX,
-                             routeFollowerWorldY, routeFollowerWalkDirection,
-                             true, cameraX, cameraY);
-            drawRouteMonster(activeSpecies, routeWorldX, routeWorldY,
-                             routeWalkDirection, false, cameraX, cameraY);
+    if (generatedMap.areaIndex == ExploreMapGenerator::TALL_GRASS_PARK_AREA) {
+        ExploreTileSemantics::ActorDepth actors[3] = {
+            {ExploreTileSemantics::ActorRole::LEADER, routeWorldY}};
+        uint8_t actorCount = 1;
+        if (hasHealthyRouteFollower(state)) {
+            actors[actorCount++] = {
+                ExploreTileSemantics::ActorRole::COMPANION, routeFollowerWorldY};
+        }
+        if (routeBossPending) {
+            const ExploreMapGenerator::Path& path = generatedMap.paths[currentRoutePath];
+            if (routeBossIndex < path.pointCount) {
+                actors[actorCount++] = {ExploreTileSemantics::ActorRole::BOSS,
+                    routeBossWorldPose(path, routeBossIndex, nowMs).point.y};
+            }
+        }
+        ExploreTileSemantics::sortActorsByGroundDepth(actors, actorCount);
+        for (uint8_t index = 0; index < actorCount; ++index) {
+            switch (actors[index].role) {
+            case ExploreTileSemantics::ActorRole::BOSS:
+                renderRouteBoss(cameraX, cameraY, nowMs);
+                break;
+            case ExploreTileSemantics::ActorRole::COMPANION:
+                drawRouteMonster(engine.speciesFor(state.team[1]),
+                    routeFollowerWorldX, routeFollowerWorldY,
+                    routeFollowerWalkDirection, true, cameraX, cameraY);
+                break;
+            case ExploreTileSemantics::ActorRole::LEADER:
+                drawRouteMonster(activeSpecies, routeWorldX, routeWorldY,
+                    routeWalkDirection, false, cameraX, cameraY);
+                break;
+            }
+        }
+    } else {
+        bool bossBehindTeam = false;
+        if (routeBossPending) {
+            const ExploreMapGenerator::Path& path = generatedMap.paths[currentRoutePath];
+            if (routeBossIndex < path.pointCount) {
+                bossBehindTeam =
+                    routePathPointWorld(path, routeBossIndex).y <= routeWorldY;
+            }
+        }
+        if (bossBehindTeam) renderRouteBoss(cameraX, cameraY, nowMs);
+        if (hasHealthyRouteFollower(state)) {
+            const Species& followerSpecies = engine.speciesFor(state.team[1]);
+            if (routeFollowerWorldY <= routeWorldY) {
+                drawRouteMonster(followerSpecies, routeFollowerWorldX,
+                                 routeFollowerWorldY, routeFollowerWalkDirection,
+                                 true, cameraX, cameraY);
+                drawRouteMonster(activeSpecies, routeWorldX, routeWorldY,
+                                 routeWalkDirection, false, cameraX, cameraY);
+            } else {
+                drawRouteMonster(activeSpecies, routeWorldX, routeWorldY,
+                                 routeWalkDirection, false, cameraX, cameraY);
+                drawRouteMonster(followerSpecies, routeFollowerWorldX,
+                                 routeFollowerWorldY, routeFollowerWalkDirection,
+                                 true, cameraX, cameraY);
+            }
         } else {
             drawRouteMonster(activeSpecies, routeWorldX, routeWorldY,
                              routeWalkDirection, false, cameraX, cameraY);
-            drawRouteMonster(followerSpecies, routeFollowerWorldX,
-                             routeFollowerWorldY, routeFollowerWalkDirection,
-                             true, cameraX, cameraY);
         }
-    } else {
-        drawRouteMonster(activeSpecies, routeWorldX, routeWorldY,
-                         routeWalkDirection, false, cameraX, cameraY);
+        if (routeBossPending && !bossBehindTeam) renderRouteBoss(cameraX, cameraY, nowMs);
     }
-    if (routeBossPending && !bossBehindTeam) renderRouteBoss(cameraX, cameraY);
 
     drawGeneratedMapForegroundViewport(
         generatedMap, cameraX, cameraY, map.fieldColor, mapAnimationFrame);
@@ -4472,7 +4573,7 @@ void ExploreScene::renderWalking() {
     if (exploreMenuOpen) renderExploreMenu();
 }
 
-void ExploreScene::renderRouteBoss(int cameraX, int cameraY) {
+void ExploreScene::renderRouteBoss(int cameraX, int cameraY, uint32_t nowMs) {
     if (!routeBossPending) return;
     const ExploreMapGenerator::Path& path = generatedMap.paths[currentRoutePath];
     if (routeBossIndex >= path.pointCount) return;
@@ -4480,33 +4581,17 @@ void ExploreScene::renderRouteBoss(int cameraX, int cameraY) {
     const Species* species = findSpecies(expeditionBossSpeciesId);
     if (!species) return;
 
-    RouteWorldPoint anchor = routePathPointWorld(path, routeBossIndex);
-    float anchorX = anchor.x;
-    float anchorY = anchor.y;
-    float tangentX = 0.0f;
-    float tangentY = 1.0f;
-    if (routeBossIndex + 1 < path.pointCount) {
-        RouteWorldPoint next = routePathPointWorld(path, routeBossIndex + 1);
-        tangentX = next.x - anchorX;
-        tangentY = next.y - anchorY;
-    }
-    float tangentLength = hypotf(tangentX, tangentY);
-    if (tangentLength > 0.01f) {
-        tangentX /= tangentLength;
-        tangentY /= tangentLength;
-    }
-
-    uint32_t nowMs = Hal::ins().millis();
+    const RouteBossWorldPose pose = routeBossWorldPose(path, routeBossIndex, nowMs);
+    const float tangentX = pose.tangentX;
+    const float tangentY = pose.tangentY;
     uint32_t patrolPhase = nowMs % ROUTE_BOSS_PATROL_CYCLE_MS;
     bool movingOut = patrolPhase >= ROUTE_BOSS_PATROL_OUT_START_MS &&
                      patrolPhase < ROUTE_BOSS_PATROL_OUT_END_MS;
     bool movingBack = patrolPhase >= ROUTE_BOSS_PATROL_RETURN_START_MS &&
                       patrolPhase < ROUTE_BOSS_PATROL_RETURN_END_MS;
     bool patrolMoving = movingOut || movingBack;
-    float patrolOffset = ROUTE_BOSS_PATROL_DISTANCE *
-                         routeBossPatrolPermille(nowMs) / 1000.0f;
-    float worldX = anchorX + tangentX * patrolOffset;
-    float worldY = anchorY + tangentY * patrolOffset;
+    float worldX = pose.point.x;
+    float worldY = pose.point.y;
 
     uint8_t walkDirection = static_cast<uint8_t>(PokemonSprites::WalkDirection::DOWN);
     if (routeBossPatrolFacesOutward(patrolPhase)) {
@@ -4552,7 +4637,12 @@ void ExploreScene::renderRouteBoss(int cameraX, int cameraY) {
     int drawH = MathUtil::max<int>(1, static_cast<int>(roundf(frame->height * scale)));
     int centerX = static_cast<int>(roundf(worldX)) - cameraX;
     float airOffsetY = routeAirOffsetY(species->id, Hal::ins().millis(), scale);
-    int centerY = static_cast<int>(roundf(worldY - airOffsetY)) - cameraY;
+    const bool parkGroundAnchor = generatedMap.areaIndex ==
+        ExploreMapGenerator::TALL_GRASS_PARK_AREA;
+    const int groundOffset = parkGroundAnchor ? static_cast<int>(roundf(
+        PokemonSprites::frameGroundOffsetY(frame) * scale)) : 0;
+    int centerY = static_cast<int>(roundf(worldY - airOffsetY)) - cameraY -
+        groundOffset;
     int drawX = centerX - drawW / 2;
     int drawY = centerY - drawH / 2;
     if (drawX + drawW < -8 || drawX >= Hal::DISPLAY_W + 8 ||
@@ -4562,10 +4652,19 @@ void ExploreScene::renderRouteBoss(int cameraX, int cameraY) {
 
     auto& c = PixelRenderer::canvas();
     // Keep the shadow at the unshifted ground anchor while the body floats.
-    int shadowY = static_cast<int>(roundf(worldY)) - cameraY + drawH / 2 - 10;
+    int shadowY = static_cast<int>(roundf(worldY)) - cameraY +
+        (parkGroundAnchor ? -1 : drawH / 2 - 10);
     c.fillEllipse(centerX, shadowY, 10, 3,
                   PixelRenderer::rgb(68, 87, 74));
     PokemonSprites::drawFrameScaled(frame, drawX, drawY, scale, flipX);
+    const int actorTop = MathUtil::min(drawY, shadowY - 3);
+    const int actorBottom = MathUtil::max(drawY + drawH, shadowY + 4);
+    drawGeneratedMapVegetationForActor(
+        generatedMap, cameraX, cameraY,
+        routeMap(mapBlocks[currentMapBlock]).fieldColor,
+        static_cast<uint8_t>((Hal::ins().millis() / 140U) % 8U),
+        worldY, MathUtil::min(drawX, centerX - 10), actorTop,
+        MathUtil::max(drawX + drawW, centerX + 11), actorBottom);
 }
 
 void ExploreScene::drawRouteMonster(const Species& species, float worldX,
@@ -4685,14 +4784,31 @@ void ExploreScene::drawRouteMonster(const Species& species, float worldX,
         int markerH = static_cast<int>(marker->height * scale);
         int markerX = static_cast<int>(roundf(worldX)) - cameraX - markerW / 2;
         float airOffsetY = routeAirOffsetY(species.id, Hal::ins().millis(), scale);
-        int markerY = static_cast<int>(roundf(worldY - airOffsetY)) - cameraY - markerH / 2;
-        int shadowY = static_cast<int>(roundf(worldY)) - cameraY + markerH / 2 - 10;
+        const bool parkGroundAnchor = generatedMap.areaIndex ==
+            ExploreMapGenerator::TALL_GRASS_PARK_AREA;
+        const int groundOffset = parkGroundAnchor ? static_cast<int>(roundf(
+            PokemonSprites::frameGroundOffsetY(marker) * scale)) : 0;
+        int markerY = static_cast<int>(roundf(worldY - airOffsetY)) - cameraY -
+            markerH / 2 - groundOffset;
+        int shadowY = static_cast<int>(roundf(worldY)) - cameraY +
+            (parkGroundAnchor ? -1 : markerH / 2 - 10);
         c.fillEllipse(markerX + markerW / 2, shadowY,
                       10, 3,
                       PixelRenderer::rgb(68, 87, 74));
         markerX += static_cast<int>(roundf(poseOffsetX * scale));
         markerY += static_cast<int>(roundf(poseOffsetY * scale));
         PokemonSprites::drawFrameScaled(marker, markerX, markerY, scale, markerFlipX);
+        const int centerX = static_cast<int>(roundf(worldX)) - cameraX;
+        drawGeneratedMapVegetationForActor(
+            generatedMap, cameraX, cameraY,
+            routeMap(mapBlocks[currentMapBlock]).fieldColor,
+            static_cast<uint8_t>((Hal::ins().millis() / 140U) % 8U),
+            worldY, MathUtil::min(markerX, centerX - 10),
+            MathUtil::min(markerY, shadowY - 3),
+            MathUtil::max(markerX + static_cast<int>(roundf(marker->width * scale)),
+                          centerX + 11),
+            MathUtil::max(markerY + static_cast<int>(roundf(marker->height * scale)),
+                          shadowY + 4));
     }
 }
 

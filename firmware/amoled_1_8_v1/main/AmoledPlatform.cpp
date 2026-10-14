@@ -7,6 +7,7 @@
 #include "bsp/esp32_s3_touch_amoled_1_8.h"
 #include "esp_heap_caps.h"
 #include "esp_event.h"
+#include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_now.h"
 #include "esp_psram.h"
@@ -130,6 +131,9 @@ void bindAmoledPlatform() {
 bool AmoledPlatform::begin() {
     if (initialized_) return true;
     if (bsp_i2c_init() != ESP_OK) return false;
+    if (!imu_.begin(bsp_i2c_get_handle())) {
+        ESP_LOGW("AmoledPlatform", "QMI8658 unavailable or standby failed");
+    }
     audioQueue_ = xQueueCreate(AUDIO_QUEUE_CAPACITY, sizeof(AudioChunk*));
     audioMutex_ = xSemaphoreCreateMutex();
     if (!audioQueue_ || !audioMutex_ ||
@@ -457,11 +461,12 @@ bool AmoledPlatform::recordMicrophone(int16_t* data, size_t sampleCount,
 bool AmoledPlatform::microphoneRecording() const { return microphoneMode_; }
 bool AmoledPlatform::microphoneActive() const { return microphoneMode_; }
 
+bool AmoledPlatform::setAccelerationEnabled(bool enabled) {
+    return imu_.setAccelerationEnabled(enabled);
+}
+
 bool AmoledPlatform::readAcceleration(float& x, float& y, float& z) {
-    x = 0.0f;
-    y = 0.0f;
-    z = 0.0f;
-    return false;
+    return imu_.readAcceleration(x, y, z);
 }
 
 int AmoledPlatform::batteryLevel() {

@@ -2,10 +2,24 @@
 
 #include <cstdint>
 #include "game/GameState.h"
+#include "game/Species.h"
 
 class Canvas565;
 
 namespace GameAssets {
+
+enum class BattleFx : uint8_t {
+    HIT,
+    FIRE,
+    WATER,
+    ELECTRIC,
+    SCRATCH,
+    BITE,
+    LEER,
+    GROWL,
+    SAND_ATTACK,
+    COUNT,
+};
 
 enum class Kind : uint16_t {
     ITEM_POKE_BALL,
@@ -91,6 +105,22 @@ enum class Kind : uint16_t {
     BALL_TIMER_BALL_7,
     BALL_TIMER_BALL_OPEN,
     BALL_BURST_STAR,
+    BATTLE_FX_HIT_0,
+    BATTLE_FX_HIT_1,
+    BATTLE_FX_HIT_2,
+    BATTLE_FX_HIT_3,
+    BATTLE_FX_FIRE_0,
+    BATTLE_FX_FIRE_1,
+    BATTLE_FX_FIRE_2,
+    BATTLE_FX_FIRE_3,
+    BATTLE_FX_WATER_0,
+    BATTLE_FX_WATER_1,
+    BATTLE_FX_WATER_2,
+    BATTLE_FX_WATER_3,
+    BATTLE_FX_ELECTRIC_0,
+    BATTLE_FX_ELECTRIC_1,
+    BATTLE_FX_ELECTRIC_2,
+    BATTLE_FX_ELECTRIC_3,
     BATTLE_BG_GRASS,
     BATTLE_BG_RIVERSIDE,
     BATTLE_BG_DEEP_FOREST,
@@ -347,6 +377,43 @@ enum class Kind : uint16_t {
     EXPLORE_TILE_4771,
     EXPLORE_TILE_4772,
     EXPLORE_TILE_4773,
+    EXPLORE_TILE_0391,
+    EXPLORE_TILE_0399,
+    EXPLORE_TILE_0812,
+    EXPLORE_TILE_0813,
+    EXPLORE_TILE_0816,
+    EXPLORE_TILE_0817,
+    EXPLORE_TILE_0820,
+    EXPLORE_TILE_0821,
+    EXPLORE_TILE_0824,
+    EXPLORE_TILE_0825,
+    EXPLORE_TILE_0826,
+    EXPLORE_TILE_0832,
+    EXPLORE_TILE_0833,
+    EXPLORE_TILE_0834,
+    EXPLORE_TILE_0840,
+    EXPLORE_TILE_0841,
+    EXPLORE_TILE_0842,
+    BATTLE_FX_SCRATCH_0,
+    BATTLE_FX_SCRATCH_1,
+    BATTLE_FX_SCRATCH_2,
+    BATTLE_FX_SCRATCH_3,
+    BATTLE_FX_BITE_0,
+    BATTLE_FX_BITE_1,
+    BATTLE_FX_BITE_2,
+    BATTLE_FX_BITE_3,
+    BATTLE_FX_LEER_0,
+    BATTLE_FX_LEER_1,
+    BATTLE_FX_LEER_2,
+    BATTLE_FX_LEER_3,
+    BATTLE_FX_GROWL_0,
+    BATTLE_FX_GROWL_1,
+    BATTLE_FX_GROWL_2,
+    BATTLE_FX_GROWL_3,
+    BATTLE_FX_SAND_ATTACK_0,
+    BATTLE_FX_SAND_ATTACK_1,
+    BATTLE_FX_SAND_ATTACK_2,
+    BATTLE_FX_SAND_ATTACK_3,
     COUNT,
 };
 
@@ -357,6 +424,10 @@ bool draw(Kind kind, int x, int y, float scale = 1.0f);
 bool drawCentered(Kind kind, int centerX, int centerY, float scale = 1.0f);
 bool drawCenteredAlpha(Kind kind, int centerX, int centerY,
                        float scale, uint8_t alpha);
+Kind battleFxKind(BattleFx fx, uint8_t frame);
+BattleFx battleFxForType(TypeId type);
+BattleFx battleFxForMove(Game::MoveId moveId, TypeId type);
+bool battleFxIsStatus(BattleFx fx);
 bool drawBattleBackground(Kind kind);
 bool drawBackgroundViewport(Kind kind, int cameraX, int cameraY);
 bool isExploreTileAnimated(uint16_t tileId);

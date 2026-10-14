@@ -425,6 +425,7 @@ bool loadLegacyGameState(const uint8_t* stateBytes, uint16_t version,
 
     state = Game::GameState{};
     memcpy(&state, stateBytes, LEGACY_GAME_STATE_V1_V2_SIZE);
+    state.settings.reservedAudioSetting = 0;
     // Legacy v1/v2 records did not define gender. Use the requested stable
     // migration default for every team and storage monster.
     constexpr uint8_t LEGACY_GENDER =

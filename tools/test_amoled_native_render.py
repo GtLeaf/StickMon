@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class AmoledNativeRenderTests(unittest.TestCase):
     def test_page_headers_are_self_contained(self):
-        for header in ("RoomScreens.h", "SettingsScreens.h", "UiCommon.h",
+        for header in ("RoomScreens.h", "SettingsScreens.h", "HatchScreens.h", "UiCommon.h",
                        "ExploreMapRenderer.h", "RenderCaches.h", "SceneFade.h"):
             with self.subTest(header=header):
                 subprocess.run([
@@ -40,6 +40,7 @@ class AmoledNativeRenderTests(unittest.TestCase):
             "tools/amoled_native_render_host.cpp",
             "tools/amoled_ui_behavior_host.cpp",
             "tools/amoled_expedition_host.cpp",
+            "tools/amoled_shower_host.cpp",
             "firmware/amoled_1_8_v1/main/AmoledApp.cpp",
             "src/hardware/EspNowLink.cpp",
             *[str(path.relative_to(ROOT)) for path in amoled_ui_sources(ROOT)],
@@ -79,14 +80,50 @@ class AmoledNativeRenderTests(unittest.TestCase):
         subprocess.run([self.binary, str(ROOT / "data"), "--case", name],
                        cwd=ROOT, check=True)
 
+    def test_shower_drag_damage_feedback_idle_and_completion(self):
+        self.run_case("shower-flow")
+
+    def test_shower_foam_rinse_feedback_and_cache_partial_frames(self):
+        args = [self.binary, str(ROOT / "data"), "--case", "shower-render"]
+        output = os.environ.get("AMOLED_RENDER_OUTPUT")
+        if output:
+            Path(output).mkdir(parents=True, exist_ok=True)
+            args.append(output)
+        subprocess.run(args, cwd=ROOT, check=True)
+
+    def test_explore_position_cadence_and_damage_rectangle_pixels(self):
+        self.run_case("explore-motion-damage")
+
+    def test_park_third_route_selection_boss_placement_and_map_link(self):
+        self.run_case("explore-park-routes")
+
     def test_explore_button_pixels_and_hit_boundaries(self):
         self.run_case("explore-buttons")
+
+    def test_first_boot_hatch_resume_and_save_commit(self):
+        self.run_case("hatch-flow")
+
+    def test_hatch_pixels_and_dirty_bands(self):
+        args = [self.binary, str(ROOT / "data"), "--case", "hatch-render"]
+        output = os.environ.get("AMOLED_RENDER_OUTPUT")
+        if output:
+            Path(output).mkdir(parents=True, exist_ok=True)
+            args.append(output)
+        subprocess.run(args, cwd=ROOT, check=True)
 
     def test_shared_page_header_pixels_and_hit_boundaries(self):
         self.run_case("page-header")
 
     def test_battle_sprite_fit_and_no_floating_damage_numbers(self):
         self.run_case("battle-sprite-presentation")
+
+    def test_pet_hearts_follow_visible_head_and_hop(self):
+        args = [self.binary, str(ROOT / "data"), "--case", "pet-heart-layout"]
+        output = os.environ.get("AMOLED_RENDER_OUTPUT")
+        if output:
+            Path(output).mkdir(parents=True, exist_ok=True)
+            args.append(output)
+        subprocess.run(args, cwd=ROOT, check=True)
 
     def test_home_faint_rest_progress_reuses_hp_bar(self):
         self.run_case("home-faint-hp-hud")
@@ -102,6 +139,17 @@ class AmoledNativeRenderTests(unittest.TestCase):
 
     def test_settings_slider_endpoints_thickness_and_pressed_state(self):
         self.run_case("settings-sliders")
+
+    def test_settings_reset_requires_confirmation_and_preserves_non_game_storage(self):
+        self.run_case("settings-reset")
+
+    def test_settings_reset_confirmation_pixels_and_partial_frames(self):
+        args = [self.binary, str(ROOT / "data"), "--case", "settings-reset-render"]
+        output = os.environ.get("AMOLED_RENDER_OUTPUT")
+        if output:
+            Path(output).mkdir(parents=True, exist_ok=True)
+            args.append(output)
+        subprocess.run(args, cwd=ROOT, check=True)
 
     def test_team_popup_rows_and_separators(self):
         self.run_case("team-popup")
@@ -133,14 +181,64 @@ class AmoledNativeRenderTests(unittest.TestCase):
     def test_prewarmed_battle_background_matches_cold_render(self):
         self.run_case("battle-prewarm")
 
+    def test_battle_fx_frames_and_animation_dirty_rows(self):
+        args = [self.binary, str(ROOT / "data"), "--case", "battle-fx"]
+        output = os.environ.get("AMOLED_RENDER_OUTPUT")
+        if output:
+            Path(output).mkdir(parents=True, exist_ok=True)
+            args.append(output)
+        subprocess.run(args, cwd=ROOT, check=True)
+
+    def test_battle_asset_actions_follow_real_results(self):
+        self.run_case("battle-asset-actions")
+
     def test_page_clip_intersection_and_early_return(self):
         self.run_case("page-clip")
 
     def test_progression_replacement_requires_selection_and_confirmation(self):
         self.run_case("progression-replace")
 
+    def test_explore_pickup_is_visible_and_matches_partial_redraws(self):
+        self.run_case("explore-pickup")
+        # Firmware replaces the shared UI pack with the native AMOLED pack.
+        with tempfile.TemporaryDirectory() as directory:
+            data = Path(directory)
+            for item in (ROOT / "data").iterdir():
+                if item.name != "packs":
+                    (data / item.name).symlink_to(item, target_is_directory=item.is_dir())
+            pack = data / "packs/dev"
+            pack.mkdir(parents=True)
+            for item in (ROOT / "data/packs/dev").iterdir():
+                if item.name != "game":
+                    (pack / item.name).symlink_to(item, target_is_directory=item.is_dir())
+            game = pack / "game"
+            game.mkdir()
+            for item in (ROOT / "data/packs/dev/game").iterdir():
+                source = item.with_name("ui_amoled.smonfx") if item.name == "ui.smonfx" else item
+                (game / item.name).symlink_to(source)
+            subprocess.run([self.binary, str(data), "--case", "explore-pickup"],
+                           cwd=ROOT, check=True)
+
+    def test_explore_vegetation_respects_actor_depth_and_partial_redraws(self):
+        args = [self.binary, str(ROOT / "data"), "--case", "explore-vegetation"]
+        output = os.environ.get("AMOLED_RENDER_OUTPUT")
+        if output:
+            Path(output).mkdir(parents=True, exist_ok=True)
+            args.append(output)
+        subprocess.run(args, cwd=ROOT, check=True)
+
+
+    def test_lock_focus_matches_visible_sprite_pixels(self):
+        self.run_case("lock-focus-pixels")
+
     def test_expedition_black_frames_and_direct_home_return(self):
         self.run_case("expedition-transition")
+
+    def test_healthy_reserve_continues_normal_and_boss_encounters(self):
+        self.run_case("explore-reserve-encounters")
+
+    def test_explore_saves_at_rewards_and_exit_boundaries(self):
+        self.run_case("explore-save-boundaries")
 
     def test_debug_visitor_prompt_talk_and_exit(self):
         if os.environ.get("AMOLED_RENDER_DEBUG") == "1":

@@ -10,6 +10,17 @@ namespace {
 
 constexpr uint16_t GRASS_TILES[] = {385, 385, 385, 386, 387, 388, 389};
 constexpr uint16_t DENSE_GRASS_TILE = 390;
+constexpr uint16_t TALL_GRASS_TOP_TILE = 391;
+constexpr uint16_t TALL_GRASS_BASE_TILE = 399;
+constexpr uint16_t PARK_BOUNDARY_TREE_TILES[3][2] = {
+    {800, 801}, {808, 809}, {816, 817},
+};
+constexpr uint16_t PARK_TREE_TILES[3][2] = {
+    {804, 805}, {812, 813}, {820, 821},
+};
+constexpr uint16_t PARK_CENTERED_TREE_TILES[3][3] = {
+    {824, 825, 826}, {832, 833, 834}, {840, 841, 842},
+};
 constexpr uint16_t FLOWER_TILE = 415;
 constexpr uint16_t SHRUB_TILE = 859;
 constexpr uint16_t DEEP_SEA_TILE = 144;
@@ -287,7 +298,7 @@ struct AreaProfile {
 constexpr AreaProfile AREA_PROFILES[] = {
     {0, 20, 24, 8, 2},    // Grass path: open and resource friendly.
     {0, 0, 16, 8, 1},     // Creek slope: stream and cliff carry the scene.
-    {0, 25, 44, 10, 2},   // Tall grass park: one large encounter patch.
+    {0, 0, 40, 10, 1},    // Tall grass park uses its own layered scenery pass.
     {0, 0, 0, 0, 0},      // Frost cave uses its own snow decoration pass.
     {0, 100, 30, 8, 1},   // Mist forest: guaranteed forest enclosure.
     {0, 0, 18, 7, 1},     // Ancient valley: waterfall scenery dominates.
@@ -723,6 +734,308 @@ bool buildTopology(uint32_t seed, Edge entryEdge, uint8_t coastChance,
     for (uint8_t i = 0; i < out.pathCount; ++i) addPathRoad(out.paths[i], road);
     return validateBorderRoad(out, road);
 }
+
+Point transformParkPoint(Point point, bool mirrorX, bool mirrorY) {
+    // Interior route anchors occupy the upper/left cell of a two-cell road.
+    // Boundary endpoints must remain on the outermost cell after reflection.
+    if (mirrorX) point.x = point.x == 0 ? WIDTH - 1
+        : point.x == WIDTH - 1 ? 0 : WIDTH - 2 - point.x;
+    if (mirrorY) point.y = point.y == 0 ? HEIGHT - 1
+        : point.y == HEIGHT - 1 ? 0 : HEIGHT - 2 - point.y;
+    return point;
+}
+
+Endpoint parkEndpoint(Point point) {
+    Edge edge = point.y == 0 ? Edge::TOP : point.y == HEIGHT - 1 ? Edge::BOTTOM
+        : point.x == 0 ? Edge::LEFT : Edge::RIGHT;
+    return {point, edge};
+}
+
+bool validateParkTopology(const Map& map) {
+    CellMask vertices;
+    CellMask rightEdges;
+    CellMask downEdges;
+    vertices.clear();
+    rightEdges.clear();
+    downEdges.clear();
+    for (uint8_t pathIndex = 0; pathIndex < map.pathCount; ++pathIndex) {
+        const Path& path = map.paths[pathIndex];
+        if (path.pointCount < 2 || !samePoint(path.points[0], map.entry.point) ||
+            !samePoint(path.points[path.pointCount - 1], path.exit.point) ||
+            path.exit.edge == map.entry.edge) return false;
+        for (uint8_t other = 0; other < pathIndex; ++other) {
+            if (map.paths[other].exit.edge == path.exit.edge) return false;
+        }
+        CellMask visited;
+        visited.clear();
+        for (uint8_t i = 0; i < path.pointCount; ++i) {
+            Point point = path.points[i];
+            if (point.x >= WIDTH || point.y >= HEIGHT || visited.contains(point.x, point.y))
+                return false;
+            visited.add(point.x, point.y);
+            vertices.add(point.x, point.y);
+            if (i == 0) continue;
+            Point previous = path.points[i - 1];
+            int dx = point.x - previous.x;
+            int dy = point.y - previous.y;
+            if ((dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy) != 1)
+                return false;
+            if (point.y == previous.y)
+                rightEdges.add(point.x < previous.x ? point.x : previous.x, point.y);
+            else downEdges.add(point.x, point.y < previous.y ? point.y : previous.y);
+        }
+    }
+    // All paths start at one entry, so the graph is connected. V-1 edges excludes loops.
+    if (rightEdges.count() + downEdges.count() + 1 != vertices.count()) return false;
+    uint8_t forkCount = 0;
+    uint8_t leafCount = 0;
+    bool hasFirstJunction = map.pathCount == 1;
+    for (uint8_t y = 0; y < HEIGHT; ++y) {
+        for (uint8_t x = 0; x < WIDTH; ++x) {
+            if (!vertices.contains(x, y)) continue;
+            int degree = rightEdges.contains(x, y) + rightEdges.contains(x - 1, y) +
+                         downEdges.contains(x, y) + downEdges.contains(x, y - 1);
+            if (degree == 1) ++leafCount;
+            if (degree == 3) {
+                ++forkCount;
+                if (samePoint({x, y}, map.junction)) hasFirstJunction = true;
+            }
+            if (degree < 1 || degree > 3) return false;
+        }
+    }
+    return hasFirstJunction && forkCount + 1 == map.pathCount &&
+           leafCount == map.pathCount + 1;
+}
+
+constexpr uint16_t PARK_TOPOLOGY_ATTEMPTS = 192;
+constexpr uint8_t PARK_FALLBACK_ATTEMPTS = 32;
+constexpr int PARK_DX[4] = {0, 1, 0, -1};
+constexpr int PARK_DY[4] = {-1, 0, 1, 0};
+
+bool parkAppendRun(Path& path, uint8_t heading, int distance,
+                   uint8_t width, uint8_t height, bool terminal = false) {
+    Point start = path.points[path.pointCount - 1];
+    int endX = start.x + PARK_DX[heading] * distance;
+    int endY = start.y + PARK_DY[heading] * distance;
+    if (distance < 2 || endX < 0 || endX >= width || endY < 0 || endY >= height)
+        return false;
+    if (!terminal && (endX < 1 || endX > width - 3 || endY < 1 || endY > height - 3))
+        return false;
+    for (int step = 1; step <= distance; ++step) {
+        Point point{static_cast<uint8_t>(start.x + PARK_DX[heading] * step),
+                    static_cast<uint8_t>(start.y + PARK_DY[heading] * step)};
+        for (uint8_t i = 0; i < path.pointCount; ++i)
+            if (samePoint(path.points[i], point)) return false;
+        if (!appendPoint(path, point.x, point.y)) return false;
+    }
+    return true;
+}
+
+bool parkFinishRun(Path& path, uint8_t heading, uint8_t width, uint8_t height) {
+    Point point = path.points[path.pointCount - 1];
+    int distances[4] = {point.y, width - 1 - point.x, height - 1 - point.y, point.x};
+    return parkAppendRun(path, heading, distances[heading], width, height, true);
+}
+
+bool parkGrowBranch(Rng& rng, Point start, uint8_t heading, uint8_t edge,
+                    uint8_t width, uint8_t height, Path& branch) {
+    branch = {};
+    appendPoint(branch, start.x, start.y);
+    if (heading == edge && rng.bounded(2) == 0)
+        return parkFinishRun(branch, edge, width, height);
+    if (!parkAppendRun(branch, heading, 2 + rng.bounded(4), width, height)) return false;
+    if (heading == edge || heading == (edge + 2) % 4) {
+        heading = (heading + (rng.bounded(2) ? 1 : 3)) % 4;
+        if (!parkAppendRun(branch, heading, 2 + rng.bounded(3), width, height)) return false;
+    } else if (rng.bounded(2)) {
+        if (!parkAppendRun(branch, edge, 2 + rng.bounded(3), width, height)) return false;
+        if (!parkAppendRun(branch, heading, 2 + rng.bounded(3), width, height)) return false;
+    }
+    return parkFinishRun(branch, edge, width, height);
+}
+
+uint8_t parkHeading(Point a, Point b) {
+    return a.x == b.x ? (b.y < a.y ? 0 : 2) : (b.x > a.x ? 1 : 3);
+}
+
+bool parkOwnsRoadCell(const uint8_t* graph, uint8_t vertex, int x, int y) {
+    int vx = vertex % WIDTH;
+    int vy = vertex / WIDTH;
+    if (!graph[vertex]) return false;
+    return (vx == x && vy == y) ||
+           ((graph[vertex] & 5) && vx + 1 == x && vy == y) ||
+           ((graph[vertex] & 10) && vx == x && vy + 1 == y);
+}
+
+bool parkRoadCellsAreNear(const uint8_t* graph, int x, int y, int nx, int ny) {
+    const int owners[3][2] = {{x, y}, {x - 1, y}, {x, y - 1}};
+    for (const auto& owner : owners) {
+        if (owner[0] < 0 || owner[1] < 0) continue;
+        uint8_t root = owner[1] * WIDTH + owner[0];
+        if (!parkOwnsRoadCell(graph, root, x, y)) continue;
+        // A degree-three tree has at most 22 vertices within three steps.
+        uint8_t queue[32] = {root};
+        uint8_t depths[32] = {};
+        uint8_t head = 0, tail = 1;
+        CellMask seen;
+        seen.add(owner[0], owner[1]);
+        while (head < tail) {
+            uint8_t vertex = queue[head];
+            uint8_t depth = depths[head++];
+            if (parkOwnsRoadCell(graph, vertex, nx, ny)) return true;
+            if (depth == 3) continue;
+            int vx = vertex % WIDTH, vy = vertex / WIDTH;
+            for (uint8_t dir = 0; dir < 4; ++dir) {
+                if (!(graph[vertex] & (1 << dir))) continue;
+                int nextX = vx + PARK_DX[dir], nextY = vy + PARK_DY[dir];
+                if (seen.contains(nextX, nextY)) continue;
+                if (tail >= 32) return false;
+                seen.add(nextX, nextY);
+                queue[tail] = nextY * WIDTH + nextX;
+                depths[tail++] = depth + 1;
+            }
+        }
+    }
+    return false;
+}
+
+bool validateParkWideRoad(const Map& map, const CellMask& road) {
+    uint8_t graph[CELL_COUNT] = {};
+    for (uint8_t p = 0; p < map.pathCount; ++p) {
+        const Path& path = map.paths[p];
+        for (uint8_t i = 1; i < path.pointCount; ++i) {
+            Point a = path.points[i - 1], b = path.points[i];
+            uint8_t heading = parkHeading(a, b);
+            graph[a.y * WIDTH + a.x] |= 1 << heading;
+            graph[b.y * WIDTH + b.x] |= 1 << ((heading + 2) % 4);
+        }
+    }
+    for (int y = 0; y < HEIGHT; ++y) {
+        for (int x = 0; x < WIDTH; ++x) {
+            if (!road.contains(x, y)) continue;
+            if (road.contains(x + 1, y) && !parkRoadCellsAreNear(graph, x, y, x + 1, y))
+                return false;
+            if (road.contains(x, y + 1) && !parkRoadCellsAreNear(graph, x, y, x, y + 1))
+                return false;
+        }
+    }
+    return true;
+}
+
+Point orientParkPoint(Point point, uint8_t width, bool vertical, bool mirror, Edge edge) {
+    if (mirror) point.x = point.x == 0 ? width - 1
+        : point.x == width - 1 ? 0 : width - 2 - point.x;
+    if (vertical) return transformParkPoint(point, false, edge == Edge::TOP);
+    return transformParkPoint({point.y, point.x}, edge == Edge::LEFT, false);
+}
+
+bool parkTopologyCandidate(Rng& rng, Edge entryEdge, uint8_t type,
+                           bool fallback, Map& out, CellMask& road) {
+    bool vertical = entryEdge == Edge::TOP || entryEdge == Edge::BOTTOM;
+    uint8_t width = vertical ? WIDTH : HEIGHT;
+    uint8_t height = vertical ? HEIGHT : WIDTH;
+    bool mirror = rng.bounded(2) != 0;
+    Path main{};
+    uint8_t entryX = 2 + rng.bounded(width - 5);
+    appendPoint(main, entryX, height - 1);
+    Path branches[2] = {};
+    uint8_t forks[2] = {};
+    if (fallback) {
+        uint8_t x = 3 + rng.bounded(2);
+        uint8_t middle = width - 6 + rng.bounded(2);
+        uint8_t lower = height - 5 + rng.bounded(2);
+        uint8_t upper = 3 + rng.bounded(2);
+        main = {};
+        appendLine(main, x, height - 1);
+        appendLine(main, x, lower);
+        appendLine(main, middle, lower);
+        appendLine(main, middle, upper);
+        appendLine(main, middle, 0);
+        forks[0] = height - 1 - lower;
+        forks[1] = forks[0] + middle - x + lower - upper;
+        if (type) {
+            appendPoint(branches[0], x, lower);
+            appendLine(branches[0], 0, lower);
+        }
+        if (type == 2) {
+            appendPoint(branches[1], middle, upper);
+            appendLine(branches[1], width - 1, upper);
+        }
+    } else {
+        constexpr uint8_t edges[3] = {0, 1, 3};
+        uint8_t primary = type < 2 ? edges[rng.bounded(3)] : 0;
+        uint8_t shifts = 1 + rng.bounded(2);
+        for (uint8_t i = 0; i < shifts; ++i) {
+            if (!parkAppendRun(main, 0, 2 + rng.bounded(4), width, height)) return false;
+            uint8_t heading = rng.bounded(2) ? 1 : 3;
+            if (!parkAppendRun(main, heading, 2 + rng.bounded(4), width, height)) return false;
+        }
+        if (primary && !parkAppendRun(main, 0, 2 + rng.bounded(3), width, height)) return false;
+        if (!parkFinishRun(main, primary, width, height)) return false;
+        if (type) {
+            uint8_t candidates[MAX_PATH_POINTS] = {};
+            uint8_t count = 0;
+            for (uint8_t i = 3; i + 3 < main.pointCount; ++i) {
+                if (parkHeading(main.points[i - 1], main.points[i]) ==
+                    parkHeading(main.points[i], main.points[i + 1])) candidates[count++] = i;
+            }
+            if (!count) return false;
+            forks[0] = candidates[rng.bounded(count)];
+            if (type == 2) {
+                uint8_t later[MAX_PATH_POINTS] = {};
+                uint8_t laterCount = 0;
+                for (uint8_t i = 0; i < count; ++i)
+                    if (candidates[i] >= forks[0] + 4) later[laterCount++] = candidates[i];
+                if (!laterCount) return false;
+                forks[1] = later[rng.bounded(laterCount)];
+            }
+            uint8_t exits[2] = {};
+            uint8_t exitCount = 0;
+            for (uint8_t edge : edges) if (edge != primary) exits[exitCount++] = edge;
+            if (rng.bounded(2)) {
+                uint8_t swap = exits[0]; exits[0] = exits[1]; exits[1] = swap;
+            }
+            for (uint8_t i = 0; i < type; ++i) {
+                uint8_t heading = parkHeading(main.points[forks[i]], main.points[forks[i] + 1]);
+                heading = (heading + (rng.bounded(2) ? 1 : 3)) % 4;
+                if (!parkGrowBranch(rng, main.points[forks[i]], heading, exits[i],
+                                    width, height, branches[i])) return false;
+            }
+        }
+    }
+    out.pathCount = type + 1;
+    std::memset(out.paths, 0, sizeof(out.paths));
+    for (uint8_t i = 0; i < out.pathCount; ++i) {
+        Path control = main;
+        if (i) {
+            control.pointCount = forks[i - 1];
+            for (uint8_t j = 0; j < branches[i - 1].pointCount; ++j) {
+                Point point = branches[i - 1].points[j];
+                if (!appendPoint(control, point.x, point.y)) return false;
+            }
+        }
+        uint8_t destination = type == 2 ? (i == 0 ? 1 : i == 1 ? 0 : 2) : i;
+        Path& path = out.paths[destination];
+        for (uint8_t j = 0; j < control.pointCount; ++j) {
+            if (j && j + 1 < control.pointCount &&
+                parkHeading(control.points[j - 1], control.points[j]) ==
+                parkHeading(control.points[j], control.points[j + 1])) continue;
+            Point point = orientParkPoint(control.points[j], width, vertical, mirror, entryEdge);
+            if (!appendLine(path, point.x, point.y)) return false;
+        }
+        path.exit = parkEndpoint(path.points[path.pointCount - 1]);
+    }
+    out.entry = parkEndpoint(out.paths[0].points[0]);
+    out.junction = type ? orientParkPoint(main.points[forks[0]], width, vertical, mirror, entryEdge)
+                        : out.entry.point;
+    if (out.entry.edge != entryEdge || !validateParkTopology(out)) return false;
+    road.clear();
+    for (uint8_t i = 0; i < out.pathCount; ++i) addPathRoad(out.paths[i], road);
+    constexpr uint8_t limits[3] = {64, 76, 84};
+    return road.count() <= limits[type] && validateBorderRoad(out, road) &&
+           validateParkWideRoad(out, road);
+}
+
 
 bool buildAncientWaterfallTopology(Edge entryEdge, Map& out, CellMask& road) {
     out.entry = {};
@@ -1503,14 +1816,16 @@ CellMask largestConnectedComponent(const CellMask& available) {
 }
 
 void growCompactPatch(Rng& rng, const CellMask& available, uint8_t requestedSize,
-                      CellMask& patch) {
+                      CellMask& patch, bool reserveGround = true) {
     patch.clear();
     CellMask component = largestConnectedComponent(available);
     int componentCount = component.count();
     if (componentCount == 0) return;
-    int reserve = componentCount >= 32 ? 12 : (componentCount / 4 > 4 ? componentCount / 4 : 4);
+    int reserve = reserveGround
+        ? (componentCount >= 32 ? 12 : (componentCount / 4 > 4 ? componentCount / 4 : 4))
+        : 0;
     int target = minimum(requestedSize, componentCount - reserve);
-    if (target < 6) return;
+    if (target < (reserveGround ? 6 : 3)) return;
 
     int bestSeedScore = -32768;
     for (uint8_t x = 0; x < WIDTH; ++x) {
@@ -1799,6 +2114,294 @@ void stampBoundaryFlowers(Map& map, Rng& rng, const CellMask& denseGrass,
             map.layers[0][point.y * WIDTH + point.x] = FLOWER_TILE;
         }
     }
+}
+
+CellMask parkGrassAvailable(const CellMask& road, const CellMask& trees) {
+    CellMask blocked = road;
+    blocked.unite(trees);
+    CellMask available;
+    available.clear();
+    for (uint8_t y = 1; y < HEIGHT; ++y) {
+        for (uint8_t x = 0; x < WIDTH; ++x) {
+            if (!blocked.contains(x, y) && !blocked.contains(x, y - 1)) {
+                available.add(x, y);
+            }
+        }
+    }
+    return available;
+}
+
+int parkTreeDistance(uint8_t left, uint8_t top, uint8_t width,
+                     const CellMask& trees) {
+    int distance = 6;
+    for (uint8_t dy = 0; dy < 3; ++dy) {
+        for (uint8_t dx = 0; dx < width; ++dx) {
+            for (uint8_t y = 0; y < HEIGHT; ++y) {
+                for (uint8_t x = 0; x < WIDTH; ++x) {
+                    if (!trees.contains(x, y)) continue;
+                    distance = minimum(distance,
+                        absolute(left + dx - x) + absolute(top + dy - y));
+                }
+            }
+        }
+    }
+    return distance;
+}
+
+template <typename Visitor>
+void forEachParkTreeCandidate(const CellMask& road, const CellMask& trees,
+                              uint8_t width, bool topBoundary, uint8_t grassTarget,
+                              bool allowAdjacent, Visitor visitor) {
+    CellMask forbidden = topBoundary || allowAdjacent ? trees : expandedMask(trees, 1);
+    forbidden.unite(road);
+    for (uint8_t top = 0; top < HEIGHT - 2; ++top) {
+        for (uint8_t left = 0; left <= WIDTH - width; ++left) {
+            int margin = minimum(minimum(left, WIDTH - left - width),
+                                 minimum(top, HEIGHT - top - 3));
+            if (topBoundary && top != 0) continue;
+            if (forbidden.intersectsRect(left, top, left + width - 1, top + 2)) continue;
+            CellMask afterTrees = trees;
+            for (uint8_t dy = 0; dy < 3; ++dy) {
+                for (uint8_t dx = 0; dx < width; ++dx) afterTrees.add(left + dx, top + dy);
+            }
+            CellMask available = parkGrassAvailable(road, afterTrees);
+            uint16_t capacity = available.count();
+            if (capacity < grassTarget + 8U) continue;
+            int score = capacity * 8 + parkTreeDistance(left, top, width, trees) * 2 +
+                        (topBoundary ? 0 : minimum(margin, 2) * 3);
+            visitor(Point{left, top}, score);
+        }
+    }
+}
+
+bool chooseParkTree(Rng& rng, const CellMask& road, const CellMask& trees,
+                     uint8_t width, bool topBoundary, uint8_t grassTarget, Point& selected,
+                     bool allowAdjacent = false) {
+    int bestScore = -32768;
+    forEachParkTreeCandidate(road, trees, width, topBoundary, grassTarget, allowAdjacent,
+        [&](const Point&, int score) { if (score > bestScore) bestScore = score; });
+    if (bestScore == -32768) return false;
+    uint16_t optionCount = 0;
+    forEachParkTreeCandidate(road, trees, width, topBoundary, grassTarget, allowAdjacent,
+        [&](const Point&, int score) { if (score >= bestScore - 8) ++optionCount; });
+    uint16_t choice = static_cast<uint16_t>(rng.bounded(optionCount));
+    bool found = false;
+    forEachParkTreeCandidate(road, trees, width, topBoundary, grassTarget, allowAdjacent,
+        [&](const Point& point, int score) {
+            if (found || score < bestScore - 8) return;
+            if (choice-- == 0) {
+                selected = point;
+                found = true;
+            }
+        });
+    return found;
+}
+
+template <size_t TreeWidth>
+void stampParkTree(Map& map, CellMask& trees, const Point& point,
+                    const uint16_t (&tiles)[3][TreeWidth], uint8_t count = 1) {
+    for (uint8_t tree = 0; tree < count; ++tree) {
+        for (uint8_t dy = 0; dy < 3; ++dy) {
+            for (uint8_t dx = 0; dx < TreeWidth; ++dx) {
+                uint8_t x = point.x + tree * TreeWidth + dx;
+                uint8_t y = point.y + dy;
+                map.layers[1][y * WIDTH + x] = tiles[dy][dx];
+                trees.add(x, y);
+            }
+        }
+    }
+}
+
+void labelParkGrass(const CellMask& grass, uint8_t (&labels)[CELL_COUNT]) {
+    std::memset(labels, 0, sizeof(labels));
+    uint8_t label = 0;
+    Point stack[CELL_COUNT];
+    for (uint8_t x = 0; x < WIDTH; ++x) {
+        for (uint8_t y = 0; y < HEIGHT; ++y) {
+            if (!grass.contains(x, y) || labels[y * WIDTH + x] != 0) continue;
+            ++label;
+            uint16_t stackCount = 0;
+            stack[stackCount++] = {x, y};
+            labels[y * WIDTH + x] = label;
+            while (stackCount > 0) {
+                Point point = stack[--stackCount];
+                constexpr int8_t DX[] = {1, -1, 0, 0};
+                constexpr int8_t DY[] = {0, 0, 1, -1};
+                for (uint8_t i = 0; i < 4; ++i) {
+                    int nx = point.x + DX[i];
+                    int ny = point.y + DY[i];
+                    if (!grass.contains(nx, ny) || labels[ny * WIDTH + nx] != 0) continue;
+                    labels[ny * WIDTH + nx] = label;
+                    stack[stackCount++] = {static_cast<uint8_t>(nx), static_cast<uint8_t>(ny)};
+                }
+            }
+        }
+    }
+}
+
+bool parkFrontierFits(const Point& point, const CellMask& available,
+                       const CellMask& grass, const uint8_t (&labels)[CELL_COUNT]) {
+    if (!available.contains(point.x, point.y) || grass.contains(point.x, point.y)) return false;
+    uint8_t adjacentLabel = 0;
+    constexpr int8_t DX[] = {1, -1, 0, 0};
+    constexpr int8_t DY[] = {0, 0, 1, -1};
+    for (uint8_t i = 0; i < 4; ++i) {
+        int x = point.x + DX[i];
+        int y = point.y + DY[i];
+        if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT) continue;
+        uint8_t label = labels[y * WIDTH + x];
+        if (label == 0) continue;
+        if (adjacentLabel != 0 && adjacentLabel != label) return false;
+        adjacentLabel = label;
+    }
+    return adjacentLabel != 0;
+}
+
+void growParkGrassToTarget(Rng& rng, const CellMask& available,
+                           uint8_t target, CellMask& grass) {
+    while (grass.count() < target) {
+        uint8_t labels[CELL_COUNT];
+        labelParkGrass(grass, labels);
+        int bestScore = -32768;
+        uint16_t optionCount = 0;
+        for (uint8_t x = 0; x < WIDTH; ++x) {
+            for (uint8_t y = 0; y < HEIGHT; ++y) {
+                Point point{x, y};
+                if (!parkFrontierFits(point, available, grass, labels)) continue;
+                int score = cardinalNeighborCount(point, grass) * 100 +
+                            localOpenness(point, available, 1) * 4;
+                if (score > bestScore) {
+                    bestScore = score;
+                    optionCount = 1;
+                } else if (score == bestScore) {
+                    ++optionCount;
+                }
+            }
+        }
+        if (optionCount == 0) return;
+        uint16_t choice = static_cast<uint16_t>(rng.bounded(optionCount));
+        bool found = false;
+        for (uint8_t x = 0; x < WIDTH && !found; ++x) {
+            for (uint8_t y = 0; y < HEIGHT; ++y) {
+                Point point{x, y};
+                if (!parkFrontierFits(point, available, grass, labels)) continue;
+                int score = cardinalNeighborCount(point, grass) * 100 +
+                            localOpenness(point, available, 1) * 4;
+                if (score != bestScore) continue;
+                if (choice-- == 0) {
+                    grass.add(x, y);
+                    found = true;
+                    break;
+                }
+            }
+        }
+    }
+}
+
+void stampTallGrassPark(Map& map, Rng& rng, const CellMask& road, CellMask& trees,
+                         const AreaProfile& profile) {
+    uint8_t grassTarget = profile.grassMinimum + rng.bounded(profile.grassVariance + 1U);
+    trees.clear();
+    // Open canopy tiles connect only to forest beyond the top map edge.
+    uint8_t boundaryTreeCount = 0;
+    for (uint8_t group = 0; group < 2; ++group) {
+        Point chosen{};
+        if (!chooseParkTree(rng, road, trees, 4, true, grassTarget, chosen)) break;
+        stampParkTree(map, trees, chosen, PARK_BOUNDARY_TREE_TILES, 2);
+        boundaryTreeCount += 2;
+    }
+    // Replace unavailable top groups with complete standalone trees.
+    uint8_t independentTarget = 6 + rng.bounded(2) - boundaryTreeCount;
+    for (uint8_t tree = 0; tree < independentTarget; ++tree) {
+        bool centered = rng.bounded(2) != 0;
+        Point chosen{};
+        bool found = chooseParkTree(rng, road, trees, centered ? 3 : 2,
+                                    false, grassTarget, chosen);
+        if (!found && centered) {
+            centered = false;
+            found = chooseParkTree(rng, road, trees, 2, false, grassTarget, chosen);
+        }
+        // Complete standalone trees may touch when the three-exit layout is tight.
+        if (!found) {
+            centered = false;
+            found = chooseParkTree(rng, road, trees, 2, false, grassTarget, chosen, true);
+        }
+        // Keep the grass target within its accepted range if more space is needed.
+        while (!found && grassTarget > profile.grassMinimum) {
+            --grassTarget;
+            centered = false;
+            found = chooseParkTree(rng, road, trees, 2, false, grassTarget, chosen, true);
+        }
+        if (!found) break;
+        if (centered) stampParkTree(map, trees, chosen, PARK_CENTERED_TREE_TILES);
+        else stampParkTree(map, trees, chosen, PARK_TREE_TILES);
+    }
+    map.hasForest = !trees.empty();
+
+    CellMask available = parkGrassAvailable(road, trees);
+    CellMask grass;
+    grass.clear();
+    for (uint8_t patchIndex = 0; patchIndex < 4; ++patchIndex) {
+        int remaining = grassTarget - grass.count();
+        int requested = patchIndex == 0 ? remaining - 18
+            : (remaining + 3 - patchIndex) / (4 - patchIndex);
+        CellMask patchAvailable = available;
+        patchAvailable.subtract(orthogonallyExpanded(grass));
+        CellMask patch;
+        growCompactPatch(rng, patchAvailable, static_cast<uint8_t>(requested), patch, false);
+        grass.unite(patch);
+    }
+    // Fill narrow fragments by extending existing patches while keeping them separate.
+    growParkGrassToTarget(rng, available, grassTarget, grass);
+    CellMask grassFootprint = grass;
+    for (uint8_t y = 1; y < HEIGHT; ++y) {
+        for (uint8_t x = 0; x < WIDTH; ++x) {
+            if (!grass.contains(x, y)) continue;
+            map.layers[0][y * WIDTH + x] = TALL_GRASS_BASE_TILE;
+            map.layers[1][(y - 1) * WIDTH + x] = TALL_GRASS_TOP_TILE;
+            grassFootprint.add(x, y - 1);
+        }
+    }
+    CellMask flowerBlocked = trees;
+    flowerBlocked.unite(grassFootprint);
+    CellMask empty;
+    empty.clear();
+    stampBoundaryFlowers(map, rng, grass, empty, road, empty, flowerBlocked,
+                         profile.flowerGroups);
+}
+
+bool generateRandomPark(uint32_t seed, Edge entryEdge, Map& out) {
+    Rng topology(seed ^ 0xA511E9B3U);
+    uint8_t roll = topology.bounded(100);
+    uint8_t type = roll < 30 ? 0 : roll < 80 ? 1 : 2;
+    for (uint16_t attempt = 0; attempt < PARK_TOPOLOGY_ATTEMPTS + PARK_FALLBACK_ATTEMPTS; ++attempt) {
+        CellMask road;
+        if (!parkTopologyCandidate(topology, entryEdge, type,
+                                   attempt >= PARK_TOPOLOGY_ATTEMPTS, out, road)) continue;
+        std::memset(out.layers, 0, sizeof(out.layers));
+        Rng terrain(seed ^ 0x63D83595U);
+        for (uint16_t i = 0; i < CELL_COUNT; ++i)
+            out.layers[0][i] = GRASS_TILES[terrain.bounded(sizeof(GRASS_TILES) / sizeof(GRASS_TILES[0]))];
+        for (uint8_t y = 0; y < HEIGHT; ++y)
+            for (uint8_t x = 0; x < WIDTH; ++x)
+                if (road.contains(x, y)) out.layers[0][y * WIDTH + x] = roadTile(out, road, x, y);
+        CellMask trees;
+        stampTallGrassPark(out, terrain, road, trees, profileFor(TALL_GRASS_PARK_AREA));
+        CellMask grass;
+        uint8_t treeCount = 0;
+        for (uint16_t i = 0; i < CELL_COUNT; ++i) {
+            if (out.layers[0][i] == TALL_GRASS_BASE_TILE) grass.add(i % WIDTH, i / WIDTH);
+            uint16_t tile = out.layers[1][i];
+            if (tile == 800 || tile == 804 || tile == 824) ++treeCount;
+        }
+        uint8_t labels[CELL_COUNT];
+        labelParkGrass(grass, labels);
+        uint8_t patches = 0;
+        for (uint8_t label : labels) if (label > patches) patches = label;
+        if (grass.count() >= 40 && grass.count() <= 50 && treeCount >= 6 && treeCount <= 7 &&
+            patches >= 3 && patches <= 4) return true;
+    }
+    return false;
 }
 
 void stampGroundDecorations(Map& map, Rng& rng, const CellMask& road,
@@ -2315,6 +2918,7 @@ bool generate(uint32_t seed, Edge entryEdge, uint8_t areaIndex, Map& out,
     std::memset(&out, 0, sizeof(out));
     out.seed = seed;
     out.areaIndex = areaIndex;
+    if (areaIndex == TALL_GRASS_PARK_AREA) return generateRandomPark(seed, entryEdge, out);
     Rng terrain(seed ^ 0x63D83595U);
     Rng features(seed ^ 0xC2B2AE35U);
     const AreaProfile& profile = profileFor(areaIndex);
@@ -2424,7 +3028,7 @@ bool generate(uint32_t seed, Edge entryEdge, uint8_t areaIndex, Map& out,
         }
     }
 
-    if (!hasCreek && !hasWaterfall && !hasSnow &&
+    if (!hasCreek && !hasWaterfall && !hasSnow && areaIndex != TALL_GRASS_PARK_AREA &&
         terrain.bounded(100) < profile.forestChance) {
         uint8_t order[4] = {0, 1, 2, 3};
         for (uint8_t count = 4; count > 1; --count) {
@@ -2447,6 +3051,8 @@ bool generate(uint32_t seed, Edge entryEdge, uint8_t areaIndex, Map& out,
     decorationBlocked.unite(scenery);
     if (hasSnow) {
         stampSnowDecorations(out, terrain, road, scenery);
+    } else if (areaIndex == TALL_GRASS_PARK_AREA) {
+        stampTallGrassPark(out, terrain, road, forest, profile);
     } else if (!hasWaterfall) {
         stampGroundDecorations(out, terrain, road, water, decorationBlocked, profile);
     }
@@ -2540,7 +3146,9 @@ bool isWaterTile(uint16_t tileId) {
 bool isForestTile(uint16_t tileId) {
     switch (tileId) {
     case 800: case 801: case 802: case 804: case 805: case 808: case 809:
-    case 810: case 811: case 818: case 819: case FENCE_TOP_LEFT: case FENCE_LEFT:
+    case 810: case 811: case 812: case 813: case 816: case 817: case 818: case 819:
+    case 820: case 821: case 824: case 825: case 826: case 832: case 833: case 834:
+    case 840: case 841: case 842: case FENCE_TOP_LEFT: case FENCE_LEFT:
     case FENCE_TOP: case FENCE_TOP_RIGHT: case SHRUB_TILE:
         return true;
     default:

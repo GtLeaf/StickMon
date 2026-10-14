@@ -8,9 +8,10 @@ constexpr uint8_t WIDTH = 16;
 constexpr uint8_t HEIGHT = 12;
 constexpr uint8_t LAYER_COUNT = 3;
 constexpr uint8_t PATH_COUNT = 2;
+constexpr uint8_t MAX_PATH_COUNT = 3;
 constexpr uint8_t MAX_PATH_POINTS = 48;
 constexpr uint16_t CELL_COUNT = WIDTH * HEIGHT;
-constexpr uint16_t ALGORITHM_VERSION = 11;
+constexpr uint16_t ALGORITHM_VERSION = 15;
 constexpr uint8_t GRASS_PATH_AREA = 0;
 constexpr uint8_t CREEK_BRIDGE_SLOPE_AREA = 1;
 constexpr uint8_t TALL_GRASS_PARK_AREA = 2;
@@ -51,8 +52,8 @@ struct Path {
 struct Map {
     uint16_t layers[LAYER_COUNT][CELL_COUNT] = {};
     Endpoint entry = {};
-    Point junction = {};
-    Path paths[PATH_COUNT] = {};
+    Point junction = {};  // First fork; the entry for a single park route.
+    Path paths[MAX_PATH_COUNT] = {};
     uint8_t pathCount = 0;
     uint32_t seed = 0;
     uint8_t areaIndex = 0;

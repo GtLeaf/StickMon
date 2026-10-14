@@ -710,6 +710,13 @@ struct SpriteFrame {{
     uint32_t paletteOffset;
 }};
 
+struct FrameBounds {{
+    uint8_t left = 0;
+    uint8_t top = 0;
+    uint8_t width = 0;
+    uint8_t height = 0;
+}};
+
 struct SpriteCacheStats {{
     uint8_t cachedSpecies;
     uint8_t missingSpecies;
@@ -725,6 +732,7 @@ struct SpriteCacheStats {{
 const SpriteFrame* findSpeciesSprite(uint16_t speciesId, SpriteKind kind);
 const SpriteFrame* findCachedSpeciesSprite(uint16_t speciesId, SpriteKind kind);
 int16_t frameGroundOffsetY(const SpriteFrame* frame);
+FrameBounds frameVisibleBounds(const SpriteFrame* frame);
 uint8_t frameVisibleWidth(const SpriteFrame* frame);
 bool walkingAnimation(uint16_t speciesId, WalkDirection direction, WalkingAnimation& animation);
 bool petAnimationProfile(uint16_t speciesId, PetAnimationProfile& profile);
@@ -1198,10 +1206,11 @@ int16_t frameGroundOffsetY(const SpriteFrame* frame) {
     return static_cast<int16_t>(MathUtil::clamp((int)(height * 0.42f), 16, 32));
 }
 
-uint8_t frameVisibleWidth(const SpriteFrame* frame) {
-    if (!frame) return 0;
+FrameBounds frameVisibleBounds(const SpriteFrame* frame) {
+    if (!frame) return {};
     const uint8_t width = FlashStorage::readByte(&frame->width);
     const uint8_t height = FlashStorage::readByte(&frame->height);
+    const FrameBounds fallback{0, 0, width, height};
     const uint32_t offset = FlashStorage::readDword(&frame->offset);
     const uint32_t length = FlashStorage::readDword(&frame->length);
     const uint8_t format = FlashStorage::readByte(&frame->format);
@@ -1210,43 +1219,48 @@ uint8_t frameVisibleWidth(const SpriteFrame* frame) {
         source != SPRITE_SOURCE_FILE_BLOCK ||
         (format != static_cast<uint8_t>(SpriteFormat::RGB565_RLE) &&
          format != static_cast<uint8_t>(SpriteFormat::INDEXED4_RLE))) {
-        return width;
+        return fallback;
     }
 
     const uint16_t speciesId = FlashStorage::readWord(&frame->speciesId);
     CachedSpecies* cached = cachedSpeciesFor(speciesId);
-    if (!cached || offset + length > cached->rleWords) return width;
+    if (!cached || offset + length > cached->rleWords) return fallback;
 
     const uint32_t total = static_cast<uint32_t>(width) * height;
     uint32_t wordIndex = 0;
     uint32_t pixelIndex = 0;
-    uint8_t left = width;
-    uint8_t right = 0;
+    uint8_t left = width, top = height, right = 0, bottom = 0;
     bool visible = false;
     while (wordIndex < length && pixelIndex < total) {
         const uint16_t token = FlashStorage::readWord(
             &cached->data[offset + wordIndex++]);
         const uint16_t run = token & 0x7FFFU;
         if (run == 0) continue;
-        const uint32_t runEnd = std::min<uint32_t>(
-            total, pixelIndex + run);
+        const uint32_t runEnd = std::min<uint32_t>(total, pixelIndex + run);
         if ((token & 0x8000U) == 0) {
-            for (uint32_t pixel = pixelIndex; pixel < runEnd; ++pixel) {
-                const uint8_t column = static_cast<uint8_t>(pixel % width);
-                left = std::min(left, column);
-                right = std::max(right, column);
-            }
             const uint32_t payloadWords =
                 format == static_cast<uint8_t>(SpriteFormat::INDEXED4_RLE)
                     ? (static_cast<uint32_t>(run) + 3U) / 4U
                     : static_cast<uint32_t>(run);
-            if (payloadWords > length - wordIndex) return width;
+            if (payloadWords > length - wordIndex) return fallback;
+            const uint8_t firstRow = static_cast<uint8_t>(pixelIndex / width);
+            const uint8_t lastRow = static_cast<uint8_t>((runEnd - 1U) / width);
+            top = std::min(top, firstRow);
+            bottom = std::max(bottom, lastRow);
+            // A run crossing a row edge covers both extreme columns.
+            left = std::min<uint8_t>(left, firstRow == lastRow ? pixelIndex % width : 0);
+            right = std::max<uint8_t>(right, firstRow == lastRow ? (runEnd - 1U) % width : width - 1);
             wordIndex += payloadWords;
             visible = true;
         }
         pixelIndex = runEnd;
     }
-    return visible ? static_cast<uint8_t>(right - left + 1U) : 0;
+    return visible ? FrameBounds{left, top, static_cast<uint8_t>(right - left + 1U),
+                                 static_cast<uint8_t>(bottom - top + 1U)} : FrameBounds{};
+}
+
+uint8_t frameVisibleWidth(const SpriteFrame* frame) {
+    return frameVisibleBounds(frame).width;
 }
 
 bool syncTeamCache(const uint16_t* speciesIds, uint8_t count,

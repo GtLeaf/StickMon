@@ -26,6 +26,7 @@ OUTPUTS = {
     "hatch": PACK_OUT / "game" / "hatch.smonfx",
 }
 GENERATED_GAME_DIR = ROOT / "origin_asset" / "generated" / "game"
+BATTLE_FX_PREVIEW_DIR = GENERATED_GAME_DIR / "battle_fx"
 EGG_PREVIEW = GENERATED_GAME_DIR / "egg_32.png"
 STATUS_ICON_DIR = ROOT / "origin_asset" / "icon" / "status"
 EXPLORE_MENU_BG_SOURCE = (
@@ -40,7 +41,7 @@ MAGIC = 0x58464753  # SGFX
 VERSION = 2
 FLAG_RAW_DEFLATE = 1
 FORMAT_INDEXED4_RLE = 1
-MAX_PACK_FRAMES = 256
+MAX_PACK_FRAMES = 272
 MAX_PACK_DATA_WORDS = 200000
 MAX_PACK_PALETTE_WORDS = 2048
 MAX_PACK_PAYLOAD_BYTES = 384000
@@ -50,6 +51,8 @@ EXPLORE_PICKUP_SIZE = 22
 EXPLORE_PICKUP_CONTENT_SIZE = 19
 BALL_W = 32
 BALL_H = 64
+BATTLE_FX_FRAME_SIZE = (64, 64)
+BATTLE_FX_FRAME_COUNT = 4
 BACKGROUND_W = 240
 BACKGROUND_H = 135
 EGG_SIZE = 32
@@ -131,6 +134,21 @@ BALLS = [
     ("HEAVY_BALL", "HEAVYBALL"),
     ("TIMER_BALL", "TIMERBALL"),
 ]
+
+LEGACY_BATTLE_FX = [
+    ("HIT", "003-Attack01.png", (0, 1, 2, 2), (1.0, 1.0, 1.0, 0.35)),
+    ("FIRE", "015-Fire01.png", (0, 1, 2, 3), (1.0, 1.0, 1.0, 1.0)),
+    ("WATER", "018-Water01.png", (0, 1, 2, 3), (1.0, 1.0, 1.0, 1.0)),
+    ("ELECTRIC", "017-Thunder01.png", (2, 3, 4, 5), (1.0, 1.0, 1.0, 1.0)),
+]
+ADDITIONAL_BATTLE_FX = [
+    ("SCRATCH", "scratchbattle.png", (0, 1, 2, 4), (1.0, 1.0, 1.0, 0.6)),
+    ("BITE", "teeth.png", (2, 3, 6, 8), (1.0, 1.0, 1.0, 1.0)),
+    ("LEER", "leer.png", (0, 1, 2, 3), (1.0, 1.0, 1.0, 0.5)),
+    ("GROWL", "Growl.png", (0, 1, 2, 0), (1.0, 1.0, 1.0, 0.5)),
+    ("SAND_ATTACK", "Sand-Attack.png", (0, 1, 2, 1), (1.0, 1.0, 1.0, 0.5)),
+]
+BATTLE_FX = LEGACY_BATTLE_FX + ADDITIONAL_BATTLE_FX
 
 STATUS_ICONS = [
     ("STATUS_POISON", "status_poison.png"),
@@ -222,6 +240,16 @@ EXPLORE_TILES = [
     ("EXPLORE_TILE_1231", 1231),
 ]
 
+# Keep additions at the end of Kind to preserve IDs in existing packs.
+TALL_GRASS_PARK_TILES = [
+    (f"EXPLORE_TILE_{tile_id:04d}", tile_id)
+    for tile_id in (
+        391, 399,
+        812, 813, 816, 817, 820, 821,
+        824, 825, 826, 832, 833, 834, 840, 841, 842,
+    )
+]
+
 EXTERNAL_EXPLORE_TILES = [
     (f"EXPLORE_TILE_{runtime_id:04d}", runtime_id, tileset_name, source_id)
     for runtime_id, (tileset_name, source_id) in CUSTOM_TILE_SOURCES.items()
@@ -277,6 +305,11 @@ for kind_prefix, _ in BALLS:
     KIND_ORDER.extend(f"BALL_{kind_prefix}_{index}" for index in range(8))
     KIND_ORDER.append(f"BALL_{kind_prefix}_OPEN")
 KIND_ORDER.append("BALL_BURST_STAR")
+for kind_prefix, _filename, _cells, _opacities in LEGACY_BATTLE_FX:
+    KIND_ORDER.extend(
+        f"BATTLE_FX_{kind_prefix}_{index}"
+        for index in range(BATTLE_FX_FRAME_COUNT)
+    )
 KIND_ORDER.extend(kind for kind, _ in BACKGROUNDS)
 KIND_ORDER.extend(kind for kind, _ in MENU_BACKGROUNDS)
 KIND_ORDER.extend(kind for kind, _ in EXPLORE_TILES)
@@ -290,6 +323,13 @@ KIND_ORDER.extend(kind for kind, _ in EVOLUTION_BACKGROUNDS)
 KIND_ORDER.extend(kind for kind, _ in LATE_ITEMS)
 KIND_ORDER.extend(kind for kind, runtime_id, _tileset, _source_id in EXTERNAL_EXPLORE_TILES
                   if runtime_id > 4761)
+KIND_ORDER.extend(kind for kind, _ in TALL_GRASS_PARK_TILES)
+# Append new kinds to preserve all existing pack IDs.
+for kind_prefix, _filename, _cells, _opacities in ADDITIONAL_BATTLE_FX:
+    KIND_ORDER.extend(
+        f"BATTLE_FX_{kind_prefix}_{index}"
+        for index in range(BATTLE_FX_FRAME_COUNT)
+    )
 KIND_IDS = {kind: index for index, kind in enumerate(KIND_ORDER)}
 
 
@@ -309,6 +349,11 @@ def expected_pack_kind_names():
         "battle": (
             battle_balls
             + ["BALL_BURST_STAR"]
+            + [
+                f"BATTLE_FX_{kind_prefix}_{index}"
+                for kind_prefix, _filename, _cells, _opacities in BATTLE_FX
+                for index in range(BATTLE_FX_FRAME_COUNT)
+            ]
             + [kind for kind, _filename in BACKGROUNDS]
             + [kind for kind, _path in MENU_BACKGROUNDS]
             + [kind for kind, _path in EVOLUTION_BACKGROUNDS]
@@ -318,6 +363,7 @@ def expected_pack_kind_names():
             [kind for kind, _tile_id in EXPLORE_TILES]
             + [kind for kind, *_rest in EXTERNAL_EXPLORE_TILES]
             + [kind for kind, *_rest in ANIMATED_EXPLORE_FRAMES]
+            + [kind for kind, _tile_id in TALL_GRASS_PARK_TILES]
         ),
         "hatch": ["EGG"],
     }
@@ -499,6 +545,7 @@ def validate_explore_tile_mapping():
     mapped_ids = {int(tile_id) for tile_id in re.findall(r"case\s+(\d+)\s*:", match.group(1))}
     expected_ids = (
         {tile_id for _kind, tile_id in EXPLORE_TILES}
+        | {tile_id for _kind, tile_id in TALL_GRASS_PARK_TILES}
         | {runtime_id for _kind, runtime_id, _tileset, _source_id in EXTERNAL_EXPLORE_TILES}
         | ANIMATED_EXPLORE_TILE_IDS
     )
@@ -698,6 +745,50 @@ def prepare_animated_explore_tile(tile_id, source, frame_index):
     return tile.resize((26, 26), Image.Resampling.NEAREST)
 
 
+def battle_fx_alpha_coverage(image, opacity):
+    # The pack has binary transparency. Fixed ordered coverage preserves soft
+    # edges and fading without introducing a background color or frame noise.
+    bayer = ((0, 8, 2, 10), (12, 4, 14, 6),
+             (3, 11, 1, 9), (15, 7, 13, 5))
+    alpha = image.getchannel("A")
+    source = alpha.load()
+    for y in range(image.height):
+        for x in range(image.width):
+            threshold = (bayer[y % 4][x % 4] + 0.5) * 255 / 16
+            source[x, y] = 255 if source[x, y] * opacity > threshold else 0
+    image.putalpha(alpha)
+    return image
+
+
+def prepare_battle_fx_frames(path, cells, opacities):
+    source = load_rgba(path)
+    cell_size = 192
+    if (source.width % cell_size or source.height % cell_size or
+            len(cells) != BATTLE_FX_FRAME_COUNT or
+            len(opacities) != BATTLE_FX_FRAME_COUNT):
+        raise ValueError(f"unexpected battle FX sheet size: {source.size} {path}")
+    columns = source.width // cell_size
+    cell_count = columns * (source.height // cell_size)
+    frames, bounds = [], []
+    for index in cells:
+        if index < 0 or index >= cell_count:
+            raise ValueError(f"invalid battle FX cell: {path} cell={index}")
+        left, top = index % columns * cell_size, index // columns * cell_size
+        cell = source.crop((left, top, left + cell_size, top + cell_size))
+        bbox = cell.getchannel("A").getbbox()
+        if not bbox:
+            raise ValueError(f"empty battle FX frame: {path} frame={index}")
+        frames.append(cell)
+        bounds.append(bbox)
+    # All cells share one crop and scale so expansion and anchor positions
+    # survive the conversion instead of each frame filling the whole canvas.
+    shared_bbox = (min(box[0] for box in bounds), min(box[1] for box in bounds),
+                   max(box[2] for box in bounds), max(box[3] for box in bounds))
+    return [battle_fx_alpha_coverage(
+        fit_sprite_canvas(frame.crop(shared_bbox), BATTLE_FX_FRAME_SIZE, padding=2),
+        opacity) for frame, opacity in zip(frames, opacities)]
+
+
 def build_assets():
     writers = {
         "ui": Writer(),
@@ -734,6 +825,20 @@ def build_assets():
     burst = load_rgba(GRAPHICS / "Battle animations" / "ballBurst_star.png")
     burst = burst.resize((32, 32), Image.Resampling.NEAREST)
     writers["battle"].add("BALL_BURST_STAR", quantize_rgba(burst, 15))
+
+    BATTLE_FX_PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
+    for stale_preview in BATTLE_FX_PREVIEW_DIR.glob("*.png"):
+        stale_preview.unlink()
+    for kind_prefix, filename, cells, opacities in BATTLE_FX:
+        frames = prepare_battle_fx_frames(GRAPHICS / "Animations" / filename,
+                                         cells, opacities)
+        for index, frame in enumerate(frames):
+            frame.save(BATTLE_FX_PREVIEW_DIR /
+                       f"{kind_prefix.lower()}_{index}.png")
+            writers["battle"].add(
+                f"BATTLE_FX_{kind_prefix}_{index}",
+                quantize_rgba(frame, 15),
+            )
 
     for kind, filename in BACKGROUNDS:
         image = load_rgba(GRAPHICS / "Battlebacks" / filename)
@@ -783,6 +888,9 @@ def build_assets():
         tile = prepare_animated_explore_tile(
             tile_id, animated_sources[source_name], frame_index
         )
+        writers["map"].add(kind, quantize_rgba(tile, 16))
+    for kind, tile_id in TALL_GRASS_PARK_TILES:
+        tile = prepare_explore_tile(tile_id, tileset, autotiles)
         writers["map"].add(kind, quantize_rgba(tile, 16))
 
     egg = prepare_egg(GRAPHICS / "Pokemon" / "Eggs" / "000.png")

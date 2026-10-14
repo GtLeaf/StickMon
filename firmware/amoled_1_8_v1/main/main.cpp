@@ -9,6 +9,7 @@
 #include "AmoledPlatform.h"
 #include "AmoledGeometry.h"
 #include "HomeScreen.h"
+#include "LockPetDoubleTap.h"
 #include "TouchInput.h"
 #include "core/AudioManager.h"
 #if STICKMON_HAS_CLAW
@@ -64,6 +65,8 @@ struct ExploreFramePerf {
     uint32_t frames = 0;
     uint32_t rows = 0;
     uint32_t maxRows = 0;
+    uint64_t pixels = 0;
+    uint32_t partialFrames = 0;
     uint32_t overBudgetFrames = 0;
     uint64_t updateTotalUs = 0;
     uint32_t updateMaxUs = 0;
@@ -76,6 +79,12 @@ struct ExploreFramePerf {
     uint64_t frameTotalUs = 0;
     uint32_t frameMaxUs = 0;
     uint32_t frameGapMaxUs = 0;
+    int64_t lastPresentedUs = 0;
+    std::array<uint32_t, 128> presentGapsUs{};
+    uint32_t presentGapCount = 0;
+    uint64_t presentGapTotalUs = 0;
+    uint32_t presentGapMaxUs = 0;
+    uint32_t over50msGaps = 0;
 
     void flush(int64_t nowUs, bool force) {
         if (frames == 0) return;
@@ -83,12 +92,19 @@ struct ExploreFramePerf {
         if (!force && elapsedUs < 1000000) return;
         const uint32_t fps10 = elapsedUs > 0
             ? static_cast<uint32_t>(frames * 10000000ULL / elapsedUs) : 0;
+        std::sort(presentGapsUs.begin(), presentGapsUs.begin() +
+                  std::min<size_t>(presentGapCount, presentGapsUs.size()));
+        const uint32_t sampledGaps = std::min<size_t>(
+            presentGapCount, presentGapsUs.size());
+        const uint32_t p95Us = sampledGaps > 0
+            ? presentGapsUs[(sampledGaps * 95U + 99U) / 100U - 1U] : 0;
         ESP_LOGI(
             TAG,
-            "[ExplorePerf] fps=%lu.%lu frames=%lu rows(avg/max)=%lu/%lu "
+            "[ExplorePerf] fps=%lu.%lu frames=%lu rows(avg/max)=%lu/%lu pixelsAvg=%lu partial=%lu "
             "update(avg/max)=%lu/%lu us claw(avg/max)=%lu/%lu us "
             "draw(avg/max)=%lu/%lu us lcd(avg/max)=%lu/%lu us "
-            "total(avg/max)=%lu/%lu us gapMax=%lu us over20ms=%lu",
+            "total(avg/max)=%lu/%lu us gapMax=%lu us over20ms=%lu "
+            "windowUs=%lu presentGap(avg/p95/max)=%lu/%lu/%lu us over50ms=%lu gaps=%lu",
             static_cast<unsigned long>(fps10 / 10),
             static_cast<unsigned long>(fps10 % 10),
             static_cast<unsigned long>(frames),
@@ -105,18 +121,27 @@ struct ExploreFramePerf {
             static_cast<unsigned long>(frameTotalUs / frames),
             static_cast<unsigned long>(frameMaxUs),
             static_cast<unsigned long>(frameGapMaxUs),
-            static_cast<unsigned long>(overBudgetFrames));
+            static_cast<unsigned long>(overBudgetFrames),
+            static_cast<unsigned long>(elapsedUs),
+            static_cast<unsigned long>(presentGapCount > 0
+                ? presentGapTotalUs / presentGapCount : 0),
+            static_cast<unsigned long>(p95Us),
+            static_cast<unsigned long>(presentGapMaxUs),
+            static_cast<unsigned long>(over50msGaps),
+            static_cast<unsigned long>(presentGapCount));
         const int64_t previousFrameStartedUs = lastFrameStartedUs;
+        const int64_t previousPresentedUs = lastPresentedUs;
         *this = ExploreFramePerf{};
         if (!force) {
             windowStartedUs = nowUs;
             lastFrameStartedUs = previousFrameStartedUs;
+            lastPresentedUs = previousPresentedUs;
         }
     }
 
     void record(int64_t frameStartedUs, int64_t finishedUs,
                 uint32_t updateUs, uint32_t clawUs, uint32_t renderUs,
-                uint32_t transferUs, uint16_t rowCount) {
+                uint32_t transferUs, uint16_t rowCount, uint16_t columnCount) {
         if (windowStartedUs == 0) windowStartedUs = frameStartedUs;
         if (lastFrameStartedUs != 0) {
             frameGapMaxUs = std::max(
@@ -124,10 +149,25 @@ struct ExploreFramePerf {
                 static_cast<uint32_t>(frameStartedUs - lastFrameStartedUs));
         }
         lastFrameStartedUs = frameStartedUs;
+        // Measure successful transfer completions, including time spent in
+        // scheduling, logging and other tasks between frames.
+        if (lastPresentedUs != 0) {
+            const uint32_t gapUs = static_cast<uint32_t>(finishedUs - lastPresentedUs);
+            if (presentGapCount < presentGapsUs.size()) {
+                presentGapsUs[presentGapCount] = gapUs;
+            }
+            ++presentGapCount;
+            presentGapTotalUs += gapUs;
+            presentGapMaxUs = std::max(presentGapMaxUs, gapUs);
+            if (gapUs > 50000) ++over50msGaps;
+        }
+        lastPresentedUs = finishedUs;
         const uint32_t totalUs = static_cast<uint32_t>(
             finishedUs - frameStartedUs);
         ++frames;
         rows += rowCount;
+        pixels += static_cast<uint32_t>(rowCount) * columnCount;
+        if (columnCount < LOGICAL_WIDTH) ++partialFrames;
         maxRows = std::max<uint32_t>(maxRows, rowCount);
         if (totalUs > 20000) ++overBudgetFrames;
         updateTotalUs += updateUs;
@@ -649,6 +689,8 @@ extern "C" void app_main(void) {
     }
 
     LockPhase lockPhase = LockPhase::OPEN;
+    AmoledV1::LockPetDoubleTap lockDoubleTap;
+    bool lockRequestPending = false;
     uint32_t lockAnimationStartedMs = 0;
     int lockAnimationStartRadius = lockCoverRadius(
         AmoledUi::WIDTH / 2, AmoledUi::HEIGHT / 2);
@@ -686,25 +728,45 @@ extern "C" void app_main(void) {
                 ESP_LOGI(TAG, "Touch down display=(%d,%d)", event.x, event.y);
             }
             if (lockPhase != LockPhase::OPEN) {
-                if (event.type == AmoledV1::TouchEventType::DOWN) {
-                    AmoledV1::AmoledPlatform::instance().setBrightness(
-                        lockedBrightness);
-                    if (lockPhase != LockPhase::OPENING) {
-                        int16_t focusX = AmoledUi::WIDTH / 2;
-                        int16_t focusY = AmoledUi::HEIGHT / 2;
-                        if (lockHasFocus) app.lockFocusPoint(focusX, focusY);
+                if (lockPhase == LockPhase::LOCKED) {
+                    int16_t focusX = AmoledUi::WIDTH / 2;
+                    int16_t focusY = AmoledUi::HEIGHT / 2;
+                    const bool hasFocus = app.lockFocusPoint(focusX, focusY);
+                    const int radius = lockRadius(
+                        lockPhase, nowMs, lockAnimationStartedMs,
+                        lockAnimationStartRadius, hasFocus, app.petIsSleeping());
+                    const int dx = event.x - focusX;
+                    const int dy = event.y - focusY;
+                    const bool hitsPet = hasFocus &&
+                        dx * dx + dy * dy <= radius * radius &&
+                        app.lockTapHitsPet(event.x, event.y);
+                    bool unlock = false;
+                    if (event.type == AmoledV1::TouchEventType::DOWN) {
+                        lockDoubleTap.press(nowMs, event.x, event.y, hitsPet);
+                    } else if (event.type == AmoledV1::TouchEventType::MOVE) {
+                        lockDoubleTap.move(event.x, event.y, hitsPet);
+                    } else if (event.type == AmoledV1::TouchEventType::UP) {
+                        unlock = lockDoubleTap.release(
+                            nowMs, event.x, event.y, hitsPet);
+                    }
+                    if (unlock) {
+                        AmoledV1::AmoledPlatform::instance().setBrightness(
+                            lockedBrightness);
                         lockAnimationStartRadius =
                             lockCoverRadius(focusX, focusY);
                         lockPhase = LockPhase::OPENING;
                         lockAnimationStartedMs = nowMs;
                         lockFinalCleanupPending = false;
                         lockSnapshotValid = false;
+                        app.onWake(nowMs);
+                        lockWakeGraceUntilMs = nowMs + LOCK_WAKE_GRACE_MS;
+                        ESP_LOGI(TAG, "Display unlocked by pet double tap");
                     }
-                    app.onWake(nowMs);
-                    lockWakeGraceUntilMs = nowMs + LOCK_WAKE_GRACE_MS;
-                    ESP_LOGI(TAG, "Display unlocked by touch");
                 }
             } else {
+                if (event.type == AmoledV1::TouchEventType::DOWN) {
+                    lockRequestPending = false;
+                }
                 app.handleTouch(event);
             }
         }
@@ -752,10 +814,17 @@ extern "C" void app_main(void) {
         sceneFadeWasActive = sceneFadeActive;
         if (sceneFadeActive) sceneFadeWasInward = app.sceneFadeInward();
 
-        bool lockRequest = app.consumeLockRequest();
+        lockRequestPending |= app.consumeLockRequest() &&
+                              lockPhase == LockPhase::OPEN;
+        bool lockRequest = lockRequestPending;
         if (lockPhase == LockPhase::OPEN && lockRequest &&
             app.displayLockAllowed() &&
-            static_cast<int32_t>(nowMs - lockWakeGraceUntilMs) >= 0) {
+            static_cast<int32_t>(nowMs - lockWakeGraceUntilMs) >= 0 &&
+            app.prepareDisplayLock(nowMs)) {
+            lockRequestPending = false;
+            lockDoubleTap.reset();
+            // The snapshot must contain the room, even when locking a menu.
+            app.render(canvas);
             lockedBrightness =
                 AmoledV1::AmoledPlatform::instance().brightness();
             lockAnimationStartedMs = nowMs;
@@ -780,11 +849,12 @@ extern "C" void app_main(void) {
         if (lockPhase == LockPhase::CLOSING &&
             nowMs - lockAnimationStartedMs >= LOCK_ANIMATION_MS) {
             lockPhase = LockPhase::LOCKED;
+            lockDoubleTap.reset();
             // Keep the animation-completion frame partial. The full cleanup
             // runs after motion has stopped so it cannot stall the transition.
             lockFinalCleanupAtMs = nowMs + LOCK_FINAL_CLEANUP_DELAY_MS;
             lockFinalCleanupPending = true;
-            ESP_LOGI(TAG, "Display locked; touch to wake");
+            ESP_LOGI(TAG, "Display locked; double tap pet to wake");
         }
         if (lockPhase == LockPhase::OPENING &&
             nowMs - lockAnimationStartedMs >= LOCK_ANIMATION_MS) {
@@ -855,8 +925,8 @@ extern "C" void app_main(void) {
             bool lockFrame = lockPhase != LockPhase::OPEN;
             uint16_t renderBegin = app.renderRowBegin();
             uint16_t renderEnd = app.renderRowEnd();
-            uint16_t renderXBegin = 0;
-            uint16_t renderXEnd = LOGICAL_WIDTH;
+            uint16_t renderXBegin = app.renderColumnBegin();
+            uint16_t renderXEnd = app.renderColumnEnd();
             uint16_t nativeRenderBegin = static_cast<uint16_t>(renderBegin);
             uint16_t nativeRenderEnd = renderEnd;
             uint16_t nativeRenderXBegin = renderXBegin;
@@ -967,6 +1037,10 @@ extern "C" void app_main(void) {
                     panel, physicalPixels, transferBuffers, transferDone,
                     nativeRenderXBegin, nativeRenderXEnd,
                     nativeRenderBegin, nativeRenderEnd);
+            } else if (renderXBegin != 0 || renderXEnd != LOGICAL_WIDTH) {
+                result = submitFrameRegion(
+                    panel, physicalPixels, transferBuffers, transferDone,
+                    renderXBegin, renderXEnd, renderBegin, renderEnd);
             } else {
                 result = submitFrame(
                     panel, physicalPixels, transferBuffers, transferDone,
@@ -980,7 +1054,8 @@ extern "C" void app_main(void) {
                     static_cast<uint32_t>(renderFinishedUs - renderStartedUs),
                     static_cast<uint32_t>(transferFinishedUs -
                                           transferStartedUs),
-                    static_cast<uint16_t>(renderEnd - renderBegin));
+                    static_cast<uint16_t>(renderEnd - renderBegin),
+                    static_cast<uint16_t>(renderXEnd - renderXBegin));
             }
 #endif
             if (result != ESP_OK) {

@@ -16,10 +16,11 @@ constexpr int DISPLAY_WIDTH = 368;
 constexpr int DISPLAY_HEIGHT = 448;
 constexpr uint32_t RELEASE_TIMEOUT_MS = 120;
 constexpr char TAG[] = "TouchInput";
-constexpr float CAL_X_SCALE = 0.8985547f;
-constexpr float CAL_X_OFFSET = 15.9703f;
-constexpr float CAL_Y_SCALE = 0.8800800f;
-constexpr float CAL_Y_OFFSET = 22.6573f;
+// V2 nine-point DOWN fit; see README.md. V1 uses a different controller/fit.
+constexpr float CAL_X_SCALE = 1.1179618f;
+constexpr float CAL_X_OFFSET = -20.711235f;
+constexpr float CAL_Y_SCALE = 1.0494687f;
+constexpr float CAL_Y_OFFSET = -21.692282f;
 
 int16_t toDisplayCoordinate(uint16_t value, int limit, float scale, float offset) {
     const int calibrated = static_cast<int>(std::lround(value * scale + offset));
@@ -51,7 +52,7 @@ bool TouchInput::poll(uint32_t nowMs, TouchEvent& event) {
     if (!interruptPending) {
         if (pointerDown && nowMs - lastTouchMs >= RELEASE_TIMEOUT_MS) {
             pointerDown = false;
-            event = {TouchEventType::UP, lastX, lastY, lastX, lastY, nowMs};
+            event = {TouchEventType::UP, lastX, lastY, lastRawX, lastRawY, nowMs};
             return true;
         }
         return false;
@@ -72,6 +73,9 @@ bool TouchInput::poll(uint32_t nowMs, TouchEvent& event) {
         int16_t y = toDisplayCoordinate(point.y, DISPLAY_HEIGHT, CAL_Y_SCALE, CAL_Y_OFFSET);
         int16_t rawX = static_cast<int16_t>(point.x);
         int16_t rawY = static_cast<int16_t>(point.y);
+        // Keep the last sensor sample even if rounding suppresses a MOVE.
+        lastRawX = rawX;
+        lastRawY = rawY;
         if (!pointerDown) {
             pointerDown = true;
             lastX = x;
@@ -90,7 +94,7 @@ bool TouchInput::poll(uint32_t nowMs, TouchEvent& event) {
 
     if (pointerDown) {
         pointerDown = false;
-        event = {TouchEventType::UP, lastX, lastY, lastX, lastY, nowMs};
+        event = {TouchEventType::UP, lastX, lastY, lastRawX, lastRawY, nowMs};
         return true;
     }
     return false;

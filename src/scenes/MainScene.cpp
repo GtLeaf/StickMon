@@ -16,7 +16,6 @@
 #include "core/RoomResource.h"
 #include "core/TraceLog.h"
 #include "core/UiStrings.h"
-#include "core/VoiceCallService.h"
 #include "game/SpeciesBehavior.h"
 #include "game/GameRandom.h"
 #include "game/HomeHud.h"
@@ -711,7 +710,6 @@ constexpr uint8_t LEGACY_SECONDARY_VIEW_DIRECTION_MAX = 3;
 }
 
 void MainScene::onEnter() {
-    VoiceCallService::ins().begin();
     if (GameEngine::ins().localContactVisitActive() &&
         GameEngine::ins().previousScene() == SceneID::EXPLORE &&
         GameEngine::ins().exploreTravelPhase() ==
@@ -877,7 +875,6 @@ void MainScene::onExit() {
     homeCoordinator.releaseAll(0);
     homeCoordinator.releaseAll(1);
     cancelPairInteraction(nowMs);
-    VoiceCallService::ins().stopListening();
     if (doorTransition == DoorTransitionMode::NONE) {
         persistViewState(nowMs);
     } else if (visitorDepartureSnapshotValid &&
@@ -1107,38 +1104,6 @@ SceneUpdateResult MainScene::update(uint32_t nowMs, float dtSeconds) {
         contactGuestMotion == ContactGuestMotion::NONE &&
         pairInteraction == PairInteraction::NONE) {
         updateVisitor(nowMs, dtSeconds);
-    }
-    auto& voice = VoiceCallService::ins();
-    const auto& settings = GameEngine::ins().gameState().settings;
-    const auto& voiceMonster = GameEngine::ins().activeMonster();
-    bool usesBed =
-        Game::speciesCareProfileFor(voiceMonster.speciesId).usesBed;
-    bool voiceCanRespond = !voiceMonster.fainted && voiceMonster.hpCur > 0 &&
-                           voiceMonster.majorStatus != Game::MajorStatus::SLEEP &&
-                           mainActor.task != AiMode::RESTING && mainActor.task != AiMode::WAKING &&
-                           mainActor.task != AiMode::SEEK_BED &&
-                           (!usesBed || !mainSceneIsSleepTime());
-    bool voiceAvailable = settings.voiceCallEnabled && voice.profileReady() &&
-                          !GameEngine::ins().idleModeActive() &&
-                          voiceCanRespond &&
-                          doorTransition == DoorTransitionMode::NONE &&
-                          progressionModal == ProgressionModal::NONE &&
-                          contactDialog == ContactDialog::NONE &&
-                          contactGuestMotion == ContactGuestMotion::NONE &&
-                          pairInteraction == PairInteraction::NONE &&
-                          !Hal::ins().audioPlaying();
-    if (voiceAvailable) {
-        if (!voice.listening() && roomAction != RoomAction::VOICE_CALL_APPROACH &&
-            roomAction != RoomAction::VOICE_CALL_WAIT) {
-            voice.startListening(nowMs);
-        }
-        voice.updateListening(nowMs);
-        if (voice.consumeMatch()) {
-            GameEngine::ins().wakeFromIdle();
-            startVoiceCallReaction(nowMs);
-        }
-    } else {
-        voice.stopListening();
     }
     if (doorTransition == DoorTransitionMode::NONE) {
         if (progressionModal != ProgressionModal::NONE || openPendingProgression()) {
@@ -2803,10 +2768,6 @@ void MainScene::finishRoomAction(uint32_t nowMs) {
         feedingBecameFull = false;
         feedingMoodAfter = 0;
     }
-    if (completed == RoomAction::VOICE_CALL_APPROACH ||
-        completed == RoomAction::VOICE_CALL_WAIT) {
-        VoiceCallService::ins().clearDetectionQueue(nowMs);
-    }
     mainActor.mind.onActivity(nowMs);
 }
 
@@ -2832,36 +2793,6 @@ bool MainScene::startAttention(uint32_t nowMs) {
         return true;
     }
     return beginScriptedMove(RoomAction::ATTENTION_APPROACH, x, y, nowMs);
-}
-
-bool MainScene::startVoiceCallReaction(uint32_t nowMs) {
-    const Game::MonsterRuntime& mon = GameEngine::ins().activeMonster();
-    if (mon.fainted || mon.hpCur == 0 || mon.majorStatus == Game::MajorStatus::SLEEP ||
-        mainActor.task == AiMode::RESTING || mainActor.task == AiMode::WAKING ||
-        mainActor.task == AiMode::SEEK_BED || mainActor.task == AiMode::FEEDING ||
-        doorTransition != DoorTransitionMode::NONE ||
-        progressionModal != ProgressionModal::NONE) {
-        return false;
-    }
-
-    float x = 0.0f;
-    float y = 0.0f;
-    if (!chooseAttentionPose(x, y)) return false;
-    cancelRoomAction(nowMs);
-    clearMoveRoute();
-    mainActor.velocityX = 0.0f;
-    mainActor.velocityY = 0.0f;
-    if (fabsf(x - mainActor.x) < 3.0f && fabsf(y - mainActor.y) < 3.0f) {
-        homeCoordinator.stop(0, nowMs);
-        roomAction = RoomAction::VOICE_CALL_WAIT;
-        roomActionStartedMs = nowMs;
-        roomActionUntilMs = nowMs + 1250;
-        pmdDirection = PmdDirection::FRONT;
-        showHearts(HeartEffect::TWO, nowMs, 1250);
-        CryPlayer::ins().replay(mon.speciesId);
-        return true;
-    }
-    return beginScriptedMove(RoomAction::VOICE_CALL_APPROACH, x, y, nowMs);
 }
 
 bool MainScene::startWindowGaze(uint32_t nowMs) {
@@ -2987,15 +2918,6 @@ void MainScene::finishScriptedMovement(uint32_t nowMs) {
         pmdDirection = PmdDirection::FRONT;
         showHearts(HeartEffect::ONE, nowMs, ATTENTION_WAIT_MS);
         return;
-    case RoomAction::VOICE_CALL_APPROACH:
-        roomAction = RoomAction::VOICE_CALL_WAIT;
-        roomActionStartedMs = nowMs;
-        roomActionUntilMs = nowMs + 1250;
-        homeCoordinator.stop(0, nowMs);
-        pmdDirection = PmdDirection::FRONT;
-        showHearts(HeartEffect::TWO, nowMs, 1250);
-        CryPlayer::ins().replay(GameEngine::ins().activeMonster().speciesId);
-        return;
     case RoomAction::WINDOW_APPROACH:
         roomAction = RoomAction::WINDOW_WAIT;
         roomActionStartedMs = nowMs;
@@ -3038,7 +2960,6 @@ bool MainScene::updateRoomAction(uint32_t nowMs) {
     case RoomAction::PET_CALM:
     case RoomAction::QUIET_GAZE:
     case RoomAction::ATTENTION_WAIT:
-    case RoomAction::VOICE_CALL_WAIT:
     case RoomAction::WINDOW_WAIT:
         mainActor.velocityX = 0.0f;
         mainActor.velocityY = 0.0f;
@@ -3084,7 +3005,6 @@ bool MainScene::updateRoomAction(uint32_t nowMs) {
         return true;
     case RoomAction::PET_WITHDRAW:
     case RoomAction::ATTENTION_APPROACH:
-    case RoomAction::VOICE_CALL_APPROACH:
     case RoomAction::CIRCLE:
     case RoomAction::DASH:
     case RoomAction::STEP_BACK:
@@ -3162,14 +3082,13 @@ float MainScene::actionRenderYOffset(uint32_t nowMs) const {
                      !feedingHadDislikedBite &&
                      (feedingHadTastyBite || feedingBecameFull || feedingMoodAfter >= 60 ||
                       mainActor.behavior.activityBias > 0);
-    bool voiceHappy = roomAction == RoomAction::VOICE_CALL_WAIT;
-    if (roomAction != RoomAction::PET_HAPPY && !voiceHappy && !happyFeed) return 0.0f;
+    if (roomAction != RoomAction::PET_HAPPY && !happyFeed) return 0.0f;
     uint32_t elapsed = nowMs - roomActionStartedMs;
-    uint32_t hopDuration = (roomAction == RoomAction::PET_HAPPY || voiceHappy) ? 1000UL : 600UL;
+    uint32_t hopDuration = (roomAction == RoomAction::PET_HAPPY) ? 1000UL : 600UL;
     if (elapsed >= hopDuration) return 0.0f;
     const PmdSpriteConfig* config = active ? pmdSpriteConfigForSpecies(active->id) : nullptr;
     float amplitude = config && config->airHeight > 0.0f ? 3.0f : 5.0f;
-    float cycles = (roomAction == RoomAction::PET_HAPPY || voiceHappy) ? 2.0f : 1.0f;
+    float cycles = (roomAction == RoomAction::PET_HAPPY) ? 2.0f : 1.0f;
     float phase = (float)elapsed / (float)hopDuration;
     return fabsf(sinf(phase * 3.14159265f * cycles)) * amplitude;
 }
@@ -3345,8 +3264,6 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
 
     bool contextualAction = roomAction == RoomAction::ATTENTION_APPROACH ||
                             roomAction == RoomAction::ATTENTION_WAIT ||
-                            roomAction == RoomAction::VOICE_CALL_APPROACH ||
-                            roomAction == RoomAction::VOICE_CALL_WAIT ||
                             roomAction == RoomAction::LOOK_AROUND ||
                             roomAction == RoomAction::CIRCLE ||
                             roomAction == RoomAction::DASH ||
@@ -7344,7 +7261,6 @@ bool MainScene::onButton(const ButtonEvent& event) {
     }
 
     cancelPairInteraction(Hal::ins().millis());
-    VoiceCallService::ins().stopListening();
 
     if (event.btn == 0 && event.action == BtnAction::PRESSED) {
         uint32_t nowMs = Hal::ins().millis();

@@ -5,7 +5,6 @@
 class SettingsScene : public Scene {
 public:
     void onEnter() override;
-    void onExit() override;
     SceneUpdateResult update(uint32_t nowMs, float dtSeconds) override;
     void render() override;
     bool onButton(const ButtonEvent& event) override;
@@ -15,7 +14,6 @@ private:
         BRIGHTNESS = 0,
         GAME_SPEED,
         VOLUME,
-        VOICE_CALL,
         POWER_SAVE,
         HELP,
         RESET_GAME,
@@ -25,8 +23,6 @@ private:
     enum class ViewMode : uint8_t {
         MENU,
         HELP,
-        VOICE_CALL,
-        VOICE_ENROLL,
         RESET_CONFIRM,
     };
 
@@ -36,9 +32,7 @@ private:
     ViewMode viewMode = ViewMode::MENU;
     bool resetConfirmYes = false;
     float menuScroll = 0.0f;
-    uint8_t voiceCursor = 0;
     uint8_t helpPage = 0;
-    uint32_t enrollmentFinishedAt = 0;
 
     void activateCurrent();
     void cycleBrightness();
@@ -46,10 +40,6 @@ private:
     void markSettingsDirty();
     void renderMenu();
     void renderHelp();
-    void renderVoiceCall();
-    void renderVoiceEnrollment();
     void renderResetConfirm();
     void renderToast();
-    void handleVoiceCallButton(const ButtonEvent& event);
-    const char* enrollmentMessage() const;
 };

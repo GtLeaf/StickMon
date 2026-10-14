@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
 import shutil
+from collections import defaultdict
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from cave_tile_semantics import (
@@ -45,6 +47,17 @@ from generate_runtime_tile_map import (
     FROST_OUTSIDE_TILE,
     FROST_WALL_TILES,
     MIST_FOREST_PATH_AREA,
+    PARK_BOUNDARY_TREE_TILES,
+    PARK_TREE_TILES,
+    PARK_CENTERED_TREE_TILES,
+    TALL_GRASS_PARK_AREA,
+    TALL_GRASS_TOP_TILE,
+    TALL_GRASS_BASE_TILE,
+    build_road,
+    RoutePath,
+    Endpoint,
+    append_line,
+    validate_park_wide_road,
     SEA_SHORE_TILE,
     SEA_CORNER_UNDERLAY_TILE,
     SEA_LEFT_SHORE_TILE,
@@ -82,6 +95,7 @@ from generate_runtime_tile_map import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
+PARK_PREVIEW_SEEDS = (0xD91CE3C7, 0x275E3781, 0x456130EC, 0x4048A45A, 255, 102)
 ROAD_TILES = {537, 538, 539, 540, 542, 545, 546, 547, 553, 554, 555, 556, 558}
 STREAM_TILES = {
     STREAM_LEFT_TILE,
@@ -223,6 +237,81 @@ class RuntimeTileMapTests(unittest.TestCase):
                 break
         self.assertEqual(checked, 16)
 
+    def test_tall_grass_park_uses_complete_trees_and_paired_separate_grass(self):
+        tree_shapes = (PARK_BOUNDARY_TREE_TILES, PARK_TREE_TILES,
+                       PARK_CENTERED_TREE_TILES)
+        tree_ids = {tile for shape in tree_shapes for row in shape for tile in row}
+        observed_tree_shapes = set()
+        for seed in (*range(1, 65), *PARK_PREVIEW_SEEDS):
+            for edge in Edge:
+                runtime_map = generate_map(seed, edge, TALL_GRASS_PARK_AREA)
+                road = build_road(runtime_map.paths)
+                self.assertEqual(runtime_map.entry.edge, edge)
+                self.assertTrue(runtime_map.has_forest)
+                self.assertFalse(runtime_map.has_coast)
+                self.assertFalse(runtime_map.has_creek)
+                self.assertFalse(runtime_map.has_cliff)
+                self.assertTrue(all(DENSE_GRASS_TILE not in layer
+                                    for layer in runtime_map.layers))
+                self.assertTrue(all(tile not in {1662, 1665, 1681, 1682, SHRUB_TILE}
+                                    for layer in runtime_map.layers for tile in layer))
+
+                grass = {(index % 16, index // 16)
+                         for index, tile in enumerate(runtime_map.layers[0])
+                         if tile == TALL_GRASS_BASE_TILE}
+                tips = {(index % 16, index // 16)
+                        for index, tile in enumerate(runtime_map.layers[1])
+                        if tile == TALL_GRASS_TOP_TILE}
+                self.assertTrue(all(y > 0 for _x, y in grass))
+                self.assertEqual(tips, {(x, y - 1) for x, y in grass})
+                self.assertGreaterEqual(len(grass), 40)
+                self.assertLessEqual(len(grass), 50)
+                self.assertIn(len(connected_components(grass)), (3, 4))
+
+                covered = set()
+                tree_count = 0
+                boundary_count = 0
+                for shape in tree_shapes:
+                    for index, tile in enumerate(runtime_map.layers[1]):
+                        if tile != shape[0][0]:
+                            continue
+                        left, top = index % 16, index // 16
+                        width = len(shape[0])
+                        footprint = {(left + dx, top + dy)
+                                     for dy in range(3) for dx in range(width)}
+                        self.assertTrue(all(0 <= x < 16 and 0 <= y < 12
+                                            for x, y in footprint))
+                        self.assertTrue(covered.isdisjoint(footprint))
+                        for dy, row in enumerate(shape):
+                            for dx, expected in enumerate(row):
+                                self.assertEqual(runtime_map.layers[1][
+                                    (top + dy) * 16 + left + dx], expected)
+                        covered.update(footprint)
+                        tree_count += 1
+                        observed_tree_shapes.add(shape[0][0])
+                        if shape == PARK_BOUNDARY_TREE_TILES:
+                            boundary_count += 1
+                            self.assertEqual(top, 0,
+                                             "open canopy must meet the top map edge")
+                self.assertGreaterEqual(tree_count, 6)
+                self.assertLessEqual(tree_count, 7)
+                self.assertIn(boundary_count, (0, 2, 4))
+                self.assertEqual(covered, {(index % 16, index // 16)
+                                          for index, tile in enumerate(runtime_map.layers[1])
+                                          if tile in tree_ids})
+                self.assertTrue(covered.isdisjoint(grass | tips))
+                self.assertTrue(road.isdisjoint(covered | grass | tips))
+                for x, y in road:
+                    self.assertIn(runtime_map.layers[0][y * 16 + x], ROAD_TILES)
+                    self.assertEqual(runtime_map.layers[1][y * 16 + x], 0)
+                    self.assertEqual(runtime_map.layers[2][y * 16 + x], 0)
+                flowers = {(index % 16, index // 16)
+                           for index, tile in enumerate(runtime_map.layers[0])
+                           if tile == FLOWER_TILE}
+                self.assertLessEqual(len(flowers), 5)
+                self.assertTrue(flowers.isdisjoint(road | covered | grass | tips))
+        self.assertEqual(observed_tree_shapes, {800, 804, 824})
+
     def test_active_area_profiles_keep_landscapes_visually_distinct(self):
         for seed in range(1, 33):
             grass = generate_map(seed, Edge.TOP)
@@ -235,6 +324,92 @@ class RuntimeTileMapTests(unittest.TestCase):
             frost = generate_map(seed, Edge.TOP, FROST_CRYSTAL_CAVE_AREA)
             self.assertFalse(frost.has_forest)
             self.assertFalse(frost.has_coast)
+
+    def test_park_routes_have_one_to_three_exits_and_real_sequential_forks(self):
+        layouts = {edge: set() for edge in Edge}
+        counts = {edge: set() for edge in Edge}
+        for seed in (*range(1, 65), *PARK_PREVIEW_SEEDS):
+            for edge in Edge:
+                m = generate_map(seed, edge, TALL_GRASS_PARK_AREA)
+                graph = defaultdict(set)
+                self.assertEqual(m.entry.edge, edge)
+                self.assertIn(len(m.paths), (1, 2, 3))
+                self.assertEqual(len({path.exit.edge for path in m.paths}), len(m.paths))
+                self.assertNotIn(edge, {path.exit.edge for path in m.paths})
+                turns = []
+                for path in m.paths:
+                    self.assertEqual(path.points[0], m.entry.point)
+                    self.assertEqual(path.points[-1], path.exit.point)
+                    self.assertEqual(len(path.points), len(set(path.points)))
+                    self.assertLessEqual(len(path.points), 48)
+                    directions = []
+                    for a, b in zip(path.points, path.points[1:]):
+                        direction = b[0] - a[0], b[1] - a[1]
+                        self.assertEqual(abs(direction[0]) + abs(direction[1]), 1)
+                        directions.append(direction)
+                        graph[a].add(b)
+                        graph[b].add(a)
+                    turns.append(sum(a != b for a, b in zip(directions, directions[1:])))
+                self.assertGreaterEqual(max(turns), 2)
+                self.assertEqual(sum(map(len, graph.values())) // 2, len(graph) - 1)
+                forks = {point for point, adjacent in graph.items() if len(adjacent) == 3}
+                self.assertEqual(len(forks), len(m.paths) - 1)
+                self.assertEqual(sum(len(adjacent) == 1 for adjacent in graph.values()),
+                                 len(m.paths) + 1)
+                self.assertTrue(all(len(adjacent) <= 3 for adjacent in graph.values()))
+                if len(m.paths) > 1:
+                    self.assertIn(m.junction, forks)
+                if len(m.paths) == 3:
+                    # Both long routes pass through the second fork after the first.
+                    second = next(iter(forks - {m.junction}))
+                    self.assertNotIn(second, m.paths[0].points)
+                    for path in m.paths[1:]:
+                        self.assertGreater(path.points.index(second), path.points.index(m.junction))
+                road = build_road(m.paths)
+                allowed = set()
+                for endpoint in (m.entry, *(path.exit for path in m.paths)):
+                    x, y = endpoint.point
+                    allowed.update(((x, y), (x + 1, y)) if endpoint.edge in (Edge.TOP, Edge.BOTTOM)
+                                   else ((x, y), (x, y + 1)))
+                self.assertEqual({p for p in road if p[0] in (0, 15) or p[1] in (0, 11)}, allowed)
+                counts[edge].add(len(m.paths))
+                layouts[edge].add(tuple(tuple(path.points) for path in m.paths))
+        for edge in Edge:
+            self.assertEqual(counts[edge], {1, 2, 3})
+            self.assertGreaterEqual(len(layouts[edge]), 60)
+
+    def test_random_park_is_reproducible_and_coordinates_vary_within_each_type(self):
+        layouts = {count: set() for count in (1, 2, 3)}
+        for seed in range(1, 129):
+            m = generate_map(seed, Edge.BOTTOM, TALL_GRASS_PARK_AREA)
+            layouts[len(m.paths)].add(tuple(tuple(path.points) for path in m.paths))
+            validate_park_wide_road(m.paths, build_road(m.paths))
+            if seed <= 16:
+                other = generate_map(seed, Edge.BOTTOM, TALL_GRASS_PARK_AREA)
+                self.assertEqual(m, other)
+        for shapes in layouts.values():
+            self.assertGreaterEqual(len(shapes), 20)
+
+    def test_random_park_compact_fallback_retains_selected_type_and_plants(self):
+        with patch('generate_runtime_tile_map.PARK_TOPOLOGY_ATTEMPTS', 0):
+            for seed in range(1, 25):
+                for edge in Edge:
+                    m = generate_map(seed, edge, TALL_GRASS_PARK_AREA)
+                    from generate_runtime_tile_map import XorShift32
+                    roll = XorShift32(seed ^ 0xA511E9B3).bounded(100)
+                    self.assertEqual(len(m.paths), 1 if roll < 30 else 2 if roll < 80 else 3)
+                    self.assertEqual(m.entry.edge, edge)
+                    validate_park_wide_road(m.paths, build_road(m.paths))
+                    self.assertGreaterEqual(m.layers[0].count(TALL_GRASS_BASE_TILE), 40)
+                    self.assertIn(sum(tile in (800, 804, 824) for tile in m.layers[1]), (6, 7))
+
+    def test_random_park_rejects_shortcuts_created_by_two_cell_width(self):
+        points = []
+        for point in ((3, 11), (3, 4), (5, 4), (5, 8), (9, 8), (9, 0)):
+            append_line(points, *point)
+        paths = [RoutePath(points, Endpoint((9, 0), Edge.TOP))]
+        with self.assertRaisesRegex(ValueError, 'shortcut'):
+            validate_park_wide_road(paths, build_road(paths))
 
     def test_frost_cave_uses_caves_tiles_and_keeps_routes_clear(self):
         ice_ids = set(FROST_ICE_TILES.values())
@@ -695,7 +870,10 @@ class RuntimeTileMapTests(unittest.TestCase):
                 text=True,
             )
             for area in range(6):
-                for seed in (1, 0x20260713, 0xDEADBEEF, 0xFFFFFFFF):
+                seeds = (*range(17), 0x20260713, 0xDEADBEEF, 0xFFFFFFFF)
+                if area == TALL_GRASS_PARK_AREA:
+                    seeds += PARK_PREVIEW_SEEDS
+                for seed in seeds:
                     for edge in Edge:
                         expected = fingerprint(generate_map(seed, edge, area))
                         actual = int(

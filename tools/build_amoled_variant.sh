@@ -83,11 +83,25 @@ if [[ -f "$SDKCONFIG" ]]; then
     fi
 fi
 
+# OTA requires a rollback-aware V2 bootloader even with cached sdkconfig.
+if [[ "$1" == v2 && -f "$SDKCONFIG" ]]; then
+    sed -i.bak 's/^# CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE is not set$/CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y/' "$SDKCONFIG"
+    rm -f "$SDKCONFIG.bak"
+fi
+
 source "$IDF_PATH/export.sh"
 cd "$PROJECT_DIR"
 
-AMOLED_ITEMS_DIR="${STICKMON_ESSENTIALS_DIR:-${ESSENTIALS_DIR:-}}/Graphics/Items"
-if [[ -d "$AMOLED_ITEMS_DIR" ]]; then
+AMOLED_ITEMS_DIR="${STICKMON_ESSENTIALS_DIR:-${ESSENTIALS_DIR:-$REPO_DIR/external/pokemon-essentials}}/Graphics/Items"
+AMOLED_SHARED_UI="$REPO_DIR/data/packs/dev/game/ui.smonfx"
+AMOLED_NATIVE_UI="$REPO_DIR/data/packs/dev/game/ui_amoled.smonfx"
+AMOLED_UI_VALIDATOR="$REPO_DIR/tools/validate_amoled_ui_assets.py"
+AMOLED_UI_CURRENT=false
+if python3 "$AMOLED_UI_VALIDATOR" "$AMOLED_SHARED_UI" "$AMOLED_NATIVE_UI" \
+        >/dev/null 2>&1 && [[ ! "$AMOLED_SHARED_UI" -nt "$AMOLED_NATIVE_UI" ]]; then
+    AMOLED_UI_CURRENT=true
+fi
+if [[ -d "$AMOLED_ITEMS_DIR" && "$AMOLED_UI_CURRENT" == false ]]; then
     ASSET_PYTHON=""
     for CANDIDATE in "${STICKMON_ASSET_PYTHON:-}" \
                      /opt/homebrew/bin/python3 \
@@ -109,17 +123,27 @@ if [[ -d "$AMOLED_ITEMS_DIR" ]]; then
     fi
     "$ASSET_PYTHON" "$REPO_DIR/tools/generate_amoled_ui_assets.py" \
         --items-dir "$AMOLED_ITEMS_DIR"
-elif [[ ! -f "$REPO_DIR/data/packs/dev/game/ui_amoled.smonfx" ]]; then
+elif [[ ! -f "$AMOLED_NATIVE_UI" ]]; then
     printf '%s\n' "AMOLED item sources are missing; set ESSENTIALS_DIR or STICKMON_ESSENTIALS_DIR." >&2
     exit 1
 fi
+python3 "$AMOLED_UI_VALIDATOR" "$AMOLED_SHARED_UI" "$AMOLED_NATIVE_UI"
 
-idf.py -B "$BUILD_DIR" \
-    "-DSDKCONFIG=$SDKCONFIG" \
-    "-DSDKCONFIG_DEFAULTS=$DEFAULTS" \
-    "-DSTICKMON_ENABLE_CLAW=$ENABLE_CLAW" \
-    "-DSTICKMON_ENABLE_DEBUG_FEATURES=$DEBUG_FEATURES" \
-    build
+OTA_ARGS=()
+if [[ "$1" == v2 && -n "${STICKMON_OTA_ENDPOINT:-}" ]]; then
+    OTA_ARGS+=("-DSTICKMON_OTA_ENDPOINT=$STICKMON_OTA_ENDPOINT")
+fi
+CMAKE_ARGS=(
+    "-DSDKCONFIG=$SDKCONFIG"
+    "-DSDKCONFIG_DEFAULTS=$DEFAULTS"
+    "-DSTICKMON_ENABLE_CLAW=$ENABLE_CLAW"
+    "-DSTICKMON_ENABLE_DEBUG_FEATURES=$DEBUG_FEATURES"
+)
+if ((${#OTA_ARGS[@]})); then
+    idf.py -B "$BUILD_DIR" "${OTA_ARGS[@]}" "${CMAKE_ARGS[@]}" build
+else
+    idf.py -B "$BUILD_DIR" "${CMAKE_ARGS[@]}" build
+fi
 
 if [[ "$1" == v2 && "$DEBUG_FEATURES" == OFF ]]; then
     python3 "$SCRIPT_DIR/package_amoled_v2_release.py" "$BUILD_DIR"

@@ -5,6 +5,7 @@
 
 #include "esp_codec_dev.h"
 #include "core/PcmMixer.h"
+#include "Qmi8658.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
@@ -56,6 +57,7 @@ public:
     bool recordMicrophone(int16_t*, size_t, uint32_t) override;
     bool microphoneRecording() const override;
     bool microphoneActive() const override;
+    bool setAccelerationEnabled(bool enabled) override;
     bool readAcceleration(float& x, float& y, float& z) override;
 
     int batteryLevel() override;
@@ -67,6 +69,7 @@ public:
     void restart() override;
     void enterDeepSleep(uint64_t timerWakeUs, bool wakeOnSecondaryButton) override;
 
+    void setOtaWriteProtection(bool value) { otaWriteProtection_ = value; }
     bool initialize() override;
     size_t blobSize(const char*, const char*) override;
     bool readBlob(const char*, const char*, void*, size_t) override;
@@ -106,6 +109,8 @@ private:
     void applySpeakerVolumeLocked();
 
     Platform::Services services_;
+    Stickmon::Qmi8658 imu_;
+    bool otaWriteProtection_ = false;
     bool resourcesMounted_ = false;
     bool initialized_ = false;
     bool peerTransportActive_ = false;

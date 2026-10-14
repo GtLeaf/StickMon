@@ -2,6 +2,7 @@
 
 #include "core/Scene.h"
 #include "game/BathService.h"
+#include "game/BathInteraction.h"
 
 class ShowerScene : public Scene {
 public:
@@ -22,16 +23,7 @@ private:
         INCOMPLETE,
     };
 
-    struct Foam {
-        float x = 0.0f;
-        float y = 0.0f;
-        float restX = 0.0f;
-        float restYOffset = 0.0f;
-        uint8_t stage = 0;
-        uint8_t brushProgress = 0;
-        uint32_t bornMs = 0;
-        bool active = false;
-    };
+    using Foam = Game::BathInteraction::Foam;
 
     struct WaterDrop {
         float x = 0.0f;
@@ -65,9 +57,8 @@ private:
     uint8_t menuCursor = 0;
     float menuAnimCursor = 0.0f;
     uint8_t soapCursor = 0;
-    Foam foam[FOAM_CAP] = {};
+    Game::BathInteraction::State bath;
     WaterDrop water[WATER_CAP] = {};
-    uint8_t foamSpawnCursor = 0;
     float gravityX = 0.0f;
     float gravityY = 0.0f;
     float gravityZ = 0.0f;
@@ -79,7 +70,6 @@ private:
     float waterSpawnCarry = 0.0f;
     uint32_t lastSoapSwingMs = 0;
     uint32_t lastBrushRubMs = 0;
-    uint32_t lastFoamGrowthMs = 0;
     uint32_t lastRinseFoamMs = 0;
     uint32_t modeStartedMs = 0;
     uint32_t toastUntilMs = 0;
@@ -90,12 +80,10 @@ private:
     uint32_t wiggleStartMs = 0;
     uint32_t turnUntilMs = 0;
     bool turnFlip = false;
-    uint8_t foamRestSlot = 0;
     uint32_t lastRubReactionMs = 0;
     uint32_t lastRinseShakeMs = 0;
     float atmosphereAlpha = 0.0f;
     bool soapUsed = false;
-    bool atmosphereTarget = false;
     bool soapRewarded = false;
     bool brushRewarded = false;
     bool rinseRewarded = false;
@@ -125,6 +113,7 @@ private:
     bool anyFoam() const;
     uint8_t foamLevelTotal() const;
     void checkAtmosphereThreshold(uint32_t nowMs);
+    Game::BathInteraction::Layout bathLayout() const;
     int monsterBottomY() const;
     float foamRestY(uint8_t stage) const;
     int8_t nextOwnedSoap(int8_t from, int8_t direction) const;
