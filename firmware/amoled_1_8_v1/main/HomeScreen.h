@@ -35,6 +35,8 @@ class PixelCache565;
 
 AmoledUi::Rect homePetVisibleBounds(const HomeViewModel& model);
 AmoledUi::Rect exploreRouteActorBounds(const ExploreRouteViewModel& model);
+AmoledUi::Rect exploreRouteWildlifeBounds(const ExploreRouteViewModel& model,
+                                         uint8_t index);
 
 void drawHatchHeart(Canvas565& canvas, int x, int y);
 
@@ -80,6 +82,9 @@ inline constexpr int MAIN_MENU_ITEM_COUNT =
 
 void renderHomeScreen(Canvas565& canvas, const HomeViewModel& model,
                       uint16_t rowBegin = 0, uint16_t rowEnd = AmoledUi::HEIGHT);
+void renderHomeScreenRegion(Canvas565& canvas, const HomeViewModel& model,
+                            uint16_t rowBegin, uint16_t rowEnd,
+                            uint16_t columnBegin, uint16_t columnEnd);
 HomeHitTarget homeHitTargetAt(int x, int y, int petCenterX = 184,
                               int petGroundY = 302,
                               int bowlCenterX = 290,

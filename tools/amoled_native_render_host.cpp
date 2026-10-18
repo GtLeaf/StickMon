@@ -26,6 +26,7 @@ using namespace AmoledV1;
 
 void checkShowerFlow(DesktopPlatform& desktop, Canvas565& canvas,
                      const Game::GameState& state);
+void checkShowerGrowthRoundTrip(DesktopPlatform& desktop, Canvas565& canvas);
 
 void checkLockFocusPixels(DesktopPlatform& desktop, Canvas565& canvas,
                          const Game::GameState& state);
@@ -41,9 +42,18 @@ void checkExploreSaveBoundaries(DesktopPlatform& desktop,
 void checkProgressionReplacement(DesktopPlatform& desktop,
                                  const Game::GameState& state);
 void checkSettingsReset(DesktopPlatform& desktop);
+void checkBatteryDisplay(DesktopPlatform& desktop, Canvas565& canvas);
+void checkExploreEcology(DesktopPlatform& desktop, Canvas565& canvas);
+void checkExploreWater(DesktopPlatform& desktop, Canvas565& canvas);
 void checkHatchFlow(DesktopPlatform& desktop, Canvas565& canvas);
+void checkBathHatchControllerEffects();
 void checkBattleAssetActions(DesktopPlatform& desktop, const Game::GameState& state);
+void checkSharedBattleExecution(DesktopPlatform& desktop, const Game::GameState& state);
+void checkMedicineFlow(DesktopPlatform& desktop, Canvas565& canvas,
+                        const Game::GameState& state);
 #if STICKMON_ENABLE_DEBUG_FEATURES
+void checkBattleDiagnosticsSaveIsolation(DesktopPlatform& desktop,
+                                         const Game::GameState& state);
 void checkVisitorInvalidHostEntry(DesktopPlatform& desktop,
                                   const Game::GameState& state);
 void checkVisitorDiagnostics(DesktopPlatform& desktop,
@@ -54,6 +64,14 @@ bool runUiBehaviorCase(const char* name, Canvas565& canvas, Game::GameState& sta
 
 static std::vector<uint16_t> pixels(AmoledUi::WIDTH * AmoledUi::HEIGHT);
 static const char* outputDirectory = nullptr;
+void checkHomeCareRewards(DesktopPlatform& desktop, Canvas565& canvas);
+void checkHomeRoomAuthority(DesktopPlatform& desktop, Canvas565& canvas);
+void checkHomeAutomaticFoodTurns(DesktopPlatform& desktop, Canvas565& canvas);
+void checkHomeFoodExitNoStall(DesktopPlatform& desktop, Canvas565& canvas);
+void checkHomeFaintRecoveryAndSleep(DesktopPlatform& desktop, Canvas565& canvas);
+void checkHomeSavedTurns(DesktopPlatform& desktop);
+void checkHomeYieldAndActions(DesktopPlatform& desktop, Canvas565& canvas);
+void checkLockedRoomPower(DesktopPlatform& desktop, Canvas565& canvas);
 
 class RoomRenderPower final : public Platform::IPowerDevice {
 public:
@@ -462,6 +480,10 @@ int main(int argc, char** argv) {
         checkHatchFlow(desktop, canvas);
         return 0;
     }
+    if (selectedCase && std::strcmp(selectedCase, "bath-hatch-controller-effects") == 0) {
+        checkBathHatchControllerEffects();
+        return 0;
+    }
     if (selectedCase && std::strcmp(selectedCase, "hatch-render") == 0) {
         auto& original = desktop.serviceBundle();
         RoomRenderPower power(original.power);
@@ -606,6 +628,22 @@ int main(int argc, char** argv) {
 
     if (selectedCase && std::strcmp(selectedCase, "battle-asset-actions") == 0) {
         checkBattleAssetActions(desktop, state);
+        return 0;
+    }
+
+    if (selectedCase && std::strcmp(selectedCase, "battle-shared-execution") == 0) {
+        checkSharedBattleExecution(desktop, state);
+        return 0;
+    }
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    if (selectedCase && std::strcmp(selectedCase, "battle-diagnostic-save") == 0) {
+        checkBattleDiagnosticsSaveIsolation(desktop, state);
+        return 0;
+    }
+#endif
+
+    if (selectedCase && std::strcmp(selectedCase, "medicine-flow") == 0) {
+        checkMedicineFlow(desktop, canvas, state);
         return 0;
     }
 
@@ -929,6 +967,38 @@ int main(int argc, char** argv) {
         return 0;
     }
 #endif
+    if (selectedCase && std::strcmp(selectedCase, "locked-room-power") == 0) {
+        checkLockedRoomPower(desktop, canvas);
+        return 0;
+    }
+    if (selectedCase && std::strcmp(selectedCase, "home-care-rewards") == 0) {
+        checkHomeCareRewards(desktop, canvas);
+        return 0;
+    }
+    if (selectedCase && std::strcmp(selectedCase, "home-room-authority") == 0) {
+        checkHomeRoomAuthority(desktop, canvas);
+        return 0;
+    }
+    if (selectedCase && std::strcmp(selectedCase, "home-food-turns") == 0) {
+        checkHomeAutomaticFoodTurns(desktop, canvas);
+        return 0;
+    }
+    if (selectedCase && std::strcmp(selectedCase, "home-food-exit-stall") == 0) {
+        checkHomeFoodExitNoStall(desktop, canvas);
+        return 0;
+    }
+    if (selectedCase && std::strcmp(selectedCase, "home-faint-sleep-wake") == 0) {
+        checkHomeFaintRecoveryAndSleep(desktop, canvas);
+        return 0;
+    }
+    if (selectedCase && std::strcmp(selectedCase, "home-saved-turns") == 0) {
+        checkHomeSavedTurns(desktop);
+        return 0;
+    }
+    if (selectedCase && std::strcmp(selectedCase, "home-yield-actions") == 0) {
+        checkHomeYieldAndActions(desktop, canvas);
+        return 0;
+    }
     if (selectedCase && std::strcmp(selectedCase, "shower-render") == 0) {
         PixelCache565 cache;
         auto render = [&](Canvas565& target, const ShowerViewModel& model, uint16_t top, uint16_t bottom) {
@@ -973,7 +1043,23 @@ int main(int argc, char** argv) {
         checkShowerFlow(desktop, canvas, state);
         return 0;
     }
+    if (selectedCase && std::strcmp(selectedCase, "shower-growth-roundtrip") == 0) {
+        checkShowerGrowthRoundTrip(desktop, canvas);
+        return 0;
+    }
     if (selectedCase) {
+        if (std::strcmp(selectedCase, "explore-water") == 0) {
+            checkExploreWater(desktop, canvas);
+            return 0;
+        }
+        if (std::strcmp(selectedCase, "explore-ecology") == 0) {
+            checkExploreEcology(desktop, canvas);
+            return 0;
+        }
+        if (std::strcmp(selectedCase, "battery-display") == 0) {
+            checkBatteryDisplay(desktop, canvas);
+            return 0;
+        }
         if (runUiBehaviorCase(selectedCase, canvas, state)) return 0;
         std::fprintf(stderr, "unknown behavior case: %s\n", selectedCase);
         return 2;
@@ -1172,6 +1258,13 @@ int main(int argc, char** argv) {
     BattleViewModel battle{}; battle.state = &state;
     battle.playerSpeciesId = 1; battle.wildSpeciesId = 4;
     checkPage("battle", battle, renderBattleScreenCached);
+    battle.thrownItem = Game::ItemId::SWEET_FOOD;
+    for (int frame = 0; frame <= 4; ++frame) {
+        battle.itemThrowProgress = frame / 4.0f;
+        const auto label = std::string("battle-fruit-throw-") + std::to_string(frame);
+        checkPage(label.c_str(), battle, renderBattleScreenCached);
+    }
+    battle.thrownItem = Game::ItemId::COUNT;
     battle.showPlayerExperience = true;
     battle.playerExperience = 50;
     checkPage("battle-exp", battle, renderBattleScreenCached);
@@ -1267,19 +1360,19 @@ int main(int argc, char** argv) {
     assert(computerItemAt(200, 262, ComputerViewModel::Page::MENU) == -1);
     assert(computerItemAt(200, 348, ComputerViewModel::Page::MENU) == -1);
     assert(settingsItemAt(200, 90) == 0);
-    assert(settingsItemAt(200, 295) == SETTINGS_POWER_SAVE_ITEM);
-    assert(settingsItemAt(200, 296) == SETTINGS_RESET_GAME_ITEM);
-    assert(settingsItemAt(200, 343) == SETTINGS_RESET_GAME_ITEM);
-    assert(settingsItemAt(200, 344) == -1);
+    assert(settingsItemAt(200, 323) == SETTINGS_POWER_SAVE_ITEM);
+    assert(settingsItemAt(200, 324) == SETTINGS_RESET_GAME_ITEM);
+    assert(settingsItemAt(200, 383) == SETTINGS_RESET_GAME_ITEM);
+    assert(settingsItemAt(200, 384) == -1);
     assert(settingsItemAt(200, 400) == -1);
-    assert(settingsItemAt(200, 296, true) == SETTINGS_RESET_GAME_ITEM);
-    assert(settingsItemAt(200, 343, true) == SETTINGS_RESET_GAME_ITEM);
+    assert(settingsItemAt(200, 324, true) == SETTINGS_RESET_GAME_ITEM);
+    assert(settingsItemAt(200, 383, true) == SETTINGS_RESET_GAME_ITEM);
     const int updateItem = STICKMON_ENABLE_DEBUG_FEATURES
         ? SETTINGS_SYSTEM_UPDATE_ITEM : -1;
-    assert(settingsItemAt(200, 344, true) == updateItem);
-    assert(settingsItemAt(200, 391, true) == updateItem);
-    assert(settingsItemAt(200, 392, true) == -1);
-    assert(settingsItemAt(200, 400, true) == -1);
+    assert(settingsItemAt(200, 384, true) == updateItem);
+    assert(settingsItemAt(200, 443, true) == updateItem);
+    assert(settingsItemAt(200, 444, true) == -1);
+    assert(settingsItemAt(200, 400, true) == updateItem);
     assert(settingsItemAt(200, 447, true) == -1);
     assert(settingsItemAt(200, 448, true) == -1);
     assert(computerItemAt(0, 165, ComputerViewModel::Page::STORAGE, 0, 20) == 0);

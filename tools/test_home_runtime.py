@@ -18,7 +18,7 @@ class HomeRuntimeTests(unittest.TestCase):
             subprocess.run(
                 [
                     "c++",
-                    "-std=c++11",
+                    "-std=c++17",
                     "-Werror",
                     f"-I{ROOT / 'src'}",
                     str(ROOT / "tools" / "home_runtime_host.cpp"),

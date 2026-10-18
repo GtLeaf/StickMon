@@ -66,7 +66,7 @@ class AmoledExploreScreenTests(unittest.TestCase):
         self.assertIn("exploreRouteWorldCache", home)
         self.assertIn("GameAssets::drawExploreTileTo(", home)
         self.assertIn("bool drawExploreTileTo(Canvas565& canvas", assets)
-        self.assertIn("loopElapsedMs < targetLoopMs", main)
+        self.assertIn("targetLoopMs - std::min(targetLoopMs, loopElapsedMs)", main)
         self.assertNotIn(
             "vTaskDelay(pdMS_TO_TICKS(lockPhase == LockPhase::OPEN ? 20 : 16))",
             main,

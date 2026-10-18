@@ -6,6 +6,9 @@ external/
 __pycache__/
 *.pyc
 
+# Web simulator build output
+build/
+
 # ESP-IDF firmware outputs
 firmware/**/build*/
 firmware/**/managed_components/

@@ -33,14 +33,14 @@ struct FoodConsumeResult {
     bool lastBite = false;
     bool becameFull = false;
     FoodReaction reaction = FoodReaction::NORMAL;
-    uint8_t careExp = 0;
-    bool weakCareExp = false;
+    uint32_t careExp = 0;
 };
 
 struct PetResult {
     PetOutcome outcome = PetOutcome::DAILY_LIMIT;
     uint8_t moodGain = 0;
     uint8_t affectionGain = 0;
+    uint32_t careExp = 0;
 };
 
 namespace Game {

@@ -205,7 +205,8 @@ const char* abilityName(AbilityId ability) {
 }
 
 const Species* levelUpEvolutionTarget(const Species& species,
-                                      const Game::MonsterRuntime& monster) {
+                                      const Game::MonsterRuntime& monster,
+                                      uint32_t gameMinutesTotal) {
     if (species.evolveTo == 0 || species.evolveTo == species.id) return nullptr;
 
     bool ready = false;
@@ -216,6 +217,16 @@ const Species* levelUpEvolutionTarget(const Species& species,
     case EvolutionMethod::FRIENDSHIP:
         ready = monster.affection >= FRIENDSHIP_EVOLUTION_THRESHOLD;
         break;
+    case EvolutionMethod::BRANCH: {
+        // Eevee's daytime friendship branch shares the room's 06:00-18:00 day.
+        const uint16_t minuteOfDay = gameMinutesTotal % (24U * 60U);
+        if (species.id == 133 &&
+            monster.affection >= FRIENDSHIP_EVOLUTION_THRESHOLD &&
+            minuteOfDay >= 6U * 60U && minuteOfDay < 18U * 60U) {
+            return findSpecies(196);
+        }
+        break;
+    }
     default:
         break;
     }

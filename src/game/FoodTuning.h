@@ -14,17 +14,16 @@ namespace FoodTuning {
 struct FoodProfile {
     uint8_t satietyGain;
     uint8_t moodGain;
-    uint8_t careExp;
 };
 
 static constexpr FoodProfile PROFILES[Game::ROOM_FOOD_COUNT] = {
-    {25, 3, 1}, // 0 饼干（3 口/份，见 roomFoodBitesPerServing）
-    {22, 5, 6}, // 1 能量方块
-    {20, 8, 6}, // 2 桃桃果
-    {24, 4, 6}, // 3 樱子果
-    {22, 6, 6}, // 4 利木果
-    {26, 3, 7}, // 5 莓莓果
-    {23, 5, 6}, // 6 零余果
+    {25, 3}, // 0 饼干（3 口/份，见 roomFoodBitesPerServing）
+    {22, 5}, // 1 能量方块
+    {20, 8}, // 2 桃桃果
+    {24, 4}, // 3 樱子果
+    {22, 6}, // 4 利木果
+    {26, 3}, // 5 莓莓果
+    {23, 5}, // 6 零余果
 };
 
 // 口味偏好对心情的修正（百分比，100 = 不变）。仅作用于 2~6 号口味树果。

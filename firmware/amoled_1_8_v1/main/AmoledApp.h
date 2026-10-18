@@ -8,7 +8,13 @@
 #define STICKMON_HAS_CLAW 0
 #endif
 
-#include "TouchInput.h"
+#include "TouchEvent.h"
+#include "app/SettingsController.h"
+#include "app/HatchController.h"
+#include "app/TeamController.h"
+#include "app/InventoryController.h"
+#include "app/ShowerController.h"
+#include "SleepBreathClock.h"
 #include "AmoledGeometry.h"
 #include "HomeScreen.h"
 #include "ui/RenderCaches.h"
@@ -21,13 +27,13 @@
 #include "core/MainSceneViewState.h"
 #include "core/RoomResource.h"
 #include "core/SaveManager.h"
-#include "game/HatchInteraction.h"
 #include "core/VisitSessionService.h"
 #include "game/CareTicker.h"
 #include "game/BathService.h"
 #include "game/BattleSystem.h"
 #include "game/BattleTurnController.h"
 #include "game/EncounterHistory.h"
+#include "game/ExploreGrass.h"
 #include "game/ExploreItemEffects.h"
 #include "game/ExploreBoss.h"
 #include "game/ExploreBossPity.h"
@@ -52,10 +58,14 @@ class AmoledApp {
 public:
     void begin(uint32_t nowMs);
     void handleTouch(const TouchEvent& event);
+    void cancelTouch();
     void update(uint32_t nowMs);
     void render(Canvas565& canvas) const;
 
     bool startupStateLoaded() const { return startupStateLoaded_; }
+    // Flush through the same validated save path used by the device lifecycle.
+    bool flushSave() { return saveState(); }
+    bool saveWriteBlocked() const { return saveWritesBlocked; }
     bool needsRender() const { return dirtyRowsValid; }
     uint16_t renderRowBegin() const { return dirtyRowBegin; }
     uint16_t renderRowEnd() const { return dirtyRowEnd; }
@@ -69,6 +79,12 @@ public:
     bool sceneFadeInward() const { return expeditionFade.inward(); }
     uint8_t sceneFadeAlpha() const { return expeditionFade.alpha(); }
     bool displayLockAllowed() const;
+    bool lockedHomePowerAllowed() const;
+    void setDisplayLocked(bool locked) { displayLocked = locked; }
+    void forceRenderRegion(int left, int top, int right, int bottom) {
+        dirtyRowsValid = false;
+        requestRenderRect(left, top, right, bottom);
+    }
     void forceFullRender() { requestFullRender(); }
     void forceRenderRows(uint16_t begin, uint16_t end) {
         begin = std::min<uint16_t>(begin, AmoledUi::HEIGHT);
@@ -86,17 +102,20 @@ public:
     bool lockFocusPoint(int16_t& x, int16_t& y) const;
     bool lockTapHitsPet(int16_t x, int16_t y) const;
     bool petIsSleeping() const;
+    uint8_t petSleepFrame() const { return petFrame; }
+    float petSleepExpansion(uint32_t nowMs) const { return sleepBreath.expansion(nowMs); }
 #if STICKMON_ENABLE_DEBUG_FEATURES
     void renderDebugTouchOverlay(Canvas565& canvas) const;
     bool debugStartExplore(uint8_t area);
     void debugReportSaveState();
     void debugReportHomeState() const;
+    bool debugBattleScenario(uint8_t scenario, uint32_t nowMs);
     bool debugStartShowerDrag(uint8_t tool, uint32_t nowMs);
     bool showerDraggingForDiagnostics() const {
-        return sceneFlow.current() == AppSceneFlow::Scene::SHOWER && showerToolDragging;
+        return sceneFlow.current() == AppSceneFlow::Scene::SHOWER && showerController_.state().showerToolDragging;
     }
     uint8_t showerToolForDiagnostics() const {
-        return showerMode == ShowerMode::BRUSHING ? 1 : 0;
+        return showerController_.state().showerMode == ShowerMode::BRUSHING ? 1 : 0;
     }
     bool debugTriggerContact(uint8_t kind);
     bool debugPromptContact(uint8_t kind);
@@ -124,9 +143,15 @@ public:
 #endif
 
 private:
+    void updateBattery(uint32_t nowMs);
     void fillHomePetModel(HomeViewModel& model) const;
     friend struct AmoledAppTestAccess;
+    friend struct AmoledPageTestAccess;
+    friend struct AmoledBatteryTestAccess;
+    friend struct AmoledEcologyTestAccess;
     friend struct AmoledShowerTestAccess;
+    friend struct AmoledCareTestAccess;
+    friend struct AmoledPowerTestAccess;
     enum class MusicContext : uint8_t {
         HOME = 0,
         EXPLORE,
@@ -188,12 +213,7 @@ private:
         EXITING,
     };
 
-    enum class PendingItemAction : uint8_t {
-        NONE = 0,
-        BUY,
-        SELL,
-        USE,
-    };
+    using PendingItemAction = InventoryController::PendingItemAction;
 
     enum class ExpeditionDeparturePhase : uint8_t {
         NONE = 0,
@@ -234,11 +254,11 @@ private:
     void persistDebugMotionFlags();
     void handleDebugTouchTest(const TouchEvent& event);
 #endif
+    float itemMaxScroll() const;
     void clampItemScroll();
     uint8_t shopDailyItemCount() const;
     uint8_t shopExploreItemCount() const;
     uint8_t currentItemCount() const;
-    Game::ItemId currentItemAt(uint8_t index) const;
     void openItemScene(AppSceneFlow::Scene target);
     void closeItemScene();
     void performPendingItemAction(uint32_t nowMs);
@@ -261,13 +281,12 @@ private:
     void clampComputerScroll();
     void clampClawLogScroll();
     void clampTeamMovesScroll();
-    void startTeamMovesDetailAnimation(bool visible, uint32_t nowMs);
 #if STICKMON_HAS_CLAW
     // Copies the shared ClawStatusLog into the render snapshot buffer and
     // reclamps the scroll offset. Called from update/tap paths only.
     void refreshClawLogSnapshot();
 #endif
-    void setSettingsSliderValue(uint8_t item, int x, uint32_t nowMs);
+    void applySettingsChange(SettingsController::Change change);
     bool resetGame();
     void updateHatch(uint32_t nowMs);
     void syncHatchImu(uint32_t nowMs);
@@ -282,24 +301,18 @@ private:
     void startShowerSoap(uint8_t soapIndex, uint32_t nowMs);
     void startShowerTool(ShowerMode mode, uint32_t nowMs);
     void updateShowerToolDrag(int x, int y, uint32_t nowMs);
-    void spawnShowerFoam(uint32_t nowMs);
     void rubShowerFoamAt(int x, int y, uint32_t nowMs);
     bool tryMergeShowerFoam(ShowerFoamState& source, uint32_t nowMs);
-    ShowerFoamState* findShowerFoamPartner(const ShowerFoamState& source);
-    void rinseShowerFoamOneStage();
     bool anyShowerFoam() const;
-    uint8_t showerFoamLevelTotal() const;
     void checkShowerAtmosphereThreshold(uint32_t nowMs);
-    bool updateShowerFoamMotion(float dtSeconds);
     Game::BathInteraction::Layout showerBathLayout() const;
     void updateShower(uint32_t nowMs);
-    void startShowerHop(float height, uint32_t nowMs);
-    void addShowerFloat(uint8_t experience, uint8_t heartCount, uint32_t nowMs);
-    void spawnShowerWater(float x, float y, float vx, float vy);
+    uint32_t applyHomeCareExperience(uint8_t slot, uint32_t amount);
+    bool startPendingCareProgression(uint32_t nowMs);
     void flushShowerSave(uint32_t nowMs);
+    void applyShowerEffects(uint32_t nowMs);
     void grantShowerStage(Game::BathService::Stage stage, uint32_t nowMs);
     void startShowerRinse(uint32_t nowMs);
-    void requestShowerExit();
     void resetShowerSession(uint32_t nowMs);
     void openProgressionScene(AppSceneFlow::Scene returnScene,
                               uint8_t teamSlot, uint8_t oldLevel,
@@ -316,9 +329,9 @@ private:
                                  uint16_t& cursor, Game::MoveId& moveId) const;
     void completeProgression(uint32_t nowMs);
     void openTeamScene(bool preserveSubSceneReturn = false);
+    void finishTeamItemUse(uint32_t nowMs);
+    uint16_t teamItemHpForRender(uint32_t nowMs) const;
     void openTeamMoves(uint8_t teamSlot, uint32_t nowMs);
-    void beginTeamStatusSlide(uint8_t targetPage, uint32_t nowMs);
-    void refreshTeamMoveRecallable();
     void switchTeamLeader(uint32_t nowMs);
     void leaveTeamMember(uint8_t teamSlot, uint32_t nowMs);
     bool queueExploreDeparture(uint8_t area, bool autoWalk);
@@ -331,6 +344,7 @@ private:
     void beginExploreRouteExit(uint32_t nowMs);
     bool advanceExploreRouteWalkFrames(uint32_t nowMs);
     void updateExploreRoute(uint32_t nowMs);
+    void updateExploreEcology(uint32_t nowMs);
     bool recoverExploreTeamForCompletedSteps();
     void requestExploreRouteDynamicRender();
     void requestExploreRouteBossRender();
@@ -351,11 +365,16 @@ private:
     void updateBattleSwitch(uint32_t nowMs);
     void enqueueBattleEffectLogs(const BattleSystem::EffectResolution& effects,
                                  bool attackerWild, uint32_t nowMs);
+    void enqueueBattleDamageLogs(const BattleSystem::DamageResult& damage,
+                                 uint16_t dealt, uint32_t nowMs);
     void performBattleWildTurn(uint32_t nowMs);
     void performBattleWildAction(
         const BattleTurnController::Action& action, uint32_t nowMs);
+    void performBattleAction(
+        const BattleTurnController::Action& action, uint32_t nowMs);
     void performBattlePlannedAction(uint32_t nowMs);
     void advanceBattleTurn(uint32_t nowMs);
+    void finishBattleEndTurn(uint32_t nowMs);
     int8_t availableBattleSwitchSlot() const;
     bool resolveBattleFaint(uint32_t nowMs);
     void startBattleHpAnimation(bool wildSide, uint16_t fromHp,
@@ -399,6 +418,8 @@ private:
     void leaveExploreRoute();
     void updateClockAndCare(uint32_t nowMs);
     void updateMoodHearts(uint32_t nowMs);
+    void startSleepAnimation(uint32_t nowMs, uint16_t frameMs);
+    void updateSleepAnimation(uint32_t nowMs);
     void updatePet(uint32_t nowMs);
     void beginVisitDeparture(uint32_t nowMs);
     bool updateVisitDeparture(uint32_t nowMs);
@@ -439,7 +460,8 @@ private:
     bool claimBowl(uint8_t teamSlot, uint32_t nowMs);
     bool homeActorNearFood(uint8_t actorId) const;
     bool homeActorBlocksFoodApproach(uint8_t actorId) const;
-    bool companionFoodAvoidsMain() const;
+    bool tryYieldHomeBlocker(uint8_t waitingActorId, float goalX, float goalY,
+                             uint32_t nowMs);
     bool startMainFoodSeek(uint32_t nowMs);
     bool startCompanionFoodSeek(uint32_t nowMs);
     bool startCompanionFoodExit(uint32_t nowMs);
@@ -479,6 +501,8 @@ private:
     bool beginPetMove(PetMotion motion, float x, float y,
                       uint32_t nowMs);
     void finishPetMove(uint32_t nowMs);
+    PetMotion petMotion() const;
+    bool petIsResting() const;
     void schedulePetDecision(uint32_t nowMs);
     void updatePetFootprint();
     bool petFootprintInsideWalkArea(float x, float y) const;
@@ -513,14 +537,16 @@ private:
     mutable uint32_t lastExploreMapSeed = 0;
     bool externalSceneFade = false;
     bool lockRequested = false;
+    bool displayLocked = false;
+    int8_t batteryPercent = -1;
+    bool batterySampled = false;
+    uint32_t lastBatterySampleMs = 0;
 
     bool pointerDown = false;
     bool dragging = false;
     int16_t touchStartX = 0;
     int16_t touchStartY = 0;
     int16_t touchLastY = 0;
-    bool teamActionPopupOpen = false;
-    uint8_t teamActionPopupSlot = 0;
 
     float menuScroll = 0.0f;
     float menuVelocity = 0.0f;
@@ -535,6 +561,7 @@ private:
     uint8_t debugFocus = 0;
     uint8_t debugDigits[4] = {};
     bool debugBattleActive = false;
+    bool debugBattleScenarioActive = false;
     bool debugBattleRequested = false;
     bool debugTiltControl = false;
     uint32_t nextHomeStateDiagnosticMs = 0;
@@ -590,56 +617,10 @@ private:
     uint32_t explorePreviewLastRenderRequestMs = 0;
     uint8_t exploreMenuCursor = 0;
     int pressedExploreMenuItem = -1;
-    float itemScroll = 0.0f;
-    float itemVelocity = 0.0f;
-    int pressedItemRow = -1;
-    int pressedShopCategory = -1;
-    int pressedShopDetailAction = -1;
-    int pressedTeamSlot = -1;
-    bool teamStatusOpen = false;
-    bool teamStatusFromContact = false;
-    uint8_t teamStatusContactSlot = 0xFF;
-    uint8_t teamStatusSlot = 0;
-    uint8_t teamStatusPage = 0;
-    // Horizontal page swipe: drag offset in pixels, then a snap animation
-    // from teamStatusAnimFromX to teamStatusAnimToX on release.
-    bool teamStatusDragging = false;
-    int16_t teamStatusSlideX = 0;
-    bool teamStatusAnimating = false;
-    uint32_t teamStatusAnimStartMs = 0;
-    int16_t teamStatusAnimFromX = 0;
-    int16_t teamStatusAnimToX = 0;
-    uint8_t teamStatusAnimTargetPage = 0;
-    bool teamMovesOpen = false;
-    uint8_t teamMovesSlot = 0;
-    TeamMovesViewModel::Mode teamMovesMode = TeamMovesViewModel::Mode::MANAGE;
-    int16_t teamMovesScroll = 0;
-    bool teamMovesDragging = false;
-    uint8_t teamMovesSelectedItem = 0xFF;
-    Game::MoveId teamMovesRecallIds[
-        Game::MoveManagementService::MAX_RECALLABLE_MOVE_COUNT] = {};
-    uint8_t teamMovesRecallCount = 0;
-    uint8_t teamMovesRecallSelected = 0xFF;
-    float teamMovesDetailProgress = 0.0f;
-    bool teamMovesDetailAnimating = false;
-    bool teamMovesDetailTargetVisible = false;
-    uint32_t teamMovesDetailAnimStartMs = 0;
     int pressedRoomItem = -1;
     int pressedCommunicationItem = -1;
-    int pressedShowerItem = -1;
-    bool teamConfirmOpen = false;
-    uint8_t pendingTeamSlot = 0;
-    Game::ShopService::Category shopCategory =
-        Game::ShopService::Category::DAILY;
-    float shopDetailProgress = 0.0f;
-    int shopDetailItemIndex = -1;
-    bool itemConfirmOpen = false;
-    bool battleBagMode = false;
     uint8_t battleFoodBond = 0;
     MusicContext musicContext = MusicContext::HOME;
-    Game::ItemId pendingItem = Game::ItemId::COUNT;
-    PendingItemAction pendingItemAction = PendingItemAction::NONE;
-    bool selectingItemTarget = false;
     uint8_t selectedExploreArea = 0;
     ComputerViewModel::Page computerPage = ComputerViewModel::Page::MENU;
     // Social can be opened from the computer menu or from the background
@@ -664,34 +645,13 @@ private:
     bool clawLogPinned = true;
     uint32_t clawLogGen = 0;
     size_t clawLogCount = 0;
-    uint8_t settingsPressedItem = 0xFF;
-    bool settingsResetConfirm = false;
+    SettingsController settingsController;
+    TeamController teamController_;
+    InventoryController inventoryController_;
     bool gameResetPending = false;
     bool saveWritesBlocked = false;
-    float hatchElapsedSeconds = 0.0f;
-    uint16_t hatchPokeCount = 0;
-    uint16_t hatchWipeCount = 0;
-    uint16_t hatchLastSavedSecond = 0;
-    uint16_t hatchLastRemainingSecond = 180;
-    uint8_t hatchLastProgress = 0;
-    int8_t hatchLastShakeOffset = 0;
-    int8_t hatchPressedItem = -1;
-    uint32_t hatchLastUpdateMs = 0;
-    uint32_t hatchCompletionRetryMs = 0;
-    bool hatchImuRequested = false;
-    bool hatchImuEnabled = false;
-    bool hatchImuStateKnown = false;
-    uint32_t hatchImuRetryMs = 0;
-    uint32_t hatchLastImuPollMs = 0;
-    Game::HatchShakeDetector hatchShakeDetector;
-    uint32_t hatchHeartStartedMs = 0;
-    uint32_t hatchShakeStartedMs = 0;
-    bool hatchHeartVisible = false;
-    bool hatchShaking = false;
-    mutable AmoledUi::Rect hatchEggHitBounds{130, 136, 108, 128};
+    HatchController hatchController_;
     std::unique_ptr<Game::GameState> hatchResult;
-    bool settingsSliderDragging = false;
-    bool settingsSliderChanged = false;
     AppSceneFlow::Scene progressionReturnScene = AppSceneFlow::Scene::HOME;
     ProgressionViewModel::Mode progressionMode =
         ProgressionViewModel::Mode::LEVEL_UP;
@@ -709,7 +669,6 @@ private:
     uint32_t progressionEvolutionTouchResumeUntilMs = 0;
     bool progressionEvolutionTouchHeld = false;
     bool progressionEvolutionTouchConsumed = false;
-    AppSceneFlow::Scene itemTargetReturnScene = AppSceneFlow::Scene::HOME;
     Game::MoveId progressionMoveId = 0;
     Game::MoveId progressionOldMove2 = 0;
     Game::MoveId progressionOldMove3 = 0;
@@ -722,41 +681,8 @@ private:
     bool progressionDetailTargetVisible = false;
     uint32_t progressionDetailAnimStartMs = 0;
 
-    ShowerMode showerMode = ShowerMode::MENU;
-    uint8_t showerSoapIndex = 0;
-    uint8_t showerRinseProgress = 0;
-    uint8_t showerCompletionHearts = 0;
-    int16_t showerToolX = 184;
-    int16_t showerToolY = 212;
-    int16_t showerLastStrokeX = 184;
-    int16_t showerLastStrokeY = 212;
-    float showerStrokeCarry = 0.0f;
-    bool showerToolDragging = false;
-    bool showerSoapConsumed = false;
-    bool showerSoapRewarded = false;
-    bool showerBrushRewarded = false;
-    bool showerRinseRewarded = false;
-    bool showerExitConfirmYes = false;
-    uint32_t showerModeStartedMs = 0;
-    uint32_t showerLastFrameMs = 0;
-    uint32_t showerLastRubMs = 0;
-    uint32_t showerLastRinseFoamMs = 0;
-    float showerAtmosphereAlpha = 0.0f;
-    Game::BathInteraction::State showerBath;
-    int16_t showerGroundY = 324;
-    uint32_t showerLastUpdateMs = 0;
-    uint32_t showerLastSoapMs = 0;
-    uint32_t showerHopStartedMs = 0;
-    float showerHopHeight = 0;
-    uint32_t showerWiggleStartedMs = 0;
-    uint32_t showerTurnUntilMs = 0;
-    bool showerTurnFlip = false;
-    uint32_t showerLastReactionMs = 0;
-    uint32_t showerLastRinseShakeMs = 0;
-    uint32_t showerNextVisualMs = 0;
-    float showerWaterCarry = 0;
-    ShowerWaterState showerWater[64] = {};
-    ShowerFloatState showerFloats[4] = {};
+    ShowerController showerController_;
+    bool progressionFromCare = false;
     bool showerSavePending = false;
     uint32_t showerSaveAfterMs = 0;
 #if STICKMON_ENABLE_DEBUG_FEATURES
@@ -766,6 +692,9 @@ private:
 
     ExploreMapGenerator::Map exploreRouteMap;
     ExplorePool::Pool exploreRoutePool{};
+    ExploreEcology::Simulation exploreEcology;
+    ExploreGrass::Simulation exploreGrass;
+    ExploreDaylight::Tone exploreRouteDaylight{};
     uint8_t exploreRouteMapBlock = 0;
     uint8_t exploreRouteMapBlockCount = 1;
     uint8_t exploreRouteMapEncounterCount = 0;
@@ -842,10 +771,12 @@ private:
     BattleTurnController::TurnPlan battleTurnPlan;
     uint8_t battleTurnActionIndex = 0;
     bool battleTurnDamaged[2] = {};
+    bool battleForceWildEndPending = false;
     enum class BattleContinuation : uint8_t {
         NONE,
         ADVANCE_TURN,
         WILD_TURN,
+        FINISH_END_TURN,
     };
     BattleContinuation battleContinuation = BattleContinuation::NONE;
     enum class BattleSwitchStage : uint8_t { NONE, RETREATING, ENTERING };
@@ -872,6 +803,9 @@ private:
     uint8_t battleProgressionIndex = 0;
     bool battleProgressionSequenceActive = false;
     bool battleVictoryFinalizePending = false;
+    Game::ItemId battleThrownItem = Game::ItemId::COUNT;
+    uint32_t battleItemThrowStartedMs = 0;
+    uint8_t battleItemThrowFrame = 0;
     bool battleAnimationActive = false;
     bool battleAnimationAttackerWild = false;
     bool battleAnimationHit = false;
@@ -918,8 +852,6 @@ private:
     Game::EncounterHistory encounterHistory;
     MainSceneViewState mainViewState;
     Game::CareTickAccumulators careAcc = {};
-    MonsterMind monsterMind;
-    MonsterBehaviorProfile behaviorProfile;
     Home::Actor homeMainActor;
     Home::Actor homeCompanionActor;
     Home::Simulation homeRuntime;
@@ -943,28 +875,16 @@ private:
     float visitDoorOutsideY = 0.0f;
     bool visitRadioExclusive = false;
 
-    PetMotion petMotion = PetMotion::IDLE;
-    float petX = 92.0f;
-    float petY = 151.0f;
-    float petTargetX = 92.0f;
-    float petTargetY = 151.0f;
-    float petFootprintRadiusX = 9.0f;
-    float petFootprintRadiusY = 4.0f;
     float cameraX = 0.0f;
     float cameraY = 0.0f;
     uint32_t lastPetUpdateMs = 0;
-    uint32_t nextMindUpdateMs = 0;
-    uint32_t nextPetDecisionMs = 0;
+    SleepBreathClock sleepBreath;
     uint32_t nextPetFrameMs = 0;
     uint32_t nextFeedBiteMs = 0;
-    uint32_t feedingUntilMs = 0;
     uint8_t petFrame = 0;
     PokemonSprites::WalkDirection petDirection =
         PokemonSprites::WalkDirection::DOWN;
-    PetMotion petStopMotion = PetMotion::IDLE;
-    bool petResting = false;
-    bool petScheduledSleeping = false;
-    bool petStoppingToEat = false;
+    bool petStopping = false;
     bool petLongMove = true;
     RoomAction roomAction = RoomAction::NONE;
     uint8_t roomActionPhase = 0;
@@ -999,7 +919,6 @@ private:
     float expeditionCompanionDoorOutsideX = 0.0f;
     float expeditionCompanionDoorOutsideY = 0.0f;
     uint32_t expeditionDoorPhaseStartedMs = 0;
-    uint32_t petTurnUntilMs = 0;
     uint32_t nextPetDebugLogMs = 0;
     uint32_t lastCompanionUpdateMs = 0;
     uint32_t nextCompanionFrameMs = 0;

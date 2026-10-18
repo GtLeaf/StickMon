@@ -6,6 +6,7 @@
 #include "esp_codec_dev.h"
 #include "core/PcmMixer.h"
 #include "Qmi8658.h"
+#include "Axp2101Battery.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
@@ -110,6 +111,7 @@ private:
 
     Platform::Services services_;
     Stickmon::Qmi8658 imu_;
+    Stickmon::Axp2101Battery battery_;
     bool otaWriteProtection_ = false;
     bool resourcesMounted_ = false;
     bool initialized_ = false;

@@ -32,6 +32,7 @@ from generate_game_assets import (
     SHOWER_MENU_SPRINKLER_SIZE,
     SHOWER_SOAP_COUNT,
     TALL_GRASS_PARK_TILES,
+    CREEK_TILES,
     Writer,
     expand_stale_pack_selection,
     expected_pack_kind_names,
@@ -136,7 +137,7 @@ class GenerateGameAssetsTests(unittest.TestCase):
     def test_expanded_map_pack_fits_the_synchronized_frame_limit(self):
         writer = Writer()
         kinds = expected_pack_kind_names()["map"]
-        self.assertEqual(len(kinds), 258)
+        self.assertEqual(len(kinds), 260)
         for kind in kinds:
             writer.add(kind, Image.new("RGBA", (26, 26), (40, 120, 80, 255)))
         with TemporaryDirectory() as temp_dir:
@@ -144,8 +145,22 @@ class GenerateGameAssetsTests(unittest.TestCase):
             stats = write_pack("map", writer, pack_path)
             self.assertEqual(read_pack_kind_ids(pack_path),
                              [KIND_IDS[kind] for kind in kinds])
-        self.assertEqual(stats["frames"], 258)
+        self.assertEqual(stats["frames"], 260)
         self.assertLessEqual(stats["frames"], MAX_PACK_FRAMES)
+
+    def test_creek_caps_use_unmodified_outside_tiles(self):
+        from asset_paths import essentials_dir
+        sheet = Image.open(essentials_dir() / "Graphics/Tilesets/Outside.png").convert("RGBA")
+        self.assertEqual(CREEK_TILES,
+                         [("EXPLORE_TILE_1184", 1184), ("EXPLORE_TILE_1186", 1186)])
+        for kind, tile_id in CREEK_TILES:
+            index = tile_id - 384
+            x, y = index % 8 * 32, index // 8 * 32
+            original = sheet.crop((x, y, x + 32, y + 32)).resize(
+                (26, 26), Image.Resampling.NEAREST)
+            self.assertEqual(prepare_explore_tile(tile_id, sheet, ()).tobytes(), original.tobytes())
+            self.assertEqual(KIND_IDS[kind], len(KIND_ORDER) - 2 + CREEK_TILES.index((kind, tile_id)))
+            self.assertIn(0, original.getchannel("A").tobytes())
 
     def test_new_grass_and_tree_tiles_preserve_transparent_coverage(self):
         sheet = Image.new("RGBA", (256, 32 * 58), (0, 0, 0, 0))

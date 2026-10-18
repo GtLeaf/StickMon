@@ -71,6 +71,10 @@ public:
     static ActorIntent survivalIntent(const ActorObservation& actor,
                                       bool bowlHasFood);
     static IdleGoal idleGoal(MonsterDesire desire, ActorIntent survival);
+    static float routeSpeed(Task task,
+                            const MonsterBehaviorProfile& behavior,
+                            const Game::MonsterRuntime& monster,
+                            float minimum = 0.0f);
     static bool ambientEligible(const Game::MonsterRuntime& monster,
                                 MonsterDesire desire, bool sleepTime,
                                 bool bowlHasFood);

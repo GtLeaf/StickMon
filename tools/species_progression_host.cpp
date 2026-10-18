@@ -258,17 +258,17 @@ int main() {
     mon = {};
     mon.speciesId = bulbasaur->id;
     mon.level = 15;
-    if (levelUpEvolutionTarget(*bulbasaur, mon) != nullptr) return 41;
+    if (levelUpEvolutionTarget(*bulbasaur, mon, 7U * 60U) != nullptr) return 41;
     mon.level = 16;
-    const Species* ivysaur = levelUpEvolutionTarget(*bulbasaur, mon);
+    const Species* ivysaur = levelUpEvolutionTarget(*bulbasaur, mon, 7U * 60U);
     if (!ivysaur || ivysaur->id != 2) return 42;
     mon.speciesId = ivysaur->id;
     mon.level = 31;
-    if (levelUpEvolutionTarget(*ivysaur, mon) != nullptr) return 43;
+    if (levelUpEvolutionTarget(*ivysaur, mon, 7U * 60U) != nullptr) return 43;
     mon.level = 32;
-    const Species* venusaur = levelUpEvolutionTarget(*ivysaur, mon);
+    const Species* venusaur = levelUpEvolutionTarget(*ivysaur, mon, 7U * 60U);
     if (!venusaur || venusaur->id != 3 ||
-        levelUpEvolutionTarget(*venusaur, mon) != nullptr) {
+        levelUpEvolutionTarget(*venusaur, mon, 7U * 60U) != nullptr) {
         return 44;
     }
 
@@ -281,17 +281,46 @@ int main() {
     mon.speciesId = azurill->id;
     mon.level = 10;
     mon.affection = FRIENDSHIP_EVOLUTION_THRESHOLD - 1;
-    if (levelUpEvolutionTarget(*azurill, mon) != nullptr) return 46;
+    if (levelUpEvolutionTarget(*azurill, mon, 0) != nullptr) return 46;
     mon.affection = FRIENDSHIP_EVOLUTION_THRESHOLD;
-    const Species* marill = levelUpEvolutionTarget(*azurill, mon);
+    const Species* marill = levelUpEvolutionTarget(*azurill, mon, 0);
     if (!marill || marill->id != 183) return 47;
     mon.level = Game::LEVEL_MAX;
     mon.affection = 255;
-    if (levelUpEvolutionTarget(*pikachu, mon) != nullptr ||
-        levelUpEvolutionTarget(*graveler, mon) != nullptr ||
-        levelUpEvolutionTarget(*eevee, mon) != nullptr) {
+    if (levelUpEvolutionTarget(*pikachu, mon, 7U * 60U) != nullptr ||
+        levelUpEvolutionTarget(*graveler, mon, 7U * 60U) != nullptr ||
+        levelUpEvolutionTarget(*eevee, mon, 18U * 60U) != nullptr) {
         return 48;
     }
+
+    // Cover every minute on two game days, with friendship below, at and
+    // above the threshold. Only daytime Eevee can select Espeon.
+    mon.speciesId = eevee->id;
+    mon.level = 20;
+    for (uint16_t affection : {219, 220, 255}) {
+        mon.affection = static_cast<uint8_t>(affection);
+        for (uint32_t minute = 0; minute < 2U * 24U * 60U; ++minute) {
+            const uint16_t minuteOfDay = minute % (24U * 60U);
+            const bool expected = affection >= FRIENDSHIP_EVOLUTION_THRESHOLD &&
+                minuteOfDay >= 6U * 60U && minuteOfDay < 18U * 60U;
+            const Species* target = levelUpEvolutionTarget(*eevee, mon, minute);
+            if (expected ? (!target || target->id != 196) : target != nullptr) {
+                return 60;
+            }
+        }
+    }
+    // Friendship does not interfere with the existing item branches.
+    const std::array<Game::ItemId, 3> stones = {{
+        Game::ItemId::FIRE_STONE, Game::ItemId::WATER_STONE,
+        Game::ItemId::THUNDER_STONE,
+    }};
+    const std::array<uint16_t, 3> stoneTargets = {{136, 134, 135}};
+    for (size_t index = 0; index < stones.size(); ++index) {
+        const Species* target = stoneEvolutionTarget(*eevee, stones[index]);
+        if (!target || target->id != stoneTargets[index]) return 61;
+    }
+    const Species* espeon = findSpecies(196);
+    if (!espeon || levelUpEvolutionTarget(*espeon, mon, 7U * 60U)) return 62;
 
     bool testedInheritedMove = false;
     for (uint8_t speciesIndex = 0; speciesIndex < speciesCount(); ++speciesIndex) {

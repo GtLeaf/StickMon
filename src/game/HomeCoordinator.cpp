@@ -75,8 +75,13 @@ bool Coordinator::finishTurn(uint8_t actorId, uint32_t nowMs,
         actors_[actorId]->task != Task::TURNING) {
         return false;
     }
+    if (pairActive() && !force) return false;
     const Task resumeTask = actors_[actorId]->resumeTask;
-    return transitionInternal(actorId, resumeTask, nowMs, 0, force, true);
+    // Completing the actor's own turn is not a competing lower-priority
+    // intent. The TURNING guard above also rejects stale completions after a
+    // survival or door task interrupts it; ordinary transitions keep their
+    // priority checks unchanged.
+    return transitionInternal(actorId, resumeTask, nowMs, 0, true, true);
 }
 
 bool Coordinator::transitionInternal(uint8_t actorId, Task task,

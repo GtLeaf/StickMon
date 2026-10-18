@@ -7,12 +7,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from amoled_page_cases import run_page_case
 from amoled_source import read_home_source
 
 
 ROOT = Path(__file__).resolve().parents[1]
-HOME_SCREEN = ROOT / "firmware" / "amoled_1_8_v1" / "main" / "HomeScreen.cpp"
-AMOLED_APP = ROOT / "firmware" / "amoled_1_8_v1" / "main" / "AmoledApp.cpp"
 TEAM_SCREENS = (ROOT / "firmware" / "amoled_1_8_v1" / "main" /
                 "ui" / "TeamScreens.inc")
 SCREEN_MODELS = (ROOT / "firmware" / "amoled_1_8_v1" / "main" /
@@ -32,7 +31,7 @@ class AmoledTeamLayoutTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.source = read_home_source(ROOT)
-        cls.app_source = AMOLED_APP.read_text(encoding="utf-8")
+        cls.controller = (ROOT / "firmware/amoled_1_8_v1/main/app/TeamController.cpp").read_text()
         cls.team_source = TEAM_SCREENS.read_text(encoding="utf-8")
         cls.models_source = SCREEN_MODELS.read_text(encoding="utf-8")
         cls.strings_source = UI_STRINGS.read_text(encoding="utf-8")
@@ -42,68 +41,14 @@ class AmoledTeamLayoutTests(unittest.TestCase):
         cls.settings_source = SETTINGS_SCREENS.read_text(encoding="utf-8")
 
     def test_team_action_popup_uses_shared_hit_test(self):
-        start = self.app_source.index("if (teamActionPopupOpen)")
-        end = self.app_source.index("if (teamMovesOpen)", start)
-        handler = self.app_source[start:end]
-        self.assertIn("teamActionPopupItemAt(x, y, teamActionPopupSlot)", handler)
+        run_page_case("team-navigation")
 
     def test_item_target_tap_bypasses_regular_team_popup(self):
-        release_start = self.app_source.index(
-            "pressedTeamSlot >= 0 && !dragging && distance <= TAP_SLOP"
-        )
-        release = self.app_source[release_start - 180:release_start + 260]
-        self.assertIn("!selectingItemTarget", release)
-        self.assertIn("teamActionPopupOpen = true;", release)
-
-        team_start = self.app_source.index(
-            "if (sceneFlow.current() == AppSceneFlow::Scene::TEAM)"
-        )
-        team_end = self.app_source.index(
-            "if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE)",
-            team_start,
-        )
-        team = self.app_source[team_start:team_end]
-        target_start = team.index("if (selectingItemTarget)")
-        target = team[target_start:]
-        self.assertIn(
-            "Game::ItemInventory::useOnTeam(gameState, pendingItem, target)",
-            target,
-        )
+        run_page_case("bag-use")
 
     def test_item_target_team_preserves_bag_return_chain(self):
-        bag_start = self.app_source.index(
-            "if (sceneFlow.current() == AppSceneFlow::Scene::BAG)"
-        )
-        bag_end = self.app_source.index(
-            "if (sceneFlow.current() == AppSceneFlow::Scene::SHOP)", bag_start
-        )
-        bag = self.app_source[bag_start:bag_end]
-        self.assertIn("itemTargetReturnScene = sceneFlow.subSceneReturn();", bag)
-        self.assertIn("openTeamScene(true);", bag)
-
-        open_start = self.app_source.index("void AmoledApp::openTeamScene(")
-        open_end = self.app_source.index(
-            "void AmoledApp::refreshTeamMoveRecallable", open_start
-        )
-        open_team = self.app_source[open_start:open_end]
-        self.assertIn("if (preserveSubSceneReturn)", open_team)
-        self.assertIn("sceneFlow.enter(AppSceneFlow::Scene::TEAM);", open_team)
-        self.assertIn("sceneFlow.openSubScene(AppSceneFlow::Scene::TEAM);", open_team)
-
-        team_start = self.app_source.index(
-            "if (sceneFlow.current() == AppSceneFlow::Scene::TEAM)"
-        )
-        team_end = self.app_source.index(
-            "if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE)",
-            team_start,
-        )
-        team = self.app_source[team_start:team_end]
-        self.assertGreaterEqual(
-            team.count("sceneFlow.enter(AppSceneFlow::Scene::BAG);"), 2
-        )
-        self.assertNotIn(
-            "sceneFlow.openSubScene(AppSceneFlow::Scene::BAG);", team
-        )
+        run_page_case("bag-navigation")
+        run_page_case("bag-use")
 
     @unittest.skipUnless(shutil.which("c++"), "host C++ compiler is unavailable")
     def test_item_target_return_chain_for_route_and_explore_menu(self):
@@ -139,35 +84,11 @@ int main() {
             subprocess.run([str(binary)], capture_output=True, check=True)
 
     def test_front_action_sets_popup_target_before_switching(self):
-        start = self.app_source.index("if (teamActionPopupOpen)")
-        end = self.app_source.index("if (teamMovesOpen)", start)
-        handler = self.app_source[start:end]
-        action_start = handler.index("if (!leader && choice == 0) {")
-        action_end = handler.index("}", action_start)
-        action = handler[action_start:action_end]
-        self.assertLess(action.index("pendingTeamSlot = teamActionPopupSlot;"),
-                        action.index("switchTeamLeader(nowMs);"))
-
-        start = self.app_source.index("void AmoledApp::switchTeamLeader(")
-        end = self.app_source.index("void AmoledApp::leaveTeamMember(", start)
-        switch = self.app_source[start:end]
-        self.assertIn("Game::TeamRoster::moveToFront(gameState, pendingTeamSlot)",
-                      switch)
+        run_page_case("team-leader")
 
     def test_status_action_opens_selected_monster_status_page(self):
-        start = self.app_source.index("if (teamStatusOpen)")
-        end = self.app_source.index("if (teamMovesOpen)", start)
-        handler = self.app_source[start:end]
-        self.assertIn("teamStatusOpen = false", handler)
-        self.assertNotIn("teamStatusNextAt", handler)
-
-        popup = self.app_source[
-            self.app_source.index("if (teamActionPopupOpen)"):
-            self.app_source.index("if (teamMovesOpen)",
-                                  self.app_source.index("if (teamActionPopupOpen)"))
-        ]
-        self.assertIn("teamStatusOpen = true", popup)
-        self.assertIn("teamStatusSlot = teamActionPopupSlot", popup)
+        run_page_case("team-leader")
+        run_page_case("team-navigation")
 
     def test_status_page_has_stick_five_page_data_and_shared_v2_renderer(self):
         self.assertIn("constexpr uint8_t TEAM_STATUS_PAGE_COUNT = 5;", self.source)
@@ -192,13 +113,8 @@ int main() {
         self.assertIn("Ui::Status::FLAVOR_DISLIKE_EMPTY", overview)
 
     def test_status_pages_switch_by_swipe_with_snap_animation(self):
-        self.assertIn("teamStatusDragging = true;", self.app_source)
-        self.assertIn("beginTeamStatusSlide(static_cast<uint8_t>(target)", self.app_source)
-        self.assertIn("teamStatusPage = teamStatusAnimTargetPage;", self.app_source)
-        self.assertIn("model.slideOffsetX = teamStatusSlideX;", self.app_source)
-        self.assertNotIn("teamStatusNextAt", self.app_source)
-        self.assertIn("int16_t slideOffsetX = 0;",
-                      self.models_source)
+        run_page_case("team-navigation")
+        self.assertIn("int16_t slideOffsetX = 0;", self.models_source)
 
     def test_moves_uses_shared_page_header_with_title_only(self):
         start = self.team_source.index("bool teamMovesBackAt")
@@ -232,17 +148,7 @@ int main() {
         self.assertIn("? Game::MOVE_SLOT_COUNT", renderer)
         self.assertNotIn("Ui::Amoled::RECALL_MOVE", renderer)
 
-        start = self.app_source.index("if (teamMovesOpen)")
-        end = self.app_source.index("if (teamConfirmOpen)", start)
-        handler = self.app_source[start:end]
-        manage_start = handler.index(
-            "if (teamMovesMode == TeamMovesViewModel::Mode::MANAGE)")
-        manage_end = handler.index(
-            "else if (teamMovesMode == TeamMovesViewModel::Mode::RECALL_SELECT)",
-            manage_start)
-        manage_handler = handler[manage_start:manage_end]
-        self.assertNotIn("refreshTeamMoveRecallable", manage_handler)
-        self.assertNotIn("teamMovesOpen = false", manage_handler)
+        run_page_case("team-navigation")
 
     def test_moves_cells_are_taller_centered_and_use_black_page_background(self):
         start = self.team_source.index("int teamMovesItemAt(",
@@ -260,11 +166,10 @@ int main() {
         self.assertIn("(AmoledUi::HEIGHT),\n                    rgb(0, 0, 0));",
                       moves_page)
 
-        clamp_start = self.app_source.index("void AmoledApp::clampTeamMovesScroll")
-        clamp_end = self.app_source.index(
-            "void AmoledApp::startTeamMovesDetailAnimation", clamp_start)
-        self.assertIn("constexpr int ROW_STEP = 66;",
-                      self.app_source[clamp_start:clamp_end])
+        self.assertIn("constexpr int MOVES_ROW_STEP = 66;", self.controller)
+        clamp = self.controller.split("void TeamController::clampMovesScroll()", 1)[1].split(
+            "void TeamController::startDetailAnimation", 1)[0]
+        self.assertIn("* MOVES_ROW_STEP", clamp)
 
     def test_moves_cells_show_emerald_type_badge_and_four_proficiency_grades(self):
         start = self.team_source.index("const char* teamMovesProficiencyName")

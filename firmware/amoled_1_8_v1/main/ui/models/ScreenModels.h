@@ -13,6 +13,9 @@
 #include "game/BattleSystem.h"
 #include "game/ExplorePool.h"
 #include "game/ExploreMapGenerator.h"
+#include "game/ExploreEcology.h"
+#include "game/ExploreGrass.h"
+#include "game/ExploreDaylight.h"
 #include "game/EvolutionSequence.h"
 #include "game/GameState.h"
 #include "game/ShopService.h"
@@ -32,6 +35,7 @@ struct HomeViewModel {
     MonsterHud monsters[Game::TEAM_CAP];
     uint8_t monsterCount = 1;
     uint16_t gameMinutesOfDay = 8 * 60 + 30;
+    int8_t batteryPercent = -1;
     int16_t cameraX = 0;
     int16_t cameraY = 0;
     int16_t petCenterX = 184;
@@ -160,6 +164,10 @@ struct ExploreViewModel {
 };
 
 struct ExploreRouteViewModel {
+    ExploreDaylight::Tone daylight{};
+    const ExploreGrass::Simulation* grass = nullptr;
+    ExploreEcology::Pose wildlife[ExploreEcology::CAPACITY]{};
+    uint8_t wildlifeCount = 0;
     uint16_t renderColumnBegin = 0;
     uint16_t renderColumnEnd = AmoledUi::WIDTH;
     const ExploreMapGenerator::Map* map = nullptr;
@@ -210,6 +218,8 @@ using CommunicationViewModel = Communication::VisitSessionService::ViewModel;
 
 struct TeamViewModel {
     const Game::GameState* state = nullptr;
+    uint8_t hpOverrideSlot = 0xFF;
+    uint16_t hpOverride = 0;
     int pressedSlot = -1;
     bool confirmOpen = false;
     bool actionPopupOpen = false;
@@ -371,6 +381,8 @@ struct BattleViewModel {
     uint8_t teamCount = 0;
     uint8_t battleBagCount = 0;
     Game::ItemId battleBagItems[8] = {};
+    Game::ItemId thrownItem = Game::ItemId::COUNT;
+    float itemThrowProgress = 0.0f;
     bool animationActive = false;
     bool animationAttackerWild = false;
     bool animationHit = false;
@@ -412,7 +424,7 @@ struct ShowerWaterState {
 
 struct ShowerFloatState {
     uint32_t bornMs = 0;
-    uint8_t experience = 0;
+    uint32_t experience = 0;
     bool active = false;
     uint8_t heartCount = 0;
 };

@@ -211,6 +211,31 @@ void Canvas565::fillAssetRect(int x, int y, int w, int h, uint16_t color) {
     fillRect(x * scale, y * scale, w * scale, h * scale, color);
 }
 
+void Canvas565::multiplyRectRgb(int x, int y, int w, int h,
+                                 uint16_t red, uint16_t green, uint16_t blue) {
+    if (!pixels_ || w <= 0 || h <= 0 || (red == 256 && green == 256 && blue == 256)) return;
+    const int scale = renderScale();
+    const int left = std::max(x, clipLeft_) * scale;
+    const int right = std::min(x + w, clipRight_) * scale;
+    const int top = std::max(y, clipTop_) * scale;
+    const int bottom = std::min(y + h, clipBottom_) * scale;
+    if (left >= right || top >= bottom) return;
+    uint16_t r[32], g[64], b[32];
+    for (int i = 0; i < 64; ++i) {
+        g[i] = encodeColor(uint16_t(std::min(63, (i * green + 128) / 256) << 5));
+        if (i >= 32) continue;
+        r[i] = encodeColor(uint16_t(std::min(31, (i * red + 128) / 256) << 11));
+        b[i] = encodeColor(uint16_t(std::min(31, (i * blue + 128) / 256)));
+    }
+    for (int row = top; row < bottom; ++row) {
+        uint16_t* pixel = pixels_ + row * physicalWidth_ + left;
+        for (int column = left; column < right; ++column, ++pixel) {
+            const uint16_t color = decodeColor(*pixel);
+            *pixel = r[color >> 11] | g[(color >> 5) & 63] | b[color & 31];
+        }
+    }
+}
+
 void Canvas565::drawRect(int x, int y, int w, int h, uint16_t color) {
     if (w <= 0 || h <= 0) return;
     drawFastHLine(x, y, w, color);

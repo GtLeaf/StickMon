@@ -35,6 +35,7 @@ void Runtime::attach(Actor& first, Actor* second) {
 
 void Runtime::reset(uint32_t nowMs) {
     coordinator_.reset(nowMs);
+    for (bool& used : detourUsed_) used = false;
 }
 
 Actor* Runtime::actor(uint8_t actorId) {
@@ -84,6 +85,23 @@ bool Runtime::overlapsOther(uint8_t actorId, float x, float y) const {
                            world_.actorOverlapPadding;
     return std::fabs(x - other->x) < std::max(1.0f, allowedX) &&
            std::fabs(movingFootY - otherFootY) < std::max(1.0f, allowedY);
+}
+
+bool Runtime::targetAvailable(uint8_t actorId, float x, float y) const {
+    const Actor* moving = actor(actorId);
+    if (!moving || !moving->active || !pointAllowed(*moving, x, y) ||
+        overlapsOther(actorId, x, y)) return false;
+    const Actor* other = otherActor(actorId);
+    if (!other || !other->active || other->hidden || other->route.empty()) return true;
+    const Task task = other->task == Task::TURNING ? other->resumeTask : other->task;
+    if (!taskUsesRoute(task)) return true;
+    const float halfX = moving->geometry.footprint.radiusX +
+                        other->geometry.footprint.radiusX + world_.actorOverlapPadding;
+    const float halfY = moving->geometry.footprint.radiusY +
+                        other->geometry.footprint.radiusY + world_.actorOverlapPadding;
+    return std::fabs(x - other->targetX) >= halfX ||
+           std::fabs(y + moving->geometry.groundOffsetY - other->targetY -
+                     other->geometry.groundOffsetY) >= halfY;
 }
 
 bool Runtime::segmentOverlapsOther(uint8_t actorId, float fromX,
@@ -313,11 +331,21 @@ bool Runtime::chooseSoftStep(uint8_t actorId, float waypointX,
 
 bool Runtime::planRoute(uint8_t actorId, float goalX, float goalY,
                         bool allowOutsideStart, bool avoidOther) {
+    return planRouteInternal(actorId, goalX, goalY,
+                             allowOutsideStart, avoidOther, false);
+}
+
+bool Runtime::planRouteInternal(uint8_t actorId, float goalX, float goalY,
+                                bool allowOutsideStart, bool avoidOther,
+                                bool detour) {
     Actor* moving = actor(actorId);
     if (!moving || !moving->active || !world_.polygon ||
         world_.polygonCount < 3) {
         return false;
     }
+
+    if (world_.actorCollisionMode == ActorCollisionMode::SOFT && avoidOther &&
+        !targetAvailable(actorId, goalX, goalY)) return false;
 
     RoomNavigator::Request request;
     request.polygon = world_.polygon;
@@ -335,6 +363,20 @@ bool Runtime::planRoute(uint8_t actorId, float goalX, float goalY,
     request.goalY = goalY;
     request.allowOutsideStart = allowOutsideStart;
     request.obstacle = obstacleFor(actorId, avoidOther);
+    const Actor* other = otherActor(actorId);
+    const bool protectedPose = other && (other->task == Task::SLEEPING ||
+        other->task == Task::FAINTED || other->task == Task::FEEDING);
+    if ((detour || (world_.actorCollisionMode == ActorCollisionMode::SOFT &&
+                    avoidOther && protectedPose)) &&
+        other && other->active && !other->hidden) {
+        request.obstacle.active = true;
+        request.obstacle.x = other->x;
+        request.obstacle.footY = other->y + other->geometry.groundOffsetY;
+        request.obstacle.minSeparation = std::max(
+            moving->geometry.footprint.radiusX + other->geometry.footprint.radiusX,
+            moving->geometry.footprint.radiusY + other->geometry.footprint.radiusY) +
+            world_.actorOverlapPadding;
+    }
 
     Route proposed;
     if (!RoomNavigator::build(request, proposed, world_.scratch)) {
@@ -345,6 +387,23 @@ bool Runtime::planRoute(uint8_t actorId, float goalX, float goalY,
     moving->route = proposed;
     moving->blockedSinceMs = 0;
     moving->lastWaypointDistance = 1000000.0f;
+    detourUsed_[actorId] = detour;
+    return true;
+}
+
+bool Runtime::recoverSoftRoute(uint8_t actorId, uint32_t nowMs, bool avoidOther) {
+    Actor* moving = actor(actorId);
+    const Actor* other = otherActor(actorId);
+    if (world_.actorCollisionMode != ActorCollisionMode::SOFT || !avoidOther ||
+        !moving || !other || !other->active || other->hidden || detourUsed_[actorId]) {
+        return false;
+    }
+    // Try one global detour after local steering stalls. The next failure
+    // returns control to the task adapter instead of rebuilding forever.
+    detourUsed_[actorId] = true;
+    if (!planRouteInternal(actorId, moving->targetX, moving->targetY,
+                           false, true, true)) return false;
+    moving->lastMoveProgressMs = nowMs;
     return true;
 }
 
@@ -405,6 +464,7 @@ RouteStep Runtime::advanceRoute(uint8_t actorId, uint32_t nowMs, float speed,
           RoomNavigator::segmentKeepsSpacing(
               moving->x, fromFootY, nextX, nextFootY, obstacle);
     if (!accepted) {
+        if (recoverSoftRoute(actorId, nowMs, avoidOther)) return RouteStep::MOVING;
         moving->velocityX = 0.0f;
         moving->velocityY = 0.0f;
         return RouteStep::BLOCKED;
@@ -436,6 +496,7 @@ RouteStep Runtime::advanceRoute(uint8_t actorId, uint32_t nowMs, float speed,
             if (moving->stuckRecoveryCount < 0xFF) {
                 ++moving->stuckRecoveryCount;
             }
+            if (recoverSoftRoute(actorId, nowMs, avoidOther)) return RouteStep::MOVING;
             return RouteStep::BLOCKED;
         }
     } else {

@@ -1,0 +1,7 @@
+# Shared AMOLED application sources, relative to the V1 main directory.
+AmoledApp.cpp
+app/SettingsController.cpp
+app/TeamController.cpp
+app/InventoryController.cpp
+app/HatchController.cpp
+app/ShowerController.cpp

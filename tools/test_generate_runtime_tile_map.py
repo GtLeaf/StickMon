@@ -32,7 +32,8 @@ from generate_runtime_tile_map import (
     CLIFF_FACE_TILE,
     CLIFF_STAIR_LEFT_TILE,
     CLIFF_STAIR_RIGHT_TILE,
-    CLIFF_TOP_TILE,
+    CLIFF_LEFT_TILE,
+    CLIFF_RIGHT_TILE,
     CREEK_BRIDGE_SLOPE_AREA,
     DEEP_SEA_EDGE_TILE,
     DEEP_SEA_TILE,
@@ -86,6 +87,8 @@ from generate_runtime_tile_map import (
     WATERFALL_BODY_TOP_TILES,
     WATERFALL_CREST_TILES,
     connected_components,
+    creek_style,
+    expanded,
     derive_seed,
     fingerprint,
     generate_map,
@@ -727,39 +730,129 @@ class RuntimeTileMapTests(unittest.TestCase):
                 }
                 if runtime_map.has_cliff:
                     cliff_count += 1
-                    self.assertEqual(len(stair_cells), 4)
+                    self.assertEqual(len(stair_cells), 2)
                     stair_xs = {x for x, _y in stair_cells}
                     stair_ys = {y for _x, y in stair_cells}
                     self.assertEqual(len(stair_xs), 2)
-                    self.assertEqual(len(stair_ys), 2)
+                    self.assertEqual(len(stair_ys), 1)
                     stair_left = min(stair_xs)
                     cliff_top = min(stair_ys)
-                    self.assertEqual(
-                        runtime_map.layers[0][cliff_top * 16 + stair_left - 1],
-                        CLIFF_TOP_TILE,
-                    )
-                    self.assertEqual(
-                        runtime_map.layers[0][cliff_top * 16 + stair_left + 2],
-                        CLIFF_TOP_TILE,
-                    )
-                    self.assertEqual(
-                        runtime_map.layers[1][(cliff_top + 1) * 16 + stair_left - 1],
-                        CLIFF_FACE_TILE,
-                    )
-                    self.assertEqual(
-                        runtime_map.layers[1][(cliff_top + 1) * 16 + stair_left + 2],
-                        CLIFF_FACE_TILE,
-                    )
+                    cliff_cells = {
+                        (i % 16, i // 16)
+                        for i, tile in enumerate(runtime_map.layers[1])
+                        if tile in {CLIFF_LEFT_TILE, CLIFF_FACE_TILE, CLIFF_RIGHT_TILE}
+                    }
+                    self.assertEqual({y for _x, y in cliff_cells}, {cliff_top})
+                    wall_xs = {x for x, _y in cliff_cells | stair_cells}
+                    self.assertEqual(wall_xs, set(range(min(wall_xs), max(wall_xs) + 1)))
+                    for x, y in cliff_cells:
+                        tile = runtime_map.layers[1][y * 16 + x]
+                        expected = (CLIFF_LEFT_TILE if x == min(wall_xs) and x > 0 else
+                                    CLIFF_RIGHT_TILE if x == max(wall_xs) and x < 15 else
+                                    CLIFF_FACE_TILE)
+                        self.assertEqual(tile, expected)
+                        self.assertNotIn(runtime_map.layers[1][(y - 1) * 16 + x],
+                                         {CLIFF_LEFT_TILE, CLIFF_FACE_TILE, CLIFF_RIGHT_TILE})
+                    self.assertTrue(cliff_cells.isdisjoint(
+                        {point for path in runtime_map.paths for point in path.points}))
+                    for x in stair_xs:
+                        self.assertIn(runtime_map.layers[0][(cliff_top - 1) * 16 + x], ROAD_TILES)
+                        self.assertIn(runtime_map.layers[0][(cliff_top + 1) * 16 + x], ROAD_TILES)
+                        self.assertIn(runtime_map.layers[0][(cliff_top - 2) * 16 + x], ROAD_TILES)
+                        self.assertIn(runtime_map.layers[0][(cliff_top + 2) * 16 + x], ROAD_TILES)
+                    for path in runtime_map.paths:
+                        for index, point in enumerate(path.points):
+                            if point not in stair_cells:
+                                continue
+                            self.assertGreaterEqual(index, 2)
+                            self.assertLess(index + 2, len(path.points))
+                            for offset in (1, 2):
+                                before, after = path.points[index - offset], path.points[index + offset]
+                                self.assertEqual(before[0], point[0])
+                                self.assertEqual(after[0], point[0])
+                                self.assertEqual(abs(before[1] - point[1]), offset)
+                                self.assertEqual(before[1] + after[1], point[1] * 2)
+                    self.assertTrue(all(1188 not in layer for layer in runtime_map.layers))
                 else:
                     self.assertFalse(stair_cells)
 
                 for path in runtime_map.paths:
+                    for first, second in zip(path.points, path.points[1:]):
+                        if first in bridge_cells or second in bridge_cells:
+                            self.assertEqual(first[1], second[1], "horizontal bridge cannot carry vertical steps")
                     for point in path.points:
                         index = point[1] * 16 + point[0]
                         if runtime_map.layers[0][index] in STREAM_TILES:
                             self.assertIn(point, bridge_cells)
         self.assertGreater(transition_count, 0)
         self.assertGreater(cliff_count, 0)
+
+    def test_creek_styles_vary_layouts_and_preserve_complete_plants_on_both_banks(self):
+        layouts = {style: set() for style in range(4)}
+        tree_ids = {tile for row in PARK_TREE_TILES for tile in row}
+        cases = [(seed, Edge(seed % 4)) for seed in range(1, 97)] + [(12, Edge.RIGHT)]
+        for seed, edge in cases:
+            m = generate_map(seed, edge, CREEK_BRIDGE_SLOPE_AREA)
+            style = creek_style(seed)
+            road = build_road(m.paths)
+            water = {(i % 16, i // 16) for i, t in enumerate(m.layers[0]) if t in STREAM_TILES}
+            self.assertEqual(len(connected_components(water)), 1)
+            rows = [tuple(sorted(x for x, wy in water if wy == y)) for y in range(12)]
+            changes = [y for y in range(1, 12) if rows[y] != rows[y - 1]]
+            self.assertEqual(len(changes), (0, 1, 2, 2)[style])
+            if style == 0:
+                self.assertFalse(m.has_cliff)
+            if style == 2:
+                self.assertEqual(len(rows[0]), len(rows[-1]))
+                self.assertNotEqual(rows[0][0], rows[-1][0])
+            if style == 3:
+                self.assertEqual(rows[0], rows[-1])
+                self.assertEqual(len(rows[changes[0]]), len(rows[0]) + 1)
+                self.assertTrue(m.has_cliff)
+                self.assertIn(changes[1] - changes[0], (3, 4), "river bay needs room to read as a bend")
+            if len(changes) == 2:
+                self.assertGreaterEqual(changes[1] - changes[0], 2)
+            grass = {(i % 16, i // 16) for i, t in enumerate(m.layers[0]) if t == DENSE_GRASS_TILE}
+            patches = connected_components(grass)
+            self.assertEqual(len(patches), 2)
+            self.assertTrue(all(len(patch) >= 4 for patch in patches))
+            for patch in patches:
+                width = max(x for x, _y in patch) - min(x for x, _y in patch) + 1
+                height = max(y for _x, y in patch) - min(y for _x, y in patch) + 1
+                self.assertGreaterEqual(min(width, height), 2)
+                self.assertLessEqual(max(width, height), min(width, height) * 2)
+                self.assertTrue(any({(x, y), (x + 1, y), (x, y + 1), (x + 1, y + 1)} <= patch
+                                    for x, y in patch), "grass needs a solid core, not a thin strip")
+            self.assertTrue(any(x < min(rows[y]) for x, y in grass))
+            self.assertTrue(any(x > max(rows[y]) for x, y in grass))
+            trees = {(i % 16, i // 16) for i, t in enumerate(m.layers[1]) if t in tree_ids}
+            self.assertIn(len(trees), (0, 6))
+            if trees:
+                left = min(x for x, _y in trees)
+                top = min(y for _x, y in trees)
+                self.assertEqual(trees, {(left + dx, top + dy) for dx in range(2) for dy in range(3)})
+                for dy, row in enumerate(PARK_TREE_TILES):
+                    for dx, tile in enumerate(row):
+                        self.assertEqual(m.layers[1][(top + dy) * 16 + left + dx], tile)
+            bridge = {(i % 16, i // 16) for i, t in enumerate(m.layers[2])
+                      if t in (BRIDGE_TOP_TILE, BRIDGE_BOTTOM_TILE)}
+            stairs = {(i % 16, i // 16) for i, t in enumerate(m.layers[0])
+                      if t in (CLIFF_STAIR_LEFT_TILE, CLIFF_STAIR_RIGHT_TILE)}
+            cliff = {(i % 16, i // 16) for i, t in enumerate(m.layers[1])
+                     if t in (CLIFF_LEFT_TILE, CLIFF_FACE_TILE, CLIFF_RIGHT_TILE)}
+            self.assertTrue(trees.isdisjoint(expanded(cliff | stairs)))
+            flowers = {(i % 16, i // 16) for i, t in enumerate(m.layers[0]) if t == FLOWER_TILE}
+            shrubs = {(i % 16, i // 16) for i, t in enumerate(m.layers[1]) if t == SHRUB_TILE}
+            plants = grass | trees | flowers | shrubs
+            forbidden = road | water | cliff | expanded(bridge) | expanded(stairs) | expanded({m.junction})
+            self.assertTrue(plants.isdisjoint(forbidden))
+            self.assertEqual(len(plants), len(grass) + len(trees) + len(flowers) + len(shrubs))
+            land = {(x, y) for x in range(16) for y in range(12)} - road - water - cliff - stairs
+            self.assertGreaterEqual(len(land - plants) * 4, len(land))
+            layouts[style].add(tuple(tuple(path.points) for path in m.paths) + tuple(rows))
+            self.assertEqual(m, generate_map(seed, edge, CREEK_BRIDGE_SLOPE_AREA))
+        for variants in layouts.values():
+            self.assertGreaterEqual(len(variants), 16)
 
     def test_ancient_waterfall_maps_use_cave_ground_cliffs_and_portals(self):
         fingerprints = set()

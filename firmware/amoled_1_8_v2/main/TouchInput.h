@@ -27,12 +27,17 @@ class TouchInput {
 public:
     esp_err_t begin();
     bool poll(uint32_t nowMs, TouchEvent& event);
+    void waitForInput(uint32_t durationMs);
+    bool canSleep() const { return wakeReady_ && !pointerDown && !interruptPending && !interruptMasked_; }
 
 private:
     static void onInterrupt(esp_lcd_touch_handle_t touch);
 
     esp_lcd_touch_handle_t handle = nullptr;
     volatile bool interruptPending = false;
+    volatile bool interruptMasked_ = false;
+    void* ownerTask_ = nullptr;
+    bool wakeReady_ = false;
     bool pointerDown = false;
     uint32_t lastTouchMs = 0;
     int16_t lastX = 0;

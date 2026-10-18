@@ -53,6 +53,7 @@ public:
     // Used by target selection and diagnostics. This is intentionally a
     // visual-overlap test, not a physical collision test.
     bool overlapsOther(uint8_t actorId, float x, float y) const;
+    bool targetAvailable(uint8_t actorId, float x, float y) const;
 
     bool transition(uint8_t actorId, Task task, uint32_t nowMs,
                     uint32_t durationMs = 0, bool force = false) {
@@ -111,6 +112,10 @@ public:
     }
 
 private:
+    bool planRouteInternal(uint8_t actorId, float goalX, float goalY,
+                           bool allowOutsideStart, bool avoidOther,
+                           bool detour);
+    bool recoverSoftRoute(uint8_t actorId, uint32_t nowMs, bool avoidOther);
     RoomNavigator::Obstacle obstacleFor(uint8_t actorId,
                                         bool avoidOther) const;
     bool pointAllowed(const Actor& actor, float x, float y) const;
@@ -125,6 +130,7 @@ private:
 
     Actor* actors_[ACTOR_CAP] = {};
     uint8_t actorCount_ = 0;
+    bool detourUsed_[ACTOR_CAP] = {};
     NavigationWorld world_;
     Coordinator coordinator_;
 };

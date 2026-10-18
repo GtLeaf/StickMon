@@ -14,6 +14,8 @@ inline constexpr int PAGE_HEADER_HEIGHT = 76;
 inline constexpr int PAGE_HEADER_BACK_HIT_WIDTH = 80;
 inline constexpr int CONTENT_TOP = PAGE_HEADER_HEIGHT;
 inline constexpr uint16_t PAGE_BACKGROUND = 0x0000;
+inline constexpr int MOVE_DETAIL_HEIGHT = 272;
+inline constexpr int MOVE_DESCRIPTION_LINE_STEP = 40;
 inline constexpr int DETAIL_BUTTON_Y = 354;
 inline constexpr int DETAIL_BUTTON_HEIGHT = 72;
 inline constexpr AmoledUi::Rect DETAIL_ACTION_RECT{

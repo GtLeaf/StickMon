@@ -122,6 +122,12 @@ bool resetTestOtaHandler() {
     return true;
 }
 
+size_t sharedBattleDraws = 0;
+uint32_t sharedBattleMinimum(uint32_t minimum, uint32_t) {
+    ++sharedBattleDraws;
+    return minimum;
+}
+
 }  // namespace
 
 // Exercise real application transitions; only initial state and diagnostics need access.
@@ -129,8 +135,244 @@ struct AmoledAppTestAccess {
     using Phase = AmoledApp::ExpeditionDeparturePhase;
     using Scene = AppSceneFlow::Scene;
 
+    static void checkNoEffectBattleLogs(DesktopPlatform& desktop,
+                                        const Game::GameState& state) {
+        for (bool wildSide : {false, true}) {
+            // Splash, a capped stat drop, an immune damaging move, and a
+            // successful stat drop exercise the distinct result sources.
+            for (int scenario = 0; scenario < 4; ++scenario) {
+                GameRandom::setRangeProvider(+[](uint32_t minimum, uint32_t) { return minimum; });
+                AmoledApp app;
+                app.begin(desktop.millis());
+                app.gameState = state;
+                app.gameState.teamCount = 1;
+                app.gameState.team[0] = Game::MonsterFactory::create(wildSide ? 7 : 129, 10);
+                app.battleWild = Game::MonsterFactory::create(wildSide ? 129 : 7, 10);
+                app.battlePlayerSlot = 0;
+                app.sceneFlow.enter(Scene::BATTLE);
+                app.battlePlayerState = {};
+                app.battleWildState = {};
+                auto& attacker = wildSide ? app.battleWild : app.gameState.team[0];
+                auto& defender = wildSide ? app.gameState.team[0] : app.battleWild;
+                auto& defendState = wildSide ? app.battlePlayerState : app.battleWildState;
+                const Game::MoveId move = scenario == 0 ? 150 : scenario == 2 ? 10 : 45;
+                attacker.move2Id = move;
+                if (scenario == 1) {
+                    defendState.statStages[static_cast<uint8_t>(BattleStat::ATTACK)] = -6;
+                }
+                if (scenario == 2) defender = Game::MonsterFactory::create(92, 10);
+                const auto attackerHp = attacker.hpCur;
+                const auto defenderHp = defender.hpCur;
+                app.clearBattleLog();
+                BattleTurnController::Action action{
+                    wildSide ? BattleTurnController::Side::WILD
+                             : BattleTurnController::Side::PLAYER, 0, move};
+                if (wildSide) app.performBattleWildAction(action, desktop.millis());
+                else app.performBattlePlayerAction(action, desktop.millis());
+                assert(app.battleLogVisibleCount == 1);
+                assert(std::strstr(app.battleLogLines[0], findMove(move)->name));
+                app.battleAttackLogHeld = false;
+                int noEffect = 0, resultLines = 0;
+                while (app.battleLogQueueCount > 0) {
+                    desktop.advanceMs(5000);
+                    assert(app.serviceBattleLog(desktop.millis()));
+                    const auto* line = app.battleLogLines[app.battleLogVisibleCount - 1];
+                    if (std::strcmp(line, Ui::Explore::NO_EFFECT) == 0) ++noEffect;
+                    ++resultLines;
+                }
+                assert(resultLines == 1);
+                assert(noEffect == (scenario == 3 ? 0 : 1));
+                assert(attacker.hpCur == attackerHp && defender.hpCur == defenderHp);
+                if (scenario == 3) {
+                    assert(defendState.statStages[static_cast<uint8_t>(BattleStat::ATTACK)] == -1);
+                }
+            }
+        }
+        GameRandom::setRangeProvider(nullptr);
+        std::puts("battle no-effect logs: Splash, capped status and immunity report once for both attackers; successful status retained");
+    }
+
+    static void checkBattleItemsAndBlocks(DesktopPlatform& desktop,
+                                          const Game::GameState& state) {
+        for (bool wildSide : {false, true}) {
+            AmoledApp app;
+            app.begin(desktop.millis());
+            app.gameState = state;
+            app.gameState.team[0] = Game::MonsterFactory::create(7, 20);
+            app.battleWild = Game::MonsterFactory::create(4, 20);
+            app.battlePlayerSlot = 0;
+            app.sceneFlow.enter(Scene::BATTLE);
+            auto& attacker = wildSide ? app.battleWild : app.gameState.team[0];
+            auto& attackState = wildSide ? app.battleWildState : app.battlePlayerState;
+            attackState = {};
+            attackState.confusionTurns = 3;
+            const auto hp = attacker.hpCur;
+            GameRandom::setRangeProvider(+[](uint32_t minimum, uint32_t) { return minimum; });
+            app.clearBattleLog();
+            BattleTurnController::Action action{
+                wildSide ? BattleTurnController::Side::WILD : BattleTurnController::Side::PLAYER,
+                0, 33};
+            if (wildSide) app.performBattleWildAction(action, desktop.millis());
+            else app.performBattlePlayerAction(action, desktop.millis());
+            char expected[128];
+            std::snprintf(expected, sizeof(expected), Ui::Explore::CONFUSION_HIT_FMT,
+                          findSpecies(attacker.speciesId)->name);
+            assert(std::strcmp(app.battleLogLines[0], expected) == 0);
+            assert(attacker.hpCur < hp && app.battleTurnDamaged[wildSide ? 1 : 0]);
+            assert(app.battleHpAnimationActive && app.battleHpAnimationWild == wildSide);
+            const auto started = app.battleHpAnimationStartedMs;
+            const auto before = app.battleHpPercentForRender(wildSide, attacker.hpCur,
+                                                            attacker.hpMax, started);
+            const auto middle = app.battleHpPercentForRender(wildSide, attacker.hpCur,
+                                                            attacker.hpMax, started + 210);
+            const auto after = app.battleHpPercentForRender(wildSide, attacker.hpCur,
+                                                           attacker.hpMax, started + 420);
+            assert(before == hp * 100 / attacker.hpMax);
+            assert(before > middle && middle > after);
+            assert(after == attacker.hpCur * 100 / attacker.hpMax);
+            desktop.advanceMs(210);
+            app.update(desktop.millis());
+            assert(app.battleHpAnimationActive);
+            assert(app.battleContinuation == AmoledApp::BattleContinuation::ADVANCE_TURN);
+            desktop.advanceMs(210);
+            app.update(desktop.millis());
+            assert(!app.battleHpAnimationActive);
+        }
+        AmoledApp app;
+        app.begin(desktop.millis());
+        app.gameState = state;
+        app.gameState.oobeDone = true;
+        app.battleWild = Game::MonsterFactory::create(4, 10);
+        app.battlePlayerSlot = 0;
+        app.sceneFlow.enter(Scene::BATTLE);
+        app.clearBattleLog();
+        app.performBattleBag(desktop.millis());
+        const auto item = Game::ItemId::SWEET_FOOD;
+        Game::ItemInventory::add(app.gameState, item);
+        const auto stock = Game::ItemInventory::count(app.gameState, item);
+        const auto hp = app.battleWild.hpCur;
+        app.performBattleBagItem(item, desktop.millis());
+        assert(app.sceneFlow.current() == Scene::BATTLE);
+        assert(app.battleThrownItem == item && app.battleLogQueueCount == 1);
+        assert(Game::ItemInventory::count(app.gameState, item) == stock - 1);
+        const auto continuation = app.battleContinuation;
+        desktop.advanceMs(400);
+        app.update(desktop.millis());
+        assert(app.battleThrownItem == item && app.battleItemThrowFrame > 0);
+        assert(app.battleContinuation == continuation && app.battleWild.hpCur == hp);
+        app.handleTap(80, 400, desktop.millis());
+        app.performBattleBagItem(item, desktop.millis());
+        assert(Game::ItemInventory::count(app.gameState, item) == stock - 1);
+        desktop.advanceMs(410);
+        app.update(desktop.millis());
+        assert(app.battleThrownItem == Game::ItemId::COUNT);
+        assert(app.battleContinuation == continuation);
+        GameRandom::setRangeProvider(nullptr);
+
+        // Sell the last item in the persistent detail panel, then ignore taps.
+        app.sceneFlow.enter(Scene::SHOP);
+        app.battleContinuation = AmoledApp::BattleContinuation::NONE;
+        app.inventoryController_.state().pendingItem = Game::ItemId::POTION;
+        const auto potions = Game::ItemInventory::count(app.gameState, app.inventoryController_.state().pendingItem);
+        if (potions) Game::ItemInventory::remove(app.gameState, app.inventoryController_.state().pendingItem, potions);
+        Game::ItemInventory::add(app.gameState, app.inventoryController_.state().pendingItem);
+        app.inventoryController_.state().pendingItemAction = AmoledApp::PendingItemAction::SELL;
+        app.inventoryController_.state().itemConfirmOpen = true;
+        app.inventoryController_.state().shopCategory = Game::ShopService::Category::SELL;
+        app.handleTap(100, 390, desktop.millis());
+        assert(Game::ItemInventory::count(app.gameState, app.inventoryController_.state().pendingItem) == 0);
+        assert(app.inventoryController_.state().itemConfirmOpen && app.toast == nullptr);
+        const auto coins = app.gameState.coins;
+        app.handleTap(100, 390, desktop.millis());
+        assert(app.gameState.coins == coins && app.toast == nullptr);
+        std::puts("battle food: arc blocks input/turn and consumes once; confusion names self-hit on both sides; sold-out action ignored");
+    }
+
+    static void checkBattleDamageLogs(DesktopPlatform& desktop,
+                                      const Game::GameState& state) {
+        for (bool wildSide : {false, true}) {
+            // Normal, critical, super, critical+super, resisted,
+            // critical+resisted, miss, immune, and zero-damage status.
+            for (int scenario = 0; scenario < 9; ++scenario) {
+                const bool critical = scenario == 1 || scenario == 3 || scenario == 5;
+                GameRandom::setRangeProvider(scenario == 6
+                    ? +[](uint32_t, uint32_t maximum) { return maximum - 1; }
+                    : critical ? +[](uint32_t minimum, uint32_t) { return minimum; }
+                    : +[](uint32_t minimum, uint32_t maximum) {
+                        return std::min(minimum + 1, maximum - 1);
+                    });
+                AmoledApp app;
+                app.begin(desktop.millis());
+                app.gameState = state;
+                app.gameState.teamCount = 1;
+                app.gameState.team[0] = Game::MonsterFactory::create(7, 20);
+                app.battleWild = Game::MonsterFactory::create(7, 20);
+                app.battlePlayerSlot = 0;
+                app.sceneFlow.enter(Scene::BATTLE);
+                app.battlePlayerState = {};
+                app.battleWildState = {};
+                auto& attacker = wildSide ? app.battleWild : app.gameState.team[0];
+                auto& defender = wildSide ? app.gameState.team[0] : app.battleWild;
+                auto& attackState = wildSide ? app.battleWildState : app.battlePlayerState;
+                const bool super = scenario == 2 || scenario == 3;
+                const bool resisted = scenario == 4 || scenario == 5;
+                const Game::MoveId move = super || resisted ? 55 : scenario == 8 ? 45 : 10;
+                attacker.move2Id = move;
+                if (super) defender = Game::MonsterFactory::create(4, 20);
+                if (scenario == 7) defender = Game::MonsterFactory::create(92, 20);
+                if (scenario == 6) {
+                    attackState.statStages[static_cast<uint8_t>(BattleStat::ACCURACY)] = -6;
+                }
+                app.clearBattleLog();
+                BattleTurnController::Action action{
+                    wildSide ? BattleTurnController::Side::WILD
+                             : BattleTurnController::Side::PLAYER, 0, move};
+                if (wildSide) app.performBattleWildAction(action, desktop.millis());
+                else app.performBattlePlayerAction(action, desktop.millis());
+                assert(app.battleLogVisibleCount == 1);
+                assert(std::strstr(app.battleLogLines[0], findMove(move)->name));
+                desktop.advanceMs(app.battleAnimationDurationMs + 1);
+                // Results must remain queued while the attack animation holds the log.
+                assert(!app.serviceBattleLog(desktop.millis()));
+                app.battleAttackLogHeld = false;
+                app.battleAnimationActive = false;
+                std::vector<std::string> lines;
+                while (app.battleLogQueueCount > 0) {
+                    desktop.advanceMs(5000);
+                    assert(app.serviceBattleLog(desktop.millis()));
+                    lines.emplace_back(app.battleLogLines[app.battleLogVisibleCount - 1]);
+                }
+                if (scenario < 6) {
+                    char expected[64];
+                    std::snprintf(expected, sizeof(expected),
+                        wildSide ? Ui::Explore::WILD_DAMAGE_FMT : Ui::Explore::DAMAGE_FMT,
+                        app.battleAnimationDamage);
+                    assert(lines[0] == expected);
+                    size_t next = 1;
+                    if (critical) assert(lines.at(next++) == Ui::Explore::CRITICAL_HIT);
+                    if (super) assert(lines.at(next++) == Ui::Explore::SUPER_EFFECTIVE);
+                    if (resisted) assert(lines.at(next++) == Ui::Explore::NOT_VERY_EFFECTIVE);
+                    assert(lines.size() == next);
+                } else {
+                    assert(lines.size() == 1);
+                    if (scenario == 6) assert(lines[0] == Ui::Explore::MOVE_MISSED);
+                    if (scenario == 7) assert(lines[0] == Ui::Explore::NO_EFFECT);
+                    for (const auto* message : {Ui::Explore::CRITICAL_HIT,
+                            Ui::Explore::SUPER_EFFECTIVE, Ui::Explore::NOT_VERY_EFFECTIVE}) {
+                        assert(lines[0] != message);
+                    }
+                }
+            }
+        }
+        GameRandom::setRangeProvider(nullptr);
+        std::puts("battle damage logs: both sides report critical/effectiveness in order after the animation; misses, immunity and status do not misreport");
+    }
+
     static void checkBattleAssetActions(DesktopPlatform& desktop,
                                         const Game::GameState& state) {
+        checkBattleDamageLogs(desktop, state);
+        checkNoEffectBattleLogs(desktop, state);
+        checkBattleItemsAndBlocks(desktop, state);
         for (bool wildSide : {false, true}) {
             for (Game::MoveId id : {10, 154, 163, 44, 242, 43, 45, 28}) {
                 const auto* move = findMove(id);
@@ -198,6 +440,294 @@ struct AmoledAppTestAccess {
         std::puts("battle asset actions: both sides, success, caps, misses and immunity verified");
     }
 
+    static void checkSharedBattleExecution(DesktopPlatform& desktop,
+                                           const Game::GameState& state) {
+        // Exercise both actual App adapters, not a second service-only caller.
+        for (bool wildSide : {false, true}) {
+            for (int scenario = 0; scenario < 7; ++scenario) {
+                GameRandom::setRangeProvider(+[](uint32_t minimum, uint32_t) { return minimum; });
+                AmoledApp app;
+                app.begin(desktop.millis());
+                app.gameState = state;
+                app.gameState.teamCount = 1;
+                app.gameState.team[0] = Game::MonsterFactory::create(4, 35);
+                app.battleWild = Game::MonsterFactory::create(7, 35);
+                app.battlePlayerSlot = 0;
+                app.sceneFlow.enter(Scene::BATTLE);
+                app.battlePlayerState = {};
+                app.battleWildState = {};
+                auto& attacker = wildSide ? app.battleWild : app.gameState.team[0];
+                auto& defender = wildSide ? app.gameState.team[0] : app.battleWild;
+                auto& attackState = wildSide ? app.battleWildState : app.battlePlayerState;
+                auto& defendState = wildSide ? app.battlePlayerState : app.battleWildState;
+                Game::MoveId move = 55;
+                if (scenario == 0) {
+                    defender = Game::MonsterFactory::create(134, 35);
+                    defender.hpCur = 1;
+                } else if (scenario == 1) {
+                    defender = Game::MonsterFactory::create(25, 35);
+                    defender.hpCur = defender.hpMax = 500;
+                    move = 424;
+                } else if (scenario == 2) {
+                    move = 256;
+                    attacker.hpCur = 1;
+                    attackState.stockpileCount = 3;
+                } else if (scenario == 3) {
+                    move = 37;
+                    attackState.lockedMoveId = move;
+                    attackState.lockedSpecialSlot = 0;
+                    attackState.lockedTurns = 1;
+                } else if (scenario == 4) {
+                    move = 130;
+                } else if (scenario == 5) {
+                    attacker.majorStatus = Game::MajorStatus::SLEEP;
+                    attacker.majorStatusTurns = 1;
+                } else {
+                    move = 10;
+                    defender = Game::MonsterFactory::create(92, 35);
+                }
+                attacker.move2Id = move;
+                const auto proficiency = attacker.moveProficiency[1];
+                const auto attackerHp = attacker.hpCur;
+                app.clearBattleLog();
+                const auto side = wildSide ? BattleTurnController::Side::WILD
+                                           : BattleTurnController::Side::PLAYER;
+                app.battleTurnPlan.count = 2;
+                app.battleTurnPlan.actions[0] = {side, 0, move};
+                app.battleTurnPlan.actions[1] = {
+                    wildSide ? BattleTurnController::Side::PLAYER
+                             : BattleTurnController::Side::WILD,
+                    BattleSystem::SPECIAL_SLOT_NONE, 33};
+                app.battleTurnActionIndex = 0;
+                const BattleTurnController::Action action{side, 0, move};
+                if (wildSide) app.performBattleWildAction(action, desktop.millis());
+                else app.performBattlePlayerAction(action, desktop.millis());
+                if (scenario == 0) {
+                    assert(defender.hpCur == 1 + defender.hpMax / 4);
+                    assert(app.battleHpAnimationActive && !app.battleAnimationHit);
+                } else if (scenario == 1) {
+                    assert(attacker.majorStatus == Game::MajorStatus::PARALYSIS);
+                    assert(defender.majorStatus == Game::MajorStatus::BURN && defendState.flinched);
+                } else if (scenario == 2) {
+                    assert(attacker.hpCur == attacker.hpMax && attackState.stockpileCount == 0);
+                    assert(app.battleHpAnimationActive);
+                } else if (scenario == 3) {
+                    assert(attackState.lockedMoveId == 0 && attackState.confusionTurns > 0);
+                } else if (scenario == 4) {
+                    assert(attackState.chargingMoveId == 130);
+                    assert(attackState.statStages[static_cast<uint8_t>(BattleStat::DEFENSE)] == 1);
+                    assert(!app.battleAnimationActive);
+                } else if (scenario == 5) {
+                    assert(attacker.majorStatus == Game::MajorStatus::NONE);
+                } else {
+                    assert(defender.hpCur == defender.hpMax && !app.battleAnimationHit);
+                }
+                assert(attacker.moveProficiency[1] == proficiency +
+                    ((!wildSide && scenario != 0 && scenario != 4 && scenario != 6) ? 1 : 0));
+
+                // Polling the animation and draining its queue cannot reapply rewards.
+                app.battleContinuation = AmoledApp::BattleContinuation::NONE;
+                app.battleAudioPending = false;
+                app.battleAttackLogHeld = false;
+                app.battleAnimationActive = false;
+                std::vector<std::string> lines;
+                for (uint8_t i = 0; i < app.battleLogVisibleCount; ++i)
+                    lines.emplace_back(app.battleLogLines[i]);
+                while (app.battleLogQueueCount > 0) {
+                    desktop.advanceMs(5000);
+                    assert(app.serviceBattleLog(desktop.millis()));
+                    lines.emplace_back(app.battleLogLines[app.battleLogVisibleCount - 1]);
+                }
+                const auto count = [&](const std::string& expected) {
+                    return std::count(lines.begin(), lines.end(), expected);
+                };
+                char expected[96];
+                const Species& a = *findSpecies(attacker.speciesId);
+                const Species& d = *findSpecies(defender.speciesId);
+                if (scenario == 0) {
+                    assert(count(Ui::Explore::NO_EFFECT) == 1);
+                    std::snprintf(expected, sizeof(expected), Ui::Explore::ABSORB_HEAL_FMT,
+                                  d.name, defender.hpMax / 4);
+                    assert(count(expected) == 1);
+                } else if (scenario == 1) {
+                    std::snprintf(expected, sizeof(expected), Ui::Explore::STATUS_APPLIED_FMT,
+                                  a.name, Ui::Status::STATUS_PARALYSIS);
+                    assert(count(expected) == 1);
+                    std::snprintf(expected, sizeof(expected), Ui::Explore::ABILITY_ACTIVATED_FMT,
+                                  d.name, abilityName(AbilityId::STATIC));
+                    assert(count(expected) == 1);
+                } else if (scenario == 2) {
+                    std::snprintf(expected, sizeof(expected), Ui::Explore::HEALED_FMT,
+                                  a.name, attacker.hpMax - attackerHp);
+                    assert(count(expected) == 1);
+                } else if (scenario == 3) {
+                    std::snprintf(expected, sizeof(expected), Ui::Explore::RAMPAGE_CONFUSED_FMT, a.name);
+                    assert(count(expected) == 1);
+                } else if (scenario == 4) {
+                    std::snprintf(expected, sizeof(expected), Ui::Explore::STAT_ROSE_FMT,
+                                  a.name, Ui::Explore::STAT_NAMES[static_cast<uint8_t>(BattleStat::DEFENSE)]);
+                    assert(count(expected) == 1);
+                } else if (scenario == 5) {
+                    std::snprintf(expected, sizeof(expected), Ui::Explore::WOKE_UP_FMT, a.name);
+                    assert(count(expected) == 1);
+                } else assert(count(Ui::Explore::NO_EFFECT) == 1);
+                const auto finalAttackerHp = attacker.hpCur, finalDefenderHp = defender.hpCur;
+                const auto finalProficiency = attacker.moveProficiency[1];
+                for (int repeat = 0; repeat < 3; ++repeat) {
+                    desktop.advanceMs(5000);
+                    app.update(desktop.millis());
+                    assert(attacker.hpCur == finalAttackerHp && defender.hpCur == finalDefenderHp);
+                    assert(attacker.moveProficiency[1] == finalProficiency);
+                }
+            }
+        }
+        GameRandom::setRangeProvider(nullptr);
+        std::puts("shared battle App adapters: absorb, contact, stockpile, rampage, charge, wake and immunity apply/log once on both sides");
+
+        for (int effect = 0; effect < 4; ++effect) {
+            AmoledApp app;
+            app.begin(desktop.millis());
+            app.gameState = state;
+            app.gameState.teamCount = 1;
+            app.gameState.team[0] = Game::MonsterFactory::create(4, 35);
+            app.battleWild = Game::MonsterFactory::create(7, 35);
+            app.battlePlayerSlot = 0;
+            app.sceneFlow.enter(Scene::BATTLE);
+            auto& player = app.gameState.team[0];
+            player.hpCur = player.hpMax = 500;
+            if (effect == 3) player.hpCur = 1;
+            player.move2Id = 76;
+            app.battlePlayerState = {};
+            app.battleWildState = {};
+            BattleSystem::beginChargingMove(app.battlePlayerState, 76, 0);
+            if (effect == 0 || effect == 3) player.majorStatus = Game::MajorStatus::POISON;
+            if (effect == 1) app.battlePlayerState.bindTurns = 1;
+            if (effect == 2) app.battlePlayerState.yawnTurns = 1;
+            app.battleTurnPlan.count = 1;
+            app.battleTurnPlan.actions[0] = {BattleTurnController::Side::PLAYER, 0, 76};
+            app.battleTurnActionIndex = 0;
+            app.clearBattleLog();
+            GameRandom::setRangeProvider(sharedBattleMinimum);
+            sharedBattleDraws = 0;
+            app.advanceBattleTurn(desktop.millis());
+            assert(app.battleContinuation == AmoledApp::BattleContinuation::FINISH_END_TURN);
+            assert(!app.battleAnimationActive && app.battleLogPlaybackBusy());
+            assert(app.battlePhase == BattleViewModel::Phase::ACTION);
+            const auto drawsAfterEnd = sharedBattleDraws;
+            const auto hpAfterEnd = player.hpCur;
+            for (int frame = 0; frame < 5; ++frame) {
+                desktop.advanceMs(10);
+                app.update(desktop.millis());
+                assert(!app.battleAnimationActive && app.battleTurnPlan.count == 0);
+                assert(sharedBattleDraws == drawsAfterEnd && player.hpCur == hpAfterEnd);
+                assert(app.battlePhase == BattleViewModel::Phase::ACTION);
+            }
+            while (app.battleLogQueueCount > 0) {
+                desktop.advanceMs(5000);
+                assert(app.serviceBattleLog(desktop.millis()));
+            }
+            // The last visible line also receives its full reading time.
+            assert(app.battleLogPlaybackBusy());
+            desktop.advanceMs(10);
+            app.update(desktop.millis());
+            assert(sharedBattleDraws == drawsAfterEnd && app.battleTurnPlan.count == 0);
+            desktop.advanceMs(5000);
+            app.update(desktop.millis());
+            if (effect == 3) {
+                assert(app.battlePhase == BattleViewModel::Phase::DEFEAT);
+                assert(app.battleTurnPlan.count == 0 && sharedBattleDraws == drawsAfterEnd);
+            } else assert(app.battleTurnPlan.count == 2);
+            assert(app.battleContinuation != AmoledApp::BattleContinuation::FINISH_END_TURN);
+            GameRandom::setRangeProvider(nullptr);
+        }
+        std::puts("shared battle end turn: poison, bind and yawn logs finish before charge release or faint resolution");
+    }
+
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    static void checkBattleDiagnosticsSaveIsolation(DesktopPlatform& desktop,
+                                                    const Game::GameState& state) {
+        auto& original = desktop.serviceBundle();
+        ResetBlobStore blobs(original.blobs);
+        ResetPowerSpy power(original.power);
+        Platform::Services guarded{
+            original.lifecycle, original.clock, original.logger, original.input,
+            original.display, original.audio, original.imu, power,
+            blobs, original.resources, original.memory, original.peers};
+        Platform::bind(guarded);
+        AmoledApp app;
+        app.begin(desktop.millis());
+        app.gameState = state;
+        app.gameState.oobeDone = true;
+        app.gameState.coins = 43210;
+        app.gameState.team[0] = Game::MonsterFactory::create(1, 23);
+        app.sceneFlow.enter(Scene::HOME);
+        assert(app.saveState());
+        blobs.failSnapshots = true;
+        assert(!app.debugBattleScenario(1, desktop.millis()));
+        assert(!app.debugBattleScenarioActive && app.gameState.team[0].speciesId == 1);
+        blobs.failSnapshots = false;
+        assert(app.debugBattleScenario(1, desktop.millis()));
+        assert(app.debugBattleScenarioActive);
+        const size_t writesAfterBackup = blobs.writes;
+        const auto stateA = blobs.contents("stickmon", "state_a");
+        const auto stateB = blobs.contents("stickmon", "state_b");
+        const auto legacy = blobs.contents("stickmon", "state");
+        auto assertSavedPlayer = [&]() {
+            assert(blobs.writes == writesAfterBackup);
+            assert(blobs.contents("stickmon", "state_a") == stateA);
+            assert(blobs.contents("stickmon", "state_b") == stateB);
+            assert(blobs.contents("stickmon", "state") == legacy);
+            Game::GameState loaded;
+            MainSceneViewState view;
+            assert(app.saveManager.load(loaded, view));
+            assert(loaded.coins == 43210 && loaded.team[0].speciesId == 1);
+            assert(loaded.team[0].level == 23 && loaded.teamCount == state.teamCount);
+        };
+        assertSavedPlayer();
+        for (uint8_t scenario = 2; scenario <= 12; ++scenario) {
+            assert(app.debugBattleScenario(scenario, desktop.millis()));
+            if (scenario == 9) {
+                assert(app.gameState.team[0].speciesId == 129);
+                assert(app.battleTurnPlan.actions[0].moveId == 150);
+                assert(app.battleTurnPlan.actions[0].specialSlot == BattleSystem::SPECIAL_SLOT_NONE);
+                assert(app.battleAnimationDamage == 0 && !app.battleAnimationHit);
+                assert(app.battleWild.hpCur == app.battleWild.hpMax);
+                // Inspect the actual executed move line: a planned move alone
+                // would miss an invalid-special-slot fallback to Scratch.
+                assert(app.battleLogVisibleCount == 1);
+                assert(std::strstr(app.battleLogLines[0], findMove(150)->name));
+                assert(!std::strstr(app.battleLogLines[0], findMove(10)->name));
+                app.battleAttackLogHeld = false;
+                app.battleAnimationActive = false;
+                app.battleContinuation = AmoledApp::BattleContinuation::NONE;
+                unsigned noEffectCount = 0;
+                while (app.battleLogQueueCount > 0) {
+                    desktop.advanceMs(5000);
+                    assert(app.serviceBattleLog(desktop.millis()));
+                    if (std::strcmp(app.battleLogLines[app.battleLogVisibleCount - 1],
+                                    Ui::Explore::NO_EFFECT) == 0) ++noEffectCount;
+                }
+                assert(noEffectCount == 1);
+                assert(app.battleWild.hpCur == app.battleWild.hpMax);
+            }
+            desktop.advanceMs(50);
+            app.update(desktop.millis());
+            assert(!app.saveState());
+            assertSavedPlayer();
+        }
+        // Closing a normal encounter also reaches saveState; it stays isolated.
+        app.clearBattleLog();
+        app.battleContinuation = AmoledApp::BattleContinuation::NONE;
+        app.closeBattle(desktop.millis());
+        assertSavedPlayer();
+        assert(app.debugBattleScenario(0, desktop.millis()));
+        assert(power.restarts == 1);
+        assertSavedPlayer();
+        Platform::bind(original);
+        std::puts("battle diagnostics: actual Splash is move 150, zero damage, one no-effect log; failed backup and all 12 fixtures preserve original snapshots");
+    }
+#endif
+
     static void tap(AmoledApp& app, DesktopPlatform& desktop, int x, int y) {
         TouchEvent event;
         event.x = x;
@@ -236,19 +766,169 @@ struct AmoledAppTestAccess {
         app.markRendered();
     }
 
+    static void checkMedicineFlow(DesktopPlatform& desktop, Canvas565& canvas,
+                                  const Game::GameState& state) {
+        const auto tapTarget = [&](AmoledApp& app, uint8_t slot) {
+            for (int y = 0; y < 448; ++y) {
+                if (teamMemberAt(100, y, app.gameState.teamCount) == slot) {
+                    app.handleTap(100, y + 20, desktop.millis());
+                    return;
+                }
+            }
+            assert(false && "team member must be reachable");
+        };
+        const auto tapBack = [&](AmoledApp& app) {
+            for (int y = 0; y < 80; ++y) {
+                for (int x = 0; x < 368; ++x) {
+                    if (teamBackAt(x, y)) {
+                        app.handleTap(x, y, desktop.millis());
+                        return;
+                    }
+                }
+            }
+            assert(false && "team back must be reachable");
+        };
+        const auto confirmMedicine = [&](AmoledApp& app, Game::ItemId item) {
+            app.inventoryController_.state().pendingItem = item;
+            app.inventoryController_.state().pendingItemAction = AmoledApp::PendingItemAction::USE;
+            app.inventoryController_.state().itemConfirmOpen = true;
+            for (int y = 0; y < 448; ++y) {
+                if (itemConfirmChoiceAt(100, y) == 0) {
+                    app.handleTap(100, y, desktop.millis());
+                    return;
+                }
+            }
+            assert(false && "medicine confirm must be reachable");
+        };
+
+        for (bool battle : {false, true}) {
+            for (uint8_t target : {0, 1}) {
+                for (Game::ItemId item : {Game::ItemId::POTION, Game::ItemId::REVIVE,
+                                          Game::ItemId::FULL_HEAL}) {
+                    AmoledApp app;
+                    app.begin(desktop.millis());
+                    app.gameState = state;
+                    app.gameState.teamCount = 2;
+                    app.gameState.team[0] = Game::MonsterFactory::create(7, 20);
+                    app.gameState.team[1] = Game::MonsterFactory::create(4, 20);
+                    app.gameState.activeSlot = 1;
+                    app.battlePlayerSlot = 1;
+                    app.battleWild = Game::MonsterFactory::create(1, 20);
+                    app.battlePhase = BattleViewModel::Phase::ACTION;
+                    app.clearBattleLog();
+                    auto& monster = app.gameState.team[target];
+                    monster.hpCur = item == Game::ItemId::REVIVE ? 0 : 5;
+                    monster.fainted = item == Game::ItemId::REVIVE;
+                    if (item == Game::ItemId::FULL_HEAL) {
+                        monster.majorStatus = Game::MajorStatus::POISON;
+                    }
+                    const auto oldHp = monster.hpCur;
+                    const auto otherHp = app.gameState.team[1 - target].hpCur;
+                    Game::ItemInventory::add(app.gameState, item, 2);
+                    const auto stock = Game::ItemInventory::count(app.gameState, item);
+                    app.sceneFlow.enter(battle ? Scene::BATTLE : Scene::HOME);
+                    if (battle) app.performBattleBag(desktop.millis());
+                    else app.openItemScene(Scene::BAG);
+                    confirmMedicine(app, item);
+                    assert(app.sceneFlow.current() == Scene::TEAM && app.inventoryController_.state().selectingItemTarget);
+                    assert(Game::ItemInventory::count(app.gameState, item) == stock);
+
+                    // Cancelling target selection costs neither an item nor a turn.
+                    tapBack(app);
+                    assert(app.sceneFlow.current() == Scene::BAG && !app.inventoryController_.state().selectingItemTarget);
+                    assert(Game::ItemInventory::count(app.gameState, item) == stock);
+                    assert(app.battleContinuation == AmoledApp::BattleContinuation::NONE);
+                    confirmMedicine(app, item);
+                    tapTarget(app, target);
+                    const auto newHp = monster.hpCur;
+                    assert(app.inventoryController_.state().teamItemFeedbackActive && app.inventoryController_.state().teamItemTargetSlot == target);
+                    assert(app.sceneFlow.current() == Scene::TEAM);
+                    assert(Game::ItemInventory::count(app.gameState, item) == stock - 1);
+                    assert(app.gameState.team[1 - target].hpCur == otherHp);
+                    assert(app.battlePlayerSlot == 1 && app.gameState.activeSlot == 1);
+                    assert(app.gameState.team[0].speciesId == 7 && app.gameState.team[1].speciesId == 4);
+                    assert(!monster.fainted && monster.majorStatus == Game::MajorStatus::NONE);
+                    if (item == Game::ItemId::POTION) assert(newHp == oldHp + 20);
+                    if (item == Game::ItemId::REVIVE) assert(newHp == monster.hpMax / 2);
+                    if (item == Game::ItemId::FULL_HEAL) assert(newHp == oldHp);
+                    assert(app.teamItemHpForRender(desktop.millis()) == oldHp);
+                    checkHatchFrame(app, canvas);
+                    const std::vector<uint16_t> first(canvas.rawPixels(),
+                                                      canvas.rawPixels() + canvas.pixelCount());
+                    // Repeated target and back taps during feedback must be ignored.
+                    tapTarget(app, target);
+                    tapBack(app);
+                    assert(app.sceneFlow.current() == Scene::TEAM);
+                    assert(Game::ItemInventory::count(app.gameState, item) == stock - 1);
+                    desktop.advanceMs(210);
+                    app.update(desktop.millis());
+                    assert(app.teamItemHpForRender(desktop.millis()) == oldHp + (newHp - oldHp) / 2);
+                    checkHatchFrame(app, canvas);
+                    if (newHp != oldHp) {
+                        assert(!std::equal(first.begin(), first.end(), canvas.rawPixels()));
+                    }
+                    desktop.advanceMs(210);
+                    app.update(desktop.millis());
+                    assert(app.teamItemHpForRender(desktop.millis()) == newHp);
+                    assert(app.sceneFlow.current() == Scene::TEAM && app.inventoryController_.state().teamItemFeedbackActive);
+                    checkHatchFrame(app, canvas);
+                    desktop.advanceMs(199);
+                    app.update(desktop.millis());
+                    assert(app.sceneFlow.current() == Scene::TEAM);
+                    desktop.advanceMs(1);
+                    app.update(desktop.millis());
+                    assert(!app.inventoryController_.state().teamItemFeedbackActive && !app.inventoryController_.state().selectingItemTarget);
+                    assert(app.sceneFlow.current() == (battle ? Scene::BATTLE : Scene::BAG));
+                    assert(!app.inventoryController_.state().battleBagMode && !app.battleHpAnimationActive);
+                    assert(app.battleContinuation == (battle ? AmoledApp::BattleContinuation::WILD_TURN
+                                                             : AmoledApp::BattleContinuation::NONE));
+                    assert(Game::ItemInventory::count(app.gameState, item) == stock - 1);
+                    checkHatchFrame(app, canvas);
+                    if (!battle) {
+                        app.closeItemScene();
+                        assert(app.sceneFlow.current() == Scene::HOME);
+                    }
+                }
+            }
+        }
+        // A full-health or fainted target rejects a potion without consuming it.
+        AmoledApp app;
+        app.begin(desktop.millis());
+        app.gameState = state;
+        app.battlePlayerSlot = 0;
+        app.gameState.team[0].hpCur = app.gameState.team[0].hpMax;
+        app.gameState.team[1].hpCur = 0;
+        app.gameState.team[1].fainted = true;
+        Game::ItemInventory::add(app.gameState, Game::ItemId::POTION);
+        const auto stock = Game::ItemInventory::count(app.gameState, Game::ItemId::POTION);
+        app.sceneFlow.enter(Scene::BATTLE);
+        app.performBattleBag(desktop.millis());
+        confirmMedicine(app, Game::ItemId::POTION);
+        for (uint8_t slot : {0, 1}) {
+            tapTarget(app, slot);
+            assert(app.sceneFlow.current() == Scene::TEAM && !app.inventoryController_.state().teamItemFeedbackActive);
+            assert(Game::ItemInventory::count(app.gameState, Game::ItemId::POTION) == stock);
+        }
+        tapBack(app);
+        app.closeItemScene();
+        assert(app.sceneFlow.current() == Scene::BATTLE && !app.inventoryController_.state().battleBagMode);
+        assert(app.battleContinuation == AmoledApp::BattleContinuation::NONE);
+        std::puts("medicine: target selection, active/reserve healing, revive/status feedback, animated partial frames, return timing and cancellation verified");
+    }
+
     static void shakeHatch(AmoledApp& app, DesktopPlatform& desktop, HatchImuSpy& imu) {
         // Settle the device, then apply two samples in opposing directions.
         imu.x = 0;
         for (int i = 0; i < 60; ++i) {
             desktop.advanceMs(20); app.update(desktop.millis());
         }
-        const uint16_t before = app.hatchWipeCount;
+        const uint16_t before = app.hatchController_.state().wipeCount;
         for (int i = 0; i < 4; ++i) {
             imu.x = i % 2 ? -1.2f : 1.2f;
             desktop.advanceMs(20); app.update(desktop.millis());
         }
-        assert(app.hatchWipeCount == before + 1);
-        assert(app.hatchShaking && app.hatchLastShakeOffset != 0);
+        assert(app.hatchController_.state().wipeCount == before + 1);
+        assert(app.hatchController_.state().shaking && app.hatchController_.state().lastShakeOffset != 0);
         imu.x = 0;
     }
 
@@ -278,35 +958,54 @@ struct AmoledAppTestAccess {
         renderHatchScreen(canvas, egg);
         assert(std::equal(initial.begin(), initial.end(), canvas.rawPixels()));
         app.markRendered();
+        // Cancelled, dragged and orphaned releases cannot count as egg taps.
+        const auto sendEgg = [&](TouchEventType type, int x, int y) {
+            TouchEvent event{};
+            event.type = type; event.x = x; event.y = y;
+            event.timestampMs = desktop.millis();
+            app.handleTouch(event);
+        };
+        sendEgg(TouchEventType::UP, 184, 200);
+        sendEgg(TouchEventType::DOWN, 184, 200);
+        app.cancelTouch();
+        sendEgg(TouchEventType::UP, 184, 200);
+        sendEgg(TouchEventType::DOWN, 184, 200);
+        sendEgg(TouchEventType::MOVE, 260, 200);
+        sendEgg(TouchEventType::UP, 184, 200);
+        sendEgg(TouchEventType::DOWN, 120, 396);
+        sendEgg(TouchEventType::UP, 184, 200);
+        assert(app.hatchController_.state().pokeCount == 0);
+        assert(app.sceneFlow.current() == Scene::HATCH);
+        assert(!app.hatchController_.state().heartVisible);
         desktop.advanceMs(40000);
         app.update(desktop.millis());
-        assert(app.sceneFlow.current() == Scene::HATCH && app.hatchElapsedSeconds == 40);
+        assert(app.sceneFlow.current() == Scene::HATCH && app.hatchController_.state().elapsedSeconds == 40);
         assert(app.renderRowBegin() >= HOME_STATUS_TOP || app.renderRowBegin() == 0);
         assert(app.renderRowEnd() == 448);
         checkHatchFrame(app, canvas);
         for (int i = 0; i < 10; ++i) tap(app, desktop, 184, 200);
-        assert(app.hatchHeartVisible && app.hatchShaking);
-        assert(app.hatchPokeCount == 10 && app.hatchWipeCount == 0);
+        assert(app.hatchController_.state().heartVisible && app.hatchController_.state().shaking);
+        assert(app.hatchController_.state().pokeCount == 10 && app.hatchController_.state().wipeCount == 0);
         assert(app.renderRowBegin() == HOME_ROOM_TOP && app.renderRowEnd() == AmoledV1::HOME_STATUS_TOP);
         checkHatchFrame(app, canvas);
         tap(app, desktop, 272, 396);
-        assert(app.hatchPokeCount == 10 && app.hatchWipeCount == 0);
+        assert(app.hatchController_.state().pokeCount == 10 && app.hatchController_.state().wipeCount == 0);
         for (int i = 0; i < 3; ++i) shakeHatch(app, desktop, imu);
-        assert(!app.hatchHeartVisible);
+        assert(!app.hatchController_.state().heartVisible);
         checkHatchFrame(app, canvas);
-        const uint16_t interactionsBeforeFeedback = app.hatchPokeCount + app.hatchWipeCount;
+        const uint16_t interactionsBeforeFeedback = app.hatchController_.state().pokeCount + app.hatchController_.state().wipeCount;
         desktop.advanceMs(900); app.update(desktop.millis());
-        assert(app.hatchShaking && app.hatchLastShakeOffset != 0);
-        assert(app.hatchPokeCount + app.hatchWipeCount == interactionsBeforeFeedback);
+        assert(app.hatchController_.state().shaking && app.hatchController_.state().lastShakeOffset != 0);
+        assert(app.hatchController_.state().pokeCount + app.hatchController_.state().wipeCount == interactionsBeforeFeedback);
         checkHatchFrame(app, canvas);
         desktop.advanceMs(60); app.update(desktop.millis());
-        assert(!app.hatchShaking && app.hatchLastShakeOffset == 0);
+        assert(!app.hatchController_.state().shaking && app.hatchController_.state().lastShakeOffset == 0);
         checkHatchFrame(app, canvas);
         desktop.advanceMs(20); app.update(desktop.millis());
         assert(!app.needsRender());
         assert(app.saveState());
-        const float pausedElapsed = app.hatchElapsedSeconds;
-        assert(app.hatchPokeCount == 10 && app.hatchWipeCount == 3);
+        const float pausedElapsed = app.hatchController_.state().elapsedSeconds;
+        assert(app.hatchController_.state().pokeCount == 10 && app.hatchController_.state().wipeCount == 3);
         Game::HatchProgress progress;
         assert(app.saveManager.loadHatchProgress(progress));
         assert(progress.elapsedSeconds == static_cast<uint16_t>(pausedElapsed) && progress.pokeCount == 10 && progress.wipeCount == 3);
@@ -324,7 +1023,7 @@ struct AmoledAppTestAccess {
         assert(app.saveState());
         desktop.advanceMs(300000);
         app.update(desktop.millis());
-        assert(app.hatchElapsedSeconds == pausedElapsed && !app.consumeLockRequest() && imu.reads == pausedReads);
+        assert(app.hatchController_.state().elapsedSeconds == pausedElapsed && !app.consumeLockRequest() && imu.reads == pausedReads);
         assert(imu.disables == pausedDisables);
         tap(app, desktop, 40, 38);
         assert(app.sceneFlow.current() == Scene::MAIN_MENU);
@@ -337,16 +1036,16 @@ struct AmoledAppTestAccess {
         tapMenu(app, desktop, AppSceneFlow::MainMenuItem::BACK);
         assert(app.sceneFlow.current() == Scene::HATCH);
         app.update(desktop.millis());
-        assert(app.hatchElapsedSeconds == pausedElapsed && imu.enabled);
+        assert(app.hatchController_.state().elapsedSeconds == pausedElapsed && imu.enabled);
 
         AmoledApp resumed;
         resumed.begin(desktop.millis());
         assert(resumed.startupStateLoaded() && resumed.sceneFlow.current() == Scene::HATCH);
-        assert(resumed.hatchElapsedSeconds == progress.elapsedSeconds && resumed.hatchPokeCount == 10);
-        assert(resumed.hatchWipeCount == 3 && resumed.gameState.settings.brightness == 96);
+        assert(resumed.hatchController_.state().elapsedSeconds == progress.elapsedSeconds && resumed.hatchController_.state().pokeCount == 10);
+        assert(resumed.hatchController_.state().wipeCount == 3 && resumed.gameState.settings.brightness == 96);
         desktop.advanceMs((179 - progress.elapsedSeconds) * 1000);
         resumed.update(desktop.millis());
-        assert(!resumed.gameState.oobeDone && resumed.hatchLastRemainingSecond == 1);
+        assert(!resumed.gameState.oobeDone && resumed.hatchController_.state().lastRemainingSecond == 1);
         desktop.advanceMs(1000);
         resumed.update(desktop.millis());
         assert(resumed.sceneFlow.current() == Scene::HOME && resumed.gameState.oobeDone);
@@ -377,7 +1076,7 @@ struct AmoledAppTestAccess {
             if (speed == 0) {
                 for (int i = 0; i < 10; ++i) shakeHatch(accelerated, desktop, imu);
             }
-            const uint32_t duration = std::ceil((180 - accelerated.hatchElapsedSeconds) * 1000 / (1U << speed));
+            const uint32_t duration = std::ceil((180 - accelerated.hatchController_.state().elapsedSeconds) * 1000 / (1U << speed));
             desktop.advanceMs(duration - 2);
             accelerated.update(desktop.millis());
             assert(!accelerated.gameState.oobeDone && accelerated.gameState.teamCount == 0);
@@ -396,12 +1095,12 @@ struct AmoledAppTestAccess {
         retry.update(desktop.millis());
         assert(retry.sceneFlow.current() == Scene::HATCH && !retry.gameState.oobeDone);
         assert(retry.gameState.teamCount == 0 && retry.hatchResult);
-        assert(retry.hatchLastRemainingSecond == 0 && retry.hatchLastProgress == 100 && !imu.enabled);
+        assert(retry.hatchController_.state().lastRemainingSecond == 0 && Game::HatchService::progressPercent(retry.hatchController_.state().elapsedSeconds, retry.gameState.hatchSeconds) == 100 && !imu.enabled);
         assert(retry.toast && std::strcmp(retry.toast, Ui::Hatch::SAVE_FAILED) == 0);
         assert(retry.saveManager.loadHatchProgress(progress) && progress.elapsedSeconds == 180);
         const auto candidateIv = retry.hatchResult->team[0].ivPacked;
         tap(retry, desktop, 272, 396);
-        assert(retry.hatchWipeCount == 0);
+        assert(retry.hatchController_.state().wipeCount == 0);
         blobs.failSnapshots = false;
         desktop.advanceMs(1000);
         retry.update(desktop.millis());
@@ -430,7 +1129,7 @@ struct AmoledAppTestAccess {
         AmoledApp noImu;
         noImu.begin(desktop.millis());
         tap(noImu, desktop, 184, 200);
-        assert(noImu.hatchPokeCount == 1 && noImu.hatchHeartVisible);
+        assert(noImu.hatchController_.state().pokeCount == 1 && noImu.hatchController_.state().heartVisible);
         desktop.advanceMs(180000); noImu.update(desktop.millis());
         assert(noImu.gameState.oobeDone);
         imu.fail = false;
@@ -490,45 +1189,45 @@ struct AmoledAppTestAccess {
         };
         app.sceneFlow.enter(Scene::SETTINGS);
         app.markRendered();
-        tap(app, desktop, 200, 368);  // V1 has no action below reset.
-        assert(!app.settingsResetConfirm);
+        tap(app, desktop, 200, 414);  // V1 has no action below reset.
+        assert(!app.settingsController.resetConfirm());
         assertSavesUnchanged();
         size_t writesBefore = blobs.writes;
-        tap(app, desktop, 200, 320);
-        assert(app.settingsResetConfirm);
+        tap(app, desktop, 200, 354);
+        assert(app.settingsController.resetConfirm());
         assert(blobs.clears == 0 && blobs.writes == writesBefore);
         assert(app.needsRender());
         assert(app.renderRowBegin() == 0 && app.renderRowEnd() == AmoledUi::HEIGHT);
         assertSavesUnchanged();
         tap(app, desktop, 184, 300);  // Body text and blank area are inert.
-        assert(app.settingsResetConfirm);
+        assert(app.settingsController.resetConfirm());
         tap(app, desktop, 106, 390);  // Cancel returns to the settings list.
-        assert(!app.settingsResetConfirm && app.sceneFlow.current() == Scene::SETTINGS);
+        assert(!app.settingsController.resetConfirm() && app.sceneFlow.current() == Scene::SETTINGS);
         assert(blobs.clears == 0 && blobs.writes == writesBefore);
         assertSavesUnchanged();
-        tap(app, desktop, 200, 320);
+        tap(app, desktop, 200, 354);
         tap(app, desktop, 40, 38);  // Header back also only dismisses confirmation.
-        assert(!app.settingsResetConfirm && app.sceneFlow.current() == Scene::SETTINGS);
+        assert(!app.settingsController.resetConfirm() && app.sceneFlow.current() == Scene::SETTINGS);
         assertSavesUnchanged();
 
         app.visitSession.startSearch();
         assert(app.visitSession.busy());
-        tap(app, desktop, 200, 320);
-        assert(!app.settingsResetConfirm);
+        tap(app, desktop, 200, 354);
+        assert(!app.settingsController.resetConfirm());
         assert(blobs.clears == 0);
         assertSavesUnchanged();
         app.visitSession.stop();
 
         app.setSystemUpdateHandler(resetTestOtaHandler);
         resetTestOtaCalls = 0;
-        tap(app, desktop, 200, 320);  // Adding OTA does not replace the reset row.
-        assert(app.settingsResetConfirm && resetTestOtaCalls == 0);
+        tap(app, desktop, 200, 354);  // Adding OTA does not replace the reset row.
+        assert(app.settingsController.resetConfirm() && resetTestOtaCalls == 0);
         tap(app, desktop, 106, 390);
-        tap(app, desktop, 200, 368);
+        tap(app, desktop, 200, 414);
 #if STICKMON_ENABLE_DEBUG_FEATURES
-        assert(resetTestOtaCalls == 1 && !app.settingsResetConfirm);
+        assert(resetTestOtaCalls == 1 && !app.settingsController.resetConfirm());
 #else
-        assert(resetTestOtaCalls == 0 && !app.settingsResetConfirm);
+        assert(resetTestOtaCalls == 0 && !app.settingsController.resetConfirm());
         assertSavesUnchanged();
 #endif
         assert(blobs.clears == 0 && power.restarts == 0);
@@ -537,8 +1236,8 @@ struct AmoledAppTestAccess {
             before[i] = blobs.contents("stickmon", GAME_KEYS[i]);
         }
         writesBefore = blobs.writes;
-        tap(app, desktop, 200, 320);
-        assert(app.settingsResetConfirm);
+        tap(app, desktop, 200, 354);
+        assert(app.settingsController.resetConfirm());
         TouchEvent event;
         event.timestampMs = desktop.millis();
         event.y = 390;
@@ -554,7 +1253,7 @@ struct AmoledAppTestAccess {
         app.handleTouch(event);
         event.type = TouchEventType::UP;
         app.handleTouch(event);  // A short move from outside the button is inert.
-        assert(blobs.clears == 0 && app.settingsResetConfirm);
+        assert(blobs.clears == 0 && app.settingsController.resetConfirm());
         event.type = TouchEventType::DOWN;
         app.handleTouch(event);
         event.type = TouchEventType::UP;
@@ -567,12 +1266,12 @@ struct AmoledAppTestAccess {
         app.visitSession.startSearch();
         assert(app.visitSession.busy());
         tap(app, desktop, 262, 390);  // A session starting on the dialog blocks reset.
-        assert(blobs.clears == 0 && app.settingsResetConfirm);
+        assert(blobs.clears == 0 && app.settingsController.resetConfirm());
         assertSavesUnchanged();
         app.visitSession.stop();
         blobs.failClear = true;
         tap(app, desktop, 262, 390);
-        assert(blobs.clears == 1 && app.settingsResetConfirm && app.storageReady);
+        assert(blobs.clears == 1 && app.settingsController.resetConfirm() && app.storageReady);
         assert(app.toast && std::strcmp(app.toast, Ui::Settings::RESET_FAILED) == 0);
         assert(app.gameState.coins == 9876 && app.gameState.storageCount == 1);
         assert(blobs.writes == writesBefore);
@@ -607,7 +1306,7 @@ struct AmoledAppTestAccess {
         assert(fresh.sceneFlow.current() == Scene::HATCH);
         assert(fresh.gameState.coins == 0 && !fresh.gameState.oobeDone);
         assert(fresh.gameState.teamCount == 0 && fresh.gameState.storageCount == 0);
-        assert(fresh.hatchElapsedSeconds == 0 && fresh.hatchPokeCount == 0 && fresh.hatchWipeCount == 0);
+        assert(fresh.hatchController_.state().elapsedSeconds == 0 && fresh.hatchController_.state().pokeCount == 0 && fresh.hatchController_.state().wipeCount == 0);
         desktop.advanceMs(180000);
         fresh.update(desktop.millis());
         assert(fresh.sceneFlow.current() == Scene::HOME && fresh.gameState.oobeDone);
@@ -650,9 +1349,12 @@ struct AmoledAppTestAccess {
                     for (int hop : {0, -14}) {
                         app.petDirection = direction;
                         app.petFrame = 0;
-                        app.petResting = pose == 1;
-                        app.petMotion = pose == 2 ? AmoledApp::PetMotion::WANDERING
-                                                  : AmoledApp::PetMotion::IDLE;
+                        app.homeMainActor.faintRestActive = false;
+                        app.homeRuntime.transition(0,
+                            pose == 1 ? Home::Task::SLEEPING
+                                : pose == 2 ? Home::Task::WANDER : Home::Task::IDLE,
+                            desktop.millis(), 0, true);
+                        app.petStopping = false;
                         app.pairMainRenderOffsetY = hop / 2.0f;
                         HomeViewModel model;
                         app.fillHomePetModel(model);
@@ -696,8 +1398,25 @@ struct AmoledAppTestAccess {
                         assert(bounds.width == expected.width && bounds.height == expected.height);
                         int16_t x = 0, y = 0;
                         assert(app.lockFocusPoint(x, y));
-                        assert(x == expected.x + expected.width / 2);
-                        assert(y == expected.y + expected.height / 2);
+                        auto focusBounds = expected;
+                        if (pose == 1) {
+                            for (uint8_t i = 1; i < profile.sleepingFrames; ++i) {
+                                model.petFrame = i;
+                                const auto other = homePetVisibleBounds(model);
+                                const int right = std::max(focusBounds.x + focusBounds.width, other.x + other.width);
+                                const int bottom = std::max(focusBounds.y + focusBounds.height, other.y + other.height);
+                                focusBounds.x = std::min(focusBounds.x, other.x);
+                                focusBounds.y = std::min(focusBounds.y, other.y);
+                                focusBounds.width = right - focusBounds.x;
+                                focusBounds.height = bottom - focusBounds.y;
+                                app.petFrame = i;
+                                int16_t nextX = 0, nextY = 0;
+                                assert(app.lockFocusPoint(nextX, nextY));
+                                assert(nextX == x && nextY == y);
+                            }
+                        }
+                        assert(x == focusBounds.x + focusBounds.width / 2);
+                        assert(y == focusBounds.y + focusBounds.height / 2);
                         assert(app.lockTapHitsPet(x, y));
                         assert(!app.lockTapHitsPet(expected.x - 13, y));
                         if (pose == 0 && hop == 0 && direction == PokemonSprites::WalkDirection::DOWN) {
@@ -719,11 +1438,11 @@ struct AmoledAppTestAccess {
         for (Scene scene : {Scene::MAIN_MENU, Scene::SETTINGS, Scene::BAG,
                             Scene::TEAM, Scene::EXPLORE_AREAS}) {
             app.sceneFlow.enter(scene);
-            app.itemConfirmOpen = true;
-            app.settingsResetConfirm = true;
+            app.inventoryController_.state().itemConfirmOpen = true;
+            app.settingsController.showResetConfirmation();
             assert(app.prepareDisplayLock(desktop.millis()));
             assert(app.sceneFlow.current() == Scene::HOME);
-            assert(!app.itemConfirmOpen && !app.settingsResetConfirm);
+            assert(!app.inventoryController_.state().itemConfirmOpen && !app.settingsController.resetConfirm());
             assert(app.needsRender());
             int16_t x = 0, y = 0;
             assert(app.lockFocusPoint(x, y));
@@ -828,16 +1547,14 @@ struct AmoledAppTestAccess {
         assert(app.debugPromptContact(1));
         RoomResource& room = RoomResource::ins();
         assert(room.available());
-        app.petX = static_cast<float>(room.doorwayInsideX());
-        app.petY = static_cast<float>(room.doorwayInsideY());
-        app.homeMainActor.x = app.petX;
-        app.homeMainActor.y = app.petY;
-        assert(!app.petFootprintInsideWalkArea(app.petX, app.petY));
+        app.homeMainActor.x = static_cast<float>(room.doorwayInsideX());
+        app.homeMainActor.y = static_cast<float>(room.doorwayInsideY());
+        assert(!app.petFootprintInsideWalkArea(app.homeMainActor.x, app.homeMainActor.y));
         assert(app.debugAcceptContact());
         app.syncHomeActors(desktop.millis());
         assert(app.visitorMotion == AmoledApp::VisitorMotion::HOST_APPROACH);
         assert(app.homeCompanionActor.hidden);
-        assert(app.petFootprintInsideWalkArea(app.petX, app.petY));
+        assert(app.petFootprintInsideWalkArea(app.homeMainActor.x, app.homeMainActor.y));
         bool sawHostClear = false;
         bool sawGuestEnter = false;
         for (int tick = 0;
@@ -852,7 +1569,12 @@ struct AmoledAppTestAccess {
         }
         assert(sawHostClear && sawGuestEnter);
         assert(app.visitorMotion == AmoledApp::VisitorMotion::ACTIVE);
-        assert(app.petFootprintInsideWalkArea(app.petX, app.petY));
+        assert(app.homeRuntime.validate() == Home::INVARIANT_OK);
+        HomeViewModel enteredModel;
+        app.fillHomePetModel(enteredModel);
+        assert(enteredModel.petCenterX == app.worldToScreenX(app.homeMainActor.x));
+        assert(enteredModel.petGroundY == app.worldToScreenY(app.homeMainActor.y));
+        assert(app.petFootprintInsideWalkArea(app.homeMainActor.x, app.homeMainActor.y));
         assert(app.companionFootprintInsideWalkArea(
             app.homeCompanionActor.x, app.homeCompanionActor.y));
         assert(app.pairPhase == AmoledApp::PairPhase::APPROACH);
@@ -957,6 +1679,11 @@ struct AmoledAppTestAccess {
         }
         assert(exitFrames > 0);
         assert(app.gameState.teamCount == 1);
+        assert(app.homeRuntime.validate() == Home::INVARIANT_OK);
+        HomeViewModel exitedModel;
+        app.fillHomePetModel(exitedModel);
+        assert(exitedModel.petCenterX == app.worldToScreenX(app.homeMainActor.x));
+        assert(exitedModel.petGroundY == app.worldToScreenY(app.homeMainActor.y));
         assert(desktop.logs().find("[FriendDiag] visitor-exit finish kind=1") !=
                std::string::npos);
         const std::string& logs = desktop.logs();
@@ -1045,8 +1772,8 @@ struct AmoledAppTestAccess {
 
     static void fadeIn(AmoledApp& app, DesktopPlatform& desktop, Canvas565& canvas,
                        Scene destination) {
-        const float petX = app.petX;
-        const float petY = app.petY;
+        const float petX = app.homeMainActor.x;
+        const float petY = app.homeMainActor.y;
         tick(app, desktop, 2000);  // Destination loading cannot consume its fade-in.
         assert(app.expeditionFade.alpha() == 255);
         present(app, canvas);
@@ -1058,7 +1785,7 @@ struct AmoledAppTestAccess {
             assert(app.expeditionFade.alpha() <= before);
             assert(before - app.expeditionFade.alpha() <= 43);
             if (app.expeditionFade.active()) {
-                assert(app.petX == petX && app.petY == petY);
+                assert(app.homeMainActor.x == petX && app.homeMainActor.y == petY);
                 ++shades;
             }
             present(app, canvas);
@@ -1663,6 +2390,79 @@ struct AmoledAppTestAccess {
         std::puts("explore reserve: faint switch, next encounter, boss and empty-team guards verified");
     }
 
+    static void checkHealthyDeparture(DesktopPlatform& desktop, Canvas565& canvas,
+                                      const Game::GameState& state) {
+        for (bool flagOnly : {false, true}) {
+            for (int faintMask = 0; faintMask < 4; ++faintMask) {
+                AmoledApp app;
+                app.begin(desktop.millis());
+                app.gameState = state;
+                app.gameState.teamCount = 2;
+                app.gameState.team[0] = Game::MonsterFactory::create(8, 20);
+                app.gameState.team[1] = Game::MonsterFactory::create(280, 20);
+                app.gameState.settings.idleTimeoutIndex = 4;
+                app.gameState.settings.speedIndex = 0;
+                for (int slot = 0; slot < 2; ++slot) {
+                    if (!(faintMask & (1 << slot))) continue;
+                    if (flagOnly) app.gameState.team[slot].fainted = true;
+                    else app.gameState.team[slot].hpCur = 0;
+                }
+                app.sceneFlow.enter(Scene::EXPLORE_AREAS);
+                const auto activeSlot = app.gameState.activeSlot;
+                tap(app, desktop, 98, 412);
+                if (faintMask == 3) {
+                    assert(!app.pendingExpedition && !app.exploreSessionActive);
+                    assert(app.expeditionDeparturePhase == Phase::NONE);
+                    assert(app.sceneFlow.current() == Scene::EXPLORE_AREAS);
+                    assert(app.toast && std::strcmp(app.toast, Ui::Menu::PET_REST) == 0);
+                    continue;
+                }
+                assert(app.pendingExpedition);
+                assert(app.sceneFlow.current() == Scene::HOME);
+                const float mainX = app.homeMainActor.x, mainY = app.homeMainActor.y;
+                const float companionX = app.homeCompanionActor.x;
+                const float companionY = app.homeCompanionActor.y;
+                int frames = 0;
+                while (app.expeditionDeparturePhase != Phase::FADE_OUT) {
+                    tick(app, desktop);
+                    assert(++frames < 1000);
+                    if (faintMask & 1) {
+                        assert(app.petIsResting() && !app.expeditionMainHidden);
+                        assert(app.homeMainActor.x == mainX && app.homeMainActor.y == mainY);
+                        assert(app.homeMainActor.task == Home::Task::FAINTED);
+                        assert(app.expeditionDeparturePhase != Phase::WALK_TO_DOOR);
+                        assert(app.expeditionDeparturePhase != Phase::CROSS_DOOR);
+                    }
+                    if (faintMask & 2) {
+                        assert(app.homeCompanionActor.faintRestActive);
+                        assert(!app.expeditionCompanionHidden);
+                        assert(app.homeCompanionActor.x == companionX);
+                        assert(app.homeCompanionActor.y == companionY);
+                        assert(app.homeCompanionActor.task == Home::Task::FAINTED);
+                    }
+                    if (app.expeditionDeparturePhase != Phase::FADE_OUT) present(app, canvas);
+                }
+                assert(app.expeditionMainHidden == !(faintMask & 1));
+                assert(app.expeditionCompanionHidden == !(faintMask & 2));
+                fadeOut(app, desktop, canvas, Scene::HOME);
+                fadeIn(app, desktop, canvas, Scene::EXPLORE_ROUTE);
+                assert(app.gameState.team[0].speciesId == 8);
+                assert(app.gameState.team[1].speciesId == 280);
+                assert(app.gameState.activeSlot == activeSlot);
+                assert(app.beginExploreEncounter(desktop.millis(), false, 7, 12));
+                assert(app.battlePlayerSlot == (faintMask == 1 ? 1 : 0));
+            }
+        }
+        AmoledApp solo;
+        solo.begin(desktop.millis());
+        solo.gameState = state;
+        solo.gameState.teamCount = 1;
+        solo.gameState.team[0].hpCur = 0;
+        assert(!solo.queueExploreDeparture(0, false));
+        assert(!solo.pendingExpedition);
+        std::puts("healthy departure: both/leader/reserve, HP zero/flag only, all down and solo guards verified");
+    }
+
     static void checkFaintedReturn(DesktopPlatform& desktop,
                                    Canvas565& canvas,
                                    const Game::GameState& state) {
@@ -1683,9 +2483,9 @@ struct AmoledAppTestAccess {
             fadeOut(app, desktop, canvas, Scene::EXPLORE_ROUTE);
             assert(app.sceneFlow.current() == Scene::HOME);
             if (faintMask & 1) {
-                assert(app.petResting);
-                assert(app.petX == RoomResource::ins().bedX());
-                assert(app.petY == RoomResource::ins().bedY());
+                assert(app.petIsResting());
+                assert(app.homeMainActor.x == RoomResource::ins().bedX());
+                assert(app.homeMainActor.y == RoomResource::ins().bedY());
                 assert(app.homeMainActor.task == Home::Task::FAINTED);
             }
             if (faintMask & 2) {
@@ -1704,8 +2504,8 @@ struct AmoledAppTestAccess {
                 assert(++frames < 1000);
             }
             if (faintMask & 1) {
-                assert(app.petX == RoomResource::ins().bedX());
-                assert(app.petResting);
+                assert(app.homeMainActor.x == RoomResource::ins().bedX());
+                assert(app.petIsResting());
             }
             if (faintMask & 2) assert(app.homeCompanionActor.faintRestActive);
         }
@@ -1718,6 +2518,7 @@ struct AmoledAppTestAccess {
         checkDisplayLockArbitration(desktop, state);
         checkMenuPanel(canvas);
         checkMenuDismiss(desktop, state);
+        checkHealthyDeparture(desktop, canvas, state);
         checkFaintedReturn(desktop, canvas, state);
         checkRouteExitWalkFrames(desktop, state);
         checkFrostLadderLinks(desktop, state);
@@ -1792,15 +2593,20 @@ struct AmoledAppTestAccess {
                 assert(app.lockTapHitsPet(x, y));
             }
             assert(!app.exploreRouteMoving && !app.exploreRouteAutoWalk);
-            assert(app.petX == app.petTargetX && app.petY == app.petTargetY);
+            assert(app.homeMainActor.x == app.homeMainActor.targetX && app.homeMainActor.y == app.homeMainActor.targetY);
             assert(app.homeMainActor.task == Home::Task::IDLE);
+            assert(app.homeRuntime.validate() == Home::INVARIANT_OK);
+            HomeViewModel returnedModel;
+            app.fillHomePetModel(returnedModel);
+            assert(returnedModel.petCenterX == app.worldToScreenX(app.homeMainActor.x));
+            assert(returnedModel.petGroundY == app.worldToScreenY(app.homeMainActor.y));
             if (app.gameState.teamCount > 1 &&
                 app.homeCompanionActor.active &&
                 !app.gameState.team[1].fainted &&
                 app.gameState.team[1].hpCur > 0) {
                 assert(app.homeCompanionActor.task == Home::Task::IDLE);
-                const float dx = app.homeCompanionActor.x - app.petX;
-                const float dy = app.homeCompanionActor.y - app.petY;
+                const float dx = app.homeCompanionActor.x - app.homeMainActor.x;
+                const float dy = app.homeCompanionActor.y - app.homeMainActor.y;
                 assert(dx * dx + dy * dy > 16.0f);
                 assert(!app.expeditionMainHidden);
                 assert(!app.expeditionCompanionHidden);
@@ -1839,6 +2645,22 @@ void checkSettingsReset(DesktopPlatform& desktop) {
 
 void checkBattleAssetActions(DesktopPlatform& desktop, const Game::GameState& state) {
     AmoledV1::AmoledAppTestAccess::checkBattleAssetActions(desktop, state);
+}
+
+void checkSharedBattleExecution(DesktopPlatform& desktop, const Game::GameState& state) {
+    AmoledV1::AmoledAppTestAccess::checkSharedBattleExecution(desktop, state);
+}
+
+#if STICKMON_ENABLE_DEBUG_FEATURES
+void checkBattleDiagnosticsSaveIsolation(DesktopPlatform& desktop,
+                                         const Game::GameState& state) {
+    AmoledV1::AmoledAppTestAccess::checkBattleDiagnosticsSaveIsolation(desktop, state);
+}
+#endif
+
+void checkMedicineFlow(DesktopPlatform& desktop, Canvas565& canvas,
+                        const Game::GameState& state) {
+    AmoledV1::AmoledAppTestAccess::checkMedicineFlow(desktop, canvas, state);
 }
 
 

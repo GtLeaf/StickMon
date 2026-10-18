@@ -1,28 +1,13 @@
 #!/usr/bin/env python3
-"""Remaining source integration checks; pixel/hit contracts live in test_amoled_native_render."""
+"""Settings integration behavior, independent of application source layout."""
 
 import unittest
-from pathlib import Path
-
-
-ROOT = Path(__file__).resolve().parents[1]
-AMOLED_APP = ROOT / "firmware" / "amoled_1_8_v1" / "main" / "AmoledApp.cpp"
+from amoled_page_cases import run_page_case
 
 
 class AmoledSettingsTests(unittest.TestCase):
     def test_saved_brightness_is_applied_during_startup(self):
-        source = AMOLED_APP.read_text()
-        begin_start = source.index("void AmoledApp::begin(")
-        begin_end = source.index("void AmoledApp::handleTouch(", begin_start)
-        begin = source[begin_start:begin_end]
-
-        load = begin.index("saveManager.load(")
-        brightness = begin.index(
-            "Platform::display().setBrightness(gameState.settings.brightness);"
-        )
-        first_render = begin.index("requestFullRender();")
-        self.assertLess(load, brightness)
-        self.assertLess(brightness, first_render)
+        run_page_case("settings-sliders")
 
 
 if __name__ == "__main__":

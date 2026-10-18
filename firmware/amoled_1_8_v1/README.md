@@ -55,6 +55,61 @@ layer:
   shared levels. In battle, the bag also lists daily food and soap: food can
   be thrown to a wild monster using the shared friendship rules, while
   unusable items show a warning without consuming a turn.
+- Medicine from either bag opens the team page to select its target, including
+  reserve members during battle. HP numbers and bars animate for 420 ms, then
+  hold the result for 200 ms before returning to the bag or battle. Successful
+  battle use consumes one turn; cancelling or choosing an invalid target does
+  not consume an item or turn. Confusion self-damage animates either HP bar.
+- All six exploration areas on AMOLED V1/V2 usually show two ambient Pokemon
+  from the active area pool, subject to available habitat. They rest, turn,
+  wander on safe grass, cave floor, ice or suitable water and briefly watch a
+  passing player. Water-only fish require open water; actors avoid waterfalls,
+  bridges, solid object footprints, holes and walls. Unknown rare species show grass movement,
+  ripples or ground dust until encountered normally. Camera movement and battles
+  preserve their positions; paused routes and menus freeze them. Wildlife
+  uses cached sprites, vegetation depth and local redraws, without changing
+  encounter rolls or saves. StickS3 rendering is not enabled in this prototype.
+  A third actor requires a separated part of the route; limited habitats can
+  have fewer. Placement prefers safe room to move. Initial quiet waits are
+  0.6-2.0 seconds, later rests 1.4-3.0 seconds; small looks and steps continue
+  independently of big episode cooldowns. Blocked walks try other safe legs
+  or turn visibly instead of restarting a long static wait.
+  Host rendering checks pass; device FPS remains untested.
+- Ambient behavior follows species temperaments: relaxed land Pokemon nap and
+  wake, curious Pokemon watch/approach/return, and shy Pokemon retreat into
+  nearby cover, peek and emerge. Real grass, shrubs, trees and rocks occlude
+  wildlife by ground depth in every area; open ground leaves them visible.
+  Grass uses a blade contour over the existing terrain, while hiding behind
+  solid objects keeps the body at its real ground position. Pidgey/Pidgeotto/
+  Pidgeot stay grounded. Butterfree and bats continuously flap and circle
+  between safe short flights; their returns stay airborne and wing timing
+  survives turns. Wingull/Pelipper roam their connected flight region with
+  rounded turns and varied distant destinations, crossing roads, horizontal
+  water and low props while avoiding trunks, cliffs and cave walls. After
+  25-45 seconds plus the current leg, they can leave via an open border, wait
+  12-25 active seconds, then fly back from an open border in the same region.
+  They retain their population slot and keep moving offscreen; absent actors
+  cause no redraw. Isolated habitat uses a small local loop. Flying actors
+  use small ground shadows, with canopy cover and no swimming ripples.
+  Swimmers gather ripples, jump and splash down. Existing idle,
+  walking and sleeping packs supply the poses. Body height is independent of
+  ground shadows. A single conspicuous sequence plays at a time, with quiet
+  pauses and 15-30 second per-actor cooldowns. Every phase freezes in menus,
+  pause and battle; unknown rare species remain habitat hints.
+- Breloom/Shroomish and Marill/Azurill can occasionally form an adult/young
+  pair when either member is visible in the active preview pool (50% eligibility
+  roll); the companion may be absent from the pool. An explicitly hidden member
+  blocks that family. Companions do not change the encounter pool or history.
+  A pair uses the existing two ecology slots and requires a safe shared ground
+  trail; unsuitable terrain keeps ordinary independent actors. The young
+  follows after a delay and looks around; the adult waits and turns back.
+  They walk toward varied destinations about 4-7 safe steps away, avoiding
+  recent stops. At arrival or after 15-25 active seconds they briefly reunite,
+  then continue from their actual anchors toward another place. Shared routes
+  exclude dead-end branches and tiny pockets rather than circling in place.
+  A nearby player makes the adult watch while
+  the young closes the gap. Existing sprite sizes, cover and pause rules apply.
+  No new packs or save fields; device observation remains pending.
 - Use the route's portrait exploration menu for `TEAM`, `BAG`, `END`, and
   `BACK`. Its semantic order, destinations, and `MenuAssets` icon indices are
   shared with the M5StickS3 firmware. Header back and `BACK` resume from the
@@ -138,7 +193,10 @@ layer:
   seconds, and an idle bath screen does not continuously refresh.
 - Open `ROOM / FOOD` to choose one of the seven shared food types and inspect
   stock. The bowl on the home screen places the selected food using the shared
-  `HomeCare` rules.
+  `HomeCare` rules. Food and shower return to the room menu while preserving
+  the room's return to the main menu, including repeated food visits and
+  bath-exit confirmation. Nine touch-navigation paths pass host regression
+  checks (2026-10-17); device validation remains pending.
 - Open `COMPUTER` for `SOCIAL` (invite or visit), and, in the Claw build,
   `AI_HOSTING`. Social reuses the shared visit-session page and returns to the
   computer menu after an idle session ends. The Claw item starts a local Wi-Fi
@@ -162,7 +220,7 @@ layer:
   Periodic care saves pause during exploration and battle, and remain active at home.
   Item consumption and progression decisions retain their immediate saves.
   Sudden power loss can discard steps and recovery since the last save event.
-- Run the ESP32-S3 at 240 MHz and expand logical pixels through two alternating
+- Run the ESP32-S3 at 240 MHz outside the stable locked room and expand logical pixels through two alternating
   DMA buffers. Each transfer stripe contains 32 logical rows (64 physical
   rows), allowing 2x scaling for the next stripe to overlap the current QSPI
   transfer.
@@ -186,12 +244,31 @@ The ESP-IDF platform now provides NVS A/B saves, SPIFFS resources, PSRAM
 allocation, audio codec access, and the real ESP-NOW transport used by the
 shared `EspNowLink` protocol. The communication scene starts the shared visit
 session flow, while two physical devices still need an end-to-end V1/V2
-interoperability check. Battery and PCF85063A RTC services still report unavailable until calibrated
-board drivers are validated. The QMI8658 driver now provides on-demand hatch
+interoperability check. V1/V2 now share an AXP2101 battery telemetry driver:
+the home icon reads the PMU's state of charge at startup, every five seconds,
+and on wake. Only changes invalidate the home header. An absent battery,
+I2C failure, disabled gauge, or out-of-range percentage displays a gray dash
+instead of a filled icon. Initialization enables battery detection and the
+gauge while preserving charger parameters, watchdog settings and power rails.
+This uses the PMU's built-in battery profile; percentage accuracy and behavior
+while charging still require V1/V2 hardware validation. PCF85063A RTC services
+remain unavailable. The QMI8658 driver now provides on-demand hatch
 acceleration; its sensitivity and standby behavior need V1/V2 hardware checks.
-The lock function masks the room around the visible pet while keeping the MCU
-awake at a reduced polling rate; PMU-backed deep sleep remains a hardware
-validation task.
+The lock function masks the room around the visible pet without changing screen
+brightness. Stable locked rooms update logic every 100 ms and cap visible frames
+at 5 fps while active or 2 fps while sleeping. Hidden header/HUD changes do not
+transfer pixels; visible updates draw and transfer the affected rectangle.
+Touch interrupts wake the UI task independently of the frame cap, with 20 ms
+release checks while a finger is held down. Game time and care use elapsed time.
+
+V1/V2 use ESP-IDF dynamic frequency scaling from 80 to 240 MHz. Stable locked
+rooms release the high-frequency and no-sleep locks; wake and complex scenes
+restore them. Automatic Light-sleep requires a working touch wake source and
+is inhibited while USB is connected to preserve the debug console. Idle audio
+closes the codec/I2S output, and leaving ESP-NOW stops Wi-Fi; Claw resumes any
+required network through its existing leave-session flow. Battery-only sleep,
+current consumption, physical touch wake and audio/radio recovery still need
+hardware acceptance. PMU-backed deep sleep is not part of this strategy.
 
 The V1 startup sequence resets the display and touch rails through TCA9554
 before initializing SH8601 and FT3168. Touch reads are interrupt-driven from
@@ -366,3 +443,20 @@ partition so later resource expansion does not require another layout change.
 The first on-device check should confirm display orientation, pixel colors,
 full-screen alignment, touch orientation, menu dragging, lock/wake behavior,
 real route tiles, camera following, route pause/resume, and route exit.
+
+锁屏睡眠表现：圆环单独以约 15fps 上限局部更新，睡姿保留每帧 800ms，与圆环共用入睡时钟（两帧 1.6s 一呼一吸）；濒死休息保持 700ms/帧。睡姿图像范围并集固定圆环中心，解锁不重置相位；亮度策略不变。实际帧率与功耗范围见 `../../doc/锁屏房间省电验收.md`。
+
+
+探索草丛反馈：普通密草会在地面精灵经过时拨开并回弹；高草的摆动与身体
+遮挡使用同一叶片轮廓，停止后保留静态遮挡。效果留在地图草格上，离开后
+继续回弹；一大一小组合分别触发。飞行、浮空、水生、腾空和未揭示精灵不
+触发踩草。沿用现有草丛素材，暂停冻结，动画结束后不继续请求草丛重绘。
+此表现由 V1/V2 共用，尚未进行本轮实机验收。
+
+
+探索昼夜配色：室外地图跟随游戏内时钟，清晨 04:00–06:00、白天
+06:00–18:00、傍晚 18:00–20:00、夜晚 20:00–04:00。包含晨昏的明亮时段
+共 16 小时，完整夜晚 8 小时；晨昏按分钟平滑过渡。地图、精灵、草丛和
+拾取物统一受光，文字、按钮与弹窗保持原色。霜晶窟保留固有洞穴配色。
+探索暂停时保留当前光照，恢复后跟上游戏时间；稳定配色不增加地图重绘。
+共享规则也接入 StickS3 的探索地图。本轮未刷机，实机观感与帧率待验收。

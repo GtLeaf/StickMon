@@ -250,6 +250,8 @@ TALL_GRASS_PARK_TILES = [
     )
 ]
 
+CREEK_TILES = [("EXPLORE_TILE_1184", 1184), ("EXPLORE_TILE_1186", 1186)]
+
 EXTERNAL_EXPLORE_TILES = [
     (f"EXPLORE_TILE_{runtime_id:04d}", runtime_id, tileset_name, source_id)
     for runtime_id, (tileset_name, source_id) in CUSTOM_TILE_SOURCES.items()
@@ -330,6 +332,7 @@ for kind_prefix, _filename, _cells, _opacities in ADDITIONAL_BATTLE_FX:
         f"BATTLE_FX_{kind_prefix}_{index}"
         for index in range(BATTLE_FX_FRAME_COUNT)
     )
+KIND_ORDER.extend(kind for kind, _tile_id in CREEK_TILES)
 KIND_IDS = {kind: index for index, kind in enumerate(KIND_ORDER)}
 
 
@@ -364,6 +367,7 @@ def expected_pack_kind_names():
             + [kind for kind, *_rest in EXTERNAL_EXPLORE_TILES]
             + [kind for kind, *_rest in ANIMATED_EXPLORE_FRAMES]
             + [kind for kind, _tile_id in TALL_GRASS_PARK_TILES]
+            + [kind for kind, _tile_id in CREEK_TILES]
         ),
         "hatch": ["EGG"],
     }
@@ -546,6 +550,7 @@ def validate_explore_tile_mapping():
     expected_ids = (
         {tile_id for _kind, tile_id in EXPLORE_TILES}
         | {tile_id for _kind, tile_id in TALL_GRASS_PARK_TILES}
+        | {tile_id for _kind, tile_id in CREEK_TILES}
         | {runtime_id for _kind, runtime_id, _tileset, _source_id in EXTERNAL_EXPLORE_TILES}
         | ANIMATED_EXPLORE_TILE_IDS
     )
@@ -890,6 +895,9 @@ def build_assets():
         )
         writers["map"].add(kind, quantize_rgba(tile, 16))
     for kind, tile_id in TALL_GRASS_PARK_TILES:
+        tile = prepare_explore_tile(tile_id, tileset, autotiles)
+        writers["map"].add(kind, quantize_rgba(tile, 16))
+    for kind, tile_id in CREEK_TILES:
         tile = prepare_explore_tile(tile_id, tileset, autotiles)
         writers["map"].add(kind, quantize_rgba(tile, 16))
 

@@ -4,6 +4,7 @@
 #include "core/AppSceneFlow.h"
 #include "core/Scene.h"
 #include "core/ProgressionUi.h"
+#include "game/BattleActionService.h"
 #include "game/BattleSystem.h"
 #include "game/BattleTurnController.h"
 #include "game/ExploreMapGenerator.h"
@@ -161,12 +162,9 @@ private:
     uint8_t battleActionIndex = 0;
     bool battleActionAttackerWild = false;
     bool battleActionSelfHit = false;
-    bool battleActionReleasingCharge = false;
     bool battleTurnDamaged[2] = {};
     bool forcedBattleEndPending = false;
-    BattleSystem::DamageResult battleActionResult;
-    BattleSystem::ActionCheckResult battleActionCheck;
-    BattleSystem::EffectResolution battleEffectResolution;
+    BattleActionService::PendingAction battlePendingAction;
     BattleSystem::BattleActorState playerBattleState;
     BattleSystem::BattleActorState wildBattleState;
     uint16_t battleHpFrom = 0;

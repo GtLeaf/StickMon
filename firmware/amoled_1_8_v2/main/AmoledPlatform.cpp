@@ -131,6 +131,9 @@ void bindAmoledPlatform() {
 bool AmoledPlatform::begin() {
     if (initialized_) return true;
     if (bsp_i2c_init() != ESP_OK) return false;
+    if (!battery_.begin(bsp_i2c_get_handle())) {
+        ESP_LOGW("AmoledPlatform", "AXP2101 battery gauge unavailable");
+    }
     if (!imu_.begin(bsp_i2c_get_handle())) {
         ESP_LOGW("AmoledPlatform", "QMI8658 unavailable or standby failed");
     }
@@ -216,6 +219,15 @@ void AmoledPlatform::audioTask() {
         }
         reclaimFinished();
         if (!mixer_.anyActive()) {
+            // No channel remains: release the codec/I2S and amplifier before
+            // blocking. The next queued sound reopens the same output.
+            xSemaphoreTake(audioMutex_, portMAX_DELAY);
+            if (speakerCodec_ && speakerOpen_) {
+                esp_codec_dev_close(speakerCodec_);
+                speakerOpen_ = false;
+                ESP_LOGI("AudioPower", "Idle speaker output closed");
+            }
+            xSemaphoreGive(audioMutex_);
             if (xQueueReceive(audioQueue_, &chunk, portMAX_DELAY) != pdTRUE) {
                 continue;
             }
@@ -470,14 +482,12 @@ bool AmoledPlatform::readAcceleration(float& x, float& y, float& z) {
 }
 
 int AmoledPlatform::batteryLevel() {
-    // The V2 BSP does not expose a calibrated PMU/ADC channel through the
-    // common board API yet. Keep this unknown until the driver is integrated.
-    return -1;
+    // Retry initialization after a transient startup bus failure.
+    if (!battery_.available() && !battery_.begin(bsp_i2c_get_handle())) return -1;
+    return battery_.level();
 }
 Platform::PowerCapabilities AmoledPlatform::capabilities() const {
-    // V1 has the power hardware, but this firmware does not yet ship a
-    // calibrated AXP2101/RTC driver. Report only the sleep path we can verify.
-    return {false, false, true, true};
+    return {battery_.available(), false, true, true};
 }
 Platform::WakeReason AmoledPlatform::wakeReason() const {
     switch (esp_sleep_get_wakeup_cause()) {
@@ -670,8 +680,10 @@ void AmoledPlatform::end() {
     if (!peerTransportActive_) return;
     esp_now_unregister_recv_cb();
     esp_now_deinit();
-    // Wi-Fi is shared with the remote ESP-Claw runtime. ESP-NOW may be
-    // disabled here, but the station must remain alive for remote chat.
+    // The visit session owns the radio exclusively. Claw's subsequent
+    // leavePeerSession() restarts STA when remote chat needs the network.
+    const esp_err_t stopped = esp_wifi_stop();
+    ESP_LOGI("RadioPower", "Visit radio stopped: %s", esp_err_to_name(stopped));
     peerTransportActive_ = false;
     resetPeerQueue();
 }

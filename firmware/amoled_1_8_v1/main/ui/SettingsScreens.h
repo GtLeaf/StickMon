@@ -19,7 +19,6 @@ inline constexpr int SETTINGS_SYSTEM_UPDATE_ITEM = 5;
 
 inline constexpr int SETTINGS_SLIDER_LEFT = 148;
 inline constexpr int SETTINGS_SLIDER_RIGHT = 332;
-inline constexpr int SETTINGS_SLIDER_OFFSET_Y = 48;
 
 void renderSettingsScreen(Canvas565& canvas, const SettingsViewModel& model,
                           uint16_t rowBegin = 0, uint16_t rowEnd = AmoledUi::HEIGHT);

@@ -1,5 +1,7 @@
 #include "game/HomeActorController.h"
 
+#include <algorithm>
+
 #include "game/SpeciesBehavior.h"
 
 namespace Home {
@@ -113,6 +115,17 @@ IdleGoal ActorController::idleGoal(MonsterDesire desire,
         return IdleGoal::STARE;
     }
     return IdleGoal::IDLE;
+}
+
+float ActorController::routeSpeed(Task task,
+                                 const MonsterBehaviorProfile& behavior,
+                                 const Game::MonsterRuntime& monster,
+                                 float minimum) {
+    float speed = task == Task::SEEK_FOOD ? 19.0f
+        : task == Task::WANDER ? 10.5f : 12.5f;
+    speed *= behavior.moveSpeedScale;
+    if (monster.mood < 40 || monster.satiety < 20) speed *= 0.72f;
+    return std::max(minimum, speed);
 }
 
 bool ActorController::ambientEligible(const Game::MonsterRuntime& monster,

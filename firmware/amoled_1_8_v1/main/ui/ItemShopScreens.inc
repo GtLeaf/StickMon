@@ -564,7 +564,11 @@ void renderShopScreen(Canvas565& canvas, const ShopViewModel& model,
              shopFadeColor(rgb(126, 175, 175), detailAlpha,
                            detailBackground));
 
+        const bool soldOut = model.mode == ShopViewModel::Mode::SELL &&
+            (!model.state || Game::ItemInventory::count(
+                *model.state, model.detailItem) == 0);
         uint16_t actionFill = shopFadeColor(
+            soldOut ? rgb(35, 35, 35) :
             model.pressedDetailAction == 0 ? rgb(48, 74, 68)
                                            : rgb(36, 54, 61),
             detailAlpha, detailBackground);
@@ -590,7 +594,7 @@ void renderShopScreen(Canvas565& canvas, const ShopViewModel& model,
             SHOP_DETAIL_ACTION_RECT.y +
                 (SHOP_DETAIL_ACTION_RECT.height - FontResource::LARGE_GLYPH_H) / 2,
             action,
-            shopFadeColor(rgb(115, 226, 183), detailAlpha,
+            shopFadeColor(soldOut ? rgb(105, 105, 105) : rgb(115, 226, 183), detailAlpha,
                           detailBackground));
         PixelRenderer::text(
             canvas,

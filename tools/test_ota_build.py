@@ -32,6 +32,8 @@ class OtaBuildTest(unittest.TestCase):
             self.assertEqual(lite['resourceSha256'], claw['resourceSha256'])
             self.assertNotEqual(lite['flavor'], claw['flavor'])
             self.assertFalse(lite['debug'])
+            self.assertEqual(lite['saveSchema'], 3)
+            self.assertEqual(lite['saveVersion'], 5)
             with self.assertRaises(ValueError):
                 generate(stage, root / 'bad', config, 'lite', 'http://example.test', key)
 if __name__ == '__main__':

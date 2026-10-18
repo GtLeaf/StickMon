@@ -118,7 +118,7 @@ private:
     float foamRestY(uint8_t stage) const;
     int8_t nextOwnedSoap(int8_t from, int8_t direction) const;
     void awardBathStage(Game::BathService::Stage stage);
-    void spawnExpFloat(uint8_t amount, uint32_t nowMs);
+    void spawnExpFloat(uint32_t amount, uint32_t nowMs);
     void spawnHeartFloat(uint32_t nowMs);
     void startHop(float heightPx, uint32_t nowMs);
     void startWiggle(uint32_t nowMs);

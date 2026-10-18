@@ -4,6 +4,7 @@
 #include <cstdint>
 #include "game/BondSystem.h"
 #include "game/ContactRoster.h"
+#include "game/CareExperience.h"
 #include "game/GameState.h"
 #include "game/Species.h"
 #include "game/SpeciesBehavior.h"
@@ -102,9 +103,10 @@ struct CareTickResult {
 
 // 日计数重置（careDay/stepsToday 等）；返回是否有字段变化。
 inline bool resetDailyCareCounters(GameState& state) {
+    const bool rewardsChanged = CareExperience::prepareDay(state);
     uint32_t day = state.gameMinutesTotal / GAME_MINUTES_PER_DAY;
     if (day > 0xFFFF) day = 0xFFFF;
-    if (state.careDay == (uint16_t)day) return false;
+    if (state.careDay == (uint16_t)day) return rewardsChanged;
 
     state.careDay = (uint16_t)day;
     state.careExpToday = 0;

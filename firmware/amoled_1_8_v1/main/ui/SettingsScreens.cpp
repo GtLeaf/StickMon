@@ -20,8 +20,8 @@ using UiCommon::drawToast;
 namespace {
 
 constexpr int MENU_CONTENT_TOP = UiMetrics::CONTENT_TOP;
-constexpr int SETTINGS_SLIDER_ROW_HEIGHT = 62;
-constexpr int SETTINGS_ITEM_ROW_HEIGHT = 48;
+constexpr int SETTINGS_SLIDER_ROW_HEIGHT = 64;
+constexpr int SETTINGS_ITEM_ROW_HEIGHT = 60;
 
 constexpr int settingsRowTop(int index) {
     return MENU_CONTENT_TOP +
@@ -70,7 +70,7 @@ void drawResetConfirmation(Canvas565& canvas, const SettingsViewModel& model) {
 
 void drawSettingsSlider(Canvas565& canvas, int y, uint8_t value,
                         uint8_t minimum, uint8_t maximum, bool pressed) {
-    const int trackY = y + SETTINGS_SLIDER_OFFSET_Y;
+    const int trackY = y + SETTINGS_SLIDER_ROW_HEIGHT / 2;
     const int trackWidth = SETTINGS_SLIDER_RIGHT - SETTINGS_SLIDER_LEFT;
     const int range = std::max<int>(1, maximum - minimum);
     const int clamped = std::clamp<int>(value, minimum, maximum);

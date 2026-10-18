@@ -31,7 +31,7 @@ from generate_map_rule_preview import (
 from map_generation_rules import CUSTOM_TILE_SOURCES, CUSTOM_TILE_SOURCE_FLIP_Y, CUSTOM_TILE_SOURCE_ROTATIONS
 
 
-ALGORITHM_VERSION = 15
+ALGORITHM_VERSION = 18
 MASK32 = 0xFFFFFFFF
 MAX_PATH_POINTS = 48
 PATH_COUNT = 2
@@ -108,8 +108,9 @@ STREAM_BOTTOM_OUTER_RIGHT_TILE = 4401
 STREAM_BOTTOM_INNER_LEFT_TILE = 4402
 STREAM_BOTTOM_INNER_RIGHT_TILE = 4403
 
-CLIFF_TOP_TILE = 1188
+CLIFF_LEFT_TILE = 1184
 CLIFF_FACE_TILE = 1185
+CLIFF_RIGHT_TILE = 1186
 CLIFF_STAIR_LEFT_TILE = 1161
 CLIFF_STAIR_RIGHT_TILE = 1162
 
@@ -1504,7 +1505,7 @@ def build_ancient_waterfall_topology(entry_edge):
     return entry, junction, paths, False, road
 
 
-def creek_candidates(road):
+def creek_candidates(road, paths=()):
     candidates = []
     for width in (3, 4, 5):
         for left in range(2, MAP_W - width - 1):
@@ -1526,70 +1527,13 @@ def creek_candidates(road):
                     (left + width, bridge_top),
                     (left + width, bridge_top + 1),
                 }
-                if crossing and crossing <= bridge_water and approaches <= road:
+                bridge = {(x, y) for y in (bridge_top, bridge_top + 1)
+                          for x in range(left - 1, left + width + 1)}
+                turns_on_bridge = any(p[1] != q[1] and (p in bridge or q in bridge)
+                                      for path in paths for p, q in zip(path.points, path.points[1:]))
+                if crossing and crossing <= bridge_water and approaches <= road and not turns_on_bridge:
                     candidates.append(CreekSpec(left, width, bridge_top))
     return candidates
-
-
-def stream_cells(shape):
-    cells = set()
-    for y in range(MAP_H):
-        if shape.boundary and y >= shape.boundary:
-            left, width = shape.downstream_left, shape.downstream_width
-        else:
-            left, width = shape.upstream_left, shape.upstream_width
-        cells.update((x, y) for x in range(left, left + width))
-    return cells
-
-
-def stream_transition_candidates(road, creek):
-    base_left = creek.left
-    base_width = creek.width
-    bridge_water = {
-        (x, y)
-        for y in (creek.bridge_top, creek.bridge_top + 1)
-        for x in range(base_left, base_left + base_width)
-    }
-    remote_spans = (
-        (base_left + 1, base_width - 1),
-        (base_left, base_width - 1),
-        (base_left - 1, base_width + 1),
-        (base_left, base_width + 1),
-    )
-    candidates = []
-    for boundary in range(1, MAP_H):
-        if not (
-            boundary <= creek.bridge_top - 2
-            or boundary >= creek.bridge_top + 4
-        ):
-            continue
-        bridge_is_downstream = boundary <= creek.bridge_top - 2
-        for remote_left, remote_width in remote_spans:
-            if (
-                remote_width < 3
-                or remote_left < 1
-                or remote_left + remote_width > MAP_W - 1
-            ):
-                continue
-            if bridge_is_downstream:
-                shape = StreamShape(
-                    remote_left, remote_width, base_left, base_width, boundary
-                )
-            else:
-                shape = StreamShape(
-                    base_left, base_width, remote_left, remote_width, boundary
-                )
-            if (stream_cells(shape) & road) <= bridge_water:
-                candidates.append(shape)
-    return candidates
-
-
-def choose_stream_shape(features, road, creek):
-    straight = StreamShape(creek.left, creek.width, creek.left, creek.width, 0)
-    transitions = stream_transition_candidates(road, creek)
-    if features.bounded(100) < 55 and transitions:
-        return transitions[features.bounded(len(transitions))]
-    return straight
 
 
 def stamp_stream(runtime_map, shape):
@@ -1615,6 +1559,11 @@ def stamp_stream(runtime_map, shape):
     if not shape.boundary:
         return water, transition_cells
 
+    return water, stamp_stream_corners(runtime_map, shape)
+
+
+def stamp_stream_corners(runtime_map, shape):
+    transition_cells = set()
     boundary = shape.boundary
     upstream_left = shape.upstream_left
     upstream_right = upstream_left + shape.upstream_width
@@ -1645,7 +1594,87 @@ def stamp_stream(runtime_map, shape):
     for x, y, tile_id in corners:
         runtime_map.layers[0][y * MAP_W + x] = tile_id
         transition_cells.add((x, y))
-    return water, transition_cells
+    return transition_cells
+
+
+def creek_style(seed):
+    return XorShift32(seed ^ 0x91E10DA5).bounded(4)
+
+
+def creek_layout_candidates(road, creek, style, paths=()):
+    base = (creek.left, creek.width)
+    if style == 0:
+        return [(base,) * MAP_H]
+
+    def step(span, mode):
+        left, width = span
+        return ((left + 1, width - 1), (left, width - 1),
+                (left - 1, width + 1), (left, width + 1))[mode]
+
+    boundaries = [b for b in (range(1, MAP_H) if style == 3 else range(2, MAP_H - 1))
+                  if b <= creek.bridge_top - 2 or b >= creek.bridge_top + 4]
+    pairs = [(b, MAP_H) for b in boundaries] if style == 1 else [
+        (a, b) for a in boundaries for b in boundaries if b >= a + 2]
+    candidates = []
+    for a, b in pairs:
+        if style == 3 and not 3 <= b - a <= 4:
+            continue
+        bridge_segment = int(creek.bridge_top >= a) + int(creek.bridge_top >= b)
+        for first in range(4):
+            for second in range(1 if style == 1 else 4):
+                near = step(base, first)
+                far = step(near, second)
+                spans = ((base, near, far) if bridge_segment == 0 else
+                         (near, base, step(base, second)) if bridge_segment == 1 else
+                         (far, near, base))
+                used = spans[:2] if style == 1 else spans
+                if any(not (3 <= w <= 5 and 1 <= l and l + w <= MAP_W - 1)
+                       for l, w in used):
+                    continue
+                if style == 2 and not (spans[0][1] == spans[2][1]
+                                       and spans[0][0] != spans[2][0]):
+                    continue
+                if style == 3 and not (spans[0] == spans[2]
+                                       and spans[1][1] == spans[0][1] + 1):
+                    continue
+                rows = tuple(spans[int(y >= a) + int(y >= b)] for y in range(MAP_H))
+                water = {(x, y) for y, (left, width) in enumerate(rows)
+                         for x in range(left, left + width)}
+                crossing = {(x, y) for y in (creek.bridge_top, creek.bridge_top + 1)
+                            for x in range(creek.left, creek.left + creek.width)}
+                if not water & road <= crossing:
+                    continue
+                if style == 3:
+                    bridge = {(x, y) for y in (creek.bridge_top, creek.bridge_top + 1)
+                              for x in range(creek.left - 1, creek.left + creek.width + 1)}
+                    if not cliff_candidates(road, water, bridge, creek_envelope(rows), paths):
+                        continue
+                candidates.append(rows)
+    return candidates
+
+
+def creek_envelope(rows):
+    left = min(l for l, _w in rows)
+    width = max(l + w for l, w in rows) - left
+    return StreamShape(left, width, left, width, 0)
+
+
+def stamp_creek_layout(runtime_map, rows):
+    water = set()
+    transitions = set()
+    for y, (left, width) in enumerate(rows):
+        for x in range(left, left + width):
+            runtime_map.layers[0][y * MAP_W + x] = (
+                STREAM_LEFT_TILE if x == left else
+                STREAM_RIGHT_TILE if x == left + width - 1 else STREAM_CENTER_TILE)
+            water.add((x, y))
+    for y in range(1, MAP_H):
+        if rows[y] != rows[y - 1]:
+            ul, uw = rows[y - 1]
+            dl, dw = rows[y]
+            transitions.update(stamp_stream_corners(
+                runtime_map, StreamShape(ul, uw, dl, dw, y)))
+    return water, transitions
 
 
 def stamp_bridge(runtime_map, creek):
@@ -1659,7 +1688,23 @@ def stamp_bridge(runtime_map, creek):
     return bridge
 
 
-def cliff_candidates(road, water, bridge, shape):
+def cliff_landing_fits(paths, stair_left, stair_y):
+    for path in paths:
+        for index, (x, y) in enumerate(path.points):
+            if y != stair_y or not stair_left <= x < stair_left + 2:
+                continue
+            if index < 2 or index + 2 >= len(path.points):
+                return False
+            for offset in (1, 2):
+                before, after = path.points[index - offset], path.points[index + offset]
+                if (before[0] != x or after[0] != x
+                        or abs(before[1] - y) != offset
+                        or before[1] + after[1] != y * 2):
+                    return False
+    return True
+
+
+def cliff_candidates(road, water, bridge, shape, paths=()):
     minimum_left = min(shape.upstream_left, shape.downstream_left)
     maximum_right = max(
         shape.upstream_left + shape.upstream_width,
@@ -1682,12 +1727,13 @@ def cliff_candidates(road, water, bridge, shape):
                 vertical_approach = {
                     (x, y)
                     for x in (stair_left, stair_left + 1)
-                    for y in (top - 1, top + 2)
+                    for y in (top - 1, top + 2, top + 3)
                 }
                 if (
                     stairs <= road
                     and vertical_approach <= road
                     and (road & cliff) <= stairs
+                    and cliff_landing_fits(paths, stair_left, top + 1)
                 ):
                     candidates.append(CliffSpec(top, left, right, stair_left))
     return candidates
@@ -1696,23 +1742,19 @@ def cliff_candidates(road, water, bridge, shape):
 def stamp_cliff(runtime_map, spec):
     cliff = set()
     stairs = set()
+    y = spec.top + 1
     for x in range(spec.left, spec.right):
-        for y in (spec.top, spec.top + 1):
-            point = (x, y)
-            cliff.add(point)
-            if spec.stair_left <= x < spec.stair_left + 2:
-                runtime_map.layers[0][y * MAP_W + x] = (
-                    CLIFF_STAIR_LEFT_TILE
-                    if x == spec.stair_left
-                    else CLIFF_STAIR_RIGHT_TILE
-                )
-                runtime_map.layers[1][y * MAP_W + x] = 0
-                stairs.add(point)
-            elif y == spec.top:
-                runtime_map.layers[0][y * MAP_W + x] = CLIFF_TOP_TILE
-                runtime_map.layers[1][y * MAP_W + x] = 0
-            else:
-                runtime_map.layers[1][y * MAP_W + x] = CLIFF_FACE_TILE
+        point = (x, y)
+        cliff.add(point)
+        if spec.stair_left <= x < spec.stair_left + 2:
+            runtime_map.layers[0][y * MAP_W + x] = (
+                CLIFF_STAIR_LEFT_TILE if x == spec.stair_left else CLIFF_STAIR_RIGHT_TILE)
+            stairs.add(point)
+        else:
+            runtime_map.layers[1][y * MAP_W + x] = (
+                CLIFF_LEFT_TILE if x == spec.left and spec.left > 0 else
+                CLIFF_RIGHT_TILE if x + 1 == spec.right and spec.right < MAP_W else
+                CLIFF_FACE_TILE)
     return cliff, stairs
 
 
@@ -2113,8 +2155,109 @@ def generate_frost_cave_map(seed, entry_edge, level=0, level_count=1, entered_by
     return runtime_map
 
 
-def generate_map(seed, entry_edge, area_index=0, *, frost_level=0,
-                 frost_level_count=1, frost_entered_by_ladder=False):
+def creek_bank_distance(point, rows):
+    x, y = point
+    left, width = rows[y]
+    return left - x if x < left else x - left - width + 1
+
+
+def grow_creek_patch(rng, available, requested, rows):
+    components = connected_components(available)
+    if not components:
+        return set()
+    component = components[0]
+    target = min(requested, len(component) - max(4, len(component) // 4))
+    if target < 4:
+        return set()
+
+    def margin(p):
+        return min(p[0], MAP_W - 1 - p[0], p[1], MAP_H - 1 - p[1])
+
+    best_patch, best_quality = set(), -32768
+    for _attempt in range(8):
+        scored = [(sum(q in component for q in neighbors4(p)) * 14
+                   - abs(creek_bank_distance(p, rows) - 3) * 7
+                   + min(2, margin(p)) * 15 + rng.bounded(21), p)
+                  for p in sorted(component)]
+        seed = max(scored, key=lambda item: item[0])[1]
+        patch = {seed}
+        frontier = set(neighbors4(seed)) & component
+        while len(patch) < target:
+            scored = [(sum(q in patch for q in neighbors4(p)) * 20
+                       + rng.bounded(31) - (abs(p[0] - seed[0]) + abs(p[1] - seed[1])) * 3
+                       + min(1, margin(p)) * 15
+                       - abs(creek_bank_distance(p, rows) - 2) * 2, p)
+                      for p in sorted(frontier)]
+            chosen = max(scored, key=lambda item: item[0])[1]
+            patch.add(chosen)
+            frontier.remove(chosen)
+            frontier.update(set(neighbors4(chosen)) & component - patch)
+        border = sum(margin(p) == 0 for p in patch)
+        tips = sum(sum(q in patch for q in neighbors4(p)) <= 1 for p in patch)
+        width = max(x for x, _y in patch) - min(x for x, _y in patch) + 1
+        height = max(y for _x, y in patch) - min(y for _x, y in patch) + 1
+        quality = min(width, height) * 20 - border * 3 - tips * 2
+        core = any({(x, y), (x + 1, y), (x, y + 1), (x + 1, y + 1)} <= patch
+                   for x, y in patch)
+        compact = (core and min(width, height) >= 2 and max(width, height) <= min(width, height) * 2
+                   and (requested >= 10 or (width <= 3 and height <= 4)))
+        if compact and quality > best_quality:
+            best_patch, best_quality = patch, quality
+        if compact and (requested < 10 or (min(width, height) >= 3
+                              and border * 10 <= len(patch) * 3
+                              and tips * 4 <= len(patch))):
+            break
+    return best_patch
+
+
+def stamp_creek_vegetation(runtime_map, rng, road, water, bridge, cliff, stairs, rows, style):
+    protected = expanded(bridge) | expanded({runtime_map.junction}) | expanded(stairs)
+    available = {(x, y) for x in range(MAP_W) for y in range(MAP_H)} - (
+        road | water | cliff | protected)
+    trees = set()
+    tree_available = available - expanded(cliff)
+    if style in (1, 3) or (style == 2 and rng.bounded(2)):
+        candidates = []
+        for x in range(1, MAP_W - 2):
+            for y in range(MAP_H - 2):
+                cells = {(x + dx, y + dy) for dx in range(2) for dy in range(3)}
+                if cells <= tree_available:
+                    candidates.append((x, y, cells))
+        if candidates:
+            x, y, trees = candidates[rng.bounded(len(candidates))]
+            for dy, row in enumerate(PARK_TREE_TILES):
+                for dx, tile in enumerate(row):
+                    runtime_map.layers[1][(y + dy) * MAP_W + x + dx] = tile
+    available -= trees
+    banks = [{p for p in available if p[0] < rows[p[1]][0]},
+             {p for p in available if p[0] >= sum(rows[p[1]])}]
+    if len(banks[1]) > len(banks[0]):
+        banks.reverse()
+    total = (18, 24, 22, 20)[style] + rng.bounded(4)
+    main = grow_creek_patch(rng, banks[0], total * 7 // 10, rows)
+    secondary = grow_creek_patch(rng, banks[1], min(9, total - len(main)), rows)
+    if not main or not secondary:
+        raise ValueError("creek vegetation needs one grass patch on each bank")
+    grass = main | secondary
+    for x, y in grass:
+        runtime_map.layers[0][y * MAP_W + x] = DENSE_GRASS_TILE
+    shrubs = set()
+    for _ in range((1, 3, 2, 2)[style]):
+        candidates = [p for p in sorted(available - grass - shrubs)
+                      if any(q in grass for q in neighbors4(p))
+                      and minimum_distance({p}, shrubs) >= 3]
+        if not candidates:
+            break
+        x, y = candidates[rng.bounded(len(candidates))]
+        shrubs.add((x, y))
+        runtime_map.layers[1][y * MAP_W + x] = SHRUB_TILE
+    stamp_boundary_flowers(runtime_map, rng, grass, shrubs, road, water,
+                           cliff | protected | trees, 1 if style == 0 else 2)
+
+
+def _generate_map_candidate(seed, entry_edge, area_index=0, *, frost_level=0,
+                            frost_level_count=1, frost_entered_by_ladder=False,
+                            creek_attempt=0):
     seed &= MASK32
     area_index &= 0xFF
     if area_index == TALL_GRASS_PARK_AREA:
@@ -2135,17 +2278,23 @@ def generate_map(seed, entry_edge, area_index=0, *, frost_level=0,
             entry_edge
         )
     elif area_index == CREEK_BRIDGE_SLOPE_AREA:
-        for attempt in range(16):
-            topology_seed = seed ^ ((0x9E3779B9 * (attempt + 1)) & MASK32)
+        style = creek_style(seed)
+        rows = None
+        for attempt in range(96):
+            topology_seed = seed ^ ((0x9E3779B9 * (attempt + 1 + creek_attempt * 96)) & MASK32)
             entry, junction, paths, has_coast, road = build_topology(
                 topology_seed, entry_edge, coast_chance=0
             )
-            candidates = creek_candidates(road)
+            candidates = creek_candidates(road, paths)
             if candidates:
-                creek = candidates[features.bounded(len(candidates))]
-                break
+                candidate = candidates[features.bounded(len(candidates))]
+                layouts = creek_layout_candidates(road, candidate, style, paths)
+                if layouts:
+                    creek = candidate
+                    rows = layouts[features.bounded(len(layouts))]
+                    break
         if creek is None:
-            raise ValueError("unable to place creek bridge after 16 topology attempts")
+            raise ValueError("unable to place creek layout after 96 topology attempts")
     elif area_index == MIST_FOREST_PATH_AREA:
         for attempt in range(16):
             topology_seed = (
@@ -2204,11 +2353,11 @@ def generate_map(seed, entry_edge, area_index=0, *, frost_level=0,
         runtime_map.has_cliff = True
 
     if creek is not None:
-        shape = choose_stream_shape(features, road, creek)
-        water, transition_cells = stamp_stream(runtime_map, shape)
+        shape = creek_envelope(rows)
+        water, transition_cells = stamp_creek_layout(runtime_map, rows)
         bridge = stamp_bridge(runtime_map, creek)
-        if features.bounded(100) < 60:
-            candidates = cliff_candidates(road, water, bridge, shape)
+        if features.bounded(100) < (0, 25, 45, 100)[style]:
+            candidates = cliff_candidates(road, water, bridge, shape, paths)
             if candidates:
                 cliff_spec = candidates[features.bounded(len(candidates))]
                 cliff, stairs = stamp_cliff(runtime_map, cliff_spec)
@@ -2250,6 +2399,8 @@ def generate_map(seed, entry_edge, area_index=0, *, frost_level=0,
 
     if has_snow:
         stamp_snow_decorations(runtime_map, terrain, road, scenery)
+    elif creek is not None:
+        stamp_creek_vegetation(runtime_map, terrain, road, water, bridge, cliff, stairs, rows, style)
     elif area_index == TALL_GRASS_PARK_AREA:
         forest, _grass = stamp_tall_grass_park(runtime_map, terrain, road, profile)
     elif not has_waterfall:
@@ -2266,6 +2417,18 @@ def generate_map(seed, entry_edge, area_index=0, *, frost_level=0,
             if point not in road or blocked_water or blocked_cliff or point in forest:
                 raise ValueError(f"route crosses blocked scenery: {point}")
     return runtime_map
+
+
+def generate_map(seed, entry_edge, area_index=0, **kwargs):
+    if area_index & 0xFF != CREEK_BRIDGE_SLOPE_AREA:
+        return _generate_map_candidate(seed, entry_edge, area_index, **kwargs)
+    for attempt in range(16):
+        try:
+            return _generate_map_candidate(seed, entry_edge, area_index,
+                                            creek_attempt=attempt, **kwargs)
+        except ValueError:
+            if attempt == 15:
+                raise
 
 
 def fnv_byte(value, byte):
@@ -2323,6 +2486,7 @@ def route_junctions(paths):
 def map_json(runtime_map):
     return {
         "algorithmVersion": ALGORITHM_VERSION,
+        "creekStyle": "ABCD"[creek_style(runtime_map.seed)] if runtime_map.has_creek else None,
         "seed": runtime_map.seed,
         "areaIndex": runtime_map.area_index,
         "fingerprint": f"{fingerprint(runtime_map):08x}",

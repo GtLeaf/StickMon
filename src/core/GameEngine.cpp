@@ -127,12 +127,6 @@ static_assert(!supportsLongPressHome(SceneID::MAIN) &&
               !supportsLongPressHome(SceneID::HATCH),
               "home, explore, and hatch scenes must retain their own long-press behavior");
 
-uint8_t careExpMultiplierForLevel(uint8_t level) {
-    if (level <= 5) return 3;
-    if (level <= 10) return 2;
-    return 1;
-}
-
 uint8_t clampFoodIndex(uint8_t foodIndex) {
     return foodIndex < Game::ROOM_FOOD_COUNT ? foodIndex : 0;
 }
@@ -1021,10 +1015,11 @@ FoodPlacementResult GameEngine::placeSelectedFoodInBowl() {
 }
 
 FoodConsumeResult GameEngine::consumeBowlFood(uint8_t teamSlot) {
+    syncGameClock(Hal::ins().millis());
     FoodConsumeResult result =
         Game::HomeCare::consumeBowlFood(state, teamSlot);
     if (result.consumed) {
-        grantCareExperience(result.careExp, result.weakCareExp, teamSlot);
+        result.careExp = addExperienceToTeamMember(teamSlot, result.careExp);
         markDirty(SaveUrgency::SOON);
     }
     return result;
@@ -1310,7 +1305,7 @@ bool GameEngine::useEvolutionStone(uint8_t teamSlot, Game::ItemId stone) {
         teamSlot, mon.speciesId, target->id, mon.level, stone);
 }
 
-uint8_t GameEngine::grantBathReward(BathRewardStage stage) {
+uint32_t GameEngine::grantBathReward(BathRewardStage stage) {
     if (state.teamCount == 0) return 0;
     uint32_t now = Hal::ins().millis();
     syncGameClock(now);
@@ -1318,7 +1313,8 @@ uint8_t GameEngine::grantBathReward(BathRewardStage stage) {
 
     Game::BathService::RewardResult reward =
         Game::BathService::applyStageReward(state, stage);
-    if (reward.experience > 0) addExperience(reward.experience);
+    if (reward.experience > 0)
+        reward.experience = addExperienceToTeamMember(0, reward.experience);
     markDirty(SaveUrgency::SOON);
     return reward.experience;
 }
@@ -1391,17 +1387,18 @@ bool GameEngine::rewardPairInteractionMood() {
     if (state.teamCount < 2) return false;
     syncGameClock(Hal::ins().millis());
     resetDailyCountersIfNeeded();
-    if (state.pairMoodRewardsToday >= 3) return false;
-
+    const bool moodReward = state.pairMoodRewardsToday < 3;
     bool changed = false;
     for (uint8_t slot = 0;
          slot < state.teamCount && slot < Game::TEAM_CAP; ++slot) {
         Game::MonsterRuntime& mon = state.team[slot];
-        if (mon.fainted || mon.hpCur == 0 || mon.mood >= 100) continue;
-        ++mon.mood;
-        changed = true;
+        if (mon.fainted || mon.hpCur == 0) continue;
+        const uint32_t experience = Game::CareExperience::grant(state, slot,
+            Game::CareExperience::Source::PLAY);
+        changed |= addExperienceToTeamMember(slot, experience) > 0;
+        if (moodReward && mon.mood < 100) { ++mon.mood; changed = true; }
     }
-    ++state.pairMoodRewardsToday;
+    if (moodReward) ++state.pairMoodRewardsToday;
     markDirty(SaveUrgency::SOON);
     return changed;
 }
@@ -1417,7 +1414,7 @@ PetResult GameEngine::petMonster() {
         return result;
     }
     if (result.outcome == PetOutcome::REWARDED) {
-        grantCareExperience(2);
+        result.careExp = addExperienceToTeamMember(0, result.careExp);
         markDirty(SaveUrgency::SOON);
     }
     return result;
@@ -1438,6 +1435,8 @@ void GameEngine::addExperience(uint32_t amount) {
 uint32_t GameEngine::addExperienceToTeamMember(uint8_t teamSlot, uint32_t amount) {
     if (amount == 0 || teamSlot >= state.teamCount || teamSlot >= Game::TEAM_CAP) return 0;
     Game::MonsterRuntime& mon = state.team[teamSlot];
+    Game::CareExperience::prepareDay(state);
+    Game::CareExperience::recordFor(state, mon);
     const Species& beforeSpecies = speciesFor(mon);
     Game::ExperienceService::Result experience =
         Game::ExperienceService::add(mon, beforeSpecies, amount);
@@ -1734,7 +1733,7 @@ void GameEngine::clearPendingMoveLearn() {
 bool GameEngine::applyLevelUpEvolutions(Game::MonsterRuntime& mon, uint8_t teamSlot,
                                         bool notify, uint8_t oldLevel) {
     const Species& from = speciesFor(mon);
-    const Species* target = levelUpEvolutionTarget(from, mon);
+    const Species* target = levelUpEvolutionTarget(from, mon, gameMinutesTotal());
     if (!target) return false;
     if (!notify || teamSlot >= Game::TEAM_CAP) return false;
     return queueEvolutionEvent(
@@ -1934,6 +1933,9 @@ void GameEngine::markDirty(SaveUrgency urgency) {
 
 void GameEngine::enterDeepSleep() {
     saveNow();
+#if defined(__EMSCRIPTEN__)
+    return;
+#endif
     retainCareAccumulators(careAcc);
     AudioManager::ins().stopAll();
     Hal::ins().setBrightness(0);
@@ -2184,11 +2186,13 @@ void GameEngine::processInput(uint32_t nowMs) {
 #endif
             continue;
         }
+#if !defined(__EMSCRIPTEN__)
         if (currentId == SceneID::MAIN && event.btn == 1 &&
             event.action == BtnAction::LONG_PRESS) {
             enterDeepSleep();
             return;
         }
+#endif
     }
 }
 
@@ -2624,31 +2628,6 @@ void GameEngine::sanitizeMonsterMoves() {
 
 void GameEngine::resetDailyCountersIfNeeded() {
     if (Game::resetDailyCareCounters(state)) markDirty(SaveUrgency::DEFERRED);
-}
-
-void GameEngine::grantCareExperience(uint8_t baseAmount, bool weakGain,
-                                     uint8_t teamSlot) {
-    if (baseAmount == 0 || teamSlot >= state.teamCount ||
-        teamSlot >= Game::TEAM_CAP) {
-        return;
-    }
-    uint32_t now = Hal::ins().millis();
-    syncGameClock(now);
-    resetDailyCountersIfNeeded();
-
-    Game::MonsterRuntime& mon = state.team[teamSlot];
-    uint16_t cap = Game::BathService::careDailyCapForLevel(mon.level);
-    if (state.careExpToday >= cap) return;
-
-    uint16_t amount = weakGain || mon.level > 15
-        ? 1
-        : (uint16_t)baseAmount * careExpMultiplierForLevel(mon.level);
-    amount = MathUtil::min<uint16_t>(amount, cap - state.careExpToday);
-    if (amount == 0) return;
-
-    state.careExpToday += amount;
-    addExperienceToTeamMember(teamSlot, amount);
-    markDirty(SaveUrgency::DEFERRED);
 }
 
 void GameEngine::tickCare(uint32_t nowMs) {

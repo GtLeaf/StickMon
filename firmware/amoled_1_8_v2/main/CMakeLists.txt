@@ -16,6 +16,8 @@ set(STICKMON_MAIN_REQUIRES
     esp_psram
     esp_system
     esp_timer
+    esp_pm
+    esp_driver_gpio
     esp_wifi
     nvs_flash
     spiffs
@@ -36,60 +38,13 @@ idf_component_register(
     SRCS
         "main.cpp"
         "OtaRuntime.cpp"
-        "${STICKMON_AMOLED_APP_SOURCE}"
+        ${STICKMON_AMOLED_APP_SOURCES}
         "AmoledPlatform.cpp"
         "${STICKMON_ROOT}/firmware/common/Qmi8658.cpp"
+        "${STICKMON_ROOT}/firmware/common/Axp2101Battery.cpp"
         ${STICKMON_AMOLED_UI_SOURCES}
         "TouchInput.cpp"
-        "${STICKMON_ROOT}/src/assets/FontFallbackCN.cpp"
-        "${STICKMON_ROOT}/src/assets/GameAssets.cpp"
-        "${STICKMON_ROOT}/src/assets/HudAssets.cpp"
-        "${STICKMON_ROOT}/src/assets/MenuAssets.cpp"
-        "${STICKMON_ROOT}/src/assets/PokemonSprites.cpp"
-        "${STICKMON_ROOT}/src/core/DeflateDecoder.cpp"
-        "${STICKMON_ROOT}/src/core/AudioManager.cpp"
-        "${STICKMON_ROOT}/src/core/PcmMixer.cpp"
-        "${STICKMON_ROOT}/src/core/CryPlayer.cpp"
-        "${STICKMON_ROOT}/src/core/FontResource.cpp"
-        "${STICKMON_ROOT}/src/core/GameClockService.cpp"
-        "${STICKMON_ROOT}/src/core/ResourceFS.cpp"
-        "${STICKMON_ROOT}/src/core/ResourcePack.cpp"
-        "${STICKMON_ROOT}/src/core/RoomMovementArea.cpp"
-        "${STICKMON_ROOT}/src/core/RoomNavigator.cpp"
-        "${STICKMON_ROOT}/src/core/RoomRenderer.cpp"
-        "${STICKMON_ROOT}/src/core/RoomResource.cpp"
-        "${STICKMON_ROOT}/src/core/SaveCodec.cpp"
-        "${STICKMON_ROOT}/src/core/SaveManager.cpp"
-        "${STICKMON_ROOT}/src/core/VisitSessionService.cpp"
-        "${STICKMON_ROOT}/src/game/HomeCare.cpp"
-        "${STICKMON_ROOT}/src/game/HomeActor.cpp"
-        "${STICKMON_ROOT}/src/game/HomeActorController.cpp"
-        "${STICKMON_ROOT}/src/game/HomeChase.cpp"
-        "${STICKMON_ROOT}/src/game/HomeCoordinator.cpp"
-        "${STICKMON_ROOT}/src/game/HomeRuntime.cpp"
-        "${STICKMON_ROOT}/src/game/HomeSimulation.cpp"
-        "${STICKMON_ROOT}/src/game/BathService.cpp"
-        "${STICKMON_ROOT}/src/game/BathInteraction.cpp"
-        "${STICKMON_ROOT}/src/game/BattleSystem.cpp"
-        "${STICKMON_ROOT}/src/game/BattleTurnController.cpp"
-        "${STICKMON_ROOT}/src/game/ExperienceService.cpp"
-        "${STICKMON_ROOT}/src/game/FriendshipService.cpp"
-        "${STICKMON_ROOT}/src/game/FriendshipSystem.cpp"
-        "${STICKMON_ROOT}/src/game/ItemInventory.cpp"
-        "${STICKMON_ROOT}/src/game/MonsterFactory.cpp"
-        "${STICKMON_ROOT}/src/game/HatchService.cpp"
-        "${STICKMON_ROOT}/src/game/MoveManagementService.cpp"
-        "${STICKMON_ROOT}/src/game/ShopService.cpp"
-        "${STICKMON_ROOT}/src/game/ExploreMapGenerator.cpp"
-        "${STICKMON_ROOT}/src/game/GameRandom.cpp"
-        "${STICKMON_ROOT}/src/game/MonsterMind.cpp"
-        "${STICKMON_ROOT}/src/game/Species.cpp"
-        "${STICKMON_ROOT}/src/hardware/EspNowLink.cpp"
-        "${STICKMON_ROOT}/src/platform/api/PlatformServices.cpp"
-        "${STICKMON_ROOT}/src/presentation/Canvas565.cpp"
-        "${STICKMON_ROOT}/src/presentation/HudRenderer.cpp"
-        "${STICKMON_ROOT}/src/presentation/PixelRenderer.cpp"
-        "${STICKMON_ROOT}/src/third_party/uzlib/tinflate.c"
+        ${STICKMON_AMOLED_SHARED_SOURCES}
     INCLUDE_DIRS
         "."
         "${CMAKE_BINARY_DIR}/ota-generated"

@@ -83,6 +83,10 @@ public:
         return runtime_.overlapsOther(actorId, x, y);
     }
 
+    bool targetAvailable(uint8_t actorId, float x, float y) const {
+        return runtime_.targetAvailable(actorId, x, y);
+    }
+
     bool transition(uint8_t actorId, Task task, uint32_t nowMs,
                     uint32_t durationMs = 0, bool force = false);
     bool transitionPreparedRoute(uint8_t actorId, Task task,

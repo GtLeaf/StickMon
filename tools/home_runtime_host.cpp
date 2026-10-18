@@ -1,5 +1,6 @@
 #include <cassert>
 #include <cmath>
+#include <initializer_list>
 
 #include "game/HomeRuntime.h"
 
@@ -98,6 +99,23 @@ int main() {
     assert(!runtime.overlapsOther(0, leader.x, leader.y));
     assert(leader.y > 100.0f || leader.x < 100.0f);
 
+    // A delayed step can leave no valid local sidestep. Fall back to one
+    // global detour, then finish at normal speed without crossing the blocker.
+    runtime.stop(0, 2100);
+    leader.x = 20.0f;
+    leader.y = 100.0f;
+    assert(runtime.planRoute(0, 180.0f, 100.0f));
+    assert(leader.route.count == 1);
+    result = runtime.advanceRoute(0, 2100, 200.0f, 0.8f);
+    assert(result == Home::RouteStep::MOVING);
+    assert(leader.route.count >= 2);
+    assert(leader.x == 20.0f && leader.y == 100.0f);
+    for (int frame = 1; frame < 500 && result == Home::RouteStep::MOVING; ++frame) {
+        result = runtime.advanceRoute(0, 2100 + frame * 50, 20.0f, 0.05f);
+        assert(!runtime.overlapsOther(0, leader.x, leader.y));
+    }
+    assert(result == Home::RouteStep::ARRIVED);
+
     // Two ordinary wander routes may cross. Neither actor should turn a
     // temporary visual encounter into a permanent BLOCKED state.
     leader.stop(1100, 0);
@@ -152,7 +170,8 @@ int main() {
     runtime.setNavigation(world);
     assert(runtime.transition(0, Home::Task::WANDER, 23000));
     assert(runtime.transition(1, Home::Task::WANDER, 23000));
-    assert(runtime.planRoute(0, 78.0f, 122.0f));
+    assert(!runtime.planRoute(0, 78.0f, 122.0f));
+    assert(runtime.planRoute(0, 98.0f, 122.0f));
     assert(runtime.planRoute(1, 134.0f, 92.0f));
     leaderResult = Home::RouteStep::MOVING;
     companionResult = Home::RouteStep::MOVING;
@@ -185,8 +204,8 @@ int main() {
     assert(leaderResolved);
     assert(companionResolved);
 
-    // A route ending inside a stationary actor can never arrive. Soft
-    // steering must eventually report BLOCKED instead of circling forever.
+    // Occupied and reserved endpoints are rejected before either actor
+    // starts walking; a failed request preserves its current valid route.
     leader.stop(65000, 0);
     companion.stop(65000, 0);
     leader.x = 20.0f;
@@ -198,13 +217,55 @@ int main() {
     world.footBounds = {0.0f, 0.0f, 200.0f, 200.0f};
     runtime.setNavigation(world);
     assert(runtime.transition(0, Home::Task::WANDER, 65000));
+    assert(!runtime.targetAvailable(0, companion.x, companion.y));
+    assert(!runtime.planRoute(0, companion.x, companion.y));
+    assert(runtime.transition(1, Home::Task::WANDER, 65000));
+    assert(runtime.planRoute(1, 150, 150));
+    assert(!runtime.planRoute(0, 150, 150));
+    assert(runtime.planRoute(0, 180, 100));
+    const auto validTarget = leader.targetX;
+    assert(!runtime.planRoute(0, 150, 150));
+    assert(leader.targetX == validTarget && !leader.route.empty());
+    runtime.stop(1, 65000);
+    companion.hidden = true;
     assert(runtime.planRoute(0, companion.x, companion.y));
+    companion.hidden = false;
+
+    // Sleeping, fainted and feeding actors keep their pose. A global detour
+    // is planned immediately, instead of repeatedly steering into them.
+    for (auto task : {Home::Task::SLEEPING, Home::Task::FAINTED, Home::Task::FEEDING}) {
+        runtime.stop(0, 70000);
+        runtime.stop(1, 70000);
+        leader.x = 20; leader.y = 100;
+        companion.x = 100; companion.y = 100;
+        runtime.transition(0, Home::Task::SEEK_FOOD, 70000);
+        runtime.transition(1, task, 70000, 0, true);
+        assert(runtime.planRoute(0, 180, 100));
+        assert(leader.route.count >= 2);
+        result = Home::RouteStep::MOVING;
+        for (int frame = 0; frame < 500 && result == Home::RouteStep::MOVING; ++frame) {
+            result = runtime.advanceRoute(0, 70000 + frame * 50, 20, .05f, .8f, true);
+            assert(!runtime.overlapsOther(0, leader.x, leader.y));
+        }
+        assert(result == Home::RouteStep::ARRIVED);
+        assert(companion.x == 100 && companion.y == 100 && companion.task == task);
+    }
+
+    // A narrow corridor cannot pass a stationary blocker. Recovery terminates
+    // rather than rebuilding the same route on every frame.
+    const RoomResource::Point corridor[] = {{0, 44}, {200, 44}, {200, 56}, {0, 56}};
+    runtime.stop(0, 100000); runtime.stop(1, 100000);
+    leader.x = 20; leader.y = 50;
+    companion.x = 100; companion.y = 50;
+    world.polygon = corridor; world.polygonCount = 4;
+    world.footBounds = {0, 44, 200, 56};
+    runtime.setNavigation(world);
+    runtime.transition(0, Home::Task::SEEK_FOOD, 100000);
+    assert(runtime.planRoute(0, 180, 50));
     result = Home::RouteStep::MOVING;
-    for (int frame = 0; frame < 240 &&
-         result == Home::RouteStep::MOVING; ++frame) {
-        result = runtime.advanceRoute(
-            0, 65000U + static_cast<uint32_t>(frame * 50),
-            10.0f, 0.05f, 0.8f, true);
+    for (int frame = 0; frame < 500 && result == Home::RouteStep::MOVING; ++frame) {
+        result = runtime.advanceRoute(0, 100000 + frame * 50, 20, .05f, .8f, true);
+        assert(!runtime.overlapsOther(0, leader.x, leader.y));
     }
     assert(result == Home::RouteStep::BLOCKED);
 

@@ -1,0 +1,160 @@
+name: PR regression and builds
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scope:
+    runs-on: ubuntu-latest
+    outputs:
+      sticks3: ${{ steps.scope.outputs.sticks3 }}
+      amoled: ${{ steps.scope.outputs.amoled }}
+      web: ${{ steps.scope.outputs.web }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Select affected build targets
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
+            git ls-files -z > "$RUNNER_TEMP/changed-paths"
+          else
+            git diff --no-renames --name-only -z "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/changed-paths"
+          fi
+          python3 tools/ci_build_scope.py < "$RUNNER_TEMP/changed-paths" >> "$GITHUB_OUTPUT"
+
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: tools
+      AMOLED_RENDER_DEBUG: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Shared rules, saves, page behavior and touch regression
+        shell: bash
+        run: |
+          python3 -m unittest \
+            test_ci_build_scope test_amoled_source \
+            test_architecture_boundaries test_render_demand \
+            test_save_codec test_save_migration \
+            test_home_runtime test_home_simulation test_home_coordinator \
+            test_home_actor_controller test_home_chase test_home_care \
+            test_home_visit_arrival test_home_visit_departure \
+            test_bath_service test_bath_interaction test_care_experience \
+            test_hatch_service test_team_roster test_item_inventory test_shop_service \
+            test_experience_service test_move_management test_battle_turn_controller \
+            test_battle_status test_battle_action_service \
+            test_amoled_v2_touch test_release_debug_gate \
+            test_team_inventory_controllers test_amoled_page_controllers \
+            test_amoled_native_render test_web_simulator \
+            2>&1 | tee checks.log
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: regression-log
+          path: checks.log
+
+  sticks3:
+    needs: scope
+    if: needs.scope.outputs.sticks3 == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+      - name: Install PlatformIO
+        run: python3 -m pip install platformio==6.1.18
+      - name: Build StickS3
+        run: pio run -e m5stick-s3-debug
+
+  amoled:
+    needs: scope
+    if: needs.scope.outputs.amoled != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    container: espressif/idf:v5.5.4
+    strategy:
+      fail-fast: false
+      matrix:
+        board: ${{ fromJSON(needs.scope.outputs.amoled) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build AMOLED lite
+        shell: bash
+        run: bash tools/build_amoled_variant.sh '${{ matrix.board }}' lite debug
+
+  web:
+    needs: scope
+    if: needs.scope.outputs.web != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      EMSDK_VERSION: 4.0.15
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.scope.outputs.web) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        id: emsdk
+        with:
+          path: emsdk
+          key: emsdk-${{ runner.os }}-${{ env.EMSDK_VERSION }}
+      - name: Install pinned emsdk
+        if: steps.emsdk.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git emsdk
+          ./emsdk/emsdk install "$EMSDK_VERSION"
+          ./emsdk/emsdk activate "$EMSDK_VERSION"
+      - name: Build Web target
+        run: |
+          source emsdk/emsdk_env.sh
+          bash tools/build_web.sh --target '${{ matrix.target }}'
+
+  required-checks:
+    if: always()
+    needs: [scope, regression, sticks3, amoled, web]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every selected check to pass
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          results = json.loads(os.environ['RESULTS'])
+          failed = [name for name, job in results.items()
+                    if job['result'] not in ('success', 'skipped')]
+          if failed:
+              raise SystemExit('Failed or cancelled checks: ' + ', '.join(failed))
+          PY

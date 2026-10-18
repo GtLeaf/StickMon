@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 
 import unittest
+import re
 from pathlib import Path
+
+from amoled_source import amoled_shared_sources
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -90,16 +93,18 @@ class AmoledHomeRuntimeTests(unittest.TestCase):
         )
 
     def test_both_amoled_boards_link_shared_home_runtime(self):
+        shared = {source.relative_to(ROOT).as_posix() for source in amoled_shared_sources(ROOT)}
+        self.assertTrue({
+            "src/game/HomeActor.cpp", "src/game/HomeActorController.cpp",
+            "src/game/HomeCoordinator.cpp", "src/game/HomeRuntime.cpp",
+            "src/game/HomeSimulation.cpp", "src/core/RoomNavigator.cpp",
+        }.issubset(shared))
         for board in ("amoled_1_8_v1", "amoled_1_8_v2"):
             cmake = (ROOT / "firmware" / board / "main" / "CMakeLists.txt").read_text(
                 encoding="utf-8"
             )
-            self.assertIn('"${STICKMON_ROOT}/src/game/HomeActor.cpp"', cmake)
-            self.assertIn('"${STICKMON_ROOT}/src/game/HomeActorController.cpp"', cmake)
-            self.assertIn('"${STICKMON_ROOT}/src/game/HomeCoordinator.cpp"', cmake)
-            self.assertIn('"${STICKMON_ROOT}/src/game/HomeRuntime.cpp"', cmake)
-            self.assertIn('"${STICKMON_ROOT}/src/game/HomeSimulation.cpp"', cmake)
-            self.assertIn('"${STICKMON_ROOT}/src/core/RoomNavigator.cpp"', cmake)
+            self.assertIn('include("${STICKMON_ROOT}/firmware/common/amoled_sources.cmake")', cmake)
+            self.assertIn("${STICKMON_AMOLED_SHARED_SOURCES}", cmake)
 
     def test_amoled_uses_authoritative_home_simulation(self):
         self.assertIn("Home::Simulation homeRuntime;", self.header)
@@ -107,6 +112,30 @@ class AmoledHomeRuntimeTests(unittest.TestCase):
         self.assertIn("homeRuntime.beginBowlClearance(0, nowMs);", self.app)
         self.assertIn("homeRuntime.beginBowlClearance(1, nowMs);", self.app)
         self.assertIn("homeRuntime.renderSnapshot()", self.app)
+
+    def test_main_actor_has_no_parallel_position_mind_or_timing_members(self):
+        # These declarations previously required copying state to/from Actor
+        # on every update and could overwrite routes after scene transitions.
+        for name in (
+            "petX", "petY", "petTargetX", "petTargetY", "monsterMind",
+            "behaviorProfile", "petFootprintRadiusX", "petFootprintRadiusY",
+            "nextMindUpdateMs", "nextPetDecisionMs", "petMotion",
+            "petStopMotion", "petStoppingToEat", "petScheduledSleeping",
+            "petResting",
+        ):
+            with self.subTest(member=name):
+                self.assertIsNone(re.search(
+                    rf"^\s*(?:float|bool|uint32_t|PetMotion|MonsterMind|"
+                    rf"MonsterBehaviorProfile)\s+{name}\s*(?:=|;)",
+                    self.header, re.MULTILINE,
+                ))
+
+        sync = function_body(
+            self.app,
+            "void AmoledApp::syncHomeActors(uint32_t nowMs)",
+            "Home::ActorObservation AmoledApp::homeActorObservation(",
+        )
+        self.assertNotRegex(sync, r"homeMainActor\.(?:x|y|targetX|targetY)\s*=")
 
 
 if __name__ == "__main__":

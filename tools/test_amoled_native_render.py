@@ -1,26 +1,29 @@
 #!/usr/bin/env python3
 """Render real AMOLED pages and compare native dirty bands with full frames."""
 import os
+import shutil
 import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-from amoled_source import amoled_ui_sources
+from amoled_host import build_amoled_host
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class AmoledNativeRenderTests(unittest.TestCase):
     def test_page_headers_are_self_contained(self):
-        for header in ("RoomScreens.h", "SettingsScreens.h", "HatchScreens.h", "UiCommon.h",
-                       "ExploreMapRenderer.h", "RenderCaches.h", "SceneFade.h"):
+        headers = [f"ui/{header}" for header in
+                   ("RoomScreens.h", "SettingsScreens.h", "HatchScreens.h", "UiCommon.h",
+                    "ExploreMapRenderer.h", "RenderCaches.h", "SceneFade.h")]
+        headers += ["app/HatchController.h", "app/ShowerController.h"]
+        for header in headers:
             with self.subTest(header=header):
                 subprocess.run([
                     "c++", "-std=c++17", "-fsyntax-only", "-x", "c++",
                     "-Isrc", "-Ifirmware/amoled_1_8_v1/main", "-",
-                ], input=f'#include "ui/{header}"\n',
+                ], input=f'#include "{header}"\n',
                    text=True, cwd=ROOT, check=True)
 
     def test_models_header_is_self_contained(self):
@@ -38,50 +41,72 @@ class AmoledNativeRenderTests(unittest.TestCase):
     def setUpClass(cls):
         sources = [
             "tools/amoled_native_render_host.cpp",
+            "tools/amoled_battery_host.cpp",
+            "tools/amoled_ecology_host.cpp",
             "tools/amoled_ui_behavior_host.cpp",
             "tools/amoled_expedition_host.cpp",
             "tools/amoled_shower_host.cpp",
-            "firmware/amoled_1_8_v1/main/AmoledApp.cpp",
-            "src/hardware/EspNowLink.cpp",
-            *[str(path.relative_to(ROOT)) for path in amoled_ui_sources(ROOT)],
-            "src/platform/api/PlatformServices.cpp",
-            "src/platform/desktop/DesktopPlatform.cpp",
+            "tools/amoled_bath_hatch_controller_host.cpp",
+            "tools/amoled_care_host.cpp",
+            "tools/amoled_lock_power_host.cpp",
         ]
-        for directory, names in {
-            "presentation": ["Canvas565", "PixelRenderer", "HudRenderer"],
-            "assets": ["FontFallbackCN", "GameAssets", "HudAssets", "MenuAssets", "PokemonSprites"],
-            "core": ["FontResource", "RoomResource", "RoomRenderer", "ResourceFS", "ResourcePack", "DeflateDecoder",
-                     "AudioManager", "CryPlayer", "GameClockService", "RoomMovementArea",
-                     "RoomNavigator",
-                     "SaveCodec", "SaveManager", "VisitSessionService"],
-        }.items():
-            sources += [f"src/{directory}/{name}.cpp" for name in names]
-        sources += [str(p.relative_to(ROOT)) for p in sorted((ROOT / "src/game").glob("*.cpp"))]
         tmp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(tmp.cleanup)
-        # The host exercises app logic, not ESP touch-device initialization.
-        (Path(tmp.name) / "esp_err.h").write_text("#pragma once\nusing esp_err_t = int;\n")
-        (Path(tmp.name) / "esp_lcd_touch.h").write_text(
-            "#pragma once\nusing esp_lcd_touch_handle_t = void*;\n")
         cls.binary = str(Path(tmp.name) / "amoled-native-render")
-        inflater = str(Path(tmp.name) / "tinflate.o")
-        subprocess.run(["cc", "-O1", "-c", "src/third_party/uzlib/tinflate.c",
-                        "-o", inflater], cwd=ROOT, check=True)
-        subprocess.run([
-            "c++", "-std=c++17", "-O1", "-ffunction-sections", "-fdata-sections",
-            "-Wl,-dead_strip" if sys.platform == "darwin" else "-Wl,--gc-sections",
-            "-Isrc", "-Ifirmware/amoled_1_8_v1/main",
-            "-DSTICKMON_HAS_CLAW=0",
-            "-DSTICKMON_ENABLE_DEBUG_FEATURES=" + os.environ.get("AMOLED_RENDER_DEBUG", "0"),
-            "-I" + tmp.name, *sources, inflater, "-o", cls.binary,
-        ], cwd=ROOT, check=True)
+        build_amoled_host(Path(cls.binary), sources,
+                          debug=os.environ.get("AMOLED_RENDER_DEBUG", "0") == "1")
+        keep_binary = os.environ.get("AMOLED_RENDER_KEEP_BINARY")
+        if keep_binary:
+            target = Path(keep_binary).resolve()
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(cls.binary, target)
+            target.chmod(0o755)
 
     def run_case(self, name):
         subprocess.run([self.binary, str(ROOT / "data"), "--case", name],
                        cwd=ROOT, check=True)
 
+    def test_battery_sampling_header_redraw_unknown_and_recovery(self):
+        self.run_case("battery-display")
+
+    def test_explore_ecology_behavior_partial_frames_and_pause(self):
+        self.run_case("explore-ecology")
+
+    def test_explore_fish_bridge_occlusion_and_wildlife_grass(self):
+        self.run_case("explore-water")
+
     def test_shower_drag_damage_feedback_idle_and_completion(self):
         self.run_case("shower-flow")
+
+    def test_bath_hatch_controller_effects_cancel_retry_and_clock_wrap(self):
+        self.run_case("bath-hatch-controller-effects")
+
+    def test_shower_level_up_returns_keep_stage_rewards_recovery_and_saved_state(self):
+        self.run_case("shower-growth-roundtrip")
+
+    def test_locked_room_care_time_and_damage(self):
+        self.run_case("locked-room-power")
+
+    def test_home_care_rewards_progression_and_reboot(self):
+        self.run_case("home-care-rewards")
+
+    def test_home_actor_motion_and_lock_wake_preserve_authoritative_pose(self):
+        self.run_case("home-room-authority")
+
+    def test_home_two_servings_choose_hungrier_actor_and_clear_bowl(self):
+        self.run_case("home-food-turns")
+
+    def test_home_both_faint_recover_sleep_and_wake(self):
+        self.run_case("home-faint-sleep-wake")
+
+    def test_home_fed_companion_clears_bowl_for_hungry_leader_after_restore(self):
+        self.run_case("home-food-exit-stall")
+
+    def test_home_save_during_turn_restores_walk_and_food_routes(self):
+        self.run_case("home-saved-turns")
+
+    def test_home_yield_turn_and_room_action_arrival_presentation(self):
+        self.run_case("home-yield-actions")
 
     def test_shower_foam_rinse_feedback_and_cache_partial_frames(self):
         args = [self.binary, str(ROOT / "data"), "--case", "shower-render"]
@@ -191,6 +216,16 @@ class AmoledNativeRenderTests(unittest.TestCase):
 
     def test_battle_asset_actions_follow_real_results(self):
         self.run_case("battle-asset-actions")
+
+    def test_battle_shared_rules_and_effect_logs_apply_once_on_both_sides(self):
+        self.run_case("battle-shared-execution")
+
+    def test_debug_battle_fixtures_preserve_player_save_on_close_and_reboot(self):
+        if os.environ.get("AMOLED_RENDER_DEBUG") == "1":
+            self.run_case("battle-diagnostic-save")
+
+    def test_medicine_target_selection_hp_animation_and_return(self):
+        self.run_case("medicine-flow")
 
     def test_page_clip_intersection_and_early_return(self):
         self.run_case("page-clip")

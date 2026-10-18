@@ -67,12 +67,7 @@ class AmoledExpeditionDepartureTests(unittest.TestCase):
         body = self.app[begin:end]
         self.assertIn("expeditionMainHidden = true;", body)
         self.assertIn("expeditionCompanionHidden = true;", body)
-        main_hide = body.index("expeditionMainHidden = true;")
         companion_hide = body.index("expeditionCompanionHidden = true;")
-        self.assertIn(
-            "petMotion = PetMotion::IDLE;",
-            body[main_hide:main_hide + 240],
-        )
         self.assertIn(
             "expeditionCompanionDeparting = false;",
             body[companion_hide:companion_hide + 240],
@@ -111,12 +106,16 @@ class AmoledExpeditionDepartureTests(unittest.TestCase):
         self.assertIn("advanceExploreRouteWalkFrames(nowMs);",
                       self.app[update:finish])
 
-    def test_departure_keeps_render_actor_in_sync_with_pet_coordinates(self):
+    def test_departure_moves_the_authoritative_render_actor(self):
         begin = self.app.index("bool AmoledApp::updateExploreDeparture")
         end = self.app.index("void AmoledApp::beginExploreReturn", begin)
         body = self.app[begin:end]
-        self.assertIn("homeMainActor.x = petX;", body)
-        self.assertIn("homeMainActor.y = petY;", body)
+        self.assertIn("homeMainActor.x += dx / distance * step;", body)
+        self.assertIn("homeMainActor.y += dy / distance * step;", body)
+        self.assertIn("homeMainActor.velocityX = distance > 0.0f", body)
+        self.assertIn("homeMainActor.velocityY = distance > 0.0f", body)
+        self.assertNotIn("petX", body)
+        self.assertNotIn("petY", body)
         self.assertIn("homeRuntime.transition(0, Home::Task::DOOR_ACTION", body)
 
     def test_return_walks_both_actors_into_the_room(self):

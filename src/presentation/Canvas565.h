@@ -49,6 +49,10 @@ public:
     // Returns false when the canvas needs the scaled-pixel fallback.
     bool blendRectAlphaNative(int x, int y, int w, int h,
                               uint16_t color, uint8_t alpha);
+    // Channel gains use 256 as identity. Honors clipping, raster scale and
+    // stored byte order, with small channel tables instead of per-pixel math.
+    void multiplyRectRgb(int x, int y, int w, int h,
+                         uint16_t red, uint16_t green, uint16_t blue);
     void drawRect(int x, int y, int w, int h, uint16_t color);
     void drawCircle(int cx, int cy, int radius, uint16_t color);
     void fillCircle(int cx, int cy, int radius, uint16_t color);

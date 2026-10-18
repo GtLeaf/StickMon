@@ -83,6 +83,30 @@ if [[ -f "$SDKCONFIG" ]]; then
     fi
 fi
 
+# Existing build directories must adopt the room power-management settings too.
+if [[ -f "$SDKCONFIG" && "$1" != 1_75c ]]; then
+    python3 - "$SDKCONFIG" <<'PYCONFIG'
+import re
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+text = path.read_text()
+for key, value in {
+    "CONFIG_PM_ENABLE": "y",
+    "CONFIG_PM_DFS_INIT_AUTO": "n",
+    "CONFIG_FREERTOS_USE_TICKLESS_IDLE": "y",
+    "CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION": "y",
+}.items():
+    line = key + "=" + value
+    pattern = r"(?m)^(?:" + key + r"=.*|# " + key + r" is not set)$"
+    if re.search(pattern, text):
+        text = re.sub(pattern, line, text)
+    else:
+        text += "\n" + line + "\n"
+path.write_text(text)
+PYCONFIG
+fi
+
 # OTA requires a rollback-aware V2 bootloader even with cached sdkconfig.
 if [[ "$1" == v2 && -f "$SDKCONFIG" ]]; then
     sed -i.bak 's/^# CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE is not set$/CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y/' "$SDKCONFIG"

@@ -3,7 +3,7 @@
 import unittest
 from pathlib import Path
 
-from amoled_source import read_home_source
+from amoled_source import read_app_source, read_home_source
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,11 +21,14 @@ AMOLED_PLATFORMS = (
 class AmoledBattleTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.app_source = AMOLED_APP.read_text()
+        cls.app_source = read_app_source(ROOT)
         cls.app_header = AMOLED_APP_HEADER.read_text()
         cls.screen_source = read_home_source(ROOT)
         cls.screen_header = HOME_SCREEN_HEADER.read_text()
         cls.stick_explore_source = STICK_EXPLORE.read_text()
+        action_start = cls.app_source.index("void AmoledApp::performBattleAction(")
+        action_end = cls.app_source.index("\nvoid AmoledApp::", action_start + 10)
+        cls.shared_action = cls.app_source[action_start:action_end]
 
     def test_animation_uses_fresh_clock_and_redraws_each_frame(self):
         start = self.app_source.index("if (battleAnimationActive &&")
@@ -58,7 +61,9 @@ class AmoledBattleTests(unittest.TestCase):
         )
         wild = self.app_source[wild_start:wild_end]
 
-        for attack in (player, wild):
+        for wrapper in (player, wild):
+            self.assertIn("performBattleAction(action, nowMs);", wrapper)
+        for attack in (self.shared_action,):
             self.assertIn("battleAnimationActive = true;", attack)
             self.assertIn(
                 "battleAnimationStartedMs = Platform::clock().millis();", attack
@@ -85,12 +90,11 @@ class AmoledBattleTests(unittest.TestCase):
             self.assertIn(f"EffectOutcomeKind::{kind}", effects)
         self.assertIn("Ui::Explore::STAT_FELL_FMT", effects)
         self.assertIn("Ui::Explore::STAT_NAMES[stat]", effects)
-        for attacker in ("performBattlePlayerAction", "performBattleWildAction"):
-            start = self.app_source.index(f"void AmoledApp::{attacker}(")
-            end = self.app_source.index("\nvoid AmoledApp::", start + 10)
-            action = self.app_source[start:end]
-            self.assertLess(action.index("pushBattleLog(nowMs, false, BATTLE_RESULT_LOG_MS);"),
-                            action.index("enqueueBattleEffectLogs(moveEffects,"))
+        action = self.shared_action
+        self.assertLess(action.index("pushBattleLog(nowMs, false, BATTLE_RESULT_LOG_MS);"),
+                        action.index("enqueueBattleEffectLogs(moveEffects,"))
+        self.assertIn("enqueueBattleEffectLogs(result.abilityEffects,", action)
+        self.assertIn("enqueueBattleEffectLogs(result.absorbEffects,", action)
         self.assertIn("!battleLogPlaybackBusy()) {", self.app_source)
 
     def test_switch_animates_both_sides_before_counterattack(self):
@@ -132,15 +136,11 @@ class AmoledBattleTests(unittest.TestCase):
         self.assertIn("Ui::Explore::WILD_DAMAGE_FMT", helper)
         self.assertNotIn("HIT_FMT", helper)
 
-        for function_name in (
-            "void AmoledApp::performBattlePlayerAction(",
-            "void AmoledApp::performBattleWildAction(",
-        ):
-            start = self.app_source.index(function_name)
-            end = self.app_source.index("\nvoid AmoledApp::", start + 10)
-            attack = self.app_source[start:end]
-            self.assertIn("formatBattleOutcome(", attack)
-            self.assertIn("damage.effectiveness > 0", attack)
+        self.assertIn("formatBattleOutcome(", self.shared_action)
+        # Immunity and side effects are resolved in the shared gameplay layer.
+        service = (ROOT / "src/game/BattleActionService.cpp").read_text()
+        self.assertIn("damage.effectiveness == 0", service)
+        self.assertIn("BattleSystem::applyMoveEffects(", service)
 
     def test_battle_audio_waits_until_first_frame_is_presented(self):
         mark_start = self.app_source.index("void AmoledApp::markRendered()")
@@ -346,8 +346,9 @@ class AmoledBattleTests(unittest.TestCase):
             "void AmoledApp::performBattlePlannedAction(", wild_start
         )
         wild = self.app_source[wild_start:wild_end]
-        self.assertIn("startBattleHpAnimation(", player)
-        self.assertIn("startBattleHpAnimation(", wild)
+        self.assertIn("performBattleAction(action, nowMs);", player)
+        self.assertIn("performBattleAction(action, nowMs);", wild)
+        self.assertIn("startBattleHpAnimation(", self.shared_action)
 
     def test_victory_replaces_player_hp_with_animated_experience(self):
         faint_start = self.app_source.index(
@@ -384,15 +385,8 @@ class AmoledBattleTests(unittest.TestCase):
         self.assertIn("battleImpactAudioPlayed = true;", update)
         self.assertIn("static_cast<SfxCue>(battleImpactSfx)", update)
 
-        for function_name in (
-            "void AmoledApp::performBattlePlayerAction(",
-            "void AmoledApp::performBattleWildAction(",
-        ):
-            start = self.app_source.index(function_name)
-            end = self.app_source.index("\nvoid AmoledApp::", start + 10)
-            attack = self.app_source[start:end]
-            self.assertIn("battlePendingSfx = 0xFF;", attack)
-            self.assertIn("battleImpactSfx = static_cast<uint8_t>(", attack)
+        self.assertIn("battlePendingSfx = 0xFF;", self.shared_action)
+        self.assertIn("battleImpactSfx = static_cast<uint8_t>(", self.shared_action)
 
     def test_victory_auto_finishes_once_without_continue_button(self):
         update_start = self.app_source.index("void AmoledApp::update(")
@@ -457,9 +451,7 @@ class AmoledBattleTests(unittest.TestCase):
         complete_start = self.app_source.index(
             "void AmoledApp::completeProgression("
         )
-        complete_end = self.app_source.index(
-            "void AmoledApp::openShowerScene(", complete_start
-        )
+        complete_end = self.app_source.index("\n}\n", complete_start)
         complete = self.app_source[complete_start:complete_end]
         self.assertIn("battleProgressionSequenceActive", complete)
         self.assertIn("startNextBattleProgression(nowMs)", complete)
@@ -499,8 +491,9 @@ class AmoledBattleTests(unittest.TestCase):
         self.assertIn("openItemScene(AppSceneFlow::Scene::BAG);", bag)
         self.assertIn("battleBagMode = true;", bag)
         self.assertIn("homeBagItemCount(gameState)", bag)
-        self.assertIn("model.exploreOnly = false;", self.app_source)
-        self.assertIn("model.battleMode = battleBagMode;", self.app_source)
+        models = (ROOT / "firmware/amoled_1_8_v1/main/ui/models/ScreenModels.h").read_text()
+        self.assertIn("bool exploreOnly = false;", models)
+        self.assertIn("model.battleMode = state_.battleBagMode;", self.app_source)
         self.assertIn("homeBagDailyItemCount(gameState)", self.app_source)
         self.assertIn("homeBagItemAt(gameState, index)", self.app_source)
         item_start = self.app_source.index("void AmoledApp::performBattleBagItem(")

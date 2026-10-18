@@ -13,6 +13,12 @@ Only the board layer is V2-specific: `main.cpp`, `AmoledPlatform.*` and
 `TouchInput.*`. The V2 target uses the official Waveshare BSP `^2.0.3`,
 which provides the CO5300 panel path and V2 touch auto-detection.
 
+V1/V2 share `firmware/common/Axp2101Battery.*` for battery telemetry. The
+home battery icon reads the PMU percentage at startup, every five seconds,
+and on wake; missing/invalid readings show a gray dash. Charging parameters
+and power rails are preserved. The PMU's built-in battery profile is used;
+battery accuracy and charging behavior still require hardware validation.
+
 ## Touch calibration
 
 V2 uses its own raw-to-native-pixel calibration in `main/TouchInput.cpp`:
@@ -55,9 +61,28 @@ sprite packs, `zh16.smonfont` and `ascii16-unscii.smonfont`. The shared AMOLED
 renderer loads the Chinese font for UTF-8 names and prompts, so the V1/V2
 application code and font assets stay aligned.
 
+Both bags select medicine targets on the shared team page, including reserve
+members in battle. HP recovery animates there before returning to the bag or
+battle; only successful battle use consumes a turn. Confusion self-damage also
+animates the affected HP bar on either side.
+
 Locking returns to the room and keeps the pet visible. Double-tap the pet
 within 500 ms to unlock; taps elsewhere, single taps, holds and drags are ignored.
 An active expedition returns through the normal home transition before locking.
+
+Stable locked rooms keep the configured brightness, update logic every 100 ms,
+and cap visible frames at 5 fps while active or 2 fps while sleeping. Only the
+visible affected rectangle is rendered and transferred. Touch interrupts wake
+the UI independently of rendering; held touches get 20 ms release checks.
+Game time, feeding and care continue using elapsed time.
+
+V1/V2 share 80-240 MHz dynamic frequency scaling and automatic Light-sleep.
+The stable locked room releases its CPU/no-sleep locks when touch wake is ready;
+wake and complex scenes restore 240 MHz. USB inhibits Light-sleep to preserve
+the debug console. Idle audio closes codec/I2S output; leaving ESP-NOW stops
+Wi-Fi, with Claw restoring required networking through its existing session
+cleanup. See `../../doc/锁屏房间省电验收.md` for measured results and remaining
+hardware checks; battery current savings require external measurement.
 
 The shared settings page includes `重置游戏` with a separate cancel/confirm page.
 Confirmed resets clear only game data and restart with a new egg;
@@ -169,6 +194,35 @@ and reports successful saves since boot. `diag tap X Y` sends a normal down/up
 touch through the app using native 368x448 coordinates. These commands and
 `[SaveDiag]` save-event logs are debug-only and do not bypass gameplay gates.
 
+`diag battle N` runs a controlled battle fixture in debug builds only. Start
+from the home/room/debug page after hatching. The first fixture must successfully
+save the current game before entering; fixture changes stay in RAM and all game
+saves are blocked until `diag battle 0` reboots and reloads the original save.
+Do not use fixture play to make permanent progress. `[BattleAction]` reports the
+single committed action and HP/effect snapshots; `[BattleLog]` records playback.
+
+| N | Fixture |
+| --- | --- |
+| 1 | Normal player and wild turn |
+| 2 / 3 / 4 | Sleep / paralysis / confusion self-hit |
+| 5 | Skull Bash charge and release |
+| 6 / 7 | Water Absorb / Static contact ability |
+| 8 | Swallow with three stockpiles |
+| 9 | Magikarp uses Splash; one no-effect message |
+| 10 | Dragon Tail ends the encounter |
+| 11 / 12 | Wake before moving / Normal-type immunity |
+| 0 | Reboot and reload the original game |
+
 The V2 Lite debug build has been flashed and exercised on hardware for an
 automatic exploration and wild encounter. Full hardware acceptance, including
 Claw connectivity, remains pending.
+
+锁屏睡眠表现：圆环单独以约 15fps 上限局部更新，睡姿保留每帧 800ms，与圆环共用入睡时钟（两帧 1.6s 一呼一吸）；濒死休息保持 700ms/帧。睡姿图像范围并集固定圆环中心，解锁不重置相位；亮度策略不变。实际帧率与功耗范围见 `../../doc/锁屏房间省电验收.md`。
+
+
+探索昼夜配色：室外地图跟随游戏内时钟，清晨 04:00–06:00、白天
+06:00–18:00、傍晚 18:00–20:00、夜晚 20:00–04:00。包含晨昏的明亮时段
+共 16 小时，完整夜晚 8 小时；晨昏按分钟平滑过渡。地图、精灵、草丛和
+拾取物统一受光，文字、按钮与弹窗保持原色。霜晶窟保留固有洞穴配色。
+探索暂停时保留当前光照，恢复后跟上游戏时间；稳定配色不增加地图重绘。
+共享规则也接入 StickS3 的探索地图。本轮未刷机，实机观感与帧率待验收。

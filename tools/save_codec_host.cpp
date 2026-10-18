@@ -64,6 +64,22 @@ Game::GameState makeState() {
     state.normalBossMissCount[4] = 9;
     state.debugMotionFlags =
         Game::DEBUG_MOTION_TILT | Game::DEBUG_MOTION_TALK_POINTS;
+    state.careRewardDay = 19;
+    auto& care = state.careRewards[3];
+    care.valid = true;
+    care.ivPacked = 123;
+    care.metAt = 456;
+    care.budget = 507;
+    care.awarded[0] = 203;
+    care.awarded[1] = 100;
+    care.awarded[2] = 177;
+    care.awarded[3] = 17;
+    care.nature = 7;
+    care.metArea = 2;
+    care.origin = Game::Origin::BEFRIENDED;
+    care.bathStageMask = 7;
+    care.pairCount = 2;
+    care.pendingOldLevel = 29;
     return state;
 }
 
@@ -144,6 +160,10 @@ void verifyRoundTrip() {
     assert(decoded.state.settings.volume == 66);
     assert(decoded.state.settings.vibrationOn && decoded.state.settings.leftHanded);
     assert(decoded.state.normalBossMissCount[4] == 9);
+    assert(decoded.state.careRewardDay == 19);
+    assert(decoded.state.careRewards[3].budget == 507);
+    assert(decoded.state.careRewards[3].awarded[2] == 177);
+    assert(decoded.state.careRewards[3].pendingOldLevel == 29);
     assert(decoded.state.debugMotionFlags ==
            (Game::DEBUG_MOTION_TILT | Game::DEBUG_MOTION_TALK_POINTS));
     assert(decoded.view.valid && decoded.view.speciesId == 25);
@@ -232,6 +252,8 @@ void verifySchema1DecodesWithDefaults() {
     assert(decoded.state.normalBossMissCount[4] == 9);
     // The v4 field did not exist in schema 1; it must default to zero.
     assert(decoded.state.debugMotionFlags == 0);
+    assert(decoded.state.careRewardDay == UINT32_MAX);
+    for (const auto& record : decoded.state.careRewards) assert(!record.valid);
     assert(decoded.view.valid && decoded.view.secondary.valid);
     assert(decoded.view.secondary.foodRetryRemainingMs == 9999);
 
@@ -251,6 +273,12 @@ void verifySchema1DecodesWithDefaults() {
     future[14] = static_cast<uint8_t>(checksum);
     future[15] = static_cast<uint8_t>(checksum >> 8);
     assert(!SaveCodec::decode(future.data(), future.size(), decoded));
+    assert(SaveTestUtil::fabricateSchema2Blob(encoded, length, legacy));
+    assert(SaveCodec::decode(legacy.data(), legacy.size(), decoded));
+    assert(decoded.state.version == Game::SAVE_VERSION);
+    assert(decoded.state.debugMotionFlags == state.debugMotionFlags);
+    assert(decoded.state.careRewardDay == UINT32_MAX);
+    for (const auto& record : decoded.state.careRewards) assert(!record.valid);
 }
 
 }  // namespace

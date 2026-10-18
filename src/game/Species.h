@@ -216,8 +216,10 @@ uint8_t speciesCount();
 const Species* findSpecies(uint16_t speciesId);
 AbilityId abilityForSpecies(const Species& species);
 const char* abilityName(AbilityId ability);
+// Time-dependent branches use the game clock, in total elapsed minutes.
 const Species* levelUpEvolutionTarget(const Species& species,
-                                      const Game::MonsterRuntime& monster);
+                                      const Game::MonsterRuntime& monster,
+                                      uint32_t gameMinutesTotal);
 // 进化石触发的目标；石头无效或不匹配时返回 nullptr。
 const Species* stoneEvolutionTarget(const Species& species, Game::ItemId stone);
 const MoveInfo* findMove(Game::MoveId moveId);

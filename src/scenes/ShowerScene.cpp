@@ -610,7 +610,7 @@ void ShowerScene::awardBathStage(BathRewardStage stage) {
     }
     if (!rewarded || *rewarded) return;
     *rewarded = true;
-    uint8_t experience = GameEngine::ins().grantBathReward(stage);
+    uint32_t experience = GameEngine::ins().grantBathReward(stage);
     if (experience == 0) return;
     uint32_t nowMs = Hal::ins().millis();
     spawnExpFloat(experience, nowMs);
@@ -634,7 +634,7 @@ void ShowerScene::startTurn(uint32_t nowMs) {
     turnUntilMs = nowMs + TURN_HOLD_MS;
 }
 
-void ShowerScene::spawnExpFloat(uint8_t amount, uint32_t nowMs) {
+void ShowerScene::spawnExpFloat(uint32_t amount, uint32_t nowMs) {
     uint8_t slot = 0;
     uint32_t oldest = UINT32_MAX;
     for (uint8_t i = 0; i < EXP_FLOAT_CAP; ++i) {

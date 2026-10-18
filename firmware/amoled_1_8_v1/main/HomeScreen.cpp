@@ -435,11 +435,15 @@ void drawExploreMenuIcon(Canvas565& canvas) {
     }
 }
 
-void drawBattery(Canvas565& canvas, int x, int y, uint8_t percent) {
+void drawBattery(Canvas565& canvas, int x, int y, int percent) {
     const uint16_t outline = rgb(222, 234, 229);
     canvas.drawRoundRect((x), (y), (32), (16), (4), outline);
     canvas.fillRect((x + 32), (y + 4), (4), (8), outline);
-    int fillWidth = static_cast<int>(percent) * 24 / 100;
+    if (percent < 0 || percent > 100) {
+        canvas.fillRect(x + 12, y + 7, 8, 2, rgb(142, 157, 155));
+        return;
+    }
+    int fillWidth = percent * 24 / 100;
     canvas.fillRect((x + 4), (y + 4), (fillWidth), (8), percent < 20 ? rgb(238, 91, 91) : rgb(92, 213, 139));
 }
 
@@ -1056,7 +1060,9 @@ void drawExploreRoutePickup(Canvas565& canvas,
     ExploreRouteGeometry::WorldPoint point =
         ExploreRouteGeometry::pathPoint(path, model.pickupIndex);
     int x = static_cast<int>(std::lround((point.x - model.cameraX) * AmoledUi::RESOURCE_SCALE));
-    int y = static_cast<int>(std::lround((point.y - model.cameraY) * AmoledUi::RESOURCE_SCALE)) + 6;
+    int y = EXPLORE_ROUTE_MAP_TOP + static_cast<int>(std::lround(
+        (point.y - model.cameraY) * AmoledUi::RESOURCE_SCALE)) +
+        EXPLORE_ROUTE_ACTOR_GROUND_OFFSET_Y - 12;
     if (x < -26 || x >= AmoledUi::WIDTH + 26 ||
         y < EXPLORE_ROUTE_MAP_TOP - 26 ||
         y >= EXPLORE_ROUTE_MAP_BOTTOM + 26) return;
@@ -1091,8 +1097,8 @@ void drawExploreRouteShadow(Canvas565& canvas,
         return;
     }
 
-    // The route point is the sprite's logical anchor. Account for transparent
-    // padding in the frame so the shadow stays directly under the visible feet.
+    // Account for transparent padding around the sprite's ground anchor
+    // so the shadow stays directly under the visible feet.
     const int groundY = spriteTopY + drawHeight / 2 +
         static_cast<int>(std::lround(
             PokemonSprites::frameGroundOffsetY(frame) * scale));
@@ -1211,7 +1217,8 @@ void drawExploreRouteBoss(Canvas565& canvas,
         FlashStorage::readByte(&frame->height) * scale)));
     int centerX = static_cast<int>(std::lround((point.x - model.cameraX) * AmoledUi::RESOURCE_SCALE));
     int groundCenterY = EXPLORE_ROUTE_MAP_TOP +
-        static_cast<int>(std::lround((point.y - model.cameraY) * AmoledUi::RESOURCE_SCALE));
+        static_cast<int>(std::lround((point.y - model.cameraY) * AmoledUi::RESOURCE_SCALE)) +
+        EXPLORE_ROUTE_ACTOR_GROUND_OFFSET_Y;
     const int groundOffset = static_cast<int>(std::lround(
         PokemonSprites::frameGroundOffsetY(frame) * scale));
     const int spriteGroundTopY = groundCenterY - height / 2 - groundOffset;
@@ -1230,7 +1237,7 @@ void drawExploreRouteBoss(Canvas565& canvas,
                            width, height, scale);
     PokemonSprites::drawFrameScaled(frame, x, y, scale, flipX);
     drawExploreRouteMapVegetationForActor(
-        canvas, model, point.y, std::min(x, centerX - 24),
+        canvas, model, exploreRouteActorFootWorldY(point.y), std::min(x, centerX - 24),
         std::min(y, groundCenterY - 7),
         std::max(x + width, centerX + 25),
         std::max(y + height, groundCenterY + 6), rowBegin, rowEnd);
@@ -1263,7 +1270,8 @@ AmoledUi::Rect exploreActorBounds(uint16_t speciesId, float worldX, float worldY
     (void)flipX;
     constexpr float scale = AmoledUi::RESOURCE_SCALE;
     const int x = static_cast<int>(std::lround(worldX * scale)) - cameraX * AmoledUi::RESOURCE_SCALE;
-    const int ground = EXPLORE_ROUTE_MAP_TOP + static_cast<int>(std::lround(worldY * scale)) - cameraY * AmoledUi::RESOURCE_SCALE;
+    const int ground = EXPLORE_ROUTE_MAP_TOP + static_cast<int>(std::lround(worldY * scale)) -
+        cameraY * AmoledUi::RESOURCE_SCALE + EXPLORE_ROUTE_ACTOR_GROUND_OFFSET_Y;
     if (!frame) return {x - 63, ground - 155, 127, 169};
     const int width = static_cast<int>(std::lround(FlashStorage::readByte(&frame->width) * scale));
     const int height = static_cast<int>(std::lround(FlashStorage::readByte(&frame->height) * scale));
@@ -1293,6 +1301,8 @@ void drawExploreRouteActor(Canvas565& canvas, uint16_t speciesId,
                            int16_t cameraX, int16_t cameraY,
                            const ExploreRouteViewModel& model,
                            uint16_t rowBegin, uint16_t rowEnd) {
+    const bool airborne = ExploreEcology::locomotionForSpecies(speciesId) !=
+        ExploreEcology::Locomotion::GROUND;
     auto direction = static_cast<PokemonSprites::WalkDirection>(
         walkDirection <=
                 static_cast<uint8_t>(PokemonSprites::WalkDirection::RIGHT)
@@ -1318,7 +1328,7 @@ void drawExploreRouteActor(Canvas565& canvas, uint16_t speciesId,
         worldX * AmoledUi::RESOURCE_SCALE)) - cameraX * AmoledUi::RESOURCE_SCALE;
     const int routeGroundY = EXPLORE_ROUTE_MAP_TOP +
         static_cast<int>(std::lround(worldY * AmoledUi::RESOURCE_SCALE)) -
-        cameraY * AmoledUi::RESOURCE_SCALE;
+        cameraY * AmoledUi::RESOURCE_SCALE + EXPLORE_ROUTE_ACTOR_GROUND_OFFSET_Y;
     if (!frame) {
 #if STICKMON_ENABLE_DEBUG_FEATURES && STICKMON_ENABLE_TRACE_LOGS
         Platform::logf(
@@ -1331,19 +1341,19 @@ void drawExploreRouteActor(Canvas565& canvas, uint16_t speciesId,
             routeGroundY);
 #endif
         // The fallback art is authored around a ground anchor. Keep its feet
-        // on the same route point as regular walking frames.
+        // on the same shifted ground anchor as regular walking frames.
         drawFallbackPet(canvas, screenX, routeGroundY);
         drawExploreRouteMapVegetationForActor(
-            canvas, model, worldY, screenX - 62, routeGroundY - 154,
-            screenX + 63, routeGroundY + 13, rowBegin, rowEnd);
+            canvas, model, exploreRouteActorFootWorldY(worldY), screenX - 62, routeGroundY - 154,
+            screenX + 63, routeGroundY + 13, rowBegin, rowEnd, !airborne, airborne);
         return;
     }
     const int width = static_cast<int>(std::lround(
         FlashStorage::readByte(&frame->width) * scale));
     const int height = static_cast<int>(std::lround(
         FlashStorage::readByte(&frame->height) * scale));
-    // Route points are ground anchors: the frame's feet and shadow must land
-    // on the road centerline. The encoded offset describes how far the frame's
+    // Align the feet with the pickup shadow's ground anchor below the route
+    // centerline. The encoded offset describes how far the frame's
     // ground is below its pixel center; floating species lift only the body.
     const int groundOffset = static_cast<int>(std::lround(
         PokemonSprites::frameGroundOffsetY(frame) * scale));
@@ -1412,13 +1422,13 @@ void drawExploreRouteActor(Canvas565& canvas, uint16_t speciesId,
         drawFallbackPet(canvas, screenX, routeGroundY);
     }
     drawExploreRouteMapVegetationForActor(
-        canvas, model, worldY,
+        canvas, model, exploreRouteActorFootWorldY(worldY),
         std::min(screenX - width / 2, screenX - (spriteDrawn ? 24 : 62)),
         std::min(drawY, routeGroundY - (spriteDrawn ? 7 : 154)),
         std::max(screenX - width / 2 + width,
                  screenX + (spriteDrawn ? 25 : 63)),
         std::max(drawY + height, routeGroundY + (spriteDrawn ? 6 : 13)),
-        rowBegin, rowEnd);
+        rowBegin, rowEnd, !airborne, airborne);
 }
 
 void drawExploreRoutePet(Canvas565& canvas,
@@ -1442,28 +1452,198 @@ void drawExploreRouteCompanion(Canvas565& canvas,
         model.cameraX, model.cameraY, model, rowBegin, rowEnd);
 }
 
+constexpr float WILDLIFE_SCALE = 1.5f;
+
+const PokemonSprites::SpriteFrame* wildlifeFrame(const ExploreEcology::Pose& pose,
+                                                  bool& flipX) {
+    PokemonSprites::PetAnimationProfile profile{};
+    if (PokemonSprites::petAnimationProfile(pose.speciesId, profile)) {
+        const bool sleeping = pose.activity == ExploreEcology::Activity::DOZE ||
+            (pose.cover == ExploreEcology::Cover::GRASS &&
+             (pose.activity == ExploreEcology::Activity::HIDE ||
+              pose.activity == ExploreEcology::Activity::BURROW));
+        const bool flapping = pose.airborne || pose.activity == ExploreEcology::Activity::TAKEOFF ||
+                              pose.activity == ExploreEcology::Activity::LAND;
+        if (sleeping || (!pose.walking && !flapping)) {
+            constexpr uint8_t directions[] = {0, 2, 4, 6};
+            uint8_t direction = directions[pose.direction % 4];
+            flipX = !sleeping && direction == 6 && profile.mirrorRightDirections;
+            if (flipX) direction = 2;
+            const uint8_t count = sleeping ? profile.sleepingFrames : profile.idleFrames;
+            if (count) {
+                const auto kind = static_cast<PokemonSprites::SpriteKind>(
+                    static_cast<uint16_t>(sleeping ? profile.sleepingBase : profile.idleBase) +
+                    (sleeping ? 0 : direction * count) + pose.frame % count);
+                if (const auto* frame = PokemonSprites::findCachedSpeciesSprite(pose.speciesId, kind))
+                    return frame;
+            }
+        }
+    }
+    PokemonSprites::WalkingAnimation animation{};
+    if (PokemonSprites::walkingAnimation(pose.speciesId,
+            static_cast<PokemonSprites::WalkDirection>(pose.direction % 4), animation) &&
+        animation.frameCount) {
+        flipX = animation.flipX;
+        const auto kind = static_cast<PokemonSprites::SpriteKind>(
+            static_cast<uint16_t>(animation.base) +
+            ((pose.airborne || pose.walking || pose.activity == ExploreEcology::Activity::TAKEOFF ||
+              pose.activity == ExploreEcology::Activity::LAND) ? pose.frame % animation.frameCount : 0));
+        if (const auto* frame = PokemonSprites::findCachedSpeciesSprite(pose.speciesId, kind))
+            return frame;
+    }
+    flipX = false;
+    return PokemonSprites::findCachedSpeciesSprite(
+        pose.speciesId, PokemonSprites::SpriteKind::ICON_0);
+}
+
+AmoledUi::Rect wildlifeBounds(const ExploreRouteViewModel& model, uint8_t index) {
+    if (index >= model.wildlifeCount || index >= ExploreEcology::CAPACITY) return {};
+    const auto& pose = model.wildlife[index];
+    if (pose.absent) return {};
+    const int x = int(std::lround((pose.x - model.cameraX) * AmoledUi::RESOURCE_SCALE));
+    const int ground = int(std::lround((pose.y - model.cameraY) * AmoledUi::RESOURCE_SCALE));
+    if (pose.hidden) return {x - 16, ground - 17, 33, 24};
+    bool flipX = false;
+    const auto* frame = wildlifeFrame(pose, flipX);
+    if (!frame) return {x, ground, 0, 0};
+    const int width = int(std::lround(FlashStorage::readByte(&frame->width) * WILDLIFE_SCALE));
+    const int height = int(std::lround(FlashStorage::readByte(&frame->height) * WILDLIFE_SCALE));
+    const int offset = int(std::lround(PokemonSprites::frameGroundOffsetY(frame) * WILDLIFE_SCALE));
+    const int bodyX = x + pose.sway * AmoledUi::RESOURCE_SCALE;
+    const int bodyTop = ground - height / 2 - offset - pose.lift * AmoledUi::RESOURCE_SCALE;
+    const int bodyBottom = bodyTop + height;
+    const int left = std::min(bodyX - width / 2, x - 26) - 1;
+    const int top = std::min(bodyTop - 14, ground - 19) - 1;
+    const int right = std::max(bodyX - width / 2 + width, x + 27) + 1;
+    const int bottom = std::max(bodyBottom, ground + 7) + 1;
+    return {left, top, right - left, bottom - top};
+}
+
+void drawWildlifeRipple(Canvas565& canvas, int x, int y, int radius,
+                        uint16_t color) {
+    constexpr int segments = 20;
+    int previousX = x + radius, previousY = y;
+    for (int i = 1; i <= segments; ++i) {
+        const float angle = i * 6.2831853f / segments;
+        const int nextX = x + int(std::lround(std::cos(angle) * radius));
+        const int nextY = y + int(std::lround(std::sin(angle) * 4));
+        canvas.drawLine(previousX, previousY, nextX, nextY, color);
+        previousX = nextX;
+        previousY = nextY;
+    }
+}
+
+void drawWildlifeHabitatHint(Canvas565& canvas, const ExploreEcology::Pose& pose,
+                             int x, int ground) {
+    const uint8_t phase = pose.frame % 3;
+    if (pose.surface == ExploreEcology::Surface::WATER) {
+        drawWildlifeRipple(canvas, x, ground, 10 + phase * 3, rgb(171, 217, 225));
+        if (phase) canvas.fillCircle(x + 3, ground - 7, 2, rgb(195, 233, 239));
+    } else if (pose.surface == ExploreEcology::Surface::ROCK ||
+               pose.surface == ExploreEcology::Surface::ICE) {
+        const bool ice = pose.surface == ExploreEcology::Surface::ICE;
+        const uint16_t color = ice ? rgb(183, 219, 231) : rgb(146, 137, 125);
+        const int spread = phase * 3;
+        canvas.fillEllipse(x, ground + 2, 10 + spread, 2, color);
+        if (phase) {
+            canvas.fillCircle(x - 5 - spread, ground - 4, 2, color);
+            canvas.fillCircle(x + 5 + spread, ground - 7, 2, color);
+        }
+    } else {
+        const int bend = phase == 1 ? -3 : (phase == 2 ? 3 : 0);
+        for (int blade = -1; blade <= 1; ++blade) {
+            canvas.drawLine(x + blade * 6, ground + 2,
+                x + blade * 9 + bend, ground - 10 - (blade == 0 ? 4 : 0),
+                rgb(68, 126, 75));
+            canvas.drawLine(x + blade * 6 + 1, ground + 2,
+                x + blade * 9 + bend + 1, ground - 9 - (blade == 0 ? 4 : 0),
+                rgb(110, 163, 85));
+        }
+    }
+}
+
+void drawExploreWildlife(Canvas565& canvas, const ExploreRouteViewModel& model,
+                         uint8_t index, uint16_t rowBegin, uint16_t rowEnd) {
+    const auto bounds = wildlifeBounds(model, index);
+    if (bounds.width == 0 || bounds.x + bounds.width <= 0 || bounds.x >= AmoledUi::WIDTH ||
+        bounds.y + bounds.height <= rowBegin || bounds.y >= rowEnd) return;
+    const auto& pose = model.wildlife[index];
+    const int x = int(std::lround((pose.x - model.cameraX) * AmoledUi::RESOURCE_SCALE));
+    const int ground = int(std::lround((pose.y - model.cameraY) * AmoledUi::RESOURCE_SCALE));
+    if (pose.hidden) {
+        drawWildlifeHabitatHint(canvas, pose, x, ground);
+    } else {
+        bool flipX = false;
+        const auto* frame = wildlifeFrame(pose, flipX);
+        if (!frame) return;
+        const int width = int(std::lround(FlashStorage::readByte(&frame->width) * WILDLIFE_SCALE));
+        const int height = int(std::lround(FlashStorage::readByte(&frame->height) * WILDLIFE_SCALE));
+        const int baseTop = ground - height / 2 - int(std::lround(
+            PokemonSprites::frameGroundOffsetY(frame) * WILDLIFE_SCALE));
+        const int top = baseTop - pose.lift * AmoledUi::RESOURCE_SCALE;
+        const int bodyX = x + pose.sway * AmoledUi::RESOURCE_SCALE;
+        if (pose.airborne)
+            canvas.fillEllipse(x, ground + 2, 9, 2, rgb(62, 83, 83));
+        else if (pose.surface == ExploreEcology::Surface::WATER)
+            drawWildlifeRipple(canvas, x, ground, 18, rgb(144, 201, 217));
+        else drawExploreRouteShadow(canvas, frame, x, baseTop, width, height, WILDLIFE_SCALE);
+        PokemonSprites::drawFrameScaled(frame, bodyX - width / 2, top, WILDLIFE_SCALE, flipX);
+        if (pose.activity == ExploreEcology::Activity::DOZE) {
+            // A small pixel Z moves with the breathing pose.
+            const int zx = bodyX + 8, zy = top - 9;
+            const uint16_t color = rgb(208, 226, 231);
+            canvas.drawFastHLine(zx, zy, 6, color);
+            canvas.drawLine(zx + 5, zy, zx, zy + 5, color);
+            canvas.drawFastHLine(zx, zy + 5, 6, color);
+        }
+        if (pose.activity == ExploreEcology::Activity::SPLASH ||
+            pose.activity == ExploreEcology::Activity::GATHER) {
+            drawWildlifeRipple(canvas, x, ground, 18 + pose.frame % 3 * 3, rgb(185, 224, 233));
+            if (pose.activity == ExploreEcology::Activity::SPLASH) {
+                const int spread = 12 + pose.frame % 3 * 3;
+                canvas.fillCircle(x - spread, ground - 7, 2, rgb(194, 231, 239));
+                canvas.fillCircle(x + spread, ground - 11, 2, rgb(194, 231, 239));
+            }
+        }
+    }
+    drawExploreRouteMapVegetationForActor(canvas, model, pose.y,
+        bounds.x, bounds.y, bounds.x + bounds.width, bounds.y + bounds.height,
+        rowBegin, rowEnd, !pose.airborne, pose.airborne,
+        pose.surface == ExploreEcology::Surface::WATER);
+}
+
 void drawExploreRouteParkActors(Canvas565& canvas,
                                 const ExploreRouteViewModel& model,
                                 uint16_t rowBegin, uint16_t rowEnd) {
-    ExploreTileSemantics::ActorDepth actors[3] = {
-        {ExploreTileSemantics::ActorRole::LEADER, model.worldY}};
+    ExploreTileSemantics::ActorDepth actors[3 + ExploreEcology::CAPACITY] = {
+        {ExploreTileSemantics::ActorRole::LEADER, exploreRouteActorFootWorldY(model.worldY)}};
     uint8_t actorCount = 1;
     if (model.companionVisible && model.companionSpeciesId != 0) {
         actors[actorCount++] = {
-            ExploreTileSemantics::ActorRole::COMPANION, model.companionWorldY};
+            ExploreTileSemantics::ActorRole::COMPANION,
+            exploreRouteActorFootWorldY(model.companionWorldY)};
     }
     if (model.bossPending && model.bossSpeciesId != 0 && model.map &&
         model.pathIndex < model.map->pathCount) {
         const ExploreMapGenerator::Path& path = model.map->paths[model.pathIndex];
         if (model.bossIndex < path.pointCount) {
             actors[actorCount++] = {ExploreTileSemantics::ActorRole::BOSS,
-                exploreRouteBossWorldPose(
-                    path, model.bossIndex, model.animationNowMs).point.y};
+                exploreRouteActorFootWorldY(exploreRouteBossWorldPose(
+                    path, model.bossIndex, model.animationNowMs).point.y)};
         }
+    }
+    for (uint8_t i = 0; i < model.wildlifeCount && i < ExploreEcology::CAPACITY; ++i) {
+        actors[actorCount++] = {
+            ExploreTileSemantics::ActorRole::WILDLIFE, model.wildlife[i].y, i,
+            model.wildlife[i].surface == ExploreEcology::Surface::WATER &&
+                !model.wildlife[i].airborne};
     }
     ExploreTileSemantics::sortActorsByGroundDepth(actors, actorCount);
     for (uint8_t index = 0; index < actorCount; ++index) {
         switch (actors[index].role) {
+        case ExploreTileSemantics::ActorRole::WILDLIFE:
+            drawExploreWildlife(canvas, model, actors[index].index, rowBegin, rowEnd);
+            break;
         case ExploreTileSemantics::ActorRole::BOSS:
             drawExploreRouteBoss(canvas, model, rowBegin, rowEnd);
             break;
@@ -1534,6 +1714,10 @@ void drawExplorePreviewSlot(Canvas565& canvas,
 
 }  // namespace
 
+AmoledUi::Rect exploreRouteWildlifeBounds(const ExploreRouteViewModel& model, uint8_t index) {
+    return wildlifeBounds(model, index);
+}
+
 AmoledUi::Rect exploreRouteActorBounds(const ExploreRouteViewModel& model) {
     auto bounds = exploreActorBounds(model.speciesId, model.worldX, model.worldY,
         model.walkDirection, model.petFrame, model.walking, model.animationNowMs,
@@ -1557,10 +1741,16 @@ void drawHatchHeart(Canvas565& canvas, int x, int y) {
 
 void renderHomeScreen(Canvas565& canvas, const HomeViewModel& model,
                       uint16_t rowBegin, uint16_t rowEnd) {
+    renderHomeScreenRegion(canvas, model, rowBegin, rowEnd, 0, AmoledUi::WIDTH);
+}
+
+void renderHomeScreenRegion(Canvas565& canvas, const HomeViewModel& model,
+                            uint16_t rowBegin, uint16_t rowEnd,
+                            uint16_t columnBegin, uint16_t columnEnd) {
     const uint16_t ink = rgb(226, 238, 233);
     rowBegin = std::min<uint16_t>(rowBegin, AmoledUi::HEIGHT);
     rowEnd = std::min<uint16_t>(rowEnd, AmoledUi::HEIGHT);
-    UiCommon::PageClip pageClip(canvas, rowBegin, rowEnd);
+    UiCommon::PageClip pageClip(canvas, rowBegin, rowEnd, columnBegin, columnEnd);
     if (rowBegin >= rowEnd) return;
 
     if (rowBegin < HOME_HEADER_HEIGHT) {
@@ -1595,7 +1785,7 @@ void renderHomeScreen(Canvas565& canvas, const HomeViewModel& model,
         clockText[4] = static_cast<char>('0' + minute % 10);
         text(canvas, 232, (HOME_HEADER_HEIGHT - clockHeight) / 2,
              clockText, ink);
-        drawBattery(canvas, 320, headerCenterY - 16 / 2, 82);
+        drawBattery(canvas, 320, headerCenterY - 16 / 2, model.batteryPercent);
         pageClip.reset();
     }
 
@@ -2387,7 +2577,7 @@ int progressionReplaceItemAt(int x, int y, int16_t scrollOffsetY,
     if (x < 12 || x >= 356 || y < TEAM_MOVES_HEADER_HEIGHT ||
         y >= AmoledUi::HEIGHT) return -1;
     const int push = selectedItem < 3 ? static_cast<int>(std::lround(
-        (AmoledUi::HEIGHT / 2) * std::clamp(detailProgress, 0.0f, 1.0f))) : 0;
+        UiMetrics::MOVE_DETAIL_HEIGHT * std::clamp(detailProgress, 0.0f, 1.0f))) : 0;
     for (int index = 0; index < 3; ++index) {
         const int rowY = TEAM_MOVES_HEADER_HEIGHT + index * 66 - scrollOffsetY +
                          (index > selectedItem ? push : 0);
@@ -2717,7 +2907,7 @@ void renderProgressionScreen(Canvas565& canvas,
     }
     if (model.mode == ProgressionViewModel::Mode::MOVE_REPLACE) {
         constexpr int listTop = TEAM_MOVES_HEADER_HEIGHT;
-        constexpr int detailSize = AmoledUi::HEIGHT / 2;
+        constexpr int detailSize = UiMetrics::MOVE_DETAIL_HEIGHT;
         const MoveInfo* moves[] = {
             findMove(model.moveId), findMove(model.oldMove2),
             findMove(model.oldMove3)};
@@ -3256,6 +3446,18 @@ void renderBattleScreen(Canvas565& canvas, const BattleViewModel& model,
                                    model.playerStatus,
                                    model.playerBattleState, nowMs);
     }
+    if (model.thrownItem != Game::ItemId::COUNT) {
+        const float progress = std::clamp(model.itemThrowProgress, 0.0f, 1.0f);
+        const float fromX = playerBounds.x + playerBounds.width / 2.0f;
+        const float fromY = std::min(320.0f, playerBounds.y + playerBounds.height / 2.0f);
+        const float toX = wildBounds.x + wildBounds.width / 2.0f;
+        const float toY = wildBounds.y + wildBounds.height / 2.0f;
+        const int x = static_cast<int>(std::lround(fromX + (toX - fromX) * progress));
+        const int y = static_cast<int>(std::lround(fromY + (toY - fromY) * progress -
+                                                  240.0f * progress * (1.0f - progress)));
+        GameAssets::drawCentered(GameAssets::itemKind(model.thrownItem), x, y,
+                                 0.8f - 0.3f * progress);
+    }
     if (model.animationActive) {
         drawBattleStatusMoveEffect(model, playerBounds, wildBounds);
     }
@@ -3575,7 +3777,8 @@ void drawShowerFloats(Canvas565& canvas, const ShowerViewModel& model) {
             }
         } else {
             char message[16];
-            std::snprintf(message, sizeof(message), Ui::Shower::EXP_GAIN_FMT, floater.experience);
+            std::snprintf(message, sizeof(message), Ui::Shower::EXP_GAIN_FMT,
+                          static_cast<unsigned>(floater.experience));
             text(canvas, 216, 244 - rise, message,
                  rgb(241 * alpha / 255, 242 * alpha / 255, 232 * alpha / 255));
         }

@@ -15,7 +15,9 @@ int main() {
     for (uint8_t area = 0; area < Game::EXPLORE_AREA_COUNT; ++area) {
         assert(state.normalBossMissCount[area] == 0);
     }
-    static_assert(sizeof(Game::GameState) == 1572);
+    static_assert(offsetof(Game::GameState, careRewardDay) == 1572);
+    assert(state.careRewardDay == UINT32_MAX);
+    for (const auto& record : state.careRewards) assert(!record.valid);
     static_assert(offsetof(Game::GameState, tutorialFlags) == 1559);
     static_assert(offsetof(Game::GameState, debugMotionFlags) == 1570);
     assert(state.debugMotionFlags == 0);

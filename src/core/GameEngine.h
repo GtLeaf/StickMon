@@ -213,7 +213,7 @@ public:
                                    uint8_t capacity) const;
     bool recallMove(uint8_t teamSlot, Game::MoveId moveId,
                     uint8_t replacementSlot);
-    uint8_t grantBathReward(BathRewardStage stage);
+    uint32_t grantBathReward(BathRewardStage stage);
     uint16_t applyBathCompletionRecovery(uint8_t score);
     bool spendCoins(uint32_t amount);
     void addCoins(uint32_t amount);
@@ -353,8 +353,6 @@ private:
     void tickCare(uint32_t nowMs);
     void updateVisit(uint32_t nowMs);
     void resetDailyCountersIfNeeded();
-    void grantCareExperience(uint8_t baseAmount, bool weakGain = false,
-                             uint8_t teamSlot = 0);
     bool syncSpriteCache(uint8_t loadBudget = 0xFF,
                          bool* cacheChanged = nullptr);
     bool queueNextPendingMove(Game::MonsterRuntime& mon, const Species& species,

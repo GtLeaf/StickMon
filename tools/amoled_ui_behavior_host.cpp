@@ -3,6 +3,7 @@
 #include "core/FontResource.h"
 #include "core/UiStrings.h"
 #include "game/Species.h"
+#include "game/ItemInventory.h"
 #include "presentation/Canvas565.h"
 #include "presentation/PixelRenderer.h"
 #include "ui/RenderCaches.h"
@@ -112,6 +113,20 @@ void shopDetail(Canvas565& canvas, Game::GameState& state) {
         renderShopScreen(canvas, model);
         assert(capture(canvas) == expected);
     }
+    Game::GameState local = state;
+    model.state = &local;
+    model.mode = ShopViewModel::Mode::SELL;
+    const auto stock = Game::ItemInventory::count(local, model.detailItem);
+    if (stock) Game::ItemInventory::remove(local, model.detailItem, stock);
+    for (int pressed : {-1, 0}) {
+        model.pressedDetailAction = pressed;
+        renderShopScreen(canvas, model);
+        expectPixel(canvas, 106, 418, PixelRenderer::rgb(35, 35, 35));
+    }
+    Game::ItemInventory::add(local, model.detailItem);
+    model.pressedDetailAction = -1;
+    renderShopScreen(canvas, model);
+    expectPixel(canvas, 106, 418, PixelRenderer::rgb(36, 54, 61));
 }
 
 void settingsSliders(Canvas565& canvas, Game::GameState& state) {
@@ -125,7 +140,7 @@ void settingsSliders(Canvas565& canvas, Game::GameState& state) {
     model.volume = 0;
     renderSettingsScreen(canvas, model);
     const auto minimum = capture(canvas);
-    for (int y : {124, 186}) {
+    for (int y : {108, 172}) {
         expectPixel(canvas, 148, y, active);
         expectPixel(canvas, 148, y - 10, knob);
         for (int dy = -8; dy < 8; ++dy) expectPixel(canvas, 240, y + dy, track);
@@ -135,13 +150,13 @@ void settingsSliders(Canvas565& canvas, Game::GameState& state) {
     model.brightness = 255;
     model.volume = 100;
     renderSettingsScreen(canvas, model);
-    for (int y : {124, 186}) {
+    for (int y : {108, 172}) {
         expectPixel(canvas, 332, y, active);
         expectPixel(canvas, 332, y - 10, knob);
         expectPixel(canvas, 240, y, active);
-        // The label/value region stays unchanged; values are conveyed by the slider.
-        for (int row = y - 28; row < y - 14; ++row) {
-            for (int x = 12; x < 356; ++x) {
+        // Changing values must leave the labels unchanged beside the slider.
+        for (int row = y - 16; row < y + 16; ++row) {
+            for (int x = 12; x < 130; ++x) {
                 expectPixel(canvas, x, row, minimum[row * AmoledUi::WIDTH + x]);
             }
         }
@@ -150,7 +165,7 @@ void settingsSliders(Canvas565& canvas, Game::GameState& state) {
     for (int index : {0, 1}) {
         model.pressedItem = index;
         renderSettingsScreen(canvas, model);
-        const int y = index == 0 ? 124 : 186;
+        const int y = index == 0 ? 108 : 172;
         expectPixel(canvas, 332, y - 13, knob);
         expectPixel(canvas, 332, y, PixelRenderer::rgb(115, 226, 183));
     }
@@ -159,8 +174,8 @@ void settingsSliders(Canvas565& canvas, Game::GameState& state) {
     model.brightness = 0;
     model.volume = 255;
     renderSettingsScreen(canvas, model);
-    expectPixel(canvas, 148, 124, active);
-    expectPixel(canvas, 332, 186, active);
+    expectPixel(canvas, 148, 108, active);
+    expectPixel(canvas, 332, 172, active);
 }
 
 void teamPopup(Canvas565& canvas, Game::GameState& state) {

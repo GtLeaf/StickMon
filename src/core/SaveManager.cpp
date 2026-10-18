@@ -5,6 +5,7 @@
 #include <cstring>
 #include <new>
 #include "game/BondSystem.h"
+#include "game/CareExperience.h"
 #include "game/ExploreBossPity.h"
 #include "game/ExploreSpecialEncounter.h"
 #include "game/FriendshipPity.h"
@@ -124,6 +125,15 @@ struct SaveRecordV1WithViewV2 {
     uint16_t version;
     uint16_t reserved;
     uint8_t stateBytes[LEGACY_GAME_STATE_V1_V2_SIZE];
+    MainSceneViewRecord view;
+};
+
+// Frozen raw v3/v4 envelope. Never reinterpret its bytes as the growing state.
+struct SaveRecordV3V4 {
+    uint32_t magic;
+    uint16_t version;
+    uint16_t reserved;
+    uint8_t stateBytes[1572];
     MainSceneViewRecord view;
 };
 
@@ -406,7 +416,7 @@ void loadMainSceneViewRecordV1(const MainSceneViewRecordV1& record,
 }
 
 bool loadLegacyGameState(const uint8_t* stateBytes, uint16_t version,
-                         Game::GameState& state) {
+                         Game::GameState& state, size_t stateSize = LEGACY_GAME_STATE_V1_V2_SIZE) {
     uint32_t magic = 0;
     uint16_t stateVersion = 0;
     uint16_t storedChecksum = 0;
@@ -416,7 +426,7 @@ bool loadLegacyGameState(const uint8_t* stateBytes, uint16_t version,
     memcpy(&storedChecksum, stateBytes + offsetof(Game::GameState, checksum),
            sizeof(storedChecksum));
     uint16_t expectedChecksum = checksumBytes(
-        stateBytes, LEGACY_GAME_STATE_V1_V2_SIZE,
+        stateBytes, stateSize,
         offsetof(Game::GameState, checksum));
     if (magic != Game::SAVE_MAGIC || stateVersion != version ||
         storedChecksum != expectedChecksum) {
@@ -424,24 +434,23 @@ bool loadLegacyGameState(const uint8_t* stateBytes, uint16_t version,
     }
 
     state = Game::GameState{};
-    memcpy(&state, stateBytes, LEGACY_GAME_STATE_V1_V2_SIZE);
+    memcpy(&state, stateBytes, stateSize);
     state.settings.reservedAudioSetting = 0;
     // Legacy v1/v2 records did not define gender. Use the requested stable
     // migration default for every team and storage monster.
     constexpr uint8_t LEGACY_GENDER =
         static_cast<uint8_t>(Game::Gender::MALE);
-    for (Game::MonsterRuntime& monster : state.team) {
-        monster.gender = LEGACY_GENDER;
-    }
-    for (Game::MonsterRuntime& monster : state.storage) {
-        monster.gender = LEGACY_GENDER;
+    if (version <= 2) {
+        for (Game::MonsterRuntime& monster : state.team) monster.gender = LEGACY_GENDER;
+        for (Game::MonsterRuntime& monster : state.storage) monster.gender = LEGACY_GENDER;
     }
     state.version = Game::SAVE_VERSION;
     state.checksum = 0;
-    state.normalBossPitySlotIndex = ExploreSpecial::slotIndexFor(
-        state.gameMinutesTotal);
-    memset(state.normalBossMissCount, 0,
-           sizeof(state.normalBossMissCount));
+    if (version <= 2) {
+        state.normalBossPitySlotIndex = ExploreSpecial::slotIndexFor(state.gameMinutesTotal);
+        memset(state.normalBossMissCount, 0, sizeof(state.normalBossMissCount));
+    }
+    if (version < 4) state.debugMotionFlags = 0;
     return true;
 }
 
@@ -875,6 +884,19 @@ bool sanitizeState(Game::GameState& state) {
         state.debugMotionFlags = motionFlags;
         changed = true;
     }
+    changed |= Game::CareExperience::prepareDay(state);
+    for (auto& record : state.careRewards) {
+        if (!record.valid) continue;
+        if (record.budget > 65535) { record.budget = 65535; changed = true; }
+        for (uint8_t i = 0; i < 4; ++i) {
+            const uint32_t cap = Game::CareExperience::categoryCap(record.budget,
+                static_cast<Game::CareExperience::Source>(i));
+            if (record.awarded[i] > cap) { record.awarded[i] = cap; changed = true; }
+        }
+        if (record.bathStageMask > 7) { record.bathStageMask &= 7; changed = true; }
+        if (record.pairCount > 3) { record.pairCount = 3; changed = true; }
+        if (record.pendingOldLevel >= Game::LEVEL_MAX) { record.pendingOldLevel = 0; changed = true; }
+    }
     return changed;
 }
 
@@ -911,7 +933,7 @@ bool SaveManager::load(Game::GameState& state,
         bool migrationPending = false;
         if (migrated) {
             Platform::logf("[SaveManager] migrated state v%u -> v%u\n",
-                           SaveCodec::SCHEMA_1_STATE_VERSION,
+                           codecHeap->schema == 1 ? 3 : 4,
                            Game::SAVE_VERSION);
             if (saveSnapshot(state, viewState)) {
                 Platform::logLine("[SaveManager] migration committed");
@@ -997,6 +1019,14 @@ bool SaveManager::load(Game::GameState& state,
         loaded = migrateLegacySaveRecord(
             raw, len, header.version, state, viewState, viewValid);
         migrated = loaded;
+    } else if ((header.version == 3 || header.version == 4) && len == sizeof(SaveRecordV3V4)) {
+        const auto* record = reinterpret_cast<const SaveRecordV3V4*>(raw);
+        loaded = loadLegacyGameState(record->stateBytes, header.version, state, 1572);
+        if (loaded) {
+            viewValid = mainSceneViewRecordValid(record->view);
+            if (viewValid) loadMainSceneViewRecord(record->view, viewState);
+            migrated = true;
+        }
     } else if (header.version == SAVE_RECORD_VERSION &&
                len == sizeof(SaveRecord)) {
         auto* record = new (std::nothrow) SaveRecord{};

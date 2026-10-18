@@ -54,14 +54,13 @@ class AmoledHomeBehaviorTests(unittest.TestCase):
             self.assertIn(token, APP)
 
     def test_main_sleep_commits_directly_when_already_at_bed_pose(self):
-        begin = APP.index("MonsterDesire desire = monsterMind.topDesire();")
+        begin = APP.index("MonsterDesire desire = homeMainActor.mind.topDesire();")
         end = APP.index(
             '"[AmoledPet] decision desire=%u motion=%u', begin
         )
         body = APP[begin:end]
         self.assertIn("const bool atSleepPose =", body)
         self.assertIn("homeMainActor.route.clear();", body)
-        self.assertIn("petScheduledSleeping = true;", body)
         self.assertIn(
             "homeRuntime.transition(\n"
             "                0, Home::Task::SLEEPING",
@@ -74,11 +73,8 @@ class AmoledHomeBehaviorTests(unittest.TestCase):
             APP.index("Home::ActorObservation AmoledApp::homeActorObservation("):
             APP.index("Home::HouseholdObservation AmoledApp::homeHouseholdObservation(")
         ]
-        self.assertIn(
-            "observation.desire = teamSlot == 0\n"
-            "            ? monsterMind.topDesire() : actor->mind.topDesire();",
-            observation,
-        )
+        self.assertIn("actor->mind.topDesire()", observation)
+        self.assertIn("homeMainActor.mind.update(", APP)
         self.assertIn('"[HomeSleep] event=decision intent=%u desire=%u "', APP)
 
     def test_awake_pet_leaves_persisted_bed_pose(self):
@@ -110,7 +106,7 @@ class AmoledHomeBehaviorTests(unittest.TestCase):
         ):
             self.assertIn(token, APP)
 
-    def test_more_hungry_pet_gets_next_serving_without_blocker_yield(self):
+    def test_more_hungry_pet_gets_next_serving_with_shared_avoidance(self):
         for token in (
             "int8_t AmoledApp::preferredBowlEater(uint32_t nowMs) const",
             "Home::ActorController::selectBowlActor(",
@@ -119,8 +115,7 @@ class AmoledHomeBehaviorTests(unittest.TestCase):
             "homeRuntime.beginTick(nowMs);",
         ):
             self.assertIn(token, APP)
-        self.assertNotIn("startMainFoodYield", APP)
-        self.assertNotIn("startCompanionFoodYield", APP)
+        self.assertIn("tryYieldHomeBlocker", APP)
 
     def test_unowned_food_reenters_arbitration_after_route_failure_or_restore(self):
         self.assertIn(
@@ -146,12 +141,9 @@ class AmoledHomeBehaviorTests(unittest.TestCase):
 
     def test_companion_food_uses_soft_avoidance_and_reachable_approach(self):
         for token in (
-            "bool AmoledApp::companionFoodAvoidsMain() const",
-            "const bool avoidMain = companionFoodAvoidsMain();",
             "for (int radius = 0; radius <= 36 && !routeFound; radius += 2)",
             "homeRuntime.planRoute(1, candidateX, candidateY,\n"
-            "                                          false, avoidMain)",
-            "companionFoodAvoidsMain()));",
+            "                                          false, true)",
         ):
             self.assertIn(token, APP)
 
@@ -159,7 +151,7 @@ class AmoledHomeBehaviorTests(unittest.TestCase):
         self.assertIn("bool AmoledApp::startCompanionFoodExit(uint32_t nowMs)", APP)
         self.assertIn("if (teamSlot == 0 && homeActorBlocksFoodApproach(1))", APP)
         self.assertIn("beginCompanionMove(Home::Task::YIELDING, x, y,\n"
-                      "                                   nowMs, false, false)", APP)
+                      "                                   nowMs, false, true)", APP)
         self.assertIn('"[HomeFood] event=exit actor=1', APP)
         self.assertIn('"[HomeFood] event=exit_failed actor=1', APP)
 
@@ -173,20 +165,20 @@ class AmoledHomeBehaviorTests(unittest.TestCase):
             '"[HomeFood] event=reject actor=0 stage=route',
             '"[HomeFood] event=reject actor=1 stage=claim',
             '"[HomeFood] event=reject actor=1 stage=route',
-            '"[HomeFood] event=blocked actor=0 stage=replan',
+            '"[HomeFood] event=blocked actor=0 stage=route',
             '"[HomeFood] event=blocked actor=1 stage=%s',
         ):
             self.assertIn(token, APP)
 
     def test_new_serving_releases_lingering_old_feed_session(self):
-        self.assertIn(
-            "petMotion == PetMotion::EATING ||\n"
-            "        (petMotion == PetMotion::STOPPING && petStoppingToEat)",
-            APP,
-        )
-        self.assertIn(
-            "homeCompanionActor.task == Home::Task::FEEDING", APP
-        )
+        begin = APP.index("void AmoledApp::wakeHomeFoodArbitration(")
+        end = APP.index("void AmoledApp::serviceHomeFoodArbitration(", begin)
+        arbitration = APP[begin:end]
+        self.assertIn("Home::Task::SEEK_FOOD", arbitration)
+        self.assertIn("Home::Task::FEEDING", arbitration)
+        self.assertIn("homeRuntime.release(Home::Resource::BOWL,", arbitration)
+        self.assertIn("homeRuntime.stop(0, nowMs)", arbitration)
+        self.assertIn("stopCompanion(nowMs)", arbitration)
 
     def test_pair_timing_and_real_actor_routes_match_stick_contract(self):
         for token in (

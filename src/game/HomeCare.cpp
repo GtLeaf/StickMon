@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "game/FoodTuning.h"
+#include "game/CareTicker.h"
 #include "game/Species.h"
 #include "game/SpeciesBehavior.h"
 
@@ -57,6 +58,7 @@ FoodPlacementResult placeSelectedFoodInBowl(GameState& state) {
 }
 
 FoodConsumeResult consumeBowlFood(GameState& state, uint8_t teamSlot) {
+    resetDailyCareCounters(state);
     FoodConsumeResult result;
     if (state.room.bowlCount == 0 ||
         teamSlot >= state.teamCount || teamSlot >= TEAM_CAP) {
@@ -113,13 +115,16 @@ FoodConsumeResult consumeBowlFood(GameState& state, uint8_t teamSlot) {
     result.moodAfter = monster.mood;
     result.lastBite = state.room.bowlCount == 0;
     result.becameFull = !wasFull && monster.satiety >= 100;
-    result.careExp = profile.careExp;
-    result.weakCareExp = wasFull;
+    if (!wasFull) {
+        result.careExp = CareExperience::grant(state, teamSlot,
+            CareExperience::Source::FOOD, foodIndex);
+    }
     return result;
 }
 
 PetResult petMonster(GameState& state, uint8_t teamSlot,
                      uint32_t gameSeconds) {
+    resetDailyCareCounters(state);
     PetResult result;
     if (teamSlot >= state.teamCount || teamSlot >= TEAM_CAP) {
         result.outcome = PetOutcome::NEEDS_REST;
@@ -149,6 +154,7 @@ PetResult petMonster(GameState& state, uint8_t teamSlot,
     result.outcome = PetOutcome::REWARDED;
     result.moodGain = monster.mood - oldMood;
     result.affectionGain = monster.affection - oldAffection;
+    result.careExp = CareExperience::grant(state, teamSlot, CareExperience::Source::PET);
     return result;
 }
 

@@ -36,7 +36,7 @@ M5StickS3、AMOLED 1.8 V1、AMOLED 1.8 V2 三个固件目标；玩法、存档�
 ### AMOLED 1.8 V1
 
 - 工程：`firmware/amoled_1_8_v1`，ESP-IDF 5.5.x。
-- SH8601 + FT3168，物理 368x448；使用 184x224 RGB565 逻辑画布并 2x 输出。
+- SH8601 + FT3168，当前画布与触摸均为原生 368x448 RGB565；旧素材按资源规则缩放。
 - 使用 SPIFFS 资源、PSRAM、NVS A/B 存档和共享 ESP-NOW 协议。
 - 构建：在工程目录加载 ESP-IDF 后执行 `idf.py -B build build`。
 - 刷入：`./flash.sh --port PORT`；应用、bootloader、分区表和 resources.bin
@@ -130,15 +130,16 @@ Coze Agent 远程读取/操作游戏状态），只接入 AMOLED V1/V2。
 
 ## 存档兼容
 
-- 当前 `Game::SAVE_VERSION = 4`，以源码为准；
+- 当前 `Game::SAVE_VERSION = 5`，以源码为准；
   `doc/存档兼容与迁移规则.md` 可能落后，修改前必须同时读
   `GameState.h`、`SaveCodec.*`、`SaveManager.*`。
 - 新写入使用 `SaveCodec` 显式小端字段编码，不允许直接把 C++ struct 布局当作
   新格式持久化。
 - 快照带 schema、sequence 和 CRC；NVS 使用 `state_a`/`state_b` 双槽，读取
   sequence 最大且校验通过的记录，同时保留 `state` 兼容镜像。
-- 当前支持 v1/v2/v3/v4 读取和迁移（SaveCodec schema 1=v3 载荷、schema 2=v4
-  载荷，按 schema 兼容解码）。迁移必须先成功写入新格式，才能视为完成；
+- 当前支持 v1/v2/v3/v4/v5 读取和迁移（SaveCodec schema 1=v3、schema 2=v4、
+  schema 3=v5，按 schema 兼容解码）。v5 在冻结的 1572 字节后追加每只精灵
+  的照料额度记录，MonsterRuntime 仍为 64 字节。迁移必须先成功写入新格式，才能视为完成；
   写入失败时保留旧 blob 以便下次重试。
 - 遇到高于当前固件版本的存档必须返回 `NEWER_VERSION` 并写保护，绝不能把
   默认状态覆盖回去。
@@ -166,8 +167,8 @@ Coze Agent 远程读取/操作游戏状态），只接入 AMOLED V1/V2。
 - 使用纵向脏区传屏；`AmoledApp::needsRender()` 与 dirty row 范围决定传输。
 - 静止页面、暂停探索和静止洗澡页面不得持续全屏刷新。
 - 页面切换/唤醒可全帧刷新，局部交互应只标记受影响行。
-- 184x224 是 UI 坐标空间，368x448 只用于板级 2x 传输，业务布局不得混用
-  物理坐标。
+- 当前 AMOLED UI、脏区与触摸均使用原生 368x448 坐标；184x224 仅是部分
+  源素材的历史尺寸，不应作为新的页面布局坐标。
 
 ## 关键玩法不变量
 
@@ -185,6 +186,9 @@ Coze Agent 远程读取/操作游戏状态），只接入 AMOLED V1/V2。
   升级、进化等队列事件必须由所有经验来源统一触发。
 - 洗澡完成按 1/2/3 星恢复 45%/70%/100% HP；阶段经验和心情奖励统一走
   `BathService`。
+- 照料经验统一走 `CareExperience`：每日按完整升级跨度的 40%/30%/20%
+  固定预算，身份使用 ContactRoster 的不变量；当天升级/进化不重算。
+  食物/摸头/洗澡/伙伴互动分别使用约 40%/20%/35%/5% 的额度。
 - 区域按击败前一区域头目顺序解锁；探索精灵池缓存直到时间轮换或头目刷新，
   不应在每次进入菜单时重新解码。
 
@@ -229,6 +233,20 @@ Coze Agent 远程读取/操作游戏状态），只接入 AMOLED V1/V2。
   若 V2 板级/共享 AMOLED 代码受影响，也构建 V2。
 - 不能运行实机测试时必须明确记录。V2 显示/触摸、三目标 ESP-NOW、音频、
   PMU 深睡、电池/IMU/RTC 仍属于重点实机风险。
+
+## Web 模拟器（2026-10-17）
+
+- 当前源码树包含 `src/platform/web/`，不再需要切到旧 `web-simulator` 分支才能构建。
+- `bash tools/build_web.sh --target sticks3|amoled-v2` 输出到 `build/web/<target>/`。
+- 微雪入口运行真实 AmoledApp，复用 `ui/sources.txt` 和原生资源包；V1/Claw 不纳入网页试玩。
+- 页面唯一编辑源：Stick 的 `web/index.html`、微雪的 `web/amoled-v2/index.html`。
+- `python3 tools/publish_web.py --flasher <checkout>` 先验证两目标，再发布本地产物，
+  不自动推送/部署。不要手改刷机站生成的哈希入口。
+- 微雪 localStorage 前缀独立于 Stick；Web Locks 保证单写。失焦/隐藏暂停逻辑时钟，
+  取消触摸不能合成为一次点击，关闭面板先保存再释放。
+- PlatformIO 必须排除 `platform/web/`，否则会误编译 Emscripten 启动入口。
+- 验证：`python3 tools/test_web_simulator.py`，以及原生 AMOLED 渲染、存档和三目标构建。
+- 完整说明与未验证边界：`doc/微雪V2-网页模拟器.md`。
 
 ## 参考文档
 

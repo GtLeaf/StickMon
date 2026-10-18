@@ -126,7 +126,8 @@ PackSlot packSlotFor(Kind kind) {
     if (kind == Kind::EGG) return PackSlot::HATCH;
     if ((kind >= Kind::EXPLORE_TILE_0072 && kind <= Kind::EXPLORE_WATERFALL_BOTTOM_F3) ||
         (kind >= Kind::EXPLORE_TILE_4762 && kind <= Kind::EXPLORE_TILE_4773) ||
-        (kind >= Kind::EXPLORE_TILE_0391 && kind <= Kind::EXPLORE_TILE_0842)) {
+        (kind >= Kind::EXPLORE_TILE_0391 && kind <= Kind::EXPLORE_TILE_0842) ||
+        (kind >= Kind::EXPLORE_TILE_1184 && kind <= Kind::EXPLORE_TILE_1186)) {
         return PackSlot::MAP;
     }
     if (kind < Kind::COUNT) return PackSlot::BATTLE;
@@ -681,6 +682,8 @@ bool drawExploreTileTo(Canvas565& canvas, uint16_t tileId, int x, int y,
     case 1162: kind = Kind::EXPLORE_TILE_1162; break;
     case 1185: kind = Kind::EXPLORE_TILE_1185; break;
     case 1188: kind = Kind::EXPLORE_TILE_1188; break;
+    case 1184: kind = Kind::EXPLORE_TILE_1184; break;
+    case 1186: kind = Kind::EXPLORE_TILE_1186; break;
     case 1506: kind = Kind::EXPLORE_TILE_1506; break;
     case 1507: kind = Kind::EXPLORE_TILE_1507; break;
     case 1514: kind = Kind::EXPLORE_TILE_1514; break;

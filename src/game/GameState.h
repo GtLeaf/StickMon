@@ -12,7 +12,7 @@ static constexpr uint8_t TEAM_CAP = 2;
 static constexpr uint8_t STORAGE_CAP = 20;
 static constexpr uint8_t ITEM_STACK_CAP = 99;
 static constexpr uint32_t SAVE_MAGIC = 0x534D4F4E; // SMON
-static constexpr uint16_t SAVE_VERSION = 4;
+static constexpr uint16_t SAVE_VERSION = 5;
 static constexpr uint16_t MIN_SUPPORTED_SAVE_VERSION = 1;
 // debugMotionFlags 位定义：AMOLED debug 菜单「运动」分类下的开关，
 // release 固件忽略这些位但必须原样保留。
@@ -308,6 +308,23 @@ struct PlayerSettings {
     uint8_t language = 0; // 0 = zh-CN
 };
 
+// Identity matches ContactRoster; species/level are excluded so evolution and
+// roster reordering retain the same daily rewards without changing radio data.
+struct CareRewardRecord {
+    uint32_t ivPacked = 0;
+    uint32_t metAt = 0;
+    uint32_t budget = 0;
+    uint32_t awarded[4] = {}; // food, pet, bath, partner play
+    uint8_t nature = 0;
+    uint8_t metArea = MET_AREA_UNKNOWN;
+    Origin origin = Origin::UNKNOWN;
+    uint8_t bathStageMask = 0;
+    uint8_t pairCount = 0;
+    uint8_t pendingOldLevel = 0;
+    bool valid = false;
+};
+static constexpr uint8_t CARE_REWARD_RECORD_CAP = TEAM_CAP + STORAGE_CAP;
+
 struct GameState {
     uint32_t magic = SAVE_MAGIC;
     uint16_t version = SAVE_VERSION;
@@ -324,7 +341,7 @@ struct GameState {
     uint32_t coins = INITIAL_COINS;
     uint16_t stepsToday = 0;
     uint16_t walkExpToday = 0;
-    uint16_t careExpToday = 0;
+    uint16_t careExpToday = 0; // Legacy v1-v4 aggregate; v5 uses careRewards.
     uint16_t careDay = 0;
     uint8_t pairMoodRewardsToday = 0;
     uint8_t candyPurchasesToday = 0;
@@ -352,9 +369,14 @@ struct GameState {
     // v4：debug「运动」开关（位定义见 DEBUG_MOTION_*），落尾部对齐字节，
     // 存档尺寸不变。
     uint8_t debugMotionFlags = 0;
+    // v5 append-only extension; the preceding 1572 bytes remain frozen.
+    uint32_t careRewardDay = UINT32_MAX;
+    CareRewardRecord careRewards[CARE_REWARD_RECORD_CAP];
 };
-static_assert(sizeof(GameState) == 1572,
-              "v4 save size changed; add a schema version and migration");
+static_assert(offsetof(GameState, careRewardDay) == 1572,
+              "v5 care fields must follow the frozen v4 layout");
+static_assert(sizeof(GameState) == 2368,
+              "v5 save size changed; add a schema version and migration");
 static_assert(offsetof(GameState, room) == 1452,
               "BagState must not shift the v1 room/save layout");
 static_assert(offsetof(GameState, tutorialFlags) == 1559,

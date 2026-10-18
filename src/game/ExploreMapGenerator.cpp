@@ -54,8 +54,9 @@ constexpr uint16_t STREAM_BOTTOM_OUTER_RIGHT_TILE = 4401;
 constexpr uint16_t STREAM_BOTTOM_INNER_LEFT_TILE = 4402;
 constexpr uint16_t STREAM_BOTTOM_INNER_RIGHT_TILE = 4403;
 
-constexpr uint16_t CLIFF_TOP_TILE = 1188;
+constexpr uint16_t CLIFF_LEFT_TILE = 1184;
 constexpr uint16_t CLIFF_FACE_TILE = 1185;
+constexpr uint16_t CLIFF_RIGHT_TILE = 1186;
 constexpr uint16_t CLIFF_STAIR_LEFT_TILE = 1161;
 constexpr uint16_t CLIFF_STAIR_RIGHT_TILE = 1162;
 
@@ -1331,8 +1332,20 @@ void stampAncientWaterfallValley(Map& map, CellMask& water, CellMask& forest,
     stampAncientCaveEntrances(map);
 }
 
-bool creekCandidateFits(const CellMask& road, uint8_t left, uint8_t width,
+bool creekCandidateFits(const Map& map, const CellMask& road, uint8_t left, uint8_t width,
                         uint8_t bridgeTop) {
+    auto onBridge = [&](const Point& point) {
+        return point.y >= bridgeTop && point.y <= bridgeTop + 1 &&
+               point.x >= left - 1 && point.x <= left + width;
+    };
+    for (uint8_t i = 0; i < map.pathCount; ++i) {
+        const Path& path = map.paths[i];
+        for (uint8_t j = 1; j < path.pointCount; ++j) {
+            const Point& p = path.points[j - 1];
+            const Point& q = path.points[j];
+            if (p.y != q.y && (onBridge(p) || onBridge(q))) return false;
+        }
+    }
     bool crossing = false;
     for (uint8_t y = 0; y < HEIGHT; ++y) {
         for (uint8_t x = left; x < left + width; ++x) {
@@ -1348,23 +1361,23 @@ bool creekCandidateFits(const CellMask& road, uint8_t left, uint8_t width,
            road.contains(left + width, bridgeTop + 1);
 }
 
-uint16_t creekCandidateCount(const CellMask& road) {
+uint16_t creekCandidateCount(const Map& map, const CellMask& road) {
     uint16_t count = 0;
     for (uint8_t width = 3; width <= 5; ++width) {
         for (uint8_t left = 2; left < WIDTH - width - 1; ++left) {
             for (uint8_t top = 1; top < HEIGHT - 2; ++top) {
-                if (creekCandidateFits(road, left, width, top)) ++count;
+                if (creekCandidateFits(map, road, left, width, top)) ++count;
             }
         }
     }
     return count;
 }
 
-bool selectCreekCandidate(const CellMask& road, uint16_t choice, CreekSpec& out) {
+bool selectCreekCandidate(const Map& map, const CellMask& road, uint16_t choice, CreekSpec& out) {
     for (uint8_t width = 3; width <= 5; ++width) {
         for (uint8_t left = 2; left < WIDTH - width - 1; ++left) {
             for (uint8_t top = 1; top < HEIGHT - 2; ++top) {
-                if (!creekCandidateFits(road, left, width, top)) continue;
+                if (!creekCandidateFits(map, road, left, width, top)) continue;
                 if (choice-- == 0) {
                     out = {left, width, top};
                     return true;
@@ -1375,116 +1388,29 @@ bool selectCreekCandidate(const CellMask& road, uint16_t choice, CreekSpec& out)
     return false;
 }
 
-bool streamShapeFits(const CellMask& road, const CreekSpec& creek,
-                     const StreamShape& shape) {
+struct CreekLayout {
+    uint8_t left[HEIGHT] = {};
+    uint8_t width[HEIGHT] = {};
+};
+
+uint8_t creekStyle(uint32_t seed) {
+    Rng style(seed ^ 0x91E10DA5U);
+    return static_cast<uint8_t>(style.bounded(4));
+}
+
+StreamShape creekEnvelope(const CreekLayout& layout) {
+    uint8_t left = WIDTH;
+    uint8_t right = 0;
     for (uint8_t y = 0; y < HEIGHT; ++y) {
-        uint8_t left = shape.boundary && y >= shape.boundary
-                           ? shape.downstreamLeft : shape.upstreamLeft;
-        uint8_t width = shape.boundary && y >= shape.boundary
-                            ? shape.downstreamWidth : shape.upstreamWidth;
-        for (uint8_t x = left; x < left + width; ++x) {
-            if (!road.contains(x, y)) continue;
-            bool inBridge = (y == creek.bridgeTop || y == creek.bridgeTop + 1) &&
-                            x >= creek.left && x < creek.left + creek.width;
-            if (!inBridge) return false;
-        }
+        if (layout.left[y] < left) left = layout.left[y];
+        if (layout.left[y] + layout.width[y] > right)
+            right = layout.left[y] + layout.width[y];
     }
-    return true;
+    return {left, static_cast<uint8_t>(right - left), left,
+            static_cast<uint8_t>(right - left), 0};
 }
 
-bool transitionShape(const CreekSpec& creek, uint8_t boundary, uint8_t mode,
-                     StreamShape& out) {
-    int remoteLeft = creek.left;
-    int remoteWidth = creek.width;
-    switch (mode) {
-    case 0: ++remoteLeft; --remoteWidth; break;
-    case 1: --remoteWidth; break;
-    case 2: --remoteLeft; ++remoteWidth; break;
-    default: ++remoteWidth; break;
-    }
-    if (remoteWidth < 3 || remoteLeft < 1 ||
-        remoteLeft + remoteWidth > WIDTH - 1) return false;
-
-    bool bridgeIsDownstream = boundary <= static_cast<int>(creek.bridgeTop) - 2;
-    if (bridgeIsDownstream) {
-        out = {
-            static_cast<uint8_t>(remoteLeft), static_cast<uint8_t>(remoteWidth),
-            creek.left, creek.width, boundary,
-        };
-    } else {
-        out = {
-            creek.left, creek.width,
-            static_cast<uint8_t>(remoteLeft), static_cast<uint8_t>(remoteWidth),
-            boundary,
-        };
-    }
-    return true;
-}
-
-uint16_t transitionCandidateCount(const CellMask& road, const CreekSpec& creek) {
-    uint16_t count = 0;
-    for (uint8_t boundary = 1; boundary < HEIGHT; ++boundary) {
-        if (boundary > static_cast<int>(creek.bridgeTop) - 2 &&
-            boundary < creek.bridgeTop + 4) continue;
-        for (uint8_t mode = 0; mode < 4; ++mode) {
-            StreamShape shape{};
-            if (transitionShape(creek, boundary, mode, shape) &&
-                streamShapeFits(road, creek, shape)) ++count;
-        }
-    }
-    return count;
-}
-
-bool selectTransitionCandidate(const CellMask& road, const CreekSpec& creek,
-                               uint16_t choice, StreamShape& out) {
-    for (uint8_t boundary = 1; boundary < HEIGHT; ++boundary) {
-        if (boundary > static_cast<int>(creek.bridgeTop) - 2 &&
-            boundary < creek.bridgeTop + 4) continue;
-        for (uint8_t mode = 0; mode < 4; ++mode) {
-            StreamShape shape{};
-            if (!transitionShape(creek, boundary, mode, shape) ||
-                !streamShapeFits(road, creek, shape)) continue;
-            if (choice-- == 0) {
-                out = shape;
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-StreamShape chooseStreamShape(Rng& features, const CellMask& road,
-                              const CreekSpec& creek) {
-    StreamShape straight = {
-        creek.left, creek.width, creek.left, creek.width, 0,
-    };
-    uint16_t count = transitionCandidateCount(road, creek);
-    if (features.bounded(100) >= 55 || count == 0) return straight;
-    StreamShape selected{};
-    return selectTransitionCandidate(road, creek, features.bounded(count), selected)
-               ? selected : straight;
-}
-
-void stampStream(Map& map, const StreamShape& shape, CellMask& water,
-                 CellMask& transitionCells) {
-    water.clear();
-    transitionCells.clear();
-    for (uint8_t y = 0; y < HEIGHT; ++y) {
-        uint8_t left = shape.boundary && y >= shape.boundary
-                           ? shape.downstreamLeft : shape.upstreamLeft;
-        uint8_t width = shape.boundary && y >= shape.boundary
-                            ? shape.downstreamWidth : shape.upstreamWidth;
-        for (uint8_t column = 0; column < width; ++column) {
-            uint8_t x = left + column;
-            uint16_t tileId = column == 0 ? STREAM_LEFT_TILE
-                                : column == width - 1 ? STREAM_RIGHT_TILE
-                                                      : STREAM_CENTER_TILE;
-            map.layers[0][y * WIDTH + x] = tileId;
-            water.add(x, y);
-        }
-    }
-    if (shape.boundary == 0) return;
-
+void stampStreamCorners(Map& map, const StreamShape& shape, CellMask& transitionCells) {
     uint8_t boundary = shape.boundary;
     uint8_t upstreamRight = shape.upstreamLeft + shape.upstreamWidth;
     uint8_t downstreamRight = shape.downstreamLeft + shape.downstreamWidth;
@@ -1508,6 +1434,27 @@ void stampStream(Map& map, const StreamShape& shape, CellMask& water,
     }
 }
 
+void stampCreekLayout(Map& map, const CreekLayout& layout, CellMask& water,
+                      CellMask& transitionCells) {
+    water.clear();
+    transitionCells.clear();
+    for (uint8_t y = 0; y < HEIGHT; ++y) {
+        for (uint8_t column = 0; column < layout.width[y]; ++column) {
+            uint8_t x = layout.left[y] + column;
+            map.layers[0][y * WIDTH + x] = column == 0 ? STREAM_LEFT_TILE
+                : column + 1 == layout.width[y] ? STREAM_RIGHT_TILE : STREAM_CENTER_TILE;
+            water.add(x, y);
+        }
+    }
+    for (uint8_t y = 1; y < HEIGHT; ++y) {
+        if (layout.left[y] == layout.left[y - 1] &&
+            layout.width[y] == layout.width[y - 1]) continue;
+        StreamShape transition{layout.left[y - 1], layout.width[y - 1],
+                               layout.left[y], layout.width[y], y};
+        stampStreamCorners(map, transition, transitionCells);
+    }
+}
+
 void stampBridge(Map& map, const CreekSpec& creek, CellMask& bridge) {
     bridge.clear();
     uint8_t left = creek.left - 1;
@@ -1520,7 +1467,27 @@ void stampBridge(Map& map, const CreekSpec& creek, CellMask& bridge) {
     }
 }
 
-bool cliffCandidateFits(const CellMask& road, const CellMask& water,
+bool cliffLandingFits(const Map& map, uint8_t stairLeft, uint8_t stairY) {
+    for (uint8_t i = 0; i < map.pathCount; ++i) {
+        const Path& path = map.paths[i];
+        for (uint8_t j = 0; j < path.pointCount; ++j) {
+            const Point& point = path.points[j];
+            if (point.y != stairY || point.x < stairLeft || point.x >= stairLeft + 2) continue;
+            if (j < 2 || j + 2 >= path.pointCount) return false;
+            for (uint8_t offset = 1; offset <= 2; ++offset) {
+                const Point& before = path.points[j - offset];
+                const Point& after = path.points[j + offset];
+                int dy = static_cast<int>(before.y) - point.y;
+                if (before.x != point.x || after.x != point.x ||
+                    (dy != offset && dy != -offset) || before.y + after.y != point.y * 2)
+                    return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool cliffCandidateFits(const Map& map, const CellMask& road, const CellMask& water,
                         const CellMask& bridge, uint8_t top, uint8_t left,
                         uint8_t right, uint8_t stairLeft) {
     for (uint8_t x = left; x < right; ++x) {
@@ -1532,12 +1499,13 @@ bool cliffCandidateFits(const CellMask& road, const CellMask& water,
         }
     }
     for (uint8_t x = stairLeft; x < stairLeft + 2; ++x) {
-        if (!road.contains(x, top - 1) || !road.contains(x, top + 2)) return false;
+        if (!road.contains(x, top - 1) || !road.contains(x, top + 2) ||
+            !road.contains(x, top + 3)) return false;
     }
-    return true;
+    return cliffLandingFits(map, stairLeft, top + 1);
 }
 
-uint16_t cliffCandidateCount(const CellMask& road, const CellMask& water,
+uint16_t cliffCandidateCount(const Map& map, const CellMask& road, const CellMask& water,
                              const CellMask& bridge, const StreamShape& shape) {
     uint8_t minimumLeft = shape.upstreamLeft < shape.downstreamLeft
                               ? shape.upstreamLeft : shape.downstreamLeft;
@@ -1552,7 +1520,7 @@ uint16_t cliffCandidateCount(const CellMask& road, const CellMask& water,
         if (right - left < 5) continue;
         for (uint8_t top = 1; top < HEIGHT - 2; ++top) {
             for (uint8_t stairLeft = left + 1; stairLeft < right - 2; ++stairLeft) {
-                if (cliffCandidateFits(road, water, bridge, top, left, right, stairLeft)) {
+                if (cliffCandidateFits(map, road, water, bridge, top, left, right, stairLeft)) {
                     ++count;
                 }
             }
@@ -1561,7 +1529,7 @@ uint16_t cliffCandidateCount(const CellMask& road, const CellMask& water,
     return count;
 }
 
-bool selectCliffCandidate(const CellMask& road, const CellMask& water,
+bool selectCliffCandidate(const Map& map, const CellMask& road, const CellMask& water,
                           const CellMask& bridge, const StreamShape& shape,
                           uint16_t choice, CliffSpec& out) {
     uint8_t minimumLeft = shape.upstreamLeft < shape.downstreamLeft
@@ -1576,7 +1544,7 @@ bool selectCliffCandidate(const CellMask& road, const CellMask& water,
         if (right - left < 5) continue;
         for (uint8_t top = 1; top < HEIGHT - 2; ++top) {
             for (uint8_t stairLeft = left + 1; stairLeft < right - 2; ++stairLeft) {
-                if (!cliffCandidateFits(road, water, bridge, top, left, right, stairLeft)) {
+                if (!cliffCandidateFits(map, road, water, bridge, top, left, right, stairLeft)) {
                     continue;
                 }
                 if (choice-- == 0) {
@@ -1589,23 +1557,123 @@ bool selectCliffCandidate(const CellMask& road, const CellMask& water,
     return false;
 }
 
+template <typename Visitor>
+void forEachCreekLayout(const Map& map, const CellMask& road, const CreekSpec& creek, uint8_t style,
+                        Visitor visitor) {
+    CreekLayout layout;
+    if (style == 0) {
+        for (uint8_t y = 0; y < HEIGHT; ++y) {
+            layout.left[y] = creek.left;
+            layout.width[y] = creek.width;
+        }
+        visitor(layout);
+        return;
+    }
+    struct Span { int left; int width; };
+    auto step = [](Span span, uint8_t mode) {
+        switch (mode) {
+        case 0: ++span.left; --span.width; break;
+        case 1: --span.width; break;
+        case 2: --span.left; ++span.width; break;
+        default: ++span.width; break;
+        }
+        return span;
+    };
+    auto boundaryAllowed = [&](uint8_t b) {
+        return b <= static_cast<int>(creek.bridgeTop) - 2 || b >= creek.bridgeTop + 4;
+    };
+    for (uint8_t a = style == 3 ? 1 : 2; a < (style == 3 ? HEIGHT : HEIGHT - 1); ++a) {
+        if (!boundaryAllowed(a)) continue;
+        for (uint8_t b = style == 1 ? HEIGHT : a + 2;
+             b <= (style == 1 ? HEIGHT : style == 3 ? HEIGHT - 1 : HEIGHT - 2); ++b) {
+            if (style != 1 && !boundaryAllowed(b)) continue;
+            if (style == 3 && (b - a < 3 || b - a > 4)) continue;
+            uint8_t bridgeSegment = (creek.bridgeTop >= a) + (creek.bridgeTop >= b);
+            for (uint8_t first = 0; first < 4; ++first) {
+                for (uint8_t second = 0; second < (style == 1 ? 1 : 4); ++second) {
+                    Span base{creek.left, creek.width};
+                    Span near = step(base, first);
+                    Span far = step(near, second);
+                    Span spans[3] = {base, near, far};
+                    if (bridgeSegment == 1) {
+                        spans[0] = near;
+                        spans[1] = base;
+                        spans[2] = step(base, second);
+                    } else if (bridgeSegment == 2) {
+                        spans[0] = far;
+                        spans[1] = near;
+                        spans[2] = base;
+                    }
+                    bool valid = true;
+                    for (uint8_t i = 0; i < (style == 1 ? 2 : 3); ++i) {
+                        if (spans[i].width < 3 || spans[i].width > 5 || spans[i].left < 1 ||
+                            spans[i].left + spans[i].width > WIDTH - 1) valid = false;
+                    }
+                    if (!valid) continue;
+                    if (style == 2 && (spans[0].width != spans[2].width ||
+                                       spans[0].left == spans[2].left)) continue;
+                    if (style == 3 && (spans[0].left != spans[2].left ||
+                                       spans[0].width != spans[2].width ||
+                                       spans[1].width != spans[0].width + 1)) continue;
+                    CellMask water;
+                    water.clear();
+                    for (uint8_t y = 0; y < HEIGHT && valid; ++y) {
+                        Span span = spans[(y >= a) + (y >= b)];
+                        layout.left[y] = static_cast<uint8_t>(span.left);
+                        layout.width[y] = static_cast<uint8_t>(span.width);
+                        for (int x = span.left; x < span.left + span.width; ++x) {
+                            water.add(x, y);
+                            if (road.contains(x, y) && !((y == creek.bridgeTop ||
+                                y == creek.bridgeTop + 1) && x >= creek.left &&
+                                x < creek.left + creek.width)) valid = false;
+                        }
+                    }
+                    if (!valid) continue;
+                    if (style == 3) {
+                        CellMask bridge;
+                        bridge.clear();
+                        for (uint8_t y = creek.bridgeTop; y <= creek.bridgeTop + 1; ++y)
+                            for (uint8_t x = creek.left - 1; x <= creek.left + creek.width; ++x)
+                                bridge.add(x, y);
+                        if (cliffCandidateCount(map, road, water, bridge, creekEnvelope(layout)) == 0)
+                            continue;
+                    }
+                    visitor(layout);
+                }
+            }
+        }
+    }
+}
+
+bool chooseCreekLayout(Rng& features, const Map& map, const CellMask& road, const CreekSpec& creek,
+                       uint8_t style, CreekLayout& out) {
+    uint16_t count = 0;
+    forEachCreekLayout(map, road, creek, style, [&](const CreekLayout&) { ++count; });
+    if (count == 0) return false;
+    uint16_t choice = static_cast<uint16_t>(features.bounded(count));
+    forEachCreekLayout(map, road, creek, style, [&](const CreekLayout& layout) {
+        if (choice-- == 0) out = layout;
+    });
+    return true;
+}
+
 void stampCliff(Map& map, const CliffSpec& spec, CellMask& cliff, CellMask& stairs) {
     cliff.clear();
     stairs.clear();
+    // Outside supplies a complete one-row face. The first reserved row is
+    // the upper landing, not a second copy of the cliff crest.
+    uint8_t y = spec.top + 1;
     for (uint8_t x = spec.left; x < spec.right; ++x) {
-        for (uint8_t y = spec.top; y <= spec.top + 1; ++y) {
-            cliff.add(x, y);
-            if (x >= spec.stairLeft && x < spec.stairLeft + 2) {
-                map.layers[0][y * WIDTH + x] =
-                    x == spec.stairLeft ? CLIFF_STAIR_LEFT_TILE : CLIFF_STAIR_RIGHT_TILE;
-                map.layers[1][y * WIDTH + x] = 0;
-                stairs.add(x, y);
-            } else if (y == spec.top) {
-                map.layers[0][y * WIDTH + x] = CLIFF_TOP_TILE;
-                map.layers[1][y * WIDTH + x] = 0;
-            } else {
-                map.layers[1][y * WIDTH + x] = CLIFF_FACE_TILE;
-            }
+        cliff.add(x, y);
+        if (x >= spec.stairLeft && x < spec.stairLeft + 2) {
+            map.layers[0][y * WIDTH + x] =
+                x == spec.stairLeft ? CLIFF_STAIR_LEFT_TILE : CLIFF_STAIR_RIGHT_TILE;
+            stairs.add(x, y);
+        } else {
+            map.layers[1][y * WIDTH + x] =
+                x == spec.left && spec.left > 0 ? CLIFF_LEFT_TILE
+                : x + 1 == spec.right && spec.right < WIDTH ? CLIFF_RIGHT_TILE
+                : CLIFF_FACE_TILE;
         }
     }
 }
@@ -2114,6 +2182,188 @@ void stampBoundaryFlowers(Map& map, Rng& rng, const CellMask& denseGrass,
             map.layers[0][point.y * WIDTH + point.x] = FLOWER_TILE;
         }
     }
+}
+
+int creekBankDistance(const Point& point, const CreekLayout& layout) {
+    int left = layout.left[point.y];
+    return point.x < left ? left - point.x : point.x - left - layout.width[point.y] + 1;
+}
+
+void growCreekPatch(Rng& rng, const CellMask& available, uint8_t requested,
+                     const CreekLayout& layout, CellMask& out) {
+    out.clear();
+    CellMask component = largestConnectedComponent(available);
+    int capacity = component.count();
+    int reserve = capacity / 4 > 4 ? capacity / 4 : 4;
+    int target = minimum(requested, capacity - reserve);
+    if (target < 4) return;
+    int bestQuality = -32768;
+    for (uint8_t attempt = 0; attempt < 8; ++attempt) {
+        int bestScore = -32768;
+        Point seed{};
+        for (uint8_t x = 0; x < WIDTH; ++x) {
+            for (uint8_t y = 0; y < HEIGHT; ++y) {
+                if (!component.contains(x, y)) continue;
+                Point point{x, y};
+                int score = cardinalNeighborCount(point, component) * 14
+                    - absolute(creekBankDistance(point, layout) - 3) * 7
+                    + minimum(2, edgeMargin(point)) * 15 + rng.bounded(21);
+                if (score > bestScore) { bestScore = score; seed = point; }
+            }
+        }
+        CellMask patch;
+        patch.clear();
+        patch.add(seed.x, seed.y);
+        CellMask frontier;
+        frontier.clear();
+        addCardinalNeighbors(seed, component, patch, frontier);
+        while (patch.count() < target) {
+            bestScore = -32768;
+            Point selected{};
+            for (uint8_t x = 0; x < WIDTH; ++x) {
+                for (uint8_t y = 0; y < HEIGHT; ++y) {
+                    if (!frontier.contains(x, y)) continue;
+                    Point point{x, y};
+                    // Keep the random draw before the distance terms, as in Python.
+                    int jitter = static_cast<int>(rng.bounded(31));
+                    int score = cardinalNeighborCount(point, patch) * 20 + jitter
+                        - (absolute(x - seed.x) + absolute(y - seed.y)) * 3
+                        + minimum(1, edgeMargin(point)) * 15
+                        - absolute(creekBankDistance(point, layout) - 2) * 2;
+                    if (score > bestScore) { bestScore = score; selected = point; }
+                }
+            }
+            patch.add(selected.x, selected.y);
+            frontier.remove(selected.x, selected.y);
+            addCardinalNeighbors(selected, component, patch, frontier);
+        }
+        uint8_t border = 0, tips = 0;
+        bool core = false;
+        uint8_t left = WIDTH, right = 0, top = HEIGHT, bottom = 0;
+        for (uint8_t x = 0; x < WIDTH; ++x) {
+            for (uint8_t y = 0; y < HEIGHT; ++y) {
+                if (!patch.contains(x, y)) continue;
+                if (patch.contains(x + 1, y) && patch.contains(x, y + 1) &&
+                    patch.contains(x + 1, y + 1)) core = true;
+                Point point{x, y};
+                if (edgeMargin(point) == 0) ++border;
+                if (cardinalNeighborCount(point, patch) <= 1) ++tips;
+                if (x < left) left = x;
+                if (x > right) right = x;
+                if (y < top) top = y;
+                if (y > bottom) bottom = y;
+            }
+        }
+        int extent = minimum(right - left + 1, bottom - top + 1);
+        int width = right - left + 1;
+        int height = bottom - top + 1;
+        bool compact = core && extent >= 2 && width <= height * 2 && height <= width * 2 &&
+                       (requested >= 10 || (width <= 3 && height <= 4));
+        int quality = extent * 20 - border * 3 - tips * 2;
+        if (compact && quality > bestQuality) { out = patch; bestQuality = quality; }
+        if (compact && (requested < 10 || (extent >= 3 && border * 10 <= patch.count() * 3 &&
+                               tips * 4 <= patch.count()))) break;
+    }
+}
+
+bool stampCreekVegetation(Map& map, Rng& rng, const CellMask& road,
+                           const CellMask& water, const CellMask& bridge,
+                           const CellMask& cliff, const CellMask& stairs,
+                           const CreekLayout& layout, uint8_t style) {
+    CellMask junction;
+    junction.clear();
+    junction.add(map.junction.x, map.junction.y);
+    CellMask protectedCells = expandedMask(bridge, 1);
+    protectedCells.unite(expandedMask(junction, 1));
+    protectedCells.unite(expandedMask(stairs, 1));
+    CellMask available;
+    available.clear();
+    for (uint8_t x = 0; x < WIDTH; ++x)
+        for (uint8_t y = 0; y < HEIGHT; ++y)
+            if (!road.contains(x, y) && !water.contains(x, y) && !cliff.contains(x, y) &&
+                !protectedCells.contains(x, y)) available.add(x, y);
+    CellMask trees;
+    trees.clear();
+    CellMask treeAvailable = available;
+    treeAvailable.subtract(expandedMask(cliff, 1));
+    if (style == 1 || style == 3 || (style == 2 && rng.bounded(2))) {
+        uint16_t count = 0;
+        auto visitTrees = [&](auto visitor) {
+            for (uint8_t x = 1; x < WIDTH - 2; ++x) {
+                for (uint8_t y = 0; y < HEIGHT - 2; ++y) {
+                    bool fits = true;
+                    for (uint8_t dx = 0; dx < 2; ++dx)
+                        for (uint8_t dy = 0; dy < 3; ++dy)
+                            if (!treeAvailable.contains(x + dx, y + dy)) fits = false;
+                    if (fits) visitor(Point{x, y});
+                }
+            }
+        };
+        visitTrees([&](const Point&) { ++count; });
+        if (count) {
+            uint16_t choice = static_cast<uint16_t>(rng.bounded(count));
+            visitTrees([&](const Point& point) {
+                if (choice-- != 0) return;
+                for (uint8_t dy = 0; dy < 3; ++dy) {
+                    for (uint8_t dx = 0; dx < 2; ++dx) {
+                        map.layers[1][(point.y + dy) * WIDTH + point.x + dx] = PARK_TREE_TILES[dy][dx];
+                        trees.add(point.x + dx, point.y + dy);
+                    }
+                }
+            });
+        }
+    }
+    available.subtract(trees);
+    CellMask banks[2];
+    banks[0].clear();
+    banks[1].clear();
+    for (uint8_t x = 0; x < WIDTH; ++x)
+        for (uint8_t y = 0; y < HEIGHT; ++y)
+            if (available.contains(x, y)) banks[x < layout.left[y] ? 0 : 1].add(x, y);
+    if (banks[1].count() > banks[0].count()) {
+        CellMask swap = banks[0]; banks[0] = banks[1]; banks[1] = swap;
+    }
+    constexpr uint8_t GRASS_TARGETS[] = {18, 24, 22, 20};
+    uint8_t total = GRASS_TARGETS[style] + rng.bounded(4);
+    CellMask grass, secondary;
+    growCreekPatch(rng, banks[0], total * 7 / 10, layout, grass);
+    growCreekPatch(rng, banks[1], minimum(9, total - grass.count()), layout, secondary);
+    if (grass.empty() || secondary.empty()) return false;
+    grass.unite(secondary);
+    for (uint8_t y = 0; y < HEIGHT; ++y)
+        for (uint8_t x = 0; x < WIDTH; ++x)
+            if (grass.contains(x, y)) map.layers[0][y * WIDTH + x] = DENSE_GRASS_TILE;
+    CellMask shrubs;
+    shrubs.clear();
+    constexpr uint8_t SHRUB_TARGETS[] = {1, 3, 2, 2};
+    for (uint8_t i = 0; i < SHRUB_TARGETS[style]; ++i) {
+        auto visitShrubs = [&](auto visitor) {
+            for (uint8_t x = 0; x < WIDTH; ++x) {
+                for (uint8_t y = 0; y < HEIGHT; ++y) {
+                    Point point{x, y};
+                    if (!available.contains(x, y) || grass.contains(x, y) || shrubs.contains(x, y) ||
+                        cardinalNeighborCount(point, grass) == 0) continue;
+                    PointGroup group;
+                    group.points[0] = point;
+                    group.count = 1;
+                    if (minimumDistance(group, shrubs) >= 3) visitor(point);
+                }
+            }
+        };
+        uint16_t count = 0;
+        visitShrubs([&](const Point&) { ++count; });
+        if (!count) break;
+        uint16_t choice = static_cast<uint16_t>(rng.bounded(count));
+        Point selected{};
+        visitShrubs([&](const Point& point) { if (choice-- == 0) selected = point; });
+        shrubs.add(selected.x, selected.y);
+        map.layers[1][selected.y * WIDTH + selected.x] = SHRUB_TILE;
+    }
+    CellMask blocked = cliff;
+    blocked.unite(protectedCells);
+    blocked.unite(trees);
+    stampBoundaryFlowers(map, rng, grass, shrubs, road, water, blocked, style == 0 ? 1 : 2);
+    return true;
 }
 
 CellMask parkGrassAvailable(const CellMask& road, const CellMask& trees) {
@@ -2911,8 +3161,8 @@ Edge opposite(Edge edge) {
     return Edge::TOP;
 }
 
-bool generate(uint32_t seed, Edge entryEdge, uint8_t areaIndex, Map& out,
-              FrostContext frost) {
+static bool generateCandidate(uint32_t seed, Edge entryEdge, uint8_t areaIndex, Map& out,
+                               FrostContext frost, uint8_t creekAttempt) {
     if (areaIndex == FROST_CRYSTAL_CAVE_AREA &&
         (frost.levelCount == 0 || frost.level >= frost.levelCount)) return false;
     std::memset(&out, 0, sizeof(out));
@@ -2928,17 +3178,20 @@ bool generate(uint32_t seed, Edge entryEdge, uint8_t areaIndex, Map& out,
     CellMask road;
     road.clear();
     CreekSpec creek{};
+    CreekLayout creekLayout;
+    uint8_t style = creekStyle(seed);
     bool hasCreek = false;
     bool hasWaterfall = areaIndex == ANCIENT_WATERFALL_VALLEY_AREA;
     if (hasWaterfall) {
         if (!buildAncientWaterfallTopology(entryEdge, out, road)) return false;
     } else if (areaIndex == CREEK_BRIDGE_SLOPE_AREA) {
-        for (uint8_t attempt = 0; attempt < 16; ++attempt) {
-            uint32_t topologySeed = seed ^ (0x9E3779B9U * (attempt + 1U));
+        for (uint8_t attempt = 0; attempt < 96; ++attempt) {
+            uint32_t topologySeed = seed ^ (0x9E3779B9U * (attempt + 1U + creekAttempt * 96U));
             if (!buildTopology(topologySeed, entryEdge, 0, out, road)) continue;
-            uint16_t count = creekCandidateCount(road);
+            uint16_t count = creekCandidateCount(out, road);
             if (count == 0) continue;
-            if (!selectCreekCandidate(road, features.bounded(count), creek)) return false;
+            if (!selectCreekCandidate(out, road, features.bounded(count), creek)) return false;
+            if (!chooseCreekLayout(features, out, road, creek, style, creekLayout)) continue;
             hasCreek = true;
             break;
         }
@@ -3002,15 +3255,16 @@ bool generate(uint32_t seed, Edge entryEdge, uint8_t areaIndex, Map& out,
     }
 
     if (hasCreek) {
-        StreamShape shape = chooseStreamShape(features, road, creek);
-        stampStream(out, shape, water, transitionCells);
+        StreamShape shape = creekEnvelope(creekLayout);
+        stampCreekLayout(out, creekLayout, water, transitionCells);
         stampBridge(out, creek, bridge);
-        if (features.bounded(100) < 60) {
-            uint16_t count = cliffCandidateCount(road, water, bridge, shape);
+        constexpr uint8_t CLIFF_CHANCES[] = {0, 25, 45, 100};
+        if (features.bounded(100) < CLIFF_CHANCES[style]) {
+            uint16_t count = cliffCandidateCount(out, road, water, bridge, shape);
             if (count > 0) {
                 CliffSpec spec{};
                 if (!selectCliffCandidate(
-                        road, water, bridge, shape, features.bounded(count), spec)) return false;
+                        out, road, water, bridge, shape, features.bounded(count), spec)) return false;
                 stampCliff(out, spec, cliff, stairs);
                 out.hasCliff = true;
             }
@@ -3051,6 +3305,9 @@ bool generate(uint32_t seed, Edge entryEdge, uint8_t areaIndex, Map& out,
     decorationBlocked.unite(scenery);
     if (hasSnow) {
         stampSnowDecorations(out, terrain, road, scenery);
+    } else if (hasCreek) {
+        if (!stampCreekVegetation(out, terrain, road, water, bridge, cliff, stairs,
+                                  creekLayout, style)) return false;
     } else if (areaIndex == TALL_GRASS_PARK_AREA) {
         stampTallGrassPark(out, terrain, road, forest, profile);
     } else if (!hasWaterfall) {
@@ -3071,6 +3328,14 @@ bool generate(uint32_t seed, Edge entryEdge, uint8_t areaIndex, Map& out,
         }
     }
     return true;
+}
+
+bool generate(uint32_t seed, Edge entryEdge, uint8_t areaIndex, Map& out,
+              FrostContext frost) {
+    uint8_t attempts = areaIndex == CREEK_BRIDGE_SLOPE_AREA ? 16 : 1;
+    for (uint8_t attempt = 0; attempt < attempts; ++attempt)
+        if (generateCandidate(seed, entryEdge, areaIndex, out, frost, attempt)) return true;
+    return false;
 }
 
 uint32_t fingerprint(const Map& map) {

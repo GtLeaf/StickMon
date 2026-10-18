@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cmath>
 #include <cstring>
 
 #include "assets/GameAssets.h"
@@ -36,7 +37,75 @@ constexpr int EXPLORE_ROUTE_WORLD_PHYSICAL_HEIGHT =
     EXPLORE_ROUTE_WORLD_HEIGHT * AmoledUi::RESOURCE_SCALE;
 
 bool isExploreActorForegroundTile(uint16_t tileId) {
-    return tileId == 4541 || tileId == 4772;
+    return tileId == 4772;
+}
+
+constexpr int GRASS_SIZE = ExploreRouteGeometry::TILE_SIZE;
+constexpr uint16_t GRASS_TRANSPARENT = 0xF81F;
+struct GrassPixels {
+    uint16_t tiles[3][GRASS_SIZE * GRASS_SIZE]{};
+    uint16_t floor[64]{};
+    uint8_t floorCount = 0;
+    bool ready = false;
+    bool isFloor(uint16_t color) const {
+        return std::find(floor, floor + floorCount, color) != floor + floorCount;
+    }
+    bool load() {
+        if (ready) return true;
+        Canvas565 tile;
+        uint16_t scratch[GRASS_SIZE * GRASS_SIZE];
+        floorCount = 0;
+        // Sparse ground tiles identify floor colors without inventing a mask
+        // or decoding artwork in the animation hot path.
+        tile.attach({scratch, GRASS_SIZE, GRASS_SIZE, false});
+        for (uint16_t id = 385; id <= 389; ++id) {
+            if (!GameAssets::drawExploreTileTo(tile, id, 0, 0, 0, 1)) return false;
+            for (uint16_t color : scratch)
+                if (!isFloor(color) && floorCount < 64) floor[floorCount++] = color;
+        }
+        const uint16_t ids[] = {390, 399, 391};
+        for (int i = 0; i < 3; ++i) {
+            tile.attach({tiles[i], GRASS_SIZE, GRASS_SIZE, false});
+            tile.fillSprite(GRASS_TRANSPARENT);
+            if (!GameAssets::drawExploreTileTo(tile, ids[i], 0, 0, 0, 1)) return false;
+        }
+        ready = true;
+        return true;
+    }
+};
+
+ExploreGrass::Frame grassFrame(const ExploreRouteViewModel& model, int cell, uint16_t id) {
+    if (!model.grass) return {};
+    if (id == 391 && cell + ExploreMapGenerator::WIDTH < ExploreMapGenerator::CELL_COUNT &&
+        model.map->layers[0][cell + ExploreMapGenerator::WIDTH] == 399)
+        cell += ExploreMapGenerator::WIDTH;
+    return model.grass->frame(cell);
+}
+
+// Both the ground pass and body cover sample the same deformed artwork.
+// Leaves part around the contact, overshoot briefly, then return to rest.
+void drawGrass(Canvas565& canvas, uint16_t id, int x, int y,
+               ExploreGrass::Frame frame, bool cover) {
+    static GrassPixels grass;
+    if (!grass.load()) return;
+    constexpr int scale = AmoledUi::RESOURCE_SCALE;
+    const int index = id == 391 ? 2 : id == 399 ? 1 : 0;
+    const int bend = ExploreGrass::Simulation::bend(frame);
+    for (int row = 0; row < GRASS_SIZE; ++row) {
+        if (cover && id == 390 && row < 10) continue;
+        const int spread = id == 391 ? bend * (2 * GRASS_SIZE - 1 - row) / (2 * GRASS_SIZE - 1)
+            : id == 399 ? bend * (GRASS_SIZE - 1 - row) / (2 * GRASS_SIZE - 1)
+                        : bend * (GRASS_SIZE - 1 - row) / (GRASS_SIZE - 1);
+        for (int column = 0; column < GRASS_SIZE; ++column) {
+            const int source = column - (column < frame.contactX ? -spread : spread);
+            const uint16_t color = source < 0 || source >= GRASS_SIZE
+                ? (id == 391 ? GRASS_TRANSPARENT : grass.floor[0])
+                : grass.tiles[index][row * GRASS_SIZE + source];
+            if (color == GRASS_TRANSPARENT || (cover && id != 391 && grass.isFloor(color)))
+                continue;
+            canvas.fillRect(x + column * scale, y + row * scale, scale, scale, color);
+        }
+    }
 }
 
 #if defined(ESP_PLATFORM) && STICKMON_ENABLE_DEBUG_FEATURES
@@ -316,6 +385,37 @@ void drawExploreMapAnimations(Canvas565& canvas,
     }
 }
 
+void drawExploreGrassAnimations(Canvas565& canvas, const ExploreRouteViewModel& model,
+                                uint16_t rowBegin, uint16_t rowEnd) {
+    if (!model.grass) return;
+    constexpr int size = GRASS_SIZE * AmoledUi::RESOURCE_SCALE;
+    const auto& map = *model.map;
+    for (int cell = 0; cell < ExploreMapGenerator::CELL_COUNT; ++cell) {
+        const int x = (cell % ExploreMapGenerator::WIDTH * GRASS_SIZE - model.cameraX) * AmoledUi::RESOURCE_SCALE;
+        const int y = EXPLORE_ROUTE_MAP_TOP +
+            (cell / ExploreMapGenerator::WIDTH * GRASS_SIZE - model.cameraY) * AmoledUi::RESOURCE_SCALE;
+        if (x + size <= model.renderColumnBegin || x >= model.renderColumnEnd ||
+            y + size <= rowBegin || y >= rowEnd) continue;
+        const auto base = grassFrame(model, cell, map.layers[0][cell]);
+        const auto top = grassFrame(model, cell, 391);
+        const bool movingBase = base.phase && ExploreTileSemantics::denseGrass(map.layers[0][cell]);
+        const bool movingTop = top.phase && map.layers[1][cell] == 391;
+        if (!movingBase && !movingTop) continue;
+        // Recompose this cell in layer order, clearing the original transparent
+        // grass top before drawing its displaced contour.
+        for (uint8_t layer = 0; layer < ExploreMapGenerator::LAYER_COUNT; ++layer) {
+            const uint16_t id = map.layers[layer][cell];
+            if (!id || isExploreActorForegroundTile(id)) continue;
+            if ((layer == 0 && movingBase) || (layer == 1 && movingTop)) {
+                drawGrass(canvas, id, x, y, layer ? top : base, false);
+            } else if (!GameAssets::drawExploreTileTo(canvas, id, x, y,
+                        model.mapFrame, AmoledUi::RESOURCE_SCALE)) {
+                drawExploreTileFallback(canvas, id, x, y, layer, ExploreAreaCatalog::fieldColor(model.area));
+            }
+        }
+    }
+}
+
 }  // namespace
 
 bool drawExploreRouteMapLayer(Canvas565& canvas,
@@ -341,6 +441,7 @@ bool drawExploreRouteMapLayer(Canvas565& canvas,
         drawExploreMapAnimations(
             canvas, *model.map, model.cameraX, model.cameraY, model.mapFrame,
             rowBegin, rowEnd, ExploreAreaCatalog::fieldColor(model.area));
+        drawExploreGrassAnimations(canvas, model, rowBegin, rowEnd);
 #if defined(ESP_PLATFORM) && STICKMON_ENABLE_DEBUG_FEATURES
         if (model.walking) {
             const int64_t finishedUs = esp_timer_get_time();
@@ -365,6 +466,7 @@ bool drawExploreRouteMapLayer(Canvas565& canvas,
     drawExploreMapAnimations(
         canvas, *model.map, model.cameraX, model.cameraY, model.mapFrame,
         rowBegin, rowEnd, ExploreAreaCatalog::fieldColor(model.area));
+    drawExploreGrassAnimations(canvas, model, rowBegin, rowEnd);
 #if defined(ESP_PLATFORM) && STICKMON_ENABLE_DEBUG_FEATURES
     if (model.walking) {
         const int64_t finishedUs = esp_timer_get_time();
@@ -389,9 +491,9 @@ void drawExploreRouteMapForegroundLayer(Canvas565& canvas,
 void drawExploreRouteMapVegetationForActor(
     Canvas565& canvas, const ExploreRouteViewModel& model,
     float actorFootWorldY, int actorLeft, int actorTop,
-    int actorRight, int actorBottom, uint16_t rowBegin, uint16_t rowEnd) {
-    if (!model.map || model.map->areaIndex !=
-            ExploreMapGenerator::TALL_GRASS_PARK_AREA) return;
+    int actorRight, int actorBottom, uint16_t rowBegin, uint16_t rowEnd,
+    bool denseGrassCover, bool airborne, bool swimming) {
+    if (!model.map) return;
     const int mapTop = std::max<int>(rowBegin, EXPLORE_ROUTE_MAP_TOP);
     const int mapBottom = std::min<int>(rowEnd, EXPLORE_ROUTE_MAP_BOTTOM);
     const int left = std::max<int>(model.renderColumnBegin, actorLeft);
@@ -416,21 +518,35 @@ void drawExploreRouteMapVegetationForActor(
         (cameraX + right - 1) / tileSize);
     const int lastY = std::min<int>(ExploreMapGenerator::HEIGHT - 1,
         (cameraY + bottom - EXPLORE_ROUTE_MAP_TOP - 1) / tileSize);
-    constexpr uint8_t layer = 1;
     const uint16_t fieldColor = ExploreAreaCatalog::fieldColor(model.area);
-    for (int tileY = firstY; tileY <= lastY; ++tileY) {
-        for (int tileX = firstX; tileX <= lastX; ++tileX) {
-            const uint16_t tileId = model.map->layers[layer]
-                [tileY * ExploreMapGenerator::WIDTH + tileX];
-            if (!ExploreTileSemantics::vegetationOccludes(
-                    tileId, layer, tileY, actorFootWorldY,
-                    ExploreRouteGeometry::TILE_SIZE)) continue;
-            const int x = tileX * tileSize - cameraX;
-            const int y = EXPLORE_ROUTE_MAP_TOP + tileY * tileSize - cameraY;
-            if (!GameAssets::drawExploreTileTo(
-                    canvas, tileId, x, y, model.mapFrame,
-                    AmoledUi::RESOURCE_SCALE)) {
-                drawExploreTileFallback(canvas, tileId, x, y, layer, fieldColor);
+    for (uint8_t layer = 0; layer < ExploreMapGenerator::LAYER_COUNT; ++layer) {
+        for (int tileY = firstY; tileY <= lastY; ++tileY) {
+            for (int tileX = firstX; tileX <= lastX; ++tileX) {
+                const uint16_t tileId = model.map->layers[layer]
+                    [tileY * ExploreMapGenerator::WIDTH + tileX];
+                if (airborne && ExploreTileSemantics::foregroundDepthOffsetRows(tileId) <= 1)
+                    continue;
+                const int x = tileX * tileSize - cameraX;
+                const int y = EXPLORE_ROUTE_MAP_TOP + tileY * tileSize - cameraY;
+                const int cell = tileY * ExploreMapGenerator::WIDTH + tileX;
+                if (layer == 0 && denseGrassCover && ExploreTileSemantics::denseGrass(tileId) &&
+                    actorFootWorldY < (tileY + 1) * GRASS_SIZE) {
+                    drawGrass(canvas, tileId, x, y, grassFrame(model, cell, tileId), true);
+                }
+                const bool bridgeCover = swimming && !airborne && layer == 2 &&
+                    ExploreTileSemantics::bridgeDeck(tileId);
+                if (!bridgeCover && !ExploreTileSemantics::objectOccludes(
+                        tileId, layer, tileY, actorFootWorldY,
+                        ExploreRouteGeometry::TILE_SIZE)) continue;
+                if (tileId == 391) {
+                    drawGrass(canvas, tileId, x, y, grassFrame(model, cell, tileId), true);
+                    continue;
+                }
+                if (!GameAssets::drawExploreTileTo(
+                        canvas, tileId, x, y, model.mapFrame,
+                        AmoledUi::RESOURCE_SCALE)) {
+                    drawExploreTileFallback(canvas, tileId, x, y, layer, fieldColor);
+                }
             }
         }
     }

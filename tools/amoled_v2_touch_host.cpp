@@ -1,5 +1,7 @@
 #include "TouchInput.h"
 #include "bsp/touch.h"
+#include "freertos/task.h"
+#include "driver/gpio.h"
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -30,12 +32,39 @@ esp_err_t esp_lcd_touch_get_data(esp_lcd_touch_handle_t,
     return ESP_OK;
 }
 
+namespace {
+uint32_t notifications = 0, waitCalls = 0, waitedMs = 0, yields = 0;
+int interruptLevel = 1;
+int enabledInterrupts = 0, disabledInterrupts = 0;
+bool wakeFailure = false;
+}
+TaskHandle_t xTaskGetCurrentTaskHandle() { return &sensor; }
+void vTaskNotifyGiveFromISR(TaskHandle_t task, BaseType_t* wake) {
+    assert(task == &sensor); ++notifications; *wake = pdTRUE;
+}
+uint32_t ulTaskNotifyTake(BaseType_t clear, TickType_t wait) {
+    assert(clear == pdTRUE); ++waitCalls; waitedMs = wait;
+    uint32_t pending = notifications; notifications = 0; return pending;
+}
+void testYield() { ++yields; }
+esp_err_t gpio_wakeup_enable(gpio_num_t pin, int level) {
+    assert(pin == 21 && level == GPIO_INTR_LOW_LEVEL);
+    return wakeFailure ? -1 : ESP_OK;
+}
+esp_err_t esp_sleep_enable_gpio_wakeup() { return ESP_OK; }
+esp_err_t gpio_intr_disable(gpio_num_t) { ++disabledInterrupts; return ESP_OK; }
+esp_err_t gpio_intr_enable(gpio_num_t) { ++enabledInterrupts; return ESP_OK; }
+int gpio_get_level(gpio_num_t) { return interruptLevel; }
+
 int main() {
     using namespace AmoledV2;
     TouchInput input;
     TouchEvent event;
     assert(!input.poll(0, event));
     assert(input.begin() == ESP_OK);
+    assert(input.canSleep());
+    input.waitForInput(100);
+    assert(waitedMs == 100);
     uint32_t now = 100;
     auto point = [&](uint16_t x, uint16_t y) {
         reading = {x, y};
@@ -112,4 +141,33 @@ int main() {
         previous = event.y;
         release();
     }
+    // A held low wake pin is masked until deassertion. The worker polls at
+    // 20ms, so long holds cannot cause an ISR storm or a busy spin.
+    interruptLevel = 0;
+    assert(point(184, 224));
+    assert(!input.canSleep());
+    const auto disabled = disabledInterrupts;
+    const auto enabled = enabledInterrupts;
+    input.waitForInput(100);
+    assert(waitedMs == 20);
+    assert(!input.poll(now + 20, event));
+    assert(disabledInterrupts == disabled && enabledInterrupts == enabled);
+    interruptLevel = 1;
+    now += 21;
+    release();
+    assert(input.canSleep());
+    assert(enabledInterrupts > enabled);
+    assert(yields > 0 && notifications > 0);
+    const auto waitsBefore = waitCalls;
+    interruptCallback(&sensor);
+    input.waitForInput(100);
+    assert(waitCalls == waitsBefore); // Pending input never waits for a frame.
+    assert(!input.canSleep());
+    input.poll(now++, event);
+    assert(input.canSleep());
+    TouchInput missingWake;
+    wakeFailure = true;
+    assert(missingWake.begin() == ESP_OK);
+    assert(!missingWake.canSleep()); // Normal touch works; shallow sleep stays disabled.
+
 }

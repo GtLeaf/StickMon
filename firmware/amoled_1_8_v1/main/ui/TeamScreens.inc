@@ -483,12 +483,16 @@ void renderTeamScreen(Canvas565& canvas, const TeamViewModel& model,
         std::snprintf(level, sizeof(level), "Lv%u", monster.level);
         text(canvas, 128, y + 56, level, rgb(126, 175, 175));
         char hp[20];
+        const uint16_t shownHp = model.hpOverrideSlot == slot
+            ? model.hpOverride : monster.hpCur;
         std::snprintf(hp, sizeof(hp), "%u/%u",
-                      monster.hpCur, monster.hpMax);
+                      shownHp, monster.hpMax);
         text(canvas, 344 - textWidth(hp),
              y + 56, hp, rgb(226, 238, 233));
         drawHomeHpBar(canvas, 128, y + 100, 208,
-                      Game::HomeHud::hpPercent(monster));
+                      static_cast<uint8_t>(std::min<uint32_t>(100,
+                          static_cast<uint32_t>(shownHp) * 100 /
+                          std::max<uint16_t>(1, monster.hpMax))));
 
         if (monster.majorStatus != Game::MajorStatus::NONE) {
             const int iconX = 128 + textWidth(species ? species->name : Ui::Amoled::MONSTER) + 10;
@@ -581,7 +585,7 @@ void drawMoveDetailContent(Canvas565& canvas, const MoveInfo& move,
         const int glyphWidth = *cursor < 0x80 ? 16 : 32;
         if (lineLength > 0 && lineWidth + glyphWidth > 320) {
             line[lineLength] = '\0';
-            text(canvas, 24, detailBase + 64 + lineIndex * 28,
+            text(canvas, 24, detailBase + 64 + lineIndex * UiMetrics::MOVE_DESCRIPTION_LINE_STEP,
                  line, fadeColor(rgb(178, 194, 190)));
             ++lineIndex;
             lineLength = 0;
@@ -596,7 +600,7 @@ void drawMoveDetailContent(Canvas565& canvas, const MoveInfo& move,
     }
     if (lineLength > 0 && lineIndex < 5) {
         line[lineLength] = '\0';
-        text(canvas, 24, detailBase + 64 + lineIndex * 28,
+        text(canvas, 24, detailBase + 64 + lineIndex * UiMetrics::MOVE_DESCRIPTION_LINE_STEP,
              line, fadeColor(rgb(178, 194, 190)));
     }
 }
@@ -612,7 +616,7 @@ int teamMovesItemAt(int x, int y, TeamMovesViewModel::Mode mode,
     constexpr int LIST_TOP = TEAM_MOVES_HEADER_HEIGHT;
     constexpr int ROW_HEIGHT = 60;
     constexpr int ROW_STEP = 66;
-    constexpr int DETAIL_HEIGHT = AmoledUi::HEIGHT / 2;
+    constexpr int DETAIL_HEIGHT = UiMetrics::MOVE_DETAIL_HEIGHT;
     if (x < 12 || x >= 356 || y < LIST_TOP || y >= AmoledUi::HEIGHT) {
         return -1;
     }
@@ -647,7 +651,7 @@ void renderTeamMovesScreen(Canvas565& canvas,
     constexpr int LIST_TOP = TEAM_MOVES_HEADER_HEIGHT;
     constexpr int ROW_HEIGHT = 60;
     constexpr int ROW_STEP = 66;
-    constexpr int DETAIL_HEIGHT = AmoledUi::HEIGHT / 2;
+    constexpr int DETAIL_HEIGHT = UiMetrics::MOVE_DETAIL_HEIGHT;
 
     const MoveInfo* selectedMove = nullptr;
     if (model.mode == TeamMovesViewModel::Mode::MANAGE &&

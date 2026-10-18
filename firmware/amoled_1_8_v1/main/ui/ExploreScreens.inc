@@ -254,7 +254,7 @@ void drawExploreRouteBottomHud(Canvas565& canvas,
         (HOME_STATUS_TOP),
         (AmoledUi::WIDTH),
         (AmoledUi::HEIGHT - HOME_STATUS_TOP),
-        rgb(18, 27, 35));
+        rgb(0, 0, 0));
     canvas.drawFastHLine(
         (0),
         (HOME_STATUS_TOP),
@@ -267,7 +267,7 @@ void drawExploreRouteBottomHud(Canvas565& canvas,
         (352),
         (HOME_MONSTER_PANEL_W),
         (88), (8),
-        rgb(24, 34, 42));
+        rgb(0, 0, 0));
     canvas.drawRoundRect(
         (HOME_MONSTER_PANEL_X),
         (352),
@@ -311,7 +311,8 @@ void renderExploreRouteScreen(Canvas565& canvas,
         if (model.map) {
             drawExploreRouteMapLayer(canvas, model, mapCache, top, bottom);
             drawExploreRoutePickup(canvas, model);
-            if (model.map->areaIndex == ExploreMapGenerator::TALL_GRASS_PARK_AREA) {
+            if (model.map->areaIndex == ExploreMapGenerator::TALL_GRASS_PARK_AREA ||
+                model.wildlifeCount > 0) {
                 drawExploreRouteParkActors(canvas, model, top, bottom);
             } else {
                 bool bossBehindPlayer = exploreRouteBossBehindPlayer(model);
@@ -337,6 +338,8 @@ void renderExploreRouteScreen(Canvas565& canvas,
                                        EXPLORE_ROUTE_MAP_TOP)),
                 ExploreAreaCatalog::fieldColor(model.area));
         }
+        canvas.multiplyRectRgb(0, top, AmoledUi::WIDTH, bottom - top,
+            model.daylight.red, model.daylight.green, model.daylight.blue);
         pageClip.reset();
     }
 

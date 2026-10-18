@@ -48,7 +48,7 @@ class AmoledLockTests(unittest.TestCase):
     def test_only_home_pet_provides_a_lock_focus(self):
         source = APP.read_text()
         start = source.index("bool AmoledApp::lockFocusPoint(")
-        end = source.index("void AmoledApp::setSettingsSliderValue(", start)
+        end = source.index("\nvoid AmoledApp::", start + 1)
         focus = source[start:end]
 
         self.assertIn("Scene::HOME", focus)
@@ -76,21 +76,21 @@ class AmoledLockTests(unittest.TestCase):
             with self.subTest(version=path.parents[1].name):
                 source = path.read_text()
                 self.assertIn("LOCK_SLEEP_BREATH_AMPLITUDE", source)
-                self.assertIn("LOCK_SLEEP_BREATH_PERIOD_MS", source)
+                self.assertIn("app.petSleepExpansion(nowMs)", source)
                 self.assertIn("!preserveFocus || !sleeping", source)
-                self.assertIn("std::cos(cycle * 6.2831853f)", source)
+                self.assertIn("expansion * LOCK_SLEEP_BREATH_AMPLITUDE", source)
                 self.assertIn("app.petIsSleeping()", source)
                 self.assertIn("lockSleeping != lastLockSleeping", source)
 
     def test_app_sleep_state_is_home_and_schedule_aware(self):
         source = APP.read_text()
         start = source.index("bool AmoledApp::petIsSleeping() const")
-        end = source.index("void AmoledApp::setSettingsSliderValue(", start)
+        end = source.index("\nvoid AmoledApp::", start + 1)
         sleep = source[start:end]
         self.assertIn("Scene::HOME", sleep)
         self.assertIn("gameState.teamCount == 0", sleep)
-        self.assertIn("petResting", sleep)
-        self.assertIn("Game::isSleepCareTime", sleep)
+        self.assertIn("petIsResting()", sleep)
+        self.assertNotIn("petScheduledSleeping", sleep)
 
 
 if __name__ == "__main__":

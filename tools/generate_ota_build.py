@@ -2,6 +2,7 @@
 """Generate V2 OTA identity from the exact staged SPIFFS file contents."""
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -25,10 +26,15 @@ def generate(stage, output, config, flavor, endpoint, public_key, debug=False):
     if endpoint and (not endpoint.startswith('https://') or len(endpoint) > 200):
         raise ValueError('OTA endpoint must use HTTPS')
     resource_id, entries = resource_identity(stage)
+    source_root = Path(__file__).resolve().parents[1]
+    save_schema = int(re.search(r'SCHEMA_VERSION\s*=\s*(\d+)',
+        (source_root / 'src/core/SaveCodec.h').read_text()).group(1))
+    save_version = int(re.search(r'SAVE_VERSION\s*=\s*(\d+)',
+        (source_root / 'src/game/GameState.h').read_text()).group(1))
     identity = dict(schema=1, target='waveshare-amoled-1.8-v2', flavor=flavor,
                     version=version['version'], build=version['build'],
                     layout='waveshare-v2-16m-v1', resourceSha256=resource_id,
-                    saveSchema=2, saveVersion=4, debug=debug)
+                    saveSchema=save_schema, saveVersion=save_version, debug=debug)
     output.mkdir(parents=True, exist_ok=True)
     (output / 'ota-build.json').write_text(json.dumps(identity, indent=2) + '\n')
     header = '#pragma once\nnamespace OtaBuild {\n'

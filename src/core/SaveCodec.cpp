@@ -267,6 +267,20 @@ void writeState(Writer& writer, const Game::GameState& state) {
     writer.u32(state.normalBossPitySlotIndex);
     for (uint8_t value : state.normalBossMissCount) writer.u8(value);
     writer.u8(state.debugMotionFlags);
+    writer.u32(state.careRewardDay);
+    for (const auto& record : state.careRewards) {
+        writer.u32(record.ivPacked);
+        writer.u32(record.metAt);
+        writer.u32(record.budget);
+        for (uint32_t amount : record.awarded) writer.u32(amount);
+        writer.u8(record.nature);
+        writer.u8(record.metArea);
+        writer.u8(static_cast<uint8_t>(record.origin));
+        writer.u8(record.bathStageMask);
+        writer.u8(record.pairCount);
+        writer.u8(record.pendingOldLevel);
+        writer.u8(record.valid ? 1 : 0);
+    }
 }
 
 void readState(Reader& reader, uint16_t schema, Game::GameState& state) {
@@ -352,6 +366,22 @@ void readState(Reader& reader, uint16_t schema, Game::GameState& state) {
     state.normalBossPitySlotIndex = reader.u32();
     for (uint8_t& value : state.normalBossMissCount) value = reader.u8();
     if (schema >= 2) state.debugMotionFlags = reader.u8();
+    if (schema >= 3) {
+        state.careRewardDay = reader.u32();
+        for (auto& record : state.careRewards) {
+            record.ivPacked = reader.u32();
+            record.metAt = reader.u32();
+            record.budget = reader.u32();
+            for (uint32_t& amount : record.awarded) amount = reader.u32();
+            record.nature = reader.u8();
+            record.metArea = reader.u8();
+            record.origin = static_cast<Game::Origin>(reader.u8());
+            record.bathStageMask = reader.u8();
+            record.pairCount = reader.u8();
+            record.pendingOldLevel = reader.u8();
+            record.valid = reader.u8() != 0;
+        }
+    }
     state.checksum = 0;
 }
 
@@ -491,7 +521,7 @@ bool decode(const uint8_t* input,
     readState(reader, schema, snapshot.state);
     readView(reader, snapshot.view);
     const uint16_t expectedStateVersion =
-        schema == SCHEMA_VERSION ? Game::SAVE_VERSION : SCHEMA_1_STATE_VERSION;
+        schema == 1 ? SCHEMA_1_STATE_VERSION : schema == 2 ? 4 : Game::SAVE_VERSION;
     if (!reader.ok() || reader.position() != payloadLength ||
         snapshot.state.magic != Game::SAVE_MAGIC ||
         snapshot.state.version != expectedStateVersion ||

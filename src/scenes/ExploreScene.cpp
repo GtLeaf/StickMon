@@ -13,6 +13,7 @@
 #include "core/UiStrings.h"
 #include "game/BattleSystem.h"
 #include "game/ExploreAreaCatalog.h"
+#include "game/ExploreDaylight.h"
 #include "game/ExploreBoss.h"
 #include "game/ExploreBossPity.h"
 #include "game/ExploreEncounters.h"
@@ -2265,10 +2266,7 @@ void ExploreScene::clearBattleLogs() {
     battleActionIndex = 0;
     battleActionAttackerWild = false;
     battleActionSelfHit = false;
-    battleActionReleasingCharge = false;
-    battleActionResult = BattleSystem::DamageResult{};
-    battleActionCheck = BattleSystem::ActionCheckResult{};
-    battleEffectResolution = BattleSystem::EffectResolution{};
+    battlePendingAction.reset();
     battleHpFrom = 0;
     battleHpTo = 0;
     battleActionStarted = 0;
@@ -2545,12 +2543,17 @@ void ExploreScene::enqueueBattleEffectLogs(const BattleSystem::EffectResolution&
             ? attackerWild
             : !attackerWild;
         const char* targetName = targetWild ? wild->name : playerSpecies.name;
+        const char* defenderName = attackerWild ? playerSpecies.name : wild->name;
+        const bool defenderOwnsAbility = outcome.ability == AbilityId::STATIC ||
+            outcome.ability == AbilityId::EFFECT_SPORE ||
+            outcome.ability == AbilityId::SYNCHRONIZE;
         switch (outcome.kind) {
         case BattleSystem::EffectOutcomeKind::STATUS_APPLIED:
         case BattleSystem::EffectOutcomeKind::YAWN_SLEEP:
             if (outcome.ability != AbilityId::NONE) {
                 snprintf(logBuf, sizeof(logBuf), Ui::Explore::ABILITY_ACTIVATED_FMT,
-                         targetName, abilityName(outcome.ability));
+                         defenderOwnsAbility ? defenderName : targetName,
+                         abilityName(outcome.ability));
                 enqueueBattleLog(logBuf);
             }
             snprintf(logBuf, sizeof(logBuf), Ui::Explore::STATUS_APPLIED_FMT,
@@ -2680,10 +2683,7 @@ void ExploreScene::beginBattleAction() {
     battleActionAttackerWild =
         plannedAction.side == BattleTurnController::Side::WILD;
     battleActionSelfHit = false;
-    battleActionReleasingCharge = false;
-    battleActionResult = BattleSystem::DamageResult{};
-    battleActionCheck = BattleSystem::ActionCheckResult{};
-    battleEffectResolution = BattleSystem::EffectResolution{};
+    battlePendingAction.reset();
     wildRuntime.hpCur = wildHp;
 
     Game::MonsterRuntime& attacker = battleActionAttackerWild ? wildRuntime : activeMon;
@@ -2692,13 +2692,10 @@ void ExploreScene::beginBattleAction() {
         ? wildBattleState : playerBattleState;
     BattleSystem::BattleActorState& defenderState = battleActionAttackerWild
         ? playerBattleState : wildBattleState;
+    Game::MonsterRuntime& defender = battleActionAttackerWild ? activeMon : wildRuntime;
+    const Species& defenderSpecies = battleActionAttackerWild ? activeSpecies : *wild;
     uint8_t sideIndex = battleActionAttackerWild ? 1 : 0;
-    uint8_t specialSlot = plannedAction.specialSlot;
     Game::MoveId moveId = plannedAction.moveId;
-    if (BattleSystem::isChargingMove(attackerState)) {
-        battleActionReleasingCharge = true;
-    }
-    const MoveInfo* move = findMove(moveId);
     const char* attackerName = attackerSpecies.name;
     char logBuf[BATTLE_LOG_LEN];
 
@@ -2709,10 +2706,18 @@ void ExploreScene::beginBattleAction() {
             : BattleTurnController::Side::WILD);
     Game::MoveId opponentMoveId = opponentAction ? opponentAction->moveId : 0;
     const MoveInfo* opponentMove = findMove(opponentMoveId);
-    battleActionCheck = BattleSystem::checkAction(
-        attacker, attackerSpecies, attackerState, moveId,
-        opponentMove && opponentMove->power > 0 &&
-            opponentMove->damageClass != DamageClass::STATUS);
+    BattleSystem::DamageContext damageContext;
+    damageContext.attackerMovesSecond = battleActionIndex > 0;
+    damageContext.defenderDamagedThisTurn = battleTurnDamaged[opponentIndex];
+    damageContext.defenderMoveIsDamaging = opponentMove && opponentMove->power > 0 &&
+        opponentMove->damageClass != DamageClass::STATUS;
+    damageContext.allowForceWildEnd = !battleActionAttackerWild;
+    BattleActionService::prepare(
+        battlePendingAction, attacker, attackerSpecies, attackerState,
+        defender, defenderSpecies, defenderState, plannedAction.specialSlot,
+        moveId, damageContext);
+    const auto& battleActionCheck = battlePendingAction.check;
+    const auto& battleActionResult = battlePendingAction.damage;
     if (!battleActionAttackerWild) engine.markDirty(SaveUrgency::DEFERRED);
     if (battleActionCheck.wokeUp) {
         snprintf(logBuf, sizeof(logBuf), Ui::Explore::WOKE_UP_FMT, attackerName);
@@ -2727,11 +2732,7 @@ void ExploreScene::beginBattleAction() {
         enqueueBattleLog(logBuf);
     }
 
-    if (!battleActionCheck.canAct()) {
-        if (battleActionReleasingCharge) {
-            BattleSystem::clearChargingMove(attackerState);
-            battleActionReleasingCharge = false;
-        }
+    if (battlePendingAction.kind == BattleActionService::Kind::BLOCKED) {
         switch (battleActionCheck.blockReason) {
         case BattleSystem::ActionBlockReason::FLINCH:
             snprintf(logBuf, sizeof(logBuf), Ui::Explore::FLINCHED_FMT, attackerName);
@@ -2765,22 +2766,20 @@ void ExploreScene::beginBattleAction() {
         if (battleActionCheck.blockReason == BattleSystem::ActionBlockReason::CONFUSION_SELF_HIT &&
             battleActionCheck.selfDamage > 0) {
             battleActionSelfHit = true;
-            battleActionResult.damage = battleActionCheck.selfDamage;
             battleHpFrom = attacker.hpCur;
-            battleHpTo = battleActionResult.damage >= battleHpFrom
+            battleHpTo = battleActionCheck.selfDamage >= battleHpFrom
                 ? 0
-                : battleHpFrom - battleActionResult.damage;
+                : battleHpFrom - battleActionCheck.selfDamage;
             battleActionStarted = Hal::ins().millis();
             battleTurnStage = BattleTurnStage::ANIMATING;
         } else {
+            applyBattleDamage();
             battleTurnStage = BattleTurnStage::WAIT_ACTION_LOGS;
         }
         return;
     }
 
-    if (!battleActionReleasingCharge &&
-        BattleSystem::moveRequiresCharge(moveId)) {
-        BattleSystem::beginChargingMove(attackerState, moveId, specialSlot);
+    if (battlePendingAction.kind == BattleActionService::Kind::CHARGING) {
         if (moveId == 76) {
             snprintf(logBuf, sizeof(logBuf), Ui::Explore::SOLAR_BEAM_CHARGE_FMT,
                      attackerName);
@@ -2789,35 +2788,17 @@ void ExploreScene::beginBattleAction() {
                      attackerName);
         }
         enqueueBattleLog(logBuf);
-        if (move && (move->flags & MOVE_FLAG_CHARGE_DEFENSE)) {
+        if (battlePendingAction.defenseRaised) {
             uint8_t defense = static_cast<uint8_t>(BattleStat::DEFENSE);
-            int8_t before = attackerState.statStages[defense];
-            attackerState.statStages[defense] = std::min<int8_t>(6, before + 1);
-            if (attackerState.statStages[defense] != before) {
-                snprintf(logBuf, sizeof(logBuf), Ui::Explore::STAT_ROSE_FMT,
-                         attackerName, Ui::Explore::STAT_NAMES[defense]);
-                enqueueBattleLog(logBuf);
-            }
+            snprintf(logBuf, sizeof(logBuf), Ui::Explore::STAT_ROSE_FMT,
+                     attackerName, Ui::Explore::STAT_NAMES[defense]);
+            enqueueBattleLog(logBuf);
         }
+        applyBattleDamage();
         battleTurnStage = BattleTurnStage::WAIT_ACTION_LOGS;
         return;
     }
-    if (battleActionReleasingCharge) {
-        BattleSystem::clearChargingMove(attackerState);
-    }
-
-    Game::MonsterRuntime& defender = battleActionAttackerWild ? activeMon : wildRuntime;
-    const Species& defenderSpecies = battleActionAttackerWild ? activeSpecies : *wild;
-    BattleSystem::DamageContext damageContext;
-    damageContext.attackerMovesSecond = battleActionIndex > 0;
-    damageContext.defenderDamagedThisTurn = battleTurnDamaged[opponentIndex];
-    damageContext.defenderMoveIsDamaging = opponentMove && opponentMove->power > 0 &&
-        opponentMove->damageClass != DamageClass::STATUS;
-    damageContext.allowForceWildEnd = !battleActionAttackerWild;
-    battleActionResult = BattleSystem::calcBasicDamage(
-        attacker, attackerSpecies, defender, defenderSpecies, specialSlot,
-        attackerState, defenderState, damageContext);
-    move = findMove(battleActionResult.moveId);
+    const MoveInfo* move = findMove(battleActionResult.moveId);
     if (battleActionAttackerWild) {
         snprintf(logBuf, sizeof(logBuf), Ui::Explore::WILD_MOVE_USED_FMT,
                  move ? move->name : Ui::Status::MOVE_UNKNOWN);
@@ -2828,44 +2809,20 @@ void ExploreScene::beginBattleAction() {
     enqueueBattleLog(logBuf);
 
     if (battleActionResult.failed && move) {
-        BattleSystem::recordMoveResult(
-            attackerState, attacker, attackerSpecies, *move, false, specialSlot);
+        applyBattleDamage();
         enqueueBattleLog(Ui::Explore::MOVE_FAILED);
         battleTurnStage = BattleTurnStage::WAIT_ACTION_LOGS;
         return;
     }
 
     if (battleActionResult.missed) {
-        if (move) BattleSystem::recordMoveResult(
-            attackerState, attacker, attackerSpecies, *move, false, specialSlot);
+        applyBattleDamage();
         enqueueBattleLog(Ui::Explore::MOVE_MISSED);
         battleTurnStage = BattleTurnStage::WAIT_ACTION_LOGS;
         return;
     }
     if (battleActionResult.effectiveness == 0) {
-        if (move) BattleSystem::recordMoveResult(
-            attackerState, attacker, attackerSpecies, *move, true, specialSlot);
-        if (!battleActionResult.absorbed &&
-            battleActionResult.activatedAbility != AbilityId::NONE) {
-            snprintf(logBuf, sizeof(logBuf), Ui::Explore::ABILITY_ACTIVATED_FMT,
-                     defenderSpecies.name,
-                     abilityName(battleActionResult.activatedAbility));
-            enqueueBattleLog(logBuf);
-        }
-        if (battleActionResult.absorbed) {
-            uint16_t beforeHp = defender.hpCur;
-            BattleSystem::EffectResolution absorb = BattleSystem::applyAbsorbAbility(
-                battleActionResult,
-                defender, defenderSpecies,
-                defenderState);
-            if (battleActionAttackerWild) activeMon.hpCur = defender.hpCur;
-            else {
-                wildHp = defender.hpCur;
-                wildRuntime.hpCur = wildHp;
-            }
-            enqueueBattleEffectLogs(absorb, battleActionAttackerWild);
-            if (defender.hpCur != beforeHp) engine.markDirty(SaveUrgency::DEFERRED);
-        }
+        applyBattleDamage();
         enqueueBattleLog(Ui::Explore::NO_EFFECT);
         battleTurnStage = BattleTurnStage::WAIT_ACTION_LOGS;
         return;
@@ -2906,103 +2863,79 @@ void ExploreScene::applyBattleDamage() {
     const Species& activeSpecies = battlePlayerSpecies();
     wildRuntime.hpCur = wildHp;
 
-    if (battleActionSelfHit) {
-        AudioManager::ins().playSfx(SfxCue::DAMAGE_NORMAL);
-        if (battleActionAttackerWild) {
-            wildHp = battleHpTo;
-            wildRuntime.hpCur = wildHp;
-            battleTurnDamaged[1] = true;
-        } else {
-            activeMon.hpCur = battleHpTo;
-            battleTurnDamaged[0] = true;
+    Game::MonsterRuntime& attacker = battleActionAttackerWild ? wildRuntime : activeMon;
+    const Species& attackerSpecies = battleActionAttackerWild ? *wild : activeSpecies;
+    BattleSystem::BattleActorState& attackerState = battleActionAttackerWild
+        ? wildBattleState : playerBattleState;
+    Game::MonsterRuntime& defender = battleActionAttackerWild ? activeMon : wildRuntime;
+    const Species& defenderSpecies = battleActionAttackerWild ? activeSpecies : *wild;
+    BattleSystem::BattleActorState& defenderState = battleActionAttackerWild
+        ? playerBattleState : wildBattleState;
+    const bool defenderCanStillAct = battleTurnPlan.hasActionAfter(
+        battleActionIndex,
+        battleActionAttackerWild ? BattleTurnController::Side::PLAYER
+                                 : BattleTurnController::Side::WILD);
+    if (!BattleActionService::commit(
+            battlePendingAction, attacker, attackerSpecies, attackerState,
+            defender, defenderSpecies, defenderState, defenderCanStillAct,
+            !battleActionAttackerWild)) {
+        return;
+    }
+    const auto& result = battlePendingAction.result;
+    const auto& damage = battlePendingAction.damage;
+    wildHp = wildRuntime.hpCur;
+
+    if (battlePendingAction.kind == BattleActionService::Kind::BLOCKED) {
+        if (result.selfDamage > 0) {
+            AudioManager::ins().playSfx(SfxCue::DAMAGE_NORMAL);
+            battleTurnDamaged[battleActionAttackerWild ? 1 : 0] = true;
+            if (!battleActionAttackerWild) engine.markDirty(SaveUrgency::DEFERRED);
+        }
+        return;
+    }
+    if (battlePendingAction.kind != BattleActionService::Kind::READY ||
+        damage.failed || damage.missed) {
+        return;
+    }
+    if (damage.effectiveness == 0) {
+        if (!damage.absorbed && damage.activatedAbility != AbilityId::NONE) {
+            char logBuf[BATTLE_LOG_LEN];
+            snprintf(logBuf, sizeof(logBuf), Ui::Explore::ABILITY_ACTIVATED_FMT,
+                     defenderSpecies.name, abilityName(damage.activatedAbility));
+            enqueueBattleLog(logBuf);
+        }
+        enqueueBattleEffectLogs(result.absorbEffects, battleActionAttackerWild);
+        if (result.defenderHpAfter != result.defenderHpBefore) {
             engine.markDirty(SaveUrgency::DEFERRED);
         }
         return;
     }
 
-    if (battleActionResult.damage > 0) {
-        SfxCue damageCue = battleActionResult.effectiveness > 100
+    if (result.actualDamage > 0) {
+        SfxCue damageCue = damage.effectiveness > 100
             ? SfxCue::DAMAGE_SUPER
-            : (battleActionResult.effectiveness < 100
+            : (damage.effectiveness < 100
                 ? SfxCue::DAMAGE_WEAK : SfxCue::DAMAGE_NORMAL);
         AudioManager::ins().playSfx(damageCue);
-        if (battleActionAttackerWild) {
-            activeMon.hpCur = battleHpTo;
-            battleTurnDamaged[0] = true;
-        } else {
-            wildHp = battleHpTo;
-            wildRuntime.hpCur = wildHp;
-            battleTurnDamaged[1] = true;
-        }
+        battleTurnDamaged[battleActionAttackerWild ? 0 : 1] = true;
     }
-
-    const MoveInfo* move = findMove(battleActionResult.moveId);
-    if (move) {
-        bool defenderCanStillAct = battleTurnPlan.hasActionAfter(
-            battleActionIndex,
-            battleActionAttackerWild ? BattleTurnController::Side::PLAYER
-                                     : BattleTurnController::Side::WILD);
-        uint16_t actualDamage = battleHpFrom >= battleHpTo ? battleHpFrom - battleHpTo : 0;
-        if (battleActionAttackerWild) {
-            battleEffectResolution = BattleSystem::applyMoveEffects(
-                *move, wildRuntime, *wild, wildBattleState,
-                activeMon, activeSpecies, playerBattleState,
-                actualDamage, defenderCanStillAct);
-        } else {
-            battleEffectResolution = BattleSystem::applyMoveEffects(
-                *move, activeMon, activeSpecies, playerBattleState,
-                wildRuntime, *wild, wildBattleState,
-                actualDamage, defenderCanStillAct);
-        }
-        wildHp = wildRuntime.hpCur;
-        enqueueBattleEffectLogs(battleEffectResolution, battleActionAttackerWild);
-
-        BattleSystem::EffectResolution abilityEffects =
-            BattleSystem::applyPostDamageAbilities(
-                *move,
-                battleActionAttackerWild ? wildRuntime : activeMon,
-                battleActionAttackerWild ? *wild : activeSpecies,
-                battleActionAttackerWild ? wildBattleState : playerBattleState,
-                battleActionAttackerWild ? activeMon : wildRuntime,
-                battleActionAttackerWild ? activeSpecies : *wild,
-                battleActionAttackerWild ? playerBattleState : wildBattleState,
-                actualDamage);
-        wildHp = wildRuntime.hpCur;
-        enqueueBattleEffectLogs(abilityEffects, battleActionAttackerWild);
-
-        bool rampageEnded = BattleSystem::recordMoveResult(
-            battleActionAttackerWild ? wildBattleState : playerBattleState,
-            battleActionAttackerWild ? wildRuntime : activeMon,
-            battleActionAttackerWild ? *wild : activeSpecies,
-            *move, true, battleActionResult.specialSlot);
-        wildHp = wildRuntime.hpCur;
-        if (rampageEnded) {
-            char logBuf[BATTLE_LOG_LEN];
-            snprintf(logBuf, sizeof(logBuf), Ui::Explore::RAMPAGE_CONFUSED_FMT,
-                     battleActionAttackerWild ? wild->name : activeSpecies.name);
-            enqueueBattleLog(logBuf);
-        }
-        if (battleActionResult.sturdyActivated) {
-            char logBuf[BATTLE_LOG_LEN];
-            snprintf(logBuf, sizeof(logBuf), Ui::Explore::ABILITY_ACTIVATED_FMT,
-                     battleActionAttackerWild ? activeSpecies.name : wild->name,
-                     abilityName(AbilityId::STURDY));
-            enqueueBattleLog(logBuf);
-        }
-        if (battleActionResult.forceWildEnd && wildHp > 0) {
-            forcedBattleEndPending = true;
-            enqueueBattleLog(Ui::Explore::DRAGON_TAIL_END);
-        }
+    enqueueBattleEffectLogs(result.moveEffects, battleActionAttackerWild);
+    enqueueBattleEffectLogs(result.abilityEffects, battleActionAttackerWild);
+    if (result.rampageEnded) {
+        char logBuf[BATTLE_LOG_LEN];
+        snprintf(logBuf, sizeof(logBuf), Ui::Explore::RAMPAGE_CONFUSED_FMT,
+                 attackerSpecies.name);
+        enqueueBattleLog(logBuf);
     }
-
-    if (!battleActionAttackerWild && move) {
-        uint8_t moveSlot = battleActionResult.special
-            ? static_cast<uint8_t>(battleActionResult.specialSlot + 1)
-            : 0;
-        if (moveSlot > 0 && moveSlot < Game::MOVE_SLOT_COUNT &&
-            activeMon.moveProficiency[moveSlot] < Game::MOVE_PROFICIENCY_MAX) {
-            activeMon.moveProficiency[moveSlot]++;
-        }
+    if (damage.sturdyActivated) {
+        char logBuf[BATTLE_LOG_LEN];
+        snprintf(logBuf, sizeof(logBuf), Ui::Explore::ABILITY_ACTIVATED_FMT,
+                 defenderSpecies.name, abilityName(AbilityId::STURDY));
+        enqueueBattleLog(logBuf);
+    }
+    if (result.forceWildEnd && wildHp > 0) {
+        forcedBattleEndPending = true;
+        enqueueBattleLog(Ui::Explore::DRAGON_TAIL_END);
     }
     engine.markDirty(SaveUrgency::DEFERRED);
 }
@@ -4513,6 +4446,9 @@ void ExploreScene::renderWalking() {
         ExploreTileSemantics::sortActorsByGroundDepth(actors, actorCount);
         for (uint8_t index = 0; index < actorCount; ++index) {
             switch (actors[index].role) {
+            case ExploreTileSemantics::ActorRole::WILDLIFE:
+                // The first ecology presentation is enabled on AMOLED only.
+                break;
             case ExploreTileSemantics::ActorRole::BOSS:
                 renderRouteBoss(cameraX, cameraY, nowMs);
                 break;
@@ -4561,6 +4497,10 @@ void ExploreScene::renderWalking() {
 
     drawGeneratedMapForegroundViewport(
         generatedMap, cameraX, cameraY, map.fieldColor, mapAnimationFrame);
+
+    const auto daylight = ExploreDaylight::at(state.gameMinutesTotal, generatedMap.areaIndex);
+    c.multiplyRectRgb(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H,
+        daylight.red, daylight.green, daylight.blue);
 
     const uint16_t panel = PixelRenderer::rgb(8, 10, 14);
     int hudW = MathUtil::max(60, uiTextWidth(map.name) + 12);

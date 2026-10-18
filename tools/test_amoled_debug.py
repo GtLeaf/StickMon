@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 
-import unittest
+import os
 from pathlib import Path
+import shlex
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
 
 from amoled_source import read_home_source
 
@@ -31,15 +37,57 @@ class AmoledDebugMigrationTests(unittest.TestCase):
         self.assertIn('"-DSTICKMON_ENABLE_DEBUG_FEATURES=$DEBUG_FEATURES"', self.build)
 
     def test_prebuilt_amoled_assets_do_not_require_pillow(self):
-        items_check = self.build.index('if [[ -d "$AMOLED_ITEMS_DIR" ]]')
-        pillow_check = self.build.index('ASSET_PYTHON=""')
-        prebuilt_check = self.build.index(
-            'elif [[ ! -f "$REPO_DIR/data/packs/dev/game/ui_amoled.smonfx" ]]'
-        )
-        self.assertLess(items_check, pillow_check)
-        self.assertLess(pillow_check, prebuilt_check)
-        self.assertIn("/usr/bin/python3", self.build)
-        self.assertIn("STICKMON_ASSET_PYTHON", self.build)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for relative in ("tools/build_amoled_variant.sh", "tools/validate_amoled_ui_assets.py",
+                             "src/assets/GameAssets.h", "data/packs/dev/game/ui.smonfx",
+                             "data/packs/dev/game/ui_amoled.smonfx"):
+                destination = root / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(ROOT / relative, destination)
+            shared = root / "data/packs/dev/game/ui.smonfx"
+            native = shared.with_name("ui_amoled.smonfx")
+            os.utime(native, (shared.stat().st_mtime + 1, shared.stat().st_mtime + 1))
+            items = root / "essentials/Graphics/Items"
+            items.mkdir(parents=True)
+            sdk = root / "idf"
+            sdk.mkdir()
+            (sdk / "export.sh").write_text("# Test SDK: compilation is replaced with a probe.\n")
+            binary = root / "bin"
+            binary.mkdir()
+            python_args = root / "python-args.txt"
+            idf_args = root / "idf-args.txt"
+            scripts = {
+                "python3": '#!/bin/sh\nprintf "%s\\n" "$*" >> "$STICKMON_TEST_PYTHON_ARGS"\n'
+                           f'exec {shlex.quote(sys.executable)} -S "$@"\n',
+                "idf.py": '#!/bin/sh\nprintf "%s\\n" "$*" > "$STICKMON_TEST_IDF_ARGS"\n',
+            }
+            for name, source in scripts.items():
+                path = binary / name
+                path.write_text(source)
+                path.chmod(0o755)
+            env = dict(os.environ, IDF_PATH=str(sdk), IDF_PYTHON_ENV_PATH=str(sdk / "python"),
+                       STICKMON_ESSENTIALS_DIR=str(root / "essentials"),
+                       STICKMON_TEST_PYTHON_ARGS=str(python_args), STICKMON_TEST_IDF_ARGS=str(idf_args),
+                       PATH=str(binary) + os.pathsep + os.environ["PATH"])
+            env.pop("PYTHONPATH", None)
+            no_pillow = subprocess.run([str(binary / "python3"), "-c", "import PIL"],
+                                       env=env, capture_output=True)
+            self.assertNotEqual(no_pillow.returncode, 0)
+            python_args.unlink()
+            for board in ("v1", "v2"):
+                with self.subTest(board=board):
+                    (root / f"firmware/amoled_1_8_{board}").mkdir(parents=True)
+                    result = subprocess.run(["bash", str(root / "tools/build_amoled_variant.sh"),
+                                             board, "lite", "debug"], env=env,
+                                            capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn("-DSTICKMON_ENABLE_CLAW=OFF", idf_args.read_text())
+                    self.assertIn("build-lite-debug", idf_args.read_text())
+            calls = python_args.read_text()
+            self.assertIn("validate_amoled_ui_assets.py", calls)
+            self.assertNotIn("import PIL", calls)
+            self.assertNotIn("generate_amoled_ui_assets.py", calls)
 
     def test_main_menu_exposes_debug_entry(self):
         self.assertIn("MainMenuItem::DEBUG", self.flow)

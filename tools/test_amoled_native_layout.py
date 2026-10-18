@@ -48,7 +48,7 @@ class AmoledNativeLayoutTests(unittest.TestCase):
     def test_dirty_regions_and_lock_animation_submit_native_rows(self):
         for source in (self.v1_main, self.v2_main):
             self.assertIn("submitFrameRegion(", source)
-            self.assertIn("forceRenderRows(", source)
+            self.assertIn("forceRenderRegion(", source)
             self.assertNotIn("nativeCoordinate(", source)
             self.assertNotIn("nativeExtent(", source)
         self.assertIn("EXPLORE_ROUTE_MAP_FRAME_MS", self.app)
@@ -57,7 +57,7 @@ class AmoledNativeLayoutTests(unittest.TestCase):
     def test_lock_dirty_region_is_not_scaled_twice(self):
         for source in (self.v1_main, self.v2_main):
             self.assertIn("nativeRenderBegin = static_cast<uint16_t>(", source)
-            self.assertIn("app.forceRenderRows(nativeRenderBegin, nativeRenderEnd);", source)
+            self.assertIn("app.forceRenderRegion(nativeRenderXBegin, nativeRenderBegin,", source)
             self.assertIn(
                 "nativeRenderXBegin, nativeRenderXEnd,\n"
                 "                             nativeRenderBegin, nativeRenderEnd);",

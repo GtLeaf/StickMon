@@ -1,4 +1,5 @@
 #include <cassert>
+#include <cmath>
 
 #include "game/HomeActorController.h"
 
@@ -85,6 +86,36 @@ int main() {
     using Home::ActorIntent;
     using Home::IdleGoal;
     using Home::PairActivity;
+    MonsterBehaviorProfile behavior;
+    behavior.moveSpeedScale = 1.0f;
+    Game::MonsterRuntime walkingMonster{};
+    walkingMonster.mood = 40;
+    walkingMonster.satiety = 20;
+    auto expectSpeed = [&](Home::Task task, float expected,
+                           float minimum = 0.0f) {
+        assert(std::fabs(ActorController::routeSpeed(
+            task, behavior, walkingMonster, minimum) - expected) < 0.0001f);
+    };
+    expectSpeed(Home::Task::WANDER, 10.5f);
+    expectSpeed(Home::Task::SEEK_FOOD, 19.0f);
+    expectSpeed(Home::Task::SEEK_SLEEP, 12.5f);
+    expectSpeed(Home::Task::YIELDING, 12.5f);
+    behavior.moveSpeedScale = 1.5f;
+    expectSpeed(Home::Task::SEEK_FOOD, 28.5f);
+    walkingMonster.mood = 39;
+    expectSpeed(Home::Task::SEEK_FOOD, 20.52f);
+    walkingMonster.mood = 40;
+    walkingMonster.satiety = 19;
+    expectSpeed(Home::Task::SEEK_FOOD, 20.52f);
+    walkingMonster.mood = 39;
+    expectSpeed(Home::Task::SEEK_FOOD, 20.52f);
+    behavior.moveSpeedScale = 0.1f;
+    expectSpeed(Home::Task::WANDER, 0.756f);
+    expectSpeed(Home::Task::WANDER, 3.0f, 3.0f);
+    expectSpeed(Home::Task::SEEK_FOOD, 3.0f, 3.0f);
+    behavior.moveSpeedScale = 1.0f;
+    expectSpeed(Home::Task::SEEK_SLEEP, 9.0f, 3.0f);
+
     assert(ActorController::idleGoal(MonsterDesire::EAT,
                                      ActorIntent::SEEK_FOOD) ==
            IdleGoal::SEEK_FOOD);

@@ -29,6 +29,18 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                     )
         self.assertEqual([], violations, "\n" + "\n".join(violations))
 
+    def test_amoled_page_controllers_do_not_access_app_or_platform(self):
+        self.assert_no_patterns(
+            ROOT / "firmware/amoled_1_8_v1/main/app",
+            [
+                ("application internals", r"\bAmoledApp\b"),
+                ("platform services", r"\bPlatform::|#\s*include\s*[<\"]platform/"),
+                ("storage", r"\bSaveManager\b|#\s*include\s*[<\"]core/Save"),
+                ("render cache ownership", r"\bRenderCaches\b|\bPixelCache565\b"),
+                ("device SDK", r"#\s*include\s*[<\"](?:Arduino\.h|M5|esp_|driver/|freertos/)"),
+            ],
+        )
+
     def test_game_logic_is_host_buildable(self):
         self.assert_no_patterns(
             ROOT / "src" / "game",

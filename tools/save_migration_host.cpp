@@ -429,6 +429,57 @@ void verifyCodecSchema1Migration(DesktopPlatform& desktop) {
            (Game::DEBUG_MOTION_TILT | Game::DEBUG_MOTION_WALK_BOUNDARY));
 }
 
+void verifyV4CareMigration() {
+    for (int format = 0; format < 3; ++format) {
+        assert(Platform::blobs().clearNamespace("stickmon"));
+        Game::GameState original;
+        original.oobeDone = true;
+        original.coins = 8765;
+        original.bag.soap[2] = 8;
+        original.team[0].petCountToday = 3;
+        original.debugMotionFlags = Game::DEBUG_MOTION_TILT;
+        original.normalBossMissCount[2] = 2;
+        if (format == 0) {
+            uint8_t current[SaveCodec::MAX_ENCODED_BYTES];
+            size_t length = 0;
+            assert(SaveCodec::encode(original, {}, 9, current, sizeof(current), length));
+            std::vector<uint8_t> legacy;
+            assert(SaveTestUtil::fabricateSchema2Blob(current, length, legacy));
+            assert(Platform::blobs().writeBlob("stickmon", "state_a", legacy.data(), legacy.size()));
+        } else {
+            struct FrozenRecord {
+                uint32_t magic;
+                uint16_t version, reserved;
+                uint8_t stateBytes[1572];
+                ViewV2 view;
+            } legacy{};
+            static_assert(sizeof(legacy) == 1676);
+            original.version = format == 1 ? 3 : 4;
+            legacy.magic = SAVE_RECORD_MAGIC;
+            legacy.version = original.version;
+            std::memcpy(legacy.stateBytes, &original, 1572);
+            const uint16_t checksum = checksumBytes(legacy.stateBytes, 1572, 6);
+            std::memcpy(legacy.stateBytes + 6, &checksum, 2);
+            assert(Platform::blobs().writeBlob("stickmon", "state", &legacy, sizeof(legacy)));
+        }
+        SaveManager manager;
+        Game::GameState migrated;
+        MainSceneViewState view;
+        assert(manager.load(migrated, view));
+        assert(migrated.version == 5);
+        assert(migrated.coins == original.coins && migrated.bag.soap[2] == 8);
+        assert(migrated.team[0].petCountToday == 3);
+        assert(migrated.normalBossMissCount[2] == 2);
+        assert(migrated.debugMotionFlags == (format == 1 ? 0 : Game::DEBUG_MOTION_TILT));
+        assert(migrated.careRewardDay == migrated.gameMinutesTotal / 1440);
+        assert(migrated.careRewards[0].valid && migrated.careRewards[0].budget == 18);
+        assert(migrated.careRewards[0].awarded[0] == 0);
+        Game::GameState reloaded;
+        assert(manager.load(reloaded, view));
+        assert(reloaded.careRewards[0].budget == 18);
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -439,6 +490,7 @@ int main() {
     verifyTransitionalMigration();
     verifyV2Migration(desktop);
     verifyCodecSchema1Migration(desktop);
+    verifyV4CareMigration();
     verifyInvalidLegacyViewKeepsGameState();
     verifyNewerVersionIsPreserved();
     verifyCodecAbRecovery();

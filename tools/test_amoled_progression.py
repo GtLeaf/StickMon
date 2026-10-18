@@ -12,7 +12,7 @@ class AmoledProgressionTests(unittest.TestCase):
     def test_completion_does_not_show_growth_toast(self):
         body = APP.read_text(encoding="utf-8").split(
             "void AmoledApp::completeProgression(uint32_t nowMs) {", 1
-        )[1].split("void AmoledApp::openShowerScene", 1)[0]
+        )[1].split("\n}\n", 1)[0]
         self.assertNotIn("GROWTH_COMPLETE", body)
 
     def test_replacement_list_reuses_move_detail_and_requires_confirmation(self):
