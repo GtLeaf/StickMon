@@ -12,11 +12,18 @@ Use a static Web tool for this workflow:
 - Exporting `layout.json` and a quick preview PNG is simple.
 - No desktop GUI framework or build step is required.
 
-Open:
+Start with the live project reader (Python 3 with Pillow):
 
 ```bash
-open tools/room_editor/index.html
+python3 tools/room_editor/serve.py
 ```
+
+This opens `http://127.0.0.1:8765/` and automatically loads the current project
+scene. Use `--port 8766` if needed, or `--no-open` to start without opening a
+browser. Install Pillow with `python3 -m pip install pillow` if it is missing.
+
+Opening `index.html` directly still supports manual imports and saved sessions;
+live project reading requires the local server.
 
 The left sidebar remembers which sections you opened in this browser. With a
 loaded room it starts from the furniture library; without a room it starts from
@@ -28,9 +35,126 @@ Assets and Background.
 - `styles.css`: editor layout, panels, canvas, face list, and controls.
 - `app.js`: image import, shape editing, furniture placement, preview, import,
   and export logic.
+- `preview_model.js`: device profiles, shared-coordinate camera rules, and
+  sprite ground anchors. Also usable from Node for regression checks.
+- `serve.py`: local editor server and read-only `/api/project-scene` endpoint.
+- `project_scene.py`: resolves active firmware resources, source artwork,
+  furniture, device configuration, and live sprite previews.
 - `compose_room.py`: command-line day/night preview compositor.
 - `generate_sprite_previews.py`: extracts current LittleFS `.smonsp` sprite
   frames from `data/packs/dev/sprites/` into editor-loadable PNG previews.
+
+## Load the Current Project
+
+The local server reads the same project inputs as the firmware resource pipeline:
+
+- `data/active.json` selects the active resource pack, including `packPath` and
+  `activePack` aliases supported by `ResourcePack`.
+- That pack's `manifest.json` selects its room pack and sprite directory.
+- `prepare_room_background.py` supplies the default editable room layout and
+  furniture directory. The current layout is
+  `origin_asset/room/standar/room_layout.json`.
+- Background layers are resolved from that layout; furniture uses the same
+  source/library lookup as `compose_room.py`, including day/night windows that
+  do not have a `libraryId`.
+- `PlatformServices.h`, `AmoledGeometry.h`, `UiMetrics.h`, `MainScene.cpp`, and
+  `AmoledApp.cpp` provide display sizes, room viewport dimensions, resource
+  scale, and camera rules.
+- Sprite packs are decoded directly in memory, so current previews do not
+  depend on previously generated editor PNGs.
+
+The loaded scene contains editable source backgrounds, individual furniture,
+lighting, movement polygons, and doorways. The source path, active pack, and
+compiled room/art dimensions appear above Inputs. A message flags source files
+newer than the room pack or differing dimensions; source edits may not yet have
+been rebuilt into firmware resources. This reads the local project; it does not
+read a connected device's flash or game save.
+
+Startup loads the live project scene first. Saved editor sessions remain
+available through `Load session`. `重新载入工程场景` reads the files again after
+project changes. Reload replaces the scene in one undoable step and retains the
+previous content if reading fails. First load fits the scene into the edit area.
+The server does not write project or firmware assets; existing save/export
+controls keep their usual behavior.
+
+For a different editable source, use the same overrides as the room generator:
+
+```bash
+python3 tools/room_editor/serve.py --layout path/to/room_layout.json --furniture-dir path/to/furniture
+```
+
+Only `standard.smonroom` currently has an automatic source mapping. Another
+active room requires an explicit `--layout`; the tool reports this instead of
+silently loading the standard source.
+
+## Browse and Try Furniture
+
+The furniture library has counted category buttons for beds, rugs, bowls,
+windows, shelves, toys, and other furniture. Browsing categories are derived
+from existing asset metadata and names; firmware categories remain unchanged.
+Each category count follows the current search and theme filters, so the
+buttons show how many matching items remain. Search also matches Chinese
+category/theme labels. Forest, starry night, and cloud themes can be combined
+with a category and search.
+
+Selecting furniture on the canvas or in Layers opens the library and filters
+its category, clearing the previous search/theme. With a scene furniture item
+selected, click a thumbnail or `试换` to preview a candidate in both the
+editor and the device preview. While a trial is active, the Properties panel
+and canvas editing are locked until `应用替换` or `取消试换`; Layers can still
+be used to select another item, which cancels the trial. The current library
+item is marked `当前使用` and cannot create a no-op trial. Without a selected
+furniture item, thumbnails are disabled and only `添加` creates a new item.
+The original scene, save state, and export data remain intact until
+`应用替换`. Consecutive candidates replace the same preview. `取消试换`,
+Escape, or Undo discards the trial. Save and layout export ask you to apply or
+cancel first.
+
+Applying preserves the object's ID, draw order, opacity, and day/night
+visibility. The candidate uses its library size and proportions, collision
+polygons, and shadow settings. Floor furniture keeps its bottom center; rugs
+and wall furniture keep their center. Application is one undoable change.
+Image failures and stale image loads cannot overwrite the original object.
+`添加` still creates another object. Library deletion and source annotation
+counts are under each item's `管理` menu.
+
+## Device Previews
+
+The top toolbar selects a device without changing the shared room coordinates,
+furniture positions, movement polygons, or layout JSON schema:
+
+| Device | Display pixels | Room display pixels | Room coordinates visible | Resource scale |
+| --- | --- | --- | --- | --- |
+| StickS3 | 240x135 | 240x135 | 240x135 | 1x |
+| Waveshare AMOLED 1.8 V1 / V2 | 368x448 | 368x296 | 184x148 | 2x |
+
+AMOLED reserves 48 pixels above the room and 104 pixels below it. These areas
+show placeholders. The preview represents the current shared V1/V2 room UI;
+it does not verify either board's display or touch driver.
+The StickS3 HUD guide is hidden while AMOLED is selected.
+
+- `房间全景`: shows the whole room and outlines the selected device's viewport.
+- `设备画面`: crops the room at the selected camera X/Y and adds device UI
+  placeholders. Switching devices opens this mode automatically from full room.
+- `跟随精灵`: follows a selected, visible project sprite using the firmware
+  camera rules. Drag the sprite on the edit canvas to inspect the viewport.
+  StickS3 keeps its actor center 84 room pixels below the top; AMOLED uses its
+  existing camera dead zone. Both clamp the camera to the room bounds.
+- `编辑合成`: uses the editor's Z/Sort Y ordering and lighting.
+- `固件层次示意`: draws furniture into the background before drawing sprites.
+  `occludesSprite` remains metadata; current firmware has no dynamic furniture
+  occlusion. Lighting and shadows remain approximate in both preview modes.
+
+The editor scales shared room pixels for the device preview. It does not render
+the firmware's native 2x room artwork, full device UI, or gameplay simulation.
+Device and camera preferences are stored in session backups only. PNG export
+uses the selected preview mode and omits viewport outlines and ground anchors.
+
+`保存工程` saves the editable session; `导出游戏布局` downloads the shared
+`room_layout.json` used to generate game resources. The toolbar reports unsaved
+content, distinguishes a browser draft from a saved/downloaded project file, and
+warns before closing with unsaved changes. Merely changing device, camera, or
+day/night view does not mark the project content as modified.
 
 ## Recommended Asset Flow
 
@@ -41,8 +165,9 @@ Assets and Background.
    checkboxes. File names containing
    `day` or `night` are assigned automatically; other names are enabled for both
    modes by default.
-3. Confirm the game preview size. `Room W` and `Room H` are target game pixels;
-   keep `Lock room aspect ratio` enabled when changing only one dimension.
+3. Check the room size readout. Shared room width is fixed at 240 game pixels;
+   height follows the trimmed background, with a minimum canvas height of 135.
+   Choose the device and preview mode from the top toolbar to inspect its crop.
 4. Adjust `Reference opacity` so the original-size image is useful as a tracing
    guide in the edit area.
 5. Switch the editor to `Shape`.
@@ -175,7 +300,7 @@ Assets and Background.
 17. Use `Toolbox` / `Measure H` to drag a vertical measurement on the edit
     canvas. The readout shows both original canvas pixels and target game pixels.
 18. Use the export buttons:
-   - `Save session`: writes `sessions/stickmon_room_editor_session.json` under
+   - `保存工程` (Save session): writes `sessions/stickmon_room_editor_session.json` under
      the selected `tools/room_editor` folder and also keeps a browser draft
      backup in IndexedDB/localStorage. Browsers without directory handle support
      fall back to downloading a `stickmon_room_editor_session_*.json` backup.
@@ -188,7 +313,7 @@ Assets and Background.
      the project session JSON.
    - `Layout JSON`: can import normal room layout exports or downloaded session
      backup files.
-   - `Export layout JSON`: writes `room_layout.json`, including room geometry,
+   - `导出游戏布局`: writes `room_layout.json`, including room geometry,
      furniture, guides, and lighting. Treat this as the single source of truth.
    - `Export preview PNG`: writes a screenshot of the current day/night preview.
      Project sprite preview frames are embedded as data URLs so this also works
@@ -290,9 +415,9 @@ right-side `Delete` button to remove that item.
 The editor separates source image size from target canvas size:
 
 - The base image can be larger than `240x135`.
-- Preview always draws the full target room, then displays it with CSS at a
-  maximum width of `240px`; height follows the room aspect ratio.
-- The white/cyan frame in preview marks the `240x135` game screen range.
+- Full-room preview shows the complete target room. Device and follow modes
+  show the selected device's camera crop, including AMOLED UI placeholders.
+- The white/cyan frame marks the selected device's room viewport.
 - When a background image is loaded, preview uses the current Day/Night variant
   as the background at the target canvas size. Room geometry is only used as the
   fallback background when no image is loaded.
@@ -334,8 +459,18 @@ asset list and can be:
   mode).
 - Deleted with the right-panel `Delete` button.
 - Changed to a different species/action/frame from the properties panel.
+- Animated with `播放同方向动作帧`; frames retain their ground anchor.
+- Restored to resource pixel size with `恢复真机尺寸` in Properties.
 
-It uses the current `Sprite X/Y/W/H` guide as its initial placement.
+New previews default to native resource size (1:1 in shared room coordinates,
+2x in the AMOLED device view). `最长边 64` is available for size comparisons.
+Initial placement is centered in the selected device's room viewport. Frame
+changes preserve the ground anchor; old sessions retain their custom scale.
+Sprites are session-only preview objects and are excluded from layout exports.
+
+The generator supports v1 and raw-deflate v2/v3 `.smonsp` packs, validates compressed
+sizes and CRC, and reads frame ground-padding metadata. Regenerate after pack
+changes so the editor's dimensions and anchors match the current firmware assets.
 
 ## Runtime Interpretation
 
@@ -363,7 +498,8 @@ Furniture behavior uses five canonical `kind` values:
 
 - `floor_flat`: floor overlays with no cast shadow or sprite occlusion
 - `floor_small`: small floor objects that cast shadows but do not occlude sprites
-- `floor_furniture`: floor furniture that casts shadows and occludes sprites
+- `floor_furniture`: floor furniture that casts shadows and carries sprite
+  occlusion metadata (not implemented as dynamic occlusion by current firmware)
 - `wall_flat`: flat wall decoration without a cast shadow
 - `wall_mounted`: wall-mounted objects that cast onto wall faces
 
@@ -376,6 +512,25 @@ and screen coordinates when explicit projection metadata is absent.
 
 Furniture should be generated as isolated PNGs. Do not rely on extracting
 furniture from a complete AI room image as the long-term source of truth.
+
+## Validation
+
+Run from the repository root (Python requires Pillow):
+
+```bash
+node --check tools/room_editor/app.js
+node --test tools/room_editor/test_*.cjs
+python3 -m unittest discover -s tools/room_editor -p 'test_*.py'
+python3 tools/test_prepare_room_background.py
+```
+
+Node tests cover camera clamping, device controls, unchanged layout exports,
+native sprite sizing, stable ground anchors, old sessions, save/undo behavior,
+project scene reload/rollback, and preview draw order using DOM/canvas command
+stubs. Python checks also cover the live resource reader, changed source/config
+files, missing assets, and the local HTTP API. They do not cover browser
+layout or real canvas pixels. Browser visual checks and V1/V2 hardware acceptance
+remain separate verification steps.
 
 ## Furniture Library
 

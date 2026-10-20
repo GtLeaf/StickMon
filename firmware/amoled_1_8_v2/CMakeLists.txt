@@ -109,6 +109,28 @@ foreach(RESOURCE_SPRITE_FILE IN LISTS RESOURCE_SPRITE_FILES)
 endforeach()
 configure_file("${RESOURCE_ROOM}"
                "${RESOURCE_STAGE_DIR}/packs/dev/rooms/standard.smonroom" COPYONLY)
+# Layered rooms and reusable furniture are currently a Debug preview feature.
+set(RESOURCE_DEBUG_ROOMS)
+if(STICKMON_ENABLE_DEBUG_FEATURES)
+    set(RESOURCE_LAYERED_ROOT "${STICKMON_ROOT}/origin_asset/generated/room/layered")
+    file(GLOB RESOURCE_LAYERED_ROOMS CONFIGURE_DEPENDS "${RESOURCE_LAYERED_ROOT}/rooms/*.smonroom")
+    file(GLOB RESOURCE_FURNITURE_FILES CONFIGURE_DEPENDS "${RESOURCE_LAYERED_ROOT}/furniture/*.smonfurn")
+    if(NOT EXISTS "${RESOURCE_LAYERED_ROOT}/rooms/standard.smonroom" OR NOT RESOURCE_FURNITURE_FILES)
+        message(FATAL_ERROR "Generate layered rooms with tools/generate_room_layers.py first")
+    endif()
+    file(MAKE_DIRECTORY "${RESOURCE_STAGE_DIR}/packs/dev/furniture")
+    foreach(RESOURCE_LAYERED_ROOM IN LISTS RESOURCE_LAYERED_ROOMS)
+        get_filename_component(RESOURCE_NAME "${RESOURCE_LAYERED_ROOM}" NAME)
+        configure_file("${RESOURCE_LAYERED_ROOM}"
+            "${RESOURCE_STAGE_DIR}/packs/dev/rooms/${RESOURCE_NAME}" COPYONLY)
+    endforeach()
+    foreach(RESOURCE_FURNITURE_FILE IN LISTS RESOURCE_FURNITURE_FILES)
+        get_filename_component(RESOURCE_NAME "${RESOURCE_FURNITURE_FILE}" NAME)
+        configure_file("${RESOURCE_FURNITURE_FILE}"
+            "${RESOURCE_STAGE_DIR}/packs/dev/furniture/${RESOURCE_NAME}" COPYONLY)
+    endforeach()
+    set(RESOURCE_DEBUG_ROOMS ${RESOURCE_LAYERED_ROOMS} ${RESOURCE_FURNITURE_FILES})
+endif()
 configure_file("${RESOURCE_MAPS}"
                "${RESOURCE_STAGE_DIR}/packs/dev/game/maps.smonfx" COPYONLY)
 configure_file("${RESOURCE_UI}"
@@ -142,7 +164,7 @@ spiffs_create_partition_image(
     "${RESOURCE_STAGE_DIR}"
     FLASH_IN_PROJECT
     DEPENDS "${RESOURCE_ACTIVE}" "${RESOURCE_MANIFEST}"
-            ${RESOURCE_SPRITE_FILES} "${RESOURCE_ROOM}" "${RESOURCE_MAPS}"
+            ${RESOURCE_SPRITE_FILES} "${RESOURCE_ROOM}" ${RESOURCE_DEBUG_ROOMS} "${RESOURCE_MAPS}"
             "${RESOURCE_UI}" "${RESOURCE_BATTLE}" "${RESOURCE_HATCH}"
             ${RESOURCE_FONT_FILES} ${RESOURCE_AUDIO_FILES}
             ${RESOURCE_CRY_FILES}

@@ -14,6 +14,7 @@
 #include "hardware/Hal.h"
 #include "presentation/PixelRenderer.h"
 #include "presentation/TutorialOverlay.h"
+#include "presentation/TeamFlag.h"
 #include "platform/api/FlashStorage.h"
 
 namespace {
@@ -2443,17 +2444,19 @@ void MenuScene::renderStoragePage() {
             const Game::MonsterRuntime& mon = teamSlot >= 0
                 ? state.team[teamSlot] : state.storage[i];
             const Species& species = GameEngine::ins().speciesFor(mon);
-            PixelRenderer::text(TEXT_X, y + 3, species.name, color, 1);
-
             const char* bondLabel = bondLevelName(mon.bond);
             int bondX = Hal::DISPLAY_W - textPixelWidth(bondLabel) - 10;
+            const int flagSpace = inTeam ? TeamFlag::width(1) + 4 : 0;
+            const int nameWidth = std::min(textPixelWidth(species.name),
+                std::max(0, bondX - TEXT_X - 4 - flagSpace));
+            const int nameTop = std::max(y + 3, LIST_Y_START);
+            const int nameBottom = std::min(y + 19, LIST_BOTTOM);
+            c.setClipRect(TEXT_X, nameTop, nameWidth,
+                          std::max(0, nameBottom - nameTop));
+            PixelRenderer::text(TEXT_X, y + 3, species.name, color, 1);
+            c.setClipRect(0, LIST_Y_START, Hal::DISPLAY_W, VISIBLE_H);
             if (inTeam) {
-                int statusX = TEXT_X + textPixelWidth(species.name) + 7;
-                int statusW = textPixelWidth(Ui::Storage::IN_TEAM);
-                if (statusX + statusW + 4 < bondX) {
-                    PixelRenderer::text(statusX, y + 3,
-                                        Ui::Storage::IN_TEAM, color, 1);
-                }
+                TeamFlag::draw(c, TEXT_X + nameWidth + 4, y + 4);
             }
             PixelRenderer::text(MathUtil::max(TEXT_X + 82, bondX), y + 3,
                                 bondLabel,

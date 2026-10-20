@@ -16,12 +16,15 @@ class ExploreIceSlideTests(unittest.TestCase):
             subprocess.run(
                 [
                     "c++",
-                    "-std=c++11",
+                    "-std=c++17",
                     "-Wall",
                     "-Wextra",
                     "-Werror",
+                    "-Wno-unused-parameter",
+                    "-Wno-unused-function",
                     "-Isrc",
                     "tools/explore_ice_slide_host.cpp",
+                    "src/game/ExploreMapGenerator.cpp",
                     "-o",
                     str(executable),
                 ],

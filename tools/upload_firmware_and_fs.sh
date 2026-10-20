@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_NAME="m5stick-s3-debug"
 UPLOAD_PORT=""
 DRY_RUN=0
-# 编译产物导出目录（供 tools/web-flasher 上传固件用），可用 OUT_DIR 覆盖
+# 编译产物导出目录（供独立维护的网页刷机站上传固件用），可用 OUT_DIR 覆盖
 OUT_DIR="${OUT_DIR:-$ROOT_DIR/tools/out}"
 # boot_app0.bin 在 PlatformIO 框架目录而非工程构建目录，可用 BOOT_APP0_BIN 覆盖
 BOOT_APP0_BIN="${BOOT_APP0_BIN:-$HOME/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin}"
@@ -24,7 +24,7 @@ Usage: tools/upload_firmware_and_fs.sh [options]
 
 Builds and uploads the firmware (including the partition table), then uploads
 the complete data/ directory as a LittleFS image. After building, the files
-needed by tools/web-flasher (bootloader / partitions / boot_app0 / firmware /
+needed by the external web flasher (bootloader / partitions / boot_app0 / firmware /
 littlefs .bin) are exported to tools/out/.
 
 Options:
@@ -139,7 +139,7 @@ run_pio -t buildfs
 
 echo "[flash] 3/5 Exporting build artifacts to: $OUT_DIR"
 BUILD_DIR="$ROOT_DIR/.pio/build/$ENV_NAME"
-# 与 tools/web-flasher 上传表单一一对应的 5 个 bin
+# 与独立网页刷机站上传表单一一对应的 5 个 bin
 ARTIFACTS=(
     "$BUILD_DIR/bootloader.bin"
     "$BUILD_DIR/partitions.bin"

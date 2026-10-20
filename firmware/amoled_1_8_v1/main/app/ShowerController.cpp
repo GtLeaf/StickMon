@@ -25,6 +25,13 @@ constexpr float SHOWER_BRUSH_DISTANCE = 8.0f;
 constexpr uint32_t SHOWER_BRUSH_INTERVAL_MS = Game::BathInteraction::RUB_INTERVAL_MS;
 }
 
+void ShowerController::prepareVisualBenchmark(bool brush, uint32_t nowMs) {
+    state_.showerSoapRewarded = state_.showerBrushRewarded = state_.showerRinseRewarded = true;
+    if (brush) {
+        for (int i = 0; i < 8; ++i) Game::BathInteraction::spawn(state_.showerBath, bathLayout(), nowMs);
+    }
+}
+
 void ShowerController::startHop(float height, uint32_t nowMs) {
     state_.showerHopStartedMs = nowMs;
     state_.showerHopHeight = height;

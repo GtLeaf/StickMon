@@ -42,8 +42,8 @@ class AmoledMusicContextTests(unittest.TestCase):
         self.assertIn("setMusicContext(MusicContext::EXPLORE)",
                       self.source[route_start:route_end])
 
-        battle_start = self.source.index("bool AmoledApp::beginExploreEncounter(")
-        battle_end = self.source.index("void AmoledApp::pushBattleLog(", battle_start)
+        battle_start = self.source.index("void AmoledApp::startExploreBattle(")
+        battle_end = self.source.index("\nvoid AmoledApp::", battle_start + 10)
         self.assertIn("MusicContext::BATTLE_SPECIAL", self.source[battle_start:battle_end])
         self.assertIn("MusicContext::BATTLE", self.source[battle_start:battle_end])
 

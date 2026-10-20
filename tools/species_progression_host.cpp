@@ -1,9 +1,11 @@
 #include <array>
 #include <cstdint>
+#include <cstdio>
 
 #include "game/BattleSystem.h"
 #include "game/EffortService.h"
 #include "game/ExploreBoss.h"
+#include "game/ExploreEncounters.h"
 #include "game/FriendshipSystem.h"
 #include "game/Species.h"
 
@@ -25,9 +27,9 @@ constexpr std::array<GrowthExpectation, 6> EXPECTED_GROWTH = {{
 
 constexpr uint16_t EXPECTED_BOSS_EXP
     [ExploreBoss::AREA_COUNT][ExploreBoss::CANDIDATE_COUNT] = {
-        {494, 414, 348, 320},
-        {688, 918, 732, 732},
-        {1458, 1820, 1650, 1796},
+        {494, 122, 142, 320},
+        {688, 426, 204, 262},
+        {1458, 1242, 1650, 1458},
         {2016, 2700, 2616, 2892},
         {2786, 3406, 3648, 2650},
         {5168, 4594, 4172, 4612},
@@ -42,11 +44,57 @@ bool hasLearnsetEntry(const Species& species, uint8_t level, Game::MoveId moveId
     return false;
 }
 
+// Derive encounter floors from the real evolution graph, including level
+// requirements inherited through friendship, stone and trade evolutions.
+uint8_t minimumEncounterLevel(uint16_t speciesId, uint8_t depth = 0) {
+    if (!findSpecies(speciesId) || depth >= speciesCount()) return Game::LEVEL_MAX + 1;
+    uint8_t minimum = 1;
+    for (uint8_t index = 0; index < speciesCount(); ++index) {
+        const auto& parent = speciesTable()[index];
+        if (parent.evolveTo != speciesId) continue;
+        const uint8_t inherited = minimumEncounterLevel(parent.id, depth + 1);
+        if (inherited > minimum) minimum = inherited;
+        if (parent.evolveMethod == EvolutionMethod::LEVEL && parent.evolveLevel > minimum) {
+            minimum = parent.evolveLevel;
+        }
+    }
+    return minimum;
+}
+
+bool encounterLevelValid(const char* kind, uint8_t area, uint16_t speciesId, uint8_t level) {
+    const uint8_t minimum = minimumEncounterLevel(speciesId);
+    if (level >= minimum && level <= Game::LEVEL_MAX) return true;
+    std::fprintf(stderr, "%s area=%u species=%u level=%u requires >=%u\n",
+                 kind, area, speciesId, level, minimum);
+    return false;
+}
+
+bool encounterLevelsRespectEvolution() {
+    for (const auto& expected : std::array<std::array<uint16_t, 2>, 9>{{
+             {{130, 20}}, {{282, 30}}, {{3, 32}}, {{279, 25}}, {{162, 15}},
+             {{17, 18}}, {{169, 22}}, {{94, 25}}, {{26, 1}}}}) {
+        if (minimumEncounterLevel(expected[0]) != expected[1]) return false;
+    }
+    for (uint8_t area = 0; area < ExploreBoss::AREA_COUNT; ++area) {
+        const auto table = ExploreEncounters::tableForArea(area);
+        for (uint8_t index = 0; index < table.count; ++index) {
+            const auto& entry = table.entries[index];
+            if (!encounterLevelValid("wild", area, entry.speciesId, entry.minLevel)) return false;
+        }
+        const auto& boss = ExploreBoss::configForArea(area);
+        for (uint16_t speciesId : boss.speciesIds) {
+            if (!encounterLevelValid("boss", area, speciesId, boss.level)) return false;
+        }
+    }
+    return true;
+}
+
 } // namespace
 
 int main() {
     static_assert(sizeof(Game::MoveId) == 2, "official move ids require 16 bits");
     if (Game::LEVEL_MAX != 100) return 1;
+    if (!encounterLevelsRespectEvolution()) return 67;
 
     for (const GrowthExpectation& expected : EXPECTED_GROWTH) {
         if (minimumExpForLevel(expected.rate, Game::LEVEL_MAX) != expected.level100Exp) {

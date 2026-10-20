@@ -30,6 +30,7 @@
 #include "game/GameRandom.h"
 #include "hardware/Hal.h"
 #include "presentation/PixelRenderer.h"
+#include "presentation/PokemonShadow.h"
 #include "presentation/TutorialOverlay.h"
 #include "platform/api/FlashStorage.h"
 #include "platform/api/PlatformServices.h"
@@ -884,19 +885,6 @@ PokemonSprites::WalkDirection inwardDirection(ExploreMapGenerator::Edge edge) {
     return PokemonSprites::WalkDirection::DOWN;
 }
 
-constexpr bool isFrostForegroundWallTile(uint16_t tileId) {
-    return (tileId >= 4517 && tileId <= 4519) ||
-           tileId == 4522 || tileId == 4523;
-}
-
-static_assert(isFrostForegroundWallTile(4517) &&
-              isFrostForegroundWallTile(4518) &&
-              isFrostForegroundWallTile(4519) &&
-              isFrostForegroundWallTile(4522) &&
-              isFrostForegroundWallTile(4523));
-static_assert(!isFrostForegroundWallTile(4516) &&
-              !isFrostForegroundWallTile(4520));
-
 void drawGeneratedTileFallback(uint16_t tileId, int x, int y, uint8_t layer,
                                uint16_t fieldColor) {
     auto& canvas = PixelRenderer::canvas();
@@ -964,12 +952,12 @@ void drawGeneratedMapForegroundViewport(
                          (cameraX + Hal::DISPLAY_W - 1) / EXPLORE_TILE_SIZE);
     int lastY = MathUtil::min<int>(ExploreMapGenerator::HEIGHT - 1,
                          (cameraY + Hal::DISPLAY_H - 1) / EXPLORE_TILE_SIZE);
-    constexpr uint8_t layer = 1;
+    constexpr uint8_t layer = 2;
     for (int tileY = firstY; tileY <= lastY; ++tileY) {
         for (int tileX = firstX; tileX <= lastX; ++tileX) {
             uint16_t tileId = generated.layers[layer]
                 [tileY * ExploreMapGenerator::WIDTH + tileX];
-            if (!isFrostForegroundWallTile(tileId)) continue;
+            if (tileId != 4772) continue;
             int x = tileX * EXPLORE_TILE_SIZE - cameraX;
             int y = tileY * EXPLORE_TILE_SIZE - cameraY;
             if (!GameAssets::drawExploreTile(tileId, x, y, animationFrame)) {
@@ -984,7 +972,6 @@ void drawGeneratedMapVegetationForActor(
     int cameraX, int cameraY, uint16_t fieldColor,
     uint8_t animationFrame, float actorFootWorldY,
     int actorLeft, int actorTop, int actorRight, int actorBottom) {
-    if (generated.areaIndex != ExploreMapGenerator::TALL_GRASS_PARK_AREA) return;
     const int left = MathUtil::max(0, actorLeft);
     const int top = MathUtil::max(0, actorTop);
     const int right = MathUtil::min<int>(Hal::DISPLAY_W, actorRight);
@@ -1001,18 +988,19 @@ void drawGeneratedMapVegetationForActor(
         (cameraX + right - 1) / EXPLORE_TILE_SIZE);
     const int lastY = MathUtil::min<int>(ExploreMapGenerator::HEIGHT - 1,
         (cameraY + bottom - 1) / EXPLORE_TILE_SIZE);
-    constexpr uint8_t layer = 1;
-    for (int tileY = firstY; tileY <= lastY; ++tileY) {
-        for (int tileX = firstX; tileX <= lastX; ++tileX) {
-            const uint16_t tileId = generated.layers[layer]
-                [tileY * ExploreMapGenerator::WIDTH + tileX];
-            if (!ExploreTileSemantics::vegetationOccludes(
-                    tileId, layer, tileY, actorFootWorldY,
-                    EXPLORE_TILE_SIZE)) continue;
-            const int x = tileX * EXPLORE_TILE_SIZE - cameraX;
-            const int y = tileY * EXPLORE_TILE_SIZE - cameraY;
-            if (!GameAssets::drawExploreTile(tileId, x, y, animationFrame)) {
-                drawGeneratedTileFallback(tileId, x, y, layer, fieldColor);
+    for (uint8_t layer = 0; layer < ExploreMapGenerator::LAYER_COUNT; ++layer) {
+        for (int tileY = firstY; tileY <= lastY; ++tileY) {
+            for (int tileX = firstX; tileX <= lastX; ++tileX) {
+                const uint16_t tileId = generated.layers[layer]
+                    [tileY * ExploreMapGenerator::WIDTH + tileX];
+                if (!ExploreTileSemantics::objectOccludes(
+                        tileId, layer, tileY, actorFootWorldY,
+                        EXPLORE_TILE_SIZE)) continue;
+                const int x = tileX * EXPLORE_TILE_SIZE - cameraX;
+                const int y = tileY * EXPLORE_TILE_SIZE - cameraY;
+                if (!GameAssets::drawExploreTile(tileId, x, y, animationFrame)) {
+                    drawGeneratedTileFallback(tileId, x, y, layer, fieldColor);
+                }
             }
         }
     }
@@ -4428,7 +4416,8 @@ void ExploreScene::renderWalking() {
     const Game::GameState& state = engine.gameState();
     uint8_t leaderSlot = routeLeaderSlot(state);
     const Species& activeSpecies = engine.speciesFor(state.team[leaderSlot]);
-    if (generatedMap.areaIndex == ExploreMapGenerator::TALL_GRASS_PARK_AREA) {
+    if (generatedMap.areaIndex == ExploreMapGenerator::TALL_GRASS_PARK_AREA ||
+        generatedMap.areaIndex == ExploreMapGenerator::FROST_CRYSTAL_CAVE_AREA) {
         ExploreTileSemantics::ActorDepth actors[3] = {
             {ExploreTileSemantics::ActorRole::LEADER, routeWorldY}};
         uint8_t actorCount = 1;
@@ -4577,9 +4566,10 @@ void ExploreScene::renderRouteBoss(int cameraX, int cameraY, uint32_t nowMs) {
     int drawH = MathUtil::max<int>(1, static_cast<int>(roundf(frame->height * scale)));
     int centerX = static_cast<int>(roundf(worldX)) - cameraX;
     float airOffsetY = routeAirOffsetY(species->id, Hal::ins().millis(), scale);
-    const bool parkGroundAnchor = generatedMap.areaIndex ==
-        ExploreMapGenerator::TALL_GRASS_PARK_AREA;
-    const int groundOffset = parkGroundAnchor ? static_cast<int>(roundf(
+    const bool centeredGroundAnchor = (generatedMap.areaIndex ==
+        ExploreMapGenerator::TALL_GRASS_PARK_AREA || generatedMap.areaIndex ==
+        ExploreMapGenerator::FROST_CRYSTAL_CAVE_AREA);
+    const int groundOffset = centeredGroundAnchor ? static_cast<int>(roundf(
         PokemonSprites::frameGroundOffsetY(frame) * scale)) : 0;
     int centerY = static_cast<int>(roundf(worldY - airOffsetY)) - cameraY -
         groundOffset;
@@ -4592,19 +4582,20 @@ void ExploreScene::renderRouteBoss(int cameraX, int cameraY, uint32_t nowMs) {
 
     auto& c = PixelRenderer::canvas();
     // Keep the shadow at the unshifted ground anchor while the body floats.
-    int shadowY = static_cast<int>(roundf(worldY)) - cameraY +
-        (parkGroundAnchor ? -1 : drawH / 2 - 10);
-    c.fillEllipse(centerX, shadowY, 10, 3,
+    const int shadowGroundY = static_cast<int>(roundf(worldY)) - cameraY -
+        groundOffset + static_cast<int>(roundf(PokemonSprites::frameGroundOffsetY(frame) * scale));
+    const auto shadow = PokemonShadow::atGround(frame, centerX, shadowGroundY, scale, flipX);
+    c.fillEllipse(shadow.x, shadow.y, shadow.radiusX, shadow.radiusY,
                   PixelRenderer::rgb(68, 87, 74));
     PokemonSprites::drawFrameScaled(frame, drawX, drawY, scale, flipX);
-    const int actorTop = MathUtil::min(drawY, shadowY - 3);
-    const int actorBottom = MathUtil::max(drawY + drawH, shadowY + 4);
+    const int actorTop = MathUtil::min(drawY, shadow.y - shadow.radiusY);
+    const int actorBottom = MathUtil::max(drawY + drawH, shadow.y + shadow.radiusY + 1);
     drawGeneratedMapVegetationForActor(
         generatedMap, cameraX, cameraY,
         routeMap(mapBlocks[currentMapBlock]).fieldColor,
         static_cast<uint8_t>((Hal::ins().millis() / 140U) % 8U),
-        worldY, MathUtil::min(drawX, centerX - 10), actorTop,
-        MathUtil::max(drawX + drawW, centerX + 11), actorBottom);
+        worldY, MathUtil::min(drawX, shadow.x - shadow.radiusX), actorTop,
+        MathUtil::max(drawX + drawW, shadow.x + shadow.radiusX + 1), actorBottom);
 }
 
 void ExploreScene::drawRouteMonster(const Species& species, float worldX,
@@ -4724,31 +4715,34 @@ void ExploreScene::drawRouteMonster(const Species& species, float worldX,
         int markerH = static_cast<int>(marker->height * scale);
         int markerX = static_cast<int>(roundf(worldX)) - cameraX - markerW / 2;
         float airOffsetY = routeAirOffsetY(species.id, Hal::ins().millis(), scale);
-        const bool parkGroundAnchor = generatedMap.areaIndex ==
-            ExploreMapGenerator::TALL_GRASS_PARK_AREA;
-        const int groundOffset = parkGroundAnchor ? static_cast<int>(roundf(
+        const bool centeredGroundAnchor = (generatedMap.areaIndex ==
+            ExploreMapGenerator::TALL_GRASS_PARK_AREA || generatedMap.areaIndex ==
+            ExploreMapGenerator::FROST_CRYSTAL_CAVE_AREA);
+        const int groundOffset = centeredGroundAnchor ? static_cast<int>(roundf(
             PokemonSprites::frameGroundOffsetY(marker) * scale)) : 0;
         int markerY = static_cast<int>(roundf(worldY - airOffsetY)) - cameraY -
             markerH / 2 - groundOffset;
-        int shadowY = static_cast<int>(roundf(worldY)) - cameraY +
-            (parkGroundAnchor ? -1 : markerH / 2 - 10);
-        c.fillEllipse(markerX + markerW / 2, shadowY,
-                      10, 3,
+        const int shadowGroundY = static_cast<int>(roundf(worldY)) - cameraY -
+            groundOffset + static_cast<int>(roundf(PokemonSprites::frameGroundOffsetY(marker) * scale)) +
+            static_cast<int>(roundf(poseOffsetY * scale));
+        const auto shadow = PokemonShadow::atGround(marker,
+            markerX + markerW / 2 + static_cast<int>(roundf(poseOffsetX * scale)),
+            shadowGroundY, scale, markerFlipX);
+        c.fillEllipse(shadow.x, shadow.y, shadow.radiusX, shadow.radiusY,
                       PixelRenderer::rgb(68, 87, 74));
         markerX += static_cast<int>(roundf(poseOffsetX * scale));
         markerY += static_cast<int>(roundf(poseOffsetY * scale));
         PokemonSprites::drawFrameScaled(marker, markerX, markerY, scale, markerFlipX);
-        const int centerX = static_cast<int>(roundf(worldX)) - cameraX;
         drawGeneratedMapVegetationForActor(
             generatedMap, cameraX, cameraY,
             routeMap(mapBlocks[currentMapBlock]).fieldColor,
             static_cast<uint8_t>((Hal::ins().millis() / 140U) % 8U),
-            worldY, MathUtil::min(markerX, centerX - 10),
-            MathUtil::min(markerY, shadowY - 3),
+            worldY, MathUtil::min(markerX, shadow.x - shadow.radiusX),
+            MathUtil::min(markerY, shadow.y - shadow.radiusY),
             MathUtil::max(markerX + static_cast<int>(roundf(marker->width * scale)),
-                          centerX + 11),
+                          shadow.x + shadow.radiusX + 1),
             MathUtil::max(markerY + static_cast<int>(roundf(marker->height * scale)),
-                          shadowY + 4));
+                          shadow.y + shadow.radiusY + 1));
     }
 }
 

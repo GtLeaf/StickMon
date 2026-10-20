@@ -7,6 +7,11 @@ ESP32-S3-Touch-AMOLED-1.8 board:
 - Touch: FT3168 over I2C
 - Target framework: ESP-IDF 5.5.x
 
+V1 touch uses its own FT3168 nine-point calibration in `main/TouchInput.cpp`.
+The physical-V1 replay averages 6.2 px error; V2/CST820 calibration is separate
+and unchanged. See [V1 calibration](../../doc/AMOLED-V1-触控校准.md) for samples,
+validation status and the independent driver replay test.
+
 The current milestone initializes the display and FT3168 touch controller,
 mounts a SPIFFS resource partition, and runs the first portrait interaction
 layer:

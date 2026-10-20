@@ -45,7 +45,8 @@ Surface groundSurface(const ExploreMapGenerator::Map& map, uint16_t cell) {
     if (grass(base)) return Surface::GRASS;
     if (base == ExploreCaveTiles::CAVE_FLOOR) return Surface::ROCK;
     if (map.areaIndex == ExploreMapGenerator::FROST_CRYSTAL_CAVE_AREA &&
-        (base == 4511 || ExploreMapGenerator::isSmoothIceTile(base))) return Surface::ICE;
+        (base == 4511 || base == 4501 || (base >= 4780 && base <= 4794) ||
+         ExploreMapGenerator::isSmoothIceTile(base))) return Surface::ICE;
     return Surface::NONE;
 }
 }
@@ -240,25 +241,30 @@ void Simulation::reset(const ExploreMapGenerator::Map& map, uint8_t pathIndex,
             }
         }
         if (bestCell < 0) continue;
-        Actor actor{};
-        actor.pose.speciesId = pool.entries[selected].speciesId;
-        actor.pose.x = actor.homeX = actor.fromX = actor.toX =
-            ExploreRouteGeometry::tileCenter(bestCell % ExploreMapGenerator::WIDTH);
-        actor.pose.y = actor.homeY = actor.fromY = actor.toY =
-            ExploreRouteGeometry::tileCenter(bestCell / ExploreMapGenerator::WIDTH);
-        actor.pose.direction = next(random) % 4;
-        actor.pose.hidden = (hiddenPoolMask & (1U << selected)) != 0;
-        actor.pose.surface = surfaces_[bestCell];
-        actor.pose.cover = cover_[bestCell];
-        actor.random = next(random);
-        actor.durationMs = 600 + next(actor.random) % 1401;
-        actor.episodeCooldownMs = 3000 + next(actor.random) % 5001;
-        actors_[count_++] = actor;
-        if (!actor.pose.hidden && wideFlightSpecies(actor.pose.speciesId) &&
-            canFlyAt(actor.pose.x, actor.pose.y)) beginWideFlight(count_ - 1);
-        else if (!actor.pose.hidden && locomotionForSpecies(actor.pose.speciesId) == Locomotion::FLAP)
-            cruise(count_ - 1);
+        appendActor(pool.entries[selected].speciesId, bestCell,
+            (hiddenPoolMask & (1U << selected)) != 0, random);
     }
+}
+
+void Simulation::appendActor(uint16_t species, uint8_t cell, bool hidden, uint32_t& random) {
+    Actor actor{};
+    actor.pose.speciesId = species;
+    actor.pose.x = actor.homeX = actor.fromX = actor.toX =
+        ExploreRouteGeometry::tileCenter(cell % ExploreMapGenerator::WIDTH);
+    actor.pose.y = actor.homeY = actor.fromY = actor.toY =
+        ExploreRouteGeometry::tileCenter(cell / ExploreMapGenerator::WIDTH);
+    actor.pose.direction = next(random) % 4;
+    actor.pose.hidden = hidden;
+    actor.pose.surface = surfaces_[cell];
+    actor.pose.cover = cover_[cell];
+    actor.random = next(random);
+    actor.durationMs = 600 + next(actor.random) % 1401;
+    actor.episodeCooldownMs = 3000 + next(actor.random) % 5001;
+    actors_[count_++] = actor;
+    if (!actor.pose.hidden && wideFlightSpecies(actor.pose.speciesId) &&
+        canFlyAt(actor.pose.x, actor.pose.y)) beginWideFlight(count_ - 1);
+    else if (!actor.pose.hidden && locomotionForSpecies(actor.pose.speciesId) == Locomotion::FLAP)
+        cruise(count_ - 1);
 }
 
 Cover Simulation::coverAt(float x, float y) const {
@@ -599,8 +605,9 @@ void Simulation::update(uint32_t nowMs, bool active, float playerX, float player
     if (!active) return;
     if (group_.active) {
         group_.pendingMs += dt;
-        const bool visible = view.contains(actors_[0].pose.x, actors_[0].pose.y) ||
-            view.contains(actors_[1].pose.x, actors_[1].pose.y);
+        bool visible = false;
+        for (uint8_t i = 0; i < count_; ++i)
+            visible |= view.contains(actors_[i].pose.x, actors_[i].pose.y);
         if (group_.pendingMs >= (visible ? 100U : 500U)) {
             const uint32_t elapsed = group_.pendingMs;
             group_.pendingMs = 0;

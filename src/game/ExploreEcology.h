@@ -9,13 +9,29 @@ namespace ExploreEcology {
 
 inline constexpr uint8_t CAPACITY = 3;
 inline constexpr uint8_t GROUP_CHANCE_PERCENT = 50;
-inline constexpr uint16_t GROUP_PAIRS[][2] = {{286, 285}, {183, 298}};
-inline uint16_t groupPartner(uint16_t species) {
-    for (const auto& pair : GROUP_PAIRS) {
-        if (species == pair[0]) return pair[1];
-        if (species == pair[1]) return pair[0];
+struct Family {
+    uint16_t species[CAPACITY];
+    uint8_t count;
+};
+// Disjoint families, ordered from leader to youngest, with walking artwork.
+inline constexpr Family GROUP_FAMILIES[] = {
+    {{286, 285}, 2}, {{184, 183, 298}, 3}, {{162, 161}, 2},
+    {{262, 261}, 2}, {{195, 194}, 2}, {{323, 322}, 2},
+    {{17, 16}, 2}, {{282, 280}, 2}, {{25, 172}, 2}
+};
+constexpr uint8_t groupCompanionCapacity() {
+    uint8_t capacity = ExplorePool::POOL_CAP;
+    // One new companion per represented family, plus each larger family's
+    // extra members. Families are disjoint and duplicates are loaded once.
+    for (const auto& family : GROUP_FAMILIES) capacity += family.count - 2;
+    return capacity;
+}
+inline const Family* groupFamily(uint16_t species) {
+    for (const auto& family : GROUP_FAMILIES) {
+        for (uint8_t i = 0; i < family.count; ++i)
+            if (species == family.species[i]) return &family;
     }
-    return 0;
+    return nullptr;
 }
 
 enum class Surface : uint8_t { NONE, GRASS, ROCK, ICE, WATER };
@@ -76,6 +92,7 @@ public:
     void revealSpecies(uint16_t speciesId);
     uint8_t count() const { return count_; }
     bool hasGroup() const { return group_.active; }
+    bool hasFamily() const { return group_.members != 0; }
     const Pose& pose(uint8_t index) const { return actors_[index].pose; }
     bool safeCell(int x, int y) const;
     Surface surfaceAt(int x, int y) const;
@@ -86,16 +103,17 @@ public:
     bool canFlyAt(float x, float y) const;
 
 private:
-    // A group owns slots 0/1 (adult/young), sharing a validated ground trail.
+    // A family owns two or three slots sharing a validated ground trail.
     struct Group {
         enum class Phase : uint8_t { PATROL, GATHER, REUNION, WATCH };
         bool active = false;
+        uint8_t members = 0;
         uint8_t route[10]{}, routeCount = 0;
         uint8_t links[ExploreMapGenerator::CELL_COUNT]{};
         uint8_t recent[8] = {255, 255, 255, 255, 255, 255, 255, 255};
         uint8_t recentIndex = 0;
         Phase phase = Phase::PATROL;
-        float leader = 26, follower = 0, stop = 0;
+        float travel[CAPACITY]{}, stop = 0;
         uint32_t random = 1, pendingMs = 0, clockMs = 0, cycleMs = 0;
         uint32_t cycleDurationMs = 20000, waitMs = 600, glanceMs = 0;
         uint32_t nextGlanceMs = 6000, attentionCooldownMs = 0;
@@ -106,6 +124,9 @@ private:
     bool planGroupRoute(const ExploreMapGenerator::Path* path = nullptr);
     void groupPoint(float travel, float& x, float& y) const;
     void advanceGroup(uint32_t dt, float playerX, float playerY, bool visible);
+    bool spawnFamilySingle(const ExploreMapGenerator::Path& path, uint16_t species,
+                           uint32_t& random);
+    void appendActor(uint16_t species, uint8_t cell, bool hidden, uint32_t& random);
     struct Actor {
         Pose pose;
         float homeX = 0, homeY = 0;

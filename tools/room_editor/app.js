@@ -11,6 +11,7 @@ const SESSION_DEFAULT_FILE_NAME = "stickmon_room_editor_session.json";
 const GAME_SCREEN_WIDTH = 240;
 const GAME_SCREEN_HEIGHT = 135;
 const PREVIEW_MAX_WIDTH = 240;
+const previewModel = window.RoomPreviewModel;
 const LIGHT_HANDLE_RADIUS = 7;
 const BASE_FIT_WIDTH = "fit_width";
 const BACKGROUND_MODES = ["day", "night"];
@@ -24,13 +25,13 @@ const CONTROL_TOOLTIPS = {
   sourceScale: "家具导入时的默认缩放比例。用源图像素除以这个值，得到游戏坐标尺寸。",
   furnitureImportMode: "选择家具 PNG 导入时如何确定初始大小。",
   baseFit: "背景适配方式。当前项目固定为宽度填满 240px 游戏画布。",
-  spriteSpeciesSelect: "选择一个项目内精灵，用于预览精灵与家具遮挡关系。",
+  spriteSpeciesSelect: "选择项目内精灵，用于检查尺寸和摆放。编辑器的交错图层不代表固件支持动态家具遮挡。",
   spriteActionSelect: "选择精灵动作帧类型。",
   spriteFrameSelect: "选择具体帧。",
   addProjectSprite: "把当前选择的精灵帧放到画面中心做尺寸和遮挡预览。",
   librarySearch: "按名称、文件名、标签或库 ID 筛选家具库。",
-  libraryCategory: "按家具类别筛选库中家具。",
-  showGuides: "显示或隐藏 HUD 参考线。",
+  libraryTheme: "按森林、星空、白云等主题筛选家具。",
+  showGuides: "显示或隐藏 StickS3 的 HUD 参考线。微雪界面位于房间显示区外。",
   showGrid: "显示 8px 网格，方便按游戏像素对齐家具。",
   gridOpacity: "调整 8px 网格线的透明度。只影响主编辑画布显示，不影响预览和导出。",
   snapToGrid: "拖动家具时吸附到 8px 网格。",
@@ -47,11 +48,17 @@ const CONTROL_TOOLTIPS = {
   undoAction: "撤销上一步配置修改。",
   redoAction: "重做刚撤销的修改。",
   resetView: "清空当前选择并把主编辑画布缩放恢复到 100%。",
-  preview: "最终游戏坐标预览。点击可放大查看。",
+  preview: "按所选设备和镜头查看房间。设备界面为占位；光影为近似效果。点击可放大。",
+  previewDevice: "只切换显示设备，不修改共享房间、家具或活动区域的坐标。",
+  previewMode: "全景查看布局；设备画面模拟可见范围；跟随精灵按固件镜头规则移动。",
+  previewEffect: "编辑合成按图层交错绘制；固件层次示意把家具画在背景上，再绘制精灵。",
+  previewFollow: "选择镜头跟随的精灵。可添加多个精灵比较主精灵与访客的位置。",
+  spriteSizing: "真机尺寸按资源像素摆放；微雪在设备预览中统一放大 2 倍。",
   selectTool: "选择工具：用于普通选择、拖动和编辑。",
   measureHeightTool: "测量工具：在高清主画布上测量高度，并换算成游戏像素。",
   clearMeasure: "清除当前测量线。",
   saveSession: "保存当前编辑器会话，同时更新项目 session JSON 和浏览器草稿缓存。",
+  loadProjectScene: "从当前工程重新读取背景、家具、区域和固件配置。可用 Undo 恢复载入前的场景。",
   loadSession: "优先从项目 session JSON 恢复；找不到时再恢复浏览器未保存草稿。",
   changeSessionFile: "重新选择 room_editor 工具目录，session 默认保存到 sessions/ 下。",
   clearSession: "清除浏览器里的未保存草稿缓存，不删除项目 session JSON。",
@@ -102,7 +109,7 @@ const CONTROL_TOOLTIPS = {
   itemWallShadowDepthPx: "墙面投影深度，用于控制墙上物体影子下落距离。",
   itemWallShadowOffsetY: "墙面投影垂直偏移，用于微调墙上影子位置。",
   itemReceivesShadow: "这个物体是否接收其它物体投影。",
-  itemOccludesSprite: "精灵经过时，这个物体是否遮挡精灵。",
+  itemOccludesSprite: "家具遮挡标注。当前固件背景是合成图，此标注尚不提供运行时动态遮挡。",
   itemZ: "主要绘制顺序。数值越大越靠上。",
   itemSortY: "同一 Z 值内的排序参考 Y 坐标。"
 };
@@ -394,6 +401,8 @@ const state = {
   editMode: "furniture",
   toolMode: "select",
   previewZoomed: false,
+  preview: { device: "sticks3", mode: "room", effect: "composition", x: 0, y: 0, followId: "", ground: true },
+  projectScene: null,
   editZoom: 1,
   base: null,
   backgroundItems: [],
@@ -476,6 +485,13 @@ const canvas = document.getElementById("stage");
 const ctx = canvas.getContext("2d");
 const previewCanvas = document.getElementById("preview");
 const previewCtx = previewCanvas.getContext("2d");
+let savedProjectKey = null;
+let projectSaveLabel = "尚未保存工程";
+let projectDirty = false;
+let previewAnimationTimer = null;
+const previewAnimationImages = new Map();
+let previewAnimationGeneration = 0;
+let projectSceneMessage = "通过本地启动入口读取当前工程场景；也可继续手动导入资源。";
 const statusEl = document.getElementById("status");
 const assetList = document.getElementById("assetList");
 const selectedPanel = document.getElementById("selectedPanel");
@@ -491,7 +507,14 @@ const baseImageMeta = document.getElementById("baseImageMeta");
 const furnitureLibraryList = document.getElementById("furnitureLibraryList");
 const furnitureLibraryMeta = document.getElementById("furnitureLibraryMeta");
 const librarySearchInput = document.getElementById("librarySearch");
-const libraryCategoryInput = document.getElementById("libraryCategory");
+const libraryCategories = document.getElementById("libraryCategories");
+const libraryThemeInput = document.getElementById("libraryTheme");
+let libraryBrowseCategory = "";
+let librarySelectionId = null;
+let librarySelectionItem = null;
+let librarySelectionLabel = "";
+let furnitureSwap = null;
+let furnitureSwapRequest = 0;
 const hoverTooltip = document.getElementById("hoverTooltip");
 let tooltipTimer = null;
 let tooltipAnchor = null;
@@ -515,9 +538,8 @@ function updateCanvasSizeReadouts() {
   if (exportSize) exportSize.textContent = `${Math.round(state.width)}x${Math.round(state.height)}`;
   if (editSize) editSize.textContent = `${Math.round(state.editWidth)}x${Math.round(state.editHeight)}`;
   if (previewSize) {
-    previewSize.textContent =
-      `Room ${Math.round(state.width)}x${Math.round(state.height)} · ` +
-      `Screen ${GAME_SCREEN_WIDTH}x${GAME_SCREEN_HEIGHT}`;
+    const p = previewModel.profile(state.preview.device);
+    previewSize.textContent = `房间 ${Math.round(state.width)}×${Math.round(state.height)} · 屏幕 ${p.width}×${p.height}`;
   }
 }
 
@@ -1027,11 +1049,12 @@ function faceSourcePoints(face) {
 }
 
 function screenFrameRect() {
+  const viewport = previewModel.viewport(state.preview.device);
   return {
-    x: 0,
-    y: 0,
-    w: Math.min(GAME_SCREEN_WIDTH, state.width),
-    h: Math.min(GAME_SCREEN_HEIGHT, state.height)
+    x: state.preview.x,
+    y: state.preview.y,
+    w: viewport.width,
+    h: viewport.height
   };
 }
 
@@ -1741,6 +1764,13 @@ function projectSpriteFrameForItem(item) {
   ) || null;
 }
 
+function restoreProjectSpriteGround(item) {
+  if (item.source !== "project_sprite" || Number.isFinite(item.groundOffsetY)) return item;
+  const frame = projectSpriteFrameForItem(item);
+  item.groundOffsetY = frame?.groundOffsetY ?? clampNumber(Math.trunc(item.sourceHeight * 0.42), 16, 32);
+  return item;
+}
+
 async function hydrateProjectSpriteImage(item) {
   const frame = projectSpriteFrameForItem(item);
   const source = projectSpriteFrameSource(frame);
@@ -1751,6 +1781,7 @@ async function hydrateProjectSpriteImage(item) {
   item.exportableImage = loaded.exportable;
   item.sourceWidth = item.sourceWidth || frame.width || loaded.img.naturalWidth;
   item.sourceHeight = item.sourceHeight || frame.height || loaded.img.naturalHeight;
+  restoreProjectSpriteGround(item);
   return loaded.exportable;
 }
 
@@ -1879,67 +1910,169 @@ function furnitureLibraryEntryByItemReference(item) {
   }) || null;
 }
 
-function furnitureLibraryMatches(entry, search, category) {
-  if (category && furnitureLibraryCategory(entry) !== category) return false;
-  if (!search) return true;
-  const haystack = [
-    entry.id,
-    entry.name,
-    entry.fileName,
-    entry.category,
-    entry.furnitureType,
-    entry.kind,
-    ...(entry.tags || [])
-  ].join(" ").toLowerCase();
-  return haystack.includes(search.toLowerCase());
+const LIBRARY_BROWSE_CATEGORIES = [
+  ["bed", "床"], ["rug", "地毯"], ["bowl", "碗"], ["window", "窗户"],
+  ["shelf", "置物架"], ["toy", "玩具"], ["other", "其他"]
+];
+const LIBRARY_THEMES = [["forest-leaf", "森林"], ["starry-night", "星空"], ["cloud", "白云"]];
+
+function furnitureBrowseCategory(entry) {
+  const words = [entry.category, entry.libraryCategory, entry.furnitureType, entry.kind,
+    entry.fileName, entry.name, entry.id, ...(entry.tags || [])].join(" ").toLowerCase();
+  if (/window|窗/.test(words)) return "window";
+  if (/shelf|shelves|置物架|书架/.test(words)) return "shelf";
+  if (/rug|carpet|地毯/.test(words)) return "rug";
+  if (/bed|床/.test(words)) return "bed";
+  if (/bowl|碗/.test(words)) return "bowl";
+  if (/toy|玩具/.test(words)) return "toy";
+  return "other";
+}
+
+function furnitureLibraryTheme(entry) {
+  const text = [entry.name, entry.fileName, entry.id, ...(entry.tags || [])].join(" ").toLowerCase();
+  return LIBRARY_THEMES.find(([key]) => text.includes(key))?.[0] || "";
+}
+
+function furnitureLibraryMatches(entry, search, category, theme = "") {
+  if (category && furnitureBrowseCategory(entry) !== category) return false;
+  if (theme && furnitureLibraryTheme(entry) !== theme) return false;
+  const label = LIBRARY_BROWSE_CATEGORIES.find(([key]) => key === furnitureBrowseCategory(entry))?.[1];
+  const themeLabel = LIBRARY_THEMES.find(([key]) => key === furnitureLibraryTheme(entry))?.[1];
+  const haystack = [entry.id, entry.name, entry.fileName, entry.category, entry.furnitureType,
+    entry.kind, label, themeLabel, ...(entry.tags || [])].join(" ").toLowerCase();
+  return !search || haystack.includes(search.toLowerCase());
+}
+
+function selectedFurnitureForSwap() {
+  const item = selectedItem();
+  return item && item.source !== "project_sprite" && state.editMode === "furniture" ? item : null;
+}
+
+function furnitureSwapKey(item) {
+  return JSON.stringify(item, (key, value) => ["img", "dataUrl", "originalDataUrl"].includes(key) ? undefined : value);
+}
+
+function furnitureSwapIsCurrent(swap = furnitureSwap) {
+  return !!swap && selectedFurnitureForSwap() === swap.original &&
+    swap.original.img === swap.originalImage && swap.original.dataUrl === swap.originalDataUrl &&
+    furnitureSwapKey(swap.original) === swap.originalKey;
+}
+
+function furniturePreviewItem(item) {
+  if (!furnitureSwap?.candidate || item !== furnitureSwap.original) return item;
+  return furnitureSwapIsCurrent() ? furnitureSwap.candidate : item;
+}
+
+function syncFurnitureLibrarySelection() {
+  const target = selectedFurnitureForSwap();
+  let changed = false;
+  let swapCleared = false;
+  if (furnitureSwap && !furnitureSwapIsCurrent()) {
+    furnitureSwap = null;
+    furnitureSwapRequest += 1;
+    changed = true;
+    swapCleared = true;
+  }
+  const label = target ? `${target.name}:${target.libraryId || ""}:${furnitureBrowseCategory(target)}` : "";
+  if (target !== librarySelectionItem || label !== librarySelectionLabel) {
+    librarySelectionItem = target;
+    librarySelectionLabel = label;
+    changed = true;
+  }
+  if ((target?.id || null) !== librarySelectionId) {
+    librarySelectionId = target?.id || null;
+    if (target) {
+      libraryBrowseCategory = furnitureBrowseCategory(target);
+      librarySearchInput.value = "";
+      libraryThemeInput.value = "";
+      document.getElementById("furnitureLibraryPanel").open = true;
+    }
+    changed = true;
+  }
+  if (changed) refreshFurnitureLibraryPanel();
+  if (swapCleared) {
+    refreshSelectedPanel();
+    updateEditModeButtons();
+  }
+}
+
+function updateFurnitureSwapPanel() {
+  const target = selectedFurnitureForSwap();
+  const swap = furnitureSwapIsCurrent() ? furnitureSwap : null;
+  document.getElementById("librarySwapTarget").textContent = target
+    ? swap ? `正在试换：${target.name}` : `当前选中：${target.name}`
+    : "选中场景家具后，点击同类缩略图原位试换。";
+  const candidate = swap?.candidate;
+  document.getElementById("librarySwapHint").textContent = swap?.loading
+    ? "正在加载候选家具…"
+    : candidate ? `试换：${candidate.name} · 尚未应用，可继续点击其他候选比较。`
+    : target ? "点击缩略图或「试换」查看效果；应用后可用 Undo 恢复。" : "也可直接添加新家具。";
+  document.getElementById("librarySwapActions").hidden = !swap;
+  document.getElementById("applyFurnitureSwap").disabled = !candidate || swap.loading;
 }
 
 function refreshFurnitureLibraryPanel() {
   if (!furnitureLibraryList) return;
   const catalog = furnitureLibraryCatalog();
   const search = librarySearchInput?.value.trim() || "";
-  const category = libraryCategoryInput?.value || "";
-  const categories = [...new Set(catalog.map(furnitureLibraryCategory).filter(Boolean))].sort();
-  if (libraryCategoryInput) {
-    const previous = libraryCategoryInput.value;
-    libraryCategoryInput.innerHTML = '<option value="">All</option>' +
-      categories.map((value) => `<option value="${escapeAttr(value)}">${escapeHtml(furnitureTypeLabel(value))}</option>`).join("");
-    libraryCategoryInput.value = categories.includes(previous) ? previous : "";
+  const theme = libraryThemeInput?.value || "";
+  const target = selectedFurnitureForSwap();
+  const currentEntry = furnitureLibraryEntryByItemReference(target);
+  const filteredCatalog = catalog.filter((entry) => furnitureLibraryMatches(entry, search, "", theme));
+  libraryCategories.replaceChildren();
+  for (const [key, label] of [["", "全部"], ...LIBRARY_BROWSE_CATEGORIES]) {
+    const count = filteredCatalog.filter((entry) => !key || furnitureBrowseCategory(entry) === key).length;
+    if (!count && key !== libraryBrowseCategory) continue;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = `${label} ${count}`;
+    button.setAttribute("aria-pressed", String(key === libraryBrowseCategory));
+    button.addEventListener("click", () => { libraryBrowseCategory = key; refreshFurnitureLibraryPanel(); });
+    libraryCategories.appendChild(button);
   }
-  const entries = catalog.filter((entry) => furnitureLibraryMatches(entry, search, category));
+  const previousTheme = libraryThemeInput.value;
+  libraryThemeInput.innerHTML = '<option value="">全部主题</option>' + LIBRARY_THEMES
+    .filter(([key]) => catalog.some((entry) => furnitureLibraryTheme(entry) === key))
+    .map(([key, label]) => `<option value="${key}">${label}</option>`).join("");
+  libraryThemeInput.value = previousTheme;
+  const entries = catalog.filter((entry) => furnitureLibraryMatches(entry, search, libraryBrowseCategory, theme));
   furnitureLibraryList.innerHTML = "";
   for (const entry of entries) {
     const el = document.createElement("div");
-    el.className = "library-item";
+    el.className = `library-item${furnitureSwap?.candidate?.libraryId === entry.id ? " previewing" : ""}`;
     const imageSrc = entry.dataUrl || entry.image || "";
     const polygonCount = entry.footprintPolygon.length + entry.shadowPolygon.length;
-    const tags = [furnitureTypeLabel(entry.furnitureType), itemKindLabel(entry.kind), ...(entry.tags || [])]
-      .filter(Boolean)
-      .slice(0, 3)
-      .join(" / ");
+    const w = Math.round(entry.targetWidth || entry.sourceWidth * entry.defaultScaleX);
+    const h = Math.round(entry.targetHeight || entry.sourceHeight * entry.defaultScaleY);
+    const canPreview = Boolean(target) && currentEntry?.id !== entry.id;
+    const action = canPreview ? `预览 ${entry.name}` : target ? `当前使用 ${entry.name}` : `需先选择场景家具才能预览 ${entry.name}`;
+    const current = currentEntry?.id === entry.id;
     el.innerHTML = `
-      ${imageSrc ? `<img class="library-thumb" alt="" src="${escapeAttr(imageSrc)}">` : '<div class="library-thumb"></div>'}
+      <button class="library-thumb library-thumb-button" type="button" aria-label="${escapeAttr(action)}" ${canPreview ? "" : "disabled"}>
+        ${imageSrc ? `<img alt="" src="${escapeAttr(imageSrc)}">` : ""}
+      </button>
       <div class="library-details">
         <div class="library-name">${escapeHtml(entry.name)}</div>
-        <div class="library-meta">${escapeHtml(tags || entry.id)}</div>
-        <div class="library-meta">${Math.round(entry.sourceWidth || 0)}x${Math.round(entry.sourceHeight || 0)}, ${polygonCount ? `${polygonCount} polygon pts` : "semantic only"}</div>
+        <div class="library-meta">游戏尺寸 ${w}×${h}${current ? " · 当前使用" : ""}</div>
       </div>
       <div class="library-actions">
-        <button class="library-add" type="button" data-library-id="${escapeAttr(entry.id)}">Add</button>
-        <button class="library-delete danger" type="button" data-library-id="${escapeAttr(entry.id)}" title="Permanently delete from library">Delete</button>
-      </div>
-    `;
-    el.querySelector(".library-add").addEventListener("click", async (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      await addFurnitureLibraryEntry(entry);
+        ${target ? `<button class="library-try primary" type="button" aria-label="${escapeAttr(`试换 ${entry.name}`)}" ${canPreview ? "" : "disabled"}>${current ? "当前使用" : "试换"}</button>` : ""}
+        <button class="library-add" type="button" aria-label="${escapeAttr(`添加 ${entry.name}`)}">添加</button>
+        <details class="library-manage"><summary>管理</summary>
+          <div class="hint">原图 ${entry.sourceWidth}×${entry.sourceHeight} · ${polygonCount} 个标注点</div>
+          <button class="library-delete danger" type="button">从家具库删除</button>
+        </details>
+      </div>`;
+    const tryEntry = () => previewFurnitureLibraryEntry(entry);
+    el.querySelector(".library-thumb-button").addEventListener("click", target ? tryEntry : () => {});
+    el.querySelector(".library-try")?.addEventListener("click", (event) => {
+      if (event.currentTarget.disabled) return;
+      tryEntry();
     });
-    el.querySelector(".library-delete").addEventListener("click", async (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      try {
-        await deleteFurnitureLibraryEntry(entry);
-      } catch (error) {
+    el.querySelector(".library-add").addEventListener("click", () => addFurnitureLibraryEntry(entry));
+    el.querySelector(".library-delete").addEventListener("click", async () => {
+      try { await deleteFurnitureLibraryEntry(entry); }
+      catch (error) {
         console.error(error);
         setStatus(isFilePickerAbort(error) ? "Room editor folder was not selected." : (error.message || "Deleting furniture library item failed."));
       }
@@ -1949,20 +2082,99 @@ function refreshFurnitureLibraryPanel() {
   if (!entries.length) {
     const empty = document.createElement("div");
     empty.className = "hint";
-    empty.textContent = catalog.length ? "No matching furniture." : "No furniture library loaded. Select annotated furniture and click Add selected.";
+    empty.textContent = catalog.length ? "没有匹配的家具，请切换分类或清空搜索、主题。" : "家具库为空。";
     furnitureLibraryList.appendChild(empty);
   }
-  if (furnitureLibraryMeta) {
-    furnitureLibraryMeta.textContent = catalog.length
-      ? `${entries.length}/${catalog.length} library item(s).`
-      : "No furniture library loaded.";
-  }
+  furnitureLibraryMeta.textContent = `显示 ${entries.length} / 当前筛选 ${filteredCatalog.length} 件（共 ${catalog.length} 件）`;
+  updateFurnitureSwapPanel();
 }
 
 function initFurnitureLibraryControls() {
   librarySearchInput?.addEventListener("input", refreshFurnitureLibraryPanel);
-  libraryCategoryInput?.addEventListener("change", refreshFurnitureLibraryPanel);
+  libraryThemeInput?.addEventListener("change", refreshFurnitureLibraryPanel);
+  document.getElementById("applyFurnitureSwap").addEventListener("click", applyFurnitureSwap);
+  document.getElementById("cancelFurnitureSwap").addEventListener("click", () => cancelFurnitureSwap());
   refreshFurnitureLibraryPanel();
+}
+
+async function previewFurnitureLibraryEntry(entry) {
+  const original = selectedFurnitureForSwap();
+  if (!original) return false;
+  const currentEntry = furnitureLibraryEntryByItemReference(original);
+  if (currentEntry?.id === entry.id) {
+    setStatus(`“${entry.name}”已经是当前家具，无需试换。`);
+    return false;
+  }
+  const request = ++furnitureSwapRequest;
+  const previous = furnitureSwapIsCurrent() ? furnitureSwap.candidate : null;
+  furnitureSwap = { original, originalKey: furnitureSwapKey(original),
+    originalImage: original.img, originalDataUrl: original.dataUrl, candidate: previous, loading: true };
+  updateFurnitureSwapPanel();
+  refreshSelectedPanel();
+  updateEditModeButtons();
+  try {
+    const candidate = await createFurnitureItemFromLibraryEntry(entry, { id: original.id });
+    if (request !== furnitureSwapRequest || !furnitureSwapIsCurrent()) return false;
+    const centerX = original.x + itemTargetWidth(original) / 2;
+    const centerY = original.y + itemTargetHeight(original) / 2;
+    const centered = furnitureBrowseCategory(original) === "rug" || original.slot === "wall";
+    candidate.x = centerX - itemTargetWidth(candidate) / 2;
+    candidate.y = centered ? centerY - itemTargetHeight(candidate) / 2
+      : original.y + itemTargetHeight(original) - itemTargetHeight(candidate);
+    for (const key of ["z", "sortY", "layer", "slot", "opacity", "visible", "visibleInDay", "visibleInNight"]) {
+      if (original[key] !== undefined) candidate[key] = original[key];
+    }
+    furnitureSwap.candidate = candidate;
+    furnitureSwap.loading = false;
+    refreshFurnitureLibraryPanel();
+    refreshSelectedPanel();
+    updateEditModeButtons();
+    render();
+    return true;
+  } catch (error) {
+    if (request === furnitureSwapRequest) {
+      furnitureSwap.loading = false;
+      if (!previous) furnitureSwap = null;
+      refreshFurnitureLibraryPanel();
+      refreshSelectedPanel();
+      updateEditModeButtons();
+      setStatus(`试换失败：${error.message}，原家具已保留。`);
+    }
+    return false;
+  }
+}
+
+function cancelFurnitureSwap(redraw = true) {
+  furnitureSwapRequest += 1;
+  furnitureSwap = null;
+  if (redraw) {
+    refreshFurnitureLibraryPanel();
+    refreshSelectedPanel();
+    updateEditModeButtons();
+    render();
+    setStatus("已取消试换，保留原家具。");
+  }
+}
+
+function applyFurnitureSwap() {
+  if (!furnitureSwapIsCurrent() || !furnitureSwap.candidate || furnitureSwap.loading) return false;
+  const { original, candidate } = furnitureSwap;
+  commitHistory();
+  state.items[state.items.indexOf(original)] = candidate;
+  cancelFurnitureSwap(false);
+  refreshList();
+  refreshSelectedPanel();
+  refreshFurnitureLibraryPanel();
+  render();
+  commitHistory();
+  setStatus(`已替换为 ${candidate.name}，可用 Undo 恢复。`);
+  return true;
+}
+
+function requireFurnitureSwapDecision() {
+  if (!furnitureSwap) return false;
+  setStatus("请先应用或取消家具试换，再保存或导出布局。");
+  return true;
 }
 
 async function createFurnitureItemFromLibraryEntry(entry, placement = {}) {
@@ -2590,10 +2802,11 @@ function updateSpriteFrameOptions() {
   updateProjectSpriteMeta();
 }
 
-function initProjectSpriteControls() {
+function refreshProjectSpriteControls() {
   const speciesSelect = document.getElementById("spriteSpeciesSelect");
   const addButton = document.getElementById("addProjectSprite");
   const catalog = projectSpriteCatalog();
+  const previousSpecies = Number(speciesSelect.value);
   speciesSelect.innerHTML = "";
   for (const entry of catalog) {
     const option = document.createElement("option");
@@ -2606,13 +2819,20 @@ function initProjectSpriteControls() {
   document.getElementById("spriteActionSelect").disabled = empty;
   document.getElementById("spriteFrameSelect").disabled = empty;
   addButton.disabled = empty;
+  speciesSelect.value = String(catalog.find((entry) => entry.speciesId === previousSpecies)?.speciesId || catalog[0]?.speciesId || "");
+  updateSpriteActionOptions();
+}
+
+function initProjectSpriteControls() {
+  const speciesSelect = document.getElementById("spriteSpeciesSelect");
+  const addButton = document.getElementById("addProjectSprite");
   speciesSelect.addEventListener("change", updateSpriteActionOptions);
   document.getElementById("spriteActionSelect").addEventListener("change", updateSpriteFrameOptions);
   document.getElementById("spriteFrameSelect").addEventListener("change", updateProjectSpriteMeta);
   addButton.addEventListener("click", () => {
     addProjectSpritePreview();
   });
-  updateSpriteActionOptions();
+  refreshProjectSpriteControls();
 }
 
 async function addProjectSpritePreview() {
@@ -2621,7 +2841,8 @@ async function addProjectSpritePreview() {
   if (!entry || !frame) return;
   const loaded = await loadExportableImageSource(projectSpriteFrameSource(frame));
   const maxSize = 64;
-  const scale = Math.min(
+  const nativeSize = document.getElementById("spriteSizing").value === "native";
+  const scale = nativeSize ? 1 : Math.min(
     maxSize / Math.max(1, frame.width),
     maxSize / Math.max(1, frame.height)
   );
@@ -2638,6 +2859,8 @@ async function addProjectSpritePreview() {
     dataUrl: loaded.dataUrl,
     sourceWidth: frame.width,
     sourceHeight: frame.height,
+    groundOffsetY: frame.groundOffsetY,
+    nativeSize,
     x: Math.round(targetX),
     y: Math.round(targetY),
     scale,
@@ -2666,6 +2889,7 @@ async function addProjectSpritePreview() {
   };
   state.items.push(item);
   state.selectedId = item.id;
+  if (!state.preview.followId) state.preview.followId = item.id;
   state.selectedFaceId = null;
   state.selectedPointIndex = null;
   state.selectedPointId = null;
@@ -2686,12 +2910,18 @@ async function updateProjectSpriteFrame(item, speciesId, action, framePath) {
   const frame = entry.actions[action].find((f) => f.path === framePath);
   if (!frame) return;
   const loaded = await loadExportableImageSource(projectSpriteFrameSource(frame));
+  const ground = previewModel.ground(item);
   item.name = entry.name;
   item.fileName = frame.file;
   item.img = loaded.img;
   item.dataUrl = loaded.dataUrl;
   item.sourceWidth = frame.width;
   item.sourceHeight = frame.height;
+  item.groundOffsetY = frame.groundOffsetY;
+  if (item.nativeSize) item.scale = item.scaleX = item.scaleY = 1;
+  const nextGround = previewModel.ground(item);
+  item.x += ground.x - nextGround.x;
+  item.y += ground.y - nextGround.y;
   item.speciesId = speciesId;
   item.action = action;
   item.frame = frame.kindName;
@@ -2931,6 +3161,10 @@ function setItemAspectLocked(item, locked) {
 }
 
 function deleteItemById(itemId) {
+  if (furnitureSwapIsCurrent()) {
+    setStatus("请先应用或取消家具试换，再删除家具。");
+    return false;
+  }
   const item = state.items.find((value) => value.id === itemId);
   if (!item) return false;
 
@@ -2946,8 +3180,8 @@ function deleteItemById(itemId) {
   return true;
 }
 
-function sortedItems() {
-  return [...state.items].sort((a, b) => {
+function sortedItems(preview = false) {
+  return state.items.map((item) => preview ? furniturePreviewItem(item) : item).sort((a, b) => {
     if (a.z !== b.z) return a.z - b.z;
     const sortDiff = itemSortY(a) - itemSortY(b);
     if (sortDiff !== 0) return sortDiff;
@@ -4770,7 +5004,7 @@ function drawItemShadows(
   lightPoint,
   scale = 1,
   pointsForFace = (face) => face.points,
-  items = sortedItems()
+  items = sortedItems(true)
 ) {
   const faces = receivingShadowFaces();
   const projectionModel = roomProjectionModel(pointsForFace);
@@ -4813,7 +5047,7 @@ function drawItemShadows(
 
 function createItemShadowLayers(targetCtx, rectForItem, lightPoint, scale = 1, pointsForFace = (face) => face.points) {
   if (!state.night.castShadows) return [];
-  const casters = sortedItems().filter((item) =>
+  const casters = sortedItems(true).filter((item) =>
     itemVisibleInMode(item) &&
     itemCastsShadow(item) &&
     itemRenderOpacity(item) > 0 &&
@@ -4877,7 +5111,7 @@ function drawBase() {
   ctx.globalAlpha = 1;
 }
 
-function drawPreviewBackground() {
+function drawPreviewBackground(previewCtx) {
   previewCtx.clearRect(0, 0, state.width, state.height);
   previewCtx.fillStyle = "#05070c";
   previewCtx.fillRect(0, 0, state.width, state.height);
@@ -4947,17 +5181,21 @@ function drawReceiverShadows(
   targetCtx.restore();
 }
 
-function drawSceneItems(targetCtx, rectForItem, shadowLayers) {
-  const items = sortedItems().filter((item) => itemVisibleInMode(item));
+function drawSceneItems(targetCtx, rectForItem, shadowLayers, options = {}) {
+  let items = sortedItems(true).filter((item) => itemVisibleInMode(item));
+  if (options.furnitureOnly) items = items.filter((item) => item.source !== "project_sprite");
+  if (options.spritesOnly) items = items.filter((item) => item.source === "project_sprite");
+  if (options.spritesOnly) items.sort((a, b) => previewModel.ground(a).y - previewModel.ground(b).y);
   const receiverLayer = document.createElement("canvas");
   receiverLayer.width = targetCtx.canvas.width;
   receiverLayer.height = targetCtx.canvas.height;
   for (const item of items) {
-    const bounds = rectForItem(item);
+    const visual = options.animate ? animatedSpriteVisual(item) : item;
+    const bounds = rectForItem(visual);
     targetCtx.save();
     targetCtx.globalAlpha = itemRenderOpacity(item);
     targetCtx.imageSmoothingEnabled = false;
-    targetCtx.drawImage(item.img, bounds.x, bounds.y, bounds.w, bounds.h);
+    targetCtx.drawImage(visual.img, bounds.x, bounds.y, bounds.w, bounds.h);
     targetCtx.restore();
     drawReceiverShadows(targetCtx, item, bounds, shadowLayers, receiverLayer);
   }
@@ -5062,19 +5300,114 @@ function renderRoomGeometry(targetCtx, width, height) {
   }
 }
 
-function renderPreview() {
-  if (previewCanvas.width !== state.width || previewCanvas.height !== state.height) {
-    previewCanvas.width = state.width;
-    previewCanvas.height = state.height;
-  }
-  const lightPoint = activeLightPoint();
-  drawPreviewBackground();
-  const shadowLayers = createItemShadowLayers(previewCtx, itemBounds, lightPoint, 1, faceTargetPoints);
-  drawShadowLayers(previewCtx, shadowLayers);
-  drawSceneItems(previewCtx, itemBounds, shadowLayers);
+function previewSprites() {
+  return state.items.filter((item) => item.source === "project_sprite" && itemVisibleInMode(item));
+}
 
-  drawLightingOverlay(previewCtx, state.width, state.height, lightPoint, 1);
-  drawScreenFrame(previewCtx);
+function updatePreviewCamera() {
+  const prepared = preparedRoomMetrics();
+  const sprite = previewSprites().find((item) => item.id === state.preview.followId) || previewSprites()[0];
+  const ground = sprite ? previewModel.ground(sprite) : null;
+  const focus = state.preview.mode === "follow" && ground ? { x: ground.x, y: ground.actorY } : null;
+  Object.assign(state.preview, previewModel.camera(state.preview.device, prepared, state.preview, focus));
+}
+
+function syncPreviewControls() {
+  const sprites = previewSprites();
+  const select = document.getElementById("previewFollow");
+  const signature = JSON.stringify(sprites.map((item) => [item.id, item.name]));
+  if (select.dataset.signature !== signature) {
+    select.replaceChildren();
+    if (!sprites.length) select.add(new Option("先添加精灵预览", ""));
+    for (const item of sprites) select.add(new Option(`${item.name} (${item.id})`, item.id));
+    select.dataset.signature = signature;
+  }
+  if (!sprites.some((item) => item.id === state.preview.followId)) state.preview.followId = sprites[0]?.id || "";
+  select.value = state.preview.followId;
+  select.disabled = !sprites.length;
+  document.getElementById("previewDevice").value = state.preview.device;
+  document.getElementById("previewMode").value = state.preview.mode;
+  document.getElementById("previewEffect").value = state.preview.effect;
+  document.getElementById("previewGround").checked = state.preview.ground;
+  document.getElementById("showGuides").disabled = state.preview.device === "amoled";
+  const v = previewModel.viewport(state.preview.device);
+  const prepared = preparedRoomMetrics();
+  for (const axis of ["X", "Y"]) {
+    const input = document.getElementById(`previewCamera${axis}`);
+    input.value = state.preview[axis.toLowerCase()];
+    input.disabled = state.preview.mode === "follow";
+    input.min = axis === "Y" && state.preview.device === "amoled" ? prepared.y : 0;
+    input.max = Math.max(Number(input.min), axis === "X" ? prepared.width - v.width : prepared.y + prepared.height - v.height);
+  }
+  document.getElementById("previewDetails").textContent =
+    `可见房间 ${v.width}×${v.height} · 镜头 ${state.preview.x}, ${state.preview.y} · 资源倍率 ${previewModel.profile(state.preview.device).scale}×`;
+}
+
+function drawGroundGuides(targetCtx) {
+  for (const item of previewSprites()) {
+    const point = previewModel.ground(item);
+    targetCtx.save();
+    targetCtx.strokeStyle = "#f2bd72";
+    targetCtx.lineWidth = 1;
+    targetCtx.beginPath();
+    targetCtx.moveTo(point.x - 4, point.y); targetCtx.lineTo(point.x + 4, point.y);
+    targetCtx.moveTo(point.x, point.y - 4); targetCtx.lineTo(point.x, point.y + 4);
+    targetCtx.stroke();
+    targetCtx.restore();
+  }
+}
+
+function renderPreview({ helpers = true } = {}) {
+  updatePreviewCamera();
+  syncPreviewControls();
+  const scene = document.createElement("canvas");
+  scene.width = state.width;
+  scene.height = state.height;
+  const sceneCtx = scene.getContext("2d");
+  const lightPoint = activeLightPoint();
+  drawPreviewBackground(sceneCtx);
+  let shadowLayers = createItemShadowLayers(sceneCtx, itemBounds, lightPoint, 1, faceTargetPoints);
+  const firmware = state.preview.effect === "firmware";
+  if (firmware) shadowLayers = shadowLayers.filter(({ item }) => item.source !== "project_sprite");
+  drawShadowLayers(sceneCtx, shadowLayers);
+  drawSceneItems(sceneCtx, itemBounds, shadowLayers, { furnitureOnly: firmware, animate: true });
+  drawLightingOverlay(sceneCtx, state.width, state.height, lightPoint, 1);
+  if (firmware) drawSceneItems(sceneCtx, itemBounds, [], { spritesOnly: true, animate: true });
+  if (helpers && state.preview.ground) drawGroundGuides(sceneCtx);
+  const p = previewModel.profile(state.preview.device);
+  const fullRoom = state.preview.mode === "room";
+  const width = fullRoom ? state.width : p.width;
+  const height = fullRoom ? state.height : p.height;
+  if (previewCanvas.width !== width) previewCanvas.width = width;
+  if (previewCanvas.height !== height) previewCanvas.height = height;
+  previewCanvas.style.width = `${Math.min(PREVIEW_MAX_WIDTH, width)}px`;
+  previewCanvas.style.height = "auto";
+  previewCanvas.style.aspectRatio = `${width} / ${height}`;
+  previewCtx.imageSmoothingEnabled = false;
+  previewCtx.fillStyle = "#111318";
+  previewCtx.fillRect(0, 0, width, height);
+  if (fullRoom) {
+    previewCtx.drawImage(scene, 0, 0);
+    if (helpers) drawScreenFrame(previewCtx);
+  } else {
+    previewCtx.save();
+    previewCtx.beginPath();
+    previewCtx.rect(0, p.roomTop, p.width, p.roomHeight);
+    previewCtx.clip();
+    previewCtx.drawImage(scene, -state.preview.x * p.scale, p.roomTop - state.preview.y * p.scale,
+      scene.width * p.scale, scene.height * p.scale);
+    previewCtx.restore();
+    if (p.roomTop) {
+      previewCtx.fillStyle = "#222733";
+      previewCtx.fillRect(0, 0, p.width, p.roomTop);
+      previewCtx.fillRect(0, p.roomTop + p.roomHeight, p.width, p.height - p.roomTop - p.roomHeight);
+      previewCtx.fillStyle = "#a8b0bf";
+      previewCtx.font = "16px sans-serif";
+      previewCtx.fillText("顶部界面占位", 16, 30);
+      previewCtx.fillText("状态与操作区占位", 16, p.roomTop + p.roomHeight + 38);
+    }
+  }
+  updateCanvasSizeReadouts();
 }
 
 function angleToRad(angleDeg) {
@@ -5152,7 +5485,7 @@ function drawScreenFrame(targetCtx, toEdit = false) {
     targetCtx.fillRect(x + 3, y + 3, 55, 11);
     targetCtx.fillStyle = "rgba(255, 255, 255, 0.94)";
     targetCtx.font = "7px sans-serif";
-    targetCtx.fillText(`${GAME_SCREEN_WIDTH}x${GAME_SCREEN_HEIGHT}`, x + 6, y + 11);
+    targetCtx.fillText(`${frame.w}x${frame.h}`, x + 6, y + 11);
   }
   targetCtx.restore();
 }
@@ -5299,7 +5632,7 @@ function drawGrid() {
 }
 
 function drawGuides() {
-  if (!state.guides.show) return;
+  if (!state.guides.show || state.preview.device === "amoled") return;
   ctx.save();
   ctx.lineWidth = 1;
   ctx.setLineDash([3, 2]);
@@ -5326,7 +5659,8 @@ function drawGuides() {
 }
 
 function drawSelection() {
-  const item = selectedItem();
+  const selected = selectedItem();
+  const item = selected ? furniturePreviewItem(selected) : null;
   if (!item) return;
   const b = itemBounds(item);
   const editBounds = targetRectToEdit(b.x, b.y, b.w, b.h);
@@ -5487,10 +5821,12 @@ function drawMeasureOverlay() {
 }
 
 function render() {
+  syncFurnitureLibrarySelection();
   state.width = GAME_SCREEN_WIDTH;
   state.height = Math.max(GAME_SCREEN_HEIGHT, Number(document.getElementById("canvasH").value) || GAME_SCREEN_HEIGHT);
   state.baseFit = BASE_FIT_WIDTH;
   syncCanvasSizeToPreparedRoom();
+  updatePreviewCamera();
   state.baseOpacity = (Number(document.getElementById("baseOpacity").value) || 0) / 100;
   state.sourceScale = Number(document.getElementById("sourceScale").value) || 1;
   state.furnitureImportMode = document.getElementById("furnitureImportMode").value;
@@ -5542,6 +5878,7 @@ function render() {
   updateMeasurePanel();
   updateWorkflowStatus();
   updateSharedPointHint();
+  updateProjectSceneMeta();
 }
 
 function refreshList() {
@@ -5791,6 +6128,7 @@ function refreshSelectedPanel() {
     return;
   }
 
+  const trialLocked = Boolean(furnitureSwapIsCurrent() && furnitureSwap.original === item);
   const isSprite = item.source === "project_sprite";
   normalizeItemSemantics(item);
   const furnitureTypeOptions = FURNITURE_TYPES.map((type) => (
@@ -5850,8 +6188,12 @@ function refreshSelectedPanel() {
       </div>
     `
     : '<div class="hint">No wall faces yet. Add wall faces in Shape mode to target wall shadows.</div>';
-  let html = `
-    <details class="property-group" open>
+  let html = `${trialLocked ? `
+    <div class="trial-lock-notice" role="status">
+      正在试换：${escapeHtml(item.name)}。属性和画布编辑已锁定，请先应用替换或取消试换。
+    </div>
+  ` : ""}
+  <details class="property-group" open>
       <summary>
         <span>Basic</span>
         <span class="section-meta">${Math.round(bounds.w)}x${Math.round(bounds.h)}</span>
@@ -5881,6 +6223,7 @@ function refreshSelectedPanel() {
           ` : ""}
         </div>
         ${isSprite ? '<div id="itemSizeHint" class="hint compact-source-meta"></div>' : ""}
+        ${isSprite ? '<button id="spriteNativeSize" type="button">恢复真机尺寸</button><div class="hint">按资源像素摆放；微雪设备预览统一放大 2 倍。十字标记为脚底锚点。</div>' : ""}
       </div>
     </details>
   `;
@@ -6004,25 +6347,45 @@ function refreshSelectedPanel() {
           <label class="field">Sort Y<input id="itemSortY" type="number" value="${Math.round(itemSortY(item))}"></label>
         </div>
         ${!isSprite ? `
-          <label class="check-row"><input id="itemOccludesSprite" type="checkbox" ${item.occludesSprite ? "checked" : ""}> Occlude sprite</label>
+          <label class="check-row"><input id="itemOccludesSprite" type="checkbox" ${item.occludesSprite ? "checked" : ""}> Occlude sprite（标注）</label>
         ` : ""}
-        <div class="hint">Z controls the main draw order. Items with the same Z use Sort Y, normally the object's bottom edge.</div>
+        <div class="hint">编辑合成按 Z 和 Sort Y 排序。当前固件将家具烘焙到背景，此处遮挡标注尚不提供动态家具遮挡。</div>
       </div>
     </details>
   `;
 
   selectedPanel.innerHTML = html;
+  if (trialLocked) {
+    for (const control of selectedPanel.querySelectorAll("input, select, textarea, button")) {
+      control.disabled = true;
+    }
+  }
 
   document.getElementById("shadowAdvancedGroup")?.addEventListener("toggle", () => render());
 
   if (isSprite) {
     bindSpriteSelectorInputs(item);
+    document.getElementById("spriteNativeSize").addEventListener("click", () => {
+      const ground = previewModel.ground(item);
+      item.scale = item.scaleX = item.scaleY = 1;
+      item.aspectLocked = item.nativeSize = true;
+      const next = previewModel.ground(item);
+      item.x += ground.x - next.x;
+      item.y += ground.y - next.y;
+      item.sortY = autoSortY(item);
+      refreshSelectedPanel();
+      refreshList();
+      render();
+      commitHistory();
+    });
   }
 
   const bind = (id, fn) => {
     const input = document.getElementById(id);
     if (!input) return;
     input.addEventListener("input", () => {
+      if (trialLocked) return;
+      if (isSprite && ["itemW", "itemH", "itemScale"].includes(id)) item.nativeSize = false;
       fn(input);
       refreshList();
       render();
@@ -6053,6 +6416,7 @@ function refreshSelectedPanel() {
     const input = document.getElementById(id);
     if (!input) return;
     input.addEventListener("input", () => {
+      if (trialLocked) return;
       fn(input);
       item.sortY = autoSortY(item);
       updateSizeFields(id);
@@ -6935,11 +7299,12 @@ function toggleRoomFaceDrawing() {
 function updateEditModeButtons() {
   const isFurniture = state.editMode === "furniture";
   const hasSelectedItem = Boolean(selectedItem());
+  const trialLocked = furnitureSwapIsCurrent();
   document.getElementById("furnitureMode").classList.toggle("active", isFurniture);
   document.getElementById("shapeMode").classList.toggle("active", !isFurniture);
 
-  document.getElementById("duplicateItem").disabled = !isFurniture || !hasSelectedItem;
-  document.getElementById("deleteItem").disabled = !isFurniture || !hasSelectedItem;
+  document.getElementById("duplicateItem").disabled = !isFurniture || !hasSelectedItem || trialLocked;
+  document.getElementById("deleteItem").disabled = !isFurniture || !hasSelectedItem || trialLocked;
   syncInspectorWorkflow();
   updateRoomFaceAddButton();
 }
@@ -6977,9 +7342,66 @@ function updatePreviewZoom() {
   previewCanvas.classList.toggle("zoomed", state.previewZoomed);
 }
 
+function animatedSpriteVisual(item) {
+  if (!previewAnimationTimer || item.source !== "project_sprite") return item;
+  const entry = projectSpriteCatalog().find((value) => value.speciesId === item.speciesId);
+  const group = String(item.frame || "").replace(/_\d+$/, "");
+  const frames = (entry?.actions?.[item.action] || []).filter((frame) => frame.kindName.replace(/_\d+$/, "") === group);
+  if (frames.length < 2) return item;
+  const delay = item.action === "walking" ? 180 : item.action === "sleeping" ? 700 : 520;
+  const frame = frames[Math.floor(performance.now() / delay) % frames.length];
+  const key = `${item.speciesId}:${frame.kindName}`;
+  if (!previewAnimationImages.has(key)) {
+    previewAnimationImages.set(key, null);
+    const generation = previewAnimationGeneration;
+    loadImageSource(projectSpriteFrameSource(frame)).then((img) => {
+      if (generation === previewAnimationGeneration) previewAnimationImages.set(key, img);
+    }).catch((error) => {
+      if (generation !== previewAnimationGeneration) return;
+      stopPreviewAnimation();
+      setStatus(`精灵动画加载失败：${error.message}`);
+    });
+  }
+  const img = previewAnimationImages.get(key);
+  if (!img) return item;
+  const visual = { ...item, img, sourceWidth: frame.width, sourceHeight: frame.height, groundOffsetY: frame.groundOffsetY };
+  const ground = previewModel.ground(item);
+  const nextGround = previewModel.ground(visual);
+  visual.x += ground.x - nextGround.x;
+  visual.y += ground.y - nextGround.y;
+  return visual;
+}
+
+function stopPreviewAnimation() {
+  clearInterval(previewAnimationTimer);
+  previewAnimationTimer = null;
+  previewAnimationGeneration += 1;
+  previewAnimationImages.clear();
+  document.getElementById("previewPlay").checked = false;
+}
+
+function projectSaveKey(snapshot = takeSnapshot()) {
+  const content = { ...snapshot };
+  for (const key of ["selectedId", "selectedFaceId", "selectedPointId", "selectedPointIndex",
+    "expandedFaceIds", "draftExpanded", "editZoom", "showProjectionGuides", "mode", "lightProfile", "preview", "projectScene"]) {
+    delete content[key];
+  }
+  return JSON.stringify(content, (key, value) => key === "img" ? undefined : value);
+}
+
+function updateProjectSaveState() {
+  const key = projectSaveKey();
+  if (savedProjectKey === null) savedProjectKey = key;
+  projectDirty = key !== savedProjectKey;
+  const label = document.getElementById("projectSaveState");
+  label.textContent = projectDirty ? `${projectSaveLabel} · 有未保存修改` : projectSaveLabel;
+  label.classList.toggle("dirty", projectDirty);
+}
+
 function updateUndoButtons() {
   document.getElementById("undoAction").disabled = state.historyIndex <= 0;
   document.getElementById("redoAction").disabled = state.historyIndex >= state.history.length - 1;
+  updateProjectSaveState();
 }
 
 function takeSnapshot() {
@@ -6998,6 +7420,8 @@ function takeSnapshot() {
     editWidth: state.editWidth,
     editHeight: state.editHeight,
     editZoom: state.editZoom,
+    preview: { ...state.preview },
+    projectScene: state.projectScene ? JSON.parse(JSON.stringify(state.projectScene)) : null,
     pointCoordinateSpace: "edit",
     mode: state.mode,
     lightProfile: state.lightProfile,
@@ -7419,6 +7843,9 @@ async function hydrateSessionSnapshot(snapshot) {
 
   const hydratedItems = await Promise.all((hydrated.items || []).map(async (item) => {
     const next = { ...item };
+    if (!next.dataUrl && next.source === "project_sprite") {
+      next.dataUrl = projectSpriteFrameSource(projectSpriteFrameForItem(next));
+    }
     if (!next.dataUrl) {
       const libraryEntry = (next.libraryId ? furnitureLibraryEntryById(next.libraryId) : null) ||
         furnitureLibraryEntryByItemReference(next);
@@ -7441,6 +7868,7 @@ async function hydrateSessionSnapshot(snapshot) {
     next.scaleX = next.scaleX ?? next.scale ?? 1;
     next.scaleY = next.scaleY ?? next.scale ?? 1;
     next.aspectLocked = next.aspectLocked ?? Math.abs(next.scaleX - next.scaleY) < 0.0001;
+    restoreProjectSpriteGround(next);
     if (next.source === "furniture") {
       next.furnitureType = normalizeFurnitureType(next.furnitureType || inferFurnitureType(next.fileName || next.name));
     }
@@ -7473,6 +7901,8 @@ function sessionSavedAtLabel(record) {
 }
 
 async function saveEditorSession(options = {}) {
+  if (requireFurnitureSwapDecision()) return;
+  const saveKey = projectSaveKey();
   const record = createSessionRecord();
   let exportResult = "";
   try {
@@ -7485,12 +7915,28 @@ async function saveEditorSession(options = {}) {
       exportResult = `export failed: ${error.message || error}`;
     }
   }
-  const draftBackend = await saveSessionRecord(record);
+  const fileSaved = exportResult === "downloaded" || exportResult.startsWith("updated ");
+  let draftBackend;
+  let draftSaved = true;
+  try {
+    draftBackend = await saveSessionRecord(record);
+  } catch (error) {
+    console.warn("Browser draft save failed.", error);
+    draftBackend = `unavailable: ${error.message || error}`;
+    draftSaved = false;
+  }
+  if (fileSaved) {
+    savedProjectKey = saveKey;
+    projectSaveLabel = exportResult === "downloaded" ? "工程备份已下载" : "工程已保存";
+  } else {
+    projectSaveLabel = draftSaved ? "仅浏览器草稿，工程文件未保存" : "工程文件和浏览器草稿均未保存";
+  }
+  updateProjectSaveState();
   const itemCount = record.snapshot.items?.length || 0;
   const dayName = record.files.backgrounds?.day || record.files.base || "no day background";
   const nightName = record.files.backgrounds?.night || "no night background";
   updateSessionExportMeta(`Last save: project ${exportResult}; draft ${draftBackend}.`);
-  setStatus(`Session saved: project ${exportResult}; draft ${draftBackend}; day ${dayName}, night ${nightName}, ${itemCount} item(s).`);
+  setStatus(`Session ${fileSaved || draftSaved ? "saved" : "save failed"}: project ${exportResult}; draft ${draftBackend}; day ${dayName}, night ${nightName}, ${itemCount} item(s).`);
 }
 
 async function loadEditorSession() {
@@ -7507,12 +7953,13 @@ async function loadEditorSession() {
     setStatus("No saved session found.");
     return;
   }
-  await restoreSessionRecord(draftSession.record);
+  await restoreSessionRecord(draftSession.record, { draft: true });
   updateSessionExportMeta(`Recovered ${draftSession.backend} saved at ${sessionSavedAtLabel(draftSession.record)}. Save session to update the project session JSON.`);
   setStatus(`Unsaved draft recovered from ${draftSession.backend}.`);
 }
 
-async function restoreSessionRecord(record) {
+async function restoreSessionRecord(record, { draft = false } = {}) {
+  stopPreviewAnimation();
   const snapshot = await hydrateSessionSnapshot(record.snapshot);
   restoreSnapshot(snapshot);
   state.drawingFace = false;
@@ -7520,6 +7967,9 @@ async function restoreSessionRecord(record) {
   state.historyIndex = -1;
   refreshAfterStateRestore();
   commitHistory();
+  savedProjectKey = draft ? "" : projectSaveKey();
+  projectSaveLabel = draft ? "已恢复浏览器草稿，工程文件未保存" : "工程已载入";
+  updateProjectSaveState();
 }
 
 async function tryAutoLoadEditorSession() {
@@ -7548,6 +7998,7 @@ async function clearEditorSession() {
 }
 
 function restoreSnapshot(snapshot) {
+  cancelFurnitureSwap(false);
   const legacySourceCoordinateSpace =
     Number(snapshot.editWidth || 0) > Math.max(GAME_SCREEN_WIDTH * 1.5, Number(snapshot.width || 0) * 1.5);
   const pointCoordinateSpace = snapshot.pointCoordinateSpace || (legacySourceCoordinateSpace ? "source" : "target");
@@ -7563,6 +8014,15 @@ function restoreSnapshot(snapshot) {
   state.editHeight = snapshot.editHeight;
   state.editZoom = normalizedEditZoom(snapshot.editZoom == null ? 100 : Number(snapshot.editZoom) <= 3 ? Number(snapshot.editZoom) * 100 : snapshot.editZoom);
   state.mode = snapshot.mode;
+  state.projectScene = snapshot.projectScene || null;
+  const preview = snapshot.preview || {};
+  state.preview = {
+    device: preview.device === "amoled" ? "amoled" : "sticks3",
+    mode: ["room", "device", "follow"].includes(preview.mode) ? preview.mode : "room",
+    effect: preview.effect === "firmware" ? "firmware" : "composition",
+    x: Number(preview.x) || 0, y: Number(preview.y) || 0,
+    followId: String(preview.followId || ""), ground: preview.ground !== false
+  };
   state.lightProfile = currentLightProfile();
   state.backgroundItems = Array.isArray(snapshot.backgroundItems)
     ? snapshot.backgroundItems.map((background, index) => ({
@@ -7586,6 +8046,7 @@ function restoreSnapshot(snapshot) {
     day: snapshot.backgrounds?.day || snapshot.base || null,
     night: snapshot.backgrounds?.night || null
   };
+  state.base = snapshot.base ? { ...snapshot.base } : null;
   setLegacyBaseFromBackgrounds();
   state.baseFit = BASE_FIT_WIDTH;
   state.baseOpacity = snapshot.baseOpacity;
@@ -7594,7 +8055,7 @@ function restoreSnapshot(snapshot) {
   state.furnitureImportMode = snapshot.furnitureImportMode;
   state.aspectLocked = snapshot.aspectLocked;
   state.aspectRatio = snapshot.aspectRatio;
-  state.items = (snapshot.items || []).map((item) => ({ ...item }));
+  state.items = (snapshot.items || []).map((item) => restoreProjectSpriteGround({ ...item }));
   state.selectedId = snapshot.selectedId;
   state.nextId = snapshot.nextId;
   state.points = Array.from(pointMap.values());
@@ -7668,6 +8129,7 @@ function commitHistory() {
 }
 
 function undo() {
+  if (furnitureSwap) { cancelFurnitureSwap(); return; }
   if (state.historyIndex <= 0) return;
   state.historyIndex -= 1;
   restoreSnapshot(state.history[state.historyIndex]);
@@ -7683,6 +8145,7 @@ function undo() {
 }
 
 function redo() {
+  if (furnitureSwap) { cancelFurnitureSwap(); return; }
   if (state.historyIndex >= state.history.length - 1) return;
   state.historyIndex += 1;
   restoreSnapshot(state.history[state.historyIndex]);
@@ -8084,7 +8547,7 @@ function resetPreviewCanvasBitmap() {
 async function downloadCanvas(fileName) {
   await ensureExportablePreviewImages();
   resetPreviewCanvasBitmap();
-  renderPreview();
+  renderPreview({ helpers: false });
   try {
     const blob = await canvasToPngBlob(previewCanvas);
     downloadBlob(fileName, blob);
@@ -8097,23 +8560,20 @@ async function downloadCanvas(fileName) {
       .slice(0, 3);
     const blockedText = blockedItems.length ? ` Non-exportable image: ${blockedItems.join(", ")}.` : "";
     setStatus(`Preview PNG export failed. Reload the editor and retry; if it still fails, re-import path-based images.${blockedText}`);
+  } finally {
+    renderPreview();
   }
 }
 
-async function importLayout(file) {
+async function importLayout(file, { history = true, projectScene = null } = {}) {
   const text = await file.text();
   const layout = JSON.parse(text);
   if (layout.type === "stickmon-room-editor-session" || layout.snapshot) {
-    const snapshot = await hydrateSessionSnapshot(layout.snapshot || layout);
-    restoreSnapshot(snapshot);
-    state.drawingFace = false;
-    state.history = [];
-    state.historyIndex = -1;
-    refreshAfterStateRestore();
-    commitHistory();
+    await restoreSessionRecord({ snapshot: layout.snapshot || layout });
     setStatus(`Session file loaded: ${file.name}.`);
     return;
   }
+  state.projectScene = projectScene;
   if (layout.canvas) {
     document.getElementById("canvasW").value = GAME_SCREEN_WIDTH;
     document.getElementById("canvasH").value = Math.max(GAME_SCREEN_HEIGHT, layout.canvas.height || 135);
@@ -8289,7 +8749,7 @@ async function importLayout(file) {
   refreshFaceList();
   refreshSelectedFacePanel();
   render();
-  commitHistory();
+  if (history) commitHistory();
 }
 
 function escapeHtml(value) {
@@ -8348,6 +8808,43 @@ for (const id of ["baseOpacity", "sourceScale", "furnitureImportMode", "baseFit"
     commitHistory();
   });
 }
+
+for (const id of ["previewDevice", "previewMode", "previewEffect", "previewFollow", "previewGround", "previewCameraX", "previewCameraY"]) {
+  document.getElementById(id).addEventListener("change", (event) => {
+    const value = event.target.value;
+    if (id === "previewDevice") {
+      state.preview.device = value;
+      state.preview.x = state.preview.y = 0;
+      if (state.preview.mode === "room") state.preview.mode = "device";
+    }
+    if (id === "previewMode") state.preview.mode = value;
+    if (id === "previewEffect") state.preview.effect = value;
+    if (id === "previewFollow") state.preview.followId = value;
+    if (id === "previewGround") state.preview.ground = event.target.checked;
+    if (id === "previewCameraX") state.preview.x = Number(value) || 0;
+    if (id === "previewCameraY") state.preview.y = Number(value) || 0;
+    render();
+    commitHistory();
+  });
+}
+
+document.getElementById("previewPlay").addEventListener("change", (event) => {
+  if (!event.target.checked) {
+    stopPreviewAnimation();
+    renderPreview();
+    return;
+  }
+  previewAnimationTimer = window.setInterval(() => {
+    if (!document.hidden) renderPreview();
+  }, 120);
+  renderPreview();
+});
+
+window.addEventListener("beforeunload", (event) => {
+  if (!projectDirty) return;
+  event.preventDefault();
+  event.returnValue = "";
+});
 
 document.getElementById("dayMode").addEventListener("click", () => {
   commitLightInputsToState();
@@ -8448,6 +8945,7 @@ document.getElementById("undoAction").addEventListener("click", undo);
 document.getElementById("redoAction").addEventListener("click", redo);
 
 document.getElementById("exportJson").addEventListener("click", () => {
+  if (requireFurnitureSwapDecision()) return;
   downloadText("room_layout.json", JSON.stringify(exportLayoutObject(), null, 2), "application/json");
   setStatus("Layout JSON exported: room_layout.json. It includes roomGeometry.");
 });
@@ -8457,7 +8955,7 @@ document.getElementById("exportGeometry")?.addEventListener("click", () => {
 });
 
 document.getElementById("exportPreview").addEventListener("click", async () => {
-  await downloadCanvas(`room_${state.mode}_preview.png`);
+  await downloadCanvas(`room_${state.mode}_${state.preview.mode}_${state.preview.device}.png`);
 });
 
 document.getElementById("exportFurnitureLibrary")?.addEventListener("click", () => {
@@ -8501,6 +8999,10 @@ document.getElementById("saveSession").addEventListener("click", async () => {
   }
 });
 
+document.getElementById("loadProjectScene").addEventListener("click", async () => {
+  await loadCurrentProjectScene();
+});
+
 document.getElementById("changeSessionFile").addEventListener("click", async () => {
   try {
     await saveEditorSession({ forcePick: true });
@@ -8541,7 +9043,10 @@ document.getElementById("deleteItem").addEventListener("click", () => {
 
 document.getElementById("duplicateItem").addEventListener("click", () => {
   const item = selectedItem();
-  if (!item) return;
+  if (!item || furnitureSwapIsCurrent()) {
+    if (furnitureSwapIsCurrent()) setStatus("请先应用或取消家具试换，再复制家具。");
+    return;
+  }
   const copy = { ...item, id: `f${state.nextId++}`, name: `${item.name}_copy`, x: item.x + 4, y: item.y + 4 };
   copy.sortY = autoSortY(copy);
   state.items.push(copy);
@@ -8561,6 +9066,11 @@ canvas.addEventListener("pointerdown", (event) => {
     canvas.setPointerCapture(event.pointerId);
     updateMeasurePanel();
     render();
+    return;
+  }
+
+  if (furnitureSwapIsCurrent()) {
+    setStatus("请先应用或取消家具试换，再编辑家具。");
     return;
   }
 
@@ -8733,6 +9243,11 @@ canvas.addEventListener("pointerup", finishCanvasDrag);
 canvas.addEventListener("pointercancel", finishCanvasDrag);
 
 window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && furnitureSwap) {
+    cancelFurnitureSwap();
+    event.preventDefault();
+    return;
+  }
   if (event.key === "Escape" && state.previewZoomed) {
     state.previewZoomed = false;
     updatePreviewZoom();
@@ -8899,11 +9414,123 @@ function refreshInitialEmptyEditor() {
   render();
 }
 
+function updateProjectSceneMeta() {
+  const meta = document.getElementById("projectSceneMeta");
+  const source = state.projectScene;
+  if (!source) {
+    meta.textContent = projectSceneMessage;
+    return;
+  }
+  const room = source.compiledRoom;
+  meta.textContent = `工程源：${source.layout} · 资源包 ${source.packId}` +
+    (room ? ` · 固件房间 ${room.width}×${room.height} / 素材 ${room.artWidth}×${room.artHeight}` : "") +
+    (source.warnings?.length ? `。${source.warnings.join(" ")}` : "");
+}
+
+async function applyProjectScene(payload) {
+  if (payload?.type !== "stickmon-project-scene" || payload.version !== 1 || !payload.layout ||
+      !Array.isArray(payload.backgroundItems) || !payload.backgroundItems.length ||
+      !Array.isArray(payload.items) || !Array.isArray(payload.sprites) || !payload.devices || !payload.source?.layout) {
+    throw new Error("工程场景数据不完整。");
+  }
+  const layout = payload.layout;
+  const next = createSessionSnapshot();
+  Object.assign(next, {
+    width: layout.canvas?.width || GAME_SCREEN_WIDTH,
+    height: layout.canvas?.height || GAME_SCREEN_HEIGHT,
+    base: null, backgrounds: { day: null, night: null }, backgroundItems: payload.backgroundItems,
+    items: payload.items, points: [], faces: [], draftPoints: [], drawingFace: false,
+    selectedId: null, selectedFaceId: null, selectedPointId: null, selectedPointIndex: null,
+    expandedFaceIds: [], nextFaceId: 1, nextPointId: 1,
+    projectScene: null,
+    baseTrim: coerceTrimBox(layout.roomGeometry?.prepared?.trim || layout.base?.trim),
+    sourceScale: layout.sourceScale || 1, baseOpacity: layout.baseOpacity ?? 1,
+    mode: normalizeBackgroundMode(layout.backgrounds?.activeMode || "day"),
+    night: normalizeNightSettings(layout.night || DEFAULT_NIGHT),
+    guides: { ...state.guides, ...layout.guides },
+    preview: { ...state.preview, x: 0, y: 0, followId: "" }
+  });
+  next.nextId = Math.max(1, ...next.items.map((item) => (Number(String(item.id).match(/(\d+)$/)?.[1]) || 0) + 1));
+  next.nextBackgroundId = Math.max(1, ...next.backgroundItems.map((item) => (Number(String(item.id).match(/(\d+)$/)?.[1]) || 0) + 1));
+  // Decode every image before replacing any editable state.
+  const hydrated = await hydrateSessionSnapshot(next);
+  const previous = takeSnapshot();
+  const previousProfiles = previewModel.profiles;
+  const previousCatalog = window.STICKMON_PROJECT_SPRITES;
+  const previousHistory = state.history.slice();
+  const previousHistoryIndex = state.historyIndex;
+  try {
+    previewModel.configure(payload.devices);
+    commitHistory();
+    stopPreviewAnimation();
+    restoreSnapshot(hydrated);
+    syncInputsFromState();
+    const source = { ...payload.source, warnings: payload.warnings || [] };
+    await importLayout({ name: payload.source.layout,
+      text: async () => JSON.stringify({ ...layout, furniture: hydrated.items }) },
+      { history: false, projectScene: source });
+    if (!previous.backgroundItems?.length && !previous.base) {
+      const area = canvas.parentElement?.getBoundingClientRect();
+      if (area?.width && area?.height) {
+        const fit = Math.min((area.width - 36) / state.editWidth, (area.height - 36) / state.editHeight, 1);
+        setEditZoom(Math.max(25, Math.floor(fit * 4) * 25));
+      }
+    }
+    window.STICKMON_PROJECT_SPRITES = payload.sprites;
+    refreshProjectSpriteControls();
+    commitHistory();
+    savedProjectKey = projectSaveKey();
+    projectSaveLabel = "当前工程场景已载入";
+    updateProjectSaveState();
+    updateProjectSceneMeta();
+  } catch (error) {
+    previewModel.configure(previousProfiles);
+    window.STICKMON_PROJECT_SPRITES = previousCatalog;
+    restoreSnapshot(previous);
+    state.history = previousHistory;
+    state.historyIndex = previousHistoryIndex;
+    refreshAfterStateRestore();
+    throw error;
+  }
+}
+
+async function loadCurrentProjectScene({ automatic = false } = {}) {
+  if (!/^https?:$/.test(window.location?.protocol || "")) {
+    projectSceneMessage = "读取当前工程：请运行 python3 tools/room_editor/serve.py，并使用它打开的页面。";
+    updateProjectSceneMeta();
+    if (!automatic) setStatus(projectSceneMessage);
+    return false;
+  }
+  const button = document.getElementById("loadProjectScene");
+  button.disabled = true;
+  document.getElementById("projectSceneMeta").textContent = "正在读取当前工程场景与固件配置…";
+  try {
+    const response = await fetch("/api/project-scene", { cache: "no-store" });
+    if (automatic && response.status === 404) {
+      projectSceneMessage = "当前服务未提供工程读取接口。请使用 python3 tools/room_editor/serve.py 启动。";
+      updateProjectSceneMeta();
+      return false;
+    }
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+    await applyProjectScene(payload);
+    setStatus(`已载入当前工程：${payload.backgroundItems.length} 个背景、${payload.items.length} 件家具、${state.faces.length} 个区域、${payload.sprites.length} 种精灵。重新载入前的场景可用 Undo 恢复。`);
+    return true;
+  } catch (error) {
+    projectSceneMessage = `工程场景载入失败：${error.message}`;
+    document.getElementById("projectSceneMeta").textContent = projectSceneMessage;
+    setStatus(projectSceneMessage);
+    return false;
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function initializeEditor() {
   setupHoverTooltips();
   initProjectSpriteControls();
   initFurnitureLibraryControls();
-  const loaded = await tryAutoLoadEditorSession();
+  const loaded = await loadCurrentProjectScene({ automatic: true }) || await tryAutoLoadEditorSession();
   if (!loaded) refreshInitialEmptyEditor();
   setupLeftPanelState();
 }

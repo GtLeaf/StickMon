@@ -62,18 +62,32 @@ areas on AMOLED V1/V2.
     roaming or change map coordinates. All new phases freeze during pause;
     unknown species remain habitat hints until revealed.
 
-15. When either member is visible in the active preview pool, Breloom/Shroomish
-    or Marill/Azurill may spawn as an adult/young pair with a 50% eligibility
-    roll. The explicit family table may supply the other member even when it
-    is absent from the pool. At most one pair occupies the map's two existing
-    ecology slots. A family with an explicitly hidden pool member is ineligible;
-    grouping shall never reveal that member. The active encounter pool and
-    encounter history remain unchanged.
-16. Pairs shall share a trail validated for both species, with a delayed young
-    follower, occasional looks, adult waiting and brief reunions at destinations
+15. When any member is visible in the active preview pool, the explicit
+    adult/young families may spawn with one overall 50% eligibility roll.
+    Families are Breloom/Shroomish, Azumarill/Marill/Azurill, Furret/Sentret,
+    Mightyena/Poochyena, Quagsire/Wooper, Camerupt/Numel, Pidgeotto/Pidgey,
+    Gardevoir/Ralts and Pikachu/Pichu. Multiple eligible families shall be
+    sampled uniformly without replacement until safe placement is found.
+    The explicit family table may supply missing members even when they are
+    absent from the pool. When selected, the Marill family chooses one member
+    with 30% probability, two with 45%, or all three with 25%. Each single
+    has 10% probability and each pair 15%. A solo uses independent behavior;
+    pairs/triples follow in evolution order. At most one selected family uses
+    its exact chosen slot count, with no additional independent actors. A family
+    with an explicitly hidden pool member is ineligible; selection shall never
+    reveal that member. The active encounter pool and history remain unchanged.
+16. Families shall share a trail validated for every member, with delayed
+    followers, occasional looks, adult waiting and brief reunions at destinations
     or after 15-25 active seconds. A nearby player makes the adult face them and the young
     close the gap. Routes may vary at reunions without teleporting or crossing
     obstacles; unsuitable habitat falls back to ordinary independent actors.
+    When all three appear, Azumarill leads Marill and Azurill in that order.
+    Each follower follows the preceding member, waits for the younger one, and retains a safe gap
+    through turns, gathering and player reactions. Replanning preserves all
+    three anchors. Any visible member requests the foreground update cadence.
+    Composition is fixed at map entry. If the chosen group lacks a safe trail,
+    try other compositions of that size, then fewer members, down to one safe
+    actor. Hidden-member exclusion applies before composition selection.
     Existing sprite size, ground anchors, cover, pause and redraw rules apply.
 17. Groups shall walk toward varied destinations, preferring targets 4-7 safe
     steps away and avoiding recent stopping places. They shall continue from

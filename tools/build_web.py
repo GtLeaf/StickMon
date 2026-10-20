@@ -39,7 +39,7 @@ def stage_resources(target, stage):
                         str(data / "packs/dev/game/ui.smonfx"),
                         str(data / "packs/dev/game/ui_amoled.smonfx")], check=True)
     # Only runtime files; exclude source PNGs and unused target-specific UI packs.
-    extensions = {".json", ".smonsp", ".smonroom", ".smonfx", ".smonfont", ".smonaudio", ".smoncry"}
+    extensions = {".json", ".smonsp", ".smonroom", ".smonfurn", ".smonfx", ".smonfont", ".smonaudio", ".smoncry"}
     for source in sorted(data.rglob("*")):
         if not source.is_file() or source.suffix not in extensions:
             continue

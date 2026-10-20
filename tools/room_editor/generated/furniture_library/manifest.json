@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-07-09T14:07:20.458780Z",
+  "generatedAt": "2026-10-18T09:29:50.389689+00:00",
   "items": [
     {
       "id": "furniture_furniture_0001_shelf",
@@ -434,6 +434,597 @@
       "cutoutApplied": false,
       "annotated": true,
       "image": "images/furniture_window_night.png",
+      "revision": 1
+    },
+    {
+      "id": "furniture_rug_forest_leaf",
+      "name": "森林叶片地毯",
+      "category": "decoration",
+      "tags": [
+        "decoration",
+        "rug",
+        "floor",
+        "generated",
+        "forest-leaf"
+      ],
+      "fileName": "rug-forest-leaf.png",
+      "sourceWidth": 204,
+      "sourceHeight": 100,
+      "defaultScale": 0.5,
+      "defaultScaleX": 0.5,
+      "defaultScaleY": 0.5,
+      "targetWidth": 102,
+      "targetHeight": 50,
+      "sourceScale": 2,
+      "furnitureType": "decoration",
+      "kind": "rug",
+      "heightPx": 0,
+      "footprint": "polygon",
+      "footprintPolygon": [],
+      "shadowPolygon": [],
+      "shadowAnchor": "auto",
+      "shadowFaceIds": [],
+      "wallShadowDepthPx": 0,
+      "wallShadowOffsetY": 0,
+      "castsShadow": false,
+      "shadowOpacity": 53,
+      "shadowLength": 22,
+      "shadowBlur": 0.0,
+      "receivesShadow": true,
+      "occludesSprite": false,
+      "visibleInDay": true,
+      "visibleInNight": true,
+      "slot": "floor",
+      "layer": "floor",
+      "cutoutApplied": false,
+      "annotated": true,
+      "image": "images/furniture_rug_forest_leaf.png",
+      "revision": 1
+    },
+    {
+      "id": "furniture_rug_starry_night",
+      "name": "星月夜空地毯",
+      "category": "decoration",
+      "tags": [
+        "decoration",
+        "rug",
+        "floor",
+        "generated",
+        "starry-night"
+      ],
+      "fileName": "rug-starry-night.png",
+      "sourceWidth": 204,
+      "sourceHeight": 100,
+      "defaultScale": 0.5,
+      "defaultScaleX": 0.5,
+      "defaultScaleY": 0.5,
+      "targetWidth": 102,
+      "targetHeight": 50,
+      "sourceScale": 2,
+      "furnitureType": "decoration",
+      "kind": "rug",
+      "heightPx": 0,
+      "footprint": "polygon",
+      "footprintPolygon": [],
+      "shadowPolygon": [],
+      "shadowAnchor": "auto",
+      "shadowFaceIds": [],
+      "wallShadowDepthPx": 0,
+      "wallShadowOffsetY": 0,
+      "castsShadow": false,
+      "shadowOpacity": 53,
+      "shadowLength": 22,
+      "shadowBlur": 0.0,
+      "receivesShadow": true,
+      "occludesSprite": false,
+      "visibleInDay": true,
+      "visibleInNight": true,
+      "slot": "floor",
+      "layer": "floor",
+      "cutoutApplied": false,
+      "annotated": true,
+      "image": "images/furniture_rug_starry_night.png",
+      "revision": 1
+    },
+    {
+      "id": "furniture_rug_cloud",
+      "name": "蓝天白云地毯",
+      "category": "decoration",
+      "tags": [
+        "decoration",
+        "rug",
+        "floor",
+        "generated",
+        "cloud"
+      ],
+      "fileName": "rug-cloud.png",
+      "sourceWidth": 204,
+      "sourceHeight": 100,
+      "defaultScale": 0.5,
+      "defaultScaleX": 0.5,
+      "defaultScaleY": 0.5,
+      "targetWidth": 102,
+      "targetHeight": 50,
+      "sourceScale": 2,
+      "furnitureType": "decoration",
+      "kind": "rug",
+      "heightPx": 0,
+      "footprint": "polygon",
+      "footprintPolygon": [],
+      "shadowPolygon": [],
+      "shadowAnchor": "auto",
+      "shadowFaceIds": [],
+      "wallShadowDepthPx": 0,
+      "wallShadowOffsetY": 0,
+      "castsShadow": false,
+      "shadowOpacity": 53,
+      "shadowLength": 22,
+      "shadowBlur": 0.0,
+      "receivesShadow": true,
+      "occludesSprite": false,
+      "visibleInDay": true,
+      "visibleInNight": true,
+      "slot": "floor",
+      "layer": "floor",
+      "cutoutApplied": false,
+      "annotated": true,
+      "image": "images/furniture_rug_cloud.png",
+      "revision": 1
+    },
+    {
+      "id": "furniture_bed_forest_leaf",
+      "name": "森林叶片床铺",
+      "category": "bed",
+      "tags": [
+        "bed",
+        "bed_sofa",
+        "floor",
+        "main",
+        "generated",
+        "forest-leaf"
+      ],
+      "fileName": "bed-forest-leaf.png",
+      "sourceWidth": 160,
+      "sourceHeight": 102,
+      "defaultScale": 0.5,
+      "defaultScaleX": 0.5,
+      "defaultScaleY": 0.5,
+      "targetWidth": 80,
+      "targetHeight": 51,
+      "sourceScale": 2,
+      "furnitureType": "bed",
+      "kind": "bed_sofa",
+      "heightPx": 34,
+      "footprint": "ellipse",
+      "footprintPolygon": [
+        [
+          0.07,
+          0.62
+        ],
+        [
+          0.17,
+          0.53
+        ],
+        [
+          0.32,
+          0.47
+        ],
+        [
+          0.5,
+          0.45
+        ],
+        [
+          0.69,
+          0.48
+        ],
+        [
+          0.84,
+          0.55
+        ],
+        [
+          0.94,
+          0.66
+        ],
+        [
+          0.91,
+          0.82
+        ],
+        [
+          0.76,
+          0.94
+        ],
+        [
+          0.55,
+          0.99
+        ],
+        [
+          0.34,
+          0.97
+        ],
+        [
+          0.15,
+          0.86
+        ]
+      ],
+      "shadowPolygon": [
+        [
+          0.02,
+          0.34
+        ],
+        [
+          0.08,
+          0.22
+        ],
+        [
+          0.24,
+          0.1
+        ],
+        [
+          0.49,
+          0.02
+        ],
+        [
+          0.75,
+          0.09
+        ],
+        [
+          0.92,
+          0.24
+        ],
+        [
+          0.99,
+          0.43
+        ],
+        [
+          0.96,
+          0.66
+        ],
+        [
+          0.86,
+          0.82
+        ],
+        [
+          0.67,
+          0.96
+        ],
+        [
+          0.5,
+          1
+        ],
+        [
+          0.3,
+          0.96
+        ],
+        [
+          0.12,
+          0.82
+        ],
+        [
+          0.03,
+          0.62
+        ]
+      ],
+      "shadowAnchor": "floor",
+      "shadowFaceIds": [],
+      "wallShadowDepthPx": 0,
+      "wallShadowOffsetY": 0,
+      "castsShadow": true,
+      "shadowOpacity": 53,
+      "shadowLength": 7,
+      "shadowBlur": 0.8,
+      "receivesShadow": true,
+      "occludesSprite": true,
+      "visibleInDay": true,
+      "visibleInNight": true,
+      "slot": "floor",
+      "layer": "main",
+      "cutoutApplied": false,
+      "annotated": true,
+      "image": "images/furniture_bed_forest_leaf.png",
+      "revision": 1
+    },
+    {
+      "id": "furniture_bed_starry_night",
+      "name": "星月夜空床铺",
+      "category": "bed",
+      "tags": [
+        "bed",
+        "bed_sofa",
+        "floor",
+        "main",
+        "generated",
+        "starry-night"
+      ],
+      "fileName": "bed-starry-night.png",
+      "sourceWidth": 160,
+      "sourceHeight": 102,
+      "defaultScale": 0.5,
+      "defaultScaleX": 0.5,
+      "defaultScaleY": 0.5,
+      "targetWidth": 80,
+      "targetHeight": 51,
+      "sourceScale": 2,
+      "furnitureType": "bed",
+      "kind": "bed_sofa",
+      "heightPx": 34,
+      "footprint": "ellipse",
+      "footprintPolygon": [
+        [
+          0.07,
+          0.62
+        ],
+        [
+          0.17,
+          0.53
+        ],
+        [
+          0.32,
+          0.47
+        ],
+        [
+          0.5,
+          0.45
+        ],
+        [
+          0.69,
+          0.48
+        ],
+        [
+          0.84,
+          0.55
+        ],
+        [
+          0.94,
+          0.66
+        ],
+        [
+          0.91,
+          0.82
+        ],
+        [
+          0.76,
+          0.94
+        ],
+        [
+          0.55,
+          0.99
+        ],
+        [
+          0.34,
+          0.97
+        ],
+        [
+          0.15,
+          0.86
+        ]
+      ],
+      "shadowPolygon": [
+        [
+          0.02,
+          0.34
+        ],
+        [
+          0.08,
+          0.22
+        ],
+        [
+          0.24,
+          0.1
+        ],
+        [
+          0.49,
+          0.02
+        ],
+        [
+          0.75,
+          0.09
+        ],
+        [
+          0.92,
+          0.24
+        ],
+        [
+          0.99,
+          0.43
+        ],
+        [
+          0.96,
+          0.66
+        ],
+        [
+          0.86,
+          0.82
+        ],
+        [
+          0.67,
+          0.96
+        ],
+        [
+          0.5,
+          1
+        ],
+        [
+          0.3,
+          0.96
+        ],
+        [
+          0.12,
+          0.82
+        ],
+        [
+          0.03,
+          0.62
+        ]
+      ],
+      "shadowAnchor": "floor",
+      "shadowFaceIds": [],
+      "wallShadowDepthPx": 0,
+      "wallShadowOffsetY": 0,
+      "castsShadow": true,
+      "shadowOpacity": 53,
+      "shadowLength": 7,
+      "shadowBlur": 0.8,
+      "receivesShadow": true,
+      "occludesSprite": true,
+      "visibleInDay": true,
+      "visibleInNight": true,
+      "slot": "floor",
+      "layer": "main",
+      "cutoutApplied": false,
+      "annotated": true,
+      "image": "images/furniture_bed_starry_night.png",
+      "revision": 1
+    },
+    {
+      "id": "furniture_bed_cloud",
+      "name": "蓝天白云床铺",
+      "category": "bed",
+      "tags": [
+        "bed",
+        "bed_sofa",
+        "floor",
+        "main",
+        "generated",
+        "cloud"
+      ],
+      "fileName": "bed-cloud.png",
+      "sourceWidth": 160,
+      "sourceHeight": 102,
+      "defaultScale": 0.5,
+      "defaultScaleX": 0.5,
+      "defaultScaleY": 0.5,
+      "targetWidth": 80,
+      "targetHeight": 51,
+      "sourceScale": 2,
+      "furnitureType": "bed",
+      "kind": "bed_sofa",
+      "heightPx": 34,
+      "footprint": "ellipse",
+      "footprintPolygon": [
+        [
+          0.07,
+          0.62
+        ],
+        [
+          0.17,
+          0.53
+        ],
+        [
+          0.32,
+          0.47
+        ],
+        [
+          0.5,
+          0.45
+        ],
+        [
+          0.69,
+          0.48
+        ],
+        [
+          0.84,
+          0.55
+        ],
+        [
+          0.94,
+          0.66
+        ],
+        [
+          0.91,
+          0.82
+        ],
+        [
+          0.76,
+          0.94
+        ],
+        [
+          0.55,
+          0.99
+        ],
+        [
+          0.34,
+          0.97
+        ],
+        [
+          0.15,
+          0.86
+        ]
+      ],
+      "shadowPolygon": [
+        [
+          0.02,
+          0.34
+        ],
+        [
+          0.08,
+          0.22
+        ],
+        [
+          0.24,
+          0.1
+        ],
+        [
+          0.49,
+          0.02
+        ],
+        [
+          0.75,
+          0.09
+        ],
+        [
+          0.92,
+          0.24
+        ],
+        [
+          0.99,
+          0.43
+        ],
+        [
+          0.96,
+          0.66
+        ],
+        [
+          0.86,
+          0.82
+        ],
+        [
+          0.67,
+          0.96
+        ],
+        [
+          0.5,
+          1
+        ],
+        [
+          0.3,
+          0.96
+        ],
+        [
+          0.12,
+          0.82
+        ],
+        [
+          0.03,
+          0.62
+        ]
+      ],
+      "shadowAnchor": "floor",
+      "shadowFaceIds": [],
+      "wallShadowDepthPx": 0,
+      "wallShadowOffsetY": 0,
+      "castsShadow": true,
+      "shadowOpacity": 53,
+      "shadowLength": 7,
+      "shadowBlur": 0.8,
+      "receivesShadow": true,
+      "occludesSprite": true,
+      "visibleInDay": true,
+      "visibleInNight": true,
+      "slot": "floor",
+      "layer": "main",
+      "cutoutApplied": false,
+      "annotated": true,
+      "image": "images/furniture_bed_cloud.png",
       "revision": 1
     }
   ]

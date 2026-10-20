@@ -84,12 +84,25 @@ void drawHeaderButton(Canvas565& canvas, int x, bool pressed, int height) {
                          rgb(67, 97, 101));
 }
 
+void drawBackChevron(Canvas565& canvas, int x, int centerY, int halfHeight,
+                     uint16_t color) {
+    // Match the reference SVG's 45-degree arms, bevelled ends and 69:257
+    // inner-tip inset / half-height ratio, rounded to native pixels.
+    if (halfHeight <= 0) return;
+    const int inset = std::max(1, (halfHeight * 69 + 128) / 257);
+    for (int dy = -halfHeight; dy <= halfHeight; ++dy) {
+        const int distance = dy < 0 ? -dy : dy;
+        const int right = std::min(distance + inset, 2 * halfHeight - distance);
+        canvas.drawFastHLine(x + distance, centerY + dy,
+                             right - distance + 1, color);
+    }
+}
+
 void drawBackIcon(Canvas565& canvas, int height) {
     drawHeaderButton(canvas, 0, false, height);
-    const uint16_t color = rgb(222, 234, 229);
+    const uint16_t color = rgb(255, 255, 255);
     const int centerY = height / 2;
-    canvas.drawLine(32, centerY - 10, 18, centerY, color);
-    canvas.drawLine(18, centerY, 32, centerY + 10, color);
+    drawBackChevron(canvas, 18, centerY, 12, color);
 }
 
 void drawHeader(Canvas565& canvas, int height, bool backButton) {
@@ -121,9 +134,8 @@ void drawPageHeader(Canvas565& canvas, const char* title,
     if (backButton) {
         canvas.fillCircle(backCenterX, centerY, 26, rgb(27, 43, 51));
         canvas.drawCircle(backCenterX, centerY, 26, rgb(67, 97, 101));
-        const uint16_t backColor = rgb(235, 183, 239);
-        canvas.drawLine(47, centerY - 14, 29, centerY, backColor);
-        canvas.drawLine(29, centerY, 47, centerY + 14, backColor);
+        const uint16_t backColor = rgb(255, 255, 255);
+        drawBackChevron(canvas, 29, centerY, 16, backColor);
     }
 
     const int right = AmoledUi::WIDTH - rightPadding;

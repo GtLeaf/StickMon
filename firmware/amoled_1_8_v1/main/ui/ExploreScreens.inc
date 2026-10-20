@@ -312,6 +312,7 @@ void renderExploreRouteScreen(Canvas565& canvas,
             drawExploreRouteMapLayer(canvas, model, mapCache, top, bottom);
             drawExploreRoutePickup(canvas, model);
             if (model.map->areaIndex == ExploreMapGenerator::TALL_GRASS_PARK_AREA ||
+                model.map->areaIndex == ExploreMapGenerator::FROST_CRYSTAL_CAVE_AREA ||
                 model.wildlifeCount > 0) {
                 drawExploreRouteParkActors(canvas, model, top, bottom);
             } else {

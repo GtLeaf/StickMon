@@ -2,12 +2,11 @@
 
 import unittest
 from pathlib import Path
+from amoled_source import read_app_source
 
 
 ROOT = Path(__file__).resolve().parents[1]
-APP = (ROOT / "firmware/amoled_1_8_v1/main/AmoledApp.cpp").read_text(
-    encoding="utf-8"
-)
+APP = read_app_source(ROOT)
 HEADER = (ROOT / "firmware/amoled_1_8_v1/main/AmoledApp.h").read_text(
     encoding="utf-8"
 )
@@ -185,7 +184,7 @@ class AmoledHomeBehaviorTests(unittest.TestCase):
             "PAIR_INTERACTION_MIN_INTERVAL_MS = 90000UL",
             "PAIR_INTERACTION_MAX_INTERVAL_MS = 180000UL",
             "Home::ActorController::pairActivity(",
-            "homeRuntime.beginPair(pairActivity, nowMs)",
+            "homeRuntime.beginPair(state_.activity, nowMs)",
             "homeRuntime.advanceRoute(\n                0,",
             "homeRuntime.advanceRoute(\n                1,",
             "PokemonSprites::frameVisibleWidth(frame)",
@@ -199,21 +198,21 @@ class AmoledHomeBehaviorTests(unittest.TestCase):
             "uint32_t pairApproachBudgetMs(const Home::Actor& actor)",
             "index < actor.route.count",
             "routeDistance += std::hypot",
-            "pairPhaseUntilMs = nowMs + pairApproachBudgetMs(movingActor);",
+            "state_.phaseUntilMs = nowMs + pairApproachBudgetMs(movingActor);",
             "goalDistance <= PAIR_APPROACH_GOAL_TOLERANCE",
-            '"[FriendDiag] talk approach-near-goal',
+            'Trace::NEAR_GOAL',
         ):
             self.assertIn(token, APP)
 
     def test_pair_talk_moves_both_actors_to_fixed_points_together(self):
         for token in (
-            "pairTalkParallelApproach = true",
-            "pairTalkMainApproachSpeed",
-            "pairTalkCompanionApproachSpeed",
+            "state_.parallelApproach = true",
+            "state_.mainApproachSpeed",
+            "state_.companionApproachSpeed",
             "sharedDurationSeconds",
-            "0, nowMs, std::max(0.1f, pairTalkMainApproachSpeed)",
-            "std::max(0.1f, pairTalkCompanionApproachSpeed)",
-            '"[FriendDiag] talk positioned kind=%u parallel=1',
+            "0, nowMs, std::max(0.1f, state_.mainApproachSpeed)",
+            "std::max(0.1f, state_.companionApproachSpeed)",
+            '"[FriendDiag] talk positioned kind=%u parallel=%u',
             '"[FriendDiag] talk approach-parallel kind=%u',
             '"[FriendDiag] talk active kind=%u',
         ):
@@ -227,28 +226,28 @@ class AmoledHomeBehaviorTests(unittest.TestCase):
             "void AmoledApp::beginVisitorExit(uint32_t nowMs",
             "room.doorwayInsideX()",
             "room.doorwayOutsideX()",
-            "void AmoledApp::finishVisitorExit(uint32_t nowMs)",
+            "void AmoledApp::finishVisitorExit(uint32_t nowMs, bool debugVisitor)",
         ):
             self.assertIn(token, APP)
-        self.assertIn("VisitorMotion visitorMotion", HEADER)
+        self.assertIn("VisitorFlow visitorFlow_", HEADER)
+        self.assertIn("VisitAwayFlow visitAwayFlow_", HEADER)
 
     def test_visitor_exit_route_advances_walk_presentation(self):
-        start = APP.index(
-            "if (visitorMotion == VisitorMotion::EXITING && !visitorCrossingDoor)"
-        )
-        end = APP.index("const float targetX", start)
-        route = APP[start:end]
+        flow = (ROOT / "firmware/amoled_1_8_v1/main/app/VisitorFlow.cpp").read_text()
+        start = flow.index("if (state_.motion == Motion::EXITING && !state_.crossingDoor)")
+        end = flow.index("const float targetX", start)
+        route = flow[start:end]
         for token in (
             "const float previousX = homeCompanionActor.x;",
             "const float movedX = homeCompanionActor.x - previousX;",
-            "companionDirection = petDirectionForDelta(movedX, movedY);",
-            "++companionFrame;",
-            "nextCompanionFrameMs = nowMs + MOTION_FRAME_MS;",
+            "face(1, movedX, movedY);",
+            "effects_.frameMask |= 2;",
             "outsideX - homeCompanionActor.x",
-            '"frame=%u dir=%u moved=%u\\n"',
+            "damageActor(1, previousY);",
         ):
             self.assertIn(token, route)
-        self.assertIn('"[FriendDiag] visitor-exit cross kind=%u', APP)
+        self.assertIn("effects.frameMask & 2", APP)
+        self.assertIn("++companionFrame; nextCompanionFrameMs = nowMs + MOTION_FRAME_MS;", APP)
 
     def test_temporary_visitors_are_always_removed_from_saves(self):
         self.assertIn("Game::GameState persistentState = gameState;", APP)
@@ -263,33 +262,33 @@ class AmoledHomeBehaviorTests(unittest.TestCase):
             "ATTENTION_INITIAL_MIN_MS = 25000UL",
             "ATTENTION_MIN_MS = 90000UL",
             "SPECIAL_ACTION_MIN_MS = 20000UL",
-            "RoomAction::LOOK_AROUND",
-            "RoomAction::QUIET_GAZE",
-            "RoomAction::DASH",
-            "RoomAction::STEP_BACK",
-            "RoomAction::CIRCLE",
-            "RoomAction::WINDOW_APPROACH",
+            "Action::LOOK_AROUND",
+            "Action::QUIET_GAZE",
+            "Action::DASH",
+            "Action::STEP_BACK",
+            "Action::CIRCLE",
+            "Action::WINDOW_APPROACH",
             "Home::Task::ROOM_ACTION",
             "RoomResource::BehaviorAnchorType::WINDOW_GAZE",
         ):
             self.assertIn(token, APP)
-        self.assertIn("RoomAction roomAction", HEADER)
+        self.assertIn("HomeFlow homeFlow_", HEADER)
 
     def test_environment_actions_yield_to_survival_and_pair_rules(self):
         self.assertIn(
-            "if (roomAction != RoomAction::NONE && urgentNeed)", APP
+            "if (homeFlow_.state().action != RoomAction::NONE && urgentNeed)", APP
         )
         self.assertIn("cancelRoomAction(nowMs);", APP)
-        self.assertIn("roomAction != RoomAction::NONE ||", APP)
+        self.assertIn("homeFlow_.state().action != RoomAction::NONE ||", APP)
 
     def test_window_gaze_and_exploration_timestamps_are_persisted(self):
         self.assertIn("gameState.team[0].lastWindowGazeAt =", APP)
         self.assertIn("gameState.team[slot].lastExploredAt = exploredAt;", APP)
-        self.assertIn("saveState();\n        return;\n    case RoomAction::CIRCLE", APP)
+        self.assertIn("effects_.save = true;\n        return;\n    case Action::CIRCLE", APP)
 
     def test_transient_home_actions_are_normalized_before_save(self):
         for token in (
-            "const bool transientMain = roomAction != RoomAction::NONE",
+            "const bool transientMain = homeFlow_.state().action != RoomAction::NONE",
             "homeMainActor.task == Home::Task::PAIR_ACTION",
             "homeMainActor.task == Home::Task::DOOR_ACTION",
             "storedMotion == PetMotion::EATING",

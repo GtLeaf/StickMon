@@ -31,7 +31,7 @@ from generate_map_rule_preview import (
 from map_generation_rules import CUSTOM_TILE_SOURCES, CUSTOM_TILE_SOURCE_FLIP_Y, CUSTOM_TILE_SOURCE_ROTATIONS
 
 
-ALGORITHM_VERSION = 18
+ALGORITHM_VERSION = 21
 MASK32 = 0xFFFFFFFF
 MAX_PATH_POINTS = 48
 PATH_COUNT = 2
@@ -108,6 +108,11 @@ STREAM_BOTTOM_OUTER_RIGHT_TILE = 4401
 STREAM_BOTTOM_INNER_LEFT_TILE = 4402
 STREAM_BOTTOM_INNER_RIGHT_TILE = 4403
 
+CLIFF_SIDE_LEFT_TILE = 1176
+CLIFF_SIDE_RIGHT_TILE = 1178
+CLIFF_TOP_LEFT_TILE = 1187
+CLIFF_TOP_TILE = 1188
+CLIFF_TOP_RIGHT_TILE = 1189
 CLIFF_LEFT_TILE = 1184
 CLIFF_FACE_TILE = 1185
 CLIFF_RIGHT_TILE = 1186
@@ -268,6 +273,7 @@ class RoutePath:
     points: list[tuple[int, int]]
     exit: Endpoint
     falls_to_next_level: bool = False
+    cell_centered: bool = False
 
 
 @dataclass
@@ -1467,6 +1473,54 @@ def build_topology(seed, entry_edge, coast_chance):
     return entry, junction, paths, has_coast, road
 
 
+def creek_has_terrace(seed, style):
+    return XorShift32(seed ^ 0x7C34A921).bounded(100) < (0, 25, 45, 100)[style]
+
+
+def build_creek_terrace_topology(seed, entry_edge):
+    rng = XorShift32(seed ^ 0xB531D7A9)
+    mirror = entry_edge == Edge.LEFT
+    if entry_edge in (Edge.TOP, Edge.BOTTOM):
+        mirror = bool(rng.bounded(2))
+    river_left = 10 + rng.bounded(2)
+    width = 3 + rng.bounded(2 if river_left == 10 else 1)
+    bridge_y = 4 + rng.bounded(2) * 2
+    side = 5 + rng.bounded(river_left - 9)
+    stair_x = 1 + rng.bounded(side - 3)
+    top = 3 + rng.bounded(3)
+    turn_y = top + 4
+    corridor_x = river_left - 3
+    if mirror:
+        stair_x = MAP_W - 2 - stair_x
+        corridor_x = MAP_W - 2 - corridor_x
+        cliff = CliffSpec(top, MAP_W - 1 - side, MAP_W, stair_x)
+        creek = CreekSpec(MAP_W - river_left - width, width, bridge_y)
+    else:
+        cliff = CliffSpec(top, 0, side + 1, stair_x)
+        creek = CreekSpec(river_left, width, bridge_y)
+    side_edge = Edge.LEFT if mirror else Edge.RIGHT
+    ports = [Endpoint((stair_x, 0), Edge.TOP),
+             Endpoint((0 if mirror else MAP_W - 1, bridge_y), side_edge),
+             Endpoint((corridor_x, MAP_H - 1), Edge.BOTTOM)]
+    junction = (corridor_x, turn_y)
+    arms = []
+    for port in ports:
+        points = [port.point]
+        if port.edge == Edge.TOP:
+            append_line(points, stair_x, turn_y)
+        elif port.edge == side_edge:
+            append_line(points, corridor_x, bridge_y)
+        append_line(points, *junction)
+        arms.append(points)
+    entry_index = next(i for i, port in enumerate(ports) if port.edge == entry_edge)
+    paths = [RoutePath(arms[entry_index] + list(reversed(arms[i]))[1:], port)
+             for i, port in enumerate(ports) if i != entry_index]
+    validate_topology(paths, junction)
+    road = build_road(paths)
+    validate_border_road(ports[entry_index], paths, road)
+    return ports[entry_index], junction, paths, False, road, creek, cliff
+
+
 def build_ancient_waterfall_topology(entry_edge):
     layouts = {
         Edge.BOTTOM: (
@@ -1601,7 +1655,7 @@ def creek_style(seed):
     return XorShift32(seed ^ 0x91E10DA5).bounded(4)
 
 
-def creek_layout_candidates(road, creek, style, paths=()):
+def creek_layout_candidates(road, creek, style):
     base = (creek.left, creek.width)
     if style == 0:
         return [(base,) * MAP_H]
@@ -1644,19 +1698,8 @@ def creek_layout_candidates(road, creek, style, paths=()):
                             for x in range(creek.left, creek.left + creek.width)}
                 if not water & road <= crossing:
                     continue
-                if style == 3:
-                    bridge = {(x, y) for y in (creek.bridge_top, creek.bridge_top + 1)
-                              for x in range(creek.left - 1, creek.left + creek.width + 1)}
-                    if not cliff_candidates(road, water, bridge, creek_envelope(rows), paths):
-                        continue
                 candidates.append(rows)
     return candidates
-
-
-def creek_envelope(rows):
-    left = min(l for l, _w in rows)
-    width = max(l + w for l, w in rows) - left
-    return StreamShape(left, width, left, width, 0)
 
 
 def stamp_creek_layout(runtime_map, rows):
@@ -1688,73 +1731,38 @@ def stamp_bridge(runtime_map, creek):
     return bridge
 
 
-def cliff_landing_fits(paths, stair_left, stair_y):
-    for path in paths:
-        for index, (x, y) in enumerate(path.points):
-            if y != stair_y or not stair_left <= x < stair_left + 2:
-                continue
-            if index < 2 or index + 2 >= len(path.points):
-                return False
-            for offset in (1, 2):
-                before, after = path.points[index - offset], path.points[index + offset]
-                if (before[0] != x or after[0] != x
-                        or abs(before[1] - y) != offset
-                        or before[1] + after[1] != y * 2):
-                    return False
-    return True
-
-
-def cliff_candidates(road, water, bridge, shape, paths=()):
-    minimum_left = min(shape.upstream_left, shape.downstream_left)
-    maximum_right = max(
-        shape.upstream_left + shape.upstream_width,
-        shape.downstream_left + shape.downstream_width,
-    )
-    candidates = []
-    for left, right in ((0, minimum_left), (maximum_right, MAP_W)):
-        if right - left < 5:
-            continue
-        for top in range(1, MAP_H - 2):
-            cliff = {(x, y) for x in range(left, right) for y in (top, top + 1)}
-            if cliff & (water | bridge):
-                continue
-            for stair_left in range(left + 1, right - 2):
-                stairs = {
-                    (x, y)
-                    for x in (stair_left, stair_left + 1)
-                    for y in (top, top + 1)
-                }
-                vertical_approach = {
-                    (x, y)
-                    for x in (stair_left, stair_left + 1)
-                    for y in (top - 1, top + 2, top + 3)
-                }
-                if (
-                    stairs <= road
-                    and vertical_approach <= road
-                    and (road & cliff) <= stairs
-                    and cliff_landing_fits(paths, stair_left, top + 1)
-                ):
-                    candidates.append(CliffSpec(top, left, right, stair_left))
-    return candidates
+def cliff_footprint(spec):
+    side = spec.right - 1 if spec.left == 0 else spec.left
+    return ({(side, y) for y in range(spec.top)} |
+            {(x, y) for x in range(spec.left, spec.right)
+             for y in (spec.top, spec.top + 1)})
 
 
 def stamp_cliff(runtime_map, spec):
-    cliff = set()
+    # Original Route 2 has 1188 above 1185 and two rows of 1161/1162.
+    cliff = cliff_footprint(spec)
     stairs = set()
-    y = spec.top + 1
-    for x in range(spec.left, spec.right):
-        point = (x, y)
-        cliff.add(point)
-        if spec.stair_left <= x < spec.stair_left + 2:
-            runtime_map.layers[0][y * MAP_W + x] = (
-                CLIFF_STAIR_LEFT_TILE if x == spec.stair_left else CLIFF_STAIR_RIGHT_TILE)
-            stairs.add(point)
-        else:
-            runtime_map.layers[1][y * MAP_W + x] = (
-                CLIFF_LEFT_TILE if x == spec.left and spec.left > 0 else
-                CLIFF_RIGHT_TILE if x + 1 == spec.right and spec.right < MAP_W else
-                CLIFF_FACE_TILE)
+    right_side = spec.left == 0
+    side = spec.right - 1 if right_side else spec.left
+    for y in range(spec.top):
+        runtime_map.layers[1][y * MAP_W + side] = (
+            CLIFF_SIDE_RIGHT_TILE if right_side else CLIFF_SIDE_LEFT_TILE)
+    for y in (spec.top, spec.top + 1):
+        for x in range(spec.left, spec.right):
+            cell = y * MAP_W + x
+            if spec.stair_left <= x < spec.stair_left + 2:
+                runtime_map.layers[0][cell] = (
+                    CLIFF_STAIR_LEFT_TILE if x == spec.stair_left else CLIFF_STAIR_RIGHT_TILE)
+                stairs.add((x, y))
+            elif x == side:
+                runtime_map.layers[1][cell] = (
+                    (CLIFF_TOP_RIGHT_TILE if right_side else CLIFF_TOP_LEFT_TILE)
+                    if y == spec.top else
+                    (CLIFF_RIGHT_TILE if right_side else CLIFF_LEFT_TILE))
+            elif y == spec.top:
+                runtime_map.layers[0][cell] = CLIFF_TOP_TILE
+            else:
+                runtime_map.layers[1][cell] = CLIFF_FACE_TILE
     return cliff, stairs
 
 
@@ -1955,6 +1963,60 @@ def route_crosses_ice_straight(runtime_map, path):
     return True
 
 
+FROST_ROUTE_TILES = (4780, 4781, 4782, 4783, 4784, 4785, 4786, 4787, 4788, 4789, 4790, 4791, 4792, 4501, 4793, 4794)
+
+
+def frost_route_tile(route, x, y):
+    mask = sum(bit for dx, dy, bit in ((0, -1, 1), (-1, 0, 2), (0, 1, 4), (1, 0, 8))
+               if (x + dx, y + dy) in route)
+    return FROST_ROUTE_TILES[mask]
+
+
+def frost_scenery(runtime_map, floor, walls, route, seed):
+    rng = XorShift32(seed ^ 0xA5F1537D)
+    occupied = set(walls)
+    portals = {runtime_map.entry.point, *(path.exit.point for path in runtime_map.paths)}
+    small_clearance = route | expanded(portals | {runtime_map.junction})
+    tall_clearance = expanded(route) | small_clearance
+    target = max(8, min(12, len(floor) // 10))
+    tiles = (4508, 4509, 4508, 4507, 4544, 4510, 4507, 4544, 4542, 4507, 4510, 4544)
+    anchors = []
+    for ordinal, tile in enumerate(tiles[:target]):
+        tall = tile in (4508, 4509)
+        clearance = tall_clearance if tall else small_clearance
+        def cells(x, y):
+            return {(x, y), (x, y - 1)} if tall else {(x, y)}
+        def fits(x, y):
+            footprint = cells(x, y)
+            return (footprint <= floor and not footprint & (occupied | clearance)
+                    and all(runtime_map.layers[0][py * MAP_W + px] not in SMOOTH_ICE_TILE_IDS
+                            for px, py in footprint))
+        def score(x, y):
+            wall = any((x + dx, y + dy) in walls
+                       for dx in (-1, 0, 1) for dy in (-1, 0, 1))
+            if tall:
+                separation = min((abs(x - ax) + abs(y - ay) for ax, ay in anchors), default=8)
+                return min(8, separation) * 4 + int(wall) * 6
+            adjacent = any(max(abs(x - ax), abs(y - ay)) <= 1 for ax, ay in anchors)
+            nearby = sum(abs(x - ax) + abs(y - ay) <= 3 for ax, ay in anchors)
+            return int(adjacent) * 24 + int(wall) * 8 - nearby * 8
+        candidates = [(x, y) for x in range(1, MAP_W - 1) for y in range(1, MAP_H - 1)
+                      if fits(x, y)]
+        if not candidates:
+            if ordinal < 2:
+                raise ValueError("frost scenery has no safe complete footprint")
+            continue
+        best = max(score(x, y) for x, y in candidates)
+        candidates = [(x, y) for x, y in candidates if score(x, y) == best]
+        x, y = candidates[rng.bounded(len(candidates))]
+        runtime_map.layers[1][y * MAP_W + x] = tile
+        if tall:
+            runtime_map.layers[2][(y - 1) * MAP_W + x] = 4541 if tile == 4508 else 4543
+        occupied.update(cells(x, y))
+        anchors.append((x, y))
+    return occupied
+
+
 def generate_frost_cave_map(seed, entry_edge, level=0, level_count=1, entered_by_ladder=False):
     if level_count == 0 or not 0 <= level < level_count:
         raise ValueError("invalid frost cave level")
@@ -1973,7 +2035,7 @@ def generate_frost_cave_map(seed, entry_edge, level=0, level_count=1, entered_by
     for index, control_points in enumerate(spec["routes"]):
         points = expand_frost_route(control_points, mirror_x, mirror_y)
         append_line(points, *exits[index].point)
-        paths.append(RoutePath(points, exits[index]))
+        paths.append(RoutePath(points, exits[index], cell_centered=True))
     if level > 0:
         for path in paths:
             while len(path.points) > 2 and not frost_interior(path.points[0]):
@@ -2090,56 +2152,11 @@ def generate_frost_cave_map(seed, entry_edge, level=0, level_count=1, entered_by
         for path in paths
         for point in path.points
     }
-    blocked = set(walls)
-    hill_origin = spec["rock_hill"]
-    if hill_origin is not None:
-        first = transform_frost_point(hill_origin, mirror_x, mirror_y)
-        last = transform_frost_point(
-            (hill_origin[0] + 2, hill_origin[1] + 2),
-            mirror_x,
-            mirror_y,
-        )
-        hill_left = min(first[0], last[0])
-        hill_top = min(first[1], last[1])
-        hill_cells = {
-            (hill_left + column, hill_top + row)
-            for row in range(3)
-            for column in range(3)
-        }
-        if not hill_cells <= floor or hill_cells & blocked or hill_cells & route_cells:
-            raise ValueError("transparent frost rock hill overlaps blocked terrain")
-        for row, tile_row in enumerate(FROST_ROCK_HILL_TILES):
-            for column, tile_id in enumerate(tile_row):
-                x = hill_left + column
-                y = hill_top + row
-                runtime_map.layers[1][y * MAP_W + x] = tile_id
-        blocked.update(hill_cells)
-
-    for x, y, tile_id in spec["crystals"]:
-        x, y = transform_frost_point((x, y), mirror_x, mirror_y)
-        if (x, y) in blocked or (x, y) in route_cells or y == 0:
-            raise ValueError(f"frost crystal blocks a route at {(x, y)}")
-        runtime_map.layers[1][y * MAP_W + x] = tile_id
-        runtime_map.layers[2][(y - 1) * MAP_W + x] = FROST_CRYSTAL_TOP_TILE
-        blocked.add((x, y))
-
-    for x, y, tile_id in spec["boulders"]:
-        x, y = transform_frost_point((x, y), mirror_x, mirror_y)
-        if (x, y) in blocked or (x, y) in route_cells:
-            raise ValueError(f"frost boulder blocks a route at {(x, y)}")
-        runtime_map.layers[1][y * MAP_W + x] = tile_id
-        blocked.add((x, y))
-
-    scenery = set(blocked) | ice
-    scenery.update(
-        (x, y)
-        for y in range(MAP_H)
-        for x in range(MAP_W)
-        if (x, y) not in floor
-    )
-    decorations = XorShift32(seed ^ 0xA5F1537D)
-    stamp_snow_decorations(runtime_map, decorations, route_cells, scenery,
-                           allow_cracks=False)
+    # Paint the same centerline used by movement. Smooth ice keeps its original
+    # surface and slide semantics; the trail resumes on the dry landing.
+    for x, y in route_cells - ice:
+        runtime_map.layers[0][y * MAP_W + x] = frost_route_tile(route_cells, x, y)
+    blocked = frost_scenery(runtime_map, floor, walls, route_cells, seed)
 
     if not stamp_frost_portals(runtime_map, level, level_count, entered_by_ladder):
         raise ValueError("frost portal is not attached to scene geometry")
@@ -2266,6 +2283,7 @@ def _generate_map_candidate(seed, entry_edge, area_index=0, *, frost_level=0,
     features = XorShift32(seed ^ 0xC2B2AE35)
     profile = AREA_PROFILES[area_index] if area_index < len(AREA_PROFILES) else AREA_PROFILES[0]
     creek = None
+    planned_cliff = None
     has_waterfall = area_index == ANCIENT_WATERFALL_VALLEY_AREA
     has_snow = area_index == FROST_CRYSTAL_CAVE_AREA
 
@@ -2282,13 +2300,17 @@ def _generate_map_candidate(seed, entry_edge, area_index=0, *, frost_level=0,
         rows = None
         for attempt in range(96):
             topology_seed = seed ^ ((0x9E3779B9 * (attempt + 1 + creek_attempt * 96)) & MASK32)
-            entry, junction, paths, has_coast, road = build_topology(
-                topology_seed, entry_edge, coast_chance=0
-            )
-            candidates = creek_candidates(road, paths)
+            if creek_has_terrace(seed, style):
+                entry, junction, paths, has_coast, road, candidate, planned_cliff = (
+                    build_creek_terrace_topology(topology_seed, entry_edge))
+                candidates = [candidate]
+            else:
+                entry, junction, paths, has_coast, road = build_topology(
+                    topology_seed, entry_edge, coast_chance=0)
+                candidates = creek_candidates(road, paths)
             if candidates:
                 candidate = candidates[features.bounded(len(candidates))]
-                layouts = creek_layout_candidates(road, candidate, style, paths)
+                layouts = creek_layout_candidates(road, candidate, style)
                 if layouts:
                     creek = candidate
                     rows = layouts[features.bounded(len(layouts))]
@@ -2353,15 +2375,13 @@ def _generate_map_candidate(seed, entry_edge, area_index=0, *, frost_level=0,
         runtime_map.has_cliff = True
 
     if creek is not None:
-        shape = creek_envelope(rows)
         water, transition_cells = stamp_creek_layout(runtime_map, rows)
         bridge = stamp_bridge(runtime_map, creek)
-        if features.bounded(100) < (0, 25, 45, 100)[style]:
-            candidates = cliff_candidates(road, water, bridge, shape, paths)
-            if candidates:
-                cliff_spec = candidates[features.bounded(len(candidates))]
-                cliff, stairs = stamp_cliff(runtime_map, cliff_spec)
-                runtime_map.has_cliff = True
+        if planned_cliff is not None:
+            cliff, stairs = stamp_cliff(runtime_map, planned_cliff)
+            if cliff & (water | bridge) or (cliff & road) != stairs:
+                raise ValueError("terrace wall overlaps creek or road")
+            runtime_map.has_cliff = True
         stamp_water_rocks(
             runtime_map, features, water, road, bridge, transition_cells
         )
@@ -2453,6 +2473,7 @@ def fingerprint(runtime_map):
     for path in runtime_map.paths:
         value = fnv_byte(value, len(path.points))
         value = fnv_byte(value, 1 if path.falls_to_next_level else 0)
+        value = fnv_byte(value, 1 if path.cell_centered else 0)
         value = fnv_byte(value, int(path.exit.edge))
         value = fnv_byte(value, path.exit.point[0])
         value = fnv_byte(value, path.exit.point[1])
@@ -2497,6 +2518,7 @@ def map_json(runtime_map):
         "paths": [
             {
                 "points": [list(point) for point in path.points],
+                "cellCentered": path.cell_centered,
                 "exit": endpoint_json(path.exit),
             }
             for path in runtime_map.paths

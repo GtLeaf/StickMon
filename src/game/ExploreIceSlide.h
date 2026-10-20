@@ -35,7 +35,8 @@ inline uint8_t landingIndex(const ExploreMapGenerator::Map& map,
     for (uint8_t index = 1; index <= limit; ++index) {
         const auto& point = path.points[index];
         uint16_t cell = point.y * ExploreMapGenerator::WIDTH + point.x;
-        if (map.layers[0][cell] == 4511 &&
+        if ((map.layers[0][cell] == 4511 || map.layers[0][cell] == 4501 ||
+             (map.layers[0][cell] >= 4780 && map.layers[0][cell] <= 4794)) &&
             map.layers[1][cell] == 0 && map.layers[2][cell] == 0) {
             candidates[count++] = index;
         }

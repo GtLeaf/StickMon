@@ -92,19 +92,21 @@ class AmoledExpeditionDepartureTests(unittest.TestCase):
         )
 
     def test_final_route_uses_exit_motion_before_completion(self):
-        self.assertIn("EXPLORE_ROUTE_EXIT_MARGIN", self.app)
-        self.assertIn("void AmoledApp::beginExploreRouteExit", self.app)
-        begin = self.app.index("void AmoledApp::beginExploreRouteExit")
-        end = self.app.index("void AmoledApp::updateExploreRoute", begin)
-        body = self.app[begin:end]
+        presenter = (ROOT / "firmware/amoled_1_8_v1/main/app/ExplorePresenter.cpp").read_text()
+        self.assertIn("EXPLORE_ROUTE_EXIT_MARGIN", presenter)
+        self.assertIn("explorePresenter_.beginExit(", self.app)
+        begin = presenter.index("void ExplorePresenter::beginExit")
+        end = presenter.index("bool ExplorePresenter::advanceWalkFrames", begin)
+        body = presenter[begin:end]
         self.assertIn("exploreRouteTargetX = EXPLORE_ROUTE_WORLD_WIDTH + EXPLORE_ROUTE_EXIT_MARGIN", body)
         self.assertIn("exploreRouteTargetY = EXPLORE_ROUTE_WORLD_HEIGHT + EXPLORE_ROUTE_EXIT_MARGIN", body)
-        update = self.app.index("void AmoledApp::updateExploreRoute")
-        exit_motion = self.app.index("if (exploreRouteExiting)", update)
-        finish = self.app.index("finishExploreRouteAtEnd(nowMs);", exit_motion)
-        self.assertIn("if (exploreRouteExiting)", self.app[update:finish])
-        self.assertIn("advanceExploreRouteWalkFrames(nowMs);",
-                      self.app[update:finish])
+        update = presenter.index("ExplorePresenter::Motion ExplorePresenter::updateMotion")
+        finish = presenter.index("return Motion::EXIT_FINISHED;", update)
+        self.assertIn("if (route.exploreRouteExiting)", presenter[update:finish])
+        self.assertIn("advanceWalkFrames(route, nowMs);", presenter[update:finish])
+        app_update = self.app.index("void AmoledApp::updateExploreRoute")
+        finish = self.app.index("exploreSession_.finishExit(gameState);", app_update)
+        self.assertIn("motion == ExplorePresenter::Motion::EXIT_FINISHED", self.app[app_update:finish])
 
     def test_departure_moves_the_authoritative_render_actor(self):
         begin = self.app.index("bool AmoledApp::updateExploreDeparture")

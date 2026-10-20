@@ -237,3 +237,93 @@ Pair-frequency validation (2026-10-18):
 - Architecture (12) and exploration screen (18) checks passed; StickS3 release
   and AMOLED V1/V2 Lite builds passed. Whitespace check passed.
 - No firmware flashing or hardware validation performed.
+
+
+## Additional adult/young families (2026-10-18)
+
+- [x] Add seven grounded families using existing directional walking artwork. (15)
+- [x] Randomize eligible family selection after one overall 50% roll, retaining
+  hidden-family exclusion and safe-route fallback. (15, 16)
+- [x] Bound route-entry partner preloads by active-pool capacity. (6, 15)
+- [x] Extend single-member, movement/range and multi-family selection checks. (15-17)
+- [x] Complete native sprite/frame review and affected firmware builds. (4-6, 15)
+
+
+Additional-family validation (2026-10-18):
+
+- All nine families produced 505/1024 groups for adult-only, young-only and
+  both-member pools. Two six-family mixes produced 1013/2048 groups each;
+  every eligible family appeared, pool reordering preserved group poses,
+  and hidden families stayed excluded. Pool bytes remained unchanged.
+- Range checks passed 504 terrain/seed cases, visiting at least 24 cells in
+  120 seconds. Follow/wait/reunion, safety, density, secrecy and pause checks
+  passed for 540 synthetic and 540 real-map pairs, plus 768 generated maps.
+- Focused AMOLED ecology checks passed 8355 actual pair dirty/full frames
+  across all nine families and all three pool variants. Every directional
+  walking frame was present in the cache; gameplay state/history/RNG stayed
+  unchanged. Exported previews of all seven new families were visually reviewed.
+- Architecture (13) and exploration-screen (18) tests passed. StickS3 release
+  and AMOLED V1/V2 Lite builds passed. V2's first build hit a concurrent
+  component-manager temporary-file race; retry completed successfully.
+- Whitespace check passed. No firmware flashing or hardware validation performed.
+
+
+## Three-member Marill family (2026-10-18)
+
+- [x] Replace the Marill/Azurill family with ordered Azumarill/Marill/Azurill. (15)
+- [x] Generalize shared route anchors, safe graph and delayed following to three
+  members, retaining player reactions, gathering and broad roaming. (16, 17)
+- [x] Preload all family artwork and include the third member in visibility cadence. (6, 16)
+- [x] Cover all seven pool subsets and hidden masks, movement spacing, actual
+  follower trails, deterministic selection, pause and partial visibility. (15-17)
+- [x] Complete native render/asset review and affected firmware builds. (4-6, 15-19)
+
+
+Three-member-family validation (2026-10-18):
+
+- Each single-member and all-member pool produced 505/1024 groups. All seven
+  nonempty Marill-family pool subsets gave identical group selection/poses;
+  every explicit hidden-member mask blocked the full family. A 128-seed run
+  exercised 60 triples for 180 seconds, checking actual predecessor trails,
+  safe terrain and tail-only visible cadence. Family spacing, pause, wide
+  range, mixed selection and the 768-map suite passed for pairs and triples.
+- Address/undefined-behavior sanitizer checks passed the shared ecology suite,
+  including the ten-node route buffer and repeated three-anchor replanning.
+- Focused AMOLED ecology passed 8645 actual family dirty/full frame comparisons
+  across all families, all single-member pools and full-family pools. Route
+  entry cached every active family's artwork, all walking frames existed,
+  and gameplay state/history/RNG remained unchanged. The exported triple
+  sequence was visually checked for size, ground anchors, turns and cover.
+- Architecture (13) and exploration-screen (18) tests passed. StickS3 release
+  and AMOLED V1/V2 Lite builds passed; whitespace check passed.
+- No firmware flashing or hardware validation performed.
+
+
+## Marill family composition variety (2026-10-18)
+
+- [x] Select single/pair/triple compositions with 30%/45%/25% weights after
+  the one overall family roll; keep all seven combinations and evolution order. (15)
+- [x] Reuse independent actor initialization for solos, reserve only the chosen
+  slots, and fall back safely through smaller compositions. (15, 16)
+- [x] Test distribution, input-pool independence, stable members, hidden rules,
+  movement, pause and unsuitable habitats for all seven compositions. (15-17)
+- [x] Finish seven-composition native render review and affected builds. (4-6, 15-19)
+
+
+Composition-variety validation (2026-10-18):
+
+- In 8192 suitable-map seeds, 4062 selected the Marill family (49.6%). Among
+  those, solos/pairs/triples measured 31.2%/44.5%/24.3%; every one of the seven
+  compositions appeared. All seven active-pool subsets retained identical
+  selected compositions/poses, and explicit hidden masks blocked selection.
+- Every composition passed stable-member, 90-second motion and pause checks.
+  Small unsuitable group habitats degraded to safe single actors; entirely
+  blocked maps produced no actor. Existing pair/range/episode/flight and
+  768-map checks passed, including address/undefined-behavior sanitizers.
+- AMOLED ecology passed 13137 actual family dirty/full frame comparisons,
+  covering all seven Marill compositions with each singleton/full input pool,
+  other families, all walking frames and unchanged game state/history/RNG.
+  Exported previews of all seven compositions were visually reviewed.
+- Architecture (13) and exploration-screen (18) checks passed; StickS3 release
+  and AMOLED V1/V2 Lite builds passed. Whitespace check passed.
+- No firmware flashing or hardware validation performed.

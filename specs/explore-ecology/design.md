@@ -91,26 +91,39 @@ Airborne sprites use small ground shadows, no swimming ripples or grass crop;
 tall tree contours still occlude them by depth. Old/new dirty bounds include
 departures, absence and reentry.
 
-Adult/young pairs (approved 2026-10-17): an explicit first-batch table supports
-Breloom/Shroomish and Marill/Azurill only. Selection precedes independent spawn,
-requires either active entry to be visible, uses a 50% eligibility roll, and
-consumes exactly two slots. An explicitly hidden pool member blocks that
-family, even if its partner is visible. A missing member is supplied only by
+Adult/young pairs (expanded 2026-10-18): the explicit disjoint family table
+supports Breloom/Shroomish, Azumarill/Marill/Azurill, Furret/Sentret,
+Mightyena/Poochyena, Quagsire/Wooper, Camerupt/Numel, Pidgeotto/Pidgey,
+Gardevoir/Ralts and Pikachu/Pichu. These families have existing directional
+walking frames. Selection precedes independent spawn, requires any active entry
+to be visible, uses a 50% eligibility roll, and consumes two slots, or one to three
+for the Marill family. An explicitly hidden pool member blocks that family,
+even if another member is visible. A missing member is supplied only by
 the explicit family table, never added to the encounter pool or history.
 One transient group controller replaces independent episodes for these actors.
 No evolution guesses, extra assets, encounter changes or persistent data.
 Route entry preloads and pins partners of active pool species alongside the
 area encounter table and boss, so an out-of-pool companion needs no sprite
-decode during walking. The shared pair table also supplies this preload list.
+decode during walking. The shared family table also supplies this preload list.
+Every missing family member is preloaded at entry. Disjoint families need at
+most one companion per represented family plus each larger family's extra
+members. With one three-member family, the preload bound is the source-table
+capacity plus one boss plus the active-pool capacity plus one (32 species),
+within the 36 pinned cache slots.
+Collect visible eligible families before one overall 50% roll. Select a random
+remaining candidate, clearing the previous shared graph before each route
+attempt. Failed habitats try another candidate; exhaustion falls back to
+independent actors. One eligible family keeps its prior random sequence,
+and adding families never increases the overall roll or actor count.
 
-Cache shared cardinal walking edges validated for both members against surface
+Cache shared cardinal walking edges validated for every member against surface
 and prop footprints. Remove dead-end branches, then reject connected pockets
 smaller than eight cells. The initial adult anchor is near the selected route.
 At each destination, run a bounded BFS preferring targets 4-7 steps away;
 penalize the eight recent stopping places and their neighbours. Exclude the
-young's current cell from the new path to avoid reversing into it. Plan only
+followers' current cells from the new path to avoid reversing into them. Plan only
 at stops, not on each frame. Every new trail starts with the exact adjacent
-young/adult nodes; the trail is open, never wrapped back to its start.
+family nodes; the trail is open, never wrapped back to its start.
 
 The adult advances on the trail; the young follows the same real traversed
 positions after a short delay. Brief glances open the gap; the adult waits and
@@ -150,3 +163,44 @@ its screen rectangle, plus the high top above it; camera transforms and clips
 are shared with the map. Idle effects request no redraw. Grounded visible
 wildlife and party members supply actual shadow-center anchors; airborne,
 water-only, hidden and absent actors do not trample grass.
+
+
+## Three-member Marill family (2026-10-18)
+
+The family table stores ordered species and a bounded member count: Azumarill
+(184), Marill (183), Azurill (298). Any visible member makes the family eligible for composition selection;
+any explicitly hidden member vetoes it. It replaces the two-member Marill
+entry so this family has one selection ticket under the overall 50% roll.
+
+A three-position train shares one open route: two trailing anchor nodes plus
+up to seven BFS edges ahead, fitting the existing ten-node route buffer.
+Each follower uses its predecessor's actual trail and waits for the member
+behind when their gap grows. Only the youngest pauses for the glance beat.
+Gathering aligns all members at adjacent nodes before preserving those nodes
+for the next route. Player reactions close gaps to one tile, retaining room
+for gathering at the endpoint. Every species validates the shared graph.
+A complete family uses all three ambient slots, with no additional independent actor.
+Any visible member, including only Azurill at the edge of the camera, selects
+the normal 100 ms update cadence. Grass, cover, depth and dirty bounds continue
+to use the existing three wildlife poses. No persistent or encounter data changes.
+
+
+## Marill family composition variety (2026-10-18)
+
+After the overall 50% roll and family selection, one separate ambient random
+roll selects a composition: each singleton gets ten outcomes out of 100,
+each pair gets fifteen, and all three get twenty-five. The three-member family
+still has one selection ticket, irrespective of how many members are in the
+active pool. Ordered masks retain the most evolved present member as leader.
+Other two-member families keep their existing behavior and random sequence.
+
+Try the chosen composition first. An unsuitable shared trail tries the other
+compositions of the same size without replacement, then smaller sizes, ending
+with a safe single actor. Failed attempts clear cached links and routes.
+Singleton placement stays near the selected route and prefers walking exits;
+it calls the same actor initializer as ordinary independent spawning. It uses
+normal independent activities and consumes one slot, then ends spawning so
+no unrelated actors fill the remaining slots. `hasFamily()` records a selected
+family even for one member; `hasGroup()` remains specific to the shared train.
+The member count/species never change while walking or revealing an actor.
+Preloading continues to cover all three possible members before map entry.

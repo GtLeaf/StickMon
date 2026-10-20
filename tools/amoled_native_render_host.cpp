@@ -1,3 +1,4 @@
+#include "presentation/PokemonShadow.h"
 #include "HomeScreen.h"
 #include "core/FontResource.h"
 #include "core/RoomResource.h"
@@ -8,6 +9,8 @@
 #include "game/MonsterFactory.h"
 #include "game/ItemInventory.h"
 #include "game/ExploreTileSemantics.h"
+#include "game/ExploreRouteGeometry.h"
+#include "game/ExploreIceSlide.h"
 #include "platform/desktop/DesktopPlatform.h"
 #include "presentation/Canvas565.h"
 #include "presentation/PixelRenderer.h"
@@ -48,6 +51,7 @@ void checkExploreWater(DesktopPlatform& desktop, Canvas565& canvas);
 void checkHatchFlow(DesktopPlatform& desktop, Canvas565& canvas);
 void checkBathHatchControllerEffects();
 void checkBattleAssetActions(DesktopPlatform& desktop, const Game::GameState& state);
+namespace AmoledV1 { void checkBattleFlowContracts(const char* scenario); }
 void checkSharedBattleExecution(DesktopPlatform& desktop, const Game::GameState& state);
 void checkMedicineFlow(DesktopPlatform& desktop, Canvas565& canvas,
                         const Game::GameState& state);
@@ -65,12 +69,20 @@ bool runUiBehaviorCase(const char* name, Canvas565& canvas, Game::GameState& sta
 static std::vector<uint16_t> pixels(AmoledUi::WIDTH * AmoledUi::HEIGHT);
 static const char* outputDirectory = nullptr;
 void checkHomeCareRewards(DesktopPlatform& desktop, Canvas565& canvas);
+void checkHomeHudMessages(DesktopPlatform& desktop, Canvas565& canvas);
 void checkHomeRoomAuthority(DesktopPlatform& desktop, Canvas565& canvas);
 void checkHomeAutomaticFoodTurns(DesktopPlatform& desktop, Canvas565& canvas);
 void checkHomeFoodExitNoStall(DesktopPlatform& desktop, Canvas565& canvas);
 void checkHomeFaintRecoveryAndSleep(DesktopPlatform& desktop, Canvas565& canvas);
 void checkHomeSavedTurns(DesktopPlatform& desktop);
 void checkHomeYieldAndActions(DesktopPlatform& desktop, Canvas565& canvas);
+void checkHomeAmbientSequence(DesktopPlatform& desktop, Canvas565& canvas, bool wrap);
+void checkVisitorSequence(DesktopPlatform& desktop, Canvas565& canvas, bool wrap);
+void checkVisitorEffects(DesktopPlatform& desktop);
+void checkVisitAwayEffects(DesktopPlatform& desktop);
+void checkPairEffects(DesktopPlatform& desktop);
+void checkPairSequence(DesktopPlatform& desktop, Canvas565& canvas, bool wrap);
+void checkHomeAmbientEffects(DesktopPlatform& desktop);
 void checkLockedRoomPower(DesktopPlatform& desktop, Canvas565& canvas);
 
 class RoomRenderPower final : public Platform::IPowerDevice {
@@ -527,6 +539,91 @@ int main(int argc, char** argv) {
         Platform::bind(original);
         return 0;
     }
+    if (selectedCase && std::strcmp(selectedCase, "shadow-legacy") == 0) {
+        PokemonSprites::PetAnimationProfile profile{};
+        assert(PokemonSprites::petAnimationProfile(1, profile));
+        const auto* frame = PokemonSprites::findSpeciesSprite(1, profile.idleBase);
+        assert(frame && frame->shadowRadiusX == 0 && frame->shadowRadiusY == 0);
+        const auto shadow = PokemonShadow::atGround(frame, 100, 200, 2.0f, true);
+        assert(shadow.x == 100 && shadow.y == 200);
+        canvas.fillSprite(0);
+        assert(PokemonSprites::drawFrameSilhouette(frame, 0, 0, 0xFFFF));
+        const auto bounds = PokemonSprites::frameVisibleBounds(frame);
+        assert(bounds.width && bounds.height);
+        return 0;
+    }
+    if (selectedCase && std::strcmp(selectedCase, "pet-shadow") == 0) {
+        auto& original = desktop.serviceBundle();
+        RoomRenderPower power(original.power);
+        Platform::Services withPsram{
+            original.lifecycle, original.clock, original.logger, original.input,
+            original.display, original.audio, original.imu, power, original.blobs,
+            original.resources, original.memory, original.peers};
+        Platform::bind(withPsram);
+        assert(RoomResource::ins().begin());
+        for (uint16_t species : {4, 26, 92, 196, 212}) {
+            PokemonSprites::WalkingAnimation animation{};
+            assert(PokemonSprites::walkingAnimation(species,
+                PokemonSprites::WalkDirection::LEFT, animation));
+            const auto* frame = PokemonSprites::findSpeciesSprite(species, animation.base);
+            assert(frame && frame->shadowRadiusX && frame->shadowRadiusY);
+            const auto normal = PokemonSprites::frameShadow(frame, false);
+            const auto mirror = PokemonSprites::frameShadow(frame, true);
+            assert(normal.offsetX + mirror.offsetX == int(frame->width) - 1 - 2 * (frame->width / 2));
+            assert(normal.offsetY == mirror.offsetY && normal.radiusX == mirror.radiusX);
+            if (species == 4) {
+                assert(PokemonSprites::frameGroundOffsetY(frame) == 24);
+                const auto ground = PokemonShadow::atGround(frame, 184, 330, 2.0f);
+                assert(ground.x == 180 && ground.y == 318);
+                assert(ground.radiusX == 28 && ground.radiusY == 12);
+            }
+            for (bool flipped : {false, true}) {
+                HomeViewModel model;
+                model.speciesId = species;
+                model.petAction = HomeViewModel::PetVisualAction::WALKING;
+                model.petDirection = flipped ? PokemonSprites::WalkDirection::RIGHT
+                                             : PokemonSprites::WalkDirection::LEFT;
+                model.petCenterX = 184;
+                model.petGroundY = 330;
+                model.petFrame = 0;
+                model.petVisible = false;
+                renderHomeScreen(canvas, model);
+                const auto empty = pixels;
+                // Put the body well above the floor so actual shadow pixels
+                // can be compared independently of body occlusion.
+                model.petVisible = true;
+                model.petRenderOffsetY = -100;
+                renderHomeScreen(canvas, model);
+                const auto first = pixels;
+                model.petRenderOffsetY = -120;
+                renderHomeScreen(canvas, model);
+                PokemonSprites::WalkingAnimation selected{};
+                assert(PokemonSprites::walkingAnimation(species, model.petDirection, selected));
+                const auto* selectedFrame = PokemonSprites::findSpeciesSprite(species, selected.base);
+                assert(selectedFrame);
+                const auto ground = PokemonShadow::atGround(selectedFrame, 184, 330, 2.0f, selected.flipX);
+                int changed = 0;
+                for (int y = 290; y < 365; ++y) {
+                    for (int x = 120; x < 250; ++x) {
+                        const size_t i = y * 368 + x;
+                        assert(pixels[i] == first[i]);
+                        if (pixels[i] != empty[i]) {
+                            ++changed;
+                            assert(std::abs(x - ground.x) <= ground.radiusX);
+                            assert(std::abs(y - ground.y) <= ground.radiusY);
+                        }
+                    }
+                }
+                assert(changed > 20);
+                model.petRenderOffsetY = 0;
+                char name[64];
+                std::snprintf(name, sizeof(name), "shadow-%u-%s", species, flipped ? "right" : "left");
+                checkPage(name, model, renderHomeScreen);
+            }
+        }
+        Platform::bind(original);
+        return 0;
+    }
     if (selectedCase && std::strcmp(selectedCase, "pet-heart-layout") == 0) {
         auto& original = desktop.serviceBundle();
         RoomRenderPower power(original.power);
@@ -621,6 +718,10 @@ int main(int argc, char** argv) {
     state.storage[0] = state.team[0];
     state.storage[1] = state.team[1];
 
+    if (selectedCase && std::strncmp(selectedCase, "battle-flow-", 12) == 0) {
+        AmoledV1::checkBattleFlowContracts(selectedCase);
+        return 0;
+    }
     if (selectedCase && std::strcmp(selectedCase, "battle-fx") == 0) {
         checkBattleFxRendering(state, renderBattleScreenCached);
         return 0;
@@ -644,6 +745,48 @@ int main(int argc, char** argv) {
 
     if (selectedCase && std::strcmp(selectedCase, "medicine-flow") == 0) {
         checkMedicineFlow(desktop, canvas, state);
+        return 0;
+    }
+
+    if (selectedCase && std::strcmp(selectedCase, "battle-body-sizes") == 0) {
+        for (uint16_t species : {1, 25, 3, 6, 9, 130, 143, 149, 42, 169, 172, 194, 280, 279, 380, 381}) {
+            BattleViewModel model{};
+            model.state = &state;
+            model.playerSpeciesId = 6;
+            model.wildSpeciesId = species;
+            model.playerLevel = model.wildLevel = 36;
+            model.playerHp = model.wildHp = 100;
+            const auto label = std::string("battle-size-") + std::to_string(species);
+            checkPage(label.c_str(), model, renderBattleScreenCached);
+            model.animationActive = model.animationHit = true;
+            model.animationFrame = 3;
+            for (bool wild : {false, true}) {
+                model.animationAttackerWild = wild;
+                checkPage((label + (wild ? "-attack" : "-defend")).c_str(),
+                          model, renderBattleScreenCached);
+            }
+        }
+        return 0;
+    }
+
+    if (selectedCase && std::strcmp(selectedCase, "battle-snorlax") == 0) {
+        BattleViewModel model{};
+        model.state = &state;
+        model.playerSpeciesId = 6;
+        model.wildSpeciesId = 143;
+        model.playerLevel = model.wildLevel = 36;
+        model.playerHp = model.wildHp = 100;
+        checkPage("battle-snorlax", model, renderBattleScreenCached);
+        model.animationActive = model.animationHit = true;
+        for (bool attackerWild : {false, true}) {
+            model.animationAttackerWild = attackerWild;
+            for (int frame = 0; frame <= 6; ++frame) {
+                model.animationFrame = frame;
+                const auto label = std::string("battle-snorlax-") +
+                    (attackerWild ? "attack-" : "defend-") + std::to_string(frame);
+                checkPage(label.c_str(), model, renderBattleScreenCached);
+            }
+        }
         return 0;
     }
 
@@ -700,6 +843,95 @@ int main(int argc, char** argv) {
         }
         std::printf("explore pickup: %zu changed pixels, %zu red pixels\n", changed, red);
         assert(changed > 200 && red > 30);
+        return 0;
+    }
+
+    if (selectedCase && std::strcmp(selectedCase, "explore-frost") == 0) {
+        ExploreMapGenerator::Map map{};
+        map.areaIndex = ExploreMapGenerator::FROST_CRYSTAL_CAVE_AREA;
+        ExploreRouteViewModel model{};
+        model.state = &state;
+        model.map = &map;
+        model.area = map.areaIndex;
+        constexpr uint16_t emptyColor = 0xF81F;
+        constexpr uint16_t actorColor = 0x07FF;
+        constexpr int tileSize = 52;
+        struct CoverCase { uint16_t tile; uint8_t layer; int row; int depth; };
+        std::vector<CoverCase> covers;
+        for (uint16_t tile = 4512; tile <= 4523; ++tile)
+            covers.push_back({tile, 1, 3, 104});
+        covers.push_back({4508, 1, 4, 130});
+        covers.push_back({4509, 1, 4, 130});
+        covers.push_back({4541, 2, 3, 130});
+        covers.push_back({4543, 2, 3, 130});
+        for (const auto& item : covers) {
+            for (auto& layer : map.layers) std::fill(std::begin(layer), std::end(layer), 0);
+            map.layers[item.layer][item.row * ExploreMapGenerator::WIDTH + 3] = item.tile;
+            const int x = 3 * tileSize, y = item.row * tileSize;
+            canvas.clearClipRect();
+            canvas.fillSprite(emptyColor);
+            assert(GameAssets::drawExploreTileTo(canvas, item.tile, x, y, 0, 2));
+            const auto tilePixels = pixels;
+            size_t restored = 0;
+            for (float depth : {item.depth - 0.01f, static_cast<float>(item.depth)}) {
+                canvas.clearClipRect();
+                canvas.fillSprite(actorColor);
+                drawExploreRouteMapVegetationForActor(canvas, model, depth,
+                    x + 4, y + 4, x + tileSize - 4, y + tileSize - 4,
+                    0, EXPLORE_ROUTE_MAP_BOTTOM);
+                for (int py = 0; py < AmoledUi::HEIGHT; ++py) {
+                    for (int px = 0; px < AmoledUi::WIDTH; ++px) {
+                        const size_t index = py * AmoledUi::WIDTH + px;
+                        const bool cover = depth < item.depth && px >= x + 4 &&
+                            px < x + tileSize - 4 && py >= y + 4 &&
+                            py < y + tileSize - 4 && tilePixels[index] != emptyColor;
+                        assert(pixels[index] == (cover ? tilePixels[index] : actorColor));
+                        restored += cover;
+                    }
+                }
+            }
+            assert(restored > 0);
+        }
+        // Actual generated rooms with both team members, bosses and pickups:
+        // full frames and dirty bands must restore identical object pixels.
+        for (unsigned sample = 0; sample < 4; ++sample) {
+            const uint32_t seed = sample < 2 ? 2 : 34;
+            const auto edge = sample % 2 == 0 ? ExploreMapGenerator::Edge::LEFT
+                : ExploreMapGenerator::Edge::BOTTOM;
+            assert(ExploreMapGenerator::generate(seed, edge, model.area, map, {1, 3, true}));
+            // These probes deliberately reuse a seed for a different entry
+            // direction; discard the previous room's cached background.
+            caches.exploreWorld.invalidate();
+            const auto& path = map.paths[0];
+            for (uint8_t index : {static_cast<uint8_t>(2),
+                                 static_cast<uint8_t>(path.pointCount / 2),
+                                 static_cast<uint8_t>(path.pointCount - 2)}) {
+                const auto point = ExploreRouteGeometry::pathPoint(path, index);
+                const auto companion = ExploreRouteGeometry::pathPoint(path, index - 1);
+                model.speciesId = 8;
+                model.worldX = point.x;
+                model.worldY = point.y;
+                model.cameraX = std::max(0, std::min(232, static_cast<int>(point.x) - 92));
+                model.cameraY = std::max(0, std::min(140, static_cast<int>(point.y) - 86));
+                model.companionVisible = true;
+                model.companionSpeciesId = 280;
+                model.companionWorldX = companion.x;
+                model.companionWorldY = companion.y;
+                model.bossPending = true;
+                model.bossIndex = ExploreIceSlide::nearestNonIceIndex(
+                    map, path, path.pointCount - 2, 1, path.pointCount - 2);
+                assert(model.bossIndex != ExploreIceSlide::INVALID_INDEX);
+                model.bossSpeciesId = 362;
+                model.pickupAvailable = true;
+                model.pickupIndex = ExploreIceSlide::nearestNonIceIndex(
+                    map, path, 3, 1, path.pointCount - 2);
+                assert(model.pickupIndex != ExploreIceSlide::INVALID_INDEX);
+                char name[80];
+                std::snprintf(name, sizeof(name), "frost-room-%u-step-%u", sample, index);
+                checkPage(name, model, renderExploreRouteScreenCached);
+            }
+        }
+        std::puts("frost occlusion: 12 snow walls, both complete crystals and 12 room poses passed");
         return 0;
     }
 
@@ -975,6 +1207,48 @@ int main(int argc, char** argv) {
         checkHomeCareRewards(desktop, canvas);
         return 0;
     }
+    if (selectedCase && std::strcmp(selectedCase, "home-hud-messages") == 0) {
+        checkHomeHudMessages(desktop, canvas);
+        HomeViewModel home;
+        home.monsterCount = 2;
+        home.monsters[0].hp = 80;
+        home.monsters[1].hp = 50;
+        renderHomeScreen(canvas, home);
+        const auto baseline = pixels;
+        const char* messages[] = {
+            Ui::Menu::FOOD_ADDED, Ui::Menu::PET_LIMIT, Ui::Menu::PET_REST,
+            Ui::Menu::NO_FOOD, Ui::Menu::FOOD_FULL, Ui::Menu::FOOD_MIXED,
+            Ui::Hatch::DONE, Ui::Amoled::REST_AT_HOME,
+            "今天的探险真开心！\n下次再一起出门吧！",
+            "今天的探险真开心！下次再一起出门吧！房间里的伙伴也在等你。",
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+        };
+        for (size_t i = 0; i < sizeof(messages) / sizeof(messages[0]); ++i) {
+            home.toast = messages[i];
+            renderHomeScreen(canvas, home);
+            assert(std::equal(baseline.begin(), baseline.begin() + HOME_STATUS_TOP * 368,
+                              pixels.begin()));
+            // Buttons and status icons are replaced by the plain message strip.
+            assert(canvas.readPixel(44, 400) == UiCommon::rgb(18, 27, 35));
+            char name[48];
+            std::snprintf(name, sizeof(name), "home-hud-message-%zu", i);
+            checkPage(name, home, renderHomeScreen);
+            home.toast = nullptr;
+            renderHomeScreen(canvas, home, HOME_STATUS_TOP, 448);
+            assert(pixels == baseline);
+        }
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        home.toast = Ui::Menu::FOOD_ADDED;
+        home.debugContactPromptFade = 255;
+        home.debugContactPromptText = "今天的探险真开心！";
+        renderHomeScreen(canvas, home);
+        const auto withToast = pixels;
+        home.toast = nullptr;
+        renderHomeScreen(canvas, home);
+        assert(pixels == withToast);  // Visitor prompts keep priority over feedback.
+#endif
+        return 0;
+    }
     if (selectedCase && std::strcmp(selectedCase, "home-room-authority") == 0) {
         checkHomeRoomAuthority(desktop, canvas);
         return 0;
@@ -993,6 +1267,36 @@ int main(int argc, char** argv) {
     }
     if (selectedCase && std::strcmp(selectedCase, "home-saved-turns") == 0) {
         checkHomeSavedTurns(desktop);
+        return 0;
+    }
+    if (selectedCase && (std::strcmp(selectedCase, "visitor-sequence") == 0 ||
+                         std::strcmp(selectedCase, "visitor-wrap") == 0)) {
+        checkVisitorSequence(desktop, canvas, std::strcmp(selectedCase, "visitor-wrap") == 0);
+        return 0;
+    }
+    if (selectedCase && std::strcmp(selectedCase, "visitor-effects") == 0) {
+        checkVisitorEffects(desktop); return 0;
+    }
+    if (selectedCase && std::strcmp(selectedCase, "visit-away-effects") == 0) {
+        checkVisitAwayEffects(desktop); return 0;
+    }
+    if (selectedCase && std::strcmp(selectedCase, "pair-effects") == 0) {
+        checkPairEffects(desktop);
+        return 0;
+    }
+    if (selectedCase && (std::strcmp(selectedCase, "pair-sequence") == 0 ||
+                         std::strcmp(selectedCase, "pair-wrap") == 0)) {
+        checkPairSequence(desktop, canvas, std::strcmp(selectedCase, "pair-wrap") == 0);
+        return 0;
+    }
+    if (selectedCase && (std::strcmp(selectedCase, "home-ambient-sequence") == 0 ||
+                         std::strcmp(selectedCase, "home-ambient-wrap") == 0)) {
+        checkHomeAmbientSequence(desktop, canvas,
+            std::strcmp(selectedCase, "home-ambient-wrap") == 0);
+        return 0;
+    }
+    if (selectedCase && std::strcmp(selectedCase, "home-ambient-effects") == 0) {
+        checkHomeAmbientEffects(desktop);
         return 0;
     }
     if (selectedCase && std::strcmp(selectedCase, "home-yield-actions") == 0) {
@@ -1075,6 +1379,15 @@ int main(int argc, char** argv) {
 #if STICKMON_ENABLE_DEBUG_FEATURES
     DebugViewModel debug;
     checkPage("debug", debug, renderDebugScreen);
+    debug.category = DebugViewModel::Category::ROOM;
+    debug.bedStyle = 1;
+    debug.rugStyle = 2;
+    checkPage("debug-room", debug, renderDebugScreen);
+    debug.popup = DebugViewModel::Popup::BED_STYLE;
+    checkPage("debug-bed", debug, renderDebugScreen);
+    debug.popup = DebugViewModel::Popup::RUG_STYLE;
+    checkPage("debug-rug", debug, renderDebugScreen);
+    debug.popup = DebugViewModel::Popup::NONE;
     debug.category = DebugViewModel::Category::TOUCH_TEST;
     TouchTest::State touchTest;
     debug.touchTest = &touchTest;

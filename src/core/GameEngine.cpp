@@ -215,6 +215,10 @@ bool GameEngine::begin() {
     }
     if (encounterHistoryDirty) markDirty(SaveUrgency::SOON);
     resetDailyCountersIfNeeded();
+#if defined(__EMSCRIPTEN__)
+    // Start browser sessions at full brightness, including restored saves.
+    state.settings.brightness = 255;
+#endif
     Hal::ins().setBrightness(state.settings.brightness);
     Hal::ins().setAudioVolume(state.settings.volume);
     ButtonDispatcher::ins().setLongPressMs(state.settings.longPressMs);

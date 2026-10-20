@@ -14,6 +14,33 @@ constexpr int MOVES_ROW_STEP = 66;
 constexpr int MOVES_HEADER_HEIGHT = UiMetrics::PAGE_HEADER_HEIGHT;
 }
 
+void TeamController::cancelTouch() {
+    state_.pressedTeamSlot = -1;
+    state_.teamStatusDragging = state_.teamMovesDragging = false;
+    state_.teamStatusSlideX = 0;
+}
+
+void TeamController::dragMoves(int deltaY) {
+    state_.teamMovesDragging = true;
+    state_.teamMovesScroll -= static_cast<int16_t>(deltaY);
+    clampMovesScroll();
+}
+
+void TeamController::showActions(uint8_t slot) {
+    state_.teamActionPopupOpen = true;
+    state_.teamActionPopupSlot = slot;
+}
+
+void TeamController::requestLeaderConfirmation(uint8_t slot) {
+    state_.pendingTeamSlot = slot;
+    state_.teamConfirmOpen = true;
+}
+
+void TeamController::completeLeaderChange() {
+    state_.teamConfirmOpen = false;
+    state_.pendingTeamSlot = 0;
+}
+
 void TeamController::resetStatus() {
     state_.teamStatusFromContact = false;
     state_.teamStatusContactSlot = 0xFF;

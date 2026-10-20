@@ -41,7 +41,7 @@ MAGIC = 0x58464753  # SGFX
 VERSION = 2
 FLAG_RAW_DEFLATE = 1
 FORMAT_INDEXED4_RLE = 1
-MAX_PACK_FRAMES = 272
+MAX_PACK_FRAMES = 288
 MAX_PACK_DATA_WORDS = 200000
 MAX_PACK_PALETTE_WORDS = 2048
 MAX_PACK_PAYLOAD_BYTES = 384000
@@ -250,7 +250,11 @@ TALL_GRASS_PARK_TILES = [
     )
 ]
 
-CREEK_TILES = [("EXPLORE_TILE_1184", 1184), ("EXPLORE_TILE_1186", 1186)]
+CREEK_TILES = [
+    ("EXPLORE_TILE_1184", 1184), ("EXPLORE_TILE_1186", 1186),
+    ("EXPLORE_TILE_1176", 1176), ("EXPLORE_TILE_1178", 1178),
+    ("EXPLORE_TILE_1187", 1187), ("EXPLORE_TILE_1189", 1189),
+]
 
 EXTERNAL_EXPLORE_TILES = [
     (f"EXPLORE_TILE_{runtime_id:04d}", runtime_id, tileset_name, source_id)
@@ -324,7 +328,7 @@ KIND_ORDER.extend(kind for kind, _ in EXPLORE_PICKUP_MARKERS)
 KIND_ORDER.extend(kind for kind, _ in EVOLUTION_BACKGROUNDS)
 KIND_ORDER.extend(kind for kind, _ in LATE_ITEMS)
 KIND_ORDER.extend(kind for kind, runtime_id, _tileset, _source_id in EXTERNAL_EXPLORE_TILES
-                  if runtime_id > 4761)
+                  if 4761 < runtime_id < 4780)
 KIND_ORDER.extend(kind for kind, _ in TALL_GRASS_PARK_TILES)
 # Append new kinds to preserve all existing pack IDs.
 for kind_prefix, _filename, _cells, _opacities in ADDITIONAL_BATTLE_FX:
@@ -333,6 +337,8 @@ for kind_prefix, _filename, _cells, _opacities in ADDITIONAL_BATTLE_FX:
         for index in range(BATTLE_FX_FRAME_COUNT)
     )
 KIND_ORDER.extend(kind for kind, _tile_id in CREEK_TILES)
+KIND_ORDER.extend(kind for kind, runtime_id, _tileset, _source_id in EXTERNAL_EXPLORE_TILES
+                  if runtime_id >= 4780)
 KIND_IDS = {kind: index for index, kind in enumerate(KIND_ORDER)}
 
 

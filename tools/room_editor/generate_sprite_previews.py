@@ -5,6 +5,7 @@ import base64
 import json
 import re
 import struct
+import zlib
 from pathlib import Path
 
 from PIL import Image
@@ -20,9 +21,10 @@ OUT_DIR = GENERATED / "pokemon_sprites"
 MANIFEST = GENERATED / "pokemon_preview_assets.js"
 
 PACK_MAGIC = 0x5350534D
-PACK_VERSION = 1
 PACK_HEADER = struct.Struct("<IHHHHHH")
+PACK_HEADER_V2 = struct.Struct("<IHHHHHHIII")
 PACK_FRAME = struct.Struct("<HBBBBHIII")
+PACK_FRAME_V3 = struct.Struct("<HBBBBHIIIBBBB")
 
 
 def png_data_url(path: Path) -> str:
@@ -128,19 +130,43 @@ def load_sprite_pack(path: Path, kind_names: list[str]) -> tuple[int, list[dict]
     if len(payload) < PACK_HEADER.size:
         raise RuntimeError(f"truncated sprite pack: {path}")
     magic, version, species_id, frame_count, rle_words, palette_words, _ = PACK_HEADER.unpack_from(payload)
-    if magic != PACK_MAGIC or version != PACK_VERSION:
+    if magic != PACK_MAGIC or version not in (1, 2, 3):
         raise RuntimeError(f"invalid sprite pack header: {path}")
+    header_size = PACK_HEADER.size
+    frame_struct = PACK_FRAME_V3 if version == 3 else PACK_FRAME
+    if version >= 2:
+        if len(payload) < PACK_HEADER_V2.size:
+            raise RuntimeError(f"truncated sprite pack: {path}")
+        *_, flags, raw_size, compressed_size, checksum = PACK_HEADER_V2.unpack_from(payload)
+        expected = frame_count * frame_struct.size + (rle_words + palette_words) * 2
+        if flags != 1 or raw_size != expected or compressed_size != len(payload) - PACK_HEADER_V2.size:
+            raise RuntimeError(f"sprite pack size or flags mismatch: {path}")
+        decoder = zlib.decompressobj(-15)
+        try:
+            raw = decoder.decompress(payload[PACK_HEADER_V2.size:], raw_size + 1)
+        except zlib.error as exc:
+            raise RuntimeError(f"invalid compressed sprite pack: {path}") from exc
+        if (len(raw) != raw_size or not decoder.eof or decoder.unused_data
+                or zlib.crc32(raw) & 0xFFFFFFFF != checksum):
+            raise RuntimeError(f"sprite pack checksum or payload mismatch: {path}")
+        payload = raw
+        header_size = 0
 
-    frame_table_end = PACK_HEADER.size + frame_count * PACK_FRAME.size
+    frame_table_end = header_size + frame_count * frame_struct.size
     data_end = frame_table_end + (rle_words + palette_words) * 2
     if data_end != len(payload):
         raise RuntimeError(f"sprite pack size mismatch: {path}")
 
     frames = []
-    offset = PACK_HEADER.size
+    offset = header_size
     for _ in range(frame_count):
-        kind, width, height, fmt, palette_size, _reserved, data_offset, length, palette_offset = PACK_FRAME.unpack_from(payload, offset)
-        offset += PACK_FRAME.size
+        record = frame_struct.unpack_from(payload, offset)
+        kind, width, height, fmt, palette_size, reserved, data_offset, length, palette_offset = record[:9]
+        offset += frame_struct.size
+        if (not width or not height or fmt not in (0, 1) or data_offset + length > rle_words
+                or palette_offset + palette_size > palette_words or palette_size > 16):
+            raise RuntimeError(f"invalid sprite frame: {path}")
+        padding = reserved & 0xFF if reserved & 0xFF00 == 0xA500 else None
         frames.append({
             "speciesId": species_id,
             "kind": kind,
@@ -152,6 +178,8 @@ def load_sprite_pack(path: Path, kind_names: list[str]) -> tuple[int, list[dict]
             "offset": data_offset,
             "length": length,
             "paletteOffset": palette_offset,
+            "shadow": list(record[9:]) if version == 3 else None,
+            "groundOffsetY": height // 2 - padding if padding is not None else max(16, min(32, int(height * 0.42))),
         })
 
     words = words_from_bytes(payload[frame_table_end:])
@@ -224,6 +252,7 @@ def main() -> None:
             action = frame_action(frame["kindName"])
             if action is None and frame is not preview_frame:
                 continue
+            action = action or "front"
             file_name = f"{species_id:03d}_{slug}_{frame['kindName']}.png"
             file_path = OUT_DIR / file_name
             image = decode_frame(frame, rle, palettes)
@@ -238,6 +267,7 @@ def main() -> None:
                     "width": frame["width"],
                     "height": frame["height"],
                     "kindName": frame["kindName"],
+                    "groundOffsetY": frame["groundOffsetY"],
                 })
 
         preview_file_name = f"{species_id:03d}_{slug}_{preview_frame['kindName']}.png"

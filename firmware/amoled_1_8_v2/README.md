@@ -19,13 +19,61 @@ and on wake; missing/invalid readings show a gray dash. Charging parameters
 and power rails are preserved. The PMU's built-in battery profile is used;
 battery accuracy and charging behavior still require hardware validation.
 
+## CO5300 partial refresh
+
+The direct framebuffer path bypasses the BSP's LVGL rounder. All V2 uploads
+must therefore round both axes outward to 2-pixel boundaries (exclusive ends
+are even), including full-width dirty row uploads and each 32-row DMA chunk.
+Copy the expanded rectangle from the persistent framebuffer with the expanded
+stride. Only rounding LCD addresses would mismatch the pixel payload.
+The lock animation already rounded its rectangles; ordinary shower/exploration
+updates previously did not. This can corrupt partial updates on the V2 panel.
+Run `python3 tools/test_amoled_v2_display.py` to replay odd rectangles, boundary
+pixels and asynchronous DMA ownership. This is a transfer regression check;
+it does not measure physical scanout tearing or establish TE synchronization.
+
 ## Touch calibration
 
-V2 uses its own raw-to-native-pixel calibration in `main/TouchInput.cpp`:
+`main/TouchInput.cpp` selects calibration by controller address, using the
+same priority as the BSP: CST820 at `0x15` first, FT compatibility at `0x38`
+second. Detection happens before driver construction, and the selected profile
+is printed at startup. The BSP applies no swap, mirror or coordinate scaling.
+UP events retain the last sensor coordinates for diagnostics.
+
+### Physical V2 / CST820
+
+Two passes of nine-point DOWN measurements on the actual V2, 2026-10-19, give:
+`x = round(rawX * 0.90673230 + 13.937319)` and
+`y = round(rawY * 0.88606005 + 20.206188)`, clamped to 368x448.
+
+| Target | Pass 1 raw DOWN | Pass 2 raw DOWN |
+| --- | --- | --- |
+| 24,32 | 13,45 | 8,5 |
+| 184,32 | 188,11 | 207,4 |
+| 344,32 | 357,18 | 347,3 |
+| 24,224 | 2,208 | 6,214 |
+| 184,224 | 200,243 | 196,223 |
+| 344,224 | 364,245 | 361,248 |
+| 24,416 | 16,447 | 7,438 |
+| 184,416 | 185,447 | 185,447 |
+| 344,416 | 367,447 | 367,447 |
+
+The first-pass fit was flashed and independently checked by the second pass:
+mean error 13.5 pixels, maximum 23.3 pixels; the user confirmed improved finger
+alignment. The final profile then pools both passes to reduce sampling bias.
+Across all 18 fitting samples it replays at mean 10.9 pixels and maximum 28.1
+pixels (the old FT profile gives mean 32.7 pixels). These final figures are
+fit residuals, not independent acceptance measurements or an accuracy guarantee.
+See `../../doc/AMOLED-V2-触控校准.md` for provenance and remaining edge limits.
+
+### Physical V1 / FT compatibility
+
+Retain the historical fit only for FT at `0x38`:
 `x = round(rawX * 1.1179618 - 20.711235)` and
 `y = round(rawY * 1.0494687 - 21.692282)`, clamped to 368x448.
-The BSP applies no swap, mirror or coordinate scaling on this path.
-The former V1 coefficients compressed V2 touches toward the screen center.
+Hardware identification was corrected on 2026-10-19: the older measurements
+were taken on physical V1 hardware running the V2 firmware. They are not CST820
+calibration data.
 
 The coefficients are independent-axis least-squares fits of the user's
 2026-10-13 nine-point DOWN measurements (session timestamps 660581-668621).
@@ -145,8 +193,9 @@ back to the V1 display and touch drivers:
   --debug
 ```
 
-Use `--variant lite` for the firmware without ESP-Claw. Add `--erase` once
-when recovering from a previously mixed V1/V2 image.
+Use `--variant lite` for the firmware without ESP-Claw. Switching V1/V2
+firmware normally does not require `--erase`. That option deletes all flash
+data, including game saves and Wi-Fi/Claw credentials.
 
 The Claw and Lite builds resolve dependencies into their own isolated
 `build-claw` and `build-lite` directories, keeping machine-specific

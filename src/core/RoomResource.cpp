@@ -2,6 +2,7 @@
 
 #include "core/ResourcePack.h"
 #include "core/MathUtil.h"
+#include "core/DeflateDecoder.h"
 #include "platform/api/PlatformServices.h"
 
 #include <cstdlib>
@@ -12,6 +13,15 @@ static constexpr uint32_t ROOM_PACK_MAGIC = 0x4D4F5253;
 static constexpr uint16_t ROOM_PACK_VERSION_V2 = 2;
 static constexpr uint16_t ROOM_PACK_VERSION = 3;
 static constexpr uint16_t ROOM_PACK_VERSION_HIRES = 4;
+// v5 adds a reference fingerprint and deflated replacement pixels + bit mask.
+static constexpr uint16_t ROOM_PACK_VERSION_DELTA = 5;
+static constexpr uint16_t ROOM_PACK_VERSION_LAYERED = 6;
+
+uint32_t fingerprint(const uint8_t* data, size_t length) {
+    uint32_t hash = 2166136261U;
+    for (size_t i = 0; i < length; ++i) hash = (hash ^ data[i]) * 16777619U;
+    return hash;
+}
 static constexpr const char* DEFAULT_ROOM_ID = "standard";
 static constexpr uint16_t MAX_WORLD_W = 240;
 static constexpr uint16_t MAX_WORLD_H = 320;
@@ -173,7 +183,8 @@ bool readExact(Platform::ResourceFile& file, void* out, size_t length) {
 bool validHeader(const RoomHeaderData& h) {
     if (h.magic != ROOM_PACK_MAGIC ||
         (h.version != ROOM_PACK_VERSION_V2 && h.version != ROOM_PACK_VERSION &&
-         h.version != ROOM_PACK_VERSION_HIRES)) return false;
+         h.version != ROOM_PACK_VERSION_HIRES && h.version != ROOM_PACK_VERSION_DELTA &&
+         h.version != ROOM_PACK_VERSION_LAYERED)) return false;
     if (h.width == 0 || h.width > MAX_WORLD_W || h.height == 0 || h.height > MAX_WORLD_H) return false;
     if (h.artWidth == 0 || h.artWidth > MAX_ART_W ||
         h.artHeight == 0 || h.artHeight > MAX_ART_H) return false;
@@ -189,11 +200,14 @@ bool validHeader(const RoomHeaderData& h) {
         (h.doorwayPolygonCount < 3 || h.doorwayPolygonCount > MAX_POLYGON_POINTS)) return false;
     if (h.nightPatchRunCount > MAX_PATCH_RUNS || h.nightPatchPixelCount > MAX_PATCH_PIXELS) return false;
     if ((h.nightPatchRunCount == 0) != (h.nightPatchPixelCount == 0)) return false;
-    if (h.flags > 1 || h.reserved != 0) return false;
+    if (h.flags > (h.version == ROOM_PACK_VERSION_DELTA ? 3 : 1) || h.reserved != 0) return false;
+    if ((h.flags & 2) && (h.nightPatchRunCount || h.nightPatchPixelCount)) return false;
+    if (h.version == ROOM_PACK_VERSION_LAYERED &&
+        (h.nightPatchRunCount || h.nightPatchPixelCount || h.flags != 1)) return false;
     if ((h.version == ROOM_PACK_VERSION_V2 && h.behaviorAnchorCount != 0) ||
         h.behaviorAnchorCount > MAX_BEHAVIOR_ANCHORS) return false;
 
-    if (h.version != ROOM_PACK_VERSION_HIRES &&
+    if (h.version < ROOM_PACK_VERSION_HIRES &&
         (h.artWidth != h.width || h.artHeight != h.height)) return false;
 
     auto validBounds = [](int16_t minX, int16_t minY, int16_t maxX, int16_t maxY,
@@ -283,15 +297,18 @@ bool validPayload(const RoomHeaderData& h, const RoomResource::PatchRun* runs,
 }
 
 RoomResource& RoomResource::ins() {
-    static RoomResource instance;
-    return instance;
+    // Resource caches have application lifetime. Platform services may already
+    // be gone during static destruction (notably in native/Web hosts).
+    static RoomResource* instance = new RoomResource;
+    return *instance;
 }
 
 bool RoomResource::begin() {
     if (initialized_) return loaded_;
     initialized_ = true;
     clearMeta();
-    loaded_ = loadExternal();
+    loaded_ = loadExternal(DEFAULT_ROOM_ID);
+    if (loaded_) ++revision_;
     Platform::logf("[RoomResource] source=%s world=%ux%u art=%ux%u scale=%u base=%u "
                   "patchRuns=%u patchPixels=%u "
                   "door=%u inside=%d,%d outside=%d,%d anchors=%u\n",
@@ -301,6 +318,15 @@ bool RoomResource::begin() {
                   doorwayInsideX_, doorwayInsideY_, doorwayOutsideX_, doorwayOutsideY_,
                   behaviorAnchorCount_);
     return loaded_;
+}
+
+bool RoomResource::setFurniture(const char* slot, const char* assetId) {
+    if (!loaded_ || !layered_ || !slot || !assetId) return false;
+    const char* selected = furniture_.selected(slot);
+    if (selected && std::strcmp(selected, assetId) == 0) return true;
+    if (!furniture_.replace(slot, assetId)) return false;
+    ++revision_;
+    return true;
 }
 
 RoomResource::PatchRun RoomResource::nightPatchRun(uint32_t index) const {
@@ -349,12 +375,21 @@ bool RoomResource::findBehaviorAnchor(BehaviorAnchorType type, BehaviorAnchor& o
     return false;
 }
 
-bool RoomResource::loadExternal() {
+bool RoomResource::selectRoom(const char* roomId) {
+    if (!roomId || !loadExternal(roomId)) return false;
+    initialized_ = loaded_ = true;
+    ++revision_;
+    Platform::logf("[RoomResource] selected id=%s revision=%u\n",
+                   roomId, static_cast<unsigned>(revision_));
+    return true;
+}
+
+bool RoomResource::loadExternal(const char* roomId) {
     ResourcePack& pack = ResourcePack::ins();
     if (!pack.begin()) return false;
 
     Platform::ResourceFile file;
-    if (!pack.openRoom(DEFAULT_ROOM_ID, file)) return false;
+    if (!pack.openRoom(roomId, file)) return false;
 
     struct __attribute__((packed)) HeaderPrefix {
         uint32_t magic;
@@ -368,7 +403,8 @@ bool RoomResource::loadExternal() {
     }
 
     RoomHeaderData header;
-    if (prefix.version == ROOM_PACK_VERSION_HIRES) {
+    if (prefix.version == ROOM_PACK_VERSION_HIRES || prefix.version == ROOM_PACK_VERSION_DELTA ||
+        prefix.version == ROOM_PACK_VERSION_LAYERED) {
         PackedRoomHeaderHires packed{};
         if (!readExact(file, &packed, sizeof(packed))) {
             Platform::logLine("[RoomResource] truncated v4 room header");
@@ -388,16 +424,35 @@ bool RoomResource::loadExternal() {
         return false;
     }
 
-    const size_t headerSize = header.version == ROOM_PACK_VERSION_HIRES
-        ? sizeof(PackedRoomHeaderHires) : sizeof(PackedRoomHeader);
+    const bool delta = header.version == ROOM_PACK_VERSION_DELTA;
+    uint32_t referenceHash = 0;
+    if (delta && !readExact(file, &referenceHash, sizeof(referenceHash))) return false;
+    const size_t headerSize = (header.version >= ROOM_PACK_VERSION_HIRES
+        ? sizeof(PackedRoomHeaderHires) : sizeof(PackedRoomHeader)) + (delta ? 4 : 0);
     uint64_t expectedSize = headerSize + static_cast<uint64_t>(header.baseCompressedLen) +
                             static_cast<uint64_t>(header.nightPatchRunCount) * sizeof(PatchRun) +
                             static_cast<uint64_t>(header.nightPatchPixelCount) * sizeof(uint16_t) +
                             static_cast<uint64_t>(header.walkPolygonCount + header.bedPolygonCount +
                                                   header.doorwayPolygonCount) * sizeof(Point) +
                             static_cast<uint64_t>(header.behaviorAnchorCount) * sizeof(BehaviorAnchor);
-    if (expectedSize != file.size()) {
+    const bool layered = header.version == ROOM_PACK_VERSION_LAYERED;
+    if ((!layered && expectedSize != file.size()) ||
+        (layered && expectedSize + 8 > file.size())) {
         Platform::logLine("[RoomResource] room payload size mismatch");
+        return false;
+    }
+
+    RoomResource reference;
+    struct ReferenceCleanup {
+        RoomResource& resource;
+        ~ReferenceCleanup() { resource.releaseExternal(); }
+    } cleanup{reference};
+    if (delta && (std::strcmp(roomId, DEFAULT_ROOM_ID) == 0 ||
+        !reference.loadExternal(DEFAULT_ROOM_ID) || reference.referenceCompressed_ ||
+        reference.baseRawBytes_ != header.baseRawBytes ||
+        reference.artWidth_ != header.artWidth || reference.artHeight_ != header.artHeight ||
+        fingerprint(reference.baseCompressed_, reference.baseCompressedLen_) != referenceHash)) {
+        Platform::logLine("[RoomResource] preview reference mismatch");
         return false;
     }
 
@@ -445,7 +500,16 @@ bool RoomResource::loadExternal() {
         return false;
     }
 
-    if (!validPayload(header, patchRuns, walk, bed, doorway, anchors)) {
+    RoomFurniture furniture;
+    bool baseValid = true;
+    if (layered) {
+        uint8_t* decoded = allocArray<uint8_t>(header.baseRawBytes);
+        baseValid = decoded && DeflateDecoder::inflateMemory(
+            baseCompressed, header.baseCompressedLen, decoded, header.baseRawBytes);
+        if (decoded) Platform::memory().release(decoded);
+    }
+    if (!baseValid || !validPayload(header, patchRuns, walk, bed, doorway, anchors) ||
+        (layered && !furniture.load(file, header.artWidth, header.artHeight))) {
         Platform::memory().release(baseCompressed);
         if (patchRuns) Platform::memory().release(patchRuns);
         if (patchPixels) Platform::memory().release(patchPixels);
@@ -458,6 +522,21 @@ bool RoomResource::loadExternal() {
     }
 
     releaseExternal();
+    furniture_.swap(furniture);
+    layered_ = layered;
+    if (delta) {
+        referenceCompressed_ = reference.baseCompressed_;
+        referenceCompressedLen_ = reference.baseCompressedLen_;
+        reference.baseCompressed_ = nullptr;
+        if (header.flags & 2) {
+            header.nightPatchRunCount = reference.nightPatchRunCount_;
+            header.nightPatchPixelCount = reference.nightPatchPixelCount_;
+            patchRuns = reference.nightPatchRuns_;
+            patchPixels = reference.nightPatchPixels_;
+            reference.nightPatchRuns_ = nullptr;
+            reference.nightPatchPixels_ = nullptr;
+        }
+    }
     width_ = header.width;
     height_ = header.height;
     artWidth_ = header.artWidth;
@@ -542,6 +621,11 @@ void RoomResource::clearMeta() {
 }
 
 void RoomResource::releaseExternal() {
+    furniture_.clear();
+    layered_ = false;
+    if (referenceCompressed_) Platform::memory().release(referenceCompressed_);
+    referenceCompressed_ = nullptr;
+    referenceCompressedLen_ = 0;
     if (baseCompressed_) Platform::memory().release(baseCompressed_);
     if (nightPatchRuns_) Platform::memory().release(nightPatchRuns_);
     if (nightPatchPixels_) Platform::memory().release(nightPatchPixels_);

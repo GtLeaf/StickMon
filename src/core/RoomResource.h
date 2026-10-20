@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include "core/RoomFurniture.h"
 
 class RoomResource {
 public:
@@ -32,6 +33,12 @@ public:
     static RoomResource& ins();
 
     bool begin();
+    // Switch only after a complete resource has been read and validated.
+    bool selectRoom(const char* roomId);
+    bool setFurniture(const char* slot, const char* assetId);
+    bool layered() const { return layered_; }
+    const RoomFurniture& furniture() const { return furniture_; }
+    uint32_t revision() const { return revision_; }
     bool available() const { return loaded_; }
     bool missing() const { return initialized_ && !loaded_; }
     bool external() const { return loaded_; }
@@ -51,6 +58,8 @@ public:
     uint32_t nightPatchPixelCount() const { return nightPatchPixelCount_; }
 
     const uint8_t* baseCompressedData() const { return loaded_ ? baseCompressed_ : nullptr; }
+    const uint8_t* referenceCompressedData() const { return referenceCompressed_; }
+    uint32_t referenceCompressedLen() const { return referenceCompressedLen_; }
     PatchRun nightPatchRun(uint32_t index) const;
     uint16_t nightPatchPixel(uint32_t index) const;
 
@@ -95,12 +104,15 @@ private:
     RoomResource() = default;
     ~RoomResource() = default;
 
-    bool loadExternal();
+    bool loadExternal(const char* roomId);
     void clearMeta();
     void releaseExternal();
 
     bool initialized_ = false;
+    bool layered_ = false;
+    RoomFurniture furniture_;
     bool loaded_ = false;
+    uint32_t revision_ = 0;
 
     uint16_t width_ = 0;
     uint16_t height_ = 0;
@@ -141,6 +153,8 @@ private:
     uint8_t behaviorAnchorCount_ = 0;
 
     uint8_t* baseCompressed_ = nullptr;
+    uint8_t* referenceCompressed_ = nullptr;
+    uint32_t referenceCompressedLen_ = 0;
     PatchRun* nightPatchRuns_ = nullptr;
     uint16_t* nightPatchPixels_ = nullptr;
     Point* walkPolygon_ = nullptr;

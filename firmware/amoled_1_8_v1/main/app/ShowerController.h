@@ -61,12 +61,15 @@ public:
     enum class Action : uint8_t { NONE, CLOSE, SELECT_SOAP, ALREADY_SOAPED, NO_SOAP };
     struct TapResult { Action action = Action::NONE; uint8_t soapIndex = 0; };
 
-    State& state() { return state_; }
     const State& state() const { return state_; }
     Effects takeEffects();
     void reset(uint32_t nowMs, int16_t groundY);
     bool beginTouch(int x, int y);
     void cancelTouch();
+    void clearPress() { state_.pressedShowerItem = -1; }
+    void finishTouch() { clearPress(); state_.showerToolDragging = false; }
+    void alignPetGround(int16_t groundY) { state_.showerGroundY = groundY; }
+    void prepareVisualBenchmark(bool brush, uint32_t nowMs);
     TapResult tap(const Game::GameState& state, int x, int y, uint32_t nowMs);
     void soapConsumed(uint8_t index, uint32_t nowMs);
     void startTool(ShowerMode mode, uint32_t nowMs);
@@ -95,6 +98,7 @@ public:
     void spawnWater(float x, float y, float vx, float vy);
 
 private:
+    friend struct ShowerControllerTestAccess;
     void requestStage(Game::BathService::Stage stage);
     void damage(int left, int top, int right, int bottom);
     void damageRows(int top, int bottom) { damage(0, top, 368, bottom); }

@@ -17,9 +17,9 @@ struct Config {
 };
 
 static constexpr Config CONFIGS[AREA_COUNT] = {
-    {{12, 162, 17, 25}, 10, 200},  // Butterfree, Furret, Pidgeotto, Pikachu
-    {{8, 184, 195, 279}, 17, 200},  // Wartortle, Azumarill, Quagsire, Pelipper
-    {{143, 3, 26, 282}, 27, 200},  // Snorlax, Venusaur, Raichu, Gardevoir
+    {{12, 161, 16, 25}, 10, 200},  // Butterfree, Sentret, Pidgey, Pikachu
+    {{8, 183, 194, 278}, 17, 200},  // Wartortle, Marill, Wooper, Wingull
+    {{143, 286, 26, 130}, 27, 200}, // Snorlax, Breloom, Raichu, Gyarados
     {{362, 94, 76, 169}, 42, 200},  // Glalie, Gengar, Golem, Crobat
     {{197, 94, 169, 212}, 53, 200}, // Umbreon, Gengar, Crobat, Scizor
     {{149, 6, 76, 169}, 67, 200},  // Dragonite, Charizard, Golem, Crobat

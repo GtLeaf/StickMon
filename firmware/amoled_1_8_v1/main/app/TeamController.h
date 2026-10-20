@@ -63,10 +63,28 @@ public:
         uint8_t replacementSlot = 0xFF;
     };
 
-    State& state() { return state_; }
     const State& state() const { return state_; }
 
     void openTeam();
+    void cancelTouch();
+    void pressMember(int slot) { state_.pressedTeamSlot = slot; }
+    void beginMovesGesture() { state_.teamMovesDragging = false; }
+    void dragMoves(int deltaY);
+    void endMovesGesture() { state_.teamMovesDragging = false; }
+    void endStatusGesture() { state_.teamStatusDragging = false; }
+    void beginMovesDrag() { state_.teamMovesDragging = true; }
+    void beginStatusDrag() { state_.teamStatusDragging = true; }
+    void showActions(uint8_t slot);
+    void dismissActions() { state_.teamActionPopupOpen = false; }
+    void selectLeaderCandidate(uint8_t slot) { state_.pendingTeamSlot = slot; }
+    void requestLeaderConfirmation(uint8_t slot);
+    void dismissConfirmation() { state_.teamConfirmOpen = false; }
+    void completeLeaderChange();
+    void beginRecallSelection() {
+        state_.teamMovesMode = TeamMovesViewModel::Mode::RECALL_SELECT;
+        state_.teamMovesScroll = 0;
+    }
+    void closeMoves() { state_.teamMovesOpen = false; }
     void resetStatus();
     void closeStatus();
     void openStatus(uint8_t slot);

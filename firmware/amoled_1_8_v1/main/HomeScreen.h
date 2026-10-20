@@ -104,6 +104,8 @@ bool debugBackAt(int x, int y);
 int debugItemAt(int x, int y, DebugViewModel::Category category,
                 float scroll);
 float debugMaxScroll(DebugViewModel::Category category);
+int debugFurnitureStyleAt(int x, int y);
+bool debugFurnitureCancelAt(int x, int y);
 int debugPopupChoiceAt(int x, int y);
 int debugPopupDigitAt(int x, int y, uint8_t digitCount);
 int debugContactChoiceAt(int x, int y);

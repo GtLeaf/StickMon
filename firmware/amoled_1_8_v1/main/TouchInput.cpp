@@ -21,11 +21,11 @@ constexpr uint8_t FT3168_ADDRESS = 0x38;
 constexpr int PROBE_ATTEMPTS = 10;
 constexpr uint32_t RELEASE_TIMEOUT_MS = 120;
 constexpr char TAG[] = "TouchInput";
-// First-pass 9-point least-squares calibration from the debug grid.
-constexpr float CAL_X_SCALE = 0.8985547f;
-constexpr float CAL_X_OFFSET = 15.9703f;
-constexpr float CAL_Y_SCALE = 0.8800800f;
-constexpr float CAL_Y_OFFSET = 22.6573f;
+// Physical V1 / FT3168 nine-point DOWN fit; see tools/amoled_v1_touch_host.cpp.
+constexpr float CAL_X_SCALE = 1.1179618f;
+constexpr float CAL_X_OFFSET = -20.711235f;
+constexpr float CAL_Y_SCALE = 1.0494687f;
+constexpr float CAL_Y_OFFSET = -21.692282f;
 
 int16_t toDisplayCoordinate(uint16_t value, int limit, float scale, float offset) {
     const int calibrated = static_cast<int>(std::lround(value * scale + offset));
@@ -60,6 +60,7 @@ esp_err_t TouchInput::begin() {
     esp_err_t result = bsp_touch_new(&config, &handle);
     if (result != ESP_OK) return result;
 
+    ESP_LOGI(TAG, "Touch calibration profile: V1 FT3168 (0x38)");
     ownerTask_ = xTaskGetCurrentTaskHandle();
     result = esp_lcd_touch_register_interrupt_callback_with_data(
         handle, onInterrupt, this);

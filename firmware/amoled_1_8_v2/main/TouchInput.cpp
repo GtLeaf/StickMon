@@ -8,6 +8,7 @@
 #include "esp_log.h"
 #include "esp_sleep.h"
 #include "driver/gpio.h"
+#include "driver/i2c_master.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -18,11 +19,16 @@ constexpr int DISPLAY_WIDTH = 368;
 constexpr int DISPLAY_HEIGHT = 448;
 constexpr uint32_t RELEASE_TIMEOUT_MS = 120;
 constexpr char TAG[] = "TouchInput";
-// V2 nine-point DOWN fit; see README.md. V1 uses a different controller/fit.
-constexpr float CAL_X_SCALE = 1.1179618f;
-constexpr float CAL_X_OFFSET = -20.711235f;
-constexpr float CAL_Y_SCALE = 1.0494687f;
-constexpr float CAL_Y_OFFSET = -21.692282f;
+// Historical measurements came from physical V1 hardware running this target.
+constexpr float FT_X_SCALE = 1.1179618f;
+constexpr float FT_X_OFFSET = -20.711235f;
+constexpr float FT_Y_SCALE = 1.0494687f;
+constexpr float FT_Y_OFFSET = -21.692282f;
+// Physical V2 / CST820 two-pass nine-point DOWN fit, 2026-10-19; see README.md.
+constexpr float CST_X_SCALE = 0.90673230f;
+constexpr float CST_X_OFFSET = 13.937319f;
+constexpr float CST_Y_SCALE = 0.88606005f;
+constexpr float CST_Y_OFFSET = 20.206188f;
 
 int16_t toDisplayCoordinate(uint16_t value, int limit, float scale, float offset) {
     const int calibrated = static_cast<int>(std::lround(value * scale + offset));
@@ -33,11 +39,25 @@ int16_t toDisplayCoordinate(uint16_t value, int limit, float scale, float offset
 }  // namespace
 
 esp_err_t TouchInput::begin() {
+    esp_err_t result = bsp_i2c_init();
+    if (result != ESP_OK) return result;
+    // Match BSP detection priority before constructing the driver. A later
+    // probe could miss a controller that has already entered auto-sleep.
+    auto bus = bsp_i2c_get_handle();
+    if (!bus) return ESP_ERR_INVALID_STATE;
+    if (i2c_master_probe(bus, 0x15, 100) == ESP_OK) {
+        legacyFtController_ = false;
+    } else {
+        result = i2c_master_probe(bus, 0x38, 100);
+        if (result != ESP_OK) return result;
+        legacyFtController_ = true;
+    }
     bsp_touch_config_t config{};
-    esp_err_t result = bsp_touch_new(&config, &handle);
+    result = bsp_touch_new(&config, &handle);
     if (result != ESP_OK) return result;
 
-    ESP_LOGI(TAG, "V2 touch initialized through BSP auto-detection");
+    ESP_LOGI(TAG, "Touch calibration profile: %s",
+             legacyFtController_ ? "FT compatibility (0x38)" : "CST820 (0x15)");
 
     ownerTask_ = xTaskGetCurrentTaskHandle();
     result = esp_lcd_touch_register_interrupt_callback_with_data(
@@ -108,6 +128,10 @@ bool TouchInput::poll(uint32_t nowMs, TouchEvent& event) {
 
     if (pointCount > 0) {
         lastTouchMs = nowMs;
+        const float CAL_X_SCALE = legacyFtController_ ? FT_X_SCALE : CST_X_SCALE;
+        const float CAL_X_OFFSET = legacyFtController_ ? FT_X_OFFSET : CST_X_OFFSET;
+        const float CAL_Y_SCALE = legacyFtController_ ? FT_Y_SCALE : CST_Y_SCALE;
+        const float CAL_Y_OFFSET = legacyFtController_ ? FT_Y_OFFSET : CST_Y_OFFSET;
         int16_t x = toDisplayCoordinate(point.x, DISPLAY_WIDTH, CAL_X_SCALE, CAL_X_OFFSET);
         int16_t y = toDisplayCoordinate(point.y, DISPLAY_HEIGHT, CAL_Y_SCALE, CAL_Y_OFFSET);
         int16_t rawX = static_cast<int16_t>(point.x);

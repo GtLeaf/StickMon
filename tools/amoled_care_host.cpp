@@ -3,10 +3,12 @@
 #include "game/CareExperience.h"
 #include "game/HomeCare.h"
 #include "game/GameRandom.h"
+#include "core/UiStrings.h"
 #include "platform/desktop/DesktopPlatform.h"
 #include "presentation/Canvas565.h"
 #include <cassert>
 #include <cstdio>
+#include <cstring>
 #include <cmath>
 #include <algorithm>
 #include <vector>
@@ -41,9 +43,9 @@ struct AmoledCareTestAccess {
             actor->mind.reset(desktop.millis());
             actor->nextMindUpdateMs = desktop.millis();
         }
-        app.roomAction = AmoledApp::RoomAction::NONE;
-        app.nextAttentionMs = app.nextSpecialActionMs =
-            app.nextPairInteractionMs = desktop.millis() + 3600000;
+        app.homeFlow_.reset();
+        app.homeFlow_.state_.nextAttentionMs = app.homeFlow_.state_.nextSpecialActionMs =
+            app.pairFlow_.state_.nextInteractionMs = desktop.millis() + 3600000;
         app.gameClock.set(desktop.millis(), app.gameState.gameMinutesTotal);
         app.lastCareMs = app.lastPetUpdateMs = desktop.millis();
     }
@@ -64,7 +66,7 @@ struct AmoledCareTestAccess {
                     i % AmoledUi::WIDTH, i / AmoledUi::WIDTH, left, top, right, bottom,
                     static_cast<unsigned>(app.homeMainActor.task),
                     static_cast<unsigned>(app.homeCompanionActor.task),
-                    static_cast<unsigned>(app.roomAction));
+                    static_cast<unsigned>(app.homeFlow_.state().action));
                 break;
             }
             assert(false);
@@ -91,6 +93,73 @@ struct AmoledCareTestAccess {
         if (app.homeCompanionActor.task == Home::Task::FEEDING) {
             assert(app.homeRuntime.owner(Home::Resource::BOWL) == 1);
         }
+    }
+
+    static void checkHudMessages(DesktopPlatform& desktop, Canvas565& canvas) {
+        AmoledApp app;
+        prepareRoom(app, desktop, 1);
+        app.updateMoodHearts(desktop.millis());
+        app.forceFullRender();
+        presentRoom(app, canvas);
+        const std::vector<uint16_t> normal(canvas.rawPixels(),
+            canvas.rawPixels() + canvas.pixelCount());
+        const auto now = desktop.millis();
+        app.setToast(Ui::Menu::FOOD_ADDED, now);
+        assert(app.toastUntil == now + 1500);
+        assert(app.renderRowBegin() == HOME_STATUS_TOP && app.renderRowEnd() == 448);
+        presentRoom(app, canvas);
+        assert(std::equal(normal.begin(), normal.begin() + HOME_STATUS_TOP * 368,
+                          canvas.rawPixels()));
+        // The hidden menu and lock cannot be activated, even if the feedback
+        // expires while the finger is held down.
+        app.handleTap(120, 396, now);
+        app.handleTap(44, 396, now);
+        assert(app.sceneFlow.current() == AppSceneFlow::Scene::HOME);
+        assert(!app.consumeLockRequest());
+        app.handleTouch({TouchEventType::DOWN, 120, 396, 120, 396, now});
+        assert(!app.pointerDown);
+        desktop.advanceMs(1500);
+        app.update(desktop.millis());
+        assert(!app.toast);
+        app.handleTouch({TouchEventType::UP, 120, 396, 120, 396, desktop.millis()});
+        assert(app.sceneFlow.current() == AppSceneFlow::Scene::HOME);
+        presentRoom(app, canvas);
+
+        app.setToast(Ui::Menu::NO_FOOD, desktop.millis());
+        assert(app.toastUntil == desktop.millis() + 2000);
+        presentRoom(app, canvas);
+        desktop.advanceMs(500);
+        app.setToast(Ui::Menu::NO_FOOD, desktop.millis());
+        assert(app.toastUntil == desktop.millis() + 2000);
+        assert(app.renderRowBegin() == HOME_STATUS_TOP);
+        presentRoom(app, canvas);
+
+        // A new room action replaces the message immediately without a queue.
+        app.gameState.room.food[0] = 2;
+        app.gameState.room.bowlCount = app.gameState.room.bowlBitesRemaining = 0;
+        putServing(app, desktop);
+        assert(std::strcmp(app.toast, Ui::Menu::FOOD_ADDED) == 0);
+        presentRoom(app, canvas);
+        const auto oldExp = app.gameState.team[0].exp;
+        app.handleTap(app.worldToScreenX(app.homeMainActor.x),
+                      app.worldToScreenY(app.homeMainActor.y) - 20, desktop.millis());
+        assert(app.heartsUntil != 0);
+        assert(app.gameState.team[0].exp >= oldExp);
+
+        // Scene changes discard feedback in both directions, including a
+        // transition rendered before the next update tick.
+        app.sceneFlow.openMenu();
+        app.forceFullRender();
+        assert(!app.toast);
+        app.setToast(Ui::Menu::NO_FOOD, desktop.millis());
+        assert(app.toastUntil == desktop.millis() + 1100);
+        app.sceneFlow.goHome();
+        app.forceFullRender();
+        assert(!app.toast);
+        presentRoom(app, canvas);
+        app.handleTap(120, 396, desktop.millis());
+        assert(app.sceneFlow.current() == AppSceneFlow::Scene::MAIN_MENU);
+        std::puts("home HUD: feedback damage, timing, replacement, room taps, hidden gestures and scene cleanup verified");
     }
 
     static void checkAuthoritativeRoomMotion(DesktopPlatform& desktop,
@@ -480,15 +549,16 @@ struct AmoledCareTestAccess {
             app.updateCamera();
             app.forceFullRender();
             presentRoom(app, canvas);
-            assert(app.beginRoomActionMove(approach, 125, 125, desktop.millis()));
+            assert(app.homeFlow_.beginMove(approach, 125, 125, desktop.millis()));
+            app.applyHomeFlowEffects(desktop.millis());
             bool waiting = false;
             for (int frame = 0; frame < 300; ++frame) {
                 desktop.advanceMs(50);
                 app.updatePet(desktop.millis());
                 assertRoomState(app);
                 if (frame % 20 == 0) presentRoom(app, canvas);
-                waiting = app.roomAction == AmoledApp::RoomAction::ATTENTION_WAIT ||
-                          app.roomAction == AmoledApp::RoomAction::WINDOW_WAIT;
+                waiting = app.homeFlow_.state().action == AmoledApp::RoomAction::ATTENTION_WAIT ||
+                          app.homeFlow_.state().action == AmoledApp::RoomAction::WINDOW_WAIT;
                 if (waiting) break;
             }
             assert(waiting && actor.motion == Home::MotionPhase::STILL);
@@ -545,18 +615,18 @@ struct AmoledCareTestAccess {
             app.advanceProgression(desktop.millis());
             assert(monster.speciesId == 133 && monster.level == 20);
             if (test.evolves) {
-                assert(app.progressionMode == ProgressionViewModel::Mode::EVOLUTION);
-                assert(app.progressionToSpeciesId == 196);
-                assert(app.progressionEvolutionItem == Game::ItemId::COUNT);
+                assert(app.progressionFlow_.state().progressionMode == ProgressionViewModel::Mode::EVOLUTION);
+                assert(app.progressionFlow_.state().progressionToSpeciesId == 196);
+                assert(app.progressionFlow_.state().progressionEvolutionItem == Game::ItemId::COUNT);
                 app.advanceProgression(desktop.millis());
                 assert(monster.speciesId == 133);
                 if (test.cancel) {
-                    assert(app.progressionEvolution.beginCancellation(desktop.millis()));
+                    assert(app.progressionFlow_.cancelEvolution(desktop.millis()));
                     desktop.advanceMs(Game::EvolutionSequence::CANCEL_COMPLETE_MS);
                     app.handleTap(0, 0, desktop.millis());
                 }
             } else {
-                assert(app.progressionMode != ProgressionViewModel::Mode::EVOLUTION);
+                assert(app.progressionFlow_.state().progressionMode != ProgressionViewModel::Mode::EVOLUTION);
             }
             for (int tries = 0; tries < 20 &&
                  app.sceneFlow.current() == AppSceneFlow::Scene::PROGRESSION; ++tries) {
@@ -666,6 +736,489 @@ struct AmoledCareTestAccess {
         }
     }
 
+    static void checkAmbientSequence(DesktopPlatform& desktop, Canvas565& canvas,
+                                     bool wrap) {
+        uint16_t seen = 0;
+        for (uint32_t seed = 1; seed <= 64; ++seed) {
+            AmoledApp app;
+            prepareRoom(app, desktop);
+            auto& actor = app.homeMainActor;
+            actor.x = actor.targetX = 100;
+            actor.y = actor.targetY = 125;
+            app.homeCompanionActor.x = app.homeCompanionActor.targetX = 155;
+            app.homeCompanionActor.y = app.homeCompanionActor.targetY = 115;
+            actor.behavior.activityBias = static_cast<int8_t>(seed % 3) - 1;
+            app.configureHomeRuntime();
+            app.updateCamera();
+            presentRoom(app, canvas);
+            const uint32_t base = wrap ? 0xFFFFF000U : 1000U;
+            actor.nextDecisionMs = base + 60000;
+            app.nextPetFrameMs = base + 140;
+            GameRandom::seed(seed);
+            assert(app.homeFlow_.startAutonomousAction(
+                app.homeActionLayout(), app.petDirection, base));
+            app.applyHomeFlowEffects(base);
+            const auto selected = app.homeFlow_.state().action;
+            seen |= 1U << static_cast<uint8_t>(selected);
+            uint64_t hash = 1469598103934665603ULL;
+            const auto add = [&](uint32_t value) {
+                for (uint8_t byte = 0; byte < 4; ++byte) {
+                    hash = (hash ^ (value & 255U)) * 1099511628211ULL;
+                    value >>= 8;
+                }
+            };
+            const auto number = [&](float value) {
+                uint32_t bits;
+                std::memcpy(&bits, &value, sizeof(bits));
+                add(bits);
+            };
+            int frames = 0;
+            do {
+                add(static_cast<uint8_t>(app.homeFlow_.state().action));
+                add(app.homeFlow_.state().phase);
+                add(static_cast<uint8_t>(actor.task));
+                add(static_cast<uint8_t>(actor.motion));
+                number(actor.x); number(actor.y);
+                number(actor.targetX); number(actor.targetY);
+                add(actor.route.count); add(actor.route.index);
+                add(static_cast<uint8_t>(app.petDirection)); add(app.petFrame);
+                add(app.nextPetFrameMs - base); add(actor.nextDecisionMs - base);
+                add(app.homeFlow_.state().nextSpecialActionMs - base);
+                add(app.needsRender()); add(app.renderRowBegin()); add(app.renderRowEnd());
+                if (frames % 13 == 0) presentRoom(app, canvas);
+                if (app.homeFlow_.state().action == AmoledApp::RoomAction::NONE) break;
+                ++frames;
+                assert(frames <= 400);
+                app.updateRoomAction(base + frames * 50U, 0.05f);
+                assertRoomState(app);
+            } while (true);
+            presentRoom(app, canvas);
+            std::printf("HomeSequence seed=%u action=%u frames=%d hash=%016llx rng=%08x\n",
+                seed, static_cast<unsigned>(selected), frames,
+                static_cast<unsigned long long>(hash), GameRandom::next());
+        }
+        for (const auto action : {AmoledApp::RoomAction::LOOK_AROUND,
+                AmoledApp::RoomAction::QUIET_GAZE, AmoledApp::RoomAction::STEP_BACK,
+                AmoledApp::RoomAction::CIRCLE, AmoledApp::RoomAction::DASH}) {
+            assert(seen & (1U << static_cast<uint8_t>(action)));
+        }
+    }
+
+    static void checkPairSequence(DesktopPlatform& desktop, Canvas565& canvas, bool wrap) {
+        for (uint32_t seed = 1; seed <= 16; ++seed) for (uint8_t scenario = 0; scenario < 10; ++scenario) {
+            AmoledApp app;
+            prepareRoom(app, desktop);
+            const uint32_t base = wrap ? 0xFFFFF000U : 1000U;
+            if (scenario == 3 || scenario == 4) {
+                const uint8_t slot = scenario == 3 ? 0 : 1;
+                app.gameState.team[slot] = Game::MonsterFactory::create(129, 20);
+                app.syncHomeActors(desktop.millis());
+                app.updatePetFootprint();
+            }
+            for (uint8_t slot = 0; slot < 2; ++slot) {
+                app.homeRuntime.stop(slot, base, 0);
+                app.gameState.team[slot].mood = 95;
+                app.gameState.team[slot].satiety = 100;
+                app.gameState.team[slot].nature = 0;
+            }
+            app.homeMainActor.x = app.homeMainActor.targetX = 103;
+            app.homeMainActor.y = app.homeMainActor.targetY = 125;
+            app.homeCompanionActor.x = app.homeCompanionActor.targetX = 155;
+            app.homeCompanionActor.y = app.homeCompanionActor.targetY = 115;
+            app.configureHomeRuntime(); app.updateCamera(); presentRoom(app, canvas);
+            app.nextPetFrameMs = app.nextCompanionFrameMs = base + 140;
+            app.gameState.pairMoodRewardsToday = scenario == 9 ? 3 : 0;
+            const bool arrival = scenario == 2 || scenario == 3 || scenario == 4 || scenario == 9;
+            if (arrival) {
+                app.visitorFlow_.state_.motion = AmoledApp::VisitorMotion::ACTIVE;
+                app.visitArrival.begin(base);
+            }
+            app.requestFullRender();
+            GameRandom::seed(seed);
+            const bool started = app.startPairInteraction(base, scenario == 1, arrival, arrival);
+            assert(started);
+            uint64_t hash = 1469598103934665603ULL;
+            const auto add = [&](uint32_t value) {
+                for (uint8_t byte = 0; byte < 4; ++byte) {
+                    hash = (hash ^ (value & 255U)) * 1099511628211ULL; value >>= 8;
+                }
+            };
+            const auto number = [&](float value) {
+                uint32_t bits; std::memcpy(&bits, &value, sizeof(bits)); add(bits);
+            };
+            int frames = 0;
+            do {
+                add(static_cast<uint8_t>(app.pairFlow_.state_.phase)); add(static_cast<uint8_t>(app.pairFlow_.state_.activity));
+                add(app.pairFlow_.state_.leaderMain); add(app.pairFlow_.state_.arrivalTalk);
+                add(app.pairFlow_.state_.parallelApproach); add(app.pairFlow_.state_.mainArrived); add(app.pairFlow_.state_.companionArrived);
+                add(app.pairFlow_.state_.phaseUntilMs - base); add(app.pairFlow_.state_.interactionUntilMs - base);
+                add(app.pairFlow_.state_.chaseLegsRemaining); add(app.pairFlow_.state_.nextInteractionMs - base);
+                number(app.pairFlow_.state_.mainRenderOffsetY); number(app.pairFlow_.state_.companionRenderOffsetY);
+                number(app.cameraX); number(app.cameraY);
+                add(static_cast<uint8_t>(app.petDirection)); add(static_cast<uint8_t>(app.companionDirection));
+                add(app.petFrame); add(app.companionFrame); add(app.nextPetFrameMs-base); add(app.nextCompanionFrameMs-base);
+                add(app.heartsUntil == 0 ? 0 : app.heartsUntil-base);
+                add(static_cast<uint8_t>(app.visitArrival.phase()));
+                add(app.gameState.pairMoodRewardsToday);
+                for (uint8_t slot = 0; slot < 2; ++slot) {
+                    const auto& actor = *app.homeRuntime.actor(slot);
+                    add(static_cast<uint8_t>(actor.task)); add(static_cast<uint8_t>(actor.motion));
+                    number(actor.x); number(actor.y); number(actor.targetX); number(actor.targetY);
+                    number(actor.velocityX); number(actor.velocityY);
+                    add(actor.route.count); add(actor.route.index); add(actor.nextDecisionMs-base);
+                    add(app.gameState.team[slot].exp); add(app.gameState.team[slot].mood);
+                }
+                add(app.needsRender()); add(app.renderRowBegin()); add(app.renderRowEnd());
+                if (frames % 67 == 0) presentRoom(app, canvas);
+                if (app.pairFlow_.state_.phase == AmoledApp::PairPhase::NONE) break;
+                assert(++frames <= 1000);
+                const uint32_t now = base + frames * 50U;
+                if (frames == 5) {
+                    app.requestFullRender();
+                    if (scenario == 5) app.gameState.team[1].satiety = 25;
+                    if (scenario == 6) app.visitorFlow_.state_.motion = AmoledApp::VisitorMotion::EXITING;
+                    if (scenario == 7) app.cancelPairInteraction(now);
+                    if (scenario == 8) app.homeMainActor.route.clear();
+                    if (scenario == 2) app.gameState.team[0].satiety = 0;
+                }
+                if (app.pairFlow_.state_.phase != AmoledApp::PairPhase::NONE) app.updatePairInteraction(now, 0.05f);
+                assert(app.homeRuntime.validate() == Home::INVARIANT_OK);
+            } while (true);
+            const auto mood = app.gameState.pairMoodRewardsToday;
+            const auto experience = app.gameState.team[0].exp;
+            app.finishPairInteraction(base + frames * 50U, true);
+            assert(app.gameState.pairMoodRewardsToday == mood && app.gameState.team[0].exp == experience);
+            presentRoom(app, canvas);
+            std::printf("PairSequence seed=%u scenario=%u frames=%d hash=%016llx rng=%08x\n",seed,scenario,frames,
+                static_cast<unsigned long long>(hash), GameRandom::next());
+        }
+    }
+
+    static void checkVisitorSequence(DesktopPlatform& desktop, Canvas565& canvas, bool wrap) {
+        for (uint32_t seed = 1; seed <= 8; ++seed) for (uint8_t scenario = 0; scenario < 8; ++scenario) {
+            AmoledApp app; prepareRoom(app, desktop);
+            const uint32_t base = wrap ? 0xFFFFF000U : 1000U;
+            auto& guest = app.gameState.team[1];
+            guest = Game::MonsterFactory::create(scenario == 1 ? 129 : 172, 10);
+            guest.origin = Game::Origin::VISITOR; guest.satiety = 100; guest.nature = 0;
+            app.syncHomeActors(base); app.updatePetFootprint();
+            app.homeMainActor.x = app.homeMainActor.targetX = scenario == 2 ? 231 : 100;
+            app.homeMainActor.y = app.homeMainActor.targetY = scenario == 2 ? 155 : 125;
+            app.configureHomeRuntime(); app.updateCamera(); presentRoom(app, canvas);
+            GameRandom::seed(seed);
+            app.beginVisitorEntry(base);
+            uint64_t hash = 1469598103934665603ULL;
+            const auto add = [&](uint32_t value) {
+                for (uint8_t byte=0; byte<4; ++byte) { hash=(hash^(value&255U))*1099511628211ULL; value>>=8; }
+            };
+            const auto number = [&](float value) {uint32_t bits; std::memcpy(&bits,&value,sizeof(bits));add(bits);};
+            bool exited = false; int frames = 0; bool activeSeen = false;
+            do {
+                add(static_cast<uint8_t>(app.visitorFlow_.state_.motion)); add(app.visitorFlow_.state_.hostDoorPhase);
+                add(app.visitorFlow_.state_.crossingDoor); add(app.visitorFlow_.state_.untilMs-base);
+                add(app.visitorFlow_.state_.welcomeValid); number(app.visitorFlow_.state_.welcomeX); number(app.visitorFlow_.state_.welcomeY);
+                add(app.visitorFlow_.state_.landingValid); number(app.visitorFlow_.state_.landingX); number(app.visitorFlow_.state_.landingY);
+                add(static_cast<uint8_t>(app.visitArrival.phase())); add(app.gameState.teamCount);
+                add(static_cast<uint8_t>(app.pairFlow_.state().phase));
+                number(app.cameraX);number(app.cameraY);add(app.petFrame);add(app.companionFrame);
+                add(app.nextPetFrameMs-base);add(app.nextCompanionFrameMs-base);
+                add(static_cast<uint8_t>(app.petDirection));add(static_cast<uint8_t>(app.companionDirection));
+                for (uint8_t slot=0;slot<2;++slot) {
+                    const auto& a=slot==0?app.homeMainActor:app.homeCompanionActor;
+                    number(a.x);number(a.y);number(a.targetX);number(a.targetY);
+                    number(a.velocityX);number(a.velocityY);add(a.hidden);add(a.active);
+                    add(static_cast<uint8_t>(a.task));add(static_cast<uint8_t>(a.motion));
+                    add(a.route.count);add(a.route.index);
+                }
+                add(static_cast<uint32_t>(app.homeRuntime.owner(Home::Resource::DOOR)));
+                add(app.needsRender());add(app.renderRowBegin());add(app.renderRowEnd());
+                if(frames%79==0)presentRoom(app,canvas);
+                if(exited && app.visitorFlow_.state_.motion==AmoledApp::VisitorMotion::NONE)break;
+                assert(++frames<=1100);const uint32_t now=base+frames*50U;
+                if(frames==1) app.updateVisitorMotion(base,0.0f);
+                if(scenario==3 && frames==2)app.homeMainActor.route.clear();
+                if(scenario==4 && app.visitorFlow_.state_.motion==AmoledApp::VisitorMotion::ENTERING) app.visitorFlow_.state_.untilMs=now;
+                if(scenario==5 && app.visitorFlow_.state_.hostDoorPhase==2)app.visitorFlow_.state_.untilMs=now;
+                if(scenario==6 && !exited && app.visitorFlow_.state_.motion==AmoledApp::VisitorMotion::ENTERING) {
+                    app.beginVisitorExit(now,false);exited=true;
+                }
+                if(app.visitorFlow_.state_.motion==AmoledApp::VisitorMotion::ACTIVE && !exited) {
+                    activeSeen=true;
+                    app.cancelPairInteraction(now);
+                    app.beginVisitorExit(now,false);exited=true;
+                    if(scenario==7) {app.homeCompanionActor.route.clear();app.visitorFlow_.state_.crossingDoor=true;}
+                }
+                app.updateVisitorMotion(now,0.05f);
+                assert(app.homeRuntime.validate()==Home::INVARIANT_OK);
+            }while(true);
+            assert(activeSeen || scenario==6);
+            assert(app.gameState.teamCount==1 && app.homeRuntime.owner(Home::Resource::DOOR)<0);
+            presentRoom(app,canvas);
+            std::printf("VisitorSequence seed=%u scenario=%u frames=%d hash=%016llx rng=%08x\n",seed,scenario,frames,
+                static_cast<unsigned long long>(hash),GameRandom::next());
+        }
+    }
+
+    static void checkVisitorEffects(DesktopPlatform& desktop) {
+        for (bool wrap : {false, true}) {
+            const uint32_t base = wrap ? 0xFFFFF000U : 1000U;
+            for (int scenario = 0; scenario < 3; ++scenario) {
+                AmoledApp app; prepareRoom(app, desktop);
+                auto& guest = app.gameState.team[1];
+                guest = Game::MonsterFactory::create(172, 10);
+                guest.origin = Game::Origin::VISITOR;
+                app.syncHomeActors(base); app.updatePetFootprint();
+                app.configureHomeRuntime();
+                app.beginVisitorEntry(base);
+                assert(app.visitorFlow_.state().motion == AmoledApp::VisitorMotion::HOST_APPROACH);
+                assert(app.homeRuntime.owner(Home::Resource::DOOR) == 0);
+                if (scenario == 0) {
+                    // Early cancellation used to leave the host owning DOOR.
+                    app.beginVisitorExit(base + 1, false);
+                    assert(app.homeRuntime.owner(Home::Resource::DOOR) == 1);
+                    assert(app.homeMainActor.task != Home::Task::DOOR_ACTION);
+                    assert(app.homeRuntime.validate() == Home::INVARIANT_OK);
+                    for (uint32_t ms = 50; ms < 25000 && app.gameState.teamCount > 1; ms += 50)
+                        app.updateVisitorMotion(base + ms, 0.05f);
+                    assert(app.gameState.teamCount == 1);
+                    assert(app.homeRuntime.owner(Home::Resource::DOOR) < 0);
+                    const auto end = app.visitorFlow_.takeEffects();
+                    assert(!end.exitFinished && !end.entryFinished && !end.needLanding);
+                } else if (scenario == 1) {
+                    // Exploration cancels an entry and releases both door leases.
+                    app.visitorFlow_.cancelEntryForDeparture();
+                    assert(app.visitorFlow_.state().motion == AmoledApp::VisitorMotion::NONE);
+                    assert(app.homeRuntime.owner(Home::Resource::DOOR) < 0);
+                    app.markRendered();
+                    app.updateVisitorMotion(base + 50, 0.05f);
+                    assert(!app.needsRender());
+                } else {
+                    // The landing acknowledgement must be consumed only once.
+                    auto layout = app.visitorLayout();
+                    app.visitorFlow_.state_.hostDoorPhase = 1;
+                    app.visitArrival.advance(Home::VisitArrivalEvent::HOST_READY, base);
+                    app.visitorFlow_.update(layout, base + 500, 0.05f);
+                    app.visitorFlow_.takeEffects();
+                    // A host-clear route can precede revealing the visitor.
+                    for (uint32_t ms = 550; !app.visitorFlow_.landingPending_ && ms < 20000; ms += 50) {
+                        app.visitorFlow_.update(layout, base + ms, 0.05f);
+                        app.visitorFlow_.takeEffects();
+                        app.visitorFlow_.completeMovement(layout, base + ms);
+                        app.visitorFlow_.takeEffects();
+                    }
+                    assert(app.visitorFlow_.landingPending_);
+                    app.visitorFlow_.completeLanding(true, 100, 120);
+                    const auto landed = app.visitorFlow_.takeEffects();
+                    assert(landed.resetFrameMask == 2 && landed.fullRender);
+                    app.visitorFlow_.completeLanding(true, 0, 0);
+                    const auto duplicate = app.visitorFlow_.takeEffects();
+                    assert(!duplicate.resetFrameMask && !duplicate.fullRender && !duplicate.traceCount);
+                    app.visitorFlow_.cancelEntryForDeparture();
+                    assert(app.homeRuntime.owner(Home::Resource::DOOR) < 0);
+                }
+            }
+        }
+        std::puts("visitor effects: early exit lease handoff, cancellation, landing acknowledgement and wrap verified");
+    }
+
+    static void checkVisitAwayEffects(DesktopPlatform& desktop) {
+        using Phase = VisitAwayFlow::Phase;
+        for (bool wrap : {false, true}) for (int scenario = 0; scenario < 3; ++scenario) {
+            const uint32_t base = wrap ? 0xFFFFF000U : 1000U;
+            AmoledApp app; prepareRoom(app, desktop);
+            const auto layout = app.visitorLayout();
+            auto& flow = app.visitAwayFlow_;
+            const VisitAwayFlow::Door door{scenario == 0, layout.insideX, layout.insideY,
+                                           layout.outsideX, layout.outsideY};
+            flow.begin(door, base);
+            auto effects = flow.takeEffects();
+            assert(effects.resetAnimation && effects.fullRender);
+            assert(!flow.takeEffects().resetAnimation);
+            bool crossed = false, departed = false;
+            for (uint32_t ms = 50; ms < 25000 && !departed; ms += 50) {
+                const auto previous = flow.state().phase;
+                assert(flow.update(true, base + ms, scenario == 2 ? 0.0f : 0.05f));
+                effects = flow.takeEffects();
+                assert(effects.camera && effects.actorChanged);
+                flow.completeMovement(base + ms);
+                effects = flow.takeEffects();
+                if (flow.state().phase == Phase::CROSS_DOOR) {
+                    crossed = true;
+                    if (previous == Phase::WALK_TO_DOOR) {
+                        assert(app.homeMainActor.x == door.insideX && app.homeMainActor.y == door.insideY);
+                        assert(!app.homeMainActor.route.count);
+                    }
+                }
+                if (effects.departed) { assert(effects.fullRender); departed = true; }
+            }
+            assert(crossed && departed && flow.state().phase == Phase::AWAY && app.homeMainActor.hidden);
+            assert(flow.update(true, base + 25000, 0.05f));
+            assert(!flow.takeEffects().departed);
+            assert(!flow.update(false, base + 25001, 0.0f));
+            effects = flow.takeEffects();
+            assert(effects.clearRecall && effects.stopAnimation && !effects.resetAnimation);
+            assert(flow.state().phase == Phase::NONE && !app.homeMainActor.hidden);
+            assert(app.homeMainActor.x == door.insideX && app.homeMainActor.y == door.insideY);
+            assert(app.homeRuntime.validate() == Home::INVARIANT_OK);
+            // Cancellation while approaching preserves the pose and animation deadline.
+            flow.begin(door, base + 26000); flow.takeEffects();
+            const float x = app.homeMainActor.x, y = app.homeMainActor.y;
+            app.nextPetFrameMs = base + 28000;
+            flow.update(false, base + 26001, 0.0f); app.applyVisitAwayEffects(base + 26001);
+            assert(app.nextPetFrameMs == base + 28000);
+            assert(app.homeMainActor.x == x && app.homeMainActor.y == y);
+            flow.begin(door, base + 27000); flow.takeEffects();
+            flow.update(true, base + 40001, 0.0f); flow.takeEffects(); flow.completeMovement(base + 40001);
+            assert(flow.state().phase == Phase::CROSS_DOOR);
+            flow.takeEffects(); flow.update(false, base + 40002, 0.0f);
+            assert(flow.state().phase == Phase::NONE && !app.homeMainActor.hidden);
+        }
+        std::puts("visit away: routed/direct/timeout departure, once-only completion, cancellation, frame clock and wrap verified");
+    }
+
+    static void checkPairEffects(DesktopPlatform& desktop) {
+        const uint32_t now = 1000;
+        {
+            AmoledApp app; prepareRoom(app, desktop);
+            app.markRendered();
+            assert(!app.updatePairInteraction(desktop.millis(), 0.05f));
+            assert(!app.needsRender());
+            const auto empty = app.pairFlow_.takeEffects();
+            assert(!empty.roomChanged && !empty.camera && !empty.finished && !empty.frameMask);
+            app.schedulePairInteraction(now, true);
+            assert(!app.pairFlow_.needsStart(now + 299) && app.pairFlow_.needsStart(now + 300));
+        }
+        // Termination must release both routes/resources and emit one completion.
+        for (int reason = 0; reason < 4; ++reason) {
+            AmoledApp app; prepareRoom(app, desktop);
+            assert(app.startPairInteraction(now, true));
+            if (reason == 0) app.gameState.team[0].majorStatus = Game::MajorStatus::SLEEP;
+            if (reason == 1) app.gameState.team[1].hpCur = 0;
+            if (reason == 2) app.gameState.team[0].satiety = 25;
+            if (reason == 3) app.visitorFlow_.state_.motion = AmoledApp::VisitorMotion::EXITING;
+            const auto exp = app.gameState.team[0].exp;
+            assert(!app.updatePairInteraction(now + 50, 0.05f));
+            assert(!app.homeRuntime.pairActive());
+            assert(!app.homeMainActor.route.count && !app.homeCompanionActor.route.count);
+            assert(app.gameState.team[0].exp == exp && app.gameState.pairMoodRewardsToday == 0);
+            assert(app.heartsUntil == 0);
+        }
+        for (bool nearGoal : {false, true}) {
+            AmoledApp app; prepareRoom(app, desktop);
+            app.visitorFlow_.state_.motion = AmoledApp::VisitorMotion::ACTIVE;
+            app.visitArrival.begin(now - 420);
+            assert(app.visitArrival.advance(Home::VisitArrivalEvent::HOST_READY, now - 420));
+            assert(app.visitArrival.advance(Home::VisitArrivalEvent::DOOR_OPENED, now));
+            assert(app.visitArrival.advance(Home::VisitArrivalEvent::GUEST_ENTERING, now));
+            assert(app.visitArrival.advance(Home::VisitArrivalEvent::GUEST_INSIDE, now));
+            assert(app.startPairInteraction(now, false, true, true));
+            app.pairFlow_.state_.phaseUntilMs = now;
+            if (nearGoal) {
+                app.homeMainActor.x = app.homeMainActor.targetX - 0.5f;
+                app.homeMainActor.y = app.homeMainActor.targetY;
+                app.homeCompanionActor.x = app.homeCompanionActor.targetX - 0.5f;
+                app.homeCompanionActor.y = app.homeCompanionActor.targetY;
+            }
+            const bool active = app.updatePairInteraction(now, 0.0f);
+            assert(active == nearGoal);
+            if (!nearGoal) {
+                assert(app.visitArrival.phase() == Home::VisitArrivalPhase::COMPLETE);
+                assert(!app.homeRuntime.pairActive());
+                continue;
+            }
+            assert(app.pairFlow_.state().phase == AmoledApp::PairPhase::INVITE);
+            assert(app.homeMainActor.x == app.homeMainActor.targetX);
+            assert(app.homeCompanionActor.x == app.homeCompanionActor.targetX);
+            app.updatePairInteraction(now + 750, 0.0f);
+            assert(app.visitArrival.phase() == Home::VisitArrivalPhase::TALK);
+            auto& flow = app.pairFlow_;
+            flow.finish(now + 800, true);
+            flow.finish(now + 800, true);
+            const auto done = flow.takeEffects();
+            assert(done.finished && done.reward && done.stopAnimation && done.roomChanged);
+            assert(app.visitArrival.phase() == Home::VisitArrivalPhase::COMPLETE);
+            assert(!app.homeRuntime.pairActive());
+            assert(!flow.completeMovement(app.pairLayout(), now + 800));
+            const auto empty = flow.takeEffects();
+            assert(!empty.finished && !empty.reward && !empty.roomChanged && !empty.frameMask);
+        }
+        std::puts("pair effects: idle, deadlines, health/hunger/exit cancellation, arrival timeout/tolerance and one-shot completion verified");
+    }
+
+    // Effect-contract checks apply only to the extracted owner.
+    static void checkAmbientEffects(DesktopPlatform& desktop) {
+        AmoledApp first, second;
+        prepareRoom(first, desktop, 1);
+        prepareRoom(second, desktop, 1);
+        auto& flow = first.homeFlow_;
+        const auto layout = first.homeActionLayout();
+        float x = 0, y = 0;
+        assert(flow.chooseAttentionPose(layout, x, y));
+        first.homeMainActor.x = x;
+        first.homeMainActor.y = y;
+        constexpr uint32_t base = 0xFFFFFFF0U;
+        assert(flow.startAttention(layout, first.petDirection, base));
+        auto effects = flow.takeEffects();
+        assert(effects.heart == HomeFlow::Heart::SHOW && !effects.save);
+        assert(effects.heartsUntilMs == base + 6000U);
+        assert(flow.takeEffects().heart == HomeFlow::Heart::NONE);
+        assert(second.homeFlow_.state().action == AmoledApp::RoomAction::NONE);
+        assert(flow.update(layout, base + 5999U, 0.05f, false).active);
+        effects = flow.takeEffects();
+        assert(!effects.roomChanged && !effects.save && !effects.scheduleDecision);
+        assert(flow.update(layout, base + 6000U, 0.05f, false).active);
+        effects = flow.takeEffects();
+        assert(effects.scheduleDecision && effects.roomChanged);
+        assert(flow.state().action == AmoledApp::RoomAction::NONE);
+        assert(!flow.update(layout, base + 6050U, 0.05f, false).active);
+        effects = flow.takeEffects();
+        assert(!effects.roomChanged && !effects.save && !effects.scheduleDecision);
+        assert(flow.startAttention(layout, first.petDirection, 7000));
+        flow.takeEffects();
+        flow.cancel(false, 7100);
+        effects = flow.takeEffects();
+        assert(effects.heart == HomeFlow::Heart::CLEAR && effects.scheduleDecision);
+        flow.cancel(false, 7150);
+        assert(!flow.takeEffects().scheduleDecision);
+        // A failed exit must retain the original bowl-clearance retry.
+        flow.startFeedFinish(8000);
+        flow.takeEffects();
+        flow.cancel(true, 8100);
+        assert(flow.state().action == AmoledApp::RoomAction::FEED_FINISH);
+        assert(flow.state().untilMs == 8400);
+        flow.takeEffects();
+        flow.cancel(false, 8500);
+        assert(flow.state().action == AmoledApp::RoomAction::NONE);
+        flow.takeEffects();
+        // Window persistence is emitted on arrival, and consumed once.
+        assert(flow.beginMove(AmoledApp::RoomAction::WINDOW_APPROACH, x, y, 9000));
+        flow.takeEffects();
+        flow.completeMovement(layout, Home::RouteStep::ARRIVED, false, 9050);
+        effects = flow.takeEffects();
+        assert(effects.save && first.gameState.team[0].lastWindowGazeAt == 12U * 60U * 60U);
+        assert(flow.state().action == AmoledApp::RoomAction::WINDOW_WAIT);
+        assert(!flow.takeEffects().save);
+        flow.update(layout, 9100, 0.05f, false);
+        effects = flow.takeEffects();
+        assert(!effects.save && !effects.roomChanged);
+        assert(!flow.tryAmbient(layout, first.petDirection, 9150));
+        assert(flow.state().action == AmoledApp::RoomAction::WINDOW_WAIT);
+        // Exercise the production survival handoff while attention is active.
+        prepareRoom(first, desktop, 1);
+        first.homeMainActor.x = x;
+        first.homeMainActor.y = y;
+        const uint32_t now = desktop.millis();
+        assert(flow.startAttention(layout, first.petDirection, now));
+        first.applyHomeFlowEffects(now);
+        first.gameState.team[0].satiety = 10;
+        first.gameState.room.bowlCount = 0;
+        first.updatePet(now + 50);
+        assert(flow.state().action == AmoledApp::RoomAction::NONE);
+        assert(first.heartsUntil == 0);
+        assert(first.homeMainActor.task != Home::Task::ROOM_ACTION);
+        std::puts("HomeFlow effects: independent state, one-shot save/hearts, stationary waits, cancellation, clearance retry and clock wrap passed");
+    }
+
     static void checkRoomAvoidance(DesktopPlatform& desktop) {
         using Task = Home::Task;
         const auto prepare = [&](AmoledApp& app) {
@@ -684,7 +1237,7 @@ struct AmoledCareTestAccess {
             app.homeMainActor.y = app.homeMainActor.targetY = 125;
             app.homeCompanionActor.x = app.homeCompanionActor.targetX = 132;
             app.homeCompanionActor.y = app.homeCompanionActor.targetY = 115;
-            app.roomAction = AmoledApp::RoomAction::NONE;
+            app.homeFlow_.reset();
             app.homeRuntime.stop(0, desktop.millis(), 60000);
             app.homeRuntime.stop(1, desktop.millis(), 60000);
             app.configureHomeRuntime();
@@ -821,10 +1374,10 @@ struct AmoledCareTestAccess {
             assert(app.gameState.team[i].level == 16);
         }
         assert(app.startPendingCareProgression(desktop.millis()));
-        assert(app.progressionTeamSlot == 0);
+        assert(app.progressionFlow_.state().progressionTeamSlot == 0);
         app.advanceProgression(desktop.millis());
-        assert(app.progressionMode == ProgressionViewModel::Mode::EVOLUTION);
-        assert(app.progressionToSpeciesId == 2);
+        assert(app.progressionFlow_.state().progressionMode == ProgressionViewModel::Mode::EVOLUTION);
+        assert(app.progressionFlow_.state().progressionToSpeciesId == 2);
         for (int tries = 0; tries < 20 && app.sceneFlow.current() == AppSceneFlow::Scene::PROGRESSION; ++tries) {
             desktop.advanceMs(20000);
             app.advanceProgression(desktop.millis());
@@ -832,7 +1385,7 @@ struct AmoledCareTestAccess {
         assert(app.gameState.team[0].speciesId == 2);
         assert(app.sceneFlow.current() == AppSceneFlow::Scene::HOME);
         assert(app.startPendingCareProgression(desktop.millis()));
-        assert(app.progressionTeamSlot == 1);
+        assert(app.progressionFlow_.state().progressionTeamSlot == 1);
         for (int tries = 0; tries < 20 && app.sceneFlow.current() == AppSceneFlow::Scene::PROGRESSION; ++tries) {
             desktop.advanceMs(20000);
             app.advanceProgression(desktop.millis());
@@ -878,6 +1431,10 @@ void checkHomeCareRewards(DesktopPlatform& desktop, Canvas565& canvas) {
     AmoledV1::AmoledCareTestAccess::run(desktop, canvas);
 }
 
+void checkHomeHudMessages(DesktopPlatform& desktop, Canvas565& canvas) {
+    AmoledV1::AmoledCareTestAccess::checkHudMessages(desktop, canvas);
+}
+
 void checkHomeRoomAuthority(DesktopPlatform& desktop, Canvas565& canvas) {
     AmoledV1::AmoledCareTestAccess::checkAuthoritativeRoomMotion(desktop, canvas);
 }
@@ -900,4 +1457,32 @@ void checkHomeSavedTurns(DesktopPlatform& desktop) {
 
 void checkHomeYieldAndActions(DesktopPlatform& desktop, Canvas565& canvas) {
     AmoledV1::AmoledCareTestAccess::checkYieldTurnAndStationaryActions(desktop, canvas);
+}
+
+void checkHomeAmbientSequence(DesktopPlatform& desktop, Canvas565& canvas, bool wrap) {
+    AmoledV1::AmoledCareTestAccess::checkAmbientSequence(desktop, canvas, wrap);
+}
+
+void checkHomeAmbientEffects(DesktopPlatform& desktop) {
+    AmoledV1::AmoledCareTestAccess::checkAmbientEffects(desktop);
+}
+
+void checkPairSequence(DesktopPlatform& desktop, Canvas565& canvas, bool wrap) {
+    AmoledV1::AmoledCareTestAccess::checkPairSequence(desktop, canvas, wrap);
+}
+
+void checkPairEffects(DesktopPlatform& desktop) {
+    AmoledV1::AmoledCareTestAccess::checkPairEffects(desktop);
+}
+
+void checkVisitorSequence(DesktopPlatform& desktop, Canvas565& canvas, bool wrap) {
+    AmoledV1::AmoledCareTestAccess::checkVisitorSequence(desktop, canvas, wrap);
+}
+
+void checkVisitorEffects(DesktopPlatform& desktop) {
+    AmoledV1::AmoledCareTestAccess::checkVisitorEffects(desktop);
+}
+
+void checkVisitAwayEffects(DesktopPlatform& desktop) {
+    AmoledV1::AmoledCareTestAccess::checkVisitAwayEffects(desktop);
 }

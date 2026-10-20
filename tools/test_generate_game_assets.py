@@ -137,7 +137,7 @@ class GenerateGameAssetsTests(unittest.TestCase):
     def test_expanded_map_pack_fits_the_synchronized_frame_limit(self):
         writer = Writer()
         kinds = expected_pack_kind_names()["map"]
-        self.assertEqual(len(kinds), 260)
+        self.assertEqual(len(kinds), 279)
         for kind in kinds:
             writer.add(kind, Image.new("RGBA", (26, 26), (40, 120, 80, 255)))
         with TemporaryDirectory() as temp_dir:
@@ -145,22 +145,37 @@ class GenerateGameAssetsTests(unittest.TestCase):
             stats = write_pack("map", writer, pack_path)
             self.assertEqual(read_pack_kind_ids(pack_path),
                              [KIND_IDS[kind] for kind in kinds])
-        self.assertEqual(stats["frames"], 260)
+        self.assertEqual(stats["frames"], 279)
         self.assertLessEqual(stats["frames"], MAX_PACK_FRAMES)
 
     def test_creek_caps_use_unmodified_outside_tiles(self):
         from asset_paths import essentials_dir
         sheet = Image.open(essentials_dir() / "Graphics/Tilesets/Outside.png").convert("RGBA")
         self.assertEqual(CREEK_TILES,
-                         [("EXPLORE_TILE_1184", 1184), ("EXPLORE_TILE_1186", 1186)])
+                         [(f"EXPLORE_TILE_{tile}", tile) for tile in (1184, 1186, 1176, 1178, 1187, 1189)])
         for kind, tile_id in CREEK_TILES:
             index = tile_id - 384
             x, y = index % 8 * 32, index // 8 * 32
             original = sheet.crop((x, y, x + 32, y + 32)).resize(
                 (26, 26), Image.Resampling.NEAREST)
             self.assertEqual(prepare_explore_tile(tile_id, sheet, ()).tobytes(), original.tobytes())
-            self.assertEqual(KIND_IDS[kind], len(KIND_ORDER) - 2 + CREEK_TILES.index((kind, tile_id)))
-            self.assertIn(0, original.getchannel("A").tobytes())
+            self.assertEqual(KIND_IDS[kind], len(KIND_ORDER) - 15 - len(CREEK_TILES) + CREEK_TILES.index((kind, tile_id)))
+            if tile_id in (1184, 1186, 1176, 1178):
+                self.assertIn(0, original.getchannel("A").tobytes())
+
+    def test_frost_trail_uses_whole_unmodified_native_tiles(self):
+        from asset_paths import essentials_dir
+        from map_generation_rules import FROST_ROUTE_TILE_SOURCES
+        sheet = Image.open(essentials_dir() / "Graphics/Tilesets/Caves.png").convert("RGBA")
+        self.assertEqual(len(FROST_ROUTE_TILE_SOURCES), 15)
+        for tile_id, source in FROST_ROUTE_TILE_SOURCES.items():
+            index = source - 384
+            x, y = index % 8 * 32, index // 8 * 32
+            original = sheet.crop((x, y, x + 32, y + 32)).resize(
+                (26, 26), Image.Resampling.NEAREST)
+            self.assertEqual(prepare_explore_tile(source, sheet, ()).tobytes(), original.tobytes())
+            self.assertEqual(KIND_IDS[f"EXPLORE_TILE_{tile_id}"],
+                             len(KIND_ORDER) - 15 + tile_id - 4780)
 
     def test_new_grass_and_tree_tiles_preserve_transparent_coverage(self):
         sheet = Image.new("RGBA", (256, 32 * 58), (0, 0, 0, 0))

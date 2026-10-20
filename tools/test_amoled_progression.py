@@ -1,19 +1,22 @@
-import re
 import unittest
 from pathlib import Path
 
+from amoled_page_cases import run_page_case
+
 
 ROOT = Path(__file__).resolve().parents[1]
-APP = ROOT / "firmware/amoled_1_8_v1/main/AmoledApp.cpp"
 SCREEN = ROOT / "firmware/amoled_1_8_v1/main/HomeScreen.cpp"
 
 
 class AmoledProgressionTests(unittest.TestCase):
-    def test_completion_does_not_show_growth_toast(self):
-        body = APP.read_text(encoding="utf-8").split(
-            "void AmoledApp::completeProgression(uint32_t nowMs) {", 1
-        )[1].split("\n}\n", 1)[0]
-        self.assertNotIn("GROWTH_COMPLETE", body)
+    def test_skip_keeps_both_moves_and_proficiency(self):
+        run_page_case("progression-skip")
+
+    def test_replace_second_move_resets_only_its_proficiency(self):
+        run_page_case("progression-replace-2")
+
+    def test_replace_third_move_resets_only_its_proficiency(self):
+        run_page_case("progression-replace-3")
 
     def test_replacement_list_reuses_move_detail_and_requires_confirmation(self):
         source = SCREEN.read_text(encoding="utf-8")
@@ -29,37 +32,6 @@ class AmoledProgressionTests(unittest.TestCase):
         )[0]
         self.assertIn("index > selectedItem ? push : 0", hit)
         self.assertIn("return index", hit)
-
-    def test_confirming_new_move_skips_and_replacement_resets_proficiency(self):
-        source = APP.read_text(encoding="utf-8")
-        body = re.search(
-            r"if \(progressionMode == ProgressionViewModel::Mode::MOVE_REPLACE\) \{"
-            r"(.*?)\n        if \(progressionMode == ProgressionViewModel::Mode::EVOLUTION\)",
-            source, re.S,
-        )
-        self.assertIsNotNone(body)
-        action = body.group(1)
-        self.assertIn("if (progressionSelectedItem >= 3) return", action)
-        self.assertIn("progressionSelectedItem == 0", action)
-        self.assertIn("Mode::MOVE_LEARN", action)
-        self.assertIn("monster.moveProficiency[1] = 0", action)
-        self.assertIn("monster.moveProficiency[2] = 0", action)
-        self.assertLess(action.index("advanceProgression(nowMs)"),
-                        action.index("progressionReplaceItemAt("))
-
-    def test_level_up_entrance_and_gesture_gate(self):
-        app = APP.read_text(encoding="utf-8")
-        screen = SCREEN.read_text(encoding="utf-8")
-        dialog = screen.split("void drawLevelUpDialog", 1)[1].split(
-            "void drawLevelUpScene", 1)[0]
-        self.assertIn("LEVEL_UP_DIALOG_FMT", dialog)
-        self.assertNotIn("Ui::Amoled::CONTINUE", dialog)
-        self.assertIn("model.oldLevel", screen)
-        self.assertIn("model.levelUpElapsedMs", screen)
-        self.assertIn("progressionLevelUpTouchAllowed", app)
-        self.assertIn("event.timestampMs - progressionLevelUpStartedMs >=", app)
-        self.assertIn("!progressionLevelUpTouchAllowed", app)
-        self.assertIn("nowMs - progressionLevelUpStartedMs < LEVEL_UP_ANIMATION_MS", app)
 
 
 if __name__ == "__main__":

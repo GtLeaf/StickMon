@@ -5,6 +5,64 @@
 
 namespace AmoledV1 {
 
+void InventoryController::cancelTouch() {
+    state_.pressedItemRow = state_.pressedShopCategory = state_.pressedShopDetailAction = -1;
+}
+
+void InventoryController::beginListTouch(int row, int category) {
+    stopScroll();
+    state_.pressedItemRow = row;
+    state_.pressedShopCategory = category;
+}
+
+void InventoryController::beginDetailTouch(int choice, const Game::GameState& gameState) {
+    stopScroll();
+    state_.pressedShopDetailAction = choice;
+    if (choice == 0 && state_.pendingItemAction == PendingItemAction::SELL &&
+        Game::ItemInventory::count(gameState, state_.pendingItem) == 0) {
+        state_.pressedShopDetailAction = -1;
+    }
+}
+
+void InventoryController::dragList(int deltaY, float maximum) {
+    state_.pressedItemRow = state_.pressedShopCategory = -1;
+    state_.itemScroll -= static_cast<float>(deltaY);
+    state_.itemVelocity = static_cast<float>(-deltaY);
+    clampScroll(maximum);
+}
+
+void InventoryController::clearAction() {
+    state_.itemConfirmOpen = false;
+    state_.pendingItem = Game::ItemId::COUNT;
+    state_.pendingItemAction = PendingItemAction::NONE;
+}
+
+void InventoryController::cancelTargetSelection() {
+    state_.selectingItemTarget = false;
+    clearAction();
+}
+
+void InventoryController::beginItemTarget(Game::ItemId item, AppSceneFlow::Scene returnScene) {
+    state_.pendingItem = item;
+    state_.pendingItemAction = PendingItemAction::USE;
+    beginTargetSelection(returnScene);
+}
+
+void InventoryController::beginFeedback(uint8_t slot, uint16_t fromHp, uint16_t toHp, uint32_t nowMs) {
+    state_.teamItemTargetSlot = slot;
+    state_.teamItemHpFrom = fromHp;
+    state_.teamItemHpTo = toHp;
+    state_.teamItemFeedbackActive = true;
+    state_.teamItemStartedMs = state_.nextTeamItemFrameMs = nowMs;
+}
+
+bool InventoryController::feedbackFrameDue(uint32_t nowMs, uint32_t intervalMs) {
+    if (!state_.teamItemFeedbackActive ||
+        static_cast<int32_t>(nowMs - state_.nextTeamItemFrameMs) < 0) return false;
+    state_.nextTeamItemFrameMs = nowMs + intervalMs;
+    return true;
+}
+
 void InventoryController::open() {
     const bool battleBagMode = state_.battleBagMode;
     state_ = State{};

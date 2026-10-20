@@ -51,7 +51,8 @@ class AmoledNativeLayoutTests(unittest.TestCase):
             self.assertIn("forceRenderRegion(", source)
             self.assertNotIn("nativeCoordinate(", source)
             self.assertNotIn("nativeExtent(", source)
-        self.assertIn("EXPLORE_ROUTE_MAP_FRAME_MS", self.app)
+        self.assertIn("EXPLORE_ROUTE_MAP_FRAME_MS",
+                      cls_text(V1_MAIN / "app" / "ExplorePresenter.cpp"))
         self.assertIn("LOCK_ANIMATION_MS", self.v1_main)
 
     def test_lock_dirty_region_is_not_scaled_twice(self):

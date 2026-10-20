@@ -135,6 +135,21 @@ struct AmoledAppTestAccess {
     using Phase = AmoledApp::ExpeditionDeparturePhase;
     using Scene = AppSceneFlow::Scene;
 
+    static bool finishRoute(AmoledApp& app, uint32_t nowMs) {
+        const bool advanced = app.exploreSession_.finishAtEnd(app.gameState);
+        const bool autoReturn = app.exploreSession_.state().exploreRouteComplete && app.autonomousExpedition;
+        app.applyExploreEffects(nowMs);
+        return advanced || autoReturn;
+    }
+    static void pickupRoute(AmoledApp& app, uint32_t nowMs) {
+        app.exploreSession_.resolvePickup(app.gameState);
+        app.applyExploreEffects(nowMs);
+    }
+    static void resolveRoute(AmoledApp& app, uint32_t nowMs, bool blocked, bool repel) {
+        app.exploreSession_.resolveStepEvent(app.gameState, blocked, repel);
+        app.applyExploreEffects(nowMs);
+    }
+
     static void checkNoEffectBattleLogs(DesktopPlatform& desktop,
                                         const Game::GameState& state) {
         for (bool wildSide : {false, true}) {
@@ -147,14 +162,14 @@ struct AmoledAppTestAccess {
                 app.gameState = state;
                 app.gameState.teamCount = 1;
                 app.gameState.team[0] = Game::MonsterFactory::create(wildSide ? 7 : 129, 10);
-                app.battleWild = Game::MonsterFactory::create(wildSide ? 129 : 7, 10);
-                app.battlePlayerSlot = 0;
+                app.battleSession_.state_.battleWild = Game::MonsterFactory::create(wildSide ? 129 : 7, 10);
+                app.battleSession_.state_.battlePlayerSlot = 0;
                 app.sceneFlow.enter(Scene::BATTLE);
-                app.battlePlayerState = {};
-                app.battleWildState = {};
-                auto& attacker = wildSide ? app.battleWild : app.gameState.team[0];
-                auto& defender = wildSide ? app.gameState.team[0] : app.battleWild;
-                auto& defendState = wildSide ? app.battlePlayerState : app.battleWildState;
+                app.battleSession_.state_.battlePlayerState = {};
+                app.battleSession_.state_.battleWildState = {};
+                auto& attacker = wildSide ? app.battleSession_.state_.battleWild : app.gameState.team[0];
+                auto& defender = wildSide ? app.gameState.team[0] : app.battleSession_.state_.battleWild;
+                auto& defendState = wildSide ? app.battleSession_.state_.battlePlayerState : app.battleSession_.state_.battleWildState;
                 const Game::MoveId move = scenario == 0 ? 150 : scenario == 2 ? 10 : 45;
                 attacker.move2Id = move;
                 if (scenario == 1) {
@@ -163,20 +178,20 @@ struct AmoledAppTestAccess {
                 if (scenario == 2) defender = Game::MonsterFactory::create(92, 10);
                 const auto attackerHp = attacker.hpCur;
                 const auto defenderHp = defender.hpCur;
-                app.clearBattleLog();
+                app.battleSession_.clearLog();
                 BattleTurnController::Action action{
                     wildSide ? BattleTurnController::Side::WILD
                              : BattleTurnController::Side::PLAYER, 0, move};
                 if (wildSide) app.performBattleWildAction(action, desktop.millis());
                 else app.performBattlePlayerAction(action, desktop.millis());
-                assert(app.battleLogVisibleCount == 1);
-                assert(std::strstr(app.battleLogLines[0], findMove(move)->name));
-                app.battleAttackLogHeld = false;
+                assert(app.battleSession_.timeline_.state_.battleLogVisibleCount == 1);
+                assert(std::strstr(app.battleSession_.timeline_.state_.battleLogLines[0], findMove(move)->name));
+                app.battleSession_.timeline_.state_.battleAttackLogHeld = false;
                 int noEffect = 0, resultLines = 0;
-                while (app.battleLogQueueCount > 0) {
+                while (app.battleSession_.timeline_.state_.battleLogQueueCount > 0) {
                     desktop.advanceMs(5000);
-                    assert(app.serviceBattleLog(desktop.millis()));
-                    const auto* line = app.battleLogLines[app.battleLogVisibleCount - 1];
+                    assert(app.battleSession_.serviceLog(desktop.millis()));
+                    const auto* line = app.battleSession_.timeline_.state_.battleLogLines[app.battleSession_.timeline_.state_.battleLogVisibleCount - 1];
                     if (std::strcmp(line, Ui::Explore::NO_EFFECT) == 0) ++noEffect;
                     ++resultLines;
                 }
@@ -199,16 +214,16 @@ struct AmoledAppTestAccess {
             app.begin(desktop.millis());
             app.gameState = state;
             app.gameState.team[0] = Game::MonsterFactory::create(7, 20);
-            app.battleWild = Game::MonsterFactory::create(4, 20);
-            app.battlePlayerSlot = 0;
+            app.battleSession_.state_.battleWild = Game::MonsterFactory::create(4, 20);
+            app.battleSession_.state_.battlePlayerSlot = 0;
             app.sceneFlow.enter(Scene::BATTLE);
-            auto& attacker = wildSide ? app.battleWild : app.gameState.team[0];
-            auto& attackState = wildSide ? app.battleWildState : app.battlePlayerState;
+            auto& attacker = wildSide ? app.battleSession_.state_.battleWild : app.gameState.team[0];
+            auto& attackState = wildSide ? app.battleSession_.state_.battleWildState : app.battleSession_.state_.battlePlayerState;
             attackState = {};
             attackState.confusionTurns = 3;
             const auto hp = attacker.hpCur;
             GameRandom::setRangeProvider(+[](uint32_t minimum, uint32_t) { return minimum; });
-            app.clearBattleLog();
+            app.battleSession_.clearLog();
             BattleTurnController::Action action{
                 wildSide ? BattleTurnController::Side::WILD : BattleTurnController::Side::PLAYER,
                 0, 33};
@@ -217,10 +232,10 @@ struct AmoledAppTestAccess {
             char expected[128];
             std::snprintf(expected, sizeof(expected), Ui::Explore::CONFUSION_HIT_FMT,
                           findSpecies(attacker.speciesId)->name);
-            assert(std::strcmp(app.battleLogLines[0], expected) == 0);
-            assert(attacker.hpCur < hp && app.battleTurnDamaged[wildSide ? 1 : 0]);
-            assert(app.battleHpAnimationActive && app.battleHpAnimationWild == wildSide);
-            const auto started = app.battleHpAnimationStartedMs;
+            assert(std::strcmp(app.battleSession_.timeline_.state_.battleLogLines[0], expected) == 0);
+            assert(attacker.hpCur < hp && app.battleSession_.state_.battleTurnDamaged[wildSide ? 1 : 0]);
+            assert(app.battleSession_.timeline_.state_.battleHpAnimationActive && app.battleSession_.timeline_.state_.battleHpAnimationWild == wildSide);
+            const auto started = app.battleSession_.timeline_.state_.battleHpAnimationStartedMs;
             const auto before = app.battleHpPercentForRender(wildSide, attacker.hpCur,
                                                             attacker.hpMax, started);
             const auto middle = app.battleHpPercentForRender(wildSide, attacker.hpCur,
@@ -232,53 +247,56 @@ struct AmoledAppTestAccess {
             assert(after == attacker.hpCur * 100 / attacker.hpMax);
             desktop.advanceMs(210);
             app.update(desktop.millis());
-            assert(app.battleHpAnimationActive);
-            assert(app.battleContinuation == AmoledApp::BattleContinuation::ADVANCE_TURN);
+            assert(app.battleSession_.timeline_.state_.battleHpAnimationActive);
+            assert(app.battleSession_.state_.battleContinuation == AmoledApp::BattleContinuation::ADVANCE_TURN);
             desktop.advanceMs(210);
             app.update(desktop.millis());
-            assert(!app.battleHpAnimationActive);
+            assert(!app.battleSession_.timeline_.state_.battleHpAnimationActive);
         }
         AmoledApp app;
         app.begin(desktop.millis());
         app.gameState = state;
         app.gameState.oobeDone = true;
-        app.battleWild = Game::MonsterFactory::create(4, 10);
-        app.battlePlayerSlot = 0;
+        app.battleSession_.state_.battleWild = Game::MonsterFactory::create(4, 10);
+        app.battleSession_.state_.battlePlayerSlot = 0;
         app.sceneFlow.enter(Scene::BATTLE);
-        app.clearBattleLog();
+        app.battleSession_.clearLog();
         app.performBattleBag(desktop.millis());
         const auto item = Game::ItemId::SWEET_FOOD;
         Game::ItemInventory::add(app.gameState, item);
         const auto stock = Game::ItemInventory::count(app.gameState, item);
-        const auto hp = app.battleWild.hpCur;
+        const auto hp = app.battleSession_.state_.battleWild.hpCur;
         app.performBattleBagItem(item, desktop.millis());
         assert(app.sceneFlow.current() == Scene::BATTLE);
-        assert(app.battleThrownItem == item && app.battleLogQueueCount == 1);
+        assert(app.battleSession_.timeline_.state_.battleThrownItem == item && app.battleSession_.timeline_.state_.battleLogQueueCount == 1);
         assert(Game::ItemInventory::count(app.gameState, item) == stock - 1);
-        const auto continuation = app.battleContinuation;
+        const auto continuation = app.battleSession_.state_.battleContinuation;
         desktop.advanceMs(400);
         app.update(desktop.millis());
-        assert(app.battleThrownItem == item && app.battleItemThrowFrame > 0);
-        assert(app.battleContinuation == continuation && app.battleWild.hpCur == hp);
+        assert(app.battleSession_.timeline_.state_.battleThrownItem == item && app.battleSession_.timeline_.state_.battleItemThrowFrame > 0);
+        assert(app.battleSession_.state_.battleContinuation == continuation && app.battleSession_.state_.battleWild.hpCur == hp);
         app.handleTap(80, 400, desktop.millis());
         app.performBattleBagItem(item, desktop.millis());
         assert(Game::ItemInventory::count(app.gameState, item) == stock - 1);
         desktop.advanceMs(410);
         app.update(desktop.millis());
-        assert(app.battleThrownItem == Game::ItemId::COUNT);
-        assert(app.battleContinuation == continuation);
+        assert(app.battleSession_.timeline_.state_.battleThrownItem == Game::ItemId::COUNT);
+        assert(app.battleSession_.state_.battleContinuation == continuation);
         GameRandom::setRangeProvider(nullptr);
 
         // Sell the last item in the persistent detail panel, then ignore taps.
         app.sceneFlow.enter(Scene::SHOP);
-        app.battleContinuation = AmoledApp::BattleContinuation::NONE;
-        app.inventoryController_.state().pendingItem = Game::ItemId::POTION;
-        const auto potions = Game::ItemInventory::count(app.gameState, app.inventoryController_.state().pendingItem);
-        if (potions) Game::ItemInventory::remove(app.gameState, app.inventoryController_.state().pendingItem, potions);
-        Game::ItemInventory::add(app.gameState, app.inventoryController_.state().pendingItem);
-        app.inventoryController_.state().pendingItemAction = AmoledApp::PendingItemAction::SELL;
-        app.inventoryController_.state().itemConfirmOpen = true;
-        app.inventoryController_.state().shopCategory = Game::ShopService::Category::SELL;
+        app.battleSession_.state_.battleContinuation = AmoledApp::BattleContinuation::NONE;
+        const auto potions = Game::ItemInventory::count(app.gameState, Game::ItemId::POTION);
+        if (potions) Game::ItemInventory::remove(app.gameState, Game::ItemId::POTION, potions);
+        Game::ItemInventory::add(app.gameState, Game::ItemId::POTION);
+        app.inventoryController_.selectCategory(Game::ShopService::Category::SELL);
+        for (uint8_t i = 0; i < app.inventoryController_.itemCount(app.gameState, Scene::SHOP); ++i) {
+            if (app.inventoryController_.itemAt(app.gameState, Scene::SHOP, i) == Game::ItemId::POTION) {
+                app.inventoryController_.selectItem(app.gameState, Scene::SHOP, i);
+                break;
+            }
+        }
         app.handleTap(100, 390, desktop.millis());
         assert(Game::ItemInventory::count(app.gameState, app.inventoryController_.state().pendingItem) == 0);
         assert(app.inventoryController_.state().itemConfirmOpen && app.toast == nullptr);
@@ -306,14 +324,14 @@ struct AmoledAppTestAccess {
                 app.gameState = state;
                 app.gameState.teamCount = 1;
                 app.gameState.team[0] = Game::MonsterFactory::create(7, 20);
-                app.battleWild = Game::MonsterFactory::create(7, 20);
-                app.battlePlayerSlot = 0;
+                app.battleSession_.state_.battleWild = Game::MonsterFactory::create(7, 20);
+                app.battleSession_.state_.battlePlayerSlot = 0;
                 app.sceneFlow.enter(Scene::BATTLE);
-                app.battlePlayerState = {};
-                app.battleWildState = {};
-                auto& attacker = wildSide ? app.battleWild : app.gameState.team[0];
-                auto& defender = wildSide ? app.gameState.team[0] : app.battleWild;
-                auto& attackState = wildSide ? app.battleWildState : app.battlePlayerState;
+                app.battleSession_.state_.battlePlayerState = {};
+                app.battleSession_.state_.battleWildState = {};
+                auto& attacker = wildSide ? app.battleSession_.state_.battleWild : app.gameState.team[0];
+                auto& defender = wildSide ? app.gameState.team[0] : app.battleSession_.state_.battleWild;
+                auto& attackState = wildSide ? app.battleSession_.state_.battleWildState : app.battleSession_.state_.battlePlayerState;
                 const bool super = scenario == 2 || scenario == 3;
                 const bool resisted = scenario == 4 || scenario == 5;
                 const Game::MoveId move = super || resisted ? 55 : scenario == 8 ? 45 : 10;
@@ -323,30 +341,30 @@ struct AmoledAppTestAccess {
                 if (scenario == 6) {
                     attackState.statStages[static_cast<uint8_t>(BattleStat::ACCURACY)] = -6;
                 }
-                app.clearBattleLog();
+                app.battleSession_.clearLog();
                 BattleTurnController::Action action{
                     wildSide ? BattleTurnController::Side::WILD
                              : BattleTurnController::Side::PLAYER, 0, move};
                 if (wildSide) app.performBattleWildAction(action, desktop.millis());
                 else app.performBattlePlayerAction(action, desktop.millis());
-                assert(app.battleLogVisibleCount == 1);
-                assert(std::strstr(app.battleLogLines[0], findMove(move)->name));
-                desktop.advanceMs(app.battleAnimationDurationMs + 1);
+                assert(app.battleSession_.timeline_.state_.battleLogVisibleCount == 1);
+                assert(std::strstr(app.battleSession_.timeline_.state_.battleLogLines[0], findMove(move)->name));
+                desktop.advanceMs(app.battleSession_.timeline_.state_.battleAnimationDurationMs + 1);
                 // Results must remain queued while the attack animation holds the log.
-                assert(!app.serviceBattleLog(desktop.millis()));
-                app.battleAttackLogHeld = false;
-                app.battleAnimationActive = false;
+                assert(!app.battleSession_.serviceLog(desktop.millis()));
+                app.battleSession_.timeline_.state_.battleAttackLogHeld = false;
+                app.battleSession_.timeline_.state_.battleAnimationActive = false;
                 std::vector<std::string> lines;
-                while (app.battleLogQueueCount > 0) {
+                while (app.battleSession_.timeline_.state_.battleLogQueueCount > 0) {
                     desktop.advanceMs(5000);
-                    assert(app.serviceBattleLog(desktop.millis()));
-                    lines.emplace_back(app.battleLogLines[app.battleLogVisibleCount - 1]);
+                    assert(app.battleSession_.serviceLog(desktop.millis()));
+                    lines.emplace_back(app.battleSession_.timeline_.state_.battleLogLines[app.battleSession_.timeline_.state_.battleLogVisibleCount - 1]);
                 }
                 if (scenario < 6) {
                     char expected[64];
                     std::snprintf(expected, sizeof(expected),
                         wildSide ? Ui::Explore::WILD_DAMAGE_FMT : Ui::Explore::DAMAGE_FMT,
-                        app.battleAnimationDamage);
+                        app.battleSession_.timeline_.state_.battleAnimationDamage);
                     assert(lines[0] == expected);
                     size_t next = 1;
                     if (critical) assert(lines.at(next++) == Ui::Explore::CRITICAL_HIT);
@@ -389,13 +407,13 @@ struct AmoledAppTestAccess {
                     app.begin(desktop.millis());
                     app.gameState = state;
                     app.gameState.team[0] = Game::MonsterFactory::create(4, 30);
-                    app.battleWild = Game::MonsterFactory::create(7, 30);
-                    app.battlePlayerSlot = 0;
+                    app.battleSession_.state_.battleWild = Game::MonsterFactory::create(7, 30);
+                    app.battleSession_.state_.battlePlayerSlot = 0;
                     app.sceneFlow.enter(Scene::BATTLE);
-                    auto& attacker = wildSide ? app.battleWild : app.gameState.team[0];
-                    auto& defender = wildSide ? app.gameState.team[0] : app.battleWild;
-                    auto& attackState = wildSide ? app.battleWildState : app.battlePlayerState;
-                    auto& defendState = wildSide ? app.battlePlayerState : app.battleWildState;
+                    auto& attacker = wildSide ? app.battleSession_.state_.battleWild : app.gameState.team[0];
+                    auto& defender = wildSide ? app.gameState.team[0] : app.battleSession_.state_.battleWild;
+                    auto& attackState = wildSide ? app.battleSession_.state_.battleWildState : app.battleSession_.state_.battlePlayerState;
+                    auto& defendState = wildSide ? app.battleSession_.state_.battlePlayerState : app.battleSession_.state_.battleWildState;
                     attacker.move2Id = id;
                     if (mode == 1) {
                         for (auto& stage : defendState.statStages) stage = -6;
@@ -415,24 +433,24 @@ struct AmoledAppTestAccess {
                                  : BattleTurnController::Side::PLAYER, 0, id};
                     if (wildSide) app.performBattleWildAction(action, desktop.millis());
                     else app.performBattlePlayerAction(action, desktop.millis());
-                    assert(app.battleAnimationActive);
-                    assert(app.battleAnimationAttackerWild == wildSide);
-                    assert(app.battleAnimationFx == fx);
-                    assert(app.battleAnimationStatusEffect == (status && mode == 0));
-                    assert(app.battleAnimationHit == (!status && mode == 0));
+                    assert(app.battleSession_.timeline_.state_.battleAnimationActive);
+                    assert(app.battleSession_.timeline_.state_.battleAnimationAttackerWild == wildSide);
+                    assert(app.battleSession_.timeline_.state_.battleAnimationFx == fx);
+                    assert(app.battleSession_.timeline_.state_.battleAnimationStatusEffect == (status && mode == 0));
+                    assert(app.battleSession_.timeline_.state_.battleAnimationHit == (!status && mode == 0));
                     if (status || mode != 0) {
                         assert(defender.hpCur == before);
-                        assert(!app.battleHpAnimationActive);
-                        assert(app.battleImpactSfx == static_cast<uint8_t>(
+                        assert(!app.battleSession_.timeline_.state_.battleHpAnimationActive);
+                        assert(app.battleSession_.timeline_.state_.battleImpactSfx == static_cast<uint8_t>(
                             mode == 0 ? SfxCue::UI_CONFIRM : SfxCue::UI_CANCEL));
                     } else {
-                        assert(defender.hpCur < before && app.battleHpAnimationActive);
+                        assert(defender.hpCur < before && app.battleSession_.timeline_.state_.battleHpAnimationActive);
                     }
-                    app.battleContinuation = AmoledApp::BattleContinuation::NONE;
-                    app.battleAudioPending = false;
-                    desktop.advanceMs(app.battleAnimationDurationMs + 1);
+                    app.battleSession_.state_.battleContinuation = AmoledApp::BattleContinuation::NONE;
+                    app.battleSession_.timeline_.state_.battleAudioPending = false;
+                    desktop.advanceMs(app.battleSession_.timeline_.state_.battleAnimationDurationMs + 1);
                     app.update(desktop.millis());
-                    assert(!app.battleAnimationActive && !app.battleAnimationStatusEffect);
+                    assert(!app.battleSession_.timeline_.state_.battleAnimationActive && !app.battleSession_.timeline_.state_.battleAnimationStatusEffect);
                 }
             }
         }
@@ -451,15 +469,15 @@ struct AmoledAppTestAccess {
                 app.gameState = state;
                 app.gameState.teamCount = 1;
                 app.gameState.team[0] = Game::MonsterFactory::create(4, 35);
-                app.battleWild = Game::MonsterFactory::create(7, 35);
-                app.battlePlayerSlot = 0;
+                app.battleSession_.state_.battleWild = Game::MonsterFactory::create(7, 35);
+                app.battleSession_.state_.battlePlayerSlot = 0;
                 app.sceneFlow.enter(Scene::BATTLE);
-                app.battlePlayerState = {};
-                app.battleWildState = {};
-                auto& attacker = wildSide ? app.battleWild : app.gameState.team[0];
-                auto& defender = wildSide ? app.gameState.team[0] : app.battleWild;
-                auto& attackState = wildSide ? app.battleWildState : app.battlePlayerState;
-                auto& defendState = wildSide ? app.battlePlayerState : app.battleWildState;
+                app.battleSession_.state_.battlePlayerState = {};
+                app.battleSession_.state_.battleWildState = {};
+                auto& attacker = wildSide ? app.battleSession_.state_.battleWild : app.gameState.team[0];
+                auto& defender = wildSide ? app.gameState.team[0] : app.battleSession_.state_.battleWild;
+                auto& attackState = wildSide ? app.battleSession_.state_.battleWildState : app.battleSession_.state_.battlePlayerState;
+                auto& defendState = wildSide ? app.battleSession_.state_.battlePlayerState : app.battleSession_.state_.battleWildState;
                 Game::MoveId move = 55;
                 if (scenario == 0) {
                     defender = Game::MonsterFactory::create(134, 35);
@@ -489,54 +507,54 @@ struct AmoledAppTestAccess {
                 attacker.move2Id = move;
                 const auto proficiency = attacker.moveProficiency[1];
                 const auto attackerHp = attacker.hpCur;
-                app.clearBattleLog();
+                app.battleSession_.clearLog();
                 const auto side = wildSide ? BattleTurnController::Side::WILD
                                            : BattleTurnController::Side::PLAYER;
-                app.battleTurnPlan.count = 2;
-                app.battleTurnPlan.actions[0] = {side, 0, move};
-                app.battleTurnPlan.actions[1] = {
+                app.battleSession_.state_.battleTurnPlan.count = 2;
+                app.battleSession_.state_.battleTurnPlan.actions[0] = {side, 0, move};
+                app.battleSession_.state_.battleTurnPlan.actions[1] = {
                     wildSide ? BattleTurnController::Side::PLAYER
                              : BattleTurnController::Side::WILD,
                     BattleSystem::SPECIAL_SLOT_NONE, 33};
-                app.battleTurnActionIndex = 0;
+                app.battleSession_.state_.battleTurnActionIndex = 0;
                 const BattleTurnController::Action action{side, 0, move};
                 if (wildSide) app.performBattleWildAction(action, desktop.millis());
                 else app.performBattlePlayerAction(action, desktop.millis());
                 if (scenario == 0) {
                     assert(defender.hpCur == 1 + defender.hpMax / 4);
-                    assert(app.battleHpAnimationActive && !app.battleAnimationHit);
+                    assert(app.battleSession_.timeline_.state_.battleHpAnimationActive && !app.battleSession_.timeline_.state_.battleAnimationHit);
                 } else if (scenario == 1) {
                     assert(attacker.majorStatus == Game::MajorStatus::PARALYSIS);
                     assert(defender.majorStatus == Game::MajorStatus::BURN && defendState.flinched);
                 } else if (scenario == 2) {
                     assert(attacker.hpCur == attacker.hpMax && attackState.stockpileCount == 0);
-                    assert(app.battleHpAnimationActive);
+                    assert(app.battleSession_.timeline_.state_.battleHpAnimationActive);
                 } else if (scenario == 3) {
                     assert(attackState.lockedMoveId == 0 && attackState.confusionTurns > 0);
                 } else if (scenario == 4) {
                     assert(attackState.chargingMoveId == 130);
                     assert(attackState.statStages[static_cast<uint8_t>(BattleStat::DEFENSE)] == 1);
-                    assert(!app.battleAnimationActive);
+                    assert(!app.battleSession_.timeline_.state_.battleAnimationActive);
                 } else if (scenario == 5) {
                     assert(attacker.majorStatus == Game::MajorStatus::NONE);
                 } else {
-                    assert(defender.hpCur == defender.hpMax && !app.battleAnimationHit);
+                    assert(defender.hpCur == defender.hpMax && !app.battleSession_.timeline_.state_.battleAnimationHit);
                 }
                 assert(attacker.moveProficiency[1] == proficiency +
                     ((!wildSide && scenario != 0 && scenario != 4 && scenario != 6) ? 1 : 0));
 
                 // Polling the animation and draining its queue cannot reapply rewards.
-                app.battleContinuation = AmoledApp::BattleContinuation::NONE;
-                app.battleAudioPending = false;
-                app.battleAttackLogHeld = false;
-                app.battleAnimationActive = false;
+                app.battleSession_.state_.battleContinuation = AmoledApp::BattleContinuation::NONE;
+                app.battleSession_.timeline_.state_.battleAudioPending = false;
+                app.battleSession_.timeline_.state_.battleAttackLogHeld = false;
+                app.battleSession_.timeline_.state_.battleAnimationActive = false;
                 std::vector<std::string> lines;
-                for (uint8_t i = 0; i < app.battleLogVisibleCount; ++i)
-                    lines.emplace_back(app.battleLogLines[i]);
-                while (app.battleLogQueueCount > 0) {
+                for (uint8_t i = 0; i < app.battleSession_.timeline_.state_.battleLogVisibleCount; ++i)
+                    lines.emplace_back(app.battleSession_.timeline_.state_.battleLogLines[i]);
+                while (app.battleSession_.timeline_.state_.battleLogQueueCount > 0) {
                     desktop.advanceMs(5000);
-                    assert(app.serviceBattleLog(desktop.millis()));
-                    lines.emplace_back(app.battleLogLines[app.battleLogVisibleCount - 1]);
+                    assert(app.battleSession_.serviceLog(desktop.millis()));
+                    lines.emplace_back(app.battleSession_.timeline_.state_.battleLogLines[app.battleSession_.timeline_.state_.battleLogVisibleCount - 1]);
                 }
                 const auto count = [&](const std::string& expected) {
                     return std::count(lines.begin(), lines.end(), expected);
@@ -590,54 +608,54 @@ struct AmoledAppTestAccess {
             app.gameState = state;
             app.gameState.teamCount = 1;
             app.gameState.team[0] = Game::MonsterFactory::create(4, 35);
-            app.battleWild = Game::MonsterFactory::create(7, 35);
-            app.battlePlayerSlot = 0;
+            app.battleSession_.state_.battleWild = Game::MonsterFactory::create(7, 35);
+            app.battleSession_.state_.battlePlayerSlot = 0;
             app.sceneFlow.enter(Scene::BATTLE);
             auto& player = app.gameState.team[0];
             player.hpCur = player.hpMax = 500;
             if (effect == 3) player.hpCur = 1;
             player.move2Id = 76;
-            app.battlePlayerState = {};
-            app.battleWildState = {};
-            BattleSystem::beginChargingMove(app.battlePlayerState, 76, 0);
+            app.battleSession_.state_.battlePlayerState = {};
+            app.battleSession_.state_.battleWildState = {};
+            BattleSystem::beginChargingMove(app.battleSession_.state_.battlePlayerState, 76, 0);
             if (effect == 0 || effect == 3) player.majorStatus = Game::MajorStatus::POISON;
-            if (effect == 1) app.battlePlayerState.bindTurns = 1;
-            if (effect == 2) app.battlePlayerState.yawnTurns = 1;
-            app.battleTurnPlan.count = 1;
-            app.battleTurnPlan.actions[0] = {BattleTurnController::Side::PLAYER, 0, 76};
-            app.battleTurnActionIndex = 0;
-            app.clearBattleLog();
+            if (effect == 1) app.battleSession_.state_.battlePlayerState.bindTurns = 1;
+            if (effect == 2) app.battleSession_.state_.battlePlayerState.yawnTurns = 1;
+            app.battleSession_.state_.battleTurnPlan.count = 1;
+            app.battleSession_.state_.battleTurnPlan.actions[0] = {BattleTurnController::Side::PLAYER, 0, 76};
+            app.battleSession_.state_.battleTurnActionIndex = 0;
+            app.battleSession_.clearLog();
             GameRandom::setRangeProvider(sharedBattleMinimum);
             sharedBattleDraws = 0;
             app.advanceBattleTurn(desktop.millis());
-            assert(app.battleContinuation == AmoledApp::BattleContinuation::FINISH_END_TURN);
-            assert(!app.battleAnimationActive && app.battleLogPlaybackBusy());
-            assert(app.battlePhase == BattleViewModel::Phase::ACTION);
+            assert(app.battleSession_.state_.battleContinuation == AmoledApp::BattleContinuation::FINISH_END_TURN);
+            assert(!app.battleSession_.timeline_.state_.battleAnimationActive && app.battleSession_.logBusy());
+            assert(app.battleSession_.state_.battlePhase == BattleViewModel::Phase::ACTION);
             const auto drawsAfterEnd = sharedBattleDraws;
             const auto hpAfterEnd = player.hpCur;
             for (int frame = 0; frame < 5; ++frame) {
                 desktop.advanceMs(10);
                 app.update(desktop.millis());
-                assert(!app.battleAnimationActive && app.battleTurnPlan.count == 0);
+                assert(!app.battleSession_.timeline_.state_.battleAnimationActive && app.battleSession_.state_.battleTurnPlan.count == 0);
                 assert(sharedBattleDraws == drawsAfterEnd && player.hpCur == hpAfterEnd);
-                assert(app.battlePhase == BattleViewModel::Phase::ACTION);
+                assert(app.battleSession_.state_.battlePhase == BattleViewModel::Phase::ACTION);
             }
-            while (app.battleLogQueueCount > 0) {
+            while (app.battleSession_.timeline_.state_.battleLogQueueCount > 0) {
                 desktop.advanceMs(5000);
-                assert(app.serviceBattleLog(desktop.millis()));
+                assert(app.battleSession_.serviceLog(desktop.millis()));
             }
             // The last visible line also receives its full reading time.
-            assert(app.battleLogPlaybackBusy());
+            assert(app.battleSession_.logBusy());
             desktop.advanceMs(10);
             app.update(desktop.millis());
-            assert(sharedBattleDraws == drawsAfterEnd && app.battleTurnPlan.count == 0);
+            assert(sharedBattleDraws == drawsAfterEnd && app.battleSession_.state_.battleTurnPlan.count == 0);
             desktop.advanceMs(5000);
             app.update(desktop.millis());
             if (effect == 3) {
-                assert(app.battlePhase == BattleViewModel::Phase::DEFEAT);
-                assert(app.battleTurnPlan.count == 0 && sharedBattleDraws == drawsAfterEnd);
-            } else assert(app.battleTurnPlan.count == 2);
-            assert(app.battleContinuation != AmoledApp::BattleContinuation::FINISH_END_TURN);
+                assert(app.battleSession_.state_.battlePhase == BattleViewModel::Phase::DEFEAT);
+                assert(app.battleSession_.state_.battleTurnPlan.count == 0 && sharedBattleDraws == drawsAfterEnd);
+            } else assert(app.battleSession_.state_.battleTurnPlan.count == 2);
+            assert(app.battleSession_.state_.battleContinuation != AmoledApp::BattleContinuation::FINISH_END_TURN);
             GameRandom::setRangeProvider(nullptr);
         }
         std::puts("shared battle end turn: poison, bind and yawn logs finish before charge release or faint resolution");
@@ -688,27 +706,27 @@ struct AmoledAppTestAccess {
             assert(app.debugBattleScenario(scenario, desktop.millis()));
             if (scenario == 9) {
                 assert(app.gameState.team[0].speciesId == 129);
-                assert(app.battleTurnPlan.actions[0].moveId == 150);
-                assert(app.battleTurnPlan.actions[0].specialSlot == BattleSystem::SPECIAL_SLOT_NONE);
-                assert(app.battleAnimationDamage == 0 && !app.battleAnimationHit);
-                assert(app.battleWild.hpCur == app.battleWild.hpMax);
+                assert(app.battleSession_.state_.battleTurnPlan.actions[0].moveId == 150);
+                assert(app.battleSession_.state_.battleTurnPlan.actions[0].specialSlot == BattleSystem::SPECIAL_SLOT_NONE);
+                assert(app.battleSession_.timeline_.state_.battleAnimationDamage == 0 && !app.battleSession_.timeline_.state_.battleAnimationHit);
+                assert(app.battleSession_.state_.battleWild.hpCur == app.battleSession_.state_.battleWild.hpMax);
                 // Inspect the actual executed move line: a planned move alone
                 // would miss an invalid-special-slot fallback to Scratch.
-                assert(app.battleLogVisibleCount == 1);
-                assert(std::strstr(app.battleLogLines[0], findMove(150)->name));
-                assert(!std::strstr(app.battleLogLines[0], findMove(10)->name));
-                app.battleAttackLogHeld = false;
-                app.battleAnimationActive = false;
-                app.battleContinuation = AmoledApp::BattleContinuation::NONE;
+                assert(app.battleSession_.timeline_.state_.battleLogVisibleCount == 1);
+                assert(std::strstr(app.battleSession_.timeline_.state_.battleLogLines[0], findMove(150)->name));
+                assert(!std::strstr(app.battleSession_.timeline_.state_.battleLogLines[0], findMove(10)->name));
+                app.battleSession_.timeline_.state_.battleAttackLogHeld = false;
+                app.battleSession_.timeline_.state_.battleAnimationActive = false;
+                app.battleSession_.state_.battleContinuation = AmoledApp::BattleContinuation::NONE;
                 unsigned noEffectCount = 0;
-                while (app.battleLogQueueCount > 0) {
+                while (app.battleSession_.timeline_.state_.battleLogQueueCount > 0) {
                     desktop.advanceMs(5000);
-                    assert(app.serviceBattleLog(desktop.millis()));
-                    if (std::strcmp(app.battleLogLines[app.battleLogVisibleCount - 1],
+                    assert(app.battleSession_.serviceLog(desktop.millis()));
+                    if (std::strcmp(app.battleSession_.timeline_.state_.battleLogLines[app.battleSession_.timeline_.state_.battleLogVisibleCount - 1],
                                     Ui::Explore::NO_EFFECT) == 0) ++noEffectCount;
                 }
                 assert(noEffectCount == 1);
-                assert(app.battleWild.hpCur == app.battleWild.hpMax);
+                assert(app.battleSession_.state_.battleWild.hpCur == app.battleSession_.state_.battleWild.hpMax);
             }
             desktop.advanceMs(50);
             app.update(desktop.millis());
@@ -716,8 +734,8 @@ struct AmoledAppTestAccess {
             assertSavedPlayer();
         }
         // Closing a normal encounter also reaches saveState; it stays isolated.
-        app.clearBattleLog();
-        app.battleContinuation = AmoledApp::BattleContinuation::NONE;
+        app.battleSession_.clearLog();
+        app.battleSession_.state_.battleContinuation = AmoledApp::BattleContinuation::NONE;
         app.closeBattle(desktop.millis());
         assertSavedPlayer();
         assert(app.debugBattleScenario(0, desktop.millis()));
@@ -789,9 +807,12 @@ struct AmoledAppTestAccess {
             assert(false && "team back must be reachable");
         };
         const auto confirmMedicine = [&](AmoledApp& app, Game::ItemId item) {
-            app.inventoryController_.state().pendingItem = item;
-            app.inventoryController_.state().pendingItemAction = AmoledApp::PendingItemAction::USE;
-            app.inventoryController_.state().itemConfirmOpen = true;
+            for (uint8_t i = 0; i < app.inventoryController_.itemCount(app.gameState, Scene::BAG); ++i) {
+                if (app.inventoryController_.itemAt(app.gameState, Scene::BAG, i) == item) {
+                    app.inventoryController_.selectItem(app.gameState, Scene::BAG, i);
+                    break;
+                }
+            }
             for (int y = 0; y < 448; ++y) {
                 if (itemConfirmChoiceAt(100, y) == 0) {
                     app.handleTap(100, y, desktop.millis());
@@ -812,10 +833,10 @@ struct AmoledAppTestAccess {
                     app.gameState.team[0] = Game::MonsterFactory::create(7, 20);
                     app.gameState.team[1] = Game::MonsterFactory::create(4, 20);
                     app.gameState.activeSlot = 1;
-                    app.battlePlayerSlot = 1;
-                    app.battleWild = Game::MonsterFactory::create(1, 20);
-                    app.battlePhase = BattleViewModel::Phase::ACTION;
-                    app.clearBattleLog();
+                    app.battleSession_.state_.battlePlayerSlot = 1;
+                    app.battleSession_.state_.battleWild = Game::MonsterFactory::create(1, 20);
+                    app.battleSession_.state_.battlePhase = BattleViewModel::Phase::ACTION;
+                    app.battleSession_.clearLog();
                     auto& monster = app.gameState.team[target];
                     monster.hpCur = item == Game::ItemId::REVIVE ? 0 : 5;
                     monster.fainted = item == Game::ItemId::REVIVE;
@@ -837,7 +858,7 @@ struct AmoledAppTestAccess {
                     tapBack(app);
                     assert(app.sceneFlow.current() == Scene::BAG && !app.inventoryController_.state().selectingItemTarget);
                     assert(Game::ItemInventory::count(app.gameState, item) == stock);
-                    assert(app.battleContinuation == AmoledApp::BattleContinuation::NONE);
+                    assert(app.battleSession_.state_.battleContinuation == AmoledApp::BattleContinuation::NONE);
                     confirmMedicine(app, item);
                     tapTarget(app, target);
                     const auto newHp = monster.hpCur;
@@ -845,7 +866,7 @@ struct AmoledAppTestAccess {
                     assert(app.sceneFlow.current() == Scene::TEAM);
                     assert(Game::ItemInventory::count(app.gameState, item) == stock - 1);
                     assert(app.gameState.team[1 - target].hpCur == otherHp);
-                    assert(app.battlePlayerSlot == 1 && app.gameState.activeSlot == 1);
+                    assert(app.battleSession_.state_.battlePlayerSlot == 1 && app.gameState.activeSlot == 1);
                     assert(app.gameState.team[0].speciesId == 7 && app.gameState.team[1].speciesId == 4);
                     assert(!monster.fainted && monster.majorStatus == Game::MajorStatus::NONE);
                     if (item == Game::ItemId::POTION) assert(newHp == oldHp + 20);
@@ -879,8 +900,8 @@ struct AmoledAppTestAccess {
                     app.update(desktop.millis());
                     assert(!app.inventoryController_.state().teamItemFeedbackActive && !app.inventoryController_.state().selectingItemTarget);
                     assert(app.sceneFlow.current() == (battle ? Scene::BATTLE : Scene::BAG));
-                    assert(!app.inventoryController_.state().battleBagMode && !app.battleHpAnimationActive);
-                    assert(app.battleContinuation == (battle ? AmoledApp::BattleContinuation::WILD_TURN
+                    assert(!app.inventoryController_.state().battleBagMode && !app.battleSession_.timeline_.state_.battleHpAnimationActive);
+                    assert(app.battleSession_.state_.battleContinuation == (battle ? AmoledApp::BattleContinuation::WILD_TURN
                                                              : AmoledApp::BattleContinuation::NONE));
                     assert(Game::ItemInventory::count(app.gameState, item) == stock - 1);
                     checkHatchFrame(app, canvas);
@@ -895,7 +916,7 @@ struct AmoledAppTestAccess {
         AmoledApp app;
         app.begin(desktop.millis());
         app.gameState = state;
-        app.battlePlayerSlot = 0;
+        app.battleSession_.state_.battlePlayerSlot = 0;
         app.gameState.team[0].hpCur = app.gameState.team[0].hpMax;
         app.gameState.team[1].hpCur = 0;
         app.gameState.team[1].fainted = true;
@@ -912,7 +933,7 @@ struct AmoledAppTestAccess {
         tapBack(app);
         app.closeItemScene();
         assert(app.sceneFlow.current() == Scene::BATTLE && !app.inventoryController_.state().battleBagMode);
-        assert(app.battleContinuation == AmoledApp::BattleContinuation::NONE);
+        assert(app.battleSession_.state_.battleContinuation == AmoledApp::BattleContinuation::NONE);
         std::puts("medicine: target selection, active/reserve healing, revive/status feedback, animated partial frames, return timing and cancellation verified");
     }
 
@@ -1355,7 +1376,7 @@ struct AmoledAppTestAccess {
                                 : pose == 2 ? Home::Task::WANDER : Home::Task::IDLE,
                             desktop.millis(), 0, true);
                         app.petStopping = false;
-                        app.pairMainRenderOffsetY = hop / 2.0f;
+                        app.pairFlow_.state_.mainRenderOffsetY = hop / 2.0f;
                         HomeViewModel model;
                         app.fillHomePetModel(model);
                         bool flip = false;
@@ -1438,7 +1459,8 @@ struct AmoledAppTestAccess {
         for (Scene scene : {Scene::MAIN_MENU, Scene::SETTINGS, Scene::BAG,
                             Scene::TEAM, Scene::EXPLORE_AREAS}) {
             app.sceneFlow.enter(scene);
-            app.inventoryController_.state().itemConfirmOpen = true;
+            app.inventoryController_.selectCategory(Game::ShopService::Category::DAILY);
+            app.inventoryController_.selectItem(app.gameState, Scene::SHOP, 0);
             app.settingsController.showResetConfirmation();
             assert(app.prepareDisplayLock(desktop.millis()));
             assert(app.sceneFlow.current() == Scene::HOME);
@@ -1455,9 +1477,9 @@ struct AmoledAppTestAccess {
             assert(!app.lockTapHitsPet(x, y));
             app.homeMainActor.hidden = false;
         }
-        app.visitDeparture = AmoledApp::VisitDeparture::AWAY;
+        app.visitAwayFlow_.state_.phase = AmoledApp::VisitDeparture::AWAY;
         assert(!app.prepareDisplayLock(desktop.millis()));
-        app.visitDeparture = AmoledApp::VisitDeparture::NONE;
+        app.visitAwayFlow_.state_.phase = AmoledApp::VisitDeparture::NONE;
         app.gameState.teamCount = 0;
         assert(!app.prepareDisplayLock(desktop.millis()));
         std::puts("lock room: menus return home and invisible pets cannot lock/unlock");
@@ -1508,25 +1530,36 @@ struct AmoledAppTestAccess {
             app.gameState.team[0].move3Id = 44;
             app.gameState.team[0].moveProficiency[1] = 70;
             app.gameState.team[0].moveProficiency[2] = 80;
-            app.sceneFlow.enter(Scene::PROGRESSION);
-            app.progressionMode = ProgressionViewModel::Mode::MOVE_REPLACE;
-            app.progressionTeamSlot = 0;
-            app.progressionOldLevel = app.gameState.team[0].level;
-            app.progressionMoveId = 22;
-            app.progressionOldMove2 = 33;
-            app.progressionOldMove3 = 44;
+            const auto* species = findSpecies(1);
+            uint8_t learnLevel = 0;
+            for (uint16_t i = 0; i < learnsetEntryCountForSpecies(*species); ++i) {
+                const auto* entry = learnsetEntryForSpecies(*species, i);
+                if (entry && entry->level > 1 && entry->level < 16 &&
+                    entry->moveId != 33 && entry->moveId != 44 &&
+                    canLearnAsSpecialMove(*species, entry->moveId)) {
+                    learnLevel = entry->level;
+                    break;
+                }
+            }
+            assert(learnLevel > 1);
+            app.gameState.team[0].speciesId = 1;
+            app.gameState.team[0].level = learnLevel;
+            app.openProgressionScene(Scene::HOME, 0, learnLevel - 1, desktop.millis());
+            app.advanceProgression(desktop.millis());
+            const auto learnedMove = app.progressionFlow_.state().progressionMoveId;
+            assert(learnedMove != 0);
             tap(app, desktop, 328, 38);
-            assert(app.progressionMode == ProgressionViewModel::Mode::MOVE_REPLACE);
+            assert(app.progressionFlow_.state().progressionMode == ProgressionViewModel::Mode::MOVE_REPLACE);
             assert(app.gameState.team[0].move2Id == 33);
             assert(app.gameState.team[0].move3Id == 44);
             tap(app, desktop, 160, 106 + selection * 66);
-            assert(app.progressionSelectedItem == selection);
-            assert(app.progressionMode == ProgressionViewModel::Mode::MOVE_REPLACE);
+            assert(app.progressionFlow_.state().progressionSelectedItem == selection);
+            assert(app.progressionFlow_.state().progressionMode == ProgressionViewModel::Mode::MOVE_REPLACE);
             assert(app.gameState.team[0].move2Id == 33);
             assert(app.gameState.team[0].move3Id == 44);
             tap(app, desktop, 328, 38);
-            assert(app.gameState.team[0].move2Id == (selection == 1 ? 22 : 33));
-            assert(app.gameState.team[0].move3Id == (selection == 2 ? 22 : 44));
+            assert(app.gameState.team[0].move2Id == (selection == 1 ? learnedMove : 33));
+            assert(app.gameState.team[0].move3Id == (selection == 2 ? learnedMove : 44));
             if (selection == 1) assert(app.gameState.team[0].moveProficiency[1] == 0);
             if (selection == 2) assert(app.gameState.team[0].moveProficiency[2] == 0);
         }
@@ -1552,23 +1585,23 @@ struct AmoledAppTestAccess {
         assert(!app.petFootprintInsideWalkArea(app.homeMainActor.x, app.homeMainActor.y));
         assert(app.debugAcceptContact());
         app.syncHomeActors(desktop.millis());
-        assert(app.visitorMotion == AmoledApp::VisitorMotion::HOST_APPROACH);
+        assert(app.visitorFlow_.state_.motion == AmoledApp::VisitorMotion::HOST_APPROACH);
         assert(app.homeCompanionActor.hidden);
         assert(app.petFootprintInsideWalkArea(app.homeMainActor.x, app.homeMainActor.y));
         bool sawHostClear = false;
         bool sawGuestEnter = false;
         for (int tick = 0;
-             tick < 400 && app.visitorMotion != AmoledApp::VisitorMotion::ACTIVE;
+             tick < 400 && app.visitorFlow_.state_.motion != AmoledApp::VisitorMotion::ACTIVE;
              ++tick) {
             desktop.advanceMs(50);
             app.update(desktop.millis());
             app.markRendered();
-            sawHostClear |= app.visitorHostDoorPhase == 2;
-            sawGuestEnter |= app.visitorMotion ==
+            sawHostClear |= app.visitorFlow_.state_.hostDoorPhase == 2;
+            sawGuestEnter |= app.visitorFlow_.state_.motion ==
                 AmoledApp::VisitorMotion::ENTERING;
         }
         assert(sawHostClear && sawGuestEnter);
-        assert(app.visitorMotion == AmoledApp::VisitorMotion::ACTIVE);
+        assert(app.visitorFlow_.state_.motion == AmoledApp::VisitorMotion::ACTIVE);
         assert(app.homeRuntime.validate() == Home::INVARIANT_OK);
         HomeViewModel enteredModel;
         app.fillHomePetModel(enteredModel);
@@ -1577,7 +1610,7 @@ struct AmoledAppTestAccess {
         assert(app.petFootprintInsideWalkArea(app.homeMainActor.x, app.homeMainActor.y));
         assert(app.companionFootprintInsideWalkArea(
             app.homeCompanionActor.x, app.homeCompanionActor.y));
-        assert(app.pairPhase == AmoledApp::PairPhase::APPROACH);
+        assert(app.pairFlow_.state().phase == AmoledApp::PairPhase::APPROACH);
         const std::string& logs = desktop.logs();
         assert(logs.find("[VisitArrival] host_recover") != std::string::npos);
         assert(logs.find("[VisitArrival] host_clear_begin") != std::string::npos);
@@ -1604,39 +1637,39 @@ struct AmoledAppTestAccess {
         assert(app.debugContactPromptFade == 255);
         assert(app.debugAcceptContact());
         app.syncHomeActors(desktop.millis());
-        assert(app.visitorMotion == AmoledApp::VisitorMotion::HOST_APPROACH);
+        assert(app.visitorFlow_.state_.motion == AmoledApp::VisitorMotion::HOST_APPROACH);
         assert(app.homeCompanionActor.hidden);
         // Firmware can service the freshly attached visitor again in the
         // same millisecond. That zero-duration tick must not reveal it.
         app.update(desktop.millis());
         app.markRendered();
-        assert(app.visitorMotion == AmoledApp::VisitorMotion::HOST_APPROACH);
+        assert(app.visitorFlow_.state_.motion == AmoledApp::VisitorMotion::HOST_APPROACH);
         assert(app.homeCompanionActor.hidden);
         int ticks = 0;
         bool sawVisitorEnter = false;
-        while (app.visitorMotion != AmoledApp::VisitorMotion::ACTIVE) {
+        while (app.visitorFlow_.state_.motion != AmoledApp::VisitorMotion::ACTIVE) {
             desktop.advanceMs(50);
             app.update(desktop.millis());
             app.markRendered();
-            if (app.visitorMotion == AmoledApp::VisitorMotion::ENTERING) {
+            if (app.visitorFlow_.state_.motion == AmoledApp::VisitorMotion::ENTERING) {
                 sawVisitorEnter = true;
                 assert(!app.homeCompanionActor.hidden);
             }
             assert(++ticks < 300);
         }
         assert(sawVisitorEnter);
-        assert(app.pairPhase == AmoledApp::PairPhase::APPROACH);
+        assert(app.pairFlow_.state().phase == AmoledApp::PairPhase::APPROACH);
         ticks = 0;
-        while (app.pairPhase == AmoledApp::PairPhase::APPROACH) {
+        while (app.pairFlow_.state().phase == AmoledApp::PairPhase::APPROACH) {
             desktop.advanceMs(50);
             app.update(desktop.millis());
             app.markRendered();
             assert(++ticks < 120);
         }
-        if (app.pairPhase != AmoledApp::PairPhase::INVITE) {
+        if (app.pairFlow_.state().phase != AmoledApp::PairPhase::INVITE) {
             std::fputs(desktop.logs().c_str(), stderr);
         }
-        assert(app.pairPhase == AmoledApp::PairPhase::INVITE);
+        assert(app.pairFlow_.state().phase == AmoledApp::PairPhase::INVITE);
         const int centerDistancePx = std::abs(
             app.worldToScreenX(app.homeMainActor.x) -
             app.worldToScreenX(app.homeCompanionActor.x));
@@ -1670,7 +1703,7 @@ struct AmoledAppTestAccess {
             desktop.advanceMs(50);
             app.update(desktop.millis());
             app.markRendered();
-            if (app.visitorMotion == AmoledApp::VisitorMotion::EXITING) {
+            if (app.visitorFlow_.state_.motion == AmoledApp::VisitorMotion::EXITING) {
                 assert(std::hypot(app.homeCompanionActor.x - previousX,
                                   app.homeCompanionActor.y - previousY) < 3.0f);
                 ++exitFrames;
@@ -1840,46 +1873,46 @@ struct AmoledAppTestAccess {
             app.gameState.team[0].hpCur = app.gameState.team[1].hpCur = 10;
             app.selectedExploreArea = ExploreMapGenerator::TALL_GRASS_PARK_AREA;
             assert(ExploreMapGenerator::generate(9137, ExploreMapGenerator::Edge::LEFT,
-                app.selectedExploreArea, app.exploreRouteMap));
+                app.selectedExploreArea, app.exploreSession_.state_.exploreRouteMap));
             app.sceneFlow.enter(Scene::EXPLORE_ROUTE);
-            app.exploreRoutePaused = false;
-            app.exploreRouteComplete = false;
-            app.exploreRouteBossPending = false;
-            app.exploreRoutePickupAvailable = false;
-            app.exploreRouteAutoWalk = false;
-            app.exploreRoutePlayerWalkActive = false;
-            app.exploreRouteExiting = false;
+            app.exploreSession_.state_.exploreRoutePaused = false;
+            app.exploreSession_.state_.exploreRouteComplete = false;
+            app.exploreSession_.state_.exploreRouteBossPending = false;
+            app.exploreSession_.state_.exploreRoutePickupAvailable = false;
+            app.exploreSession_.state_.exploreRouteAutoWalk = false;
+            app.exploreSession_.state_.exploreRoutePlayerWalkActive = false;
+            app.exploreSession_.state_.exploreRouteExiting = false;
             app.autonomousExpedition = false;
             for (uint8_t direction = 0; direction < 4; ++direction) {
                 uint32_t now = desktop.millis();
-                app.exploreRouteDirection = direction;
-                app.exploreRouteFollowerDirection = direction;
-                app.exploreRouteMoving = app.exploreRouteFollowerMoving = true;
-                app.exploreRouteWorldX = app.exploreRouteFromX = 70;
-                app.exploreRouteWorldY = app.exploreRouteFromY = 72;
-                app.exploreRouteFollowerWorldX = app.exploreRouteFollowerFromX = 54;
-                app.exploreRouteFollowerWorldY = app.exploreRouteFollowerFromY = 56;
+                app.explorePresenter_.state_.exploreRouteDirection = direction;
+                app.explorePresenter_.state_.exploreRouteFollowerDirection = direction;
+                app.exploreSession_.state_.exploreRouteMoving = app.explorePresenter_.state_.exploreRouteFollowerMoving = true;
+                app.explorePresenter_.state_.exploreRouteWorldX = app.explorePresenter_.state_.exploreRouteFromX = 70;
+                app.explorePresenter_.state_.exploreRouteWorldY = app.explorePresenter_.state_.exploreRouteFromY = 72;
+                app.explorePresenter_.state_.exploreRouteFollowerWorldX = app.explorePresenter_.state_.exploreRouteFollowerFromX = 54;
+                app.explorePresenter_.state_.exploreRouteFollowerWorldY = app.explorePresenter_.state_.exploreRouteFollowerFromY = 56;
                 const float dx = direction == 2 ? -16 : direction == 3 ? 16 : 0;
                 const float dy = direction == 0 ? 16 : direction == 1 ? -16 : 0;
-                app.exploreRouteTargetX = 70 + dx;
-                app.exploreRouteTargetY = 72 + dy;
-                app.exploreRouteFollowerTargetX = 54 + dx;
-                app.exploreRouteFollowerTargetY = 56 + dy;
-                app.exploreRouteMoveStartedMs = now;
-                app.nextExploreRouteFrameMs = now + 90;
-                app.nextExploreRouteMapFrameMs = now + 10000;
-                app.updateExploreRouteCamera();
+                app.explorePresenter_.state_.exploreRouteTargetX = 70 + dx;
+                app.explorePresenter_.state_.exploreRouteTargetY = 72 + dy;
+                app.explorePresenter_.state_.exploreRouteFollowerTargetX = 54 + dx;
+                app.explorePresenter_.state_.exploreRouteFollowerTargetY = 56 + dy;
+                app.explorePresenter_.state_.exploreRouteMoveStartedMs = now;
+                app.explorePresenter_.state_.nextExploreRouteFrameMs = now + 90;
+                app.explorePresenter_.state_.nextExploreRouteMapFrameMs = now + 10000;
+                app.explorePresenter_.updateCamera();
                 app.forceFullRender();
                 app.render(canvas);
                 app.markRendered();
-                const uint8_t frame = app.exploreRoutePetFrame;
+                const uint8_t frame = app.explorePresenter_.state_.exploreRoutePetFrame;
                 for (int tick = 1; tick <= 12; ++tick) {
                     const std::vector<uint16_t> before(canvas.rawPixels(),
                         canvas.rawPixels() + AmoledUi::WIDTH * AmoledUi::HEIGHT);
                     desktop.advanceMs(20);
                     app.updateExploreRoute(desktop.millis());
                     assert(app.needsRender());
-                    if (tick < 5) assert(app.exploreRoutePetFrame == frame);
+                    if (tick < 5) assert(app.explorePresenter_.state_.exploreRoutePetFrame == frame);
                     const int left = app.renderColumnBegin(), right = app.renderColumnEnd();
                     const int top = app.renderRowBegin(), bottom = app.renderRowEnd();
                     assert(right - left < AmoledUi::WIDTH);
@@ -1901,7 +1934,7 @@ struct AmoledAppTestAccess {
                     app.markRendered();
                 }
                 // Stopping the follower changes its frame even without a position change.
-                app.exploreRouteMoving = app.exploreRouteFollowerMoving = false;
+                app.exploreSession_.state_.exploreRouteMoving = app.explorePresenter_.state_.exploreRouteFollowerMoving = false;
                 app.requestExploreRouteDynamicRender();
                 app.render(canvas);
                 const std::vector<uint16_t> stopped(canvas.rawPixels(),
@@ -1911,19 +1944,19 @@ struct AmoledAppTestAccess {
                 app.render(canvas);
                 assert(std::equal(stopped.begin(), stopped.end(), canvas.rawPixels()));
                 app.markRendered();
-                app.exploreRoutePaused = true;
+                app.exploreSession_.state_.exploreRoutePaused = true;
                 desktop.advanceMs(20);
                 app.updateExploreRoute(desktop.millis());
                 assert(!app.needsRender());
-                app.exploreRoutePaused = false;
+                app.exploreSession_.state_.exploreRoutePaused = false;
             }
             // A changed viewport restores the entire map, including both actors.
-            app.exploreRouteFromX = app.exploreRouteWorldX = 180;
-            app.exploreRouteTargetX = 196;
-            app.exploreRouteFromY = app.exploreRouteWorldY = 140;
-            app.exploreRouteTargetY = 140;
-            app.exploreRouteMoving = true;
-            app.exploreRouteMoveStartedMs = desktop.millis();
+            app.explorePresenter_.state_.exploreRouteFromX = app.explorePresenter_.state_.exploreRouteWorldX = 180;
+            app.explorePresenter_.state_.exploreRouteTargetX = 196;
+            app.explorePresenter_.state_.exploreRouteFromY = app.explorePresenter_.state_.exploreRouteWorldY = 140;
+            app.explorePresenter_.state_.exploreRouteTargetY = 140;
+            app.exploreSession_.state_.exploreRouteMoving = true;
+            app.explorePresenter_.state_.exploreRouteMoveStartedMs = desktop.millis();
             desktop.advanceMs(20);
             app.updateExploreRoute(desktop.millis());
             assert(app.renderColumnBegin() == 0 && app.renderColumnEnd() == AmoledUi::WIDTH);
@@ -1938,29 +1971,29 @@ struct AmoledAppTestAccess {
         app.begin(desktop.millis());
         app.gameState = state;
         app.selectedExploreArea = ExploreMapGenerator::TALL_GRASS_PARK_AREA;
-        app.exploreRouteMapBlock = 0;
-        app.exploreRouteMapBlockCount = 1;
+        app.exploreSession_.state_.exploreRouteMapBlock = 0;
+        app.exploreSession_.state_.exploreRouteMapBlockCount = 1;
         for (bool withBoss : {false, true}) {
             uint8_t selected[4] = {};
             for (uint32_t seed = 1; seed <= 96; ++seed) {
                 for (auto edge : {ExploreMapGenerator::Edge::TOP, ExploreMapGenerator::Edge::RIGHT,
                                   ExploreMapGenerator::Edge::BOTTOM, ExploreMapGenerator::Edge::LEFT}) {
-                    app.exploreRouteExpeditionSeed = seed;
-                    app.exploreRoutePendingEntryEdge = edge;
-                    app.exploreRouteBossScheduled = withBoss;
+                    app.exploreSession_.state_.exploreRouteExpeditionSeed = seed;
+                    app.exploreSession_.state_.exploreRoutePendingEntryEdge = edge;
+                    app.exploreSession_.state_.exploreRouteBossScheduled = withBoss;
                     assert(app.generateExploreRouteMap(desktop.millis()));
-                    assert(app.exploreRouteMap.entry.edge == edge);
-                    const uint8_t count = app.exploreRouteMap.pathCount;
-                    assert(count >= 1 && count <= 3 && app.exploreRoutePath < count);
-                    selected[count] |= 1U << app.exploreRoutePath;
-                    const auto& path = app.exploreRouteMap.paths[app.exploreRoutePath];
+                    assert(app.exploreSession_.state_.exploreRouteMap.entry.edge == edge);
+                    const uint8_t count = app.exploreSession_.state_.exploreRouteMap.pathCount;
+                    assert(count >= 1 && count <= 3 && app.exploreSession_.state_.exploreRoutePath < count);
+                    selected[count] |= 1U << app.exploreSession_.state_.exploreRoutePath;
+                    const auto& path = app.exploreSession_.state_.exploreRouteMap.paths[app.exploreSession_.state_.exploreRoutePath];
                     auto start = ExploreRouteGeometry::pathPoint(path, 0);
-                    assert(app.exploreRouteWorldX == start.x && app.exploreRouteWorldY == start.y);
+                    assert(app.explorePresenter_.state_.exploreRouteWorldX == start.x && app.explorePresenter_.state_.exploreRouteWorldY == start.y);
                     if (withBoss) {
                         assert(ExploreBoss::canPlaceOnPath(path.pointCount));
-                        assert(app.exploreRouteBossPending);
-                        assert(app.exploreRouteBossIndex > 0 &&
-                               app.exploreRouteBossIndex < path.pointCount - 1);
+                        assert(app.exploreSession_.state_.exploreRouteBossPending);
+                        assert(app.exploreSession_.state_.exploreRouteBossIndex > 0 &&
+                               app.exploreSession_.state_.exploreRouteBossIndex < path.pointCount - 1);
                     }
                 }
             }
@@ -1969,20 +2002,20 @@ struct AmoledAppTestAccess {
             if (!withBoss) assert(selected[3] == 7);
         }
         // Follow the third route to the next map with its actual exit direction.
-        app.exploreRouteBossScheduled = false;
-        app.exploreRouteMapBlockCount = 2;
-        app.exploreRouteMapBlock = 0;
+        app.exploreSession_.state_.exploreRouteBossScheduled = false;
+        app.exploreSession_.state_.exploreRouteMapBlockCount = 2;
+        app.exploreSession_.state_.exploreRouteMapBlock = 0;
         for (uint32_t seed = 1; ; ++seed) {
             assert(seed < 100);
-            app.exploreRouteExpeditionSeed = seed;
+            app.exploreSession_.state_.exploreRouteExpeditionSeed = seed;
             assert(app.generateExploreRouteMap(desktop.millis()));
-            if (app.exploreRouteMap.pathCount == 3) break;
+            if (app.exploreSession_.state_.exploreRouteMap.pathCount == 3) break;
         }
-        app.exploreRoutePath = 2;
-        auto exit = app.exploreRouteMap.paths[2].exit.edge;
-        app.finishExploreRouteAtEnd(desktop.millis());
-        assert(app.exploreRouteMapBlock == 1);
-        assert(app.exploreRouteMap.entry.edge == ExploreMapGenerator::opposite(exit));
+        app.exploreSession_.state_.exploreRoutePath = 2;
+        auto exit = app.exploreSession_.state_.exploreRouteMap.paths[2].exit.edge;
+        finishRoute(app, desktop.millis());
+        assert(app.exploreSession_.state_.exploreRouteMapBlock == 1);
+        assert(app.exploreSession_.state_.exploreRouteMap.entry.edge == ExploreMapGenerator::opposite(exit));
         std::puts("park routes: 1-3 exits, third-route selection, boss placement and map links verified");
     }
 
@@ -1998,57 +2031,57 @@ struct AmoledAppTestAccess {
                 app.gameState = state;
                 app.gameState.teamCount = teamCount;
                 app.sceneFlow.enter(Scene::EXPLORE_ROUTE);
-                app.exploreRouteMap.pathCount = 1;
-                app.exploreRouteMap.paths[0].exit.edge = edge;
-                app.exploreRouteMapBlockCount = 1;
-                app.exploreRouteMapBlock = 0;
-                app.exploreRoutePath = 0;
-                app.exploreRouteWorldX = width / 2;
-                app.exploreRouteWorldY = height / 2;
-                app.exploreRouteFollowerWorldX = width / 2 - 12;
-                app.exploreRouteFollowerWorldY = height / 2 - 12;
-                app.exploreRouteBossPending = false;
-                app.exploreRouteComplete = false;
-                app.exploreRoutePaused = false;
+                app.exploreSession_.state_.exploreRouteMap.pathCount = 1;
+                app.exploreSession_.state_.exploreRouteMap.paths[0].exit.edge = edge;
+                app.exploreSession_.state_.exploreRouteMapBlockCount = 1;
+                app.exploreSession_.state_.exploreRouteMapBlock = 0;
+                app.exploreSession_.state_.exploreRoutePath = 0;
+                app.explorePresenter_.state_.exploreRouteWorldX = width / 2;
+                app.explorePresenter_.state_.exploreRouteWorldY = height / 2;
+                app.explorePresenter_.state_.exploreRouteFollowerWorldX = width / 2 - 12;
+                app.explorePresenter_.state_.exploreRouteFollowerWorldY = height / 2 - 12;
+                app.exploreSession_.state_.exploreRouteBossPending = false;
+                app.exploreSession_.state_.exploreRouteComplete = false;
+                app.exploreSession_.state_.exploreRoutePaused = false;
                 app.autonomousExpedition = false;
                 uint32_t now = desktop.millis();
                 app.beginExploreRouteExit(now);
-                assert(app.exploreRouteExiting && app.exploreRouteMoving);
-                assert(app.exploreRouteFollowerMoving == (teamCount == 2));
+                assert(app.exploreSession_.state_.exploreRouteExiting && app.exploreSession_.state_.exploreRouteMoving);
+                assert(app.explorePresenter_.state_.exploreRouteFollowerMoving == (teamCount == 2));
                 app.updateExploreRoute(now);
-                const uint8_t leaderFrame = app.exploreRoutePetFrame;
-                const uint8_t followerFrame = app.exploreRouteFollowerFrame;
+                const uint8_t leaderFrame = app.explorePresenter_.state_.exploreRoutePetFrame;
+                const uint8_t followerFrame = app.explorePresenter_.state_.exploreRouteFollowerFrame;
                 app.updateExploreRoute(now + 45);
-                assert(app.exploreRoutePetFrame == leaderFrame);
-                assert(app.exploreRouteFollowerFrame == followerFrame);
+                assert(app.explorePresenter_.state_.exploreRoutePetFrame == leaderFrame);
+                assert(app.explorePresenter_.state_.exploreRouteFollowerFrame == followerFrame);
                 app.updateExploreRoute(now + 90);
-                assert(app.exploreRoutePetFrame == static_cast<uint8_t>(leaderFrame + 1));
-                assert(app.exploreRouteFollowerFrame == static_cast<uint8_t>(
+                assert(app.explorePresenter_.state_.exploreRoutePetFrame == static_cast<uint8_t>(leaderFrame + 1));
+                assert(app.explorePresenter_.state_.exploreRouteFollowerFrame == static_cast<uint8_t>(
                     followerFrame + (teamCount == 2 ? 1 : 0)));
-                assert(!app.exploreRouteComplete);
-                assert(app.exploreRouteWorldX != app.exploreRouteFromX ||
-                       app.exploreRouteWorldY != app.exploreRouteFromY);
+                assert(!app.exploreSession_.state_.exploreRouteComplete);
+                assert(app.explorePresenter_.state_.exploreRouteWorldX != app.explorePresenter_.state_.exploreRouteFromX ||
+                       app.explorePresenter_.state_.exploreRouteWorldY != app.explorePresenter_.state_.exploreRouteFromY);
                 if (teamCount == 2) {
-                    assert(app.exploreRouteFollowerWorldX != app.exploreRouteFollowerFromX ||
-                           app.exploreRouteFollowerWorldY != app.exploreRouteFollowerFromY);
+                    assert(app.explorePresenter_.state_.exploreRouteFollowerWorldX != app.explorePresenter_.state_.exploreRouteFollowerFromX ||
+                           app.explorePresenter_.state_.exploreRouteFollowerWorldY != app.explorePresenter_.state_.exploreRouteFollowerFromY);
                 }
                 int ticks = 0;
                 now += 90;
-                while (app.exploreRouteExiting) {
+                while (app.exploreSession_.state_.exploreRouteExiting) {
                     now += 90;
                     app.updateExploreRoute(now);
                     assert(++ticks < 1000);
                 }
-                assert(app.exploreRouteComplete);
+                assert(app.exploreSession_.state_.exploreRouteComplete);
                 auto outside = [=](float x, float y) {
                     return x < 0 || x > width || y < 0 || y > height;
                 };
-                assert(outside(app.exploreRouteWorldX, app.exploreRouteWorldY));
+                assert(outside(app.explorePresenter_.state_.exploreRouteWorldX, app.explorePresenter_.state_.exploreRouteWorldY));
                 if (teamCount == 2) {
-                    assert(outside(app.exploreRouteFollowerWorldX,
-                                   app.exploreRouteFollowerWorldY));
+                    assert(outside(app.explorePresenter_.state_.exploreRouteFollowerWorldX,
+                                   app.explorePresenter_.state_.exploreRouteFollowerWorldY));
                 }
-                assert(!app.exploreRouteMoving && !app.exploreRouteFollowerMoving);
+                assert(!app.exploreSession_.state_.exploreRouteMoving && !app.explorePresenter_.state_.exploreRouteFollowerMoving);
             }
         }
         std::puts("route exit: both actors walk on all four edges before completion");
@@ -2061,40 +2094,40 @@ struct AmoledAppTestAccess {
         app.gameState = state;
         app.selectedExploreArea = ExploreMapGenerator::FROST_CRYSTAL_CAVE_AREA;
         app.sceneFlow.enter(Scene::EXPLORE_ROUTE);
-        app.exploreRouteMapBlock = 0;
-        app.exploreRouteMapBlockCount = 3;
-        app.exploreRouteExpeditionSeed = 0x20260713;
-        app.exploreRoutePendingEntryEdge = ExploreMapGenerator::Edge::TOP;
-        app.exploreRouteBossScheduled = false;
+        app.exploreSession_.state_.exploreRouteMapBlock = 0;
+        app.exploreSession_.state_.exploreRouteMapBlockCount = 3;
+        app.exploreSession_.state_.exploreRouteExpeditionSeed = 0x20260713;
+        app.exploreSession_.state_.exploreRoutePendingEntryEdge = ExploreMapGenerator::Edge::TOP;
+        app.exploreSession_.state_.exploreRouteBossScheduled = false;
         uint32_t now = desktop.millis() + 5000;
         assert(app.generateExploreRouteMap(now));
-        app.exploreRoutePath = 0;
-        const auto& path = app.exploreRouteMap.paths[0];
+        app.exploreSession_.state_.exploreRoutePath = 0;
+        const auto& path = app.exploreSession_.state_.exploreRouteMap.paths[0];
         for (uint8_t index = 0; index < path.pointCount; ++index) {
             const auto& point = path.points[index];
             uint16_t cell = point.y * ExploreMapGenerator::WIDTH + point.x;
-            assert(app.exploreRouteMap.layers[0][cell] != 4506);
-            assert(app.exploreRouteMap.layers[0][cell] !=
+            assert(app.exploreSession_.state_.exploreRouteMap.layers[0][cell] != 4506);
+            assert(app.exploreSession_.state_.exploreRouteMap.layers[0][cell] !=
                    ExploreCaveTiles::FROST_BROKEN_ICE_HOLE);
         }
         assert(!path.fallsToNextLevel);
         uint16_t downCell = path.exit.point.y * ExploreMapGenerator::WIDTH +
                             path.exit.point.x;
-        assert(app.exploreRouteMap.layers[1][downCell] ==
+        assert(app.exploreSession_.state_.exploreRouteMap.layers[1][downCell] ==
                ExploreCaveTiles::FROST_DOWNWARD_STAIRS);
-        assert(app.exploreRouteMap.layers[1][
-            app.exploreRouteMap.paths[1].exit.point.y * ExploreMapGenerator::WIDTH +
-            app.exploreRouteMap.paths[1].exit.point.x] ==
+        assert(app.exploreSession_.state_.exploreRouteMap.layers[1][
+            app.exploreSession_.state_.exploreRouteMap.paths[1].exit.point.y * ExploreMapGenerator::WIDTH +
+            app.exploreSession_.state_.exploreRouteMap.paths[1].exit.point.x] ==
             ExploreCaveTiles::FROST_UP_LADDER[1]);
-        app.exploreRoutePath = 1;
-        app.exploreRouteBossPending = false;
-        assert(app.finishExploreRouteAtEnd(now + 500));
-        assert(app.exploreRouteMapBlock == 1);
-        app.exploreRoutePath = 1;
-        assert(app.finishExploreRouteAtEnd(now + 1000));
-        assert(app.exploreRouteMapBlock == 2);
-        const auto& entry = app.exploreRouteMap.entry.point;
-        assert(app.exploreRouteMap.layers[1][entry.y * ExploreMapGenerator::WIDTH +
+        app.exploreSession_.state_.exploreRoutePath = 1;
+        app.exploreSession_.state_.exploreRouteBossPending = false;
+        assert(finishRoute(app, now + 500));
+        assert(app.exploreSession_.state_.exploreRouteMapBlock == 1);
+        app.exploreSession_.state_.exploreRoutePath = 1;
+        assert(finishRoute(app, now + 1000));
+        assert(app.exploreSession_.state_.exploreRouteMapBlock == 2);
+        const auto& entry = app.exploreSession_.state_.exploreRouteMap.entry.point;
+        assert(app.exploreSession_.state_.exploreRouteMap.layers[1][entry.y * ExploreMapGenerator::WIDTH +
                                              entry.x] ==
                ExploreCaveTiles::FROST_DOWNWARD_STAIRS);
         std::puts("frost links: down stairs and up ladder connect cave levels");
@@ -2131,15 +2164,15 @@ struct AmoledAppTestAccess {
             app.begin(desktop.millis());
             app.gameState = state;
             app.sceneFlow.enter(Scene::EXPLORE_ROUTE);
-            app.exploreRouteMoving = false;
-            app.exploreRoutePlayerWalkActive = false;
+            app.exploreSession_.state_.exploreRouteMoving = false;
+            app.exploreSession_.state_.exploreRoutePlayerWalkActive = false;
             app.pauseExploreRoute(desktop.millis());
             app.sceneFlow.openExploreMenu();
             tap(app, desktop, point[0], point[1]);
             assert(app.sceneFlow.current() == Scene::EXPLORE_ROUTE);
-            assert(!app.exploreRoutePaused);
-            assert(!app.exploreRouteMoving);
-            assert(!app.exploreRoutePlayerWalkActive);
+            assert(!app.exploreSession_.state_.exploreRoutePaused);
+            assert(!app.exploreSession_.state_.exploreRouteMoving);
+            assert(!app.exploreSession_.state_.exploreRoutePlayerWalkActive);
         }
     }
 
@@ -2162,23 +2195,23 @@ struct AmoledAppTestAccess {
         app.gameState.team[1].bond = Game::Bond::MAX_VALUE;
         app.sceneFlow.enter(Scene::EXPLORE_ROUTE);
         app.exploreSessionActive = true;
-        app.exploreRouteMap = ExploreMapGenerator::Map{};
-        app.exploreRouteMap.pathCount = 1;
-        app.exploreRoutePath = 0;
-        app.exploreRouteMapBlockCount = 1;
-        auto& path = app.exploreRouteMap.paths[0];
+        app.exploreSession_.state_.exploreRouteMap = ExploreMapGenerator::Map{};
+        app.exploreSession_.state_.exploreRouteMap.pathCount = 1;
+        app.exploreSession_.state_.exploreRoutePath = 0;
+        app.exploreSession_.state_.exploreRouteMapBlockCount = 1;
+        auto& path = app.exploreSession_.state_.exploreRouteMap.paths[0];
         path.pointCount = 16;
         for (uint8_t index = 0; index < path.pointCount; ++index) {
             path.points[index] = {3, static_cast<uint8_t>(3 + index)};
         }
-        app.exploreRouteEncounterCooldownSteps = 100;
+        app.exploreSession_.state_.exploreRouteEncounterCooldownSteps = 100;
         const uint16_t hpBefore = app.gameState.team[0].hpCur;
         const size_t beforeWalk = blobs.writes;
         for (int step = 0; step < 10; ++step) {
             assert(app.beginExploreRouteStep(desktop.millis()));
             desktop.advanceMs(1000);
             app.updateExploreRoute(desktop.millis());
-            assert(!app.exploreRouteMoving);
+            assert(!app.exploreSession_.state_.exploreRouteMoving);
             assert(app.sceneFlow.current() == Scene::EXPLORE_ROUTE);
         }
         assert(app.gameState.stepsToday == 10);
@@ -2191,15 +2224,15 @@ struct AmoledAppTestAccess {
         Game::GameState loaded;
         MainSceneViewState view;
         const auto load = [&]() { assert(app.saveManager.load(loaded, view)); };
-        // Pickup IDs are local to AmoledApp.cpp: coin=1, potion=2.
+        // Pickup IDs are local to ExploreSession.cpp: coin=1, potion=2.
         for (uint8_t pickup : {1, 2}) {
             const auto coins = app.gameState.coins;
             const auto potions = Game::ItemInventory::count(
                 app.gameState, Game::ItemId::POTION);
-            app.exploreRoutePickupAvailable = true;
-            app.exploreRoutePickupItem = pickup;
+            app.exploreSession_.state_.exploreRoutePickupAvailable = true;
+            app.exploreSession_.state_.exploreRoutePickupItem = pickup;
             const auto writes = blobs.writes;
-            app.resolveExploreRoutePickup(desktop.millis());
+            pickupRoute(app, desktop.millis());
             assert(blobs.writes > writes);
             load();
             assert(loaded.stepsToday == 10);
@@ -2211,20 +2244,20 @@ struct AmoledAppTestAccess {
 
         // A battle closes after all rewards and boss progress have settled.
         app.sceneFlow.enter(Scene::BATTLE);
-        app.battlePhase = BattleViewModel::Phase::VICTORY;
-        app.battleWild = Game::MonsterFactory::create(7, 5);
-        app.battleRewardCoins = 123;
-        app.battleRewardExp = 0;  // Keep this case independent of level animations.
-        app.battleIsBoss = true;
-        app.battleSpecialKind = ExploreSpecial::Kind::FIRST_LATIAS;
+        app.battleSession_.state_.battlePhase = BattleViewModel::Phase::VICTORY;
+        app.battleSession_.state_.battleWild = Game::MonsterFactory::create(7, 5);
+        app.battleSession_.state_.battleRewardCoins = 123;
+        app.battleSession_.state_.battleRewardExp = 0;  // Keep this case independent of level animations.
+        app.battleSession_.state_.battleIsBoss = true;
+        app.battleSession_.state_.battleSpecialKind = ExploreSpecial::Kind::FIRST_LATIAS;
         const auto coins = app.gameState.coins;
         const auto writes = blobs.writes;
-        std::snprintf(app.battleMessage, sizeof(app.battleMessage), "Victory");
-        app.pushBattleLog(desktop.millis());
+        std::snprintf(app.battleSession_.battleMessage, sizeof(app.battleSession_.battleMessage), "Victory");
+        app.battleSession_.pushBattleLog(desktop.millis());
         app.finishBattleVictory(desktop.millis());
         assert(app.gameState.coins == coins + 123);
         assert(blobs.writes == writes);  // Reward logs still own the battle screen.
-        app.clearBattleLog();
+        app.battleSession_.clearLog();
         app.finishBattleAfterFriendship(desktop.millis());
         assert(app.sceneFlow.current() == Scene::EXPLORE_ROUTE);
         load();
@@ -2237,7 +2270,7 @@ struct AmoledAppTestAccess {
         app.autonomousExpedition = true;
         app.gameState.coins += 17;
         app.finishBattleAfterFriendship(desktop.millis());
-        assert(app.exploreRouteAutoWalk);
+        assert(app.exploreSession_.state_.exploreRouteAutoWalk);
         load();
         assert(loaded.coins == coins + 140);
         app.autonomousExpedition = false;
@@ -2252,7 +2285,10 @@ struct AmoledAppTestAccess {
         load();
         assert(loaded.team[0].level == oldLevel + 1);
         app.gameState.pendingLevelUp = true;
-        app.completeProgression(desktop.millis());
+        for (int tries = 0; tries < 20 && app.sceneFlow.current() == Scene::PROGRESSION; ++tries) {
+            desktop.advanceMs(20000);
+            app.advanceProgression(desktop.millis());
+        }
         assert(app.sceneFlow.current() == Scene::EXPLORE_ROUTE);
         load();
         assert(!loaded.pendingLevelUp);
@@ -2264,15 +2300,24 @@ struct AmoledAppTestAccess {
         load();
         assert(loaded.team[0].hpCur == app.gameState.team[0].hpCur);
 
-        // No recovery, status or bond changes: steps alone must still be saved.
+        // A failed return snapshot retries without applying the bond twice.
         ++app.gameState.stepsToday;
+        app.gameState.team[0].bond = 10;
+        blobs.failSnapshots = true;
         app.completeExploreReturn();
         assert(app.sceneFlow.current() == Scene::HOME);
+        assert(app.gameState.team[0].bond == 11 && app.saveCoordinator_.dirty());
+        const auto failedReturnWrites = blobs.writes;
+        app.completeExploreReturn();
+        assert(app.gameState.team[0].bond == 11 && blobs.writes == failedReturnWrites);
+        blobs.failSnapshots = false;
+        desktop.advanceMs(2500);
+        app.updateClockAndCare(desktop.millis());
         load();
-        assert(loaded.stepsToday == 11);
+        assert(loaded.stepsToday == 11 && loaded.team[0].bond == 11);
 
         app.sceneFlow.enter(Scene::BATTLE);
-        app.battlePhase = BattleViewModel::Phase::DEFEAT;
+        app.battleSession_.state_.battlePhase = BattleViewModel::Phase::DEFEAT;
         app.finishBattleDefeat(desktop.millis());
         load();
         assert(loaded.team[0].hpCur == 0 && loaded.team[0].fainted);
@@ -2298,12 +2343,12 @@ struct AmoledAppTestAccess {
         app.gameState = state;
         app.sceneFlow.enter(Scene::EXPLORE_ROUTE);
         app.selectedExploreArea = 0;
-        app.exploreRouteMapBlock = 0;
-        app.exploreRouteMapBlockCount = 1;
-        app.exploreRoutePath = 0;
-        app.exploreRouteMap = ExploreMapGenerator::Map{};
-        app.exploreRouteMap.pathCount = 1;
-        auto& path = app.exploreRouteMap.paths[0];
+        app.exploreSession_.state_.exploreRouteMapBlock = 0;
+        app.exploreSession_.state_.exploreRouteMapBlockCount = 1;
+        app.exploreSession_.state_.exploreRoutePath = 0;
+        app.exploreSession_.state_.exploreRouteMap = ExploreMapGenerator::Map{};
+        app.exploreSession_.state_.exploreRouteMap.pathCount = 1;
+        auto& path = app.exploreSession_.state_.exploreRouteMap.paths[0];
         path.pointCount = 4;
         for (uint8_t index = 0; index < path.pointCount; ++index) {
             path.points[index] = {3, static_cast<uint8_t>(3 + index)};
@@ -2312,52 +2357,54 @@ struct AmoledAppTestAccess {
         // Faint the original leader in battle, then finish the automatic switch
         // and return to the route without changing the permanent team order.
         assert(app.beginExploreEncounter(desktop.millis()));
-        assert(app.battlePlayerSlot == 0);
+        assert(app.battleSession_.state_.battlePlayerSlot == 0);
         app.gameState.team[0].hpCur = 0;
         assert(app.resolveBattleFaint(desktop.millis()));
         assert(app.gameState.team[0].fainted);
         desktop.advanceMs(360);
-        app.updateBattleSwitch(desktop.millis());
+        app.battleSession_.updateBattleSwitch(app.gameState, desktop.millis());
+        app.applyBattleEffects(desktop.millis());
         desktop.advanceMs(360);
-        app.updateBattleSwitch(desktop.millis());
-        assert(app.battlePlayerSlot == 1);
-        assert(app.battleSwitchStage == AmoledApp::BattleSwitchStage::NONE);
+        app.battleSession_.updateBattleSwitch(app.gameState, desktop.millis());
+        app.applyBattleEffects(desktop.millis());
+        assert(app.battleSession_.state_.battlePlayerSlot == 1);
+        assert(app.battleSession_.timeline_.state_.battleSwitchStage == BattleSwitchStage::NONE);
         app.closeBattle(desktop.millis());
 
-        app.exploreRouteIndex = 1;
-        app.exploreRouteGuaranteedEncounterIndex = 1;
-        app.exploreRouteGuaranteedEncounterPending = true;
-        app.exploreRouteMapEncounterCount = 0;
-        app.resolveExploreStepEvent(desktop.millis(), false, false);
+        app.exploreSession_.state_.exploreRouteIndex = 1;
+        app.exploreSession_.state_.exploreRouteGuaranteedEncounterIndex = 1;
+        app.exploreSession_.state_.exploreRouteGuaranteedEncounterPending = true;
+        app.exploreSession_.state_.exploreRouteMapEncounterCount = 0;
+        resolveRoute(app, desktop.millis(), false, false);
         assert(app.sceneFlow.current() == Scene::BATTLE);
-        assert(app.battlePlayerSlot == 1 && !app.battleIsBoss);
-        assert(app.exploreRouteMapEncounterCount == 1);
-        assert(!app.exploreRouteGuaranteedEncounterPending);
+        assert(app.battleSession_.state_.battlePlayerSlot == 1 && !app.battleSession_.state_.battleIsBoss);
+        assert(app.exploreSession_.state_.exploreRouteMapEncounterCount == 1);
+        assert(!app.exploreSession_.state_.exploreRouteGuaranteedEncounterPending);
         assert(app.toast == nullptr);
         app.closeBattle(desktop.millis());
 
-        app.exploreRouteBossPending = true;
-        app.exploreRouteBossIndex = 2;
-        app.exploreRouteIndex = 2;
-        app.exploreRouteBossSpeciesId = 7;
-        app.exploreRouteBossLevel = 12;
-        app.exploreRouteBossExperiencePercent = 150;
-        app.resolveExploreStepEvent(desktop.millis(), true, true);
+        app.exploreSession_.state_.exploreRouteBossPending = true;
+        app.exploreSession_.state_.exploreRouteBossIndex = 2;
+        app.exploreSession_.state_.exploreRouteIndex = 2;
+        app.exploreSession_.state_.exploreRouteBossSpeciesId = 7;
+        app.exploreSession_.state_.exploreRouteBossLevel = 12;
+        app.exploreSession_.state_.exploreRouteBossExperiencePercent = 150;
+        resolveRoute(app, desktop.millis(), true, true);
         assert(app.sceneFlow.current() == Scene::BATTLE);
-        assert(app.battlePlayerSlot == 1 && app.battleIsBoss);
-        assert(app.battleWild.speciesId == 7 && app.battleWild.level == 12);
-        assert(app.battleExperiencePercent == 150);
-        assert(!app.exploreRouteBossPending);
+        assert(app.battleSession_.state_.battlePlayerSlot == 1 && app.battleSession_.state_.battleIsBoss);
+        assert(app.battleSession_.state_.battleWild.speciesId == 7 && app.battleSession_.state_.battleWild.level == 12);
+        assert(app.battleSession_.state_.battleExperiencePercent == 150);
+        assert(!app.exploreSession_.state_.exploreRouteBossPending);
         assert(app.gameState.team[0].speciesId == state.team[0].speciesId);
         assert(app.gameState.team[1].speciesId == state.team[1].speciesId);
         assert(app.gameState.activeSlot == state.activeSlot);
         app.closeBattle(desktop.millis());
 
         // The route-end retry must use the same healthy reserve selection.
-        app.exploreRouteBossPending = true;
-        assert(app.finishExploreRouteAtEnd(desktop.millis()));
-        assert(app.battlePlayerSlot == 1 && app.battleIsBoss);
-        assert(!app.exploreRouteBossPending);
+        app.exploreSession_.state_.exploreRouteBossPending = true;
+        assert(finishRoute(app, desktop.millis()));
+        assert(app.battleSession_.state_.battlePlayerSlot == 1 && app.battleSession_.state_.battleIsBoss);
+        assert(!app.exploreSession_.state_.exploreRouteBossPending);
         app.closeBattle(desktop.millis());
 
         // Zero HP and an explicit fainted flag both prevent entry. A healthy
@@ -2379,7 +2426,7 @@ struct AmoledAppTestAccess {
                 assert(app.beginExploreEncounter(desktop.millis(), boss, 7, 12) ==
                        expectedEntry);
                 if (expectedEntry) {
-                    assert(app.battlePlayerSlot == (healthCase == 0 ? 0 : 1));
+                    assert(app.battleSession_.state_.battlePlayerSlot == (healthCase == 0 ? 0 : 1));
                     app.closeBattle(desktop.millis());
                 } else {
                     assert(app.sceneFlow.current() == Scene::EXPLORE_ROUTE);
@@ -2450,7 +2497,7 @@ struct AmoledAppTestAccess {
                 assert(app.gameState.team[1].speciesId == 280);
                 assert(app.gameState.activeSlot == activeSlot);
                 assert(app.beginExploreEncounter(desktop.millis(), false, 7, 12));
-                assert(app.battlePlayerSlot == (faintMask == 1 ? 1 : 0));
+                assert(app.battleSession_.state_.battlePlayerSlot == (faintMask == 1 ? 1 : 0));
             }
         }
         AmoledApp solo;
@@ -2545,11 +2592,11 @@ struct AmoledAppTestAccess {
             assert(app.sceneFlow.current() == Scene::EXPLORE_ROUTE);
             fadeIn(app, desktop, canvas, Scene::EXPLORE_ROUTE);
 
-            app.exploreRouteMoving = false;
-            app.exploreRouteBossPending = false;
-            app.exploreRouteMapBlockCount = 1;
-            app.exploreRouteMapBlock = 0;
-            app.exploreRouteSteps = 10;
+            app.exploreSession_.state_.exploreRouteMoving = false;
+            app.exploreSession_.state_.exploreRouteBossPending = false;
+            app.exploreSession_.state_.exploreRouteMapBlockCount = 1;
+            app.exploreSession_.state_.exploreRouteMapBlock = 0;
+            app.exploreSession_.state_.exploreRouteSteps = 10;
             if (returnMode == 3) {
                 app.sceneFlow.openMenu();
                 assert(!app.prepareDisplayLock(desktop.millis()));
@@ -2564,7 +2611,7 @@ struct AmoledAppTestAccess {
                 tap(app, desktop, 340, endY);
             } else {
                 app.autonomousExpedition = returnMode == 2;
-                app.finishExploreRouteAtEnd(desktop.millis());
+                finishRoute(app, desktop.millis());
                 if (returnMode == 0) tap(app, desktop, 184, 200);
             }
             assert(app.expeditionDeparturePhase == Phase::RETURN_FADE_OUT);
@@ -2592,7 +2639,7 @@ struct AmoledAppTestAccess {
                 assert(app.lockFocusPoint(x, y));
                 assert(app.lockTapHitsPet(x, y));
             }
-            assert(!app.exploreRouteMoving && !app.exploreRouteAutoWalk);
+            assert(!app.exploreSession_.state_.exploreRouteMoving && !app.exploreSession_.state_.exploreRouteAutoWalk);
             assert(app.homeMainActor.x == app.homeMainActor.targetX && app.homeMainActor.y == app.homeMainActor.targetY);
             assert(app.homeMainActor.task == Home::Task::IDLE);
             assert(app.homeRuntime.validate() == Home::INVARIANT_OK);

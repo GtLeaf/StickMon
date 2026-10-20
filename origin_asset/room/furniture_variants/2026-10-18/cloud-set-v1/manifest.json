@@ -1,0 +1,66 @@
+{
+  "theme": "cloud",
+  "export": "AMOLED native physical pixels (2x room logical coordinates)",
+  "items": [
+    {
+      "name": "bed",
+      "file": "assets/bed-cloud.png",
+      "width": 160,
+      "height": 102,
+      "logicalWidth": 80,
+      "logicalHeight": 51,
+      "bytes": 30507,
+      "source": "approved cloud asset"
+    },
+    {
+      "name": "rug",
+      "file": "assets/rug-cloud.png",
+      "width": 204,
+      "height": 100,
+      "logicalWidth": 102,
+      "logicalHeight": 50,
+      "bytes": 45009,
+      "source": "approved cloud asset"
+    },
+    {
+      "name": "bowl",
+      "file": "assets/bowl-cloud.png",
+      "width": 40,
+      "height": 28,
+      "logicalWidth": 20,
+      "logicalHeight": 14,
+      "bytes": 2978,
+      "source": "generated"
+    },
+    {
+      "name": "shelf",
+      "file": "assets/shelf-cloud.png",
+      "width": 112,
+      "height": 68,
+      "logicalWidth": 56,
+      "logicalHeight": 34,
+      "bytes": 11811,
+      "source": "generated"
+    },
+    {
+      "name": "window-day",
+      "file": "assets/window-day-cloud.png",
+      "width": 90,
+      "height": 98,
+      "logicalWidth": 45,
+      "logicalHeight": 49,
+      "bytes": 18622,
+      "source": "generated"
+    },
+    {
+      "name": "window-night",
+      "file": "assets/window-night-cloud.png",
+      "width": 90,
+      "height": 98,
+      "logicalWidth": 45,
+      "logicalHeight": 49,
+      "bytes": 19033,
+      "source": "generated"
+    }
+  ]
+}

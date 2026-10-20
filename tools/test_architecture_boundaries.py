@@ -4,6 +4,8 @@ import re
 import unittest
 from pathlib import Path
 
+from amoled_source import amoled_app_sources, read_app_source
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_SUFFIXES = {".h", ".hpp", ".c", ".cpp"}
@@ -81,9 +83,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         stick = (ROOT / "src/scenes/MainScene.cpp").read_text(
             encoding="utf-8"
         )
-        amoled = (
-            ROOT / "firmware/amoled_1_8_v1/main/AmoledApp.cpp"
-        ).read_text(encoding="utf-8")
+        amoled = read_app_source(ROOT)
         for source in (stick, amoled):
             self.assertIn("Home::ActorController::selectBowlActor(", source)
             self.assertIn("Home::ActorController::survivalIntent(", source)
@@ -108,9 +108,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
     def test_visit_departure_phases_are_shared(self):
         stick = (ROOT / "src/scenes/MainScene.cpp").read_text(encoding="utf-8")
-        amoled = (ROOT / "firmware/amoled_1_8_v1/main/AmoledApp.cpp").read_text(
-            encoding="utf-8"
-        )
+        amoled = read_app_source(ROOT)
         for source in (stick, amoled):
             self.assertIn("Home::VisitDepartureFlow::advance(", source)
         self.assertIn("HomeVisitDeparture.h", (
@@ -124,16 +122,12 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             ROOT / "src/scenes/MainScene.h",
             ROOT / "firmware/amoled_1_8_v1/main/AmoledApp.h",
         )
-        sources = (
-            ROOT / "src/scenes/MainScene.cpp",
-            ROOT / "firmware/amoled_1_8_v1/main/AmoledApp.cpp",
-        )
         for header in headers:
             text = header.read_text(encoding="utf-8")
             self.assertIn("HomeVisitArrival.h", text)
             self.assertIn("Home::VisitArrivalFlow visitArrival;", text)
-        for source in sources:
-            text = source.read_text(encoding="utf-8")
+        for text in ((ROOT / "src/scenes/MainScene.cpp").read_text(encoding="utf-8"),
+                     read_app_source(ROOT)):
             for event in ("HOST_READY", "DOOR_OPENED", "GUEST_ENTERING",
                           "GUEST_INSIDE", "TALK_STARTED", "TALK_FINISHED"):
                 self.assertIn(f"Home::VisitArrivalEvent::{event}", text)
@@ -143,8 +137,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
     def test_room_survival_tasks_use_home_simulation(self):
         sources = {
-            "Stick": ROOT / "src/scenes/MainScene.cpp",
-            "AMOLED": ROOT / "firmware/amoled_1_8_v1/main/AmoledApp.cpp",
+            "Stick": [ROOT / "src/scenes/MainScene.cpp"],
+            "AMOLED": amoled_app_sources(ROOT),
         }
         task_names = (
             "SEEK_FOOD",
@@ -166,14 +160,15 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             rf"(?:{'|'.join(task_names)})\b"
         )
         violations = []
-        for platform, path in sources.items():
-            for line_number, line in enumerate(
-                path.read_text(encoding="utf-8").splitlines(), start=1
-            ):
-                if pattern.search(line):
-                    violations.append(
-                        f"{platform} {path.relative_to(ROOT)}:{line_number}"
-                    )
+        for platform, paths in sources.items():
+            for path in paths:
+                for line_number, line in enumerate(
+                    path.read_text(encoding="utf-8").splitlines(), start=1
+                ):
+                    if pattern.search(line):
+                        violations.append(
+                            f"{platform} {path.relative_to(ROOT)}:{line_number}"
+                        )
         self.assertEqual([], violations, "\n" + "\n".join(violations))
 
     def test_presentation_is_device_independent(self):

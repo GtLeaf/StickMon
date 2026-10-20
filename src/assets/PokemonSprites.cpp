@@ -104,7 +104,7 @@ static constexpr uint8_t KNOWN_MISSING_FILE_CAP = 16;
 static constexpr uint8_t FRAME_MISSING_CAP = 4;
 static constexpr uint8_t KNOWN_MISSING_FRAME_CAP = 16;
 static constexpr uint32_t SPRITE_PACK_MAGIC = 0x5350534D;
-static constexpr uint16_t SPRITE_PACK_VERSION = 2;
+static constexpr uint16_t SPRITE_PACK_VERSION = 3;
 static constexpr uint16_t SPRITE_PACK_FLAG_RAW_DEFLATE = 1;
 static constexpr uint16_t MAX_PACK_FRAMES = 256;
 static constexpr uint32_t MAX_PACK_PAYLOAD_BYTES = 128000;
@@ -134,6 +134,13 @@ struct __attribute__((packed)) PackedSpriteFrame {
     uint32_t paletteOffset;
 };
 
+struct __attribute__((packed)) PackedSpriteFrameV3 {
+    PackedSpriteFrame base;
+    uint8_t shadowX, shadowY, shadowRadiusX, shadowRadiusY;
+};
+
+static_assert(sizeof(PackedSpriteFrameV3) == 24, "Unexpected v3 sprite frame layout");
+static_assert(sizeof(SpriteFrame) == 28, "Unexpected runtime sprite frame layout");
 static_assert(sizeof(PackedSpriteHeader) == 28, "Unexpected sprite pack header layout");
 static_assert(sizeof(PackedSpriteFrame) == 20, "Unexpected sprite pack frame layout");
 
@@ -337,7 +344,7 @@ bool loadSpeciesFromResourcePack(uint8_t slot, uint16_t speciesId) {
     PackedSpriteHeader header = {};
     if (!readExact(file, &header, sizeof(header))) return false;
     if (header.magic != SPRITE_PACK_MAGIC ||
-        header.version != SPRITE_PACK_VERSION ||
+        (header.version != 2 && header.version != SPRITE_PACK_VERSION) ||
         header.speciesId != speciesId ||
         header.frameCount == 0 ||
         header.frameCount > MAX_PACK_FRAMES ||
@@ -350,7 +357,9 @@ bool loadSpeciesFromResourcePack(uint8_t slot, uint16_t speciesId) {
     }
 
     uint32_t frameBytes = static_cast<uint32_t>(header.frameCount) * sizeof(SpriteFrame);
-    uint32_t packedFrameBytes = static_cast<uint32_t>(header.frameCount) * sizeof(PackedSpriteFrame);
+    const uint32_t packedFrameStride = header.version >= 3
+        ? sizeof(PackedSpriteFrameV3) : sizeof(PackedSpriteFrame);
+    uint32_t packedFrameBytes = static_cast<uint32_t>(header.frameCount) * packedFrameStride;
     uint32_t expectedPayloadBytes = packedFrameBytes +
         (static_cast<uint32_t>(header.rleWords) + header.paletteWords) * sizeof(uint16_t);
     uint32_t fileBytes = static_cast<uint32_t>(file.size());
@@ -384,10 +393,15 @@ bool loadSpeciesFromResourcePack(uint8_t slot, uint16_t speciesId) {
         return false;
     }
 
-    const auto* packedFrames = reinterpret_cast<const PackedSpriteFrame*>(payload);
     for (uint16_t i = 0; i < header.frameCount; ++i) {
-        const PackedSpriteFrame& packed = packedFrames[i];
-        if (!validPackedFrame(packed, header)) {
+        const uint8_t* record = payload + i * packedFrameStride;
+        const auto& packed = *reinterpret_cast<const PackedSpriteFrame*>(record);
+        const auto* shadow = header.version >= 3
+            ? reinterpret_cast<const PackedSpriteFrameV3*>(record) : nullptr;
+        if (!validPackedFrame(packed, header) ||
+            (shadow && ((shadow->shadowRadiusX == 0) != (shadow->shadowRadiusY == 0) ||
+                        shadow->shadowRadiusX > packed.width ||
+                        shadow->shadowRadiusY > packed.height))) {
             Platform::memory().release(frames);
             Platform::memory().release(payload);
             return false;
@@ -404,6 +418,10 @@ bool loadSpeciesFromResourcePack(uint8_t slot, uint16_t speciesId) {
                 (packed.reserved & 0xFF00U) == SPRITE_FRAME_GROUND_MARKER
                     ? (packed.reserved & 0x00FFU) + 1U
                     : 0U),
+            static_cast<uint8_t>(shadow ? shadow->shadowX : 0),
+            static_cast<uint8_t>(shadow ? shadow->shadowY : 0),
+            static_cast<uint8_t>(shadow ? shadow->shadowRadiusX : 0),
+            static_cast<uint8_t>(shadow ? shadow->shadowRadiusY : 0),
             packed.offset,
             packed.length,
             packed.paletteOffset,
@@ -604,6 +622,24 @@ int16_t frameGroundOffsetY(const SpriteFrame* frame) {
         return static_cast<int16_t>(height / 2 - bottomPadding);
     }
     return static_cast<int16_t>(MathUtil::clamp((int)(height * 0.42f), 16, 32));
+}
+
+FrameShadow frameShadow(const SpriteFrame* frame, bool flipX) {
+    if (!frame) return {};
+    const int width = FlashStorage::readByte(&frame->width);
+    const int height = FlashStorage::readByte(&frame->height);
+    const uint8_t rx = FlashStorage::readByte(&frame->shadowRadiusX);
+    const uint8_t ry = FlashStorage::readByte(&frame->shadowRadiusY);
+    if (rx && ry) {
+        const int x = FlashStorage::readByte(&frame->shadowX);
+        return {static_cast<int16_t>((flipX ? width - 1 - x : x) - width / 2),
+                static_cast<int16_t>(int(FlashStorage::readByte(&frame->shadowY)) - height / 2),
+                rx, ry};
+    }
+    // v2 packs and non-PMD art keep the previous ground anchor.
+    return {0, frameGroundOffsetY(frame),
+            static_cast<uint8_t>(MathUtil::clamp(int(width * 0.44f), 16, 40)),
+            static_cast<uint8_t>(MathUtil::clamp(int(height * 0.14f), 6, 14))};
 }
 
 FrameBounds frameVisibleBounds(const SpriteFrame* frame) {

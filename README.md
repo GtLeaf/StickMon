@@ -46,7 +46,8 @@ serial monitor before flashing so it does not occupy the device port.
 
 The script auto-detects the serial port when `--port` is omitted. It also
 exports `bootloader.bin`, `partitions.bin`, `boot_app0.bin`, `firmware.bin`,
-and `littlefs.bin` to `tools/out/` for the web flasher. Run
+and `littlefs.bin` to `tools/out/` for the separately maintained web flasher.
+The web flasher has moved out of this repository. Run
 `./tools/upload_firmware_and_fs.sh --help` for all options and environment
 overrides.
 

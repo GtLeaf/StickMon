@@ -21,19 +21,13 @@
 #include "game/ExploreItemProgression.h"
 #include "game/ExploreAreaCatalog.h"
 #include "game/ExploreEncounters.h"
-#include "game/ExploreEncounterRules.h"
 #include "game/BathService.h"
 #include "game/BattleSystem.h"
-#include "game/BattleActionService.h"
 #include "game/BondSystem.h"
 #include "game/ContactRoster.h"
-#include "game/EffortService.h"
 #include "game/ExploreRouteGeometry.h"
-#include "game/ExploreIceSlide.h"
-#include "game/ExploreRunRules.h"
 #include "game/ExperienceService.h"
 #include "game/FriendshipService.h"
-#include "game/FriendshipSystem.h"
 #include "game/GameRandom.h"
 #include "game/HatchService.h"
 #include "game/HomeCare.h"
@@ -54,119 +48,32 @@
 #include "presentation/PixelRenderer.h"
 
 namespace AmoledV1 {
+using namespace BattleTiming;
 namespace {
 
 constexpr int TAP_SLOP = 12;
 constexpr int DRAG_START_SLOP = 6;
 constexpr int MENU_HEADER_HEIGHT = 56;
-constexpr uint32_t TEAM_MOVES_DETAIL_ANIM_MS = 240;
 constexpr uint32_t MIND_UPDATE_MS = 400;
 constexpr uint32_t MOTION_FRAME_MS = 140;
 constexpr uint32_t TURN_PAUSE_MS = 160;
 constexpr uint32_t PET_WANDER_RETRY_MIN_MS = 700;
 constexpr uint32_t PET_WANDER_RETRY_MAX_MS = 1400;
 constexpr uint32_t PET_DEBUG_LOG_INTERVAL_MS = 10000;
-constexpr uint32_t PROGRESSION_ANIMATION_FRAME_MS = 50;
-constexpr uint32_t LEVEL_UP_ANIMATION_MS = 800;
-constexpr uint32_t EVOLUTION_CANCEL_HOLD_MS = 600;
-constexpr uint32_t EVOLUTION_TOUCH_GAP_MS = 50;
 constexpr uint32_t COMPANION_NIGHT_FOOD_RETRY_MS = 60000UL;
 constexpr uint16_t HOME_SLEEP_FRAME_MS = 800;
-constexpr uint32_t ATTENTION_INITIAL_MIN_MS = 25000UL;
-constexpr uint32_t ATTENTION_INITIAL_MAX_MS = 45000UL;
-constexpr uint32_t ATTENTION_MIN_MS = 90000UL;
-constexpr uint32_t ATTENTION_MAX_MS = 180000UL;
-
-const char* battleActionBlockedFormat(BattleSystem::ActionBlockReason reason) {
-    switch (reason) {
-    case BattleSystem::ActionBlockReason::FLINCH: return Ui::Explore::FLINCHED_FMT;
-    case BattleSystem::ActionBlockReason::SLEEP: return Ui::Explore::ASLEEP_FMT;
-    case BattleSystem::ActionBlockReason::FREEZE: return Ui::Explore::FROZEN_FMT;
-    case BattleSystem::ActionBlockReason::PARALYSIS: return Ui::Explore::PARALYZED_FMT;
-    case BattleSystem::ActionBlockReason::CONFUSION_SELF_HIT: return Ui::Explore::CONFUSION_HIT_FMT;
-    case BattleSystem::ActionBlockReason::RECHARGE: return Ui::Explore::RECHARGING_FMT;
-    case BattleSystem::ActionBlockReason::MOVE_FAILED: return Ui::Explore::MOVE_FAILED;
-    default: return Ui::Amoled::ACTION_BLOCKED;
-    }
-}
-
-bool battleStatusEffectSucceeded(
-    GameAssets::BattleFx fx, const BattleSystem::DamageResult& damage,
-    const BattleSystem::EffectResolution& effects) {
-    if (!GameAssets::battleFxIsStatus(fx) || damage.missed || damage.failed ||
-        damage.effectiveness == 0) return false;
-    for (uint8_t i = 0; i < effects.count; ++i) {
-        const auto& outcome = effects.outcomes[i];
-        if (outcome.kind == BattleSystem::EffectOutcomeKind::STAT_CHANGED &&
-            outcome.target == MoveEffectTarget::DEFENDER &&
-            outcome.stageDelta != 0) return true;
-    }
-    return false;
-}
 
 bool isEvolutionStone(Game::ItemId item) {
     return item == Game::ItemId::FIRE_STONE ||
            item == Game::ItemId::WATER_STONE ||
            item == Game::ItemId::THUNDER_STONE;
 }
-constexpr uint32_t SPECIAL_ACTION_MIN_MS = 20000UL;
-constexpr uint32_t SPECIAL_ACTION_MAX_MS = 40000UL;
-constexpr uint32_t ATTENTION_WAIT_MS = 6000UL;
-constexpr uint32_t WINDOW_GAZE_MIN_MS = 6000UL;
-constexpr uint32_t WINDOW_GAZE_MAX_MS = 10000UL;
-constexpr uint32_t WINDOW_GAZE_DELAY_SECONDS =
-    2UL * 24UL * 60UL * 60UL;
-constexpr uint32_t PAIR_INTERACTION_MIN_INTERVAL_MS = 90000UL;
-constexpr uint32_t PAIR_INTERACTION_MAX_INTERVAL_MS = 180000UL;
-constexpr uint32_t PAIR_INTERACTION_RETRY_MS = 5000UL;
-constexpr uint32_t PAIR_TALK_TIMEOUT_MS = 9000UL;
-constexpr uint32_t PAIR_CHASE_TIMEOUT_MS = 24000UL;
-constexpr uint16_t PAIR_INVITE_MS = 750;
-constexpr uint16_t PAIR_CELEBRATE_MS = 1200;
-constexpr uint16_t PAIR_TALK_HOP_MS = 560;
-constexpr uint16_t PAIR_TALK_GAP_MS = 180;
-constexpr uint16_t PAIR_TALK_END_PAUSE_MS = 240;
-constexpr uint16_t PAIR_TALK_TOTAL_MS =
-    PAIR_TALK_HOP_MS * 2 + PAIR_TALK_GAP_MS + PAIR_TALK_END_PAUSE_MS;
-constexpr uint8_t PAIR_CHASE_LEGS = 4;
-constexpr float PAIR_APPROACH_DISTANCE = 20.0f;
 constexpr int PAIR_TALK_MIN_GAP_PX = 20;
-// The rug is the room's visual stage for conversations. Keep these points
-// explicit so the pair does not drift into furniture or crowd the doorway.
-constexpr float PAIR_TALK_COMPANION_X = 97.0f;
-constexpr float PAIR_TALK_MAIN_X = 149.0f;
-constexpr float PAIR_TALK_STAGE_Y = 118.0f;
 // Actor x/y is rendered as the sprite rectangle's bottom-center anchor.
 // Keep the host close to the doorway while leaving its full footprint inside
 // the room walk polygon.
 constexpr float VISITOR_WELCOME_OFFSET_X = 10.0f;
 constexpr float VISITOR_WELCOME_OFFSET_Y = -5.0f;
-constexpr float PAIR_APPROACH_SPEED = 12.5f;
-constexpr float PAIR_APPROACH_GOAL_TOLERANCE = 1.0f;
-constexpr float PAIR_CHASE_LEADER_SPEED = 18.0f;
-constexpr float PAIR_CHASE_FOLLOWER_SPEED = 17.0f;
-constexpr float VISITOR_DOOR_SPEED = 18.0f;
-constexpr uint32_t VISITOR_MOTION_TIMEOUT_MS =
-    Home::VisitArrivalFlow::MOTION_TIMEOUT_MS;
-constexpr float VISITOR_DOOR_CLEAR_DISTANCE = 28.0f;
-
-bool exploreRouteMonsterHealthy(const Game::MonsterRuntime& monster) {
-    return !monster.fainted && monster.hpCur > 0;
-}
-
-uint8_t exploreRouteLeaderSlot(const Game::GameState& state) {
-    const bool firstHealthy = state.teamCount > 0 &&
-        exploreRouteMonsterHealthy(state.team[0]);
-    const bool secondHealthy = state.teamCount > 1 &&
-        exploreRouteMonsterHealthy(state.team[1]);
-    return ExploreRunRules::leaderSlotForHealth(firstHealthy, secondHealthy);
-}
-
-bool exploreRouteHasCompanion(const Game::GameState& state) {
-    return exploreRouteLeaderSlot(state) == 0 && state.teamCount > 1 &&
-           state.team[1].speciesId != 0 &&
-           exploreRouteMonsterHealthy(state.team[1]);
-}
 
 int pairIdleWidthPx(uint16_t speciesId) {
     PokemonSprites::PetAnimationProfile profile{};
@@ -186,70 +93,12 @@ int pairIdleWidthPx(uint16_t speciesId) {
     return widest > 0 ? widest : 80;
 }
 
-float pairRouteDistance(const Home::Actor& actor) {
-    float routeDistance = 0.0f;
-    float fromX = actor.x;
-    float fromY = actor.y;
-    for (uint8_t index = actor.route.index;
-         index < actor.route.count; ++index) {
-        const float toX = actor.route.x[index];
-        const float toY = actor.route.y[index];
-        routeDistance += std::hypot(toX - fromX, toY - fromY);
-        fromX = toX;
-        fromY = toY;
-    }
-    if (actor.route.index >= actor.route.count) {
-        routeDistance = std::hypot(
-            actor.targetX - actor.x, actor.targetY - actor.y);
-    }
-    return routeDistance;
-}
-
-uint32_t pairApproachBudgetMs(const Home::Actor& actor) {
-    const float routeDistance = pairRouteDistance(actor);
-    return static_cast<uint32_t>(std::clamp(
-        routeDistance / PAIR_APPROACH_SPEED * 1000.0f + 1800.0f,
-        4000.0f, 20000.0f));
-}
 constexpr uint32_t CARE_TICK_MS = 60000;
 constexpr uint32_t PERIODIC_SAVE_MS = 5UL * 60UL * 1000UL;
-constexpr uint16_t EXPLORE_ROUTE_STEP_MS = 360;
-constexpr uint16_t EXPLORE_ROUTE_FRAME_MS = 90;
-constexpr uint16_t EXPLORE_ROUTE_FOLLOWER_DELAY_MS = 120;
-constexpr uint8_t EXPLORE_ROUTE_FOLLOWER_GAP_STEPS = 2;
 constexpr uint32_t EXPLORE_DOOR_PHASE_TIMEOUT_MS = 8000;
 constexpr float EXPLORE_DOOR_CROSS_SPEED = 42.0f;
 constexpr float EXPLORE_DOOR_CLEAR_SPEED = 30.0f;
-constexpr float EXPLORE_ROUTE_EXIT_MARGIN =
-    ExploreRouteGeometry::TILE_SIZE * 3.0f;
-constexpr float EXPLORE_ROUTE_EXIT_SPEED = 42.0f;
-constexpr uint16_t EXPLORE_ROUTE_MAP_FRAME_MS = 280;
-constexpr uint16_t EXPLORE_ROUTE_BOSS_FRAME_MS = 140;
-constexpr uint32_t EXPLORE_ROUTE_BOSS_PATROL_CYCLE_MS = 6000;
-constexpr uint32_t EXPLORE_ROUTE_BOSS_PATROL_OUT_START_MS = 1600;
-constexpr uint32_t EXPLORE_ROUTE_BOSS_PATROL_OUT_END_MS = 2300;
-constexpr uint32_t EXPLORE_ROUTE_BOSS_PATROL_RETURN_START_MS = 3800;
-constexpr uint32_t EXPLORE_ROUTE_BOSS_PATROL_RETURN_END_MS = 4500;
-constexpr uint8_t EXPLORE_MAP_MIN_COUNT[] = {3, 4, 4, 5, 6, 7};
-constexpr uint8_t EXPLORE_MAP_MAX_COUNT[] = {4, 5, 6, 7, 8, 9};
-constexpr uint16_t EXPLORE_ENCOUNTER_CHANCE[] = {
-    500, 600, 700, 900, 1100, 1300,
-};
-constexpr uint8_t EXPLORE_ENCOUNTER_COOLDOWN_STEPS = 5;
-constexpr uint8_t EXPLORE_MAX_ENCOUNTERS_PER_MAP = 2;
-constexpr uint16_t EXPLORE_MAP_PICKUP_CHANCE = 6500;
-constexpr uint32_t EXPLORE_MAP_GENERATION_SAFE_SEED = 1;
-constexpr uint32_t EXPLORE_MAP_GENERATION_RETRY_SALTS[] = {
-    0,
-    0x6D2B79F5U,
-    0x9E3779B9U,
-    0x85EBCA6BU,
-};
 constexpr int EXPLORE_ROUTE_VIEW_HEIGHT = HOME_STATUS_TOP;
-constexpr int EXPLORE_ROUTE_WORLD_WIDTH =
-    ExploreMapGenerator::WIDTH * ExploreRouteGeometry::TILE_SIZE;
-constexpr int EXPLORE_ROUTE_WORLD_HEIGHT =
-    ExploreMapGenerator::HEIGHT * ExploreRouteGeometry::TILE_SIZE;
 constexpr uint32_t EXPLORE_PREVIEW_CYCLE_MS = 2800;
 constexpr uint32_t EXPLORE_PREVIEW_MOVE_MS = 500;
 constexpr uint32_t EXPLORE_PREVIEW_HOLD_MS =
@@ -261,17 +110,6 @@ constexpr uint32_t EXPLORE_PREVIEW_BACKGROUND_LOAD_MS = 80;
 // invalidation band separate from the full page used by area changes.
 constexpr uint16_t EXPLORE_PREVIEW_RENDER_TOP = EXPLORE_PREVIEW_TOP;
 constexpr uint16_t EXPLORE_PREVIEW_RENDER_BOTTOM = EXPLORE_PREVIEW_BOTTOM;
-constexpr uint16_t BATTLE_ANIMATION_RENDER_END = 384;
-constexpr uint16_t BATTLE_LOG_DEFAULT_MS = 700;
-constexpr uint16_t BATTLE_ATTACK_LOG_MS = 700;
-constexpr uint16_t BATTLE_RESULT_LOG_MS = 650;
-constexpr uint32_t BATTLE_HP_ANIMATION_MS = 420;
-constexpr uint32_t BATTLE_HP_DAMAGE_DELAY_MS = 280;
-constexpr uint32_t BATTLE_EXP_ANIMATION_MS = 900;
-constexpr uint32_t BATTLE_GAUGE_FRAME_MS = 40;
-constexpr uint32_t BATTLE_SWITCH_PHASE_MS = 360;
-constexpr uint32_t BATTLE_SWITCH_FRAME_MS = 40;
-constexpr int BATTLE_SWITCH_TRAVEL_X = 180;
 constexpr float FALLBACK_ROOM_MIN_X = 56.0f;
 constexpr float FALLBACK_ROOM_MAX_X = 122.0f;
 constexpr float FALLBACK_ROOM_MIN_Y = 126.0f;
@@ -280,7 +118,6 @@ constexpr float FALLBACK_FOOD_APPROACH_X = 121.0f;
 constexpr float FALLBACK_FOOD_APPROACH_Y = 149.0f;
 constexpr uint32_t MOOD_BURST_DURATION_MS = 420;
 constexpr uint32_t MOOD_BURST_FRAME_MS = 50;
-constexpr uint32_t FEED_FINISH_MS = 650;
 #if STICKMON_ENABLE_DEBUG_FEATURES
 constexpr float DEBUG_TILT_DEADZONE = 0.08f;
 constexpr float DEBUG_TILT_MAX = 0.62f;
@@ -293,13 +130,6 @@ constexpr float DEBUG_TILT_SPEED = 58.0f;
 Stickmon::ClawStatusLog::Entry s_clawLogEntries[Stickmon::ClawStatusLog::CAPACITY];
 #endif
 
-// Keep the FIFO out of AmoledApp so neither app_main nor callers that create
-// a temporary app object need to carry the 1.5 KiB queue in their stack frame.
-constexpr uint8_t BATTLE_LOG_QUEUE_CAP = 24;
-constexpr uint8_t BATTLE_LOG_LEN = 64;
-char s_battleLogQueue[BATTLE_LOG_QUEUE_CAP][BATTLE_LOG_LEN] = {};
-uint16_t s_battleLogDurations[BATTLE_LOG_QUEUE_CAP] = {};
-
 uint8_t moodHeartCountFor(uint8_t mood) {
     return std::min<uint8_t>(5, static_cast<uint8_t>(mood / 20));
 }
@@ -311,41 +141,6 @@ constexpr float CAMERA_SAFE_RIGHT = 122.0f;
 constexpr float CAMERA_SAFE_TOP = 58.0f;
 constexpr float CAMERA_SAFE_BOTTOM = 126.0f;
 
-constexpr uint8_t exploreMapCountForRoll(uint8_t area, uint8_t roll) {
-    uint8_t minCount = EXPLORE_MAP_MIN_COUNT[area];
-    uint8_t maxCount = EXPLORE_MAP_MAX_COUNT[area];
-    return maxCount == minCount
-        ? minCount
-        : (maxCount == minCount + 1
-            ? (roll < 50 ? minCount : maxCount)
-            : (roll < 25
-                ? minCount
-                : (roll < 75 ? minCount + 1 : maxCount)));
-}
-
-constexpr uint8_t exploreCooldownAfterStep(uint8_t cooldown) {
-    return cooldown > 0 ? cooldown - 1 : 0;
-}
-
-constexpr bool exploreEncounterGateOpen(uint8_t cooldown,
-                                        uint8_t encounterCount) {
-    return cooldown == 0 &&
-           encounterCount < EXPLORE_MAX_ENCOUNTERS_PER_MAP;
-}
-
-constexpr bool exploreCanScheduleGuaranteedEncounter(uint8_t pointCount,
-                                                     uint8_t cooldown) {
-    return pointCount >= 3 && cooldown + 1 <= pointCount - 2;
-}
-
-constexpr uint8_t exploreGuaranteedEncounterIndex(uint8_t pointCount,
-                                                  uint8_t cooldown) {
-    return pointCount * 2 / 3 < cooldown + 1
-        ? cooldown + 1
-        : (pointCount * 2 / 3 > pointCount - 2
-            ? pointCount - 2
-            : pointCount * 2 / 3);
-}
 constexpr RoomResource::Point FALLBACK_WALK_POLYGON[] = {
     {static_cast<int16_t>(FALLBACK_ROOM_MIN_X),
      static_cast<int16_t>(FALLBACK_ROOM_MIN_Y)},
@@ -356,24 +151,6 @@ constexpr RoomResource::Point FALLBACK_WALK_POLYGON[] = {
     {static_cast<int16_t>(FALLBACK_ROOM_MIN_X),
      static_cast<int16_t>(FALLBACK_ROOM_MAX_Y)},
 };
-
-constexpr bool windowGazeDue(uint32_t lastExploredAt,
-                             uint32_t lastWindowGazeAt,
-                             uint32_t nowGameSeconds) {
-    return lastWindowGazeAt <= lastExploredAt &&
-           nowGameSeconds >= lastExploredAt &&
-           nowGameSeconds - lastExploredAt >=
-               WINDOW_GAZE_DELAY_SECONDS;
-}
-
-static_assert(
-    !windowGazeDue(100, 100,
-                   100 + WINDOW_GAZE_DELAY_SECONDS - 1) &&
-        windowGazeDue(100, 100,
-                      100 + WINDOW_GAZE_DELAY_SECONDS) &&
-        !windowGazeDue(100, 101,
-                       100 + WINDOW_GAZE_DELAY_SECONDS),
-    "window gaze runs once after two days without exploration");
 
 int16_t gHomeNavParent[RoomNavigator::MAX_NODES] = {};
 uint16_t gHomeNavQueue[RoomNavigator::MAX_NODES] = {};
@@ -416,191 +193,6 @@ uint8_t mainDirectionForView(PokemonSprites::WalkDirection direction) {
     }
 }
 
-uint8_t exploreDirectionForDelta(float dx, float dy, uint8_t fallback) {
-    if (std::fabs(dx) < 0.01f && std::fabs(dy) < 0.01f) return fallback;
-    if (std::fabs(dx) >= std::fabs(dy)) {
-        return static_cast<uint8_t>(
-            dx >= 0.0f ? PokemonSprites::WalkDirection::RIGHT
-                       : PokemonSprites::WalkDirection::LEFT);
-    }
-    return static_cast<uint8_t>(
-        dy >= 0.0f ? PokemonSprites::WalkDirection::DOWN
-                   : PokemonSprites::WalkDirection::UP);
-}
-
-uint8_t exploreInwardDirection(ExploreMapGenerator::Edge edge) {
-    switch (edge) {
-    case ExploreMapGenerator::Edge::TOP:
-        return static_cast<uint8_t>(PokemonSprites::WalkDirection::DOWN);
-    case ExploreMapGenerator::Edge::RIGHT:
-        return static_cast<uint8_t>(PokemonSprites::WalkDirection::LEFT);
-    case ExploreMapGenerator::Edge::BOTTOM:
-        return static_cast<uint8_t>(PokemonSprites::WalkDirection::UP);
-    case ExploreMapGenerator::Edge::LEFT:
-        return static_cast<uint8_t>(PokemonSprites::WalkDirection::RIGHT);
-    }
-    return static_cast<uint8_t>(PokemonSprites::WalkDirection::DOWN);
-}
-
-bool exploreRouteBossPatrolMoving(uint32_t nowMs) {
-    const uint32_t phase = nowMs % EXPLORE_ROUTE_BOSS_PATROL_CYCLE_MS;
-    return (phase >= EXPLORE_ROUTE_BOSS_PATROL_OUT_START_MS &&
-            phase < EXPLORE_ROUTE_BOSS_PATROL_OUT_END_MS) ||
-           (phase >= EXPLORE_ROUTE_BOSS_PATROL_RETURN_START_MS &&
-            phase < EXPLORE_ROUTE_BOSS_PATROL_RETURN_END_MS);
-}
-
-void formatBattleOutcome(char* output, size_t outputSize,
-                         const BattleSystem::DamageResult& damage,
-                         uint16_t dealt,
-                         const BattleSystem::EffectResolution& effects,
-                         const MoveInfo* move, bool attackerWild) {
-    if (damage.failed) {
-        std::snprintf(output, outputSize, "%s", Ui::Explore::MOVE_FAILED);
-    } else if (damage.missed) {
-        std::snprintf(output, outputSize, "%s", Ui::Explore::MOVE_MISSED);
-    } else if (damage.effectiveness == 0) {
-        std::snprintf(output, outputSize, "%s", Ui::Explore::NO_EFFECT);
-    } else if (dealt > 0) {
-        std::snprintf(output, outputSize,
-                      attackerWild ? Ui::Explore::WILD_DAMAGE_FMT
-                                   : Ui::Explore::DAMAGE_FMT,
-                      dealt);
-    } else if (move && effects.count > 0) {
-        // Effect outcomes already report success or failure. In particular,
-        // STATUS_FAILED owns the no-effect line for moves such as Splash.
-        output[0] = '\0';
-    } else {
-        std::snprintf(output, outputSize, "%s", Ui::Explore::NO_EFFECT);
-    }
-}
-
-void formatBattleMoveUsed(char* output, size_t outputSize,
-                          const Species& attackerSpecies,
-                          const MoveInfo* move, bool attackerWild) {
-    const char* moveName = move ? move->name : Ui::Status::MOVE_UNKNOWN;
-    if (attackerWild) {
-        std::snprintf(output, outputSize, Ui::Explore::WILD_MOVE_USED_FMT,
-                      moveName);
-    } else {
-        std::snprintf(output, outputSize, Ui::Explore::MOVE_USED_FMT,
-                      attackerSpecies.name, moveName);
-    }
-}
-
-enum ExplorePickupId : uint8_t {
-    EXPLORE_PICKUP_NONE = 0,
-    EXPLORE_PICKUP_COIN,
-    EXPLORE_PICKUP_POTION,
-    EXPLORE_PICKUP_SUPER_POTION,
-    EXPLORE_PICKUP_ANTIDOTE,
-    EXPLORE_PICKUP_RARE_CANDY,
-    EXPLORE_PICKUP_MAX_POTION,
-    EXPLORE_PICKUP_FULL_RESTORE,
-    EXPLORE_PICKUP_FULL_HEAL,
-    EXPLORE_PICKUP_REVIVE,
-    EXPLORE_PICKUP_MAX_REPEL,
-    EXPLORE_PICKUP_HONEY,
-    EXPLORE_PICKUP_NUGGET,
-    EXPLORE_PICKUP_BIG_PEARL,
-    EXPLORE_PICKUP_STAR_PIECE,
-    EXPLORE_PICKUP_HEART_SCALE,
-};
-
-struct ExplorePickupEntry {
-    uint8_t id;
-    uint16_t weight;
-};
-
-static constexpr ExplorePickupEntry GRASS_PATH_PICKUPS[] = {
-    {EXPLORE_PICKUP_COIN, 40}, {EXPLORE_PICKUP_POTION, 25},
-    {EXPLORE_PICKUP_ANTIDOTE, 10}, {EXPLORE_PICKUP_HONEY, 10},
-    {EXPLORE_PICKUP_NUGGET, 3}, {EXPLORE_PICKUP_RARE_CANDY, 2},
-};
-static constexpr ExplorePickupEntry CREEK_SLOPE_PICKUPS[] = {
-    {EXPLORE_PICKUP_COIN, 40}, {EXPLORE_PICKUP_POTION, 20},
-    {EXPLORE_PICKUP_ANTIDOTE, 10}, {EXPLORE_PICKUP_MAX_REPEL, 8},
-    {EXPLORE_PICKUP_HONEY, 8}, {EXPLORE_PICKUP_NUGGET, 5},
-    {EXPLORE_PICKUP_RARE_CANDY, 2},
-};
-static constexpr ExplorePickupEntry TALL_GRASS_PARK_PICKUPS[] = {
-    {EXPLORE_PICKUP_COIN, 38}, {EXPLORE_PICKUP_SUPER_POTION, 20},
-    {EXPLORE_PICKUP_ANTIDOTE, 8}, {EXPLORE_PICKUP_REVIVE, 5},
-    {EXPLORE_PICKUP_MAX_REPEL, 8}, {EXPLORE_PICKUP_NUGGET, 6},
-    {EXPLORE_PICKUP_BIG_PEARL, 3}, {EXPLORE_PICKUP_RARE_CANDY, 2},
-};
-static constexpr ExplorePickupEntry FROST_CRYSTAL_CAVE_PICKUPS[] = {
-    {EXPLORE_PICKUP_COIN, 36}, {EXPLORE_PICKUP_SUPER_POTION, 18},
-    {EXPLORE_PICKUP_FULL_HEAL, 8}, {EXPLORE_PICKUP_REVIVE, 6},
-    {EXPLORE_PICKUP_MAX_REPEL, 6}, {EXPLORE_PICKUP_NUGGET, 4},
-    {EXPLORE_PICKUP_BIG_PEARL, 6}, {EXPLORE_PICKUP_HEART_SCALE, 2},
-    {EXPLORE_PICKUP_RARE_CANDY, 2},
-};
-static constexpr ExplorePickupEntry MIST_FOREST_PATH_PICKUPS[] = {
-    {EXPLORE_PICKUP_COIN, 34}, {EXPLORE_PICKUP_MAX_POTION, 15},
-    {EXPLORE_PICKUP_FULL_HEAL, 8}, {EXPLORE_PICKUP_REVIVE, 7},
-    {EXPLORE_PICKUP_BIG_PEARL, 7}, {EXPLORE_PICKUP_STAR_PIECE, 4},
-    {EXPLORE_PICKUP_HEART_SCALE, 2}, {EXPLORE_PICKUP_RARE_CANDY, 2},
-};
-static constexpr ExplorePickupEntry ANCIENT_WATERFALL_VALLEY_PICKUPS[] = {
-    {EXPLORE_PICKUP_COIN, 32}, {EXPLORE_PICKUP_MAX_POTION, 15},
-    {EXPLORE_PICKUP_FULL_RESTORE, 6}, {EXPLORE_PICKUP_REVIVE, 8},
-    {EXPLORE_PICKUP_BIG_PEARL, 5}, {EXPLORE_PICKUP_STAR_PIECE, 7},
-    {EXPLORE_PICKUP_HEART_SCALE, 2}, {EXPLORE_PICKUP_RARE_CANDY, 2},
-};
-
-struct ExplorePickupTable {
-    const ExplorePickupEntry* entries;
-    uint8_t count;
-    uint8_t minCoin;
-    uint8_t maxCoin;
-};
-
-#define EXPLORE_PICKUP_COUNT(value) \
-    static_cast<uint8_t>(sizeof(value) / sizeof(value[0]))
-
-static constexpr ExplorePickupTable EXPLORE_PICKUP_TABLES[] = {
-    {GRASS_PATH_PICKUPS, EXPLORE_PICKUP_COUNT(GRASS_PATH_PICKUPS), 10, 30},
-    {CREEK_SLOPE_PICKUPS, EXPLORE_PICKUP_COUNT(CREEK_SLOPE_PICKUPS), 15, 40},
-    {TALL_GRASS_PARK_PICKUPS, EXPLORE_PICKUP_COUNT(TALL_GRASS_PARK_PICKUPS), 20, 60},
-    {FROST_CRYSTAL_CAVE_PICKUPS, EXPLORE_PICKUP_COUNT(FROST_CRYSTAL_CAVE_PICKUPS), 30, 80},
-    {MIST_FOREST_PATH_PICKUPS, EXPLORE_PICKUP_COUNT(MIST_FOREST_PATH_PICKUPS), 40, 110},
-    {ANCIENT_WATERFALL_VALLEY_PICKUPS,
-     EXPLORE_PICKUP_COUNT(ANCIENT_WATERFALL_VALLEY_PICKUPS), 50, 150},
-};
-
-#undef EXPLORE_PICKUP_COUNT
-
-const ExplorePickupTable& explorePickupTableForArea(uint8_t area) {
-    return EXPLORE_PICKUP_TABLES[
-        std::min<uint8_t>(area, Game::EXPLORE_AREA_COUNT - 1)];
-}
-
-bool explorePickupAvailable(uint8_t pickupId, uint16_t stepsToday) {
-    return pickupId != EXPLORE_PICKUP_RARE_CANDY || stepsToday >= 5000;
-}
-
-uint8_t rollExplorePickup(uint8_t area, uint16_t stepsToday) {
-    const ExplorePickupTable& table = explorePickupTableForArea(area);
-    uint16_t total = 0;
-    for (uint8_t index = 0; index < table.count; ++index) {
-        if (explorePickupAvailable(table.entries[index].id, stepsToday)) {
-            total += table.entries[index].weight;
-        }
-    }
-    if (total == 0) return EXPLORE_PICKUP_NONE;
-
-    uint16_t roll = static_cast<uint16_t>(GameRandom::range(0, total));
-    for (uint8_t index = 0; index < table.count; ++index) {
-        if (!explorePickupAvailable(table.entries[index].id, stepsToday)) {
-            continue;
-        }
-        if (roll < table.entries[index].weight) return table.entries[index].id;
-        roll -= table.entries[index].weight;
-    }
-    return EXPLORE_PICKUP_NONE;
-}
-
 PokemonSprites::WalkDirection petDirectionForDelta(float dx, float dy) {
     if (std::fabs(dx) >= std::fabs(dy)) {
         return dx >= 0.0f ? PokemonSprites::WalkDirection::RIGHT
@@ -615,14 +207,6 @@ PokemonSprites::WalkDirection foodFacingDirection(float x, float y) {
     const float foodX = room.available() ? room.foodX() : FALLBACK_FOOD_APPROACH_X;
     const float foodY = room.available() ? room.foodY() : FALLBACK_FOOD_APPROACH_Y;
     return petDirectionForDelta(foodX - x, foodY - y);
-}
-
-PokemonSprites::WalkDirection rotatePetDirection(
-    PokemonSprites::WalkDirection direction, int8_t step) {
-    int value = static_cast<int>(direction) + step;
-    while (value < 0) value += 4;
-    while (value >= 4) value -= 4;
-    return static_cast<PokemonSprites::WalkDirection>(value);
 }
 
 GameAssets::Kind battleBackgroundForArea(uint8_t area) {
@@ -755,6 +339,9 @@ void AmoledApp::releaseVisitRadioSession() {
 }
 
 void AmoledApp::begin(uint32_t nowMs) {
+    battleSession_.bindClock(+[] { return Platform::clock().millis(); });
+    saveCoordinator_.reset(nowMs);
+    lastPersistMs = nowMs;
 #if STICKMON_ENABLE_DEBUG_FEATURES
     debugBattleScenarioActive = false;
 #endif
@@ -775,7 +362,7 @@ void AmoledApp::begin(uint32_t nowMs) {
     expeditionMainHidden = false;
     expeditionCompanionHidden = false;
     GameRandom::seed(Platform::power().hardwareRandom() ^ nowMs);
-    exploreEcology = ExploreEcology::Simulation{};
+    explorePresenter_.reset();
     batterySampled = false;
     updateBattery(nowMs);
     visitSession.attach(&gameState);
@@ -841,6 +428,10 @@ void AmoledApp::begin(uint32_t nowMs) {
         teamSpecies[slot] = gameState.team[slot].speciesId;
     }
     PokemonSprites::syncTeamCache(teamSpecies, teamCount);
+#if defined(__EMSCRIPTEN__)
+    // Start browser sessions at full brightness, including restored saves.
+    gameState.settings.brightness = 255;
+#endif
     Platform::display().setBrightness(gameState.settings.brightness);
     Platform::audio().setVolume(gameState.settings.volume);
     AudioManager::ins().setMusic(MusicTrack::HOME);
@@ -851,7 +442,6 @@ void AmoledApp::begin(uint32_t nowMs) {
                    gameState.room.food[gameState.room.selectedFood]);
     gameClock.start(nowMs, gameState.gameMinutesTotal);
     lastCareMs = nowMs;
-    lastPersistMs = nowMs;
     lastInteractionMs = nowMs;
     lastPetUpdateMs = nowMs;
     homeMainActor.nextMindUpdateMs = nowMs;
@@ -866,10 +456,7 @@ void AmoledApp::begin(uint32_t nowMs) {
     }
     PetMotion restoredMotion = PetMotion::IDLE;
     petDirection = PokemonSprites::WalkDirection::DOWN;
-    roomAction = RoomAction::NONE;
-    roomActionPhase = 0;
-    roomActionStartedMs = 0;
-    roomActionUntilMs = 0;
+    homeFlow_.reset();
     petFrame = 0;
     nextPetFrameMs = nowMs + 520;
     homeMainActor.mind.reset(nowMs);
@@ -877,8 +464,8 @@ void AmoledApp::begin(uint32_t nowMs) {
     if (const Species* species = findSpecies(gameState.team[0].speciesId)) {
         homeMainActor.behavior = behaviorProfileFor(*species, gameState.team[0]);
     }
-    scheduleAttention(nowMs, true);
-    scheduleSpecialAction(nowMs);
+    homeFlow_.scheduleAttention(nowMs, true);
+    homeFlow_.scheduleSpecialAction(nowMs);
     RoomResource::ins().begin();
     Platform::logf("[AmoledApp] begin: room resource ready\n");
     FontResource::ins().begin();
@@ -1122,7 +709,7 @@ bool AmoledApp::brainSnapshot(Stickmon::BrainBridge::Snapshot& out) const {
         sceneFlow.current() != AppSceneFlow::Scene::HOME ||
         visitSession.busy() || pendingExpedition ||
         expeditionDeparturePhase != ExpeditionDeparturePhase::NONE ||
-        roomAction != RoomAction::NONE || homeRuntime.pairActive();
+        homeFlow_.state().action != RoomAction::NONE || homeRuntime.pairActive();
     if (pendingExpedition ||
         expeditionDeparturePhase != ExpeditionDeparturePhase::NONE) {
         out.explorePhase = 1;  // departing
@@ -1161,8 +748,8 @@ bool AmoledApp::queueExploreDeparture(uint8_t area, bool autoWalk) {
     if (!ExploreItemProgression::isAreaUnlocked(area, gameState)) {
         return false;
     }
-    const uint8_t leader = exploreRouteLeaderSlot(gameState);
-    if (!exploreRouteMonsterHealthy(gameState.team[leader])) {
+    const uint8_t leader = ExploreSession::leaderSlot(gameState);
+    if (!ExploreSession::healthy(gameState.team[leader])) {
         setToast(Ui::Menu::PET_REST, Platform::clock().millis());
         return false;
     }
@@ -1186,16 +773,7 @@ bool AmoledApp::queueExploreDeparture(uint8_t area, bool autoWalk) {
     // evaluates expeditionCompanionDeparting and never walks to the door.
     syncHomeActors(nowMs);
     placeFaintedHomeActors(nowMs);
-    if (visitorMotion == VisitorMotion::HOST_APPROACH ||
-        visitorMotion == VisitorMotion::ENTERING) {
-        // A mid-entry visitor joins the departure from wherever they are.
-        visitorMotion = VisitorMotion::NONE;
-        visitArrival.reset();
-        visitorCrossingDoor = false;
-        visitorMotionUntilMs = 0;
-        homeRuntime.release(Home::Resource::DOOR, 0);
-        homeRuntime.release(Home::Resource::DOOR, 1);
-    }
+    visitorFlow_.cancelEntryForDeparture();
     lastInteractionMs = nowMs;
     // The departure animation always starts from the room, regardless of the
     // page that was visible when the request arrived.
@@ -1233,25 +811,9 @@ bool AmoledApp::debugBattleScenario(uint8_t scenario, uint32_t nowMs) {
     if (scenario != 9) gameState.team[0].move2Id = moveId;
     selectedExploreArea = 0;
     debugBattleActive = true;
+    exploreSession_.battleClosed();
     if (!beginExploreEncounter(nowMs, true, wildSpecies, 35)) return false;
-    battleIsBoss = false;
-    auto& player = gameState.team[0];
-    if (scenario == 2 || scenario == 11) {
-        player.majorStatus = Game::MajorStatus::SLEEP;
-        player.majorStatusTurns = scenario == 2 ? 2 : 1;
-    }
-    if (scenario == 3) player.majorStatus = Game::MajorStatus::PARALYSIS;
-    if (scenario == 4) battlePlayerState.confusionTurns = 3;
-    if (scenario == 6) battleWild.hpCur = 1;
-    if (scenario == 8) {
-        player.hpCur = 1;
-        battlePlayerState.stockpileCount = 3;
-    }
-    clearBattleLog();
-    battleTurnPlan = BattleTurnController::TurnPlan{};
-    battleTurnPlan.count = 1;
-    battleTurnPlan.actions[0] = {BattleTurnController::Side::PLAYER, specialSlot, moveId};
-    battleTurnActionIndex = 0;
+    battleSession_.configureDiagnostic(gameState, scenario, moveId, specialSlot);
     Platform::logf("[BattleDiag] scenario=%u start saves=%lu writes=blocked\n",
         scenario, static_cast<unsigned long>(diagnosticSaveCount));
     GameRandom::setRangeProvider([](uint32_t minimum, uint32_t) { return minimum; });
@@ -1262,6 +824,26 @@ bool AmoledApp::debugBattleScenario(uint8_t scenario, uint32_t nowMs) {
 }
 
 void AmoledApp::debugReportSaveState() {
+    const auto& route = exploreSession_.state();
+    const auto& presentation = explorePresenter_.state();
+    Platform::logf(
+        "[ExploreState] now=%lu scene=%u area=%u block=%u index=%u steps=%u "
+        "moving=%u paused=%u exiting=%u complete=%u world=(%.2f,%.2f) "
+        "follower=(%.2f,%.2f) camera=(%d,%d) frames=%u/%u/%u\n",
+        static_cast<unsigned long>(Platform::clock().millis()),
+        unsigned(sceneFlow.current()), unsigned(selectedExploreArea),
+        unsigned(route.exploreRouteMapBlock), unsigned(route.exploreRouteIndex),
+        unsigned(route.exploreRouteSteps), unsigned(route.exploreRouteMoving),
+        unsigned(route.exploreRoutePaused), unsigned(route.exploreRouteExiting),
+        unsigned(route.exploreRouteComplete),
+        static_cast<double>(presentation.exploreRouteWorldX),
+        static_cast<double>(presentation.exploreRouteWorldY),
+        static_cast<double>(presentation.exploreRouteFollowerWorldX),
+        static_cast<double>(presentation.exploreRouteFollowerWorldY),
+        int(presentation.exploreRouteCameraX), int(presentation.exploreRouteCameraY),
+        unsigned(presentation.exploreRoutePetFrame),
+        unsigned(presentation.exploreRouteFollowerFrame),
+        unsigned(presentation.exploreRouteMapFrame));
     Game::GameState saved;
     MainSceneViewState savedView;
     const bool loaded = saveManager.load(saved, savedView);
@@ -1270,7 +852,7 @@ void AmoledApp::debugReportSaveState() {
             "[SaveDiag] source=%s scene=%u phase=%u saves=%lu steps=%u "
             "coins=%lu team=%u storage=%u hp=%u/%u level=%u/%u potion=%u\n",
             source, static_cast<unsigned>(sceneFlow.current()),
-            static_cast<unsigned>(battlePhase),
+            static_cast<unsigned>(battleSession_.state().battlePhase),
             static_cast<unsigned long>(diagnosticSaveCount), state.stepsToday,
             static_cast<unsigned long>(state.coins), state.teamCount,
             state.storageCount, state.team[0].hpCur, state.team[1].hpCur,
@@ -1300,8 +882,8 @@ void AmoledApp::debugReportHomeState() const {
         home.bowlClearing ? 1U : 0U, static_cast<int>(selected.actorId),
         homeFoodArbitrationPending ? 1U : 0U,
         static_cast<long>(static_cast<int32_t>(nextHomeFoodArbitrationMs - nowMs)),
-        homeRuntime.pairActive() ? 1U : 0U, static_cast<unsigned>(visitorMotion),
-        static_cast<unsigned>(roomAction), static_cast<unsigned>(petMotion()),
+        homeRuntime.pairActive() ? 1U : 0U, static_cast<unsigned>(visitorFlow_.state().motion),
+        static_cast<unsigned>(homeFlow_.state().action), static_cast<unsigned>(petMotion()),
         (homeMainActor.task == Home::Task::SLEEPING) ? 1U : 0U,
         static_cast<long>(static_cast<int32_t>(homeMainActor.nextDecisionMs - nowMs)));
     for (uint8_t slot = 0; slot < home.actorCount; ++slot) {
@@ -1368,7 +950,7 @@ bool AmoledApp::debugAcceptContact() {
 bool AmoledApp::debugStartPairTalk() {
     if (!debugContactActive ||
         sceneFlow.current() != AppSceneFlow::Scene::HOME ||
-        visitorMotion != VisitorMotion::ACTIVE) return false;
+        visitorFlow_.state().motion != VisitorMotion::ACTIVE) return false;
     const uint32_t nowMs = Platform::clock().millis();
     return startPairInteraction(nowMs, false, true);
 }
@@ -1815,7 +1397,7 @@ bool AmoledApp::updateExploreDeparture(uint32_t nowMs) {
             started = startExploreRoute(nowMs);
         }
         pendingExpedition = false;
-        exploreRouteAutoWalk = started && autoWalk;
+        exploreSession_.setAutoWalk(started && autoWalk);
         autonomousExpedition = started && autoWalk;
 #if STICKMON_ENABLE_DEBUG_FEATURES
         if (debugContactActive && debugContactKind == 3) {
@@ -1900,7 +1482,7 @@ bool AmoledApp::updateExploreDeparture(uint32_t nowMs) {
             gameState.teamCount > 1 && gameState.team[1].fainted ? 1 : 0,
             gameState.teamCount > 1
                 ? static_cast<unsigned>(gameState.team[1].hpCur) : 0U,
-            static_cast<int>(visitorMotion));
+            static_cast<int>(visitorFlow_.state().motion));
 #endif
         if (expeditionCompanionDeparting) {
             expeditionCompanionDoorInsideX = expeditionDoorInsideX;
@@ -1910,7 +1492,7 @@ bool AmoledApp::updateExploreDeparture(uint32_t nowMs) {
             homeRuntime.transition(
                 1, Home::Task::DOOR_ACTION, nowMs, 0, true);
         }
-        if (!exploreRouteMonsterHealthy(gameState.team[0])) {
+        if (!ExploreSession::healthy(gameState.team[0])) {
             // The leader stays in its faint-rest pose. Only the healthy
             // companion participates in the doorway animation.
             if (expeditionCompanionDeparting) {
@@ -2067,12 +1649,8 @@ void AmoledApp::beginExploreReturn(uint32_t nowMs) {
     expeditionDeparturePhase = ExpeditionDeparturePhase::RETURN_FADE_OUT;
     expeditionFade.beginOut();
     autonomousExpedition = false;
-    exploreRouteMoving = false;
-    exploreRouteExitConfirm = false;
+    exploreSession_.stopRoute();
     toast = nullptr;
-    exploreRouteAutoWalk = false;
-    exploreRoutePlayerWalkActive = false;
-    exploreRoutePaused = false;
     requestFullRender();
 }
 
@@ -2219,19 +1797,17 @@ void AmoledApp::cancelTouch() {
     // Losing pointer capture must not turn a cancelled gesture into a tap.
     pointerDown = dragging = false;
     pressedMenuItem = pressedExploreArea = -1;
-    exploreDragStartArea = pressedExploreMenuItem = inventoryController_.state().pressedItemRow = -1;
-    inventoryController_.state().pressedShopCategory = inventoryController_.state().pressedShopDetailAction = teamController_.state().pressedTeamSlot = -1;
-    pressedRoomItem = pressedCommunicationItem = showerController_.state().pressedShowerItem = -1;
+    exploreDragStartArea = pressedExploreMenuItem = -1;
+    inventoryController_.cancelTouch();
+    teamController_.cancelTouch();
+    pressedRoomItem = pressedCommunicationItem = -1;
     contactActionPressedItem = -1;
-    computerPressedItem = progressionPressedItem =
-        battlePressedItem = 0xFF;
+    computerPressedItem = 0xFF;
+    battleSession_.press(0xFF);
     hatchController_.cancelTouch();
     settingsController.cancelTouch();
-    teamController_.state().teamStatusDragging = teamController_.state().teamMovesDragging = showerController_.state().showerToolDragging = false;
-    teamController_.state().teamStatusSlideX = 0;
-    progressionLevelUpTouchAllowed = progressionEvolutionTouchConsumed =
-        progressionEvolutionTouchHeld = false;
-    progressionEvolutionTouchStartedMs = progressionEvolutionTouchResumeUntilMs = 0;
+    showerController_.finishTouch();
+    progressionFlow_.cancelTouch();
 #if STICKMON_ENABLE_DEBUG_FEATURES
     debugPressedItem = -1;
 #endif
@@ -2243,7 +1819,7 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
     if (inventoryController_.state().teamItemFeedbackActive) {
         pointerDown = false;
         dragging = false;
-        teamController_.state().pressedTeamSlot = -1;
+        teamController_.pressMember(-1);
         return;
     }
     // TouchInput has already normalized the controller sample at the
@@ -2255,6 +1831,12 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
         // has not consumed yet. Explicit lock taps set a fresh request on UP.
         lockRequested = false;
         lastInteractionMs = event.timestampMs;
+        if (sceneFlow.current() == AppSceneFlow::Scene::HOME &&
+            event.y >= HOME_STATUS_TOP && toast &&
+            static_cast<int32_t>(event.timestampMs - toastUntil) < 0) {
+            pointerDown = dragging = false;
+            return;
+        }
     }
     if (sceneFlow.current() == AppSceneFlow::Scene::HATCH) {
         handleHatchTouch(event);
@@ -2317,11 +1899,11 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
         // also prevents an Agent-started route from resuming after a menu
         // visit or a touch on the route screen.
         autonomousExpedition = false;
-        exploreRouteAutoWalk = false;
+        exploreSession_.setAutoWalk(false);
 #endif
         // A touch cancels the current one-shot player walk. A route tap below
         // may start a new walk-to-interaction command.
-        exploreRoutePlayerWalkActive = false;
+        exploreSession_.cancelPlayerWalk();
         pointerDown = true;
         lastInteractionMs = event.timestampMs;
         dragging = false;
@@ -2357,13 +1939,13 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
         } else if (sceneFlow.current() == AppSceneFlow::Scene::TEAM &&
                    teamController_.state().teamMovesOpen &&
                    event.y >= TEAM_MOVES_HEADER_HEIGHT && event.y < 448) {
-            teamController_.state().teamMovesDragging = false;
+            teamController_.endMovesGesture();
             requestRenderRows(TEAM_MOVES_HEADER_HEIGHT, 448);
         } else if (sceneFlow.current() == AppSceneFlow::Scene::TEAM &&
                    !teamController_.state().teamConfirmOpen && !teamController_.state().teamActionPopupOpen && event.y >= MENU_HEADER_HEIGHT) {
-            teamController_.state().pressedTeamSlot = teamMemberAt(
+            teamController_.pressMember(teamMemberAt(
                 event.x, event.y,
-                Game::TeamRoster::memberCount(gameState));
+                Game::TeamRoster::memberCount(gameState)));
             requestRenderRows(MENU_HEADER_HEIGHT, 448);
         } else if (sceneFlow.current() == AppSceneFlow::Scene::ROOM) {
             pressedRoomItem = event.y >= MENU_HEADER_HEIGHT
@@ -2381,10 +1963,9 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
             requestRenderRows(MENU_HEADER_HEIGHT, 448);
         } else if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE &&
                    event.y >= MENU_HEADER_HEIGHT) {
-            battlePressedItem = battleLogPlaybackBusy()
-                ? 0xFF
-                : static_cast<uint8_t>(std::max(
-                      -1, battleItemAt(event.x, event.y, battlePhase)));
+            battleSession_.press(battleSession_.logBusy()
+                ? 0xFF : static_cast<uint8_t>(std::max(
+                    -1, battleItemAt(event.x, event.y, battleSession_.state().battlePhase))));
             requestRenderRows(352, 448);
         } else if (sceneFlow.current() == AppSceneFlow::Scene::COMPUTER &&
                    event.y >= MENU_HEADER_HEIGHT) {
@@ -2400,7 +1981,7 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
                 break;
             }
             if (computerPage == ComputerViewModel::Page::STATUS) {
-                teamController_.state().teamStatusDragging = false;
+                teamController_.endStatusGesture();
                 requestRenderRows(0, 448);
                 break;
             }
@@ -2427,79 +2008,36 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
                 event.x, event.y, systemUpdateHandler != nullptr, gameState.settings));
             requestRenderRows(MENU_HEADER_HEIGHT, 448);
         } else if (sceneFlow.current() == AppSceneFlow::Scene::PROGRESSION) {
-            if (progressionMode == ProgressionViewModel::Mode::EVOLUTION) {
-                const bool cancellable = progressionEvolution.initialized() &&
-                    !progressionEvolution.cancelling() &&
-                    !progressionEvolution.animationComplete(event.timestampMs);
-                const bool cancellationAnimating =
-                    progressionEvolution.cancelling() &&
-                    !progressionEvolution.cancellationComplete(
-                        event.timestampMs);
-                const bool resumeGesture =
-                    progressionEvolutionTouchStartedMs != 0 &&
-                    progressionEvolutionTouchResumeUntilMs != 0 &&
-                    static_cast<int32_t>(event.timestampMs -
-                                         progressionEvolutionTouchResumeUntilMs) <= 0;
-                progressionEvolutionTouchHeld = cancellable;
-                progressionEvolutionTouchConsumed =
-                    resumeGesture || cancellable || cancellationAnimating;
-                progressionEvolutionTouchStartedMs = cancellable
-                    ? (resumeGesture ? progressionEvolutionTouchStartedMs
-                                     : event.timestampMs)
-                    : 0;
-                progressionEvolutionTouchResumeUntilMs = 0;
-                if (cancellable) requestRenderRows(330, 348);
-            } else {
-                if (progressionMode == ProgressionViewModel::Mode::LEVEL_UP) {
-                    progressionLevelUpTouchAllowed =
-                        event.timestampMs - progressionLevelUpStartedMs >=
-                            LEVEL_UP_ANIMATION_MS;
-                }
-                const int hit = progressionMode == ProgressionViewModel::Mode::MOVE_REPLACE
-                    ? progressionReplaceItemAt(event.x, event.y,
-                          progressionScroll, progressionSelectedItem,
-                          progressionDetailProgress)
-                    : progressionItemAt(event.x, event.y, progressionMode);
-                progressionPressedItem = hit < 0 ? 0xFF
-                                                 : static_cast<uint8_t>(hit);
-                requestRenderRows(MENU_HEADER_HEIGHT, 448);
-            }
+            progressionFlow_.beginTouch(event.x, event.y, event.timestampMs);
+            applyProgressionEffects(event.timestampMs);
         } else if (sceneFlow.current() == AppSceneFlow::Scene::SHOWER) {
             if (showerController_.beginTouch(event.x, event.y)) dragging = true;
             applyShowerEffects(event.timestampMs);
         } else if (sceneFlow.current() == AppSceneFlow::Scene::SHOP &&
                    event.y >= MENU_HEADER_HEIGHT) {
-            inventoryController_.state().itemVelocity = 0.0f;
+            inventoryController_.stopScroll();
             if (inventoryController_.state().itemConfirmOpen) {
-                inventoryController_.state().pressedShopDetailAction =
-                    itemConfirmChoiceAt(event.x, event.y);
-                if (inventoryController_.state().pressedShopDetailAction == 0 &&
-                    inventoryController_.state().pendingItemAction == PendingItemAction::SELL &&
-                    Game::ItemInventory::count(gameState, inventoryController_.state().pendingItem) == 0) {
-                    inventoryController_.state().pressedShopDetailAction = -1;
-                }
+                inventoryController_.beginDetailTouch(itemConfirmChoiceAt(event.x, event.y), gameState);
             } else {
                 ShopViewModel::Mode mode =
                     inventoryController_.state().shopCategory == Game::ShopService::Category::SELL
                         ? ShopViewModel::Mode::SELL
                         : ShopViewModel::Mode::BUY;
-                inventoryController_.state().pressedShopCategory = shopMenuItemAt(event.x, event.y);
-                inventoryController_.state().pressedItemRow = shopGridItemAt(
+                inventoryController_.beginListTouch(shopGridItemAt(
                     event.x, event.y, inventoryController_.state().itemScroll, mode,
-                    shopDailyItemCount(), shopExploreItemCount(),
-                    currentItemCount());
+                    shopDailyItemCount(), shopExploreItemCount(), currentItemCount()),
+                    shopMenuItemAt(event.x, event.y));
             }
             requestRenderRows(MENU_HEADER_HEIGHT, 448);
         } else if (sceneFlow.current() == AppSceneFlow::Scene::BAG &&
                    !inventoryController_.state().itemConfirmOpen && event.y >= MENU_HEADER_HEIGHT) {
-            inventoryController_.state().itemVelocity = 0.0f;
+            inventoryController_.stopScroll();
             const uint8_t dailyCount =
                 Game::ItemInventory::homeBagDailyItemCount(gameState);
-            inventoryController_.state().pressedItemRow = itemListItemAt(
-                event.x, event.y, inventoryController_.state().itemScroll,
-                dailyCount,
+            inventoryController_.beginListTouch(itemListItemAt(
+                event.x, event.y, inventoryController_.state().itemScroll, dailyCount,
                 Game::ItemInventory::homeBagExploreItemCount(gameState),
-                currentItemCount(), false);
+                currentItemCount(), false));
             requestRenderRows(MENU_HEADER_HEIGHT, 448);
         }
         break;
@@ -2511,7 +2049,7 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
                 updateShowerToolDrag(event.x, event.y, event.timestampMs);
             } else if (std::max(std::abs(event.x - touchStartX),
                                 std::abs(event.y - touchStartY)) > TAP_SLOP) {
-                showerController_.state().pressedShowerItem = -1;
+                showerController_.clearPress();
                 requestRenderRows(MENU_HEADER_HEIGHT, 448);
             }
         } else if (sceneFlow.current() == AppSceneFlow::Scene::SETTINGS &&
@@ -2582,30 +2120,23 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
                    touchStartY >= TEAM_MOVES_HEADER_HEIGHT &&
                    touchStartY < 448) {
             if (std::abs(event.y - touchStartY) > DRAG_START_SLOP) {
-                teamController_.state().teamMovesDragging = true;
+                teamController_.beginMovesDrag();
                 dragging = true;
             }
             if (teamController_.state().teamMovesDragging) {
-                teamController_.state().teamMovesScroll -= static_cast<int16_t>(event.y - touchLastY);
-                clampTeamMovesScroll();
+                teamController_.dragMoves(event.y - touchLastY);
                 requestRenderRows(MENU_HEADER_HEIGHT, 448);
             }
         } else if (sceneFlow.current() == AppSceneFlow::Scene::PROGRESSION &&
-                   progressionMode == ProgressionViewModel::Mode::MOVE_REPLACE &&
+                   progressionFlow_.state().progressionMode == ProgressionViewModel::Mode::MOVE_REPLACE &&
                    touchStartY >= TEAM_MOVES_HEADER_HEIGHT) {
             if (std::abs(event.y - touchStartY) > DRAG_START_SLOP) {
                 dragging = true;
-                progressionPressedItem = 0xFF;
+                progressionFlow_.clearPress();
             }
             if (dragging) {
-                progressionScroll -= static_cast<int16_t>(event.y - touchLastY);
-                const int maxScroll = progressionSelectedItem < 3
-                    ? std::max(0, static_cast<int>(std::lround(
-                          UiMetrics::MOVE_DETAIL_HEIGHT * progressionDetailProgress)) - 174)
-                    : 0;
-                progressionScroll = std::clamp<int16_t>(progressionScroll, 0,
-                    static_cast<int16_t>(maxScroll));
-                requestRenderRows(TEAM_MOVES_HEADER_HEIGHT, 448);
+                progressionFlow_.dragReplacement(event.y - touchLastY);
+                applyProgressionEffects(event.timestampMs);
             }
         } else if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_MENU &&
                    std::max(std::abs(event.x - touchStartX),
@@ -2620,7 +2151,7 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
             if (!teamController_.state().teamStatusDragging &&
                 std::abs(deltaX) > DRAG_START_SLOP &&
                 std::abs(deltaX) > std::abs(deltaY)) {
-                teamController_.state().teamStatusDragging = true;
+                teamController_.beginStatusDrag();
                 dragging = true;
             }
             if (teamController_.state().teamStatusDragging) {
@@ -2635,7 +2166,7 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
                    std::max(std::abs(event.x - touchStartX),
                             std::abs(event.y - touchStartY)) > TAP_SLOP &&
                    teamController_.state().pressedTeamSlot >= 0) {
-            teamController_.state().pressedTeamSlot = -1;
+            teamController_.pressMember(-1);
             requestRenderRows(MENU_HEADER_HEIGHT, 448);
         } else if (sceneFlow.current() == AppSceneFlow::Scene::COMPUTER &&
                    computerPage == ComputerViewModel::Page::STATUS) {
@@ -2644,7 +2175,7 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
             if (!teamController_.state().teamStatusDragging &&
                 std::abs(deltaX) > DRAG_START_SLOP &&
                 std::abs(deltaX) > std::abs(deltaY)) {
-                teamController_.state().teamStatusDragging = true;
+                teamController_.beginStatusDrag();
                 dragging = true;
             }
             if (teamController_.state().teamStatusDragging) {
@@ -2704,13 +2235,15 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
             } else if (sceneFlow.current() == AppSceneFlow::Scene::SETTINGS) {
                 settingsController.invalidatePress();
             } else {
-                progressionPressedItem = 0xFF;
+                progressionFlow_.clearPress();
             }
-            requestRenderRows(MENU_HEADER_HEIGHT, 448);
+            // Growth animation also changes above the shared page header.
+            requestRenderRows(sceneFlow.current() == AppSceneFlow::Scene::PROGRESSION
+                                  ? 0 : MENU_HEADER_HEIGHT, 448);
         } else if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE &&
                    std::max(std::abs(event.x - touchStartX),
                             std::abs(event.y - touchStartY)) > TAP_SLOP) {
-            battlePressedItem = 0xFF;
+            battleSession_.press(0xFF);
             requestRenderRows(MENU_HEADER_HEIGHT, 448);
         } else if ((sceneFlow.current() == AppSceneFlow::Scene::BAG ||
                     sceneFlow.current() == AppSceneFlow::Scene::SHOP) &&
@@ -2719,14 +2252,11 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
             if (std::abs(event.y - touchStartY) > DRAG_START_SLOP) {
                 dragging = sceneFlow.current() == AppSceneFlow::Scene::BAG ||
                            touchStartX >= SHOP_LEFT_PANEL_WIDTH;
-                inventoryController_.state().pressedItemRow = -1;
-                inventoryController_.state().pressedShopCategory = -1;
+                inventoryController_.cancelTouch();
             }
             if (dragging) {
                 int deltaY = event.y - touchLastY;
-                inventoryController_.state().itemScroll -= static_cast<float>(deltaY);
-                inventoryController_.state().itemVelocity = static_cast<float>(-deltaY);
-                clampItemScroll();
+                inventoryController_.dragList(deltaY, itemMaxScroll());
                 requestRenderRows(MENU_HEADER_HEIGHT, 448);
             }
         }
@@ -2741,30 +2271,10 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
         }
         int distance = std::max(std::abs(event.x - touchStartX),
                                 std::abs(event.y - touchStartY));
-        const bool evolutionTouchWasConsumed =
-            sceneFlow.current() == AppSceneFlow::Scene::PROGRESSION &&
-            progressionMode == ProgressionViewModel::Mode::EVOLUTION &&
-            progressionEvolutionTouchConsumed;
-        const bool evolutionCompletedAtRelease =
-            evolutionTouchWasConsumed &&
-            progressionEvolution.animationComplete(event.timestampMs);
-        const bool evolutionHoldReached =
-            evolutionTouchWasConsumed && progressionEvolutionTouchHeld &&
-            !evolutionCompletedAtRelease &&
-            !progressionEvolution.cancelling() &&
-            event.timestampMs - progressionEvolutionTouchStartedMs >=
-                EVOLUTION_CANCEL_HOLD_MS;
-        if (evolutionHoldReached &&
-            progressionEvolution.beginCancellation(event.timestampMs)) {
-            CryPlayer::ins().stop();
-            nextProgressionAnimationFrameMs = event.timestampMs;
-            requestFullRender();
-        }
-        const bool evolutionTouchCanResume =
-            evolutionTouchWasConsumed && progressionEvolutionTouchHeld &&
-            !evolutionCompletedAtRelease && !evolutionHoldReached &&
-            !progressionEvolution.cancelling();
-        progressionEvolutionTouchHeld = false;
+        const auto progressionRelease = sceneFlow.current() == AppSceneFlow::Scene::PROGRESSION
+            ? progressionFlow_.prepareRelease(event.timestampMs) : ProgressionFlow::Release{};
+        applyProgressionEffects(event.timestampMs);
+        const bool evolutionTouchWasConsumed = progressionRelease.consumed;
         bool settingsSliderWasDragging = settingsController.sliderDragging();
         if (settingsSliderWasDragging) {
             if (shopTouch) {
@@ -2785,14 +2295,13 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
             // A touch that began while evolution was running cannot cross the
             // completion boundary and acknowledge the completed evolution.
         } else if (sceneFlow.current() == AppSceneFlow::Scene::PROGRESSION &&
-                   progressionMode == ProgressionViewModel::Mode::LEVEL_UP &&
-                   !progressionLevelUpTouchAllowed) {
+                   progressionFlow_.state().progressionMode == ProgressionViewModel::Mode::LEVEL_UP &&
+                   !progressionFlow_.state().progressionLevelUpTouchAllowed) {
             // A gesture begun during the entrance animation stays consumed.
         } else if (sceneFlow.current() == AppSceneFlow::Scene::TEAM &&
                    !inventoryController_.state().selectingItemTarget &&
                    teamController_.state().pressedTeamSlot >= 0 && !dragging && distance <= TAP_SLOP) {
-            teamController_.state().teamActionPopupOpen = true;
-            teamController_.state().teamActionPopupSlot = static_cast<uint8_t>(teamController_.state().pressedTeamSlot);
+            teamController_.showActions(static_cast<uint8_t>(teamController_.state().pressedTeamSlot));
             requestRenderRows(MENU_HEADER_HEIGHT, 448);
         } else if (sceneFlow.current() == AppSceneFlow::Scene::SHOP &&
                    inventoryController_.state().itemConfirmOpen) {
@@ -2825,7 +2334,7 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
             requestRenderRows(MENU_HEADER_HEIGHT, 448);
         } else if (sceneFlow.current() == AppSceneFlow::Scene::TEAM &&
                    teamController_.state().teamMovesDragging) {
-            teamController_.state().teamMovesDragging = false;
+            teamController_.endMovesGesture();
         } else if (!dragging && distance <= TAP_SLOP) {
             if (shopTouch) Platform::logLine("[ShopTouch] list_tap=accepted");
             handleTap(event.x, event.y, event.timestampMs);
@@ -2842,28 +2351,17 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
         pressedExploreArea = -1;
         exploreDragStartArea = -1;
         pressedExploreMenuItem = -1;
-        inventoryController_.state().pressedItemRow = -1;
-        inventoryController_.state().pressedShopCategory = -1;
-        inventoryController_.state().pressedShopDetailAction = -1;
-        teamController_.state().pressedTeamSlot = -1;
+        inventoryController_.cancelTouch();
+        teamController_.pressMember(-1);
         pressedRoomItem = -1;
         pressedCommunicationItem = -1;
-        showerController_.state().pressedShowerItem = -1;
+        showerController_.clearPress();
         computerPressedItem = 0xFF;
         contactActionPressedItem = -1;
         settingsController.cancelTouch();
-        progressionPressedItem = 0xFF;
-        progressionLevelUpTouchAllowed = false;
-        progressionEvolutionTouchConsumed = false;
-        if (evolutionTouchCanResume) {
-            progressionEvolutionTouchResumeUntilMs =
-                event.timestampMs + EVOLUTION_TOUCH_GAP_MS;
-        } else {
-            progressionEvolutionTouchStartedMs = 0;
-            progressionEvolutionTouchResumeUntilMs = 0;
-        }
-        battlePressedItem = 0xFF;
-        showerController_.state().showerToolDragging = false;
+        progressionFlow_.finishTouch(event.timestampMs, progressionRelease.resume);
+        battleSession_.press(0xFF);
+        showerController_.finishTouch();
         if (releasedShowerTool) {
             requestRenderRect(showerController_.state().showerToolX - 64, showerController_.state().showerToolY - 64,
                               showerController_.state().showerToolX + 65, showerController_.state().showerToolY + 65);
@@ -2871,6 +2369,8 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
             flushShowerSave(event.timestampMs);
             break;
         }
+        // Home taps invalidate their actual feedback in handleTap().
+        if (sceneFlow.current() == AppSceneFlow::Scene::HOME) break;
         requestRenderRows(
                           sceneFlow.current() == AppSceneFlow::Scene::MAIN_MENU
                               ? MAIN_MENU_CONTENT_TOP
@@ -2879,6 +2379,7 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
                           : sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_ROUTE
                               ? HOME_HEADER_HEIGHT
                           : sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_MENU
+                            || sceneFlow.current() == AppSceneFlow::Scene::PROGRESSION
                               ? 0
                           : sceneFlow.current() == AppSceneFlow::Scene::BAG ||
                             sceneFlow.current() == AppSceneFlow::Scene::SHOP ||
@@ -2888,7 +2389,6 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
                             sceneFlow.current() == AppSceneFlow::Scene::COMMUNICATION ||
                             sceneFlow.current() == AppSceneFlow::Scene::COMPUTER ||
                             sceneFlow.current() == AppSceneFlow::Scene::SETTINGS ||
-                            sceneFlow.current() == AppSceneFlow::Scene::PROGRESSION ||
                             sceneFlow.current() == AppSceneFlow::Scene::BATTLE ||
                             sceneFlow.current() == AppSceneFlow::Scene::SHOWER
                               ? MENU_HEADER_HEIGHT
@@ -2903,10 +2403,11 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
 }
 
 void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
+    const auto& route = exploreSession_.state();
     if (inventoryController_.state().teamItemFeedbackActive) return;
     if (sceneFlow.current() == AppSceneFlow::Scene::HOME) {
-        if (visitDeparture == VisitDeparture::WALK_TO_DOOR ||
-            visitDeparture == VisitDeparture::CROSS_DOOR) return;
+        if (visitAwayFlow_.state().phase == VisitDeparture::WALK_TO_DOOR ||
+            visitAwayFlow_.state().phase == VisitDeparture::CROSS_DOOR) return;
         if (visitRecallConfirm) {
             const int choice = recallConfirmChoiceAt(x, y);
             if (choice == 0 && visitSession.active() &&
@@ -2966,6 +2467,10 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             return;
         }
 #endif
+        // A HUD message replaces the buttons, but room interactions stay live.
+        if (toast && toastScene == AppSceneFlow::Scene::HOME &&
+            static_cast<int32_t>(nowMs - toastUntil) < 0 &&
+            y >= HOME_STATUS_TOP) return;
         RoomResource& room = RoomResource::ins();
         int bowlX = room.available()
             ? worldToScreenX(room.foodX())
@@ -2976,7 +2481,7 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
         switch (homeHitTargetAt(x, y, worldToScreenX(homeMainActor.x),
                                worldToScreenY(homeMainActor.y), bowlX, bowlY)) {
         case HomeHitTarget::MENU:
-            if (visitDeparture == VisitDeparture::AWAY) {
+            if (visitAwayFlow_.state().phase == VisitDeparture::AWAY) {
                 if (visitSession.active() &&
                     !visitSession.viewModel().localIsHost) {
                     visitRecallConfirm = true;
@@ -2999,6 +2504,7 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             switch (result.outcome) {
             case PetOutcome::REWARDED:
                 heartsUntil = nowMs + 1000;
+                requestRenderRows(HOME_ROOM_TOP, AmoledUi::HEIGHT);
                 applyHomeCareExperience(0, result.careExp);
                 saveState();
                 break;
@@ -3028,6 +2534,7 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             switch (result) {
             case FoodPlacementResult::ADDED:
                 setToast(Ui::Menu::FOOD_ADDED, nowMs);
+                requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
                 wakeHomeFoodArbitration(nowMs);
                 saveState();
                 break;
@@ -3046,7 +2553,6 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
         case HomeHitTarget::NONE:
             break;
         }
-        requestRenderRows(HOME_ROOM_TOP, 448);
         return;
     }
 
@@ -3097,15 +2603,15 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
     }
 
     if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_ROUTE) {
-        if (exploreRouteIceSliding) return;
-        if (exploreRouteComplete) {
+        if (route.exploreRouteIceSliding) return;
+        if (route.exploreRouteComplete) {
             leaveExploreRoute();
             return;
         }
-        if (exploreRouteExitConfirm) {
+        if (route.exploreRouteExitConfirm) {
             int choice = exploreRouteExitChoiceAt(x, y);
             if (choice == 0) {
-                exploreRouteExitConfirm = false;
+                exploreSession_.confirmExit(false);
                 resumeExploreRoute(nowMs);
                 requestRenderRows(HOME_HEADER_HEIGHT, 448);
             } else if (choice == 1) {
@@ -3114,7 +2620,7 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             return;
         }
         if (exploreRouteBackAt(x, y)) {
-            exploreRouteExitConfirm = true;
+            exploreSession_.confirmExit(true);
             pauseExploreRoute(nowMs);
             requestRenderRows(HOME_HEADER_HEIGHT, 448);
             return;
@@ -3136,9 +2642,8 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             // Match Stick's beginAutoWalk(): one player tap walks through
             // route points until the next interaction. It is not Agent
             // mode and must not leave automatic exploration enabled.
-            exploreRoutePlayerWalkActive = true;
-            exploreRouteAutoWalk = false;
-            if (!exploreRouteMoving) {
+            exploreSession_.walkByPlayer();
+            if (!route.exploreRouteMoving) {
                 beginExploreRouteStep(nowMs);
             }
             requestRenderRows(0, EXPLORE_ROUTE_VIEW_HEIGHT);
@@ -3147,38 +2652,31 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
     }
 
     if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE) {
-        if (battleThrownItem != Game::ItemId::COUNT ||
-            battleAnimationActive || battleHpAnimationActive ||
-            battleSwitchStage != BattleSwitchStage::NONE ||
-            battleExperienceAnimationActive ||
-            battleLogPlaybackBusy() ||
-            battleContinuation != BattleContinuation::NONE) return;
+        if (battleSession_.inputBusy()) return;
         if (battleBackAt(x, y)) {
-            if (battlePhase == BattleViewModel::Phase::BAG_SELECT ||
-                battlePhase == BattleViewModel::Phase::SWITCH_SELECT) {
-                battlePhase = BattleViewModel::Phase::ACTION;
-                battlePressedItem = 0xFF;
+            if (battleSession_.state().battlePhase == BattleViewModel::Phase::BAG_SELECT ||
+                battleSession_.state().battlePhase == BattleViewModel::Phase::SWITCH_SELECT) {
+                battleSession_.showAction();
+                battleSession_.press(0xFF);
                 requestFullRender();
             }
             return;
         }
-        int item = battleItemAt(x, y, battlePhase);
+        int item = battleItemAt(x, y, battleSession_.state().battlePhase);
         if (item < 0) return;
-        if (battlePhase == BattleViewModel::Phase::FRIENDSHIP) {
+        if (battleSession_.state().battlePhase == BattleViewModel::Phase::FRIENDSHIP) {
             resolveBattleFriendship(static_cast<uint8_t>(item), nowMs);
-        } else if (battlePhase == BattleViewModel::Phase::VICTORY) {
+        } else if (battleSession_.state().battlePhase == BattleViewModel::Phase::VICTORY) {
             return;
-        } else if (battlePhase == BattleViewModel::Phase::DEFEAT) {
+        } else if (battleSession_.state().battlePhase == BattleViewModel::Phase::DEFEAT) {
             finishBattleDefeat(nowMs);
-        } else if (battlePhase == BattleViewModel::Phase::BAG_SELECT) {
-            if (item < 0 || item >= 4 ||
-                item >= battleBagCount) return;
-            performBattleBagItem(battleBagItems[item], nowMs);
-        } else if (battlePhase == BattleViewModel::Phase::SWITCH_SELECT) {
-            battlePressedItem = static_cast<uint8_t>(item);
+        } else if (battleSession_.state().battlePhase == BattleViewModel::Phase::BAG_SELECT) {
+            performBattleBag(nowMs);
+        } else if (battleSession_.state().battlePhase == BattleViewModel::Phase::SWITCH_SELECT) {
+            battleSession_.press(static_cast<uint8_t>(item));
             performBattleSwitch(static_cast<uint8_t>(item), true, nowMs);
         } else if (item == 0) {
-            battlePressedItem = 0xFF;
+            battleSession_.press(0xFF);
             performBattleAttack(nowMs);
         } else if (item == 1) {
             performBattleBag(nowMs);
@@ -3239,10 +2737,10 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
         if (teamController_.state().teamActionPopupOpen) {
             const int choice = teamActionPopupItemAt(x, y, teamController_.state().teamActionPopupSlot);
             if (choice >= 0) {
-                teamController_.state().teamActionPopupOpen = false;
+                teamController_.dismissActions();
                 const bool leader = teamController_.state().teamActionPopupSlot == 0;
                 if (!leader && choice == 0) {
-                    teamController_.state().pendingTeamSlot = teamController_.state().teamActionPopupSlot;
+                    teamController_.selectLeaderCandidate(teamController_.state().teamActionPopupSlot);
                     switchTeamLeader(nowMs);
                 }
                 else if (leader ? choice == 0 : choice == 1) {
@@ -3253,14 +2751,14 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
                 else if (!leader && choice == 3) leaveTeamMember(teamController_.state().teamActionPopupSlot, nowMs);
                 else requestRenderRows(MENU_HEADER_HEIGHT, 448);
             } else {
-                teamController_.state().teamActionPopupOpen = false;
+                teamController_.dismissActions();
                 requestRenderRows(MENU_HEADER_HEIGHT, 448);
             }
             return;
         }
         if (teamController_.state().teamMovesOpen) {
             if (teamMovesBackAt(x, y)) {
-                teamController_.state().teamMovesOpen = false;
+                teamController_.closeMoves();
                 requestFullRender();
                 return;
             }
@@ -3302,18 +2800,15 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             if (choice == 0) {
                 switchTeamLeader(nowMs);
             } else if (choice == 1) {
-                teamController_.state().teamConfirmOpen = false;
+                teamController_.dismissConfirmation();
                 requestRenderRows(MENU_HEADER_HEIGHT, 448);
             }
             return;
         }
         if (teamBackAt(x, y)) {
             if (inventoryController_.state().selectingItemTarget) {
-                inventoryController_.state().selectingItemTarget = false;
-                inventoryController_.state().pendingItem = Game::ItemId::COUNT;
-                inventoryController_.state().pendingItemAction = PendingItemAction::NONE;
-                inventoryController_.state().itemConfirmOpen = false;
-                teamController_.state().teamActionPopupOpen = false;
+                inventoryController_.cancelTargetSelection();
+                teamController_.dismissActions();
                 sceneFlow.enter(AppSceneFlow::Scene::BAG);
                 requestFullRender();
             } else closeItemScene();
@@ -3341,10 +2836,7 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
                     const Game::ItemId stone = inventoryController_.state().pendingItem;
                     const uint16_t fromSpeciesId =
                         gameState.team[target].speciesId;
-                    inventoryController_.state().selectingItemTarget = false;
-                    inventoryController_.state().pendingItem = Game::ItemId::COUNT;
-                    inventoryController_.state().pendingItemAction = PendingItemAction::NONE;
-                    inventoryController_.state().itemConfirmOpen = false;
+                    inventoryController_.cancelTargetSelection();
                     openEvolutionProgression(
                         inventoryController_.state().itemTargetReturnScene, target, fromSpeciesId,
                         evolutionTarget->id, nowMs, stone);
@@ -3357,24 +2849,18 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
                 if (used == Game::ItemInventory::UseResult::USED) {
                     saveState();
                     if (gameState.team[target].level != oldLevel) {
-                        inventoryController_.state().selectingItemTarget = false;
-                        inventoryController_.state().pendingItem = Game::ItemId::COUNT;
-                        inventoryController_.state().pendingItemAction = PendingItemAction::NONE;
+                        inventoryController_.cancelTargetSelection();
                         openProgressionScene(
                             inventoryController_.state().itemTargetReturnScene, target, oldLevel, nowMs);
                         return;
                     }
-                    inventoryController_.state().teamItemTargetSlot = target;
-                    inventoryController_.state().teamItemHpFrom = hpBefore;
-                    inventoryController_.state().teamItemHpTo = gameState.team[target].hpCur;
-                    inventoryController_.state().teamItemFeedbackActive = true;
-                    teamController_.state().pressedTeamSlot = -1;
+                    teamController_.pressMember(-1);
                     pointerDown = false;
                     dragging = false;
                     setToast(Ui::Amoled::ITEM_USED, Platform::clock().millis());
                     AudioManager::ins().playSfx(SfxCue::UI_CONFIRM);
-                    inventoryController_.state().teamItemStartedMs = Platform::clock().millis();
-                    inventoryController_.state().nextTeamItemFrameMs = inventoryController_.state().teamItemStartedMs;
+                    inventoryController_.beginFeedback(target, hpBefore, gameState.team[target].hpCur,
+                                                       Platform::clock().millis());
                 } else setToast(Ui::Amoled::NO_EFFECT, nowMs);
             }
             requestFullRender();
@@ -3386,8 +2872,7 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
                        gameState, static_cast<uint8_t>(slot))) {
             setToast(Ui::Amoled::VISITOR_LOCKED, nowMs);
         } else {
-            teamController_.state().pendingTeamSlot = static_cast<uint8_t>(slot);
-            teamController_.state().teamConfirmOpen = true;
+            teamController_.requestLeaderConfirmation(static_cast<uint8_t>(slot));
             toast = nullptr;
             requestRenderRows(MENU_HEADER_HEIGHT, 448);
         }
@@ -3422,77 +2907,8 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
     }
 
     if (sceneFlow.current() == AppSceneFlow::Scene::PROGRESSION) {
-        if (progressionMode == ProgressionViewModel::Mode::MOVE_REPLACE) {
-            if (x >= 300 && x < 356 && y >= 10 && y < 66) {
-                if (progressionSelectedItem >= 3) return;
-                if (progressionSelectedItem == 0) {
-                    progressionMode = ProgressionViewModel::Mode::MOVE_LEARN;
-                } else {
-                    Game::MonsterRuntime& monster =
-                        gameState.team[progressionTeamSlot];
-                    Game::MoveId& slot = progressionSelectedItem == 1
-                        ? monster.move2Id : monster.move3Id;
-                    slot = progressionMoveId;
-                    if (progressionSelectedItem == 1) {
-                        monster.moveProficiency[1] = 0;
-                    } else {
-                        monster.moveProficiency[2] = 0;
-                    }
-                    saveState();
-                }
-                progressionPressedItem = 0xFF;
-                advanceProgression(nowMs);
-                return;
-            }
-            const int choice = progressionReplaceItemAt(
-                x, y, progressionScroll, progressionSelectedItem,
-                progressionDetailProgress);
-            if (choice >= 0) {
-                if (progressionSelectedItem == choice &&
-                    !progressionDetailAnimating &&
-                    progressionDetailProgress >= 0.99f) {
-                    progressionDetailTargetVisible = false;
-                    progressionDetailAnimStartMs = nowMs;
-                    progressionDetailAnimating = true;
-                } else if (progressionSelectedItem != choice) {
-                    progressionSelectedItem = static_cast<uint8_t>(choice);
-                    if (progressionDetailProgress > 0.0f) {
-                        progressionDetailProgress = 1.0f;
-                        progressionDetailAnimating = false;
-                        progressionDetailTargetVisible = true;
-                    } else {
-                        progressionDetailTargetVisible = true;
-                        progressionDetailAnimStartMs = nowMs;
-                        progressionDetailAnimating = true;
-                    }
-                }
-                requestRenderRows(0, 448);
-            }
-            return;
-        }
-        if (progressionMode == ProgressionViewModel::Mode::EVOLUTION) {
-            if (progressionEvolution.cancelling()) {
-                if (!progressionEvolution.cancellationComplete(nowMs)) return;
-                progressionEvolution.reset();
-                progressionEvolutionItem = Game::ItemId::COUNT;
-                progressionToSpeciesId = 0;
-                progressionMoveCursor = 0;
-                progressionMode = ProgressionViewModel::Mode::MOVE_LEARN;
-                advanceProgression(nowMs);
-            } else if (progressionEvolution.animationComplete(nowMs)) {
-                advanceProgression(nowMs);
-            } else if (progressionEvolution.beginCancellation(nowMs)) {
-                CryPlayer::ins().stop();
-                progressionPressedItem = 0xFF;
-                nextProgressionAnimationFrameMs = nowMs;
-                requestFullRender();
-            }
-            return;
-        }
-        if (progressionMode == ProgressionViewModel::Mode::LEVEL_UP &&
-            nowMs - progressionLevelUpStartedMs < LEVEL_UP_ANIMATION_MS) return;
-        if (progressionItemAt(x, y, progressionMode) != 0) return;
-        advanceProgression(nowMs);
+        progressionFlow_.tap(gameState, x, y, nowMs);
+        applyProgressionEffects(nowMs);
         return;
     }
 
@@ -3701,9 +3117,7 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
                     openTeamScene(true);
                 } else performPendingItemAction(nowMs);
                 } else if (choice == 1) {
-                    inventoryController_.state().itemConfirmOpen = false;
-                    inventoryController_.state().pendingItem = Game::ItemId::COUNT;
-                    inventoryController_.state().pendingItemAction = PendingItemAction::NONE;
+                    inventoryController_.clearAction();
                     requestFullRender();
                 }
                 return;
@@ -3885,11 +3299,11 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             visitSession.attach(&gameState);
             requestFullRender();
         } else if (entry.target == AppSceneFlow::Scene::HOME) {
-            exploreRouteMoving = false;
-            exploreRouteAutoWalk = false;
-            exploreRoutePlayerWalkActive = false;
-            exploreRoutePaused = false;
-            exploreRouteExitConfirm = false;
+            if (exploreSessionActive) {
+                beginExploreReturn(nowMs);
+                return;
+            }
+            exploreSession_.stopRoute();
             if (gameState.oobeDone) sceneFlow.goHome();
             else {
                 sceneFlow.closeMenu();
@@ -3931,6 +3345,7 @@ void AmoledApp::updateBattery(uint32_t nowMs) {
 
 void AmoledApp::update(uint32_t nowMs) {
     if (gameResetPending) return;
+    if (toast && toastScene != sceneFlow.current()) toast = nullptr;
     updateBattery(nowMs);
     updateExploreEcology(nowMs);
     syncHatchImu(nowMs);
@@ -3954,7 +3369,7 @@ void AmoledApp::update(uint32_t nowMs) {
         // WeChat messages are player input too. Stop any route/battle
         // automation before processing another frame of the app state.
         autonomousExpedition = false;
-        exploreRouteAutoWalk = false;
+        exploreSession_.setAutoWalk(false);
     }
     if (sceneFlow.current() == AppSceneFlow::Scene::COMPUTER &&
         computerPage == ComputerViewModel::Page::CLAW_SETUP) {
@@ -3980,56 +3395,9 @@ void AmoledApp::update(uint32_t nowMs) {
 #endif
     AudioManager::ins().update();
     CryPlayer::ins().update();
-    if (sceneFlow.current() == AppSceneFlow::Scene::PROGRESSION &&
-        progressionMode == ProgressionViewModel::Mode::EVOLUTION &&
-        progressionEvolution.initialized()) {
-        if (progressionEvolutionTouchHeld) {
-            if (progressionEvolution.animationComplete(nowMs)) {
-                // Completion wins when it reaches its deadline before the
-                // hold. The gesture remains consumed until the finger lifts.
-                progressionEvolutionTouchHeld = false;
-                requestRenderRows(330, 348);
-            } else if (nowMs - progressionEvolutionTouchStartedMs >=
-                       EVOLUTION_CANCEL_HOLD_MS) {
-                progressionEvolutionTouchHeld = false;
-                if (progressionEvolution.beginCancellation(nowMs)) {
-                    CryPlayer::ins().stop();
-                    nextProgressionAnimationFrameMs = nowMs;
-                    requestFullRender();
-                }
-            }
-        }
-        if (!progressionEvolution.cancelling() &&
-            !progressionEvolution.cryPlayed() &&
-            progressionEvolution.elapsed(nowMs) >=
-                Game::EvolutionSequence::REVEAL_END_MS) {
-            progressionEvolution.markCryPlayed();
-            CryPlayer::ins().replay(progressionToSpeciesId);
-        }
-        const bool animating = progressionEvolution.cancelling()
-            ? !progressionEvolution.cancellationComplete(nowMs)
-            : !progressionEvolution.animationComplete(nowMs);
-        if (animating &&
-            static_cast<int32_t>(nowMs - nextProgressionAnimationFrameMs) >= 0) {
-            nextProgressionAnimationFrameMs =
-                nowMs + PROGRESSION_ANIMATION_FRAME_MS;
-            requestRenderRows(0, 348);
-        } else if (!animating && nextProgressionAnimationFrameMs != 0) {
-            nextProgressionAnimationFrameMs = 0;
-            requestFullRender();
-        }
-    }
-    if (sceneFlow.current() == AppSceneFlow::Scene::PROGRESSION &&
-        progressionMode == ProgressionViewModel::Mode::LEVEL_UP &&
-        nextProgressionAnimationFrameMs != 0 &&
-        static_cast<int32_t>(nowMs - nextProgressionAnimationFrameMs) >= 0) {
-        if (nowMs - progressionLevelUpStartedMs < LEVEL_UP_ANIMATION_MS) {
-            nextProgressionAnimationFrameMs =
-                nowMs + PROGRESSION_ANIMATION_FRAME_MS;
-        } else {
-            nextProgressionAnimationFrameMs = 0;
-        }
-        requestFullRender();
+    if (sceneFlow.current() == AppSceneFlow::Scene::PROGRESSION) {
+        progressionFlow_.update(nowMs);
+        applyProgressionEffects(nowMs);
     }
 #if STICKMON_ENABLE_DEBUG_FEATURES
     if (debugContactActive && debugContactKind != 3 &&
@@ -4074,25 +3442,9 @@ void AmoledApp::update(uint32_t nowMs) {
         if (!beginExploreEncounter(nowMs)) debugBattleActive = false;
     }
 #endif
-    if (battleAudioPending && battleAudioReady) {
-        uint8_t pendingSfx = battlePendingSfx;
-        uint16_t pendingCrySpecies = battlePendingCrySpecies;
-        battleAudioPending = false;
-        battleAudioReady = false;
-        battlePendingSfx = 0xFF;
-        battlePendingCrySpecies = 0;
-        uint32_t audioStartedMs = Platform::clock().millis();
-        if (pendingSfx != 0xFF) {
-            AudioManager::ins().playSfx(static_cast<SfxCue>(pendingSfx));
-        }
-        if (pendingCrySpecies != 0) {
-            CryPlayer::ins().replay(pendingCrySpecies);
-        }
-        Platform::logf("[BattleAudio] queued species=%u elapsed=%lu\n",
-                       pendingCrySpecies,
-                       static_cast<unsigned long>(
-                           Platform::clock().millis() - audioStartedMs));
-    }
+    const auto battleAudio = battleSession_.takeAudio();
+    if (battleAudio.sfx != 0xFF) AudioManager::ins().playSfx(static_cast<SfxCue>(battleAudio.sfx));
+    if (battleAudio.crySpecies != 0) CryPlayer::ins().replay(battleAudio.crySpecies);
     CommunicationViewModel communicationBefore = visitSession.viewModel();
     Game::MonsterRuntime detachedVisitor{};
     const bool hadAttachedVisitor = gameState.teamCount > 1 &&
@@ -4105,13 +3457,12 @@ void AmoledApp::update(uint32_t nowMs) {
         cancelPairInteraction(nowMs);
         homeRuntime.releaseAll(0);
         homeRuntime.stop(0, nowMs);
-        visitorMotion = VisitorMotion::NONE;
-        visitArrival.reset();
+        visitorFlow_.resetMotion();
         syncHomeActors(nowMs);
         sceneFlow.goHome();
         requestFullRender();
     } else if (hadAttachedVisitor && gameState.teamCount < 2 &&
-               visitorMotion != VisitorMotion::EXITING) {
+               visitorFlow_.state().motion != VisitorMotion::EXITING) {
         gameState.team[1] = detachedVisitor;
         gameState.teamCount = 2;
         gameState.activeSlot = 0;
@@ -4211,37 +3562,11 @@ void AmoledApp::update(uint32_t nowMs) {
     if (teamUpdate.statusCompleted) requestFullRender();
     else if (teamUpdate.statusChanged) requestRenderRows(MENU_HEADER_HEIGHT, 448);
     if (teamUpdate.movesChanged) requestRenderRows(TEAM_MOVES_HEADER_HEIGHT, 448);
-    if (sceneFlow.current() == AppSceneFlow::Scene::PROGRESSION &&
-        progressionMode == ProgressionViewModel::Mode::MOVE_REPLACE &&
-        progressionDetailAnimating) {
-        const float raw = std::min(1.0f,
-            static_cast<float>(nowMs - progressionDetailAnimStartMs) /
-            static_cast<float>(TEAM_MOVES_DETAIL_ANIM_MS));
-        const float eased = progressionDetailTargetVisible
-            ? 1.0f - (1.0f - raw) * (1.0f - raw) : raw * raw;
-        progressionDetailProgress = progressionDetailTargetVisible
-            ? eased : 1.0f - eased;
-        if (raw >= 1.0f) {
-            progressionDetailAnimating = false;
-            progressionDetailProgress = progressionDetailTargetVisible ? 1.0f : 0.0f;
-            if (!progressionDetailTargetVisible) progressionSelectedItem = 0xFF;
-        }
-        const int maxScroll = std::max(0,
-            static_cast<int>(std::lround(
-                UiMetrics::MOVE_DETAIL_HEIGHT * progressionDetailProgress)) - 174);
-        progressionScroll = std::clamp<int16_t>(progressionScroll, 0,
-            static_cast<int16_t>(maxScroll));
-        if (progressionSelectedItem == 2 && progressionDetailTargetVisible) {
-            progressionScroll = static_cast<int16_t>(maxScroll);
-        }
-        requestRenderRows(0, 448);
-    }
 
     if (sceneFlow.current() == AppSceneFlow::Scene::TEAM &&
         inventoryController_.state().teamItemFeedbackActive) {
         const uint32_t itemNowMs = Platform::clock().millis();
-        if (static_cast<int32_t>(itemNowMs - inventoryController_.state().nextTeamItemFrameMs) >= 0) {
-            inventoryController_.state().nextTeamItemFrameMs = itemNowMs + BATTLE_GAUGE_FRAME_MS;
+        if (inventoryController_.feedbackFrameDue(itemNowMs, BATTLE_GAUGE_FRAME_MS)) {
             requestRenderRows(MENU_HEADER_HEIGHT, 448);
         }
         // Keep the completed HP value visible briefly before leaving the team.
@@ -4250,138 +3575,21 @@ void AmoledApp::update(uint32_t nowMs) {
         }
     }
 
-    if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE &&
-        battleHpAnimationActive) {
-        const uint32_t gaugeNowMs = Platform::clock().millis();
-        if (static_cast<int32_t>(gaugeNowMs -
-                                 nextBattleHpAnimationFrameMs) >= 0) {
-            nextBattleHpAnimationFrameMs =
-                gaugeNowMs + BATTLE_GAUGE_FRAME_MS;
-            requestRenderRows(battleHpAnimationWild ? 48 : 266,
-                              battleHpAnimationWild ? 88 : 306);
-        }
-        if (static_cast<int32_t>(
-                gaugeNowMs - battleHpAnimationStartedMs) >= 0 &&
-            gaugeNowMs - battleHpAnimationStartedMs >=
-                BATTLE_HP_ANIMATION_MS) {
-            battleHpAnimationActive = false;
-            requestRenderRows(battleHpAnimationWild ? 48 : 266,
-                              battleHpAnimationWild ? 88 : 306);
-        }
-    }
-    if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE &&
-        battleExperienceAnimationActive) {
-        const uint32_t gaugeNowMs = Platform::clock().millis();
-        if (static_cast<int32_t>(
-                gaugeNowMs - nextBattleExperienceAnimationFrameMs) >= 0) {
-            nextBattleExperienceAnimationFrameMs =
-                gaugeNowMs + BATTLE_GAUGE_FRAME_MS;
-            requestRenderRows(232, 308);
-        }
-        if (gaugeNowMs - battleExperienceAnimationStartedMs >=
-            BATTLE_EXP_ANIMATION_MS) {
-            battleExperienceAnimationActive = false;
-            AudioManager::ins().playSfx(SfxCue::EXP_FULL);
-            requestRenderRows(232, 308);
-        }
-    }
-
-    if (battleThrownItem != Game::ItemId::COUNT &&
-        sceneFlow.current() == AppSceneFlow::Scene::BATTLE) {
-        const uint32_t elapsed = Platform::clock().millis() - battleItemThrowStartedMs;
-        const uint8_t frame = static_cast<uint8_t>(std::min<uint32_t>(24, elapsed / 33));
-        if (frame != battleItemThrowFrame) {
-            battleItemThrowFrame = frame;
-            requestRenderRows(0, BATTLE_ANIMATION_RENDER_END);
-        }
-        if (elapsed >= 800) {
-            battleThrownItem = Game::ItemId::COUNT;
-            requestRenderRows(0, BATTLE_ANIMATION_RENDER_END);
-        }
-    }
-    if (battleAnimationActive &&
-        sceneFlow.current() == AppSceneFlow::Scene::BATTLE) {
-        // Audio setup can block after the loop timestamp was sampled. Use a
-        // fresh monotonic value so the first frame cannot underflow and skip.
-        uint32_t animationNowMs = Platform::clock().millis();
-        uint32_t elapsed = animationNowMs - battleAnimationStartedMs;
-        if (!battleImpactAudioPlayed &&
-            elapsed >= BATTLE_HP_DAMAGE_DELAY_MS) {
-            battleImpactAudioPlayed = true;
-            if (battleImpactSfx != 0xFF) {
-                AudioManager::ins().playSfx(
-                    static_cast<SfxCue>(battleImpactSfx));
-            }
-        }
-        uint8_t frame = elapsed < battleAnimationDurationMs
-            ? static_cast<uint8_t>(std::min<uint32_t>(
-                  6, elapsed / 80U + 1U))
-            : 0;
-        if (frame != battleAnimationFrame) {
-            battleAnimationFrame = frame;
-            requestRenderRows(0, BATTLE_ANIMATION_RENDER_END);
-        }
-        if (elapsed >= battleAnimationDurationMs) {
-            battleAnimationActive = false;
-            battleAnimationStatusEffect = false;
-            battleAnimationFrame = 0;
-            battleAnimationDamage = 0;
-            battleAttackLogHeld = false;
-            battleImpactSfx = 0xFF;
-            requestRenderRows(0, BATTLE_ANIMATION_RENDER_END);
-            Platform::logf("[BattleAnim] complete side=%s elapsed=%lu\n",
-                           battleAnimationAttackerWild ? "wild" : "player",
-                           static_cast<unsigned long>(elapsed));
-        }
-    }
-    if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE &&
-        serviceBattleLog(nowMs)) {
-        requestRenderRows(352, 448);
-    }
-    if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE &&
-        battleSwitchStage != BattleSwitchStage::NONE) {
-        updateBattleSwitch(Platform::clock().millis());
-    }
-    if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE &&
-        battleContinuation != BattleContinuation::NONE &&
-        battleSwitchStage == BattleSwitchStage::NONE &&
-        battleThrownItem == Game::ItemId::COUNT &&
-        !battleAnimationActive && !battleHpAnimationActive &&
-        !battleLogPlaybackBusy()) {
-        const BattleContinuation continuation = battleContinuation;
-        battleContinuation = BattleContinuation::NONE;
-        if (continuation == BattleContinuation::WILD_TURN) {
-            performBattleWildTurn(nowMs);
-        } else if (continuation == BattleContinuation::FINISH_END_TURN) {
-            finishBattleEndTurn(nowMs);
-        } else {
-            advanceBattleTurn(nowMs);
-        }
-    }
-    if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE &&
-        battlePhase == BattleViewModel::Phase::VICTORY &&
-        !battleExperienceAnimationActive && !battleLogPlaybackBusy() &&
-        !battleVictoryFinalizePending &&
-        battleContinuation == BattleContinuation::NONE) {
-        finishBattleVictory(nowMs);
-    }
-    if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE &&
-        battleVictoryFinalizePending && !battleLogPlaybackBusy()) {
-        battleVictoryFinalizePending = false;
-        finishBattleAfterFriendship(nowMs);
+    if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE) {
+        battleSession_.updateGauges(Platform::clock().millis());
+        applyBattleEffects(nowMs);
+        battleSession_.updateAttack(Platform::clock().millis());
+        applyBattleEffects(nowMs);
+        battleSession_.updateFlow(gameState, nowMs);
+        applyBattleEffects(nowMs);
     }
 
 #if STICKMON_HAS_CLAW
     if (autonomousExpedition &&
-        sceneFlow.current() == AppSceneFlow::Scene::BATTLE &&
-        battleThrownItem == Game::ItemId::COUNT &&
-        !battleAnimationActive && !battleHpAnimationActive &&
-        battleSwitchStage == BattleSwitchStage::NONE &&
-        !battleExperienceAnimationActive && !battleLogPlaybackBusy() &&
-        battleContinuation == BattleContinuation::NONE) {
+        sceneFlow.current() == AppSceneFlow::Scene::BATTLE && !battleSession_.inputBusy()) {
         // Reuse the game's deterministic battle AI for autonomous routes.
         // Existing animation and log gates keep each action interruptible.
-        switch (battlePhase) {
+        switch (battleSession_.state().battlePhase) {
         case BattleViewModel::Phase::ACTION:
             performBattleAttack(nowMs);
             break;
@@ -4397,7 +3605,7 @@ void AmoledApp::update(uint32_t nowMs) {
             break;
         case BattleViewModel::Phase::SWITCH_SELECT:
             for (uint8_t slot = 0; slot < gameState.teamCount; ++slot) {
-                if (slot != battlePlayerSlot &&
+                if (slot != battleSession_.state().battlePlayerSlot &&
                     !gameState.team[slot].fainted &&
                     gameState.team[slot].hpCur > 0) {
                     performBattleSwitch(slot, false, nowMs);
@@ -4406,7 +3614,7 @@ void AmoledApp::update(uint32_t nowMs) {
             }
             break;
         case BattleViewModel::Phase::BAG_SELECT:
-            battlePhase = BattleViewModel::Phase::ACTION;
+            battleSession_.showAction();
             break;
         }
     }
@@ -4441,11 +3649,10 @@ void AmoledApp::update(uint32_t nowMs) {
         toast = nullptr;
         requestRenderRows(
             sceneFlow.current() == AppSceneFlow::Scene::HOME
-                ? HOME_ROOM_TOP
+                ? HOME_STATUS_TOP
                 : sceneFlow.current() == AppSceneFlow::Scene::MAIN_MENU
                     ? MAIN_MENU_CONTENT_TOP : MENU_HEADER_HEIGHT,
-            sceneFlow.current() == AppSceneFlow::Scene::HOME
-                ? HOME_STATUS_TOP : 448);
+            AmoledUi::HEIGHT);
     }
     if (heartsUntil && static_cast<int32_t>(nowMs - heartsUntil) >= 0) {
         heartsUntil = 0;
@@ -4657,13 +3864,41 @@ void AmoledApp::selectExploreArea(uint8_t area, uint32_t nowMs) {
     loadExplorePreview(nowMs);
 }
 
-bool AmoledApp::startExploreRoute(uint32_t nowMs) {
-    if (!ExploreItemProgression::isAreaUnlocked(
-            selectedExploreArea, gameState)) {
-        return false;
+void AmoledApp::applyExploreEffects(uint32_t nowMs) {
+    const auto effects = exploreSession_.takeEffects();
+    if (effects.invalidateWorld) renderCaches_.exploreWorld.invalidate();
+    if (effects.mapChanged) resetExploreMapPresentation(nowMs);
+    if (effects.statusChanged) requestRenderRows(HOME_STATUS_TOP, AmoledUi::HEIGHT);
+    if (effects.fullRender) requestFullRender();
+    char message[64];
+    switch (effects.notice) {
+    case ExploreSession::Notice::MAP_FAILED: setToast(Ui::Amoled::MAP_FAILED, nowMs); break;
+    case ExploreSession::Notice::PET_REST: setToast(Ui::Menu::PET_REST, nowMs); break;
+    case ExploreSession::Notice::BAG_FULL: setToast(Ui::Amoled::BAG_FULL, nowMs); break;
+    case ExploreSession::Notice::COINS:
+        std::snprintf(message, sizeof(message), Ui::Explore::PICKUP_COIN_FMT,
+            static_cast<unsigned long>(effects.coins));
+        setToast(message, nowMs, 1300);
+        break;
+    case ExploreSession::Notice::ITEM:
+        std::snprintf(message, sizeof(message), Ui::Explore::PICKUP_FMT,
+            Game::ShopService::shortName(effects.item));
+        setToast(message, nowMs, 1300);
+        break;
+    case ExploreSession::Notice::NONE: break;
     }
+    if (effects.save) saveState();
+    if (effects.startBattle) startExploreBattle(effects.encounter, nowMs);
+    if (effects.completed && autonomousExpedition) leaveExploreRoute();
+    if (effects.startExit) beginExploreRouteExit(nowMs);
+    if (effects.startStep) beginExploreRouteStep(nowMs);
+}
+
+bool AmoledApp::startExploreRoute(uint32_t nowMs) {
+    const auto& route = exploreSession_.state();
+    if (!exploreSession_.begin(gameState, selectedExploreArea)) return false;
     exploreSessionActive = true;
-    exploreRoutePool = buildExplorePreviewPool(gameState, selectedExploreArea);
+    applyExploreEffects(nowMs);
 
     // Keep every possible encounter for this area resident before walking
     // starts. This moves sprite decompression to route entry instead of a
@@ -4671,7 +3906,7 @@ bool AmoledApp::startExploreRoute(uint32_t nowMs) {
     ExploreEncounters::Table encounterTable =
         ExploreEncounters::tableForArea(selectedExploreArea);
     constexpr uint8_t ROUTE_SPECIES_CAP = ExplorePool::MAX_SOURCE_ENTRIES + 1 +
-        sizeof(ExploreEcology::GROUP_PAIRS) / sizeof(uint16_t);
+        ExploreEcology::groupCompanionCapacity();
     uint16_t routeSpecies[ROUTE_SPECIES_CAP] = {};
     uint8_t routeSpeciesCount = 0;
     for (uint8_t index = 0; index < encounterTable.count; ++index) {
@@ -4689,117 +3924,30 @@ bool AmoledApp::startExploreRoute(uint32_t nowMs) {
             routeSpecies[routeSpeciesCount++] = speciesId;
         }
     }
-    exploreRouteMapBlock = 0;
-    exploreRouteMapBlockCount = exploreMapCountForRoll(
-        selectedExploreArea,
-        static_cast<uint8_t>(GameRandom::range(0, 100)));
-    exploreRouteMapEncounterCount = 0;
-    exploreRouteEncounterCooldownSteps = 0;
-    exploreRouteGuaranteedEncounterIndex = 0;
-    exploreRouteGuaranteedEncounterPending = false;
-    exploreRouteExpeditionSeed = static_cast<uint32_t>(
-        GameRandom::range(1, 0x7FFFFFFFU));
-    exploreRoutePendingEntryEdge = static_cast<ExploreMapGenerator::Edge>(
-        (exploreRouteExpeditionSeed >> 8) & 0x03U);
-    exploreRoutePendingFrostLadder = false;
-    exploreRoutePendingFrostFall = false;
-    exploreRouteFrostFallAtMs = 0;
-
-    exploreRouteIndex = 0;
-    exploreRouteSteps = 0;
-    exploreRouteMoving = false;
-    exploreRouteAutoWalk = false;
-    exploreRouteExiting = false;
-    exploreRouteExitStartedMs = 0;
-    exploreRouteExitDurationMs = 0;
-    exploreRoutePlayerWalkActive = false;
-    exploreRoutePaused = false;
-    exploreRouteComplete = false;
-    exploreRouteExitConfirm = false;
-    exploreRouteIceSliding = false;
-    exploreRouteIceDx = 0;
-    exploreRouteIceDy = 0;
-    exploreRoutePickupIndex = 0;
-    exploreRoutePickupItem = EXPLORE_PICKUP_NONE;
-    exploreRoutePickupAvailable = false;
-    exploreRouteBossScheduled = false;
-    exploreRouteBossIndex = 0;
-    exploreRouteBossPending = false;
-    exploreRoutePityEligible = false;
-    exploreRouteBossSpeciesId = 0;
-    exploreRouteBossLevel = 0;
-    exploreRouteBossExperiencePercent = 100;
-    exploreRouteSpecialKind = ExploreSpecial::Kind::NONE;
-    exploreItemEffects.reset();
-    bool bossLengthEligible = ExploreRunRules::allowsRegionalBoss(
-        exploreRouteMapBlockCount,
-        EXPLORE_MAP_MAX_COUNT[selectedExploreArea]);
-    if (bossLengthEligible) {
-        uint32_t slotIndex = ExploreSpecial::slotIndexFor(
-            gameState.gameMinutesTotal);
-        if (ExploreBossPity::syncSlot(gameState, slotIndex)) saveState();
-        bool ownsMew = false;
-        for (uint8_t slot = 0; slot < gameState.teamCount &&
-             slot < Game::TEAM_CAP; ++slot) {
-            ownsMew = ownsMew || gameState.team[slot].speciesId ==
-                       ExploreSpecial::MEW;
-        }
-        for (uint8_t slot = 0; slot < gameState.storageCount &&
-             slot < Game::STORAGE_CAP; ++slot) {
-            ownsMew = ownsMew || gameState.storage[slot].speciesId ==
-                       ExploreSpecial::MEW;
-        }
-        exploreRouteSpecialKind = ExploreSpecial::kindForArea(
-            selectedExploreArea, gameState.specialBossDefeatedMask,
-            slotIndex, gameState.roamingRerollCounts, ownsMew);
-        if (exploreRouteSpecialKind != ExploreSpecial::Kind::NONE) {
-            ExploreSpecial::Config config = ExploreSpecial::configFor(
-                exploreRouteSpecialKind);
-            exploreRouteBossScheduled = true;
-            exploreRouteBossSpeciesId = config.speciesId;
-            exploreRouteBossLevel = ExploreSpecial::encounterLevel(
-                exploreRouteSpecialKind,
-                ExploreBoss::configForArea(selectedExploreArea).level);
-            exploreRouteBossExperiencePercent = config.experiencePercent;
-        } else {
-            uint8_t misses = gameState.normalBossMissCount[selectedExploreArea];
-            uint32_t chance = ExploreBossPity::chanceForMisses(misses);
-            if (ExploreBossPity::requiresGuaranteedEligibleRun(misses) ||
-                GameRandom::range(0, ExploreBoss::SPAWN_ROLL_MAX) < chance) {
-                const ExploreBoss::Config& config =
-                    ExploreBoss::configForArea(selectedExploreArea);
-                exploreRouteBossScheduled = true;
-                exploreRouteBossSpeciesId = ExploreBoss::speciesForRoll(
-                    selectedExploreArea,
-                    GameRandom::range(0, ExploreBoss::CANDIDATE_COUNT));
-                exploreRouteBossLevel = config.level;
-                exploreRouteBossExperiencePercent = config.experiencePercent;
-            } else {
-                exploreRoutePityEligible = true;
-            }
-        }
-    }
-
-    if (exploreRouteBossScheduled && exploreRouteBossSpeciesId != 0) {
+    if (route.exploreRouteBossScheduled && route.exploreRouteBossSpeciesId != 0) {
         bool bossAlreadyIncluded = false;
         for (uint8_t index = 0; index < routeSpeciesCount; ++index) {
-            if (routeSpecies[index] == exploreRouteBossSpeciesId) {
+            if (routeSpecies[index] == route.exploreRouteBossSpeciesId) {
                 bossAlreadyIncluded = true;
                 break;
             }
         }
         if (!bossAlreadyIncluded &&
             routeSpeciesCount < ExplorePool::MAX_SOURCE_ENTRIES + 1) {
-            routeSpecies[routeSpeciesCount++] = exploreRouteBossSpeciesId;
+            routeSpecies[routeSpeciesCount++] = route.exploreRouteBossSpeciesId;
         }
     }
     // A visible pool member may bring a companion absent from the encounter
     // table. Decode/pin that artwork at entry, outside walking frame loops.
-    for (uint8_t index = 0; index < exploreRoutePool.count; ++index) {
-        const uint16_t partner = ExploreEcology::groupPartner(exploreRoutePool.entries[index].speciesId);
-        if (!partner || std::find(routeSpecies, routeSpecies + routeSpeciesCount, partner) !=
-                routeSpecies + routeSpeciesCount) continue;
-        if (routeSpeciesCount < ROUTE_SPECIES_CAP) routeSpecies[routeSpeciesCount++] = partner;
+    for (uint8_t index = 0; index < route.exploreRoutePool.count; ++index) {
+        const auto* family = ExploreEcology::groupFamily(route.exploreRoutePool.entries[index].speciesId);
+        if (!family) continue;
+        for (uint8_t member = 0; member < family->count; ++member) {
+            const uint16_t species = family->species[member];
+            if (std::find(routeSpecies, routeSpecies + routeSpeciesCount, species) !=
+                    routeSpecies + routeSpeciesCount) continue;
+            if (routeSpeciesCount < ROUTE_SPECIES_CAP) routeSpecies[routeSpeciesCount++] = species;
+        }
     }
     PokemonSprites::setPinnedDynamicSpecies(routeSpecies, routeSpeciesCount);
     PokemonSprites::preloadDynamicSpecies(routeSpecies, routeSpeciesCount);
@@ -4812,12 +3960,7 @@ bool AmoledApp::startExploreRoute(uint32_t nowMs) {
     AudioManager::ins().preloadSfx(SfxCue::UI_CONFIRM);
 
     if (!generateExploreRouteMap(nowMs)) return false;
-    exploreRoutePetFrame = 0;
-    exploreRouteMapFrame = 0;
-    nextExploreRouteFrameMs = nowMs;
-    nextExploreRouteMapFrameMs = nowMs + EXPLORE_ROUTE_MAP_FRAME_MS;
-    nextExploreRouteBossFrameMs = nowMs;
-    exploreRouteBossWasMoving = false;
+    explorePresenter_.startRun(nowMs);
     const uint32_t exploredAt =
         static_cast<uint32_t>(gameState.gameMinutesTotal * 60UL);
     for (uint8_t slot = 0;
@@ -4835,1060 +3978,168 @@ bool AmoledApp::startExploreRoute(uint32_t nowMs) {
 }
 
 bool AmoledApp::generateExploreRouteMap(uint32_t nowMs) {
-    uint32_t mapSeed = ExploreMapGenerator::deriveSeed(
-        exploreRouteExpeditionSeed, exploreRouteMapBlock,
-        selectedExploreArea);
-    bool generated = false;
-    for (uint32_t salt : EXPLORE_MAP_GENERATION_RETRY_SALTS) {
-        uint32_t candidateSeed = mapSeed ^ salt;
-        if (candidateSeed == 0) candidateSeed = EXPLORE_MAP_GENERATION_SAFE_SEED;
-        if (ExploreMapGenerator::generate(
-                candidateSeed, exploreRoutePendingEntryEdge,
-                selectedExploreArea, exploreRouteMap,
-                {exploreRouteMapBlock, exploreRouteMapBlockCount,
-                 exploreRoutePendingFrostLadder})) {
-            generated = true;
-            break;
-        }
-    }
-    if (!generated) {
-        generated = ExploreMapGenerator::generate(
-            EXPLORE_MAP_GENERATION_SAFE_SEED,
-            exploreRoutePendingEntryEdge, selectedExploreArea,
-            exploreRouteMap,
-            {exploreRouteMapBlock, exploreRouteMapBlockCount,
-             exploreRoutePendingFrostLadder});
-    }
-    if (!generated || exploreRouteMap.pathCount == 0) {
-        setToast(Ui::Amoled::MAP_FAILED, nowMs);
-        return false;
-    }
+    const bool generated = exploreSession_.generateMap(gameState, selectedExploreArea);
+    applyExploreEffects(nowMs);
+    return generated;
+}
 
-    exploreRoutePath = 0;
-    if (exploreRouteMapBlock + 1 == exploreRouteMapBlockCount &&
-        exploreRouteBossScheduled) {
-        uint8_t bossPaths[ExploreMapGenerator::MAX_PATH_COUNT] = {};
-        uint8_t bossPathCount = 0;
-        for (uint8_t path = 0; path < exploreRouteMap.pathCount; ++path) {
-            if (ExploreBoss::canPlaceOnPath(
-                    exploreRouteMap.paths[path].pointCount)) {
-                bossPaths[bossPathCount++] = path;
-            }
-        }
-        if (bossPathCount > 0) {
-            exploreRoutePath = bossPaths[
-                GameRandom::range(0, bossPathCount)];
-        }
-    } else if (exploreRouteMap.pathCount > 1) {
-        exploreRoutePath = static_cast<uint8_t>(
-            GameRandom::range(0, exploreRouteMap.pathCount));
-    }
-
-    const ExploreMapGenerator::Path& path =
-        exploreRouteMap.paths[exploreRoutePath];
-    if (path.pointCount == 0) {
-        setToast(Ui::Amoled::MAP_FAILED, nowMs);
-        return false;
-    }
-    exploreRouteMapEncounterCount = 0;
-    exploreRouteBossPending = false;
-    exploreRouteBossIndex = 0;
-    if (exploreRouteMapBlock + 1 == exploreRouteMapBlockCount &&
-        exploreRouteBossScheduled && ExploreBoss::canPlaceOnPath(
-            path.pointCount)) {
-        uint8_t preferred = ExploreBoss::routeIndex(path.pointCount);
-        exploreRouteBossIndex = ExploreIceSlide::nearestNonIceIndex(
-            exploreRouteMap, path, preferred, 1,
-            static_cast<uint8_t>(path.pointCount - 2));
-        if (exploreRouteBossIndex != ExploreIceSlide::INVALID_INDEX) {
-            exploreRouteBossPending = true;
-        }
-    }
-
-    exploreRouteIndex = 0;
-    exploreRouteMoving = false;
-    exploreRouteFollowerMoving = false;
-    exploreRouteIceSliding = false;
-    exploreRouteIceDx = 0;
-    exploreRouteIceDy = 0;
-    exploreRouteDirection = exploreInwardDirection(exploreRouteMap.entry.edge);
-    ExploreRouteGeometry::WorldPoint start =
-        ExploreRouteGeometry::pathPoint(path, 0);
-    exploreRouteWorldX = exploreRouteFromX = exploreRouteTargetX = start.x;
-    exploreRouteWorldY = exploreRouteFromY = exploreRouteTargetY = start.y;
-    if (exploreRoutePendingFrostFall) {
-        exploreRouteIndex = ExploreIceSlide::landingIndex(
-            exploreRouteMap, path,
-            exploreRouteMap.seed ^ exploreRouteExpeditionSeed);
-        ExploreRouteGeometry::WorldPoint landing =
-            ExploreRouteGeometry::pathPoint(path, exploreRouteIndex);
-        exploreRouteWorldX = exploreRouteFromX = exploreRouteTargetX = landing.x;
-        exploreRouteWorldY = exploreRouteFromY = exploreRouteTargetY = landing.y;
-        exploreRoutePendingFrostFall = false;
-    }
-    exploreRouteFollowerWorldX = exploreRouteFollowerFromX =
-        exploreRouteFollowerTargetX = start.x;
-    exploreRouteFollowerWorldY = exploreRouteFollowerFromY =
-        exploreRouteFollowerTargetY = start.y;
-    exploreRouteFollowerDirection = exploreRouteDirection;
-    const float followerOffset =
-        ExploreRouteGeometry::TILE_SIZE * 0.75f;
-    switch (static_cast<PokemonSprites::WalkDirection>(
-                exploreRouteFollowerDirection)) {
-    case PokemonSprites::WalkDirection::LEFT:
-        exploreRouteFollowerWorldX += followerOffset;
-        break;
-    case PokemonSprites::WalkDirection::UP:
-        exploreRouteFollowerWorldY += followerOffset;
-        break;
-    case PokemonSprites::WalkDirection::RIGHT:
-        exploreRouteFollowerWorldX -= followerOffset;
-        break;
-    case PokemonSprites::WalkDirection::DOWN:
-    default:
-        exploreRouteFollowerWorldY -= followerOffset;
-        break;
-    }
-    exploreRouteFollowerWorldX = std::clamp(
-        exploreRouteFollowerWorldX, 0.0f,
-        static_cast<float>(ExploreMapGenerator::WIDTH *
-                           ExploreRouteGeometry::TILE_SIZE));
-    exploreRouteFollowerWorldY = std::clamp(
-        exploreRouteFollowerWorldY, 0.0f,
-        static_cast<float>(ExploreMapGenerator::HEIGHT *
-                           ExploreRouteGeometry::TILE_SIZE));
-    exploreRouteFollowerFromX = exploreRouteFollowerTargetX =
-        exploreRouteFollowerWorldX;
-    exploreRouteFollowerFromY = exploreRouteFollowerTargetY =
-        exploreRouteFollowerWorldY;
-    exploreRouteFollowerFrame = 0;
-    nextExploreRouteBossFrameMs = nowMs;
-    exploreRouteBossWasMoving = false;
-    updateExploreRouteCamera();
-    placeExploreRoutePickup();
+void AmoledApp::resetExploreMapPresentation(uint32_t nowMs) {
+    const auto& route = exploreSession_.state();
     uint8_t hiddenPoolMask = 0;
-    for (uint8_t i = 0; i < exploreRoutePool.count; ++i) {
-        const auto& entry = exploreRoutePool.entries[i];
+    for (uint8_t i = 0; i < route.exploreRoutePool.count; ++i) {
+        const auto& entry = route.exploreRoutePool.entries[i];
         if (ExplorePool::isRare(entry.rarity) && !hasEncounteredSpecies(entry.speciesId))
             hiddenPoolMask |= 1U << i;
     }
-    exploreEcology.reset(exploreRouteMap, exploreRoutePath, exploreRoutePool,
-                         hiddenPoolMask, nowMs);
-    exploreGrass.reset(nowMs);
-    exploreRouteDaylight = ExploreDaylight::at(gameState.gameMinutesTotal, selectedExploreArea);
+    explorePresenter_.resetMap(route, gameState, selectedExploreArea, hiddenPoolMask, nowMs);
     requestFullRender();
-    return true;
-}
-
-void AmoledApp::placeExploreRoutePickup() {
-    exploreRoutePickupIndex = 0;
-    exploreRoutePickupItem = EXPLORE_PICKUP_NONE;
-    exploreRoutePickupAvailable = false;
-    exploreRouteGuaranteedEncounterIndex = 0;
-    exploreRouteGuaranteedEncounterPending = false;
-
-    if (exploreRouteMap.pathCount == 0) return;
-    const ExploreMapGenerator::Path& path =
-        exploreRouteMap.paths[exploreRoutePath];
-    if (path.pointCount < 2) return;
-
-    if (exploreRouteBossPending) return;
-
-    if (exploreRouteMapBlock + 1 == exploreRouteMapBlockCount) {
-        uint8_t preferred = path.pointCount >= 3
-            ? static_cast<uint8_t>(path.pointCount - 2)
-            : static_cast<uint8_t>(path.pointCount - 1);
-        uint8_t last = preferred;
-        exploreRoutePickupIndex = ExploreIceSlide::nearestNonIceIndex(
-            exploreRouteMap, path, preferred, 1, last);
-        if (exploreRoutePickupIndex == ExploreIceSlide::INVALID_INDEX) {
-            exploreRoutePickupIndex = ExploreIceSlide::nearestNonIceIndex(
-                exploreRouteMap, path, preferred, 1,
-                static_cast<uint8_t>(path.pointCount - 1));
-        }
-        if (exploreRoutePickupIndex == ExploreIceSlide::INVALID_INDEX) return;
-        exploreRoutePickupItem = rollExplorePickup(
-            selectedExploreArea, gameState.stepsToday);
-        if (exploreRoutePickupItem == EXPLORE_PICKUP_NONE) {
-            exploreRoutePickupItem = EXPLORE_PICKUP_COIN;
-        }
-        exploreRoutePickupAvailable = true;
-        return;
-    }
-
-    // Match Stick: place the pickup in the middle portion of the route and
-    // move it to the nearest non-ice point so sliding cannot skip it.
-    if (path.pointCount < 3) {
-        exploreRoutePickupIndex = ExploreIceSlide::nearestNonIceIndex(
-            exploreRouteMap, path,
-            static_cast<uint8_t>(path.pointCount - 1),
-            1, static_cast<uint8_t>(path.pointCount - 1));
-        if (exploreRoutePickupIndex == ExploreIceSlide::INVALID_INDEX) return;
-        exploreRoutePickupItem = rollExplorePickup(
-            selectedExploreArea, gameState.stepsToday);
-        exploreRoutePickupAvailable =
-            exploreRoutePickupItem != EXPLORE_PICKUP_NONE;
-        return;
-    }
-
-    bool choosePickup = GameRandom::range(0, 10000) <
-                        EXPLORE_MAP_PICKUP_CHANCE;
-    if (!choosePickup && exploreCanScheduleGuaranteedEncounter(
-            path.pointCount, exploreRouteEncounterCooldownSteps)) {
-        uint8_t first = static_cast<uint8_t>(
-            exploreRouteEncounterCooldownSteps + 1);
-        uint8_t last = static_cast<uint8_t>(path.pointCount - 2);
-        exploreRouteGuaranteedEncounterIndex = ExploreIceSlide::nearestNonIceIndex(
-            exploreRouteMap, path,
-            exploreGuaranteedEncounterIndex(
-                path.pointCount, exploreRouteEncounterCooldownSteps),
-            first, last);
-        if (exploreRouteGuaranteedEncounterIndex !=
-            ExploreIceSlide::INVALID_INDEX) {
-            exploreRouteGuaranteedEncounterPending = true;
-            return;
-        }
-    }
-
-    uint8_t first = std::max<uint8_t>(1, path.pointCount / 3);
-    uint8_t last = std::min<uint8_t>(path.pointCount - 2,
-                                     path.pointCount * 3 / 4);
-    if (first > last) first = last = path.pointCount / 2;
-
-    uint8_t preferred = static_cast<uint8_t>(
-        GameRandom::range(first, static_cast<uint32_t>(last) + 1));
-    exploreRoutePickupIndex = ExploreIceSlide::nearestNonIceIndex(
-        exploreRouteMap, path, preferred, first, last);
-    if (exploreRoutePickupIndex == ExploreIceSlide::INVALID_INDEX) {
-        exploreRoutePickupIndex = ExploreIceSlide::nearestNonIceIndex(
-            exploreRouteMap, path, preferred, 1,
-            static_cast<uint8_t>(path.pointCount - 1));
-    }
-    if (exploreRoutePickupIndex == ExploreIceSlide::INVALID_INDEX) return;
-
-    exploreRoutePickupItem = rollExplorePickup(
-        selectedExploreArea, gameState.stepsToday);
-    exploreRoutePickupAvailable =
-        exploreRoutePickupItem != EXPLORE_PICKUP_NONE;
 }
 
 bool AmoledApp::beginExploreRouteStep(uint32_t nowMs) {
-    if (exploreRouteMoving || exploreRoutePaused || exploreRouteComplete ||
-        exploreRoutePendingFrostFall ||
-        exploreRouteMap.pathCount == 0 ||
-        exploreRoutePath >= exploreRouteMap.pathCount) {
+    const auto& route = exploreSession_.state();
+    if (!exploreSession_.beginStep(gameState)) {
+        applyExploreEffects(nowMs);
         return false;
     }
-    const ExploreMapGenerator::Path& path =
-        exploreRouteMap.paths[exploreRoutePath];
-    if (exploreRouteIndex + 1 >= path.pointCount) {
-        if (exploreRouteMapBlock + 1 >= exploreRouteMapBlockCount) {
-            beginExploreRouteExit(nowMs);
-        } else {
-            finishExploreRouteAtEnd(nowMs);
-        }
-        requestRenderRows(HOME_HEADER_HEIGHT, 448);
-        return false;
-    }
-
-    if (!exploreRouteIceSliding) {
-        int8_t dx = 0;
-        int8_t dy = 0;
-        if (ExploreIceSlide::begins(
-                exploreRouteMap, path, exploreRouteIndex, dx, dy)) {
-            exploreRouteIceSliding = true;
-            exploreRouteIceDx = dx;
-            exploreRouteIceDy = dy;
-        }
-    }
-
-    exploreRouteFromX = exploreRouteWorldX;
-    exploreRouteFromY = exploreRouteWorldY;
-    exploreRouteFollowerFromX = exploreRouteFollowerWorldX;
-    exploreRouteFollowerFromY = exploreRouteFollowerWorldY;
-    ++exploreRouteIndex;
-    ExploreRouteGeometry::WorldPoint target =
-        ExploreRouteGeometry::pathPoint(path, exploreRouteIndex);
-    exploreRouteTargetX = target.x;
-    exploreRouteTargetY = target.y;
-    exploreRouteFollowerTargetX = exploreRouteFollowerFromX;
-    exploreRouteFollowerTargetY = exploreRouteFollowerFromY;
-    if (exploreRouteIndex >= EXPLORE_ROUTE_FOLLOWER_GAP_STEPS) {
-        ExploreRouteGeometry::WorldPoint followerTarget =
-            ExploreRouteGeometry::pathPoint(
-                path, static_cast<uint8_t>(
-                          exploreRouteIndex - EXPLORE_ROUTE_FOLLOWER_GAP_STEPS));
-        exploreRouteFollowerTargetX = followerTarget.x;
-        exploreRouteFollowerTargetY = followerTarget.y;
-    }
-    exploreRouteDirection = exploreDirectionForDelta(
-        exploreRouteTargetX - exploreRouteFromX,
-        exploreRouteTargetY - exploreRouteFromY,
-        exploreRouteDirection);
-    exploreRouteFollowerDirection = exploreDirectionForDelta(
-        exploreRouteFollowerTargetX - exploreRouteFollowerFromX,
-        exploreRouteFollowerTargetY - exploreRouteFollowerFromY,
-        exploreRouteFollowerDirection);
-    exploreRouteMoveStartedMs = nowMs;
-    nextExploreRouteFrameMs = nowMs;
-    exploreRouteMoving = true;
-    exploreRouteFollowerMoving =
-        std::fabs(exploreRouteFollowerTargetX - exploreRouteFollowerFromX) >= 0.01f ||
-        std::fabs(exploreRouteFollowerTargetY - exploreRouteFollowerFromY) >= 0.01f;
+    explorePresenter_.beginStep(route, nowMs);
 #if STICKMON_ENABLE_DEBUG_FEATURES && STICKMON_ENABLE_TRACE_LOGS
+    const auto& path = route.exploreRouteMap.paths[route.exploreRoutePath];
     const ExploreMapGenerator::Point& fromPoint =
-        path.points[exploreRouteIndex - 1];
+        path.points[route.exploreRouteIndex - 1];
     const ExploreMapGenerator::Point& targetPoint =
-        path.points[exploreRouteIndex];
+        path.points[route.exploreRouteIndex];
     Platform::logf(
         "[AmoledExploreDiag] step block=%u path=%u index=%u/%u "
         "tileFrom=(%u,%u) tileTarget=(%u,%u) "
         "from=(%.2f,%.2f) target=(%.2f,%.2f) delta=(%.2f,%.2f) "
         "dir=%u followerFrom=(%.2f,%.2f) followerTarget=(%.2f,%.2f) "
         "followerDir=%u\n",
-        static_cast<unsigned>(exploreRouteMapBlock),
-        static_cast<unsigned>(exploreRoutePath),
-        static_cast<unsigned>(exploreRouteIndex),
+        static_cast<unsigned>(route.exploreRouteMapBlock),
+        static_cast<unsigned>(route.exploreRoutePath),
+        static_cast<unsigned>(route.exploreRouteIndex),
         static_cast<unsigned>(path.pointCount),
         static_cast<unsigned>(fromPoint.x), static_cast<unsigned>(fromPoint.y),
         static_cast<unsigned>(targetPoint.x),
         static_cast<unsigned>(targetPoint.y),
-        static_cast<double>(exploreRouteFromX),
-        static_cast<double>(exploreRouteFromY),
-        static_cast<double>(exploreRouteTargetX),
-        static_cast<double>(exploreRouteTargetY),
-        static_cast<double>(exploreRouteTargetX - exploreRouteFromX),
-        static_cast<double>(exploreRouteTargetY - exploreRouteFromY),
-        static_cast<unsigned>(exploreRouteDirection),
-        static_cast<double>(exploreRouteFollowerFromX),
-        static_cast<double>(exploreRouteFollowerFromY),
-        static_cast<double>(exploreRouteFollowerTargetX),
-        static_cast<double>(exploreRouteFollowerTargetY),
-        static_cast<unsigned>(exploreRouteFollowerDirection));
+        static_cast<double>(explorePresenter_.state().exploreRouteFromX),
+        static_cast<double>(explorePresenter_.state().exploreRouteFromY),
+        static_cast<double>(explorePresenter_.state().exploreRouteTargetX),
+        static_cast<double>(explorePresenter_.state().exploreRouteTargetY),
+        static_cast<double>(explorePresenter_.state().exploreRouteTargetX - explorePresenter_.state().exploreRouteFromX),
+        static_cast<double>(explorePresenter_.state().exploreRouteTargetY - explorePresenter_.state().exploreRouteFromY),
+        static_cast<unsigned>(explorePresenter_.state().exploreRouteDirection),
+        static_cast<double>(explorePresenter_.state().exploreRouteFollowerFromX),
+        static_cast<double>(explorePresenter_.state().exploreRouteFollowerFromY),
+        static_cast<double>(explorePresenter_.state().exploreRouteFollowerTargetX),
+        static_cast<double>(explorePresenter_.state().exploreRouteFollowerTargetY),
+        static_cast<unsigned>(explorePresenter_.state().exploreRouteFollowerDirection));
 #endif
+
     return true;
 }
 
 void AmoledApp::beginExploreRouteExit(uint32_t nowMs) {
-    if (exploreRouteExiting || exploreRouteComplete ||
-        exploreRoutePath >= exploreRouteMap.pathCount) {
-        return;
-    }
-    const ExploreMapGenerator::Path& path =
-        exploreRouteMap.paths[exploreRoutePath];
-    exploreRouteFromX = exploreRouteWorldX;
-    exploreRouteFromY = exploreRouteWorldY;
-    exploreRouteTargetX = exploreRouteWorldX;
-    exploreRouteTargetY = exploreRouteWorldY;
-    switch (path.exit.edge) {
-    case ExploreMapGenerator::Edge::TOP:
-        exploreRouteTargetY = -EXPLORE_ROUTE_EXIT_MARGIN;
-        break;
-    case ExploreMapGenerator::Edge::RIGHT:
-        exploreRouteTargetX = EXPLORE_ROUTE_WORLD_WIDTH + EXPLORE_ROUTE_EXIT_MARGIN;
-        break;
-    case ExploreMapGenerator::Edge::BOTTOM:
-        exploreRouteTargetY = EXPLORE_ROUTE_WORLD_HEIGHT + EXPLORE_ROUTE_EXIT_MARGIN;
-        break;
-    case ExploreMapGenerator::Edge::LEFT:
-        exploreRouteTargetX = -EXPLORE_ROUTE_EXIT_MARGIN;
-        break;
-    }
-    exploreRouteFollowerFromX = exploreRouteFollowerWorldX;
-    exploreRouteFollowerFromY = exploreRouteFollowerWorldY;
-    exploreRouteFollowerTargetX = exploreRouteTargetX;
-    exploreRouteFollowerTargetY = exploreRouteTargetY;
-    exploreRouteDirection = exploreDirectionForDelta(
-        exploreRouteTargetX - exploreRouteFromX,
-        exploreRouteTargetY - exploreRouteFromY,
-        exploreRouteDirection);
-    exploreRouteFollowerDirection = exploreDirectionForDelta(
-        exploreRouteFollowerTargetX - exploreRouteFollowerFromX,
-        exploreRouteFollowerTargetY - exploreRouteFollowerFromY,
-        exploreRouteFollowerDirection);
-    const float leaderDistance = std::hypot(
-        exploreRouteTargetX - exploreRouteFromX,
-        exploreRouteTargetY - exploreRouteFromY);
-    const float followerDistance = std::hypot(
-        exploreRouteFollowerTargetX - exploreRouteFollowerFromX,
-        exploreRouteFollowerTargetY - exploreRouteFollowerFromY);
-    const bool hasFollower = exploreRouteHasCompanion(gameState);
-    const float longestDistance = hasFollower
-        ? std::max(leaderDistance, followerDistance) : leaderDistance;
-    exploreRouteExitDurationMs = static_cast<uint32_t>(std::max(
-        500.0f, longestDistance / EXPLORE_ROUTE_EXIT_SPEED * 1000.0f));
-    exploreRouteExitStartedMs = nowMs;
-    exploreRouteMoveStartedMs = nowMs;
-    nextExploreRouteFrameMs = nowMs;
-    exploreRouteMoving = true;
-    exploreRouteFollowerMoving = hasFollower && followerDistance > 0.01f;
-    exploreRouteExiting = true;
-    exploreRouteAutoWalk = false;
-    exploreRoutePlayerWalkActive = false;
+    if (!exploreSession_.beginExit()) return;
+    explorePresenter_.beginExit(exploreSession_.state(), ExploreSession::hasCompanion(gameState), nowMs);
     requestFullRender();
 }
 
-bool AmoledApp::advanceExploreRouteWalkFrames(uint32_t nowMs) {
-    if (!exploreRouteMoving ||
-        static_cast<int32_t>(nowMs - nextExploreRouteFrameMs) < 0) {
-        return false;
-    }
-    exploreRoutePetFrame = static_cast<uint8_t>(exploreRoutePetFrame + 1);
-    if (exploreRouteFollowerMoving) {
-        exploreRouteFollowerFrame = static_cast<uint8_t>(
-            exploreRouteFollowerFrame + 1);
-    }
-    nextExploreRouteFrameMs = nowMs + EXPLORE_ROUTE_FRAME_MS;
-    return true;
-}
 
 void AmoledApp::updateExploreEcology(uint32_t nowMs) {
+    const auto& route = exploreSession_.state();
     const bool active = sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_ROUTE &&
-        !exploreRoutePaused && !exploreRouteComplete && !exploreRouteExitConfirm &&
-        !exploreRouteExiting && !expeditionFade.active();
-    ExploreEcology::Pose before[ExploreEcology::CAPACITY];
-    for (uint8_t i = 0; i < exploreEcology.count(); ++i)
-        before[i] = exploreEcology.pose(i);
-    exploreEcology.update(nowMs, active, exploreRouteWorldX, exploreRouteWorldY,
-        {float(exploreRouteCameraX), float(exploreRouteCameraY),
-         AmoledUi::WIDTH / float(AmoledUi::RESOURCE_SCALE),
-         EXPLORE_ROUTE_VIEW_HEIGHT / float(AmoledUi::RESOURCE_SCALE)});
-    ExploreGrass::Frame grassBefore[ExploreMapGenerator::CELL_COUNT];
-    for (uint16_t cell = 0; cell < ExploreMapGenerator::CELL_COUNT; ++cell)
-        grassBefore[cell] = exploreGrass.frame(cell);
-    ExploreGrass::Contact contacts[ExploreGrass::ACTORS]{};
-    const auto grounded = [](uint16_t species) {
-        return ExploreEcology::locomotionForSpecies(species) == ExploreEcology::Locomotion::GROUND;
-    };
-    const uint8_t leaderSlot = exploreRouteLeaderSlot(gameState);
-    contacts[0] = {exploreRouteWorldX, exploreRouteActorFootWorldY(exploreRouteWorldY),
-        grounded(gameState.team[leaderSlot].speciesId)};
-    contacts[1] = {exploreRouteFollowerWorldX, exploreRouteActorFootWorldY(exploreRouteFollowerWorldY),
-        exploreRouteHasCompanion(gameState) && grounded(gameState.team[1].speciesId)};
-    for (uint8_t i = 0; i < exploreEcology.count(); ++i) {
-        const auto& pose = exploreEcology.pose(i);
-        contacts[i + 2] = {pose.x, pose.y,
-            !pose.hidden && !pose.airborne && !pose.absent && pose.lift <= 0 && grounded(pose.speciesId)};
-    }
-    exploreGrass.update(exploreRouteMap, nowMs, active, contacts, ExploreGrass::ACTORS);
-    if (!active) return;
-    constexpr int grassTile = ExploreRouteGeometry::TILE_SIZE * AmoledUi::RESOURCE_SCALE;
-    for (uint16_t cell = 0; cell < ExploreMapGenerator::CELL_COUNT; ++cell) {
-        const auto frame = exploreGrass.frame(cell);
-        if (grassBefore[cell] == frame) continue;
-        const bool high = frame.kind == ExploreGrass::Kind::HIGH ||
-            grassBefore[cell].kind == ExploreGrass::Kind::HIGH;
-        const int x = (int(cell % ExploreMapGenerator::WIDTH) * ExploreRouteGeometry::TILE_SIZE -
-            exploreRouteCameraX) * AmoledUi::RESOURCE_SCALE;
-        const int y = (int(cell / ExploreMapGenerator::WIDTH) * ExploreRouteGeometry::TILE_SIZE -
-            exploreRouteCameraY) * AmoledUi::RESOURCE_SCALE;
-        requestRenderRect(x, std::max(0, y - (high ? grassTile : 0)), x + grassTile,
-            std::min(EXPLORE_ROUTE_VIEW_HEIGHT, y + grassTile));
-    }
-    auto model = exploreRouteModel();
-    for (uint8_t i = 0; i < exploreEcology.count(); ++i) {
-        if (ExploreEcology::samePose(before[i], exploreEcology.pose(i))) continue;
-        const auto current = exploreRouteWildlifeBounds(model, i);
-        model.wildlife[i] = before[i];
-        const auto previous = exploreRouteWildlifeBounds(model, i);
-        model.wildlife[i] = exploreEcology.pose(i);
-        if (!previous.width || !current.width) {
-            const auto& visible = previous.width ? previous : current;
-            if (visible.width) requestRenderRect(visible.x, std::max(0, visible.y),
-                visible.x + visible.width,
-                std::min(EXPLORE_ROUTE_VIEW_HEIGHT, visible.y + visible.height));
-            continue;
-        }
-        requestRenderRect(std::min(previous.x, current.x),
-            std::max(0, std::min(previous.y, current.y)),
-            std::max(previous.x + previous.width, current.x + current.width),
-            std::min(EXPLORE_ROUTE_VIEW_HEIGHT,
-                std::max(previous.y + previous.height, current.y + current.height)));
-    }
+        !route.exploreRoutePaused && !route.exploreRouteComplete && !route.exploreRouteExitConfirm &&
+        !route.exploreRouteExiting && !expeditionFade.active();
+    explorePresenter_.updateEcology(route, gameState, selectedExploreArea, active, nowMs);
+    applyExplorePresentationDamage();
 }
 
 void AmoledApp::updateExploreRoute(uint32_t nowMs) {
+    const auto& route = exploreSession_.state();
     if (sceneFlow.current() != AppSceneFlow::Scene::EXPLORE_ROUTE ||
-        exploreRoutePaused ||
-        exploreRouteComplete) {
+        route.exploreRoutePaused || route.exploreRouteComplete) return;
+    if (route.exploreRoutePendingFrostFall) {
+        exploreSession_.updatePendingFall(gameState, nowMs);
+        applyExploreEffects(nowMs);
         return;
     }
-    if (exploreRoutePendingFrostFall) {
-        if (static_cast<int32_t>(nowMs - exploreRouteFrostFallAtMs) >= 0) {
-            finishExploreRouteAtEnd(nowMs);
+    const bool exiting = route.exploreRouteExiting;
+#if STICKMON_ENABLE_DEBUG_FEATURES && STICKMON_ENABLE_TRACE_LOGS
+    const int previousCameraX = explorePresenter_.state().exploreRouteCameraX;
+    const int previousCameraY = explorePresenter_.state().exploreRouteCameraY;
+#endif
+    const auto motion = explorePresenter_.updateMotion(route, gameState, selectedExploreArea, nowMs);
+#if STICKMON_ENABLE_DEBUG_FEATURES && STICKMON_ENABLE_TRACE_LOGS
+    const auto& presentation = explorePresenter_.state();
+    if (previousCameraX != presentation.exploreRouteCameraX ||
+        previousCameraY != presentation.exploreRouteCameraY) {
+        Platform::logf("[AmoledExploreDiag] camera world=(%.2f,%.2f) old=(%d,%d) next=(%d,%d)\n",
+            static_cast<double>(presentation.exploreRouteWorldX),
+            static_cast<double>(presentation.exploreRouteWorldY),
+            previousCameraX, previousCameraY,
+            int(presentation.exploreRouteCameraX), int(presentation.exploreRouteCameraY));
+    }
+#endif
+    applyExplorePresentationDamage();
+    if (exiting) {
+        if (motion == ExplorePresenter::Motion::EXIT_FINISHED) {
+            exploreSession_.finishExit(gameState);
+            applyExploreEffects(nowMs);
             requestFullRender();
         }
         return;
     }
-    if (exploreRouteExiting) {
-        advanceExploreRouteWalkFrames(nowMs);
-        const uint32_t elapsed = nowMs - exploreRouteExitStartedMs;
-        const float progress = std::min(
-            1.0f, elapsed / static_cast<float>(
-                std::max<uint32_t>(1, exploreRouteExitDurationMs)));
-        exploreRouteWorldX = exploreRouteFromX +
-            (exploreRouteTargetX - exploreRouteFromX) * progress;
-        exploreRouteWorldY = exploreRouteFromY +
-            (exploreRouteTargetY - exploreRouteFromY) * progress;
-        if (exploreRouteFollowerMoving) {
-            exploreRouteFollowerWorldX = exploreRouteFollowerFromX +
-                (exploreRouteFollowerTargetX - exploreRouteFollowerFromX) * progress;
-            exploreRouteFollowerWorldY = exploreRouteFollowerFromY +
-                (exploreRouteFollowerTargetY - exploreRouteFollowerFromY) * progress;
-        }
-        const int16_t previousCameraX = exploreRouteCameraX;
-        const int16_t previousCameraY = exploreRouteCameraY;
-        updateExploreRouteCamera();
-        if (previousCameraX != exploreRouteCameraX ||
-            previousCameraY != exploreRouteCameraY) {
-            requestRenderRows(0, EXPLORE_ROUTE_VIEW_HEIGHT);
-        } else {
-            requestExploreRouteDynamicRender();
-        }
-        if (progress < 1.0f) return;
-        exploreRouteWorldX = exploreRouteTargetX;
-        exploreRouteWorldY = exploreRouteTargetY;
-        exploreRouteFollowerWorldX = exploreRouteFollowerTargetX;
-        exploreRouteFollowerWorldY = exploreRouteFollowerTargetY;
-        exploreRouteMoving = false;
-        exploreRouteFollowerMoving = false;
-        exploreRouteExiting = false;
-        finishExploreRouteAtEnd(nowMs);
-        requestFullRender();
-        return;
-    }
-    if (exploreRouteBossPending &&
-        static_cast<int32_t>(nowMs - nextExploreRouteBossFrameMs) >= 0) {
-        const bool bossMoving = exploreRouteBossPatrolMoving(nowMs);
-        if (bossMoving || exploreRouteBossWasMoving) {
-            requestExploreRouteBossRender();
-        }
-        exploreRouteBossWasMoving = bossMoving;
-        nextExploreRouteBossFrameMs = nowMs + EXPLORE_ROUTE_BOSS_FRAME_MS;
-    }
-    if (!exploreRouteMoving) {
-        if (exploreRouteAutoWalk || exploreRoutePlayerWalkActive) {
-            beginExploreRouteStep(nowMs);
-        }
-        return;
-    }
-
-    uint32_t elapsed = nowMs - exploreRouteMoveStartedMs;
-    float progress = std::min(
-        1.0f, elapsed / static_cast<float>(EXPLORE_ROUTE_STEP_MS));
-    exploreRouteWorldX = exploreRouteFromX +
-        (exploreRouteTargetX - exploreRouteFromX) * progress;
-    exploreRouteWorldY = exploreRouteFromY +
-        (exploreRouteTargetY - exploreRouteFromY) * progress;
-    if (exploreRouteFollowerMoving) {
-        uint32_t followerElapsed = elapsed > EXPLORE_ROUTE_FOLLOWER_DELAY_MS
-            ? elapsed - EXPLORE_ROUTE_FOLLOWER_DELAY_MS : 0;
-        float followerProgress = elapsed > EXPLORE_ROUTE_FOLLOWER_DELAY_MS
-            ? std::min(1.0f, followerElapsed /
-                static_cast<float>(EXPLORE_ROUTE_STEP_MS)) : 0.0f;
-        exploreRouteFollowerWorldX = exploreRouteFollowerFromX +
-            (exploreRouteFollowerTargetX - exploreRouteFollowerFromX) *
-                followerProgress;
-        exploreRouteFollowerWorldY = exploreRouteFollowerFromY +
-            (exploreRouteFollowerTargetY - exploreRouteFollowerFromY) *
-                followerProgress;
-    }
-    int16_t previousCameraX = exploreRouteCameraX;
-    int16_t previousCameraY = exploreRouteCameraY;
-    updateExploreRouteCamera();
-    bool cameraMoved = previousCameraX != exploreRouteCameraX ||
-                       previousCameraY != exploreRouteCameraY;
-    if (cameraMoved) {
-        // The cached map is keyed by viewport. Rebuild the complete map band
-        // when the camera scrolls instead of compositing two viewports.
-        requestRenderRows(0, EXPLORE_ROUTE_VIEW_HEIGHT);
-    }
-
-    // Position interpolation runs every UI tick; walking art retains its own cadence.
-    advanceExploreRouteWalkFrames(nowMs);
-    if (!cameraMoved) requestExploreRouteDynamicRender();
-
-    if (static_cast<int32_t>(nowMs - nextExploreRouteMapFrameMs) >= 0) {
-        do {
-            exploreRouteMapFrame = static_cast<uint8_t>(
-                exploreRouteMapFrame + 1);
-            nextExploreRouteMapFrameMs += EXPLORE_ROUTE_MAP_FRAME_MS;
-        } while (static_cast<int32_t>(nowMs - nextExploreRouteMapFrameMs) >= 0);
-        if (exploreRouteMap.hasCreek || exploreRouteMap.hasWaterfall ||
-            exploreRouteMap.hasCoast) {
-            requestExploreRouteMapAnimationRender();
-        }
-    }
-
-    if (progress < 1.0f) return;
-    exploreRouteWorldX = exploreRouteTargetX;
-    exploreRouteWorldY = exploreRouteTargetY;
-    exploreRouteFollowerWorldX = exploreRouteFollowerTargetX;
-    exploreRouteFollowerWorldY = exploreRouteFollowerTargetY;
-    exploreRouteMoving = false;
-    exploreRouteFollowerMoving = false;
-    ++exploreRouteSteps;
-    if (recoverExploreTeamForCompletedSteps()) {
-        requestRenderRows(HOME_STATUS_TOP, AmoledUi::HEIGHT);
-    }
-    bool encounterBlockedThisStep =
-        exploreRouteEncounterCooldownSteps > 0;
-    bool repelActiveThisStep = exploreItemEffects.repelStepsRemaining() > 0;
-    exploreRouteEncounterCooldownSteps = exploreCooldownAfterStep(
-        exploreRouteEncounterCooldownSteps);
-    exploreItemEffects.completeWalkStep();
-    gameState.stepsToday = static_cast<uint16_t>(std::min<uint32_t>(
-        60000, static_cast<uint32_t>(gameState.stepsToday) + 1));
-    const ExploreMapGenerator::Path& path =
-        exploreRouteMap.paths[exploreRoutePath];
-    if (selectedExploreArea == ExploreMapGenerator::FROST_CRYSTAL_CAVE_AREA &&
-        exploreRouteMapBlock + 1 < exploreRouteMapBlockCount &&
-        ExploreIceSlide::isCrackedIce(exploreRouteMap, path, exploreRouteIndex)) {
-        ExploreIceSlide::breakIce(exploreRouteMap, path, exploreRouteIndex);
-        renderCaches_.exploreWorld.invalidate();
-        exploreRoutePendingFrostFall = true;
-        exploreRouteFrostFallAtMs = nowMs + 240;
-        exploreRouteIceSliding = false;
-        exploreRouteIceDx = 0;
-        exploreRouteIceDy = 0;
-        requestFullRender();
-        return;
-    }
-    bool continueIce = exploreRouteIceSliding && ExploreIceSlide::continues(
-        exploreRouteMap, path, exploreRouteIndex,
-        exploreRouteIceDx, exploreRouteIceDy);
-    if (!continueIce) {
-        exploreRouteIceSliding = false;
-        exploreRouteIceDx = 0;
-        exploreRouteIceDy = 0;
-        resolveExploreStepEvent(nowMs, encounterBlockedThisStep,
-                                repelActiveThisStep);
-    }
-    if (sceneFlow.current() != AppSceneFlow::Scene::EXPLORE_ROUTE) {
-        requestFullRender();
-        return;
-    }
-    if (exploreRouteIndex + 1 >= path.pointCount) {
-        if (exploreRouteMapBlock + 1 >= exploreRouteMapBlockCount) {
-            beginExploreRouteExit(nowMs);
-            return;
-        }
-        if (finishExploreRouteAtEnd(nowMs)) return;
-    } else if (exploreRoutePlayerWalkActive &&
-               exploreRouteBossPending &&
-               exploreRouteIndex + 1 == exploreRouteBossIndex) {
-        // Stick stops one route point before the regional boss. The next tap
-        // enters the boss point; Agent mode continues without this pause.
-        exploreRoutePlayerWalkActive = false;
-    } else if (continueIce || exploreRouteAutoWalk ||
-               exploreRoutePlayerWalkActive) {
+    if (motion == ExplorePresenter::Motion::STEP_FINISHED) {
+        exploreSession_.completeStep(gameState, nowMs);
+        applyExploreEffects(nowMs);
+        requestExploreRouteDynamicRender();
+    } else if (!route.exploreRouteMoving &&
+        (route.exploreRouteAutoWalk || route.exploreRoutePlayerWalkActive)) {
         beginExploreRouteStep(nowMs);
     }
-    requestExploreRouteDynamicRender();
-}
-
-bool AmoledApp::recoverExploreTeamForCompletedSteps() {
-    if (!ExploreRunRules::isRecoveryStep(exploreRouteSteps)) return false;
-
-    bool recovered = false;
-    for (uint8_t slot = 0;
-         slot < gameState.teamCount && slot < Game::TEAM_CAP; ++slot) {
-        Game::MonsterRuntime& monster = gameState.team[slot];
-        if (monster.fainted || monster.hpCur == 0 || monster.hpMax == 0 ||
-            monster.hpCur >= monster.hpMax) {
-            continue;
-        }
-        const uint16_t amount =
-            ExploreRunRules::recoveryAmount(monster.hpMax);
-        monster.hpCur = static_cast<uint16_t>(std::min<uint32_t>(
-            monster.hpMax,
-            static_cast<uint32_t>(monster.hpCur) + amount));
-        recovered = true;
-    }
-    return recovered;
 }
 
 ExploreRouteViewModel AmoledApp::exploreRouteModel() const {
-    ExploreRouteViewModel model;
-    model.grass = &exploreGrass;
-    model.daylight = exploreRouteDaylight;
-    model.wildlifeCount = exploreEcology.count();
-    for (uint8_t i = 0; i < model.wildlifeCount; ++i)
-        model.wildlife[i] = exploreEcology.pose(i);
-    model.map = &exploreRouteMap;
-    model.state = &gameState;
-    const uint8_t leaderSlot = exploreRouteLeaderSlot(gameState);
-    model.speciesId = gameState.team[leaderSlot].speciesId;
-    model.area = selectedExploreArea;
-    model.pathIndex = exploreRoutePath;
-    model.routeIndex = exploreRouteIndex;
-    if (exploreRoutePath < exploreRouteMap.pathCount) {
-        model.routePointCount =
-            exploreRouteMap.paths[exploreRoutePath].pointCount;
-    }
-    model.walkDirection = exploreRouteDirection;
-    model.petFrame = exploreRoutePetFrame;
-    model.mapFrame = exploreRouteMapFrame;
-    model.animationNowMs = Platform::clock().millis();
-    model.steps = exploreRouteSteps;
-    model.worldX = exploreRouteWorldX;
-    model.worldY = exploreRouteWorldY;
-    model.companionVisible = exploreRouteHasCompanion(gameState);
-    model.companionSpeciesId = model.companionVisible
-        ? gameState.team[1].speciesId : 0;
-    model.companionWorldX = exploreRouteFollowerWorldX;
-    model.companionWorldY = exploreRouteFollowerWorldY;
-    model.companionWalkDirection = exploreRouteFollowerDirection;
-    model.companionFrame = exploreRouteFollowerFrame;
-    model.companionWalking = exploreRouteFollowerMoving;
-    model.cameraX = exploreRouteCameraX;
-    model.cameraY = exploreRouteCameraY;
-    model.walking = exploreRouteMoving && !exploreRoutePaused;
-    model.autoWalk = exploreRouteAutoWalk && !exploreRoutePaused;
-    model.sliding = exploreRouteIceSliding;
-    model.complete = exploreRouteComplete;
-    model.bossPending = exploreRouteBossPending;
-    model.bossIndex = exploreRouteBossIndex;
-    model.bossSpeciesId = exploreRouteBossSpeciesId;
-    model.fadeAlpha = externalSceneFade ? 0 : expeditionFade.alpha();
-    model.exitConfirm = exploreRouteExitConfirm;
-    model.pickupIndex = exploreRoutePickupIndex;
-    model.pickupItem = exploreRoutePickupItem;
-    model.pickupAvailable = exploreRoutePickupAvailable;
-    model.toast = toast;
-    return model;
+    return explorePresenter_.model(exploreSession_.state(), gameState, selectedExploreArea,
+        Platform::clock().millis(), externalSceneFade ? 0 : expeditionFade.alpha(), toast);
 }
 
 void AmoledApp::requestExploreRouteDynamicRender() {
     if (sceneFlow.current() != AppSceneFlow::Scene::EXPLORE_ROUTE) return;
-    if (!exploreActorBoundsValid || lastExploreCameraX != exploreRouteCameraX ||
-        lastExploreCameraY != exploreRouteCameraY || lastExploreMapSeed != exploreRouteMap.seed) {
-        requestRenderRows(0, EXPLORE_ROUTE_VIEW_HEIGHT);
-        return;
-    }
-    const auto current = exploreRouteActorBounds(exploreRouteModel());
-    const auto previous = lastExploreActorBounds;
-    requestRenderRect(std::min(previous.x, current.x),
-        std::min(previous.y, current.y),
-        std::max(previous.x + previous.width, current.x + current.width),
-        std::min(EXPLORE_ROUTE_VIEW_HEIGHT,
-            std::max(previous.y + previous.height, current.y + current.height)));
+    explorePresenter_.requestDynamicDamage(exploreRouteModel());
+    applyExplorePresentationDamage();
 }
 
-void AmoledApp::requestExploreRouteBossRender() {
-    if (sceneFlow.current() != AppSceneFlow::Scene::EXPLORE_ROUTE ||
-        !exploreRouteBossPending ||
-        exploreRoutePath >= exploreRouteMap.pathCount) {
-        return;
-    }
-    const ExploreMapGenerator::Path& path =
-        exploreRouteMap.paths[exploreRoutePath];
-    if (exploreRouteBossIndex >= path.pointCount) return;
-
-    const ExploreRouteGeometry::WorldPoint point =
-        ExploreRouteGeometry::pathPoint(path, exploreRouteBossIndex);
-    const int centerY = static_cast<int>(std::lround(
-        (point.y - exploreRouteCameraY) * AmoledUi::RESOURCE_SCALE)) +
-        EXPLORE_ROUTE_ACTOR_GROUND_OFFSET_Y;
-    // Covers the largest 2x walking frames, airborne bobbing, shadow, and the
-    // complete 5px patrol path so the cached map clears every previous pose.
-    constexpr int BOSS_TOP_MARGIN = 112;
-    constexpr int BOSS_BOTTOM_MARGIN = 88;
-    if (centerY + BOSS_BOTTOM_MARGIN <= 0 ||
-        centerY - BOSS_TOP_MARGIN >= EXPLORE_ROUTE_VIEW_HEIGHT) {
-        return;
-    }
-    const int top = std::clamp(centerY - BOSS_TOP_MARGIN, 0,
-                               EXPLORE_ROUTE_VIEW_HEIGHT - 1);
-    const int bottom = std::clamp(centerY + BOSS_BOTTOM_MARGIN, top + 1,
-                                  EXPLORE_ROUTE_VIEW_HEIGHT);
-    requestRenderRows(static_cast<uint16_t>(top),
-                      static_cast<uint16_t>(bottom));
+void AmoledApp::applyExplorePresentationDamage() {
+    const auto damage = explorePresenter_.takeDamage();
+    if (!damage.valid) return;
+    const auto& r = damage.bounds;
+    requestRenderRect(r.x, r.y, r.x + r.width, r.y + r.height);
 }
 
-void AmoledApp::requestExploreRouteMapAnimationRender() {
-    constexpr int tileSize = ExploreRouteGeometry::TILE_SIZE * AmoledUi::RESOURCE_SCALE;
-    constexpr int mapTop = 0;
-    constexpr int mapBottom = EXPLORE_ROUTE_VIEW_HEIGHT;
-    int top = mapBottom;
-    int bottom = mapTop;
 
-    for (uint8_t layer = 0;
-         layer < ExploreMapGenerator::LAYER_COUNT; ++layer) {
-        for (uint8_t tileY = 0; tileY < ExploreMapGenerator::HEIGHT; ++tileY) {
-            for (uint8_t tileX = 0; tileX < ExploreMapGenerator::WIDTH;
-                 ++tileX) {
-                uint16_t tileId = exploreRouteMap.layers[layer]
-                    [tileY * ExploreMapGenerator::WIDTH + tileX];
-                if (!GameAssets::isExploreTileAnimated(tileId)) continue;
-                int tileTop = mapTop + static_cast<int>(tileY) * tileSize -
-                              exploreRouteCameraY * AmoledUi::RESOURCE_SCALE;
-                int tileBottom = tileTop + tileSize;
-                top = std::min(top, tileTop);
-                bottom = std::max(bottom, tileBottom);
-            }
-        }
-    }
 
-    top = std::clamp(top, mapTop, mapBottom);
-    bottom = std::clamp(bottom, top, mapBottom);
-    if (top < bottom) {
-        requestRenderRows(static_cast<uint16_t>(top),
-                          static_cast<uint16_t>(bottom));
-    }
+bool AmoledApp::beginExploreEncounter(uint32_t nowMs, bool boss, uint16_t speciesOverride,
+    uint8_t levelOverride, uint16_t experiencePercent, ExploreSpecial::Kind specialKind) {
+    const bool ready = exploreSession_.beginEncounter(gameState, selectedExploreArea,
+        boss, speciesOverride, levelOverride, experiencePercent, specialKind);
+    applyExploreEffects(nowMs);
+    return ready;
 }
 
-bool AmoledApp::finishExploreRouteAtEnd(uint32_t nowMs) {
-    if (exploreRouteBossPending) {
-        if (beginExploreEncounter(
-                nowMs, true, exploreRouteBossSpeciesId,
-                exploreRouteBossLevel, exploreRouteBossExperiencePercent,
-                exploreRouteSpecialKind)) {
-            exploreRouteBossPending = false;
-            exploreRouteAutoWalk = false;
-            exploreRoutePlayerWalkActive = false;
-            return true;
-        }
-        // Keep the pending boss at the route end when the active team cannot
-        // enter battle yet; a later tap can retry after the player recovers.
-        exploreRouteAutoWalk = false;
-        exploreRoutePlayerWalkActive = false;
-        return false;
-    }
-    if (exploreRouteMapBlock + 1 < exploreRouteMapBlockCount) {
-        const ExploreMapGenerator::Path& path =
-            exploreRouteMap.paths[exploreRoutePath];
-    exploreRoutePendingEntryEdge = ExploreMapGenerator::opposite(
-            path.exit.edge);
-        exploreRoutePendingFrostLadder =
-            !exploreRoutePendingFrostFall && exploreRoutePath == 1;
-        ++exploreRouteMapBlock;
-        if (!generateExploreRouteMap(nowMs)) {
-            exploreRouteAutoWalk = false;
-            exploreRoutePlayerWalkActive = false;
-            return false;
-        }
-        if (exploreRouteAutoWalk || exploreRoutePlayerWalkActive) {
-            beginExploreRouteStep(nowMs);
-        }
-        return true;
-    }
-    if (exploreRoutePityEligible) {
-        ExploreBossPity::increment(gameState, selectedExploreArea);
-        exploreRoutePityEligible = false;
-        saveState();
-    }
-    exploreRouteComplete = true;
-    exploreRouteAutoWalk = false;
-    exploreRoutePlayerWalkActive = false;
-    if (autonomousExpedition) {
-        // A completed autonomous expedition has no player-facing route screen
-        // to acknowledge. Return home so the normal care loop can continue.
-        leaveExploreRoute();
-        return true;
-    }
-    requestFullRender();
-    return false;
-}
-
-void AmoledApp::resolveExploreStepEvent(
-    uint32_t nowMs, bool encounterBlockedThisStep,
-    bool repelActiveThisStep) {
-    bool honeyEncounter = exploreItemEffects.honeyEncounterPending();
-
-    if (exploreRouteBossPending &&
-        exploreRouteIndex == exploreRouteBossIndex) {
-        if (beginExploreEncounter(
-                nowMs, true, exploreRouteBossSpeciesId,
-                exploreRouteBossLevel, exploreRouteBossExperiencePercent,
-                exploreRouteSpecialKind)) {
-            exploreRouteBossPending = false;
-            exploreRouteAutoWalk = false;
-            exploreRoutePlayerWalkActive = false;
-        }
-        return;
-    }
-    if (exploreRoutePickupAvailable &&
-        exploreRouteIndex == exploreRoutePickupIndex) {
-        resolveExploreRoutePickup(nowMs);
-        return;
-    }
-
-    const ExploreMapGenerator::Path& path =
-        exploreRouteMap.paths[exploreRoutePath];
-    if (exploreRouteIndex + 1 >= path.pointCount) return;
-
-
-    bool guaranteedEncounter = exploreRouteGuaranteedEncounterPending &&
-        exploreRouteIndex >= exploreRouteGuaranteedEncounterIndex;
-    bool encounterGateBypassed = honeyEncounter;
-    bool encounterGateOpen = encounterGateBypassed ||
-        exploreEncounterGateOpen(encounterBlockedThisStep,
-                                 exploreRouteMapEncounterCount);
-    bool repelAllowsEncounter = !repelActiveThisStep ||
-                                guaranteedEncounter || honeyEncounter;
-    uint16_t encounterChance = EXPLORE_ENCOUNTER_CHANCE[
-        std::min<uint8_t>(selectedExploreArea,
-                          static_cast<uint8_t>(Game::EXPLORE_AREA_COUNT - 1))];
-    bool randomEncounter = false;
-    if (encounterGateOpen && repelAllowsEncounter &&
-        !guaranteedEncounter && !honeyEncounter) {
-        randomEncounter = GameRandom::range(0, 10000) < encounterChance;
-    }
-    if (encounterGateOpen && repelAllowsEncounter &&
-        (guaranteedEncounter || honeyEncounter || randomEncounter) &&
-        beginExploreEncounter(nowMs)) {
-        ++exploreRouteMapEncounterCount;
-        exploreRouteEncounterCooldownSteps =
-            EXPLORE_ENCOUNTER_COOLDOWN_STEPS;
-        exploreRouteGuaranteedEncounterPending = false;
-        if (honeyEncounter) exploreItemEffects.consumeHoneyEncounter();
-        return;
-    }
-}
-
-void AmoledApp::resolveExploreRoutePickup(uint32_t nowMs) {
-    if (!exploreRoutePickupAvailable) return;
-    // Manual route walking pauses at a pickup so the next tap controls when
-    // movement resumes. Autonomous departures must keep their route running;
-    // otherwise collecting one item permanently strands the expedition.
-    const bool resumeAutoWalk = exploreRouteAutoWalk;
-    exploreRoutePickupAvailable = false;
-    exploreRouteAutoWalk = false;
-    exploreRoutePlayerWalkActive = false;
-    exploreRouteAutoWalk = resumeAutoWalk;
-
-    const ExplorePickupTable& table =
-        explorePickupTableForArea(selectedExploreArea);
-    if (exploreRoutePickupItem == EXPLORE_PICKUP_COIN) {
-        uint32_t coins = GameRandom::range(table.minCoin,
-                                           static_cast<uint32_t>(table.maxCoin) + 1);
-        gameState.coins += coins;
-        std::snprintf(battleMessage, sizeof(battleMessage),
-                      Ui::Explore::PICKUP_COIN_FMT,
-                      static_cast<unsigned long>(coins));
-        setToast(battleMessage, nowMs, 1300);
-        saveState();
-        return;
-    }
-
-    Game::ItemId item = Game::ItemId::COUNT;
-    switch (exploreRoutePickupItem) {
-    case EXPLORE_PICKUP_POTION: item = Game::ItemId::POTION; break;
-    case EXPLORE_PICKUP_SUPER_POTION: item = Game::ItemId::SUPER_POTION; break;
-    case EXPLORE_PICKUP_ANTIDOTE: item = Game::ItemId::ANTIDOTE; break;
-    case EXPLORE_PICKUP_RARE_CANDY: item = Game::ItemId::CANDY; break;
-    case EXPLORE_PICKUP_MAX_POTION: item = Game::ItemId::MAX_POTION; break;
-    case EXPLORE_PICKUP_FULL_RESTORE: item = Game::ItemId::FULL_RESTORE; break;
-    case EXPLORE_PICKUP_FULL_HEAL: item = Game::ItemId::FULL_HEAL; break;
-    case EXPLORE_PICKUP_REVIVE: item = Game::ItemId::REVIVE; break;
-    case EXPLORE_PICKUP_MAX_REPEL: item = Game::ItemId::MAX_REPEL; break;
-    case EXPLORE_PICKUP_HONEY: item = Game::ItemId::HONEY; break;
-    case EXPLORE_PICKUP_NUGGET: item = Game::ItemId::NUGGET; break;
-    case EXPLORE_PICKUP_BIG_PEARL: item = Game::ItemId::BIG_PEARL; break;
-    case EXPLORE_PICKUP_STAR_PIECE: item = Game::ItemId::STAR_PIECE; break;
-    case EXPLORE_PICKUP_HEART_SCALE: item = Game::ItemId::HEART_SCALE; break;
-    default: break;
-    }
-
-    const char* name = item == Game::ItemId::COUNT
-        ? nullptr : Game::ShopService::shortName(item);
-    if (item == Game::ItemId::COUNT ||
-        !Game::ItemInventory::add(gameState, item)) {
-        setToast(Ui::Amoled::BAG_FULL, nowMs);
-        saveState();
-        return;
-    }
-
-    std::snprintf(battleMessage, sizeof(battleMessage), Ui::Explore::PICKUP_FMT,
-                  name ? name : Ui::Amoled::ITEM);
-    setToast(battleMessage, nowMs, 1300);
-    saveState();
-}
-
-bool AmoledApp::beginExploreEncounter(
-    uint32_t nowMs, bool boss, uint16_t speciesOverride,
-    uint8_t levelOverride, uint16_t experiencePercent,
-    ExploreSpecial::Kind specialKind) {
+void AmoledApp::startExploreBattle(const ExploreSession::Encounter& encounter, uint32_t nowMs) {
 #if STICKMON_ENABLE_DEBUG_FEATURES
     const uint32_t encounterStartMs = Platform::clock().millis();
 #endif
-    const uint8_t leaderSlot = exploreRouteLeaderSlot(gameState);
-    if (leaderSlot >= gameState.teamCount ||
-        !exploreRouteMonsterHealthy(gameState.team[leaderSlot])) {
-        setToast(Ui::Menu::PET_REST, nowMs);
-        return false;
-    }
-    const Species* species = nullptr;
-    uint8_t levelMinimum = 1;
-    uint8_t levelMaximum = Game::LEVEL_MAX;
-    if (boss && speciesOverride != 0) {
-        species = findSpecies(speciesOverride);
-    } else {
-        ExploreEncounters::Table table =
-            ExploreEncounters::tableForArea(selectedExploreArea);
-        if (!table.entries || table.count == 0) return false;
-        const ExploreEncounters::Entry* picked = nullptr;
-        if (exploreRoutePool.count > 0) {
-            const uint32_t totalWeight =
-                ExplorePool::poolWeightTotal(exploreRoutePool);
-            if (totalWeight == 0) return false;
-            const ExplorePool::PoolEntry* poolEntry = ExplorePool::entryForRoll(
-                exploreRoutePool, GameRandom::range(0, totalWeight));
-            if (!poolEntry) return false;
-            for (uint8_t index = 0; index < table.count; ++index) {
-                if (table.entries[index].speciesId == poolEntry->speciesId) {
-                    picked = &table.entries[index];
-                    break;
-                }
-            }
-        } else {
-            uint32_t totalWeight = 0;
-            for (uint8_t index = 0; index < table.count; ++index) {
-                totalWeight += table.entries[index].weight;
-            }
-            if (totalWeight == 0) return false;
-            uint32_t roll = GameRandom::range(0, totalWeight);
-            for (uint8_t index = 0; index < table.count; ++index) {
-                if (roll < table.entries[index].weight) {
-                    picked = &table.entries[index];
-                    break;
-                }
-                roll -= table.entries[index].weight;
-            }
-        }
-        if (!picked) return false;
-        species = findSpecies(picked->speciesId);
-        levelMinimum = picked->minLevel;
-        levelMaximum = picked->maxLevel;
-    }
-    if (!species) return false;
-    recordEncounteredSpecies(species->id);
-    uint8_t level = levelOverride;
-    if (level == 0) {
-        const ExploreMapGenerator::Path& path =
-            exploreRouteMap.paths[exploreRoutePath];
-        const uint8_t targetLevel = ExploreEncounterRules::targetLevel(
-            ExploreAreaCatalog::recommendedLevel(selectedExploreArea),
-            ExploreAreaCatalog::depthSpread(selectedExploreArea),
-            exploreRouteMapBlock, exploreRouteMapBlockCount,
-            exploreRouteIndex, path.pointCount);
-        level = ExploreEncounterRules::levelForRoll(
-            levelMinimum, levelMaximum, targetLevel,
-            static_cast<uint8_t>(GameRandom::range(0, 100)));
-    }
-
-    battleWild = Game::MonsterFactory::create(species->id, level);
-    battleWild.origin = Game::Origin::UNKNOWN;
-    battleWild.metArea = selectedExploreArea;
-    battleWild.metAt = gameState.gameMinutesTotal * 60UL;
-    battleWild.lastSeenAt = battleWild.metAt;
-    battleIsBoss = boss;
-    battleExperiencePercent = experiencePercent;
-    battleSpecialKind = specialKind;
-
+    const auto& wild = encounter.wild;
+    const auto leaderSlot = encounter.leaderSlot;
+    const auto boss = encounter.boss;
+    const auto experiencePercent = encounter.experiencePercent;
+    const auto specialKind = encounter.special;
+    pauseExploreRoute(nowMs);
+    recordEncounteredSpecies(wild.speciesId);
     uint16_t dynamicSpecies[] = {
-        gameState.team[leaderSlot].speciesId, battleWild.speciesId,
+        gameState.team[leaderSlot].speciesId, wild.speciesId,
     };
 #if STICKMON_ENABLE_DEBUG_FEATURES
     const uint32_t spritePrepStartedMs = Platform::clock().millis();
@@ -5899,62 +4150,9 @@ bool AmoledApp::beginExploreEncounter(
     const uint32_t spritePrepMs =
         Platform::clock().millis() - spritePrepStartedMs;
 #endif
-    BattleSystem::resetVolatile(battlePlayerState);
-    BattleSystem::resetVolatile(battleWildState);
-    battleTurnController.reset();
-    battleForceWildEndPending = false;
-    battleTurnPlan = BattleTurnController::TurnPlan{};
-    battleTurnActionIndex = 0;
-    battleTurnDamaged[0] = false;
-    battleTurnDamaged[1] = false;
-    battleContinuation = BattleContinuation::NONE;
-    BattleSystem::EffectResolution effects;
-    battlePlayerSlot = leaderSlot;
-    const Species* playerSpecies = findSpecies(
-        gameState.team[battlePlayerSlot].speciesId);
-    if (playerSpecies) {
-        BattleSystem::applyEntryAbility(
-            *playerSpecies, battlePlayerState, *species, battleWildState,
-            effects);
-        effects = BattleSystem::EffectResolution{};
-        BattleSystem::applyEntryAbility(
-            *species, battleWildState, *playerSpecies, battlePlayerState,
-            effects);
-    }
-    battlePhase = BattleViewModel::Phase::ACTION;
-    battlePressedItem = 0xFF;
-    battleFriendshipPrompt = BattleViewModel::FriendshipPrompt::OFFER;
-    battleFriendshipContactSlot = 0xFF;
-    resetBattleProgressionQueue();
-    battleThrownItem = Game::ItemId::COUNT;
-    battleAnimationActive = false;
-    battleAnimationStatusEffect = false;
-    battleSwitchStage = BattleSwitchStage::NONE;
-    pendingBattleSwitchSlot = 0xFF;
-    battleSwitchConsumesTurn = false;
-    battleAnimationAttackerWild = false;
-    battleAnimationHit = false;
-    battleAnimationFx = GameAssets::BattleFx::HIT;
-    battleAnimationDamage = 0;
-    battleAnimationFrame = 0;
-    battleAttackLogHeld = false;
-    battleImpactAudioPlayed = false;
-    battleImpactSfx = 0xFF;
-    battleHpAnimationActive = false;
-    battleExperienceVisible = false;
-    battleExperienceAnimationActive = false;
-    battleExperienceAnimationFrom = 0;
-    battleExperienceAnimationTo = 0;
-    inventoryController_.state().battleBagMode = false;
-    battleFoodBond = 0;
-    battleAudioPending = false;
-    battleAudioReady = false;
-    battlePendingSfx = 0xFF;
-    battlePendingCrySpecies = 0;
-    battleRewardExp = 0;
-    battleRewardCoins = 0;
-    battleVictoryFinalizePending = false;
-    clearBattleLog();
+    battleSession_.begin(gameState, wild, leaderSlot, boss, experiencePercent,
+                         specialKind, selectedExploreArea, nowMs);
+    inventoryController_.setBattleBagMode(false);
     // Also cover debug battles, which can start without entering a route.
 #if STICKMON_ENABLE_DEBUG_FEATURES
     const uint32_t sfxPrepStartedMs = Platform::clock().millis();
@@ -5967,12 +4165,11 @@ bool AmoledApp::beginExploreEncounter(
 #if STICKMON_ENABLE_DEBUG_FEATURES
     const uint32_t sfxPrepMs = Platform::clock().millis() - sfxPrepStartedMs;
 #endif
-    std::snprintf(battleMessage, sizeof(battleMessage), Ui::Amoled::WILD_FMT,
-                  species->name);
-    pushBattleLog(nowMs);
+    char message[64];
+    std::snprintf(message, sizeof(message), Ui::Amoled::WILD_FMT, findSpecies(wild.speciesId)->name);
+    battleSession_.pushLog(message, nowMs);
+    applyBattleEffects(nowMs);
     toast = nullptr;
-    exploreRoutePlayerWalkActive = false;
-    exploreRouteAutoWalk = false;
     sceneFlow.enter(AppSceneFlow::Scene::BATTLE);
     setMusicContext(boss ? MusicContext::BATTLE_SPECIAL
                          : MusicContext::BATTLE);
@@ -5984,719 +4181,64 @@ bool AmoledApp::beginExploreEncounter(
     encounterSfxPrepMs = sfxPrepMs;
     encounterFirstFramePending = true;
 #endif
-    return true;
-}
-
-void AmoledApp::pushBattleLog(uint32_t nowMs, bool invalidate,
-                              uint16_t durationMs) {
-    if (!battleMessage[0]) return;
-#if STICKMON_ENABLE_DEBUG_FEATURES
-    Platform::logf("[BattleLog] %s\n", battleMessage);
-#endif
-    if (battleLogQueueCount >= BATTLE_LOG_QUEUE_CAP) {
-        s_battleLogDurations[battleLogHead] = 0;
-        battleLogHead = static_cast<uint8_t>(
-            (battleLogHead + 1) % BATTLE_LOG_QUEUE_CAP);
-        --battleLogQueueCount;
-    }
-    const uint8_t tail = static_cast<uint8_t>(
-        (battleLogHead + battleLogQueueCount) % BATTLE_LOG_QUEUE_CAP);
-    std::snprintf(s_battleLogQueue[tail], sizeof(s_battleLogQueue[tail]), "%s",
-                  battleMessage);
-    s_battleLogDurations[tail] = durationMs == 0
-        ? BATTLE_LOG_DEFAULT_MS : durationMs;
-    ++battleLogQueueCount;
-    if (invalidate && serviceBattleLog(nowMs)) {
-        requestRenderRows(352, 448);
-    }
-}
-
-bool AmoledApp::serviceBattleLog(uint32_t nowMs) {
-    if (battleThrownItem != Game::ItemId::COUNT ||
-        (battleAttackLogHeld && battleAnimationActive)) return false;
-    if (battleLogActive &&
-        static_cast<int32_t>(nowMs - battleLogUntil) < 0) {
-        return false;
-    }
-    if (battleLogQueueCount == 0) {
-        const bool changed = battleLogActive || battleLogVisibleCount > 0;
-        battleLogActive = false;
-        battleLogVisibleCount = 0;
-        battleLogUntil = 0;
-        for (auto& line : battleLogLines) line[0] = '\0';
-        return changed;
-    }
-
-    uint8_t line = 0;
-    if (battleLogVisibleCount < BATTLE_LOG_VISIBLE_CAP) {
-        line = battleLogVisibleCount++;
-    } else {
-        for (uint8_t index = 1; index < BATTLE_LOG_VISIBLE_CAP; ++index) {
-            std::memcpy(battleLogLines[index - 1], battleLogLines[index],
-                        BATTLE_LOG_LEN);
-        }
-        line = BATTLE_LOG_VISIBLE_CAP - 1;
-    }
-    std::memcpy(battleLogLines[line], s_battleLogQueue[battleLogHead],
-                BATTLE_LOG_LEN);
-    battleLogLines[line][BATTLE_LOG_LEN - 1] = '\0';
-    s_battleLogQueue[battleLogHead][0] = '\0';
-    const uint16_t durationMs = s_battleLogDurations[battleLogHead] == 0
-        ? BATTLE_LOG_DEFAULT_MS : s_battleLogDurations[battleLogHead];
-    s_battleLogDurations[battleLogHead] = 0;
-    battleLogHead = static_cast<uint8_t>(
-        (battleLogHead + 1) % BATTLE_LOG_QUEUE_CAP);
-    --battleLogQueueCount;
-    battleLogActive = true;
-    battleLogUntil = nowMs + durationMs;
-    return true;
-}
-
-bool AmoledApp::battleLogPlaybackBusy() const {
-    return battleLogActive || battleLogQueueCount > 0;
-}
-
-void AmoledApp::clearBattleLog() {
-    battleLogHead = 0;
-    battleLogQueueCount = 0;
-    battleLogVisibleCount = 0;
-    battleLogUntil = 0;
-    battleLogActive = false;
-    battleMessage[0] = '\0';
-    for (auto& line : s_battleLogQueue) line[0] = '\0';
-    for (auto& duration : s_battleLogDurations) duration = 0;
-    for (auto& line : battleLogLines) line[0] = '\0';
-}
-
-void AmoledApp::enqueueBattleDamageLogs(
-    const BattleSystem::DamageResult& damage, uint16_t dealt,
-    uint32_t nowMs) {
-    if (damage.failed || damage.missed || damage.effectiveness == 0 ||
-        dealt == 0) return;
-    auto enqueue = [&](const char* message) {
-        std::snprintf(battleMessage, sizeof(battleMessage), "%s", message);
-        pushBattleLog(nowMs, false);
-    };
-    if (damage.critical) enqueue(Ui::Explore::CRITICAL_HIT);
-    if (damage.effectiveness > 100) {
-        enqueue(Ui::Explore::SUPER_EFFECTIVE);
-    } else if (damage.effectiveness < 100) {
-        enqueue(Ui::Explore::NOT_VERY_EFFECTIVE);
-    }
-}
-
-void AmoledApp::enqueueBattleEffectLogs(
-    const BattleSystem::EffectResolution& effects, bool attackerWild,
-    uint32_t nowMs) {
-    const Species* playerSpecies = battlePlayerSlot < gameState.teamCount
-        ? findSpecies(gameState.team[battlePlayerSlot].speciesId) : nullptr;
-    const Species* wildSpecies = findSpecies(battleWild.speciesId);
-    if (!playerSpecies || !wildSpecies) return;
-    auto statusLabel = [](Game::MajorStatus status) -> const char* {
-        switch (status) {
-        case Game::MajorStatus::POISON: return Ui::Status::STATUS_POISON;
-        case Game::MajorStatus::TOXIC: return Ui::Status::STATUS_TOXIC;
-        case Game::MajorStatus::PARALYSIS: return Ui::Status::STATUS_PARALYSIS;
-        case Game::MajorStatus::SLEEP: return Ui::Status::STATUS_SLEEP;
-        case Game::MajorStatus::BURN: return Ui::Status::STATUS_BURN;
-        case Game::MajorStatus::FREEZE: return Ui::Status::STATUS_FREEZE;
-        default: return Ui::Status::STATUS_OK;
-        }
-    };
-    for (uint8_t index = 0; index < effects.count; ++index) {
-        const auto& outcome = effects.outcomes[index];
-        const bool targetWild = outcome.target == MoveEffectTarget::ATTACKER
-            ? attackerWild : !attackerWild;
-        const char* targetName = targetWild
-            ? wildSpecies->name : playerSpecies->name;
-        const char* attackerName = attackerWild
-            ? wildSpecies->name : playerSpecies->name;
-        const char* defenderName = attackerWild
-            ? playerSpecies->name : wildSpecies->name;
-        const bool defenderOwnsAbility = outcome.ability == AbilityId::STATIC ||
-            outcome.ability == AbilityId::EFFECT_SPORE ||
-            outcome.ability == AbilityId::SYNCHRONIZE;
-        if (outcome.ability != AbilityId::NONE) {
-            std::snprintf(battleMessage, sizeof(battleMessage),
-                          Ui::Explore::ABILITY_ACTIVATED_FMT,
-                          defenderOwnsAbility ? defenderName
-                              : outcome.ability == AbilityId::INTIMIDATE
-                                  ? attackerName : targetName,
-                          abilityName(outcome.ability));
-            pushBattleLog(nowMs, false);
-        }
-        switch (outcome.kind) {
-        case BattleSystem::EffectOutcomeKind::STATUS_APPLIED:
-        case BattleSystem::EffectOutcomeKind::YAWN_SLEEP:
-            std::snprintf(battleMessage, sizeof(battleMessage),
-                          Ui::Explore::STATUS_APPLIED_FMT, targetName,
-                          statusLabel(outcome.status));
-            break;
-        case BattleSystem::EffectOutcomeKind::STATUS_FAILED:
-            std::snprintf(battleMessage, sizeof(battleMessage), "%s",
-                          Ui::Explore::NO_EFFECT);
-            break;
-        case BattleSystem::EffectOutcomeKind::CONFUSED:
-            std::snprintf(battleMessage, sizeof(battleMessage),
-                          Ui::Explore::CONFUSED_FMT, targetName);
-            break;
-        case BattleSystem::EffectOutcomeKind::BOUND:
-            std::snprintf(battleMessage, sizeof(battleMessage),
-                          Ui::Explore::BOUND_FMT, targetName);
-            break;
-        case BattleSystem::EffectOutcomeKind::STAT_CHANGED: {
-            const uint8_t stat = static_cast<uint8_t>(outcome.stat);
-            if (stat >= static_cast<uint8_t>(BattleStat::COUNT)) continue;
-            std::snprintf(battleMessage, sizeof(battleMessage),
-                          outcome.stageDelta > 0 ? Ui::Explore::STAT_ROSE_FMT
-                                                 : Ui::Explore::STAT_FELL_FMT,
-                          targetName, Ui::Explore::STAT_NAMES[stat]);
-            break;
-        }
-        case BattleSystem::EffectOutcomeKind::DRAINED:
-            std::snprintf(battleMessage, sizeof(battleMessage),
-                          Ui::Explore::DRAINED_FMT, outcome.amount);
-            break;
-        case BattleSystem::EffectOutcomeKind::RECOIL:
-            std::snprintf(battleMessage, sizeof(battleMessage),
-                          Ui::Explore::RECOIL_FMT, targetName, outcome.amount);
-            break;
-        case BattleSystem::EffectOutcomeKind::HEALED:
-            std::snprintf(battleMessage, sizeof(battleMessage),
-                          Ui::Explore::HEALED_FMT, targetName, outcome.amount);
-            break;
-        case BattleSystem::EffectOutcomeKind::CURED:
-            std::snprintf(battleMessage, sizeof(battleMessage),
-                          Ui::Explore::CURED_FMT, targetName);
-            break;
-        case BattleSystem::EffectOutcomeKind::BIND_CLEARED:
-        case BattleSystem::EffectOutcomeKind::BIND_ENDED:
-            std::snprintf(battleMessage, sizeof(battleMessage),
-                          Ui::Explore::BIND_ENDED_FMT, targetName);
-            break;
-        case BattleSystem::EffectOutcomeKind::YAWNED:
-            std::snprintf(battleMessage, sizeof(battleMessage),
-                          Ui::Explore::YAWNED_FMT, targetName);
-            break;
-        case BattleSystem::EffectOutcomeKind::STATUS_DAMAGE:
-            std::snprintf(battleMessage, sizeof(battleMessage),
-                          Ui::Explore::STATUS_DAMAGE_FMT, targetName,
-                          outcome.amount);
-            break;
-        case BattleSystem::EffectOutcomeKind::BIND_DAMAGE:
-            std::snprintf(battleMessage, sizeof(battleMessage),
-                          Ui::Explore::BIND_DAMAGE_FMT, targetName,
-                          outcome.amount);
-            break;
-        case BattleSystem::EffectOutcomeKind::ABILITY_ACTIVATED:
-            if (outcome.amount == 0) continue;
-            std::snprintf(battleMessage, sizeof(battleMessage),
-                          Ui::Explore::ABSORB_HEAL_FMT, targetName,
-                          outcome.amount);
-            break;
-        case BattleSystem::EffectOutcomeKind::FLINCHED:
-            continue;
-        }
-        pushBattleLog(nowMs, false);
-    }
 }
 
 void AmoledApp::performBattleAttack(uint32_t nowMs) {
-    if (battlePhase != BattleViewModel::Phase::ACTION) return;
-    if (battlePlayerSlot >= gameState.teamCount ||
-        battlePlayerSlot >= Game::TEAM_CAP) return;
-    Game::MonsterRuntime& player = gameState.team[battlePlayerSlot];
-    const Species* playerSpecies = findSpecies(player.speciesId);
-    const Species* wildSpecies = findSpecies(battleWild.speciesId);
-    if (!playerSpecies || !wildSpecies) return;
-
-    battleTurnPlan = battleTurnController.planAiTurn(
-        player, *playerSpecies, battlePlayerState,
-        battleWild, *wildSpecies, battleWildState);
-    battleTurnActionIndex = 0;
-    battleTurnDamaged[0] = false;
-    battleTurnDamaged[1] = false;
-    performBattlePlannedAction(nowMs);
+    battleSession_.performBattleAttack(gameState, nowMs);
+    applyBattleEffects(nowMs);
 }
 
 void AmoledApp::performBattlePlayerAction(
     const BattleTurnController::Action& action, uint32_t nowMs) {
-    if (action.side == BattleTurnController::Side::PLAYER)
-        performBattleAction(action, nowMs);
-}
-
-void AmoledApp::performBattleAction(
-    const BattleTurnController::Action& action, uint32_t nowMs) {
-    if (battlePlayerSlot >= gameState.teamCount ||
-        battlePlayerSlot >= Game::TEAM_CAP) return;
-    Game::MonsterRuntime& player = gameState.team[battlePlayerSlot];
-    const Species* playerSpecies = findSpecies(player.speciesId);
-    const Species* wildSpecies = findSpecies(battleWild.speciesId);
-    if (!playerSpecies || !wildSpecies) return;
-
-    const bool attackerWild = action.side == BattleTurnController::Side::WILD;
-    auto& attacker = attackerWild ? battleWild : player;
-    auto& defender = attackerWild ? player : battleWild;
-    const Species& attackerSpecies = attackerWild ? *wildSpecies : *playerSpecies;
-    const Species& defenderSpecies = attackerWild ? *playerSpecies : *wildSpecies;
-    auto& attackerState = attackerWild ? battleWildState : battlePlayerState;
-    auto& defenderState = attackerWild ? battlePlayerState : battleWildState;
-    const auto defenderSide = attackerWild ? BattleTurnController::Side::PLAYER
-                                           : BattleTurnController::Side::WILD;
-    const auto* opponentAction = battleTurnPlan.actionFor(defenderSide);
-    const MoveInfo* opponentMove = findMove(opponentAction ? opponentAction->moveId : 0);
-    BattleSystem::DamageContext context;
-    context.attackerMovesSecond = battleTurnActionIndex > 0;
-    context.defenderDamagedThisTurn = battleTurnDamaged[attackerWild ? 0 : 1];
-    context.defenderMoveIsDamaging = opponentMove && opponentMove->power > 0 &&
-        opponentMove->damageClass != DamageClass::STATUS;
-    context.allowForceWildEnd = !attackerWild;
-
-    BattleActionService::PendingAction pending;
-    BattleActionService::prepare(pending, attacker, attackerSpecies, attackerState,
-        defender, defenderSpecies, defenderState, action.specialSlot, action.moveId, context);
-    BattleActionService::commit(pending, attacker, attackerSpecies, attackerState,
-        defender, defenderSpecies, defenderState,
-        battleTurnPlan.hasActionAfter(battleTurnActionIndex, defenderSide), !attackerWild);
-    const auto& check = pending.check;
-    const auto& damage = pending.damage;
-    const auto& result = pending.result;
-    const auto& moveEffects = result.moveEffects;
-    if (result.selfDamage > 0) battleTurnDamaged[attackerWild ? 1 : 0] = true;
-    if (result.actualDamage > 0) battleTurnDamaged[attackerWild ? 0 : 1] = true;
-#if STICKMON_ENABLE_DEBUG_FEATURES
-    Platform::logf("[BattleAction] side=%s index=%u move=%u kind=%u block=%u "
-        "damage=%u self=%u attacker=%u->%u defender=%u->%u effects=%u/%u/%u\n",
-        attackerWild ? "wild" : "player", battleTurnActionIndex, pending.moveId,
-        static_cast<unsigned>(pending.kind), static_cast<unsigned>(check.blockReason),
-        result.actualDamage, result.selfDamage, result.attackerHpBefore,
-        result.attackerHpAfter, result.defenderHpBefore, result.defenderHpAfter,
-        result.moveEffects.count, result.abilityEffects.count, result.absorbEffects.count);
-#endif
-    auto recoveryLog = [&](bool changed, const char* format) {
-        if (!changed) return;
-        std::snprintf(battleMessage, sizeof(battleMessage), format, attackerSpecies.name);
-        pushBattleLog(nowMs);
-    };
-    recoveryLog(check.wokeUp, Ui::Explore::WOKE_UP_FMT);
-    recoveryLog(check.thawed, Ui::Explore::THAWED_FMT);
-    recoveryLog(check.confusionEnded, Ui::Explore::CONFUSION_ENDED_FMT);
-    battleContinuation = BattleContinuation::ADVANCE_TURN;
-    if (pending.kind == BattleActionService::Kind::BLOCKED) {
-        if (result.selfDamage > 0)
-            startBattleHpAnimation(attackerWild, result.attackerHpBefore,
-                result.attackerHpAfter, attacker.hpMax, Platform::clock().millis());
-        std::snprintf(battleMessage, sizeof(battleMessage),
-                      battleActionBlockedFormat(check.blockReason), attackerSpecies.name);
-        pushBattleLog(nowMs);
-        return;
-    }
-    if (pending.kind == BattleActionService::Kind::CHARGING) {
-        std::snprintf(battleMessage, sizeof(battleMessage), "%s",
-                      attackerWild ? Ui::Amoled::WILD_CHARGE : Ui::Amoled::CHARGING);
-        pushBattleLog(nowMs);
-        if (pending.defenseRaised) {
-            std::snprintf(battleMessage, sizeof(battleMessage), Ui::Explore::STAT_ROSE_FMT,
-                attackerSpecies.name, Ui::Explore::STAT_NAMES[static_cast<uint8_t>(BattleStat::DEFENSE)]);
-            pushBattleLog(nowMs, false);
-        }
-        return;
-    }
-
-    const MoveInfo* move = findMove(damage.moveId);
-    const uint16_t dealt = result.actualDamage;
-    formatBattleMoveUsed(battleMessage, sizeof(battleMessage), attackerSpecies, move, attackerWild);
-    battleAttackLogHeld = true;
-    pushBattleLog(nowMs, true, BATTLE_ATTACK_LOG_MS);
-    if (damage.effectiveness == 0 && !damage.absorbed &&
-        damage.activatedAbility != AbilityId::NONE) {
-        std::snprintf(battleMessage, sizeof(battleMessage), Ui::Explore::ABILITY_ACTIVATED_FMT,
-            defenderSpecies.name, abilityName(damage.activatedAbility));
-        pushBattleLog(nowMs, false);
-    }
-    enqueueBattleEffectLogs(result.absorbEffects, attackerWild, nowMs);
-    formatBattleOutcome(battleMessage, sizeof(battleMessage), damage,
-                        dealt, moveEffects, move, attackerWild);
-    // Hold the move line until impact, then play ordered result/effect logs.
-    pushBattleLog(nowMs, false, BATTLE_RESULT_LOG_MS);
-    enqueueBattleDamageLogs(damage, dealt, nowMs);
-    enqueueBattleEffectLogs(moveEffects, attackerWild, nowMs);
-    enqueueBattleEffectLogs(result.abilityEffects, attackerWild, nowMs);
-    if (result.rampageEnded) {
-        std::snprintf(battleMessage, sizeof(battleMessage), Ui::Explore::RAMPAGE_CONFUSED_FMT,
-                      attackerSpecies.name);
-        pushBattleLog(nowMs, false);
-    }
-    if (damage.sturdyActivated) {
-        std::snprintf(battleMessage, sizeof(battleMessage), Ui::Explore::ABILITY_ACTIVATED_FMT,
-                      defenderSpecies.name, abilityName(AbilityId::STURDY));
-        pushBattleLog(nowMs, false);
-    }
-    if (result.forceWildEnd) {
-        battleForceWildEndPending = true;
-        std::snprintf(battleMessage, sizeof(battleMessage), "%s", Ui::Explore::DRAGON_TAIL_END);
-        pushBattleLog(nowMs, false);
-    }
-    battleAnimationActive = true;
-    battleAnimationAttackerWild = attackerWild;
-    battleAnimationHit = !damage.missed && !damage.failed && dealt > 0;
-    battleAnimationFx = move ? GameAssets::battleFxForMove(move->id, move->type)
-                             : GameAssets::BattleFx::HIT;
-    battleAnimationStatusEffect = battleStatusEffectSucceeded(battleAnimationFx, damage, moveEffects);
-    battleAnimationDamage = dealt;
-    battleAnimationDurationMs = BATTLE_HP_DAMAGE_DELAY_MS + BATTLE_HP_ANIMATION_MS + BATTLE_GAUGE_FRAME_MS;
-    battleAnimationFrame = 1;
-    battleAnimationStartedMs = Platform::clock().millis();
-    if (result.defenderHpBefore != result.defenderHpAfter) {
-        startBattleHpAnimation(!attackerWild, result.defenderHpBefore,
-            result.defenderHpAfter, defender.hpMax, battleAnimationStartedMs + BATTLE_HP_DAMAGE_DELAY_MS);
-    } else if (result.attackerHpBefore != result.attackerHpAfter) {
-        startBattleHpAnimation(attackerWild, result.attackerHpBefore,
-            result.attackerHpAfter, attacker.hpMax, battleAnimationStartedMs + BATTLE_HP_DAMAGE_DELAY_MS);
-    }
-    battleAudioPending = true;
-    battleAudioReady = false;
-    battlePendingSfx = 0xFF;
-    battleImpactAudioPlayed = false;
-    battleImpactSfx = static_cast<uint8_t>(battleAnimationHit
-        ? (damage.effectiveness > 100 ? SfxCue::DAMAGE_SUPER
-            : damage.effectiveness < 100 ? SfxCue::DAMAGE_WEAK : SfxCue::DAMAGE_NORMAL)
-        : battleAnimationStatusEffect ? SfxCue::UI_CONFIRM : SfxCue::UI_CANCEL);
-    battlePendingCrySpecies = attacker.speciesId;
-    Platform::logf("[BattleAnim] start side=%s hit=%u damage=%u\n",
-                   attackerWild ? "wild" : "player", battleAnimationHit ? 1 : 0, dealt);
-    requestRenderRows(0, BATTLE_ANIMATION_RENDER_END);
+    battleSession_.performBattlePlayerAction(gameState, action, nowMs);
+    applyBattleEffects(nowMs);
 }
 
 bool AmoledApp::resolveBattleFaint(uint32_t nowMs) {
-    if (battlePlayerSlot >= gameState.teamCount ||
-        battlePlayerSlot >= Game::TEAM_CAP) return false;
-    Game::MonsterRuntime& player = gameState.team[battlePlayerSlot];
-    const Species* wildSpecies = findSpecies(battleWild.speciesId);
-    if (!wildSpecies) return false;
-    battlePhase = BattleViewModel::Phase::ACTION;
-    if (player.hpCur == 0) {
-        player.fainted = true;
-        player.lastSeenAt = Game::gameSecondsForMinutes(
-            gameState.gameMinutesTotal);
-        const int8_t switchSlot = availableBattleSwitchSlot();
-        const bool hasSwitch = switchSlot >= 0;
-        battlePhase = hasSwitch ? BattleViewModel::Phase::ACTION
-                                : BattleViewModel::Phase::DEFEAT;
-        std::snprintf(battleMessage, sizeof(battleMessage), "%s",
-                      Ui::Amoled::PET_FAINTED);
-        pushBattleLog(nowMs);
-        battleTurnPlan = BattleTurnController::TurnPlan{};
-        battleTurnActionIndex = 0;
-        if (hasSwitch) {
-            performBattleSwitch(static_cast<uint8_t>(switchSlot), false,
-                                nowMs);
-            return true;
-        }
-        requestFullRender();
-        return true;
-    }
-    if (battleWild.hpCur == 0) {
-        battleWild.fainted = true;
-        battleRewardExp = BattleSystem::scaledExperienceReward(
-            BattleSystem::experienceReward(*wildSpecies, battleWild.level),
-            battleExperiencePercent);
-        battleRewardCoins = battleIsBoss
-            ? ExploreBoss::victoryCoinReward(true)
-            : 8 + static_cast<uint32_t>(battleWild.level) * 2;
-        battlePhase = BattleViewModel::Phase::VICTORY;
-        startBattleExperienceAnimation(nowMs);
-        std::snprintf(battleMessage, sizeof(battleMessage),
-                      Ui::Amoled::VICTORY_FMT,
-                      battleRewardExp);
-        pushBattleLog(nowMs);
-        battleTurnPlan = BattleTurnController::TurnPlan{};
-        battleTurnActionIndex = 0;
-        requestFullRender();
-        return true;
-    }
-    return false;
+    const bool result = battleSession_.resolveBattleFaint(gameState, nowMs);
+    applyBattleEffects(nowMs);
+    return result;
 }
 
 void AmoledApp::performBattleSwitch(uint8_t teamSlot, bool consumesTurn,
                                     uint32_t nowMs) {
-    if (teamSlot >= gameState.teamCount || teamSlot >= Game::TEAM_CAP ||
-        teamSlot == battlePlayerSlot) {
-        setToast(Ui::Amoled::CHOOSE_OTHER, nowMs);
-        return;
-    }
-    Game::MonsterRuntime& candidate = gameState.team[teamSlot];
-    if (candidate.fainted || candidate.hpCur == 0) {
-        setToast(Ui::Amoled::CANNOT_SWITCH, nowMs);
-        return;
-    }
-    const Species* candidateSpecies = findSpecies(candidate.speciesId);
-    const Species* wildSpecies = findSpecies(battleWild.speciesId);
-    if (!candidateSpecies || !wildSpecies) return;
-    pendingBattleSwitchSlot = teamSlot;
-    battleSwitchConsumesTurn = consumesTurn;
-    battleSwitchStage = BattleSwitchStage::RETREATING;
-    battleSwitchStartedMs = Platform::clock().millis();
-    nextBattleSwitchFrameMs = battleSwitchStartedMs;
-    battlePhase = BattleViewModel::Phase::ACTION;
-    battlePressedItem = 0xFF;
-    requestRenderRows(0, BATTLE_ANIMATION_RENDER_END);
-}
-
-void AmoledApp::updateBattleSwitch(uint32_t nowMs) {
-    if (battleSwitchStage == BattleSwitchStage::NONE) return;
-    if (static_cast<int32_t>(nowMs - nextBattleSwitchFrameMs) >= 0) {
-        nextBattleSwitchFrameMs = nowMs + BATTLE_SWITCH_FRAME_MS;
-        requestRenderRows(0, BATTLE_ANIMATION_RENDER_END);
-    }
-    if (nowMs - battleSwitchStartedMs < BATTLE_SWITCH_PHASE_MS) return;
-    if (battleSwitchStage == BattleSwitchStage::RETREATING) {
-        if (pendingBattleSwitchSlot >= gameState.teamCount ||
-            pendingBattleSwitchSlot >= Game::TEAM_CAP ||
-            gameState.team[pendingBattleSwitchSlot].fainted ||
-            gameState.team[pendingBattleSwitchSlot].hpCur == 0) {
-            battleSwitchStage = BattleSwitchStage::NONE;
-            pendingBattleSwitchSlot = 0xFF;
-            battleSwitchConsumesTurn = false;
-            requestRenderRows(0, BATTLE_ANIMATION_RENDER_END);
-            return;
-        }
-        battlePlayerSlot = pendingBattleSwitchSlot;
-        pendingBattleSwitchSlot = 0xFF;
-        const Species* candidateSpecies = findSpecies(
-            gameState.team[battlePlayerSlot].speciesId);
-        const Species* wildSpecies = findSpecies(battleWild.speciesId);
-        if (!candidateSpecies || !wildSpecies) {
-            battleSwitchStage = BattleSwitchStage::NONE;
-            battleSwitchConsumesTurn = false;
-            return;
-        }
-        BattleSystem::resetVolatile(battlePlayerState);
-        battleTurnController.resetPlayerAi();
-        BattleSystem::EffectResolution effects;
-        BattleSystem::applyEntryAbility(
-            *candidateSpecies, battlePlayerState, *wildSpecies,
-            battleWildState, effects);
-        uint16_t dynamicSpecies[] = {
-            gameState.team[battlePlayerSlot].speciesId, battleWild.speciesId};
-        PokemonSprites::setDynamicSceneSpecies(dynamicSpecies, 2);
-        PokemonSprites::preloadDynamicSpecies(dynamicSpecies, 2);
-        enqueueBattleEffectLogs(effects, false, nowMs);
-        battleSwitchStage = BattleSwitchStage::ENTERING;
-        battleSwitchStartedMs = Platform::clock().millis();
-        nextBattleSwitchFrameMs = battleSwitchStartedMs;
-        requestRenderRows(0, BATTLE_ANIMATION_RENDER_END);
-        return;
-    }
-    battleSwitchStage = BattleSwitchStage::NONE;
-    battleSwitchStartedMs = 0;
-    const Species* candidateSpecies = findSpecies(
-        gameState.team[battlePlayerSlot].speciesId);
-    if (candidateSpecies) {
-        std::snprintf(battleMessage, sizeof(battleMessage),
-                      Ui::Explore::SWITCH_IN_FMT, candidateSpecies->name);
-        pushBattleLog(nowMs);
-    }
-    if (battleSwitchConsumesTurn) {
-        battleContinuation = BattleContinuation::WILD_TURN;
-    }
-    battleSwitchConsumesTurn = false;
-    requestRenderRows(0, BATTLE_ANIMATION_RENDER_END);
+    battleSession_.performBattleSwitch(gameState, teamSlot, consumesTurn, nowMs);
+    applyBattleEffects(nowMs);
 }
 
 void AmoledApp::performBattleWildTurn(uint32_t nowMs) {
-    if (battlePhase != BattleViewModel::Phase::ACTION) return;
-    if (battlePlayerSlot >= gameState.teamCount ||
-        battlePlayerSlot >= Game::TEAM_CAP) return;
-    Game::MonsterRuntime& player = gameState.team[battlePlayerSlot];
-    const Species* playerSpecies = findSpecies(player.speciesId);
-    const Species* wildSpecies = findSpecies(battleWild.speciesId);
-    if (!playerSpecies || !wildSpecies) return;
-
-    battleTurnPlan = battleTurnController.planWildOnly(
-        player, *playerSpecies, battlePlayerState,
-        battleWild, *wildSpecies, battleWildState);
-    battleTurnActionIndex = 0;
-    battleTurnDamaged[0] = false;
-    battleTurnDamaged[1] = false;
-    performBattlePlannedAction(nowMs);
+    battleSession_.performBattleWildTurn(gameState, nowMs);
+    applyBattleEffects(nowMs);
 }
 
 void AmoledApp::performBattleWildAction(
     const BattleTurnController::Action& action, uint32_t nowMs) {
-    if (action.side == BattleTurnController::Side::WILD)
-        performBattleAction(action, nowMs);
+    battleSession_.performBattleWildAction(gameState, action, nowMs);
+    applyBattleEffects(nowMs);
 }
 
 void AmoledApp::performBattlePlannedAction(uint32_t nowMs) {
-    if (battleTurnActionIndex >= battleTurnPlan.count) {
-        advanceBattleTurn(nowMs);
-        return;
-    }
-    const BattleTurnController::Action& action =
-        battleTurnPlan.actions[battleTurnActionIndex];
-    if (action.side == BattleTurnController::Side::WILD) {
-        performBattleWildAction(action, nowMs);
-    } else {
-        performBattlePlayerAction(action, nowMs);
-    }
+    battleSession_.performBattlePlannedAction(gameState, nowMs);
+    applyBattleEffects(nowMs);
 }
 
 void AmoledApp::advanceBattleTurn(uint32_t nowMs) {
-    if (battlePlayerSlot >= gameState.teamCount ||
-        battlePlayerSlot >= Game::TEAM_CAP) return;
-    Game::MonsterRuntime& player = gameState.team[battlePlayerSlot];
-    const Species* playerSpecies = findSpecies(player.speciesId);
-    const Species* wildSpecies = findSpecies(battleWild.speciesId);
-    if (!playerSpecies || !wildSpecies) return;
-
-    if (resolveBattleFaint(nowMs)) return;
-    if (battleForceWildEndPending) {
-        closeBattle(nowMs);
-        return;
-    }
-
-    ++battleTurnActionIndex;
-    if (battleTurnActionIndex < battleTurnPlan.count) {
-        performBattlePlannedAction(nowMs);
-        return;
-    }
-
-    auto playerEffects = BattleSystem::resolveEndTurn(player, *playerSpecies, battlePlayerState);
-    for (uint8_t i = 0; i < playerEffects.count; ++i)
-        playerEffects.outcomes[i].target = MoveEffectTarget::ATTACKER;
-    enqueueBattleEffectLogs(playerEffects, false, nowMs);
-    auto wildEffects = BattleSystem::resolveEndTurn(battleWild, *wildSpecies, battleWildState);
-    for (uint8_t i = 0; i < wildEffects.count; ++i)
-        wildEffects.outcomes[i].target = MoveEffectTarget::ATTACKER;
-    enqueueBattleEffectLogs(wildEffects, true, nowMs);
-    battleTurnPlan = BattleTurnController::TurnPlan{};
-    battleTurnActionIndex = 0;
-    battleTurnDamaged[0] = false;
-    battleTurnDamaged[1] = false;
-    battleContinuation = BattleContinuation::FINISH_END_TURN;
-    requestFullRender();
-}
-
-void AmoledApp::finishBattleEndTurn(uint32_t nowMs) {
-    if (resolveBattleFaint(nowMs)) return;
-    if (BattleSystem::isChargingMove(battlePlayerState) ||
-        battlePlayerState.lockedMoveId != 0) {
-        performBattleAttack(nowMs);
-        return;
-    }
-    requestFullRender();
+    battleSession_.advanceBattleTurn(gameState, nowMs);
+    applyBattleEffects(nowMs);
 }
 
 int8_t AmoledApp::availableBattleSwitchSlot() const {
-    for (uint8_t slot = 0;
-         slot < gameState.teamCount && slot < Game::TEAM_CAP; ++slot) {
-        if (slot == battlePlayerSlot) continue;
-        const Game::MonsterRuntime& candidate = gameState.team[slot];
-        if (!candidate.fainted && candidate.hpCur > 0) {
-            return static_cast<int8_t>(slot);
-        }
-    }
-    return -1;
-}
-
-void AmoledApp::startBattleHpAnimation(bool wildSide, uint16_t fromHp,
-                                       uint16_t toHp, uint16_t maxHp,
-                                       uint32_t startedMs) {
-    battleHpAnimationWild = wildSide;
-    battleHpAnimationFrom = fromHp;
-    battleHpAnimationTo = toHp;
-    battleHpAnimationMax = std::max<uint16_t>(1, maxHp);
-    battleHpAnimationStartedMs = startedMs;
-    nextBattleHpAnimationFrameMs = startedMs;
-    battleHpAnimationActive = fromHp != toHp;
+    return battleSession_.availableBattleSwitchSlot(gameState);
 }
 
 uint8_t AmoledApp::battleHpPercentForRender(
     bool wildSide, uint16_t currentHp, uint16_t maxHp,
     uint32_t nowMs) const {
-    uint32_t shownHp = currentHp;
-    uint32_t shownMax = std::max<uint16_t>(1, maxHp);
-    if (battleHpAnimationActive &&
-        battleHpAnimationWild == wildSide) {
-        shownMax = battleHpAnimationMax;
-        if (static_cast<int32_t>(nowMs - battleHpAnimationStartedMs) <= 0) {
-            shownHp = battleHpAnimationFrom;
-        } else {
-            uint32_t elapsed = std::min<uint32_t>(
-                BATTLE_HP_ANIMATION_MS,
-                nowMs - battleHpAnimationStartedMs);
-            if (battleHpAnimationFrom >= battleHpAnimationTo) {
-                const uint32_t distance =
-                    battleHpAnimationFrom - battleHpAnimationTo;
-                shownHp = battleHpAnimationFrom -
-                    distance * elapsed / BATTLE_HP_ANIMATION_MS;
-            } else {
-                const uint32_t distance =
-                    battleHpAnimationTo - battleHpAnimationFrom;
-                shownHp = battleHpAnimationFrom +
-                    distance * elapsed / BATTLE_HP_ANIMATION_MS;
-            }
-        }
-    }
-    return static_cast<uint8_t>(std::min<uint32_t>(
-        100, shownHp * 100U / shownMax));
-}
-
-void AmoledApp::startBattleExperienceAnimation(uint32_t nowMs) {
-    battleExperienceVisible = true;
-    battleExperienceAnimationActive = false;
-    battleExperienceAnimationStartedMs = nowMs;
-    nextBattleExperienceAnimationFrameMs = nowMs;
-    if (battlePlayerSlot >= gameState.teamCount ||
-        battlePlayerSlot >= Game::TEAM_CAP) {
-        return;
-    }
-    const Game::MonsterRuntime& player = gameState.team[battlePlayerSlot];
-    const Species* species = findSpecies(player.speciesId);
-    if (!species) return;
-    bool hasReserve = false;
-    for (uint8_t slot = 0; slot < gameState.teamCount &&
-         slot < Game::TEAM_CAP; ++slot) {
-        if (slot == battlePlayerSlot) continue;
-        const Game::MonsterRuntime& reserve = gameState.team[slot];
-        if (!reserve.fainted && reserve.hpCur > 0) {
-            hasReserve = true;
-            break;
-        }
-    }
-    const BattleSystem::ExperienceAwards awards =
-        BattleSystem::experienceAwards(battleRewardExp, hasReserve);
-    Game::MonsterRuntime preview = player;
-    Game::ExperienceService::add(preview, *species, awards.active);
-    battleExperienceAnimationFrom = player.exp;
-    battleExperienceAnimationTo = preview.exp;
-    battleExperienceAnimationActive =
-        battleExperienceAnimationTo > battleExperienceAnimationFrom;
-    if (battleExperienceAnimationActive) {
-        AudioManager::ins().playSfx(SfxCue::EXP_GAIN);
-    }
+    return battleSession_.timeline().hpPercent(wildSide, currentHp, maxHp, nowMs);
 }
 
 uint32_t AmoledApp::battleExperienceForRender(uint32_t nowMs) const {
-    if (!battleExperienceVisible ||
-        battleExperienceAnimationTo <= battleExperienceAnimationFrom) {
-        return battleExperienceAnimationFrom;
-    }
-    if (!battleExperienceAnimationActive) {
-        return battleExperienceAnimationTo;
-    }
-    if (nowMs <= battleExperienceAnimationStartedMs) {
-        return battleExperienceAnimationFrom;
-    }
-    const uint32_t elapsed = std::min<uint32_t>(
-        BATTLE_EXP_ANIMATION_MS,
-        nowMs - battleExperienceAnimationStartedMs);
-    const uint64_t distance = static_cast<uint64_t>(
-        battleExperienceAnimationTo - battleExperienceAnimationFrom) *
-        elapsed;
-    return battleExperienceAnimationFrom +
-        static_cast<uint32_t>(distance / BATTLE_EXP_ANIMATION_MS);
+    return battleSession_.timeline().experience(nowMs);
 }
 
 void AmoledApp::performBattleBag(uint32_t nowMs) {
@@ -6704,10 +4246,10 @@ void AmoledApp::performBattleBag(uint32_t nowMs) {
         setToast(Ui::Amoled::NOTHING, nowMs);
         return;
     }
-    battlePhase = BattleViewModel::Phase::ACTION;
-    battlePressedItem = 0xFF;
+    battleSession_.showAction();
+    battleSession_.press(0xFF);
     openItemScene(AppSceneFlow::Scene::BAG);
-    inventoryController_.state().battleBagMode = true;
+    inventoryController_.setBattleBagMode(true);
 }
 
 void AmoledApp::performBattleBagItem(Game::ItemId item, uint32_t nowMs) {
@@ -6720,52 +4262,19 @@ void AmoledApp::performBattleBagItem(Game::ItemId item, uint32_t nowMs) {
         return;
     }
     if (foodIndex >= 0) {
-        const Species* wildSpecies = findSpecies(battleWild.speciesId);
-        if (!wildSpecies) return;
-        if (!Game::ItemInventory::remove(gameState, item)) {
+        if (!battleSession_.throwFood(gameState, item, nowMs)) {
             setToast(Ui::Room::FOOD_NO_STOCK, nowMs);
             return;
         }
         saveState();
-        inventoryController_.state().itemVelocity = 0.0f;
-        inventoryController_.state().itemConfirmOpen = false;
-        inventoryController_.state().pendingItem = Game::ItemId::COUNT;
-        inventoryController_.state().pendingItemAction = PendingItemAction::NONE;
-        inventoryController_.state().pressedItemRow = -1;
-        inventoryController_.state().battleBagMode = false;
+        inventoryController_.stopScroll();
+        inventoryController_.clearAction();
+        inventoryController_.cancelTouch();
+        inventoryController_.setBattleBagMode(false);
         sceneFlow.closeSubScene();
-        std::snprintf(battleMessage, sizeof(battleMessage),
-                      Ui::Explore::FOOD_THROW_FMT, wildSpecies->name,
-                      Ui::Room::FOOD_NAMES[foodIndex]);
-        pushBattleLog(nowMs);
-        battlePhase = BattleViewModel::Phase::ACTION;
-        battleThrownItem = item;
-        battleItemThrowFrame = 0;
-        battleItemThrowStartedMs = Platform::clock().millis();
-        const FoodTuning::ThrowClass throwClass =
-            FriendshipSystem::classifyFoodThrow(
-                static_cast<uint8_t>(foodIndex), battleWild.nature);
-        const bool accepted = FriendshipSystem::acceptsFoodThrow(
-            battleIsBoss, throwClass,
-            static_cast<uint8_t>(GameRandom::range(0, 100)));
-        std::snprintf(battleMessage, sizeof(battleMessage),
-                      accepted
-                          ? (throwClass == FoodTuning::ThrowClass::LIKED
-                                 ? Ui::Explore::FOOD_ACCEPTED_LIKED_FMT
-                                 : Ui::Explore::FOOD_ACCEPTED_FMT)
-                          : (throwClass == FoodTuning::ThrowClass::DISLIKED
-                                 ? Ui::Explore::FOOD_REFUSED_DISLIKED_FMT
-                                 : Ui::Explore::FOOD_REFUSED_FMT),
-                      wildSpecies->name);
-        pushBattleLog(nowMs);
-        if (accepted) {
-            battleFoodBond = FriendshipSystem::addFoodBond(
-                battleFoodBond, FriendshipSystem::throwBondGain(throwClass));
-        }
-        battleContinuation = accepted ? BattleContinuation::ADVANCE_TURN
-                                      : BattleContinuation::WILD_TURN;
         AudioManager::ins().playSfx(SfxCue::THROW);
-        battleItemThrowStartedMs = Platform::clock().millis();
+        battleSession_.throwAudioPlayed(Platform::clock().millis());
+        applyBattleEffects(nowMs);
         requestFullRender();
         return;
     }
@@ -6773,12 +4282,7 @@ void AmoledApp::performBattleBagItem(Game::ItemId item, uint32_t nowMs) {
         setToast(Ui::Amoled::NO_STOCK, nowMs);
         return;
     }
-    inventoryController_.state().pendingItem = item;
-    inventoryController_.state().pendingItemAction = PendingItemAction::USE;
-    inventoryController_.state().itemConfirmOpen = false;
-    inventoryController_.state().itemTargetReturnScene = AppSceneFlow::Scene::BATTLE;
-    inventoryController_.state().selectingItemTarget = true;
-    inventoryController_.state().itemVelocity = 0.0f;
+    inventoryController_.beginItemTarget(item, AppSceneFlow::Scene::BATTLE);
     openTeamScene(true);
 }
 
@@ -6791,25 +4295,16 @@ uint16_t AmoledApp::teamItemHpForRender(uint32_t nowMs) const {
 }
 
 void AmoledApp::finishTeamItemUse(uint32_t nowMs) {
-    inventoryController_.state().teamItemFeedbackActive = false;
-    inventoryController_.state().teamItemTargetSlot = 0xFF;
-    inventoryController_.state().selectingItemTarget = false;
-    inventoryController_.state().itemConfirmOpen = false;
-    inventoryController_.state().pendingItem = Game::ItemId::COUNT;
-    inventoryController_.state().pendingItemAction = PendingItemAction::NONE;
-    inventoryController_.state().pressedItemRow = -1;
-    teamController_.state().pressedTeamSlot = -1;
+    inventoryController_.finishTargetSelection();
+    teamController_.pressMember(-1);
     pointerDown = false;
     dragging = false;
     if (inventoryController_.state().battleBagMode) {
-        inventoryController_.state().battleBagMode = false;
+        inventoryController_.setBattleBagMode(false);
         sceneFlow.closeSubScene();
         toast = nullptr;
-        std::snprintf(battleMessage, sizeof(battleMessage), "%s",
-                      Ui::Amoled::ITEM_USED);
-        pushBattleLog(nowMs);
-        battlePhase = BattleViewModel::Phase::ACTION;
-        battleContinuation = BattleContinuation::WILD_TURN;
+        battleSession_.itemUsed(nowMs);
+        applyBattleEffects(nowMs);
     } else {
         sceneFlow.enter(AppSceneFlow::Scene::BAG);
     }
@@ -6817,280 +4312,44 @@ void AmoledApp::finishTeamItemUse(uint32_t nowMs) {
 }
 
 void AmoledApp::performBattleFlee(uint32_t nowMs) {
-    if (BattleSystem::canFlee(battlePlayerState) &&
-        GameRandom::range(0, 100) < 60) {
-        closeBattle(nowMs);
-        setToast(Ui::Amoled::GOT_AWAY, nowMs);
-        return;
-    }
-    std::snprintf(battleMessage, sizeof(battleMessage), "%s",
-                  Ui::Amoled::CANNOT_ESCAPE);
-    pushBattleLog(nowMs);
-    battleContinuation = BattleContinuation::WILD_TURN;
+    battleSession_.performBattleFlee(gameState, nowMs);
+    applyBattleEffects(nowMs);
 }
 
 void AmoledApp::finishBattleVictory(uint32_t nowMs) {
-    if (battlePhase != BattleViewModel::Phase::VICTORY) return;
-    if (battlePlayerSlot >= gameState.teamCount ||
-        battlePlayerSlot >= Game::TEAM_CAP) {
-        closeBattle(nowMs);
-        return;
-    }
-    Game::MonsterRuntime& player = gameState.team[battlePlayerSlot];
-    const Species* species = findSpecies(player.speciesId);
-    const Species* wildSpecies = findSpecies(battleWild.speciesId);
-    if (!species || !wildSpecies) {
-        closeBattle(nowMs);
-        return;
-    }
-    uint8_t reserveSlot = 0xFF;
-    for (uint8_t slot = 0; slot < gameState.teamCount &&
-         slot < Game::TEAM_CAP; ++slot) {
-        if (slot == battlePlayerSlot) continue;
-        const Game::MonsterRuntime& reserve = gameState.team[slot];
-        if (!reserve.fainted && reserve.hpCur > 0) {
-            reserveSlot = slot;
-            break;
-        }
-    }
-    const BattleSystem::ExperienceAwards awards =
-        BattleSystem::experienceAwards(
-            battleRewardExp, reserveSlot != 0xFF);
-
-    Game::EffortService::grant(player, *wildSpecies, *species);
-    Game::CareExperience::prepareDay(gameState);
-    Game::CareExperience::recordFor(gameState, player);
-    const Game::ExperienceService::Result playerExperience =
-        Game::ExperienceService::add(player, *species, awards.active);
-    queueBattleProgression(battlePlayerSlot, playerExperience.oldLevel,
-                           playerExperience.leveledUp);
-    if (playerExperience.leveledUp) {
-        std::snprintf(battleMessage, sizeof(battleMessage),
-                      Ui::Explore::LEVEL_UP_LOG_FMT, species->name,
-                      playerExperience.newLevel);
-        pushBattleLog(nowMs);
-    }
-
-    if (reserveSlot != 0xFF && awards.reserve > 0) {
-        Game::MonsterRuntime& reserve = gameState.team[reserveSlot];
-        const Species* reserveSpecies = findSpecies(reserve.speciesId);
-        if (reserveSpecies) {
-            Game::CareExperience::recordFor(gameState, reserve);
-            Game::EffortService::grant(
-                reserve, *wildSpecies, *reserveSpecies);
-            const Game::ExperienceService::Result reserveExperience =
-                Game::ExperienceService::add(
-                    reserve, *reserveSpecies, awards.reserve);
-            if (reserveExperience.awarded > 0) {
-                std::snprintf(battleMessage, sizeof(battleMessage),
-                              Ui::Explore::SHARED_EXP_GAIN_FMT,
-                              reserveSpecies->name,
-                              static_cast<unsigned>(
-                                  reserveExperience.awarded));
-                pushBattleLog(nowMs);
-            }
-            queueBattleProgression(
-                reserveSlot, reserveExperience.oldLevel,
-                reserveExperience.leveledUp);
-            if (reserveExperience.leveledUp) {
-                std::snprintf(battleMessage, sizeof(battleMessage),
-                              Ui::Explore::LEVEL_UP_LOG_FMT,
-                              reserveSpecies->name,
-                              reserveExperience.newLevel);
-                pushBattleLog(nowMs);
-            }
-        }
-    }
-    gameState.coins += battleRewardCoins;
-    if (battleIsBoss) {
-        uint8_t area = selectedExploreArea;
-        if (area < Game::EXPLORE_AREA_COUNT) {
-            if (gameState.explorePoolRerollCounts[area] < UINT8_MAX) {
-                ++gameState.explorePoolRerollCounts[area];
-            }
-            if (battleSpecialKind == ExploreSpecial::Kind::NONE) {
-                ExploreBossPity::resetArea(gameState, area);
-            }
-            uint8_t defeated = ExploreSpecial::defeatedBit(battleSpecialKind);
-            if (defeated != 0) {
-                gameState.specialBossDefeatedMask = static_cast<uint8_t>(
-                    gameState.specialBossDefeatedMask | defeated);
-            }
-        }
-    }
-    bool allowsFriendship = battleSpecialKind == ExploreSpecial::Kind::NONE ||
-        ExploreSpecial::configFor(battleSpecialKind).allowsFriendship;
-    Game::FriendshipService::OfferResult offer =
-        Game::FriendshipService::evaluateOffer(
-            gameState, *wildSpecies, battleWild,
-            battleIsBoss, allowsFriendship, battleFoodBond);
-    if (offer.offered) {
-        battleFriendshipPrompt = BattleViewModel::FriendshipPrompt::OFFER;
-        battleFriendshipContactSlot = 0xFF;
-        battlePhase = BattleViewModel::Phase::FRIENDSHIP;
-        battlePressedItem = 0xFF;
-        std::snprintf(battleMessage, sizeof(battleMessage),
-                      Ui::Explore::FRIEND_RECOGNIZES_FMT,
-                      wildSpecies->name);
-        pushBattleLog(nowMs);
-        std::snprintf(battleMessage, sizeof(battleMessage), "%s",
-                      Ui::Explore::FRIEND_CONTACT_QUESTION);
-        pushBattleLog(nowMs);
-        requestFullRender();
-        return;
-    }
-    if (offer.eligible) {
-        Game::FriendshipService::recordFailure(
-            gameState, battleWild.speciesId);
-    }
-    if (battleLogPlaybackBusy()) {
-        battleVictoryFinalizePending = true;
-        requestRenderRows(352, 448);
-        return;
-    }
-    finishBattleAfterFriendship(nowMs);
+    battleSession_.finishBattleVictory(gameState, nowMs);
+    applyBattleEffects(nowMs);
 }
 
 void AmoledApp::resolveBattleFriendship(uint8_t choice, uint32_t nowMs) {
-    if (battlePhase != BattleViewModel::Phase::FRIENDSHIP) return;
-    if (battleFriendshipPrompt == BattleViewModel::FriendshipPrompt::OFFER) {
-        if (choice != 0) {
-            finishBattleAfterFriendship(nowMs);
-            return;
-        }
-        uint8_t contactSlot = 0xFF;
-        if (gameState.storageCount >= Game::STORAGE_CAP) {
-            battleFriendshipPrompt = BattleViewModel::FriendshipPrompt::FULL;
-            std::snprintf(battleMessage, sizeof(battleMessage), "%s",
-                          Ui::Amoled::BOX_FULL);
-            pushBattleLog(nowMs);
-            battlePressedItem = 0xFF;
-            requestRenderRows(MENU_HEADER_HEIGHT, 448);
-            return;
-        }
-        if (!Game::FriendshipService::recordContact(
-                gameState, battleWild, selectedExploreArea,
-                gameState.gameMinutesTotal * 60UL, &contactSlot)) {
-            battleFriendshipPrompt = BattleViewModel::FriendshipPrompt::FULL;
-            std::snprintf(battleMessage, sizeof(battleMessage), "%s",
-                          Ui::Amoled::BOX_FULL);
-            pushBattleLog(nowMs);
-            battlePressedItem = 0xFF;
-            requestRenderRows(MENU_HEADER_HEIGHT, 448);
-            return;
-        }
-        Game::FriendshipService::recordSuccess(
-            gameState, battleWild.speciesId);
-        battleFriendshipContactSlot = contactSlot;
-        if (gameState.teamCount < Game::TEAM_CAP) {
-            battleFriendshipPrompt = BattleViewModel::FriendshipPrompt::TEAM;
-            std::snprintf(battleMessage, sizeof(battleMessage), "%s",
-                          Ui::Amoled::ADD_TO_TEAM);
-        } else {
-            battleFriendshipPrompt = BattleViewModel::FriendshipPrompt::ACQUIRED;
-            std::snprintf(battleMessage, sizeof(battleMessage), "%s",
-                          Ui::Amoled::FRIEND_ADDED);
-        }
-        pushBattleLog(nowMs);
-        battlePressedItem = 0xFF;
-        requestRenderRows(MENU_HEADER_HEIGHT, 448);
-        return;
-    }
-    if (battleFriendshipPrompt == BattleViewModel::FriendshipPrompt::TEAM) {
-        if (choice == 0 && battleFriendshipContactSlot != 0xFF) {
-            Game::FriendshipService::InviteResult result =
-                Game::FriendshipService::inviteContact(
-                    gameState, battleFriendshipContactSlot,
-                    gameState.gameMinutesTotal);
-            if (result == Game::FriendshipService::InviteResult::JOINED) {
-                uint16_t speciesIds[Game::TEAM_CAP] = {};
-                uint8_t count = Game::TeamRoster::memberCount(gameState);
-                for (uint8_t slot = 0; slot < count; ++slot) {
-                    speciesIds[slot] = gameState.team[slot].speciesId;
-                }
-                PokemonSprites::syncTeamCache(speciesIds, count);
-                battleFriendshipPrompt = BattleViewModel::FriendshipPrompt::ACQUIRED;
-                std::snprintf(battleMessage, sizeof(battleMessage), "%s",
-                              Ui::Amoled::TEAM_MEMBER_ADDED);
-                pushBattleLog(nowMs);
-                requestRenderRows(MENU_HEADER_HEIGHT, 448);
-                return;
-            }
-        }
-        finishBattleAfterFriendship(nowMs);
-        return;
-    }
-    finishBattleAfterFriendship(nowMs);
+    battleSession_.resolveBattleFriendship(gameState, choice, nowMs);
+    applyBattleEffects(nowMs);
 }
 
 void AmoledApp::finishBattleAfterFriendship(uint32_t nowMs) {
-    if (battleProgressionCount > battleProgressionIndex) {
-        autonomousExpedition = false;
-        battleProgressionSequenceActive = true;
-        if (startNextBattleProgression(nowMs)) {
-            // The battle screen has handed off to level/evolution choices.
-            saveState();
-            return;
-        }
-    }
-    closeBattle(nowMs);
-    if (autonomousExpedition) exploreRouteAutoWalk = true;
-}
-
-void AmoledApp::resetBattleProgressionQueue() {
-    for (uint8_t slot = 0; slot < Game::TEAM_CAP; ++slot) {
-        battleProgressionSlots[slot] = 0;
-        battleProgressionOldLevels[slot] = 0;
-    }
-    battleProgressionCount = 0;
-    battleProgressionIndex = 0;
-    battleProgressionSequenceActive = false;
-    battleVictoryFinalizePending = false;
+    battleSession_.finishBattleAfterFriendship(gameState, nowMs);
+    applyBattleEffects(nowMs);
 }
 
 void AmoledApp::queueBattleProgression(uint8_t teamSlot, uint8_t oldLevel,
                                        bool leveledUp) {
-    if (!leveledUp || teamSlot >= gameState.teamCount ||
-        teamSlot >= Game::TEAM_CAP ||
-        battleProgressionCount >= Game::TEAM_CAP) {
-        return;
-    }
-    battleProgressionSlots[battleProgressionCount] = teamSlot;
-    battleProgressionOldLevels[battleProgressionCount] = oldLevel;
-    ++battleProgressionCount;
+    battleSession_.queueBattleProgression(gameState, teamSlot, oldLevel, leveledUp);
 }
 
 bool AmoledApp::startNextBattleProgression(uint32_t nowMs) {
-    while (battleProgressionIndex < battleProgressionCount) {
-        const uint8_t index = battleProgressionIndex++;
-        const uint8_t teamSlot = battleProgressionSlots[index];
-        const uint8_t oldLevel = battleProgressionOldLevels[index];
-        if (teamSlot >= gameState.teamCount || teamSlot >= Game::TEAM_CAP ||
-            gameState.team[teamSlot].level <= oldLevel) {
-            continue;
-        }
-        openProgressionScene(AppSceneFlow::Scene::EXPLORE_ROUTE,
-                             teamSlot, oldLevel, nowMs);
-        return true;
-    }
-    battleProgressionSequenceActive = false;
-    return false;
+    const bool result = battleSession_.startNextBattleProgression(gameState, nowMs);
+    applyBattleEffects(nowMs);
+    return result;
 }
 
 void AmoledApp::finishBattleDefeat(uint32_t nowMs) {
-    if (battlePhase != BattleViewModel::Phase::DEFEAT) return;
-    if (battlePlayerSlot < gameState.teamCount &&
-        battlePlayerSlot < Game::TEAM_CAP) {
-        Game::MonsterRuntime& player = gameState.team[battlePlayerSlot];
-        player.hpCur = 0;
-        player.fainted = true;
-        player.lastSeenAt = Game::gameSecondsForMinutes(
-            gameState.gameMinutesTotal);
-    }
+    if (!battleSession_.finishDefeat(gameState)) return;
     saveState();
     exploreSessionActive = false;
     autonomousExpedition = false;
+    exploreSession_.stopRoute();
     PokemonSprites::setDynamicSceneSpecies(nullptr, 0);
+    PokemonSprites::setPinnedDynamicSpecies(nullptr, 0);
     // Defeat returns directly from battle to the room instead of using the
     // normal expedition return transition. Clear departure-only visibility
     // state so fainted team members can be rendered resting at home.
@@ -7109,13 +4368,12 @@ void AmoledApp::finishBattleDefeat(uint32_t nowMs) {
     sceneFlow.goHome();
 #endif
     setMusicContext(MusicContext::HOME);
-    battlePhase = BattleViewModel::Phase::ACTION;
+    battleSession_.reset();
     setToast(Ui::Amoled::REST_AT_HOME, nowMs, 1500);
     requestFullRender();
 }
 
 void AmoledApp::closeBattle(uint32_t nowMs) {
-    (void)nowMs;
     // Persist the complete result before resuming the route, including flee
     // damage, rewards, contacts and any completed progression choices.
     saveState();
@@ -7127,49 +4385,13 @@ void AmoledApp::closeBattle(uint32_t nowMs) {
     }
 #endif
     PokemonSprites::setDynamicSceneSpecies(nullptr, 0);
-    battlePressedItem = 0xFF;
-    battlePlayerSlot = 0;
-    battleIsBoss = false;
-    battleExperiencePercent = 100;
-    battleSpecialKind = ExploreSpecial::Kind::NONE;
-    battleFriendshipPrompt = BattleViewModel::FriendshipPrompt::OFFER;
-    battleFriendshipContactSlot = 0xFF;
-    resetBattleProgressionQueue();
-    battleThrownItem = Game::ItemId::COUNT;
-    battleAnimationActive = false;
-    battleAnimationStatusEffect = false;
-    battleSwitchStage = BattleSwitchStage::NONE;
-    pendingBattleSwitchSlot = 0xFF;
-    battleSwitchConsumesTurn = false;
-    battleAnimationAttackerWild = false;
-    battleAnimationHit = false;
-    battleAnimationFx = GameAssets::BattleFx::HIT;
-    battleAnimationDamage = 0;
-    battleAnimationFrame = 0;
-    battleAttackLogHeld = false;
-    battleImpactAudioPlayed = false;
-    battleImpactSfx = 0xFF;
-    battleHpAnimationActive = false;
-    battleExperienceVisible = false;
-    battleExperienceAnimationActive = false;
-    battleExperienceAnimationFrom = 0;
-    battleExperienceAnimationTo = 0;
-    inventoryController_.state().battleBagMode = false;
-    battleFoodBond = 0;
-    battleAudioPending = false;
-    battleAudioReady = false;
-    battlePendingSfx = 0xFF;
-    battlePendingCrySpecies = 0;
-    battleForceWildEndPending = false;
-    battleTurnPlan = BattleTurnController::TurnPlan{};
-    battleTurnActionIndex = 0;
-    battleTurnDamaged[0] = false;
-    battleTurnDamaged[1] = false;
-    battleContinuation = BattleContinuation::NONE;
-    clearBattleLog();
-    battlePhase = BattleViewModel::Phase::ACTION;
-    exploreRouteAutoWalk = false;
-    exploreRoutePaused = false;
+    battleSession_.reset();
+    inventoryController_.setBattleBagMode(false);
+    // Battle and growth can keep the route hidden for minutes. Rebase its
+    // presentation deadlines after storage/cache work, before walking resumes.
+    nowMs = Platform::clock().millis();
+    resumeExploreRoute(nowMs);
+    exploreSession_.battleClosed();
     sceneFlow.enter(returnToDebug ? AppSceneFlow::Scene::DEBUG
                                   : AppSceneFlow::Scene::EXPLORE_ROUTE);
     setMusicContext(returnToDebug ? MusicContext::HOME
@@ -7177,72 +4399,50 @@ void AmoledApp::closeBattle(uint32_t nowMs) {
     requestFullRender();
 }
 
-void AmoledApp::updateExploreRouteCamera() {
-    int maximumX = std::max(0, EXPLORE_ROUTE_WORLD_WIDTH - AmoledUi::WIDTH / AmoledUi::RESOURCE_SCALE);
-    int maximumY = std::max(0,
-        EXPLORE_ROUTE_WORLD_HEIGHT - EXPLORE_ROUTE_VIEW_HEIGHT / AmoledUi::RESOURCE_SCALE);
-    int cameraX = static_cast<int>(std::lround(exploreRouteWorldX)) - 92;
-    int cameraY = static_cast<int>(std::lround(exploreRouteWorldY)) -
-                  EXPLORE_ROUTE_VIEW_HEIGHT / (2 * AmoledUi::RESOURCE_SCALE);
-    const int16_t nextCameraX = static_cast<int16_t>(
-        std::clamp(cameraX, 0, maximumX));
-    const int16_t nextCameraY = static_cast<int16_t>(
-        std::clamp(cameraY, 0, maximumY));
-#if STICKMON_ENABLE_DEBUG_FEATURES && STICKMON_ENABLE_TRACE_LOGS
-    if (nextCameraX != exploreRouteCameraX || nextCameraY != exploreRouteCameraY) {
-        Platform::logf(
-            "[AmoledExploreDiag] camera world=(%.2f,%.2f) old=(%d,%d) "
-            "next=(%d,%d) max=(%d,%d)\n",
-            static_cast<double>(exploreRouteWorldX),
-            static_cast<double>(exploreRouteWorldY),
-            static_cast<int>(exploreRouteCameraX),
-            static_cast<int>(exploreRouteCameraY),
-            static_cast<int>(nextCameraX), static_cast<int>(nextCameraY),
-            maximumX, maximumY);
+void AmoledApp::applyBattleEffects(uint32_t nowMs) {
+    const auto effects = battleSession_.takeEffects();
+    requestRenderRows(effects.rowBegin, effects.rowEnd);
+    requestRenderRows(effects.timeline.rowBegin, effects.timeline.rowEnd);
+    if (effects.timeline.sfx != 0xFF)
+        AudioManager::ins().playSfx(static_cast<SfxCue>(effects.timeline.sfx));
+    if (effects.syncTeam) {
+        uint16_t speciesIds[Game::TEAM_CAP] = {};
+        const uint8_t count = Game::TeamRoster::memberCount(gameState);
+        for (uint8_t slot = 0; slot < count; ++slot) speciesIds[slot] = gameState.team[slot].speciesId;
+        PokemonSprites::syncTeamCache(speciesIds, count);
     }
-#endif
-    exploreRouteCameraX = nextCameraX;
-    exploreRouteCameraY = nextCameraY;
+    if (effects.preloadSwitch) {
+        const auto& battle = battleSession_.state();
+        const uint16_t species[] = {gameState.team[battle.battlePlayerSlot].speciesId,
+                                    battle.battleWild.speciesId};
+        PokemonSprites::setDynamicSceneSpecies(species, 2);
+        PokemonSprites::preloadDynamicSpecies(species, 2);
+        battleSession_.switchPreloaded(Platform::clock().millis());
+        const auto acknowledged = battleSession_.takeEffects();
+        requestRenderRows(acknowledged.timeline.rowBegin, acknowledged.timeline.rowEnd);
+    }
+    if (effects.stopAutonomous) autonomousExpedition = false;
+    if (effects.openProgression)
+        openProgressionScene(AppSceneFlow::Scene::EXPLORE_ROUTE,
+            effects.progressionSlot, effects.progressionOldLevel, nowMs);
+    if (effects.save) saveState();
+    if (effects.close) {
+        closeBattle(nowMs);
+        if (effects.resumeAutonomous && autonomousExpedition) exploreSession_.setAutoWalk(true);
+    }
+    if (effects.toast) setToast(effects.toast, nowMs);
 }
 
+
 void AmoledApp::pauseExploreRoute(uint32_t nowMs) {
-    if (exploreRoutePaused) return;
-    exploreRoutePaused = true;
-    exploreRoutePausedAtMs = nowMs;
+    exploreSession_.pause(nowMs);
 }
 
 void AmoledApp::resumeExploreRoute(uint32_t nowMs) {
-    if (!exploreRoutePaused) return;
-    if (exploreRouteMoving) {
-        exploreRouteMoveStartedMs += nowMs - exploreRoutePausedAtMs;
-    }
-    exploreRoutePaused = false;
-    exploreRoutePausedAtMs = 0;
-    nextExploreRouteFrameMs = nowMs;
-}
-
-void AmoledApp::settleExploreReturn() {
-    const uint8_t bondGain = Game::Bond::adventureGain(exploreRouteSteps);
-    for (uint8_t slot = 0;
-         slot < gameState.teamCount && slot < Game::TEAM_CAP; ++slot) {
-        Game::MonsterRuntime& monster = gameState.team[slot];
-        if (monster.majorStatus != Game::MajorStatus::NONE ||
-            monster.majorStatusTurns != 0) {
-            monster.majorStatus = Game::MajorStatus::NONE;
-            monster.majorStatusTurns = 0;
-        }
-        if (bondGain == 0 || monster.origin == Game::Origin::VISITOR ||
-            monster.fainted || monster.hpCur == 0) {
-            continue;
-        }
-        Game::Bond::Value nextBond = Game::Bond::increase(
-            monster.bond, bondGain);
-        if (nextBond == monster.bond) continue;
-        monster.bond = nextBond;
-    }
-    exploreItemEffects.reset();
-    // Even a short, uneventful route can have unsaved steps and care changes.
-    saveState();
+    const auto& route = exploreSession_.state();
+    if (!route.exploreRoutePaused) return;
+    const uint32_t paused = exploreSession_.resume(nowMs);
+    explorePresenter_.resume(route, paused, nowMs);
 }
 
 void AmoledApp::leaveExploreRoute() {
@@ -7256,9 +4456,9 @@ void AmoledApp::leaveExploreRoute() {
 
 void AmoledApp::completeExploreReturn() {
     autonomousExpedition = false;
-    exploreRoutePool = ExplorePool::Pool{};
     PokemonSprites::setPinnedDynamicSpecies(nullptr, 0);
-    settleExploreReturn();
+    exploreSession_.finishReturn(gameState);
+    applyExploreEffects(Platform::clock().millis());
 #if STICKMON_ENABLE_DEBUG_FEATURES
     if (debugContactActive && debugContactKind == 3) {
         Platform::logf("[FriendDiag] home-return kind=3 team=%u phase=%u\n",
@@ -7267,11 +4467,6 @@ void AmoledApp::completeExploreReturn() {
         completeDebugContact(Platform::clock().millis());
     }
 #endif
-    exploreRouteMoving = false;
-    exploreRouteAutoWalk = false;
-    exploreRoutePlayerWalkActive = false;
-    exploreRoutePaused = false;
-    exploreRouteExitConfirm = false;
     sceneFlow.goHome();
     setMusicContext(MusicContext::HOME);
     requestFullRender();
@@ -7315,6 +4510,7 @@ void AmoledApp::placeFaintedHomeActors(uint32_t nowMs) {
 }
 
 void AmoledApp::updateClockAndCare(uint32_t nowMs) {
+    const auto& route = exploreSession_.state();
     Game::CareExperience::prepareDay(gameState);
     uint16_t previousMinuteOfDay = static_cast<uint16_t>(
         gameState.gameMinutesTotal % Game::GAME_MINUTES_PER_DAY);
@@ -7334,13 +4530,10 @@ void AmoledApp::updateClockAndCare(uint32_t nowMs) {
     }
 
     if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_ROUTE &&
-        !exploreRoutePaused && !exploreRouteComplete && !exploreRouteExitConfirm &&
-        !exploreRouteExiting && !expeditionFade.active()) {
-        const auto tone = ExploreDaylight::at(gameState.gameMinutesTotal, selectedExploreArea);
-        if (tone != exploreRouteDaylight) {
-            exploreRouteDaylight = tone;
-            requestRenderRows(EXPLORE_ROUTE_MAP_TOP, EXPLORE_ROUTE_MAP_BOTTOM);
-        }
+        !route.exploreRoutePaused && !route.exploreRouteComplete && !route.exploreRouteExitConfirm &&
+        !route.exploreRouteExiting && !expeditionFade.active()) {
+        explorePresenter_.updateDaylight(gameState.gameMinutesTotal, selectedExploreArea);
+        applyExplorePresentationDamage();
     }
 
     uint32_t elapsedMs = nowMs - lastCareMs;
@@ -7355,13 +4548,15 @@ void AmoledApp::updateClockAndCare(uint32_t nowMs) {
         if (gameState.teamCount > 0) requestRenderRows(HOME_STATUS_TOP, 448);
     }
 
-    if (!exploreSessionActive &&
-        sceneFlow.current() != AppSceneFlow::Scene::BATTLE &&
+    if (!pointerDown && !saveWritesBlocked && !saveCoordinator_.dirty() &&
+        !exploreSessionActive && sceneFlow.current() != AppSceneFlow::Scene::BATTLE &&
         (clockChanged || elapsedMs >= CARE_TICK_MS) &&
         nowMs - lastPersistMs >= PERIODIC_SAVE_MS) {
         saveState();
-        lastPersistMs = nowMs;
     }
+    // Failed event saves remain pending across scenes. Avoid storage writes
+    // during an active gesture; the coordinator bounds the retry frequency.
+    if (!pointerDown && saveCoordinator_.due(nowMs)) saveState();
 }
 
 void AmoledApp::updateMoodHearts(uint32_t nowMs) {
@@ -7430,14 +4625,14 @@ void AmoledApp::updatePet(uint32_t nowMs) {
     // scene transitions, save restore, and visitor teardown. Repair stale
     // leases/routes before the next decision is allowed to claim a resource.
     homeRuntime.beginTick(nowMs);
-    if (visitDeparture != VisitDeparture::NONE &&
+    if (visitAwayFlow_.state().phase != VisitDeparture::NONE &&
         updateVisitDeparture(nowMs)) {
         lastPetUpdateMs = nowMs;
         return;
     }
     if (visitSession.visitorArrivalReady() &&
         homeCompanionActor.active && homeCompanionActor.hidden &&
-        visitorMotion == VisitorMotion::NONE &&
+        visitorFlow_.state().motion == VisitorMotion::NONE &&
         gameState.teamCount > 1 &&
         gameState.team[1].origin == Game::Origin::VISITOR) {
         Platform::logf("[VisitArrival] departed species=%u\n",
@@ -7470,9 +4665,9 @@ void AmoledApp::updatePet(uint32_t nowMs) {
     }
     serviceHomeFoodArbitration(nowMs);
     updateCompanion(nowMs);
-    if (visitorMotion == VisitorMotion::HOST_APPROACH ||
-        visitorMotion == VisitorMotion::ENTERING ||
-        visitorMotion == VisitorMotion::EXITING) {
+    if (visitorFlow_.state().motion == VisitorMotion::HOST_APPROACH ||
+        visitorFlow_.state().motion == VisitorMotion::ENTERING ||
+        visitorFlow_.state().motion == VisitorMotion::EXITING) {
         lastPetUpdateMs = nowMs;
         return;
     }
@@ -7482,7 +4677,7 @@ void AmoledApp::updatePet(uint32_t nowMs) {
     if (updatePairInteraction(nowMs, elapsedSeconds)) return;
     // Clearing a shared resource is part of the committed food transaction,
     // not an autonomous choice. It must finish even if Claw takes control.
-    if (roomAction == RoomAction::FEED_FINISH &&
+    if (homeFlow_.state().action == RoomAction::FEED_FINISH &&
         updateRoomAction(nowMs, elapsedSeconds)) {
         return;
     }
@@ -7618,7 +4813,7 @@ void AmoledApp::updatePet(uint32_t nowMs) {
         (gameState.room.bowlCount > 0 &&
          monster.satiety < MONSTER_FEED_TARGET_SATIETY &&
          homeMainActor.mind.topDesire() == MonsterDesire::EAT);
-    if (roomAction != RoomAction::NONE && urgentNeed) {
+    if (homeFlow_.state().action != RoomAction::NONE && urgentNeed) {
         cancelRoomAction(nowMs);
         homeMainActor.nextDecisionMs = nowMs;
     }
@@ -7674,20 +4869,15 @@ void AmoledApp::updatePet(uint32_t nowMs) {
     }
 #endif
 
-    if (roomAction != RoomAction::NONE &&
+    if (homeFlow_.state().action != RoomAction::NONE &&
         updateRoomAction(nowMs, elapsedSeconds)) {
         return;
     }
     if (ambientActionAllowed()) {
-        if (startWindowGaze(nowMs)) return;
-        if (static_cast<int32_t>(nowMs - nextAttentionMs) >= 0 &&
-            startAttention(nowMs)) {
-            return;
-        }
-        if (static_cast<int32_t>(nowMs - nextSpecialActionMs) >= 0 &&
-            startAutonomousAction(nowMs)) {
-            return;
-        }
+        const bool started = homeFlow_.tryAmbient(
+            homeActionLayout(homeFlow_.needsWindowAnchor()), petDirection, nowMs);
+        applyHomeFlowEffects(nowMs);
+        if (started) return;
     }
 
     if (petMotion() == PetMotion::TURNING) {
@@ -8196,40 +5386,12 @@ void AmoledApp::schedulePetDecision(uint32_t nowMs) {
     homeMainActor.nextDecisionMs = nowMs + GameRandom::range(minimum, maximum + 1);
 }
 
-void AmoledApp::scheduleAttention(uint32_t nowMs, bool initial) {
-    uint32_t minimum = initial ? ATTENTION_INITIAL_MIN_MS : ATTENTION_MIN_MS;
-    uint32_t maximum = initial ? ATTENTION_INITIAL_MAX_MS : ATTENTION_MAX_MS;
-    uint32_t delayMs = static_cast<uint32_t>(
-        GameRandom::range(minimum, maximum + 1));
-    if (homeMainActor.behavior.sociabilityBias > 0) {
-        delayMs = delayMs * static_cast<uint32_t>(
-            100 - homeMainActor.behavior.sociabilityBias * 14) / 100UL;
-    } else if (homeMainActor.behavior.sociabilityBias < 0) {
-        delayMs = delayMs * static_cast<uint32_t>(
-            100 + (-homeMainActor.behavior.sociabilityBias) * 18) / 100UL;
-    }
-    nextAttentionMs = nowMs + delayMs;
-}
-
-void AmoledApp::scheduleSpecialAction(uint32_t nowMs) {
-    uint32_t delayMs = static_cast<uint32_t>(GameRandom::range(
-        SPECIAL_ACTION_MIN_MS, SPECIAL_ACTION_MAX_MS + 1));
-    if (homeMainActor.behavior.activityBias > 0) {
-        delayMs = delayMs * static_cast<uint32_t>(
-            100 - homeMainActor.behavior.activityBias * 12) / 100UL;
-    } else if (homeMainActor.behavior.activityBias < 0) {
-        delayMs = delayMs * static_cast<uint32_t>(
-            100 + (-homeMainActor.behavior.activityBias) * 16) / 100UL;
-    }
-    nextSpecialActionMs = nowMs + delayMs;
-}
-
 bool AmoledApp::ambientActionAllowed() const {
-    if (roomAction != RoomAction::NONE || petMotion() != PetMotion::IDLE ||
+    if (homeFlow_.state().action != RoomAction::NONE || petMotion() != PetMotion::IDLE ||
         homeMainActor.task != Home::Task::IDLE || homeRuntime.pairActive() ||
-        visitorMotion == VisitorMotion::HOST_APPROACH ||
-        visitorMotion == VisitorMotion::ENTERING ||
-        visitorMotion == VisitorMotion::EXITING || pendingExpedition ||
+        visitorFlow_.state().motion == VisitorMotion::HOST_APPROACH ||
+        visitorFlow_.state().motion == VisitorMotion::ENTERING ||
+        visitorFlow_.state().motion == VisitorMotion::EXITING || pendingExpedition ||
         expeditionDeparturePhase != ExpeditionDeparturePhase::NONE) {
         return false;
     }
@@ -8243,463 +5405,77 @@ bool AmoledApp::ambientActionAllowed() const {
         gameState.room.bowlCount > 0);
 }
 
-bool AmoledApp::chooseNearbyPose(float originX, float originY,
-                                 float minDistance, float maxDistance,
-                                 float preferredAngle, float angleSpread,
-                                 float& x, float& y) const {
-    for (uint8_t attempt = 0; attempt < 18; ++attempt) {
-        const float unit = static_cast<float>(
-            GameRandom::random(-1000, 1001)) / 1000.0f;
-        const float angle = preferredAngle + unit * angleSpread;
-        const float distance = minDistance + (maxDistance - minDistance) *
-            (static_cast<float>(GameRandom::random(0, 1001)) / 1000.0f);
-        const float candidateX = originX + std::cos(angle) * distance;
-        const float candidateY = originY + std::sin(angle) * distance;
-        if (!homeRuntime.targetAvailable(0, candidateX, candidateY) ||
-            !petPathInsideWalkArea(originX, originY,
-                                   candidateX, candidateY)) {
-            continue;
-        }
-        x = candidateX;
-        y = candidateY;
-        return true;
-    }
-    return false;
-}
-
-bool AmoledApp::chooseAttentionPose(float& x, float& y) const {
+HomeFlow::Layout AmoledApp::homeActionLayout(bool includeWindow) const {
     RoomResource& room = RoomResource::ins();
-    const int minimumX = room.available() ? room.walkMinX()
-                                          : FALLBACK_ROOM_MIN_X;
-    const int maximumX = room.available() ? room.walkMaxX()
-                                          : FALLBACK_ROOM_MAX_X;
-    const int minimumY = room.available() ? room.walkMinY()
-                                          : FALLBACK_ROOM_MIN_Y;
-    const int maximumY = room.available() ? room.walkMaxY()
-                                          : FALLBACK_ROOM_MAX_Y;
-    const float desiredX = (minimumX + maximumX) * 0.5f;
-    float bestScore = 1000000.0f;
-    bool found = false;
-    for (int candidateY = maximumY; candidateY >= minimumY;
-         candidateY -= 3) {
-        for (int candidateX = minimumX; candidateX <= maximumX;
-             candidateX += 3) {
-            if (!petFootprintInsideWalkArea(candidateX, candidateY) ||
-                !homeRuntime.targetAvailable(0, candidateX, candidateY)) continue;
-            const float score = (maximumY - candidateY) * 5.0f +
-                                std::fabs(candidateX - desiredX);
-            if (score >= bestScore) continue;
-            x = static_cast<float>(candidateX);
-            y = static_cast<float>(candidateY);
-            bestScore = score;
-            found = true;
-        }
-        if (found && maximumY - candidateY >= 9) break;
-    }
-    return found;
-}
-
-bool AmoledApp::chooseCirclePose(uint8_t phase, float& x, float& y) const {
-    static constexpr float X_SCALE[] = {1.0f, 0.0f, -1.0f, 0.0f, 0.0f};
-    static constexpr float Y_SCALE[] = {0.0f, 0.62f, 0.0f, -0.62f, 0.0f};
-    if (phase >= 5) return false;
-    x = roomActionOriginX + X_SCALE[phase] * roomActionRadius;
-    y = roomActionOriginY + Y_SCALE[phase] * roomActionRadius;
-    return petFootprintInsideWalkArea(x, y);
-}
-
-bool AmoledApp::chooseWindowGazePose(
-    const RoomResource::BehaviorAnchor& anchor,
-    float& x, float& y) const {
-    static constexpr int8_t OFFSETS[][2] = {
-        {0, 0}, {-3, 0}, {3, 0}, {-6, 0}, {6, 0},
-        {0, 3}, {-3, 3}, {3, 3}, {0, -3}, {-3, -3}, {3, -3},
-        {-9, 0}, {9, 0}, {0, 6}, {0, -6},
+    HomeFlow::Layout layout;
+    layout.polygon = room.available() ? room.walkPolygon() : FALLBACK_WALK_POLYGON;
+    layout.polygonCount = room.available() ? room.walkPolygonCount()
+        : static_cast<uint8_t>(sizeof(FALLBACK_WALK_POLYGON) / sizeof(FALLBACK_WALK_POLYGON[0]));
+    layout.bounds = {
+        room.available() ? static_cast<float>(room.walkMinX()) : FALLBACK_ROOM_MIN_X,
+        room.available() ? static_cast<float>(room.walkMinY()) : FALLBACK_ROOM_MIN_Y,
+        room.available() ? static_cast<float>(room.walkMaxX()) : FALLBACK_ROOM_MAX_X,
+        room.available() ? static_cast<float>(room.walkMaxY()) : FALLBACK_ROOM_MAX_Y,
     };
-    for (const auto& offset : OFFSETS) {
-        const float candidateX = anchor.footX + offset[0];
-        const float candidateY = anchor.footY + offset[1];
-        if (!petFootprintInsideWalkArea(candidateX, candidateY)) continue;
-        x = candidateX;
-        y = candidateY;
-        return true;
-    }
-    return false;
+    layout.foodX = room.available() ? room.foodX() : FALLBACK_FOOD_APPROACH_X;
+    layout.foodY = room.available() ? room.foodY() : FALLBACK_FOOD_APPROACH_Y;
+    RoomResource::BehaviorAnchor anchor{};
+    layout.hasWindow = includeWindow && room.available() && room.findBehaviorAnchor(
+        RoomResource::BehaviorAnchorType::WINDOW_GAZE, anchor);
+    layout.windowX = anchor.footX;
+    layout.windowY = anchor.footY;
+    layout.windowDirection = mainDirectionFromView(anchor.facing);
+    return layout;
 }
 
-bool AmoledApp::beginRoomActionLeg(float x, float y, uint32_t nowMs) {
-    if (!homeRuntime.transition(
-            0, Home::Task::ROOM_ACTION, nowMs, 0, true) ||
-        !homeRuntime.planRoute(
-            0, x, y, false, homeCompanionActor.active)) {
-        return false;
-    }
-    homeMainActor.targetX = x;
-    homeMainActor.targetY = y;
-    float waypointX = x;
-    float waypointY = y;
-    homeMainActor.route.current(waypointX, waypointY);
-    petDirection = petDirectionForDelta(
-        waypointX - homeMainActor.x, waypointY - homeMainActor.y);
-    homeMainActor.motion = Home::MotionPhase::ROUTE;
-    petStopping = false;
-    petFrame = 0;
-    nextPetFrameMs = nowMs;
-    return true;
-}
-
-bool AmoledApp::beginRoomActionMove(RoomAction action, float x, float y,
-                                    uint32_t nowMs) {
-    roomAction = action;
-    roomActionPhase = 0;
-    roomActionStartedMs = nowMs;
-    roomActionOriginX = homeMainActor.x;
-    roomActionOriginY = homeMainActor.y;
-    if (beginRoomActionLeg(x, y, nowMs)) return true;
-    roomAction = RoomAction::NONE;
-    homeRuntime.stop(0, nowMs, 700);
-    homeMainActor.motion = Home::MotionPhase::STILL;
-    petStopping = false;
-    homeMainActor.targetX = homeMainActor.x;
-    homeMainActor.targetY = homeMainActor.y;
-    return false;
+void AmoledApp::applyHomeFlowEffects(uint32_t nowMs) {
+    const HomeFlow::Effects effects = homeFlow_.takeEffects();
+    if (effects.stopAnimation) petStopping = false;
+    if (effects.resetFrame) petFrame = 0;
+    if (effects.startWalk) nextPetFrameMs = nowMs;
+    if (effects.directionChanged) petDirection = effects.direction;
+    if (effects.heart == HomeFlow::Heart::SHOW) heartsUntil = effects.heartsUntilMs;
+    else if (effects.heart == HomeFlow::Heart::CLEAR) heartsUntil = 0;
+    if (effects.scheduleDecision) schedulePetDecision(nowMs);
+    if (effects.save) saveState();
+    if (effects.roomChanged) requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
 }
 
 void AmoledApp::startFeedFinish(uint32_t nowMs) {
-    roomAction = RoomAction::FEED_FINISH;
-    roomActionPhase = 0;
-    roomActionStartedMs = nowMs;
-    roomActionUntilMs = nowMs + FEED_FINISH_MS;
-    homeMainActor.motion = Home::MotionPhase::STILL;
-    petStopping = false;
-    homeMainActor.targetX = homeMainActor.x;
-    homeMainActor.targetY = homeMainActor.y;
-    requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
-}
-
-bool AmoledApp::startAttention(uint32_t nowMs) {
-    float x = 0.0f;
-    float y = 0.0f;
-    scheduleAttention(nowMs);
-    if (!chooseAttentionPose(x, y)) return false;
-    if (std::fabs(x - homeMainActor.x) < 3.0f && std::fabs(y - homeMainActor.y) < 3.0f) {
-        roomAction = RoomAction::ATTENTION_WAIT;
-        roomActionStartedMs = nowMs;
-        roomActionUntilMs = nowMs + ATTENTION_WAIT_MS;
-        roomActionBaseDirection = petDirection;
-        petDirection = PokemonSprites::WalkDirection::DOWN;
-        homeMainActor.motion = Home::MotionPhase::STILL;
-        petStopping = false;
-        homeRuntime.transition(0, Home::Task::ROOM_ACTION, nowMs, 0, true);
-        homeMainActor.motion = Home::MotionPhase::STILL;
-        heartsUntil = roomActionUntilMs;
-        requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
-        return true;
-    }
-    return beginRoomActionMove(RoomAction::ATTENTION_APPROACH, x, y, nowMs);
-}
-
-bool AmoledApp::startWindowGaze(uint32_t nowMs) {
-    const Game::MonsterRuntime& monster = gameState.team[0];
-    const uint32_t gameSeconds =
-        static_cast<uint32_t>(gameState.gameMinutesTotal * 60UL);
-    if (!windowGazeDue(monster.lastExploredAt,
-                       monster.lastWindowGazeAt, gameSeconds)) {
-        return false;
-    }
-    RoomResource::BehaviorAnchor anchor{};
-    RoomResource& room = RoomResource::ins();
-    if (!room.available() || !room.findBehaviorAnchor(
-            RoomResource::BehaviorAnchorType::WINDOW_GAZE, anchor)) {
-        return false;
-    }
-    float x = 0.0f;
-    float y = 0.0f;
-    if (!chooseWindowGazePose(anchor, x, y)) return false;
-    windowGazeDirection = mainDirectionFromView(anchor.facing);
-    return beginRoomActionMove(RoomAction::WINDOW_APPROACH, x, y, nowMs);
-}
-
-bool AmoledApp::startAutonomousAction(uint32_t nowMs) {
-    scheduleSpecialAction(nowMs);
-    PokemonSprites::PetAnimationProfile animation{};
-    const bool energeticAllowed =
-        homeMainActor.behavior.movementMode != MonsterMovementMode::STATIONARY &&
-        PokemonSprites::petAnimationProfile(
-            gameState.team[0].speciesId, animation) &&
-        animation.walkingFrames >= 2;
-    const int roll = static_cast<int>(GameRandom::random(100));
-    RoomAction selected = RoomAction::LOOK_AROUND;
-    if (homeMainActor.behavior.activityBias >= 1) {
-        if (energeticAllowed && roll < 26) selected = RoomAction::DASH;
-        else if (energeticAllowed && roll < 50) selected = RoomAction::CIRCLE;
-        else if (roll < 64) selected = RoomAction::STEP_BACK;
-        else if (roll < 84) selected = RoomAction::LOOK_AROUND;
-        else selected = RoomAction::QUIET_GAZE;
-    } else if (homeMainActor.behavior.activityBias <= -1) {
-        if (roll < 38) selected = RoomAction::QUIET_GAZE;
-        else if (roll < 72) selected = RoomAction::LOOK_AROUND;
-        else if (roll < 92 || !energeticAllowed) selected = RoomAction::STEP_BACK;
-        else if (roll < 98) selected = RoomAction::CIRCLE;
-        else selected = RoomAction::DASH;
-    } else {
-        if (roll < 27) selected = RoomAction::LOOK_AROUND;
-        else if (roll < 50) selected = RoomAction::QUIET_GAZE;
-        else if (roll < 68 || !energeticAllowed) selected = RoomAction::STEP_BACK;
-        else if (roll < 84) selected = RoomAction::CIRCLE;
-        else selected = RoomAction::DASH;
-    }
-
-    roomActionStartedMs = nowMs;
-    roomActionBaseDirection = petDirection;
-    if (selected == RoomAction::LOOK_AROUND ||
-        selected == RoomAction::QUIET_GAZE) {
-        roomAction = selected;
-        roomActionPhase = 0;
-        roomActionUntilMs = nowMs + static_cast<uint32_t>(GameRandom::range(
-            selected == RoomAction::LOOK_AROUND ? 1100 : 1400,
-            selected == RoomAction::LOOK_AROUND ? 1801 : 2801));
-        if (selected == RoomAction::QUIET_GAZE) {
-            petDirection = PokemonSprites::WalkDirection::DOWN;
-        }
-        homeRuntime.transition(0, Home::Task::ROOM_ACTION, nowMs, 0, true);
-        homeMainActor.motion = Home::MotionPhase::STILL;
-        requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
-        return true;
-    }
-
-    if (selected == RoomAction::DASH || selected == RoomAction::STEP_BACK) {
-        float x = 0.0f;
-        float y = 0.0f;
-        const bool dash = selected == RoomAction::DASH;
-        const float preferred = dash
-            ? static_cast<float>(GameRandom::random(0, 6284)) / 1000.0f
-            : -1.57079633f;
-        if (chooseNearbyPose(
-                homeMainActor.x, homeMainActor.y, dash ? 20.0f : 7.0f,
-                dash ? 32.0f : 12.0f, preferred,
-                dash ? 2.35619449f : 0.55f, x, y) &&
-            beginRoomActionMove(selected, x, y, nowMs)) {
-            return true;
-        }
-    } else if (selected == RoomAction::CIRCLE) {
-        roomAction = RoomAction::CIRCLE;
-        roomActionPhase = 0;
-        roomActionStartedMs = nowMs;
-        roomActionOriginX = homeMainActor.x;
-        roomActionOriginY = homeMainActor.y;
-        for (int radius = 11; radius >= 6; --radius) {
-            roomActionRadius = static_cast<float>(radius);
-            bool valid = true;
-            float previousX = roomActionOriginX;
-            float previousY = roomActionOriginY;
-            for (uint8_t phase = 0; phase < 5; ++phase) {
-                float checkX = 0.0f;
-                float checkY = 0.0f;
-                if (!chooseCirclePose(phase, checkX, checkY) ||
-                    !petPathInsideWalkArea(
-                        previousX, previousY, checkX, checkY)) {
-                    valid = false;
-                    break;
-                }
-                previousX = checkX;
-                previousY = checkY;
-            }
-            if (!valid) continue;
-            float x = 0.0f;
-            float y = 0.0f;
-            chooseCirclePose(0, x, y);
-            if (beginRoomActionLeg(x, y, nowMs)) return true;
-            break;
-        }
-        roomAction = RoomAction::NONE;
-    }
-
-    roomAction = RoomAction::LOOK_AROUND;
-    roomActionPhase = 0;
-    roomActionStartedMs = nowMs;
-    roomActionBaseDirection = petDirection;
-    roomActionUntilMs = nowMs + 1200;
-    homeRuntime.transition(0, Home::Task::ROOM_ACTION, nowMs, 0, true);
-    homeMainActor.motion = Home::MotionPhase::STILL;
-    requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
-    return true;
-}
-
-void AmoledApp::finishRoomActionMovement(uint32_t nowMs) {
-    switch (roomAction) {
-    case RoomAction::ATTENTION_APPROACH:
-        roomAction = RoomAction::ATTENTION_WAIT;
-        roomActionStartedMs = nowMs;
-        roomActionUntilMs = nowMs + ATTENTION_WAIT_MS;
-        homeMainActor.motion = Home::MotionPhase::STILL;
-        petStopping = false;
-        petDirection = PokemonSprites::WalkDirection::DOWN;
-        heartsUntil = roomActionUntilMs;
-        homeRuntime.transition(0, Home::Task::ROOM_ACTION, nowMs, 0, true);
-        homeMainActor.motion = Home::MotionPhase::STILL;
-        return;
-    case RoomAction::WINDOW_APPROACH:
-        roomAction = RoomAction::WINDOW_WAIT;
-        roomActionStartedMs = nowMs;
-        roomActionUntilMs = nowMs + static_cast<uint32_t>(GameRandom::range(
-            WINDOW_GAZE_MIN_MS, WINDOW_GAZE_MAX_MS + 1));
-        homeMainActor.motion = Home::MotionPhase::STILL;
-        petStopping = false;
-        petDirection = windowGazeDirection;
-        homeRuntime.transition(0, Home::Task::ROOM_ACTION, nowMs, 0, true);
-        homeMainActor.motion = Home::MotionPhase::STILL;
-        gameState.team[0].lastWindowGazeAt =
-            static_cast<uint32_t>(gameState.gameMinutesTotal * 60UL);
-        saveState();
-        return;
-    case RoomAction::CIRCLE:
-        ++roomActionPhase;
-        if (roomActionPhase < 5) {
-            float x = 0.0f;
-            float y = 0.0f;
-            if (chooseCirclePose(roomActionPhase, x, y) &&
-                beginRoomActionLeg(x, y, nowMs)) {
-                return;
-            }
-        }
-        break;
-    case RoomAction::DASH:
-    case RoomAction::STEP_BACK:
-    default:
-        break;
-    }
-    finishRoomAction(nowMs);
+    homeFlow_.startFeedFinish(nowMs);
+    applyHomeFlowEffects(nowMs);
 }
 
 bool AmoledApp::updateRoomAction(uint32_t nowMs, float elapsedSeconds) {
-    if (roomAction == RoomAction::NONE) return false;
-    if (roomAction == RoomAction::FEED_FINISH && roomActionPhase == 0) {
-        if (static_cast<int32_t>(nowMs - roomActionUntilMs) < 0) return true;
-        roomActionPhase = 1;
-        RoomResource& room = RoomResource::ins();
-        const float foodX = room.available()
-            ? static_cast<float>(room.foodX()) : FALLBACK_FOOD_APPROACH_X;
-        const float foodY = room.available()
-            ? static_cast<float>(room.foodY()) : FALLBACK_FOOD_APPROACH_Y;
-        const float awayAngle = std::atan2(homeMainActor.y - foodY, homeMainActor.x - foodX);
-        float x = 0.0f;
-        float y = 0.0f;
-        if (chooseNearbyPose(homeMainActor.x, homeMainActor.y, 32.0f, 48.0f, awayAngle,
-                             3.14159265f * 0.42f, x, y) &&
-            beginRoomActionLeg(x, y, nowMs)) {
-            return true;
-        }
-        finishRoomAction(nowMs);
-        return true;
-    }
-    if (roomAction == RoomAction::ATTENTION_WAIT ||
-        roomAction == RoomAction::QUIET_GAZE ||
-        roomAction == RoomAction::WINDOW_WAIT) {
-        if (static_cast<int32_t>(nowMs - roomActionUntilMs) >= 0) {
-            finishRoomAction(nowMs);
-        }
-        return true;
-    }
-    if (roomAction == RoomAction::LOOK_AROUND) {
-        const uint8_t phase = static_cast<uint8_t>(std::min<uint32_t>(
-            2, (nowMs - roomActionStartedMs) / 380UL));
-        if (phase != roomActionPhase) {
-            static constexpr int8_t STEPS[] = {-1, 1, 0};
-            roomActionPhase = phase;
-            petDirection = rotatePetDirection(
-                roomActionBaseDirection, STEPS[phase]);
-            requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
-        }
-        if (static_cast<int32_t>(nowMs - roomActionUntilMs) >= 0) {
-            petDirection = roomActionBaseDirection;
-            finishRoomAction(nowMs);
-        }
-        return true;
-    }
-
-    float waypointX = homeMainActor.targetX;
-    float waypointY = homeMainActor.targetY;
-    homeMainActor.route.current(waypointX, waypointY);
-    petDirection = petDirectionForDelta(
-        waypointX - homeMainActor.x, waypointY - homeMainActor.y);
-    const float previousY = homeMainActor.y;
+    const HomeFlow::Layout layout = homeActionLayout();
+    const HomeFlow::Update result = homeFlow_.update(
+        layout, nowMs, elapsedSeconds, homeActorBlocksFoodApproach(0));
+    applyHomeFlowEffects(nowMs);
+    if (!result.moved) return result.active;
     const int previousCameraX = static_cast<int>(std::lround(cameraX));
     const int previousCameraY = static_cast<int>(std::lround(cameraY));
-    const float speed = (roomAction == RoomAction::DASH ? 16.3f : 10.5f) *
-                        homeMainActor.behavior.moveSpeedScale;
-    const Home::RouteStep step = homeRuntime.advanceRoute(
-        0, nowMs, speed, elapsedSeconds, 0.8f,
-        homeCompanionActor.active);
     updateCamera();
     const bool cameraMoved =
         static_cast<int>(std::lround(cameraX)) != previousCameraX ||
         static_cast<int>(std::lround(cameraY)) != previousCameraY;
-    if (cameraMoved) {
-        requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
-    }
+    if (cameraMoved) requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
     if (static_cast<int32_t>(nowMs - nextPetFrameMs) >= 0) {
         PokemonSprites::PetAnimationProfile animation{};
-        const uint8_t frameCount =
-            PokemonSprites::petAnimationProfile(
-                gameState.team[0].speciesId, animation)
-                ? std::max<uint8_t>(1, animation.walkingFrames)
-                : 3;
+        const uint8_t frameCount = PokemonSprites::petAnimationProfile(
+            gameState.team[0].speciesId, animation)
+                ? std::max<uint8_t>(1, animation.walkingFrames) : 3;
         petFrame = static_cast<uint8_t>((petFrame + 1) % frameCount);
         nextPetFrameMs = nowMs + MOTION_FRAME_MS;
-        if (!cameraMoved) requestHomeActorRows(previousY, homeMainActor.y);
+        if (!cameraMoved) requestHomeActorRows(result.previousY, homeMainActor.y);
     }
-    if (step == Home::RouteStep::ARRIVED) {
-        finishRoomActionMovement(nowMs);
-    } else if (step == Home::RouteStep::BLOCKED ||
-               step == Home::RouteStep::NO_ROUTE) {
-        finishRoomAction(nowMs);
-    }
+    homeFlow_.completeMovement(layout, result.step, homeActorBlocksFoodApproach(0), nowMs);
+    applyHomeFlowEffects(nowMs);
     return true;
 }
 
-void AmoledApp::finishRoomAction(uint32_t nowMs) {
-    const RoomAction finishedAction = roomAction;
-    if (finishedAction == RoomAction::FEED_FINISH &&
-        homeActorBlocksFoodApproach(0)) {
-        roomActionPhase = 0;
-        roomActionStartedMs = nowMs;
-        roomActionUntilMs = nowMs + 300;
-        homeRuntime.stop(0, nowMs, 300);
-        homeMainActor.motion = Home::MotionPhase::STILL;
-        petStopping = false;
-        homeMainActor.targetX = homeMainActor.x;
-        homeMainActor.targetY = homeMainActor.y;
-        petFrame = 0;
-        requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
-        return;
-    }
-    roomAction = RoomAction::NONE;
-    roomActionPhase = 0;
-    roomActionStartedMs = 0;
-    roomActionUntilMs = 0;
-    homeRuntime.stop(0, nowMs, static_cast<uint32_t>(
-        GameRandom::range(650, 1201)));
-    if (finishedAction == RoomAction::FEED_FINISH) {
-        homeRuntime.finishBowlClearance(0, nowMs);
-    }
-    homeMainActor.motion = Home::MotionPhase::STILL;
-    petStopping = false;
-    homeMainActor.targetX = homeMainActor.x;
-    homeMainActor.targetY = homeMainActor.y;
-    petFrame = 0;
-    homeMainActor.mind.onActivity(nowMs);
-    schedulePetDecision(nowMs);
-    requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
-}
-
 void AmoledApp::cancelRoomAction(uint32_t nowMs) {
-    if (roomAction == RoomAction::NONE) return;
-    const bool ownedHeart =
-        roomAction == RoomAction::ATTENTION_APPROACH ||
-        roomAction == RoomAction::ATTENTION_WAIT;
-    finishRoomAction(nowMs);
-    if (ownedHeart) heartsUntil = 0;
+    homeFlow_.cancel(homeActorBlocksFoodApproach(0), nowMs);
+    applyHomeFlowEffects(nowMs);
 }
 
 void AmoledApp::updatePetFootprint() {
@@ -8945,8 +5721,7 @@ void AmoledApp::syncHomeActors(uint32_t nowMs) {
         homeRuntime.releaseAll(1);
         homeCompanionActor = Home::Actor{};
         companionFrame = 0;
-        visitorMotion = VisitorMotion::NONE;
-        visitArrival.reset();
+        visitorFlow_.resetMotion();
         homeRuntime.attach(homeMainActor);
     } else {
         homeRuntime.attach(
@@ -9099,7 +5874,7 @@ bool AmoledApp::tryYieldHomeBlocker(uint8_t waitingActorId,
         blocker->behavior.movementMode == MonsterMovementMode::STATIONARY ||
         blockerId >= gameState.teamCount || gameState.team[blockerId].fainted ||
         gameState.team[blockerId].hpCur == 0) return false;
-    if (blockerId == 0 && (roomAction != RoomAction::NONE ||
+    if (blockerId == 0 && (homeFlow_.state().action != RoomAction::NONE ||
                            petMotion() != PetMotion::IDLE)) return false;
     const float clearance = waiting->geometry.footprint.radiusX +
                             blocker->geometry.footprint.radiusX + 2.0f;
@@ -9752,9 +6527,9 @@ void AmoledApp::updateCompanion(uint32_t nowMs) {
     if (homeCompanionActor.hidden && visitSession.active() &&
         visitSession.viewModel().localIsHost &&
         !visitSession.visitorArrivalReady()) return;
-    if (visitorMotion == VisitorMotion::HOST_APPROACH ||
-        visitorMotion == VisitorMotion::ENTERING ||
-        visitorMotion == VisitorMotion::EXITING) {
+    if (visitorFlow_.state().motion == VisitorMotion::HOST_APPROACH ||
+        visitorFlow_.state().motion == VisitorMotion::ENTERING ||
+        visitorFlow_.state().motion == VisitorMotion::EXITING) {
         return;
     }
 
@@ -9774,8 +6549,8 @@ void AmoledApp::updateCompanion(uint32_t nowMs) {
                 static_cast<long>(static_cast<int32_t>(
                     homeCompanionActor.nextDecisionMs - nowMs)),
                 static_cast<int>(homeCompanionActor.behavior.movementMode),
-                static_cast<int>(pairPhase),
-                static_cast<int>(visitorMotion));
+                static_cast<int>(pairFlow_.state().phase),
+                static_cast<int>(visitorFlow_.state().motion));
         }
     }
 #endif
@@ -10059,1616 +6834,353 @@ void AmoledApp::updateCompanion(uint32_t nowMs) {
     }
 }
 
-bool AmoledApp::pairInteractionAllowed() const {
-    if (sceneFlow.current() != AppSceneFlow::Scene::HOME ||
-        gameState.teamCount < 2 || !homeCompanionActor.active ||
-        visitorMotion == VisitorMotion::HOST_APPROACH ||
-        visitorMotion == VisitorMotion::ENTERING ||
-        visitorMotion == VisitorMotion::EXITING ||
-        roomAction != RoomAction::NONE ||
-        petMotion() != PetMotion::IDLE ||
-        homeCompanionActor.task != Home::Task::IDLE) {
-        return false;
-    }
+PairFlow::Environment AmoledApp::pairEnvironment() const {
+    PairFlow::Environment environment;
+    const bool home = sceneFlow.current() == AppSceneFlow::Scene::HOME &&
+        homeFlow_.state().action == RoomAction::NONE;
+    environment.ordinaryStartAllowed = home && petMotion() == PetMotion::IDLE &&
+        visitorFlow_.state().motion != VisitorMotion::HOST_APPROACH &&
+        visitorFlow_.state().motion != VisitorMotion::ENTERING && visitorFlow_.state().motion != VisitorMotion::EXITING;
 #if STICKMON_HAS_CLAW
-    if (Stickmon::ClawRuntime::instance().autonomyActive()) return false;
+    if (Stickmon::ClawRuntime::instance().autonomyActive()) environment.ordinaryStartAllowed = false;
 #endif
-    const Game::SpeciesCareProfile first =
-        Game::speciesCareProfileFor(gameState.team[0].speciesId);
-    const Game::SpeciesCareProfile second =
-        Game::speciesCareProfileFor(gameState.team[1].speciesId);
-    return Home::ActorController::pairEligible(
-        gameState.team[0], gameState.team[1],
-        first.usesBed && Game::isSleepCareTime(
-            gameState.gameMinutesTotal, gameState.team[0].nature),
-        second.usesBed && Game::isSleepCareTime(
-            gameState.gameMinutesTotal, gameState.team[1].nature));
+    environment.forcedTalkAllowed = home && visitorFlow_.state().motion == VisitorMotion::ACTIVE;
+    environment.visitorExiting = visitorFlow_.state().motion == VisitorMotion::EXITING;
+    return environment;
+}
+
+PairFlow::Layout AmoledApp::pairLayout(bool includeSpacing) const {
+    const RoomResource& room = RoomResource::ins();
+    PairFlow::Layout layout;
+    layout.bounds = {
+        static_cast<float>(room.available() ? room.walkMinX() : FALLBACK_ROOM_MIN_X),
+        static_cast<float>(room.available() ? room.walkMinY() : FALLBACK_ROOM_MIN_Y),
+        static_cast<float>(room.available() ? room.walkMaxX() : FALLBACK_ROOM_MAX_X),
+        static_cast<float>(room.available() ? room.walkMaxY() : FALLBACK_ROOM_MAX_Y)};
+    if (includeSpacing) {
+        layout.talkDistance = (pairIdleWidthPx(gameState.team[0].speciesId) +
+            pairIdleWidthPx(gameState.team[1].speciesId)) / (2.0f * AmoledUi::RESOURCE_SCALE) +
+            PAIR_TALK_MIN_GAP_PX / static_cast<float>(AmoledUi::RESOURCE_SCALE);
+    }
+    return layout;
+}
+
+bool AmoledApp::pairInteractionAllowed() const {
+    return pairFlow_.eligible(pairEnvironment());
 }
 
 void AmoledApp::schedulePairInteraction(uint32_t nowMs, bool immediate) {
-    nextPairInteractionMs = immediate
-        ? nowMs + 300
-        : nowMs + static_cast<uint32_t>(GameRandom::range(
-              PAIR_INTERACTION_MIN_INTERVAL_MS,
-              PAIR_INTERACTION_MAX_INTERVAL_MS + 1));
+    pairFlow_.schedule(nowMs, immediate);
 }
 
 bool AmoledApp::startPairInteraction(uint32_t nowMs, bool forceChase,
-                                     bool forceTalk) {
-    if (!forceTalk) {
-        if (!pairInteractionAllowed()) return false;
-    } else if (sceneFlow.current() != AppSceneFlow::Scene::HOME ||
-               gameState.teamCount < 2 || !homeCompanionActor.active ||
-               visitorMotion != VisitorMotion::ACTIVE ||
-               roomAction != RoomAction::NONE ||
-               gameState.team[0].fainted || gameState.team[0].hpCur == 0 ||
-               gameState.team[1].fainted || gameState.team[1].hpCur == 0) {
-        return false;
-    }
-    const Game::SpeciesCareProfile first =
-        Game::speciesCareProfileFor(gameState.team[0].speciesId);
-    const Game::SpeciesCareProfile second =
-        Game::speciesCareProfileFor(gameState.team[1].speciesId);
-    const uint8_t roll = forceTalk
-        ? 0 : static_cast<uint8_t>(GameRandom::random(100));
-    pairActivity = Home::ActorController::pairActivity(
-        first.canMove, second.canMove, forceChase, false, forceTalk, roll);
-    if (!homeRuntime.beginPair(pairActivity, nowMs)) {
-        pairActivity = Home::PairActivity::NONE;
-        schedulePairInteraction(nowMs);
-        return false;
-    }
-
-    pairLeaderMain = Home::ActorController::pairLeaderMain(
-        first.canMove, second.canMove,
-        static_cast<uint8_t>(GameRandom::random(2)));
-    const float talkDistance = (pairIdleWidthPx(gameState.team[0].speciesId) +
-                                pairIdleWidthPx(gameState.team[1].speciesId)) /
-                                   (2.0f * AmoledUi::RESOURCE_SCALE) +
-                               PAIR_TALK_MIN_GAP_PX /
-                                   static_cast<float>(AmoledUi::RESOURCE_SCALE);
-    const float approachDistance = pairActivity == Home::PairActivity::TALK
-        ? talkDistance : PAIR_APPROACH_DISTANCE;
-    pairTalkParallelApproach = false;
-    pairTalkMainArrived = false;
-    pairTalkCompanionArrived = false;
-    pairTalkMainApproachSpeed = 0.0f;
-    pairTalkCompanionApproachSpeed = 0.0f;
-    bool planned = false;
-    if (pairActivity == Home::PairActivity::TALK &&
-        first.canMove && second.canMove) {
-        // The two fixed talk points are a coordinated choreography. Plan both
-        // paths without treating the other actor's starting pose as a static
-        // obstacle, then scale their speeds to reach the stage together.
-        pairLeaderMain = true;
-        auto planFixedRoute = [&](uint8_t actorId, Home::Actor& actor,
-                                  float targetX, float targetY,
-                                  bool& arrived) {
-            actor.targetX = targetX;
-            actor.targetY = targetY;
-            arrived = std::hypot(targetX - actor.x, targetY - actor.y) <=
-                PAIR_APPROACH_GOAL_TOLERANCE;
-            if (arrived) {
-                actor.route.clear();
-                return true;
-            }
-            return homeRuntime.planRoute(
-                actorId, targetX, targetY, false, false);
-        };
-        const bool mainPlanned = planFixedRoute(
-            0, homeMainActor, PAIR_TALK_MAIN_X, PAIR_TALK_STAGE_Y,
-            pairTalkMainArrived);
-        const bool companionPlanned = mainPlanned && planFixedRoute(
-            1, homeCompanionActor, PAIR_TALK_COMPANION_X,
-            PAIR_TALK_STAGE_Y, pairTalkCompanionArrived);
-        if (mainPlanned && companionPlanned) {
-            const float mainDistance = pairRouteDistance(homeMainActor);
-            const float companionDistance = pairRouteDistance(homeCompanionActor);
-            const float sharedDurationSeconds = std::max(
-                0.1f, std::max(mainDistance, companionDistance) /
-                          PAIR_APPROACH_SPEED);
-            pairTalkMainApproachSpeed = pairTalkMainArrived
-                ? 0.0f : mainDistance / sharedDurationSeconds;
-            pairTalkCompanionApproachSpeed = pairTalkCompanionArrived
-                ? 0.0f : companionDistance / sharedDurationSeconds;
-            pairTalkParallelApproach = true;
-            planned = true;
-#if STICKMON_ENABLE_DEBUG_FEATURES
-            Platform::logf("[FriendDiag] talk fixed-stage companion=%.1f,%.1f "
-                           "main=%.1f,%.1f speeds=%.2f,%.2f\n",
-                           PAIR_TALK_COMPANION_X, PAIR_TALK_STAGE_Y,
-                           PAIR_TALK_MAIN_X, PAIR_TALK_STAGE_Y,
-                           pairTalkCompanionApproachSpeed,
-                           pairTalkMainApproachSpeed);
-#endif
-        } else {
-            homeMainActor.route.clear();
-            homeCompanionActor.route.clear();
-        }
-    }
-    const uint8_t firstMover = pairLeaderMain ? 0 : 1;
-    const bool fixedTalk = pairActivity == Home::PairActivity::TALK &&
-        first.canMove && second.canMove;
-    for (int attempt = 0;
-         attempt < ((!fixedTalk && pairActivity == Home::PairActivity::TALK) ? 2 : 1) &&
-         !planned; ++attempt) {
-        if (fixedTalk) break;
-        const uint8_t mover = attempt == 0 ? firstMover : 1 - firstMover;
-        const Home::Actor& other = mover == 0
-            ? homeCompanionActor : homeMainActor;
-        const float offsets[][2] = {
-            {-approachDistance, 0.0f}, {approachDistance, 0.0f},
-            {0.0f, -approachDistance}, {0.0f, approachDistance},
-        };
-        for (const auto& offset : offsets) {
-            // Vertical separation must account for the full sprite height;
-            // only horizontal destinations guarantee the requested visual gap.
-            if (pairActivity == Home::PairActivity::TALK && offset[0] == 0.0f) {
-                continue;
-            }
-            if (homeRuntime.planRoute(
-                    mover, other.x + offset[0], other.y + offset[1])) {
-                pairLeaderMain = mover == 0;
-                planned = true;
-                break;
-            }
-        }
-    }
-    if (!planned) {
-#if STICKMON_ENABLE_DEBUG_FEATURES
-        Platform::logf("[FriendDiag] talk route-failed kind=%u main=%.1f,%.1f "
-                       "companion=%.1f,%.1f offset=%.1f\n",
-                       static_cast<unsigned>(debugContactKind),
-                       homeMainActor.x, homeMainActor.y,
-                       homeCompanionActor.x, homeCompanionActor.y,
-                       approachDistance);
-#endif
-        homeRuntime.endPair(nowMs);
-        pairActivity = Home::PairActivity::NONE;
-        schedulePairInteraction(nowMs);
-        return false;
-    }
-
-    pairPhase = PairPhase::APPROACH;
-    pairPhaseStartedMs = nowMs;
-    if (pairTalkParallelApproach) {
-        pairPhaseUntilMs = nowMs + std::max(
-            pairApproachBudgetMs(homeMainActor),
-            pairApproachBudgetMs(homeCompanionActor));
-    } else {
-        const Home::Actor& movingActor = pairLeaderMain
-            ? homeMainActor : homeCompanionActor;
-        pairPhaseUntilMs = nowMs + pairApproachBudgetMs(movingActor);
-    }
-    pairInteractionUntilMs = nowMs +
-        (pairActivity == Home::PairActivity::CHASE
-             ? PAIR_CHASE_TIMEOUT_MS : PAIR_TALK_TIMEOUT_MS);
-    pairChaseLegsRemaining = PAIR_CHASE_LEGS;
-    pairMainRenderOffsetY = 0.0f;
-    pairCompanionRenderOffsetY = 0.0f;
-#if STICKMON_ENABLE_DEBUG_FEATURES
-    Platform::logf("[HomeDiag] pair start activity=%d leaderMain=%d "
-                   "main=%.1f,%.1f companion=%.1f,%.1f\n",
-                   static_cast<int>(pairActivity), pairLeaderMain ? 1 : 0,
-                   homeMainActor.x, homeMainActor.y,
-                   homeCompanionActor.x, homeCompanionActor.y);
-#endif
-    return true;
+                                    bool forceTalk, bool arrivalTalk) {
+    const auto environment = pairEnvironment();
+    const bool allowed = forceTalk ? pairFlow_.forcedTalkAllowed(environment) : pairFlow_.eligible(environment);
+    const bool started = pairFlow_.start(pairLayout(allowed), environment, nowMs,
+                                        forceChase, forceTalk, arrivalTalk);
+    applyPairFlowEffects(nowMs);
+    return started;
 }
 
-bool AmoledApp::updatePairInteraction(uint32_t nowMs,
-                                      float elapsedSeconds) {
-    if (pairPhase == PairPhase::NONE) {
-        if (static_cast<int32_t>(nowMs - nextPairInteractionMs) < 0) {
-            return false;
-        }
-        if (!startPairInteraction(nowMs)) {
-            nextPairInteractionMs = nowMs + PAIR_INTERACTION_RETRY_MS;
-            return false;
-        }
+bool AmoledApp::updatePairInteraction(uint32_t nowMs, float elapsedSeconds) {
+    const auto environment = pairEnvironment();
+    const auto layout = pairLayout(pairFlow_.needsStart(nowMs) && pairFlow_.eligible(environment));
+    pairFlow_.update(layout, environment, nowMs, elapsedSeconds);
+    applyPairFlowEffects(nowMs);
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    const auto& pair = pairFlow_.state();
+    if (pair.phase == PairPhase::APPROACH && pair.parallelApproach &&
+        static_cast<int32_t>(nowMs - visitorDiagNextLogMs) >= 0) {
+        visitorDiagNextLogMs = nowMs + 300;
+        Platform::logf("[FriendDiag] talk approach-parallel kind=%u main=%.1f,%.1f "
+                       "companion=%.1f,%.1f arrived=%u,%u\n",
+                       static_cast<unsigned>(debugContactKind), homeMainActor.x, homeMainActor.y,
+                       homeCompanionActor.x, homeCompanionActor.y,
+                       pair.mainArrived ? 1U : 0U, pair.companionArrived ? 1U : 0U);
     }
-
-    if (gameState.teamCount < 2 || !homeCompanionActor.active ||
-        gameState.team[0].fainted || gameState.team[0].hpCur == 0 ||
-        gameState.team[1].fainted || gameState.team[1].hpCur == 0 ||
-        gameState.team[0].majorStatus == Game::MajorStatus::SLEEP ||
-        gameState.team[1].majorStatus == Game::MajorStatus::SLEEP ||
-        visitorMotion == VisitorMotion::EXITING) {
-        cancelPairInteraction(nowMs);
-        return false;
-    }
-    for (uint8_t slot = 0; slot < 2 && !pairArrivalTalk; ++slot) {
-        const Game::MonsterRuntime& monster = gameState.team[slot];
-        const Game::SpeciesCareProfile care =
-            Game::speciesCareProfileFor(monster.speciesId);
-        if ((care.usesBed && Game::isSleepCareTime(
-                 gameState.gameMinutesTotal, monster.nature)) ||
-            (care.needsFood && monster.satiety <= 25)) {
-            cancelPairInteraction(nowMs);
-            return false;
-        }
-    }
-
-    auto faceActors = [&]() {
-        companionDirection = petDirectionForDelta(
-            homeMainActor.x - homeCompanionActor.x,
-            homeMainActor.y - homeCompanionActor.y);
-        petDirection = petDirectionForDelta(
-            homeCompanionActor.x - homeMainActor.x,
-            homeCompanionActor.y - homeMainActor.y);
-    };
-    auto planChaseLeg = [&]() {
-        const uint8_t leader = pairLeaderMain ? 0 : 1;
-        const uint8_t follower = pairLeaderMain ? 1 : 0;
-        Home::Actor& leaderActor = pairLeaderMain
-            ? homeMainActor : homeCompanionActor;
-        const float followX = leaderActor.x;
-        const float followY = leaderActor.y;
-        RoomResource& room = RoomResource::ins();
-        const int minimumX = room.available() ? room.walkMinX()
-                                              : FALLBACK_ROOM_MIN_X;
-        const int maximumX = room.available() ? room.walkMaxX()
-                                              : FALLBACK_ROOM_MAX_X;
-        const int minimumY = room.available() ? room.walkMinY()
-                                              : FALLBACK_ROOM_MIN_Y;
-        const int maximumY = room.available() ? room.walkMaxY()
-                                              : FALLBACK_ROOM_MAX_Y;
-        for (uint8_t attempt = 0; attempt < 48; ++attempt) {
-            const float targetX = static_cast<float>(GameRandom::random(
-                minimumX, maximumX + 1));
-            const float targetY = static_cast<float>(GameRandom::random(
-                minimumY, maximumY + 1));
-            const float dx = targetX - leaderActor.x;
-            const float dy = targetY - leaderActor.y;
-            const float distanceSq = dx * dx + dy * dy;
-            if (distanceSq < 1156.0f || distanceSq > 7056.0f) continue;
-            if (!homeRuntime.planRoute(leader, targetX, targetY,
-                                       false, false)) {
-                continue;
-            }
-            if (!homeRuntime.planRoute(follower, followX, followY,
-                                       false, false)) {
-                leaderActor.route.clear();
-                continue;
-            }
-            return true;
-        }
-        return false;
-    };
-
-    switch (pairPhase) {
-    case PairPhase::APPROACH: {
-        if (pairTalkParallelApproach) {
-            if (!pairTalkMainArrived) {
-                float waypointX = homeMainActor.targetX;
-                float waypointY = homeMainActor.targetY;
-                homeMainActor.route.current(waypointX, waypointY);
-                petDirection = petDirectionForDelta(
-                    waypointX - homeMainActor.x,
-                    waypointY - homeMainActor.y);
-            }
-            if (!pairTalkCompanionArrived) {
-                float waypointX = homeCompanionActor.targetX;
-                float waypointY = homeCompanionActor.targetY;
-                homeCompanionActor.route.current(waypointX, waypointY);
-                companionDirection = petDirectionForDelta(
-                    waypointX - homeCompanionActor.x,
-                    waypointY - homeCompanionActor.y);
-            }
-
-            Home::RouteStep mainStep = Home::RouteStep::ARRIVED;
-            Home::RouteStep companionStep = Home::RouteStep::ARRIVED;
-            if (!pairTalkMainArrived) {
-                mainStep = homeRuntime.advanceRoute(
-                    0, nowMs, std::max(0.1f, pairTalkMainApproachSpeed),
-                    elapsedSeconds, 1.0f, false);
-            }
-            if (!pairTalkCompanionArrived) {
-                companionStep = homeRuntime.advanceRoute(
-                    1, nowMs,
-                    std::max(0.1f, pairTalkCompanionApproachSpeed),
-                    elapsedSeconds, 1.0f, false);
-            }
-            updateCamera();
-#if STICKMON_ENABLE_DEBUG_FEATURES
-            if (static_cast<int32_t>(nowMs - visitorDiagNextLogMs) >= 0) {
-                visitorDiagNextLogMs = nowMs + 300;
-                Platform::logf(
-                    "[FriendDiag] talk approach-parallel kind=%u "
-                    "main=%.1f,%.1f companion=%.1f,%.1f arrived=%u,%u\n",
-                    static_cast<unsigned>(debugContactKind),
-                    homeMainActor.x, homeMainActor.y,
-                    homeCompanionActor.x, homeCompanionActor.y,
-                    pairTalkMainArrived ? 1U : 0U,
-                    pairTalkCompanionArrived ? 1U : 0U);
-            }
 #endif
-            if (!pairTalkMainArrived &&
-                static_cast<int32_t>(nowMs - nextPetFrameMs) >= 0) {
-                ++petFrame;
-                nextPetFrameMs = nowMs + MOTION_FRAME_MS;
-            }
-            if (!pairTalkCompanionArrived &&
-                static_cast<int32_t>(nowMs - nextCompanionFrameMs) >= 0) {
-                ++companionFrame;
-                nextCompanionFrameMs = nowMs + MOTION_FRAME_MS;
-            }
-            requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
-
-            const bool phaseTimedOut =
-                static_cast<int32_t>(nowMs - pairPhaseUntilMs) >= 0;
-            auto resolveArrival = [&](Home::Actor& actor,
-                                      Home::RouteStep step,
-                                      bool& arrived,
-                                      const char* role) {
-                if (arrived) return true;
-                const bool terminal = step == Home::RouteStep::ARRIVED ||
-                    step == Home::RouteStep::BLOCKED ||
-                    step == Home::RouteStep::NO_ROUTE || phaseTimedOut;
-                if (!terminal) return true;
-                const float goalDistance = std::hypot(
-                    actor.targetX - actor.x, actor.targetY - actor.y);
-                if (step == Home::RouteStep::ARRIVED ||
-                    goalDistance <= PAIR_APPROACH_GOAL_TOLERANCE) {
-                    actor.x = actor.targetX;
-                    actor.y = actor.targetY;
-                    actor.velocityX = 0.0f;
-                    actor.velocityY = 0.0f;
-                    actor.route.clear();
-                    arrived = true;
-#if STICKMON_ENABLE_DEBUG_FEATURES
-                    if (step != Home::RouteStep::ARRIVED) {
-                        Platform::logf(
-                            "[FriendDiag] talk approach-near-goal "
-                            "kind=%u role=%s distance=%.2f timeout=%u\n",
-                            static_cast<unsigned>(debugContactKind), role,
-                            static_cast<double>(goalDistance),
-                            phaseTimedOut ? 1U : 0U);
-                    }
-#endif
-                    return true;
-                }
-#if STICKMON_ENABLE_DEBUG_FEATURES
-                Platform::logf(
-                    "[FriendDiag] talk approach-failed kind=%u role=%s "
-                    "step=%d distance=%.2f timeout=%u\n",
-                    static_cast<unsigned>(debugContactKind), role,
-                    static_cast<int>(step),
-                    static_cast<double>(goalDistance),
-                    phaseTimedOut ? 1U : 0U);
-#else
-                (void)role;
-#endif
-                return false;
-            };
-            if (!resolveArrival(homeMainActor, mainStep,
-                                pairTalkMainArrived, "main") ||
-                !resolveArrival(homeCompanionActor, companionStep,
-                                pairTalkCompanionArrived, "companion")) {
-                finishPairInteraction(nowMs, false);
-                return false;
-            }
-            updateCamera();
-            if (!pairTalkMainArrived || !pairTalkCompanionArrived) {
-                return true;
-            }
-
-            faceActors();
-#if STICKMON_ENABLE_DEBUG_FEATURES
-            const int dxPx = std::abs(worldToScreenX(homeMainActor.x) -
-                                      worldToScreenX(homeCompanionActor.x));
-            const int mainWidth = pairIdleWidthPx(gameState.team[0].speciesId);
-            const int companionWidth =
-                pairIdleWidthPx(gameState.team[1].speciesId);
-            const int visibleGapPx = dxPx -
-                (mainWidth + companionWidth) / 2;
-            if (visibleGapPx < PAIR_TALK_MIN_GAP_PX) {
-                Platform::logf(
-                    "[FriendDiag] talk configured-gap kind=%u gapXpx=%d "
-                    "minimum=%d (fixed points kept)\n",
-                    static_cast<unsigned>(debugContactKind), visibleGapPx,
-                    PAIR_TALK_MIN_GAP_PX);
-            }
-            const int dy = std::abs(worldToScreenY(homeMainActor.y) -
-                                    worldToScreenY(homeCompanionActor.y));
-            Platform::logf("[FriendDiag] talk positioned kind=%u parallel=1 "
-                           "dxPx=%d dyPx=%d widths=%d,%d gapXpx=%d "
-                           "main=%.1f,%.1f companion=%.1f,%.1f\n",
-                           static_cast<unsigned>(debugContactKind), dxPx, dy,
-                           mainWidth, companionWidth, visibleGapPx,
-                           homeMainActor.x, homeMainActor.y,
-                           homeCompanionActor.x, homeCompanionActor.y);
-            Platform::logf("[FriendDiag] arrival talk-ready kind=%u "
-                           "mainDir=%u guestDir=%u\n",
-                           static_cast<unsigned>(debugContactKind),
-                           static_cast<unsigned>(petDirection),
-                           static_cast<unsigned>(companionDirection));
-#endif
-            pairPhase = PairPhase::INVITE;
-            pairPhaseStartedMs = nowMs;
-            pairPhaseUntilMs = nowMs + PAIR_INVITE_MS;
-            return true;
-        }
-
-        const uint8_t mover = pairLeaderMain ? 0 : 1;
-        Home::Actor& movingActor = pairLeaderMain
-            ? homeMainActor : homeCompanionActor;
-        float waypointX = movingActor.targetX;
-        float waypointY = movingActor.targetY;
-        movingActor.route.current(waypointX, waypointY);
-        if (mover == 0) {
-            petDirection = petDirectionForDelta(
-                waypointX - homeMainActor.x, waypointY - homeMainActor.y);
-        } else {
-            companionDirection = petDirectionForDelta(
-                waypointX - homeCompanionActor.x,
-                waypointY - homeCompanionActor.y);
-        }
-        Home::RouteStep step = homeRuntime.advanceRoute(
-            mover, nowMs, PAIR_APPROACH_SPEED, elapsedSeconds, 1.0f, true);
-        updateCamera();
-        // The mover walks during APPROACH too; without frame advancement the
-        // sprite slides across the room in a static pose.
-        if (mover == 0) {
-            if (static_cast<int32_t>(nowMs - nextPetFrameMs) >= 0) {
-                petFrame = static_cast<uint8_t>(petFrame + 1);
-                nextPetFrameMs = nowMs + MOTION_FRAME_MS;
-            }
-        } else if (static_cast<int32_t>(nowMs - nextCompanionFrameMs) >= 0) {
-            companionFrame = static_cast<uint8_t>(companionFrame + 1);
-            nextCompanionFrameMs = nowMs + MOTION_FRAME_MS;
-        }
-        requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
-        const bool phaseTimedOut =
-            static_cast<int32_t>(nowMs - pairPhaseUntilMs) >= 0;
-        const bool terminalStep = step == Home::RouteStep::ARRIVED ||
-            step == Home::RouteStep::BLOCKED ||
-            step == Home::RouteStep::NO_ROUTE || phaseTimedOut;
-        if (terminalStep) {
-            const float goalDistance = std::hypot(
-                movingActor.targetX - movingActor.x,
-                movingActor.targetY - movingActor.y);
-            bool reachedGoal = step == Home::RouteStep::ARRIVED;
-            if (!reachedGoal &&
-                goalDistance <= PAIR_APPROACH_GOAL_TOLERANCE) {
-                // A frame can hit the deadline after movement reaches the
-                // target but before advanceRoute reports ARRIVED. Snap only
-                // within the normal arrival tolerance so the scripted talk
-                // is not cancelled one frame before completion.
-                movingActor.x = movingActor.targetX;
-                movingActor.y = movingActor.targetY;
-                movingActor.velocityX = 0.0f;
-                movingActor.velocityY = 0.0f;
-                movingActor.route.clear();
-                updateCamera();
-                reachedGoal = true;
-#if STICKMON_ENABLE_DEBUG_FEATURES
-                if (pairActivity == Home::PairActivity::TALK) {
-                    Platform::logf(
-                        "[FriendDiag] talk approach-near-goal kind=%u "
-                        "distance=%.2f timeout=%u\n",
-                        static_cast<unsigned>(debugContactKind),
-                        static_cast<double>(goalDistance),
-                        phaseTimedOut ? 1U : 0U);
-                }
-#endif
-            }
-            if (pairActivity == Home::PairActivity::TALK && !reachedGoal) {
-#if STICKMON_ENABLE_DEBUG_FEATURES
-                Platform::logf(
-                    "[FriendDiag] talk approach-failed kind=%u step=%d "
-                    "distance=%.2f timeout=%u\n",
-                    static_cast<unsigned>(debugContactKind),
-                    static_cast<int>(step),
-                    static_cast<double>(goalDistance),
-                    phaseTimedOut ? 1U : 0U);
-#endif
-                finishPairInteraction(nowMs, false);
-                return false;
-            }
-            homeMainActor.route.clear();
-            homeCompanionActor.route.clear();
-#if STICKMON_ENABLE_DEBUG_FEATURES
-            const int dxPx = std::abs(worldToScreenX(homeMainActor.x) -
-                                      worldToScreenX(homeCompanionActor.x));
-            const int visibleGapPx = dxPx -
-                (pairIdleWidthPx(gameState.team[0].speciesId) +
-                 pairIdleWidthPx(gameState.team[1].speciesId)) / 2;
-            if (pairActivity == Home::PairActivity::TALK) {
-                Platform::logf("[FriendDiag] talk approach kind=%u step=%d "
-                               "gapXpx=%d dxPx=%d\n",
-                               static_cast<unsigned>(debugContactKind),
-                               static_cast<int>(step), visibleGapPx, dxPx);
-            }
-#endif
-            faceActors();
-#if STICKMON_ENABLE_DEBUG_FEATURES
-            if (pairActivity == Home::PairActivity::TALK) {
-                const int mainWidth = pairIdleWidthPx(gameState.team[0].speciesId);
-                const int companionWidth = pairIdleWidthPx(gameState.team[1].speciesId);
-                const int dy = std::abs(worldToScreenY(homeMainActor.y) -
-                                        worldToScreenY(homeCompanionActor.y));
-                Platform::logf("[FriendDiag] talk positioned kind=%u step=%d "
-                               "dxPx=%d dyPx=%d widths=%d,%d gapXpx=%d "
-                               "main=%.1f,%.1f companion=%.1f,%.1f\n",
-                               static_cast<unsigned>(debugContactKind),
-                               static_cast<int>(step), dxPx, dy,
-                               mainWidth, companionWidth,
-                               visibleGapPx,
-                               homeMainActor.x, homeMainActor.y,
-                               homeCompanionActor.x, homeCompanionActor.y);
-                Platform::logf("[FriendDiag] arrival talk-ready kind=%u "
-                               "mainDir=%u guestDir=%u\n",
-                               static_cast<unsigned>(debugContactKind),
-                               static_cast<unsigned>(petDirection),
-                               static_cast<unsigned>(companionDirection));
-            }
-#endif
-            pairPhase = PairPhase::INVITE;
-            pairPhaseStartedMs = nowMs;
-            pairPhaseUntilMs = nowMs + PAIR_INVITE_MS;
-        }
-        return true;
-    }
-    case PairPhase::INVITE:
-        faceActors();
-        if (static_cast<int32_t>(nowMs - pairPhaseUntilMs) >= 0) {
-            pairPhase = PairPhase::ACTIVE;
-            pairPhaseStartedMs = nowMs;
-            if (pairActivity == Home::PairActivity::TALK) {
-                if (pairArrivalTalk) {
-                    visitArrival.advance(Home::VisitArrivalEvent::TALK_STARTED,
-                                         nowMs);
-                }
-                pairPhaseUntilMs = nowMs + PAIR_TALK_TOTAL_MS;
-#if STICKMON_ENABLE_DEBUG_FEATURES
-                Platform::logf(
-                    "[FriendDiag] talk active kind=%u durationMs=%u\n",
-                    static_cast<unsigned>(debugContactKind),
-                    static_cast<unsigned>(PAIR_TALK_TOTAL_MS));
-#endif
-            } else if (!planChaseLeg()) {
-                pairActivity = Home::PairActivity::TALK;
-                pairPhaseUntilMs = nowMs + PAIR_TALK_TOTAL_MS;
-            }
-        }
-        return true;
-    case PairPhase::ACTIVE:
-        if (pairActivity == Home::PairActivity::TALK) {
-            const uint32_t elapsed = nowMs - pairPhaseStartedMs;
-            pairMainRenderOffsetY = elapsed < PAIR_TALK_HOP_MS
-                ? -std::sin(static_cast<float>(elapsed) /
-                            PAIR_TALK_HOP_MS * 3.14159265f) * 5.0f : 0.0f;
-            const uint32_t companionStart =
-                PAIR_TALK_HOP_MS + PAIR_TALK_GAP_MS;
-            pairCompanionRenderOffsetY =
-                elapsed >= companionStart &&
-                elapsed < companionStart + PAIR_TALK_HOP_MS
-                    ? -std::sin(static_cast<float>(elapsed - companionStart) /
-                                PAIR_TALK_HOP_MS * 3.14159265f) * 5.0f
-                    : 0.0f;
-            requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
-            if (static_cast<int32_t>(nowMs - pairPhaseUntilMs) >= 0) {
-                pairPhase = PairPhase::CELEBRATE;
-                pairPhaseUntilMs = nowMs + PAIR_CELEBRATE_MS;
-                heartsUntil = pairPhaseUntilMs;
-            }
-            return true;
-        } else {
-            const Home::RouteStep mainStep = homeRuntime.advanceRoute(
-                0, nowMs, pairLeaderMain ? PAIR_CHASE_LEADER_SPEED
-                                  : PAIR_CHASE_FOLLOWER_SPEED,
-                elapsedSeconds, 1.0f, false);
-            const Home::RouteStep companionStep = homeRuntime.advanceRoute(
-                1, nowMs, pairLeaderMain ? PAIR_CHASE_FOLLOWER_SPEED
-                                  : PAIR_CHASE_LEADER_SPEED,
-                elapsedSeconds, 1.0f, false);
-            updateCamera();
-            petDirection = petDirectionForDelta(
-                homeMainActor.velocityX, homeMainActor.velocityY);
-            companionDirection = petDirectionForDelta(
-                homeCompanionActor.velocityX, homeCompanionActor.velocityY);
-            if (static_cast<int32_t>(nowMs - nextPetFrameMs) >= 0) {
-                petFrame = static_cast<uint8_t>(petFrame + 1);
-                nextPetFrameMs = nowMs + MOTION_FRAME_MS;
-            }
-            if (static_cast<int32_t>(nowMs - nextCompanionFrameMs) >= 0) {
-                companionFrame = static_cast<uint8_t>(companionFrame + 1);
-                nextCompanionFrameMs = nowMs + MOTION_FRAME_MS;
-            }
-            requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
-            const bool mainDone = mainStep == Home::RouteStep::ARRIVED ||
-                mainStep == Home::RouteStep::BLOCKED ||
-                mainStep == Home::RouteStep::NO_ROUTE;
-            const bool companionDone =
-                companionStep == Home::RouteStep::ARRIVED ||
-                companionStep == Home::RouteStep::BLOCKED ||
-                companionStep == Home::RouteStep::NO_ROUTE;
-            if (mainDone && companionDone) {
-                if (pairChaseLegsRemaining > 0) --pairChaseLegsRemaining;
-                if (pairChaseLegsRemaining == 0 || !planChaseLeg()) {
-                    pairPhase = PairPhase::CELEBRATE;
-                    pairPhaseUntilMs = nowMs + PAIR_CELEBRATE_MS;
-                    heartsUntil = pairPhaseUntilMs;
-                    faceActors();
-                }
-            }
-            if (static_cast<int32_t>(nowMs - pairInteractionUntilMs) >= 0) {
-                pairPhase = PairPhase::CELEBRATE;
-                pairPhaseUntilMs = nowMs + PAIR_CELEBRATE_MS;
-                heartsUntil = pairPhaseUntilMs;
-            }
-            return true;
-        }
-    case PairPhase::CELEBRATE:
-        faceActors();
-        pairMainRenderOffsetY = 0.0f;
-        pairCompanionRenderOffsetY = 0.0f;
-        if (static_cast<int32_t>(nowMs - pairPhaseUntilMs) >= 0) {
-            finishPairInteraction(nowMs, true);
-            return false;
-        }
-        return true;
-    case PairPhase::NONE:
-        break;
-    }
-    return false;
+    const bool active = pairFlow_.completeMovement(layout, nowMs);
+    applyPairFlowEffects(nowMs);
+    return active;
 }
 
 void AmoledApp::finishPairInteraction(uint32_t nowMs, bool reward) {
-    if (pairPhase == PairPhase::NONE && !homeRuntime.pairActive()) return;
-    if (pairArrivalTalk) {
-        const Home::VisitArrivalEvent event =
-            reward && visitArrival.phase() == Home::VisitArrivalPhase::TALK
-                ? Home::VisitArrivalEvent::TALK_FINISHED
-                : Home::VisitArrivalEvent::TALK_SKIPPED;
-        visitArrival.advance(event, nowMs);
-    }
-#if STICKMON_ENABLE_DEBUG_FEATURES
-    Platform::logf("[HomeDiag] pair finish phase=%d reward=%d\n",
-                   static_cast<int>(pairPhase), reward ? 1 : 0);
-#endif
-    homeMainActor.route.clear();
-    homeCompanionActor.route.clear();
-    homeRuntime.endPair(nowMs, 700);
-    homeMainActor.targetX = homeMainActor.x;
-    homeMainActor.targetY = homeMainActor.y;
-    homeMainActor.motion = Home::MotionPhase::STILL;
-    petStopping = false;
-    pairPhase = PairPhase::NONE;
-    pairActivity = Home::PairActivity::NONE;
-    pairArrivalTalk = false;
-    pairTalkParallelApproach = false;
-    pairTalkMainArrived = false;
-    pairTalkCompanionArrived = false;
-    pairTalkMainApproachSpeed = 0.0f;
-    pairTalkCompanionApproachSpeed = 0.0f;
-    pairChaseLegsRemaining = 0;
-    pairMainRenderOffsetY = 0.0f;
-    pairCompanionRenderOffsetY = 0.0f;
-    homeMainActor.mind.onActivity(nowMs);
-    homeCompanionActor.mind.onActivity(nowMs);
-    schedulePetDecision(nowMs);
-    schedulePairInteraction(nowMs);
-    if (reward) {
-        const bool moodReward = gameState.pairMoodRewardsToday < 3;
-        for (uint8_t slot = 0; slot < 2; ++slot) {
-            Game::MonsterRuntime& monster = gameState.team[slot];
-            const uint32_t experience = Game::CareExperience::grant(gameState, slot,
-                Game::CareExperience::Source::PLAY);
-            applyHomeCareExperience(slot, experience);
-            if (moodReward && !monster.fainted && monster.hpCur > 0 && monster.mood < 100) {
-                ++monster.mood;
-            }
-        }
-        if (moodReward) ++gameState.pairMoodRewardsToday;
-        saveState();
-    }
-    requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
+    pairFlow_.finish(nowMs, reward);
+    applyPairFlowEffects(nowMs);
 }
 
 void AmoledApp::cancelPairInteraction(uint32_t nowMs) {
-    finishPairInteraction(nowMs, false);
-    heartsUntil = 0;
+    pairFlow_.cancel(nowMs);
+    applyPairFlowEffects(nowMs);
+}
+
+void AmoledApp::applyPairFlowEffects(uint32_t nowMs) {
+    const auto effects = pairFlow_.takeEffects();
+    if (effects.directionMask & 1) petDirection = effects.direction[0];
+    if (effects.directionMask & 2) companionDirection = effects.direction[1];
+    if (effects.camera) updateCamera();
+    if ((effects.frameMask & 1) && static_cast<int32_t>(nowMs - nextPetFrameMs) >= 0) {
+        ++petFrame; nextPetFrameMs = nowMs + MOTION_FRAME_MS;
+    }
+    if ((effects.frameMask & 2) && static_cast<int32_t>(nowMs - nextCompanionFrameMs) >= 0) {
+        ++companionFrame; nextCompanionFrameMs = nowMs + MOTION_FRAME_MS;
+    }
+    if (effects.stopAnimation) petStopping = false;
+    if (effects.heart == PairFlow::Heart::SHOW) heartsUntil = effects.heartsUntilMs;
+    else if (effects.heart == PairFlow::Heart::CLEAR) heartsUntil = 0;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    for (uint8_t i = 0; i < effects.traceCount; ++i) {
+        const auto& trace = effects.traces[i];
+        const auto& pair = pairFlow_.state();
+        switch (trace.kind) {
+        case PairFlow::Trace::START:
+            Platform::logf("[HomeDiag] pair start activity=%d leaderMain=%d main=%.1f,%.1f companion=%.1f,%.1f\n",
+                static_cast<int>(pair.activity), pair.leaderMain ? 1 : 0,
+                homeMainActor.x, homeMainActor.y, homeCompanionActor.x, homeCompanionActor.y);
+            break;
+        case PairFlow::Trace::FIXED_STAGE:
+            Platform::logf("[FriendDiag] talk fixed-stage companion=%.1f,%.1f main=%.1f,%.1f speeds=%.2f,%.2f\n",
+                PairFlow::TALK_COMPANION_X, PairFlow::TALK_STAGE_Y, PairFlow::TALK_MAIN_X, PairFlow::TALK_STAGE_Y,
+                pair.companionApproachSpeed, pair.mainApproachSpeed);
+            break;
+        case PairFlow::Trace::POSITIONED: {
+            const int dx = std::abs(worldToScreenX(homeMainActor.x) - worldToScreenX(homeCompanionActor.x));
+            const int dy = std::abs(worldToScreenY(homeMainActor.y) - worldToScreenY(homeCompanionActor.y));
+            const int firstWidth = pairIdleWidthPx(gameState.team[0].speciesId);
+            const int secondWidth = pairIdleWidthPx(gameState.team[1].speciesId);
+            const int gap = dx - (firstWidth + secondWidth) / 2;
+            if (pair.parallelApproach && gap < PAIR_TALK_MIN_GAP_PX) {
+                Platform::logf("[FriendDiag] talk configured-gap kind=%u gapXpx=%d minimum=%d (fixed points kept)\n",
+                    static_cast<unsigned>(debugContactKind), gap, PAIR_TALK_MIN_GAP_PX);
+            }
+            Platform::logf("[FriendDiag] talk positioned kind=%u parallel=%u dxPx=%d dyPx=%d widths=%d,%d gapXpx=%d main=%.1f,%.1f companion=%.1f,%.1f\n",
+                static_cast<unsigned>(debugContactKind), pair.parallelApproach ? 1U : 0U,
+                dx, dy, firstWidth, secondWidth, gap,
+                homeMainActor.x, homeMainActor.y, homeCompanionActor.x, homeCompanionActor.y);
+            Platform::logf("[FriendDiag] arrival talk-ready kind=%u mainDir=%u guestDir=%u\n",
+                static_cast<unsigned>(debugContactKind), static_cast<unsigned>(petDirection),
+                static_cast<unsigned>(companionDirection));
+            break;
+        }
+        case PairFlow::Trace::ACTIVE:
+            Platform::logf("[FriendDiag] talk active kind=%u durationMs=%u\n",
+                static_cast<unsigned>(debugContactKind),
+                static_cast<unsigned>(pair.phaseUntilMs - pair.phaseStartedMs));
+            break;
+        case PairFlow::Trace::FINISH:
+            Platform::logf("[HomeDiag] pair finish phase=%d reward=%d\n", static_cast<int>(trace.phase), effects.reward ? 1 : 0);
+            break;
+        case PairFlow::Trace::ROUTE_FAILED:
+            Platform::logf("[FriendDiag] talk route-failed kind=%u main=%.1f,%.1f companion=%.1f,%.1f\n",
+                static_cast<unsigned>(debugContactKind), homeMainActor.x, homeMainActor.y,
+                homeCompanionActor.x, homeCompanionActor.y);
+            break;
+        case PairFlow::Trace::NEAR_GOAL:
+        case PairFlow::Trace::APPROACH_FAILED:
+            Platform::logf("[FriendDiag] talk %s kind=%u role=%s step=%d distance=%.2f timeout=%u\n",
+                trace.kind == PairFlow::Trace::NEAR_GOAL ? "approach-near-goal" : "approach-failed",
+                static_cast<unsigned>(debugContactKind), trace.role == 0 ? "main" : "companion",
+                static_cast<int>(trace.step), static_cast<double>(trace.distance), trace.timedOut ? 1U : 0U);
+            break;
+        }
+    }
+#endif
+    if (effects.finished) {
+        // Keep PRNG and progression order: decision, pair interval, each care grant/XP, save.
+        schedulePetDecision(nowMs);
+        pairFlow_.schedule(nowMs);
+        if (effects.reward) {
+            const bool moodReward = gameState.pairMoodRewardsToday < 3;
+            for (uint8_t slot = 0; slot < 2; ++slot) {
+                auto& monster = gameState.team[slot];
+                const uint32_t experience = Game::CareExperience::grant(gameState, slot,
+                    Game::CareExperience::Source::PLAY);
+                applyHomeCareExperience(slot, experience);
+                if (moodReward && !monster.fainted && monster.hpCur > 0 && monster.mood < 100) ++monster.mood;
+            }
+            if (moodReward) ++gameState.pairMoodRewardsToday;
+            saveState();
+        }
+    }
+    if (effects.roomChanged) requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
+}
+
+
+VisitorFlow::Layout AmoledApp::visitorLayout() const {
+    const RoomResource& room = RoomResource::ins();
+    VisitorFlow::Layout layout;
+    layout.available = room.available();
+    layout.polygon = room.walkPolygon();
+    layout.polygonCount = room.walkPolygonCount();
+    layout.walkPolygon = room.available() ? room.walkPolygon() : FALLBACK_WALK_POLYGON;
+    layout.walkCount = room.available() ? room.walkPolygonCount()
+        : static_cast<uint8_t>(sizeof(FALLBACK_WALK_POLYGON) / sizeof(FALLBACK_WALK_POLYGON[0]));
+    layout.bounds = {room.available() ? static_cast<float>(room.walkMinX()) : FALLBACK_ROOM_MIN_X,
+        room.available() ? static_cast<float>(room.walkMinY()) : FALLBACK_ROOM_MIN_Y,
+        room.available() ? static_cast<float>(room.walkMaxX()) : FALLBACK_ROOM_MAX_X,
+        room.available() ? static_cast<float>(room.walkMaxY()) : FALLBACK_ROOM_MAX_Y};
+    layout.insideX = room.available() ? room.doorwayInsideX() : FALLBACK_ROOM_MAX_X - 8.0f;
+    layout.insideY = room.available() ? room.doorwayInsideY() : FALLBACK_ROOM_MAX_Y;
+    layout.outsideX = room.available() ? room.doorwayOutsideX() : layout.insideX + 12.0f;
+    layout.outsideY = room.available() ? room.doorwayOutsideY() : layout.insideY + 10.0f;
+    return layout;
 }
 
 void AmoledApp::beginVisitDeparture(uint32_t nowMs) {
     visitRecallConfirm = false;
     cancelPairInteraction(nowMs);
     cancelRoomAction(nowMs);
-    homeRuntime.releaseAll(0);
-    homeRuntime.transition(0, Home::Task::DOOR_ACTION, nowMs, 0, true);
-    RoomResource& room = RoomResource::ins();
-    visitDoorInsideX = room.available()
-        ? static_cast<float>(room.doorwayInsideX())
-        : FALLBACK_ROOM_MAX_X - 8.0f;
-    visitDoorInsideY = room.available()
-        ? static_cast<float>(room.doorwayInsideY())
-        : FALLBACK_ROOM_MAX_Y;
-    visitDoorOutsideX = room.available()
-        ? static_cast<float>(room.doorwayOutsideX())
-        : visitDoorInsideX + 12.0f;
-    visitDoorOutsideY = room.available()
-        ? static_cast<float>(room.doorwayOutsideY())
-        : visitDoorInsideY + 10.0f;
-    homeMainActor.hidden = false;
-    homeMainActor.faintRestActive = false;
-    homeMainActor.motion = Home::MotionPhase::STILL;
-    petStopping = false;
-    homeMainActor.route.clear();
-    if (!room.available() ||
-        !homeRuntime.planRoute(0, visitDoorInsideX, visitDoorInsideY,
-                               false, false)) {
-        homeMainActor.targetX = visitDoorInsideX;
-        homeMainActor.targetY = visitDoorInsideY;
-    }
-    visitDeparture = VisitDeparture::WALK_TO_DOOR;
-    visitDepartureStartedMs = nowMs;
-    nextPetFrameMs = nowMs;
-    requestFullRender();
+    const auto layout = visitorLayout();
+    visitAwayFlow_.begin({layout.available, layout.insideX, layout.insideY,
+                         layout.outsideX, layout.outsideY}, nowMs);
+    applyVisitAwayEffects(nowMs);
 }
 
 bool AmoledApp::updateVisitDeparture(uint32_t nowMs) {
-    if (!visitSession.active()) {
-        visitRecallConfirm = false;
-        if (visitDeparture == VisitDeparture::AWAY ||
-            visitDeparture == VisitDeparture::CROSS_DOOR) {
-            homeMainActor.x = visitDoorInsideX;
-            homeMainActor.y = visitDoorInsideY;
-        }
-        homeMainActor.hidden = false;
-        homeRuntime.stop(0, nowMs, 0);
-        homeMainActor.motion = Home::MotionPhase::STILL;
-        petStopping = false;
-        visitDeparture = VisitDeparture::NONE;
-        updateCamera();
-        requestFullRender();
-        return false;
-    }
-    if (visitDeparture == VisitDeparture::AWAY) return true;
-    float elapsedSeconds = lastPetUpdateMs == 0 || nowMs < lastPetUpdateMs
-        ? 0.0f
-        : std::min<uint32_t>(nowMs - lastPetUpdateMs, 120U) / 1000.0f;
-    const float previousX = homeMainActor.x;
-    const float previousY = homeMainActor.y;
-    bool arrived = false;
-    if (visitDeparture == VisitDeparture::WALK_TO_DOOR &&
-        !homeMainActor.route.empty()) {
-        const Home::RouteStep step = homeRuntime.advanceRoute(
-            0, nowMs, VISITOR_DOOR_SPEED, elapsedSeconds, 1.0f, false);
-        arrived = step == Home::RouteStep::ARRIVED;
-        if (step == Home::RouteStep::BLOCKED ||
-            step == Home::RouteStep::NO_ROUTE) homeMainActor.route.clear();
-    } else {
-        const float targetX = visitDeparture == VisitDeparture::WALK_TO_DOOR
-            ? visitDoorInsideX : visitDoorOutsideX;
-        const float targetY = visitDeparture == VisitDeparture::WALK_TO_DOOR
-            ? visitDoorInsideY : visitDoorOutsideY;
-        const float distance = std::hypot(targetX - homeMainActor.x,
-                                          targetY - homeMainActor.y);
-        const float step = VISITOR_DOOR_SPEED * elapsedSeconds;
-        arrived = distance <= std::max(0.8f, step);
-        if (arrived) {
-            homeMainActor.x = targetX;
-            homeMainActor.y = targetY;
-        } else if (step > 0.0f) {
-            homeMainActor.x += (targetX - homeMainActor.x) / distance * step;
-            homeMainActor.y += (targetY - homeMainActor.y) / distance * step;
-        }
-    }
-    petDirection = petDirectionForDelta(homeMainActor.x - previousX,
-                                         homeMainActor.y - previousY);
-    if (static_cast<int32_t>(nowMs - nextPetFrameMs) >= 0) {
-        ++petFrame;
-        nextPetFrameMs = nowMs + MOTION_FRAME_MS;
-    }
-    updateCamera();
-    requestHomeActorRows(previousY, homeMainActor.y);
-    const VisitDeparture nextPhase = Home::VisitDepartureFlow::advance(
-        visitDeparture, arrived, nowMs - visitDepartureStartedMs);
-    if (nextPhase != visitDeparture) {
-        if (nextPhase == VisitDeparture::CROSS_DOOR) {
-            homeMainActor.x = visitDoorInsideX;
-            homeMainActor.y = visitDoorInsideY;
-            homeMainActor.route.clear();
-            visitDeparture = nextPhase;
-            visitDepartureStartedMs = nowMs;
-        } else {
-            homeMainActor.hidden = true;
-            visitDeparture = nextPhase;
-            visitSession.markVisitorDeparted();
-            requestFullRender();
-        }
-    }
-    return true;
+    const float elapsedSeconds = lastPetUpdateMs == 0 || nowMs < lastPetUpdateMs
+        ? 0.0f : std::min<uint32_t>(nowMs - lastPetUpdateMs, 120U) / 1000.0f;
+    const bool active = visitAwayFlow_.update(visitSession.active(), nowMs, elapsedSeconds);
+    applyVisitAwayEffects(nowMs);
+    visitAwayFlow_.completeMovement(nowMs);
+    applyVisitAwayEffects(nowMs);
+    return active;
 }
 
-bool AmoledApp::chooseVisitorDoorPose(const Home::Actor& actor,
-                                      float& x, float& y) const {
-    RoomResource& room = RoomResource::ins();
-    if (!room.available() || room.walkPolygonCount() < 3) return false;
-    const float anchorX = static_cast<float>(room.doorwayInsideX());
-    const float anchorY = static_cast<float>(room.doorwayInsideY());
-    auto valid = [&](float candidateX, float candidateY) {
-        return RoomMovementArea::containsFootprint(
-            room.walkPolygon(), room.walkPolygonCount(),
-            candidateX, candidateY + actor.geometry.groundOffsetY,
-            actor.geometry.footprint);
-    };
-    auto tryCandidate = [&](int dx, int dy) {
-        float candidateX = anchorX + static_cast<float>(dx);
-        float candidateY = anchorY + static_cast<float>(dy) -
-            actor.geometry.groundOffsetY;
-        if (!valid(candidateX, candidateY)) return false;
-        x = candidateX;
-        y = candidateY;
-        return true;
-    };
-    if (tryCandidate(0, 0)) return true;
-    for (int radius = 2; radius <= 48; radius += 2) {
-        for (int offset = -radius; offset <= radius; offset += 2) {
-            if (tryCandidate(radius, offset) ||
-                tryCandidate(-radius, offset) ||
-                tryCandidate(offset, radius) ||
-                tryCandidate(offset, -radius)) {
-                return true;
-            }
-        }
+void AmoledApp::applyVisitAwayEffects(uint32_t nowMs) {
+    const auto effects = visitAwayFlow_.takeEffects();
+    if (effects.clearRecall) visitRecallConfirm = false;
+    if (effects.stopAnimation || effects.resetAnimation) petStopping = false;
+    if (effects.resetAnimation) nextPetFrameMs = nowMs;
+    if (effects.directionChanged) petDirection = effects.direction;
+    if (effects.startWalk && static_cast<int32_t>(nowMs - nextPetFrameMs) >= 0) {
+        ++petFrame; nextPetFrameMs = nowMs + MOTION_FRAME_MS;
     }
-    return false;
-}
-
-bool AmoledApp::beginVisitorHostClear(uint32_t nowMs) {
-    RoomResource& room = RoomResource::ins();
-    const float centerX = room.available()
-        ? (static_cast<float>(room.walkMinX()) +
-           static_cast<float>(room.walkMaxX())) * 0.5f
-        : (FALLBACK_ROOM_MIN_X + FALLBACK_ROOM_MAX_X) * 0.5f;
-    const float centerY = room.available()
-        ? (static_cast<float>(room.walkMinY()) +
-           static_cast<float>(room.walkMaxY())) * 0.5f
-        : (FALLBACK_ROOM_MIN_Y + FALLBACK_ROOM_MAX_Y) * 0.5f;
-    static constexpr int8_t OFFSETS[][2] = {
-        {0, 0}, {-18, 0}, {18, 0}, {0, -14}, {0, 14},
-        {-18, -12}, {18, -12}, {-18, 12}, {18, 12},
-        {-30, 0}, {30, 0}, {0, -24}, {0, 24},
-    };
-    for (const auto& offset : OFFSETS) {
-        const float candidateX = centerX + offset[0];
-        const float candidateY = centerY + offset[1] -
-            homeMainActor.geometry.groundOffsetY;
-        if (!RoomMovementArea::containsFootprint(
-                room.walkPolygon(), room.walkPolygonCount(),
-                candidateX,
-                candidateY + homeMainActor.geometry.groundOffsetY,
-                homeMainActor.geometry.footprint)) {
-            continue;
-        }
-        const float dx = candidateX - visitorDoorInsideX;
-        const float dy = candidateY - visitorDoorInsideY;
-        if (dx * dx + dy * dy <
-                VISITOR_DOOR_CLEAR_DISTANCE * VISITOR_DOOR_CLEAR_DISTANCE) {
-            continue;
-        }
-        if (!homeRuntime.planRoute(0, candidateX, candidateY, false, false)) {
-            continue;
-        }
-        if (!homeRuntime.transitionPreparedRoute(
-                0, Home::Task::DOOR_ACTION, nowMs, 0, true)) {
-            continue;
-        }
-        visitorHostDoorPhase = 2;
-        visitorRouteBlockedSinceMs = 0;
-        visitorMotionUntilMs = nowMs + VISITOR_MOTION_TIMEOUT_MS;
-        Platform::logf("[VisitArrival] host_clear_begin host=%.1f,%.1f "
-                       "goal=%.1f,%.1f route=%u\n",
-                       homeMainActor.x, homeMainActor.y, candidateX, candidateY,
-                       static_cast<unsigned>(homeMainActor.route.count));
-        return true;
-    }
-    Platform::logf("[VisitArrival] host_clear_unavailable host=%.1f,%.1f "
-                   "door=%.1f,%.1f walk=%u\n",
-                   homeMainActor.x, homeMainActor.y, visitorDoorInsideX, visitorDoorInsideY,
-                   petFootprintInsideWalkArea(homeMainActor.x, homeMainActor.y) ? 1U : 0U);
-    return false;
+    if (effects.camera) updateCamera();
+    if (effects.actorChanged) requestHomeActorRows(effects.previousY, homeMainActor.y);
+    if (effects.departed) visitSession.markVisitorDeparted();
+    if (effects.fullRender) requestFullRender();
 }
 
 void AmoledApp::beginVisitorEntry(uint32_t nowMs) {
     if (!homeCompanionActor.active || gameState.teamCount < 2 ||
-        gameState.team[1].origin != Game::Origin::VISITOR) {
-        return;
-    }
+        gameState.team[1].origin != Game::Origin::VISITOR) return;
     cancelRoomAction(nowMs);
-    RoomResource& room = RoomResource::ins();
-    const float insideX = room.available()
-        ? static_cast<float>(room.doorwayInsideX())
-        : FALLBACK_ROOM_MAX_X - 8.0f;
-    const float insideY = room.available()
-        ? static_cast<float>(room.doorwayInsideY())
-        : FALLBACK_ROOM_MAX_Y;
-    visitorDoorInsideX = insideX;
-    visitorDoorInsideY = insideY;
-    visitorDoorOutsideX = room.available()
-        ? static_cast<float>(room.doorwayOutsideX()) : insideX + 12.0f;
-    visitorDoorOutsideY = room.available()
-        ? static_cast<float>(room.doorwayOutsideY()) : insideY + 10.0f;
+    const auto layout = visitorLayout();
     cancelPairInteraction(nowMs);
-    visitArrival.begin(nowMs);
-    homeRuntime.transition(0, Home::Task::DOOR_ACTION, nowMs, 0, true);
-    homeRuntime.acquire(Home::Resource::DOOR, 0,
-                        Home::Task::DOOR_ACTION, nowMs);
-    // The temporary team member already exists in game state, but keep its
-    // actor offstage until the host has reached a clear waiting point by the
-    // door. This mirrors Stick's host-to-door arrival phase.
-    homeCompanionActor.hidden = true;
-    homeCompanionActor.route.clear();
-    visitorRouteBlockedSinceMs = 0;
-    visitorWelcomeValid = false;
-    float welcomeX = insideX;
-    float welcomeY = insideY;
-    if (!chooseVisitorDoorPose(homeMainActor, welcomeX, welcomeY)) {
-        Platform::logf(
-            "[VisitArrival] welcome pose unavailable inside=%.1f,%.1f\n",
-            insideX, insideY);
-        visitArrival.advance(Home::VisitArrivalEvent::HOST_READY, nowMs);
-        visitorHostDoorPhase = 1;
-        visitorMotion = VisitorMotion::HOST_APPROACH;
-        visitorMotionUntilMs = nowMs +
-            Home::VisitArrivalFlow::DOOR_OPEN_MS + VISITOR_MOTION_TIMEOUT_MS;
-        return;
-    }
-    visitorDoorInsideX = welcomeX;
-    visitorDoorInsideY = welcomeY;
-    const bool hostStartsOutside = !petFootprintInsideWalkArea(homeMainActor.x, homeMainActor.y);
-    if (hostStartsOutside) {
-        const float originalX = homeMainActor.x;
-        const float originalY = homeMainActor.y;
-        RoomMovementArea::Footprint footprint = {
-            homeMainActor.geometry.footprint.radiusX, homeMainActor.geometry.footprint.radiusY};
-        bool recovered = false;
-        for (int radius = 2; radius <= 48 && !recovered; radius += 2) {
-            for (int offset = -radius; offset <= radius; offset += 2) {
-                const float candidates[][2] = {
-                    {originalX + radius, originalY + offset},
-                    {originalX - radius, originalY + offset},
-                    {originalX + offset, originalY + radius},
-                    {originalX + offset, originalY - radius},
-                };
-                for (const auto& candidate : candidates) {
-                    if (!RoomMovementArea::containsFootprint(
-                            room.walkPolygon(), room.walkPolygonCount(),
-                            candidate[0], candidate[1], footprint)) {
-                        continue;
-                    }
-                    homeMainActor.x = candidate[0];
-                    homeMainActor.y = candidate[1];
-                    recovered = true;
-                    break;
-                }
-                if (recovered) break;
-            }
-        }
-        if (!recovered) {
-            homeMainActor.x = welcomeX;
-            homeMainActor.y = welcomeY;
-        }
-        homeMainActor.targetX = homeMainActor.x;
-        homeMainActor.targetY = homeMainActor.y;
-        homeMainActor.route.clear();
-        Platform::logf("[VisitArrival] host_recover from=%.1f,%.1f "
-                       "to=%.1f,%.1f nearby=%u walk=%u\n",
-                       originalX, originalY, homeMainActor.x, homeMainActor.y,
-                       recovered ? 1U : 0U,
-                       petFootprintInsideWalkArea(homeMainActor.x, homeMainActor.y) ? 1U : 0U);
-        requestFullRender();
-    }
-    const bool routePlanned = homeRuntime.planRoute(
-        0, welcomeX, welcomeY, false, false);
-    if (visitSession.active() && visitSession.viewModel().localIsHost) {
-        Platform::logf("[VisitArrival] welcome route=%u host=%.1f,%.1f "
-                       "goal=%.1f,%.1f startWalk=%u goalWalk=%u "
-                       "routePoints=%u\n",
-                       routePlanned ? 1U : 0U, homeMainActor.x,
-                       homeMainActor.y, welcomeX, welcomeY,
-                       petFootprintInsideWalkArea(homeMainActor.x, homeMainActor.y) ? 1U : 0U,
-                       petFootprintInsideWalkArea(welcomeX, welcomeY) ? 1U : 0U,
-                       static_cast<unsigned>(homeMainActor.route.count));
-    }
-    if (routePlanned) {
-        // Runtime actor x/y and the renderer's petCenterX/petGroundY are
-        // the same bottom-center anchor. Preserve the fixed goal so the
-        // debug marker remains exact after the visitor is revealed.
-        visitorWelcomeX = homeMainActor.targetX;
-        visitorWelcomeY = homeMainActor.targetY;
-        visitorWelcomeValid = true;
-    }
-    visitorHostDoorPhase = 0;
-    if (!routePlanned) {
-        Platform::logf("[VisitArrival] host_to_door_fallback "
-                       "from=%.1f,%.1f door=%.1f,%.1f\n",
-                       homeMainActor.x, homeMainActor.y, welcomeX, welcomeY);
-        homeMainActor.x = welcomeX;
-        homeMainActor.y = welcomeY;
-        homeMainActor.targetX = welcomeX;
-        homeMainActor.targetY = welcomeY;
-        homeMainActor.x = welcomeX;
-        homeMainActor.y = welcomeY;
-        homeMainActor.targetX = welcomeX;
-        homeMainActor.targetY = welcomeY;
-        homeRuntime.stop(0, nowMs, 0);
-        visitArrival.advance(Home::VisitArrivalEvent::HOST_READY, nowMs);
-        visitorHostDoorPhase = 1;
-        visitorMotion = VisitorMotion::HOST_APPROACH;
-        visitorMotionUntilMs = nowMs +
-            Home::VisitArrivalFlow::DOOR_OPEN_MS + VISITOR_MOTION_TIMEOUT_MS;
-        visitorArrivalNextLogMs = nowMs;
-#if STICKMON_ENABLE_DEBUG_FEATURES
-        Platform::logf("[FriendDiag] arrival host-route-failed kind=%u "
-                       "from=%.1f,%.1f door=%.1f,%.1f\n",
-                       static_cast<unsigned>(debugContactKind),
-                       homeMainActor.x, homeMainActor.y, insideX, insideY);
-#endif
-        return;
-    }
-    visitorMotion = VisitorMotion::HOST_APPROACH;
-    visitorArrivalNextLogMs = nowMs;
-    visitorCrossingDoor = false;
-    const float distance = std::hypot(
-        homeMainActor.targetX - homeMainActor.x,
-        homeMainActor.targetY - homeMainActor.y);
-    visitorMotionUntilMs = nowMs + static_cast<uint32_t>(std::clamp(
-        distance / VISITOR_DOOR_SPEED * 1000.0f + 2500.0f,
-        6000.0f, 15000.0f));
-    petDirection = petDirectionForDelta(
-        homeMainActor.targetX - homeMainActor.x,
-        homeMainActor.targetY - homeMainActor.y);
-    petFrame = 0;
-    nextPetFrameMs = nowMs;
-#if STICKMON_ENABLE_DEBUG_FEATURES
-    visitorDiagNextLogMs = nowMs;
-    Platform::logf("[FriendDiag] arrival host-approach kind=%u "
-                   "from=%.1f,%.1f goal=%.1f,%.1f visitorHidden=1\n",
-                   static_cast<unsigned>(debugContactKind),
-                   homeMainActor.x, homeMainActor.y,
-                   homeMainActor.targetX, homeMainActor.targetY);
-#endif
-    requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
-}
-
-void AmoledApp::startVisitorDoorEntry(uint32_t nowMs) {
-    if (!homeCompanionActor.active || gameState.teamCount < 2 ||
-        gameState.team[1].origin != Game::Origin::VISITOR) {
-        return;
-    }
-    if (!visitArrival.advance(Home::VisitArrivalEvent::GUEST_ENTERING,
-                              nowMs)) return;
-    float insideX = visitorDoorInsideX;
-    float insideY = visitorDoorInsideY;
-    const bool guestDoorPoseReady =
-        chooseVisitorDoorPose(homeCompanionActor, insideX, insideY);
-    visitorGuestDoorInsideX = insideX;
-    visitorGuestDoorInsideY = insideY;
-    const float outsideX = visitorDoorOutsideX;
-    const float outsideY = visitorDoorOutsideY;
-
-    homeRuntime.release(Home::Resource::DOOR, 0);
-    homeRuntime.stop(0, nowMs, 700);
-    homeMainActor.targetX = homeMainActor.x;
-    homeMainActor.targetY = homeMainActor.y;
-    homeMainActor.motion = Home::MotionPhase::STILL;
-    petStopping = false;
-
-    homeRuntime.transition(1, Home::Task::DOOR_ACTION, nowMs, 0, true);
-    homeRuntime.acquire(Home::Resource::DOOR, 1,
-                        Home::Task::DOOR_ACTION, nowMs);
-    homeCompanionActor.x = outsideX;
-    homeCompanionActor.y = outsideY;
-    homeCompanionActor.targetX = insideX;
-    homeCompanionActor.targetY = insideY;
-    homeCompanionActor.route.clear();
-    homeCompanionActor.hidden = false;
-    visitorMotion = VisitorMotion::ENTERING;
-    visitorHostDoorPhase = 0;
-    visitorCrossingDoor = true;
-    visitorMotionUntilMs = nowMs + VISITOR_MOTION_TIMEOUT_MS;
-    const float landingGoals[][2] = {
-        {insideX + 12.0f, insideY - 12.0f},
-        {insideX + 24.0f, insideY - 12.0f},
-        {insideX + 12.0f, insideY - 24.0f},
-    };
-    visitorLandingValid = false;
-    for (const auto& goal : landingGoals) {
-        if (!companionFootprintInsideWalkArea(goal[0], goal[1])) continue;
-        visitorLandingX = goal[0];
-        visitorLandingY = goal[1];
-        visitorLandingValid = true;
-        break;
-    }
-    if (!visitorLandingValid) {
-        visitorLandingValid = chooseCompanionTarget(
-            visitorLandingX, visitorLandingY);
-    }
-    Platform::logf("[VisitArrival] guest_enter_begin host=%.1f,%.1f "
-                   "hostWalk=%u guestDoor=%.1f,%.1f guestDoorValid=%u "
-                   "landing=%.1f,%.1f landingValid=%u\n",
-                   homeMainActor.x, homeMainActor.y, petFootprintInsideWalkArea(homeMainActor.x, homeMainActor.y) ? 1U : 0U,
-                   insideX, insideY, guestDoorPoseReady ? 1U : 0U,
-                   visitorLandingX, visitorLandingY,
-                   visitorLandingValid ? 1U : 0U);
-    companionDirection = petDirectionForDelta(
-        insideX - outsideX, insideY - outsideY);
-    companionFrame = 0;
-    nextCompanionFrameMs = nowMs;
-    if (visitSession.active() && visitSession.viewModel().localIsHost) {
-        Platform::logf("[VisitArrival] visible species=%u outside=%.1f,%.1f inside=%.1f,%.1f\n",
-                       static_cast<unsigned>(homeCompanionActor.speciesId),
-                       outsideX, outsideY, insideX, insideY);
-    }
-#if STICKMON_ENABLE_DEBUG_FEATURES
-    Platform::logf("[FriendDiag] arrival visitor-visible kind=%u "
-                   "host=%.1f,%.1f from=%.1f,%.1f to=%.1f,%.1f "
-                   "landing=%.1f,%.1f valid=%u\n",
-                   static_cast<unsigned>(debugContactKind),
-                   homeMainActor.x, homeMainActor.y,
-                   outsideX, outsideY, insideX, insideY,
-                   visitorLandingX, visitorLandingY,
-                   visitorLandingValid ? 1U : 0U);
-#endif
-    requestFullRender();
+    visitorFlow_.beginVisitorEntry(layout, nowMs);
+    applyVisitorEffects(nowMs);
 }
 
 void AmoledApp::beginVisitorExit(uint32_t nowMs, bool debugVisitor) {
     if (!homeCompanionActor.active || gameState.teamCount < 2 ||
         gameState.team[1].origin != Game::Origin::VISITOR ||
-        visitorMotion == VisitorMotion::EXITING) {
-        return;
-    }
+        visitorFlow_.state().motion == VisitorMotion::EXITING) return;
     cancelRoomAction(nowMs);
     cancelPairInteraction(nowMs);
-    visitArrival.reset();
-    visitorExitIsDebug = debugVisitor;
-    visitorMotion = VisitorMotion::EXITING;
-    visitorCrossingDoor = false;
-    homeRuntime.transition(1, Home::Task::DOOR_ACTION, nowMs, 0, true);
-    homeRuntime.acquire(Home::Resource::DOOR, 1,
-                        Home::Task::DOOR_ACTION, nowMs);
-    RoomResource& room = RoomResource::ins();
-    const float insideX = room.available()
-        ? static_cast<float>(room.doorwayInsideX())
-        : FALLBACK_ROOM_MAX_X - 8.0f;
-    const float insideY = room.available()
-        ? static_cast<float>(room.doorwayInsideY())
-        : FALLBACK_ROOM_MAX_Y;
-    const float fromX = homeCompanionActor.x;
-    const float fromY = homeCompanionActor.y;
-    const uint32_t travelBudgetMs = static_cast<uint32_t>(std::clamp(
-        std::hypot(insideX - fromX, insideY - fromY) /
-            VISITOR_DOOR_SPEED * 2200.0f + 3000.0f,
-        static_cast<float>(VISITOR_MOTION_TIMEOUT_MS), 20000.0f));
-    visitorMotionUntilMs = nowMs + travelBudgetMs;
-    const float doorwayGoals[][2] = {
-        {insideX, insideY}, {insideX + 12.0f, insideY - 12.0f},
-        {insideX - 12.0f, insideY - 12.0f},
-        {insideX + 24.0f, insideY - 12.0f},
-        {insideX - 24.0f, insideY - 12.0f},
-        {insideX, insideY - 24.0f},
-        {insideX + 24.0f, insideY - 24.0f},
-        {insideX - 24.0f, insideY - 24.0f},
-    };
-    bool routePlanned = false;
-    for (const auto& goal : doorwayGoals) {
-        if (homeRuntime.planRoute(1, goal[0], goal[1], false, true)) {
-            routePlanned = true;
-            break;
+    visitorFlow_.beginVisitorExit(visitorLayout(), nowMs, debugVisitor);
+    applyVisitorEffects(nowMs);
+}
+
+void AmoledApp::updateVisitorMotion(uint32_t nowMs, float elapsedSeconds) {
+    const auto layout = visitorLayout();
+    visitorFlow_.update(layout, nowMs, elapsedSeconds);
+    applyVisitorEffects(nowMs);
+    visitorFlow_.completeMovement(layout, nowMs);
+    applyVisitorEffects(nowMs);
+}
+
+void AmoledApp::applyVisitorEffects(uint32_t nowMs) {
+    // A landing request hands off only the existing autonomous target selection.
+    // Its acknowledgement produces the entry pose/frame effects in the next pass.
+    for (uint8_t pass = 0; pass < 2; ++pass) {
+        const auto effects = visitorFlow_.takeEffects();
+        if (effects.stopAnimation) petStopping = false;
+        if (effects.guestIdle) { companionFrame = 0; nextCompanionFrameMs = nowMs + 520; }
+        if (effects.directionMask & 1) petDirection = effects.direction[0];
+        if (effects.directionMask & 2) companionDirection = effects.direction[1];
+        if (effects.resetFrameMask & 1) { petFrame = 0; nextPetFrameMs = nowMs; }
+        if (effects.resetFrameMask & 2) { companionFrame = 0; nextCompanionFrameMs = nowMs; }
+        if ((effects.frameMask & 1) && static_cast<int32_t>(nowMs - nextPetFrameMs) >= 0) {
+            ++petFrame; nextPetFrameMs = nowMs + MOTION_FRAME_MS;
         }
-    }
+        if ((effects.frameMask & 2) && static_cast<int32_t>(nowMs - nextCompanionFrameMs) >= 0) {
+            ++companionFrame; nextCompanionFrameMs = nowMs + MOTION_FRAME_MS;
+        }
+        if (effects.camera) updateCamera();
+        for (uint8_t i = 0; i < effects.traceCount; ++i) {
+            const auto& trace = effects.traces[i];
+            const char* label = nullptr;
+            using Trace = VisitorFlow::Trace;
+            switch (trace.kind) {
+            case Trace::HOST_CLEAR: label = "host_clear_begin"; break;
+            case Trace::CLEAR_UNAVAILABLE: label = "host_clear_unavailable"; break;
+            case Trace::WELCOME_UNAVAILABLE: label = "welcome_unavailable"; break;
+            case Trace::RECOVER: label = "host_recover"; break;
+            case Trace::HOST_FALLBACK: label = "host_to_door_fallback"; break;
+            case Trace::HOST_APPROACH: label = "host_approach_begin"; break;
+            case Trace::GUEST_VISIBLE: label = "guest_enter_begin"; break;
+            case Trace::EXIT_BEGIN: label = "guest_exit_begin"; break;
+            case Trace::ENTERED: label = "guest_enter_arrived"; break;
+            case Trace::EXITED: label = "guest_exit_end"; break;
+            case Trace::DOOR_OPEN: label = "host_open_done"; break;
+            case Trace::CLEAR_END: label = "host_clear_end"; break;
+            case Trace::HOST_READY: label = "host_approach_end"; break;
+            }
+            Platform::logf("[VisitArrival] %s host=%.1f,%.1f guest=%.1f,%.1f goal=%.1f,%.1f\n",
+                label, trace.mainX, trace.mainY, trace.guestX, trace.guestY, trace.targetX, trace.targetY);
 #if STICKMON_ENABLE_DEBUG_FEATURES
-    visitorDiagNextLogMs = nowMs;
-    Platform::logf("[FriendDiag] visitor-exit begin kind=%u debug=%u "
-                   "from=%.1f,%.1f door=%.1f,%.1f route=%u goal=%.1f,%.1f "
-                   "timeoutMs=%lu\n",
-                   static_cast<unsigned>(debugContactKind),
-                   debugVisitor ? 1U : 0U, fromX, fromY, insideX, insideY,
-                   routePlanned ? 1U : 0U,
-                   homeCompanionActor.targetX, homeCompanionActor.targetY,
-                   static_cast<unsigned long>(travelBudgetMs));
+            const char* debugLabel = nullptr;
+            switch (trace.kind) {
+            case Trace::HOST_APPROACH: debugLabel = "arrival host-approach"; break;
+            case Trace::HOST_FALLBACK: debugLabel = "arrival host-route-failed"; break;
+            case Trace::HOST_READY: debugLabel = "arrival host-ready"; break;
+            case Trace::GUEST_VISIBLE: debugLabel = "arrival visitor-visible"; break;
+            case Trace::ENTERED: debugLabel = "arrival visitor-entered"; break;
+            case Trace::EXIT_BEGIN: debugLabel = "visitor-exit begin"; break;
+            case Trace::EXITED: debugLabel = "visitor-exit finish"; break;
+            default: break;
+            }
+            if (debugLabel) Platform::logf("[FriendDiag] %s kind=%u host=%.1f,%.1f guest=%.1f,%.1f\n",
+                debugLabel, static_cast<unsigned>(debugContactKind), trace.mainX, trace.mainY,
+                trace.guestX, trace.guestY);
 #endif
-    if (!routePlanned) {
-        homeCompanionActor.route.clear();
-        visitorCrossingDoor = true;
-#if STICKMON_ENABLE_DEBUG_FEATURES
-        Platform::logf("[FriendDiag] visitor-exit route-fallback kind=%u "
-                       "direct-distancePx=%.1f\n",
-                       static_cast<unsigned>(debugContactKind),
-                       std::hypot(insideX - fromX, insideY - fromY) *
-                           AmoledUi::RESOURCE_SCALE);
-#endif
+        }
+        if (effects.entryFinished) finishVisitorEntry(nowMs, effects.timedOut);
+        if (effects.exitFinished) finishVisitorExit(nowMs, effects.debugExit);
+        if (effects.actorChanged) requestHomeActorRows(effects.previousY,
+            effects.actorId == 0 ? homeMainActor.y : homeCompanionActor.y);
+        if (effects.roomChanged) requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
+        if (effects.fullRender) requestFullRender();
+        if (!effects.needLanding) break;
+        float x = visitorFlow_.state().landingX, y = visitorFlow_.state().landingY;
+        const bool valid = visitorFlow_.state().landingValid || chooseCompanionTarget(x, y);
+        visitorFlow_.completeLanding(valid, x, y);
     }
-    companionFrame = 0;
-    nextCompanionFrameMs = nowMs;
-    requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
 }
 
 void AmoledApp::finishVisitorEntry(uint32_t nowMs, bool timedOut) {
-    visitArrival.advance(Home::VisitArrivalEvent::GUEST_INSIDE, nowMs);
-    visitorMotion = VisitorMotion::ACTIVE;
-    visitorHostDoorPhase = 0;
-    visitorCrossingDoor = false;
-    homeRuntime.release(Home::Resource::DOOR, 1);
-    stopCompanion(nowMs, 700);
 #if STICKMON_ENABLE_DEBUG_FEATURES
     showDebugContactEventPrompt(nowMs);
-    Platform::logf("[FriendDiag] arrival visitor-entered kind=%u "
-                   "pos=%.1f,%.1f timeout=%u\n",
-                   static_cast<unsigned>(debugContactKind),
-                   homeCompanionActor.x, homeCompanionActor.y,
-                   timedOut ? 1U : 0U);
-#else
-    (void)timedOut;
 #endif
-    // Arrival conversation is a scripted beat. Start it before autonomous
-    // hunger/sleep decisions can claim either actor; normal pair rules resume
-    // after this one forced talk completes.
-    pairArrivalTalk = true;
-    const bool talkStarted = startPairInteraction(nowMs, false, true);
-    Platform::logf("[VisitArrival] guest_enter_end host=%.1f,%.1f "
-                   "guest=%.1f,%.1f hostWalk=%u guestWalk=%u "
-                   "timeout=%u talkStarted=%u\n",
-                   homeMainActor.x, homeMainActor.y, homeCompanionActor.x, homeCompanionActor.y,
-                   petFootprintInsideWalkArea(homeMainActor.x, homeMainActor.y) ? 1U : 0U,
-                   companionFootprintInsideWalkArea(
-                       homeCompanionActor.x, homeCompanionActor.y) ? 1U : 0U,
-                   timedOut ? 1U : 0U, talkStarted ? 1U : 0U);
+    const bool talkStarted = startPairInteraction(nowMs, false, true, true);
+    Platform::logf("[VisitArrival] guest_enter_end host=%.1f,%.1f guest=%.1f,%.1f "
+                   "timeout=%u talkStarted=%u\n", homeMainActor.x, homeMainActor.y,
+                   homeCompanionActor.x, homeCompanionActor.y, timedOut ? 1U : 0U,
+                   talkStarted ? 1U : 0U);
     if (!talkStarted) {
         visitArrival.advance(Home::VisitArrivalEvent::TALK_SKIPPED, nowMs);
-        pairArrivalTalk = false;
         schedulePairInteraction(nowMs, true);
-#if STICKMON_ENABLE_DEBUG_FEATURES
-        Platform::logf("[FriendDiag] arrival talk-start-failed kind=%u\n",
-                       static_cast<unsigned>(debugContactKind));
-#endif
     }
 }
 
-void AmoledApp::updateVisitorMotion(uint32_t nowMs,
-                                    float elapsedSeconds) {
-    if (visitorMotion != VisitorMotion::HOST_APPROACH &&
-        visitorMotion != VisitorMotion::ENTERING &&
-        visitorMotion != VisitorMotion::EXITING) {
-        return;
-    }
-    if (visitorMotion == VisitorMotion::HOST_APPROACH) {
-        if (visitorHostDoorPhase == 1) {
-            if (!visitArrival.advance(
-                    Home::VisitArrivalEvent::DOOR_OPENED, nowMs)) {
-                requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
-                return;
-            }
-            Platform::logf("[VisitArrival] host_open_done pos=%.1f,%.1f "
-                           "walk=%u\n", homeMainActor.x, homeMainActor.y,
-                           petFootprintInsideWalkArea(homeMainActor.x, homeMainActor.y) ? 1U : 0U);
-            if (!beginVisitorHostClear(nowMs)) {
-                homeRuntime.stop(0, nowMs, 0);
-                startVisitorDoorEntry(nowMs);
-            }
-            return;
-        }
-        if (visitorHostDoorPhase == 2) {
-            if (elapsedSeconds <= 0.0f) return;
-            const float previousY = homeMainActor.y;
-            const Home::RouteStep clearStep = homeRuntime.advanceRoute(
-                0, nowMs, VISITOR_DOOR_SPEED, elapsedSeconds, 1.0f, false);
-            float waypointX = homeMainActor.targetX;
-            float waypointY = homeMainActor.targetY;
-            homeMainActor.route.current(waypointX, waypointY);
-            petDirection = petDirectionForDelta(
-                waypointX - homeMainActor.x, waypointY - homeMainActor.y);
-            if (static_cast<int32_t>(nowMs - nextPetFrameMs) >= 0) {
-                ++petFrame;
-                nextPetFrameMs = nowMs + MOTION_FRAME_MS;
-            }
-            updateCamera();
-            requestHomeActorRows(previousY, homeMainActor.y);
-            if (static_cast<int32_t>(nowMs - visitorArrivalNextLogMs) >= 0) {
-                visitorArrivalNextLogMs = nowMs + 600;
-                Platform::logf("[VisitArrival] host_clear_step step=%u "
-                               "pos=%.1f,%.1f goal=%.1f,%.1f walk=%u\n",
-                               static_cast<unsigned>(clearStep), homeMainActor.x, homeMainActor.y,
-                               homeMainActor.targetX, homeMainActor.targetY,
-                               petFootprintInsideWalkArea(homeMainActor.x, homeMainActor.y) ? 1U : 0U);
-            }
-            if (clearStep == Home::RouteStep::ARRIVED ||
-                clearStep == Home::RouteStep::BLOCKED ||
-                clearStep == Home::RouteStep::NO_ROUTE ||
-                static_cast<int32_t>(nowMs - visitorMotionUntilMs) >= 0) {
-                if (clearStep != Home::RouteStep::ARRIVED &&
-                    petFootprintInsideWalkArea(
-                        homeMainActor.targetX, homeMainActor.targetY)) {
-                    homeMainActor.x = homeMainActor.targetX;
-                    homeMainActor.y = homeMainActor.targetY;
-                }
-                Platform::logf("[VisitArrival] host_clear_end step=%u "
-                               "pos=%.1f,%.1f walk=%u\n",
-                               static_cast<unsigned>(clearStep), homeMainActor.x, homeMainActor.y,
-                               petFootprintInsideWalkArea(homeMainActor.x, homeMainActor.y) ? 1U : 0U);
-                homeRuntime.stop(0, nowMs, 0);
-                startVisitorDoorEntry(nowMs);
-            }
-            return;
-        }
-        // The companion actor can be attached during this same update tick.
-        // A zero-duration first sample is not a routing failure and must not
-        // reveal the visitor before the host has actually moved.
-        if (elapsedSeconds <= 0.0f) return;
-        const float previousY = homeMainActor.y;
-        const Home::RouteStep step = homeRuntime.advanceRoute(
-            0, nowMs, VISITOR_DOOR_SPEED, elapsedSeconds, 1.0f, false);
-        float waypointX = homeMainActor.targetX;
-        float waypointY = homeMainActor.targetY;
-        homeMainActor.route.current(waypointX, waypointY);
-        petDirection = petDirectionForDelta(
-            waypointX - homeMainActor.x, waypointY - homeMainActor.y);
-        if (static_cast<int32_t>(nowMs - nextPetFrameMs) >= 0) {
-            ++petFrame;
-            nextPetFrameMs = nowMs + MOTION_FRAME_MS;
-        }
-        updateCamera();
+void AmoledApp::finishVisitorExit(uint32_t nowMs, bool debugVisitor) {
 #if STICKMON_ENABLE_DEBUG_FEATURES
-        if (static_cast<int32_t>(nowMs - visitorDiagNextLogMs) >= 0) {
-            visitorDiagNextLogMs = nowMs + 300;
-            Platform::logf("[FriendDiag] arrival host-moving kind=%u "
-                           "step=%d pos=%.1f,%.1f visitorHidden=%u\n",
-                           static_cast<unsigned>(debugContactKind),
-                           static_cast<int>(step), homeMainActor.x, homeMainActor.y,
-                           homeCompanionActor.hidden ? 1U : 0U);
-        }
-#endif
-        requestHomeActorRows(previousY, homeMainActor.y);
-        if (static_cast<int32_t>(nowMs - visitorArrivalNextLogMs) >= 0) {
-            visitorArrivalNextLogMs = nowMs + 600;
-            Platform::logf("[VisitArrival] host_approach_step step=%u "
-                           "pos=%.1f,%.1f goal=%.1f,%.1f walk=%u\n",
-                           static_cast<unsigned>(step), homeMainActor.x, homeMainActor.y,
-                           homeMainActor.targetX, homeMainActor.targetY,
-                           petFootprintInsideWalkArea(homeMainActor.x, homeMainActor.y) ? 1U : 0U);
-        }
-        const bool timedOut =
-            static_cast<int32_t>(nowMs - visitorMotionUntilMs) >= 0;
-        if (step == Home::RouteStep::BLOCKED ||
-            step == Home::RouteStep::NO_ROUTE) {
-            if (visitorRouteBlockedSinceMs == 0) {
-                visitorRouteBlockedSinceMs = nowMs;
-            }
-        } else {
-            visitorRouteBlockedSinceMs = 0;
-        }
-        const bool routeStalled = visitorRouteBlockedSinceMs != 0 &&
-            nowMs - visitorRouteBlockedSinceMs >= 1200;
-        if (step == Home::RouteStep::ARRIVED || timedOut || routeStalled) {
-            if (step != Home::RouteStep::ARRIVED && visitorWelcomeValid) {
-                homeMainActor.x = visitorWelcomeX;
-                homeMainActor.y = visitorWelcomeY;
-                homeMainActor.targetX = homeMainActor.x;
-                homeMainActor.targetY = homeMainActor.y;
-            }
-            if (visitSession.active() && visitSession.viewModel().localIsHost) {
-                Platform::logf("[VisitArrival] host_approach_end step=%d "
-                               "timeout=%u stalled=%u pos=%.1f,%.1f walk=%u\n",
-                               static_cast<int>(step), timedOut ? 1U : 0U,
-                               routeStalled ? 1U : 0U, homeMainActor.x, homeMainActor.y,
-                               petFootprintInsideWalkArea(homeMainActor.x, homeMainActor.y) ? 1U : 0U);
-            }
-#if STICKMON_ENABLE_DEBUG_FEATURES
-            const float welcomeErrorPx = visitorWelcomeValid
-                ? std::hypot(homeMainActor.x - visitorWelcomeX,
-                             homeMainActor.y - visitorWelcomeY) *
-                      AmoledUi::RESOURCE_SCALE
-                : -1.0f;
-            Platform::logf("[FriendDiag] arrival host-ready kind=%u "
-                           "step=%d anchor=bottom-center pos=%.1f,%.1f "
-                           "goal=%.1f,%.1f errorPx=%.2f timeout=%u\n",
-                           static_cast<unsigned>(debugContactKind),
-                           static_cast<int>(step), homeMainActor.x, homeMainActor.y,
-                           visitorWelcomeX, visitorWelcomeY,
-                           static_cast<double>(welcomeErrorPx),
-                           timedOut ? 1U : 0U);
-#endif
-            visitorHostDoorPhase = 1;
-            visitArrival.advance(Home::VisitArrivalEvent::HOST_READY, nowMs);
-            homeRuntime.stop(0, nowMs, 0);
-        } else if (step == Home::RouteStep::BLOCKED ||
-                   step == Home::RouteStep::NO_ROUTE) {
-#if STICKMON_ENABLE_DEBUG_FEATURES
-            Platform::logf("[FriendDiag] arrival host-route-wait kind=%u "
-                           "step=%d pos=%.1f,%.1f\n",
-                           static_cast<unsigned>(debugContactKind),
-                           static_cast<int>(step), homeMainActor.x, homeMainActor.y);
-#endif
-        }
-        return;
-    }
-    if (static_cast<int32_t>(nowMs - visitorMotionUntilMs) >= 0) {
-#if STICKMON_ENABLE_DEBUG_FEATURES
-        Platform::logf("[FriendDiag] visitor-motion timeout kind=%u "
-                       "motion=%d crossing=%u pos=%.1f,%.1f\n",
-                       static_cast<unsigned>(debugContactKind),
-                       static_cast<int>(visitorMotion),
-                       visitorCrossingDoor ? 1U : 0U,
-                       homeCompanionActor.x, homeCompanionActor.y);
-#endif
-        if (visitorMotion == VisitorMotion::ENTERING) {
-            if (visitorLandingValid) {
-                homeCompanionActor.x = visitorLandingX;
-                homeCompanionActor.y = visitorLandingY;
-                homeCompanionActor.targetX = visitorLandingX;
-                homeCompanionActor.targetY = visitorLandingY;
-            }
-            finishVisitorEntry(nowMs, true);
-        } else {
-            finishVisitorExit(nowMs);
-        }
-        return;
-    }
-
-    RoomResource& room = RoomResource::ins();
-    const float insideX = visitorMotion == VisitorMotion::ENTERING
-        ? visitorGuestDoorInsideX
-        : (room.available() ? static_cast<float>(room.doorwayInsideX())
-                            : FALLBACK_ROOM_MAX_X - 8.0f);
-    const float insideY = visitorMotion == VisitorMotion::ENTERING
-        ? visitorGuestDoorInsideY
-        : (room.available() ? static_cast<float>(room.doorwayInsideY())
-                            : FALLBACK_ROOM_MAX_Y);
-    const float outsideX = room.available()
-        ? static_cast<float>(room.doorwayOutsideX()) : insideX + 12.0f;
-    const float outsideY = room.available()
-        ? static_cast<float>(room.doorwayOutsideY()) : insideY + 10.0f;
-
-    if (visitorMotion == VisitorMotion::EXITING && !visitorCrossingDoor) {
-        const float previousX = homeCompanionActor.x;
-        const float previousY = homeCompanionActor.y;
-        const Home::RouteStep step = homeRuntime.advanceRoute(
-            1, nowMs, VISITOR_DOOR_SPEED, elapsedSeconds, 1.0f, true);
-        const float movedX = homeCompanionActor.x - previousX;
-        const float movedY = homeCompanionActor.y - previousY;
-        const bool moved = std::hypot(movedX, movedY) > 0.001f;
-        if (moved) {
-            companionDirection = petDirectionForDelta(movedX, movedY);
-            if (static_cast<int32_t>(nowMs - nextCompanionFrameMs) >= 0) {
-                ++companionFrame;
-                nextCompanionFrameMs = nowMs + MOTION_FRAME_MS;
-            }
-        }
-#if STICKMON_ENABLE_DEBUG_FEATURES
-        if (static_cast<int32_t>(nowMs - visitorDiagNextLogMs) >= 0) {
-            visitorDiagNextLogMs = nowMs + 300;
-            Platform::logf("[FriendDiag] visitor-exit route kind=%u "
-                           "step=%d pos=%.1f,%.1f distancePx=%.1f "
-                           "frame=%u dir=%u moved=%u\n",
-                           static_cast<unsigned>(debugContactKind),
-                           static_cast<int>(step), homeCompanionActor.x,
-                           homeCompanionActor.y,
-                           std::hypot(insideX - homeCompanionActor.x,
-                                      insideY - homeCompanionActor.y) *
-                               AmoledUi::RESOURCE_SCALE,
-                           static_cast<unsigned>(companionFrame),
-                           static_cast<unsigned>(companionDirection),
-                           moved ? 1U : 0U);
-        }
-#endif
-        if (step == Home::RouteStep::ARRIVED ||
-            step == Home::RouteStep::BLOCKED ||
-            step == Home::RouteStep::NO_ROUTE) {
-#if STICKMON_ENABLE_DEBUG_FEATURES
-            Platform::logf("[FriendDiag] visitor-exit route-end kind=%u "
-                           "step=%d doorDistancePx=%.1f\n",
-                           static_cast<unsigned>(debugContactKind),
-                           static_cast<int>(step),
-                           std::hypot(insideX - homeCompanionActor.x,
-                                      insideY - homeCompanionActor.y) *
-                               AmoledUi::RESOURCE_SCALE);
-#endif
-            homeCompanionActor.route.clear();
-            visitorCrossingDoor = true;
-            companionDirection = petDirectionForDelta(
-                outsideX - homeCompanionActor.x,
-                outsideY - homeCompanionActor.y);
-        }
-        requestHomeActorRows(previousY, homeCompanionActor.y);
-        return;
-    }
-
-    const float targetX = visitorMotion == VisitorMotion::ENTERING
-        ? (visitorCrossingDoor || !visitorLandingValid
-               ? insideX : visitorLandingX)
-        : outsideX;
-    const float targetY = visitorMotion == VisitorMotion::ENTERING
-        ? (visitorCrossingDoor || !visitorLandingValid
-               ? insideY : visitorLandingY)
-        : outsideY;
-    const float dx = targetX - homeCompanionActor.x;
-    const float dy = targetY - homeCompanionActor.y;
-    const float distance = std::sqrt(dx * dx + dy * dy);
-    const float previousY = homeCompanionActor.y;
-    const float step = VISITOR_DOOR_SPEED * elapsedSeconds;
-    if (distance <= std::max(1.0f, step)) {
-        homeCompanionActor.x = targetX;
-        homeCompanionActor.y = targetY;
-        if (visitorMotion == VisitorMotion::ENTERING) {
-            if (visitorCrossingDoor && visitorLandingValid) {
-                // Doorway crossed; continue to the walkable landing spot.
-                visitorCrossingDoor = false;
-                companionDirection = petDirectionForDelta(
-                    visitorLandingX - insideX, visitorLandingY - insideY);
-            } else {
-                finishVisitorEntry(nowMs, false);
-            }
-        } else {
-            finishVisitorExit(nowMs);
-        }
-    } else if (distance > 0.0f) {
-        homeCompanionActor.x += dx / distance * step;
-        homeCompanionActor.y += dy / distance * step;
-        companionDirection = petDirectionForDelta(dx, dy);
-#if STICKMON_ENABLE_DEBUG_FEATURES
-        if (visitorMotion == VisitorMotion::EXITING &&
-            static_cast<int32_t>(nowMs - visitorDiagNextLogMs) >= 0) {
-            visitorDiagNextLogMs = nowMs + 300;
-            Platform::logf(
-                "[FriendDiag] visitor-exit cross kind=%u pos=%.1f,%.1f "
-                "remainingPx=%.1f frame=%u dir=%u\n",
-                static_cast<unsigned>(debugContactKind),
-                homeCompanionActor.x, homeCompanionActor.y,
-                std::hypot(targetX - homeCompanionActor.x,
-                           targetY - homeCompanionActor.y) *
-                    AmoledUi::RESOURCE_SCALE,
-                static_cast<unsigned>(companionFrame),
-                static_cast<unsigned>(companionDirection));
-        }
-#endif
-    }
-    if (static_cast<int32_t>(nowMs - nextCompanionFrameMs) >= 0) {
-        ++companionFrame;
-        nextCompanionFrameMs = nowMs + MOTION_FRAME_MS;
-    }
-    if (visitorMotion == VisitorMotion::ENTERING &&
-        static_cast<int32_t>(nowMs - visitorArrivalNextLogMs) >= 0) {
-        visitorArrivalNextLogMs = nowMs + 600;
-        Platform::logf("[VisitArrival] guest_enter_step pos=%.1f,%.1f "
-                       "goal=%.1f,%.1f crossing=%u hidden=%u frame=%u\n",
-                       homeCompanionActor.x, homeCompanionActor.y,
-                       targetX, targetY, visitorCrossingDoor ? 1U : 0U,
-                       homeCompanionActor.hidden ? 1U : 0U,
-                       static_cast<unsigned>(companionFrame));
-    }
-    requestHomeActorRows(previousY, homeCompanionActor.y);
-}
-
-void AmoledApp::finishVisitorExit(uint32_t nowMs) {
-    const bool debugVisitor = visitorExitIsDebug;
-#if STICKMON_ENABLE_DEBUG_FEATURES
-    Platform::logf("[FriendDiag] visitor-exit finish kind=%u "
-                   "pos=%.1f,%.1f debug=%u\n",
-                   static_cast<unsigned>(debugContactKind),
-                   homeCompanionActor.x, homeCompanionActor.y,
-                   debugVisitor ? 1U : 0U);
-#endif
-    visitorMotion = VisitorMotion::NONE;
-    visitArrival.reset();
-    visitorExitIsDebug = false;
-    visitorCrossingDoor = false;
-    visitorMotionUntilMs = 0;
-    homeRuntime.releaseAll(1);
-#if STICKMON_ENABLE_DEBUG_FEATURES
-    if (debugVisitor) {
-        finalizeDebugContact(nowMs);
-        return;
-    }
+    if (debugVisitor) { finalizeDebugContact(nowMs); return; }
 #else
     (void)debugVisitor;
 #endif
-    if (gameState.teamCount > 1 &&
-        gameState.team[1].origin == Game::Origin::VISITOR) {
+    if (gameState.teamCount > 1 && gameState.team[1].origin == Game::Origin::VISITOR) {
         gameState.team[1] = Game::MonsterRuntime{};
         gameState.teamCount = 1;
         gameState.activeSlot = 0;
@@ -11682,6 +7194,7 @@ void AmoledApp::finishVisitorExit(uint32_t nowMs) {
     schedulePairInteraction(nowMs);
     requestFullRender();
 }
+
 
 void AmoledApp::requestVisitEnd(uint32_t nowMs) {
     Game::MonsterRuntime guest{};
@@ -11913,6 +7426,8 @@ void AmoledApp::requestRenderRect(int left, int top, int right, int bottom) {
 }
 
 void AmoledApp::requestFullRender() {
+    // Ordinary feedback belongs to the page that produced it.
+    if (toast && toastScene != sceneFlow.current()) toast = nullptr;
     requestRenderRows(0, 448);
 }
 
@@ -11922,12 +7437,9 @@ void AmoledApp::markRendered() {
         expeditionFade.markPresented(Platform::clock().millis());
     }
     if (sceneFlow.current() != AppSceneFlow::Scene::EXPLORE_ROUTE &&
-        sceneFlow.current() != AppSceneFlow::Scene::EXPLORE_MENU) exploreActorBoundsValid = false;
+        sceneFlow.current() != AppSceneFlow::Scene::EXPLORE_MENU) explorePresenter_.invalidateDrawn();
     dirtyRowsValid = false;
-    if (battleAnimationActive && battleAudioPending && !battleAudioReady &&
-        sceneFlow.current() == AppSceneFlow::Scene::BATTLE) {
-        battleAudioReady = true;
-    }
+    if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE) battleSession_.markPresented();
 }
 
 #if STICKMON_ENABLE_DEBUG_FEATURES
@@ -11965,7 +7477,7 @@ void AmoledApp::fillHomePetModel(HomeViewModel& model) const {
     model.petVisible = homeSnapshot.actors[0].active &&
         !homeSnapshot.actors[0].hidden && !expeditionMainHidden;
     model.petRenderOffsetY = static_cast<int8_t>(std::lround(
-        pairMainRenderOffsetY * AmoledUi::RESOURCE_SCALE));
+        pairFlow_.state().mainRenderOffsetY * AmoledUi::RESOURCE_SCALE));
     model.petFrame = petFrame;
     model.petDirection = petDirection;
     model.petLongMove = petLongMove;
@@ -11973,27 +7485,28 @@ void AmoledApp::fillHomePetModel(HomeViewModel& model) const {
     // moves it (approach leader or chase); present that as walking so
     // the sprite does not slide in its idle pose.
     const bool mainPairMoving =
-        (pairPhase == PairPhase::APPROACH &&
-         (pairTalkParallelApproach
-              ? !pairTalkMainArrived : pairLeaderMain)) ||
-        (pairPhase == PairPhase::ACTIVE &&
-         pairActivity == Home::PairActivity::CHASE);
+        (pairFlow_.state().phase == PairPhase::APPROACH &&
+         (pairFlow_.state().parallelApproach
+              ? !pairFlow_.state().mainArrived : pairFlow_.state().leaderMain)) ||
+        (pairFlow_.state().phase == PairPhase::ACTIVE &&
+         pairFlow_.state().activity == Home::PairActivity::CHASE);
     const bool mainWelcomingVisitor =
-        visitorMotion == VisitorMotion::HOST_APPROACH;
+        visitorFlow_.state().motion == VisitorMotion::HOST_APPROACH;
     model.petAction = petMotion() == PetMotion::STOPPING
         ? HomeViewModel::PetVisualAction::STOPPING
         : (petMotion() == PetMotion::WANDERING ||
            petMotion() == PetMotion::SEEKING_FOOD ||
            petMotion() == PetMotion::SEEKING_SLEEP ||
            mainPairMoving || mainWelcomingVisitor ||
-           visitDeparture == VisitDeparture::WALK_TO_DOOR ||
-           visitDeparture == VisitDeparture::CROSS_DOOR)
+           visitAwayFlow_.state().phase == VisitDeparture::WALK_TO_DOOR ||
+           visitAwayFlow_.state().phase == VisitDeparture::CROSS_DOOR)
             ? HomeViewModel::PetVisualAction::WALKING
             : HomeViewModel::PetVisualAction::IDLE;
     model.petResting = petIsResting();
 }
 
 void AmoledApp::render(Canvas565& canvas) const {
+    const auto& route = exploreSession_.state();
     renderCaches_.retainForScene(sceneFlow.current());
     if (sceneFlow.current() == AppSceneFlow::Scene::HATCH) {
         const auto model = hatchController_.model(gameState.gameMinutesTotal, toast);
@@ -12008,7 +7521,7 @@ void AmoledApp::render(Canvas565& canvas) const {
         HomeViewModel model;
         model.speciesId = monster.speciesId;
         model.batteryPercent = batteryPercent;
-        model.visitAway = visitDeparture == VisitDeparture::AWAY;
+        model.visitAway = visitAwayFlow_.state().phase == VisitDeparture::AWAY;
         model.recallConfirm = visitRecallConfirm && model.visitAway;
         uint8_t visibleSlots[Game::TEAM_CAP] = {};
         model.monsterCount = Game::HomeHud::visibleTeamSlots(
@@ -12055,7 +7568,7 @@ void AmoledApp::render(Canvas565& canvas) const {
             model.companionGroundY = static_cast<int16_t>(
                 worldToScreenY(homeSnapshot.actors[1].y));
             model.companionRenderOffsetY = static_cast<int8_t>(std::lround(
-                pairCompanionRenderOffsetY * AmoledUi::RESOURCE_SCALE));
+                pairFlow_.state().companionRenderOffsetY * AmoledUi::RESOURCE_SCALE));
             model.companionFrame = companionFrame;
             model.companionDirection = companionDirection;
             model.companionAction =
@@ -12114,12 +7627,12 @@ void AmoledApp::render(Canvas565& canvas) const {
         model.debugLightSource = debugLightSource;
         model.debugBoundaryVisible = debugWalkBoundaryVisible;
         model.debugTalkPointsVisible = debugTalkPointsVisible;
-        float debugTalkCompanionX = PAIR_TALK_COMPANION_X;
-        float debugTalkCompanionY = PAIR_TALK_STAGE_Y;
-        float debugTalkMainX = PAIR_TALK_MAIN_X;
-        float debugTalkMainY = PAIR_TALK_STAGE_Y;
-        if (pairActivity == Home::PairActivity::TALK &&
-            pairPhase != PairPhase::NONE) {
+        float debugTalkCompanionX = PairFlow::TALK_COMPANION_X;
+        float debugTalkCompanionY = PairFlow::TALK_STAGE_Y;
+        float debugTalkMainX = PairFlow::TALK_MAIN_X;
+        float debugTalkMainY = PairFlow::TALK_STAGE_Y;
+        if (pairFlow_.state().activity == Home::PairActivity::TALK &&
+            pairFlow_.state().phase != PairPhase::NONE) {
             debugTalkMainX = homeMainActor.targetX;
             debugTalkMainY = homeMainActor.targetY;
             debugTalkCompanionX = homeCompanionActor.targetX;
@@ -12142,9 +7655,9 @@ void AmoledApp::render(Canvas565& canvas) const {
             ? static_cast<float>(debugRoom.doorwayInsideY()) +
                   VISITOR_WELCOME_OFFSET_Y
             : FALLBACK_ROOM_MAX_Y + VISITOR_WELCOME_OFFSET_Y;
-        if (visitorWelcomeValid) {
-            welcomeX = visitorWelcomeX;
-            welcomeY = visitorWelcomeY;
+        if (visitorFlow_.state().welcomeValid) {
+            welcomeX = visitorFlow_.state().welcomeX;
+            welcomeY = visitorFlow_.state().welcomeY;
         }
         model.debugWelcomeCenterX = static_cast<int16_t>(
             worldToScreenX(welcomeX));
@@ -12165,6 +7678,8 @@ void AmoledApp::render(Canvas565& canvas) const {
         model.scroll = debugScroll;
         model.pressedItem = debugPressedItem;
         model.popup = debugPopup;
+        model.bedStyle = debugBedStyle;
+        model.rugStyle = debugRugStyle;
         model.focus = debugFocus;
         for (uint8_t index = 0; index < 4; ++index) {
             model.digits[index] = debugDigits[index];
@@ -12217,7 +7732,7 @@ void AmoledApp::render(Canvas565& canvas) const {
         model.renderColumnBegin = dirtyColumnBegin;
         model.renderColumnEnd = dirtyColumnEnd;
         if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_ROUTE &&
-            exploreRouteSteps == 0 && dirtyRowBegin == 0 &&
+            route.exploreRouteSteps == 0 && dirtyRowBegin == 0 &&
             dirtyRowEnd == AmoledUi::HEIGHT) {
             // The departure fade is black here. Build the static battle layer
             // before the route redraws the same full framebuffer.
@@ -12226,11 +7741,7 @@ void AmoledApp::render(Canvas565& canvas) const {
         }
         renderExploreRouteScreen(
             canvas, model, renderCaches_.exploreWorld, dirtyRowBegin, dirtyRowEnd);
-        lastExploreActorBounds = exploreRouteActorBounds(model);
-        lastExploreCameraX = model.cameraX;
-        lastExploreCameraY = model.cameraY;
-        lastExploreMapSeed = exploreRouteMap.seed;
-        exploreActorBoundsValid = true;
+        explorePresenter_.recordDrawn(model);
         if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_MENU) {
             ExploreMenuViewModel menuModel;
             menuModel.cursor = exploreMenuCursor;
@@ -12243,95 +7754,11 @@ void AmoledApp::render(Canvas565& canvas) const {
     }
 
     if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE) {
-        BattleViewModel model;
-        model.state = &gameState;
+        BattleViewModel model = battleSession_.model(gameState, Platform::clock().millis());
         model.battleBackground = battleBackgroundForArea(selectedExploreArea);
-        uint8_t activeSlot = battlePlayerSlot < gameState.teamCount
-            ? battlePlayerSlot : 0;
-        const Game::MonsterRuntime& active = gameState.team[activeSlot];
-        model.playerSpeciesId = active.speciesId;
-        model.wildSpeciesId = battleWild.speciesId;
-        model.playerLevel = active.level;
-        model.wildLevel = battleWild.level;
-        const uint32_t battleRenderNowMs = Platform::clock().millis();
-        model.playerHp = battleHpPercentForRender(
-            false, active.hpCur, active.hpMax, battleRenderNowMs);
-        model.wildHp = battleHpPercentForRender(
-            true, battleWild.hpCur, battleWild.hpMax, battleRenderNowMs);
-        model.showPlayerExperience = battleExperienceVisible;
-        if (battleExperienceVisible) {
-            if (const Species* activeSpecies = findSpecies(active.speciesId)) {
-                const uint32_t shownExp = battleExperienceForRender(
-                    battleRenderNowMs);
-                model.playerLevel = levelForExp(
-                    activeSpecies->growthRate, shownExp);
-                const uint32_t levelFloor = minimumExpForLevel(
-                    activeSpecies->growthRate, model.playerLevel);
-                const uint32_t levelCeiling =
-                    model.playerLevel >= Game::LEVEL_MAX
-                        ? levelFloor
-                        : minimumExpForLevel(
-                              activeSpecies->growthRate,
-                              static_cast<uint8_t>(model.playerLevel + 1));
-                model.playerExperience = model.playerLevel >= Game::LEVEL_MAX
-                    ? 100
-                    : static_cast<uint8_t>(std::min<uint32_t>(
-                          100, (shownExp - levelFloor) * 100U /
-                                   std::max<uint32_t>(
-                                       1, levelCeiling - levelFloor)));
-            }
-        }
-        model.phase = battlePhase;
-        model.friendshipPrompt = battleFriendshipPrompt;
-        model.pressedItem = battlePressedItem;
-        model.activeSlot = activeSlot;
-        model.teamCount = std::min<uint8_t>(gameState.teamCount, Game::TEAM_CAP);
-        static constexpr Game::ItemId BATTLE_ITEMS[] = {
-            Game::ItemId::POTION, Game::ItemId::SUPER_POTION,
-            Game::ItemId::MAX_POTION, Game::ItemId::FULL_RESTORE,
-            Game::ItemId::FULL_HEAL, Game::ItemId::REVIVE,
-            Game::ItemId::ANTIDOTE, Game::ItemId::PARALYZE_HEAL,
-            Game::ItemId::AWAKENING, Game::ItemId::BURN_HEAL,
-            Game::ItemId::ICE_HEAL,
-        };
-        model.battleBagCount = 0;
-        for (Game::ItemId item : BATTLE_ITEMS) {
-            if (Game::ItemInventory::count(gameState, item) == 0) continue;
-            if (model.battleBagCount >= 4) break;
-            model.battleBagItems[model.battleBagCount++] = item;
-        }
-        model.thrownItem = battleThrownItem;
-        model.itemThrowProgress = std::min(1.0f,
-            static_cast<float>(Platform::clock().millis() - battleItemThrowStartedMs) / 800.0f);
-        model.animationActive = battleAnimationActive;
-        model.animationAttackerWild = battleAnimationAttackerWild;
-        model.animationHit = battleAnimationHit;
-        model.animationStatusEffect = battleAnimationStatusEffect;
-        model.animationFx = battleAnimationFx;
-        model.animationDamage = battleAnimationDamage;
-        model.animationFrame = battleAnimationFrame;
-        if (battleSwitchStage != BattleSwitchStage::NONE) {
-            const uint32_t elapsed = std::min<uint32_t>(
-                BATTLE_SWITCH_PHASE_MS,
-                battleRenderNowMs - battleSwitchStartedMs);
-            const uint32_t progress = battleSwitchStage ==
-                BattleSwitchStage::RETREATING ? elapsed
-                : BATTLE_SWITCH_PHASE_MS - elapsed;
-            model.playerSwitchOffsetX = static_cast<int16_t>(
-                -static_cast<int32_t>(BATTLE_SWITCH_TRAVEL_X * progress * progress /
-                                      (BATTLE_SWITCH_PHASE_MS * BATTLE_SWITCH_PHASE_MS)));
-        }
 #if STICKMON_ENABLE_DEBUG_FEATURES
         model.debugDrawBounds = debugBattleDrawBoundsVisible;
 #endif
-        model.playerStatus = active.majorStatus;
-        model.wildStatus = battleWild.majorStatus;
-        model.playerBattleState = battlePlayerState;
-        model.wildBattleState = battleWildState;
-        model.logCount = battleLogVisibleCount;
-        for (uint8_t line = 0; line < model.logCount && line < 2; ++line) {
-            model.logLines[line] = battleLogLines[line];
-        }
         renderBattleScreen(canvas, model, renderCaches_.battleBackground,
                            dirtyRowBegin, dirtyRowEnd);
         return;
@@ -12460,37 +7887,7 @@ void AmoledApp::render(Canvas565& canvas) const {
     }
 
     if (sceneFlow.current() == AppSceneFlow::Scene::PROGRESSION) {
-        ProgressionViewModel model;
-        model.state = &gameState;
-        model.mode = progressionMode;
-        model.teamSlot = progressionTeamSlot;
-        model.oldLevel = progressionOldLevel;
-        model.level = progressionLevel;
-        model.fromSpeciesId = progressionFromSpeciesId;
-        model.toSpeciesId = progressionToSpeciesId;
-        const uint32_t progressionNowMs = Platform::clock().millis();
-        model.levelUpElapsedMs = progressionNowMs - progressionLevelUpStartedMs;
-        model.evolutionPhase = progressionEvolution.phase(progressionNowMs);
-        model.evolutionElapsedMs = progressionEvolution.cancelling()
-            ? progressionEvolution.cancellationElapsed(progressionNowMs)
-            : progressionEvolution.elapsed(progressionNowMs);
-        model.evolutionReady =
-            progressionEvolution.animationComplete(progressionNowMs);
-        model.evolutionCancelHoldProgress = progressionEvolutionTouchHeld
-            ? static_cast<uint8_t>(std::max<uint32_t>(
-                  1, std::min<uint32_t>(
-                         99, (progressionNowMs -
-                              progressionEvolutionTouchStartedMs) * 100U /
-                                 EVOLUTION_CANCEL_HOLD_MS)))
-            : 0;
-        model.moveId = progressionMoveId;
-        model.oldMove2 = progressionOldMove2;
-        model.oldMove3 = progressionOldMove3;
-        model.pressedItem = progressionPressedItem;
-        model.selectedItem = progressionSelectedItem;
-        model.scrollOffsetY = progressionScroll;
-        model.detailProgress = progressionDetailProgress;
-        model.toast = toast;
+        const auto model = progressionFlow_.model(gameState, toast, Platform::clock().millis());
         renderProgressionScreen(canvas, model, dirtyRowBegin, dirtyRowEnd);
         return;
     }
@@ -12531,7 +7928,7 @@ bool AmoledApp::consumeLockRequest() {
 bool AmoledApp::lockedHomePowerAllowed() const {
     return sceneFlow.current() == AppSceneFlow::Scene::HOME &&
            gameState.teamCount > 0 && !gameResetPending &&
-           visitDeparture == VisitDeparture::NONE &&
+           visitAwayFlow_.state().phase == VisitDeparture::NONE &&
            expeditionDeparturePhase == ExpeditionDeparturePhase::NONE &&
            !expeditionFade.active();
 }
@@ -12542,7 +7939,7 @@ bool AmoledApp::displayLockAllowed() const {
            sceneFlow.current() != AppSceneFlow::Scene::BATTLE &&
            sceneFlow.current() != AppSceneFlow::Scene::SHOWER &&
            sceneFlow.current() != AppSceneFlow::Scene::PROGRESSION &&
-           visitDeparture == VisitDeparture::NONE &&
+           visitAwayFlow_.state().phase == VisitDeparture::NONE &&
            expeditionDeparturePhase == ExpeditionDeparturePhase::NONE &&
            !expeditionFade.active();
 }
@@ -12556,8 +7953,8 @@ bool AmoledApp::prepareDisplayLock(uint32_t nowMs) {
     }
     sceneFlow.goHome();
     pointerDown = false;
-    inventoryController_.state().itemConfirmOpen = false;
-    teamController_.state().teamConfirmOpen = false;
+    inventoryController_.suspendDetail();
+    teamController_.dismissConfirmation();
     contactConfirmOpen = false;
     settingsController.reset();
     visitRecallConfirm = false;
@@ -12672,15 +8069,31 @@ void AmoledApp::applySettingsChange(SettingsController::Change change) {
 
 void AmoledApp::setToast(const char* value, uint32_t nowMs,
                          uint32_t durationMs) {
-    toast = value;
+    // Rendering happens after callers' temporary formatting buffers expire.
+    if (value) {
+        const size_t length = std::min(std::strlen(value), sizeof(toastText) - 1);
+        std::memmove(toastText, value, length);
+        toastText[length] = '\0';
+    }
+    toast = value ? toastText : nullptr;
+    toastScene = sceneFlow.current();
+    if (toastScene == AppSceneFlow::Scene::HOME) {
+        const bool needsAttention = value && (
+            std::strcmp(value, Ui::Menu::PET_LIMIT) == 0 ||
+            std::strcmp(value, Ui::Menu::PET_REST) == 0 ||
+            std::strcmp(value, Ui::Menu::NO_FOOD) == 0 ||
+            std::strcmp(value, Ui::Menu::FOOD_FULL) == 0 ||
+            std::strcmp(value, Ui::Menu::FOOD_MIXED) == 0 ||
+            std::strcmp(value, Ui::Amoled::REST_AT_HOME) == 0);
+        durationMs = std::max<uint32_t>(durationMs, needsAttention ? 2000 : 1500);
+    }
     toastUntil = nowMs + durationMs;
     requestRenderRows(
         sceneFlow.current() == AppSceneFlow::Scene::HOME
-            ? HOME_ROOM_TOP
+            ? HOME_STATUS_TOP
             : sceneFlow.current() == AppSceneFlow::Scene::MAIN_MENU
                 ? MAIN_MENU_CONTENT_TOP : MENU_HEADER_HEIGHT,
-        sceneFlow.current() == AppSceneFlow::Scene::HOME
-            ? HOME_STATUS_TOP : 448);
+        AmoledUi::HEIGHT);
 }
 
 #if STICKMON_ENABLE_DEBUG_FEATURES
@@ -12809,7 +8222,7 @@ void AmoledApp::completeDebugContact(uint32_t nowMs) {
     if (!debugContactActive) return;
     if (sceneFlow.current() == AppSceneFlow::Scene::HOME &&
         homeCompanionActor.active) {
-        if (visitorMotion != VisitorMotion::EXITING) {
+        if (visitorFlow_.state().motion != VisitorMotion::EXITING) {
             beginVisitorExit(nowMs, true);
         }
         return;
@@ -12951,6 +8364,30 @@ void AmoledApp::persistDebugMotionFlags() {
 }
 
 void AmoledApp::handleDebugPopupTap(int x, int y, uint32_t nowMs) {
+    if (debugPopup == DebugViewModel::Popup::BED_STYLE ||
+        debugPopup == DebugViewModel::Popup::RUG_STYLE) {
+        const uint8_t style = static_cast<uint8_t>(debugFurnitureStyleAt(x, y));
+        if (style != 0) {
+            const bool bed = debugPopup == DebugViewModel::Popup::BED_STYLE;
+            const uint8_t nextBed = bed ? style : debugBedStyle;
+            const uint8_t nextRug = bed ? debugRugStyle : style;
+            static constexpr const char* STYLES[] = {nullptr, "forest_leaf", "starry_night", "cloud"};
+            char assetId[32];
+            std::snprintf(assetId, sizeof(assetId), "%s_%s", bed ? "bed" : "rug", STYLES[style]);
+            if (RoomResource::ins().setFurniture(bed ? "bed" : "rug", assetId)) {
+                debugBedStyle = nextBed;
+                debugRugStyle = nextRug;
+                debugPopup = DebugViewModel::Popup::NONE;
+                Platform::logf("[RoomPreview] bed=%u rug=%u\n", nextBed, nextRug);
+            } else {
+                setToast(Ui::Debug::EVENT_BUSY, nowMs, 1400);
+            }
+        } else if (debugFurnitureCancelAt(x, y)) {
+            debugPopup = DebugViewModel::Popup::NONE;
+        }
+        requestFullRender();
+        return;
+    }
     uint8_t digitCount = debugPopup == DebugViewModel::Popup::SET_TIME ? 4 : 3;
     int digit = debugPopupDigitAt(x, y, digitCount);
     if (digit >= 0) {
@@ -13048,11 +8485,13 @@ void AmoledApp::executeDebugAction(uint32_t nowMs) {
     const uint8_t backIndex = debugCategory == DebugViewModel::Category::TOUCH_TEST ? 0
         : debugCategory == DebugViewModel::Category::MONSTER ? 3
         : debugCategory == DebugViewModel::Category::RESOURCE ? 1
-        : debugCategory == DebugViewModel::Category::ENV ? 2
+        : debugCategory == DebugViewModel::Category::ENV ? 3
+        : debugCategory == DebugViewModel::Category::ROOM ? 2
         : debugCategory == DebugViewModel::Category::MOTION ? 4
         : debugCategory == DebugViewModel::Category::BATTLE ? 2 : 3;
     if (debugCursor == backIndex) {
-        debugCategory = DebugViewModel::Category::ROOT;
+        debugCategory = debugCategory == DebugViewModel::Category::ROOM
+            ? DebugViewModel::Category::ENV : DebugViewModel::Category::ROOT;
         debugCursor = 0;
         debugScroll = 0.0f;
         debugVelocity = 0.0f;
@@ -13127,7 +8566,17 @@ void AmoledApp::executeDebugAction(uint32_t nowMs) {
         break;
     case DebugViewModel::Category::ENV:
         if (debugCursor == 0) openDebugTimePopup();
-        else debugLightSource = static_cast<uint8_t>((debugLightSource + 1) % 6);
+        else if (debugCursor == 1) debugLightSource = static_cast<uint8_t>((debugLightSource + 1) % 6);
+        else if (debugCursor == 2) {
+            debugCategory = DebugViewModel::Category::ROOM;
+            debugCursor = 0;
+            debugScroll = debugVelocity = 0;
+        }
+        break;
+    case DebugViewModel::Category::ROOM:
+        debugPopup = debugCursor == 0 ? DebugViewModel::Popup::BED_STYLE
+                                     : DebugViewModel::Popup::RUG_STYLE;
+        toast = nullptr;
         break;
     case DebugViewModel::Category::MOTION:
         if (debugCursor == 0) {
@@ -13303,9 +8752,10 @@ void AmoledApp::handleDebugTap(int x, int y, uint32_t nowMs) {
             // cannot pop it. Return explicitly to the menu scene.
             sceneFlow.enter(AppSceneFlow::Scene::MAIN_MENU);
         } else {
-            debugCategory = DebugViewModel::Category::ROOT;
+            debugCategory = debugCategory == DebugViewModel::Category::ROOM
+                ? DebugViewModel::Category::ENV : DebugViewModel::Category::ROOT;
             debugCursor = 0;
-            debugScroll = 0.0f;
+            debugScroll = debugVelocity = 0.0f;
         }
         requestFullRender();
         return;
@@ -13401,19 +8851,20 @@ uint8_t AmoledApp::currentItemCount() const {
     return inventoryController_.itemCount(gameState, sceneFlow.current());
 }
 
-
 void AmoledApp::openItemScene(AppSceneFlow::Scene target) {
+    cancelTouch();
     sceneFlow.openSubScene(target);
     inventoryController_.open();
-    teamController_.state().teamConfirmOpen = false;
+    teamController_.dismissConfirmation();
     toast = nullptr;
     requestFullRender();
 }
 
 void AmoledApp::closeItemScene() {
+    cancelTouch();
     inventoryController_.close();
-    teamController_.state().teamConfirmOpen = false;
-    teamController_.state().pressedTeamSlot = -1;
+    teamController_.dismissConfirmation();
+    teamController_.pressMember(-1);
     toast = nullptr;
     AppSceneFlow::Scene destination = sceneFlow.closeSubScene();
     if (destination == AppSceneFlow::Scene::EXPLORE_ROUTE) {
@@ -13648,6 +9099,7 @@ void AmoledApp::handleContactConfirmTap(int x, int y, uint32_t nowMs) {
 }
 
 void AmoledApp::openSettingsScene() {
+    cancelTouch();
     sceneFlow.openSubScene(AppSceneFlow::Scene::SETTINGS);
     settingsController.reset();
     Platform::display().setBrightness(gameState.settings.brightness);
@@ -13657,6 +9109,7 @@ void AmoledApp::openSettingsScene() {
 }
 
 void AmoledApp::closeUtilityScene() {
+    cancelTouch();
     computerScroll = 0.0f;
     computerVelocity = 0.0f;
     computerPressedItem = 0xFF;
@@ -13711,7 +9164,6 @@ void AmoledApp::clampTeamMovesScroll() {
     teamController_.clampMovesScroll();
 }
 
-
 #if STICKMON_HAS_CLAW
 void AmoledApp::refreshClawLogSnapshot() {
     clawLogCount = Stickmon::ClawRuntime::instance().copyLog(
@@ -13722,278 +9174,70 @@ void AmoledApp::refreshClawLogSnapshot() {
 
 void AmoledApp::openProgressionScene(AppSceneFlow::Scene returnScene,
                                      uint8_t teamSlot, uint8_t oldLevel,
-                                     uint32_t nowMs) {
-    if (teamSlot >= gameState.teamCount || teamSlot >= Game::TEAM_CAP) return;
-    Game::MonsterRuntime& monster = gameState.team[teamSlot];
-    if (monster.level <= oldLevel) return;
-    progressionFromCare = false;
-
-    progressionReturnScene = returnScene;
-    progressionTeamSlot = teamSlot;
-    progressionOldLevel = oldLevel;
-    progressionLevel = monster.level;
-    progressionLevelUpStartedMs = nowMs;
-    progressionLevelUpTouchAllowed = false;
-    progressionFromSpeciesId = monster.speciesId;
-    progressionToSpeciesId = 0;
-    progressionMoveId = 0;
-    progressionOldMove2 = 0;
-    progressionOldMove3 = 0;
-    progressionMoveCursor = 0;
-    progressionPressedItem = 0xFF;
-    progressionEvolution.reset();
-    progressionEvolutionItem = Game::ItemId::COUNT;
-    nextProgressionAnimationFrameMs = nowMs + PROGRESSION_ANIMATION_FRAME_MS;
-    progressionEvolutionTouchStartedMs = 0;
-    progressionEvolutionTouchResumeUntilMs = 0;
-    progressionEvolutionTouchHeld = false;
-    progressionEvolutionTouchConsumed = false;
-    progressionMode = ProgressionViewModel::Mode::LEVEL_UP;
+                                     uint32_t nowMs, bool fromCare) {
+    if (!progressionFlow_.openLevel(gameState, returnScene, teamSlot, oldLevel, nowMs, fromCare)) return;
+    cancelTouch();
     toast = nullptr;
     sceneFlow.enter(AppSceneFlow::Scene::PROGRESSION);
     setMusicContext(returnScene == AppSceneFlow::Scene::EXPLORE_ROUTE
                         ? MusicContext::EXPLORE : MusicContext::HOME);
-    requestFullRender();
-}
-
-void AmoledApp::beginEvolutionSequence(uint16_t fromSpeciesId,
-                                       uint16_t toSpeciesId,
-                                       uint32_t nowMs,
-                                       Game::ItemId consumedItem) {
-    progressionFromSpeciesId = fromSpeciesId;
-    progressionToSpeciesId = toSpeciesId;
-    progressionEvolutionItem = consumedItem;
-    progressionEvolution.begin(fromSpeciesId, toSpeciesId, nowMs);
-    nextProgressionAnimationFrameMs = nowMs;
-    progressionEvolutionTouchStartedMs = 0;
-    progressionEvolutionTouchResumeUntilMs = 0;
-    progressionEvolutionTouchHeld = false;
-    progressionEvolutionTouchConsumed = false;
-    const uint16_t species[] = {fromSpeciesId, toSpeciesId};
-    PokemonSprites::preloadDynamicSpecies(species, 2, 2);
-    Platform::logf("[AmoledEvolution] begin slot=%u from=%u to=%u item=%u\n",
-                   progressionTeamSlot, fromSpeciesId, toSpeciesId,
-                   static_cast<unsigned>(consumedItem));
+    applyProgressionEffects(nowMs);
 }
 
 void AmoledApp::openEvolutionProgression(AppSceneFlow::Scene returnScene,
-                                          uint8_t teamSlot,
-                                          uint16_t fromSpeciesId,
-                                          uint16_t toSpeciesId,
-                                          uint32_t nowMs,
+                                          uint8_t teamSlot, uint16_t fromSpeciesId,
+                                          uint16_t toSpeciesId, uint32_t nowMs,
                                           Game::ItemId consumedItem) {
-    if (teamSlot >= gameState.teamCount || teamSlot >= Game::TEAM_CAP ||
-        fromSpeciesId == 0 || toSpeciesId == 0 ||
-        fromSpeciesId == toSpeciesId) return;
-    progressionReturnScene = returnScene;
-    progressionTeamSlot = teamSlot;
-    progressionOldLevel = gameState.team[teamSlot].level;
-    progressionLevel = gameState.team[teamSlot].level;
-    progressionMoveId = 0;
-    progressionOldMove2 = 0;
-    progressionOldMove3 = 0;
-    progressionMoveCursor = 0;
-    progressionPressedItem = 0xFF;
-    progressionMode = ProgressionViewModel::Mode::EVOLUTION;
-    beginEvolutionSequence(fromSpeciesId, toSpeciesId, nowMs, consumedItem);
+    if (!progressionFlow_.openEvolution(gameState, returnScene, teamSlot, fromSpeciesId,
+                                         toSpeciesId, nowMs, consumedItem)) return;
+    cancelTouch();
     toast = nullptr;
     sceneFlow.enter(AppSceneFlow::Scene::PROGRESSION);
     setMusicContext(returnScene == AppSceneFlow::Scene::EXPLORE_ROUTE
                         ? MusicContext::EXPLORE : MusicContext::HOME);
-    requestFullRender();
-}
-
-bool AmoledApp::findNextProgressionMove(uint8_t teamSlot,
-                                        uint8_t oldLevel,
-                                        uint16_t& cursor,
-                                        Game::MoveId& moveId) const {
-    if (teamSlot >= gameState.teamCount || teamSlot >= Game::TEAM_CAP) {
-        return false;
-    }
-    const Game::MonsterRuntime& monster = gameState.team[teamSlot];
-    const Species* species = findSpecies(monster.speciesId);
-    if (!species) return false;
-
-    uint16_t count = learnsetEntryCountForSpecies(*species);
-    while (cursor < count) {
-        uint16_t index = cursor++;
-        const LearnsetEntry* entry = learnsetEntryForSpecies(*species, index);
-        if (!entry) continue;
-        if (entry->level > monster.level) break;
-        if (entry->level <= oldLevel ||
-            !canLearnAsSpecialMove(*species, entry->moveId) ||
-            entry->moveId == monster.move1Id ||
-            entry->moveId == monster.move2Id ||
-            entry->moveId == monster.move3Id) {
-            continue;
-        }
-        moveId = entry->moveId;
-        return true;
-    }
-    return false;
+    applyProgressionEffects(nowMs);
 }
 
 void AmoledApp::advanceProgression(uint32_t nowMs) {
-    if (sceneFlow.current() != AppSceneFlow::Scene::PROGRESSION ||
-        progressionTeamSlot >= gameState.teamCount ||
-        progressionTeamSlot >= Game::TEAM_CAP) {
-        return;
-    }
-
-    Game::MonsterRuntime& monster = gameState.team[progressionTeamSlot];
-    const Species* species = findSpecies(monster.speciesId);
-    if (!species) {
-        completeProgression(nowMs);
-        return;
-    }
-
-    if (progressionMode == ProgressionViewModel::Mode::LEVEL_UP) {
-        gameState.pendingLevelUp = false;
-        gameState.pendingLevelUpLevel = 0;
-        const Species* target = levelUpEvolutionTarget(
-            *species, monster, gameState.gameMinutesTotal);
-        if (target) {
-            progressionMode = ProgressionViewModel::Mode::EVOLUTION;
-            progressionPressedItem = 0xFF;
-            beginEvolutionSequence(monster.speciesId, target->id, nowMs);
-            saveState();
-            requestFullRender();
-            return;
-        }
-        progressionMode = ProgressionViewModel::Mode::MOVE_LEARN;
-        progressionMoveCursor = 0;
-    } else if (progressionMode == ProgressionViewModel::Mode::EVOLUTION) {
-        if (!progressionEvolution.animationComplete(nowMs)) return;
-        const Species* target = findSpecies(progressionToSpeciesId);
-        if (target && target->id != monster.speciesId) {
-            if (progressionEvolutionItem != Game::ItemId::COUNT &&
-                !Game::ItemInventory::remove(
-                    gameState, progressionEvolutionItem, 1)) {
-                setToast(Ui::Amoled::NO_STOCK, nowMs);
-                return;
-            }
-            uint16_t oldHpMax = monster.hpMax;
-            monster.speciesId = target->id;
-            monster.hpMax = maxHpFor(*target, monster);
-            if (monster.hpMax > oldHpMax) {
-                monster.hpCur = static_cast<uint16_t>(std::min<uint32_t>(
-                    monster.hpMax,
-                    static_cast<uint32_t>(monster.hpCur) +
-                        monster.hpMax - oldHpMax));
-            } else {
-                monster.hpCur = std::min(monster.hpCur, monster.hpMax);
-            }
-            if (!canRetainSpecialMove(*target, monster.move2Id,
-                                       monster.level)) {
-                monster.move2Id = 0;
-                monster.moveProficiency[1] = 0;
-            }
-            if (!canRetainSpecialMove(*target, monster.move3Id,
-                                       monster.level)) {
-                monster.move3Id = 0;
-                monster.moveProficiency[2] = 0;
-            }
-            progressionFromSpeciesId = target->id;
-            progressionToSpeciesId = 0;
-            progressionMoveCursor = 0;
-            uint16_t speciesIds[Game::TEAM_CAP] = {};
-            uint8_t count = Game::TeamRoster::memberCount(gameState);
-            for (uint8_t slot = 0; slot < count; ++slot) {
-                speciesIds[slot] = gameState.team[slot].speciesId;
-            }
-            PokemonSprites::syncTeamCache(speciesIds, count);
-            if (progressionTeamSlot == 0) {
-                if (const Species* leader = findSpecies(monster.speciesId)) {
-                    homeMainActor.behavior = behaviorProfileFor(*leader, monster);
-                }
-            }
-            syncHomeActors(nowMs);
-            saveState();
-
-            const Species* nextTarget =
-                progressionEvolutionItem == Game::ItemId::COUNT
-                    ? levelUpEvolutionTarget(
-                          *target, monster, gameState.gameMinutesTotal) : nullptr;
-            if (nextTarget && nextTarget->id != monster.speciesId) {
-                progressionPressedItem = 0xFF;
-                beginEvolutionSequence(
-                    monster.speciesId, nextTarget->id, nowMs);
-                requestFullRender();
-                return;
-            }
-        }
-        progressionEvolution.reset();
-        progressionEvolutionItem = Game::ItemId::COUNT;
-        nextProgressionAnimationFrameMs = 0;
-        progressionMode = ProgressionViewModel::Mode::MOVE_LEARN;
-    } else if (progressionMode == ProgressionViewModel::Mode::MOVE_LEARN) {
-        // The button is also the skip action when a move is not wanted.
-    }
-
-    Game::MoveId nextMove = 0;
-    if (!findNextProgressionMove(progressionTeamSlot, progressionOldLevel,
-                                 progressionMoveCursor, nextMove)) {
-        completeProgression(nowMs);
-        return;
-    }
-    progressionMoveId = nextMove;
-    if (monster.move2Id == 0) {
-        monster.move2Id = nextMove;
-        monster.moveProficiency[1] = 0;
-        saveState();
-        advanceProgression(nowMs);
-        return;
-    }
-    if (monster.move3Id == 0) {
-        monster.move3Id = nextMove;
-        monster.moveProficiency[2] = 0;
-        saveState();
-        advanceProgression(nowMs);
-        return;
-    }
-    progressionOldMove2 = monster.move2Id;
-    progressionOldMove3 = monster.move3Id;
-    progressionMode = ProgressionViewModel::Mode::MOVE_REPLACE;
-    progressionPressedItem = 0xFF;
-    progressionSelectedItem = 0xFF;
-    progressionScroll = 0;
-    progressionDetailProgress = 0.0f;
-    progressionDetailAnimating = false;
-    progressionDetailTargetVisible = false;
-    saveState();
-    requestFullRender();
+    if (sceneFlow.current() != AppSceneFlow::Scene::PROGRESSION) return;
+    progressionFlow_.advance(gameState, nowMs);
+    applyProgressionEffects(nowMs);
 }
 
-void AmoledApp::completeProgression(uint32_t nowMs) {
-    if (progressionFromCare && progressionTeamSlot < gameState.teamCount) {
-        if (auto* record = Game::CareExperience::recordFor(gameState, gameState.team[progressionTeamSlot]))
-            record->pendingOldLevel = 0;
-        progressionFromCare = false;
+void AmoledApp::applyProgressionEffects(uint32_t nowMs) {
+    const auto effects = progressionFlow_.takeEffects();
+    if (effects.stopCry) CryPlayer::ins().stop();
+    if (effects.crySpecies) CryPlayer::ins().replay(effects.crySpecies);
+    if (effects.syncTeam) {
+        uint16_t speciesIds[Game::TEAM_CAP] = {};
+        const uint8_t count = Game::TeamRoster::memberCount(gameState);
+        for (uint8_t slot = 0; slot < count; ++slot) speciesIds[slot] = gameState.team[slot].speciesId;
+        PokemonSprites::syncTeamCache(speciesIds, count);
+        if (progressionFlow_.state().progressionTeamSlot == 0) {
+            if (const Species* leader = findSpecies(gameState.team[0].speciesId))
+                homeMainActor.behavior = behaviorProfileFor(*leader, gameState.team[0]);
+        }
+        syncHomeActors(nowMs);
     }
-    gameState.pendingLevelUp = false;
-    gameState.pendingLevelUpLevel = 0;
-    gameState.pendingMoveLearn = false;
-    gameState.pendingMoveSlot = 0;
-    gameState.pendingMoveId = 0;
-    gameState.pendingMoveCursor = 0;
-    progressionPressedItem = 0xFF;
-    progressionEvolution.reset();
-    progressionEvolutionItem = Game::ItemId::COUNT;
-    nextProgressionAnimationFrameMs = 0;
-    progressionEvolutionTouchStartedMs = 0;
-    progressionEvolutionTouchResumeUntilMs = 0;
-    progressionEvolutionTouchHeld = false;
-    progressionEvolutionTouchConsumed = false;
-    saveState();
-    if (battleProgressionSequenceActive) {
+    if (effects.preloadTo) {
+        const uint16_t species[] = {effects.preloadFrom, effects.preloadTo};
+        PokemonSprites::preloadDynamicSpecies(species, 2, 2);
+        Platform::logf("[AmoledEvolution] begin slot=%u from=%u to=%u item=%u\n",
+            progressionFlow_.state().progressionTeamSlot, effects.preloadFrom, effects.preloadTo,
+            static_cast<unsigned>(progressionFlow_.state().progressionEvolutionItem));
+    }
+    if (effects.noStock) setToast(Ui::Amoled::NO_STOCK, nowMs);
+    if (effects.save) saveState();
+    requestRenderRows(effects.rowBegin, effects.rowEnd);
+    if (!effects.completed) return;
+    if (battleSession_.state().battleProgressionSequenceActive) {
         if (startNextBattleProgression(nowMs)) return;
         closeBattle(nowMs);
         return;
     }
-    sceneFlow.enter(progressionReturnScene);
-    if (progressionReturnScene == AppSceneFlow::Scene::EXPLORE_ROUTE) {
-        resumeExploreRoute(nowMs);
-    }
+    const auto returnScene = progressionFlow_.state().progressionReturnScene;
+    sceneFlow.enter(returnScene);
+    if (returnScene == AppSceneFlow::Scene::EXPLORE_ROUTE) resumeExploreRoute(nowMs);
     requestFullRender();
 }
 
@@ -14035,8 +9279,7 @@ bool AmoledApp::startPendingCareProgression(uint32_t nowMs) {
         petStopping = false;
         stopCompanion(nowMs);
         saveState();
-        openProgressionScene(AppSceneFlow::Scene::HOME, slot, record->pendingOldLevel, nowMs);
-        progressionFromCare = true;
+        openProgressionScene(AppSceneFlow::Scene::HOME, slot, record->pendingOldLevel, nowMs, true);
         return true;
     }
     return false;
@@ -14046,7 +9289,7 @@ void AmoledApp::applyShowerEffects(uint32_t nowMs) {
     const auto effects = showerController_.takeEffects();
     if (effects.clearToast) toast = nullptr;
     if (effects.sessionReset) {
-        showerController_.state().showerGroundY = showerPetGroundY(gameState.team[0].speciesId);
+        showerController_.alignPetGround(showerPetGroundY(gameState.team[0].speciesId));
         showerToast[0] = '\0';
     }
     for (uint8_t stage = 0; stage < 3; ++stage) {
@@ -14067,8 +9310,10 @@ void AmoledApp::applyShowerEffects(uint32_t nowMs) {
 void AmoledApp::flushShowerSave(uint32_t nowMs) {
     if (!showerSavePending || pointerDown ||
         static_cast<int32_t>(nowMs - showerSaveAfterMs) < 0) return;
+    // Initial reward debounce stays local; failed attempts share the global
+    // retry interval, including when one delayed update reaches both paths.
+    if (saveCoordinator_.dirty() && !saveCoordinator_.due(nowMs)) return;
     if (saveState()) showerSavePending = false;
-    else showerSaveAfterMs = nowMs + 1000;
 }
 
 void AmoledApp::updateShower(uint32_t nowMs) {
@@ -14077,14 +9322,14 @@ void AmoledApp::updateShower(uint32_t nowMs) {
 }
 
 void AmoledApp::openShowerScene(uint32_t nowMs) {
+    cancelTouch();
     sceneFlow.enter(AppSceneFlow::Scene::SHOWER);
     resetShowerSession(nowMs);
     requestFullRender();
 }
 
 void AmoledApp::closeShowerScene() {
-    showerController_.cancelTouch();
-    pointerDown = false;
+    cancelTouch();
     showerSaveAfterMs = 0;
     flushShowerSave(Platform::clock().millis());
     toast = nullptr;
@@ -14188,8 +9433,8 @@ void AmoledApp::resetShowerSession(uint32_t nowMs) {
     applyShowerEffects(nowMs);
 }
 
-
 void AmoledApp::openTeamScene(bool preserveSubSceneReturn) {
+    cancelTouch();
     if (preserveSubSceneReturn) {
         sceneFlow.enter(AppSceneFlow::Scene::TEAM);
     } else {
@@ -14202,17 +9447,17 @@ void AmoledApp::openTeamScene(bool preserveSubSceneReturn) {
     }
     PokemonSprites::syncTeamCache(speciesIds, count);
     teamController_.openTeam();
-    inventoryController_.state().itemConfirmOpen = false;
+    inventoryController_.suspendDetail();
     toast = nullptr;
     requestFullRender();
 }
-
 
 void AmoledApp::openTeamMoves(uint8_t teamSlot, uint32_t nowMs) {
     if (!teamController_.openMoves(gameState, teamSlot)) {
         setToast(Ui::Amoled::NO_TEAM_MEMBER, nowMs);
         return;
     }
+    cancelTouch();
     toast = nullptr;
     requestFullRender();
 }
@@ -14222,8 +9467,7 @@ void AmoledApp::switchTeamLeader(uint32_t nowMs) {
     cancelPairInteraction(nowMs);
     bool changed = teamController_.state().pendingTeamSlot > 0 &&
         Game::TeamRoster::moveToFront(gameState, teamController_.state().pendingTeamSlot);
-    teamController_.state().teamConfirmOpen = false;
-    teamController_.state().pendingTeamSlot = 0;
+    teamController_.completeLeaderChange();
     if (!changed) {
         setToast(Ui::Amoled::CANNOT_SWITCH, nowMs);
         return;
@@ -14247,8 +9491,8 @@ void AmoledApp::switchTeamLeader(uint32_t nowMs) {
     homeMainActor.mind.reset(nowMs);
     homeMainActor.nextMindUpdateMs = nowMs;
     schedulePetDecision(nowMs);
-    scheduleAttention(nowMs, true);
-    scheduleSpecialAction(nowMs);
+    homeFlow_.scheduleAttention(nowMs, true);
+    homeFlow_.scheduleSpecialAction(nowMs);
     updatePetFootprint();
     updateCamera();
     saveState();
@@ -14301,7 +9545,7 @@ void AmoledApp::leaveTeamMember(uint8_t teamSlot, uint32_t nowMs) {
     PokemonSprites::syncTeamCache(speciesIds, gameState.teamCount);
     syncHomeActors(nowMs);
     saveState();
-    teamController_.state().teamActionPopupOpen = false;
+    teamController_.dismissActions();
     setToast(Ui::Team::LEAVE_TOAST, nowMs);
 }
 
@@ -14349,9 +9593,7 @@ void AmoledApp::performPendingItemAction(uint32_t nowMs) {
     } else if (inventoryController_.state().pendingItemAction == PendingItemAction::USE) {
         if (sceneFlow.current() == AppSceneFlow::Scene::BAG &&
             !Game::ItemInventory::usableFromHomeBag(inventoryController_.state().pendingItem)) {
-            inventoryController_.state().itemConfirmOpen = false;
-            inventoryController_.state().pendingItem = Game::ItemId::COUNT;
-            inventoryController_.state().pendingItemAction = PendingItemAction::NONE;
+            inventoryController_.clearAction();
             setToast(Ui::Amoled::NOT_READY, nowMs);
             requestRenderRows(MENU_HEADER_HEIGHT, 448);
             return;
@@ -14362,19 +9604,8 @@ void AmoledApp::performPendingItemAction(uint32_t nowMs) {
         bool exploring = itemReturn == AppSceneFlow::Scene::EXPLORE_MENU ||
                          itemReturn == AppSceneFlow::Scene::EXPLORE_ROUTE;
         if (explorationItem && exploring) {
-            bool activated = false;
-            if (inventoryController_.state().pendingItem == Game::ItemId::MAX_REPEL) {
-                activated = exploreItemEffects.repelStepsRemaining() == 0 &&
-                           Game::ItemInventory::remove(gameState, inventoryController_.state().pendingItem);
-                if (activated && !exploreItemEffects.activateMaxRepel()) {
-                    Game::ItemInventory::add(gameState, inventoryController_.state().pendingItem);
-                    activated = false;
-                }
-            } else if (!exploreItemEffects.honeyEncounterPending() &&
-                       Game::ItemInventory::remove(gameState, inventoryController_.state().pendingItem)) {
-                activated = exploreItemEffects.activateHoney();
-                if (!activated) Game::ItemInventory::add(gameState, inventoryController_.state().pendingItem);
-            }
+            const bool activated = exploreSession_.useItem(gameState,
+                inventoryController_.state().pendingItem);
             if (activated) {
                 resultText = inventoryController_.state().pendingItem == Game::ItemId::MAX_REPEL
                     ? Ui::Bag::MAX_REPEL_ACTIVE : Ui::Bag::HONEY_ACTIVE;
@@ -14473,9 +9704,7 @@ void AmoledApp::performPendingItemAction(uint32_t nowMs) {
         return;
     }
 
-    inventoryController_.state().itemConfirmOpen = false;
-    inventoryController_.state().pendingItem = Game::ItemId::COUNT;
-    inventoryController_.state().pendingItemAction = PendingItemAction::NONE;
+    inventoryController_.clearAction();
     if (changed) saveState();
     clampItemScroll();
     setToast(resultText, nowMs);
@@ -14488,11 +9717,11 @@ void AmoledApp::persistHomeViewState(uint32_t nowMs) {
         Game::speciesCareProfileFor(mainMonster.speciesId);
     const bool mainSleepTime = mainCare.usesBed && Game::isSleepCareTime(
         gameState.gameMinutesTotal, mainMonster.nature);
-    const bool transientMain = roomAction != RoomAction::NONE ||
+    const bool transientMain = homeFlow_.state().action != RoomAction::NONE ||
         homeRuntime.pairActive() ||
-        visitorMotion == VisitorMotion::HOST_APPROACH ||
-        visitorMotion == VisitorMotion::ENTERING ||
-        visitorMotion == VisitorMotion::EXITING || pendingExpedition ||
+        visitorFlow_.state().motion == VisitorMotion::HOST_APPROACH ||
+        visitorFlow_.state().motion == VisitorMotion::ENTERING ||
+        visitorFlow_.state().motion == VisitorMotion::EXITING || pendingExpedition ||
         expeditionDeparturePhase != ExpeditionDeparturePhase::NONE ||
         homeMainActor.task == Home::Task::ROOM_ACTION ||
         homeMainActor.task == Home::Task::PAIR_ACTION ||
@@ -14578,7 +9807,7 @@ void AmoledApp::persistHomeViewState(uint32_t nowMs) {
     const bool companionSleepTime = companionCare.usesBed &&
         Game::isSleepCareTime(gameState.gameMinutesTotal, monster.nature);
     const bool transientCompanion = homeRuntime.pairActive() ||
-        visitorMotion != VisitorMotion::NONE ||
+        visitorFlow_.state().motion != VisitorMotion::NONE ||
         homeCompanionActor.task == Home::Task::ROOM_ACTION ||
         homeCompanionActor.task == Home::Task::PAIR_ACTION ||
         homeCompanionActor.task == Home::Task::DOOR_ACTION ||
@@ -14650,7 +9879,10 @@ bool AmoledApp::saveState() {
     if (debugBattleScenarioActive) return false;
 #endif
     if (gameResetPending || !storageReady || saveWritesBlocked) return false;
-    if (!persistHatchProgress(true)) return false;
+    if (!persistHatchProgress(true)) {
+        saveCoordinator_.recordAttempt(Platform::clock().millis(), false);
+        return false;
+    }
 #if STICKMON_ENABLE_DEBUG_FEATURES
     const bool profileExploreSave =
         sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_ROUTE;
@@ -14709,7 +9941,13 @@ bool AmoledApp::saveState() {
         }
     }
 #endif
-    return snapshotSaved && historySaved;
+    const bool saved = snapshotSaved && historySaved;
+    saveCoordinator_.recordAttempt(Platform::clock().millis(), saved);
+    if (saved) {
+        lastPersistMs = Platform::clock().millis();
+        showerSavePending = false;
+    }
+    return saved;
 }
 
 bool AmoledApp::hasEncounteredSpecies(uint16_t speciesId) const {
@@ -14728,7 +9966,7 @@ bool AmoledApp::hasEncounteredSpecies(uint16_t speciesId) const {
 bool AmoledApp::recordEncounteredSpecies(uint16_t speciesId) {
     if (hasEncounteredSpecies(speciesId)) return false;
     if (!encounterHistory.add(speciesId)) return false;
-    exploreEcology.revealSpecies(speciesId);
+    explorePresenter_.revealSpecies(speciesId);
     encounterHistoryDirty = true;
     Platform::logf("[AmoledApp] encountered species=%u total=%u\n",
                    speciesId, encounterHistory.count);
@@ -14755,10 +9993,7 @@ bool AmoledV1::AmoledApp::debugStartShowerDrag(uint8_t tool, uint32_t nowMs) {
     if (!gameState.oobeDone || tool > 1 || visitSession.active()) return false;
     openShowerScene(nowMs);
     // Benchmark visual interaction without consuming items or granting rewards.
-    showerController_.state().showerSoapRewarded = showerController_.state().showerBrushRewarded = showerController_.state().showerRinseRewarded = true;
-    if (tool == 1) {
-        for (int i = 0; i < 8; ++i) Game::BathInteraction::spawn(showerController_.state().showerBath, showerBathLayout(), nowMs);
-    }
+    showerController_.prepareVisualBenchmark(tool == 1, nowMs);
     startShowerTool(tool == 0 ? ShowerMode::SOAPING : ShowerMode::BRUSHING, nowMs);
     TouchEvent event{};
     event.type = TouchEventType::DOWN;

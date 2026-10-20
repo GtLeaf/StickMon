@@ -1,0 +1,110 @@
+[
+  {
+    "file": "bed-cloud.png",
+    "size": [
+      1567,
+      1004
+    ],
+    "mode": "RGBA",
+    "transparent_pixels": 292929,
+    "opaque_pixels": 561,
+    "partial_alpha_pixels": 1279778,
+    "visible_bbox": [
+      0,
+      1,
+      1567,
+      1004
+    ],
+    "sha256": "6d214b7df7c38a076216486d411e98b4ffcc8b67c260b4b63da6d323d22d7527"
+  },
+  {
+    "file": "bed-forest-leaf.png",
+    "size": [
+      1567,
+      1004
+    ],
+    "mode": "RGBA",
+    "transparent_pixels": 274308,
+    "opaque_pixels": 377,
+    "partial_alpha_pixels": 1298583,
+    "visible_bbox": [
+      0,
+      0,
+      1567,
+      1004
+    ],
+    "sha256": "0e66be6218754bc8a442d6bdd05e01a4013585a21c94caadb37f4c35f3983345"
+  },
+  {
+    "file": "bed-starry-night.png",
+    "size": [
+      1565,
+      1005
+    ],
+    "mode": "RGBA",
+    "transparent_pixels": 251461,
+    "opaque_pixels": 503,
+    "partial_alpha_pixels": 1320861,
+    "visible_bbox": [
+      0,
+      0,
+      1565,
+      1005
+    ],
+    "sha256": "658b379bf63308dac92381d3936d17323a316a1239a8cc658e1245d1eed8f4f7"
+  },
+  {
+    "file": "rug-cloud.png",
+    "size": [
+      1798,
+      875
+    ],
+    "mode": "RGBA",
+    "transparent_pixels": 371903,
+    "opaque_pixels": 61,
+    "partial_alpha_pixels": 1201286,
+    "visible_bbox": [
+      0,
+      0,
+      1798,
+      875
+    ],
+    "sha256": "e7af34587ad4cdb3442534fe90eb2f8a5d6f4ceebfdad6c50919ab497173ded3"
+  },
+  {
+    "file": "rug-forest-leaf.png",
+    "size": [
+      1798,
+      875
+    ],
+    "mode": "RGBA",
+    "transparent_pixels": 360773,
+    "opaque_pixels": 822,
+    "partial_alpha_pixels": 1211655,
+    "visible_bbox": [
+      0,
+      0,
+      1798,
+      875
+    ],
+    "sha256": "a612a3075324b63ee05cc29cd8d87698b4cbb99e00da162912188cc39db3ea9d"
+  },
+  {
+    "file": "rug-starry-night.png",
+    "size": [
+      1798,
+      875
+    ],
+    "mode": "RGBA",
+    "transparent_pixels": 364047,
+    "opaque_pixels": 768,
+    "partial_alpha_pixels": 1208435,
+    "visible_bbox": [
+      0,
+      0,
+      1798,
+      875
+    ],
+    "sha256": "a28f070455576d7baa51802c16724c20a7fccefd4ea26f6d7c1ad2c400cba62b"
+  }
+]

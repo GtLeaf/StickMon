@@ -123,17 +123,22 @@ struct DebugViewModel {
         BATTLE,
         CONTACT_EVENT,
         TOUCH_TEST,
+        ROOM,
     };
     enum class Popup : uint8_t {
         NONE = 0,
         SWITCH_MONSTER,
         SET_TIME,
+        BED_STYLE,
+        RUG_STYLE,
     };
     Category category = Category::ROOT;
     uint8_t cursor = 0;
     float scroll = 0.0f;
     int pressedItem = -1;
     Popup popup = Popup::NONE;
+    uint8_t bedStyle = 0;
+    uint8_t rugStyle = 0;
     uint8_t focus = 0;
     uint8_t digits[4] = {};
     const Game::GameState* state = nullptr;

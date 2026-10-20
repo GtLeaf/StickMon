@@ -667,7 +667,8 @@ def merge_pack_manifest(**updates):
 def write_room_pack(width, height, art_width, art_height, room_y, base_raw, base_compressed,
                     patch_runs, patch_pixels, walk_polygon, food_x, food_y,
                     bed_polygon, bed_x, bed_y, doorway_polygon,
-                    doorway_inside, doorway_outside, behavior_anchors):
+                    doorway_inside, doorway_outside, behavior_anchors,
+                    output=None, reference_hash=None, reference_night=False):
     min_x, min_y, max_x, max_y = bounds_for(walk_polygon, width, height)
     bed_min_x, bed_min_y, bed_max_x, bed_max_y = bounds_for(bed_polygon, width, height)
     door_min_x, door_min_y, door_max_x, door_max_y = bounds_for(doorway_polygon, width, height)
@@ -682,7 +683,7 @@ def write_room_pack(width, height, art_width, art_height, room_y, base_raw, base
     payload.extend(struct.pack(
         ROOM_PACK_HEADER_FORMAT,
         ROOM_PACK_MAGIC,
-        ROOM_PACK_VERSION,
+        5 if reference_hash is not None else ROOM_PACK_VERSION,
         width,
         height,
         room_y,
@@ -714,11 +715,13 @@ def write_room_pack(width, height, art_width, art_height, room_y, base_raw, base
         doorway_inside[1],
         doorway_outside[0],
         doorway_outside[1],
-        1 if not patch_runs else 0,
+        2 if reference_night else (1 if not patch_runs else 0),
         0,
         art_width,
         art_height,
     ))
+    if reference_hash is not None:
+        payload.extend(struct.pack("<I", reference_hash))
     payload.extend(base_compressed)
     for y, x, length, offset in patch_runs:
         payload.extend(struct.pack("<HHHI", y, x, length, offset))
@@ -739,9 +742,11 @@ def write_room_pack(width, height, art_width, art_height, room_y, base_raw, base
             foot_y,
         ))
 
-    PACK_ROOM_OUT.mkdir(parents=True, exist_ok=True)
-    (PACK_ROOM_OUT / "standard.smonroom").write_bytes(payload)
-    merge_pack_manifest(room="rooms/standard.smonroom", rooms="rooms", roomCount=1)
+    destination = Path(output) if output is not None else PACK_ROOM_OUT / "standard.smonroom"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(payload)
+    if output is None:
+        merge_pack_manifest(room="rooms/standard.smonroom", rooms="rooms", roomCount=1)
     return len(payload)
 
 

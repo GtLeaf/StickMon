@@ -30,6 +30,11 @@ from generate_runtime_tile_map import (
     BRIDGE_BOTTOM_TILE,
     BRIDGE_TOP_TILE,
     CLIFF_FACE_TILE,
+    CLIFF_SIDE_LEFT_TILE,
+    CLIFF_SIDE_RIGHT_TILE,
+    CLIFF_TOP_LEFT_TILE,
+    CLIFF_TOP_TILE,
+    CLIFF_TOP_RIGHT_TILE,
     CLIFF_STAIR_LEFT_TILE,
     CLIFF_STAIR_RIGHT_TILE,
     CLIFF_LEFT_TILE,
@@ -43,6 +48,7 @@ from generate_runtime_tile_map import (
     FROST_CRYSTAL_CAVE_AREA,
     FROST_CRYSTAL_TOP_TILE,
     FROST_FLOOR_TILE,
+    FROST_ROUTE_TILES,
     FROST_ICE_TILES,
     FROST_INNER_CORNER_TILES,
     FROST_OUTSIDE_TILE,
@@ -113,6 +119,7 @@ STREAM_TILES = {
     STREAM_BOTTOM_INNER_LEFT_TILE,
     STREAM_BOTTOM_INNER_RIGHT_TILE,
 }
+CLIFF_WALL_TILES = {1176, 1178, 1184, 1185, 1186, 1187, 1188, 1189}
 STREAM_TRANSITION_TILES = {
     STREAM_TOP_OUTER_LEFT_TILE,
     STREAM_TOP_OUTER_RIGHT_TILE,
@@ -417,7 +424,7 @@ class RuntimeTileMapTests(unittest.TestCase):
     def test_frost_cave_uses_caves_tiles_and_keeps_routes_clear(self):
         ice_ids = set(FROST_ICE_TILES.values())
         ground_ids = {
-            FROST_OUTSIDE_TILE, FROST_FLOOR_TILE, *ice_ids,
+            FROST_OUTSIDE_TILE, FROST_FLOOR_TILE, *FROST_ROUTE_TILES, *ice_ids,
             4505, 4506,
         }
         wall_ids = set(FROST_WALL_TILES.values()) | set(
@@ -442,17 +449,41 @@ class RuntimeTileMapTests(unittest.TestCase):
                                  for tile_id in layer))
             self.assertFalse(any(4705 <= tile_id <= 4740 for layer in runtime_map.layers
                                  for tile_id in layer))
-            self.assertEqual(runtime_map.layers[2].count(FROST_CRYSTAL_TOP_TILE), 2)
+            self.assertEqual(runtime_map.layers[2].count(FROST_CRYSTAL_TOP_TILE),
+                             runtime_map.layers[1].count(4508))
+            self.assertGreaterEqual(runtime_map.layers[1].count(4508), 1)
+            self.assertEqual(runtime_map.layers[2].count(4543), 1)
+            self.assertNotIn(4505, runtime_map.layers[0])
+            route = {point for path in runtime_map.paths for point in path.points}
+            portals = {runtime_map.entry.point, runtime_map.junction,
+                       *(path.exit.point for path in runtime_map.paths)}
+            small_clearance = route | expanded(portals)
+            tall_clearance = expanded(route) | small_clearance
+            decoration_count = sum(tile in scenery_ids for tile in runtime_map.layers[1])
+            self.assertGreaterEqual(decoration_count, 8)
+            self.assertLessEqual(decoration_count, 12)
+            for index, tile in enumerate(runtime_map.layers[1]):
+                if tile not in scenery_ids:
+                    continue
+                x, y = index % 16, index // 16
+                self.assertNotIn((x, y), tall_clearance if tile in (4508, 4509) else small_clearance)
+                self.assertNotIn(runtime_map.layers[0][index], ice_ids)
+                if tile in (4508, 4509):
+                    self.assertNotIn((x, y - 1), tall_clearance)
+                    self.assertNotIn(runtime_map.layers[0][index - 16], ice_ids)
+                    self.assertEqual(runtime_map.layers[2][index - 16],
+                                     4541 if tile == 4508 else 4543)
             self.assertTrue(set(runtime_map.layers[2]).issubset({
-                0, FROST_CRYSTAL_TOP_TILE,
+                0, FROST_CRYSTAL_TOP_TILE, 4543,
             }))
             for path in runtime_map.paths:
+                self.assertTrue(path.cell_centered)
                 self.assertEqual(path.points[0], runtime_map.entry.point)
                 self.assertEqual(path.points[-1], path.exit.point)
                 for x, y in path.points:
                     index = y * 16 + x
                     self.assertIn(runtime_map.layers[0][index], {
-                        FROST_FLOOR_TILE, *ice_ids,
+                        FROST_FLOOR_TILE, *FROST_ROUTE_TILES, *ice_ids,
                     })
                     self.assertIn(runtime_map.layers[1][index], {
                         0,
@@ -533,7 +564,7 @@ class RuntimeTileMapTests(unittest.TestCase):
                     for path_index in range(1, len(path.points) - 2):
                         x, y = path.points[path_index]
                         cell = y * 16 + x
-                        if (last.layers[0][cell] == 4511 and
+                        if (last.layers[0][cell] in {4511, *FROST_ROUTE_TILES} and
                                 last.layers[1][cell] == 0 and
                                 last.layers[2][cell] == 0):
                             candidates.append(path_index)
@@ -730,34 +761,42 @@ class RuntimeTileMapTests(unittest.TestCase):
                 }
                 if runtime_map.has_cliff:
                     cliff_count += 1
-                    self.assertEqual(len(stair_cells), 2)
+                    self.assertEqual(len(stair_cells), 4)
                     stair_xs = {x for x, _y in stair_cells}
                     stair_ys = {y for _x, y in stair_cells}
                     self.assertEqual(len(stair_xs), 2)
-                    self.assertEqual(len(stair_ys), 1)
+                    self.assertEqual(len(stair_ys), 2)
+                    self.assertEqual(stair_ys, {min(stair_ys), min(stair_ys) + 1})
                     stair_left = min(stair_xs)
                     cliff_top = min(stair_ys)
                     cliff_cells = {
                         (i % 16, i // 16)
-                        for i, tile in enumerate(runtime_map.layers[1])
-                        if tile in {CLIFF_LEFT_TILE, CLIFF_FACE_TILE, CLIFF_RIGHT_TILE}
+                        for layer in runtime_map.layers for i, tile in enumerate(layer)
+                        if tile in CLIFF_WALL_TILES
                     }
-                    self.assertEqual({y for _x, y in cliff_cells}, {cliff_top})
-                    wall_xs = {x for x, _y in cliff_cells | stair_cells}
-                    self.assertEqual(wall_xs, set(range(min(wall_xs), max(wall_xs) + 1)))
-                    for x, y in cliff_cells:
-                        tile = runtime_map.layers[1][y * 16 + x]
-                        expected = (CLIFF_LEFT_TILE if x == min(wall_xs) and x > 0 else
-                                    CLIFF_RIGHT_TILE if x == max(wall_xs) and x < 15 else
-                                    CLIFF_FACE_TILE)
-                        self.assertEqual(tile, expected)
-                        self.assertNotIn(runtime_map.layers[1][(y - 1) * 16 + x],
-                                         {CLIFF_LEFT_TILE, CLIFF_FACE_TILE, CLIFF_RIGHT_TILE})
+                    side_cells = {(i % 16, i // 16)
+                                  for i, tile in enumerate(runtime_map.layers[1])
+                                  if tile in (CLIFF_SIDE_LEFT_TILE, CLIFF_SIDE_RIGHT_TILE)}
+                    self.assertEqual({y for _x, y in side_cells}, set(range(cliff_top)))
+                    self.assertEqual(len({x for x, _y in side_cells}), 1)
+                    side = next(iter(side_cells))[0]
+                    mirrored = runtime_map.layers[1][side] == CLIFF_SIDE_LEFT_TILE
+                    wall_xs = set(range(side, 16)) if mirrored else set(range(side + 1))
+                    self.assertEqual(cliff_cells | stair_cells,
+                                     side_cells | {(x, y) for x in wall_xs for y in stair_ys})
+                    for x in wall_xs - stair_xs:
+                        self.assertEqual(runtime_map.layers[0][cliff_top * 16 + x]
+                                         if x != side else runtime_map.layers[1][cliff_top * 16 + x],
+                                         CLIFF_TOP_TILE if x != side else
+                                         CLIFF_TOP_LEFT_TILE if mirrored else CLIFF_TOP_RIGHT_TILE)
+                        self.assertEqual(runtime_map.layers[1][(cliff_top + 1) * 16 + x],
+                                         CLIFF_FACE_TILE if x != side else
+                                         CLIFF_LEFT_TILE if mirrored else CLIFF_RIGHT_TILE)
                     self.assertTrue(cliff_cells.isdisjoint(
                         {point for path in runtime_map.paths for point in path.points}))
                     for x in stair_xs:
                         self.assertIn(runtime_map.layers[0][(cliff_top - 1) * 16 + x], ROAD_TILES)
-                        self.assertIn(runtime_map.layers[0][(cliff_top + 1) * 16 + x], ROAD_TILES)
+                        self.assertIn(runtime_map.layers[0][(cliff_top + 3) * 16 + x], ROAD_TILES)
                         self.assertIn(runtime_map.layers[0][(cliff_top - 2) * 16 + x], ROAD_TILES)
                         self.assertIn(runtime_map.layers[0][(cliff_top + 2) * 16 + x], ROAD_TILES)
                     for path in runtime_map.paths:
@@ -772,7 +811,9 @@ class RuntimeTileMapTests(unittest.TestCase):
                                 self.assertEqual(after[0], point[0])
                                 self.assertEqual(abs(before[1] - point[1]), offset)
                                 self.assertEqual(before[1] + after[1], point[1] * 2)
-                    self.assertTrue(all(1188 not in layer for layer in runtime_map.layers))
+                    self.assertTrue(any(t == CLIFF_TOP_TILE for t in runtime_map.layers[0]))
+                    self.assertGreater(stair_left, 0)
+                    self.assertLess(stair_left + 1, 15)
                 else:
                     self.assertFalse(stair_cells)
 
@@ -838,8 +879,8 @@ class RuntimeTileMapTests(unittest.TestCase):
                       if t in (BRIDGE_TOP_TILE, BRIDGE_BOTTOM_TILE)}
             stairs = {(i % 16, i // 16) for i, t in enumerate(m.layers[0])
                       if t in (CLIFF_STAIR_LEFT_TILE, CLIFF_STAIR_RIGHT_TILE)}
-            cliff = {(i % 16, i // 16) for i, t in enumerate(m.layers[1])
-                     if t in (CLIFF_LEFT_TILE, CLIFF_FACE_TILE, CLIFF_RIGHT_TILE)}
+            cliff = {(i % 16, i // 16) for layer in m.layers for i, t in enumerate(layer)
+                     if t in CLIFF_WALL_TILES}
             self.assertTrue(trees.isdisjoint(expanded(cliff | stairs)))
             flowers = {(i % 16, i // 16) for i, t in enumerate(m.layers[0]) if t == FLOWER_TILE}
             shrubs = {(i % 16, i // 16) for i, t in enumerate(m.layers[1]) if t == SHRUB_TILE}

@@ -13,7 +13,7 @@ class V2TouchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
             headers = {
-                "esp_err.h": "#pragma once\nusing esp_err_t = int;\nconstexpr int ESP_OK = 0;\n",
+                "esp_err.h": "#pragma once\nusing esp_err_t = int;\nconstexpr int ESP_OK = 0, ESP_ERR_INVALID_STATE = -2;\n",
                 "esp_log.h": "#define ESP_LOGI(tag, ...) ((void)(tag))\n",
                 "freertos/FreeRTOS.h": "#pragma once\n#include <cstdint>\n"
                 "using TickType_t = uint32_t; using BaseType_t = int;\n"
@@ -29,7 +29,11 @@ class V2TouchTests(unittest.TestCase):
                 "esp_err_t gpio_intr_disable(gpio_num_t);\nesp_err_t gpio_intr_enable(gpio_num_t);\n"
                 "int gpio_get_level(gpio_num_t);\n",
                 "esp_sleep.h": "#pragma once\n#include \"esp_err.h\"\nesp_err_t esp_sleep_enable_gpio_wakeup();\n",
-                "bsp/esp32_s3_touch_amoled_1_8.h": "#pragma once\n",
+                "driver/i2c_master.h": "#pragma once\n#include <cstdint>\n#include \"esp_err.h\"\n"
+                "using i2c_master_bus_handle_t = void*;\n"
+                "esp_err_t i2c_master_probe(i2c_master_bus_handle_t, uint16_t, int);\n",
+                "bsp/esp32_s3_touch_amoled_1_8.h": "#pragma once\n#include \"driver/i2c_master.h\"\n"
+                "esp_err_t bsp_i2c_init();\ni2c_master_bus_handle_t bsp_i2c_get_handle();\n",
                 "bsp/touch.h": "#pragma once\n#include \"esp_lcd_touch.h\"\n"
                 "struct bsp_touch_config_t {};\n"
                 "esp_err_t bsp_touch_new(const bsp_touch_config_t*, esp_lcd_touch_handle_t*);\n",

@@ -43,6 +43,8 @@ void drawSceneFadeOverlay(Canvas565& canvas, uint8_t alpha,
                           uint16_t rowBegin, uint16_t rowEnd);
 void drawHeaderButton(Canvas565& canvas, int x, bool pressed = false,
                       int height = UiMetrics::HOME_HEADER_HEIGHT);
+void drawBackChevron(Canvas565& canvas, int x, int centerY, int halfHeight,
+                     uint16_t color);
 void drawBackIcon(Canvas565& canvas, int height = UiMetrics::HOME_HEADER_HEIGHT);
 void drawHeader(Canvas565& canvas, int height, bool backButton = false);
 void drawHeaderText(Canvas565& canvas, int x, const char* value,

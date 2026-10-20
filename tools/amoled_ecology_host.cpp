@@ -71,8 +71,8 @@ struct AmoledEcologyTestAccess {
             app.expeditionFade.reset();
             app.gameState.teamCount = 1;
             app.gameState.team[0].speciesId = 161;
-            app.exploreRouteWorldX = app.exploreRouteWorldY = -1000;
-            auto& map = app.exploreRouteMap;
+            app.explorePresenter_.state_.exploreRouteWorldX = app.explorePresenter_.state_.exploreRouteWorldY = -1000;
+            auto& map = app.exploreSession_.state_.exploreRouteMap;
             map = {};
             map.seed = 773;
             std::fill_n(map.layers[0], ExploreMapGenerator::CELL_COUNT, 390);
@@ -82,16 +82,20 @@ struct AmoledEcologyTestAccess {
             ExplorePool::Pool pool{};
             pool.count = 1;
             pool.entries[0] = {species, 1, ExplorePool::Rarity::COMMON};
-            app.exploreEcology.reset(map, 0, pool, hidden ? 1 : 0, desktop.millis());
-            assert(app.exploreEcology.count() == 1);
-            app.exploreGrass.reset(desktop.millis());
+            app.explorePresenter_.state_.exploreEcology.reset(map, 0, pool, hidden ? 1 : 0, desktop.millis());
+            for (uint32_t seed = 774; app.explorePresenter_.state_.exploreEcology.hasGroup() && seed < 838; ++seed) {
+                map.seed = seed;
+                app.explorePresenter_.state_.exploreEcology.reset(map, 0, pool, hidden ? 1 : 0, desktop.millis());
+            }
+            assert(!app.explorePresenter_.state_.exploreEcology.hasGroup() && app.explorePresenter_.state_.exploreEcology.count() == 1);
+            app.explorePresenter_.state_.exploreGrass.reset(desktop.millis());
             app.updateExploreEcology(desktop.millis());
             bool feedback = false;
             for (int tick = 0; tick < 300; ++tick) {
                 desktop.advanceMs(100);
                 app.updateExploreEcology(desktop.millis());
                 for (int cell = 0; cell < ExploreMapGenerator::CELL_COUNT; ++cell)
-                    feedback |= app.exploreGrass.frame(cell).phase != 0;
+                    feedback |= app.explorePresenter_.state_.exploreGrass.frame(cell).phase != 0;
             }
             assert(feedback == (species == 161 && !hidden));
           }
@@ -222,27 +226,37 @@ struct AmoledEcologyTestAccess {
         app.selectedExploreArea = area;
         GameRandom::setRangeProvider(countingRandom);
         assert(app.startExploreRoute(desktop.millis()));
-        assert(app.selectedExploreArea == area && app.exploreEcology.count() > 0);
-        app.exploreRouteBossPending = false;
-        app.exploreRouteBossScheduled = false;
-        const auto mapFingerprint = ExploreMapGenerator::fingerprint(app.exploreRouteMap);
+        assert(app.selectedExploreArea == area && app.explorePresenter_.state_.exploreEcology.count() > 0);
+        for (uint8_t entry = 0; entry < app.exploreSession_.state_.exploreRoutePool.count; ++entry) {
+            const auto* family = ExploreEcology::groupFamily(app.exploreSession_.state_.exploreRoutePool.entries[entry].speciesId);
+            if (!family) continue;
+            for (uint8_t i = 0; i < family->count; ++i) {
+                PokemonSprites::WalkingAnimation animation{};
+                assert(PokemonSprites::walkingAnimation(family->species[i],
+                    PokemonSprites::WalkDirection::DOWN, animation));
+                assert(PokemonSprites::findCachedSpeciesSprite(family->species[i], animation.base));
+            }
+        }
+        app.exploreSession_.state_.exploreRouteBossPending = false;
+        app.exploreSession_.state_.exploreRouteBossScheduled = false;
+        const auto mapFingerprint = ExploreMapGenerator::fingerprint(app.exploreSession_.state_.exploreRouteMap);
         const auto state = app.gameState;
         const auto history = app.encounterHistory;
         const int callsBefore = randomCalls;
         // Observe from a real route point near the first wild actor.
-        const auto target = app.exploreEcology.pose(0);
-        const auto& path = app.exploreRouteMap.paths[app.exploreRoutePath];
+        const auto target = app.explorePresenter_.state_.exploreEcology.pose(0);
+        const auto& path = app.exploreSession_.state_.exploreRouteMap.paths[app.exploreSession_.state_.exploreRoutePath];
         float nearest = 1e9f;
         for (uint8_t p = 0; p < path.pointCount; ++p) {
             const auto point = ExploreRouteGeometry::pathPoint(path, p);
             const float dx = point.x - target.x, dy = point.y - target.y;
             if (dx * dx + dy * dy < nearest) {
                 nearest = dx * dx + dy * dy;
-                app.exploreRouteWorldX = point.x;
-                app.exploreRouteWorldY = point.y;
+                app.explorePresenter_.state_.exploreRouteWorldX = point.x;
+                app.explorePresenter_.state_.exploreRouteWorldY = point.y;
             }
         }
-        app.updateExploreRouteCamera();
+        app.explorePresenter_.updateCamera();
         app.requestFullRender();
         app.render(canvas);
         app.markRendered();
@@ -277,20 +291,20 @@ struct AmoledEcologyTestAccess {
         assert(randomCalls == callsBefore);
         assert(std::memcmp(&state, &app.gameState, sizeof(state)) == 0);
         assert(std::memcmp(&history, &app.encounterHistory, sizeof(history)) == 0);
-        assert(mapFingerprint == ExploreMapGenerator::fingerprint(app.exploreRouteMap));
+        assert(mapFingerprint == ExploreMapGenerator::fingerprint(app.exploreSession_.state_.exploreRouteMap));
         ExploreEcology::Pose paused[ExploreEcology::CAPACITY];
-        for (uint8_t i = 0; i < app.exploreEcology.count(); ++i)
-            paused[i] = app.exploreEcology.pose(i);
+        for (uint8_t i = 0; i < app.explorePresenter_.state_.exploreEcology.count(); ++i)
+            paused[i] = app.explorePresenter_.state_.exploreEcology.pose(i);
         for (int reason = 0; reason < 4; ++reason) {
-            app.exploreRoutePaused = reason == 0;
-            app.exploreRouteComplete = reason == 1;
+            app.exploreSession_.state_.exploreRoutePaused = reason == 0;
+            app.exploreSession_.state_.exploreRouteComplete = reason == 1;
             app.sceneFlow.enter(reason == 2 ? AppSceneFlow::Scene::BATTLE
                 : reason == 3 ? AppSceneFlow::Scene::EXPLORE_MENU
                               : AppSceneFlow::Scene::EXPLORE_ROUTE);
             desktop.advanceMs(10000);
             app.updateExploreEcology(desktop.millis());
-            for (uint8_t i = 0; i < app.exploreEcology.count(); ++i)
-                assert(ExploreEcology::samePose(paused[i], app.exploreEcology.pose(i)));
+            for (uint8_t i = 0; i < app.explorePresenter_.state_.exploreEcology.count(); ++i)
+                assert(ExploreEcology::samePose(paused[i], app.explorePresenter_.state_.exploreEcology.pose(i)));
             assert(!app.needsRender());
         }
         // Camera changes affect screen position, not map population or location.
@@ -302,7 +316,7 @@ struct AmoledEcologyTestAccess {
         const auto shiftedBounds = exploreRouteWildlifeBounds(model, 0);
         assert(shiftedBounds.x == originalBounds.x - 20);
         assert(shiftedBounds.y == originalBounds.y - 20);
-        assert(ExploreEcology::samePose(world, app.exploreEcology.pose(0)));
+        assert(ExploreEcology::samePose(world, app.explorePresenter_.state_.exploreEcology.pose(0)));
 
         // Exercise unknown/known species and depth overlap in every dirty band.
         model = app.exploreRouteModel();
@@ -516,12 +530,12 @@ struct AmoledEcologyTestAccess {
         app.render(canvas); const auto partial = pixels(canvas);
         app.requestFullRender(); app.render(canvas);
         assert(partial == pixels(canvas)); app.markRendered();
-        app.exploreRoutePaused = true;
+        app.exploreSession_.state_.exploreRoutePaused = true;
         setTime(1150);
         assert(app.exploreRouteModel().daylight == ExploreDaylight::at(1141, 0));
         assert(app.renderRowEnd() <= HOME_HEADER_HEIGHT);
         app.markRendered();
-        app.exploreRoutePaused = false;
+        app.exploreSession_.state_.exploreRoutePaused = false;
         setTime(1150);
         assert(app.exploreRouteModel().daylight == ExploreDaylight::at(1150, 0));
         assert(app.renderRowEnd() == EXPLORE_ROUTE_MAP_BOTTOM);
@@ -542,30 +556,30 @@ struct AmoledEcologyTestAccess {
         app.begin(desktop.millis());
         assert(app.startExploreRoute(desktop.millis()));
         app.expeditionFade.reset();
-        app.exploreRouteBossPending = app.exploreRouteBossScheduled = false;
-        app.exploreRouteMap = {};
-        auto& map = app.exploreRouteMap;
+        app.exploreSession_.state_.exploreRouteBossPending = app.exploreSession_.state_.exploreRouteBossScheduled = false;
+        app.exploreSession_.state_.exploreRouteMap = {};
+        auto& map = app.exploreSession_.state_.exploreRouteMap;
         map.seed = 918273;
         std::fill_n(map.layers[0], ExploreMapGenerator::CELL_COUNT, 385);
         constexpr int cell = 4 * ExploreMapGenerator::WIDTH + 3;
         map.layers[0][cell] = 399;
         map.layers[1][cell - ExploreMapGenerator::WIDTH] = 391;
-        app.exploreEcology.reset(map, 0, {}, 0, desktop.millis());
+        app.explorePresenter_.state_.exploreEcology.reset(map, 0, {}, 0, desktop.millis());
         app.gameState.teamCount = 1;
         app.gameState.team[0].speciesId = 161;
         app.gameState.activeSlot = 0;
-        app.exploreRouteWorldX = 81;
-        app.exploreRouteWorldY = 107;
-        app.exploreRouteCameraX = 0;
-        app.exploreRouteCameraY = 13;
+        app.explorePresenter_.state_.exploreRouteWorldX = 81;
+        app.explorePresenter_.state_.exploreRouteWorldY = 107;
+        app.explorePresenter_.state_.exploreRouteCameraX = 0;
+        app.explorePresenter_.state_.exploreRouteCameraY = 13;
         app.updateExploreEcology(desktop.millis());
         app.requestFullRender(); app.render(canvas); app.markRendered();
         const auto state = app.gameState;
         const int callsBefore = randomCalls;
-        app.exploreRouteWorldX += 6;
+        app.explorePresenter_.state_.exploreRouteWorldX += 6;
         desktop.advanceMs(80);
         app.updateExploreEcology(desktop.millis());
-        assert(app.exploreGrass.frame(cell).phase == 1 && app.needsRender());
+        assert(app.explorePresenter_.state_.exploreGrass.frame(cell).phase == 1 && app.needsRender());
         // Draw the actor's move once; following ticks exercise grass-only damage.
         app.requestFullRender(); app.render(canvas); app.markRendered();
         for (int tick = 0; tick < 10; ++tick) {
@@ -580,30 +594,30 @@ struct AmoledEcologyTestAccess {
                 app.markRendered();
             }
         }
-        assert(app.exploreGrass.frame(cell).phase == 0 && !app.needsRender());
-        app.exploreRouteWorldX += 6;
+        assert(app.explorePresenter_.state_.exploreGrass.frame(cell).phase == 0 && !app.needsRender());
+        app.explorePresenter_.state_.exploreRouteWorldX += 6;
         desktop.advanceMs(80); app.updateExploreEcology(desktop.millis());
-        const auto frame = app.exploreGrass.frame(cell);
+        const auto frame = app.explorePresenter_.state_.exploreGrass.frame(cell);
         assert(frame.phase == 1);
         app.requestFullRender(); app.render(canvas); app.markRendered();
-        app.exploreRoutePaused = true;
+        app.exploreSession_.state_.exploreRoutePaused = true;
         desktop.advanceMs(10000); app.updateExploreEcology(desktop.millis());
-        assert(app.exploreGrass.frame(cell) == frame && !app.needsRender());
-        app.exploreRoutePaused = false;
+        assert(app.explorePresenter_.state_.exploreGrass.frame(cell) == frame && !app.needsRender());
+        app.exploreSession_.state_.exploreRoutePaused = false;
         desktop.advanceMs(90); app.updateExploreEcology(desktop.millis());
-        assert(app.exploreGrass.frame(cell).phase == 2);
+        assert(app.explorePresenter_.state_.exploreGrass.frame(cell).phase == 2);
         assert(std::memcmp(&state, &app.gameState, sizeof(state)) == 0);
         assert(randomCalls == callsBefore);
         // Species using flying/floating movement cannot create grass feedback.
         for (uint16_t species : {uint16_t(41), uint16_t(278)}) {
             app.gameState.team[0].speciesId = species;
-            app.exploreGrass.reset(desktop.millis());
+            app.explorePresenter_.state_.exploreGrass.reset(desktop.millis());
             app.updateExploreEcology(desktop.millis());
-            app.exploreRouteWorldX = 81;
+            app.explorePresenter_.state_.exploreRouteWorldX = 81;
             desktop.advanceMs(100); app.updateExploreEcology(desktop.millis());
-            app.exploreRouteWorldX += 8;
+            app.explorePresenter_.state_.exploreRouteWorldX += 8;
             desktop.advanceMs(100); app.updateExploreEcology(desktop.millis());
-            assert(app.exploreGrass.frame(cell).phase == 0);
+            assert(app.explorePresenter_.state_.exploreGrass.frame(cell).phase == 0);
         }
         std::puts("grass app: grass-only damage, settle, pause, flight and gameplay isolation verified");
     }
@@ -786,7 +800,11 @@ struct AmoledEcologyTestAccess {
             pool.entries[0] = {species, 1, ExplorePool::Rarity::COMMON};
             ExploreEcology::Simulation sim;
             sim.reset(map, 0, pool, 0, 0);
-            assert(sim.count() == 1);
+            for (uint32_t seed = 8; sim.hasGroup() && seed < 72; ++seed) {
+                map.seed = seed;
+                sim.reset(map, 0, pool, 0, 0);
+            }
+            assert(!sim.hasGroup() && sim.count() == 1);
             PokemonSprites::preloadDynamicSpecies(&species, 1);
             const auto origin = sim.pose(0);
             ExploreRouteViewModel model{};
@@ -903,7 +921,11 @@ struct AmoledEcologyTestAccess {
             pool.entries[0] = {species, 1, ExplorePool::Rarity::COMMON};
             ExploreEcology::Simulation sim;
             sim.reset(map, 0, pool, 0, 0);
-            assert(sim.count() == 1);
+            for (uint32_t seed = 8; sim.hasGroup() && seed < 72; ++seed) {
+                map.seed = seed;
+                sim.reset(map, 0, pool, 0, 0);
+            }
+            assert(!sim.hasGroup() && sim.count() == 1);
             const auto origin = sim.pose(0);
             PokemonSprites::preloadDynamicSpecies(&species, 1);
             ExploreRouteViewModel model{};
@@ -975,7 +997,11 @@ struct AmoledEcologyTestAccess {
             pool.entries[0] = {species, 1, ExplorePool::Rarity::COMMON};
             ExploreEcology::Simulation sim;
             sim.reset(map, 0, pool, 0, 0);
-            assert(sim.count() == 1);
+            for (uint32_t seed = 8; sim.hasGroup() && seed < 72; ++seed) {
+                map.seed = seed;
+                sim.reset(map, 0, pool, 0, 0);
+            }
+            assert(!sim.hasGroup() && sim.count() == 1);
             PokemonSprites::preloadDynamicSpecies(&species, 1);
             ExploreRouteViewModel model{};
             model.map = &map;
@@ -1043,58 +1069,82 @@ struct AmoledEcologyTestAccess {
     }
     static void checkGroupApp(DesktopPlatform& desktop, Canvas565& canvas) {
         int rendered = 0;
-        for (uint16_t adult : {uint16_t(286), uint16_t(183)}) {
-          for (uint8_t poolVariant = 0; poolVariant < 3; ++poolVariant) {
+        for (const auto& family : ExploreEcology::GROUP_FAMILIES) {
+          const auto& species = family.species;
+          const uint16_t adult = species[0];
+          for (uint8_t composition = family.count == 3 ? 1 : 3;
+               composition < (1U << family.count); ++composition) {
+          uint16_t selected[ExploreEcology::CAPACITY]{};
+          uint8_t selectedCount = 0;
+          for (uint8_t i = 0; i < family.count; ++i)
+              if (composition & (1U << i)) selected[selectedCount++] = species[i];
+          for (uint8_t poolVariant = 0; poolVariant <= family.count; ++poolVariant) {
             const bool watery = false;
             AmoledApp app;
             app.begin(desktop.millis());
             app.selectedExploreArea = adult == 286 ? 2 : 1;
             GameRandom::setRangeProvider(countingRandom);
             assert(app.startExploreRoute(desktop.millis()));
-            app.exploreRouteBossPending = app.exploreRouteBossScheduled = false;
-            const uint16_t species[] = {adult, uint16_t(adult == 286 ? 285 : 298)};
+            app.exploreSession_.state_.exploreRouteBossPending = app.exploreSession_.state_.exploreRouteBossScheduled = false;
             ExplorePool::Pool pool{};
-            pool.count = poolVariant == 2 ? 2 : 1;
-            pool.entries[0] = {species[poolVariant == 1], 1, ExplorePool::Rarity::COMMON};
-            if (poolVariant == 2) pool.entries[1] = {species[1], 1, ExplorePool::Rarity::COMMON};
+            pool.count = poolVariant == family.count ? family.count : 1;
+            for (uint8_t i = 0; i < pool.count; ++i)
+                pool.entries[i] = {species[poolVariant == family.count ? i : poolVariant], 1, ExplorePool::Rarity::COMMON};
             const auto poolBefore = pool;
             bool found = false;
             for (uint32_t seed = 1; seed <= 512; ++seed) {
                 if (!ExploreMapGenerator::generate(seed, ExploreMapGenerator::Edge(seed % 4),
-                    app.selectedExploreArea, app.exploreRouteMap)) continue;
-                app.exploreRoutePath = seed % app.exploreRouteMap.pathCount;
-                app.exploreEcology.reset(app.exploreRouteMap, app.exploreRoutePath, pool, 0, desktop.millis());
-                if (app.exploreEcology.hasGroup() &&
-                    (app.exploreEcology.pose(0).surface == ExploreEcology::Surface::WATER) == watery &&
-                    app.exploreEcology.pose(0).cover == ExploreEcology::Cover::NONE &&
-                    app.exploreEcology.pose(1).cover == ExploreEcology::Cover::NONE) {
+                    app.selectedExploreArea, app.exploreSession_.state_.exploreRouteMap)) continue;
+                app.exploreSession_.state_.exploreRoutePath = seed % app.exploreSession_.state_.exploreRouteMap.pathCount;
+                app.explorePresenter_.state_.exploreEcology.reset(app.exploreSession_.state_.exploreRouteMap, app.exploreSession_.state_.exploreRoutePath, pool, 0, desktop.millis());
+                bool uncovered = true;
+                for (uint8_t i = 0; i < app.explorePresenter_.state_.exploreEcology.count(); ++i)
+                    uncovered &= app.explorePresenter_.state_.exploreEcology.pose(i).cover == ExploreEcology::Cover::NONE;
+                bool matches = app.explorePresenter_.state_.exploreEcology.count() == selectedCount;
+                for (uint8_t i = 0; matches && i < selectedCount; ++i)
+                    matches &= app.explorePresenter_.state_.exploreEcology.pose(i).speciesId == selected[i];
+                if (app.explorePresenter_.state_.exploreEcology.hasFamily() && matches && uncovered &&
+                    (app.explorePresenter_.state_.exploreEcology.pose(0).surface == ExploreEcology::Surface::WATER) == watery) {
                     found = true; break;
                 }
             }
             assert(found);
-            assert(app.exploreEcology.count() == 2);
-            assert(app.exploreEcology.pose(0).speciesId == species[0] &&
-                   app.exploreEcology.pose(1).speciesId == species[1]);
+            assert(app.explorePresenter_.state_.exploreEcology.count() == selectedCount);
+            assert(app.explorePresenter_.state_.exploreEcology.hasGroup() == (selectedCount > 1));
+            for (uint8_t i = 0; i < selectedCount; ++i)
+                assert(app.explorePresenter_.state_.exploreEcology.pose(i).speciesId == selected[i]);
             assert(std::memcmp(&poolBefore, &pool, sizeof(pool)) == 0);
-            PokemonSprites::preloadDynamicSpecies(species, 2);
+            assert(PokemonSprites::preloadDynamicSpecies(species, family.count));
+            for (uint8_t i = 0; i < family.count; ++i) {
+                const uint16_t member = species[i];
+                for (uint8_t direction = 0; direction < 4; ++direction) {
+                    PokemonSprites::WalkingAnimation animation{};
+                    assert(PokemonSprites::walkingAnimation(member,
+                        static_cast<PokemonSprites::WalkDirection>(direction), animation));
+                    assert(animation.frameCount >= 2);
+                    for (uint8_t frame = 0; frame < animation.frameCount; ++frame)
+                        assert(PokemonSprites::findCachedSpeciesSprite(member,
+                            static_cast<PokemonSprites::SpriteKind>(unsigned(animation.base) + frame)));
+                }
+            }
             const auto state = app.gameState;
             const auto history = app.encounterHistory;
             const int callsBefore = randomCalls;
-            const auto origin = app.exploreEcology.pose(0);
-            app.exploreRouteWorldX = origin.x;
-            app.exploreRouteWorldY = origin.y + 65;
-            app.updateExploreRouteCamera();
-            app.exploreRouteCameraX = std::clamp(int(origin.x) - 92, 0, 416 - 184);
-            app.exploreRouteCameraY = std::clamp(int(origin.y) - 86, 0, 312 - 172);
+            const auto origin = app.explorePresenter_.state_.exploreEcology.pose(0);
+            app.explorePresenter_.state_.exploreRouteWorldX = origin.x;
+            app.explorePresenter_.state_.exploreRouteWorldY = origin.y + 65;
+            app.explorePresenter_.updateCamera();
+            app.explorePresenter_.state_.exploreRouteCameraX = std::clamp(int(origin.x) - 92, 0, 416 - 184);
+            app.explorePresenter_.state_.exploreRouteCameraY = std::clamp(int(origin.y) - 86, 0, 312 - 172);
             app.requestFullRender(); app.render(canvas); app.markRendered();
             for (unsigned tick = 0; tick < 350; ++tick) {
                 if (tick == 75) {
-                    const auto leader = app.exploreEcology.pose(0);
-                    app.exploreRouteWorldX = leader.x + 20;
-                    app.exploreRouteWorldY = leader.y;
+                    const auto leader = app.explorePresenter_.state_.exploreEcology.pose(0);
+                    app.explorePresenter_.state_.exploreRouteWorldX = leader.x + 20;
+                    app.explorePresenter_.state_.exploreRouteWorldY = leader.y;
                     app.requestFullRender(); app.render(canvas); app.markRendered();
                 } else if (tick == 100) {
-                    app.exploreRouteWorldX = -1000; app.exploreRouteWorldY = -1000;
+                    app.explorePresenter_.state_.exploreRouteWorldX = -1000; app.explorePresenter_.state_.exploreRouteWorldY = -1000;
                     app.requestFullRender(); app.render(canvas); app.markRendered();
                 }
                 desktop.advanceMs(100);
@@ -1109,7 +1159,7 @@ struct AmoledEcologyTestAccess {
                 ++rendered;
                 if (tick % 2 == 0 && tick < 280) {
                     char name[64];
-                    std::snprintf(name, sizeof(name), "group-%u-%s-%03u", adult,
+                    std::snprintf(name, sizeof(name), "group-%u-mask-%u-%s-%03u", adult, composition,
                         watery ? "water" : "ground", tick / 2);
                     writePreview(canvas, name);
                 }
@@ -1119,9 +1169,10 @@ struct AmoledEcologyTestAccess {
             assert(callsBefore == randomCalls);
             GameRandom::setRangeProvider(nullptr);
           }
+          }
         }
         assert(rendered > 400);
-        std::printf("groups app: %d real dirty frames across two land pairs and adult-only/young-only/both pools; follow, reunion, player, cover and gameplay isolation verified\n", rendered);
+        std::printf("groups app: %d real dirty frames across all seven Marill compositions, other pairs and single-member/all-member pools; follow, reunion, player, cover and gameplay isolation verified\n", rendered);
     }
     static void checkWideFlightApp(DesktopPlatform& desktop, Canvas565& canvas) {
         AmoledApp app;
@@ -1129,12 +1180,12 @@ struct AmoledEcologyTestAccess {
         app.selectedExploreArea = 1;
         GameRandom::setRangeProvider(countingRandom);
         assert(app.startExploreRoute(desktop.millis()));
-        app.exploreRouteBossPending = app.exploreRouteBossScheduled = false;
+        app.exploreSession_.state_.exploreRouteBossPending = app.exploreSession_.state_.exploreRouteBossScheduled = false;
         ExplorePool::Pool pool{};
         pool.count = 1;
         pool.entries[0] = {278, 1, ExplorePool::Rarity::COMMON};
-        app.exploreEcology.reset(app.exploreRouteMap, app.exploreRoutePath, pool, 0, desktop.millis());
-        assert(app.exploreEcology.count() == 1);
+        app.explorePresenter_.state_.exploreEcology.reset(app.exploreSession_.state_.exploreRouteMap, app.exploreSession_.state_.exploreRoutePath, pool, 0, desktop.millis());
+        assert(app.explorePresenter_.state_.exploreEcology.count() == 1);
         const uint16_t species = 278;
         PokemonSprites::preloadDynamicSpecies(&species, 1);
         const auto state = app.gameState;
@@ -1145,7 +1196,7 @@ struct AmoledEcologyTestAccess {
         for (unsigned tick = 0; tick < 1800; ++tick) {
             desktop.advanceMs(100);
             app.updateExploreEcology(desktop.millis());
-            if (app.exploreEcology.pose(0).absent) {
+            if (app.explorePresenter_.state_.exploreEcology.pose(0).absent) {
                 ++absentTicks;
                 assert(!app.needsRender());
             }

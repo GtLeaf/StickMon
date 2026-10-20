@@ -50,7 +50,8 @@ class SpeciesProgressionTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
             )
-            subprocess.run([str(binary)], check=True, capture_output=True, text=True)
+            result = subprocess.run([str(binary)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_evolution_targets_have_dev_pack_sprites(self):
         species_source = (ROOT / "src" / "game" / "Species.cpp").read_text()

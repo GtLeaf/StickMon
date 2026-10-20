@@ -417,3 +417,8 @@ def stamp_forest_fence(layers, map_width, map_height, forest_x, top_y, forest_wi
         "fence_bounds": (forest_x - 1, top_y, fence_right, bottom_y),
         "crown_bounds": (forest_x, top_y, forest_right, top_y),
     }
+
+# Original Caves snow trail, including complete tips, elbows and junctions.
+FROST_ROUTE_TILE_SOURCES = {4780: 1264, 4781: 1256, 4782: 1267, 4783: 1290, 4784: 1240, 4785: 1248, 4786: 1274, 4787: 1285, 4788: 1265, 4789: 1288, 4790: 1266, 4791: 1284, 4792: 1272, 4793: 1276, 4794: 1250}
+CUSTOM_TILE_SOURCES.update({tile: ("Caves.png", source)
+                            for tile, source in FROST_ROUTE_TILE_SOURCES.items()})

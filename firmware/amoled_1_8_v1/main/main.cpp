@@ -729,7 +729,8 @@ extern "C" void app_main(void) {
             Stickmon::ClawRuntime::instance().notePlayerActivity(nowMs);
 #endif
             if (event.type == AmoledV1::TouchEventType::DOWN) {
-                ESP_LOGI(TAG, "Touch down display=(%d,%d)", event.x, event.y);
+                ESP_LOGI(TAG, "Touch down raw=(%d,%d) display=(%d,%d)",
+                         event.rawX, event.rawY, event.x, event.y);
             }
             if (lockPhase != LockPhase::OPEN) {
                 if (lockPhase == LockPhase::LOCKED) {

@@ -55,7 +55,7 @@ constexpr uint32_t LOCK_FINAL_CLEANUP_DELAY_MS = 180;
 constexpr int LOCK_FINAL_RADIUS = 66;
 constexpr int LOCK_FEATHER_PIXELS = 8;
 constexpr int LOCK_COVER_MARGIN = LOCK_FEATHER_PIXELS + 2;
-constexpr int LOCK_UPDATE_ALIGNMENT = 2;
+constexpr int DISPLAY_UPDATE_ALIGNMENT = 2;
 constexpr int LOCK_SLEEP_BREATH_AMPLITUDE = 8;
 enum class LockPhase : uint8_t { OPEN, CLOSING, LOCKED, OPENING };
 constexpr size_t PHYSICAL_PIXELS =
@@ -246,6 +246,23 @@ struct ExploreSerialCommand {
                             app.handleTouch(event);
                             ESP_LOGI(TAG, "[DiagCmd] tap x=%d y=%d", x, y);
                         } else ESP_LOGW(TAG, "[DiagCmd] invalid tap");
+                    } else if (std::strncmp(line, "diag touch ", 11) == 0) {
+                        char phase[8] = {}, extra = 0;
+                        int x = -1, y = -1;
+                        if (std::sscanf(line + 11, "%7s %d %d %c", phase, &x, &y, &extra) == 3 &&
+                            x >= 0 && x < 368 && y >= 0 && y < 448 &&
+                            (!std::strcmp(phase, "down") || !std::strcmp(phase, "move") ||
+                             !std::strcmp(phase, "up"))) {
+                            AmoledV1::TouchEvent event{};
+                            event.x = x;
+                            event.y = y;
+                            event.timestampMs = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+                            event.type = !std::strcmp(phase, "down") ? AmoledV1::TouchEventType::DOWN
+                                : !std::strcmp(phase, "move") ? AmoledV1::TouchEventType::MOVE
+                                                            : AmoledV1::TouchEventType::UP;
+                            app.handleTouch(event);
+                            ESP_LOGI(TAG, "[DiagCmd] touch %s x=%d y=%d", phase, x, y);
+                        } else ESP_LOGW(TAG, "[DiagCmd] invalid touch");
                     } else if (std::strcmp(line, "diag shower soap") == 0 ||
                                std::strcmp(line, "diag shower brush") == 0) {
                         const uint8_t tool = std::strcmp(line, "diag shower brush") == 0 ? 1 : 0;
@@ -356,6 +373,24 @@ esp_err_t startDisplay(esp_lcd_panel_handle_t* panel,
     return bsp_display_brightness_set(72);
 }
 
+// Match the official CO5300 BSP rounder: inclusive ends must be odd.
+// Our ends are exclusive, so round all four bounds outward to even pixels.
+void alignDisplayUpdateRegion(uint16_t& xBegin, uint16_t& xEnd,
+                           uint16_t& yBegin, uint16_t& yEnd) {
+    xBegin = static_cast<uint16_t>(
+        xBegin / DISPLAY_UPDATE_ALIGNMENT * DISPLAY_UPDATE_ALIGNMENT);
+    yBegin = static_cast<uint16_t>(
+        yBegin / DISPLAY_UPDATE_ALIGNMENT * DISPLAY_UPDATE_ALIGNMENT);
+    xEnd = static_cast<uint16_t>(std::min<int>(
+        LOGICAL_WIDTH,
+        ((xEnd + DISPLAY_UPDATE_ALIGNMENT - 1) / DISPLAY_UPDATE_ALIGNMENT) *
+            DISPLAY_UPDATE_ALIGNMENT));
+    yEnd = static_cast<uint16_t>(std::min<int>(
+        LOGICAL_HEIGHT,
+        ((yEnd + DISPLAY_UPDATE_ALIGNMENT - 1) / DISPLAY_UPDATE_ALIGNMENT) *
+            DISPLAY_UPDATE_ALIGNMENT));
+}
+
 esp_err_t submitFrame(esp_lcd_panel_handle_t panel,
                       const uint16_t* physicalPixels,
                       const TransferBuffers& transferBuffers,
@@ -366,6 +401,8 @@ esp_err_t submitFrame(esp_lcd_panel_handle_t panel,
     sourceBegin = std::min<uint16_t>(sourceBegin, LOGICAL_HEIGHT);
     sourceEnd = std::min<uint16_t>(sourceEnd, LOGICAL_HEIGHT);
     if (sourceBegin >= sourceEnd) return ESP_OK;
+    uint16_t xBegin = 0, xEnd = LOGICAL_WIDTH;
+    alignDisplayUpdateRegion(xBegin, xEnd, sourceBegin, sourceEnd);
     esp_err_t result = ESP_OK;
     size_t pendingTransfers = 0;
     size_t nextBuffer = 0;
@@ -425,6 +462,9 @@ esp_err_t submitFrameRegion(esp_lcd_panel_handle_t panel,
     sourceBegin = std::min<uint16_t>(sourceBegin, LOGICAL_HEIGHT);
     sourceEnd = std::min<uint16_t>(sourceEnd, LOGICAL_HEIGHT);
     if (xBegin >= xEnd || sourceBegin >= sourceEnd) return ESP_OK;
+    // The framebuffer retains neighboring pixels; copy the expanded rectangle
+    // with its expanded stride, rather than shifting/rounding only LCD commands.
+    alignDisplayUpdateRegion(xBegin, xEnd, sourceBegin, sourceEnd);
 
     uint16_t physicalXBegin = xBegin;
     uint16_t physicalXEnd = xEnd;
@@ -560,21 +600,6 @@ void restoreFrameRegion(uint16_t* destination, const uint16_t* snapshot,
     }
 }
 
-void alignLockUpdateRegion(uint16_t& xBegin, uint16_t& xEnd,
-                           uint16_t& yBegin, uint16_t& yEnd) {
-    xBegin = static_cast<uint16_t>(
-        xBegin / LOCK_UPDATE_ALIGNMENT * LOCK_UPDATE_ALIGNMENT);
-    yBegin = static_cast<uint16_t>(
-        yBegin / LOCK_UPDATE_ALIGNMENT * LOCK_UPDATE_ALIGNMENT);
-    xEnd = static_cast<uint16_t>(std::min<int>(
-        LOGICAL_WIDTH,
-        ((xEnd + LOCK_UPDATE_ALIGNMENT - 1) / LOCK_UPDATE_ALIGNMENT) *
-            LOCK_UPDATE_ALIGNMENT));
-    yEnd = static_cast<uint16_t>(std::min<int>(
-        LOGICAL_HEIGHT,
-        ((yEnd + LOCK_UPDATE_ALIGNMENT - 1) / LOCK_UPDATE_ALIGNMENT) *
-            LOCK_UPDATE_ALIGNMENT));
-}
 
 int lockCoverRadius(int centerX, int centerY) {
     const int farX = std::max(centerX, static_cast<int>(LOGICAL_WIDTH) - 1 -
@@ -672,7 +697,7 @@ bool brainSay(const char* text, void* userCtx) {
 
 extern "C" void app_main(void) {
     AmoledV2::Ota::armBootGuard();
-    ESP_LOGI(TAG, "Starting AMOLED V1 display milestone");
+    ESP_LOGI(TAG, "Starting AMOLED V2 firmware (CO5300 / CST820 target)");
     ESP_LOGI(TAG, "Reset reason: %d", static_cast<int>(esp_reset_reason()));
     ESP_LOGI(TAG, "PSRAM size: %u bytes",
              static_cast<unsigned>(esp_psram_get_size()));
@@ -1198,7 +1223,7 @@ extern "C" void app_main(void) {
                     nativeRenderBegin = renderBegin;
                     nativeRenderEnd = renderEnd;
                 }
-                alignLockUpdateRegion(nativeRenderXBegin, nativeRenderXEnd,
+                alignDisplayUpdateRegion(nativeRenderXBegin, nativeRenderXEnd,
                                       nativeRenderBegin, nativeRenderEnd);
                 renderXBegin = nativeRenderXBegin;
                 renderXEnd = nativeRenderXEnd;
@@ -1217,7 +1242,7 @@ extern "C" void app_main(void) {
                         std::max(0, lockFrameFocusY - reach));
                     nativeRenderEnd = std::max<uint16_t>(nativeRenderEnd,
                         std::min<int>(LOGICAL_HEIGHT, lockFrameFocusY + reach));
-                    alignLockUpdateRegion(nativeRenderXBegin, nativeRenderXEnd,
+                    alignDisplayUpdateRegion(nativeRenderXBegin, nativeRenderXEnd,
                                           nativeRenderBegin, nativeRenderEnd);
                     app.forceRenderRegion(nativeRenderXBegin, nativeRenderBegin,
                                           nativeRenderXEnd, nativeRenderEnd);

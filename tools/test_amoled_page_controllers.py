@@ -33,6 +33,12 @@ class AmoledPageControllerTests(unittest.TestCase):
     def test_shop_sale_saves_once_and_zero_stock_stays_disabled(self):
         self.run_case("shop-transactions")
 
+    def test_failed_saves_retry_without_waiting_for_periodic_save(self):
+        self.run_case("save-retry")
+
+    def test_history_only_save_failure_retries_after_successful_snapshot(self):
+        run_page_case("history-retry")
+
     def test_page_exit_consumes_gestures_from_all_extracted_pages(self):
         self.run_case("page-exit-gestures")
 

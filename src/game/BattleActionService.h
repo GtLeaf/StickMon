@@ -56,8 +56,8 @@ void prepare(
     Game::MoveId moveId,
     const BattleSystem::DamageContext& context = {});
 
-// Commit at the presentation's impact node. Only its first call returns true;
-// later calls leave state and randomness untouched and retain the result.
+// Adapters choose the commit point (AMOLED action start, Stick impact). Only
+// its first call returns true; repeats retain the result without state or RNG changes.
 bool commit(
     PendingAction& pending,
     Game::MonsterRuntime& attacker,

@@ -1,0 +1,14 @@
+{
+  "mode": "built-in image_gen",
+  "date": "2026-10-18",
+  "prompts": [
+    {
+      "name": "picture-right-wall",
+      "prompt": "Use case: precise-object-edit. Independent transparent furniture sprite for StickMon's existing STARRY NIGHT set. Match input's cozy detailed original handcrafted game rendering: warm walnut wood, muted indigo/slate blue, ivory cream, restrained gold. Broad readable color clusters and warm dark outlines, restrained shading, no photorealism or tiny texture. Keep design legible at the final tiny game sprite size. Exactly ONE isolated complete asset on true transparent alpha, no room, wall, floor, extra objects, captions, text, UI, watermark or characters. No external cast shadow.\nSpecific edit: Change ONLY the mounting perspective of this constellation picture to fit the RIGHT wall of the same dollhouse room. The top and bottom edges must slope DOWNWARD as they move toward image right; vertical edges remain nearly vertical. Current image is left-wall view with upward-right edges; rebuild right-wall view. Keep walnut frame, cream inner trim, midnight blue illustration, sparse golden constellation and crescent. Keep the illustration itself readable and naturally oriented, no backwards lettering. Approximate final sprite bounding 56x48 pixels. No hanging string. Do not keep the original left-wall upward-right projection."
+    },
+    {
+      "name": "star-floor-cushion",
+      "prompt": "Use case: precise-object-edit. Independent transparent furniture sprite for StickMon's existing STARRY NIGHT set. Match input's cozy detailed original handcrafted game rendering: warm walnut wood, muted indigo/slate blue, ivory cream, restrained gold. Broad readable color clusters and warm dark outlines, restrained shading, no photorealism or tiny texture. Keep design legible at the final tiny game sprite size. Exactly ONE isolated complete asset on true transparent alpha, no room, wall, floor, extra objects, captions, text, UI, watermark or characters. No external cast shadow.\nSpecific edit: Transform this tiny flat toy into a substantially larger plump STAR-SHAPED FLOOR THROW PILLOW. Keep its rounded five-point buttery-gold star silhouette, large ivory crescent at center and muted indigo seam. Full plush pillow volume, soft stuffed bulges with clear broad shading, slightly propped upright/leaning back as a cushion rather than lying completely flat. Elevated front dollhouse camera. No face, limbs, stand, planet or extra prop. It will sit on the back-right floor where a small globe previously stood. Final game sprite 64x56 pixels, over twice old toy width; full object fills most of its bounds and remains clear at native size. Not a small stuffed charm."
+    }
+  ]
+}

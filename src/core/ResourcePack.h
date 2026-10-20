@@ -20,6 +20,7 @@ public:
     bool openCry(uint16_t speciesId, Platform::ResourceFile& file) const;
     bool openAudio(const char* audioId, Platform::ResourceFile& file) const;
     bool openRoom(const char* roomId, Platform::ResourceFile& file) const;
+    bool openFurniture(const char* assetId, Platform::ResourceFile& file) const;
     bool openFont(const char* fontId, Platform::ResourceFile& file) const;
     bool openDefaultFont(Platform::ResourceFile& file) const;
     bool openUiAssets(Platform::ResourceFile& file) const;

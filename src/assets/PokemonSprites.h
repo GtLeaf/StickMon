@@ -1660,9 +1660,16 @@ struct SpriteFrame {
     uint8_t paletteSize;
     uint8_t source;
     uint8_t groundPaddingPlusOne;
+    uint8_t shadowX, shadowY, shadowRadiusX, shadowRadiusY;
     uint32_t offset;
     uint32_t length;
     uint32_t paletteOffset;
+};
+
+// Shadow center is relative to the frame canvas center, before body lift.
+struct FrameShadow {
+    int16_t offsetX = 0, offsetY = 0;
+    uint8_t radiusX = 0, radiusY = 0;
 };
 
 struct FrameBounds {
@@ -1687,6 +1694,7 @@ struct SpriteCacheStats {
 const SpriteFrame* findSpeciesSprite(uint16_t speciesId, SpriteKind kind);
 const SpriteFrame* findCachedSpeciesSprite(uint16_t speciesId, SpriteKind kind);
 int16_t frameGroundOffsetY(const SpriteFrame* frame);
+FrameShadow frameShadow(const SpriteFrame* frame, bool flipX = false);
 FrameBounds frameVisibleBounds(const SpriteFrame* frame);
 uint8_t frameVisibleWidth(const SpriteFrame* frame);
 bool walkingAnimation(uint16_t speciesId, WalkDirection direction, WalkingAnimation& animation);

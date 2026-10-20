@@ -1,0 +1,66 @@
+{
+  "theme": "forest",
+  "export": "AMOLED native physical pixels (2x room logical coordinates)",
+  "items": [
+    {
+      "name": "bed",
+      "file": "assets/bed-forest.png",
+      "width": 160,
+      "height": 102,
+      "logicalWidth": 80,
+      "logicalHeight": 51,
+      "bytes": 36755,
+      "source": "approved forest asset"
+    },
+    {
+      "name": "rug",
+      "file": "assets/rug-forest.png",
+      "width": 204,
+      "height": 100,
+      "logicalWidth": 102,
+      "logicalHeight": 50,
+      "bytes": 48869,
+      "source": "approved forest asset"
+    },
+    {
+      "name": "bowl",
+      "file": "assets/bowl-forest.png",
+      "width": 40,
+      "height": 28,
+      "logicalWidth": 20,
+      "logicalHeight": 14,
+      "bytes": 3051,
+      "source": "generated"
+    },
+    {
+      "name": "shelf",
+      "file": "assets/shelf-forest.png",
+      "width": 112,
+      "height": 68,
+      "logicalWidth": 56,
+      "logicalHeight": 34,
+      "bytes": 14605,
+      "source": "generated"
+    },
+    {
+      "name": "window-day",
+      "file": "assets/window-day-forest.png",
+      "width": 90,
+      "height": 98,
+      "logicalWidth": 45,
+      "logicalHeight": 49,
+      "bytes": 19092,
+      "source": "generated"
+    },
+    {
+      "name": "window-night",
+      "file": "assets/window-night-forest.png",
+      "width": 90,
+      "height": 98,
+      "logicalWidth": 45,
+      "logicalHeight": 49,
+      "bytes": 18601,
+      "source": "generated"
+    }
+  ]
+}

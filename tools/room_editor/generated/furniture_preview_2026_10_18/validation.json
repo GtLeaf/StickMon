@@ -1,0 +1,110 @@
+{
+  "originalLibraryCount": 6,
+  "libraryCount": 12,
+  "assets": [
+    {
+      "name": "rug-forest-leaf",
+      "originalSize": [
+        1798,
+        875
+      ],
+      "displaySize": [
+        102,
+        50
+      ],
+      "librarySize": [
+        204,
+        100
+      ],
+      "originalBytes": 2037007,
+      "libraryBytes": 49095
+    },
+    {
+      "name": "rug-starry-night",
+      "originalSize": [
+        1798,
+        875
+      ],
+      "displaySize": [
+        102,
+        50
+      ],
+      "librarySize": [
+        204,
+        100
+      ],
+      "originalBytes": 2044434,
+      "libraryBytes": 48528
+    },
+    {
+      "name": "rug-cloud",
+      "originalSize": [
+        1798,
+        875
+      ],
+      "displaySize": [
+        102,
+        50
+      ],
+      "librarySize": [
+        204,
+        100
+      ],
+      "originalBytes": 1931572,
+      "libraryBytes": 45153
+    },
+    {
+      "name": "bed-forest-leaf",
+      "originalSize": [
+        1567,
+        1004
+      ],
+      "displaySize": [
+        80,
+        51
+      ],
+      "librarySize": [
+        160,
+        102
+      ],
+      "originalBytes": 1815034,
+      "libraryBytes": 36705
+    },
+    {
+      "name": "bed-starry-night",
+      "originalSize": [
+        1565,
+        1005
+      ],
+      "displaySize": [
+        80,
+        51
+      ],
+      "librarySize": [
+        160,
+        102
+      ],
+      "originalBytes": 1766186,
+      "libraryBytes": 30641
+    },
+    {
+      "name": "bed-cloud",
+      "originalSize": [
+        1567,
+        1004
+      ],
+      "displaySize": [
+        80,
+        51
+      ],
+      "librarySize": [
+        160,
+        102
+      ],
+      "originalBytes": 1640907,
+      "libraryBytes": 29804
+    }
+  ],
+  "totalOriginalBytes": 11235140,
+  "totalLibraryBytes": 239926
+}

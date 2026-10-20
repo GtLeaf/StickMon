@@ -1,0 +1,46 @@
+{
+  "theme": "starry",
+  "revision": 2,
+  "export": "AMOLED native physical pixels",
+  "items": [
+    {
+      "name": "picture-right-wall",
+      "label": "右墙挂画",
+      "file": "assets/picture-right-wall.png",
+      "width": 56,
+      "height": 48,
+      "bytes": 4327
+    },
+    {
+      "name": "star-floor-cushion",
+      "label": "星星抱枕",
+      "file": "assets/star-floor-cushion.png",
+      "width": 64,
+      "height": 56,
+      "bytes": 7966
+    }
+  ],
+  "placements": {
+    "picture-right-wall": [
+      193,
+      43
+    ],
+    "star-floor-cushion": [
+      183,
+      82
+    ]
+  },
+  "reusedFurniture": [
+    {
+      "name": "furniture_shelf",
+      "label": "左墙置物架（含摆件）",
+      "file": "../starry-set-v1/assets/shelf-starry.png",
+      "width": 112,
+      "height": 68,
+      "positionLogical": [
+        67,
+        21
+      ]
+    }
+  ]
+}

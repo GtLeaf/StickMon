@@ -1,0 +1,41 @@
+{
+  "generated_with": "built-in image_gen",
+  "variants": [
+    {
+      "name": "rug-forest-leaf",
+      "kind": "rug",
+      "source": "/Users/gtleaf/.codex/generated_images/01a13421-87ee-7bf0-b664-cbe88bc8cfff/exec-609ae5be-c480-4732-b8b8-efb417455029.png",
+      "file": "rug-forest-leaf.png"
+    },
+    {
+      "name": "rug-starry-night",
+      "kind": "rug",
+      "source": "/Users/gtleaf/.codex/generated_images/01a13421-87ee-7bf0-b664-cbe88bc8cfff/exec-95d6f11b-740a-46c1-b2ce-2e07aa1f783c.png",
+      "file": "rug-starry-night.png"
+    },
+    {
+      "name": "rug-cloud",
+      "kind": "rug",
+      "source": "/Users/gtleaf/.codex/generated_images/01a13421-87ee-7bf0-b664-cbe88bc8cfff/exec-664344c6-0ddf-471e-bbc4-7b3b735a203c.png",
+      "file": "rug-cloud.png"
+    },
+    {
+      "name": "bed-forest-leaf",
+      "kind": "bed",
+      "source": "/Users/gtleaf/.codex/generated_images/01a13421-87ee-7bf0-b664-cbe88bc8cfff/exec-aa2ee07b-8cc5-489c-8176-83bfb8d9e558.png",
+      "file": "bed-forest-leaf.png"
+    },
+    {
+      "name": "bed-starry-night",
+      "kind": "bed",
+      "source": "/Users/gtleaf/.codex/generated_images/01a13421-87ee-7bf0-b664-cbe88bc8cfff/exec-f2cc5fe5-be02-4d95-b7ab-e7901f4b8ee4.png",
+      "file": "bed-starry-night.png"
+    },
+    {
+      "name": "bed-cloud",
+      "kind": "bed",
+      "source": "/Users/gtleaf/.codex/generated_images/01a13421-87ee-7bf0-b664-cbe88bc8cfff/exec-29304340-9c5d-4efa-b718-cd73c285dd92.png",
+      "file": "bed-cloud.png"
+    }
+  ]
+}

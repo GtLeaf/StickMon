@@ -11,7 +11,7 @@ constexpr uint8_t PATH_COUNT = 2;
 constexpr uint8_t MAX_PATH_COUNT = 3;
 constexpr uint8_t MAX_PATH_POINTS = 48;
 constexpr uint16_t CELL_COUNT = WIDTH * HEIGHT;
-constexpr uint16_t ALGORITHM_VERSION = 18;
+constexpr uint16_t ALGORITHM_VERSION = 21;
 constexpr uint8_t GRASS_PATH_AREA = 0;
 constexpr uint8_t CREEK_BRIDGE_SLOPE_AREA = 1;
 constexpr uint8_t TALL_GRASS_PARK_AREA = 2;
@@ -47,6 +47,7 @@ struct Path {
     uint8_t pointCount = 0;
     Endpoint exit = {};
     bool fallsToNextLevel = false;
+    bool cellCentered = false;  // Caves use cell centers, outdoor roads use paired cells.
 };
 
 struct Map {

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import re
+import json
+import hashlib
 import shutil
 import struct
 import subprocess
@@ -51,6 +53,34 @@ def configured_explore_species():
 
 
 class GeneratePokemonSpritesTests(unittest.TestCase):
+    def test_battle_sizes_preserve_source_occupancy_and_generated_header_is_current(self):
+        sizes = generator.battle_front_sizes()
+        self.assertEqual(sorted({sid for sid, _, _ in sizes}), [sid for sid, _, _ in sizes])
+        self.assertTrue(all(0 < w <= 160 and 0 < h <= 160 for _, w, h in sizes))
+        dimensions = {sid: (w, h) for sid, w, h in sizes}
+        self.assertEqual((70, 66), dimensions[1])
+        self.assertEqual((128, 138), dimensions[143])
+        self.assertEqual((158, 160), dimensions[130])
+        self.assertGreater(dimensions[149][1], dimensions[1][1] * 2)
+        with tempfile.TemporaryDirectory() as directory:
+            header = Path(directory) / "PokemonBattleSizes.h"
+            generator.write_battle_sizes(header)
+            self.assertEqual(generator.OUT_BATTLE_SIZES.read_text(), header.read_text())
+
+    def test_battle_sizes_use_common_canvas_for_different_source_resolutions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            graphics = Path(directory)
+            (graphics / "Front").mkdir()
+            for size, ident in ((80, "SMALL"), (160, "LARGE")):
+                image = Image.new("RGBA", (size, size))
+                image.paste((255, 255, 255, 255),
+                            (size // 4, size // 4, size * 3 // 4, size * 3 // 4))
+                image.save(graphics / "Front" / f"{ident}.png")
+            with mock.patch.object(generator, "GRAPHICS", graphics), \
+                 mock.patch.object(generator, "species_rows", return_value=[(1, "SMALL"), (2, "LARGE")]), \
+                 mock.patch.object(generator, "PMD_SPECS", []):
+                self.assertEqual([(1, 80, 80), (2, 80, 80)], generator.battle_front_sizes())
+
     def test_asset_writer_records_visible_bottom_padding(self):
         image = Image.new("RGBA", (12, 16), (0, 0, 0, 0))
         image.paste((255, 255, 255, 255), (2, 3, 10, 11))
@@ -79,6 +109,43 @@ class GeneratePokemonSpritesTests(unittest.TestCase):
             generator.SPRITE_FRAME_GROUND_MARKER | 5,
             packed_frame[5],
         )
+
+    def test_shadow_registration_covers_every_packed_pmd_source_and_is_current(self):
+        metadata = json.loads(generator.SHADOW_METADATA.read_text())["frames"]
+        packed_count = 0
+        for spec in PMD_SPECS:
+            writer = generator.AssetWriter()
+            generator.add_pmd_frames(writer, spec)
+            for frame in writer.frames:
+                x, y, rx, ry = frame["shadow"]
+                self.assertTrue(0 <= x <= 255 and 0 <= y <= 255)
+                self.assertTrue(0 < rx <= frame["width"])
+                self.assertTrue(0 < ry <= frame["height"])
+                packed_count += 1
+        self.assertEqual(1597, packed_count)
+        for key, entry in metadata.items():
+            self.assertEqual(entry["sha256"], hashlib.sha256(
+                (generator.PROCESSED / key).read_bytes()).hexdigest(), key)
+            if entry["iou"] < 0.9:
+                self.assertEqual("local-review", entry.get("calibration"), key)
+
+    def test_shadow_pack_roundtrip_keeps_feet_separate_from_visible_bottom(self):
+        spec = generator.PMD_BY_ID[4]
+        writer = generator.AssetWriter()
+        generator.add_pmd_frames(writer, spec)
+        kinds = {f["kind"]: i for i, f in enumerate(writer.frames)}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "004.smonsp"
+            generator.write_species_pack(path, 4, writer, kinds)
+            packed = path.read_bytes()
+        self.assertEqual(3, struct.unpack_from("<H", packed, 4)[0])
+        raw = zlib.decompress(packed[28:], -15)
+        for i, frame in enumerate(writer.frames):
+            record = struct.unpack_from("<HBBBBHIIIBBBB", raw, i * 24)
+            self.assertEqual(tuple(record[9:]), frame["shadow"])
+        left = next(f for f in writer.frames if f["kind"] == "CHARMANDER_WALKING_LEFT_0")
+        self.assertEqual((30, 50, 14, 6), left["shadow"])
+        self.assertEqual(56, left["height"] - left["ground_padding"])
 
     def test_trim_alpha_padding_keeps_only_visible_bounds(self):
         image = Image.new("RGBA", (8, 7), (0, 0, 0, 0))

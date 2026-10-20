@@ -70,6 +70,8 @@ constexpr int objectDepthOffsetRows(uint16_t tileId, uint8_t layer) {
     const int vegetation = foregroundDepthOffsetRows(tileId);
     if (vegetation) return vegetation;
     if (layer == 0) return 0;
+    if (tileId >= 4512 && tileId <= 4523) return 1;
+    if (layer == 2 && tileId == 4543) return 2;
     if (tileId == 859 || tileId == 1231 || tileId == 1532 ||
         (tileId >= 4507 && tileId <= 4510) ||
         (tileId >= 4542 && tileId <= 4544)) return 1;

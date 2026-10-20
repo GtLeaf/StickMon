@@ -348,6 +348,13 @@ bool ResourcePack::openFont(const char* fontId, Platform::ResourceFile& file) co
     return written > 0 && static_cast<size_t>(written) < sizeof(relative) && openRelative(relative, file);
 }
 
+bool ResourcePack::openFurniture(const char* assetId, Platform::ResourceFile& file) const {
+    if (!active_ || !isSafePackName(assetId)) return false;
+    char relative[64];
+    int written = std::snprintf(relative, sizeof(relative), "furniture/%s.smonfurn", assetId);
+    return written > 0 && static_cast<size_t>(written) < sizeof(relative) && openRelative(relative, file);
+}
+
 bool ResourcePack::openDefaultFont(Platform::ResourceFile& file) const {
     return active_ && openRelative(defaultFontPath_, file);
 }

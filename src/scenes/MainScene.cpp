@@ -7077,22 +7077,16 @@ void MainScene::drawVisitorShadow() {
     const PmdSpriteConfig* config =
         pmdSpriteConfigForSpecies(visitor.speciesId);
     bool floating = config && config->airHeight > 0.0f;
-    uint8_t frameW = FlashStorage::readByte(&frame->width);
-    uint8_t frameH = FlashStorage::readByte(&frame->height);
-    int rx = MathUtil::clamp(
-        static_cast<int>(frameW * (floating ? 0.25f : 0.44f)),
-        floating ? 10 : 16, floating ? 22 : 40);
-    int ry = MathUtil::clamp(
-        static_cast<int>(frameH * (floating ? 0.055f : 0.14f)),
-        floating ? 3 : 6, floating ? 6 : 14);
+    const auto shadow = PokemonSprites::frameShadow(frame, flipX);
+    int rx = shadow.radiusX;
+    int ry = shadow.radiusY;
     if (night) {
         rx = (rx * 11 + 5) / 10;
         ry = (ry * 11 + 5) / 10;
     }
-    int shadowX = (int)roundf(visitor.x) + visitor.renderOffsetX;
+    int shadowX = (int)roundf(visitor.x) + visitor.renderOffsetX + shadow.offsetX;
     int shadowY = worldToScreenY(
-        visitor.y + PokemonSprites::frameGroundOffsetY(frame) +
-        visitor.renderOffsetY);
+        visitor.y + shadow.offsetY + visitor.renderOffsetY);
     uint16_t shadowColor = night ? PixelRenderer::rgb(18, 16, 24) : PixelRenderer::rgb(36, 29, 24);
     uint8_t outerAlpha =
         night ? (floating ? 84 : 122) : (floating ? 68 : 116);
@@ -7388,19 +7382,18 @@ void MainScene::drawShadow() {
     bool night = mainSceneIsNight();
     const PmdSpriteConfig* config = active ? pmdSpriteConfigForSpecies(active->id) : nullptr;
     bool floating = config && config->airHeight > 0.0f;
-    uint8_t frameW = FlashStorage::readByte(&frame->width);
-    uint8_t frameH = FlashStorage::readByte(&frame->height);
-
-    int rx = MathUtil::clamp((int)(frameW * (floating ? 0.25f : 0.44f)), floating ? 10 : 16, floating ? 22 : 40);
-    int ry = MathUtil::clamp((int)(frameH * (floating ? 0.055f : 0.14f)), floating ? 3 : 6, floating ? 6 : 14);
+    const bool flipX = config ? pmdDirectionFlipX() : facingRight;
+    const auto shadow = PokemonSprites::frameShadow(frame, flipX);
+    int rx = shadow.radiusX;
+    int ry = shadow.radiusY;
     if (night) {
         rx = (rx * 11 + 5) / 10;
         ry = (ry * 11 + 5) / 10;
     }
 
-    int shadowX = (int)mainActor.x + pmdRenderOffsetX;
+    int shadowX = (int)mainActor.x + pmdRenderOffsetX + shadow.offsetX;
     int shadowY = worldToScreenY(
-        mainActor.y + PokemonSprites::frameGroundOffsetY(frame) + pmdRenderOffsetY);
+        mainActor.y + shadow.offsetY + pmdRenderOffsetY);
     uint16_t shadowColor = night ? PixelRenderer::rgb(18, 16, 24) : PixelRenderer::rgb(36, 29, 24);
     uint8_t outerAlpha = night ? (floating ? 84 : 122) : (floating ? 68 : 116);
     uint8_t coreAlpha = night ? (floating ? 0 : 92) : (floating ? 0 : 86);

@@ -61,6 +61,22 @@ uint32_t crc32(const uint8_t* data, size_t length) {
 
 }  // namespace
 
+bool inflateMemory(const uint8_t* compressed, size_t compressedBytes,
+                   uint8_t* output, size_t outputBytes) {
+    if (!compressed || !compressedBytes || !output || !outputBytes) return false;
+    TINF_DATA state{};
+    uzlib_init();
+    uzlib_uncompress_init(&state, nullptr, 0);
+    state.source = compressed;
+    state.source_limit = compressed + compressedBytes;
+    state.dest_start = state.dest = output;
+    state.dest_limit = output + outputBytes;
+    int status = TINF_OK;
+    while (state.dest < state.dest_limit && status == TINF_OK)
+        status = uzlib_uncompress(&state);
+    return state.dest == state.dest_limit && (status == TINF_OK || status == TINF_DONE);
+}
+
 bool inflateFile(Platform::ResourceFile& file,
                  uint32_t compressedBytes,
                  uint8_t* output,

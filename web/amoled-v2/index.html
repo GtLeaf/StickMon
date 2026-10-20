@@ -7,18 +7,17 @@
 :root{color-scheme:dark;background:#101014;color:#e8e6df;font:14px/1.6 'SF Mono',Menlo,Consolas,'PingFang SC','Microsoft YaHei',sans-serif}
 *{box-sizing:border-box}body{margin:0;padding:14px 12px 18px}main{max-width:680px;margin:auto}
 .heading{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:12px}.heading strong{color:#ffd23f;letter-spacing:1px}.heading span{color:#9a97a8;font-size:12px}
-.stage{display:flex;gap:24px;align-items:center}.device{width:392px;max-width:100%;flex-shrink:0;border:1px solid #33333f;border-radius:24px;padding:12px;background:#1a1a22}
+.stage{display:flex;justify-content:center;align-items:center}.device{width:392px;max-width:100%;flex-shrink:0;border:1px solid #33333f;border-radius:24px;padding:12px;background:#1a1a22}
 canvas{display:block;width:100%;height:auto;aspect-ratio:368/448;border-radius:14px;background:#050507;touch-action:none;image-rendering:pixelated;user-select:none;-webkit-user-select:none}
-.label{font-size:10px;color:#9a97a8;letter-spacing:2px;text-align:center;margin-top:8px}.help{flex:1;color:#9a97a8;font-size:12px}.help p{margin:0 0 12px}.help strong{color:#e8e6df}
+.label{font-size:10px;color:#9a97a8;letter-spacing:2px;text-align:center;margin-top:8px}
 .tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}button{font:inherit;color:#e8e6df;background:#1a1a22;border:1px solid #33333f;padding:7px 12px;border-radius:7px;cursor:pointer;min-height:40px}button:hover{border-color:#ffd23f}button:focus-visible,canvas:focus-visible{outline:2px solid #ffd23f;outline-offset:3px}button:disabled{opacity:.45;cursor:default}#retry{color:#ffd23f}
 #status{margin:10px 0 0;min-height:23px;font-size:12px;color:#9a97a8}#status.error{color:#ffae91}
-@media(max-width:580px){.stage{display:block}.device{margin:auto;width:368px;padding:9px;border-radius:20px}.help{margin-top:12px}.help p{margin:0 0 4px}.heading span{font-size:10px}.tools{margin-top:10px}body{padding:10px 8px 14px}}
+@media(max-width:580px){.stage{display:block}.device{margin:auto;width:368px;padding:9px;border-radius:20px}.heading span{font-size:10px}.tools{margin-top:10px}body{padding:10px 8px 14px}}
 </style>
 <main>
   <div class="heading"><strong>StickMon</strong><span>微雪 AMOLED 1.8 V2</span></div>
   <div class="stage">
     <div class="device"><canvas id="stickmon-canvas" width="368" height="448" tabindex="0" aria-label="微雪游戏屏幕，支持点击、长按和拖动"></canvas><div class="label">WAVESHARE · AMOLED V2</div></div>
-    <aside class="help"><p><strong>直接触摸屏幕开始试玩</strong></p><p>电脑支持点击、长按和拖动。手机可直接触摸，屏幕外可滚动页面。</p><p>进度保存在当前浏览器，与 Stick 试玩和实体设备分别保存。</p><p>网页试玩不含远程聊天、设备联网及 OTA 更新。</p></aside>
   </div>
   <div class="tools"><button id="mute" disabled aria-pressed="false">静音</button><button id="restart" disabled>重启</button><button id="reset" disabled>清空存档</button><button id="resume" hidden>继续试玩</button><button id="retry" hidden>重新加载</button></div>
   <p id="status" role="status" aria-live="polite">正在准备微雪试玩…</p>

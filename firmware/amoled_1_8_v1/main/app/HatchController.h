@@ -74,7 +74,6 @@ public:
     AmoledUi::Rect& eggHitBounds() const { return eggHitBounds_; }
 
     const State& state() const { return state_; }
-    State& state() { return state_; }
 
 private:
     State state_;

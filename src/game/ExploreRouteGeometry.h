@@ -23,7 +23,7 @@ inline WorldPoint pathPoint(const ExploreMapGenerator::Path& path,
     if (index >= path.pointCount) index = path.pointCount - 1;
     const ExploreMapGenerator::Point& point = path.points[index];
     WorldPoint world{tileCenter(point.x), tileCenter(point.y)};
-    if (path.pointCount == 1) return world;
+    if (path.pointCount == 1 || path.cellCentered) return world;
 
     // Roads are two tiles wide. Their centerline therefore sits halfway
     // between the paired cells; at a turn, both axes need that offset.

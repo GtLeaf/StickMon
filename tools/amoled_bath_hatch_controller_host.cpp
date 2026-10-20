@@ -1,11 +1,23 @@
 #include "app/HatchController.h"
 #include "app/ShowerController.h"
+#include "app/ProgressionFlow.h"
+#include "app/TeamController.h"
+#include "app/InventoryController.h"
+#include "game/MonsterFactory.h"
+
+#include <type_traits>
+#include <utility>
 
 #include <cassert>
 #include <cstdio>
 
 void checkBathHatchControllerEffects() {
     using namespace AmoledV1;
+    static_assert(std::is_const_v<std::remove_reference_t<decltype(std::declval<HatchController&>().state())>>);
+    static_assert(std::is_const_v<std::remove_reference_t<decltype(std::declval<ShowerController&>().state())>>);
+    static_assert(std::is_const_v<std::remove_reference_t<decltype(std::declval<TeamController&>().state())>>);
+    static_assert(std::is_const_v<std::remove_reference_t<decltype(std::declval<InventoryController&>().state())>>);
+    static_assert(std::is_const_v<std::remove_reference_t<decltype(std::declval<ProgressionFlow&>().state())>>);
     HatchController hatch;
     const uint32_t start = 0xFFFFFF00U;
     hatch.reset(start);
@@ -92,5 +104,38 @@ void checkBathHatchControllerEffects() {
     assert(shower.state().showerMode == ShowerMode::MENU);
     const auto drained = shower.takeEffects();
     assert(!drained.redraw && !drained.sessionReset && drained.rewardStageMask == 0);
+    // The growth flow consumes effects once, preserves stones on cancellation,
+    // and cannot apply a completed evolution again (including clock wrap).
+    Game::GameState growth;
+    growth.teamCount = 1;
+    growth.team[0] = Game::MonsterFactory::create(133, 20);
+    assert(Game::ItemInventory::add(growth, Game::ItemId::WATER_STONE));
+    ProgressionFlow flow;
+    const uint32_t evolutionStart = 0xFFFFFF00U;
+    assert(flow.openEvolution(growth, AppSceneFlow::Scene::HOME, 0, 133, 134,
+                              evolutionStart, Game::ItemId::WATER_STONE));
+    assert(flow.takeEffects().preloadTo == 134);
+    assert(flow.takeEffects().preloadTo == 0);
+    assert(flow.cancelEvolution(evolutionStart + 100));
+    assert(flow.takeEffects().stopCry);
+    assert(!flow.takeEffects().stopCry);
+    const uint32_t cancelledAt = evolutionStart + 100 + Game::EvolutionSequence::CANCEL_COMPLETE_MS;
+    flow.tap(growth, 0, 0, cancelledAt);
+    assert(flow.takeEffects().completed);
+    assert(growth.team[0].speciesId == 133);
+    assert(Game::ItemInventory::count(growth, Game::ItemId::WATER_STONE) == 1);
+    assert(flow.openEvolution(growth, AppSceneFlow::Scene::HOME, 0, 133, 134,
+                              cancelledAt, Game::ItemId::WATER_STONE));
+    flow.takeEffects();
+    flow.advance(growth, cancelledAt + Game::EvolutionSequence::COMPLETE_MS);
+    const auto evolved = flow.takeEffects();
+    assert(evolved.save && evolved.syncTeam && evolved.completed);
+    assert(growth.team[0].speciesId == 134);
+    assert(Game::ItemInventory::count(growth, Game::ItemId::WATER_STONE) == 0);
+    flow.advance(growth, cancelledAt + 10000);
+    flow.update(cancelledAt + 10000);
+    const auto duplicate = flow.takeEffects();
+    assert(!duplicate.save && !duplicate.completed && !duplicate.syncTeam && duplicate.rowEnd == 0);
+
     std::puts("bath/hatch controllers: one-shot rewards, cancellation, completion, IMU retry, pause/wrap and failed-save acknowledgement verified");
 }

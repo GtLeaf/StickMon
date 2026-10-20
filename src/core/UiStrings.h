@@ -727,7 +727,14 @@ static constexpr const char* RESOURCE_ITEMS[] = {
     ADD_COINS,
     Ui::BACK,
 };
-static constexpr const char* ENV_ITEMS[] = {
+static constexpr const char* ROOM = "房间";
+constexpr const char* BED = "床";
+constexpr const char* RUG = "地毯";
+constexpr const char* FURNITURE_STYLES[] = {"原样", "森林", "星月", "云朵"};
+constexpr unsigned FURNITURE_STYLE_COUNT = sizeof(FURNITURE_STYLES) / sizeof(FURNITURE_STYLES[0]);
+constexpr const char* ROOM_ITEMS[] = {BED, RUG, Ui::BACK};
+constexpr const char* AMOLED_ENV_ITEMS[] = {SET_TIME, LIGHT_SOURCE, ROOM, Ui::BACK};
+constexpr const char* ENV_ITEMS[] = {
     SET_TIME,
     LIGHT_SOURCE,
     Ui::BACK,

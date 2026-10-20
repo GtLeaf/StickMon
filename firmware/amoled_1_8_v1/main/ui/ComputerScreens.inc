@@ -317,15 +317,20 @@ void renderComputerScreen(Canvas565& canvas, const ComputerViewModel& model,
                         monster->speciesId, PokemonSprites::SpriteKind::ICON_0);
                 drawContactAvatar(frame, 52, y + 45, 76);
                 const char* status = visiting ? Ui::Storage::VISITING_SHORT
-                    : inTeam ? Ui::Storage::IN_TEAM
-                    : inviteLocked ? Ui::Storage::INVITE_LOCKED_SHORT : nullptr;
+                    : !inTeam && inviteLocked
+                        ? Ui::Storage::INVITE_LOCKED_SHORT : nullptr;
                 const int statusX = status ? 340 - textWidth(status) : 340;
+                const int flagSpace = inTeam ? TeamFlag::width(2) + 6 : 0;
+                const int nameWidth = std::min(textWidth(species->name),
+                    std::max(0, statusX - 112 - flagSpace));
                 pageClip.setRect(104, y + 10,
-                                 std::max(0, statusX - 112), 32);
+                                 nameWidth, 32);
                 text(canvas, 104, y + 10, species->name,
                      selected ? rgb(248, 210, 105) : rgb(226, 238, 233));
                 pageClip.setRect(0, MENU_CONTENT_TOP, AmoledUi::WIDTH,
                                  AmoledUi::HEIGHT - MENU_CONTENT_TOP);
+                if (inTeam) TeamFlag::draw(canvas, 104 + nameWidth + 6,
+                                           y + 12, 2);
                 text(canvas, 104, y + 48, contactBondLabel(monster->bond),
                      contactBondColor(monster->bond));
                 if (status) {

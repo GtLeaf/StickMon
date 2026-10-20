@@ -34,6 +34,7 @@ private:
     static void onInterrupt(esp_lcd_touch_handle_t touch);
 
     esp_lcd_touch_handle_t handle = nullptr;
+    bool legacyFtController_ = false;
     volatile bool interruptPending = false;
     volatile bool interruptMasked_ = false;
     void* ownerTask_ = nullptr;

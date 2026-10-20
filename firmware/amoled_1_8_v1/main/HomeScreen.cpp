@@ -1,3 +1,4 @@
+#include "presentation/PokemonShadow.h"
 #include "HomeScreen.h"
 #include "AmoledGeometry.h"
 #include "ui/UiMetrics.h"
@@ -38,6 +39,7 @@
 #include "presentation/HudRenderer.h"
 #include "presentation/PixelRenderer.h"
 #include "presentation/QrCodeGen.h"
+#include "presentation/TeamFlag.h"
 
 namespace AmoledV1 {
 using UiCommon::rgb;
@@ -57,6 +59,47 @@ constexpr int HOME_HUD_BUTTON_Y = 364;
 constexpr int HOME_HUD_BUTTON_SIZE = 64;
 constexpr int HOME_MONSTER_PANEL_X = 192;
 constexpr int HOME_MONSTER_PANEL_W = 164;
+
+void drawHomeHudMessage(Canvas565& canvas, const char* message) {
+    // Match the native font widths and keep UTF-8 glyphs intact when wrapping.
+    constexpr int maxWidth = AmoledUi::WIDTH - 32;
+    char lines[2][96] = {};
+    int count = 0;
+    for (; count < 2 && *message; ++count) {
+        size_t length = 0;
+        int width = 0;
+        while (*message && *message != '\n') {
+            const char* next = message + 1;
+            while (*next && (static_cast<uint8_t>(*next) & 0xC0) == 0x80) ++next;
+            const size_t bytes = static_cast<size_t>(next - message);
+            const int glyphWidth = static_cast<uint8_t>(*message) < 0x80 ? 16 : 32;
+            if (width + glyphWidth > maxWidth || length + bytes >= sizeof(lines[0])) break;
+            std::memcpy(lines[count] + length, message, bytes);
+            length += bytes;
+            width += glyphWidth;
+            message = next;
+        }
+        if (*message == '\n') ++message;
+        if (count == 1 && *message) {
+            while (length && textWidth(lines[count]) + textWidth("...") > maxWidth) {
+                --length;
+                while (length &&
+                       (static_cast<uint8_t>(lines[count][length]) & 0xC0) == 0x80) --length;
+                lines[count][length] = '\0';
+            }
+            std::strcat(lines[count], "...");
+        }
+    }
+    const int glyphHeight = canvas.nativeText() ? FontResource::LARGE_GLYPH_H : 14;
+    constexpr int lineGap = 6;
+    const int height = count * glyphHeight + (count - 1) * lineGap;
+    const int top = HOME_STATUS_TOP + (AmoledUi::HEIGHT - HOME_STATUS_TOP - height) / 2;
+    for (int line = 0; line < count; ++line) {
+        text(canvas, (AmoledUi::WIDTH - textWidth(lines[line])) / 2,
+             top + line * (glyphHeight + lineGap), lines[line], rgb(234, 240, 235));
+    }
+}
+
 constexpr int MENU_CONTENT_TOP = UiMetrics::PAGE_HEADER_HEIGHT;
 constexpr int MENU_CELL_WIDTH = 164;
 constexpr int MENU_CELL_HEIGHT = 152;
@@ -376,17 +419,28 @@ void drawHomeHudButton(Canvas565& canvas, int x) {
 void drawHomeLockIcon(Canvas565& canvas, bool enabled = true) {
     drawHomeHudButton(canvas, HOME_LOCK_BUTTON_X);
     const uint16_t color = enabled ? rgb(222, 234, 229) : rgb(87, 106, 109);
-    canvas.drawRoundRect((HOME_LOCK_BUTTON_X + 24), (HOME_HUD_BUTTON_Y + 14), (16), (18), (8), color);
-    canvas.fillRoundRect((HOME_LOCK_BUTTON_X + 20), (HOME_HUD_BUTTON_Y + 28), (24), (20), (4), color);
-    canvas.fillCircle((HOME_LOCK_BUTTON_X + 32), (HOME_HUD_BUTTON_Y + 36), (2), rgb(27, 43, 51));
+    const uint16_t background = rgb(27, 43, 51);
+    const int x = HOME_LOCK_BUTTON_X;
+    const int y = HOME_HUD_BUTTON_Y;
+    // Reference SVG silhouette, rebuilt with a uniform 3px stroke and no bitmap.
+    canvas.fillRoundRect(x + 23, y + 13, 18, 24, 9, color);
+    canvas.fillRoundRect(x + 26, y + 16, 12, 18, 6, background);
+    canvas.fillRoundRect(x + 16, y + 26, 32, 25, 6, color);
+    canvas.fillRoundRect(x + 19, y + 29, 26, 19, 3, background);
+    canvas.fillRoundRect(x + 30, y + 34, 4, 10, 2, color);
+}
+
+void drawHudMenuIcon(Canvas565& canvas, int x) {
+    drawHomeHudButton(canvas, x);
+    const uint16_t color = rgb(222, 234, 229);
+    for (int row = 0; row < 3; ++row) {
+        canvas.fillRoundRect(x + 16, HOME_HUD_BUTTON_Y + 20 + row * 10,
+                             32, 4, 2, color);
+    }
 }
 
 void drawHomeMenuIcon(Canvas565& canvas) {
-    drawHomeHudButton(canvas, HOME_MENU_BUTTON_X);
-    const uint16_t color = rgb(222, 234, 229);
-    for (int row = 0; row < 3; ++row) {
-        canvas.drawFastHLine((HOME_MENU_BUTTON_X + 20), (HOME_HUD_BUTTON_Y + 20 + row * 10), (24), color);
-    }
+    drawHudMenuIcon(canvas, HOME_MENU_BUTTON_X);
 }
 
 void drawHomeRecallIcon(Canvas565& canvas) {
@@ -425,14 +479,7 @@ void drawExploreBagIcon(Canvas565& canvas) {
 }
 
 void drawExploreMenuIcon(Canvas565& canvas) {
-    drawHomeHudButton(canvas, EXPLORE_ROUTE_MENU_BUTTON_X);
-    const uint16_t color = rgb(222, 234, 229);
-    for (int row = 0; row < 3; ++row) {
-        canvas.drawFastHLine(
-            (EXPLORE_ROUTE_MENU_BUTTON_X + 20),
-            (HOME_HUD_BUTTON_Y + 20 + row * 10),
-            (24), color);
-    }
+    drawHudMenuIcon(canvas, EXPLORE_ROUTE_MENU_BUTTON_X);
 }
 
 void drawBattery(Canvas565& canvas, int x, int y, int percent) {
@@ -955,30 +1002,25 @@ void drawPet(Canvas565& canvas, const HomeViewModel& model,
     const PokemonMotion::AirProfile air =
         PokemonMotion::airProfileForSpecies(model.speciesId);
     const bool floating = air.height > 0.0f;
-    int radiusX = std::clamp(
-        static_cast<int>(width * (floating ? 0.25f : 0.44f)),
-        floating ? 20 : 32, floating ? 44 : 80);
-    int radiusY = std::clamp(
-        static_cast<int>(height * (floating ? 0.055f : 0.14f)),
-        floating ? 6 : 12, floating ? 12 : 28);
+    const auto shadow = PokemonShadow::atGround(
+        frame, model.petCenterX, model.petGroundY,
+        AmoledUi::RESOURCE_SCALE, layout.flipX);
+    int radiusX = shadow.radiusX;
+    int radiusY = shadow.radiusY;
     if (model.night) {
         radiusX = (radiusX * 11 + 10) / 10;
         radiusY = (radiusY * 11 + 10) / 10;
     }
-    // Shadows belong to the unshifted logical ground point.  In particular,
-    // a conversation hop moves only the body, and floating species keep their
-    // shadow on the floor instead of following the sprite canvas padding.
-    const int shadowY = model.petGroundY;
     const uint16_t shadowColor = model.night
         ? rgb(18, 16, 24) : rgb(36, 29, 24);
     const uint8_t outerAlpha = model.night
         ? (floating ? 84 : 122) : (floating ? 68 : 116);
     const uint8_t coreAlpha = model.night
         ? (floating ? 0 : 92) : (floating ? 0 : 86);
-    fillSoftShadow(canvas, model.petCenterX, shadowY, radiusX, radiusY,
+    fillSoftShadow(canvas, shadow.x, shadow.y, radiusX, radiusY,
                    shadowColor, outerAlpha);
     if (!floating) {
-        fillShadowCore(canvas, model.petCenterX, shadowY,
+        fillShadowCore(canvas, shadow.x, shadow.y,
                        std::max(10, radiusX / 2),
                        std::max(4, radiusY / 2), shadowColor, coreAlpha);
     }
@@ -1092,25 +1134,23 @@ void drawExploreRouteShadow(Canvas565& canvas,
                             const PokemonSprites::SpriteFrame* frame,
                             int centerX, int spriteTopY,
                             int drawWidth, int drawHeight,
-                            float scale) {
+                            float scale, bool flipX) {
     if (!frame || drawWidth <= 0 || drawHeight <= 0 || scale <= 0.0f) {
         return;
     }
 
-    // Account for transparent padding around the sprite's ground anchor
-    // so the shadow stays directly under the visible feet.
     const int groundY = spriteTopY + drawHeight / 2 +
         static_cast<int>(std::lround(
             PokemonSprites::frameGroundOffsetY(frame) * scale));
-    const int radiusX = std::clamp(drawWidth / 4, 16, 24);
-    const int radiusY = std::clamp(drawHeight / 16, 4, 6);
+    const auto shadow = PokemonShadow::atGround(frame, centerX, groundY, scale, flipX);
+    const int radiusX = shadow.radiusX, radiusY = shadow.radiusY;
     const uint16_t shadowColor = rgb(27, 48, 48);
 
     // A low-opacity radial layer gives the edge a soft falloff. A smaller,
     // darker core keeps the contact point readable without a hard silhouette.
-    fillSoftShadow(canvas, centerX, groundY - 1,
+    fillSoftShadow(canvas, shadow.x, shadow.y,
                    radiusX, radiusY, shadowColor, 92);
-    fillShadowCore(canvas, centerX, groundY - 1,
+    fillShadowCore(canvas, shadow.x, shadow.y,
                    std::max(8, radiusX * 2 / 3),
                    std::max(2, radiusY / 2), shadowColor, 58);
 }
@@ -1234,13 +1274,14 @@ void drawExploreRouteBoss(Canvas565& canvas,
     }
 
     drawExploreRouteShadow(canvas, frame, centerX, spriteGroundTopY,
-                           width, height, scale);
+                           width, height, scale, flipX);
     PokemonSprites::drawFrameScaled(frame, x, y, scale, flipX);
+    const auto shadow = PokemonShadow::atGround(frame, centerX, groundCenterY, scale, flipX);
     drawExploreRouteMapVegetationForActor(
-        canvas, model, exploreRouteActorFootWorldY(point.y), std::min(x, centerX - 24),
-        std::min(y, groundCenterY - 7),
-        std::max(x + width, centerX + 25),
-        std::max(y + height, groundCenterY + 6), rowBegin, rowEnd);
+        canvas, model, exploreRouteActorFootWorldY(point.y), std::min(x, shadow.x - shadow.radiusX),
+        std::min(y, shadow.y - shadow.radiusY),
+        std::max(x + width, shadow.x + shadow.radiusX + 1),
+        std::max(y + height, shadow.y + shadow.radiusY + 1), rowBegin, rowEnd);
 }
 
 AmoledUi::Rect exploreActorBounds(uint16_t speciesId, float worldX, float worldY,
@@ -1267,7 +1308,6 @@ AmoledUi::Rect exploreActorBounds(uint16_t speciesId, float worldX, float worldY
         flipX = animation.flipX;
     }
 
-    (void)flipX;
     constexpr float scale = AmoledUi::RESOURCE_SCALE;
     const int x = static_cast<int>(std::lround(worldX * scale)) - cameraX * AmoledUi::RESOURCE_SCALE;
     const int ground = EXPLORE_ROUTE_MAP_TOP + static_cast<int>(std::lround(worldY * scale)) -
@@ -1279,10 +1319,11 @@ AmoledUi::Rect exploreActorBounds(uint16_t speciesId, float worldX, float worldY
     const int lift = static_cast<int>(std::lround(exploreRouteAirOffsetY(speciesId, animationNowMs, scale)));
     const int drawY = ground - height / 2 - offset - lift;
     // Include the complete frame, the soft shadow and rounding at both edges.
-    const int left = std::min(x - width / 2, x - 24) - 1;
-    const int top = std::min(drawY, ground - 7) - 1;
-    const int right = std::max(x - width / 2 + width, x + 25) + 1;
-    const int bottom = std::max(drawY + height, ground + 6) + 1;
+    const auto shadow = PokemonShadow::atGround(frame, x, ground, scale, flipX);
+    const int left = std::min(x - width / 2, shadow.x - shadow.radiusX) - 1;
+    const int top = std::min(drawY, shadow.y - shadow.radiusY) - 1;
+    const int right = std::max(x - width / 2 + width, shadow.x + shadow.radiusX + 1) + 1;
+    const int bottom = std::max(drawY + height, shadow.y + shadow.radiusY + 1) + 1;
     return {left, top, right - left, bottom - top};
 }
 
@@ -1415,19 +1456,20 @@ void drawExploreRouteActor(Canvas565& canvas, uint16_t speciesId,
     }
 #endif
     drawExploreRouteShadow(canvas, frame, screenX,
-                           spriteGroundTopY, width, height, scale);
+                           spriteGroundTopY, width, height, scale, flipX);
     const bool spriteDrawn = PokemonSprites::drawFrameScaled(
         frame, screenX - width / 2, drawY, scale, flipX);
     if (!spriteDrawn) {
         drawFallbackPet(canvas, screenX, routeGroundY);
     }
+    const auto shadow = PokemonShadow::atGround(frame, screenX, routeGroundY, scale, flipX);
     drawExploreRouteMapVegetationForActor(
         canvas, model, exploreRouteActorFootWorldY(worldY),
-        std::min(screenX - width / 2, screenX - (spriteDrawn ? 24 : 62)),
-        std::min(drawY, routeGroundY - (spriteDrawn ? 7 : 154)),
+        std::min(screenX - width / 2, spriteDrawn ? shadow.x - shadow.radiusX : screenX - 62),
+        std::min(drawY, spriteDrawn ? shadow.y - shadow.radiusY : routeGroundY - 154),
         std::max(screenX - width / 2 + width,
-                 screenX + (spriteDrawn ? 25 : 63)),
-        std::max(drawY + height, routeGroundY + (spriteDrawn ? 6 : 13)),
+                 spriteDrawn ? shadow.x + shadow.radiusX + 1 : screenX + 63),
+        std::max(drawY + height, spriteDrawn ? shadow.y + shadow.radiusY + 1 : routeGroundY + 13),
         rowBegin, rowEnd, !airborne, airborne);
 }
 
@@ -1512,10 +1554,11 @@ AmoledUi::Rect wildlifeBounds(const ExploreRouteViewModel& model, uint8_t index)
     const int bodyX = x + pose.sway * AmoledUi::RESOURCE_SCALE;
     const int bodyTop = ground - height / 2 - offset - pose.lift * AmoledUi::RESOURCE_SCALE;
     const int bodyBottom = bodyTop + height;
-    const int left = std::min(bodyX - width / 2, x - 26) - 1;
-    const int top = std::min(bodyTop - 14, ground - 19) - 1;
-    const int right = std::max(bodyX - width / 2 + width, x + 27) + 1;
-    const int bottom = std::max(bodyBottom, ground + 7) + 1;
+    const auto shadow = PokemonShadow::atGround(frame, bodyX, ground, WILDLIFE_SCALE, flipX);
+    const int left = std::min({bodyX - width / 2, x - 26, shadow.x - shadow.radiusX}) - 1;
+    const int top = std::min({bodyTop - 14, ground - 19, shadow.y - shadow.radiusY}) - 1;
+    const int right = std::max({bodyX - width / 2 + width, x + 27, shadow.x + shadow.radiusX + 1}) + 1;
+    const int bottom = std::max({bodyBottom, ground + 7, shadow.y + shadow.radiusY + 1}) + 1;
     return {left, top, right - left, bottom - top};
 }
 
@@ -1582,11 +1625,15 @@ void drawExploreWildlife(Canvas565& canvas, const ExploreRouteViewModel& model,
             PokemonSprites::frameGroundOffsetY(frame) * WILDLIFE_SCALE));
         const int top = baseTop - pose.lift * AmoledUi::RESOURCE_SCALE;
         const int bodyX = x + pose.sway * AmoledUi::RESOURCE_SCALE;
-        if (pose.airborne)
-            canvas.fillEllipse(x, ground + 2, 9, 2, rgb(62, 83, 83));
+        if (pose.airborne) {
+            const auto shadow = PokemonShadow::atGround(
+                frame, bodyX, ground, WILDLIFE_SCALE, flipX);
+            fillSoftShadow(canvas, shadow.x, shadow.y, shadow.radiusX,
+                           shadow.radiusY, rgb(62, 83, 83), 68);
+        }
         else if (pose.surface == ExploreEcology::Surface::WATER)
             drawWildlifeRipple(canvas, x, ground, 18, rgb(144, 201, 217));
-        else drawExploreRouteShadow(canvas, frame, x, baseTop, width, height, WILDLIFE_SCALE);
+        else drawExploreRouteShadow(canvas, frame, bodyX, baseTop, width, height, WILDLIFE_SCALE, flipX);
         PokemonSprites::drawFrameScaled(frame, bodyX - width / 2, top, WILDLIFE_SCALE, flipX);
         if (pose.activity == ExploreEcology::Activity::DOZE) {
             // A small pixel Z moves with the breathing pose.
@@ -1876,7 +1923,6 @@ void renderHomeScreenRegion(Canvas565& canvas, const HomeViewModel& model,
             drawHeart(canvas, centerX - 14, heartY, rgb(239, 103, 113), true);
             drawHeart(canvas, centerX + 14, heartY - 6, rgb(239, 103, 113), true);
         }
-        drawToast(canvas, model.toast);
         pageClip.reset();
     }
 
@@ -1886,46 +1932,50 @@ void renderHomeScreenRegion(Canvas565& canvas, const HomeViewModel& model,
         pageClip.setRect((0), (top), (AmoledUi::WIDTH), (bottom - top));
         canvas.fillRect((0), (344), (AmoledUi::WIDTH), (104), rgb(18, 27, 35));
         canvas.drawFastHLine((0), (344), (AmoledUi::WIDTH), rgb(71, 108, 108));
-        drawHomeLockIcon(canvas, !model.hatching);
-        if (model.visitAway) drawHomeRecallIcon(canvas);
-        else drawHomeMenuIcon(canvas);
-
-        canvas.fillRoundRect((HOME_MONSTER_PANEL_X), (352), (HOME_MONSTER_PANEL_W), (88), (8), rgb(24, 34, 42));
-        canvas.drawRoundRect((HOME_MONSTER_PANEL_X), (352), (HOME_MONSTER_PANEL_W), (88), (8), rgb(72, 83, 98));
-        if (model.visitAway) {
-            text(canvas, HOME_MONSTER_PANEL_X + 2, 376,
-                 Ui::Social::VISIT_AWAY_HUD, rgb(226, 238, 233));
-        } else if (model.hatching) {
-            HudRenderer::drawHungerIcon(canvas, HOME_MONSTER_PANEL_X + 14,
-                                        360, 0, AmoledUi::RESOURCE_SCALE);
-            char countdown[12];
-            std::snprintf(countdown, sizeof(countdown), "%02u:%02u",
-                model.hatchRemainingSeconds / 60, model.hatchRemainingSeconds % 60);
-            const int height = canvas.nativeText() ? 32 : 14;
-            text(canvas, HOME_MONSTER_PANEL_X + 58 +
-                         (90 - textWidth(countdown)) / 2,
-                 374 - height / 2, countdown, rgb(115, 226, 183));
-            text(canvas, HOME_MONSTER_PANEL_X +
-                         (HOME_MONSTER_PANEL_W - textWidth(Ui::Hatch::TITLE)) / 2,
-                 400, Ui::Hatch::TITLE, rgb(151, 168, 166));
+        if (model.toast && *model.toast) {
+            drawHomeHudMessage(canvas, model.toast);
         } else {
-            uint8_t count = std::min<uint8_t>(model.monsterCount,
-                                              Game::TEAM_CAP);
-            for (uint8_t index = 0; index < count; ++index) {
-                int rowY = 354 + index * 42;
-                HudRenderer::drawHungerIcon(
-                    canvas, HOME_MONSTER_PANEL_X + 14, rowY + 6,
-                    model.monsters[index].hunger, AmoledUi::RESOURCE_SCALE);
-                if (model.monsters[index].hpKnown) {
-                    drawHomeHpBar(canvas, HOME_MONSTER_PANEL_X + 58,
-                                  rowY + 14, 90,
-                                  model.monsters[index].fainted
-                                      ? model.monsters[index].faintRest
-                                      : model.monsters[index].hp,
-                                  model.monsters[index].fainted);
-                } else {
-                    text(canvas, HOME_MONSTER_PANEL_X + 72, rowY + 5,
-                         "HP --", rgb(151, 168, 166));
+            drawHomeLockIcon(canvas, !model.hatching);
+            if (model.visitAway) drawHomeRecallIcon(canvas);
+            else drawHomeMenuIcon(canvas);
+
+            canvas.fillRoundRect((HOME_MONSTER_PANEL_X), (352), (HOME_MONSTER_PANEL_W), (88), (8), rgb(24, 34, 42));
+            canvas.drawRoundRect((HOME_MONSTER_PANEL_X), (352), (HOME_MONSTER_PANEL_W), (88), (8), rgb(72, 83, 98));
+            if (model.visitAway) {
+                text(canvas, HOME_MONSTER_PANEL_X + 2, 376,
+                     Ui::Social::VISIT_AWAY_HUD, rgb(226, 238, 233));
+            } else if (model.hatching) {
+                HudRenderer::drawHungerIcon(canvas, HOME_MONSTER_PANEL_X + 14,
+                                            360, 0, AmoledUi::RESOURCE_SCALE);
+                char countdown[12];
+                std::snprintf(countdown, sizeof(countdown), "%02u:%02u",
+                    model.hatchRemainingSeconds / 60, model.hatchRemainingSeconds % 60);
+                const int height = canvas.nativeText() ? 32 : 14;
+                text(canvas, HOME_MONSTER_PANEL_X + 58 +
+                             (90 - textWidth(countdown)) / 2,
+                     374 - height / 2, countdown, rgb(115, 226, 183));
+                text(canvas, HOME_MONSTER_PANEL_X +
+                             (HOME_MONSTER_PANEL_W - textWidth(Ui::Hatch::TITLE)) / 2,
+                     400, Ui::Hatch::TITLE, rgb(151, 168, 166));
+            } else {
+                uint8_t count = std::min<uint8_t>(model.monsterCount,
+                                                  Game::TEAM_CAP);
+                for (uint8_t index = 0; index < count; ++index) {
+                    int rowY = 354 + index * 42;
+                    HudRenderer::drawHungerIcon(
+                        canvas, HOME_MONSTER_PANEL_X + 14, rowY + 6,
+                        model.monsters[index].hunger, AmoledUi::RESOURCE_SCALE);
+                    if (model.monsters[index].hpKnown) {
+                        drawHomeHpBar(canvas, HOME_MONSTER_PANEL_X + 58,
+                                      rowY + 14, 90,
+                                      model.monsters[index].fainted
+                                          ? model.monsters[index].faintRest
+                                          : model.monsters[index].hp,
+                                      model.monsters[index].fainted);
+                    } else {
+                        text(canvas, HOME_MONSTER_PANEL_X + 72, rowY + 5,
+                             "HP --", rgb(151, 168, 166));
+                    }
                 }
             }
         }
@@ -2135,7 +2185,8 @@ uint8_t debugItemCount(DebugViewModel::Category category) {
     switch (category) {
     case DebugViewModel::Category::MONSTER: return 4;
     case DebugViewModel::Category::RESOURCE: return 2;
-    case DebugViewModel::Category::ENV: return 3;
+    case DebugViewModel::Category::ENV: return 4;
+    case DebugViewModel::Category::ROOM: return 3;
     case DebugViewModel::Category::MOTION: return 5;
     case DebugViewModel::Category::BATTLE: return 3;
     case DebugViewModel::Category::CONTACT_EVENT: return 4;
@@ -2153,7 +2204,9 @@ const char* debugItemLabel(DebugViewModel::Category category, uint8_t index) {
     case DebugViewModel::Category::RESOURCE:
         return Ui::Debug::RESOURCE_ITEMS[index];
     case DebugViewModel::Category::ENV:
-        return Ui::Debug::ENV_ITEMS[index];
+        return Ui::Debug::AMOLED_ENV_ITEMS[index];
+    case DebugViewModel::Category::ROOM:
+        return Ui::Debug::ROOM_ITEMS[index];
     case DebugViewModel::Category::MOTION:
         return Ui::Debug::MOTION_ITEMS[index];
     case DebugViewModel::Category::BATTLE:
@@ -2174,6 +2227,7 @@ const char* debugCategoryTitle(DebugViewModel::Category category) {
     case DebugViewModel::Category::MONSTER: return Ui::Debug::CATEGORY_MONSTER;
     case DebugViewModel::Category::RESOURCE: return Ui::Debug::CATEGORY_RESOURCE;
     case DebugViewModel::Category::ENV: return Ui::Debug::CATEGORY_ENV;
+    case DebugViewModel::Category::ROOM: return Ui::Debug::ROOM;
     case DebugViewModel::Category::MOTION: return Ui::Debug::CATEGORY_MOTION;
     case DebugViewModel::Category::BATTLE: return Ui::Debug::CATEGORY_BATTLE;
     case DebugViewModel::Category::CONTACT_EVENT:
@@ -2187,6 +2241,24 @@ const char* debugCategoryTitle(DebugViewModel::Category category) {
 void drawDebugPopup(Canvas565& canvas, const DebugViewModel& model) {
     canvas.fillRoundRect((DEBUG_POPUP_X), (DEBUG_POPUP_Y), (DEBUG_POPUP_W), (DEBUG_POPUP_H), (12), rgb(17, 27, 34));
     canvas.drawRoundRect((DEBUG_POPUP_X), (DEBUG_POPUP_Y), (DEBUG_POPUP_W), (DEBUG_POPUP_H), (12), rgb(115, 226, 183));
+    if (model.popup == DebugViewModel::Popup::BED_STYLE ||
+        model.popup == DebugViewModel::Popup::RUG_STYLE) {
+        const bool bed = model.popup == DebugViewModel::Popup::BED_STYLE;
+        const char* title = bed ? Ui::Debug::BED : Ui::Debug::RUG;
+        text(canvas, DEBUG_POPUP_X + 24, DEBUG_POPUP_Y + 12, title, rgb(226, 238, 233));
+        const uint8_t selected = bed ? model.bedStyle : model.rugStyle;
+        for (uint8_t style = 1; style < Ui::Debug::FURNITURE_STYLE_COUNT; ++style) {
+            const int y = DEBUG_POPUP_Y + 48 + (style - 1) * 44;
+            canvas.fillRoundRect(DEBUG_POPUP_X + 20, y, DEBUG_POPUP_W - 40, 40, 8, rgb(36, 54, 61));
+            if (selected == style) {
+                canvas.drawLine(DEBUG_POPUP_X + 32, y + 19, DEBUG_POPUP_X + 39, y + 26, rgb(115, 226, 183));
+                canvas.drawLine(DEBUG_POPUP_X + 39, y + 26, DEBUG_POPUP_X + 51, y + 12, rgb(115, 226, 183));
+            }
+            text(canvas, DEBUG_POPUP_X + 62, y + 4, Ui::Debug::FURNITURE_STYLES[style], rgb(226, 238, 233));
+        }
+        text(canvas, DEBUG_POPUP_X + 132, DEBUG_POPUP_Y + 232, Ui::BACK, rgb(248, 210, 105));
+        return;
+    }
     const bool timePopup = model.popup == DebugViewModel::Popup::SET_TIME;
     const char* title = timePopup ? Ui::Debug::TARGET_TIME : Ui::Debug::INPUT_ID;
     text(canvas, DEBUG_POPUP_X + (DEBUG_POPUP_W - textWidth(title)) / 2,
@@ -2233,6 +2305,20 @@ int debugItemAt(int x, int y, DebugViewModel::Category category,
     int contentY = y - DEBUG_CONTENT_TOP + static_cast<int>(std::lround(scroll));
     int index = contentY / DEBUG_ROW_HEIGHT;
     return index >= 0 && index < debugItemCount(category) ? index : -1;
+}
+
+int debugFurnitureStyleAt(int x, int y) {
+    if (x < DEBUG_POPUP_X + 20 || x >= DEBUG_POPUP_X + DEBUG_POPUP_W - 20) return 0;
+    for (unsigned style = 1; style < Ui::Debug::FURNITURE_STYLE_COUNT; ++style) {
+        const int top = DEBUG_POPUP_Y + 48 + (style - 1) * 44;
+        if (y >= top && y < top + 40) return style;
+    }
+    return 0;
+}
+
+bool debugFurnitureCancelAt(int x, int y) {
+    return x < DEBUG_POPUP_X || x >= DEBUG_POPUP_X + DEBUG_POPUP_W ||
+        y < DEBUG_POPUP_Y || y >= DEBUG_POPUP_Y + 224;
 }
 
 int debugPopupChoiceAt(int x, int y) {
@@ -2362,6 +2448,8 @@ void renderDebugScreen(Canvas565& canvas, const DebugViewModel& model,
             value = model.currentTime;
         } else if (model.category == DebugViewModel::Category::ENV && index == 1) {
             value = model.lightSource;
+        } else if (model.category == DebugViewModel::Category::ROOM && index < 2) {
+            value = Ui::Debug::FURNITURE_STYLES[index == 0 ? model.bedStyle : model.rugStyle];
         } else if (model.category == DebugViewModel::Category::MOTION && index == 0) {
             value = model.tiltEnabled ? Ui::Settings::ON : Ui::Settings::OFF;
         } else if (model.category == DebugViewModel::Category::MOTION && index == 1) {
@@ -3172,19 +3260,17 @@ int drawBattleSprite(Canvas565& canvas, uint16_t speciesId,
     const uint8_t encodedPadding =
         FlashStorage::readByte(&frame->groundPaddingPlusOne);
     const int groundPadding = encodedPadding > 0 ? encodedPadding - 1 : 0;
-    const int targetHeight = back ? PLAYER_SPRITE_TARGET_HEIGHT
-                                  : WILD_SPRITE_TARGET_HEIGHT;
-    const auto layout = fitBattleSprite(width, height, groundPadding,
-                                        centerX, groundY, maxWidth, maxHeight,
-                                        targetHeight);
-    const int airLift = back ? 0 : battleSpriteAirLift(speciesId);
+    const auto layout = back
+        ? fitBattleSprite(width, height, groundPadding, centerX, groundY,
+                          maxWidth, maxHeight, PLAYER_SPRITE_TARGET_HEIGHT)
+        : fitBattleFrontSprite(speciesId, width, height, groundPadding,
+                               centerX, groundY, maxWidth, maxHeight);
     if (drawnBounds) {
         *drawnBounds = layout.rect;
-        drawnBounds->y -= airLift;
     }
     PokemonSprites::drawFrameScaled(
-        frame, layout.rect.x, layout.rect.y - airLift, layout.scale, false);
-    return airLift;
+        frame, layout.rect.x, layout.rect.y, layout.scale, false);
+    return layout.verticalOffset;
 }
 
 void drawBattleStatusMoveEffect(const BattleViewModel& model,
@@ -3267,9 +3353,8 @@ void drawBattleFooter(Canvas565& canvas) {
 
 void drawBattleBackIcon(Canvas565& canvas) {
     drawHeaderButton(canvas, 316);
-    const uint16_t color = rgb(222, 234, 229);
-    canvas.drawLine((348), (14), (334), (24), color);
-    canvas.drawLine((334), (24), (348), (34), color);
+    const uint16_t color = rgb(255, 255, 255);
+    UiCommon::drawBackChevron(canvas, 334, 24, 12, color);
 }
 
 void drawBattleFooterChoice(Canvas565& canvas, int index, int count,
@@ -3382,7 +3467,7 @@ void renderBattleScreen(Canvas565& canvas, const BattleViewModel& model,
     }
     playerX += model.playerSwitchOffsetX;
     AmoledUi::Rect wildBounds{}, playerBounds{};
-    const int wildAirLift = drawBattleSprite(
+    const int wildVerticalOffset = drawBattleSprite(
         canvas, model.wildSpeciesId, wildX, WILD_GROUND_Y,
         WILD_SPRITE_AREA_WIDTH, BATTLE_SPRITE_AREA_HEIGHT, false, &wildBounds);
 #if STICKMON_ENABLE_DEBUG_FEATURES
@@ -3405,7 +3490,7 @@ void renderBattleScreen(Canvas565& canvas, const BattleViewModel& model,
 #if STICKMON_ENABLE_DEBUG_FEATURES
     if (profileBattle) stamps[5] = Platform::clock().micros();
 #endif
-    const int playerAirLift = drawBattleSprite(
+    const int playerVerticalOffset = drawBattleSprite(
         canvas, model.playerSpeciesId, playerX, PLAYER_GROUND_Y,
         PLAYER_SPRITE_AREA_WIDTH, BATTLE_SPRITE_AREA_HEIGHT, true, &playerBounds);
 #if STICKMON_ENABLE_DEBUG_FEATURES
@@ -3437,12 +3522,12 @@ void renderBattleScreen(Canvas565& canvas, const BattleViewModel& model,
 
     uint32_t nowMs = Platform::clock().millis();
     if (model.wildHp > 0) {
-        drawBattleConditionEffects(canvas, wildX, WILD_GROUND_Y - wildAirLift,
+        drawBattleConditionEffects(canvas, wildX, WILD_GROUND_Y - wildVerticalOffset,
                                    model.wildStatus,
                                    model.wildBattleState, nowMs);
     }
     if (model.playerHp > 0) {
-        drawBattleConditionEffects(canvas, playerX, PLAYER_GROUND_Y - playerAirLift,
+        drawBattleConditionEffects(canvas, playerX, PLAYER_GROUND_Y - playerVerticalOffset,
                                    model.playerStatus,
                                    model.playerBattleState, nowMs);
     }
@@ -3464,8 +3549,8 @@ void renderBattleScreen(Canvas565& canvas, const BattleViewModel& model,
     if (model.animationActive && model.animationHit) {
         int hitX = model.animationAttackerWild ? playerX : wildX;
         int hitY = model.animationAttackerWild
-                       ? PLAYER_GROUND_Y - playerAirLift - 44
-                       : WILD_GROUND_Y - wildAirLift - 42;
+                       ? PLAYER_GROUND_Y - playerVerticalOffset - 44
+                       : wildBounds.y + wildBounds.height / 2;
         if (model.animationFrame >= 2 && model.animationFrame <= 5) {
             const uint8_t fxFrame = static_cast<uint8_t>(model.animationFrame - 2);
             if (!drawBattleFxEffect(hitX, hitY, model.animationFx, fxFrame)) {

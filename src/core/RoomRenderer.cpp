@@ -1,6 +1,7 @@
 #include "core/RoomRenderer.h"
 
 #include "core/MathUtil.h"
+#include "core/DeflateDecoder.h"
 #include "core/RoomResource.h"
 #include "hardware/Hal.h"
 #include "platform/api/PlatformServices.h"
@@ -10,10 +11,6 @@
 #include <cstdlib>
 #include <cstring>
 
-extern "C" {
-#include "third_party/uzlib/uzlib.h"
-}
-
 namespace RoomRenderer {
 namespace {
 
@@ -21,6 +18,7 @@ uint16_t* roomBuffer = nullptr;
 uint32_t roomBufferPixels = 0;
 bool roomBufferValid = false;
 bool roomBufferNight = false;
+uint32_t roomBufferRevision = 0;
 
 bool ensureRoomBuffer() {
     RoomResource& room = RoomResource::ins();
@@ -43,23 +41,7 @@ bool ensureRoomBuffer() {
 
 bool inflateRawDeflate(const uint8_t* compressed, uint32_t compressedSize,
                        uint8_t* out, uint32_t outSize) {
-    TINF_DATA state;
-    memset(&state, 0, sizeof(state));
-    uzlib_init();
-    uzlib_uncompress_init(&state, nullptr, 0);
-    state.source = compressed;
-    state.source_limit = compressed + compressedSize;
-    state.dest_start = out;
-    state.dest = out;
-    state.dest_limit = out + outSize;
-
-    int result = TINF_OK;
-    while (state.dest < state.dest_limit) {
-        result = uzlib_uncompress(&state);
-        if (result == TINF_DONE) break;
-        if (result != TINF_OK) return false;
-    }
-    return result == TINF_DONE || state.dest == state.dest_limit;
+    return DeflateDecoder::inflateMemory(compressed, compressedSize, out, outSize);
 }
 
 bool decodeBase() {
@@ -69,11 +51,26 @@ bool decodeBase() {
     const uint32_t compressedLen = room.baseCompressedLen();
     const uint8_t* compressed = room.baseCompressedData();
     if (!compressed) return false;
-    return inflateRawDeflate(
-        compressed,
-        compressedLen,
-        reinterpret_cast<uint8_t*>(roomBuffer),
-        room.baseRawBytes());
+    if (!room.referenceCompressedData()) {
+        return inflateRawDeflate(compressed, compressedLen,
+            reinterpret_cast<uint8_t*>(roomBuffer), room.baseRawBytes());
+    }
+    const uint32_t maskBytes = (roomBufferPixels + 7) / 8;
+    const uint32_t patchBytes = room.baseRawBytes() + maskBytes;
+    auto* patch = static_cast<uint8_t*>(Platform::memory().allocate(patchBytes, true));
+    if (!patch) return false;
+    const bool ok = inflateRawDeflate(compressed, compressedLen, patch, patchBytes) &&
+        inflateRawDeflate(room.referenceCompressedData(), room.referenceCompressedLen(),
+            reinterpret_cast<uint8_t*>(roomBuffer), room.baseRawBytes());
+    if (ok) {
+        const auto* colors = reinterpret_cast<const uint16_t*>(patch);
+        const auto* mask = patch + room.baseRawBytes();
+        for (uint32_t pixel = 0; pixel < roomBufferPixels; ++pixel) {
+            if (mask[pixel / 8] & (1U << (pixel % 8))) roomBuffer[pixel] = colors[pixel];
+        }
+    }
+    Platform::memory().release(patch);
+    return ok;
 }
 
 void applyNightPatch() {
@@ -93,15 +90,38 @@ void applyNightPatch() {
 
 bool prepare(bool night) {
     if (!ensureRoomBuffer()) return false;
-    if (roomBufferValid && roomBufferNight == night) return true;
+    if (roomBufferValid && roomBufferNight == night &&
+        roomBufferRevision == RoomResource::ins().revision()) return true;
     uint32_t started = Platform::clock().millis();
     if (!decodeBase()) {
         Platform::logLine("[RoomRenderer] base decode failed");
         roomBufferValid = false;
         return false;
     }
-    if (night) applyNightPatch();
+    RoomResource& room = RoomResource::ins();
+    if (room.layered()) {
+        if (night && room.furniture().nightBaseLength() &&
+            !inflateRawDeflate(room.furniture().nightBase(), room.furniture().nightBaseLength(),
+                reinterpret_cast<uint8_t*>(roomBuffer), room.baseRawBytes())) {
+            roomBufferValid = false;
+            return false;
+        }
+        auto* rgb = static_cast<uint8_t*>(Platform::memory().allocate(roomBufferPixels * 3, true));
+        if (!rgb) { roomBufferValid = false; return false; }
+        for (uint32_t i = 0; i < roomBufferPixels; ++i) {
+            const uint16_t color = roomBuffer[i];
+            rgb[i * 3] = ((color >> 11) * 255 + 15) / 31;
+            rgb[i * 3 + 1] = (((color >> 5) & 63) * 255 + 31) / 63;
+            rgb[i * 3 + 2] = ((color & 31) * 255 + 15) / 31;
+        }
+        room.furniture().composite(rgb, room.artWidth(), room.artHeight(), night);
+        for (uint32_t i = 0; i < roomBufferPixels; ++i)
+            roomBuffer[i] = ((rgb[i * 3] & 0xf8) << 8) |
+                           ((rgb[i * 3 + 1] & 0xfc) << 3) | (rgb[i * 3 + 2] >> 3);
+        Platform::memory().release(rgb);
+    } else if (night) applyNightPatch();
     roomBufferNight = night;
+    roomBufferRevision = RoomResource::ins().revision();
     roomBufferValid = true;
     Platform::logf("[RoomRenderer] prepared mode=%s bytes=%u ms=%u\n",
                   night ? "night" : "day",

@@ -1,0 +1,66 @@
+{
+  "theme": "starry",
+  "export": "AMOLED native physical pixels (2x room logical coordinates)",
+  "items": [
+    {
+      "name": "bed",
+      "file": "assets/bed-starry.png",
+      "width": 160,
+      "height": 102,
+      "logicalWidth": 80,
+      "logicalHeight": 51,
+      "bytes": 31357,
+      "source": "approved starry asset"
+    },
+    {
+      "name": "rug",
+      "file": "assets/rug-starry.png",
+      "width": 204,
+      "height": 100,
+      "logicalWidth": 102,
+      "logicalHeight": 50,
+      "bytes": 48205,
+      "source": "approved starry asset"
+    },
+    {
+      "name": "bowl",
+      "file": "assets/bowl-starry.png",
+      "width": 40,
+      "height": 28,
+      "logicalWidth": 20,
+      "logicalHeight": 14,
+      "bytes": 2966,
+      "source": "generated"
+    },
+    {
+      "name": "shelf",
+      "file": "assets/shelf-starry.png",
+      "width": 112,
+      "height": 68,
+      "logicalWidth": 56,
+      "logicalHeight": 34,
+      "bytes": 11076,
+      "source": "generated"
+    },
+    {
+      "name": "window-day",
+      "file": "assets/window-day-starry.png",
+      "width": 90,
+      "height": 98,
+      "logicalWidth": 45,
+      "logicalHeight": 49,
+      "bytes": 17750,
+      "source": "generated"
+    },
+    {
+      "name": "window-night",
+      "file": "assets/window-night-starry.png",
+      "width": 90,
+      "height": 98,
+      "logicalWidth": 45,
+      "logicalHeight": 49,
+      "bytes": 17862,
+      "source": "generated"
+    }
+  ]
+}

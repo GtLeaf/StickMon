@@ -64,14 +64,14 @@ class BattleActionServiceTests(unittest.TestCase):
 
     def test_real_stick_and_amoled_adapters_use_shared_execution(self):
         stick = (ROOT / "src/scenes/ExploreScene.cpp").read_text()
-        amoled = (ROOT / "firmware/amoled_1_8_v1/main/AmoledApp.cpp").read_text()
+        amoled = (ROOT / "firmware/amoled_1_8_v1/main/app/BattleSession.cpp").read_text()
         def method(source, name):
             start = source.index(name)
             following = re.search(r"\n(?:void|bool|int8_t) \w+::", source[start + len(name):])
             return source[start:start + len(name) + following.start()] if following else source[start:]
         stick_prepare = method(stick, "void ExploreScene::beginBattleAction()")
         stick_commit = method(stick, "void ExploreScene::applyBattleDamage()")
-        amoled_action = method(amoled, "void AmoledApp::performBattleAction(")
+        amoled_action = method(amoled, "void BattleSession::performBattleAction(")
         self.assertIn("battlePendingAction.reset()", stick_prepare)
         self.assertIn("BattleActionService::prepare(", stick_prepare)
         self.assertIn("if (!BattleActionService::commit(", stick_commit)
@@ -82,8 +82,8 @@ class BattleActionServiceTests(unittest.TestCase):
                               "applyPostDamageAbilities", "applyAbsorbAbility", "recordMoveResult"):
                 self.assertNotIn(f"BattleSystem::{operation}(", adapter)
         for name in ("performBattlePlayerAction", "performBattleWildAction"):
-            self.assertIn("performBattleAction(action, nowMs);",
-                          method(amoled, f"void AmoledApp::{name}("))
+            self.assertIn("performBattleAction(gameState, action, nowMs);",
+                          method(amoled, f"void BattleSession::{name}("))
 
 
 if __name__ == "__main__":

@@ -18,7 +18,7 @@ constexpr uint32_t PACK_MAGIC = 0x58464753;
 constexpr uint16_t PACK_VERSION = 2;
 constexpr uint32_t FLAG_RAW_DEFLATE = 1;
 constexpr uint8_t FORMAT_INDEXED4_RLE = 1;
-constexpr uint16_t MAX_FRAMES = 272;
+constexpr uint16_t MAX_FRAMES = 288;
 constexpr uint32_t MAX_DATA_WORDS = 200000;
 constexpr uint32_t MAX_PALETTE_WORDS = 2048;
 constexpr uint32_t MAX_PAYLOAD_BYTES = 384000;
@@ -127,7 +127,7 @@ PackSlot packSlotFor(Kind kind) {
     if ((kind >= Kind::EXPLORE_TILE_0072 && kind <= Kind::EXPLORE_WATERFALL_BOTTOM_F3) ||
         (kind >= Kind::EXPLORE_TILE_4762 && kind <= Kind::EXPLORE_TILE_4773) ||
         (kind >= Kind::EXPLORE_TILE_0391 && kind <= Kind::EXPLORE_TILE_0842) ||
-        (kind >= Kind::EXPLORE_TILE_1184 && kind <= Kind::EXPLORE_TILE_1186)) {
+        (kind >= Kind::EXPLORE_TILE_1184 && kind <= Kind::EXPLORE_TILE_4794)) {
         return PackSlot::MAP;
     }
     if (kind < Kind::COUNT) return PackSlot::BATTLE;
@@ -684,6 +684,25 @@ bool drawExploreTileTo(Canvas565& canvas, uint16_t tileId, int x, int y,
     case 1188: kind = Kind::EXPLORE_TILE_1188; break;
     case 1184: kind = Kind::EXPLORE_TILE_1184; break;
     case 1186: kind = Kind::EXPLORE_TILE_1186; break;
+    case 1176: kind = Kind::EXPLORE_TILE_1176; break;
+    case 1178: kind = Kind::EXPLORE_TILE_1178; break;
+    case 1187: kind = Kind::EXPLORE_TILE_1187; break;
+    case 1189: kind = Kind::EXPLORE_TILE_1189; break;
+    case 4780: kind = Kind::EXPLORE_TILE_4780; break;
+    case 4781: kind = Kind::EXPLORE_TILE_4781; break;
+    case 4782: kind = Kind::EXPLORE_TILE_4782; break;
+    case 4783: kind = Kind::EXPLORE_TILE_4783; break;
+    case 4784: kind = Kind::EXPLORE_TILE_4784; break;
+    case 4785: kind = Kind::EXPLORE_TILE_4785; break;
+    case 4786: kind = Kind::EXPLORE_TILE_4786; break;
+    case 4787: kind = Kind::EXPLORE_TILE_4787; break;
+    case 4788: kind = Kind::EXPLORE_TILE_4788; break;
+    case 4789: kind = Kind::EXPLORE_TILE_4789; break;
+    case 4790: kind = Kind::EXPLORE_TILE_4790; break;
+    case 4791: kind = Kind::EXPLORE_TILE_4791; break;
+    case 4792: kind = Kind::EXPLORE_TILE_4792; break;
+    case 4793: kind = Kind::EXPLORE_TILE_4793; break;
+    case 4794: kind = Kind::EXPLORE_TILE_4794; break;
     case 1506: kind = Kind::EXPLORE_TILE_1506; break;
     case 1507: kind = Kind::EXPLORE_TILE_1507; break;
     case 1514: kind = Kind::EXPLORE_TILE_1514; break;

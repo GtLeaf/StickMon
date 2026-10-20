@@ -18,8 +18,10 @@ src/core/RoomMovementArea.cpp
 src/core/RoomNavigator.cpp
 src/core/RoomRenderer.cpp
 src/core/RoomResource.cpp
+src/core/RoomFurniture.cpp
 src/core/SaveCodec.cpp
 src/core/SaveManager.cpp
+src/core/SaveCoordinator.cpp
 src/core/VisitSessionService.cpp
 src/game/HomeCare.cpp
 src/game/HomeActor.cpp

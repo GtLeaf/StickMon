@@ -4,6 +4,7 @@
 #include "game/ItemInventory.h"
 #include "game/MonsterFactory.h"
 #include "game/ShopService.h"
+#include "game/Species.h"
 #include "platform/desktop/DesktopPlatform.h"
 #include "presentation/Canvas565.h"
 #include "presentation/PixelRenderer.h"
@@ -27,6 +28,47 @@ struct AmoledPageTestAccess {
         app.sceneFlow.openSubScene(scene);
         app.forceFullRender();
     }
+    static void recordEncounter(AmoledApp& app, uint16_t species) {
+        assert(app.recordEncounteredSpecies(species));
+    }
+    static Game::MoveId startLevel(AmoledApp& app, uint32_t nowMs) {
+        for (uint8_t index = 0; index < speciesCount(); ++index) {
+            const auto& species = speciesTable()[index];
+            for (uint16_t i = 0; i < learnsetEntryCountForSpecies(species); ++i) {
+                const auto* entry = learnsetEntryForSpecies(species, i);
+                if (!entry || entry->level <= 1 ||
+                    !canLearnAsSpecialMove(species, entry->moveId)) continue;
+                auto monster = Game::MonsterFactory::create(species.id, entry->level - 1);
+                if (!monster.move2Id || !monster.move3Id ||
+                    entry->moveId == monster.move2Id || entry->moveId == monster.move3Id) continue;
+                unsigned newMoves = 0;
+                for (uint16_t j = 0; j < learnsetEntryCountForSpecies(species); ++j) {
+                    const auto* other = learnsetEntryForSpecies(species, j);
+                    if (other && other->level == entry->level &&
+                        canLearnAsSpecialMove(species, other->moveId) &&
+                        other->moveId != monster.move2Id && other->moveId != monster.move3Id)
+                        ++newMoves;
+                }
+                if (newMoves != 1) continue;
+                monster.level = entry->level;
+                if (levelUpEvolutionTarget(species, monster, app.gameState.gameMinutesTotal)) continue;
+                monster.moveProficiency[1] = 70;
+                monster.moveProficiency[2] = 80;
+                app.gameState.team[0] = monster;
+                app.openProgressionScene(AppSceneFlow::Scene::HOME, 0,
+                                         entry->level - 1, nowMs);
+                return entry->moveId;
+            }
+        }
+        assert(false && "test species needs a special move before evolution");
+        return 0;
+    }
+    static void startEvolution(AmoledApp& app, uint32_t nowMs) {
+        app.gameState.team[0] = Game::MonsterFactory::create(133, 20);
+        assert(Game::ItemInventory::add(app.gameState, Game::ItemId::WATER_STONE));
+        app.openEvolutionProgression(AppSceneFlow::Scene::HOME, 0, 133, 134,
+                                     nowMs, Game::ItemId::WATER_STONE);
+    }
 };
 }  // namespace AmoledV1
 
@@ -47,6 +89,7 @@ public:
     }
     bool writeBlob(const char* ns, const char* key, const void* data, size_t size) override {
         ++writes;
+        if (failWrites || (failKey && std::strcmp(key, failKey) == 0)) return false;
         return backing_.writeBlob(ns, key, data, size);
     }
     bool removeBlob(const char* ns, const char* key) override {
@@ -57,6 +100,8 @@ public:
         ++clears;
         return backing_.clearNamespace(ns);
     }
+    bool failWrites = false;
+    const char* failKey = nullptr;
     size_t writes = 0;
     size_t removes = 0;
     size_t clears = 0;
@@ -136,10 +181,20 @@ struct Fixture {
     }
     void render() {
         if (!app.needsRender()) return;
+        const auto begin = app.renderRowBegin(), end = app.renderRowEnd();
         app.render(canvas);
         const Frame partial = pixels;
         app.forceFullRender();
         app.render(canvas);
+        if (partial != pixels) {
+            for (size_t i = 0; i < pixels.size(); ++i) {
+                if (partial[i] == pixels[i]) continue;
+                std::fprintf(stderr, "partial mismatch scene=%u time=%lu band=%u..%u first=%zu,%zu\n",
+                    static_cast<unsigned>(scene()), static_cast<unsigned long>(desktop.millis()),
+                    begin, end, i % AmoledUi::WIDTH, i / AmoledUi::WIDTH);
+                break;
+            }
+        }
         assert(partial == pixels);
         app.markRendered();
     }
@@ -399,6 +454,125 @@ void shopTransactions(Fixture& f) {
     std::puts("shop: one sale saves once; stock-zero action stays disabled; cancelled/cross-button touches cannot transact");
 }
 
+void saveRetry(Fixture& f) {
+    f.enter(Scene::SETTINGS);
+    const auto savedSpeed = f.saved().settings.speedIndex;
+    f.blobs.failWrites = true;
+    f.tap(240, 234);
+    assert(f.state().settings.speedIndex != savedSpeed);
+    assert(f.saved().settings.speedIndex == savedSpeed);
+    const auto failedWrites = f.blobs.writes;
+    f.advance(1000);
+    assert(f.blobs.writes == failedWrites);
+    f.advance(1100);
+    assert(f.blobs.writes > failedWrites);
+    const auto secondFailure = f.blobs.writes;
+    f.blobs.failWrites = false;
+    // A pending save must wait until a gesture ends, even after it is due.
+    f.event(TouchEventType::DOWN, 240, 300);
+    f.advance(2200);
+    assert(f.blobs.writes == secondFailure);
+    f.cancel();
+    assert(f.saved().settings.speedIndex == f.state().settings.speedIndex);
+    const auto committed = f.blobs.writes;
+    f.advance(3000);
+    assert(f.blobs.writes == committed);
+    // A newly started App sees the committed result after the retry.
+    AmoledApp restored;
+    restored.begin(f.desktop.millis());
+    assert(AmoledPageTestAccess::state(restored).settings.speedIndex ==
+           f.state().settings.speedIndex);
+    std::puts("save retry: failed writes stay pending, retries are bounded, gestures defer writes and success survives restart");
+}
+
+void historyRetry(Fixture& f) {
+    f.enter(Scene::SETTINGS);
+    AmoledPageTestAccess::recordEncounter(f.app, 25);
+    f.blobs.failKey = "encounters";
+    f.tap(240, 234);
+    // Snapshot succeeds while the independent history blob fails.
+    assert(f.saved().settings.speedIndex == f.state().settings.speedIndex);
+    SaveManager manager;
+    assert(manager.begin());
+    Game::EncounterHistory history;
+    manager.loadEncounterHistory(history);
+    assert(!history.contains(25));
+    const auto failedWrites = f.blobs.writes;
+    f.advance(1000);
+    assert(f.blobs.writes == failedWrites);
+    f.blobs.failKey = nullptr;
+    f.advance(1100);
+    assert(f.blobs.writes > failedWrites);
+    assert(manager.loadEncounterHistory(history) && history.contains(25));
+    const auto committed = f.blobs.writes;
+    f.advance(3000);
+    assert(f.blobs.writes == committed);
+    std::puts("save retry: history-only failure stays pending after a successful snapshot and commits on retry");
+}
+
+void progressionGestures(Fixture& f, int selection) {
+    const auto learnedMove = AmoledPageTestAccess::startLevel(f.app, f.desktop.millis());
+    const auto oldMove2 = f.state().team[0].move2Id;
+    const auto oldMove3 = f.state().team[0].move3Id;
+    f.render();
+    const auto levelFrame = f.pixels;
+    // A press begun during the entrance cannot advance when released later.
+    f.event(TouchEventType::DOWN, 180, 240);
+    f.advance(850);
+    f.event(TouchEventType::UP, 180, 240);
+    assert(f.scene() == Scene::PROGRESSION);
+    f.tap(180, 240);
+    assert(f.pixels != levelFrame);
+    f.tap(328, 38);  // Confirmation without a choice is inert.
+    assert(f.state().team[0].move2Id == oldMove2 && f.state().team[0].move3Id == oldMove3);
+    f.event(TouchEventType::DOWN, 160, 106 + selection * 66);
+    f.cancel();
+    f.event(TouchEventType::UP, 160, 106 + selection * 66);
+    f.tap(328, 38);
+    assert(f.state().team[0].move2Id == oldMove2 && f.state().team[0].move3Id == oldMove3);
+    f.tap(160, 106 + selection * 66);
+    assert(f.state().team[0].move2Id == oldMove2 && f.state().team[0].move3Id == oldMove3);
+    f.tap(328, 38);
+    assert(f.scene() == Scene::HOME);
+    assert(f.state().team[0].move2Id == (selection == 1 ? learnedMove : oldMove2));
+    assert(f.state().team[0].move3Id == (selection == 2 ? learnedMove : oldMove3));
+    assert(f.state().team[0].moveProficiency[1] == (selection == 1 ? 0 : 70));
+    assert(f.state().team[0].moveProficiency[2] == (selection == 2 ? 0 : 80));
+    assert(f.saved().team[0].move2Id == f.state().team[0].move2Id);
+    assert(f.saved().team[0].move3Id == f.state().team[0].move3Id);
+    std::puts("growth: entrance gate, cancelled press, explicit skip/replacement and proficiency/save verified");
+}
+
+void evolutionGestures(Fixture& f, bool cancel) {
+    AmoledPageTestAccess::startEvolution(f.app, f.desktop.millis());
+    f.render();
+    assert(f.scene() == Scene::PROGRESSION);
+    const auto checkUncommitted = [&] {
+        assert(f.state().team[0].speciesId == 133);
+        assert(Game::ItemInventory::count(f.state(), Game::ItemId::WATER_STONE) == 1);
+    };
+    checkUncommitted();
+    f.event(TouchEventType::DOWN, 180, 240);
+    f.advance(cancel ? 610 : 200);
+    // Movement does not cancel an evolution hold; a short tap remains consumed.
+    f.event(TouchEventType::MOVE, 280, 340);
+    f.event(TouchEventType::UP, 280, 340);
+    checkUncommitted();
+    f.advance(cancel ? Game::EvolutionSequence::CANCEL_COMPLETE_MS
+                     : Game::EvolutionSequence::COMPLETE_MS);
+    checkUncommitted();
+    f.tap(180, 240);
+    assert(f.scene() == Scene::HOME);
+    assert(f.state().team[0].speciesId == (cancel ? 133 : 134));
+    assert(Game::ItemInventory::count(f.state(), Game::ItemId::WATER_STONE) == (cancel ? 1 : 0));
+    assert(f.saved().team[0].speciesId == f.state().team[0].speciesId);
+    const auto committed = f.blobs.writes;
+    f.event(TouchEventType::UP, 180, 240);
+    f.advance(3000);
+    assert(f.blobs.writes == committed);
+    std::puts("evolution: consumed gestures, hold cancellation, delayed commit and saved stone/species verified");
+}
+
 void pageExitGestures(Fixture& f) {
     struct PagePress { Scene scene; int x; int y; };
     for (const auto& page : {PagePress{Scene::TEAM, 100, 120},
@@ -436,6 +610,13 @@ int main(int argc, char** argv) {
     else if (std::strcmp(argv[2], "bag-navigation") == 0) bagNavigation(fixture);
     else if (std::strcmp(argv[2], "bag-use") == 0) bagUse(fixture);
     else if (std::strcmp(argv[2], "shop-transactions") == 0) shopTransactions(fixture);
+    else if (std::strcmp(argv[2], "save-retry") == 0) saveRetry(fixture);
+    else if (std::strcmp(argv[2], "history-retry") == 0) historyRetry(fixture);
+    else if (std::strcmp(argv[2], "progression-skip") == 0) progressionGestures(fixture, 0);
+    else if (std::strcmp(argv[2], "progression-replace-2") == 0) progressionGestures(fixture, 1);
+    else if (std::strcmp(argv[2], "progression-replace-3") == 0) progressionGestures(fixture, 2);
+    else if (std::strcmp(argv[2], "evolution-cancel") == 0) evolutionGestures(fixture, true);
+    else if (std::strcmp(argv[2], "evolution-commit") == 0) evolutionGestures(fixture, false);
     else if (std::strcmp(argv[2], "page-exit-gestures") == 0) pageExitGestures(fixture);
     else return 2;
     return 0;

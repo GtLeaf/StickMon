@@ -6,6 +6,9 @@
 
 namespace DeflateDecoder {
 
+bool inflateMemory(const uint8_t* compressed, size_t compressedBytes,
+                   uint8_t* output, size_t outputBytes);
+
 struct Stats {
     uint32_t inputBytes = 0;
     uint32_t outputBytes = 0;

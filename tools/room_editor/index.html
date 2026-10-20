@@ -7,10 +7,18 @@
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
+  <header class="app-toolbar">
+    <div class="tool-identity"><strong>StickMon · 房间编辑器</strong><span id="projectSaveState" role="status">尚未保存工程</span></div>
+    <label class="toolbar-field">设备<select id="previewDevice"><option value="sticks3">StickS3 · 240×135</option><option value="amoled">微雪 AMOLED 1.8 V1 / V2</option></select></label>
+    <label class="toolbar-field">预览<select id="previewMode"><option value="room">房间全景</option><option value="device">设备画面</option><option value="follow">跟随精灵</option></select></label>
+    <div class="segmented"><button id="dayMode" class="active" type="button">白天</button><button id="nightMode" type="button">夜晚</button></div>
+    <div class="toolbar project-actions"><button id="loadProjectScene" type="button">重新载入工程场景</button><button id="saveSession" class="primary" type="button">保存工程</button><button id="exportJson" type="button">导出游戏布局</button></div>
+  </header>
   <main class="app">
     <section class="panel left-panel">
       <div class="panel-header">Inputs</div>
       <div class="panel-body stack">
+        <div id="projectSceneMeta" class="hint" role="status">通过本地启动入口自动读取当前工程场景。</div>
         <input id="canvasW" type="hidden" value="240">
         <input id="canvasH" type="hidden" value="135">
         <input id="aspectLock" type="checkbox" checked hidden>
@@ -80,7 +88,7 @@
             </select>
 
             <div class="hint">
-              Backgrounds fit 240px wide. Assign Day/Night visibility in Layers; the cyan frame marks the 240x135 screen.
+              Backgrounds fit 240px wide. Assign Day/Night visibility in Layers; the cyan frame marks the selected device's room viewport.
             </div>
           </div>
         </details>
@@ -122,6 +130,7 @@
               Frame
               <select id="spriteFrameSelect"></select>
             </label>
+            <label class="field">初始比例<select id="spriteSizing"><option value="native">真机尺寸（资源 1:1）</option><option value="fit64">最长边 64（辅助比较）</option></select></label>
             <div class="toolbar">
               <button id="addProjectSprite" type="button">Add sprite preview</button>
             </div>
@@ -136,15 +145,22 @@
           <div class="panel-body stack">
             <div class="row">
               <label class="field">
-                Search
-                <input id="librarySearch" type="search" placeholder="name, tag, id">
+                搜索家具
+                <input id="librarySearch" type="search" placeholder="名称、标签、ID">
               </label>
               <label class="field">
-                Category
-                <select id="libraryCategory">
-                  <option value="">All</option>
-                </select>
+                主题
+                <select id="libraryTheme"><option value="">全部主题</option></select>
               </label>
+            </div>
+            <div id="libraryCategories" class="library-categories" role="group" aria-label="家具分类"></div>
+            <div class="library-swap" id="librarySwapPanel">
+              <div id="librarySwapTarget" role="status">选中场景家具后，点击同类缩略图原位试换。</div>
+              <div class="hint" id="librarySwapHint"></div>
+              <div class="toolbar" id="librarySwapActions" hidden>
+                <button id="applyFurnitureSwap" class="primary" type="button">应用替换</button>
+                <button id="cancelFurnitureSwap" type="button">取消试换</button>
+              </div>
             </div>
             <div class="furniture-library-list" id="furnitureLibraryList"></div>
             <div class="hint" id="furnitureLibraryMeta">No furniture library loaded.</div>
@@ -162,7 +178,7 @@
           <div class="panel-body stack">
             <label class="check-row">
               <input id="showGuides" type="checkbox" checked>
-              Show HUD guide
+              Show StickS3 HUD guide
             </label>
 
             <label class="check-row">
@@ -190,10 +206,6 @@
 
     <section class="panel stage-wrap">
       <div class="stage-toolbar">
-        <div class="segmented">
-          <button id="dayMode" class="active" type="button">Preview Day</button>
-          <button id="nightMode" type="button">Preview Night</button>
-        </div>
         <div class="segmented">
           <button id="furnitureMode" class="active" type="button">Furniture</button>
           <button id="shapeMode" type="button">Shape</button>
@@ -227,6 +239,15 @@
           </div>
           <div class="preview-frame">
             <canvas id="preview" class="preview-canvas" width="240" height="135"></canvas>
+          </div>
+          <div class="stack preview-options">
+            <label class="field">绘制方式<select id="previewEffect"><option value="composition">编辑合成</option><option value="firmware">固件层次示意</option></select></label>
+            <label class="field">跟随对象<select id="previewFollow"><option value="">先添加精灵预览</option></select></label>
+            <div class="row"><label class="field">镜头 X<input id="previewCameraX" type="number" min="0" step="1" value="0"></label><label class="field">镜头 Y<input id="previewCameraY" type="number" min="0" step="1" value="0"></label></div>
+            <label class="check-row"><input id="previewGround" type="checkbox" checked>显示精灵脚底锚点</label>
+            <label class="check-row"><input id="previewPlay" type="checkbox">播放同方向动作帧</label>
+            <div class="hint" id="previewDetails"></div>
+            <div class="hint preview-notice" id="previewNotice">编辑合成用于构图；固件将家具烘焙到背景，再绘制精灵。设备界面为占位，光影为近似效果。</div>
           </div>
         </div>
 
@@ -268,7 +289,6 @@
               <div class="export-section-title">Session</div>
               <div class="hint" id="sessionExportMeta">Auto-load uses sessions/stickmon_room_editor_session.json first. Browser storage is only an unsaved draft backup.</div>
               <div class="export-grid">
-                <button id="saveSession" class="primary" type="button">Save session</button>
                 <button id="loadSession" type="button">Load session</button>
                 <button id="changeSessionFile" type="button">Change tool folder</button>
                 <button id="clearSession" class="danger" type="button">Clear saved</button>
@@ -277,11 +297,10 @@
             <div class="export-section">
               <div class="export-section-title">Export</div>
               <div class="export-grid">
-                <button id="exportJson" class="primary" type="button">Export layout JSON</button>
                 <button id="exportPreview" type="button">Export preview PNG</button>
                 <button id="exportFurnitureLibrary" type="button">Export furniture bundle</button>
               </div>
-              <div class="hint">Layout JSON includes room geometry, furniture, guides, and lighting.</div>
+              <div class="hint">保存工程用于继续编辑；顶部“导出游戏布局”用于生成固件资源，不包含设备预览设置。PNG 导出当前预览模式，始终省略辅助框和锚点。</div>
             </div>
           </div>
         </details>
@@ -319,7 +338,7 @@
           </div>
         </details>
 
-        <details class="panel subpanel light-panel" id="lightShadowsPanel" open>
+        <details class="panel subpanel light-panel" id="lightShadowsPanel">
           <summary class="panel-header collapsible-panel-summary">
             <span>Light and shadows</span>
           </summary>
@@ -469,6 +488,7 @@
 
   <script src="./generated/pokemon_preview_assets.js"></script>
   <script src="./generated/furniture_library_assets.js"></script>
+  <script src="./preview_model.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>

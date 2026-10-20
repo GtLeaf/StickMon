@@ -82,7 +82,7 @@ void pageHeader(Canvas565& canvas, Game::GameState&) {
     expectPixel(canvas, 0, 76, untouched);
     expectPixel(canvas, 40, 38, PixelRenderer::rgb(27, 43, 51));
     expectPixel(canvas, 40, 12, PixelRenderer::rgb(67, 97, 101));
-    expectPixel(canvas, 29, 38, PixelRenderer::rgb(235, 183, 239));
+    expectPixel(canvas, 29, 38, PixelRenderer::rgb(255, 255, 255));
 
     UiCommon::drawPageHeader(canvas, Ui::SHOP, "C100", false);
     expectPixel(canvas, 120, 38, PixelRenderer::rgb(0, 0, 0));
@@ -541,6 +541,47 @@ void battleSpritePresentation(Canvas565& canvas, Game::GameState& state) {
     assert(WILD_SPRITE_AREA_WIDTH == 176);
     assert(PLAYER_SPRITE_AREA_WIDTH == 152);
     assert(BATTLE_SPRITE_AREA_HEIGHT == 144);
+    int smallHeight = 0, largeHeight = 0;
+    for (const auto& entry : PokemonBattleSizes::FRONT) {
+        const auto* frame = PokemonSprites::findSpeciesSprite(entry.speciesId,
+            PokemonSprites::SpriteKind::FRONT);
+        assert(frame);
+        const int padding = std::max(0, int(frame->groundPaddingPlusOne) - 1);
+        const auto fit = fitBattleFrontSprite(entry.speciesId, frame->width,
+            frame->height, padding, 272, 229, 176, 144);
+        const int lift = battleSpriteAirLift(entry.speciesId);
+        assert(fit.scale > 0 && fit.rect.width <= 176);
+        assert(fit.rect.y >= 85);  // Keep body and hovering height below the HP row.
+        assert(fit.rect.height + lift <= 144);
+        assert(fit.rect.x >= 184 && fit.rect.x + fit.rect.width <= 360);
+        const auto grounded = fitBattleSpriteAtScale(frame->width, frame->height,
+            padding, 272, 229 - lift, 176, 144 - lift, fit.scale);
+        assert(fit.rect.width == grounded.rect.width && fit.rect.height == grounded.rect.height);
+        assert(fit.rect.x + fit.rect.width / 2 == 272);
+        assert(fit.rect.y <= grounded.rect.y);
+        // The visible body's empty space is balanced above and below it,
+        // including ground padding and the reserved flying offset.
+        const int topGap = fit.rect.y - 85;
+        const int bottomGap = grounded.rect.y - fit.rect.y;
+        assert(std::abs(topGap - bottomGap) <= 1);
+        assert(fit.verticalOffset == lift + bottomGap);
+        const auto attack = fitBattleFrontSprite(entry.speciesId, frame->width,
+            frame->height, padding, 272 - 38, 229, 176, 144);
+        assert(attack.rect.x == fit.rect.x - 38 && attack.rect.y == fit.rect.y);
+        if (entry.speciesId == 1) smallHeight = fit.rect.height;
+        if (entry.speciesId == 130) largeHeight = fit.rect.height;
+    }
+    assert(smallHeight >= 64 && smallHeight <= 66);
+    assert(largeHeight >= 140 && largeHeight > smallHeight * 2);
+    const auto centeredSmall = fitBattleFrontSprite(1, 70, 66, 0, 272, 229, 176, 144);
+    assert(centeredSmall.rect.y == 124 && centeredSmall.rect.height == 66);
+    assert(centeredSmall.rect.y + centeredSmall.rect.height / 2 == 157);
+    const auto centeredPadding = fitBattleFrontSprite(1, 70, 76, 10, 272, 229, 176, 144);
+    assert(centeredPadding.rect.y == centeredSmall.rect.y);
+    const auto centeredLarge = fitBattleFrontSprite(130, 158, 160, 0, 272, 229, 176, 144);
+    assert(centeredLarge.rect.y == 85 && centeredLarge.rect.height == 144);
+    assert(!PokemonBattleSizes::front(65535).width);
+    assert(!fitBattleFrontSprite(1, 0, 10, 0, 272, 229, 176, 144).scale);
     for (int areaWidth : {176, 152}) {
         for (const auto size : {AmoledUi::Rect{0, 0, 48, 48},
                                 AmoledUi::Rect{0, 0, 105, 65},
@@ -562,6 +603,7 @@ void battleSpritePresentation(Canvas565& canvas, Game::GameState& state) {
     const auto small = fitBattleSprite(48, 48, 0, 80, 344, 152, 144, 104);
     assert(small.rect.width == 96 && small.rect.height == 96);
     assert(small.rect.y + small.rect.height == 344);
+    assert(small.verticalOffset == 0);
     const auto padded = fitBattleSprite(48, 64, 16, 80, 344, 152, 144, 104);
     assert(padded.rect.height == 128);
     assert(padded.rect.y + 96 == 344);

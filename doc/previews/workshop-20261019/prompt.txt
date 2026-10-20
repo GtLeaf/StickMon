@@ -1,0 +1,29 @@
+Use case: ui-mockup
+Asset type: High fidelity Chinese interaction concept board for StickMon, an existing pixel-art virtual Pokémon pet game on a small AMOLED handheld.
+Primary request: Produce ONE polished, coherent interaction flow concept image showing SIX actual game screens, not phones or web dashboards. Each screen has an exact portrait content aspect ratio 368:448. Arrange the six screens in a generous 3-column by 2-row grid on a very dark neutral presentation canvas, with clear numbered captions and subtle arrows (top left to top right; top right down to bottom left; bottom row left to right). Prefer a large landscape output around 2400x2000 or larger so Chinese is crisp. Give every screen equal size, complete and unclipped, with large readable UI typography and touch targets. Title at top: “工坊 · 家具制作流程”. Quiet subtitle: “探索发现 → 收集材料 → 伙伴协作 → 装饰房间”.
+
+Input images:
+Reference image 1 is the existing partners page: strictly follow its near-black content background, sky-blue page title at upper right, white large Chinese text, circular dark blue-gray back-chevron button at upper left, restrained muted teal secondary text and separators, pixel-art Pokémon portraits. Reference image 2 is the actual room menu and confirms large, spaced dark blue-gray rounded rows. Reference image 3 is the room environment and furniture design reference, preserve its cozy green-wall wooden-floor isometric room with leaf-green wicker pet bed and round leaf-pattern rug. Reference image 4 is the forest furniture asset contact sheet: preserve the leaf-pattern rug as the EXACT same focal furniture throughout the flow, with consistent silhouette, green leaves, cream woven field, brown rope edging. These are visual references for a NEW concept board; do not modify the reference files.
+
+Style/medium: Faithful game UI mockups, pixel-art sprites and furniture matching existing references, not fantasy ornamental menus. Render Chinese typography clean and readable, preferably resembling the game's pixel font but do not sacrifice legibility. Large clear hierarchy and minimal text per small screen. Use solid flat blacks, deep blue-gray cards, muted teal details, blue page headers, pale mint-green primary action buttons and warm gold only for rewards. No phone chrome, browser bars, hardware casing, gradients, glassmorphism, English placeholder text or decorative clutter. Every panel must look implementable on the existing device.
+
+Six screens and exact principal Chinese labels:
+1. Caption outside screen: “01 探索发现”
+Inside: header “探索”; a simple existing-game-style top-down forest tile map with a small pixel Pokémon and a recipe scroll reward on a path. Black lower HUD shows scroll icon plus “发现配方” and “叶片地毯”. This is a lightweight bottom HUD event, NOT a blocking modal; keep exploration visible. Tiny outside annotation “自动收录，可继续探索”.
+
+2. Caption: “02 工坊列表”
+Inside: header “工坊”; two small clear tabs “配方” (selected) and “制作”. Three large spaced rows with furniture thumbnail left, name and one short status, chevron right. Row 1 “叶片地毯”, status “材料不足”, small gold “新” badge; row 2 “叶片床”, status “可制作”; row 3 “森林食盆”, status “已拥有”. Same furniture art family as reference. Outside annotation “点配方查看材料”.
+
+3. Caption: “03 查看与追踪”
+Inside header “叶片地毯”. Hero rug preview centered in upper area. Two uncluttered material rows with tiny icons: “纤维  4/6”, source “森林拾取”; “叶片  2/2” with a subtle mint check. Missing count 4/6 is soft amber. Single bottom primary action “追踪配方”. Do NOT show a working craft button while materials are missing. Outside annotation “补齐材料后，按钮变为「制作」”.
+
+4. Caption: “04 找伙伴帮忙”
+Inside header “找伙伴”. Short top line “选择制作方式”. Three large selection rows: “自己制作” with “3分钟”; a cute pixel Bulbasaur portrait, “妙蛙种子” with small “擅长编织” and “2分钟”, selected with a mint outline and check; a pixel Squirtle portrait, “杰尼龟” with “3分钟”. Large bottom primary “开始制作”. No team limit gates, no fees, no energy cost labels. Outside annotation “伙伴可选，不占队伍名额”.
+
+5. Caption: “05 制作进行中”
+Inside header “制作”. Name “叶片地毯”; centered charming small pixel scene of Bulbasaur beside a modest wooden crafting table and the partially woven reference rug; clear large remaining time “01:42”; small line “妙蛙种子正在帮忙”. Single bottom secondary-outline action “继续探索”. No button to speed up with currency, no secondary quest widgets. Outside annotation “离开页面、锁屏都继续计时”.
+
+6. Caption: “06 完成与摆放”
+Inside header “制作完成”. Warm restrained celebratory sparkles above a room preview matching reference 3, with the same focal leaf-pattern rug clearly highlighted in the center and Bulbasaur beside it. Name below preview “叶片地毯”; small line “和妙蛙种子一起完成”. Large bottom primary action “立即摆放”, small secondary text “稍后”. Outside annotation “完成后永久拥有，可反复更换”.
+
+Consistency constraints: all back controls at same top-left position; titles top right in sky blue; minimum 24–32px-equivalent Chinese text inside native-size screen UI; principal controls about 48px-equivalent high. Keep six panels unclipped, with sufficient vertical space and no overlapping text. Main furniture stays identical across panels. All captions and labels are simplified Chinese, spelled correctly. Show screens as plausible game renders, not dense explanatory slides. No implementation details or code. No unsupported claims about released functionality; this is a visual concept.

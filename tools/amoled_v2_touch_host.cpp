@@ -1,5 +1,6 @@
 #include "TouchInput.h"
 #include "bsp/touch.h"
+#include "bsp/esp32_s3_touch_amoled_1_8.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
 #include <algorithm>
@@ -12,8 +13,17 @@ esp_lcd_touch_t sensor{};
 void (*interruptCallback)(esp_lcd_touch_handle_t) = nullptr;
 esp_lcd_touch_point_data_t reading{};
 uint8_t readingCount = 0;
+bool cstPresent = false, ftPresent = true, busReady = true;
+esp_err_t busInitResult = ESP_OK;
 }
 
+esp_err_t bsp_i2c_init() { return busInitResult; }
+i2c_master_bus_handle_t bsp_i2c_get_handle() { return busReady ? &sensor : nullptr; }
+esp_err_t i2c_master_probe(i2c_master_bus_handle_t bus, uint16_t address, int timeout) {
+    assert(bus == &sensor && timeout == 100);
+    assert(address == 0x15 || address == 0x38);
+    return (address == 0x15 ? cstPresent : ftPresent) ? ESP_OK : -1;
+}
 esp_err_t bsp_touch_new(const bsp_touch_config_t*, esp_lcd_touch_handle_t* handle) {
     *handle = &sensor;
     return ESP_OK;
@@ -79,7 +89,7 @@ int main() {
         assert(event.type == TouchEventType::UP);
     };
 
-    // Latest complete hardware session, DOWN samples only, ordered by target.
+    // Physical V1 / FT compatibility session, DOWN samples ordered by target.
     const int samples[][6] = {
         {44,53,24,32,56,69}, {187,42,184,32,184,60}, {329,53,344,32,312,69},
         {43,238,24,224,55,232}, {180,240,184,224,178,234}, {326,237,344,224,309,231},
@@ -102,7 +112,7 @@ int main() {
         assert(!input.poll(now++, event));
     }
     assert(sum / 9 < 7 && sum < oldSum / 4);
-    std::printf("V2 nine-point replay: mean %.1f -> %.1f px, max %.1f px\n",
+    std::printf("FT compatibility replay: mean %.1f -> %.1f px, max %.1f px\n",
                 oldSum / 9, sum / 9, maxError);
 
     // Movement and timeout release must use the same mapped/raw sample pair.
@@ -169,5 +179,79 @@ int main() {
     wakeFailure = true;
     assert(missingWake.begin() == ESP_OK);
     assert(!missingWake.canSleep()); // Normal touch works; shallow sleep stays disabled.
+
+    // Physical V2 / CST820, 2026-10-19. Both addresses present must select CST
+    // first, matching the BSP. The FT fit above must not be reused here.
+    cstPresent = true;
+    wakeFailure = false;
+    TouchInput cst;
+    assert(cst.begin() == ESP_OK);
+    const int cstSamples[][6] = {
+        {13,45,24,32,0,26}, {188,11,184,32,189,0}, {357,18,344,32,367,0},
+        {2,208,24,224,0,197}, {200,243,184,224,203,233}, {364,245,344,224,367,235},
+        {16,447,24,416,0,447}, {185,447,184,416,186,447}, {367,447,344,416,367,447},
+        {8,5,24,32,0,0},
+        {207,4,184,32,211,0},
+        {347,3,344,32,367,0},
+        {6,214,24,224,0,203},
+        {196,223,184,224,198,212},
+        {361,248,344,224,367,239},
+        {7,438,24,416,0,438},
+        {185,447,184,416,186,447},
+        {367,447,344,416,367,447},
+    };
+    sum = oldSum = maxError = 0;
+    for (const auto& s : cstSamples) {
+        reading = {static_cast<uint16_t>(s[0]), static_cast<uint16_t>(s[1])};
+        readingCount = 1;
+        interruptCallback(&sensor);
+        assert(cst.poll(now++, event) && event.type == TouchEventType::DOWN);
+        assert(event.rawX == s[0] && event.rawY == s[1]);
+        const auto down = event;
+        const double error = std::hypot(event.x - s[2], event.y - s[3]);
+        sum += error;
+        oldSum += std::hypot(s[4] - s[2], s[5] - s[3]);
+        maxError = std::max(maxError, error);
+        assert(error < 29);
+        readingCount = 0;
+        interruptCallback(&sensor);
+        assert(cst.poll(now++, event) && event.type == TouchEventType::UP);
+        assert(event.x == down.x && event.y == down.y);
+        assert(event.rawX == s[0] && event.rawY == s[1]);
+    }
+    assert(sum / 18 < 11 && sum < oldSum / 2);
+    std::printf("CST820 two-pass replay: mean %.1f -> %.1f px, max %.1f px\n",
+                oldSum / 18, sum / 18, maxError);
+    // Probe CST-only too; missing FT must not affect this path.
+    ftPresent = false;
+    TouchInput cstOnly;
+    assert(cstOnly.begin() == ESP_OK);
+    for (int axis = 0; axis < 2; ++axis) {
+        previous = -1;
+        for (uint16_t value = 0; value < (axis == 0 ? 368 : 448); ++value) {
+            reading = {axis == 0 ? value : uint16_t(184),
+                       axis == 1 ? value : uint16_t(224)};
+            readingCount = 1;
+            interruptCallback(&sensor);
+            assert(cstOnly.poll(now++, event));
+            const int coordinate = axis == 0 ? event.x : event.y;
+            assert(coordinate >= previous && coordinate >= 0 &&
+                   coordinate < (axis == 0 ? 368 : 448));
+            previous = coordinate;
+            readingCount = 0;
+            interruptCallback(&sensor);
+            assert(cstOnly.poll(now++, event));
+        }
+    }
+    TouchInput unavailable;
+    cstPresent = false;
+    ftPresent = false;
+    assert(unavailable.begin() != ESP_OK);
+    cstPresent = true;
+    busReady = false;
+    assert(unavailable.begin() == ESP_ERR_INVALID_STATE);
+    busReady = true;
+    busInitResult = -3;
+    assert(unavailable.begin() == -3);
 
 }

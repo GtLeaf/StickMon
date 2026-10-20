@@ -35,11 +35,22 @@ public:
         AppSceneFlow::Scene itemTargetReturnScene = AppSceneFlow::Scene::HOME;
     };
 
-    State& state() { return state_; }
     const State& state() const { return state_; }
 
     // Flow, saves, sounds and transactions are handled by the application.
     void open();
+    void cancelTouch();
+    void beginListTouch(int row, int category = -1);
+    void beginDetailTouch(int choice, const Game::GameState& gameState);
+    void dragList(int deltaY, float maximum);
+    void stopScroll() { state_.itemVelocity = 0.0f; }
+    void setBattleBagMode(bool enabled) { state_.battleBagMode = enabled; }
+    void suspendDetail() { state_.itemConfirmOpen = false; }
+    void clearAction();
+    void cancelTargetSelection();
+    void beginItemTarget(Game::ItemId item, AppSceneFlow::Scene returnScene);
+    void beginFeedback(uint8_t slot, uint16_t fromHp, uint16_t toHp, uint32_t nowMs);
+    bool feedbackFrameDue(uint32_t nowMs, uint32_t intervalMs);
     void close();
     void closeDetail();
     void selectCategory(Game::ShopService::Category category);

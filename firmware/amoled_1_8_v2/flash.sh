@@ -21,7 +21,8 @@ usage() {
     printf 'Builds and flashes the V2 firmware and resources from this directory.\n'
     printf 'The default variant is claw (WeChat enabled).\n'
     printf 'Use --debug to expose the Debug entry in the main menu.\n'
-    printf 'Use --erase once when recovering from a mixed or unknown image.\n'
+    printf 'WARNING: --erase deletes all flash data, including saves and credentials.\n'
+    printf 'Switching V1/V2 firmware does not normally require --erase.\n'
 }
 
 while (($# > 0)); do
@@ -95,6 +96,10 @@ source "$IDF_PATH/export.sh"
 cd "$PROJECT_DIR"
 
 "$SCRIPT_DIR/../../tools/build_amoled_variant.sh" "${BUILD_ARGS[@]}"
+
+printf 'Flashing AMOLED V2 (CO5300 / CST820 target), variant=%s, debug=%s\n' \
+    "$PROFILE" "$DEBUG"
+printf 'Build directory: %s\n' "$BUILD_DIR"
 
 if ((ERASE)); then
     idf.py -B "$BUILD_DIR" -p "$PORT" erase-flash

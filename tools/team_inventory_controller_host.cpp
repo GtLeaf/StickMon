@@ -67,7 +67,7 @@ void checkInventoryFlow() {
     assert(controller.selectItem(game, Scene::BAG, scaleRow) ==
         InventoryController::Selection::OPEN_MOVE_MANAGER);
     assert(!controller.state().itemConfirmOpen);
-    controller.state().battleBagMode = true;
+    controller.setBattleBagMode(true);
     const auto battleBag = controller.bagModel(game);
     assert(battleBag.battleMode && !battleBag.exploreOnly);
     assert(battleBag.dailyItemCount == Game::ItemInventory::homeBagDailyItemCount(game));
@@ -94,14 +94,15 @@ void checkInventoryFlow() {
 
 void checkScrollLifetime() {
     InventoryController controller;
-    controller.state().itemScroll = 90;
-    controller.state().itemVelocity = 30;
+    controller.dragList(-60, 100);
+    controller.dragList(-30, 100);
     assert(controller.tickScroll(100));
     assert(controller.state().itemScroll == 100);
     assert(controller.state().itemVelocity == 0);
-    controller.state().itemScroll = 90;
-    controller.state().itemVelocity = -5;
-    controller.state().itemConfirmOpen = true;
+    Game::GameState game;
+    controller.dragList(5, 100);
+    controller.dragList(5, 100);
+    assert(controller.selectItem(game, Scene::SHOP, 0) == InventoryController::Selection::DETAIL);
     assert(!controller.tickScroll(100));
     assert(controller.state().itemScroll == 90);
     controller.closeDetail();
@@ -163,7 +164,7 @@ void checkMovesAndRecall() {
     controller.tick(220);
     assert(controller.movesModel(game).detailProgress > 0.5f);
     controller.tick(340);
-    controller.state().teamMovesScroll = 300;
+    controller.dragMoves(-300);
     controller.clampMovesScroll();
     const int expandedScroll = controller.state().teamMovesScroll;
     assert(expandedScroll > 0);
@@ -174,7 +175,7 @@ void checkMovesAndRecall() {
     assert(std::memcmp(&game.team[0], &unchanged, sizeof(unchanged)) == 0);
 
     assert(controller.state().teamMovesRecallCount > 0);
-    controller.state().teamMovesMode = AmoledV1::TeamMovesViewModel::Mode::RECALL_SELECT;
+    controller.beginRecallSelection();
     selected = controller.selectMove(0, true, 700);
     assert(selected.action == TeamController::MoveAction::REDRAW);
     selected = controller.selectMove(0, true, 800);

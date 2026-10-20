@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "room": "standard",
+  "source": "origin_asset/room/standar/room_layout.json",
+  "placements": [
+    {
+      "slot": "rug",
+      "asset": "tex_9b204230e67cad24",
+      "x": 162,
+      "y": 184,
+      "width": 204,
+      "height": 100
+    },
+    {
+      "slot": "f6",
+      "asset": "tex_966478d52fe143e2",
+      "x": 134,
+      "y": 42,
+      "width": 112,
+      "height": 68
+    },
+    {
+      "slot": "f7",
+      "asset": "tex_ce8cd50e5bf3fb1a",
+      "x": 278,
+      "y": 46,
+      "width": 90,
+      "height": 98
+    },
+    {
+      "slot": "f8",
+      "asset": "tex_9048c6ee6d88119f",
+      "x": 278,
+      "y": 46,
+      "width": 90,
+      "height": 98
+    },
+    {
+      "slot": "bed",
+      "asset": "tex_2341d2982de8cd50",
+      "x": 72,
+      "y": 124,
+      "width": 160,
+      "height": 102
+    },
+    {
+      "slot": "f3",
+      "asset": "tex_9418fcf87085d5b3",
+      "x": 70,
+      "y": 212,
+      "width": 40,
+      "height": 28
+    }
+  ],
+  "resources": [
+    "rooms/standard.smonroom",
+    "furniture/tex_9b204230e67cad24.smonfurn",
+    "furniture/rug_forest_leaf.smonfurn",
+    "furniture/rug_starry_night.smonfurn",
+    "furniture/rug_cloud.smonfurn",
+    "furniture/tex_966478d52fe143e2.smonfurn",
+    "furniture/tex_ce8cd50e5bf3fb1a.smonfurn",
+    "furniture/tex_9048c6ee6d88119f.smonfurn",
+    "furniture/tex_2341d2982de8cd50.smonfurn",
+    "furniture/bed_forest_leaf.smonfurn",
+    "furniture/bed_starry_night.smonfurn",
+    "furniture/bed_cloud.smonfurn",
+    "furniture/tex_9418fcf87085d5b3.smonfurn"
+  ]
+}

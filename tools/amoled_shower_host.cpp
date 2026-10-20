@@ -33,6 +33,11 @@ private:
 }
 
 namespace AmoledV1 {
+struct ShowerControllerTestAccess {
+    static ShowerController::State& fixture(ShowerController& controller) {
+        return controller.state_;
+    }
+};
 struct AmoledShowerTestAccess {
     static void send(AmoledApp& app, DesktopPlatform& desktop, TouchEventType type, int x, int y) {
         TouchEvent event{};
@@ -100,10 +105,10 @@ struct AmoledShowerTestAccess {
                 if (bath == 2) app.startShowerSoap(0, desktop.millis());
                 tap(40, 36);
                 if (bath == 2) {
-                    assert(app.showerController_.state().showerMode == ShowerMode::EXIT_CONFIRM);
+                    assert(ShowerControllerTestAccess::fixture(app.showerController_).showerMode == ShowerMode::EXIT_CONFIRM);
                     tap(250, 380); // Stay, then request exit again.
                     assert(app.sceneFlow.current() == Scene::SHOWER);
-                    assert(app.showerController_.state().showerMode == ShowerMode::MENU);
+                    assert(ShowerControllerTestAccess::fixture(app.showerController_).showerMode == ShowerMode::MENU);
                     tap(40, 36);
                     tap(100, 380);
                 }
@@ -137,8 +142,8 @@ struct AmoledShowerTestAccess {
                 app.startShowerRinse(desktop.millis());
                 desktop.advanceMs(1800);
                 app.update(desktop.millis());
-                assert(app.showerController_.state().showerMode == ShowerMode::COMPLETE);
-                assert(app.showerController_.state().showerCompletionHearts == 1);
+                assert(ShowerControllerTestAccess::fixture(app.showerController_).showerMode == ShowerMode::COMPLETE);
+                assert(ShowerControllerTestAccess::fixture(app.showerController_).showerCompletionHearts == 1);
                 assert(monster.hpCur > 2);
             } else {
                 app.startShowerSoap(0, desktop.millis());
@@ -147,7 +152,7 @@ struct AmoledShowerTestAccess {
                 send(app, desktop, TouchEventType::MOVE, 140, 212);
                 send(app, desktop, TouchEventType::UP, 140, 212);
                 assert(app.gameState.bag.soap[0] == 0);
-                assert(app.showerController_.state().showerSoapRewarded);
+                assert(ShowerControllerTestAccess::fixture(app.showerController_).showerSoapRewarded);
                 assert(app.anyShowerFoam());
             }
             assert(app.sceneFlow.current() == Scene::PROGRESSION);
@@ -227,7 +232,7 @@ struct AmoledShowerTestAccess {
                 }
                 present(app, canvas);
                 assert(blobs.writes == saved);
-                if (app.showerController_.state().showerSoapRewarded) {
+                if (ShowerControllerTestAccess::fixture(app.showerController_).showerSoapRewarded) {
                     if (soapRewardSeen) {
                         assert(app.gameState.team[0].exp == rewardedExperience);
                     } else {
@@ -236,9 +241,9 @@ struct AmoledShowerTestAccess {
                     }
                 }
             }
-            assert(smallDamage && soapRewardSeen && app.showerController_.state().showerHopHeight > 0);
+            assert(smallDamage && soapRewardSeen && ShowerControllerTestAccess::fixture(app.showerController_).showerHopHeight > 0);
             assert(app.showerSavePending);
-            send(app, desktop, TouchEventType::UP, app.showerController_.state().showerToolX, app.showerController_.state().showerToolY);
+            send(app, desktop, TouchEventType::UP, ShowerControllerTestAccess::fixture(app.showerController_).showerToolX, ShowerControllerTestAccess::fixture(app.showerController_).showerToolY);
             assert(!app.showerSavePending && blobs.writes > saved);
             present(app, canvas);
             for (int i = 0; i < 65; ++i) {
@@ -249,11 +254,11 @@ struct AmoledShowerTestAccess {
             // A stationary pointer does not create foam or brush progress.
             app.startShowerTool(ShowerMode::BRUSHING, desktop.millis());
             send(app, desktop, TouchEventType::DOWN, 184, 212);
-            const auto bathBefore = app.showerController_.state().showerBath;
+            const auto bathBefore = ShowerControllerTestAccess::fixture(app.showerController_).showerBath;
             desktop.advanceMs(200);
             send(app, desktop, TouchEventType::MOVE, 184, 212);
             for (int i = 0; i < 8; ++i)
-                assert(app.showerController_.state().showerBath.foam[i].brushProgress == bathBefore.foam[i].brushProgress);
+                assert(ShowerControllerTestAccess::fixture(app.showerController_).showerBath.foam[i].brushProgress == bathBefore.foam[i].brushProgress);
             send(app, desktop, TouchEventType::UP, 184, 212);
             present(app, canvas);
             // Pointer cancellation ends the tool gesture, including later UP/MOVE events.
@@ -261,25 +266,25 @@ struct AmoledShowerTestAccess {
             desktop.advanceMs(100);
             send(app, desktop, TouchEventType::MOVE, 220, 212);
             app.cancelTouch();
-            const auto stoppedX = app.showerController_.state().showerToolX;
-            const auto stoppedY = app.showerController_.state().showerToolY;
+            const auto stoppedX = ShowerControllerTestAccess::fixture(app.showerController_).showerToolX;
+            const auto stoppedY = ShowerControllerTestAccess::fixture(app.showerController_).showerToolY;
             const auto stoppedExperience = app.gameState.team[0].exp;
             send(app, desktop, TouchEventType::MOVE, 100, 250);
             send(app, desktop, TouchEventType::UP, 100, 250);
-            assert(!app.showerController_.state().showerToolDragging);
-            assert(app.showerController_.state().showerToolX == stoppedX);
-            assert(app.showerController_.state().showerToolY == stoppedY);
+            assert(!ShowerControllerTestAccess::fixture(app.showerController_).showerToolDragging);
+            assert(ShowerControllerTestAccess::fixture(app.showerController_).showerToolX == stoppedX);
+            assert(ShowerControllerTestAccess::fixture(app.showerController_).showerToolY == stoppedY);
             assert(app.gameState.team[0].exp == stoppedExperience);
             assert(app.sceneFlow.current() == AppSceneFlow::Scene::SHOWER);
             present(app, canvas);
             // Alpha continues animating after the gesture and stops at its endpoint.
             app.resetShowerSession(desktop.millis());
-            app.showerController_.state().showerBath.atmosphereTarget = true;
+            ShowerControllerTestAccess::fixture(app.showerController_).showerBath.atmosphereTarget = true;
             app.forceFullRender(); present(app, canvas);
             for (int i = 0; i < 55; ++i) {
                 desktop.advanceMs(20); app.update(desktop.millis()); present(app, canvas);
             }
-            assert(app.showerController_.state().showerAtmosphereAlpha == 255);
+            assert(ShowerControllerTestAccess::fixture(app.showerController_).showerAtmosphereAlpha == 255);
             desktop.advanceMs(40); app.update(desktop.millis());
             assert(!app.needsRender());
             for (int score : {1, 2, 3}) {
@@ -289,20 +294,20 @@ struct AmoledShowerTestAccess {
                 app.gameState.team[0].fainted = false;
                 auto* record = Game::CareExperience::recordFor(app.gameState, app.gameState.team[0]);
                 record->bathStageMask = 7;
-                app.showerController_.state().showerSoapRewarded = score >= 2;
-                app.showerController_.state().showerBrushRewarded = score >= 3;
-                app.showerController_.state().showerAtmosphereAlpha = 255;
+                ShowerControllerTestAccess::fixture(app.showerController_).showerSoapRewarded = score >= 2;
+                ShowerControllerTestAccess::fixture(app.showerController_).showerBrushRewarded = score >= 3;
+                ShowerControllerTestAccess::fixture(app.showerController_).showerAtmosphereAlpha = 255;
                 app.startShowerRinse(desktop.millis());
                 present(app, canvas);
                 bool shook = false;
                 for (int i = 0; i < 105; ++i) {
                     desktop.advanceMs(20); app.update(desktop.millis());
-                    shook = shook || app.showerController_.state().showerWiggleStartedMs != 0;
+                    shook = shook || ShowerControllerTestAccess::fixture(app.showerController_).showerWiggleStartedMs != 0;
                     present(app, canvas);
                 }
                 assert(shook);
-                assert(app.showerController_.state().showerMode == ShowerMode::COMPLETE);
-                assert(app.showerController_.state().showerCompletionHearts == score);
+                assert(ShowerControllerTestAccess::fixture(app.showerController_).showerMode == ShowerMode::COMPLETE);
+                assert(ShowerControllerTestAccess::fixture(app.showerController_).showerCompletionHearts == score);
                 assert(app.gameState.team[0].hpCur == (score == 1 ? 55 : score == 2 ? 80 : 100));
                 const auto hp = app.gameState.team[0].hpCur;
                 desktop.advanceMs(100); app.update(desktop.millis());
@@ -311,34 +316,34 @@ struct AmoledShowerTestAccess {
             // Resting offsets are actual landing positions and remain mergeable.
             app.resetShowerSession(desktop.millis());
             app.startShowerTool(ShowerMode::BRUSHING, desktop.millis());
-            auto& first = app.showerController_.state().showerBath.foam[0];
+            auto& first = ShowerControllerTestAccess::fixture(app.showerController_).showerBath.foam[0];
             first.active = true; first.stage = 2; first.brushProgress = 4;
             first.restYOffset = -12;
             first.x = first.restX = 180;
             first.y = Game::BathInteraction::restY(app.showerBathLayout(), 2) - 12;
-            auto& second = app.showerController_.state().showerBath.foam[1];
+            auto& second = ShowerControllerTestAccess::fixture(app.showerController_).showerBath.foam[1];
             second = first; second.x = second.restX = 200;
             assert(app.tryMergeShowerFoam(first, desktop.millis()));
             assert(first.stage == 3 && !second.active);
             // Lower-layer weight >6 triggers the full-body effect and brush reward.
-            app.showerController_.state().showerBath = Game::BathInteraction::State{};
+            ShowerControllerTestAccess::fixture(app.showerController_).showerBath = Game::BathInteraction::State{};
             for (int i = 0; i < 3; ++i) {
-                auto& foam = app.showerController_.state().showerBath.foam[i];
+                auto& foam = ShowerControllerTestAccess::fixture(app.showerController_).showerBath.foam[i];
                 foam.active = true; foam.x = foam.restX = 140 + i * 35;
                 foam.y = 280; foam.stage = i == 0 ? 3 : i == 1 ? 2 : 0;
             }
             app.checkShowerAtmosphereThreshold(desktop.millis());
-            assert(app.showerController_.state().showerBath.atmosphereTarget && app.showerController_.state().showerBrushRewarded);
+            assert(ShowerControllerTestAccess::fixture(app.showerController_).showerBath.atmosphereTarget && ShowerControllerTestAccess::fixture(app.showerController_).showerBrushRewarded);
             assert(!app.anyShowerFoam());
             // A qualifying rub can produce the Stick turn reaction.
             app.resetShowerSession(desktop.millis());
-            app.showerController_.state().showerBath.foam[0].active = true;
-            app.showerController_.state().showerBath.foam[0].x = 184; app.showerController_.state().showerBath.foam[0].y = 212;
-            app.showerController_.state().showerLastReactionMs = desktop.millis() - 1600;
+            ShowerControllerTestAccess::fixture(app.showerController_).showerBath.foam[0].active = true;
+            ShowerControllerTestAccess::fixture(app.showerController_).showerBath.foam[0].x = 184; ShowerControllerTestAccess::fixture(app.showerController_).showerBath.foam[0].y = 212;
+            ShowerControllerTestAccess::fixture(app.showerController_).showerLastReactionMs = desktop.millis() - 1600;
             GameRandom::setRangeProvider(+[](uint32_t minimum, uint32_t) { return minimum; });
             app.rubShowerFoamAt(184, 212, desktop.millis());
             GameRandom::setRangeProvider(nullptr);
-            assert(app.showerController_.state().showerTurnUntilMs > desktop.millis() && app.showerController_.state().showerTurnFlip);
+            assert(ShowerControllerTestAccess::fixture(app.showerController_).showerTurnUntilMs > desktop.millis() && ShowerControllerTestAccess::fixture(app.showerController_).showerTurnFlip);
             app.forceFullRender(); present(app, canvas);
             // Failed saves remain queued until a later successful retry.
             blobs.fail = true;
@@ -346,9 +351,13 @@ struct AmoledShowerTestAccess {
             app.showerSaveAfterMs = desktop.millis();
             app.flushShowerSave(desktop.millis());
             assert(app.showerSavePending);
+            const auto failedWrites = blobs.writes;
             blobs.fail = false;
             desktop.advanceMs(1000);
             app.flushShowerSave(desktop.millis());
+            assert(app.showerSavePending && blobs.writes == failedWrites);
+            desktop.advanceMs(1000);
+            app.update(desktop.millis());
             assert(!app.showerSavePending);
         }
         Platform::bind(original);
