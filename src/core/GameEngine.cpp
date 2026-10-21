@@ -9,6 +9,7 @@
 #include <new>
 #include "assets/PokemonSprites.h"
 #include "core/ButtonDispatcher.h"
+#include "presentation/TouchUi.h"
 #include "core/FontResource.h"
 #include "core/MathUtil.h"
 #include "core/RoomResource.h"
@@ -271,7 +272,7 @@ void GameEngine::run() {
     bool immediateSceneUpdatePending =
         sceneUpdateScheduled &&
         static_cast<int32_t>(now - nextSceneUpdateMs) >= 0;
-    if (sceneDirty && !immediateSceneUpdatePending &&
+    if (sceneDirty && !Platform::display().locked() && !immediateSceneUpdatePending &&
         now - lastFrameMs >= frameMs) {
         sceneDirty = false;
         render(now);
@@ -2161,6 +2162,27 @@ void GameEngine::scheduleSceneUpdate(uint32_t nowMs) {
 }
 
 void GameEngine::processInput(uint32_t nowMs) {
+    const bool physicalDown = Platform::input().pressed(Platform::InputButton::PRIMARY) ||
+        Platform::input().pressed(Platform::InputButton::SECONDARY);
+    if (physicalDown && currentScene) currentScene->cancelTouch();
+    Platform::IInputDevice::TouchEvent touch;
+    for (int i = 0; i < 8 && Platform::input().pollTouch(touch); ++i) {
+        if (physicalDown || Platform::display().locked() || sceneFade != SceneFadePhase::NONE ||
+            resourceAlertVisible()) {
+            if (currentScene) currentScene->cancelTouch();
+            continue;
+        }
+        resetIdle(nowMs);
+        if (currentScene && currentScene->onTouch(touch)) {
+            sceneDirty = true;
+            scheduleSceneUpdate(nowMs);
+        }
+    }
+    if (Platform::display().locked()) {
+        if (currentScene) currentScene->cancelTouch();
+        ButtonDispatcher::ins().reset();
+        return;
+    }
     bool rawInputActive =
         Platform::input().pressed(Platform::InputButton::PRIMARY) ||
         Platform::input().pressed(Platform::InputButton::SECONDARY);
@@ -2168,6 +2190,7 @@ void GameEngine::processInput(uint32_t nowMs) {
 
     ButtonEvent events[ButtonDispatcher::MAX_EVENTS_PER_POLL];
     uint8_t count = ButtonDispatcher::ins().poll(events, ButtonDispatcher::MAX_EVENTS_PER_POLL);
+    if (count > 0 && currentScene) currentScene->cancelTouch();
     if (count > 0) resetIdle(nowMs);
     if (sceneFade != SceneFadePhase::NONE) return;
     if (resourceAlertVisible()) return;
@@ -2190,7 +2213,7 @@ void GameEngine::processInput(uint32_t nowMs) {
 #endif
             continue;
         }
-#if !defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) && !defined(STICKMON_DEDICATED_POWER_BUTTON)
         if (currentId == SceneID::MAIN && event.btn == 1 &&
             event.action == BtnAction::LONG_PRESS) {
             enterDeepSleep();
@@ -2427,6 +2450,7 @@ void GameEngine::render(uint32_t nowMs) {
 #endif
     PokemonSprites::beginRenderFrame();
     if (currentScene) currentScene->render();
+    if (currentScene && currentScene->touchNavigation()) TouchUi::drawNavigation();
     renderResourceAlert();
     renderSceneFade(Hal::ins().millis());
 #if STICKMON_ENABLE_RENDER_STATS

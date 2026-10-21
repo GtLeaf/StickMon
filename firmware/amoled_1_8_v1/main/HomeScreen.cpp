@@ -38,6 +38,7 @@
 #include "presentation/Canvas565.h"
 #include "presentation/HudRenderer.h"
 #include "presentation/PixelRenderer.h"
+#include "presentation/MenuGrid.h"
 #include "presentation/QrCodeGen.h"
 #include "presentation/TeamFlag.h"
 
@@ -101,13 +102,7 @@ void drawHomeHudMessage(Canvas565& canvas, const char* message) {
 }
 
 constexpr int MENU_CONTENT_TOP = UiMetrics::PAGE_HEADER_HEIGHT;
-constexpr int MENU_CELL_WIDTH = 164;
-constexpr int MENU_CELL_HEIGHT = 152;
-constexpr int MENU_ROW_HEIGHT = 164;
-constexpr int MENU_GRID_LEFT = 8;
-constexpr int MENU_GRID_GAP = 16;
 constexpr int MENU_VIEWPORT_HEIGHT = 448 - MENU_CONTENT_TOP;
-constexpr int MAIN_MENU_VIEWPORT_HEIGHT = 448 - MAIN_MENU_CONTENT_TOP;
 // The computer page is a compact vertical list. Keep its geometry separate
 // from the two-column main menu so all four entries fit on one screen.
 constexpr int COMPUTER_MENU_ROW_HEIGHT = 86;
@@ -480,18 +475,6 @@ void drawExploreBagIcon(Canvas565& canvas) {
 
 void drawExploreMenuIcon(Canvas565& canvas) {
     drawHudMenuIcon(canvas, EXPLORE_ROUTE_MENU_BUTTON_X);
-}
-
-void drawBattery(Canvas565& canvas, int x, int y, int percent) {
-    const uint16_t outline = rgb(222, 234, 229);
-    canvas.drawRoundRect((x), (y), (32), (16), (4), outline);
-    canvas.fillRect((x + 32), (y + 4), (4), (8), outline);
-    if (percent < 0 || percent > 100) {
-        canvas.fillRect(x + 12, y + 7, 8, 2, rgb(142, 157, 155));
-        return;
-    }
-    int fillWidth = percent * 24 / 100;
-    canvas.fillRect((x + 4), (y + 4), (fillWidth), (8), percent < 20 ? rgb(238, 91, 91) : rgb(92, 213, 139));
 }
 
 void drawHeart(Canvas565& canvas, int x, int y, uint16_t color,
@@ -1832,7 +1815,7 @@ void renderHomeScreenRegion(Canvas565& canvas, const HomeViewModel& model,
         clockText[4] = static_cast<char>('0' + minute % 10);
         text(canvas, 232, (HOME_HEADER_HEIGHT - clockHeight) / 2,
              clockText, ink);
-        drawBattery(canvas, 320, headerCenterY - 16 / 2, model.batteryPercent);
+        HudRenderer::drawBattery(canvas, 320, headerCenterY - 16 / 2, model.batteryPercent);
         pageClip.reset();
     }
 
@@ -2068,10 +2051,7 @@ HomeHitTarget homeHitTargetAt(int x, int y, int petCenterX,
 }
 
 float mainMenuMaxScroll() {
-    int rowCount = (MAIN_MENU_ITEM_COUNT + 1) / 2;
-    int contentHeight = rowCount * MENU_ROW_HEIGHT;
-    return static_cast<float>(
-        std::max(0, contentHeight - MAIN_MENU_VIEWPORT_HEIGHT));
+    return MenuGrid::mainLayout(AmoledUi::WIDTH, AmoledUi::HEIGHT, 2).maxScroll(MAIN_MENU_ITEM_COUNT);
 }
 
 bool mainMenuBackAt(int, int) {
@@ -2079,24 +2059,7 @@ bool mainMenuBackAt(int, int) {
 }
 
 int mainMenuItemAt(int x, int y, float scroll) {
-    if (x < MENU_GRID_LEFT ||
-        x >= MENU_GRID_LEFT + 2 * MENU_CELL_WIDTH + MENU_GRID_GAP ||
-        y < MAIN_MENU_CONTENT_TOP || y >= 448) {
-        return -1;
-    }
-    int contentY = static_cast<int>(y - MAIN_MENU_CONTENT_TOP + scroll);
-    if (contentY < 0) return -1;
-    int row = contentY / MENU_ROW_HEIGHT;
-    int cellY = contentY % MENU_ROW_HEIGHT;
-    if (cellY >= MENU_CELL_HEIGHT) return -1;
-
-    int localX = x - MENU_GRID_LEFT;
-    int column = localX / (MENU_CELL_WIDTH + MENU_GRID_GAP);
-    int cellX = localX % (MENU_CELL_WIDTH + MENU_GRID_GAP);
-    if (column >= 2 || cellX >= MENU_CELL_WIDTH) return -1;
-
-    int index = row * 2 + column;
-    return index < MAIN_MENU_ITEM_COUNT ? index : -1;
+    return MenuGrid::mainLayout(AmoledUi::WIDTH, AmoledUi::HEIGHT, 2).itemAt(x, y, scroll, MAIN_MENU_ITEM_COUNT);
 }
 
 #if STICKMON_ENABLE_DEBUG_FEATURES
@@ -2118,53 +2081,12 @@ int debugContactChoiceAt(int x, int y) {
 
 void renderMainMenu(Canvas565& canvas, const MenuViewModel& model,
                     uint16_t rowBegin, uint16_t rowEnd) {
-    const uint16_t ink = rgb(226, 238, 233);
-    rowBegin = std::min<uint16_t>(rowBegin, AmoledUi::HEIGHT);
-    rowEnd = std::min<uint16_t>(rowEnd, AmoledUi::HEIGHT);
     UiCommon::PageClip pageClip(canvas, rowBegin, rowEnd);
     if (rowBegin >= rowEnd) return;
-
-    int contentTop = std::max<int>(rowBegin, MAIN_MENU_CONTENT_TOP);
-    pageClip.setRect((0), (contentTop), (AmoledUi::WIDTH), (rowEnd - contentTop));
-    canvas.fillRect((0), (MAIN_MENU_CONTENT_TOP), (AmoledUi::WIDTH), (AmoledUi::HEIGHT - MAIN_MENU_CONTENT_TOP), UiMetrics::PAGE_BACKGROUND);
-
-    int scroll = static_cast<int>(std::lround(model.scroll));
-    int rowCount = (MAIN_MENU_ITEM_COUNT + 1) / 2;
-    for (int row = 0; row < rowCount; ++row) {
-        int y = MAIN_MENU_CONTENT_TOP + row * MENU_ROW_HEIGHT - scroll;
-        if (y + MENU_ROW_HEIGHT <= MAIN_MENU_CONTENT_TOP || y >= 448) continue;
-
-        for (int column = 0; column < 2; ++column) {
-            int index = row * 2 + column;
-            if (index >= MAIN_MENU_ITEM_COUNT) break;
-            int x = MENU_GRID_LEFT + column * (MENU_CELL_WIDTH + MENU_GRID_GAP);
-            AppSceneFlow::MainMenuEntry entry =
-                AppSceneFlow::mainMenuEntry(
-                    static_cast<uint8_t>(index),
-                    STICKMON_ENABLE_DEBUG_FEATURES != 0);
-            bool pressed = index == model.pressedItem;
-            uint16_t background = pressed ? rgb(42, 61, 68)
-                                          : rgb(24, 34, 42);
-            uint16_t border = pressed ? rgb(115, 226, 183)
-                                      : rgb(56, 75, 84);
-            canvas.fillRoundRect((x), (y + 2), (MENU_CELL_WIDTH), (MENU_CELL_HEIGHT), (8), background);
-            canvas.drawRoundRect((x), (y + 2), (MENU_CELL_WIDTH), (MENU_CELL_HEIGHT), (8), border);
-            if (entry.iconIndex < MenuAssets::MAIN_ICON_COUNT) {
-                uint16_t offset = FlashStorage::readWord(
-                    &MenuAssets::MAIN_ICON_FRAMES[entry.iconIndex].offset);
-                uint16_t length = FlashStorage::readWord(
-                    &MenuAssets::MAIN_ICON_FRAMES[entry.iconIndex].length);
-                PixelRenderer::drawRgb565RleScaled(
-                    x + (MENU_CELL_WIDTH - MenuAssets::FRAME_W * 2) / 2,
-                    y + 14, MenuAssets::FRAME_W, MenuAssets::FRAME_H,
-                    MenuAssets::MAIN_ICON_RLE, offset, length, 2.0f);
-            }
-            text(canvas, x + (MENU_CELL_WIDTH - textWidth(entry.shortLabel)) / 2,
-                 y + 108, entry.shortLabel, ink);
-        }
-    }
+    canvas.fillRect(0, 0, AmoledUi::WIDTH, AmoledUi::HEIGHT, UiMetrics::PAGE_BACKGROUND);
+    MenuGrid::mainMenu(canvas, MenuGrid::mainLayout(AmoledUi::WIDTH, AmoledUi::HEIGHT, 2),
+                       MAIN_MENU_ITEM_COUNT, model.scroll, model.pressedItem);
     drawToast(canvas, model.toast);
-    pageClip.reset();
 }
 
 #if STICKMON_ENABLE_DEBUG_FEATURES

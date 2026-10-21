@@ -157,7 +157,7 @@ bool drawViewportBuffer(int16_t destinationX, int16_t destinationY,
     if (sourceWidth <= 0 || sourceHeight <= 0) return false;
 
     Canvas565& canvas = PixelRenderer::canvas();
-    // Fast path for the AMOLED room: the art and destination are both native
+    // Fast path: the art and destination are both native
     // pixels, so each source row can be sent to the panel without fillRect.
     if (artScale == pixelScale && sourceWidth >= viewportWidth &&
         sourceHeight >= viewportHeight) {
@@ -201,14 +201,49 @@ bool drawViewportBuffer(int16_t destinationX, int16_t destinationY,
 
 }  // namespace
 
-bool draw(float cameraY, bool night) {
+Viewport viewport() {
+    const auto& room = RoomResource::ins();
+    const int width = room.available()
+        ? MathUtil::min<int>(Hal::DISPLAY_W, room.width() * PIXEL_SCALE) : Hal::DISPLAY_W;
+    const int height = room.available()
+        ? MathUtil::min<int>(Hal::DISPLAY_H, room.height() * PIXEL_SCALE) : Hal::DISPLAY_H;
+    return {static_cast<int16_t>((Hal::DISPLAY_W - width) / 2),
+            static_cast<int16_t>((Hal::DISPLAY_H - height) / 2),
+            static_cast<uint16_t>(width), static_cast<uint16_t>(height)};
+}
+
+int16_t clampCameraX(float cameraX) {
+    const auto& room = RoomResource::ins();
+    const int width = (Hal::DISPLAY_W + PIXEL_SCALE - 1) / PIXEL_SCALE;
+    return MathUtil::clamp<int>(static_cast<int>(roundf(cameraX)), 0,
+        MathUtil::max<int>(0, room.width() - width));
+}
+
+int16_t clampCameraY(float cameraY) {
+    const auto& room = RoomResource::ins();
+    const int height = (Hal::DISPLAY_H + PIXEL_SCALE - 1) / PIXEL_SCALE;
+    return MathUtil::clamp<int>(static_cast<int>(roundf(cameraY)), room.roomY(),
+        room.roomY() + MathUtil::max<int>(0, room.height() - height));
+}
+
+int16_t screenX(float worldX, float cameraX) {
+    return viewport().x + static_cast<int16_t>(roundf((worldX - clampCameraX(cameraX)) * PIXEL_SCALE));
+}
+
+int16_t screenY(float worldY, float cameraY) {
+    return viewport().y + static_cast<int16_t>(roundf((worldY - clampCameraY(cameraY)) * PIXEL_SCALE));
+}
+
+bool draw(float cameraY, bool night, float cameraX) {
     RoomResource::ins().begin();
     if (!prepare(night)) {
         PixelRenderer::clear(PixelRenderer::rgb(16, 18, 24));
         return false;
     }
-    return drawViewportBuffer(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H,
-                              0, static_cast<int16_t>(roundf(cameraY)), 1);
+    const auto view = viewport();
+    PixelRenderer::clear(0);
+    return drawViewportBuffer(view.x, view.y, view.width, view.height,
+                              clampCameraX(cameraX), clampCameraY(cameraY), PIXEL_SCALE);
 }
 
 bool drawViewport(int16_t destinationX, int16_t destinationY,

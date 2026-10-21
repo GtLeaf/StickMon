@@ -3,8 +3,22 @@
 #include "assets/HudAssets.h"
 #include "platform/api/FlashStorage.h"
 #include "presentation/Canvas565.h"
+#include "presentation/PixelRenderer.h"
 
 namespace HudRenderer {
+
+void drawBattery(Canvas565& canvas, int x, int y, int percent) {
+    const uint16_t outline = PixelRenderer::rgb(222, 234, 229);
+    canvas.drawRoundRect(x, y, 32, 16, 4, outline);
+    canvas.fillRect(x + 32, y + 4, 4, 8, outline);
+    if (percent < 0 || percent > 100) {
+        canvas.fillRect(x + 12, y + 7, 8, 2, PixelRenderer::rgb(142, 157, 155));
+        return;
+    }
+    const int fillWidth = percent * 24 / 100;
+    canvas.fillRect(x + 4, y + 4, fillWidth, 8,
+        percent < 20 ? PixelRenderer::rgb(238, 91, 91) : PixelRenderer::rgb(92, 213, 139));
+}
 
 void drawHungerIcon(Canvas565& canvas, int x, int y, uint8_t hunger,
                     uint8_t pixelScale) {

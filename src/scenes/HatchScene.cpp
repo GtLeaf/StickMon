@@ -1,4 +1,5 @@
 #include "scenes/HatchScene.h"
+#include "presentation/TouchUi.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -22,13 +23,18 @@ bool hatchSceneIsNight() {
     return minutes < 6 * 60 || minutes >= 18 * 60;
 }
 
+float hatchCameraX() {
+    return RoomRenderer::clampCameraX(RoomResource::ins().bedX() -
+        Hal::DISPLAY_W / (2.0f * RoomRenderer::PIXEL_SCALE));
+}
+
 float hatchCameraY() {
     RoomResource& room = RoomResource::ins();
     if (!room.available()) return 0.0f;
-    float maxCamera = static_cast<float>(room.roomY() + room.height() - Hal::DISPLAY_H);
-    if (maxCamera < 0.0f) maxCamera = 0.0f;
-    float camera = static_cast<float>(room.roomY() + room.bedY() - 16) - 84.0f;
-    return std::max(0.0f, std::min(maxCamera, camera));
+    const float focus = RoomRenderer::PIXEL_SCALE == 1
+        ? 84.0f : Hal::DISPLAY_H / (2.0f * RoomRenderer::PIXEL_SCALE);
+    return RoomRenderer::clampCameraY(room.roomY() + room.bedY() -
+        (RoomRenderer::PIXEL_SCALE == 1 ? 16 : 26) - focus);
 }
 }
 
@@ -128,6 +134,21 @@ void HatchScene::render() {
     drawEgg();
     drawHud();
     drawToast();
+    TouchUi::drawHomeMenu();
+}
+
+int HatchScene::touchTarget(int16_t x, int16_t y) {
+    if (TouchUi::homeMenuHit(x, y)) return 1;
+    auto& room = RoomResource::ins();
+    const int cx = room.available() ? RoomRenderer::screenX(room.bedX(), hatchCameraX()) : Hal::DISPLAY_W / 2;
+    const int cy = room.available() ? RoomRenderer::screenY(room.roomY() + room.bedY() - 26, hatchCameraY()) : 84;
+    return std::abs(x - cx) <= 24 && std::abs(y - cy) <= 27 ? 0 : -1;
+}
+
+bool HatchScene::onTap(int target) {
+    if (target == 1) return onButton({0, BtnAction::LONG_PRESS});
+    if (target == 0) return onButton({1, BtnAction::PRESSED});
+    return false;
 }
 
 void HatchScene::complete() {
@@ -171,26 +192,27 @@ int8_t HatchScene::eggShakeOffset(uint32_t nowMs) const {
 }
 
 void HatchScene::drawRoom() {
-    RoomRenderer::draw(hatchCameraY(), hatchSceneIsNight());
+    RoomRenderer::draw(hatchCameraY(), hatchSceneIsNight(), hatchCameraX());
 }
 
 void HatchScene::drawEgg() {
     auto& c = PixelRenderer::canvas();
     RoomResource& room = RoomResource::ins();
-    int x = room.available() ? room.bedX() : Hal::DISPLAY_W / 2;
+    int x = room.available() ? RoomRenderer::screenX(room.bedX(), hatchCameraX()) : Hal::DISPLAY_W / 2;
     int y = room.available()
-        ? static_cast<int>(room.roomY() + room.bedY() - 26 - hatchCameraY())
+        ? RoomRenderer::screenY(room.roomY() + room.bedY() - 26, hatchCameraY())
         : 84;
-    x += eggShakeOffset(Hal::ins().millis());
-    if (!GameAssets::drawCentered(GameAssets::Kind::EGG, x, y)) {
-        c.fillRect(x - 12, y - 16, 24, 32, PixelRenderer::rgb(255, 216, 72));
+    x += eggShakeOffset(Hal::ins().millis()) * RoomRenderer::PIXEL_SCALE;
+    if (!GameAssets::drawCentered(GameAssets::Kind::EGG, x, y, RoomRenderer::PIXEL_SCALE)) {
+        c.fillRect(x - 12 * RoomRenderer::PIXEL_SCALE, y - 16 * RoomRenderer::PIXEL_SCALE,
+                   24 * RoomRenderer::PIXEL_SCALE, 32 * RoomRenderer::PIXEL_SCALE, PixelRenderer::rgb(255, 216, 72));
     }
 }
 
 void HatchScene::drawHud() {
     auto& c = PixelRenderer::canvas();
-    static constexpr int PANEL_X = 168;
-    static constexpr int PANEL_Y = 2;
+    static constexpr int PANEL_X = Hal::DISPLAY_W - 72 - (Hal::DISPLAY_W > 240 ? 10 : 0);
+    static constexpr int PANEL_Y = Hal::DISPLAY_H > 135 ? 12 : 2;
     static constexpr int PANEL_W = 68;
     static constexpr int ASCII_ADVANCE = 8;
     c.fillRect(PANEL_X, PANEL_Y, PANEL_W, 22,
@@ -211,6 +233,6 @@ void HatchScene::drawHud() {
 void HatchScene::drawToast() {
     if (!toast) return;
     auto& c = PixelRenderer::canvas();
-    c.fillRect(72, 6, 96, 20, PixelRenderer::rgb(41, 45, 55));
-    PixelRenderer::text(98, 8, toast, PixelRenderer::rgb(255, 255, 255));
+    c.fillRect((Hal::DISPLAY_W - 96) / 2, 6, 96, 20, PixelRenderer::rgb(41, 45, 55));
+    PixelRenderer::text((Hal::DISPLAY_W - 44) / 2, 8, toast, PixelRenderer::rgb(255, 255, 255));
 }

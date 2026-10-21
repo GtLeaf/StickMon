@@ -1,6 +1,7 @@
 #include "scenes/ShowerScene.h"
 
 #include <cmath>
+#include <cstdio>
 
 #include "assets/GameAssets.h"
 #include "assets/PokemonSprites.h"
@@ -15,13 +16,15 @@
 #include "platform/api/FlashStorage.h"
 
 namespace {
-constexpr int MONSTER_CENTER_X = 99;
-constexpr int MONSTER_CENTER_Y = 78;
-constexpr int MENU_CENTER_X = 210;
+constexpr int BATH_DX = (Hal::DISPLAY_W - 240) / 3;
+constexpr int BATH_DY = (Hal::DISPLAY_H - 135) / 2;
+constexpr int MONSTER_CENTER_X = 99 + BATH_DX;
+constexpr int MONSTER_CENTER_Y = 78 + BATH_DY;
+constexpr int MENU_CENTER_X = Hal::DISPLAY_W - 30;
 constexpr int MENU_CENTER_Y = Hal::DISPLAY_H / 2;
 constexpr int MENU_SPACING = 46;
-constexpr int MENU_INDICATOR_X = 176;
-constexpr int WATER_RIGHT_X = 176;
+constexpr int MENU_INDICATOR_X = Hal::DISPLAY_W - 64;
+constexpr int WATER_RIGHT_X = 176 + BATH_DX;
 constexpr int MENU_GRADIENT_X = MENU_INDICATOR_X;
 constexpr float SHAKE_THRESHOLD_G = 0.38f;
 constexpr float GRAVITY_SMOOTHING_HZ = 2.0f;
@@ -36,9 +39,9 @@ constexpr uint32_t INCOMPLETE_DURATION_MS = 700;
 constexpr uint32_t EXP_FLOAT_DURATION_MS = 1100;
 constexpr uint32_t EXP_FLOAT_FADE_START_MS = 500;
 constexpr float EXP_FLOAT_RISE_PX = 24.0f;
-constexpr float EXP_FLOAT_BASE_X = 138.0f;
+constexpr float EXP_FLOAT_BASE_X = 138.0f + BATH_DX;
 constexpr float HEART_FLOAT_X = MONSTER_CENTER_X - 3.0f;
-constexpr float HEART_FLOAT_Y = 46.0f;
+constexpr float HEART_FLOAT_Y = 46.0f + BATH_DY;
 constexpr uint32_t HOP_DURATION_MS = 320;
 constexpr uint32_t WIGGLE_DURATION_MS = 220;
 constexpr uint32_t WIGGLE_FLIP_INTERVAL_MS = 70;
@@ -161,7 +164,7 @@ SceneUpdateResult ShowerScene::update(uint32_t nowMs, float dtSeconds) {
     float ax = 0.0f;
     float ay = 0.0f;
     float az = 0.0f;
-    Hal::ins().readAccel(ax, ay, az);
+    const bool motionAvailable = Hal::ins().readAccel(ax, ay, az);
 
     float dt = dtSeconds > 0.05f ? 0.05f : dtSeconds;
     if (!accelSeeded) {
@@ -178,6 +181,14 @@ SceneUpdateResult ShowerScene::update(uint32_t nowMs, float dtSeconds) {
     float dynY = ay - gravityY;
     float dynZ = az - gravityZ;
     float shake = sqrtf(dynX * dynX + dynY * dynY + dynZ * dynZ);
+    if (!motionAvailable && Platform::input().pressed(Platform::InputButton::PRIMARY)) {
+        // Sweep over the existing foam area while A is held.
+        const float phase = static_cast<float>(nowMs % 1600) * 0.003926991f;
+        dynX = sinf(phase) * 0.75f;
+        dynY = cosf(phase * 2.0f) * 0.55f;
+        shake = 0.8f;
+    }
+
 
     switch (mode) {
     case Mode::SOAPING:
@@ -376,9 +387,9 @@ void ShowerScene::updateSoaping(uint32_t nowMs, float dtSeconds,
     float dt = dtSeconds > 0.05f ? 0.05f : dtSeconds;
     float smoothing = 1.0f - expf(-9.0f * dt);
     float targetX = clampFloat(MONSTER_CENTER_X + dynX * TOOL_SHAKE_GAIN,
-                               44.0f, 161.0f);
+                               44.0f + BATH_DX, 161.0f + BATH_DX);
     float targetY = clampFloat(MONSTER_CENTER_Y + dynY * TOOL_SHAKE_GAIN,
-                               33.0f, 122.0f);
+                               33.0f + BATH_DY, 122.0f + BATH_DY);
     soapX += (targetX - soapX) * smoothing;
     soapY += (targetY - soapY) * smoothing;
     if (shake >= SHAKE_THRESHOLD_G &&
@@ -393,9 +404,9 @@ void ShowerScene::updateBrushing(uint32_t nowMs, float dtSeconds,
     float dt = dtSeconds > 0.05f ? 0.05f : dtSeconds;
     float smoothing = 1.0f - expf(-9.0f * dt);
     float targetX = clampFloat(MONSTER_CENTER_X + dynX * TOOL_SHAKE_GAIN,
-                               44.0f, 161.0f);
+                               44.0f + BATH_DX, 161.0f + BATH_DX);
     float targetY = clampFloat(MONSTER_CENTER_Y + dynY * TOOL_SHAKE_GAIN,
-                               33.0f, 122.0f);
+                               33.0f + BATH_DY, 122.0f + BATH_DY);
     brushX += (targetX - brushX) * smoothing;
     brushY += (targetY - brushY) * smoothing;
     if (shake >= SHAKE_THRESHOLD_G &&
@@ -421,9 +432,9 @@ void ShowerScene::updateRinsing(uint32_t nowMs, float dtSeconds) {
         drop.vy += 260.0f * dt;
         drop.x += drop.vx * dt;
         drop.y += drop.vy * dt;
-        if (drop.y >= 121.0f) {
-            if (fabsf(drop.vy) > 35.0f && drop.x > 25.0f && drop.x < 155.0f) {
-                drop.y = 120.0f;
+        if (drop.y >= 121.0f + BATH_DY) {
+            if (fabsf(drop.vy) > 35.0f && drop.x > 25.0f + BATH_DX && drop.x < 155.0f + BATH_DX) {
+                drop.y = 120.0f + BATH_DY;
                 drop.vy = -drop.vy * 0.24f;
                 drop.vx += drop.x < MONSTER_CENTER_X ? -18.0f : 18.0f;
             } else {
@@ -534,7 +545,7 @@ void ShowerScene::spawnWaterDrop() {
         WaterDrop& drop = water[i];
         if (drop.active) continue;
         drop.active = true;
-        drop.x = 22.0f + static_cast<float>((i * 29 + bath.spawnCursor * 7) % 139);
+        drop.x = 22.0f + BATH_DX + static_cast<float>((i * 29 + bath.spawnCursor * 7) % 139);
         drop.y = -4.0f - static_cast<float>((i * 7) % 42);
         drop.vx = static_cast<float>((static_cast<int>(i) % 7) - 3) * 4.0f;
         drop.vy = 125.0f + static_cast<float>((i * 13) % 90);
@@ -575,6 +586,10 @@ int ShowerScene::monsterBottomY() const {
 
 Game::BathInteraction::Layout ShowerScene::bathLayout() const {
     Game::BathInteraction::Layout layout;
+    layout.centerX += BATH_DX; layout.centerY += BATH_DY;
+    layout.left += BATH_DX; layout.right += BATH_DX;
+    layout.top += BATH_DY; layout.bottom += BATH_DY;
+    layout.lowerY += BATH_DY;
     layout.groundY = monsterBottomY();
     return layout;
 }
@@ -680,7 +695,7 @@ void ShowerScene::spawnHeartFloat(uint32_t nowMs) {
 }
 
 void ShowerScene::render() {
-    if (!GameAssets::draw(GameAssets::Kind::SHOWER_BACKGROUND, 0, 0)) {
+    if (!GameAssets::drawBackgroundViewport(GameAssets::Kind::SHOWER_BACKGROUND, 0, 0)) {
         PixelRenderer::clear(PixelRenderer::rgb(21, 36, 30));
     }
 
@@ -695,13 +710,15 @@ void ShowerScene::render() {
         drawHearts();
         int messageX = (Hal::DISPLAY_W - textPixelWidth(completionMessage)) / 2;
         if (messageX < 0) messageX = 0;
-        PixelRenderer::text(messageX, 92, completionMessage,
+        PixelRenderer::text(messageX, 92 + BATH_DY, completionMessage,
                             PixelRenderer::rgb(241, 242, 232), 1);
     }
     if (mode == Mode::EXIT_CONFIRM) drawExitConfirm();
     if (mode == Mode::INCOMPLETE) drawIncomplete();
     drawExpFloats();
     drawToast();
+    if (Hal::DISPLAY_H > 135 && (mode == Mode::SOAPING || mode == Mode::BRUSHING))
+        PixelRenderer::text(36, Hal::DISPLAY_H - 32, "HOLD A", 0xffff);
 }
 
 void ShowerScene::drawAtmosphere() const {
@@ -763,14 +780,14 @@ void ShowerScene::drawWater() const {
     uint16_t waterColor = PixelRenderer::rgb(74, 190, 232);
     uint16_t highlight = PixelRenderer::rgb(220, 250, 255);
     uint32_t elapsed = Hal::ins().millis() - modeStartedMs;
-    PixelRenderer::fillRectAlpha(20, 0, 143, 121, waterColor, 58);
+    PixelRenderer::fillRectAlpha(20 + BATH_DX, 0, 143, 121 + BATH_DY, waterColor, 58);
     for (uint8_t stream = 0; stream < 12; ++stream) {
-        int x = 22 + stream * 12;
+        int x = 22 + BATH_DX + stream * 12;
         int width = 7 + (stream % 3);
         int phase = static_cast<int>((elapsed / 3 + stream * 23) % 76);
         PixelRenderer::fillRectAlpha(x, phase - 76, width, 58, highlight, 88);
         PixelRenderer::fillRectAlpha(x, phase, width, 58, highlight, 88);
-        c.drawFastVLine(x + width / 2, 0, 121,
+        c.drawFastVLine(x + width / 2, 0, 121 + BATH_DY,
                         PixelRenderer::rgb(145, 226, 249));
     }
     for (const WaterDrop& drop : water) {
@@ -780,8 +797,8 @@ void ShowerScene::drawWater() const {
         c.drawFastVLine(x, y, drop.vy > 180.0f ? 11 : 7, highlight);
         c.drawPixel(x, y, highlight);
     }
-    c.fillEllipse(MONSTER_CENTER_X, 122, 70, 8, waterColor);
-    c.drawFastHLine(30, 119, 120, highlight);
+    c.fillEllipse(MONSTER_CENTER_X, 122 + BATH_DY, 70, 8, waterColor);
+    c.drawFastHLine(30 + BATH_DX, 119 + BATH_DY, 120, highlight);
     GameAssets::drawCentered(
         GameAssets::Kind::SHOWER_SPRINKLER,
         MONSTER_CENTER_X, 19, 1.05f);

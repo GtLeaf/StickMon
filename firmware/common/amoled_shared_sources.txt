@@ -55,5 +55,6 @@ src/hardware/EspNowLink.cpp
 src/platform/api/PlatformServices.cpp
 src/presentation/Canvas565.cpp
 src/presentation/HudRenderer.cpp
+src/presentation/MenuGrid.cpp
 src/presentation/PixelRenderer.cpp
 src/third_party/uzlib/tinflate.c

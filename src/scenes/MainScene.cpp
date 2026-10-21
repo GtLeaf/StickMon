@@ -1,4 +1,5 @@
 #include "scenes/MainScene.h"
+#include "presentation/TouchUi.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -22,6 +23,7 @@
 #include "hardware/Hal.h"
 #include "presentation/HudRenderer.h"
 #include "presentation/PixelRenderer.h"
+#include "presentation/PokemonShadow.h"
 #include "presentation/TutorialOverlay.h"
 #include "platform/api/FlashStorage.h"
 #include "platform/api/PlatformServices.h"
@@ -436,14 +438,15 @@ float clampf(float value, float lo, float hi) {
     return value;
 }
 
-float roomMaxCameraY() {
-    float bottom = (float)(roomOriginY() + roomHeight());
-    float maxY = bottom - (float)Hal::DISPLAY_H;
-    return maxY > 0.0f ? maxY : 0.0f;
+float cameraForWorldX(float worldX) {
+    return RoomRenderer::clampCameraX(
+        worldX - Hal::DISPLAY_W / (2.0f * RoomRenderer::PIXEL_SCALE));
 }
 
 float cameraForWorldY(float worldY) {
-    return clampf(worldY - CAMERA_FOCUS_Y, 0.0f, roomMaxCameraY());
+    const float focus = RoomRenderer::PIXEL_SCALE == 1
+        ? CAMERA_FOCUS_Y : Hal::DISPLAY_H / (2.0f * RoomRenderer::PIXEL_SCALE);
+    return RoomRenderer::clampCameraY(worldY - focus);
 }
 
 int16_t roomPointX(uint8_t index) {
@@ -778,6 +781,7 @@ void MainScene::onEnter() {
     }
     mainActor.velocityX = 0.0f;
     mainActor.velocityY = 0.0f;
+    cameraX = cameraForWorldX(mainActor.x);
     cameraY = cameraForWorldY(mainActor.y);
     pmdLongMove = false;
     pmdMotionPhase = PokemonMotion::SLITHER_IDLE_PHASE_INDEX;
@@ -2101,17 +2105,31 @@ float MainScene::pairConversationSeparation() const {
 }
 
 void MainScene::updateCamera() {
-    float focusY = pairInteraction != PairInteraction::NONE &&
-                           visitor.active
-        ? (mainActor.y + visitor.y) * 0.5f
-        : (doorMainHidden && !doorVisitorHidden
-               ? visitor.y
-               : mainActor.y);
+    const bool pair = pairInteraction != PairInteraction::NONE && visitor.active;
+    const bool visitorFocus = doorMainHidden && !doorVisitorHidden;
+    const float focusX = pair ? (mainActor.x + visitor.x) * 0.5f
+        : (visitorFocus ? visitor.x : mainActor.x);
+    const float focusY = pair ? (mainActor.y + visitor.y) * 0.5f
+        : (visitorFocus ? visitor.y : mainActor.y);
+    cameraX = cameraForWorldX(focusX);
     cameraY = cameraForWorldY(focusY);
 }
 
+int16_t MainScene::worldToScreenX(float worldX) const {
+    return RoomRenderer::screenX(worldX, cameraX);
+}
+
 int16_t MainScene::worldToScreenY(float worldY) const {
-    return (int16_t)roundf(worldY - cameraY);
+    return RoomRenderer::screenY(worldY, cameraY);
+}
+
+int16_t MainScene::spriteGroundY(
+    float actorY, float groundOffset, const PokemonSprites::SpriteFrame* frame) const {
+    // The simulation stores centers. Register each displayed frame at its
+    // stable world foot anchor; retain the original 1x presentation.
+    const float offset = RoomRenderer::PIXEL_SCALE == 1
+        ? PokemonSprites::frameGroundOffsetY(frame) : groundOffset;
+    return worldToScreenY(actorY + offset);
 }
 
 float MainScene::walkBoundaryOffsetY() const {
@@ -7077,25 +7095,26 @@ void MainScene::drawVisitorShadow() {
     const PmdSpriteConfig* config =
         pmdSpriteConfigForSpecies(visitor.speciesId);
     bool floating = config && config->airHeight > 0.0f;
-    const auto shadow = PokemonSprites::frameShadow(frame, flipX);
+    const auto shadow = PokemonShadow::atGround(frame,
+        worldToScreenX(visitor.x) + visitor.renderOffsetX * RoomRenderer::PIXEL_SCALE,
+        spriteGroundY(visitor.y, visitorGeometry().groundOffsetY, frame) +
+            visitor.renderOffsetY * RoomRenderer::PIXEL_SCALE,
+        RoomRenderer::PIXEL_SCALE, flipX);
     int rx = shadow.radiusX;
     int ry = shadow.radiusY;
     if (night) {
         rx = (rx * 11 + 5) / 10;
         ry = (ry * 11 + 5) / 10;
     }
-    int shadowX = (int)roundf(visitor.x) + visitor.renderOffsetX + shadow.offsetX;
-    int shadowY = worldToScreenY(
-        visitor.y + shadow.offsetY + visitor.renderOffsetY);
     uint16_t shadowColor = night ? PixelRenderer::rgb(18, 16, 24) : PixelRenderer::rgb(36, 29, 24);
     uint8_t outerAlpha =
         night ? (floating ? 84 : 122) : (floating ? 68 : 116);
     uint8_t coreAlpha =
         night ? (floating ? 0 : 92) : (floating ? 0 : 86);
-    fillSoftEllipseAlpha(shadowX, shadowY, rx, ry, shadowColor, outerAlpha);
+    fillSoftEllipseAlpha(shadow.x, shadow.y, rx, ry, shadowColor, outerAlpha);
     if (!floating) {
-        fillEllipseAlpha(shadowX, shadowY, MathUtil::max(5, rx / 2),
-                         MathUtil::max(2, ry / 2), shadowColor, coreAlpha);
+        fillEllipseAlpha(shadow.x, shadow.y, MathUtil::max(5 * RoomRenderer::PIXEL_SCALE, rx / 2),
+                         MathUtil::max(2 * RoomRenderer::PIXEL_SCALE, ry / 2), shadowColor, coreAlpha);
     }
 }
 
@@ -7105,7 +7124,7 @@ void MainScene::drawVisitor() {
     const PokemonSprites::SpriteFrame* frame = visitorCurrentFrame(flipX);
     if (!frame) return;
 
-    int x = (int)roundf(visitor.x) + visitor.renderOffsetX;
+    int x = worldToScreenX(visitor.x) + visitor.renderOffsetX * RoomRenderer::PIXEL_SCALE;
     bool sleeping =
         visitor.task == VisitorState::SLEEPING &&
         visitor.dropOffsetY <= 0.0f;
@@ -7114,15 +7133,19 @@ void MainScene::drawVisitor() {
     float floatOffset = pmdFloatYOffset(
         config, Hal::ins().millis(),
         sleeping || visitor.dropOffsetY > 0.0f);
-    int y = worldToScreenY(
-        visitor.y - visitor.dropOffsetY - floatOffset +
-        visitor.renderOffsetY -
-        pairConversationHopOffset(false, Hal::ins().millis()));
+    int y = spriteGroundY(
+        visitor.y - visitor.dropOffsetY - floatOffset -
+            pairConversationHopOffset(false, Hal::ins().millis()),
+        visitorGeometry().groundOffsetY, frame) +
+        (visitor.renderOffsetY - PokemonSprites::frameGroundOffsetY(frame)) *
+            RoomRenderer::PIXEL_SCALE;
     uint8_t w = FlashStorage::readByte(&frame->width);
     uint8_t h = FlashStorage::readByte(&frame->height);
-    PokemonSprites::drawFrame(frame, x - w / 2, y - h / 2, flipX);
+    PokemonSprites::drawFrameScaled(frame,
+        x - (w / 2) * RoomRenderer::PIXEL_SCALE,
+        y - (h / 2) * RoomRenderer::PIXEL_SCALE, RoomRenderer::PIXEL_SCALE, flipX);
     if (sleeping) {
-        drawVisitorSleepZz(x, y - h / 2);
+        drawVisitorSleepZz(x, y - (h / 2) * RoomRenderer::PIXEL_SCALE);
     }
 }
 
@@ -7145,16 +7168,16 @@ void MainScene::render() {
     int16_t visitorDepthZ = (int16_t)(visitor.y - 78.0f);
     RenderItem items[] = {
         {0, &MainScene::drawBackground},
-        {10, &MainScene::drawFloor},
-        {18, &MainScene::drawFood},
-        {(int16_t)(20 + depthZ), &MainScene::drawShadow},
-        {(int16_t)(20 + visitorDepthZ), &MainScene::drawVisitorShadow},
-        {(int16_t)(30 + depthZ), &MainScene::drawMonster},
-        {(int16_t)(30 + visitorDepthZ), &MainScene::drawVisitor},
-        {(int16_t)(40 + depthZ), &MainScene::drawStateEffect},
-        {85, &MainScene::drawNightOverlay},
+        {10, &MainScene::drawFloor, true},
+        {18, &MainScene::drawFood, true},
+        {(int16_t)(20 + depthZ), &MainScene::drawShadow, true},
+        {(int16_t)(20 + visitorDepthZ), &MainScene::drawVisitorShadow, true},
+        {(int16_t)(30 + depthZ), &MainScene::drawMonster, true},
+        {(int16_t)(30 + visitorDepthZ), &MainScene::drawVisitor, true},
+        {(int16_t)(40 + depthZ), &MainScene::drawStateEffect, true},
+        {85, &MainScene::drawNightOverlay, true},
 #if STICKMON_ENABLE_DEBUG_FEATURES
-        {88, &MainScene::drawWalkBoundary},
+        {88, &MainScene::drawWalkBoundary, true},
 #endif
         {90, &MainScene::drawHud},
         {100, &MainScene::drawToast},
@@ -7163,6 +7186,45 @@ void MainScene::render() {
         {110, &MainScene::drawProgressionPopup},
     };
     sortAndDraw(items, sizeof(items) / sizeof(items[0]));
+    if (progressionModal == ProgressionModal::NONE &&
+        contactDialog == ContactDialog::NONE) TouchUi::drawHomeMenu();
+}
+
+int MainScene::touchTarget(int16_t x, int16_t y) {
+    if (visitDeparture != VisitDeparture::NONE ||
+        contactDialog != ContactDialog::NONE || contactGuestMotion != ContactGuestMotion::NONE ||
+        progressionModal != ProgressionModal::NONE || doorTransition != DoorTransitionMode::NONE) return -1;
+    if (TouchUi::homeMenuHit(x, y)) return 2;
+    const auto view = RoomRenderer::viewport();
+    if (x < view.x || y < view.y || x >= view.x + view.width || y >= view.y + view.height) return -1;
+    if (std::abs(x - worldToScreenX(foodCenterX())) <= 19 &&
+        std::abs(y - worldToScreenY(foodCenterY())) <= 18) return 1;
+    if (doorMainHidden) return -1;
+    const auto* frame = currentMonsterFrame();
+    if (!frame) return -1;
+    const auto* config = active ? pmdSpriteConfigForSpecies(active->id) : nullptr;
+    const auto now = Hal::ins().millis();
+    const float lift = pmdFloatYOffset(config, now, pmdAction == PmdAction::SLEEPING) +
+        actionRenderYOffset(now) + pairConversationHopOffset(true, now);
+    const int cx = worldToScreenX(mainActor.x) + pmdRenderOffsetX * RoomRenderer::PIXEL_SCALE;
+    const int cy = spriteGroundY(mainActor.y - lift, mainGeometry().groundOffsetY, frame) +
+        (pmdRenderOffsetY - PokemonSprites::frameGroundOffsetY(frame)) * RoomRenderer::PIXEL_SCALE;
+    const int w = FlashStorage::readByte(&frame->width) * RoomRenderer::PIXEL_SCALE;
+    const int h = FlashStorage::readByte(&frame->height) * RoomRenderer::PIXEL_SCALE;
+    const auto bounds = PokemonSprites::frameVisibleBounds(frame);
+    const bool flip = config ? (pmdAction == PmdAction::SLEEPING ? false : pmdDirectionFlipX()) : facingRight;
+    const int left = flip ? FlashStorage::readByte(&frame->width) - bounds.left - bounds.width : bounds.left;
+    const int visibleX = cx - w / 2 + (left + bounds.width / 2) * RoomRenderer::PIXEL_SCALE;
+    const int visibleY = cy - h / 2 + (bounds.top + bounds.height / 2) * RoomRenderer::PIXEL_SCALE;
+    const int rx = std::max(20, bounds.width * RoomRenderer::PIXEL_SCALE / 2 + 4);
+    const int ry = std::max(22, bounds.height * RoomRenderer::PIXEL_SCALE / 2 + 4);
+    return std::abs(x - visibleX) <= rx && std::abs(y - visibleY) <= ry ? 0 : -1;
+}
+
+bool MainScene::onTap(int target) {
+    if (target == 2) return onButton({0, BtnAction::LONG_PRESS});
+    if (target == 0 || target == 1) return onButton({static_cast<uint8_t>(target), BtnAction::PRESSED});
+    return false;
 }
 
 bool MainScene::onButton(const ButtonEvent& event) {
@@ -7340,8 +7402,7 @@ void MainScene::drawProgressionPopup() {
 }
 
 void MainScene::drawBackground() {
-    PixelRenderer::clear(PixelRenderer::rgb(5, 6, 18));
-    RoomRenderer::draw(cameraY, mainSceneIsNight());
+    RoomRenderer::draw(cameraY, mainSceneIsNight(), cameraX);
 }
 
 void MainScene::drawFloor() {
@@ -7355,20 +7416,21 @@ void MainScene::drawFood() {
     uint8_t remainingBites = MathUtil::min<uint8_t>(
         maxBites,
         GameEngine::ins().bowlFoodBitesRemaining());
-    int cx = (int)foodCenterX();
+    int cx = worldToScreenX(foodCenterX());
     int foodY = worldToScreenY(foodCenterY());
 
-    static constexpr int FOOD_LEFT = -9;
-    static constexpr int FOOD_WIDTH = 18;
+    static constexpr int FOOD_LEFT = -9 * RoomRenderer::PIXEL_SCALE;
+    static constexpr int FOOD_WIDTH = 18 * RoomRenderer::PIXEL_SCALE;
     int visibleWidth = maxBites == 0
         ? 0
         : (FOOD_WIDTH * remainingBites + maxBites - 1) / maxBites;
     if (visibleWidth <= 0) return;
-    c.setClipRect(cx + FOOD_LEFT, foodY - 12, visibleWidth, 20);
+    c.setClipRect(cx + FOOD_LEFT, foodY - 12 * RoomRenderer::PIXEL_SCALE,
+                  visibleWidth, 20 * RoomRenderer::PIXEL_SCALE);
     if (!GameAssets::drawCentered(
             GameAssets::itemKind(Game::itemIdForFoodIndex(foodIndex)),
-            cx, foodY - 3, 0.5f)) {
-        c.fillEllipse(cx, foodY, 8, 3, PixelRenderer::rgb(238, 76, 56));
+            cx, foodY - 3 * RoomRenderer::PIXEL_SCALE, 0.5f * RoomRenderer::PIXEL_SCALE)) {
+        c.fillEllipse(cx, foodY, 8 * RoomRenderer::PIXEL_SCALE, 3 * RoomRenderer::PIXEL_SCALE, PixelRenderer::rgb(238, 76, 56));
     }
     c.clearClipRect();
 }
@@ -7383,7 +7445,11 @@ void MainScene::drawShadow() {
     const PmdSpriteConfig* config = active ? pmdSpriteConfigForSpecies(active->id) : nullptr;
     bool floating = config && config->airHeight > 0.0f;
     const bool flipX = config ? pmdDirectionFlipX() : facingRight;
-    const auto shadow = PokemonSprites::frameShadow(frame, flipX);
+    const auto shadow = PokemonShadow::atGround(frame,
+        worldToScreenX(mainActor.x) + pmdRenderOffsetX * RoomRenderer::PIXEL_SCALE,
+        spriteGroundY(mainActor.y, mainGeometry().groundOffsetY, frame) +
+            pmdRenderOffsetY * RoomRenderer::PIXEL_SCALE,
+        RoomRenderer::PIXEL_SCALE, flipX);
     int rx = shadow.radiusX;
     int ry = shadow.radiusY;
     if (night) {
@@ -7391,57 +7457,35 @@ void MainScene::drawShadow() {
         ry = (ry * 11 + 5) / 10;
     }
 
-    int shadowX = (int)mainActor.x + pmdRenderOffsetX + shadow.offsetX;
-    int shadowY = worldToScreenY(
-        mainActor.y + shadow.offsetY + pmdRenderOffsetY);
     uint16_t shadowColor = night ? PixelRenderer::rgb(18, 16, 24) : PixelRenderer::rgb(36, 29, 24);
     uint8_t outerAlpha = night ? (floating ? 84 : 122) : (floating ? 68 : 116);
     uint8_t coreAlpha = night ? (floating ? 0 : 92) : (floating ? 0 : 86);
-    fillSoftEllipseAlpha(shadowX, shadowY, rx, ry, shadowColor, outerAlpha);
+    fillSoftEllipseAlpha(shadow.x, shadow.y, rx, ry, shadowColor, outerAlpha);
     if (!floating) {
-        fillEllipseAlpha(shadowX, shadowY, MathUtil::max(5, rx / 2), MathUtil::max(2, ry / 2),
+        fillEllipseAlpha(shadow.x, shadow.y, MathUtil::max(5 * RoomRenderer::PIXEL_SCALE, rx / 2), MathUtil::max(2 * RoomRenderer::PIXEL_SCALE, ry / 2),
                          shadowColor, coreAlpha);
     }
 }
 
 void MainScene::drawMonster() {
     if (doorMainHidden) return;
-    int x = (int)mainActor.x;
+    const PokemonSprites::SpriteFrame* frame = currentMonsterFrame();
+    if (!frame) return;
     uint32_t nowMs = Hal::ins().millis();
     const PmdSpriteConfig* config = active ? pmdSpriteConfigForSpecies(active->id) : nullptr;
-    int y = worldToScreenY(mainActor.y - pmdFloatYOffset(
-                               config, nowMs,
-                               pmdAction == PmdAction::SLEEPING) -
-                           actionRenderYOffset(nowMs) -
-                           pairConversationHopOffset(true, nowMs));
-    if (active && pmdSpriteConfigForSpecies(active->id) && drawPmdMonster(x, y)) {
-        return;
-    }
-
-    const PokemonSprites::SpriteFrame* frame = currentMonsterFrame();
-    if (frame) {
-        uint8_t w = FlashStorage::readByte(&frame->width);
-        uint8_t h = FlashStorage::readByte(&frame->height);
-        if (PokemonSprites::drawFrame(frame, x - w / 2, y - h / 2, facingRight)) {
-            return;
-        }
-    }
-}
-
-bool MainScene::drawPmdMonster(int x, int y) {
-    if (!active) return false;
-    const PokemonSprites::SpriteFrame* frame = PokemonSprites::findSpeciesSprite(active->id, pmdSpriteKind());
-    if (!frame) return false;
-
-    x += pmdRenderOffsetX;
-    y += pmdRenderOffsetY;
-    uint8_t w = FlashStorage::readByte(&frame->width);
-    uint8_t h = FlashStorage::readByte(&frame->height);
-    if (PokemonSprites::drawFrame(frame, x - w / 2, y - h / 2,
-                                  pmdAction == PmdAction::SLEEPING ? false : pmdDirectionFlipX())) {
-        return true;
-    }
-    return false;
+    const float lift = pmdFloatYOffset(config, nowMs, pmdAction == PmdAction::SLEEPING) +
+        actionRenderYOffset(nowMs) + pairConversationHopOffset(true, nowMs);
+    int x = worldToScreenX(mainActor.x) + pmdRenderOffsetX * RoomRenderer::PIXEL_SCALE;
+    int y = spriteGroundY(mainActor.y - lift, mainGeometry().groundOffsetY, frame) +
+        (pmdRenderOffsetY - PokemonSprites::frameGroundOffsetY(frame)) *
+            RoomRenderer::PIXEL_SCALE;
+    const int w = FlashStorage::readByte(&frame->width);
+    const int h = FlashStorage::readByte(&frame->height);
+    const bool flip = config
+        ? (pmdAction == PmdAction::SLEEPING ? false : pmdDirectionFlipX()) : facingRight;
+    PokemonSprites::drawFrameScaled(frame,
+        x - (w / 2) * RoomRenderer::PIXEL_SCALE,
+        y - (h / 2) * RoomRenderer::PIXEL_SCALE, RoomRenderer::PIXEL_SCALE, flip);
 }
 
 void MainScene::drawStateEffect() {
@@ -7453,11 +7497,11 @@ void MainScene::drawStateEffect() {
     auto& c = PixelRenderer::canvas();
     const PmdSpriteConfig* config = active ? pmdSpriteConfigForSpecies(active->id) : nullptr;
     bool pulse = roomAction == RoomAction::ATTENTION_WAIT && ((nowMs / 260UL) & 1U) != 0;
-    int baseX = (int)mainActor.x + 17;
+    int baseX = worldToScreenX(mainActor.x) + 17 * RoomRenderer::PIXEL_SCALE;
     int baseY = worldToScreenY(mainActor.y - pmdFloatYOffset(
                                    config, nowMs,
                                    pmdAction == PmdAction::SLEEPING) -
-                               actionRenderYOffset(nowMs)) - 30 - (pulse ? 2 : 0);
+                               actionRenderYOffset(nowMs)) - 30 * RoomRenderer::PIXEL_SCALE - (pulse ? 2 : 0);
     uint16_t color = PixelRenderer::rgb(255, 103, 135);
     uint16_t outline = PixelRenderer::rgb(204, 204, 204);
     auto fillHeart = [&](int x, int y, bool small, uint16_t fill) {
@@ -7490,7 +7534,7 @@ void MainScene::drawNightOverlay() {
     if (lightSource == 0) return;
 
     const PmdSpriteConfig* config = active ? pmdSpriteConfigForSpecies(active->id) : nullptr;
-    int followX = (int)mainActor.x;
+    int followX = worldToScreenX(mainActor.x);
     int followY = worldToScreenY(
         mainActor.y -
         pmdFloatYOffset(config, Hal::ins().millis(),
@@ -7557,13 +7601,13 @@ void MainScene::drawWalkBoundary() {
     uint16_t outline = PixelRenderer::rgb(0, 0, 0);
     uint16_t red = PixelRenderer::rgb(255, 32, 32);
 
-    int16_t firstX = roomPointX(0);
+    int16_t firstX = worldToScreenX(roomPointX(0));
     int16_t firstY = worldToScreenY((float)roomPointY(0));
     int16_t prevX = firstX;
     int16_t prevY = firstY;
     for (uint8_t i = 1; i <= count; ++i) {
         uint8_t index = i == count ? 0 : i;
-        int16_t x = roomPointX(index);
+        int16_t x = worldToScreenX(roomPointX(index));
         int16_t y = worldToScreenY((float)roomPointY(index));
 
         c.drawLine(prevX - 1, prevY, x - 1, y, outline);
@@ -7578,17 +7622,17 @@ void MainScene::drawWalkBoundary() {
     }
 
     uint16_t routeColor = PixelRenderer::rgb(255, 216, 72);
-    int routePrevX = (int)roundf(mainActor.x);
+    int routePrevX = worldToScreenX(mainActor.x);
     int routePrevY = worldToScreenY(mainActor.y);
     for (uint8_t i = mainActor.route.index; i < mainActor.route.count; ++i) {
-        int routeX = (int)roundf(mainActor.route.x[i]);
+        int routeX = worldToScreenX(mainActor.route.x[i]);
         int routeY = worldToScreenY(mainActor.route.y[i]);
         c.drawLine(routePrevX, routePrevY, routeX, routeY, routeColor);
         c.fillCircle(routeX, routeY, 2, routeColor);
         routePrevX = routeX;
         routePrevY = routeY;
     }
-    c.drawCircle((int)roundf(mainActor.targetX), worldToScreenY(mainActor.targetY), 4,
+    c.drawCircle(worldToScreenX(mainActor.targetX), worldToScreenY(mainActor.targetY), 4,
                  PixelRenderer::rgb(64, 210, 255));
     char debugText[24];
     snprintf(debugText, sizeof(debugText), "AI:%u D:%u R:%u B:%u",
@@ -7600,8 +7644,8 @@ void MainScene::drawWalkBoundary() {
 
 void MainScene::drawHud() {
     auto& c = PixelRenderer::canvas();
-    static constexpr int PANEL_X = 168;
-    static constexpr int PANEL_Y = 2;
+    static constexpr int PANEL_X = Hal::DISPLAY_W - 72 - (Hal::DISPLAY_W > 240 ? 10 : 0);
+    static constexpr int PANEL_Y = Hal::DISPLAY_H > 135 ? 12 : 2;
     static constexpr int PANEL_W = 68;
     static constexpr int PANEL_RADIUS = 5;
 
@@ -7614,16 +7658,21 @@ void MainScene::drawHud() {
         contactGuestMotion != ContactGuestMotion::ENTER_CROSS;
     uint8_t visibleCount = Game::HomeHud::visibleTeamSlots(
         state, visibleSlots, visitingGuestEntered);
-    int panelH = visibleCount > 1 ? 57 : 38;
-    fillRoundRectAlpha(PANEL_X, PANEL_Y, PANEL_W, panelH, PANEL_RADIUS,
+    const bool marginHud = RoomRenderer::viewport().y >= PANEL_Y + 22;
+    const int clockPanelW = marginHud ? 96 : PANEL_W;
+    const int clockPanelX = marginHud ? Hal::DISPLAY_W - 28 - clockPanelW : PANEL_X;
+    int panelH = marginHud ? 22 : (visibleCount > 1 ? 57 : 38);
+    fillRoundRectAlpha(clockPanelX, PANEL_Y, clockPanelW, panelH, PANEL_RADIUS,
                        PixelRenderer::rgb(8, 10, 14), 150);
-    c.drawRoundRect(PANEL_X, PANEL_Y, PANEL_W, panelH, PANEL_RADIUS,
+    c.drawRoundRect(clockPanelX, PANEL_Y, clockPanelW, panelH, PANEL_RADIUS,
                     PixelRenderer::rgb(72, 83, 98));
 
     char clock[8];
     uint16_t gameMinutes = GameEngine::ins().gameMinutesOfDay();
     snprintf(clock, sizeof(clock), "%02u:%02u", gameMinutes / 60, gameMinutes % 60);
-    PixelRenderer::text(PANEL_X + 20, PANEL_Y + 3, clock, PixelRenderer::rgb(245, 246, 232));
+    PixelRenderer::text(clockPanelX + (marginHud ? 8 : 20), PANEL_Y + 3, clock, PixelRenderer::rgb(245, 246, 232));
+    if (marginHud)
+        HudRenderer::drawBattery(c, clockPanelX + 54, PANEL_Y + 3, Hal::ins().batteryLevel());
 
     uint32_t nowMs = Hal::ins().millis();
     for (uint8_t visibleIndex = 0; visibleIndex < visibleCount; ++visibleIndex) {
@@ -7644,10 +7693,17 @@ void MainScene::drawHud() {
 
         uint8_t hpPct = Game::HomeHud::hpPercent(mon);
 
-        int rowY = PANEL_Y + 18 + visibleIndex * 19;
+        const int statusX = marginHud ? 14 + visibleIndex * 76 : PANEL_X;
+        if (marginHud) {
+            fillRoundRectAlpha(statusX, PANEL_Y, PANEL_W, 22, PANEL_RADIUS,
+                               PixelRenderer::rgb(8, 10, 14), 150);
+            c.drawRoundRect(statusX, PANEL_Y, PANEL_W, 22, PANEL_RADIUS,
+                            PixelRenderer::rgb(72, 83, 98));
+        }
+        int rowY = marginHud ? PANEL_Y + 2 : PANEL_Y + 18 + visibleIndex * 19;
         HudRenderer::drawHungerIcon(
-            c, PANEL_X + 6, rowY + 2, hunger);
-        int barX = PANEL_X + 29;
+            c, statusX + 6, rowY + 2, hunger);
+        int barX = statusX + 29;
         int barW = 31;
 
         auto drawBar = [&](int y, uint8_t value, uint16_t fillColor) {
@@ -7667,11 +7723,16 @@ void MainScene::drawHud() {
 void MainScene::drawToast() {
     if (!toast) return;
     auto& c = PixelRenderer::canvas();
-    c.fillRect(68, 6, 96, 20, PixelRenderer::rgb(41, 45, 55));
-    PixelRenderer::text(76, 8, toast, PixelRenderer::rgb(255, 255, 255));
+    const auto view = RoomRenderer::viewport();
+    const bool bottomMargin = Hal::DISPLAY_H - view.y - view.height >= 31;
+    const int x = bottomMargin ? (Hal::DISPLAY_W - 96) / 2 : 68;
+    const int y = bottomMargin ? Hal::DISPLAY_H - 31 : 6;
+    c.fillRect(x, y, 96, 20, PixelRenderer::rgb(41, 45, 55));
+    PixelRenderer::text(x + 8, y + 2, toast, PixelRenderer::rgb(255, 255, 255));
 }
 
 void MainScene::drawTutorial() {
+    if (Platform::input().touchAvailable()) return;
     GameEngine& engine = GameEngine::ins();
     if (!engine.gameState().oobeDone || engine.idleModeActive() ||
         doorTransition != DoorTransitionMode::NONE ||
@@ -7704,7 +7765,13 @@ void MainScene::sortAndDraw(RenderItem* items, uint8_t count) {
     std::sort(items, items + count, [](const RenderItem& a, const RenderItem& b) {
         return a.z < b.z;
     });
+    auto& canvas = PixelRenderer::canvas();
+    const auto view = RoomRenderer::viewport();
     for (uint8_t i = 0; i < count; ++i) {
+        if (items[i].roomLayer) {
+            canvas.setClipRect(view.x, view.y, view.width, view.height);
+        }
         (this->*items[i].draw)();
+        canvas.clearClipRect();
     }
 }

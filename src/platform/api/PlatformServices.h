@@ -9,8 +9,14 @@ static_assert(__cplusplus >= 201703L,
 
 namespace Platform {
 
-static constexpr uint16_t LOGICAL_DISPLAY_W = 240;
-static constexpr uint16_t LOGICAL_DISPLAY_H = 135;
+#ifndef STICKMON_DISPLAY_WIDTH
+#define STICKMON_DISPLAY_WIDTH 240
+#endif
+#ifndef STICKMON_DISPLAY_HEIGHT
+#define STICKMON_DISPLAY_HEIGHT 135
+#endif
+static constexpr uint16_t LOGICAL_DISPLAY_W = STICKMON_DISPLAY_WIDTH;
+static constexpr uint16_t LOGICAL_DISPLAY_H = STICKMON_DISPLAY_HEIGHT;
 
 enum class InputButton : uint8_t {
     PRIMARY = 0,
@@ -61,9 +67,17 @@ public:
 
 class IInputDevice {
 public:
+    enum class TouchType : uint8_t { DOWN, MOVE, UP, CANCEL };
+    struct TouchEvent {
+        TouchType type = TouchType::CANCEL;
+        int16_t x = 0, y = 0;
+        uint32_t timestampMs = 0;
+    };
     virtual ~IInputDevice() = default;
     virtual void update() = 0;
     virtual bool pressed(InputButton button) const = 0;
+    virtual bool touchAvailable() const { return false; }
+    virtual bool pollTouch(TouchEvent& event) { (void)event; return false; }
 };
 
 class IDisplayDevice {
@@ -74,6 +88,7 @@ public:
     virtual void setBrightness(uint8_t value) = 0;
     virtual uint8_t brightness() const = 0;
     virtual void sleep() = 0;
+    virtual bool locked() const { return false; }
 };
 
 class IAudioDevice {

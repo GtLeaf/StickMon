@@ -11,6 +11,8 @@ public:
     SceneUpdateResult update(uint32_t nowMs, float dtSeconds) override;
     void render() override;
     bool onButton(const ButtonEvent& event) override;
+    int touchTarget(int16_t x, int16_t y) override;
+    bool onTap(int target) override;
 
 private:
     float elapsed = 0.0f;

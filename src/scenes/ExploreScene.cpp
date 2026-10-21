@@ -151,10 +151,10 @@ static constexpr uint32_t BATTLE_ACTION_MS =
     BATTLE_HIT_DELAY_MS + BATTLE_HIT_SHAKE_MS + BATTLE_HP_DRAIN_MS;
 static constexpr uint32_t BATTLE_SWITCH_PHASE_MS = 360;
 static constexpr uint32_t FOOD_THROW_DURATION_MS = 700;
-static constexpr int FOOD_THROW_START_X = 78;
-static constexpr int FOOD_THROW_START_Y = 83;
-static constexpr int FOOD_THROW_END_X = 166;
-static constexpr int FOOD_THROW_END_Y = 48;
+static constexpr int FOOD_THROW_START_X = 78 + (Hal::DISPLAY_W - 240) / 3;
+static constexpr int FOOD_THROW_START_Y = 83 + (Hal::DISPLAY_H - 135);
+static constexpr int FOOD_THROW_END_X = 166 + (Hal::DISPLAY_W - 240);
+static constexpr int FOOD_THROW_END_Y = 48 + (Hal::DISPLAY_H - 135) / 2;
 static constexpr int FOOD_THROW_ARC_HEIGHT = 34;
 static constexpr int BATTLE_SWITCH_TRAVEL_X = 120;
 static constexpr uint8_t EXPLORE_MAP_TILES_W = 16;
@@ -217,25 +217,25 @@ static_assert(!routeBossPatrolFacesOutward(0) &&
               "route boss must hold its last movement direction at each endpoint");
 
 struct BattleLayout {
-    static constexpr int PLAYER_NAME_Y = 66;
+    static constexpr int PLAYER_NAME_Y = 66 + (Hal::DISPLAY_H - 135);
 
-    static constexpr int WILD_X = 178;
-    static constexpr int WILD_GROUND_Y = PLAYER_NAME_Y;
+    static constexpr int WILD_X = 178 + (Hal::DISPLAY_W - 240);
+    static constexpr int WILD_GROUND_Y = 66 + (Hal::DISPLAY_H - 135) / 2;
     static constexpr int WILD_MAX_W = 116;
     static constexpr int WILD_MAX_H = WILD_GROUND_Y;
 
-    static constexpr int PLAYER_X = 52;
-    static constexpr int PLAYER_GROUND_Y = 107;
+    static constexpr int PLAYER_X = 52 + (Hal::DISPLAY_W - 240) / 3;
+    static constexpr int PLAYER_GROUND_Y = 107 + (Hal::DISPLAY_H - 135);
     static constexpr int PLAYER_MAX_W = 105;
     static constexpr int PLAYER_MAX_H = 65;
 
-    static constexpr int FOOTER_Y = 99;
+    static constexpr int FOOTER_Y = Hal::DISPLAY_H - 36;
     static constexpr int FOOTER_H = Hal::DISPLAY_H - FOOTER_Y;
 
-    static constexpr int EXP_LABEL_X = 118;
+    static constexpr int EXP_LABEL_X = 118 + (Hal::DISPLAY_W - 240);
     static constexpr int EXP_LABEL_VISUAL_H = 9;
-    static constexpr int EXP_BAR_X = 149;
-    static constexpr int EXP_BAR_Y = 85;
+    static constexpr int EXP_BAR_X = 149 + (Hal::DISPLAY_W - 240);
+    static constexpr int EXP_BAR_Y = 85 + (Hal::DISPLAY_H - 135);
     static constexpr int EXP_BAR_W = 81;
     static constexpr int EXP_BAR_H = 6;
     static constexpr int EXP_LABEL_Y =
@@ -249,9 +249,9 @@ static_assert(BattleLayout::EXP_LABEL_Y +
 
 static_assert(BattleLayout::WILD_GROUND_Y - BattleLayout::WILD_MAX_H == 0,
               "wild sprite bounds must reach the top edge of the display");
-static_assert(BattleLayout::PLAYER_X - BattleLayout::PLAYER_MAX_W / 2 == 0,
+static_assert(BattleLayout::PLAYER_X - BattleLayout::PLAYER_MAX_W / 2 >= 0,
               "player sprite bounds must reach the left edge of the display");
-static_assert(BattleLayout::PLAYER_GROUND_Y - BattleLayout::PLAYER_MAX_H == 42,
+static_assert(BattleLayout::PLAYER_GROUND_Y - BattleLayout::PLAYER_MAX_H == 42 + Hal::DISPLAY_H - 135,
               "player sprite bounds must use the lowered top edge");
 
 void drawBattleText(int x, int y, const char* value, uint16_t color) {
@@ -4815,7 +4815,7 @@ void ExploreScene::renderEncounter() {
     const RouteMap& map = routeMap(mapBlocks[currentMapBlock]);
     if (!GameAssets::drawBattleBackground(map.battleBackground)) {
         c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, PixelRenderer::rgb(197, 220, 192));
-        c.fillRect(0, 78, Hal::DISPLAY_W, 24, PixelRenderer::rgb(228, 225, 190));
+        c.fillRect(0, 78 + (Hal::DISPLAY_H - 135) / 2, Hal::DISPLAY_W, 24 + (Hal::DISPLAY_H - 135) / 2, PixelRenderer::rgb(228, 225, 190));
     }
 
     uint32_t nowMs = Hal::ins().millis();
@@ -4886,13 +4886,13 @@ void ExploreScene::renderFoodThrow() {
 
 void ExploreScene::renderResult() {
     auto& c = PixelRenderer::canvas();
-    c.fillRect(42, 42, 156, 58, PixelRenderer::rgb(35, 42, 50));
-    c.drawRect(42, 42, 156, 58, PixelRenderer::rgb(95, 110, 126));
+    c.fillRect((Hal::DISPLAY_W - 156) / 2, (Hal::DISPLAY_H - 58) / 2, 156, 58, PixelRenderer::rgb(35, 42, 50));
+    c.drawRect((Hal::DISPLAY_W - 156) / 2, (Hal::DISPLAY_H - 58) / 2, 156, 58, PixelRenderer::rgb(95, 110, 126));
     const char* result = resultMessage && resultMessage[0]
         ? resultMessage
         : (wild ? wild->name : nullptr);
     if (result) {
-        PixelRenderer::text(58, 67, result,
+        PixelRenderer::text((Hal::DISPLAY_W - 124) / 2, (Hal::DISPLAY_H - 8) / 2, result,
                             PixelRenderer::rgb(241, 242, 232), 1);
     }
 }
@@ -5049,10 +5049,10 @@ void ExploreScene::renderBattleHud() {
 
     if (wild) {
         uint16_t shownWildHp = battleHpForRender(true, wildHp, Hal::ins().millis());
-        drawBattleDarkText(6, 5, wild->name);
+        drawBattleDarkText(Hal::DISPLAY_W > 240 ? 16 : 6, Hal::DISPLAY_H > 135 ? 14 : 5, wild->name);
         snprintf(buf, sizeof(buf), Ui::Common::LEVEL_FMT, wildRuntime.level);
-        drawBattleAsciiRightAligned(114, 5, buf);
-        drawHpWithStatus(12, 20, 28, 23, 74, shownWildHp, wildHpMax,
+        drawBattleAsciiRightAligned(Hal::DISPLAY_W > 240 ? 124 : 114, Hal::DISPLAY_H > 135 ? 14 : 5, buf);
+        drawHpWithStatus(Hal::DISPLAY_W > 240 ? 22 : 12, Hal::DISPLAY_H > 135 ? 29 : 20, Hal::DISPLAY_W > 240 ? 38 : 28, Hal::DISPLAY_H > 135 ? 32 : 23, 74, shownWildHp, wildHpMax,
                          wildRuntime.majorStatus);
     }
 
@@ -5069,14 +5069,14 @@ void ExploreScene::renderBattleHud() {
         ? levelForExp(species.growthRate, shownExp)
         : active.level;
 
-    drawBattleDarkText(120, BattleLayout::PLAYER_NAME_Y, species.name);
+    drawBattleDarkText(120 + Hal::DISPLAY_W - 240, BattleLayout::PLAYER_NAME_Y, species.name);
     snprintf(buf, sizeof(buf), Ui::Common::LEVEL_FMT, shownLevel);
-    drawBattleAsciiRightAligned(228, BattleLayout::PLAYER_NAME_Y, buf);
+    drawBattleAsciiRightAligned(228 + Hal::DISPLAY_W - 240, BattleLayout::PLAYER_NAME_Y, buf);
 
     if (!showVictoryExp) {
         uint16_t shownPlayerHp = battleHpForRender(
             false, active.hpCur, Hal::ins().millis());
-        drawHpWithStatus(128, 82, 144, 85, 86, shownPlayerHp, active.hpMax,
+        drawHpWithStatus(128 + Hal::DISPLAY_W - 240, 82 + Hal::DISPLAY_H - 135, 144 + Hal::DISPLAY_W - 240, 85 + Hal::DISPLAY_H - 135, 86, shownPlayerHp, active.hpMax,
                          active.majorStatus);
         return;
     }
@@ -5117,13 +5117,13 @@ void ExploreScene::renderCommandBox() {
 
     if (battleLogActive || battleLogVisibleCount > 0) {
         for (uint8_t i = 0; i < battleLogVisibleCount; ++i) {
-            drawBattleFooterDarkText(12, 101 + i * 16, battleLogVisible[i]);
+            drawBattleFooterDarkText(12, BattleLayout::FOOTER_Y + 2 + i * 16, battleLogVisible[i]);
         }
         return;
     }
     if (phase != Phase::ENCOUNTER) return;
     if (defeatAwaitInput) {
-        drawBattleFooterDarkText(72, 109, Ui::Explore::ANY_KEY_RETURN);
+        drawBattleFooterDarkText((Hal::DISPLAY_W - 96) / 2, BattleLayout::FOOTER_Y + 10, Ui::Explore::ANY_KEY_RETURN);
         return;
     }
     if (battleTurnStage != BattleTurnStage::IDLE ||
@@ -5131,8 +5131,8 @@ void ExploreScene::renderCommandBox() {
         return;
     }
 
-    static constexpr int commandY = 109;
-    static constexpr int xs[] = {18, 74, 126, 190};
+    static constexpr int commandY = BattleLayout::FOOTER_Y + 10;
+    static constexpr int xs[] = {18, 74 + (Hal::DISPLAY_W - 240) / 3, 126 + (Hal::DISPLAY_W - 240) * 2 / 3, 190 + Hal::DISPLAY_W - 240};
     static constexpr const char* items[] = {
         Ui::Explore::CMD_BATTLE,
         Ui::Explore::CMD_BAG,

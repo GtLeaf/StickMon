@@ -1,3 +1,4 @@
+#include "Rgb565Transfer.h"
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -256,6 +257,12 @@ esp_err_t startDisplay(esp_lcd_panel_handle_t* panel,
     return result;
 }
 
+esp_err_t submitPanelPixels(void* panel, int x0, int y0, int x1, int y1,
+                            const uint16_t* pixels) {
+    return esp_lcd_panel_draw_bitmap(static_cast<esp_lcd_panel_handle_t>(panel),
+                                    x0, y0, x1, y1, pixels);
+}
+
 esp_err_t submitFrame(esp_lcd_panel_handle_t panel,
                       const uint16_t* physicalPixels,
                       const TransferBuffers& transferBuffers,
@@ -265,52 +272,12 @@ esp_err_t submitFrame(esp_lcd_panel_handle_t panel,
     if (!transferDone) return ESP_ERR_INVALID_ARG;
     sourceBegin = std::min<uint16_t>(sourceBegin, LOGICAL_HEIGHT);
     sourceEnd = std::min<uint16_t>(sourceEnd, LOGICAL_HEIGHT);
-    if (sourceBegin >= sourceEnd) return ESP_OK;
-    esp_err_t result = ESP_OK;
-    size_t pendingTransfers = 0;
-    size_t nextBuffer = 0;
-
-    for (uint16_t sourceY = sourceBegin;
-         result == ESP_OK && sourceY < sourceEnd;
-         sourceY += TRANSFER_LOGICAL_ROWS) {
-        if (pendingTransfers == TRANSFER_BUFFER_COUNT) {
-            if (xSemaphoreTake(transferDone, pdMS_TO_TICKS(1000)) != pdTRUE) {
-                result = ESP_ERR_TIMEOUT;
-                break;
-            }
-            --pendingTransfers;
-        }
-
-        uint16_t logicalRows = static_cast<uint16_t>(
-            std::min<uint16_t>(TRANSFER_LOGICAL_ROWS, sourceEnd - sourceY));
-        uint16_t physicalY = sourceY;
-        uint16_t physicalRows = logicalRows;
-
-        for (uint16_t row = 0; row < physicalRows; ++row) {
-            const uint16_t* source = physicalPixels +
-                static_cast<size_t>(physicalY + row) * PHYSICAL_WIDTH;
-            std::memcpy(transferBuffers[nextBuffer] +
-                            static_cast<size_t>(row) * PHYSICAL_WIDTH,
-                        source, PHYSICAL_WIDTH * sizeof(uint16_t));
-        }
-        result = esp_lcd_panel_draw_bitmap(
-            panel, 0, physicalY, PHYSICAL_WIDTH,
-            physicalY + physicalRows, transferBuffers[nextBuffer]);
-        if (result == ESP_OK) {
-            ++pendingTransfers;
-            nextBuffer = (nextBuffer + 1U) % TRANSFER_BUFFER_COUNT;
-        }
-    }
-
-    while (pendingTransfers > 0) {
-        if (xSemaphoreTake(transferDone, pdMS_TO_TICKS(1000)) != pdTRUE) {
-            if (result == ESP_OK) result = ESP_ERR_TIMEOUT;
-            break;
-        }
-        --pendingTransfers;
-    }
-
-    return result;
+    uint16_t xBegin = 0, xEnd = LOGICAL_WIDTH;
+    if (xBegin >= xEnd || sourceBegin >= sourceEnd) return ESP_OK;
+    return Stickmon::submitRgb565Region(physicalPixels, PHYSICAL_WIDTH,
+        xBegin, sourceBegin, xEnd, sourceEnd, transferBuffers.data(),
+        transferBuffers.size(), TRANSFER_LOGICAL_ROWS, transferDone,
+        submitPanelPixels, panel);
 }
 
 esp_err_t submitFrameRegion(esp_lcd_panel_handle_t panel,
@@ -320,56 +287,15 @@ esp_err_t submitFrameRegion(esp_lcd_panel_handle_t panel,
                             uint16_t xBegin, uint16_t xEnd,
                             uint16_t sourceBegin, uint16_t sourceEnd) {
     if (!transferDone) return ESP_ERR_INVALID_ARG;
-    xBegin = std::min<uint16_t>(xBegin, LOGICAL_WIDTH);
-    xEnd = std::min<uint16_t>(xEnd, LOGICAL_WIDTH);
     sourceBegin = std::min<uint16_t>(sourceBegin, LOGICAL_HEIGHT);
     sourceEnd = std::min<uint16_t>(sourceEnd, LOGICAL_HEIGHT);
+    xBegin = std::min<uint16_t>(xBegin, LOGICAL_WIDTH);
+    xEnd = std::min<uint16_t>(xEnd, LOGICAL_WIDTH);
     if (xBegin >= xEnd || sourceBegin >= sourceEnd) return ESP_OK;
-
-    uint16_t physicalXBegin = xBegin;
-    uint16_t physicalXEnd = xEnd;
-    esp_err_t result = ESP_OK;
-    size_t pendingTransfers = 0;
-    size_t nextBuffer = 0;
-    for (uint16_t sourceY = sourceBegin;
-         result == ESP_OK && sourceY < sourceEnd;
-         sourceY += TRANSFER_LOGICAL_ROWS) {
-        if (pendingTransfers == TRANSFER_BUFFER_COUNT) {
-            if (xSemaphoreTake(transferDone, pdMS_TO_TICKS(1000)) != pdTRUE) {
-                result = ESP_ERR_TIMEOUT;
-                break;
-            }
-            --pendingTransfers;
-        }
-        uint16_t logicalRows = static_cast<uint16_t>(std::min<uint16_t>(
-            TRANSFER_LOGICAL_ROWS, sourceEnd - sourceY));
-        uint16_t physicalY = sourceY;
-        uint16_t physicalRows = logicalRows;
-        const uint16_t physicalRegionWidth = physicalXEnd - physicalXBegin;
-        for (uint16_t row = 0; row < physicalRows; ++row) {
-            const uint16_t* source = physicalPixels +
-                static_cast<size_t>(physicalY + row) * PHYSICAL_WIDTH +
-                physicalXBegin;
-            std::memcpy(transferBuffers[nextBuffer] +
-                            static_cast<size_t>(row) * physicalRegionWidth,
-                        source, physicalRegionWidth * sizeof(uint16_t));
-        }
-        result = esp_lcd_panel_draw_bitmap(
-            panel, physicalXBegin, physicalY, physicalXEnd,
-            physicalY + physicalRows, transferBuffers[nextBuffer]);
-        if (result == ESP_OK) {
-            ++pendingTransfers;
-            nextBuffer = (nextBuffer + 1U) % TRANSFER_BUFFER_COUNT;
-        }
-    }
-    while (pendingTransfers > 0) {
-        if (xSemaphoreTake(transferDone, pdMS_TO_TICKS(1000)) != pdTRUE) {
-            if (result == ESP_OK) result = ESP_ERR_TIMEOUT;
-            break;
-        }
-        --pendingTransfers;
-    }
-    return result;
+    return Stickmon::submitRgb565Region(physicalPixels, PHYSICAL_WIDTH,
+        xBegin, sourceBegin, xEnd, sourceEnd, transferBuffers.data(),
+        transferBuffers.size(), TRANSFER_LOGICAL_ROWS, transferDone,
+        submitPanelPixels, panel);
 }
 
 uint32_t millisNow() {

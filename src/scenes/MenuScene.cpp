@@ -1,4 +1,6 @@
 #include "scenes/MenuScene.h"
+#include "presentation/TouchUi.h"
+#include "presentation/MenuGrid.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -11,6 +13,7 @@
 #include "core/UiMotion.h"
 #include "game/BondSystem.h"
 #include "game/Species.h"
+#include "game/TeamRoster.h"
 #include "hardware/Hal.h"
 #include "presentation/PixelRenderer.h"
 #include "presentation/TutorialOverlay.h"
@@ -18,6 +21,34 @@
 #include "platform/api/FlashStorage.h"
 
 namespace {
+MenuGrid::Layout touchTeamLayout() {
+    return MenuGrid::fit(TouchUi::pageBody(), Hal::DISPLAY_W - 16, 76, 0, 8, 8, 4);
+}
+
+MenuGrid::Layout touchMoveLayout() {
+    auto body = TouchUi::pageBody();
+    body.y += 6;
+    body.height -= 12;
+    body.width = 90;
+    return MenuGrid::fit(body, 90, 24, 0, 0, 0);
+}
+
+MenuGrid::Rect touchForgetPopup() {
+    const auto body = TouchUi::pageBody();
+    return {body.x + (body.width - 190) / 2, body.y + 32, 190, 72};
+}
+MenuGrid::Rect touchForgetChoice(bool yes) {
+    const auto popup = touchForgetPopup();
+    return {popup.x + (yes ? 44 : 114), popup.y + 32, 64, 40};
+}
+
+MenuGrid::Rect touchTeamPopup(uint8_t slot, uint8_t count) {
+    const int height = 8 + count * 40;
+    const int desired = touchTeamLayout().cell(slot).y + 24;
+    return {Hal::DISPLAY_W - 8 - 132,
+        std::min(desired, Hal::DISPLAY_H - height - 16), 132, height};
+}
+
 const char* originName(Game::Origin origin) {
     switch (origin) {
     case Game::Origin::STARTER: return Ui::Status::ORIGIN_STARTER;
@@ -477,6 +508,7 @@ void MenuScene::onEnter() {
         cursor = lastCursor;
     }
     animCursor = (float)cursor;
+    menuGridScroll = MenuGrid::mainLayout(Hal::DISPLAY_W, Hal::DISPLAY_H).reveal(cursor, 0, ITEM_COUNT);
     lastBatteryLevel = Hal::ins().filteredBatteryLevel();
 #if STICKMON_ENABLE_DEBUG_FEATURES
     if (GameEngine::ins().consumeDebugMenuReturnRequest()) {
@@ -527,12 +559,18 @@ void MenuScene::onExit() {
 }
 
 void MenuScene::resetNavigation() {
+    cancelTouch();
     navDepth = 0;
     viewMode = ViewMode::MENU;
+    bagDetailOpen = false;
+    menuGridScroll = MenuGrid::mainLayout(Hal::DISPLAY_W, Hal::DISPLAY_H).reveal(cursor, 0, ITEM_COUNT);
 }
 
 void MenuScene::pushView(ViewMode next) {
     if (next == viewMode) return;
+    cancelTouch();
+    pageScroll = 0;
+    if (next == ViewMode::BAG) { bagGridScroll = 0; bagDetailOpen = false; }
     if (navDepth < NAV_STACK_CAP) {
         navStack[navDepth++] = viewMode;
     } else {
@@ -545,6 +583,8 @@ void MenuScene::pushView(ViewMode next) {
 }
 
 void MenuScene::popView() {
+    cancelTouch();
+    bagDetailOpen = false;
     teamActionOpen = false;
     moveForgetConfirmOpen = false;
     storageActionOpen = false;
@@ -567,6 +607,11 @@ void MenuScene::popView() {
 }
 
 uint8_t MenuScene::teamActionCount() const {
+    if (TouchUi::enabled()) {
+        uint8_t count = 0;
+        while (teamActionAt(count) != TeamAction::BACK) ++count;
+        return count;
+    }
     const auto& state = GameEngine::ins().gameState();
     bool canSetFirst = teamCursor > 0 && teamCursor < state.teamCount;
     bool canLeave =
@@ -576,6 +621,17 @@ uint8_t MenuScene::teamActionCount() const {
 
 MenuScene::TeamAction MenuScene::teamActionAt(uint8_t index) const {
     const auto& state = GameEngine::ins().gameState();
+    if (TouchUi::enabled()) {
+        if (teamCursor >= Game::TeamRoster::memberCount(state)) return TeamAction::BACK;
+        const bool partner = teamCursor > 0 && state.team[teamCursor].origin != Game::Origin::VISITOR;
+        uint8_t action = 0;
+        if (partner && index == action++) return TeamAction::FIRST;
+        if (index == action++) return TeamAction::STATUS;
+        if (index == action++) return TeamAction::MOVES;
+        if (partner && !exploreContextMode && formalTeamCount(state) > 1 && index == action)
+            return TeamAction::LEAVE;
+        return TeamAction::BACK;
+    }
     bool canSetFirst = teamCursor > 0 && teamCursor < state.teamCount;
     bool canLeave =
         !exploreContextMode && formalTeamCount(state) > 1;
@@ -646,7 +702,30 @@ SceneUpdateResult MenuScene::update(uint32_t nowMs, float dtSeconds) {
         demand.animate(maxScroll > 0);
     };
 
-    if (viewMode == ViewMode::MENU) {
+    if (TouchUi::enabled() && directTouchPage()) {
+        if (viewMode == ViewMode::MENU) {
+            menuGridScroll = std::clamp(menuGridScroll, 0.0f,
+                MenuGrid::mainLayout(Hal::DISPLAY_W, Hal::DISPLAY_H).maxScroll(ITEM_COUNT));
+        } else if (viewMode == ViewMode::BAG) {
+            BagRow rows[BAG_ITEM_COUNT];
+            const auto count = collectVisibleBagRows(rows, BAG_ITEM_COUNT);
+            const auto layout = MenuGrid::fit({0, 38, Hal::DISPLAY_W, Hal::DISPLAY_H - 38});
+            bagGridScroll = std::clamp(bagGridScroll, 0.0f, layout.maxScroll(count));
+        } else if (viewMode == ViewMode::STATUS) {
+            statusScroll = std::clamp(statusScroll, 0.0f,
+                float(std::max(0, touchStatusContentHeight() - TouchUi::pageBody().height)));
+        } else if (viewMode == ViewMode::MOVES) {
+            moveListScroll = std::clamp(moveListScroll, 0.0f, touchMoveLayout().maxScroll(touchMoveRowCount()));
+            const auto* move = touchMoveInfo(moveCursor);
+            if (move && !moveForgetConfirmOpen) {
+                const char* lines[] = {move->description};
+                animateDescription(lines, 1, TouchUi::pageBody().width - 101,
+                    0x9000 | (int(movePageMode) << 8) | moveCursor);
+            }
+        } else if (viewMode == ViewMode::FOOD) {
+            foodScroll = std::clamp(foodScroll, 0.0f, TouchUi::listLayout().maxScroll(Game::ROOM_FOOD_COUNT));
+        }
+    } else if (viewMode == ViewMode::MENU) {
         UiMotion::StepResult step = UiMotion::lerp(
             animCursor, static_cast<float>(cursor), 0.25f);
         demand.changed(step.changed);
@@ -658,7 +737,7 @@ SceneUpdateResult MenuScene::update(uint32_t nowMs, float dtSeconds) {
         }
         demand.wakeIn(30000);
     } else if (viewMode == ViewMode::FOOD) {
-        static constexpr int VISIBLE_H = Hal::DISPLAY_H - 12;
+        static constexpr int VISIBLE_H = TouchUi::CONTENT_H - 12;
         static constexpr int ROW_H = 22;
         int maxScroll = MathUtil::max(0, FOOD_ITEM_COUNT * ROW_H - VISIBLE_H);
         int target = foodCursor * ROW_H - VISIBLE_H / 2 + ROW_H / 2;
@@ -674,7 +753,7 @@ SceneUpdateResult MenuScene::update(uint32_t nowMs, float dtSeconds) {
                 0x300 + foodCursor);
         }
     } else if (viewMode == ViewMode::STORAGE) {
-        static constexpr int VISIBLE_H = Hal::DISPLAY_H - 12;
+        static constexpr int VISIBLE_H = TouchUi::CONTENT_H - 12;
         static constexpr int ROW_H = 24;
         uint8_t rows = GameEngine::ins().gameState().storageCount + 1;
         int maxScroll = MathUtil::max(0, static_cast<int>(rows) * ROW_H - VISIBLE_H);
@@ -687,15 +766,15 @@ SceneUpdateResult MenuScene::update(uint32_t nowMs, float dtSeconds) {
         static constexpr int ROW_H = 24;
         int maxScroll = MathUtil::max(
             0, ROW_Y * 2 + static_cast<int>(debugItemCount()) * ROW_H -
-                   Hal::DISPLAY_H);
+                   TouchUi::CONTENT_H);
         int target =
-            ROW_Y + debugCursor * ROW_H + ROW_H / 2 - Hal::DISPLAY_H / 2;
+            ROW_Y + debugCursor * ROW_H + ROW_H / 2 - TouchUi::CONTENT_H / 2;
         animateScroll(debugScroll, MathUtil::clamp(target, 0, maxScroll));
 #endif
     } else if (viewMode == ViewMode::BAG) {
         BagRow rows[BAG_ITEM_COUNT] = {};
         uint8_t count = collectVisibleBagRows(rows, BAG_ITEM_COUNT);
-        static constexpr int VISIBLE_H = Hal::DISPLAY_H - 12;
+        static constexpr int VISIBLE_H = TouchUi::CONTENT_H - 12;
         static constexpr int ROW_H = 22;
         int maxScroll =
             MathUtil::max(0, static_cast<int>(count) * ROW_H - VISIBLE_H);
@@ -723,7 +802,7 @@ SceneUpdateResult MenuScene::update(uint32_t nowMs, float dtSeconds) {
                     : SPECIAL_MOVE_SLOT_COUNT + 1);
             static constexpr int LIST_Y = 6;
             static constexpr int ROW_H = 24;
-            static constexpr int VISIBLE_H = Hal::DISPLAY_H - LIST_Y * 2;
+            static constexpr int VISIBLE_H = TouchUi::CONTENT_H - LIST_Y * 2;
             int maxScroll = MathUtil::max(
                 0, static_cast<int>(rowCount) * ROW_H - VISIBLE_H);
             int target = moveCursor * ROW_H - VISIBLE_H / 2 + ROW_H / 2;
@@ -778,9 +857,9 @@ SceneUpdateResult MenuScene::update(uint32_t nowMs, float dtSeconds) {
                         wrappedTextLineCount(move->description, MOVE_DESC_W);
                     contentH += 74 + MathUtil::max(1, lines) * 16;
                 }
-                contentH = MathUtil::max(contentH, Hal::DISPLAY_H);
+                contentH = MathUtil::max(contentH, TouchUi::CONTENT_H);
             }
-            int maxScroll = MathUtil::max(0, contentH - Hal::DISPLAY_H);
+            int maxScroll = MathUtil::max(0, contentH - TouchUi::CONTENT_H);
             int key =
                 (statusFromStorage ? 0x4000 : 0) |
                 (static_cast<int>(statusMonsterIndex) << 8) | statusPage;
@@ -793,7 +872,261 @@ SceneUpdateResult MenuScene::update(uint32_t nowMs, float dtSeconds) {
     return demand.result();
 }
 
+bool MenuScene::directTouchPage() const {
+    return viewMode == ViewMode::MENU || viewMode == ViewMode::BAG ||
+        viewMode == ViewMode::TEAM || viewMode == ViewMode::STATUS || viewMode == ViewMode::MOVES ||
+        viewMode == ViewMode::ROOM || viewMode == ViewMode::FOOD || viewMode == ViewMode::COMPUTER;
+}
+
+bool MenuScene::touchNavigation() const {
+    return !TouchUi::enabled() || !directTouchPage();
+}
+
+void MenuScene::cancelTouch() {
+    Scene::cancelTouch();
+    gridTouch.cancel();
+    statusSwipeActive = false;
+}
+
+bool MenuScene::onTouch(const Platform::IInputDevice::TouchEvent& event) {
+    if (!TouchUi::enabled() || !directTouchPage())
+        return Scene::onTouch(event);
+    if (viewMode == ViewMode::STATUS || viewMode == ViewMode::MOVES) {
+        const bool status = viewMode == ViewMode::STATUS;
+        const auto body = status ? TouchUi::pageBody() : touchMoveLayout().viewport;
+        if (status && event.type == Platform::IInputDevice::TouchType::DOWN) {
+            statusSwipeActive = body.contains(event.x, event.y);
+            statusSwipeX = event.x;
+            statusSwipeY = event.y;
+        }
+        if (status && event.type == Platform::IInputDevice::TouchType::CANCEL)
+            statusSwipeActive = false;
+        if (status && event.type == Platform::IInputDevice::TouchType::UP) {
+            const int dx = event.x - statusSwipeX, dy = event.y - statusSwipeY;
+            const bool swipe = statusSwipeActive && std::abs(dx) >= 40 && std::abs(dx) > std::abs(dy) * 2;
+            statusSwipeActive = false;
+            if (swipe && GameEngine::ins().gameState().oobeDone) {
+                statusPage = (statusPage + (dx < 0 ? 1 : STATUS_PAGE_COUNT - 1)) % STATUS_PAGE_COUNT;
+                statusScroll = 0;
+                cancelTouch();
+                return true;
+            }
+        }
+        auto& scroll = status ? statusScroll : moveListScroll;
+        const float maximum = status ? std::max(0, touchStatusContentHeight() - body.height)
+            : touchMoveLayout().maxScroll(touchMoveRowCount());
+        const auto result = gridTouch.update(event, touchTarget(event.x, event.y), scroll, maximum,
+            body.contains(event.x, event.y) && !moveForgetConfirmOpen);
+        const bool activated = result.tap >= 0 && onTap(result.tap);
+        return result.changed || activated;
+    }
+    if (viewMode == ViewMode::TEAM) {
+        const auto result = gridTouch.update(event, touchTarget(event.x, event.y), pageScroll, 0, false);
+        const bool activated = result.tap >= 0 && onTap(result.tap);
+        return result.changed || activated;
+    }
+    if (viewMode == ViewMode::ROOM || viewMode == ViewMode::FOOD || viewMode == ViewMode::COMPUTER) {
+        const bool food = viewMode == ViewMode::FOOD;
+        const auto layout = TouchUi::listLayout(food ? 44 : viewMode == ViewMode::ROOM ? 80 : 74);
+        auto& scroll = food ? foodScroll : pageScroll;
+        const int count = food ? Game::ROOM_FOOD_COUNT : 2;
+        const auto result = gridTouch.update(event, touchTarget(event.x, event.y), scroll,
+            layout.maxScroll(count), layout.viewport.contains(event.x, event.y));
+        const bool activated = result.tap >= 0 && onTap(result.tap);
+        return result.changed || activated;
+    }
+    const bool main = viewMode == ViewMode::MENU;
+    BagRow rows[BAG_ITEM_COUNT];
+    const int count = main ? ITEM_COUNT : collectVisibleBagRows(rows, BAG_ITEM_COUNT);
+    const auto layout = main ? MenuGrid::mainLayout(Hal::DISPLAY_W, Hal::DISPLAY_H)
+        : MenuGrid::fit({0, 38, Hal::DISPLAY_W, Hal::DISPLAY_H - 38});
+    auto& scroll = main ? menuGridScroll : bagGridScroll;
+    const auto result = gridTouch.update(event, touchTarget(event.x, event.y), scroll,
+        layout.maxScroll(count), layout.viewport.contains(event.x, event.y) && !bagDetailOpen && !bagConfirmOpen);
+    const bool activated = result.tap >= 0 && onTap(result.tap);
+    return result.changed || activated;
+}
+
+int MenuScene::touchTarget(int16_t x, int16_t y) {
+    const bool fullTouch = TouchUi::enabled() && directTouchPage();
+    if (x < 0 || x >= Hal::DISPLAY_W || y < 0 || y >= (fullTouch ? Hal::DISPLAY_H : TouchUi::CONTENT_H)) return -1;
+    const int mode = static_cast<int>(viewMode) * 256;
+    auto row = [&](int top, int height, int count, int scroll = 0) {
+        const int index = (y - top + scroll) / height;
+        return y >= top && index >= 0 && index < count ? mode + index : -1;
+    };
+    if (fullTouch && (viewMode == ViewMode::TEAM || viewMode == ViewMode::STATUS || viewMode == ViewMode::MOVES)) {
+        const auto header = TouchUi::safeHeaderBounds();
+        if (y < header.y + header.height && !header.contains(x, y)) return -1;
+    }
+    if (fullTouch && (viewMode == ViewMode::STATUS || viewMode == ViewMode::MOVES)) {
+        if (moveForgetConfirmOpen && viewMode == ViewMode::MOVES) {
+            if (TouchUi::safeBack().contains(x, y)) return mode + 230;
+            if (touchForgetChoice(true).contains(x, y)) return mode + 200;
+            if (touchForgetChoice(false).contains(x, y)) return mode + 201;
+            return -1;
+        }
+        if (TouchUi::safeBack().contains(x, y)) return mode + 230;
+        if (viewMode == ViewMode::STATUS && !GameEngine::ins().gameState().oobeDone) return -1;
+        if (viewMode == ViewMode::STATUS && TouchUi::safeHeaderBounds().contains(x, y) && x >= 76) return mode + 232;
+        if (viewMode == ViewMode::MOVES) {
+            const int item = touchMoveLayout().itemAt(x, y, moveListScroll, touchMoveRowCount());
+            return item < 0 ? -1 : mode + item;
+        }
+        return -1;
+    }
+    if (fullTouch && viewMode == ViewMode::TEAM) {
+        if (teamActionOpen) {
+            const auto rect = touchTeamPopup(teamCursor, teamActionCount());
+            const int item = (y - rect.y - 4) / 40;
+            if (rect.contains(x, y) && y >= rect.y + 4 && y < rect.y + rect.height - 4)
+                return mode + 128 + item;
+            return mode + 229;
+        }
+        if (TouchUi::safeBack().contains(x, y)) return mode + 230;
+        const auto& state = GameEngine::ins().gameState();
+        const int item = touchTeamLayout().itemAt(x, y, 0, state.oobeDone ? Game::TeamRoster::memberCount(state) : 1);
+        return item < 0 ? -1 : mode + item;
+    }
+    if (fullTouch && (viewMode == ViewMode::ROOM || viewMode == ViewMode::FOOD || viewMode == ViewMode::COMPUTER)) {
+        if (TouchUi::pageBackHit(x, y)) return mode + 230;
+        const bool food = viewMode == ViewMode::FOOD;
+        const auto layout = TouchUi::listLayout(food ? 44 : viewMode == ViewMode::ROOM ? 80 : 74);
+        const int item = layout.itemAt(x, y, food ? foodScroll : pageScroll, food ? Game::ROOM_FOOD_COUNT : 2);
+        return item < 0 ? -1 : mode + item;
+    }
+    // Confirmation popups consume the pointer; underlying rows cannot fire.
+    if (bagConfirmOpen || moveForgetConfirmOpen || storageReleaseConfirmOpen || storageInviteConfirmOpen) {
+        const int top = storageInviteConfirmOpen ? 76 : 75;
+        const int shift = bagConfirmOpen ? (Hal::DISPLAY_W - 240) / 2 : 0;
+        if (y < top || y >= top + 29 || x < 65 + shift || x >= 205 + shift) return -1;
+        return mode + 200 + (x >= 139 + shift);
+    }
+    if (teamActionOpen || storageActionOpen) {
+        const int top = teamActionOpen ? 12 : 27;
+        const int height = teamActionOpen ? 22 : 21;
+        const int count = teamActionOpen ? teamActionCount() : storageActionCount();
+        if (x < 142 || x >= 220 || y < top || y >= top + count * height) return -1;
+        return mode + 128 + (y - top) / height;
+    }
+    switch (viewMode) {
+    case ViewMode::MENU:
+        if (TouchUi::enabled()) {
+            const int item = MenuGrid::mainLayout(Hal::DISPLAY_W, Hal::DISPLAY_H).itemAt(x, y, menuGridScroll, ITEM_COUNT);
+            return item < 0 ? -1 : mode + item;
+        }
+        if (x < 12 || x >= Hal::DISPLAY_W - 8) return -1;
+        for (int i = 0; i < ITEM_COUNT; ++i) {
+            const int cy = TouchUi::CONTENT_H / 2 + int((i - animCursor) * 50);
+            if (std::abs(y - cy) <= 23) return mode + i;
+        }
+        return -1;
+    case ViewMode::TEAM:
+        return row(24, 39, (GameEngine::ins().gameState().oobeDone ? GameEngine::ins().gameState().teamCount : 1) + 1);
+    case ViewMode::ROOM: return row(5, 21, ROOM_ITEM_COUNT);
+    case ViewMode::FOOD: return x < 78 ? row(6, 22, FOOD_ITEM_COUNT, int(foodScroll)) : -1;
+    case ViewMode::BAG: {
+        BagRow rows[BAG_ITEM_COUNT];
+        const auto count = collectVisibleBagRows(rows, BAG_ITEM_COUNT);
+        if (TouchUi::enabled()) {
+            if (TouchUi::backHit(x, y)) return mode + 230;
+            if (bagDetailOpen) {
+                if (y >= Hal::DISPLAY_H - 40 && y < Hal::DISPLAY_H - 6) {
+                    if (x >= 8 && x < Hal::DISPLAY_W / 2 - 6) return mode + 230;
+                    if (x >= Hal::DISPLAY_W / 2 + 6 && x < Hal::DISPLAY_W - 8) return mode + 231;
+                }
+                return -1;
+            }
+            const int item = MenuGrid::fit({0, 38, Hal::DISPLAY_W, Hal::DISPLAY_H - 38}).itemAt(x, y, bagGridScroll, count);
+            return item < 0 ? -1 : mode + item;
+        }
+        return x < 78 ? row(6, 22, count, int(bagScroll)) : -1;
+    }
+    case ViewMode::COMPUTER: return row(18, 30, COMPUTER_ITEM_COUNT);
+    case ViewMode::STORAGE: return row(6, 24, GameEngine::ins().gameState().storageCount + 1, int(storageScroll));
+    default: return -1;
+    }
+}
+
+bool MenuScene::onTap(int target) {
+    if (target / 256 != static_cast<int>(viewMode)) return false;
+    const int index = target % 256;
+    if (TouchUi::enabled() && viewMode == ViewMode::TEAM && teamActionOpen) {
+        if (index == 229) { teamActionOpen = false; cancelTouch(); return true; }
+        if (index < 128 || index >= 128 + teamActionCount()) return false;
+    }
+    if (TouchUi::enabled() && directTouchPage() && index == 230)
+        return onButton({1, BtnAction::LONG_PRESS});
+    if (TouchUi::enabled() && viewMode == ViewMode::STATUS && (index == 231 || index == 232)) {
+        statusPage = (statusPage + (index == 231 ? STATUS_PAGE_COUNT - 1 : 1)) % STATUS_PAGE_COUNT;
+        statusScroll = 0;
+        cancelTouch();
+        return true;
+    }
+    if (TouchUi::enabled() && viewMode == ViewMode::MOVES && !moveForgetConfirmOpen) {
+        if (index < touchMoveRowCount()) {
+            const bool activate = moveCursor == index || index + 1 == touchMoveRowCount();
+            moveCursor = index;
+            descScrollKey = -1;
+            descScroll = 0;
+            moveListScroll = touchMoveLayout().reveal(moveCursor, moveListScroll, touchMoveRowCount());
+            return activate ? onButton({0, BtnAction::PRESSED}) : true;
+        }
+    }
+    if (TouchUi::enabled() && viewMode == ViewMode::BAG && index == 231)
+        return onButton({0, BtnAction::PRESSED});
+    if (TouchUi::enabled() && viewMode == ViewMode::BAG && index < 128 && !bagConfirmOpen) {
+        bagCursor = index;
+        BagRow rows[BAG_ITEM_COUNT];
+        const int count = collectVisibleBagRows(rows, BAG_ITEM_COUNT);
+        if (index >= count) return false;
+        if (rows[index].source == BAG_ITEM_COUNT - 1) return onButton({0, BtnAction::PRESSED});
+        bagDetailOpen = true;
+        return true;
+    }
+    if (index >= 200) {
+        const bool yes = index == 200;
+        if (bagConfirmOpen) bagConfirmYes = yes;
+        else if (moveForgetConfirmOpen) moveForgetConfirmYes = yes;
+        else if (storageReleaseConfirmOpen) storageReleaseConfirmYes = yes;
+        else if (storageInviteConfirmOpen) storageInviteConfirmYes = yes;
+        else return false;
+    } else if (index >= 128) {
+        if (teamActionOpen) teamActionCursor = index - 128;
+        else if (storageActionOpen) storageActionCursor = index - 128;
+        else return false;
+    } else {
+        switch (viewMode) {
+        case ViewMode::MENU: cursor = index; animCursor = cursor; break;
+        case ViewMode::TEAM: teamCursor = index; break;
+        case ViewMode::ROOM: roomCursor = index; break;
+        case ViewMode::FOOD: foodCursor = index; break;
+        case ViewMode::BAG: bagCursor = index; break;
+        case ViewMode::COMPUTER: computerCursor = index; break;
+        case ViewMode::STORAGE: storageCursor = index; break;
+        default: return false;
+        }
+    }
+    GameEngine::ins().completeTutorial(Game::TutorialStep::MENU_NAV);
+    return onButton({0, BtnAction::PRESSED});
+}
+
 bool MenuScene::onButton(const ButtonEvent& event) {
+    if (TouchUi::enabled() && viewMode == ViewMode::BAG && !bagConfirmOpen) {
+        if (bagDetailOpen && event.btn == 1 && event.action == BtnAction::LONG_PRESS) {
+            bagDetailOpen = false;
+            cancelTouch();
+            return true;
+        }
+        if (!bagDetailOpen && event.btn == 0 && event.action == BtnAction::PRESSED) {
+            BagRow rows[BAG_ITEM_COUNT];
+            const int count = collectVisibleBagRows(rows, BAG_ITEM_COUNT);
+            if (bagCursor < count && rows[bagCursor].source != BAG_ITEM_COUNT - 1) {
+                bagDetailOpen = true;
+                return true;
+            }
+        }
+    }
     if (viewMode != ViewMode::MENU) {
         if (!exploreContextMode && event.btn == 1 &&
             event.action == BtnAction::LONG_PRESS) {
@@ -819,8 +1152,9 @@ bool MenuScene::onButton(const ButtonEvent& event) {
             if (viewMode == ViewMode::MOVES &&
                 movePageMode == MovePageMode::RECALL_REPLACE) {
                 movePageMode = MovePageMode::RECALL_SELECT;
+                pageScroll = 0;
                 moveCursor = recallSelectedIndex;
-                moveListScroll = 0.0f;
+                moveListScroll = TouchUi::enabled() ? touchMoveLayout().reveal(moveCursor, 0, touchMoveRowCount()) : 0.0f;
                 descScrollKey = -1;
                 descScroll = 0.0f;
                 return true;
@@ -870,6 +1204,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                 pushView(ViewMode::FOOD);
                 foodCursor = visibleFoodIndexOf(GameEngine::ins().selectedFoodIndex());
                 foodScroll = 0.0f;
+                if (TouchUi::enabled()) foodScroll = TouchUi::listLayout().reveal(foodCursor, 0, Game::ROOM_FOOD_COUNT);
             } else if (roomCursor == 1) {
                 const auto& state = GameEngine::ins().gameState();
                 if (!state.oobeDone || state.teamCount == 0) {
@@ -884,8 +1219,9 @@ bool MenuScene::onButton(const ButtonEvent& event) {
             return true;
         }
         if (viewMode == ViewMode::FOOD && event.btn == 1 && event.action == BtnAction::PRESSED) {
-            foodCursor = (foodCursor + 1) % FOOD_ITEM_COUNT;
+            foodCursor = (foodCursor + 1) % (TouchUi::enabled() ? Game::ROOM_FOOD_COUNT : FOOD_ITEM_COUNT);
             if (foodCursor == 0) foodScroll = 0.0f;
+            if (TouchUi::enabled()) foodScroll = TouchUi::listLayout().reveal(foodCursor, foodScroll, Game::ROOM_FOOD_COUNT);
             return true;
         }
         if (viewMode == ViewMode::FOOD && event.btn == 0 && event.action == BtnAction::PRESSED) {
@@ -901,11 +1237,13 @@ bool MenuScene::onButton(const ButtonEvent& event) {
             return true;
         }
         if (viewMode == ViewMode::TEAM) {
+            cancelTouch();
             const auto& state = GameEngine::ins().gameState();
             bool showingEgg = !state.oobeDone;
             uint8_t teamCount = showingEgg ? 1 : state.teamCount;
             uint8_t rowCount = teamCount + 1;
             if (teamCursor >= rowCount) teamCursor = 0;
+            if (teamActionOpen && (showingEgg || teamCursor >= teamCount)) teamActionOpen = false;
             if (event.btn == 1 && event.action == BtnAction::PRESSED) {
                 if (teamActionOpen) {
                     teamActionCursor = (teamActionCursor + 1) % teamActionCount();
@@ -961,6 +1299,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                     moveForgetSlot = 0;
                     moveForgetConfirmOpen = false;
                     moveForgetConfirmYes = false;
+                    pageScroll = 0;
                     descScrollKey = -1;
                     descScroll = 0.0f;
                     teamActionOpen = false;
@@ -1013,6 +1352,9 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                     moveForgetConfirmYes = !moveForgetConfirmYes;
                 } else {
                     moveCursor = (moveCursor + 1) % rowCount;
+                    if (TouchUi::enabled())
+                        moveListScroll = touchMoveLayout().reveal(moveCursor, moveListScroll, rowCount);
+                    pageScroll = 0;
                     descScrollKey = -1;
                     descScroll = 0.0f;
                 }
@@ -1026,6 +1368,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                     } else {
                         recallSelectedIndex = moveCursor;
                         movePageMode = MovePageMode::RECALL_REPLACE;
+                        pageScroll = 0;
                         moveCursor = 0;
                         moveListScroll = 0.0f;
                         descScrollKey = -1;
@@ -1036,8 +1379,9 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                 if (movePageMode == MovePageMode::RECALL_REPLACE) {
                     if (moveCursor >= SPECIAL_MOVE_SLOT_COUNT) {
                         movePageMode = MovePageMode::RECALL_SELECT;
+                        pageScroll = 0;
                         moveCursor = recallSelectedIndex;
-                        moveListScroll = 0.0f;
+                        moveListScroll = TouchUi::enabled() ? touchMoveLayout().reveal(moveCursor, 0, touchMoveRowCount()) : 0.0f;
                         descScrollKey = -1;
                         descScroll = 0.0f;
                         return true;
@@ -1070,6 +1414,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                     }
                     moveForgetConfirmOpen = false;
                     moveForgetConfirmYes = false;
+                    pageScroll = 0;
                     descScrollKey = -1;
                     descScroll = 0.0f;
                     const auto& updatedMon =
@@ -1115,6 +1460,9 @@ bool MenuScene::onButton(const ButtonEvent& event) {
             uint8_t visibleCount = bagVisibleItemCount(battleBagMode);
             bagCursor = (bagCursor + 1) % visibleCount;
             if (bagCursor == 0) bagScroll = 0.0f;
+            if (TouchUi::enabled()) bagGridScroll = MenuGrid::fit({0, 38, Hal::DISPLAY_W, Hal::DISPLAY_H - 38}).reveal(bagCursor, bagGridScroll, visibleCount);
+            if (TouchUi::enabled() && bagSourceIndexForVisible(bagCursor, battleBagMode) == BAG_SOURCE_BACK)
+                bagDetailOpen = false;
             return true;
         }
         if (viewMode == ViewMode::BAG && event.btn == 0 && event.action == BtnAction::PRESSED) {
@@ -1231,6 +1579,9 @@ bool MenuScene::onButton(const ButtonEvent& event) {
                     }
                 }
                 bagConfirmOpen = false;
+                if (TouchUi::enabled() &&
+                    bagSourceIndexForVisible(bagCursor, battleBagMode) != bagConfirmSource)
+                    bagDetailOpen = false;
                 return true;
             }
             uint8_t source = bagSourceIndexForVisible(
@@ -1492,6 +1843,7 @@ bool MenuScene::onButton(const ButtonEvent& event) {
             cursor = 0;
             animCursor = 0.0f;
         }
+        if (TouchUi::enabled()) menuGridScroll = MenuGrid::mainLayout(Hal::DISPLAY_W, Hal::DISPLAY_H).reveal(cursor, menuGridScroll, ITEM_COUNT);
         return true;
     }
 
@@ -1577,7 +1929,12 @@ bool MenuScene::onButton(const ButtonEvent& event) {
 
 void MenuScene::render() {
     auto& c = PixelRenderer::canvas();
-    c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, PixelRenderer::rgb(7, 9, 14));
+    c.fillRect(0, 0, Hal::DISPLAY_W, TouchUi::CONTENT_H, PixelRenderer::rgb(7, 9, 14));
+    if (TouchUi::enabled() && (viewMode == ViewMode::ROOM || viewMode == ViewMode::FOOD || viewMode == ViewMode::COMPUTER)) {
+        renderTouchPage();
+        renderTutorial();
+        return;
+    }
 
     if (viewMode == ViewMode::STATUS) {
         renderStatusPage();
@@ -1633,6 +1990,7 @@ void MenuScene::render() {
 }
 
 void MenuScene::renderTutorial() {
+    if (Platform::input().touchAvailable()) return;
     if (exploreContextMode) return;
     GameEngine& engine = GameEngine::ins();
     if (!engine.gameState().oobeDone) return;
@@ -1651,15 +2009,22 @@ void MenuScene::renderTutorial() {
 
 void MenuScene::renderMenu() {
     auto& c = PixelRenderer::canvas();
-    c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, 0x0000);
+    if (TouchUi::enabled()) {
+        c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, 0);
+        MenuGrid::mainMenu(c, MenuGrid::mainLayout(Hal::DISPLAY_W, Hal::DISPLAY_H),
+            ITEM_COUNT, menuGridScroll, gridTouch.pressed(), cursor);
+        return;
+    }
+    c.fillRect(0, 0, Hal::DISPLAY_W, TouchUi::CONTENT_H, 0x0000);
     int batt = Hal::ins().filteredBatteryLevel();
     char battBuf[8];
-    snprintf(battBuf, sizeof(battBuf), Ui::Menu::TITLE_BATTERY_FMT, batt);
+    if (Platform::power().batteryLevel() < 0) snprintf(battBuf, sizeof(battBuf), "--");
+    else snprintf(battBuf, sizeof(battBuf), Ui::Menu::TITLE_BATTERY_FMT, batt);
     PixelRenderer::text(Hal::DISPLAY_W - textPixelWidth(battBuf) - 6, 6, battBuf,
                         batt > 20 ? 0x07E0 : 0xF800,
                         1);
 
-    constexpr int centerY = Hal::DISPLAY_H / 2;
+    constexpr int centerY = TouchUi::CONTENT_H / 2;
     constexpr int spacing = 50;
     constexpr int boxW = 60;
     constexpr int boxH = 40;
@@ -1722,11 +2087,23 @@ void MenuScene::renderMenu() {
 void MenuScene::renderToast() {
     if (!toast) return;
     auto& c = PixelRenderer::canvas();
+    if (TouchUi::enabled() && (viewMode == ViewMode::TEAM || viewMode == ViewMode::STATUS || viewMode == ViewMode::MOVES)) {
+        const auto body = TouchUi::pageBody();
+        c.fillRoundRect(8, body.y + body.height - 72, body.width - 16, 26, 4, PixelRenderer::rgb(34, 39, 47));
+        MenuGrid::label(c, body.width / 2, body.y + body.height - 67, toast, body.width - 32, 0xffff);
+        return;
+    }
+    if (TouchUi::enabled() && directTouchPage()) {
+        c.fillRoundRect(8, Hal::DISPLAY_H - 72, Hal::DISPLAY_W - 16, 26, 4, PixelRenderer::rgb(34, 39, 47));
+        MenuGrid::label(c, Hal::DISPLAY_W / 2, Hal::DISPLAY_H - 67, toast, Hal::DISPLAY_W - 32, 0xffff);
+        return;
+    }
     c.fillRect(70, 108, 100, 20, PixelRenderer::rgb(34, 39, 47));
     PixelRenderer::text(78, 110, toast, PixelRenderer::rgb(255, 255, 255), 1);
 }
 
 void MenuScene::renderTeamPage() {
+    if (TouchUi::enabled()) { renderTouchTeam(); return; }
     auto& c = PixelRenderer::canvas();
     const auto& state = GameEngine::ins().gameState();
     bool showingEgg = !state.oobeDone;
@@ -1734,7 +2111,7 @@ void MenuScene::renderTeamPage() {
     uint8_t rowCount = teamCount + 1;
     if (teamCursor >= rowCount) teamCursor = 0;
 
-    c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, PixelRenderer::rgb(10, 14, 20));
+    c.fillRect(0, 0, Hal::DISPLAY_W, TouchUi::CONTENT_H, PixelRenderer::rgb(10, 14, 20));
     PixelRenderer::text(8, 6, Ui::TEAM, PixelRenderer::rgb(67, 213, 224), 1);
 
     static constexpr int ROW_X = 8;
@@ -1804,6 +2181,71 @@ void MenuScene::renderTeamPage() {
     renderToast();
 }
 
+void MenuScene::renderTouchTeam() {
+    auto& c = PixelRenderer::canvas();
+    const auto& state = GameEngine::ins().gameState();
+    const bool egg = !state.oobeDone;
+    const uint8_t count = egg ? 1 : Game::TeamRoster::memberCount(state);
+    const int mode = static_cast<int>(ViewMode::TEAM) * 256;
+    if (teamCursor > count) teamCursor = 0;
+    c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, 0);
+    for (uint8_t slot = 0; slot < count; ++slot) {
+        const auto rect = touchTeamLayout().cell(slot);
+        MenuGrid::card(c, rect, gridTouch.pressed() == mode + slot, teamCursor == slot);
+        if (egg) {
+            GameAssets::drawCentered(GameAssets::Kind::EGG, rect.x + 32, rect.y + 38);
+            PixelRenderer::text(rect.x + 72, rect.y + 14, Ui::Status::EGG_TITLE, 0xffff);
+            PixelRenderer::text(rect.x + 72, rect.y + 44, Ui::Status::EGG_STATE, 0xffe0);
+            continue;
+        }
+        const auto& mon = state.team[slot];
+        const auto& species = GameEngine::ins().speciesFor(mon);
+        const auto* frame = PokemonSprites::findSpeciesSprite(mon.speciesId, PokemonSprites::SpriteKind::FRONT);
+        bool drawn = false;
+        if (frame) {
+            const int width = FlashStorage::readByte(&frame->width);
+            const int height = FlashStorage::readByte(&frame->height);
+            const float scale = std::min(1.0f, std::min(56.0f / std::max(1, width), 60.0f / std::max(1, height)));
+            drawn = PokemonSprites::drawFrameScaled(frame,
+                rect.x + 32 - int(std::lround(width * scale)) / 2,
+                rect.y + 38 - int(std::lround(height * scale)) / 2, scale);
+        }
+        if (!drawn) c.fillCircle(rect.x + 32, rect.y + 38, 20, PixelRenderer::rgb(42, 61, 68));
+        MenuGrid::label(c, rect.x + 72 + (rect.width - 112) / 2, rect.y + 8, species.name, rect.width - 112, 0xffff);
+        if (slot == 0) TeamFlag::draw(c, rect.x + rect.width - 22, rect.y + 8);
+        const auto status = GameAssets::statusKind(mon.majorStatus);
+        if (status != GameAssets::Kind::COUNT)
+            GameAssets::drawCentered(status, rect.x + rect.width - 40, rect.y + 18);
+        char value[24];
+        std::snprintf(value, sizeof(value), "Lv%u", mon.level);
+        PixelRenderer::text(rect.x + 72, rect.y + 30, value, PixelRenderer::rgb(126, 175, 175));
+        std::snprintf(value, sizeof(value), "%u/%u", mon.hpCur, mon.hpMax);
+        PixelRenderer::text(rect.x + rect.width - 12 - textPixelWidth(value), rect.y + 30, value, 0xffff);
+        const int hp = std::min(100, int(uint32_t(mon.hpCur) * 100 / std::max<uint16_t>(1, mon.hpMax)));
+        const int barWidth = rect.width - 84;
+        c.fillRoundRect(rect.x + 72, rect.y + 56, barWidth, 8, 4, PixelRenderer::rgb(48, 63, 70));
+        if (hp) c.fillRoundRect(rect.x + 72, rect.y + 56, barWidth * hp / 100, 8, 4,
+            hp > 50 ? PixelRenderer::rgb(83, 184, 157) : hp > 20 ? 0xffe0 : 0xfaaa);
+    }
+    TouchUi::safePageHeader(Ui::TEAM, gridTouch.pressed() == mode + 230, teamCursor == count);
+    renderToast();
+    if (!egg && teamActionOpen && teamCursor < count) {
+        const auto rect = touchTeamPopup(teamCursor, teamActionCount());
+        c.fillRoundRect(rect.x, rect.y, rect.width, rect.height, 6, PixelRenderer::rgb(17, 27, 34));
+        c.drawRoundRect(rect.x, rect.y, rect.width, rect.height, 6, PixelRenderer::rgb(115, 226, 183));
+        for (uint8_t item = 0; item < teamActionCount(); ++item) {
+            const int top = rect.y + 4 + item * 40;
+            if (gridTouch.pressed() == mode + 128 + item)
+                c.fillRect(rect.x + 2, top, rect.width - 4, 40, PixelRenderer::rgb(42, 61, 68));
+            if (teamActionCursor == item)
+                c.fillRect(rect.x + 5, top + 12, 3, 16, 0xffe0);
+            PixelRenderer::text(rect.x + 16, top + 12, teamActionLabel(item), 0xffff);
+            if (item + 1 < teamActionCount())
+                c.drawFastHLine(rect.x + 12, top + 39, rect.width - 24, PixelRenderer::rgb(82, 117, 117));
+        }
+    }
+}
+
 void MenuScene::renderTeamActionPopup() {
     auto& c = PixelRenderer::canvas();
     static constexpr int POP_X = 142;
@@ -1824,6 +2266,94 @@ void MenuScene::renderTeamActionPopup() {
     }
 }
 
+int MenuScene::renderTouchStatusProfile(bool draw) {
+    const auto& state = GameEngine::ins().gameState();
+    const int count = statusFromStorage ? state.storageCount : state.teamCount;
+    if (!count) return 0;
+    const int index = statusMonsterIndex < count ? statusMonsterIndex : 0;
+    const auto& activeMon = statusFromStorage ? state.storage[index] : state.team[index];
+    const auto& mon = GameEngine::ins().speciesFor(activeMon);
+    const auto body = TouchUi::pageBody();
+    auto sx = [body](int x) { return body.x + x; };
+    auto sy = [body, this](int y) { return body.y + y - int(statusScroll); };
+    const auto white = PixelRenderer::rgb(241, 242, 232);
+    const auto cyan = PixelRenderer::rgb(67, 213, 224);
+    const auto yellow = PixelRenderer::rgb(255, 216, 72);
+    if (draw) drawStatusMonsterIcon(mon, sx(8), sy(14));
+    char line[128];
+    int extra = 0;
+    auto field = [&](int y, const char* text, uint16_t color, int x = 88) {
+        const int lines = wrapText(text, body.width - x - 10, sx(x), sy(y + extra), color, draw);
+        extra += std::max(0, lines - 1) * 16;
+    };
+    std::snprintf(line, sizeof(line), Ui::Status::PROFILE_LINE_FMT, mon.name, genderName(mon, activeMon), activeMon.level);
+    field(16, line, white);
+    std::snprintf(line, sizeof(line), Ui::Status::TYPE_FMT, typeName(mon.type1), typeName(mon.type2));
+    field(38, line, yellow);
+    if (draw) PixelRenderer::text(sx(88), sy(60 + extra), Ui::Status::ABILITY, cyan);
+    field(60, abilityName(abilityForSpecies(mon)), white, 130);
+    const int liked = natureLikedFoodIndex(activeMon.nature), disliked = natureDislikedFoodIndex(activeMon.nature);
+    if (liked >= 0 && disliked >= 0)
+        std::snprintf(line, sizeof(line), Ui::Status::NATURE_PREFERENCE_FMT, natureName(activeMon.nature),
+            Ui::Status::FLAVOR_NAMES[liked], Ui::Status::FLAVOR_NAMES[disliked]);
+    else std::snprintf(line, sizeof(line), Ui::Status::NATURE_FMT, natureName(activeMon.nature));
+    field(82, line, white);
+    if (draw) {
+        PixelRenderer::canvas().drawFastHLine(sx(14), sy(101 + extra), 196, PixelRenderer::rgb(55, 63, 76));
+        PixelRenderer::text(sx(16), sy(109 + extra), Ui::Status::SOURCE_INFO, cyan);
+        if (activeMon.origin == Game::Origin::BEFRIENDED && activeMon.metArea < Ui::Explore::AREA_COUNT) {
+            PixelRenderer::text(sx(60), sy(109 + extra), Ui::Status::SOURCE_AT, white);
+            const char* area = metAreaName(activeMon.metArea);
+            PixelRenderer::text(sx(84), sy(109 + extra), area, yellow);
+            PixelRenderer::text(sx(84 + textPixelWidth(area) + 6), sy(109 + extra), Ui::Status::SOURCE_MET, white);
+        } else {
+            const char* source = activeMon.origin == Game::Origin::HATCHED ? Ui::Status::SOURCE_HATCHED : originName(activeMon.origin);
+            PixelRenderer::text(sx(60), sy(109 + extra), source, yellow);
+        }
+    }
+    return 129 + extra;
+}
+
+int MenuScene::touchStatusContentHeight() {
+    const auto& state = GameEngine::ins().gameState();
+    const int count = statusFromStorage ? state.storageCount : state.teamCount;
+    if (!state.oobeDone || !count) return 0;
+    if (statusPage == 0) return renderTouchStatusProfile(false);
+    if (statusPage != 2) return statusPageContentHeight(statusPage);
+    const int index = statusMonsterIndex < count ? statusMonsterIndex : 0;
+    const auto& mon = statusFromStorage ? state.storage[index] : state.team[index];
+    int height = 78;
+    for (uint8_t slot = 0; slot < SPECIAL_MOVE_SLOT_COUNT; ++slot) {
+        const auto* move = findMove(specialMoveIdForMonster(mon, slot));
+        height += move ? 74 + std::max(1, wrappedTextLineCount(move->description, TouchUi::pageBody().width - 36)) * 16 : 38;
+    }
+    return height;
+}
+
+int MenuScene::touchMoveRowCount() const {
+    const auto& state = GameEngine::ins().gameState();
+    if (moveMonsterIndex >= state.teamCount) return 0;
+    const auto& mon = state.team[moveMonsterIndex];
+    return movePageMode == MovePageMode::MANAGE ? learnedMoveCount(GameEngine::ins().speciesFor(mon), mon) + 1
+        : movePageMode == MovePageMode::RECALL_SELECT ? recallMoveCount + 1 : SPECIAL_MOVE_SLOT_COUNT + 1;
+}
+
+const MoveInfo* MenuScene::touchMoveInfo(uint8_t row, uint8_t* proficiency) const {
+    const auto& state = GameEngine::ins().gameState();
+    if (proficiency) *proficiency = 0;
+    if (moveMonsterIndex >= state.teamCount) return nullptr;
+    const auto& mon = state.team[moveMonsterIndex];
+    const auto& species = GameEngine::ins().speciesFor(mon);
+    if (movePageMode == MovePageMode::RECALL_SELECT)
+        return row < recallMoveCount ? findMove(recallMoveIds[row]) : nullptr;
+    const int slot = movePageMode == MovePageMode::MANAGE
+        ? (row < learnedMoveCount(species, mon) ? learnedMoveSlotAt(species, mon, row) : Game::MOVE_SLOT_COUNT)
+        : row < SPECIAL_MOVE_SLOT_COUNT ? row + 1 : Game::MOVE_SLOT_COUNT;
+    if (slot >= Game::MOVE_SLOT_COUNT) return nullptr;
+    if (proficiency) *proficiency = mon.moveProficiency[slot];
+    return moveInfoForSlot(species, mon, slot);
+}
+
 void MenuScene::renderMovesPage() {
     auto& c = PixelRenderer::canvas();
     const auto& state = GameEngine::ins().gameState();
@@ -1842,27 +2372,35 @@ void MenuScene::renderMovesPage() {
             : SPECIAL_MOVE_SLOT_COUNT + 1);
     if (moveCursor >= rowCount) moveCursor = rowCount - 1;
 
+    const bool touch = TouchUi::enabled();
+    const auto body = touch ? TouchUi::pageBody() : MenuGrid::Rect{0, 0, Hal::DISPLAY_W, TouchUi::CONTENT_H};
+    auto sx = [body](int x) { return body.x + x; };
+    auto sy = [body](int y) { return body.y + y; };
+    if (touch) {
+        c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, 0);
+        moveListScroll = std::clamp(moveListScroll, 0.0f, touchMoveLayout().maxScroll(rowCount));
+    }
     static constexpr int LEFT_W = 90;
     static constexpr int RIGHT_X = LEFT_W + 7;
     static constexpr int LIST_Y = 6;
     static constexpr int ROW_H = 24;
     static constexpr int TEXT_X = 7;
 
-    c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H,
+    c.fillRect(body.x, body.y, body.width, body.height,
                PixelRenderer::rgb(10, 14, 20));
-    c.drawFastVLine(LEFT_W, 6, Hal::DISPLAY_H - 12,
+    c.drawFastVLine(sx(LEFT_W), sy(6), body.height - 12,
                     PixelRenderer::rgb(123, 125, 123));
 
-    c.setClipRect(0, LIST_Y, LEFT_W, Hal::DISPLAY_H - LIST_Y * 2);
+    c.setClipRect(body.x, sy(LIST_Y), LEFT_W, body.height - LIST_Y * 2);
     for (uint8_t index = 0; index < rowCount; ++index) {
-        int y = LIST_Y + index * ROW_H - static_cast<int>(moveListScroll);
-        if (y + ROW_H < LIST_Y || y >= Hal::DISPLAY_H - LIST_Y) continue;
+        int y = sy(LIST_Y) + index * ROW_H - static_cast<int>(moveListScroll);
+        if (y + ROW_H < sy(LIST_Y) || y >= body.y + body.height - LIST_Y) continue;
         bool selected = index == moveCursor;
         uint16_t color = selected
             ? PixelRenderer::rgb(255, 216, 72)
             : PixelRenderer::rgb(241, 242, 232);
         if (selected) {
-            c.fillRect(2, y + 2, 3, 18, PixelRenderer::rgb(255, 216, 72));
+            c.fillRect(sx(2), y + 2, 3, 18, PixelRenderer::rgb(255, 216, 72));
         }
 
         const MoveInfo* rowMove = nullptr;
@@ -1888,15 +2426,15 @@ void MenuScene::renderMovesPage() {
         }
 
         if (rowMove) {
-            PixelRenderer::text(TEXT_X, y + 3, rowMove->name, color, 1);
+            PixelRenderer::text(sx(TEXT_X), y + 3, rowMove->name, color, 1);
         } else if (isBack) {
-            PixelRenderer::text(TEXT_X, y + 3, Ui::BACK, color, 1);
+            PixelRenderer::text(sx(TEXT_X), y + 3, Ui::BACK, color, 1);
         } else {
-            PixelRenderer::text(TEXT_X, y + 3,
+            PixelRenderer::text(sx(TEXT_X), y + 3,
                                 Ui::Team::MOVE_UNLEARNED, color, 1);
         }
         if (index + 1 < rowCount) {
-            c.drawFastHLine(5, y + ROW_H - 1, LEFT_W - 10,
+            c.drawFastHLine(sx(5), y + ROW_H - 1, LEFT_W - 10,
                             PixelRenderer::rgb(55, 63, 76));
         }
     }
@@ -1931,9 +2469,10 @@ void MenuScene::renderMovesPage() {
         emptyHint = Ui::Team::MOVE_REPLACE_BACK_HINT;
     }
 
+    c.setClipRect(sx(RIGHT_X), body.y, body.width - RIGHT_X, body.height);
     if (move) {
-        int moveNameX = drawTypeBracket(RIGHT_X + 2, 7, move->type);
-        PixelRenderer::text(moveNameX + 3, 7, move->name,
+        int moveNameX = drawTypeBracket(sx(RIGHT_X + 2), sy(7), move->type);
+        PixelRenderer::text(moveNameX + 3, sy(7), move->name,
                             PixelRenderer::rgb(241, 242, 232), 1);
 
         char line[48];
@@ -1951,25 +2490,28 @@ void MenuScene::renderMovesPage() {
         }
         snprintf(line, sizeof(line), Ui::Team::MOVE_POWER_ACCURACY_FMT,
                  power, accuracy);
-        PixelRenderer::text(RIGHT_X + 2, 31, line,
+        PixelRenderer::text(sx(RIGHT_X + 2), sy(31), line,
                             PixelRenderer::rgb(255, 216, 72), 1);
-        PixelRenderer::text(RIGHT_X + 2, 52, Ui::Team::MOVE_PROFICIENCY,
+        PixelRenderer::text(sx(RIGHT_X + 2), sy(52), Ui::Team::MOVE_PROFICIENCY,
                             PixelRenderer::rgb(135, 214, 238), 1);
-        drawProficiencyBar(RIGHT_X + 48, 56, 86, 9, proficiency);
+        drawProficiencyBar(sx(RIGHT_X + 48), sy(56), 86, 9, proficiency);
 
         const char* description[] = {move->description};
         renderScrollableDescription(
-            description, 1, RIGHT_X + 2, 76,
-            Hal::DISPLAY_W - RIGHT_X - 4,
+            description, 1, sx(RIGHT_X + 2), sy(76),
+            body.width - RIGHT_X - 4,
             PixelRenderer::rgb(255, 218, 178), descriptionKey);
     } else if (emptyHint) {
-        int detailWidth = Hal::DISPLAY_W - RIGHT_X;
-        int hintX = RIGHT_X + MathUtil::max(
+        int detailWidth = body.width - RIGHT_X;
+        int hintX = sx(RIGHT_X) + MathUtil::max(
             2, (detailWidth - textPixelWidth(emptyHint)) / 2);
-        PixelRenderer::text(hintX, 58, emptyHint,
+        PixelRenderer::text(hintX, sy(58), emptyHint,
                             PixelRenderer::rgb(156, 164, 176), 1);
     }
 
+    c.clearClipRect();
+    if (touch) TouchUi::safePageHeader(Ui::Team::ACTION_MOVES,
+        gridTouch.pressed() == int(ViewMode::MOVES) * 256 + 230);
     if (movePageMode == MovePageMode::MANAGE && moveForgetConfirmOpen) {
         renderMoveForgetConfirmPopup();
     }
@@ -1993,8 +2535,10 @@ void MenuScene::renderMoveForgetConfirmPopup() {
     }
 
     auto& c = PixelRenderer::canvas();
-    static constexpr int POP_X = 25;
-    static constexpr int POP_Y = 32;
+    const bool touch = TouchUi::enabled();
+    const auto popup = touchForgetPopup();
+    const int POP_X = touch ? popup.x : 25;
+    const int POP_Y = touch ? popup.y : 32;
     static constexpr int POP_W = 190;
     static constexpr int POP_H = 72;
     c.fillRect(POP_X, POP_Y, POP_W, POP_H, PixelRenderer::rgb(24, 28, 36));
@@ -2040,16 +2584,23 @@ void MenuScene::renderStatusPage() {
     char buf[64];
     if (statusPage >= STATUS_PAGE_COUNT) statusPage = 0;
 
-    c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, PixelRenderer::rgb(10, 14, 20));
+    const bool touch = TouchUi::enabled();
+    const auto body = touch ? TouchUi::pageBody() : MenuGrid::Rect{0, 0, Hal::DISPLAY_W, TouchUi::CONTENT_H};
+    if (touch) {
+        c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, 0);
+        statusScroll = std::clamp(statusScroll, 0.0f, float(std::max(0, touchStatusContentHeight() - body.height)));
+    }
+    c.fillRect(body.x, body.y, body.width, body.height, PixelRenderer::rgb(10, 14, 20));
+    const int scrollY = int(statusScroll);
+    auto sx = [body](int x) { return body.x + x; };
+    auto sy = [body, scrollY](int y) { return body.y + y - scrollY; };
+    c.setClipRect(body.x, body.y, body.width, body.height);
+    if (touch && statusPage == 0) {
+        renderTouchStatusProfile(true);
+    } else if (statusPage == 0) {
+        drawStatusMonsterIcon(mon, sx(8), sy(14));
 
-    int scrollY = (int)statusScroll;
-    auto sy = [scrollY](int y) { return y - scrollY; };
-
-    c.setClipRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H);
-    if (statusPage == 0) {
-        drawStatusMonsterIcon(mon, 8, sy(14));
-
-        int infoX = 88;
+        int infoX = sx(88);
         snprintf(buf, sizeof(buf), Ui::Status::PROFILE_LINE_FMT,
                  mon.name, genderName(mon, activeMon), activeMon.level);
         PixelRenderer::text(infoX, sy(16), buf, PixelRenderer::rgb(241, 242, 232), 1);
@@ -2070,41 +2621,41 @@ void MenuScene::renderStatusPage() {
         }
         PixelRenderer::text(infoX, sy(82), buf, PixelRenderer::rgb(241, 242, 232), 1);
 
-        c.drawFastHLine(14, sy(101), 196, PixelRenderer::rgb(55, 63, 76));
-        PixelRenderer::text(16, sy(109), Ui::Status::SOURCE_INFO, PixelRenderer::rgb(67, 213, 224), 1);
+        c.drawFastHLine(sx(14), sy(101), 196, PixelRenderer::rgb(55, 63, 76));
+        PixelRenderer::text(sx(16), sy(109), Ui::Status::SOURCE_INFO, PixelRenderer::rgb(67, 213, 224), 1);
         if (activeMon.origin == Game::Origin::BEFRIENDED &&
             activeMon.metArea < Ui::Explore::AREA_COUNT) {
-            PixelRenderer::text(60, sy(109), Ui::Status::SOURCE_AT, PixelRenderer::rgb(241, 242, 232), 1);
+            PixelRenderer::text(sx(60), sy(109), Ui::Status::SOURCE_AT, PixelRenderer::rgb(241, 242, 232), 1);
             const char* area = metAreaName(activeMon.metArea);
-            PixelRenderer::text(84, sy(109), area, PixelRenderer::rgb(255, 216, 72), 1);
+            PixelRenderer::text(sx(84), sy(109), area, PixelRenderer::rgb(255, 216, 72), 1);
             PixelRenderer::text(84 + textPixelWidth(area) + 6, sy(109),
                                 Ui::Status::SOURCE_MET,
                                 PixelRenderer::rgb(241, 242, 232), 1);
         } else if (activeMon.origin == Game::Origin::HATCHED) {
-            PixelRenderer::text(60, sy(109), Ui::Status::SOURCE_HATCHED,
+            PixelRenderer::text(sx(60), sy(109), Ui::Status::SOURCE_HATCHED,
                                 PixelRenderer::rgb(255, 216, 72), 1);
         } else if (activeMon.origin == Game::Origin::STARTER) {
-            PixelRenderer::text(60, sy(109), Ui::Status::SOURCE_STARTER,
+            PixelRenderer::text(sx(60), sy(109), Ui::Status::SOURCE_STARTER,
                                 PixelRenderer::rgb(255, 216, 72), 1);
         } else {
-            PixelRenderer::text(60, sy(109), originName(activeMon.origin),
+            PixelRenderer::text(sx(60), sy(109), originName(activeMon.origin),
                                 PixelRenderer::rgb(255, 216, 72), 1);
         }
     } else if (statusPage == 1) {
-        PixelRenderer::text(12, sy(8), Ui::Status::CURRENT_STATS, PixelRenderer::rgb(67, 213, 224), 1);
+        PixelRenderer::text(sx(12), sy(8), Ui::Status::CURRENT_STATS, PixelRenderer::rgb(67, 213, 224), 1);
         snprintf(buf, sizeof(buf), Ui::Status::HP_FMT, activeMon.hpCur, activeMon.hpMax);
-        PixelRenderer::text(14, sy(30), buf, PixelRenderer::rgb(92, 222, 112), 1);
-        drawStatRow(128, sy(30), Ui::Status::STAT_SPA, statFor(mon, activeMon, 3), PixelRenderer::rgb(241, 242, 232));
-        drawStatRow(14, sy(50), Ui::Status::STAT_ATK, statFor(mon, activeMon, 1), PixelRenderer::rgb(241, 242, 232));
-        drawStatRow(128, sy(50), Ui::Status::STAT_SPD, statFor(mon, activeMon, 4), PixelRenderer::rgb(241, 242, 232));
-        drawStatRow(14, sy(70), Ui::Status::STAT_DEF, statFor(mon, activeMon, 2), PixelRenderer::rgb(241, 242, 232));
-        drawStatRow(128, sy(70), Ui::Status::STAT_SPE, statFor(mon, activeMon, 5), PixelRenderer::rgb(241, 242, 232));
+        PixelRenderer::text(sx(14), sy(30), buf, PixelRenderer::rgb(92, 222, 112), 1);
+        drawStatRow(sx(128), sy(30), Ui::Status::STAT_SPA, statFor(mon, activeMon, 3), PixelRenderer::rgb(241, 242, 232));
+        drawStatRow(sx(14), sy(50), Ui::Status::STAT_ATK, statFor(mon, activeMon, 1), PixelRenderer::rgb(241, 242, 232));
+        drawStatRow(sx(128), sy(50), Ui::Status::STAT_SPD, statFor(mon, activeMon, 4), PixelRenderer::rgb(241, 242, 232));
+        drawStatRow(sx(14), sy(70), Ui::Status::STAT_DEF, statFor(mon, activeMon, 2), PixelRenderer::rgb(241, 242, 232));
+        drawStatRow(sx(128), sy(70), Ui::Status::STAT_SPE, statFor(mon, activeMon, 5), PixelRenderer::rgb(241, 242, 232));
 
         snprintf(buf, sizeof(buf), Ui::Status::EXP_VALUE_FMT, (unsigned long)activeMon.exp);
-        PixelRenderer::text(14, sy(92), buf, PixelRenderer::rgb(241, 242, 232), 1);
+        PixelRenderer::text(sx(14), sy(92), buf, PixelRenderer::rgb(241, 242, 232), 1);
         uint32_t expNext = expToNextLevel(mon.growthRate, activeMon.level, activeMon.exp);
         snprintf(buf, sizeof(buf), Ui::Status::EXP_NEXT_FMT, (unsigned long)expNext);
-        PixelRenderer::text(128, sy(92), buf, PixelRenderer::rgb(241, 242, 232), 1);
+        PixelRenderer::text(sx(128), sy(92), buf, PixelRenderer::rgb(241, 242, 232), 1);
 
         uint32_t levelExp = minimumExpForLevel(mon.growthRate, activeMon.level);
         uint32_t nextExp = activeMon.level >= Game::LEVEL_MAX
@@ -2117,7 +2668,7 @@ void MenuScene::renderStatusPage() {
         uint8_t totalPct = maxExp > 0
             ? (uint8_t)MathUtil::min<uint32_t>(100, activeMon.exp * 100UL / maxExp)
             : 100;
-        static constexpr int BAR_X = 14;
+        const int BAR_X = sx(14);
         static constexpr int BAR_Y = 118;
         static constexpr int BAR_W = 186;
         static constexpr int BAR_H = 9;
@@ -2136,36 +2687,36 @@ void MenuScene::renderStatusPage() {
         c.drawRoundRect(BAR_X, barY, BAR_W, BAR_H, 2, PixelRenderer::rgb(45, 48, 56));
     } else if (statusPage == 2) {
         const MoveInfo* basicMove = findMove(moveIdForMonster(mon, activeMon, false));
-        PixelRenderer::text(12, sy(8), Ui::Status::MOVE_INFO, PixelRenderer::rgb(67, 213, 224), 1);
+        PixelRenderer::text(sx(12), sy(8), Ui::Status::MOVE_INFO, PixelRenderer::rgb(67, 213, 224), 1);
 
         TypeId basicType = basicMove ? basicMove->type : TypeId::NORMAL;
-        PixelRenderer::text(14, sy(31), Ui::Status::BASIC_MOVE, PixelRenderer::rgb(67, 213, 224), 1);
-        int basicNameX = drawTypeBracket(18, sy(51), basicType);
+        PixelRenderer::text(sx(14), sy(31), Ui::Status::BASIC_MOVE, PixelRenderer::rgb(67, 213, 224), 1);
+        int basicNameX = drawTypeBracket(sx(18), sy(51), basicType);
         PixelRenderer::text(basicNameX + 4, sy(51), basicMove ? basicMove->name : Ui::Status::MOVE_UNKNOWN,
                             PixelRenderer::rgb(241, 242, 232), 1);
 
-        static constexpr int MOVE_DESC_X = 18;
-        static constexpr int MOVE_DESC_W = Hal::DISPLAY_W - MOVE_DESC_X * 2;
+        const int MOVE_DESC_X = sx(18);
+        const int MOVE_DESC_W = body.width - 36;
         auto drawSpecialMove = [&](uint8_t slot, int y) {
             const MoveInfo* specialMove = findMove(specialMoveIdForMonster(activeMon, slot));
             char label[24];
             snprintf(label, sizeof(label), "%s%u", Ui::Status::SPECIAL_MOVE, (unsigned)(slot + 1));
-            PixelRenderer::text(14, sy(y), label,
+            PixelRenderer::text(sx(14), sy(y), label,
                                 specialMove ? PixelRenderer::rgb(67, 213, 224) : PixelRenderer::rgb(156, 164, 176),
                                 1);
             if (!specialMove) {
-                PixelRenderer::text(104, sy(y), Ui::Status::MOVE_NOT_LEARNED,
+                PixelRenderer::text(sx(104), sy(y), Ui::Status::MOVE_NOT_LEARNED,
                                     PixelRenderer::rgb(156, 164, 176), 1);
                 return y + 38;
             }
             snprintf(buf, sizeof(buf), Ui::Status::PROFICIENCY_FMT,
                      proficiencyName(activeMon.moveProficiency[slot + 1]));
-            PixelRenderer::text(128, sy(y), buf, PixelRenderer::rgb(255, 216, 72), 1);
-            int specialNameX = drawTypeBracket(18, sy(y + 20), specialMove->type);
+            PixelRenderer::text(sx(128), sy(y), buf, PixelRenderer::rgb(255, 216, 72), 1);
+            int specialNameX = drawTypeBracket(sx(18), sy(y + 20), specialMove->type);
             PixelRenderer::text(specialNameX + 4, sy(y + 20), specialMove->name,
                                 PixelRenderer::rgb(241, 242, 232), 1);
             snprintf(buf, sizeof(buf), Ui::Status::POWER_FMT, specialMove->power);
-            PixelRenderer::text(24, sy(y + 44), buf, PixelRenderer::rgb(255, 216, 72), 1);
+            PixelRenderer::text(sx(24), sy(y + 44), buf, PixelRenderer::rgb(255, 216, 72), 1);
             int lines = drawWrappedText(MOVE_DESC_X, sy(y + 64), specialMove->description,
                                         MOVE_DESC_W, PixelRenderer::rgb(135, 214, 238));
             return y + 74 + std::max(1, lines) * 16;
@@ -2173,40 +2724,54 @@ void MenuScene::renderStatusPage() {
         int moveY = drawSpecialMove(0, 78);
         drawSpecialMove(1, moveY);
     } else if (statusPage == 3) {
-        PixelRenderer::text(12, sy(8), Ui::Status::EFFORT_STATS, PixelRenderer::rgb(67, 213, 224), 1);
+        PixelRenderer::text(sx(12), sy(8), Ui::Status::EFFORT_STATS, PixelRenderer::rgb(67, 213, 224), 1);
         snprintf(buf, sizeof(buf), Ui::Status::TOTAL_FMT, Game::evTotal(activeMon.ev), Game::EV_TOTAL_MAX);
-        drawInfoRow(126, sy(8), buf, PixelRenderer::rgb(255, 216, 72));
-        drawStatRow(18, sy(34), Ui::Status::STAT_HP, activeMon.ev.hp, PixelRenderer::rgb(241, 242, 232));
-        drawStatRow(18, sy(52), Ui::Status::STAT_ATK, activeMon.ev.atk, PixelRenderer::rgb(241, 242, 232));
-        drawStatRow(18, sy(70), Ui::Status::STAT_DEF, activeMon.ev.def, PixelRenderer::rgb(241, 242, 232));
-        drawStatRow(18, sy(88), Ui::Status::STAT_SPA, activeMon.ev.spa, PixelRenderer::rgb(241, 242, 232));
-        drawStatRow(18, sy(106), Ui::Status::STAT_SPD, activeMon.ev.spd, PixelRenderer::rgb(241, 242, 232));
-        drawStatRow(126, sy(34), Ui::Status::STAT_SPE, activeMon.ev.spe, PixelRenderer::rgb(241, 242, 232));
+        drawInfoRow(sx(126), sy(8), buf, PixelRenderer::rgb(255, 216, 72));
+        drawStatRow(sx(18), sy(34), Ui::Status::STAT_HP, activeMon.ev.hp, PixelRenderer::rgb(241, 242, 232));
+        drawStatRow(sx(18), sy(52), Ui::Status::STAT_ATK, activeMon.ev.atk, PixelRenderer::rgb(241, 242, 232));
+        drawStatRow(sx(18), sy(70), Ui::Status::STAT_DEF, activeMon.ev.def, PixelRenderer::rgb(241, 242, 232));
+        drawStatRow(sx(18), sy(88), Ui::Status::STAT_SPA, activeMon.ev.spa, PixelRenderer::rgb(241, 242, 232));
+        drawStatRow(sx(18), sy(106), Ui::Status::STAT_SPD, activeMon.ev.spd, PixelRenderer::rgb(241, 242, 232));
+        drawStatRow(sx(126), sy(34), Ui::Status::STAT_SPE, activeMon.ev.spe, PixelRenderer::rgb(241, 242, 232));
     } else {
-        PixelRenderer::text(12, sy(8), Ui::Status::INDIVIDUAL_STATS, PixelRenderer::rgb(67, 213, 224), 1);
-        drawStatRow(18, sy(34), Ui::Status::STAT_HP, Game::ivAt(activeMon.ivPacked, 0), PixelRenderer::rgb(135, 214, 238));
-        drawStatRow(18, sy(52), Ui::Status::STAT_ATK, Game::ivAt(activeMon.ivPacked, 1), PixelRenderer::rgb(135, 214, 238));
-        drawStatRow(18, sy(70), Ui::Status::STAT_DEF, Game::ivAt(activeMon.ivPacked, 2), PixelRenderer::rgb(135, 214, 238));
-        drawStatRow(18, sy(88), Ui::Status::STAT_SPA, Game::ivAt(activeMon.ivPacked, 3), PixelRenderer::rgb(135, 214, 238));
-        drawStatRow(18, sy(106), Ui::Status::STAT_SPD, Game::ivAt(activeMon.ivPacked, 4), PixelRenderer::rgb(135, 214, 238));
-        drawStatRow(126, sy(34), Ui::Status::STAT_SPE, Game::ivAt(activeMon.ivPacked, 5), PixelRenderer::rgb(135, 214, 238));
+        PixelRenderer::text(sx(12), sy(8), Ui::Status::INDIVIDUAL_STATS, PixelRenderer::rgb(67, 213, 224), 1);
+        drawStatRow(sx(18), sy(34), Ui::Status::STAT_HP, Game::ivAt(activeMon.ivPacked, 0), PixelRenderer::rgb(135, 214, 238));
+        drawStatRow(sx(18), sy(52), Ui::Status::STAT_ATK, Game::ivAt(activeMon.ivPacked, 1), PixelRenderer::rgb(135, 214, 238));
+        drawStatRow(sx(18), sy(70), Ui::Status::STAT_DEF, Game::ivAt(activeMon.ivPacked, 2), PixelRenderer::rgb(135, 214, 238));
+        drawStatRow(sx(18), sy(88), Ui::Status::STAT_SPA, Game::ivAt(activeMon.ivPacked, 3), PixelRenderer::rgb(135, 214, 238));
+        drawStatRow(sx(18), sy(106), Ui::Status::STAT_SPD, Game::ivAt(activeMon.ivPacked, 4), PixelRenderer::rgb(135, 214, 238));
+        drawStatRow(sx(126), sy(34), Ui::Status::STAT_SPE, Game::ivAt(activeMon.ivPacked, 5), PixelRenderer::rgb(135, 214, 238));
     }
     c.clearClipRect();
 
     renderPageIndicator(statusPage, STATUS_PAGE_COUNT);
+    if (touch) {
+        char title[32];
+        std::snprintf(title, sizeof(title), "%s %u/%u", Ui::STATUS, unsigned(statusPage + 1), unsigned(STATUS_PAGE_COUNT));
+        TouchUi::safePageHeader(title, gridTouch.pressed() == int(ViewMode::STATUS) * 256 + 230);
+    }
 }
 
 void MenuScene::renderEggStatusPage() {
     auto& c = PixelRenderer::canvas();
 
     statusPage = 0;
-    c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, PixelRenderer::rgb(10, 14, 20));
-    if (!GameAssets::drawCentered(GameAssets::Kind::EGG, 44, 63, 1.5f)) {
-        c.fillEllipse(44, 63, 16, 23, PixelRenderer::rgb(240, 232, 184));
+    const bool touch = TouchUi::enabled();
+    const auto body = touch ? TouchUi::pageBody() : MenuGrid::Rect{0, 0, Hal::DISPLAY_W, TouchUi::CONTENT_H};
+    auto sx = [body](int x) { return body.x + x; };
+    auto sy = [body](int y) { return body.y + y; };
+    if (touch) c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, 0);
+    c.fillRect(body.x, body.y, body.width, body.height, PixelRenderer::rgb(10, 14, 20));
+    c.setClipRect(body.x, body.y, body.width, body.height);
+    if (!GameAssets::drawCentered(GameAssets::Kind::EGG, sx(44), sy(63), 1.5f)) {
+        c.fillEllipse(sx(44), sy(63), 16, 23, PixelRenderer::rgb(240, 232, 184));
     }
-    PixelRenderer::text(88, 38, Ui::Status::EGG_TITLE, PixelRenderer::rgb(241, 242, 232), 1);
-    c.drawFastHLine(84, 65, 122, PixelRenderer::rgb(55, 63, 76));
-    PixelRenderer::text(88, 78, Ui::Status::EGG_STATE, PixelRenderer::rgb(255, 216, 72), 1);
+    PixelRenderer::text(sx(88), sy(38), Ui::Status::EGG_TITLE, PixelRenderer::rgb(241, 242, 232), 1);
+    c.drawFastHLine(sx(84), sy(65), 122, PixelRenderer::rgb(55, 63, 76));
+    PixelRenderer::text(sx(88), sy(78), Ui::Status::EGG_STATE, PixelRenderer::rgb(255, 216, 72), 1);
+    c.clearClipRect();
+    if (touch) TouchUi::safePageHeader(Ui::Status::EGG_TITLE,
+        gridTouch.pressed() == int(ViewMode::STATUS) * 256 + 230);
 }
 
 void MenuScene::renderBagPage() {
@@ -2221,16 +2786,64 @@ void MenuScene::renderBagPage() {
     uint8_t visibleCount = collectVisibleBagRows(rows, BAG_ITEM_COUNT);
     if (bagCursor >= visibleCount) bagCursor = visibleCount - 1;
 
-    c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, PixelRenderer::rgb(10, 14, 20));
+    if (TouchUi::enabled()) {
+        renderTouchBag(rows, visibleCount);
+        return;
+    }
+
+    c.fillRect(0, 0, Hal::DISPLAY_W, TouchUi::CONTENT_H, PixelRenderer::rgb(10, 14, 20));
     renderSplitList(rows, visibleCount);
     renderBagDetail(rows[bagCursor]);
     if (bagConfirmOpen) renderBagConfirmPopup();
     renderToast();
 }
 
+void MenuScene::renderTouchBag(const BagRow* rows, uint8_t count) {
+    auto& c = PixelRenderer::canvas();
+    c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, 0);
+    const int mode = static_cast<int>(ViewMode::BAG) * 256;
+    TouchUi::header(Ui::BAG, nullptr, gridTouch.pressed() == mode + 230);
+    if (!bagDetailOpen) {
+        const auto layout = MenuGrid::fit({0, 38, Hal::DISPLAY_W, Hal::DISPLAY_H - 38});
+        c.setClipRect(0, 38, Hal::DISPLAY_W, Hal::DISPLAY_H - 38);
+        for (int i = 0; i < count; ++i) {
+            const auto rect = layout.cell(i, bagGridScroll);
+            if (rect.y + rect.height <= 38 || rect.y >= Hal::DISPLAY_H) continue;
+            MenuGrid::card(c, rect, gridTouch.pressed() == mode + i, i == bagCursor);
+            if (rows[i].source < BAG_ITEM_COUNT - 1) {
+                GameAssets::drawCentered(GameAssets::itemKind(bagItemId(rows[i].source)),
+                    rect.x + rect.width / 2, rect.y + 25);
+                char value[12]; std::snprintf(value, sizeof(value), "x%u", rows[i].count);
+                PixelRenderer::text(rect.x + 5, rect.y + 3, value, 0x7bef);
+            }
+            MenuGrid::label(c, rect.x + rect.width / 2, rect.y + 50,
+                Ui::Bag::NAMES[rows[i].source], rect.width - 8, 0xffff);
+        }
+        c.clearClipRect();
+    } else {
+        const auto& row = rows[bagCursor];
+        if (row.source < BAG_ITEM_COUNT - 1) {
+            GameAssets::drawCentered(GameAssets::itemKind(bagItemId(row.source)), 44, 73, 1.5f);
+            PixelRenderer::text(84, 48, Ui::Bag::NAMES[row.source], 0xffff);
+            char value[16]; std::snprintf(value, sizeof(value), Ui::Bag::COUNT_X_FMT, row.count);
+            PixelRenderer::text(84, 72, value, 0xffe0);
+            c.setClipRect(8, 102, Hal::DISPLAY_W - 16, Hal::DISPLAY_H - 150);
+            int y = 104;
+            for (int i = 0; i < 3; ++i)
+                y += drawWrappedText(12, y, Ui::Bag::DESCS[row.source][i], Hal::DISPLAY_W - 24, 0xbdf7) * 16;
+            c.clearClipRect();
+        }
+        const int width = Hal::DISPLAY_W / 2 - 14;
+        TouchUi::action(8, Hal::DISPLAY_H - 40, width, Ui::BACK, gridTouch.pressed() == mode + 230);
+        TouchUi::action(Hal::DISPLAY_W / 2 + 6, Hal::DISPLAY_H - 40, width, Ui::Amoled::USE, gridTouch.pressed() == mode + 231);
+    }
+    if (bagConfirmOpen) renderBagConfirmPopup();
+    renderToast();
+}
+
 void MenuScene::renderBagConfirmPopup() {
     auto& c = PixelRenderer::canvas();
-    static constexpr int POP_X = 25;
+    static constexpr int POP_X = (Hal::DISPLAY_W - 190) / 2;
     static constexpr int POP_Y = 32;
     static constexpr int POP_W = 190;
     static constexpr int POP_H = 72;
@@ -2266,9 +2879,57 @@ void MenuScene::renderBagConfirmPopup() {
     PixelRenderer::text(POP_X + 130, POP_Y + 49, Ui::Bag::NO, noColor, 1);
 }
 
+void MenuScene::renderTouchPage() {
+    auto& c = PixelRenderer::canvas();
+    c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, 0);
+    const bool food = viewMode == ViewMode::FOOD;
+    const bool room = viewMode == ViewMode::ROOM;
+    const int mode = static_cast<int>(viewMode) * 256;
+    const auto layout = TouchUi::listLayout(food ? 44 : room ? 80 : 74);
+    const int count = food ? Game::ROOM_FOOD_COUNT : 2;
+    const int selected = food ? foodCursor : room ? roomCursor : computerCursor;
+    c.setClipRect(0, TouchUi::PAGE_HEADER_H, Hal::DISPLAY_W, Hal::DISPLAY_H - TouchUi::PAGE_HEADER_H);
+    auto& engine = GameEngine::ins();
+    for (int i = 0; i < count; ++i) {
+        const auto rect = layout.cell(i, food ? foodScroll : pageScroll);
+        if (rect.y + rect.height <= TouchUi::PAGE_HEADER_H || rect.y >= Hal::DISPLAY_H) continue;
+        MenuGrid::card(c, rect, gridTouch.pressed() == mode + i, selected == i);
+        if (food) {
+            const auto stock = engine.foodCount(i);
+            const bool active = i == engine.selectedFoodIndex();
+            if (active) c.fillRect(rect.x + 3, rect.y + 8, 3, rect.height - 16, 0xffe0);
+            GameAssets::drawCentered(GameAssets::itemKind(Game::itemIdForFoodIndex(i)), rect.x + 26, rect.y + 22, 0.8f);
+            PixelRenderer::text(rect.x + 52, rect.y + 14, Ui::Room::FOOD_NAMES[i],
+                active ? 0xffe0 : stock ? 0xffff : 0x7bef);
+            char value[12]; std::snprintf(value, sizeof(value), "x%u", stock);
+            PixelRenderer::text(Hal::DISPLAY_W - 18 - textPixelWidth(value), rect.y + 14, value, stock ? 0x77b6 : 0x7bef);
+        } else if (room) {
+            GameAssets::drawCentered(i == 0 ? GameAssets::Kind::ITEM_NORMAL_FOOD : GameAssets::Kind::SHOWER_MENU_SPRINKLER,
+                rect.x + 38, rect.y + 40, i == 0 ? 1.5f : 1.2f);
+            PixelRenderer::text(rect.x + 80, rect.y + 32, Ui::Room::ITEMS[i], 0xffff);
+            if (i == 0) {
+                unsigned total = 0;
+                for (auto stock : engine.gameState().room.food) total += stock;
+                char value[12]; std::snprintf(value, sizeof(value), "x%u", total);
+                PixelRenderer::text(Hal::DISPLAY_W - 18 - textPixelWidth(value), rect.y + 13, value, 0xffe0);
+            }
+        } else {
+            PixelRenderer::text(rect.x + 16, rect.y + 29, Ui::Computer::ITEMS[i], 0xffff);
+            if (i == 1) {
+                char value[12]; std::snprintf(value, sizeof(value), Ui::Computer::STORAGE_COUNT_FMT, engine.gameState().storageCount);
+                PixelRenderer::text(Hal::DISPLAY_W - 18 - textPixelWidth(value), rect.y + 29, value, 0x77b6);
+            } else PixelRenderer::text(Hal::DISPLAY_W - 28, rect.y + 29, ">", 0x77b6);
+        }
+    }
+    c.clearClipRect();
+    TouchUi::pageHeader(food ? Ui::FOOD : room ? Ui::ROOM : Ui::COMPUTER,
+        gridTouch.pressed() == mode + 230, room && roomCursor == ROOM_ITEM_COUNT - 1);
+    renderToast();
+}
+
 void MenuScene::renderRoomPage() {
     auto& c = PixelRenderer::canvas();
-    c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, 0x0000);
+    c.fillRect(0, 0, Hal::DISPLAY_W, TouchUi::CONTENT_H, 0x0000);
 
     static constexpr int ROW_X = 8;
     static constexpr int TEXT_X = 22;
@@ -2302,18 +2963,18 @@ void MenuScene::renderRoomPage() {
 
 void MenuScene::renderFoodPage() {
     auto& c = PixelRenderer::canvas();
-    c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, 0x0000);
+    c.fillRect(0, 0, Hal::DISPLAY_W, TouchUi::CONTENT_H, 0x0000);
 
     static constexpr int LEFT_W = 78;
     static constexpr int LIST_Y_START = 6;
-    static constexpr int LIST_BOTTOM = Hal::DISPLAY_H - 6;
+    static constexpr int LIST_BOTTOM = TouchUi::CONTENT_H - 6;
     static constexpr int VISIBLE_H = LIST_BOTTOM - LIST_Y_START;
     static constexpr int ROW_H = 22;
     static constexpr int TEXT_X = 18;
 
     if (foodCursor >= FOOD_ITEM_COUNT) foodCursor = 0;
 
-    c.drawFastVLine(LEFT_W, 6, Hal::DISPLAY_H - 12, 0x7BEF);
+    c.drawFastVLine(LEFT_W, 6, TouchUi::CONTENT_H - 12, 0x7BEF);
 
     uint8_t selectedFood = GameEngine::ins().selectedFoodIndex();
     c.setClipRect(0, LIST_Y_START, LEFT_W - 1, VISIBLE_H);
@@ -2370,7 +3031,7 @@ void MenuScene::renderFoodPage() {
 
 void MenuScene::renderComputerPage() {
     auto& c = PixelRenderer::canvas();
-    c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, 0x0000);
+    c.fillRect(0, 0, Hal::DISPLAY_W, TouchUi::CONTENT_H, 0x0000);
 
     static constexpr int ROW_X = 8;
     static constexpr int TEXT_X = 22;
@@ -2407,12 +3068,12 @@ void MenuScene::renderStoragePage() {
     uint8_t rowCount = state.storageCount + 1;
     if (storageCursor >= rowCount) storageCursor = rowCount - 1;
 
-    c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, 0x0000);
+    c.fillRect(0, 0, Hal::DISPLAY_W, TouchUi::CONTENT_H, 0x0000);
 
     static constexpr int ROW_X = 8;
     static constexpr int TEXT_X = 18;
     static constexpr int LIST_Y_START = 6;
-    static constexpr int LIST_BOTTOM = Hal::DISPLAY_H - 6;
+    static constexpr int LIST_BOTTOM = TouchUi::CONTENT_H - 6;
     static constexpr int VISIBLE_H = LIST_BOTTOM - LIST_Y_START;
     static constexpr int ROW_H = 24;
     static constexpr int SEP_W = Hal::DISPLAY_W - ROW_X * 2;
@@ -2558,7 +3219,7 @@ void MenuScene::renderStorageReleaseConfirmPopup() {
 #if STICKMON_ENABLE_DEBUG_FEATURES
 void MenuScene::renderDebugPage() {
     auto& c = PixelRenderer::canvas();
-    c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, 0x0000);
+    c.fillRect(0, 0, Hal::DISPLAY_W, TouchUi::CONTENT_H, 0x0000);
 
     static constexpr int ROW_X = 8;
     static constexpr int TEXT_X = 20;
@@ -2575,7 +3236,7 @@ void MenuScene::renderDebugPage() {
 
     for (uint8_t i = 0; i < itemCount; ++i) {
         int rowY = ROW_Y + i * ROW_H - (int)debugScroll;
-        if (rowY + ROW_H <= 0 || rowY >= Hal::DISPLAY_H) continue;
+        if (rowY + ROW_H <= 0 || rowY >= TouchUi::CONTENT_H) continue;
         int textY = rowY + TEXT_Y_OFFSET;
         bool selected = i == debugCursor;
         uint16_t color = selected ? PixelRenderer::rgb(255, 216, 72) : PixelRenderer::rgb(241, 242, 232);
@@ -3032,12 +3693,12 @@ void MenuScene::renderSplitList(const BagRow* rows, uint8_t count) {
     auto& c = PixelRenderer::canvas();
     static constexpr int LEFT_W = 78;
     static constexpr int LIST_Y_START = 6;
-    static constexpr int LIST_BOTTOM = Hal::DISPLAY_H - 6;
+    static constexpr int LIST_BOTTOM = TouchUi::CONTENT_H - 6;
     static constexpr int VISIBLE_H = LIST_BOTTOM - LIST_Y_START;
     static constexpr int ROW_H = 22;
     static constexpr int TEXT_X = 12;
 
-    c.drawFastVLine(LEFT_W, 6, Hal::DISPLAY_H - 12, 0x7BEF);
+    c.drawFastVLine(LEFT_W, 6, TouchUi::CONTENT_H - 12, 0x7BEF);
 
     c.setClipRect(0, LIST_Y_START, LEFT_W - 1, VISIBLE_H);
     for (uint8_t i = 0; i < count; ++i) {
@@ -3198,9 +3859,21 @@ void MenuScene::renderPageIndicator(uint8_t page, uint8_t count) {
     auto& c = PixelRenderer::canvas();
     const int dotW = 4;
     const int gap = 4;
+    if (TouchUi::enabled()) {
+        const int totalW = count * dotW + (count - 1) * gap;
+        const int left = (Hal::DISPLAY_W - totalW) / 2;
+        const int top = Hal::DISPLAY_H - 24;
+        c.fillRoundRect(left - 8, top, totalW + 16, 16, 8, PixelRenderer::rgb(8, 10, 14));
+        for (uint8_t i = 0; i < count; ++i) {
+            const auto color = i == page ? PixelRenderer::rgb(67, 213, 224) : PixelRenderer::rgb(92, 98, 110);
+            c.fillRect(left + i * (dotW + gap), top + 6, dotW, 4, color);
+        }
+        return;
+    }
     int totalH = count * 5 + (count - 1) * gap;
-    int x = Hal::DISPLAY_W - 10;
-    int y = (Hal::DISPLAY_H - totalH) / 2;
+    const auto body = MenuGrid::Rect{0, 0, Hal::DISPLAY_W, TouchUi::CONTENT_H};
+    int x = body.x + body.width - 10;
+    int y = body.y + (body.height - totalH) / 2;
     for (uint8_t i = 0; i < count; ++i) {
         uint16_t color = i == page ? PixelRenderer::rgb(67, 213, 224) : PixelRenderer::rgb(92, 98, 110);
         c.fillRect(x, y + i * (5 + gap), dotW, 5, color);

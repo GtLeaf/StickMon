@@ -29,6 +29,7 @@ endif()
 idf_component_register(
     SRCS
         "main.cpp"
+        "${STICKMON_ROOT}/firmware/common/Rgb565Transfer.cpp"
         ${STICKMON_AMOLED_APP_SOURCES}
         "AmoledPlatform.cpp"
         "${STICKMON_ROOT}/firmware/common/Qmi8658.cpp"

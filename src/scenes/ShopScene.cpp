@@ -1,4 +1,7 @@
 #include "scenes/ShopScene.h"
+#include "presentation/TouchUi.h"
+#include "presentation/MenuGrid.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include "assets/GameAssets.h"
@@ -24,7 +27,7 @@ static constexpr float SHOP_ICON_SCALE = 1.0f;
 static constexpr float SELECTED_SHOP_ICON_SCALE = 1.2f;
 static constexpr int CONTENT_TOP = 24;
 static constexpr int ICON_ROW_H = 37;
-static constexpr int ICON_CENTER_Y = Hal::DISPLAY_H / 2;
+static constexpr int ICON_CENTER_Y = TouchUi::CONTENT_H / 2;
 static constexpr int SUBMENU_DIVIDER_X = 58;
 
 uint16_t darkenRgb565(uint16_t color, uint8_t keep) {
@@ -40,7 +43,7 @@ void shadeRect(int x, int y, int w, int h, uint8_t keep) {
     int x0 = x < 0 ? 0 : x;
     int y0 = y < 0 ? 0 : y;
     int x1 = x + w > Hal::DISPLAY_W ? Hal::DISPLAY_W : x + w;
-    int y1 = y + h > Hal::DISPLAY_H ? Hal::DISPLAY_H : y + h;
+    int y1 = y + h > TouchUi::CONTENT_H ? TouchUi::CONTENT_H : y + h;
     for (int py = y0; py < y1; ++py) {
         for (int px = x0; px < x1; ++px) {
             uint16_t color = (uint16_t)c.readPixel(px, py);
@@ -120,6 +123,9 @@ uint32_t canvasFingerprint(int centerX, int centerY, int halfSize) {
 }
 
 void ShopScene::onEnter() {
+    cancelTouch();
+    touchGridScroll = 0;
+    touchDetailOpen = false;
     viewMode = ViewMode::CATEGORY;
     activeCategory = CATEGORY_DAILY;
     cursor = 0;
@@ -142,6 +148,15 @@ void ShopScene::onEnter() {
 
 SceneUpdateResult ShopScene::update(uint32_t nowMs, float dtSeconds) {
     RenderDemand demand;
+    if (TouchUi::enabled()) {
+        itemColumnX = viewMode == ViewMode::CATEGORY ? CATEGORY_ICON_COLUMN_X : SUBMENU_ICON_COLUMN_X;
+        itemAnimCursor = cursor;
+        const auto layout = MenuGrid::fit({0, 38, Hal::DISPLAY_W, Hal::DISPLAY_H - 38});
+        touchGridScroll = std::clamp(touchGridScroll, 0.0f,
+            layout.maxScroll(viewMode == ViewMode::CATEGORY ? CATEGORY_COUNT : currentItemCount()));
+        if (demand.expired(toast != nullptr, nowMs, toastUntil)) toast = nullptr;
+        return demand.result();
+    }
     bool animating = false;
     float targetX = viewMode == ViewMode::CATEGORY
         ? CATEGORY_ICON_COLUMN_X : SUBMENU_ICON_COLUMN_X;
@@ -164,7 +179,97 @@ SceneUpdateResult ShopScene::update(uint32_t nowMs, float dtSeconds) {
     return demand.result();
 }
 
+bool ShopScene::touchNavigation() const { return !TouchUi::enabled(); }
+
+void ShopScene::cancelTouch() { Scene::cancelTouch(); gridTouch.cancel(); }
+
+bool ShopScene::onTouch(const Platform::IInputDevice::TouchEvent& event) {
+    if (!TouchUi::enabled()) return Scene::onTouch(event);
+    const auto layout = MenuGrid::fit({0, 38, Hal::DISPLAY_W, Hal::DISPLAY_H - 38});
+    const int count = viewMode == ViewMode::CATEGORY ? CATEGORY_COUNT : currentItemCount();
+    const auto result = gridTouch.update(event, touchTarget(event.x, event.y), touchGridScroll,
+        layout.maxScroll(count), !touchDetailOpen && layout.viewport.contains(event.x, event.y));
+    const bool activated = result.tap >= 0 && onTap(result.tap);
+    return result.changed || activated;
+}
+
+int ShopScene::touchTarget(int16_t x, int16_t y) {
+    if (TouchUi::enabled()) {
+        if (x < 0 || x >= Hal::DISPLAY_W || y < 0 || y >= Hal::DISPLAY_H) return -1;
+        const int mode = static_cast<int>(viewMode) * 256;
+        if (TouchUi::backHit(x, y)) return mode + 230;
+        if (touchDetailOpen) {
+            if (y >= Hal::DISPLAY_H - 40 && y < Hal::DISPLAY_H - 6) {
+                if (x >= 8 && x < Hal::DISPLAY_W / 2 - 6) return mode + 230;
+                if (x >= Hal::DISPLAY_W / 2 + 6 && x < Hal::DISPLAY_W - 8) return mode + 231;
+            }
+            return -1;
+        }
+        const int count = viewMode == ViewMode::CATEGORY ? CATEGORY_COUNT : currentItemCount();
+        const auto layout = MenuGrid::fit({0, 38, Hal::DISPLAY_W, Hal::DISPLAY_H - 38});
+        const int item = layout.itemAt(x, y, touchGridScroll, count);
+        return item < 0 ? -1 : mode + item;
+    }
+    if (!itemColumnSettled() || y >= TouchUi::CONTENT_H) return -1;
+    if (viewMode == ViewMode::CATEGORY && x >= 6 && x < 76 && y >= 26 && y < 26 + CATEGORY_COUNT * 24) {
+        return (y - 26) / 24;
+    }
+    // Selecting a product only previews it; the separate Confirm control buys.
+    if (viewMode != ViewMode::CATEGORY && x < 58 && y >= CONTENT_TOP) {
+        const int index = int(std::lround(itemAnimCursor + float(y - ICON_CENTER_Y) / ICON_ROW_H));
+        if (index >= 0 && index < currentItemCount()) return 256 + index;
+    }
+    return -1;
+}
+
+bool ShopScene::onTap(int target) {
+    if (TouchUi::enabled()) {
+        if (target / 256 != static_cast<int>(viewMode)) return false;
+        const int index = target % 256;
+        if (index == 230) return onButton({1, BtnAction::LONG_PRESS});
+        if (index == 231 && touchDetailOpen) return onButton({0, BtnAction::PRESSED});
+        const int count = viewMode == ViewMode::CATEGORY ? CATEGORY_COUNT : currentItemCount();
+        if (index < 0 || index >= count || touchDetailOpen) return false;
+        cursor = index;
+        return onButton({0, BtnAction::PRESSED});
+    }
+    if (!itemColumnSettled()) return false;
+    if (target >= 256 && viewMode != ViewMode::CATEGORY) {
+        cursor = target - 256;
+        return true;
+    }
+    if (viewMode != ViewMode::CATEGORY || target < 0 || target >= CATEGORY_COUNT) return false;
+    cursor = target;
+    return onButton({0, BtnAction::PRESSED});
+}
+
 bool ShopScene::onButton(const ButtonEvent& event) {
+    if (TouchUi::enabled()) {
+        if ((event.btn == 0 || event.btn == 1) && event.action == BtnAction::LONG_PRESS) {
+            cancelTouch();
+            if (touchDetailOpen) touchDetailOpen = false;
+            else if (viewMode != ViewMode::CATEGORY) returnToCategories();
+            else GameEngine::ins().requestScene(SceneID::MENU);
+            return true;
+        }
+        if (event.btn == 1 && event.action == BtnAction::PRESSED) {
+            const int count = viewMode == ViewMode::CATEGORY ? CATEGORY_COUNT : currentItemCount();
+            cursor = (cursor + 1) % count;
+            touchGridScroll = MenuGrid::fit({0, 38, Hal::DISPLAY_W, Hal::DISPLAY_H - 38}).reveal(cursor, touchGridScroll, count);
+            if (viewMode != ViewMode::CATEGORY && selectedItem() == BACK) touchDetailOpen = false;
+            return true;
+        }
+        if (event.btn == 0 && event.action == BtnAction::PRESSED) {
+            cancelTouch();
+            if (viewMode == ViewMode::CATEGORY) { activateCategory(); touchGridScroll = 0; }
+            else if (selectedItem() == BACK) returnToCategories();
+            else if (!touchDetailOpen) touchDetailOpen = true;
+            else if (viewMode == ViewMode::SELL) sellCurrent();
+            else buyCurrent();
+            return true;
+        }
+        return false;
+    }
     if ((event.btn == 0 || event.btn == 1) && !itemColumnSettled()) return true;
     if ((event.btn == 0 || event.btn == 1) && event.action == BtnAction::LONG_PRESS) {
         if (viewMode == ViewMode::CATEGORY) {
@@ -216,6 +321,9 @@ void ShopScene::activateCategory() {
 }
 
 void ShopScene::returnToCategories() {
+    cancelTouch();
+    touchDetailOpen = false;
+    touchGridScroll = 0;
     viewMode = ViewMode::CATEGORY;
     cursor = (uint8_t)activeCategory;
     toast = nullptr;
@@ -278,6 +386,7 @@ void ShopScene::sellCurrent() {
 
     uint8_t count = sellItemCount();
     if (count > 0 && cursor >= count) cursor = count - 1;
+    if (TouchUi::enabled() && selectedItem() != item) touchDetailOpen = false;
 }
 
 ShopScene::Item ShopScene::currentItem() const {
@@ -411,7 +520,8 @@ void ShopScene::render() {
     static_assert(sizeof(Ui::Shop::DESCS) / sizeof(Ui::Shop::DESCS[0]) == COUNT,
                   "shop descriptions must match ShopScene::Item");
     auto& c = PixelRenderer::canvas();
-    c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, PixelRenderer::rgb(7, 9, 14));
+    if (TouchUi::enabled()) { renderTouchShop(); return; }
+    c.fillRect(0, 0, Hal::DISPLAY_W, TouchUi::CONTENT_H, PixelRenderer::rgb(7, 9, 14));
     c.fillRect(0, 0, Hal::DISPLAY_W, 20, PixelRenderer::rgb(25, 25, 40));
     PixelRenderer::text(4, 2, Ui::SHOP, PixelRenderer::rgb(67, 213, 224), 1);
 
@@ -420,6 +530,50 @@ void ShopScene::render() {
     PixelRenderer::text(188, 2, coins, PixelRenderer::rgb(255, 216, 72), 1);
 
     renderList();
+    renderToast();
+}
+
+void ShopScene::renderTouchShop() {
+    auto& c = PixelRenderer::canvas();
+    c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, 0);
+    const int mode = static_cast<int>(viewMode) * 256;
+    char coins[20]; std::snprintf(coins, sizeof(coins), Ui::Shop::COINS_SHORT_FMT,
+        static_cast<unsigned long>(GameEngine::ins().coinCount()));
+    TouchUi::header(Ui::SHOP, coins, gridTouch.pressed() == mode + 230);
+    if (!touchDetailOpen) {
+        const bool categories = viewMode == ViewMode::CATEGORY;
+        const int count = categories ? CATEGORY_COUNT : currentItemCount();
+        if (cursor >= count) cursor = count - 1;
+        const auto layout = MenuGrid::fit({0, 38, Hal::DISPLAY_W, Hal::DISPLAY_H - 38});
+        c.setClipRect(0, 38, Hal::DISPLAY_W, Hal::DISPLAY_H - 38);
+        for (int i = 0; i < count; ++i) {
+            const auto rect = layout.cell(i, touchGridScroll);
+            if (rect.y + rect.height <= 38 || rect.y >= Hal::DISPLAY_H) continue;
+            MenuGrid::card(c, rect, gridTouch.pressed() == mode + i, i == cursor);
+            const Item item = categories ? itemForCategory(static_cast<Category>(i), 0) : itemAtIndex(i);
+            if (item != BACK) drawItemIcon(item, rect.x + rect.width / 2, rect.y + 25, 1.0f, 0xffff);
+            MenuGrid::label(c, rect.x + rect.width / 2, rect.y + 50,
+                categories ? Ui::Shop::CATEGORY_ITEMS[i] : nameFor(item), rect.width - 8, 0xffff);
+        }
+        c.clearClipRect();
+    } else {
+        const Item item = selectedItem();
+        drawItemIcon(item, 44, 75, 1.5f, 0xffff);
+        PixelRenderer::text(84, 47, nameFor(item), 0xffff);
+        char value[24];
+        std::snprintf(value, sizeof(value), viewMode == ViewMode::SELL ? Ui::Shop::SELL_PRICE_FMT : Ui::Shop::PRICE_FMT,
+            viewMode == ViewMode::SELL ? sellPriceFor(item) : priceFor(item));
+        PixelRenderer::text(84, 70, value, 0xffe0);
+        std::snprintf(value, sizeof(value), Ui::Shop::OWNED_FMT, ownedCountFor(item));
+        PixelRenderer::text(84, 91, value, 0xbdf7);
+        c.setClipRect(8, 115, Hal::DISPLAY_W - 16, Hal::DISPLAY_H - 163);
+        drawWrappedText(descFor(item), 12, 116, Hal::DISPLAY_W - 24, 0xbdf7, 4);
+        c.clearClipRect();
+        const int width = Hal::DISPLAY_W / 2 - 14;
+        TouchUi::action(8, Hal::DISPLAY_H - 40, width, Ui::BACK, gridTouch.pressed() == mode + 230);
+        TouchUi::action(Hal::DISPLAY_W / 2 + 6, Hal::DISPLAY_H - 40, width,
+            viewMode == ViewMode::SELL ? Ui::Amoled::SELL : Ui::Amoled::BUY, gridTouch.pressed() == mode + 231);
+    }
     renderToast();
 }
 
@@ -438,7 +592,7 @@ void ShopScene::renderCategoryList() {
         static constexpr int START_Y = 26;
         static constexpr int ROW_H = 24;
         static constexpr int TEXT_X = 16;
-        c.drawFastVLine(DIVIDER_X, CONTENT_TOP, Hal::DISPLAY_H - CONTENT_TOP - 5,
+        c.drawFastVLine(DIVIDER_X, CONTENT_TOP, TouchUi::CONTENT_H - CONTENT_TOP - 5,
                         PixelRenderer::rgb(70, 74, 84));
 
         for (uint8_t i = 0; i < CATEGORY_COUNT; ++i) {
@@ -462,7 +616,7 @@ void ShopScene::renderSubmenu() {
     renderIconColumn((int)roundf(itemColumnX), false, settled);
     if (!settled) return;
 
-    c.drawFastVLine(SUBMENU_DIVIDER_X, CONTENT_TOP, Hal::DISPLAY_H - CONTENT_TOP - 5,
+    c.drawFastVLine(SUBMENU_DIVIDER_X, CONTENT_TOP, TouchUi::CONTENT_H - CONTENT_TOP - 5,
                     PixelRenderer::rgb(70, 74, 84));
     renderItemDetail();
 }
@@ -484,7 +638,7 @@ void ShopScene::renderIconColumn(int centerX, bool dimmed, bool selectable) {
     }
     if (itemCount == 0) return;
 
-    c.setClipRect(centerX - 29, CONTENT_TOP, 58, Hal::DISPLAY_H - CONTENT_TOP);
+    c.setClipRect(centerX - 29, CONTENT_TOP, 58, TouchUi::CONTENT_H - CONTENT_TOP);
     for (uint8_t pass = 0; pass < 2; ++pass) {
         for (uint8_t i = 0; i < itemCount; ++i) {
             bool selected = selectable && i == cursor;
@@ -492,7 +646,7 @@ void ShopScene::renderIconColumn(int centerX, bool dimmed, bool selectable) {
 
             int centerY = ICON_CENTER_Y +
                 (int)roundf(((float)i - itemAnimCursor) * ICON_ROW_H);
-            if (centerY + 24 < CONTENT_TOP || centerY - 24 >= Hal::DISPLAY_H) continue;
+            if (centerY + 24 < CONTENT_TOP || centerY - 24 >= TouchUi::CONTENT_H) continue;
 
             Item item = itemForCategory(category, i);
             if (selected) {
@@ -518,9 +672,9 @@ void ShopScene::renderIconColumn(int centerX, bool dimmed, bool selectable) {
                        centerX + 24, CONTENT_TOP + 1, arrowColor);
     }
     if (itemAnimCursor < (float)(itemCount - 1) - 0.05f) {
-        c.fillTriangle(centerX + 21, Hal::DISPLAY_H - 7,
-                       centerX + 27, Hal::DISPLAY_H - 7,
-                       centerX + 24, Hal::DISPLAY_H - 3, arrowColor);
+        c.fillTriangle(centerX + 21, TouchUi::CONTENT_H - 7,
+                       centerX + 27, TouchUi::CONTENT_H - 7,
+                       centerX + 24, TouchUi::CONTENT_H - 3, arrowColor);
     }
 }
 
@@ -627,6 +781,11 @@ void ShopScene::renderItemDetail() {
 void ShopScene::renderToast() {
     if (!toast) return;
     auto& c = PixelRenderer::canvas();
+    if (TouchUi::enabled()) {
+        c.fillRoundRect(8, Hal::DISPLAY_H - 72, Hal::DISPLAY_W - 16, 26, 4, PixelRenderer::rgb(34, 39, 47));
+        MenuGrid::label(c, Hal::DISPLAY_W / 2, Hal::DISPLAY_H - 67, toast, Hal::DISPLAY_W - 32, 0xffff);
+        return;
+    }
     c.fillRect(70, 108, 100, 20, PixelRenderer::rgb(34, 39, 47));
     PixelRenderer::text(78, 110, toast, PixelRenderer::rgb(255, 255, 255), 1);
 }

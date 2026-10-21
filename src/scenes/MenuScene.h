@@ -3,6 +3,7 @@
 #include "core/BuildConfig.h"
 #include "core/AppSceneFlow.h"
 #include "core/Scene.h"
+#include "core/TouchScroll.h"
 #include "game/GameState.h"
 #include "game/Species.h"
 
@@ -29,6 +30,11 @@ public:
     SceneUpdateResult update(uint32_t nowMs, float dtSeconds) override;
     void render() override;
     bool onButton(const ButtonEvent& event) override;
+    bool touchNavigation() const override;
+    bool onTouch(const Platform::IInputDevice::TouchEvent& event) override;
+    void cancelTouch() override;
+    int touchTarget(int16_t x, int16_t y) override;
+    bool onTap(int target) override;
     void openExploreTeamView();
     void openExploreBagView();
     void openBattleBagView(const char* targetName, uint8_t targetTeamSlot);
@@ -122,6 +128,13 @@ private:
     static int8_t lastCursor;
     int8_t cursor = 0;
     float animCursor = 0.0f;
+    float menuGridScroll = 0.0f;
+    float bagGridScroll = 0.0f;
+    float pageScroll = 0.0f;
+    bool bagDetailOpen = false;
+    bool statusSwipeActive = false;
+    int16_t statusSwipeX = 0, statusSwipeY = 0;
+    TouchScroll gridTouch;
     uint32_t toastUntil = 0;
     const char* toast = nullptr;
     char toastBuffer[48] = {};
@@ -187,15 +200,23 @@ private:
     uint8_t navDepth = 0;
 
     void renderMenu();
+    bool directTouchPage() const;
+    void renderTouchPage();
     void renderTutorial();
     void renderToast();
     void renderTeamPage();
+    void renderTouchTeam();
     void renderTeamActionPopup();
     void renderStatusPage();
     void renderMovesPage();
+    int renderTouchStatusProfile(bool draw);
+    int touchStatusContentHeight();
+    int touchMoveRowCount() const;
+    const MoveInfo* touchMoveInfo(uint8_t row, uint8_t* proficiency = nullptr) const;
     void renderMoveForgetConfirmPopup();
     void renderEggStatusPage();
     void renderBagPage();
+    void renderTouchBag(const BagRow* rows, uint8_t count);
     void renderBagConfirmPopup();
     void renderRoomPage();
     void renderFoodPage();

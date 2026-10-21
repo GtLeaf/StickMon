@@ -27,6 +27,8 @@ public:
     SceneUpdateResult update(uint32_t nowMs, float dtSeconds) override;
     void render() override;
     bool onButton(const ButtonEvent& event) override;
+    int touchTarget(int16_t x, int16_t y) override;
+    bool onTap(int target) override;
     void beginLinkedGuestExit(uint32_t nowMs,
                               const Game::MonsterRuntime& guest,
                               const SecondarySceneViewState& saved);
@@ -158,6 +160,7 @@ private:
     struct RenderItem {
         int16_t z;
         void (MainScene::*draw)();
+        bool roomLayer = false;
     };
 
     using VisitorState = Home::Task;
@@ -238,7 +241,10 @@ private:
     float pairConversationSeparation() const;
     void updateDebugTiltControl(uint32_t nowMs, float dtSeconds);
     void updateCamera();
+    int16_t worldToScreenX(float worldX) const;
     int16_t worldToScreenY(float worldY) const;
+    int16_t spriteGroundY(float actorY, float groundOffset,
+                         const PokemonSprites::SpriteFrame* frame) const;
     float walkBoundaryOffsetY() const;
     float walkFootprintRadiusX() const;
     float walkFootprintRadiusY() const;
@@ -412,7 +418,6 @@ private:
     void drawFood();
     void drawShadow();
     void drawMonster();
-    bool drawPmdMonster(int x, int y);
     void drawStateEffect();
     void drawNightOverlay();
 #if STICKMON_ENABLE_DEBUG_FEATURES
@@ -430,6 +435,7 @@ private:
     const PokemonSprites::SpriteFrame* movementBoundsFrame() const;
 
     const Species* active = nullptr;
+    float cameraX = 0.0f;
     float cameraY = 0.0f;
     PmdDirection turnTargetDirection = PmdDirection::FRONT;
     bool facingRight = true;

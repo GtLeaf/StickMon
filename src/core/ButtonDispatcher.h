@@ -23,6 +23,7 @@ public:
     void setLongPressMs(uint16_t value) { longPressMs = value; }
     uint8_t poll(ButtonEvent* events, uint8_t maxEvents);
     bool isDown(Platform::InputButton button) const;
+    void reset() { states[0] = {}; states[1] = {}; }
 
 private:
     struct BtnState {

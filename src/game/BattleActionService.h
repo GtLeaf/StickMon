@@ -39,7 +39,11 @@ struct PendingAction {
     bool defenseRaised = false;
     bool committed = false;
 
-    void reset() { *this = PendingAction{}; }
+    void reset() {
+        // A named value avoids an Xtensa GCC 14 aggregate-assignment ICE.
+        PendingAction fresh;
+        *this = fresh;
+    }
 };
 
 // Preparation owns action checks and charge transitions, but never changes HP.

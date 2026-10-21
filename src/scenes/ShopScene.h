@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/Scene.h"
+#include "core/TouchScroll.h"
 #include "game/GameState.h"
 
 class ShopScene : public Scene {
@@ -10,6 +11,11 @@ public:
     SceneUpdateResult update(uint32_t nowMs, float dtSeconds) override;
     void render() override;
     bool onButton(const ButtonEvent& event) override;
+    bool touchNavigation() const override;
+    bool onTouch(const Platform::IInputDevice::TouchEvent& event) override;
+    void cancelTouch() override;
+    int touchTarget(int16_t x, int16_t y) override;
+    bool onTap(int target) override;
 
 private:
     enum class ViewMode : uint8_t {
@@ -67,6 +73,9 @@ private:
     uint8_t cursor = 0;
     float itemColumnX = 128.0f;
     float itemAnimCursor = 0.0f;
+    float touchGridScroll = 0.0f;
+    bool touchDetailOpen = false;
+    TouchScroll gridTouch;
     const char* toast = nullptr;
     uint32_t toastUntil = 0;
     uint16_t columnTraceMask = 0;
@@ -89,6 +98,7 @@ private:
     uint8_t ownedCountFor(Item item) const;
     bool itemColumnSettled() const;
     void renderList();
+    void renderTouchShop();
     void renderCategoryList();
     void renderSubmenu();
     void renderIconColumn(int centerX, bool dimmed, bool selectable);

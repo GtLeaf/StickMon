@@ -365,7 +365,7 @@ bool decodeBackgroundViewport(const FrameRef& ref, int cameraX, int cameraY) {
     const Frame& frame = *ref.frame;
     const AssetPack& pack = *ref.pack;
     const uint32_t total = static_cast<uint32_t>(frame.width) * frame.height;
-    if (frame.width < Hal::DISPLAY_W || frame.height < Hal::DISPLAY_H || total == 0) return false;
+    if (total == 0) return false;
     if (!background) background = allocate<uint16_t>(Hal::DISPLAY_W * Hal::DISPLAY_H);
     if (!background) return false;
     memset(background, 0, Hal::DISPLAY_W * Hal::DISPLAY_H * sizeof(uint16_t));
@@ -387,6 +387,24 @@ bool decodeBackgroundViewport(const FrameRef& ref, int cameraX, int cameraY) {
         if (source + packedWords > frame.length) return false;
         uint32_t runEnd = runStart + runLength;
 
+        if (frame.width < Hal::DISPLAY_W || frame.height < Hal::DISPLAY_H) {
+            // Expand background art only. Scene widgets and sprites are laid
+            // out independently at the framebuffer's native resolution.
+            for (uint32_t absolute = runStart; absolute < runEnd; ++absolute) {
+                const uint32_t offset = absolute - runStart;
+                const uint16_t packed = pack.data[frame.offset + source + offset / 4];
+                const uint8_t index = (packed >> ((offset & 3) * 4)) & 0x0f;
+                if (index >= frame.paletteSize) return false;
+                const int sx = absolute % frame.width, sy = absolute / frame.width;
+                const int left = (sx * Hal::DISPLAY_W + frame.width - 1) / frame.width;
+                const int right = ((sx + 1) * Hal::DISPLAY_W + frame.width - 1) / frame.width;
+                const int top = (sy * Hal::DISPLAY_H + frame.height - 1) / frame.height;
+                const int bottom = ((sy + 1) * Hal::DISPLAY_H + frame.height - 1) / frame.height;
+                for (int y = top; y < bottom; ++y)
+                    for (int x = left; x < right; ++x)
+                        background[y * Hal::DISPLAY_W + x] = pack.palettes[frame.paletteOffset + index];
+            }
+        } else
         for (int destY = 0; destY < Hal::DISPLAY_H; ++destY) {
             uint32_t rowStart = static_cast<uint32_t>(cameraY + destY) * frame.width + cameraX;
             uint32_t visibleStart = MathUtil::max(runStart, rowStart);

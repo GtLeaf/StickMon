@@ -8,6 +8,6 @@ enum class Button {
 };
 
 void draw(Button button, const char* text, bool longPress = false,
-          int y = 104);
+          int y = -1);
 
 } // namespace TutorialOverlay

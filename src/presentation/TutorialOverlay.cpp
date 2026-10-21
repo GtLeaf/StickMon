@@ -13,6 +13,7 @@ void draw(Button button, const char* text, bool longPress, int y) {
     static constexpr int PANEL_X = 4;
     static constexpr int PANEL_H = 27;
     static constexpr int PANEL_W = Hal::DISPLAY_W - PANEL_X * 2;
+    if (y < 0) y = Hal::DISPLAY_H - PANEL_H - 4;
     y = MathUtil::clamp(y, 0, Hal::DISPLAY_H - PANEL_H - 2);
 
     PixelRenderer::fillRectAlpha(

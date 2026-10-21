@@ -1,0 +1,6 @@
+# Name, Type, SubType, Offset, Size
+nvs, data, nvs, 0x9000, 0x4000
+phy_init, data, phy, 0xf000, 0x1000
+factory, app, factory, 0x20000, 0x600000
+game_nvs, data, nvs, 0x700000, 0x10000
+resources, data, spiffs, 0x800000, 0x800000
