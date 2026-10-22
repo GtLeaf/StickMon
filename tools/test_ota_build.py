@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -34,7 +35,18 @@ class OtaBuildTest(unittest.TestCase):
             self.assertFalse(lite['debug'])
             self.assertEqual(lite['saveSchema'], 3)
             self.assertEqual(lite['saveVersion'], 5)
+            self.assertEqual(lite['minSaveSchema'], 1)
+            self.assertEqual(lite['minSaveVersion'], 1)
             with self.assertRaises(ValueError):
                 generate(stage, root / 'bad', config, 'lite', 'http://example.test', key)
+
+    def test_device_save_migration_policy(self):
+        root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as tmp:
+            binary = Path(tmp) / 'ota_save_compatibility'
+            subprocess.run(['c++', '-std=c++17', '-Wall', '-Wextra', '-Werror',
+                            '-I.', 'tools/ota_save_compatibility_host.cpp', '-o', str(binary)],
+                           cwd=root, check=True)
+            subprocess.run([str(binary)], check=True)
 if __name__ == '__main__':
     unittest.main()

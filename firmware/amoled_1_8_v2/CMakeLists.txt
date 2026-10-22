@@ -37,6 +37,10 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 idf_build_set_property(DEPENDENCIES_LOCK
                        "${CMAKE_BINARY_DIR}/dependencies.lock")
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/ota-generated")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${STICKMON_ROOT}/tools/generate_ota_build.py"
+    "${STICKMON_ROOT}/src/core/SaveCodec.h"
+    "${STICKMON_ROOT}/src/game/GameState.h")
 project(stickmon_amoled_1_8_v2)
 if(NOT CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE)
     message(FATAL_ERROR "V2 OTA requires CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y; use tools/build_amoled_variant.sh or update cached sdkconfig")

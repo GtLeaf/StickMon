@@ -31,10 +31,16 @@ def generate(stage, output, config, flavor, endpoint, public_key, debug=False):
         (source_root / 'src/core/SaveCodec.h').read_text()).group(1))
     save_version = int(re.search(r'SAVE_VERSION\s*=\s*(\d+)',
         (source_root / 'src/game/GameState.h').read_text()).group(1))
+    min_save_schema = int(re.search(r'MIN_SUPPORTED_SCHEMA_VERSION\s*=\s*(\d+)',
+        (source_root / 'src/core/SaveCodec.h').read_text()).group(1))
+    min_save_version = int(re.search(r'MIN_SUPPORTED_SAVE_VERSION\s*=\s*(\d+)',
+        (source_root / 'src/game/GameState.h').read_text()).group(1))
     identity = dict(schema=1, target='waveshare-amoled-1.8-v2', flavor=flavor,
                     version=version['version'], build=version['build'],
                     layout='waveshare-v2-16m-v1', resourceSha256=resource_id,
-                    saveSchema=save_schema, saveVersion=save_version, debug=debug)
+                    saveSchema=save_schema, saveVersion=save_version,
+                    minSaveSchema=min_save_schema, minSaveVersion=min_save_version,
+                    debug=debug)
     output.mkdir(parents=True, exist_ok=True)
     (output / 'ota-build.json').write_text(json.dumps(identity, indent=2) + '\n')
     header = '#pragma once\nnamespace OtaBuild {\n'

@@ -40,7 +40,7 @@ python3 tools/sign_ota_release.py firmware/amoled_1_8_v2/build-claw --key .ota/r
 
 使用独立工程 `/Users/gtleaf/project/web/stickmon-flasher`。
 
-1. 在管理后台注册游戏 `stickmon` 对应的微雪 V2 设备：默认 slug `waveshare-amoled-1-8-v2`，ESP32-S3，16 MB。已有 slug 不同时设置服务端 `OTA_DEVICE_SLUG`，不能用 V1 设备代替。
+1. 在管理后台注册游戏 `stickmon` 对应的微雪 V2 设备：规范 slug `waveshare-amoled-1-8-v2`，ESP32-S3，16 MB。历史 slug `waves-amoled-1.8` 自动兼容，其他名称设置服务端 `OTA_DEVICE_SLUG`，不能用 V1 设备代替。此识别也用于模拟器和备份入口，无需重命名数据库设备或旧分享链接。
 2. 设备烧录模板：bootloader=`0x0`，partitions=`0x8000`，boot_app0=`0xf000`，firmware=`0x20000`，littlefs=`0x620000`。这里的 `littlefs.bin` 实际承载 SPIFFS，是现有上传字段命名。
 3. 在固件页按该组合上传同一次构建的五个 bin。普通上传不会自动成为 OTA 更新。
 4. 在新「OTA 更新」页选择该固件及对应 `ota-release.json`，验证并保存；再发布到 Lite/Claw 的 stable 通道。beta 通道也可管理，当前设备默认只使用 stable。
@@ -64,7 +64,21 @@ python3 tools/sign_ota_release.py firmware/amoled_1_8_v2/build-claw --key .ota/r
 
 新应用 pending verify 阶段禁止平台 blob 写入、删除和 NVS 自动擦除。核对资源和可解码快照，初始化平台、触摸、应用与两次显示传输后确认；120 秒启动超时会触发重启。未确认即重启或崩溃由回滚 bootloader 回到旧应用。签名防止服务端文件被替换，但没有启用硬件 Secure Boot 或 eFuse 防降级。
 
-首期只允许存档格式不变的更新。双槽存档是正常保存冗余，不能当作跨格式迁移的长期升级备份。资源 OTA 和跨 schema 更新另行设计。
+签名清单包含目标写入格式 `saveSchema` / `saveVersion`，以及目标最低读取格式
+`minSaveSchema` / `minSaveVersion`。构建工具从 SaveCodec 与 GameState 的常量生成
+这四项，当前为 3 / 5、最低 1 / 1；升级迁移支持变更时必须同步测试后重新构建签名。
+新校验器仅允许自身格式位于目标读取范围内且目标写入格式不降低的更新。缺少最低读取
+字段的历史清单继续要求同格式。签名、同素材/布局/类型、更高 build 的限制仍保留。
+
+跨格式首次启动时先解码旧快照并在内存迁移，pending verify 写保护阻止迁移结果写回；
+平台、资源、存档和显示验证成功后才确认启动并解除保护，后续保存提交新格式。
+验证失败回滚时旧存档不变。双槽存档是正常保存冗余，不能当作长期升级备份。
+
+**已安装旧校验器的设备**：旧代码要求同格式，无法通过网站更新直接接收跨格式固件。
+从旧 2 / 4 升到本次 3 / 5 必须 USB 更新一次。先从刷机站备份，保留 NVS；若已有
+回滚 bootloader、布局和素材与新包一致，可只刷应用，否则使用完整包。新固件会迁移
+旧存档。不能把 3 / 5 元数据改成 2 / 4；新构建有静态断言防止元数据与迁移能力不符。
+安装本次校验器后，后续同素材且读取范围兼容的更高 build 可跨格式 OTA。
 
 ## 验证状态
 

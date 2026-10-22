@@ -1,5 +1,6 @@
 #include "OtaRuntime.h"
 #include "OtaBuild.h"
+#include "OtaSaveCompatibility.h"
 #include "AmoledPlatform.h"
 #include "core/FontResource.h"
 #include "core/ResourceFS.h"
@@ -38,8 +39,10 @@
 
 namespace AmoledV2::Ota {
 static_assert(OtaBuild::saveSchema == SaveCodec::SCHEMA_VERSION &&
-              OtaBuild::saveVersion == Game::SAVE_VERSION,
-              "Application-only OTA requires unchanged save compatibility");
+              OtaBuild::saveVersion == Game::SAVE_VERSION &&
+              OtaBuild::minSaveSchema == SaveCodec::MIN_SUPPORTED_SCHEMA_VERSION &&
+              OtaBuild::minSaveVersion == Game::MIN_SUPPORTED_SAVE_VERSION,
+              "OTA save compatibility must match the compiled migration support");
 namespace {
 SemaphoreHandle_t mutex;
 std::atomic<bool> redraw{true}, busy{false}, cancel{false}, committing{false};
@@ -142,6 +145,18 @@ bool value(cJSON* root, const char* name, uint32_t expected) {
     uint32_t result;
     return number(root, name, result) && result == expected;
 }
+bool compatibleSave(cJSON* meta) {
+    uint32_t schema, version;
+    if (!number(meta, "saveSchema", schema) || !number(meta, "saveVersion", version)) return false;
+    uint32_t minSchema = schema, minVersion = version;
+    // Historical manifests without a range remain exact-format only.
+    if (cJSON_HasObjectItem(meta, "minSaveSchema") || cJSON_HasObjectItem(meta, "minSaveVersion")) {
+        if (!number(meta, "minSaveSchema", minSchema) ||
+            !number(meta, "minSaveVersion", minVersion)) return false;
+    }
+    return canMigrateSave(SaveCodec::SCHEMA_VERSION, Game::SAVE_VERSION,
+                          schema, version, minSchema, minVersion);
+}
 using Json = std::unique_ptr<cJSON, decltype(&cJSON_Delete)>;
 Json parse(const std::string& body) { return Json(cJSON_Parse(body.c_str()), cJSON_Delete); }
 
@@ -197,8 +212,7 @@ bool verify(cJSON* envelope) {
         !equal(meta.get(), "target", OtaBuild::target) || !equal(meta.get(), "flavor", OtaBuild::flavor) ||
         !equal(meta.get(), "layout", OtaBuild::layout) ||
         !equal(meta.get(), "resourceSha256", OtaBuild::resourceSha256) ||
-        !value(meta.get(), "saveSchema", SaveCodec::SCHEMA_VERSION) ||
-        !value(meta.get(), "saveVersion", Game::SAVE_VERSION) ||
+        !compatibleSave(meta.get()) ||
         !number(meta.get(), "build", build) || build <= OtaBuild::build ||
         !number(meta.get(), "size", size) || !size || size > partition->size ||
         std::strlen(string(meta.get(), "sha256")) != 64 ||
