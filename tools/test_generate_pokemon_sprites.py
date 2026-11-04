@@ -53,6 +53,79 @@ def configured_explore_species():
 
 
 class GeneratePokemonSpritesTests(unittest.TestCase):
+    def test_scizor_source_rows_match_exported_and_packed_directions(self):
+        import extract_pmd_eeveelution_frames as extractor
+        from room_editor.generate_sprite_previews import (
+            load_sprite_pack, decode_frame, rgb565_to_rgba,
+        )
+
+        spec = next(s for s in extractor.SPECS if s.species_id == 212)
+        source = extractor.clear_background(Image.open(
+            extractor.SOURCE_ROOT / spec.source_group / spec.source_name).convert("RGBA"))
+        # Visually checked against the source sheet: profile, rear, rear
+        # diagonal, and front diagonal follow the first frontal row.
+        source_rows = {"front": 0, "left": 1, "back": 2,
+                       "up_left": 3, "down_left": 4}
+        _, frames, data, palettes = load_sprite_pack(
+            generator.PACK_SPRITE_OUT / "212.smonsp", generator.sprite_kind_names())
+        packed = {frame["kindName"]: frame for frame in frames}
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(extractor, "OUT_ROOT", Path(directory)):
+            extractor.process_spec(spec)
+            for action in ("idle", "walking"):
+                for direction, row in source_rows.items():
+                    for index, box in enumerate(spec.boxes[action][row]):
+                        with self.subTest(action=action, direction=direction, index=index):
+                            expected = extractor.crop_source_frame(source, box, spec)
+                            name = f"{direction}_{index}.png"
+                            generated = Image.open(
+                                extractor.processed_species_dir(spec) / action / name)
+                            published = Image.open(
+                                generator.PROCESSED / "212_scizor" / action / name)
+                            self.assertEqual(expected.tobytes(), generated.tobytes())
+                            self.assertEqual(expected.tobytes(), published.tobytes())
+                            quantized = Image.new("RGBA", expected.size)
+                            quantized.putdata([
+                                rgb565_to_rgba(generator.rgb565(r, g, b)) if a > 16
+                                else (0, 0, 0, 0)
+                                for r, g, b, a in expected.getdata()
+                            ])
+                            kind = f"SCIZOR_{action.upper()}_{direction.upper()}_{index}"
+                            self.assertEqual(quantized.tobytes(), decode_frame(
+                                packed[kind], data, palettes).tobytes())
+
+    def test_market_additions_preserve_published_kind_ids(self):
+        names = generator.sprite_kind_names()
+        self.assertEqual('STATUS', names[1600])
+        self.assertEqual('99a4bc8386f04b2d2b817d0989e5338f34cde8175a03165ba192873b72ac0ec5',
+                         hashlib.sha256('\n'.join(names[:1601]).encode()).hexdigest())
+        self.assertEqual(len(names), len(set(names)))
+
+    def test_market_npcs_have_carousel_and_registered_directional_art(self):
+        from room_editor.generate_sprite_previews import load_sprite_pack, decode_frame
+        names = generator.sprite_kind_names()
+        playable = {sid for sid, _ in generator.species_rows()}
+        metadata = json.loads(generator.SHADOW_METADATA.read_text())['frames']
+        for spec in generator.NPC_PMD_SPECS:
+            self.assertNotIn(spec.species_id, playable)
+            sid, frames, rle, palettes = load_sprite_pack(
+                generator.PACK_SPRITE_OUT / f'{spec.species_id:03d}.smonsp', names)
+            self.assertEqual(sid, spec.species_id)
+            kinds = {f['kindName']: f for f in frames}
+            self.assertIn('ICON_0', kinds)
+            self.assertIn('FRONT', kinds)
+            self.assertTrue(decode_frame(kinds['FRONT'],rle,palettes).getbbox())
+            for direction in generator.SOURCE_DIRECTIONS:
+                walking = [kinds[f'{spec.ident}_WALKING_{direction.upper()}_{i}'] for i in range(4)]
+                pixels = {decode_frame(f,rle,palettes).tobytes() for f in walking}
+                self.assertGreaterEqual(len(pixels),2,(spec.ident,direction))
+                for frame in walking:
+                    self.assertGreater(frame['shadow'][2],0)
+                    self.assertGreater(frame['shadow'][3],0)
+            for path in generator.processed_species_dir(spec).rglob('*.png'):
+                entry=metadata[path.relative_to(generator.PROCESSED).as_posix()]
+                self.assertEqual(entry['sha256'],hashlib.sha256(path.read_bytes()).hexdigest())
+
     def test_battle_sizes_preserve_source_occupancy_and_generated_header_is_current(self):
         sizes = generator.battle_front_sizes()
         self.assertEqual(sorted({sid for sid, _, _ in sizes}), [sid for sid, _, _ in sizes])
@@ -315,13 +388,13 @@ class GeneratePokemonSpritesTests(unittest.TestCase):
     def test_generated_walking_config_matches_source_specs(self):
         source = (ROOT / "src" / "assets" / "PokemonSprites.cpp").read_text()
         rows = re.findall(
-            r"^\s*\{(\d+),\s*SpriteKind::.*?,\s*(\d+),\s*(?:true|false)\},$",
+            r"^\s*\{(\d+),\s*SpriteKind::.*?,\s*(\d+),\s*(?:true|false),\s*(?:true|false),\s*(?:true|false)\},$",
             source,
             flags=re.MULTILINE,
         )
         generated = {int(species_id): int(frame_count)
                      for species_id, frame_count in rows}
-        expected = {spec.species_id: spec.walking_frames for spec in PMD_SPECS}
+        expected = {spec.species_id: spec.walking_frames for spec in generator.ALL_PMD_SPECS}
 
         self.assertEqual(expected, generated)
 

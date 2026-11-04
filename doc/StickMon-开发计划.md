@@ -454,8 +454,8 @@ python3 tools/generate_explore_map.py
 
 - `origin_asset/generated/game/maps/explore_<key>.smonmap`：供后续自由探索运行时读取的紧凑二进制网格。
 - `origin_asset/generated/game/maps/explore_<key>.json`：与二进制内容等价的可读检查文件，额外包含洪泛可达性和路线冲突统计。
-- `origin_asset/generated/game/debug/explore_<key>_semantics.png`：在原地图上标出陆行可达、水面、漂浮可达、不可达、入口、出口和逐方向阻挡边。
-- `origin_asset/generated/game/debug/explore_maps_semantics.png`：四张调试图的 `2x2` 总览。
+- `.stick-local/previews/explore-debug/explore_<key>_semantics.png`：在原地图上标出陆行可达、水面、漂浮可达、不可达、入口、出口和逐方向阻挡边。
+- `.stick-local/previews/explore-debug/explore_maps_semantics.png`：四张调试图的 `2x2` 总览。
 
 `.smonmap` v1 使用 16 字节小端头部，依次保存 `SMAP` magic、版本、宽、高、格位像素尺寸、来源 Map ID、裁剪原点、入口、出口数量和 cell stride；随后为每个出口的 `(x,y)` 两字节坐标，以及按行优先排列的四字节 cell：`landBlocked`、`floatBlocked`、原始 `terrainTag`、`flags`。两个 blocked 字节的低四位沿用 RPG Maker XP 的 `下=0x01、左=0x02、右=0x04、上=0x08`；移动时必须同时检查起点方向位和终点反方向位。flags 当前定义为入口 `0x01`、出口 `0x02`、水域 `0x04`、可漂浮水面 `0x08`、固定路线 `0x10`、地图事件 `0x20`。
 
@@ -471,7 +471,7 @@ python3 tools/generate_named_explore_map.py --scene grass_path --seed 20260713 -
 
 `草丛小路` 地图池包含四张可组成一次完整探索的候选图：01 从底部进入并通向顶部/右侧，02 从左侧进入并通向顶部/底部，03 从顶部进入并通向底部/右侧，04 从左侧进入并通向右侧/顶部。默认流程选择 `01 右出口 -> 02 左入口 -> 02 下出口 -> 03 上入口 -> 03 右出口 -> 04 左入口`，每张图仍保留另一个备用出口。01、03 使用 Map039 灯塔参考图的真实左岸模块，02、04 使用开放草地和森林门廊；道路严格限制在入口到出口路线的两格宽包络内，水面与森林均不得覆盖道路。
 
-逐图输出命名为 `explore_grass_path_01～04_416.png`、`debug/explore_grass_path_01～04_routes.png`、`debug/explore_grass_path_01～04_semantics.png` 及同名 `.smonmap/.json`；整局输出 `explore_grass_path_expedition.png`、路线/语义总览和 `maps/explore_grass_path_expedition.json` 衔接清单。`--count` 可取 2～4。水岸必须沿用 Map039 的 `144` 深海主体、`168` 深海边缘、`72` 近岸过渡，不得把实际为空地的 `392～410` 图块覆盖成水面语义。`草丛小路` 当前只使用 Layer 0 的普通可遇敌草 `390`，不放置 Layer 1 高草 `391`。这四张图现在是算法回归样本，不再作为运行时地图池。
+逐图输出命名为 `explore_grass_path_01～04_416.png`、`.stick-local/previews/explore-debug/explore_grass_path_01～04_routes.png`、`.stick-local/previews/explore-debug/explore_grass_path_01～04_semantics.png` 及同名 `.smonmap/.json`；整局输出 `explore_grass_path_expedition.png`、路线/语义总览和 `maps/explore_grass_path_expedition.json` 衔接清单。`--count` 可取 2～4。水岸必须沿用 Map039 的 `144` 深海主体、`168` 深海边缘、`72` 近岸过渡，不得把实际为空地的 `392～410` 图块覆盖成水面语义。`草丛小路` 当前只使用 Layer 0 的普通可遇敌草 `390`，不放置 Layer 1 高草 `391`。这四张图现在是算法回归样本，不再作为运行时地图池。
 
 旧候选场景“瀑岛高台”使用 `python3 tools/generate_named_explore_map.py --scene waterfall_plateau --seed 20260714 --count 4` 生成。四张图按 `01 右出口 -> 02 左入口 -> 02 下出口 -> 03 上入口 -> 03 右出口 -> 04 左入口` 衔接，保留“陆地为底、纵向水道和整段瀑布墙切开地表”的构图，作为偏峡谷式瀑布地图继续留在候选池中。
 
@@ -506,15 +506,15 @@ Python 镜像实现位于 `tools/generate_runtime_tile_map.py`，与固件共享
 ```bash
 PYTHONPATH=tools python3 tools/generate_runtime_tile_map.py \
   --seed 0x20260713 --count 4 \
-  --output-dir /tmp/stickmon-runtime-tile-maps
+  --output-dir .stick-local/previews/runtime-tile-maps
 ```
 
-霜晶冰窟的四模板验收样例使用固定种子 `0x2`；连续四层依次覆盖横向模板 1、纵向模板 0、横向模板 0、纵向模板 1，并写入工程内的正式预览目录：
+霜晶冰窟的四模板验收样例使用固定种子 `0x2`；连续四层依次覆盖横向模板 1、纵向模板 0、横向模板 0、纵向模板 1，并写入 Git 忽略的本地预览目录：
 
 ```bash
 PYTHONPATH=tools python3 tools/generate_runtime_tile_map.py \
   --areas 3 --entry left --seed 0x2 --count 4 \
-  --output-dir origin_asset/generated/game/runtime_frost_crystal_cave_v8
+  --output-dir .stick-local/previews/runtime_frost_crystal_cave_v8
 ```
 
 `tools/test_generate_runtime_tile_map.py` 会批量检查真实分叉点、边缘道路、水岸、区域画像、单一连通草区、结构化鲜花/灌木、桥区直流缓冲、渐进岸线、转角石块禁放区、同高楼梯崖肩、古木瀑谷四入口、冰窟雪路净空、冰面直穿与非冰面分叉、圆角双层底图和确定性，并现场编译纯 C++ 生成器，与 Python 对照 64 组跨区域指纹。`tools/test_explore_ice_slide.py` 另外检查滑行方向锁定、停止条件、事件迁移和输入/事件顺序。Python 与 C++ 必须共享算法版本、候选枚举顺序、PRNG 调用顺序和 FNV 指纹；任一端修改规则都必须同步并恢复全部测试。当前角色仍沿生成路线逐步移动；逐格自由移动、陆行/漂浮碰撞和动态事件占位继续使用后续语义网格阶段实现。
@@ -545,19 +545,19 @@ Map039 Route 4 的森林栅栏是首个标准模板：
 规则确认图可单独生成，不会写入游戏资源包：
 
 ```bash
-python3 tools/generate_map_rule_preview.py --output-dir /tmp/stickmon-map-rule-preview
+python3 tools/generate_map_rule_preview.py --output-dir .stick-local/previews/map-rule-preview
 ```
 
 旧版视觉规则确认工具仍按“随机 2～4 张、出口方向衔接下一张入口”的短流程生成；它只用于地图构图回归，不代表正式运行时的分场景远征长度：
 
 ```bash
-python3 tools/generate_typical_map_run.py --output-dir /tmp/stickmon-typical-map-run
+python3 tools/generate_typical_map_run.py --output-dir .stick-local/previews/typical-map-run
 ```
 
 包含灯塔、高草、水岸和森林等景观的多出口地图组：
 
 ```bash
-python3 tools/generate_landmark_map_run.py --output-dir /tmp/stickmon-landmark-map-run
+python3 tools/generate_landmark_map_run.py --output-dir .stick-local/previews/landmark-map-run
 ```
 
 逐个解析并渲染 Essentials 的全部 `MapXXX.rxdata`，生成全量图册、图层拆解、统计和逐图索引：

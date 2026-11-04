@@ -51,4 +51,4 @@
 
 证据：`/tmp/stickmon-pairflow-native.log`、`/tmp/stickmon-pairflow-shared-tests.log`、`/tmp/stickmon-pairflow-sizes.json`、`/tmp/stickmon-pairflow-device-result.json`、`/tmp/stickmon-pairflow-reboot-result.json`。旧源码与原始指纹日志目录由 `/tmp/stickmon-pairflow-baseline-path` 记录；私有设备备份不进入仓库。
 
-下一批处理访客会话与门口编排，继续复用共享 Arrival/Departure/Simulation，避免把它们并回 HomeFlow；Claw 专项延期。
+后续[访客会话与拜访门口编排](visitor-flow.md)已完成，继续复用共享 Arrival/Departure/Simulation；探索专用出入门编排仍待拆分，Claw 专项延期。

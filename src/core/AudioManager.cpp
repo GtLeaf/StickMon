@@ -66,6 +66,7 @@ const char* musicId(MusicTrack track) {
     case MusicTrack::EXPLORE: return "bgm_explore";
     case MusicTrack::BATTLE: return "bgm_battle";
     case MusicTrack::BATTLE_SPECIAL: return "bgm_battle_special";
+    case MusicTrack::MARKET: return "bgm_market";
     case MusicTrack::NONE: return nullptr;
     }
     return nullptr;
@@ -245,17 +246,20 @@ bool AudioManager::startRequestedMusic() {
     AudioHeader header{};
     Platform::ResourceFile file;
     if (!openAudio(id, file, header) || !header.looping ||
-        header.sampleRate != PcmMixer::OUTPUT_SAMPLE_RATE) {
+        (header.sampleRate != PcmMixer::OUTPUT_SAMPLE_RATE &&
+         header.sampleRate * 2 != PcmMixer::OUTPUT_SAMPLE_RATE)) {
         if (file) file.close();
         return false;
     }
 
     uint8_t* compressed = static_cast<uint8_t*>(
         Platform::memory().allocate(header.blockBytes, true));
+    const size_t pcmCapacity = header.blockSamples *
+        (PcmMixer::OUTPUT_SAMPLE_RATE / header.sampleRate);
     uint8_t* first = static_cast<uint8_t*>(
-        Platform::memory().allocate(header.blockSamples, true));
+        Platform::memory().allocate(pcmCapacity, true));
     uint8_t* second = static_cast<uint8_t*>(
-        Platform::memory().allocate(header.blockSamples, true));
+        Platform::memory().allocate(pcmCapacity, true));
     if (!compressed || !first || !second) {
         if (compressed) Platform::memory().release(compressed);
         if (first) Platform::memory().release(first);
@@ -272,6 +276,7 @@ bool AudioManager::startRequestedMusic() {
     nextMusicBuffer_ = 0;
     nextMusicBlock_ = 0;
     nextMusicSkipSamples_ = 0;
+    musicPreviousSample_ = 128;
     playingMusic_ = requestedMusic_;
     for (uint8_t block = 0; block < MUSIC_PREFILL_BLOCKS; ++block) {
         if (!queueNextMusicBlock(block == 0)) {
@@ -332,6 +337,20 @@ bool AudioManager::decodeMusicBlock(uint8_t bufferIndex) {
             musicPcm_[bufferIndex] + nextMusicSkipSamples_, decoded);
         nextMusicSkipSamples_ = 0;
     }
+    if (musicHeader_.sampleRate * 2 == PcmMixer::OUTPUT_SAMPLE_RATE) {
+        // Expand the compact 8 kHz track for the existing 16 kHz backend.
+        // Work backwards so interpolation cannot overwrite unread samples.
+        auto* pcm = musicPcm_[bufferIndex];
+        const uint8_t previous = nextMusicBlock_ == 0 ? pcm[0] : musicPreviousSample_;
+        musicPreviousSample_ = pcm[decoded - 1];
+        for (size_t i = decoded; i-- > 0;) {
+            const uint8_t current = pcm[i];
+            const uint8_t before = i ? pcm[i - 1] : previous;
+            pcm[2 * i + 1] = current;
+            pcm[2 * i] = static_cast<uint8_t>((unsigned(before) + current) / 2);
+        }
+        decoded *= 2;
+    }
     musicPcmSamples_[bufferIndex] = static_cast<uint16_t>(decoded);
     ++nextMusicBlock_;
     if (playingMusic_ == MusicTrack::HOME &&
@@ -348,7 +367,7 @@ bool AudioManager::queueNextMusicBlock(bool stopCurrent) {
     if (!decodeMusicBlock(bufferIndex)) return false;
     size_t sampleCount = musicPcmSamples_[bufferIndex];
     if (!Platform::audio().playPcmU8Channel(
-            musicPcm_[bufferIndex], sampleCount, musicHeader_.sampleRate,
+            musicPcm_[bufferIndex], sampleCount, PcmMixer::OUTPUT_SAMPLE_RATE,
             MUSIC_CHANNEL, stopCurrent)) {
         return false;
     }

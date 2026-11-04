@@ -422,3 +422,7 @@ def stamp_forest_fence(layers, map_width, map_height, forest_x, top_y, forest_wi
 FROST_ROUTE_TILE_SOURCES = {4780: 1264, 4781: 1256, 4782: 1267, 4783: 1290, 4784: 1240, 4785: 1248, 4786: 1274, 4787: 1285, 4788: 1265, 4789: 1288, 4790: 1266, 4791: 1284, 4792: 1272, 4793: 1276, 4794: 1250}
 CUSTOM_TILE_SOURCES.update({tile: ("Caves.png", source)
                             for tile, source in FROST_ROUTE_TILE_SOURCES.items()})
+
+# Approved ancient valley native cave art; aliases never overlap Outside IDs.
+from ancient_valley_layouts import TILE_SOURCES as ANCIENT_VALLEY_TILE_SOURCES
+CUSTOM_TILE_SOURCES.update(ANCIENT_VALLEY_TILE_SOURCES)

@@ -26,10 +26,11 @@ This spec is intentionally scoped to Scizor only.
 
 ## Directions
 
-- Source row order: `front`, `down_left`, `left`, `up_left`, `back`.
+- Source row order: `front`, `left`, `back`, `up_left`, `down_left`.
 - Exported direction order: `front`, `down_left`, `left`, `up_left`, `back`.
 - Mirrored directions: right-side directions are drawn by runtime mirroring; only source direction PNGs are exported.
 
+- Note: The source rows use front, left, back, up_left, down_left, unlike the generic sheet order.
 - Note: Only the five left-side source directions are exported; right-side directions are mirrored at runtime.
 
 ## Contact sheet

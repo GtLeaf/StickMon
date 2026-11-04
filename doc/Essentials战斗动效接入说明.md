@@ -51,7 +51,7 @@
   零伤害技能没有扣血，伤害技能继续按原时序扣血。
 - V2 lite debug、V1 lite debug、M5StickS3 release 编译通过。
 
-桌面战斗预览位于 `tools/out/essentials-battle-evaluation/battle-preview.gif`。
+桌面战斗预览位于 `.stick-local/artifacts/essentials-battle-evaluation/battle-preview.gif`。
 实机仍需检查播放节奏、精灵头部锚点、画面刷新与音效时序。
 
 ## 战斗结果文字播报

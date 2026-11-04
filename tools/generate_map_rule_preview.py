@@ -151,7 +151,9 @@ def sample_route(route):
 
 def main():
     parser = argparse.ArgumentParser(description="Generate a preview using StickMon map composition rules")
-    parser.add_argument("--output-dir", type=Path, default=Path("/tmp/stickmon-map-rule-preview"))
+    parser.add_argument("--output-dir", type=Path,
+                        default=ROOT / ".stick-local/previews/map-rule-preview",
+                        help="preview output directory (default: %(default)s)")
     parser.add_argument("--seed", type=int, default=20260712)
     args = parser.parse_args()
 

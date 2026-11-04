@@ -50,16 +50,13 @@ class ExploreReturnStatusTests(unittest.TestCase):
         begin = self.engine.index("bool GameEngine::clearExploreBattleStatuses")
         end = self.engine.index("void GameEngine::beginDebugBattle", begin)
         body = self.engine[begin:end]
-        self.assertIn("slot < state.teamCount", body)
-        self.assertIn("slot < Game::TEAM_CAP", body)
-        self.assertIn("mon.majorStatus = Game::MajorStatus::NONE", body)
-        self.assertIn("mon.majorStatusTurns = 0", body)
+        self.assertIn("return Game::ExplorePartyService::clearBattleStatuses(state);", body)
 
 
 class MoveLearnComparisonTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.source = (ROOT / "src/core/ProgressionUi.cpp").read_text(
+        cls.source = (ROOT / "src/ui/common/ProgressionUiBase.cpp").read_text(
             encoding="utf-8"
         )
 
@@ -72,7 +69,7 @@ class MoveLearnComparisonTests(unittest.TestCase):
         self.assertIn(
             "state.replacementSlot == MOVE_LEARN_NEW_SLOT", self.source
         )
-        self.assertIn("engine.resolvePendingMoveLearn(false)", self.source)
+        self.assertIn("return MoveLearnAction::DECLINE", self.source)
         self.assertIn(
             "bool showingNewMove = uiState.replacementSlot == "
             "MOVE_LEARN_NEW_SLOT",

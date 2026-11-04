@@ -1,6 +1,7 @@
 #include "AmoledApp.h"
 #include "game/MonsterFactory.h"
 #include "game/CareExperience.h"
+#include "game/HatchService.h"
 #include "platform/desktop/DesktopPlatform.h"
 #include "presentation/Canvas565.h"
 #include <cassert>
@@ -132,6 +133,92 @@ struct AmoledPowerTestAccess {
             app.updateSleepAnimation(desktop.millis() + 700);
             assert(app.petFrame == 1);
         }
+        // Panel-off cadence still finishes meals, heals, crosses midnight and
+        // saves real state. Rendering and touch must leave the hidden frame intact.
+        monster = Game::MonsterFactory::create(8, 20);
+        monster.satiety = 10;
+        monster.hpCur = 1;
+        app.sceneFlow.goHome();
+        app.homeMainActor.faintRestActive = false;
+        app.syncHomeActors(desktop.millis());
+        app.gameState.gameMinutesTotal = 1439;
+        app.gameClock.set(desktop.millis(), 1439);
+        app.lastCareMs = desktop.millis();
+        app.lastPetUpdateMs = desktop.millis();
+        app.gameState.settings.speedIndex = 0;
+        app.gameState.room.bowlFood = 0;
+        app.gameState.room.bowlCount = 1;
+        app.gameState.room.bowlBitesRemaining = 3;
+        app.homeRuntime.releaseAll(0);
+        assert(app.homeRuntime.acquire(Home::Resource::BOWL, 0,
+            Home::Task::FEEDING, desktop.millis()));
+        app.homeRuntime.transition(0, Home::Task::FEEDING, desktop.millis(), 10000, true);
+        app.nextFeedBiteMs = desktop.millis();
+        const uint32_t standbyXp = monster.exp;
+        const auto standbyScene = app.sceneFlow.current();
+        assert(app.prepareDisplayStandby(desktop.millis()));
+        assert(app.displayStandby());
+        canvas.fillSprite(SENTINEL);
+        app.render(canvas);
+        for (unsigned i = 0; i < canvas.pixelCount(); ++i)
+            assert(canvas.rawPixels()[i] == canvas.encodeColor(SENTINEL));
+        app.handleTouch({TouchEventType::DOWN, 200, 200, 0, 0, desktop.millis()});
+        app.handleTouch({TouchEventType::UP, 200, 200, 0, 0, desktop.millis()});
+        assert(!app.pointerDown && app.sceneFlow.current() == standbyScene);
+        for (int i = 0; i < 3600; ++i) {
+            desktop.advanceMs(1001);
+            app.update(desktop.millis());
+        }
+        assert(app.displayStandby());
+        assert(app.gameState.room.bowlCount == 0);
+        assert(monster.exp == standbyXp + 39 && monster.hpCur > 1);
+        assert(app.gameState.gameMinutesTotal >= 1499);
+        assert(app.gameState.careRewardDay == 1);
+        assert(app.saveState());
+        app.setDisplayStandby(false, desktop.millis());
+        assert(!app.displayStandby() && app.needsRender());
+        assert(app.renderRowBegin() == 0 && app.renderRowEnd() == AmoledUi::HEIGHT);
+        assert(desktop.brightness() == brightness);
+        app.render(canvas);
+        assert(canvas.rawPixels()[0] != canvas.encodeColor(SENTINEL));
+        AmoledApp standbyReload;
+        standbyReload.begin(desktop.millis());
+        assert(standbyReload.gameState.team[0].exp == monster.exp);
+        assert(standbyReload.gameState.gameMinutesTotal == app.gameState.gameMinutesTotal);
+
+        // Sleeping from a menu preserves its page and consumes no hidden input.
+        app.sceneFlow.openMenu();
+        const auto menuScene = app.sceneFlow.current();
+        assert(app.prepareDisplayStandby(desktop.millis()));
+        desktop.advanceMs(60000);
+        app.update(desktop.millis());
+        assert(app.sceneFlow.current() == menuScene);
+        app.setDisplayStandby(false, desktop.millis());
+        assert(app.sceneFlow.current() == menuScene);
+
+        // Eggs keep their countdown without accepting taps or shake input.
+        Game::HatchService::initializeNewGame(app.gameState);
+        app.gameState.hatchSeconds = 100;
+        app.gameState.settings.speedIndex = 0;
+        app.sceneFlow = AppSceneFlow::Controller(AppSceneFlow::Scene::HATCH);
+        app.hatchController_.reset(desktop.millis());
+        app.hatchController_.restoreProgress({}, 100, desktop.millis());
+        assert(app.prepareDisplayStandby(desktop.millis()));
+        for (int i = 0; i < 5; ++i) {
+            desktop.advanceMs(1000);
+            app.update(desktop.millis());
+        }
+        assert(app.displayStandby() && app.hatchController_.state().elapsedSeconds >= 5);
+        assert(!app.hatchController_.state().imuEnabled);
+        assert(app.hatchController_.state().pokeCount == 0 &&
+               app.hatchController_.state().wipeCount == 0);
+        for (int i = 0; i < 100 && !app.gameState.oobeDone; ++i) {
+            desktop.advanceMs(1000);
+            app.update(desktop.millis());
+        }
+        assert(app.gameState.oobeDone && app.gameState.teamCount == 1);
+        assert(app.displayStandby()); // Hatch completion rebuilds the app in-place.
+        app.setDisplayStandby(false, desktop.millis());
         std::puts("locked room: actual feeding XP, 1h clock/recovery, midnight, save and wake redraw verified");
     }
 };

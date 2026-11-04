@@ -39,7 +39,8 @@ def validate(input_path, native_path, header_path=None):
     names = [name.strip() for name in names.split(",") if name.strip()]
     kinds = {name: index for index, name in enumerate(names)}
     expected = set(range(kinds["SHOWER_BACKGROUND"] + 1)) | {
-        kinds["EXPLORE_PICKUP_BALL"], kinds["ITEM_HEART_SCALE"]}
+        kinds["EXPLORE_PICKUP_BALL"], kinds["ITEM_HEART_SCALE"], kinds["MARKET_CHAT"]}
+    expected |= {index for name, index in kinds.items() if name.startswith("ITEM48_")}
     for path in (input_path, native_path):
         frames = read_frames(path)
         ids = [frame[0] for frame in frames]

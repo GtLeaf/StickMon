@@ -1,11 +1,14 @@
 #pragma once
 
 #include "core/Scene.h"
-#include "core/TouchScroll.h"
+#include "ui/SettingsUi.h"
 
-class SettingsScene : public Scene {
+// Application adapter; the selected family owns settings layout and input.
+class SettingsScene : public Scene, private Ui::SettingsHost {
 public:
+    SettingsScene() : ui(*this) {}
     void onEnter() override;
+    void onExit() override;
     SceneUpdateResult update(uint32_t nowMs, float dtSeconds) override;
     void render() override;
     bool onButton(const ButtonEvent& event) override;
@@ -16,46 +19,18 @@ public:
     bool onTap(int target) override;
 
 private:
-    enum Item : uint8_t {
-        BRIGHTNESS = 0,
-        GAME_SPEED,
-        VOLUME,
-        POWER_SAVE,
-        HELP,
-        RESET_GAME,
-        COUNT,
-    };
-
-    enum class ViewMode : uint8_t {
-        MENU,
-        HELP,
-        RESET_CONFIRM,
-    };
-
-    uint8_t cursor = 0;
-    const char* toast = nullptr;
-    uint32_t toastUntil = 0;
-    ViewMode viewMode = ViewMode::MENU;
-    bool resetConfirmYes = false;
-    float menuScroll = 0.0f;
-    uint8_t helpPage = 0;
-    TouchScroll pageTouch;
-    float touchScroll = 0;
-    int sliderCandidate = -1;
-    int16_t sliderStartX = 0, sliderStartY = 0;
-    bool sliderDragging = false, sliderChanged = false;
-
-    static constexpr uint8_t TOUCH_ORDER[] = {BRIGHTNESS, VOLUME, GAME_SPEED, POWER_SAVE, HELP, RESET_GAME};
-    bool setSliderValue(int item, int x);
-    void previewVolume();
-    void renderTouch();
-
-    void activateCurrent();
-    void cycleBrightness();
-    void normalizeVolumeSetting();
+    Ui::SettingsUi ui;
+    const Game::GameState& settingsState() const override;
+    uint8_t settingsBrightness() const override;
+    float settingsGameSpeed() const override;
+    const char* settingsIdleLabel() const override;
+    void initializeSettings(bool continuousVolume) override;
+    void cycleSetting(Ui::SettingsPage::Item item) override;
+    bool setSettingValue(Ui::SettingsPage::Item item, uint8_t value) override;
+    void previewSettingsVolume() override;
+    void leaveSettings() override;
+    void replaySettingsTutorial() override;
+    bool resetSettingsGame() override;
+    void finishSettingsReset() override;
     void markSettingsDirty();
-    void renderMenu();
-    void renderHelp();
-    void renderResetConfirm();
-    void renderToast();
 };

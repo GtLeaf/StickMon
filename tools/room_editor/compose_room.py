@@ -1627,13 +1627,15 @@ def main():
     parser.add_argument("--day-base", help="Day background image. Overrides --base for the day output.")
     parser.add_argument("--night-base", help="Night background image. Overrides --base for the night output.")
     parser.add_argument("--furniture-dir", required=True, help="Directory containing furniture PNG files")
-    parser.add_argument("--out", default="room_preview", help="Output prefix")
+    parser.add_argument("--out", default=ROOT / ".stick-local/previews/room/room_preview",
+                        help="Output prefix (default: %(default)s)")
     parser.add_argument("--no-lighting", action="store_true", help="Only use lights for shadow projection; do not draw light glow.")
     args = parser.parse_args()
 
     layout_path = Path(args.layout)
     layout = json.loads(layout_path.read_text(encoding="utf-8"))
     out_prefix = Path(args.out)
+    out_prefix.parent.mkdir(parents=True, exist_ok=True)
     day_base = args.day_base or args.base
     night_base = args.night_base or args.base or day_base
 

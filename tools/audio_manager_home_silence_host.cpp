@@ -46,6 +46,26 @@ int main(int argc, char** argv) {
         assert(audio.playingMusic() == MusicTrack::EXPLORE);
     }
 
+    audio.setMusic(MusicTrack::MARKET);
+    assert(audio.playingMusic()==MusicTrack::MARKET);
+    assert(platform.lastAudio().size()==4082); // 2041 decoded 8 kHz samples -> 16 kHz.
+    // More than two full 46.25 second cycles, including an unaligned loop.
+    for(size_t block=0;block<500;++block) {
+        platform.consumeQueuedPcm(AudioManager::MUSIC_CHANNEL);
+        platform.advanceMs(20);audio.update();
+        assert(audio.playingMusic()==MusicTrack::MARKET);
+        assert(!platform.lastAudio().empty()&&platform.lastAudio().size()<=4082);
+    }
+    audio.setMusicSuspended(true);audio.update();
+    assert(platform.queuedPcm(AudioManager::MUSIC_CHANNEL)==0);
+    audio.setMusicSuspended(false);audio.update();
+    assert(audio.playingMusic()==MusicTrack::MARKET);
+    platform.setVolume(0);audio.update();
+    assert(platform.queuedPcm(AudioManager::MUSIC_CHANNEL)==0);
+    platform.setVolume(50);audio.update();
+    assert(audio.playingMusic()==MusicTrack::MARKET);
+    audio.setMusic(MusicTrack::EXPLORE);
+    assert(audio.playingMusic()==MusicTrack::EXPLORE);
     audio.stopAll();
     return 0;
 }

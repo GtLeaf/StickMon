@@ -17,7 +17,7 @@ ESSENTIALS = essentials_dir()
 EXPORTER = ROOT / "tools" / "export_rmxp_map.rb"
 OUTPUT_DIR = ROOT / "origin_asset" / "generated" / "game"
 MAP_DATA_DIR = OUTPUT_DIR / "maps"
-DEBUG_DIR = OUTPUT_DIR / "debug"
+DEBUG_DIR = ROOT / ".stick-local/previews/explore-debug"
 FULL_PREVIEW = OUTPUT_DIR / "explore_route1_full.png"
 ROUTE_PREVIEW = OUTPUT_DIR / "explore_maps_routes.png"
 SEMANTICS_PREVIEW = DEBUG_DIR / "explore_maps_semantics.png"
@@ -692,7 +692,10 @@ def render_semantics_overview(items):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Render StickMon exploration maps from RPG Maker XP")
+    parser = argparse.ArgumentParser(
+        description="Render StickMon exploration maps from RPG Maker XP",
+        epilog=f"Debug previews: {DEBUG_DIR} (ignored by Git).",
+    )
     parser.add_argument(
         "--map-key",
         choices=["all"] + [spec["key"] for spec in MAP_SPECS],

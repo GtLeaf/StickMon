@@ -1,0 +1,288 @@
+{
+  "version": 1,
+  "description": "Frozen pre-extraction horizontal and AMOLED exploration values; both sources independently match these tables.",
+  "sourceSha256": {
+    "src/scenes/ExploreScene.cpp": "7e214c465ee78184f878ee08cbc965d8fd12fa171cd611661d9f8f8e2d38d276",
+    "firmware/amoled_1_8_v1/main/app/ExploreSession.cpp": "abd0811320208ec329efffa4ad5bd65b3d060eed56199b6735746aa36b6e8518"
+  },
+  "pickupIds": {
+    "NONE": 0,
+    "COIN": 1,
+    "POTION": 2,
+    "SUPER_POTION": 3,
+    "ANTIDOTE": 4,
+    "RARE_CANDY": 5,
+    "MAX_POTION": 6,
+    "FULL_RESTORE": 7,
+    "FULL_HEAL": 8,
+    "REVIVE": 9,
+    "MAX_REPEL": 10,
+    "HONEY": 11,
+    "NUGGET": 12,
+    "BIG_PEARL": 13,
+    "STAR_PIECE": 14,
+    "HEART_SCALE": 15
+  },
+  "areas": [
+    {
+      "area": 0,
+      "name": "GRASS_PATH",
+      "minMapCount": 3,
+      "maxMapCount": 4,
+      "encounterChance": 500,
+      "minCoin": 10,
+      "maxCoin": 30,
+      "entries": [
+        [
+          1,
+          40
+        ],
+        [
+          2,
+          25
+        ],
+        [
+          4,
+          10
+        ],
+        [
+          11,
+          10
+        ],
+        [
+          12,
+          3
+        ],
+        [
+          5,
+          2
+        ]
+      ]
+    },
+    {
+      "area": 1,
+      "name": "CREEK_SLOPE",
+      "minMapCount": 4,
+      "maxMapCount": 5,
+      "encounterChance": 600,
+      "minCoin": 15,
+      "maxCoin": 40,
+      "entries": [
+        [
+          1,
+          40
+        ],
+        [
+          2,
+          20
+        ],
+        [
+          4,
+          10
+        ],
+        [
+          10,
+          8
+        ],
+        [
+          11,
+          8
+        ],
+        [
+          12,
+          5
+        ],
+        [
+          5,
+          2
+        ]
+      ]
+    },
+    {
+      "area": 2,
+      "name": "TALL_GRASS_PARK",
+      "minMapCount": 4,
+      "maxMapCount": 6,
+      "encounterChance": 700,
+      "minCoin": 20,
+      "maxCoin": 60,
+      "entries": [
+        [
+          1,
+          38
+        ],
+        [
+          3,
+          20
+        ],
+        [
+          4,
+          8
+        ],
+        [
+          9,
+          5
+        ],
+        [
+          10,
+          8
+        ],
+        [
+          12,
+          6
+        ],
+        [
+          13,
+          3
+        ],
+        [
+          5,
+          2
+        ]
+      ]
+    },
+    {
+      "area": 3,
+      "name": "FROST_CRYSTAL_CAVE",
+      "minMapCount": 5,
+      "maxMapCount": 7,
+      "encounterChance": 900,
+      "minCoin": 30,
+      "maxCoin": 80,
+      "entries": [
+        [
+          1,
+          36
+        ],
+        [
+          3,
+          18
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          9,
+          6
+        ],
+        [
+          10,
+          6
+        ],
+        [
+          12,
+          4
+        ],
+        [
+          13,
+          6
+        ],
+        [
+          15,
+          2
+        ],
+        [
+          5,
+          2
+        ]
+      ]
+    },
+    {
+      "area": 4,
+      "name": "MIST_FOREST_PATH",
+      "minMapCount": 6,
+      "maxMapCount": 8,
+      "encounterChance": 1100,
+      "minCoin": 40,
+      "maxCoin": 110,
+      "entries": [
+        [
+          1,
+          34
+        ],
+        [
+          6,
+          15
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          9,
+          7
+        ],
+        [
+          13,
+          7
+        ],
+        [
+          14,
+          4
+        ],
+        [
+          15,
+          2
+        ],
+        [
+          5,
+          2
+        ]
+      ]
+    },
+    {
+      "area": 5,
+      "name": "ANCIENT_WATERFALL_VALLEY",
+      "minMapCount": 7,
+      "maxMapCount": 9,
+      "encounterChance": 1300,
+      "minCoin": 50,
+      "maxCoin": 150,
+      "entries": [
+        [
+          1,
+          32
+        ],
+        [
+          6,
+          15
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          9,
+          8
+        ],
+        [
+          13,
+          5
+        ],
+        [
+          14,
+          7
+        ],
+        [
+          15,
+          2
+        ],
+        [
+          5,
+          2
+        ]
+      ]
+    }
+  ],
+  "cooldownSteps": 5,
+  "maxEncountersPerMap": 2,
+  "mapPickupChance": 6500,
+  "mapGenerationSafeSeed": 1,
+  "mapGenerationRetrySalts": [
+    0,
+    1831565813,
+    2654435769,
+    2246822507
+  ]
+}

@@ -29,9 +29,12 @@ from generate_map_rule_preview import (
     render_layer,
 )
 from map_generation_rules import CUSTOM_TILE_SOURCES, CUSTOM_TILE_SOURCE_FLIP_Y, CUSTOM_TILE_SOURCE_ROTATIONS
+from frost_cave_layouts import layout as frost_layout, layout_index as frost_layout_index
+from ancient_valley_layouts import layout as valley_layout, WATER_TILES as VALLEY_WATER_TILES, water_frame as valley_water_frame
 
 
-ALGORITHM_VERSION = 21
+ROOT = Path(__file__).resolve().parents[1]
+ALGORITHM_VERSION = 26
 MASK32 = 0xFFFFFFFF
 MAX_PATH_POINTS = 48
 PATH_COUNT = 2
@@ -167,74 +170,6 @@ FROST_ROCK_HILL_TILES = (
 )
 FROST_CRYSTAL_TOP_TILE = 4541
 
-FROST_HORIZONTAL_TEMPLATES = (
-    {
-        "rects": ((0, 5, 9, 11), (5, 1, 12, 8), (9, 0, 12, 3), (11, 3, 15, 7)),
-        "entry": ((0, 9), Edge.LEFT),
-        "exits": (((10, 0), Edge.TOP), ((15, 6), Edge.RIGHT)),
-        "junction": (7, 6),
-        "routes": (
-            ((0, 9), (7, 9), (7, 6), (10, 6), (10, 0)),
-            ((0, 9), (7, 9), (7, 6), (15, 6)),
-        ),
-        "ice_rects": (),
-        "rock_hill": None,
-        "crystals": ((6, 5, 4508), (13, 5, 4509)),
-        "boulders": ((8, 10, 4542), (11, 7, 4510)),
-    },
-    {
-        "rects": (
-            (0, 1, 6, 8),
-            (5, 4, 10, 7),
-            (9, 2, 15, 10),
-            (10, 8, 14, 11),
-            (1, 0, 5, 3),
-        ),
-        "entry": ((0, 6), Edge.LEFT),
-        "exits": (((12, 11), Edge.BOTTOM), ((3, 0), Edge.TOP)),
-        "junction": (3, 6),
-        "routes": (
-            ((0, 6), (7, 6), (13, 6), (13, 11), (12, 11)),
-            ((0, 6), (3, 6), (3, 0)),
-        ),
-        "ice_rects": (),
-        "rock_hill": None,
-        "crystals": ((7, 5, 4508), (4, 7, 4509)),
-        "boulders": ((2, 5, 4542), (14, 8, 4544)),
-    },
-)
-
-FROST_VERTICAL_TEMPLATES = (
-    {
-        "rects": ((0, 3, 15, 8), (5, 0, 11, 11)),
-        "entry": ((8, 11), Edge.BOTTOM),
-        "exits": (((0, 5), Edge.LEFT), ((15, 4), Edge.RIGHT)),
-        "junction": (8, 4),
-        "routes": (
-            ((8, 11), (8, 4), (1, 4), (1, 5), (0, 5)),
-            ((8, 11), (8, 4), (15, 4)),
-        ),
-        "ice_rects": ((6, 5, 10, 9),),
-        "rock_hill": None,
-        "crystals": ((2, 7, 4509), (10, 2, 4508)),
-        "boulders": ((3, 6, 4543), (10, 9, 4510)),
-    },
-    {
-        "rects": ((2, 0, 13, 4), (0, 2, 5, 10), (10, 2, 15, 10), (4, 7, 11, 11)),
-        "entry": ((7, 11), Edge.BOTTOM),
-        "exits": (((15, 4), Edge.RIGHT), ((0, 8), Edge.LEFT)),
-        "junction": (11, 4),
-        "routes": (
-            ((7, 11), (7, 8), (4, 8), (4, 2), (11, 2), (11, 4), (15, 4)),
-            ((7, 11), (7, 8), (4, 8), (4, 2), (11, 2), (11, 8), (0, 8)),
-        ),
-        "ice_rects": ((5, 1, 10, 3),),
-        "rock_hill": None,
-        "crystals": ((3, 2, 4509), (13, 5, 4508)),
-        "boulders": ((4, 9, 4544), (11, 9, 4542)),
-    },
-)
-
 TOP_EDGE_FOREST_TILE_ROWS = (
     (800, 801),
     (808, 809),
@@ -274,6 +209,10 @@ class RoutePath:
     exit: Endpoint
     falls_to_next_level: bool = False
     cell_centered: bool = False
+    next_valley_node: int = 255
+    next_valley_entrance: int = 0
+    terminal: bool = False
+    interior_exit: bool = False
 
 
 @dataclass
@@ -289,6 +228,8 @@ class RuntimeMap:
     has_creek: bool
     has_cliff: bool
     has_waterfall: bool
+    valley_journey: bool = False
+    valley_node: int = 0
 
 
 @dataclass(frozen=True)
@@ -655,59 +596,12 @@ def stamp_ancient_cave_entrances(runtime_map):
 
 
 def stamp_ancient_waterfall_valley(runtime_map):
-    water = set()
-    forest = set()
-    cliff = set()
-    stairs = set()
-    scenery = set()
-
-    def sea(*args, **kwargs):
-        water.update(stamp_sea_channel(runtime_map, *args, **kwargs))
-
-    def waterfall(*args, **kwargs):
-        water.update(stamp_waterfall(runtime_map, *args, **kwargs))
-
-    def wall(*args, **kwargs):
-        wall_cliff, wall_stairs = stamp_waterfall_wall(runtime_map, *args, **kwargs)
-        cliff.update(wall_cliff)
-        stairs.update(wall_stairs)
-
-    def top_forest(left, width):
-        forest.update(stamp_top_edge_forest_cluster(runtime_map, left, width))
-
-    edge = runtime_map.entry.edge
-    if edge == Edge.BOTTOM:
-        sea(4, 0, 4, 3)
-        sea(3, 8, 6, MAP_H, 4, 4)
-        waterfall(4, 4, 3, 3)
-        wall(3, 8, (4, 4), 11)
-        stamp_small_water_rock(runtime_map, 6, 9)
-    elif edge == Edge.LEFT:
-        sea(10, 0, 4, 4)
-        sea(9, 9, 6, MAP_H, 10, 4)
-        waterfall(10, 4, 4, 3)
-        wall(4, 9, (10, 4), 4)
-        stamp_small_water_rock(runtime_map, 11, 10)
-    elif edge == Edge.TOP:
-        sea(10, 0, 4, 3)
-        sea(9, 8, 6, MAP_H, 10, 4)
-        waterfall(10, 4, 3, 3)
-        wall(3, 8, (10, 4), 5)
-        stamp_small_water_rock(runtime_map, 11, 9)
-    else:
-        sea(2, 0, 3, 3)
-        sea(7, 0, 3, 3)
-        sea(1, 8, 10, MAP_H, 2, 3)
-        for x in range(7, 10):
-            runtime_map.layers[0][8 * MAP_W + x] = SEA_WATER_TILE
-        waterfall(2, 3, 3, 3)
-        waterfall(7, 3, 3, 3)
-        wall(3, 8, (2, 3), 12, second_gap=(7, 3))
-        stamp_large_water_rock(runtime_map, 5, 9)
-        stamp_small_water_rock(runtime_map, 3, 10)
-
-    stamp_ancient_cave_entrances(runtime_map)
-    return water, forest, cliff, stairs, scenery
+    spec = valley_layout(runtime_map.entry.edge)
+    runtime_map.layers = spec['layers']
+    ports = {tuple(p['visual_anchor']) for p in spec['portals']}
+    solid = set(map(tuple, spec['cliffs'])) | (set(map(tuple, spec['walls'])) - ports)
+    return (set(map(tuple, spec['water'])), set(), solid,
+            set(map(tuple, spec['stairs'])), set(map(tuple, spec['decoration'])))
 
 
 def forest_footprint(spec):
@@ -1522,41 +1416,13 @@ def build_creek_terrace_topology(seed, entry_edge):
 
 
 def build_ancient_waterfall_topology(entry_edge):
-    layouts = {
-        Edge.BOTTOM: (
-            (11, MAP_H - 1),
-            (11, 9),
-            ((Edge.RIGHT, (MAP_W - 1, 9)), (Edge.TOP, (11, 0))),
-        ),
-        Edge.LEFT: (
-            (0, 2),
-            (4, 2),
-            ((Edge.BOTTOM, (4, MAP_H - 1)), (Edge.TOP, (4, 0))),
-        ),
-        Edge.TOP: (
-            (5, 0),
-            (5, 9),
-            ((Edge.LEFT, (0, 9)), (Edge.BOTTOM, (5, MAP_H - 1))),
-        ),
-        Edge.RIGHT: (
-            (MAP_W - 1, 9),
-            (12, 9),
-            ((Edge.TOP, (12, 0)), (Edge.BOTTOM, (12, MAP_H - 1))),
-        ),
-    }
-    entry_point, junction, exit_specs = layouts[entry_edge]
-    entry = Endpoint(entry_point, entry_edge)
-    trunk = [entry.point]
-    append_line(trunk, *junction)
-    paths = []
-    for exit_edge, exit_point in exit_specs:
-        points = list(trunk)
-        append_line(points, *exit_point)
-        paths.append(RoutePath(points, Endpoint(exit_point, exit_edge)))
-    validate_topology(paths, junction)
-    road = build_road(paths)
-    validate_border_road(entry, paths, road)
-    return entry, junction, paths, False, road
+    spec = valley_layout(entry_edge)
+    entry = Endpoint(tuple(spec['entry']['point']), entry_edge)
+    paths = [RoutePath([tuple(p) for p in r['points']],
+                       Endpoint(tuple(r['points'][-1]), Edge(r['edge'])),
+                       cell_centered=True) for r in spec['routes']]
+    road = {p for path in paths for p in path.points}
+    return entry, tuple(spec['junction']), paths, False, road
 
 
 def creek_candidates(road, paths=()):
@@ -1919,21 +1785,18 @@ def frost_portal_touches_scene(runtime_map, endpoint):
 
 
 def stamp_frost_portals(runtime_map, level, level_count, entered_by_ladder):
-    if level == 0:
-        stamp_frost_exterior(runtime_map, runtime_map.entry)
-    elif entered_by_ladder:
-        x, y = runtime_map.entry.point
-        if not frost_portal_touches_scene(runtime_map, runtime_map.entry):
-            return False
-        runtime_map.layers[1][y * MAP_W + x] = FROST_DOWNWARD_STAIRS_RUNTIME_TILE
+    # All cave transitions use complete, upright native stair modules. Slot 1
+    # stays the upward route, matching the shared session transition contract.
+    x, y = runtime_map.entry.point
+    runtime_map.layers[1][y * MAP_W + x] = FROST_DOWNWARD_STAIRS_RUNTIME_TILE
     for index, path in enumerate(runtime_map.paths):
         x, y = path.exit.point
-        if level + 1 >= level_count:
-            stamp_frost_exterior(runtime_map, path.exit)
-        elif index == 0:
+        if index == 0:
             runtime_map.layers[1][y * MAP_W + x] = FROST_DOWNWARD_STAIRS_RUNTIME_TILE
         elif index == 1:
-            if y == 0 or runtime_map.layers[2][(y - 1) * MAP_W + x] != 0:
+            if (y == 0 or runtime_map.layers[1][(y - 1) * MAP_W + x] != FROST_WALL_TILES['top']
+                    or runtime_map.layers[2][(y - 1) * MAP_W + x] != 0
+                    or path.points[-2] != (x, y + 1)):
                 return False
             runtime_map.layers[2][(y - 1) * MAP_W + x] = FROST_UP_LADDER_RUNTIME_TILES[0]
             runtime_map.layers[1][y * MAP_W + x] = FROST_UP_LADDER_RUNTIME_TILES[1]
@@ -1977,8 +1840,8 @@ def frost_scenery(runtime_map, floor, walls, route, seed):
     occupied = set(walls)
     portals = {runtime_map.entry.point, *(path.exit.point for path in runtime_map.paths)}
     small_clearance = route | expanded(portals | {runtime_map.junction})
-    tall_clearance = expanded(route) | small_clearance
-    target = max(8, min(12, len(floor) // 10))
+    tall_clearance = small_clearance
+    target = 10
     tiles = (4508, 4509, 4508, 4507, 4544, 4510, 4507, 4544, 4542, 4507, 4510, 4544)
     anchors = []
     for ordinal, tile in enumerate(tiles[:target]):
@@ -2003,8 +1866,6 @@ def frost_scenery(runtime_map, floor, walls, route, seed):
         candidates = [(x, y) for x in range(1, MAP_W - 1) for y in range(1, MAP_H - 1)
                       if fits(x, y)]
         if not candidates:
-            if ordinal < 2:
-                raise ValueError("frost scenery has no safe complete footprint")
             continue
         best = max(score(x, y) for x, y in candidates)
         candidates = [(x, y) for x, y in candidates if score(x, y) == best]
@@ -2020,32 +1881,15 @@ def frost_scenery(runtime_map, floor, walls, route, seed):
 def generate_frost_cave_map(seed, entry_edge, level=0, level_count=1, entered_by_ladder=False):
     if level_count == 0 or not 0 <= level < level_count:
         raise ValueError("invalid frost cave level")
-    horizontal = entry_edge in (Edge.LEFT, Edge.RIGHT)
-    templates = FROST_HORIZONTAL_TEMPLATES if horizontal else FROST_VERTICAL_TEMPLATES
-    spec = templates[(seed >> 5) & 1]
-    mirror_x = entry_edge == Edge.RIGHT or (not horizontal and bool(seed & 0x80))
-    mirror_y = entry_edge == Edge.TOP or (horizontal and bool(seed & 0x80))
-
-    entry = transform_frost_endpoint(spec["entry"], mirror_x, mirror_y)
-    exits = [
-        transform_frost_endpoint(value, mirror_x, mirror_y)
-        for value in spec["exits"]
-    ]
+    spec = frost_layout(frost_layout_index(seed))
+    mirror_x = entry_edge == Edge.RIGHT or bool(seed & 0x10000000)
+    mirror_y = False  # Upright wall ladders must never be mirrored vertically.
     paths = []
-    for index, control_points in enumerate(spec["routes"]):
+    for index, control_points in enumerate(spec['controls']):
         points = expand_frost_route(control_points, mirror_x, mirror_y)
-        append_line(points, *exits[index].point)
-        paths.append(RoutePath(points, exits[index], cell_centered=True))
-    if level > 0:
-        for path in paths:
-            while len(path.points) > 2 and not frost_interior(path.points[0]):
-                path.points.pop(0)
-        entry = Endpoint(paths[0].points[0], entry.edge)
-    if level + 1 < level_count:
-        for path in paths:
-            while len(path.points) > 2 and not frost_interior(path.points[-1]):
-                path.points.pop()
-            path.exit = Endpoint(path.points[-1], path.exit.edge)
+        endpoint = Endpoint(points[-1], Edge.BOTTOM if index == 0 else Edge.TOP)
+        paths.append(RoutePath(points, endpoint, cell_centered=True))
+    entry = Endpoint(paths[0].points[0], entry_edge)
     runtime_map = RuntimeMap(
         seed=seed,
         area_index=FROST_CRYSTAL_CAVE_AREA,
@@ -2064,22 +1908,12 @@ def generate_frost_cave_map(seed, entry_edge, level=0, level_count=1, entered_by
         has_waterfall=False,
     )
 
-    floor = set()
-    for left, top, right, bottom in spec["rects"]:
-        for y in range(top, bottom + 1):
-            for x in range(left, right + 1):
-                floor.add(transform_frost_point((x, y), mirror_x, mirror_y))
+    floor = {transform_frost_point((x, y), mirror_x, False)
+             for y, row in enumerate(spec['floor_rows']) for x in range(MAP_W)
+             if row & (1 << x)}
     for x, y in floor:
         runtime_map.layers[0][y * MAP_W + x] = FROST_FLOOR_TILE
-
-    portals = (entry, *(path.exit for path in paths))
-    openings = {
-        (cell, endpoint.edge)
-        for endpoint in portals
-        for cell in frost_endpoint_edge_cells(endpoint)
-    }
-    if any(not frost_endpoint_edge_cells(endpoint) <= floor for endpoint in portals):
-        raise ValueError("frost cave portal leaves its floor mask")
+    openings = set()  # Interior stair landings keep the cave perimeter closed.
 
     walls = set()
     for x, y in sorted(floor):
@@ -2116,7 +1950,8 @@ def generate_frost_cave_map(seed, entry_edge, level=0, level_count=1, entered_by
             walls.add((x, y))
 
     ice = set()
-    for left, top, right, bottom in spec["ice_rects"]:
+    ice_rects = (spec['ice_rect'],) if spec['ice_rect'] != (0, 0, 0, 0) else ()
+    for left, top, right, bottom in ice_rects:
         for y in range(top, bottom + 1):
             for x in range(left, right + 1):
                 ice.add(transform_frost_point((x, y), mirror_x, mirror_y))
@@ -2277,8 +2112,13 @@ def _generate_map_candidate(seed, entry_edge, area_index=0, *, frost_level=0,
                             creek_attempt=0):
     seed &= MASK32
     area_index &= 0xFF
+    if area_index == 0:
+        from grass_path import generate_map as generate_grass_path
+        return generate_grass_path(seed, entry_edge)
     if area_index == TALL_GRASS_PARK_AREA:
         return generate_park_map(seed, entry_edge)
+    if area_index == MIST_FOREST_PATH_AREA:
+        return generate_mist_forest(seed,entry_edge,frost_level,frost_level_count)
     terrain = XorShift32(seed ^ 0x63D83595)
     features = XorShift32(seed ^ 0xC2B2AE35)
     profile = AREA_PROFILES[area_index] if area_index < len(AREA_PROFILES) else AREA_PROFILES[0]
@@ -2317,20 +2157,6 @@ def _generate_map_candidate(seed, entry_edge, area_index=0, *, frost_level=0,
                     break
         if creek is None:
             raise ValueError("unable to place creek layout after 96 topology attempts")
-    elif area_index == MIST_FOREST_PATH_AREA:
-        for attempt in range(16):
-            topology_seed = (
-                seed
-                if attempt == 0
-                else seed ^ ((0x9E3779B9 * attempt) & MASK32)
-            )
-            entry, junction, paths, has_coast, road = build_topology(
-                topology_seed, entry_edge, coast_chance=profile[0]
-            )
-            if any(not (forest_footprint(spec) & road) for spec in FOREST_SPECS):
-                break
-        else:
-            raise ValueError("unable to place mist forest after 16 topology attempts")
     else:
         entry, junction, paths, has_coast, road = build_topology(
             seed, entry_edge, coast_chance=profile[0]
@@ -2455,6 +2281,81 @@ def fnv_byte(value, byte):
     return ((value ^ byte) * 16777619) & MASK32
 
 
+def generate_mist_forest(seed, edge, level=0, count=1):
+    from mist_forest import room_for
+    if not 0<=int(edge)<4 or count<1 or not 0<=level<count:
+        raise ValueError('invalid forest progress or entrance')
+    room = room_for(seed,edge,level,count)
+    paths = [RoutePath(list(points),Endpoint(tuple(room['exit']),Edge((int(edge)+2)%4)))
+             for points in room['paths']]
+    junction = tuple(room['entry'])
+    if len(paths)>1:
+        for i,point in enumerate(paths[0].points):
+            if not all(i<len(p.points) and p.points[i]==point for p in paths):
+                break
+            junction = point
+    return RuntimeMap(seed,4,Endpoint(tuple(room['entry']),Edge(edge)),junction,paths,
+                      [list(layer) for layer in room['layers']],False,True,False,False,False)
+
+
+def generate_valley_region(seed, node=0, entrance=0, final_block=False):
+    """Use the same authored region tables and BFS order as the firmware."""
+    from collections import deque
+    from valley_region import room_for
+    if not 0 <= node < 14:
+        raise ValueError('invalid valley node')
+    room = room_for(seed, node)
+    if not 0 <= entrance < len(room['portals']):
+        raise ValueError('invalid valley entrance')
+    if node == 10 and entrance >= 2 or node == 13 and entrance < 2:
+        raise ValueError('entrance belongs to another elevation')
+    roads = room['roads'][1 if node == 13 else 0]
+    def road(p):
+        x, y = p
+        return 0 <= x < 16 and 0 <= y < 12 and roads[y] & (1 << x)
+    def stair(p):
+        return room['stairs'][p[1]] & (1 << p[0])
+    start = tuple(room['portals'][entrance]['point'])
+    if not road(start):
+        raise ValueError('entrance is outside the road')
+    parents = {start: start}
+    queue = deque([start])
+    while queue:
+        x, y = queue.popleft()
+        for p in ((x,y-1), (x+1,y), (x,y+1), (x-1,y)):
+            if p in parents or not road(p):
+                continue
+            if (stair((x,y)) or stair(p)) and p[0] != x:
+                continue
+            parents[p] = (x,y)
+            queue.append(p)
+    paths = []
+    for i, portal in enumerate(room['portals']):
+        if i == entrance or node == 10 and i >= 2 or node == 13 and i < 2:
+            continue
+        cell = tuple(portal['point'])
+        end = cell
+        points = [cell]
+        while cell != start:
+            cell = parents[cell]
+            points.append(cell)
+        if not 2 <= len(points) <= 48:
+            raise ValueError('invalid route length')
+        paths.append(RoutePath(points[::-1], Endpoint(end, Edge(portal['edge'])),
+            cell_centered=True, next_valley_node=portal['target'],
+            next_valley_entrance=portal['entrance'], interior_exit=portal['warp'],
+            terminal=portal['target'] == 255 or final_block and node < 10))
+    junction = start
+    for i, point in enumerate(paths[0].points):
+        if not all(i < len(p.points) and p.points[i] == point for p in paths):
+            break
+        junction = point
+    return RuntimeMap(seed, 5, Endpoint(start, Edge(room['portals'][entrance]['edge'])),
+        junction, paths, [list(layer) for layer in room['layers']],
+        False, room['forest'], False, not room['forest'] or node in (4,5),
+        not room['forest'], True, node)
+
+
 def fnv_word(value, word):
     value = fnv_byte(value, word & 0xFF)
     return fnv_byte(value, (word >> 8) & 0xFF)
@@ -2470,6 +2371,9 @@ def fingerprint(runtime_map):
     value = fnv_byte(value, runtime_map.junction[0])
     value = fnv_byte(value, runtime_map.junction[1])
     value = fnv_byte(value, len(runtime_map.paths))
+    if runtime_map.valley_journey:
+        value = fnv_byte(value, 0xA5)
+        value = fnv_byte(value, runtime_map.valley_node)
     for path in runtime_map.paths:
         value = fnv_byte(value, len(path.points))
         value = fnv_byte(value, 1 if path.falls_to_next_level else 0)
@@ -2477,6 +2381,9 @@ def fingerprint(runtime_map):
         value = fnv_byte(value, int(path.exit.edge))
         value = fnv_byte(value, path.exit.point[0])
         value = fnv_byte(value, path.exit.point[1])
+        if runtime_map.valley_journey:
+            for field in (path.next_valley_node, path.next_valley_entrance, path.terminal, path.interior_exit):
+                value = fnv_byte(value, int(field))
         for x, y in path.points:
             value = fnv_byte(value, x)
             value = fnv_byte(value, y)
@@ -2509,6 +2416,8 @@ def map_json(runtime_map):
         "algorithmVersion": ALGORITHM_VERSION,
         "creekStyle": "ABCD"[creek_style(runtime_map.seed)] if runtime_map.has_creek else None,
         "seed": runtime_map.seed,
+        "valleyJourney": runtime_map.valley_journey,
+        "valleyNode": runtime_map.valley_node,
         "areaIndex": runtime_map.area_index,
         "fingerprint": f"{fingerprint(runtime_map):08x}",
         "size": [MAP_W, MAP_H],
@@ -2519,6 +2428,10 @@ def map_json(runtime_map):
             {
                 "points": [list(point) for point in path.points],
                 "cellCentered": path.cell_centered,
+                "nextValleyNode": path.next_valley_node,
+                "nextValleyEntrance": path.next_valley_entrance,
+                "terminal": path.terminal,
+                "interiorExit": path.interior_exit,
                 "exit": endpoint_json(path.exit),
             }
             for path in runtime_map.paths
@@ -2533,6 +2446,12 @@ def map_json(runtime_map):
 
 
 def render(runtime_map, frame_index=0):
+    from valley_region import ASSETS as REGION_ASSETS, tile_image as region_tile_image
+    from mist_forest import ASSETS as MIST_ASSETS, compile_all as mist_rooms, asset_image as mist_image
+    if runtime_map.area_index == MIST_FOREST_PATH_AREA:
+        mist_rooms()
+    mist_ids = range(10000,10000+len(MIST_ASSETS))
+    region_ids = range(9000, 9000 + len(REGION_ASSETS))
     tileset = Image.open(TILESET).convert("RGBA")
     autotiles = load_autotiles(WATERFALL_AUTOTILE_NAMES)
     external_tilesets = {
@@ -2541,7 +2460,7 @@ def render(runtime_map, frame_index=0):
     }
     rendered_layers = []
     for layer in runtime_map.layers:
-        outside_ids = [0 if tile_id in CUSTOM_TILE_SOURCES else tile_id for tile_id in layer]
+        outside_ids = [0 if tile_id in CUSTOM_TILE_SOURCES or tile_id in VALLEY_WATER_TILES or tile_id in region_ids or tile_id in mist_ids else tile_id for tile_id in layer]
         rendered = render_layer(outside_ids, tileset, autotiles, frame_index)
         for tileset_name, external_tileset in external_tilesets.items():
             external_ids = [
@@ -2575,6 +2494,18 @@ def render(runtime_map, frame_index=0):
                 rendered.alpha_composite(
                     tile, ((index % MAP_W) * 32, (index // MAP_W) * 32)
                 )
+        if any(tile in VALLEY_WATER_TILES for tile in layer):
+            sources = {'Sea': autotiles[0], 'Sea without shore': autotiles[1]}
+            for index, tile in enumerate(layer):
+                if tile in VALLEY_WATER_TILES:
+                    rendered.alpha_composite(valley_water_frame(tile, sources, frame_index),
+                                             (index % MAP_W * 32, index // MAP_W * 32))
+        for index, tile in enumerate(layer):
+            if tile in mist_ids:
+                rendered.alpha_composite(mist_image(tile),(index%MAP_W*32,index//MAP_W*32))
+            if tile in region_ids:
+                rendered.alpha_composite(region_tile_image(tile - 9000, frame_index),
+                                         (index % MAP_W * 32, index // MAP_W * 32))
         rendered_layers.append(rendered)
     combined = Image.new("RGBA", rendered_layers[0].size, (0, 0, 0, 255))
     for layer in rendered_layers:
@@ -2649,7 +2580,9 @@ def main():
     parser.add_argument("--entry", choices=("random", *NAME_EDGES), default="random")
     parser.add_argument("--count", type=int, choices=range(1, 9))
     parser.add_argument("--areas", default="0,1,2,3")
-    parser.add_argument("--output-dir", type=Path, default=Path("/tmp/stickmon-runtime-tile-maps"))
+    parser.add_argument("--output-dir", type=Path,
+                        default=ROOT / ".stick-local/previews/runtime-tile-maps",
+                        help="preview output directory (default: %(default)s)")
     args = parser.parse_args()
 
     areas = [int(value) for value in args.areas.split(",") if value.strip()]

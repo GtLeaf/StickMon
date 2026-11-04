@@ -46,10 +46,23 @@ serial monitor before flashing so it does not occupy the device port.
 
 The script auto-detects the serial port when `--port` is omitted. It also
 exports `bootloader.bin`, `partitions.bin`, `boot_app0.bin`, `firmware.bin`,
-and `littlefs.bin` to `tools/out/` for the separately maintained web flasher.
+and `littlefs.bin` to `.stick-local/firmware/stick-s3/` for the separately maintained web flasher.
 The web flasher has moved out of this repository. Run
 `./tools/upload_firmware_and_fs.sh --help` for all options and environment
 overrides.
+
+## Local Working Artifacts
+
+Keep temporary files, acceptance screenshots, debugging logs, frozen source
+snapshots, previews, and device backups under the Git-ignored `.stick-local/`
+directory. Use a task name and date for retained acceptance evidence; do not
+commit these files. The previous `tools/out/` contents are preserved under
+`.stick-local/artifacts/`, and quarantined resources are under
+`.stick-local/unused-resources/`.
+
+Source assets and reviewed regression fixtures remain versioned. Normal build
+directories and automatically cleaned temporary directories keep their existing
+conventions. See [本地产物管理规范](doc/本地产物管理规范.md) for locations and examples.
 
 ## Current Prototype
 

@@ -54,12 +54,14 @@ jobs:
       - name: Shared rules, saves, page behavior and touch regression
         shell: bash
         run: |
+          mkdir -p .stick-local/logs/ci
           python3 -m unittest \
             test_ci_build_scope test_amoled_source \
             test_architecture_boundaries test_render_demand \
             test_save_codec test_save_migration \
             test_home_runtime test_home_simulation test_home_coordinator \
             test_home_actor_controller test_home_chase test_home_care \
+            test_door_departure \
             test_home_visit_arrival test_home_visit_departure \
             test_bath_service test_bath_interaction test_care_experience \
             test_hatch_service test_team_roster test_item_inventory test_shop_service \
@@ -68,12 +70,13 @@ jobs:
             test_amoled_v2_touch test_release_debug_gate \
             test_team_inventory_controllers test_amoled_page_controllers \
             test_amoled_native_render test_web_simulator \
-            2>&1 | tee checks.log
+            2>&1 | tee .stick-local/logs/ci/checks.log
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: regression-log
-          path: checks.log
+          path: .stick-local/logs/ci/checks.log
+          include-hidden-files: true
 
   sticks3:
     needs: scope

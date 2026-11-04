@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "scope": "market-npc-only",
+  "species": [
+    {"id": 113, "ident": "CHANSEY", "slug": "chansey", "name": "吉利蛋", "canvas": 64},
+    {"id": 115, "ident": "KANGASKHAN", "slug": "kangaskhan", "name": "袋兽", "canvas": 80},
+    {"id": 225, "ident": "DELIBIRD", "slug": "delibird", "name": "信使鸟", "canvas": 64},
+    {"id": 352, "ident": "KECLEON", "slug": "kecleon", "name": "变隐龙", "canvas": 64}
+  ]
+}

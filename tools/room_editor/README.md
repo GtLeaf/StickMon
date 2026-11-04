@@ -592,8 +592,7 @@ The fixed `compose_room.py` expects Pillow:
 python3 -m pip install pillow
 python3 tools/room_editor/compose_room.py \
   --layout room_layout.json \
-  --furniture-dir furniture \
-  --out room_preview
+  --furniture-dir furniture
 ```
 
 Pass `--day-base empty_room_day.png --night-base empty_room_night.png` when the
@@ -605,8 +604,11 @@ Project sprite preview items are resolved from
 
 It writes:
 
-- `room_preview_day.png`
-- `room_preview_night.png`
+- `.stick-local/previews/room/room_preview_day.png`
+- `.stick-local/previews/room/room_preview_night.png`
+
+These local previews are ignored by Git. Pass `--out PREFIX` to override the
+output prefix; keep temporary previews under the repository's `.stick-local/`.
 
 The script is intended as a preview compositor. A later firmware asset
 generator can consume the same `room_layout.json` and PNG files.

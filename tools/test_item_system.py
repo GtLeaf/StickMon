@@ -24,16 +24,16 @@ def array_items(source, name):
 
 def pickup_entries(source, name):
     match = re.search(
-        rf"static constexpr PickupEntry {name}\[\]\s*=\s*\{{(.*?)\}};",
+        rf"inline constexpr Entry {name}\[\]\s*=\s*\{{(.*?)\}};",
         source,
         re.S,
     )
     if not match:
         raise AssertionError(f"missing {name}")
     return {
-        pickup: int(weight)
+        "PICKUP_" + pickup: int(weight)
         for pickup, weight in re.findall(
-            r"\{\s*(PICKUP_[A-Z0-9_]+)\s*,\s*(\d+)\s*\}",
+            r"\{\s*([A-Z][A-Z0-9_]+)\s*,\s*(\d+)\s*\}",
             match.group(1),
         )
     }
@@ -96,7 +96,7 @@ class ItemSystemTests(unittest.TestCase):
         self.assertEqual(expected, items)
 
     def test_explore_pickup_distribution_matches_item_design(self):
-        source = (ROOT / "src" / "scenes" / "ExploreScene.cpp").read_text()
+        source = (ROOT / "src" / "game" / "ExplorePickupRules.h").read_text()
         expected = {
             "GRASS_PATH_PICKUPS": {
                 "PICKUP_COIN": 40,
@@ -169,8 +169,7 @@ class ItemSystemTests(unittest.TestCase):
         for table_name, entries in expected.items():
             self.assertEqual(entries, pickup_entries(source, table_name))
             range_match = re.search(
-                rf"{table_name},\s*ENTRY_COUNT\({table_name}\),\s*"
-                rf"(\d+),\s*(\d+)",
+                rf"makeTable\({table_name},\s*(\d+),\s*(\d+)\)",
                 source,
             )
             self.assertIsNotNone(range_match, table_name)

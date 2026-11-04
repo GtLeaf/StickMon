@@ -7,6 +7,9 @@ from pathlib import Path
 from generate_typical_map_run import build_map, make_overview
 
 
+ROOT = Path(__file__).resolve().parents[1]
+
+
 LANDMARK_MAP_SPECS = [
     {
         "key": "01_lighthouse_cove",
@@ -83,7 +86,8 @@ def main():
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("/tmp/stickmon-landmark-map-run"),
+        default=ROOT / ".stick-local/previews/landmark-map-run",
+        help="preview output directory (default: %(default)s)",
     )
     parser.add_argument("--seed", type=int, default=20260713)
     parser.add_argument("--count", type=int, choices=range(2, 5))

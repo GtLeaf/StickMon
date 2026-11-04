@@ -11,7 +11,7 @@ constexpr uint8_t PATH_COUNT = 2;
 constexpr uint8_t MAX_PATH_COUNT = 3;
 constexpr uint8_t MAX_PATH_POINTS = 48;
 constexpr uint16_t CELL_COUNT = WIDTH * HEIGHT;
-constexpr uint16_t ALGORITHM_VERSION = 21;
+constexpr uint16_t ALGORITHM_VERSION = 26;
 constexpr uint8_t GRASS_PATH_AREA = 0;
 constexpr uint8_t CREEK_BRIDGE_SLOPE_AREA = 1;
 constexpr uint8_t TALL_GRASS_PARK_AREA = 2;
@@ -37,9 +37,15 @@ struct Endpoint {
 };
 
 struct FrostContext {
+    // Segment progress is also used by the mist forest's tree progression.
     uint8_t level = 0;
     uint8_t levelCount = 1;
     bool enteredByLadder = false;
+};
+
+struct ValleyContext {
+    uint8_t node = 0;
+    uint8_t entrance = 0;
 };
 
 struct Path {
@@ -48,6 +54,10 @@ struct Path {
     Endpoint exit = {};
     bool fallsToNextLevel = false;
     bool cellCentered = false;  // Caves use cell centers, outdoor roads use paired cells.
+    uint8_t nextValleyNode = 255;
+    uint8_t nextValleyEntrance = 0;
+    bool terminal = false;
+    bool interiorExit = false;
 };
 
 struct Map {
@@ -63,12 +73,26 @@ struct Map {
     bool hasCreek = false;
     bool hasCliff = false;
     bool hasWaterfall = false;
+    bool valleyJourney = false;
+    uint8_t valleyNode = 0;
 };
+
+inline bool finalPath(const Map& map, uint8_t path, uint8_t block, uint8_t count) {
+    return map.valleyJourney ? path < map.pathCount && map.paths[path].terminal
+                            : block + 1 >= count;
+}
+
+inline bool internalValleyTransfer(const Map& map, uint8_t path) {
+    return map.valleyJourney && path < map.pathCount && map.valleyNode >= 10 &&
+           map.paths[path].nextValleyNode >= 10 && map.paths[path].nextValleyNode < 14;
+}
 
 uint32_t deriveSeed(uint32_t expeditionSeed, uint8_t blockIndex, uint8_t areaIndex);
 Edge opposite(Edge edge);
 bool generate(uint32_t seed, Edge entryEdge, uint8_t areaIndex, Map& out,
               FrostContext frost = {});
+bool generateValleyRegion(uint32_t expeditionSeed, ValleyContext context,
+                          bool finalBlock, Map& out);
 uint32_t fingerprint(const Map& map);
 
 bool isRoadTile(uint16_t tileId);

@@ -4,6 +4,7 @@
 #include <climits>
 #include "core/ButtonDispatcher.h"
 #include "core/TouchTap.h"
+#include "ui/SceneInput.h"
 
 enum class SceneID : uint8_t {
     MAIN = 0,
@@ -101,9 +102,13 @@ public:
     virtual ~Scene() = default;
     virtual void onEnter() {}
     virtual void onExit() {}
-    virtual void onBeforeSave() {}
+    virtual bool onBeforeSave() { return true; }
+    // Synchronize presentation surfaces before input mapping and frame binding.
+    virtual void prepareSurface() {}
     virtual SceneUpdateResult update(uint32_t nowMs, float dtSeconds) = 0;
     virtual void render() = 0;
+    // Opt-in visual cadence. Core care/audio/save ticks keep their own interval.
+    virtual uint32_t visualFrameIntervalMs(uint32_t nowMs) const { (void)nowMs; return 66; }
     virtual bool onButton(const ButtonEvent& event) { (void)event; return false; }
     virtual bool touchNavigation() const { return false; }
     virtual int touchTarget(int16_t x, int16_t y) { (void)x; (void)y; return -1; }
@@ -111,17 +116,14 @@ public:
     virtual void cancelTouch() { touchTap_.cancel(); }
     virtual bool onTouch(const Platform::IInputDevice::TouchEvent& event) {
         int target = -1;
-        if (event.x >= 0 && event.x < Platform::LOGICAL_DISPLAY_W &&
-            event.y >= 0 && event.y < Platform::LOGICAL_DISPLAY_H) {
-            if (touchNavigation() && event.y >= Platform::LOGICAL_DISPLAY_H - 32) {
-                target = 0x7000 + event.x * 3 / Platform::LOGICAL_DISPLAY_W;
-            } else target = touchTarget(event.x, event.y);
+        if (Ui::SceneInput::contains(event.x, event.y)) {
+            target = Ui::SceneInput::target(event.x, event.y, touchNavigation());
+            if (target == Ui::SceneInput::CONTENT) target = touchTarget(event.x, event.y);
         }
         const int tap = touchTap_.update(event, target);
         if (tap < 0) return false;
-        if (tap == 0x7000) return onButton({1, BtnAction::LONG_PRESS});
-        if (tap == 0x7001) return onButton({1, BtnAction::PRESSED});
-        if (tap == 0x7002) return onButton({0, BtnAction::PRESSED});
+        ButtonEvent button;
+        if (Ui::SceneInput::button(tap, button)) return onButton(button);
         return onTap(tap);
     }
 private:

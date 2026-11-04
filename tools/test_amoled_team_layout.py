@@ -13,7 +13,7 @@ from amoled_source import read_home_source
 
 ROOT = Path(__file__).resolve().parents[1]
 TEAM_SCREENS = (ROOT / "firmware" / "amoled_1_8_v1" / "main" /
-                "ui" / "TeamScreens.inc")
+                "ui" / "TeamScreens.cpp")
 SCREEN_MODELS = (ROOT / "firmware" / "amoled_1_8_v1" / "main" /
                  "ui" / "models" / "ScreenModels.h")
 UI_STRINGS = ROOT / "src" / "core" / "UiStrings.h"

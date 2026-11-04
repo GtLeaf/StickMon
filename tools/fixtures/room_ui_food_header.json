@@ -1,0 +1,23 @@
+{
+  "ostb": {
+    "food-choice-0.rgb565": "a363ffb94041f6a8f155080b7ae117d68ee82fecf57d2248b5bc226b8b9b89cf",
+    "food-choice-1.rgb565": "1c73287a7160cce4661e76b7fb84690d6d74f024a2060338de6a775afeb4a6c1",
+    "food-choice-2.rgb565": "443f7ce6b02af04da06b1b5a8ddcfafdb4a5bde490e0cb86917a31206a2c5897",
+    "food-choice-3.rgb565": "02e6868fd4a6a973f3468bb3dc035fe6f4b8dbea7c3a045acd879b8cb8b9a104",
+    "food-choice-4.rgb565": "028e21cc86adf6fa76aca196d55a196d536b66ed3a4a191a7c50260bc42b94ac",
+    "food-choice-5.rgb565": "4a9b55ce092cd31f8df514dd8b8faac921a895b1c2304f41a9006d22abb3f3d4",
+    "food-choice-6.rgb565": "2727cf7984ed28e0eae34907bfd6f8489cf94206e2a7ff5b8473161fb0ea96e5",
+    "food-choice-7.rgb565": "f56b392a57e37e3b997038e9a78d2f4aa67c2d37f49c390b7b902df9370fc58b",
+    "food-empty-notice.rgb565": "fd11ff0118af3144621fec6f85802c59bc2ec723e66dbbde89a65c0ab236a2cf",
+    "food-empty-stock.rgb565": "9407d4ddd9206fdee45346b866162e2d3bffc2c186ef9e7ddbb91921c8ac2e7a",
+    "food-invalid-selected.rgb565": "9c7e7828b83cafb4a0f9ac99e99b1409bec8ba30a8620fbb7b1a2b48700f9f8d",
+    "food-partial-scroll.rgb565": "1c04ba6e6a570a797e00bbfa62b37ed5d47ce7caa668ee7b3af3dc1a5df2d2b2",
+    "food-selected-notice.rgb565": "95e4e11937e0a7051e88caa1d600eff3a1b9c3001339028d96221cd6a3c79570",
+    "room-choice-0.rgb565": "91e7e460167670048f0b9d83b92a627b52de16dbcd4db630c6965c4d25b27ddb",
+    "room-choice-1.rgb565": "b3e9926bf04417453e27590937d08840c02ac9131180e2ae371691d744408718",
+    "room-choice-2.rgb565": "18c6fc940ad84b4dda9f21aded34dd644889736c9255f620673be4226f59b6be",
+    "room-empty-stock.rgb565": "6df679897d03f7347b065a8cf523de160f1b9bad631926e253116c5b57f14948",
+    "room-full-stock.rgb565": "12ed3b769c8ab0b94353800587876a0e7b4b8f8c0573ab73c9a243b408f6530a",
+    "room-hatch-notice.rgb565": "200146081e0555223385033b83c263b3597becffce2033e9ae76b0fcc7560fea"
+  }
+}

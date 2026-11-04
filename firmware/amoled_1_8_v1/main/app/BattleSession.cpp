@@ -488,6 +488,7 @@ void BattleSession::updateBattleSwitch(Game::GameState& gameState, uint32_t nowM
             return;
         }
         state_.battlePlayerSlot = state_.pendingBattleSwitchSlot;
+        state_.costs.enter(gameState, state_.battlePlayerSlot);
         state_.pendingBattleSwitchSlot = 0xFF;
         const Species* candidateSpecies = findSpecies(
             gameState.team[state_.battlePlayerSlot].speciesId);
@@ -852,6 +853,7 @@ void BattleSession::begin(Game::GameState& gameState, const Game::MonsterRuntime
     area_ = area;
     state_.battleWild = wild;
     state_.battlePlayerSlot = leaderSlot;
+    state_.costs.begin(gameState, leaderSlot, boss);
     state_.battleIsBoss = boss;
     state_.battleExperiencePercent = experiencePercent;
     state_.battleSpecialKind = special;

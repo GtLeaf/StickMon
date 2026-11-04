@@ -162,7 +162,12 @@ PMD_SPECS = [
     PmdSpec(42, "GOLBAT", "golbat", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
     PmdSpec(169, "CROBAT", "crobat", 1, 3, 2, tuple(SOURCE_DIRECTIONS)),
 ]
-PMD_BY_ID = {spec.species_id: spec for spec in PMD_SPECS}
+# NPC-only artwork is separate from the collectible species/learnset roster.
+NPC_SPECIES = json.loads((ROOT / "origin_asset/market_npc_species.json").read_text())["species"]
+NPC_PMD_SPECS = [PmdSpec(s["id"], s["ident"], s["slug"], 1, 4, 2, tuple(SOURCE_DIRECTIONS))
+                 for s in NPC_SPECIES]
+ALL_PMD_SPECS = PMD_SPECS + NPC_PMD_SPECS
+PMD_BY_ID = {spec.species_id: spec for spec in ALL_PMD_SPECS}
 
 SHADOW_METADATA = ROOT / "origin_asset" / "pmd_shadow_metadata.json"
 _shadow_metadata = None
@@ -658,11 +663,20 @@ def export_dev_pack(kind_map):
             write_species_pack(PACK_SPRITE_OUT / f"{species_id:03d}.smonsp", species_id, writer, kind_map)
             exported += 1
 
-    for spec in PMD_SPECS:
+    for spec in ALL_PMD_SPECS:
         if spec.species_id in present_species_ids or not processed_species_dir(spec).exists():
             continue
         writer = AssetWriter()
-        add_base_frames(writer, spec.species_id, spec.ident, missing)
+        if spec in NPC_PMD_SPECS:
+            icon = to_rgba(sprite_source_path("Icons", spec.species_id, spec.ident))
+            writer.add_frame(spec.species_id, spec.ident, "ICON_0", icon.crop((0, 0, ICON_SIZE, ICON_SIZE)))
+            # The destination carousel shares FRONT; no battle/back portrait
+            # or cry is required for a non-collectible map actor.
+            front = to_rgba(sprite_source_path("Front", spec.species_id, spec.ident))
+            writer.add_frame(spec.species_id, spec.ident, "FRONT",
+                             prepare_enemy_battle_front(front, output_scale=2.0))
+        else:
+            add_base_frames(writer, spec.species_id, spec.ident, missing)
         add_pmd_frames(writer, spec)
         if writer.frames:
             write_species_pack(PACK_SPRITE_OUT / f"{spec.species_id:03d}.smonsp", spec.species_id, writer, kind_map)
@@ -679,36 +693,38 @@ def export_dev_pack(kind_map):
     return exported
 
 
+def sprite_kind_names():
+    names = list(BASE_KINDS)
+    for specs in (PMD_SPECS, NPC_PMD_SPECS):
+        for spec in specs:
+            for action, count in (("IDLE", spec.idle_frames), ("WALKING", spec.walking_frames)):
+                for direction in spec.directions:
+                    for index in range(count):
+                        names.append(f"{spec.ident}_{action}_{direction.upper()}_{index}")
+            for index in range(spec.sleeping_frames):
+                names.append(f"{spec.ident}_SLEEPING_{index}")
+        if specs is PMD_SPECS:
+            # STATUS was already published after the original PMD blocks.
+            names.append("STATUS")
+    return names
+
+
 def main():
     write_battle_sizes()
-    kind_names = list(BASE_KINDS)
-    for spec in PMD_SPECS:
-        for action, count in (("IDLE", spec.idle_frames), ("WALKING", spec.walking_frames)):
-            for direction in spec.directions:
-                for index in range(count):
-                    kind_names.append(f"{spec.ident}_{action}_{direction.upper()}_{index}")
-        for index in range(spec.sleeping_frames):
-            kind_names.append(f"{spec.ident}_SLEEPING_{index}")
-    # Keep additions after generated PMD kinds so existing pack frame IDs stay stable.
-    kind_names.append("STATUS")
+    kind_names = sprite_kind_names()
     kind_map = {name: index for index, name in enumerate(kind_names)}
 
     walking_rows = []
-    for spec in PMD_SPECS:
-        right_direction = "right" if "right" in spec.directions else "left"
-        walking_rows.append(
-            "    {%d, SpriteKind::%s_WALKING_FRONT_0, SpriteKind::%s_WALKING_LEFT_0, "
-            "SpriteKind::%s_WALKING_BACK_0, SpriteKind::%s_WALKING_%s_0, %d, %s}," % (
-                spec.species_id,
-                spec.ident,
-                spec.ident,
-                spec.ident,
-                spec.ident,
-                right_direction.upper(),
-                spec.walking_frames,
-                "false" if right_direction == "right" else "true",
-            )
-        )
+    for spec in ALL_PMD_SPECS:
+        directions = ["front", "left", "back", "right", "down_left", "up_left", "up_right", "down_right"]
+        bases = []
+        for direction in directions:
+            source = direction if direction in spec.directions else direction.replace("right", "left")
+            bases.append(f"SpriteKind::{spec.ident}_WALKING_{source.upper()}_0")
+        flips = ["false" if direction in spec.directions else "true"
+                 for direction in ("right", "up_right", "down_right")]
+        walking_rows.append("    {%d, %s, %d, %s}," % (
+            spec.species_id, ", ".join(bases), spec.walking_frames, ", ".join(flips)))
     walking_table = "\n".join(walking_rows)
 
     pack_sprite_count = export_dev_pack(kind_map)
@@ -736,6 +752,10 @@ enum class WalkDirection : uint8_t {{
     LEFT,
     UP,
     RIGHT,
+    DOWN_LEFT,
+    UP_LEFT,
+    UP_RIGHT,
+    DOWN_RIGHT,
 }};
 
 struct WalkingAnimation {{
@@ -828,7 +848,8 @@ const SpriteCacheStats& cacheStats();
 bool drawFrame(const SpriteFrame* frame, int x, int y, bool flipX = false);
 bool drawFrameSilhouette(const SpriteFrame* frame, int x, int y,
                          uint16_t color = 0, bool flipX = false);
-bool drawFrameScaled(const SpriteFrame* frame, int x, int y, float scale, bool flipX = false);
+bool drawFrameScaled(const SpriteFrame* frame, int x, int y, float scale, bool flipX = false,
+                     bool nearest = false);
 
 }}  // namespace PokemonSprites
 """
@@ -1672,7 +1693,7 @@ bool drawFrameSilhouette(const SpriteFrame* frame, int x, int y,
     return true;
 }
 
-bool drawFrameScaled(const SpriteFrame* frame, int x, int y, float scale, bool flipX) {
+bool drawFrameScaled(const SpriteFrame* frame, int x, int y, float scale, bool flipX, bool nearest) {
     if (!frame) return false;
     if (scale == 1.0f) return drawFrame(frame, x, y, flipX);
 
@@ -1701,11 +1722,11 @@ bool drawFrameScaled(const SpriteFrame* frame, int x, int y, float scale, bool f
             paletteOffset,
             paletteSize,
             scale,
-            flipX);
+            flipX, 255, nearest);
         return true;
     }
 
-    PixelRenderer::drawRgb565RleScaled(x, y, width, height, rle, offset, length, scale, flipX);
+    PixelRenderer::drawRgb565RleScaled(x, y, width, height, rle, offset, length, scale, flipX, nearest);
     return true;
 }
 
@@ -1718,8 +1739,14 @@ struct WalkingConfig {{
     SpriteKind leftBase;
     SpriteKind upBase;
     SpriteKind rightBase;
+    SpriteKind downLeftBase;
+    SpriteKind upLeftBase;
+    SpriteKind upRightBase;
+    SpriteKind downRightBase;
     uint8_t frameCount;
     bool rightFlipX;
+    bool upRightFlipX;
+    bool downRightFlipX;
 }};
 
 static constexpr WalkingConfig WALKING_CONFIGS[] = {{
@@ -1745,6 +1772,17 @@ bool walkingAnimation(uint16_t speciesId, WalkDirection direction, WalkingAnimat
             animation.base = config.rightBase;
             animation.flipX = config.rightFlipX;
             break;
+        case WalkDirection::DOWN_LEFT: animation.base = config.downLeftBase; break;
+        case WalkDirection::UP_LEFT: animation.base = config.upLeftBase; break;
+        case WalkDirection::UP_RIGHT:
+            animation.base = config.upRightBase;
+            animation.flipX = config.upRightFlipX;
+            break;
+        case WalkDirection::DOWN_RIGHT:
+            animation.base = config.downRightBase;
+            animation.flipX = config.downRightFlipX;
+            break;
+        default: return false;
         }
         return animation.frameCount > 0;
     }

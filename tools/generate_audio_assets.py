@@ -41,6 +41,9 @@ MUSIC_SOURCES = {
     "bgm_battle": "Audio/BGM/Battle wild.ogg",
     "bgm_battle_special": "Audio/BGM/Battle roaming.mid",
 }
+REPOSITORY_MUSIC_SOURCES = {
+    "bgm_market": "origin_asset/audio/emerald/mus_verdanturf.mid",
+}
 
 SFX_SOURCES = {
     "sfx_ui_cursor": "Audio/SE/GUI sel cursor.ogg",
@@ -357,7 +360,9 @@ def generate(essentials, soundfont):
                 f"pack={len(pack)}"
             )
 
-    merge_manifest(len(MUSIC_SOURCES), len(SFX_SOURCES))
+    from generate_market_audio import generate as generate_market
+    generate_market(soundfont)
+    merge_manifest(len(MUSIC_SOURCES) + len(REPOSITORY_MUSIC_SOURCES), len(SFX_SOURCES))
 
 
 def main():

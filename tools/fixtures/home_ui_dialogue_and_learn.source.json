@@ -1,0 +1,142 @@
+{
+  "date": "2026-10-25",
+  "reason": "OSTB room conversations used fixed 240x135 coordinates; move learning prompts and confirmations also used fixed coordinates and accepted physical buttons only.",
+  "before": ".stick-local/artifacts/ostb-home-dialog-move-learn-20261024/before",
+  "preview": ".stick-local/artifacts/ostb-home-dialog-move-learn-20261024/preview.png",
+  "reviewed_contact_sheets": [
+    ".stick-local/artifacts/ostb-home-dialog-move-learn-20261024/review-final-0.png",
+    ".stick-local/artifacts/ostb-home-dialog-move-learn-20261024/review-final-1.png",
+    ".stick-local/artifacts/ostb-home-dialog-move-learn-20261024/review-final-2.png",
+    ".stick-local/artifacts/ostb-home-dialog-move-learn-20261024/review-final-3.png",
+    ".stick-local/artifacts/ostb-home-dialog-move-learn-20261024/review-final-4.png",
+    ".stick-local/artifacts/ostb-home-dialog-move-learn-20261024/review-final-5.png",
+    ".stick-local/artifacts/ostb-home-dialog-move-learn-20261024/review-final-6.png",
+    ".stick-local/artifacts/ostb-home-dialog-move-learn-20261024/review-home-0.png",
+    ".stick-local/artifacts/ostb-home-dialog-move-learn-20261024/review-home-1.png",
+    ".stick-local/artifacts/ostb-home-dialog-move-learn-20261024/review-home-2.png"
+  ],
+  "layout": {
+    "room_dialogue_x": 28,
+    "room_dialogue_bottom": 232,
+    "room_dialogue_width": 240,
+    "learn_prompt": [
+      28,
+      46,
+      240,
+      148
+    ],
+    "learn_confirmation": [
+      28,
+      52,
+      240,
+      136
+    ],
+    "touch_choices_height": 44,
+    "replacement_row_height": 44,
+    "replacement_row_spacing": 50,
+    "replacement_result": [
+      28,
+      56,
+      240,
+      128
+    ]
+  },
+  "configurations": {
+    "home-sticks3": {
+      "frames": 187,
+      "changed": 0
+    },
+    "home-ostb": {
+      "frames": 187,
+      "changed": 28
+    },
+    "final-sticks3": {
+      "frames": 271,
+      "changed": 0
+    },
+    "final-ostb": {
+      "frames": 273,
+      "changed": 74
+    }
+  },
+  "scope": "Presentation and input adapters only; no game rules, maps, resources, saves, or AMOLED UI changed. Existing unrelated explore map fixture failures are not part of this task.",
+  "source_sha256": {
+    "src/core/ProgressionUi.cpp": "db243adf92cadf68e634a0dc62976bc1c32e1ec15a416e0f7321440b2122ccf4",
+    "src/core/ProgressionUi.h": "937f81b6104839093a2c25e4aa2dac2605e3313e6694406de82d8883af27b0f5",
+    "src/core/UiStrings.h": "a0365310ebbde67c8e353bbae357a7d53bc0ba927efaaf1691c2752147c9d342",
+    "src/scenes/ExploreScene.cpp": "4bdb1fa5b34b7714e29f3421d62c5b172c7f1e79b48467e7566812ac1cc24042",
+    "src/scenes/MainScene.cpp": "6e6045daf00ae14b4ae0779f49c6e546117d7e18887c286ba65dc5a1f9894082",
+    "src/ui/common/HomeUiBase.cpp": "01ccb47ccdf1f1a2fdb96ebf09d03119e0a1b27bc133beecb79693953a5340d9",
+    "src/ui/common/HomeUiBase.h": "667ab43793b7724109cb822a256b62bf4d7365c488c1296b79625b06d56aad67",
+    "src/ui/common/HomeUiContent.cpp": "c294d8860734a125aeb51f1d1940aff80817e7701644d84abc38c23964efbe09",
+    "src/ui/common/HomeUiContent.h": "659c4bdcdb1aac10d1d0dd88f0c848bd465a1906860708df3b997de81b7e2862",
+    "src/ui/common/ProgressionUiBase.cpp": "6f6529318246425f600b423caad86db4dd8a78adf6a5db13015416410be4cfeb",
+    "src/ui/common/ProgressionUiBase.h": "f897c44639c38646790f3c27a15fc1bab16e28656f93d4cd59c2226ac6529290",
+    "src/ui/compact_touch/HomeUi.cpp": "c9b3ba166d164385c15ba3eb358c1c8ec284423889728d50120229e584a324fb",
+    "src/ui/compact_touch/HomeUi.h": "564ccfa6a20e25bdf3cdf21f279db1854cf7da5a760897a6c9a4236402e0f23a",
+    "src/ui/compact_touch/ProgressionUi.cpp": "c34e8ba1ed59c395ba81b659c39e4bee59409f1af88adae27a15c59e30fcb37f",
+    "src/ui/compact_touch/ProgressionUi.h": "630431b36a2182c9c635f175fa349e9d3f1e8ba032bc2fabc8a9fe6ab9e201ed",
+    "tools/final_ui_parity_host.cpp": "10f80350421e3551570089c87ebdbd6bd70a8eda9993b6987f44fb7e4cba3ade",
+    "tools/test_home_ui_parity.py": "f7bdbce8d62c8beffb6d80f35bb71670fceb600ed60624e900aea86aaaac9a0f",
+    "tools/test_final_ui_parity.py": "69964ef9a11de8c25d048c570dda12ee7d09f21c75e1771d6c8a9787cda5e561",
+    "tools/fixtures/home_ui_dialogue_and_learn.json": "207ca8c95da45b69754394531ea864d802d83bd964d2eb6332f90dda97f3f40f",
+    "tools/fixtures/final_ui_move_learn_touch.json": "7cc1c4a3ec6a4a338b7b712a8b239ef7b58220220d2bb9b3a3d6ec9e3fad79dc"
+  },
+  "original_fixtures_sha256": {
+    "amoled_explore_routes.txt": "e712790d0fb9eb64582112a21cff627068997380232e20225067dbfd176582e1",
+    "amoled_home_flow_baseline.json": "dd41192b5c9871de23044eb886ce2aefb46ef5a5406ab6b8368d48843d407036",
+    "amoled_pair_flow_baseline.json": "f1b9ef4b5321997ea8f11c6ec5084d8486a8fe0f742277eaa9c28767c93d9b54",
+    "amoled_visitor_flow_baseline.json": "b6adaa89bbfdab4bc505fba9f4cfc3973b801cddfc1d32a172781766f813253a",
+    "application_ui_parity.json": "11101d0c200d2850c8ccd2ac18d8f7e20f0662d6ad479c2b921fb0dff92b0a4a",
+    "application_ui_parity.source.json": "4406161ce007d73fcdd7096d095d760bef630afab35329a9cdd525c30ad5d725",
+    "contacts_ui_parity.json": "9a1a570101d7c49e9e224f62d83aca5a7b0e808ba6bd960c7de7f21acaee3dde",
+    "explore_ecology_ui.json": "40af3d1a1b9c04105066db92e0c62ec14b33c99957daa2ee4d14c3ecafcc5b31",
+    "explore_ecology_ui_hud.json": "9649b5446d76f58ec5ac21236b0fa1e23c29d9cdde1c639c68dc3cf929e8543e",
+    "explore_ecology_ui_route_anchor.json": "1c59f4ef6ea4dd970368186ca5be180bf6cbdcbd4dae7c8e7c175afd9f58b0c9",
+    "explore_party_adapter.txt": "22bb423a46fd1110827e7a2769856ecf1d638f28743695ae07ad4f8739d14301",
+    "explore_shared_adapter.source.json": "f9e7be61b31e9afa6894da227f7eea41d5a5e66ce05edd44532f49a28373638b",
+    "explore_shared_adapter.txt": "d2e32ac3332dd3a385bb488af9722c90fd115de42d480a9dac49d4729e2adb83",
+    "explore_shared_rules.json": "66c377a8dae33e438cb64c96be3fe1af209bb12d8fd492ae57c5a19875ba40b5",
+    "explore_ui_battle_footer.json": "196173990a7b2bc3ce62c2ecbb4a8e6a7d5b6f716fef8cefc5ec87533bcd1261",
+    "explore_ui_battle_footer.source.json": "7f69a20f8c3437cd8c2d5cbbb3cda86e021b2162e96fada661e7da4261c61da7",
+    "explore_ui_ecology.json": "c749cdecacef7bb10bc0ae4919b3407b45f48d4c52bcddc0c5b00730f4d75eda",
+    "explore_ui_ecology.source.json": "fa49038c03ba68724296b868e617dd24ae87b41a66d31d4c940b02463490242c",
+    "explore_ui_hud.json": "8867810e82cc8ffce4f8d102e57187684f878752ba96e86c1c155d1959c374c3",
+    "explore_ui_hud.source.json": "6ac5de3688e9908d64d864f770f4dd10f97b8834bd870a33e810dc3ad8fa717e",
+    "explore_ui_parity.json": "104f1eebe9d41336752792a4e955302e0878cd7bcf1d4d4a610e5a17d42d3a93",
+    "explore_ui_route_anchor.json": "52a39f192f10ef440c3d9ddc4fbbf9d4875829248dce1e9e9ec4510336ea639f",
+    "explore_ui_route_anchor.source.json": "101438208890ac2ba3f3ce7a8031f26d3502994d791bd086a1f570efd7e0afad",
+    "explore_ui_touch.json": "c9bbcd2147b7e01ed89e549c85ba6cdaf7cc4a558ab78ed3ef53e3a0582e8ea5",
+    "explore_ui_touch.source.json": "b76a61eee7d3bd52587afde8924a751a9a6ca5d302b03cf93d50dd62e9f144a5",
+    "final_ui_debug_touch.json": "ecc26d13daec9f884908afc42f434524a6340b6002d4cf43e8bebcb76b5a7d55",
+    "final_ui_debug_touch.source.json": "43d0ebe41916c55ad7384784a2c11df6e15a9e0d2bf54b1a5b38993ef50a4edb",
+    "final_ui_parity.json": "ec3c87917e1080bc6175167aa3c2a202604578991f6b92e0982fe9f411ab471c",
+    "final_ui_parity.source.json": "f11926e6642f062ed6c32b03eac09c8a940110ab274615d17a0173690c233fd2",
+    "hatch_ui_parity.json": "1bca2680b8fec5b59bb3be2b01e95f6ae74f724d67ad93429e830a0bac7d8f0d",
+    "hatch_ui_parity.source.json": "556f1ccd4410043d879d33b0f0f79b14ee137cd872b1b4cb7af2fd3d2060c58f",
+    "home_ui_hud.json": "442f45e99324b1b41477338fe8e28cc475ddd4fdfca042596a51162e210911af",
+    "home_ui_hud.source.json": "2c7285a2af38322c962ea97c555435f8bfccc4379564b1cfe4834c20bbf8caaf",
+    "home_ui_menu_position.json": "db2d6e650ead71b7143d8ea01d900e9026d4fd2191ec595254fa9fadea888b71",
+    "home_ui_menu_position.source.json": "1d1bffbe52c293f34a5f8ce6177e5be350c160e18a69e2e69d0211f889d61698",
+    "home_ui_parity.json": "94c017f9dbe93e8eab52fd904c2a0d3c7fce1071d7c30ed53990969166a2a9cb",
+    "item_ui_parity.json": "a88367b87885db0afbe3309125c48d83cbab13fab808f7090523991742eeea17",
+    "main_menu_ui_parity.json": "1ed28c4d7d728631b8756a057d580e26a3190b0be66a242539cdfd39f2763832",
+    "party_ui_parity.json": "d794b7809f16d2c82671fc1fab83657b2573add29971e328f4015439f96e2e74",
+    "party_ui_touch.json": "2d302a0873fba12276740ba1b57e22d005a82947ff285c085e1fa65d0e580c26",
+    "party_ui_touch.source.json": "67dd0bb3e058f11259f4e516d83f75945dc0ec8b9d396b8581df14329fa84040",
+    "room_ui_food_header.json": "7a13b59c3b4704603bc6866d0c40e26d4dc1219fd99915acc721f992cb9e8287",
+    "room_ui_food_header.source.json": "c0ff147f0cf0aaa7c84101ff82463a933b8580883db8b8a4a64ba2280cc509d9",
+    "room_ui_parity.json": "0acc1f9423e3470ee388fcc1a722ccba80d6ca8faceb01f743f44d0ab1421447",
+    "settings_ui_parity.json": "7ce45c5088909b066e8f225a2de433568de9dce5596090d929cdfc00b3a64162",
+    "shower_ui_drag.json": "844cfd6271694b32a65aa7dbaf5bbda601fb6ef361531ad4848fdbc5a6b3e4f7",
+    "shower_ui_drag.source.json": "a183f6c71207d27d61a474cac243930872f332f1aca547443eac0f10cc3a4ac7",
+    "shower_ui_parity.json": "f94b431cbff98fcbdb6698b15511c6702171e7fd4831e8d3110c865e62964173",
+    "shower_ui_parity.source.json": "a210a9b6367bd81a3e3762984b18838631411d6871563413510baf6aaaa406e7",
+    "shower_ui_picker.json": "bfcf2b96b57d7e00d37bbd1e52896f12898d255249e10d0b42b9f0956185f9a4",
+    "shower_ui_picker.source.json": "470a8a0bc4afd58f342fee82733e36df8740bec93a5bbf3320540730b7dbcb3b",
+    "shower_ui_touch.json": "862455d5c3e9e26e9f4fb06bc856bd475bac18b703d10f9b9a63b93d4ce153a7",
+    "shower_ui_touch.source.json": "fb82c8899d05a58770d29a4689af3009479b5103f12692e49db644249f7df3cc",
+    "social_ui_parity.json": "7e1d97e00b34d00a8f75baad4064d2ca9efb27c1125cc22bfef4d43fdec2d0ce",
+    "social_ui_parity.source.json": "b92990e0710af96f6d85c677fc8bf432597b26817cf824b3f3d19b1bde5f979f"
+  }
+}

@@ -18194,70 +18194,66 @@
     "212_scizor/idle/back_0.png": {
       "shadow": [
         33,
-        54,
-        16,
+        62,
+        14,
         6
       ],
-      "sha256": "b595dff2f1d28679efdfdceafb0abe7e89b79c5d22100d2a14f75109989263d2",
-      "iou": 0.6939,
+      "sha256": "4f3cfc6af2b6eaed66ec67ecbbda80a134a62cccc703849e79d358cebe9e2c58",
+      "iou": 1.0,
       "reference": [
-        "Walk",
+        "Idle",
         4,
-        3,
+        1,
         false
-      ],
-      "calibration": "local-review"
+      ]
     },
     "212_scizor/idle/back_1.png": {
       "shadow": [
         33,
-        54,
-        16,
+        52,
+        13,
         6
       ],
-      "sha256": "94e004d48b923bf26e176122128458e82c7fac1c90c2d0952a3b4e1c49461831",
-      "iou": 0.5761,
+      "sha256": "9e169ad553c2814ff7791471211fa72fb7c62868d3bc4bc5ec2141b2bcb53623",
+      "iou": 1.0,
       "reference": [
         "Idle",
         4,
-        1,
+        0,
         false
-      ],
-      "calibration": "local-review"
+      ]
     },
     "212_scizor/idle/down_left_0.png": {
       "shadow": [
-        33,
-        54,
-        16,
+        34,
+        60,
+        13,
         6
       ],
-      "sha256": "be57b9d9c6e657d93c0ecd3ea3989888e717453725c2dcf8bc014c48d9a92705",
-      "iou": 0.6471,
+      "sha256": "b595dff2f1d28679efdfdceafb0abe7e89b79c5d22100d2a14f75109989263d2",
+      "iou": 1.0,
       "reference": [
         "Idle",
         7,
         1,
         false
-      ],
-      "calibration": "local-review"
+      ]
     },
     "212_scizor/idle/down_left_1.png": {
       "shadow": [
         33,
-        54,
-        16,
+        48,
+        14,
         6
       ],
-      "sha256": "e4d4782d24853d855930c9e7b11dd77c512b5b1812accbf32259181b8a35f15c",
-      "iou": 0.6142,
+      "sha256": "94e004d48b923bf26e176122128458e82c7fac1c90c2d0952a3b4e1c49461831",
+      "iou": 1.0,
       "reference": [
-        "Walk",
+        "Idle",
         7,
-        1,
+        0,
         false
-      ],
-      "calibration": "local-review"
+      ]
     },
     "212_scizor/idle/front_0.png": {
       "shadow": [
@@ -18293,37 +18289,35 @@
     },
     "212_scizor/idle/left_0.png": {
       "shadow": [
-        32,
-        54,
-        16,
+        33,
+        52,
+        14,
         6
       ],
-      "sha256": "4f3cfc6af2b6eaed66ec67ecbbda80a134a62cccc703849e79d358cebe9e2c58",
-      "iou": 0.6701,
-      "reference": [
-        "Idle",
-        2,
-        1,
-        true
-      ],
-      "calibration": "local-review"
-    },
-    "212_scizor/idle/left_1.png": {
-      "shadow": [
-        32,
-        54,
-        16,
-        6
-      ],
-      "sha256": "9e169ad553c2814ff7791471211fa72fb7c62868d3bc4bc5ec2141b2bcb53623",
-      "iou": 0.6191,
+      "sha256": "be57b9d9c6e657d93c0ecd3ea3989888e717453725c2dcf8bc014c48d9a92705",
+      "iou": 1.0,
       "reference": [
         "Idle",
         6,
         0,
         false
+      ]
+    },
+    "212_scizor/idle/left_1.png": {
+      "shadow": [
+        39,
+        60,
+        14,
+        6
       ],
-      "calibration": "local-review"
+      "sha256": "e4d4782d24853d855930c9e7b11dd77c512b5b1812accbf32259181b8a35f15c",
+      "iou": 1.0,
+      "reference": [
+        "Idle",
+        6,
+        1,
+        false
+      ]
     },
     "212_scizor/idle/up_left_0.png": {
       "shadow": [
@@ -18391,105 +18385,99 @@
     },
     "212_scizor/walking/back_0.png": {
       "shadow": [
-        33,
-        54,
-        16,
+        30,
+        50,
+        14,
         6
       ],
-      "sha256": "744ed10020d24f87c5abb4bd8547d4bf16626ecdabace409e8e0f525c7ef3ddd",
-      "iou": 0.6738,
+      "sha256": "c9aeaf526535cc99b388cd9ae39b8fa815a0829b67fb672b8b14220e7172d7b1",
+      "iou": 0.9979,
       "reference": [
-        "Idle",
+        "Walk",
         4,
         1,
         false
-      ],
-      "calibration": "local-review"
+      ]
     },
     "212_scizor/walking/back_1.png": {
       "shadow": [
         33,
-        54,
-        16,
+        62,
+        14,
         6
       ],
-      "sha256": "b595dff2f1d28679efdfdceafb0abe7e89b79c5d22100d2a14f75109989263d2",
-      "iou": 0.6939,
+      "sha256": "4f3cfc6af2b6eaed66ec67ecbbda80a134a62cccc703849e79d358cebe9e2c58",
+      "iou": 1.0,
       "reference": [
-        "Walk",
+        "Idle",
         4,
-        3,
+        1,
         false
-      ],
-      "calibration": "local-review"
+      ]
     },
     "212_scizor/walking/back_2.png": {
       "shadow": [
-        33,
-        54,
-        16,
+        36,
+        50,
+        14,
         6
       ],
-      "sha256": "027fe95b23298a5f9904270a9ff0d1bc0db46b17771d784aa721fdc61203baa6",
-      "iou": 0.5887,
+      "sha256": "c2ba15fcbc4bbac6be550cde3f9c79aba1774275b928da5169526c386050bea9",
+      "iou": 1.0,
       "reference": [
         "Walk",
         4,
         3,
         false
-      ],
-      "calibration": "local-review"
+      ]
     },
     "212_scizor/walking/down_left_0.png": {
       "shadow": [
-        33,
-        54,
-        16,
+        31,
+        52,
+        14,
         6
       ],
-      "sha256": "675dd3afa0882dd6857c4a6069eb168f08b8b97975a67a939fc61357a935dd71",
-      "iou": 0.652,
+      "sha256": "744ed10020d24f87c5abb4bd8547d4bf16626ecdabace409e8e0f525c7ef3ddd",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        7,
+        1,
+        false
+      ]
+    },
+    "212_scizor/walking/down_left_1.png": {
+      "shadow": [
+        34,
+        60,
+        13,
+        6
+      ],
+      "sha256": "b595dff2f1d28679efdfdceafb0abe7e89b79c5d22100d2a14f75109989263d2",
+      "iou": 1.0,
       "reference": [
         "Idle",
         7,
         1,
         false
-      ],
-      "calibration": "local-review"
-    },
-    "212_scizor/walking/down_left_1.png": {
-      "shadow": [
-        33,
-        54,
-        16,
-        6
-      ],
-      "sha256": "0f5b8bdf3bb1a9f30cd168ab64d2e5e56bc8c23ad20a7f42da7b2a359f47f1a2",
-      "iou": 0.6663,
-      "reference": [
-        "Walk",
-        7,
-        1,
-        false
-      ],
-      "calibration": "local-review"
+      ]
     },
     "212_scizor/walking/down_left_2.png": {
       "shadow": [
-        33,
-        54,
-        16,
+        34,
+        49,
+        13,
         6
       ],
-      "sha256": "5fc9c9971fb77a971710dabdc3b2cc9e02d07f13bb49cd2d9cf89b0f1d3d409b",
-      "iou": 0.6614,
+      "sha256": "027fe95b23298a5f9904270a9ff0d1bc0db46b17771d784aa721fdc61203baa6",
+      "iou": 1.0,
       "reference": [
         "Walk",
         7,
-        1,
+        3,
         false
-      ],
-      "calibration": "local-review"
+      ]
     },
     "212_scizor/walking/front_0.png": {
       "shadow": [
@@ -18541,54 +18529,51 @@
     },
     "212_scizor/walking/left_0.png": {
       "shadow": [
-        32,
-        54,
-        16,
+        33,
+        52,
+        14,
         6
       ],
-      "sha256": "c9aeaf526535cc99b388cd9ae39b8fa815a0829b67fb672b8b14220e7172d7b1",
-      "iou": 0.619,
+      "sha256": "675dd3afa0882dd6857c4a6069eb168f08b8b97975a67a939fc61357a935dd71",
+      "iou": 0.9944,
       "reference": [
         "Idle",
         6,
-        1,
+        0,
         false
-      ],
-      "calibration": "local-review"
+      ]
     },
     "212_scizor/walking/left_1.png": {
       "shadow": [
-        32,
-        54,
-        16,
+        30,
+        60,
+        14,
         6
       ],
-      "sha256": "4f3cfc6af2b6eaed66ec67ecbbda80a134a62cccc703849e79d358cebe9e2c58",
-      "iou": 0.6701,
+      "sha256": "0f5b8bdf3bb1a9f30cd168ab64d2e5e56bc8c23ad20a7f42da7b2a359f47f1a2",
+      "iou": 1.0,
       "reference": [
         "Idle",
         2,
         1,
         true
-      ],
-      "calibration": "local-review"
+      ]
     },
     "212_scizor/walking/left_2.png": {
       "shadow": [
-        32,
-        54,
-        16,
+        33,
+        50,
+        13,
         6
       ],
-      "sha256": "c2ba15fcbc4bbac6be550cde3f9c79aba1774275b928da5169526c386050bea9",
-      "iou": 0.6862,
+      "sha256": "5fc9c9971fb77a971710dabdc3b2cc9e02d07f13bb49cd2d9cf89b0f1d3d409b",
+      "iou": 1.0,
       "reference": [
-        "Idle",
-        2,
-        1,
-        true
-      ],
-      "calibration": "local-review"
+        "Walk",
+        6,
+        3,
+        false
+      ]
     },
     "212_scizor/walking/up_left_0.png": {
       "shadow": [
@@ -25430,6 +25415,1734 @@
         "Idle",
         5,
         3,
+        false
+      ]
+    },
+    "113_chansey/idle/front_0.png": {
+      "shadow": [
+        32,
+        52,
+        22,
+        8
+      ],
+      "sha256": "96136a23756b96882cce0ae8e9a520ec67d7b6e041c2a6b664f62c4fe35e1db3",
+      "iou": 1.0,
+      "reference": [
+        "Idle",
+        0,
+        0,
+        false
+      ]
+    },
+    "113_chansey/idle/down_left_0.png": {
+      "shadow": [
+        32,
+        52,
+        22,
+        8
+      ],
+      "sha256": "96bd7f3818c2b1cdd615e733bb9048502c64db2a0d35fdad0c0d2dc743ad9111",
+      "iou": 1.0,
+      "reference": [
+        "Idle",
+        7,
+        0,
+        false
+      ]
+    },
+    "113_chansey/idle/left_0.png": {
+      "shadow": [
+        32,
+        52,
+        22,
+        8
+      ],
+      "sha256": "4f772479c6471d45bc39d926ac2ba730fdc8795cad6fbfce102559eade3db05f",
+      "iou": 1.0,
+      "reference": [
+        "Idle",
+        6,
+        0,
+        false
+      ]
+    },
+    "113_chansey/idle/up_left_0.png": {
+      "shadow": [
+        32,
+        52,
+        22,
+        8
+      ],
+      "sha256": "ad75ad586d545f1865df483c5675a54325ab48880bdb5ad4dcf25acacd3a30a3",
+      "iou": 1.0,
+      "reference": [
+        "Idle",
+        5,
+        0,
+        false
+      ]
+    },
+    "113_chansey/idle/back_0.png": {
+      "shadow": [
+        32,
+        52,
+        22,
+        8
+      ],
+      "sha256": "ece3a62a76b2d70d2052ff29f0a5cb1aa7149da618c097344644109b9606650f",
+      "iou": 1.0,
+      "reference": [
+        "Idle",
+        4,
+        0,
+        false
+      ]
+    },
+    "113_chansey/walking/front_0.png": {
+      "shadow": [
+        32,
+        52,
+        22,
+        8
+      ],
+      "sha256": "96136a23756b96882cce0ae8e9a520ec67d7b6e041c2a6b664f62c4fe35e1db3",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        0,
+        0,
+        false
+      ]
+    },
+    "113_chansey/walking/front_1.png": {
+      "shadow": [
+        32,
+        52,
+        22,
+        8
+      ],
+      "sha256": "a8274d1452217f71e6e1c37c8005ad700dc34e3449e551f5854c5b9bff707051",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        0,
+        1,
+        false
+      ]
+    },
+    "113_chansey/walking/front_2.png": {
+      "shadow": [
+        32,
+        52,
+        22,
+        8
+      ],
+      "sha256": "96136a23756b96882cce0ae8e9a520ec67d7b6e041c2a6b664f62c4fe35e1db3",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        0,
+        2,
+        false
+      ]
+    },
+    "113_chansey/walking/front_3.png": {
+      "shadow": [
+        32,
+        52,
+        22,
+        8
+      ],
+      "sha256": "5d3d25f7fb7df16b57d99b2678596f88ac936966c2610cff7eda79615947fadb",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        0,
+        3,
+        false
+      ]
+    },
+    "113_chansey/walking/down_left_0.png": {
+      "shadow": [
+        32,
+        52,
+        22,
+        8
+      ],
+      "sha256": "96bd7f3818c2b1cdd615e733bb9048502c64db2a0d35fdad0c0d2dc743ad9111",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        7,
+        0,
+        false
+      ]
+    },
+    "113_chansey/walking/down_left_1.png": {
+      "shadow": [
+        32,
+        52,
+        22,
+        8
+      ],
+      "sha256": "357c2d175db2741b52aaf1fc1815e4107899e25cbcb39635d3c4df177603a4c8",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        7,
+        1,
+        false
+      ]
+    },
+    "113_chansey/walking/down_left_2.png": {
+      "shadow": [
+        32,
+        52,
+        22,
+        8
+      ],
+      "sha256": "96bd7f3818c2b1cdd615e733bb9048502c64db2a0d35fdad0c0d2dc743ad9111",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        7,
+        2,
+        false
+      ]
+    },
+    "113_chansey/walking/down_left_3.png": {
+      "shadow": [
+        32,
+        52,
+        22,
+        8
+      ],
+      "sha256": "dbae4b89e95b149880ed443c85d90a820c963b151c8755e7c7bb37bc45f6f668",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        7,
+        3,
+        false
+      ]
+    },
+    "113_chansey/walking/left_0.png": {
+      "shadow": [
+        32,
+        52,
+        22,
+        8
+      ],
+      "sha256": "4f772479c6471d45bc39d926ac2ba730fdc8795cad6fbfce102559eade3db05f",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        6,
+        0,
+        false
+      ]
+    },
+    "113_chansey/walking/left_1.png": {
+      "shadow": [
+        32,
+        52,
+        22,
+        8
+      ],
+      "sha256": "ec6c692f45d63eef37ea133c2d56dadd1985d6e32428ff5bd9d3e26914299556",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        6,
+        1,
+        false
+      ]
+    },
+    "113_chansey/walking/left_2.png": {
+      "shadow": [
+        32,
+        52,
+        22,
+        8
+      ],
+      "sha256": "4f772479c6471d45bc39d926ac2ba730fdc8795cad6fbfce102559eade3db05f",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        6,
+        2,
+        false
+      ]
+    },
+    "113_chansey/walking/left_3.png": {
+      "shadow": [
+        32,
+        52,
+        22,
+        8
+      ],
+      "sha256": "0e1fa045228329e25bee838313cc419f4d8d1ae0d5a32ae199f09db5292102f5",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        6,
+        3,
+        false
+      ]
+    },
+    "113_chansey/walking/up_left_0.png": {
+      "shadow": [
+        32,
+        52,
+        22,
+        8
+      ],
+      "sha256": "ad75ad586d545f1865df483c5675a54325ab48880bdb5ad4dcf25acacd3a30a3",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        5,
+        0,
+        false
+      ]
+    },
+    "113_chansey/walking/up_left_1.png": {
+      "shadow": [
+        32,
+        52,
+        22,
+        8
+      ],
+      "sha256": "66470c6db22bb337d241fc11f8f34d52787c1d9c614abe1a47065130999c1130",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        5,
+        1,
+        false
+      ]
+    },
+    "113_chansey/walking/up_left_2.png": {
+      "shadow": [
+        32,
+        52,
+        22,
+        8
+      ],
+      "sha256": "ad75ad586d545f1865df483c5675a54325ab48880bdb5ad4dcf25acacd3a30a3",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        5,
+        2,
+        false
+      ]
+    },
+    "113_chansey/walking/up_left_3.png": {
+      "shadow": [
+        32,
+        52,
+        22,
+        8
+      ],
+      "sha256": "ef6ff0edd86c99870c9ca5d5b044370105c874e8db972cd2cb19913baeb54bae",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        5,
+        3,
+        false
+      ]
+    },
+    "113_chansey/walking/back_0.png": {
+      "shadow": [
+        32,
+        52,
+        22,
+        8
+      ],
+      "sha256": "ece3a62a76b2d70d2052ff29f0a5cb1aa7149da618c097344644109b9606650f",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        4,
+        0,
+        false
+      ]
+    },
+    "113_chansey/walking/back_1.png": {
+      "shadow": [
+        32,
+        52,
+        22,
+        8
+      ],
+      "sha256": "a395848b84047f56a273916f9e66887565c655f4369e5b9f7de24c65ef210a18",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        4,
+        1,
+        false
+      ]
+    },
+    "113_chansey/walking/back_2.png": {
+      "shadow": [
+        32,
+        52,
+        22,
+        8
+      ],
+      "sha256": "ece3a62a76b2d70d2052ff29f0a5cb1aa7149da618c097344644109b9606650f",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        4,
+        2,
+        false
+      ]
+    },
+    "113_chansey/walking/back_3.png": {
+      "shadow": [
+        32,
+        52,
+        22,
+        8
+      ],
+      "sha256": "77094279a3067890a8efc5472091aab09e1c20b6d1c8476002491103f5935ee2",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        4,
+        3,
+        false
+      ]
+    },
+    "113_chansey/sleeping/frame_0.png": {
+      "shadow": [
+        32,
+        52,
+        22,
+        8
+      ],
+      "sha256": "dd6a75878509e43926e79e76fb9c3c9864538c63062b2105aaff9f5b964fdd22",
+      "iou": 1.0,
+      "reference": [
+        "Sleep",
+        0,
+        0,
+        false
+      ]
+    },
+    "113_chansey/sleeping/frame_1.png": {
+      "shadow": [
+        32,
+        52,
+        22,
+        8
+      ],
+      "sha256": "d5d947aa554baafe265899eef044902ef31a5695ac2d4451c0dddb8ddd0478d3",
+      "iou": 1.0,
+      "reference": [
+        "Sleep",
+        0,
+        1,
+        false
+      ]
+    },
+    "115_kangaskhan/idle/front_0.png": {
+      "shadow": [
+        40,
+        68,
+        22,
+        8
+      ],
+      "sha256": "f8a448b40146739fc00168ed2e5668f33f968c811ee5965587af9e3620db8a07",
+      "iou": 1.0,
+      "reference": [
+        "Idle",
+        0,
+        0,
+        false
+      ]
+    },
+    "115_kangaskhan/idle/down_left_0.png": {
+      "shadow": [
+        40,
+        68,
+        22,
+        8
+      ],
+      "sha256": "2c40ea6b4a2b832032f55ed46dfe637d9a7bb8b41b345a030016b1db5010b79c",
+      "iou": 1.0,
+      "reference": [
+        "Idle",
+        7,
+        0,
+        false
+      ]
+    },
+    "115_kangaskhan/idle/left_0.png": {
+      "shadow": [
+        40,
+        68,
+        22,
+        8
+      ],
+      "sha256": "7c9dd0b0a28f9c46c65664961481b0b7b4c533242de3fe7b6749d5ebb19e994c",
+      "iou": 1.0,
+      "reference": [
+        "Idle",
+        6,
+        0,
+        false
+      ]
+    },
+    "115_kangaskhan/idle/up_left_0.png": {
+      "shadow": [
+        40,
+        68,
+        22,
+        8
+      ],
+      "sha256": "cd88763624e16632b505586f551af4698de579348ffc5010fbe0da4011e7a9a4",
+      "iou": 1.0,
+      "reference": [
+        "Idle",
+        5,
+        0,
+        false
+      ]
+    },
+    "115_kangaskhan/idle/back_0.png": {
+      "shadow": [
+        40,
+        68,
+        22,
+        8
+      ],
+      "sha256": "dbdf8647da336be5b1a61b25784a01dffab0199218da0efbcc80a17b67b7e9c4",
+      "iou": 1.0,
+      "reference": [
+        "Idle",
+        4,
+        0,
+        false
+      ]
+    },
+    "115_kangaskhan/walking/front_0.png": {
+      "shadow": [
+        40,
+        68,
+        22,
+        8
+      ],
+      "sha256": "f8a448b40146739fc00168ed2e5668f33f968c811ee5965587af9e3620db8a07",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        0,
+        0,
+        false
+      ]
+    },
+    "115_kangaskhan/walking/front_1.png": {
+      "shadow": [
+        40,
+        68,
+        22,
+        8
+      ],
+      "sha256": "587103be73020436f587ba9177327adcb2c6ae0b08551c20c56f4a8cb4408772",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        0,
+        1,
+        false
+      ]
+    },
+    "115_kangaskhan/walking/front_2.png": {
+      "shadow": [
+        40,
+        68,
+        22,
+        8
+      ],
+      "sha256": "f8a448b40146739fc00168ed2e5668f33f968c811ee5965587af9e3620db8a07",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        0,
+        2,
+        false
+      ]
+    },
+    "115_kangaskhan/walking/front_3.png": {
+      "shadow": [
+        40,
+        68,
+        22,
+        8
+      ],
+      "sha256": "38569c5c08253f6db1e9b5f096fd9e91a972435c4cb279765ceeaab4b0d781a3",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        0,
+        3,
+        false
+      ]
+    },
+    "115_kangaskhan/walking/down_left_0.png": {
+      "shadow": [
+        40,
+        68,
+        22,
+        8
+      ],
+      "sha256": "2c40ea6b4a2b832032f55ed46dfe637d9a7bb8b41b345a030016b1db5010b79c",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        7,
+        0,
+        false
+      ]
+    },
+    "115_kangaskhan/walking/down_left_1.png": {
+      "shadow": [
+        40,
+        68,
+        22,
+        8
+      ],
+      "sha256": "bde1feaddcc230a2d0a024caa5752f146f26b5efe3b5f4866e02badd243ea90e",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        7,
+        1,
+        false
+      ]
+    },
+    "115_kangaskhan/walking/down_left_2.png": {
+      "shadow": [
+        40,
+        68,
+        22,
+        8
+      ],
+      "sha256": "2c40ea6b4a2b832032f55ed46dfe637d9a7bb8b41b345a030016b1db5010b79c",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        7,
+        2,
+        false
+      ]
+    },
+    "115_kangaskhan/walking/down_left_3.png": {
+      "shadow": [
+        40,
+        68,
+        22,
+        8
+      ],
+      "sha256": "fa84aa64bf9f7e2c18996d68e0b8ebc3d83718512671b86b4c05d45e84ca6651",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        7,
+        3,
+        false
+      ]
+    },
+    "115_kangaskhan/walking/left_0.png": {
+      "shadow": [
+        40,
+        68,
+        22,
+        8
+      ],
+      "sha256": "7c9dd0b0a28f9c46c65664961481b0b7b4c533242de3fe7b6749d5ebb19e994c",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        6,
+        0,
+        false
+      ]
+    },
+    "115_kangaskhan/walking/left_1.png": {
+      "shadow": [
+        40,
+        68,
+        22,
+        8
+      ],
+      "sha256": "5b91046b01bdadd004a01bf3c3275412964c704caca918f6743b215522562a58",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        6,
+        1,
+        false
+      ]
+    },
+    "115_kangaskhan/walking/left_2.png": {
+      "shadow": [
+        40,
+        68,
+        22,
+        8
+      ],
+      "sha256": "7c9dd0b0a28f9c46c65664961481b0b7b4c533242de3fe7b6749d5ebb19e994c",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        6,
+        2,
+        false
+      ]
+    },
+    "115_kangaskhan/walking/left_3.png": {
+      "shadow": [
+        40,
+        68,
+        22,
+        8
+      ],
+      "sha256": "d325ca5c9c38d80888abb5424aa386c88d68feb9b2b6dc86caab24cb8d080b48",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        6,
+        3,
+        false
+      ]
+    },
+    "115_kangaskhan/walking/up_left_0.png": {
+      "shadow": [
+        40,
+        68,
+        22,
+        8
+      ],
+      "sha256": "cd88763624e16632b505586f551af4698de579348ffc5010fbe0da4011e7a9a4",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        5,
+        0,
+        false
+      ]
+    },
+    "115_kangaskhan/walking/up_left_1.png": {
+      "shadow": [
+        40,
+        68,
+        22,
+        8
+      ],
+      "sha256": "8351238719026777d2de1c61d9ca387e7e10f92e3205f29183c6d014c166591a",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        5,
+        1,
+        false
+      ]
+    },
+    "115_kangaskhan/walking/up_left_2.png": {
+      "shadow": [
+        40,
+        68,
+        22,
+        8
+      ],
+      "sha256": "cd88763624e16632b505586f551af4698de579348ffc5010fbe0da4011e7a9a4",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        5,
+        2,
+        false
+      ]
+    },
+    "115_kangaskhan/walking/up_left_3.png": {
+      "shadow": [
+        40,
+        68,
+        22,
+        8
+      ],
+      "sha256": "dd69b1aa65111a21e7f56e0dd3732369b1bb52c3df7e1fe868a9a4b0065352fe",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        5,
+        3,
+        false
+      ]
+    },
+    "115_kangaskhan/walking/back_0.png": {
+      "shadow": [
+        40,
+        68,
+        22,
+        8
+      ],
+      "sha256": "dbdf8647da336be5b1a61b25784a01dffab0199218da0efbcc80a17b67b7e9c4",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        4,
+        0,
+        false
+      ]
+    },
+    "115_kangaskhan/walking/back_1.png": {
+      "shadow": [
+        40,
+        68,
+        22,
+        8
+      ],
+      "sha256": "3aab36cfe4681285842ca73f6a10b7dee49b00b2c274f9110f4b2647dd99cfc8",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        4,
+        1,
+        false
+      ]
+    },
+    "115_kangaskhan/walking/back_2.png": {
+      "shadow": [
+        40,
+        68,
+        22,
+        8
+      ],
+      "sha256": "dbdf8647da336be5b1a61b25784a01dffab0199218da0efbcc80a17b67b7e9c4",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        4,
+        2,
+        false
+      ]
+    },
+    "115_kangaskhan/walking/back_3.png": {
+      "shadow": [
+        40,
+        68,
+        22,
+        8
+      ],
+      "sha256": "2a034e8e7704e287874dfac3d52f02abc369cc354197cb5a2fb3d1c0f7f95455",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        4,
+        3,
+        false
+      ]
+    },
+    "115_kangaskhan/sleeping/frame_0.png": {
+      "shadow": [
+        40,
+        68,
+        22,
+        8
+      ],
+      "sha256": "009fee28f01c6525c9da1a9d4cee4cd91ed1843d1e342db57a3260eb52091a64",
+      "iou": 1.0,
+      "reference": [
+        "Sleep",
+        0,
+        0,
+        false
+      ]
+    },
+    "115_kangaskhan/sleeping/frame_1.png": {
+      "shadow": [
+        40,
+        68,
+        22,
+        8
+      ],
+      "sha256": "27b456ec4f2f1b76dcee548ff4cdb39d30a901826ac745f5a0f1c4a6592394b2",
+      "iou": 1.0,
+      "reference": [
+        "Sleep",
+        0,
+        1,
+        false
+      ]
+    },
+    "225_delibird/idle/front_0.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "ed9774c363e95f9a8f18ee82bd32f5b55ca75313a71c927decc3801fc89fdde4",
+      "iou": 1.0,
+      "reference": [
+        "Idle",
+        0,
+        0,
+        false
+      ]
+    },
+    "225_delibird/idle/down_left_0.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "0c1bf5c16b9bc1dee2c4183c75801615f6a0f1162ebf1fac1f2cebda7081d7db",
+      "iou": 1.0,
+      "reference": [
+        "Idle",
+        7,
+        0,
+        false
+      ]
+    },
+    "225_delibird/idle/left_0.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "afa6d7fcaa6a368942420e29ea9f0c6e8377850a29c4d68664b20a5999e7df14",
+      "iou": 1.0,
+      "reference": [
+        "Idle",
+        6,
+        0,
+        false
+      ]
+    },
+    "225_delibird/idle/up_left_0.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "cdd4e25a952d1793c5923f84b4679f2abc30ac79dcb0d9221008762cfec2793f",
+      "iou": 1.0,
+      "reference": [
+        "Idle",
+        5,
+        0,
+        false
+      ]
+    },
+    "225_delibird/idle/back_0.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "9a8fdb5cb50e2ea23268beb2aa74eb3af13e62d74962a998bd6719903bf7f28e",
+      "iou": 1.0,
+      "reference": [
+        "Idle",
+        4,
+        0,
+        false
+      ]
+    },
+    "225_delibird/walking/front_0.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "50cfd6b5d3108d655bb6175e60e46dbddae11706b43c18adc4cdcb669bff59a4",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        0,
+        0,
+        false
+      ]
+    },
+    "225_delibird/walking/front_1.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "cda254f56c28cced294f0f3b24282ed4b92e1c6f7448a2729b9aa0ca75acf646",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        0,
+        1,
+        false
+      ]
+    },
+    "225_delibird/walking/front_2.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "50cfd6b5d3108d655bb6175e60e46dbddae11706b43c18adc4cdcb669bff59a4",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        0,
+        2,
+        false
+      ]
+    },
+    "225_delibird/walking/front_3.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "88d0ecba7d4a0a321d0b5e1f4d773018c3fca423692c52cbf74afe442a8d2763",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        0,
+        3,
+        false
+      ]
+    },
+    "225_delibird/walking/down_left_0.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "198c35153ff1aff858e6f001a99fa7cf98e8bc5360eb7723e44b168fff07156b",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        7,
+        0,
+        false
+      ]
+    },
+    "225_delibird/walking/down_left_1.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "6ca13df885abe6bf5e173ca559d8acf0ea1e46d7b113e3954ee326ebcd561e5c",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        7,
+        1,
+        false
+      ]
+    },
+    "225_delibird/walking/down_left_2.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "198c35153ff1aff858e6f001a99fa7cf98e8bc5360eb7723e44b168fff07156b",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        7,
+        2,
+        false
+      ]
+    },
+    "225_delibird/walking/down_left_3.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "dac82bb3c3382e79b41fbb9b2a15951748a90cbd83637051625febdeb53c456f",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        7,
+        3,
+        false
+      ]
+    },
+    "225_delibird/walking/left_0.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "5903aab272acbed5a0b8b13c11d733e3179809f0a6a577e0221a8f56527623c2",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        6,
+        0,
+        false
+      ]
+    },
+    "225_delibird/walking/left_1.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "a1552faab94ccf7b75fa82adf5a01b8f2380e86d7a75b2a33cc56c66597301db",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        6,
+        1,
+        false
+      ]
+    },
+    "225_delibird/walking/left_2.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "5903aab272acbed5a0b8b13c11d733e3179809f0a6a577e0221a8f56527623c2",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        6,
+        2,
+        false
+      ]
+    },
+    "225_delibird/walking/left_3.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "e8b5c29a2406ea0cb156daa679c272b5fdd73ec9871151763115b9cf0fa72143",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        6,
+        3,
+        false
+      ]
+    },
+    "225_delibird/walking/up_left_0.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "552f060eaa42466f662a171ba3f8f028c939c4f94bb4caef23fccca9d1e01aef",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        5,
+        0,
+        false
+      ]
+    },
+    "225_delibird/walking/up_left_1.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "4ca5c75b4eedef31a72cae2fd2491be4102bce6ea477c9b33e99a139b3dcead1",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        5,
+        1,
+        false
+      ]
+    },
+    "225_delibird/walking/up_left_2.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "552f060eaa42466f662a171ba3f8f028c939c4f94bb4caef23fccca9d1e01aef",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        5,
+        2,
+        false
+      ]
+    },
+    "225_delibird/walking/up_left_3.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "c7a8973cea90c8222a4a6aca29688b82af47a30156044880b3ad0469b0dae1d7",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        5,
+        3,
+        false
+      ]
+    },
+    "225_delibird/walking/back_0.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "dd63cd887a6ae76532817225b4822e1d8c9fe5e8814c48160c38346894a06441",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        4,
+        0,
+        false
+      ]
+    },
+    "225_delibird/walking/back_1.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "4898baa29ff6c0fbe22f204305a685a89c4394920919549038486a0eed6079c2",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        4,
+        1,
+        false
+      ]
+    },
+    "225_delibird/walking/back_2.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "dd63cd887a6ae76532817225b4822e1d8c9fe5e8814c48160c38346894a06441",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        4,
+        2,
+        false
+      ]
+    },
+    "225_delibird/walking/back_3.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "2da4f22ff40df50a6b55c019eee5adbc52a266b57a25ea6cc45986bd7fa1d684",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        4,
+        3,
+        false
+      ]
+    },
+    "225_delibird/sleeping/frame_0.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "bc369719610f3c20251b6d6b7e316b0e6867c0c383903a9f40eca3c41491e03d",
+      "iou": 1.0,
+      "reference": [
+        "Sleep",
+        0,
+        0,
+        false
+      ]
+    },
+    "225_delibird/sleeping/frame_1.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "b1db9d88a0ca63a0f9009a6eeaa240d2c9de39960fabd737865dbc04253a81e6",
+      "iou": 1.0,
+      "reference": [
+        "Sleep",
+        0,
+        1,
+        false
+      ]
+    },
+    "352_kecleon/idle/front_0.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "c3d112dd4d621152fe2dfaf086c3c0fba2ba05a48859f122f4eaa7188b267d54",
+      "iou": 1.0,
+      "reference": [
+        "Idle",
+        0,
+        0,
+        false
+      ]
+    },
+    "352_kecleon/idle/down_left_0.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "e04857572ad6e683e501eafc37423c48154d67d8ff1bdcfeb0839a5d43ebb6dd",
+      "iou": 1.0,
+      "reference": [
+        "Idle",
+        7,
+        0,
+        false
+      ]
+    },
+    "352_kecleon/idle/left_0.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "b00c7c67503d50e543cee5eab29c32e72eae671f522e3d5f16cabdcde8a150cd",
+      "iou": 1.0,
+      "reference": [
+        "Idle",
+        6,
+        0,
+        false
+      ]
+    },
+    "352_kecleon/idle/up_left_0.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "bb3cc88f35be67daf73ec54d93df8fcd1a37c6b5d85ba3493004eb588f2f243a",
+      "iou": 1.0,
+      "reference": [
+        "Idle",
+        5,
+        0,
+        false
+      ]
+    },
+    "352_kecleon/idle/back_0.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "5971e3cf7dee6ff25e1982c63cc9b9bb81545ffecd41e48ea0b1752c9145b24a",
+      "iou": 1.0,
+      "reference": [
+        "Idle",
+        4,
+        0,
+        false
+      ]
+    },
+    "352_kecleon/walking/front_0.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "956c9e84764d923b81ecd9cd79ad1ca64f6b361339ad7a5fef6923984dca1dfb",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        0,
+        0,
+        false
+      ]
+    },
+    "352_kecleon/walking/front_1.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "b875c91675995d9c6551801f30b81af2d835679b48579fc852cdace11258d29c",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        0,
+        1,
+        false
+      ]
+    },
+    "352_kecleon/walking/front_2.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "956c9e84764d923b81ecd9cd79ad1ca64f6b361339ad7a5fef6923984dca1dfb",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        0,
+        2,
+        false
+      ]
+    },
+    "352_kecleon/walking/front_3.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "132b0af589d3a70d3d5b25b5f06f4af8db5e939c3a7e255d91ab98493cf1d075",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        0,
+        3,
+        false
+      ]
+    },
+    "352_kecleon/walking/down_left_0.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "d4df8a4ce427dcba3189d5e608121f1042fe42134b3850f3df02d3cb28b53bd9",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        7,
+        0,
+        false
+      ]
+    },
+    "352_kecleon/walking/down_left_1.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "b173957114de4dd4bd9e67f87677855b32ca55341bb8e9cc7ff01ac0c8d6a67c",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        7,
+        1,
+        false
+      ]
+    },
+    "352_kecleon/walking/down_left_2.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "d4df8a4ce427dcba3189d5e608121f1042fe42134b3850f3df02d3cb28b53bd9",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        7,
+        2,
+        false
+      ]
+    },
+    "352_kecleon/walking/down_left_3.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "730e9cc8f9850e81222a23ac56ed289252d7f9d85afe31cccfb8d515a4672046",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        7,
+        3,
+        false
+      ]
+    },
+    "352_kecleon/walking/left_0.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "f3afc06cdcea9202ea06bee433b76ea29c2e013a861e5eb78f1a9b7e02ec0074",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        6,
+        0,
+        false
+      ]
+    },
+    "352_kecleon/walking/left_1.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "19c15b8729d07c270abaf965a74e8f28f35226d594da4e4e488b4d39964bbc86",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        6,
+        1,
+        false
+      ]
+    },
+    "352_kecleon/walking/left_2.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "f3afc06cdcea9202ea06bee433b76ea29c2e013a861e5eb78f1a9b7e02ec0074",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        6,
+        2,
+        false
+      ]
+    },
+    "352_kecleon/walking/left_3.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "418eb1ce8640306b91b811f86ae008af99cd51ac133f913d1abc630657828d4e",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        6,
+        3,
+        false
+      ]
+    },
+    "352_kecleon/walking/up_left_0.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "d6f5ca6b1a4a4543e11a4afe4a223d1511469fafb4bcd6af00b0e05f0fab7e49",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        5,
+        0,
+        false
+      ]
+    },
+    "352_kecleon/walking/up_left_1.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "eab3c4df61b2684467c01ddbbccdce9ad9efcd124a5f71d52b54e9c474e89420",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        5,
+        1,
+        false
+      ]
+    },
+    "352_kecleon/walking/up_left_2.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "d6f5ca6b1a4a4543e11a4afe4a223d1511469fafb4bcd6af00b0e05f0fab7e49",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        5,
+        2,
+        false
+      ]
+    },
+    "352_kecleon/walking/up_left_3.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "d62688b352ff96f40117f2c6ccfda4588dd7c98ee4e4c27c0b9338f198c195e7",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        5,
+        3,
+        false
+      ]
+    },
+    "352_kecleon/walking/back_0.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "a1315d1290c6abdd64f398228621e200232fe24ab9c1250b638e762b2039df11",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        4,
+        0,
+        false
+      ]
+    },
+    "352_kecleon/walking/back_1.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "260d92a0a788b83c04254853cae1be77450271d07ff24e1ed35cce8831960ae9",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        4,
+        1,
+        false
+      ]
+    },
+    "352_kecleon/walking/back_2.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "a1315d1290c6abdd64f398228621e200232fe24ab9c1250b638e762b2039df11",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        4,
+        2,
+        false
+      ]
+    },
+    "352_kecleon/walking/back_3.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "0669c6254c7982b834c2ceabac6c42ddcf09a801d7ddae86bfc5ec45ec48edce",
+      "iou": 1.0,
+      "reference": [
+        "Walk",
+        4,
+        3,
+        false
+      ]
+    },
+    "352_kecleon/sleeping/frame_0.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "38683581128abd98a4bd8eb56ae7aba55f0ea6b05bf39c08faad4f07f4a85d58",
+      "iou": 1.0,
+      "reference": [
+        "Sleep",
+        0,
+        0,
+        false
+      ]
+    },
+    "352_kecleon/sleeping/frame_1.png": {
+      "shadow": [
+        32,
+        52,
+        14,
+        6
+      ],
+      "sha256": "46a181e7f8131159e8a5324f6740f50af67bbd0256a2a4bad412ff0e065971fe",
+      "iou": 1.0,
+      "reference": [
+        "Sleep",
+        0,
+        1,
         false
       ]
     }

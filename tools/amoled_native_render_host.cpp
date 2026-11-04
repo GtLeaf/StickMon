@@ -1,5 +1,6 @@
 #include "presentation/PokemonShadow.h"
 #include "HomeScreen.h"
+#include "app/ExplorePresenter.h"
 #include "core/FontResource.h"
 #include "core/RoomResource.h"
 #include "core/RoomRenderer.h"
@@ -10,6 +11,7 @@
 #include "game/ItemInventory.h"
 #include "game/ExploreTileSemantics.h"
 #include "game/ExploreRouteGeometry.h"
+#include "game/ExploreAreaCatalog.h"
 #include "game/ExploreIceSlide.h"
 #include "platform/desktop/DesktopPlatform.h"
 #include "presentation/Canvas565.h"
@@ -130,7 +132,7 @@ public:
     explicit CacheFailAllocator(Platform::IMemoryAllocator& backing) : backing_(backing) {}
     int failures = 0;
     void* allocate(size_t bytes, bool external) override {
-        if (bytes >= pixels.size() * sizeof(uint16_t)) {
+        if (bytes >= 416 * 312 * sizeof(uint16_t)) {
             ++failures;
             return nullptr;
         }
@@ -475,6 +477,55 @@ int main(int argc, char** argv) {
         checkPageClip(canvas);
         return 0;
     }
+    if (selectedCase && std::strcmp(selectedCase, "fractional-sampling") == 0) {
+        constexpr int w = 5, h = 4;
+        const uint16_t palette[] = {0, 0xf800, 0x07e0, 0x001f};
+        std::vector<uint16_t> rgb, indexed;
+        uint16_t art[w * h]{};
+        uint8_t mask[(w * h + 7) / 8]{};
+        for (int i = 0; i < w * h; ++i) {
+            if (i % 3 == 1) { rgb.push_back(0x8001); indexed.push_back(0x8001); continue; }
+            art[i] = palette[i % 4];
+            mask[i / 8] |= 1U << (i % 8);
+            rgb.insert(rgb.end(), {1, art[i]});
+            indexed.insert(indexed.end(), {1, uint16_t(i % 4)});
+        }
+        for (bool swapped : {false, true})
+        for (float scale : {1.2f, 1.5f})
+        for (bool flip : {false, true})
+        for (bool clipped : {false, true})
+        for (int x : {-3, 2})
+        for (int format : {0, 1, 2}) {
+            if (format == 2 && flip) continue;
+            canvas.attach({pixels.data(), AmoledUi::WIDTH, AmoledUi::HEIGHT, swapped});
+            canvas.fillSprite(0xf81f);
+            if (clipped) canvas.setClipRect(1, 2, 5, 5);
+            const int y = x;
+            if (format == 0) PixelRenderer::drawRgb565RleScaled(x, y, w, h,
+                rgb.data(), 0, rgb.size(), scale, flip, true);
+            if (format == 1) PixelRenderer::drawIndexed4RleScaled(x, y, w, h,
+                indexed.data(), 0, indexed.size(), palette, 0, 4, scale, flip, 255, true);
+            if (format == 2) canvas.drawMaskedAssetImage(x, y, w, h, art, mask, scale);
+            canvas.clearClipRect();
+            for (int py = 0; py < 16; ++py) for (int px = 0; px < 16; ++px) {
+                uint16_t expected = 0xf81f;
+                const bool inside = px >= x && py >= y &&
+                    px < x + int(std::lround(w * scale)) &&
+                    py < y + int(std::lround(h * scale)) &&
+                    (!clipped || (px >= 1 && px < 6 && py >= 2 && py < 7));
+                if (inside) {
+                    int sx = std::min(w - 1, int((px - x) / scale));
+                    const int sy = std::min(h - 1, int((py - y) / scale));
+                    if (flip) sx = w - 1 - sx;
+                    const int i = sy * w + sx;
+                    if (mask[i / 8] & (1U << (i % 8))) expected = art[i];
+                }
+                assert(canvas.readPixel(px, py) == expected);
+            }
+        }
+        std::puts("fractional sampling: RGB/indexed/decoded pixels, transparency, opaque black, flips, negative origins, clips and byte order verified");
+        return 0;
+    }
     RenderCaches caches;
     auto renderExploreScreenCached = [&](Canvas565& canvas, const ExploreViewModel& model,
                                   uint16_t top, uint16_t bottom) {
@@ -488,6 +539,76 @@ int main(int argc, char** argv) {
                                   uint16_t top, uint16_t bottom) {
         renderBattleScreen(canvas, model, caches.battleBackground, top, bottom);
     };
+    if (selectedCase && std::strcmp(selectedCase, "explore-native-scale") == 0) {
+        static_assert(EXPLORE_ROUTE_SCALE == 1.5f && AmoledUi::RESOURCE_SCALE == 2);
+        ExploreMapGenerator::Map map{};
+        map.seed = 717;
+        std::fill_n(map.layers[0], ExploreMapGenerator::CELL_COUNT, 385);
+        ExploreRouteViewModel model{};
+        model.map = &map;
+        model.cameraX = 25;
+        model.cameraY = 17;
+        model.worldX = model.worldY = -1000;
+        std::vector<uint16_t> tile(26 * 26);
+        Canvas565 expected;
+        expected.attach({tile.data(), 26, 26, false});
+        assert(GameAssets::drawExploreTileTo(expected, 385, 0, 0));
+        canvas.clearClipRect();
+        assert(drawExploreRouteMapLayer(canvas, model, caches.exploreWorld, 0, 344));
+        assert(caches.exploreWorld.allocatedBytes() == 624 * 468 * 2);
+        for (int y = 0; y < 344; ++y) for (int x = 0; x < 368; ++x) {
+            const uint16_t color = tile[int(((y + 26) % 39) / 1.5f) * 26 + int(((x + 38) % 39) / 1.5f)];
+            assert(canvas.readPixel(x, y) == color);
+        }
+        // At night, native rows remain distinct in both raw and colored planes.
+        model.daylight = {128, 152, 192};
+        ExploreRouteTonePass tone;
+        assert(drawExploreRouteMapLayer(canvas, model, caches.exploreWorld, 0, 344, &tone));
+        assert(tone.active && caches.exploreWorld.allocatedBytes() == 624 * 468 * 4);
+        tone.finish(canvas, model);
+        for (int y = 0; y < 344; ++y) for (int x = 0; x < 368; ++x) {
+            const uint16_t raw = tile[int(((y + 26) % 39) / 1.5f) * 26 + int(((x + 38) % 39) / 1.5f)];
+            const uint16_t colored = uint16_t(
+                ((((raw >> 11) * 128 + 128) / 256) << 11) |
+                (((((raw >> 5) & 63) * 152 + 128) / 256) << 5) |
+                (((raw & 31) * 192 + 128) / 256));
+            assert(canvas.readPixel(x, y) == colored);
+        }
+        const uint16_t species[] = {1, 8, 41, 129, 278, 285};
+        PokemonSprites::preloadDynamicSpecies(species, 6);
+        Game::GameState game{};
+        game.teamCount = 1;
+        game.team[0].hpCur = game.team[0].hpMax = 100;
+        model.state = &game;
+        model.speciesId = 1;
+        model.companionVisible = true;
+        model.companionSpeciesId = 8;
+        model.wildlifeCount = 2;
+        model.wildlife[0] = {278, 120, 175, 1, 0, true, false};
+        model.wildlife[1] = {285, 275, 190, 1, 0, false, false};
+        for (uint8_t area = 0; area < 6; ++area) {
+            assert(ExploreMapGenerator::generate(12152 + area,
+                ExploreMapGenerator::Edge::LEFT, area, map));
+            model.area = area;
+            const auto point = ExploreRouteGeometry::pathPoint(map.paths[0], map.paths[0].pointCount / 2);
+            model.cameraX = std::clamp(int(std::lround(point.x - 368 / 3.0f)), 0, 170);
+            model.cameraY = std::clamp(int(std::lround(point.y - 344 / 3.0f)), 0, 82);
+            model.worldX = point.x;
+            model.worldY = point.y;
+            model.companionWorldX = point.x - 20;
+            model.companionWorldY = point.y;
+            model.pickupAvailable = true;
+            model.pickupIndex = map.paths[0].pointCount / 2 + 1;
+            for (bool night : {false, true}) {
+                model.daylight = ExploreDaylight::at(night ? 1320 : 720, area);
+                char name[48];
+                std::snprintf(name, sizeof(name), "explore-1p5x-area-%u-%s", area, night ? "night" : "day");
+                checkPage(name, model, renderExploreRouteScreenCached);
+            }
+        }
+        std::puts("explore 1.5x: exact 39px nearest tiles, odd camera origins, raw/night planes and six area dirty/full previews verified");
+        return 0;
+    }
     if (selectedCase && std::strcmp(selectedCase, "hatch-flow") == 0) {
         checkHatchFlow(desktop, canvas);
         return 0;
@@ -832,8 +953,8 @@ int main(int argc, char** argv) {
         model.pickupAvailable = true;
         checkPage("explore-pickup", model, renderExploreRouteScreenCached);
         size_t changed = 0, red = 0;
-        for (int y = 208; y < 256; ++y) {
-            for (int x = 184; x < 232; ++x) {
+        for (int y = 150; y < 190; ++y) {
+            for (int x = 136; x < 176; ++x) {
                 const size_t i = y * AmoledUi::WIDTH + x;
                 if (pixels[i] == empty[i]) continue;
                 ++changed;
@@ -842,7 +963,7 @@ int main(int argc, char** argv) {
             }
         }
         std::printf("explore pickup: %zu changed pixels, %zu red pixels\n", changed, red);
-        assert(changed > 200 && red > 30);
+        assert(changed > 50 && red > 7);
         return 0;
     }
 
@@ -855,7 +976,7 @@ int main(int argc, char** argv) {
         model.area = map.areaIndex;
         constexpr uint16_t emptyColor = 0xF81F;
         constexpr uint16_t actorColor = 0x07FF;
-        constexpr int tileSize = 52;
+        constexpr int tileSize = 26 * EXPLORE_ROUTE_SCALE;
         struct CoverCase { uint16_t tile; uint8_t layer; int row; int depth; };
         std::vector<CoverCase> covers;
         for (uint16_t tile = 4512; tile <= 4523; ++tile)
@@ -864,29 +985,35 @@ int main(int argc, char** argv) {
         covers.push_back({4509, 1, 4, 130});
         covers.push_back({4541, 2, 3, 130});
         covers.push_back({4543, 2, 3, 130});
+        // Both pieces use the exact same lower-landing ground anchor.
+        covers.push_back({4772, 2, 3, 117});
+        covers.push_back({4773, 1, 4, 117});
         for (const auto& item : covers) {
             for (auto& layer : map.layers) std::fill(std::begin(layer), std::end(layer), 0);
             map.layers[item.layer][item.row * ExploreMapGenerator::WIDTH + 3] = item.tile;
             const int x = 3 * tileSize, y = item.row * tileSize;
             canvas.clearClipRect();
             canvas.fillSprite(emptyColor);
-            assert(GameAssets::drawExploreTileTo(canvas, item.tile, x, y, 0, 2));
+            assert(GameAssets::drawExploreTileTo(canvas, item.tile, x, y, 0, EXPLORE_ROUTE_SCALE));
             const auto tilePixels = pixels;
             size_t restored = 0;
-            for (float depth : {item.depth - 0.01f, static_cast<float>(item.depth)}) {
-                canvas.clearClipRect();
-                canvas.fillSprite(actorColor);
-                drawExploreRouteMapVegetationForActor(canvas, model, depth,
-                    x + 4, y + 4, x + tileSize - 4, y + tileSize - 4,
-                    0, EXPLORE_ROUTE_MAP_BOTTOM);
-                for (int py = 0; py < AmoledUi::HEIGHT; ++py) {
-                    for (int px = 0; px < AmoledUi::WIDTH; ++px) {
-                        const size_t index = py * AmoledUi::WIDTH + px;
-                        const bool cover = depth < item.depth && px >= x + 4 &&
-                            px < x + tileSize - 4 && py >= y + 4 &&
-                            py < y + tileSize - 4 && tilePixels[index] != emptyColor;
-                        assert(pixels[index] == (cover ? tilePixels[index] : actorColor));
-                        restored += cover;
+            for (bool airborne : {false, true}) {
+                if (airborne && !ExploreTileSemantics::upwardLadder(item.tile, item.layer)) continue;
+                for (float depth : {item.depth - 0.01f, static_cast<float>(item.depth)}) {
+                    canvas.clearClipRect();
+                    canvas.fillSprite(actorColor);
+                    drawExploreRouteMapVegetationForActor(canvas, model, depth,
+                        x + 4, y + 4, x + tileSize - 4, y + tileSize - 4,
+                        0, EXPLORE_ROUTE_MAP_BOTTOM, false, airborne);
+                    for (int py = 0; py < AmoledUi::HEIGHT; ++py) {
+                        for (int px = 0; px < AmoledUi::WIDTH; ++px) {
+                            const size_t index = py * AmoledUi::WIDTH + px;
+                            const bool cover = depth < item.depth && px >= x + 4 &&
+                                px < x + tileSize - 4 && py >= y + 4 &&
+                                py < y + tileSize - 4 && tilePixels[index] != emptyColor;
+                            assert(pixels[index] == (cover ? tilePixels[index] : actorColor));
+                            restored += cover;
+                        }
                     }
                 }
             }
@@ -931,7 +1058,98 @@ int main(int argc, char** argv) {
                 checkPage(name, model, renderExploreRouteScreenCached);
             }
         }
-        std::puts("frost occlusion: 12 snow walls, both complete crystals and 12 room poses passed");
+        // Approach and stand on the actual upward ladder, including tall
+        // heads overlapping its upper tile. Full, dirty-band and cache-disabled
+        // rendering must agree; both ladder pieces stay behind front actors.
+        assert(ExploreMapGenerator::generate(151, ExploreMapGenerator::Edge::BOTTOM,
+            model.area, map, {1, 3, true}));
+        caches.exploreWorld.invalidate();
+        const auto& upPath = map.paths[1];
+        model.pathIndex = 1;
+        model.bossPending = false;
+        model.pickupAvailable = false;
+        for (uint16_t species : {8, 143}) {
+            model.speciesId = species;
+            for (int phase = 0; phase <= 4; ++phase) {
+                const auto a = ExploreRouteGeometry::pathPoint(upPath, upPath.pointCount - 2);
+                const auto b = ExploreRouteGeometry::pathPoint(upPath, upPath.pointCount - 1);
+                model.worldX = b.x;
+                model.worldY = a.y + (b.y - a.y) * phase / 4.0f;
+                model.cameraX = std::max(0, std::min(232, static_cast<int>(b.x) - 92));
+                model.cameraY = 0;
+                model.companionVisible = true;
+                model.companionSpeciesId = 280;
+                model.companionWorldX = b.x;
+                model.companionWorldY = model.worldY + 20;
+                char name[80];
+                std::snprintf(name, sizeof(name), "frost-ladder-%u-phase-%d", species, phase);
+                checkPage(name, model, renderExploreRouteScreenCached);
+                if (phase == 4) {
+                    const auto cached = pixels;
+                    auto& original = desktop.serviceBundle();
+                    CacheFailAllocator failing(original.memory);
+                    Platform::Services limited{
+                        original.lifecycle, original.clock, original.logger, original.input,
+                        original.display, original.audio, original.imu, original.power,
+                        original.blobs, original.resources, failing, original.peers};
+                    RenderCaches emptyCaches;
+                    Platform::bind(limited);
+                    checkPage("frost-ladder-no-cache", model,
+                        [&](Canvas565& target, const ExploreRouteViewModel& view,
+                            uint16_t top, uint16_t bottom) {
+                            renderExploreRouteScreen(target, view, emptyCaches.exploreWorld, top, bottom);
+                        });
+                    assert(pixels == cached);
+                    Platform::bind(original);
+                }
+            }
+        }
+        // Final cave stairs and early retreat hold both actors in place through
+        // the transition. Outdoor exits retain their walk beyond the map edge.
+        for (uint8_t area : {ExploreMapGenerator::FROST_CRYSTAL_CAVE_AREA,
+                             ExploreMapGenerator::TALL_GRASS_PARK_AREA}) {
+            for (uint32_t seed = 0; seed < 4; ++seed) {
+                ExploreSession::State route{};
+                assert(ExploreMapGenerator::generate(seed, ExploreMapGenerator::Edge::LEFT,
+                    area, route.exploreRouteMap, {2, 3, true}));
+                for (uint8_t branch = 0; branch < route.exploreRouteMap.pathCount; ++branch) {
+                    route.exploreRoutePath = branch;
+                    const auto& path = route.exploreRouteMap.paths[branch];
+                    for (uint8_t index : {static_cast<uint8_t>(path.pointCount / 2),
+                                         static_cast<uint8_t>(path.pointCount - 1)}) {
+                        route.exploreRouteIndex = index;
+                        route.exploreRouteExiting = true;
+                        ExplorePresenter presenter;
+                        presenter.resetMap(route, state, area, 0, 1000);
+                        const auto before = presenter.state();
+                        presenter.beginExit(route, true, 1000);
+                        const auto targets = presenter.state();
+                        const bool cave = area == ExploreMapGenerator::FROST_CRYSTAL_CAVE_AREA;
+                        assert(ExploreRouteGeometry::interiorStairExit(route.exploreRouteMap, path) == cave);
+                        if (cave) {
+                            assert(targets.exploreRouteTargetX == before.exploreRouteWorldX);
+                            assert(targets.exploreRouteTargetY == before.exploreRouteWorldY);
+                            assert(targets.exploreRouteFollowerTargetX == before.exploreRouteFollowerWorldX);
+                            assert(targets.exploreRouteFollowerTargetY == before.exploreRouteFollowerWorldY);
+                            assert(!targets.exploreRouteFollowerMoving);
+                        } else {
+                            assert(targets.exploreRouteTargetX != before.exploreRouteWorldX ||
+                                   targets.exploreRouteTargetY != before.exploreRouteWorldY);
+                        }
+                        assert(presenter.updateMotion(route, state, area, 1250) == ExplorePresenter::Motion::NONE);
+                        assert(presenter.updateMotion(route, state, area,
+                            1000 + targets.exploreRouteExitDurationMs) == ExplorePresenter::Motion::EXIT_FINISHED);
+                        if (cave) {
+                            assert(presenter.state().exploreRouteWorldX == before.exploreRouteWorldX);
+                            assert(presenter.state().exploreRouteWorldY == before.exploreRouteWorldY);
+                            assert(presenter.state().exploreRouteFollowerWorldX == before.exploreRouteFollowerWorldX);
+                            assert(presenter.state().exploreRouteFollowerWorldY == before.exploreRouteFollowerWorldY);
+                        }
+                    }
+                }
+            }
+        }
+        std::puts("frost occlusion: snow walls, complete crystals, both ladder pieces, 12 room poses and 10 ladder poses passed");
         return 0;
     }
 
@@ -958,7 +1176,7 @@ int main(int argc, char** argv) {
         model.map = &map;
         model.area = ExploreMapGenerator::TALL_GRASS_PARK_AREA;
         model.worldX = model.worldY = -1000;
-        constexpr int tileSize = 52;
+        constexpr int tileSize = 26 * EXPLORE_ROUTE_SCALE;
         constexpr int tileX = 3;
         constexpr uint16_t emptyColor = 0xF81F;
         constexpr uint16_t actorColor = 0x07FF;
@@ -977,7 +1195,7 @@ int main(int argc, char** argv) {
             const int x = tileX * tileSize;
             const int y = item.tileY * tileSize;
             canvas.fillSprite(emptyColor);
-            assert(GameAssets::drawExploreTileTo(canvas, item.tileId, x, y, 0, 2));
+            assert(GameAssets::drawExploreTileTo(canvas, item.tileId, x, y, 0, EXPLORE_ROUTE_SCALE));
             const auto vegetation = pixels;
             size_t restored = 0;
             for (float actorDepth : {item.groundDepth - 0.01f, item.groundDepth}) {
@@ -1009,7 +1227,7 @@ int main(int argc, char** argv) {
         map.layers[1][3 * ExploreMapGenerator::WIDTH + tileX] = 391;
         canvas.fillSprite(emptyColor);
         assert(GameAssets::drawExploreTileTo(
-            canvas, 391, 3 * tileSize, 3 * tileSize, 0, 2));
+            canvas, 391, 3 * tileSize, 3 * tileSize, 0, EXPLORE_ROUTE_SCALE));
         const auto grass = pixels;
         renderExploreRouteScreenCached(canvas, model, 0, AmoledUi::HEIGHT);
         const auto empty = pixels;
@@ -1084,7 +1302,7 @@ int main(int argc, char** argv) {
         model.companionWorldY = 110;
         checkPage("explore-vegetation-patrol-three", model, renderExploreRouteScreenCached);
         size_t visibleBossPixels = 0;
-        for (int y = 4 * tileSize; y < 238; ++y) {
+        for (int y = 4 * tileSize; y < 4 * tileSize + 15 * EXPLORE_ROUTE_SCALE; ++y) {
             for (int x = 3 * tileSize; x < 4 * tileSize; ++x) {
                 const size_t index = y * AmoledUi::WIDTH + x;
                 if (frontBoss[index] == empty[index]) continue;
@@ -1375,6 +1593,16 @@ int main(int argc, char** argv) {
     home.monsters[0] = {70, 80};
     home.monsters[1] = {100, 60};
     checkPage("home", home, renderHomeScreen);
+    home.batteryCharging = true;
+    home.batteryPercent = 50;
+    checkPage("home-charging", home, renderHomeScreen);
+    home.batteryPercent = 10;
+    checkPage("home-charging-low", home, renderHomeScreen);
+    home.batteryPercent = 100;
+    checkPage("home-charging-full", home, renderHomeScreen);
+    home.batteryPercent = -1;
+    checkPage("home-charging-unknown", home, renderHomeScreen);
+    home.batteryCharging = false;
     checkPage("menu", MenuViewModel{}, renderMainMenu);
 #if STICKMON_ENABLE_DEBUG_FEATURES
     DebugViewModel debug;

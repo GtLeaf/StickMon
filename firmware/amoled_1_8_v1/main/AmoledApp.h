@@ -3,6 +3,10 @@
 #include <algorithm>
 #include <cstdint>
 #include <memory>
+#include "core/TouchTap.h"
+#include "game/ExploreDestinations.h"
+#include "game/MarketSession.h"
+#include "ui/common/MarketWalkUi.h"
 
 #ifndef STICKMON_HAS_CLAW
 #define STICKMON_HAS_CLAW 0
@@ -13,6 +17,7 @@
 #include "app/HatchController.h"
 #include "app/TeamController.h"
 #include "app/InventoryController.h"
+#include "app/ContactsController.h"
 #include "app/ShowerController.h"
 #include "app/ProgressionFlow.h"
 #include "app/BattleSession.h"
@@ -69,10 +74,15 @@ public:
     void cancelTouch();
     void update(uint32_t nowMs);
     void render(Canvas565& canvas) const;
+    bool exploreFramePipelineAllowed() const;
 
     bool startupStateLoaded() const { return startupStateLoaded_; }
     // Flush through the same validated save path used by the device lifecycle.
     bool flushSave() { return saveState(); }
+    bool preparePowerOff(uint32_t nowMs);
+    bool prepareDisplayStandby(uint32_t nowMs);
+    void setDisplayStandby(bool standby, uint32_t nowMs);
+    bool displayStandby() const { return displayStandby_; }
     bool saveWriteBlocked() const { return saveWritesBlocked; }
     bool needsRender() const { return dirtyRowsValid; }
     uint16_t renderRowBegin() const { return dirtyRowBegin; }
@@ -88,7 +98,10 @@ public:
     uint8_t sceneFadeAlpha() const { return expeditionFade.alpha(); }
     bool displayLockAllowed() const;
     bool lockedHomePowerAllowed() const;
-    void setDisplayLocked(bool locked) { displayLocked = locked; }
+    void setDisplayLocked(bool locked) {
+        if (locked && !displayLocked && market_) cancelTouch();
+        displayLocked = locked;
+    }
     void forceRenderRegion(int left, int top, int right, int bottom) {
         dirtyRowsValid = false;
         requestRenderRect(left, top, right, bottom);
@@ -367,6 +380,7 @@ private:
     void placeFaintedHomeActors(uint32_t nowMs);
     void leaveExploreRoute();
     void updateClockAndCare(uint32_t nowMs);
+    void advanceExploreMinutes(uint32_t minutes, uint32_t nowMs);
     void updateMoodHearts(uint32_t nowMs);
     void startSleepAnimation(uint32_t nowMs, uint16_t frameMs);
     void updateSleepAnimation(uint32_t nowMs);
@@ -469,7 +483,9 @@ private:
     bool externalSceneFade = false;
     bool lockRequested = false;
     bool displayLocked = false;
+    bool displayStandby_ = false;
     int8_t batteryPercent = -1;
+    bool batteryCharging = false;
     bool batterySampled = false;
     uint32_t lastBatterySampleMs = 0;
 
@@ -554,6 +570,24 @@ private:
     int pressedCommunicationItem = -1;
     MusicContext musicContext = MusicContext::HOME;
     uint8_t selectedExploreArea = 0;
+    uint8_t selectedExploreDestination_ = ExploreDestinations::MARKET;
+    std::unique_ptr<Market::Session> market_;
+    Ui::MarketWalkUi marketUi_;
+    // The market animates continuously; cap its full-screen frames instead of
+    // redrawing on every 20 ms loop and every touch move. On the 20 ms loop
+    // grid a 33 ms minimum gap presents a steady frame every 40 ms (25 fps).
+    static constexpr uint32_t MARKET_FRAME_MS = 33;
+    uint32_t lastMarketFrameMs_ = 0;
+    bool marketFrameDirty_ = false;
+    static constexpr Ui::MarketView::Viewport marketViewport() {
+        return {368, 448, 1.5f, false, true, 2};
+    }
+    bool startMarket(uint32_t nowMs);
+    void closeMarket(uint32_t nowMs);
+    void selectExploreDestination(uint8_t index, uint32_t nowMs);
+    uint8_t selectedExploreListIndex() const {
+        return ExploreDestinations::visibleIndex(selectedExploreDestination_, gameState);
+    }
     ComputerViewModel::Page computerPage = ComputerViewModel::Page::MENU;
     // Social can be opened from the computer menu or from the background
     // assistant. Keep the return route explicit because both use the same
@@ -562,12 +596,7 @@ private:
     float computerScroll = 0.0f;
     float computerVelocity = 0.0f;
     uint8_t computerPressedItem = 0xFF;
-    bool contactActionOpen = false;
-    uint8_t contactActionSlot = 0xFF;
-    int contactActionPressedItem = -1;
-    bool contactConfirmOpen = false;
-    bool contactConfirmYes = false;
-    bool contactConfirmDelete = false;
+    ContactsController contactsController_;
     // CLAW_SETUP log view state. Entries themselves are copied into a
     // file-scope buffer at render time to avoid retaining another log copy
     // in every application instance.

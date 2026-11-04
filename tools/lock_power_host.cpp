@@ -1,4 +1,5 @@
 #include "LockPowerSchedule.h"
+#include "DisplayStandbySchedule.h"
 #include "AmoledLockPower.h"
 #include "SleepBreathClock.h"
 #include <cassert>
@@ -67,6 +68,22 @@ int main() {
     assert(wrap.wait(15, true) == 1);
     wrap.presented(16);
     assert(wrap.wait(16, true) > 0);
+
+    // Touch/USB activity must not turn panel-off work into an animation loop.
+    Amoled::DisplayStandbySchedule standby;
+    standby.begin(100);
+    unsigned polls = 0, ticks = 0;
+    for (uint32_t now = 100; now < 30100; now += 7) {
+        if (standby.buttonDue(now)) { standby.polled(now); ++polls; }
+        if (standby.logicDue(now)) { standby.updated(now); ++ticks; }
+        assert(standby.wait(now) <= 250);
+    }
+    assert(polls <= 120 && polls >= 115);
+    assert(ticks <= 30 && ticks >= 29);
+    standby.begin(UINT32_MAX - 100);
+    assert(!standby.buttonDue(148) && standby.buttonDue(149));
+    assert(!standby.logicDue(898) && standby.logicDue(899));
+    assert(standby.wait(148) == 1);
 
     // Opposite sprite orders, jitter, missed frames and millis wraparound.
     for (uint8_t expanded : {0, 1}) {

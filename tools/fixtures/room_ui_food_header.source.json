@@ -1,0 +1,30 @@
+{
+  "changes": {
+    "ostb": {
+      "added": [],
+      "changed": [
+        "food-choice-0.rgb565",
+        "food-choice-1.rgb565",
+        "food-choice-2.rgb565",
+        "food-choice-3.rgb565",
+        "food-choice-4.rgb565",
+        "food-choice-5.rgb565",
+        "food-choice-6.rgb565",
+        "food-choice-7.rgb565",
+        "food-empty-notice.rgb565",
+        "food-empty-stock.rgb565",
+        "food-invalid-selected.rgb565",
+        "food-partial-scroll.rgb565",
+        "food-selected-notice.rgb565"
+      ],
+      "removed": []
+    }
+  },
+  "previous_fixture": "room_ui_parity.json",
+  "previous_fixture_sha256": "0acc1f9423e3470ee388fcc1a722ccba80d6ca8faceb01f743f44d0ab1421447",
+  "reason": "OSTB food picker shares the team safe header and matching full-width list geometry.",
+  "reviewed_preview": ".stick-local/artifacts/ostb-soap-food-20261023/preview.png",
+  "source_snapshot": ".stick-local/artifacts/ostb-soap-food-20261023/source",
+  "stick_policy": "Original Stick captures and prior fixtures are preserved.",
+  "validation": "23 related regression scripts pass; OSTB shower release/debug and food ASan/UBSan, strict syntax, native header/corner checks and OSTB release/debug, Stick release, AMOLED V1 lite builds pass. No device flashing performed."
+}

@@ -53,4 +53,4 @@
 
 证据：`/tmp/stickmon-visitflow-native.log`、`/tmp/stickmon-visitflow-shared.log`、`/tmp/stickmon-visitflow-home-source.log`、`/tmp/stickmon-visitflow-sizes.json`、`/tmp/stickmon-visitflow-device-visitor-result.log`、`/tmp/stickmon-visitflow-device-route-result.json`、`/tmp/stickmon-visitflow-nvs-restored.json`、`/tmp/stickmon-visitflow-reboot-result.json`。旧源码/固件与指纹日志路径由 `/tmp/stickmon-visitflow-baseline-path` 记录。
 
-下一批优先提取探索专用的出发/返程门口编排（含 fade 确认、入门、让位和取消），App 保留导航/真实呈现确认。之后处理房间生存编排与 HomePresenter；继续复用共享规则，避免合回 HomeFlow。Claw 专项继续延期。
+当前尚待提取探索专用的出发/返程门口编排（含 fade 确认、入门、让位和取消），App 保留导航/真实呈现确认。之后处理房间生存编排与 HomePresenter；继续复用共享规则，避免合回 HomeFlow。Claw 专项继续延期。

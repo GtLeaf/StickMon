@@ -1,0 +1,31 @@
+{
+  "description": "Actual horizontal ExploreScene adapter transcript produced from the frozen pre-extraction source tree. Both families and release/debug must preserve each state and random-call digest.",
+  "configuration": "sticks3-release",
+  "adapterCases": 3600,
+  "generatedRunCases": 144,
+  "pickupPlacementCases": 1728,
+  "pickupResolutionCases": 864,
+  "encounterGateCases": 864,
+  "hostSha256": "a7fb8ec89b4c1e72e64d2995a382fb17bcda8ec2bd7f75c51294ea1889889124",
+  "sourceSha256": {
+    "src/scenes/ExploreScene.cpp": "7e214c465ee78184f878ee08cbc965d8fd12fa171cd611661d9f8f8e2d38d276",
+    "src/core/GameEngine.cpp": "33710ba36933a1f866e9f6719987502c060e76e320f2bb34117661e2bfdb693d",
+    "src/game/ExploreAreaCatalog.h": "37598a6f8b9e15a986210f06aac49ae6150c9f4af5a3bf3be6aac6b79ac02476",
+    "src/game/ExploreRunRules.h": "5ff71f3947f069be5c6f75a170c26d1f6c5d1850297267acbfb991f9baef2cb1",
+    "src/game/GameRandom.h": "0499aff852ab8514c80e70c7ff2bed3cb736f72dd7f35b59cd01d3fc9c1f5853",
+    "src/game/GameRandom.cpp": "0070697103c800b487a07f54afd516dedf4e17ed08ec2b648e0b66362c745124"
+  },
+  "transcriptSha256": "d2e32ac3332dd3a385bb488af9722c90fd115de42d480a9dac49d4729e2adb83",
+  "verifiedConfigurations": [
+    "sticks3-release",
+    "sticks3-debug",
+    "ostb-release",
+    "ostb-debug"
+  ],
+  "verifiedSanitizerConfigurations": [
+    "sticks3-release",
+    "sticks3-debug",
+    "ostb-release",
+    "ostb-debug"
+  ]
+}

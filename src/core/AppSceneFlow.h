@@ -25,6 +25,7 @@ enum class Scene : uint8_t {
     BATTLE,
     DEBUG,
     HATCH,
+    MARKET,
 };
 
 enum class ExploreMenuItem : uint8_t {

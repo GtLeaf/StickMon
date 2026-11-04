@@ -165,14 +165,15 @@ cd /Users/gtleaf/project/esp/StickMon
 ./tools/build_amoled_variant.sh v2 lite
 ```
 
-Each successful non-debug V2 build also creates `build-claw/out/` or
-`build-lite/out/` with the five files expected by the web flasher upload
+Each successful non-debug V2 build also exports to the Git-ignored repository
+directory `.stick-local/firmware/amoled-v2/build-claw/` or `build-lite/`
+with the five files expected by the web flasher upload
 form: `bootloader.bin`, `partitions.bin`, `boot_app0.bin`, `firmware.bin`,
 and `littlefs.bin`. The `boot_app0.bin` and `littlefs.bin` slot names refer
 to V2's OTA initialization data and SPIFFS resources, respectively.
 Choose all five files from one variant; do not mix Claw and Lite builds.
 The packager checks `flasher_args.json` against the V2 offsets before copying.
-To export an existing build without rebuilding, run:
+To export an existing build without rebuilding, run (use `--output-dir` to override the export directory):
 
 ```sh
 python3 tools/package_amoled_v2_release.py firmware/amoled_1_8_v2/build-lite
@@ -234,7 +235,7 @@ since only one process can own the serial port at a time:
 ```
 
 Run this from the repository root with a living leader on the home screen.
-The script prints its log path under `tools/out/` and exits after the first
+The script prints its log path under `.stick-local/logs/` and exits after the first
 `[EncounterPerf]` line (or a 180-second timeout). Flashing without `--erase`
 preserves NVS, but the expedition itself can update the game save.
 

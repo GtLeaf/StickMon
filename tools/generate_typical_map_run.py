@@ -48,6 +48,9 @@ from map_generation_rules import (
 )
 
 
+ROOT = Path(__file__).resolve().parents[1]
+
+
 # Map028's rock-edged still-water module. Every tile keeps the Outside
 # tileset's passage=0x0f and terrainTag=6 metadata.
 POND_TILES = (
@@ -1674,7 +1677,9 @@ def make_overview(images, specs, run_seed, filename, route_view, output_dir):
 
 def main():
     parser = argparse.ArgumentParser(description="Generate a 2-4 map StickMon typical run preview")
-    parser.add_argument("--output-dir", type=Path, default=Path("/tmp/stickmon-typical-map-run"))
+    parser.add_argument("--output-dir", type=Path,
+                        default=ROOT / ".stick-local/previews/typical-map-run",
+                        help="preview output directory (default: %(default)s)")
     parser.add_argument("--seed", type=int, default=20260713)
     parser.add_argument("--count", type=int, choices=range(2, 5))
     args = parser.parse_args()

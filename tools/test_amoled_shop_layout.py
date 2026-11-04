@@ -18,7 +18,7 @@ class AmoledShopLayoutTests(unittest.TestCase):
 
     def test_left_rail_only_has_buy_and_sell(self):
         render = self._function(self.screen, "void renderShopScreen(",
-                                "int roomMenuItemAt(")
+                                "\n}\n")
         self.assertIn(
             "Ui::Amoled::BUY, Ui::Amoled::SELL",
             render,
@@ -31,7 +31,7 @@ class AmoledShopLayoutTests(unittest.TestCase):
 
     def test_buy_grid_has_daily_then_explore_sections(self):
         render = self._function(self.screen, "void renderShopScreen(",
-                                "int roomMenuItemAt(")
+                                "\n}\n")
         daily = render.index("drawSectionHeader(0, Ui::Shop::CATEGORY_DAILY)")
         explore = render.index("Ui::Shop::CATEGORY_EXPLORE", daily)
         self.assertLess(daily, explore)
@@ -45,7 +45,7 @@ class AmoledShopLayoutTests(unittest.TestCase):
 
     def test_detail_is_static_and_uses_native_icon_scale(self):
         render = self._function(self.screen, "void renderShopScreen(",
-                                "int roomMenuItemAt(")
+                                "\n}\n")
         self.assertIn("showRail", render)
         self.assertIn("const bool detailOpen", render)
         self.assertNotIn("shopEase", render)
@@ -56,7 +56,7 @@ class AmoledShopLayoutTests(unittest.TestCase):
 
     def test_shop_header_has_back_title_right_and_centered_coins(self):
         render = self._function(self.screen, "void renderShopScreen(",
-                                "int roomMenuItemAt(")
+                                "\n}\n")
         header = render[:render.index("if (rowEnd <= MENU_CONTENT_TOP)")]
         self.assertIn("drawPageHeader(canvas, Ui::SHOP", header)
         self.assertIn("drawPageHeaderCenteredText(canvas, coins", header)
@@ -64,7 +64,7 @@ class AmoledShopLayoutTests(unittest.TestCase):
 
     def test_grid_cells_render_native_icons_without_labels(self):
         render = self._function(self.screen, "void renderShopScreen(",
-                                "int roomMenuItemAt(")
+                                "\n}\n")
         grid = render[render.index("for (uint8_t index = 0;"):
                       render.index("if (model.itemCount == 0)")]
         self.assertIn("SHOP_GRID_ICON_SCALE", grid)

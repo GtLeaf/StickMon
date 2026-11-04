@@ -56,8 +56,8 @@ class VisitSessionServiceTests(unittest.TestCase):
     def test_stick_uses_shared_visit_session(self):
         scene = (ROOT / "src/scenes/SocialScene.cpp").read_text()
         engine = (ROOT / "src/core/GameEngine.cpp").read_text()
-        self.assertIn("service.acceptIncoming(cursor == 0)", scene)
-        self.assertIn("service.selectRoom(roomCursor)", scene)
+        self.assertIn("service.acceptIncoming(value != 0)", scene)
+        self.assertIn("service.selectRoom(value)", scene)
         self.assertIn("visitSession.update(nowMs)", engine)
         self.assertIn("visitSession.takeHostRecall()", engine)
         self.assertIn("beginLinkedGuestExit(", engine)

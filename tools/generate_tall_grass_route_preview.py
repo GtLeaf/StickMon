@@ -9,10 +9,14 @@ from PIL import Image, ImageDraw, ImageFont
 import generate_runtime_tile_map as g
 
 
+ROOT = Path(__file__).resolve().parents[1]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output-dir', type=Path,
-                        default=Path('origin_asset/generated/game/runtime_tall_grass_park_v15'))
+                        default=ROOT / '.stick-local/previews/runtime_tall_grass_park_v15',
+                        help='preview output directory (default: %(default)s)')
     parser.add_argument('--font', type=Path,
                         default=Path('/System/Library/Fonts/STHeiti Medium.ttc'))
     args = parser.parse_args()

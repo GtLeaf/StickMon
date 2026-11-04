@@ -1,0 +1,28 @@
+{
+  "source": "pre-batch working tree",
+  "snapshot": ".stick-local/artifacts/device-ui-application-20261023/frozen/src",
+  "sha256": {
+    "src/core/GameEngine.cpp": "04feb488c5fcedb9bf3cdf73a8bf5c2f3b38ab22f654b1f0beea3bae50ddae31",
+    "src/core/Scene.h": "e4e1d6c2e9958d8fc5292a28ff792eb725f9704b42a3a4e400a8ff091731730b",
+    "src/presentation/TouchUi.h": "cb0e76242406a6885ef0b6780a15ac7e402935d80b5599efa1de9c6ac1467061",
+    "src/presentation/TouchUi.cpp": "d9d82d2659b2cbc2f5326758788f6477c568cc2486b190e0cdf5c818ed6b44b5"
+  },
+  "configurations": {
+    "ostb-debug": {
+      "frames": 165,
+      "checkpoints": "application-ui-checkpoints=36"
+    },
+    "ostb-release": {
+      "frames": 165,
+      "checkpoints": "application-ui-checkpoints=36"
+    },
+    "sticks3-debug": {
+      "frames": 165,
+      "checkpoints": "application-ui-checkpoints=36"
+    },
+    "sticks3-release": {
+      "frames": 165,
+      "checkpoints": "application-ui-checkpoints=36"
+    }
+  }
+}

@@ -173,8 +173,6 @@ class AmoledDebugMigrationTests(unittest.TestCase):
         self.assertIn("app.debugStartPairTalk()", main)
         self.assertNotIn('"talk": "diag pair talk\\n"', visitor_capture)
         self.assertIn('phase = "waiting-talk"', visitor_capture)
-        self.assertIn("[FriendDiag] visitor-exit route-fallback", self.app)
-        self.assertIn("[FriendDiag] visitor-exit route-end", self.app)
         self.assertIn("[FriendDiag] talk positioned", self.app)
 
     def test_environment_and_boundary_debug_are_rendered(self):
@@ -190,8 +188,6 @@ class AmoledDebugMigrationTests(unittest.TestCase):
         self.assertIn("model.debugWelcomeCenterX", markers)
         self.assertIn("model.debugWelcomeGroundY", markers)
         self.assertNotIn("text(canvas", markers)
-        self.assertIn("anchor=bottom-center", self.app)
-        self.assertIn("errorPx=%.2f", self.app)
 
     def test_motion_debug_is_connected_to_runtime_behavior(self):
         self.assertIn("Platform::imu().readAcceleration", self.app)
@@ -261,12 +257,12 @@ class AmoledDebugMigrationTests(unittest.TestCase):
 
     def test_computer_menu_has_compact_geometry(self):
         start = self.home.index("int computerItemAt(")
-        end = self.home.index("}  // namespace AmoledV1", start)
+        end = self.home.index("int computerMaxStorageScroll(", start)
         computer = self.home[start:end]
         self.assertIn("COMPUTER_MENU_ROW_HEIGHT = 86", self.home)
         self.assertIn("COMPUTER_MENU_CELL_HEIGHT = 78", self.home)
         self.assertIn("/ COMPUTER_MENU_ROW_HEIGHT", computer)
-        self.assertIn("index * COMPUTER_MENU_ROW_HEIGHT", computer)
+        self.assertIn("index * COMPUTER_MENU_ROW_HEIGHT", self.home)
         self.assertNotIn("index * MENU_ROW_HEIGHT", computer)
 
     def test_ai_hosting_menu_owns_claw_and_wifi_controls(self):

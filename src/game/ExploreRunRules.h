@@ -4,6 +4,53 @@
 
 namespace ExploreRunRules {
 
+inline constexpr uint8_t COOLDOWN_STEPS = 5;
+inline constexpr uint8_t MAX_ENCOUNTERS_PER_MAP = 2;
+inline constexpr uint16_t MAP_PICKUP_CHANCE = 6500;
+inline constexpr uint32_t MAP_GENERATION_SAFE_SEED = 1;
+inline constexpr uint32_t MAP_GENERATION_RETRY_SALTS[] = {
+    0, 0x6D2B79F5U, 0x9E3779B9U, 0x85EBCA6BU,
+};
+
+constexpr uint8_t mapCountForRoll(uint8_t minimum, uint8_t maximum, uint8_t roll) {
+    return maximum <= minimum
+        ? minimum
+        : (maximum == minimum + 1
+            ? (roll < 50 ? minimum : maximum)
+            : (roll < 25 ? minimum : (roll < 75 ? minimum + 1 : maximum)));
+}
+
+constexpr uint8_t cooldownAfterCompletedStep(uint8_t cooldown) {
+    return cooldown > 0 ? cooldown - 1 : 0;
+}
+
+constexpr uint8_t cooldownAfterCompletedSteps(uint8_t cooldown, uint8_t steps) {
+    for (uint8_t i = 0; i < steps; ++i) cooldown = cooldownAfterCompletedStep(cooldown);
+    return cooldown;
+}
+
+constexpr bool encounterGateOpen(uint8_t cooldown, uint8_t encounterCount) {
+    return cooldown == 0 && encounterCount < MAX_ENCOUNTERS_PER_MAP;
+}
+
+constexpr bool encounterGateAllows(uint8_t cooldown, uint8_t encounterCount, bool bypassGate) {
+    return bypassGate || encounterGateOpen(cooldown, encounterCount);
+}
+
+constexpr bool repelAllowsEncounter(bool guaranteed, bool repelActiveThisStep) {
+    return guaranteed || !repelActiveThisStep;
+}
+
+constexpr bool canScheduleGuaranteedEncounter(uint8_t pointCount, uint8_t cooldown) {
+    return pointCount >= 3 && cooldown + 1 <= pointCount - 2;
+}
+
+constexpr uint8_t guaranteedEncounterIndex(uint8_t pointCount, uint8_t cooldown) {
+    return pointCount * 2 / 3 < cooldown + 1
+        ? cooldown + 1
+        : (pointCount * 2 / 3 > pointCount - 2 ? pointCount - 2 : pointCount * 2 / 3);
+}
+
 constexpr bool allowsRegionalBoss(uint8_t mapCount, uint8_t maximumMapCount) {
     return maximumMapCount <= 2 ||
            mapCount > static_cast<uint8_t>(maximumMapCount - 2);

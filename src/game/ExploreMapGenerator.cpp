@@ -1,7 +1,13 @@
+#include "game/ExploreLakeTiles.h"
 #include "game/ExploreMapGenerator.h"
 
 #include "game/ExploreCaveTiles.h"
 #include "game/ExploreIceSlide.h"
+#include "game/ExploreFrostLayouts.h"
+#include "game/ExploreAncientValleyLayouts.h"
+#include "game/ExploreValleyData.h"
+#include "game/ExploreMistForestData.h"
+#include "game/ExploreGrassPathData.h"
 
 #include <cstring>
 #include <cstdlib>
@@ -258,36 +264,6 @@ struct CliffSpec {
     uint8_t stairLeft;
 };
 
-struct FrostRect {
-    uint8_t left;
-    uint8_t top;
-    uint8_t right;
-    uint8_t bottom;
-};
-
-struct FrostScenerySpec {
-    Point point;
-    uint16_t tileId;
-};
-
-struct FrostTemplate {
-    const FrostRect* rects;
-    uint8_t rectCount;
-    Endpoint entry;
-    Endpoint exits[PATH_COUNT];
-    Point junction;
-    const Point* routeControls[PATH_COUNT];
-    uint8_t routeControlCounts[PATH_COUNT];
-    const FrostRect* iceRects;
-    uint8_t iceRectCount;
-    bool hasRockHill;
-    Point rockHill;
-    const FrostScenerySpec* crystals;
-    uint8_t crystalCount;
-    const FrostScenerySpec* boulders;
-    uint8_t boulderCount;
-};
-
 struct AreaProfile {
     uint8_t coastChance;
     uint8_t forestChance;
@@ -303,170 +279,6 @@ constexpr AreaProfile AREA_PROFILES[] = {
     {0, 0, 0, 0, 0},      // Frost cave uses its own snow decoration pass.
     {0, 100, 30, 8, 1},   // Mist forest: guaranteed forest enclosure.
     {0, 0, 18, 7, 1},     // Ancient valley: waterfall scenery dominates.
-};
-
-constexpr FrostRect FROST_H0_RECTS[] = {
-    {0, 5, 9, 11}, {5, 1, 12, 8}, {9, 0, 12, 3}, {11, 3, 15, 7},
-};
-constexpr Point FROST_H0_ROUTE0[] = {
-    {0, 9}, {7, 9}, {7, 6}, {10, 6}, {10, 0},
-};
-constexpr Point FROST_H0_ROUTE1[] = {
-    {0, 9}, {7, 9}, {7, 6}, {15, 6},
-};
-constexpr FrostScenerySpec FROST_H0_CRYSTALS[] = {
-    {{6, 5}, 4508}, {{13, 5}, 4509},
-};
-constexpr FrostScenerySpec FROST_H0_BOULDERS[] = {
-    {{8, 10}, 4542}, {{11, 7}, 4510},
-};
-
-constexpr FrostRect FROST_H1_RECTS[] = {
-    {0, 1, 6, 8}, {5, 4, 10, 7}, {9, 2, 15, 10}, {10, 8, 14, 11}, {1, 0, 5, 3},
-};
-constexpr Point FROST_H1_ROUTE0[] = {
-    {0, 6}, {7, 6}, {13, 6}, {13, 11}, {12, 11},
-};
-constexpr Point FROST_H1_ROUTE1[] = {
-    {0, 6}, {3, 6}, {3, 0},
-};
-constexpr FrostScenerySpec FROST_H1_CRYSTALS[] = {
-    {{7, 5}, 4508}, {{4, 7}, 4509},
-};
-constexpr FrostScenerySpec FROST_H1_BOULDERS[] = {
-    {{2, 5}, 4542}, {{14, 8}, 4544},
-};
-
-constexpr FrostRect FROST_V0_RECTS[] = {
-    {0, 3, 15, 8}, {5, 0, 11, 11},
-};
-constexpr Point FROST_V0_ROUTE0[] = {
-    {8, 11}, {8, 4}, {1, 4}, {1, 5}, {0, 5},
-};
-constexpr Point FROST_V0_ROUTE1[] = {
-    {8, 11}, {8, 4}, {15, 4},
-};
-constexpr FrostRect FROST_V0_ICE[] = {
-    {6, 5, 10, 9},
-};
-constexpr FrostScenerySpec FROST_V0_CRYSTALS[] = {
-    {{2, 7}, 4509}, {{10, 2}, 4508},
-};
-constexpr FrostScenerySpec FROST_V0_BOULDERS[] = {
-    {{3, 6}, 4543}, {{10, 9}, 4510},
-};
-
-constexpr FrostRect FROST_V1_RECTS[] = {
-    {2, 0, 13, 4}, {0, 2, 5, 10}, {10, 2, 15, 10}, {4, 7, 11, 11},
-};
-constexpr Point FROST_V1_ROUTE0[] = {
-    {7, 11}, {7, 8}, {4, 8}, {4, 2}, {11, 2}, {11, 4}, {15, 4},
-};
-constexpr Point FROST_V1_ROUTE1[] = {
-    {7, 11}, {7, 8}, {4, 8}, {4, 2}, {11, 2}, {11, 8}, {0, 8},
-};
-constexpr FrostRect FROST_V1_ICE[] = {
-    {5, 1, 10, 3},
-};
-constexpr FrostScenerySpec FROST_V1_CRYSTALS[] = {
-    {{3, 2}, 4509}, {{13, 5}, 4508},
-};
-constexpr FrostScenerySpec FROST_V1_BOULDERS[] = {
-    {{4, 9}, 4544}, {{11, 9}, 4542},
-};
-
-constexpr FrostTemplate FROST_HORIZONTAL_TEMPLATES[] = {
-    {
-        FROST_H0_RECTS,
-        static_cast<uint8_t>(sizeof(FROST_H0_RECTS) / sizeof(FROST_H0_RECTS[0])),
-        {{0, 9}, Edge::LEFT},
-        {{{10, 0}, Edge::TOP}, {{15, 6}, Edge::RIGHT}},
-        {7, 6},
-        {FROST_H0_ROUTE0, FROST_H0_ROUTE1},
-        {
-            static_cast<uint8_t>(sizeof(FROST_H0_ROUTE0) / sizeof(FROST_H0_ROUTE0[0])),
-            static_cast<uint8_t>(sizeof(FROST_H0_ROUTE1) / sizeof(FROST_H0_ROUTE1[0])),
-        },
-        nullptr,
-        0,
-        false,
-        {2, 6},
-        FROST_H0_CRYSTALS,
-        static_cast<uint8_t>(
-            sizeof(FROST_H0_CRYSTALS) / sizeof(FROST_H0_CRYSTALS[0])),
-        FROST_H0_BOULDERS,
-        static_cast<uint8_t>(
-            sizeof(FROST_H0_BOULDERS) / sizeof(FROST_H0_BOULDERS[0])),
-    },
-    {
-        FROST_H1_RECTS,
-        static_cast<uint8_t>(sizeof(FROST_H1_RECTS) / sizeof(FROST_H1_RECTS[0])),
-        {{0, 6}, Edge::LEFT},
-        {{{12, 11}, Edge::BOTTOM}, {{3, 0}, Edge::TOP}},
-        {3, 6},
-        {FROST_H1_ROUTE0, FROST_H1_ROUTE1},
-        {
-            static_cast<uint8_t>(sizeof(FROST_H1_ROUTE0) / sizeof(FROST_H1_ROUTE0[0])),
-            static_cast<uint8_t>(sizeof(FROST_H1_ROUTE1) / sizeof(FROST_H1_ROUTE1[0])),
-        },
-        nullptr,
-        0,
-        false,
-        {0, 0},
-        FROST_H1_CRYSTALS,
-        static_cast<uint8_t>(
-            sizeof(FROST_H1_CRYSTALS) / sizeof(FROST_H1_CRYSTALS[0])),
-        FROST_H1_BOULDERS,
-        static_cast<uint8_t>(
-            sizeof(FROST_H1_BOULDERS) / sizeof(FROST_H1_BOULDERS[0])),
-    },
-};
-
-constexpr FrostTemplate FROST_VERTICAL_TEMPLATES[] = {
-    {
-        FROST_V0_RECTS,
-        static_cast<uint8_t>(sizeof(FROST_V0_RECTS) / sizeof(FROST_V0_RECTS[0])),
-        {{8, 11}, Edge::BOTTOM},
-        {{{0, 5}, Edge::LEFT}, {{15, 4}, Edge::RIGHT}},
-        {8, 4},
-        {FROST_V0_ROUTE0, FROST_V0_ROUTE1},
-        {
-            static_cast<uint8_t>(sizeof(FROST_V0_ROUTE0) / sizeof(FROST_V0_ROUTE0[0])),
-            static_cast<uint8_t>(sizeof(FROST_V0_ROUTE1) / sizeof(FROST_V0_ROUTE1[0])),
-        },
-        FROST_V0_ICE,
-        static_cast<uint8_t>(sizeof(FROST_V0_ICE) / sizeof(FROST_V0_ICE[0])),
-        false,
-        {0, 0},
-        FROST_V0_CRYSTALS,
-        static_cast<uint8_t>(
-            sizeof(FROST_V0_CRYSTALS) / sizeof(FROST_V0_CRYSTALS[0])),
-        FROST_V0_BOULDERS,
-        static_cast<uint8_t>(
-            sizeof(FROST_V0_BOULDERS) / sizeof(FROST_V0_BOULDERS[0])),
-    },
-    {
-        FROST_V1_RECTS,
-        static_cast<uint8_t>(sizeof(FROST_V1_RECTS) / sizeof(FROST_V1_RECTS[0])),
-        {{7, 11}, Edge::BOTTOM},
-        {{{15, 4}, Edge::RIGHT}, {{0, 8}, Edge::LEFT}},
-        {11, 4},
-        {FROST_V1_ROUTE0, FROST_V1_ROUTE1},
-        {
-            static_cast<uint8_t>(sizeof(FROST_V1_ROUTE0) / sizeof(FROST_V1_ROUTE0[0])),
-            static_cast<uint8_t>(sizeof(FROST_V1_ROUTE1) / sizeof(FROST_V1_ROUTE1[0])),
-        },
-        FROST_V1_ICE,
-        static_cast<uint8_t>(sizeof(FROST_V1_ICE) / sizeof(FROST_V1_ICE[0])),
-        false,
-        {0, 0},
-        FROST_V1_CRYSTALS,
-        static_cast<uint8_t>(
-            sizeof(FROST_V1_CRYSTALS) / sizeof(FROST_V1_CRYSTALS[0])),
-        FROST_V1_BOULDERS,
-        static_cast<uint8_t>(
-            sizeof(FROST_V1_BOULDERS) / sizeof(FROST_V1_BOULDERS[0])),
-    },
 };
 
 const AreaProfile& profileFor(uint8_t areaIndex) {
@@ -1039,52 +851,26 @@ bool parkTopologyCandidate(Rng& rng, Edge entryEdge, uint8_t type,
 
 
 bool buildAncientWaterfallTopology(Edge entryEdge, Map& out, CellMask& road) {
-    out.entry = {};
-    out.junction = {};
-    std::memset(out.paths, 0, sizeof(out.paths));
+    if (static_cast<uint8_t>(entryEdge) >= 4) return false;
+    const auto& spec = ExploreAncientValley::LAYOUTS[static_cast<uint8_t>(entryEdge)];
+    out.entry = spec.entry;
+    out.junction = spec.junction;
     out.pathCount = PATH_COUNT;
     out.hasCoast = false;
+    std::memset(out.paths, 0, sizeof(out.paths));
     road.clear();
-
-    Endpoint exits[PATH_COUNT] = {};
-    switch (entryEdge) {
-    case Edge::BOTTOM:
-        out.entry = {{11, HEIGHT - 1}, Edge::BOTTOM};
-        out.junction = {11, 9};
-        exits[0] = {{WIDTH - 1, 9}, Edge::RIGHT};
-        exits[1] = {{11, 0}, Edge::TOP};
-        break;
-    case Edge::LEFT:
-        out.entry = {{0, 2}, Edge::LEFT};
-        out.junction = {4, 2};
-        exits[0] = {{4, HEIGHT - 1}, Edge::BOTTOM};
-        exits[1] = {{4, 0}, Edge::TOP};
-        break;
-    case Edge::TOP:
-        out.entry = {{5, 0}, Edge::TOP};
-        out.junction = {5, 9};
-        exits[0] = {{0, 9}, Edge::LEFT};
-        exits[1] = {{5, HEIGHT - 1}, Edge::BOTTOM};
-        break;
-    case Edge::RIGHT:
-        out.entry = {{WIDTH - 1, 9}, Edge::RIGHT};
-        out.junction = {12, 9};
-        exits[0] = {{12, 0}, Edge::TOP};
-        exits[1] = {{12, HEIGHT - 1}, Edge::BOTTOM};
-        break;
-    }
-
-    Path trunk;
-    if (!appendPoint(trunk, out.entry.point.x, out.entry.point.y) ||
-        !appendLine(trunk, out.junction.x, out.junction.y)) return false;
     for (uint8_t i = 0; i < PATH_COUNT; ++i) {
-        out.paths[i] = trunk;
-        if (!appendLine(out.paths[i], exits[i].point.x, exits[i].point.y)) return false;
-        out.paths[i].exit = exits[i];
+        Path& path = out.paths[i];
+        path.cellCentered = true;
+        path.exit = spec.routes[i].exit;
+        for (uint8_t j = 0; j < spec.routes[i].count; ++j) {
+            const Point p = spec.routes[i].controls[j];
+            if (!appendLine(path, p.x, p.y)) return false;
+        }
+        for (uint8_t j = 0; j < path.pointCount; ++j)
+            road.add(path.points[j].x, path.points[j].y);
     }
-    if (!validateTopology(out)) return false;
-    for (uint8_t i = 0; i < out.pathCount; ++i) addPathRoad(out.paths[i], road);
-    return validateBorderRoad(out, road);
+    return true;
 }
 
 bool endpointConnects(const Endpoint& endpoint, int x, int y) {
@@ -1294,42 +1080,17 @@ void stampAncientWaterfallValley(Map& map, CellMask& water, CellMask& forest,
                                  CellMask& cliff, CellMask& stairs,
                                  CellMask& scenery) {
     (void)forest;
-    switch (map.entry.edge) {
-    case Edge::BOTTOM:
-        stampSeaChannel(map, 4, 0, 4, 3, 0, 0, water);
-        stampSeaChannel(map, 3, 8, 6, HEIGHT, 4, 4, water);
-        stampWaterfall(map, 4, 4, 3, 3, water);
-        stampWaterfallWall(map, 3, 8, 4, 4, 0, 0, 11, cliff, stairs);
-        stampSmallWaterRock(map, 6, 9);
-        break;
-    case Edge::LEFT:
-        stampSeaChannel(map, 10, 0, 4, 4, 0, 0, water);
-        stampSeaChannel(map, 9, 9, 6, HEIGHT, 10, 4, water);
-        stampWaterfall(map, 10, 4, 4, 3, water);
-        stampWaterfallWall(map, 4, 9, 10, 4, 0, 0, 4, cliff, stairs);
-        stampSmallWaterRock(map, 11, 10);
-        break;
-    case Edge::TOP:
-        stampSeaChannel(map, 10, 0, 4, 3, 0, 0, water);
-        stampSeaChannel(map, 9, 8, 6, HEIGHT, 10, 4, water);
-        stampWaterfall(map, 10, 4, 3, 3, water);
-        stampWaterfallWall(map, 3, 8, 10, 4, 0, 0, 5, cliff, stairs);
-        stampSmallWaterRock(map, 11, 9);
-        break;
-    case Edge::RIGHT:
-        stampSeaChannel(map, 2, 0, 3, 3, 0, 0, water);
-        stampSeaChannel(map, 7, 0, 3, 3, 0, 0, water);
-        stampSeaChannel(map, 1, 8, 10, HEIGHT, 2, 3, water);
-        // Keep the second landing opening in the same top basin row.
-        for (uint8_t x = 7; x < 10; ++x) map.layers[0][8 * WIDTH + x] = SEA_WATER_TILE;
-        stampWaterfall(map, 2, 3, 3, 3, water);
-        stampWaterfall(map, 7, 3, 3, 3, water);
-        stampWaterfallWall(map, 3, 8, 2, 3, 7, 3, 12, cliff, stairs);
-        stampLargeWaterRock(map, 5, 9);
-        stampSmallWaterRock(map, 3, 10);
-        break;
+    (void)scenery;
+    const auto& spec = ExploreAncientValley::LAYOUTS[static_cast<uint8_t>(map.entry.edge)];
+    std::memcpy(map.layers, spec.layers, sizeof(map.layers));
+    for (uint8_t y = 0; y < HEIGHT; ++y) {
+        for (uint8_t x = 0; x < WIDTH; ++x) {
+            const uint16_t bit = 1U << x;
+            if (spec.water[y] & bit) water.add(x, y);
+            if (spec.solid[y] & bit) cliff.add(x, y);
+            if (spec.stairs[y] & bit) stairs.add(x, y);
+        }
     }
-    stampAncientCaveEntrances(map);
 }
 
 bool creekCandidateFits(const Map& map, const CellMask& road, uint8_t left, uint8_t width,
@@ -2346,20 +2107,32 @@ CellMask parkGrassAvailable(const CellMask& road, const CellMask& trees) {
     return available;
 }
 
-int parkTreeDistance(uint8_t left, uint8_t top, uint8_t width,
-                     const CellMask& trees) {
-    int distance = 6;
-    for (uint8_t dy = 0; dy < 3; ++dy) {
-        for (uint8_t dx = 0; dx < width; ++dx) {
-            for (uint8_t y = 0; y < HEIGHT; ++y) {
-                for (uint8_t x = 0; x < WIDTH; ++x) {
-                    if (!trees.contains(x, y)) continue;
-                    distance = minimum(distance,
-                        absolute(left + dx - x) + absolute(top + dy - y));
-                }
-            }
+void parkTreeDistances(const CellMask& trees, uint8_t (&distances)[CELL_COUNT]) {
+    // Two Manhattan-distance passes, saturated at the original scoring limit.
+    for (int y = 0; y < HEIGHT; ++y) {
+        for (int x = 0; x < WIDTH; ++x) {
+            int distance = trees.contains(x, y) ? 0 : 6;
+            if (x > 0) distance = minimum(distance, distances[y * WIDTH + x - 1] + 1);
+            if (y > 0) distance = minimum(distance, distances[(y - 1) * WIDTH + x] + 1);
+            distances[y * WIDTH + x] = static_cast<uint8_t>(distance);
         }
     }
+    for (int y = HEIGHT - 1; y >= 0; --y) {
+        for (int x = WIDTH - 1; x >= 0; --x) {
+            int distance = distances[y * WIDTH + x];
+            if (x + 1 < WIDTH) distance = minimum(distance, distances[y * WIDTH + x + 1] + 1);
+            if (y + 1 < HEIGHT) distance = minimum(distance, distances[(y + 1) * WIDTH + x] + 1);
+            distances[y * WIDTH + x] = static_cast<uint8_t>(distance);
+        }
+    }
+}
+
+int parkTreeDistance(uint8_t left, uint8_t top, uint8_t width,
+                     const uint8_t (&distances)[CELL_COUNT]) {
+    int distance = 6;
+    for (uint8_t dy = 0; dy < 3; ++dy)
+        for (uint8_t dx = 0; dx < width; ++dx)
+            distance = minimum(distance, distances[(top + dy) * WIDTH + left + dx]);
     return distance;
 }
 
@@ -2369,20 +2142,24 @@ void forEachParkTreeCandidate(const CellMask& road, const CellMask& trees,
                               bool allowAdjacent, Visitor visitor) {
     CellMask forbidden = topBoundary || allowAdjacent ? trees : expandedMask(trees, 1);
     forbidden.unite(road);
+    const CellMask available = parkGrassAvailable(road, trees);
+    const uint16_t initialCapacity = available.count();
+    uint8_t distances[CELL_COUNT];
+    parkTreeDistances(trees, distances);
     for (uint8_t top = 0; top < HEIGHT - 2; ++top) {
         for (uint8_t left = 0; left <= WIDTH - width; ++left) {
             int margin = minimum(minimum(left, WIDTH - left - width),
                                  minimum(top, HEIGHT - top - 3));
             if (topBoundary && top != 0) continue;
             if (forbidden.intersectsRect(left, top, left + width - 1, top + 2)) continue;
-            CellMask afterTrees = trees;
-            for (uint8_t dy = 0; dy < 3; ++dy) {
-                for (uint8_t dx = 0; dx < width; ++dx) afterTrees.add(left + dx, top + dy);
-            }
-            CellMask available = parkGrassAvailable(road, afterTrees);
-            uint16_t capacity = available.count();
+            // A three-row tree invalidates grass bases in those rows and the
+            // next row (whose tall top would overlap the tree). Count each once.
+            uint16_t capacity = initialCapacity;
+            for (uint8_t dy = 0; dy < 4; ++dy)
+                for (uint8_t dx = 0; dx < width; ++dx)
+                    if (available.contains(left + dx, top + dy)) --capacity;
             if (capacity < grassTarget + 8U) continue;
-            int score = capacity * 8 + parkTreeDistance(left, top, width, trees) * 2 +
+            int score = capacity * 8 + parkTreeDistance(left, top, width, distances) * 2 +
                         (topBoundary ? 0 : minimum(margin, 2) * 3);
             visitor(Point{left, top}, score);
         }
@@ -2393,23 +2170,26 @@ bool chooseParkTree(Rng& rng, const CellMask& road, const CellMask& trees,
                      uint8_t width, bool topBoundary, uint8_t grassTarget, Point& selected,
                      bool allowAdjacent = false) {
     int bestScore = -32768;
-    forEachParkTreeCandidate(road, trees, width, topBoundary, grassTarget, allowAdjacent,
-        [&](const Point&, int score) { if (score > bestScore) bestScore = score; });
-    if (bestScore == -32768) return false;
-    uint16_t optionCount = 0;
-    forEachParkTreeCandidate(road, trees, width, topBoundary, grassTarget, allowAdjacent,
-        [&](const Point&, int score) { if (score >= bestScore - 8) ++optionCount; });
-    uint16_t choice = static_cast<uint16_t>(rng.bounded(optionCount));
-    bool found = false;
+    int16_t scores[CELL_COUNT];
+    for (auto& score : scores) score = -32768;
     forEachParkTreeCandidate(road, trees, width, topBoundary, grassTarget, allowAdjacent,
         [&](const Point& point, int score) {
-            if (found || score < bestScore - 8) return;
-            if (choice-- == 0) {
-                selected = point;
-                found = true;
-            }
+            scores[point.y * WIDTH + point.x] = static_cast<int16_t>(score);
+            if (score > bestScore) bestScore = score;
         });
-    return found;
+    if (bestScore == -32768) return false;
+    uint16_t optionCount = 0;
+    for (int16_t score : scores) if (score >= bestScore - 8) ++optionCount;
+    uint16_t choice = static_cast<uint16_t>(rng.bounded(optionCount));
+    // Row-major order matches the original visitor, with exactly one RNG draw.
+    for (uint16_t cell = 0; cell < CELL_COUNT; ++cell) {
+        if (scores[cell] < bestScore - 8) continue;
+        if (choice-- == 0) {
+            selected = {static_cast<uint8_t>(cell % WIDTH), static_cast<uint8_t>(cell / WIDTH)};
+            return true;
+        }
+    }
+    return false;
 }
 
 template <size_t TreeWidth>
@@ -2685,37 +2465,6 @@ Point transformFrostPoint(Point point, bool mirrorX, bool mirrorY) {
     return point;
 }
 
-Edge transformFrostEdge(Edge edge, bool mirrorX, bool mirrorY) {
-    if (mirrorX) {
-        if (edge == Edge::LEFT) edge = Edge::RIGHT;
-        else if (edge == Edge::RIGHT) edge = Edge::LEFT;
-    }
-    if (mirrorY) {
-        if (edge == Edge::TOP) edge = Edge::BOTTOM;
-        else if (edge == Edge::BOTTOM) edge = Edge::TOP;
-    }
-    return edge;
-}
-
-Endpoint transformFrostEndpoint(const Endpoint& endpoint, bool mirrorX, bool mirrorY) {
-    Endpoint transformed;
-    transformed.point = transformFrostPoint(endpoint.point, mirrorX, mirrorY);
-    if (mirrorX && (endpoint.edge == Edge::TOP || endpoint.edge == Edge::BOTTOM)) {
-        --transformed.point.x;
-    }
-    transformed.edge = transformFrostEdge(endpoint.edge, mirrorX, mirrorY);
-    return transformed;
-}
-
-void addFrostRect(CellMask& mask, const FrostRect& rect, bool mirrorX, bool mirrorY) {
-    for (uint8_t y = rect.top; y <= rect.bottom; ++y) {
-        for (uint8_t x = rect.left; x <= rect.right; ++x) {
-            Point point = transformFrostPoint({x, y}, mirrorX, mirrorY);
-            mask.add(point.x, point.y);
-        }
-    }
-}
-
 bool buildFrostPath(Path& path, const Point* controls, uint8_t controlCount,
                     const Endpoint& exit, bool mirrorX, bool mirrorY) {
     path = {};
@@ -2731,54 +2480,23 @@ bool buildFrostPath(Path& path, const Point* controls, uint8_t controlCount,
     return path.pointCount >= 2;
 }
 
-bool frostEndpointContains(const Endpoint& endpoint, uint8_t x, uint8_t y) {
-    int pointX = endpoint.point.x;
-    int pointY = endpoint.point.y;
-    int cellX = x;
-    int cellY = y;
-    if (endpoint.edge == Edge::TOP || endpoint.edge == Edge::BOTTOM) {
-        return cellY == pointY && cellX >= pointX - 1 && cellX <= pointX + 1;
-    }
-    return cellX == pointX && cellY >= pointY - 1 && cellY <= pointY + 1;
-}
-
-bool frostPortalOpening(const Map& map, uint8_t x, uint8_t y, Edge edge) {
-    if (map.entry.edge == edge && frostEndpointContains(map.entry, x, y)) return true;
-    for (uint8_t i = 0; i < map.pathCount; ++i) {
-        if (map.paths[i].exit.edge == edge &&
-            frostEndpointContains(map.paths[i].exit, x, y)) return true;
-    }
-    return false;
-}
-
-bool frostEndpointFits(const Endpoint& endpoint, const CellMask& floor) {
-    if (endpoint.edge == Edge::TOP || endpoint.edge == Edge::BOTTOM) {
-        return floor.contains(endpoint.point.x - 1, endpoint.point.y) &&
-               floor.contains(endpoint.point.x, endpoint.point.y) &&
-               floor.contains(endpoint.point.x + 1, endpoint.point.y);
-    }
-    return floor.contains(endpoint.point.x, endpoint.point.y - 1) &&
-           floor.contains(endpoint.point.x, endpoint.point.y) &&
-           floor.contains(endpoint.point.x, endpoint.point.y + 1);
-}
-
-bool frostBoundaryTile(const Map& map, const CellMask& floor,
+bool frostBoundaryTile(const CellMask& floor,
                        uint8_t x, uint8_t y, uint16_t& tileId) {
     constexpr uint8_t OUT_TOP = 1;
     constexpr uint8_t OUT_RIGHT = 2;
     constexpr uint8_t OUT_BOTTOM = 4;
     constexpr uint8_t OUT_LEFT = 8;
     uint8_t outside = 0;
-    if (!floor.contains(x, y - 1) && !frostPortalOpening(map, x, y, Edge::TOP)) {
+    if (!floor.contains(x, y - 1)) {
         outside |= OUT_TOP;
     }
-    if (!floor.contains(x + 1, y) && !frostPortalOpening(map, x, y, Edge::RIGHT)) {
+    if (!floor.contains(x + 1, y)) {
         outside |= OUT_RIGHT;
     }
-    if (!floor.contains(x, y + 1) && !frostPortalOpening(map, x, y, Edge::BOTTOM)) {
+    if (!floor.contains(x, y + 1)) {
         outside |= OUT_BOTTOM;
     }
-    if (!floor.contains(x - 1, y) && !frostPortalOpening(map, x, y, Edge::LEFT)) {
+    if (!floor.contains(x - 1, y)) {
         outside |= OUT_LEFT;
     }
     switch (outside) {
@@ -2811,111 +2529,23 @@ uint16_t frostIceTile(const CellMask& ice, uint8_t x, uint8_t y) {
     return FROST_ICE_CENTER_TILE;
 }
 
-bool frostInterior(Point point) {
-    return point.x > 0 && point.x + 1 < WIDTH &&
-           point.y > 0 && point.y + 1 < HEIGHT;
-}
-
-void trimFrostEntry(Map& map) {
-    for (uint8_t i = 0; i < map.pathCount; ++i) {
-        Path& path = map.paths[i];
-        uint8_t first = 0;
-        while (first + 2 < path.pointCount &&
-               !frostInterior(path.points[first])) ++first;
-        for (uint8_t j = first; j < path.pointCount; ++j) {
-            path.points[j - first] = path.points[j];
-        }
-        path.pointCount -= first;
-    }
-    map.entry.point = map.paths[0].points[0];
-}
-
-void trimFrostExits(Map& map) {
-    for (uint8_t i = 0; i < map.pathCount; ++i) {
-        Path& path = map.paths[i];
-        while (path.pointCount > 2 &&
-               !frostInterior(path.points[path.pointCount - 1])) {
-            --path.pointCount;
-        }
-        path.exit.point = path.points[path.pointCount - 1];
-    }
-}
-
-void stampFrostExterior(Map& map, const Endpoint& endpoint) {
-    const uint16_t* tiles = nullptr;
-    int x = endpoint.point.x;
-    int y = endpoint.point.y;
-    switch (endpoint.edge) {
-    case Edge::TOP:
-        tiles = ExploreCaveTiles::FROST_EXIT;
-        --x;
-        break;
-    case Edge::RIGHT:
-        tiles = ExploreCaveTiles::FROST_EXIT_RIGHT;
-        --y;
-        break;
-    case Edge::BOTTOM:
-        tiles = ExploreCaveTiles::FROST_EXIT_BOTTOM;
-        --x;
-        break;
-    case Edge::LEFT:
-        tiles = ExploreCaveTiles::FROST_EXIT_LEFT;
-        --y;
-        break;
-    }
-    for (int i = 0; i < 3; ++i) {
-        int column = x + ((endpoint.edge == Edge::TOP || endpoint.edge == Edge::BOTTOM) ? i : 0);
-        int row = y + ((endpoint.edge == Edge::LEFT || endpoint.edge == Edge::RIGHT) ? i : 0);
-        if (column >= 0 && column < WIDTH && row >= 0 && row < HEIGHT) {
-            map.layers[1][row * WIDTH + column] = tiles[i];
-        }
-    }
-}
-
-bool frostPortalTouchesScene(const Map& map, const Endpoint& endpoint) {
-    int x = endpoint.point.x;
-    int y = endpoint.point.y;
-    switch (endpoint.edge) {
-    case Edge::TOP: --y; break;
-    case Edge::RIGHT: ++x; break;
-    case Edge::BOTTOM: ++y; break;
-    case Edge::LEFT: --x; break;
-    }
-    if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT) return true;
-    uint16_t index = static_cast<uint16_t>(y * WIDTH + x);
-    return map.layers[1][index] != 0 || map.layers[2][index] != 0;
-}
-
-bool stampFrostPortals(Map& map, FrostContext frost) {
-    if (map.pathCount == 0 || map.paths[0].pointCount == 0) return false;
-    if (frost.level == 0) {
-        stampFrostExterior(map, map.entry);
-    } else if (frost.enteredByLadder) {
-        Point point = map.entry.point;
-        if (!frostPortalTouchesScene(map, map.entry)) return false;
-        map.layers[1][point.y * WIDTH + point.x] =
-            ExploreCaveTiles::FROST_DOWNWARD_STAIRS;
-    }
+bool stampFrostPortals(Map& map) {
+    Point entry = map.entry.point;
+    map.layers[1][entry.y * WIDTH + entry.x] = ExploreCaveTiles::FROST_DOWNWARD_STAIRS;
     for (uint8_t i = 0; i < map.pathCount; ++i) {
         const Path& path = map.paths[i];
-        if (path.pointCount == 0) continue;
-        if (frost.level + 1 >= frost.levelCount) {
-            stampFrostExterior(map, path.exit);
-        } else if (i == 0) {
-            Point point = path.exit.point;
-            map.layers[1][point.y * WIDTH + point.x] =
-                ExploreCaveTiles::FROST_DOWNWARD_STAIRS;
+        Point point = path.exit.point;
+        if (i == 0) {
+            map.layers[1][point.y * WIDTH + point.x] = ExploreCaveTiles::FROST_DOWNWARD_STAIRS;
         } else if (i == 1) {
-            Point point = path.exit.point;
-            if (point.y == 0 || map.layers[2][(point.y - 1) * WIDTH + point.x] != 0 ||
-                !frostPortalTouchesScene(map, path.exit)) return false;
-            map.layers[2][(point.y - 1) * WIDTH + point.x] =
-                ExploreCaveTiles::FROST_UP_LADDER[0];
-            map.layers[1][point.y * WIDTH + point.x] =
-                ExploreCaveTiles::FROST_UP_LADDER[1];
-        } else {
-            return false;
-        }
+            if (point.y == 0 || path.pointCount < 2 ||
+                map.layers[1][(point.y - 1) * WIDTH + point.x] != FROST_WALL_TOP_TILE ||
+                map.layers[2][(point.y - 1) * WIDTH + point.x] != 0) return false;
+            const Point approach = path.points[path.pointCount - 2];
+            if (approach.x != point.x || approach.y != point.y + 1) return false;
+            map.layers[2][(point.y - 1) * WIDTH + point.x] = ExploreCaveTiles::FROST_UP_LADDER[0];
+            map.layers[1][point.y * WIDTH + point.x] = ExploreCaveTiles::FROST_UP_LADDER[1];
+        } else return false;
     }
     return true;
 }
@@ -2941,11 +2571,8 @@ bool stampFrostScenery(Map& map, const CellMask& floor, const CellMask& walls,
         portals.add(map.paths[i].exit.point.x, map.paths[i].exit.point.y);
     CellMask smallClearance = expandedMask(portals, 1);
     smallClearance.unite(route);
-    CellMask tallClearance = expandedMask(route, 1);
-    tallClearance.unite(smallClearance);
-    uint8_t target = static_cast<uint8_t>(floor.count() / 10);
-    if (target < 8) target = 8;
-    if (target > 12) target = 12;
+    const CellMask& tallClearance = smallClearance;
+    constexpr uint8_t target = 10;
     const uint16_t tiles[] = {4508, 4509, 4508, 4507, 4544, 4510,
                               4507, 4544, 4542, 4507, 4510, 4544};
     Point anchors[12]{};
@@ -2989,10 +2616,7 @@ bool stampFrostScenery(Map& map, const CellMask& floor, const CellMask& walls,
                 if (value == best) ++count;
             }
         }
-        if (!count) {
-            if (ordinal < 2) return false;
-            continue;
-        }
+        if (!count) continue;
         uint16_t choice = rng.bounded(count);
         bool placed = false;
         for (uint8_t x = 1; x < WIDTH - 1 && !placed; ++x) {
@@ -3015,31 +2639,22 @@ bool stampFrostScenery(Map& map, const CellMask& floor, const CellMask& walls,
 
 bool generateFrostCave(uint32_t seed, Edge entryEdge, Map& out,
                        FrostContext frost) {
-    bool horizontal = entryEdge == Edge::LEFT || entryEdge == Edge::RIGHT;
-    uint8_t variant = static_cast<uint8_t>((seed >> 5) & 1U);
-    const FrostTemplate& spec = horizontal
-        ? FROST_HORIZONTAL_TEMPLATES[variant]
-        : FROST_VERTICAL_TEMPLATES[variant];
-    bool mirrorX = entryEdge == Edge::RIGHT ||
-                   (!horizontal && (seed & 0x80U) != 0);
-    bool mirrorY = entryEdge == Edge::TOP ||
-                   (horizontal && (seed & 0x80U) != 0);
-
+    (void)frost;  // Portal roles remain stable on first, middle and final rooms.
+    const auto& spec = ExploreFrostLayouts::LAYOUTS[seed % ExploreFrostLayouts::COUNT];
+    const bool mirrorX = entryEdge == Edge::RIGHT || (seed & 0x10000000U) != 0;
     out.seed = seed;
     out.areaIndex = FROST_CRYSTAL_CAVE_AREA;
-    out.entry = transformFrostEndpoint(spec.entry, mirrorX, mirrorY);
-    out.junction = transformFrostPoint(spec.junction, mirrorX, mirrorY);
+    out.junction = transformFrostPoint(spec.junction, mirrorX, false);
     out.pathCount = PATH_COUNT;
     for (uint8_t i = 0; i < PATH_COUNT; ++i) {
-        Endpoint exit = transformFrostEndpoint(spec.exits[i], mirrorX, mirrorY);
-        if (!buildFrostPath(out.paths[i], spec.routeControls[i],
-                            spec.routeControlCounts[i], exit, mirrorX, mirrorY)) {
-            return false;
-        }
+        const Point endpoint = transformFrostPoint(
+            spec.controls[i][spec.controlCounts[i] - 1], mirrorX, false);
+        const Endpoint exit{endpoint, i == 0 ? Edge::BOTTOM : Edge::TOP};
+        if (!buildFrostPath(out.paths[i], spec.controls[i], spec.controlCounts[i],
+                            exit, mirrorX, false)) return false;
+        out.paths[i].cellCentered = true;
     }
-    for (uint8_t i = 0; i < PATH_COUNT; ++i) out.paths[i].cellCentered = true;
-    if (frost.level > 0) trimFrostEntry(out);
-    if (frost.level + 1 < frost.levelCount) trimFrostExits(out);
+    out.entry = {out.paths[0].points[0], entryEdge};
 
     CellMask floor;
     CellMask walls;
@@ -3052,16 +2667,18 @@ bool generateFrostCave(uint32_t seed, Edge entryEdge, Map& out,
     route.clear();
     blocked.clear();
 
-    for (uint8_t i = 0; i < spec.rectCount; ++i) {
-        addFrostRect(floor, spec.rects[i], mirrorX, mirrorY);
-    }
-    if (!frostEndpointFits(out.entry, floor)) return false;
-    for (uint8_t i = 0; i < PATH_COUNT; ++i) {
-        if (!frostEndpointFits(out.paths[i].exit, floor)) return false;
-        const Path& path = out.paths[i];
-        for (uint8_t p = 0; p < path.pointCount; ++p) {
-            route.add(path.points[p].x, path.points[p].y);
+    for (uint8_t y = 0; y < HEIGHT; ++y) {
+        for (uint8_t x = 0; x < WIDTH; ++x) {
+            if (spec.floorRows[y] & (1U << x)) {
+                const Point point = transformFrostPoint({x, y}, mirrorX, false);
+                floor.add(point.x, point.y);
+            }
         }
+    }
+    for (uint8_t i = 0; i < PATH_COUNT; ++i) {
+        const Path& path = out.paths[i];
+        for (uint8_t p = 0; p < path.pointCount; ++p)
+            route.add(path.points[p].x, path.points[p].y);
     }
 
     for (uint16_t index = 0; index < CELL_COUNT; ++index) {
@@ -3077,7 +2694,7 @@ bool generateFrostCave(uint32_t seed, Edge entryEdge, Map& out,
         for (uint8_t x = 0; x < WIDTH; ++x) {
             if (!floor.contains(x, y)) continue;
             uint16_t tileId = 0;
-            if (!frostBoundaryTile(out, floor, x, y, tileId)) return false;
+            if (!frostBoundaryTile(floor, x, y, tileId)) return false;
             if (tileId) {
                 out.layers[1][y * WIDTH + x] = tileId;
                 walls.add(x, y);
@@ -3111,8 +2728,13 @@ bool generateFrostCave(uint32_t seed, Edge entryEdge, Map& out,
     }
     blocked.unite(walls);
 
-    for (uint8_t i = 0; i < spec.iceRectCount; ++i) {
-        addFrostRect(ice, spec.iceRects[i], mirrorX, mirrorY);
+    if (spec.iceRect[2]) {
+        for (uint8_t y = spec.iceRect[1]; y <= spec.iceRect[3]; ++y) {
+            for (uint8_t x = spec.iceRect[0]; x <= spec.iceRect[2]; ++x) {
+                const Point point = transformFrostPoint({x, y}, mirrorX, false);
+                ice.add(point.x, point.y);
+            }
+        }
     }
     for (uint8_t y = 0; y < HEIGHT; ++y) {
         for (uint8_t x = 0; x < WIDTH; ++x) {
@@ -3130,7 +2752,7 @@ bool generateFrostCave(uint32_t seed, Edge entryEdge, Map& out,
     }
     if (!stampFrostScenery(out, floor, walls, route, blocked)) return false;
 
-    if (!stampFrostPortals(out, frost)) return false;
+    if (!stampFrostPortals(out)) return false;
 
     for (uint8_t i = 0; i < out.pathCount; ++i) {
         const Path& path = out.paths[i];
@@ -3142,6 +2764,71 @@ bool generateFrostCave(uint32_t seed, Edge entryEdge, Map& out,
             }
         }
     }
+    return true;
+}
+
+bool generateGrassPath(uint32_t seed, Edge entryEdge, Map& out) {
+    if (static_cast<uint8_t>(entryEdge) > 3) return false;
+    Rng selection(seed ^ 0x6A09E667U);
+    Rng woodland(seed ^ 0xB7E15162U);
+    const uint8_t style = selection.bounded(3);
+    const uint8_t fenced = woodland.bounded(100) < ExploreGrassPathData::FENCED_CHANCE;
+    const uint8_t sample = selection.bounded(ExploreGrassPathData::SAMPLES);
+    const auto& room = ExploreGrassPathData::ROOMS[
+        ((style * 2 + fenced) * 4 + static_cast<uint8_t>(entryEdge)) *
+        ExploreGrassPathData::SAMPLES + sample];
+    out = Map{};
+    out.seed = seed;
+    out.areaIndex = GRASS_PATH_AREA;
+    out.hasForest = true;
+    out.entry = {{room.entry.x, room.entry.y}, entryEdge};
+    out.junction = {room.junction.x, room.junction.y};
+    out.pathCount = 2;
+    for (uint8_t layer = 0; layer < LAYER_COUNT; ++layer)
+        for (uint16_t cell = 0; cell < CELL_COUNT; ++cell)
+            out.layers[layer][cell] = ExploreGrassPathData::TILES[room.layers[layer][cell]];
+    for (uint8_t p = 0; p < out.pathCount; ++p) {
+        const auto& source = room.paths[p];
+        auto& path = out.paths[p];
+        path.pointCount = source.count;
+        path.exit = {{source.exit.x, source.exit.y}, static_cast<Edge>(source.edge)};
+        for (uint8_t i = 0; i < path.pointCount; ++i)
+            path.points[i] = {source.points[i].x, source.points[i].y};
+    }
+    return true;
+}
+
+bool generateMistForest(uint32_t seed, Edge entryEdge, Map& out, FrostContext progress) {
+    if (static_cast<uint8_t>(entryEdge)>3 || progress.levelCount==0 ||
+        progress.level>=progress.levelCount) return false;
+    const auto& room = ExploreMistForestData::room(seed,static_cast<uint8_t>(entryEdge),
+                                                 progress.level,progress.levelCount);
+    out = Map{};
+    out.seed = seed;
+    out.areaIndex = MIST_FOREST_PATH_AREA;
+    out.hasForest = true;
+    out.entry = {{room.entry.x,room.entry.y},entryEdge};
+    std::memcpy(out.layers,room.layers,sizeof(out.layers));
+    out.pathCount = room.count;
+    for (uint8_t p=0;p<room.count;++p) {
+        auto& path = out.paths[p];
+        path.pointCount = room.paths[p].count;
+        path.exit = {{room.exit.x,room.exit.y},opposite(entryEdge)};
+        for (uint8_t i=0;i<path.pointCount;++i)
+            path.points[i] = {room.paths[p].points[i].x,room.paths[p].points[i].y};
+    }
+    out.junction = out.entry.point;
+    for (uint8_t i=0;i<out.paths[0].pointCount;++i) {
+        bool common = true;
+        for (uint8_t p=1;p<out.pathCount;++p)
+            common &= i<out.paths[p].pointCount &&
+                out.paths[p].points[i].x==out.paths[0].points[i].x &&
+                out.paths[p].points[i].y==out.paths[0].points[i].y;
+        if (!common) break;
+        out.junction = out.paths[0].points[i];
+    }
+    // A single route begins immediately; it has no fork to stop at.
+    if (out.pathCount==1) out.junction = out.entry.point;
     return true;
 }
 
@@ -3184,7 +2871,9 @@ static bool generateCandidate(uint32_t seed, Edge entryEdge, uint8_t areaIndex, 
     std::memset(&out, 0, sizeof(out));
     out.seed = seed;
     out.areaIndex = areaIndex;
+    if (areaIndex == GRASS_PATH_AREA) return generateGrassPath(seed, entryEdge, out);
     if (areaIndex == TALL_GRASS_PARK_AREA) return generateRandomPark(seed, entryEdge, out);
+    if (areaIndex == MIST_FOREST_PATH_AREA) return generateMistForest(seed,entryEdge,out,frost);
     Rng terrain(seed ^ 0x63D83595U);
     Rng features(seed ^ 0xC2B2AE35U);
     const AreaProfile& profile = profileFor(areaIndex);
@@ -3220,22 +2909,6 @@ static bool generateCandidate(uint32_t seed, Edge entryEdge, uint8_t areaIndex, 
             break;
         }
         if (!hasCreek) return false;
-    } else if (areaIndex == MIST_FOREST_PATH_AREA) {
-        CellMask emptyWater;
-        emptyWater.clear();
-        bool hasForestCandidate = false;
-        for (uint8_t attempt = 0; attempt < 16; ++attempt) {
-            uint32_t topologySeed =
-                attempt == 0 ? seed : seed ^ (0x9E3779B9U * attempt);
-            if (!buildTopology(topologySeed, entryEdge, profile.coastChance, out, road)) continue;
-            for (const ForestSpec& spec : FOREST_SPECS) {
-                if (!forestFits(spec, road, emptyWater)) continue;
-                hasForestCandidate = true;
-                break;
-            }
-            if (hasForestCandidate) break;
-        }
-        if (!hasForestCandidate) return false;
     } else if (!buildTopology(seed, entryEdge, profile.coastChance, out, road)) {
         return false;
     }
@@ -3359,6 +3032,91 @@ bool generate(uint32_t seed, Edge entryEdge, uint8_t areaIndex, Map& out,
     return false;
 }
 
+bool generateValleyRegion(uint32_t seed, ValleyContext context, bool finalBlock, Map& out) {
+    if (context.node >= 14) return false;
+    const auto& room = ExploreValleyData::room(seed, context.node);
+    if (context.entrance >= room.count) return false;
+    if ((context.node == 10 && context.entrance >= 2) ||
+        (context.node == 13 && context.entrance < 2)) return false;
+    const auto& entrance = room.portals[context.entrance];
+    out = Map{};
+    out.seed = seed;
+    out.areaIndex = ANCIENT_WATERFALL_VALLEY_AREA;
+    out.valleyJourney = true;
+    out.valleyNode = context.node;
+    out.entry = {{entrance.point.x, entrance.point.y}, static_cast<Edge>(entrance.edge)};
+    out.hasForest = room.forest;
+    out.hasWaterfall = !room.forest;
+    out.hasCliff = !room.forest || context.node == 4 || context.node == 5;
+    std::memcpy(out.layers, room.layers, sizeof(out.layers));
+    const uint8_t level = context.node == 13 ? 1 : 0;
+    auto inRoad = [&](int cell) {
+        return cell >= 0 && cell < CELL_COUNT && (room.roads[level][cell / WIDTH] & (1U << (cell % WIDTH)));
+    };
+    auto isStair = [&](int cell) { return room.stairs[cell / WIDTH] & (1U << (cell % WIDTH)); };
+    const int start = entrance.point.y * WIDTH + entrance.point.x;
+    if (!inRoad(start)) return false;
+    int16_t parent[CELL_COUNT];
+    uint16_t queue[CELL_COUNT];
+    for (auto& p : parent) p = -1;
+    uint16_t head = 0, tail = 0;
+    queue[tail++] = start;
+    parent[start] = start;
+    while (head < tail) {
+        const int cell = queue[head++];
+        const int x = cell % WIDTH, y = cell / WIDTH;
+        const int neighbors[] = {cell - WIDTH, cell + 1, cell + WIDTH, cell - 1};
+        for (int next : neighbors) {
+            if (!inRoad(next) || parent[next] != -1) continue;
+            const int nx = next % WIDTH, ny = next / WIDTH;
+            if (std::abs(nx - x) + std::abs(ny - y) != 1) continue;
+            if ((isStair(cell) || isStair(next)) && nx != x) continue;
+            parent[next] = cell;
+            queue[tail++] = next;
+        }
+    }
+    for (uint8_t p = 0; p < room.count; ++p) {
+        if (p == context.entrance) continue;
+        if (context.node == 10 && p >= 2) continue;
+        if (context.node == 13 && p < 2) continue;
+        const auto& exit = room.portals[p];
+        int cell = exit.point.y * WIDTH + exit.point.x;
+        if (parent[cell] == -1) return false;
+        if (out.pathCount == MAX_PATH_COUNT) return false;
+        Path& path = out.paths[out.pathCount++];
+        Point reverse[MAX_PATH_POINTS];
+        uint8_t count = 0;
+        for (;;) {
+            if (count == MAX_PATH_POINTS) return false;
+            reverse[count++] = {static_cast<uint8_t>(cell % WIDTH), static_cast<uint8_t>(cell / WIDTH)};
+            if (cell == start) break;
+            cell = parent[cell];
+        }
+        if (count < 2) return false;
+        path.pointCount = count;
+        for (uint8_t i = 0; i < count; ++i) path.points[i] = reverse[count - i - 1];
+        path.exit = {{exit.point.x, exit.point.y}, static_cast<Edge>(exit.edge)};
+        path.cellCentered = true;
+        path.nextValleyNode = exit.target;
+        path.nextValleyEntrance = exit.entrance;
+        path.interiorExit = exit.warp;
+        // Finish a bridge circuit in C even when the run quota was reached in A.
+        path.terminal = exit.target == 255 || (finalBlock && context.node < 10);
+    }
+    if (!out.pathCount) return false;
+    out.junction = out.paths[0].points[0];
+    for (uint8_t i = 0; i < out.paths[0].pointCount; ++i) {
+        bool common = true;
+        for (uint8_t p = 1; p < out.pathCount; ++p)
+            common &= i < out.paths[p].pointCount &&
+                out.paths[p].points[i].x == out.paths[0].points[i].x &&
+                out.paths[p].points[i].y == out.paths[0].points[i].y;
+        if (!common) break;
+        out.junction = out.paths[0].points[i];
+    }
+    return true;
+}
+
 uint32_t fingerprint(const Map& map) {
     uint32_t hash = 2166136261U;
     hash = fnvWord(hash, ALGORITHM_VERSION);
@@ -3369,6 +3127,10 @@ uint32_t fingerprint(const Map& map) {
     hash = fnvByte(hash, map.junction.x);
     hash = fnvByte(hash, map.junction.y);
     hash = fnvByte(hash, map.pathCount);
+    if (map.valleyJourney) {
+        hash = fnvByte(hash, 0xA5);
+        hash = fnvByte(hash, map.valleyNode);
+    }
     for (uint8_t i = 0; i < map.pathCount; ++i) {
         const Path& path = map.paths[i];
         hash = fnvByte(hash, path.pointCount);
@@ -3377,6 +3139,12 @@ uint32_t fingerprint(const Map& map) {
         hash = fnvByte(hash, static_cast<uint8_t>(path.exit.edge));
         hash = fnvByte(hash, path.exit.point.x);
         hash = fnvByte(hash, path.exit.point.y);
+        if (map.valleyJourney) {
+            hash = fnvByte(hash, path.nextValleyNode);
+            hash = fnvByte(hash, path.nextValleyEntrance);
+            hash = fnvByte(hash, path.terminal);
+            hash = fnvByte(hash, path.interiorExit);
+        }
         for (uint8_t p = 0; p < path.pointCount; ++p) {
             hash = fnvByte(hash, path.points[p].x);
             hash = fnvByte(hash, path.points[p].y);
@@ -3408,6 +3176,9 @@ bool isRoadTile(uint16_t tileId) {
 }
 
 bool isWaterTile(uint16_t tileId) {
+    if (ExploreLakeTiles::contains(tileId)) return true;
+    if (ExploreValleyData::flag(tileId, 4)) return true;
+    if (ExploreAncientValley::waterTile(tileId)) return true;
     switch (tileId) {
     case SEA_WATER_TILE: case SEA_LEFT_SHORE_TILE: case SEA_TOP_SHORE_TILE:
     case SEA_TOP_RIGHT_CORNER_TILE: case SEA_TOP_LEFT_CORNER_TILE:
@@ -3432,6 +3203,7 @@ bool isWaterTile(uint16_t tileId) {
 }
 
 bool isForestTile(uint16_t tileId) {
+    if (ExploreMistForestData::flag(tileId,32)) return true;
     switch (tileId) {
     case 800: case 801: case 802: case 804: case 805: case 808: case 809:
     case 810: case 811: case 812: case 813: case 816: case 817: case 818: case 819:

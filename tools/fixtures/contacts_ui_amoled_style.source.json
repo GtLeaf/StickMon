@@ -1,0 +1,19 @@
+{
+  "date": "2026-10-25",
+  "reference": "firmware/amoled_1_8_v1/main/ui/ComputerScreens.cpp: STORAGE renderer and contact popup geometry",
+  "artifact": ".stick-local/artifacts/ostb-contacts-amoled-style-20261025",
+  "review": [
+    "review.png",
+    "review-states.png"
+  ],
+  "changes": "72px avatar rows, live team name/bond, team flag/visit/lock status, capacity, chevrons, dimmed action popup, centered named confirmation. No Back rows. Family safe header and drag retained.",
+  "counts": {
+    "ostb": 42,
+    "sticks3": 0
+  },
+  "preserved": {
+    "contacts_ui_parity.json": "9a1a570101d7c49e9e224f62d83aca5a7b0e808ba6bd960c7de7f21acaee3dde",
+    "contacts_ui_header.json": "5c96de92460b8fd6be0959ff56dc225d2a9830a3aa915ad0e81937cffdb5a026"
+  },
+  "host_assets": "Enable dynamic sprite loading after setup, matching completed real engine startup; no production startup behavior changed."
+}

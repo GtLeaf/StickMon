@@ -96,6 +96,7 @@ if(NOT RESOURCE_SPRITE_FILES)
 endif()
 
 file(REMOVE_RECURSE "${RESOURCE_STAGE_DIR}")
+include("${STICKMON_ROOT}/firmware/common/market_dialogue_resources.cmake")
 file(MAKE_DIRECTORY "${RESOURCE_STAGE_DIR}/packs/dev/sprites")
 file(MAKE_DIRECTORY "${RESOURCE_STAGE_DIR}/packs/dev/rooms")
 file(MAKE_DIRECTORY "${RESOURCE_STAGE_DIR}/packs/dev/game")
@@ -171,7 +172,7 @@ spiffs_create_partition_image(
             ${RESOURCE_SPRITE_FILES} "${RESOURCE_ROOM}" ${RESOURCE_DEBUG_ROOMS} "${RESOURCE_MAPS}"
             "${RESOURCE_UI}" "${RESOURCE_BATTLE}" "${RESOURCE_HATCH}"
             ${RESOURCE_FONT_FILES} ${RESOURCE_AUDIO_FILES}
-            ${RESOURCE_CRY_FILES}
+            ${RESOURCE_CRY_FILES} "${RESOURCE_DIALOGUE}"
 )
 
 # OTA identifies the deployed resource file set, not a mutable pack version.

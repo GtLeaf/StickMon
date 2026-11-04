@@ -24,6 +24,8 @@ from cave_tile_semantics import (
     FROST_DOWNWARD_STAIRS_RUNTIME_TILE,
 )
 
+from frost_cave_layouts import layout as frost_layout, LAYOUT_COUNT, cpp_table
+
 from generate_runtime_tile_map import (
     ANCIENT_WATERFALL_VALLEY_AREA,
     BOULDER_TILE,
@@ -190,62 +192,27 @@ class RuntimeTileMapTests(unittest.TestCase):
                     self.assertTrue(set(path.points).issubset(road))
                     self.assertTrue(set(path.points).isdisjoint(water))
 
-    def test_open_maps_use_one_grass_region_and_anchored_decorations(self):
-        checked = 0
-        for seed in range(1, 256):
+    def test_grass_path_uses_two_meadows_and_anchored_decorations(self):
+        for seed in range(1, 65):
             runtime_map = generate_map(seed, Edge.LEFT)
-            if runtime_map.has_coast or runtime_map.has_forest:
-                continue
-            checked += 1
-            dense_grass = {
-                (index % 16, index // 16)
-                for index, tile_id in enumerate(runtime_map.layers[0])
-                if tile_id == DENSE_GRASS_TILE
-            }
-            flowers = {
-                (index % 16, index // 16)
-                for index, tile_id in enumerate(runtime_map.layers[0])
-                if tile_id == FLOWER_TILE
-            }
-            shrubs = {
-                (index % 16, index // 16)
-                for index, tile_id in enumerate(runtime_map.layers[1])
-                if tile_id == SHRUB_TILE
-            }
-            self.assertGreaterEqual(len(dense_grass), 24)
-            self.assertEqual(len(connected_components(dense_grass)), 1)
-            self.assertTrue(flowers or shrubs)
-
+            self.assertFalse(runtime_map.has_coast)
+            self.assertTrue(runtime_map.has_forest)
+            grass = {(i % 16, i // 16) for i, t in enumerate(runtime_map.layers[0])
+                     if t == DENSE_GRASS_TILE}
+            flowers = {(i % 16, i // 16) for i, t in enumerate(runtime_map.layers[0])
+                       if t == FLOWER_TILE}
+            shrubs = {(i % 16, i // 16) for i, t in enumerate(runtime_map.layers[1])
+                      if t == SHRUB_TILE}
+            self.assertEqual(len(connected_components(grass)), 2)
+            self.assertEqual(len(connected_components(flowers)), 2)
             for component in connected_components(flowers):
-                self.assertIn(len(component), (3, 4, 5))
-                self.assertTrue(any(
-                    abs(x - gx) + abs(y - gy) == 1
-                    for x, y in component
-                    for gx, gy in dense_grass
-                ))
-            for component in connected_components(shrubs):
-                self.assertGreaterEqual(len(component), 2)
-                self.assertLessEqual(len(component), 4)
-                self.assertTrue(
-                    len({x for x, _y in component}) == 1
-                    or len({y for _x, y in component}) == 1
-                )
-                self.assertTrue(all(
-                    any(abs(x - gx) + abs(y - gy) == 1 for gx, gy in dense_grass)
-                    for x, y in component
-                ))
-            road_indexes = {
-                y * 16 + x
-                for path in runtime_map.paths
-                for x, y in path.points
-            }
-            self.assertTrue(all(
-                runtime_map.layers[1][index] != SHRUB_TILE
-                for index in road_indexes
-            ))
-            if checked == 16:
-                break
-        self.assertEqual(checked, 16)
+                self.assertIn(len(component), (3, 4))
+                self.assertTrue(any(abs(x-gx) + abs(y-gy) == 1
+                                    for x, y in component for gx, gy in grass))
+            self.assertIn(len(shrubs), (0, 2))
+            road = build_road(runtime_map.paths)
+            self.assertFalse(road & (grass | flowers | shrubs))
+            validate_park_wide_road(runtime_map.paths, road)
 
     def test_tall_grass_park_uses_complete_trees_and_paired_separate_grass(self):
         tree_shapes = (PARK_BOUNDARY_TREE_TILES, PARK_TREE_TILES,
@@ -423,268 +390,114 @@ class RuntimeTileMapTests(unittest.TestCase):
 
     def test_frost_cave_uses_caves_tiles_and_keeps_routes_clear(self):
         ice_ids = set(FROST_ICE_TILES.values())
-        ground_ids = {
-            FROST_OUTSIDE_TILE, FROST_FLOOR_TILE, *FROST_ROUTE_TILES, *ice_ids,
-            4505, 4506,
-        }
-        wall_ids = set(FROST_WALL_TILES.values()) | set(
-            FROST_INNER_CORNER_TILES.values()
-        )
-        scenery_ids = {4507, 4508, 4509, 4510, 4542, 4543, 4544}
-        observed_profiles = set()
-        for edge in Edge:
-            runtime_map = generate_map(0x20260713, edge, FROST_CRYSTAL_CAVE_AREA)
-            self.assertEqual(runtime_map.entry.edge, edge)
-            self.assertFalse(runtime_map.has_coast)
-            self.assertFalse(runtime_map.has_forest)
-            self.assertFalse(runtime_map.has_creek)
-            self.assertFalse(runtime_map.has_waterfall)
-            self.assertTrue(set(runtime_map.layers[0]).issubset(ground_ids))
-            self.assertTrue(set(runtime_map.layers[1]).issubset({
-                0, *wall_ids, *scenery_ids,
-                *(tile_id for tiles in FROST_EXIT_DIRECTIONAL_RUNTIME_TILES.values()
-                  for tile_id in tiles),
-            }))
-            self.assertFalse(any(4532 <= tile_id <= 4540 for layer in runtime_map.layers
-                                 for tile_id in layer))
-            self.assertFalse(any(4705 <= tile_id <= 4740 for layer in runtime_map.layers
-                                 for tile_id in layer))
-            self.assertEqual(runtime_map.layers[2].count(FROST_CRYSTAL_TOP_TILE),
-                             runtime_map.layers[1].count(4508))
-            self.assertGreaterEqual(runtime_map.layers[1].count(4508), 1)
-            self.assertEqual(runtime_map.layers[2].count(4543), 1)
-            self.assertNotIn(4505, runtime_map.layers[0])
-            route = {point for path in runtime_map.paths for point in path.points}
-            portals = {runtime_map.entry.point, runtime_map.junction,
-                       *(path.exit.point for path in runtime_map.paths)}
-            small_clearance = route | expanded(portals)
-            tall_clearance = expanded(route) | small_clearance
-            decoration_count = sum(tile in scenery_ids for tile in runtime_map.layers[1])
-            self.assertGreaterEqual(decoration_count, 8)
-            self.assertLessEqual(decoration_count, 12)
-            for index, tile in enumerate(runtime_map.layers[1]):
-                if tile not in scenery_ids:
-                    continue
-                x, y = index % 16, index // 16
-                self.assertNotIn((x, y), tall_clearance if tile in (4508, 4509) else small_clearance)
-                self.assertNotIn(runtime_map.layers[0][index], ice_ids)
-                if tile in (4508, 4509):
-                    self.assertNotIn((x, y - 1), tall_clearance)
-                    self.assertNotIn(runtime_map.layers[0][index - 16], ice_ids)
-                    self.assertEqual(runtime_map.layers[2][index - 16],
-                                     4541 if tile == 4508 else 4543)
-            self.assertTrue(set(runtime_map.layers[2]).issubset({
-                0, FROST_CRYSTAL_TOP_TILE, 4543,
-            }))
-            for path in runtime_map.paths:
-                self.assertTrue(path.cell_centered)
-                self.assertEqual(path.points[0], runtime_map.entry.point)
-                self.assertEqual(path.points[-1], path.exit.point)
-                for x, y in path.points:
-                    index = y * 16 + x
-                    self.assertIn(runtime_map.layers[0][index], {
-                        FROST_FLOOR_TILE, *FROST_ROUTE_TILES, *ice_ids,
-                    })
-                    self.assertIn(runtime_map.layers[1][index], {
-                        0,
-                        *(tile_id for tiles in FROST_EXIT_DIRECTIONAL_RUNTIME_TILES.values()
-                          for tile_id in tiles),
-                    })
-
-            self.assertGreaterEqual(
-                len({
-                    fingerprint(generate_map(seed, edge,
-                                             FROST_CRYSTAL_CAVE_AREA))
-                    for seed in range(1, 65)
-                }),
-                16,
-            )
-
-        for seed in range(1, 65):
+        wall_ids = set(FROST_WALL_TILES.values()) | set(FROST_INNER_CORNER_TILES.values())
+        scenery_ids = {4507, 4508, 4509, 4510, 4542, 4544}
+        profiles = set()
+        shapes = set()
+        for seed in range(LAYOUT_COUNT):
             for edge in Edge:
-                runtime_map = generate_map(seed, edge, FROST_CRYSTAL_CAVE_AREA)
-                has_ice = any(tile_id in ice_ids for tile_id in runtime_map.layers[0])
-                self.assertFalse(any(4532 <= tile_id <= 4540
-                                     for layer in runtime_map.layers
-                                     for tile_id in layer))
-                observed_profiles.add(has_ice)
-        self.assertEqual(
-            observed_profiles,
-            {False, True},
-        )
+                m = generate_map(seed, edge, FROST_CRYSTAL_CAVE_AREA)
+                self.assertEqual(m.entry.edge, edge)
+                self.assertFalse(m.has_coast or m.has_forest or m.has_creek or m.has_waterfall)
+                self.assertTrue(set(m.layers[0]) <= {
+                    FROST_OUTSIDE_TILE, FROST_FLOOR_TILE, *FROST_ROUTE_TILES, *ice_ids})
+                self.assertTrue(set(m.layers[1]) <= {
+                    0, *wall_ids, *scenery_ids, FROST_DOWNWARD_STAIRS_RUNTIME_TILE,
+                    FROST_UP_LADDER_RUNTIME_TILES[1]})
+                self.assertTrue(set(m.layers[2]) <= {0, 4541, 4543, FROST_UP_LADDER_RUNTIME_TILES[0]})
+                for base, top in ((4508,4541),(4509,4543)):
+                    self.assertEqual(m.layers[1].count(base),m.layers[2].count(top))
+                    for i,t in enumerate(m.layers[1]):
+                        if t == base:
+                            self.assertGreaterEqual(i,16)
+                            self.assertEqual(m.layers[2][i-16],top)
+                route = {p for path in m.paths for p in path.points}
+                protected = route | expanded({m.entry.point,m.junction,*(p.exit.point for p in m.paths)})
+                objects = sum(t in scenery_ids for t in m.layers[1])
+                self.assertGreaterEqual(objects,5)
+                self.assertLessEqual(objects,10)
+                for i,t in enumerate(m.layers[1]):
+                    if t in scenery_ids:
+                        self.assertNotIn((i%16,i//16),protected)
+                        self.assertNotIn(m.layers[0][i],ice_ids)
+                        if t in (4508,4509):
+                            self.assertNotIn((i%16,i//16-1),protected)
+                            self.assertNotIn(m.layers[0][i-16],ice_ids)
+                for path in m.paths:
+                    self.assertTrue(path.cell_centered)
+                    self.assertEqual(path.points[0],m.entry.point)
+                    self.assertEqual(path.points[-1],path.exit.point)
+                    self.assertEqual(len(path.points),len(set(path.points)))
+                    self.assertLessEqual(len(path.points),48)
+                    for a,b in zip(path.points,path.points[1:]):
+                        self.assertEqual(abs(a[0]-b[0])+abs(a[1]-b[1]),1)
+                    for x,y in path.points:
+                        self.assertNotIn(m.layers[1][y*16+x],wall_ids|scenery_ids)
+                        self.assertNotIn(m.layers[2][y*16+x],{4541,4543})
+                shapes.add(tuple(t != FROST_OUTSIDE_TILE for t in m.layers[0]))
+                profiles.add(any(t in ice_ids for t in m.layers[0]))
+        self.assertEqual(profiles,{False,True})
+        self.assertGreater(len(shapes),200)
 
     def test_frost_ice_routes_slide_straight_and_fork_on_dry_ground(self):
-        observed_ice_profiles = set()
-        for seed in range(1, 65):
-            for edge in Edge:
-                runtime_map = generate_map(seed, edge, FROST_CRYSTAL_CAVE_AREA)
-                route_ice_counts = []
-                for path in runtime_map.paths:
-                    self.assertTrue(route_crosses_ice_straight(runtime_map, path))
-                    route_ice_counts.append(sum(
-                        is_smooth_ice_tile(
-                            runtime_map.layers[0][y * 16 + x]
-                        )
-                        for x, y in path.points
-                    ))
-                junction_index = runtime_map.junction[1] * 16 + runtime_map.junction[0]
-                self.assertFalse(is_smooth_ice_tile(
-                    runtime_map.layers[0][junction_index]
-                ))
-                if any(route_ice_counts):
-                    self.assertTrue(all(count > 0 for count in route_ice_counts))
-                observed_ice_profiles.add(tuple(count > 0 for count in route_ice_counts))
-        self.assertEqual(observed_ice_profiles, {(False, False), (True, True)})
+        profiles = set()
+        for seed in range(LAYOUT_COUNT):
+            m = generate_map(seed, Edge.TOP, FROST_CRYSTAL_CAVE_AREA)
+            counts=[]
+            for path in m.paths:
+                self.assertTrue(route_crosses_ice_straight(m,path))
+                counts.append(sum(is_smooth_ice_tile(m.layers[0][y*16+x]) for x,y in path.points))
+            for x,y in (m.entry.point,m.junction,*(p.exit.point for p in m.paths)):
+                self.assertFalse(is_smooth_ice_tile(m.layers[0][y*16+x]))
+            profiles.add(tuple(c>0 for c in counts))
+        self.assertEqual(profiles,{(False,False),(True,True)})
 
     def test_frost_level_portals_cracks_and_landings_stay_connected(self):
-        exterior = {
-            tile_id for tiles in FROST_EXIT_DIRECTIONAL_RUNTIME_TILES.values()
-            for tile_id in tiles
-        }
-        for seed in range(1, 257):
+        exterior={t for tiles in FROST_EXIT_DIRECTIONAL_RUNTIME_TILES.values() for t in tiles}
+        for seed in range(1,97):
             for edge in Edge:
-                first = generate_map(seed, edge, FROST_CRYSTAL_CAVE_AREA,
-                                     frost_level=0, frost_level_count=3)
-                middle = generate_map(seed, edge, FROST_CRYSTAL_CAVE_AREA,
-                                      frost_level=1, frost_level_count=3,
-                                      frost_entered_by_ladder=True)
-                last = generate_map(seed, edge, FROST_CRYSTAL_CAVE_AREA,
-                                    frost_level=2, frost_level_count=3)
-                self.assertEqual(len(exterior & set(first.layers[1])), 3)
-                self.assertFalse(exterior & set(middle.layers[1]))
-                self.assertTrue(exterior & set(last.layers[1]))
-                self.assertNotIn(4506, first.layers[0])
-                self.assertFalse(first.paths[0].falls_to_next_level)
-                self.assertFalse(first.paths[1].falls_to_next_level)
-                self.assertNotIn(4506, middle.layers[0])
-                self.assertFalse(middle.paths[0].falls_to_next_level)
-                self.assertFalse(middle.paths[1].falls_to_next_level)
-                for path in last.paths:
-                    candidates = []
-                    for path_index in range(1, len(path.points) - 2):
-                        x, y = path.points[path_index]
-                        cell = y * 16 + x
-                        if (last.layers[0][cell] in {4511, *FROST_ROUTE_TILES} and
-                                last.layers[1][cell] == 0 and
-                                last.layers[2][cell] == 0):
-                            candidates.append(path_index)
-                    self.assertTrue(candidates)
-                for index, tile_id in enumerate(middle.layers[1]):
-                    if tile_id != FROST_DEEP_ENTRANCE_RUNTIME_TILE:
-                        continue
-                    x, y = index % 16, index // 16
-                    adjacent = (
-                        middle.layers[1][neighbor_y * 16 + neighbor_x]
-                        for neighbor_x, neighbor_y in (
-                            (x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)
-                        ) if 0 <= neighbor_x < 16 and 0 <= neighbor_y < 12
-                    )
-                    self.assertTrue(any(tile in set(FROST_WALL_TILES.values())
-                                        for tile in adjacent))
-
-        layouts = {
-            (runtime_map.entry.point,
-             tuple(tuple(path.points) for path in runtime_map.paths))
-            for seed in range(256)
-            for runtime_map in (
-                generate_map(seed, Edge.TOP, FROST_CRYSTAL_CAVE_AREA,
-                             frost_level=0, frost_level_count=3),
-            )
-        }
-        self.assertEqual(len(layouts), 4)
+                for level in range(3):
+                    m=generate_map(seed,edge,FROST_CRYSTAL_CAVE_AREA,
+                        frost_level=level,frost_level_count=3,frost_entered_by_ladder=level>0)
+                    self.assertFalse(exterior & set(m.layers[1]))
+                    self.assertNotIn(4506,m.layers[0])
+                    ex,ey=m.entry.point
+                    self.assertEqual(m.layers[1][ey*16+ex],FROST_DOWNWARD_STAIRS_RUNTIME_TILE)
+                    for index,path in enumerate(m.paths):
+                        self.assertFalse(path.falls_to_next_level)
+                        x,y=path.exit.point
+                        self.assertTrue(0<x<15 and 0<y<11)
+                        self.assertIn(m.layers[0][y*16+x],{4511,*FROST_ROUTE_TILES})
+                        if index==0:
+                            self.assertEqual(m.layers[1][y*16+x],4747)
+                        else:
+                            self.assertEqual(m.layers[1][y*16+x],4773)
+                            self.assertEqual(m.layers[2][(y-1)*16+x],4772)
+                            self.assertEqual(m.layers[1][(y-1)*16+x],FROST_WALL_TILES['top'])
+                            self.assertEqual(path.points[-2],(x,y+1))
+                            self.assertIn(m.layers[1][(y-1)*16+x-1],set(FROST_WALL_TILES.values()))
+                            self.assertIn(m.layers[1][(y-1)*16+x+1],set(FROST_WALL_TILES.values()))
 
     def test_cave_runtime_aliases_are_complete_and_portals_are_atomic(self):
-        runtime_ids = [runtime_id for runtime_id, _source_id in CAVE_RUNTIME_TILE_SOURCES]
-        self.assertEqual(runtime_ids, list(range(4700, 4774)))
-        self.assertEqual(CAVE_RUNTIME_FLIP_Y_IDS, frozenset((4738, 4739, 4740)))
-        source_by_runtime_id = dict(CAVE_RUNTIME_TILE_SOURCES)
-        self.assertEqual(source_by_runtime_id[4741], 1301)
-        for runtime_id in (4742, 4763, 4766, 4769):
-            self.assertEqual(source_by_runtime_id[runtime_id], 1300)
-        self.assertEqual(source_by_runtime_id[4743], 1299)
-        self.assertEqual(CAVE_RUNTIME_ROTATIONS[4741], 180)
-        self.assertEqual(CAVE_RUNTIME_ROTATIONS[4742], 180)
-        self.assertEqual(CAVE_RUNTIME_ROTATIONS[4743], 180)
-        self.assertEqual(FROST_EXIT_DIRECTIONAL_RUNTIME_TILES["top"],
-                         (4743, 4742, 4741))
-        self.assertEqual(CAVE_RUNTIME_ROTATIONS[4762], 270)
-        self.assertEqual(CAVE_RUNTIME_ROTATIONS[4768], 90)
-        self.assertNotIn(4765, CAVE_RUNTIME_ROTATIONS)
-
-        observed_edges = set()
-        for edge in Edge:
-            runtime_map = generate_map(0x20260713, edge, FROST_CRYSTAL_CAVE_AREA)
-            endpoints = (runtime_map.entry, *(path.exit for path in runtime_map.paths))
-            route_anchors = (
-                runtime_map.paths[0].points[0],
-                *(path.points[-1] for path in runtime_map.paths),
-            )
-            for endpoint, route_anchor in zip(endpoints, route_anchors):
-                observed_edges.add(endpoint.edge)
-                x, y = route_anchor
-                tiles = FROST_EXIT_DIRECTIONAL_RUNTIME_TILES[
-                    endpoint.edge.name.lower()
-                ]
-                self.assertEqual(runtime_map.layers[1][y * 16 + x], tiles[1])
-                if endpoint.edge in (Edge.TOP, Edge.BOTTOM):
-                    portal_cells = [
-                        (x - 1 + offset, y) for offset in range(3)
-                    ]
-                else:
-                    portal_cells = [
-                        (x, y - 1 + offset) for offset in range(3)
-                    ]
-                self.assertEqual(
-                    [runtime_map.layers[1][cell_y * 16 + cell_x]
-                     for cell_x, cell_y in portal_cells],
-                    list(tiles),
-                )
-                self.assertNotIn(
-                    4747,
-                    runtime_map.layers[1],
-                )
-        self.assertEqual(observed_edges, set(Edge))
-
-        for edge in Edge:
-            first = generate_map(0x20260713, edge, FROST_CRYSTAL_CAVE_AREA,
-                                 frost_level=0, frost_level_count=3)
-            middle = generate_map(0x13579BDF, edge, FROST_CRYSTAL_CAVE_AREA,
-                                  frost_level=1, frost_level_count=3,
-                                  frost_entered_by_ladder=True)
-            last = generate_map(0xC0FFEE01, edge, FROST_CRYSTAL_CAVE_AREA,
-                                frost_level=2, frost_level_count=3)
-            self.assertIn(FROST_UP_LADDER_RUNTIME_TILES[1], first.layers[1])
-            self.assertIn(FROST_UP_LADDER_RUNTIME_TILES[0], first.layers[2])
-            self.assertIn(FROST_DOWNWARD_STAIRS_RUNTIME_TILE, middle.layers[1])
-            self.assertIn(FROST_UP_LADDER_RUNTIME_TILES[1], middle.layers[1])
-            self.assertIn(FROST_UP_LADDER_RUNTIME_TILES[0], middle.layers[2])
-            self.assertNotIn(4506, first.layers[0])
-            self.assertNotIn(4506, middle.layers[0])
-            self.assertNotIn(4506, last.layers[0])
-            self.assertFalse(first.paths[0].falls_to_next_level)
-            self.assertFalse(middle.paths[0].falls_to_next_level)
-            self.assertFalse(middle.paths[1].falls_to_next_level)
-            middle_path0_exit = middle.paths[0].points[-1]
-            self.assertEqual(
-                middle.layers[1][middle_path0_exit[1] * 16 +
-                                  middle_path0_exit[0]],
-                FROST_DOWNWARD_STAIRS_RUNTIME_TILE,
-            )
-            for path in middle.paths:
-                self.assertTrue(0 < path.exit.point[0] < 15)
-                self.assertTrue(0 < path.exit.point[1] < 11)
-
-            fallen = generate_map(0x13579BDF, edge, FROST_CRYSTAL_CAVE_AREA,
-                                  frost_level=1, frost_level_count=3,
-                                  frost_entered_by_ladder=False)
-            self.assertNotIn(FROST_DEEP_ENTRANCE_RUNTIME_TILE,
-                             fallen.layers[1])
-
-        for seed in range(1, 65):
-            runtime_map = generate_map(seed, Edge.TOP, FROST_CRYSTAL_CAVE_AREA)
-            all_tiles = set().union(*map(set, runtime_map.layers))
-            self.assertNotIn(FROST_BROKEN_ICE_HOLE_RUNTIME_TILE, all_tiles)
-            self.assertNotIn(FROST_CAVE_HOLE_RUNTIME_TILE, all_tiles)
+        ids=[runtime_id for runtime_id,_ in CAVE_RUNTIME_TILE_SOURCES]
+        self.assertEqual(ids,list(range(4700,4774)))
+        sources=dict(CAVE_RUNTIME_TILE_SOURCES)
+        self.assertEqual(sources[4772],1332)
+        self.assertEqual(sources[4773],1340)
+        self.assertNotIn(4772,CAVE_RUNTIME_ROTATIONS)
+        self.assertNotIn(4773,CAVE_RUNTIME_ROTATIONS)
+        self.assertEqual((ROOT/'src/game/ExploreFrostLayouts.h').read_text(),cpp_table())
+        # No accepted geometry encloses a central solid island. Every solid
+        # component must connect to the outer map boundary.
+        all_cells={(x,y) for x in range(16) for y in range(12)}
+        routes=set()
+        for index in range(LAYOUT_COUNT):
+            spec=frost_layout(index)
+            floor={(x,y) for y,row in enumerate(spec['floor_rows']) for x in range(16) if row&(1<<x)}
+            for component in connected_components(all_cells-floor):
+                self.assertTrue(any(x in (0,15) or y in (0,11) for x,y in component))
+            routes.add(spec['controls'])
+        self.assertGreater(len(routes),100)
 
     def test_creek_maps_keep_routes_on_bridges_and_transitions_away_from_bridges(self):
         transition_count = 0
@@ -896,81 +709,28 @@ class RuntimeTileMapTests(unittest.TestCase):
             self.assertGreaterEqual(len(variants), 16)
 
     def test_ancient_waterfall_maps_use_cave_ground_cliffs_and_portals(self):
-        fingerprints = set()
+        from ancient_valley_layouts import TILE_SOURCES, WATER_TILES
         for edge in Edge:
-            runtime_map = generate_map(
-                0x20260713, edge, ANCIENT_WATERFALL_VALLEY_AREA
-            )
-            fingerprints.add(fingerprint(runtime_map))
-            self.assertTrue(runtime_map.has_waterfall)
-            self.assertTrue(runtime_map.has_cliff)
-            self.assertFalse(runtime_map.has_forest)
-            self.assertFalse(runtime_map.has_coast)
-            self.assertFalse(runtime_map.has_creek)
-
-            waterfall_tiles = (
-                set(WATERFALL_CREST_TILES)
-                | set(WATERFALL_BODY_TOP_TILES)
-                | set(WATERFALL_BODY_MIDDLE_TILES)
-                | set(WATERFALL_BODY_LOWER_TILES)
-                | {WATERFALL_BOTTOM_TILE}
-            )
-            cave_ground_tiles = {
-                CAVE_FLOOR_RUNTIME_TILE,
-                CAVE_ROCK_STEP_RUNTIME_TILE,
-                *CAVE_CLIFF_RUNTIME_TILES,
-            }
-            self.assertTrue(set(runtime_map.layers[0]).issubset(
-                cave_ground_tiles
-                | waterfall_tiles
-                | {SEA_WATER_TILE, SEA_LEFT_SHORE_TILE, SEA_TOP_SHORE_TILE,
-                   SEA_RIGHT_SHORE_TILE, SEA_TOP_LEFT_CORNER_TILE,
-                   SEA_TOP_RIGHT_CORNER_TILE, SEA_CORNER_UNDERLAY_TILE}
-            ))
-            self.assertNotIn(BOULDER_TILE, runtime_map.layers[2])
-            self.assertTrue(any(tile_id in CAVE_CLIFF_RUNTIME_TILES
-                                for tile_id in runtime_map.layers[0]))
-            self.assertTrue(any(tile_id == CAVE_FLOOR_RUNTIME_TILE
-                                for tile_id in runtime_map.layers[0]))
-            entrance_tiles = {
-                tile_id
-                for tiles in CAVE_ENTRANCE_RUNTIME_TILES.values()
-                for tile_id in tiles
-            }
-            self.assertTrue(entrance_tiles & set(runtime_map.layers[1]))
-
-            corner_indexes = {
-                index
-                for index, tile_id in enumerate(runtime_map.layers[1])
-                if tile_id in {
-                    SEA_TOP_LEFT_CORNER_TILE,
-                    SEA_TOP_RIGHT_CORNER_TILE,
-                }
-            }
-            self.assertEqual(len(corner_indexes), 2)
-            self.assertTrue(all(
-                runtime_map.layers[0][index] == SEA_CORNER_UNDERLAY_TILE
-                for index in corner_indexes
-            ))
-
-            self.assertTrue(any(
-                tile_id in waterfall_tiles for tile_id in runtime_map.layers[0]
-            ))
-
-            stair_cells = {
-                (index % 16, index // 16)
-                for index, tile_id in enumerate(runtime_map.layers[0])
-                if tile_id == CAVE_ROCK_STEP_RUNTIME_TILE
-            }
-            self.assertEqual(len(stair_cells), 10)
-            for path in runtime_map.paths:
-                for point in path.points:
-                    index = point[1] * 16 + point[0]
-                    self.assertNotIn(
-                        runtime_map.layers[0][index],
-                        set(WATERFALL_CREST_TILES) | {WATERFALL_BOTTOM_TILE},
-                    )
-        self.assertEqual(len(fingerprints), len(Edge))
+            m = generate_map(0x20260713, edge, ANCIENT_WATERFALL_VALLEY_AREA)
+            self.assertTrue(m.has_waterfall and m.has_cliff)
+            self.assertFalse(m.has_forest or m.has_coast or m.has_creek)
+            self.assertEqual(m.entry.edge, edge)
+            self.assertTrue(all(p.cell_centered for p in m.paths))
+            source = lambda t: TILE_SOURCES.get(t, (None, 0))[1]
+            self.assertTrue(any(source(t) == 610 for t in m.layers[0]))
+            self.assertTrue(any(source(t) == 539 for t in m.layers[1]))
+            self.assertTrue(set(WATERFALL_CREST_TILES) & set(m.layers[1]))
+            self.assertTrue(set(WATER_TILES) & set(m.layers[1]))
+            for endpoint in [m.entry] + [p.exit for p in m.paths]:
+                x, y = endpoint.point
+                if endpoint.edge == Edge.TOP:
+                    self.assertEqual(source(m.layers[1][(y-1)*16+x]), 524)
+                    self.assertEqual(source(m.layers[1][y*16+x]), 532)
+                elif endpoint.edge == Edge.BOTTOM:
+                    self.assertEqual([source(m.layers[1][y*16+xx]) for xx in (x-1,x,x+1)], [507,508,509])
+                    self.assertEqual(source(m.layers[2][y*16+x]), 516)
+                else:
+                    self.assertEqual(source(m.layers[1][y*16+x]), 517 if endpoint.edge == Edge.LEFT else 515)
 
     def test_seed_derivation_has_stable_snapshots(self):
         self.assertEqual(derive_seed(0x20260713, 0, 0), 0x99ADB62E)
@@ -983,7 +743,7 @@ class RuntimeTileMapTests(unittest.TestCase):
                 runtime_map = generate_map(1, edge, area)
                 self.assertEqual(runtime_map.area_index, area)
                 self.assertEqual(runtime_map.entry.edge, edge)
-                self.assertEqual(len(runtime_map.paths), 2)
+                self.assertEqual(len(runtime_map.paths), 1 if area==MIST_FOREST_PATH_AREA else 2)
 
     @unittest.skipUnless(shutil.which("c++"), "host C++ compiler is unavailable")
     def test_python_matches_firmware_cpp_fingerprint(self):

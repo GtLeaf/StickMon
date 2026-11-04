@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-#include "HomeScreen.h"
+#include "ui/ExploreScreens.h"
 #include "ui/ExploreMapRenderer.h"
 #include "assets/GameAssets.h"
 #include "assets/PokemonSprites.h"
@@ -194,24 +194,28 @@ void ExplorePresenter::beginExit(const ExploreSession::State& route, bool hasFol
     state_.exploreRouteFromY = state_.exploreRouteWorldY;
     state_.exploreRouteTargetX = state_.exploreRouteWorldX;
     state_.exploreRouteTargetY = state_.exploreRouteWorldY;
-    switch (path.exit.edge) {
-    case ExploreMapGenerator::Edge::TOP:
-        state_.exploreRouteTargetY = -EXPLORE_ROUTE_EXIT_MARGIN;
-        break;
-    case ExploreMapGenerator::Edge::RIGHT:
-        state_.exploreRouteTargetX = EXPLORE_ROUTE_WORLD_WIDTH + EXPLORE_ROUTE_EXIT_MARGIN;
-        break;
-    case ExploreMapGenerator::Edge::BOTTOM:
-        state_.exploreRouteTargetY = EXPLORE_ROUTE_WORLD_HEIGHT + EXPLORE_ROUTE_EXIT_MARGIN;
-        break;
-    case ExploreMapGenerator::Edge::LEFT:
-        state_.exploreRouteTargetX = -EXPLORE_ROUTE_EXIT_MARGIN;
-        break;
+    const bool interiorStair = ExploreRouteGeometry::interiorPortalExit(
+        route.exploreRouteMap, path);
+    if (!interiorStair) {
+        switch (path.exit.edge) {
+        case ExploreMapGenerator::Edge::TOP:
+            state_.exploreRouteTargetY = -EXPLORE_ROUTE_EXIT_MARGIN;
+            break;
+        case ExploreMapGenerator::Edge::RIGHT:
+            state_.exploreRouteTargetX = EXPLORE_ROUTE_WORLD_WIDTH + EXPLORE_ROUTE_EXIT_MARGIN;
+            break;
+        case ExploreMapGenerator::Edge::BOTTOM:
+            state_.exploreRouteTargetY = EXPLORE_ROUTE_WORLD_HEIGHT + EXPLORE_ROUTE_EXIT_MARGIN;
+            break;
+        case ExploreMapGenerator::Edge::LEFT:
+            state_.exploreRouteTargetX = -EXPLORE_ROUTE_EXIT_MARGIN;
+            break;
+        }
     }
     state_.exploreRouteFollowerFromX = state_.exploreRouteFollowerWorldX;
     state_.exploreRouteFollowerFromY = state_.exploreRouteFollowerWorldY;
-    state_.exploreRouteFollowerTargetX = state_.exploreRouteTargetX;
-    state_.exploreRouteFollowerTargetY = state_.exploreRouteTargetY;
+    state_.exploreRouteFollowerTargetX = interiorStair ? state_.exploreRouteFollowerFromX : state_.exploreRouteTargetX;
+    state_.exploreRouteFollowerTargetY = interiorStair ? state_.exploreRouteFollowerFromY : state_.exploreRouteTargetY;
     state_.exploreRouteDirection = exploreDirectionForDelta(
         state_.exploreRouteTargetX - state_.exploreRouteFromX,
         state_.exploreRouteTargetY - state_.exploreRouteFromY,
@@ -257,8 +261,8 @@ void ExplorePresenter::updateEcology(const ExploreSession::State& route,
         before[i] = state_.exploreEcology.pose(i);
     state_.exploreEcology.update(nowMs, active, state_.exploreRouteWorldX, state_.exploreRouteWorldY,
         {float(state_.exploreRouteCameraX), float(state_.exploreRouteCameraY),
-         AmoledUi::WIDTH / float(AmoledUi::RESOURCE_SCALE),
-         EXPLORE_ROUTE_VIEW_HEIGHT / float(AmoledUi::RESOURCE_SCALE)});
+         AmoledUi::WIDTH / float(EXPLORE_ROUTE_SCALE),
+         EXPLORE_ROUTE_VIEW_HEIGHT / float(EXPLORE_ROUTE_SCALE)});
     ExploreGrass::Frame grassBefore[ExploreMapGenerator::CELL_COUNT];
     for (uint16_t cell = 0; cell < ExploreMapGenerator::CELL_COUNT; ++cell)
         grassBefore[cell] = state_.exploreGrass.frame(cell);
@@ -278,16 +282,16 @@ void ExplorePresenter::updateEcology(const ExploreSession::State& route,
     }
     state_.exploreGrass.update(route.exploreRouteMap, nowMs, active, contacts, ExploreGrass::ACTORS);
     if (!active) return;
-    constexpr int grassTile = ExploreRouteGeometry::TILE_SIZE * AmoledUi::RESOURCE_SCALE;
+    constexpr int grassTile = ExploreRouteGeometry::TILE_SIZE * EXPLORE_ROUTE_SCALE;
     for (uint16_t cell = 0; cell < ExploreMapGenerator::CELL_COUNT; ++cell) {
         const auto frame = state_.exploreGrass.frame(cell);
         if (grassBefore[cell] == frame) continue;
         const bool high = frame.kind == ExploreGrass::Kind::HIGH ||
             grassBefore[cell].kind == ExploreGrass::Kind::HIGH;
-        const int x = (int(cell % ExploreMapGenerator::WIDTH) * ExploreRouteGeometry::TILE_SIZE -
-            state_.exploreRouteCameraX) * AmoledUi::RESOURCE_SCALE;
-        const int y = (int(cell / ExploreMapGenerator::WIDTH) * ExploreRouteGeometry::TILE_SIZE -
-            state_.exploreRouteCameraY) * AmoledUi::RESOURCE_SCALE;
+        const int x = exploreRouteScreen(int(cell % ExploreMapGenerator::WIDTH) * ExploreRouteGeometry::TILE_SIZE,
+            state_.exploreRouteCameraX);
+        const int y = exploreRouteScreen(int(cell / ExploreMapGenerator::WIDTH) * ExploreRouteGeometry::TILE_SIZE,
+            state_.exploreRouteCameraY);
         requestRect(x, std::max(0, y - (high ? grassTile : 0)), x + grassTile,
             std::min(EXPLORE_ROUTE_VIEW_HEIGHT, y + grassTile));
     }
@@ -496,13 +500,12 @@ void ExplorePresenter::requestBossDamage(const ExploreSession::State& route) {
 
     const ExploreRouteGeometry::WorldPoint point =
         ExploreRouteGeometry::pathPoint(path, route.exploreRouteBossIndex);
-    const int centerY = static_cast<int>(std::lround(
-        (point.y - state_.exploreRouteCameraY) * AmoledUi::RESOURCE_SCALE)) +
+    const int centerY = exploreRouteScreen(point.y, state_.exploreRouteCameraY) +
         EXPLORE_ROUTE_ACTOR_GROUND_OFFSET_Y;
-    // Covers the largest 2x walking frames, airborne bobbing, shadow, and the
+    // Covers the largest walking frames, airborne bobbing, shadow, and the
     // complete 5px patrol path so the cached map clears every previous pose.
-    constexpr int BOSS_TOP_MARGIN = 112;
-    constexpr int BOSS_BOTTOM_MARGIN = 88;
+    constexpr int BOSS_TOP_MARGIN = 56 * EXPLORE_ROUTE_SCALE;
+    constexpr int BOSS_BOTTOM_MARGIN = 44 * EXPLORE_ROUTE_SCALE;
     if (centerY + BOSS_BOTTOM_MARGIN <= 0 ||
         centerY - BOSS_TOP_MARGIN >= EXPLORE_ROUTE_VIEW_HEIGHT) {
         return;
@@ -516,7 +519,7 @@ void ExplorePresenter::requestBossDamage(const ExploreSession::State& route) {
 }
 
 void ExplorePresenter::requestMapAnimationDamage(const ExploreSession::State& route) {
-    constexpr int tileSize = ExploreRouteGeometry::TILE_SIZE * AmoledUi::RESOURCE_SCALE;
+    constexpr int tileSize = ExploreRouteGeometry::TILE_SIZE * EXPLORE_ROUTE_SCALE;
     constexpr int mapTop = 0;
     constexpr int mapBottom = EXPLORE_ROUTE_VIEW_HEIGHT;
     int top = mapBottom;
@@ -531,7 +534,7 @@ void ExplorePresenter::requestMapAnimationDamage(const ExploreSession::State& ro
                     [tileY * ExploreMapGenerator::WIDTH + tileX];
                 if (!GameAssets::isExploreTileAnimated(tileId)) continue;
                 int tileTop = mapTop + static_cast<int>(tileY) * tileSize -
-                              state_.exploreRouteCameraY * AmoledUi::RESOURCE_SCALE;
+                              exploreRoutePixel(state_.exploreRouteCameraY);
                 int tileBottom = tileTop + tileSize;
                 top = std::min(top, tileTop);
                 bottom = std::max(bottom, tileBottom);
@@ -548,16 +551,16 @@ void ExplorePresenter::requestMapAnimationDamage(const ExploreSession::State& ro
 }
 
 void ExplorePresenter::updateCamera() {
-    int maximumX = std::max(0, EXPLORE_ROUTE_WORLD_WIDTH - AmoledUi::WIDTH / AmoledUi::RESOURCE_SCALE);
-    int maximumY = std::max(0,
-        EXPLORE_ROUTE_WORLD_HEIGHT - EXPLORE_ROUTE_VIEW_HEIGHT / AmoledUi::RESOURCE_SCALE);
-    int cameraX = static_cast<int>(std::lround(state_.exploreRouteWorldX)) - 92;
-    int cameraY = static_cast<int>(std::lround(state_.exploreRouteWorldY)) -
-                  EXPLORE_ROUTE_VIEW_HEIGHT / (2 * AmoledUi::RESOURCE_SCALE);
-    const int16_t nextCameraX = static_cast<int16_t>(
-        std::clamp(cameraX, 0, maximumX));
-    const int16_t nextCameraY = static_cast<int16_t>(
-        std::clamp(cameraY, 0, maximumY));
+    auto origin = [](float position, int worldSize, int viewportPixels) {
+        const float viewSize = viewportPixels / EXPLORE_ROUTE_SCALE;
+        if (worldSize <= viewSize) return int(std::lround(-(viewSize - worldSize) / 2));
+        return std::clamp(int(std::lround(position - viewSize / 2)),
+                          0, worldSize - int(std::ceil(viewSize)));
+    };
+    const int16_t nextCameraX = static_cast<int16_t>(origin(
+        state_.exploreRouteWorldX, EXPLORE_ROUTE_WORLD_WIDTH, AmoledUi::WIDTH));
+    const int16_t nextCameraY = static_cast<int16_t>(origin(
+        state_.exploreRouteWorldY, EXPLORE_ROUTE_WORLD_HEIGHT, EXPLORE_ROUTE_VIEW_HEIGHT));
     state_.exploreRouteCameraX = nextCameraX;
     state_.exploreRouteCameraY = nextCameraY;
 }

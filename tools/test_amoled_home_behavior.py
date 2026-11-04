@@ -251,7 +251,9 @@ class AmoledHomeBehaviorTests(unittest.TestCase):
 
     def test_temporary_visitors_are_always_removed_from_saves(self):
         self.assertIn("Game::GameState persistentState = gameState;", APP)
-        self.assertIn("origin != Game::Origin::VISITOR", APP)
+        self.assertIn("persistentState.activeSlot = 0;", APP)
+        save = APP[APP.index("bool AmoledApp::saveState()"):]
+        self.assertNotIn("for (uint8_t slot = 0; slot < persistentState.teamCount;)", save)
         self.assertNotIn(
             "#if STICKMON_ENABLE_DEBUG_FEATURES\n    Game::GameState persistentState",
             APP,
@@ -291,20 +293,18 @@ class AmoledHomeBehaviorTests(unittest.TestCase):
             "const bool transientMain = homeFlow_.state().action != RoomAction::NONE",
             "homeMainActor.task == Home::Task::PAIR_ACTION",
             "homeMainActor.task == Home::Task::DOOR_ACTION",
-            "storedMotion == PetMotion::EATING",
-            "storedMotion == PetMotion::STOPPING",
+            "storedMotion == MainMotion::EATING",
+            "storedMotion == MainMotion::STOPPING",
             "const bool transientCompanion = homeRuntime.pairActive()",
             "homeCompanionActor.task == Home::Task::SEEK_FOOD",
         ):
             self.assertIn(token, APP)
 
     def test_saved_sleep_and_companion_food_retry_are_restored_safely(self):
-        self.assertIn("mainViewState.aiMode == 8 && savedSleepTime", APP)
+        self.assertIn("saved.aiMode == 8 && sleepTime", APP)
         self.assertIn("saved.state == 6 && sleepTime", APP)
         self.assertIn("nowMs + saved.foodRetryRemainingMs", APP)
-        self.assertIn(
-            "homeCompanionActor.foodWakeRetryAfterMs - nowMs", APP
-        )
+        self.assertIn("actor.foodWakeRetryAfterMs, nowMs", APP)
 
     def test_companion_sleep_matches_stick_anchor_and_locks_target(self):
         for token in (

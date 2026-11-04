@@ -1,0 +1,21 @@
+{
+  "showerSourceCommit": "a430cd6c0deaa7ebfa9c9d76ae70284ad98d0731",
+  "showerFiles": {
+    "src/scenes/ShowerScene.cpp": "661828e846817bca1ea969213ffcd5807521389c9c0fcbb8001483624c11b475",
+    "src/scenes/ShowerScene.h": "6d7f1e142e8bb9c6c2afbe7169f81640f1ab58338bea018a68fa3c992fb04e8f"
+  },
+  "otherSources": "Frozen task-start working tree; same files as candidate except the two original shower scene files.",
+  "baselineManifest": ".stick-local/artifacts/device-ui-shower-20261023/baseline-manifest.json",
+  "framesPerConfiguration": 218,
+  "configurations": [
+    "ostb-debug",
+    "ostb-release",
+    "sticks3-debug",
+    "sticks3-release"
+  ],
+  "fixtureSha256": "f94b431cbff98fcbdb6698b15511c6702171e7fd4831e8d3110c865e62964173",
+  "method": "Compile the original monolithic ShowerScene from the recorded Git commit against frozen task-start dependencies. Capture RGB565 with tools/shower_ui_parity_host.cpp and STICKMON_SHOWER_UI_BASELINE=1; do not generate expected pixels from the extracted UI.",
+  "lifecycleException": "The original INCOMPLETE timeout has a verified heap-use-after-free. Original baseline captures and 35 journeys omit its destructive timeout; current production additionally executes the real engine-owned destructive timeout.",
+  "baselineManifestSha256": "88633f4da51fff56b6f1f79a12bb5f05082d42f4410f3c32fab5eefea298593b",
+  "harnessSha256": "3d946945c33eb4b63ff33914797eba5e7db2c34108897a06e34d55df2498e5a9"
+}

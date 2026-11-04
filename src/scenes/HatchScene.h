@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/Scene.h"
+#include "ui/HatchUi.h"
 
 class HatchScene : public Scene {
 public:
@@ -8,6 +9,7 @@ public:
 
     void onEnter() override;
     void onExit() override;
+    bool onBeforeSave() override { return persistProgress(true); }
     SceneUpdateResult update(uint32_t nowMs, float dtSeconds) override;
     void render() override;
     bool onButton(const ButtonEvent& event) override;
@@ -19,19 +21,10 @@ private:
     uint16_t pokeCount = 0;
     uint16_t wipeCount = 0;
     uint16_t lastSavedSecond = 0;
-    uint32_t toastUntil = 0;
-    const char* toast = nullptr;
-    int8_t lastEggOffset = 0;
-    bool lastNight = false;
-    uint16_t lastRemainingSecond = 0;
+    Ui::HatchUi ui;
 
     void complete();
-    void persistProgress(bool force);
-    uint8_t hatchProgress() const;
-    uint16_t hatchSecondsRemaining() const;
-    int8_t eggShakeOffset(uint32_t nowMs) const;
-    void drawRoom();
-    void drawEgg();
-    void drawHud();
-    void drawToast();
+    bool persistProgress(bool force);
+    Ui::HatchFrame hatchFrame(uint32_t nowMs) const;
+    bool applyAction(Ui::HatchAction action);
 };

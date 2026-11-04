@@ -10,6 +10,9 @@ from amoled_source import amoled_shared_sources
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "firmware" / "amoled_1_8_v1" / "main" / "AmoledApp.cpp"
 APP_HEADER = ROOT / "firmware" / "amoled_1_8_v1" / "main" / "AmoledApp.h"
+HOME_VIEW_STATE = (
+    ROOT / "firmware" / "amoled_1_8_v1" / "main" / "app" / "HomeViewState.cpp"
+)
 
 
 def function_body(source: str, signature: str, next_signature: str) -> str:
@@ -79,18 +82,17 @@ class AmoledHomeRuntimeTests(unittest.TestCase):
             self.assertIn(token, self.app)
 
     def test_companion_pose_is_persisted_without_schema_change(self):
-        persist = function_body(
+        app = function_body(
             self.app,
             "void AmoledApp::persistHomeViewState(uint32_t nowMs)",
             "bool AmoledApp::saveState()",
         )
-        self.assertIn("secondary.x = homeCompanionActor.x;", persist)
-        self.assertIn("secondary.y = homeCompanionActor.y - companionGroundOffset;", persist)
-        self.assertIn("secondary.direction = static_cast<uint8_t>(companionDirection);", persist)
-        self.assertIn(
-            "secondary.frameIndex = transientCompanion ? 0 : companionFrame;",
-            persist,
-        )
+        self.assertIn("HomeViewState::encodeSecondary(", app)
+        persist = HOME_VIEW_STATE.read_text(encoding="utf-8")
+        self.assertIn("saved.x = actor.x;", persist)
+        self.assertIn("saved.y = actor.y - groundOffset;", persist)
+        self.assertIn("saved.direction = static_cast<uint8_t>(direction);", persist)
+        self.assertIn("saved.frameIndex = transient ? 0 : frame;", persist)
 
     def test_both_amoled_boards_link_shared_home_runtime(self):
         shared = {source.relative_to(ROOT).as_posix() for source in amoled_shared_sources(ROOT)}

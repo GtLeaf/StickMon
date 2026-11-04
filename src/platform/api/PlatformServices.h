@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <utility>
+#include "TouchTransform.h"
 
 static_assert(__cplusplus >= 201703L,
               "StickMon requires C++17 or newer");
@@ -78,6 +79,10 @@ public:
     virtual bool pressed(InputButton button) const = 0;
     virtual bool touchAvailable() const { return false; }
     virtual bool pollTouch(TouchEvent& event) { (void)event; return false; }
+    virtual bool touchCalibrationSupported() const { return false; }
+    // Bypass correction for calibration only. Changing modes cancels any contact.
+    virtual void bypassTouchCalibration(bool) {}
+    virtual bool saveTouchCalibration(const TouchTransform&) { return false; }
 };
 
 class IDisplayDevice {
@@ -85,6 +90,11 @@ public:
     virtual ~IDisplayDevice() = default;
     virtual FrameBuffer565 frameBuffer() = 0;
     virtual void present() = 0;
+    // Physical framebuffer rectangle; platforms without partial transfer fall back.
+    virtual void presentRegion(int x, int y, int width, int height) {
+        (void)x; (void)y; (void)width; (void)height;
+        present();
+    }
     virtual void setBrightness(uint8_t value) = 0;
     virtual uint8_t brightness() const = 0;
     virtual void sleep() = 0;
@@ -128,6 +138,7 @@ class IPowerDevice {
 public:
     virtual ~IPowerDevice() = default;
     virtual int batteryLevel() = 0;
+    virtual bool batteryCharging() { return false; }
     virtual PowerCapabilities capabilities() const { return {}; }
     virtual WakeReason wakeReason() const = 0;
     virtual uint32_t hardwareRandom() = 0;

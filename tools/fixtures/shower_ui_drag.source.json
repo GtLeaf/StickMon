@@ -1,0 +1,26 @@
+{
+  "reason": "OSTB soap and brush use held touch dragging; remove HOLD A.",
+  "previous_fixture": "shower_ui_touch.json",
+  "previous_fixture_sha256": "862455d5c3e9e26e9f4fb06bc856bd475bac18b703d10f9b9a63b93d4ce153a7",
+  "changes": {
+    "ostb-debug": {
+      "changed": 90,
+      "added": [
+        "touch-brush-drag.rgb565",
+        "touch-soap-drag.rgb565"
+      ],
+      "removed": []
+    },
+    "ostb-release": {
+      "changed": 90,
+      "added": [
+        "touch-brush-drag.rgb565",
+        "touch-soap-drag.rgb565"
+      ],
+      "removed": []
+    }
+  },
+  "reviewed_preview": ".stick-local/artifacts/ostb-drag-moves-20261023/preview.png",
+  "stick_policy": "Original Stick captures remain unchanged.",
+  "validation": "Prior OSTB release captures matched existing fixtures before edits; real journeys, strict syntax, OSTB ASan/UBSan and affected firmware builds pass."
+}

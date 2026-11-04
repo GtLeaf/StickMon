@@ -49,6 +49,8 @@ public:
     // Returns false when the canvas needs the scaled-pixel fallback.
     bool blendRectAlphaNative(int x, int y, int w, int h,
                               uint16_t color, uint8_t alpha);
+    bool blendRoundRectAlphaNative(int x, int y, int w, int h, int radius,
+                                   uint16_t color, uint8_t alpha);
     // Channel gains use 256 as identity. Honors clipping, raster scale and
     // stored byte order, with small channel tables instead of per-pixel math.
     void multiplyRectRgb(int x, int y, int w, int h,
@@ -64,10 +66,15 @@ public:
     void drawRoundRect(int x, int y, int w, int h,
                        int radius, uint16_t color);
     void pushImage(int x, int y, int w, int h, const uint16_t* source);
+    // Copy a source image whose pixels already use the framebuffer's stored
+    // byte order. This is used for static decoded layers such as battle
+    // backgrounds, where swapping and per-pixel clipping would dominate the
+    // render loop.
+    void pushImageNative(int x, int y, int w, int h, const uint16_t* source);
     void drawMaskedAssetImage(int x, int y, int w, int h,
                               const uint16_t* pixels,
                               const uint8_t* opaqueMask,
-                              uint8_t pixelScale = 1);
+                              float pixelScale = 1);
     void drawAssetPixel(int x, int y, uint16_t color);
     void fillAssetRect(int x, int y, int w, int h, uint16_t color);
     void drawRgb565Rle(int x, int y, int w, int h,
@@ -76,6 +83,10 @@ public:
 
     void setClipRect(int x, int y, int w, int h);
     void clearClipRect();
+    int clipLeft() const { return clipLeft_; }
+    int clipTop() const { return clipTop_; }
+    int clipRight() const { return clipRight_; }
+    int clipBottom() const { return clipBottom_; }
 
 private:
     bool visible(int x, int y) const;

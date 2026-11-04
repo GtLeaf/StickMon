@@ -1,8 +1,8 @@
 # Exploration Ecology
 
-The user approved the grass-path prototype, then requested its extension to
-all exploration maps. Continue the same behavior and rendering across all six
-areas on AMOLED V1/V2.
+更新：2026-10-26。当前共享生态规则覆盖六个探索地区；AMOLED V1/V2 由
+ExplorePresenter 驱动，OSTB／谷仓子页通过 compact_touch 的 ExploreEcologyUi 接入。
+Stick UI 尚未接入生态表现；原逐批验收见 [tasks.md](tasks.md)。
 
 1. When entering any exploration map, usually spawn two ambient actors from the
    expedition's existing active pool near the selected route, with the explicit
@@ -23,7 +23,8 @@ areas on AMOLED V1/V2.
    cached sprites, and update offscreen actors at a reduced cadence.
 6. Ecology shall use its own deterministic randomness, leave map generation,
    encounter rolls, rewards and save schemas unchanged, and share logic in
-   `src/game`. AMOLED V1/V2 share this first presentation integration.
+   `src/game`. AMOLED V1/V2 share ExplorePresenter; compact_touch uses
+   ExploreEcologyUi with the same simulation rules.
 7. The first behavior batch shall use existing sprite packs for sleep/wake,
    curious approach/observe/return, shy retreat/hide/peek/emerge, grass burrowing,
    winged short flights and aquatic jumps/splashes. Species select appropriate
@@ -66,7 +67,9 @@ areas on AMOLED V1/V2.
     adult/young families may spawn with one overall 50% eligibility roll.
     Families are Breloom/Shroomish, Azumarill/Marill/Azurill, Furret/Sentret,
     Mightyena/Poochyena, Quagsire/Wooper, Camerupt/Numel, Pidgeotto/Pidgey,
-    Gardevoir/Ralts and Pikachu/Pichu. Multiple eligible families shall be
+    Gardevoir/Ralts, Pikachu/Pichu and cave-only Golbat/Zubat. Frost Crystal
+    Cave excludes ambient Pidgey/Pidgeotto, including independent fallback;
+    their family remains available outdoors. Multiple eligible families shall be
     sampled uniformly without replacement until safe placement is found.
     The explicit family table may supply missing members even when they are
     absent from the pool. When selected, the Marill family chooses one member
@@ -76,7 +79,7 @@ areas on AMOLED V1/V2.
     its exact chosen slot count, with no additional independent actors. A family
     with an explicitly hidden pool member is ineligible; selection shall never
     reveal that member. The active encounter pool and history remain unchanged.
-16. Families shall share a trail validated for every member, with delayed
+16. Ground families shall share a trail validated for every member, with delayed
     followers, occasional looks, adult waiting and brief reunions at destinations
     or after 15-25 active seconds. A nearby player makes the adult face them and the young
     close the gap. Routes may vary at reunions without teleporting or crossing
@@ -89,7 +92,7 @@ areas on AMOLED V1/V2.
     try other compositions of that size, then fewer members, down to one safe
     actor. Hidden-member exclusion applies before composition selection.
     Existing sprite size, ground anchors, cover, pause and redraw rules apply.
-17. Groups shall walk toward varied destinations, preferring targets 4-7 safe
+17. Groups shall move toward varied destinations, preferring targets 4-7 safe
     steps away and avoiding recent stopping places. They shall continue from
     their current anchors without wrapping a short fixed loop or reversing
     into the follower. Tiny pockets and dead-end-only habitats shall use
@@ -106,6 +109,13 @@ areas on AMOLED V1/V2.
     settling. Ordinary grass shall cover only its low leaf region. Adult/young
     contacts shall trigger independently. Pause shall freeze effects; local
     dirty redraws shall match full frames and cease once grass settles.
+
+20. Cave Golbat shall lead Zubat along a safe shared trail with a one-tile
+    following gap. Both continuously flap and move, including at route joins
+    and near the player; neither may walk, hover for reunions, or trample grass.
+    New routes preserve anchors, avoid cave obstacles and cover broad connected
+    habitat. The existing 50% family chance, any-member eligibility, hidden
+    veto, pause and offscreen cadence apply. Encounter tables stay unchanged.
 
 Acceptance: deterministic simulation and habitat tests, native full/partial
 render comparisons, pause and encounter-state checks, and affected firmware

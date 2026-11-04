@@ -1,14 +1,7 @@
 #include "core/RoomNavigator.h"
 
+#include <algorithm>
 #include <cmath>
-
-namespace {
-
-float clampf(float value, float lo, float hi) {
-    return value < lo ? lo : (value > hi ? hi : value);
-}
-
-}  // namespace
 
 uint16_t RoomNavigator::requiredNodeCapacity(const Bounds& bounds) {
     float width = bounds.maxX - bounds.minX;
@@ -27,28 +20,44 @@ uint16_t RoomNavigator::requiredNodeCapacity(const Bounds& bounds) {
 bool RoomNavigator::segmentKeepsSpacing(
     float fromX, float fromY, float toX, float toY,
     const Obstacle& obstacle) {
-    if (!obstacle.active) return true;
-    float dx = toX - fromX;
-    float dy = toY - fromY;
-    float lengthSq = dx * dx + dy * dy;
-    float progress = lengthSq <= 0.001f
-        ? 0.0f
-        : ((obstacle.x - fromX) * dx +
-           (obstacle.footY - fromY) * dy) / lengthSq;
-    progress = clampf(progress, 0.0f, 1.0f);
-    float nearestX = fromX + dx * progress;
-    float nearestY = fromY + dy * progress;
-    float gapX = nearestX - obstacle.x;
-    float gapY = nearestY - obstacle.footY;
-    float minSq = obstacle.minSeparation * obstacle.minSeparation;
-    float startX = fromX - obstacle.x;
-    float startY = fromY - obstacle.footY;
-    float startSq = startX * startX + startY * startY;
-    float endX = toX - obstacle.x;
-    float endY = toY - obstacle.footY;
-    float endSq = endX * endX + endY * endY;
-    if (startSq < minSq) return endSq > startSq;
-    return gapX * gapX + gapY * gapY >= minSq;
+    if (!obstacle.active || obstacle.halfWidth <= 0.0f ||
+        obstacle.halfHeight <= 0.0f) return true;
+
+    auto inside = [&](float x, float y) {
+        return std::fabs(x - obstacle.x) < obstacle.halfWidth &&
+               std::fabs(y - obstacle.footY) < obstacle.halfHeight;
+    };
+    // Allow an actor that was restored inside another footprint to leave it;
+    // otherwise the two actors can remain permanently deadlocked.
+    if (inside(fromX, fromY)) return !inside(toX, toY);
+
+    const float dx = toX - fromX;
+    const float dy = toY - fromY;
+    float tMin = 0.0f;
+    float tMax = 1.0f;
+    const float delta[2] = {dx, dy};
+    const float start[2] = {fromX, fromY};
+    const float center[2] = {obstacle.x, obstacle.footY};
+    const float extent[2] = {obstacle.halfWidth, obstacle.halfHeight};
+    for (uint8_t axis = 0; axis < 2; ++axis) {
+        if (std::fabs(delta[axis]) <= 0.0001f) {
+            if (std::fabs(start[axis] - center[axis]) >= extent[axis]) {
+                return true;
+            }
+            continue;
+        }
+        float nearT = (center[axis] - extent[axis] - start[axis]) /
+                      delta[axis];
+        float farT = (center[axis] + extent[axis] - start[axis]) /
+                     delta[axis];
+        if (nearT > farT) std::swap(nearT, farT);
+        tMin = std::max(tMin, nearT);
+        tMax = std::min(tMax, farT);
+        if (tMin > tMax) return true;
+    }
+    // Exact edge contact is valid; only a segment through the open rectangle
+    // is blocked.
+    return !(tMax > tMin && tMax > 0.0f && tMin < 1.0f);
 }
 
 bool RoomNavigator::build(const Request& request, Home::Route& route,
@@ -74,9 +83,8 @@ bool RoomNavigator::build(const Request& request, Home::Route& route,
         if (!request.obstacle.active) return true;
         float dx = x - request.obstacle.x;
         float dy = y + offsetY - request.obstacle.footY;
-        float minSq = request.obstacle.minSeparation *
-                      request.obstacle.minSeparation;
-        return dx * dx + dy * dy >= minSq;
+        return std::fabs(dx) >= request.obstacle.halfWidth ||
+               std::fabs(dy) >= request.obstacle.halfHeight;
     };
     auto segmentAllowed = [&](float fromX, float fromY,
                               float toX, float toY,

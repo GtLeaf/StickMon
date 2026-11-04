@@ -1,4 +1,5 @@
 #include "Rgb565Transfer.h"
+#include "ExploreFramePipeline.h"
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -14,6 +15,7 @@
 #include "HomeScreen.h"
 #include "LockPetDoubleTap.h"
 #include "LockPowerSchedule.h"
+#include "DisplayStandbySchedule.h"
 #include "AmoledLockPower.h"
 #include "TouchInput.h"
 #include "core/AudioManager.h"
@@ -66,6 +68,8 @@ constexpr size_t TRANSFER_PIXELS =
 using TransferBuffers = std::array<uint16_t*, TRANSFER_BUFFER_COUNT>;
 
 #if STICKMON_ENABLE_DEBUG_FEATURES
+bool explorePipelineEnabled = true;
+
 struct ExploreFramePerf {
     const char* label = "[ExplorePerf]";
     int64_t windowStartedUs = 0;
@@ -194,11 +198,43 @@ struct ExploreFramePerf {
     }
 };
 
+bool standbyToggleRequested = false;
+
 struct ExploreSerialCommand {
     char line[32] = {};
     uint8_t length = 0;
     bool discard = false;
     bool ready = false;
+
+    // Export the last rendered framebuffer without changing scene or save.
+    void captureFrame() {
+        auto& canvas = PixelRenderer::canvas();
+        char row[LOGICAL_WIDTH * 4 + 40];
+        const auto send = [](const char* data, int length) {
+            // Match the console's VFS output path. The RX driver's small TX
+            // ring cannot enqueue a complete framebuffer row.
+            return std::fwrite(data, 1, length, stdout) == size_t(length) &&
+                   std::fflush(stdout) == 0;
+        };
+        int length = std::snprintf(row, sizeof(row), "\n[FrameBegin] %u %u\n", LOGICAL_WIDTH, LOGICAL_HEIGHT);
+        if (!send(row, length)) return;
+        uint32_t hash = 2166136261U;
+        constexpr char hex[] = "0123456789abcdef";
+        for (int y = 0; y < LOGICAL_HEIGHT; ++y) {
+            int used = std::snprintf(row, sizeof(row), "[FrameRow] %d ", y);
+            for (int x = 0; x < LOGICAL_WIDTH; ++x) {
+                const uint16_t pixel = canvas.readPixel(x, y);
+                hash = (hash ^ uint8_t(pixel >> 8)) * 16777619U;
+                hash = (hash ^ uint8_t(pixel)) * 16777619U;
+                for (int shift = 12; shift >= 0; shift -= 4) row[used++] = hex[(pixel >> shift) & 15];
+            }
+            row[used++] = '\n';
+            if (!send(row, used)) return;
+            vTaskDelay(1);
+        }
+        length = std::snprintf(row, sizeof(row), "[FrameEnd] %08lx\n", static_cast<unsigned long>(hash));
+        send(row, length);
+    }
 
     void begin() {
         usb_serial_jtag_driver_config_t config =
@@ -218,10 +254,18 @@ struct ExploreSerialCommand {
                     line[length] = '\0';
                     if (std::strcmp(line, "diag ping") == 0) {
                         ESP_LOGI(TAG, "[DiagCmd] pong");
+                    } else if (std::strcmp(line, "diag pipeline 0") == 0 ||
+                               std::strcmp(line, "diag pipeline 1") == 0) {
+                        explorePipelineEnabled = line[14] == '1';
+                        ESP_LOGI(TAG, "[DiagCmd] pipeline=%u", explorePipelineEnabled);
+                    } else if (std::strcmp(line, "diag standby") == 0) {
+                        standbyToggleRequested = true;
                     } else if (std::strcmp(line, "diag power") == 0) {
                         lockPower.report();
                     } else if (std::strcmp(line, "diag status") == 0) {
                         app.debugReportSaveState();
+                    } else if (std::strcmp(line, "diag frame") == 0) {
+                        captureFrame();
                     } else if (std::strncmp(line, "diag battle ", 12) == 0) {
                         unsigned scenario = 0;
                         char extra = 0;
@@ -797,6 +841,48 @@ extern "C" void app_main(void) {
     if (pendingOta && !AmoledV2::Ota::confirmBoot()) esp_restart();
 
     lockPower.begin();
+    AmoledV2::ExploreFramePipeline explorePipeline;
+    uint16_t* renderSpare = static_cast<uint16_t*>(heap_caps_malloc(
+        PHYSICAL_PIXELS * sizeof(uint16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    bool pipelineReady = renderSpare && explorePipeline.begin(
+        PHYSICAL_WIDTH, transferBuffers.data(), transferBuffers.size(),
+        TRANSFER_LOGICAL_ROWS, transferDone, submitPanelPixels, panel);
+    if (!pipelineReady) {
+        heap_caps_free(renderSpare);
+        renderSpare = nullptr;
+    }
+    ESP_LOGI(TAG, "Explore render/transfer pipeline: %s, extra framebuffer=%u bytes",
+             pipelineReady ? "ready" : "synchronous fallback",
+             pipelineReady ? static_cast<unsigned>(PHYSICAL_PIXELS * sizeof(uint16_t)) : 0U);
+    Stickmon::FrameRect spareDamage{0, 0, PHYSICAL_WIDTH, PHYSICAL_HEIGHT};
+    // A timed-out DMA may still own its buffers. Preserve them and the save;
+    // never retry rendering into memory whose ownership is unknown.
+    const auto stopOnTransferTimeout = [&](esp_err_t error) {
+        if (error != ESP_ERR_TIMEOUT) return;
+        ESP_LOGE(TAG, "Display DMA timeout; stopping display until device restart");
+        app.flushSave();
+        for (;;) vTaskDelay(pdMS_TO_TICKS(1000));
+    };
+    const auto collectExploreFrame = [&](bool wait) {
+        AmoledV2::ExploreFramePipeline::Result completed;
+        if (!explorePipeline.takeResult(completed, wait)) return ESP_OK;
+        stopOnTransferTimeout(completed.error);
+        if (completed.error != ESP_OK) {
+            ESP_LOGE(TAG, "Explore transfer failed: %s; falling back to full redraw",
+                     esp_err_to_name(completed.error));
+            pipelineReady = false;
+            app.forceFullRender();
+        }
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        else if (completed.frame.profile) {
+            const auto& frame = completed.frame;
+            exploreFramePerf.record(frame.startedUs, completed.finishedUs,
+                frame.updateUs, frame.clawUs, frame.drawUs, completed.transferUs,
+                frame.bounds.bottom - frame.bounds.top, frame.bounds.right - frame.bounds.left);
+        }
+#endif
+        return completed.error;
+    };
     Amoled::LockPowerSchedule lockSchedule;
     uint8_t lastPresentedSleepFrame = 0;
 #if STICKMON_ENABLE_DEBUG_FEATURES
@@ -832,7 +918,11 @@ extern "C" void app_main(void) {
 #if STICKMON_HAS_CLAW
     Stickmon::ClawRuntime::instance().beginAsync();
 #endif
+    Amoled::DisplayStandbySchedule standbySchedule;
+    bool discardStandbyTouch = false;
+    uint8_t standbyBrightness = AmoledV2::AmoledPlatform::instance().brightness();
     while (true) {
+        collectExploreFrame(false);
 #if STICKMON_ENABLE_DEBUG_FEATURES
         const int64_t loopStartedUs = esp_timer_get_time();
 #endif
@@ -840,8 +930,91 @@ extern "C" void app_main(void) {
 #if STICKMON_ENABLE_DEBUG_FEATURES
         exploreCommand.poll(app);
 #endif
+        auto& powerPlatform = AmoledV2::AmoledPlatform::instance();
+        bool powerPressed = false;
+        if (!app.displayStandby() || standbySchedule.buttonDue(nowMs)) {
+            powerPressed = powerPlatform.takePowerButtonPress(nowMs);
+            standbySchedule.polled(nowMs);
+        }
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        powerPressed |= standbyToggleRequested;
+        standbyToggleRequested = false;
+#endif
+        if (powerPressed) {
+            collectExploreFrame(true);
+            lockPower.setLockedRoom(false, false);
+            if (app.displayStandby()) {
+                const int64_t wakeStartedUs = esp_timer_get_time();
+                app.setDisplayStandby(false, nowMs);
+                powerPlatform.setBrightness(standbyBrightness);
+                // Wake redraw bypasses the normal synchronous-scene path.
+                // The spare framebuffer must catch up before the next DMA frame.
+                spareDamage = {0, 0, PHYSICAL_WIDTH, PHYSICAL_HEIGHT};
+                app.render(canvas);
+#if STICKMON_ENABLE_DEBUG_FEATURES
+                app.renderDebugTouchOverlay(canvas);
+#endif
+                // Refresh GRAM while the panel is off, then reveal a complete frame.
+                result = submitFrame(panel, physicalPixels, transferBuffers, transferDone);
+                stopOnTransferTimeout(result);
+                if (result == ESP_OK) result = esp_lcd_panel_disp_on_off(panel, true);
+                if (result == ESP_OK) {
+                    app.markRendered();
+                    powerPlatform.setAudioStandby(false);
+                    AudioManager::ins().setMusicSuspended(false);
+                    lockPhase = LockPhase::OPEN;
+                    lockRequestPending = false;
+                    lockDoubleTap.reset();
+                    lockVisualValid = lockHasFocus = lockSnapshotValid = false;
+                    lockFinalCleanupPending = false;
+                    sceneFadeWasActive = false;
+                    lockWakeGraceUntilMs = millisNow() + LOCK_WAKE_GRACE_MS;
+                    ESP_LOGI(TAG, "[Standby] awake restoreUs=%lld; no reboot",
+                             static_cast<long long>(esp_timer_get_time() - wakeStartedUs));
+                } else {
+                    app.setDisplayStandby(true, nowMs);
+                    ESP_LOGE(TAG, "[Standby] wake failed: %s", esp_err_to_name(result));
+                }
+            } else {
+                standbyBrightness = sceneFadeWasActive ? sceneFadeBaseBrightness :
+                    (lockPhase != LockPhase::OPEN ? lockedBrightness : powerPlatform.brightness());
+                if (app.prepareDisplayStandby(nowMs)) {
+                    powerPlatform.setAudioStandby(true);
+                    result = esp_lcd_panel_disp_on_off(panel, false);
+                    if (result == ESP_OK) {
+                        standbySchedule.begin(millisNow());
+                        ESP_LOGI(TAG, "[Standby] asleep panel=off render=off logic=1000ms key=250ms");
+                    } else {
+                        app.setDisplayStandby(false, nowMs);
+                        powerPlatform.setAudioStandby(false);
+                        AudioManager::ins().setMusicSuspended(lockPhase != LockPhase::OPEN);
+                        ESP_LOGE(TAG, "[Standby] panel-off failed: %s", esp_err_to_name(result));
+                    }
+                }
+            }
+        }
+        if (app.displayStandby()) {
+            AmoledV2::TouchEvent ignored;
+            if (touchReady && touch.poll(nowMs, ignored)) {
+                discardStandbyTouch = ignored.type != AmoledV2::TouchEventType::UP;
+            }
+            if (standbySchedule.logicDue(nowMs)) {
+                app.update(nowMs);
+                standbySchedule.updated(nowMs);
+#if STICKMON_HAS_CLAW
+                Stickmon::ClawRuntime::instance().update(nowMs);
+#endif
+            }
+            lockPower.setLockedRoom(true, touchReady && touch.canSleep());
+            touch.waitForInput(standbySchedule.wait(millisNow()));
+            continue;
+        }
         AmoledV2::TouchEvent event;
-        if (touchReady && touch.poll(nowMs, event)) {
+        const bool gotTouch = touchReady && touch.poll(nowMs, event);
+        const bool discardTouch = discardStandbyTouch;
+        if (gotTouch && discardStandbyTouch && event.type == AmoledV2::TouchEventType::UP)
+            discardStandbyTouch = false;
+        if (gotTouch && !discardTouch) {
 #if STICKMON_HAS_CLAW
             Stickmon::ClawRuntime::instance().notePlayerActivity(nowMs);
 #endif
@@ -919,6 +1092,14 @@ extern "C" void app_main(void) {
         clawUs = static_cast<uint32_t>(esp_timer_get_time() - clawStartedUs);
 #endif
 #endif
+        bool pipelineAllowed = pipelineReady && app.exploreFramePipelineAllowed() &&
+            lockPhase == LockPhase::OPEN && !lockRequestPending;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+        pipelineAllowed = pipelineAllowed && explorePipelineEnabled;
+#endif
+        // Scene transitions, brightness commands and snapshot captures must
+        // follow completion of the last explore frame on the panel.
+        if (!pipelineAllowed) collectExploreFrame(true);
         const bool sceneFadeActive = app.sceneFadeActive();
         const bool sceneFadePhaseChanged = sceneFadeActive &&
             (!sceneFadeWasActive ||
@@ -1179,6 +1360,24 @@ extern "C" void app_main(void) {
             const bool profileShowerFrame = !lockFrame && app.showerDraggingForDiagnostics();
             const int64_t renderStartedUs = esp_timer_get_time();
 #endif
+            const bool pipelineFrame = pipelineAllowed && !lockFrame;
+            if (pipelineFrame) {
+                alignDisplayUpdateRegion(renderXBegin, renderXEnd, renderBegin, renderEnd);
+                app.forceRenderRegion(renderXBegin, renderBegin, renderXEnd, renderEnd);
+            }
+            const Stickmon::FrameRect renderBounds{
+                renderXBegin, renderBegin, renderXEnd, renderEnd};
+            if (pipelineFrame) {
+                Stickmon::syncFrameOutsideDamage(renderSpare, physicalPixels,
+                    PHYSICAL_WIDTH, spareDamage, renderBounds);
+                std::swap(physicalPixels, renderSpare);
+                canvas.attach({physicalPixels, PHYSICAL_WIDTH, PHYSICAL_HEIGHT, true});
+                PixelRenderer::bind({physicalPixels, PHYSICAL_WIDTH, PHYSICAL_HEIGHT, true});
+                spareDamage = renderBounds;
+            } else {
+                // Synchronous scenes may change any part of the front image.
+                spareDamage = {0, 0, PHYSICAL_WIDTH, PHYSICAL_HEIGHT};
+            }
             if (useLockSnapshot) {
                 restoreFrameRegion(physicalPixels, lockSnapshot,
                                    nativeRenderXBegin, nativeRenderXEnd,
@@ -1201,7 +1400,30 @@ extern "C" void app_main(void) {
 #if STICKMON_ENABLE_DEBUG_FEATURES
             const int64_t renderFinishedUs = esp_timer_get_time();
 #endif
-            if (lockFrame) {
+            bool queuedExploreFrame = false;
+            if (pipelineFrame) {
+                // The previous transfer overlapped the render above. Only now
+                // wait for its ownership to return, then hand over this frame.
+                result = collectExploreFrame(true);
+                if (result == ESP_OK) {
+                    AmoledV2::ExploreFramePipeline::Frame frame;
+                    frame.pixels = physicalPixels;
+                    frame.bounds = renderBounds;
+#if STICKMON_ENABLE_DEBUG_FEATURES
+                    frame.startedUs = loopStartedUs;
+                    frame.updateUs = updateUs;
+                    frame.clawUs = clawUs;
+                    frame.drawUs = static_cast<uint32_t>(renderFinishedUs - renderStartedUs);
+                    frame.profile = profileExploreFrame;
+#endif
+                    queuedExploreFrame = explorePipeline.submitFrame(frame);
+                    result = queuedExploreFrame ? ESP_OK : ESP_FAIL;
+                    if (!queuedExploreFrame) {
+                        pipelineReady = false;
+                        app.forceFullRender();
+                    }
+                }
+            } else if (lockFrame) {
                 drawLockMask(canvas,
                              lockFrameFocusX,
                              lockFrameFocusY,
@@ -1232,7 +1454,7 @@ extern "C" void app_main(void) {
                     static_cast<uint16_t>(renderEnd - renderBegin),
                     static_cast<uint16_t>(renderXEnd - renderXBegin));
             }
-            if (profileExploreFrame && result == ESP_OK) {
+            if (profileExploreFrame && result == ESP_OK && !queuedExploreFrame) {
                 exploreFramePerf.record(
                     loopStartedUs, transferFinishedUs, updateUs, clawUs,
                     static_cast<uint32_t>(renderFinishedUs - renderStartedUs),
@@ -1242,6 +1464,7 @@ extern "C" void app_main(void) {
             }
 #endif
             if (result != ESP_OK) {
+                stopOnTransferTimeout(result);
                 ESP_LOGE(TAG, "Frame update failed: %s",
                          esp_err_to_name(result));
             } else {

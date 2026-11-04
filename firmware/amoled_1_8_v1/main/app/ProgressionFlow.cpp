@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-#include "HomeScreen.h"
+#include "ui/ProgressionScreens.h"
 #include "game/CareExperience.h"
 #include "game/Species.h"
 #include "ui/UiMetrics.h"
@@ -544,7 +544,7 @@ void ProgressionFlow::dragReplacement(int deltaY) {
         : 0;
     state_.progressionScroll = std::clamp<int16_t>(
         state_.progressionScroll, 0, static_cast<int16_t>(maximum));
-    damageRows(TEAM_MOVES_HEADER_HEIGHT, 448);
+    damageRows(UiMetrics::PAGE_HEADER_HEIGHT, 448);
 }
 
 void ProgressionFlow::cancelTouch() {

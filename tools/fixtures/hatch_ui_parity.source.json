@@ -1,0 +1,28 @@
+{
+  "source": "pre-batch working tree snapshot",
+  "snapshot": ".stick-local/artifacts/device-ui-hatch-overlays-20261023/frozen/src",
+  "sha256": {
+    "src/scenes/HatchScene.cpp": "253765c0ad01b8ae98c9ec52923919c81d63ef231806caa150bd05d382d589cd",
+    "src/scenes/HatchScene.h": "fd1aeff0a5cdef96626cff7b38f2a3c53024c55dd03623a6ac991cb494e69aa1",
+    "src/scenes/MenuScene.cpp": "bc4b29614f043b409c6e91e2c1aa5250bfca3ba0c019fad1ca0a769e4599715a",
+    "src/scenes/MenuScene.h": "b4256fa795e20383052bd144fa5dc2b9626c3ba37653b3148d3fe7b3cb2a0fcb"
+  },
+  "configurations": {
+    "ostb-debug": {
+      "frames": 672,
+      "checkpoints": "hatch-overlay-checkpoints=52"
+    },
+    "ostb-release": {
+      "frames": 648,
+      "checkpoints": "hatch-overlay-checkpoints=50"
+    },
+    "sticks3-debug": {
+      "frames": 672,
+      "checkpoints": "hatch-overlay-checkpoints=51"
+    },
+    "sticks3-release": {
+      "frames": 648,
+      "checkpoints": "hatch-overlay-checkpoints=49"
+    }
+  }
+}

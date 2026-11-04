@@ -1,21 +1,12 @@
 #pragma once
 
-#include <cstdint>
+#include "ui/common/ProgressionUiModel.h"
+#include "core/TouchTap.h"
 
 namespace ProgressionUi {
 
-enum class MoveLearnStage : uint8_t {
-    PROMPT,
-    REPLACEMENT,
-};
-
-struct MoveLearnState {
-    MoveLearnStage stage = MoveLearnStage::PROMPT;
-    uint8_t promptCursor = 0;
-    uint8_t replacementSlot = 1;
-    bool confirmOpen = false;
-    bool confirmYes = false;
-};
+using MoveLearnStage = Ui::MoveLearnStage;
+using MoveLearnState = Ui::MoveLearnState;
 
 void renderLevelUp(const char* speciesName, uint8_t level);
 bool evolutionAnimationComplete(uint16_t fromSpeciesId,
@@ -32,6 +23,10 @@ void renderEvolution(uint16_t fromSpeciesId,
 void renderEvolutionCancelled(uint16_t speciesId, uint32_t nowMs);
 void resetMoveLearnState(MoveLearnState& state);
 bool handleMoveLearnInput(MoveLearnState& state, uint8_t button);
+bool handleMoveLearnTouch(MoveLearnState& state, const TouchTap::Event& event);
+bool handleLevelUpTouch(const TouchTap::Event& event);
+bool handleMoveReplacementTouch(const TouchTap::Event& event);
+void cancelMoveLearnTouch();
 void renderMoveLearn(const MoveLearnState& state);
 void renderMoveReplacement();
 

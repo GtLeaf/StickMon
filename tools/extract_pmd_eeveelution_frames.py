@@ -2097,9 +2097,13 @@ SPECS = [
         display_name="Scizor",
         source_name="212_scizor.png",
         scale=2.0,
+        source_directions=["front", "left", "back", "up_left", "down_left"],
         contact_directions=SOURCE_DIRECTIONS,
         export_mirror_frames=False,
-        notes=["Only the five left-side source directions are exported; right-side directions are mirrored at runtime."],
+        notes=[
+            "The source rows use front, left, back, up_left, down_left, unlike the generic sheet order.",
+            "Only the five left-side source directions are exported; right-side directions are mirrored at runtime.",
+        ],
         sleeping_boxes=[(611, 22, 640, 52), (610, 56, 640, 84)],
         boxes={
             "idle": [

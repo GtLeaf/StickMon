@@ -1,0 +1,23 @@
+{
+  "sticks3": {
+    "bag-confirm.rgb565": "416f85225f13934a23f0a6c4b7852a7aab72b51500fc8274206e9a0a66aa6311",
+    "bag-entry.rgb565": "bf1e52fb68c761714817845ab5975bb37bf24fc8bf6a14113e5ea8825956365f",
+    "bag-used.rgb565": "3534a336feb901091dd676320e1560301d0a4089b6b7a6918e95e5359ce0d868",
+    "shop-bought.rgb565": "4b3dd177f74e7e69fff73bb0119dbf6e2b5f00a9e7dcdfcc05c2a78fa3f5f8f8",
+    "shop-detail.rgb565": "d3dfb1c7682a796f93bf165d5d6b8abb22d913fd87909bc0ba19f85d5440b83d",
+    "shop-entry.rgb565": "0e7503f5e59bccd056314d8c8043316911c4a9940471955f47b96a1e16db975e",
+    "shop-sell.rgb565": "fc1bc028403f8ae9afe600140182ee53c2e3e88a55b236e1740dde087c995324",
+    "shop-sold.rgb565": "5ee6d9d76dcbf1e92c240a5de97959a8af29dbcb9475f026de88dcbc64cf5c68"
+  },
+  "ostb": {
+    "bag-confirm.rgb565": "7d445348280c4d8f23b8e3c2d324b82772721eae76e843f6df5e43b15bde7133",
+    "bag-detail.rgb565": "5e18d9e3987bc110b3a9b806a1562b863c2f39f9c6a56aaa7e3edee2d07aead7",
+    "bag-entry.rgb565": "97b244593a4180df9179c7daf529bd1f295d8ac4356d3d47ffb5415019da0956",
+    "bag-used.rgb565": "135d2c0957b18f5dd6d52b7a862c2eeb0ef0889067ce8b87010f754dbe87900e",
+    "shop-bought.rgb565": "168e03ddfc3f7ee6631b29e87f3a88268fc99b473940d8adef598fa642abe7ce",
+    "shop-detail.rgb565": "085e65786bbb24a2e2000b7b60db1e08fb2e62bdad9c4083d44c5a1699d0bc56",
+    "shop-entry.rgb565": "d3a436903a3e0f540e127e41ce5166b6068022ba9497746e5e7527ce53fab0ff",
+    "shop-sell.rgb565": "b5e6af63d6224f6f4eb244e3c68d3ddbf805a6234ed3efb8c8901b5b7a163543",
+    "shop-sold.rgb565": "831df1d3c3880771d4d70b0fe66e7f20b96bef882cab6907d894252f26eb6ca5"
+  }
+}

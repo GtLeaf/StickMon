@@ -1,6 +1,6 @@
 # 探索会话批次
 
-日期：2026-10-18。用户已确认执行上一轮建议。本批只提取 ExploreSession；Presenter 和 HomeFlow 留待后续。
+日期：2026-10-18。用户已确认执行上一轮建议。本批只提取 ExploreSession；随后已完成 [ExplorePresenter](explore-presenter.md) 与 [HomeFlow](home-flow.md)。
 
 ## 范围与验收
 
@@ -68,6 +68,6 @@
 
 ## 后续
 
-下一批抽 ExplorePresenter，迁移坐标/相机/帧时钟、模型构建与脏区计算，并继续保留 App 的资源和硬件职责。之后处理 HomeFlow。未刷机或执行实机验收；显示/触摸、暂停后音画节拍、锁屏电源、通信与内存高水位仍需设备验证。
+坐标／相机／帧时钟、模型与脏区计算随后已迁入 [ExplorePresenter](explore-presenter.md)，房间动作已迁入 [HomeFlow](home-flow.md)，App 继续负责资源与硬件。本会话提取批次未刷机或执行实机验收；显示/触摸、暂停后音画节拍、锁屏电源、通信与内存高水位仍需设备验证。
 
 后续进展：2026-10-19 已实施 [ExplorePresenter](explore-presenter.md)，该记录包含本批构建、体积与设备测试结果。

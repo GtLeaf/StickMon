@@ -19,10 +19,18 @@ class V2DisplayTests(unittest.TestCase):
             start = source.index("void alignDisplayUpdateRegion(")
             helper = source[start:source.index("esp_err_t submitFrame(", start)]
         with tempfile.TemporaryDirectory() as directory:
+            stubs = Path(directory)
+            (stubs / "freertos").mkdir()
+            # The panel harness defines these types above the real transfer
+            # implementation, so its SDK includes can be empty on the host.
+            for name in ("esp_err.h", "freertos/FreeRTOS.h", "freertos/semphr.h"):
+                (stubs / name).write_text("#pragma once\n")
             cpp = Path(directory) / "display.cpp"
-            cpp.write_text(PREFIX + helper + transfers + SUFFIX)
+            cpp.write_text(PREFIX + '\n#include "Rgb565Transfer.cpp"\n' +
+                           helper + transfers + SUFFIX)
             binary = Path(directory) / "display"
             subprocess.run(["c++", "-std=c++17", "-Wall", "-Wextra", "-Werror",
+                            "-I" + directory, "-I" + str(ROOT / "firmware/common"),
                             str(cpp), "-o", str(binary)], check=True)
             subprocess.run([str(binary)], check=True)
 

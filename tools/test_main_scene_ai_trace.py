@@ -47,7 +47,8 @@ class MainSceneDiagnosticsTests(unittest.TestCase):
         end = self.source.index("void MainScene::enterVisitorFeeding", begin)
         body = self.source[begin:end]
         self.assertIn("visitor.task != VisitorState::IDLE", body)
-        self.assertIn("visitor.task = VisitorState::WALK", body)
+        self.assertRegex(body, r"homeCoordinator\.transitionPreparedRoute\(\s*"
+                         r"1, VisitorState::WALK, nowMs, 0, true\)")
         self.assertIn("buildVisitorMoveRoute(candidateX, candidateY)", body)
 
     def test_failed_food_arbitration_does_not_freeze_main_actor(self):

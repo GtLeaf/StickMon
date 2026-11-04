@@ -53,12 +53,19 @@ RoomNavigator::Obstacle Runtime::obstacleFor(
         world_.actorCollisionMode == ActorCollisionMode::SOFT) {
         return obstacle;
     }
+    const Actor* moving = actor(actorId);
     const Actor* other = otherActor(actorId);
+    if (!moving) return obstacle;
     if (!other || !other->active || other->hidden) return obstacle;
     obstacle.active = true;
     obstacle.x = other->x;
     obstacle.footY = other->y + other->geometry.groundOffsetY;
-    obstacle.minSeparation = world_.actorMinSeparation;
+    obstacle.halfWidth = moving->geometry.footprint.radiusX +
+                         other->geometry.footprint.radiusX +
+                         world_.actorOverlapPadding;
+    obstacle.halfHeight = moving->geometry.footprint.radiusY +
+                          other->geometry.footprint.radiusY +
+                          world_.actorOverlapPadding;
     return obstacle;
 }
 
@@ -83,8 +90,8 @@ bool Runtime::overlapsOther(uint8_t actorId, float x, float y) const {
     const float allowedY = moving->geometry.footprint.radiusY +
                            other->geometry.footprint.radiusY +
                            world_.actorOverlapPadding;
-    return std::fabs(x - other->x) < std::max(1.0f, allowedX) &&
-           std::fabs(movingFootY - otherFootY) < std::max(1.0f, allowedY);
+    return std::fabs(x - other->x) < allowedX &&
+           std::fabs(movingFootY - otherFootY) < allowedY;
 }
 
 bool Runtime::targetAvailable(uint8_t actorId, float x, float y) const {
@@ -113,49 +120,19 @@ bool Runtime::segmentOverlapsOther(uint8_t actorId, float fromX,
         return false;
     }
 
-    const float otherFootY = other->y + other->geometry.groundOffsetY;
-    const float fromFootY = fromY + moving->geometry.groundOffsetY;
-    const float toFootY = toY + moving->geometry.groundOffsetY;
-    // overlapsOther() uses strict interior bounds, so a segment travelling
-    // exactly along the footprint edge must remain legal as well.
-    constexpr float EDGE_EPSILON = 0.001f;
-    const float halfX = std::max(
-        1.0f, moving->geometry.footprint.radiusX +
-                  other->geometry.footprint.radiusX +
-                  world_.actorOverlapPadding) - EDGE_EPSILON;
-    const float halfY = std::max(
-        1.0f, moving->geometry.footprint.radiusY +
-                  other->geometry.footprint.radiusY +
-                  world_.actorOverlapPadding) - EDGE_EPSILON;
-    const float minX = other->x - halfX;
-    const float maxX = other->x + halfX;
-    const float minY = otherFootY - halfY;
-    const float maxY = otherFootY + halfY;
-
-    // Slab intersection for the swept foot point. The rectangle is
-    // deliberately conservative; the padding keeps a one-pixel visual gap.
-    float tMin = 0.0f;
-    float tMax = 1.0f;
-    const float delta[2] = {toX - fromX, toFootY - fromFootY};
-    const float start[2] = {fromX, fromFootY};
-    const float boundsMin[2] = {minX, minY};
-    const float boundsMax[2] = {maxX, maxY};
-    for (uint8_t axis = 0; axis < 2; ++axis) {
-        if (std::fabs(delta[axis]) <= 0.0001f) {
-            if (start[axis] < boundsMin[axis] ||
-                start[axis] > boundsMax[axis]) {
-                return false;
-            }
-            continue;
-        }
-        float nearT = (boundsMin[axis] - start[axis]) / delta[axis];
-        float farT = (boundsMax[axis] - start[axis]) / delta[axis];
-        if (nearT > farT) std::swap(nearT, farT);
-        tMin = std::max(tMin, nearT);
-        tMax = std::min(tMax, farT);
-        if (tMin > tMax) return false;
-    }
-    return tMax >= 0.0f && tMin <= 1.0f;
+    RoomNavigator::Obstacle obstacle;
+    obstacle.active = true;
+    obstacle.x = other->x;
+    obstacle.footY = other->y + other->geometry.groundOffsetY;
+    obstacle.halfWidth = moving->geometry.footprint.radiusX +
+                         other->geometry.footprint.radiusX +
+                         world_.actorOverlapPadding;
+    obstacle.halfHeight = moving->geometry.footprint.radiusY +
+                          other->geometry.footprint.radiusY +
+                          world_.actorOverlapPadding;
+    return !RoomNavigator::segmentKeepsSpacing(
+        fromX, fromY + moving->geometry.groundOffsetY,
+        toX, toY + moving->geometry.groundOffsetY, obstacle);
 }
 
 bool Runtime::shouldYieldToOther(uint8_t actorId) const {
@@ -372,9 +349,13 @@ bool Runtime::planRouteInternal(uint8_t actorId, float goalX, float goalY,
         request.obstacle.active = true;
         request.obstacle.x = other->x;
         request.obstacle.footY = other->y + other->geometry.groundOffsetY;
-        request.obstacle.minSeparation = std::max(
-            moving->geometry.footprint.radiusX + other->geometry.footprint.radiusX,
-            moving->geometry.footprint.radiusY + other->geometry.footprint.radiusY) +
+        request.obstacle.halfWidth =
+            moving->geometry.footprint.radiusX +
+            other->geometry.footprint.radiusX +
+            world_.actorOverlapPadding;
+        request.obstacle.halfHeight =
+            moving->geometry.footprint.radiusY +
+            other->geometry.footprint.radiusY +
             world_.actorOverlapPadding;
     }
 

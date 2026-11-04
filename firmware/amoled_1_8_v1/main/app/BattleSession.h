@@ -3,6 +3,7 @@
 #include "app/BattleTimeline.h"
 #include "game/BattleTurnController.h"
 #include "game/ExploreSpecialEncounter.h"
+#include "game/ExploreCostService.h"
 #include "ui/models/ScreenModels.h"
 
 namespace AmoledV1 {
@@ -15,6 +16,7 @@ public:
     enum class BattleContinuation : uint8_t { NONE, ADVANCE_TURN, WILD_TURN, FINISH_END_TURN };
     struct State {
         Game::MonsterRuntime battleWild;
+        Game::ExploreCost::Battle costs;
         uint8_t battlePlayerSlot = 0;
         BattleSystem::BattleActorState battlePlayerState;
         BattleSystem::BattleActorState battleWildState;
@@ -55,6 +57,9 @@ public:
     };
     void bindClock(Clock clock) { clock_ = clock; }
     const State& state() const { return state_; }
+    uint8_t settleExploreCosts(Game::GameState& gameState, Game::ExploreCost::Session& session) {
+        return session.settleBattle(gameState, state_.costs);
+    }
     BattleViewModel model(const Game::GameState& gameState, uint32_t nowMs) const;
     const BattleTimeline& timeline() const { return timeline_; }
     void begin(Game::GameState& gameState, const Game::MonsterRuntime& wild,

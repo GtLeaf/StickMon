@@ -12,6 +12,7 @@
 #include "HomeScreen.h"
 #include "LockPetDoubleTap.h"
 #include "LockPowerSchedule.h"
+#include "DisplayStandbySchedule.h"
 #include "AmoledLockPower.h"
 #include "TouchInput.h"
 #include "core/AudioManager.h"
@@ -644,13 +645,90 @@ extern "C" void app_main(void) {
 #if STICKMON_HAS_CLAW
     Stickmon::ClawRuntime::instance().beginAsync();
 #endif
+    Amoled::DisplayStandbySchedule standbySchedule;
+    bool discardStandbyTouch = false;
+    uint8_t standbyBrightness = AmoledV1::AmoledPlatform::instance().brightness();
     while (true) {
 #if STICKMON_ENABLE_DEBUG_FEATURES
         const int64_t loopStartedUs = esp_timer_get_time();
 #endif
         uint32_t nowMs = millisNow();
+        auto& powerPlatform = AmoledV1::AmoledPlatform::instance();
+        bool powerPressed = false;
+        if (!app.displayStandby() || standbySchedule.buttonDue(nowMs)) {
+            powerPressed = powerPlatform.takePowerButtonPress(nowMs);
+            standbySchedule.polled(nowMs);
+        }
+        if (powerPressed) {
+            lockPower.setLockedRoom(false, false);
+            if (app.displayStandby()) {
+                const int64_t wakeStartedUs = esp_timer_get_time();
+                app.setDisplayStandby(false, nowMs);
+                powerPlatform.setBrightness(standbyBrightness);
+                app.render(canvas);
+#if STICKMON_ENABLE_DEBUG_FEATURES
+                app.renderDebugTouchOverlay(canvas);
+#endif
+                // Refresh GRAM while the panel is off, then reveal a complete frame.
+                result = submitFrame(panel, physicalPixels, transferBuffers, transferDone);
+                if (result == ESP_OK) result = esp_lcd_panel_disp_on_off(panel, true);
+                if (result == ESP_OK) {
+                    app.markRendered();
+                    powerPlatform.setAudioStandby(false);
+                    AudioManager::ins().setMusicSuspended(false);
+                    lockPhase = LockPhase::OPEN;
+                    lockRequestPending = false;
+                    lockDoubleTap.reset();
+                    lockVisualValid = lockHasFocus = lockSnapshotValid = false;
+                    lockFinalCleanupPending = false;
+                    sceneFadeWasActive = false;
+                    lockWakeGraceUntilMs = millisNow() + LOCK_WAKE_GRACE_MS;
+                    ESP_LOGI(TAG, "[Standby] awake restoreUs=%lld; no reboot",
+                             static_cast<long long>(esp_timer_get_time() - wakeStartedUs));
+                } else {
+                    app.setDisplayStandby(true, nowMs);
+                    ESP_LOGE(TAG, "[Standby] wake failed: %s", esp_err_to_name(result));
+                }
+            } else {
+                standbyBrightness = sceneFadeWasActive ? sceneFadeBaseBrightness :
+                    (lockPhase != LockPhase::OPEN ? lockedBrightness : powerPlatform.brightness());
+                if (app.prepareDisplayStandby(nowMs)) {
+                    powerPlatform.setAudioStandby(true);
+                    result = esp_lcd_panel_disp_on_off(panel, false);
+                    if (result == ESP_OK) {
+                        standbySchedule.begin(millisNow());
+                        ESP_LOGI(TAG, "[Standby] asleep panel=off render=off logic=1000ms key=250ms");
+                    } else {
+                        app.setDisplayStandby(false, nowMs);
+                        powerPlatform.setAudioStandby(false);
+                        AudioManager::ins().setMusicSuspended(lockPhase != LockPhase::OPEN);
+                        ESP_LOGE(TAG, "[Standby] panel-off failed: %s", esp_err_to_name(result));
+                    }
+                }
+            }
+        }
+        if (app.displayStandby()) {
+            AmoledV1::TouchEvent ignored;
+            if (touchReady && touch.poll(nowMs, ignored)) {
+                discardStandbyTouch = ignored.type != AmoledV1::TouchEventType::UP;
+            }
+            if (standbySchedule.logicDue(nowMs)) {
+                app.update(nowMs);
+                standbySchedule.updated(nowMs);
+#if STICKMON_HAS_CLAW
+                Stickmon::ClawRuntime::instance().update(nowMs);
+#endif
+            }
+            lockPower.setLockedRoom(true, touchReady && touch.canSleep());
+            touch.waitForInput(standbySchedule.wait(millisNow()));
+            continue;
+        }
         AmoledV1::TouchEvent event;
-        if (touchReady && touch.poll(nowMs, event)) {
+        const bool gotTouch = touchReady && touch.poll(nowMs, event);
+        const bool discardTouch = discardStandbyTouch;
+        if (gotTouch && discardStandbyTouch && event.type == AmoledV1::TouchEventType::UP)
+            discardStandbyTouch = false;
+        if (gotTouch && !discardTouch) {
 #if STICKMON_HAS_CLAW
             Stickmon::ClawRuntime::instance().notePlayerActivity(nowMs);
 #endif

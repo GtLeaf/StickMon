@@ -1951,8 +1951,8 @@ struct AmoledAppTestAccess {
                 app.exploreSession_.state_.exploreRoutePaused = false;
             }
             // A changed viewport restores the entire map, including both actors.
-            app.explorePresenter_.state_.exploreRouteFromX = app.explorePresenter_.state_.exploreRouteWorldX = 180;
-            app.explorePresenter_.state_.exploreRouteTargetX = 196;
+            app.explorePresenter_.state_.exploreRouteFromX = app.explorePresenter_.state_.exploreRouteWorldX = 200;
+            app.explorePresenter_.state_.exploreRouteTargetX = 216;
             app.explorePresenter_.state_.exploreRouteFromY = app.explorePresenter_.state_.exploreRouteWorldY = 140;
             app.explorePresenter_.state_.exploreRouteTargetY = 140;
             app.exploreSession_.state_.exploreRouteMoving = true;

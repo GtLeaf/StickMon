@@ -1,0 +1,12 @@
+{
+  "date": "2026-10-23",
+  "reason": "User requested compact battery, vertical two-pet HUD and inset hamburger menu for OSTB. Original home_ui_parity.json retained.",
+  "before": ".stick-local/artifacts/ostb-home-hud-20261023/before",
+  "review": ".stick-local/artifacts/ostb-home-hud-20261023/preview.png",
+  "source_sha256": {
+    "src/ui/compact_touch/HomeUi.cpp": "3ac0cef3c3f02c5be808f294764268486f807aea314caaddbad1094bbbbeccd7",
+    "src/presentation/HudRenderer.cpp": "12851fcdc3062fa614007605062dac625c2b72c99adb50f951e7005ac2246760",
+    "src/presentation/HudRenderer.h": "f8db8becc16b411c898d46a2f1804ba3ed1fa5222e2d69e29eb370147116c8f8",
+    "tools/home_ui_parity_host.cpp": "d6ca980c65120cb19b94c9f353b2d3e64a6fdecb9ae04c4fe8bc651f283a9d0a"
+  }
+}

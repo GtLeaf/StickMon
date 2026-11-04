@@ -3,6 +3,14 @@
 #include "core/BuildConfig.h"
 
 namespace Ui {
+namespace MarketText {
+static constexpr const char* NAME = "市集";
+static constexpr const char* PAUSE = "暂停";
+static constexpr const char* CONTINUE = "继续";
+static constexpr const char* WALK = "前往";
+static constexpr const char* CHAT = "聊天";
+}
+
 static constexpr const char* TITLE = "StickMon";
 static constexpr const char* ROOM = "房间";
 static constexpr const char* MENU = "菜单";
@@ -84,6 +92,7 @@ static constexpr const char* EVOLUTION_FMT = "%s进化!";
 static constexpr const char* EVOLUTION_COMPLETE_FMT = "%s进化完成!";
 static constexpr const char* EVOLUTION_CANCELLED_FMT = "%s停止进化!";
 static constexpr const char* A_CONTINUE = "A 继续";
+static constexpr const char* CONTINUE = "继续";
 }
 
 namespace Amoled {
@@ -249,6 +258,7 @@ static constexpr const char* NO_STOCK = "没有库存";
 static constexpr const char* ITEM_NOT_READY = "物品尚未准备好";
 static constexpr const char* EXPLORE_ONLY = "只能在探索中使用";
 static constexpr const char* ITEM_USED = "物品已使用";
+static constexpr const char* ITEM_TARGET = "选择精灵";
 static constexpr const char* NO_TARGET = "没有目标";
 static constexpr const char* MON_FAINTED = "精灵已濒死";
 static constexpr const char* HP_FULL = "体力已满";
@@ -677,6 +687,24 @@ static constexpr const char* PAIR_INTERACTION = "追逐触发";
 static constexpr const char* BATTLE_DRAW_BOUNDS = "双方绘制框";
 static constexpr const char* TOUCH_DISPLAY = "点击显示";
 static constexpr const char* TOUCH_TEST = "触摸";
+static constexpr const char* TOUCH_CALIBRATE = "校准";
+static constexpr const char* TOUCH_CALIBRATION_TITLE = "触摸校准";
+static constexpr const char* TOUCH_CALIBRATION_ORDER = "按顺序按住黄色点后松开";
+static constexpr const char* TOUCH_CALIBRATION_HOLD = "每点约半秒，保持手指稳定";
+static constexpr const char* TOUCH_CALIBRATION_FIT = "八点拟合，中心独立验证";
+static constexpr const char* TOUCH_CALIBRATION_SAVE_HINT = "验证后保存，返回可取消";
+static constexpr const char* TOUCH_CALIBRATION_AIM = "对准黄点，按住约半秒后松开";
+static constexpr const char* TOUCH_CALIBRATION_READY = "验证通过，可以保存";
+static constexpr const char* TOUCH_CALIBRATION_START = "开始";
+static constexpr const char* TOUCH_CALIBRATION_SAVE = "保存";
+static constexpr const char* TOUCH_CALIBRATION_RETRY = "重来";
+static constexpr const char* TOUCH_CALIBRATION_RESTORE = "还原";
+static constexpr const char* TOUCH_CALIBRATION_RESTORED = "已还原原始映射，请重测";
+static constexpr const char* TOUCH_CALIBRATION_SAVED = "校准已保存，请重测";
+static constexpr const char* TOUCH_CALIBRATION_SAVE_FAILED = "保存失败，原参数保留";
+static constexpr const char* TOUCH_CALIBRATION_UNSTABLE = "请稳定按住约半秒再松开";
+static constexpr const char* TOUCH_CALIBRATION_FIT_FAILED = "偏差不一致，请重新对准黄点";
+static constexpr const char* TOUCH_CALIBRATION_CENTER_FAILED = "中心验证未通过，请重试中心";
 static constexpr const char* LIGHT_FOLLOW = "跟随";
 static constexpr const char* LIGHT_TOP_LEFT = "左上";
 static constexpr const char* LIGHT_TOP = "上方";
@@ -1196,6 +1224,7 @@ static constexpr const char* DESCS[] = {
 }
 
 namespace Explore {
+static constexpr const char* HUNGRY_FMT = "%s饱食低，先喂食";
 static constexpr const char* CONTINUE = "继续前进...";
 static constexpr const char* WILD_APPEARED = "野生精灵出现!";
 static constexpr const char* FRIEND_RECOGNIZES_FMT = "%s认可了你";
@@ -1411,3 +1440,15 @@ static constexpr const char* MENU_ITEMS[] = {
 };
 }
 }
+
+// Native SDGOODS room proof controls.
+namespace Ui { namespace RoundRoom {
+static constexpr const char* SAVE = "Save";
+static constexpr const char* RESTART = "Restart";
+static constexpr const char* SAVED = "Saved";
+static constexpr const char* SAVE_FAILED = "Save failed";
+static constexpr const char* HP_FMT = "%02u:%02u   HP %u%%";
+static constexpr const char* SATIETY_FMT = "Satiety %u%%";
+static constexpr const char* START_FAILED = "Save unavailable";
+static constexpr const char* DATA_RETAINED = "Original data retained";
+} }

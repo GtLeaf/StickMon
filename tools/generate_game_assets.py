@@ -10,13 +10,22 @@ from pathlib import Path
 from PIL import Image
 
 from asset_paths import essentials_dir
+from map_editor_assets import FRAMES as EDITOR_FRAMES, EXTRA_FRAMES, animate_tile
+from lake_autotile import FRAMES as LAKE_FRAMES, tile_image as lake_tile_image
+from map_editor_rotations import TILES as ROTATED_TILES, tile_image as rotated_tile_image
+from slateport_market import SHEET as MARKET_SHEET, tile_image as market_tile_image
 from generate_explore_map import autotile_variant, regular_tile
 from map_generation_rules import CUSTOM_TILE_SOURCES, CUSTOM_TILE_SOURCE_FLIP_Y, CUSTOM_TILE_SOURCE_ROTATIONS
+from valley_region import FRAMES as REGION_FRAMES, tile_image as region_tile_image
+from mist_forest import FRAME_COUNT as MIST_FRAME_COUNT, compile_all as mist_rooms, tile_image as mist_tile_image
+from ancient_valley_layouts import WATER_TILES as VALLEY_WATER_TILES, water_frame as valley_water_frame
 
 
 ROOT = Path(__file__).resolve().parents[1]
 ESSENTIALS = essentials_dir()
 GRAPHICS = ESSENTIALS / "Graphics"
+mist_rooms()
+MIST_FRAMES = [(f'EXPLORE_MIST_FOREST_{i}',i) for i in range(MIST_FRAME_COUNT)]
 DATA_DIR = ROOT / "data"
 PACK_OUT = DATA_DIR / "packs" / "dev"
 OUTPUTS = {
@@ -41,9 +50,9 @@ MAGIC = 0x58464753  # SGFX
 VERSION = 2
 FLAG_RAW_DEFLATE = 1
 FORMAT_INDEXED4_RLE = 1
-MAX_PACK_FRAMES = 288
+MAX_PACK_FRAMES = 1536
 MAX_PACK_DATA_WORDS = 200000
-MAX_PACK_PALETTE_WORDS = 2048
+MAX_PACK_PALETTE_WORDS = 6144
 MAX_PACK_PAYLOAD_BYTES = 384000
 
 ITEM_SIZE = 36
@@ -112,6 +121,9 @@ ITEMS = [
 LATE_ITEMS = [
     ("ITEM_HEART_SCALE", "HEARTSCALE.png"),
 ]
+
+NATIVE_ITEMS = [(kind.replace("ITEM_", "ITEM48_", 1), name) for kind, name in ITEMS + LATE_ITEMS]
+NATIVE_SOAPS = [f"ITEM48_SOAP_{i}" for i in range(SHOWER_SOAP_COUNT)]
 
 SHOWER_ASSETS = [
     *(f"SHOWER_BUBBLE_{index}" for index in range(len(SHOWER_BUBBLE_SIZES))),
@@ -339,6 +351,22 @@ for kind_prefix, _filename, _cells, _opacities in ADDITIONAL_BATTLE_FX:
 KIND_ORDER.extend(kind for kind, _tile_id in CREEK_TILES)
 KIND_ORDER.extend(kind for kind, runtime_id, _tileset, _source_id in EXTERNAL_EXPLORE_TILES
                   if runtime_id >= 4780)
+VALLEY_WATER_FRAMES = [
+    (f"EXPLORE_VALLEY_WATER_{tile}_F{frame}", tile, frame)
+    for tile in VALLEY_WATER_TILES for frame in range(8)
+]
+KIND_ORDER.extend(kind for kind, _tile, _frame in VALLEY_WATER_FRAMES)
+KIND_ORDER.extend(kind for kind, _tile, _frame in REGION_FRAMES)
+KIND_ORDER.extend(kind for kind, _frame in MIST_FRAMES)
+KIND_ORDER.extend(kind for kind, *_rest in EDITOR_FRAMES)
+KIND_ORDER.extend(kind for kind, *_rest in LAKE_FRAMES)
+KIND_ORDER.extend(spec['kind'] for spec in ROTATED_TILES if 'crop' not in spec)
+KIND_ORDER.extend(kind for kind, _ in NATIVE_ITEMS)
+KIND_ORDER.extend(NATIVE_SOAPS)
+KIND_ORDER.extend(spec['kind'] for spec in ROTATED_TILES if 'crop' in spec and 'stackLayers' not in spec)
+KIND_ORDER.append("MARKET_CHAT")
+KIND_ORDER.extend(spec['kind'] for spec in ROTATED_TILES if 'stackLayers' in spec)
+KIND_ORDER.extend(kind for kind, *_rest in EXTRA_FRAMES)
 KIND_IDS = {kind: index for index, kind in enumerate(KIND_ORDER)}
 
 
@@ -354,6 +382,9 @@ def expected_pack_kind_names():
             [kind for kind, _filename in ITEMS + LATE_ITEMS]
             + list(SHOWER_ASSETS)
             + [kind for kind, _filename in EXPLORE_PICKUP_MARKERS]
+            + [kind for kind, _filename in NATIVE_ITEMS]
+            + NATIVE_SOAPS
+            + ["MARKET_CHAT"]
         ),
         "battle": (
             battle_balls
@@ -374,6 +405,12 @@ def expected_pack_kind_names():
             + [kind for kind, *_rest in ANIMATED_EXPLORE_FRAMES]
             + [kind for kind, _tile_id in TALL_GRASS_PARK_TILES]
             + [kind for kind, _tile_id in CREEK_TILES]
+            + [kind for kind, _tile, _frame in VALLEY_WATER_FRAMES]
+            + [kind for kind, _tile, _frame in REGION_FRAMES]
+            + [kind for kind, _frame in MIST_FRAMES]
+            + [kind for kind, *_rest in EDITOR_FRAMES+EXTRA_FRAMES]
+            + [kind for kind, *_rest in LAKE_FRAMES]
+            + [spec['kind'] for spec in ROTATED_TILES]
         ),
         "hatch": ["EGG"],
     }
@@ -391,14 +428,18 @@ def validate_kind_order():
 
 def validate_runtime_pack_limit():
     source = GAME_ASSETS_SOURCE.read_text(encoding="utf-8")
-    match = re.search(r"constexpr\s+uint16_t\s+MAX_FRAMES\s*=\s*(\d+)\s*;", source)
-    if not match:
-        raise ValueError(f"unable to parse MAX_FRAMES: {GAME_ASSETS_SOURCE}")
-    if int(match.group(1)) != MAX_PACK_FRAMES:
-        raise ValueError(
-            "game asset frame limit mismatch: "
-            f"generator={MAX_PACK_FRAMES} runtime={match.group(1)}"
-        )
+    for name, expected in (
+        ('MAX_FRAMES', MAX_PACK_FRAMES),
+        ('MAX_DATA_WORDS', MAX_PACK_DATA_WORDS),
+        ('MAX_PALETTE_WORDS', MAX_PACK_PALETTE_WORDS),
+        ('MAX_PAYLOAD_BYTES', MAX_PACK_PAYLOAD_BYTES),
+    ):
+        match = re.search(rf"constexpr\s+uint(?:16|32)_t\s+{name}\s*=\s*(\d+)\s*;", source)
+        if not match:
+            raise ValueError(f"unable to parse {name}: {GAME_ASSETS_SOURCE}")
+        if int(match.group(1)) != expected:
+            raise ValueError(f"game asset {name} limit mismatch: "
+                             f"generator={expected} runtime={match.group(1)}")
 
 
 def remove_edge_white_background(image):
@@ -558,7 +599,7 @@ def validate_explore_tile_mapping():
         | {tile_id for _kind, tile_id in TALL_GRASS_PARK_TILES}
         | {tile_id for _kind, tile_id in CREEK_TILES}
         | {runtime_id for _kind, runtime_id, _tileset, _source_id in EXTERNAL_EXPLORE_TILES}
-        | ANIMATED_EXPLORE_TILE_IDS
+        | ANIMATED_EXPLORE_TILE_IDS | set(VALLEY_WATER_TILES)
     )
     if mapped_ids != expected_ids:
         raise ValueError(
@@ -906,6 +947,54 @@ def build_assets():
     for kind, tile_id in CREEK_TILES:
         tile = prepare_explore_tile(tile_id, tileset, autotiles)
         writers["map"].add(kind, quantize_rgba(tile, 16))
+
+    valley_sources = {name: load_rgba(GRAPHICS / "Autotiles" / f"{name}.png")
+                      for name in {s['source'] for s in VALLEY_WATER_TILES.values()}}
+    for kind, tile_id, frame_index in VALLEY_WATER_FRAMES:
+        tile = valley_water_frame(tile_id, valley_sources, frame_index)
+        tile = tile.resize((26, 26), Image.Resampling.NEAREST)
+        writers["map"].add(kind, quantize_rgba(tile, 16))
+
+    for kind, tile_index, frame_index in REGION_FRAMES:
+        tile = region_tile_image(tile_index, frame_index).resize((26, 26), Image.Resampling.NEAREST)
+        writers["map"].add(kind, quantize_rgba(tile, 16))
+
+    for kind, frame in MIST_FRAMES:
+        tile = mist_tile_image(frame).resize((26,26),Image.Resampling.NEAREST)
+        writers["map"].add(kind,quantize_rgba(tile,16))
+
+    editor_sheets = {name: load_rgba(GRAPHICS / "Tilesets" / name)
+                     for _, _, name, *_ in EDITOR_FRAMES+EXTRA_FRAMES if name != MARKET_SHEET}
+    for kind, _runtime_id, name, source_id, _depth, frame in EDITOR_FRAMES+EXTRA_FRAMES:
+        tile = (market_tile_image(source_id,frame).resize((26,26),Image.Resampling.NEAREST)
+                if name == MARKET_SHEET else
+                animate_tile(name, source_id, regular_tile(editor_sheets[name], source_id), frame)
+                .resize((26,26),Image.Resampling.NEAREST))
+        writers["map"].add(kind, quantize_rgba(tile, 16))
+
+    lake_source = load_rgba(GRAPHICS / "Autotiles/Sea.png")
+    for kind, _tid, mask, frame in LAKE_FRAMES:
+        tile = lake_tile_image(lake_source, mask, frame).resize((26,26), Image.Resampling.NEAREST)
+        writers["map"].add(kind, quantize_rgba(tile, 16))
+
+    for spec in ROTATED_TILES:
+        tile = rotated_tile_image(spec).resize((26,26),Image.Resampling.NEAREST)
+        writers["map"].add(spec['kind'],quantize_rgba(tile,16))
+
+    for kind, filename in NATIVE_ITEMS:
+        image = load_rgba(GRAPHICS / "Items" / filename)
+        if image.size != (48, 48):
+            raise ValueError(f"native item must be 48x48: {filename}: {image.size}")
+        writers["ui"].add(kind, quantize_rgba(image, 15))
+    soap_paths = sorted((SHOWER_SOURCE_DIR / "soap").glob("soap_*.png*"))
+    for kind, path in zip(NATIVE_SOAPS, soap_paths):
+        image = fit_sprite_canvas(load_rgba(path), (48, 48))
+        writers["ui"].add(kind, quantize_rgba(image, 15))
+
+    chat = load_rgba(ROOT / "origin_asset" / "icon" / "market" / "chat.png")
+    if chat.size != (28, 28):
+        raise ValueError(f"market chat icon must be 28x28: {chat.size}")
+    writers["ui"].add("MARKET_CHAT", quantize_rgba(chat, 15))
 
     egg = prepare_egg(GRAPHICS / "Pokemon" / "Eggs" / "000.png")
     GENERATED_GAME_DIR.mkdir(parents=True, exist_ok=True)

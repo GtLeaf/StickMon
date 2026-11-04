@@ -24,7 +24,9 @@ public:
         bool active = false;
         float x = 0.0f;
         float footY = 0.0f;
-        float minSeparation = 0.0f;
+        // Combined half extents of the moving and blocking footprints.
+        float halfWidth = 0.0f;
+        float halfHeight = 0.0f;
     };
 
     struct Request {

@@ -1,4 +1,6 @@
 #pragma once
+#include <memory>
+#include "game/MarketSession.h"
 
 #include "core/BuildConfig.h"
 #include "core/AppSceneFlow.h"
@@ -9,17 +11,21 @@
 #include "game/BattleTurnController.h"
 #include "game/ExploreMapGenerator.h"
 #include "game/ExplorePool.h"
+#include "game/ExploreCostService.h"
 #include "game/ExploreSpecialEncounter.h"
 #include "game/GameState.h"
 #include "game/Species.h"
 #include "scenes/MenuScene.h"
+#include "ui/ExploreUi.h"
+#include "ui/common/MarketWalkUi.h"
 
 namespace PokemonSprites {
 struct SpriteFrame;
 }
 
-class ExploreScene : public Scene {
+class ExploreScene : public Scene, private Ui::ExploreHost {
 public:
+    ExploreScene() : ui(*this) {}
     static bool serviceAreaPoolCache(uint8_t loadBudget = 1);
 
     enum class Area : uint8_t {
@@ -37,31 +43,31 @@ public:
 
     void onEnter() override;
     void onExit() override;
+    void prepareSurface() override;
     SceneUpdateResult update(uint32_t nowMs, float dtSeconds) override;
     void render() override;
+    uint32_t visualFrameIntervalMs(uint32_t nowMs) const override;
     bool onButton(const ButtonEvent& event) override;
+    bool onTouch(const Platform::IInputDevice::TouchEvent& event) override;
+    void cancelTouch() override;
+    bool touchNavigation() const override {
+        return exploreSubViewOpen && exploreSubView.touchNavigation();
+    }
+    int touchTarget(int16_t x, int16_t y) override {
+        return market_ || exploreSubViewOpen ? -1 : ui.touchTarget(x, y);
+    }
+    bool onTap(int target) override {
+        return !exploreSubViewOpen && ui.onTap(target);
+    }
 
 private:
-    enum class Phase : uint8_t {
-        SELECT,
-        WALKING,
-        ENCOUNTER,
-        LEVEL_UP,
-        EVOLUTION,
-        EVOLUTION_CANCELLED,
-        LEARN_MOVE,
-        MOVE_REPLACED,
-        FRIENDSHIP,
-        SPECIAL_PROMPT,
-        PICKUP,
-        RESULT,
-        EXITING,
-        ENDING,
-    };
+    bool finishSubViewInput();
+    using Phase = Ui::ExplorePhase;
+    Ui::ExploreUi ui;
+    char departureToast[96] = {};
+    uint32_t departureToastUntil = 0;
 
     Phase phase = Phase::SELECT;
-    uint8_t areaCursor = 0;
-    float areaAnimCursor = 0.0f;
     // 栖息地轮换：预览展示当前种子活跃池（§7.5，轮播池成员）
     static constexpr uint8_t AREA_PREVIEW_COUNT = 6;
     static constexpr uint8_t AREA_PRELOAD_CAP =
@@ -70,18 +76,22 @@ private:
                   "area preview must show the whole active pool");
     uint32_t areaPreviewStartedAt = 0;
     uint32_t areaPreviewNextLoadAt = 0;
-    uint32_t areaPreviewVisualCycle = UINT32_MAX;
     uint16_t areaPreviewSpeciesIds[AREA_PREVIEW_COUNT] = {};
     uint16_t areaPreloadSpeciesIds[AREA_PRELOAD_CAP] = {};
     uint8_t areaPreloadSpeciesCount = 0;
     bool areaPreviewLoadPending = false;
+    bool areaPreviewReady = false;
+    bool areaPreviewPaused = false;
+    uint32_t areaPreviewPausedElapsed = 0;
     const PokemonSprites::SpriteFrame*
         areaPreviewFrames[AREA_PREVIEW_COUNT] = {};
     ExplorePool::Pool areaPreviewPool{};
-    bool areaBackgroundTraced = false;
     // 趟内活跃池快照：探险开始时按种子重建，趟内遭遇只在池内滚点（§7.8）
     ExplorePool::Pool activePool{};
     Area activeArea = Area::GRASS_PATH;
+    Game::ExploreCost::Session exploreCosts;
+    Game::ExploreCost::Battle battleCosts;
+    void settleExploreCosts(bool returning);
     uint16_t steps = 0;
     uint8_t adventureBondGain = 0;
     bool adventureBondSettled = false;
@@ -129,10 +139,8 @@ private:
         FINISHING,
     };
     bool friendshipOfferPending = false;
-    bool friendshipConfirmYes = true;
     FriendshipStep friendshipStep = FriendshipStep::CONTACT_INTRO;
     uint8_t friendshipContactIndex = 0xFF;
-    uint8_t battleCursor = 0;
     bool battleIsBoss = false;
     bool battleAllowsFriendship = true;
     uint8_t battleFoodBond = 0;
@@ -192,6 +200,11 @@ private:
     ExploreMapGenerator::Map generatedMap;
     uint32_t expeditionSeed = 0;
     ExploreMapGenerator::Edge pendingEntryEdge = ExploreMapGenerator::Edge::TOP;
+    ExploreMapGenerator::ValleyContext pendingValley;
+    bool finalRoute() const {
+        return ExploreMapGenerator::finalPath(generatedMap, currentRoutePath,
+                                              currentMapBlock, mapBlockCount);
+    }
     bool pendingFrostLadder = false;
     bool pendingFrostFall = false;
     uint32_t frostFallAtMs = 0;
@@ -199,8 +212,6 @@ private:
     bool routeMoving = false;
     uint8_t routeWalkDirection = 0;
     uint8_t routeFollowerWalkDirection = 0;
-    uint8_t routeVisualWalkDirection = 0;
-    uint8_t routeFollowerVisualWalkDirection = 0;
     float routeWorldX = 0.0f;
     float routeWorldY = 0.0f;
     float routeFromX = 0.0f;
@@ -219,6 +230,8 @@ private:
     uint16_t routeFollowerMoveDurationMs = 0;
     bool routeFollowerMoving = false;
     bool autoWalkActive = false;
+    bool routePausedForTouch = false;
+    uint32_t routePausedAt = 0;
     bool iceSliding = false;
     int8_t iceSlideDx = 0;
     int8_t iceSlideDy = 0;
@@ -238,14 +251,12 @@ private:
     uint16_t expeditionBossExperiencePercent = 100;
     ExploreSpecial::Kind expeditionSpecialKind = ExploreSpecial::Kind::NONE;
     bool specialRelocationHandled = false;
-    bool specialChallengeYes = true;
     uint8_t routeBossIndex = 0;
     bool routeBossPending = false;
     static constexpr uint8_t EXPLORE_MENU_ITEM_COUNT =
         AppSceneFlow::exploreMenuItemCount();
     bool exploreMenuOpen = false;
     bool exploreSubViewOpen = false;
-    uint8_t exploreMenuCursor = 0;
     uint32_t exploreMenuOpenedAt = 0;
     MenuScene exploreSubView;
 
@@ -279,13 +290,18 @@ private:
     void resolvePickup(uint8_t pickupId);
     void clearBattleLogs();
     void enqueueBattleLog(const char* text, BattleLogCue cue = BattleLogCue::NONE);
-    bool serviceBattleLog(uint32_t nowMs);
+    struct BattleLogUpdate {
+        bool changed;
+        bool sceneReplaced;
+        BattleLogUpdate(bool changed, bool sceneReplaced = false)
+            : changed(changed), sceneReplaced(sceneReplaced) {}
+    };
+    BattleLogUpdate serviceBattleLog(uint32_t nowMs);
     bool battleLogBusy() const;
     bool battleLogPlaybackBusy() const;
     void updateBattleTurn(uint32_t nowMs);
     void updateBattleSwitch(uint32_t nowMs);
     void beginBattleSwitch(uint8_t slot, bool consumesTurn);
-    int battleSwitchOffsetX(uint32_t nowMs) const;
     void beginBattleAction();
     void beginChargedBattleTurn();
     void finishBattleAction();
@@ -295,12 +311,9 @@ private:
     void enqueueBattleEffectLogs(const BattleSystem::EffectResolution& effects,
                                  bool attackerWild);
     void finishWildFaint();
-    uint16_t battleHpForRender(bool wildSide, uint16_t currentHp, uint32_t nowMs) const;
-    int battleHitShakeX(bool wildSide, uint32_t nowMs) const;
     void prepareExpAnimation(uint32_t fromExp, uint32_t toExp);
     void startExpAnimation(uint32_t nowMs);
     void updateExpAnimation(uint32_t nowMs);
-    uint32_t battleExpForRender(uint32_t nowMs) const;
     bool enterPendingProgression(Phase returnPhase);
     void enqueueBattleProgressionLogs(uint8_t teamSlot);
     void attackWild();
@@ -312,7 +325,7 @@ private:
     void finishPlayerFaint();
     void finishBattleVictoryFlow();
     void clearFriendshipFlow();
-    void resolveFriendshipOffer();
+    void resolveFriendshipOffer(bool confirmed);
     void initializeRouteFollowerPosition(bool useTrailPosition);
     void fleeEncounter();
     void resetWalk();
@@ -327,35 +340,25 @@ private:
     void completeExploreReturn(bool fainted);
     void requestExploreExit(bool fainted = false, bool showEndPrompt = true);
     void closeExploreMenu();
-    void renderAreaMenu();
-    void renderTutorial();
     static ExplorePool::Pool buildAreaPool(uint8_t areaIndex);
     static uint8_t collectAreaPoolSpecies(uint16_t* speciesIds,
                                           uint8_t capacity,
                                           uint8_t priorityArea = 0xFF);
     void loadAreaPreview();
-    void updateAreaPreviewLoading(uint32_t nowMs);
+    bool updateAreaPreviewLoading(uint32_t nowMs);
     void refreshAreaPreviewFrames();
     void snapshotActivePool();
-    void renderWalking();
-    void renderEncounter();
-    void renderFoodThrow();
-    void renderFriendshipPrompt();
-    void renderSpecialPrompt();
-    void renderPickupPrompt();
-    void renderResult();
-    void renderEndPrompt();
-    void renderExploreMenu();
-    void renderRouteBoss(int cameraX, int cameraY, uint32_t nowMs);
-    void renderRoutePickup(int cameraX, int cameraY);
-    void drawRouteMonster(const Species& species, float worldX, float worldY,
-                          uint8_t walkDirection, bool follower,
-                          int cameraX, int cameraY);
-    void drawMonsterSprite(const Species& species, int x, int groundY,
-                           int maxWidth, int maxHeight, bool back = false,
-                           int spriteOffsetX = 0);
-    void renderBattleHud();
-    void renderCommandBox();
+    Ui::ExploreInputFrame exploreInputFrame() const override;
+    Ui::ExploreRouteFrame exploreRouteFrame() const override;
+    Ui::ExploreBattleFrame exploreBattleFrame() const override;
+    Ui::ExploreTutorialFrame exploreTutorialFrame() const override;
+    bool activateExplore(Ui::ExploreAction action, uint8_t value = 0) override;
+    bool handleExploreProgressionButton(const ButtonEvent& event) override;
+    void renderExploreProgression() override;
+    std::unique_ptr<Market::Session> market_;
+    Ui::MarketWalkUi marketUi_;
+    bool beginMarket();
+    void closeMarket();
     bool ownsSpecies(uint16_t speciesId) const;
     ExploreSpecial::Kind specialKindForArea(uint8_t area) const;
 };

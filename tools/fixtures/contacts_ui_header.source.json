@@ -1,0 +1,11 @@
+{
+  "date": "2026-10-25",
+  "artifact": ".stick-local/artifacts/ostb-contacts-header-20261025",
+  "review": "review.png: empty, list traits, actions, invite/delete and full-list return reviewed; new safe header, list/popup vertical offsets and footer removal intended. All 42 changed frames use the same layout.",
+  "before_fixture_sha256": "9a1a570101d7c49e9e224f62d83aca5a7b0e808ba6bd960c7de7f21acaee3dde",
+  "counts": {
+    "ostb": 42,
+    "sticks3": 0
+  },
+  "scope": "OSTB Contacts only. Stick 48 frames and OSTB six Computer frames identical. No gameplay changes."
+}

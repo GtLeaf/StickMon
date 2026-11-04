@@ -378,16 +378,18 @@ after selecting the menu item, and returning from the setup screen stops the
 HTTP server and hotspot. If ESP-Claw is already using STA, that connection is
 kept alive while the setup hotspot is stopped.
 
-Generate the NVS image with the repository helper after loading ESP-IDF. Keep
-the output outside the repository because it contains credentials:
+Generate the NVS image with the repository helper after loading ESP-IDF. Run
+from the repository root and keep credentials in the Git-ignored local backup directory:
 
 ```bash
 source /Users/gtleaf/.espressif/v5.5.4/esp-idf/export.sh
-python3 /Users/gtleaf/project/esp/StickMon/tools/generate_claw_nvs.py \
+cd "$(git rev-parse --show-toplevel)"
+mkdir -p .stick-local/backups
+python3 tools/generate_claw_nvs.py \
   --ssid "$WIFI_SSID" \
   --password "$WIFI_PASSWORD" \
   --coze-token "$COZE_ACCESS_TOKEN" \
-  --output /tmp/stickmon-claw-nvs.bin
+  --output .stick-local/backups/stickmon-claw-nvs.bin
 ```
 
 For pre-issued channel credentials, add `--wechat-token "$WECHAT_ILINK_TOKEN"`
@@ -403,10 +405,10 @@ full-chip erase:
 
 ```bash
 python -m esptool --chip esp32s3 --port /dev/cu.usbmodemXXXX \
-  read_flash 0x9000 0x6000 /tmp/stickmon-nvs-backup.bin
+  read_flash 0x9000 0x6000 .stick-local/backups/stickmon-nvs-backup.bin
 
 python -m esptool --chip esp32s3 --port /dev/cu.usbmodemXXXX \
-  write_flash 0x9000 /tmp/stickmon-claw-nvs.bin
+  write_flash 0x9000 .stick-local/backups/stickmon-claw-nvs.bin
 ```
 
 ## Flash

@@ -3,6 +3,7 @@ AmoledApp.cpp
 app/SettingsController.cpp
 app/TeamController.cpp
 app/InventoryController.cpp
+app/ContactsController.cpp
 app/HatchController.cpp
 app/ShowerController.cpp
 app/ProgressionFlow.cpp
@@ -10,6 +11,7 @@ app/BattleSession.cpp
 app/BattleTimeline.cpp
 app/ExploreSession.cpp
 app/ExplorePresenter.cpp
+app/HomeViewState.cpp
 app/HomeFlow.cpp
 app/PairFlow.cpp
 app/VisitorFlow.cpp

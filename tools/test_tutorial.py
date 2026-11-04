@@ -38,15 +38,18 @@ class TutorialTests(unittest.TestCase):
 
     def test_replay_resets_progress_and_returns_home(self):
         source = self.read("src/scenes/SettingsScene.cpp")
+        source = source[source.index("void SettingsScene::replaySettingsTutorial()") :]
+        source = source[:source.index("\n}") + 2]
+        self.assertIn("auto& engine = GameEngine::ins();", source)
         replay = re.compile(
-            r"resetTutorial\(\);\s*"
-            r"GameEngine::ins\(\)\.requestScene\(SceneID::MAIN\);"
+            r"engine\.resetTutorial\(\);\s*"
+            r"engine\.requestScene\(SceneID::MAIN\);"
         )
         self.assertRegex(source, replay)
 
     def test_battle_command_footer_has_no_operation_hint(self):
-        source = self.read("src/scenes/ExploreScene.cpp")
-        command_box = source[source.index("void ExploreScene::renderCommandBox()") :]
+        source = self.read("src/ui/common/ExploreBattleUiContent.cpp")
+        command_box = source[source.index("void drawCommandBox(") :]
         command_box = command_box[: command_box.index("\n}") + 2]
         self.assertNotIn("Ui::Tutorial::BATTLE_ACTION", command_box)
         self.assertNotIn("TutorialOverlay::draw", command_box)

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 
 #include "platform/api/ProgramMemory.h"
 
@@ -102,9 +103,15 @@ uint16_t Canvas565::readPixel(int x, int y) const {
 
 bool Canvas565::blendRectAlphaNative(int x, int y, int w, int h,
                                     uint16_t color, uint8_t alpha) {
+    return blendRoundRectAlphaNative(x, y, w, h, 0, color, alpha);
+}
+
+bool Canvas565::blendRoundRectAlphaNative(int x, int y, int w, int h, int radius,
+                                         uint16_t color, uint8_t alpha) {
     if (renderScale() != 1) return false;
-    if (!pixels_ || w <= 0 || h <= 0 || alpha == 0) return true;
-    if (alpha == 255) {
+    if (!pixels_ || w <= 0 || h <= 0 || radius < 0 || alpha == 0) return true;
+    radius = std::min(radius, std::min(w, h) / 2);
+    if (alpha == 255 && radius == 0) {
         fillRect(x, y, w, h, color);
         return true;
     }
@@ -133,8 +140,17 @@ bool Canvas565::blendRectAlphaNative(int x, int y, int w, int h,
             ((sourceG * alpha + channel * inverse) / 255) >> 2) << 5;
     }
     for (int row = top; row < bottom; ++row) {
-        uint16_t* pixel = pixels_ + static_cast<size_t>(row) * physicalWidth_ + left;
-        for (int column = left; column < right; ++column, ++pixel) {
+        const int cornerY = row < y + radius ? y + radius
+                            : row >= y + h - radius ? y + h - radius - 1 : row;
+        const int dy = row - cornerY;
+        int inset = 0;
+        while (inset < radius &&
+               (radius - inset) * (radius - inset) + dy * dy > radius * radius) ++inset;
+        const int rowLeft = std::max(left, x + inset);
+        const int rowRight = std::min(right, x + w - inset);
+        if (rowLeft >= rowRight) continue;
+        uint16_t* pixel = pixels_ + static_cast<size_t>(row) * physicalWidth_ + rowLeft;
+        for (int column = rowLeft; column < rowRight; ++column, ++pixel) {
             const uint16_t previous = decodeColor(*pixel);
             *pixel = encodeColor(static_cast<uint16_t>(
                 red[previous >> 11] |
@@ -227,11 +243,25 @@ void Canvas565::multiplyRectRgb(int x, int y, int w, int h,
         r[i] = encodeColor(uint16_t(std::min(31, (i * red + 128) / 256) << 11));
         b[i] = encodeColor(uint16_t(std::min(31, (i * blue + 128) / 256)));
     }
-    for (int row = top; row < bottom; ++row) {
-        uint16_t* pixel = pixels_ + row * physicalWidth_ + left;
-        for (int column = left; column < right; ++column, ++pixel) {
-            const uint16_t color = decodeColor(*pixel);
-            *pixel = r[color >> 11] | g[(color >> 5) & 63] | b[color & 31];
+    // Decode channel indices directly from storage. Keep byte-order branching
+    // and function calls outside the full-screen PSRAM pixel loop.
+    if (byteSwapped_) {
+        for (int row = top; row < bottom; ++row) {
+            uint16_t* pixel = pixels_ + row * physicalWidth_ + left;
+            for (int column = left; column < right; ++column, ++pixel) {
+                const uint16_t stored = *pixel;
+                *pixel = r[(stored >> 3) & 31] |
+                         g[((stored & 7) << 3) | (stored >> 13)] |
+                         b[(stored >> 8) & 31];
+            }
+        }
+    } else {
+        for (int row = top; row < bottom; ++row) {
+            uint16_t* pixel = pixels_ + row * physicalWidth_ + left;
+            for (int column = left; column < right; ++column, ++pixel) {
+                const uint16_t color = *pixel;
+                *pixel = r[color >> 11] | g[(color >> 5) & 63] | b[color & 31];
+            }
         }
     }
 }
@@ -387,6 +417,18 @@ void Canvas565::drawRoundRect(int x, int y, int w, int h,
 void Canvas565::pushImage(int x, int y, int w, int h,
                           const uint16_t* source) {
     if (!source || w <= 0 || h <= 0) return;
+    if (renderScale() == 1 && assetScale_ == 1 && !byteSwapped_ &&
+        x >= clipLeft_ && y >= clipTop_ &&
+        x + w <= clipRight_ && y + h <= clipBottom_ &&
+        x >= 0 && y >= 0 && x + w <= physicalWidth_ &&
+        y + h <= physicalHeight_) {
+        for (int row = 0; row < h; ++row) {
+            std::memcpy(pixels_ + static_cast<size_t>(y + row) * physicalWidth_ + x,
+                        source + static_cast<size_t>(row) * w,
+                        static_cast<size_t>(w) * sizeof(uint16_t));
+        }
+        return;
+    }
     for (int py = 0; py < h; ++py) {
         for (int px = 0; px < w; ++px) {
             drawAssetPixel(x + px, y + py,
@@ -395,11 +437,53 @@ void Canvas565::pushImage(int x, int y, int w, int h,
     }
 }
 
+void Canvas565::pushImageNative(int x, int y, int w, int h,
+                                const uint16_t* source) {
+    if (!pixels_ || !source || w <= 0 || h <= 0 || renderScale() != 1 ||
+        assetScale_ != 1) return;
+    const int left = std::max(x, clipLeft_);
+    const int top = std::max(y, clipTop_);
+    const int right = std::min(x + w, clipRight_);
+    const int bottom = std::min(y + h, clipBottom_);
+    if (left >= right || top >= bottom) return;
+    for (int row = top; row < bottom; ++row) {
+        const int sourceX = left - x;
+        const uint16_t* src = source + static_cast<size_t>(row - y) * w + sourceX;
+        uint16_t* dst = pixels_ + static_cast<size_t>(row) * physicalWidth_ + left;
+        const size_t count = static_cast<size_t>(right - left);
+        std::memcpy(dst, src, count * sizeof(uint16_t));
+    }
+}
+
 void Canvas565::drawMaskedAssetImage(int x, int y, int w, int h,
                                      const uint16_t* pixels,
                                      const uint8_t* opaqueMask,
-                                     uint8_t pixelScale) {
-    if (!pixels || !opaqueMask || w <= 0 || h <= 0) return;
+                                     float pixelScale) {
+    if (!pixels_ || !pixels || !opaqueMask || w <= 0 || h <= 0) return;
+    if (pixelScale > 0.0f && pixelScale != std::floor(pixelScale)) {
+        const int renderScale = this->renderScale();
+        const float step = pixelScale * assetScale_ * renderScale;
+        const int originX = x * assetScale_ * renderScale;
+        const int originY = y * assetScale_ * renderScale;
+        const int left = std::max(originX, clipLeft_ * renderScale);
+        const int right = std::min(originX + int(std::lround(w * step)), clipRight_ * renderScale);
+        const int top = std::max(originY, clipTop_ * renderScale);
+        const int bottom = std::min(originY + int(std::lround(h * step)), clipBottom_ * renderScale);
+        if (left >= right || top >= bottom) return;
+        // Destination sampling keeps transparent edges exact and preserves
+        // the same source pixel when clipping a fractional-size tile.
+        for (int row = top; row < bottom; ++row) {
+            const int sourceRow = std::min(h - 1, int((row - originY) / step));
+            uint16_t* dest = pixels_ + row * physicalWidth_ + left;
+            for (int col = left; col < right; ++col, ++dest) {
+                const int sourceCol = std::min(w - 1, int((col - originX) / step));
+                const int source = sourceRow * w + sourceCol;
+                if (opaqueMask[source >> 3] & (1U << (source & 7)))
+                    *dest = encodeColor(pixels[source]);
+            }
+        }
+        return;
+    }
     const int assetScale = assetScale_ * std::max<int>(1, pixelScale);
     const int renderScale = this->renderScale();
     const int logicalLeft = x * assetScale_;
@@ -408,45 +492,62 @@ void Canvas565::drawMaskedAssetImage(int x, int y, int w, int h,
     const int physicalWidth = physicalWidth_;
     const int physicalHeight = physicalHeight_;
 
-    // The AMOLED profile uses 2x asset pixels directly in a 1x framebuffer.
-    // Avoid calling fillRect for every source pixel in this hot path.
-    if (assetScale == 2 && renderScale == 1) {
-        for (int sourceRow = 0; sourceRow < h; ++sourceRow) {
-            const int logicalY = logicalTop + sourceRow * assetScale;
-            if (logicalY >= clipBottom_ ||
-                logicalY + assetScale <= clipTop_) {
-                continue;
-            }
-            const int clippedTop = std::max(logicalY, clipTop_);
-            const int clippedBottom = std::min(
-                logicalY + assetScale, clipBottom_);
-            for (int sourceCol = 0; sourceCol < w; ++sourceCol) {
-                const uint32_t pixelIndex =
-                    static_cast<uint32_t>(sourceRow) * w + sourceCol;
-                if ((opaqueMask[pixelIndex >> 3] &
-                     (1U << (pixelIndex & 7))) == 0) {
-                    continue;
-                }
-                const int logicalX = logicalLeft + sourceCol * assetScale;
-                if (logicalX >= clipRight_ ||
-                    logicalX + assetScale <= clipLeft_) {
-                    continue;
-                }
-                const int clippedLeft = std::max(logicalX, clipLeft_);
-                const int clippedRight = std::min(
-                    logicalX + assetScale, clipRight_);
-                if (clippedLeft >= clippedRight) continue;
-                const uint16_t stored = encodeColor(pixels[pixelIndex]);
-                for (int physicalY = clippedTop;
-                     physicalY < clippedBottom; ++physicalY) {
-                    uint16_t* row = pixels_ +
-                        static_cast<uint32_t>(physicalY) * physicalWidth;
-                    row[clippedLeft] = stored;
-                    if (clippedLeft + 1 < clippedRight) {
-                        row[clippedLeft + 1] = stored;
+    // Native pixel art needs one clipped row walk, not a scaled rectangle
+    // calculation and fill call for every opaque source pixel.
+    if (assetScale == 1 && renderScale == 1) {
+        const int left = std::max(logicalLeft, clipLeft_);
+        const int right = std::min(logicalLeft + w, clipRight_);
+        const int top = std::max(logicalTop, clipTop_);
+        const int bottom = std::min(logicalTop + h, clipBottom_);
+        if (left >= right || top >= bottom) return;
+        for (int row = top; row < bottom; ++row) {
+            uint32_t source = static_cast<uint32_t>(row - logicalTop) * w + left - logicalLeft;
+            uint16_t* dest = pixels_ + row * physicalWidth_ + left;
+            if (byteSwapped_) {
+                for (int col = left; col < right; ++col, ++source, ++dest)
+                    if (opaqueMask[source >> 3] & (1U << (source & 7))) {
+                        const uint16_t color = pixels[source];
+                        *dest = static_cast<uint16_t>((color << 8) | (color >> 8));
                     }
-                }
+            } else {
+                for (int col = left; col < right; ++col, ++source, ++dest)
+                    if (opaqueMask[source >> 3] & (1U << (source & 7)))
+                        *dest = pixels[source];
             }
+        }
+        return;
+    }
+
+    // Clip once, then expand each visible source pixel to two adjacent rows.
+    // The two clipped edge columns are handled separately from the hot loop.
+    if (assetScale == 2 && renderScale == 1) {
+        const int left = std::max(logicalLeft, clipLeft_);
+        const int right = std::min(logicalLeft + w * 2, clipRight_);
+        const int top = std::max(logicalTop, clipTop_);
+        const int bottom = std::min(logicalTop + h * 2, clipBottom_);
+        if (left >= right || top >= bottom) return;
+        const int firstRow = (top - logicalTop) / 2;
+        const int lastRow = (bottom - logicalTop + 1) / 2;
+        const int firstCol = (left - logicalLeft) / 2;
+        for (int sourceRow = firstRow; sourceRow < lastRow; ++sourceRow) {
+            const int y0 = std::max(top, logicalTop + sourceRow * 2);
+            const int y1 = std::min(bottom - 1, logicalTop + sourceRow * 2 + 1);
+            uint16_t* row0 = pixels_ + y0 * physicalWidth_ + left;
+            uint16_t* row1 = pixels_ + y1 * physicalWidth_ + left;
+            uint32_t source = static_cast<uint32_t>(sourceRow) * w + firstCol;
+            int remaining = right - left;
+            if ((left - logicalLeft) & 1) {
+                if (opaqueMask[source >> 3] & (1U << (source & 7)))
+                    *row0 = *row1 = encodeColor(pixels[source]);
+                ++row0; ++row1; ++source; --remaining;
+            }
+            for (; remaining >= 2; remaining -= 2, ++source, row0 += 2, row1 += 2) {
+                if (!(opaqueMask[source >> 3] & (1U << (source & 7)))) continue;
+                const uint16_t color = encodeColor(pixels[source]);
+                row0[0] = row0[1] = row1[0] = row1[1] = color;
+            }
+            if (remaining && (opaqueMask[source >> 3] & (1U << (source & 7))))
+                *row0 = *row1 = encodeColor(pixels[source]);
         }
         return;
     }

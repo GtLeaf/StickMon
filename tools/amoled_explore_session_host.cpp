@@ -350,6 +350,19 @@ struct AmoledAppTestAccess {
         ExplorePresenter presenter, other;
         presenter.resetMap(route, game, 0, 0, 100);
         presenter.startRun(100);
+        // Fractional zoom follows on both axes and keeps the full viewport
+        // inside the map at all four edges, including odd camera origins.
+        for (const auto& sample : {std::pair<float, int>{-100.0f, 0},
+                {122.0f, 0}, {148.0f, 25}, {208.0f, 85}, {600.0f, 170}}) {
+            other.state_.exploreRouteWorldX = sample.first;
+            for (const auto& vertical : {std::pair<float, int>{-100.0f, 0},
+                    {114.0f, 0}, {156.0f, 41}, {600.0f, 82}}) {
+                other.state_.exploreRouteWorldY = vertical.first;
+                other.updateCamera();
+                assert(other.state_.exploreRouteCameraX == sample.second);
+                assert(other.state_.exploreRouteCameraY == vertical.second);
+            }
+        }
         unsigned char before[sizeof(game)];
         std::memcpy(before, &game, sizeof(game));
 

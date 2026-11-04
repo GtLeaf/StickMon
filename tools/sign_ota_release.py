@@ -7,10 +7,13 @@ import json
 import subprocess
 import tempfile
 from pathlib import Path
+from package_amoled_v2_release import release_output_dir
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('build_dir', type=Path)
 parser.add_argument('--key', required=True, type=Path)
+parser.add_argument('--output-dir', type=Path,
+                    help='Export directory (default: .stick-local/firmware/amoled-v2/BUILD_NAME)')
 args = parser.parse_args()
 build = args.build_dir.resolve()
 meta = json.loads((build / 'ota-generated/ota-build.json').read_text())
@@ -35,8 +38,8 @@ with tempfile.TemporaryDirectory() as tmp:
                     '-signature', str(signature), str(source)], check=True)
     envelope = dict(payload=base64.b64encode(payload).decode(),
                     signature=base64.b64encode(signature.read_bytes()).decode())
-dest = build / 'ota-release.json'
+output = args.output_dir.resolve() if args.output_dir else release_output_dir(build)
+output.mkdir(parents=True, exist_ok=True)
+dest = output / 'ota-release.json'
 dest.write_text(json.dumps(envelope, indent=2) + '\n')
-if (build / 'out').is_dir():
-    (build / 'out/ota-release.json').write_text(dest.read_text())
 print(f'Signed {meta["flavor"]} {meta["version"]} build {meta["build"]}: {dest}')

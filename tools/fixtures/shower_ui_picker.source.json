@@ -1,0 +1,57 @@
+{
+  "changes": {
+    "ostb-debug": {
+      "added": [
+        "touch-soap-picker-empty.rgb565",
+        "touch-soap-picker-one-owned.rgb565"
+      ],
+      "changed": [
+        "mode-species-1-1.rgb565",
+        "mode-species-143-1.rgb565",
+        "mode-species-147-1.rgb565",
+        "mode-species-25-1.rgb565",
+        "mode-species-92-1.rgb565",
+        "soap-picker-0-0.rgb565",
+        "soap-picker-0-1.rgb565",
+        "soap-picker-0-99.rgb565",
+        "soap-picker-1-0.rgb565",
+        "soap-picker-1-1.rgb565",
+        "soap-picker-1-99.rgb565",
+        "soap-picker-2-0.rgb565",
+        "soap-picker-2-1.rgb565",
+        "soap-picker-2-99.rgb565"
+      ],
+      "removed": []
+    },
+    "ostb-release": {
+      "added": [
+        "touch-soap-picker-empty.rgb565",
+        "touch-soap-picker-one-owned.rgb565"
+      ],
+      "changed": [
+        "mode-species-1-1.rgb565",
+        "mode-species-143-1.rgb565",
+        "mode-species-147-1.rgb565",
+        "mode-species-25-1.rgb565",
+        "mode-species-92-1.rgb565",
+        "soap-picker-0-0.rgb565",
+        "soap-picker-0-1.rgb565",
+        "soap-picker-0-99.rgb565",
+        "soap-picker-1-0.rgb565",
+        "soap-picker-1-1.rgb565",
+        "soap-picker-1-99.rgb565",
+        "soap-picker-2-0.rgb565",
+        "soap-picker-2-1.rgb565",
+        "soap-picker-2-99.rgb565"
+      ],
+      "removed": []
+    }
+  },
+  "previous_fixture": "shower_ui_drag.json",
+  "previous_fixture_sha256": "844cfd6271694b32a65aa7dbaf5bbda601fb6ef361531ad4848fdbc5a6b3e4f7",
+  "reason": "OSTB modal soap cards select directly without USE; empty stock disabled.",
+  "reviewed_preview": ".stick-local/artifacts/ostb-soap-food-20261023/preview.png",
+  "source_snapshot": ".stick-local/artifacts/ostb-soap-food-20261023/source",
+  "stick_policy": "Original Stick captures and prior fixtures are preserved.",
+  "validation": "23 related regression scripts pass; OSTB shower release/debug and food ASan/UBSan, strict syntax, native header/corner checks and OSTB release/debug, Stick release, AMOLED V1 lite builds pass. No device flashing performed."
+}

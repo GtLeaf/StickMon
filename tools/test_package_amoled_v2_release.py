@@ -4,8 +4,9 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from package_amoled_v2_release import UPLOAD_FILES, package_release
+from package_amoled_v2_release import UPLOAD_FILES, package_release, release_output_dir
 
 
 class PackageAmoledV2ReleaseTests(unittest.TestCase):
@@ -32,7 +33,7 @@ class PackageAmoledV2ReleaseTests(unittest.TestCase):
         output.mkdir()
         (output / "stale.bin").write_bytes(b"stale")
 
-        self.assertEqual(package_release(self.build_dir), output.resolve())
+        self.assertEqual(package_release(self.build_dir, output), output.resolve())
         self.assertEqual(
             {file.name for file in output.iterdir()},
             {destination for _, destination in UPLOAD_FILES.values()},
@@ -49,13 +50,30 @@ class PackageAmoledV2ReleaseTests(unittest.TestCase):
         self.write_flash_args()
 
         with self.assertRaisesRegex(ValueError, "offsets differ"):
-            package_release(self.build_dir)
+            package_release(self.build_dir, output)
         self.assertEqual((output / "keep.bin").read_bytes(), b"keep")
 
     def test_refuses_missing_file(self):
         (self.build_dir / "resources.bin").unlink()
         with self.assertRaisesRegex(FileNotFoundError, "resources.bin"):
             package_release(self.build_dir)
+
+    def test_default_export_stays_outside_build_and_does_not_reuse_old_signature(self):
+        with patch('package_amoled_v2_release.ROOT', self.build_dir / 'repository'):
+            expected = release_output_dir(self.build_dir)
+            expected.mkdir(parents=True)
+            (expected / 'ota-release.json').write_text('old signature')
+            self.assertEqual(package_release(self.build_dir), expected.resolve())
+            self.assertFalse((self.build_dir / 'out').exists())
+            self.assertFalse((expected / 'ota-release.json').exists())
+            for source, destination in UPLOAD_FILES.values():
+                self.assertEqual((expected / destination).read_bytes(),
+                                 (self.build_dir / source).read_bytes())
+
+    def test_refuses_export_over_source_build(self):
+        with self.assertRaisesRegex(ValueError, 'source build'):
+            package_release(self.build_dir, self.build_dir)
+        self.assertTrue((self.build_dir / 'resources.bin').is_file())
 
 
 if __name__ == "__main__":

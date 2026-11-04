@@ -1,0 +1,7 @@
+{
+  "tool": "built-in image_gen",
+  "prompt": "Use case: stylized-concept\nAsset type: a single pixel-art chat button icon for a small ESP32 handheld monster-care game, intended to display at 28x28 pixels inside a dark rounded button over a colorful top-down pixel-art marketplace.\nPrimary request: one crisp, instantly recognizable speech bubble icon with three dark dots. Cream-white speech bubble, subtle pale blue shadow on its lower/right edge, dark blue outline, short speech tail at bottom left. Friendly retro handheld game sprite aesthetic, clean chunky pixels, limited palette, front-facing flat symbol.\nComposition: centered single icon, square canvas, symbol fills 80 percent, balanced transparent margins. Design on a logical 32x32 pixel grid, enlarged with hard pixel edges. Real transparent background.\nConstraints: no text, no letters, no words, no additional objects, no button container, no watermark, no gradients, no soft shadows, no glow.",
+  "source": "chat-generated.png",
+  "runtime": "chat.png",
+  "preparation": "tools/prepare_market_chat_icon.py; 28x28 nearest-neighbor, original alpha preserved"
+}

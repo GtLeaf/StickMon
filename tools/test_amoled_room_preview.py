@@ -101,7 +101,7 @@ class RoomPreviewTests(unittest.TestCase):
                     self.assertLessEqual(max(high for low, high in diff.getextrema()), 18, (name, mode))
                     self.assertLess(sum(ImageStat.Stat(diff).mean) / 3, 3.0, (name, mode))
                     if name == 'b1_r1' and mode == 'day':
-                        keep = ROOT / 'tools/out/room-layers'
+                        keep = ROOT / '.stick-local/previews/room-layers'
                         keep.mkdir(parents=True, exist_ok=True)
                         actual.resize((960, 644), Image.Resampling.NEAREST).save(keep / 'forest.png')
                         expected.resize((960, 644), Image.Resampling.NEAREST).save(keep / 'forest-reference.png')

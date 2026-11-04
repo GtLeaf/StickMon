@@ -1,0 +1,6 @@
+recovery cases=2592 state-save-and-rng=ecbfe1e5 rng-calls=0
+bond-and-immediate-save cases=2880 state-save-and-rng=70820df5 rng-calls=0
+save-failure-and-write-protection cases=3 state-save-and-rng=0313d500 rng-calls=0
+status-cleanup cases=108 state-save-and-rng=4fb483bc rng-calls=0
+visible-leader-and-follower cases=192 state-save-and-rng=263e7415 rng-calls=0
+return-settlement-once cases=96 state-save-and-rng=496350b5 rng-calls=0

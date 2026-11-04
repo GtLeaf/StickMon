@@ -1,6 +1,27 @@
-# AMOLED App 渐进重构：首批实施记录
+# AMOLED 应用重构
 
-日期：2026-10-18。范围为[结构风险与重构方案](../../doc/代码结构风险与重构方案.md)的阶段 0–2；Claw 专项延期。
+更新：2026-10-26。相关拆分规范集中在本目录；下表是已实施的模块边界，
+各页保留对应批次的需求、设计与验收范围，构建数值和设备结果不作为当前版本结论。
+当前生产模块见 [app/README](../../firmware/amoled_1_8_v1/main/app/README.md)。
+
+| 模块 | 规范与记录 |
+| --- | --- |
+| 保存／成长、输入取消与只读控制器 | 本页首批记录：SaveCoordinator、ProgressionFlow |
+| 洗澡／孵化控制器 | [ShowerController／HatchController](page-controllers.md) |
+| 房间权威状态 | [Home::Actor 与保存坐标转换](home-state.md) |
+| 战斗会话／时间线 | [BattleSession／BattleTimeline](battle.md)，共享行动规则见[战斗执行](../battle-execution/README.md) |
+| 探索会话／表现 | [ExploreSession](explore.md)、[ExplorePresenter](explore-presenter.md) |
+| 自主房间动作／伙伴互动 | [HomeFlow](home-flow.md)、[PairFlow](pair-flow.md) |
+| 访客／外出拜访 | [VisitorFlow／VisitAwayFlow](visitor-flow.md) |
+
+探索专用出发／返程门口、伙伴生存编排与 HomePresenter 仍在 App；
+通用 InputRouter／NavigationCoordinator／SnapshotBuilder 未提取，renderer／板级物理整理仍待推进。
+Claw 专项随迭代暂停。后续优先级应结合当前源码与风险重新评估，不沿用旧批次的“下一批”。
+完整待验收项查各批次；实现和编译通过不能替代实机显示／触摸、音频、低功耗、双机或内存测量。
+
+## 首批实施记录（2026-10-18，阶段 0–2）
+
+范围为[结构风险与重构方案](../../doc/代码结构风险与重构方案.md)的阶段 0–2；Claw 专项延期。
 
 ## 已完成
 
@@ -43,11 +64,11 @@
 
 两者 `.flash.rodata` 均无增长；`.flash.text` 分别增加 1,228 / 1,272 字节。小幅增长来自保存调度、封装入口与流程效果交接。未新增素材、修改资源格式、存档 schema 或分区。拆分的收益是所有权与验证边界，不能据此推导堆内存、帧耗时或功耗改善。
 
-`AmoledApp.cpp` 从本轮基线 14,842 行降至约 14,350 行；只是首批抽取，战斗、探索和房间仍在后续阶段。
+`AmoledApp.cpp` 在该首批中从 14,842 行降至约 14,350 行；后续战斗、探索和房间拆分已实施，见上方总览。
 
-## 后续范围与待验收
+## 首批边界与后续进展
 
 - 阶段 3 的 `BattleSession` / `BattleTimeline` 已在[战斗批次](battle.md)实施；阶段 4 的 ExploreSession / ExplorePresenter 已在[会话批次](explore.md)和[表现批次](explore-presenter.md)完成；阶段 5 首批 HomeFlow 见[房间动作批次](home-flow.md)，阶段 5 第二批 PairFlow 见[伙伴互动批次](pair-flow.md)；阶段 5 第三批见[访客/拜访门口批次](visitor-flow.md)；后续处理探索专用出入门编排和 renderer/板级物理整理。
 - 通用 InputRouter / NavigationCoordinator 和 SnapshotBuilder 尚未提取；本批先通过现有入口落实取消与保存契约。
-- 未刷机或执行实机验收。显示/触摸、锁屏唤醒/深睡、音频、ESP-NOW、IMU/RTC/电池、运行时内存高水位和帧耗时仍待设备验证。
+- 此首批未刷机或执行实机验收；后续设备记录见对应批次。显示/触摸、锁屏唤醒/深睡、音频、ESP-NOW、IMU/RTC/电池、运行时内存高水位和帧耗时仍待设备验证。
 - Claw 并发、超时与动作幂等专项仍随其恢复迭代处理，编译通过不代表这些风险已解决。

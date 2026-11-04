@@ -7,6 +7,7 @@
 #include "core/PcmMixer.h"
 #include "Qmi8658.h"
 #include "Axp2101Battery.h"
+#include "AmoledPowerButton.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
@@ -62,6 +63,10 @@ public:
     bool readAcceleration(float& x, float& y, float& z) override;
 
     int batteryLevel() override;
+    bool batteryCharging() override;
+    bool takePowerButtonPress(uint32_t nowMs);
+    void setAudioStandby(bool standby);
+    bool powerOff();
     Platform::PowerCapabilities capabilities() const override;
     Platform::WakeReason wakeReason() const override;
     uint32_t hardwareRandom() override;
@@ -111,6 +116,7 @@ private:
     Platform::Services services_;
     Stickmon::Qmi8658 imu_;
     Stickmon::Axp2101Battery battery_;
+    Amoled::PowerButton powerButton_;
     bool resourcesMounted_ = false;
     bool initialized_ = false;
     bool peerTransportActive_ = false;
@@ -119,6 +125,7 @@ private:
     bool microphoneOpen_ = false;
     bool microphoneMode_ = false;
     std::atomic<bool> audioPlaying_{false};
+    std::atomic<bool> audioStandby_{false};
     std::array<std::atomic<uint32_t>,
                Platform::IAudioDevice::CHANNEL_COUNT> audioGeneration_{};
     std::array<uint32_t, Platform::IAudioDevice::CHANNEL_COUNT>

@@ -1,12 +1,9 @@
 #include "scenes/MainScene.h"
-#include "presentation/TouchUi.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include "assets/GameAssets.h"
 #include "assets/PokemonMotion.h"
 #include "assets/PokemonSprites.h"
-#include "core/ButtonDispatcher.h"
 #include "core/CryPlayer.h"
 #include "core/GameEngine.h"
 #include "core/MathUtil.h"
@@ -21,11 +18,6 @@
 #include "game/GameRandom.h"
 #include "game/HomeHud.h"
 #include "hardware/Hal.h"
-#include "presentation/HudRenderer.h"
-#include "presentation/PixelRenderer.h"
-#include "presentation/PokemonShadow.h"
-#include "presentation/TutorialOverlay.h"
-#include "platform/api/FlashStorage.h"
 #include "platform/api/PlatformServices.h"
 
 namespace {
@@ -37,7 +29,6 @@ static constexpr float PMD_SHORT_MOVE_DISTANCE = 14.0f;
 static constexpr float DEBUG_TILT_DEADZONE = 0.08f;
 static constexpr float DEBUG_TILT_MAX = 0.62f;
 static constexpr float DEBUG_TILT_SPEED = 58.0f;
-static constexpr float CAMERA_FOCUS_Y = 84.0f;
 static constexpr float FOOD_FEED_OFFSET_X = 12.0f;
 static constexpr float FOOD_FEED_OFFSET_Y = 4.0f;
 static constexpr float BED_APPROACH_TOLERANCE_X = 18.0f;
@@ -71,7 +62,6 @@ static constexpr uint32_t ATTENTION_WAIT_MS = 6000UL;
 static constexpr uint32_t WINDOW_GAZE_MIN_MS = 6000UL;
 static constexpr uint32_t WINDOW_GAZE_MAX_MS = 10000UL;
 static constexpr uint32_t WINDOW_GAZE_DELAY_SECONDS = 2UL * 24UL * 60UL * 60UL;
-static constexpr uint16_t HUNGER_ANIM_MS = 360;
 static constexpr float DOOR_ROUTE_SPEED = 42.0f;
 static constexpr float DOOR_CROSS_SPEED = 28.0f;
 static constexpr uint32_t DOOR_ROUTE_TIMEOUT_MS = 8000UL;
@@ -92,14 +82,6 @@ static_assert(!monsterShouldWakeForFood(59) &&
               "normal hunger must not interrupt scheduled sleep");
 static constexpr uint32_t CONTACT_GUEST_MOTION_TIMEOUT_MS =
     Home::VisitArrivalFlow::MOTION_TIMEOUT_MS;
-// Contact dialog visual tuning. Alpha 153 means 60% opacity.
-static constexpr int CONTACT_DIALOG_X = 5;
-static constexpr int CONTACT_DIALOG_BOTTOM = 131;
-static constexpr int CONTACT_DIALOG_W = 230;
-static constexpr int CONTACT_DIALOG_SINGLE_H = 28;
-static constexpr int CONTACT_DIALOG_CHOICE_H = 45;
-static constexpr int CONTACT_DIALOG_RADIUS = 4;
-static constexpr uint8_t CONTACT_DIALOG_BG_ALPHA = 153;
 static constexpr uint32_t PAIR_INTERACTION_MIN_INTERVAL_MS = 90000UL;
 static constexpr uint32_t PAIR_INTERACTION_MAX_INTERVAL_MS = 180000UL;
 static constexpr uint32_t PAIR_INTERACTION_RETRY_MS = 5000UL;
@@ -122,27 +104,6 @@ static constexpr float PAIR_CHASE_FOLLOWER_SPEED = 17.0f;
 static constexpr float PAIR_APPROACH_SPEED = 12.5f;
 static constexpr float PAIR_SETTLE_SPEED = 11.5f;
 static constexpr float PAIR_CONVERSATION_EXTRA_GAP = 28.0f;
-
-int mainTextPixelWidth(const char* value) {
-    int width = 0;
-    const uint8_t* p = reinterpret_cast<const uint8_t*>(value);
-    while (*p) {
-        if (*p < 0x80) {
-            width += *p == ' ' ? 5 : 8;
-            ++p;
-        } else if ((*p & 0xE0) == 0xC0) {
-            width += 16;
-            p += 2;
-        } else if ((*p & 0xF0) == 0xE0) {
-            width += 16;
-            p += 3;
-        } else {
-            width += 8;
-            ++p;
-        }
-    }
-    return width;
-}
 
 constexpr bool doorRouteStepAllowed(bool enforceWalkArea, bool enteringWalkArea,
                                     bool currentInside, bool nextInside) {
@@ -322,131 +283,10 @@ const PmdSpriteConfig* pmdSpriteConfigForSpecies(uint16_t speciesId) {
     return nullptr;
 }
 
-uint8_t rgb565R(uint16_t c) {
-    return (uint8_t)(((c >> 11) & 0x1F) * 255 / 31);
-}
-
-uint8_t rgb565G(uint16_t c) {
-    return (uint8_t)(((c >> 5) & 0x3F) * 255 / 63);
-}
-
-uint8_t rgb565B(uint16_t c) {
-    return (uint8_t)((c & 0x1F) * 255 / 31);
-}
-
-uint16_t blendRgb565(uint16_t dst, uint16_t src, uint8_t alpha) {
-    uint8_t inv = 255 - alpha;
-    uint8_t r = (uint8_t)((rgb565R(src) * alpha + rgb565R(dst) * inv) / 255);
-    uint8_t g = (uint8_t)((rgb565G(src) * alpha + rgb565G(dst) * inv) / 255);
-    uint8_t b = (uint8_t)((rgb565B(src) * alpha + rgb565B(dst) * inv) / 255);
-    return PixelRenderer::rgb(r, g, b);
-}
-
-void fillRoundRectAlpha(int x, int y, int w, int h, int radius,
-                        uint16_t color, uint8_t alpha) {
-    if (w <= 0 || h <= 0 || alpha == 0) return;
-    auto& c = PixelRenderer::canvas();
-    radius = MathUtil::max(0, MathUtil::min(radius, MathUtil::min(w, h) / 2));
-    for (int py = y; py < y + h; ++py) {
-        if (py < 0 || py >= Hal::DISPLAY_H) continue;
-        for (int px = x; px < x + w; ++px) {
-            if (px < 0 || px >= Hal::DISPLAY_W) continue;
-            int localX = px - x;
-            int localY = py - y;
-            bool inside = radius == 0 ||
-                          (localX >= radius && localX < w - radius) ||
-                          (localY >= radius && localY < h - radius);
-            if (!inside) {
-                int centerX = localX < radius ? radius : w - radius - 1;
-                int centerY = localY < radius ? radius : h - radius - 1;
-                int dx = localX - centerX;
-                int dy = localY - centerY;
-                inside = dx * dx + dy * dy <= radius * radius;
-            }
-            if (!inside) continue;
-            uint16_t bg = (uint16_t)c.readPixel(px, py);
-            c.drawPixel(px, py, blendRgb565(bg, color, alpha));
-        }
-    }
-}
-
-void fillRadialLightAlpha(int centerX, int centerY, int radiusX, int radiusY, uint16_t color, uint8_t maxAlpha) {
-    if (radiusX <= 0 || radiusY <= 0 || maxAlpha == 0) return;
-    auto& c = PixelRenderer::canvas();
-    int minX = centerX - radiusX;
-    int maxX = centerX + radiusX;
-    int minY = centerY - radiusY;
-    int maxY = centerY + radiusY;
-    for (int py = minY; py <= maxY; ++py) {
-        if (py < 0 || py >= Hal::DISPLAY_H) continue;
-        float dy = (float)(py - centerY) / (float)radiusY;
-        for (int px = minX; px <= maxX; ++px) {
-            if (px < 0 || px >= Hal::DISPLAY_W) continue;
-            float dx = (float)(px - centerX) / (float)radiusX;
-            float distSq = dx * dx + dy * dy;
-            if (distSq > 1.0f) continue;
-            uint8_t alpha = (uint8_t)(maxAlpha * (1.0f - distSq));
-            if (alpha == 0) continue;
-            uint16_t bg = (uint16_t)c.readPixel(px, py);
-            c.drawPixel(px, py, blendRgb565(bg, color, alpha));
-        }
-    }
-}
-
-void fillSoftEllipseAlpha(int centerX, int centerY, int radiusX, int radiusY, uint16_t color, uint8_t maxAlpha) {
-    fillRadialLightAlpha(centerX, centerY, radiusX, radiusY, color, maxAlpha);
-}
-
-void fillEllipseAlpha(int centerX, int centerY, int radiusX, int radiusY, uint16_t color, uint8_t alpha) {
-    if (radiusX <= 0 || radiusY <= 0 || alpha == 0) return;
-    auto& c = PixelRenderer::canvas();
-    int minX = centerX - radiusX;
-    int maxX = centerX + radiusX;
-    int minY = centerY - radiusY;
-    int maxY = centerY + radiusY;
-    for (int py = minY; py <= maxY; ++py) {
-        if (py < 0 || py >= Hal::DISPLAY_H) continue;
-        float dy = (float)(py - centerY) / (float)radiusY;
-        for (int px = minX; px <= maxX; ++px) {
-            if (px < 0 || px >= Hal::DISPLAY_W) continue;
-            float dx = (float)(px - centerX) / (float)radiusX;
-            if (dx * dx + dy * dy > 1.0f) continue;
-            uint16_t bg = (uint16_t)c.readPixel(px, py);
-            c.drawPixel(px, py, blendRgb565(bg, color, alpha));
-        }
-    }
-}
-
-void fillTopDownLightAlpha(int height, uint16_t color, uint8_t maxAlpha) {
-    if (height <= 0 || maxAlpha == 0) return;
-    if (height > Hal::DISPLAY_H) height = Hal::DISPLAY_H;
-    auto& c = PixelRenderer::canvas();
-    for (int py = 0; py < height; ++py) {
-        float t = 1.0f - (float)py / (float)height;
-        uint8_t alpha = (uint8_t)(maxAlpha * t * t);
-        if (alpha == 0) continue;
-        for (int px = 0; px < Hal::DISPLAY_W; ++px) {
-            uint16_t bg = (uint16_t)c.readPixel(px, py);
-            c.drawPixel(px, py, blendRgb565(bg, color, alpha));
-        }
-    }
-}
-
 float clampf(float value, float lo, float hi) {
     if (value < lo) return lo;
     if (value > hi) return hi;
     return value;
-}
-
-float cameraForWorldX(float worldX) {
-    return RoomRenderer::clampCameraX(
-        worldX - Hal::DISPLAY_W / (2.0f * RoomRenderer::PIXEL_SCALE));
-}
-
-float cameraForWorldY(float worldY) {
-    const float focus = RoomRenderer::PIXEL_SCALE == 1
-        ? CAMERA_FOCUS_Y : Hal::DISPLAY_H / (2.0f * RoomRenderer::PIXEL_SCALE);
-    return RoomRenderer::clampCameraY(worldY - focus);
 }
 
 int16_t roomPointX(uint8_t index) {
@@ -535,10 +375,20 @@ uint16_t visitorIdleDirectionFrameIndex(
     switch (direction) {
     case PokemonSprites::WalkDirection::DOWN:
         return 0;
+    case PokemonSprites::WalkDirection::DOWN_LEFT:
+        return 1;
     case PokemonSprites::WalkDirection::LEFT:
         return 2;
     case PokemonSprites::WalkDirection::UP:
         return 4;
+    case PokemonSprites::WalkDirection::UP_LEFT:
+        return 3;
+    case PokemonSprites::WalkDirection::UP_RIGHT:
+        flipX = config && config->mirrorRightDirections;
+        return flipX ? 3 : 5;
+    case PokemonSprites::WalkDirection::DOWN_RIGHT:
+        flipX = config && config->mirrorRightDirections;
+        return flipX ? 1 : 7;
     case PokemonSprites::WalkDirection::RIGHT:
         if (config && config->mirrorRightDirections) {
             flipX = true;
@@ -731,7 +581,7 @@ void MainScene::onEnter() {
     roomAction = RoomAction::NONE;
     heartEffect = HeartEffect::NONE;
     heartEffectUntilMs = 0;
-    hungerAnimUntilMs = 0;
+    homeUi.enter();
     feedingHadTastyBite = false;
     feedingHadDislikedBite = false;
     feedingBecameFull = false;
@@ -781,8 +631,7 @@ void MainScene::onEnter() {
     }
     mainActor.velocityX = 0.0f;
     mainActor.velocityY = 0.0f;
-    cameraX = cameraForWorldX(mainActor.x);
-    cameraY = cameraForWorldY(mainActor.y);
+    homeUi.focus(mainActor.x, mainActor.y);
     pmdLongMove = false;
     pmdMotionPhase = PokemonMotion::SLITHER_IDLE_PHASE_INDEX;
     pmdRenderOffsetX = 0;
@@ -875,6 +724,8 @@ void MainScene::onEnter() {
 }
 
 void MainScene::onExit() {
+    ProgressionUi::cancelMoveLearnTouch();
+    homeUi.onExit();
     uint32_t nowMs = Hal::ins().millis();
     homeCoordinator.releaseAll(0);
     homeCoordinator.releaseAll(1);
@@ -897,10 +748,11 @@ void MainScene::onExit() {
     }
 }
 
-void MainScene::onBeforeSave() {
+bool MainScene::onBeforeSave() {
     if (doorTransition == DoorTransitionMode::NONE) {
         persistViewState(Hal::ins().millis());
     }
+    return true;
 }
 
 void MainScene::restoreViewState(uint32_t nowMs) {
@@ -1151,25 +1003,7 @@ SceneUpdateResult MainScene::update(uint32_t nowMs, float dtSeconds) {
     if (doorTransition != DoorTransitionMode::NONE) {
         return SceneUpdateResult::animate(66);
     }
-#if STICKMON_ENABLE_DEBUG_FEATURES
-    bool combo =
-        ButtonDispatcher::ins().isDown(Platform::InputButton::PRIMARY) &&
-        ButtonDispatcher::ins().isDown(Platform::InputButton::SECONDARY);
-    if (!combo) {
-        comboStartMs = 0;
-        comboSaved = false;
-    } else if (comboStartMs == 0) {
-        comboStartMs = nowMs;
-    } else if (!comboSaved && nowMs - comboStartMs >= 800) {
-        GameEngine::ins().saveNow();
-        toast = Ui::Common::SAVED;
-        toastUntil = nowMs + 1200;
-        comboSaved = true;
-    }
-#endif
-    if (toast && static_cast<int32_t>(nowMs - toastUntil) >= 0) {
-        toast = nullptr;
-    }
+    homeUi.update(nowMs, dtSeconds);
     return SceneUpdateResult::animate(66);
 }
 
@@ -1196,7 +1030,7 @@ void MainScene::beginDoorTransition(uint32_t nowMs) {
     doorRouteEnteringWalkArea = false;
     visitorDoorRouteEnteringWalkArea = false;
     doorDepartureHasVisitor = false;
-    doorWaitingActorReady = false;
+    doorNextRouteAttemptMs = nowMs;
     doorMainHidden = false;
     doorVisitorHidden = false;
     doorFirstActor = DoorActor::MAIN;
@@ -1256,69 +1090,20 @@ void MainScene::beginDoorTransition(uint32_t nowMs) {
                 visitorDx * visitorDx + visitorDy * visitorDy)
                 ? DoorActor::VISITOR
                 : DoorActor::MAIN;
-
-            float waitingX = doorFirstActor == DoorActor::MAIN ? visitor.x : mainActor.x;
-            float waitingY = doorFirstActor == DoorActor::MAIN ? visitor.y : mainActor.y;
-            const ActorGeometry waitingGeometry =
-                doorFirstActor == DoorActor::MAIN
-                    ? visitorGeometry() : mainGeometry();
-            if (!chooseDoorWaitPose(waitingX, waitingY, waitingGeometry,
-                                    doorWaitX, doorWaitY)) {
-                doorDepartureHasVisitor = false;
-                doorFirstActor = DoorActor::MAIN;
-            }
         }
 
-        float mainGoalX = doorDepartureHasVisitor && doorFirstActor == DoorActor::VISITOR
-            ? doorWaitX
-            : doorInsideX;
-        float mainGoalY = doorDepartureHasVisitor && doorFirstActor == DoorActor::VISITOR
-            ? doorWaitY
-            : doorInsideY;
-        mainActor.targetX = mainGoalX;
-        mainActor.targetY = mainGoalY;
-        bool mainRouteReady = buildMoveRoute(mainGoalX, mainGoalY);
-        if (mainRouteReady) {
-            homeCoordinator.transitionPreparedRoute(
-                0, AiMode::DOOR_ACTION, nowMs, 0, true);
-        } else {
-            homeCoordinator.transition(
-                0, AiMode::DOOR_ACTION, nowMs, 0, true);
-        }
-
-        bool visitorRouteReady = true;
+        // Keep the other actor in place. Planning against its actual position
+        // avoids moving it into a route that was planned before it yielded.
+        homeCoordinator.transition(0, AiMode::DOOR_ACTION, nowMs, 0, true);
         if (doorDepartureHasVisitor) {
-            visitor.targetX = doorFirstActor == DoorActor::MAIN ? doorWaitX : doorInsideX;
-            visitor.targetY = doorFirstActor == DoorActor::MAIN
-                ? doorWaitY : visitorDoorInsideY;
+            homeCoordinator.transition(
+                1, VisitorState::DOOR_ACTION, nowMs, 0, true);
+            visitor.targetX = visitor.x;
+            visitor.targetY = visitor.y;
             visitor.frameStartedMs = nowMs;
             visitor.frameIndex = 0;
-            visitorRouteReady = buildVisitorMoveRoute(visitor.targetX, visitor.targetY);
-            if (visitorRouteReady) {
-                homeCoordinator.transitionPreparedRoute(
-                    1, VisitorState::DOOR_ACTION, nowMs, 0, true);
-            } else {
-                homeCoordinator.transition(
-                    1, VisitorState::DOOR_ACTION, nowMs, 0, true);
-            }
         }
-
-        if (!mainRouteReady) {
-            mainActor.x = mainGoalX;
-            mainActor.y = mainGoalY;
-            clearMoveRoute();
-        }
-        if (!visitorRouteReady) {
-            visitor.x = visitor.targetX;
-            visitor.y = visitor.targetY;
-            clearVisitorMoveRoute();
-        }
-        if (!mainRouteReady || !visitorRouteReady) {
-            Platform::logf(
-                "[DoorDeparture] route fallback main=%u visitor=%u paired=%u\n",
-                mainRouteReady ? 1 : 0, visitorRouteReady ? 1 : 0,
-                doorDepartureHasVisitor ? 1 : 0);
-        }
+        planFirstDoorExit(nowMs);
 
         doorRouteEnteringWalkArea = !monsterFootprintInsideWalkArea(mainActor.x, mainActor.y);
         visitorDoorRouteEnteringWalkArea =
@@ -1379,7 +1164,7 @@ void MainScene::beginVisitDeparture(uint32_t nowMs) {
         mainActor.route.x, mainActor.route.y,
         mainActor.route.count, mainActor.route.index,
         monsterAtBedSleepPose(), mainGeometry(), false,
-        visitor.x, visitor.y, visitorGeometry().groundOffsetY);
+        visitor.x, visitor.y, visitorGeometry());
     doorRouteEnteringWalkArea =
         !monsterFootprintInsideWalkArea(mainActor.x, mainActor.y);
     visitDeparture = VisitDeparture::WALK_TO_DOOR;
@@ -1436,135 +1221,13 @@ void MainScene::updateDoorTransition(uint32_t nowMs) {
 
     switch (doorTransition) {
     case DoorTransitionMode::EXIT_ROUTE:
-        if (nowMs - doorPhaseStartedMs >= DOOR_ROUTE_TIMEOUT_MS) {
-            if (doorDepartureHasVisitor && !doorWaitingActorReady) {
-                DoorActor waitingActor = doorFirstActor == DoorActor::MAIN
-                    ? DoorActor::VISITOR
-                    : DoorActor::MAIN;
-                if (waitingActor == DoorActor::MAIN) {
-                    mainActor.x = doorWaitX;
-                    mainActor.y = doorWaitY;
-                    clearMoveRoute();
-                } else {
-                    visitor.x = doorWaitX;
-                    visitor.y = doorWaitY;
-                    clearVisitorMoveRoute();
-                }
-                doorWaitingActorReady = true;
-                doorPhaseStartedMs = nowMs;
-                doorLastProgressMs = nowMs;
-                Platform::logLine(
-                    "[DoorDeparture] waiting route timeout fallback=wait_pose");
-                return;
-            }
-            if (doorFirstActor == DoorActor::MAIN) {
-                mainActor.x = doorInsideX;
-                mainActor.y = doorInsideY;
-                mainActor.targetX = doorOutsideX;
-                mainActor.targetY = doorOutsideY;
-                clearMoveRoute();
-            } else {
-                visitor.x = visitorDoorInsideX;
-                visitor.y = visitorDoorInsideY;
-                visitor.targetX = doorOutsideX;
-                visitor.targetY = visitorDoorOutsideY;
-                clearVisitorMoveRoute();
-            }
-            Platform::logLine(
-                "[DoorDeparture] first route timeout fallback=cross");
-            doorTransition = DoorTransitionMode::EXIT_CROSS;
-            doorPhaseStartedMs = nowMs;
-            return;
-        }
-
-        if (doorDepartureHasVisitor && !doorWaitingActorReady) {
-            DoorActor waitingActor = doorFirstActor == DoorActor::MAIN
-                ? DoorActor::VISITOR
-                : DoorActor::MAIN;
-            float beforeX = waitingActor == DoorActor::MAIN
-                ? mainActor.x : visitor.x;
-            float beforeY = waitingActor == DoorActor::MAIN
-                ? mainActor.y : visitor.y;
-            doorWaitingActorReady = updateDoorWaitingActor(dtSeconds);
-            float afterX = waitingActor == DoorActor::MAIN
-                ? mainActor.x : visitor.x;
-            float afterY = waitingActor == DoorActor::MAIN
-                ? mainActor.y : visitor.y;
-            if (fabsf(afterX - beforeX) > 0.01f ||
-                fabsf(afterY - beforeY) > 0.01f) {
-                doorLastProgressMs = nowMs;
-            }
-            if (!doorWaitingActorReady &&
-                nowMs - doorLastProgressMs >= DOOR_STALL_TIMEOUT_MS) {
-                if (waitingActor == DoorActor::MAIN) {
-                    mainActor.x = doorWaitX;
-                    mainActor.y = doorWaitY;
-                    clearMoveRoute();
-                } else {
-                    visitor.x = doorWaitX;
-                    visitor.y = doorWaitY;
-                    clearVisitorMoveRoute();
-                }
-                doorWaitingActorReady = true;
-                Platform::logLine(
-                    "[DoorDeparture] waiting route stalled fallback=wait_pose");
-            }
-            if (!doorWaitingActorReady) return;
-            // The first actor gets its own timeout budget after the waiting
-            // actor has cleared the doorway.
-            doorPhaseStartedMs = nowMs;
-            doorLastProgressMs = nowMs;
-        }
-        {
-            float beforeX = doorFirstActor == DoorActor::MAIN
-                ? mainActor.x : visitor.x;
-            float beforeY = doorFirstActor == DoorActor::MAIN
-                ? mainActor.y : visitor.y;
-            bool firstReady = doorFirstActor == DoorActor::MAIN
-                ? updateDoorRoute(dtSeconds)
-                : updateVisitorDoorRoute(dtSeconds);
-            float afterX = doorFirstActor == DoorActor::MAIN
-                ? mainActor.x : visitor.x;
-            float afterY = doorFirstActor == DoorActor::MAIN
-                ? mainActor.y : visitor.y;
-            if (fabsf(afterX - beforeX) > 0.01f ||
-                fabsf(afterY - beforeY) > 0.01f) {
-                doorLastProgressMs = nowMs;
-            }
-            if (!firstReady &&
-                nowMs - doorLastProgressMs >= DOOR_STALL_TIMEOUT_MS) {
-                if (doorFirstActor == DoorActor::MAIN) {
-                    mainActor.x = doorInsideX;
-                    mainActor.y = doorInsideY;
-                    mainActor.targetX = doorOutsideX;
-                    mainActor.targetY = doorOutsideY;
-                    clearMoveRoute();
-                } else {
-                    visitor.x = visitorDoorInsideX;
-                    visitor.y = visitorDoorInsideY;
-                    visitor.targetX = doorOutsideX;
-                    visitor.targetY = visitorDoorOutsideY;
-                    clearVisitorMoveRoute();
-                }
-                Platform::logLine(
-                    "[DoorDeparture] first route stalled fallback=cross");
-                doorTransition = DoorTransitionMode::EXIT_CROSS;
-                doorPhaseStartedMs = nowMs;
-                return;
-            }
-            if (!firstReady) return;
-            if (doorFirstActor == DoorActor::MAIN) {
-                mainActor.targetX = doorOutsideX;
-                mainActor.targetY = doorOutsideY;
-            } else {
-                visitor.targetX = doorOutsideX;
-                visitor.targetY = visitorDoorOutsideY;
-            }
-            doorTransition = DoorTransitionMode::EXIT_CROSS;
-            doorPhaseStartedMs = nowMs;
-        }
+        updateDoorExitRoute(nowMs, dtSeconds, false);
         return;
     case DoorTransitionMode::EXIT_CROSS:
+        if (nowMs - doorPhaseStartedMs >= DOOR_ROUTE_TIMEOUT_MS) {
+            finishDoorDeparture();
+            return;
+        }
         {
             bool firstOutside = doorFirstActor == DoorActor::MAIN
                 ? moveDoorToward(doorOutsideX, doorOutsideY, DOOR_CROSS_SPEED,
@@ -1581,82 +1244,14 @@ void MainScene::updateDoorTransition(uint32_t nowMs) {
             beginSecondDoorExit(nowMs);
         }
         return;
-    case DoorTransitionMode::EXIT_SECOND_ROUTE: {
-        if (nowMs - doorPhaseStartedMs >= DOOR_ROUTE_TIMEOUT_MS) {
-            DoorActor secondActor = doorFirstActor == DoorActor::MAIN
-                ? DoorActor::VISITOR
-                : DoorActor::MAIN;
-            if (secondActor == DoorActor::MAIN) {
-                mainActor.x = doorInsideX;
-                mainActor.y = doorInsideY;
-                mainActor.targetX = doorOutsideX;
-                mainActor.targetY = doorOutsideY;
-                clearMoveRoute();
-            } else {
-                visitor.x = visitorDoorInsideX;
-                visitor.y = visitorDoorInsideY;
-                visitor.targetX = doorOutsideX;
-                visitor.targetY = visitorDoorOutsideY;
-                clearVisitorMoveRoute();
-            }
-            Platform::logLine(
-                "[DoorDeparture] second route timeout fallback=cross");
-            doorTransition = DoorTransitionMode::EXIT_SECOND_CROSS;
-            doorPhaseStartedMs = nowMs;
-            return;
-        }
-        DoorActor secondActor = doorFirstActor == DoorActor::MAIN
-            ? DoorActor::VISITOR
-            : DoorActor::MAIN;
-        float beforeX = secondActor == DoorActor::MAIN
-            ? mainActor.x : visitor.x;
-        float beforeY = secondActor == DoorActor::MAIN
-            ? mainActor.y : visitor.y;
-        bool secondReady = secondActor == DoorActor::MAIN
-            ? updateDoorRoute(dtSeconds)
-            : updateVisitorDoorRoute(dtSeconds);
-        float afterX = secondActor == DoorActor::MAIN
-            ? mainActor.x : visitor.x;
-        float afterY = secondActor == DoorActor::MAIN
-            ? mainActor.y : visitor.y;
-        if (fabsf(afterX - beforeX) > 0.01f ||
-            fabsf(afterY - beforeY) > 0.01f) {
-            doorLastProgressMs = nowMs;
-        }
-        if (!secondReady &&
-            nowMs - doorLastProgressMs >= DOOR_STALL_TIMEOUT_MS) {
-            if (secondActor == DoorActor::MAIN) {
-                mainActor.x = doorInsideX;
-                mainActor.y = doorInsideY;
-                mainActor.targetX = doorOutsideX;
-                mainActor.targetY = doorOutsideY;
-                clearMoveRoute();
-            } else {
-                visitor.x = visitorDoorInsideX;
-                visitor.y = visitorDoorInsideY;
-                visitor.targetX = doorOutsideX;
-                visitor.targetY = visitorDoorOutsideY;
-                clearVisitorMoveRoute();
-            }
-            Platform::logLine(
-                "[DoorDeparture] second route stalled fallback=cross");
-            doorTransition = DoorTransitionMode::EXIT_SECOND_CROSS;
-            doorPhaseStartedMs = nowMs;
-            return;
-        }
-        if (!secondReady) return;
-        if (secondActor == DoorActor::MAIN) {
-            mainActor.targetX = doorOutsideX;
-            mainActor.targetY = doorOutsideY;
-        } else {
-            visitor.targetX = doorOutsideX;
-            visitor.targetY = visitorDoorOutsideY;
-        }
-        doorTransition = DoorTransitionMode::EXIT_SECOND_CROSS;
-        doorPhaseStartedMs = nowMs;
+    case DoorTransitionMode::EXIT_SECOND_ROUTE:
+        updateDoorExitRoute(nowMs, dtSeconds, true);
         return;
-    }
     case DoorTransitionMode::EXIT_SECOND_CROSS: {
+        if (nowMs - doorPhaseStartedMs >= DOOR_ROUTE_TIMEOUT_MS) {
+            finishDoorDeparture();
+            return;
+        }
         DoorActor secondActor = doorFirstActor == DoorActor::MAIN
             ? DoorActor::VISITOR
             : DoorActor::MAIN;
@@ -1764,19 +1359,84 @@ void MainScene::updateDoorTransition(uint32_t nowMs) {
     }
 }
 
-bool MainScene::updateDoorWaitingActor(float dtSeconds) {
-    DoorActor waitingActor = doorFirstActor == DoorActor::MAIN
-        ? DoorActor::VISITOR
-        : DoorActor::MAIN;
-    if (waitingActor == DoorActor::MAIN) {
-        if (updateDoorRoute(dtSeconds)) {
-            mainActor.velocityX = mainActor.velocityY = 0.0f;
-            return true;
-        }
-    } else if (updateVisitorDoorRoute(dtSeconds)) {
-        return true;
+bool MainScene::planDoorExitRoute(DoorActor actor, uint32_t nowMs) {
+    const bool movingMain = actor == DoorActor::MAIN;
+    Home::Actor& moving = movingMain ? mainActor : visitor;
+    const Home::Actor& other = movingMain ? visitor : mainActor;
+    const bool avoidOther = other.active &&
+        !(movingMain ? doorVisitorHidden : doorMainHidden);
+    const float insideX = movingMain ? doorInsideX : visitorDoorInsideX;
+    const float insideY = movingMain ? doorInsideY : visitorDoorInsideY;
+    const float outsideY = movingMain ? doorOutsideY : visitorDoorOutsideY;
+    moving.targetX = insideX;
+    moving.targetY = insideY;
+    moving.route.clear();
+    // A route to the threshold is insufficient if the waiting actor blocks
+    // the crossing itself. Try the opposite departure order in that case.
+    if (avoidOther && !doorStepKeepsSpacing(
+            insideX, insideY, doorOutsideX, outsideY,
+            other.x, other.y, !movingMain)) {
+        return false;
     }
-    return false;
+    const bool ready = movingMain
+        ? buildMoveRoute(insideX, insideY)
+        : buildVisitorMoveRoute(insideX, insideY);
+    if (!ready) return false;
+    return homeCoordinator.transitionPreparedRoute(
+        movingMain ? 0 : 1, Home::Task::DOOR_ACTION, nowMs, 0, true);
+}
+
+bool MainScene::planFirstDoorExit(uint32_t nowMs) {
+    doorNextRouteAttemptMs = nowMs + 350;
+    if (planDoorExitRoute(doorFirstActor, nowMs)) return true;
+    if (!doorDepartureHasVisitor) return false;
+    const DoorActor alternate = doorFirstActor == DoorActor::MAIN
+        ? DoorActor::VISITOR : DoorActor::MAIN;
+    if (!planDoorExitRoute(alternate, nowMs)) return false;
+    doorFirstActor = alternate;
+    return true;
+}
+
+void MainScene::updateDoorExitRoute(
+    uint32_t nowMs, float dtSeconds, bool second) {
+    if (nowMs - doorPhaseStartedMs >= DOOR_ROUTE_TIMEOUT_MS) {
+        // Preserve visible coordinates. A completely blocked departure ends
+        // through the existing scene fade rather than a jump to the doorway.
+        Platform::logLine("[DoorDeparture] route timeout fallback=fade");
+        finishDoorDeparture();
+        return;
+    }
+    DoorActor actor = second
+        ? (doorFirstActor == DoorActor::MAIN ? DoorActor::VISITOR : DoorActor::MAIN)
+        : doorFirstActor;
+    Home::Actor* moving = actor == DoorActor::MAIN ? &mainActor : &visitor;
+    const bool needsRoute = moving->route.empty();
+    const bool stalled = nowMs - doorLastProgressMs >= DOOR_STALL_TIMEOUT_MS;
+    if ((needsRoute || stalled) &&
+        static_cast<int32_t>(nowMs - doorNextRouteAttemptMs) >= 0) {
+        doorNextRouteAttemptMs = nowMs + 350;
+        const bool ready = second
+            ? planDoorExitRoute(actor, nowMs) : planFirstDoorExit(nowMs);
+        if (!ready) return;
+        actor = second ? actor : doorFirstActor;
+        moving = actor == DoorActor::MAIN ? &mainActor : &visitor;
+    }
+    // An empty or failed route is not evidence of arrival.
+    if (moving->route.empty()) return;
+    const float beforeX = moving->x;
+    const float beforeY = moving->y;
+    const bool arrived = actor == DoorActor::MAIN
+        ? updateDoorRoute(dtSeconds) : updateVisitorDoorRoute(dtSeconds);
+    if (fabsf(moving->x - beforeX) > 0.01f ||
+        fabsf(moving->y - beforeY) > 0.01f) {
+        doorLastProgressMs = nowMs;
+    }
+    if (!arrived) return;
+    moving->targetX = doorOutsideX;
+    moving->targetY = actor == DoorActor::MAIN ? doorOutsideY : visitorDoorOutsideY;
+    doorTransition = second ? DoorTransitionMode::EXIT_SECOND_CROSS
+                            : DoorTransitionMode::EXIT_CROSS;
+    doorPhaseStartedMs = nowMs;
 }
 
 void MainScene::beginSecondDoorExit(uint32_t nowMs) {
@@ -1784,59 +1444,16 @@ void MainScene::beginSecondDoorExit(uint32_t nowMs) {
         finishDoorDeparture();
         return;
     }
-
-    DoorActor secondActor = doorFirstActor == DoorActor::MAIN
-        ? DoorActor::VISITOR
-        : DoorActor::MAIN;
-    bool routeReady = false;
-    if (secondActor == DoorActor::MAIN) {
-        mainActor.targetX = doorInsideX;
-        mainActor.targetY = doorInsideY;
-        routeReady = buildMoveRoute(mainActor.targetX, mainActor.targetY);
-        if (routeReady) {
-            homeCoordinator.transitionPreparedRoute(
-                0, AiMode::DOOR_ACTION, nowMs, 0, true);
-        }
-        doorRouteEnteringWalkArea = !monsterFootprintInsideWalkArea(mainActor.x, mainActor.y);
-    } else {
-        visitor.targetX = visitorDoorInsideX;
-        visitor.targetY = visitorDoorInsideY;
-        visitor.frameStartedMs = nowMs;
-        visitor.frameIndex = 0;
-        routeReady = buildVisitorMoveRoute(visitor.targetX, visitor.targetY);
-        if (routeReady) {
-            homeCoordinator.transitionPreparedRoute(
-                1, VisitorState::DOOR_ACTION, nowMs, 0, true);
-        }
-        visitorDoorRouteEnteringWalkArea =
-            !actorFootprintInsideWalkArea(
-                visitor.x, visitor.y, visitorGeometry());
-    }
-
-    if (!routeReady) {
-        if (secondActor == DoorActor::MAIN) {
-            mainActor.x = doorInsideX;
-            mainActor.y = doorInsideY;
-            mainActor.targetX = doorOutsideX;
-            mainActor.targetY = doorOutsideY;
-            clearMoveRoute();
-        } else {
-            visitor.x = visitorDoorInsideX;
-            visitor.y = visitorDoorInsideY;
-            visitor.targetX = doorOutsideX;
-            visitor.targetY = visitorDoorOutsideY;
-            clearVisitorMoveRoute();
-        }
-        Platform::logf(
-            "[DoorDeparture] second route fallback actor=%u mode=cross\n",
-            secondActor == DoorActor::MAIN ? 0 : 1);
-        doorTransition = DoorTransitionMode::EXIT_SECOND_CROSS;
-        doorPhaseStartedMs = nowMs;
-        return;
-    }
+    const DoorActor secondActor = doorFirstActor == DoorActor::MAIN
+        ? DoorActor::VISITOR : DoorActor::MAIN;
+    planDoorExitRoute(secondActor, nowMs);
+    doorRouteEnteringWalkArea = !monsterFootprintInsideWalkArea(mainActor.x, mainActor.y);
+    visitorDoorRouteEnteringWalkArea = !actorFootprintInsideWalkArea(
+        visitor.x, visitor.y, visitorGeometry());
     doorTransition = DoorTransitionMode::EXIT_SECOND_ROUTE;
     doorPhaseStartedMs = nowMs;
     doorLastProgressMs = nowMs;
+    doorNextRouteAttemptMs = nowMs + 350;
 }
 
 void MainScene::finishDoorDeparture() {
@@ -2077,17 +1694,21 @@ bool MainScene::doorStepKeepsSpacing(float currentX, float currentY,
                                      float nextX, float nextY,
                                      float otherX, float otherY,
                                      bool movingVisitor) const {
-    float minSeparation = doorActorMinSeparation();
-    float movingOffset = movingVisitor
-        ? visitorGeometry().groundOffsetY : mainGeometry().groundOffsetY;
-    float otherOffset = movingVisitor
-        ? mainGeometry().groundOffsetY : visitorGeometry().groundOffsetY;
-    currentY += movingOffset;
-    nextY += movingOffset;
-    otherY += otherOffset;
-    return routeSegmentKeepsSpacing(
-        currentX, currentY, nextX, nextY,
-        otherX, otherY, minSeparation);
+    const ActorGeometry movingGeometry = movingVisitor
+        ? visitorGeometry() : mainGeometry();
+    const ActorGeometry otherGeometry = movingVisitor
+        ? mainGeometry() : visitorGeometry();
+    RoomNavigator::Obstacle obstacle;
+    obstacle.active = true;
+    obstacle.x = otherX;
+    obstacle.footY = otherY + otherGeometry.groundOffsetY;
+    obstacle.halfWidth = movingGeometry.footprint.radiusX +
+                         otherGeometry.footprint.radiusX;
+    obstacle.halfHeight = movingGeometry.footprint.radiusY +
+                          otherGeometry.footprint.radiusY;
+    return RoomNavigator::segmentKeepsSpacing(
+        currentX, currentY + movingGeometry.groundOffsetY,
+        nextX, nextY + movingGeometry.groundOffsetY, obstacle);
 }
 
 float MainScene::doorActorMinSeparation() const {
@@ -2111,25 +1732,20 @@ void MainScene::updateCamera() {
         : (visitorFocus ? visitor.x : mainActor.x);
     const float focusY = pair ? (mainActor.y + visitor.y) * 0.5f
         : (visitorFocus ? visitor.y : mainActor.y);
-    cameraX = cameraForWorldX(focusX);
-    cameraY = cameraForWorldY(focusY);
+    homeUi.focus(focusX, focusY);
 }
 
 int16_t MainScene::worldToScreenX(float worldX) const {
-    return RoomRenderer::screenX(worldX, cameraX);
+    return Ui::HomeUiContent::screenX(worldX, homeUi.camera);
 }
 
 int16_t MainScene::worldToScreenY(float worldY) const {
-    return RoomRenderer::screenY(worldY, cameraY);
+    return Ui::HomeUiContent::screenY(worldY, homeUi.camera);
 }
 
 int16_t MainScene::spriteGroundY(
     float actorY, float groundOffset, const PokemonSprites::SpriteFrame* frame) const {
-    // The simulation stores centers. Register each displayed frame at its
-    // stable world foot anchor; retain the original 1x presentation.
-    const float offset = RoomRenderer::PIXEL_SCALE == 1
-        ? PokemonSprites::frameGroundOffsetY(frame) : groundOffset;
-    return worldToScreenY(actorY + offset);
+    return Ui::HomeUiContent::spriteGroundY(actorY, groundOffset, frame, homeUi.camera);
 }
 
 float MainScene::walkBoundaryOffsetY() const {
@@ -2300,9 +1916,14 @@ bool MainScene::actorTargetsKeepSpacing(
     float dx = targetX - otherX;
     float dy = (targetY + movingGeometry.groundOffsetY) -
                (otherY + otherGeometry.groundOffsetY);
-    float separation = minSeparation > 0.0f
-        ? minSeparation : doorActorMinSeparation();
-    return dx * dx + dy * dy >= separation * separation;
+    if (minSeparation > 0.0f) {
+        return dx * dx + dy * dy >= minSeparation * minSeparation;
+    }
+    const float allowedX = movingGeometry.footprint.radiusX +
+                           otherGeometry.footprint.radiusX;
+    const float allowedY = movingGeometry.footprint.radiusY +
+                           otherGeometry.footprint.radiusY;
+    return std::fabs(dx) >= allowedX || std::fabs(dy) >= allowedY;
 }
 
 void MainScene::clearMoveRoute() {
@@ -2354,7 +1975,7 @@ bool MainScene::buildMoveRoute(float goalX, float goalY) {
         static_cast<float>(roomWalkMaxX()),
         static_cast<float>(roomWalkMaxY()),
     };
-    world.actorMinSeparation = doorActorMinSeparation();
+    world.actorOverlapPadding = 0.0f;
     world.scratch.parent = gNavParent;
     world.scratch.queue = gNavQueue;
     world.scratch.capacity = NAV_MAX_NODES;
@@ -2377,7 +1998,7 @@ bool MainScene::buildVisitorMoveRoute(float goalX, float goalY) {
         static_cast<float>(roomWalkMaxX()),
         static_cast<float>(roomWalkMaxY()),
     };
-    world.actorMinSeparation = doorActorMinSeparation();
+    world.actorOverlapPadding = 0.0f;
     world.scratch.parent = gNavParent;
     world.scratch.queue = gNavQueue;
     world.scratch.capacity = NAV_MAX_NODES;
@@ -2393,7 +2014,7 @@ bool MainScene::buildMoveRouteFrom(float startX, float startY,
                                    bool allowOutsideStart,
                                    const ActorGeometry& geometry,
                                    bool avoidOther, float otherX, float otherY,
-                                   float otherGroundOffsetY) {
+                                   const ActorGeometry& otherGeometry) {
     routeCount = 0;
     routeIndex = 0;
     if (!ensureNavScratch()) return false;
@@ -2415,8 +2036,11 @@ bool MainScene::buildMoveRouteFrom(float startX, float startY,
     request.allowOutsideStart = allowOutsideStart;
     request.obstacle.active = avoidOther;
     request.obstacle.x = otherX;
-    request.obstacle.footY = otherY + otherGroundOffsetY;
-    request.obstacle.minSeparation = doorActorMinSeparation();
+    request.obstacle.footY = otherY + otherGeometry.groundOffsetY;
+    request.obstacle.halfWidth = geometry.footprint.radiusX +
+                                 otherGeometry.footprint.radiusX;
+    request.obstacle.halfHeight = geometry.footprint.radiusY +
+                                  otherGeometry.footprint.radiusY;
     Home::Route result;
     RoomNavigator::Scratch scratch;
     scratch.parent = gNavParent;
@@ -2468,7 +2092,10 @@ void MainScene::handleVisitorMoveBlocked(uint32_t nowMs,
     if (visitor.blockedSinceMs == 0) visitor.blockedSinceMs = nowMs;
     if ((int32_t)(nowMs - visitor.nextReplanMs) >= 0) {
         visitor.nextReplanMs = nowMs + 350;
+        const uint32_t blockedSinceMs = visitor.blockedSinceMs;
         buildVisitorMoveRoute(visitor.targetX, visitor.targetY);
+        // Planning a route is not evidence that the actor has moved.
+        visitor.blockedSinceMs = blockedSinceMs;
     }
     if (nowMs - visitor.blockedSinceMs < MOVE_STUCK_MS) return;
 
@@ -3656,10 +3283,7 @@ void MainScene::updateFeeding(uint32_t nowMs) {
         feedingBiteMs = nowMs + (uint32_t)GameRandom::random(FEED_BITE_INTERVAL_MIN_MS,
                                                    FEED_BITE_INTERVAL_MAX_MS + 1);
         if (result.consumed) {
-            hungerAnimFrom = result.satietyBefore;
-            hungerAnimTo = result.satietyAfter;
-            hungerAnimStartedMs = nowMs;
-            hungerAnimUntilMs = nowMs + HUNGER_ANIM_MS;
+            homeUi.animateHunger(result.satietyBefore, result.satietyAfter, nowMs);
             feedingMoodAfter = result.moodAfter;
             feedingHadTastyBite = feedingHadTastyBite || result.foodIndex == 1 ||
                                   result.reaction == FoodReaction::LIKED;
@@ -4191,7 +3815,7 @@ bool MainScene::buildPairActorRoute(bool mainActor, float x, float y,
             this->mainActor.x, this->mainActor.y, x, y,
             proposed.x, proposed.y, proposed.count, proposed.index,
             allowOutsideStart, movementGeometry, false,
-            visitor.x, visitor.y, visitorGeometry().groundOffsetY)) {
+            visitor.x, visitor.y, visitorGeometry())) {
             return false;
         }
         this->mainActor.targetX = x;
@@ -4217,7 +3841,7 @@ bool MainScene::buildPairActorRoute(bool mainActor, float x, float y,
                 proposed.x, proposed.y, proposed.count, proposed.index,
                 allowOutsideStart, movementGeometry, false,
                 this->mainActor.x, this->mainActor.y,
-                mainGeometry().groundOffsetY)) {
+                mainGeometry())) {
             return false;
         }
         visitor.targetX = x;
@@ -4273,7 +3897,7 @@ bool MainScene::buildPairChasePlan(uint32_t nowMs) {
             followerRoute.x, followerRoute.y,
             followerRoute.count, followerRoute.index,
             false, followerGeometry, false,
-            leaderStartX, leaderStartY, leaderGeometry.groundOffsetY)) {
+            leaderStartX, leaderStartY, leaderGeometry)) {
         STICKMON_TRACEF(
             "[PairAI] event=chase_plan_failed t=%lu reason=follower_entry "
             "cost_us=%lu\n",
@@ -4525,30 +4149,21 @@ bool MainScene::updatePairActorRoute(bool mainActor, float speed,
         return true;
     }
 
+    const ActorGeometry movementGeometry =
+        pairActorGeometry(mainActor, profile);
+    const ActorGeometry otherGeometry =
+        pairActorGeometry(!mainActor, profile);
     if (keepSpacing) {
         float actorX = mainActor ? this->mainActor.x : visitor.x;
         float actorY = mainActor ? this->mainActor.y : visitor.y;
         float otherX = mainActor ? visitor.x : this->mainActor.x;
         float otherY = mainActor ? visitor.y : this->mainActor.y;
-        actorY += mainActor
-            ? mainGeometry().groundOffsetY
-            : visitorGeometry().groundOffsetY;
-        otherY += mainActor
-            ? visitorGeometry().groundOffsetY
-            : mainGeometry().groundOffsetY;
-        float waypointFootY = waypointY + (mainActor
-            ? mainGeometry().groundOffsetY
-            : visitorGeometry().groundOffsetY);
-        float actorDx = actorX - otherX;
-        float actorDy = actorY - otherY;
-        float waypointDx = waypointX - otherX;
-        float waypointDy = waypointFootY - otherY;
-        float minSeparation = doorActorMinSeparation();
-        float stopDistance = minSeparation + 1.5f;
-        if (actorDx * actorDx + actorDy * actorDy <=
-                stopDistance * stopDistance &&
-            waypointDx * waypointDx + waypointDy * waypointDy <
-                minSeparation * minSeparation) {
+        if (!actorTargetsKeepSpacing(
+                actorX, actorY, movementGeometry,
+                otherX, otherY, otherGeometry) &&
+            !actorTargetsKeepSpacing(
+                waypointX, waypointY, movementGeometry,
+                otherX, otherY, otherGeometry)) {
             if (mainActor) {
                 clearMoveRoute();
                 this->mainActor.velocityX = this->mainActor.velocityY = 0.0f;
@@ -4565,8 +4180,6 @@ bool MainScene::updatePairActorRoute(bool mainActor, float speed,
     }
 
     doorLastUpdateMs = nowMs;
-    const ActorGeometry movementGeometry =
-        pairActorGeometry(mainActor, profile);
     float previousVelocityX = mainActor
         ? this->mainActor.velocityX : visitor.velocityX;
     float previousVelocityY = mainActor
@@ -5363,7 +4976,7 @@ void MainScene::beginContactGuestEntry(uint32_t nowMs) {
         mainActor.route.x, mainActor.route.y,
         mainActor.route.count, mainActor.route.index,
         monsterAtBedSleepPose(), mainGeometry(), false,
-        visitor.x, visitor.y, visitorGeometry().groundOffsetY);
+        visitor.x, visitor.y, visitorGeometry());
     if (!routeReady) {
         mainActor.x = doorInsideX;
         mainActor.y = doorInsideY;
@@ -5409,7 +5022,7 @@ bool MainScene::beginContactHostClearDoor(uint32_t nowMs) {
                 mainActor.route.count, mainActor.route.index,
                 false, mainGeometry(), false,
                 visitor.x, visitor.y,
-                visitorGeometry().groundOffsetY)) {
+                visitorGeometry())) {
             continue;
         }
         mainActor.targetX = candidateX;
@@ -5471,13 +5084,13 @@ bool MainScene::beginContactMeetingArrangement(uint32_t nowMs) {
                 visitor.route.x, visitor.route.y,
                 visitor.route.count, visitor.route.index,
                 guestOutsideStart, guestGeometry, false,
-                mainActor.x, mainActor.y, hostGeometry.groundOffsetY) ||
+                mainActor.x, mainActor.y, hostGeometry) ||
             !buildMoveRouteFrom(
                 mainActor.x, mainActor.y, hostX, hostY,
                 mainActor.route.x, mainActor.route.y,
                 mainActor.route.count, mainActor.route.index,
                 false, hostGeometry, false,
-                visitor.x, visitor.y, guestGeometry.groundOffsetY)) {
+                visitor.x, visitor.y, guestGeometry)) {
             clearMoveRoute();
             clearVisitorMoveRoute();
             continue;
@@ -5709,7 +5322,7 @@ void MainScene::beginContactGuestExit(uint32_t nowMs) {
         visitor.route.x, visitor.route.y,
         visitor.route.count, visitor.route.index,
         false, visitorGeometry(), false,
-        mainActor.x, mainActor.y, mainGeometry().groundOffsetY);
+        mainActor.x, mainActor.y, mainGeometry());
     if (!routeReady) {
         contactGuestMotion = ContactGuestMotion::EXIT_DIRECT;
         STICKMON_TRACEF(
@@ -5796,16 +5409,18 @@ bool MainScene::handleContactDialogButton(const ButtonEvent& event) {
         contactDialog = ContactDialog::NONE;
         engine.beginContactVisitStay(nowMs);
         return true;
-    case ContactDialog::EXPLORE_INVITE:
-        if (contactDialogYes) {
+    case ContactDialog::EXPLORE_INVITE: {
+        const bool accepted = contactDialogYes;
+        contactDialogYes = true;
+        if (accepted) {
             contactDialog = ContactDialog::NONE;
             engine.acceptContactExploreInvitation();
         } else {
             engine.requestContactVisitFarewell();
             contactDialog = ContactDialog::HAPPY_VISIT;
         }
-        contactDialogYes = true;
         return true;
+    }
     case ContactDialog::HAPPY_RETURN:
         contactDialog = ContactDialog::BYE_RETURN;
         return true;
@@ -5824,85 +5439,6 @@ bool MainScene::handleContactDialogButton(const ButtonEvent& event) {
         return false;
     }
     return true;
-}
-
-void MainScene::drawContactDialog() {
-    if (contactDialog == ContactDialog::NONE &&
-        visitDeparture != VisitDeparture::AWAY) return;
-
-    char line[64] = {};
-    const char* text = nullptr;
-    const Species* guest =
-        findSpecies(GameEngine::ins().contactVisitSpeciesId());
-    const char* guestName = guest ? guest->name : "";
-    switch (contactDialog) {
-    case ContactDialog::NONE:
-        if (visitDeparture != VisitDeparture::AWAY) return;
-        text = Ui::Social::VISIT_AWAY;
-        break;
-    case ContactDialog::LINK_ARRIVAL:
-        text = Ui::Social::LINK_WELCOME;
-        break;
-    case ContactDialog::KNOCK:
-        text = Ui::ContactVisit::KNOCK;
-        break;
-    case ContactDialog::PLAY_ARRIVAL:
-        snprintf(line, sizeof(line), Ui::ContactVisit::PLAY_FMT, guestName);
-        text = line;
-        break;
-    case ContactDialog::GIFT_ARRIVAL:
-        snprintf(line, sizeof(line), Ui::ContactVisit::GIFT_FMT, guestName);
-        text = line;
-        break;
-    case ContactDialog::EXPLORE_INVITE:
-        snprintf(line, sizeof(line), Ui::ContactVisit::EXPLORE_FMT, guestName);
-        text = line;
-        break;
-    case ContactDialog::HAPPY_RETURN:
-        text = Ui::ContactVisit::HAPPY_RETURN;
-        break;
-    case ContactDialog::BYE_RETURN:
-        text = Ui::ContactVisit::BYE_RETURN;
-        break;
-    case ContactDialog::HAPPY_VISIT:
-        text = Ui::ContactVisit::HAPPY_VISIT;
-        break;
-    case ContactDialog::BYE_VISIT:
-        text = Ui::ContactVisit::BYE_VISIT;
-        break;
-    }
-
-    bool choiceDialog =
-        contactDialog == ContactDialog::KNOCK ||
-        contactDialog == ContactDialog::EXPLORE_INVITE;
-    int boxH = choiceDialog
-        ? CONTACT_DIALOG_CHOICE_H : CONTACT_DIALOG_SINGLE_H;
-    int boxY = CONTACT_DIALOG_BOTTOM - boxH;
-
-    auto& c = PixelRenderer::canvas();
-    fillRoundRectAlpha(
-        CONTACT_DIALOG_X, boxY, CONTACT_DIALOG_W, boxH,
-        CONTACT_DIALOG_RADIUS, PixelRenderer::rgb(20, 24, 31),
-        CONTACT_DIALOG_BG_ALPHA);
-    c.drawRoundRect(
-        CONTACT_DIALOG_X, boxY, CONTACT_DIALOG_W, boxH,
-        CONTACT_DIALOG_RADIUS,
-                    PixelRenderer::rgb(236, 239, 230));
-    int textX = CONTACT_DIALOG_X + MathUtil::max(
-        6, (CONTACT_DIALOG_W - mainTextPixelWidth(text)) / 2);
-    PixelRenderer::text(textX, boxY + 6, text,
-                        PixelRenderer::rgb(241, 242, 232), 1);
-
-    if (choiceDialog) {
-        uint16_t selected = PixelRenderer::rgb(255, 216, 72);
-        uint16_t normal = PixelRenderer::rgb(148, 156, 169);
-        PixelRenderer::text(CONTACT_DIALOG_X + 71, boxY + 27,
-                            Ui::ContactVisit::YES,
-                            contactDialogYes ? selected : normal, 1);
-        PixelRenderer::text(CONTACT_DIALOG_X + 149, boxY + 27,
-                            Ui::ContactVisit::NO,
-                            contactDialogYes ? normal : selected, 1);
-    }
 }
 
 bool MainScene::visitorHostActive() const {
@@ -6257,9 +5793,17 @@ void MainScene::updateVisitorFoodSeek(uint32_t nowMs, float dtSeconds) {
 
     doorLastUpdateMs = nowMs;
     float speed = visitorMoveSpeed(visitorBehaviorProfile(), true);
-    if (!moveVisitorDoorToward(waypointX, waypointY, speed,
-                               dtSeconds, true, true)) {
-        handleVisitorMoveBlocked(nowMs, false);
+    const float previousX = visitor.x;
+    const float previousY = visitor.y;
+    const bool reached = moveVisitorDoorToward(
+        waypointX, waypointY, speed, dtSeconds, true, true);
+    if (!reached) {
+        // Not reaching the waypoint is normal while a step makes progress.
+        if (visitor.x != previousX || visitor.y != previousY) {
+            visitor.blockedSinceMs = 0;
+        } else if (dtSeconds > 0.0f) {
+            handleVisitorMoveBlocked(nowMs, false);
+        }
         return;
     }
     visitor.blockedSinceMs = 0;
@@ -6713,6 +6257,10 @@ void MainScene::advanceVisitorFrames(uint32_t nowMs, bool walking) {
         case PokemonSprites::WalkDirection::LEFT: direction = 2; break;
         case PokemonSprites::WalkDirection::UP: direction = 4; break;
         case PokemonSprites::WalkDirection::RIGHT: direction = 6; break;
+        case PokemonSprites::WalkDirection::DOWN_LEFT: direction = 1; break;
+        case PokemonSprites::WalkDirection::UP_LEFT: direction = 3; break;
+        case PokemonSprites::WalkDirection::UP_RIGHT: direction = 5; break;
+        case PokemonSprites::WalkDirection::DOWN_RIGHT: direction = 7; break;
         }
         PokemonMotion::Pose pose = PokemonMotion::slitherPose(
             motion, config->walkingFrames, nowMs - visitor.frameStartedMs,
@@ -7084,150 +6632,52 @@ const PokemonSprites::SpriteFrame* MainScene::visitorCurrentFrame(bool& flipX) c
     return PokemonSprites::findSpeciesSprite(visitor.speciesId, PokemonSprites::SpriteKind::FRONT);
 }
 
-void MainScene::drawVisitorShadow() {
-    if (doorVisitorHidden) return;
-    if (visitor.task == VisitorState::SLEEPING) return;
-    bool flipX = false;
-    const PokemonSprites::SpriteFrame* frame = visitorCurrentFrame(flipX);
-    if (!frame) return;
+void MainScene::render() { homeUi.render(); }
 
-    bool night = mainSceneIsNight();
-    const PmdSpriteConfig* config =
-        pmdSpriteConfigForSpecies(visitor.speciesId);
-    bool floating = config && config->airHeight > 0.0f;
-    const auto shadow = PokemonShadow::atGround(frame,
-        worldToScreenX(visitor.x) + visitor.renderOffsetX * RoomRenderer::PIXEL_SCALE,
-        spriteGroundY(visitor.y, visitorGeometry().groundOffsetY, frame) +
-            visitor.renderOffsetY * RoomRenderer::PIXEL_SCALE,
-        RoomRenderer::PIXEL_SCALE, flipX);
-    int rx = shadow.radiusX;
-    int ry = shadow.radiusY;
-    if (night) {
-        rx = (rx * 11 + 5) / 10;
-        ry = (ry * 11 + 5) / 10;
-    }
-    uint16_t shadowColor = night ? PixelRenderer::rgb(18, 16, 24) : PixelRenderer::rgb(36, 29, 24);
-    uint8_t outerAlpha =
-        night ? (floating ? 84 : 122) : (floating ? 68 : 116);
-    uint8_t coreAlpha =
-        night ? (floating ? 0 : 92) : (floating ? 0 : 86);
-    fillSoftEllipseAlpha(shadow.x, shadow.y, rx, ry, shadowColor, outerAlpha);
-    if (!floating) {
-        fillEllipseAlpha(shadow.x, shadow.y, MathUtil::max(5 * RoomRenderer::PIXEL_SCALE, rx / 2),
-                         MathUtil::max(2 * RoomRenderer::PIXEL_SCALE, ry / 2), shadowColor, coreAlpha);
-    }
-}
-
-void MainScene::drawVisitor() {
-    if (doorVisitorHidden) return;
-    bool flipX = false;
-    const PokemonSprites::SpriteFrame* frame = visitorCurrentFrame(flipX);
-    if (!frame) return;
-
-    int x = worldToScreenX(visitor.x) + visitor.renderOffsetX * RoomRenderer::PIXEL_SCALE;
-    bool sleeping =
-        visitor.task == VisitorState::SLEEPING &&
-        visitor.dropOffsetY <= 0.0f;
-    const PmdSpriteConfig* config =
-        pmdSpriteConfigForSpecies(visitor.speciesId);
-    float floatOffset = pmdFloatYOffset(
-        config, Hal::ins().millis(),
-        sleeping || visitor.dropOffsetY > 0.0f);
-    int y = spriteGroundY(
-        visitor.y - visitor.dropOffsetY - floatOffset -
-            pairConversationHopOffset(false, Hal::ins().millis()),
-        visitorGeometry().groundOffsetY, frame) +
-        (visitor.renderOffsetY - PokemonSprites::frameGroundOffsetY(frame)) *
-            RoomRenderer::PIXEL_SCALE;
-    uint8_t w = FlashStorage::readByte(&frame->width);
-    uint8_t h = FlashStorage::readByte(&frame->height);
-    PokemonSprites::drawFrameScaled(frame,
-        x - (w / 2) * RoomRenderer::PIXEL_SCALE,
-        y - (h / 2) * RoomRenderer::PIXEL_SCALE, RoomRenderer::PIXEL_SCALE, flipX);
-    if (sleeping) {
-        drawVisitorSleepZz(x, y - (h / 2) * RoomRenderer::PIXEL_SCALE);
-    }
-}
-
-void MainScene::drawVisitorSleepZz(int screenX, int spriteTopY) const {
-    uint32_t nowMs = Hal::ins().millis();
-    for (uint8_t i = 0; i < 2; ++i) {
-        uint32_t phase = (nowMs + i * (VISITOR_SLEEP_ZZ_CYCLE_MS / 2)) % VISITOR_SLEEP_ZZ_CYCLE_MS;
-        float t = (float)phase / (float)VISITOR_SLEEP_ZZ_CYCLE_MS;
-        int zx = screenX + 8 + (int)(t * 4.0f) + (int)i * 3;
-        int zy = spriteTopY - 7 - (int)(t * 9.0f) - (int)i * 2;
-        uint16_t color = t < 0.34f ? PixelRenderer::rgb(255, 255, 255)
-            : (t < 0.67f ? PixelRenderer::rgb(176, 176, 184)
-                         : PixelRenderer::rgb(112, 112, 124));
-        PixelRenderer::text(zx, zy, "Z", color, 1);
-    }
-}
-
-void MainScene::render() {
-    int16_t depthZ = (int16_t)(mainActor.y - 78.0f);
-    int16_t visitorDepthZ = (int16_t)(visitor.y - 78.0f);
-    RenderItem items[] = {
-        {0, &MainScene::drawBackground},
-        {10, &MainScene::drawFloor, true},
-        {18, &MainScene::drawFood, true},
-        {(int16_t)(20 + depthZ), &MainScene::drawShadow, true},
-        {(int16_t)(20 + visitorDepthZ), &MainScene::drawVisitorShadow, true},
-        {(int16_t)(30 + depthZ), &MainScene::drawMonster, true},
-        {(int16_t)(30 + visitorDepthZ), &MainScene::drawVisitor, true},
-        {(int16_t)(40 + depthZ), &MainScene::drawStateEffect, true},
-        {85, &MainScene::drawNightOverlay, true},
-#if STICKMON_ENABLE_DEBUG_FEATURES
-        {88, &MainScene::drawWalkBoundary, true},
-#endif
-        {90, &MainScene::drawHud},
-        {100, &MainScene::drawToast},
-        {105, &MainScene::drawContactDialog},
-        {107, &MainScene::drawTutorial},
-        {110, &MainScene::drawProgressionPopup},
-    };
-    sortAndDraw(items, sizeof(items) / sizeof(items[0]));
-    if (progressionModal == ProgressionModal::NONE &&
-        contactDialog == ContactDialog::NONE) TouchUi::drawHomeMenu();
-}
-
-int MainScene::touchTarget(int16_t x, int16_t y) {
-    if (visitDeparture != VisitDeparture::NONE ||
-        contactDialog != ContactDialog::NONE || contactGuestMotion != ContactGuestMotion::NONE ||
-        progressionModal != ProgressionModal::NONE || doorTransition != DoorTransitionMode::NONE) return -1;
-    if (TouchUi::homeMenuHit(x, y)) return 2;
-    const auto view = RoomRenderer::viewport();
-    if (x < view.x || y < view.y || x >= view.x + view.width || y >= view.y + view.height) return -1;
-    if (std::abs(x - worldToScreenX(foodCenterX())) <= 19 &&
-        std::abs(y - worldToScreenY(foodCenterY())) <= 18) return 1;
-    if (doorMainHidden) return -1;
-    const auto* frame = currentMonsterFrame();
-    if (!frame) return -1;
-    const auto* config = active ? pmdSpriteConfigForSpecies(active->id) : nullptr;
-    const auto now = Hal::ins().millis();
-    const float lift = pmdFloatYOffset(config, now, pmdAction == PmdAction::SLEEPING) +
-        actionRenderYOffset(now) + pairConversationHopOffset(true, now);
-    const int cx = worldToScreenX(mainActor.x) + pmdRenderOffsetX * RoomRenderer::PIXEL_SCALE;
-    const int cy = spriteGroundY(mainActor.y - lift, mainGeometry().groundOffsetY, frame) +
-        (pmdRenderOffsetY - PokemonSprites::frameGroundOffsetY(frame)) * RoomRenderer::PIXEL_SCALE;
-    const int w = FlashStorage::readByte(&frame->width) * RoomRenderer::PIXEL_SCALE;
-    const int h = FlashStorage::readByte(&frame->height) * RoomRenderer::PIXEL_SCALE;
-    const auto bounds = PokemonSprites::frameVisibleBounds(frame);
-    const bool flip = config ? (pmdAction == PmdAction::SLEEPING ? false : pmdDirectionFlipX()) : facingRight;
-    const int left = flip ? FlashStorage::readByte(&frame->width) - bounds.left - bounds.width : bounds.left;
-    const int visibleX = cx - w / 2 + (left + bounds.width / 2) * RoomRenderer::PIXEL_SCALE;
-    const int visibleY = cy - h / 2 + (bounds.top + bounds.height / 2) * RoomRenderer::PIXEL_SCALE;
-    const int rx = std::max(20, bounds.width * RoomRenderer::PIXEL_SCALE / 2 + 4);
-    const int ry = std::max(22, bounds.height * RoomRenderer::PIXEL_SCALE / 2 + 4);
-    return std::abs(x - visibleX) <= rx && std::abs(y - visibleY) <= ry ? 0 : -1;
-}
-
-bool MainScene::onTap(int target) {
-    if (target == 2) return onButton({0, BtnAction::LONG_PRESS});
-    if (target == 0 || target == 1) return onButton({static_cast<uint8_t>(target), BtnAction::PRESSED});
-    return false;
-}
-
+int MainScene::touchTarget(int16_t x, int16_t y) { return homeUi.touchTarget(x, y); }
+bool MainScene::onTap(int target) { return homeUi.onTap(target); }
 bool MainScene::onButton(const ButtonEvent& event) {
+    cancelTouch();
+    return homeUi.onButton(event);
+}
+bool MainScene::onTouch(const Platform::IInputDevice::TouchEvent& event) {
+    if (visitDeparture == VisitDeparture::NONE && contactDialog == ContactDialog::NONE &&
+        contactGuestMotion == ContactGuestMotion::NONE) {
+        if (progressionModal == ProgressionModal::LEVEL_UP) {
+            if (ProgressionUi::handleLevelUpTouch(event))
+                return onButton({0, BtnAction::PRESSED});
+            return true;
+        }
+        if (progressionModal == ProgressionModal::LEARN_MOVE) {
+            if (ProgressionUi::handleMoveLearnTouch(progressionMoveLearn, event)) {
+                progressionModal = ProgressionModal::NONE;
+                openPendingProgression();
+            }
+            return true;
+        }
+        if (progressionModal == ProgressionModal::MOVE_REPLACED) {
+            if (ProgressionUi::handleMoveReplacementTouch(event))
+                return onButton({0, BtnAction::PRESSED});
+            return true;
+        }
+    }
+    ProgressionUi::cancelMoveLearnTouch();
+    return homeUi.onTouch(event);
+}
+void MainScene::cancelTouch() {
+    homeUi.cancelTouch();
+    ProgressionUi::cancelMoveLearnTouch();
+}
+
+bool MainScene::homeOverlayActive() const {
+    return visitDeparture != VisitDeparture::NONE ||
+        contactDialog != ContactDialog::NONE ||
+        contactGuestMotion != ContactGuestMotion::NONE ||
+        progressionModal != ProgressionModal::NONE ||
+        doorTransition != DoorTransitionMode::NONE;
+}
+
+bool MainScene::handleHomeOverlayButton(const ButtonEvent& event) {
     if (visitDeparture != VisitDeparture::NONE) {
         if (event.action == BtnAction::PRESSED &&
             visitDeparture == VisitDeparture::AWAY) {
@@ -7312,13 +6762,14 @@ bool MainScene::onButton(const ButtonEvent& event) {
         return true;
     }
     if (doorTransition != DoorTransitionMode::NONE) return true;
-    if (event.action != BtnAction::PRESSED && event.action != BtnAction::LONG_PRESS) {
-        return false;
-    }
+    return false;
+}
 
-    cancelPairInteraction(Hal::ins().millis());
+void MainScene::cancelHomePair() { cancelPairInteraction(Hal::ins().millis()); }
+void MainScene::saveHome() { GameEngine::ins().saveNow(); }
 
-    if (event.btn == 0 && event.action == BtnAction::PRESSED) {
+bool MainScene::activateHome(Ui::HomeAction action) {
+    if (action == Ui::HomeAction::PET) {
         uint32_t nowMs = Hal::ins().millis();
         PetResult result = GameEngine::ins().petMonster();
         startPetReaction(nowMs, result);
@@ -7327,20 +6778,20 @@ bool MainScene::onButton(const ButtonEvent& event) {
         }
         switch (result.outcome) {
         case PetOutcome::REWARDED:
-            toast = Ui::Menu::PET_TOAST;
+            homeUi.toast = Ui::Menu::PET_TOAST;
             break;
         case PetOutcome::DAILY_LIMIT:
-            toast = Ui::Menu::PET_LIMIT;
+            homeUi.toast = Ui::Menu::PET_LIMIT;
             break;
         case PetOutcome::NEEDS_REST:
-            toast = Ui::Menu::PET_REST;
+            homeUi.toast = Ui::Menu::PET_REST;
             break;
         }
-        toastUntil = nowMs + 1200;
+        homeUi.toastUntil = nowMs + 1200;
         return true;
     }
 
-    if (event.btn == 1 && event.action == BtnAction::PRESSED) {
+    if (action == Ui::HomeAction::FEED) {
         uint32_t nowMs = Hal::ins().millis();
         cancelRoomAction(nowMs);
         FoodPlacementResult result = GameEngine::ins().placeSelectedFoodInBowl();
@@ -7349,28 +6800,28 @@ bool MainScene::onButton(const ButtonEvent& event) {
         }
         switch (result) {
         case FoodPlacementResult::ADDED:
-            toast = Ui::Menu::FOOD_ADDED;
+            homeUi.toast = Ui::Menu::FOOD_ADDED;
             mainActor.nextMindUpdateMs = nowMs;
             if (mainActor.task == AiMode::IDLE && (int32_t)(mainActor.nextDecisionMs - (nowMs + 1200)) > 0) {
                 mainActor.nextDecisionMs = nowMs + 1200;
             }
             break;
         case FoodPlacementResult::BOWL_FULL:
-            toast = Ui::Menu::FOOD_FULL;
+            homeUi.toast = Ui::Menu::FOOD_FULL;
             break;
         case FoodPlacementResult::DIFFERENT_FOOD:
-            toast = Ui::Menu::FOOD_MIXED;
+            homeUi.toast = Ui::Menu::FOOD_MIXED;
             break;
         case FoodPlacementResult::NO_STOCK:
         default:
-            toast = Ui::Menu::NO_FOOD;
+            homeUi.toast = Ui::Menu::NO_FOOD;
             break;
         }
-        toastUntil = nowMs + 1200;
+        homeUi.toastUntil = nowMs + 1200;
         return true;
     }
 
-    if (event.btn == 0 && event.action == BtnAction::LONG_PRESS) {
+    if (action == Ui::HomeAction::MENU) {
         cancelRoomAction(Hal::ins().millis());
         GameEngine::ins().completeTutorial(Game::TutorialStep::OPEN_MENU);
         GameEngine::ins().requestScene(SceneID::MENU);
@@ -7379,7 +6830,7 @@ bool MainScene::onButton(const ButtonEvent& event) {
     return false;
 }
 
-void MainScene::drawProgressionPopup() {
+void MainScene::renderHomeProgression() {
     if (progressionModal == ProgressionModal::LEVEL_UP) {
         const auto& engine = GameEngine::ins();
         ProgressionUi::renderLevelUp(
@@ -7401,377 +6852,134 @@ void MainScene::drawProgressionPopup() {
     }
 }
 
-void MainScene::drawBackground() {
-    RoomRenderer::draw(cameraY, mainSceneIsNight(), cameraX);
-}
-
-void MainScene::drawFloor() {
-}
-
-void MainScene::drawFood() {
-    if (!GameEngine::ins().bowlHasFood()) return;
-    auto& c = PixelRenderer::canvas();
-    uint8_t foodIndex = GameEngine::ins().bowlFoodIndex();
-    uint8_t maxBites = Game::roomFoodBitesPerServing(foodIndex);
-    uint8_t remainingBites = MathUtil::min<uint8_t>(
-        maxBites,
-        GameEngine::ins().bowlFoodBitesRemaining());
-    int cx = worldToScreenX(foodCenterX());
-    int foodY = worldToScreenY(foodCenterY());
-
-    static constexpr int FOOD_LEFT = -9 * RoomRenderer::PIXEL_SCALE;
-    static constexpr int FOOD_WIDTH = 18 * RoomRenderer::PIXEL_SCALE;
-    int visibleWidth = maxBites == 0
-        ? 0
-        : (FOOD_WIDTH * remainingBites + maxBites - 1) / maxBites;
-    if (visibleWidth <= 0) return;
-    c.setClipRect(cx + FOOD_LEFT, foodY - 12 * RoomRenderer::PIXEL_SCALE,
-                  visibleWidth, 20 * RoomRenderer::PIXEL_SCALE);
-    if (!GameAssets::drawCentered(
-            GameAssets::itemKind(Game::itemIdForFoodIndex(foodIndex)),
-            cx, foodY - 3 * RoomRenderer::PIXEL_SCALE, 0.5f * RoomRenderer::PIXEL_SCALE)) {
-        c.fillEllipse(cx, foodY, 8 * RoomRenderer::PIXEL_SCALE, 3 * RoomRenderer::PIXEL_SCALE, PixelRenderer::rgb(238, 76, 56));
-    }
-    c.clearClipRect();
-}
-
-void MainScene::drawShadow() {
-    if (doorMainHidden) return;
-    if (pmdAction == PmdAction::SLEEPING) return;
-    const PokemonSprites::SpriteFrame* frame = currentMonsterFrame();
-    if (!frame) return;
-
-    bool night = mainSceneIsNight();
-    const PmdSpriteConfig* config = active ? pmdSpriteConfigForSpecies(active->id) : nullptr;
-    bool floating = config && config->airHeight > 0.0f;
-    const bool flipX = config ? pmdDirectionFlipX() : facingRight;
-    const auto shadow = PokemonShadow::atGround(frame,
-        worldToScreenX(mainActor.x) + pmdRenderOffsetX * RoomRenderer::PIXEL_SCALE,
-        spriteGroundY(mainActor.y, mainGeometry().groundOffsetY, frame) +
-            pmdRenderOffsetY * RoomRenderer::PIXEL_SCALE,
-        RoomRenderer::PIXEL_SCALE, flipX);
-    int rx = shadow.radiusX;
-    int ry = shadow.radiusY;
-    if (night) {
-        rx = (rx * 11 + 5) / 10;
-        ry = (ry * 11 + 5) / 10;
-    }
-
-    uint16_t shadowColor = night ? PixelRenderer::rgb(18, 16, 24) : PixelRenderer::rgb(36, 29, 24);
-    uint8_t outerAlpha = night ? (floating ? 84 : 122) : (floating ? 68 : 116);
-    uint8_t coreAlpha = night ? (floating ? 0 : 92) : (floating ? 0 : 86);
-    fillSoftEllipseAlpha(shadow.x, shadow.y, rx, ry, shadowColor, outerAlpha);
-    if (!floating) {
-        fillEllipseAlpha(shadow.x, shadow.y, MathUtil::max(5 * RoomRenderer::PIXEL_SCALE, rx / 2), MathUtil::max(2 * RoomRenderer::PIXEL_SCALE, ry / 2),
-                         shadowColor, coreAlpha);
-    }
-}
-
-void MainScene::drawMonster() {
-    if (doorMainHidden) return;
-    const PokemonSprites::SpriteFrame* frame = currentMonsterFrame();
-    if (!frame) return;
-    uint32_t nowMs = Hal::ins().millis();
-    const PmdSpriteConfig* config = active ? pmdSpriteConfigForSpecies(active->id) : nullptr;
-    const float lift = pmdFloatYOffset(config, nowMs, pmdAction == PmdAction::SLEEPING) +
-        actionRenderYOffset(nowMs) + pairConversationHopOffset(true, nowMs);
-    int x = worldToScreenX(mainActor.x) + pmdRenderOffsetX * RoomRenderer::PIXEL_SCALE;
-    int y = spriteGroundY(mainActor.y - lift, mainGeometry().groundOffsetY, frame) +
-        (pmdRenderOffsetY - PokemonSprites::frameGroundOffsetY(frame)) *
-            RoomRenderer::PIXEL_SCALE;
-    const int w = FlashStorage::readByte(&frame->width);
-    const int h = FlashStorage::readByte(&frame->height);
-    const bool flip = config
+Ui::HomeFrame MainScene::homeFrame() const {
+    Ui::HomeFrame frame;
+    const auto& engine = GameEngine::ins();
+    const auto& state = engine.gameState();
+    frame.nowMs = Hal::ins().millis();
+    frame.night = mainSceneIsNight();
+    frame.gameMinutes = engine.gameMinutesOfDay();
+    frame.main.frame = currentMonsterFrame();
+    frame.main.x = mainActor.x;
+    frame.main.y = mainActor.y;
+    frame.main.groundOffsetY = mainGeometry().groundOffsetY;
+    frame.main.offsetX = pmdRenderOffsetX;
+    frame.main.offsetY = pmdRenderOffsetY;
+    frame.main.hidden = doorMainHidden;
+    frame.main.shadowHidden = pmdAction == PmdAction::SLEEPING;
+    const auto* mainConfig = active ? pmdSpriteConfigForSpecies(active->id) : nullptr;
+    frame.main.floating = mainConfig && mainConfig->airHeight > 0.0f;
+    frame.main.shadowFlip = mainConfig ? pmdDirectionFlipX() : facingRight;
+    frame.main.flip = mainConfig
         ? (pmdAction == PmdAction::SLEEPING ? false : pmdDirectionFlipX()) : facingRight;
-    PokemonSprites::drawFrameScaled(frame,
-        x - (w / 2) * RoomRenderer::PIXEL_SCALE,
-        y - (h / 2) * RoomRenderer::PIXEL_SCALE, RoomRenderer::PIXEL_SCALE, flip);
-}
+    frame.lightLift = pmdFloatYOffset(mainConfig, frame.nowMs, frame.main.shadowHidden);
+    frame.heartLift = actionRenderYOffset(frame.nowMs);
+    frame.main.lift = frame.lightLift + frame.heartLift + pairConversationHopOffset(true, frame.nowMs);
 
-void MainScene::drawStateEffect() {
-    if (doorMainHidden) return;
-    uint32_t nowMs = Hal::ins().millis();
-    if (heartEffect == HeartEffect::NONE ||
-        (int32_t)(nowMs - heartEffectUntilMs) >= 0) return;
-    if (!currentMonsterFrame()) return;
-    auto& c = PixelRenderer::canvas();
-    const PmdSpriteConfig* config = active ? pmdSpriteConfigForSpecies(active->id) : nullptr;
-    bool pulse = roomAction == RoomAction::ATTENTION_WAIT && ((nowMs / 260UL) & 1U) != 0;
-    int baseX = worldToScreenX(mainActor.x) + 17 * RoomRenderer::PIXEL_SCALE;
-    int baseY = worldToScreenY(mainActor.y - pmdFloatYOffset(
-                                   config, nowMs,
-                                   pmdAction == PmdAction::SLEEPING) -
-                               actionRenderYOffset(nowMs)) - 30 * RoomRenderer::PIXEL_SCALE - (pulse ? 2 : 0);
-    uint16_t color = PixelRenderer::rgb(255, 103, 135);
-    uint16_t outline = PixelRenderer::rgb(204, 204, 204);
-    auto fillHeart = [&](int x, int y, bool small, uint16_t fill) {
-        int radius = small ? 2 : 3;
-        int spread = small ? 4 : 5;
-        int tipY = small ? y + 7 : y + 9;
-        c.fillCircle(x, y, radius, fill);
-        c.fillCircle(x + spread, y, radius, fill);
-        c.fillTriangle(x - radius, y + 2, x + spread + radius, y + 2,
-                       x + spread / 2, tipY, fill);
-    };
-    auto drawHeart = [&](int x, int y, bool small) {
-        for (int dy = -2; dy <= 2; ++dy) {
-            int horizontal = 2 - abs(dy);
-            for (int dx = -horizontal; dx <= horizontal; ++dx) {
-                fillHeart(x + dx, y + dy, small, outline);
-            }
-        }
-        fillHeart(x, y, small, color);
-    };
-    drawHeart(baseX, baseY, false);
-    if (heartEffect == HeartEffect::TWO) {
-        drawHeart(baseX - 11, baseY + 7, true);
+    frame.visitor.frame = visitorCurrentFrame(frame.visitor.flip);
+    frame.visitor.shadowFlip = frame.visitor.flip;
+    frame.visitor.x = visitor.x;
+    frame.visitor.y = visitor.y;
+    frame.visitor.groundOffsetY = visitorGeometry().groundOffsetY;
+    frame.visitor.offsetX = visitor.renderOffsetX;
+    frame.visitor.offsetY = visitor.renderOffsetY;
+    frame.visitor.hidden = doorVisitorHidden;
+    frame.visitor.shadowHidden = visitor.task == VisitorState::SLEEPING;
+    frame.visitor.sleepZ = frame.visitor.shadowHidden && visitor.dropOffsetY <= 0.0f;
+    const auto* visitorConfig = pmdSpriteConfigForSpecies(visitor.speciesId);
+    frame.visitor.floating = visitorConfig && visitorConfig->airHeight > 0.0f;
+    frame.visitor.drop = visitor.dropOffsetY;
+    frame.visitor.lift = pmdFloatYOffset(
+        visitorConfig, frame.nowMs, frame.visitor.sleepZ || visitor.dropOffsetY > 0.0f);
+    frame.visitor.hop = pairConversationHopOffset(false, frame.nowMs);
+
+    frame.foodPresent = engine.bowlHasFood();
+    frame.foodIndex = engine.bowlFoodIndex();
+    frame.foodBites = engine.bowlFoodBitesRemaining();
+    frame.foodX = foodCenterX();
+    frame.foodY = foodCenterY();
+    if (heartEffect != HeartEffect::NONE &&
+        static_cast<int32_t>(frame.nowMs - heartEffectUntilMs) < 0) {
+        frame.hearts = heartEffect == HeartEffect::TWO ? 2 : 1;
     }
-}
-
-void MainScene::drawNightOverlay() {
-    bool night = mainSceneIsNight();
-    uint8_t lightSource = GameEngine::ins().debugLightSourceIndex();
-    if (lightSource == 0) return;
-
-    const PmdSpriteConfig* config = active ? pmdSpriteConfigForSpecies(active->id) : nullptr;
-    int followX = worldToScreenX(mainActor.x);
-    int followY = worldToScreenY(
-        mainActor.y -
-        pmdFloatYOffset(config, Hal::ins().millis(),
-                        pmdAction == PmdAction::SLEEPING) -
-        10.0f);
-    int lightX = followX;
-    int lightY = followY;
-    switch (lightSource) {
-    case 1:
-        lightX = 44;
-        lightY = 30;
-        break;
-    case 2:
-        lightX = Hal::DISPLAY_W / 2;
-        lightY = 20;
-        break;
-    case 3:
-        lightX = Hal::DISPLAY_W - 44;
-        lightY = 30;
-        break;
-    case 4:
-        lightX = 34;
-        lightY = Hal::DISPLAY_H / 2;
-        break;
-    case 5:
-        lightX = Hal::DISPLAY_W - 34;
-        lightY = Hal::DISPLAY_H / 2;
-        break;
-    default:
-        break;
-    }
-
-    if (night) {
-        int coreRadiusX = 58;
-        int coreRadiusY = 42;
-        int haloRadiusX = 112;
-        int haloRadiusY = 76;
-        fillRadialLightAlpha(lightX, lightY, coreRadiusX, coreRadiusY,
-                             PixelRenderer::rgb(255, 210, 128), 88);
-        fillRadialLightAlpha(lightX, lightY, haloRadiusX, haloRadiusY,
-                             PixelRenderer::rgb(255, 151, 92), 30);
-    } else {
-        fillRadialLightAlpha(lightX, lightY, 68, 46,
-                             PixelRenderer::rgb(255, 226, 150), 30);
-        fillRadialLightAlpha(lightX, lightY, 118, 76,
-                             PixelRenderer::rgb(255, 176, 96), 10);
-    }
-
-    if (lightSource != 0) {
-        auto& c = PixelRenderer::canvas();
-        c.fillCircle(lightX, lightY, 3, PixelRenderer::rgb(255, 236, 158));
-        c.drawCircle(lightX, lightY, 5, PixelRenderer::rgb(255, 169, 79));
-    }
-}
-
-#if STICKMON_ENABLE_DEBUG_FEATURES
-void MainScene::drawWalkBoundary() {
-    if (!GameEngine::ins().debugWalkBoundaryVisible()) return;
-
-    uint8_t count = room().walkPolygonCount();
-    if (count < 2) return;
-
-    auto& c = PixelRenderer::canvas();
-    uint16_t outline = PixelRenderer::rgb(0, 0, 0);
-    uint16_t red = PixelRenderer::rgb(255, 32, 32);
-
-    int16_t firstX = worldToScreenX(roomPointX(0));
-    int16_t firstY = worldToScreenY((float)roomPointY(0));
-    int16_t prevX = firstX;
-    int16_t prevY = firstY;
-    for (uint8_t i = 1; i <= count; ++i) {
-        uint8_t index = i == count ? 0 : i;
-        int16_t x = worldToScreenX(roomPointX(index));
-        int16_t y = worldToScreenY((float)roomPointY(index));
-
-        c.drawLine(prevX - 1, prevY, x - 1, y, outline);
-        c.drawLine(prevX + 1, prevY, x + 1, y, outline);
-        c.drawLine(prevX, prevY - 1, x, y - 1, outline);
-        c.drawLine(prevX, prevY + 1, x, y + 1, outline);
-        c.drawLine(prevX, prevY, x, y, red);
-
-        c.fillCircle(x, y, 2, red);
-        prevX = x;
-        prevY = y;
-    }
-
-    uint16_t routeColor = PixelRenderer::rgb(255, 216, 72);
-    int routePrevX = worldToScreenX(mainActor.x);
-    int routePrevY = worldToScreenY(mainActor.y);
-    for (uint8_t i = mainActor.route.index; i < mainActor.route.count; ++i) {
-        int routeX = worldToScreenX(mainActor.route.x[i]);
-        int routeY = worldToScreenY(mainActor.route.y[i]);
-        c.drawLine(routePrevX, routePrevY, routeX, routeY, routeColor);
-        c.fillCircle(routeX, routeY, 2, routeColor);
-        routePrevX = routeX;
-        routePrevY = routeY;
-    }
-    c.drawCircle(worldToScreenX(mainActor.targetX), worldToScreenY(mainActor.targetY), 4,
-                 PixelRenderer::rgb(64, 210, 255));
-    char debugText[24];
-    snprintf(debugText, sizeof(debugText), "AI:%u D:%u R:%u B:%u",
-             (unsigned)mainActor.task, (unsigned)mainActor.mind.topDesire(), (unsigned)mainActor.route.count,
-             (unsigned)GameEngine::ins().bowlFoodCount());
-    PixelRenderer::text(2, 2, debugText, 0xFFFF, 1);
-}
-#endif
-
-void MainScene::drawHud() {
-    auto& c = PixelRenderer::canvas();
-    static constexpr int PANEL_X = Hal::DISPLAY_W - 72 - (Hal::DISPLAY_W > 240 ? 10 : 0);
-    static constexpr int PANEL_Y = Hal::DISPLAY_H > 135 ? 12 : 2;
-    static constexpr int PANEL_W = 68;
-    static constexpr int PANEL_RADIUS = 5;
-
-    const Game::GameState& state = GameEngine::ins().gameState();
+    frame.heartPulse = roomAction == RoomAction::ATTENTION_WAIT &&
+        ((frame.nowMs / 260UL) & 1U) != 0;
+    frame.lightSource = engine.debugLightSourceIndex();
     uint8_t visibleSlots[Game::TEAM_CAP] = {};
     bool visitingGuestEntered = visitor.active && !doorVisitorHidden &&
         contactGuestMotion != ContactGuestMotion::HOST_TO_DOOR &&
         contactGuestMotion != ContactGuestMotion::HOST_OPEN_DOOR &&
         contactGuestMotion != ContactGuestMotion::HOST_CLEAR_DOOR &&
         contactGuestMotion != ContactGuestMotion::ENTER_CROSS;
-    uint8_t visibleCount = Game::HomeHud::visibleTeamSlots(
-        state, visibleSlots, visitingGuestEntered);
-    const bool marginHud = RoomRenderer::viewport().y >= PANEL_Y + 22;
-    const int clockPanelW = marginHud ? 96 : PANEL_W;
-    const int clockPanelX = marginHud ? Hal::DISPLAY_W - 28 - clockPanelW : PANEL_X;
-    int panelH = marginHud ? 22 : (visibleCount > 1 ? 57 : 38);
-    fillRoundRectAlpha(clockPanelX, PANEL_Y, clockPanelW, panelH, PANEL_RADIUS,
-                       PixelRenderer::rgb(8, 10, 14), 150);
-    c.drawRoundRect(clockPanelX, PANEL_Y, clockPanelW, panelH, PANEL_RADIUS,
-                    PixelRenderer::rgb(72, 83, 98));
-
-    char clock[8];
-    uint16_t gameMinutes = GameEngine::ins().gameMinutesOfDay();
-    snprintf(clock, sizeof(clock), "%02u:%02u", gameMinutes / 60, gameMinutes % 60);
-    PixelRenderer::text(clockPanelX + (marginHud ? 8 : 20), PANEL_Y + 3, clock, PixelRenderer::rgb(245, 246, 232));
-    if (marginHud)
-        HudRenderer::drawBattery(c, clockPanelX + 54, PANEL_Y + 3, Hal::ins().batteryLevel());
-
-    uint32_t nowMs = Hal::ins().millis();
-    for (uint8_t visibleIndex = 0; visibleIndex < visibleCount; ++visibleIndex) {
-        uint8_t slot = visibleSlots[visibleIndex];
-        const Game::MonsterRuntime& mon = state.team[slot];
-        uint8_t hunger = Game::HomeHud::hungerPercent(mon);
-        if (slot == 0 && (int32_t)(nowMs - hungerAnimUntilMs) < 0 &&
-            hungerAnimUntilMs > hungerAnimStartedMs) {
-            uint32_t elapsed = nowMs - hungerAnimStartedMs;
-            uint32_t duration = hungerAnimUntilMs - hungerAnimStartedMs;
-            if (elapsed > duration) elapsed = duration;
-            int delta = (int)hungerAnimTo - (int)hungerAnimFrom;
-            hunger = (uint8_t)MathUtil::clamp(
-                (int)hungerAnimFrom +
-                    (int)((int64_t)delta * elapsed / duration),
-                0, 100);
+    frame.hudCount = Game::HomeHud::visibleTeamSlots(state, visibleSlots, visitingGuestEntered);
+    for (uint8_t i = 0; i < frame.hudCount; ++i) {
+        const uint8_t slot = visibleSlots[i];
+        frame.hud[i] = {slot, Game::HomeHud::hungerPercent(state.team[slot]),
+                            Game::HomeHud::hpPercent(state.team[slot])};
+    }
+    frame.touchBlocked = homeOverlayActive();
+    frame.showMenu = progressionModal == ProgressionModal::NONE &&
+        contactDialog == ContactDialog::NONE;
+    frame.contactVisible = contactDialog != ContactDialog::NONE ||
+        visitDeparture == VisitDeparture::AWAY;
+    frame.contactChoice = contactDialog == ContactDialog::KNOCK ||
+        contactDialog == ContactDialog::EXPLORE_INVITE;
+    frame.contactYes = contactDialogYes;
+    const auto* guest = findSpecies(engine.contactVisitSpeciesId());
+    const char* guestName = guest ? guest->name : "";
+    const char* contactText = "";
+    switch (contactDialog) {
+    case ContactDialog::NONE: contactText = Ui::Social::VISIT_AWAY; break;
+    case ContactDialog::LINK_ARRIVAL: contactText = Ui::Social::LINK_WELCOME; break;
+    case ContactDialog::KNOCK: contactText = Ui::ContactVisit::KNOCK; break;
+    case ContactDialog::PLAY_ARRIVAL:
+        snprintf(frame.contactText, sizeof(frame.contactText), Ui::ContactVisit::PLAY_FMT, guestName);
+        break;
+    case ContactDialog::GIFT_ARRIVAL:
+        snprintf(frame.contactText, sizeof(frame.contactText), Ui::ContactVisit::GIFT_FMT, guestName);
+        break;
+    case ContactDialog::EXPLORE_INVITE:
+        snprintf(frame.contactText, sizeof(frame.contactText), Ui::ContactVisit::EXPLORE_FMT, guestName);
+        break;
+    case ContactDialog::HAPPY_RETURN: contactText = Ui::ContactVisit::HAPPY_RETURN; break;
+    case ContactDialog::BYE_RETURN: contactText = Ui::ContactVisit::BYE_RETURN; break;
+    case ContactDialog::HAPPY_VISIT: contactText = Ui::ContactVisit::HAPPY_VISIT; break;
+    case ContactDialog::BYE_VISIT: contactText = Ui::ContactVisit::BYE_VISIT; break;
+    }
+    if (!frame.contactText[0]) {
+        snprintf(frame.contactText, sizeof(frame.contactText), "%s", contactText);
+    }
+    if (state.oobeDone && !engine.idleModeActive() &&
+        doorTransition == DoorTransitionMode::NONE &&
+        progressionModal == ProgressionModal::NONE &&
+        contactDialog == ContactDialog::NONE &&
+        contactGuestMotion == ContactGuestMotion::NONE &&
+        roomAction == RoomAction::NONE) {
+        const char* tutorialText = nullptr;
+        if (!engine.tutorialComplete(Game::TutorialStep::ROOM_FEED)) {
+            frame.tutorialButton = 1;
+            tutorialText = Ui::Tutorial::ROOM_FEED;
+        } else if (!engine.tutorialComplete(Game::TutorialStep::ROOM_PET)) {
+            snprintf(frame.tutorialText, sizeof(frame.tutorialText), Ui::Tutorial::ROOM_PET_FMT,
+                     active ? active->name : "");
+        } else if (!engine.tutorialComplete(Game::TutorialStep::OPEN_MENU)) {
+            tutorialText = Ui::Tutorial::OPEN_MENU;
+            frame.tutorialLongPress = true;
         }
-
-        uint8_t hpPct = Game::HomeHud::hpPercent(mon);
-
-        const int statusX = marginHud ? 14 + visibleIndex * 76 : PANEL_X;
-        if (marginHud) {
-            fillRoundRectAlpha(statusX, PANEL_Y, PANEL_W, 22, PANEL_RADIUS,
-                               PixelRenderer::rgb(8, 10, 14), 150);
-            c.drawRoundRect(statusX, PANEL_Y, PANEL_W, 22, PANEL_RADIUS,
-                            PixelRenderer::rgb(72, 83, 98));
-        }
-        int rowY = marginHud ? PANEL_Y + 2 : PANEL_Y + 18 + visibleIndex * 19;
-        HudRenderer::drawHungerIcon(
-            c, statusX + 6, rowY + 2, hunger);
-        int barX = statusX + 29;
-        int barW = 31;
-
-        auto drawBar = [&](int y, uint8_t value, uint16_t fillColor) {
-            c.fillRect(barX, y, barW, 6, PixelRenderer::rgb(39, 45, 50));
-            int fillW = ((barW - 2) * value) / 100;
-            if (fillW > 0) c.fillRect(barX + 1, y + 1, fillW, 4, fillColor);
-            c.drawRect(barX, y, barW, 6, PixelRenderer::rgb(220, 224, 218));
-        };
-        uint16_t hpColor = hpPct > 50
-            ? PixelRenderer::rgb(92, 222, 112)
-            : (hpPct > 20 ? PixelRenderer::rgb(246, 204, 72)
-                          : PixelRenderer::rgb(232, 80, 84));
-        drawBar(rowY + 6, hpPct, hpColor);
+        if (tutorialText) snprintf(frame.tutorialText, sizeof(frame.tutorialText), "%s", tutorialText);
+        frame.tutorialVisible = frame.tutorialText[0] != '\0';
     }
-}
-
-void MainScene::drawToast() {
-    if (!toast) return;
-    auto& c = PixelRenderer::canvas();
-    const auto view = RoomRenderer::viewport();
-    const bool bottomMargin = Hal::DISPLAY_H - view.y - view.height >= 31;
-    const int x = bottomMargin ? (Hal::DISPLAY_W - 96) / 2 : 68;
-    const int y = bottomMargin ? Hal::DISPLAY_H - 31 : 6;
-    c.fillRect(x, y, 96, 20, PixelRenderer::rgb(41, 45, 55));
-    PixelRenderer::text(x + 8, y + 2, toast, PixelRenderer::rgb(255, 255, 255));
-}
-
-void MainScene::drawTutorial() {
-    if (Platform::input().touchAvailable()) return;
-    GameEngine& engine = GameEngine::ins();
-    if (!engine.gameState().oobeDone || engine.idleModeActive() ||
-        doorTransition != DoorTransitionMode::NONE ||
-        progressionModal != ProgressionModal::NONE ||
-        contactDialog != ContactDialog::NONE ||
-        contactGuestMotion != ContactGuestMotion::NONE ||
-        roomAction != RoomAction::NONE) {
-        return;
-    }
-
-    if (!engine.tutorialComplete(Game::TutorialStep::ROOM_FEED)) {
-        TutorialOverlay::draw(
-            TutorialOverlay::Button::B, Ui::Tutorial::ROOM_FEED);
-        return;
-    }
-    if (!engine.tutorialComplete(Game::TutorialStep::ROOM_PET)) {
-        char line[48];
-        snprintf(line, sizeof(line), Ui::Tutorial::ROOM_PET_FMT,
-                 active ? active->name : "");
-        TutorialOverlay::draw(TutorialOverlay::Button::A, line);
-        return;
-    }
-    if (!engine.tutorialComplete(Game::TutorialStep::OPEN_MENU)) {
-        TutorialOverlay::draw(
-            TutorialOverlay::Button::A, Ui::Tutorial::OPEN_MENU, true);
-    }
-}
-
-void MainScene::sortAndDraw(RenderItem* items, uint8_t count) {
-    std::sort(items, items + count, [](const RenderItem& a, const RenderItem& b) {
-        return a.z < b.z;
-    });
-    auto& canvas = PixelRenderer::canvas();
-    const auto view = RoomRenderer::viewport();
-    for (uint8_t i = 0; i < count; ++i) {
-        if (items[i].roomLayer) {
-            canvas.setClipRect(view.x, view.y, view.width, view.height);
-        }
-        (this->*items[i].draw)();
-        canvas.clearClipRect();
-    }
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    frame.walkBoundaryVisible = engine.debugWalkBoundaryVisible();
+    frame.routeX = mainActor.route.x;
+    frame.routeY = mainActor.route.y;
+    frame.routeIndex = mainActor.route.index;
+    frame.routeCount = mainActor.route.count;
+    frame.targetX = mainActor.targetX;
+    frame.targetY = mainActor.targetY;
+    snprintf(frame.debugText, sizeof(frame.debugText), "AI:%u D:%u R:%u B:%u",
+             static_cast<unsigned>(mainActor.task), static_cast<unsigned>(mainActor.mind.topDesire()),
+             static_cast<unsigned>(mainActor.route.count), static_cast<unsigned>(engine.bowlFoodCount()));
+#endif
+    return frame;
 }

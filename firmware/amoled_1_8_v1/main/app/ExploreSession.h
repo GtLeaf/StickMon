@@ -5,6 +5,7 @@
 #include "game/ExploreItemEffects.h"
 #include "game/ExploreSpecialEncounter.h"
 #include "game/GameState.h"
+#include "game/ExploreCostService.h"
 
 namespace AmoledV1 {
 
@@ -22,6 +23,7 @@ public:
         uint32_t exploreRouteExpeditionSeed = 0;
         ExploreMapGenerator::Edge exploreRoutePendingEntryEdge =
             ExploreMapGenerator::Edge::TOP;
+        ExploreMapGenerator::ValleyContext exploreRoutePendingValley;
         bool exploreRoutePendingFrostLadder = false;
         bool exploreRoutePendingFrostFall = false;
         uint32_t exploreRouteFrostFallAtMs = 0;
@@ -62,6 +64,7 @@ public:
         ExploreSpecial::Kind special = ExploreSpecial::Kind::NONE;
     };
     struct Effects {
+        uint32_t extraMinutes = 0;
         bool save = false, fullRender = false, statusChanged = false;
         bool mapChanged = false, invalidateWorld = false;
         bool startStep = false, startExit = false, completed = false, startBattle = false;
@@ -70,6 +73,7 @@ public:
         Game::ItemId item = Game::ItemId::COUNT;
         Encounter encounter;
     };
+    Game::ExploreCost::Session costs;
     const State& state() const { return state_; }
     static bool healthy(const Game::MonsterRuntime& monster);
     static uint8_t leaderSlot(const Game::GameState& gameState);
@@ -99,6 +103,11 @@ public:
     void confirmExit(bool open) { state_.exploreRouteExitConfirm = open; }
     Effects takeEffects();
 private:
+    bool finalRoute() const {
+        return ExploreMapGenerator::finalPath(state_.exploreRouteMap,
+            state_.exploreRoutePath, state_.exploreRouteMapBlock,
+            state_.exploreRouteMapBlockCount);
+    }
     bool finishAtEnd(Game::GameState& gameState);
     void resolveStepEvent(Game::GameState& gameState, bool blocked, bool repelActive);
     void resolvePickup(Game::GameState& gameState);

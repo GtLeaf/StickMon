@@ -20,10 +20,12 @@ class AmoledNativeRenderTests(unittest.TestCase):
     def test_page_headers_are_self_contained(self):
         headers = [f"ui/{header}" for header in
                    ("RoomScreens.h", "SettingsScreens.h", "HatchScreens.h", "UiCommon.h",
+                    "ItemShopScreens.h", "TeamScreens.h", "ComputerScreens.h",
+                    "ExploreScreens.h", "ProgressionScreens.h", "ShowerScreens.h",
                     "ExploreMapRenderer.h", "RenderCaches.h", "SceneFade.h")]
         headers += ["app/HatchController.h", "app/ShowerController.h",
                     "app/BattleSession.h", "app/BattleTimeline.h",
-                    "app/ExploreSession.h", "app/ExplorePresenter.h", "app/HomeFlow.h", "app/PairFlow.h",
+                    "app/ExploreSession.h", "app/ExplorePresenter.h", "app/HomeViewState.h", "app/HomeFlow.h", "app/PairFlow.h",
                     "app/VisitorFlow.h", "app/VisitAwayFlow.h"]
         for header in headers:
             with self.subTest(header=header):
@@ -104,6 +106,17 @@ class AmoledNativeRenderTests(unittest.TestCase):
 
     def test_explore_ecology_behavior_partial_frames_and_pause(self):
         self.run_case("explore-ecology")
+
+    def test_fractional_sampling_transparency_clipping_and_mirroring(self):
+        self.run_case("fractional-sampling")
+
+    def test_explore_native_scale_tiles_centering_and_night_cache(self):
+        args = [self.binary, str(ROOT / "data"), "--case", "explore-native-scale"]
+        output = os.environ.get("AMOLED_RENDER_OUTPUT")
+        if output:
+            Path(output).mkdir(parents=True, exist_ok=True)
+            args.append(output)
+        subprocess.run(args, cwd=ROOT, check=True)
 
     def test_explore_fish_bridge_occlusion_and_wildlife_grass(self):
         self.run_case("explore-water")

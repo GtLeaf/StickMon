@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 GENERATOR = ROOT / "tools" / "generate_pokemon_sprites.py"
-DEFAULT_THIRD_PARTY = Path("/tmp/stickmon-compress-eval")
+DEFAULT_THIRD_PARTY = ROOT / ".stick-local/scratch/compress-eval"
 DEFAULT_XTENSA_BIN = Path.home() / ".platformio/packages/toolchain-xtensa-esp32s3/bin"
 
 
@@ -328,7 +328,8 @@ def main():
     parser = argparse.ArgumentParser(
         description="Evaluate miniz/uzlib/heatshrink decode footprint and sprite payload compression.",
     )
-    parser.add_argument("--third-party", type=Path, default=DEFAULT_THIRD_PARTY)
+    parser.add_argument("--third-party", type=Path, default=DEFAULT_THIRD_PARTY,
+                        help="local evaluation sources (default: %(default)s)")
     parser.add_argument("--xtensa-bin", type=Path, default=DEFAULT_XTENSA_BIN)
     parser.add_argument("--loops", type=int, default=80)
     args = parser.parse_args()

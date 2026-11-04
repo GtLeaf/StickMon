@@ -4,6 +4,7 @@
 #include "platform/api/PlatformServices.h"
 
 #include <cstdlib>
+#include <cstring>
 
 namespace {
 static constexpr uint32_t FONT_PACK_MAGIC = 0x4E464D53; // SMFN
@@ -53,6 +54,58 @@ const char* faceName(FontFace face) {
 FontResource& FontResource::ins() {
     static FontResource instance;
     return instance;
+}
+
+bool FontResource::loadCoverage(uint8_t height, CoverageFontData& data) {
+    data.initialized = true;
+    if (!ResourcePack::ins().begin()) return false;
+    Platform::ResourceFile file;
+    if (!ResourcePack::ins().openFont(
+            height == 16 ? "round-zh16-a4" : "round-zh20-a4", file)) return false;
+    PackedFontHeader h{};
+    const size_t stride = sizeof(uint32_t) + height * height / 2;
+    if (!readExact(file, &h, sizeof(h)) || h.magic != FONT_PACK_MAGIC ||
+        h.version != 2 || h.flags != 4 || h.reserved != 0 ||
+        h.width != height || h.height != height ||
+        h.bytesPerGlyph != height * height / 2 ||
+        !h.glyphCount || h.glyphCount > MAX_FONT_GLYPHS ||
+        file.size() != sizeof(h) + stride * h.glyphCount) return false;
+    const size_t bytes = stride * h.glyphCount;
+    auto* records = static_cast<uint8_t*>(Platform::memory().allocate(bytes, true));
+    if (!records) return false;
+    bool valid = readExact(file, records, bytes);
+    uint32_t previous = 0;
+    for (uint16_t i = 0; valid && i < h.glyphCount; ++i) {
+        uint32_t codepoint;
+        std::memcpy(&codepoint, records + stride * i, sizeof(codepoint));
+        valid = validCodepoint(codepoint) && codepoint > previous;
+        previous = codepoint;
+    }
+    if (!valid) {
+        Platform::memory().release(records);
+        return false;
+    }
+    data.records = records;
+    data.glyphCount = h.glyphCount;
+    Platform::logf("[FontResource] coverage height=%u glyphs=%u\n", height, h.glyphCount);
+    return true;
+}
+
+const uint8_t* FontResource::findCoverageGlyph(uint32_t codepoint, uint8_t height) {
+    if (height != 16 && height != 20) return nullptr;
+    auto& data = height == 16 ? coverage16_ : coverage20_;
+    if (!data.initialized) loadCoverage(height, data);
+    int lo = 0, hi = data.glyphCount - 1;
+    const size_t stride = sizeof(uint32_t) + height * height / 2;
+    while (lo <= hi) {
+        const int mid = (lo + hi) / 2;
+        uint32_t value;
+        std::memcpy(&value, data.records + stride * mid, sizeof(value));
+        if (value == codepoint) return data.records + stride * mid + sizeof(value);
+        if (value < codepoint) lo = mid + 1;
+        else hi = mid - 1;
+    }
+    return nullptr;
 }
 
 bool FontResource::begin() {

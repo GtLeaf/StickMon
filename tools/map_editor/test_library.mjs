@@ -1,0 +1,45 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {deleteLibraryPrefab} from './library.js';
+import {copy, flatten, History, libraryPrefabs, prefabFor} from './model.js';
+import {recognizeRoads, storeRoadRoute, currentRoadNetwork, roadRouteCurrent} from './road-network.js';
+
+const {project, catalog} = JSON.parse(fs.readFileSync(0,'utf8'));
+const builtins = copy(catalog.prefabs), originalBuiltins = copy(builtins);
+const custom = copy(prefabFor(project,'market-crate'));
+custom.id = 'custom-used';
+project.prefabs.push(custom,{...copy(custom),id:'custom-unused'});
+project.map.objects.push({id:'test-used',prefab:custom.id,x:0,y:0});
+project.map.roadNetwork = recognizeRoads(project,catalog);
+storeRoadRoute(project);
+const original = copy(project), pixels = flatten(project), history = new History(project);
+for (const id of ['custom-unused','custom-used','market-crate']) {
+  history.change(p => deleteLibraryPrefab(p,builtins,id));
+  assert.ok(!libraryPrefabs(history.project,builtins).some(p => p.id === id));
+  assert.deepEqual(flatten(history.project),pixels);
+  assert.deepEqual(history.project.map.objects,original.map.objects);
+  assert.ok(currentRoadNetwork(history.project));
+  assert.ok(history.project.map.paths.every(p => roadRouteCurrent(history.project,p)));
+}
+assert.equal(prefabFor(history.project,'custom-unused'),undefined);
+assert.ok(prefabFor(history.project,'custom-used').hidden);
+assert.deepEqual(history.project.map.paths.map(p => p.points),original.map.paths.map(p => p.points));
+const deleted = copy(history.project);
+for (let i=0;i<3;i++) history.undo();
+assert.deepEqual(history.project,original);
+for (let i=0;i<3;i++) history.redo();
+assert.deepEqual(history.project,deleted);
+const fallback = copy(original);
+fallback.prefabs = fallback.prefabs.filter(p => p.id !== 'sign');
+deleteLibraryPrefab(fallback,builtins,'sign');
+assert.ok(!libraryPrefabs(fallback,builtins).some(p => p.id === 'sign'));
+assert.deepEqual(builtins,originalBuiltins);
+const stale = copy(original);
+stale.map.layers[0][1] = 'outside:386';
+const oldNetwork = copy(stale.map.roadNetwork), oldPaths = copy(stale.map.paths);
+deleteLibraryPrefab(stale,builtins,'custom-unused');
+assert.equal(currentRoadNetwork(stale),null);
+assert.ok(!roadRouteCurrent(stale,stale.map.paths.find(p => p.kind === 'roadNetwork')));
+assert.deepEqual(stale.map.roadNetwork,oldNetwork);
+assert.deepEqual(stale.map.paths,oldPaths);
+process.stdout.write(JSON.stringify(deleted));

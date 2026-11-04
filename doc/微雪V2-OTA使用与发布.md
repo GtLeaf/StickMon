@@ -28,7 +28,9 @@ python3 tools/sign_ota_release.py firmware/amoled_1_8_v2/build-lite --key .ota/r
 python3 tools/sign_ota_release.py firmware/amoled_1_8_v2/build-claw --key .ota/release-key.pem
 ```
 
-`build-lite/out/`、`build-claw/out/` 包含供刷机站上传的五个 bin；签名后另有 `ota-release.json`。设备只下载对应的 `firmware.bin`，不使用绝对刷写偏移进行 OTA。
+仓库根目录下 Git 忽略的 `.stick-local/firmware/amoled-v2/build-lite/`、`build-claw/`
+包含供刷机站上传的五个 bin；签名后另有 `ota-release.json`。打包与签名均支持
+`--output-dir`，覆盖目录时两步须指定同一路径。设备只下载对应的 `firmware.bin`，不使用绝对刷写偏移进行 OTA。
 
 本机已生成发布私钥 `.ota/release-key.pem`（仅本机，权限 0600，Git 忽略）。**请单独备份此私钥**。公钥在 `firmware/amoled_1_8_v2/ota/public-key.pem`，与刷机站 `config/ota-public-key.pem` 完全一致。私钥不能上传到站点或提交 Git；更换公钥需要 USB 安装新的信任基线。
 

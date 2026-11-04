@@ -12,9 +12,9 @@ void draw(Button button, const char* text, bool longPress, int y) {
     auto& canvas = PixelRenderer::canvas();
     static constexpr int PANEL_X = 4;
     static constexpr int PANEL_H = 27;
-    static constexpr int PANEL_W = Hal::DISPLAY_W - PANEL_X * 2;
-    if (y < 0) y = Hal::DISPLAY_H - PANEL_H - 4;
-    y = MathUtil::clamp(y, 0, Hal::DISPLAY_H - PANEL_H - 2);
+    const int PANEL_W = canvas.width() - PANEL_X * 2;
+    if (y < 0) y = canvas.height() - PANEL_H - 4;
+    y = MathUtil::clamp(y, 0, canvas.height() - PANEL_H - 2);
 
     PixelRenderer::fillRectAlpha(
         PANEL_X, y, PANEL_W, PANEL_H,

@@ -13,7 +13,22 @@ from amoled_source import amoled_runtime_sources
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def ui_flags_for(target):
+    """Match the scene UI family and device profile used by native firmware."""
+    if target == "sticks3":
+        return ["-DSTICKMON_UI_COMPACT_TOUCH=0"]
+    if target == "ostb":
+        return ["-DSTICKMON_UI_COMPACT_TOUCH=1", "-DSTICKMON_TOUCH_INPUT=1",
+                "-DSTICKMON_DISPLAY_WIDTH=296", "-DSTICKMON_DISPLAY_HEIGHT=240",
+                "-DSTICKMON_UI_HEADER_INSET_X=28", "-DSTICKMON_UI_HEADER_TOP=4"]
+    if target == "amoled-v2":
+        return []
+    raise ValueError(f"Unknown source target: {target}")
+
+
 def sources_for(target):
+    """Select one UI family; 'ostb' is also available to native host tests."""
+    ui_flags_for(target)
     if target == "amoled-v2":
         sources = amoled_runtime_sources(ROOT)
     else:
@@ -21,6 +36,10 @@ def sources_for(target):
         sources = [p for name in ("presentation", "assets", "core", "hardware", "scenes")
                    for p in sorted((ROOT / "src" / name).glob("*.cpp"))]
         sources += sorted((ROOT / "src/game").glob("*.cpp"))
+        sources += sorted((ROOT / "src/core/features").glob("*.cpp"))
+        sources += sorted((ROOT / "src/ui/common").glob("*.cpp"))
+        family = "compact_touch" if target == "ostb" else "stick"
+        sources += sorted((ROOT / "src/ui" / family).glob("*.cpp"))
         sources += [ROOT / "src/platform/api/PlatformServices.cpp",
                     ROOT / "src/third_party/uzlib/tinflate.c"]
     sources += [ROOT / "src/platform/web/WebPlatform.cpp",
@@ -71,7 +90,7 @@ def main():
     compiler = subprocess.check_output(["emcc", "--version"], text=True).splitlines()[0]
     flags = ["-O2", "-DNDEBUG", "-DSTICKMON_HAS_CLAW=0", "-DSTICKMON_ENABLE_DEBUG_FEATURES=0",
              "-DSTICKMON_ENABLE_TRACE_LOGS=0", "-MMD", "-MP", "-I" + str(ROOT / "src"),
-             "-I" + str(ROOT / "firmware/amoled_1_8_v1/main")]
+             "-I" + str(ROOT / "firmware/amoled_1_8_v1/main"), *ui_flags_for(target)]
     signature = json.dumps([compiler, flags])
     signature_file = objects / "flags.json"
     force = not signature_file.exists() or signature_file.read_text() != signature

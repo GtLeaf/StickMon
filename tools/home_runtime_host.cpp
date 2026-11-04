@@ -32,11 +32,21 @@ int main() {
     world.polygon = polygon;
     world.polygonCount = 4;
     world.footBounds = {0.0f, 0.0f, 100.0f, 100.0f};
-    world.actorMinSeparation = 12.0f;
     world.scratch.parent = parent;
     world.scratch.queue = queue;
     world.scratch.capacity = RoomNavigator::MAX_NODES;
     runtime.setNavigation(world);
+
+    RoomNavigator::Obstacle edgeObstacle;
+    edgeObstacle.active = true;
+    edgeObstacle.x = 50.0f;
+    edgeObstacle.footY = 50.0f;
+    edgeObstacle.halfWidth = 6.0f;
+    edgeObstacle.halfHeight = 6.0f;
+    assert(RoomNavigator::segmentKeepsSpacing(
+        20.0f, 44.0f, 80.0f, 44.0f, edgeObstacle));
+    assert(!RoomNavigator::segmentKeepsSpacing(
+        20.0f, 50.0f, 80.0f, 50.0f, edgeObstacle));
 
     assert(runtime.planRoute(0, 88.0f, 50.0f));
     assert(leader.route.count >= 2);
@@ -48,7 +58,7 @@ int main() {
         assert(result != Home::RouteStep::BLOCKED);
         const float dx = leader.x - companion.x;
         const float dy = leader.y - companion.y;
-        assert(std::sqrt(dx * dx + dy * dy) >= 11.9f);
+        assert(std::fabs(dx) >= 6.0f || std::fabs(dy) >= 6.0f);
     }
     assert(result == Home::RouteStep::ARRIVED);
     assert(std::fabs(leader.x - 88.0f) < 0.01f);
@@ -63,7 +73,7 @@ int main() {
     companion.x = 50.0f;
     companion.y = 50.0f;
     world.actorCollisionMode = Home::ActorCollisionMode::SOFT;
-    world.actorOverlapPadding = 1.0f;
+    world.actorOverlapPadding = 0.0f;
     runtime.setNavigation(world);
     assert(runtime.planRoute(0, 88.0f, 50.0f));
     result = Home::RouteStep::MOVING;
@@ -91,7 +101,7 @@ int main() {
     world.polygon = largePolygon;
     world.polygonCount = 4;
     world.footBounds = {0.0f, 0.0f, 200.0f, 200.0f};
-    world.actorOverlapPadding = 1.0f;
+    world.actorOverlapPadding = 0.0f;
     runtime.setNavigation(world);
     assert(runtime.planRoute(0, 180.0f, 100.0f));
     result = runtime.advanceRoute(0, 2000, 600.0f, 0.1f);
@@ -166,7 +176,7 @@ int main() {
     world.polygonCount = 8;
     world.footBounds = {45.0f, 70.0f, 231.0f, 155.0f};
     world.actorCollisionMode = Home::ActorCollisionMode::SOFT;
-    world.actorOverlapPadding = 1.0f;
+    world.actorOverlapPadding = 0.0f;
     runtime.setNavigation(world);
     assert(runtime.transition(0, Home::Task::WANDER, 23000));
     assert(runtime.transition(1, Home::Task::WANDER, 23000));

@@ -5,16 +5,22 @@ the native host renderer. Paths are relative to the V1 `main` directory.
 Add each new renderer `.cpp` here once. Firmware CMake watches this file and
 reconfigures when it changes; the host tests read the same list.
 
-`RoomScreens.cpp` and `SettingsScreens.cpp` compile independently. Their headers
-own the page render and hit-test APIs. `HomeScreen.h` includes these headers to
-preserve existing callers. New page implementations should include their own
-header, required models and shared helpers, without including `HomeScreen.h`.
+`ItemShopScreens`, `TeamScreens`, `ComputerScreens`, `ExploreScreens`,
+`ProgressionScreens`, `RoomScreens`, `SettingsScreens` and `HatchScreens` compile
+independently. Their headers own the page render and hit-test APIs.
+`HomeScreen.h` includes these headers to preserve existing callers. New page
+implementations should include their own header, required models and shared
+helpers, without including `HomeScreen.h`. `TeamScreensInternal.h` exposes only
+the team drawing helpers still used by the communication page in HomeScreen and
+the independent progression page.
 
 `ExploreMapRenderer.cpp` handles exploration world cache construction, viewport copying,
-tile fallback rendering, animated tiles, foreground tile rendering and ESP Debug
-performance statistics. `drawExploreRouteMapLayer` renders the actor-underlay;
-`drawExploreRouteMapForegroundLayer` renders tiles such as crystal tops after actors.
-The route screen keeps responsibility for actors, pickups, the HUD and overlays.
+tile fallback rendering, animated tiles, depth-sorted object occlusion and ESP Debug
+performance statistics. `drawExploreRouteMapLayer` renders the actor underlay;
+`drawExploreRouteMapVegetationForActor` restores vegetation, rocks and complete ladder
+modules by each actor's ground depth. Both pieces of an upward ladder share the lower
+landing depth, and airborne actors use the same ladder semantics. The route screen
+keeps responsibility for actors, pickups, the HUD and overlays.
 
 `AmoledApp` owns a `RenderCaches` instance and passes the required `PixelCache565`
 explicitly to battle, explore-selector and route renderers. Renderers no longer
@@ -33,8 +39,9 @@ local `RenderCaches` instance).
 
 `UiCommon` owns the helpers used across compilation units. Page-only helpers
 belong in the page's anonymous namespace. Models remain in `models/ScreenModels.h`.
-The remaining `.inc` files still compile within `HomeScreen.cpp`; they are not
-entries in the source list.
+Only the shower implementation still lives in `HomeScreen.cpp`; its public
+declaration uses the narrow `ShowerScreens.h` interface so controllers do not
+depend on the aggregate HomeScreen header.
 
 Each top-level renderer uses `UiCommon::PageClip` for the duration of its call.
 `setRect` intersects a local viewport with the requested dirty rows on both the

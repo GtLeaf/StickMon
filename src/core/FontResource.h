@@ -25,6 +25,8 @@ public:
     uint16_t glyphCount(FontFace face) const;
     const uint8_t* findGlyphBitmap(uint32_t codepoint, FontFace face);
     const uint8_t* findLargeGlyphBitmap(uint32_t codepoint, FontFace face);
+    // Optional SMFN v2 A4 subset, loaded only by callers that opt in.
+    const uint8_t* findCoverageGlyph(uint32_t codepoint, uint8_t height);
 
 private:
     struct __attribute__((packed)) Glyph {
@@ -49,6 +51,13 @@ private:
         LargeGlyph* glyphs = nullptr;
     };
 
+    struct CoverageFontData {
+        bool initialized = false;
+        uint16_t glyphCount = 0;
+        uint8_t* records = nullptr;
+    };
+    bool loadCoverage(uint8_t height, CoverageFontData& data);
+
     FontResource() = default;
     ~FontResource() = default;
 
@@ -66,4 +75,6 @@ private:
     FontData unsciiAscii_;
     LargeFontData sarasaCjkLarge_;
     LargeFontData unsciiAsciiLarge_;
+    CoverageFontData coverage16_;
+    CoverageFontData coverage20_;
 };

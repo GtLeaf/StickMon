@@ -17,3 +17,17 @@ firmware/**/sdkconfig.old
 
 # OTA release signing key (private; back up separately)
 .ota/
+
+# Local screenshots, logs, snapshots, previews, backups and scratch files.
+/.stick-local/
+
+# Legacy output paths: keep ignored to avoid accidentally adding old artifacts.
+/.stick-unused-resources/
+/out/
+/output/
+
+# OSTB adaptation is paused; keep its firmware, specs and native tools local.
+/firmware/ostb_3st/
+/specs/ostb-3st-port/
+/tools/ostb_native_host.cpp
+/tools/test_ostb_native.py

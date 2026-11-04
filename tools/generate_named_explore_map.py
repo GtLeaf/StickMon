@@ -1416,7 +1416,10 @@ def generate_scene(scene_key, seed, count=4):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate a named StickMon exploration map")
+    parser = argparse.ArgumentParser(
+        description="Generate a named StickMon exploration map",
+        epilog=f"Debug previews: {DEBUG_DIR} (ignored by Git).",
+    )
     parser.add_argument("--scene", choices=sorted(SCENE_SPECS), default="grass_path")
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--count", type=int, choices=range(2, 5), default=4)

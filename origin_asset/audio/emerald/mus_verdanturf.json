@@ -1,0 +1,8 @@
+{
+  "title": "Pokemon Emerald - Verdanturf Town",
+  "source": "https://github.com/pret/pokeemerald/blob/master/sound/songs/midi/mus_verdanturf.mid",
+  "mapSource": "https://github.com/pret/pokeemerald/blob/master/data/maps/VerdanturfTown/map.json",
+  "sha256": "b413ee56e1df45aa6decf60345449f794d058e72d62a64c41f8f962829a0e21b",
+  "render": "Original MIDI with the existing Essentials GMGSx.sf2; PSG slots mapped to GM square leads, channel 10 kept melodic. Instrument timbre differs from GBA hardware.",
+  "encoding": "8 kHz mono IMA ADPCM; streamed and interpolated to 16 kHz; original intro and complete loop markers retained."
+}

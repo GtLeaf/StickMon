@@ -1,0 +1,726 @@
+{
+  "schema": 1,
+  "traits": {
+    "active": 1,
+    "calm": 2,
+    "shy": 4,
+    "playful": 8,
+    "curious": 16,
+    "caring": 32
+  },
+  "profiles": [
+    {
+      "species": 352,
+      "name": "变隐龙",
+      "traits": [
+        "playful",
+        "curious"
+      ]
+    },
+    {
+      "species": 94,
+      "name": "耿鬼",
+      "traits": [
+        "playful"
+      ]
+    },
+    {
+      "species": 115,
+      "name": "袋兽",
+      "traits": [
+        "calm",
+        "caring"
+      ]
+    },
+    {
+      "species": 113,
+      "name": "吉利蛋",
+      "traits": [
+        "caring"
+      ]
+    },
+    {
+      "species": 25,
+      "name": "皮卡丘",
+      "traits": [
+        "active"
+      ]
+    },
+    {
+      "species": 172,
+      "name": "皮丘",
+      "traits": [
+        "shy",
+        "curious"
+      ]
+    },
+    {
+      "species": 162,
+      "name": "大尾立",
+      "traits": [
+        "calm"
+      ]
+    },
+    {
+      "species": 161,
+      "name": "尾立",
+      "traits": [
+        "curious"
+      ]
+    },
+    {
+      "species": 286,
+      "name": "斗笠菇",
+      "traits": [
+        "calm"
+      ]
+    },
+    {
+      "species": 285,
+      "name": "蘑蘑菇",
+      "traits": [
+        "shy"
+      ]
+    },
+    {
+      "species": 279,
+      "name": "大嘴鸥",
+      "traits": [
+        "calm"
+      ]
+    },
+    {
+      "species": 278,
+      "name": "长翅鸥",
+      "traits": [
+        "active"
+      ]
+    },
+    {
+      "species": 225,
+      "name": "信使鸟",
+      "traits": [
+        "active",
+        "caring"
+      ]
+    },
+    {
+      "species": 184,
+      "name": "玛力露丽",
+      "traits": [
+        "active"
+      ]
+    },
+    {
+      "species": 212,
+      "name": "巨钳螳螂",
+      "traits": [
+        "calm"
+      ]
+    }
+  ],
+  "scripts": [
+    {
+      "id": 1,
+      "context": "resident",
+      "traits": [],
+      "species": 0,
+      "weight": 1,
+      "lines": [
+        {
+          "speaker": "target",
+          "text": "今天逛得怎么样？"
+        },
+        {
+          "speaker": "self",
+          "text": "还没走到头，就想再逛一圈。"
+        },
+        {
+          "speaker": "target",
+          "text": "慢慢来，好东西要仔细找。"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "context": "resident",
+      "traits": [],
+      "species": 0,
+      "weight": 1,
+      "lines": [
+        {
+          "speaker": "target",
+          "text": "欢迎过来看看。"
+        },
+        {
+          "speaker": "self",
+          "text": "你在这里待很久了吗？"
+        },
+        {
+          "speaker": "target",
+          "text": "遇到有趣的客人，就不觉得久。"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "context": "resident",
+      "traits": [],
+      "species": 0,
+      "weight": 1,
+      "lines": [
+        {
+          "speaker": "self",
+          "text": "这里一直这么热闹吗？"
+        },
+        {
+          "speaker": "target",
+          "text": "有时安静，有时大家一起过来。"
+        },
+        {
+          "speaker": "target",
+          "text": "我都喜欢。"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "context": "resident",
+      "traits": [],
+      "species": 0,
+      "weight": 1,
+      "lines": [
+        {
+          "speaker": "target",
+          "text": "刚才有位客人从这里经过两次。"
+        },
+        {
+          "speaker": "self",
+          "text": "会不会是迷路了？"
+        },
+        {
+          "speaker": "target",
+          "text": "也可能是舍不得走呢。"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "context": "resident",
+      "traits": [],
+      "species": 0,
+      "weight": 1,
+      "lines": [
+        {
+          "speaker": "self",
+          "text": "你最喜欢市集的什么？"
+        },
+        {
+          "speaker": "target",
+          "text": "每天都能见到不一样的面孔。"
+        },
+        {
+          "speaker": "target",
+          "text": "今天又多认识了你。"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "context": "resident",
+      "traits": [],
+      "species": 0,
+      "weight": 1,
+      "lines": [
+        {
+          "speaker": "target",
+          "text": "逛累了就慢一点。"
+        },
+        {
+          "speaker": "self",
+          "text": "我还想再看看前面。"
+        },
+        {
+          "speaker": "target",
+          "text": "那等会儿再见。"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "context": "resident",
+      "traits": [],
+      "species": 0,
+      "weight": 1,
+      "lines": [
+        {
+          "speaker": "self",
+          "text": "这里有什么有趣的事吗？"
+        },
+        {
+          "speaker": "target",
+          "text": "你坐一会儿，也许就遇到了。"
+        },
+        {
+          "speaker": "self",
+          "text": "那我得留心看看。"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "context": "resident",
+      "traits": [],
+      "species": 0,
+      "weight": 1,
+      "lines": [
+        {
+          "speaker": "target",
+          "text": "又有客人来啦。"
+        },
+        {
+          "speaker": "self",
+          "text": "我只是随便逛逛。"
+        },
+        {
+          "speaker": "target",
+          "text": "随便逛逛也很好呀。"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "context": "solo",
+      "traits": [],
+      "species": 0,
+      "weight": 1,
+      "lines": [
+        {
+          "speaker": "target",
+          "text": "你也是来逛市集的吗？"
+        },
+        {
+          "speaker": "self",
+          "text": "对，走着走着就到这里了。"
+        },
+        {
+          "speaker": "target",
+          "text": "那我们都来对地方了。"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "context": "solo",
+      "traits": [],
+      "species": 0,
+      "weight": 1,
+      "lines": [
+        {
+          "speaker": "target",
+          "text": "我已经逛了一圈。"
+        },
+        {
+          "speaker": "self",
+          "text": "准备回去了吗？"
+        },
+        {
+          "speaker": "target",
+          "text": "再逛一圈再说。"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "context": "solo",
+      "traits": [
+        "curious"
+      ],
+      "species": 0,
+      "weight": 1,
+      "lines": [
+        {
+          "speaker": "self",
+          "text": "今天有什么新发现？"
+        },
+        {
+          "speaker": "target",
+          "text": "同一条路，反着走又不一样。"
+        },
+        {
+          "speaker": "self",
+          "text": "我也试试。"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "context": "solo",
+      "traits": [
+        "active"
+      ],
+      "species": 0,
+      "weight": 1,
+      "lines": [
+        {
+          "speaker": "target",
+          "text": "刚才想去那边，现在又想去这边。"
+        },
+        {
+          "speaker": "self",
+          "text": "不用着急。"
+        },
+        {
+          "speaker": "target",
+          "text": "说得对，两边都去！"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "context": "solo",
+      "traits": [
+        "calm"
+      ],
+      "species": 0,
+      "weight": 1,
+      "lines": [
+        {
+          "speaker": "self",
+          "text": "你在等谁吗？"
+        },
+        {
+          "speaker": "target",
+          "text": "没有，只是在这里歇一会儿。"
+        },
+        {
+          "speaker": "target",
+          "text": "看大家来来往往也很有趣。"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "context": "solo",
+      "traits": [],
+      "species": 0,
+      "weight": 1,
+      "lines": [
+        {
+          "speaker": "target",
+          "text": "我想记住每个摊位的位置。"
+        },
+        {
+          "speaker": "self",
+          "text": "记住了吗？"
+        },
+        {
+          "speaker": "target",
+          "text": "还差一点，再走一遍。"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "context": "solo",
+      "traits": [],
+      "species": 0,
+      "weight": 1,
+      "lines": [
+        {
+          "speaker": "self",
+          "text": "你好，今天玩得开心吗？"
+        },
+        {
+          "speaker": "target",
+          "text": "嗯，刚才还遇到了新朋友。"
+        },
+        {
+          "speaker": "target",
+          "text": "现在又认识了你。"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "context": "solo",
+      "traits": [],
+      "species": 0,
+      "weight": 1,
+      "lines": [
+        {
+          "speaker": "target",
+          "text": "本来只想路过。"
+        },
+        {
+          "speaker": "self",
+          "text": "结果停下来了？"
+        },
+        {
+          "speaker": "target",
+          "text": "嗯，脚步自己就慢了下来。"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "context": "pair",
+      "traits": [],
+      "species": 0,
+      "weight": 1,
+      "lines": [
+        {
+          "speaker": "target",
+          "text": "我们正在商量先往哪边走。"
+        },
+        {
+          "speaker": "other",
+          "text": "这次轮到我选了！"
+        },
+        {
+          "speaker": "self",
+          "text": "看来你们已经有主意了。"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "context": "pair",
+      "traits": [],
+      "species": 0,
+      "weight": 1,
+      "lines": [
+        {
+          "speaker": "other",
+          "text": "再逛一圈，好不好？"
+        },
+        {
+          "speaker": "target",
+          "text": "你刚才也是这么说的。"
+        },
+        {
+          "speaker": "other",
+          "text": "这一圈真的不一样。"
+        },
+        {
+          "speaker": "self",
+          "text": "那就慢慢逛吧。"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "context": "pair",
+      "traits": [],
+      "species": 0,
+      "weight": 1,
+      "lines": [
+        {
+          "speaker": "self",
+          "text": "你们经常一起出来玩吗？"
+        },
+        {
+          "speaker": "target",
+          "text": "一起走，路上总有话说。"
+        },
+        {
+          "speaker": "other",
+          "text": "而且不容易走错路！"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "context": "pair",
+      "traits": [],
+      "species": 0,
+      "weight": 1,
+      "lines": [
+        {
+          "speaker": "target",
+          "text": "刚才我们停下来歇了一会儿。"
+        },
+        {
+          "speaker": "other",
+          "text": "然后就不想走了。"
+        },
+        {
+          "speaker": "self",
+          "text": "这里确实很舒服。"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "context": "pair",
+      "traits": [],
+      "species": 0,
+      "weight": 1,
+      "lines": [
+        {
+          "speaker": "other",
+          "text": "你看，我们又遇到新朋友了。"
+        },
+        {
+          "speaker": "target",
+          "text": "你好，要一起聊一会儿吗？"
+        },
+        {
+          "speaker": "self",
+          "text": "好呀，正好歇歇脚。"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "context": "pair",
+      "traits": [],
+      "species": 0,
+      "weight": 1,
+      "lines": [
+        {
+          "speaker": "self",
+          "text": "你们准备去哪里？"
+        },
+        {
+          "speaker": "target",
+          "text": "还没决定。"
+        },
+        {
+          "speaker": "other",
+          "text": "跟着有趣的东西走就好了。"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "context": "pair",
+      "traits": [],
+      "species": 0,
+      "weight": 1,
+      "lines": [
+        {
+          "speaker": "target",
+          "text": "我说慢慢走，它偏要走前面。"
+        },
+        {
+          "speaker": "other",
+          "text": "我是在帮你探路！"
+        },
+        {
+          "speaker": "self",
+          "text": "那也记得等等同伴。"
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "context": "pair",
+      "traits": [],
+      "species": 0,
+      "weight": 1,
+      "lines": [
+        {
+          "speaker": "other",
+          "text": "今天的事，回去我要讲好久。"
+        },
+        {
+          "speaker": "target",
+          "text": "我们才刚开始逛呢。"
+        },
+        {
+          "speaker": "self",
+          "text": "看来还会有很多故事。"
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "context": "resident",
+      "traits": [],
+      "species": 352,
+      "weight": 3,
+      "lines": [
+        {
+          "speaker": "target",
+          "text": "欢迎！你刚才是不是没看见我？"
+        },
+        {
+          "speaker": "self",
+          "text": "你的尾巴一直露在外面。"
+        },
+        {
+          "speaker": "target",
+          "text": "这是为了方便客人找到我。"
+        },
+        {
+          "speaker": "self",
+          "text": "那就当是这样吧。"
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "context": "resident",
+      "traits": [],
+      "species": 115,
+      "weight": 3,
+      "lines": [
+        {
+          "speaker": "target",
+          "text": "小家伙今天特别精神。"
+        },
+        {
+          "speaker": "self",
+          "text": "它也喜欢逛市集吗？"
+        },
+        {
+          "speaker": "target",
+          "text": "看到什么都想多看一会儿。"
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "context": "resident",
+      "traits": [],
+      "species": 113,
+      "weight": 3,
+      "lines": [
+        {
+          "speaker": "target",
+          "text": "走了这么久，歇一会儿吧。"
+        },
+        {
+          "speaker": "self",
+          "text": "我还想把每个摊位都看一遍。"
+        },
+        {
+          "speaker": "target",
+          "text": "慢慢逛，记得照顾好自己。"
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "context": "resident",
+      "traits": [],
+      "species": 94,
+      "weight": 3,
+      "lines": [
+        {
+          "speaker": "target",
+          "text": "嘿嘿，我刚才是不是吓到你了？"
+        },
+        {
+          "speaker": "self",
+          "text": "你一直站在这里呀。"
+        },
+        {
+          "speaker": "target",
+          "text": "我下次换个地方试试。"
+        }
+      ]
+    }
+  ]
+}

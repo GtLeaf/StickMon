@@ -1,6 +1,11 @@
+#include "game/ExploreEditorTiles.h"
+#include "game/ExploreLakeTiles.h"
+#include "game/ExploreRotatedTiles.h"
 #include "assets/GameAssets.h"
 
 #include "core/DeflateDecoder.h"
+#include "game/ExploreValleyData.h"
+#include "game/ExploreMistForestData.h"
 #include "core/MathUtil.h"
 #include "core/ResourcePack.h"
 #include "hardware/Hal.h"
@@ -12,15 +17,34 @@
 #include <cstring>
 
 namespace GameAssets {
+static_assert(static_cast<uint16_t>(Kind::EXPLORE_ROTATED_74) -
+              static_cast<uint16_t>(Kind::EXPLORE_ROTATED_0) + 1 == ExploreRotatedTiles::LEGACY_COUNT);
+static_assert(static_cast<uint16_t>(Kind::EXPLORE_FLOWER_BOX_7) -
+              static_cast<uint16_t>(Kind::EXPLORE_FLOWER_BOX_0) + 1 ==
+              ExploreRotatedTiles::DECKCHAIR_OFFSET - ExploreRotatedTiles::LEGACY_COUNT);
+static_assert(static_cast<uint16_t>(Kind::EXPLORE_DECKCHAIR_15) -
+              static_cast<uint16_t>(Kind::EXPLORE_DECKCHAIR_0) + 1 ==
+              ExploreRotatedTiles::STACK_OFFSET - ExploreRotatedTiles::DECKCHAIR_OFFSET);
+static_assert(static_cast<uint16_t>(Kind::EXPLORE_CRATE_STACK_7) -
+              static_cast<uint16_t>(Kind::EXPLORE_CRATE_STACK_0) + 1 ==
+              ExploreRotatedTiles::COUNT - ExploreRotatedTiles::STACK_OFFSET);
+static_assert(static_cast<uint16_t>(Kind::EXPLORE_LAKE_46_F7) -
+              static_cast<uint16_t>(Kind::EXPLORE_LAKE_0_F0) + 1 == ExploreLakeTiles::FRAME_COUNT);
+static_assert(static_cast<uint16_t>(Kind::EXPLORE_EDITOR_158) -
+              static_cast<uint16_t>(Kind::EXPLORE_EDITOR_0) + 1 == ExploreEditorTiles::FRAME_COUNT);
+static_assert(static_cast<uint16_t>(Kind::EXPLORE_MIST_FOREST_0) ==
+              static_cast<uint16_t>(Kind::EXPLORE_REGION_0)+ExploreMistForestData::LEGACY_FRAME_COUNT);
+static_assert(static_cast<uint16_t>(Kind::EXPLORE_MIST_FOREST_74)-
+              static_cast<uint16_t>(Kind::EXPLORE_MIST_FOREST_0)+1==ExploreMistForestData::FRAME_COUNT);
 namespace {
 
 constexpr uint32_t PACK_MAGIC = 0x58464753;
 constexpr uint16_t PACK_VERSION = 2;
 constexpr uint32_t FLAG_RAW_DEFLATE = 1;
 constexpr uint8_t FORMAT_INDEXED4_RLE = 1;
-constexpr uint16_t MAX_FRAMES = 288;
+constexpr uint16_t MAX_FRAMES = 1536;
 constexpr uint32_t MAX_DATA_WORDS = 200000;
-constexpr uint32_t MAX_PALETTE_WORDS = 2048;
+constexpr uint32_t MAX_PALETTE_WORDS = 6144;
 constexpr uint32_t MAX_PAYLOAD_BYTES = 384000;
 constexpr uint16_t INVALID_FRAME_INDEX = 0xFFFF;
 
@@ -94,6 +118,7 @@ uint16_t* background = nullptr;
 Kind cachedBackground = Kind::COUNT;
 int cachedBackgroundX = -1;
 int cachedBackgroundY = -1;
+bool cachedBackgroundByteSwapped = false;
 
 template <typename T>
 T* allocate(size_t count) {
@@ -120,14 +145,17 @@ PackSlot packSlotFor(Kind kind) {
     uint16_t value = static_cast<uint16_t>(kind);
     if (value <= static_cast<uint16_t>(Kind::SHOWER_BACKGROUND) ||
         kind == Kind::ITEM_HEART_SCALE ||
-        kind == Kind::EXPLORE_PICKUP_BALL) {
+        (kind >= Kind::ITEM48_POKE_BALL && kind <= Kind::ITEM48_SOAP_2) ||
+        kind == Kind::EXPLORE_PICKUP_BALL || kind == Kind::MARKET_CHAT) {
         return PackSlot::UI;
     }
     if (kind == Kind::EGG) return PackSlot::HATCH;
     if ((kind >= Kind::EXPLORE_TILE_0072 && kind <= Kind::EXPLORE_WATERFALL_BOTTOM_F3) ||
         (kind >= Kind::EXPLORE_TILE_4762 && kind <= Kind::EXPLORE_TILE_4773) ||
         (kind >= Kind::EXPLORE_TILE_0391 && kind <= Kind::EXPLORE_TILE_0842) ||
-        (kind >= Kind::EXPLORE_TILE_1184 && kind <= Kind::EXPLORE_TILE_4794)) {
+        (kind >= Kind::EXPLORE_TILE_1184 && kind <= Kind::EXPLORE_ROTATED_74) ||
+        (kind >= Kind::EXPLORE_FLOWER_BOX_0 && kind <= Kind::EXPLORE_DECKCHAIR_15) ||
+        (kind >= Kind::EXPLORE_CRATE_STACK_0 && kind <= Kind::EXPLORE_MARKET_EXTRA_13)) {
         return PackSlot::MAP;
     }
     if (kind < Kind::COUNT) return PackSlot::BATTLE;
@@ -346,7 +374,7 @@ bool decodeTile(const FrameRef& ref, DecodedTile& tile) {
 }
 
 bool drawDecodedTile(Canvas565& canvas, Kind kind, const FrameRef& ref,
-                     int x, int y, uint8_t pixelScale) {
+                     int x, int y, float pixelScale) {
     const uint16_t kindIndex = static_cast<uint16_t>(kind);
     if (kindIndex >= static_cast<uint16_t>(Kind::COUNT)) return false;
     DecodedTile& tile = decodedTiles[kindIndex];
@@ -402,7 +430,9 @@ bool decodeBackgroundViewport(const FrameRef& ref, int cameraX, int cameraY) {
                 const int bottom = ((sy + 1) * Hal::DISPLAY_H + frame.height - 1) / frame.height;
                 for (int y = top; y < bottom; ++y)
                     for (int x = left; x < right; ++x)
-                        background[y * Hal::DISPLAY_W + x] = pack.palettes[frame.paletteOffset + index];
+                        background[y * Hal::DISPLAY_W + x] =
+                            PixelRenderer::canvas().encodeColor(
+                                pack.palettes[frame.paletteOffset + index]);
             }
         } else
         for (int destY = 0; destY < Hal::DISPLAY_H; ++destY) {
@@ -416,7 +446,8 @@ bool decodeBackgroundViewport(const FrameRef& ref, int cameraX, int cameraY) {
                 if (paletteIndex >= frame.paletteSize) return false;
                 uint32_t destX = absolute - rowStart;
                 background[static_cast<uint32_t>(destY) * Hal::DISPLAY_W + destX] =
-                    pack.palettes[frame.paletteOffset + paletteIndex];
+                    PixelRenderer::canvas().encodeColor(
+                        pack.palettes[frame.paletteOffset + paletteIndex]);
             }
         }
         source += packedWords;
@@ -439,6 +470,10 @@ bool available() {
     return initialized ? resourcePackReady : begin();
 }
 
+bool preloadBattleAssets() {
+    return loadPack(PackSlot::BATTLE);
+}
+
 uint32_t compressedBytes() {
     uint32_t total = 0;
     for (const AssetPack& pack : packs) total += pack.packedBytes;
@@ -456,17 +491,17 @@ bool draw(Kind kind, int x, int y, float scale) {
     return true;
 }
 
-bool drawCentered(Kind kind, int centerX, int centerY, float scale) {
+bool drawCentered(Kind kind, int centerX, int centerY, float scale, bool nearest) {
     FrameRef ref = findFrame(kind);
     if (!ref.frame) return false;
-    int width = static_cast<int>(ref.frame->width * scale);
-    int height = static_cast<int>(ref.frame->height * scale);
+    int width = static_cast<int>(nearest ? std::lround(ref.frame->width * scale) : ref.frame->width * scale);
+    int height = static_cast<int>(nearest ? std::lround(ref.frame->height * scale) : ref.frame->height * scale);
     PixelRenderer::drawIndexed4RleScaled(
         centerX - width / 2, centerY - height / 2,
         ref.frame->width, ref.frame->height,
         ref.pack->data, ref.frame->offset, ref.frame->length,
         ref.pack->palettes, ref.frame->paletteOffset, ref.frame->paletteSize,
-        scale);
+        scale, false, 255, nearest);
     return true;
 }
 
@@ -561,17 +596,26 @@ bool drawBackgroundViewport(Kind kind, int cameraX, int cameraY) {
     int maxCameraY = MathUtil::max(0, static_cast<int>(ref.frame->height) - Hal::DISPLAY_H);
     cameraX = MathUtil::clamp(cameraX, 0, maxCameraX);
     cameraY = MathUtil::clamp(cameraY, 0, maxCameraY);
-    if (cachedBackground != kind || cachedBackgroundX != cameraX || cachedBackgroundY != cameraY) {
+    const bool byteSwapped = PixelRenderer::canvas().byteSwapped();
+    if (cachedBackground != kind || cachedBackgroundX != cameraX ||
+        cachedBackgroundY != cameraY ||
+        cachedBackgroundByteSwapped != byteSwapped) {
         if (!decodeBackgroundViewport(ref, cameraX, cameraY)) return false;
         cachedBackground = kind;
         cachedBackgroundX = cameraX;
         cachedBackgroundY = cameraY;
+        cachedBackgroundByteSwapped = byteSwapped;
     }
-    PixelRenderer::canvas().pushImage(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, background);
+    PixelRenderer::canvas().pushImageNative(
+        0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, background);
     return true;
 }
 
 bool isExploreTileAnimated(uint16_t tileId) {
+    if (ExploreLakeTiles::contains(tileId)) return true;
+    if (const auto* tile = ExploreEditorTiles::tile(tileId)) return tile->frames > 1;
+    if (const auto* tile = ExploreValleyData::tile(tileId)) return tile->frames > 1;
+    if (tileId >= 5000 && tileId <= 5013) return true;
     switch (tileId) {
     case 48:
     case 64:
@@ -599,7 +643,7 @@ bool isExploreTileAnimated(uint16_t tileId) {
 }
 
 bool drawExploreTileTo(Canvas565& canvas, uint16_t tileId, int x, int y,
-                       uint8_t animationFrame, uint8_t pixelScale) {
+                       uint8_t animationFrame, float pixelScale) {
     Kind kind = Kind::COUNT;
     uint8_t seaFrame = animationFrame % 8;
     uint8_t waterfallFrame = animationFrame % 4;
@@ -857,7 +901,97 @@ bool drawExploreTileTo(Canvas565& canvas, uint16_t tileId, int x, int y,
     case 4771: kind = Kind::EXPLORE_TILE_4771; break;
     case 4772: kind = Kind::EXPLORE_TILE_4772; break;
     case 4773: kind = Kind::EXPLORE_TILE_4773; break;
-    default: return false;
+    case 4800: kind = Kind::EXPLORE_TILE_4800; break;
+    case 4801: kind = Kind::EXPLORE_TILE_4801; break;
+    case 4802: kind = Kind::EXPLORE_TILE_4802; break;
+    case 4803: kind = Kind::EXPLORE_TILE_4803; break;
+    case 4804: kind = Kind::EXPLORE_TILE_4804; break;
+    case 4805: kind = Kind::EXPLORE_TILE_4805; break;
+    case 4806: kind = Kind::EXPLORE_TILE_4806; break;
+    case 4807: kind = Kind::EXPLORE_TILE_4807; break;
+    case 4808: kind = Kind::EXPLORE_TILE_4808; break;
+    case 4809: kind = Kind::EXPLORE_TILE_4809; break;
+    case 4810: kind = Kind::EXPLORE_TILE_4810; break;
+    case 4811: kind = Kind::EXPLORE_TILE_4811; break;
+    case 4812: kind = Kind::EXPLORE_TILE_4812; break;
+    case 4813: kind = Kind::EXPLORE_TILE_4813; break;
+    case 4814: kind = Kind::EXPLORE_TILE_4814; break;
+    case 4815: kind = Kind::EXPLORE_TILE_4815; break;
+    case 4816: kind = Kind::EXPLORE_TILE_4816; break;
+    case 4817: kind = Kind::EXPLORE_TILE_4817; break;
+    case 4818: kind = Kind::EXPLORE_TILE_4818; break;
+    case 4819: kind = Kind::EXPLORE_TILE_4819; break;
+    case 4820: kind = Kind::EXPLORE_TILE_4820; break;
+    case 4821: kind = Kind::EXPLORE_TILE_4821; break;
+    case 4822: kind = Kind::EXPLORE_TILE_4822; break;
+    case 4823: kind = Kind::EXPLORE_TILE_4823; break;
+    case 4824: kind = Kind::EXPLORE_TILE_4824; break;
+    case 4825: kind = Kind::EXPLORE_TILE_4825; break;
+    case 4826: kind = Kind::EXPLORE_TILE_4826; break;
+    case 4827: kind = Kind::EXPLORE_TILE_4827; break;
+    case 4828: kind = Kind::EXPLORE_TILE_4828; break;
+    case 4829: kind = Kind::EXPLORE_TILE_4829; break;
+    case 4830: kind = Kind::EXPLORE_TILE_4830; break;
+    case 4831: kind = Kind::EXPLORE_TILE_4831; break;
+    case 4832: kind = Kind::EXPLORE_TILE_4832; break;
+    case 4833: kind = Kind::EXPLORE_TILE_4833; break;
+    case 4834: kind = Kind::EXPLORE_TILE_4834; break;
+    case 4835: kind = Kind::EXPLORE_TILE_4835; break;
+    case 4840: kind = Kind::EXPLORE_TILE_4840; break;
+    case 4841: kind = Kind::EXPLORE_TILE_4841; break;
+    case 4842: kind = Kind::EXPLORE_TILE_4842; break;
+    case 4843: kind = Kind::EXPLORE_TILE_4843; break;
+    case 5000: kind = static_cast<Kind>(static_cast<uint16_t>(Kind::EXPLORE_VALLEY_WATER_5000_F0) + seaFrame); break;
+    case 5001: kind = static_cast<Kind>(static_cast<uint16_t>(Kind::EXPLORE_VALLEY_WATER_5001_F0) + seaFrame); break;
+    case 5002: kind = static_cast<Kind>(static_cast<uint16_t>(Kind::EXPLORE_VALLEY_WATER_5002_F0) + seaFrame); break;
+    case 5003: kind = static_cast<Kind>(static_cast<uint16_t>(Kind::EXPLORE_VALLEY_WATER_5003_F0) + seaFrame); break;
+    case 5004: kind = static_cast<Kind>(static_cast<uint16_t>(Kind::EXPLORE_VALLEY_WATER_5004_F0) + seaFrame); break;
+    case 5005: kind = static_cast<Kind>(static_cast<uint16_t>(Kind::EXPLORE_VALLEY_WATER_5005_F0) + seaFrame); break;
+    case 5006: kind = static_cast<Kind>(static_cast<uint16_t>(Kind::EXPLORE_VALLEY_WATER_5006_F0) + seaFrame); break;
+    case 5007: kind = static_cast<Kind>(static_cast<uint16_t>(Kind::EXPLORE_VALLEY_WATER_5007_F0) + seaFrame); break;
+    case 5008: kind = static_cast<Kind>(static_cast<uint16_t>(Kind::EXPLORE_VALLEY_WATER_5008_F0) + seaFrame); break;
+    case 5009: kind = static_cast<Kind>(static_cast<uint16_t>(Kind::EXPLORE_VALLEY_WATER_5009_F0) + seaFrame); break;
+    case 5010: kind = static_cast<Kind>(static_cast<uint16_t>(Kind::EXPLORE_VALLEY_WATER_5010_F0) + seaFrame); break;
+    case 5011: kind = static_cast<Kind>(static_cast<uint16_t>(Kind::EXPLORE_VALLEY_WATER_5011_F0) + seaFrame); break;
+    case 5012: kind = static_cast<Kind>(static_cast<uint16_t>(Kind::EXPLORE_VALLEY_WATER_5012_F0) + seaFrame); break;
+    case 5013: kind = static_cast<Kind>(static_cast<uint16_t>(Kind::EXPLORE_VALLEY_WATER_5013_F0) + seaFrame); break;
+    default:
+        if (ExploreRotatedTiles::tile(tileId)) {
+            const uint16_t offset = tileId - ExploreRotatedTiles::BASE;
+            if (offset < ExploreRotatedTiles::LEGACY_COUNT)
+                kind = static_cast<Kind>(static_cast<uint16_t>(Kind::EXPLORE_ROTATED_0) + offset);
+            else if (offset < ExploreRotatedTiles::DECKCHAIR_OFFSET)
+                kind = static_cast<Kind>(static_cast<uint16_t>(Kind::EXPLORE_FLOWER_BOX_0) +
+                                        offset - ExploreRotatedTiles::LEGACY_COUNT);
+            else if (offset < ExploreRotatedTiles::STACK_OFFSET)
+                kind = static_cast<Kind>(static_cast<uint16_t>(Kind::EXPLORE_DECKCHAIR_0) +
+                                        offset - ExploreRotatedTiles::DECKCHAIR_OFFSET);
+            else
+                kind = static_cast<Kind>(static_cast<uint16_t>(Kind::EXPLORE_CRATE_STACK_0) +
+                                        offset - ExploreRotatedTiles::STACK_OFFSET);
+            break;
+        }
+        if (ExploreLakeTiles::contains(tileId)) {
+            kind = static_cast<Kind>(static_cast<uint16_t>(Kind::EXPLORE_LAKE_0_F0) +
+                                     (tileId - ExploreLakeTiles::BASE) * 8 + seaFrame);
+            break;
+        }
+        if (const auto* tile = ExploreEditorTiles::tile(tileId)) {
+            kind = static_cast<Kind>(static_cast<uint16_t>(tileId>=ExploreEditorTiles::EXTRA_BASE ? Kind::EXPLORE_MARKET_EXTRA_0 : Kind::EXPLORE_EDITOR_0) +
+                                     tile->frame + animationFrame % tile->frames);
+            break;
+        }
+        if (const auto* tile = ExploreMistForestData::tile(tileId)) {
+            kind = static_cast<Kind>(static_cast<uint16_t>(Kind::EXPLORE_REGION_0)+tile->frame);
+            break;
+        }
+        if (const auto* tile = ExploreValleyData::tile(tileId)) {
+            kind = static_cast<Kind>(static_cast<uint16_t>(Kind::EXPLORE_REGION_0) +
+                tile->offset + animationFrame % tile->frames);
+        } else {
+            return false;
+        }
+        break;
     }
     FrameRef ref = findFrame(kind);
     if (!ref.frame) return false;
@@ -869,12 +1003,12 @@ bool drawExploreTileTo(Canvas565& canvas, uint16_t tileId, int x, int y,
         x, y, ref.frame->width, ref.frame->height,
         ref.pack->data, ref.frame->offset, ref.frame->length,
         ref.pack->palettes, ref.frame->paletteOffset, ref.frame->paletteSize,
-        static_cast<float>(pixelScale));
+        pixelScale, false, 255, true);
     return true;
 }
 
 bool drawExploreTile(uint16_t tileId, int x, int y,
-                     uint8_t animationFrame, uint8_t pixelScale) {
+                     uint8_t animationFrame, float pixelScale) {
     return drawExploreTileTo(
         PixelRenderer::canvas(), tileId, x, y, animationFrame, pixelScale);
 }
@@ -914,6 +1048,22 @@ Kind itemKind(Game::ItemId item) {
     case Game::ItemId::SOAP_2: return Kind::SHOWER_SOAP_2;
     default: return Kind::COUNT;
     }
+}
+
+bool drawItemIcon48(Game::ItemId item, int centerX, int centerY) {
+    const Kind original = itemKind(item);
+    Kind native = Kind::COUNT;
+    if (original <= Kind::ITEM_STAR_PIECE) {
+        native = static_cast<Kind>(static_cast<uint16_t>(Kind::ITEM48_POKE_BALL) +
+                                   static_cast<uint16_t>(original));
+    } else if (original == Kind::ITEM_HEART_SCALE) native = Kind::ITEM48_HEART_SCALE;
+    else if (original >= Kind::SHOWER_SOAP_0 && original <= Kind::SHOWER_SOAP_2) {
+        native = static_cast<Kind>(static_cast<uint16_t>(Kind::ITEM48_SOAP_0) +
+            static_cast<uint16_t>(original) - static_cast<uint16_t>(Kind::SHOWER_SOAP_0));
+    }
+    if (native != Kind::COUNT && drawCentered(native, centerX, centerY)) return true;
+    // Older packs can still display usable inventory icons until resources update.
+    return original != Kind::COUNT && drawCentered(original, centerX, centerY, 48.0f / 36.0f);
 }
 
 Kind statusKind(Game::MajorStatus status) {

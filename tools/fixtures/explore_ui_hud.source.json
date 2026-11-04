@@ -1,0 +1,126 @@
+{
+  "date": "2026-10-24",
+  "reason": "User requested OSTB vertical team HP/status HUD with a left safe inset, inset map title, room-aligned menu icon, and a menu sized to its four entries.",
+  "before": ".stick-local/artifacts/ostb-explore-hud-menu-20261024/before",
+  "reviewed_images": [
+    ".stick-local/artifacts/ostb-explore-hud-menu-20261024/preview.png",
+    ".stick-local/artifacts/ostb-explore-hud-menu-20261024/review-0.png",
+    ".stick-local/artifacts/ostb-explore-hud-menu-20261024/review-1.png",
+    ".stick-local/artifacts/ostb-explore-hud-menu-20261024/review-2.png",
+    ".stick-local/artifacts/ostb-explore-hud-menu-20261024/review-3.png",
+    ".stick-local/artifacts/ostb-explore-hud-menu-20261024/review-4.png",
+    ".stick-local/artifacts/ostb-explore-hud-menu-20261024/review-5.png",
+    ".stick-local/artifacts/ostb-explore-hud-menu-20261024/review-6.png",
+    ".stick-local/artifacts/ostb-explore-hud-menu-20261024/review-7.png"
+  ],
+  "pixel_bounds_review": ".stick-local/artifacts/ostb-explore-hud-menu-20261024/pixel-review.json",
+  "configurations": {
+    "sticks3-release": {
+      "frames": 321,
+      "changed": 0,
+      "new": []
+    },
+    "sticks3-debug": {
+      "frames": 322,
+      "changed": 0,
+      "new": []
+    },
+    "ostb-release": {
+      "frames": 332,
+      "changed": 94,
+      "new": [
+        "hud-fainted-zero-max.rgb565",
+        "hud-pair-status.rgb565",
+        "hud-single.rgb565",
+        "hud-status-0.rgb565",
+        "hud-status-1.rgb565",
+        "hud-status-2.rgb565",
+        "hud-status-3.rgb565",
+        "hud-status-4.rgb565",
+        "hud-status-5.rgb565",
+        "hud-status-6.rgb565",
+        "hud-touch-menu.rgb565"
+      ]
+    },
+    "ostb-debug": {
+      "frames": 333,
+      "changed": 94,
+      "new": [
+        "hud-fainted-zero-max.rgb565",
+        "hud-pair-status.rgb565",
+        "hud-single.rgb565",
+        "hud-status-0.rgb565",
+        "hud-status-1.rgb565",
+        "hud-status-2.rgb565",
+        "hud-status-3.rgb565",
+        "hud-status-4.rgb565",
+        "hud-status-5.rgb565",
+        "hud-status-6.rgb565",
+        "hud-touch-menu.rgb565"
+      ]
+    },
+    "eco-release": {
+      "frames": 38,
+      "changed": 38
+    },
+    "eco-debug": {
+      "frames": 38,
+      "changed": 38
+    }
+  },
+  "retained_map_differences": {
+    "ostb-release": [
+      "walking-area-3-pose-0.rgb565",
+      "walking-area-3-pose-1.rgb565",
+      "walking-area-3-pose-2.rgb565",
+      "walking-area-5-pose-0.rgb565",
+      "walking-area-5-pose-1.rgb565",
+      "walking-area-5-pose-2.rgb565",
+      "walking-boss-pickup-area-3.rgb565",
+      "walking-boss-pickup-area-5.rgb565",
+      "walking-night-area-3.rgb565",
+      "walking-night-area-5.rgb565",
+      "walking-reserve-leader-area-3.rgb565",
+      "walking-reserve-leader-area-5.rgb565"
+    ],
+    "ostb-debug": [
+      "walking-area-3-pose-0.rgb565",
+      "walking-area-3-pose-1.rgb565",
+      "walking-area-3-pose-2.rgb565",
+      "walking-area-5-pose-0.rgb565",
+      "walking-area-5-pose-1.rgb565",
+      "walking-area-5-pose-2.rgb565",
+      "walking-boss-pickup-area-3.rgb565",
+      "walking-boss-pickup-area-5.rgb565",
+      "walking-night-area-3.rgb565",
+      "walking-night-area-5.rgb565",
+      "walking-reserve-leader-area-3.rgb565",
+      "walking-reserve-leader-area-5.rgb565"
+    ]
+  },
+  "retained_ecology_differences": [
+    "area-5-active.rgb565",
+    "area-5-end.rgb565",
+    "area-5-start.rgb565"
+  ],
+  "original_fixture_sha256": {
+    "explore_ui_parity.json": "104f1eebe9d41336752792a4e955302e0878cd7bcf1d4d4a610e5a17d42d3a93",
+    "explore_ui_ecology.json": "c749cdecacef7bb10bc0ae4919b3407b45f48d4c52bcddc0c5b00730f4d75eda",
+    "explore_ui_touch.json": "c9bbcd2147b7e01ed89e549c85ba6cdaf7cc4a558ab78ed3ef53e3a0582e8ea5",
+    "explore_ecology_ui.json": "40af3d1a1b9c04105066db92e0c62ec14b33c99957daa2ee4d14c3ecafcc5b31"
+  },
+  "source_sha256": {
+    "src/scenes/ExploreScene.cpp": "6862285607f57ff5ccf5632dbf451f83a6f3f789241631bb554d5c127b068223",
+    "src/ui/common/ExploreRouteUiModel.h": "b67f171744c9534f53a50327186d3a9f398997ed8d7f672194af9f996e07dddd",
+    "src/ui/common/ExploreRouteOverlay.h": "adec17ae219a0c09871374a8508ee31c62940cd92cf74d1e46bc7a9c17fafe8c",
+    "src/ui/common/ExploreRouteUiContent.cpp": "9404b9aed104ae601fccb33ffeed4c2eeeb7619a35c0d41b2d9539aee90106c1",
+    "src/ui/compact_touch/HomeUi.cpp": "10aa2f7c5e4b37c0bd33e42ef919e794e266a45ba76fade1b6eb787ee69c1fb7",
+    "src/ui/compact_touch/ExploreUi.cpp": "753760a324936969a8a86c6a03b8114c812def0a20093f4db4c2ca358e73c076",
+    "src/ui/compact_touch/ExploreUi.h": "421e3ae7af8d35249ee3994d6bfae6d3b56a7c907d4506d4f4a2c00ee09f8edd",
+    "src/ui/compact_touch/ExploreHudUi.cpp": "511663080cc0cdb2f6827addbd6c04a47c74086e067f27f371af8792da63577a",
+    "src/ui/compact_touch/ExploreHudUi.h": "eab7291e5d0cfae1c0fc34d4a46db156301ec6ee51bb1f687d04c9eb204b27c6",
+    "src/ui/compact_touch/HudControls.h": "ce9bd9ba8fc3f16e5d82a2406f096f2bcb5ac48e7045d7dfbab48cc6c3645d32",
+    "tools/explore_ui_parity_host.cpp": "b95bcde279d5940fb3849e5313d87db9fff27bada5b30413dc458c0875900d99"
+  },
+  "review": "All existing changed route pixels are contained in old/new HUD, map title, or menu bounds. Stick and battle/selection frames are unchanged. New status captures cover seven states, HP thresholds, over-max, zero-max and fainted first slot. Original fixtures are preserved; twelve route map failures and three ecology map failures per configuration remain visible."
+}

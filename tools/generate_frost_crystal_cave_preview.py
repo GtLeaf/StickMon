@@ -181,7 +181,8 @@ def main():
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=ROOT / "out/frost_crystal_cave_previews",
+        default=ROOT / ".stick-local/previews/frost_crystal_cave_previews",
+        help="preview output directory (default: %(default)s)",
     )
     parser.add_argument("--seed", type=parse_uint, nargs="+")
     parser.add_argument("--levels", action="store_true",

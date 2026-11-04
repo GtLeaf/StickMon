@@ -12,12 +12,16 @@ inline constexpr uint8_t GROUP_CHANCE_PERCENT = 50;
 struct Family {
     uint16_t species[CAPACITY];
     uint8_t count;
+    uint8_t areaMask = 0xff;
+    bool allowsArea(uint8_t area) const { return area < 8 && (areaMask & (1U << area)); }
 };
-// Disjoint families, ordered from leader to youngest, with walking artwork.
+inline constexpr uint8_t CAVE_AREA_MASK = 1U << ExploreMapGenerator::FROST_CRYSTAL_CAVE_AREA;
+// Disjoint families, ordered from leader to youngest.
 inline constexpr Family GROUP_FAMILIES[] = {
     {{286, 285}, 2}, {{184, 183, 298}, 3}, {{162, 161}, 2},
     {{262, 261}, 2}, {{195, 194}, 2}, {{323, 322}, 2},
-    {{17, 16}, 2}, {{282, 280}, 2}, {{25, 172}, 2}
+    {{17, 16}, 2, uint8_t(0xff ^ CAVE_AREA_MASK)}, {{282, 280}, 2}, {{25, 172}, 2},
+    {{42, 41}, 2, CAVE_AREA_MASK}
 };
 constexpr uint8_t groupCompanionCapacity() {
     uint8_t capacity = ExplorePool::POOL_CAP;
@@ -103,10 +107,11 @@ public:
     bool canFlyAt(float x, float y) const;
 
 private:
-    // A family owns two or three slots sharing a validated ground trail.
+    // A family owns two or three slots sharing a validated trail.
     struct Group {
         enum class Phase : uint8_t { PATROL, GATHER, REUNION, WATCH };
         bool active = false;
+        bool airborne = false;
         uint8_t members = 0;
         uint8_t route[10]{}, routeCount = 0;
         uint8_t links[ExploreMapGenerator::CELL_COUNT]{};
@@ -120,10 +125,11 @@ private:
     } group_;
     bool spawnGroup(const ExploreMapGenerator::Path& path,
                     const ExplorePool::Pool& pool, uint8_t hiddenPoolMask,
-                    uint32_t& random);
+                    uint8_t area, uint32_t& random);
     bool planGroupRoute(const ExploreMapGenerator::Path* path = nullptr);
     void groupPoint(float travel, float& x, float& y) const;
     void advanceGroup(uint32_t dt, float playerX, float playerY, bool visible);
+    void advanceFlyingGroup(uint32_t dt);
     bool spawnFamilySingle(const ExploreMapGenerator::Path& path, uint16_t species,
                            uint32_t& random);
     void appendActor(uint16_t species, uint8_t cell, bool hidden, uint32_t& random);

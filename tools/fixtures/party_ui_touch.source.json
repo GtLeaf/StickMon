@@ -1,0 +1,17 @@
+{
+  "reason": "OSTB skills wrap descriptions with manual vertical overflow, remove Back row, and use 44px targets with 6px gaps.",
+  "previous_fixture": "party_ui_parity.json",
+  "previous_fixture_sha256": "d794b7809f16d2c82671fc1fab83657b2573add29971e328f4015439f96e2e74",
+  "changes": {
+    "ostb": {
+      "changed": 8,
+      "added": [
+        "moves-wrapped-longest.rgb565"
+      ],
+      "removed": []
+    }
+  },
+  "reviewed_preview": ".stick-local/artifacts/ostb-drag-moves-20261023/preview.png",
+  "stick_policy": "Original Stick captures remain unchanged.",
+  "validation": "Prior OSTB release captures matched existing fixtures before edits; real journeys, strict syntax, OSTB ASan/UBSan and affected firmware builds pass."
+}

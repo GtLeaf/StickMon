@@ -16,6 +16,7 @@
 #include "game/CareTicker.h"
 #include "game/ExploreItemEffects.h"
 #include "game/EncounterHistory.h"
+#include "game/ItemInventory.h"
 #include "game/Species.h"
 
 using BathRewardStage = Game::BathService::Stage;
@@ -73,6 +74,7 @@ public:
 
     float gameSpeed() const;
     uint32_t gameMinutesTotal() const;
+    void advanceExploreMinutes(uint32_t minutes);
     uint16_t gameMinutesOfDay() const;
     bool isMonsterSleepTime() const;
     void cycleGameSpeed();
@@ -191,6 +193,7 @@ public:
     bool useFullRestore(uint8_t teamSlot = 0);
     bool useFullHeal(uint8_t teamSlot = 0);
     bool useEvolutionStone(uint8_t teamSlot, Game::ItemId stone);
+    Game::ItemInventory::UseResult useTeamItem(Game::ItemId item, uint8_t teamSlot);
     bool useRevive(uint8_t teamSlot = 0);
     // 黄金喷雾/甜甜蜜：效果为会话状态（不进存档，重启失效），对下一次探索生效。
     bool useMaxRepel();
@@ -330,6 +333,7 @@ private:
     void switchScene(SceneID id, bool saveBeforeSwitch = true);
     void processInput(uint32_t nowMs);
     void update(uint32_t nowMs);
+    void updateCurrentScene(uint32_t nowMs);
     void scheduleSceneUpdate(uint32_t nowMs);
     void logSceneDemand(const SceneUpdateResult& result, uint32_t nowMs);
     void emitRenderStats(uint32_t nowMs);
@@ -359,6 +363,7 @@ private:
                               uint8_t teamSlot, uint16_t startIndex);
     void queueMoveLearnIfReady(Game::MonsterRuntime& mon, const Species& species,
                                uint8_t oldLevel, uint8_t teamSlot);
+    void queueTeamLevelUp(uint8_t teamSlot, uint8_t oldLevel);
     void queueMoveReplacementEvent(uint8_t teamSlot, Game::MoveId oldMoveId,
                                    Game::MoveId newMoveId);
     bool applyLevelUpEvolutions(Game::MonsterRuntime& mon, uint8_t teamSlot,
@@ -418,6 +423,8 @@ private:
     // 跨 tickCare 调用保留的会话型照护累加器（不持久化），见 game/CareTicker.h。
     Game::CareTickAccumulators careAcc = {};
     bool idleActive = false;
+    bool fullFrameRequired = true;
+    bool previousFrameAllowsPartial = false;
     bool debugShowWalkBoundary = false;
     bool debugTiltControl = false;
     bool debugShowBattleDrawBounds = false;

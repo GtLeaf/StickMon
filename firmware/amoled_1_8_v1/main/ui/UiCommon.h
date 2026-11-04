@@ -39,6 +39,21 @@ uint16_t rgb(uint8_t red, uint8_t green, uint8_t blue);
 int textWidth(const char* value);
 void text(Canvas565& canvas, int x, int y, const char* value,
           uint16_t color, int scale = 1);
+void drawFallbackPet(Canvas565& canvas, int centerX, int groundY,
+                     bool drawShadow = true);
+uint16_t blendShadowRgb565(uint16_t background, uint16_t color,
+                           uint8_t alpha);
+void fillSoftShadow(Canvas565& canvas, int centerX, int centerY,
+                    int radiusX, int radiusY, uint16_t color,
+                    uint8_t maxAlpha);
+void fillShadowCore(Canvas565& canvas, int centerX, int centerY,
+                    int radiusX, int radiusY, uint16_t color,
+                    uint8_t alpha);
+void drawHomeHpBar(Canvas565& canvas, int x, int y, int width,
+                   uint8_t percent, bool fainted = false);
+void drawHomeHudButton(Canvas565& canvas, int x);
+void drawHudMenuIcon(Canvas565& canvas, int x);
+void drawHomeMenuIcon(Canvas565& canvas);
 void drawSceneFadeOverlay(Canvas565& canvas, uint8_t alpha,
                           uint16_t rowBegin, uint16_t rowEnd);
 void drawHeaderButton(Canvas565& canvas, int x, bool pressed = false,

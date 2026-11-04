@@ -19,6 +19,9 @@ class MainScenePairInteractionTests(unittest.TestCase):
         cls.engine_source = (ROOT / "src" / "core" / "GameEngine.cpp").read_text(
             encoding="utf-8"
         )
+        cls.ui_content = (ROOT / "src/ui/common/HomeUiContent.cpp").read_text(
+            encoding="utf-8"
+        )
 
     def test_interaction_pool_only_contains_talk_and_chase(self):
         begin = self.header.index("enum class PairInteraction")
@@ -31,9 +34,9 @@ class MainScenePairInteractionTests(unittest.TestCase):
 
     def test_talk_hops_are_sequential_and_hearts_start_afterward(self):
         self.assertIn("PAIR_TALK_HOP_MS * 2 + PAIR_TALK_GAP_MS", self.source)
-        self.assertIn("pairConversationHopOffset(true, nowMs)", self.source)
+        self.assertIn("pairConversationHopOffset(true, frame.nowMs)", self.source)
         self.assertIn(
-            "pairConversationHopOffset(false, Hal::ins().millis())",
+            "pairConversationHopOffset(false, frame.nowMs)",
             self.source,
         )
         begin = self.source.index("case PairInteractionPhase::CONVERSATION")
@@ -109,7 +112,7 @@ class MainScenePairInteractionTests(unittest.TestCase):
     def test_pair_visitor_renders_walk_frames_while_routed(self):
         begin = self.source.index(
             "const PokemonSprites::SpriteFrame* MainScene::visitorCurrentFrame")
-        end = self.source.index("void MainScene::drawVisitor", begin)
+        end = self.source.index("void MainScene::render()", begin)
         body = self.source[begin:end]
         self.assertIn("visitor.task == VisitorState::PAIR_ACTION", body)
         self.assertIn("visitor.route.index < visitor.route.count", body)
@@ -155,7 +158,7 @@ class MainScenePairInteractionTests(unittest.TestCase):
         self.assertIn("contactVisit.stayTimerStarted", timed_out)
 
         begin = self.source.index("bool MainScene::handleContactDialogButton")
-        end = self.source.index("void MainScene::drawContactDialog", begin)
+        end = self.source.index("bool MainScene::visitorHostActive", begin)
         dialogs = self.source[begin:end]
         self.assertGreaterEqual(dialogs.count("engine.beginContactVisitStay(nowMs)"), 2)
 
@@ -226,9 +229,8 @@ class MainScenePairInteractionTests(unittest.TestCase):
         open_body = self.source[begin:end]
         self.assertIn("doorVisitorHidden = false", open_body)
 
-        begin = self.source.index("void MainScene::drawHud()")
-        end = self.source.index("void MainScene::drawToast", begin)
-        hud_body = self.source[begin:end]
+        begin = self.source.index("Ui::HomeFrame MainScene::homeFrame() const")
+        hud_body = self.source[begin:]
         self.assertIn("bool visitingGuestEntered", hud_body)
         self.assertIn("visitor.active && !doorVisitorHidden", hud_body)
         self.assertIn(
@@ -237,15 +239,17 @@ class MainScenePairInteractionTests(unittest.TestCase):
         )
 
     def test_contact_dialog_adapts_height_and_uses_translucent_background(self):
-        self.assertIn("CONTACT_DIALOG_SINGLE_H = 28", self.source)
-        self.assertIn("CONTACT_DIALOG_CHOICE_H = 45", self.source)
-        self.assertIn("CONTACT_DIALOG_BG_ALPHA = 153", self.source)
-        begin = self.source.index("void MainScene::drawContactDialog()")
-        end = self.source.index("bool MainScene::visitorHostActive", begin)
-        body = self.source[begin:end]
-        self.assertIn("int boxH = choiceDialog", body)
-        self.assertIn("CONTACT_DIALOG_BOTTOM - boxH", body)
-        self.assertIn("fillRoundRectAlpha(", body)
+        begin = self.ui_content.index("void drawContact(const HomeFrame& frame)")
+        end = self.ui_content.index("#if STICKMON_ENABLE_DEBUG_FEATURES", begin)
+        body = self.ui_content[begin:end]
+        self.assertIn("const int height = frame.contactChoice ? 45 : 28", body)
+        self.assertIn("BOTTOM = 131", body)
+        self.assertIn("WIDTH = 230", body)
+        self.assertIn("const int y = BOTTOM - height", body)
+        self.assertRegex(body, r"fillRoundRectAlpha\(X, y, WIDTH, height, RADIUS,\s*"
+                         r"PixelRenderer::rgb\(20, 24, 31\), 153\)")
+        self.assertIn("frame.contactChoice = contactDialog == ContactDialog::KNOCK ||", self.source)
+        self.assertIn("contactDialog == ContactDialog::EXPLORE_INVITE", self.source)
 
     def test_contact_guest_walks_inward_after_crossing_the_door(self):
         begin = self.source.index("bool MainScene::beginContactMeetingArrangement")

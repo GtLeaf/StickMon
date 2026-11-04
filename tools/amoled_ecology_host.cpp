@@ -28,7 +28,7 @@ public:
     WaterCacheAllocator(Platform::IMemoryAllocator& backing, bool fail)
         : backing_(backing), fail_(fail) {}
     void* allocate(size_t bytes, bool external) override {
-        return fail_ && bytes >= 368 * 448 * 2 ? nullptr : backing_.allocate(bytes, external);
+        return fail_ && bytes >= 416 * 312 * 2 ? nullptr : backing_.allocate(bytes, external);
     }
     void release(void* memory) override { backing_.release(memory); }
     size_t externalFree() const override { return backing_.externalFree(); }
@@ -62,6 +62,67 @@ void writePreview(Canvas565& canvas, const char* name) {
 }
 
 struct AmoledEcologyTestAccess {
+    static void checkNightCache(DesktopPlatform& desktop, Canvas565& canvas) {
+        auto& original = desktop.serviceBundle();
+        auto* savedPixels = canvas.rawPixels();
+        const bool savedSwap = canvas.byteSwapped();
+        const uint16_t species[] = {6, 143, 130, 285, 278, 129};
+        PokemonSprites::preloadDynamicSpecies(species, 6);
+        std::vector<uint16_t> reference(368 * 448), actual(368 * 448);
+        int compared = 0;
+        for (bool swapped : {false, true}) {
+          for (uint8_t area : {uint8_t(0), uint8_t(5)}) {
+            ExploreMapGenerator::Map map{};
+            assert(ExploreMapGenerator::generate(12152 + area,
+                ExploreMapGenerator::Edge::LEFT, area, map));
+            PixelCache565 cache;
+            ExploreRouteViewModel model{};
+            model.map = &map; model.area = area; model.speciesId = 6;
+            model.walking = true; model.companionVisible = true;
+            model.companionSpeciesId = 143; model.companionWalking = true;
+            model.bossPending = true; model.bossSpeciesId = 130;
+            model.bossIndex = std::min<int>(4, map.paths[0].pointCount - 1);
+            model.pickupAvailable = true; model.pickupIndex = model.bossIndex;
+            model.wildlifeCount = 3;
+            model.wildlife[0] = {285, 210, 170, 1, 0, false, false};
+            model.wildlife[1] = {278, 180, 180, 1, 0, true, false};
+            model.wildlife[2] = {129, 200, 160, 1, 0, false, false};
+            model.wildlife[2].surface = ExploreEcology::Surface::WATER;
+            model.wildlife[2].activity = ExploreEcology::Activity::SPLASH;
+            // Reuse one cache across night/day/twilight boundaries and animation
+            // phases; compare with the original uncached composition and tint.
+            for (int step = 0; step < 32; ++step) {
+                const uint16_t minutes[] = {1320, 1320, 1190, 720, 240, 1320, 300, 1320};
+                model.daylight = ExploreDaylight::at(minutes[step % 8], area);
+                model.cameraX = step * 7 % 233; model.cameraY = step * 11 % 141;
+                model.worldX = 180 + step; model.worldY = 160;
+                model.companionWorldX = model.worldX - 15; model.companionWorldY = 168;
+                model.mapFrame = step % 8; model.petFrame = step % 4;
+                model.animationNowMs = step * 253;
+                canvas.attach({actual.data(), 368, 448, swapped});
+                canvas.fillSprite(0);
+                renderExploreRouteScreen(canvas, model, cache);
+                canvas.attach({reference.data(), 368, 448, swapped});
+                canvas.fillSprite(0);
+                WaterCacheAllocator failing(original.memory, true);
+                Platform::Services limited{original.lifecycle, original.clock, original.logger,
+                    original.input, original.display, original.audio, original.imu, original.power,
+                    original.blobs, original.resources, failing, original.peers};
+                Platform::bind(limited);
+                { PixelCache565 uncached; renderExploreRouteScreen(canvas, model, uncached); }
+                Platform::bind(original);
+                if (reference != actual) {
+                    std::fprintf(stderr, "night cache mismatch area=%u swapped=%u step=%d\n", area, swapped, step);
+                    assert(reference == actual);
+                }
+                ++compared;
+            }
+          }
+        }
+        canvas.attach({savedPixels, 368, 448, savedSwap});
+        std::printf("night cache: %d fallback comparisons, actors/shadows/water/boss/pickup, tone transitions and both byte orders verified\n", compared);
+    }
+
     static void checkWildlifeGrassApp(DesktopPlatform& desktop) {
         for (uint16_t species : {uint16_t(161), uint16_t(41)}) {
           for (bool hidden : {false, true}) {
@@ -146,8 +207,8 @@ struct AmoledEcologyTestAccess {
                 const uint16_t tile = map.layers[2][cell];
                 if (!ExploreTileSemantics::bridgeDeck(tile)) continue;
                 assert(GameAssets::drawExploreTileTo(canvas, tile,
-                    (cell % 16 * 26 - model.cameraX) * 2,
-                    EXPLORE_ROUTE_MAP_TOP + (cell / 16 * 26 - model.cameraY) * 2, 0, 2));
+                    (cell % 16 * 26 - model.cameraX) * EXPLORE_ROUTE_SCALE,
+                    EXPLORE_ROUTE_MAP_TOP + (cell / 16 * 26 - model.cameraY) * EXPLORE_ROUTE_SCALE, 0, EXPLORE_ROUTE_SCALE));
             }
             const auto deck = pixels(canvas);
             renderExploreRouteScreen(canvas, model, cache);
@@ -263,14 +324,14 @@ struct AmoledEcologyTestAccess {
         char preview[48];
         std::snprintf(preview, sizeof(preview), "area-%u-ecology", area);
         writePreview(canvas, preview);
-        int redraws = 0;
+        int redraws = 0, partialFrames = 0;
         for (int tick = 0; tick < 120; ++tick) {
             desktop.advanceMs(100);
             app.updateExploreEcology(desktop.millis());
             if (!app.needsRender()) continue;
             ++redraws;
             assert(app.renderRowEnd() <= EXPLORE_ROUTE_MAP_BOTTOM);
-            assert(app.renderRowEnd() - app.renderRowBegin() < EXPLORE_ROUTE_MAP_BOTTOM);
+            partialFrames += app.renderRowEnd() - app.renderRowBegin() < EXPLORE_ROUTE_MAP_BOTTOM;
             app.render(canvas);
             const auto partial = pixels(canvas);
             app.requestFullRender();
@@ -287,6 +348,7 @@ struct AmoledEcologyTestAccess {
             }
             app.markRendered();
         }
+        assert(partialFrames > 0); // Dispersed actors may span the whole map band.
         assert(redraws > 5); // Continuous fliers can legitimately redraw every tick.
         assert(randomCalls == callsBefore);
         assert(std::memcmp(&state, &app.gameState, sizeof(state)) == 0);
@@ -314,8 +376,8 @@ struct AmoledEcologyTestAccess {
         model.cameraX += 10;
         model.cameraY += 10;
         const auto shiftedBounds = exploreRouteWildlifeBounds(model, 0);
-        assert(shiftedBounds.x == originalBounds.x - 20);
-        assert(shiftedBounds.y == originalBounds.y - 20);
+        assert(shiftedBounds.x == originalBounds.x - 10 * EXPLORE_ROUTE_SCALE);
+        assert(shiftedBounds.y == originalBounds.y - 10 * EXPLORE_ROUTE_SCALE);
         assert(ExploreEcology::samePose(world, app.explorePresenter_.state_.exploreEcology.pose(0)));
 
         // Exercise unknown/known species and depth overlap in every dirty band.
@@ -372,7 +434,7 @@ struct AmoledEcologyTestAccess {
             {1506, 2, 2}, {1514, 2, 1}, {1532, 2, 1}, {4507, 1, 1},
             {4541, 2, 2}, {4542, 1, 1}, {4532, 1, 3}, {4540, 1, 1}};
         constexpr uint16_t emptyColor = 0xF81F, actorColor = 0x07FF;
-        constexpr int tileX = 3, tileY = 3, tileSize = 52;
+        constexpr int tileX = 3, tileY = 3, tileSize = int(26 * EXPLORE_ROUTE_SCALE);
         for (uint8_t area = 0; area < 6; ++area) {
           for (const auto& object : objects) {
             ExploreMapGenerator::Map map{};
@@ -385,7 +447,7 @@ struct AmoledEcologyTestAccess {
             model.worldX = model.worldY = -1000;
             const int x = tileX * tileSize, y = tileY * tileSize;
             canvas.fillSprite(emptyColor);
-            assert(GameAssets::drawExploreTileTo(canvas, object.tile, x, y, 0, 2));
+            assert(GameAssets::drawExploreTileTo(canvas, object.tile, x, y, 0, EXPLORE_ROUTE_SCALE));
             const auto tile = pixels(canvas);
             const float ground = (tileY + object.rows) * 26;
             for (bool behind : {true, false}) {
@@ -416,11 +478,11 @@ struct AmoledEcologyTestAccess {
             ExploreRouteViewModel model{};
             model.map = &map;
             canvas.fillSprite(emptyColor);
-            assert(GameAssets::drawExploreTileTo(canvas, grass, tileX * tileSize, tileY * tileSize, 0, 2));
+            assert(GameAssets::drawExploreTileTo(canvas, grass, tileX * tileSize, tileY * tileSize, 0, EXPLORE_ROUTE_SCALE));
             const auto terrain = pixels(canvas);
             canvas.fillSprite(actorColor);
-            const int ground = tileY * tileSize + 26;
-            drawExploreRouteMapVegetationForActor(canvas, model, ground / 2.0f,
+            const float ground = (tileY + 0.5f) * 26;
+            drawExploreRouteMapVegetationForActor(canvas, model, ground,
                 tileX * tileSize, tileY * tileSize, (tileX + 1) * tileSize, (tileY + 1) * tileSize,
                 0, EXPLORE_ROUTE_MAP_BOTTOM, true);
             unsigned restored = 0, gaps = 0;
@@ -428,7 +490,7 @@ struct AmoledEcologyTestAccess {
             for (int y = tileY * tileSize; y < (tileY + 1) * tileSize; ++y) {
                 for (int x = tileX * tileSize; x < (tileX + 1) * tileSize; ++x) {
                     const int index = y * 368 + x;
-                    if (grass == 390 && y < tileY * tileSize + 20)
+                    if (grass == 390 && y < tileY * tileSize + 10 * EXPLORE_ROUTE_SCALE)
                         assert(output[index] == actorColor);
                     if (output[index] == actorColor) ++gaps;
                     else { assert(output[index] == terrain[index]); ++restored; }
@@ -671,10 +733,10 @@ struct AmoledEcologyTestAccess {
                 for (int c = 0; c < ExploreMapGenerator::CELL_COUNT; ++c) {
                     if (before[c] == grass.frame(c)) continue;
                     changed = true;
-                    const int x = (c % ExploreMapGenerator::WIDTH * 26 - model.cameraX) * 2;
-                    const int y = (c / ExploreMapGenerator::WIDTH * 26 - model.cameraY) * 2;
-                    left = std::min(left, x); right = std::max(right, x + 52);
-                    top = std::min(top, y - (high ? 52 : 0)); bottom = std::max(bottom, y + 52);
+                    const int x = exploreRouteScreen(c % ExploreMapGenerator::WIDTH * 26, model.cameraX);
+                    const int y = exploreRouteScreen(c / ExploreMapGenerator::WIDTH * 26, model.cameraY);
+                    left = std::min(left, x); right = std::max(right, x + int(26 * EXPLORE_ROUTE_SCALE));
+                    top = std::min(top, y - (high ? int(26 * EXPLORE_ROUTE_SCALE) : 0)); bottom = std::max(bottom, y + int(26 * EXPLORE_ROUTE_SCALE));
                 }
                 for (int i = 0; i < 2; ++i) {
                     const auto bounds = exploreRouteWildlifeBounds(model, i);
@@ -1043,8 +1105,8 @@ struct AmoledEcologyTestAccess {
                     worldModel.cameraX = worldModel.cameraY = 0;
                     worldModel.wildlife[0].absent = false;
                     const auto envelope = exploreRouteWildlifeBounds(worldModel, 0);
-                    assert(envelope.x + envelope.width <= 0 || envelope.x >= 832 ||
-                        envelope.y + envelope.height <= 0 || envelope.y >= 624);
+                    assert(envelope.x + envelope.width <= 0 || envelope.x >= 416 * EXPLORE_ROUTE_SCALE ||
+                        envelope.y + envelope.height <= 0 || envelope.y >= 312 * EXPLORE_ROUTE_SCALE);
                     if (pose.absent) ++disappearances; else ++arrivals;
                 }
                 if (pose.absent) {
@@ -1082,7 +1144,7 @@ struct AmoledEcologyTestAccess {
             const bool watery = false;
             AmoledApp app;
             app.begin(desktop.millis());
-            app.selectedExploreArea = adult == 286 ? 2 : 1;
+            app.selectedExploreArea = adult == 42 ? 3 : adult == 286 ? 2 : 1;
             GameRandom::setRangeProvider(countingRandom);
             assert(app.startExploreRoute(desktop.millis()));
             app.exploreSession_.state_.exploreRouteBossPending = app.exploreSession_.state_.exploreRouteBossScheduled = false;
@@ -1149,6 +1211,13 @@ struct AmoledEcologyTestAccess {
                 }
                 desktop.advanceMs(100);
                 app.updateExploreEcology(desktop.millis());
+                if (adult == 42) {
+                    for (uint8_t i = 0; i < selectedCount; ++i) {
+                        const auto p = app.explorePresenter_.state_.exploreEcology.pose(i);
+                        assert(p.airborne && !p.walking && p.lift > 0);
+                        assert(p.activity == ExploreEcology::Activity::ROAM && p.cover == ExploreEcology::Cover::NONE);
+                    }
+                }
                 if (!app.needsRender()) continue;
                 assert(app.renderRowEnd() <= EXPLORE_ROUTE_MAP_BOTTOM);
                 app.render(canvas);
@@ -1160,7 +1229,7 @@ struct AmoledEcologyTestAccess {
                 if (tick % 2 == 0 && tick < 280) {
                     char name[64];
                     std::snprintf(name, sizeof(name), "group-%u-mask-%u-%s-%03u", adult, composition,
-                        watery ? "water" : "ground", tick / 2);
+                        adult == 42 ? "flight" : watery ? "water" : "ground", tick / 2);
                     writePreview(canvas, name);
                 }
             }
@@ -1194,11 +1263,14 @@ struct AmoledEcologyTestAccess {
         app.requestFullRender(); app.render(canvas); app.markRendered();
         int rendered = 0, absentTicks = 0;
         for (unsigned tick = 0; tick < 1800; ++tick) {
+            const bool wasAbsent = app.explorePresenter_.state_.exploreEcology.pose(0).absent;
             desktop.advanceMs(100);
             app.updateExploreEcology(desktop.millis());
             if (app.explorePresenter_.state_.exploreEcology.pose(0).absent) {
                 ++absentTicks;
-                assert(!app.needsRender());
+                // The 1x viewport can still see the last pose in a margin.
+                // Clear it on departure, then keep all fully absent ticks idle.
+                if (wasAbsent) assert(!app.needsRender());
             }
             if (!app.needsRender()) continue;
             assert(app.renderRowEnd() <= EXPLORE_ROUTE_MAP_BOTTOM);
@@ -1221,6 +1293,7 @@ struct AmoledEcologyTestAccess {
 }
 
 void checkExploreEcology(DesktopPlatform& desktop, Canvas565& canvas) {
+    AmoledV1::AmoledEcologyTestAccess::checkNightCache(desktop, canvas);
     for (uint8_t area = 0; area < Game::EXPLORE_AREA_COUNT; ++area)
         AmoledV1::AmoledEcologyTestAccess::checkArea(desktop, canvas, area);
     AmoledV1::AmoledEcologyTestAccess::checkCover(canvas);

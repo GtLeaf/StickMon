@@ -14,27 +14,27 @@ int labelWidth(const char* label) {
 }
 bool enabled() { return NAV_H && Platform::input().touchAvailable(); }
 MenuGrid::Layout listLayout(int rowHeight) {
-    return MenuGrid::fit({0, PAGE_HEADER_H, Hal::DISPLAY_W, Hal::DISPLAY_H - PAGE_HEADER_H},
-        Hal::DISPLAY_W - 16, rowHeight, 0, 6, 8, 4);
+    return MenuGrid::fit({0, PAGE_HEADER_H, Ui::Page::WIDTH, Ui::Page::HEIGHT - PAGE_HEADER_H},
+        Ui::Page::WIDTH - 16, rowHeight, 0, 6, 8, 4);
 }
 void pageHeader(const char* title, bool pressed, bool selected) {
     auto& c = PixelRenderer::canvas();
-    c.fillRect(0, 0, Hal::DISPLAY_W, PAGE_HEADER_H, 0);
+    c.fillRect(0, 0, Ui::Page::WIDTH, PAGE_HEADER_H, 0);
     c.fillCircle(22, 19, 16, PixelRenderer::rgb(pressed ? 53 : 27, pressed ? 76 : 43, pressed ? 83 : 51));
     c.drawCircle(22, 19, 16, selected ? 0xffe0 : PixelRenderer::rgb(67, 97, 101));
     for (int offset = -1; offset <= 1; ++offset) {
         c.drawLine(24 + offset, 12, 17 + offset, 19, 0xffff);
         c.drawLine(17 + offset, 19, 24 + offset, 26, 0xffff);
     }
-    PixelRenderer::text(Hal::DISPLAY_W - 12 - labelWidth(title), 11, title, 0xffff);
+    PixelRenderer::text(Ui::Page::WIDTH - 12 - labelWidth(title), 11, title, 0xffff);
 }
 bool pageBackHit(int x, int y) { return x >= 0 && x < 46 && y >= 0 && y < PAGE_HEADER_H; }
-MenuGrid::Rect safeHeaderBounds() { return {28, SAFE_HEADER_TOP, Hal::DISPLAY_W - 56, 40}; }
-MenuGrid::Rect pageBody() { return {0, SAFE_HEADER_H, Hal::DISPLAY_W, Hal::DISPLAY_H - SAFE_HEADER_H - 16}; }
-MenuGrid::Rect safeBack() { return {28, SAFE_HEADER_TOP, 40, 40}; }
-void safePageHeader(const char* title, bool pressed, bool selected) {
+MenuGrid::Rect safeHeaderBounds() { return {Ui::Page::HEADER_INSET, SAFE_HEADER_TOP, Ui::Page::WIDTH - 2 * Ui::Page::HEADER_INSET, 40}; }
+MenuGrid::Rect pageBody() { return {0, SAFE_HEADER_H, Ui::Page::WIDTH, Ui::Page::HEIGHT - SAFE_HEADER_H - 16}; }
+MenuGrid::Rect safeBack() { return {Ui::Page::HEADER_INSET, SAFE_HEADER_TOP, 40, 40}; }
+void safePageHeader(const char* title, bool pressed, bool selected, const char* center) {
     auto& c = PixelRenderer::canvas();
-    c.fillRect(0, 0, Hal::DISPLAY_W, SAFE_HEADER_H, 0);
+    c.fillRect(0, 0, Ui::Page::WIDTH, SAFE_HEADER_H, 0);
     const auto back = safeBack();
     const int cx = back.x + 20, cy = back.y + 20;
     c.fillCircle(cx, cy, 16, PixelRenderer::rgb(pressed ? 53 : 27, pressed ? 76 : 43, pressed ? 83 : 51));
@@ -49,6 +49,14 @@ void safePageHeader(const char* title, bool pressed, bool selected) {
     c.setClipRect(left, bounds.y, right - left, bounds.height);
     PixelRenderer::text(std::max(left, right - labelWidth(title)), bounds.y + 12, title, 0xffff);
     c.clearClipRect();
+    if (center) {
+        const int end = right - labelWidth(title) - 8;
+        const int width = end - left;
+        c.setClipRect(left, bounds.y, width, bounds.height);
+        PixelRenderer::text(std::max(left, std::min(Ui::Page::WIDTH / 2 - labelWidth(center) / 2,
+            end - labelWidth(center))), bounds.y + 12, center, PixelRenderer::rgb(248, 210, 105));
+        c.clearClipRect();
+    }
 }
 void slider(int left, int right, int centerY, int value, int minimum, int maximum, bool pressed) {
     auto& c = PixelRenderer::canvas();
@@ -67,10 +75,10 @@ void action(int x, int y, int width, const char* label, bool pressed) {
 }
 void header(const char* title, const char* trailing, bool pressed) {
     auto& c = PixelRenderer::canvas();
-    c.fillRect(0, 0, Hal::DISPLAY_W, 38, 0);
+    c.fillRect(0, 0, Ui::Page::WIDTH, 38, 0);
     action(6, 2, 48, Ui::BACK, pressed);
     PixelRenderer::text(64, 10, title, 0xffff);
-    if (trailing) PixelRenderer::text(Hal::DISPLAY_W - 12 - labelWidth(trailing), 10, trailing, 0xffe0);
+    if (trailing) PixelRenderer::text(Ui::Page::WIDTH - 12 - labelWidth(trailing), 10, trailing, 0xffe0);
 }
 bool backHit(int x, int y) { return x >= 4 && x < 58 && y >= 0 && y < 38; }
 namespace {
@@ -80,18 +88,6 @@ void button(int x, int y, int w, const char* label) {
     c.drawRoundRect(x, y, w, 26, 4, PixelRenderer::rgb(94, 111, 124));
     PixelRenderer::text(x + (w - 32) / 2, y + 5, label, 0xffff);
 }
-}
-void drawNavigation() {
-    if (!NAV_H || !Platform::input().touchAvailable()) return;
-    auto& c = PixelRenderer::canvas();
-    c.clearClipRect();
-    c.fillRect(0, CONTENT_H, Hal::DISPLAY_W, NAV_H, 0);
-    const char* labels[] = {Ui::BACK, "\xe9\x80\x89\xe6\x8b\xa9", "\xe7\xa1\xae\xe8\xae\xa4"};
-    for (int i = 0; i < 3; ++i) {
-        const int left = i * Hal::DISPLAY_W / 3;
-        const int right = (i + 1) * Hal::DISPLAY_W / 3;
-        button(left + 6, CONTENT_H + 3, right - left - 12, labels[i]);
-    }
 }
 void drawHomeMenu() {
     if (!NAV_H || !Platform::input().touchAvailable()) return;

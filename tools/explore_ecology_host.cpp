@@ -27,6 +27,72 @@ static ExplorePool::Pool pool() {
     return result;
 }
 
+static void checkStationaryMetapod() {
+    using namespace ExploreEcology;
+    bool watched = false, rustled = false, caterpieMoved = false;
+    for (uint16_t tile : {uint16_t(385), uint16_t(390), uint16_t(399)}) {
+        for (uint32_t seed = 1; seed <= 12; ++seed) {
+            ExploreMapGenerator::Map map{};
+            map.seed = seed;
+            std::fill_n(map.layers[0], ExploreMapGenerator::CELL_COUNT, tile);
+            map.pathCount = 1;
+            map.paths[0].pointCount = 14;
+            for (uint8_t x = 1; x <= 14; ++x) map.paths[0].points[x - 1] = {x, 6};
+            ExplorePool::Pool active{};
+            active.count = 1;
+            active.entries[0] = {11, 1, ExplorePool::Rarity::COMMON};
+            for (bool hidden : {false, true}) {
+                Simulation sim;
+                sim.reset(map, 0, active, hidden ? 1 : 0, 0);
+                assert(sim.count() == 1 && !sim.hasGroup());
+                const auto origin = sim.pose(0);
+                for (uint32_t ms = 100; ms <= 90000; ms += 100) {
+                    const bool near = ms >= 30000 && ms < 60000;
+                    constexpr int dx[] = {0, -1, 0, 1}, dy[] = {1, 0, -1, 0};
+                    const uint8_t direction = (ms / 5000) % 4;
+                    const float px = near ? origin.x + dx[direction] * 15 : -100;
+                    const float py = near ? origin.y + dy[direction] * 15 : -100;
+                    const View view = ms < 70000 ? View{0, 0, 416, 312}
+                        : View{-1000, -1000, 10, 10};
+                    if (hidden && ms == 30000) sim.revealSpecies(11);
+                    if (ms == 45000) {
+                        auto paused = sim, running = sim;
+                        paused.update(ms + 10000, false, px, py, view);
+                        equal(sim, paused);
+                        paused.update(ms + 10100, true, px, py, view);
+                        running.update(ms + 100, true, px, py, view);
+                        equal(running, paused);
+                    }
+                    sim.update(ms, true, px, py, view);
+                    const auto& pose = sim.pose(0);
+                    assert(pose.x == origin.x && pose.y == origin.y);
+                    assert(!pose.walking && !pose.airborne && !pose.absent);
+                    assert(pose.lift == 0 && pose.sway == 0);
+                    assert(pose.cover == origin.cover && sim.canStand(11, pose.x, pose.y));
+                    assert(pose.hidden == (hidden && ms < 30000));
+                    assert(pose.activity == Activity::REST || pose.activity == Activity::WATCH ||
+                        pose.activity == Activity::RUSTLE);
+                    if (!pose.hidden) assert(pose.frame == 0);
+                    watched |= pose.activity == Activity::WATCH;
+                    rustled |= pose.hidden && pose.activity == Activity::RUSTLE;
+                }
+            }
+            // Its unevolved neighbour must retain normal ground movement.
+            active.entries[0].speciesId = 10;
+            Simulation caterpie;
+            caterpie.reset(map, 0, active, 0, 0);
+            assert(caterpie.count() == 1);
+            const auto origin = caterpie.pose(0);
+            for (uint32_t ms = 100; ms <= 30000; ms += 100) {
+                caterpie.update(ms, true, -100, -100, {0, 0, 416, 312});
+                caterpieMoved |= caterpie.pose(0).x != origin.x || caterpie.pose(0).y != origin.y;
+            }
+        }
+    }
+    assert(watched && rustled && caterpieMoved);
+    std::puts("metapod: anchored through idle, nearby player, cover, reveal, pause and offscreen; caterpie still moves");
+}
+
 static void checkEpisodes() {
     using ExploreEcology::Activity;
     using ExploreEcology::Surface;
@@ -402,7 +468,7 @@ static void checkGroupRange() {
         for (uint32_t seed = 1; seed <= 32; ++seed) {
             ExploreMapGenerator::Map map{};
             map.seed = seed;
-            map.areaIndex = adult == 286 ? 2 : 1;
+            map.areaIndex = adult == 42 ? 3 : adult == 286 ? 2 : 1;
             map.pathCount = 1; map.paths[0].pointCount = 14;
             for (uint8_t x = 1; x <= 14; ++x) map.paths[0].points[x - 1] = {x, 6};
             std::fill_n(map.layers[0], ExploreMapGenerator::CELL_COUNT, 390);
@@ -481,7 +547,7 @@ static void checkSingleMemberGroups() {
         for (uint32_t seed = 1; seed <= 1024; ++seed) {
             ExploreMapGenerator::Map map{};
             map.seed = seed;
-            map.areaIndex = pair[0] == 286 ? 2 : 1;
+            map.areaIndex = pair[0] == 42 ? 3 : pair[0] == 286 ? 2 : 1;
             map.pathCount = 1;
             map.paths[0].pointCount = 14;
             for (uint8_t x = 1; x <= 14; ++x) map.paths[0].points[x - 1] = {x, 6};
@@ -699,7 +765,10 @@ static void checkFamilySelection() {
                     assert(family.species[member] != GROUP_FAMILIES[j].species[other]);
         }
     }
-    for (size_t start : {size_t(0), families - ExplorePool::POOL_CAP}) {
+    size_t eligible[families], eligibleCount = 0;
+    for (size_t i = 0; i < families; ++i)
+        if (GROUP_FAMILIES[i].allowsArea(0)) eligible[eligibleCount++] = i;
+    for (size_t start : {size_t(0), eligibleCount - ExplorePool::POOL_CAP}) {
         int selected[ExplorePool::POOL_CAP]{};
         for (uint32_t seed = 1; seed <= 2048; ++seed) {
             ExploreMapGenerator::Map map{};
@@ -710,7 +779,7 @@ static void checkFamilySelection() {
             ExplorePool::Pool pool{};
             pool.count = ExplorePool::POOL_CAP;
             for (uint8_t i = 0; i < pool.count; ++i)
-                pool.entries[i] = {GROUP_FAMILIES[start + i].species[i % 2], 1, ExplorePool::Rarity::COMMON};
+                pool.entries[i] = {GROUP_FAMILIES[eligible[start + i]].species[i % 2], 1, ExplorePool::Rarity::COMMON};
             const auto before = pool;
             Simulation sim, reordered, hidden;
             sim.reset(map, 0, pool, 0, 0);
@@ -724,10 +793,10 @@ static void checkFamilySelection() {
             if (sim.hasFamily()) {
                 assert(sim.count() <= groupFamily(sim.pose(0).speciesId)->count);
                 assert(hidden.count() <= groupFamily(hidden.pose(0).speciesId)->count);
-                assert(groupFamily(hidden.pose(0).speciesId) != &GROUP_FAMILIES[start]);
+                assert(groupFamily(hidden.pose(0).speciesId) != &GROUP_FAMILIES[eligible[start]]);
                 bool found = false;
                 for (uint8_t i = 0; i < pool.count; ++i) {
-                    if (groupFamily(sim.pose(0).speciesId) != &GROUP_FAMILIES[start + i]) continue;
+                    if (groupFamily(sim.pose(0).speciesId) != &GROUP_FAMILIES[eligible[start + i]]) continue;
                     ++selected[i]; found = true;
                 }
                 assert(found);
@@ -749,7 +818,7 @@ static void checkGroups() {
     const View view{0, 0, 416, 312};
     int groups = 0, realGroups = 0, waited = 0, reunited = 0, reacted = 0;
     for (const auto& family : ExploreEcology::GROUP_FAMILIES) {
-        if (family.count == 3) continue; // Variable Marill compositions have dedicated coverage.
+        if (family.count == 3 || family.species[0] == 42) continue; // Variable Marill compositions have dedicated coverage.
       const auto& pair = family.species;
       const uint16_t adult = pair[0];
       const uint16_t young = pair[1];
@@ -758,7 +827,7 @@ static void checkGroups() {
         for (uint32_t seed = 1; seed <= 128; ++seed) {
             ExploreMapGenerator::Map map{};
             map.seed = seed;
-            map.areaIndex = adult == 286 ? 2 : 1;
+            map.areaIndex = adult == 42 ? 3 : adult == 286 ? 2 : 1;
             map.pathCount = 1;
             map.paths[0].pointCount = 14;
             for (uint8_t x = 1; x <= 14; ++x) map.paths[0].points[x - 1] = {x, 6};
@@ -903,7 +972,119 @@ static void checkGroups() {
         groups, realGroups);
 }
 
+static void checkCaveBatGroups() {
+    using namespace ExploreEcology;
+    unsigned groups = 0, movedTicks = 0;
+    bool frames[3]{};
+    for (uint32_t seed = 1; seed <= 128; ++seed) {
+        ExploreMapGenerator::Map map{};
+        assert(ExploreMapGenerator::generate(seed, ExploreMapGenerator::Edge(seed % 4),
+            ExploreMapGenerator::FROST_CRYSTAL_CAVE_AREA, map));
+        const auto fingerprint = ExploreMapGenerator::fingerprint(map);
+        const uint8_t path = seed % map.pathCount;
+        ExplorePool::Pool pool{};
+        pool.count = 2;
+        pool.entries[0] = {42, 1, ExplorePool::Rarity::COMMON};
+        pool.entries[1] = {41, 1, ExplorePool::Rarity::COMMON};
+        const auto beforePool = pool;
+        Simulation sim;
+        sim.reset(map, path, pool, 0, 0);
+        for (uint8_t member = 0; member < 2; ++member) {
+            auto singleton = pool;
+            singleton.count = 1; singleton.entries[0] = pool.entries[member];
+            Simulation single;
+            single.reset(map, path, singleton, 0, 0);
+            assert(single.hasGroup() == sim.hasGroup());
+            if (sim.hasGroup()) equal(sim, single);
+        }
+        for (uint8_t mask = 1; mask < 4; ++mask) {
+            Simulation hidden;
+            hidden.reset(map, path, pool, mask, 0);
+            assert(!hidden.hasFamily());
+        }
+        // Removing birds also applies when the family roll fails.
+        auto birds = pool;
+        birds.entries[0].speciesId = 17; birds.entries[1].speciesId = 16;
+        Simulation noBirds;
+        noBirds.reset(map, path, birds, 0, 0);
+        assert(!noBirds.hasFamily() && noBirds.count() == 0);
+        auto mixed = pool;
+        mixed.count = 4;
+        mixed.entries[2] = birds.entries[0]; mixed.entries[3] = birds.entries[1];
+        Simulation mixedSim;
+        mixedSim.reset(map, path, mixed, 0, 0);
+        for (uint8_t i = 0; i < mixedSim.count(); ++i)
+            assert(mixedSim.pose(i).speciesId == 41 || mixedSim.pose(i).speciesId == 42);
+        assert(mixedSim.hasGroup() == sim.hasGroup());
+        if (!sim.hasGroup()) continue;
+        ++groups;
+        assert(sim.count() == 2 && sim.pose(0).speciesId == 42 && sim.pose(1).speciesId == 41);
+        bool trail[ExploreMapGenerator::CELL_COUNT]{};
+        for (uint8_t i = 0; i < 2; ++i)
+            trail[int(sim.pose(i).y / 26) * 16 + int(sim.pose(i).x / 26)] = true;
+        for (uint32_t ms = 100; ms <= 180000; ms += 100) {
+            const Pose before[] = {sim.pose(0), sim.pose(1)};
+            // A close player must not trigger a hovering WATCH phase.
+            sim.update(ms, true, before[0].x + 10, before[0].y, {0, 0, 416, 312});
+            for (uint8_t i = 0; i < 2; ++i) {
+                const auto p = sim.pose(i);
+                assert(p.airborne && !p.walking && !p.hidden && p.lift >= 6);
+                assert(p.activity == Activity::ROAM && p.cover == Cover::NONE);
+                assert(p.frame < 3); frames[p.frame] = true;
+                const float delta = std::hypot(p.x - before[i].x, p.y - before[i].y);
+                assert(delta > 1.0f && delta < 1.81f); // No stop or teleport at replanning.
+                assert(sim.canStand(p.speciesId, p.x, p.y));
+                const int cell = int(p.y / 26) * 16 + int(p.x / 26);
+                if (i == 0) trail[cell] = true;
+                else assert(trail[cell]);
+            }
+            ++movedTicks;
+            const float gap = std::hypot(sim.pose(0).x - sim.pose(1).x, sim.pose(0).y - sim.pose(1).y);
+            assert(gap >= 18.3f && gap <= 26.01f);
+            if (ms == 20000) {
+                auto paused = sim, running = sim;
+                paused.update(ms + 30000, false, 0, 0, {0, 0, 416, 312});
+                equal(sim, paused);
+                paused.update(ms + 30100, true, 0, 0, {0, 0, 416, 312});
+                running.update(ms + 100, true, 0, 0, {0, 0, 416, 312});
+                equal(paused, running);
+            }
+        }
+        const auto before = sim.pose(0);
+        for (uint32_t ms = 180100; ms <= 181000; ms += 100)
+            sim.update(ms, true, 0, 0, {-1000, -1000, 10, 10});
+        assert(!samePose(before, sim.pose(0)));
+        assert(std::memcmp(&pool, &beforePool, sizeof(pool)) == 0);
+        assert(ExploreMapGenerator::fingerprint(map) == fingerprint);
+    }
+    assert(groups > 20 && frames[0] && frames[1] && frames[2]);
+    // The new family is cave-only; outdoor birds keep their existing pair.
+    for (uint8_t area : {uint8_t(0), uint8_t(1), uint8_t(2), uint8_t(4), uint8_t(5)}) {
+        ExploreMapGenerator::Map map{};
+        map.areaIndex = area; map.seed = 7;
+        std::fill_n(map.layers[0], ExploreMapGenerator::CELL_COUNT, 390);
+        map.pathCount = 1; map.paths[0].pointCount = 14;
+        for (uint8_t x = 1; x <= 14; ++x) map.paths[0].points[x - 1] = {x, 6};
+        ExplorePool::Pool pool{};
+        pool.count = 1; pool.entries[0] = {41, 1, ExplorePool::Rarity::COMMON};
+        Simulation sim;
+        sim.reset(map, 0, pool, 0, 0);
+        assert(!sim.hasFamily() && sim.count() == 1);
+        unsigned birds = 0;
+        pool.entries[0].speciesId = 17;
+        for (uint32_t seed = 1; seed <= 32; ++seed) {
+            map.seed = seed;
+            sim.reset(map, 0, pool, 0, 0);
+            birds += sim.hasGroup();
+        }
+        assert(birds > 0);
+    }
+    std::printf("cave bats: %u real-map groups, %u continuous flight ticks; wings, trails, player, pause, secrecy and area filtering verified\n",
+        groups, movedTicks);
+}
+
 int main() {
+    checkCaveBatGroups();
     checkSingleMemberGroups();
     checkMarillCompositions();
     checkThreeMemberFamily();
@@ -1114,6 +1295,7 @@ int main() {
     visible.update(100, true, playerX, playerY, {0, 0, 416, 312});
     offscreen.update(100, true, playerX, playerY, {-1000, -1000, 10, 10});
     assert(ExploreEcology::samePose(pose, offscreen.pose(0)));
+    checkStationaryMetapod();
     checkEpisodes();
     checkLocomotionAndCover();
     checkWideFlight();

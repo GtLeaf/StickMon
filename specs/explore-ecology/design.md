@@ -5,8 +5,9 @@ derived once when a map is generated. Pool membership, selected route and map
 seed determine the species and habitat positions. Actor-local random streams
 keep animation decisions independent of gameplay randomness and other actors.
 
-`AmoledApp` advances simulation only for an active, unlocked route, publishes
-poses through `ExploreRouteViewModel`, and invalidates old/new actor bounds.
+AMOLED `ExplorePresenter` advances simulation only for an active, unlocked
+route, publishes poses through `ExploreRouteViewModel`, and invalidates old/new
+actor bounds. `AmoledApp` coordinates the presenter with its session and renderer.
 Inactive updates rebase time so menus and battles do not cause a catch-up jump.
 The existing route actor depth ordering gains wildlife entries; cached walking
 frames, shadows and vegetation restoration are reused. Grass and forest maps
@@ -23,9 +24,11 @@ actor's dirty bounds. Missing sprite resources skip the actor.
 
 Ecology is transient map state. Camera movement and battles preserve it; a new
 map creates a new population. No persistent fields or new asset packs are added.
-StickS3 can later consume the same simulation; all six areas use the shared
-AMOLED renderer. The road actor ground alignment remains independent of wild
-actors' habitat coordinates.
+`src/ui/compact_touch/ExploreEcologyUi` already resets, updates and renders
+three wildlife slots for OSTB and SDGOODS subpages using the same simulation.
+The Stick family has not integrated this presentation. Family layout, cover
+and render-demand ownership stay in the UI; the road actor ground alignment
+remains independent of wild actors' habitat coordinates.
 
 First behavior batch (user-approved 2026-10-17): each actor owns a transient
 activity/elapsed-time sequence with separate attention and episode cooldowns.
@@ -204,3 +207,21 @@ no unrelated actors fill the remaining slots. `hasFamily()` records a selected
 family even for one member; `hasGroup()` remains specific to the shared train.
 The member count/species never change while walking or revealing an actor.
 Preloading continues to cover all three possible members before map entry.
+
+
+## Frost Crystal Cave bat family (2026-10-21)
+
+Family area masks exclude Pidgeotto/Pidgey from the cave family candidates
+and admit Golbat/Zubat there only. Independent cave selection also skips
+Pidgey/Pidgeotto before weighted sampling, so a failed family roll cannot
+bring the birds back. Encounter pool contents, weights and history are untouched.
+Any visible bat member admits the pair; explicitly hidden members veto it.
+Existing companion preloading automatically includes the missing bat artwork.
+
+Flying families reuse the cached safe graph and long destination selection.
+They move at equal constant speed with one tile of trail separation. At an
+endpoint the anchors align to route nodes; route rebasing consumes leftover
+movement in the same update, without waiting, watching or reunion phases.
+Poses stay airborne with a continuous 120 ms wing clock, small body lift
+variation and no ground cover or grass contact. Route planning remains at
+route joins rather than every frame; ordinary ground families are unchanged.

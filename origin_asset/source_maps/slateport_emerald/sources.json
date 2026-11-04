@@ -1,0 +1,64 @@
+{
+  "retrieved": "2026-10-26",
+  "repository": "https://github.com/pret/pokeemerald",
+  "files": [
+    {
+      "path": "tiles.png",
+      "sha256": "a9f3d4b49fbf4f133ecffe88248235509ad5c155b55465231dfb44cb12562dbe",
+      "url": "https://raw.githubusercontent.com/pret/pokeemerald/master/data/tilesets/secondary/slateport/tiles.png"
+    },
+    {
+      "path": "metatiles.bin",
+      "sha256": "438a0fdb3dcb3393b5bee30c2866b915a8f46b655912b2205c8f6758cfa0ddbb",
+      "url": "https://raw.githubusercontent.com/pret/pokeemerald/master/data/tilesets/secondary/slateport/metatiles.bin"
+    },
+    {
+      "path": "palettes/07.pal",
+      "sha256": "ac42c0f677e9b2f695888cd1b28eabbc43067230c949490b321bf97d87e49587",
+      "url": "https://raw.githubusercontent.com/pret/pokeemerald/master/data/tilesets/secondary/slateport/palettes/07.pal"
+    },
+    {
+      "path": "palettes/09.pal",
+      "sha256": "d236d96c012ae0f5c5464531ed8b27eedfee0dafbd50555f1126649f33c52ab7",
+      "url": "https://raw.githubusercontent.com/pret/pokeemerald/master/data/tilesets/secondary/slateport/palettes/09.pal"
+    },
+    {
+      "path": "palettes/11.pal",
+      "sha256": "f616677fdfc272a440524bf1b9d116c0502e95e876b1c17de467bacd883bcd19",
+      "url": "https://raw.githubusercontent.com/pret/pokeemerald/master/data/tilesets/secondary/slateport/palettes/11.pal"
+    },
+    {
+      "path": "anim/balloons/0.png",
+      "sha256": "d72bc380744f88c96efa6a35ce86a8a6bb6929691d9f7f08e13bb20e95bc154d",
+      "url": "https://raw.githubusercontent.com/pret/pokeemerald/master/data/tilesets/secondary/slateport/anim/balloons/0.png"
+    },
+    {
+      "path": "anim/balloons/1.png",
+      "sha256": "98dcd04380dbde1755c0ea76be698f9b93f6ee79d3dd41e31f43f2bdcfd5d5b0",
+      "url": "https://raw.githubusercontent.com/pret/pokeemerald/master/data/tilesets/secondary/slateport/anim/balloons/1.png"
+    },
+    {
+      "path": "anim/balloons/2.png",
+      "sha256": "b3a1cdf503701d04354002b81ef20ab703cb501f42b408c5e7aa72791b6dc767",
+      "url": "https://raw.githubusercontent.com/pret/pokeemerald/master/data/tilesets/secondary/slateport/anim/balloons/2.png"
+    },
+    {
+      "path": "anim/balloons/3.png",
+      "sha256": "98dcd04380dbde1755c0ea76be698f9b93f6ee79d3dd41e31f43f2bdcfd5d5b0",
+      "url": "https://raw.githubusercontent.com/pret/pokeemerald/master/data/tilesets/secondary/slateport/anim/balloons/3.png"
+    }
+  ],
+  "animation": {
+    "metatile": 836,
+    "vram_tile_start": 736,
+    "frames": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "gba_ticks_per_frame": 16,
+    "preview_frame_ms": 280
+  },
+  "extraction": "Original foreground metatile layer only; palette index 0 transparent; preserve palette RGB; nearest 16px to 32px."
+}

@@ -70,6 +70,7 @@ private:
     uint8_t nextMusicBuffer_ = 0;
     uint32_t nextMusicBlock_ = 0;
     uint16_t nextMusicSkipSamples_ = 0;
+    uint8_t musicPreviousSample_ = 128;
     uint32_t homeMusicResumeAtMs_ = 0;
     bool homeMusicCycleComplete_ = false;
 

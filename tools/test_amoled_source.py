@@ -51,12 +51,29 @@ class AmoledSourceTests(unittest.TestCase):
             subprocess.run(["cmake", "-S", str(base), "-B", str(base / "build")],
                            check=True, capture_output=True, text=True)
             for board in ("v1", "v2"):
-                sources = (base / f"build/{board}.txt").read_text().split(";")
-                for source in amoled_runtime_sources(ROOT):
+                board_main = ROOT / f"firmware/amoled_1_8_{board}/main"
+                sources = [
+                    ((board_main / source) if not Path(source).is_absolute()
+                     else Path(source)).resolve()
+                    for source in (base / f"build/{board}.txt").read_text().split(";")
+                ]
+                self.assertEqual(len(sources), len(set(sources)))
+                runtime = {source.resolve() for source in amoled_runtime_sources(ROOT)}
+                for source in runtime:
                     with self.subTest(board=board, source=source):
-                        self.assertEqual(sources.count(str(source)), 1)
-                extras = set(sources) - {str(source) for source in amoled_runtime_sources(ROOT)}
-                self.assertEqual(len(extras), 5 if board == "v1" else 6)
+                        self.assertEqual(sources.count(source), 1)
+                extras = set(sources) - runtime
+                expected = {
+                    (board_main / "main.cpp").resolve(),
+                    (board_main / "AmoledPlatform.cpp").resolve(),
+                    (board_main / "TouchInput.cpp").resolve(),
+                    (ROOT / "firmware/common/Rgb565Transfer.cpp").resolve(),
+                    (ROOT / "firmware/common/Qmi8658.cpp").resolve(),
+                    (ROOT / "firmware/common/Axp2101Battery.cpp").resolve(),
+                }
+                if board == "v2":
+                    expected.add((board_main / "OtaRuntime.cpp").resolve())
+                self.assertEqual(extras, expected)
 
     def test_shared_manifest_covers_game_rules_and_excludes_device_implementations(self):
         shared = amoled_shared_sources(ROOT)

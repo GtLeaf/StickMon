@@ -110,9 +110,16 @@ public:
 private:
     static constexpr size_t SLOT_COUNT = 4;
 
+    enum class SlotState : uint8_t {
+        EMPTY = 0,
+        QUEUED,
+        RUNNING,
+        NOTIFYING,
+        COMPLETED,
+    };
+
     struct Slot {
-        bool inUse = false;
-        bool processing = false;
+        SlotState state = SlotState::EMPTY;
         bool waiter = false;
         Request request{};
         Result result{};

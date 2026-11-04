@@ -35,7 +35,13 @@ class ExploreIceSlideTests(unittest.TestCase):
 
     def test_scene_locks_input_and_defers_events_while_sliding(self):
         source = (ROOT / "src" / "scenes" / "ExploreScene.cpp").read_text()
-        self.assertIn("phase == Phase::WALKING && iceSliding", source)
+        ui = (ROOT / "src/ui/common/ExploreUiBase.cpp").read_text()
+        self.assertRegex(
+            ui,
+            r"frame\.phase == ExplorePhase::WALKING && frame\.iceSliding &&\s*"
+            r"\(event\.btn == 0 \|\| event\.btn == 1\)\) return true;",
+        )
+        self.assertIn("frame.iceSliding = iceSliding;", source)
         self.assertIn("ExploreIceSlide::continues", source)
         self.assertIn("ExploreIceSlide::nearestNonIceIndex", source)
         slide_resolution = source.index("if (iceSliding) {", source.index(

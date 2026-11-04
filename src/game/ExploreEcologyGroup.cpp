@@ -26,11 +26,12 @@ float cellY(uint8_t cell) { return ExploreRouteGeometry::tileCenter(cell / WIDTH
 
 bool Simulation::spawnGroup(const ExploreMapGenerator::Path& path,
                              const ExplorePool::Pool& pool, uint8_t hiddenPoolMask,
-                             uint32_t& random) {
+                             uint8_t area, uint32_t& random) {
     uint8_t candidates[sizeof(GROUP_FAMILIES) / sizeof(GROUP_FAMILIES[0])]{};
     uint8_t candidateCount = 0;
     for (uint8_t family = 0; family < sizeof(GROUP_FAMILIES) / sizeof(GROUP_FAMILIES[0]); ++family) {
         const auto& candidate = GROUP_FAMILIES[family];
+        if (!candidate.allowsArea(area)) continue;
         uint8_t mask = 0;
         bool hidden = false;
         for (uint8_t i = 0; i < std::min<uint8_t>(pool.count, ExplorePool::POOL_CAP); ++i) {
@@ -95,6 +96,7 @@ bool Simulation::spawnGroup(const ExploreMapGenerator::Path& path,
                 if (!planGroupRoute(&path)) continue;
                 count_ = group_.members;
                 group_.active = true;
+                group_.airborne = locomotionForSpecies(family.species[0]) == Locomotion::FLAP;
                 group_.cycleDurationMs = 15000 + next(group_.random) % 10001;
                 group_.nextGlanceMs = 5000 + next(group_.random) % 3001;
                 for (uint8_t i = 0; i < group_.members; ++i) {
@@ -103,7 +105,10 @@ bool Simulation::spawnGroup(const ExploreMapGenerator::Path& path,
                     actor.homeX = actor.fromX = actor.toX = actor.pose.x;
                     actor.homeY = actor.fromY = actor.toY = actor.pose.y;
                     actor.pose.surface = surfaceAt(int(actor.pose.x / TILE), int(actor.pose.y / TILE));
-                    actor.pose.cover = coverAt(actor.pose.x, actor.pose.y);
+                    actor.pose.cover = group_.airborne ? Cover::NONE : coverAt(actor.pose.x, actor.pose.y);
+                    actor.pose.airborne = group_.airborne;
+                    actor.pose.lift = group_.airborne ? 8 : 0;
+                    actor.pose.activity = group_.airborne ? Activity::ROAM : Activity::REST;
                     actor.pose.direction = facing(cellX(group_.route[group_.members - i]) - actor.pose.x,
                         cellY(group_.route[group_.members - i]) - actor.pose.y);
                 }
@@ -294,7 +299,38 @@ void Simulation::groupPoint(float travel, float& x, float& y) const {
     y = cellY(a) + (cellY(b) - cellY(a)) * fraction;
 }
 
+void Simulation::advanceFlyingGroup(uint32_t dt) {
+    auto& group = group_;
+    group.clockMs += dt;
+    float remaining = TILE * dt / 1450.0f;
+    // All members keep the same speed and one-tile trail gap. Rebase only at
+    // aligned endpoints, then consume the remainder without a hovering beat.
+    while (remaining > 0) {
+        const float end = (group.routeCount - 1) * TILE;
+        const float step = std::min(remaining, end - group.travel[0]);
+        for (uint8_t i = 0; i < group.members; ++i) group.travel[i] += step;
+        remaining -= step;
+        if (group.travel[0] >= end && !planGroupRoute()) break;
+    }
+    for (uint8_t i = 0; i < group.members; ++i) {
+        auto& actor = actors_[i];
+        auto& pose = actor.pose;
+        const float oldX = pose.x, oldY = pose.y;
+        groupPoint(group.travel[i], pose.x, pose.y);
+        pose.direction = facing(pose.x - oldX, pose.y - oldY);
+        pose.frame = (group.clockMs / 120) % 3;
+        pose.lift = int8_t(8 + std::lround(std::sin(group.clockMs * 6.2831853f / 360) * 1.5f));
+        pose.airborne = true;
+        pose.walking = false;
+        pose.activity = Activity::ROAM;
+        pose.cover = Cover::NONE;
+        pose.surface = surfaceAt(int(pose.x / TILE), int(pose.y / TILE));
+        actor.toX = pose.x; actor.toY = pose.y;
+    }
+}
+
 void Simulation::advanceGroup(uint32_t dt, float playerX, float playerY, bool visible) {
+    if (group_.airborne) { advanceFlyingGroup(dt); return; }
     auto& group = group_;
     group.clockMs += dt;
     group.attentionCooldownMs -= std::min(dt, group.attentionCooldownMs);

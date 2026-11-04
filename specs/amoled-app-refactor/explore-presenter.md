@@ -1,6 +1,6 @@
 # ExplorePresenter：阶段 4 第二批
 
-日期：2026-10-19。承接 [ExploreSession](explore.md)，本批完成探索表现拆分、构建与设备验证。Claw 专项继续延期，HomeFlow 留到下一批。
+日期：2026-10-19。承接 [ExploreSession](explore.md)，本批完成探索表现拆分、构建与设备验证。Claw 专项继续延期；后续 [HomeFlow](home-flow.md) 已完成，当前范围见[目录总览](tasks.md)。
 
 ## 范围与验收
 

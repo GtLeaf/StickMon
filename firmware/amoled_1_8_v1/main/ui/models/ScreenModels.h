@@ -36,6 +36,7 @@ struct HomeViewModel {
     uint8_t monsterCount = 1;
     uint16_t gameMinutesOfDay = 8 * 60 + 30;
     int8_t batteryPercent = -1;
+    bool batteryCharging = false;
     int16_t cameraX = 0;
     int16_t cameraY = 0;
     int16_t petCenterX = 184;
@@ -155,6 +156,10 @@ struct DebugViewModel {
 #endif
 
 struct ExploreViewModel {
+    bool destinationMenu = false;
+    bool marketSelected = false;
+    uint8_t destinationIds[7]{};
+    bool destinationUnlocked[7]{};
     uint8_t visibleAreaCount = 1;
     uint8_t unlockedArea = 0;
     uint8_t selectedArea = 0;

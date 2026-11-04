@@ -65,6 +65,147 @@ bool mapDownscaledCoordinate(int source, float scale, int outputSize, int& outpu
            static_cast<int>(output / scale) == source;
 }
 
+// Upscaled RLE sprites: every source column/row maps to a fixed destination
+// interval, so compute those once per draw (with the exact per-pixel formulas
+// of the generic paths below) and write clipped spans straight into the
+// framebuffer instead of a float-rounded fillAssetRect per source pixel.
+enum class UpscaleRule : uint8_t { RGB_NEAREST, RGB_TRUNCATE, INDEXED_NEAREST, INDEXED_FLOOR };
+struct UpscaleAxis {
+    static constexpr int MAX = 256;
+    int16_t begin[MAX];
+    int16_t end[MAX];
+};
+
+void mapUpscaleAxis(UpscaleAxis& axis, int origin, int count, float scale,
+                    UpscaleRule rule, int clipBegin, int clipEnd) {
+    for (int i = 0; i < count; ++i) {
+        int start = 0;
+        int length = 0;
+        switch (rule) {
+        case UpscaleRule::RGB_NEAREST:
+            start = origin + int(std::ceil(i * scale));
+            length = std::min(int(std::ceil((i + 1) * scale)),
+                              int(std::lround(count * scale))) - (start - origin);
+            break;
+        case UpscaleRule::RGB_TRUNCATE:
+            start = (int)(origin + i * scale);
+            length = (int)ceilf(scale);
+            break;
+        case UpscaleRule::INDEXED_NEAREST: {
+            start = origin + static_cast<int>(std::ceil(i * scale));
+            int next = origin + static_cast<int>(std::ceil((i + 1) * scale));
+            next = std::min(next, origin + int(std::lround(count * scale)));
+            length = start >= next ? 0 : std::max(1, next - start);
+            break;
+        }
+        case UpscaleRule::INDEXED_FLOOR: {
+            start = origin + static_cast<int>(std::floor(i * scale));
+            const int next = origin + static_cast<int>(std::ceil((i + 1) * scale));
+            length = std::max(1, next - start);
+            break;
+        }
+        }
+        // A non-positive size is skipped by fillRect; keep it empty here.
+        const int b = std::clamp(start, clipBegin, clipEnd);
+        const int e = length > 0 ? std::clamp(start + length, b, clipEnd) : b;
+        axis.begin[i] = static_cast<int16_t>(b);
+        axis.end[i] = static_cast<int16_t>(e);
+    }
+}
+
+bool upscaleFastPathAvailable(int w, int h) {
+    return gCanvas.attached() && gCanvas.assetScale() <= 1 &&
+           gCanvas.renderScale() == 1 &&
+           w > 0 && h > 0 && w <= UpscaleAxis::MAX && h <= UpscaleAxis::MAX;
+}
+
+inline void fillUpscaledPixel(const UpscaleAxis& cols, const UpscaleAxis& rows,
+                              int col, int row, uint16_t stored) {
+    const int x0 = cols.begin[col], x1 = cols.end[col];
+    if (x0 >= x1) return;
+    uint16_t* pixels = gCanvas.rawPixels();
+    const int stride = gCanvas.physicalWidth();
+    for (int y = rows.begin[row]; y < rows.end[row]; ++y) {
+        uint16_t* line = pixels + y * stride;
+        for (int x = x0; x < x1; ++x) line[x] = stored;
+    }
+}
+
+// Same token walk and pixel order as the generic loop, so overlapping
+// destination intervals resolve to the same final pixel.
+bool drawIndexed4RleUpscaledFast(int x, int y, int w, int h, const uint16_t* data,
+                                 uint32_t offset, uint32_t length, const uint16_t* palette,
+                                 uint32_t paletteOffset, uint8_t paletteSize,
+                                 float scale, bool flipX, bool nearest) {
+    if (!upscaleFastPathAvailable(w, h)) return false;
+    static UpscaleAxis cols, rows;
+    const UpscaleRule rule = nearest ? UpscaleRule::INDEXED_NEAREST : UpscaleRule::INDEXED_FLOOR;
+    mapUpscaleAxis(cols, x, w, scale, rule, gCanvas.clipLeft(), gCanvas.clipRight());
+    mapUpscaleAxis(rows, y, h, scale, rule, gCanvas.clipTop(), gCanvas.clipBottom());
+    uint16_t stored[16] = {};
+    for (int i = 0; i < std::min<int>(paletteSize, 16); ++i)
+        stored[i] = gCanvas.encodeColor(Platform::readProgramWord(&palette[paletteOffset + i]));
+    const uint32_t total = static_cast<uint32_t>(w * h);
+    uint32_t idx = 0, pixel = 0;
+    int col = 0, row = 0;
+    while (idx < length && pixel < total) {
+        const uint16_t token = Platform::readProgramWord(&data[offset + idx++]);
+        const uint16_t run = token & 0x7FFF;
+        if (run == 0) continue;
+        if (token & 0x8000) {
+            pixel = std::min<uint32_t>(total, pixel + run);
+            col = static_cast<int>(pixel % w);
+            row = static_cast<int>(pixel / w);
+            continue;
+        }
+        uint16_t packed = 0;
+        for (uint16_t i = 0; i < run && pixel < total; ++i, ++pixel) {
+            if ((i & 0x03) == 0) {
+                if (idx >= length) return true;
+                packed = Platform::readProgramWord(&data[offset + idx++]);
+            }
+            const uint8_t paletteIndex = (packed >> ((i & 0x03) * 4)) & 0x0F;
+            if (paletteIndex < paletteSize)
+                fillUpscaledPixel(cols, rows, flipX ? w - 1 - col : col, row, stored[paletteIndex]);
+            if (++col == w) { col = 0; ++row; }
+        }
+    }
+    return true;
+}
+
+bool drawRgb565RleUpscaledFast(int x, int y, int w, int h, const uint16_t* data,
+                               uint32_t offset, uint32_t length, float scale,
+                               bool flipX, bool nearest) {
+    if (!upscaleFastPathAvailable(w, h)) return false;
+    static UpscaleAxis cols, rows;
+    const UpscaleRule rule = nearest ? UpscaleRule::RGB_NEAREST : UpscaleRule::RGB_TRUNCATE;
+    mapUpscaleAxis(cols, x, w, scale, rule, gCanvas.clipLeft(), gCanvas.clipRight());
+    mapUpscaleAxis(rows, y, h, scale, rule, gCanvas.clipTop(), gCanvas.clipBottom());
+    const bool swapped = gCanvas.byteSwapped();
+    const uint32_t total = static_cast<uint32_t>(w * h);
+    uint32_t idx = 0, pixel = 0;
+    int col = 0, row = 0;
+    while (idx < length && pixel < total) {
+        const uint16_t token = Platform::readProgramWord(&data[offset + idx++]);
+        const uint16_t run = token & 0x7FFF;
+        if (run == 0) continue;
+        if (token & 0x8000) {
+            pixel = std::min<uint32_t>(total, pixel + run);
+            col = static_cast<int>(pixel % w);
+            row = static_cast<int>(pixel / w);
+            continue;
+        }
+        for (uint16_t i = 0; i < run && idx < length && pixel < total; ++i, ++pixel) {
+            const uint16_t color = Platform::readProgramWord(&data[offset + idx++]);
+            const uint16_t stored = swapped
+                ? static_cast<uint16_t>((color << 8) | (color >> 8)) : color;
+            fillUpscaledPixel(cols, rows, flipX ? w - 1 - col : col, row, stored);
+            if (++col == w) { col = 0; ++row; }
+        }
+    }
+    return true;
+}
+
 uint16_t readGlyphRow(const uint8_t* bitmap, int row, bool progmem) {
     const uint8_t left = progmem
         ? Platform::readProgramByte(&bitmap[row * 2])
@@ -479,6 +620,43 @@ void PixelRenderer::text(Canvas565& target, int x, int y, const char* value,
     }
 }
 
+void PixelRenderer::textSmooth(int x, int y, const char* value, uint16_t color,
+                               uint8_t height) {
+    if (!value || height < 16 || height > 20) return;
+    const int startX = x;
+    while (*value) {
+        const uint32_t codepoint = readUtf8(value);
+        if (codepoint == '\n') { x = startX; y += height; continue; }
+        const bool ascii = usesUnscii(codepoint);
+        const int width = ascii ? height / 2 : height;
+        if (codepoint == ' ') { x += width; continue; }
+        const int sourceSize = height == 16 ? 16 : 20;
+        const auto* coverage = FontResource::ins().findCoverageGlyph(codepoint, sourceSize);
+        const auto* bitmap = coverage ? nullptr : FontResource::ins().findGlyphBitmap(
+            codepoint, ascii ? FontFace::UNSCII_ASCII : FontFace::SARASA_CJK);
+        const auto* fallback = coverage || bitmap || ascii ? nullptr : findFontFallbackCNGlyph(codepoint);
+        if (fallback) bitmap = fallback->bitmap;
+        for (int row = 0; row < height; ++row) for (int col = 0; col < width; ++col) {
+            const int px = x + col, py = y + row;
+            if (px < 0 || px >= gCanvas.width() || py < 0 || py >= gCanvas.height()) continue;
+            uint8_t alpha = 0;
+            if (coverage) {
+                const int index = row * sourceSize / height * sourceSize + col * sourceSize / height;
+                const uint8_t packed = coverage[index / 2];
+                alpha = ((index & 1) ? (packed & 15) : (packed >> 4)) * 17;
+            } else if (bitmap) {
+                const int sx = col * (ascii ? ASCII_CELL_WIDTH : 16) / width;
+                const int sy = row * 16 / height;
+                alpha = (readGlyphRow(bitmap, sy, fallback != nullptr) & (1U << (15 - sx))) ? 255 : 0;
+            }
+            if (alpha) gCanvas.drawPixel(px, py,
+                blendRgb565(gCanvas.readPixel(px, py), color, alpha));
+        }
+        if (!coverage && !bitmap) gCanvas.drawRect(x + 1, y + 2, width - 2, height - 4, color);
+        x += width;
+    }
+}
+
 void PixelRenderer::textOutlined(int x, int y, const char* value, uint16_t color,
                                  uint16_t outline, uint8_t outlineWidth,
                                  uint8_t size) {
@@ -632,7 +810,7 @@ void PixelRenderer::drawIndexed4RleScaled(int x, int y, int w, int h,
                                           const uint16_t* data, uint32_t offset,
                                           uint32_t length, const uint16_t* palette,
                                           uint32_t paletteOffset, uint8_t paletteSize,
-                                          float scale, bool flipX, uint8_t alpha) {
+                                          float scale, bool flipX, uint8_t alpha, bool nearest) {
     if (!gCanvas.attached() || !data || !palette || w <= 0 || h <= 0 ||
         paletteSize == 0 || scale <= 0.0f || alpha == 0) {
         return;
@@ -699,6 +877,11 @@ void PixelRenderer::drawIndexed4RleScaled(int x, int y, int w, int h,
         return;
     }
 
+    if (alpha == 255 && scale > 1.0f &&
+        drawIndexed4RleUpscaledFast(x, y, w, h, data, offset, length, palette,
+                                    paletteOffset, paletteSize, scale, flipX, nearest)) {
+        return;
+    }
     const uint32_t total = (uint32_t)(w * h);
     uint32_t idx = 0;
     uint32_t pixel = 0;
@@ -731,10 +914,15 @@ void PixelRenderer::drawIndexed4RleScaled(int x, int y, int w, int h,
             // Map each source pixel to its exact destination interval. Using
             // ceil(scale) for every pixel makes 1.66x backgrounds expand to
             // 2x and breaks the intended crop on the portrait display.
-            int drawX = x + static_cast<int>(std::floor(col * scale));
-            int drawY = y + static_cast<int>(std::floor(row * scale));
+            int drawX = x + static_cast<int>(nearest ? std::ceil(col * scale) : std::floor(col * scale));
+            int drawY = y + static_cast<int>(nearest ? std::ceil(row * scale) : std::floor(row * scale));
             int nextX = x + static_cast<int>(std::ceil((col + 1) * scale));
             int nextY = y + static_cast<int>(std::ceil((row + 1) * scale));
+            if (nearest) {
+                nextX = std::min(nextX, x + int(std::lround(w * scale)));
+                nextY = std::min(nextY, y + int(std::lround(h * scale)));
+                if (drawX >= nextX || drawY >= nextY) continue;
+            }
             int drawW = std::max(1, nextX - drawX);
             int drawH = std::max(1, nextY - drawY);
             if (alpha == 255) {
@@ -751,7 +939,7 @@ void PixelRenderer::drawIndexed4RleScaled(int x, int y, int w, int h,
 
 void PixelRenderer::drawRgb565RleScaled(int x, int y, int w, int h,
                                         const uint16_t* data, uint32_t offset,
-                                        uint32_t length, float scale, bool flipX) {
+                                        uint32_t length, float scale, bool flipX, bool nearest) {
     if (!gCanvas.attached() || !data || w <= 0 || h <= 0 ||
         scale <= 0.0f) return;
     if (scale == 1.0f) {
@@ -760,6 +948,8 @@ void PixelRenderer::drawRgb565RleScaled(int x, int y, int w, int h,
     }
 
     if (scale > 1.0f) {
+        if (drawRgb565RleUpscaledFast(x, y, w, h, data, offset, length, scale, flipX, nearest))
+            return;
         const uint32_t total = (uint32_t)(w * h);
         uint32_t idx = 0;
         uint32_t pixel = 0;
@@ -781,10 +971,14 @@ void PixelRenderer::drawRgb565RleScaled(int x, int y, int w, int h,
                 int col = pixel % w;
                 int row = pixel / w;
                 if (flipX) col = w - 1 - col;
-                int drawX = (int)(x + col * scale);
-                int drawY = (int)(y + row * scale);
-                int drawW = (int)ceilf(scale);
-                int drawH = (int)ceilf(scale);
+                int drawX = nearest ? x + int(std::ceil(col * scale)) : (int)(x + col * scale);
+                int drawY = nearest ? y + int(std::ceil(row * scale)) : (int)(y + row * scale);
+                int drawW = nearest
+                    ? std::min(int(std::ceil((col + 1) * scale)), int(std::lround(w * scale))) - (drawX - x)
+                    : (int)ceilf(scale);
+                int drawH = nearest
+                    ? std::min(int(std::ceil((row + 1) * scale)), int(std::lround(h * scale))) - (drawY - y)
+                    : (int)ceilf(scale);
                 gCanvas.fillAssetRect(drawX, drawY, drawW, drawH, color);
             }
         }

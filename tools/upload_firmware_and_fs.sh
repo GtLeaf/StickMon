@@ -6,7 +6,7 @@ ENV_NAME="m5stick-s3-debug"
 UPLOAD_PORT=""
 DRY_RUN=0
 # 编译产物导出目录（供独立维护的网页刷机站上传固件用），可用 OUT_DIR 覆盖
-OUT_DIR="${OUT_DIR:-$ROOT_DIR/tools/out}"
+OUT_DIR="${OUT_DIR:-$ROOT_DIR/.stick-local/firmware/stick-s3}"
 # boot_app0.bin 在 PlatformIO 框架目录而非工程构建目录，可用 BOOT_APP0_BIN 覆盖
 BOOT_APP0_BIN="${BOOT_APP0_BIN:-$HOME/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin}"
 
@@ -25,7 +25,7 @@ Usage: tools/upload_firmware_and_fs.sh [options]
 Builds and uploads the firmware (including the partition table), then uploads
 the complete data/ directory as a LittleFS image. After building, the files
 needed by the external web flasher (bootloader / partitions / boot_app0 / firmware /
-littlefs .bin) are exported to tools/out/.
+littlefs .bin) are exported to .stick-local/firmware/stick-s3/.
 
 Options:
   -p, --port PORT          Upload port, for example /dev/cu.usbmodem2101.
@@ -34,7 +34,7 @@ Options:
                            Default: m5stick-s3-debug.
   -e, --environment NAME   Override the PlatformIO environment.
   -o, --out DIR            Export directory for build artifacts.
-                           Default: tools/out.
+                           Default: .stick-local/firmware/stick-s3.
       --dry-run            Print the commands without executing them.
   -h, --help               Show this help.
 

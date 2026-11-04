@@ -15,13 +15,14 @@ def main() -> int:
     parser.add_argument("--port", default="/dev/cu.usbmodem2101")
     parser.add_argument("--area", type=int, choices=range(6), default=0)
     parser.add_argument("--timeout", type=int, default=180)
-    parser.add_argument("--output", type=Path)
+    parser.add_argument("--output", type=Path,
+                        help="log file (default: .stick-local/logs/amoled-v2-explore-TIMESTAMP.log)")
     args = parser.parse_args()
 
     if args.timeout < 15:
         parser.error("--timeout must be at least 15 seconds")
     output = args.output or (
-        Path(__file__).resolve().parent / "out" /
+        Path(__file__).resolve().parents[1] / ".stick-local/logs" /
         f"amoled-v2-explore-{datetime.now():%Y%m%d-%H%M%S}.log"
     )
     output.parent.mkdir(parents=True, exist_ok=True)

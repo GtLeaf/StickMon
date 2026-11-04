@@ -74,10 +74,9 @@ bool BrainBridge::enqueue(const Request& request, Result& result,
     Slot* selected = nullptr;
     portENTER_CRITICAL(&mux_);
     for (Slot& slot : slots_) {
-        if (!slot.inUse) {
+        if (slot.state == SlotState::EMPTY) {
             xSemaphoreTake(slot.done, 0);
-            slot.inUse = true;
-            slot.processing = false;
+            slot.state = SlotState::QUEUED;
             slot.waiter = true;
             slot.request = request;
             slot.result = Result{};
@@ -92,24 +91,30 @@ bool BrainBridge::enqueue(const Request& request, Result& result,
         return false;
     }
 
-    // A timeout does not mean the action was dropped: once update() claims the
-    // slot it still runs to completion. Host callbacks are retry-safe (they
-    // reject duplicate state transitions), so an LLM retry here is harmless.
-    if (xSemaphoreTake(selected->done, pdMS_TO_TICKS(waitMs)) != pdTRUE) {
-        portENTER_CRITICAL(&mux_);
-        selected->waiter = false;
-        if (!selected->processing) selected->inUse = false;
-        portEXIT_CRITICAL(&mux_);
-        setResult(result, false, "StickMon action timed out");
-        return false;
-    }
-
+    xSemaphoreTake(selected->done, pdMS_TO_TICKS(waitMs));
+    bool hasResult = false;
     portENTER_CRITICAL(&mux_);
-    result = selected->result;
-    selected->waiter = false;
-    selected->inUse = false;
+    if (selected->state == SlotState::NOTIFYING ||
+        selected->state == SlotState::COMPLETED) {
+        result = selected->result;
+        selected->waiter = false;
+        if (selected->state == SlotState::COMPLETED) {
+            selected->state = SlotState::EMPTY;
+        }
+        hasResult = true;
+    } else {
+        selected->waiter = false;
+        if (selected->state == SlotState::QUEUED) {
+            selected->state = SlotState::EMPTY;
+        }
+    }
     portEXIT_CRITICAL(&mux_);
-    return result.accepted;
+    if (hasResult) return result.accepted;
+
+    // Once update() claims a request it still runs after its waiter leaves.
+    // A timeout is therefore an unknown outcome, not a safe mutation retry.
+    setResult(result, false, "StickMon action timed out");
+    return false;
 }
 
 void BrainBridge::refreshSnapshot(uint32_t nowMs) {
@@ -211,22 +216,28 @@ void BrainBridge::update(uint32_t nowMs) {
     for (Slot& slot : slots_) {
         Request request{};
         portENTER_CRITICAL(&mux_);
-        if (!slot.inUse || slot.processing) {
+        if (slot.state != SlotState::QUEUED) {
             portEXIT_CRITICAL(&mux_);
             continue;
         }
-        slot.processing = true;
+        slot.state = SlotState::RUNNING;
         request = slot.request;
         portEXIT_CRITICAL(&mux_);
 
         Result result = execute(request);
         portENTER_CRITICAL(&mux_);
         slot.result = result;
-        slot.processing = false;
-        bool waiter = slot.waiter;
-        if (!waiter) slot.inUse = false;
+        const bool notify = slot.waiter;
+        slot.state = notify ? SlotState::NOTIFYING : SlotState::EMPTY;
         portEXIT_CRITICAL(&mux_);
+        if (!notify) continue;
+
         xSemaphoreGive(slot.done);
+        portENTER_CRITICAL(&mux_);
+        if (slot.state == SlotState::NOTIFYING) {
+            slot.state = slot.waiter ? SlotState::COMPLETED : SlotState::EMPTY;
+        }
+        portEXIT_CRITICAL(&mux_);
     }
 }
 

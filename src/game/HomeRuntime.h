@@ -26,9 +26,8 @@ struct NavigationWorld {
     const RoomResource::Point* polygon = nullptr;
     uint8_t polygonCount = 0;
     RoomNavigator::Bounds footBounds = {};
-    float actorMinSeparation = 0.0f;
     ActorCollisionMode actorCollisionMode = ActorCollisionMode::HARD;
-    float actorOverlapPadding = 1.0f;
+    float actorOverlapPadding = 0.0f;
     RoomNavigator::Scratch scratch = {};
 };
 

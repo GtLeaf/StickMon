@@ -1,4 +1,8 @@
-# Tasks
+# 生态演进与验收记录
+
+截至 2026-10-21 的各批验证记录保留如下；当时的 OSTB 构建失败只描述该批工作树。
+后续 compact_touch 已接入生态且有新的目标构建记录，当前所有权见[设计](design.md)。
+本次文档整理没有重新执行测试，也不覆盖历史失败。
 
 Pair roaming refinement (2026-10-17):
 
@@ -327,3 +331,36 @@ Composition-variety validation (2026-10-18):
 - Architecture (13) and exploration-screen (18) checks passed; StickS3 release
   and AMOLED V1/V2 Lite builds passed. Whitespace check passed.
 - No firmware flashing or hardware validation performed.
+
+
+## Frost Crystal Cave bat family (2026-10-21)
+
+- [x] Restrict family selection by area; exclude cave Pidgey/Pidgeotto ambient
+  actors and add cave-only Golbat/Zubat with any-member and hidden rules. (15, 20)
+- [x] Add continuous flapping shared-trail motion with safe endpoint rebasing,
+  fixed spacing, broad movement and no player-induced hovering. (17, 18, 20)
+- [x] Cover cave filtering, solo/full pools, hidden veto, actual follower trail,
+  continuous movement, wings, pause, offscreen motion and outdoor birds. (15-20)
+- [x] Validate native rendering/artwork and StickS3 plus AMOLED V1/V2 builds;
+  record the unrelated in-progress OSTB build blocker. (4-6, 20)
+
+
+Cave-family validation (2026-10-21):
+
+- 128 generated cave maps exercised 60 bat groups for 180 seconds each:
+  108000 moving ticks, continuous wing frames, one-tile trail spacing,
+  safe terrain, no player-induced stop, pause and offscreen progression.
+  Adult-only, young-only and both-member pools select the same groups;
+  explicit hidden masks block them. Cave bird-only pools spawn no actors;
+  mixed pools contain no Pidgey/Pidgeotto, while outdoor bird groups remain.
+- Shared ecology and address/undefined-behavior sanitizer runs passed,
+  including 768 generated maps and all previous locomotion/group suites.
+  Synthetic range cases visited at least 24 cells over 120 active seconds.
+- Native AMOLED ecology passed 13593 group partial/full frame comparisons;
+  bat artwork and exported cave frames were visually reviewed. Game state,
+  encounter history and gameplay random calls stayed unchanged. Architecture
+  (13) and exploration-screen (18) checks passed; whitespace check passed.
+- StickS3 release and AMOLED V1/V2 Lite builds passed. OSTB compiled the
+  modified ecology sources, but its full build failed in unrelated ongoing
+  touch work: MenuScene.cpp::touchTarget calls undeclared buildBagRows.
+  That work was preserved. No firmware flashing or hardware test performed.

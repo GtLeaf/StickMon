@@ -24,7 +24,8 @@ uint8_t facing(float dx, float dy) {
     return dy < 0 ? 2 : 0;
 }
 bool grass(uint16_t tile) {
-    return (tile >= 385 && tile <= 390) || tile == 399 || tile == 415;
+    return (tile >= 385 && tile <= 390) || tile == 399 || tile == 415 ||
+           ExploreMistForestData::flag(tile,64);
 }
 bool waterOnly(uint16_t species) {
     // Explicit fish family in the current roster; Water typing alone is not enough.
@@ -34,6 +35,9 @@ Surface groundSurface(const ExploreMapGenerator::Map& map, uint16_t cell) {
     const uint16_t base = map.layers[0][cell];
     const uint16_t overlay = map.layers[1][cell];
     const uint16_t top = map.layers[2][cell];
+    if ((!top || ExploreTileSemantics::bridgeDeck(top)) &&
+        (ExploreAncientValley::openWater(overlay) || overlay == 96 ||
+         ExploreValleyData::flag(overlay, 8))) return Surface::WATER;
     // A bridge leaves the river connected below its deck. Never reinterpret
     // shore, waterfall, rock or a dry bridge approach as swimming habitat.
     if (!overlay && (!top || ExploreTileSemantics::bridgeDeck(top)) &&
@@ -43,7 +47,9 @@ Surface groundSurface(const ExploreMapGenerator::Map& map, uint16_t cell) {
     if (overlay && !ExploreTileSemantics::groundBehindDecoration(overlay, 1))
         return Surface::NONE;
     if (grass(base)) return Surface::GRASS;
-    if (base == ExploreCaveTiles::CAVE_FLOOR) return Surface::ROCK;
+    if (base == ExploreCaveTiles::CAVE_FLOOR || ExploreAncientValley::caveGround(base) ||
+        ExploreValleyData::flag(base, 2))
+        return Surface::ROCK;
     if (map.areaIndex == ExploreMapGenerator::FROST_CRYSTAL_CAVE_AREA &&
         (base == 4511 || base == 4501 || (base >= 4780 && base <= 4794) ||
          ExploreMapGenerator::isSmoothIceTile(base))) return Surface::ICE;
@@ -163,8 +169,14 @@ void Simulation::reset(const ExploreMapGenerator::Map& map, uint8_t pathIndex,
     if (random == 0) random = 1;
     const uint8_t poolCount = std::min<uint8_t>(pool.count, ExplorePool::POOL_CAP);
     const uint8_t requested = std::min<uint8_t>(poolCount, 2 + (next(random) % 4 == 0));
-    if (spawnGroup(path, pool, hiddenPoolMask, random)) return;
+    if (spawnGroup(path, pool, hiddenPoolMask, map.areaIndex, random)) return;
     uint8_t usedMask = 0;
+    // Cave wildlife excludes the outdoor bird family, including solo fallback.
+    if (map.areaIndex == ExploreMapGenerator::FROST_CRYSTAL_CAVE_AREA) {
+        for (uint8_t i = 0; i < poolCount; ++i)
+            if (pool.entries[i].speciesId == 16 || pool.entries[i].speciesId == 17)
+                usedMask |= 1U << i;
+    }
     for (uint8_t slot = 0; slot < poolCount && count_ < requested; ++slot) {
         uint32_t total = 0;
         for (uint8_t i = 0; i < poolCount; ++i)
@@ -432,6 +444,27 @@ void Simulation::advance(uint8_t index, uint32_t dt, float playerX, float player
     actor.wingMs = (actor.wingMs + dt) % 7200;
     actor.elapsedMs = std::min(actor.elapsedMs + dt, actor.durationMs);
     const Activity action = pose.activity;
+    if (pose.speciesId == 11) {
+        // Wild Metapod stays anchored, including during player reactions.
+        // Never cycle walking frames or apply sleep/wake lift to this body.
+        pose.frame = pose.hidden && action == Activity::RUSTLE
+            ? 1 + (actor.elapsedMs / 180) % 2 : 0;
+        pose.walking = false;
+        pose.lift = pose.sway = 0;
+        if (actor.elapsedMs < actor.durationMs) return;
+        if (pose.hidden) {
+            if (action == Activity::RUSTLE) rest(index, false);
+            else start(actor, Activity::RUSTLE, 720);
+        } else if (action == Activity::WATCH) {
+            rest(index, true);
+        } else if (visible && claimEpisode(index)) {
+            const bool nearby = distanceSquared(pose.x, pose.y, playerX, playerY) < TILE * TILE * 4;
+            pose.direction = nearby ? facing(playerX - pose.x, playerY - pose.y)
+                : (pose.direction + (next(actor.random) % 2 ? 1 : 3)) % 4;
+            start(actor, Activity::WATCH, 1000);
+        } else rest(index, false);
+        return;
+    }
     const float t = actor.elapsedMs / float(std::max<uint32_t>(1, actor.durationMs));
     const bool fastFrames = pose.walking || action == Activity::TAKEOFF ||
         action == Activity::LAND || action == Activity::SPLASH || action == Activity::GATHER;

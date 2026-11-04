@@ -21,6 +21,10 @@ public:
                      uint8_t size = 1);
     static void text(Canvas565& target, int x, int y, const char* value,
                      uint16_t color, uint8_t size = 1);
+    // Opt-in coverage text; 16/20px are native, 17-19px are animation only.
+    // Missing optional glyphs fall back to the original 16px bitmap.
+    static void textSmooth(int x, int y, const char* value, uint16_t color,
+                           uint8_t height);
     static void textOutlined(int x, int y, const char* value, uint16_t color,
                              uint16_t outline, uint8_t outlineWidth = 1,
                              uint8_t size = 1);
@@ -41,13 +45,16 @@ public:
                                      const uint16_t* data, uint32_t offset,
                                      uint32_t length, uint16_t color,
                                      bool flipX = false);
+    // Opt-in nearest sampling gives fractional exploration zoom nonoverlapping
+    // pixel intervals; existing callers retain their original coverage rules.
     static void drawIndexed4RleScaled(int x, int y, int w, int h,
                                       const uint16_t* data, uint32_t offset,
                                       uint32_t length, const uint16_t* palette,
                                       uint32_t paletteOffset, uint8_t paletteSize,
                                       float scale, bool flipX = false,
-                                      uint8_t alpha = 255);
+                                      uint8_t alpha = 255, bool nearest = false);
     static void drawRgb565RleScaled(int x, int y, int w, int h,
                                     const uint16_t* data, uint32_t offset,
-                                    uint32_t length, float scale, bool flipX = false);
+                                    uint32_t length, float scale, bool flipX = false,
+                                    bool nearest = false);
 };

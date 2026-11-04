@@ -1,0 +1,20 @@
+{
+  "sourceCommit": "a430cd6c0deaa7ebfa9c9d76ae70284ad98d0731",
+  "sourceFiles": {
+    "src/scenes/SocialScene.cpp": "0d9d85988e42325503c21db4bddd521523012609bc1578f9836d4a56a5b3466d",
+    "src/scenes/SocialScene.h": "6e3fcd310da7662c7a62f8151d869f4cdf5d1f2b4e2a2a770a8fea30b14dd8ab"
+  },
+  "otherSources": "Frozen task-start working tree; compile using the pre-extraction manifest.",
+  "baselineManifest": ".stick-local/artifacts/device-ui-social-20261023/baseline-manifest.json",
+  "baselineManifestSha256": "0027e54ae62e071742b2a8bbea60be1524109ae8a3c15402bbb45180a97699d4",
+  "harnessSha256": "b9846175ad0da476ee93cb4fd27e1042b77f67920d9b6043f70402ee82d78541",
+  "fixtureSha256": "7e1d97e00b34d00a8f75baad4064d2ca9efb27c1125cc22bfef4d43fdec2d0ce",
+  "framesPerConfiguration": 210,
+  "configurations": [
+    "ostb-debug",
+    "ostb-release",
+    "sticks3-debug",
+    "sticks3-release"
+  ],
+  "method": "Expected RGB565 hashes come only from the frozen original monolithic SocialScene, compiled with STICKMON_SOCIAL_UI_BASELINE=1. The same harness executes 32 journeys on old and new sources, including real protocol frames and engine-owned scene destruction."
+}

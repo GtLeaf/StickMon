@@ -72,7 +72,7 @@ class AmoledExploreScreenTests(unittest.TestCase):
             main,
         )
         self.assertIn("EXPLORE_ROUTE_WORLD_PHYSICAL_WIDTH", home)
-        self.assertIn("std::memcpy(firstOutput, source", home)
+        self.assertIn("std::memcpy(canvas.rawPixels()", home)
         self.assertNotIn("firstOutput[column * 2] = source[column]", home)
         self.assertNotIn("exploreRouteMapCache", home)
 
@@ -108,7 +108,7 @@ class AmoledExploreScreenTests(unittest.TestCase):
         start = home.index("void drawExploreRouteBoss(")
         end = home.index("void drawExploreRouteActor(", start)
         boss = home[start:end]
-        self.assertIn("EXPLORE_ROUTE_BOSS_SCALE = 2.0f", home)
+        self.assertIn("EXPLORE_ROUTE_BOSS_SCALE = float(EXPLORE_ROUTE_SCALE)", home)
         self.assertIn("PokemonMotion::movementFrame(", boss)
         self.assertIn("exploreRouteBossWorldPose", boss)
         self.assertIn("exploreRouteBossPatrolPermille", home)

@@ -13,8 +13,10 @@ namespace {
 class BatteryPower final : public Platform::IPowerDevice {
 public:
     int percent = 65;
+    bool charging = false;
     size_t samples = 0;
     int batteryLevel() override { ++samples; return percent; }
+    bool batteryCharging() override { return charging; }
     Platform::WakeReason wakeReason() const override { return Platform::WakeReason::NORMAL; }
     uint32_t hardwareRandom() override { return 123; }
     size_t externalMemorySize() const override { return 0; }
@@ -22,16 +24,41 @@ public:
     void restart() override {}
     void enterDeepSleep(uint64_t, bool) override {}
 };
+
+class BatteryBlobs final : public Platform::IBlobStore {
+public:
+    explicit BatteryBlobs(Platform::IBlobStore& store) : store_(store) {}
+    bool failWrites = false;
+    bool initialize() override { return store_.initialize(); }
+    size_t blobSize(const char* ns, const char* key) override {
+        return store_.blobSize(ns, key);
+    }
+    bool readBlob(const char* ns, const char* key, void* data, size_t size) override {
+        return store_.readBlob(ns, key, data, size);
+    }
+    bool writeBlob(const char* ns, const char* key, const void* data, size_t size) override {
+        return !failWrites && store_.writeBlob(ns, key, data, size);
+    }
+    bool removeBlob(const char* ns, const char* key) override {
+        return !failWrites && store_.removeBlob(ns, key);
+    }
+    bool clearNamespace(const char* ns) override {
+        return !failWrites && store_.clearNamespace(ns);
+    }
+private:
+    Platform::IBlobStore& store_;
+};
 }
 
 struct AmoledBatteryTestAccess {
     static void check(DesktopPlatform& desktop, Canvas565& canvas) {
         auto& original = desktop.serviceBundle();
         BatteryPower power;
+        BatteryBlobs blobs(original.blobs);
         Platform::Services services{
             original.lifecycle, original.clock, original.logger, original.input,
             original.display, original.audio, original.imu, power,
-            original.blobs, original.resources, original.memory, original.peers};
+            blobs, original.resources, original.memory, original.peers};
         Platform::bind(services);
         {
             AmoledApp app;
@@ -87,6 +114,58 @@ struct AmoledBatteryTestAccess {
             power.percent = 50;
             app.updateBattery(0xFFFFFF00U + 5000U);
             assert(app.batteryPercent == 50);
+            app.markRendered();
+            power.charging = true;
+            app.onWake(start + 20000);
+            assert(app.batteryCharging && app.needsRender());
+            app.render(canvas);
+            const auto yellow = UiCommon::rgb(255, 220, 88);
+            assert(canvas.readPixel(338, 18) == yellow);
+            assert(canvas.readPixel(338, 24) == yellow);
+            app.markRendered();
+            power.charging = false;
+            app.updateBattery(start + 25000);
+            assert(!app.batteryCharging && app.needsRender());
+            app.render(canvas);
+            assert(canvas.readPixel(338, 18) != yellow);
+            // PMU failures/invalid gauge levels retain a readable charge glyph.
+            power.charging = true;
+            power.percent = -1;
+            app.onWake(start + 26000);
+            app.render(canvas);
+            assert(canvas.readPixel(338, 18) == yellow);
+            // Explicit shutdown must refuse a write-protected save.
+            app.saveWritesBlocked = true;
+            assert(!app.preparePowerOff(start + 27000));
+            app.saveWritesBlocked = false;
+            assert(app.preparePowerOff(start + 28000));
+            app.gameState.coins = 1234;
+            assert(app.preparePowerOff(start + 29000));
+            Game::GameState saved;
+            MainSceneViewState savedView;
+            SaveManager verify;
+            assert(verify.begin() && verify.load(saved, savedView));
+            assert(saved.coins == 1234);
+            app.gameState.coins = 4321;
+            blobs.failWrites = true;
+            assert(!app.preparePowerOff(start + 30000));
+            assert(verify.load(saved, savedView) && saved.coins == 1234);
+            blobs.failWrites = false;
+            assert(app.preparePowerOff(start + 31000));
+            assert(verify.load(saved, savedView) && saved.coins == 4321);
+            app.saveWritesBlocked = true;
+            assert(!app.prepareDisplayStandby(start + 32000));
+            assert(!app.displayStandby());
+            app.saveWritesBlocked = false;
+            blobs.failWrites = true;
+            assert(!app.prepareDisplayStandby(start + 33000));
+            assert(!app.displayStandby());
+            blobs.failWrites = false;
+            assert(app.prepareDisplayStandby(start + 34000));
+            assert(app.displayStandby());
+            assert(verify.load(saved, savedView) && saved.coins == 4321);
+            app.setDisplayStandby(false, start + 35000);
+            assert(!app.displayStandby() && app.needsRender());
         }
         Platform::bind(original);
     }

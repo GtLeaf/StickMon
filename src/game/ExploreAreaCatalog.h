@@ -7,6 +7,32 @@
 
 namespace ExploreAreaCatalog {
 
+inline constexpr uint8_t minMapCount(uint8_t area) {
+    return area == 1 || area == 2 ? 4
+         : area == 3 ? 5
+         : area == 4 ? 6
+         : area == 5 ? 7
+                     : 3;
+}
+
+inline constexpr uint8_t maxMapCount(uint8_t area) {
+    return area == 1 ? 5
+         : area == 2 ? 6
+         : area == 3 ? 7
+         : area == 4 ? 8
+         : area == 5 ? 9
+                     : 4;
+}
+
+inline constexpr uint16_t encounterChance(uint8_t area) {
+    return area == 1 ? 600
+         : area == 2 ? 700
+         : area == 3 ? 900
+         : area == 4 ? 1100
+         : area == 5 ? 1300
+                     : 500;
+}
+
 inline constexpr uint8_t recommendedLevel(uint8_t area) {
     return area == 1 ? 12
          : area == 2 ? 22

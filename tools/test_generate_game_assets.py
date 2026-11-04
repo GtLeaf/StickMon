@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import hashlib
+import struct
+import zlib
 import os
 import re
 import subprocess
@@ -33,6 +35,8 @@ from generate_game_assets import (
     SHOWER_SOAP_COUNT,
     TALL_GRASS_PARK_TILES,
     CREEK_TILES,
+    REGION_FRAMES,
+    MIST_FRAMES,
     Writer,
     expand_stale_pack_selection,
     expected_pack_kind_names,
@@ -55,6 +59,27 @@ from generate_game_assets import (
 
 
 class GenerateGameAssetsTests(unittest.TestCase):
+    def test_red_flower_frames_preserve_all_preexisting_kind_ids(self):
+        self.assertEqual(hashlib.sha256('\n'.join(KIND_ORDER[:1533]).encode()).hexdigest(),
+                         '85cad9f7fdbc4804a6e39ffc374f4d0a41214d0cd46f5a7971c3907d039cdcbe')
+
+    def test_compact_deckchairs_preserve_all_existing_kind_ids(self):
+        self.assertEqual(hashlib.sha256('\n'.join(KIND_ORDER[:1502]).encode()).hexdigest(),
+                         '6d9f5f2a6c3bce869471ffc2826e3167ac9d9696f8507ca71028ed1467a1e413')
+
+    def test_native_item_frames_preserve_48px_and_legacy_sizes(self):
+        content = OUTPUTS["ui"].read_bytes()
+        count = struct.unpack_from("<H", content, 6)[0]
+        payload = zlib.decompress(content[32:], -15)
+        sizes = {kind: (width, height) for kind, width, height in
+                 (struct.unpack_from("<HHH", payload, i * 22) for i in range(count))}
+        native = [name for name in KIND_ORDER if name.startswith("ITEM48_")]
+        self.assertEqual(len(native), 35)
+        for name in native:
+            self.assertEqual(sizes[KIND_IDS[name]], (48, 48), name)
+        for name, _filename in ITEMS:
+            self.assertEqual(sizes[KIND_IDS[name]], (36, 36), name)
+
     def test_food_icons_match_their_ui_names(self):
         item_sources = dict(ITEMS)
         self.assertEqual(item_sources["ITEM_NORMAL_FOOD"], "LAVACOOKIE.png")
@@ -86,6 +111,18 @@ class GenerateGameAssetsTests(unittest.TestCase):
         )
         validate_kind_order()
         validate_explore_tile_mapping()
+
+    def test_ancient_valley_preserves_all_413_preexisting_kind_ids(self):
+        self.assertEqual(hashlib.sha256("\n".join(KIND_ORDER[:413]).encode()).hexdigest(),
+                         "9e55a65b0771fe27301a6cfc743e8f7278105730bfdf9f5c41df27d6c1ef512b")
+
+    def test_region_preserves_all_565_preexisting_kind_ids(self):
+        self.assertEqual(hashlib.sha256("\n".join(KIND_ORDER[:565]).encode()).hexdigest(),
+                         "ba4eb053b2a7f5840b4d838094306fe041421a125ebe92a22aa72b1991a2b1cf")
+
+    def test_mist_forest_preserves_all_774_preexisting_kind_ids(self):
+        self.assertEqual(hashlib.sha256("\n".join(KIND_ORDER[:774]).encode()).hexdigest(),
+                         "e1204fc4e0018e6a1b18f90603b21ae705085f5c848bf61c8178c07ac258520a")
 
     def test_tall_grass_and_both_tree_variants_are_exported(self):
         exported = {tile_id for _, tile_id in
@@ -137,7 +174,10 @@ class GenerateGameAssetsTests(unittest.TestCase):
     def test_expanded_map_pack_fits_the_synchronized_frame_limit(self):
         writer = Writer()
         kinds = expected_pack_kind_names()["map"]
-        self.assertEqual(len(kinds), 279)
+        from map_editor_assets import FRAMES as EDITOR_FRAMES, EXTRA_FRAMES
+        from lake_autotile import FRAMES as LAKE_FRAMES
+        from map_editor_rotations import TILES as ROTATED_TILES
+        self.assertEqual(len(kinds), 431 + len(REGION_FRAMES) + len(MIST_FRAMES) + len(EDITOR_FRAMES) + len(EXTRA_FRAMES) + len(LAKE_FRAMES) + len(ROTATED_TILES))
         for kind in kinds:
             writer.add(kind, Image.new("RGBA", (26, 26), (40, 120, 80, 255)))
         with TemporaryDirectory() as temp_dir:
@@ -145,7 +185,7 @@ class GenerateGameAssetsTests(unittest.TestCase):
             stats = write_pack("map", writer, pack_path)
             self.assertEqual(read_pack_kind_ids(pack_path),
                              [KIND_IDS[kind] for kind in kinds])
-        self.assertEqual(stats["frames"], 279)
+        self.assertEqual(stats["frames"], 431 + len(REGION_FRAMES) + len(MIST_FRAMES) + len(EDITOR_FRAMES) + len(EXTRA_FRAMES) + len(LAKE_FRAMES) + len(ROTATED_TILES))
         self.assertLessEqual(stats["frames"], MAX_PACK_FRAMES)
 
     def test_creek_caps_use_unmodified_outside_tiles(self):
@@ -159,7 +199,7 @@ class GenerateGameAssetsTests(unittest.TestCase):
             original = sheet.crop((x, y, x + 32, y + 32)).resize(
                 (26, 26), Image.Resampling.NEAREST)
             self.assertEqual(prepare_explore_tile(tile_id, sheet, ()).tobytes(), original.tobytes())
-            self.assertEqual(KIND_IDS[kind], len(KIND_ORDER) - 15 - len(CREEK_TILES) + CREEK_TILES.index((kind, tile_id)))
+            self.assertEqual(KIND_IDS[kind], 392 + CREEK_TILES.index((kind, tile_id)))
             if tile_id in (1184, 1186, 1176, 1178):
                 self.assertIn(0, original.getchannel("A").tobytes())
 
@@ -175,7 +215,7 @@ class GenerateGameAssetsTests(unittest.TestCase):
                 (26, 26), Image.Resampling.NEAREST)
             self.assertEqual(prepare_explore_tile(source, sheet, ()).tobytes(), original.tobytes())
             self.assertEqual(KIND_IDS[f"EXPLORE_TILE_{tile_id}"],
-                             len(KIND_ORDER) - 15 + tile_id - 4780)
+                             398 + tile_id - 4780)
 
     def test_new_grass_and_tree_tiles_preserve_transparent_coverage(self):
         sheet = Image.new("RGBA", (256, 32 * 58), (0, 0, 0, 0))

@@ -175,7 +175,7 @@ void AmoledPlatform::audioTask() {
         heap_caps_free(item);
     };
     auto processChunk = [this, &releaseChunk](AudioChunk* item) {
-        if (!item || item->channel >= Platform::IAudioDevice::CHANNEL_COUNT ||
+        if (audioStandby_.load() || !item || item->channel >= Platform::IAudioDevice::CHANNEL_COUNT ||
             item->generation != audioGeneration_[item->channel].load()) {
             releaseChunk(item, true);
             return;
@@ -239,7 +239,7 @@ void AmoledPlatform::audioTask() {
 
         xSemaphoreTake(audioMutex_, portMAX_DELAY);
         stopInvalidatedChannels();
-        if (!mixer_.anyActive() || microphoneMode_) {
+        if (!mixer_.anyActive() || microphoneMode_ || audioStandby_.load()) {
             xSemaphoreGive(audioMutex_);
             vTaskDelay(1);
             continue;
@@ -351,7 +351,7 @@ bool AmoledPlatform::playPcmU8(const uint8_t* data, size_t sampleCount,
 bool AmoledPlatform::playPcmU8Channel(const uint8_t* data, size_t sampleCount,
                                       uint32_t sampleRate, uint8_t channel,
                                       bool stopCurrent) {
-    if (!initialized_ || !data || sampleCount == 0 || sampleRate == 0 ||
+    if (audioStandby_.load() || !initialized_ || !data || sampleCount == 0 || sampleRate == 0 ||
         channel >= Platform::IAudioDevice::CHANNEL_COUNT || volume_ == 0 ||
         !audioQueue_ || !audioMutex_) {
         return false;
@@ -414,7 +414,7 @@ void AmoledPlatform::stopChannel(uint8_t channel) {
     audioGeneration_[channel].fetch_add(1);
 }
 bool AmoledPlatform::beginMicrophone() {
-    if (!initialized_) return false;
+    if (!initialized_ || audioStandby_.load()) return false;
     stop();
     if (!microphoneCodec_) {
         microphoneCodec_ = bsp_audio_codec_microphone_init();
@@ -486,6 +486,28 @@ int AmoledPlatform::batteryLevel() {
     if (!battery_.available() && !battery_.begin(bsp_i2c_get_handle())) return -1;
     return battery_.level();
 }
+bool AmoledPlatform::batteryCharging() {
+    return battery_.charging();
+}
+
+bool AmoledPlatform::takePowerButtonPress(uint32_t nowMs) {
+    return battery_.available() && powerButton_.poll(battery_, nowMs);
+}
+
+void AmoledPlatform::setAudioStandby(bool standby) {
+    audioStandby_.store(standby);
+    if (standby) {
+        endMicrophone();
+        stop();
+    }
+}
+
+bool AmoledPlatform::powerOff() {
+    stop();
+    flush();
+    return battery_.powerOff();
+}
+
 Platform::PowerCapabilities AmoledPlatform::capabilities() const {
     return {battery_.available(), false, true, true};
 }

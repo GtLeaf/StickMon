@@ -458,7 +458,8 @@ def main():
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("/tmp/stickmon-essentials-map-analysis"),
+        default=ROOT / ".stick-local/previews/essentials-map-analysis",
+        help="analysis output directory (default: %(default)s)",
     )
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)

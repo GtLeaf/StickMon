@@ -23,13 +23,14 @@ def main() -> int:
                         help="maximum seconds per event")
     parser.add_argument("--route-hold", type=int, default=8,
                         help="seconds to observe the route before returning")
-    parser.add_argument("--output", type=Path)
+    parser.add_argument("--output", type=Path,
+                        help="log file (default: .stick-local/logs/amoled-v2-contacts-TIMESTAMP.log)")
     args = parser.parse_args()
     if args.timeout < 40 or args.route_hold < 3:
         parser.error("--timeout must be >= 40 and --route-hold must be >= 3")
 
     events = list(EVENTS.values()) if args.event == "all" else [EVENTS[args.event]]
-    output = args.output or (Path(__file__).resolve().parent / "out" /
+    output = args.output or (Path(__file__).resolve().parents[1] / ".stick-local/logs" /
                              f"amoled-v2-contacts-{datetime.now():%Y%m%d-%H%M%S}.log")
     output.parent.mkdir(parents=True, exist_ok=True)
     device = serial.Serial(port=None, baudrate=115200, timeout=0.2,

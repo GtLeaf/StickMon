@@ -1,6 +1,11 @@
 #pragma once
 
 #include <cstdint>
+#include "game/ExploreEditorTiles.h"
+#include "game/ExploreRotatedTiles.h"
+#include "game/ExploreAncientValleyLayouts.h"
+#include "game/ExploreValleyData.h"
+#include "game/ExploreMistForestData.h"
 
 // Tile IDs refer to the shared Outside atlas, not GameAssets::Kind values.
 // Objects are drawn in the map base, then restored inside each actor's bounds
@@ -36,10 +41,12 @@ inline void sortActorsByGroundDepth(ActorDepth* actors, uint8_t count) {
 }
 
 constexpr bool bridgeDeck(uint16_t tileId) {
-    return tileId == 1627 || tileId == 1643;
+    return tileId == 1627 || tileId == 1643 || ExploreValleyData::flag(tileId, 16);
 }
 
 constexpr int foregroundDepthOffsetRows(uint16_t tileId) {
+    if (ExploreMistForestData::flag(tileId,32)) return ExploreMistForestData::tile(tileId)->depth;
+    if (ExploreValleyData::flag(tileId, 32)) return ExploreValleyData::tile(tileId)->depth;
     if (tileId == 391) return 2;
     if ((tileId >= 800 && tileId <= 805) ||
         (tileId >= 824 && tileId <= 826)) return 3;
@@ -67,9 +74,17 @@ constexpr bool denseGrass(uint16_t tileId) {
 }
 
 constexpr int objectDepthOffsetRows(uint16_t tileId, uint8_t layer) {
+    if (const auto* tile = ExploreRotatedTiles::tile(tileId)) return (layer == 1 || (layer == 2 && tileId >= 13099 && tileId <= 13106)) ? tile->depth : 0;
+    if (const auto* tile = ExploreEditorTiles::tile(tileId)) return layer == 1 ? tile->depth : 0;
+    if (ExploreMistForestData::tile(tileId)) return layer ? ExploreMistForestData::tile(tileId)->depth : 0;
+    if (ExploreValleyData::tile(tileId)) return layer ? ExploreValleyData::tile(tileId)->depth : 0;
     const int vegetation = foregroundDepthOffsetRows(tileId);
     if (vegetation) return vegetation;
     if (layer == 0) return 0;
+    const int valleyDepth = ExploreAncientValley::depthRows(tileId);
+    if (valleyDepth) return valleyDepth;
+    if (tileId == 4772 && layer == 2) return 2;
+    if (tileId == 4773 && layer == 1) return 1;
     if (tileId >= 4512 && tileId <= 4523) return 1;
     if (layer == 2 && tileId == 4543) return 2;
     if (tileId == 859 || tileId == 1231 || tileId == 1532 ||
@@ -81,21 +96,38 @@ constexpr int objectDepthOffsetRows(uint16_t tileId, uint8_t layer) {
     return 0;
 }
 
+constexpr bool upwardLadder(uint16_t tileId, uint8_t layer) {
+    return (tileId == 4772 && layer == 2) || (tileId == 4773 && layer == 1);
+}
+
 constexpr bool objectOccludes(uint16_t tileId, uint8_t layer, int tileRow,
                               float groundY, int tileSize) {
     const int rows = objectDepthOffsetRows(tileId, layer);
-    return rows && groundY < (tileRow + rows) * tileSize;
+    // Both native ladder pieces share the center of the lower landing as
+    // their ground anchor. Neither piece is an unconditional foreground tile.
+    const bool ladder = upwardLadder(tileId, layer);
+    const float groundRow = tileRow + rows - (ladder ? 0.5f : 0.0f);
+    return rows && groundY < groundRow * tileSize;
 }
 
 // These decorations leave ground behind their visible contour. Large rock
 // hills, water rocks, cliffs, portals and all other overlays remain blocked.
 constexpr bool groundBehindDecoration(uint16_t tileId, uint8_t layer) {
-    return (layer == 1 && foregroundDepthOffsetRows(tileId) != 0) ||
+    if (ExploreRotatedTiles::tile(tileId)) return layer == 1 || (layer == 2 && tileId >= 13099 && tileId <= 13106);
+    if (ExploreEditorTiles::tile(tileId)) return layer == 1;
+    if (ExploreMistForestData::tile(tileId)) return layer && ExploreMistForestData::flag(tileId,1);
+    if (ExploreValleyData::tile(tileId)) return layer && ExploreValleyData::flag(tileId, 1);
+    return (layer != 0 && ExploreAncientValley::caveRock(tileId)) ||
+        (layer == 1 && foregroundDepthOffsetRows(tileId) != 0) ||
         (layer != 0 && (tileId == 859 || tileId == 1231 ||
             (tileId >= 4507 && tileId <= 4510) ||
             (tileId >= 4542 && tileId <= 4544) || tileId == 4541));
 }
 
+static_assert(objectOccludes(4772, 2, 3, 116.99f, 26));
+static_assert(objectOccludes(4773, 1, 4, 116.99f, 26));
+static_assert(!objectOccludes(4772, 2, 3, 117.0f, 26));
+static_assert(!objectOccludes(4773, 1, 4, 117.0f, 26));
 static_assert(vegetationOccludes(391, 1, 3, 129.0f, 26));
 static_assert(!vegetationOccludes(391, 1, 3, 130.0f, 26));
 static_assert(foregroundDepthOffsetRows(804) == 3 &&

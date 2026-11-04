@@ -1,56 +1,20 @@
 #!/usr/bin/env python3
-
+"""Exercise real room sleep/feeding and continuous exploration departures."""
+import tempfile
 import unittest
 from pathlib import Path
 
-
-ROOT = Path(__file__).resolve().parents[1]
+from test_home_ui_parity import ROOT, compile_and_run
 
 
 class DoorDepartureTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.source = (
-            ROOT / "src" / "scenes" / "MainScene.cpp"
-        ).read_text(encoding="utf-8")
-
-    def test_route_failures_fall_back_to_visible_door_crossing(self):
-        begin = self.source.index("void MainScene::beginDoorTransition")
-        update = self.source.index("void MainScene::updateDoorTransition")
-        initial_route = self.source[begin:update]
-        fallback = initial_route.index("[DoorDeparture] route fallback")
-        self.assertNotIn(
-            "finishDoorDeparture();",
-            initial_route[fallback - 700:fallback + 300],
-        )
-
-        second = self.source.index("void MainScene::beginSecondDoorExit")
-        finish = self.source.index("void MainScene::finishDoorDeparture", second)
-        second_route = self.source[second:finish]
-        self.assertIn("fallback actor=%u mode=cross", second_route)
-        self.assertIn("DoorTransitionMode::EXIT_SECOND_CROSS", second_route)
-
-    def test_stalled_routes_do_not_wait_for_full_route_timeout(self):
-        self.assertIn("DOOR_STALL_TIMEOUT_MS = 700UL", self.source)
-        self.assertIn("waiting route stalled fallback=wait_pose", self.source)
-        self.assertIn("first route stalled fallback=cross", self.source)
-        self.assertIn("second route stalled fallback=cross", self.source)
-
-    def test_pair_departure_finishes_only_after_second_actor_crosses(self):
-        transition = self.source[
-            self.source.index("case DoorTransitionMode::EXIT_CROSS"):
-            self.source.index("case DoorTransitionMode::EXIT_FADE")
-        ]
-        self.assertIn("beginSecondDoorExit(nowMs);", transition)
-        self.assertLess(
-            transition.index("beginSecondDoorExit(nowMs);"),
-            transition.index("case DoorTransitionMode::EXIT_SECOND_CROSS"),
-        )
-        second = transition[transition.index("case DoorTransitionMode::EXIT_SECOND_CROSS"):]
-        self.assertIn("if (!secondOutside) return;", second)
-        self.assertLess(second.index("if (!secondOutside) return;"),
-                        second.index("finishDoorDeparture();"))
+    def test_real_room_ai_journeys(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result, _ = compile_and_run(
+                'sticks3', Path(directory), sanitize=True,
+                host=ROOT / 'tools/home_room_ai_host.cpp')
+            self.assertEqual(result.count('PASS '), 6, result)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     unittest.main()

@@ -2,27 +2,24 @@
 
 #include "core/Scene.h"
 #include "core/VisitSessionService.h"
+#include "ui/SocialUi.h"
 
-class SocialScene : public Scene {
+class SocialScene : public Scene, private Ui::SocialHost {
 public:
+    SocialScene() : ui(*this) {}
     void onEnter() override;
     void onExit() override;
     SceneUpdateResult update(uint32_t nowMs, float dtSeconds) override;
     void render() override;
     bool onButton(const ButtonEvent& event) override;
+    bool touchNavigation() const override { return ui.touchNavigation(); }
+    bool onTouch(const Platform::IInputDevice::TouchEvent& event) override { return ui.onTouch(event); }
+    void cancelTouch() override { Scene::cancelTouch(); ui.cancelTouch(); }
 
 private:
     using State = Communication::VisitSessionService::State;
-
-    uint8_t cursor = 0;
-    uint8_t roomCursor = 0;
+    Ui::SocialUi ui;
     State lastState = State::IDLE;
-    uint8_t lastRoomCount = 0;
-    uint32_t stateStartedMs = 0;
-    uint32_t lastVisualTick = UINT32_MAX;
-
-    void renderMenu();
-    void renderRoomList(const Communication::VisitSessionService::ViewModel& model);
-    void renderStatus(const char* title, uint32_t nowMs,
-                      const char* detail = nullptr);
+    Ui::SocialFrame socialFrame() const override;
+    bool activateSocial(Ui::SocialAction action, uint8_t value = 0) override;
 };

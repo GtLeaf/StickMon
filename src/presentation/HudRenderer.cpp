@@ -7,17 +7,36 @@
 
 namespace HudRenderer {
 
-void drawBattery(Canvas565& canvas, int x, int y, int percent) {
+void drawBattery(Canvas565& canvas, int x, int y, int percent,
+                 uint8_t pixelScale, bool charging) {
+    if (!pixelScale) return;
+    const int s = pixelScale;
     const uint16_t outline = PixelRenderer::rgb(222, 234, 229);
-    canvas.drawRoundRect(x, y, 32, 16, 4, outline);
-    canvas.fillRect(x + 32, y + 4, 4, 8, outline);
+    canvas.drawRoundRect(x, y, 16 * s, 8 * s, 2 * s, outline);
+    canvas.fillRect(x + 16 * s, y + 2 * s, 2 * s, 4 * s, outline);
     if (percent < 0 || percent > 100) {
-        canvas.fillRect(x + 12, y + 7, 8, 2, PixelRenderer::rgb(142, 157, 155));
-        return;
+        canvas.fillRect(x + 6 * s, y + 7 * s / 2, 4 * s, s,
+            PixelRenderer::rgb(142, 157, 155));
+    } else {
+        const int fillWidth = percent * (12 * s) / 100;
+        canvas.fillRect(x + 2 * s, y + 2 * s, fillWidth, 4 * s,
+            percent < 20 ? PixelRenderer::rgb(238, 91, 91) : PixelRenderer::rgb(92, 213, 139));
     }
-    const int fillWidth = percent * 24 / 100;
-    canvas.fillRect(x + 4, y + 4, fillWidth, 8,
-        percent < 20 ? PixelRenderer::rgb(238, 91, 91) : PixelRenderer::rgb(92, 213, 139));
+    if (charging) {
+        // A dark inset keeps the lightning legible over every battery level.
+        canvas.fillRect(x + 5 * s, y + s, 6 * s, 6 * s,
+                        PixelRenderer::rgb(20, 32, 30));
+        const uint16_t bolt = PixelRenderer::rgb(255, 220, 88);
+        constexpr uint8_t rows[] = {0x06, 0x0C, 0x1F, 0x06, 0x0C, 0x08};
+        for (int row = 0; row < 6; ++row) {
+            for (int column = 0; column < 5; ++column) {
+                if (rows[row] & (1U << (4 - column))) {
+                    canvas.fillRect(x + (6 + column) * s, y + (1 + row) * s,
+                                    s, s, bolt);
+                }
+            }
+        }
+    }
 }
 
 void drawHungerIcon(Canvas565& canvas, int x, int y, uint8_t hunger,

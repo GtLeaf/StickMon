@@ -74,9 +74,11 @@ class MainSceneDualActorTests(unittest.TestCase):
         begin = self.source.index("bool MainScene::restoreVisitorViewState")
         end = self.source.index("void MainScene::persistVisitorViewState", begin)
         body = self.source[begin:end]
-        self.assertIn("visitor.task == VisitorState::SEEK_FOOD", body)
-        self.assertIn("visitor.task == VisitorState::FEEDING", body)
-        self.assertIn("visitor.task = VisitorState::IDLE", body)
+        self.assertIn("VisitorState restoredTask = decodeSecondaryViewTask(saved.state)", body)
+        self.assertRegex(body, r"if \(restoredTask == VisitorState::SEEK_FOOD \|\|\s*"
+                         r"restoredTask == VisitorState::FEEDING\) \{\s*"
+                         r"restoredTask = VisitorState::IDLE;")
+        self.assertIn("visitor.beginTask(restoredTask, nowMs, saved.stateRemainingMs)", body)
 
     def test_bed_yield_persists_its_stable_resume_state(self):
         begin = self.source.index("bool MainScene::restoreVisitorViewState")

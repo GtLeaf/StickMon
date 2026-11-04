@@ -1,0 +1,12 @@
+{
+  "reason": "User requested four fixed, tappable OSTB shower tools without menu scrolling.",
+  "original_fixture": "shower_ui_parity.json",
+  "original_fixture_sha256": "f94b431cbff98fcbdb6698b15511c6702171e7fd4831e8d3110c865e62964173",
+  "intentional_changed_frames": {
+    "ostb-debug": 218,
+    "ostb-release": 218
+  },
+  "reviewed_preview": ".stick-local/artifacts/ostb-shower-touch-20261023/preview.png",
+  "stick_policy": "Keep the original release/debug fixtures unchanged.",
+  "validation": "Original release captures matched frozen fixtures before editing; OSTB release/debug touch journeys and ASan/UBSan pass."
+}

@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "game/ExploreMapGenerator.h"
+#include "game/ExploreCaveTiles.h"
 
 namespace ExploreRouteGeometry {
 
@@ -15,6 +16,29 @@ struct WorldPoint {
 
 inline constexpr float tileCenter(uint8_t tile) {
     return tile * TILE_SIZE + TILE_SIZE * 0.5f;
+}
+
+// Interior stair portals finish in place instead of walking through the walls.
+inline bool interiorStairExit(const ExploreMapGenerator::Map& map,
+                              const ExploreMapGenerator::Path& path) {
+    if (!path.cellCentered || path.pointCount == 0) return false;
+    const auto point = path.points[path.pointCount - 1];
+    if (point.x >= ExploreMapGenerator::WIDTH ||
+        point.y >= ExploreMapGenerator::HEIGHT) return false;
+    const uint16_t tile = map.layers[1]
+        [point.y * ExploreMapGenerator::WIDTH + point.x];
+    return tile == ExploreCaveTiles::FROST_DOWNWARD_STAIRS ||
+           tile == ExploreCaveTiles::FROST_UP_LADDER[1];
+}
+
+// Cave doorways are warps. Finish at the authored portal instead of crossing
+// the perimeter wall on the way to a screen-edge target.
+inline bool interiorPortalExit(const ExploreMapGenerator::Map& map,
+                               const ExploreMapGenerator::Path& path) {
+    if (map.valleyJourney) return path.interiorExit;
+    if (map.areaIndex == ExploreMapGenerator::ANCIENT_WATERFALL_VALLEY_AREA &&
+        path.cellCentered && path.pointCount != 0) return true;
+    return interiorStairExit(map, path);
 }
 
 inline WorldPoint pathPoint(const ExploreMapGenerator::Path& path,

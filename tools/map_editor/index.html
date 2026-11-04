@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>StickMon · 地图工坊</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brandmark">SM</span>
+        <div>地图工坊<small>STICKMON MAP STUDIO</small></div>
+      </div>
+      <div class="project-title">
+        <input id="projectName" aria-label="工程名称" value="正在加载…" /><span
+          id="saveState"
+          >读取原素材</span
+        >
+      </div>
+      <nav>
+        <button id="new">新建</button><button id="open">打开</button
+        ><button id="snapshot">导入地图</button><span class="divider"></span
+        ><button id="undo" title="⌘ Z">撤销</button
+        ><button id="redo" title="⌘ ⇧ Z">重做</button
+        ><button id="save" class="primary">保存工程</button
+        ><button id="export">导出</button>
+      </nav>
+    </header>
+    <div class="workspace">
+      <aside class="library">
+        <div class="panel-heading">
+          <h2>素材库</h2>
+          <span id="assetCount"></span>
+        </div>
+        <div class="segmented">
+          <button data-library="prefabs" class="active">精选素材</button
+          ><button data-library="tiles">原图块</button>
+        </div>
+        <input
+          id="search"
+          type="search"
+          placeholder="搜索名称、来源或编号"
+          aria-label="搜索素材"
+        />
+        <div id="categories" class="chips"></div>
+        <div id="lakeTools" hidden>
+          <div class="segmented">
+            <button data-tool="lake" title="W · 单击生成小湖，拖动扩展">自动铺湖</button>
+            <button data-tool="lakeErase" title="逐格退水并自动修岸">退水</button>
+          </div>
+        </div>
+        <div id="tileOptions" hidden>
+          <select id="sheet" aria-label="素材来源">
+            <option value="outside">Outside · 户外</option>
+            <option value="caves">Caves · 洞穴</option>
+            <option value="interior">Interior · 室内</option>
+            <option value="runtime">运行时别名</option></select
+          ><label
+            ><input id="hideEmpty" type="checkbox" checked />
+            隐藏空白／红叉</label
+          ><button id="sheetView">展开原图 · 矩形取样</button>
+        </div>
+        <div id="assetList" class="asset-list"></div>
+        <div id="pagination">
+          <button id="prevPage">上一页</button><span id="pageLabel"></span
+          ><button id="nextPage">下一页</button>
+        </div>
+        <div class="library-footer">
+          <span class="dot"></span> 仅使用项目与 Essentials 原素材<br /><span
+            class="muted"
+            >琥珀色标记：可编辑，游戏适配待完成</span
+          >
+        </div>
+      </aside>
+      <main>
+        <div class="canvas-toolbar">
+          <div class="tools" role="toolbar" aria-label="地图工具">
+            <button data-tool="select" class="active" title="V">选择</button
+            ><button data-tool="stamp" title="B">放置</button
+            ><button data-tool="brush" title="P">笔刷</button
+            ><button data-tool="erase" title="E">擦除</button
+            ><button data-tool="fill" title="F">填充</button
+            ><button data-tool="pick" title="I">吸管</button
+            ><button data-tool="rect" title="M · 框选完整物件后整体移动">框选</button
+            ><button data-tool="tileRect" title="框选图块，用于复制或存为组合">图块框选</button
+            ><button data-tool="route" title="R">路线</button
+            ><button data-tool="zone">区域</button
+            ><button data-tool="npc">NPC</button>
+          </div>
+          <button id="toggleLeft" title="收起素材库">素材</button
+          ><button id="toggleRight" title="收起属性面板">属性</button>
+        </div>
+        <div class="canvas-meta">
+          <div>
+            <span id="mapDimensions" class="status-pill">16 × 12</span
+            ><span id="originLabel">新地图</span>
+          </div>
+          <div>
+            <select id="scaleMode" aria-label="像素预览">
+              <option value="32">32px 原素材</option>
+              <option value="26">26px 游戏逻辑</option></select
+            ><button id="zoomOut">−</button><span id="zoomLabel">100%</span
+            ><button id="zoomIn">+</button><button id="fit">适应</button>
+          </div>
+        </div>
+        <div id="rotationTools">
+          <div class="canvas-meta" role="toolbar" aria-label="物件旋转">
+            <span id="rotationLabel">选择带「可旋转」标记的集市物件</span>
+            <div>
+              <button id="rotateLeft" title="[ · 逆时针旋转 90°" disabled>↶ 90°</button>
+              <button id="rotateRight" title="] · 顺时针旋转 90°" disabled>↷ 90°</button>
+            </div>
+          </div>
+        </div>
+        <div id="viewport">
+          <div id="canvasWrap">
+            <canvas
+              id="map"
+              width="512"
+              height="384"
+              aria-label="地图编辑画布"
+            ></canvas>
+          </div>
+          <div id="loading">正在整理素材与游戏图块…</div>
+        </div>
+        <div class="canvas-bottom">
+          <span id="coordinates">格坐标 —</span
+          ><span id="hint">选择物件后单击地图放置 · 空格拖动视图</span>
+        </div>
+        <section class="diagnostics">
+          <div class="diagnostic-heading">
+            <div>
+              <button id="validate">校验地图</button
+              ><span id="validationSummary">尚未校验</span>
+            </div>
+            <button id="clearIssues">清除高亮</button>
+          </div>
+          <div id="issues">
+            <p class="muted">摆好地图后，检查组合完整性、路线和游戏兼容性。</p>
+          </div>
+        </section>
+      </main>
+      <aside class="inspector">
+        <div class="panel-heading">
+          <h2>地图与属性</h2>
+          <span>INSPECTOR</span>
+        </div>
+        <section>
+          <details id="mapSizePanel" data-inspector-panel><summary>地图尺寸 <button id="mapSizeHelp" class="help-button" type="button" aria-label="地图尺寸说明" aria-controls="mapSizeHelpContent" aria-expanded="false">?</button></summary>
+          <div class="button-grid">
+            <label>宽（格）<input id="mapWidth" type="number" min="16" max="64" step="1" value="16" required /></label>
+            <label>高（格）<input id="mapHeight" type="number" min="12" max="64" step="1" value="12" required /></label>
+          </div>
+          <button id="applyMapSize">调整尺寸</button>
+          </details>
+        </section>
+        <section>
+          <details id="activityPanel" data-inspector-panel>
+            <summary>活动区域与 NPC</summary>
+            <label><input id="zonesVisible" type="checkbox" checked /> 显示活动范围</label>
+            <label><input id="npcsVisible" type="checkbox" checked /> 显示 NPC</label>
+            <h3>活动区域</h3>
+            <div class="inline"><select id="zoneSelect" aria-label="选择活动区域"></select><button id="addZone">新增区域</button></div>
+            <div id="zoneFields" hidden>
+              <label>区域名称<input id="zoneName" maxlength="80" /></label>
+              <label>区域颜色<input id="zoneColor" type="color" /></label>
+              <div class="button-grid"><button id="zoneRectangle">矩形圈选</button><button id="zonePaint">涂抹添加</button><button id="zoneErase">擦除范围</button><button id="deleteZone">删除区域</button></div>
+              <p id="zoneInfo" class="muted"></p>
+              <h3>随机精灵来访</h3>
+              <label><input id="visitorsEnabled" type="checkbox" /> 此区域接待随机精灵组合</label>
+              <div id="visitorFields" hidden>
+                <p id="visitorPorts" class="muted"></p>
+                <p class="muted">每次单只访客或同链结伴精灵，走到此区域停留后原路离开。普通区域每区最多一组；市集可使用下方并发设置，通道错峰使用。</p>
+                <details><summary id="visitorPoolSummary">候选组合</summary>
+                  <label>搜索组合<input id="visitorSearch" type="search" placeholder="例如：皮卡丘、伊布" /></label>
+                  <div class="button-grid"><button id="visitorAll">全选候选</button><button id="visitorNone">清空候选</button></div>
+                  <div id="visitorChoices"></div>
+                </details>
+                <div class="button-grid"><label>补充最短间隔（秒）<input id="visitorIntervalMin" type="number" min="1" max="60" step="1" /></label><label>最长间隔（秒）<input id="visitorIntervalMax" type="number" min="1" max="60" step="1" /></label></div>
+                <div class="button-grid"><label>最短行程／停留（秒）<input id="visitorStayMin" type="number" min="1" max="90" step="1" /></label><label>最长停留（秒）<input id="visitorStayMax" type="number" min="1" max="90" step="1" /></label></div>
+                <p class="muted">只需圈区域和勾选组合，无需设置出生点。神兽与幻兽已排除；新开预览会重新随机。</p>
+              </div>
+            </div>
+            <h3>市集人流与演出</h3>
+            <label><input id="marketEnabled" type="checkbox" /> 启用市集接待配置（需道路网络）</label>
+            <div id="marketFields" hidden>
+              <div class="button-grid"><label>最多同时几组<input id="marketGroups" type="number" min="1" max="3" /></label><label>游客总上限<input id="marketVisitors" type="number" min="1" max="6" /></label></div>
+              <label>单只权重（%）<input id="marketSolo" type="number" min="0" max="100" /></label>
+              <div class="button-grid"><label>首组最早（秒）<input id="marketFirstMin" type="number" min="0.1" max="60" step="0.1" /></label><label>首组最晚（秒）<input id="marketFirstMax" type="number" min="0.1" max="60" step="0.1" /></label></div>
+              <label><input id="marketPerformances" type="checkbox" /> 面对面交流、聊天气泡与偶尔轻跳</label>
+              <p class="muted">市集行程可设至 90 秒，包含入场、行走和停留。常驻＋玩家同伴预留 2 只＋每组预留 2 只，合计最多 16 只。</p>
+            </div>
+            <h3>NPC</h3>
+            <div class="inline"><select id="npcSelect" aria-label="选择 NPC"></select><button id="addNpc">新增 NPC</button></div>
+            <div id="npcFields" hidden>
+              <label>NPC 名称<input id="npcName" maxlength="80" /></label>
+              <label>精灵<select id="npcSprite"></select></label>
+              <div class="button-grid">
+                <label>行为<select id="npcBehavior"><option value="idle">原地停留</option><option value="wander">随机散步</option><option value="patrol">沿点巡逻</option></select></label>
+                <label>初始朝向<select id="npcDirection"><option value="0">下</option><option value="1">左</option><option value="2">上</option><option value="3">右</option></select></label>
+              </div>
+              <label>主要接待朝向<select id="npcReception"><option value="255">关闭接待／观望</option><option value="0">下</option><option value="1">左</option><option value="2">上</option><option value="3">右</option></select></label>
+              <div id="npcReceptionFields" hidden>
+                <div id="npcLookDirections" class="inline"></div>
+                <p id="npcCustomerInfo" class="muted"></p>
+                <div class="button-grid"><button id="npcCustomer">绘制顾客点</button><button id="npcAutoCustomer">自动选择道路顾客点</button></div>
+              </div>
+              <label>活动范围<select id="npcScope"><option value="zones">指定区域（可多选）</option><option value="map">全地图自由活动</option></select></label>
+              <div id="npcZoneChoices"></div>
+              <label>每格用时（毫秒）<input id="npcStep" type="number" min="200" max="2000" step="100" /></label>
+              <div class="button-grid"><label>最短停留（毫秒）<input id="npcWaitMin" type="number" min="100" max="60000" step="100" /></label><label>最长停留（毫秒）<input id="npcWaitMax" type="number" min="100" max="60000" step="100" /></label></div>
+              <p id="npcSpawnInfo" class="muted"></p>
+              <div class="button-grid"><button id="npcPlace">设置出生点</button><button id="deleteNpc">删除 NPC</button></div>
+              <div id="patrolFields" hidden>
+                <p id="npcPatrolInfo" class="muted"></p>
+                <div class="button-grid"><button id="npcPatrol">绘制巡逻点</button><button id="npcPopPatrol">删除末点</button></div>
+              </div>
+            </div>
+            <h3>活动预览</h3>
+            <div class="button-grid"><button id="checkActivity">检查活动配置</button><button id="playActivity">预览活动</button><button id="resetActivity">重置预览</button></div>
+            <p id="activityTime" class="muted">预览不改变出生点 · 每段 120 秒</p>
+            <div id="activityIssues" role="status"></div>
+          </details>
+        </section>
+        <section>
+          <details id="layersPanel" data-inspector-panel open><summary>图层</summary>
+          <div id="layers"></div>
+          <label><input id="grid" type="checkbox" checked /> 显示网格</label
+          ><label
+            ><input id="routesVisible" type="checkbox" checked />
+            显示路网、路线与入口</label
+          ><label
+            ><input id="anchors" type="checkbox" /> 显示占地与落地锚点</label
+          >
+          </details>
+        </section>
+        <section>
+          <details id="selectionPanel" data-inspector-panel open><summary>当前选中</summary>
+          <div id="selection">
+            <p class="muted">选择完整物件，或框选地图中的图块。</p>
+          </div>
+          <div class="button-grid">
+            <button id="duplicate">复制物件</button
+            ><button id="delete">删除选择</button
+            ><button id="capture">存为组合</button
+            ><button id="explode">拆成图块</button
+            ><button id="editObject">编辑锚点／占地</button>
+          </div>
+          </details>
+        </section>
+        <section>
+          <details id="routePanel" data-inspector-panel><summary>路线与行进预览</summary>
+          <div class="inline">
+            <select id="pathSelect" aria-label="选择路线"></select
+            ><button id="addPath">+</button><button id="removePath">−</button>
+          </div>
+          <label
+            ><input id="cellCentered" type="checkbox" /> 格心路线（洞穴）</label
+          >
+          <div class="inline">
+            <button id="setEntry">设置入口</button
+            ><select id="entryEdge" aria-label="入口方向">
+              <option value="top">上</option>
+              <option value="right">右</option>
+              <option value="bottom">下</option>
+              <option value="left">左</option>
+            </select>
+          </div>
+          <div class="inline">
+            <button id="setExit">设置出口</button
+            ><select id="exitEdge" aria-label="出口方向">
+              <option value="top">上</option>
+              <option value="right">右</option>
+              <option value="bottom">下</option>
+              <option value="left">左</option>
+            </select>
+          </div>
+          <div class="button-grid">
+            <button id="popPoint">删除末点</button
+            ><button id="recognizeRoads">识别道路</button>
+            <button id="saveRoadRoute" disabled>存为路线</button>
+          </div>
+          <div id="roadInfo" class="muted"></div>
+          <div id="routeInfo" class="muted"></div>
+          <label
+            ><input id="actorVisible" type="checkbox" /> 显示预览精灵</label
+          >
+          <div class="inline">
+            <button id="play">播放</button
+            ><input
+              id="progress"
+              type="range"
+              step="any"
+              min="0"
+              max="1000"
+              value="0"
+              aria-label="行进进度"
+            />
+          </div>
+          <p class="note">
+            浏览器遮挡示意。新增物件按组合锚点预览，导出另行检查游戏支持。
+          </p>
+          </details>
+        </section>
+        <section>
+          <details id="resourcesPanel" data-inspector-panel><summary>资源与工程</summary>
+          <div id="resourceInfo" class="muted"></div>
+          <button id="refreshSources">核对后更新来源记录</button>
+          </details>
+        </section>
+      </aside>
+    </div>
+    <div id="mapSizeHelpContent" class="inspector-help" popover="auto" role="note" aria-label="地图尺寸说明">
+      <p>最小 16×12，最大 64×64；宽高可以分别设置。</p>
+      <p>从左上角保留原图，新增区域填草地；调整可以撤销。</p>
+      <p>缩小时会检查地图内容，超出新边界的内容需要先处理，不会直接裁掉。</p>
+      <p>右／下侧出入口随边界移动，请延伸道路并重新识别路网。</p>
+      <p>大地图支持编辑、保存和预览，设备导出暂限标准尺寸。</p>
+    </div>
+    <div id="toast" role="status"></div>
+    <input id="fileInput" type="file" accept=".json,.stickmap" hidden />
+    <dialog id="openDialog">
+      <div class="dialog-heading">
+        <h2>打开工程</h2>
+        <button data-close>关闭</button>
+      </div>
+      <button id="openFile" class="primary">从文件打开 .stickmap.json</button
+      ><button id="recover">恢复浏览器草稿</button>
+      <h3>本机已保存工程</h3>
+      <div id="draftList"></div>
+    </dialog>
+    <dialog id="snapshotDialog">
+      <div class="dialog-heading">
+        <h2>导入生成地图快照</h2>
+        <button data-close>关闭</button>
+      </div>
+      <p class="muted">保留种子与地区上下文，编辑结果作为独立地图保存。</p>
+      <label
+        >地区<select id="area">
+          <option value="0">青草径</option>
+          <option value="1">溪桥坡</option>
+          <option value="2">高草园</option>
+          <option value="3">霜晶窟</option>
+          <option value="4" selected>雾林径</option>
+          <option value="5">古瀑谷 · 完整区域节点</option>
+        </select></label
+      ><label
+        >种子<input
+          id="seed"
+          type="number"
+          value="38"
+          min="0"
+          max="4294967295" /></label
+      ><label
+        >入口方向<select id="importEdge">
+          <option value="bottom">下</option>
+          <option value="top">上</option>
+          <option value="left">左</option>
+          <option value="right">右</option>
+        </select></label
+      >
+      <div class="button-grid">
+        <label
+          >段号（从 1 开始）<input
+            id="level"
+            type="number"
+            value="1"
+            min="1"
+            max="8" /></label
+        ><label
+          >总段数<input id="count" type="number" value="6" min="1" max="8"
+        /></label>
+      </div>
+      <div class="button-grid">
+        <label
+          >河谷节点 0～13<input
+            id="node"
+            type="number"
+            value="0"
+            min="0"
+            max="13" /></label
+        ><label
+          >河谷入口编号<input
+            id="entrance"
+            type="number"
+            value="0"
+            min="0"
+            max="3"
+        /></label>
+      </div>
+      <button id="importSnapshot" class="primary">导入快照</button>
+    </dialog>
+    <dialog id="exportDialog">
+      <div class="dialog-heading">
+        <h2>导出地图</h2>
+        <button data-close>关闭</button>
+      </div>
+      <div class="export-option">
+        <strong>可编辑工程</strong>
+        <p>保留素材来源、完整物件、路线、活动区域与 NPC，可在另一台机器重新打开。</p>
+        <button id="downloadProject">下载工程 JSON</button>
+      </div>
+      <div class="export-option">
+        <strong>原素材预览图</strong>
+        <p>512 × 384 PNG，不含网格、路线和 NPC 等预览角色。</p>
+        <button id="downloadPng">导出 PNG</button>
+      </div>
+      <div class="export-option">
+        <strong>游戏数据包</strong>
+        <p>
+          校验通过后导出 C++
+          地图、资源需求与验证报告。新增素材需完成游戏适配；导出不会自动替换正式地图。
+        </p>
+        <button id="compile" class="primary">校验并编译 ZIP</button
+        ><button id="nativePreview">正式绘制器预览 ZIP</button>
+        <p>地图含动态物件时，正式预览 ZIP 会附带动画 GIF；PNG 为静态画面。</p>
+        <p>NPC 活动请使用编辑器中的“预览活动”。正式绘制器预览不含 NPC；数据包附带活动配置和人物素材，需另行接入设备场景。</p>
+      </div>
+    </dialog>
+    <dialog id="sheetDialog">
+      <div class="dialog-heading">
+        <h2>原图矩形取样</h2>
+        <button data-close>关闭</button>
+      </div>
+      <p class="muted">拖动选择连续图块，最多 16×12。保留原像素、原色和透明区域；带透明区域的取样会自动叠放在地面上。</p>
+      <div id="sheetViewport"><canvas id="sourceSheet"></canvas></div>
+      <button id="sampleSheet" class="primary">使用所选图块</button
+      ><span id="sampleInfo"></span>
+    </dialog>
+    <dialog id="nameDialog">
+      <form method="dialog">
+        <h2>保存组合物件</h2>
+        <input
+          id="prefabName"
+          required
+          maxlength="120"
+          placeholder="物件名称"
+        />
+        <div class="dialog-actions">
+          <button value="cancel" formnovalidate>取消</button
+          ><button value="ok" class="primary">保存组合</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="objectDialog">
+      <form method="dialog">
+        <h2>物件落地与占地</h2>
+        <p class="note">
+          修改只影响选中物件。已接入图块的遮挡深度由游戏规则决定，不兼容的锚点会在导出时提示。
+        </p>
+        <div class="button-grid">
+          <label
+            >落地点 X（相对格）<input
+              id="anchorX"
+              type="number"
+              min="0"
+              max="16"
+              step="0.5"
+              required /></label
+          ><label
+            >落地点 Y（相对格）<input
+              id="anchorY"
+              type="number"
+              min="0"
+              max="12"
+              step="0.5"
+              required
+          /></label>
+        </div>
+        <h3>占地：点击方格切换阻挡</h3>
+        <div id="footprintGrid"></div>
+        <div class="dialog-actions">
+          <button value="cancel" formnovalidate>取消</button
+          ><button value="ok" class="primary">应用</button>
+        </div>
+      </form>
+    </dialog>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

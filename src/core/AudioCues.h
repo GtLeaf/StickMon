@@ -8,6 +8,7 @@ enum class MusicTrack : uint8_t {
     EXPLORE,
     BATTLE,
     BATTLE_SPECIAL,
+    MARKET,
 };
 
 enum class SfxCue : uint8_t {

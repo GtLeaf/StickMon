@@ -26,6 +26,7 @@ class AudioAssetGeneratorTests(unittest.TestCase):
 
     def test_all_runtime_audio_ids_have_sources(self):
         self.assertEqual(4, len(audio.MUSIC_SOURCES))
+        self.assertEqual({'bgm_market'}, set(audio.REPOSITORY_MUSIC_SOURCES))
         self.assertEqual(15, len(audio.SFX_SOURCES))
         self.assertEqual(
             len({**audio.MUSIC_SOURCES, **audio.SFX_SOURCES}),
@@ -74,7 +75,7 @@ class AudioAssetGeneratorTests(unittest.TestCase):
         self.assertEqual(1234, loop_start)
 
     def test_generated_assets_have_valid_headers_and_crc(self):
-        audio_ids = {*audio.MUSIC_SOURCES, *audio.SFX_SOURCES}
+        audio_ids = {*audio.MUSIC_SOURCES, *audio.REPOSITORY_MUSIC_SOURCES, *audio.SFX_SOURCES}
         generated = {
             path.stem: path for path in audio.AUDIO_OUT.glob("*.smonaudio")
         }
@@ -91,7 +92,11 @@ class AudioAssetGeneratorTests(unittest.TestCase):
             self.assertEqual(header[7] * header[5], len(payload), audio_id)
             self.assertEqual(header[9], len(payload), audio_id)
             self.assertEqual(header[10], binascii.crc32(payload), audio_id)
-            self.assertEqual(audio.MUSIC_SAMPLE_RATE, header[3], audio_id)
+            self.assertEqual(8000 if audio_id == 'bgm_market' else audio.MUSIC_SAMPLE_RATE, header[3], audio_id)
+            if audio_id == 'bgm_market':
+                self.assertGreater(header[8], 0)
+                self.assertGreater(header[4] / header[3], 46)
+                self.assertLess(header[4] / header[3], 47)
             if audio_id in audio.MUSIC_SOURCES:
                 self.assertLess(header[8], header[4], audio_id)
                 if audio_id == "bgm_battle":

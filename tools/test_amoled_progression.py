@@ -5,7 +5,7 @@ from amoled_page_cases import run_page_case
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCREEN = ROOT / "firmware/amoled_1_8_v1/main/HomeScreen.cpp"
+SCREEN = ROOT / "firmware/amoled_1_8_v1/main/ui/ProgressionScreens.cpp"
 
 
 class AmoledProgressionTests(unittest.TestCase):

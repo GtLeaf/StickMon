@@ -1,4 +1,5 @@
 #include "core/GameEngine.h"
+#include "presentation/FrameDamage.h"
 #include "core/AudioManager.h"
 #include "core/CryPlayer.h"
 #if defined(ESP32)
@@ -9,7 +10,8 @@
 #include <new>
 #include "assets/PokemonSprites.h"
 #include "core/ButtonDispatcher.h"
-#include "presentation/TouchUi.h"
+#include "ui/ApplicationUi.h"
+#include "ui/SceneSurface.h"
 #include "core/FontResource.h"
 #include "core/MathUtil.h"
 #include "core/RoomResource.h"
@@ -18,6 +20,9 @@
 #include "game/BondSystem.h"
 #include "game/ContactRoster.h"
 #include "game/ExploreItemProgression.h"
+#include "game/ExploreDestinations.h"
+#include "game/ExplorePartyService.h"
+#include "game/ExploreCostService.h"
 #include "game/EffortService.h"
 #include "game/ExperienceService.h"
 #include "game/FriendshipService.h"
@@ -261,10 +266,19 @@ void GameEngine::run() {
     }
 
     updateIdle(now);
-    uint32_t frameMs = idleActive && !AudioManager::ins().musicFadeActive()
+    const uint32_t coreMs = idleActive && !AudioManager::ins().musicFadeActive()
         ? IDLE_FRAME_MS : FRAME_MS;
-    if (now - lastUpdateMs >= frameMs) {
+    const uint32_t visualMs = !idleActive && currentScene &&
+        sceneFade == SceneFadePhase::NONE && !resourceAlertVisible()
+        ? MathUtil::max<uint32_t>(33, currentScene->visualFrameIntervalMs(now)) : coreMs;
+    const uint32_t frameMs = MathUtil::min(coreMs, visualMs);
+    if (now - lastUpdateMs >= coreMs) {
         update(now);
+        now = Hal::ins().millis();
+        didWork = true;
+    } else if (visualMs < coreMs && sceneUpdateScheduled &&
+               static_cast<int32_t>(now - nextSceneUpdateMs) >= 0) {
+        updateCurrentScene(now);
         now = Hal::ins().millis();
         didWork = true;
     }
@@ -316,11 +330,13 @@ bool GameEngine::sceneFadeInActive() const {
 }
 
 bool GameEngine::beginExploreDeparture(uint8_t area) {
-    if (exploreBlockedByGuest()) {
+    const bool marketTrip = area == ExploreDestinations::MARKET;
+    if (!marketTrip && Game::ExploreCost::hungrySlot(state) >= 0) return false;
+    if (!marketTrip && exploreBlockedByGuest()) {
         Platform::logLine("[Explore] blocked while guest is at home");
         return false;
     }
-    if (!ExploreItemProgression::isAreaUnlocked(area, state)) {
+    if (!ExploreDestinations::unlocked(area, state)) {
         Platform::logf("[Explore] blocked locked area=%u unlocked=%u\n",
                        area, ExploreItemProgression::unlockedArea(state));
         return false;
@@ -334,6 +350,8 @@ bool GameEngine::beginExploreDeparture(uint8_t area) {
 void GameEngine::markExploreActive() {
     if (exploreTravel == ExploreTravelPhase::DEPARTING) {
         exploreTravel = ExploreTravelPhase::ACTIVE;
+        // The market shares the door animation, without recording an expedition.
+        if (exploreArea == ExploreDestinations::MARKET) return;
         uint32_t exploredAt = gameSecondsForMinutes(gameMinutesTotal());
         for (uint8_t slot = 0;
              slot < state.teamCount && slot < Game::TEAM_CAP; ++slot) {
@@ -346,6 +364,8 @@ void GameEngine::markExploreActive() {
 }
 
 void GameEngine::beginExploreReturn(bool fainted) {
+    if (exploreTravel == ExploreTravelPhase::RETURNING ||
+        exploreTravel == ExploreTravelPhase::RETURNING_FAINTED) return;
     restoreContactHostToFront();
     if (clearExploreBattleStatuses()) markDirty(SaveUrgency::SOON);
     exploreTravel = fainted ? ExploreTravelPhase::RETURNING_FAINTED
@@ -361,15 +381,7 @@ void GameEngine::finishExploreReturn() {
 }
 
 bool GameEngine::clearExploreBattleStatuses() {
-    bool changed = false;
-    for (uint8_t slot = 0; slot < state.teamCount && slot < Game::TEAM_CAP; ++slot) {
-        Game::MonsterRuntime& mon = state.team[slot];
-        if (mon.majorStatus == Game::MajorStatus::NONE && mon.majorStatusTurns == 0) continue;
-        mon.majorStatus = Game::MajorStatus::NONE;
-        mon.majorStatusTurns = 0;
-        changed = true;
-    }
-    return changed;
+    return Game::ExplorePartyService::clearBattleStatuses(state);
 }
 
 void GameEngine::beginDebugBattle() {
@@ -1310,6 +1322,23 @@ bool GameEngine::useEvolutionStone(uint8_t teamSlot, Game::ItemId stone) {
         teamSlot, mon.speciesId, target->id, mon.level, stone);
 }
 
+Game::ItemInventory::UseResult GameEngine::useTeamItem(Game::ItemId item, uint8_t teamSlot) {
+    using Result = Game::ItemInventory::UseResult;
+    if (itemCount(item) == 0) return Result::NO_STOCK;
+    if (teamSlot >= state.teamCount || teamSlot >= Game::TEAM_CAP) return Result::INVALID_TARGET;
+    if (item == Game::ItemId::FIRE_STONE || item == Game::ItemId::WATER_STONE ||
+        item == Game::ItemId::THUNDER_STONE) {
+        return useEvolutionStone(teamSlot, item) ? Result::USED : Result::NOT_USABLE;
+    }
+    const auto oldLevel = state.team[teamSlot].level;
+    const auto result = Game::ItemInventory::useOnTeam(state, item, teamSlot);
+    if (result == Result::USED) {
+        if (state.team[teamSlot].level != oldLevel) queueTeamLevelUp(teamSlot, oldLevel);
+        markDirty(SaveUrgency::IMMEDIATE);
+    }
+    return result;
+}
+
 uint32_t GameEngine::grantBathReward(BathRewardStage stage) {
     if (state.teamCount == 0) return 0;
     uint32_t now = Hal::ins().millis();
@@ -1445,19 +1474,18 @@ uint32_t GameEngine::addExperienceToTeamMember(uint8_t teamSlot, uint32_t amount
     const Species& beforeSpecies = speciesFor(mon);
     Game::ExperienceService::Result experience =
         Game::ExperienceService::add(mon, beforeSpecies, amount);
-    if (experience.leveledUp) {
-        bool evolutionQueued = applyLevelUpEvolutions(
-            mon, teamSlot, true, experience.oldLevel);
-        state.pendingLevelUp = true;
-        state.pendingLevelUpLevel = mon.level;
-        if (!evolutionQueued) {
-            queueMoveLearnIfReady(
-                mon, speciesFor(mon), experience.oldLevel, teamSlot);
-        }
-    }
+    if (experience.leveledUp) queueTeamLevelUp(teamSlot, experience.oldLevel);
     markDirty(experience.leveledUp ? SaveUrgency::IMMEDIATE
                                   : SaveUrgency::DEFERRED);
     return experience.awarded;
+}
+
+void GameEngine::queueTeamLevelUp(uint8_t teamSlot, uint8_t oldLevel) {
+    auto& mon = state.team[teamSlot];
+    const bool evolutionQueued = applyLevelUpEvolutions(mon, teamSlot, true, oldLevel);
+    state.pendingLevelUp = true;
+    state.pendingLevelUpLevel = mon.level;
+    if (!evolutionQueued) queueMoveLearnIfReady(mon, speciesFor(mon), oldLevel, teamSlot);
 }
 
 bool GameEngine::acknowledgePendingLevelUp() {
@@ -1766,26 +1794,10 @@ uint32_t GameEngine::applyFaintPenaltyToTeamMember(uint8_t teamSlot) {
 }
 
 uint8_t GameEngine::grantAdventureBond(uint16_t steps) {
-    uint8_t gain = Game::Bond::adventureGain(steps);
-    if (gain == 0) return 0;
-
-    bool changed = false;
-    for (uint8_t slot = 0; slot < state.teamCount && slot < Game::TEAM_CAP; ++slot) {
-        Game::MonsterRuntime& mon = state.team[slot];
-        bool localCompanion =
-            mon.origin == Game::Origin::VISITOR &&
-            contactVisit.active && contactVisit.exploring;
-        if ((mon.origin == Game::Origin::VISITOR && !localCompanion) ||
-            mon.fainted || mon.hpCur == 0) {
-            continue;
-        }
-        Game::Bond::Value next = Game::Bond::increase(mon.bond, gain);
-        if (next == mon.bond) continue;
-        mon.bond = next;
-        changed = true;
-    }
-    if (changed) markDirty(SaveUrgency::IMMEDIATE);
-    return changed ? gain : 0;
+    const uint8_t gain = Game::ExplorePartyService::grantAdventureBond(
+        state, steps, contactVisit.active && contactVisit.exploring);
+    if (gain != 0) markDirty(SaveUrgency::IMMEDIATE);
+    return gain;
 }
 
 void GameEngine::addWalkSteps(uint16_t steps) {
@@ -1915,6 +1927,7 @@ void GameEngine::wakeFromIdle() {
 
 void GameEngine::invalidateScene() {
     sceneDirty = true;
+    fullFrameRequired = true;
 #if STICKMON_ENABLE_RENDER_STATS
     ++renderStatsStateWakes;
 #endif
@@ -2008,7 +2021,11 @@ bool GameEngine::saveNow() {
         return false;
     }
     uint32_t now = Hal::ins().millis();
-    if (currentScene) currentScene->onBeforeSave();
+    if (currentScene && !currentScene->onBeforeSave()) {
+        saveCoordinator.recordAttempt(now, false);
+        Platform::logLine("[GameEngine] scene progress save failed");
+        return false;
+    }
     syncGameClock(now);
     ContactRoster::syncTeamContacts(state);
     if (syncOwnedSpeciesToEncounterHistory()) encounterHistoryDirty = true;
@@ -2134,8 +2151,11 @@ void GameEngine::switchScene(SceneID id, bool saveBeforeSwitch) {
         return;
     }
     currentId = actualId;
+    Ui::SceneSurface::select(currentId);
     currentScene->onEnter();
-    AudioManager::ins().setMusic(musicForScene(currentId));
+    AudioManager::ins().setMusic(currentId == SceneID::EXPLORE &&
+        exploreTravel == ExploreTravelPhase::ACTIVE && exploreArea == ExploreDestinations::MARKET
+        ? MusicTrack::MARKET : musicForScene(currentId));
     if (currentId == SceneID::MENU && fromId != SceneID::MENU) {
         AudioManager::ins().playSfx(SfxCue::MENU_OPEN);
     } else if (fromId == SceneID::MENU && currentId == homeScene()) {
@@ -2143,6 +2163,7 @@ void GameEngine::switchScene(SceneID id, bool saveBeforeSwitch) {
     }
     uint32_t enteredAt = Hal::ins().millis();
     lastSceneUpdateMs = enteredAt;
+    fullFrameRequired = true;
     sceneDirty = true;
     scheduleSceneUpdate(enteredAt);
 #if STICKMON_ENABLE_RENDER_STATS
@@ -2162,6 +2183,8 @@ void GameEngine::scheduleSceneUpdate(uint32_t nowMs) {
 }
 
 void GameEngine::processInput(uint32_t nowMs) {
+    if (currentScene) currentScene->prepareSurface();
+    Ui::SceneSurface::InputScope inputSurface(Hal::ins().frameBuffer());
     const bool physicalDown = Platform::input().pressed(Platform::InputButton::PRIMARY) ||
         Platform::input().pressed(Platform::InputButton::SECONDARY);
     if (physicalDown && currentScene) currentScene->cancelTouch();
@@ -2173,6 +2196,11 @@ void GameEngine::processInput(uint32_t nowMs) {
             continue;
         }
         resetIdle(nowMs);
+        if (currentScene) currentScene->prepareSurface();
+        if (!Ui::SceneSurface::mapTouch(touch)) {
+            if (currentScene) currentScene->cancelTouch();
+            continue;
+        }
         if (currentScene && currentScene->onTouch(touch)) {
             sceneDirty = true;
             scheduleSceneUpdate(nowMs);
@@ -2269,6 +2297,20 @@ void GameEngine::update(uint32_t nowMs) {
     }
     tickCare(nowMs);
     if (visitSession.busy()) updateVisit(nowMs);
+    updateCurrentScene(nowMs);
+    SceneFadePhase fadeBefore = sceneFade;
+    uint16_t fadeProgressBefore = sceneFadeProgressMs;
+    updateSceneFade(nowMs);
+    if (sceneFade != SceneFadePhase::NONE &&
+        (sceneFade != fadeBefore || sceneFadeProgressMs != fadeProgressBefore)) {
+        sceneDirty = true;
+    } else if (fadeBefore != sceneFade) {
+        sceneDirty = true;
+    }
+    if (saveCoordinator.due(nowMs)) saveNow();
+}
+
+void GameEngine::updateCurrentScene(uint32_t nowMs) {
     bool sceneUpdateDue =
         sceneUpdateScheduled &&
         static_cast<int32_t>(nowMs - nextSceneUpdateMs) >= 0;
@@ -2292,16 +2334,6 @@ void GameEngine::update(uint32_t nowMs) {
             }
         }
     }
-    SceneFadePhase fadeBefore = sceneFade;
-    uint16_t fadeProgressBefore = sceneFadeProgressMs;
-    updateSceneFade(nowMs);
-    if (sceneFade != SceneFadePhase::NONE &&
-        (sceneFade != fadeBefore || sceneFadeProgressMs != fadeProgressBefore)) {
-        sceneDirty = true;
-    } else if (fadeBefore != sceneFade) {
-        sceneDirty = true;
-    }
-    if (saveCoordinator.due(nowMs)) saveNow();
 }
 
 void GameEngine::logSceneDemand(const SceneUpdateResult& result,
@@ -2448,15 +2480,24 @@ void GameEngine::render(uint32_t nowMs) {
 #else
     (void)nowMs;
 #endif
+    const bool allowsPartial = sceneFade == SceneFadePhase::NONE && !resourceAlertVisible() &&
+        currentScene && !currentScene->touchNavigation();
+    FrameDamage::begin(allowsPartial && previousFrameAllowsPartial && !fullFrameRequired);
+    fullFrameRequired = false;
+    previousFrameAllowsPartial = allowsPartial;
     PokemonSprites::beginRenderFrame();
-    if (currentScene) currentScene->render();
-    if (currentScene && currentScene->touchNavigation()) TouchUi::drawNavigation();
-    renderResourceAlert();
-    renderSceneFade(Hal::ins().millis());
+    if (currentScene) currentScene->prepareSurface();
+    if (Ui::SceneSurface::begin(Hal::ins().frameBuffer())) {
+        if (currentScene) currentScene->render();
+        if (currentScene && currentScene->touchNavigation()) Ui::ApplicationUi{}.renderNavigation();
+        renderResourceAlert();
+        renderSceneFade(Hal::ins().millis());
+        Ui::SceneSurface::finish();
+    }
 #if STICKMON_ENABLE_RENDER_STATS
     uint32_t flushStartedUs = Platform::clock().micros();
 #endif
-    Hal::ins().flush();
+    FrameDamage::present();
     if (currentId == SceneID::MAIN) {
         mainSceneFirstFrameRendered = true;
     }
@@ -2480,16 +2521,9 @@ void GameEngine::render(uint32_t nowMs) {
 
 void GameEngine::renderSceneFade(uint32_t nowMs) {
     (void)nowMs;
-    if (sceneFade == SceneFadePhase::NONE) return;
-    if (sceneFade == SceneFadePhase::HOLD) {
-        PixelRenderer::darken(255);
-        return;
-    }
-    uint32_t progress = MathUtil::min<uint32_t>(sceneFadeDurationMs, sceneFadeProgressMs);
-    uint8_t amount = sceneFade == SceneFadePhase::OUT
-        ? (uint8_t)(progress * 255UL / sceneFadeDurationMs)
-        : (uint8_t)(255UL - progress * 255UL / sceneFadeDurationMs);
-    PixelRenderer::darken(amount);
+    Ui::ApplicationUi{}.renderSceneFade({sceneFade != SceneFadePhase::NONE,
+        sceneFade == SceneFadePhase::HOLD, sceneFade == SceneFadePhase::OUT,
+        sceneFadeDurationMs, sceneFadeProgressMs});
 }
 
 bool GameEngine::resourceAlertVisible() const {
@@ -2500,44 +2534,9 @@ bool GameEngine::resourceAlertVisible() const {
 
 void GameEngine::renderResourceAlert() {
     if (!resourceAlertVisible()) return;
-
-    auto& c = PixelRenderer::canvas();
-    static constexpr int POP_X = 24;
-    static constexpr int POP_Y = 34;
-    static constexpr int POP_W = 192;
-    static constexpr int POP_H = 64;
-    c.fillRect(0, 0, Hal::DISPLAY_W, Hal::DISPLAY_H, 0x0000);
-
-    uint16_t bg = PixelRenderer::rgb(18, 22, 30);
-    uint16_t border = PixelRenderer::rgb(241, 242, 232);
-    uint16_t warn = PixelRenderer::rgb(255, 216, 72);
-    uint16_t text = PixelRenderer::rgb(245, 246, 232);
-
-    c.fillRect(POP_X, POP_Y, POP_W, POP_H, bg);
-    c.drawRect(POP_X, POP_Y, POP_W, POP_H, border);
-    PixelRenderer::text(POP_X + 50, POP_Y + 8, Ui::ResourceAlert::TITLE, warn);
-
-    int y = POP_Y + 30;
-    if (RoomResource::ins().missing()) {
-        PixelRenderer::text(POP_X + 18, y, Ui::ResourceAlert::ROOM_MISSING, text);
-        y += 16;
-    }
-
-    const auto& spriteStats = PokemonSprites::cacheStats();
-    if (spriteStats.missingSpecies > 0) {
-        PixelRenderer::text(POP_X + 18, y, Ui::ResourceAlert::SPRITE_MISSING, text);
-        if (spriteStats.firstMissingSpecies != 0) {
-            char idBuf[12];
-            std::snprintf(idBuf, sizeof(idBuf), "#%03u", spriteStats.firstMissingSpecies);
-            PixelRenderer::text(POP_X + 130, y, idBuf, warn);
-        }
-        y += 16;
-    }
-
-    if (!FontResource::ins().loaded() &&
-        !RoomResource::ins().missing() && spriteStats.missingSpecies == 0) {
-        PixelRenderer::text(POP_X + 18, y, Ui::ResourceAlert::FONT_MISSING, text);
-    }
+    const auto& sprites = PokemonSprites::cacheStats();
+    Ui::ApplicationUi{}.renderResourceAlert({!FontResource::ins().loaded(),
+        RoomResource::ins().missing(), sprites.missingSpecies, sprites.firstMissingSpecies});
 }
 
 void GameEngine::resetIdle(uint32_t nowMs) {
@@ -2545,6 +2544,8 @@ void GameEngine::resetIdle(uint32_t nowMs) {
     Hal::ins().setIdleBrightness(false);
     if (idleActive) {
         idleActive = false;
+        invalidateScene();
+        scheduleSceneUpdate(nowMs);
         AudioManager::ins().setPowerSave(false);
     }
 }
@@ -2558,6 +2559,8 @@ void GameEngine::updateIdle(uint32_t nowMs) {
         Platform::logLine("[GameEngine] save before idle failed");
     }
     idleActive = true;
+    invalidateScene();
+    scheduleSceneUpdate(nowMs);
     Hal::ins().setIdleBrightness(true);
     AudioManager::ins().setPowerSave(true);
 }
@@ -2581,6 +2584,18 @@ void GameEngine::syncGameClock(uint32_t nowMs) {
     if (gameClock.sync(nowMs, gameSpeed(), state.gameMinutesTotal)) {
         markDirty(SaveUrgency::DEFERRED);
     }
+}
+
+void GameEngine::advanceExploreMinutes(uint32_t minutes) {
+    if (!minutes) return;
+    const uint32_t now = Hal::ins().millis();
+    syncGameClock(now);
+    tickCare(now);
+    gameClock.advance(minutes);
+    syncGameClock(now);
+    // Consume the action time while away, before any return scene can heal.
+    tickCare(now);
+    markDirty(SaveUrgency::DEFERRED);
 }
 
 void GameEngine::resetGameClockAnchor(uint32_t nowMs) {

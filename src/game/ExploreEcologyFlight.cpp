@@ -50,16 +50,19 @@ Surface flightSurface(const ExploreMapGenerator::Map& map, int cell) {
     if ((base >= 385 && base <= 390) || base == 399 || base == 415 ||
         ExploreMapGenerator::isRoadTile(base) || base == 4500 || base == 4502 || base == 4503)
         surface = Surface::GRASS;
-    if (base == ExploreCaveTiles::CAVE_FLOOR) surface = Surface::ROCK;
+    if (base == ExploreCaveTiles::CAVE_FLOOR || ExploreAncientValley::caveGround(base))
+        surface = Surface::ROCK;
     if (base == 4511 || ExploreMapGenerator::isSmoothIceTile(base)) surface = Surface::ICE;
     // Horizontal water and shore edges are flyable; waterfall faces are not.
     if (base == 48 || base == 64 || base == 68 || base == 72 || base == 80 || base == 84 ||
         base == 144 || base == 168 || base == 1088 || base == 1090 ||
         (base >= 1096 && base <= 1098) || base == 1104 || base == 1106 ||
         (base >= 4400 && base <= 4403)) surface = Surface::WATER;
+    if (ExploreAncientValley::waterTile(map.layers[1][cell])) surface = Surface::WATER;
     if (surface == Surface::NONE) return surface;
     for (uint8_t layer = 1; layer < ExploreMapGenerator::LAYER_COUNT; ++layer) {
         const uint16_t tile = map.layers[layer][cell];
+        if (ExploreAncientValley::waterTile(tile) || ExploreAncientValley::caveRock(tile)) continue;
         if (!tile || tile == 391 || tile == 859 || tile == 1231 || tile == 1532 ||
             tile == 1627 || tile == 1643 || (tile >= 4507 && tile <= 4510) ||
             (tile >= 4542 && tile <= 4544)) continue;

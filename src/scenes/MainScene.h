@@ -8,6 +8,7 @@
 #include "core/RoomMovementArea.h"
 #include "core/RoomResource.h"
 #include "core/Scene.h"
+#include "ui/HomeUi.h"
 #include "game/MonsterMind.h"
 #include "game/HomeActor.h"
 #include "game/HomeActorController.h"
@@ -19,16 +20,19 @@
 
 struct PetResult;
 
-class MainScene : public Scene {
+class MainScene : public Scene, private Ui::HomeHost {
 public:
+    MainScene() : homeUi(*this) {}
     void onEnter() override;
     void onExit() override;
-    void onBeforeSave() override;
+    bool onBeforeSave() override;
     SceneUpdateResult update(uint32_t nowMs, float dtSeconds) override;
     void render() override;
     bool onButton(const ButtonEvent& event) override;
     int touchTarget(int16_t x, int16_t y) override;
     bool onTap(int target) override;
+    bool onTouch(const Platform::IInputDevice::TouchEvent& event) override;
+    void cancelTouch() override;
     void beginLinkedGuestExit(uint32_t nowMs,
                               const Game::MonsterRuntime& guest,
                               const SecondarySceneViewState& saved);
@@ -157,11 +161,6 @@ private:
         CHASE,
     };
 
-    struct RenderItem {
-        int16_t z;
-        void (MainScene::*draw)();
-        bool roomLayer = false;
-    };
 
     using VisitorState = Home::Task;
 
@@ -230,7 +229,9 @@ private:
     bool moveVisitorDoorToward(float x, float y, float speed, float dtSeconds,
                                bool enforceWalkArea, bool avoidMain = false,
                                const ActorGeometry* movementGeometry = nullptr);
-    bool updateDoorWaitingActor(float dtSeconds);
+    bool planDoorExitRoute(DoorActor actor, uint32_t nowMs);
+    bool planFirstDoorExit(uint32_t nowMs);
+    void updateDoorExitRoute(uint32_t nowMs, float dtSeconds, bool second);
     void beginSecondDoorExit(uint32_t nowMs);
     void finishDoorDeparture();
     bool doorStepKeepsSpacing(float currentX, float currentY,
@@ -287,7 +288,7 @@ private:
                             bool allowOutsideStart,
                             const ActorGeometry& geometry,
                             bool avoidOther, float otherX, float otherY,
-                            float otherGroundOffsetY);
+                            const ActorGeometry& otherGeometry);
     bool pathSegmentInsideWalkArea(float fromX, float fromY, float toX, float toY,
                                    bool allowOutsideStart = false) const;
     bool actorPathSegmentInsideWalkArea(float fromX, float fromY,
@@ -367,8 +368,6 @@ private:
     void beginTeamMemberEntry(uint32_t nowMs);
     void beginContactGuestExit(uint32_t nowMs);
     bool handleContactDialogButton(const ButtonEvent& event);
-    void drawContactDialog();
-    void drawTutorial();
     bool visitorHostActive() const;
     bool visitorCanUseDoor() const;
     Home::ActorObservation homeActorObservation(
@@ -410,23 +409,14 @@ private:
     float visitorMoveSpeed(const MonsterBehaviorProfile& profile,
                            bool purposeful) const;
     const PokemonSprites::SpriteFrame* visitorCurrentFrame(bool& flipX) const;
-    void drawVisitorShadow();
-    void drawVisitor();
-    void drawVisitorSleepZz(int screenX, int spriteTopY) const;
-    void drawBackground();
-    void drawFloor();
-    void drawFood();
-    void drawShadow();
-    void drawMonster();
-    void drawStateEffect();
-    void drawNightOverlay();
-#if STICKMON_ENABLE_DEBUG_FEATURES
-    void drawWalkBoundary();
-#endif
-    void drawHud();
-    void drawToast();
-    void drawProgressionPopup();
-    void sortAndDraw(RenderItem* items, uint8_t count);
+    Ui::HomeUi homeUi;
+    Ui::HomeFrame homeFrame() const override;
+    bool homeOverlayActive() const override;
+    bool handleHomeOverlayButton(const ButtonEvent& event) override;
+    void cancelHomePair() override;
+    bool activateHome(Ui::HomeAction action) override;
+    void saveHome() override;
+    void renderHomeProgression() override;
     PmdDirection pmdDirectionForVelocity(float vx, float vy) const;
     uint16_t pmdDirectionFrameIndex() const;
     bool pmdDirectionFlipX() const;
@@ -435,8 +425,6 @@ private:
     const PokemonSprites::SpriteFrame* movementBoundsFrame() const;
 
     const Species* active = nullptr;
-    float cameraX = 0.0f;
-    float cameraY = 0.0f;
     PmdDirection turnTargetDirection = PmdDirection::FRONT;
     bool facingRight = true;
     PmdAction pmdAction = PmdAction::IDLE;
@@ -448,8 +436,6 @@ private:
     uint16_t pmdMotionCycleMs = PokemonMotion::SLITHER_AMBIENT_MAX_CYCLE_MS;
     bool pmdLongMove = false;
     uint32_t pmdFrameStartedMs = 0;
-    uint32_t toastUntil = 0;
-    const char* toast = nullptr;
     uint32_t feedingBiteMs = 0;
     uint32_t feedingUntilMs = 0;
     bool feedingConsumed = false;
@@ -462,10 +448,6 @@ private:
     FoodRouteFailure visitorFoodRouteFailure;
     bool mainYieldingForVisitorFood = false;
     bool visitorBedYieldHandled = false;
-    uint32_t hungerAnimStartedMs = 0;
-    uint32_t hungerAnimUntilMs = 0;
-    uint8_t hungerAnimFrom = 0;
-    uint8_t hungerAnimTo = 0;
     ProgressionModal progressionModal = ProgressionModal::NONE;
     ContactDialog contactDialog = ContactDialog::NONE;
     using VisitDeparture = Home::VisitDeparturePhase;
@@ -507,10 +489,10 @@ private:
     uint32_t doorLastUpdateMs = 0;
     uint32_t doorPhaseStartedMs = 0;
     uint32_t doorLastProgressMs = 0;
+    uint32_t doorNextRouteAttemptMs = 0;
     bool doorRouteEnteringWalkArea = false;
     bool visitorDoorRouteEnteringWalkArea = false;
     bool doorDepartureHasVisitor = false;
-    bool doorWaitingActorReady = false;
     bool doorMainHidden = false;
     bool doorVisitorHidden = false;
     DoorActor doorFirstActor = DoorActor::MAIN;
@@ -531,10 +513,6 @@ private:
     uint32_t heartEffectUntilMs = 0;
     uint32_t nextAttentionMs = 0;
     uint32_t nextSpecialActionMs = 0;
-#if STICKMON_ENABLE_DEBUG_FEATURES
-    uint32_t comboStartMs = 0;
-    bool comboSaved = false;
-#endif
     VisitorActor visitor;
     Home::Actor mainActor;
     Home::Simulation homeCoordinator;
