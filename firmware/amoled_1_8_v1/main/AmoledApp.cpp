@@ -3981,7 +3981,8 @@ void AmoledApp::selectExploreArea(uint8_t area, uint32_t nowMs) {
 void AmoledApp::applyExploreEffects(uint32_t nowMs) {
     const auto effects = exploreSession_.takeEffects();
     advanceExploreMinutes(effects.extraMinutes, nowMs);
-    if (effects.invalidateWorld) renderCaches_.exploreWorld.invalidate();
+    // Valley rooms share the expedition seed even when their tiles differ.
+    if (effects.invalidateWorld || effects.mapChanged) renderCaches_.exploreWorld.invalidate();
     if (effects.mapChanged) resetExploreMapPresentation(nowMs);
     if (effects.statusChanged) requestRenderRows(HOME_STATUS_TOP, AmoledUi::HEIGHT);
     if (effects.fullRender) requestFullRender();

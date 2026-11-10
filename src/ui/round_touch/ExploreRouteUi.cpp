@@ -9,6 +9,7 @@
 
 namespace Ui::RoundExplore {
 namespace {
+constexpr const char* CLOSE_MENU = "关闭";
 // Q4 centerline offsets: radius 164.5px, -116 through -137 degrees.
 // Mirror the left stroke for member two. No per-frame trigonometry or allocation.
 struct ArcPoint { int x, y; };
@@ -109,7 +110,9 @@ void drawRouteHud(const ExploreRouteFrame& frame) {
         reinterpret_cast<const unsigned char*>(frame.mapName); *p; ++p)
         if ((*p & 0xc0) != 0x80) ++count;
     const int titleWidth = int(count) * 20;
-    const bool showMenu = frame.menuAvailable && Platform::input().touchAvailable();
+    // Modal route phases block actions without changing the header geometry.
+    // Input still gates opening the menu on WALKING and its movement locks.
+    const bool showMenu = Platform::input().touchAvailable();
     const auto title = showMenu ? ROUTE_TITLE : ROUTE_NAME;
     panel(title);
     c.setClipRect(title.x, title.y, title.width, title.height);
@@ -153,7 +156,8 @@ void drawRouteHud(const ExploreRouteFrame& frame) {
         const auto color = selected ? PixelRenderer::rgb(255, 216, 72) : foreground;
         if (selected) c.fillRect(row.x + 6, row.y + 10, 3, 24, color);
         PixelRenderer::textSmooth(row.x + 21, row.y + 11,
-            Ui::Explore::SIDE_MENU_ITEMS[i], color, 20);
+            i + 1 == AppSceneFlow::exploreMenuItemCount() ? CLOSE_MENU :
+                Ui::Explore::SIDE_MENU_ITEMS[i], color, 20);
     }
 }
 }  // namespace Ui::RoundExplore

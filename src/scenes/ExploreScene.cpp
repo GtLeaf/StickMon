@@ -2947,6 +2947,11 @@ void ExploreScene::initializeRouteFollowerPosition(bool useTrailPosition) {
             routeWorldY - routeFollowerWorldY,
             routeWalkDirection);
         ui.routeVisual.routeFollowerVisualWalkDirection = routeFollowerWalkDirection;
+    } else if (ExploreRouteGeometry::hasValleyForestCenterline(&generatedMap)) {
+        const auto start = ExploreRouteGeometry::valleyForestFollowerStart(
+            generatedMap, {routeWorldX, routeWorldY}, ROUTE_FOLLOWER_START_OFFSET);
+        routeFollowerWorldX = start.x;
+        routeFollowerWorldY = start.y;
     } else {
         PokemonSprites::WalkDirection direction =
             static_cast<PokemonSprites::WalkDirection>(routeWalkDirection);

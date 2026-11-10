@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 
 #include "game/ExploreMapGenerator.h"
@@ -16,6 +17,31 @@ struct WorldPoint {
 
 inline constexpr float tileCenter(uint8_t tile) {
     return tile * TILE_SIZE + TILE_SIZE * 0.5f;
+}
+
+inline constexpr bool hasValleyForestCenterline(const ExploreMapGenerator::Map* map) {
+    return map && map->valleyJourney && map->valleyNode < 6;
+}
+
+// Stay on the entrance lane. A cave mouth has no trailing road behind it.
+inline WorldPoint valleyForestFollowerStart(const ExploreMapGenerator::Map& map,
+                                           WorldPoint leader, float spacing) {
+    using namespace ExploreMapGenerator;
+    switch (map.entry.edge) {
+    case Edge::TOP:
+        if (map.entry.point.y == 0) leader.y = std::max(0.0f, leader.y - spacing);
+        break;
+    case Edge::RIGHT:
+        if (map.entry.point.x == WIDTH - 1) leader.x = std::min(float(WIDTH * TILE_SIZE), leader.x + spacing);
+        break;
+    case Edge::BOTTOM:
+        if (map.entry.point.y == HEIGHT - 1) leader.y = std::min(float(HEIGHT * TILE_SIZE), leader.y + spacing);
+        break;
+    case Edge::LEFT:
+        if (map.entry.point.x == 0) leader.x = std::max(0.0f, leader.x - spacing);
+        break;
+    }
+    return leader;
 }
 
 // Interior stair portals finish in place instead of walking through the walls.
@@ -47,7 +73,10 @@ inline WorldPoint pathPoint(const ExploreMapGenerator::Path& path,
     if (index >= path.pointCount) index = path.pointCount - 1;
     const ExploreMapGenerator::Point& point = path.points[index];
     WorldPoint world{tileCenter(point.x), tileCenter(point.y)};
-    if (path.pointCount == 1 || path.cellCentered) return world;
+    if (path.cellCentered) {
+        return {world.x + path.visualOffsets[index].x, world.y + path.visualOffsets[index].y};
+    }
+    if (path.pointCount == 1) return world;
 
     // Roads are two tiles wide. Their centerline therefore sits halfway
     // between the paired cells; at a turn, both axes need that offset.

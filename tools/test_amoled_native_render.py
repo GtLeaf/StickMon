@@ -76,6 +76,9 @@ class AmoledNativeRenderTests(unittest.TestCase):
         subprocess.run([self.binary, str(ROOT / "data"), "--case", name],
                        cwd=ROOT, check=True)
 
+    def test_valley_map_transfers_refresh_the_world_cache(self):
+        self.run_case("explore-valley-world-cache")
+
     def test_shadow_contact_mirroring_hops_and_partial_redraw(self):
         args = [self.binary, str(ROOT / "data"), "--case", "pet-shadow"]
         output = os.environ.get("AMOLED_RENDER_OUTPUT")

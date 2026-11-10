@@ -3,6 +3,7 @@
 
 #include "game/ExploreCaveTiles.h"
 #include "game/ExploreIceSlide.h"
+#include "game/ExploreRouteGeometry.h"
 #include "game/ExploreFrostLayouts.h"
 #include "game/ExploreAncientValleyLayouts.h"
 #include "game/ExploreValleyData.h"
@@ -3032,6 +3033,52 @@ bool generate(uint32_t seed, Edge entryEdge, uint8_t areaIndex, Map& out,
     return false;
 }
 
+namespace {
+void centerValleyForestPath(Path& path, const ExploreValleyData::Room& room,
+                           const ExploreValleyData::Portal& entrance,
+                           const ExploreValleyData::Portal& exit) {
+    constexpr int HALF_TILE = ExploreRouteGeometry::TILE_SIZE / 2;
+    const auto road = [&](int x, int y) {
+        return x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT &&
+            (room.roads[0][y] & (1U << x));
+    };
+    const auto lateral = [&](Point a, Point b) {
+        const int dx = a.x == b.x, dy = !dx;
+        const bool right = road(a.x + dx, a.y + dy) && road(b.x + dx, b.y + dy);
+        const bool left = road(a.x - dx, a.y - dy) && road(b.x - dx, b.y - dy);
+        return HALF_TILE * (int(right) - int(left));
+    };
+    const auto portalOffset = [&](const ExploreValleyData::Portal& portal) -> Path::Offset {
+        if (portal.warp) return {};
+        // Reciprocal forest portals name the left/top lane of the road.
+        const int dx = portal.edge % 2 == 0, dy = !dx;
+        if (!road(portal.point.x + dx, portal.point.y + dy)) return {};
+        return {static_cast<int8_t>(dx * HALF_TILE), static_cast<int8_t>(dy * HALF_TILE)};
+    };
+    path.visualOffsets[0] = portalOffset(entrance);
+    path.visualOffsets[path.pointCount - 1] = portalOffset(exit);
+    for (uint8_t i = 1; i + 1 < path.pointCount; ++i) {
+        const Point a = path.points[i - 1], p = path.points[i], b = path.points[i + 1];
+        const bool inVertical = a.x == p.x, outVertical = p.x == b.x;
+        const int in = lateral(a, p), out = lateral(p, b);
+        int x = 0, y = 0;
+        if (inVertical == outVertical) {
+            // Blend across a width change or an intersection.
+            (inVertical ? x : y) = (in + out) / 2;
+        } else {
+            x = inVertical ? in : out;
+            y = inVertical ? out : in;
+            // Stay inside the bend if its diagonal tile is grass or scenery.
+            if (x && y && !road(p.x + x / HALF_TILE, p.y + y / HALF_TILE)) {
+                x /= 2;
+                y /= 2;
+            }
+        }
+        path.visualOffsets[i] = {static_cast<int8_t>(x), static_cast<int8_t>(y)};
+    }
+}
+}  // namespace
+
 bool generateValleyRegion(uint32_t seed, ValleyContext context, bool finalBlock, Map& out) {
     if (context.node >= 14) return false;
     const auto& room = ExploreValleyData::room(seed, context.node);
@@ -3100,6 +3147,8 @@ bool generateValleyRegion(uint32_t seed, ValleyContext context, bool finalBlock,
         path.nextValleyNode = exit.target;
         path.nextValleyEntrance = exit.entrance;
         path.interiorExit = exit.warp;
+        if (ExploreRouteGeometry::hasValleyForestCenterline(&out))
+            centerValleyForestPath(path, room, entrance, exit);
         // Finish a bridge circuit in C even when the run quota was reached in A.
         path.terminal = exit.target == 255 || (finalBlock && context.node < 10);
     }

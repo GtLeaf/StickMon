@@ -62,6 +62,67 @@ void writePreview(Canvas565& canvas, const char* name) {
 }
 
 struct AmoledEcologyTestAccess {
+    static void checkValleyWorldCache(DesktopPlatform& desktop, Canvas565& canvas) {
+        constexpr auto area = ExploreMapGenerator::ANCIENT_WATERFALL_VALLEY_AREA;
+        unsigned transitions = 0;
+        for (const uint32_t seed : {38U, 294U}) {
+            for (const uint32_t minute : {720U, 1320U}) {
+                AmoledApp app;
+                const auto now = desktop.millis();
+                app.begin(now);
+                for (uint8_t i = 0; i < area; ++i) app.gameState.explorePoolRerollCounts[i] = 1;
+                app.selectedExploreArea = area;
+                app.gameState.gameMinutesTotal = minute;
+                assert(app.startExploreRoute(now));
+                app.expeditionFade.reset();
+                auto& session = app.exploreSession_;
+                auto& route = session.state_;
+                route.exploreRouteBossPending = route.exploreRouteBossScheduled = false;
+                route.exploreRouteExpeditionSeed = seed;
+                route.exploreRouteMapBlockCount = 9;
+                route.exploreRoutePendingValley = {0, 0};
+                assert(app.generateExploreRouteMap(now));
+                app.render(canvas);
+                app.markRendered();
+                // Revisit the starting forest via its loop, then cross the bridges.
+                for (const uint8_t target : {1, 2, 3, 0, 1, 2, 5, 10, 11, 13, 12}) {
+                    const auto from = route.exploreRouteMap.valleyNode;
+                    const auto& map = route.exploreRouteMap;
+                    uint8_t path = 0;
+                    while (path < map.pathCount && map.paths[path].nextValleyNode != target) ++path;
+                    assert(path < map.pathCount);
+                    route.exploreRoutePath = path;
+                    route.exploreRouteIndex = map.paths[path].pointCount - 1;
+                    assert(session.finishAtEnd(app.gameState));
+                    app.applyExploreEffects(now);
+                    assert(map.valleyNode == target && map.seed == seed);
+                    assert(app.needsRender());
+                    app.render(canvas);
+                    const auto actual = pixels(canvas);
+                    // Render the exact same scene with a fresh world cache.
+                    app.renderCaches_.exploreWorld.invalidate();
+                    app.forceFullRender();
+                    app.render(canvas);
+                    const auto reference = pixels(canvas);
+                    if (seed == 38 && minute == 720 && from == 0 && target == 1) {
+                        writePreviewPixels(actual, "valley-transition-actual", "AMOLED_VALLEY_OUTPUT");
+                        writePreviewPixels(reference, "valley-transition-fresh", "AMOLED_VALLEY_OUTPUT");
+                    }
+                    if (actual != reference) {
+                        unsigned differences = 0;
+                        for (size_t i = 0; i < actual.size(); ++i) differences += actual[i] != reference[i];
+                        std::fprintf(stderr, "valley %u->%u seed=%u minute=%u: %u stale pixels\n",
+                            from, target, seed, minute, differences);
+                        assert(actual == reference);
+                    }
+                    app.markRendered();
+                    ++transitions;
+                }
+            }
+        }
+        std::printf("valley world cache: %u same-seed transfers match fresh rendering (day and night)\n", transitions);
+    }
+
     static void checkNightCache(DesktopPlatform& desktop, Canvas565& canvas) {
         auto& original = desktop.serviceBundle();
         auto* savedPixels = canvas.rawPixels();
@@ -1312,4 +1373,8 @@ void checkExploreEcology(DesktopPlatform& desktop, Canvas565& canvas) {
 void checkExploreWater(DesktopPlatform& desktop, Canvas565& canvas) {
     AmoledV1::AmoledEcologyTestAccess::checkWildlifeGrassApp(desktop);
     AmoledV1::AmoledEcologyTestAccess::checkWaterBridge(desktop, canvas);
+}
+
+void checkValleyWorldCache(DesktopPlatform& desktop, Canvas565& canvas) {
+    AmoledV1::AmoledEcologyTestAccess::checkValleyWorldCache(desktop, canvas);
 }

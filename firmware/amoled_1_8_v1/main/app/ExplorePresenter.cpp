@@ -112,21 +112,27 @@ void ExplorePresenter::resetMap(const ExploreSession::State& route,
     state_.exploreRouteFollowerDirection = state_.exploreRouteDirection;
     const float followerOffset =
         ExploreRouteGeometry::TILE_SIZE * 0.75f;
-    switch (static_cast<PokemonSprites::WalkDirection>(
-                state_.exploreRouteFollowerDirection)) {
-    case PokemonSprites::WalkDirection::LEFT:
-        state_.exploreRouteFollowerWorldX += followerOffset;
-        break;
-    case PokemonSprites::WalkDirection::UP:
-        state_.exploreRouteFollowerWorldY += followerOffset;
-        break;
-    case PokemonSprites::WalkDirection::RIGHT:
-        state_.exploreRouteFollowerWorldX -= followerOffset;
-        break;
-    case PokemonSprites::WalkDirection::DOWN:
-    default:
-        state_.exploreRouteFollowerWorldY -= followerOffset;
-        break;
+    if (ExploreRouteGeometry::hasValleyForestCenterline(&route.exploreRouteMap)) {
+        const auto follower = ExploreRouteGeometry::valleyForestFollowerStart(
+            route.exploreRouteMap, start, followerOffset);
+        state_.exploreRouteFollowerWorldX = follower.x;
+        state_.exploreRouteFollowerWorldY = follower.y;
+    } else {
+        switch (static_cast<PokemonSprites::WalkDirection>(state_.exploreRouteFollowerDirection)) {
+        case PokemonSprites::WalkDirection::LEFT:
+            state_.exploreRouteFollowerWorldX += followerOffset;
+            break;
+        case PokemonSprites::WalkDirection::UP:
+            state_.exploreRouteFollowerWorldY += followerOffset;
+            break;
+        case PokemonSprites::WalkDirection::RIGHT:
+            state_.exploreRouteFollowerWorldX -= followerOffset;
+            break;
+        case PokemonSprites::WalkDirection::DOWN:
+        default:
+            state_.exploreRouteFollowerWorldY -= followerOffset;
+            break;
+        }
     }
     state_.exploreRouteFollowerWorldX = std::clamp(
         state_.exploreRouteFollowerWorldX, 0.0f,
@@ -271,9 +277,10 @@ void ExplorePresenter::updateEcology(const ExploreSession::State& route,
         return ExploreEcology::locomotionForSpecies(species) == ExploreEcology::Locomotion::GROUND;
     };
     const uint8_t leaderSlot = ExploreSession::leaderSlot(gameState);
-    contacts[0] = {state_.exploreRouteWorldX, exploreRouteActorFootWorldY(state_.exploreRouteWorldY),
+    const auto* map = &route.exploreRouteMap;
+    contacts[0] = {state_.exploreRouteWorldX, exploreRouteActorFootWorldY(map, state_.exploreRouteWorldY),
         grounded(gameState.team[leaderSlot].speciesId)};
-    contacts[1] = {state_.exploreRouteFollowerWorldX, exploreRouteActorFootWorldY(state_.exploreRouteFollowerWorldY),
+    contacts[1] = {state_.exploreRouteFollowerWorldX, exploreRouteActorFootWorldY(map, state_.exploreRouteFollowerWorldY),
         ExploreSession::hasCompanion(gameState) && grounded(gameState.team[1].speciesId)};
     for (uint8_t i = 0; i < state_.exploreEcology.count(); ++i) {
         const auto& pose = state_.exploreEcology.pose(i);
@@ -500,8 +507,8 @@ void ExplorePresenter::requestBossDamage(const ExploreSession::State& route) {
 
     const ExploreRouteGeometry::WorldPoint point =
         ExploreRouteGeometry::pathPoint(path, route.exploreRouteBossIndex);
-    const int centerY = exploreRouteScreen(point.y, state_.exploreRouteCameraY) +
-        EXPLORE_ROUTE_ACTOR_GROUND_OFFSET_Y;
+    const int centerY = exploreRouteActorGroundScreenY(
+        &route.exploreRouteMap, point.y, state_.exploreRouteCameraY);
     // Covers the largest walking frames, airborne bobbing, shadow, and the
     // complete 5px patrol path so the cached map clears every previous pose.
     constexpr int BOSS_TOP_MARGIN = 56 * EXPLORE_ROUTE_SCALE;

@@ -61,6 +61,9 @@ struct Path {
     uint8_t nextValleyEntrance = 0;
     bool terminal = false;
     bool interiorExit = false;
+    // Presentation offsets in world pixels. Route indices and cells stay unchanged.
+    struct Offset { int8_t x, y; };
+    Offset visualOffsets[MAX_PATH_POINTS] = {};
 };
 
 struct Map {

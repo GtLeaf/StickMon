@@ -50,6 +50,7 @@ void checkSettingsReset(DesktopPlatform& desktop);
 void checkBatteryDisplay(DesktopPlatform& desktop, Canvas565& canvas);
 void checkExploreEcology(DesktopPlatform& desktop, Canvas565& canvas);
 void checkExploreWater(DesktopPlatform& desktop, Canvas565& canvas);
+void checkValleyWorldCache(DesktopPlatform& desktop, Canvas565& canvas);
 void checkHatchFlow(DesktopPlatform& desktop, Canvas565& canvas);
 void checkBathHatchControllerEffects();
 void checkBattleAssetActions(DesktopPlatform& desktop, const Game::GameState& state);
@@ -1572,6 +1573,10 @@ int main(int argc, char** argv) {
     if (selectedCase) {
         if (std::strcmp(selectedCase, "explore-water") == 0) {
             checkExploreWater(desktop, canvas);
+            return 0;
+        }
+        if (std::strcmp(selectedCase, "explore-valley-world-cache") == 0) {
+            checkValleyWorldCache(desktop, canvas);
             return 0;
         }
         if (std::strcmp(selectedCase, "explore-ecology") == 0) {

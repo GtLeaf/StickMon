@@ -1,5 +1,6 @@
 #include <array>
 #include <cassert>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -19,6 +20,75 @@
 #undef private
 
 using namespace ExploreMapGenerator;
+
+static void checkForestCenterlines() {
+    using ExploreRouteGeometry::pathPoint;
+    constexpr int tile = ExploreRouteGeometry::TILE_SIZE;
+    unsigned left = 0, right = 0, up = 0, down = 0, bends = 0;
+    for (uint32_t seed : {38U, 294U}) {
+        for (uint8_t node = 0; node < 6; ++node) {
+            const auto& room = ExploreValleyData::room(seed, node);
+            const auto road = [&](int x, int y) {
+                return x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT &&
+                    (room.roads[0][y] & (1U << x));
+            };
+            for (uint8_t entrance = 0; entrance < room.count; ++entrance) {
+                Map map{};
+                assert(generateValleyRegion(seed, {node, entrance}, false, map));
+                for (uint8_t p = 0; p < map.pathCount; ++p) {
+                    const auto& path = map.paths[p];
+                    if (path.interiorExit) {
+                        const auto point = pathPoint(path, path.pointCount - 1);
+                        assert(point.x == ExploreRouteGeometry::tileCenter(path.exit.point.x));
+                        assert(point.y == ExploreRouteGeometry::tileCenter(path.exit.point.y));
+                    } else if (path.nextValleyNode < 6) {
+                        Map next{};
+                        assert(generateValleyRegion(seed, {path.nextValleyNode, path.nextValleyEntrance}, false, next));
+                        const auto a = pathPoint(path, path.pointCount - 1);
+                        const auto b = pathPoint(next.paths[0], 0);
+                        assert(path.exit.edge == Edge::TOP || path.exit.edge == Edge::BOTTOM
+                               ? a.x == b.x : a.y == b.y);
+                    }
+                    for (uint8_t i = 1; i < path.pointCount; ++i) {
+                        const auto a = pathPoint(path, i - 1), b = pathPoint(path, i);
+                        assert(a.x != b.x || a.y != b.y);
+                        for (int step = 0; step <= 32; ++step) {
+                            const float x = a.x + (b.x - a.x) * (step / 32.0f);
+                            const float y = a.y + (b.y - a.y) * (step / 32.0f);
+                            bool supported = false;
+                            for (float dy : {-0.01f, 0.01f}) for (float dx : {-0.01f, 0.01f})
+                                supported |= road(int(std::floor((x + dx) / tile)), int(std::floor((y + dy) / tile)));
+                            assert(supported);
+                        }
+                        if (i + 1 == path.pointCount) continue;
+                        const auto prev = path.points[i - 1], cell = path.points[i], next = path.points[i + 1];
+                        const bool vertical = prev.x == cell.x && next.x == cell.x;
+                        const bool horizontal = prev.y == cell.y && next.y == cell.y;
+                        if (!vertical && !horizontal) { ++bends; continue; }
+                        // Isolated double lanes have exactly one partner throughout
+                        // the three-cell sample. Their center is the shared seam.
+                        const int dx = vertical, dy = horizontal;
+                        const auto flank = [&](Point c, int sign) { return road(c.x + dx * sign, c.y + dy * sign); };
+                        for (int sign : {-1, 1}) {
+                            if (!flank(prev, sign) || !flank(cell, sign) || !flank(next, sign) ||
+                                flank(prev, -sign) || flank(cell, -sign) || flank(next, -sign) ||
+                                flank(cell, 2 * sign)) continue;
+                            if (vertical) {
+                                assert(b.x == ExploreRouteGeometry::tileCenter(cell.x) + sign * tile / 2);
+                                ++(sign < 0 ? left : right);
+                            } else {
+                                assert(b.y == ExploreRouteGeometry::tileCenter(cell.y) + sign * tile / 2);
+                                ++(sign < 0 ? up : down);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert(left && right && up && down && bends);
+    std::printf("forest centerlines: left=%u right=%u up=%u down=%u bends=%u\n", left, right, up, down, bends);
+}
 
 int main(int argc, char** argv) {
     if (argc == 2 && std::strcmp(argv[1], "--fingerprints") == 0) {
@@ -40,6 +110,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     assert(argc == 2 || argc == 3);
+    checkForestCenterlines();
     DesktopPlatform desktop(argv[1]);
     Platform::bind(desktop.serviceBundle());
     assert(desktop.begin() && Platform::resources().mount() && GameAssets::begin());
@@ -53,6 +124,16 @@ int main(int argc, char** argv) {
                 const uint8_t entry = node == 13 ? 2 : 0;
                 Map map;
                 assert(generateValleyRegion(seed + offset, {node, entry}, false, map));
+                if (node >= 6) {
+                    for (uint8_t p = 0; p < map.pathCount; ++p) {
+                        const auto& path = map.paths[p];
+                        for (uint8_t i = 0; i < path.pointCount; ++i) {
+                            const auto point = ExploreRouteGeometry::pathPoint(path, i);
+                            assert(point.x == ExploreRouteGeometry::tileCenter(path.points[i].x));
+                            assert(point.y == ExploreRouteGeometry::tileCenter(path.points[i].y));
+                        }
+                    }
+                }
                 ++maps;
                 ExploreEcology::Simulation ecology;
                 ecology.reset(map, 0, {}, 0, 0);
@@ -110,11 +191,13 @@ int main(int argc, char** argv) {
         sample.layers[layer][3 * 16 + 3] = tile;
         AmoledV1::ExploreRouteViewModel model{};
         model.map = &sample;
-        constexpr int x = 156, y = 156, size = 52;
+        constexpr float scale = AmoledV1::EXPLORE_ROUTE_SCALE;
+        constexpr int size = ExploreRouteGeometry::TILE_SIZE * scale;
+        constexpr int x = 3 * size, y = 3 * size;
         constexpr uint16_t empty = 0xf81f, actor = 0x07ff;
         canvas.clearClipRect();
         canvas.fillSprite(empty);
-        assert(GameAssets::drawExploreTileTo(canvas, tile, x, y, 0, 2));
+        assert(GameAssets::drawExploreTileTo(canvas, tile, x, y, 0, scale));
         const auto original = screen;
         unsigned restored = 0;
         for (bool behind : {true, false}) {

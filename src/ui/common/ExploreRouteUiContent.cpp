@@ -126,7 +126,9 @@ ExploreRouteGeometry::WorldPoint routePathPointWorld(const ExploreMapGenerator::
 }
 
 using RouteWorldPoint = ExploreRouteGeometry::WorldPoint;
-float routeGroundOffsetY(const ExploreMapGenerator::Path& path, const ExploreRouteLayout& layout) {
+float routeGroundOffsetY(const ExploreMapGenerator::Map* map,
+                         const ExploreMapGenerator::Path& path, const ExploreRouteLayout& layout) {
+    if (ExploreRouteGeometry::hasValleyForestCenterline(map)) return 0;
     return EXPLORE_TILE_SIZE * (path.cellCentered ? 1.0f : 2.0f) * layout.routeGroundBias;
 }
 
@@ -450,7 +452,7 @@ void drawWalking(const ExploreRouteFrame& view, ExploreRouteVisualState& visual,
 
     const Species& activeSpecies = *view.leader;
     const auto& path = view.generatedMap->paths[view.currentRoutePath];
-    const float groundOffsetY = routeGroundOffsetY(path, layout);
+    const float groundOffsetY = routeGroundOffsetY(view.generatedMap, path, layout);
     if (view.overlay || (*view.generatedMap).areaIndex == ExploreMapGenerator::TALL_GRASS_PARK_AREA ||
         (*view.generatedMap).areaIndex == ExploreMapGenerator::FROST_CRYSTAL_CAVE_AREA ||
         (*view.generatedMap).areaIndex == ExploreMapGenerator::ANCIENT_WATERFALL_VALLEY_AREA) {
@@ -558,7 +560,7 @@ void drawRouteBoss(const ExploreRouteFrame& view, int cameraX, int cameraY, cons
                       patrolPhase < ROUTE_BOSS_PATROL_RETURN_END_MS;
     bool patrolMoving = movingOut || movingBack;
     float worldX = pose.point.x;
-    float worldY = pose.point.y + routeGroundOffsetY(path, layout);
+    float worldY = pose.point.y + routeGroundOffsetY(view.generatedMap, path, layout);
 
     uint8_t walkDirection = static_cast<uint8_t>(PokemonSprites::WalkDirection::DOWN);
     if (routeBossPatrolFacesOutward(patrolPhase)) {
@@ -613,8 +615,15 @@ void drawRouteBoss(const ExploreRouteFrame& view, int cameraX, int cameraY, cons
         (*view.generatedMap).areaIndex == ExploreMapGenerator::ANCIENT_WATERFALL_VALLEY_AREA;
     const int groundOffset = centeredGroundAnchor ? static_cast<int>(roundf(
         PokemonSprites::frameGroundOffsetY(frame) * scale)) : 0;
-    int centerY = static_cast<int>(roundf(worldY - airOffsetY)) - cameraY -
-        groundOffset;
+    int centerY = static_cast<int>(roundf(worldY - airOffsetY)) - cameraY - groundOffset;
+    int shadowGroundY = static_cast<int>(roundf(worldY)) - cameraY -
+        groundOffset + static_cast<int>(roundf(PokemonSprites::frameGroundOffsetY(frame) * scale));
+    if (ExploreRouteGeometry::hasValleyForestCenterline(view.generatedMap)) {
+        const auto anchor = PokemonShadow::spriteAnchorForShadow(frame, centerX, shadowGroundY, scale, flipX);
+        centerY += anchor.y - shadowGroundY;
+        centerX = anchor.x;
+        shadowGroundY = anchor.y;
+    }
     int drawX = centerX - drawW / 2;
     int drawY = centerY - drawH / 2;
     if (drawX + drawW < -8 || drawX >= layout.width + 8 ||
@@ -624,8 +633,6 @@ void drawRouteBoss(const ExploreRouteFrame& view, int cameraX, int cameraY, cons
 
     auto& c = PixelRenderer::canvas();
 
-    const int shadowGroundY = static_cast<int>(roundf(worldY)) - cameraY -
-        groundOffset + static_cast<int>(roundf(PokemonSprites::frameGroundOffsetY(frame) * scale));
     const auto shadow = PokemonShadow::atGround(frame, centerX, shadowGroundY, scale, flipX);
     c.fillEllipse(shadow.x, shadow.y, shadow.radiusX, shadow.radiusY,
                   PixelRenderer::rgb(68, 87, 74));
@@ -638,7 +645,7 @@ void drawRouteBoss(const ExploreRouteFrame& view, int cameraX, int cameraY, cons
 
 void drawRouteMonster(const ExploreRouteFrame& view, ExploreRouteVisualState& visual, const Species& species, float worldX, float worldY, uint8_t walkDirection, bool follower, int cameraX, int cameraY, const ExploreRouteLayout& layout) {
     if (!view.generatedMap) return;
-    worldY += routeGroundOffsetY(view.generatedMap->paths[view.currentRoutePath], layout);
+    worldY += routeGroundOffsetY(view.generatedMap, view.generatedMap->paths[view.currentRoutePath], layout);
     auto& c = PixelRenderer::canvas();
     const PokemonSprites::SpriteFrame* marker = nullptr;
     bool markerFlipX = false;
@@ -765,16 +772,24 @@ void drawRouteMonster(const ExploreRouteFrame& view, ExploreRouteVisualState& vi
             PokemonSprites::frameGroundOffsetY(marker) * scale)) : 0;
         int markerY = static_cast<int>(roundf(worldY - airOffsetY)) - cameraY -
             markerH / 2 - groundOffset;
-        const int shadowGroundY = static_cast<int>(roundf(worldY)) - cameraY -
-            groundOffset + static_cast<int>(roundf(PokemonSprites::frameGroundOffsetY(marker) * scale)) +
-            static_cast<int>(roundf(poseOffsetY * scale));
-        const auto shadow = PokemonShadow::atGround(marker,
-            markerX + markerW / 2 + static_cast<int>(roundf(poseOffsetX * scale)),
-            shadowGroundY, scale, markerFlipX);
+        const int poseX = static_cast<int>(roundf(poseOffsetX * scale));
+        const int poseY = static_cast<int>(roundf(poseOffsetY * scale));
+        int shadowX = markerX + markerW / 2 + poseX;
+        int shadowGroundY = static_cast<int>(roundf(worldY)) - cameraY -
+            groundOffset + static_cast<int>(roundf(PokemonSprites::frameGroundOffsetY(marker) * scale)) + poseY;
+        if (ExploreRouteGeometry::hasValleyForestCenterline(view.generatedMap)) {
+            const auto anchor = PokemonShadow::spriteAnchorForShadow(
+                marker, shadowX - poseX, shadowGroundY - poseY, scale, markerFlipX);
+            markerX += anchor.x - (shadowX - poseX);
+            markerY += anchor.y - (shadowGroundY - poseY);
+            shadowX = anchor.x;
+            shadowGroundY = anchor.y;
+        }
+        const auto shadow = PokemonShadow::atGround(marker, shadowX, shadowGroundY, scale, markerFlipX);
         c.fillEllipse(shadow.x, shadow.y, shadow.radiusX, shadow.radiusY,
                       PixelRenderer::rgb(68, 87, 74));
-        markerX += static_cast<int>(roundf(poseOffsetX * scale));
-        markerY += static_cast<int>(roundf(poseOffsetY * scale));
+        markerX += poseX;
+        markerY += poseY;
         PokemonSprites::drawFrameScaled(marker, markerX, markerY, scale, markerFlipX);
         drawRouteCover(view, cameraX, cameraY, worldY, MathUtil::min(markerX, shadow.x - shadow.radiusX),
             MathUtil::min(markerY, shadow.y - shadow.radiusY),
@@ -795,8 +810,8 @@ void drawRoutePickup(const ExploreRouteFrame& view, int cameraX, int cameraY, co
     int x = static_cast<int>(roundf(point.x)) - cameraX;
     // The existing ball artwork is centered ten pixels above its ground shadow.
     // Align that ground with the authored feet instead of retaining its old +12px offset.
-    int y = layout.feetOnRouteCenter
-        ? static_cast<int>(roundf(point.y + routeGroundOffsetY(path, layout))) - cameraY - 6
+    int y = layout.feetOnRouteCenter || ExploreRouteGeometry::hasValleyForestCenterline(view.generatedMap)
+        ? static_cast<int>(roundf(point.y + routeGroundOffsetY(view.generatedMap, path, layout))) - cameraY - 6
         : static_cast<int>(roundf(point.y)) - cameraY + ROUTE_PICKUP_VISUAL_OFFSET_Y;
     if (x < -13 || x >= layout.width + 13 ||
         y < -13 || y >= layout.height + 13) {

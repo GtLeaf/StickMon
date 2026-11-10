@@ -1,5 +1,7 @@
 #pragma once
 
+#include "game/ExploreRouteGeometry.h"
+
 #include <cstdint>
 #include <cmath>
 
@@ -40,8 +42,12 @@ inline int exploreRouteScreen(float world, int camera) {
 // Road actors share this ground anchor; their gameplay coordinates stay intact.
 inline constexpr int EXPLORE_ROUTE_ACTOR_GROUND_OFFSET_Y =
     static_cast<int>(9 * EXPLORE_ROUTE_SCALE + 0.5f);
-inline constexpr float exploreRouteActorFootWorldY(float worldY) {
-    return worldY + 9.0f;
+inline constexpr float exploreRouteActorFootWorldY(const ExploreMapGenerator::Map* map, float worldY) {
+    return worldY + (ExploreRouteGeometry::hasValleyForestCenterline(map) ? 0.0f : 9.0f);
+}
+inline int exploreRouteActorGroundScreenY(const ExploreMapGenerator::Map* map, float worldY, int cameraY) {
+    return EXPLORE_ROUTE_MAP_TOP + exploreRouteScreen(worldY, cameraY) +
+        (ExploreRouteGeometry::hasValleyForestCenterline(map) ? 0 : EXPLORE_ROUTE_ACTOR_GROUND_OFFSET_Y);
 }
 
 // Draw the map background and animated tiles within the caller's clip region.

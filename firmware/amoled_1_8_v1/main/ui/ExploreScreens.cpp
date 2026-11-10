@@ -250,6 +250,17 @@ void fillRoundRectAlpha(Canvas565& canvas, int x, int y, int width, int height,
 }
 
 
+PokemonShadow::Anchor routeSpriteAnchor(const ExploreMapGenerator::Map* map,
+                                        const PokemonSprites::SpriteFrame* frame,
+                                        float worldX, float worldY, int cameraX, int cameraY,
+                                        float scale, bool flipX) {
+    const int x = exploreRouteScreen(worldX, cameraX);
+    const int y = exploreRouteActorGroundScreenY(map, worldY, cameraY);
+    return frame && ExploreRouteGeometry::hasValleyForestCenterline(map)
+        ? PokemonShadow::spriteAnchorForShadow(frame, x, y, scale, flipX)
+        : PokemonShadow::Anchor{x, y};
+}
+
 void drawExploreRoutePickup(Canvas565& canvas,
                             const ExploreRouteViewModel& model) {
     if (!model.pickupAvailable || !model.map ||
@@ -261,8 +272,7 @@ void drawExploreRoutePickup(Canvas565& canvas,
     ExploreRouteGeometry::WorldPoint point =
         ExploreRouteGeometry::pathPoint(path, model.pickupIndex);
     int x = exploreRouteScreen(point.x, model.cameraX);
-    int y = EXPLORE_ROUTE_MAP_TOP + exploreRouteScreen(point.y, model.cameraY) +
-        EXPLORE_ROUTE_ACTOR_GROUND_OFFSET_Y - exploreRoutePixel(6);
+    int y = exploreRouteActorGroundScreenY(model.map, point.y, model.cameraY) - exploreRoutePixel(6);
     if (x < -26 || x >= AmoledUi::WIDTH + 26 ||
         y < EXPLORE_ROUTE_MAP_TOP - 26 ||
         y >= EXPLORE_ROUTE_MAP_BOTTOM + 26) return;
@@ -416,10 +426,8 @@ void drawExploreRouteBoss(Canvas565& canvas,
         FlashStorage::readByte(&frame->width) * scale)));
     int height = std::max(1, static_cast<int>(std::lround(
         FlashStorage::readByte(&frame->height) * scale)));
-    int centerX = exploreRouteScreen(point.x, model.cameraX);
-    int groundCenterY = EXPLORE_ROUTE_MAP_TOP +
-        exploreRouteScreen(point.y, model.cameraY) +
-        EXPLORE_ROUTE_ACTOR_GROUND_OFFSET_Y;
+    const auto [centerX, groundCenterY] = routeSpriteAnchor(
+        model.map, frame, point.x, point.y, model.cameraX, model.cameraY, scale, flipX);
     const int groundOffset = static_cast<int>(std::lround(
         PokemonSprites::frameGroundOffsetY(frame) * scale));
     const int spriteGroundTopY = groundCenterY - height / 2 - groundOffset;
@@ -447,7 +455,7 @@ void drawExploreRouteBoss(Canvas565& canvas,
                            width, height, scale, flipX);
     PokemonSprites::drawFrameScaled(frame, x, y, scale, flipX, true);
     drawExploreRouteMapVegetationForActor(
-        canvas, model, exploreRouteActorFootWorldY(point.y), std::min(x, shadow.x - shadow.radiusX),
+        canvas, model, exploreRouteActorFootWorldY(model.map, point.y), std::min(x, shadow.x - shadow.radiusX),
         std::min(y, shadow.y - shadow.radiusY),
         std::max(x + width, shadow.x + shadow.radiusX + 1),
         std::max(y + height, shadow.y + shadow.radiusY + 1), rowBegin, rowEnd);
@@ -456,7 +464,8 @@ void drawExploreRouteBoss(Canvas565& canvas,
 AmoledUi::Rect exploreActorBounds(uint16_t speciesId, float worldX, float worldY,
                                   uint8_t walkDirection, uint8_t petFrame,
                                   bool walking, uint32_t animationNowMs,
-                                  int16_t cameraX, int16_t cameraY) {
+                                  int16_t cameraX, int16_t cameraY,
+                                  const ExploreMapGenerator::Map* map) {
     auto direction = static_cast<PokemonSprites::WalkDirection>(
         walkDirection <=
                 static_cast<uint8_t>(PokemonSprites::WalkDirection::RIGHT)
@@ -478,8 +487,7 @@ AmoledUi::Rect exploreActorBounds(uint16_t speciesId, float worldX, float worldY
     }
 
     constexpr float scale = EXPLORE_ROUTE_SCALE;
-    const int x = exploreRouteScreen(worldX, cameraX);
-    const int ground = EXPLORE_ROUTE_MAP_TOP + exploreRouteScreen(worldY, cameraY) + EXPLORE_ROUTE_ACTOR_GROUND_OFFSET_Y;
+    const auto [x, ground] = routeSpriteAnchor(map, frame, worldX, worldY, cameraX, cameraY, scale, flipX);
     if (!frame) return {x - 63, ground - 155, 127, 169};
     const int width = static_cast<int>(std::lround(FlashStorage::readByte(&frame->width) * scale));
     const int height = static_cast<int>(std::lround(FlashStorage::readByte(&frame->height) * scale));
@@ -533,9 +541,8 @@ void drawExploreRouteActor(Canvas565& canvas, uint16_t speciesId,
     }
 
     constexpr float scale = static_cast<float>(EXPLORE_ROUTE_SCALE);
-    const int screenX = exploreRouteScreen(worldX, cameraX);
-    const int routeGroundY = EXPLORE_ROUTE_MAP_TOP +
-        exploreRouteScreen(worldY, cameraY) + EXPLORE_ROUTE_ACTOR_GROUND_OFFSET_Y;
+    const auto [screenX, routeGroundY] = routeSpriteAnchor(
+        model.map, frame, worldX, worldY, cameraX, cameraY, scale, flipX);
     if (!frame) {
 #if STICKMON_ENABLE_DEBUG_FEATURES && STICKMON_ENABLE_TRACE_LOGS
         Platform::logf(
@@ -551,7 +558,7 @@ void drawExploreRouteActor(Canvas565& canvas, uint16_t speciesId,
         // on the same shifted ground anchor as regular walking frames.
         drawFallbackPet(canvas, screenX, routeGroundY);
         drawExploreRouteMapVegetationForActor(
-            canvas, model, exploreRouteActorFootWorldY(worldY), screenX - 62, routeGroundY - 154,
+            canvas, model, exploreRouteActorFootWorldY(model.map, worldY), screenX - 62, routeGroundY - 154,
             screenX + 63, routeGroundY + 13, rowBegin, rowEnd, !airborne, airborne);
         return;
     }
@@ -630,7 +637,7 @@ void drawExploreRouteActor(Canvas565& canvas, uint16_t speciesId,
     }
     const auto shadow = PokemonShadow::atGround(frame, screenX, routeGroundY, scale, flipX);
     drawExploreRouteMapVegetationForActor(
-        canvas, model, exploreRouteActorFootWorldY(worldY),
+        canvas, model, exploreRouteActorFootWorldY(model.map, worldY),
         std::min(screenX - width / 2, spriteDrawn ? shadow.x - shadow.radiusX : screenX - 62),
         std::min(drawY, spriteDrawn ? shadow.y - shadow.radiusY : routeGroundY - 154),
         std::max(screenX - width / 2 + width,
@@ -830,19 +837,19 @@ void drawExploreRouteParkActors(Canvas565& canvas,
                                 const ExploreRouteViewModel& model,
                                 uint16_t rowBegin, uint16_t rowEnd) {
     ExploreTileSemantics::ActorDepth actors[3 + ExploreEcology::CAPACITY] = {
-        {ExploreTileSemantics::ActorRole::LEADER, exploreRouteActorFootWorldY(model.worldY)}};
+        {ExploreTileSemantics::ActorRole::LEADER, exploreRouteActorFootWorldY(model.map, model.worldY)}};
     uint8_t actorCount = 1;
     if (model.companionVisible && model.companionSpeciesId != 0) {
         actors[actorCount++] = {
             ExploreTileSemantics::ActorRole::COMPANION,
-            exploreRouteActorFootWorldY(model.companionWorldY)};
+            exploreRouteActorFootWorldY(model.map, model.companionWorldY)};
     }
     if (model.bossPending && model.bossSpeciesId != 0 && model.map &&
         model.pathIndex < model.map->pathCount) {
         const ExploreMapGenerator::Path& path = model.map->paths[model.pathIndex];
         if (model.bossIndex < path.pointCount) {
             actors[actorCount++] = {ExploreTileSemantics::ActorRole::BOSS,
-                exploreRouteActorFootWorldY(exploreRouteBossWorldPose(
+                exploreRouteActorFootWorldY(model.map, exploreRouteBossWorldPose(
                     path, model.bossIndex, model.animationNowMs).point.y)};
         }
     }
@@ -935,12 +942,12 @@ AmoledUi::Rect exploreRouteWildlifeBounds(const ExploreRouteViewModel& model, ui
 AmoledUi::Rect exploreRouteActorBounds(const ExploreRouteViewModel& model) {
     auto bounds = exploreActorBounds(model.speciesId, model.worldX, model.worldY,
         model.walkDirection, model.petFrame, model.walking, model.animationNowMs,
-        model.cameraX, model.cameraY);
+        model.cameraX, model.cameraY, model.map);
     if (model.companionVisible && model.companionSpeciesId != 0) {
         bounds = unionExploreBounds(bounds, exploreActorBounds(
             model.companionSpeciesId, model.companionWorldX, model.companionWorldY,
             model.companionWalkDirection, model.companionFrame, model.companionWalking,
-            model.animationNowMs, model.cameraX, model.cameraY));
+            model.animationNowMs, model.cameraX, model.cameraY, model.map));
     }
     return bounds;
 }
@@ -1270,8 +1277,8 @@ void renderExploreRouteScreen(Canvas565& canvas,
                     const auto point = ExploreRouteGeometry::pathPoint(
                         model.map->paths[model.pathIndex], model.pickupIndex);
                     const int x = exploreRouteScreen(point.x, model.cameraX);
-                    const int y = exploreRouteScreen(point.y, model.cameraY) +
-                        EXPLORE_ROUTE_ACTOR_GROUND_OFFSET_Y - exploreRoutePixel(6);
+                    const int y = exploreRouteActorGroundScreenY(model.map, point.y, model.cameraY) -
+                        exploreRoutePixel(6);
                     tonePass.include(model, {x - 40, y - 48, 80, 72});
                 }
             }
