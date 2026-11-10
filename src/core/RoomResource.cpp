@@ -398,7 +398,7 @@ bool RoomResource::loadExternal(const char* roomId) {
     if (!readExact(file, &prefix, sizeof(prefix)) ||
         prefix.magic != ROOM_PACK_MAGIC ||
         !file.seek(0)) {
-        Platform::logLine("[RoomResource] invalid room header");
+        Platform::errorLine("[RoomResource] invalid room header");
         return false;
     }
 
@@ -407,20 +407,20 @@ bool RoomResource::loadExternal(const char* roomId) {
         prefix.version == ROOM_PACK_VERSION_LAYERED) {
         PackedRoomHeaderHires packed{};
         if (!readExact(file, &packed, sizeof(packed))) {
-            Platform::logLine("[RoomResource] truncated v4 room header");
+            Platform::errorLine("[RoomResource] truncated v4 room header");
             return false;
         }
         header = normalizeHeader(packed);
     } else {
         PackedRoomHeader packed{};
         if (!readExact(file, &packed, sizeof(packed))) {
-            Platform::logLine("[RoomResource] truncated legacy room header");
+            Platform::errorLine("[RoomResource] truncated legacy room header");
             return false;
         }
         header = normalizeHeader(packed);
     }
     if (!validHeader(header)) {
-        Platform::logLine("[RoomResource] invalid room header");
+        Platform::errorLine("[RoomResource] invalid room header");
         return false;
     }
 
@@ -438,7 +438,7 @@ bool RoomResource::loadExternal(const char* roomId) {
     const bool layered = header.version == ROOM_PACK_VERSION_LAYERED;
     if ((!layered && expectedSize != file.size()) ||
         (layered && expectedSize + 8 > file.size())) {
-        Platform::logLine("[RoomResource] room payload size mismatch");
+        Platform::errorLine("[RoomResource] room payload size mismatch");
         return false;
     }
 
@@ -452,7 +452,7 @@ bool RoomResource::loadExternal(const char* roomId) {
         reference.baseRawBytes_ != header.baseRawBytes ||
         reference.artWidth_ != header.artWidth || reference.artHeight_ != header.artHeight ||
         fingerprint(reference.baseCompressed_, reference.baseCompressedLen_) != referenceHash)) {
-        Platform::logLine("[RoomResource] preview reference mismatch");
+        Platform::errorLine("[RoomResource] preview reference mismatch");
         return false;
     }
 
@@ -517,7 +517,7 @@ bool RoomResource::loadExternal(const char* roomId) {
         if (bed) Platform::memory().release(bed);
         if (doorway) Platform::memory().release(doorway);
         if (anchors) Platform::memory().release(anchors);
-        Platform::logLine("[RoomResource] invalid room metadata");
+        Platform::errorLine("[RoomResource] invalid room metadata");
         return false;
     }
 

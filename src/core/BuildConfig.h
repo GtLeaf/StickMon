@@ -12,6 +12,28 @@
 #define STICKMON_ENABLE_RENDER_STATS 0
 #endif
 
+// Explicitly enabled for room diagnostics, including release-only failures.
+#ifndef STICKMON_ENABLE_ROOM_DIAGNOSTICS
+#define STICKMON_ENABLE_ROOM_DIAGNOSTICS 0
+#endif
+
+#ifndef STICKMON_DEFAULT_AUDIO_VOLUME
+#define STICKMON_DEFAULT_AUDIO_VOLUME 50
+#endif
+
+#if STICKMON_DEFAULT_AUDIO_VOLUME < 0 || STICKMON_DEFAULT_AUDIO_VOLUME > 100
+#error "STICKMON_DEFAULT_AUDIO_VOLUME must be between 0 and 100"
+#endif
+
+// Core update interval while the display is locked; 0 keeps normal cadence.
+#ifndef STICKMON_LOCKED_UPDATE_MS
+#define STICKMON_LOCKED_UPDATE_MS 0
+#endif
+
+#if STICKMON_LOCKED_UPDATE_MS != 0 && (STICKMON_LOCKED_UPDATE_MS < 100 || STICKMON_LOCKED_UPDATE_MS > 2000)
+#error "STICKMON_LOCKED_UPDATE_MS must be 0 or between 100 and 2000"
+#endif
+
 #if STICKMON_ENABLE_DEBUG_FEATURES != 0 && STICKMON_ENABLE_DEBUG_FEATURES != 1
 #error "STICKMON_ENABLE_DEBUG_FEATURES must be 0 or 1"
 #endif
@@ -25,4 +47,6 @@
 
 namespace BuildConfig {
 static constexpr bool DEBUG_FEATURES = STICKMON_ENABLE_DEBUG_FEATURES != 0;
+static constexpr unsigned DEFAULT_AUDIO_VOLUME = STICKMON_DEFAULT_AUDIO_VOLUME;
+static constexpr unsigned LOCKED_UPDATE_MS = STICKMON_LOCKED_UPDATE_MS;
 }

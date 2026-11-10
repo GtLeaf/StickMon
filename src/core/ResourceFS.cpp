@@ -10,7 +10,7 @@ bool ResourceFS::begin() {
     if (mounted_) return true;
 
     if (!Platform::resources().mount()) {
-        Platform::logLine("[ResourceFS] resource store mount failed");
+        Platform::errorLine("[ResourceFS] resource store mount failed");
         return false;
     }
 

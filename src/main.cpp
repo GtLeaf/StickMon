@@ -19,20 +19,20 @@ void setup() {
         GameEngine::ins().runSilentCareWake();
     }
 
-    Serial.println("[Boot] Starting StickMon...");
+    Platform::logLine("[Boot] Starting StickMon...");
     const uint32_t randomSeedValue = Platform::power().hardwareRandom();
     randomSeed(randomSeedValue);
     GameRandom::seed(randomSeedValue);
     gameReady = GameEngine::ins().begin();
     if (!gameReady) {
-        Serial.println("[Boot] ERROR: GameEngine init failed");
+        Platform::errorLine("[Boot] ERROR: GameEngine init failed");
         return;
     }
-    Serial.printf("[Boot] PSRAM found=%d size=%u free=%u\n",
+    Platform::logf("[Boot] PSRAM found=%d size=%u free=%u\n",
                   Platform::power().externalMemorySize() > 0 ? 1 : 0,
                   Platform::power().externalMemorySize(),
                   Platform::power().externalMemoryFree());
-    Serial.println("[Boot] Init done");
+    Platform::logLine("[Boot] Init done");
 }
 
 void loop() {

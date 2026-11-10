@@ -292,7 +292,7 @@ bool ResourcePack::begin() {
     setDefaultRoot();
 
     if (!ResourceFS::ins().begin()) {
-        Platform::logLine("[ResourcePack] resource FS unavailable");
+        Platform::errorLine("[ResourcePack] resource FS unavailable");
         return false;
     }
 
@@ -302,7 +302,7 @@ bool ResourcePack::begin() {
         Platform::logf("[ResourcePack] active id=%s version=%s schema=%u root=%s\n",
                       id_, version_, schema_, root_);
     } else {
-        Platform::logf("[ResourcePack] no active pack root=%s\n", root_);
+        Platform::errorf("[ResourcePack] no active pack root=%s\n", root_);
     }
     return active_;
 }
@@ -410,12 +410,12 @@ bool ResourcePack::loadActiveConfig() {
     JsonStringStatus pathStatus =
         extractJsonStringAlias(json, "packPath", "path", path, sizeof(path));
     if (pathStatus == JsonStringStatus::INVALID) {
-        Platform::logLine("[ResourcePack] invalid pack root config");
+        Platform::errorLine("[ResourcePack] invalid pack root config");
         return false;
     }
     if (pathStatus == JsonStringStatus::VALID) {
         if (!isSafePathText(path, true)) {
-            Platform::logf("[ResourcePack] invalid pack root: %s\n", path);
+            Platform::errorf("[ResourcePack] invalid pack root: %s\n", path);
             return false;
         }
         copyText(root_, sizeof(root_), path);
@@ -427,12 +427,12 @@ bool ResourcePack::loadActiveConfig() {
         extractJsonStringAlias(json, "activePack", "pack",
                                packName, sizeof(packName));
     if (packStatus == JsonStringStatus::INVALID) {
-        Platform::logLine("[ResourcePack] invalid active pack config");
+        Platform::errorLine("[ResourcePack] invalid active pack config");
         return false;
     }
     if (packStatus == JsonStringStatus::VALID) {
         if (!isSafePackName(packName)) {
-            Platform::logf("[ResourcePack] invalid pack id: %s\n", packName);
+            Platform::errorf("[ResourcePack] invalid pack id: %s\n", packName);
             return false;
         }
         int written = std::snprintf(root_, sizeof(root_), "/packs/%s", packName);
@@ -453,18 +453,18 @@ bool ResourcePack::loadManifest() {
 
     char format[40] = {};
     if (!extractJsonString(json, "format", format, sizeof(format))) {
-        Platform::logf("[ResourcePack] manifest format missing path=%s\n", path);
+        Platform::errorf("[ResourcePack] manifest format missing path=%s\n", path);
         return false;
     }
     if (std::strcmp(format, PACK_FORMAT) != 0) {
-        Platform::logf("[ResourcePack] unsupported manifest format=%s expected=%s path=%s\n",
+        Platform::errorf("[ResourcePack] unsupported manifest format=%s expected=%s path=%s\n",
                       format,
                       PACK_FORMAT,
                       path);
         return false;
     }
     if (!extractJsonUint16(json, "schema", schema_) || schema_ != SUPPORTED_SCHEMA) {
-        Platform::logf("[ResourcePack] unsupported schema=%u\n", schema_);
+        Platform::errorf("[ResourcePack] unsupported schema=%u\n", schema_);
         return false;
     }
 
@@ -472,13 +472,13 @@ bool ResourcePack::loadManifest() {
     bool hasVersion = findJsonValue(json, "version") != nullptr;
     if ((hasId && !extractJsonString(json, "id", id_, sizeof(id_))) ||
         (hasVersion && !extractJsonString(json, "version", version_, sizeof(version_)))) {
-        Platform::logLine("[ResourcePack] invalid manifest metadata");
+        Platform::errorLine("[ResourcePack] invalid manifest metadata");
         return false;
     }
     if (id_[0] == '\0') copyText(id_, sizeof(id_), "dev");
     if (version_[0] == '\0') copyText(version_, sizeof(version_), "0.0.0");
     if (!isSafePackName(id_) || !isSafeVersionText(version_)) {
-        Platform::logLine("[ResourcePack] unsafe manifest metadata");
+        Platform::errorLine("[ResourcePack] unsafe manifest metadata");
         return false;
     }
 
@@ -493,7 +493,7 @@ bool ResourcePack::loadManifest() {
         !copyOptionalPath(json, "battleAssets", battleAssetsPath_, sizeof(battleAssetsPath_)) ||
         !copyOptionalPath(json, "mapAssets", mapAssetsPath_, sizeof(mapAssetsPath_)) ||
         !copyOptionalPath(json, "hatchAssets", hatchAssetsPath_, sizeof(hatchAssetsPath_))) {
-        Platform::logLine("[ResourcePack] invalid resource path in manifest");
+        Platform::errorLine("[ResourcePack] invalid resource path in manifest");
         return false;
     }
     return true;

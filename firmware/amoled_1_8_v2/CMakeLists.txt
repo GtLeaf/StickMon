@@ -4,6 +4,7 @@ option(STICKMON_ENABLE_CLAW "Build the ESP-Claw integration" ON)
 option(STICKMON_ENABLE_DEBUG_FEATURES "Expose the StickMon debug menu" OFF)
 
 set(STICKMON_ROOT "${CMAKE_CURRENT_LIST_DIR}/../..")
+include("${STICKMON_ROOT}/firmware/common/build_profile.cmake")
 set(STICKMON_ESPCLAW_ROOT "$ENV{STICKMON_ESPCLAW_ROOT}")
 if(NOT STICKMON_ESPCLAW_ROOT)
     set(STICKMON_ESPCLAW_ROOT "${STICKMON_ROOT}/../espclaw/esp-claw-master")

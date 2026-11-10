@@ -294,5 +294,8 @@ inline IPeerTransport& peers() { return services().peers; }
 
 void logf(const char* format, ...);
 void logLine(const char* text);
+// Actionable failures remain available in Release builds.
+void errorf(const char* format, ...);
+void errorLine(const char* text);
 
 }  // namespace Platform

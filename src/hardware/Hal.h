@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include "core/BuildConfig.h"
 #include "platform/api/PlatformServices.h"
 
 class Hal {
@@ -42,7 +43,7 @@ private:
     bool initialized = false;
     bool idleBrightnessActive = false;
     uint8_t brightness = 128;
-    uint8_t audioVolume = 50;
+    uint8_t audioVolume = BuildConfig::DEFAULT_AUDIO_VOLUME;
     int batteryFiltered = -1;
     uint32_t lastBatterySampleMs = 0;
 };

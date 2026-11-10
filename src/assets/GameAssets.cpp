@@ -193,7 +193,7 @@ bool loadPack(PackSlot slot) {
     ResourcePack& resourcePack = ResourcePack::ins();
     Platform::ResourceFile file;
     if (!openPackFile(resourcePack, slot, file)) {
-        Platform::logf("[GameAssets] pack=%s missing\n", packName(slot));
+        Platform::errorf("[GameAssets] pack=%s missing\n", packName(slot));
         return false;
     }
 
@@ -206,7 +206,7 @@ bool loadPack(PackSlot slot) {
         header.flags != FLAG_RAW_DEFLATE ||
         header.payloadRawBytes == 0 || header.payloadRawBytes > MAX_PAYLOAD_BYTES ||
         header.payloadCompressedBytes == 0) {
-        Platform::logf("[GameAssets] pack=%s invalid header\n", packName(slot));
+        Platform::errorf("[GameAssets] pack=%s invalid header\n", packName(slot));
         return false;
     }
 
@@ -214,13 +214,13 @@ bool loadPack(PackSlot slot) {
                            static_cast<uint64_t>(header.dataWords + header.paletteWords) * sizeof(uint16_t);
     uint64_t expectedFile = sizeof(Header) + static_cast<uint64_t>(header.payloadCompressedBytes);
     if (expectedRaw != header.payloadRawBytes || expectedFile != file.size()) {
-        Platform::logf("[GameAssets] pack=%s size mismatch\n", packName(slot));
+        Platform::errorf("[GameAssets] pack=%s size mismatch\n", packName(slot));
         return false;
     }
 
     uint8_t* payload = allocate<uint8_t>(header.payloadRawBytes);
     if (!payload) {
-        Platform::logf("[GameAssets] pack=%s allocation failed bytes=%u\n",
+        Platform::errorf("[GameAssets] pack=%s allocation failed bytes=%u\n",
                       packName(slot), header.payloadRawBytes);
         return false;
     }
@@ -245,7 +245,7 @@ bool loadPack(PackSlot slot) {
                 frameIndices[kindValue] != INVALID_FRAME_INDEX;
             if (!frameValid || actualSlot != slot || duplicateInPack ||
                 duplicateLoaded) {
-                Platform::logf(
+                Platform::errorf(
                     "[GameAssets] pack=%s invalid frame index=%u kind=%u valid=%u expectedSlot=%u actualSlot=%u duplicate=%u/%u\n",
                     packName(slot), i, kindValue, frameValid ? 1U : 0U,
                     static_cast<unsigned>(slot),
@@ -259,7 +259,7 @@ bool loadPack(PackSlot slot) {
     }
     if (!ok) {
         Platform::memory().release(payload);
-        Platform::logf("[GameAssets] pack=%s invalid payload read=%u inflate=%u total=%u\n",
+        Platform::errorf("[GameAssets] pack=%s invalid payload read=%u inflate=%u total=%u\n",
                       packName(slot), stats.readMs, stats.inflateMs, stats.totalMs);
         return false;
     }

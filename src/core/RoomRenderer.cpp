@@ -94,7 +94,7 @@ bool prepare(bool night) {
         roomBufferRevision == RoomResource::ins().revision()) return true;
     uint32_t started = Platform::clock().millis();
     if (!decodeBase()) {
-        Platform::logLine("[RoomRenderer] base decode failed");
+        Platform::errorLine("[RoomRenderer] base decode failed");
         roomBufferValid = false;
         return false;
     }

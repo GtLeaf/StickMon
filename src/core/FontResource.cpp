@@ -113,7 +113,7 @@ bool FontResource::begin() {
     initialized_ = true;
 
     if (!ResourcePack::ins().begin()) {
-        Platform::logLine("[FontResource] resource pack unavailable");
+        Platform::errorLine("[FontResource] resource pack unavailable");
         return false;
     }
 
@@ -210,20 +210,20 @@ bool FontResource::loadExternal(FontFace face, FontData& data) {
         ? pack.openFont(UNSCII_ASCII_FONT_ID, file)
         : pack.openDefaultFont(file);
     if (!opened) {
-        Platform::logf("[FontResource] %s font file unavailable\n",
+        Platform::errorf("[FontResource] %s font file unavailable\n",
                       faceName(face));
         return false;
     }
 
     PackedFontHeader header{};
     if (!readExact(file, &header, sizeof(header))) {
-        Platform::logf("[FontResource] %s font header truncated\n",
+        Platform::errorf("[FontResource] %s font header truncated\n",
                       faceName(face));
         return false;
     }
     if (!validHeader(header, FontResource::GLYPH_W,
                      FontResource::GLYPH_H, FontResource::GLYPH_BYTES)) {
-        Platform::logf("[FontResource] %s font header invalid magic=%08lx version=%u glyphs=%u size=%ux%u bytes=%u\n",
+        Platform::errorf("[FontResource] %s font header invalid magic=%08lx version=%u glyphs=%u size=%ux%u bytes=%u\n",
                       faceName(face),
                       static_cast<unsigned long>(header.magic),
                       header.version,
@@ -237,7 +237,7 @@ bool FontResource::loadExternal(FontFace face, FontData& data) {
     size_t bytes = sizeof(Glyph) * header.glyphCount;
     size_t expectedSize = sizeof(PackedFontHeader) + bytes;
     if (file.size() != expectedSize) {
-        Platform::logf("[FontResource] %s font size invalid actual=%u expected=%u\n",
+        Platform::errorf("[FontResource] %s font size invalid actual=%u expected=%u\n",
                       faceName(face),
                       static_cast<unsigned>(file.size()),
                       static_cast<unsigned>(expectedSize));
@@ -246,14 +246,14 @@ bool FontResource::loadExternal(FontFace face, FontData& data) {
     Glyph* glyphs = static_cast<Glyph*>(
         Platform::memory().allocate(bytes, true));
     if (!glyphs) {
-        Platform::logf("[FontResource] %s font allocation failed bytes=%u\n",
+        Platform::errorf("[FontResource] %s font allocation failed bytes=%u\n",
                       faceName(face),
                       static_cast<unsigned>(bytes));
         return false;
     }
 
     if (!readExact(file, glyphs, bytes)) {
-        Platform::logf("[FontResource] %s font glyph payload truncated\n",
+        Platform::errorf("[FontResource] %s font glyph payload truncated\n",
                       faceName(face));
         Platform::memory().release(glyphs);
         return false;
@@ -263,14 +263,14 @@ bool FontResource::loadExternal(FontFace face, FontData& data) {
     for (uint16_t i = 0; i < header.glyphCount; ++i) {
         uint32_t codepoint = glyphs[i].codepoint;
         if (!validCodepoint(codepoint)) {
-            Platform::logf("[FontResource] %s font codepoint invalid index=%u value=U+%04lX\n",
+            Platform::errorf("[FontResource] %s font codepoint invalid index=%u value=U+%04lX\n",
                           faceName(face), i,
                           static_cast<unsigned long>(codepoint));
             Platform::memory().release(glyphs);
             return false;
         }
         if (i > 0 && codepoint <= previous) {
-            Platform::logf("[FontResource] %s font codepoints unsorted index=%u previous=U+%04lX value=U+%04lX\n",
+            Platform::errorf("[FontResource] %s font codepoints unsorted index=%u previous=U+%04lX value=U+%04lX\n",
                           faceName(face),
                           i,
                           static_cast<unsigned long>(previous),
@@ -295,21 +295,21 @@ bool FontResource::loadExternalLarge(FontFace face, LargeFontData& data) {
     const char* id = face == FontFace::UNSCII_ASCII
         ? LARGE_ASCII_FONT_ID : LARGE_CJK_FONT_ID;
     if (!pack.openFont(id, file)) {
-        Platform::logf("[FontResource] large %s font file unavailable\n",
+        Platform::errorf("[FontResource] large %s font file unavailable\n",
                       faceName(face));
         return false;
     }
 
     PackedFontHeader header{};
     if (!readExact(file, &header, sizeof(header))) {
-        Platform::logf("[FontResource] large %s font header truncated\n",
+        Platform::errorf("[FontResource] large %s font header truncated\n",
                       faceName(face));
         return false;
     }
     if (!validHeader(header, FontResource::LARGE_GLYPH_W,
                      FontResource::LARGE_GLYPH_H,
                      FontResource::LARGE_GLYPH_BYTES)) {
-        Platform::logf(
+        Platform::errorf(
             "[FontResource] large %s font header invalid magic=%08lx version=%u glyphs=%u size=%ux%u bytes=%u\n",
             faceName(face), static_cast<unsigned long>(header.magic),
             header.version, header.glyphCount, header.width, header.height,
@@ -320,7 +320,7 @@ bool FontResource::loadExternalLarge(FontFace face, LargeFontData& data) {
     size_t bytes = sizeof(LargeGlyph) * header.glyphCount;
     size_t expectedSize = sizeof(PackedFontHeader) + bytes;
     if (file.size() != expectedSize) {
-        Platform::logf(
+        Platform::errorf(
             "[FontResource] large %s font size invalid actual=%u expected=%u\n",
             faceName(face), static_cast<unsigned>(file.size()),
             static_cast<unsigned>(expectedSize));
@@ -329,12 +329,12 @@ bool FontResource::loadExternalLarge(FontFace face, LargeFontData& data) {
     LargeGlyph* glyphs = static_cast<LargeGlyph*>(
         Platform::memory().allocate(bytes, true));
     if (!glyphs) {
-        Platform::logf("[FontResource] large %s font allocation failed bytes=%u\n",
+        Platform::errorf("[FontResource] large %s font allocation failed bytes=%u\n",
                       faceName(face), static_cast<unsigned>(bytes));
         return false;
     }
     if (!readExact(file, glyphs, bytes)) {
-        Platform::logf("[FontResource] large %s font glyph payload truncated\n",
+        Platform::errorf("[FontResource] large %s font glyph payload truncated\n",
                       faceName(face));
         Platform::memory().release(glyphs);
         return false;
@@ -345,7 +345,7 @@ bool FontResource::loadExternalLarge(FontFace face, LargeFontData& data) {
         uint32_t codepoint = glyphs[i].codepoint;
         if (!validCodepoint(codepoint) ||
             (i > 0 && codepoint <= previous)) {
-            Platform::logf("[FontResource] large %s font codepoints invalid index=%u\n",
+            Platform::errorf("[FontResource] large %s font codepoints invalid index=%u\n",
                           faceName(face), i);
             Platform::memory().release(glyphs);
             return false;

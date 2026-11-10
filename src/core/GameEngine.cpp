@@ -171,14 +171,14 @@ GameEngine& GameEngine::ins() {
 bool GameEngine::begin() {
     bootStartedMs = Platform::clock().millis();
     if (!Hal::ins().begin()) {
-        Platform::logLine("[GameEngine] Hal init failed");
+        Platform::errorLine("[GameEngine] Hal init failed");
         return false;
     }
     careAcc = takeRetainedCareAccumulators(
         Platform::power().wakeReason() == Platform::WakeReason::EXTERNAL_SIGNAL);
     PixelRenderer::bind(Hal::ins().frameBuffer());
     if (!resourceService.begin()) {
-        Platform::logLine("[GameEngine] external resource FS unavailable");
+        Platform::errorLine("[GameEngine] external resource FS unavailable");
     }
     saveManager.begin();
     bool normalizedState = false;
@@ -257,8 +257,28 @@ void GameEngine::run() {
     Platform::input().update();
     uint32_t now = Hal::ins().millis();
     bool didWork = false;
+#if STICKMON_ENABLE_ROOM_DIAGNOSTICS
+    static uint32_t lastRoomDiagnostic = 0;
+    if (now - lastRoomDiagnostic >= 5000) {
+        lastRoomDiagnostic = now;
+        Platform::logf("[RoomEngine] t=%u scene=%u idle=%u locked=%u fade=%u scheduled=%u due_in=%ld update_age=%u frame_age=%u dirty=%u alert=%u\n",
+            now, unsigned(currentId), unsigned(idleActive), unsigned(Platform::display().locked()),
+            unsigned(sceneFade), unsigned(sceneUpdateScheduled), long(int32_t(nextSceneUpdateMs-now)),
+            now-lastSceneUpdateMs, now-lastFrameMs, unsigned(sceneDirty), unsigned(resourceAlertVisible()));
+    }
+#endif
 
-    if (now - lastInputMs >= INPUT_SAMPLE_MS) {
+    const bool background = lockedBackground();
+    if (background != lockedBackgroundActive) {
+        lockedBackgroundActive = background;
+        // Let scenes see the lock immediately (e.g. hatch IMU off) before
+        // switching to the slower standby cadence.
+        if (background) {
+            lastUpdateMs = now - LOCKED_FRAME_MS;
+            scheduleSceneUpdate(now);
+        }
+    }
+    if (now - lastInputMs >= (background ? LOCKED_FRAME_MS : INPUT_SAMPLE_MS)) {
         lastInputMs = now;
         processInput(now);
         now = Hal::ins().millis();
@@ -266,9 +286,9 @@ void GameEngine::run() {
     }
 
     updateIdle(now);
-    const uint32_t coreMs = idleActive && !AudioManager::ins().musicFadeActive()
-        ? IDLE_FRAME_MS : FRAME_MS;
-    const uint32_t visualMs = !idleActive && currentScene &&
+    const uint32_t coreMs = background ? LOCKED_FRAME_MS
+        : idleActive && !AudioManager::ins().musicFadeActive() ? IDLE_FRAME_MS : FRAME_MS;
+    const uint32_t visualMs = !background && !idleActive && currentScene &&
         sceneFade == SceneFadePhase::NONE && !resourceAlertVisible()
         ? MathUtil::max<uint32_t>(33, currentScene->visualFrameIntervalMs(now)) : coreMs;
     const uint32_t frameMs = MathUtil::min(coreMs, visualMs);
@@ -1596,7 +1616,7 @@ void GameEngine::queueMoveReplacementEvent(uint8_t teamSlot,
                                            Game::MoveId oldMoveId,
                                            Game::MoveId newMoveId) {
     if (moveReplacementEventCount >= MOVE_REPLACEMENT_EVENT_CAP) {
-        Platform::logf("[MoveLearn] replacement queue full; dropped slot=%u %u->%u\n",
+        Platform::errorf("[MoveLearn] replacement queue full; dropped slot=%u %u->%u\n",
                       teamSlot, oldMoveId, newMoveId);
         return;
     }
@@ -1703,7 +1723,7 @@ bool GameEngine::queueEvolutionEvent(
     uint8_t oldLevel,
     Game::ItemId consumedItem) {
     if (evolutionEventCount >= EVOLUTION_EVENT_CAP) {
-        Platform::logf("[Evolution] notification queue full; dropped slot=%u %u->%u\n",
+        Platform::errorf("[Evolution] notification queue full; dropped slot=%u %u->%u\n",
                       teamSlot, fromSpeciesId, toSpeciesId);
         return false;
     }
@@ -2023,7 +2043,7 @@ bool GameEngine::saveNow() {
     uint32_t now = Hal::ins().millis();
     if (currentScene && !currentScene->onBeforeSave()) {
         saveCoordinator.recordAttempt(now, false);
-        Platform::logLine("[GameEngine] scene progress save failed");
+        Platform::errorLine("[GameEngine] scene progress save failed");
         return false;
     }
     syncGameClock(now);
@@ -2040,7 +2060,7 @@ bool GameEngine::saveNow() {
 
 bool GameEngine::resetGame() {
     if (!saveManager.clearAll()) {
-        Platform::logLine("[GameEngine] failed to clear game data");
+        Platform::errorLine("[GameEngine] failed to clear game data");
         return false;
     }
     saveWritesBlocked = false;
@@ -2073,7 +2093,7 @@ bool GameEngine::resetGame() {
     syncSpriteCache();
 
     if (!saveNow()) {
-        Platform::logLine("[GameEngine] reset completed but default save failed");
+        Platform::errorLine("[GameEngine] reset completed but default save failed");
     }
     return true;
 }
@@ -2126,7 +2146,7 @@ void GameEngine::switchScene(SceneID id, bool saveBeforeSwitch) {
     SceneID fromId = currentId;
     resetIdle(now);
     if (saveBeforeSwitch && saveCoordinator.dirty() && !saveNow()) {
-        Platform::logLine("[GameEngine] save before scene switch failed");
+        Platform::errorLine("[GameEngine] save before scene switch failed");
     }
     if (currentScene) {
         currentScene->onExit();
@@ -2138,14 +2158,14 @@ void GameEngine::switchScene(SceneID id, bool saveBeforeSwitch) {
     currentScene.reset(allocateScene(actualId));
     if (!currentScene) {
         SceneID fallback = homeScene();
-        Platform::logf("[GameEngine] scene allocation failed id=%u fallback=%u\n",
+        Platform::errorf("[GameEngine] scene allocation failed id=%u fallback=%u\n",
                       static_cast<unsigned>(id),
                       static_cast<unsigned>(fallback));
         actualId = fallback;
         currentScene.reset(allocateScene(actualId));
     }
     if (!currentScene) {
-        Platform::logLine("[GameEngine] fatal scene allocation failure; restarting");
+        Platform::errorLine("[GameEngine] fatal scene allocation failure; restarting");
         Platform::clock().sleepMs(50);
         Platform::power().restart();
         return;
@@ -2297,6 +2317,7 @@ void GameEngine::update(uint32_t nowMs) {
     }
     tickCare(nowMs);
     if (visitSession.busy()) updateVisit(nowMs);
+    if (lockedBackground()) catchUpLockedScene(nowMs);
     updateCurrentScene(nowMs);
     SceneFadePhase fadeBefore = sceneFade;
     uint16_t fadeProgressBefore = sceneFadeProgressMs;
@@ -2333,6 +2354,24 @@ void GameEngine::updateCurrentScene(uint32_t nowMs) {
                 sceneUpdateScheduled = true;
             }
         }
+    }
+}
+
+bool GameEngine::lockedBackground() const {
+    return LOCKED_FRAME_MS > 0 && Platform::display().locked();
+}
+
+void GameEngine::catchUpLockedScene(uint32_t nowMs) {
+    // Replay due scene updates at most 100ms apart so movement and AI timers
+    // see live-sized steps; skip catch-up after long stalls like live frames.
+    uint32_t stepMs = lastSceneUpdateMs;
+    if (nowMs - stepMs > 2 * LOCKED_FRAME_MS) return;
+    const Scene* scene = currentScene.get();
+    while (nowMs - stepMs > LOCKED_SCENE_STEP_MS && sceneUpdateScheduled &&
+           currentScene.get() == scene && lockedBackground()) {
+        stepMs += LOCKED_SCENE_STEP_MS;
+        if (static_cast<int32_t>(stepMs - nextSceneUpdateMs) < 0) continue;
+        updateCurrentScene(stepMs);
     }
 }
 
@@ -2556,7 +2595,7 @@ void GameEngine::updateIdle(uint32_t nowMs) {
     int32_t elapsed = (int32_t)(nowMs - lastActivityMs);
     if (elapsed < 0 || (uint32_t)elapsed < timeout) return;
     if (saveCoordinator.dirty() && !saveNow()) {
-        Platform::logLine("[GameEngine] save before idle failed");
+        Platform::errorLine("[GameEngine] save before idle failed");
     }
     idleActive = true;
     invalidateScene();

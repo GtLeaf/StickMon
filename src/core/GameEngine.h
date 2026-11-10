@@ -334,6 +334,8 @@ private:
     void processInput(uint32_t nowMs);
     void update(uint32_t nowMs);
     void updateCurrentScene(uint32_t nowMs);
+    bool lockedBackground() const;
+    void catchUpLockedScene(uint32_t nowMs);
     void scheduleSceneUpdate(uint32_t nowMs);
     void logSceneDemand(const SceneUpdateResult& result, uint32_t nowMs);
     void emitRenderStats(uint32_t nowMs);
@@ -381,6 +383,10 @@ private:
     static constexpr uint32_t INPUT_SAMPLE_MS = 16;
     static constexpr uint32_t FRAME_MS = 66;
     static constexpr uint32_t IDLE_FRAME_MS = 250;
+    // Locked standby keeps rules running, stepping scene motion in live-sized slices.
+    static constexpr uint32_t LOCKED_FRAME_MS = BuildConfig::LOCKED_UPDATE_MS;
+    static constexpr uint32_t LOCKED_SCENE_STEP_MS = 100;
+    bool lockedBackgroundActive = false;
     static constexpr uint32_t RENDER_STATS_INTERVAL_MS = 10000;
 
     enum class SceneFadePhase : uint8_t {

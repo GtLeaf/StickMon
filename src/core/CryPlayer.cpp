@@ -62,7 +62,7 @@ bool CryPlayer::play(uint16_t speciesId) {
     if (!pack.begin()) return false;
     Platform::ResourceFile file;
     if (!pack.openCry(speciesId, file)) {
-        Platform::logf("[CryPlayer] missing species=%u\n", speciesId);
+        Platform::errorf("[CryPlayer] missing species=%u\n", speciesId);
         return false;
     }
 
@@ -80,7 +80,7 @@ bool CryPlayer::play(uint16_t speciesId) {
         header.reserved != 0 ||
         static_cast<uint64_t>(sizeof(header)) + header.payloadCompressedBytes !=
             file.size()) {
-        Platform::logf("[CryPlayer] invalid species=%u bytes=%u\n",
+        Platform::errorf("[CryPlayer] invalid species=%u bytes=%u\n",
                       speciesId, static_cast<unsigned>(file.size()));
         return false;
     }
@@ -88,7 +88,7 @@ bool CryPlayer::play(uint16_t speciesId) {
     uint8_t* pcm = static_cast<uint8_t*>(
         Platform::memory().allocate(header.payloadRawBytes, true));
     if (!pcm) {
-        Platform::logf("[CryPlayer] allocation failed species=%u bytes=%u\n",
+        Platform::errorf("[CryPlayer] allocation failed species=%u bytes=%u\n",
                       speciesId, header.payloadRawBytes);
         return false;
     }
@@ -101,7 +101,7 @@ bool CryPlayer::play(uint16_t speciesId) {
                                      header.payloadCrc32,
                                      &stats)) {
         Platform::memory().release(pcm);
-        Platform::logf("[CryPlayer] decode failed species=%u read=%u inflate=%u\n",
+        Platform::errorf("[CryPlayer] decode failed species=%u read=%u inflate=%u\n",
                       speciesId, stats.readMs, stats.inflateMs);
         return false;
     }
@@ -113,7 +113,7 @@ bool CryPlayer::play(uint16_t speciesId) {
             pcm_, pcmBytes_, header.sampleRate,
             AudioManager::CRY_CHANNEL, true)) {
         releaseBuffer();
-        Platform::logf("[CryPlayer] playback failed species=%u\n", speciesId);
+        Platform::errorf("[CryPlayer] playback failed species=%u\n", speciesId);
         return false;
     }
 

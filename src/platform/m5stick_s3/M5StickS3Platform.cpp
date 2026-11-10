@@ -122,13 +122,13 @@ bool M5StickS3Platform::begin() {
     gFrameBuffer.setPsram(psramFound());
     if (!gFrameBuffer.createSprite(Platform::LOGICAL_DISPLAY_W,
                                    Platform::LOGICAL_DISPLAY_H)) {
-        Serial.println("[Platform] ERROR: createSprite failed");
+        Platform::errorLine("[Platform] ERROR: createSprite failed");
         return false;
     }
     gFrameBuffer.setSwapBytes(true);
     setVolume(audioVolume_);
     initialized_ = true;
-    Serial.println("[Platform] M5StickS3 ready");
+    Platform::logLine("[Platform] M5StickS3 ready");
     return true;
 }
 
@@ -268,7 +268,7 @@ bool M5StickS3Platform::beginMicrophone() {
         return false;
     }
     microphoneMode_ = true;
-    Serial.println("[Audio] mode=microphone");
+    Platform::logLine("[Audio] mode=microphone");
     return true;
 }
 
@@ -284,7 +284,7 @@ void M5StickS3Platform::endMicrophone() {
     setVolume(audioVolume_);
     microphoneMode_ = false;
     microphoneRecordingUntilMs_ = 0;
-    Serial.println("[Audio] mode=speaker");
+    Platform::logLine("[Audio] mode=speaker");
 }
 
 bool M5StickS3Platform::recordMicrophone(
