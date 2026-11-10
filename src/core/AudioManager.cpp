@@ -22,7 +22,15 @@ constexpr uint16_t MAX_BLOCK_SAMPLES = 4096;
 constexpr uint32_t MAX_SFX_SAMPLES = PcmMixer::OUTPUT_SAMPLE_RATE * 5U;
 constexpr uint32_t MUSIC_FADE_MS = 1000;
 constexpr uint8_t MUSIC_PREFILL_BLOCKS = 2;
-constexpr uint8_t MUSIC_QUEUE_TARGET_BLOCKS = 2;
+// Queued music blocks (about 128 ms each at 16 kHz). Targets with longer
+// main-loop stalls may raise this up to the mixer queue capacity of 4.
+#ifndef STICKMON_MUSIC_QUEUE_TARGET_BLOCKS
+#define STICKMON_MUSIC_QUEUE_TARGET_BLOCKS 2
+#endif
+constexpr uint8_t MUSIC_QUEUE_TARGET_BLOCKS = STICKMON_MUSIC_QUEUE_TARGET_BLOCKS;
+static_assert(MUSIC_QUEUE_TARGET_BLOCKS >= MUSIC_PREFILL_BLOCKS &&
+                  MUSIC_QUEUE_TARGET_BLOCKS <= 4,
+              "music queue target must fit the PcmMixer block queue");
 constexpr uint8_t MUSIC_REFILL_BLOCKS = 1;
 constexpr uint32_t HOME_MUSIC_SILENCE_MIN_MS = 2UL * 60UL * 1000UL;
 constexpr uint32_t HOME_MUSIC_SILENCE_MAX_MS = 4UL * 60UL * 1000UL;
@@ -70,6 +78,10 @@ const char* musicId(MusicTrack track) {
     case MusicTrack::NONE: return nullptr;
     }
     return nullptr;
+}
+
+bool isBattleMusic(MusicTrack track) {
+    return track == MusicTrack::BATTLE || track == MusicTrack::BATTLE_SPECIAL;
 }
 
 const char* sfxId(SfxCue cue) {
@@ -164,6 +176,11 @@ void AudioManager::setMusic(MusicTrack track) {
          (track == MusicTrack::HOME && homeMusicResumeAtMs_ != 0))) {
         return;
     }
+    if (track != MusicTrack::EXPLORE && !isBattleMusic(track)) {
+        exploreResumeValid_ = false;
+    } else if (isBattleMusic(track) && playingMusic_ == MusicTrack::EXPLORE) {
+        rememberExploreMusic();
+    }
     if (requestedMusic_ != track) homeMusicResumeAtMs_ = 0;
     requestedMusic_ = track;
     if (playingMusic_ != track) releaseMusic();
@@ -175,6 +192,7 @@ void AudioManager::setMusic(MusicTrack track) {
 }
 
 void AudioManager::stopMusic() {
+    exploreResumeValid_ = false;
     requestedMusic_ = MusicTrack::NONE;
     homeMusicResumeAtMs_ = 0;
     releaseMusic();
@@ -183,7 +201,10 @@ void AudioManager::stopMusic() {
 void AudioManager::setMusicSuspended(bool suspended) {
     if (musicSuspended_ == suspended) return;
     musicSuspended_ = suspended;
-    if (suspended) releaseMusic();
+    if (suspended) {
+        rememberExploreMusic();
+        releaseMusic();
+    }
 }
 
 void AudioManager::setPowerSave(bool active) {
@@ -219,7 +240,7 @@ bool AudioManager::openAudio(const char* id, Platform::ResourceFile& file,
          packed.loopStartSample != 0) ||
         packed.payloadBytes != packed.blockCount * packed.blockBytes ||
         sizeof(packed) + packed.payloadBytes != file.size()) {
-        Platform::logf("[Audio] invalid pack id=%s bytes=%u\n",
+        Platform::errorf("[Audio] invalid pack id=%s bytes=%u\n",
                       id, static_cast<unsigned>(file.size()));
         file.close();
         return false;
@@ -264,7 +285,7 @@ bool AudioManager::startRequestedMusic() {
         if (compressed) Platform::memory().release(compressed);
         if (first) Platform::memory().release(first);
         if (second) Platform::memory().release(second);
-        Platform::logf("[Audio] music allocation failed id=%s\n", id);
+        Platform::errorf("[Audio] music allocation failed id=%s\n", id);
         return false;
     }
 
@@ -277,6 +298,22 @@ bool AudioManager::startRequestedMusic() {
     nextMusicBlock_ = 0;
     nextMusicSkipSamples_ = 0;
     musicPreviousSample_ = 128;
+    if (requestedMusic_ == MusicTrack::EXPLORE && exploreResumeValid_) {
+        const auto& cursor = exploreResumeCursor_;
+        if (cursor.block <= header.blockCount &&
+            cursor.skipSamples < header.blockSamples &&
+            musicFile_.seek(sizeof(PackedAudioHeader) +
+                static_cast<size_t>(cursor.block) * header.blockBytes)) {
+            nextMusicBlock_ = cursor.block;
+            nextMusicSkipSamples_ = cursor.skipSamples;
+            musicPreviousSample_ = cursor.previousSample;
+        } else {
+            // A changed or unreadable resource must never start at an invalid
+            // offset. Keep the bookmark available if opening can be retried.
+            releaseMusic();
+            return false;
+        }
+    }
     playingMusic_ = requestedMusic_;
     for (uint8_t block = 0; block < MUSIC_PREFILL_BLOCKS; ++block) {
         if (!queueNextMusicBlock(block == 0)) {
@@ -285,6 +322,7 @@ bool AudioManager::startRequestedMusic() {
         }
         if (homeMusicCycleComplete_) break;
     }
+    if (playingMusic_ == MusicTrack::EXPLORE) exploreResumeValid_ = false;
     Platform::logf(
         "[Audio] music=%s rate=%u samples=%u blocks=%u prefill=%u stream=1\n",
         id, header.sampleRate, header.sampleCount, header.blockCount,
@@ -363,6 +401,7 @@ bool AudioManager::decodeMusicBlock(uint8_t bufferIndex) {
 }
 
 bool AudioManager::queueNextMusicBlock(bool stopCurrent) {
+    const MusicCursor cursor{nextMusicBlock_, nextMusicSkipSamples_, musicPreviousSample_};
     uint8_t bufferIndex = nextMusicBuffer_;
     if (!decodeMusicBlock(bufferIndex)) return false;
     size_t sampleCount = musicPcmSamples_[bufferIndex];
@@ -371,6 +410,13 @@ bool AudioManager::queueNextMusicBlock(bool stopCurrent) {
             MUSIC_CHANNEL, stopCurrent)) {
         return false;
     }
+    if (queuedMusicCursorCount_ == 4) {
+        for (uint8_t i = 1; i < queuedMusicCursorCount_; ++i) {
+            queuedMusicCursors_[i - 1] = queuedMusicCursors_[i];
+        }
+        --queuedMusicCursorCount_;
+    }
+    queuedMusicCursors_[queuedMusicCursorCount_++] = cursor;
     nextMusicBuffer_ ^= 1;
     return true;
 }
@@ -454,7 +500,10 @@ void AudioManager::update() {
     }
     if (requestedMusic_ == MusicTrack::NONE ||
         Platform::audio().volume() == 0) {
-        if (playingMusic_ != MusicTrack::NONE) releaseMusic();
+        if (playingMusic_ != MusicTrack::NONE) {
+            rememberExploreMusic();
+            releaseMusic();
+        }
         return;
     }
     if (powerSaveActive_ && musicChannelVolume_ == 0) {
@@ -494,7 +543,7 @@ void AudioManager::update() {
     if (refill > MUSIC_REFILL_BLOCKS) refill = MUSIC_REFILL_BLOCKS;
     for (uint8_t block = 0; block < refill; ++block) {
         if (!queueNextMusicBlock(false)) {
-            Platform::logLine("[Audio] music stream stopped");
+            Platform::errorLine("[Audio] music stream stopped");
             releaseMusic();
             break;
         }
@@ -544,9 +593,20 @@ void AudioManager::releaseMusic() {
     nextMusicBuffer_ = 0;
     nextMusicBlock_ = 0;
     nextMusicSkipSamples_ = 0;
+    queuedMusicCursorCount_ = 0;
     homeMusicCycleComplete_ = false;
     playingMusic_ = MusicTrack::NONE;
     musicPaused_ = false;
+}
+
+void AudioManager::rememberExploreMusic() {
+    if (playingMusic_ != MusicTrack::EXPLORE) return;
+    const uint8_t pending = std::min(
+        Platform::audio().queuedPcm(MUSIC_CHANNEL), queuedMusicCursorCount_);
+    exploreResumeCursor_ = pending > 0
+        ? queuedMusicCursors_[queuedMusicCursorCount_ - pending]
+        : MusicCursor{nextMusicBlock_, nextMusicSkipSamples_, musicPreviousSample_};
+    exploreResumeValid_ = true;
 }
 
 void AudioManager::releaseSfx() {
@@ -555,6 +615,7 @@ void AudioManager::releaseSfx() {
 }
 
 void AudioManager::stopAll() {
+    exploreResumeValid_ = false;
     requestedMusic_ = MusicTrack::NONE;
     homeMusicResumeAtMs_ = 0;
     Platform::audio().stop();

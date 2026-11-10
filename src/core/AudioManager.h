@@ -58,6 +58,7 @@ private:
     bool decodeMusicBlock(uint8_t bufferIndex);
     bool queueNextMusicBlock(bool stopCurrent);
     void beginHomeMusicSilence(uint32_t nowMs);
+    void rememberExploreMusic();
     void releaseMusic();
     void releaseSfx();
     void updateMusicFade(uint32_t nowMs);
@@ -73,6 +74,19 @@ private:
     uint8_t musicPreviousSample_ = 128;
     uint32_t homeMusicResumeAtMs_ = 0;
     bool homeMusicCycleComplete_ = false;
+
+    struct MusicCursor {
+        uint32_t block = 0;
+        uint16_t skipSamples = 0;
+        uint8_t previousSample = 128;
+    };
+    // Backends expose queued blocks, including the one currently playing.
+    // Keep enough history to resume its beginning, rather than skipping all
+    // of the decoded but not yet heard prefetch after an encounter.
+    MusicCursor queuedMusicCursors_[4] = {};
+    uint8_t queuedMusicCursorCount_ = 0;
+    MusicCursor exploreResumeCursor_{};
+    bool exploreResumeValid_ = false;
 
     uint8_t* sfxPcm_ = nullptr;
     size_t sfxPcmBytes_ = 0;
