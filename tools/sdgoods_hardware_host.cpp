@@ -71,6 +71,24 @@ int main() {
     assert(Sdgoods::AudioPolicy::microphoneSample(std::numeric_limits<int32_t>::max())==32767);
     assert(Sdgoods::AudioPolicy::microphoneSample(std::numeric_limits<int32_t>::min())==-32768);
     std::puts("PASS muted zero PCM and PA gate, stereo output range and microphone clipping");
+    {
+        using Gate=Sdgoods::AudioPolicy::OutputGate;
+        Gate gate;
+        assert(!gate.next(true,false));                 // idle boot stays closed
+        assert(gate.next(true,true));                   // playback opens output
+        for(unsigned i=0;i<Gate::HOLD_BLOCKS;++i) assert(gate.next(true,false)); // underrun hold
+        assert(!gate.next(true,false));                 // then closes
+        assert(gate.next(true,true));
+        for(unsigned i=0;i<5;++i) assert(gate.next(true,false));
+        assert(gate.next(true,true));                   // short gap resets the hold
+        for(unsigned i=0;i<Gate::HOLD_BLOCKS;++i) assert(gate.next(true,false));
+        assert(!gate.next(true,false));
+        assert(gate.next(true,true));
+        assert(!gate.next(false,true));                 // mute/suspend closes at once
+        assert(!gate.next(true,false));                 // and leaves no hold behind
+        assert(Gate::HOLD_BLOCKS*256u*1000u/16000u>=300u);
+    }
+    std::puts("PASS underrun output hold, short-gap reset and immediate mute close");
     assert(Sdgoods::batteryPercent(0)==-1 && Sdgoods::batteryPercent(2499)==-1);
     assert(Sdgoods::batteryPercent(3000)==0 && Sdgoods::batteryPercent(3640)==50);
     assert(Sdgoods::batteryPercent(4280)==100 && Sdgoods::batteryPercent(4500)==100);

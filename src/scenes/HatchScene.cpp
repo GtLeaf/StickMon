@@ -33,6 +33,7 @@ void HatchScene::onEnter() {
 }
 
 void HatchScene::onExit() {
+    ui.leave();
     savedElapsed = elapsed;
     savedPokeCount = pokeCount;
     savedWipeCount = wipeCount;
@@ -48,6 +49,7 @@ SceneUpdateResult HatchScene::update(uint32_t nowMs, float dtSeconds) {
         return demand.result();
     }
 
+    demand.changed(applyAction(ui.readMotion(nowMs, demand)));
     ui.updateVisuals(hatchFrame(nowMs), demand);
     float remaining = GameEngine::ins().gameState().hatchSeconds - elapsed;
 
@@ -70,8 +72,12 @@ bool HatchScene::applyAction(Ui::HatchAction action) {
     case Ui::HatchAction::MENU:
         GameEngine::ins().requestScene(SceneID::MENU);
         return true;
-    case Ui::HatchAction::WIPE: ++wipeCount; return true;
-    case Ui::HatchAction::POKE: ++pokeCount; return true;
+    case Ui::HatchAction::WIPE:
+        if (wipeCount < UINT16_MAX) ++wipeCount;
+        return true;
+    case Ui::HatchAction::POKE:
+        if (pokeCount < UINT16_MAX) ++pokeCount;
+        return true;
     case Ui::HatchAction::NONE: return false;
     }
     return false;

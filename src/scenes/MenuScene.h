@@ -107,7 +107,6 @@ private:
     ItemProgression itemProgression = ItemProgression::NONE;
     uint16_t itemCancelledSpecies = 0;
     ProgressionUi::MoveLearnState itemMoveLearn{};
-    TouchTap itemProgressionTap;
     bool selectingTeamItem() const override;
     void useTeamItemOn(uint8_t slot) override;
     uint16_t teamItemHp(uint8_t slot) const override;

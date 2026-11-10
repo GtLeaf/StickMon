@@ -274,7 +274,7 @@ def cpp_table():
         lines.append('    {' + ', '.join((rows, fmt(spec['ice_rect']), fmt(spec['junction']),
             '{' + ', '.join(controls) + '}', fmt(tuple(map(len, spec['controls']))))) + '},')
     lines += ['};', '}  // namespace ExploreFrostLayouts', '']
-    return '\n'.join(lines)
+    return __import__('content_tables').adapt_header('\n'.join(lines), 'ExploreFrostLayouts')
 
 
 if __name__ == '__main__':

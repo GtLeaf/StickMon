@@ -24,6 +24,8 @@ struct MoveLearnFrame {
     const Species* species = nullptr;
 };
 enum class MoveLearnAction : uint8_t { NONE, COMPLETE, ACCEPT, DECLINE, REPLACE };
+// Touch-only devices map these to the A (continue) and B (cancel) actions.
+enum class EvolutionTouchAction : uint8_t { NONE, CONTINUE, CANCEL };
 class ProgressionEffects {
 public:
     virtual ~ProgressionEffects() = default;

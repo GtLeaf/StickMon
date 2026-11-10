@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "game/GameState.h"
+#include "game/ItemCatalog.h"
 
 namespace ExploreItemProgression {
 
@@ -49,6 +50,9 @@ inline uint8_t shopUnlockedArea(const Game::GameState& state) {
 // new save. Food variety and optional care products follow exploration
 // progress instead of flooding the daily shelf on day one.
 inline uint8_t unlockAreaForItem(Game::ItemId item) {
+#if STICKMON_EXTERNAL_CONTENT
+    const auto* p=ItemCatalog::find(item);return p?p->unlockArea:Game::EXPLORE_AREA_COUNT;
+#else
     switch (item) {
     case Game::ItemId::NORMAL_FOOD:
     case Game::ItemId::POTION:
@@ -97,6 +101,7 @@ inline uint8_t unlockAreaForItem(Game::ItemId item) {
         return Game::EXPLORE_AREA_COUNT;
     }
     return Game::EXPLORE_AREA_COUNT;
+#endif
 }
 
 inline bool isShopItemUnlocked(Game::ItemId item,

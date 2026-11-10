@@ -4,6 +4,11 @@
 namespace MarketMapData {
 static_assert(Market::CELL_WIDTH==18 && Market::CELL_HEIGHT==17, "Regenerate both market headers together");
 inline constexpr const char* SOURCE_SHA256 = "f664fa5c20c0dd0ad10e79333790c541558d112dd321ebaa2f0593662e0e2b93";
+// CONTENT_TABLES_ADAPTED
+#if STICKMON_EXTERNAL_CONTENT
+inline const ContentData::Table<Market::Data,1> CONTENT{24};
+inline const Market::Data& get() { return CONTENT[0]; }
+#else
 inline const Market::Data& get() {
     static const Market::Data value = [] {
         Market::Data d{};
@@ -133,4 +138,5 @@ inline const Market::Data& get() {
     }();
     return value;
 }
+#endif
 } // namespace MarketMapData

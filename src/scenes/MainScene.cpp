@@ -87,6 +87,14 @@ static constexpr uint32_t PAIR_INTERACTION_MAX_INTERVAL_MS = 180000UL;
 static constexpr uint32_t PAIR_INTERACTION_RETRY_MS = 5000UL;
 static constexpr uint32_t PAIR_TALK_TIMEOUT_MS = 9000UL;
 static constexpr uint32_t PAIR_CHASE_TIMEOUT_MS = 24000UL;
+// Settle (3 s) + conversation + celebration fit well inside this grace period.
+static constexpr uint32_t PAIR_OVERRUN_LIMIT_MS = 15000UL;
+
+// Home::Actor::stop() clears taskUntilMs to 0 ("no deadline"). Comparing 0 as
+// a timestamp reads as ~24.8 days in the future once millis() passes 2^31.
+static bool idleDeadlinePending(uint32_t nowMs, uint32_t untilMs) {
+    return untilMs != 0 && static_cast<int32_t>(nowMs - untilMs) < 0;
+}
 static constexpr uint16_t PAIR_INVITE_MS = 750;
 static constexpr uint16_t PAIR_CELEBRATE_MS = 1200;
 static constexpr uint16_t PAIR_TALK_HOP_MS = 560;
@@ -188,27 +196,12 @@ uint8_t wrappedDirectionValue(uint8_t direction, int delta) {
     return (uint8_t)value;
 }
 
-enum class PmdMotionMode : uint8_t {
-    LOOP,
-    START_HOLD_END,
-    PINGPONG,
-};
+using PmdMotionMode=PokemonSprites::PetMotionMode;
+using PmdSpriteConfig=PokemonSprites::RoomSpriteProfile;
 
-struct PmdSpriteConfig {
-    uint16_t speciesId;
-    uint8_t idleFrames;
-    uint16_t idleFrameMs;
-    uint8_t walkingFrames;
-    uint8_t sleepingFrames;
-    PmdMotionMode motionMode;
-    PokemonSprites::SpriteKind idleBase;
-    PokemonSprites::SpriteKind walkingBase;
-    PokemonSprites::SpriteKind sleepingBase;
-    bool mirrorRightDirections;
-    float airHeight;
-    float bobAmplitude;
-};
-
+#if STICKMON_EXTERNAL_CONTENT
+inline const ContentData::Table<PmdSpriteConfig,1024,false> PMD_SPRITE_CONFIGS{8};
+#else
 static constexpr PmdSpriteConfig PMD_SPRITE_CONFIGS[] = {
     {1, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::BULBASAUR_IDLE_FRONT_0, PokemonSprites::SpriteKind::BULBASAUR_WALKING_FRONT_0, PokemonSprites::SpriteKind::BULBASAUR_SLEEPING_0, true, 0.0f, 0.0f},
     {2, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::IVYSAUR_IDLE_FRONT_0, PokemonSprites::SpriteKind::IVYSAUR_WALKING_FRONT_0, PokemonSprites::SpriteKind::IVYSAUR_SLEEPING_0, true, 0.0f, 0.0f},
@@ -275,6 +268,7 @@ static constexpr PmdSpriteConfig PMD_SPRITE_CONFIGS[] = {
     {42, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::GOLBAT_IDLE_FRONT_0, PokemonSprites::SpriteKind::GOLBAT_WALKING_FRONT_0, PokemonSprites::SpriteKind::GOLBAT_SLEEPING_0, true, 14.0f, 2.0f},
     {169, 1, PMD_IDLE_FRAME_MS, 3, 2, PmdMotionMode::LOOP, PokemonSprites::SpriteKind::CROBAT_IDLE_FRONT_0, PokemonSprites::SpriteKind::CROBAT_WALKING_FRONT_0, PokemonSprites::SpriteKind::CROBAT_SLEEPING_0, true, 14.0f, 2.0f},
 };
+#endif
 
 const PmdSpriteConfig* pmdSpriteConfigForSpecies(uint16_t speciesId) {
     for (const auto& config : PMD_SPRITE_CONFIGS) {
@@ -935,6 +929,30 @@ void MainScene::persistViewState(uint32_t nowMs) {
 }
 
 SceneUpdateResult MainScene::update(uint32_t nowMs, float dtSeconds) {
+#if STICKMON_ENABLE_ROOM_DIAGNOSTICS
+    static uint32_t lastRoomDiagnostic = 0;
+    if (nowMs - lastRoomDiagnostic >= 5000) {
+        lastRoomDiagnostic = nowMs;
+        auto& engine = GameEngine::ins();
+        Platform::logf("[RoomState] t=%u dt=%.3f game=%u tilt=%u door=%u visit=%u dialog=%u guest_motion=%u progression=%u pair=%u/%u action=%u bowl_owner=%d bowl_phase=%u invariants=%u\n",
+            nowMs, dtSeconds, engine.gameMinutesOfDay(), unsigned(engine.debugTiltControlEnabled()),
+            unsigned(doorTransition), unsigned(visitDeparture), unsigned(contactDialog),
+            unsigned(contactGuestMotion), unsigned(progressionModal), unsigned(pairInteraction),
+            unsigned(pairInteractionPhase), unsigned(roomAction), int(homeCoordinator.owner(Home::Resource::BOWL)),
+            unsigned(homeCoordinator.bowlSession().phase), unsigned(homeCoordinator.validate()));
+        for (uint8_t slot=0;slot<engine.gameState().teamCount && slot<2;++slot) {
+            const Home::Actor& actor = slot ? static_cast<const Home::Actor&>(visitor) : mainActor;
+            const auto& mon=engine.gameState().team[slot];
+            Platform::logf("[RoomActor] t=%u slot=%u species=%u active=%u task=%s resume=%s pos=%.2f,%.2f target=%.2f,%.2f route=%u/%u decision_in=%ld task_in=%ld hp=%u/%u faint=%u status=%u hunger=%u sleep=%u can_move=%u frame=%u\n",
+                nowMs, unsigned(slot), unsigned(mon.speciesId), unsigned(actor.active), Home::taskName(actor.task),
+                Home::taskName(actor.resumeTask), actor.x, actor.y, actor.targetX, actor.targetY,
+                unsigned(actor.route.index), unsigned(actor.route.count), long(int32_t(actor.nextDecisionMs-nowMs)),
+                long(int32_t(actor.taskUntilMs-nowMs)), unsigned(mon.hpCur), unsigned(mon.hpMax), unsigned(mon.fainted),
+                unsigned(mon.majorStatus), unsigned(mon.satiety), unsigned(monsterIsSleepTime(mon)),
+                unsigned(Game::speciesCareProfileFor(mon.speciesId).canMove), unsigned(slot ? visitor.frameIndex : pmdFrame));
+        }
+    }
+#endif
     const Species* nextActive = &GameEngine::ins().activeSpecies();
     if (!active || active->id != nextActive->id) {
         mainActor.behavior = behaviorProfileFor(*nextActive, GameEngine::ins().activeMonster());
@@ -963,6 +981,9 @@ SceneUpdateResult MainScene::update(uint32_t nowMs, float dtSeconds) {
     }
     if (doorTransition == DoorTransitionMode::NONE) {
         if (progressionModal != ProgressionModal::NONE || openPendingProgression()) {
+            if (progressionModal == ProgressionModal::EVOLUTION &&
+                ProgressionUi::evolutionCancelHeld(nowMs))
+                handleHomeOverlayButton({1, BtnAction::PRESSED});
             cancelPairInteraction(nowMs);
             mainActor.velocityX = 0.0f;
             mainActor.velocityY = 0.0f;
@@ -1960,8 +1981,13 @@ bool MainScene::currentVisitorWaypoint(float& x, float& y) const {
 bool MainScene::buildMoveRoute(float goalX, float goalY) {
     if (!ensureNavScratch()) return false;
     bool avoidVisitor = visitor.active && !doorVisitorHidden;
+    // Only a goal at the bed may ignore a sleeping teammate. Checking X alone
+    // also matched the food bowl beside the bed, producing a straight route
+    // through the sleeper that the spacing check then blocked forever.
     bool bedRoute = visitor.task == VisitorState::SLEEPING &&
-        fabsf(goalX - bedSleepX()) <= BED_APPROACH_TOLERANCE_X + 8.0f;
+        fabsf(goalX - bedSleepX()) <= BED_APPROACH_TOLERANCE_X + 8.0f &&
+        fabsf(goalY + walkBoundaryOffsetY() - bedSleepY()) <=
+            BED_APPROACH_TOLERANCE_Y + 8.0f;
     if (bedRoute) avoidVisitor = false;
     const ActorGeometry geometry = mainGeometry();
     mainActor.geometry.groundOffsetY = geometry.groundOffsetY;
@@ -3020,13 +3046,37 @@ void MainScene::updateMonsterAi(uint32_t nowMs, float dtSeconds) {
     bool wasInsideWalkArea = monsterFootprintInsideWalkArea(prevX, prevY);
     if (!monsterFootprintInsideWalkArea(mainActor.x, mainActor.y) &&
         !(mainActor.task == AiMode::LEAVING_BED && !wasInsideWalkArea)) {
+        // The perspective-scaled velocity bends the path away from the
+        // planned straight segment. Along a walk-area edge that bend can
+        // leave the area on every frame while the replanned route is still
+        // valid, so follow the validated segment directly instead.
+        float straightX = prevX + dx / dist * step;
+        float straightY = prevY + dy / dist * step;
+        if (monsterFootprintInsideWalkArea(straightX, straightY) &&
+            (!visitor.active || doorVisitorHidden ||
+             doorStepKeepsSpacing(prevX, prevY, straightX, straightY,
+                                  visitor.x, visitor.y, false))) {
+            mainActor.x = straightX;
+            mainActor.y = straightY;
+            mainActor.velocityX = dx / dist * speed;
+            mainActor.velocityY = dy / dist * speed;
+            updateStuckWatchdog(nowMs, sqrtf((waypointX - mainActor.x) * (waypointX - mainActor.x) +
+                                             (waypointY - mainActor.y) * (waypointY - mainActor.y)));
+            return;
+        }
         mainActor.x = prevX;
         mainActor.y = prevY;
         mainActor.velocityX = 0.0f;
         mainActor.velocityY = 0.0f;
-        if (!buildMoveRoute(mainActor.targetX, mainActor.targetY)) {
+        // Replanning is not movement. Keep the stall timer so a route that
+        // cannot be followed is abandoned instead of rebuilt forever.
+        const uint32_t lastProgressMs = mainActor.lastMoveProgressMs;
+        if (!buildMoveRoute(mainActor.targetX, mainActor.targetY) ||
+            nowMs - lastProgressMs >= MOVE_STUCK_MS) {
             abortMovement(nowMs, GameRandom::random(1200, 2601));
+            return;
         }
+        mainActor.lastMoveProgressMs = lastProgressMs;
         return;
     }
     updateStuckWatchdog(nowMs, sqrtf((waypointX - mainActor.x) * (waypointX - mainActor.x) +
@@ -4478,6 +4528,11 @@ bool MainScene::updatePairInteraction(uint32_t nowMs,
     } else if (state.team[0].majorStatus == Game::MajorStatus::SLEEP ||
                state.team[1].majorStatus == Game::MajorStatus::SLEEP) {
         interruptReason = "status_sleep";
+    } else if ((int32_t)(nowMs - pairInteractionUntilMs) >=
+               (int32_t)PAIR_OVERRUN_LIMIT_MS) {
+        // Every phase is bounded; overrunning the whole interaction this far
+        // means the state machine is not converging. Release both actors.
+        interruptReason = "overrun";
     }
     if (interruptReason) {
         STICKMON_TRACEF(
@@ -4488,8 +4543,12 @@ bool MainScene::updatePairInteraction(uint32_t nowMs,
         cancelPairInteraction(nowMs);
         return false;
     }
+    // SETTLE leads into CONVERSATION for talks, so the bounded conversation
+    // must be allowed to finish after the overall timeout. Restarting the
+    // settle from CONVERSATION would loop SETTLE->CONVERSATION forever.
     if ((int32_t)(nowMs - pairInteractionUntilMs) >= 0 &&
         pairInteractionPhase != PairInteractionPhase::SETTLE &&
+        pairInteractionPhase != PairInteractionPhase::CONVERSATION &&
         pairInteractionPhase != PairInteractionPhase::CELEBRATE) {
         beginPairSettle(nowMs);
     }
@@ -6404,7 +6463,7 @@ void MainScene::updateVisitor(uint32_t nowMs, float dtSeconds) {
         visitor.task != VisitorState::GO_TO_SLEEP &&
         visitor.task != VisitorState::YIELDING_BED) {
         if (visitor.task == VisitorState::IDLE &&
-            (int32_t)(nowMs - visitor.taskUntilMs) < 0) {
+            idleDeadlinePending(nowMs, visitor.taskUntilMs)) {
             advanceVisitorFrames(nowMs, false);
             return;
         }
@@ -6444,7 +6503,7 @@ void MainScene::updateVisitor(uint32_t nowMs, float dtSeconds) {
     if (visitor.task == VisitorState::IDLE) {
         advanceVisitorFrames(nowMs, false);
         if (startVisitorFoodSeek(nowMs)) return;
-        if ((int32_t)(nowMs - visitor.taskUntilMs) < 0) return;
+        if (idleDeadlinePending(nowMs, visitor.taskUntilMs)) return;
         float tx = 0.0f;
         float ty = 0.0f;
         if (pickVisitorPoint(tx, ty)) {
@@ -6659,6 +6718,15 @@ bool MainScene::onTouch(const Platform::IInputDevice::TouchEvent& event) {
             if (ProgressionUi::handleMoveReplacementTouch(event))
                 return onButton({0, BtnAction::PRESSED});
             return true;
+        }
+        if (progressionModal == ProgressionModal::EVOLUTION ||
+            progressionModal == ProgressionModal::EVOLUTION_CANCELLED) {
+            // Touch-only targets: hold cancels, a release after completion continues.
+            switch (ProgressionUi::handleEvolutionTouch(event, Hal::ins().millis())) {
+            case Ui::EvolutionTouchAction::CONTINUE: return handleHomeOverlayButton({0, BtnAction::PRESSED});
+            case Ui::EvolutionTouchAction::CANCEL: return handleHomeOverlayButton({1, BtnAction::PRESSED});
+            default: return true;
+            }
         }
     }
     ProgressionUi::cancelMoveLearnTouch();

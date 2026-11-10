@@ -99,6 +99,9 @@ void TeamUi::renderWithToast(const char* toastValue) {
         PixelRenderer::text(rect.x + rect.width - 12 - textPixelWidth(value), rect.y + 30, value, 0xffff);
         const int hp = std::min(100, int(uint32_t(displayedHp) * 100 / std::max<uint16_t>(1, mon.hpMax)));
         const int barWidth = rect.width - 84;
+        // Match the route HUD: 2px white outer edge, then 1px black outline.
+        c.fillRoundRect(rect.x + 69, rect.y + 53, barWidth + 6, 14, 7, 0xffff);
+        c.fillRoundRect(rect.x + 71, rect.y + 55, barWidth + 2, 10, 5, 0);
         c.fillRoundRect(rect.x + 72, rect.y + 56, barWidth, 8, 4, PixelRenderer::rgb(48, 63, 70));
         if (hp) c.fillRoundRect(rect.x + 72, rect.y + 56, barWidth * hp / 100, 8, 4,
             hp > 50 ? PixelRenderer::rgb(83, 184, 157) : hp > 20 ? 0xffe0 : 0xfaaa);

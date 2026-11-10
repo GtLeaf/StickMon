@@ -234,7 +234,7 @@ def cpp_table():
               '    const uint8_t choice = ((seed ^ (seed >> 16)) % 4) * 4 + ((seed >> 2) % 4);',
               '    return BRIDGES[choice][node == 10 || node == 13 ? 0 : node-10];',
               '}', '} // namespace ExploreValleyData', '']
-    return '\n'.join(lines)
+    return __import__('content_tables').adapt_header('\n'.join(lines), 'ExploreValleyData')
 
 
 if __name__ == '__main__':

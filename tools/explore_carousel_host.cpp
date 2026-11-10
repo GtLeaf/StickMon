@@ -69,15 +69,39 @@ int main(int argc,char** argv) {
         const auto end=desktop.millis()+ms;
         while(desktop.millis()<end) {desktop.advanceMs(1);engine.run();}
     };
-    // Market enters without synchronously inflating all residents.
+    // Select the same persistent route with or without the Debug-only market.
     assert(scene.areaPreviewPool.count>1);
-    scene.ui.state.areaCursor=1;scene.loadAreaPreview();
+    scene.ui.state.areaCursor=ExploreDestinations::visibleIndex(0,state);scene.loadAreaPreview();
     for (unsigned waited=0; !scene.areaPreviewReady && waited<3000; waited+=20) {
         for (auto sprite : scene.areaPreviewFrames) assert(!sprite);
         tick(20);
     }
     tick(6000);
     assert(scene.areaPreviewReady && !scene.areaPreviewPaused && scene.areaPreviewPool.count>1);
+    using Preview = Ui::RoundExplore::PreviewLayout;
+    const auto loaded = scene.exploreRouteFrame();
+    std::printf("current grass pool members=%u width=%d static_width=%d\n", loaded.areaPreviewCount,
+        Preview::stripWidth(loaded.areaPreviewFrames, loaded.areaPreviewCount), Preview::STATIC_WIDTH);
+    // Pool membership rotates with the seed. Use two actual loaded members
+    // to exercise a fitting group independently of today's active pool size.
+    scene.areaPreviewPool.count = 2;
+    const auto grass = scene.exploreRouteFrame();
+    assert(!scene.areaPreviewScrolls());
+    // A settled multi-member grass preview must park across complete cycles.
+    assert(!scene.areaPreviewLoadPending);
+    engine.invalidateScene();tick(100);
+    const auto grassFrames = display.full + display.partial;
+    tick(6000);
+    assert(display.full + display.partial == grassFrames);
+    auto result = scene.update(desktop.millis(), .033f);
+    assert(!result.redraw && result.nextUpdateDelayMs == SceneUpdateResult::NO_UPDATE);
+    // Boundary is measured from actual sprite widths, including the gap.
+    PokemonSprites::SpriteFrame boundary = *grass.areaPreviewFrames[0];
+    boundary.width = 150;
+    const PokemonSprites::SpriteFrame* pair[]{&boundary, &boundary};
+    assert(Preview::stripWidth(pair, 2) == 312 && !Preview::scrolls(pair, 2));
+    boundary.width = 151;
+    assert(Preview::scrolls(pair, 2));
     // Compare actual partial draws to a fresh full render, including toast,
     // buttons, rare marker, missing sprites, single/empty and byte swapping.
     auto frame=scene.exploreRouteFrame();
@@ -90,6 +114,11 @@ int main(int argc,char** argv) {
             frame.toast=i>=20 && i<40 ? "Test" : nullptr;
             frame.areaPreviewHasRare=i>=45;
             selection.pressed=reference.pressed=i>=50 && i<55 ? Ui::RoundExplore::NEXT : -1;
+            if(i==12) {
+                frame.areaPreviewCount=Ui::ExploreRouteFrame::PREVIEW_CAP;
+                for(int slot=2;slot<frame.areaPreviewCount;++slot)
+                    frame.areaPreviewFrames[slot]=frame.areaPreviewFrames[slot%2];
+            }
             if(i==60)frame.areaPreviewFrames[0]=nullptr;
             if(i==70)frame.areaPreviewCount=1;
             if(i==80)frame.areaPreviewCount=0;
@@ -113,6 +142,11 @@ int main(int argc,char** argv) {
         assert(std::equal(first.begin(),first.end(),fb.pixels));
     }
     memory.fail=false;
+    // Force a wider-than-page strip to preserve the real-engine motion checks.
+    scene.areaPreviewPool.count = Ui::ExploreRouteFrame::PREVIEW_CAP;
+    for (int i=0; i<scene.areaPreviewPool.count; ++i)
+        scene.areaPreviewFrames[i] = grass.areaPreviewFrames[i % grass.areaPreviewCount];
+    assert(scene.areaPreviewScrolls());
     // Exercise the real engine, rather than only the scene's requested delay.
     engine.fullFrameRequired=true;engine.invalidateScene();
     scene.areaPreviewStartedAt=desktop.millis()-2301;
@@ -145,9 +179,9 @@ int main(int argc,char** argv) {
     // Single-member and idle views park; wake resumes from a stable hold.
     scene.areaPreviewPool.count=1;
     scene.ui.state.areaPreviewVisualCycle=0;
-    auto result=scene.update(desktop.millis(),.033f);
+    result=scene.update(desktop.millis(),.033f);
     assert(!result.redraw && result.nextUpdateDelayMs==SceneUpdateResult::NO_UPDATE);
-    scene.areaPreviewPool.count=frame.areaPreviewCount;
+    scene.areaPreviewPool.count=Ui::ExploreRouteFrame::PREVIEW_CAP;
     engine.idleActive=true;
     result=scene.update(desktop.millis(),.033f);
     assert(scene.areaPreviewPaused);
@@ -159,5 +193,5 @@ int main(int argc,char** argv) {
     const auto beforeFade=display.full;
     assert(engine.fadeToScene(SceneID::MAIN,120));tick(1200);
     assert(engine.currentId==SceneID::MAIN && display.full>beforeFade);
-    std::puts("PASS partial/full pixel parity, damage transfer, allocation fallback, 30 FPS visual cadence, unchanged core cadence, loading exclusion, single-member parking and idle wake");
+    std::puts("PASS static grass multi-member parking, measured width boundary, partial/full pixel parity, damage transfer, allocation fallback, 30 FPS overflow cadence, unchanged core cadence, loading exclusion, single-member parking and idle wake");
 }

@@ -1,12 +1,18 @@
 #pragma once
 
+#include "core/BuildConfig.h"
 #include "game/ExploreItemProgression.h"
 
 // Display order is independent of persistent exploration-area IDs.
 namespace ExploreDestinations {
 constexpr uint8_t MARKET = 0xfe, INVALID = 0xff;
 // Reorder this table to move destinations without migrating saves.
-inline constexpr uint8_t ORDER[] = {MARKET, 0, 1, 2, 3, 4, 5};
+inline constexpr uint8_t ORDER[] = {
+#if STICKMON_ENABLE_DEBUG_FEATURES
+    MARKET,
+#endif
+    0, 1, 2, 3, 4, 5
+};
 constexpr uint8_t COUNT = sizeof(ORDER) / sizeof(ORDER[0]);
 constexpr uint8_t id(uint8_t index) { return index < COUNT ? ORDER[index] : INVALID; }
 constexpr uint8_t indexOf(uint8_t value) {
@@ -14,7 +20,8 @@ constexpr uint8_t indexOf(uint8_t value) {
     return COUNT;
 }
 inline bool visible(uint8_t value, const Game::GameState& state) {
-    return value == MARKET || value < ExploreItemProgression::visibleAreaCount(state);
+    return value == MARKET ? BuildConfig::DEBUG_FEATURES
+        : value < ExploreItemProgression::visibleAreaCount(state);
 }
 inline uint8_t visibleCount(const Game::GameState& state) {
     uint8_t count = 0;
@@ -37,6 +44,7 @@ inline uint8_t visibleIndex(uint8_t value, const Game::GameState& state) {
     return COUNT;
 }
 inline bool unlocked(uint8_t value, const Game::GameState& state) {
-    return value == MARKET || ExploreItemProgression::isAreaUnlocked(value, state);
+    return value == MARKET ? BuildConfig::DEBUG_FEATURES
+        : ExploreItemProgression::isAreaUnlocked(value, state);
 }
 } // namespace ExploreDestinations

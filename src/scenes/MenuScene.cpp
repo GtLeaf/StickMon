@@ -270,6 +270,9 @@ SceneUpdateResult MenuScene::update(uint32_t nowMs, float dtSeconds) {
         }
         return SceneUpdateResult::animate(33);
     }
+    if (itemProgression == ItemProgression::EVOLUTION &&
+        ProgressionUi::evolutionCancelHeld(nowMs))
+        handleItemProgressionButton({1, BtnAction::PRESSED});
     if (itemProgression != ItemProgression::NONE) return SceneUpdateResult::animate(33);
 #endif
     RenderDemand demand;
@@ -317,7 +320,6 @@ bool MenuScene::touchNavigation() const {
 
 void MenuScene::cancelTouch() {
 #if STICKMON_UI_ROUND_TOUCH
-    itemProgressionTap.cancel();
     ProgressionUi::cancelMoveLearnTouch();
 #endif
     Scene::cancelTouch();

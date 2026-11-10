@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include "game/ContentData.h"
 
 #include "game/ExploreMapGenerator.h"
 #include "game/ExplorePool.h"
@@ -17,13 +18,20 @@ struct Family {
 };
 inline constexpr uint8_t CAVE_AREA_MASK = 1U << ExploreMapGenerator::FROST_CRYSTAL_CAVE_AREA;
 // Disjoint families, ordered from leader to youngest.
+template<class V> inline void contentFields(V& v,Family& x) {v(x.species,x.count,x.areaMask);}
+#if STICKMON_EXTERNAL_CONTENT
+inline const ContentData::Table<Family,16,false> GROUP_FAMILIES{29};
+inline size_t familyCount() {return GROUP_FAMILIES.size();}
+#else
 inline constexpr Family GROUP_FAMILIES[] = {
     {{286, 285}, 2}, {{184, 183, 298}, 3}, {{162, 161}, 2},
     {{262, 261}, 2}, {{195, 194}, 2}, {{323, 322}, 2},
     {{17, 16}, 2, uint8_t(0xff ^ CAVE_AREA_MASK)}, {{282, 280}, 2}, {{25, 172}, 2},
     {{42, 41}, 2, CAVE_AREA_MASK}
 };
-constexpr uint8_t groupCompanionCapacity() {
+inline constexpr size_t familyCount() {return sizeof(GROUP_FAMILIES)/sizeof(GROUP_FAMILIES[0]);}
+#endif
+inline STICKMON_CONTENT_CONSTEXPR uint8_t groupCompanionCapacity() {
     uint8_t capacity = ExplorePool::POOL_CAP;
     // One new companion per represented family, plus each larger family's
     // extra members. Families are disjoint and duplicates are loaded once.
@@ -41,6 +49,12 @@ inline const Family* groupFamily(uint16_t species) {
 enum class Surface : uint8_t { NONE, GRASS, ROCK, ICE, WATER };
 enum class Temperament : uint8_t { SHY, CURIOUS, RELAXED, AERIAL };
 enum class Locomotion : uint8_t { GROUND, FLAP, FLOAT };
+struct Profile {uint16_t speciesId;Temperament temperament;Locomotion locomotion;bool wideFlight,waterOnly;};
+template<class V> inline void contentFields(V& v,Profile& x) {v(x.speciesId,x.temperament,x.locomotion,x.wideFlight,x.waterOnly);}
+#if STICKMON_EXTERNAL_CONTENT
+inline const ContentData::Table<Profile,1024,false> PROFILES{28};
+inline const Profile* profile(uint16_t species) {for(const auto& p:PROFILES)if(p.speciesId==species)return &p;return nullptr;}
+#endif
 enum class Cover : uint8_t { NONE, GRASS, SOLID };
 enum class Activity : uint8_t {
     REST, WALK, WATCH, DOZE, WAKE, APPROACH, OBSERVE, RETURN,

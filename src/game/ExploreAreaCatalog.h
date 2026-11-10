@@ -1,12 +1,28 @@
 #pragma once
 
 #include <cstdint>
+#include "game/ContentData.h"
 
 #include "assets/GameAssets.h"
 #include "game/GameState.h"
 
 namespace ExploreAreaCatalog {
 
+struct Area { uint8_t minMapCount,maxMapCount,recommendedLevel,depthSpread;
+    uint16_t encounterChance,fieldColor; GameAssets::Kind battleBackground; };
+template<class V> inline void contentFields(V& v, Area& x) {
+    v(x.minMapCount,x.maxMapCount,x.recommendedLevel,x.depthSpread,x.encounterChance,x.fieldColor,x.battleBackground);
+}
+#if STICKMON_EXTERNAL_CONTENT
+inline const ContentData::Table<Area,6> AREAS{27};
+inline uint8_t minMapCount(uint8_t area) { return AREAS[area<6?area:0].minMapCount; }
+inline uint8_t maxMapCount(uint8_t area) { return AREAS[area<6?area:0].maxMapCount; }
+inline uint8_t recommendedLevel(uint8_t area) { return AREAS[area<6?area:0].recommendedLevel; }
+inline uint8_t depthSpread(uint8_t area) { return AREAS[area<6?area:0].depthSpread; }
+inline uint16_t encounterChance(uint8_t area) { return AREAS[area<6?area:0].encounterChance; }
+inline uint16_t fieldColor(uint8_t area) { return AREAS[area<6?area:0].fieldColor; }
+inline GameAssets::Kind battleBackground(uint8_t area) { return AREAS[area<6?area:0].battleBackground; }
+#else
 inline constexpr uint8_t minMapCount(uint8_t area) {
     return area == 1 || area == 2 ? 4
          : area == 3 ? 5
@@ -84,4 +100,5 @@ static_assert(battleBackground(0) == GameAssets::Kind::BATTLE_BG_GRASS &&
                   battleBackground(5) == GameAssets::Kind::BATTLE_BG_RIVERSIDE,
               "all six explore areas must have a battle backdrop");
 
+#endif
 }  // namespace ExploreAreaCatalog

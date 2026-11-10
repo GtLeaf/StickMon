@@ -1,4 +1,6 @@
 #pragma once
+// CONTENT_TABLES_ADAPTED
+#include "game/ContentData.h"
 
 #include <cstdint>
 
@@ -16,6 +18,11 @@ struct Config {
     uint16_t experiencePercent;
 };
 
+template<class V> inline void contentFields(V& v, Config& x) { v(x.speciesIds,x.level,x.experiencePercent); }
+#if STICKMON_EXTERNAL_CONTENT
+using CONFIGS_ContentItem = Config;
+inline const ContentData::Table<CONFIGS_ContentItem,6> CONFIGS{36};
+#else
 static constexpr Config CONFIGS[AREA_COUNT] = {
     {{12, 161, 16, 25}, 10, 200},  // Butterfree, Sentret, Pidgey, Pikachu
     {{8, 183, 194, 278}, 17, 200},  // Wartortle, Marill, Wooper, Wingull
@@ -24,6 +31,7 @@ static constexpr Config CONFIGS[AREA_COUNT] = {
     {{197, 94, 169, 212}, 53, 200}, // Umbreon, Gengar, Crobat, Scizor
     {{149, 6, 76, 169}, 67, 200},  // Dragonite, Charizard, Golem, Crobat
 };
+#endif
 
 inline const Config& configForArea(uint8_t area) {
     return CONFIGS[area < AREA_COUNT ? area : 0];
@@ -50,12 +58,14 @@ static_assert(SPAWN_CHANCE > 0 && SPAWN_CHANCE < SPAWN_ROLL_MAX,
               "boss chance must be optional and non-zero");
 static_assert(CANDIDATE_COUNT > 1,
               "each area must have more than one possible boss species");
+#if !STICKMON_EXTERNAL_CONTENT
 static_assert(CONFIGS[0].level < CONFIGS[1].level &&
                   CONFIGS[1].level < CONFIGS[2].level &&
                   CONFIGS[2].level < CONFIGS[3].level &&
                   CONFIGS[3].level < CONFIGS[4].level &&
                   CONFIGS[4].level < CONFIGS[5].level,
               "boss levels must increase with area difficulty");
+#endif
 static_assert(routeIndex(3) == 1 && routeIndex(12) == 10,
               "bosses must stand one step before the exit");
 static_assert(victoryCoinReward(false) == 0 &&

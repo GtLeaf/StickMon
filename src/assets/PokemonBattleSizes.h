@@ -2,6 +2,7 @@
 #pragma once
 
 #include <cstdint>
+#include "game/ContentData.h"
 
 namespace PokemonBattleSizes {
 
@@ -9,6 +10,10 @@ struct Size { uint8_t width; uint8_t height; };
 struct Entry { uint16_t speciesId; uint8_t width; uint8_t height; };
 
 // Visible source dimensions normalized to a common 160x160 canvas.
+template<class V> inline void contentFields(V& v, Entry& x) { v(x.speciesId,x.width,x.height); }
+#if STICKMON_EXTERNAL_CONTENT
+inline const ContentData::Table<Entry,1024,false> FRONT{25};
+#else
 inline constexpr Entry FRONT[] = {
     {1, 70, 66},
     {2, 98, 90},
@@ -75,9 +80,15 @@ inline constexpr Entry FRONT[] = {
     {380, 138, 128},
     {381, 148, 148},
 };
+#endif
 
 inline Size front(uint16_t speciesId) {
-    unsigned low = 0, high = sizeof(FRONT) / sizeof(FRONT[0]);
+    unsigned low = 0;
+#if STICKMON_EXTERNAL_CONTENT
+    unsigned high = FRONT.size();
+#else
+    unsigned high = sizeof(FRONT) / sizeof(FRONT[0]);
+#endif
     while (low < high) {
         const unsigned mid = low + (high - low) / 2;
         const auto& entry = FRONT[mid];

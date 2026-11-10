@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
-#include "ResourceArchive.h"
+#include "ResourceBanks.h"
+#include "esp_partition.h"
 #include "Audio.h"
 #include "Battery.h"
 #include "PeerRadio.h"
@@ -22,6 +23,8 @@ public:
     SdgoodsPlatform();
     Platform::Services& serviceBundle() { return services_; }
     bool begin() override;
+    bool resourcesReady() const {return resourcesReady_;}
+    void enableSaveWrites(bool enabled) {saveWritesEnabled_=enabled;}
     uint32_t millis() const override;
     uint32_t micros() const override;
     void sleepMs(uint32_t ms) override;
@@ -76,7 +79,9 @@ public:
     void release(void* memory) override;
     size_t externalFree() const override { return externalMemoryFree(); }
 private:
-    ResourceArchive resources_;
+    bool resourcesReady_=false;
+    bool saveWritesEnabled_=true;
+    ResourceBanks resources_;
     Audio audio_;
     Battery battery_;
     PeerRadio radio_;
@@ -87,6 +92,10 @@ private:
     bool beginTouch();
     void applyBacklight();
     void setLocked(bool value);
+    void setPanelSleep(bool value);
+    void setCpuPowerSave(bool value);
+    static constexpr uint32_t PANEL_WAKE_MS = 120;
+    static constexpr int LOCKED_CPU_MHZ = 80;
     void prepareSleep();
     uint16_t* frame_ = nullptr;
     uint16_t* strips_[2]{};
@@ -101,5 +110,8 @@ private:
     bool initialized_ = false, storageReady_ = false, firstFrame_ = false;
     bool locked_ = false, unlocked_ = false, shutdown_ = false, saveRequested_ = false;
     bool touchBlocked_ = true, cancelPending_ = false;
+    // panelSleeping_: display off until a full frame is written after wake.
+    bool panelSleeping_ = false, panelAsleep_ = false;
+    uint32_t panelWokeAtMs_ = 0;
 };
 }  // namespace Sdgoods

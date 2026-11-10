@@ -33,7 +33,7 @@ bool ready() {
     if (!pixels) {
         pixels = static_cast<uint16_t*>(Platform::memory().allocate(
             Page::WIDTH * Page::HEIGHT * sizeof(uint16_t), true));
-        if (!pixels) Platform::logLine("[RoundSurface] page allocation failed");
+        if (!pixels) Platform::errorLine("[RoundSurface] page allocation failed");
     }
     return pixels != nullptr;
 }
@@ -68,8 +68,11 @@ void exploreSelection(bool native) {
     page = !native;
 }
 void explorePhase(ExplorePhase phase) {
+    // Move learning and evolution follow the native round layout instead of the 240px page.
     exploreSelection(phase == ExplorePhase::SELECT || RoundExplore::nativeRoute(phase) ||
-                     RoundExplore::nativeBattle(phase));
+                     RoundExplore::nativeBattle(phase) || phase == ExplorePhase::LEARN_MOVE ||
+                     phase == ExplorePhase::MOVE_REPLACED || phase == ExplorePhase::EVOLUTION ||
+                     phase == ExplorePhase::EVOLUTION_CANCELLED);
 }
 void pageHeader(const char* title, bool pressed) {
     if (!page) return;

@@ -29,7 +29,11 @@ bool grass(uint16_t tile) {
 }
 bool waterOnly(uint16_t species) {
     // Explicit fish family in the current roster; Water typing alone is not enough.
+    #if STICKMON_EXTERNAL_CONTENT
+    const auto* p=profile(species);return p && p->waterOnly;
+#else
     return species == 129 || species == 130;
+#endif
 }
 Surface groundSurface(const ExploreMapGenerator::Map& map, uint16_t cell) {
     const uint16_t base = map.layers[0][cell];
@@ -58,6 +62,9 @@ Surface groundSurface(const ExploreMapGenerator::Map& map, uint16_t cell) {
 }
 
 Temperament temperamentForSpecies(uint16_t speciesId) {
+#if STICKMON_EXTERNAL_CONTENT
+    const auto* p=profile(speciesId);return p?p->temperament:Temperament::RELAXED;
+#else
     switch (speciesId) {
     case 10: case 16: case 17: case 18: case 161: case 162: case 261:
         return Temperament::SHY;
@@ -70,15 +77,20 @@ Temperament temperamentForSpecies(uint16_t speciesId) {
         return Temperament::CURIOUS;
     default: return Temperament::RELAXED;
     }
+#endif
 }
 
 Locomotion locomotionForSpecies(uint16_t speciesId) {
+#if STICKMON_EXTERNAL_CONTENT
+    const auto* p=profile(speciesId);return p?p->locomotion:Locomotion::GROUND;
+#else
     switch (speciesId) {
     case 12: case 41: case 42: case 169: case 278: case 279:
         return Locomotion::FLAP;
     case 380: case 381: return Locomotion::FLOAT;
     default: return Locomotion::GROUND;
     }
+#endif
 }
 
 bool isEpisode(Activity activity) {

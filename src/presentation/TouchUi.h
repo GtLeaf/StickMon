@@ -23,7 +23,8 @@ MenuGrid::Rect safeHeaderBounds();
 MenuGrid::Rect pageBody();
 MenuGrid::Rect safeBack();
 void safePageHeader(const char* title, bool pressed = false, bool selected = false, const char* center = nullptr);
-void slider(int left, int right, int centerY, int value, int minimum, int maximum, bool pressed);
+void slider(int left, int right, int centerY, int value, int minimum, int maximum, bool pressed,
+            bool smoothKnob = false);
 void header(const char* title, const char* trailing = nullptr, bool pressed = false);
 bool backHit(int x, int y);
 void action(int x, int y, int width, const char* label, bool pressed = false);

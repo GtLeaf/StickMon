@@ -1,4 +1,6 @@
 #pragma once
+// CONTENT_TABLES_ADAPTED
+#include "game/ContentData.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -34,6 +36,11 @@ constexpr bool levelRangesValid(const Entry (&entries)[N], size_t index = 0) {
             levelRangesValid(entries, index + 1));
 }
 
+template<class V> inline void contentFields(V& v, Entry& x) { v(x.speciesId,x.weight,x.minLevel,x.maxLevel,x.rarity); }
+#if STICKMON_EXTERNAL_CONTENT
+using GRASS_PATH_ContentItem = Entry;
+inline const ContentData::Table<GRASS_PATH_ContentItem,10> GRASS_PATH{30};
+#else
 static constexpr Entry GRASS_PATH[] = {
     {10, 18, 1, 6, Rarity::COMMON},
     {161, 19, 1, 9, Rarity::COMMON},
@@ -46,7 +53,12 @@ static constexpr Entry GRASS_PATH[] = {
     {1, 1, 3, 9, Rarity::ULTRA_RARE},
     {4, 1, 3, 9, Rarity::ULTRA_RARE},
 };
+#endif
 
+#if STICKMON_EXTERNAL_CONTENT
+using CREEK_SLOPE_ContentItem = Entry;
+inline const ContentData::Table<CREEK_SLOPE_ContentItem,15> CREEK_SLOPE{31};
+#else
 static constexpr Entry CREEK_SLOPE[] = {
     {194, 18, 7, 17, Rarity::COMMON},
     {298, 13, 7, 15, Rarity::NORMAL},
@@ -64,7 +76,12 @@ static constexpr Entry CREEK_SLOPE[] = {
     {7, 1, 7, 15, Rarity::ULTRA_RARE},
     {5, 1, 16, 17, Rarity::ULTRA_RARE},
 };
+#endif
 
+#if STICKMON_EXTERNAL_CONTENT
+using TALL_GRASS_PARK_ContentItem = Entry;
+inline const ContentData::Table<TALL_GRASS_PARK_ContentItem,19> TALL_GRASS_PARK{32};
+#else
 static constexpr Entry TALL_GRASS_PARK[] = {
     {12, 20, 17, 27, Rarity::COMMON},
     {285, 17, 17, 22, Rarity::COMMON},
@@ -86,7 +103,12 @@ static constexpr Entry TALL_GRASS_PARK[] = {
     {147, 1, 17, 27, Rarity::RARE},
     {8, 1, 17, 27, Rarity::ULTRA_RARE},
 };
+#endif
 
+#if STICKMON_EXTERNAL_CONTENT
+using FROST_CRYSTAL_CAVE_ContentItem = Entry;
+inline const ContentData::Table<FROST_CRYSTAL_CAVE_ContentItem,13> FROST_CRYSTAL_CAVE{33};
+#else
 static constexpr Entry FROST_CRYSTAL_CAVE[] = {
     {361, 33, 28, 41, Rarity::COMMON},
     {42, 14, 28, 41, Rarity::NORMAL},
@@ -102,7 +124,12 @@ static constexpr Entry FROST_CRYSTAL_CAVE[] = {
     {281, 3, 28, 29, Rarity::RARE},
     {9, 1, 36, 41, Rarity::ULTRA_RARE},
 };
+#endif
 
+#if STICKMON_EXTERNAL_CONTENT
+using MIST_FOREST_PATH_ContentItem = Entry;
+inline const ContentData::Table<MIST_FOREST_PATH_ContentItem,13> MIST_FOREST_PATH{34};
+#else
 static constexpr Entry MIST_FOREST_PATH[] = {
     {42, 27, 41, 53, Rarity::NORMAL},
     {286, 18, 41, 53, Rarity::NORMAL},
@@ -118,7 +145,12 @@ static constexpr Entry MIST_FOREST_PATH[] = {
     {148, 3, 41, 49, Rarity::RARE},
     {3, 1, 41, 53, Rarity::ULTRA_RARE},
 };
+#endif
 
+#if STICKMON_EXTERNAL_CONTENT
+using ANCIENT_WATERFALL_VALLEY_ContentItem = Entry;
+inline const ContentData::Table<ANCIENT_WATERFALL_VALLEY_ContentItem,14> ANCIENT_WATERFALL_VALLEY{35};
+#else
 static constexpr Entry ANCIENT_WATERFALL_VALLEY[] = {
     {42, 19, 53, 67, Rarity::NORMAL},
     {323, 9, 53, 67, Rarity::NORMAL},
@@ -135,14 +167,28 @@ static constexpr Entry ANCIENT_WATERFALL_VALLEY[] = {
     {9, 1, 53, 67, Rarity::ULTRA_RARE},
     {3, 1, 53, 67, Rarity::ULTRA_RARE},
 };
+#endif
 
+#if !STICKMON_EXTERNAL_CONTENT
 static_assert(weightTotal(GRASS_PATH) == 100, "grass path weights");
+#endif
+#if !STICKMON_EXTERNAL_CONTENT
 static_assert(weightTotal(CREEK_SLOPE) == 100, "creek slope weights");
+#endif
+#if !STICKMON_EXTERNAL_CONTENT
 static_assert(weightTotal(TALL_GRASS_PARK) == 100, "tall grass weights");
+#endif
+#if !STICKMON_EXTERNAL_CONTENT
 static_assert(weightTotal(FROST_CRYSTAL_CAVE) == 100, "frost cave weights");
+#endif
+#if !STICKMON_EXTERNAL_CONTENT
 static_assert(weightTotal(MIST_FOREST_PATH) == 100, "mist forest weights");
+#endif
+#if !STICKMON_EXTERNAL_CONTENT
 static_assert(weightTotal(ANCIENT_WATERFALL_VALLEY) == 100, "ancient valley weights");
+#endif
 
+#if !STICKMON_EXTERNAL_CONTENT
 static_assert(levelRangesValid(GRASS_PATH) &&
                   levelRangesValid(CREEK_SLOPE) &&
                   levelRangesValid(TALL_GRASS_PARK) &&
@@ -150,6 +196,7 @@ static_assert(levelRangesValid(GRASS_PATH) &&
                   levelRangesValid(MIST_FOREST_PATH) &&
                   levelRangesValid(ANCIENT_WATERFALL_VALLEY),
               "explore encounter level range");
+#endif
 
 struct Table {
     const Entry* entries = nullptr;
@@ -159,6 +206,10 @@ struct Table {
 template <size_t N>
 constexpr Table table(const Entry (&entries)[N]) {
     return {entries, static_cast<uint8_t>(N)};
+}
+
+template<size_t N> inline Table table(const ContentData::Table<Entry,N>& entries) {
+    return {entries.data(), static_cast<uint8_t>(entries.size())};
 }
 
 inline Table tableForArea(uint8_t area) {

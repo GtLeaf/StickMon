@@ -1763,6 +1763,24 @@ struct PetAnimationProfile {
     bool mirrorRightDirections = true;
 };
 
+template<class V> inline void contentFields(V& v, PetAnimationProfile& x) { v(x.speciesId,x.idleFrames,x.idleFrameMs,x.walkingFrames,x.sleepingFrames,x.motionMode,x.idleBase,x.walkingBase,x.sleepingBase,x.mirrorRightDirections); }
+
+struct RoomSpriteProfile {
+    uint16_t speciesId;
+    uint8_t idleFrames;
+    uint16_t idleFrameMs;
+    uint8_t walkingFrames;
+    uint8_t sleepingFrames;
+    PetMotionMode motionMode;
+    SpriteKind idleBase;
+    SpriteKind walkingBase;
+    SpriteKind sleepingBase;
+    bool mirrorRightDirections;
+    float airHeight;
+    float bobAmplitude;
+};
+template<class V> inline void contentFields(V& v, RoomSpriteProfile& x) { v(x.speciesId,x.idleFrames,x.idleFrameMs,x.walkingFrames,x.sleepingFrames,x.motionMode,x.idleBase,x.walkingBase,x.sleepingBase,x.mirrorRightDirections,x.airHeight,x.bobAmplitude); }
+
 struct SpriteFrame {
     uint16_t speciesId;
     uint16_t kind;

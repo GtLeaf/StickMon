@@ -27,9 +27,9 @@ float cellY(uint8_t cell) { return ExploreRouteGeometry::tileCenter(cell / WIDTH
 bool Simulation::spawnGroup(const ExploreMapGenerator::Path& path,
                              const ExplorePool::Pool& pool, uint8_t hiddenPoolMask,
                              uint8_t area, uint32_t& random) {
-    uint8_t candidates[sizeof(GROUP_FAMILIES) / sizeof(GROUP_FAMILIES[0])]{};
+    uint8_t candidates[16]{};
     uint8_t candidateCount = 0;
-    for (uint8_t family = 0; family < sizeof(GROUP_FAMILIES) / sizeof(GROUP_FAMILIES[0]); ++family) {
+    for (uint8_t family = 0; family < familyCount(); ++family) {
         const auto& candidate = GROUP_FAMILIES[family];
         if (!candidate.allowsArea(area)) continue;
         uint8_t mask = 0;

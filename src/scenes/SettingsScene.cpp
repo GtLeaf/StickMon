@@ -34,13 +34,19 @@ void SettingsScene::initializeSettings(bool continuousVolume) {
     auto& engine = GameEngine::ins();
     engine.wakeFromIdle();
     auto& volume = engine.gameState().settings.volume;
-    const uint8_t normalized = volume > 100 ? 100 : continuousVolume ? volume :
-        static_cast<uint8_t>((volume / 10) * 10);
+    // Continuous controls open at the live HAL setting. Opening a page must
+    // not replace a quiet runtime level with a stale/default state value.
+    const uint8_t current = Hal::ins().getAudioVolume();
+    const uint8_t source = continuousVolume ? current : volume;
+    const uint8_t normalized = source > 100 ? 100 : continuousVolume ? source :
+        static_cast<uint8_t>((source / 10) * 10);
+    STICKMON_TRACEF("[Settings] volume enter saved=%u live=%u driver=%u next=%u\n",
+        volume, current, Platform::audio().volume(), normalized);
     if (volume != normalized) {
         volume = normalized;
         markSettingsDirty();
     }
-    Hal::ins().setAudioVolume(volume);
+    if (current != normalized) Hal::ins().setAudioVolume(normalized);
 }
 
 void SettingsScene::cycleSetting(Ui::SettingsPage::Item item) {
@@ -85,6 +91,7 @@ void SettingsScene::cycleSetting(Ui::SettingsPage::Item item) {
 bool SettingsScene::setSettingValue(Ui::SettingsPage::Item item, uint8_t value) {
     using Page = Ui::SettingsPage;
     if (item != Page::BRIGHTNESS && item != Page::VOLUME) return false;
+    if (item == Page::VOLUME) value = std::min<uint8_t>(value, 100);
     auto& engine = GameEngine::ins();
     auto& setting = item == Page::BRIGHTNESS ? engine.gameState().settings.brightness :
         engine.gameState().settings.volume;

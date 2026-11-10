@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Embed runtime resources and the market BGM within the SDGOODS app budget."""
+"""Pack embedded visuals or supplemental audio for the SDGOODS resources partition."""
 import argparse
 from pathlib import Path
 import struct
@@ -10,9 +10,10 @@ ENTRY = struct.Struct('<192sII')
 EXTENSIONS = {'.json', '.smonsp', '.smonroom', '.smonfurn', '.smonfx', '.smonfont', '.smondialogue'}
 
 
-def pack(data: Path, output: Path):
+def pack(data: Path, output: Path, *, audio_only=False):
     files = sorted(p for p in data.rglob('*') if p.is_file()
-                   and (p.suffix in EXTENSIONS or p.name == 'bgm_market.smonaudio')
+                   and (p.suffix in {'.smonaudio', '.smoncry'} if audio_only else
+                        p.suffix in EXTENSIONS or p.name == 'bgm_market.smonaudio')
                    and p.name != 'ui_amoled.smonfx')
     offset = 8 + ENTRY.size * len(files)
     index, payload = [], []
@@ -24,6 +25,8 @@ def pack(data: Path, output: Path):
         index.append(ENTRY.pack(name, offset, len(content)))
         payload.append(content)
         offset += len(content)
+    if audio_only and offset > 9 * 1024 * 1024:
+        raise ValueError(f'Audio archive exceeds the current 9 MiB resources partition: {offset}')
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_bytes(b'SMRA' + struct.pack('<I', len(files))
                        + b''.join(index) + b''.join(payload))
@@ -35,5 +38,7 @@ if __name__ == '__main__':
     parser.add_argument('--data', type=Path, default=ROOT / 'data')
     parser.add_argument('--output', type=Path,
                         default=ROOT / '.stick-local/firmware/sdgoods/stickmon_resources.bin')
+    parser.add_argument('--audio-only', action='store_true',
+                        help='Build supplemental audio archive for the resources data partition')
     args = parser.parse_args()
-    pack(args.data, args.output)
+    pack(args.data, args.output, audio_only=args.audio_only)

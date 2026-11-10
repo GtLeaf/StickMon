@@ -108,9 +108,7 @@ void MenuScene::advanceItemProgression() {
     if (itemProgression == ItemProgression::EVOLUTION && before != itemProgression)
         ProgressionUi::resetEvolutionAnimation();
     cancelTouch();
-    const bool centered = itemProgression == ItemProgression::EVOLUTION ||
-        itemProgression == ItemProgression::CANCELLED;
-    Ui::SceneSurface::mainMenu(false, !centered);
+    Ui::SceneSurface::mainMenu(false, true);
 }
 
 void MenuScene::renderItemProgression() {
@@ -124,19 +122,10 @@ void MenuScene::renderItemProgression() {
     }
     case ItemProgression::EVOLUTION: {
         ProgressionUi::renderEvolution(engine.pendingEvolutionFromSpeciesId(), engine.pendingEvolutionToSpeciesId(), now);
-        const auto* species = findSpecies(engine.pendingEvolutionToSpeciesId());
-        char message[80];
-        std::snprintf(message, sizeof(message), Ui::Common::EVOLUTION_COMPLETE_FMT, species ? species->name : "");
-        Ui::ItemFeedback::renderEvolutionNavigation(message,
-            ProgressionUi::evolutionAnimationComplete(engine.pendingEvolutionFromSpeciesId(), engine.pendingEvolutionToSpeciesId(), now));
         break;
     }
     case ItemProgression::CANCELLED: {
         ProgressionUi::renderEvolutionCancelled(itemCancelledSpecies, now);
-        const auto* species = findSpecies(itemCancelledSpecies);
-        char message[80];
-        std::snprintf(message, sizeof(message), Ui::Common::EVOLUTION_CANCELLED_FMT, species ? species->name : "");
-        Ui::ItemFeedback::renderEvolutionNavigation(message, ProgressionUi::evolutionCancellationComplete(now));
         break;
     }
     case ItemProgression::MOVE: ProgressionUi::renderMoveLearn(itemMoveLearn); break;
@@ -193,10 +182,11 @@ bool MenuScene::handleItemProgressionTouch(const Platform::IInputDevice::TouchEv
     } else if (itemProgression == ItemProgression::REPLACED) {
         if (ProgressionUi::handleMoveReplacementTouch(event)) handleItemProgressionButton({0, BtnAction::PRESSED});
     } else {
-        const int target = Ui::ItemFeedback::evolutionTarget(event.x, event.y,
-            itemProgression == ItemProgression::EVOLUTION);
-        const int tapped = itemProgressionTap.update(event, target);
-        if (tapped >= 0) handleItemProgressionButton({uint8_t(tapped), BtnAction::PRESSED});
+        switch (ProgressionUi::handleEvolutionTouch(event, Hal::ins().millis())) {
+        case Ui::EvolutionTouchAction::CONTINUE: handleItemProgressionButton({0, BtnAction::PRESSED}); break;
+        case Ui::EvolutionTouchAction::CANCEL: handleItemProgressionButton({1, BtnAction::PRESSED}); break;
+        default: break;
+        }
     }
     return true;
 }

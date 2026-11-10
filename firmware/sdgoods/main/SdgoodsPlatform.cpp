@@ -14,6 +14,7 @@ extern "C" {
 #include "driver/gpio.h"
 #include "driver/rtc_io.h"
 #include "esp_heap_caps.h"
+#include "esp_pm.h"
 #include "esp_psram.h"
 #include "esp_random.h"
 #include "esp_sleep.h"
@@ -25,8 +26,6 @@ extern "C" {
 #include "nvs_flash.h"
 }
 
-extern const uint8_t archiveStart[] asm("_binary_stickmon_resources_bin_start");
-extern const uint8_t archiveEnd[] asm("_binary_stickmon_resources_bin_end");
 
 namespace Sdgoods {
 namespace {
@@ -39,8 +38,7 @@ esp_err_t openStore(const char* nameSpace, nvs_open_mode_t mode, nvs_handle_t& h
 }
 
 SdgoodsPlatform::SdgoodsPlatform()
-    : resources_(archiveStart, archiveEnd - archiveStart),
-      audio_(*this),
+    : audio_(*this),
       services_{*this, *this, *this, *this, *this, audio_, *this, *this,
                 *this, resources_, *this, radio_} {}
 
@@ -48,7 +46,7 @@ bool SdgoodsPlatform::initialize() {
     if (storageReady_) return true;
     const auto error = nvs_flash_init();
     if (error != ESP_OK) {
-        Platform::logf("[SDGOODS] NVS init failed; storage retained: %s\n", esp_err_to_name(error));
+        Platform::errorf("[SDGOODS] NVS init failed; storage retained: %s\n", esp_err_to_name(error));
         return false;
     }
     storageReady_ = true;
@@ -67,8 +65,9 @@ bool SdgoodsPlatform::begin() {
     ESP_ERROR_CHECK(gpio_set_level(BOARD_BAT_CONTROL_GPIO, BOARD_BAT_CONTROL_LATCH_LEVEL));
     ESP_ERROR_CHECK(gpio_hold_dis(BOARD_BAT_CONTROL_GPIO));
     gpio_deep_sleep_hold_dis();
-    if (!initialize() || !resources_.mount()) return false;
-    if (!audio_.begin()) Platform::logLine("[SDGOODS] speaker unavailable; continuing silently");
+    if (!initialize()) return false;
+    setCpuPowerSave(false);
+    if (!audio_.begin()) Platform::errorLine("[SDGOODS] speaker unavailable; continuing silently");
     if (!beginDisplay() || !beginTouch()) return false;
     Platform::logf("[SDGOODS] IMU=%s; standby, shower uses touch drag\n",
         imu_.begin(i2cBus_) ? "ready" : "unavailable");
@@ -80,6 +79,7 @@ bool SdgoodsPlatform::begin() {
     key.pull_up_en = GPIO_PULLUP_ENABLE;
     ESP_ERROR_CHECK(gpio_config(&key));
     powerButton_.begin(gpio_get_level(BOARD_KEY_GPIO) == BOARD_KEY_ACTIVE_LEVEL, millis());
+    resourcesReady_=resources_.mount();
     initialized_ = true;
     Platform::logLine("[SDGOODS] native 360x360 RGB565; PSRAM frame + two 8-row DMA strips; no LVGL");
     return true;
@@ -185,7 +185,7 @@ void SdgoodsPlatform::bypassTouchCalibration(bool value) {
 
 bool SdgoodsPlatform::saveTouchCalibration(const Platform::TouchTransform& transform) {
     if (!TouchCalibrationStore::save(*this, transform)) {
-        Platform::logLine("[TouchCalibration] save failed; previous correction retained");
+        Platform::errorLine("[TouchCalibration] save failed; previous correction retained");
         return false;
     }
     // Publish only after the independent NVS record has been committed.
@@ -215,7 +215,8 @@ void SdgoodsPlatform::pollInputs() {
     case Stickmon::PowerButton::Action::SHUTDOWN: shutdown_ = true; break;
     default: break;
     }
-    if (!powerButton_.down()) battery_.poll(now);
+    // The charging estimate resets on unlock; skip ADC bursts while dark.
+    if (!powerButton_.down() && !locked_) battery_.poll(now);
     if (now - sampledAtMs_ < 20) return;
     sampledAtMs_ = now;
     if (powerButton_.down() || locked_) {
@@ -238,18 +239,29 @@ void SdgoodsPlatform::presentRegion(int x, int y, int width, int height) {
     const auto submit = [](void* context, int x0, int y0, int x1, int y1, const uint16_t* data) -> esp_err_t {
         return esp_lcd_panel_draw_bitmap(static_cast<esp_lcd_panel_handle_t>(context), x0, y0, x1, y1, data);
     };
+    if (panelSleeping_) {
+        // SLPOUT needs 120ms before display on; refresh all of GRAM while dark.
+        x = y = 0; width = height = 360;
+        const uint32_t elapsed = millis() - panelWokeAtMs_;
+        if (elapsed < PANEL_WAKE_MS) sleepMs(PANEL_WAKE_MS - elapsed);
+    }
     const auto err = Stickmon::submitRgb565Region(frame_, 360, x, y, x + width, y + height,
         strips_, 2, 8, completion_, submit, panel_);
     // A timed-out DMA may still own a strip. Stop before any memory can be reused.
     if (err != ESP_OK) {
-        Platform::logf("[SDGOODS] frame transfer failed: %s\n", esp_err_to_name(err));
+        Platform::errorf("[SDGOODS] frame transfer failed: %s\n", esp_err_to_name(err));
         abort();
     }
     firstFrame_ = true;
+    if (panelSleeping_) {
+        const auto onErr = esp_lcd_panel_disp_on_off(panel_, true);
+        if (onErr != ESP_OK) Platform::errorf("[SDGOODS] panel display on failed: %s\n", esp_err_to_name(onErr));
+        panelSleeping_ = false;
+    }
     applyBacklight();
 }
 void SdgoodsPlatform::applyBacklight() {
-    const uint32_t duty = (firstFrame_ && !locked_) ? (unsigned(brightness_) * 8191U + 127U) / 255U : 0;
+    const uint32_t duty = (firstFrame_ && !locked_ && !panelSleeping_) ? (unsigned(brightness_) * 8191U + 127U) / 255U : 0;
     ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty));
     ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0));
 }
@@ -266,7 +278,45 @@ void SdgoodsPlatform::setLocked(bool value) {
     audio_.suspend(value);
     if (value) { audio_.endMicrophone(); imu_.setAccelerationEnabled(false); }
     if (firstFrame_) applyBacklight();
-    Platform::logf("[SDGOODS] screen %s; volume=%u\n", value ? "locked" : "unlocked", audio_.volume());
+    setPanelSleep(value);
+    setCpuPowerSave(value);
+    Platform::logf("[SDGOODS] screen %s; volume=%u panel_sleep=%u\n", value ? "locked" : "unlocked",
+        audio_.volume(), unsigned(panelSleeping_));
+}
+void SdgoodsPlatform::setPanelSleep(bool value) {
+    if (!firstFrame_) return;
+    if (value) {
+        if (panelAsleep_) return;
+        // Relocked before the wake frame: SLPIN needs 120ms after SLPOUT.
+        if (panelSleeping_ && millis() - panelWokeAtMs_ < PANEL_WAKE_MS)
+            sleepMs(PANEL_WAKE_MS - (millis() - panelWokeAtMs_));
+        // Backlight is already off; stop the panel scanning GRAM as well.
+        const auto offErr = panelSleeping_ ? ESP_OK : esp_lcd_panel_disp_on_off(panel_, false);
+        const auto sleepErr = stickmon_sdgoods_panel_sleep(io_, true);
+        if (offErr != ESP_OK || sleepErr != ESP_OK)
+            Platform::errorf("[SDGOODS] panel sleep failed: %s/%s\n", esp_err_to_name(offErr), esp_err_to_name(sleepErr));
+        panelSleeping_ = true;
+        panelAsleep_ = sleepErr == ESP_OK;
+        return;
+    }
+    if (!panelSleeping_ || !panelAsleep_) return;
+    // Display stays off until the next full frame is written; see presentRegion.
+    const auto err = stickmon_sdgoods_panel_sleep(io_, false);
+    if (err != ESP_OK) Platform::errorf("[SDGOODS] panel wake failed: %s\n", esp_err_to_name(err));
+    panelAsleep_ = false;
+    panelWokeAtMs_ = millis();
+}
+void SdgoodsPlatform::setCpuPowerSave(bool value) {
+#if CONFIG_PM_ENABLE
+    esp_pm_config_t config{};
+    config.max_freq_mhz = value ? LOCKED_CPU_MHZ : CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
+    config.min_freq_mhz = config.max_freq_mhz;
+    config.light_sleep_enable = false;
+    const auto err = esp_pm_configure(&config);
+    if (err != ESP_OK) Platform::errorf("[SDGOODS] cpu %uMHz failed: %s\n", unsigned(config.max_freq_mhz), esp_err_to_name(err));
+#else
+    (void)value;
+#endif
 }
 void SdgoodsPlatform::sleep() { setLocked(true); }
 Platform::WakeReason SdgoodsPlatform::wakeReason() const {
@@ -334,15 +384,17 @@ bool SdgoodsPlatform::readBlob(const char* ns, const char* key, void* output, si
     return result == ESP_OK && actual == length;
 }
 bool SdgoodsPlatform::writeBlob(const char* ns, const char* key, const void* data, size_t length) {
+    if(!saveWritesEnabled_)return false;
     nvs_handle_t handle;
     if (!data || openStore(ns, NVS_READWRITE, handle) != ESP_OK) return false;
     auto result = nvs_set_blob(handle, key, data, length);
     if (result == ESP_OK) result = nvs_commit(handle);
     nvs_close(handle);
-    if (result != ESP_OK) Platform::logf("[SDGOODS] NVS write %s/%s failed: %s\n", ns, key, esp_err_to_name(result));
+    if (result != ESP_OK) Platform::errorf("[SDGOODS] NVS write %s/%s failed: %s\n", ns, key, esp_err_to_name(result));
     return result == ESP_OK;
 }
 bool SdgoodsPlatform::removeBlob(const char* ns, const char* key) {
+    if(!saveWritesEnabled_)return false;
     nvs_handle_t handle;
     if (openStore(ns, NVS_READWRITE, handle) != ESP_OK) return false;
     auto result = nvs_erase_key(handle, key);
@@ -352,6 +404,7 @@ bool SdgoodsPlatform::removeBlob(const char* ns, const char* key) {
     return result == ESP_OK;
 }
 bool SdgoodsPlatform::clearNamespace(const char* ns) {
+    if(!saveWritesEnabled_)return false;
     nvs_handle_t handle;
     if (openStore(ns, NVS_READWRITE, handle) != ESP_OK) return false;
     auto result = nvs_erase_all(handle);

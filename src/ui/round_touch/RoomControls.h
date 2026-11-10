@@ -4,6 +4,6 @@
 
 namespace Ui { namespace RoundRoom {
 constexpr MenuGrid::Rect HOME_MENU_RECT{161, 295, 38, 38};
-constexpr MenuGrid::Rect MENU_RECT{132, 308, 96, 32};
+void drawMenuButton();
 inline bool lastSaveOk = true;
 } }  // namespace Ui::RoundRoom

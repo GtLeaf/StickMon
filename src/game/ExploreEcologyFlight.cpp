@@ -74,7 +74,13 @@ Surface flightSurface(const ExploreMapGenerator::Map& map, int cell) {
 }
 }
 
-bool wideFlightSpecies(uint16_t species) { return species == 278 || species == 279; }
+bool wideFlightSpecies(uint16_t species) {
+#if STICKMON_EXTERNAL_CONTENT
+    const auto* p=profile(species);return p && p->wideFlight;
+#else
+    return species == 278 || species == 279;
+#endif
+}
 
 Surface Simulation::flightSurfaceAt(int x, int y) const {
     if (x < 0 || y < 0 || x >= ExploreMapGenerator::WIDTH || y >= ExploreMapGenerator::HEIGHT)

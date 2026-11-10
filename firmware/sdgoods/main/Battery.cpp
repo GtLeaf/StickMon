@@ -30,7 +30,7 @@ bool Battery::begin() {
     config.bitwidth = ADC_BITWIDTH_12;
     if (adc_cali_create_scheme_curve_fitting(&config, &calibration_) != ESP_OK) {
         calibration_ = nullptr;
-        Platform::logLine("[SDGOODS] battery calibration unavailable; level unknown");
+        Platform::errorLine("[SDGOODS] battery calibration unavailable; level unknown");
         return false;
     }
     sampled_ = levelSampled_ = false;
@@ -58,12 +58,22 @@ void Battery::poll(uint32_t now) {
         millivolts_ = 0; level_ = -1;
         levelSampled_ = false;
         trend_.reset();
-        if (previous >= 0) Platform::logLine("[SDGOODS] battery read failed; level unknown");
-        if (wasCharging) Platform::logLine("[SDGOODS] charging_estimate=0; ADC unavailable");
+        if (previous >= 0) Platform::errorLine("[SDGOODS] battery read failed; level unknown");
+        if (wasCharging) Platform::errorLine("[SDGOODS] charging_estimate=0; ADC unavailable");
         return;
     }
     // Trim one high/low reading, then smooth without retaining stale failures.
-    std::sort(readings, readings + count);
+    // Eight readings do not need the STL introsort's larger-array fast path.
+    // A bounded insertion sort also avoids GCC's -Os array-bounds false alarm.
+    for (unsigned i = 1; i < count; ++i) {
+        const int value = readings[i];
+        unsigned j = i;
+        while (j > 0 && readings[j - 1] > value) {
+            readings[j] = readings[j - 1];
+            --j;
+        }
+        readings[j] = value;
+    }
     int total = 0;
     for (unsigned i = 1; i + 1 < count; ++i) total += readings[i];
     const int mv = (total + (count - 2) / 2) / (count - 2);

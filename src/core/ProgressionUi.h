@@ -21,6 +21,8 @@ void renderEvolution(uint16_t fromSpeciesId,
                      uint16_t toSpeciesId,
                      uint32_t nowMs);
 void renderEvolutionCancelled(uint16_t speciesId, uint32_t nowMs);
+Ui::EvolutionTouchAction handleEvolutionTouch(const TouchTap::Event& event, uint32_t nowMs);
+bool evolutionCancelHeld(uint32_t nowMs);
 void resetMoveLearnState(MoveLearnState& state);
 bool handleMoveLearnInput(MoveLearnState& state, uint8_t button);
 bool handleMoveLearnTouch(MoveLearnState& state, const TouchTap::Event& event);

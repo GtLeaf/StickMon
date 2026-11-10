@@ -40,6 +40,10 @@ void beginEvolutionCancellation(uint16_t from, uint16_t to, uint32_t now) {
 bool evolutionCancellationComplete(uint32_t now) { return ui.evolutionCancellationComplete(now); }
 void renderEvolution(uint16_t from, uint16_t to, uint32_t now) { ui.renderEvolution(from, to, now); }
 void renderEvolutionCancelled(uint16_t species, uint32_t now) { ui.renderEvolutionCancelled(species, now); }
+Ui::EvolutionTouchAction handleEvolutionTouch(const TouchTap::Event& event, uint32_t now) {
+    return ui.handleEvolutionTouch(event, now);
+}
+bool evolutionCancelHeld(uint32_t now) { return ui.evolutionCancelHeld(now); }
 void resetMoveLearnState(MoveLearnState& state) { ui.resetMoveLearnState(state); }
 namespace {
 bool applyMoveLearnAction(MoveLearnState& state, Ui::MoveLearnAction action) {

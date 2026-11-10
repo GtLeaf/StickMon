@@ -86,15 +86,7 @@ void HomeUi::drawToast() {
 void HomeUi::drawHomeMenu(const HomeFrame& frame) {
     if (frame.touchBlocked) return;
     auto& canvas = PixelRenderer::canvas();
-    const auto& rect = HOME_MENU_RECT;
-    canvas.fillRoundRect(rect.x, rect.y, rect.width, rect.height, 6,
-        PixelRenderer::rgb(27, 43, 51));
-    canvas.drawRoundRect(rect.x, rect.y, rect.width, rect.height, 6,
-        PixelRenderer::rgb(67, 97, 101));
-    for (int row = 0; row < 3; ++row) {
-        canvas.fillRoundRect(rect.x + 9, rect.y + 11 + row * 6, 20, 3, 1,
-            PixelRenderer::rgb(222, 234, 229));
-    }
+    drawMenuButton();
     if (frame.tutorialVisible && !visibleToast(toast)) {
         const char* hint = frame.tutorialLongPress ? "点击底部菜单" :
             frame.tutorialButton == 1 ? "点击食碗喂食" : "点击精灵，与它互动";

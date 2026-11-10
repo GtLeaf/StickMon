@@ -40,16 +40,21 @@ public:
                                     uint16_t toSpeciesId,
                                     uint32_t nowMs);
     bool evolutionCancellationComplete(uint32_t nowMs);
-    void renderEvolution(uint16_t fromSpeciesId,
-                         uint16_t toSpeciesId,
-                         uint32_t nowMs);
-    void renderEvolutionCancelled(uint16_t speciesId, uint32_t nowMs);
+    virtual void renderEvolution(uint16_t fromSpeciesId,
+                                 uint16_t toSpeciesId,
+                                 uint32_t nowMs);
+    virtual void renderEvolutionCancelled(uint16_t speciesId, uint32_t nowMs);
+    virtual EvolutionTouchAction handleEvolutionTouch(const TouchTap::Event&, uint32_t) {
+        return EvolutionTouchAction::NONE;
+    }
+    // True once when a cancel hold reaches its duration; polled by scene updates.
+    virtual bool evolutionCancelHeld(uint32_t) { return false; }
     void resetMoveLearnState(MoveLearnState& state);
-    MoveLearnAction handleMoveLearnInput(MoveLearnState& state, uint8_t button,
-                                            const MoveLearnFrame& frame);
+    virtual MoveLearnAction handleMoveLearnInput(MoveLearnState& state, uint8_t button,
+                                                 const MoveLearnFrame& frame);
     bool moveLearnReplacementResolved(MoveLearnState& state, bool replaced, bool pending);
-    void renderMoveLearn(const MoveLearnState& state, const MoveLearnFrame& frame);
-    void renderMoveReplacement(Game::MoveId oldId, Game::MoveId newId);
+    virtual void renderMoveLearn(const MoveLearnState& state, const MoveLearnFrame& frame);
+    virtual void renderMoveReplacement(Game::MoveId oldId, Game::MoveId newId);
     virtual MoveLearnAction handleMoveLearnTouch(MoveLearnState&, const TouchTap::Event&,
                                                 const MoveLearnFrame&) { return MoveLearnAction::NONE; }
     virtual bool handleLevelUpTouch(const TouchTap::Event&) { return false; }

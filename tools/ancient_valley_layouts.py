@@ -87,7 +87,7 @@ def cpp_table():
             text += ['      {' + ', '.join(str(sum(1 << x for x in range(16) if (x, y) in cells)) for y in range(12)) + '},']
         text += ['    },']
     text += ['};', '}  // namespace ExploreAncientValley', '']
-    return '\n'.join(text)
+    return __import__('content_tables').adapt_header('\n'.join(text),'ExploreAncientValleyLayouts')
 
 
 if __name__ == '__main__':

@@ -36,6 +36,9 @@ struct Endpoint {
     Edge edge;
 };
 
+template<class V> inline void contentFields(V& v, Point& x) { v(x.x,x.y); }
+template<class V> inline void contentFields(V& v, Endpoint& x) { v(x.point,x.edge); }
+
 struct FrostContext {
     // Segment progress is also used by the mist forest's tree progression.
     uint8_t level = 0;

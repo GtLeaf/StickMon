@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstdio>
@@ -23,19 +24,28 @@
 #include "scenes/MainScene.h"
 #undef private
 #include "core/RoomRenderer.h"
+#include "platform/api/FlashStorage.h"
 #include "core/RoomResource.h"
 #include "core/FontResource.h"
 #include "core/SaveCodec.h"
 #include "core/SaveManager.h"
+#include "core/ContentStore.h"
+#include "core/ContentValidation.h"
+#include "core/AudioManager.h"
+#include "core/CryPlayer.h"
 #include "game/GameRandom.h"
 #include "game/ItemInventory.h"
 #include "game/HatchService.h"
+#include "ui/common/HatchUiContent.h"
 #include "game/MonsterFactory.h"
+#include "game/ExplorePickupRules.h"
 #include "game/ExploreDestinations.h"
 #include "game/Tutorial.h"
 #include "ui/SceneSurface.h"
 #include "presentation/PixelRenderer.h"
+#include "presentation/TouchUi.h"
 #include "ResourceArchive.h"
+#include "AudioResources.h"
 #include "RoomSession.h"
 #include "Cst816TouchState.h"
 #include "TouchCalibrationStore.h"
@@ -44,6 +54,8 @@
 #include "ui/round_touch/ExploreSelectUi.h"
 #include "ui/round_touch/ExploreRouteUi.h"
 #include "ui/round_touch/ExploreBattleUi.h"
+#include "ui/round_touch/ProgressionUi.h"
+#include "core/ProgressionUi.h"
 #include "ui/common/ExploreBattleUiContent.h"
 #include "ui/round_touch/TouchTutorial.h"
 
@@ -153,6 +165,36 @@ private:
     Platform::IMemoryAllocator& base;
 };
 
+class TestImu final : public Platform::IImuDevice {
+public:
+    bool enabled = false, available = true, valid = true;
+    float x = 0, y = 0, z = 1;
+    bool setAccelerationEnabled(bool enable) override {
+        enabled = enable && available;
+        return !enable || available;
+    }
+    bool readAcceleration(float& ax, float& ay, float& az) override {
+        if (!enabled || !valid) return false;
+        ax = x; ay = y; az = z;
+        return true;
+    }
+};
+
+class TestDisplay final : public Platform::IDisplayDevice {
+public:
+    explicit TestDisplay(Platform::IDisplayDevice& delegate) : delegate_(delegate) {}
+    bool isLocked = false;
+    Platform::FrameBuffer565 frameBuffer() override { return delegate_.frameBuffer(); }
+    void present() override { delegate_.present(); }
+    void presentRegion(int x, int y, int w, int h) override { delegate_.presentRegion(x,y,w,h); }
+    void setBrightness(uint8_t value) override { delegate_.setBrightness(value); }
+    uint8_t brightness() const override { return delegate_.brightness(); }
+    void sleep() override { delegate_.sleep(); }
+    bool locked() const override { return isLocked; }
+private:
+    Platform::IDisplayDevice& delegate_;
+};
+
 class TestPower final : public Platform::IPowerDevice {
 public:
     int batteryLevel() override { return level; }
@@ -209,7 +251,7 @@ int main(int argc, char** argv) {
     const fs::path output = argv[2];
     fs::create_directories(output);
     auto archiveBytes = readFile(argv[3]);
-    Sdgoods::ResourceArchive archive(archiveBytes.data(), archiveBytes.size());
+    Sdgoods::AudioResources archive(archiveBytes.data(), archiveBytes.size());
     assert(archive.mount());
     auto manifest = archive.open("/packs/dev/manifest.json");
     assert(manifest && manifest.size() > 0);
@@ -220,17 +262,32 @@ int main(int argc, char** argv) {
     Sdgoods::ResourceArchive truncated(archiveBytes.data(), 10);
     assert(!truncated.mount());
 
-    DesktopPlatform desktop;
+    DesktopPlatform desktop(std::getenv("STICKMON_CONTENT_ROOT") ? std::getenv("STICKMON_CONTENT_ROOT") : "data");
     TouchInput touch;
+    TestImu imu;
     TestPower power;
     NoPeers peers;
     DiskBlobs blobs(argv[4]);
     touch.store = &blobs;
     const auto& d = desktop.serviceBundle();
+    TestDisplay display(d.display);
     PageMemory memory(d.memory);
-    Platform::Services services{d.lifecycle, d.clock, d.logger, touch, d.display, d.audio,
-        d.imu, power, blobs, archive, memory, peers};
+    Platform::Services services{d.lifecycle, d.clock, d.logger, touch, display, d.audio,
+        imu, power, blobs,
+#if STICKMON_EXTERNAL_CONTENT
+        desktop,
+#else
+        archive,
+#endif
+        memory, peers};
     Platform::bind(services);
+#if STICKMON_EXTERNAL_CONTENT
+    ContentStore catalog;ContentData::bind(&catalog);
+    const bool validCatalog=validateContentCatalog() && catalog.healthy();
+    if(mode=="catalog-invalid") {assert(!validCatalog);return 0;}
+    assert(validCatalog);
+    if(mode=="catalog-valid") return 0;
+#endif
     GameRandom::seed(42);
     if (mode == "fonts" || mode == "fonts-invalid") {
         std::vector<uint16_t> guarded(360*360+32,0xa55a);
@@ -345,19 +402,20 @@ int main(int argc, char** argv) {
         assert(writer.saveHatchProgress(progress));
         return 0;
     }
-    if (mode == "battery-hud" || mode == "bag-flow" || mode == "fresh" || mode == "reset" || mode == "hud-pair" || mode == "menu-fixed" || mode == "shop-tabs" || mode == "home-notice" || mode == "contacts-header" || mode == "settings-header" || mode == "status-round" || mode == "team-moves" || mode == "explore-select" || mode == "debug-menu" || (mode == "explore-round" || mode == "battle-round")) {
+    if (mode == "settings-audio" || mode == "audio-resources" || mode == "battery-hud" || mode == "locked-standby" || mode == "bag-flow" || mode == "fresh" || mode == "reset" || mode == "hud-pair" || mode == "menu-fixed" || mode == "shop-tabs" || mode == "home-notice" || mode == "contacts-header" || mode == "settings-header" || mode == "status-round" || mode == "team-moves" || mode == "explore-select" || mode == "debug-menu" || (mode == "explore-round" || mode == "battle-round" || mode == "learn-move")) {
         // Existing menu journeys use an explicit established-save fixture.
         Game::GameState state;
         Game::HatchService::initializeNewGame(state);
         assert(Game::HatchService::finish(state, 0));
         state.tutorialFlags = Game::TUTORIAL_ALL_FLAGS;
         state.settings.volume = 0;
+        if (mode == "settings-audio") state.settings.volume = 5;
         if (mode == "home-notice") {
             state.team[0].level = 7;
             state.pendingLevelUp = true;
             state.pendingLevelUpLevel = 7;
         }
-        if (mode == "bag-flow" || mode == "hud-pair" || mode == "team-moves" || (mode == "explore-round" || mode == "battle-round")) {
+        if (mode == "bag-flow" || mode == "hud-pair" || mode == "team-moves" || (mode == "explore-round" || mode == "battle-round" || mode == "learn-move")) {
             state.team[1] = Game::MonsterFactory::create(25, 5);
             state.team[1].satiety = 25;
             state.team[1].hpCur = state.team[1].hpMax / 2;
@@ -383,6 +441,12 @@ int main(int argc, char** argv) {
         tick(20);
     };
     const auto tap = [&](int x, int y) { event(Type::DOWN, x, y); event(Type::UP, x, y); };
+    const auto shakeEgg = [&]() {
+        imu.x = 0; tick(1200);
+        imu.x = 1.2f; tick(70);
+        imu.x = -1.2f; tick(70);
+        imu.x = 0;
+    };
     const auto bowlPoint = [&]() {
         assert(engine.currentId == SceneID::MAIN);
         int sumX = 0, sumY = 0, hits = 0;
@@ -411,18 +475,41 @@ int main(int argc, char** argv) {
     }
     if (mode == "onboard-fresh") {
         assert(engine.currentId == SceneID::HATCH && !engine.gameState().oobeDone);
+        assert(engine.gameState().settings.volume == 5 && Platform::audio().volume() == 5);
         assert(engine.gameState().teamCount == 0 && engine.gameState().coins == 0);
         assert(engine.gameState().tutorialFlags == 0 && engine.gameState().hatchSeconds == 180);
         for (auto food : engine.gameState().room.food) assert(food == 0);
         tick(500); capture(output / "onboard-hatch.ppm");
         auto& hatch = *static_cast<HatchScene*>(engine.currentScene.get());
-        event(Type::DOWN, 130, 285); event(Type::CANCEL, 130, 285); event(Type::UP, 130, 285);
-        assert(hatch.wipeCount == 0);
+        const auto egg = Ui::HatchUiContent::eggCenter(hatch.ui.layout());
+        assert(hatch.touchTarget(homeMenuX,homeMenuY) == 1);
+        assert(hatch.touchTarget(130,285) == -1 && hatch.touchTarget(230,285) == -1);
+        event(Type::DOWN, egg.x, egg.y); event(Type::CANCEL, egg.x, egg.y); event(Type::UP, egg.x, egg.y);
+        event(Type::DOWN, egg.x, egg.y); event(Type::MOVE, egg.x+20, egg.y); event(Type::UP, egg.x, egg.y);
+        assert(hatch.wipeCount == 0 && hatch.pokeCount == 0);
         tap(130,285); tap(230,285);
+        assert(hatch.wipeCount == 0 && hatch.pokeCount == 0);
+        imu.available=false;tick(100);assert(!imu.enabled);
+        tap(egg.x,egg.y);tick(90);capture(output / "onboard-hatch-tap.ppm");
+        assert(hatch.pokeCount == 1);
+        imu.available=true;tick(1200);assert(imu.enabled);
+        shakeEgg();capture(output / "onboard-hatch-shake.ppm");
         assert(hatch.wipeCount == 1 && hatch.pokeCount == 1);
+        // Continuous shaking counts once until a quiet interval re-arms it.
+        for(int i=0;i<12;++i) {imu.x=i%2?1.2f:-1.2f;tick(70);}
+        assert(hatch.wipeCount == 1);imu.x=0;
+        display.isLocked=true;tick(200);assert(!imu.enabled);
+        imu.x=1.2f;tick(150);imu.x=-1.2f;tick(150);
+        assert(hatch.wipeCount==1);
+        imu.x=0;display.isLocked=false;tick(400);assert(imu.enabled);
+        tap(homeMenuX,homeMenuY);tick(400);
+        assert(engine.currentId==SceneID::MENU && !imu.enabled);
+        const auto menuBack=Ui::MainMenuUi::backBounds();
+        tap(menuBack.x+menuBack.width/2,menuBack.y+menuBack.height/2);tick(400);
+        assert(engine.currentId==SceneID::HATCH && imu.enabled);
         tick(2300);
         // Force-save before the normal 15-second interval, as the power key does.
-        assert(hatch.elapsed < 15 && session.save());
+        assert(static_cast<HatchScene*>(engine.currentScene.get())->elapsed < 15 && session.save());
         Game::HatchProgress progress{};
         assert(engine.loadHatchProgress(progress) && progress.elapsedSeconds >= 2);
         assert(progress.wipeCount == 1 && progress.pokeCount == 1);
@@ -439,7 +526,8 @@ int main(int argc, char** argv) {
         assert(hatch.elapsed >= 2 && hatch.elapsed < 15);
         assert(hatch.wipeCount == 1 && hatch.pokeCount == 1);
         // Keep production duration; only this test fixture is near completion.
-        for (int i = 0; i < 10; ++i) tap(130,285);
+        for (int i = 0; i < 10; ++i) shakeEgg();
+        assert(hatch.wipeCount==11 && hatch.pokeCount==1);
         hatch.elapsed = engine.gameState().hatchSeconds - 0.1f;
         engine.invalidateScene(); tick(1200);
         assert(engine.currentId == SceneID::MAIN && engine.gameState().oobeDone);
@@ -550,6 +638,47 @@ int main(int argc, char** argv) {
         main.onButton({0, BtnAction::PRESSED});
         engine.invalidateScene();tick(20);capture(output / "home-interaction-toast.ppm");
         std::puts("PASS full-width pixel dialogue and 640ms arrow bob, bottom level-up notice: panel-wide release tap, old location/menu/room blocked, cancel/drag/outside release rejected, no click-through and persisted acknowledgement");
+        {   // Home evolution: native 360 surface, centered sprite, touch-only controls.
+            using Modal=MainScene::ProgressionModal;
+            auto& st=engine.gameState();
+            const auto queue=[&]() {
+                st.team[0]=Game::MonsterFactory::create(25,30);
+                assert(engine.queueEvolutionEvent(0,25,26,29));
+                tick(100);assert(main.progressionModal==Modal::EVOLUTION);
+                assert(Ui::SceneSurface::width()==360);
+            };
+            queue();
+            const auto t0=desktop.millis();
+            const auto at=[&](unsigned ms,const char* name) {
+                while(desktop.millis()<t0+ms)tick(17);
+                engine.invalidateScene();tick(20);capture(output/(std::string(name)+".ppm"));
+            };
+            at(300,"home-evolution-intro");
+            // The 92x96 front frame sits inside the round safe area around x=180.
+            const auto* frame=PokemonSprites::findSpeciesSprite(25,PokemonSprites::SpriteKind::FRONT);
+            const int fw=FlashStorage::readByte(&frame->width),fh=FlashStorage::readByte(&frame->height);
+            assert(180-fw/2>=60 && 220-fh>=48);
+            tap(180,180);tick(100);assert(main.progressionModal==Modal::EVOLUTION); // too early to continue
+            at(1500,"home-evolution-morph");
+            event(Type::DOWN,180,180);tick(500);engine.invalidateScene();tick(20);
+            capture(output/"home-evolution-hold.ppm");
+            event(Type::UP,180,180);tick(50);
+            assert(main.progressionModal==Modal::EVOLUTION && engine.hasPendingEvolution()); // short hold
+            at(4300,"home-evolution-complete");
+            assert(main.progressionModal==Modal::EVOLUTION);
+            event(Type::DOWN,40,180);tick(1300);event(Type::UP,40,180);tick(100); // slow release still continues
+            assert(main.progressionModal==Modal::NONE && !engine.hasPendingEvolution() && st.team[0].speciesId==26);
+            queue();tick(900);
+            event(Type::DOWN,200,120);tick(1100);
+            assert(main.progressionModal==Modal::EVOLUTION_CANCELLED);
+            event(Type::UP,200,120);tick(100);
+            assert(main.progressionModal==Modal::EVOLUTION_CANCELLED); // the hold release does not continue
+            tick(300);engine.invalidateScene();tick(20);capture(output/"home-evolution-cancelling.ppm");
+            tick(1000);engine.invalidateScene();tick(20);capture(output/"home-evolution-cancelled.ppm");
+            tap(180,308);tick(100);
+            assert(main.progressionModal==Modal::NONE && st.team[0].speciesId==25 && !engine.hasPendingEvolution());
+            std::puts("PASS home evolution: native centered sprite, early tap ignored, short hold kept, 1s hold cancels, release-to-continue");
+        }
         return 0;
     }
     if (mode == "hud-pair") {
@@ -627,6 +756,138 @@ int main(int argc, char** argv) {
     const auto capturePage = [&](const char* name) {
         tick(300); engine.invalidateScene(); tick(20); capture(output / (std::string(name) + ".ppm"));
     };
+    if (mode == "settings-audio") {
+        const auto assertVolume = [&](uint8_t expected) {
+            if(engine.gameState().settings.volume!=expected || Hal::ins().getAudioVolume()!=expected || desktop.volume()!=expected)
+                std::fprintf(stderr,"volume mismatch expected=%u state=%u HAL=%u driver=%u scene=%u\n",
+                    unsigned(expected),unsigned(engine.gameState().settings.volume),
+                    unsigned(Hal::ins().getAudioVolume()),unsigned(desktop.volume()),unsigned(engine.currentId));
+            assert(engine.gameState().settings.volume==expected);
+            assert(Hal::ins().getAudioVolume()==expected && desktop.volume()==expected);
+        };
+        assertVolume(5); // restored quiet setting, including the HAL startup path
+        tap(homeMenuX,homeMenuY);tick(1000);
+        for (const uint8_t level : {5,23,0}) {
+            Hal::ins().setAudioVolume(level);
+            engine.gameState().settings.volume=50; // stale state must not boost live audio
+            menuItem(6);assert(engine.currentId==SceneID::SETTINGS);assertVolume(level);
+            auto& scene=*static_cast<SettingsScene*>(engine.currentScene.get());
+            const auto plays=desktop.audioPlayCount();
+            for (int i=0;i<3;++i) {scene.onEnter();assertVolume(level);}
+            assert(desktop.audioPlayCount()==plays); // entering never previews a cry
+            pageTap(35,76);assertVolume(level); // label used to add 10 and preview
+            pageEvent(Type::DOWN,150,76);pageEvent(Type::MOVE,150,26);pageEvent(Type::UP,150,26);
+            assertVolume(level); // a vertical gesture still only scrolls
+            scene.onEnter();
+            if (level==5) {
+                capturePage("settings-volume-quiet");
+                pageEvent(Type::DOWN,125,76);pageEvent(Type::MOVE,142,76);pageEvent(Type::UP,142,76);
+                assertVolume(23); // real horizontal slider updates state/HAL/driver together
+                assert(session.save());
+                Game::GameState restored;MainSceneViewState view{};SaveManager reader;
+                assert(reader.begin() && reader.load(restored,view) && restored.settings.volume==23);
+                scene.onEnter();assertVolume(23);
+                capturePage("settings-volume-adjusted");
+                pageEvent(Type::DOWN,142,76);pageEvent(Type::MOVE,152,76);
+                capturePage("settings-volume-pressed");
+                pageEvent(Type::CANCEL,152,76);pageEvent(Type::UP,152,76);
+                assert(scene.setSettingValue(Ui::SettingsPage::VOLUME,255));
+                assertVolume(100); // state cannot retain a value the driver clamps
+            }
+            back();assert(nativeMenu());
+        }
+        // Check both framebuffer storage orders and clipping on the actual slider renderer.
+        for (bool swapped : {false,true}) for (bool pressed : {false,true}) {
+            std::vector<uint16_t> guarded(96*64+32,0xa55a);
+            PixelRenderer::bind({guarded.data()+16,96,64,swapped});
+            auto& c=PixelRenderer::canvas();
+            const uint16_t bg=PixelRenderer::rgb(24,34,42);
+            const auto captureSlider = [&](const char* name) {
+                std::ofstream image(output/name,std::ios::binary);
+                image<<"P6\n96 64\n255\n";
+                for(int y=0;y<64;++y)for(int x=0;x<96;++x) {
+                    const auto pixel=c.readPixel(x,y);
+                    const char rgb[]={char((pixel>>11)*255/31),
+                        char(((pixel>>5)&63)*255/63),char((pixel&31)*255/31)};
+                    image.write(rgb,3);
+                }
+            };
+            for (int value : {0,50,100}) {
+                c.fillSprite(bg);
+                TouchUi::slider(16,80,30,value,0,100,pressed,true);
+                const int cx=16+value*64/100, r=pressed?9:8;
+                unsigned partial=0;
+                for (int dy=5;dy<=r;++dy) for(int dx=-r;dx<=r;++dx) {
+                    const auto pixel=c.readPixel(cx+dx,30+dy);
+                    assert(pixel==c.readPixel(cx-dx,30+dy));
+                    assert(pixel==c.readPixel(cx+dx,30-dy));
+                    partial+=pixel!=bg && pixel!=0xffff;
+                }
+                assert(partial>0); // actual intermediate edge coverage, not a hard circle
+                if (!swapped && value==50) {
+                    captureSlider(pressed?"slider-smooth-pressed.ppm":"slider-smooth.ppm");
+                    c.fillSprite(bg);TouchUi::slider(16,80,30,value,0,100,pressed);
+                    captureSlider(pressed?"slider-before-pressed.ppm":"slider-before.ppm");
+                }
+            }
+            c.fillSprite(bg);c.setClipRect(20,20,40,20);
+            TouchUi::slider(16,80,30,50,0,100,pressed,true);c.clearClipRect();
+            for(int y=0;y<64;++y)for(int x=0;x<96;++x)
+                if(x<20 || x>=60 || y<20 || y>=40)assert(c.readPixel(x,y)==bg);
+            for(int i=0;i<16;++i)assert(guarded[i]==0xa55a && guarded[guarded.size()-1-i]==0xa55a);
+        }
+        PixelRenderer::bind(desktop.frameBuffer());
+        std::puts("PASS quiet/restored/mute settings entry, stale state cannot boost live audio, no entry preview, label and scroll isolation, slider/save alignment, smooth knob coverage/symmetry/byte order/clipping");
+        return 0;
+    }
+    if (mode == "audio-resources") {
+        SettingsScene settings;
+        assert(settings.setSettingValue(Ui::SettingsPage::VOLUME,40));
+        assert(desktop.volume()==40 && engine.gameState().settings.volume==40);
+        const auto oldPlays=desktop.audioPlayCount();
+        settings.previewSettingsVolume();
+        assert(desktop.audioPlayCount()==oldPlays); // reproduce missing embedded cry
+        auto soundBytes=readFile(output/"audio-resources.bin");
+        assert(!soundBytes.empty());
+        assert(!archive.attachAudio(soundBytes.data(),10));
+        auto corrupt=soundBytes;corrupt[200]=0xff;corrupt[201]=0xff;corrupt[202]=0xff;corrupt[203]=0xff;
+        assert(!archive.attachAudio(corrupt.data(),corrupt.size()));
+        assert(archive.attachAudio(soundBytes.data(),soundBytes.size()) && archive.mount());
+        settings.previewSettingsVolume();
+        assert(desktop.audioPlayCount()==oldPlays+1 && !desktop.lastAudio().empty());
+        desktop.consumeQueuedPcm(AudioManager::CRY_CHANNEL);CryPlayer::ins().update();
+        unsigned cries=0;
+        for(unsigned species=1;species<=386;++species) {
+            char path[64];std::snprintf(path,sizeof(path),"/packs/dev/cries/%03u.smoncry",species);
+            if(!archive.open(path)) continue;
+            assert(CryPlayer::ins().replay(species));
+            const auto& pcm=desktop.lastAudio();
+            assert(!pcm.empty() && *std::min_element(pcm.begin(),pcm.end())<*std::max_element(pcm.begin(),pcm.end()));
+            desktop.consumeQueuedPcm(AudioManager::CRY_CHANNEL);CryPlayer::ins().update();++cries;
+        }
+        assert(cries==64);
+        for(unsigned cue=0;cue<15;++cue) assert(AudioManager::ins().playSfx(static_cast<SfxCue>(cue)));
+        for(auto track : {MusicTrack::HOME,MusicTrack::EXPLORE,MusicTrack::BATTLE,MusicTrack::BATTLE_SPECIAL,MusicTrack::MARKET}) {
+            AudioManager::ins().setMusic(track);
+            assert(AudioManager::ins().playingMusic()==track);
+            desktop.consumeQueuedPcm(AudioManager::MUSIC_CHANNEL);
+            AudioManager::ins().update();
+        }
+        // Supplemental files cannot replace the embedded manifest or game data.
+        auto foreign=soundBytes;
+        std::memset(foreign.data()+8,0,192);
+        std::strcpy(reinterpret_cast<char*>(foreign.data()+8),"/packs/dev/foreign.json");
+        assert(archive.attachAudio(foreign.data(),foreign.size()));
+        assert(!archive.open("/packs/dev/foreign.json"));
+        auto preserved=archive.open("/packs/dev/manifest.json");
+        assert(preserved && preserved.size()==manifest.size());
+        AudioManager::ins().stopAll();
+        assert(settings.setSettingValue(Ui::SettingsPage::VOLUME,0));
+        settings.previewSettingsVolume();
+        assert(desktop.volume()==0 && !CryPlayer::ins().replay(1));
+        std::puts("PASS actual settings preview missing before audio install; 64 cries, 15 SFX, five BGM decode/play, mute, malformed archive rejection and embedded data isolation");
+        return 0;
+    }
     if (mode == "battery-hud") {
         tick(1000);
         assert(engine.currentId==SceneID::MAIN);
@@ -668,6 +929,67 @@ int main(int argc, char** argv) {
         capturePage("battery-home-full-charging");
         power.charging=false; capturePage("battery-home-full-idle");
         std::puts("PASS real home/hatch charging HUD at unknown/empty/low/normal/full levels; changes confined to battery icon");
+        return 0;
+    }
+    if (mode == "locked-standby") {
+        tick(1000);
+        assert(engine.currentId==SceneID::MAIN);
+        static_assert(GameEngine::LOCKED_FRAME_MS==1000, "host mirrors the SDGOODS lock cadence");
+        const auto bowl=bowlPoint();
+        const uint8_t stock=engine.selectedFoodCount();
+        tap(bowl.first,bowl.second);
+        assert(engine.bowlHasFood() && engine.selectedFoodCount()==stock-1);
+        const uint8_t satiety=50;
+        engine.gameState().team[0].satiety=satiety;
+        auto* room=static_cast<MainScene*>(engine.currentScene.get());
+        const float startX=room->mainActor.x, startY=room->mainActor.y;
+        const uint32_t startMinutes=engine.gameState().gameMinutesTotal;
+        display.isLocked=true;
+        const auto lockedFrames=desktop.presentCount();
+        // Count core updates over 10s; locked standby must step once a second.
+        std::vector<uint32_t> updates;
+        uint32_t lastScene=engine.lastSceneUpdateMs, sceneSteps=0;
+        const auto start=desktop.millis();
+        bool ate=false;
+        while(desktop.millis()-start<60000) {
+            desktop.advanceMs(17); session.poll();
+            if(updates.empty() || updates.back()!=engine.lastUpdateMs) updates.push_back(engine.lastUpdateMs);
+            if(engine.lastSceneUpdateMs!=lastScene) {
+                ++sceneSteps;
+                lastScene=engine.lastSceneUpdateMs;
+            }
+            if(engine.activeMonster().satiety>satiety) ate=true;
+        }
+        for(size_t i=2;i<updates.size();++i) {
+            const uint32_t gap=updates[i]-updates[i-1];
+            assert(gap>=1000 && gap<1000+17);
+        }
+        assert(updates.size()>=59 && updates.size()<=62);
+        assert(sceneSteps>=59);
+        assert(desktop.presentCount()==lockedFrames);
+        assert(ate);
+        assert(room==engine.currentScene.get());
+        assert(room->mainActor.x!=startX || room->mainActor.y!=startY);
+        const uint32_t elapsedMinutes=engine.gameState().gameMinutesTotal-startMinutes;
+        assert(elapsedMinutes+1>=engine.gameMinutesTotalAt(desktop.millis())-startMinutes);
+        assert(elapsedMinutes>0);
+        // Room motion is replayed in 100ms slices up to the current update.
+        {
+            const uint32_t base=engine.lastSceneUpdateMs;
+            engine.sceneUpdateScheduled=true; engine.nextSceneUpdateMs=base;
+            engine.catchUpLockedScene(base+1000);
+            assert(engine.currentScene.get()==room && engine.lastSceneUpdateMs==base+900);
+            engine.sceneUpdateScheduled=true; engine.nextSceneUpdateMs=base+900;
+            engine.catchUpLockedScene(base+900+2001);
+            assert(engine.lastSceneUpdateMs==base+900);
+        }
+        display.isLocked=false;
+        engine.wakeFromIdle(); engine.invalidateScene();
+        tick(100);
+        assert(desktop.presentCount()>lockedFrames);
+        capturePage("locked-standby-woken");
+        std::printf("PASS locked standby: %zu core updates/60s, %u scene steps, no frames, pet ate, %u game minutes; wake redraws\n",
+            updates.size(), unsigned(sceneSteps), unsigned(elapsedMinutes));
         return 0;
     }
 #if STICKMON_ENABLE_DEBUG_FEATURES
@@ -917,11 +1239,15 @@ int main(int argc, char** argv) {
         assert(!menu().itemFeedback && state.bag.thunderStone==stones);
         targetTap(menu().teamUi,1);tick(800);
         assert(menu().itemProgression==MenuScene::ItemProgression::EVOLUTION);
-        tap(158,32);tick(2000);capturePage("bag-evolution-cancelled");pageTap(120,210);tick(100);
+        assert(Ui::SceneSurface::width()==360);
+        tap(158,32);tick(100);assert(menu().itemProgression==MenuScene::ItemProgression::EVOLUTION);
+        event(Type::DOWN,180,180);tick(1100);event(Type::UP,180,180);
+        assert(menu().itemProgression==MenuScene::ItemProgression::CANCELLED);
+        tick(2000);capturePage("bag-evolution-cancelled");tap(180,180);tick(100);
         assert(state.team[1].speciesId==25 && state.bag.thunderStone==stones);
         assert(menu().viewMode==MenuScene::ViewMode::BAG);
         openItem(menu(),Item::THUNDER_STONE);pageTap(130,270);targetTap(menu().teamUi,1);tick(800);
-        capturePage("bag-stone-evolution");tick(8000);capturePage("bag-evolution-complete");pageTap(120,210);tick(100);
+        capturePage("bag-stone-evolution");tick(8000);capturePage("bag-evolution-complete");tap(180,308);tick(100);
         for(int i=0;i<12 && menu().itemProgression!=MenuScene::ItemProgression::NONE;++i) {
             menu().onButton({1,BtnAction::PRESSED});menu().onButton({0,BtnAction::PRESSED});tick(50);
         }
@@ -1156,6 +1482,163 @@ int main(int argc, char** argv) {
         std::puts("PASS native battle command corners/cancel/busy, bag return, switch/attack/flee, real victory EXP cue, HP-only combat, reward animation, statuses, long logs, large sprites and friendship surfaces");
         return 0;
     }
+    if (mode == "learn-move") {
+        auto& state=engine.gameState();
+        state.team[1].satiety=75;
+        tap(homeMenuX,homeMenuY);tick(1000);menuItem(0);
+        selectRegion(*static_cast<ExploreScene*>(engine.currentScene.get()),0);
+        targetTap(*static_cast<ExploreScene*>(engine.currentScene.get()),Ui::RoundExplore::DEPART);
+        const auto deadline=desktop.millis()+30000;
+        while(engine.currentId!=SceneID::EXPLORE && desktop.millis()<deadline)tick(100);
+        assert(engine.currentId==SceneID::EXPLORE);
+        auto& explore=*static_cast<ExploreScene*>(engine.currentScene.get());
+        using Phase=Ui::ExplorePhase;
+        using Learn=Ui::ProgressionUi;
+        {   // Explore evolution: native surface, hold cancels, tap continues.
+            auto& st=engine.gameState();
+            const auto saved=st.team[0];
+            st.team[0]=Game::MonsterFactory::create(25,30);
+            assert(engine.queueEvolutionEvent(0,25,26,29));
+            assert(explore.enterPendingProgression(Phase::WALKING) && explore.phase==Phase::EVOLUTION);
+            engine.invalidateScene();tick(20);
+            assert(Ui::SceneSurface::width()==360);
+            tick(4300);engine.invalidateScene();tick(20);capture(output/"explore-evolution-complete.ppm");
+            tap(300,180);tick(100);
+            assert(!engine.hasPendingEvolution() && st.team[0].speciesId==26 && explore.phase==Phase::WALKING);
+            st.team[0]=Game::MonsterFactory::create(25,30);
+            assert(engine.queueEvolutionEvent(0,25,26,29));
+            assert(explore.enterPendingProgression(Phase::WALKING) && explore.phase==Phase::EVOLUTION);
+            engine.invalidateScene();tick(500);
+            event(Type::DOWN,180,180);tick(1100);event(Type::UP,180,180);
+            assert(explore.phase==Phase::EVOLUTION_CANCELLED);
+            tick(1200);tap(180,308);tick(100);
+            assert(explore.phase==Phase::WALKING && st.team[0].speciesId==25 && !engine.hasPendingEvolution());
+            st.team[0]=saved;
+            std::puts("PASS explore evolution: native surface, tap-to-continue and hold-to-cancel");
+        }
+        auto& mon=state.team[0];
+        const Species& species=*findSpecies(mon.speciesId);
+        std::vector<Game::MoveId> moves;uint8_t learnLevel=1;
+        const uint16_t learnsetCount=learnsetEntryCountForSpecies(species);
+        for(uint16_t i=0;i<learnsetCount && moves.size()<4;++i) {
+            const auto* entry=learnsetEntryForSpecies(species,i);
+            if(!entry||!canLearnAsSpecialMove(species,entry->moveId)||!findMove(entry->moveId))continue;
+            if(std::find(moves.begin(),moves.end(),entry->moveId)!=moves.end())continue;
+            moves.push_back(entry->moveId);learnLevel=std::max<uint8_t>(learnLevel,entry->level);
+        }
+        assert(moves.size()==4);
+        mon.level=std::max<uint8_t>(mon.level,learnLevel);
+        const Game::MoveId NEW=moves[0],A=moves[1],B=moves[2],C=moves[3];
+        const auto center=[](const MenuGrid::Rect& r){return std::pair<int,int>{r.x+r.width/2,r.y+r.height/2};};
+        const auto insideRound=[](const MenuGrid::Rect& r,int radius){
+            // Rounded corners: the arc centers plus radius must stay on the panel.
+            for(int x:{r.x+radius,r.x+r.width-1-radius})for(int y:{r.y+radius,r.y+r.height-1-radius}) {
+                const double d=std::hypot(x+0.5-180.0,y+0.5-180.0)+radius;
+                assert(d<=178.0);
+            }
+            assert(r.height>=38 && r.width>=40);
+        };
+        insideRound(Learn::actionButton(),19);
+        for(int card=0;card<Learn::CARD_COUNT;++card)
+            insideRound({Learn::listViewport().x,Learn::listViewport().y+card*50,Learn::listViewport().width,44},8);
+        insideRound({Learn::listViewport().x,Learn::listViewport().y,Learn::listViewport().width,Learn::listViewport().height},8);
+        const auto cardPoint=[&](int card){ // valid while every card is folded and the list is at its top
+            return std::pair<int,int>{180,Learn::listViewport().y+card*50+22};
+        };
+        const auto action=center(Learn::actionButton());
+        const auto pend=[&](Game::MoveId move){
+            state.pendingMoveLearn=true;state.pendingMoveSlot=0;state.pendingMoveId=move;state.pendingMoveCursor=learnsetCount;
+            assert(engine.hasPendingMoveLearn());
+            assert(explore.enterPendingProgression(Phase::WALKING));
+            assert(explore.phase==Phase::LEARN_MOVE);
+            engine.invalidateScene();tick(100);
+            assert(Ui::SceneSurface::width()==360);
+        };
+        // 1. A free special slot is learned directly; the only control continues.
+        mon.move2Id=A;mon.move3Id=0;
+        pend(NEW);capturePage("learn-free-slot");
+        tap(180,150);tick(100);
+        assert(engine.hasPendingMoveLearn() && mon.move3Id==0);
+        tap(action.first,action.second);tick(200);
+        assert(!engine.hasPendingMoveLearn() && mon.move3Id==NEW && mon.moveProficiency[2]==0);
+        assert(explore.phase!=Phase::LEARN_MOVE);
+        // 2. Both slots full: list opens without the old yes/no prompt.
+        mon.move2Id=B;mon.move3Id=C;mon.moveProficiency[1]=60;mon.moveProficiency[2]=35;
+        pend(NEW);capturePage("learn-list");
+        assert(explore.moveLearnState.stage==Ui::MoveLearnStage::PROMPT);
+        tap(action.first,action.second);tick(100); // disabled until a card is chosen
+        assert(engine.hasPendingMoveLearn() && mon.move2Id==B && mon.move3Id==C);
+        tap(cardPoint(1).first,cardPoint(1).second);tick(100);
+        assert(explore.moveLearnState.stage==Ui::MoveLearnStage::REPLACEMENT && explore.moveLearnState.replacementSlot==1);
+        capturePage("learn-select-old");
+        tap(cardPoint(1).first,cardPoint(1).second);tick(100); // the same card folds again
+        assert(explore.moveLearnState.stage==Ui::MoveLearnStage::PROMPT);
+        tap(cardPoint(0).first,cardPoint(0).second);tick(100);
+        assert(explore.moveLearnState.replacementSlot==Game::MOVE_SLOT_COUNT);
+        capturePage("learn-select-new");
+        tap(cardPoint(0).first,cardPoint(0).second);tick(100);
+        tap(cardPoint(2).first,cardPoint(2).second);tick(100);
+        assert(explore.moveLearnState.replacementSlot==2);
+        capturePage("learn-select-last");
+        // A drag scrolls the open list but never changes the choice.
+        event(Type::DOWN,180,250);event(Type::MOVE,180,230);event(Type::MOVE,180,200);event(Type::MOVE,180,140);event(Type::UP,180,140);
+        assert(explore.moveLearnState.replacementSlot==2 && engine.hasPendingMoveLearn());
+        event(Type::DOWN,180,120);event(Type::MOVE,180,160);event(Type::MOVE,180,240);event(Type::UP,180,240);
+        capturePage("learn-select-last-dragged");
+        assert(explore.moveLearnState.replacementSlot==2 && engine.hasPendingMoveLearn());
+        tap(action.first,action.second);tick(200); // replace without a second confirmation
+        assert(!engine.hasPendingMoveLearn() && mon.move2Id==B && mon.move3Id==NEW && mon.moveProficiency[2]==0 && mon.moveProficiency[1]==60);
+        assert(explore.phase==Phase::MOVE_REPLACED && Ui::SceneSurface::width()==360);
+        capturePage("learn-replaced");
+        tap(180,150);tick(100);assert(explore.phase==Phase::MOVE_REPLACED);
+        tap(action.first,action.second);tick(200);
+        assert(explore.phase!=Phase::MOVE_REPLACED && !engine.hasPendingMoveReplacement());
+        // 3. Choosing the new move and pressing the action gives it up untouched.
+        const auto before=mon;
+        pend(A);
+        tap(cardPoint(0).first,cardPoint(0).second);tick(100);
+        tap(action.first,action.second);tick(200);
+        assert(!engine.hasPendingMoveLearn() && std::memcmp(&before,&mon,sizeof(mon))==0);
+        assert(explore.phase!=Phase::LEARN_MOVE && explore.phase!=Phase::MOVE_REPLACED);
+        // 4. Keys: A waits for a choice, B cycles new -> slot 2 -> slot 3 -> new, A commits.
+        pend(A);
+        explore.onButton({0,BtnAction::PRESSED});tick(50);
+        assert(engine.hasPendingMoveLearn());
+        explore.onButton({1,BtnAction::PRESSED});assert(explore.moveLearnState.replacementSlot==Game::MOVE_SLOT_COUNT);
+        explore.onButton({1,BtnAction::PRESSED});assert(explore.moveLearnState.replacementSlot==1);
+        explore.onButton({1,BtnAction::PRESSED});assert(explore.moveLearnState.replacementSlot==2);
+        explore.onButton({1,BtnAction::PRESSED});assert(explore.moveLearnState.replacementSlot==Game::MOVE_SLOT_COUNT);
+        explore.onButton({1,BtnAction::PRESSED});assert(explore.moveLearnState.replacementSlot==1);
+        engine.invalidateScene();tick(100);capturePage("learn-key-slot1");
+        explore.onButton({0,BtnAction::PRESSED});tick(200);
+        assert(!engine.hasPendingMoveLearn() && mon.move2Id==A && mon.moveProficiency[1]==0 && mon.move3Id==NEW);
+        assert(explore.phase==Phase::MOVE_REPLACED);
+        explore.onButton({0,BtnAction::PRESSED});tick(200);
+        assert(explore.phase!=Phase::MOVE_REPLACED);
+        // 5. The bag-item path draws on the native detail surface with the same UI.
+        mon.move2Id=B;mon.move3Id=C;
+        state.pendingMoveLearn=true;state.pendingMoveSlot=0;state.pendingMoveId=NEW;state.pendingMoveCursor=learnsetCount;
+        Ui::SceneSurface::mainMenu(false,true);
+        {
+            Ui::SceneSurface::InputScope scope(desktop.frameBuffer());
+            assert(PixelRenderer::canvas().width()==360);
+            ProgressionUi::MoveLearnState itemState{};
+            ProgressionUi::resetMoveLearnState(itemState);
+            ProgressionUi::renderMoveLearn(itemState);capture(output/"learn-item-list.ppm");
+            const auto touchAt=[&](int x,int y){
+                const Platform::IInputDevice::TouchEvent down{Type::DOWN,int16_t(x),int16_t(y),desktop.millis()};
+                const Platform::IInputDevice::TouchEvent up{Type::UP,int16_t(x),int16_t(y),desktop.millis()+40};
+                const bool a=ProgressionUi::handleMoveLearnTouch(itemState,down);
+                return ProgressionUi::handleMoveLearnTouch(itemState,up)||a;
+            };
+            assert(!touchAt(cardPoint(1).first,cardPoint(1).second) && itemState.replacementSlot==1);
+            ProgressionUi::renderMoveLearn(itemState);capture(output/"learn-item-select.ppm");
+            assert(touchAt(action.first,action.second));
+            assert(!engine.hasPendingMoveLearn() && mon.move2Id==NEW && mon.move3Id==C);
+        }
+        std::puts("PASS round learn move: native list, free slot learns directly, inline details, single-action replace/give up, drag, keys and item surface");
+        return 0;
+    }
     if (mode == "explore-round") {
         auto& state=engine.gameState();
         state.team[1].satiety=75;
@@ -1232,10 +1715,8 @@ int main(int argc, char** argv) {
         hud.teamHud[0].status=hud.teamHud[1].status=Game::MajorStatus::NONE;
         renderHud();assert(pixels()==normalHud);
         hud.menuAvailable=true;renderHud();
-        // The menu joins the title. Everything below the header, including the
-        // old bottom control footprint, must match the HUD without its button.
-        for(int y=60;y<360;++y)for(int x=0;x<360;++x)
-            assert(canvas.readPixel(x,y)==normalHud[y*360+x]);
+        // Availability controls input, not visibility or map-title geometry.
+        assert(pixels()==normalHud);
         assert(!Ui::RoundExplore::routeHudHit(83,46,0));
         assert(Ui::RoundExplore::routeHudHit(83,46,1));
         assert(!Ui::RoundExplore::routeHudHit(276,46,1));
@@ -1315,6 +1796,31 @@ int main(int argc, char** argv) {
         for(auto phase:{Ui::ExplorePhase::PICKUP,Ui::ExplorePhase::SPECIAL_PROMPT,Ui::ExplorePhase::ENDING}) {
             explore.phase=phase;explore.prepareSurface();assert(Ui::SceneSurface::width()==360);
         }
+        // A real pickup transition must retain the exact map/title/menu header,
+        // and tapping the visible menu must not dismiss or bypass its prompt.
+        explore.phase=Ui::ExplorePhase::WALKING;
+        explore.resultMessage=nullptr;
+        explore.prepareSurface();
+        const auto headerPixels=[&]() {
+            explore.render();
+            std::vector<uint16_t> result;
+            for(int y=13;y<51;++y)for(int x=116;x<246;++x)
+                result.push_back(canvas.readPixel(x,y));
+            return result;
+        };
+        const auto walkingHeader=headerPixels();
+        explore.resolvePickup(ExplorePickupRules::POTION);
+        assert(explore.phase==Ui::ExplorePhase::PICKUP && !explore.exploreRouteFrame().menuAvailable);
+        assert(headerPixels()==walkingHeader);
+        capture(output/"explore-pickup-fixed-header.ppm");
+        assert(explore.touchTarget(220,35)==-1);
+        tap(220,35);
+        assert(explore.phase==Ui::ExplorePhase::PICKUP && !explore.exploreMenuOpen);
+        const auto pickupPrompt=Ui::RoundExplore::routeLayout(explore.phase).pickupPrompt();
+        tap(pickupPrompt.x+pickupPrompt.width/2,pickupPrompt.y+pickupPrompt.height/2);
+        assert(explore.phase==Ui::ExplorePhase::WALKING && !explore.exploreMenuOpen);
+        assert(headerPixels()==walkingHeader && explore.touchTarget(220,35)==144);
+        std::puts("PASS real pickup header pixel stability and blocked menu tap, prompt dismissal restores menu input");
         explore.phase=Ui::ExplorePhase::RESULT;explore.prepareSurface();assert(Ui::SceneSurface::width()==240);
         assert(state.settings.volume==0);
         for(int area=0;area<6;++area) {
@@ -1507,7 +2013,7 @@ int main(int argc, char** argv) {
         assert(engine.currentId==SceneID::EXPLORE && Ui::SceneSurface::width()==360);
         auto& areas=*static_cast<ExploreScene*>(engine.currentScene.get());
         assert(areas.phase==Ui::ExplorePhase::SELECT && areas.ui.state.areaCursor==0);
-        assert(areas.exploreRouteFrame().marketPreview);
+        assert(areas.exploreRouteFrame().marketPreview == bool(STICKMON_ENABLE_DEBUG_FEATURES));
         assert(FontResource::ins().findCoverageGlyph(0x63a2,20));
         assert(FontResource::ins().findCoverageGlyph(0x7d22,20));
         capturePage("explore-select-first");
@@ -1524,6 +2030,7 @@ int main(int argc, char** argv) {
         if (!areas.areaPreviewReady) std::fprintf(stderr,"%s",desktop.logs().c_str());
         assert(areas.areaPreviewReady);
         std::printf("PASS current pool settled after %u ms additional wait\n",previewWait);
+        capturePage("explore-select-grass-current-pool");
         // A one-member pool stays centered throughout the automatic carousel cycle.
         auto single=areas.exploreRouteFrame();
         single.areaPreviewCount=1;
@@ -1550,10 +2057,31 @@ int main(int argc, char** argv) {
         empty.areaPreviewCount=0;
         areas.ui.selection.render(empty);
         const auto background=pixels();
-        // Two members must repeat beyond their immediate neighbors to reach both edges.
+        // Small groups are centered, drawn once and unchanged across cycles.
         strip.areaPreviewCount=2;
-        strip.areaPreviewFrames[0]=strip.areaPreviewFrames[1]=single.areaPreviewFrames[0];
+        strip.areaPreviewFrames[0]=single.areaPreviewFrames[0];
+        assert(strip.areaPreviewFrames[1] &&
+            strip.areaPreviewFrames[0]->speciesId!=strip.areaPreviewFrames[1]->speciesId);
         strip.areaPreviewHidden[0]=strip.areaPreviewHidden[1]=false;
+        assert(!Ui::RoundExplore::PreviewLayout::scrolls(strip.areaPreviewFrames,2));
+        const int memberWidth=single.areaPreviewFrames[0]->width;
+        const int firstX=(360-memberWidth-strip.areaPreviewFrames[1]->width-12)/2;
+        PokemonSprites::drawFrame(single.areaPreviewFrames[0],firstX,172-single.areaPreviewFrames[0]->height/2);
+        PokemonSprites::drawFrame(strip.areaPreviewFrames[1],firstX+memberWidth+12,172-strip.areaPreviewFrames[1]->height/2);
+        const auto centered=pixels();
+        for(const uint32_t phase : {0u,2425u,2550u,2800u,5600u}) {
+            strip.nowMs=strip.areaPreviewStartedAt+phase;
+            areas.ui.selection.render(strip);
+            assert(pixels()==centered);
+        }
+        capture(output / "explore-preview-two-static.ppm");
+        // A genuinely overflowing group still reaches both edges while moving.
+        strip.areaPreviewCount=Ui::ExploreRouteFrame::PREVIEW_CAP;
+        for(int i=0;i<strip.areaPreviewCount;++i) {
+            strip.areaPreviewFrames[i]=single.areaPreviewFrames[0];
+            strip.areaPreviewHidden[i]=false;
+        }
+        assert(Ui::RoundExplore::PreviewLayout::scrolls(strip.areaPreviewFrames,strip.areaPreviewCount));
         for(const uint32_t phase : {0u,2300u,2425u,2550u,2675u,2799u}) {
             strip.nowMs=strip.areaPreviewStartedAt+phase;
             areas.ui.selection.render(strip);
@@ -1579,6 +2107,12 @@ int main(int argc, char** argv) {
             strip.areaPreviewHidden[slot]=loaded.areaPreviewHidden[i];
         }
         assert(strip.areaPreviewCount>1);
+        for(int i=strip.areaPreviewCount;i<Ui::ExploreRouteFrame::PREVIEW_CAP;++i) {
+            strip.areaPreviewFrames[i]=strip.areaPreviewFrames[i%strip.areaPreviewCount];
+            strip.areaPreviewHidden[i]=strip.areaPreviewHidden[i%strip.areaPreviewCount];
+        }
+        strip.areaPreviewCount=Ui::ExploreRouteFrame::PREVIEW_CAP;
+        assert(Ui::RoundExplore::PreviewLayout::scrolls(strip.areaPreviewFrames,strip.areaPreviewCount));
         const auto firstHidden=strip.areaPreviewHidden[0];
         strip.areaPreviewHidden[0]=true;
         for(int cycle=0;cycle<strip.areaPreviewCount;++cycle) {
@@ -1603,7 +2137,7 @@ int main(int argc, char** argv) {
         areas.ui.selection.render(strip);
         strip.areaPreviewCount=0;
         areas.ui.selection.render(strip);
-        std::puts("PASS full-width carousel edges throughout motion, vertical clipping, single-member stability, cycle seams and missing frames");
+        std::puts("PASS centered non-repeating static groups, full-width overflow carousel, vertical clipping, single-member stability, cycle seams and missing frames");
         engine.invalidateScene();tick(20);
         event(Type::DOWN,272,80);event(Type::CANCEL,272,80);event(Type::UP,272,80);
         assert(areas.ui.state.areaCursor==grass);
@@ -1941,7 +2475,8 @@ int main(int argc, char** argv) {
         assert(engine.currentId == SceneID::HATCH && !engine.gameState().oobeDone);
         capturePage("hatch-after-reset");
         auto& hatch = *static_cast<HatchScene*>(engine.currentScene.get());
-        tap(130,285); tap(230,285);
+        const auto egg=Ui::HatchUiContent::eggCenter(hatch.ui.layout());
+        tap(egg.x,egg.y);shakeEgg();
         assert(hatch.wipeCount == 1 && hatch.pokeCount == 1);
         tap(180,324); tick(1000); assert(engine.currentId == SceneID::MENU);
         back(); assert(engine.currentId == SceneID::HATCH);

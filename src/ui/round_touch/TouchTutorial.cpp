@@ -10,7 +10,7 @@ void explore(const ExploreTutorialFrame& frame) {
     // The round map has no walking caption, including first-run onboarding.
     if (frame.kind == ExploreTutorialKind::WALK) return;
     const char* text = frame.kind == ExploreTutorialKind::BATTLE ? "点击下方指令行动" :
-        "点击下方打开菜单";
+        "点击上方打开菜单";
     // Keep map controls and battle commands visible and tappable.
     auto& c = PixelRenderer::canvas();
     const bool battle = frame.kind == ExploreTutorialKind::BATTLE;

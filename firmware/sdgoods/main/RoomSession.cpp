@@ -7,22 +7,25 @@
 #include "platform/api/PlatformServices.h"
 
 namespace Sdgoods {
-bool RoomSession::begin() {
+bool RoomSession::begin(bool persist) {
     SaveManager verifier;
     Game::GameState prior{};
     MainSceneViewState view{};
     SaveManager::LoadStatus status = SaveManager::LoadStatus::NOT_FOUND;
     if (!verifier.begin()) return false;
-    verifier.load(prior, view, nullptr, &status);
+    bool normalized=false;
+    verifier.load(prior, view, &normalized, &status);
+    // A trial application must not rewrite data its fallback still owns.
+    if(!persist && normalized) return false;
     if (status == SaveManager::LoadStatus::INVALID ||
         status == SaveManager::LoadStatus::NEWER_VERSION) {
-        Platform::logf("[SDGOODS] refusing unreadable save: status=%u\n", unsigned(status));
+        Platform::errorf("[SDGOODS] refusing unreadable save: status=%u\n", unsigned(status));
         return false;
     }
     if (status == SaveManager::LoadStatus::NOT_FOUND &&
         (Platform::blobs().blobSize("stickmon", "state_a") ||
          Platform::blobs().blobSize("stickmon", "state_b"))) {
-        Platform::logLine("[SDGOODS] invalid snapshot slots retained; no fresh game created");
+        Platform::errorLine("[SDGOODS] invalid snapshot slots retained; no fresh game created");
         return false;
     }
     // Seed HAL before begin() applies its default volume to the audio device.
@@ -30,7 +33,8 @@ bool RoomSession::begin() {
     auto& engine = GameEngine::ins();
     if (!engine.begin()) return false;
     ready_ = true;
-    if (!save()) { ready_ = false; return false; }
+    if (persist && !save()) { ready_ = false; return false; }
+    if(!persist) savedFood_=foodState();
     const auto& state = engine.gameState();
     Platform::logf("[SDGOODS] session ready: restored=%u hatched=%u species=%u stock=%u bowl=%u bites=%u satiety=%u\n",
         status == SaveManager::LoadStatus::LOADED, state.oobeDone,
@@ -59,7 +63,8 @@ bool RoomSession::save() {
     if (lastSaveOk_) savedFood_ = foodState();
     Ui::RoundRoom::lastSaveOk = lastSaveOk_;
     GameEngine::ins().invalidateScene();
-    Platform::logf("[SDGOODS] save %s\n", lastSaveOk_ ? "ok" : "FAILED");
+    if (lastSaveOk_) Platform::logLine("[SDGOODS] save ok");
+    else Platform::errorLine("[SDGOODS] save FAILED");
     return lastSaveOk_;
 }
 

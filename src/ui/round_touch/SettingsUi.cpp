@@ -136,6 +136,8 @@ bool SettingsUi::onTap(int target) {
     }
     if (viewMode != ViewMode::MENU || target < 0 || target >= COUNT) return false;
     cursor = target;
+    // Text labels focus continuous controls; only the slider changes values.
+    if (target == VOLUME || target == BRIGHTNESS) return true;
     return onButton({0, BtnAction::PRESSED});
 }
 
@@ -170,7 +172,7 @@ void SettingsUi::render() {
             if (item == BRIGHTNESS || item == VOLUME) {
                 TouchUi::slider(SLIDER_LEFT, SLIDER_RIGHT, rect.y + 22,
                     item == BRIGHTNESS ? host.settingsBrightness() : settings.volume,
-                    item == BRIGHTNESS ? 32 : 0, item == BRIGHTNESS ? 255 : 100, pressed);
+                    item == BRIGHTNESS ? 32 : 0, item == BRIGHTNESS ? 255 : 100, pressed, true);
             } else {
                 const char* value = ">";
                 char speed[12];

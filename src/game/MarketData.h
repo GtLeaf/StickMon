@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include "game/MarketMapSize.h"
+#include "game/ContentData.h"
 
 namespace Market {
 #if defined(STICKMON_MARKET_RENDER_WIDTH)
@@ -65,4 +66,14 @@ struct Data {
     uint16_t firstMin=0, firstMax=0;
     Stall stalls[STALL_CAPACITY]{};
 };
+template<class V> inline void contentFields(V& v, Mask& x) { v(x.bytes); }
+template<class V> inline void contentFields(V& v, Activity& x) { v(x.spawn,x.patrol,x.direction,x.stepTicks,x.patrolCount,x.behavior,x.waitMin,x.waitMax,x.seed); }
+template<class V> inline void contentFields(V& v, Resident& x) { v(x.activity,x.species,x.navigation,x.reception,x.lookMask); }
+template<class V> inline void contentFields(V& v, Stall& x) { v(x.resident,x.pointCount,x.points); }
+template<class V> inline void contentFields(V& v, Family& x) { v(x.adult,x.juvenile); }
+template<class V> inline void contentFields(V& v, Data& x) {
+    v(x.version,x.map.layers,x.roads,x.pedestrian,x.residents,x.residentCount,x.stops,x.stopCount,
+      x.families,x.familyCount,x.intervalMin,x.intervalMax,x.stayMin,x.stayMax,x.entry,x.outward,
+      x.maxGroups,x.maxVisitors,x.soloPercent,x.stallCount,x.performances,x.firstMin,x.firstMax,x.stalls);
+}
 } // namespace Market

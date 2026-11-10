@@ -1,4 +1,5 @@
 #include "game/ShopService.h"
+#include "game/ItemCatalog.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -11,13 +12,20 @@ namespace Game {
 namespace ShopService {
 namespace {
 
+#if STICKMON_EXTERNAL_CONTENT
+inline const ContentData::Table<ItemId,32,false> DAILY_ITEMS{51};
+#else
 constexpr ItemId DAILY_ITEMS[] = {
     ItemId::NORMAL_FOOD, ItemId::TASTY_FOOD, ItemId::SWEET_FOOD,
     ItemId::SPICY_FOOD, ItemId::SOUR_FOOD, ItemId::BITTER_FOOD,
     ItemId::DRY_FOOD, ItemId::CANDY,
     ItemId::SOAP_0, ItemId::SOAP_1, ItemId::SOAP_2,
 };
+#endif
 
+#if STICKMON_EXTERNAL_CONTENT
+inline const ContentData::Table<ItemId,32,false> EXPLORE_ITEMS{52};
+#else
 constexpr ItemId EXPLORE_ITEMS[] = {
     ItemId::POTION, ItemId::SUPER_POTION, ItemId::ANTIDOTE,
     ItemId::PARALYZE_HEAL, ItemId::AWAKENING, ItemId::BURN_HEAL,
@@ -26,7 +34,11 @@ constexpr ItemId EXPLORE_ITEMS[] = {
     ItemId::FIRE_STONE, ItemId::WATER_STONE, ItemId::THUNDER_STONE,
     ItemId::REVIVE, ItemId::MAX_REPEL, ItemId::HONEY,
 };
+#endif
 
+#if STICKMON_EXTERNAL_CONTENT
+inline const ContentData::Table<ItemId,32,false> SELL_ITEMS{53};
+#else
 constexpr ItemId SELL_ITEMS[] = {
     ItemId::NORMAL_FOOD, ItemId::TASTY_FOOD, ItemId::SWEET_FOOD,
     ItemId::SPICY_FOOD, ItemId::SOUR_FOOD, ItemId::BITTER_FOOD,
@@ -39,9 +51,10 @@ constexpr ItemId SELL_ITEMS[] = {
     ItemId::REVIVE, ItemId::MAX_REPEL, ItemId::HONEY,
     ItemId::NUGGET, ItemId::BIG_PEARL, ItemId::STAR_PIECE,
 };
+#endif
 
-template <size_t N>
-uint8_t visibleCount(const ItemId (&items)[N], const GameState& state,
+template <class Items>
+uint8_t visibleCount(const Items& items, const GameState& state,
                      bool requireStock) {
     uint8_t count = 0;
     for (ItemId item : items) {
@@ -54,8 +67,8 @@ uint8_t visibleCount(const ItemId (&items)[N], const GameState& state,
     return count;
 }
 
-template <size_t N>
-ItemId visibleItemAt(const ItemId (&items)[N], const GameState& state,
+template <class Items>
+ItemId visibleItemAt(const Items& items, const GameState& state,
                      uint8_t visibleIndex, bool requireStock) {
     uint8_t visible = 0;
     for (ItemId item : items) {
@@ -117,6 +130,9 @@ int itemTextIndex(ItemId item) {
 }  // namespace
 
 uint16_t buyPrice(ItemId item) {
+#if STICKMON_EXTERNAL_CONTENT
+    const auto* p=ItemCatalog::find(item);return p ? p->buyPrice : 0;
+#else
     switch (item) {
     case ItemId::NORMAL_FOOD: return 20;
     case ItemId::TASTY_FOOD: return 60;
@@ -147,29 +163,42 @@ uint16_t buyPrice(ItemId item) {
     case ItemId::SOAP_2: return 25;
     default: return 0;
     }
+#endif
 }
 
 uint16_t sellPrice(ItemId item) {
+#if STICKMON_EXTERNAL_CONTENT
+    const auto* p=ItemCatalog::find(item);return p ? p->sellPrice : 0;
+#else
     switch (item) {
     case ItemId::NUGGET: return 500;
     case ItemId::BIG_PEARL: return 1000;
     case ItemId::STAR_PIECE: return 2500;
     default: return buyPrice(item) / 2;
     }
+#endif
 }
 
 const char* shortName(ItemId item) {
+#if STICKMON_EXTERNAL_CONTENT
+    const auto* p=ItemCatalog::find(item);return p ? p->name : Ui::Amoled::ITEM;
+#else
     int index = itemTextIndex(item);
     if (index >= 0) return Ui::Shop::NAMES[index];
     if (item == ItemId::HEART_SCALE) return Ui::HEART_SCALE;
     return Ui::Amoled::ITEM;
+#endif
 }
 
 const char* shortDescription(ItemId item) {
+#if STICKMON_EXTERNAL_CONTENT
+    const auto* p=ItemCatalog::find(item);return p ? p->description : Ui::Amoled::ITEM;
+#else
     int index = itemTextIndex(item);
     if (index >= 0) return Ui::Shop::DESCS[index];
     if (item == ItemId::HEART_SCALE) return Ui::Bag::DESCS[24][0];
     return Ui::Amoled::ITEM;
+#endif
 }
 
 uint8_t buyItemCount(Category category, const GameState& state) {

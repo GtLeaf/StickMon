@@ -108,10 +108,19 @@ static constexpr auto& MIST_FOREST_PATH_ENCOUNTERS =
 static constexpr auto& ANCIENT_WATERFALL_VALLEY_ENCOUNTERS =
     ExploreEncounters::ANCIENT_WATERFALL_VALLEY;
 
+#if STICKMON_EXTERNAL_CONTENT
+#define ENTRY_COUNT(value) uint8_t(value.size())
+#else
 #define ENTRY_COUNT(entriesValue) \
     static_cast<uint8_t>(sizeof(entriesValue) / sizeof(entriesValue[0]))
 
+#endif
+#if STICKMON_EXTERNAL_CONTENT
+const RouteMap (&routeMaps())[6] {
+    static const RouteMap maps[] = {
+#else
 static constexpr RouteMap ROUTE_MAPS[] = {
+#endif
     {
         Ui::Explore::GRASS_PATH,
         Ui::Explore::AREA_DESCS[0],
@@ -121,7 +130,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         ExploreAreaCatalog::minMapCount(0),
         ExploreAreaCatalog::maxMapCount(0),
         ExploreAreaCatalog::encounterChance(0),
-        Pickup::TABLES[0],
+        Pickup::tableForArea(0),
         GRASS_PATH_ENCOUNTERS,
         ENTRY_COUNT(GRASS_PATH_ENCOUNTERS),
         ExploreAreaCatalog::fieldColor(0),
@@ -136,7 +145,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         ExploreAreaCatalog::minMapCount(1),
         ExploreAreaCatalog::maxMapCount(1),
         ExploreAreaCatalog::encounterChance(1),
-        Pickup::TABLES[1],
+        Pickup::tableForArea(1),
         CREEK_SLOPE_ENCOUNTERS,
         ENTRY_COUNT(CREEK_SLOPE_ENCOUNTERS),
         ExploreAreaCatalog::fieldColor(1),
@@ -151,7 +160,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         ExploreAreaCatalog::minMapCount(2),
         ExploreAreaCatalog::maxMapCount(2),
         ExploreAreaCatalog::encounterChance(2),
-        Pickup::TABLES[2],
+        Pickup::tableForArea(2),
         TALL_GRASS_PARK_ENCOUNTERS,
         ENTRY_COUNT(TALL_GRASS_PARK_ENCOUNTERS),
         ExploreAreaCatalog::fieldColor(2),
@@ -166,7 +175,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         ExploreAreaCatalog::minMapCount(3),
         ExploreAreaCatalog::maxMapCount(3),
         ExploreAreaCatalog::encounterChance(3),
-        Pickup::TABLES[3],
+        Pickup::tableForArea(3),
         FROST_CRYSTAL_CAVE_ENCOUNTERS,
         ENTRY_COUNT(FROST_CRYSTAL_CAVE_ENCOUNTERS),
         ExploreAreaCatalog::fieldColor(3),
@@ -181,7 +190,7 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         ExploreAreaCatalog::minMapCount(4),
         ExploreAreaCatalog::maxMapCount(4),
         ExploreAreaCatalog::encounterChance(4),
-        Pickup::TABLES[4],
+        Pickup::tableForArea(4),
         MIST_FOREST_PATH_ENCOUNTERS,
         ENTRY_COUNT(MIST_FOREST_PATH_ENCOUNTERS),
         ExploreAreaCatalog::fieldColor(4),
@@ -196,13 +205,18 @@ static constexpr RouteMap ROUTE_MAPS[] = {
         ExploreAreaCatalog::minMapCount(5),
         ExploreAreaCatalog::maxMapCount(5),
         ExploreAreaCatalog::encounterChance(5),
-        Pickup::TABLES[5],
+        Pickup::tableForArea(5),
         ANCIENT_WATERFALL_VALLEY_ENCOUNTERS,
         ENTRY_COUNT(ANCIENT_WATERFALL_VALLEY_ENCOUNTERS),
         ExploreAreaCatalog::fieldColor(5),
         0x54F7,
     },
 };
+#if STICKMON_EXTERNAL_CONTENT
+    return maps;
+}
+#define ROUTE_MAPS routeMaps()
+#endif
 #undef ENTRY_COUNT
 
 static constexpr uint8_t ROUTE_MAP_COUNT = sizeof(ROUTE_MAPS) / sizeof(ROUTE_MAPS[0]);
@@ -249,15 +263,22 @@ static_assert(ROUTE_MAP_COUNT == ExploreBoss::AREA_COUNT,
               "explore boss configs and route maps must stay aligned");
 static_assert(ROUTE_MAP_COUNT == ExploreSpecial::AREA_COUNT,
               "special encounter areas and route maps must stay aligned");
+#if !STICKMON_EXTERNAL_CONTENT
 static_assert(routeLevelsStrictlyIncrease(ROUTE_MAPS),
               "explore area average levels must follow menu order");
+#endif
+#if !STICKMON_EXTERNAL_CONTENT
 static_assert(routeTuningValid(ROUTE_MAPS),
               "explore encounter chances and pickup weights must be valid");
+#endif
+#if !STICKMON_EXTERNAL_CONTENT
 static_assert(mapCountForRoll(ROUTE_MAPS[0], 0) == 3 &&
                   mapCountForRoll(ROUTE_MAPS[0], 49) == 3 &&
                   mapCountForRoll(ROUTE_MAPS[0], 50) == 4 &&
                   mapCountForRoll(ROUTE_MAPS[0], 99) == 4,
               "two-value expedition ranges must split evenly");
+#endif
+#if !STICKMON_EXTERNAL_CONTENT
 static_assert(mapCountForRoll(ROUTE_MAPS[2], 0) == 4 &&
                   mapCountForRoll(ROUTE_MAPS[2], 24) == 4 &&
                   mapCountForRoll(ROUTE_MAPS[2], 25) == 5 &&
@@ -265,6 +286,7 @@ static_assert(mapCountForRoll(ROUTE_MAPS[2], 0) == 4 &&
                   mapCountForRoll(ROUTE_MAPS[2], 75) == 6 &&
                   mapCountForRoll(ROUTE_MAPS[2], 99) == 6,
               "three-value expedition ranges must use 25/50/25 weights");
+#endif
 static_assert(ENCOUNTER_COOLDOWN_STEP_COUNT == 5 && MAX_ENCOUNTERS_PER_MAP == 2,
               "explore encounter limits must match the design contract");
 static_assert(cooldownAfterCompletedSteps(ENCOUNTER_COOLDOWN_STEP_COUNT, 4) == 1 &&
@@ -284,15 +306,21 @@ static_assert(canScheduleGuaranteedEncounter(12, 5) &&
               "guaranteed battles must use an interior point after cooldown");
 static_assert(MAP_PICKUP_CHANCE == 6500,
               "long expeditions must keep the per-map pickup chance at 65 percent");
+#if !STICKMON_EXTERNAL_CONTENT
 static_assert(ROUTE_MAPS[ROUTE_MAP_COUNT - 1].averageLevel == 60,
               "ancient waterfall valley must average level 60");
+#endif
+#if !STICKMON_EXTERNAL_CONTENT
 static_assert(ROUTE_MAPS[0].averageLevel - ROUTE_MAPS[0].depthSpread -
                   WILD_LEVEL_VARIANCE >= WILD_LEVEL_MIN,
               "first area shallow range must stay above level one");
+#endif
+#if !STICKMON_EXTERNAL_CONTENT
 static_assert(ROUTE_MAPS[ROUTE_MAP_COUNT - 1].averageLevel +
                   ROUTE_MAPS[ROUTE_MAP_COUNT - 1].depthSpread +
                   WILD_LEVEL_VARIANCE <= WILD_LEVEL_MAX,
               "deepest area level must stay within the wild level cap");
+#endif
 static_assert(ExploreEncounterRules::depthLevelOffset(332, 4) == -4 &&
                   ExploreEncounterRules::depthLevelOffset(333, 4) == 0 &&
                   ExploreEncounterRules::depthLevelOffset(666, 4) == 0 &&
@@ -512,10 +540,18 @@ const Species& ExploreScene::battlePlayerSpecies() const {
     return GameEngine::ins().speciesFor(battlePlayerMonster());
 }
 
+bool ExploreScene::areaPreviewScrolls() const {
+#if STICKMON_UI_ROUND_TOUCH
+    return Ui::RoundExplore::PreviewLayout::scrolls(areaPreviewFrames, areaPreviewPool.count);
+#else
+    return areaPreviewPool.count > 0;
+#endif
+}
+
 uint32_t ExploreScene::visualFrameIntervalMs(uint32_t nowMs) const {
 #if STICKMON_UI_ROUND_TOUCH
     if (phase == Phase::SELECT && !market_ && !exploreSubViewOpen &&
-        areaPreviewReady && !areaPreviewPaused && areaPreviewPool.count > 1 &&
+        areaPreviewReady && !areaPreviewPaused && areaPreviewScrolls() &&
         (nowMs - areaPreviewStartedAt) % AREA_PREVIEW_CYCLE_MS >= AREA_PREVIEW_HOLD_MS)
         return 33;
 #else
@@ -538,6 +574,10 @@ SceneUpdateResult ExploreScene::update(uint32_t nowMs, float dtSeconds) {
         const auto result = exploreSubView.update(nowMs, dtSeconds);
         if (finishSubViewInput()) return SceneUpdateResult::frame();
         return result;
+    }
+    if (phase == Phase::EVOLUTION && ProgressionUi::evolutionCancelHeld(nowMs)) {
+        handleExploreProgressionButton({1, BtnAction::PRESSED});
+        return SceneUpdateResult::frame();
     }
     if (phase == Phase::WALKING && pendingFrostFall &&
         static_cast<int32_t>(nowMs - frostFallAtMs) >= 0) {
@@ -565,7 +605,7 @@ SceneUpdateResult ExploreScene::update(uint32_t nowMs, float dtSeconds) {
         if (paused || areaPreviewPaused)
             areaPreviewStartedAt = nowMs - areaPreviewPausedElapsed;
         areaPreviewPaused = paused;
-        previewCanAnimate = areaPreviewPool.count > 1 && !paused;
+        previewCanAnimate = areaPreviewScrolls() && !paused;
     }
 #endif
     if (phase == Phase::SELECT) {
@@ -711,6 +751,14 @@ bool ExploreScene::onTouch(const Platform::IInputDevice::TouchEvent& event) {
         if (ProgressionUi::handleMoveReplacementTouch(event))
             return onButton({0, BtnAction::PRESSED});
         return true;
+    }
+    if (!exploreSubViewOpen &&
+        (phase == Phase::EVOLUTION || phase == Phase::EVOLUTION_CANCELLED)) {
+        switch (ProgressionUi::handleEvolutionTouch(event, Hal::ins().millis())) {
+        case Ui::EvolutionTouchAction::CONTINUE: return handleExploreProgressionButton({0, BtnAction::PRESSED});
+        case Ui::EvolutionTouchAction::CANCEL: return handleExploreProgressionButton({1, BtnAction::PRESSED});
+        default: return true;
+        }
     }
     ProgressionUi::cancelMoveLearnTouch();
     if (!exploreSubViewOpen) return ui.onTouch(event);
@@ -1466,7 +1514,7 @@ void ExploreScene::beginRouteBossEncounter() {
     const Species* boss = findSpecies(expeditionBossSpeciesId);
     routeBossPending = false;
     if (!boss) {
-        Platform::logf("[ExploreBoss] missing species=%u area=%u\n",
+        Platform::errorf("[ExploreBoss] missing species=%u area=%u\n",
                       expeditionBossSpeciesId, mapBlocks[currentMapBlock]);
         return;
     }
@@ -2954,7 +3002,7 @@ bool ExploreScene::resetRouteSegment() {
             {currentMapBlock, mapBlockCount, pendingFrostLadder});
     }
     if (!generated) {
-        Platform::logf("[ExploreMap] generation failed block=%u area=%u entry=%u\n",
+        Platform::errorf("[ExploreMap] generation failed block=%u area=%u entry=%u\n",
                       currentMapBlock, mapIndex,
                       static_cast<unsigned>(pendingEntryEdge));
         return false;
@@ -3461,7 +3509,7 @@ bool ExploreScene::updateAreaPreviewLoading(uint32_t nowMs) {
     // motion, and extend the hold if an unexpectedly slow decode overruns it.
     const uint32_t guard = std::min<uint32_t>(AREA_PREVIEW_HOLD_MS / 2,
         std::max<uint32_t>(500, PokemonSprites::cacheStats().lastReloadMs + 100));
-    if (phase == Phase::SELECT && areaPreviewReady && areaPreviewPool.count > 1 &&
+    if (phase == Phase::SELECT && areaPreviewReady && areaPreviewScrolls() &&
         cycle >= AREA_PREVIEW_HOLD_MS - guard) {
         areaPreviewNextLoadAt = nowMs + AREA_PREVIEW_CYCLE_MS - cycle;
         return false;
@@ -3477,7 +3525,7 @@ bool ExploreScene::updateAreaPreviewLoading(uint32_t nowMs) {
     if (!wasReady && areaPreviewReady) {
         areaPreviewStartedAt = finished;
         areaPreviewPausedElapsed = 0;
-    } else if (phase == Phase::SELECT && areaPreviewReady && areaPreviewPool.count > 1 &&
+    } else if (phase == Phase::SELECT && areaPreviewReady && areaPreviewScrolls() &&
                cycle < AREA_PREVIEW_HOLD_MS &&
                finished - nowMs >= AREA_PREVIEW_HOLD_MS - cycle) {
         areaPreviewStartedAt = finished - (elapsed / AREA_PREVIEW_CYCLE_MS) * AREA_PREVIEW_CYCLE_MS;
@@ -3849,6 +3897,7 @@ Ui::ExploreBattleFrame ExploreScene::exploreBattleFrame() const {
 }
 
 bool ExploreScene::beginMarket() {
+    if (!BuildConfig::DEBUG_FEATURES) return false;
     auto& engine = GameEngine::ins();
     const auto& state = engine.gameState();
     const uint8_t slot = Game::ExplorePartyService::leaderSlot(state);

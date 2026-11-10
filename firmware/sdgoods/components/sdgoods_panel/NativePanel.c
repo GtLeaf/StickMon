@@ -8,6 +8,10 @@
 #include "board_pins.h"
 #include "esp_lcd_st77916.h"
 #include "st77916_vendor_init.inc"
+#include "esp_lcd_panel_commands.h"
+
+// QSPI command framing used by the SDK driver (opcode 0x02, command in bits 8..15).
+#define SDGOODS_QSPI_WRITE_CMD(cmd) ((int)((0x02U << 24) | (((unsigned)(cmd) & 0xffU) << 8)))
 
 esp_err_t stickmon_sdgoods_panel_create(esp_lcd_panel_io_handle_t io, esp_lcd_panel_handle_t* panel) {
     st77916_vendor_config_t vendor = {
@@ -28,4 +32,8 @@ esp_err_t stickmon_sdgoods_panel_create(esp_lcd_panel_io_handle_t io, esp_lcd_pa
     if (err == ESP_OK) err = esp_lcd_panel_st77916_set_madctl(*panel, BOARD_ST77916_VENDOR_MADCTL);
     if (err == ESP_OK) err = esp_lcd_panel_disp_on_off(*panel, true);
     return err;
+}
+
+esp_err_t stickmon_sdgoods_panel_sleep(esp_lcd_panel_io_handle_t io, bool sleep) {
+    return esp_lcd_panel_io_tx_param(io, SDGOODS_QSPI_WRITE_CMD(sleep ? LCD_CMD_SLPIN : LCD_CMD_SLPOUT), NULL, 0);
 }

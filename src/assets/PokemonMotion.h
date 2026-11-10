@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include "game/ContentData.h"
 
 namespace PokemonMotion {
 
@@ -24,6 +25,17 @@ struct AirProfile {
     float height;
     float bobAmplitude;
 };
+
+struct Profile { uint16_t speciesId; Mode mode; bool registeredSlither; AirProfile air; };
+template<class V> inline void contentFields(V& v, AirProfile& x) { v(x.height,x.bobAmplitude); }
+template<class V> inline void contentFields(V& v, Profile& x) { v(x.speciesId,x.mode,x.registeredSlither,x.air); }
+#if STICKMON_EXTERNAL_CONTENT
+inline const ContentData::Table<Profile,1024,false> PROFILES{26};
+inline const Profile* profile(uint16_t id) {
+    for(const auto& p:PROFILES) if(p.speciesId==id) return &p;
+    return nullptr;
+}
+#endif
 
 enum class PlaybackContext : uint8_t {
     ROUTE,
@@ -51,6 +63,9 @@ static constexpr uint16_t SLITHER_AMBIENT_MIN_CYCLE_MS = 1100;
 static constexpr uint16_t SLITHER_AMBIENT_MAX_CYCLE_MS = 1400;
 
 inline Mode modeForSpecies(uint16_t speciesId) {
+#if STICKMON_EXTERNAL_CONTENT
+    const auto* p=profile(speciesId); return p ? p->mode : Mode::WALK;
+#else
     switch (speciesId) {
     case 1:
         return Mode::HOP;
@@ -60,6 +75,7 @@ inline Mode modeForSpecies(uint16_t speciesId) {
     default:
         return Mode::WALK;
     }
+#endif
 }
 
 inline Behavior behaviorForMode(Mode mode) {
@@ -78,11 +94,19 @@ inline Behavior behaviorForMode(Mode mode) {
 inline Behavior behaviorForSpecies(uint16_t speciesId) {
     Behavior behavior = behaviorForMode(modeForSpecies(speciesId));
     // Dratini's extracted frames need their original per-phase registration restored.
+    #if STICKMON_EXTERNAL_CONTENT
+    const auto* p=profile(speciesId);
+    behavior.registeredSlither = p && p->registeredSlither;
+#else
     behavior.registeredSlither = speciesId == 147;
+#endif
     return behavior;
 }
 
 inline AirProfile airProfileForSpecies(uint16_t speciesId) {
+#if STICKMON_EXTERNAL_CONTENT
+    const auto* p=profile(speciesId); return p ? p->air : AirProfile{};
+#else
     switch (speciesId) {
     case 12:  return {10.0f, 2.5f}; // Butterfree
     case 41:  return {12.0f, 2.0f}; // Zubat
@@ -98,6 +122,7 @@ inline AirProfile airProfileForSpecies(uint16_t speciesId) {
     case 381: return {18.0f, 2.0f}; // Latios
     default:  return {0.0f, 0.0f};
     }
+#endif
 }
 
 inline uint16_t routeStepDurationMs(const Behavior& behavior,

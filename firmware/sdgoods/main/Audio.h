@@ -30,12 +30,16 @@ public:
 private:
     void run();
     void amplifier(bool enabled);
+    void publishQueued();  // Call with mutex_ held after any mixer change.
     PcmMixer mixer_;
+    // mutex_ guards mixer_ only and is never held across a blocking I2S write,
+    // so UI-side calls cannot be starved by the audio task.
     SemaphoreHandle_t mutex_ = nullptr, micMutex_ = nullptr;
     i2s_chan_handle_t tx_ = nullptr, rx_ = nullptr;
     std::atomic<uint8_t> volume_{0};
-    std::atomic<bool> recording_{false}, microphoneOn_{false};
-    bool suspended_ = false, txEnabled_ = false;
+    std::atomic<uint8_t> queued_[CHANNEL_COUNT]{};
+    std::atomic<bool> recording_{false}, microphoneOn_{false}, suspended_{false};
+    bool txEnabled_ = false;  // Owned by the audio task.
     uint32_t microphoneRate_ = 16000;
 };
 }  // namespace Sdgoods

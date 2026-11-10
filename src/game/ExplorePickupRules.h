@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include "game/ContentData.h"
 
 #include "game/GameState.h"
 
@@ -30,6 +31,10 @@ struct Entry {
     uint16_t weight;
 };
 
+template<class V> inline void contentFields(V& v, Entry& x) { v(x.id,x.weight); }
+struct CoinRange { uint8_t minCoin,maxCoin; };
+template<class V> inline void contentFields(V& v, CoinRange& x) { v(x.minCoin,x.maxCoin); }
+#if !STICKMON_EXTERNAL_CONTENT
 inline constexpr Entry GRASS_PATH_PICKUPS[] = {
     {COIN, 40}, {POTION, 25}, {ANTIDOTE, 10},
     {HONEY, 10}, {NUGGET, 3}, {RARE_CANDY, 2},
@@ -55,6 +60,7 @@ inline constexpr Entry ANCIENT_WATERFALL_VALLEY_PICKUPS[] = {
     {BIG_PEARL, 5}, {STAR_PIECE, 7}, {HEART_SCALE, 2}, {RARE_CANDY, 2},
 };
 
+#endif
 struct Table {
     const Entry* entries;
     uint8_t count;
@@ -67,6 +73,19 @@ constexpr Table makeTable(const Entry (&entries)[N], uint8_t minCoin, uint8_t ma
     return {entries, static_cast<uint8_t>(N), minCoin, maxCoin};
 }
 
+#if STICKMON_EXTERNAL_CONTENT
+inline const Table& tableForArea(uint8_t area) {
+    static const ContentData::Table<Entry,32,false> entries[]={
+        ContentData::Table<Entry,32,false>(40),ContentData::Table<Entry,32,false>(41),
+        ContentData::Table<Entry,32,false>(42),ContentData::Table<Entry,32,false>(43),
+        ContentData::Table<Entry,32,false>(44),ContentData::Table<Entry,32,false>(45)};
+    static const ContentData::Table<CoinRange,6> coins{46};
+    static Table tables[6]{};
+    const unsigned i=area<6 ? area : 5;
+    tables[i]={entries[i].data(),uint8_t(entries[i].size()),coins[i].minCoin,coins[i].maxCoin};
+    return tables[i];
+}
+#else
 inline constexpr Table TABLES[] = {
     makeTable(GRASS_PATH_PICKUPS, 10, 30),
     makeTable(CREEK_SLOPE_PICKUPS, 15, 40),
@@ -79,6 +98,8 @@ inline constexpr Table TABLES[] = {
 constexpr const Table& tableForArea(uint8_t area) {
     return TABLES[area < Game::EXPLORE_AREA_COUNT ? area : Game::EXPLORE_AREA_COUNT - 1];
 }
+
+#endif
 
 constexpr bool available(uint8_t id, uint16_t stepsToday) {
     return id != RARE_CANDY || stepsToday >= 5000;
@@ -122,7 +143,9 @@ constexpr Game::ItemId itemId(uint8_t id) {
     }
 }
 
+#if !STICKMON_EXTERNAL_CONTENT
 static_assert(sizeof(TABLES) / sizeof(TABLES[0]) == Game::EXPLORE_AREA_COUNT,
               "pickup tables must follow the six exploration areas");
+#endif
 
 }  // namespace ExplorePickupRules

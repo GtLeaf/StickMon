@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
+#include <cstdio>
 #include <cstdlib>
 #include <limits>
 #include "sdgoods_driver_fakes.h"
 #include "Audio.h"
+#include "AudioPolicy.h"
 #include "PeerRadio.h"
 #include "Battery.h"
 #include "hardware/EspNowRadioConfig.h"
@@ -10,6 +12,8 @@
 namespace Platform {
 void logf(const char*, ...) {}
 void logLine(const char*) {}
+void errorf(const char*, ...) {}
+void errorLine(const char*) {}
 }
 class Allocator final : public Platform::IMemoryAllocator {
     void* allocate(size_t size,bool) override { return std::malloc(size); }
@@ -79,6 +83,25 @@ int main() {
     }
     std::puts("PASS real Battery driver: ADC/calibration retry and cleanup, idempotence, cache/wraparound, spikes, smoothing, unknown and recovery");
     std::puts("PASS real Battery charging estimate: independent 2s polling, HUD query deduplication, 10s level cache, load reset, ADC failure and sampling gap");
+    {
+        const int16_t pcm[] = {32767, -32768, 10000, -10000, 0};
+        int16_t stereo[10]{};
+        int previous = -1;
+        for (unsigned volume=0; volume<=100; ++volume) {
+            Sdgoods::AudioPolicy::stereo(pcm, stereo, 5, volume);
+            for (unsigned i=0; i<5; ++i) {
+                assert(stereo[i*2]==stereo[i*2+1]);
+                assert(stereo[i*2]>=-16056 && stereo[i*2]<=16055);
+                if (!volume) assert(stereo[i*2]==0);
+            }
+            assert(stereo[0]>previous); previous=stereo[0];
+            assert(stereo[4]==int(volume)*49 && stereo[6]==-int(volume)*49);
+        }
+        Sdgoods::AudioPolicy::stereo(pcm, stereo, 5, 255);
+        assert(stereo[0]==16055 && stereo[2]==-16056);
+        assert(stereo[4]==4900 && stereo[6]==-4900 && stereo[8]==0);
+        std::puts("PASS speaker gain: 101 distinct levels, 49% amplitude ceiling, stereo polarity, silence and out-of-range clamp");
+    }
     Allocator allocator; Sdgoods::Audio audio(allocator);
     assert(audio.begin() && !Fake::pa && audio.volume()==0 && Fake::stereoRate==16000);
     std::vector<uint8_t> samples(1024,255);
@@ -88,15 +111,35 @@ int main() {
     assert(audio.queuedPcm(1)==1); // one block partially retired at normal pace
     audio.setVolume(50); Fake::runAudio();
     assert(Fake::pa && Fake::i2sWrites==1 && fakeChannels[0].enabled);
-    for(auto s:Fake::lastWrite)assert(s>0 && s<32767);
+    for(auto s:Fake::lastWrite)assert(s==7965); // 32512 PCM x 50% slider x 49% cap
     audio.setVolume(0);assert(!Fake::pa);Fake::runAudio();
     assert(Fake::i2sWrites==1 && !fakeChannels[0].enabled && audio.volume()==0);
     audio.suspend(true);assert(!audio.playing() && !Fake::pa);
     assert(!audio.playPcmU8(samples.data(),samples.size(),16000));
     audio.suspend(false);assert(audio.volume()==0);
     assert(audio.playPcmU8(samples.data(),samples.size(),16000));
-    audio.setVolume(20);Fake::failWrite=true;Fake::runAudio();
+    // Failure recovery re-takes the mixer lock after the unlocked write: 2 takes.
+    audio.setVolume(20);Fake::failWrite=true;Fake::runAudio(2);
     assert(!Fake::pa && !audio.playing());Fake::failWrite=false;
+    {
+        using Gate=Sdgoods::AudioPolicy::OutputGate;
+        std::vector<uint8_t> block(256,255);
+        assert(audio.playPcmU8Channel(block.data(),block.size(),16000,0,true));
+        assert(audio.queuedPcm(0)==1 && audio.playing()); // lock-free counts
+        const int writes=Fake::i2sWrites;
+        Fake::runAudio(1+5); // one real block, then a short underrun
+        assert(Fake::i2sWrites==writes+6 && Fake::pa && fakeChannels[0].enabled);
+        assert(!audio.playing() && audio.queuedPcm(0)==0);
+        for(auto s:Fake::lastWrite)assert(s==0); // silence keeps PA/I2S open
+        assert(audio.playPcmU8Channel(block.data(),block.size(),16000,0,true));
+        Fake::runAudio(1+Gate::HOLD_BLOCKS+1); // hold expires, output closes
+        assert(Fake::i2sWrites==writes+6+1+Gate::HOLD_BLOCKS);
+        assert(!Fake::pa && !fakeChannels[0].enabled);
+        assert(audio.playPcmU8Channel(block.data(),block.size(),16000,0,true));
+        Fake::runAudio(1);assert(Fake::pa);
+        audio.setVolume(0);Fake::runAudio(1); // mute closes without hold
+        assert(!Fake::pa && !fakeChannels[0].enabled);
+    }
     audio.setVolume(0);
     assert(audio.beginMicrophone() && audio.microphoneActive());
     std::vector<int16_t> recorded(600);
@@ -105,7 +148,7 @@ int main() {
     Fake::failRead=true;assert(!audio.recordMicrophone(recorded.data(),10,16000));
     assert(!audio.microphoneRecording() && !Fake::pa && audio.volume()==0);
     audio.endMicrophone();assert(!audio.microphoneActive() && !fakeChannels[1].enabled);
-    std::puts("PASS real Audio driver: muted startup/PCM/PA, queue retirement, lock/resume, I2S failure and microphone clipping/failure");
+    std::puts("PASS real Audio driver: muted startup/PCM/PA, queue retirement, lock/resume, I2S failure, lock-free queue counts, underrun silence hold/close and microphone clipping/failure");
     // Every initialization step may fail; teardown must leave no live radio.
     for(int failure=1;failure<=11;++failure) {
         Sdgoods::PeerRadio radio;

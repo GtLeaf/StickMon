@@ -249,7 +249,7 @@ def cpp_table():
         '    if ((count==6 || count==8) && level==5) return TRANSITIONS[(seed>>8)&1][count==8][edge];',
         '    return ROOMS[(seed>>8)&1][stage(level,count)][edge];',
         '}','} // namespace ExploreMistForestData','']
-    return '\n'.join(lines)
+    return __import__('content_tables').adapt_header('\n'.join(lines), 'ExploreMistForestData')
 
 
 if __name__=='__main__':

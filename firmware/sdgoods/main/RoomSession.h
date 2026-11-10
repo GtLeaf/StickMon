@@ -7,7 +7,7 @@
 namespace Sdgoods {
 class RoomSession {
 public:
-    bool begin();
+    bool begin(bool persist=true);
     void poll();
     bool save();
     bool restart();

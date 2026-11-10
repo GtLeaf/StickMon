@@ -11,6 +11,29 @@ int labelWidth(const char* label) {
         if ((*p & 0xc0) != 0x80) width += *p < 0x80 ? 8 : 16;
     return width;
 }
+void smoothDisc(Canvas565& c, int cx, int cy, int radius, uint16_t color) {
+    // 4x4 coverage in fixed point. Blend with the actual track/card beneath
+    // each edge pixel so neither black fringes nor a jagged outline remain.
+    const int r = radius * 8 + 4;
+    for (int y = -radius; y <= radius; ++y) {
+        for (int x = -radius; x <= radius; ++x) {
+            int coverage = 0;
+            for (int sy = -3; sy <= 3; sy += 2) {
+                for (int sx = -3; sx <= 3; sx += 2) {
+                    const int dx = x * 8 + sx, dy = y * 8 + sy;
+                    coverage += dx * dx + dy * dy <= r * r;
+                }
+            }
+            if (!coverage) continue;
+            const uint16_t bg = c.readPixel(cx + x, cy + y);
+            const auto channel = [&](int shift, int mask) {
+                return ((((color >> shift) & mask) * coverage +
+                         ((bg >> shift) & mask) * (16 - coverage) + 8) / 16) << shift;
+            };
+            c.drawPixel(cx + x, cy + y, channel(11,31) | channel(5,63) | channel(0,31));
+        }
+    }
+}
 }
 bool enabled() { return NAV_H && Platform::input().touchAvailable(); }
 MenuGrid::Layout listLayout(int rowHeight) {
@@ -58,14 +81,20 @@ void safePageHeader(const char* title, bool pressed, bool selected, const char* 
         c.clearClipRect();
     }
 }
-void slider(int left, int right, int centerY, int value, int minimum, int maximum, bool pressed) {
+void slider(int left, int right, int centerY, int value, int minimum, int maximum, bool pressed,
+            bool smoothKnob) {
     auto& c = PixelRenderer::canvas();
     const int knob = left + (std::clamp(value, minimum, maximum) - minimum) * (right - left) / std::max(1, maximum - minimum);
     const auto active = PixelRenderer::rgb(pressed ? 115 : 83, pressed ? 226 : 184, pressed ? 183 : 157);
     c.fillRoundRect(left, centerY - 4, right - left, 8, 4, PixelRenderer::rgb(48, 63, 70));
     if (knob > left) c.fillRoundRect(left, centerY - 4, knob - left, 8, 4, active);
-    c.fillCircle(knob, centerY, pressed ? 9 : 8, 0xffff);
-    c.fillCircle(knob, centerY, pressed ? 5 : 4, active);
+    if (smoothKnob) {
+        smoothDisc(c, knob, centerY, pressed ? 9 : 8, 0xffff);
+        smoothDisc(c, knob, centerY, pressed ? 5 : 4, active);
+    } else {
+        c.fillCircle(knob, centerY, pressed ? 9 : 8, 0xffff);
+        c.fillCircle(knob, centerY, pressed ? 5 : 4, active);
+    }
 }
 void action(int x, int y, int width, const char* label, bool pressed) {
     auto& c = PixelRenderer::canvas();

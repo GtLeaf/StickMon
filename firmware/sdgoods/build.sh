@@ -38,3 +38,4 @@ cd "$TASK_ROOT"
 # Intentionally build only. No serial operations or flash commands.
 env -u CODEBUDDY_SAFE_DELETE_SANDBOX -u CODEBUDDY_BROKERED_FS_HOOK_ENABLED \
     -u CODEBUDDY_SAFE_DELETE_ENABLED idf.py "${BUILD_OPTIONS[@]}" build
+echo 'SDGOODS uses two OTA apps with one shared resource image. Package/install with tools/sdgoods_release.py; do not use idf.py flash or generated flash_args.'

@@ -28,17 +28,22 @@ void previewMember(const ExploreRouteFrame& frame, int index, int cx) {
 void preview(const ExploreRouteFrame& frame) {
     const int count = std::min<int>(frame.areaPreviewCount, ExploreRouteFrame::PREVIEW_CAP);
     if (!count) return;
-    if (count == 1) {
+    if (!PreviewLayout::scrolls(frame.areaPreviewFrames, count)) {
         auto& c = PixelRenderer::canvas();
         c.setClipRect(PREVIEW.x, PREVIEW.y, PREVIEW.width, PREVIEW.height);
-        previewMember(frame, 0, 180);
+        int left = (360 - PreviewLayout::stripWidth(frame.areaPreviewFrames, count)) / 2;
+        for (int i = 0; i < count; ++i) {
+            const int width = PreviewLayout::width(frame.areaPreviewFrames[i]);
+            previewMember(frame, i, left + width / 2);
+            left += width + PreviewLayout::SPACING;
+        }
         c.clearClipRect();
         return;
     }
     const uint32_t elapsed = frame.nowMs - frame.areaPreviewStartedAt;
     const int current = (elapsed / ExploreRouteTiming::PREVIEW_CYCLE_MS + 1) % count;
     const int next = (current + 1) % count;
-    const auto width = [&](int i) { return frame.areaPreviewFrames[i] ? int(frame.areaPreviewFrames[i]->width) : 80; };
+    const auto width = [&](int i) { return PreviewLayout::width(frame.areaPreviewFrames[i]); };
     const uint32_t phase = elapsed % ExploreRouteTiming::PREVIEW_CYCLE_MS;
     float progress = phase <= ExploreRouteTiming::PREVIEW_HOLD_MS ? 0.0f
         : float(phase - ExploreRouteTiming::PREVIEW_HOLD_MS) / ExploreRouteTiming::PREVIEW_MOVE_MS;
@@ -46,13 +51,13 @@ void preview(const ExploreRouteFrame& frame) {
     auto& c = PixelRenderer::canvas();
     c.setClipRect(PREVIEW.x, PREVIEW.y, PREVIEW.width, PREVIEW.height);
     // Move the whole repeating strip together so spacing is constant at the cycle seam.
-    const int step = width(current) / 2 + 12 + width(next) / 2;
+    const int step = width(current) / 2 + PreviewLayout::SPACING + width(next) / 2;
     const int anchor = 180 - int(std::lround(step * progress));
     previewMember(frame, current, anchor);
     int index = current, cx = anchor;
     while (cx - width(index) / 2 > PREVIEW.x) {
         const int previous = (index + count - 1) % count;
-        cx -= width(index) / 2 + 12 + width(previous) / 2;
+        cx -= width(index) / 2 + PreviewLayout::SPACING + width(previous) / 2;
         previewMember(frame, previous, cx);
         index = previous;
     }
@@ -60,7 +65,7 @@ void preview(const ExploreRouteFrame& frame) {
     cx = anchor;
     while (cx - width(index) / 2 + width(index) < PREVIEW.x + PREVIEW.width) {
         const int following = (index + 1) % count;
-        cx += width(index) / 2 + 12 + width(following) / 2;
+        cx += width(index) / 2 + PreviewLayout::SPACING + width(following) / 2;
         previewMember(frame, following, cx);
         index = following;
     }

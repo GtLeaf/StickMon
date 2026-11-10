@@ -62,6 +62,7 @@ public:
 
 private:
     bool finishSubViewInput();
+    bool areaPreviewScrolls() const;
     using Phase = Ui::ExplorePhase;
     Ui::ExploreUi ui;
     char departureToast[96] = {};

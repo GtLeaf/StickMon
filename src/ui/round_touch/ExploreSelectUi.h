@@ -10,6 +10,24 @@ constexpr MenuGrid::Rect PREVIOUS_BOUNDS{66, 58, 44, 44};
 constexpr MenuGrid::Rect NEXT_BOUNDS{250, 58, 44, 44};
 constexpr MenuGrid::Rect DEPART_BOUNDS{120, 282, 120, 40};
 
+// The full preview band fits inside the round panel with 24px side margins.
+// Rendering and scene scheduling must use the same measured strip width.
+struct PreviewLayout {
+    static constexpr int SPACING = 12;
+    static constexpr int STATIC_WIDTH = 312;
+    static int width(const PokemonSprites::SpriteFrame* frame) {
+        return frame ? int(frame->width) : 80;
+    }
+    static int stripWidth(const PokemonSprites::SpriteFrame* const* frames, int count) {
+        int total = 0;
+        for (int i = 0; i < count; ++i) total += width(frames[i]) + (i ? SPACING : 0);
+        return total;
+    }
+    static bool scrolls(const PokemonSprites::SpriteFrame* const* frames, int count) {
+        return count > 1 && stripWidth(frames, count) > STATIC_WIDTH;
+    }
+};
+
 class Selection {
 public:
     Selection() = default;

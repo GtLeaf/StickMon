@@ -2,6 +2,7 @@
 #include "Audio.h"
 
 #include <algorithm>
+#include <iterator>
 #include "AudioPolicy.h"
 #include "board_pins.h"
 #include "driver/gpio.h"
@@ -25,7 +26,8 @@ bool Audio::begin() {
     if (!mutex_ || !micMutex_) return false;
     i2s_chan_config_t channel = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
     channel.auto_clear = true;
-    channel.dma_desc_num = 6;
+    // 8 x 240 frames = 120 ms of DMA cushion at 16 kHz.
+    channel.dma_desc_num = 8;
     channel.dma_frame_num = 240;
     if (i2s_new_channel(&channel, &tx_, nullptr) != ESP_OK) return false;
     i2s_std_config_t config{};
@@ -47,48 +49,57 @@ bool Audio::begin() {
     return false;
 }
 
+void Audio::publishQueued() {
+    for (uint8_t ch = 0; ch < CHANNEL_COUNT; ++ch)
+        queued_[ch] = mixer_.queuedBlocks(static_cast<PcmMixer::Channel>(ch));
+}
+
 void Audio::run() {
     int16_t mono[PcmMixer::MIX_BLOCK_SAMPLES]{};
     int16_t stereo[PcmMixer::MIX_BLOCK_SAMPLES * 2]{};
+    AudioPolicy::OutputGate gate;
     for (;;) {
+        // Hold the mixer lock only while mixing; the I2S write below blocks
+        // for about one DMA block and must not stall UI-side audio calls.
         xSemaphoreTake(mutex_, portMAX_DELAY);
         const bool active = !suspended_ && mixer_.anyActive();
-        const bool audible = AudioPolicy::audible(volume_, active, suspended_);
-        if (!audible) amplifier(false);
-        if (active) {
-            mixer_.mix(mono, PcmMixer::MIX_BLOCK_SAMPLES);
-            AudioPolicy::stereo(mono, stereo, PcmMixer::MIX_BLOCK_SAMPLES, volume_);
+        if (active) mixer_.mix(mono, PcmMixer::MIX_BLOCK_SAMPLES);
+        publishQueued();
+        xSemaphoreGive(mutex_);
+
+        const uint8_t volume = volume_.load();
+        const bool output = gate.next(volume > 0 && !suspended_, active);
+        if (!output) {
+            amplifier(false);
+            if (txEnabled_) { i2s_channel_disable(tx_); txEnabled_ = false; }
+            // Muted playback still retires queued PCM at its normal rate.
+            vTaskDelay(pdMS_TO_TICKS(active ? 16 : 10));
+            continue;
         }
-        // Gate output while muted; still retire queued PCM at its normal rate.
-        if (audible && !txEnabled_) {
-            txEnabled_ = i2s_channel_enable(tx_) == ESP_OK;
-        }
-        bool ok = true;
-        if (audible && txEnabled_) {
-            size_t written = 0;
-            ok = i2s_channel_write(tx_, stereo, sizeof(stereo), &written, 100) == ESP_OK &&
-                 written == sizeof(stereo);
-            amplifier(ok);
-        } else if (txEnabled_) {
-            i2s_channel_disable(tx_);
-            txEnabled_ = false;
-        }
+        if (active) AudioPolicy::stereo(mono, stereo, PcmMixer::MIX_BLOCK_SAMPLES, volume);
+        else std::fill(std::begin(stereo), std::end(stereo), int16_t(0));
+        if (!txEnabled_) txEnabled_ = i2s_channel_enable(tx_) == ESP_OK;
+        size_t written = 0;
+        const bool ok = txEnabled_ &&
+            i2s_channel_write(tx_, stereo, sizeof(stereo), &written, 100) == ESP_OK &&
+            written == sizeof(stereo);
+        // Re-check after the blocking write: mute/suspend may have happened.
+        amplifier(ok && volume_.load() > 0 && !suspended_);
         if (!ok) {
             amplifier(false);
+            xSemaphoreTake(mutex_, portMAX_DELAY);
             mixer_.stopAll();
-            Platform::logLine("[SDGOODS] audio write failed; output muted");
+            publishQueued();
+            xSemaphoreGive(mutex_);
+            Platform::errorLine("[SDGOODS] audio write failed; output muted");
+            vTaskDelay(pdMS_TO_TICKS(16));
         }
-        xSemaphoreGive(mutex_);
-        if (!audible || !txEnabled_ || !ok)
-            vTaskDelay(pdMS_TO_TICKS(active ? 16 : 10));
     }
 }
 
 void Audio::setVolume(uint8_t value) {
-    if (mutex_) xSemaphoreTake(mutex_, portMAX_DELAY);
     volume_ = std::min<uint8_t>(value, 100);
     if (!volume_) amplifier(false);
-    if (mutex_) xSemaphoreGive(mutex_);
     Platform::logf("[SDGOODS] volume=%u; mute PA=%s\n", unsigned(volume()), volume() ? "eligible" : "OFF");
 }
 void Audio::suspend(bool value) {
@@ -96,8 +107,8 @@ void Audio::suspend(bool value) {
     xSemaphoreTake(mutex_, portMAX_DELAY);
     suspended_ = value;
     if (value) {
-        amplifier(false); mixer_.stopAll();
-        if (txEnabled_) { i2s_channel_disable(tx_); txEnabled_ = false; }
+        // The audio task owns I2S and closes it on its next block (<=16 ms).
+        amplifier(false); mixer_.stopAll(); publishQueued();
     }
     xSemaphoreGive(mutex_);
 }
@@ -109,6 +120,7 @@ bool Audio::playPcmU8Channel(const uint8_t* data, size_t count, uint32_t rate, u
     xSemaphoreTake(mutex_, portMAX_DELAY);
     const bool ok = !suspended_ && mixer_.start(static_cast<PcmMixer::Channel>(ch),
         {data, count, rate, 100, false}, replace ? PcmMixer::StartMode::REPLACE : PcmMixer::StartMode::APPEND);
+    publishQueued();
     xSemaphoreGive(mutex_);
     return ok;
 }
@@ -118,29 +130,25 @@ void Audio::setChannelVolume(uint8_t ch, uint8_t value) {
     mixer_.setVolume(static_cast<PcmMixer::Channel>(ch), std::min<uint8_t>(value, 100));
     xSemaphoreGive(mutex_);
 }
+// Lock-free: counts are republished under mutex_ after every mixer change.
 bool Audio::playing() const {
-    if (!mutex_) return false;
-    xSemaphoreTake(mutex_, portMAX_DELAY);
-    const bool result = mixer_.anyActive();
-    xSemaphoreGive(mutex_); return result;
+    for (const auto& queued : queued_) if (queued.load()) return true;
+    return false;
 }
 uint8_t Audio::queuedPcm(uint8_t ch) const {
-    if (!mutex_ || ch >= CHANNEL_COUNT) return 0;
-    xSemaphoreTake(mutex_, portMAX_DELAY);
-    const auto result = mixer_.queuedBlocks(static_cast<PcmMixer::Channel>(ch));
-    xSemaphoreGive(mutex_); return result;
+    return ch < CHANNEL_COUNT ? queued_[ch].load() : 0;
 }
 void Audio::stop() {
     if (!mutex_) return;
     xSemaphoreTake(mutex_, portMAX_DELAY);
-    mixer_.stopAll(); amplifier(false);
+    mixer_.stopAll(); publishQueued(); amplifier(false);
     xSemaphoreGive(mutex_);
 }
 void Audio::stopChannel(uint8_t ch) {
     if (!mutex_ || ch >= CHANNEL_COUNT) return;
     xSemaphoreTake(mutex_, portMAX_DELAY);
     mixer_.stop(static_cast<PcmMixer::Channel>(ch));
-    if (!mixer_.anyActive()) amplifier(false);
+    publishQueued();
     xSemaphoreGive(mutex_);
 }
 

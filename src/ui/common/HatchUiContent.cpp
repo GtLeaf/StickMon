@@ -29,14 +29,14 @@ void drawRoom(const HatchFrame& frame, const HatchLayout& layout) {
     RoomRenderer::draw(hatchCameraY(layout), frame.night, hatchCameraX(layout));
 }
 
-void drawEgg(const HatchFrame& frame, const HatchLayout& layout) {
+void drawEgg(const HatchLayout& layout, int8_t eggOffset) {
     auto& c = PixelRenderer::canvas();
     RoomResource& room = RoomResource::ins();
     int x = room.available() ? RoomRenderer::screenX(room.bedX(), hatchCameraX(layout)) : layout.width / 2;
     int y = room.available()
         ? RoomRenderer::screenY(room.roomY() + room.bedY() - 26, hatchCameraY(layout))
         : 84;
-    x += Game::HatchService::shakeOffset(frame.progress, frame.nowMs) * RoomRenderer::PIXEL_SCALE;
+    x += eggOffset * RoomRenderer::PIXEL_SCALE;
     if (!GameAssets::drawCentered(GameAssets::Kind::EGG, x, y, RoomRenderer::PIXEL_SCALE)) {
         c.fillRect(x - 12 * RoomRenderer::PIXEL_SCALE, y - 16 * RoomRenderer::PIXEL_SCALE,
                    24 * RoomRenderer::PIXEL_SCALE, 32 * RoomRenderer::PIXEL_SCALE, PixelRenderer::rgb(255, 216, 72));
@@ -81,9 +81,13 @@ Point eggCenter(const HatchLayout& layout) {
     };
 }
 
-void draw(const HatchFrame& frame, const HatchLayout& layout, const char* toast) {
+void drawWorld(const HatchFrame& frame, const HatchLayout& layout, int8_t eggOffset) {
     drawRoom(frame, layout);
-    drawEgg(frame, layout);
+    drawEgg(layout, eggOffset);
+}
+
+void draw(const HatchFrame& frame, const HatchLayout& layout, const char* toast) {
+    drawWorld(frame, layout, Game::HatchService::shakeOffset(frame.progress, frame.nowMs));
     drawHud(frame, layout);
     drawToast(layout, toast);
     TouchUi::drawHomeMenu();

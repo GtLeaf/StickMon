@@ -1,5 +1,7 @@
 """Compile authored town maps, preserving roads separately from explore paths."""
 import argparse
+import sys
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1]))
 import copy
 import hashlib
 import json
@@ -177,7 +179,7 @@ def header(data):
     for i,stall in enumerate(data['stalls']):
         lines += [f'        d.stalls[{i}].resident={stall["resident"]}; d.stalls[{i}].pointCount={len(stall["points"])};']
         for j,n in enumerate(stall['points']):lines += [f'        d.stalls[{i}].points[{j}]={n};']
-    return '\n'.join(lines+['        return d;', '    }();', '    return value;', '}', '} // namespace MarketMapData', ''])
+    return __import__('content_tables').adapt_market('\n'.join(lines+['        return d;', '    }();', '    return value;', '}', '} // namespace MarketMapData', '']))
 
 
 def size_header(data):

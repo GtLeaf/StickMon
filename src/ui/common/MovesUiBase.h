@@ -25,6 +25,7 @@ protected:
 namespace MovesDrawing {
 int textPixelWidth(const char* value);
 int drawTypeBracket(int x, int y, TypeId type);
+uint16_t typeColor(TypeId type);
 void drawProficiencyBar(int x, int y, int width, int height, uint8_t value);
 }
 

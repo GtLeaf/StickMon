@@ -206,7 +206,7 @@ def cpp_table():
              '    if (id >= EXTRA_BASE && id < EXTRA_BASE + EXTRA_COUNT) return &EXTRA_TILES[id-EXTRA_BASE];',
              '    return id >= BASE && id < BASE + COUNT ? &TILES[id - BASE] : nullptr;',
              '}','}  // namespace ExploreEditorTiles','']
-    return '\n'.join(rows)
+    return __import__('content_tables').adapt_header('\n'.join(rows), 'ExploreEditorTiles')
 
 if __name__=='__main__':
     target=Path(__file__).resolve().parents[1]/'src/game/ExploreEditorTiles.h'

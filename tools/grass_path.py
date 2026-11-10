@@ -81,7 +81,7 @@ def cpp_table():
                          '{' + ','.join(map(point, p.points)) + '}},')
         lines.append('  }},')
     lines += ['};', '} // namespace ExploreGrassPathData', '']
-    return '\n'.join(lines)
+    return __import__('content_tables').adapt_header('\n'.join(lines), 'ExploreGrassPathData')
 
 
 if __name__ == '__main__':

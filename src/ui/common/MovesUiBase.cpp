@@ -44,7 +44,7 @@ int textPixelWidth(const char* value) {
     return width;
 }
 
-static uint16_t typeColor(TypeId type) {
+uint16_t typeColor(TypeId type) {
     switch (type) {
     case TypeId::FIRE: return PixelRenderer::rgb(239, 91, 67);
     case TypeId::WATER: return PixelRenderer::rgb(67, 145, 224);

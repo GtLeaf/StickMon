@@ -168,7 +168,7 @@ def cpp_table():
               'inline constexpr const Tile* tile(uint16_t id) {',
               '    return id >= BASE && id < BASE + COUNT ? &TILES[id - BASE] : nullptr;',
               '}','}  // namespace ExploreRotatedTiles','']
-    return '\n'.join(lines)
+    return __import__('content_tables').adapt_header('\n'.join(lines), 'ExploreRotatedTiles')
 
 
 if __name__ == '__main__':
