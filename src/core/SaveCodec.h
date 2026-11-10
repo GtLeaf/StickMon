@@ -12,8 +12,10 @@
 namespace SaveCodec {
 
 static constexpr uint32_t MAGIC = 0x32435653; // SVC2
-// Schema 1 = v3, schema 2 = v4, schema 3 appends daily care records (v5).
-static constexpr uint16_t SCHEMA_VERSION = 3;
+// Schema 1 = v3, schema 2 = v4, schema 3 appends daily care records (v5),
+// schema 4 appends market stall services (v6), schema 5 the Kecleon shelf (v7),
+// schema 6 the Chansey stall (v8).
+static constexpr uint16_t SCHEMA_VERSION = 6;
 static constexpr uint16_t MIN_SUPPORTED_SCHEMA_VERSION = 1;
 // State version stored by schema-1 payloads (Game::SAVE_VERSION at the time).
 static constexpr uint16_t SCHEMA_1_STATE_VERSION = 3;

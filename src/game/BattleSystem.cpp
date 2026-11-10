@@ -340,6 +340,10 @@ uint16_t typeEffectiveness(TypeId attack, TypeId defend1, TypeId defend2) {
     return static_cast<uint16_t>(value * singleEffect(attack, defend2) / 100);
 }
 
+uint8_t proficiencyTriggerChance(uint8_t proficiency) {
+    return specialProficiencyChance(proficiency);
+}
+
 uint8_t specialTriggerChance(const Game::MonsterRuntime& attacker, uint8_t specialSlot) {
     if (specialMoveIdForMonster(attacker, specialSlot) == 0) return 0;
     uint8_t moveSlot = specialSlot + 1;

@@ -7,6 +7,9 @@
 #include "game/ExploreDestinations.h"
 #include "game/MarketSession.h"
 #include "ui/common/MarketWalkUi.h"
+#include "ui/common/MarketTutorUi.h"
+#include "ui/common/MarketShopUi.h"
+#include "ui/common/MarketCareUi.h"
 
 #ifndef STICKMON_HAS_CLAW
 #define STICKMON_HAS_CLAW 0
@@ -573,6 +576,25 @@ private:
     uint8_t selectedExploreDestination_ = ExploreDestinations::MARKET;
     std::unique_ptr<Market::Session> market_;
     Ui::MarketWalkUi marketUi_;
+    // Gengar stall: opened once the facing turn finishes; owns all touches
+    // while active and commits each purchase through saveState().
+    Ui::MarketTutorUi marketTutorUi_;
+    bool marketTutorPending_ = false;
+    uint32_t marketTutorClockMs_ = 0;
+    void openMarketTutor(uint32_t nowMs);
+    void closeMarketTutor();
+    void handleMarketTutorTouch(const Platform::IInputDevice::TouchEvent& touch);
+    // Kecleon stall: same lifecycle as the tutor; pendingStall_ names which
+    // keeper's service opens once the facing turn finishes.
+    Ui::MarketShopUi marketShopUi_;
+    uint16_t marketStallSpecies_ = 0;
+    void openMarketShop(uint32_t nowMs);
+    void handleMarketShopTouch(const Platform::IInputDevice::TouchEvent& touch);
+    // Chansey stall: same lifecycle; a paid service commits before its show.
+    Ui::MarketCareUi marketCareUi_;
+    void openMarketCare(uint32_t nowMs);
+    void handleMarketCareTouch(const Platform::IInputDevice::TouchEvent& touch);
+    bool marketServiceActive() const { return marketTutorUi_.active() || marketShopUi_.active() || marketCareUi_.active(); }
     // The market animates continuously; cap its full-screen frames instead of
     // redrawing on every 20 ms loop and every touch move. On the 20 ms loop
     // grid a 33 ms minimum gap presents a steady frame every 40 ms (25 fps).

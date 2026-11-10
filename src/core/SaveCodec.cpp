@@ -281,6 +281,27 @@ void writeState(Writer& writer, const Game::GameState& state) {
         writer.u8(record.pendingOldLevel);
         writer.u8(record.valid ? 1 : 0);
     }
+    const auto& tutor = state.marketTutor;
+    writer.u32(tutor.periodDay);
+    writer.u16(tutor.move);
+    writer.u16(tutor.drawnSpecies);
+    writer.u8(tutor.taught);
+    writer.u8(tutor.trainCount);
+    for (const auto& record : tutor.trained) {
+        writer.u32(record.ivPacked);
+        writer.u32(record.metAt);
+    }
+    const auto& shop = state.marketShop;
+    writer.u32(shop.periodDay);
+    for (uint8_t item : shop.items) writer.u8(item);
+    for (uint8_t stock : shop.stock) writer.u8(stock);
+    const auto& care = state.marketCare;
+    writer.u32(care.periodDay);
+    writer.u8(care.used);
+    for (const auto& record : care.served) {
+        writer.u32(record.ivPacked);
+        writer.u32(record.metAt);
+    }
 }
 
 void readState(Reader& reader, uint16_t schema, Game::GameState& state) {
@@ -380,6 +401,33 @@ void readState(Reader& reader, uint16_t schema, Game::GameState& state) {
             record.pairCount = reader.u8();
             record.pendingOldLevel = reader.u8();
             record.valid = reader.u8() != 0;
+        }
+    }
+    if (schema >= 4) {
+        auto& tutor = state.marketTutor;
+        tutor.periodDay = reader.u32();
+        tutor.move = reader.u16();
+        tutor.drawnSpecies = reader.u16();
+        tutor.taught = reader.u8();
+        tutor.trainCount = reader.u8();
+        for (auto& record : tutor.trained) {
+            record.ivPacked = reader.u32();
+            record.metAt = reader.u32();
+        }
+    }
+    if (schema >= 5) {
+        auto& shop = state.marketShop;
+        shop.periodDay = reader.u32();
+        for (uint8_t& item : shop.items) item = reader.u8();
+        for (uint8_t& stock : shop.stock) stock = reader.u8();
+    }
+    if (schema >= 6) {
+        auto& care = state.marketCare;
+        care.periodDay = reader.u32();
+        care.used = reader.u8();
+        for (auto& record : care.served) {
+            record.ivPacked = reader.u32();
+            record.metAt = reader.u32();
         }
     }
     state.checksum = 0;
@@ -521,7 +569,8 @@ bool decode(const uint8_t* input,
     readState(reader, schema, snapshot.state);
     readView(reader, snapshot.view);
     const uint16_t expectedStateVersion =
-        schema == 1 ? SCHEMA_1_STATE_VERSION : schema == 2 ? 4 : Game::SAVE_VERSION;
+        schema == 1 ? SCHEMA_1_STATE_VERSION : schema == 2 ? 4 :
+        schema == 3 ? 5 : schema == 4 ? 6 : schema == 5 ? 7 : Game::SAVE_VERSION;
     if (!reader.ok() || reader.position() != payloadLength ||
         snapshot.state.magic != Game::SAVE_MAGIC ||
         snapshot.state.version != expectedStateVersion ||

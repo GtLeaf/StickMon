@@ -28,8 +28,10 @@ public:
         return {b.x-pad,b.y-pad,b.w+2*pad,b.h+2*pad};
     }
     void cancel() {dragging=false;direction=-1;knobX=knobY=0;tap_.cancel();dialogueTap_.cancel();pressedNpc_=-1;dialogue_.suspendClock();}
-    void reset() {cancel();chatTarget=-1;dialogue_.reset();dialogueEnabled_=false;}
+    void reset() {cancel();chatTarget=-1;dialogue_.reset();dialogueEnabled_=false;serviceRequest_=-1;}
     void enableDialogue() {dialogueEnabled_=true;dialogue_.load();}
+    void setServiceSpecies(uint16_t species) {for(auto& v:serviceSpecies_)if(!v||v==species){v=species;return;}}
+    int takeServiceRequest() {const int r=serviceRequest_;serviceRequest_=-1;return r;}
     const MarketDialogue& dialogue() const {return dialogue_;}
     bool update(Market::Session& s,uint32_t now,bool active=true) {
         s.setDirection(direction);
@@ -39,7 +41,7 @@ public:
     }
     void refresh(const Market::Session& s) {
         if(s.exiting()||s.paused())cancel();
-        chatTarget=dialogue_.active()?-1:s.nearbyNpc(chatTarget,dialogueEnabled_);
+        chatTarget=dialogue_.active()||s.conversing()?-1:s.nearbyNpc(chatTarget,dialogueEnabled_);
     }
     void touchSession(Market::Session& s,const Platform::IInputDevice::TouchEvent& e,
                       const MarketView::Viewport& v,bool canWalk=true) {
@@ -56,8 +58,14 @@ public:
         const auto action=touch(e,v,canWalk);
         if(e.type==Type::DOWN)pressedNpc_=chatTarget>=0&&chatHit(v).contains(e.x,e.y)?chatTarget:-1;
         if(action==CHAT&&dialogueEnabled_&&pressed>=0) {
-            const auto b=MarketDialogueUi::layout(v);
-            if(dialogue_.begin(s,pressed,b.textWidth,b.glyph)){cancel();refresh(s);}
+            // Stall keepers with a service turn to face the party and hand
+            // over to the application's stall page instead of chatting.
+            if(pressed<s.data().residentCount&&isService(s.actor(pressed).species)) {
+                if(s.beginConversation(pressed)){serviceRequest_=pressed;cancel();refresh(s);}
+            } else {
+                const auto b=MarketDialogueUi::layout(v);
+                if(dialogue_.begin(s,pressed,b.textWidth,b.glyph)){cancel();refresh(s);}
+            }
         }
         if(e.type==Type::UP)pressedNpc_=-1;
         s.setDirection(direction);
@@ -123,6 +131,9 @@ private:
     MarketDialogue dialogue_;
     bool dialogueEnabled_=false;
     int pressedNpc_=-1;
+    int serviceRequest_=-1;
+    uint16_t serviceSpecies_[4]{};
+    bool isService(uint16_t species) const {for(auto v:serviceSpecies_)if(v&&v==species)return true;return false;}
     int anchorX_=0,anchorY_=0;
     static bool inside(const MarketView::Viewport& v,int x,int y) {
         if(x<0||y<0||x>=v.width||y>=v.height)return false;

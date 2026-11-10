@@ -59,7 +59,7 @@ class AmoledShopLayoutTests(unittest.TestCase):
                                 "\n}\n")
         header = render[:render.index("if (rowEnd <= MENU_CONTENT_TOP)")]
         self.assertIn("drawPageHeader(canvas, Ui::SHOP", header)
-        self.assertIn("drawPageHeaderCenteredText(canvas, coins", header)
+        self.assertIn("drawCoins(canvas, model.coins, AmoledUi::WIDTH / 2", header)
         run_page_case("shop-transactions")
 
     def test_grid_cells_render_native_icons_without_labels(self):

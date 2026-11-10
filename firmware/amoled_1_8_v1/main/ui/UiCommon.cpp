@@ -1,6 +1,7 @@
 #include "ui/UiCommon.h"
 
 #include <algorithm>
+#include <cstdio>
 
 #include "AmoledGeometry.h"
 #include "core/FontResource.h"
@@ -293,6 +294,15 @@ void drawToast(Canvas565& canvas, const char* value) {
     text(canvas, x + 14,
          TOAST_TOP + (TOAST_HEIGHT - FontResource::LARGE_GLYPH_H) / 2,
          value, rgb(234, 240, 235));
+}
+
+void drawCoins(Canvas565& canvas, uint32_t value, int anchorX, int y, bool centered, bool backdrop) {
+    char label[16];
+    std::snprintf(label, sizeof(label), "C%lu", static_cast<unsigned long>(value));
+    const int width = textWidth(label);
+    const int x = anchorX - (centered ? width / 2 : width);
+    if (backdrop) canvas.fillRoundRect(x - 8, y - 4, width + 16, 40, 6, rgb(248, 248, 224));
+    text(canvas, x, y, label, backdrop ? rgb(40, 56, 80) : rgb(248, 210, 105));
 }
 
 }  // namespace AmoledV1::UiCommon

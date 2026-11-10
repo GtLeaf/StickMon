@@ -9,9 +9,22 @@ int main(int argc,char** argv) {
     const uint32_t seed=argc>1?uint32_t(std::strtoul(argv[1],nullptr,10)):38;
     const auto& d=MarketMapData::get();
     Game::GameState state{};
-    assert(ExploreDestinations::visibleId(0,state)==ExploreDestinations::MARKET);
-    assert(ExploreDestinations::visibleId(1,state)==0);
-    assert(ExploreDestinations::unlocked(ExploreDestinations::MARKET,state));
+    const uint8_t offset=BuildConfig::DEBUG_FEATURES?1:0;
+    assert(ExploreDestinations::COUNT==Game::EXPLORE_AREA_COUNT+offset);
+    assert(ExploreDestinations::visible(ExploreDestinations::MARKET,state)==BuildConfig::DEBUG_FEATURES);
+    assert(ExploreDestinations::unlocked(ExploreDestinations::MARKET,state)==BuildConfig::DEBUG_FEATURES);
+    if(offset)assert(ExploreDestinations::visibleId(0,state)==ExploreDestinations::MARKET);
+    for(uint8_t progress=0;progress<Game::EXPLORE_AREA_COUNT;++progress) {
+        if(progress)state.explorePoolRerollCounts[progress-1]=1;
+        const auto areas=ExploreItemProgression::visibleAreaCount(state);
+        assert(ExploreDestinations::visibleCount(state)==areas+offset);
+        for(uint8_t area=0;area<areas;++area) {
+            assert(ExploreDestinations::id(area+offset)==area);
+            assert(ExploreDestinations::visibleId(area+offset,state)==area);
+            assert(ExploreDestinations::visibleIndex(area,state)==area+offset);
+        }
+        assert(ExploreDestinations::visibleId(areas+offset,state)==ExploreDestinations::INVALID);
+    }
     assert(Game::EXPLORE_AREA_COUNT==6);
     Market::Session sim,copy;
     assert(sim.reset(d,seed,25,133,0));assert(copy.reset(d,seed,25,133,0));

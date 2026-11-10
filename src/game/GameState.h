@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include "core/BuildConfig.h"
 #include "game/Tutorial.h"
 
 namespace Game {
@@ -12,7 +13,7 @@ static constexpr uint8_t TEAM_CAP = 2;
 static constexpr uint8_t STORAGE_CAP = 20;
 static constexpr uint8_t ITEM_STACK_CAP = 99;
 static constexpr uint32_t SAVE_MAGIC = 0x534D4F4E; // SMON
-static constexpr uint16_t SAVE_VERSION = 5;
+static constexpr uint16_t SAVE_VERSION = 8;
 static constexpr uint16_t MIN_SUPPORTED_SAVE_VERSION = 1;
 // debugMotionFlags 位定义：AMOLED debug 菜单「运动」分类下的开关，
 // release 固件忽略这些位但必须原样保留。
@@ -300,7 +301,7 @@ struct PlayerSettings {
     uint8_t speedIndex = 0; // 1x, 2x, 4x, 8x
     uint16_t longPressMs = 500;
     uint16_t doubleClickMs = 300;
-    uint8_t volume = 50;
+    uint8_t volume = BuildConfig::DEFAULT_AUDIO_VOLUME;
     uint8_t reservedAudioSetting = 0; // Former voice-call byte; keep legacy save offsets.
     bool vibrationOn = false;
     uint8_t idleTimeoutIndex = 2; // 0=30s, 1=2min, 2=5min, 3=10min, 4=never
@@ -324,6 +325,48 @@ struct CareRewardRecord {
     bool valid = false;
 };
 static constexpr uint8_t CARE_REWARD_RECORD_CAP = TEAM_CAP + STORAGE_CAP;
+
+// Market move tutor (Gengar stall). One period is one game day; the drawn
+// move and per-monster training quota survive re-entry, restarts and team
+// changes. Training is bound to the stable identity used by care rewards.
+static constexpr uint8_t MARKET_TUTOR_TRAIN_CAP = 8;
+static constexpr uint32_t MARKET_PERIOD_NONE = UINT32_MAX;
+struct MarketTutorTrainRecord {
+    uint32_t ivPacked = 0;
+    uint32_t metAt = 0;
+};
+struct MarketTutorState {
+    uint32_t periodDay = MARKET_PERIOD_NONE;
+    MoveId move = 0;          // 0 = no class this period
+    uint16_t drawnSpecies = 0;
+    uint8_t taught = 0;       // the period's lesson has been sold
+    uint8_t trainCount = 0;
+    uint8_t reserved[2] = {};
+    MarketTutorTrainRecord trained[MARKET_TUTOR_TRAIN_CAP];
+};
+static_assert(sizeof(MarketTutorState) == 76, "market tutor save layout");
+
+// Kecleon stall (奇珍小铺). Three fixed shelf slots per game day; the period
+// shelf and remaining stock survive re-entry and restarts.
+static constexpr uint8_t MARKET_SHELF_SLOTS = 3;
+struct MarketShopState {
+    uint32_t periodDay = MARKET_PERIOD_NONE;
+    uint8_t items[MARKET_SHELF_SLOTS] = {255, 255, 255}; // ItemId, 255 = empty
+    uint8_t stock[MARKET_SHELF_SLOTS] = {};
+    uint8_t reserved[2] = {};
+};
+static_assert(sizeof(MarketShopState) == 12, "market shop save layout");
+
+// Chansey stall (暖心小屋). Paid services used this game day and the monsters
+// served, bound to the care-reward identity so team changes never reset them.
+static constexpr uint8_t MARKET_CARE_PERIOD_CAP = 2;
+struct MarketCareState {
+    uint32_t periodDay = MARKET_PERIOD_NONE;
+    uint8_t used = 0;
+    uint8_t reserved[3] = {};
+    MarketTutorTrainRecord served[MARKET_CARE_PERIOD_CAP];
+};
+static_assert(sizeof(MarketCareState) == 24, "market care save layout");
 
 struct GameState {
     uint32_t magic = SAVE_MAGIC;
@@ -372,11 +415,23 @@ struct GameState {
     // v5 append-only extension; the preceding 1572 bytes remain frozen.
     uint32_t careRewardDay = UINT32_MAX;
     CareRewardRecord careRewards[CARE_REWARD_RECORD_CAP];
+    // v6 append-only extension: market stall services.
+    MarketTutorState marketTutor;
+    // v7 append-only extension: Kecleon shelf.
+    MarketShopState marketShop;
+    // v8 append-only extension: Chansey stall.
+    MarketCareState marketCare;
 };
 static_assert(offsetof(GameState, careRewardDay) == 1572,
               "v5 care fields must follow the frozen v4 layout");
-static_assert(sizeof(GameState) == 2368,
-              "v5 save size changed; add a schema version and migration");
+static_assert(offsetof(GameState, marketTutor) == 2368,
+              "v6 market fields must follow the frozen v5 layout");
+static_assert(offsetof(GameState, marketShop) == 2444,
+              "v7 market shop fields must follow the frozen v6 layout");
+static_assert(offsetof(GameState, marketCare) == 2456,
+              "v8 market care fields must follow the frozen v7 layout");
+static_assert(sizeof(GameState) == 2480,
+              "v8 save size changed; add a schema version and migration");
 static_assert(offsetof(GameState, room) == 1452,
               "BagState must not shift the v1 room/save layout");
 static_assert(offsetof(GameState, tutorialFlags) == 1559,

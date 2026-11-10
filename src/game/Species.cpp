@@ -11,6 +11,21 @@ constexpr uint16_t EV(uint8_t hp, uint8_t atk, uint8_t def, uint8_t spa, uint8_t
 }
 
 // Base Exp values follow Pokemon Essentials' Gen 6 PBS data.
+#if STICKMON_EXTERNAL_CONTENT
+inline const ContentData::Table<Species,255,false> SPECIES{1};
+inline const ContentData::Table<MoveEffectSpec,4096,false> OFFICIAL_MOVE_EFFECTS{2};
+inline const ContentData::Table<MoveInfo,2048,false> OFFICIAL_MOVES{3};
+inline const ContentData::Table<LearnsetEntry,16384,false> OFFICIAL_LEARNSET_ENTRIES{4};
+inline const ContentData::Table<SpeciesLearnset,1024,false> OFFICIAL_LEARNSETS{5};
+#define OFFICIAL_MOVE_COUNT (OFFICIAL_MOVES.size())
+#define OFFICIAL_MOVE_EFFECT_COUNT (OFFICIAL_MOVE_EFFECTS.size())
+#define OFFICIAL_LEARNSET_COUNT (OFFICIAL_LEARNSETS.size())
+#define OFFICIAL_LEARNSET_ENTRY_COUNT (OFFICIAL_LEARNSET_ENTRIES.size())
+inline const ContentData::Table<Game::MoveId,16384,false> TUTOR_MOVE_ENTRIES{54};
+inline const ContentData::Table<SpeciesTutorMoves,1024,false> TUTOR_MOVE_SETS{55};
+#define TUTOR_MOVE_SET_COUNT (TUTOR_MOVE_SETS.size())
+#define TUTOR_MOVE_ENTRY_COUNT (TUTOR_MOVE_ENTRIES.size())
+#else
 const Species SPECIES[] = {
     {1, Ui::SpeciesName::BULBASAUR, TypeId::GRASS, TypeId::POISON, {45, 49, 49, 65, 65, 45}, GrowthRate::PARABOLIC, EV(0, 0, 0, 1, 0, 0), 2, EvolutionMethod::LEVEL, 16, 64, 45},
     {2, Ui::SpeciesName::IVYSAUR, TypeId::GRASS, TypeId::POISON, {60, 62, 63, 80, 80, 60}, GrowthRate::PARABOLIC, EV(0, 0, 0, 1, 1, 0), 3, EvolutionMethod::LEVEL, 32, 142, 45},
@@ -79,6 +94,9 @@ const Species SPECIES[] = {
 };
 
 #include "game/OfficialMoveData.inc"
+#include "game/MoveTutorData.inc"
+
+#endif
 
 const char* const NATURE_NAMES[Game::NATURE_COUNT] = {
     Ui::NatureName::HARDY,
@@ -134,7 +152,11 @@ const Species* speciesTable() {
 }
 
 uint8_t speciesCount() {
+    #if STICKMON_EXTERNAL_CONTENT
+    return uint8_t(SPECIES.size());
+#else
     return sizeof(SPECIES) / sizeof(SPECIES[0]);
+#endif
 }
 
 const Species* findSpecies(uint16_t speciesId) {
@@ -145,6 +167,11 @@ const Species* findSpecies(uint16_t speciesId) {
 }
 
 AbilityId abilityForSpecies(const Species& species) {
+#if STICKMON_EXTERNAL_CONTENT
+    static const ContentData::Table<SpeciesAbility,1024,false> abilities{9};
+    for(const auto& entry:abilities) if(entry.speciesId==species.id) return entry.ability;
+    return AbilityId::NONE;
+#else
     switch (species.id) {
     case 1: case 2: case 3: return AbilityId::OVERGROW;
     case 4: case 5: case 6: return AbilityId::BLAZE;
@@ -173,6 +200,7 @@ AbilityId abilityForSpecies(const Species& species) {
         return AbilityId::SYNCHRONIZE;
     default: return AbilityId::NONE;
     }
+#endif
 }
 
 const char* abilityName(AbilityId ability) {
@@ -377,9 +405,60 @@ bool canRetainSpecialMoveFromLine(const Species& species, Game::MoveId moveId,
 }
 }
 
-bool canRetainSpecialMove(const Species& species, Game::MoveId moveId, uint8_t level) {
+bool canRetainLevelMove(const Species& species, Game::MoveId moveId, uint8_t level) {
     return moveId != 0 && isMoveBattleSupported(moveId) &&
            canRetainSpecialMoveFromLine(species, moveId, level, 0);
+}
+
+namespace {
+const SpeciesTutorMoves* findTutorSet(uint16_t speciesId) {
+    size_t low = 0, high = TUTOR_MOVE_SET_COUNT;
+    while (low < high) {
+        const size_t mid = low + (high - low) / 2;
+        if (TUTOR_MOVE_SETS[mid].speciesId < speciesId) low = mid + 1;
+        else high = mid;
+    }
+    return low < TUTOR_MOVE_SET_COUNT && TUTOR_MOVE_SETS[low].speciesId == speciesId
+        ? &TUTOR_MOVE_SETS[low] : nullptr;
+}
+
+bool tutorLineContains(const Species& species, Game::MoveId moveId, uint8_t depth) {
+    if (canLearnByTutor(species, moveId)) return true;
+    if (depth >= speciesCount()) return false;
+    for (uint8_t index = 0; index < speciesCount(); ++index) {
+        const Species& candidate = speciesTable()[index];
+        if (candidate.id != species.id && isDirectEvolutionPredecessor(candidate, species) &&
+            tutorLineContains(candidate, moveId, depth + 1)) return true;
+    }
+    return false;
+}
+}
+
+uint16_t tutorMoveCountForSpecies(const Species& species) {
+    const SpeciesTutorMoves* set = findTutorSet(species.id);
+    return set ? set->count : 0;
+}
+
+Game::MoveId tutorMoveForSpecies(const Species& species, uint16_t index) {
+    const SpeciesTutorMoves* set = findTutorSet(species.id);
+    if (!set || index >= set->count) return 0;
+    const size_t absolute = static_cast<size_t>(set->offset) + index;
+    return absolute < TUTOR_MOVE_ENTRY_COUNT ? TUTOR_MOVE_ENTRIES[absolute] : 0;
+}
+
+bool canLearnByTutor(const Species& species, Game::MoveId moveId) {
+    if (moveId == 0 || isBasicFirstMoveForSpecies(species, moveId) ||
+        !isMoveBattleSupported(moveId)) return false;
+    const uint16_t count = tutorMoveCountForSpecies(species);
+    for (uint16_t index = 0; index < count; ++index)
+        if (tutorMoveForSpecies(species, index) == moveId) return true;
+    return false;
+}
+
+bool canRetainSpecialMove(const Species& species, Game::MoveId moveId, uint8_t level) {
+    return canRetainLevelMove(species, moveId, level) ||
+           (moveId != 0 && !isBasicFirstMoveForSpecies(species, moveId) &&
+            tutorLineContains(species, moveId, 0));
 }
 
 uint8_t collectRecallableMoves(const Species& species,
@@ -397,7 +476,7 @@ uint8_t collectRecallableMoves(const Species& species,
             const LearnsetEntry* entry =
                 learnsetEntryForSpecies(sourceSpecies, entryIndex);
             if (!entry ||
-                !canRetainSpecialMove(species, entry->moveId, monster.level) ||
+                !canRetainLevelMove(species, entry->moveId, monster.level) ||
                 entry->moveId == monster.move1Id ||
                 entry->moveId == monster.move2Id ||
                 entry->moveId == monster.move3Id) {

@@ -32,6 +32,19 @@ struct AmoledAppTestAccess {
         assert(app.homeMainActor.active&&app.homeCompanionActor.active);
         for(int i=0;i<6;++i){state.explorePoolRerollCounts[i]=i+1;state.normalBossMissCount[i]=i+2;}
         app.sceneFlow.enter(AppSceneFlow::Scene::EXPLORE_AREAS);
+        if(!BuildConfig::DEBUG_FEATURES) {
+            assert(ExploreDestinations::visibleCount(state)==6);
+            app.selectedExploreDestination_=0;app.loadExplorePreview(0);
+            assert(app.selectedExploreListIndex()==0);
+            const auto before=state;
+            assert(!app.queueExploreDeparture(ExploreDestinations::MARKET,false));
+            assert(!app.startMarket(0)&&!app.market_&&!app.pendingExpedition);
+            assert(std::memcmp(&before,&state,sizeof(state))==0);
+            app.render(PixelRenderer::canvas());capture(output,"release-explore-selection");
+            assert(app.queueExploreDeparture(0,false));
+            std::puts("market-amoled-release: hidden; direct entry blocked; normal exploration available");
+            return;
+        }
         app.selectedExploreDestination_=ExploreDestinations::MARKET;
         app.loadExplorePreview(0);
         assert(app.selectedExploreListIndex()==0);
@@ -301,5 +314,6 @@ int main(int argc,char** argv) {
     std::vector<uint16_t> pixels(368*448);auto& c=PixelRenderer::canvas();c.attach({pixels.data(),368,448,false});
     c.setCoordinateScale(1);c.setLayoutScale(1);c.setAssetScale(1);c.setNativeText(true);
     AmoledV1::AmoledApp app;app.begin(0);AmoledV1::AmoledAppTestAccess::run(app,argc==3?argv[2]:nullptr);
-    std::puts("market-amoled: eight-way joystick lock chat walkout full-screen fade black room-return progress OK");
+    if(BuildConfig::DEBUG_FEATURES)
+        std::puts("market-amoled: eight-way joystick lock chat walkout full-screen fade black room-return progress OK");
 }

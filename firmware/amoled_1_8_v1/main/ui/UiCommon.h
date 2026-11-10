@@ -70,6 +70,8 @@ void drawPageHeader(Canvas565& canvas, const char* title,
                     bool backButton = true);
 void drawPageHeaderCenteredText(Canvas565& canvas, const char* value,
                                 uint16_t color);
+void drawCoins(Canvas565& canvas, uint32_t value, int anchorX, int y,
+               bool centered = false, bool backdrop = false);
 void drawToast(Canvas565& canvas, const char* value);
 
 }  // namespace AmoledV1::UiCommon

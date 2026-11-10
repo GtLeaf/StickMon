@@ -13,11 +13,14 @@ from test_explore_ui_parity import compile_and_run
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output',type=Path,default=ROOT/'.stick-local/artifacts/market-controls-20261102/scenes')
-    output=parser.parse_args().output.resolve()
+    parser.add_argument('--profile',choices=('release','debug'),default='debug')
+    args=parser.parse_args()
+    debug=args.profile=='debug'
+    output=args.output.resolve()
     output.mkdir(parents=True,exist_ok=True)
-    result,_=compile_and_run('sticks3',output/'stick',host=ROOT/'tools/market_scene_host.cpp',sanitize=True)
+    result,_=compile_and_run('sticks3',output/'stick',host=ROOT/'tools/market_scene_host.cpp',sanitize=True,debug=debug)
     print(result.strip())
-    amoled=build_amoled_host(output/'market-amoled',[ROOT/'tools/market_amoled_host.cpp'])
+    amoled=build_amoled_host(output/'market-amoled',[ROOT/'tools/market_amoled_host.cpp'],debug=debug)
     (output/'amoled').mkdir(exist_ok=True)
     subprocess.run([str(amoled),str(ROOT/'data'),str(output/'amoled')],check=True)
     # Select the compact family source list, then apply the SDGOODS round
@@ -32,7 +35,7 @@ def main():
            '-DSTICKMON_DISPLAY_WIDTH=360','-DSTICKMON_DISPLAY_HEIGHT=360',
            '-DSTICKMON_UI_HEADER_INSET_X=60','-DSTICKMON_UI_HEADER_TOP=32',
            '-DSTICKMON_ROOM_PIXEL_SCALE=1','-DSTICKMON_DEDICATED_POWER_BUTTON=1',
-           '-DSTICKMON_ENABLE_DEBUG_FEATURES=0','-DSTICKMON_ENABLE_TRACE_LOGS=0','-DSTICKMON_HAS_CLAW=0']
+           f'-DSTICKMON_ENABLE_DEBUG_FEATURES={int(debug)}','-DSTICKMON_ENABLE_TRACE_LOGS=0','-DSTICKMON_HAS_CLAW=0']
     obj=output/'tinflate.o'
     subprocess.run(['cc','-O1','-fsanitize=address,undefined','-c',str(ROOT/'src/third_party/uzlib/tinflate.c'),'-o',str(obj)],check=True)
     binary=output/'market-round'

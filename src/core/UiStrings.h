@@ -11,6 +11,195 @@ static constexpr const char* WALK = "前往";
 static constexpr const char* CHAT = "聊天";
 }
 
+// Kecleon stall (奇珍小铺).
+namespace MarketShopText {
+static constexpr const char* TITLE = "奇珍小铺";
+static constexpr const char* GREET = "变隐龙：欢迎！本期的好货都在这里啦。";
+static constexpr const char* GREET_SOLD_OUT = "变隐龙：本期好货已经卖完啦。";
+static constexpr const char* LEFT = "本期剩余%u";
+static constexpr const char* SOLD_OUT = "本期售罄";
+static constexpr const char* LEAVE = "离开摊位";
+static constexpr const char* BACK = "返回";
+static constexpr const char* BUY = "购买%u";
+static constexpr const char* UNAVAILABLE = "不可购买";
+static constexpr const char* OWNED = "持有 %u -> %u";
+static constexpr const char* COINS = "金币 %lu -> %lu";
+static constexpr const char* NO_COINS = "还差%lu金币";
+static constexpr const char* BAG_FULL = "持有数量已满";
+static constexpr const char* WHY_SOLD = "本期已售罄";
+static constexpr const char* DAILY_LIMIT = "今日已购买";
+static constexpr const char* STALE = "本期已结束，请重新打开";
+static constexpr const char* LOCKED = "暂时不能购买";
+static constexpr const char* SAVE_FAILED = "购买未完成，请重试";
+static constexpr const char* GOT = "获得%s×1";
+static constexpr const char* GOT_LINE2 = "这件好货归你啦！";
+static constexpr const char* CONTINUE = "继续选购";
+}
+
+// Chansey stall (暖心小屋). ASCII separators keep the 16/32px glyph grid.
+namespace MarketCareText {
+static constexpr const char* TITLE = "暖心小屋";
+static constexpr char SPEAKER[] = "吉利蛋：";
+static constexpr const char* GREET = "欢迎光临！想照顾哪位伙伴呢？";
+static constexpr const char* GREET_FULL = "本期预约满了，评估还是免费的哦。";
+static constexpr const char* MENU_MASSAGE = "亲密按摩";
+static constexpr const char* MENU_TEA = "伙伴茶会";
+static constexpr const char* MENU_EVAL = "关系评估";
+static constexpr const char* QUOTA = "本期可预约 %u/%u";
+static constexpr const char* QUOTA_EMPTY = "本期预约已满，明天再来吧";
+static constexpr const char* NOBODY_MASSAGE = "现在没有伙伴需要按摩";
+static constexpr const char* NOBODY_TEA = "现在没有伙伴可以喝茶";
+static constexpr const char* MASSAGE_LIST = "亲密按摩 / 选择伙伴";
+static constexpr const char* TEA_LIST = "伙伴茶会 / 选择伙伴";
+static constexpr const char* EVAL_LIST = "关系评估 / 选择伙伴";
+static constexpr const char* AFFECTION_CHANGE = "亲密 %u -> %u";
+static constexpr const char* MOOD_CHANGE = "心情 %u -> %u";
+static constexpr const char* BOND_CHANGE = "羁绊 %d -> %d";
+static constexpr const char* LEVEL_CHANGE = "%s -> %s";
+static constexpr const char* LEVEL_KEEP = "等级 %s";
+static constexpr const char* BOND_SUB = "%s %d";
+static constexpr const char* EVAL_SUB = "亲密 %u / %s %d";
+static constexpr const char* IN_TEAM = "队伍中";
+static constexpr const char* WHY_FULL_AFFECTION = "亲密已满";
+static constexpr const char* WHY_FULL_BOND = "羁绊已满";
+static constexpr const char* WHY_FAINTED = "濒死";
+static constexpr const char* WHY_USED = "本期已服务";
+static constexpr const char* WHY_FIRST = "先邀请它吧";
+static constexpr const char* WHY_VISITOR = "访客";
+static constexpr const char* WHY_QUOTA = "本期预约已满";
+static constexpr const char* WHY_STALE = "本期已结束，请重新打开";
+static constexpr const char* NO_COINS = "还差%lu金币";
+static constexpr const char* WHY_FIRST_LONG = "第一次邀请一定成功，先邀请它吧";
+static constexpr const char* MASSAGE_TITLE = "%s的按摩";
+static constexpr const char* TEA_TITLE = "和%s喝茶";
+static constexpr const char* INVITE_CHANCE = "邀请成功率 %u%% -> %u%%";
+static constexpr const char* INVITE_LOCKED = "今天已拒绝邀请，明天再试";
+static constexpr const char* EVOLVE_HINT = "亲密达到进化条件，升级时可能进化";
+static constexpr const char* COST_LINE = "金币 %lu -> %lu / 次数 %u -> %u";
+static constexpr const char* MASSAGE_BUTTON = "按摩%u";
+static constexpr const char* TEA_BUTTON = "茶会%u";
+static constexpr const char* UNAVAILABLE = "不可预约";
+static constexpr const char* BACK = "返回";
+static constexpr const char* SAVE_FAILED = "预约未完成，请重试";
+static constexpr const char* MASSAGING = "按摩中…";
+static constexpr const char* TEA_TIME = "茶会中…";
+static constexpr const char* AFFECTION_GAIN = "亲密+%u";
+static constexpr const char* BOND_GAIN = "羁绊+%d";
+static constexpr const char* RELAXED = "%s放松下来了";
+static constexpr const char* EVOLVE_SHORT = "下次升级时可能进化";
+static constexpr const char* TEA_LINES[] = {
+    "它还有点拘谨……",
+    "它慢慢放松了",
+    "你们聊了不少",
+    "你们聊得很开心",
+    "它越来越信任你了",
+    "你们是最好的朋友",
+};
+static constexpr const char* AFFECTION = "亲密 %u/255";
+static constexpr const char* BOND = "羁绊 %s %d";
+static constexpr const char* INVITE_NOW = "邀请成功率 %u%%";
+static constexpr const char* ADVICE[] = {
+    "它累坏了，先回家好好休息吧。",
+    "第一次邀请一定会成功，带它一起走吧。",
+    "还有点生疏，一起喝杯茶吧。",
+    "多摸摸头、按摩放松，它会更亲近你。",
+    "它已经愿意靠近你了，下次带它一起探索吧。",
+    "你们已经是挚友啦，继续保持哦。",
+};
+static constexpr const char* BOOK_MASSAGE = "预约按摩";
+static constexpr const char* BOOK_TEA = "预约茶会";
+}
+
+// Gengar stall (秘技小屋). ASCII separators keep the 16/32px glyph grid.
+namespace MarketTutorText {
+static constexpr const char* TITLE = "秘技小屋";
+static constexpr char SPEAKER[] = "耿鬼：";
+static constexpr const char* GREET_CLASS = "嘿嘿……本期秘技是%s哦。";
+static constexpr const char* GREET_TAUGHT = "课教完啦，特训还开着哦。";
+static constexpr const char* GREET_CLOSED = "这期休课，来特训吧。";
+static constexpr const char* MENU_TUTOR = "本期秘技";
+static constexpr const char* MENU_RECALL = "回忆技能";
+static constexpr const char* MENU_TRAIN = "技能特训";
+static constexpr const char* SUB_CAN = "%s / %s可以学";
+static constexpr const char* SUB_NOBODY = "%s / 队伍里没人能学";
+static constexpr const char* SUB_TAUGHT = "%s / 本期已授课";
+static constexpr const char* SUB_CLOSED = "本期休课";
+static constexpr const char* SUB_RECALL = "消耗心之鳞片1枚 / 持有%u";
+static constexpr const char* SUB_NO_SCALE = "没有心之鳞片 / 探索时可能捡到";
+static constexpr const char* SUB_TRAIN = "提高熟练度 / 本期还可%u只";
+static constexpr const char* SUB_TRAIN_DONE = "本期特训已用完";
+static constexpr const char* FROM_PRICE = "100起";
+static constexpr const char* LEAVE = "离开摊位";
+static constexpr const char* BACK = "返回";
+static constexpr const char* HOME = "回到小屋";
+static constexpr const char* PHYSICAL = "物理";
+static constexpr const char* SPECIAL = "特殊";
+static constexpr const char* STATUS = "变化";
+static constexpr const char* POWER = "威力%u";
+static constexpr const char* ACCURACY = "命中%u";
+static constexpr const char* CAN_LEARN = "可学习";
+static constexpr const char* CANNOT_LEARN = "无法学习";
+static constexpr const char* KNOWN = "已学会";
+static constexpr const char* FAINTED = "濒死";
+static constexpr const char* HUNGRY = "饥饿";
+static constexpr const char* NEED_SCALE = "缺少心之鳞片";
+static constexpr const char* WHY_LEARN = "Lv%u / 技能机可学";
+static constexpr const char* WHY_KNOWN = "Lv%u / 已经学会了";
+static constexpr const char* WHY_INCOMPATIBLE = "Lv%u / 学不会这一招";
+static constexpr const char* WHY_FAINTED = "Lv%u / 倒下了，先恢复";
+static constexpr const char* WHY_HUNGRY = "Lv%u / 太饿了，先吃点东西";
+static constexpr const char* WHY_VISITOR = "访客不能学";
+static constexpr const char* FORGET_TITLE = "%s要忘记哪一招？";
+static constexpr const char* BASIC = "基础";
+static constexpr const char* BASIC_LOCKED = "基础招式不可替换";
+static constexpr const char* EMPTY = "空位";
+static constexpr const char* EMPTY_SUB = "直接学会";
+static constexpr const char* PROFICIENCY = "熟练%u";
+static constexpr const char* TEACH_LINE1 = "%s忘记%s，";
+static constexpr const char* TEACH_LINE2 = "学会%s。";
+static constexpr const char* TEACH_EMPTY = "%s学会%s。";
+static constexpr const char* RESET_NOTE = "熟练度 %u -> 0（新招从零练起）";
+static constexpr const char* COINS_CHANGE = "金币 %lu -> %lu";
+static constexpr const char* COIN = "金币";
+static constexpr const char* TEACH_BUTTON = "教授%u";
+static constexpr const char* TEACH_DONE = "%s学会了%s！";
+static constexpr const char* TEACH_DONE2 = "嘿嘿，练熟了更厉害。";
+static constexpr const char* TRAIN_MEMBER_TITLE = "特训 / 选择伙伴";
+static constexpr const char* TRAIN_READY = "Lv%u / 本期可特训";
+static constexpr const char* TRAIN_USED = "Lv%u / 本期已特训";
+static constexpr const char* TRAIN_NOTE = "每只伙伴每期可特训一次，换队不重置。";
+static constexpr const char* TRAIN_MOVE_TITLE = "%s要练哪一招？";
+static constexpr const char* TRAIN_STEP = "熟练 %u -> %u / %u金币";
+static constexpr const char* TRAIN_MAXED = "熟练度已满100";
+static constexpr const char* MAXED = "已满";
+static constexpr const char* TRAIN_BASIC_NOTE = "基础招式不需要特训。";
+static constexpr const char* TRAIN_CONFIRM_TITLE = "特训 %s";
+static constexpr const char* TRAIN_CHANGE = "熟练度 %u -> %u";
+static constexpr const char* TRAIN_CHANCE = "发动率约%u%%->%u%%";
+static constexpr const char* TRAIN_QUOTA = "%s本期特训次数用完";
+static constexpr const char* TRAIN_BUTTON = "特训%u";
+static constexpr const char* TRAIN_DONE = "%s的%s练熟了！";
+static constexpr const char* RECALL_MEMBER_TITLE = "回忆 / 选择伙伴";
+static constexpr const char* RECALL_COUNT = "Lv%u / 可回忆%u招";
+static constexpr const char* RECALL_NONE = "Lv%u / 没有可回忆的招式";
+static constexpr const char* RECALL_LIST_TITLE = "%s / 回忆";
+static constexpr const char* HOLD = "持有%u";
+static constexpr const char* RECALL_CONFIRM_TITLE = "回忆 %s";
+static constexpr const char* RECALL_LINE2 = "想起%s。";
+static constexpr const char* RECALL_EMPTY = "%s想起%s。";
+static constexpr const char* SCALE_CHANGE = "心之鳞片 %u -> %u";
+static constexpr const char* RECALL_BUTTON = "回忆";
+static constexpr const char* RECALL_DONE = "%s想起了%s！";
+static constexpr const char* NO_COINS = "还差%lu金币";
+static constexpr const char* SAVE_FAILED = "保存失败，未完成，请重试";
+static constexpr const char* WHY_PERIOD = "本期已结束，请重新打开";
+static constexpr const char* WHY_TAUGHT = "本期已授课";
+static constexpr const char* WHY_TRAINED = "本期已特训";
+static constexpr const char* WHY_FAINTED_SHORT = "倒下了，先恢复";
+static constexpr const char* WHY_HUNGRY_SHORT = "太饿了，先吃点东西";
+static constexpr const char* WHY_GENERIC = "暂时不能进行";
+}
+
 static constexpr const char* TITLE = "StickMon";
 static constexpr const char* ROOM = "房间";
 static constexpr const char* MENU = "菜单";
@@ -1367,6 +1556,11 @@ static constexpr const char* LEARN_CHOOSE_REPLACEMENT = "选择要遗忘的技�
 static constexpr const char* LEARN_FORGET_FMT = "遗忘%s";
 static constexpr const char* LEARN_GIVE_UP_FMT = "放弃学习%s?";
 static constexpr const char* LEARN_WILL_LEARN_FMT = "将学习%s";
+static constexpr const char* LEARN_NEW_MOVE_TITLE = "新招式";
+static constexpr const char* LEARN_NEW_TAG = "新";
+static constexpr const char* LEARN_ACTION_CONFIRM = "确定";
+static constexpr const char* LEARN_ACTION_REPLACE = "替换";
+static constexpr const char* LEARN_ACTION_GIVE_UP = "放弃学习";
 static constexpr const char* MOVE_REPLACED_TITLE = "招式已替换";
 static constexpr const char* MOVE_FORGOT_FMT = "忘记了%s";
 static constexpr const char* MOVE_LEARNED_FMT = "学会了%s";

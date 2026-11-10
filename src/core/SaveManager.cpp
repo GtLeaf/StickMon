@@ -897,6 +897,34 @@ bool sanitizeState(Game::GameState& state) {
         if (record.pairCount > 3) { record.pairCount = 3; changed = true; }
         if (record.pendingOldLevel >= Game::LEVEL_MAX) { record.pendingOldLevel = 0; changed = true; }
     }
+    auto& tutor = state.marketTutor;
+    if (tutor.trainCount > Game::MARKET_TUTOR_TRAIN_CAP || tutor.taught > 1 ||
+        (tutor.move != 0 && !isMoveBattleSupported(tutor.move)) ||
+        (tutor.periodDay == Game::MARKET_PERIOD_NONE &&
+         (tutor.move || tutor.taught || tutor.trainCount))) {
+        // A damaged record only forfeits the current period; a fresh draw
+        // happens on the next market visit and nothing is refunded twice.
+        tutor = Game::MarketTutorState{};
+        changed = true;
+    }
+    auto& shop = state.marketShop;
+    bool shopValid = shop.periodDay != Game::MARKET_PERIOD_NONE;
+    for (uint8_t i = 0; i < Game::MARKET_SHELF_SLOTS; ++i) {
+        if (shop.stock[i] > 1 || (shop.items[i] != 255 &&
+            shop.items[i] >= static_cast<uint8_t>(Game::ItemId::COUNT))) shopValid = false;
+    }
+    if (!shopValid && (shop.periodDay != Game::MARKET_PERIOD_NONE ||
+                       shop.stock[0] || shop.stock[1] || shop.stock[2])) {
+        shop = Game::MarketShopState{};
+        changed = true;
+    }
+    auto& care = state.marketCare;
+    if (care.used > Game::MARKET_CARE_PERIOD_CAP ||
+        (care.periodDay == Game::MARKET_PERIOD_NONE && care.used)) {
+        // Only the current period's quota is forfeited; nothing is refunded.
+        care = Game::MarketCareState{};
+        changed = true;
+    }
     return changed;
 }
 
@@ -918,7 +946,7 @@ bool SaveManager::load(Game::GameState& state,
     // migration path below chains into saveSnapshot on the 8KB loopTask stack.
     auto* codecHeap = new (std::nothrow) CodecLoadResult;
     if (!codecHeap) {
-        Platform::logLine("[SaveManager] codec snapshot allocation failed");
+        Platform::errorLine("[SaveManager] codec snapshot allocation failed");
         reset(state);
         if (status) *status = LoadStatus::INVALID;
         return false;
@@ -933,12 +961,13 @@ bool SaveManager::load(Game::GameState& state,
         bool migrationPending = false;
         if (migrated) {
             Platform::logf("[SaveManager] migrated state v%u -> v%u\n",
-                           codecHeap->schema == 1 ? 3 : 4,
+                           codecHeap->schema == 1 ? 3 : codecHeap->schema == 2 ? 4 :
+                           codecHeap->schema == 3 ? 5 : codecHeap->schema == 4 ? 6 : 7,
                            Game::SAVE_VERSION);
             if (saveSnapshot(state, viewState)) {
                 Platform::logLine("[SaveManager] migration committed");
             } else {
-                Platform::logLine(
+                Platform::errorLine(
                     "[SaveManager] migration commit failed; legacy blob retained for retry");
                 migrationPending = true;
             }
@@ -949,7 +978,7 @@ bool SaveManager::load(Game::GameState& state,
         return true;
     }
     if (codecHeap->newerVersion) {
-        Platform::logLine(
+        Platform::errorLine(
             "[SaveManager] codec snapshot is newer than this firmware; write protection required");
         reset(state);
         if (status) *status = LoadStatus::NEWER_VERSION;
@@ -961,7 +990,7 @@ bool SaveManager::load(Game::GameState& state,
     size_t len = Platform::blobs().blobSize(NVS_NS, NVS_KEY);
     if (len < sizeof(SaveRecordHeader)) {
         if (len != 0) {
-            Platform::logf("[SaveManager] truncated state size=%u\n",
+            Platform::errorf("[SaveManager] truncated state size=%u\n",
                            static_cast<unsigned>(len));
             if (status) *status = LoadStatus::INVALID;
         }
@@ -971,7 +1000,7 @@ bool SaveManager::load(Game::GameState& state,
 
     auto* raw = new (std::nothrow) uint8_t[len];
     if (!raw) {
-        Platform::logLine("[SaveManager] state load allocation failed");
+        Platform::errorLine("[SaveManager] state load allocation failed");
         if (status) *status = LoadStatus::INVALID;
         reset(state);
         return false;
@@ -979,7 +1008,7 @@ bool SaveManager::load(Game::GameState& state,
     bool readOk = Platform::blobs().readBlob(NVS_NS, NVS_KEY, raw, len);
     size_t read = readOk ? len : 0;
     if (!readOk) {
-        Platform::logf("[SaveManager] state read failed read=%u expected=%u\n",
+        Platform::errorf("[SaveManager] state read failed read=%u expected=%u\n",
                       (unsigned)read,
                       (unsigned)len);
         delete[] raw;
@@ -991,7 +1020,7 @@ bool SaveManager::load(Game::GameState& state,
     SaveRecordHeader header{};
     memcpy(&header, raw, sizeof(header));
     if (header.magic != SAVE_RECORD_MAGIC || header.reserved != 0) {
-        Platform::logf("[SaveManager] invalid state header magic=%08lx version=%u reserved=%u\n",
+        Platform::errorf("[SaveManager] invalid state header magic=%08lx version=%u reserved=%u\n",
                       (unsigned long)header.magic,
                       header.version,
                       header.reserved);
@@ -1002,7 +1031,7 @@ bool SaveManager::load(Game::GameState& state,
     }
 
     if (header.version > SAVE_RECORD_VERSION) {
-        Platform::logf(
+        Platform::errorf(
             "[SaveManager] state v%u is newer than firmware v%u; write protection required\n",
             header.version, Game::SAVE_VERSION);
         delete[] raw;
@@ -1045,10 +1074,10 @@ bool SaveManager::load(Game::GameState& state,
             }
             delete record;
         } else {
-            Platform::logLine("[SaveManager] state load allocation failed");
+            Platform::errorLine("[SaveManager] state load allocation failed");
         }
     } else {
-        Platform::logf(
+        Platform::errorf(
             "[SaveManager] unsupported state version=%u size=%u supported=%u-%u\n",
             header.version, static_cast<unsigned>(len),
             Game::MIN_SUPPORTED_SAVE_VERSION, Game::SAVE_VERSION);
@@ -1056,7 +1085,7 @@ bool SaveManager::load(Game::GameState& state,
     delete[] raw;
 
     if (!loaded) {
-        Platform::logf(
+        Platform::errorf(
             "[SaveManager] invalid state version=%u size=%u; keeping blob and resetting runtime\n",
             header.version, static_cast<unsigned>(len));
         reset(state);
@@ -1068,7 +1097,7 @@ bool SaveManager::load(Game::GameState& state,
                        header.version, Game::SAVE_VERSION);
     }
     if (!viewValid) {
-        Platform::logLine("[SaveManager] invalid main scene view state; reset view");
+        Platform::errorLine("[SaveManager] invalid main scene view state; reset view");
     }
 
     bool changed = sanitizeState(state);
@@ -1081,7 +1110,7 @@ bool SaveManager::load(Game::GameState& state,
             Platform::logLine("[SaveManager] migration committed");
             needsRewrite = false;
         } else {
-            Platform::logLine(
+            Platform::errorLine(
                 "[SaveManager] migration commit failed; legacy blob retained for retry");
         }
     }
@@ -1094,7 +1123,7 @@ bool SaveManager::saveSnapshot(const Game::GameState& state,
                                const MainSceneViewState& viewState) {
     MainSceneViewRecord viewRecord{};
     if (!makeMainSceneViewRecord(viewState, viewRecord)) {
-        Platform::logLine("[SaveManager] refused invalid main scene view state");
+        Platform::errorLine("[SaveManager] refused invalid main scene view state");
         return false;
     }
 
@@ -1105,7 +1134,7 @@ bool SaveManager::saveSnapshot(const Game::GameState& state,
         delete[] encoded;
         delete previous;
         delete copy;
-        Platform::logLine("[SaveManager] snapshot allocation failed");
+        Platform::errorLine("[SaveManager] snapshot allocation failed");
         return false;
     }
     loadLatestCodecSnapshot(*previous);
@@ -1132,7 +1161,7 @@ bool SaveManager::saveSnapshot(const Game::GameState& state,
         delete[] encoded;
         delete previous;
         delete copy;
-        Platform::logLine("[SaveManager] snapshot encode failed");
+        Platform::errorLine("[SaveManager] snapshot encode failed");
         return false;
     }
 
@@ -1146,7 +1175,7 @@ bool SaveManager::saveSnapshot(const Game::GameState& state,
     delete copy;
 
     if (!slotResult || !mirrorResult) {
-        Platform::logLine("[SaveManager] snapshot write failed");
+        Platform::errorLine("[SaveManager] snapshot write failed");
     }
     return slotResult && mirrorResult;
 }
@@ -1161,7 +1190,7 @@ bool SaveManager::loadEncounterHistory(Game::EncounterHistory& history,
         return false;
     }
     if (len != sizeof(EncounterRecord)) {
-        Platform::logf("[SaveManager] invalid encounter history size=%u expected=%u\n",
+        Platform::errorf("[SaveManager] invalid encounter history size=%u expected=%u\n",
                       static_cast<unsigned>(len),
                       static_cast<unsigned>(sizeof(EncounterRecord)));
         return false;
@@ -1176,7 +1205,7 @@ bool SaveManager::loadEncounterHistory(Game::EncounterHistory& history,
         record.magic != ENCOUNTER_RECORD_MAGIC ||
         record.version != ENCOUNTER_RECORD_VERSION ||
         record.checksum != expectedChecksum) {
-        Platform::logLine("[SaveManager] invalid encounter history; reset history");
+        Platform::errorLine("[SaveManager] invalid encounter history; reset history");
         return false;
     }
 
@@ -1197,7 +1226,7 @@ bool SaveManager::saveEncounterHistory(
         NVS_NS, ENCOUNTER_KEY, &record, sizeof(record))
         ? sizeof(record) : 0;
     if (written != sizeof(record)) {
-        Platform::logf(
+        Platform::errorf(
             "[SaveManager] encounter history write failed written=%u expected=%u\n",
             static_cast<unsigned>(written),
             static_cast<unsigned>(sizeof(record)));

@@ -55,6 +55,20 @@ int main(int argc,char** argv) {
     for(int i=0;i<6;++i){state.explorePoolRerollCounts[i]=i+1;state.normalBossMissCount[i]=i+2;}
     engine.switchScene(SceneID::EXPLORE);
     auto& selectionStart=*static_cast<ExploreScene*>(engine.currentScene.get());selectionStart.prepareSurface();
+    if(!BuildConfig::DEBUG_FEATURES) {
+        const auto frame=selectionStart.exploreRouteFrame();
+        assert(frame.visibleAreaCount==6&&!frame.marketPreview);
+        for(uint8_t i=0;i<frame.visibleAreaCount;++i)
+            assert(std::strcmp(frame.areaNames[i],Ui::MarketText::NAME)!=0);
+        const auto before=state;
+        assert(!engine.beginExploreDeparture(ExploreDestinations::MARKET));
+        assert(!selectionStart.beginMarket()&&!selectionStart.market_);
+        assert(std::memcmp(&before,&state,sizeof(state))==0);
+        capture(argv[2],"release-explore-selection",Ui::MarketWalkUi::viewport());
+        assert(engine.beginExploreDeparture(0));
+        std::puts("market-release: hidden; direct entry blocked; normal exploration available");
+        return 0;
+    }
     unsigned speciesCount=0;
     for(uint16_t sid=1;sid<=386;++sid) {
         PokemonSprites::WalkingAnimation animation{};

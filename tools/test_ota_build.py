@@ -33,8 +33,8 @@ class OtaBuildTest(unittest.TestCase):
             self.assertEqual(lite['resourceSha256'], claw['resourceSha256'])
             self.assertNotEqual(lite['flavor'], claw['flavor'])
             self.assertFalse(lite['debug'])
-            self.assertEqual(lite['saveSchema'], 3)
-            self.assertEqual(lite['saveVersion'], 5)
+            self.assertEqual(lite['saveSchema'], 5)
+            self.assertEqual(lite['saveVersion'], 7)
             self.assertEqual(lite['minSaveSchema'], 1)
             self.assertEqual(lite['minSaveVersion'], 1)
             with self.assertRaises(ValueError):

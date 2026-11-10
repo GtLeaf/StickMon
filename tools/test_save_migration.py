@@ -20,6 +20,8 @@ class SaveMigrationTests(unittest.TestCase):
                     "-Wall",
                     "-Wextra",
                     "-Werror",
+                    # This host explicitly verifies migration diagnostics.
+                    "-DSTICKMON_ENABLE_ROOM_DIAGNOSTICS=1",
                     "-Isrc",
                     "tools/save_migration_host.cpp",
                     "src/core/SaveCodec.cpp",

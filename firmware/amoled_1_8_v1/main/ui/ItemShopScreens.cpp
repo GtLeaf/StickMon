@@ -494,12 +494,9 @@ void renderShopScreen(Canvas565& canvas, const ShopViewModel& model,
         int bottom = std::min<int>(rowEnd, MENU_CONTENT_TOP);
         pageClip.setRect((0), (rowBegin), (AmoledUi::WIDTH), (bottom - rowBegin));
         canvas.fillRect((0), (0), (AmoledUi::WIDTH), (MENU_CONTENT_TOP), UiMetrics::PAGE_BACKGROUND);
-        char coins[16];
-        std::snprintf(coins, sizeof(coins), "C%lu",
-                      static_cast<unsigned long>(model.coins));
         UiCommon::drawPageHeader(canvas, Ui::SHOP, nullptr, !detailOpen);
-        UiCommon::drawPageHeaderCenteredText(canvas, coins,
-                                             rgb(248, 210, 105));
+        UiCommon::drawCoins(canvas, model.coins, AmoledUi::WIDTH / 2,
+                            (UiMetrics::PAGE_HEADER_HEIGHT - FontResource::LARGE_GLYPH_H) / 2, true);
         pageClip.reset();
     }
 

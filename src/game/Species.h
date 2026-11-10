@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include "game/ContentData.h"
 #include "game/GameState.h"
 
 enum class TypeId : uint8_t {
@@ -209,6 +210,17 @@ struct SpeciesLearnset {
     uint8_t count;
     Game::MoveId basicMoveId;
 };
+struct SpeciesAbility { uint16_t speciesId; AbilityId ability; };
+template<class V> inline void contentFields(V& v, SpeciesAbility& x) { v(x.speciesId,x.ability); }
+struct SpeciesTutorMoves { uint16_t speciesId; uint16_t offset; uint8_t count; };
+template<class V> inline void contentFields(V& v, SpeciesTutorMoves& x) { v(x.speciesId,x.offset,x.count); }
+
+template<class V> inline void contentFields(V& v, BaseStats& x) { v(x.hp,x.atk,x.def,x.spa,x.spd,x.spe); }
+template<class V> inline void contentFields(V& v, Species& x) { v(x.id,x.name,x.type1,x.type2,x.stats,x.growthRate,x.evYieldPacked,x.evolveTo,x.evolveMethod,x.evolveLevel,x.baseExp,x.catchRate); }
+template<class V> inline void contentFields(V& v, MoveInfo& x) { v(x.id,x.name,x.description,x.power,x.type,x.damageClass,x.accuracy,x.pp,x.priority,x.battleSupported,x.effectOffset,x.effectCount,x.minHits,x.maxHits,x.criticalStage,x.flags); }
+template<class V> inline void contentFields(V& v, MoveEffectSpec& x) { v(x.kind,x.target,x.chance,x.value,x.aux,x.minTurns,x.maxTurns); }
+template<class V> inline void contentFields(V& v, LearnsetEntry& x) { v(x.level,x.moveId); }
+template<class V> inline void contentFields(V& v, SpeciesLearnset& x) { v(x.speciesId,x.offset,x.count,x.basicMoveId); }
 
 const Species& starterSpecies();
 const Species* speciesTable();
@@ -229,6 +241,14 @@ const LearnsetEntry* learnsetEntryForSpecies(const Species& species, uint16_t in
 uint16_t learnsetEntryCountForSpecies(const Species& species);
 bool isMoveBattleSupported(Game::MoveId moveId);
 bool canLearnAsSpecialMove(const Species& species, Game::MoveId moveId);
+// TM/HM/tutor compatibility from Essentials Gen 6 PBS (MoveTutorData.inc).
+bool canLearnByTutor(const Species& species, Game::MoveId moveId);
+uint16_t tutorMoveCountForSpecies(const Species& species);
+Game::MoveId tutorMoveForSpecies(const Species& species, uint16_t index);
+// Level-up retention only (this line or its predecessors); drives recall.
+bool canRetainLevelMove(const Species& species, Game::MoveId moveId, uint8_t level);
+// Any legal special move: level-up retention or tutor compatibility of the
+// species line. Save sanitizing and evolution keep tutor-taught moves.
 bool canRetainSpecialMove(const Species& species, Game::MoveId moveId, uint8_t level);
 uint8_t collectRecallableMoves(const Species& species,
                                const Game::MonsterRuntime& monster,

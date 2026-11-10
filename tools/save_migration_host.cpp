@@ -466,7 +466,7 @@ void verifyV4CareMigration() {
         Game::GameState migrated;
         MainSceneViewState view;
         assert(manager.load(migrated, view));
-        assert(migrated.version == 5);
+        assert(migrated.version == Game::SAVE_VERSION);
         assert(migrated.coins == original.coins && migrated.bag.soap[2] == 8);
         assert(migrated.team[0].petCountToday == 3);
         assert(migrated.normalBossMissCount[2] == 2);

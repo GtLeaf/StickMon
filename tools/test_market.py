@@ -79,12 +79,14 @@ class MarketTests(unittest.TestCase):
 
     def test_long_runs_have_no_collisions_and_can_leave(self):
         with tempfile.TemporaryDirectory() as temp:
-            exe=Path(temp)/'host'
-            subprocess.run(['c++','-std=c++17','-O1','-Wall','-Wextra','-Werror','-fsanitize=address,undefined',
-                            '-I',str(ROOT/'src'),str(ROOT/'tools/market_host.cpp'),'-o',str(exe)],check=True)
-            for seed in (1,2,3,4,5,17,38,99,1024,65535):
-                result=subprocess.run([str(exe),str(seed)],text=True,capture_output=True)
-                self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            for debug in (0,1):
+                exe=Path(temp)/f'host-{debug}'
+                subprocess.run(['c++','-std=c++17','-O1','-Wall','-Wextra','-Werror','-fsanitize=address,undefined',
+                                f'-DSTICKMON_ENABLE_DEBUG_FEATURES={debug}',
+                                '-I',str(ROOT/'src'),str(ROOT/'tools/market_host.cpp'),'-o',str(exe)],check=True)
+                for seed in (1,2,3,4,5,17,38,99,1024,65535):
+                    result=subprocess.run([str(exe),str(seed)],text=True,capture_output=True)
+                    self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
     def test_manual_walk_collision_chat_and_departure(self):
         with tempfile.TemporaryDirectory() as temp:

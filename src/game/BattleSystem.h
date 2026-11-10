@@ -151,6 +151,8 @@ inline ExperienceAwards experienceAwards(uint16_t reward, bool hasHealthyReserve
 
 uint16_t typeEffectiveness(TypeId attack, TypeId defend1, TypeId defend2);
 uint8_t specialTriggerChance(const Game::MonsterRuntime& attacker, uint8_t specialSlot);
+// Base trigger chance for a proficiency value, without affection/HP bonuses.
+uint8_t proficiencyTriggerChance(uint8_t proficiency);
 bool rollSpecialMove(const Game::MonsterRuntime& attacker);
 uint8_t rollSpecialMoveSlot(const Game::MonsterRuntime& attacker);
 BattleMoveWeights aiMoveWeights(
