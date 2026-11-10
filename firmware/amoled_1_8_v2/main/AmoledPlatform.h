@@ -43,6 +43,9 @@ public:
     void present() override;
     void setBrightness(uint8_t value) override;
     uint8_t brightness() const override;
+    // Panel commands must run on the core that owns the LCD SPI bus.
+    using BrightnessWriter = esp_err_t (*)(int percent);
+    void setBrightnessWriter(BrightnessWriter writer) { brightnessWriter_ = writer; }
     void sleep() override;
 
     void setVolume(uint8_t percent) override;
@@ -142,6 +145,7 @@ private:
     esp_codec_dev_handle_t speakerCodec_ = nullptr;
     esp_codec_dev_handle_t microphoneCodec_ = nullptr;
     uint8_t brightness_ = 72;
+    BrightnessWriter brightnessWriter_ = nullptr;
     uint8_t volume_ = 50;
     uint8_t channelVolumes_[Platform::IAudioDevice::CHANNEL_COUNT] = {
         100, 100, 100};

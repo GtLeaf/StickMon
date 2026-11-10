@@ -61,6 +61,8 @@ struct Transfer {
 std::deque<Transfer> pending;
 std::vector<uint16_t> panel(LOGICAL_WIDTH * LOGICAL_HEIGHT);
 unsigned calls = 0;
+// The V2 panel task runs these calls on its own core; inline is equivalent here.
+struct { esp_err_t run(esp_err_t (*call)(void*), void* context) { return call(context); } } panelTask;
 int xSemaphoreTake(SemaphoreHandle_t, int) {
     assert(!pending.empty());
     const auto& t = pending.front();

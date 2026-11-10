@@ -329,7 +329,8 @@ void AmoledPlatform::present() {}
 void AmoledPlatform::setBrightness(uint8_t value) {
     brightness_ = value;
     if (initialized_) {
-        bsp_display_brightness_set(brightnessPercent(value));
+        if (brightnessWriter_) brightnessWriter_(brightnessPercent(value));
+        else bsp_display_brightness_set(brightnessPercent(value));
     }
 }
 uint8_t AmoledPlatform::brightness() const { return brightness_; }

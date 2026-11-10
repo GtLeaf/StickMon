@@ -12,38 +12,64 @@
 struct Queue {
     std::mutex mutex;
     std::condition_variable changed;
-    std::vector<unsigned char> bytes;
-    bool full = false;
-    explicit Queue(size_t size): bytes(size) {}
+    std::deque<std::vector<unsigned char>> items;
+    size_t size, capacity;
+    Queue(unsigned count, size_t itemSize): size(itemSize), capacity(count) {}
 };
 QueueHandle_t xQueueCreate(unsigned count, size_t size) {
-    assert(count == 1);
-    return new Queue(size);
+    assert(count >= 1);
+    return new Queue(count, size);
 }
 void vQueueDelete(QueueHandle_t handle) { delete static_cast<Queue*>(handle); }
 int xQueueSend(QueueHandle_t handle, const void* data, unsigned wait) {
     auto& q = *static_cast<Queue*>(handle);
     std::unique_lock<std::mutex> lock(q.mutex);
-    if (!wait && q.full) return 0;
-    q.changed.wait(lock, [&] { return !q.full; });
-    std::memcpy(q.bytes.data(), data, q.bytes.size());
-    q.full = true;
+    if (!wait && q.items.size() == q.capacity) return 0;
+    q.changed.wait(lock, [&] { return q.items.size() < q.capacity; });
+    const auto* bytes = static_cast<const unsigned char*>(data);
+    q.items.emplace_back(bytes, bytes + q.size);
     q.changed.notify_all();
     return pdTRUE;
 }
 int xQueueReceive(QueueHandle_t handle, void* data, unsigned wait) {
     auto& q = *static_cast<Queue*>(handle);
     std::unique_lock<std::mutex> lock(q.mutex);
-    if (!wait && !q.full) return 0;
-    q.changed.wait(lock, [&] { return q.full; });
-    std::memcpy(data, q.bytes.data(), q.bytes.size());
-    q.full = false;
+    if (!wait && q.items.empty()) return 0;
+    q.changed.wait(lock, [&] { return !q.items.empty(); });
+    std::memcpy(data, q.items.front().data(), q.size);
+    q.items.pop_front();
     q.changed.notify_all();
     return pdTRUE;
 }
+// Counting semaphore for the pipeline's call handshake and call lock. The
+// display completion handle is a Display; `kind` tells them apart.
+struct Semaphore {
+    int kind = 1;
+    std::mutex mutex;
+    std::condition_variable changed;
+    int count = 0;
+};
+SemaphoreHandle_t xSemaphoreCreateBinary() { return new Semaphore; }
+SemaphoreHandle_t xSemaphoreCreateMutex() { auto* s = new Semaphore; s->count = 1; return s; }
+void vSemaphoreDelete(SemaphoreHandle_t handle) { delete static_cast<Semaphore*>(handle); }
+int xSemaphoreGive(SemaphoreHandle_t handle) {
+    auto& s = *static_cast<Semaphore*>(handle);
+    std::lock_guard<std::mutex> lock(s.mutex);
+    ++s.count;
+    s.changed.notify_all();
+    return pdTRUE;
+}
+thread_local TaskHandle_t currentTask = nullptr;
+TaskHandle_t xTaskGetCurrentTaskHandle() { return currentTask; }
+struct TaskStart { void (*run)(void*); void* context; TaskHandle_t handle; };
 int xTaskCreatePinnedToCore(void (*run)(void*), const char*, unsigned,
-                           void* context, unsigned, void*, int) {
-    std::thread(run, context).detach();
+                           void* context, unsigned, TaskHandle_t* handle, int) {
+    auto* start = new TaskStart{run, context, new int(0)};
+    if (handle) *handle = start->handle;
+    std::thread([start] {
+        currentTask = start->handle;
+        start->run(start->context);
+    }).detach();
     return pdPASS;
 }
 int64_t esp_timer_get_time() {
@@ -57,6 +83,7 @@ struct Transfer {
     std::vector<uint16_t> snapshot;
 };
 struct Display {
+    int kind = 0;
     std::mutex mutex;
     std::condition_variable changed;
     bool hold = false, blocked = false, timeout = false;
@@ -65,6 +92,13 @@ struct Display {
     std::array<uint16_t, W*H> pixels{};
 };
 int xSemaphoreTake(SemaphoreHandle_t handle, unsigned) {
+    if (*static_cast<int*>(handle) == 1) {
+        auto& s = *static_cast<Semaphore*>(handle);
+        std::unique_lock<std::mutex> lock(s.mutex);
+        s.changed.wait(lock, [&] { return s.count > 0; });
+        --s.count;
+        return pdTRUE;
+    }
     auto& display = *static_cast<Display*>(handle);
     std::unique_lock<std::mutex> lock(display.mutex);
     if (display.timeout) return 0;
@@ -96,7 +130,18 @@ int main() {
     auto* display = new Display;
     auto* pipeline = new AmoledV2::ExploreFramePipeline;
     auto* buffers = new uint16_t*[2]{new uint16_t[W*8], new uint16_t[W*8]};
-    assert(pipeline->begin(W, buffers, 2, 8, display, submit, display));
+    // Panel calls before start() run inline on the caller.
+    assert(pipeline->run([](void*) { return xTaskGetCurrentTaskHandle() ? ESP_FAIL : ESP_OK; },
+                         nullptr) == ESP_OK);
+    assert(pipeline->start());
+    assert(pipeline->configureFrames(W, buffers, 2, 8, display, submit, display));
+    // Panel calls run on the panel task, never on the caller.
+    static TaskHandle_t panelThread = nullptr;
+    assert(pipeline->run([](void*) {
+        panelThread = xTaskGetCurrentTaskHandle();
+        return 7;
+    }, nullptr) == 7);
+    assert(panelThread != nullptr && panelThread != xTaskGetCurrentTaskHandle());
     auto* a = new uint16_t[W*H]{};
     auto* b = new uint16_t[W*H]{};
     auto* front = a;
@@ -105,7 +150,7 @@ int main() {
     Stickmon::FrameRect previous{0,0,W,H};
     AmoledV2::ExploreFramePipeline::Result result;
     const auto finish = [&] {
-        assert(pipeline->takeResult(result, true));
+        assert(pipeline->takeResult(result, portMAX_DELAY));
         assert(result.error == ESP_OK);
         assert(display->pixels == expected);
         assert(display->pending.empty());
@@ -117,8 +162,18 @@ int main() {
         std::unique_lock<std::mutex> lock(display->mutex);
         display->changed.wait(lock, [&] { return display->blocked; });
     }
-    assert(!pipeline->takeResult(result, false));
+    assert(!pipeline->takeResult(result, 0));
     assert(!pipeline->submitFrame({front,{0,0,W,H}}));
+    // A panel call queued behind the in-flight frame runs only after it.
+    static Display* callDisplay = display;
+    static bool callSawPending = true;
+    std::thread caller([&] {
+        assert(pipeline->run([](void*) {
+            std::lock_guard<std::mutex> lock(callDisplay->mutex);
+            callSawPending = !callDisplay->pending.empty();
+            return ESP_OK;
+        }, nullptr) == ESP_OK);
+    });
     std::fill_n(back, W*H, 0x55aa);
     assert(std::all_of(front, front+W*H, [](uint16_t p) { return p==0; }));
     {
@@ -127,6 +182,8 @@ int main() {
         display->changed.notify_all();
     }
     finish();
+    caller.join();
+    assert(!callSawPending);
     // Random, disjoint, nested, shrinking, HUD-only and full updates.
     uint32_t random = 214;
     for (int frame = 1; frame <= 400; ++frame) {
@@ -148,11 +205,11 @@ int main() {
     // A failed submission drains earlier strips before returning ownership.
     display->calls=0;display->failAt=1;
     assert(pipeline->submitFrame({front,{0,0,W,H}}));
-    assert(pipeline->takeResult(result,true) && result.error==ESP_FAIL);
+    assert(pipeline->takeResult(result,portMAX_DELAY) && result.error==ESP_FAIL);
     assert(display->pending.empty());
     // Timeout explicitly leaves DMA-owned memory untouched; no retry follows.
     display->calls=0;display->failAt=-1;display->timeout=true;
     assert(pipeline->submitFrame({front,{0,0,W,H}}));
-    assert(pipeline->takeResult(result,true) && result.error==ESP_ERR_TIMEOUT);
+    assert(pipeline->takeResult(result,portMAX_DELAY) && result.error==ESP_ERR_TIMEOUT);
     assert(display->pending.size()==2);
 }

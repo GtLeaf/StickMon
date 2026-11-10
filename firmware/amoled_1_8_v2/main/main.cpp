@@ -1,5 +1,6 @@
 #include "Rgb565Transfer.h"
 #include "ExploreFramePipeline.h"
+#include "HangDiag.h"
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -67,6 +68,8 @@ constexpr size_t TRANSFER_PIXELS =
     static_cast<size_t>(PHYSICAL_WIDTH) * TRANSFER_PHYSICAL_ROWS;
 using TransferBuffers = std::array<uint16_t*, TRANSFER_BUFFER_COUNT>;
 
+// Upper bound for one in-flight explore frame; see collectExploreFrame.
+constexpr uint32_t EXPLORE_FRAME_RESULT_TIMEOUT_MS = 3000;
 #if STICKMON_ENABLE_DEBUG_FEATURES
 bool explorePipelineEnabled = true;
 
@@ -418,6 +421,9 @@ esp_err_t startDisplay(esp_lcd_panel_handle_t* panel,
     return bsp_display_brightness_set(72);
 }
 
+// Runs every panel operation; see ExploreFramePipeline for the core rule.
+AmoledV2::ExploreFramePipeline panelTask;
+
 // Match the official CO5300 BSP rounder: inclusive ends must be odd.
 // Our ends are exclusive, so round all four bounds outward to even pixels.
 void alignDisplayUpdateRegion(uint16_t& xBegin, uint16_t& xEnd,
@@ -436,10 +442,22 @@ void alignDisplayUpdateRegion(uint16_t& xBegin, uint16_t& xEnd,
             DISPLAY_UPDATE_ALIGNMENT));
 }
 
+struct PanelDraw {
+    void* panel;
+    int x0, y0, x1, y1;
+    const uint16_t* pixels;
+};
+
+esp_err_t drawOnPanel(void* value) {
+    const auto& draw = *static_cast<const PanelDraw*>(value);
+    return esp_lcd_panel_draw_bitmap(static_cast<esp_lcd_panel_handle_t>(draw.panel),
+                                    draw.x0, draw.y0, draw.x1, draw.y1, draw.pixels);
+}
+
 esp_err_t submitPanelPixels(void* panel, int x0, int y0, int x1, int y1,
                             const uint16_t* pixels) {
-    return esp_lcd_panel_draw_bitmap(static_cast<esp_lcd_panel_handle_t>(panel),
-                                    x0, y0, x1, y1, pixels);
+    PanelDraw draw{panel, x0, y0, x1, y1, pixels};
+    return panelTask.run(drawOnPanel, &draw);
 }
 
 esp_err_t submitFrame(esp_lcd_panel_handle_t panel,
@@ -483,6 +501,32 @@ esp_err_t submitFrameRegion(esp_lcd_panel_handle_t panel,
 
 uint32_t millisNow() {
     return static_cast<uint32_t>(esp_timer_get_time() / 1000ULL);
+}
+
+esp_err_t setPanelOn(esp_lcd_panel_handle_t panel, bool on) {
+    struct Args { esp_lcd_panel_handle_t panel; bool on; } args{panel, on};
+    return panelTask.run([](void* value) {
+        const auto& a = *static_cast<const Args*>(value);
+        return esp_lcd_panel_disp_on_off(a.panel, a.on);
+    }, &args);
+}
+
+esp_err_t writePanelBrightness(int percent) {
+    return panelTask.run([](void* value) {
+        return bsp_display_brightness_set(*static_cast<const int*>(value));
+    }, &percent);
+}
+
+esp_err_t startDisplayOnPanelTask(esp_lcd_panel_handle_t* panel,
+                                  esp_lcd_panel_io_handle_t* io) {
+    struct Args {
+        esp_lcd_panel_handle_t* panel;
+        esp_lcd_panel_io_handle_t* io;
+    } args{panel, io};
+    return panelTask.run([](void* value) {
+        const auto& a = *static_cast<const Args*>(value);
+        return startDisplay(a.panel, a.io);
+    }, &args);
 }
 
 void drawLockMask(Canvas565& canvas, int centerX, int centerY, int radius,
@@ -702,9 +746,15 @@ extern "C" void app_main(void) {
         return;
     }
 
+    // Start the panel task first: the display start below installs the LCD
+    // SPI interrupt on whichever core runs it.
+    if (!panelTask.start()) {
+        ESP_LOGW(TAG, "Panel task unavailable; display runs on the UI core");
+    }
+    AmoledV2::AmoledPlatform::instance().setBrightnessWriter(writePanelBrightness);
     esp_lcd_panel_handle_t panel = nullptr;
     esp_lcd_panel_io_handle_t io = nullptr;
-    result = startDisplay(&panel, &io);
+    result = startDisplayOnPanelTask(&panel, &io);
     if (result != ESP_OK) {
         ESP_LOGE(TAG, "Display start failed: %s", esp_err_to_name(result));
         return;
@@ -841,10 +891,9 @@ extern "C" void app_main(void) {
     if (pendingOta && !AmoledV2::Ota::confirmBoot()) esp_restart();
 
     lockPower.begin();
-    AmoledV2::ExploreFramePipeline explorePipeline;
     uint16_t* renderSpare = static_cast<uint16_t*>(heap_caps_malloc(
         PHYSICAL_PIXELS * sizeof(uint16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-    bool pipelineReady = renderSpare && explorePipeline.begin(
+    bool pipelineReady = renderSpare && panelTask.configureFrames(
         PHYSICAL_WIDTH, transferBuffers.data(), transferBuffers.size(),
         TRANSFER_LOGICAL_ROWS, transferDone, submitPanelPixels, panel);
     if (!pipelineReady) {
@@ -855,17 +904,28 @@ extern "C" void app_main(void) {
              pipelineReady ? "ready" : "synchronous fallback",
              pipelineReady ? static_cast<unsigned>(PHYSICAL_PIXELS * sizeof(uint16_t)) : 0U);
     Stickmon::FrameRect spareDamage{0, 0, PHYSICAL_WIDTH, PHYSICAL_HEIGHT};
-    // A timed-out DMA may still own its buffers. Preserve them and the save;
-    // never retry rendering into memory whose ownership is unknown.
+    // A timed-out DMA may still own its buffers, so never render or transfer
+    // again: keep the save, then restart instead of leaving the screen frozen.
     const auto stopOnTransferTimeout = [&](esp_err_t error) {
         if (error != ESP_ERR_TIMEOUT) return;
-        ESP_LOGE(TAG, "Display DMA timeout; stopping display until device restart");
+        ESP_LOGE(TAG, "Display DMA timeout; saving and restarting");
         app.flushSave();
-        for (;;) vTaskDelay(pdMS_TO_TICKS(1000));
+        esp_restart();
     };
     const auto collectExploreFrame = [&](bool wait) {
         AmoledV2::ExploreFramePipeline::Result completed;
-        if (!explorePipeline.takeResult(completed, wait)) return ESP_OK;
+        if (!panelTask.takeResult(completed,
+                wait ? pdMS_TO_TICKS(EXPLORE_FRAME_RESULT_TIMEOUT_MS) : 0)) {
+            if (wait && panelTask.pending()) {
+                // A frame normally returns within ~30 ms and every strip wait
+                // is bounded at 1 s, so this means the LCD driver itself is stuck.
+                ESP_LOGE(TAG, "Explore transfer did not return in %u ms; saving and restarting",
+                         static_cast<unsigned>(EXPLORE_FRAME_RESULT_TIMEOUT_MS));
+                app.flushSave();
+                esp_restart();
+            }
+            return ESP_OK;
+        }
         stopOnTransferTimeout(completed.error);
         if (completed.error != ESP_OK) {
             ESP_LOGE(TAG, "Explore transfer failed: %s; falling back to full redraw",
@@ -921,7 +981,9 @@ extern "C" void app_main(void) {
     Amoled::DisplayStandbySchedule standbySchedule;
     bool discardStandbyTouch = false;
     uint8_t standbyBrightness = AmoledV2::AmoledPlatform::instance().brightness();
+    AmoledV2::HangDiag::start();
     while (true) {
+        AmoledV2::HangDiag::mark(AmoledV2::HangDiag::LOOP_TOP);
         collectExploreFrame(false);
 #if STICKMON_ENABLE_DEBUG_FEATURES
         const int64_t loopStartedUs = esp_timer_get_time();
@@ -941,6 +1003,7 @@ extern "C" void app_main(void) {
         standbyToggleRequested = false;
 #endif
         if (powerPressed) {
+            AmoledV2::HangDiag::mark(AmoledV2::HangDiag::POWER);
             collectExploreFrame(true);
             lockPower.setLockedRoom(false, false);
             if (app.displayStandby()) {
@@ -957,7 +1020,7 @@ extern "C" void app_main(void) {
                 // Refresh GRAM while the panel is off, then reveal a complete frame.
                 result = submitFrame(panel, physicalPixels, transferBuffers, transferDone);
                 stopOnTransferTimeout(result);
-                if (result == ESP_OK) result = esp_lcd_panel_disp_on_off(panel, true);
+                if (result == ESP_OK) result = setPanelOn(panel, true);
                 if (result == ESP_OK) {
                     app.markRendered();
                     powerPlatform.setAudioStandby(false);
@@ -980,7 +1043,7 @@ extern "C" void app_main(void) {
                     (lockPhase != LockPhase::OPEN ? lockedBrightness : powerPlatform.brightness());
                 if (app.prepareDisplayStandby(nowMs)) {
                     powerPlatform.setAudioStandby(true);
-                    result = esp_lcd_panel_disp_on_off(panel, false);
+                    result = setPanelOn(panel, false);
                     if (result == ESP_OK) {
                         standbySchedule.begin(millisNow());
                         ESP_LOGI(TAG, "[Standby] asleep panel=off render=off logic=1000ms key=250ms");
@@ -1006,9 +1069,11 @@ extern "C" void app_main(void) {
 #endif
             }
             lockPower.setLockedRoom(true, touchReady && touch.canSleep());
+            AmoledV2::HangDiag::mark(AmoledV2::HangDiag::STANDBY);
             touch.waitForInput(standbySchedule.wait(millisNow()));
             continue;
         }
+        AmoledV2::HangDiag::mark(AmoledV2::HangDiag::TOUCH);
         AmoledV2::TouchEvent event;
         const bool gotTouch = touchReady && touch.poll(nowMs, event);
         const bool discardTouch = discardStandbyTouch;
@@ -1075,6 +1140,7 @@ extern "C" void app_main(void) {
         lockPower.setLockedRoom(lockedRoomForUpdate, touchReady && touch.canSleep());
         const bool updateDue = lockSchedule.logicDue(nowMs, lockedRoomForUpdate);
         if (updateDue) {
+            AmoledV2::HangDiag::mark(AmoledV2::HangDiag::UPDATE);
             app.update(nowMs);
             lockSchedule.updated(nowMs);
         }
@@ -1099,6 +1165,7 @@ extern "C" void app_main(void) {
 #endif
         // Scene transitions, brightness commands and snapshot captures must
         // follow completion of the last explore frame on the panel.
+        AmoledV2::HangDiag::mark(AmoledV2::HangDiag::PRE_RENDER);
         if (!pipelineAllowed) collectExploreFrame(true);
         const bool sceneFadeActive = app.sceneFadeActive();
         const bool sceneFadePhaseChanged = sceneFadeActive &&
@@ -1132,6 +1199,9 @@ extern "C" void app_main(void) {
             app.displayLockAllowed() &&
             static_cast<int32_t>(nowMs - lockWakeGraceUntilMs) >= 0 &&
             app.prepareDisplayLock(nowMs)) {
+            // The lock frames below are submitted synchronously and reuse the
+            // pipeline's DMA strips; finish the in-flight explore frame first.
+            collectExploreFrame(true);
             lockRequestPending = false;
             lockDoubleTap.reset();
             // The snapshot must contain the room, even when locking a menu.
@@ -1360,6 +1430,7 @@ extern "C" void app_main(void) {
             const bool profileShowerFrame = !lockFrame && app.showerDraggingForDiagnostics();
             const int64_t renderStartedUs = esp_timer_get_time();
 #endif
+            AmoledV2::HangDiag::mark(AmoledV2::HangDiag::RENDER);
             const bool pipelineFrame = pipelineAllowed && !lockFrame;
             if (pipelineFrame) {
                 alignDisplayUpdateRegion(renderXBegin, renderXEnd, renderBegin, renderEnd);
@@ -1404,6 +1475,7 @@ extern "C" void app_main(void) {
             if (pipelineFrame) {
                 // The previous transfer overlapped the render above. Only now
                 // wait for its ownership to return, then hand over this frame.
+                AmoledV2::HangDiag::mark(AmoledV2::HangDiag::COLLECT_WAIT);
                 result = collectExploreFrame(true);
                 if (result == ESP_OK) {
                     AmoledV2::ExploreFramePipeline::Frame frame;
@@ -1416,7 +1488,7 @@ extern "C" void app_main(void) {
                     frame.drawUs = static_cast<uint32_t>(renderFinishedUs - renderStartedUs);
                     frame.profile = profileExploreFrame;
 #endif
-                    queuedExploreFrame = explorePipeline.submitFrame(frame);
+                    queuedExploreFrame = panelTask.submitFrame(frame);
                     result = queuedExploreFrame ? ESP_OK : ESP_FAIL;
                     if (!queuedExploreFrame) {
                         pipelineReady = false;
@@ -1424,6 +1496,7 @@ extern "C" void app_main(void) {
                     }
                 }
             } else if (lockFrame) {
+                AmoledV2::HangDiag::mark(AmoledV2::HangDiag::SUBMIT_SYNC);
                 drawLockMask(canvas,
                              lockFrameFocusX,
                              lockFrameFocusY,
@@ -1435,14 +1508,17 @@ extern "C" void app_main(void) {
                     nativeRenderXBegin, nativeRenderXEnd,
                     nativeRenderBegin, nativeRenderEnd);
             } else if (renderXBegin != 0 || renderXEnd != LOGICAL_WIDTH) {
+                AmoledV2::HangDiag::mark(AmoledV2::HangDiag::SUBMIT_SYNC);
                 result = submitFrameRegion(
                     panel, physicalPixels, transferBuffers, transferDone,
                     renderXBegin, renderXEnd, renderBegin, renderEnd);
             } else {
+                AmoledV2::HangDiag::mark(AmoledV2::HangDiag::SUBMIT_SYNC);
                 result = submitFrame(
                     panel, physicalPixels, transferBuffers, transferDone,
                     renderBegin, renderEnd);
             }
+            AmoledV2::HangDiag::mark(AmoledV2::HangDiag::POST);
 #if STICKMON_ENABLE_DEBUG_FEATURES
             const int64_t transferFinishedUs = esp_timer_get_time();
             if (profileShowerFrame && result == ESP_OK) {
@@ -1533,6 +1609,7 @@ extern "C" void app_main(void) {
         const uint32_t waitMs = lockedRoom
             ? lockSchedule.wait(millisNow(), lockSleeping)
             : targetLoopMs - std::min(targetLoopMs, loopElapsedMs);
+        AmoledV2::HangDiag::mark(AmoledV2::HangDiag::IDLE_WAIT);
         if (waitMs > 0) touch.waitForInput(waitMs);
         else taskYIELD();
     }

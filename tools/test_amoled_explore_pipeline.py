@@ -24,10 +24,16 @@ int64_t esp_timer_get_time();
 #define pdPASS 1
 #define portMAX_DELAY 0xffffffffU
 #define pdMS_TO_TICKS(x) (x)
+using BaseType_t=int;
+using TickType_t=unsigned;
 ''')
     (root / 'freertos/semphr.h').write_text('''#pragma once
 using SemaphoreHandle_t=void*;
 int xSemaphoreTake(SemaphoreHandle_t,unsigned);
+int xSemaphoreGive(SemaphoreHandle_t);
+SemaphoreHandle_t xSemaphoreCreateBinary();
+SemaphoreHandle_t xSemaphoreCreateMutex();
+void vSemaphoreDelete(SemaphoreHandle_t);
 ''')
     (root / 'freertos/queue.h').write_text('''#pragma once
 #include <cstddef>
@@ -38,7 +44,9 @@ int xQueueSend(QueueHandle_t,const void*,unsigned);
 int xQueueReceive(QueueHandle_t,void*,unsigned);
 ''')
     (root / 'freertos/task.h').write_text('''#pragma once
-int xTaskCreatePinnedToCore(void (*)(void*),const char*,unsigned,void*,unsigned,void*,int);
+using TaskHandle_t=void*;
+int xTaskCreatePinnedToCore(void (*)(void*),const char*,unsigned,void*,unsigned,TaskHandle_t*,int);
+TaskHandle_t xTaskGetCurrentTaskHandle();
 ''')
     binary = root / 'pipeline'
     subprocess.run(['c++', '-std=c++17', '-O1', '-g', '-pthread',
@@ -49,4 +57,4 @@ int xTaskCreatePinnedToCore(void (*)(void*),const char*,unsigned,void*,unsigned,
                     'firmware/common/Rgb565Transfer.cpp', '-o', str(binary)],
                    cwd=ROOT, check=True)
     subprocess.run([str(binary)], check=True, timeout=30)
-print('Explore pipeline: overlap, dirty-frame coherence, drain and failure checks passed')
+print('Explore pipeline: overlap, dirty-frame coherence, panel calls, drain and failure checks passed')

@@ -12,6 +12,7 @@ if [[ -z "${IDF_PYTHON_ENV_PATH:-}" &&
     export IDF_PYTHON_ENV_PATH="$HOME/.espressif/python_env/idf5.5_py3.11_env"
 fi
 PORT=""
+BAUD=115200
 ERASE=0
 DEBUG=0
 
@@ -21,8 +22,29 @@ usage() {
     printf 'Builds and flashes the V2 firmware and resources from this directory.\n'
     printf 'The default variant is claw (WeChat enabled).\n'
     printf 'Use --debug to expose the Debug entry in the main menu.\n'
+    printf 'Flashing uses 115200 baud; close serial monitors and log capture first.\n'
     printf 'WARNING: --erase deletes all flash data, including saves and credentials.\n'
     printf 'Switching V1/V2 firmware does not normally require --erase.\n'
+}
+
+check_port_available() {
+    local holders status
+    if ! command -v lsof >/dev/null 2>&1; then
+        printf 'lsof is required to check serial port ownership.\n' >&2
+        exit 1
+    fi
+    if holders="$(lsof -n -P "$PORT" 2>&1)"; then
+        printf 'Serial port is busy: %s\n%s\n' "$PORT" "$holders" >&2
+        printf 'Stop the listed serial monitor or log capture before retrying.\n' >&2
+        exit 1
+    else
+        status=$?
+        # lsof returns 1 with no output when no process holds the port.
+        if [[ "$status" != 1 || -n "$holders" ]]; then
+            printf 'Unable to check serial port: %s\n%s\n' "$PORT" "$holders" >&2
+            exit 1
+        fi
+    fi
 }
 
 while (($# > 0)); do
@@ -80,6 +102,8 @@ case "$PROFILE" in
         ;;
 esac
 
+check_port_available
+
 BUILD_DIR="$PROJECT_DIR/build-$PROFILE"
 BUILD_ARGS=(v2 "$PROFILE")
 if ((DEBUG)); then
@@ -101,8 +125,11 @@ printf 'Flashing AMOLED V2 (CO5300 / CST820 target), variant=%s, debug=%s\n' \
     "$PROFILE" "$DEBUG"
 printf 'Build directory: %s\n' "$BUILD_DIR"
 
+check_port_available
+
 if ((ERASE)); then
-    idf.py -B "$BUILD_DIR" -p "$PORT" erase-flash
+    idf.py -B "$BUILD_DIR" -p "$PORT" -b "$BAUD" erase-flash
+    check_port_available
 fi
 
-idf.py -B "$BUILD_DIR" -p "$PORT" flash monitor
+idf.py -B "$BUILD_DIR" -p "$PORT" -b "$BAUD" flash monitor
