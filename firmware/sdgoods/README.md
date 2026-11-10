@@ -1,41 +1,109 @@
 # StickMon 谷仓独立固件（原生 framebuffer）
 
-2026-11-03 已按 Chrome 当前「市集」工程纠正并重新刷入：地图 18×17，常驻为变隐龙、耿鬼、袋兽、吉利蛋。上一轮误用了仓库 16×12 旧工程（809d022de…），本次已替换；访客池仍按页面配置保留，包括皮卡丘＋皮丘组合。
-Debug/trace 应用 3,089,216 B，SHA256 `064df933a9d2cb6181295a3deb17207f6c19edca7f01d0cf005c4d702e95b257`，运行 ELF 前缀 `2cfc69f16`。
-仅更新原设备 OTA0 `0x20000`，写入哈希验证通过；重启前低 128 KiB 与备份一致。
-原档恢复、保存成功，音量 0／PA OFF、原触摸校准正常加载；30 秒启动采集无异常。
-市集 11 项、真实场景及完整谷仓主机流程通过；真机市集触摸／显示／FPS 待人工验收。
-证据 `.stick-local/artifacts/sdgoods-market-browser-sync-20261103/`，固件
-`.stick-local/firmware/sdgoods/market-browser-sync-debug-20261103/`；低 `0x320000` 及上一版 app
-备份 `.stick-local/backups/sdgoods-market-browser-sync-20261103/`（非整片 Flash）。
+2026-11-08 发布修正：旧 15 MiB／32 MiB 整包的技能教学表含 7 个已从正式招式目录剔除的技能，
+导致启动停在 `Invalid content catalog`。旧文件名 `sdgoods-factory-{15m,32m}-20261108.bin` 停止发布；
+修正版文件名带 `catalog-fix`。教学生成器现复用正式招式过滤规则，发布工具对实际 LittleFS
+执行固件同一套启动目录校验，格式等价测试之外也检查表间引用。
 
-2026-11-02 市集控制更新：地图按下位置作为浮动摇杆中心，松手隐藏；聊天按钮保留独立手势归属，使用透明底 28px 像素气泡，背景贴合为 36×36，点击区 44×44。右上菜单已移除，玩家走回地图出口后与同伴自动离场，返回地区列表；进图不会立即退出，其他边界不可穿越。操作与资源维护见 `doc/市集接入与调整指南-2026-11-02.md`，控制专项产物位于 `.stick-local/artifacts/market-walkout-20261102/`；已随上述 11 月 3 日版本刷入。
+默认使用物理 32 MiB Flash 上的 16 MiB 地址范围、9 MiB 共享资源区；
+`-D STICKMON_SDGOODS_FULL_STORAGE=ON` 选择完整 32 MiB 表和 24 MiB 资源区。
+默认表为 `partitions.csv`，完整表为 `partitions-32m.csv`；两个 OTA 应用槽各 3 MiB。
+图片、音频、字体与 49 张内容表从只读资源文件系统读取，存档、设置和校准仍在原 NVS。
+Release 关闭 Debug 与市集入口；Debug 保留。微雪和 Stick 的分区未改。
+应用内 USB 资源更新关闭，使用下述定点完整 `install`。下方日期章节为历史记录，
+旧地址、内嵌 archive 和 app-only 方式不适用于当前版本。
 
-首个里程碑：开机进入房间 → 触摸放食 → 保存 → 保存成功后重启 → 恢复。
-2026-10-25 已刷入谷仓设备；用户确认显示、触摸正常，串口确认放食后的存档在重启后恢复。
-后续已接入完整圆屏菜单及子页，参考 OSTB 样式，继续使用同一原生渲染管线。
+音量设置／存档范围为 0～100；谷仓扬声器的 PCM 幅度上限为原输出的 49%，
+即在此前70%上限基础上再降低30%（70%×70%=49%）。
+滑杆线性映射：0→静音、50→原幅度24.5%、100→原幅度49%。保留所有滑杆档位，
+最终缩放一步完成，低音量不先取整为整数百分比。上限由 `main/AudioPolicy.h` 的
+`MAX_OUTPUT_PERCENT` 控制；百分比表示信号幅度，实际响度由设备听感确认。
+进入设置时以 HAL 当前生效音量对齐页面与保存值，不重新套用旧值或默认值，
+也不自动试听。音量／亮度文字只选中对应行，触摸滑杆才改值；圆形把手使用
+4×4 覆盖率抗锯齿并混合实际背景，普通与按下状态均平滑。
 
-## 构建
+## 构建、发布与刷入
 
-需要本地 ESP-IDF 5.5.x 和谷仓 SDK。SDK 默认位于 StickMon 同级的
-`sdgoods-esp32s3`，可通过 CMake 参数覆盖：
+一键构建、签名打包并刷入应用与一个资源（自动加载构建环境，默认 Release）：
 
 ```sh
-bash firmware/sdgoods/build.sh -B build-native
-# Debug 菜单与 trace，使用独立构建目录：
-bash firmware/sdgoods/build.sh -B build-debug -DSTICKMON_ENABLE_DEBUG_FEATURES=ON -DSTICKMON_ENABLE_TRACE_LOGS=ON
-# 自定义 SDK 位置：
-bash firmware/sdgoods/build.sh -B build-native -D STICKMON_SDGOODS_SDK_ROOT=/path/to/sdk
+bash firmware/sdgoods/flash.sh --port /dev/cu.usbmodem1101 --mac ec:da:3b:67:10:5c
 ```
 
-脚本仅构建，不访问串口。产物在 `firmware/sdgoods/build-native/`，应用为
-`stickmon_sdgoods.bin`，资源已内嵌，不另行安装资源文件系统。
-普通版默认关闭 Debug 和 trace；Debug 版在主菜单增加 Debug 入口，产物位于
-`firmware/sdgoods/build-debug/`。两种构建均不自动刷机。
-构建按 SDK 官方分区表检查应用不超过 3 MiB factory 空间；实际刷入前必须读取设备分区表。
-已测试设备使用另一套双 OTA 布局，安装时保留其引导层与分区表，应用运行于 OTA 槽。
-较早 LVGL 方案的 `build/` 缓存已迁入 `.stick-local/unused-resources/2026-10-26/firmware/`；
-当前以 `build-native/` 为准。
+`--full-storage` 选择 32 MiB 分区／24 MiB 资源，默认 16 MiB／9 MiB；
+`--debug` 启用 Debug 入口；`--build-only` 只构建并打包（无需串口／MAC）；
+`--dry-run` 仅打印命令。默认签名密钥为 `.ota/release-key.pem`，可用
+`--private-key PATH` 覆盖。每次包与日志分别保留在 `.stick-local/firmware/sdgoods/`
+和 `.stick-local/artifacts/sdgoods-flash-日期/`；任一步失败立即停止。
+构建缓存按模式、存储布局和 `sdkconfig.defaults` 摘要隔离，修改默认配置后自动新建缓存。
+刷入复用下述完整 `install`，保留原 NVS 中的存档、设置与校准。
+预留的 userdata 改址且缩小，本批未挂载，不迁移旧 userdata 文件。
+安装器只连接一次 ROM／stub，逐区比较设备内容：前 4KiB 不同则直接安排写入；
+相同则读取整个区域的设备摘要，完全匹配才显示 `Unchanged, skipping` 并跳过。
+共享资源区独立检查，损坏或不同版本时写入一次；不依赖电脑上的刷机历史。
+变化区域使用 esptool 自带的写后摘要校验，并逐项确认校验实际执行；不再追加
+重复的整轮 `verify_flash`。任一检查／写入／校验失败停止，全部区域通过才重启。
+应用、资源和配对元数据仍按同一发布包处理，不是独立 app-only 或差分包更新。
+历史记录（2026-11-06，双 12 MiB 资源旧表，不代表新布局实测）：同一设备资源未变化、两个应用和绑定变化时，完整一键流程
+由此前328.41秒降至118.05秒（约64%）；跳过5区、写入并校验3区。
+当时资源完整摘要检查约79秒；新 9 MiB 镜像的耗时需重新实测。
+esptool 的 `Writing ... (100 %)` 表示进入最后一个压缩块，仍需完成 Flash 写入与校验；
+9 MiB 资源镜像的尾部空白高度压缩，这一步可能停留几十秒。安装器会每 5 秒报告等待状态，
+以资源和应用均完成写后校验、脚本 `Done` 为完成标志。
+
+需要 ESP-IDF 5.5.x 和谷仓 SDK，默认 SDK 为项目同级 `sdgoods-esp32s3`，
+可用 `-D STICKMON_SDGOODS_SDK_ROOT=/path/to/sdk` 覆盖。
+以下命令在仓库根目录运行；`python3` 须为已加载 IDF 环境的 Python（含 pyserial）。
+
+```sh
+bash firmware/sdgoods/build.sh -B build-resource-release -D STICKMON_ENABLE_DEBUG_FEATURES=OFF
+python3 tools/sdgoods_release.py package --build firmware/sdgoods/build-resource-release \
+  --output .stick-local/firmware/sdgoods/release --private-key .ota/release-key.pem
+python3 tools/sdgoods_release.py inspect --bundle .stick-local/firmware/sdgoods/release
+
+# 应用内资源更新已关闭
+# 单资源区不能在运行中覆盖当前挂载的 LittleFS；请使用完整 ROM 安装
+
+# 首次布局迁移／恢复：先预览明确写入计划
+python3 tools/sdgoods_release.py install --bundle .stick-local/firmware/sdgoods/release
+# 核对实际 MAC 后执行；示例设备 ec:da:3b:67:10:5c，其他设备使用其自身 MAC
+python3 tools/sdgoods_release.py install --bundle .stick-local/firmware/sdgoods/release \
+  --port PORT --mac ec:da:3b:67:10:5c --execute
+
+# 开发构建允许显式未签名包，仅已运行 Debug 的设备接受
+bash firmware/sdgoods/build.sh -B build-resource-ab -D STICKMON_ENABLE_DEBUG_FEATURES=ON
+python3 tools/sdgoods_release.py package --build firmware/sdgoods/build-resource-ab \
+  --output .stick-local/firmware/sdgoods/debug --development
+```
+
+构建只生成应用与 `resources.bin` 文件系统，不访问串口。Release 发布必须签名，
+公钥默认复用 `firmware/amoled_1_8_v2/ota/public-key.pem`，私钥不提交或打进发布包。
+发布工具会解包真正的 LittleFS 镜像，与 stage 核对后才能发布。
+
+**不要使用 `idf.py flash`、SDK 默认脚本或自动生成的 `flash_args`**：它们不会同步校验 9 MiB 资源区。
+也不能只刷 app 或在运行中覆盖当前挂载的资源。统一使用完整 `install`；应用内 `update` 在单资源布局下明确关闭。
+`install` 校验设备 MAC、32 MiB 和分区表；支持空白 Flash 首装或精确已知表，定点写入两个 OTA 应用和一个共享资源镜像并验证，
+保留 NVS、PHY、userdata，不备份、不整片擦除。未知历史分区会被拒绝。
+首次改表或资源写入中断须再次执行完整 USB 安装；单资源布局不提供运行中资源回退事务。
+资源只读、挂载失败不格式化；试运行在内容／存档／关键资源通过检查前禁止存档写入。
+恢复页可在资源全部不可用时显示，使用 ROM USB 安装修复。
+
+### 上传用合并镜像
+
+```sh
+python3 tools/sdgoods_release.py factory --bundle .stick-local/firmware/sdgoods/release \
+  --output .stick-local/firmware/sdgoods/factory-16m.bin
+```
+
+输出长度由精确分区表决定：默认 16,777,216 B（16 MiB），完整布局 33,554,432 B（32 MiB），从地址 0 写入。
+这是一份新设备首装镜像，间隙填充 0xFF，直接整包写入会清除 NVS 存档／校准；
+已有设备继续用定点 `install` 保留原 NVS。物理容量检查和启动头仍为 32 MiB，
+高地址剩余 16 MiB 暂不分区，默认布局与微雪的 16 MiB 规划对齐。
+
+2026-11-09 起不再生成 15 MiB 新包，旧 15 MiB 设备仍可通过定点安装升级。
+本次分区调整不迁移微雪现有固件；跨硬件固件不可混刷。
+
+较早 LVGL 方案的构建缓存已迁入 `.stick-local/unused-resources/2026-10-26/firmware/`。
 
 ## 显示与输入
 
@@ -109,6 +177,7 @@ compact_touch 共享视图读取显式 PageProfile，房间／孵化继续使用
 队伍包含状态五页及左右跟手滑动、技能详情／遗忘确认；房间包含食物和触摸洗澡。
 背包包含物品详情／使用确认，商店支持购买／出售；电脑包含社交及联系人状态／邀请／删除。
 设置包含亮度／音量滑杆、速度、省电时间、触摸帮助、重新引导和重置确认。
+谷仓新档默认音量为 5%；已有存档继续使用其保存的音量，驱动初始化仍先静音。
 社交页已补齐触摸操作，平台现接入按需 ESP-NOW；无线初始化失败仍明确提示不可用。
 音频、IMU、电量和电源已补齐板级接口，双机互联、录音质量及硬件断电仍需专项实测。
 
@@ -126,7 +195,11 @@ compact_touch 共享视图读取显式 PageProfile，房间／孵化继续使用
 沿用 SaveManager 的 A/B 快照、CRC、序列及 legacy 镜像，schema 不变。
 NVS 逻辑命名空间映射为 `sg_` 前缀；不擦除 NVS，不覆盖 SDK 的原有设置。
 已有有效未孵化存档按共享 HatchService 恢复计时及照料次数，不跳过或覆盖；
-设置重置后也进入可触摸的孵化页，支持擦拭／戳蛋／菜单和继续孵化。
+设置重置后也进入孵化页，支持摇晃设备或点击蛋，底部复用房间的三横线菜单按钮。
+摇晃沿用微雪的重力滤波、连续峰值和静止后重新计数规则；点击蛋显示短暂爱心，
+两种照料都会触发蛋晃动。摇晃计入原擦拭照料次数，点击计入戳蛋次数，存档格式不变。
+离开孵化页或锁屏时关闭加速度采样，恢复后重新检测；IMU 不可用时仍可点击蛋。
+探索新手提示改为“点击上方打开菜单”，战斗仍提示点击下方指令。
 不可恢复的坏档或更新版本档停止进入游戏并保留原数据。
 正常行走位置随存档恢复；共享逻辑会在启动时校正不可行走的进食姿态。
 
@@ -149,7 +222,7 @@ python3 tools/test_sdgoods_touch_calibration.py
 省电时间沿用共享引擎的闲置调暗，长按关机使用电源自锁释放及深睡兜底；两者语义不同。
 用户已确认基本显示和触摸正常；触摸精度、TE／撕裂、实际帧率、物理掉电恢复仍待专项验收。
 
-## 首次实机记录（2026-10-25）
+## 历史首次实机记录（2026-10-25，旧分区）
 
 设备 MAC `ec:da:3b:67:10:5c`，ESP32-S3 rev 0.2，32 MiB Flash、8 MiB PSRAM。
 刷入的应用为 1,850,544 B，SHA256
@@ -295,6 +368,7 @@ Audio／PeerRadio 源码的假硬件测试；真实引擎检查包含音量 0 �
 - Debug／trace 记录 `[ChargeEstimate] sample_mv=... charging=... source=voltage_trend`，
   状态变化记录 `charging_estimate=...`，供后续插拔供电、不同电量与负载的实机对照。
   本次只完成代码与主机／构建验证，未访问设备或刷入。
+
 - 取消空档自动完成孵化／全部教程。空档进入真实 180 秒孵化，保留原初始物资、照料选精灵规则。
   房间依次提示触摸喂食／精灵／菜单，菜单提示选择和返回；探索／战斗使用触摸文案，帮助页同步。
 - `onBeforeSave` 现在返回成功状态，孵化会先写当前计时和照料次数；失败令整个保存失败，
@@ -303,6 +377,27 @@ Audio／PeerRadio 源码的假硬件测试；真实引擎检查包含音量 0 �
   首次流程没有通过重置实机存档测试。完整结果见 `specs/sdgoods-hardware/onboarding-acceptance.md`。
 
 本版 app 已只更新同设备 OTA0 `0x20000`，哈希通过，启动前低 128KiB 与备份一致。
+
+## 2026-11-05 补齐音频资源（待安装）
+
+- 此前内嵌资源仅选择 `bgm_market.smonaudio`，未包含其他音乐、菜单音效和精灵叫声。
+  音量滑杆能传到音频驱动，但设置页试听找不到叫声，日常音乐与音效也缺失。
+- 构建现在额外输出 `audio-resources.bin`：5 首音乐、15 个音效、64 只精灵叫声，
+  使用现有 SMRA archive；共 2,185,355 B，放入当前设备的 4 MiB `resources` 数据分区。
+  应用仍受当前 OTA 槽的 3 MiB 限制，音频不再挤入应用。资源由分区标签查找、只读映射，
+  缺失或格式错误时记录诊断并继续使用内嵌画面／原市集音乐，不重置存档。
+- 内嵌资源优先，补充包只允许提供 `.smonaudio`／`.smoncry`，不能替换内嵌清单、
+  画面、精灵或玩法数据。未改 SDK 引脚和扬声器 I2S 配置。
+- 安装需要同时更新应用和音频资源包；**单刷 app 不能安装声音**。本机已核对过的布局
+  为应用 `0x20000`、音频所在资源分区 `0x620000`，资源槽 4 MiB。其他设备必须核对
+  实际分区表，不能使用构建生成的 factory `flash_args` 套用本机。
+  更新仅写这两处，保留 bootloader／分区表／NVS／触摸校准／OTA 记录／另一 OTA 槽。
+- 主机已用实际设置页复现缺失时无试听，并验证补充资源后试听成功、64 个叫声完整解压、
+  15 个音效及5 首音乐解码播放、静音与坏索引拒绝。实体扬声器听感仍待安装后确认。
+- 分区依据：2026-11-05 本机启动日志记录 OTA0／OTA1 各 `0x300000`（3 MiB）、
+  resources `0x400000`（4 MiB）。工程 CMake 另从 SDK 复制编译分区表，
+  其中 factory launcher 为 3 MiB、16 个 OTA 槽由启动器动态分配；两套布局不同，
+  不能把编译生成的分区表直接刷入当前设备，也不能将 3 MiB 视为硬件总容量。
 
 ## 主房间布局调整（2026-10-26）
 
@@ -837,3 +932,22 @@ PA=OFF；首帧617ms、精灵701ms，25秒无启动异常，串口已关闭。�
 触摸待用户确认；未重置存档、改档或试听。证据见
 .stick-local/artifacts/sdgoods-bag-shop-tabs-20261101/，备份为对应backups目录，
 固件见.stick-local/firmware/sdgoods/bag-shop-tabs-debug-20261101/。
+
+## 2026-11-08 目录修正版发布路径
+
+`.stick-local/releases/sdgoods/catalog-fix-20261108/` 下按 `15m/`、`32m/` 隔离，
+各自包含签名 `bundle/` 和 `sdgoods-factory-<布局>-catalog-fix-20261108.bin`。
+构建缓存可清理，发布文件单独保存。旧文件名不含 catalog-fix 的两份整包不再用于发布。
+两种布局使用定点完整安装器进行设备启动验证；连续首装镜像各段与签名包一致，间隙为 0xFF。
+连续镜像刷入仍会覆盖 NVS，现有设备更新用 install 保留原 NVS。
+实机证据 `.stick-local/artifacts/sdgoods-invalid-catalog-20261108/verification.json`。
+
+## 2026-11-09 默认改为 16 MiB
+
+默认布局 `sdgoods-16m-single-v1`：双 3 MiB 应用、9 MiB 资源，结束于 0x1000000；
+与微雪规划中的 16 MiB 几何对齐，微雪现有固件分区本次不变。物理容量仍按 32 MiB 校验。
+不再新建 15 MiB 发布包，安装器仍允许从精确旧 15 MiB 表迁移；保留 `--full-storage` 的 32 MiB／24 MiB 资源方案。
+Release 构建、23 项安装、3 项进程、13 项架构、2312 个旧事务中断点、49 表／28 坏输入、
+实际 LittleFS 启动目录校验、签名／篡改拒绝及 16 MiB 整包逐段／空隙校验通过。
+本轮无 USB 串口设备，未刷机；不把历史 15 MiB／32 MiB 实机结果当作 16 MiB 验收。
+产物 `.stick-local/releases/sdgoods/16m-20261109/`；证据 `.stick-local/artifacts/sdgoods-16m-20261109/`。

@@ -1,4 +1,443 @@
+2026-11-11 工作区分批提交前检查：StickS3、微雪V1/V2 lite Release、谷仓16MiB Release构建通过；
+存档codec／迁移、三个集市摊位真实旅程、构建配置／日志、音频续播、渲染调度、架构／家族、
+外置内容／资源事务／安装器／发布进程、V2传屏／显示、古瀑谷5项与真实签名包校验通过。
+AMOLED原生渲染83项中78项通过，出门过场／水桥／饥饿伙伴及两项配对基线共5项失败；
+在提交前HEAD 11d6b77导出的独立源码和资源上复测，同5项均失败，不覆盖测试基线。
+本轮仅主机检查与构建，未访问串口或刷机。证据.stick-local/artifacts/workspace-commits-20261111/。
+根build-debug属编译缓存，新增/build-*/忽略；清除11月6日遗留且无进程占用的空index.lock。
+
+2026-11-10 微雪古瀑谷切图底图错位（已修复并构建，未刷机）：古瀑谷所有子图共用探险
+种子，而微雪底图缓存按种子／地区等参数匹配；换图只重置镜头／精灵／遮挡，未失效
+底图缓存。旧代码真实森林A→B复现75672像素与新底图不同。AmoledApp收到mapChanged时
+清除底图缓存有效标记，复用原内存，下帧按新地图重建；保留原冰裂失效路径。
+两组种子、白天／夜晚、森林回环和高桥共44次真实切图，与冷缓存逐像素相同；
+1.5倍／夜色、霜晶窟、传屏流水线及源检查通过，V1/V2 lite Release构建通过。
+证据.stick-local/artifacts/amoled-valley-map-offset-20261110/；未修改地图、资源或存档。
+
+2026-11-09 谷仓默认改为16MiB／9MiB资源（sdgoods-16m-single-v1），与微雪规划表几何一致；
+微雪现有固件不迁移。物理32MiB检查、可选32MiB／24MiB资源保留。新包不接受15MiB，
+安装器允许精确旧15MiB迁移。Release构建、23安装／3进程／13架构、2312旧事务中断点、
+49表／28坏输入、实际LittleFS启动目录／签名／16MiB整包校验通过。无USB串口，未刷机。
+产物.stick-local/releases/sdgoods/16m-20261109/，证据.stick-local/artifacts/sdgoods-16m-20261109/。
+
+2026-11-08 谷仓发布包目录修正：旧15m/32m整包启动 Invalid content catalog，串口及Release host复现。
+根因为教学生成器从原始280招式快照纳入已删除的7个PP/携带物技能（168/180/343/373/374/450/512）。
+import_tutor_moves.py复用正式过滤策略，1895→1796条；CMake补MoveTutorData.inc依赖。
+package对实际LittleFS解包后运行validate_sdgoods_catalog.py（真实ContentValidation.cpp），
+test_sdgoods_room先过有效目录再测坏例；教学全引用及未知ID注入回归已覆盖。
+默认15MiB/8MiB资源，FULL_STORAGE=ON选择partitions-32m.csv、32MiB/24MiB资源；
+flash.sh --full-storage显式选完整表，缓存隔离布局，package/install/factory按精确表选择偏移和边界。
+旧sdgoods-factory-{15m,32m}-20261108.bin停止发布，修正版名带catalog-fix；证据
+.stick-local/artifacts/sdgoods-invalid-catalog-20261108/，实机验收见该目录verification.json。
+最终发布文件集中到.stick-local/releases/sdgoods/catalog-fix-20261108/{15m,32m}/；两种
+布局均定点安装、写后校验和30秒ready=1观察通过（保留NVS，未整包覆盖NVS测试），当前设备32m。
+
 # StickMon 项目记忆
+
+2026-11-08 谷仓孵化页去掉进度条：仅删除round_touch/HatchUi.cpp的条底与填充绘制，
+保留顶部倒计时。onboard-fresh真实孵化旅程（点击／摇晃／锁屏／保存）与谷仓Release
+构建通过，导出画面已检查；未刷机。证据.stick-local/artifacts/sdgoods-hatch-countdown-20261108/。
+
+2026-11-08 微雪吉利蛋暖心小屋（已构建，未刷机）：点吉利蛋气泡→招呼→首页（亲密按摩／
+伙伴茶会／关系评估，右上×或点面板外关闭）。按摩150：正式队员亲密+10／心情+10（封顶
+255／100）；茶会200：队员或仓库本地伙伴羁绊+5（封顶100），已入队则同步伙伴记录；评估
+免费，给建议并可直接预约。每游戏日全摊2次、每只1次（两服务共用，ivPacked＋metAt绑定）。
+补充规则：未邀请过的伙伴（羁绊仍为10且未同行）首次邀请必定成功，茶会会破坏该保底，
+故禁用并提示“先邀请它吧”。确认即saveState，失败回滚；成功后面板缩回底部对话框播放
+头像轻跳＋爱心/茶杯演出，点击跳过，奖励已提交不重复。规则src/game/MarketCareService.h，
+界面src/ui/common/MarketCareUi.h，存档SAVE_VERSION 8／schema 6追加MarketCareState（编码21B），
+旧档默认空；save_schema1_fabricator与market_tutor_host伪造旧档同步扣除21B。字库zh16/zh32
+1222→1234，谷仓round-zh16同步重生成（原本已落后于前两摊位），安装须带资源。
+tools/test_market_care.py规则ASan/UBSan＋真实AmoledApp旅程通过；耿鬼／变隐龙／存档／
+架构／家族源回归通过；test_market_scenes微雪第179行既有失败未变。V1/V2 lite Debug与谷仓
+构建通过（谷仓新目录借用已有littlefs venv），StickS3因沙箱不能写~/.platformio未构建。
+V2 app SHA256前缀3d437f1b8b65，固件.stick-local/firmware/amoled-v{1,2}/market-chansey-care-debug-20261107/，
+规格specs/market-stalls/chansey-ui.md，证据.stick-local/artifacts/market-chansey-care-20261107/。
+
+2026-11-07 Release配置统一（已构建，未刷机／发布）：用户确认市集不开放，日常日志关闭，
+采用-Os。V1/V2/谷仓共用firmware/common/build_profile.cmake，IDF加载前设置Release
+SIZE／系统及bootloader WARN，并强制缓存trace／ROOM_DIAGNOSTICS／HANG_DIAG关闭；
+Debug恢复-Og／INFO。保留断言、看门狗与既有回滚保护。Platform::logf/logLine在Release
+静默，新增errorf/errorLine保留存档／资源／硬件等失败；M5直接启动／音频模式日志也接入。
+市集沿用DEBUG_FEATURES门禁，三家族真实Release旅程验证隐藏／直接入口拒绝／普通探索可用。
+谷仓GCC14 -Os触发八点ADC std::sort数组边界告警，改有界插入排序，采样／去极值／平滑
+不变；真实电池／充电趋势-Os测试及ASan/UBSan通过。配置3／门禁3／
+存档迁移和codec／音乐续播／架构13／家族10／OTA3通过。驱动全套在音量49%旧断言失败，
+冻结修改前同样复现，未改音量策略或旧断言，不称整仓全通过。四目标Release构建通过，
+实际参数和日志等级已核对；组件与SHA256位于.stick-local/firmware/<目标>/release-profile-20261107/，
+为未签名构建快照，谷仓安装仍须sdgoods_release.py签名配对资源银行流程。
+证据.stick-local/artifacts/release-profile-20261107/verification.md；未访问设备／串口，实机待验收。
+
+2026-11-07 微雪V2探索随机冻屏修复（已刷入带检测的Debug版）：用户反馈捡物品／进入下一张
+图前画面冻结。串口确认主循环停止、无DMA超时与看门狗；地图生成约23.8万次主机调用无卡死。
+新增可选STICKMON_HANG_DIAG（默认关）检测器＋coredump复现：explore_lcd卡在
+spi_device_acquire_bus(portMAX_DELAY)←CO5300 draw_bitmap，主循环等其结果。根因为LCD SPI
+中断在core0、流水线worker在core1，IDF 5.5.4 spi_bus_lock中断收尾与另核acquire交错时
+中断不唤醒等待者，总线锁永久无主。修复：explore_lcd改为固定core1的面板任务，显示启动、
+逐条draw_bitmap、开关屏与亮度（AmoledPlatform::setBrightnessWriter）全部经它执行，SPI中断
+随之装在core1，渲染独占core0；锁屏动画同步传屏前先收回在途探索帧；等待探索帧限3秒、
+DMA超时均先保存再重启，不再永久冻屏。中间版曾把worker固定core0（帧率降），已被取代。
+V1单核同步传屏不受影响。test_amoled_explore_pipeline（新增面板调用线程／排序检查）、
+v2_display、source、ci_build_scope、架构检查通过；test_amoled_debug／expedition_departure
+两项为未改动文件的既有断言失败。仅写OTA0并校验，存档与CST820校准正常；夜间约4.5分钟、
+白天（游戏06:00～08:32）各一轮长草园探索无冻屏。同为白天对比原版：帧间隔23.5→22.0ms
+（约42.6→45.5fps），最差p95 99→70ms；随机路线非固定基准。证据
+.stick-local/artifacts/amoled-pickup-freeze-20261107/，固件
+.stick-local/firmware/amoled-v2/explore-lcd-core1{,-diag}-debug-20261107/（设备为diag版）。
+
+2026-11-07 探索战后音乐续播（未刷机）：共享AudioManager在EXPLORE切入普通／特殊战斗前
+保存最早尚在播放队列内的ADPCM块游标，返回EXPLORE时seek并恢复，避免原先每战从头。
+保存循环跳过量与8kHz插值前样本，扣除已预取未播块；接口只能报告块数，恢复粒度为块
+（当前探索每块2041/16000秒，可能重复不足128ms，非逐采样精确暂停，DMA另有缓冲）。
+战斗内锁屏／静音／切普通或特殊战不覆盖游标，探索自身静音／挂起也保留；首次恢复提交
+失败可重试，返回房间／集市／NONE及显式stop清除，游标仅内存态，不改存档／UI／资源。
+新增test_audio_manager_explore_resume.py：真实AudioManager＋ADPCM解码与不中断PCM逐块比较，
+队列2／3，普通／特殊战、连续遭遇、循环尾／非对齐循环及8kHz插值、静音／挂起／省电、
+失败重试及新探索重置，ASan/UBSan通过；原实现同回归在PCM比较处失败。房间静默、
+微雪音乐上下文4、混音器契约、架构13项通过。AMOLED V1/V2 lite Debug、StickS3 Debug、
+谷仓独立build-explore-music-resume-debug（Debug/trace ON）构建通过。
+证据.stick-local/artifacts/explore-music-resume-20261107/，匹配微雪／谷仓组件保存于
+.stick-local/firmware/<目标>/explore-music-resume-debug-20261107/；谷仓按sdgoods_release.py
+配对资源银行流程安装，禁止直接使用原始flash_args。未访问设备或串口，未刷入，实机听感待验收。
+
+2026-11-07 微雪V2刷机串口冲突防护：用户flash.sh --variant lite --debug失败于
+esptool flash_set_parameters／StopIteration；两次失败均已连上S3并启动stub，尚未写入。
+发现PID22814的capture_v2_serial_20261107.py自21:55持续读取cu.usbmodem2101，
+与22:01／22:02失败重叠，竞争读取是主要嫌疑，未停止其他诊断任务或实机重刷证实。
+flash.sh现用lsof在构建前／刷入前／显式擦除后检查占用，显示持有进程并退出，不自动
+杀进程；烧录速率明确115200（此前IDF默认460800，较早同速曾刷成功，不能断言速率
+为根因）。真实占用路径提前退出、六项mock进程检查及bash语法／diff通过，无串口
+读写或刷机。证据.stick-local/artifacts/amoled-flash-serial-20261107/。
+
+2026-11-07 微雪变隐龙／耿鬼摊位新增面板外点击返回：展开后上方市集区域0≤y<168
+作为独立TouchTap目标，按下／抬起均在外侧才触发；子页复用原返回按钮路径，结果页
+回服务首页，首页以原520ms收起动画退出交谈。面板内部空白、跨边缘拖动、回忆列表
+滚动、动画／提交期间不触发，不穿透为市集行走；招呼仍点击跳过，右上×和原返回按钮
+保留。test_market_shop／test_market_tutor真实应用旅程覆盖所有子页、确认不扣费、
+结果不重复交易、边缘小位移／拖出／滚动及动画退出，规则ASan/UBSan与V2 Lite Debug
+构建通过。证据.stick-local/artifacts/market-stall-outside-back-20261107/；未刷机。
+
+2026-11-07 摊位金币配色按用户最新要求统一面板：变隐龙／耿鬼右上金币改浅米色底
+RGB(248,248,224)、深蓝灰字RGB(40,56,80)，保留原符号／字号／位置／随面板动画；
+共用drawCoins仅backdrop样式换色，普通商店仍原金色。真实秘技旅程（字形mask和
+面板配色断言）与V2 Lite Debug构建通过，预览已看；本轮未刷机。证据
+.stick-local/artifacts/market-stall-coin-palette-20261107/。
+
+2026-11-07 微雪变隐龙／耿鬼摊位面板动画与关闭按钮（V2已刷入）：共用
+src/ui/common/MarketStallMotion.h，缓动由ease-out改为三次ease-in-out，招呼框360ms
+从底部升起，打开420ms由招呼框顶边y328长成面板至y168；关闭下沉280px，单独改为520ms smoothstep（峰速1.5倍均速，原三次曲线峰速3倍导致中段跳帧）；金币随面板
+滑入滑出，招呼时隐藏。首页（货架／菜单）底部「离开摊位」改右上「×」（绘制中心
+(336,194)，命中(304,168,64,52)），拖离不关闭；子页底部「返回」按用户要求保留。
+货架三行56→72px，耿鬼菜单三行52→68px。LEAVE文案常量保留未用，避免“摊”字形变化。
+test_market_shop／test_market_tutor（规则＋真实应用旅程、单调平滑、锁屏暂停）通过；
+test_market_scenes微雪第179行对话断言改动前同样失败。V1/V2 lite Debug构建通过，
+V2 app SHA256前缀ab3cd67900db；固件.stick-local/firmware/amoled-v{1,2}/market-stall-panel-debug-20261107/，
+证据.stick-local/artifacts/market-stall-panel-anim-20261107/。沙箱禁止直接开串口，
+经用户终端运行.stick-local/scratch/flash_v2_stall_20261107.sh：同MAC28:84:85:55:56:90／16MB，
+分区表与构建一致，otadata启动ota_0；资源分区摘要一致跳过，仅写OTA0 0x20000并
+verify_flash通过，无备份，NVS／触摸校准未写。25秒启动ELF1bb2f95ee…匹配，原档species6
+Lv51、CST820校准加载，无panic。V1仅构建。实机动画流畅度与「×」手感待用户验收。
+刷机日志.stick-local/artifacts/market-stall-panel-flash-20261107/。
+用户反馈收起仍略卡后，收起单独改520ms smoothstep并再次仅写V2 OTA0（资源一致跳过），
+verify通过，启动ELF2c615b0b8…匹配、原档与校准加载、无panic；固件
+.stick-local/firmware/amoled-v2/market-stall-close-debug-20261107/，日志同名close-flash目录。
+
+2026-11-07 谷仓单击熄屏省电第一档（已构建，未刷机）：熄屏时背光0后再发DISPOFF＋
+SLPIN（SDK驱动无sleep接口，经项目NativePanel按QSPI命令格式补发）；亮屏发SLPOUT，
+下一次提交满120ms后在面板关闭状态写完整一帧，再DISPON和背光，避免露出旧画面；
+120ms内再次熄屏会先补足间隔。共享引擎新增STICKMON_LOCKED_UPDATE_MS（默认0保持原
+节拍），谷仓设1000：熄屏后核心更新／输入每秒一次，不做视觉更新；进入熄屏当下立即
+跑一次更新并安排场景（孵化IMU等即时响应）；场景按≤100ms子步补齐，超过2秒的停顿
+不补。主循环熄屏时每轮等40ms（按键去抖30ms），熄屏期间暂停电池ADC采样（亮屏后
+充电趋势本就重置）。sdkconfig.defaults开CONFIG_PM_ENABLE（未开浅睡／tickless），
+熄屏esp_pm_configure锁80MHz，亮屏恢复240MHz；新目录构建才会生效。
+谷仓新增locked-standby真实房间旅程（60秒核心更新60次、不出帧、饥饿精灵熄屏中
+吃到食物、游戏时间推进、子步补到+900ms、亮屏重绘），完整圆屏78项、Debug、调度、
+架构、家族源及Stick／OSTB房间release/debug像素回归通过。谷仓release构建
+build-locked-standby通过，app1496144B，SHA256
+4d1bcdea07e3ca0da7f7d7ea2f9ef1076860cfc4f82c0010ad416ac611af589e；首次构建需pypi装
+littlefs-python，沙箱下复用本机已有venv的site-packages。StickS3 pio构建因沙箱不能写
+~/.platformio未执行。未访问设备、未刷机；实机唤醒观感、80MHz下外设与电池续航收益
+均未测量。证据.stick-local/artifacts/sdgoods-locked-standby-20261107/，固件
+.stick-local/firmware/sdgoods/locked-standby-20261107/。
+
+2026-11-07 变隐龙奇珍小铺（微雪已接入，主机验证，未构建固件／未刷机）：点变隐龙气泡转向→
+招呼（点击跳过不误买）→三格货架→单件确认→成功页。每游戏日独立种子：稀有位心之鳞片600
+（未解锁用甜甜蜜）、补给位最高已解锁药九折、特价位进化石900／糖果1800（共用每日限购），各1件，
+价低于商店买价高于卖价。规则src/game/MarketShopService.h，界面src/ui/common/MarketShopUi.h，
+存档升v7/schema5追加MarketShopState；确认即saveState，失败回滚。字库1217→1222需带资源。
+tools/test_market_shop.py规则＋真实应用旅程通过，耿鬼旅程及存档/OTA回归通过。
+证据.stick-local/artifacts/market-kecleon-shop-20261107/。
+
+2026-11-07 微雪耿鬼秘技小屋界面精简（已构建／主机验收，未刷机）：右上金币复用
+商店UiCommon::drawCoins的金色C符号和32px数字，配无边框黑底托；主菜单只保留图标＋
+本期秘技／回忆技能／技能特训，删除副标题和价格，52px行内居中，不可用置灰且点后
+提示1.8秒。学习页删除精灵名字下副标题、技能效果说明及预览价格，保留属性／分类／
+威力／命中与16px右侧可学状态；费用仍在确认页明确显示。300ms缓出同步推进面板从
+底部滑至y168和镜头上移，离开反向收起后才结束交谈；动画中阻断触摸，锁屏／熄屏
+暂停，onWake重置服务时钟避免追赶。真实AmoledApp旅程覆盖动画误点、暂停恢复、
+离开、金币与商店像素一致及原授课／保存失败回滚／特训／回忆，规则ASan/UBSan及
+商店／架构／家族32项通过；V2 Lite Debug最终构建通过，预览已检查。zh16/zh32仅新增
+“饥”（1216→1217），旧字形逐项不变，安装须带资源。证据
+.stick-local/artifacts/market-tutor-ui-20261107/；本轮未访问设备，实机动画手感待验收。
+
+2026-11-06 谷仓进化动画圆屏适配（代码／主机验证完成，未构建固件或刷机）：原家园进化
+用StickS3 240×135坐标画在360圆屏左上（约21%被圆裁掉），家园／探索只提示“A继续”且
+无触摸入口，谷仓无A/B键会卡在进化页。现round_touch/ProgressionUi覆写renderEvolution／
+renderEvolutionCancelled：三入口（家园／探索／背包进化石）统一走360原生面、去顶栏；
+精灵1x水平居中x=180、脚底y=220，同心圆光晕背景圆心(180,168)，光环／放射线只在精灵
+上方与两侧，文字y=240，胶囊“继续”(110,290,140×36)。时序沿用EvolutionSequence 4s。
+触摸：动画中按住任意处1s取消（屏幕边缘进度环，短按不取消，取消后松手不误继续），
+完成／已取消后点任意处继续，完成前点击无效；scene update轮询长按。删除ItemFeedback
+旧进化导航与itemProgressionTap。StickS3／微雪绘制不变（基类仅改virtual）。
+圆屏home-notice／learn-move／bag-flow新增进化断言及surface／menu-fixed／explore-round／
+battle-round／status-round／team-moves／explore-select回归通过（非ASan的-O0快速构建），
+StickS3／compact_touch语法检查通过。帧与before源码位于
+.stick-local/artifacts/sdgoods-evolution-round-20261106/；实机手感待验收。
+
+2026-11-06 谷仓一键刷机提速（已实机验证）：install改用sdgoods_flash_install.py，
+复用一次ROM／stub连接，对八区先读最多4KiB前缀；不同直接写，相同须完整设备MD5
+匹配才跳过，两份资源独立检查，不用本地刷机缓存。变化区走esptool原生write_flash，
+观察真实写后MD5调用，逐项核对地址／长度／摘要，缺校验／串口错误即失败；保留签名、
+MAC／32MiB／精确布局、扇区保护与配对绑定，仅全部通过才复位，取消末尾重复verify。
+新ROM SPI容量检查先加载stub再读ID；首次顺序错误在写入前失败，已修正且回归覆盖。
+同MAC ec:da:3b:67:10:5c、cu.usbmodem1101完整flash.sh由此前328.41秒降至118.05秒
+（资源未变的代码更新场景，约64%），5区摘要匹配跳过，两个app＋resmeta三写后校验通过，
+跳过25198016B，写3033728B；资源两次摘要仍各约39秒。app1484096B，SHA256
+2a30b4a550eaea477f73c547b03240d55f4119ca9631c6279bf60448bdfde0e8，签名Release包
+.stick-local/firmware/sdgoods/flash-release-20261106-022458-70685/。
+22秒串口确认LittleFS A／restored=1／hatched=1／species4／save ok、触摸参数加载，
+无panic；打开采集触发USB_UART_CHIP_RESET。启动保存音量17，期间另有多次音量变化，
+本任务未发送触摸／音量指令；不将其描述为音量始终0。无备份／整片擦除，串口释放。
+智能安装16项与进程3项、实际构建／签名打包／dry-run／语法／diff通过；首装全变化与
+单槽损坏由主机模拟验证，本轮未额外做完整资源改写。证据
+.stick-local/artifacts/sdgoods-flash-speed-20261106/verification.json。
+
+2026-11-06 谷仓最大音量再降低30%（已构建，未刷入，取代此前70%上限）：用户将
+“降低80%”纠正为“降低30%”，以已接受的70%为基准，最终原PCM幅度70%×70%=49%；
+AudioPolicy::MAX_OUTPUT_PERCENT=49。滑杆0～100保留，50对应原幅度24.5%、100对应49%，
+默认值／保存值／设置页实时音量同步及抗锯齿保持。真实音频驱动ASan/UBSan（101档、
+正负极值、限幅、I2S样本、静音／PA／挂起／欠载）与谷仓Release构建通过。
+证据.stick-local/artifacts/sdgoods-volume-cap49-20261106/verification.json；未访问设备或
+刷机，实体听感待确认。14%只是中途被用户纠正的临时构建，不能作为最终音量方案。
+
+2026-11-06 谷仓孵化／探索教程修正（已构建，未刷入）：孵化移除擦／戳按钮及照料
+文案，改为摇晃设备或点击蛋；复用微雪HatchShakeDetector的滤波／连续峰值／静止
+重置规则，摇晃沿用wipeCount、点击沿用pokeCount，保留计时／初始精灵／存档格式。
+两种照料触发1秒蛋晃动，点击另显示700ms爱心；离页／锁屏关闭IMU，恢复后重测，
+IMU不可用仍可点蛋。菜单与首页共用38×38三横线绘制与命中几何；探索教程改为
+“点击上方打开菜单”，战斗提示保留。真实圆屏ASan/UBSan新档／摇晃去重／取消拖动／
+锁屏／IMU失败／菜单往返／跨进程孵化与教程／重置／完整菜单旅程通过，画面已检查。
+Stick release/debug共1320帧与原基线一致；共享检测／架构／家族源／调度27项及谷仓
+Release、StickS3 release、微雪V1 lite构建通过。证据
+.stick-local/artifacts/sdgoods-hatch-touch-20261106/verification.json；未访问串口或刷机，
+真实摇晃手感待设备验收，音量／触摸校准未操作。
+
+2026-11-06 谷仓设置页音量突增防护／滑块去毛刺（已构建，未刷入）：启动默认和
+存档恢复原已统一；尚未抓取用户设备上突变现场，不能断言实机根因。连续设置页
+改从HAL当前生效音量对齐页面／保存值，避免入页重套旧值或默认值；不重复写驱动
+或试听。setSettingValue先限0～100再保存，谷仓音量／亮度文字仅选中，滑杆才改值，
+避免旧文字点击加10并试听。保留默认5和70%输出上限。圆屏滑块内外圆使用4×4
+整数覆盖率混合实际背景，普通／按下均平滑；其他家族默认旧绘制。
+ASan/UBSan真实引擎验证旧状态50／实时5、23、0入页不放大，反复入页无试听，
+文字／滚动不改值，横拖设置／HAL／驱动／存档一致，越界255限100；双字节序／
+裁剪／内存guard与圆周对称和中间覆盖通过。原设置导航及完整圆屏fresh/restore
+跨进程旅程、架构13／家族10、谷仓Release构建通过；实际页与前后放大图已检查。
+证据.stick-local/artifacts/sdgoods-settings-audio-20261106/verification.json；本轮未
+访问串口或刷机，实体听感待验收。编译期间已有并发孵化改动，重新配置纳入新
+RoomControls.cpp后通过；不将编译缓存未纳入新文件视为设置逻辑问题。
+
+2026-11-06 谷仓升级学技能改为参考微雪（代码／主机验证完成，未构建固件或刷机）：
+原圆屏沿用240方屏“学习新招式？yes/no→左右分栏→再确认”，战后画在240页面，
+道具入口用240坐标画到360圆屏，左列表被圆边切掉。现新增round_touch/ProgressionUi：
+LEARN_MOVE／MOVE_REPLACED走原生360面；满位直接列出新招式／技能2／技能3三卡，点卡
+原地展开详情、再点收起，底部单按钮“替换”／“放弃学习”立即生效（用户确认不二次确认）；
+有空位直接学会，仅显示“新招式／继续”（用户确认）。共享MoveLearnState与学技能规则
+不改，基类三函数改virtual。learn-move旅程及其余圆屏模式／跨进程存档通过，Stick／OSTB
+学技能等111帧与改前一致；final_ui ostb-debug、explore_ui_parity在改前源码同样失败。
+证据.stick-local/artifacts/learn-move-round-20261106/verification.md。
+
+2026-11-06 谷仓最大音量缩至原幅度70%（已构建，未刷入）：用户选择70%，设置／
+存档仍0～100，AudioPolicy::MAX_OUTPUT_PERCENT=70，最终PCM一次缩放（mono×
+slider×70/10000），50映射原35%、100映射原70%，避免先取整使低档重复。只影响
+谷仓最终扬声器输出；原音量保存值保留，0继续静音，实际听感待设备确认。
+实际Audio驱动ASan/UBSan通过，含101档单调、正负满幅界限、双声道一致、越界限幅、
+真实I2S样本以及静音／PA／欠载／挂起回归；谷仓Release构建通过。
+证据.stick-local/artifacts/sdgoods-volume-cap-20261106/verification.json，未访问串口或刷机。
+
+2026-11-06 谷仓新档默认音量改为5%（已构建，未刷入）：BuildConfig新增可覆盖的
+STICKMON_DEFAULT_AUDIO_VOLUME（共享默认仍50，范围0～100）；谷仓CMake单独设5，
+PlayerSettings与HAL使用同一默认值，驱动初始化仍先静音。已有存档按保存值恢复，
+不将设备当前0强改为5，也不改存档结构。谷仓主机编译参数同步5，ASan/UBSan真实
+onboard-fresh断言状态／实际音量均5；既有fresh/restore完整旅程确认旧档0与实际静音
+跨进程保留，谷仓Release构建通过。日志.stick-local/artifacts/sdgoods-default-volume-20261106/。
+本轮未访问串口、未操作设备或刷新先前已安装包。
+
+2026-11-06 谷仓一键刷机100%静默排查／修复（已实机完整复核）：原flash.sh在资源A
+0x00a8ce84与资源B最后100%后各约61秒无输出，随后正常继续；原整轮347.95秒成功。
+esptool百分比在发送最后压缩块前打印，12MiB镜像末块14753B展开7942524B（主要空白），
+尾块完成约22秒，之后资源摘要校验仍耗时；子进程stdout缓冲又将完成／校验信息延后。
+tools/sdgoods_release.py新增run_install_command，esptool开启无缓冲输出，100%明确提示
+尚未写完／校验，每5秒静默报告当前阶段／总耗时，保留原错误码和输出；未改写入区域／
+设备身份／布局检查／完整8区域校验。新增test_sdgoods_release_process.py三项通过。
+改进版再完整跑flash.sh耗时328.41秒（构建增量，未声称Flash加速），36条等待提示，
+8区域digest通过，同MAC ec:da:3b:67:10:5c／cu.usbmodem1101，最终app1482944B，SHA256
+d32db3a326c8ee2b4e6bcd92f04c3e2645db30913bee72727d619661780e7a94。
+20秒启动确认原档restored=1/hatched=1、LittleFS A、ready=1、save ok、音量0，未见panic；
+无备份／整片擦除，原NVS/PHY/userdata和触摸参数保留，串口已释放。最终包
+.stick-local/firmware/sdgoods/flash-release-20261106-014053-59361/；前后计时日志、
+原工具冻结与verification.json在.stick-local/artifacts/sdgoods-flash-stall-20261106/。
+
+2026-11-06 新增谷仓一键脚本firmware/sdgoods/flash.sh：默认签名Release，串联build.sh、
+sdgoods_release.py package/inspect/install；安装要求显式--port/--mac，支持--debug、
+--build-only、--dry-run、--private-key。构建缓存按模式与sdkconfig.defaults摘要隔离；
+发布包／日志分别落.stick-local/firmware/sdgoods/与artifacts/sdgoods-flash-日期/，
+任一步失败停止，复用现有完整配对安装和存档／校准保护，不使用应用内USB update。
+bash语法、非法参数／路径空格／异目录调用／模式／dry-run无写入检查通过，实际
+--build-only构建／签名／LittleFS一致性／inspect通过；本任务未访问串口或重复刷机。
+验收日志.stick-local/artifacts/ui-release-flash-20261106/flash-script-build-only-final.log。
+
+2026-11-06 用户授权后谷仓最新工作区签名Release已刷入，同MAC ec:da:3b:67:10:5c，
+串口变为/dev/cu.usbmodem1101。新build-ui-release-20261106启用I2S_ISR_IRAM_SAFE，
+debug/trace/room_diagnostics均0；配对完整install的8区域digest全部通过，无备份／整片
+擦除，NVS/PHY/userdata未写。app1479984B，SHA256
+d2602a5c6a4473bf25951dc52c0a829ff215612801f194215289912943cf5c98。
+20秒串口确认LittleFS A挂载、ready=1、原档restored=1/hatched=1、species1/261、save ok、
+音量0/PA OFF；打开监视触发一次USB_UART_CHIP_RESET，未见panic。日志同时出现6次
+MonsterAI stuck mode=3 pos=100.7,99.4 target=81.0,78.0重试，本刷机任务未诊断是否永久
+卡住，不将启动正常描述为寻路问题已解决。串口已释放，实体面板／触摸／听感待用户确认。
+包.stick-local/firmware/sdgoods/ui-release-20261106/，证据
+.stick-local/artifacts/ui-release-flash-20261106/verification.json。
+
+2026-11-06 谷仓音频卡顿修复（代码完成，未构建固件／未刷机）：根因是sg_audio任务
+持mutex_跨阻塞i2s_channel_write（约16ms）且放锁后立即重取，主循环queuedPcm／
+playPcm／setChannelVolume被饿住，音乐补块延迟→欠载；欠载时又立即关PA／I2S放大断音。
+现Audio.cpp只在混音时持锁，I2S写在锁外；queuedPcm／playing读原子计数（每次混音器
+变更在锁内发布）；AudioPolicy::OutputGate欠载保持输出静音约300ms（19块）再关，
+静音／锁屏立即关；DMA 6→8描述符（120ms）；谷仓CMake定义
+STICKMON_MUSIC_QUEUE_TARGET_BLOCKS=3（共享默认仍2，其他目标不变）；
+sdkconfig.defaults加CONFIG_I2S_ISR_IRAM_SAFE=y（存档写Flash时DMA清零而非重放旧块，
+已有build目录sdkconfig里为not set，需新-B目录构建才生效）；main.cpp锁屏时
+setMusicSuspended，避免挂起期间每tick重开音乐。主机模型（真实AudioManager＋
+PcmMixer＋模拟DMA，66ms节拍周期停顿）无断音最大停顿110ms→270ms。驱动假件
+ASan/UBSan（锁外写、无锁计数、欠载保持／关闭、失败恢复）、hardware、房间全旅程、
+音乐静默／混音器契约通过。既有问题未改：sdgoods_driver_fakes.h在Linux GCC触发
+misleading-indentation；PcmMixer负数左移UBSan告警。证据
+.stick-local/artifacts/sdgoods-audio-stutter-20261106/。实机听感待验收。
+
+2026-11-06 谷仓队伍页HP条增加与探索HUD相同层次的2px白色外沿＋1px黑色细描边，
+原8px圆角填充／颜色阈值／血量比例／用药反馈插值保持，轮廓总高14px。仅改圆屏
+TeamUi绘制；外置内容ASan/UBSan背包选目标／回血／复活／战斗用药旅程与队伍技能
+旅程、架构／家族23项通过，满血和1HP导出画面已检查，边框不挡数值或邻卡。
+未构建固件／刷机，证据.stick-local/artifacts/team-hp-outline-20261106/verification.md。
+
+2026-11-06 谷仓探索侧菜单末项由“返回”改为“关闭”，仅圆屏文案调整，原关闭后
+暂停地图行为不变，其他设备／返回导航不改。20px圆屏字库补“关／闭”且原字形
+逐字节不变，16px资源不改；架构／家族23项与diff检查通过，未构建或刷机。
+
+2026-11-06 谷仓拾取提示顶部跳变修复（代码／主机验证完成，未构建固件或刷机）：
+menuAvailable仅WALKING且无移动锁时为真，圆屏绘制误用其隐藏菜单并将地图名面板
+84px变128px，PICKUP期间出现双重跳变。现触摸路线顶部固定保留菜单／标题几何，
+原phase／滑冰／落穴等输入门控保持，提示期间不可打开菜单。真实resolvePickup伤药
+前／中／后顶部逐像素一致，点菜单不穿透，点提示恢复后菜单可用；外置内容完整圆屏
+ASan/UBSan旅程／跨进程存档及架构／家族23项通过，拾取导出画面已看。
+本批只改round_touch绘制与回归，不改共享玩法、微雪／Stick、音量／存档／触摸参数；
+证据.stick-local/artifacts/explore-pickup-header-20261106/verification.md。
+
+2026-11-06 谷仓独立资源三批实现及首版安装：项目自有 32 MiB 表、两份 3 MiB app
+与两份 12 MiB 只读 LittleFS 固定配对；图片／音频／字体与 47 张内容表外置，
+原 sg_stickmon／sg_touchcal NVS 和保存 schema 不变。内容等价／错误输入／资源扩展、
+事务失败模型与完整圆屏旅程／跨进程存档通过，StickS3／微雪 V1/V2／谷仓构建通过。
+ancient_valley／mist_forest／valley_region 三个既有遮挡断言在冻结修改前代码同样失败，未覆盖基线。
+用户明确首版无线上用户，本轮停止扩展升级故障验收，首版通过 ROM 完整 install 交付；
+应用内 USB update 仍有 ACK 超时，统一 VFS 驱动后仍复现，坏语义包未传完，回退未实测，
+不得描述为稳定 OTA。无备份、无整片擦除，8 个写入区域独立 digest 通过；同设备
+MAC ec:da:3b:67:10:5c 运行签名 Release A，debug=0／trace=0，市集入口隐藏，
+restored=1／hatched=1、species1／261、save ok，原触摸映射加载，15 秒无 panic／错误／循环重启。
+Release app1479440B，SHA256 5ae520272841c2911d2e8f672ed99ed3d35886692bc54d3059164b655602f479，
+LittleFS used4218880／12582912B；实体面板／音频／手指／真实断电未验收。串口已释放。
+规格 specs/resource-storage/，证据 .stick-local/artifacts/sdgoods-resource-storage-20261105/；
+匹配发布包 .stick-local/firmware/sdgoods/resource-ab-release-production-20261106/。
+
+2026-11-06 谷仓房间双精灵卡住修复（代码完成，未构建固件／未刷机）：真实房间AI长时
+压测（双精灵、随机idle、注入1～15秒主循环停顿）复现：①双人聊天TALK在总超时(9秒)后
+进入SETTLE→CONVERSATION，下一帧又因总超时回到SETTLE，永久循环，两只面对面不动且不再
+跑各自AI，仅idle／弹窗等打断；正常帧不会超时，需主循环停顿≥约2.7秒（如按住电源键／
+存档阻塞）触发。现CONVERSATION不再被总超时打断，并加超时15秒强制结束兜底。②主精灵沿
+走动区边缘时0.75纵向速度使轨迹偏离已校验直线，每帧出界→重规划→不计卡住，永久停在
+WANDER／DASH；现出界时改沿规划直线前进，重规划不重置卡住计时。③主精灵去食盆时仅按X
+判断“去床”而忽略睡着的队友，直线穿过睡眠队友后被间距卡死；现需X/Y都接近床。④访客
+IDLE用taskUntilMs=0比较，开机超2^31ms(约24.8天)后访客永久不动；现0视为无期限。
+修复前压测单只卡住175/200、两只同时卡住11/90，修复后0/200（含停顿注入）。门口出发
+ASan/UBSan、首页像素一致、圆屏完整旅程通过；dual_actor／pair_interaction既有静态检查
+失败与本次无关。证据.stick-local/artifacts/room-stuck-fix-20261106/。
+
+2026-11-05 谷仓探索选择页静态预览版已刷入：核对同MAC ec:da:3b:67:10:5c、
+现行OTA0 0x20000／3MiB及OTA选择，仅写3104192B Release app，写入hash通过，
+未备份或写资源／分区表／NVS。首次写入后USB断连，用户重新接入后继续采集启动，
+确认已运行目标ELF7d53a2ff1…，无需重复刷入。原档restored=1／hatched=1，
+species1与261资源就绪、save ok、首帧509ms／精灵592ms；原右侧渐进补偿启用。
+当前设备恢复的保存音量为45（不是此前历史0），本轮未发送音量／设置操作。
+30秒应用启动无panic／错误／循环重启，串口已释放；真实预览观感与手指操作待用户
+验收。固件仍为explore-preview-fit-release-20261105，manifest已标记flashed；
+证据.stick-local/artifacts/explore-preview-fit-flash-20261105/verification.md。
+
+2026-11-05 谷仓设置调音量仍无声（代码／构建完成，未刷入）：定位为内嵌资源仅含
+市集BGM，缺少其余音乐、菜单音效与精灵叫声；实际设置页滑杆会传到驱动，试听因
+缺失叫声失败。新增可选只读SMRA音频层，通过resources标签映射，内嵌资源优先且
+外部仅接受.smonaudio／.smoncry；坏包或缺分区继续原内嵌画面。构建额外生成
+2185355B音频包（5首BGM／15音效／64叫声）；需同时安装应用与音频，单刷app无效。
+实际设置页复现修复前失败，64叫声／15音效／5音乐解码播放、静音、坏索引拒绝与
+内嵌数据隔离ASan/UBSan通过，完整圆屏交互与跨进程存档、驱动、架构13／家族10／
+房间静音回归及Debug／Release构建通过。实体扬声器听感待安装后确认。
+分区区别已核对：今天设备启动日志为OTA0 0x20000／OTA1 0x320000，各3MiB；
+resources 0x620000／4MiB。工程编译另复制SDK表（factory launcher 3MiB＋16动态
+OTA槽），不能套用生成flash_args或称整机只有3MiB；本轮未改分区、未访问设备。
+证据.stick-local/artifacts/sdgoods-audio-resources-20261105/verification.json；冻结包
+.stick-local/firmware/sdgoods/audio-resources-{debug,release}-20261105/，均flashed=false。
+
+2026-11-05 谷仓探索选择页按宽度决定轮播（完成，未刷机）：实际精灵帧宽总和＋
+原12px间距≤312px时整组居中、各成员只绘一次，不滚动；保留24px圆屏侧余量。
+超宽组保持原全宽轮播，绘制／刷新调度／预加载避让共用PreviewLayout判断，资源
+就绪后的静态组不周期重绘或轮播唤醒。精灵尺寸、池成员、稀有剪影和出发交互不改。
+ASan/UBSan轮播宽度临界值／静态与超宽切换／像素对照／多成员停驻6秒、完整圆屏
+旅程与跨进程存档、Debug探索、架构／家族23项及独立谷仓Release构建通过；
+超宽组500ms为15帧（14局部）／8核心tick，导出圆屏静态与滚动画面已检查。
+青草径活跃池随种子变化，测试包含静态两成员及超宽组，不保证该地图永远不滚动。
+证据.stick-local/artifacts/explore-preview-fit-20261105/verification.md；独立
+build-preview-fit-release产物3104192B，SHA256
+09b7539df6385860ecbe7e4b2b51f9742b82bd0622c91c85092dfb8cea0ad77f，冻结固件
+.stick-local/firmware/sdgoods/explore-preview-fit-release-20261105/。
+未访问设备／串口，音量0、存档和触摸参数未操作；实机观感待验收。
+
+2026-11-05 谷仓双精灵房间静止排查：用户反馈两只不动，后确认重启正常。
+串口实际运行debug=0/trace=0，恢复species1与261、音量0/PA OFF、饱腹28；
+精灵缓存就绪、预加载与save正常，未捕获卡住时的角色任务／坐标，根因尚未确定。
+串口打开未主动设置复位，但收到USB_UART_CHIP_RESET启动；随后esptool chip_id
+核对同MAC ec:da:3b:67:10:5c也执行了RTS复位。未写Flash、未备份、未重置存档。
+新增默认OFF的STICKMON_ENABLE_ROOM_DIAGNOSTICS，独立于Debug/trace，便于
+非Debug问题复现；开启后每5秒输出RoomBoard/RoomEngine/RoomState/RoomActor，
+含按键/锁屏/调度/淡变/阻塞弹窗/任务/坐标/路线/期限/HP/饱腹/睡眠。普通构建无日志。
+build-room-diagnostic已以debug=0/trace=0/room_diagnostics=1构建成功，未刷入；
+真实房间AI/夜间进食/64种双精灵出门回归及架构13/家族10通过。
+证据.stick-local/artifacts/sdgoods-room-still-20261105/。用户已恢复后停止设备操作，
+不将重启恢复等同根因修复；后续若复现应先抓取现场状态，再决定复位或更新。
+
+2026-11-05 发布前暂时隐藏市集入口：ExploreDestinations使用现有
+STICKMON_ENABLE_DEBUG_FEATURES，Release目录不含市集且visible／unlocked拒绝，
+共享与AMOLED启动入口同步防护；Debug保留第一项。原六区ID／解锁／存档不变。
+三家族Release真实应用验证隐藏与直接启动拒绝、普通探索可出发，Debug原市集旅程通过；
+市集13项、圆屏探索轮播通过，StickS3／微雪V1/V2 Lite／谷仓四目标Release构建通过。
+证据.stick-local/artifacts/market-release-gate-20261105/；冻结产物
+.stick-local/firmware/<目标>/market-release-hidden-20261105/，V2含五件套。未刷机。
+
+2026-11-07 耿鬼秘技小屋（微雪已接入，未刷机）：点耿鬼气泡转向→招呼→菜单（本期秘技／
+回忆／特训）。每游戏日独立种子从队伍候选抽一招（Essentials Gen6 TutorMoves 兼容表
+src/game/MoveTutorData.inc＋升级表，排除可回忆招，无等级上限），共享规则
+src/game/MarketTutorService.h，界面 src/ui/common/MarketTutorUi.h。存档升 v6/schema4 追加
+MarketTutorState；确认即 saveState，失败回滚。字库补7字需同步资源；谷仓外置表54/55。
+tools/test_market_tutor.py 主机规则＋真实应用旅程通过；固件未构建，谷仓/Stick未接入。
+规格 specs/market-stalls/gengar-ui.md，证据 .stick-local/artifacts/market-gengar-tutor-20261107/。
 
 2026-11-04 精灵头顶聊天气泡放大（完成，V2已刷入）：共享MARKET_CHAT由14×14放大
 50%至21×21逻辑像素，微雪约32×32px；头顶向上展开、保留2px逻辑间距，遮挡和脏区
@@ -304,9 +743,15 @@ OSTB 3ST 自 2026-10-30 起暂停适配，仅保留本地文件，不再提交�
   主菜单、商店、状态与技能页、伙伴列表、探索选择／地图／战斗使用 360×360，其余菜单子页及洗澡／社交采用中央 (60,60) 的 240×240 原生像素 PSRAM 表面，
   不缩放整帧。PageProfile 提供页面几何；SceneSurface 负责组合和触摸映射，输入期绑定
   页面缓冲以支持状态页跟手缓存。移出页面取消触摸，分配失败拒绝页面输入并显示错误。
-- 资源原载荷内嵌只读 archive，构建按官方 3 MiB factory 检查体积；实际安装先读设备
-  分区表。已测设备为双 OTA：保留其引导层／分区表，应用写备用 OTA0 `0x20000`，
-  OTA1 `0x790000` 保留原固件。不能直接用 SDK factory 地址或生成的 flash_args 刷本机。
+- 当前（2026-11-09）物理 Flash 仍为 32 MiB；自有 `firmware/sdgoods/partitions.csv`
+  的地址范围限制在 16 MiB：双 3 MiB app、单 9 MiB 只读 LittleFS、768 KiB 预留 userdata。
+  布局 `sdgoods-16m-single-v1`；两个 app 共用 resources，绑定在独立 resmeta，49 张 SMCD 表外置。
+  `userdata` 不挂载、不格式化，改址不迁移旧 userdata。原 NVS 的存档／校准不变。
+  构建后用 `tools/sdgoods_release.py package / inspect / install`；Release 必须签名。
+  不用 `idf.py flash`、SDK 脚本、生成 flash_args 或 app-only。install 接受精确旧表、
+  显式 MAC／32 MiB 校验，写入及擦除上限 16 MiB，不写原 NVS／PHY／userdata。
+  `factory --output PATH` 生成 16 MiB 连续首装镜像（间隙 0xFF，整包写入会清除 NVS）；
+  有存档设备使用定点 install。应用内 USB update 明确关闭，不提供共享资源回退。
   原 NVS 上用 `sg_` 前缀
   隔离命名空间，保持共享 schema / A/B / CRC。空档进入共享正式孵化，不跳过教程。
   有效未孵化旧档按共享流程恢复计时和照料次数（完整菜单已支持重置／继续孵化）；

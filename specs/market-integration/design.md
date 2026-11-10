@@ -1,6 +1,8 @@
 # 设计
 
 - ExploreDestinations：独立目的地目录；列表位置映射到稳定的地区编号或市集类型，不扩展持久化地区数组。
+  2026-11-05起市集由STICKMON_ENABLE_DEBUG_FEATURES控制：Release不加入目录，
+  visible／unlocked均拒绝；共享与AMOLED场景启动也检查同一开关。Debug保持原入口。
 - market_export.py：校验最终图层、来源、物件占地与 roadNetwork；输出版本化半格导航、常驻／访客配置及图层。维护源 origin_asset/maps/market/market.stickmap.json。
 - MarketSession：纯 C++ 100ms 模拟；道路半格网格容纳双向和避让，格中心活动区单独限制，统一动态预约；随机停留和目的地，同伴跟随。
 - MarketView：共用 tile atlas、方向动画、原尺寸和深度语义；设备负责视口和输入适配。市集会话属于临时状态，不修改 SaveCodec。

@@ -1,10 +1,11 @@
 # 项目规范索引
 
-更新：2026-11-04。当前规范按主题组织，短篇需求、设计与任务已合并；
+更新：2026-11-05。当前规范按主题组织，短篇需求、设计与任务已合并；
 谷仓早期最小房间、三项圆屏菜单方案已被完整菜单与正式首次开机流程替代并删除。
 
 | 主题 | 当前内容与验收边界 |
 | --- | --- |
+| [独立资源文件系统与分区](resource-storage/README.md) | [谷仓 32 MiB](resource-storage/sdgoods.md)三批已实现：默认 16 MiB／9 MiB 资源、可选 32 MiB／24 MiB 资源，49 张内容表；16 MiB 构建／签名／主机回归通过，未刷机；历史 15／32 MiB 目录修正版启动通过；应用内资源更新关闭；微雪／StickS3 分区迁移暂缓 |
 | [AMOLED 应用重构](amoled-app-refactor/tasks.md) | 保存与成长、洗澡／孵化控制器、房间权威状态、战斗／探索会话与表现、房间动作／伙伴／访客流程；分批记录保留各自设备验证范围，Claw 专项延期 |
 | [微雪 V2 网页模拟器](amoled-web-simulator/README.md) | 真实应用入口、触摸／暂停／单写存档和发布契约；手机／跨浏览器、远端 CI 与线上部署未纳入本地验收 |
 | [共享战斗执行](battle-execution/README.md) | prepare／commit 幂等、随机调用顺序、两端提交时机与应用效果边界 |
@@ -18,6 +19,7 @@
 | OSTB 3ST 适配（暂停） | 2026-10-30 起暂停；固件、规范和原生工具仅保留本地并由 Git 忽略，不再提交上传 |
 | [房间与家具分层](room-furniture-layers/README.md) | v6 房间、独立家具、事务替换与缓存合成；Debug 预览和 Release 边界 |
 | [市集四摊位服务方案](market-stalls/design.md) | 待评审草案：变隐龙稀有交易、耿鬼技能服务、袋兽家具与吉利蛋亲密／羁绊培养；价格与开集周期尚未实施 |
+| [吉利蛋暖心小屋交互](market-stalls/chansey-ui.md) | 亲密按摩／伙伴茶会／关系评估的流程、页面、演出与 v8 存档；微雪已接入 |
 | [谷仓菜单与页面](sdgoods-full-menu/README.md) | 八项主菜单、中央 240×240 页面表面与输入映射；[验收记录](sdgoods-full-menu/acceptance.md)保留原批次覆盖 |
 | [谷仓硬件、电量与首次开机](sdgoods-hardware/README.md) | 板级驱动、3000–4280mV、真实 180 秒孵化与触摸教程；[硬件验收](sdgoods-hardware/acceptance.md)和[首次开机验收](sdgoods-hardware/onboarding-acceptance.md)保留双机／掉电／放电等待办 |
 

@@ -198,6 +198,12 @@ Use `--variant lite` for the firmware without ESP-Claw. Switching V1/V2
 firmware normally does not require `--erase`. That option deletes all flash
 data, including game saves and Wi-Fi/Claw credentials.
 
+Flashing uses 115200 baud. Close serial monitors and background log capture
+before running the script: concurrent readers can consume esptool replies and
+cause `The chip stopped responding`. The script uses `lsof` to check port
+ownership before building and again before flashing, and reports any holder
+instead of starting a competing serial session.
+
 The Claw and Lite builds resolve dependencies into their own isolated
 `build-claw` and `build-lite` directories, keeping machine-specific
 ESP-Claw paths out of the shared source tree.
