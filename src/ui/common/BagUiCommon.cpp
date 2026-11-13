@@ -144,6 +144,14 @@ BagUi::Action BagUi::activate(const Game::GameState& state, const Context& conte
 const char* BagUi::notice(const Features::Bag::Outcome& outcome, char* buffer, size_t capacity) {
     using Features::Bag::Notice;
     switch (outcome.notice) {
+    case Notice::USED_ITEM:
+        for (uint8_t source = Features::Bag::SOURCE_MARKET_BASE; source < Features::Bag::SOURCE_BACK; ++source) {
+            if (Features::Bag::itemId(source) != outcome.item) continue;
+            std::snprintf(buffer, capacity, Ui::Bag::USED_ITEM_FMT, Ui::Bag::NAMES[source]);
+            return buffer;
+        }
+        return nullptr;
+    case Notice::NOTHING_ELSE_NEEDED: return Ui::Bag::NOTHING_ELSE_NEEDED;
     case Notice::FAINTED_CANNOT_HEAL: return Ui::Bag::FAINTED_CANNOT_HEAL;
     case Notice::USED_POTION: return Ui::Bag::USED_POTION;
     case Notice::HP_FULL: return Ui::Bag::HP_FULL;

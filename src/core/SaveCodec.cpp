@@ -302,6 +302,15 @@ void writeState(Writer& writer, const Game::GameState& state) {
         writer.u32(record.ivPacked);
         writer.u32(record.metAt);
     }
+    writer.u8(shop.boxBought);
+    writer.u8(shop.boxRoll);
+    const auto& season = state.marketSeason;
+    writer.u32(season.periodDay);
+    for (uint8_t item : season.items) writer.u8(item);
+    for (uint8_t stock : season.stock) writer.u8(stock);
+    writer.u8(season.boxRoll);
+    for (uint8_t stock : state.marketItemStock) writer.u8(stock);
+    writer.u8(state.marketTutorGifted);
 }
 
 void readState(Reader& reader, uint16_t schema, Game::GameState& state) {
@@ -429,6 +438,19 @@ void readState(Reader& reader, uint16_t schema, Game::GameState& state) {
             record.ivPacked = reader.u32();
             record.metAt = reader.u32();
         }
+    }
+    if (schema >= 7) {
+        state.marketShop.boxBought = reader.u8();
+        state.marketShop.boxRoll = reader.u8();
+    }
+    if (schema >= 8) {
+        auto& season = state.marketSeason;
+        season.periodDay = reader.u32();
+        for (uint8_t& item : season.items) item = reader.u8();
+        for (uint8_t& stock : season.stock) stock = reader.u8();
+        season.boxRoll = reader.u8();
+        for (uint8_t& stock : state.marketItemStock) stock = reader.u8();
+        state.marketTutorGifted = reader.u8();
     }
     state.checksum = 0;
 }
@@ -570,7 +592,8 @@ bool decode(const uint8_t* input,
     readView(reader, snapshot.view);
     const uint16_t expectedStateVersion =
         schema == 1 ? SCHEMA_1_STATE_VERSION : schema == 2 ? 4 :
-        schema == 3 ? 5 : schema == 4 ? 6 : schema == 5 ? 7 : Game::SAVE_VERSION;
+        schema == 3 ? 5 : schema == 4 ? 6 : schema == 5 ? 7 :
+        schema <= 7 ? 8 : Game::SAVE_VERSION;
     if (!reader.ok() || reader.position() != payloadLength ||
         snapshot.state.magic != Game::SAVE_MAGIC ||
         snapshot.state.version != expectedStateVersion ||

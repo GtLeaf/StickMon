@@ -1,94 +1,148 @@
-// Host checks for the Kecleon stall shelf rules and their save round trip.
+// Focused Kecleon period, shelf, purchase, migration and codec checks.
 #include <cassert>
 #include <cstdio>
 #include <cstring>
+#include <vector>
 #include "core/SaveCodec.h"
 #include "game/MarketShopService.h"
+#include "save_schema1_fabricator.h"
 
 using namespace Game;
 
-static GameState fresh(uint32_t day, int clearedAreas) {
-    GameState s{};
-    s.coins = 5000; s.gameMinutesTotal = day * 1440 + 30;
-    for (int i = 0; i < clearedAreas && i < EXPLORE_AREA_COUNT; ++i) s.explorePoolRerollCounts[i] = 1;
-    return s;
+static GameState fresh(uint32_t day, unsigned clearedAreas = 6) {
+    GameState state{};
+    state.coins = 100000;
+    state.gameMinutesTotal = day * 1440 + 30;
+    for (unsigned i = 0; i < clearedAreas && i < EXPLORE_AREA_COUNT; ++i)
+        state.explorePoolRerollCounts[i] = 1;
+    return state;
 }
 
 int main() {
-    // New save: every slot filled with unlocked goods, honey stands in for the scale.
-    for (uint32_t day = 0; day < 60; ++day) {
-        auto s = fresh(day, 0);
-        assert(MarketShop::ensurePeriod(s));
-        assert(MarketShop::item(s, MarketShop::RARE) == ItemId::HONEY);
-        for (uint8_t i = 0; i < MARKET_SHELF_SLOTS; ++i) {
-            const ItemId id = MarketShop::item(s, i);
-            assert(id != ItemId::COUNT && s.marketShop.stock[i] == 1);
-            assert(id == ItemId::HONEY || MarketShop::unlocked(s, id));
-            // No arbitrage: never below the shop's sell price.
-            assert(MarketShop::price(id) > ShopService::sellPrice(id));
-            for (uint8_t j = 0; j < i; ++j) assert(MarketShop::item(s, j) != id);
-        }
-    }
-    // Late game: heart scale rare slot, stones/candy sale slot, all distinct.
-    bool sawCandy = false, sawStone = false;
+    static_assert(MarketShop::ROW_COUNT == 8);
+    const uint8_t capacities[] = {3,3,1,2,3,2,1,1};
+    bool sawScale = false, sawStone = false;
+    auto rotating = fresh(0);
     for (uint32_t day = 0; day < 200; ++day) {
-        auto s = fresh(day, 6);
-        MarketShop::ensurePeriod(s);
-        assert(MarketShop::item(s, MarketShop::RARE) == ItemId::HEART_SCALE);
-        const ItemId sale = MarketShop::item(s, MarketShop::SALE);
-        sawCandy |= sale == ItemId::CANDY;
-        sawStone |= sale == ItemId::FIRE_STONE || sale == ItemId::WATER_STONE || sale == ItemId::THUNDER_STONE;
-        assert(MarketShop::price(sale) < ShopService::buyPrice(sale));
+        auto early = fresh(day, 0);
+        rotating.gameMinutesTotal = day * 1440;
+        if (!MarketSchedule::isOpenDay(day)) {
+            const auto before = rotating;
+            assert(!MarketShop::ensurePeriod(rotating));
+            assert(std::memcmp(&before, &rotating, sizeof(before)) == 0);
+            assert(!MarketShop::ensurePeriod(early));
+            continue;
+        }
+        const auto previous = rotating.marketSeason;
+        assert(MarketShop::ensurePeriod(rotating));
+        assert(MarketShop::ensurePeriod(early));
+        assert(rotating.marketSeason.periodDay == day);
+        unsigned total = 0;
+        for (uint8_t slot = 0; slot < MarketShop::ROW_COUNT; ++slot) {
+            assert(rotating.marketSeason.stock[slot] == capacities[slot]);
+            total += rotating.marketSeason.stock[slot];
+            if (slot == MarketShop::BOX) continue;
+            const auto id = MarketShop::item(rotating, slot);
+            assert(id != ItemId::COUNT && MarketShop::unlocked(rotating, id));
+            if (slot <= MarketShop::DISCOUNT_B) {
+                assert(MarketShop::price(id) < ShopService::buyPrice(id));
+                assert(MarketShop::price(id) > ShopService::sellPrice(id));
+            }
+        }
+        assert(total == 16);
+        assert(MarketShop::item(rotating, MarketShop::DISCOUNT_A) != MarketShop::item(rotating, MarketShop::DISCOUNT_B));
+        const auto rare = MarketShop::item(rotating, MarketShop::RARE);
+        sawScale |= rare == ItemId::HEART_SCALE;
+        sawStone |= rare == ItemId::FIRE_STONE || rare == ItemId::WATER_STONE || rare == ItemId::THUNDER_STONE;
+        if (previous.periodDay != MARKET_PERIOD_NONE) {
+            assert(rotating.marketSeason.items[MarketShop::SPECIAL] != previous.items[MarketShop::SPECIAL]);
+            assert(rotating.marketSeason.items[MarketShop::RARE] != previous.items[MarketShop::RARE]);
+            const bool samePair = (rotating.marketSeason.items[0] == previous.items[0] && rotating.marketSeason.items[1] == previous.items[1]) ||
+                                  (rotating.marketSeason.items[0] == previous.items[1] && rotating.marketSeason.items[1] == previous.items[0]);
+            assert(!samePair);
+        }
+        // Locked categories are unavailable; they never gain substitute goods.
+        assert(early.marketSeason.stock[MarketShop::CANDY] == 0);
+        assert(early.marketSeason.stock[MarketShop::NUTRIENT] == 0);
+        assert(early.marketSeason.stock[MarketShop::RESET_BERRY] == 0);
+        assert(early.marketSeason.stock[MarketShop::RARE] == 0);
+        assert(early.marketSeason.items[MarketShop::RARE] == 255);
+        const auto samePeriod = rotating;
+        rotating.gameMinutesTotal += 600;
+        assert(!MarketShop::ensurePeriod(rotating));
+        assert(std::memcmp(&samePeriod.marketSeason, &rotating.marketSeason, sizeof(previous)) == 0);
     }
-    assert(sawCandy && sawStone);
-    // Same day keeps the shelf; next day redraws.
-    {
-        auto s = fresh(7, 6);
-        MarketShop::ensurePeriod(s);
-        const auto first = s.marketShop;
-        s.gameMinutesTotal += 600;
-        assert(!MarketShop::ensurePeriod(s) && std::memcmp(&first, &s.marketShop, sizeof(first)) == 0);
-        s.gameMinutesTotal = 8 * 1440;
-        assert(MarketShop::ensurePeriod(s) && s.marketShop.periodDay == 8);
-    }
-    // Buying: one unit, charges once, sold out afterwards, failures keep state.
-    {
-        auto s = fresh(3, 6);
-        MarketShop::ensurePeriod(s);
-        const uint32_t period = s.marketShop.periodDay;
-        auto poor = s; poor.coins = 599;
-        assert(MarketShop::buy(poor, MarketShop::RARE, period) == MarketShop::Result::NO_COINS && poor.coins == 599);
-        auto full = s; full.bag.heartScale = ITEM_STACK_CAP;
-        assert(MarketShop::buy(full, MarketShop::RARE, period) == MarketShop::Result::BAG_FULL);
-        assert(MarketShop::buy(s, MarketShop::RARE, period + 1) == MarketShop::Result::STALE);
-        assert(MarketShop::buy(s, MarketShop::RARE, period) == MarketShop::Result::OK);
-        assert(s.coins == 4400 && s.bag.heartScale == 1 && !s.marketShop.stock[0]);
-        assert(MarketShop::buy(s, MarketShop::RARE, period) == MarketShop::Result::SOLD_OUT && s.coins == 4400);
-        // A day rollover while the confirm page is open never sells the old quote.
-        auto later = s; later.gameMinutesTotal += 1440;
-        assert(MarketShop::buy(later, MarketShop::SUPPLY, period) == MarketShop::Result::STALE);
-        assert(MarketShop::check(s, 7, period) == MarketShop::Result::BAD_SLOT);
-    }
-    // Candy shares the shop's daily limit.
-    {
-        auto s = fresh(0, 6);
-        s.marketShop.periodDay = 0; s.marketShop.items[2] = uint8_t(ItemId::CANDY); s.marketShop.stock[2] = 1;
-        s.candyPurchasesToday = DAILY_CANDY_PURCHASE_CAP;
-        assert(MarketShop::buy(s, MarketShop::SALE, 0) == MarketShop::Result::DAILY_LIMIT);
-        s.candyPurchasesToday = 0;
-        assert(MarketShop::buy(s, MarketShop::SALE, 0) == MarketShop::Result::OK && s.candyPurchasesToday == 1 && s.coins == 3200);
-    }
-    // Save codec: schema 5 round trip.
-    {
-        auto s = fresh(9, 6);
-        MarketShop::ensurePeriod(s); s.marketShop.stock[1] = 0;
-        static uint8_t encoded[SaveCodec::MAX_ENCODED_BYTES];
-        size_t length = 0; MainSceneViewState view{};
-        assert(SaveCodec::encode(s, view, 5, encoded, sizeof(encoded), length));
-        auto* decoded = new SaveCodec::Snapshot{};
-        assert(SaveCodec::decode(encoded, length, *decoded));
-        assert(std::memcmp(&decoded->state.marketShop, &s.marketShop, sizeof(s.marketShop)) == 0);
-        delete decoded;
-    }
-    std::puts("market-shop: shelf draw unlock price buy stale candy save OK");
+    assert(sawScale && sawStone);
+
+    auto state = fresh(7);
+    assert(MarketShop::ensurePeriod(state));
+    const auto slot = MarketShop::RARE;
+    const auto id = MarketShop::item(state, slot);
+    const auto price = MarketShop::price(id);
+    auto poor = state;
+    poor.coins = price - 1;
+    const auto beforePoor = poor;
+    assert(MarketShop::buy(poor, slot, 7) == MarketShop::Result::NO_COINS);
+    assert(std::memcmp(&poor, &beforePoor, sizeof(poor)) == 0);
+    auto full = state;
+    assert(ItemInventory::add(full, id, ITEM_STACK_CAP - ItemInventory::count(full,id)));
+    const auto beforeFull = full;
+    assert(MarketShop::buy(full, slot, 7) == MarketShop::Result::BAG_FULL);
+    assert(std::memcmp(&full, &beforeFull, sizeof(full)) == 0);
+    assert(MarketShop::buy(state, slot, 3) == MarketShop::Result::STALE);
+    assert(MarketShop::check(state, MarketShop::ROW_COUNT, 7) == MarketShop::Result::BAD_SLOT);
+    const auto count = ItemInventory::count(state,id);
+    assert(MarketShop::buy(state, slot, 7) == MarketShop::Result::OK);
+    assert(state.coins == 100000 - price && ItemInventory::count(state,id) == count+1);
+    const auto bought = state;
+    assert(MarketShop::buy(state, slot, 7) == MarketShop::Result::SOLD_OUT);
+    assert(std::memcmp(&state, &bought, sizeof(state)) == 0);
+    state.gameMinutesTotal = 8 * 1440;
+    const auto closed = state;
+    assert(MarketShop::buy(state, MarketShop::DISCOUNT_A, 7) == MarketShop::Result::STALE);
+    assert(!MarketShop::ensurePeriod(state));
+    assert(std::memcmp(&state,&closed,sizeof(state)) == 0);
+    state.gameMinutesTotal = 10 * 1440;
+    assert(MarketShop::ensurePeriod(state) && state.marketSeason.stock[slot] == 1);
+    state.candyPurchasesToday = DAILY_CANDY_PURCHASE_CAP;
+    const auto candy = state.bag.candy;
+    assert(MarketShop::buy(state, MarketShop::CANDY, 10) == MarketShop::Result::OK);
+    assert(state.bag.candy == candy+1 && state.candyPurchasesToday == DAILY_CANDY_PURCHASE_CAP);
+
+    // Schema7's old same-period purchases reduce the new shared quotas once.
+    state = fresh(7);
+    auto expected = state;
+    assert(MarketShop::ensurePeriod(expected));
+    state.marketShop.periodDay = 7;
+    state.marketShop.items[0] = expected.marketSeason.items[MarketShop::DISCOUNT_A];
+    state.marketShop.items[1] = uint8_t(ItemId::CANDY);
+    state.marketShop.items[2] = expected.marketSeason.items[MarketShop::RARE];
+    state.marketShop.boxBought = 1;
+    state.marketShop.boxRoll = 87;
+    state.candyPurchasesToday = 1;
+    state.marketCare.periodDay = 7;
+    state.marketCare.used = 1;
+    static uint8_t encoded[SaveCodec::MAX_ENCODED_BYTES];
+    size_t length = 0;
+    assert(SaveCodec::encode(state, {}, 5, encoded, sizeof(encoded), length));
+    std::vector<uint8_t> legacy;
+    assert(SaveTestUtil::fabricateLegacySchemaBlob(encoded,length,legacy,7));
+    SaveCodec::Snapshot decoded;
+    assert(SaveCodec::decode(legacy.data(),legacy.size(),decoded));
+    assert(MarketShop::ensurePeriod(decoded.state));
+    assert(decoded.state.marketSeason.stock[MarketShop::DISCOUNT_A] == 2);
+    assert(decoded.state.marketSeason.stock[MarketShop::CANDY] == 0);
+    assert(decoded.state.marketSeason.stock[MarketShop::RARE] == 0);
+    assert(decoded.state.marketSeason.stock[MarketShop::BOX] == 0);
+    assert(decoded.state.marketSeason.boxRoll == 87 && decoded.state.marketCare.used == 1);
+    assert(!MarketShop::ensurePeriod(decoded.state));
+    decoded.state.marketItemStock[0] = 23;
+    decoded.state.marketTutorGifted = 1;
+    const auto saved = decoded.state;
+    assert(SaveCodec::encode(saved, {}, 6, encoded, sizeof(encoded), length));
+    assert(SaveCodec::decode(encoded,length,decoded));
+    assert(std::memcmp(&decoded.state.marketSeason,&saved.marketSeason,sizeof(saved.marketSeason)) == 0);
+    assert(decoded.state.marketItemStock[0] == 23 && decoded.state.marketTutorGifted == 1);
+    assert(!MarketShop::ensurePeriod(decoded.state));
+    std::puts("market-shop: open/closed periods, rotation, 8 rows/16 units, unlocks, prices, refusals and migration/save OK");
 }

@@ -16,7 +16,7 @@ class ShopServiceTests(unittest.TestCase):
             subprocess.run(
                 [
                     "c++",
-                    "-std=c++11",
+                    "-std=c++17",
                     "-Isrc",
                     "tools/shop_service_host.cpp",
                     "src/game/ExperienceService.cpp",

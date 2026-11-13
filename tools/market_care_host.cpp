@@ -97,12 +97,20 @@ int main() {
     assert(Care::check(s, Care::Service::TEA, fainted, day) == Care::Result::QUOTA_FULL);
     assert(!Care::anyEligible(s, Care::Service::TEA) && !Care::anyEligible(s, Care::Service::MASSAGE));
 
-    // Next game day resets the stall but not the earlier gains.
+    // Closed days preserve the quota and reject care without changing state.
     s.gameMinutesTotal += 24 * 60;
+    const auto closed = s;
+    assert(Care::remaining(s) == 0 && Care::servedThisPeriod(s, s.team[0]));
+    assert(Care::apply(s, Care::Service::TEA, fainted, day) == Care::Result::STALE);
+    assert(std::memcmp(&s, &closed, sizeof(s)) == 0);
+    // The next opening resets the stall but not the earlier gains.
+    const uint32_t nextDay = MarketSchedule::nextOpenDay(day + 1);
+    assert(nextDay == 7);
+    s.gameMinutesTotal = nextDay * 1440 + 9 * 60;
     assert(Care::remaining(s) == 2 && !Care::servedThisPeriod(s, s.team[0]));
     assert(Care::anyEligible(s, Care::Service::TEA));
-    assert(Care::apply(s, Care::Service::TEA, fainted, day + 1) == Care::Result::OK);
-    assert(s.marketCare.periodDay == day + 1 && s.marketCare.used == 1 && s.storage[4].bond == 35);
+    assert(Care::apply(s, Care::Service::TEA, fainted, nextDay) == Care::Result::OK);
+    assert(s.marketCare.periodDay == nextDay && s.marketCare.used == 1 && s.storage[4].bond == 35);
 
     // Advice priorities.
     {
@@ -124,7 +132,7 @@ int main() {
         assert(SaveCodec::encode(s, view, 4, encoded, sizeof(encoded), length));
         SaveCodec::Snapshot decoded;
         assert(SaveCodec::decode(encoded, length, decoded));
-        assert(decoded.state.marketCare.periodDay == day + 1 && decoded.state.marketCare.used == 1);
+        assert(decoded.state.marketCare.periodDay == nextDay && decoded.state.marketCare.used == 1);
         assert(decoded.state.marketCare.served[0].ivPacked == 0x6666 && decoded.state.marketCare.served[0].metAt == 60);
         std::vector<uint8_t> legacy;
         assert(SaveTestUtil::fabricateSchema5Blob(encoded, length, legacy));

@@ -146,7 +146,8 @@ PackSlot packSlotFor(Kind kind) {
     if (value <= static_cast<uint16_t>(Kind::SHOWER_BACKGROUND) ||
         kind == Kind::ITEM_HEART_SCALE ||
         (kind >= Kind::ITEM48_POKE_BALL && kind <= Kind::ITEM48_SOAP_2) ||
-        kind == Kind::EXPLORE_PICKUP_BALL || kind == Kind::MARKET_CHAT) {
+        kind == Kind::EXPLORE_PICKUP_BALL || kind == Kind::MARKET_CHAT || kind == Kind::MARKET_MYSTERY_BOX ||
+        (kind >= Kind::MARKET_ITEM_HP_UP && kind <= Kind::MARKET_ITEM_LUM_BERRY)) {
         return PackSlot::UI;
     }
     if (kind == Kind::EGG) return PackSlot::HATCH;
@@ -1043,6 +1044,23 @@ Kind itemKind(Game::ItemId item) {
     case Game::ItemId::BIG_PEARL: return Kind::ITEM_BIG_PEARL;
     case Game::ItemId::STAR_PIECE: return Kind::ITEM_STAR_PIECE;
     case Game::ItemId::HEART_SCALE: return Kind::ITEM_HEART_SCALE;
+    case Game::ItemId::HP_UP: return Kind::MARKET_ITEM_HP_UP;
+    case Game::ItemId::PROTEIN: return Kind::MARKET_ITEM_PROTEIN;
+    case Game::ItemId::IRON: return Kind::MARKET_ITEM_IRON;
+    case Game::ItemId::CALCIUM: return Kind::MARKET_ITEM_CALCIUM;
+    case Game::ItemId::ZINC: return Kind::MARKET_ITEM_ZINC;
+    case Game::ItemId::CARBOS: return Kind::MARKET_ITEM_CARBOS;
+    case Game::ItemId::POMEG_BERRY: return Kind::MARKET_ITEM_POMEG_BERRY;
+    case Game::ItemId::KELPSY_BERRY: return Kind::MARKET_ITEM_KELPSY_BERRY;
+    case Game::ItemId::QUALOT_BERRY: return Kind::MARKET_ITEM_QUALOT_BERRY;
+    case Game::ItemId::HONDEW_BERRY: return Kind::MARKET_ITEM_HONDEW_BERRY;
+    case Game::ItemId::GREPA_BERRY: return Kind::MARKET_ITEM_GREPA_BERRY;
+    case Game::ItemId::TAMATO_BERRY: return Kind::MARKET_ITEM_TAMATO_BERRY;
+    case Game::ItemId::MAX_REVIVE: return Kind::MARKET_ITEM_MAX_REVIVE;
+    case Game::ItemId::LAVA_COOKIE: return Kind::MARKET_ITEM_LAVA_COOKIE;
+    case Game::ItemId::ORAN_BERRY: return Kind::MARKET_ITEM_ORAN_BERRY;
+    case Game::ItemId::SITRUS_BERRY: return Kind::MARKET_ITEM_SITRUS_BERRY;
+    case Game::ItemId::LUM_BERRY: return Kind::MARKET_ITEM_LUM_BERRY;
     case Game::ItemId::SOAP_0: return Kind::SHOWER_SOAP_0;
     case Game::ItemId::SOAP_1: return Kind::SHOWER_SOAP_1;
     case Game::ItemId::SOAP_2: return Kind::SHOWER_SOAP_2;
@@ -1057,6 +1075,9 @@ bool drawItemIcon48(Game::ItemId item, int centerX, int centerY) {
         native = static_cast<Kind>(static_cast<uint16_t>(Kind::ITEM48_POKE_BALL) +
                                    static_cast<uint16_t>(original));
     } else if (original == Kind::ITEM_HEART_SCALE) native = Kind::ITEM48_HEART_SCALE;
+    else if (original >= Kind::MARKET_ITEM_HP_UP && original <= Kind::MARKET_ITEM_LUM_BERRY) {
+        return drawCentered(original, centerX, centerY);
+    }
     else if (original >= Kind::SHOWER_SOAP_0 && original <= Kind::SHOWER_SOAP_2) {
         native = static_cast<Kind>(static_cast<uint16_t>(Kind::ITEM48_SOAP_0) +
             static_cast<uint16_t>(original) - static_cast<uint16_t>(Kind::SHOWER_SOAP_0));

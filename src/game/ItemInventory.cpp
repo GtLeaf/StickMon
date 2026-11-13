@@ -4,12 +4,14 @@
 
 #include "game/ExperienceService.h"
 #include "game/Species.h"
+#include "game/MarketItemCatalog.h"
 
 namespace Game {
 namespace ItemInventory {
 namespace {
 
 uint8_t* stockPointer(GameState& state, ItemId item) {
+    if (MarketItemCatalog::contains(item)) return &state.marketItemStock[uint8_t(item)-uint8_t(ItemId::HP_UP)];
     int8_t foodIndex = foodIndexForItemId(item);
     if (foodIndex >= 0) return &state.room.food[foodIndex];
     int8_t soapIndex = soapIndexForItemId(item);
@@ -70,6 +72,9 @@ bool cureStatus(MonsterRuntime& monster, MajorStatus first,
 }
 
 constexpr ItemId HOME_BAG_DAILY_ITEMS[] = {
+    ItemId::HP_UP, ItemId::PROTEIN, ItemId::IRON, ItemId::CALCIUM, ItemId::ZINC, ItemId::CARBOS,
+    ItemId::POMEG_BERRY, ItemId::KELPSY_BERRY, ItemId::QUALOT_BERRY,
+    ItemId::HONDEW_BERRY, ItemId::GREPA_BERRY, ItemId::TAMATO_BERRY,
     ItemId::NORMAL_FOOD,
     ItemId::TASTY_FOOD,
     ItemId::SWEET_FOOD,
@@ -84,6 +89,7 @@ constexpr ItemId HOME_BAG_DAILY_ITEMS[] = {
 };
 
 constexpr ItemId HOME_BAG_EXPLORE_ITEMS[] = {
+    ItemId::MAX_REVIVE, ItemId::LAVA_COOKIE, ItemId::ORAN_BERRY, ItemId::SITRUS_BERRY, ItemId::LUM_BERRY,
     ItemId::POTION,
     ItemId::SUPER_POTION,
     ItemId::ANTIDOTE,
@@ -164,6 +170,7 @@ bool remove(GameState& state, ItemId item, uint8_t amount) {
 }
 
 bool usableFromHomeBag(ItemId item) {
+    if (MarketItemCatalog::contains(item)) return true;
     switch (item) {
     case ItemId::POTION:
     case ItemId::SUPER_POTION:
@@ -187,6 +194,7 @@ bool usableFromHomeBag(ItemId item) {
 }
 
 bool usableInBattle(ItemId item) {
+    if (MarketItemCatalog::contains(item)) return !MarketItemCatalog::nutrient(item) && !MarketItemCatalog::resetBerry(item);
     switch (item) {
     case ItemId::POTION:
     case ItemId::SUPER_POTION:
@@ -206,7 +214,7 @@ bool usableInBattle(ItemId item) {
 }
 
 uint8_t preferredTarget(const GameState& state, ItemId item) {
-    if (item == ItemId::REVIVE) {
+    if (item == ItemId::REVIVE || item == ItemId::MAX_REVIVE) {
         for (uint8_t slot = 0;
              slot < state.teamCount && slot < TEAM_CAP; ++slot) {
             if (state.team[slot].fainted || state.team[slot].hpCur == 0) {
@@ -223,17 +231,47 @@ UseResult useOnTeam(GameState& state, ItemId item, uint8_t teamSlot) {
         return UseResult::INVALID_TARGET;
     }
     MonsterRuntime& monster = state.team[teamSlot];
+    if (MarketItemCatalog::nutrient(item) || MarketItemCatalog::resetBerry(item)) {
+        if (monster.fainted || !monster.hpCur) return UseResult::FAINTED;
+        const Species* species = findSpecies(monster.speciesId);
+        if (!species) return UseResult::INVALID_TARGET;
+        uint8_t* value = nullptr;
+        switch (MarketItemCatalog::statIndex(item)) {
+        case 0: value = &monster.ev.hp; break;
+        case 1: value = &monster.ev.atk; break;
+        case 2: value = &monster.ev.def; break;
+        case 3: value = &monster.ev.spa; break;
+        case 4: value = &monster.ev.spd; break;
+        case 5: value = &monster.ev.spe; break;
+        }
+        if (!value) return UseResult::INVALID_TARGET;
+        if (MarketItemCatalog::nutrient(item)) {
+            const unsigned total = evTotal(monster.ev);
+            if (*value >= EV_MAX || total >= EV_TOTAL_MAX) return UseResult::NOT_USABLE;
+            *value += uint8_t(std::min<unsigned>(10, std::min<unsigned>(EV_MAX-*value, EV_TOTAL_MAX-total)));
+        } else {
+            if (!*value) return UseResult::NOT_USABLE;
+            *value = uint8_t(*value > 10 ? *value - 10 : 0);
+            monster.affection = uint8_t(std::min<unsigned>(255, unsigned(monster.affection) + 2));
+        }
+        monster.hpMax = maxHpFor(*species, monster);
+        monster.hpCur = std::min(monster.hpCur, monster.hpMax);
+        remove(state, item);
+        return UseResult::USED;
+    }
     switch (item) {
     case ItemId::POTION:
     case ItemId::SUPER_POTION:
     case ItemId::MAX_POTION:
+    case ItemId::ORAN_BERRY:
+    case ItemId::SITRUS_BERRY:
         if (monster.fainted || monster.hpCur == 0) return UseResult::FAINTED;
         if (monster.hpCur >= monster.hpMax) return UseResult::HP_FULL;
         remove(state, item);
         if (item == ItemId::MAX_POTION) {
             monster.hpCur = monster.hpMax;
         } else {
-            uint16_t healing = item == ItemId::POTION ? 20 : 50;
+            uint16_t healing = item == ItemId::POTION ? 20 : item == ItemId::ORAN_BERRY ? 10 : item == ItemId::SITRUS_BERRY ? 30 : 50;
             monster.hpCur = std::min<uint16_t>(
                 monster.hpMax, static_cast<uint16_t>(monster.hpCur + healing));
         }
@@ -282,6 +320,8 @@ UseResult useOnTeam(GameState& state, ItemId item, uint8_t teamSlot) {
         remove(state, item);
         return UseResult::USED;
     case ItemId::FULL_HEAL:
+    case ItemId::LAVA_COOKIE:
+    case ItemId::LUM_BERRY:
         if (monster.majorStatus == MajorStatus::NONE) {
             return UseResult::STATUS_NORMAL;
         }
@@ -291,12 +331,13 @@ UseResult useOnTeam(GameState& state, ItemId item, uint8_t teamSlot) {
         return UseResult::USED;
 
     case ItemId::REVIVE:
+    case ItemId::MAX_REVIVE:
         if (!monster.fainted && monster.hpCur > 0) {
             return UseResult::NO_FAINTED_TARGET;
         }
         remove(state, item);
         monster.fainted = false;
-        monster.hpCur = std::max<uint16_t>(1, monster.hpMax / 2);
+        monster.hpCur = item == ItemId::MAX_REVIVE ? monster.hpMax : std::max<uint16_t>(1, monster.hpMax / 2);
         return UseResult::USED;
 
     case ItemId::CANDY: {

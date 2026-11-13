@@ -55,6 +55,9 @@ def collect_chars_from_text(text):
 def collect_ui_chars():
     text = (SRC / "core" / "UiStrings.h").read_text(encoding="utf-8")
     chars = collect_chars_from_text(text)
+    catalog = SRC / "game" / "MarketItemCatalog.h"
+    if catalog.exists():
+        chars.update(collect_chars_from_text(catalog.read_text(encoding="utf-8")))
     dialogue = ROOT / "origin_asset/text/market_dialogue.json"
     if dialogue.exists():
         chars.update(collect_chars_from_text(dialogue.read_text(encoding="utf-8")))

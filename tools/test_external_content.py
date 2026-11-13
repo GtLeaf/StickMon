@@ -49,9 +49,17 @@ template<class V> void contentFields(V& v,TestRecord& x) {v(x.number,x.text,x.en
     cpp=OUT/'external.cpp';cpp.write_text(source);binary=OUT/'external'
     inflate=OUT/'tinflate.o'
     subprocess.run(['cc','-O1','-fsanitize=address,undefined','-c','src/third_party/uzlib/tinflate.c','-o',str(inflate)],cwd=ROOT,check=True)
+    extra=[]
+    if sys.platform!='darwin':
+        # ResourcePack uses raw deflate. GNU sanitizer linking also retains
+        # uzlib's unused gzip/zlib wrappers, whose checksums are not bundled.
+        checksum=OUT/'uzlib_stub.c'
+        checksum.write_text('extern "C" {\nunsigned uzlib_adler32(const void*d,unsigned l,unsigned p){(void)d;(void)l;return p;}\n'
+                            'unsigned uzlib_crc32(const void*d,unsigned l,unsigned p){(void)d;(void)l;return p;}\n}\n')
+        extra.append(str(checksum))
     subprocess.run(['c++','-std=c++17','-O1','-g','-ffunction-sections','-fdata-sections',
                     '-fsanitize=address,undefined','-DSTICKMON_EXTERNAL_CONTENT=1','-Isrc',str(cpp),
-                    'src/game/ExploreEcologyFlight.cpp','src/core/ResourcePack.cpp','src/core/DeflateDecoder.cpp',str(inflate),'src/platform/desktop/DesktopPlatform.cpp','src/platform/api/PlatformServices.cpp','src/core/ResourceFS.cpp',
+                    'src/game/ExploreEcologyFlight.cpp','src/core/ResourcePack.cpp','src/core/DeflateDecoder.cpp',str(inflate),*extra,'src/platform/desktop/DesktopPlatform.cpp','src/platform/api/PlatformServices.cpp','src/core/ResourceFS.cpp',
                     '-Wl,-dead_strip' if sys.platform=='darwin' else '-Wl,--gc-sections','-o',str(binary)],cwd=ROOT,check=True)
     external=OUT/'external-output';external.mkdir(exist_ok=True)
     def run(mode=None):

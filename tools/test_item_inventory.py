@@ -16,7 +16,7 @@ class ItemInventoryTests(unittest.TestCase):
             subprocess.run(
                 [
                     "c++",
-                    "-std=c++11",
+                    "-std=c++17",
                     "-Isrc",
                     "tools/item_inventory_host.cpp",
                     "src/game/ExperienceService.cpp",

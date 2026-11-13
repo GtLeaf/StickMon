@@ -5,6 +5,7 @@
 #include "core/SaveCodec.h"
 #include "game/MarketTutorService.h"
 #include "game/MonsterFactory.h"
+#include "save_schema1_fabricator.h"
 
 using namespace Game;
 
@@ -65,11 +66,18 @@ int main() {
         MarketTutor::ensurePeriod(again);
         assert(again.marketTutor.move == first.move);
         s.gameMinutesTotal = 4 * 1440;
-        assert(MarketTutor::ensurePeriod(s) && s.marketTutor.periodDay == 4);
-        // Draw coverage: both members get drawn across many days.
+        assert(!MarketTutor::ensurePeriod(s));
+        assert(std::memcmp(&s.marketTutor, &first, sizeof(first)) == 0);
+        s.gameMinutesTotal = 7 * 1440;
+        assert(MarketTutor::ensurePeriod(s) && s.marketTutor.periodDay == 7);
+        // Draw coverage: both members get drawn across many opening days.
         bool drew[2] = {};
         for (uint32_t day = 0; day < 200; ++day) {
             auto d = party(133, 18, 25, 18); d.gameMinutesTotal = day * 1440;
+            if (!MarketSchedule::isOpenDay(day)) {
+                assert(!MarketTutor::ensurePeriod(d) && !d.marketTutor.move);
+                continue;
+            }
             MarketTutor::ensurePeriod(d);
             assert(d.marketTutor.move);
             drew[d.marketTutor.drawnSpecies == 25] = true;
@@ -125,7 +133,11 @@ int main() {
         std::swap(s.team[0], s.team[1]);
         assert(MarketTutor::checkTrain(s, 1, 1) == MarketTutor::Result::ALREADY_TRAINED);
         assert(MarketTutor::trainableMembers(s) == 1);
-        s.gameMinutesTotal += 1440; MarketTutor::ensurePeriod(s);
+        s.gameMinutesTotal += 1440;
+        assert(!MarketTutor::ensurePeriod(s));
+        assert(MarketTutor::checkTrain(s, 1, 1) == MarketTutor::Result::NO_CLASS);
+        s.gameMinutesTotal = 3 * 1440;
+        assert(MarketTutor::ensurePeriod(s));
         assert(MarketTutor::checkTrain(s, 1, 1) == MarketTutor::Result::OK);
         assert(MarketTutor::trainedProficiency(97) == 100 && MarketTutor::trainStep(97).cost == 300);
         assert(MarketTutor::trainedProficiency(39) == 49 && MarketTutor::trainedProficiency(40) == 48);
@@ -150,25 +162,12 @@ int main() {
         auto* decoded = new SaveCodec::Snapshot{};
         assert(SaveCodec::decode(encoded, length, *decoded));
         assert(std::memcmp(&decoded->state.marketTutor, &s.marketTutor, sizeof(s.marketTutor)) == 0);
-        // Fabricate the frozen schema-3 payload by removing the v6 extension.
-        constexpr size_t VIEW = 84, EXT = 4 + 2 + 2 + 1 + 1 + MARKET_TUTOR_TRAIN_CAP * 8 + 4 + 2 * MARKET_SHELF_SLOTS +
-                                4 + 1 + MARKET_CARE_PERIOD_CAP * 8;
-        static uint8_t legacy[SaveCodec::MAX_ENCODED_BYTES];
-        const size_t cut = length - VIEW - EXT;
-        std::memcpy(legacy, encoded, cut);
-        std::memcpy(legacy + cut, encoded + cut + EXT, VIEW);
-        const size_t legacyLength = length - EXT;
-        legacy[4] = 3; legacy[SaveCodec::HEADER_BYTES + 4] = 5;
-        const uint16_t payload = uint16_t(legacyLength - SaveCodec::HEADER_BYTES);
-        legacy[12] = uint8_t(payload); legacy[13] = uint8_t(payload >> 8);
-        uint16_t crc = 0xFFFF;
-        for (size_t i = 0; i < legacyLength; ++i) {
-            crc ^= (i == 14 || i == 15) ? 0 : legacy[i];
-            for (int b = 0; b < 8; ++b) crc = (crc & 1) ? uint16_t((crc >> 1) ^ 0xA001) : uint16_t(crc >> 1);
-        }
-        legacy[14] = uint8_t(crc); legacy[15] = uint8_t(crc >> 8);
+        // Shared fabricator removes every append-only extension, including
+        // the market-season data, while retaining the frozen schema-3 view.
+        std::vector<uint8_t> legacy;
+        assert(SaveTestUtil::fabricateSchema3Blob(encoded, length, legacy));
         *decoded = {};
-        assert(SaveCodec::decode(legacy, legacyLength, *decoded));
+        assert(SaveCodec::decode(legacy.data(), legacy.size(), *decoded));
         assert(decoded->state.version == SAVE_VERSION && decoded->state.coins == s.coins);
         assert(decoded->state.marketTutor.periodDay == MARKET_PERIOD_NONE && !decoded->state.marketTutor.move);
         assert(decoded->state.team[0].speciesId == 133);

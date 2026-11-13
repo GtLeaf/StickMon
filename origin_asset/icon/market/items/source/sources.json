@@ -1,0 +1,128 @@
+[
+  {
+    "file": "hp_up.png",
+    "repository": "pret/pokeemerald",
+    "path": "graphics/items/icons/hp_up.png",
+    "gitBlobSha": "0870f82b5b8de2706bba96e896aa09181cb7c973",
+    "url": "https://github.com/pret/pokeemerald/blob/master/graphics/items/icons/hp_up.png"
+  },
+  {
+    "file": "pomeg_berry.png",
+    "repository": "pret/pokeemerald",
+    "path": "graphics/items/icons/pomeg_berry.png",
+    "gitBlobSha": "fc0e4280231d3fe1abf53b72d0feeee679099698",
+    "url": "https://github.com/pret/pokeemerald/blob/master/graphics/items/icons/pomeg_berry.png"
+  },
+  {
+    "file": "kelpsy_berry.png",
+    "repository": "pret/pokeemerald",
+    "path": "graphics/items/icons/kelpsy_berry.png",
+    "gitBlobSha": "471d287350b25d6acb2e7d15f207b088dc503dee",
+    "url": "https://github.com/pret/pokeemerald/blob/master/graphics/items/icons/kelpsy_berry.png"
+  },
+  {
+    "file": "qualot_berry.png",
+    "repository": "pret/pokeemerald",
+    "path": "graphics/items/icons/qualot_berry.png",
+    "gitBlobSha": "7c3a0d7706bf4407d33ea87cfd345ae7db297fb0",
+    "url": "https://github.com/pret/pokeemerald/blob/master/graphics/items/icons/qualot_berry.png"
+  },
+  {
+    "file": "hondew_berry.png",
+    "repository": "pret/pokeemerald",
+    "path": "graphics/items/icons/hondew_berry.png",
+    "gitBlobSha": "cf89e344613a547208ef72f8bf7da4e9b4613a3a",
+    "url": "https://github.com/pret/pokeemerald/blob/master/graphics/items/icons/hondew_berry.png"
+  },
+  {
+    "file": "grepa_berry.png",
+    "repository": "pret/pokeemerald",
+    "path": "graphics/items/icons/grepa_berry.png",
+    "gitBlobSha": "3dae1e92bc8440debf533c989187992791bc2b48",
+    "url": "https://github.com/pret/pokeemerald/blob/master/graphics/items/icons/grepa_berry.png"
+  },
+  {
+    "file": "tamato_berry.png",
+    "repository": "pret/pokeemerald",
+    "path": "graphics/items/icons/tamato_berry.png",
+    "gitBlobSha": "cd0268755241ac8de7e61f2e15a94b44352b8b30",
+    "url": "https://github.com/pret/pokeemerald/blob/master/graphics/items/icons/tamato_berry.png"
+  },
+  {
+    "file": "max_revive.png",
+    "repository": "pret/pokeemerald",
+    "path": "graphics/items/icons/max_revive.png",
+    "gitBlobSha": "dd3df2b0c4bca0712b40e883053a41208dc39a8c",
+    "url": "https://github.com/pret/pokeemerald/blob/master/graphics/items/icons/max_revive.png"
+  },
+  {
+    "file": "lava_cookie.png",
+    "repository": "pret/pokeemerald",
+    "path": "graphics/items/icons/lava_cookie.png",
+    "gitBlobSha": "5c8c37c7de1b16c828fd145a4501258a31d73ebf",
+    "url": "https://github.com/pret/pokeemerald/blob/master/graphics/items/icons/lava_cookie.png"
+  },
+  {
+    "file": "oran_berry.png",
+    "repository": "pret/pokeemerald",
+    "path": "graphics/items/icons/oran_berry.png",
+    "gitBlobSha": "ed8d3b21225511451aedba28a8e5be0e43778bf5",
+    "url": "https://github.com/pret/pokeemerald/blob/master/graphics/items/icons/oran_berry.png"
+  },
+  {
+    "file": "sitrus_berry.png",
+    "repository": "pret/pokeemerald",
+    "path": "graphics/items/icons/sitrus_berry.png",
+    "gitBlobSha": "6b5ffeb0cd14da603ec0335912ea4a11e121dfb6",
+    "url": "https://github.com/pret/pokeemerald/blob/master/graphics/items/icons/sitrus_berry.png"
+  },
+  {
+    "file": "lum_berry.png",
+    "repository": "pret/pokeemerald",
+    "path": "graphics/items/icons/lum_berry.png",
+    "gitBlobSha": "33020e55803c9a1767e5d7c357bc528120cd97bb",
+    "url": "https://github.com/pret/pokeemerald/blob/master/graphics/items/icons/lum_berry.png"
+  },
+  {
+    "file": "vitamin.png",
+    "repository": "pret/pokeemerald",
+    "path": "graphics/items/icons/vitamin.png",
+    "gitBlobSha": "2ba89b154cd317ddd3dfdbba9cc24d2dd7adcb6a",
+    "url": "https://github.com/pret/pokeemerald/blob/master/graphics/items/icons/vitamin.png"
+  },
+  {
+    "file": "protein.pal",
+    "repository": "pret/pokeemerald",
+    "path": "graphics/items/icon_palettes/protein.pal",
+    "gitBlobSha": "913a87ea471bca3abc8dd19f1fd0d4fbfb990b6c",
+    "url": "https://github.com/pret/pokeemerald/blob/master/graphics/items/icon_palettes/protein.pal"
+  },
+  {
+    "file": "iron.pal",
+    "repository": "pret/pokeemerald",
+    "path": "graphics/items/icon_palettes/iron.pal",
+    "gitBlobSha": "44592f92b2d64c71e12dcf1e7e38b54e5195bf81",
+    "url": "https://github.com/pret/pokeemerald/blob/master/graphics/items/icon_palettes/iron.pal"
+  },
+  {
+    "file": "calcium.pal",
+    "repository": "pret/pokeemerald",
+    "path": "graphics/items/icon_palettes/calcium.pal",
+    "gitBlobSha": "0a0100e2df2271095208b336d2c4204c9853883f",
+    "url": "https://github.com/pret/pokeemerald/blob/master/graphics/items/icon_palettes/calcium.pal"
+  },
+  {
+    "file": "zinc.pal",
+    "repository": "pret/pokeemerald",
+    "path": "graphics/items/icon_palettes/zinc.pal",
+    "gitBlobSha": "472936091a2dc3bc1eeff65a57e062cd3dfc094d",
+    "url": "https://github.com/pret/pokeemerald/blob/master/graphics/items/icon_palettes/zinc.pal"
+  },
+  {
+    "file": "carbos.pal",
+    "repository": "pret/pokeemerald",
+    "path": "graphics/items/icon_palettes/carbos.pal",
+    "gitBlobSha": "75ea0b5e85615f823a9faf306d95cb6de82cb853",
+    "url": "https://github.com/pret/pokeemerald/blob/master/graphics/items/icon_palettes/carbos.pal"
+  }
+]

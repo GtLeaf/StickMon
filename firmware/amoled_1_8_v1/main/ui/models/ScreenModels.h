@@ -158,6 +158,7 @@ struct DebugViewModel {
 struct ExploreViewModel {
     bool destinationMenu = false;
     bool marketSelected = false;
+    uint32_t marketDaysUntilOpen = 0;
     uint8_t destinationIds[7]{};
     bool destinationUnlocked[7]{};
     uint8_t visibleAreaCount = 1;

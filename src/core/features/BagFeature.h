@@ -5,13 +5,15 @@
 
 namespace Features { namespace Bag {
 
-constexpr uint8_t ITEM_COUNT = 26;
+constexpr uint8_t ITEM_COUNT = 43;
 constexpr uint8_t SOURCE_FOOD_BASE = 4;
 constexpr uint8_t SOURCE_HEAL_BASE = 11;
 constexpr uint8_t SOURCE_EXTRA_BASE = 15;
 constexpr uint8_t SOURCE_EXTRA_COUNT = 10;
 constexpr uint8_t SOURCE_HEART_SCALE = SOURCE_EXTRA_BASE + 9;
-constexpr uint8_t SOURCE_BACK = 25;
+constexpr uint8_t SOURCE_MARKET_BASE = 25;
+constexpr uint8_t SOURCE_MARKET_COUNT = 17;
+constexpr uint8_t SOURCE_BACK = SOURCE_MARKET_BASE + SOURCE_MARKET_COUNT;
 
 struct Row { uint8_t source; uint8_t count; };
 struct Context {
@@ -33,6 +35,7 @@ enum class BattleResult : uint8_t {
         FULL_RESTORE,
         FULL_HEAL,
         REVIVE,
+        MARKET_ITEM,
 };
 enum class Selection : uint8_t { NONE, CONFIRM, RECALL, BACK };
 enum class Notice : uint8_t { NONE,
@@ -59,13 +62,16 @@ enum class Notice : uint8_t { NONE,
     USED_HONEY,
     HONEY_ACTIVE,
     FOOD_NO_STOCK,
-    THREW_FOOD
+    THREW_FOOD,
+    USED_ITEM,
+    NOTHING_ELSE_NEEDED
 };
 struct Outcome {
     bool used = false;
     BattleResult battleResult = BattleResult::NONE;
     Notice notice = Notice::NONE;
     uint8_t foodIndex = 0;
+    Game::ItemId item = Game::ItemId::COUNT;
 };
 
 Game::ItemId itemId(uint8_t source);

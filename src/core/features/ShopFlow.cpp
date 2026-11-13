@@ -65,6 +65,10 @@ ShopFlow::Item ShopFlow::itemForCategory(Category category, uint8_t index) const
 }
 
 ShopFlow::Item ShopFlow::itemFromGameItemId(Game::ItemId item) {
+    if (item >= Game::ItemId::HP_UP && item < Game::ItemId::COUNT) {
+        return static_cast<Item>(MARKET_FIRST + static_cast<uint8_t>(item) -
+                                 static_cast<uint8_t>(Game::ItemId::HP_UP));
+    }
     switch (item) {
     case Game::ItemId::POTION: return POTION;
     case Game::ItemId::SUPER_POTION: return SUPER_POTION;
@@ -99,6 +103,7 @@ ShopFlow::Item ShopFlow::itemFromGameItemId(Game::ItemId item) {
     case Game::ItemId::HEART_SCALE:
     case Game::ItemId::COUNT:
         return BACK;
+    default: return BACK;
     }
     return BACK;
 }
@@ -118,7 +123,7 @@ ShopFlow::Item ShopFlow::sellItemAtIndex(uint8_t index) const {
 
 uint8_t ShopFlow::currentItemCount() const {
     return viewMode == ViewMode::CATEGORY
-        ? CATEGORY_COUNT : itemCountForCategory(activeCategory, true);
+        ? static_cast<uint8_t>(CATEGORY_COUNT) : itemCountForCategory(activeCategory, true);
 }
 
 uint8_t ShopFlow::itemCountForCategory(Category category, bool includeBack) const {
@@ -158,6 +163,10 @@ uint16_t ShopFlow::sellPriceFor(Item item) {
 }
 
 Game::ItemId ShopFlow::gameItemIdFor(Item item) {
+    if (item >= MARKET_FIRST && item <= MARKET_LAST) {
+        return static_cast<Game::ItemId>(static_cast<uint8_t>(Game::ItemId::HP_UP) +
+                                         item - MARKET_FIRST);
+    }
     switch (item) {
     case POTION: return Game::ItemId::POTION;
     case SUPER_POTION: return Game::ItemId::SUPER_POTION;

@@ -49,7 +49,7 @@ int main() {
     const bool modes[] = {false, true};
     for (bool battle : modes) {
         const auto count = collect(state, battle, rows, ITEM_COUNT);
-        assert(count == 19 && visibleCount(state, battle) == count);
+        assert(count == (battle ? 24 : 36) && visibleCount(state, battle) == count);
         assert(rows[count - 1].source == SOURCE_BACK);
         bool seen[ITEM_COUNT] = {};
         for (uint8_t index = 0; index < count; ++index) {
@@ -65,6 +65,11 @@ int main() {
         assert(seen[SOURCE_EXTRA_BASE + 6]);
         assert(seen[SOURCE_EXTRA_BASE + 7] == !battle);
         assert(seen[SOURCE_HEART_SCALE] == !battle);
+        for (uint8_t source = 25; source < 42; ++source) {
+            const bool recovery = source >= 37;
+            assert(seen[source] == (!battle || recovery));
+            assert(select(source, battle) == ((!battle || recovery) ? Selection::CONFIRM : Selection::NONE));
+        }
         assert(collect(state, battle, rows, 2) == 2);
     }
     assert(std::memcmp(&state, &beforeQueries, sizeof(state)) == 0);
@@ -133,5 +138,34 @@ int main() {
     assert(!outcome.used && outcome.notice == Notice::NONE && applyCalls == callsBefore);
     outcome = use(state, 0, context, nullptr);
     assert(!outcome.used && applyCalls == callsBefore);
+    // Purchased cultivation items reach the normal bag; execution rejects
+    // stale battle selection as well as hiding the row.
+    context.battle = false;
+    state.team[0].speciesId = 1;
+    state.team[0].ev.atk = 0;
+    outcome = use(state, 26, context, applyItem);
+    assert(outcome.used && lastItem == ItemId::PROTEIN && state.team[0].ev.atk == 10);
+    context.battle = true;
+    const int beforeRejected = applyCalls;
+    outcome = use(state, 25, context, applyItem);
+    assert(!outcome.used && applyCalls == beforeRejected);
+    // Every new recovery is manually usable in battle, even with legacy
+    // healing inventory still present.
+    for (uint8_t source = 37; source < 42; ++source) {
+        auto& mon = state.team[0];
+        mon.hpCur = source == 37 ? 0 : 1;
+        mon.fainted = source == 37;
+        mon.majorStatus = Game::MajorStatus::BURN;
+        context.targetTeamSlot = 0;
+        outcome = use(state, source, context, applyItem);
+        assert(outcome.used && outcome.battleResult != BattleResult::NONE);
+        assert(lastItem == static_cast<ItemId>(uint8_t(ItemId::HP_UP) + source - 25));
+        assert(itemCount(state, source) == 0);
+    }
+    assert(Game::ItemInventory::add(state, ItemId::ORAN_BERRY));
+    state.team[0].hpCur = state.team[0].hpMax;
+    outcome = use(state, 39, context, applyItem);
+    assert(!outcome.used && outcome.notice == Notice::NOTHING_ELSE_NEEDED);
+    assert(itemCount(state, 39) == 1);
     return 0;
 }

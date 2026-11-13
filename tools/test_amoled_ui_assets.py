@@ -60,6 +60,18 @@ class AmoledUiAssetTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "checksum"):
                 validate(SHARED, path)
 
+    def test_market_item_size_is_rejected_in_native_pack(self):
+        from generate_game_assets import KIND_IDS
+        def small(header, payload):
+            for index in range(header[2]):
+                offset = index * FRAME.size
+                if struct.unpack_from('<H', payload, offset)[0] == KIND_IDS['MARKET_ITEM_HP_UP']:
+                    struct.pack_into('<HH', payload, offset + 2, 36, 36)
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.changed_pack(directory, small)
+            with self.assertRaisesRegex(ValueError, 'MARKET_ITEM_HP_UP must be 48x48'):
+                validate(SHARED, path)
+
 
 if __name__ == "__main__":
     unittest.main()

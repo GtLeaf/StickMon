@@ -24,7 +24,6 @@ from ancient_valley_layouts import WATER_TILES as VALLEY_WATER_TILES, water_fram
 ROOT = Path(__file__).resolve().parents[1]
 ESSENTIALS = essentials_dir()
 GRAPHICS = ESSENTIALS / "Graphics"
-mist_rooms()
 MIST_FRAMES = [(f'EXPLORE_MIST_FOREST_{i}',i) for i in range(MIST_FRAME_COUNT)]
 DATA_DIR = ROOT / "data"
 PACK_OUT = DATA_DIR / "packs" / "dev"
@@ -367,6 +366,28 @@ KIND_ORDER.extend(spec['kind'] for spec in ROTATED_TILES if 'crop' in spec and '
 KIND_ORDER.append("MARKET_CHAT")
 KIND_ORDER.extend(spec['kind'] for spec in ROTATED_TILES if 'stackLayers' in spec)
 KIND_ORDER.extend(kind for kind, *_rest in EXTRA_FRAMES)
+KIND_ORDER.append("MARKET_MYSTERY_BOX")
+# Append-only IDs: the original market pack and every legacy Kind stay stable.
+MARKET_ITEMS = [
+    ("MARKET_ITEM_HP_UP", "hp_up.png"),
+    ("MARKET_ITEM_PROTEIN", "protein.png"),
+    ("MARKET_ITEM_IRON", "iron.png"),
+    ("MARKET_ITEM_CALCIUM", "calcium.png"),
+    ("MARKET_ITEM_ZINC", "zinc.png"),
+    ("MARKET_ITEM_CARBOS", "carbos.png"),
+    ("MARKET_ITEM_POMEG_BERRY", "pomeg_berry.png"),
+    ("MARKET_ITEM_KELPSY_BERRY", "kelpsy_berry.png"),
+    ("MARKET_ITEM_QUALOT_BERRY", "qualot_berry.png"),
+    ("MARKET_ITEM_HONDEW_BERRY", "hondew_berry.png"),
+    ("MARKET_ITEM_GREPA_BERRY", "grepa_berry.png"),
+    ("MARKET_ITEM_TAMATO_BERRY", "tamato_berry.png"),
+    ("MARKET_ITEM_MAX_REVIVE", "max_revive.png"),
+    ("MARKET_ITEM_LAVA_COOKIE", "lava_cookie.png"),
+    ("MARKET_ITEM_ORAN_BERRY", "oran_berry.png"),
+    ("MARKET_ITEM_SITRUS_BERRY", "sitrus_berry.png"),
+    ("MARKET_ITEM_LUM_BERRY", "lum_berry.png"),
+]
+KIND_ORDER.extend(kind for kind, _filename in MARKET_ITEMS)
 KIND_IDS = {kind: index for index, kind in enumerate(KIND_ORDER)}
 
 
@@ -384,7 +405,8 @@ def expected_pack_kind_names():
             + [kind for kind, _filename in EXPLORE_PICKUP_MARKERS]
             + [kind for kind, _filename in NATIVE_ITEMS]
             + NATIVE_SOAPS
-            + ["MARKET_CHAT"]
+            + ["MARKET_CHAT", "MARKET_MYSTERY_BOX"]
+            + [kind for kind, _filename in MARKET_ITEMS]
         ),
         "battle": (
             battle_balls
@@ -842,6 +864,7 @@ def prepare_battle_fx_frames(path, cells, opacities):
 
 
 def build_assets():
+    mist_rooms()
     writers = {
         "ui": Writer(),
         "battle": Writer(),
@@ -995,6 +1018,15 @@ def build_assets():
     if chat.size != (28, 28):
         raise ValueError(f"market chat icon must be 28x28: {chat.size}")
     writers["ui"].add("MARKET_CHAT", quantize_rgba(chat, 15))
+    box = load_rgba(ROOT / "origin_asset/icon/market/mystery-box.png")
+    if box.size != (48, 48):
+        raise ValueError("Mystery box icon must be 48x48")
+    writers["ui"].add("MARKET_MYSTERY_BOX", quantize_rgba(box, 15))
+    for kind, filename in MARKET_ITEMS:
+        image = load_rgba(ROOT / "origin_asset/icon/market/items" / filename)
+        if image.size != (48, 48):
+            raise ValueError(f"Market item icon must be 48x48: {filename}")
+        writers["ui"].add(kind, quantize_rgba(image, 15))
 
     egg = prepare_egg(GRAPHICS / "Pokemon" / "Eggs" / "000.png")
     GENERATED_GAME_DIR.mkdir(parents=True, exist_ok=True)

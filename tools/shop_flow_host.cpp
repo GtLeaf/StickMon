@@ -65,7 +65,7 @@ void catalogAndNavigation() {
 
     // Catalog reads must remain live after an unlock or an inventory mutation.
     state.explorePoolRerollCounts[3] = 1;
-    assert(flow.itemCountForCategory(Flow::CATEGORY_DAILY, false) == 11);
+    assert(flow.itemCountForCategory(Flow::CATEGORY_DAILY, false) == 10);
     assert(flow.itemCountForCategory(Flow::CATEGORY_EXPLORE, false) == 16);
     assert(flow.itemForCategory(Flow::CATEGORY_EXPLORE, 7) == Flow::MAX_POTION);
     assert(Game::ItemInventory::add(state, ItemId::NUGGET));
@@ -116,21 +116,13 @@ void candyDayAndLastSale() {
     clearStock(state);
     state.explorePoolRerollCounts[2] = 1;
     state.coins = 10000;
-    assert(Flow::buy(state, Flow::CANDY) == BuyResult::BOUGHT);
-    assert(state.bag.candy == 1 && state.candyPurchasesToday == 1);
-    assert(state.coins == 8000);
     const auto before = snapshot(state);
-    assert(Flow::buy(state, Flow::CANDY) == BuyResult::DAILY_LIMIT);
+    assert(Flow::buy(state, Flow::CANDY) == BuyResult::INVALID_ITEM);
     assert(snapshot(state) == before);
-
-    // The application synchronizes the day before calling the feature. Use
-    // that same shared daily reset here, rather than giving ShopFlow a clock.
     state.gameMinutesTotal += Game::GAME_MINUTES_PER_DAY;
-    assert(Game::resetDailyCareCounters(state));
-    assert(state.candyPurchasesToday == 0);
-    assert(Flow::buy(state, Flow::CANDY) == BuyResult::BOUGHT);
-    assert(state.bag.candy == 2 && state.candyPurchasesToday == 1);
-    assert(state.coins == 6000);
+    Game::resetDailyCareCounters(state);
+    assert(Flow::buy(state, Flow::CANDY) == BuyResult::INVALID_ITEM);
+    assert(state.coins == 10000 && state.bag.candy == 0);
 
     clearStock(state);
     assert(Game::ItemInventory::add(state, ItemId::NUGGET));
@@ -151,8 +143,9 @@ void candyDayAndLastSale() {
 void everyItemMatchesSharedRules() {
     // Feature item IDs have a legacy visual order. Check every conversion
     // against the actual ItemId to prevent a UI from buying another product.
-    for (uint8_t index = 0; index < static_cast<uint8_t>(ItemId::HEART_SCALE); ++index) {
+    for (uint8_t index = 0; index < static_cast<uint8_t>(ItemId::COUNT); ++index) {
         const ItemId item = static_cast<ItemId>(index);
+        if (item == ItemId::HEART_SCALE) continue;
         const Flow::Item selected = Flow::itemFromGameItemId(item);
         assert(selected != Flow::BACK && Flow::gameItemIdFor(selected) == item);
         Game::GameState actual;

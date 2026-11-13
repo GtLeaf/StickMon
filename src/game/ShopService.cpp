@@ -18,7 +18,7 @@ inline const ContentData::Table<ItemId,32,false> DAILY_ITEMS{51};
 constexpr ItemId DAILY_ITEMS[] = {
     ItemId::NORMAL_FOOD, ItemId::TASTY_FOOD, ItemId::SWEET_FOOD,
     ItemId::SPICY_FOOD, ItemId::SOUR_FOOD, ItemId::BITTER_FOOD,
-    ItemId::DRY_FOOD, ItemId::CANDY,
+    ItemId::DRY_FOOD,
     ItemId::SOAP_0, ItemId::SOAP_1, ItemId::SOAP_2,
 };
 #endif
@@ -37,9 +37,13 @@ constexpr ItemId EXPLORE_ITEMS[] = {
 #endif
 
 #if STICKMON_EXTERNAL_CONTENT
-inline const ContentData::Table<ItemId,32,false> SELL_ITEMS{53};
+inline const ContentData::Table<ItemId,64,false> SELL_ITEMS{53};
 #else
 constexpr ItemId SELL_ITEMS[] = {
+    ItemId::HP_UP, ItemId::PROTEIN, ItemId::IRON, ItemId::CALCIUM, ItemId::ZINC, ItemId::CARBOS,
+    ItemId::POMEG_BERRY, ItemId::KELPSY_BERRY, ItemId::QUALOT_BERRY,
+    ItemId::HONDEW_BERRY, ItemId::GREPA_BERRY, ItemId::TAMATO_BERRY,
+    ItemId::MAX_REVIVE, ItemId::LAVA_COOKIE, ItemId::ORAN_BERRY, ItemId::SITRUS_BERRY, ItemId::LUM_BERRY,
     ItemId::NORMAL_FOOD, ItemId::TASTY_FOOD, ItemId::SWEET_FOOD,
     ItemId::SPICY_FOOD, ItemId::SOUR_FOOD, ItemId::BITTER_FOOD,
     ItemId::DRY_FOOD, ItemId::POTION, ItemId::SUPER_POTION,
@@ -81,6 +85,7 @@ ItemId visibleItemAt(const Items& items, const GameState& state,
 }
 
 bool purchasable(ItemId item) {
+    if (item == ItemId::CANDY) return false;
     for (ItemId candidate : DAILY_ITEMS) if (candidate == item) return true;
     for (ItemId candidate : EXPLORE_ITEMS) if (candidate == item) return true;
     return false;
@@ -130,6 +135,7 @@ int itemTextIndex(ItemId item) {
 }  // namespace
 
 uint16_t buyPrice(ItemId item) {
+    if (const auto* entry = MarketItemCatalog::find(item)) return entry->price;
 #if STICKMON_EXTERNAL_CONTENT
     const auto* p=ItemCatalog::find(item);return p ? p->buyPrice : 0;
 #else
@@ -167,6 +173,7 @@ uint16_t buyPrice(ItemId item) {
 }
 
 uint16_t sellPrice(ItemId item) {
+    if (const auto* entry = MarketItemCatalog::find(item)) return entry->price / 2;
 #if STICKMON_EXTERNAL_CONTENT
     const auto* p=ItemCatalog::find(item);return p ? p->sellPrice : 0;
 #else
@@ -180,6 +187,7 @@ uint16_t sellPrice(ItemId item) {
 }
 
 const char* shortName(ItemId item) {
+    if (const auto* entry = MarketItemCatalog::find(item)) return entry->name;
 #if STICKMON_EXTERNAL_CONTENT
     const auto* p=ItemCatalog::find(item);return p ? p->name : Ui::Amoled::ITEM;
 #else
@@ -191,6 +199,7 @@ const char* shortName(ItemId item) {
 }
 
 const char* shortDescription(ItemId item) {
+    if (const auto* entry = MarketItemCatalog::find(item)) return entry->description;
 #if STICKMON_EXTERNAL_CONTENT
     const auto* p=ItemCatalog::find(item);return p ? p->description : Ui::Amoled::ITEM;
 #else

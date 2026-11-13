@@ -1,5 +1,6 @@
 #include "game/ExploreDestinations.h"
 #include "game/MarketMapData.h"
+#include "game/MarketSchedule.h"
 #include "ui/common/MarketView.h"
 #include "scenes/ExploreScene.h"
 #include <algorithm>
@@ -773,6 +774,9 @@ bool ExploreScene::finishSubViewInput() {
         exploreSubViewOpen = false;
         cancelTouch();
         switch (itemResult) {
+        case MenuScene::BattleBagResult::MARKET_ITEM:
+            enqueueBattleLog(Ui::Amoled::ITEM_USED);
+            break;
         case MenuScene::BattleBagResult::POTION:
             enqueueBattleLog(Ui::Bag::USED_POTION);
             break;
@@ -3905,6 +3909,7 @@ bool ExploreScene::beginMarket() {
     if (!BuildConfig::DEBUG_FEATURES) return false;
     auto& engine = GameEngine::ins();
     const auto& state = engine.gameState();
+    if (!Game::MarketSchedule::isOpen(state)) return false;
     const uint8_t slot = Game::ExplorePartyService::leaderSlot(state);
     const uint16_t leader = state.teamCount ? state.team[slot].speciesId : 25;
     const uint16_t follower = state.teamCount > 1 && slot == 0 && Game::ExplorePartyService::healthy(state.team[1]) ? state.team[1].speciesId : 0;

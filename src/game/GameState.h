@@ -13,7 +13,7 @@ static constexpr uint8_t TEAM_CAP = 2;
 static constexpr uint8_t STORAGE_CAP = 20;
 static constexpr uint8_t ITEM_STACK_CAP = 99;
 static constexpr uint32_t SAVE_MAGIC = 0x534D4F4E; // SMON
-static constexpr uint16_t SAVE_VERSION = 8;
+static constexpr uint16_t SAVE_VERSION = 9;
 static constexpr uint16_t MIN_SUPPORTED_SAVE_VERSION = 1;
 // debugMotionFlags 位定义：AMOLED debug 菜单「运动」分类下的开关，
 // release 固件忽略这些位但必须原样保留。
@@ -82,6 +82,9 @@ enum class ItemId : uint8_t {
     SOAP_1,
     SOAP_2,
     HEART_SCALE,
+    HP_UP, PROTEIN, IRON, CALCIUM, ZINC, CARBOS,
+    POMEG_BERRY, KELPSY_BERRY, QUALOT_BERRY, HONDEW_BERRY, GREPA_BERRY, TAMATO_BERRY,
+    MAX_REVIVE, LAVA_COOKIE, ORAN_BERRY, SITRUS_BERRY, LUM_BERRY,
     COUNT,
 };
 static_assert(
@@ -353,7 +356,8 @@ struct MarketShopState {
     uint32_t periodDay = MARKET_PERIOD_NONE;
     uint8_t items[MARKET_SHELF_SLOTS] = {255, 255, 255}; // ItemId, 255 = empty
     uint8_t stock[MARKET_SHELF_SLOTS] = {};
-    uint8_t reserved[2] = {};
+    uint8_t boxBought = 0;
+    uint8_t boxRoll = 0; // 1..100; zero migrates an older same-day shelf.
 };
 static_assert(sizeof(MarketShopState) == 12, "market shop save layout");
 
@@ -421,6 +425,16 @@ struct GameState {
     MarketShopState marketShop;
     // v8 append-only extension: Chansey stall.
     MarketCareState marketCare;
+    // v9 append-only extension; all preceding v8 bytes remain frozen.
+    struct Season {
+        uint32_t periodDay = MARKET_PERIOD_NONE;
+        uint8_t items[8] = {255,255,255,255,255,255,255,255};
+        uint8_t stock[8] = {};
+        uint8_t boxRoll = 0;
+        uint8_t reserved[3] = {};
+    } marketSeason;
+    uint8_t marketItemStock[17] = {};
+    uint8_t marketTutorGifted = 0;
 };
 static_assert(offsetof(GameState, careRewardDay) == 1572,
               "v5 care fields must follow the frozen v4 layout");
@@ -430,8 +444,9 @@ static_assert(offsetof(GameState, marketShop) == 2444,
               "v7 market shop fields must follow the frozen v6 layout");
 static_assert(offsetof(GameState, marketCare) == 2456,
               "v8 market care fields must follow the frozen v7 layout");
-static_assert(sizeof(GameState) == 2480,
-              "v8 save size changed; add a schema version and migration");
+static_assert(offsetof(GameState, marketSeason) == 2480,
+              "v9 extension must preserve the frozen v8 prefix");
+static_assert(sizeof(GameState) == 2524, "v9 save size changed");
 static_assert(offsetof(GameState, room) == 1452,
               "BagState must not shift the v1 room/save layout");
 static_assert(offsetof(GameState, tutorialFlags) == 1559,

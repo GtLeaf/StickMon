@@ -8,6 +8,7 @@
 #include "core/MathUtil.h"
 #include "core/UiMotion.h"
 #include "game/BondSystem.h"
+#include "game/MarketItemCatalog.h"
 #include "game/Species.h"
 #include "game/TeamRoster.h"
 #include "hardware/Hal.h"
@@ -17,6 +18,8 @@
 namespace {
 bool applyBagItem(Game::ItemId item, uint8_t slot) {
     auto& engine = GameEngine::ins();
+    if (Game::MarketItemCatalog::contains(item))
+        return engine.useTeamItem(item, slot) == Game::ItemInventory::UseResult::USED;
     switch (item) {
     case Game::ItemId::POTION: return engine.usePotion(slot);
     case Game::ItemId::SUPER_POTION: return engine.useSuperPotion(slot);

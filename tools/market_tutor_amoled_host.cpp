@@ -35,6 +35,7 @@ struct AmoledAppTestAccess {
     static void run(AmoledApp& app) {
         auto& state = app.gameState;
         state = {}; state.oobeDone = true; state.teamCount = 2; state.coins = 1774; state.bag.heartScale = 1;
+        state.marketTutorGifted = 1; // This journey exercises lessons after the first-visit gift.
         state.team[0] = Game::MonsterFactory::create(25, 18);
         state.team[1] = Game::MonsterFactory::create(133, 18);
         state.team[0].ivPacked = 0x1234; state.team[0].metAt = 100;

@@ -5,6 +5,7 @@
 #include <cstdio>
 #include "core/GameEngine.h"
 #include "core/UiStrings.h"
+#include "game/MarketItemCatalog.h"
 #include "hardware/Hal.h"
 #include "ui/SceneSurface.h"
 #include "ui/round_touch/ItemFeedbackUi.h"
@@ -13,6 +14,8 @@ namespace {
 Features::Bag::BattleResult battleResult(Game::ItemId item) {
     using Item = Game::ItemId;
     using Result = Features::Bag::BattleResult;
+    if (Game::MarketItemCatalog::contains(item) && Game::ItemInventory::usableInBattle(item))
+        return Result::MARKET_ITEM;
     switch (item) {
     case Item::POTION: return Result::POTION;
     case Item::SUPER_POTION: return Result::SUPER_POTION;

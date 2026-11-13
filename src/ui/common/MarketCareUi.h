@@ -52,7 +52,7 @@ public:
     // open and the final close, stays put around a performance.
     int hudOffset() const {
         if (page_ == Page::GREET) return MarketStallMotion::HUD_HIDDEN;
-        if (transition_ == Transition::CLOSING) return MarketStallMotion::smooth(0, MarketStallMotion::HUD_HIDDEN, transitionMs_, duration());
+        if (transition_ == Transition::CLOSING) return MarketStallMotion::tween(0, MarketStallMotion::HUD_HIDDEN, transitionMs_, duration());
         if (transition_ == Transition::OPENING && openFromGreet_)
             return MarketStallMotion::tween(MarketStallMotion::HUD_HIDDEN, 0, transitionMs_, duration());
         return 0;
@@ -188,8 +188,7 @@ private:
         }
     }
     int tween(int from, int to) const {
-        return transition_ == Transition::CLOSING ? MarketStallMotion::smooth(from, to, transitionMs_, duration())
-                                                  : MarketStallMotion::tween(from, to, transitionMs_, duration());
+        return MarketStallMotion::tween(from, to, transitionMs_, duration());
     }
     // The greeting box rises from the bottom edge, grows into the panel,
     // shrinks back into the box for a performance and sinks away on close.

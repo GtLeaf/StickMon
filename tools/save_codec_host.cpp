@@ -80,6 +80,23 @@ Game::GameState makeState() {
     care.bathStageMask = 7;
     care.pairCount = 2;
     care.pendingOldLevel = 29;
+    state.marketShop.periodDay = 315;
+    state.marketShop.items[0] = static_cast<uint8_t>(Game::ItemId::HONEY);
+    state.marketShop.stock[0] = 0;
+    state.marketShop.boxBought = 1;
+    state.marketShop.boxRoll = 99;
+    state.marketCare.periodDay = 315;
+    state.marketCare.used = 1;
+    state.marketSeason.periodDay = 315;
+    const uint8_t capacities[] = {3,3,1,2,3,2,1,1};
+    for (unsigned i = 0; i < 8; ++i) {
+        state.marketSeason.items[i] = static_cast<uint8_t>(Game::ItemId::POTION);
+        state.marketSeason.stock[i] = capacities[i];
+    }
+    state.marketSeason.items[7] = 255;
+    state.marketSeason.boxRoll = 100;
+    for (unsigned i = 0; i < 17; ++i) state.marketItemStock[i] = static_cast<uint8_t>(99-i);
+    state.marketTutorGifted = 1;
     return state;
 }
 
@@ -143,6 +160,13 @@ void verifyRoundTrip() {
     uint32_t sequence = 0;
     assert(SaveCodec::decode(encoded, length, decoded, &sequence));
     assert(sequence == 0x12345678);
+    assert(SaveCodec::SCHEMA_VERSION == 8);
+    assert(decoded.state.marketSeason.periodDay == state.marketSeason.periodDay);
+    assert(std::memcmp(decoded.state.marketSeason.items, state.marketSeason.items, 8) == 0);
+    assert(std::memcmp(decoded.state.marketSeason.stock, state.marketSeason.stock, 8) == 0);
+    assert(decoded.state.marketSeason.boxRoll == 100);
+    assert(std::memcmp(decoded.state.marketItemStock, state.marketItemStock, 17) == 0);
+    assert(decoded.state.marketTutorGifted == 1);
     assert(decoded.state.oobeDone && decoded.state.teamCount == 2);
     assert(decoded.state.team[0].speciesId == 25);
     assert(decoded.state.team[0].gender ==
@@ -219,8 +243,10 @@ void verifyRejectsCorruptionAndBadCapacity() {
     uint8_t encoded[SaveCodec::MAX_ENCODED_BYTES] = {};
     size_t length = 0;
     assert(SaveCodec::encode(state, view, 1, encoded, sizeof(encoded), length));
+    size_t rejectedLength = length;
     assert(!SaveCodec::encode(state, view, 1, encoded,
-                              SaveCodec::HEADER_BYTES - 1, length));
+                              SaveCodec::HEADER_BYTES - 1, rejectedLength));
+    assert(rejectedLength == 0);
 
     SaveCodec::Snapshot snapshot;
     uint8_t saved = encoded[length - 1];
@@ -281,10 +307,43 @@ void verifySchema1DecodesWithDefaults() {
     for (const auto& record : decoded.state.careRewards) assert(!record.valid);
 }
 
+void verifyAllLegacySchemasPreservePrefix() {
+    const auto state = makeState();
+    uint8_t encoded[SaveCodec::MAX_ENCODED_BYTES] = {};
+    size_t length = 0;
+    assert(SaveCodec::encode(state, makeView(), 17, encoded, sizeof(encoded), length));
+    for (uint16_t schema = 1; schema <= 7; ++schema) {
+        std::vector<uint8_t> legacy;
+        assert(SaveTestUtil::fabricateLegacySchemaBlob(encoded, length, legacy, schema));
+        SaveCodec::Snapshot decoded;
+        assert(SaveCodec::decode(legacy.data(), legacy.size(), decoded));
+        assert(decoded.state.version == Game::SAVE_VERSION);
+        assert(decoded.state.coins == state.coins && decoded.state.bag.candy == 7);
+        assert(decoded.state.marketSeason.periodDay == Game::MARKET_PERIOD_NONE);
+        for (auto item : decoded.state.marketSeason.items) assert(item == 255);
+        for (auto stock : decoded.state.marketSeason.stock) assert(stock == 0);
+        assert(decoded.state.marketSeason.boxRoll == 0);
+        for (auto stock : decoded.state.marketItemStock) assert(stock == 0);
+        assert(decoded.state.marketTutorGifted == 0);
+        if (schema >= 5) {
+            assert(decoded.state.marketShop.periodDay == 315);
+            assert(decoded.state.marketShop.stock[0] == 0);
+        }
+        if (schema >= 6) assert(decoded.state.marketCare.used == 1);
+        if (schema >= 7) {
+            assert(decoded.state.marketShop.boxBought == 1);
+            assert(decoded.state.marketShop.boxRoll == 99);
+            assert(length - legacy.size() == 39);
+        }
+        assert(decoded.view.secondary.foodRetryRemainingMs == 9999);
+    }
+}
+
 }  // namespace
 
 int main() {
     verifyRoundTrip();
+    verifyAllLegacySchemasPreservePrefix();
     verifyRetiredFlagIsIgnored();
     verifyRejectsCorruptionAndBadCapacity();
     verifySchema1DecodesWithDefaults();

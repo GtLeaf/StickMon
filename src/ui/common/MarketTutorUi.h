@@ -52,7 +52,7 @@ public:
                                                                  transition_ == Transition::CLOSING, transitionMs_,
                                                                  duration()); }
 
-    void open(const Game::GameState& state) {
+    void open(const Game::GameState& state, const char* welcome = nullptr) {
         *this = MarketTutorUi{};
         page_ = Page::GREET;
         transition_ = Transition::GREET_IN;
@@ -63,6 +63,7 @@ public:
         } else {
             std::snprintf(greet_, sizeof(greet_), "%s", t.move ? MarketTutorText::GREET_TAUGHT : MarketTutorText::GREET_CLOSED);
         }
+        if (welcome) std::snprintf(greet_, sizeof(greet_), "%s", welcome);
     }
     void close() { page_ = Page::CLOSED; transition_ = Transition::NONE; tap_.cancel(); pending_ = false; }
     void cancelTouch() { tap_.cancel(); listTracking_ = dragging_ = false; }
@@ -207,11 +208,9 @@ private:
     uint32_t duration() const {
         return transition_ == Transition::GREET_IN ? GREET_IN_MS : transition_ == Transition::CLOSING ? CLOSE_MS : OPEN_MS;
     }
-    // Closing travels farther than opening, so it is longer and uses
-    // the gentler smoothstep curve.
+    // One progress curve keeps panel, camera and badge in step.
     int tween(int from, int to) const {
-        return transition_ == Transition::CLOSING ? MarketStallMotion::smooth(from, to, transitionMs_, duration())
-                                                  : MarketStallMotion::tween(from, to, transitionMs_, duration());
+        return MarketStallMotion::tween(from, to, transitionMs_, duration());
     }
     // The greeting box rises from the bottom edge, then its top edge grows
     // into the panel top; closing sinks the whole panel away.
@@ -470,27 +469,8 @@ private:
     void rtext(int right, int y, const char* s, int size = 32, uint16_t color = 0) const { text(right - textWidth(s, size), y, s, size, color); }
     void ctext(int y, const char* s, int size = 32, uint16_t color = 0) const { text((W - textWidth(s, size)) / 2, y, s, size, color); }
 
-    // Reuse the native font rasterizer, then sample each glyph at 28px.
-    // Keep the compact stall badges local; other currency HUDs stay at 32px.
     void hudBadge(int x, int y, const char* label) const {
-        auto& c = PixelRenderer::canvas();
-        constexpr int height = 28;
-        c.fillRoundRect(x - 8, y - 4, textWidth(label, height) + 16, 40, 6, paper());
-        uint16_t pixels[32 * 32];
-        Canvas565 glyph;
-        glyph.attach({pixels, 32, 32, false});
-        glyph.setNativeText(true);
-        for (const auto* p = reinterpret_cast<const uint8_t*>(label); *p;) {
-            const int n = *p < 0x80 ? 1 : *p < 0xe0 ? 2 : *p < 0xf0 ? 3 : 4;
-            char value[5]{}; std::memcpy(value, p, n);
-            glyph.fillRect(0, 0, 32, 32, paper());
-            PixelRenderer::text(glyph, 0, 0, value, ink());
-            const int width = n == 1 ? height / 2 : height;
-            for (int row = 0; row < height; ++row)
-                for (int col = 0; col < width; ++col)
-                    c.drawPixel(x + col, y + row + 2, glyph.readPixel(col * 32 / height, row * 32 / height));
-            x += width; p += n;
-        }
+        MarketStallMotion::drawBadge(x, y, label, textWidth(label, 28), paper(), ink());
     }
     void renderHud(const Game::GameState& s) const {
         const int y = 16 + hudOffset();

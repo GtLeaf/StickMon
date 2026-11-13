@@ -19,6 +19,8 @@ public:
               MainSceneViewState& viewState,
               bool* normalized = nullptr,
               LoadStatus* status = nullptr);
+    // True once any loader-readable snapshot copy is durable; failure of a
+    // redundant copy does not undo a committed transaction.
     bool saveSnapshot(const Game::GameState& state,
                       const MainSceneViewState& viewState);
     bool loadEncounterHistory(Game::EncounterHistory& history,

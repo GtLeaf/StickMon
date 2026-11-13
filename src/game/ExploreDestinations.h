@@ -2,6 +2,7 @@
 
 #include "core/BuildConfig.h"
 #include "game/ExploreItemProgression.h"
+#include "game/MarketSchedule.h"
 
 // Display order is independent of persistent exploration-area IDs.
 namespace ExploreDestinations {
@@ -44,7 +45,7 @@ inline uint8_t visibleIndex(uint8_t value, const Game::GameState& state) {
     return COUNT;
 }
 inline bool unlocked(uint8_t value, const Game::GameState& state) {
-    return value == MARKET ? BuildConfig::DEBUG_FEATURES
+    return value == MARKET ? BuildConfig::DEBUG_FEATURES && Game::MarketSchedule::isOpen(state)
         : ExploreItemProgression::isAreaUnlocked(value, state);
 }
 } // namespace ExploreDestinations

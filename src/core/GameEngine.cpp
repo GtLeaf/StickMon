@@ -28,6 +28,7 @@
 #include "game/FriendshipService.h"
 #include "game/GameRandom.h"
 #include "game/ItemInventory.h"
+#include "game/MarketItemCatalog.h"
 #include "game/MonsterFactory.h"
 #include "game/MoveManagementService.h"
 #include "game/SpeciesBehavior.h"
@@ -1249,6 +1250,8 @@ bool GameEngine::useHoney() {
 
 namespace {
 uint8_t* itemStockPointer(Game::GameState& s, Game::ItemId item) {
+    if (Game::MarketItemCatalog::contains(item))
+        return &s.marketItemStock[uint8_t(item) - uint8_t(Game::ItemId::HP_UP)];
     int8_t foodIndex = Game::foodIndexForItemId(item);
     if (foodIndex >= 0) return &s.room.food[foodIndex];
     int8_t soapIndex = Game::soapIndexForItemId(item);

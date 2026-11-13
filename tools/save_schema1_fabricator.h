@@ -38,7 +38,11 @@ inline bool fabricateLegacySchemaBlob(const uint8_t* encoded, size_t length,
     constexpr size_t SHOP_EXTENSION_BYTES = 4 + 2 * Game::MARKET_SHELF_SLOTS;
     // Schema 6 (v8) appends the Chansey stall record after the shelf.
     constexpr size_t CARE_STALL_EXTENSION_BYTES = 4 + 1 + Game::MARKET_CARE_PERIOD_CAP * 8;
-    const size_t removedBytes = (schema <= 5 ? CARE_STALL_EXTENSION_BYTES : 0) +
+    constexpr size_t MYSTERY_BOX_EXTENSION_BYTES = 2;
+    constexpr size_t SEASON_EXTENSION_BYTES = 4 + 8 + 8 + 1 + 17 + 1;
+    const size_t removedBytes = (schema <= 7 ? SEASON_EXTENSION_BYTES : 0) +
+                                (schema <= 6 ? MYSTERY_BOX_EXTENSION_BYTES : 0) +
+                                (schema <= 5 ? CARE_STALL_EXTENSION_BYTES : 0) +
                                 (schema <= 4 ? SHOP_EXTENSION_BYTES : 0) +
                                 (schema <= 3 ? MARKET_EXTENSION_BYTES : 0) +
                                 (schema <= 2 ? CARE_EXTENSION_BYTES : 0) + (schema == 1 ? 1 : 0);
@@ -55,7 +59,7 @@ inline bool fabricateLegacySchemaBlob(const uint8_t* encoded, size_t length,
     out[5] = 0;
     // State version lives right after the payload magic.
     out[SaveCodec::HEADER_BYTES + 4] =
-        static_cast<uint8_t>(schema == 1 ? 3 : schema == 2 ? 4 : schema == 3 ? 5 : schema == 4 ? 6 : 7);
+        static_cast<uint8_t>(schema == 1 ? 3 : schema == 2 ? 4 : schema == 3 ? 5 : schema == 4 ? 6 : schema == 5 ? 7 : schema <= 7 ? 8 : 9);
     out[SaveCodec::HEADER_BYTES + 5] =
         0;
     const uint16_t payloadLength =

@@ -6,6 +6,7 @@
 #include "game/ItemInventory.h"
 #include "game/MoveManagementService.h"
 #include "game/Species.h"
+#include "game/MarketSchedule.h"
 
 // Gengar stall (秘技小屋): one TM-style lesson per game day drawn from the
 // current team's learnable moves, plus proficiency training. Pure rules only;
@@ -22,7 +23,7 @@ enum class Result : uint8_t {
 };
 struct TrainStep { uint16_t cost; uint8_t gain; };
 
-inline uint32_t periodDay(const GameState& state) { return state.gameMinutesTotal / (24U * 60U); }
+inline uint32_t periodDay(const GameState& state) { return MarketSchedule::periodDay(state); }
 
 // Price tiers are data, not derived from damage alone: status moves sit in
 // the middle tier because control effects can matter as much as power.
@@ -93,6 +94,7 @@ inline uint32_t mix(uint32_t x) {
 // Draw once per period with a private seed; never touches GameRandom.
 // Returns true when the stored period changed (caller should persist).
 inline bool ensurePeriod(GameState& state) {
+    if (!MarketSchedule::isOpen(state)) return false;
     auto& t = state.marketTutor;
     const uint32_t day = periodDay(state);
     if (t.periodDay == day) return false;
@@ -135,6 +137,7 @@ inline Result checkMember(const GameState& state, uint8_t slot) {
 }
 
 inline Result checkTeach(const GameState& state, uint8_t slot, uint8_t replacement) {
+    if (!MarketSchedule::isOpen(state)) return Result::NO_CLASS;
     const auto& t = state.marketTutor;
     if (t.periodDay != periodDay(state) || !t.move) return Result::NO_CLASS;
     if (t.taught) return Result::ALREADY_TAUGHT;
@@ -161,6 +164,7 @@ inline Result teach(GameState& state, uint8_t slot, uint8_t replacement) {
 }
 
 inline Result checkTrain(const GameState& state, uint8_t slot, uint8_t moveSlot) {
+    if (!MarketSchedule::isOpen(state)) return Result::NO_CLASS;
     if (moveSlot < MoveManagementService::SPECIAL_MOVE_SLOT_FIRST || moveSlot >= MOVE_SLOT_COUNT) return Result::BAD_SLOT;
     const Result member = checkMember(state, slot);
     if (member != Result::OK) return member;
@@ -195,6 +199,7 @@ inline uint8_t trainableMembers(const GameState& state) {
 
 // Recall keeps the existing heart-scale rule and service.
 inline Result recall(GameState& state, uint8_t slot, MoveId move, uint8_t replacement) {
+    if (!MarketSchedule::isOpen(state)) return Result::NO_CLASS;
     if (slot >= state.teamCount || state.team[slot].origin == Origin::VISITOR) return Result::BAD_MEMBER;
     if (!ItemInventory::count(state, ItemId::HEART_SCALE)) return Result::NO_HEART_SCALE;
     return MoveManagementService::recallMove(state, slot, move, replacement) ? Result::OK : Result::INCOMPATIBLE;

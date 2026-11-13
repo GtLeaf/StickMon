@@ -4,6 +4,9 @@
 
 namespace Ui {
 namespace MarketText {
+static constexpr const char* OPEN_TODAY = "今日开放";
+static constexpr const char* NEXT_OPEN = "还有%lu天开放";
+static constexpr const char* CLOSED = "暂未开放";
 static constexpr const char* NAME = "市集";
 static constexpr const char* PAUSE = "暂停";
 static constexpr const char* CONTINUE = "继续";
@@ -13,6 +16,17 @@ static constexpr const char* CHAT = "聊天";
 
 // Kecleon stall (奇珍小铺).
 namespace MarketShopText {
+static constexpr const char* NUTRIENT = "营养剂自选";
+static constexpr const char* RESET_BERRY = "洗点树果自选";
+static constexpr const char* RARE = "稀有道具";
+static constexpr const char* NOT_UNLOCKED = "尚未解锁";
+static constexpr const char* SELECT_NUTRIENT = "选择培养属性";
+static constexpr const char* SELECT_RESET = "选择调整属性";
+static constexpr const char* STAT_LABELS[] = {"HP","攻击","防御","特攻","特防","速度"};
+static constexpr const char* BOX = "神秘盲盒";
+static constexpr const char* BOX_LINE1 = "随机获得一组道具";
+static constexpr const char* BOX_LINE2 = "本期限购一盒";
+static constexpr const char* BOX_GOT = "开出%s×%u";
 static constexpr const char* TITLE = "奇珍小铺";
 static constexpr const char* GREET = "变隐龙：欢迎！本期的好货都在这里啦。";
 static constexpr const char* GREET_SOLD_OUT = "变隐龙：本期好货已经卖完啦。";
@@ -46,7 +60,7 @@ static constexpr const char* MENU_MASSAGE = "亲密按摩";
 static constexpr const char* MENU_TEA = "伙伴茶会";
 static constexpr const char* MENU_EVAL = "关系评估";
 static constexpr const char* QUOTA = "本期可预约 %u/%u";
-static constexpr const char* QUOTA_EMPTY = "本期预约已满，明天再来吧";
+static constexpr const char* QUOTA_EMPTY = "本期预约已满，下次开集再来吧";
 static constexpr const char* NOBODY_MASSAGE = "现在没有伙伴需要按摩";
 static constexpr const char* NOBODY_TEA = "现在没有伙伴可以喝茶";
 static constexpr const char* MASSAGE_LIST = "亲密按摩 / 选择伙伴";
@@ -112,6 +126,9 @@ static constexpr const char* BOOK_TEA = "预约茶会";
 
 // Gengar stall (秘技小屋). ASCII separators keep the 16/32px glyph grid.
 namespace MarketTutorText {
+static constexpr const char* WELCOME_GIFT = "初次见面，送你一枚心之鳞片！";
+static constexpr const char* WELCOME_FULL = "背包满了，心之鳞片下次再给你。";
+static constexpr const char* WELCOME_RETRY = "礼物没送成，下次见面再给你。";
 static constexpr const char* TITLE = "秘技小屋";
 static constexpr char SPEAKER[] = "耿鬼：";
 static constexpr const char* GREET_CLASS = "嘿嘿……本期秘技是%s哦。";
@@ -1172,6 +1189,8 @@ static constexpr const char* LONG_HOME_HINT = "长A回房间";
 }
 
 namespace Bag {
+static constexpr const char* USED_ITEM_FMT = "已使用%s";
+static constexpr const char* NOTHING_ELSE_NEEDED = "现在不需要使用";
 static constexpr const char* ITEMS = "持有物";
 static constexpr const char* PROGRESS = "进度";
 static constexpr const char* COUNT_X_FMT = "x%u";
@@ -1237,6 +1256,9 @@ static constexpr const char* NAMES[] = {
     Ui::MAX_REPEL,
     Ui::HONEY,
     Ui::HEART_SCALE,
+    "HP增强剂", "攻击增强剂", "防御增强剂", "特攻增强剂", "特防增强剂", "速度增强剂",
+    "榴石果", "藻根果", "比巴果", "哈密果", "萄葡果", "茄番果",
+    "活力块", "釜炎仙贝", "橙橙果", "文柚果", "木子果",
     Ui::BACK,
 };
 static constexpr const char* DESCS[][3] = {
@@ -1265,6 +1287,23 @@ static constexpr const char* DESCS[][3] = {
     {"100步内避开遇敌", "对下一次探索生效", "保底遭遇不受影响"},
     {"下一步必定遇敌", "对下一次探索生效", "刷怪提速好帮手"},
     {"让伙伴回忆招式", "选择招式后替换技能", "使用后消耗一枚"},
+    {"HP努力值增加10", "单项上限252", "总努力值上限510"},
+    {"攻击努力值增加10", "单项上限252", "总努力值上限510"},
+    {"防御努力值增加10", "单项上限252", "总努力值上限510"},
+    {"特攻努力值增加10", "单项上限252", "总努力值上限510"},
+    {"特防努力值增加10", "单项上限252", "总努力值上限510"},
+    {"速度努力值增加10", "单项上限252", "总努力值上限510"},
+    {"HP努力值降低10", "亲密提升2点", "努力值为零时不消耗"},
+    {"攻击努力值降低10", "亲密提升2点", "努力值为零时不消耗"},
+    {"防御努力值降低10", "亲密提升2点", "努力值为零时不消耗"},
+    {"特攻努力值降低10", "亲密提升2点", "努力值为零时不消耗"},
+    {"特防努力值降低10", "亲密提升2点", "努力值为零时不消耗"},
+    {"速度努力值降低10", "亲密提升2点", "努力值为零时不消耗"},
+    {"让濒死伙伴复活", "恢复全部体力", "可以手动用于战斗"},
+    {"解除异常状态", "不恢复体力", "集市限定补给"},
+    {"恢复10点体力", "从背包手动使用", "集市限定树果"},
+    {"恢复30点体力", "从背包手动使用", "集市限定树果"},
+    {"解除异常状态", "从背包手动使用", "集市限定树果"},
     {"回到主菜单", "继续选择其他功能", ""},
 };
 }
@@ -1382,6 +1421,23 @@ static constexpr const char* NAMES[] = {
     Ui::NUGGET,
     Ui::BIG_PEARL,
     Ui::STAR_PIECE,
+    "HP增强剂",
+    "攻击增强剂",
+    "防御增强剂",
+    "特攻增强剂",
+    "特防增强剂",
+    "速度增强剂",
+    "榴石果",
+    "藻根果",
+    "比巴果",
+    "哈密果",
+    "萄葡果",
+    "茄番果",
+    "活力块",
+    "釜炎仙贝",
+    "橙橙果",
+    "文柚果",
+    "木子果",
     Ui::BACK,
 };
 static constexpr const char* DESCS[] = {
@@ -1415,6 +1471,23 @@ static constexpr const char* DESCS[] = {
     "纯卖钱 值500C",
     "纯卖钱 值1000C",
     "纯卖钱 值2500C",
+    "提升HP努力值10点",
+    "提升攻击努力值10点",
+    "提升防御努力值10点",
+    "提升特攻努力值10点",
+    "提升特防努力值10点",
+    "提升速度努力值10点",
+    "降低HP努力值10点 亲密提升2点",
+    "降低攻击努力值10点 亲密提升2点",
+    "降低防御努力值10点 亲密提升2点",
+    "降低特攻努力值10点 亲密提升2点",
+    "降低特防努力值10点 亲密提升2点",
+    "降低速度努力值10点 亲密提升2点",
+    "复活一只精灵 恢复全部HP",
+    "治愈异常状态",
+    "恢复10点HP",
+    "恢复30点HP",
+    "治愈异常状态",
     "回到菜单",
 };
 }

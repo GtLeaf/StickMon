@@ -39,8 +39,10 @@ def validate(input_path, native_path, header_path=None):
     names = [name.strip() for name in names.split(",") if name.strip()]
     kinds = {name: index for index, name in enumerate(names)}
     expected = set(range(kinds["SHOWER_BACKGROUND"] + 1)) | {
-        kinds["EXPLORE_PICKUP_BALL"], kinds["ITEM_HEART_SCALE"], kinds["MARKET_CHAT"]}
-    expected |= {index for name, index in kinds.items() if name.startswith("ITEM48_")}
+        kinds["EXPLORE_PICKUP_BALL"], kinds["ITEM_HEART_SCALE"], kinds["MARKET_CHAT"],
+        kinds["MARKET_MYSTERY_BOX"]}
+    expected |= {index for name, index in kinds.items()
+                 if name.startswith(("ITEM48_", "MARKET_ITEM_"))}
     for path in (input_path, native_path):
         frames = read_frames(path)
         ids = [frame[0] for frame in frames]
@@ -50,7 +52,8 @@ def validate(input_path, native_path, header_path=None):
                 f"unexpected={sorted(set(ids) - expected)}. Regenerate AMOLED UI assets.")
         if Path(path) == Path(native_path):
             for kind, width, height, *_rest in frames:
-                if names[kind].startswith("ITEM_") and (width, height) != (48, 48):
+                if (names[kind].startswith(("ITEM_", "MARKET_ITEM_")) or
+                        names[kind] == "MARKET_MYSTERY_BOX") and (width, height) != (48, 48):
                     raise ValueError(f"AMOLED item {names[kind]} must be 48x48: {path}")
 
 

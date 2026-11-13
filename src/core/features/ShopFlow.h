@@ -53,6 +53,8 @@ public:
         NUGGET,
         BIG_PEARL,
         STAR_PIECE,
+        MARKET_FIRST,
+        MARKET_LAST = MARKET_FIRST + 16,
         BACK,
         COUNT,
     };

@@ -4,6 +4,7 @@
 #include "game/BondSystem.h"
 #include "game/ContactRoster.h"
 #include "game/GameState.h"
+#include "game/MarketSchedule.h"
 
 // Chansey stall (暖心小屋): paid affection massage and partner tea, plus a free
 // relationship check. Two paid services per game day for the whole stall and
@@ -29,7 +30,7 @@ struct Target {
     bool operator==(const Target& o) const { return kind == o.kind && slot == o.slot; }
 };
 
-inline uint32_t periodDay(const GameState& state) { return state.gameMinutesTotal / (24U * 60U); }
+inline uint32_t periodDay(const GameState& state) { return MarketSchedule::periodDay(state); }
 
 inline const MonsterRuntime* monster(const GameState& state, Target t) {
     if (t.kind == Target::TEAM) return t.slot < state.teamCount && t.slot < TEAM_CAP ? &state.team[t.slot] : nullptr;
@@ -89,6 +90,7 @@ inline uint16_t price(Service s) { return s == Service::MASSAGE ? MASSAGE_PRICE 
 // `period` is the day the confirmation page showed; a rollover while it is
 // open never charges the old quote against the new period.
 inline Result check(const GameState& state, Service s, Target t, uint32_t period) {
+    if (!MarketSchedule::isOpen(state)) return Result::STALE;
     if (period != periodDay(state)) return Result::STALE;
     if (s == Service::MASSAGE && t.kind != Target::TEAM) return Result::BAD_TARGET;
     const MonsterRuntime* m = monster(state, t);

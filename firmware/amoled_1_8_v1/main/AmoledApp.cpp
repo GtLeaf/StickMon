@@ -1,4 +1,5 @@
 #include "game/MarketMapData.h"
+#include "game/MarketWelcome.h"
 #include "ui/common/MarketView.h"
 #include "AmoledApp.h"
 
@@ -2892,6 +2893,7 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
                 Game::ItemInventory::UseResult used =
                     Game::ItemInventory::useOnTeam(gameState, inventoryController_.state().pendingItem, target);
                 if (used == Game::ItemInventory::UseResult::USED) {
+                    syncHomeActors(nowMs);
                     saveState();
                     if (gameState.team[target].level != oldLevel) {
                         inventoryController_.cancelTargetSelection();
@@ -7866,6 +7868,7 @@ void AmoledApp::render(Canvas565& canvas) const {
     if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_AREAS) {
         ExploreViewModel model;
         model.marketSelected = selectedExploreDestination_ == ExploreDestinations::MARKET;
+        model.marketDaysUntilOpen = Game::MarketSchedule::daysUntilOpen(Game::MarketSchedule::gameDay(gameState));
         model.destinationMenu = true;
         model.visibleAreaCount = ExploreDestinations::visibleCount(gameState);
         for (uint8_t i=0; i<model.visibleAreaCount; ++i) {
@@ -9753,6 +9756,7 @@ void AmoledApp::performPendingItemAction(uint32_t nowMs) {
             switch (Game::ItemInventory::useOnTeam(
                         gameState, inventoryController_.state().pendingItem, target)) {
         case Game::ItemInventory::UseResult::USED:
+            syncHomeActors(nowMs);
             resultText = Ui::Amoled::ITEM_USED;
             changed = true;
             break;
@@ -10010,7 +10014,9 @@ bool AmoledApp::saveState() {
         lastPersistMs = Platform::clock().millis();
         showerSavePending = false;
     }
-    return saved;
+    // A separately retried encounter-history failure must not make a caller
+    // roll back a transaction whose game-state snapshot is already durable.
+    return snapshotSaved;
 }
 
 bool AmoledApp::hasEncounteredSpecies(uint16_t speciesId) const {
@@ -10077,7 +10083,7 @@ void AmoledApp::selectExploreDestination(uint8_t index, uint32_t nowMs) {
 }
 
 bool AmoledApp::startMarket(uint32_t nowMs) {
-    if (!BuildConfig::DEBUG_FEATURES) return false;
+    if (!BuildConfig::DEBUG_FEATURES || !Game::MarketSchedule::isOpen(gameState)) return false;
     const auto slot = Game::ExplorePartyService::leaderSlot(gameState);
     const uint16_t leader = gameState.teamCount ? gameState.team[slot].speciesId : 25;
     const uint16_t follower = gameState.teamCount > 1 && slot == 0 && Game::ExplorePartyService::healthy(gameState.team[1]) ? gameState.team[1].speciesId : 0;
@@ -10110,19 +10116,37 @@ void AmoledApp::closeMarket(uint32_t nowMs) {
 
 void AmoledApp::openMarketTutor(uint32_t nowMs) {
     marketTutorPending_ = false;
-    // A new game day draws the period lesson; persist it so a restart cannot
-    // reroll the same day.
+    if (!Game::MarketSchedule::isOpen(gameState)) {
+        closeMarketTutor();
+        setToast(Ui::MarketText::CLOSED, nowMs);
+        return;
+    }
+    // Persist the lesson for this opening so restarting cannot reroll it.
     if (Game::MarketTutor::ensurePeriod(gameState)) {
         saveCoordinator_.mark(nowMs, SaveCoordinator::Priority::SOON);
     }
-    marketTutorUi_.open(gameState);
+    const char* welcome = nullptr;
+    if (!gameState.marketTutorGifted) {
+        const Game::GameState before = gameState;
+        const auto result = Game::MarketWelcome::grant(gameState);
+        if (result == Game::MarketWelcome::Result::GRANTED) {
+            if (saveState()) welcome = Ui::MarketTutorText::WELCOME_GIFT;
+            else { gameState = before; welcome = Ui::MarketTutorText::WELCOME_RETRY; }
+        } else if (result == Game::MarketWelcome::Result::BAG_FULL) welcome = Ui::MarketTutorText::WELCOME_FULL;
+    }
+    marketTutorUi_.open(gameState, welcome);
     marketTutorClockMs_ = nowMs;
     requestFullRender();
 }
 
 void AmoledApp::openMarketShop(uint32_t nowMs) {
     marketTutorPending_ = false;
-    // A new game day draws the shelf; persist it so a restart cannot reroll.
+    if (!Game::MarketSchedule::isOpen(gameState)) {
+        closeMarketTutor();
+        setToast(Ui::MarketText::CLOSED, nowMs);
+        return;
+    }
+    // Persist the shelf for this opening so restarting cannot reroll it.
     if (Game::MarketShop::ensurePeriod(gameState)) {
         saveCoordinator_.mark(nowMs, SaveCoordinator::Priority::SOON);
     }
@@ -10136,7 +10160,8 @@ void AmoledApp::handleMarketShopTouch(const Platform::IInputDevice::TouchEvent& 
     if (request.kind != Ui::MarketShopUi::Request::BUY) return;
     // Apply to the live state, then roll back unless the save succeeds.
     const Game::GameState before = gameState;
-    const auto result = Game::MarketShop::buy(gameState, request.slot, request.period);
+    Game::MarketShop::Reward reward{};
+    const auto result = Game::MarketShop::buy(gameState, request.slot, request.period, &reward, request.choice);
     if (result != Game::MarketShop::Result::OK) {
         gameState = before;
         marketShopUi_.rejected(result);
@@ -10145,11 +10170,16 @@ void AmoledApp::handleMarketShopTouch(const Platform::IInputDevice::TouchEvent& 
     const bool saved = saveState();
     if (!saved) gameState = before;
     else AudioManager::ins().playSfx(SfxCue::UI_CONFIRM);
-    marketShopUi_.committed(saved);
+    marketShopUi_.committed(saved, reward.item, reward.amount);
 }
 
 void AmoledApp::openMarketCare(uint32_t nowMs) {
     marketTutorPending_ = false;
+    if (!Game::MarketSchedule::isOpen(gameState)) {
+        closeMarketTutor();
+        setToast(Ui::MarketText::CLOSED, nowMs);
+        return;
+    }
     marketCareUi_.open(gameState);
     marketTutorClockMs_ = nowMs;
     requestFullRender();

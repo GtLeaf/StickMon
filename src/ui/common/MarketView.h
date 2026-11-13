@@ -398,9 +398,8 @@ inline bool renderStatic(const Market::Session& session,const Viewport& v,uint32
     const auto& d=session.data();
     if(!prepareStaticLayer(d,v,tile,c.byteSwapped()))return false;
     auto& s=staticLayer();
-    // Dialogue may pan beyond the normal camera range. The direct renderer
-    // extends edge ground there; the fixed cache has no pixels for those rows.
-    if(cy<s.rowBegin*tile||cy+mapHeight>s.rowEnd*tile){perf::fallback("camera-window");return false;}
+    // Dialogue can pan beyond the cache. Keep its world pixels and redraw
+    // only the missing edge-ground rows; do not rebuild or enlarge the cache.
     constexpr int CAPACITY=512;
     static Rect rects[CAPACITY];
     int count=0;bool overflow=false;
@@ -409,15 +408,17 @@ inline bool renderStatic(const Market::Session& session,const Viewport& v,uint32
         if(l>=r||t>=b)return;
         if(count<CAPACITY)rects[count++]={l,t,r,b};else overflow=true;
     };
-    // Screen areas outside the cached world are background and must be tinted.
+    // Uncached bands start as background; edge ground is drawn below and
+    // included here so daylight also covers those pixels exactly once.
     const int winL=-cx,winT=s.rowBegin*tile-cy,winR=s.pixelWidth-cx,winB=s.rowEnd*tile-cy;
     add(0,0,v.width,winT);add(0,winB,v.width,mapHeight);
     add(0,winT,winL,winB);add(winR,winT,v.width,winB);
     const int left=std::max(0,cx/tile),right=std::min(Market::CELL_WIDTH,(cx+v.width+tile-1)/tile);
-    const int top=std::max(s.rowBegin,int(std::floor(float(cy)/tile)));
-    const int bottom=std::min(s.rowEnd,int(std::ceil(float(cy+mapHeight)/tile)));
+    const int top=int(std::floor(float(cy)/tile));
+    const int bottom=int(std::ceil(float(cy+mapHeight)/tile));
     for(int y=top;y<bottom;++y)for(int x=left;x<right;++x)
-        if(s.animated[(y-s.rowBegin)*Market::CELL_WIDTH+x])add(x*tile-cx,y*tile-cy,x*tile-cx+tile,y*tile-cy+tile);
+        if(y>=s.rowBegin&&y<s.rowEnd&&s.animated[(y-s.rowBegin)*Market::CELL_WIDTH+x])
+            add(x*tile-cx,y*tile-cy,x*tile-cx+tile,y*tile-cy+tile);
     Market::Pose poses[Market::CAPACITY]{};uint8_t order[Market::CAPACITY]{};
     ActorDraw actors[Market::CAPACITY];int actorCount=0;
     const int visible=sortedPoses(session,poses,order);
@@ -437,7 +438,7 @@ inline bool renderStatic(const Market::Session& session,const Viewport& v,uint32
     if(tinted)for(int i=0;i<count;++i)copyFromLayer(s,s.plain,cx,cy,rects[i]);
     f.restore=lap();
     for(int y=top;y<bottom;++y)for(int x=left;x<right;++x) {
-        if(!s.animated[(y-s.rowBegin)*Market::CELL_WIDTH+x])continue;
+        if(y>=s.rowBegin&&y<s.rowEnd&&!s.animated[(y-s.rowBegin)*Market::CELL_WIDTH+x])continue;
         const int l=std::max(0,x*tile-cx),t=std::max(0,y*tile-cy);
         const int r=std::min(v.width,x*tile-cx+tile),b=std::min(mapHeight,y*tile-cy+tile);
         if(l>=r||t>=b)continue;

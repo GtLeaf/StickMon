@@ -1064,7 +1064,17 @@ void renderExploreScreen(Canvas565& canvas, const ExploreViewModel& model,
                        ((std::max(0,
                            std::min(bottom, EXPLORE_PREVIEW_BOTTOM) -
                            std::max(top, EXPLORE_PREVIEW_TOP)))));
-    if (selectedLocked) {
+    if (model.marketSelected) {
+        char countdown[64];
+        const char* message = Ui::MarketText::OPEN_TODAY;
+        if (model.marketDaysUntilOpen > 0) {
+            std::snprintf(countdown, sizeof(countdown), Ui::MarketText::NEXT_OPEN,
+                          static_cast<unsigned long>(model.marketDaysUntilOpen));
+            message = countdown;
+        }
+        text(canvas, previewCenterX - textWidth(message) / 2,
+             EXPLORE_PREVIEW_CENTER_Y - 16, message, selectedLocked ? muted : ink);
+    } else if (selectedLocked) {
         const char* message = Ui::Explore::DEFEAT_PREVIOUS_BOSS;
         text(canvas, previewCenterX - textWidth(message) / 2,
              EXPLORE_PREVIEW_CENTER_Y - 16, message, muted);
@@ -1141,7 +1151,8 @@ void renderExploreScreen(Canvas565& canvas, const ExploreViewModel& model,
                              EXPLORE_BACK_BUTTON_NATIVE.height, 8,
                              rgb(67, 97, 101));
         drawExploreNativeButtonLabel(
-            canvas, EXPLORE_START_BUTTON_NATIVE, Ui::Explore::DEPART,
+            canvas, EXPLORE_START_BUTTON_NATIVE,
+            model.marketSelected && selectedLocked ? Ui::MarketText::CLOSED : Ui::Explore::DEPART,
             selectedLocked ? rgb(126, 145, 145) : rgb(226, 238, 233));
         drawExploreNativeButtonLabel(canvas, EXPLORE_BACK_BUTTON_NATIVE,
                                      Ui::BACK, rgb(226, 238, 233));

@@ -113,7 +113,7 @@ bool validateContentCatalog() {
         items[id]=true;
     }
     for(unsigned id=51;id<=53;++id) {
-        ContentData::Table<Game::ItemId,32,false> list{uint16_t(id)};
+        ContentData::Table<Game::ItemId,64,false> list{uint16_t(id)};
         if(!list.ready()) return invalid(__LINE__);
         bool seen[size_t(Game::ItemId::COUNT)]{};
         for(auto item:list) {
