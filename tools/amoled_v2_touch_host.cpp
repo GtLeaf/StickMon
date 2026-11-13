@@ -14,7 +14,7 @@ void (*interruptCallback)(esp_lcd_touch_handle_t) = nullptr;
 esp_lcd_touch_point_data_t reading{};
 uint8_t readingCount = 0;
 bool cstPresent = false, ftPresent = true, busReady = true;
-esp_err_t busInitResult = ESP_OK;
+esp_err_t busInitResult = ESP_OK, readResult = ESP_OK;
 }
 
 esp_err_t bsp_i2c_init() { return busInitResult; }
@@ -34,7 +34,7 @@ esp_err_t esp_lcd_touch_register_interrupt_callback_with_data(
     interruptCallback = callback;
     return ESP_OK;
 }
-esp_err_t esp_lcd_touch_read_data(esp_lcd_touch_handle_t) { return ESP_OK; }
+esp_err_t esp_lcd_touch_read_data(esp_lcd_touch_handle_t) { return readResult; }
 esp_err_t esp_lcd_touch_get_data(esp_lcd_touch_handle_t,
     esp_lcd_touch_point_data_t* point, uint8_t* count, uint8_t) {
     *point = reading;
@@ -115,16 +115,28 @@ int main() {
     std::printf("FT compatibility replay: mean %.1f -> %.1f px, max %.1f px\n",
                 oldSum / 9, sum / 9, maxError);
 
-    // Movement and timeout release must use the same mapped/raw sample pair.
+    // Missing interrupts do not mean release: query the held contact.
     assert(point(180, 240) && event.type == TouchEventType::DOWN);
     assert(point(187, 250) && event.type == TouchEventType::MOVE);
     const auto moved = event;
     assert(!input.poll(moved.timestampMs + 119, event));
-    assert(input.poll(moved.timestampMs + 120, event));
+    assert(!input.poll(moved.timestampMs + 120, event));
+    assert(!input.canSleep());
+    reading = {190, 300}; // Slow drag, with no new interrupt.
+    assert(input.poll(moved.timestampMs + 140, event));
+    assert(event.type == TouchEventType::MOVE && event.y > moved.y);
+    const auto continued = event;
+    readResult = -1;
+    assert(!input.poll(moved.timestampMs + 400, event));
+    assert(!input.canSleep()); // Read failures cannot synthesize a click.
+    readResult = ESP_OK;
+    assert(!input.poll(moved.timestampMs + 420, event));
+    readingCount = 0;
+    assert(input.poll(moved.timestampMs + 440, event));
     assert(event.type == TouchEventType::UP);
-    assert(event.x == moved.x && event.y == moved.y);
-    assert(event.rawX == 187 && event.rawY == 250);
-    now = moved.timestampMs + 121;
+    assert(event.x == continued.x && event.y == continued.y);
+    assert(!input.poll(moved.timestampMs + 460, event));
+    now = moved.timestampMs + 480;
 
     // Sensor changes hidden by clamping still belong in release diagnostics.
     assert(point(0, 0) && event.type == TouchEventType::DOWN);

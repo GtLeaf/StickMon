@@ -25,7 +25,6 @@ private:
     void* ownerTask_ = nullptr;
     bool wakeReady_ = false;
     bool pointerDown = false;
-    uint32_t lastTouchMs = 0;
     int16_t lastX = 0;
     int16_t lastY = 0;
 };

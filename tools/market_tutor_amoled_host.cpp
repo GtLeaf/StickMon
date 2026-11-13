@@ -85,6 +85,19 @@ struct AmoledAppTestAccess {
         app.marketUi_.chatTarget = 1; app.marketUi_.refresh(*app.market_);
         assert(app.marketUi_.chatTarget == 1);
         const auto ui = [&]() -> Ui::MarketTutorUi& { return app.marketTutorUi_; };
+        const auto leaveAndReopen = [&]() {
+            tap(184, 414);
+            assert(ui().animating());
+            advance(6);
+            assert(!ui().active() && !app.market_->conversing());
+            assert(marketStandNear(*app.market_, 1));
+            app.marketUi_.chatTarget = 1; app.marketUi_.refresh(*app.market_);
+            tap(184, 399);
+            for (int i = 0; i < 30 && !ui().active(); ++i) advance(1);
+            advance(4); assert(ui().page() == Page::GREET);
+            tap(184, 380); advance(5); assert(ui().page() == Page::MENU);
+            openedSceneShift = -100000;
+        };
         // Chat button on Gengar turns both sides, then opens the stall.
         tap(184, 399);
         assert(app.market_->conversing() && !app.marketUi_.dialogue().active());
@@ -188,7 +201,19 @@ struct AmoledAppTestAccess {
         shot("06-confirm-save-failed");
         app.saveWritesBlocked = false;
         tap(272, 414);
-        assert(ui().page() == Page::RESULT && state.coins == 1374);
+        assert(ui().page() != Page::RESULT && state.coins == 1374);
+        shot("learn-00");
+        tap(184,330); assert(ui().page()!=Page::RESULT);
+        advance(3);
+        app.setDisplayLocked(true);advance(30);app.setDisplayLocked(false);app.update(t);
+        app.setDisplayStandby(true,t);advance(30);app.setDisplayStandby(false,t);app.update(t);
+        assert(ui().page()!=Page::RESULT && state.coins==1374);
+        for(int i=3;i<56;++i){
+            char name[40];std::snprintf(name,sizeof(name),"learn-%02d",i);shot(name);
+            assert(state.coins==1374 && state.team[1].move2Id==247 && state.marketTutor.taught==1);
+            advance(1);
+        }
+        assert(ui().page()==Page::RESULT);
         assert(state.team[1].move2Id == 247 && state.team[1].moveProficiency[1] == 0 && state.marketTutor.taught == 1);
         shot("07-learned");
         {
@@ -197,7 +222,7 @@ struct AmoledAppTestAccess {
             assert(loaded.coins == 1374 && loaded.team[1].move2Id == 247 && loaded.marketTutor.taught == 1);
             assert(loaded.marketTutor.periodDay == period.periodDay && loaded.marketTutor.move == 247);
         }
-        tap(184, 100); assert(ui().page() == Page::MENU && state.coins == 1374);
+        leaveAndReopen(); assert(state.coins == 1374);
         tap(184, 216 + 28); assert(ui().page() == Page::MENU); // lesson sold this period
         shot("07b-menu-unavailable");
 
@@ -206,19 +231,40 @@ struct AmoledAppTestAccess {
         tap(184, 100); assert(ui().page() == Page::MENU);
         tap(184, 380);
         tap(98, 328); assert(ui().page() == Page::TRAIN_MOVE); shot("09-train-move");
-        tap(184, 100); assert(ui().page() == Page::TRAIN_MEMBER);
-        tap(98, 328);
-        tap(184, 354); assert(ui().page() == Page::TRAIN_MOVE); // 100 is maxed.
-        tap(184, 294); assert(ui().page() == Page::CONFIRM); shot("10-train-confirm");
-        tap(184, 100); assert(ui().page() == Page::TRAIN_MOVE && state.coins == 1374 && state.team[0].moveProficiency[1] == 64);
-        tap(184, 294);
-        tap(272, 414); assert(ui().page() == Page::RESULT && state.team[0].moveProficiency[1] == 72 && state.coins == 1174);
-        shot("10a-trained");
-        tap(184, 414);
+        // Selecting a row stays here, and full slots cannot replace selection.
+        tap(184, 294); assert(ui().page() == Page::TRAIN_MOVE);
+        tap(184, 354); assert(ui().page() == Page::TRAIN_MOVE);
+        assert(state.coins == 1374 && state.team[0].moveProficiency[1] == 64);
+        app.saveWritesBlocked = true;
+        tap(272, 414);
+        assert(ui().page() == Page::TRAIN_MOVE && state.coins == 1374);
+        assert(state.team[0].moveProficiency[1] == 64);
+        shot("09a-train-save-failed");
+        app.saveWritesBlocked = false;
+        tap(272, 414);
+        assert(ui().page() != Page::RESULT && state.team[0].moveProficiency[1] == 72 && state.coins == 1174);
+        shot("10-training-start");
+        tap(184, 330); assert(ui().page() != Page::RESULT); // Payment finger cannot skip.
+        advance(3); shot("10a-training-demonstrate");
+        app.setDisplayLocked(true); advance(30);
+        app.setDisplayLocked(false); app.update(t);
+        assert(ui().page() != Page::RESULT && state.coins == 1174);
+        app.setDisplayStandby(true,t); advance(30); app.setDisplayStandby(false,t); app.update(t);
+        assert(ui().page() != Page::RESULT && state.coins == 1174);
+        for (int i = 3; i < 48; ++i) {
+            char name[48]; std::snprintf(name,sizeof(name),"animation-%02d",i);
+            shot(name);
+            if(i==9) shot("10b-training-practice");
+            if(i==18) shot("10c-training-finish");
+            advance(1);
+        }
+        assert(ui().page() == Page::RESULT); shot("10d-trained");
+        leaveAndReopen();
         tap(184, 380); tap(98, 328);
         assert(ui().page() == Page::TRAIN_MEMBER); // Already trained this period.
-        shot("10b-train-member-used");
+        shot("10e-train-member-used");
         tap(184, 414); assert(ui().page() == Page::MENU);
+
 
         // Recall: short lists are stationary; long lists reach every move.
         tap(184, 310); assert(ui().page() == Page::RECALL_MEMBER); shot("11a-recall-member");
@@ -242,6 +288,16 @@ struct AmoledAppTestAccess {
             Game::MoveManagementService::MAX_RECALLABLE_MOVE_COUNT);
         assert(recallCount > 3);
         const int maxScroll = (recallCount - 3) * 56;
+        shot("11b-recall-long-top");
+        TouchEvent slow{}; slow.type=TouchEventType::DOWN; slow.x=184; slow.y=365; slow.timestampMs=touchTime;
+        app.handleTouch(slow); assert(ui().page()==Page::RECALL_LIST);
+        advance(2); assert(ui().page()==Page::RECALL_LIST);
+        slow.type=TouchEventType::MOVE; slow.y=345; slow.timestampMs+=200; app.handleTouch(slow);
+        assert(ui().page()==Page::RECALL_LIST && ui().scrollOffset()==20);
+        slow.type=TouchEventType::UP; slow.timestampMs+=100; app.handleTouch(slow);
+        assert(ui().page()==Page::RECALL_LIST);
+        drag(184,225,184,365); assert(ui().scrollOffset()==0);
+        touchTime+=500;
         shot("11b-recall-long-top");
         const auto topPixels = std::vector<uint16_t>(PixelRenderer::canvas().rawPixels(),
             PixelRenderer::canvas().rawPixels() + 368 * 448);
@@ -285,7 +341,7 @@ struct AmoledAppTestAccess {
             assert(loaded.team[1].move3Id == recallable[recallCount - 1] && loaded.bag.heartScale == 0 && loaded.coins == 1174);
         }
         shot("12a-recalled");
-        tap(184, 414); assert(ui().page() == Page::MENU); shot("13-menu-after");
+        leaveAndReopen(); shot("13-menu-after");
         std::printf("recall-scroll: %d moves, top/bottom clamp, %d changed pixels, saved final move %u OK\n",
                     recallCount, changedPixels, unsigned(recallable[recallCount - 1]));
 
@@ -321,6 +377,305 @@ struct AmoledAppTestAccess {
 };
 }
 
+// Public UI replay for prices, rank boundaries and one-shot performance.
+static void trainingCases() {
+    namespace UiCommon = AmoledV1::UiCommon;
+    using UI = Ui::MarketTutorUi;
+    using Type = Platform::IInputDevice::TouchType;
+    auto& canvas = PixelRenderer::canvas();
+    const auto centeredText = [&](const char* label, int y, int left, int right, uint16_t color, int size = 32) {
+        const auto background = color == UiCommon::rgb(248,248,224) ? UiCommon::rgb(48,64,112) : UiCommon::rgb(248,248,224);
+        std::vector<uint16_t> pixels(368 * 448, background);
+        Canvas565 expected; expected.attach({pixels.data(),368,448,false}); expected.setNativeText(size == 32);
+        PixelRenderer::text(expected, (left + right - UiCommon::textWidth(label) * size / 32) / 2, y, label, color);
+        for (int yy=y; yy<y+size; ++yy) for(int x=left; x<right; ++x)
+            if (canvas.readPixel(x, yy) != expected.readPixel(x, yy)) {
+                std::fprintf(stderr,"text mismatch %s at %d,%d got %04x expected %04x native=%d scale=%d\n",label,x,yy,canvas.readPixel(x,yy),expected.readPixel(x,yy),canvas.nativeText(),canvas.renderScale());
+                capture("failed-text"); std::abort();
+            }
+    };
+    for (const int before : {0, 39, 40, 55, 60, 79, 80, 85, 90, 95, 99}) {
+        auto state = Game::GameState{};
+        state.teamCount = 1; state.coins = 3000;
+        state.team[0] = Game::MonsterFactory::create(25, 18);
+        state.team[0].ivPacked = 12; state.team[0].metAt = 24;
+        state.team[0].move2Id = 486; state.team[0].moveProficiency[1] = uint8_t(before);
+        state.team[0].move3Id = 98; state.team[0].moveProficiency[2] = 80;
+        Game::MarketTutor::ensurePeriod(state);
+        UI ui; uint32_t clock = 100;
+        const auto tap = [&](int x, int y) {
+            ui.touch({Type::DOWN,int16_t(x),int16_t(y),clock},state);
+            const auto request = ui.touch({Type::UP,int16_t(x),int16_t(y),clock+40},state);
+            clock += 200; return request;
+        };
+        ui.open(state); ui.update(250); ui.update(250); tap(184,380); ui.update(250); ui.update(250);
+        tap(184,380); tap(184,328); assert(ui.page()==UI::Page::TRAIN_MOVE);
+        ui.render(state);
+        char label[24]; const unsigned price = before < 40 ? 100 : before < 80 ? 200 : 300;
+        std::snprintf(label,sizeof(label),"特训%u",price);
+        centeredText(label,398,192,352,UiCommon::rgb(248,248,224));
+        if(before==0) capture("training-price-100");
+        // Selecting another move changes the footer price and never trains it.
+        assert(tap(184,354).kind==UI::Request::NONE); ui.render(state);
+        centeredText("特训300",398,192,352,UiCommon::rgb(248,248,224));
+        if(before==0) capture("training-price-300");
+        assert(state.coins==3000);
+        tap(184,294); ui.render(state); centeredText(label,398,192,352,UiCommon::rgb(248,248,224));
+        const auto rich = state;
+        state.coins = 0;
+        assert(tap(272,414).kind==UI::Request::NONE && state.team[0].moveProficiency[1]==before);
+        state = rich;
+        auto request = tap(272,414);
+        assert(request.kind==UI::Request::TRAIN && request.slot==1 && ui.pending());
+        assert(tap(272,414).kind==UI::Request::NONE); // pending payment cannot repeat
+        ui.committed(false,state); ui.render(state);
+        centeredText("保存失败，未完成，请重试",230,24,344,UiCommon::rgb(183,56,56),16);
+        request = tap(272,414); assert(request.kind==UI::Request::TRAIN);
+        assert(Game::MarketTutor::train(state,0,request.slot)==Game::MarketTutor::Result::OK);
+        assert(state.coins==3000-price);
+        ui.committed(true,state); assert(ui.page()==UI::Page::TRAINING);
+        ui.render(state); char name[64]; std::snprintf(name,sizeof(name),"training-rank-%02d-start",before); capture(name);
+        tap(184,330); assert(ui.page()==UI::Page::TRAINING);
+        ui.update(250); ui.update(150); // 400ms skip boundary
+        tap(184,330); assert(ui.page()==UI::Page::RESULT && state.coins==3000-price);
+        ui.render(state);
+        const auto after = state.team[0].moveProficiency[1];
+        const char* ending = before < 90 && after >= 90 ? "已经精通了！" :
+            before < 60 && after >= 60 ? "已经熟练了！" : "用得更熟练了！";
+        centeredText(ending,312,24,344,UiCommon::rgb(40,56,80));
+        for(int y=350;y<380;++y) for(int x=24;x<344;++x)
+            assert(canvas.readPixel(x,y)==UiCommon::rgb(248,248,224));
+        centeredText("离开",398,16,352,UiCommon::rgb(248,248,224));
+        std::snprintf(name,sizeof(name),"training-rank-%02d-result",before); capture(name);
+        tap(184,414); ui.update(250); ui.update(250); ui.update(20); assert(!ui.active());
+    }
+    std::puts("training public UI: 11 boundary values, dynamic prices, insufficient funds, saved one-shot animation, 400ms skip, centered rank copy and exit OK");
+}
+
+static void learningSkipCase() {
+    using UI=Ui::MarketTutorUi;
+    using Type=Platform::IInputDevice::TouchType;
+    Game::GameState state{};state.teamCount=1;state.coins=3000;
+    state.team[0]=Game::MonsterFactory::create(133,18);
+    state.team[0].move2Id=129;state.team[0].move3Id=44;
+    Game::MarketTutor::ensurePeriod(state);
+    state.marketTutor.move=247;state.marketTutor.drawnSpecies=133;
+    UI ui;ui.open(state);ui.update(250);ui.update(250);uint32_t clock=0;
+    const auto tap=[&](int x,int y){
+        ui.touch({Type::DOWN,int16_t(x),int16_t(y),clock},state);
+        auto result=ui.touch({Type::UP,int16_t(x),int16_t(y),clock+50},state);
+        clock+=200;return result;
+    };
+    tap(184,380);ui.update(250);ui.update(250);tap(184,244);tap(184,328);tap(184,294);
+    assert(ui.page()==UI::Page::CONFIRM);
+    auto request=tap(272,414);assert(request.kind==UI::Request::TEACH);
+    ui.committed(false,state);
+    assert(ui.page()==UI::Page::CONFIRM && state.coins==3000 && state.team[0].move2Id==129);
+    request=tap(272,414);assert(request.kind==UI::Request::TEACH);
+    assert(Game::MarketTutor::teach(state,0,1)==Game::MarketTutor::Result::OK);
+    ui.committed(true,state);assert(ui.page()==UI::Page::TEACHING);
+    const auto coins=state.coins;assert(coins==2600 && state.team[0].move2Id==247);
+    // An ignored DOWN before400ms cannot turn into a skip on later UP.
+    ui.touch({Type::DOWN,184,330,clock},state);ui.update(250);ui.update(150);
+    ui.touch({Type::UP,184,330,clock+500},state);clock+=600;
+    assert(ui.page()==UI::Page::TEACHING);
+    ui.touch({Type::DOWN,184,330,clock},state);ui.cancelTouch();
+    ui.touch({Type::UP,184,330,clock+50},state);clock+=200;
+    assert(ui.page()==UI::Page::TEACHING);
+    tap(184,330);assert(ui.page()==UI::Page::RESULT);
+    assert(state.coins==coins && state.team[0].move2Id==247 && state.marketTutor.taught==1);
+    for(int i=0;i<70;++i)ui.update(100);
+    assert(ui.page()==UI::Page::RESULT && state.coins==coins);
+    tap(184,414);ui.update(250);ui.update(250);ui.update(20);assert(!ui.active());
+    std::puts("learning performance: failed save stays confirmation, saved move before show,400ms gate, canceled gesture, one-shot skip and exit OK");
+}
+
+// Compare the production performance with independently drawn, directional
+// market sprites. Ground anchors are a public presentation contract.
+static void trainingFacingCases() {
+    namespace Sprites = PokemonSprites;
+    namespace Colors = AmoledV1::UiCommon;
+    using UI = Ui::MarketTutorUi;
+    using Type = Platform::IInputDevice::TouchType;
+    auto& canvas = PixelRenderer::canvas();
+    for (const uint16_t species : {25, 133, 143, 130}) {
+        Game::GameState state{}; state.teamCount=1; state.coins=3000;
+        state.team[0]=Game::MonsterFactory::create(species,30);
+        state.team[0].move2Id=98; state.team[0].moveProficiency[1]=40;
+        Game::MarketTutor::ensurePeriod(state);
+        const uint16_t ids[]={94,species};
+        assert(Sprites::preloadDynamicSpecies(ids,2));
+        UI ui; ui.open(state); ui.update(250); ui.update(250);
+        uint32_t clock=0;
+        const auto tap=[&](int x,int y) {
+            ui.touch({Type::DOWN,int16_t(x),int16_t(y),clock},state);
+            auto result=ui.touch({Type::UP,int16_t(x),int16_t(y),clock+50},state);
+            clock+=200;return result;
+        };
+        tap(184,380);ui.update(250);ui.update(250);tap(184,380);tap(184,328);
+        assert(tap(272,414).kind==UI::Request::TRAIN);
+        assert(Game::MarketTutor::train(state,0,1)==Game::MarketTutor::Result::OK);
+        ui.committed(true,state);
+        for(int ms=0;ms<4800;ms+=100) {
+            ui.render(state);
+            if(ms==0) for(int role=0;role<2;++role) {
+                Sprites::WalkingAnimation animation{};
+                const auto direction=role==0?Sprites::WalkDirection::RIGHT:Sprites::WalkDirection::LEFT;
+                assert(Sprites::walkingAnimation(ids[role],direction,animation));
+                const auto spriteTime=0;
+                const auto kind=Sprites::SpriteKind(uint16_t(animation.base)+(spriteTime/150)%animation.frameCount);
+                const auto* frame=Sprites::findSpeciesSprite(ids[role],kind);assert(frame);
+                const float scale=std::min(2.0f,80.0f/std::max(frame->width,frame->height));
+                const int footX=role==0?90:278;
+                const int hop=0;
+                const int footY=366+hop;
+                std::vector<uint16_t> pixels(368*448,Colors::rgb(248,248,224));
+                Canvas565 expected;expected.attach({pixels.data(),368,448,false});
+                const Canvas565 savedCanvas=canvas; canvas=expected;
+                assert(Sprites::drawFrameScaled(frame,int(footX-frame->width*scale/2),
+                    int(footY-(Sprites::frameGroundOffsetY(frame)+frame->height/2.0f)*scale),
+                    scale,animation.flipX,true));
+                expected=canvas; canvas=savedCanvas;
+                int checked=0;
+                // Check sprite pixels above the floor and away from particles.
+                for(int y=270;y<352;++y)for(int x=footX-40;x<footX+40;++x) {
+                    const auto color=expected.readPixel(x,y);
+                    if(color==Colors::rgb(248,248,224))continue;
+                    const auto actual=canvas.readPixel(x,y);
+                    if(actual==Colors::rgb(240,168,48) || actual==Colors::rgb(138,92,200))continue;
+                    assert(actual==color);++checked;
+                }
+                assert(checked>100);
+            }
+            for(int y=390;y<430;++y)for(int x=24;x<344;++x)
+                assert(canvas.readPixel(x,y)==Colors::rgb(248,248,224));
+            char name[64];std::snprintf(name,sizeof(name),"facing-%03u-%02d",species,ms/100);capture(name);
+            ui.update(100);
+        }
+        assert(ui.page()==UI::Page::RESULT);
+    }
+    std::puts("training facing: 4 species x 48 frames, initial directional pixels, target timeline and blank footer OK");
+}
+
+// Actual public UI route: selected move determines which approved script plays.
+static void trainingTypeCases() {
+    using UI=Ui::MarketTutorUi;
+    using Type=Platform::IInputDevice::TouchType;
+    namespace C=AmoledV1::UiCommon;
+    struct Case { uint16_t move; const char* name; bool melee,self; uint16_t species=25; };
+    const Case cases[]={{486,"remote",false,false},{98,"melee",true,false},
+        {97,"self",false,true},{86,"enemy-status",false,true},
+        {402,"seed-bomb",false,false},{479,"smack-down",false,false},
+        {97,"self-eevee",false,true,133},{97,"self-snorlax",false,true,143},
+        {97,"self-gyarados",false,true,130}};
+    auto& canvas=PixelRenderer::canvas();
+    const auto yellowPixels=[&](int x0,int x1){
+        int count=0;
+        for(int y=290;y<371;++y)for(int x=x0;x<x1;++x){
+            const auto c=canvas.readPixel(x,y);
+            count+= (c>>11)>=23 && ((c>>5)&63)>=35 && (c&31)<=12;
+        }
+        return count;
+    };
+    for(const auto& test:cases){
+        Game::GameState state{};state.teamCount=1;state.coins=3000;
+        state.team[0]=Game::MonsterFactory::create(test.species,30);
+        state.team[0].ivPacked=12;state.team[0].metAt=24;
+        state.team[0].move2Id=test.move;state.team[0].moveProficiency[1]=40;
+        Game::MarketTutor::ensurePeriod(state);
+        const uint16_t ids[]={94,test.species};assert(PokemonSprites::preloadDynamicSpecies(ids,2));
+        UI ui;ui.open(state);ui.update(250);ui.update(250);uint32_t clock=0;
+        const auto tap=[&](int x,int y){
+            ui.touch({Type::DOWN,int16_t(x),int16_t(y),clock},state);
+            auto req=ui.touch({Type::UP,int16_t(x),int16_t(y),clock+50},state);
+            clock+=200;return req;
+        };
+        tap(184,380);ui.update(250);ui.update(250);tap(184,380);tap(184,328);
+        auto req=tap(272,414);assert(req.kind==UI::Request::TRAIN && req.slot==1);
+        assert(Game::MarketTutor::train(state,0,req.slot)==Game::MarketTutor::Result::OK);
+        ui.committed(true,state);assert(ui.page()==UI::Page::TRAINING);
+        int changedFrames=0;std::vector<uint16_t> previous;
+        for(int ms=0;ms<4800;ms+=100){
+            ui.render(state);
+            if(ms==1200){
+                if(test.species==25){
+                    if(test.melee){assert(yellowPixels(180,235)>80);assert(yellowPixels(255,315)==0);}
+                    else {assert(yellowPixels(255,315)>80);}
+                }
+                if(test.self){
+                    for(int y=304;y<360;++y)for(int x=150;x<205;++x)assert(canvas.readPixel(x,y)==C::rgb(248,248,224));
+                } else { assert(canvas.readPixel(test.melee?180:178,330)!=C::rgb(248,248,224)); }
+            }
+            for(int y=392;y<430;++y)for(int x=24;x<344;++x)assert(canvas.readPixel(x,y)==C::rgb(248,248,224));
+            std::vector<uint16_t> pixels(canvas.rawPixels(),canvas.rawPixels()+368*448);
+            changedFrames+=!previous.empty() && pixels!=previous;previous=std::move(pixels);
+            char file[80];std::snprintf(file,sizeof(file),"type-%s-%02d",test.name,ms/100);capture(file);
+            assert(state.coins==2800 && state.team[0].moveProficiency[1]==48);
+            ui.update(100);
+        }
+        assert(ui.page()==UI::Page::RESULT && changedFrames>25);
+        tap(184,414);ui.update(250);ui.update(250);ui.update(20);assert(!ui.active());
+    }
+    std::puts("training types: real UI remote/melee/self/enemy-status plus ranged overrides, complete timelines, one payment and direct exits OK");
+}
+
+// Learning follows the chosen move as well, using actual eligible lessons.
+static void learningTypeCases() {
+    using UI=Ui::MarketTutorUi;
+    using Type=Platform::IInputDevice::TouchType;
+    namespace C=AmoledV1::UiCommon;
+    struct Case { uint16_t move; const char* name; bool melee,self; uint16_t species=25; };
+    const Case cases[]={{85,"remote",false,false},{98,"melee",true,false},
+                        {97,"self",false,true},{86,"enemy-status",false,true},
+        {104,"self-eevee",false,true,133},{111,"self-snorlax",false,true,143},
+        {349,"self-gyarados",false,true,130}};
+    auto& canvas=PixelRenderer::canvas();
+    for(const auto& test:cases){
+        Game::GameState state{};state.teamCount=1;state.coins=3000;
+        state.team[0]=Game::MonsterFactory::create(test.species,1);
+        state.team[0].ivPacked=12;state.team[0].metAt=24;
+        Game::MarketTutor::ensurePeriod(state);
+        state.marketTutor.move=test.move;state.marketTutor.drawnSpecies=test.species;
+        assert(Game::MarketTutor::eligibility(state.team[0],test.move)==Game::MarketTutor::Eligibility::CAN_LEARN);
+        const auto old=state.team[0].move2Id;
+        const uint16_t ids[]={94,test.species};assert(PokemonSprites::preloadDynamicSpecies(ids,2));
+        UI ui;ui.open(state);ui.update(250);ui.update(250);uint32_t clock=0;
+        const auto tap=[&](int x,int y){
+            ui.touch({Type::DOWN,int16_t(x),int16_t(y),clock},state);
+            auto req=ui.touch({Type::UP,int16_t(x),int16_t(y),clock+50},state);clock+=200;return req;
+        };
+        tap(184,380);ui.update(250);ui.update(250);tap(184,244);tap(184,328);tap(184,294);
+        assert(tap(272,414).kind==UI::Request::TEACH);
+        ui.committed(false,state);
+        assert(ui.page()==UI::Page::CONFIRM && state.coins==3000 && state.team[0].move2Id==old);
+        assert(tap(272,414).kind==UI::Request::TEACH);
+        assert(Game::MarketTutor::teach(state,0,1)==Game::MarketTutor::Result::OK);
+        const auto paid=state.coins;
+        assert(paid==3000-Game::MarketTutor::lessonPrice(test.move));
+        ui.committed(true,state);assert(ui.page()==UI::Page::TEACHING);
+        int changed=0;std::vector<uint16_t> previous;
+        for(int ms=0;ms<5600;ms+=100){
+            ui.render(state);
+            if(ms==800){
+                int originInk=0;
+                for(int y=300;y<360;++y)for(int x=65;x<115;++x)originInk+=canvas.readPixel(x,y)!=C::rgb(248,248,224);
+                if(test.melee)assert(originInk==0);else assert(originInk>100);
+                if(test.self){for(int y=304;y<360;++y)for(int x=150;x<205;++x)assert(canvas.readPixel(x,y)==C::rgb(248,248,224));}
+                else assert(canvas.readPixel(178,330)!=C::rgb(248,248,224));
+            }
+            for(int y=392;y<430;++y)for(int x=24;x<344;++x)assert(canvas.readPixel(x,y)==C::rgb(248,248,224));
+            std::vector<uint16_t> pixels(canvas.rawPixels(),canvas.rawPixels()+368*448);
+            changed+=!previous.empty()&&pixels!=previous;previous=std::move(pixels);
+            char file[80];std::snprintf(file,sizeof(file),"learning-%s-%02d",test.name,ms/100);capture(file);
+            assert(state.coins==paid&&state.team[0].move2Id==test.move&&state.marketTutor.taught==1);
+            ui.update(100);
+        }
+        assert(ui.page()==UI::Page::RESULT&&changed>35);
+        tap(184,414);ui.update(250);ui.update(250);ui.update(20);assert(!ui.active());
+    }
+    std::puts("learning types: eligible remote/melee/self/enemy-status lessons, teacher movement, rollback, complete timings, one payment and exit OK");
+}
+
 int main(int argc, char** argv) {
     assert(argc == 2 || argc == 3);
     gOutput = argc == 3 ? argv[2] : nullptr;
@@ -329,4 +684,9 @@ int main(int argc, char** argv) {
     std::vector<uint16_t> pixels(368 * 448); auto& c = PixelRenderer::canvas(); c.attach({pixels.data(), 368, 448, false});
     c.setCoordinateScale(1); c.setLayoutScale(1); c.setAssetScale(1); c.setNativeText(true);
     AmoledV1::AmoledApp app; app.begin(0); AmoledV1::AmoledAppTestAccess::run(app);
+    trainingCases();
+    trainingFacingCases();
+    learningSkipCase();
+    trainingTypeCases();
+    learningTypeCases();
 }

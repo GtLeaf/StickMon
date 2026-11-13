@@ -11,6 +11,7 @@
 #include "game/MarketTutorService.h"
 #include "presentation/PixelRenderer.h"
 #include "ui/common/MarketStallMotion.h"
+#include "ui/common/MarketTutorPerformance.h"
 #include "ui/common/MarketView.h"
 
 // Gengar stall (秘技小屋) pages for the 368x448 touch layout. The controller
@@ -22,7 +23,7 @@ namespace Ui {
 class MarketTutorUi {
 public:
     enum class Page : uint8_t { CLOSED, GREET, MENU, TUTOR, SLOT, CONFIRM, RESULT,
-                                TRAIN_MEMBER, TRAIN_MOVE, RECALL_MEMBER, RECALL_LIST };
+                                TRAIN_MEMBER, TRAIN_MOVE, RECALL_MEMBER, RECALL_LIST, TRAINING, TEACHING };
     enum class Mode : uint8_t { TEACH, TRAIN, RECALL };
     struct Request {
         enum Kind : uint8_t { NONE, CLOSE, TEACH, TRAIN, RECALL } kind = NONE;
@@ -33,6 +34,8 @@ public:
 
     static constexpr int W = 368, H = 448, PANEL_Y = 208, ROW_Y = 216, ROW_H = 56, GREET_H = 120;
     static constexpr int MENU_Y = PANEL_Y, MENU_ROW_H = 68;
+    static constexpr uint32_t TRAIN_MS = MarketTutorPerformance::TRAINING_MS;
+    static constexpr uint32_t TEACH_MS = MarketTutorPerformance::LEARNING_MS, TRAIN_SKIP_MS = 400;
     static constexpr uint32_t GREET_IN_MS = 360, OPEN_MS = 420, CLOSE_MS = 520;
 
     bool active() const { return page_ != Page::CLOSED; }
@@ -81,6 +84,12 @@ public:
             }
             return true;
         }
+        if (performing()) {
+            const uint32_t duration = page_ == Page::TEACHING ? TEACH_MS : TRAIN_MS;
+            showMs_ = std::min(duration, showMs_ + deltaMs);
+            if (showMs_ == duration) { page_ = Page::RESULT; tap_.cancel(); }
+            return true;
+        }
         return changed;
     }
 
@@ -107,6 +116,11 @@ public:
         using Type = Platform::IInputDevice::TouchType;
         Request none{};
         if (pending_ || page_ == Page::CLOSED || animating()) { tap_.cancel(); return none; }
+        if (performing()) {
+            if (showMs_ < TRAIN_SKIP_MS) { tap_.cancel(); return none; }
+            if (tap_.update(e, 0) == 0) { page_ = Page::RESULT; tap_.cancel(); }
+            return none;
+        }
         if (page_ == Page::GREET) {
             // The lifting finger of the skip tap never lands on the menu.
             if (tap_.update(e, 0) == 0) openPanel();
@@ -118,7 +132,7 @@ public:
         if (clicked < 0) return none;
         if (clicked == OUTSIDE) {
             const int backTarget = page_ == Page::MENU ? CLOSE : page_ == Page::CONFIRM ? BACK :
-                page_ == Page::RESULT ? PRIMARY : FOOTER;
+                page_ == Page::RESULT ? PRIMARY : page_ == Page::TRAIN_MOVE ? BACK : FOOTER;
             return activate(backTarget, state);
         }
         return activate(clicked, state);
@@ -137,13 +151,17 @@ public:
             std::snprintf(result2_, sizeof(result2_), "%s", MarketTutorText::TEACH_DONE2);
         } else if (mode_ == Mode::TRAIN) {
             const MoveInfo* trained = findMove(slotMove(m, slot_));
-            std::snprintf(result1_, sizeof(result1_), MarketTutorText::TRAIN_DONE, who, trained ? trained->name : "");
-            std::snprintf(result2_, sizeof(result2_), MarketTutorText::TRAIN_CHANGE, before_, m.moveProficiency[slot_]);
+            const auto after = m.moveProficiency[slot_];
+            const char* message = before_ < 90 && after >= 90 ? MarketTutorText::TRAIN_MASTERED :
+                before_ < 60 && after >= 60 ? MarketTutorText::TRAIN_SKILLED : MarketTutorText::TRAIN_DONE;
+            std::snprintf(result1_, sizeof(result1_), message, who, trained ? trained->name : "");
+            result2_[0] = 0;
         } else {
             std::snprintf(result1_, sizeof(result1_), MarketTutorText::RECALL_DONE, who, move ? move->name : "");
             result2_[0] = 0;
         }
-        page_ = Page::RESULT;
+        page_ = mode_ == Mode::TEACH ? Page::TEACHING : mode_ == Mode::TRAIN ? Page::TRAINING : Page::RESULT;
+        showMs_ = 0; tap_.cancel();
     }
     void rejected(Game::MarketTutor::Result r) { pending_ = false; error_ = reason(r); }
 
@@ -159,6 +177,7 @@ public:
         case Page::RESULT: renderResult(state); break;
         case Page::TRAIN_MEMBER: renderMembers(state, true); break;
         case Page::TRAIN_MOVE: renderTrainMoves(state); break;
+        case Page::TRAINING: case Page::TEACHING: renderPerformance(state); break;
         case Page::RECALL_MEMBER: renderMembers(state, false); break;
         case Page::RECALL_LIST: renderRecallList(state); break;
         default: break;
@@ -171,7 +190,7 @@ private:
     Page page_ = Page::CLOSED;
     enum class Transition : uint8_t { NONE, GREET_IN, OPENING, CLOSING };
     Transition transition_ = Transition::NONE;
-    uint32_t transitionMs_ = 0, errorMs_ = 0;
+    uint32_t transitionMs_ = 0, errorMs_ = 0, showMs_ = 0;
     Mode mode_ = Mode::TEACH;
     TouchTap tap_;
     uint8_t member_ = 0, slot_ = 1, before_ = 0;
@@ -182,6 +201,8 @@ private:
     char greet_[96]{}, result1_[96]{}, result2_[64]{};
 
     enum Target { ROW0 = 0, ROW1, ROW2, FOOTER = 10, BACK, PRIMARY, CLOSE, RECALL_ROW = 20, OUTSIDE = 1000 };
+
+    bool performing() const { return page_ == Page::TRAINING || page_ == Page::TEACHING; }
 
     uint32_t duration() const {
         return transition_ == Transition::GREET_IN ? GREET_IN_MS : transition_ == Transition::CLOSING ? CLOSE_MS : OPEN_MS;
@@ -330,7 +351,9 @@ private:
             return contains(footer()) ? FOOTER : -1;
         case Page::TRAIN_MOVE:
             for (int i = 0; i < 2; ++i) if (contains(moveRow(i)) && trainable(s, uint8_t(i + 1))) return i;
-            return contains(footer()) ? FOOTER : -1;
+            if (contains(back())) return BACK;
+            { const char* why = nullptr; unsigned long need = 0;
+              return contains(primary()) && trainable(s, slot_) && !confirmDisabled(s, &why, &need) ? PRIMARY : -1; }
         case Page::RECALL_LIST: {
             if (contains(footer())) return FOOTER;
             if (y < LIST_TOP || y >= LIST_BOTTOM || x < 10 || x >= 358) return -1;
@@ -390,14 +413,22 @@ private:
             r.member = member_; r.slot = slot_; r.move = chosenMove(s);
             return r;
         case Page::RESULT:
-            page_ = Page::MENU; scroll_ = 0; return r;
+            transition_ = Transition::CLOSING; transitionMs_ = 0;
+            tap_.cancel(); scroll_ = 0; return r;
         case Page::TRAIN_MEMBER: case Page::RECALL_MEMBER:
             if (target == FOOTER) { page_ = Page::MENU; return r; }
             member_ = uint8_t(target); scroll_ = 0;
-            page_ = page_ == Page::TRAIN_MEMBER ? Page::TRAIN_MOVE : Page::RECALL_LIST; return r;
+            page_ = page_ == Page::TRAIN_MEMBER ? Page::TRAIN_MOVE : Page::RECALL_LIST;
+            slot_ = trainable(s, 1) ? 1 : 2;
+            return r;
         case Page::TRAIN_MOVE:
-            if (target == FOOTER) { page_ = Page::TRAIN_MEMBER; return r; }
-            slot_ = uint8_t(target + 1); before_ = s.team[member_].moveProficiency[slot_]; page_ = Page::CONFIRM; return r;
+            if (target == BACK || target == FOOTER) { page_ = Page::TRAIN_MEMBER; return r; }
+            if (target == PRIMARY) {
+                before_ = s.team[member_].moveProficiency[slot_]; pending_ = true;
+                r.kind = Request::TRAIN; r.member = member_; r.slot = slot_; r.move = chosenMove(s);
+                tap_.cancel(); return r;
+            }
+            slot_ = uint8_t(target + 1); return r;
         case Page::RECALL_LIST: {
             if (target == FOOTER) { page_ = Page::RECALL_MEMBER; return r; }
             Game::MoveId moves[Game::MoveManagementService::MAX_RECALLABLE_MOVE_COUNT];
@@ -570,7 +601,7 @@ private:
         }
         return lines;
     }
-    void wrapText(int x, int y, const char* s, int width, int lines, int size = 32) const {
+    void wrapText(int x, int y, const char* s, int width, int lines, int size = 32, bool centered = false) const {
         char buf[192];
         const auto* p = reinterpret_cast<const uint8_t*>(s);
         for (int lineIndex = 0; *p && lineIndex < lines; ++lineIndex) {
@@ -583,7 +614,7 @@ private:
                 std::memcpy(buf + used, p, n); used += n; p += n; w += advance;
             }
             buf[used] = 0;
-            text(x, y + lineIndex * (size + 2), buf, size);
+            text(centered ? x + (width - w) / 2 : x, y + lineIndex * (size + 2), buf, size);
         }
     }
     void memberCard(const Game::GameState& s, int i, bool enabled) const {
@@ -677,7 +708,7 @@ private:
                           static_cast<unsigned long>(s.coins >= cost ? s.coins - cost : 0));
             std::snprintf(label, sizeof(label), MarketTutorText::TRAIN_BUTTON, cost);
         } else {
-            if (mode_ == Mode::TEACH) discIcon(20, 220, move ? move->type : TypeId::GHOST); else scaleIcon(20, 220);
+            if (mode_ == Mode::RECALL) scaleIcon(20, 220);
             if (mode_ == Mode::TEACH) std::snprintf(title, sizeof(title), "%s", move ? move->name : "");
             else std::snprintf(title, sizeof(title), MarketTutorText::RECALL_CONFIRM_TITLE, move ? move->name : "");
             if (old) {
@@ -699,7 +730,9 @@ private:
             }
         }
         const int titleSize = textWidth(title, 32) > 264 ? 16 : 32;
-        text(80, 220 + (32 - titleSize) / 2, title, titleSize);
+        const int titleX = mode_ == Mode::TEACH ? (W - 48 - 12 - textWidth(title, titleSize)) / 2 : 20;
+        if (mode_ == Mode::TEACH) discIcon(titleX, 220, move ? move->type : TypeId::GHOST);
+        text(mode_ == Mode::TEACH ? titleX + 60 : 80, 220 + (32 - titleSize) / 2, title, titleSize);
         if (mode_ == Mode::TRAIN) {
             text(24, 272, l1);
             text(24, 310, l2, 16);
@@ -709,7 +742,10 @@ private:
             char body[192]; std::snprintf(body, sizeof(body), "%s%s%s", l1, l2[0] ? "\n" : "", l2);
             const int lines = mode_ == Mode::TEACH ? 3 : 2;
             const int size = wrappedLines(body, 320, 32) <= lines ? 32 : 16;
-            wrapText(24, 270, body, 320, size == 32 ? lines : mode_ == Mode::TEACH ? 5 : 3, size);
+            const int count = wrappedLines(body, 320, size);
+            const int bodyY = mode_ == Mode::TEACH ? 270 + (96 - count * (size + 2)) / 2 : 270;
+            wrapText(24, bodyY, body, 320, size == 32 ? lines : mode_ == Mode::TEACH ? 5 : 3, size,
+                     mode_ == Mode::TEACH);
             if (mode_ == Mode::RECALL) {
                 text(24, 338, n1, 16);
                 text(24, 356, n2, 16);
@@ -732,7 +768,8 @@ private:
         else if (mode_ == Mode::TRAIN) trainIcon(160, 220);
         else scaleIcon(160, 220);
         const int size = wrappedLines(result1_, 320, 32) <= 2 ? 32 : 16;
-        wrapText(24, 278, result1_, 320, size == 32 ? 2 : 3, size);
+        const int lines = wrappedLines(result1_, 320, size);
+        wrapText(24, 278 + (68 - lines * (size + 2)) / 2, result1_, 320, size == 32 ? 2 : 3, size, true);
         if (result2_[0]) ctext(354, result2_, 16);
         button(wide(), MarketTutorText::HOME, true);
     }
@@ -745,11 +782,10 @@ private:
 
     void renderTrainMoves(const Game::GameState& s) const {
         const auto& m = s.team[member_];
-        text(24, 222, MarketTutorText::TRAIN_MOVE_TITLE);
         for (uint8_t slot = 1; slot < 3; ++slot) {
             const MoveInfo* move = findMove(slotMove(m, slot));
             const Rect r = moveRow(slot - 1);
-            rowFrame(r, false);
+            rowFrame(r, slot == slot_ && trainable(s, slot));
             if (!move) { rowText(r, 24, MarketTutorText::EMPTY, "", "", true); continue; }
             const uint8_t p = m.moveProficiency[slot];
             if (p >= Game::MOVE_PROFICIENCY_MAX) {
@@ -762,7 +798,27 @@ private:
             std::snprintf(right, sizeof(right), MarketTutorText::TRAIN_COST, step.cost);
             rowText(r, 24, move->name, sub, right, false, 0, 16);
         }
-        button(footer(), MarketTutorText::BACK, false);
+        char label[24];
+        const auto cost = Game::MarketTutor::trainStep(m.moveProficiency[slot_]).cost;
+        std::snprintf(label, sizeof(label), MarketTutorText::TRAIN_BUTTON, cost);
+        const char* why = nullptr; unsigned long need = 0;
+        const bool disabled = !trainable(s, slot_) || confirmDisabled(s, &why, &need);
+        char reasonText[64];
+        if (why == MarketTutorText::NO_COINS) std::snprintf(reasonText, sizeof(reasonText), why, need);
+        else std::snprintf(reasonText, sizeof(reasonText), "%s", why ? why : "");
+        const char* shown = error_ ? error_ : disabled ? reasonText : nullptr;
+        if (shown && *shown) ctext(230, shown, 16, red());
+        else text(24, 222, MarketTutorText::TRAIN_MOVE_TITLE);
+        button(back(), MarketTutorText::BACK, false);
+        button(primary(), label, true, disabled || pending_);
+    }
+
+    void renderPerformance(const Game::GameState& s) const {
+        const bool learning = page_ == Page::TEACHING;
+        ctext(232, learning ? MarketTutorText::LEARNING : MarketTutorText::TRAINING);
+        MarketTutorPerformance::render(learning ? MarketTutorPerformance::learningStyle(findMove(chosenMove(s))) :
+                                                 MarketTutorPerformance::trainingStyle(findMove(chosenMove(s))),
+                                       showMs_, s.team[member_].speciesId);
     }
 
     void renderRecallList(const Game::GameState& s) const {

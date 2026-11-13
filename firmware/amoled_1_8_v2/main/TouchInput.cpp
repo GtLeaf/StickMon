@@ -17,7 +17,6 @@ namespace {
 
 constexpr int DISPLAY_WIDTH = 368;
 constexpr int DISPLAY_HEIGHT = 448;
-constexpr uint32_t RELEASE_TIMEOUT_MS = 120;
 constexpr char TAG[] = "TouchInput";
 // Historical measurements came from physical V1 hardware running this target.
 constexpr float FT_X_SCALE = 1.1179618f;
@@ -108,14 +107,10 @@ bool TouchInput::poll(uint32_t nowMs, TouchEvent& event) {
         }
     }
 
-    if (!interruptPending) {
-        if (pointerDown && nowMs - lastTouchMs >= RELEASE_TIMEOUT_MS) {
-            pointerDown = false;
-            event = {TouchEventType::UP, lastX, lastY, lastRawX, lastRawY, nowMs};
-            return true;
-        }
-        return false;
-    }
+    // Controllers can pulse INT only once while a finger remains down.
+    // Keep sampling at waitForInput's bounded held-pointer cadence. Only a
+    // successful sensor read reporting no contacts can finish a gesture.
+    if (!interruptPending && !pointerDown) return false;
 
     interruptPending = false;
     if (esp_lcd_touch_read_data(handle) != ESP_OK) return false;
@@ -127,7 +122,6 @@ bool TouchInput::poll(uint32_t nowMs, TouchEvent& event) {
     }
 
     if (pointCount > 0) {
-        lastTouchMs = nowMs;
         const float CAL_X_SCALE = legacyFtController_ ? FT_X_SCALE : CST_X_SCALE;
         const float CAL_X_OFFSET = legacyFtController_ ? FT_X_OFFSET : CST_X_OFFSET;
         const float CAL_Y_SCALE = legacyFtController_ ? FT_Y_SCALE : CST_Y_SCALE;

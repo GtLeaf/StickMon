@@ -19,7 +19,6 @@ constexpr int DISPLAY_WIDTH = 368;
 constexpr int DISPLAY_HEIGHT = 448;
 constexpr uint8_t FT3168_ADDRESS = 0x38;
 constexpr int PROBE_ATTEMPTS = 10;
-constexpr uint32_t RELEASE_TIMEOUT_MS = 120;
 constexpr char TAG[] = "TouchInput";
 // Physical V1 / FT3168 nine-point DOWN fit; see tools/amoled_v1_touch_host.cpp.
 constexpr float CAL_X_SCALE = 1.1179618f;
@@ -110,14 +109,10 @@ bool TouchInput::poll(uint32_t nowMs, TouchEvent& event) {
         }
     }
 
-    if (!interruptPending) {
-        if (pointerDown && nowMs - lastTouchMs >= RELEASE_TIMEOUT_MS) {
-            pointerDown = false;
-            event = {TouchEventType::UP, lastX, lastY, lastX, lastY, nowMs};
-            return true;
-        }
-        return false;
-    }
+    // Controllers can pulse INT only once while a finger remains down.
+    // Keep sampling at waitForInput's bounded held-pointer cadence. Only a
+    // successful sensor read reporting no contacts can finish a gesture.
+    if (!interruptPending && !pointerDown) return false;
 
     interruptPending = false;
     if (esp_lcd_touch_read_data(handle) != ESP_OK) return false;
@@ -129,7 +124,6 @@ bool TouchInput::poll(uint32_t nowMs, TouchEvent& event) {
     }
 
     if (pointCount > 0) {
-        lastTouchMs = nowMs;
         int16_t x = toDisplayCoordinate(point.x, DISPLAY_WIDTH, CAL_X_SCALE, CAL_X_OFFSET);
         int16_t y = toDisplayCoordinate(point.y, DISPLAY_HEIGHT, CAL_Y_SCALE, CAL_Y_OFFSET);
         int16_t rawX = static_cast<int16_t>(point.x);
