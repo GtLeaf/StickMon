@@ -58,7 +58,17 @@ struct AmoledAppTestAccess {
             app.handleTouch(e); e.type = TouchEventType::UP; e.timestampMs += 60;
             app.handleTouch(e); touchTime += 200;
         };
-        const auto shot = [&](const char* name) { app.render(PixelRenderer::canvas()); capture(name); };
+        int openedSceneShift = -100000;
+        const auto shot = [&](const char* name) {
+            const auto& panel = app.marketTutorUi_;
+            if (panel.active() && panel.page() != Page::GREET && !panel.animating()) {
+                assert(panel.panelTop() == 208);
+                const int shift = panel.sceneShift(*app.market_, app.marketViewport());
+                if (openedSceneShift == -100000) openedSceneShift = shift;
+                assert(shift == openedSceneShift); // Switching pages never moves the scene.
+            }
+            app.render(PixelRenderer::canvas()); capture(name);
+        };
         assert(app.startMarket(0));
         advance(40);
         assert(marketStandNear(*app.market_, 1) && app.market_->actor(1).species == 94);
@@ -83,7 +93,18 @@ struct AmoledAppTestAccess {
         assert(state.marketTutor.move == 247 && state.marketTutor.drawnSpecies == 133);
         const auto period = state.marketTutor;
         advance(3); shot("01-greet");
-        for (int n = 0; n < 40 && ui().page() == Page::GREET; ++n) advance(1);
+        advance(600); // A full minute never advances the greeting on its own.
+        assert(ui().page() == Page::GREET && !ui().animating());
+        drag(184, 360, 184, 260);
+        assert(ui().page() == Page::GREET);
+        TouchEvent greetDown{}; greetDown.type = TouchEventType::DOWN;
+        greetDown.x = 184; greetDown.y = 380; greetDown.timestampMs = touchTime;
+        app.handleTouch(greetDown); app.setDisplayLocked(true);
+        app.setDisplayLocked(false);
+        greetDown.type = TouchEventType::UP; greetDown.timestampMs += 60;
+        app.handleTouch(greetDown); touchTime += 200;
+        advance(30); assert(ui().page() == Page::GREET);
+        tap(184, 380);
         // The panel grows from the greeting box edge, not from the bottom.
         assert(ui().page() == Page::MENU && ui().animating() && ui().panelTop() == 328 && ui().hudOffset() < -40);
         const auto viewport = app.marketViewport();
@@ -94,13 +115,13 @@ struct AmoledAppTestAccess {
         advance(1);
         const int partialTop = ui().panelTop();
         const int partialShift = ui().sceneShift(*app.market_, viewport);
-        assert(partialTop > 168 && partialTop < 328 && partialShift > greetingShift);
+        assert(partialTop > Ui::MarketTutorUi::MENU_Y && partialTop < 328 && partialShift > greetingShift);
         shot("01b-opening-100ms");
         // Both the camera and panel pause while locked, even after a long gap.
         app.setDisplayLocked(true); advance(20);
         assert(ui().panelTop() == partialTop && ui().sceneShift(*app.market_, viewport) == partialShift);
         app.setDisplayLocked(false); advance(1);
-        assert(ui().panelTop() < partialTop && ui().panelTop() > 168);
+        assert(ui().panelTop() < partialTop && ui().panelTop() > Ui::MarketTutorUi::MENU_Y);
         shot("01c-opening-200ms");
         const int standbyTop = ui().panelTop();
         app.setDisplayStandby(true, t); advance(40);
@@ -108,20 +129,20 @@ struct AmoledAppTestAccess {
         app.setDisplayStandby(false, t); app.update(t);
         assert(ui().panelTop() == standbyTop); // Wake never catches up the slide.
         for (int n = 0; n < 5 && ui().animating(); ++n) advance(1);
-        assert(!ui().animating() && ui().panelTop() == 168 && ui().hudOffset() == 0);
+        assert(!ui().animating() && ui().panelTop() == Ui::MarketTutorUi::MENU_Y && ui().hudOffset() == 0);
         assert(ui().sceneShift(*app.market_, viewport) > partialShift);
         shot("02-menu");
-        // Currency keeps the shop glyphs/font and uses the stall panel palette.
+        // Currency uses the shop glyphs at 28px and keeps the stall palette.
         {
             const auto pixels = std::vector<uint16_t>(PixelRenderer::canvas().rawPixels(),
                 PixelRenderer::canvas().rawPixels() + 368 * 448);
             ShopViewModel model{}; model.coins = state.coins;
             renderShopScreen(PixelRenderer::canvas(), model, 0, 64);
-            const int w = UiCommon::textWidth("C1774");
-            for (int y = 0; y < 32; ++y) for (int x = 0; x < w; ++x) {
+            const int w = UiCommon::textWidth("C1774") * 28 / 32;
+            for (int y = 0; y < 28; ++y) for (int x = 0; x < w; ++x) {
                 const int shopY = (UiMetrics::PAGE_HEADER_HEIGHT - FontResource::LARGE_GLYPH_H) / 2;
-                const auto shop = PixelRenderer::canvas().readPixel(184 - w / 2 + x, shopY + y);
-                const auto tutor = pixels[(16 + y) * 368 + 340 - w + x];
+                const auto shop = PixelRenderer::canvas().readPixel(184 - UiCommon::textWidth("C1774") / 2 + x * 32 / 28, shopY + y * 32 / 28);
+                const auto tutor = pixels[(18 + y) * 368 + 340 - w + x];
                 const auto gold = UiCommon::rgb(248, 210, 105);
                 const auto ink = UiCommon::rgb(40, 56, 80);
                 const auto paper = UiCommon::rgb(248, 248, 224);
@@ -134,21 +155,29 @@ struct AmoledAppTestAccess {
         const auto pose = app.market_->playerPose();
         tap(20, 435); advance(5); // Unused panel space is not outside.
         assert(app.market_->playerPose().x == pose.x && ui().page() == Page::MENU);
-        tap(184, 168); assert(ui().page() == Page::MENU && !ui().animating());
-        drag(184, 165, 184, 171);
-        drag(184, 171, 184, 165);
+        tap(184, Ui::MarketTutorUi::MENU_Y); assert(ui().page() == Page::MENU && !ui().animating());
+        drag(184, Ui::MarketTutorUi::MENU_Y - 3, 184, Ui::MarketTutorUi::MENU_Y + 3);
+        drag(184, Ui::MarketTutorUi::MENU_Y + 3, 184, Ui::MarketTutorUi::MENU_Y - 3);
         drag(184, 100, 184, 244);
         assert(ui().page() == Page::MENU && !ui().animating());
 
         tap(184, 216 + 28); assert(ui().page() == Page::TUTOR); shot("03-tutor");
         tap(184, 100); assert(ui().page() == Page::MENU);
         tap(184, 244);
-        tap(184, 248 + 28); assert(ui().page() == Page::TUTOR); // Pikachu cannot learn
-        tap(184, 248 + 56 + 28); assert(ui().page() == Page::SLOT && ui().member() == 1); shot("04-slot");
+        tap(98, 312); assert(ui().page() == Page::TUTOR); // Disabled left card cannot learn.
+        // A single partner is centered; the empty right position is inert.
+        const auto first = state.team[0];
+        state.team[0] = state.team[1]; state.teamCount = 1;
+        shot("03a-tutor-single");
+        tap(300, 312); assert(ui().page() == Page::TUTOR);
+        tap(184, 312); assert(ui().page() == Page::SLOT && ui().member() == 0);
         tap(184, 100); assert(ui().page() == Page::TUTOR);
-        tap(184, 332);
-        tap(184, 216 + 28); assert(ui().page() == Page::SLOT); // basic move is locked
-        tap(184, 216 + 56 + 28); assert(ui().page() == Page::CONFIRM); shot("05-confirm");
+        state.team[0] = first; state.teamCount = 2;
+        tap(270, 312); assert(ui().page() == Page::SLOT && ui().member() == 1); shot("04-slot");
+        tap(184, 100); assert(ui().page() == Page::TUTOR);
+        tap(270, 312);
+        tap(184, 216 + 28); assert(ui().page() == Page::SLOT); // Header space does not expose a basic-move slot.
+        tap(184, 294); assert(ui().page() == Page::CONFIRM); shot("05-confirm");
         drag(272, 414, 184, 100); assert(ui().page() == Page::CONFIRM && state.coins == 1774);
         tap(184, 100); assert(ui().page() == Page::SLOT && state.coins == 1774 && !state.marketTutor.taught);
         tap(184, 300);
@@ -172,52 +201,106 @@ struct AmoledAppTestAccess {
         tap(184, 216 + 28); assert(ui().page() == Page::MENU); // lesson sold this period
         shot("07b-menu-unavailable");
 
-        // Training: Pikachu's Electro Ball 64 -> 72.
-        tap(184, 216 + 112 + 28); assert(ui().page() == Page::TRAIN_MEMBER); shot("08-train-member");
+        // Training shares the horizontal partner cards and compact move rows.
+        tap(184, 380); assert(ui().page() == Page::TRAIN_MEMBER); shot("08-train-member");
         tap(184, 100); assert(ui().page() == Page::MENU);
-        tap(184, 356);
-        tap(184, 216 + 28); assert(ui().page() == Page::TRAIN_MOVE); shot("09-train-move");
+        tap(184, 380);
+        tap(98, 328); assert(ui().page() == Page::TRAIN_MOVE); shot("09-train-move");
         tap(184, 100); assert(ui().page() == Page::TRAIN_MEMBER);
-        tap(184, 244);
-        tap(184, 216 + 56 + 28); assert(ui().page() == Page::TRAIN_MOVE); // 100 is maxed
-        tap(184, 216 + 28); assert(ui().page() == Page::CONFIRM); shot("10-train-confirm");
+        tap(98, 328);
+        tap(184, 354); assert(ui().page() == Page::TRAIN_MOVE); // 100 is maxed.
+        tap(184, 294); assert(ui().page() == Page::CONFIRM); shot("10-train-confirm");
         tap(184, 100); assert(ui().page() == Page::TRAIN_MOVE && state.coins == 1374 && state.team[0].moveProficiency[1] == 64);
-        tap(184, 244);
+        tap(184, 294);
         tap(272, 414); assert(ui().page() == Page::RESULT && state.team[0].moveProficiency[1] == 72 && state.coins == 1174);
+        shot("10a-trained");
         tap(184, 414);
-        tap(184, 216 + 112 + 28); tap(184, 216 + 28);
-        assert(ui().page() == Page::TRAIN_MEMBER); // already trained this period
+        tap(184, 380); tap(98, 328);
+        assert(ui().page() == Page::TRAIN_MEMBER); // Already trained this period.
+        shot("10b-train-member-used");
         tap(184, 414); assert(ui().page() == Page::MENU);
 
-        // Recall with the heart scale.
-        tap(184, 216 + 56 + 28); assert(ui().page() == Page::RECALL_MEMBER);
+        // Recall: short lists are stationary; long lists reach every move.
+        tap(184, 310); assert(ui().page() == Page::RECALL_MEMBER); shot("11a-recall-member");
         tap(184, 100); assert(ui().page() == Page::MENU);
-        tap(184, 300);
-        tap(184, 216 + 56 + 28); assert(ui().page() == Page::RECALL_LIST); shot("11-recall-list");
+        tap(184, 310);
+        state.team[1].level = 1;
+        Game::MoveId shortMoves[Game::MoveManagementService::MAX_RECALLABLE_MOVE_COUNT];
+        const int shortCount = Game::MoveManagementService::collectRecallable(*findSpecies(133), state.team[1], shortMoves,
+            Game::MoveManagementService::MAX_RECALLABLE_MOVE_COUNT);
+        assert(shortCount > 0 && shortCount <= 3);
+        tap(270, 328); assert(ui().page() == Page::RECALL_LIST); shot("11-recall-list");
+        assert(ui().scrollOffset() == 0);
+        drag(184, 365, 184, 225);
+        assert(ui().page() == Page::RECALL_LIST && ui().scrollOffset() == 0);
         drag(184, 260, 184, 100); assert(ui().page() == Page::RECALL_LIST);
         tap(184, 100); assert(ui().page() == Page::RECALL_MEMBER);
-        tap(184, 300);
-        tap(184, 216 + 28); assert(ui().page() == Page::SLOT);
-        tap(184, 100); assert(ui().page() == Page::RECALL_LIST);
-        tap(184, 244);
-        tap(184, 216 + 112 + 28); assert(ui().page() == Page::CONFIRM); shot("12-recall-confirm");
+        state.team[1].level = 100;
+        tap(270, 328); assert(ui().page() == Page::RECALL_LIST);
+        Game::MoveId recallable[Game::MoveManagementService::MAX_RECALLABLE_MOVE_COUNT];
+        const int recallCount = Game::MoveManagementService::collectRecallable(*findSpecies(133), state.team[1], recallable,
+            Game::MoveManagementService::MAX_RECALLABLE_MOVE_COUNT);
+        assert(recallCount > 3);
+        const int maxScroll = (recallCount - 3) * 56;
+        shot("11b-recall-long-top");
+        const auto topPixels = std::vector<uint16_t>(PixelRenderer::canvas().rawPixels(),
+            PixelRenderer::canvas().rawPixels() + 368 * 448);
+        drag(184, 365, 184, 225); assert(ui().scrollOffset() == 140 && ui().page() == Page::RECALL_LIST);
+        shot("11c-recall-long-scrolled");
+        int changedPixels = 0;
+        for (int y = 216; y < 384; ++y) for (int x = 10; x < 358; ++x)
+            changedPixels += topPixels[y * 368 + x] != PixelRenderer::canvas().readPixel(x, y);
+        assert(changedPixels > 0);
+        drag(184, 240, 184, 285); assert(ui().scrollOffset() == 95);
+        for (int i = 0; i < maxScroll / 140 + 2; ++i) drag(184, 365, 184, 225);
+        assert(ui().scrollOffset() == maxScroll && ui().page() == Page::RECALL_LIST);
+        shot("11d-recall-last");
+        // Overscroll stays clamped, and dragging outside never activates back.
+        drag(184, 365, 184, 100); assert(ui().scrollOffset() == maxScroll && ui().page() == Page::RECALL_LIST);
+        TouchEvent scrollDown{}; scrollDown.type = TouchEventType::DOWN;
+        scrollDown.x = 184; scrollDown.y = 300; scrollDown.timestampMs = touchTime;
+        app.handleTouch(scrollDown); app.setDisplayLocked(true); app.setDisplayLocked(false);
+        scrollDown.type = TouchEventType::UP; scrollDown.y = 350; scrollDown.timestampMs += 60;
+        app.handleTouch(scrollDown); touchTime += 200;
+        assert(ui().scrollOffset() == maxScroll && ui().page() == Page::RECALL_LIST);
+        tap(184, 356); assert(ui().page() == Page::SLOT);
+        tap(184, 100); assert(ui().page() == Page::RECALL_LIST && ui().scrollOffset() == maxScroll);
+        for (int i = 0; i < maxScroll / 140 + 2; ++i) drag(184, 225, 184, 365);
+        assert(ui().scrollOffset() == 0 && ui().page() == Page::RECALL_LIST);
+        // Explicit back and re-entry resets the scroll position.
+        drag(184, 365, 184, 225); assert(ui().scrollOffset() == 140);
+        tap(184, 100); assert(ui().page() == Page::RECALL_MEMBER);
+        tap(270, 328); assert(ui().page() == Page::RECALL_LIST && ui().scrollOffset() == 0);
+        for (int i = 0; i < maxScroll / 140 + 2; ++i) drag(184, 365, 184, 225);
+        tap(184, 356); assert(ui().page() == Page::SLOT);
+        tap(184, 354); assert(ui().page() == Page::CONFIRM); shot("12-recall-confirm");
         tap(184, 100); assert(ui().page() == Page::SLOT && state.bag.heartScale == 1);
-        tap(184, 356);
-        tap(272, 414); assert(ui().page() == Page::RESULT && state.bag.heartScale == 0 && state.team[1].move3Id != 44);
+        tap(184, 354);
+        tap(272, 414); assert(ui().page() == Page::RESULT && state.bag.heartScale == 0);
+        // Verify the actual saved move is the last item, not its visible row index.
+        assert(state.team[1].move3Id == recallable[recallCount - 1]);
+        {
+            SaveManager manager; Game::GameState loaded; MainSceneViewState view;
+            assert(manager.load(loaded, view));
+            assert(loaded.team[1].move3Id == recallable[recallCount - 1] && loaded.bag.heartScale == 0 && loaded.coins == 1174);
+        }
+        shot("12a-recalled");
         tap(184, 414); assert(ui().page() == Page::MENU); shot("13-menu-after");
+        std::printf("recall-scroll: %d moves, top/bottom clamp, %d changed pixels, saved final move %u OK\n",
+                    recallCount, changedPixels, unsigned(recallable[recallCount - 1]));
 
         // Lock cancels the gesture and keeps the page; leave resumes walking.
-        TouchEvent down{}; down.type = TouchEventType::DOWN; down.x = 336; down.y = 194; down.timestampMs = touchTime;
+        TouchEvent down{}; down.type = TouchEventType::DOWN; down.x = 184; down.y = 100; down.timestampMs = touchTime;
         app.handleTouch(down); app.setDisplayLocked(true);
         TouchEvent up = down; up.type = TouchEventType::UP; up.timestampMs = touchTime + 50; app.handleTouch(up);
         app.setDisplayLocked(false); advance(3);
         assert(ui().page() == Page::MENU && app.market_->conversing());
         touchTime += 200;
-        tap(184, 100); // Main-page outside tap closes with the cross animation.
+        tap(184, 100); // Main-page outside tap closes with the panel animation.
         assert(ui().active() && ui().animating() && app.market_->conversing());
         const int openShift = ui().sceneShift(*app.market_, viewport);
         advance(1);
-        assert(ui().panelTop() > 168 && ui().panelTop() < 448);
+        assert(ui().panelTop() > Ui::MarketTutorUi::MENU_Y && ui().panelTop() < 448);
         assert(ui().sceneShift(*app.market_, viewport) < openShift);
         shot("14-closing-100ms");
         tap(184, 244); assert(ui().page() == Page::MENU);
@@ -233,7 +316,7 @@ struct AmoledAppTestAccess {
         // Same period on re-entry: no redraw, no second lesson.
         auto again = state; Game::MarketTutor::ensurePeriod(again);
         assert(again.marketTutor.move == 247 && again.marketTutor.taught == 1);
-        std::puts("market-tutor-amoled: outside back on every subpage, animated close, boundary/scroll drags, shop currency, lock pause and save rollback OK");
+        std::puts("market-tutor-amoled: outside back on every subpage, animated close, tap-only greeting, uniform panel/camera, horizontal members, actual recall scrolling and final move, boundary drags, compact currency, lock pause and save rollback OK");
     }
 };
 }

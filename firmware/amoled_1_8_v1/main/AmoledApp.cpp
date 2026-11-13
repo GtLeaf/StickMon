@@ -7654,13 +7654,10 @@ void AmoledApp::render(Canvas565& canvas) const {
     }
     if (sceneFlow.current() == AppSceneFlow::Scene::MARKET && market_ && marketTutorUi_.active()) {
         auto view = marketViewport();
-        // The stall panel covers the lower 280px; lift the camera so the
-        // facing party stays in the 168px scene band.
+        // Keep the facing party above the current stall panel.
         view.cameraOffsetY = marketTutorUi_.sceneShift(*market_, view);
         Ui::MarketView::render(*market_, view, market_->timeMs(), gameState.gameMinutesTotal);
         marketTutorUi_.render(gameState);
-        if (marketTutorUi_.page() != Ui::MarketTutorUi::Page::GREET)
-            UiCommon::drawCoins(canvas, gameState.coins, AmoledUi::WIDTH - 28, 16 + marketTutorUi_.hudOffset(), false, true);
         UiCommon::drawSceneFadeOverlay(canvas, externalSceneFade ? 0 : expeditionFade.alpha(), 0, AmoledUi::HEIGHT);
         return;
     }
