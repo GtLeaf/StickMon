@@ -61,6 +61,8 @@ SFX_SOURCES = {
     "sfx_level_up": "Audio/SE/Pkmn level up.ogg",
     "sfx_move_learnt": "Audio/SE/Pkmn move learnt.ogg",
     "sfx_contact": "Audio/ME/Register phone.ogg",
+    "sfx_buy_item": "Audio/SE/Mart buy item.ogg",
+    "sfx_item_get": "Audio/ME/Item get.ogg",
 }
 
 IMA_INDEX_TABLE = (

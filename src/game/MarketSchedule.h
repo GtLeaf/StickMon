@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include "core/BuildConfig.h"
 #include "game/GameState.h"
 
 // Open for one game day at a time, beginning on day zero for discovery.
@@ -36,7 +37,12 @@ inline constexpr uint32_t daysUntilOpen(uint32_t day) {
 }
 
 inline constexpr bool isOpen(const GameState& state) {
-    return isOpenDay(gameDay(state));
+    // Debug bypasses access restrictions, not persistent shelf/quota periods.
+    return BuildConfig::DEBUG_FEATURES || isOpenDay(gameDay(state));
+}
+
+inline constexpr uint32_t daysUntilOpen(const GameState& state) {
+    return isOpen(state) ? 0U : daysUntilOpen(gameDay(state));
 }
 
 inline constexpr uint32_t periodDay(const GameState& state) {

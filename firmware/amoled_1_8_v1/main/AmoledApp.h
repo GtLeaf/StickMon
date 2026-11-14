@@ -182,6 +182,7 @@ private:
         EXPLORE,
         BATTLE,
         BATTLE_SPECIAL,
+        MARKET,
     };
 
     void setMusicContext(MusicContext context);

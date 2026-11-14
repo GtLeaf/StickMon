@@ -27,4 +27,6 @@ enum class SfxCue : uint8_t {
     LEVEL_UP,
     MOVE_LEARNT,
     CONTACT,
+    BUY_ITEM,
+    ITEM_GET,
 };

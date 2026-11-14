@@ -1,3 +1,29 @@
+2026-11-14 微雪摊位音效（已构建，未刷机）：普通购买保存成功播BUY_ITEM；盲盒奖励／
+耿鬼首次已保存心鳞礼物播ITEM_GET。学习演出自然结束／跳过及回忆成功播MOVE_LEARNT，
+特训／按摩／茶会演出完成播短确认；保存失败／禁用项／返回播取消，完整点击才响，
+付款不叠确认音。三个Ui通过MarketUiFeedback交由应用消费；锁屏暂停演出，关闭清反馈。
+新增16kHz单声道ADPCM两包共27720B，旧音频哈希不变，SfxCue末尾追加且缓存界限更新。
+真实App实际PCM专项、三摊规则／旅程、音频资源7／续播／房间静音、架构13／家族10通过；
+V1/V2 Lite Debug及StickS3 Debug构建通过，两版resources.bin已核对含新包。未访问设备，
+扬声器听感待验收；刷机需同步资源。证据.stick-local/artifacts/market-sfx-20261114/verification.json。
+
+2026-11-14 微雪启用绿荫镇BGM（已构建，未刷机）：原bgm_market资源已存在但
+startMarket缺切换；新增MusicContext::MARKET并在成功进入时请求对应曲目，原主动／
+锁屏回房completeExploreReturn恢复HOME。沿用原8kHz／46.25秒前奏及循环资源，未重制。
+真实App七组回家锁屏（含静音）验证requested／playing、回HOME和音量不变，改前
+idle30在requested MARKET失败；三摊完整旅程记录资源打开次数，购买／教学／照料期间
+不重开曲目。原音乐上下文4／音频资源7／架构13项通过，V1/V2 Lite Debug构建通过。
+未访问设备或刷机，实际扬声器听感待验收。证据
+.stick-local/artifacts/market-music-enable-20261114/verification.json。
+
+2026-11-13 Debug集市持续开放（已构建，未刷机）：MarketSchedule::isOpen对Debug
+始终为true，入口及三个摊位复用同一规则；入口今日开放使用state版daysUntilOpen，
+原始日历／periodDay保持3/4天周期，库存与课程／照料额度不因Debug访问闭市日重置。
+正式包保留原日历及入口门禁。日历release/debug ASan/UBSan、三摊规则及真实App
+（闭市日进入／购买／三摊交谈）、六组回房锁屏、架构13项通过；StickS3 Debug及
+AMOLED V1/V2 Lite Debug构建通过，未访问串口或刷机。证据
+.stick-local/artifacts/market-debug-open-20261113/verification.json。
+
 2026-11-13 周期集市：用户确认每3～4个游戏日开放一天，当前按3/4间隔交替（玩家第1/4/8/11天），不新增日历页，仅入口今日/倒计时。奇珍小铺8位、全解锁16件：优惠3+3、糖果1、六选营养剂共2、六选洗点树果共3、特殊恢复2、稀有轮换1、盲盒1；心鳞不固定，耿鬼首次招呼每档送1，满包/总写入失败待领取。糖果移出日常购买，盲盒糖果额外不占固定库存。17道具追加，培养战斗外/恢复可手动战斗；家族背包/出售已接。SAVE9/schema8追加39B，保留raw8冻结2480B前缀及schema1..7。SaveManager任意有效副本落盘算成功，图鉴失败保持重试，避免回滚已提交交易。主机全流程/迁移/部分写入故障及独立审查通过，闭市摊主对话释放修复。未构建固件/刷机，缺工具链/设备；规格specs/market-stalls/periodic-market.md，证据.stick-local/artifacts/market-season-20261113/，详见verification.md含既有测试限制。
 
 2026-11-13 变隐龙神秘盲盒＋滚动货架（主机验证，未刷机）：保留三件普通商品，新增
@@ -104,6 +130,17 @@ AmoledApp旅程、11组费用／熟练档位与结果像素、耿鬼规则ASan/U
 规则ASan/UBSan、真实AmoledApp旅程、架构13／家族源10、V1/V2 lite Debug与StickS3
 构建通过；已检查导出页，新文字均复用现有字形，无资源变更。证据
 .stick-local/artifacts/gengar-compact-pages-20261113/；实体触摸仍待验收，未访问串口。
+
+2026-11-13 微雪集市停留后空房间（已修复／构建，未刷机）：集市出门故意置
+exploreSessionActive=false，prepareDisplayLock原仅给普通探索走beginExploreReturn，
+集市直接goHome，遗留market_和出门隐藏标记，petVisible与lockFocusPoint均false。
+现集市也先走完整回房／清理摊位和集市／主从入门，再由main保留的锁屏请求重试，
+不补探索费用或修改存档格式。新增test_market_lock真实应用六组旅程：自动30秒／
+120秒、单只、手动、教学面板打开、禁用自动锁屏130秒后主动离场，均验证可见队伍、
+集市释放、焦点及解锁；改前在首组失败，改后全过。原房间省电／焦点144姿态／
+房间位姿／电池四项及调度两项通过，V1/V2 lite Debug构建通过。未访问设备／刷机。
+修复证据.stick-local/artifacts/market-idle-lock-fix-20261113/；原复现证据
+.stick-local/artifacts/market-idle-return-20261113/。
 
 2026-11-13 微雪耿鬼摊位布局（已构建，未刷机）：左上秘技小屋／右上金币统一浅米色
 圆角徽章，局部28px字高；首页去标题行和关闭按钮，顶边168→208，面板圆角14px。

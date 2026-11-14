@@ -101,6 +101,8 @@ const char* sfxId(SfxCue cue) {
     case SfxCue::LEVEL_UP: return "sfx_level_up";
     case SfxCue::MOVE_LEARNT: return "sfx_move_learnt";
     case SfxCue::CONTACT: return "sfx_contact";
+    case SfxCue::BUY_ITEM: return "sfx_buy_item";
+    case SfxCue::ITEM_GET: return "sfx_item_get";
     }
     return nullptr;
 }

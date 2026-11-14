@@ -11,6 +11,7 @@
 #include "game/Species.h"
 #include "presentation/PixelRenderer.h"
 #include "ui/common/MarketStallMotion.h"
+#include "ui/common/MarketUiFeedback.h"
 #include "ui/common/MarketView.h"
 
 // Chansey stall (暖心小屋) pages for the 368x448 touch layout: greeting, a
@@ -37,6 +38,7 @@ public:
     static constexpr uint32_t GREET_HOLD_MS = 600, GREET_IN_MS = 360, OPEN_MS = 420, CLOSE_MS = 520,
                               SHRINK_MS = 360, SHOW_MS = 1200, ERROR_MS = 1800;
 
+    bool takeSfx(SfxCue& cue) { return feedback_.takeSfx(cue); }
     bool active() const { return page_ != Page::CLOSED; }
     Page page() const { return page_; }
     Mode mode() const { return mode_; }
@@ -65,7 +67,7 @@ public:
         std::snprintf(greet_, sizeof(greet_), "%s%s", MarketCareText::SPEAKER,
                       Game::MarketCare::remaining(state) ? MarketCareText::GREET : MarketCareText::GREET_FULL);
     }
-    void close() { page_ = Page::CLOSED; transition_ = Transition::NONE; tap_.cancel(); pending_ = false; dragging_ = false; }
+    void close() { feedback_.clear(); page_ = Page::CLOSED; transition_ = Transition::NONE; tap_.cancel(); pending_ = false; dragging_ = false; }
     void cancelTouch() { tap_.cancel(); dragging_ = false; }
 
     bool update(uint32_t deltaMs) {
@@ -86,7 +88,9 @@ public:
         }
         if (page_ == Page::SHOW) {
             // Hops and hearts while performing, then the bouncing next marker.
+            const bool wasDone = showMs_ >= SHOW_MS;
             showMs_ += deltaMs;
+            if (!wasDone && showMs_ >= SHOW_MS) feedback_.set(SfxCue::UI_CONFIRM);
             return true;
         }
         if (page_ != Page::GREET) return changed;
@@ -122,9 +126,9 @@ public:
         if (page_ == Page::GREET || page_ == Page::SHOW) {
             // Lifting the finger anywhere advances; it never lands on a row.
             if (tap_.update(e, 0) != 0) return none;
-            if (page_ == Page::GREET) openPanel();
-            else if (showMs_ < SHOW_MS) showMs_ = SHOW_MS;
-            else { page_ = Page::MENU; transition_ = Transition::OPENING; transitionMs_ = 0; openFromGreet_ = false; }
+            if (page_ == Page::GREET) { feedback_.set(SfxCue::UI_CONFIRM); openPanel(); }
+            else if (showMs_ < SHOW_MS) { showMs_ = SHOW_MS; feedback_.set(SfxCue::UI_CONFIRM); }
+            else { feedback_.set(SfxCue::UI_CONFIRM); page_ = Page::MENU; transition_ = Transition::OPENING; transitionMs_ = 0; openFromGreet_ = false; }
             return none;
         }
         if (page_ == Page::LIST && listDrag(e, state)) return none;
@@ -140,13 +144,13 @@ public:
     // Result of the application's save for the last request.
     void committed(bool saved, const Game::GameState& state) {
         pending_ = false;
-        if (!saved) { error_ = MarketCareText::SAVE_FAILED; errorMs_ = 0; return; }
+        if (!saved) { feedback_.set(SfxCue::UI_CANCEL); error_ = MarketCareText::SAVE_FAILED; errorMs_ = 0; return; }
         error_ = nullptr;
         const Game::MonsterRuntime* m = Game::MarketCare::monster(state, target_);
         if (m) { afterAffection_ = m->affection; afterBond_ = m->bond; }
         page_ = Page::SHOW; transition_ = Transition::SHRINKING; transitionMs_ = 0; showMs_ = 0;
     }
-    void rejected(Game::MarketCare::Result r) { pending_ = false; error_ = reason(r); errorMs_ = 0; }
+    void rejected(Game::MarketCare::Result r) { pending_ = false; feedback_.set(SfxCue::UI_CANCEL); error_ = reason(r); errorMs_ = 0; }
 
     void render(const Game::GameState& state) const {
         if (page_ == Page::CLOSED) return;
@@ -164,12 +168,13 @@ public:
 
 private:
     enum class Transition : uint8_t { NONE, GREET_IN, OPENING, CLOSING, SHRINKING };
-    enum Target_ { CLOSE = 10, FOOTER, BACK, PRIMARY, OUTSIDE, ROW = 20 };
+    enum Target_ { CLOSE = 10, FOOTER, BACK, PRIMARY, OUTSIDE, DISABLED, ROW = 20 };
     Page page_ = Page::CLOSED;
     Mode mode_ = Mode::MASSAGE;
     Transition transition_ = Transition::NONE;
     uint32_t transitionMs_ = 0, greetMs_ = 0, showMs_ = 0, errorMs_ = 0, period_ = 0;
     TouchTap tap_;
+    MarketUiFeedback feedback_;
     Target target_{};
     int scroll_ = 0, dragStartY_ = 0, dragScroll_ = 0;
     bool dragging_ = false, pending_ = false, fromEval_ = false, openFromGreet_ = true;
@@ -202,7 +207,7 @@ private:
         }
     }
     void openPanel() { page_ = Page::MENU; transition_ = Transition::OPENING; transitionMs_ = 0; openFromGreet_ = true; tap_.cancel(); }
-    void showError(const char* text) { error_ = text; errorMs_ = ERROR_MS; }
+    void showError(const char* text) { feedback_.set(SfxCue::UI_CANCEL); error_ = text; errorMs_ = ERROR_MS; }
 
     // ---- geometry shared by hit testing and drawing
     static Rect menuRow(int i) { return {10, ROW_Y + i * MENU_ROW_H, 348, MENU_ROW_H}; }
@@ -301,12 +306,12 @@ private:
             Target items[Game::MarketCare::TARGET_CAP];
             const int n = list(s, items);
             const int index = (y - LIST_TOP + scroll_) / ROW_H;
-            return index < n && rowEnabled(s, items[index]) ? ROW + index : -1;
+            return index < n ? (rowEnabled(s, items[index]) ? ROW + index : DISABLED) : -1;
         }
         case Page::CONFIRM:
             if (back().contains(x, y)) return BACK;
-            return primary().contains(x, y) && Game::MarketCare::check(s, service(mode_), target_, period_) ==
-                Game::MarketCare::Result::OK ? PRIMARY : -1;
+            return primary().contains(x, y) ? (Game::MarketCare::check(s, service(mode_), target_, period_) ==
+                Game::MarketCare::Result::OK ? PRIMARY : DISABLED) : -1;
         case Page::EVAL:
             if (recommended(s) == Mode::EVAL) return wide().contains(x, y) ? BACK : -1;
             if (back().contains(x, y)) return BACK;
@@ -317,6 +322,8 @@ private:
 
     Request activate(int hitTarget, const Game::GameState& s) {
         Request r{};
+        feedback_.set(hitTarget == CLOSE || hitTarget == FOOTER || hitTarget == BACK ? SfxCue::UI_CANCEL : SfxCue::UI_CONFIRM);
+        if (hitTarget == DISABLED) { feedback_.set(SfxCue::UI_CANCEL); return r; }
         switch (page_) {
         case Page::MENU: {
             if (hitTarget == CLOSE) { transition_ = Transition::CLOSING; transitionMs_ = 0; tap_.cancel(); return r; }
@@ -347,7 +354,7 @@ private:
                 else page_ = Page::LIST;
                 return r;
             }
-            pending_ = true;
+            feedback_.clear(); pending_ = true;
             r.kind = mode_ == Mode::TEA ? Request::TEA : Request::MASSAGE;
             r.target = target_; r.period = period_;
             return r;

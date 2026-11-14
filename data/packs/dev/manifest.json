@@ -1,6 +1,6 @@
 {
   "audio": "audio",
-  "audioCount": 20,
+  "audioCount": 22,
   "audioEncoding": "ima-adpcm-mono-block-v2",
   "battleAssets": "game/battle.smonfx",
   "cries": "cries",
@@ -21,7 +21,7 @@
   "roomCount": 1,
   "rooms": "rooms",
   "schema": 1,
-  "sfxCount": 15,
+  "sfxCount": 17,
   "spriteCount": 68,
   "sprites": "sprites",
   "uiAssets": "game/ui.smonfx",

@@ -27,7 +27,7 @@ class AudioAssetGeneratorTests(unittest.TestCase):
     def test_all_runtime_audio_ids_have_sources(self):
         self.assertEqual(4, len(audio.MUSIC_SOURCES))
         self.assertEqual({'bgm_market'}, set(audio.REPOSITORY_MUSIC_SOURCES))
-        self.assertEqual(15, len(audio.SFX_SOURCES))
+        self.assertEqual(17, len(audio.SFX_SOURCES))
         self.assertEqual(
             len({**audio.MUSIC_SOURCES, **audio.SFX_SOURCES}),
             len(audio.MUSIC_SOURCES) + len(audio.SFX_SOURCES),
@@ -93,6 +93,10 @@ class AudioAssetGeneratorTests(unittest.TestCase):
             self.assertEqual(header[9], len(payload), audio_id)
             self.assertEqual(header[10], binascii.crc32(payload), audio_id)
             self.assertEqual(8000 if audio_id == 'bgm_market' else audio.MUSIC_SAMPLE_RATE, header[3], audio_id)
+            if audio_id in audio.SFX_SOURCES:
+                self.assertFalse(header[2] & audio.AUDIO_FLAG_LOOP, audio_id)
+                self.assertGreater(header[4], 0, audio_id)
+                self.assertLessEqual(header[4], audio.SFX_SAMPLE_RATE * 5, audio_id)
             if audio_id == 'bgm_market':
                 self.assertGreater(header[8], 0)
                 self.assertGreater(header[4] / header[3], 46)

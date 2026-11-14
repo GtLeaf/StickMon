@@ -11,6 +11,7 @@
 #include "game/MarketTutorService.h"
 #include "presentation/PixelRenderer.h"
 #include "ui/common/MarketStallMotion.h"
+#include "ui/common/MarketUiFeedback.h"
 #include "ui/common/MarketTutorPerformance.h"
 #include "ui/common/MarketView.h"
 
@@ -38,6 +39,7 @@ public:
     static constexpr uint32_t TEACH_MS = MarketTutorPerformance::LEARNING_MS, TRAIN_SKIP_MS = 400;
     static constexpr uint32_t GREET_IN_MS = 360, OPEN_MS = 420, CLOSE_MS = 520;
 
+    bool takeSfx(SfxCue& cue) { return feedback_.takeSfx(cue); }
     bool active() const { return page_ != Page::CLOSED; }
     Page page() const { return page_; }
     Mode mode() const { return mode_; }
@@ -65,7 +67,7 @@ public:
         }
         if (welcome) std::snprintf(greet_, sizeof(greet_), "%s", welcome);
     }
-    void close() { page_ = Page::CLOSED; transition_ = Transition::NONE; tap_.cancel(); pending_ = false; }
+    void close() { feedback_.clear(); page_ = Page::CLOSED; transition_ = Transition::NONE; tap_.cancel(); pending_ = false; }
     void cancelTouch() { tap_.cancel(); listTracking_ = dragging_ = false; }
 
     // Only an explicit completed tap advances the greeting.
@@ -88,7 +90,7 @@ public:
         if (performing()) {
             const uint32_t duration = page_ == Page::TEACHING ? TEACH_MS : TRAIN_MS;
             showMs_ = std::min(duration, showMs_ + deltaMs);
-            if (showMs_ == duration) { page_ = Page::RESULT; tap_.cancel(); }
+            if (showMs_ == duration) finishPerformance();
             return true;
         }
         return changed;
@@ -119,12 +121,12 @@ public:
         if (pending_ || page_ == Page::CLOSED || animating()) { tap_.cancel(); return none; }
         if (performing()) {
             if (showMs_ < TRAIN_SKIP_MS) { tap_.cancel(); return none; }
-            if (tap_.update(e, 0) == 0) { page_ = Page::RESULT; tap_.cancel(); }
+            if (tap_.update(e, 0) == 0) finishPerformance();
             return none;
         }
         if (page_ == Page::GREET) {
             // The lifting finger of the skip tap never lands on the menu.
-            if (tap_.update(e, 0) == 0) openPanel();
+            if (tap_.update(e, 0) == 0) { feedback_.set(SfxCue::UI_CONFIRM); openPanel(); }
             return none;
         }
         if (page_ == Page::RECALL_LIST && listDrag(e, state)) return none;
@@ -142,7 +144,7 @@ public:
     // Result of the application's save for the last request.
     void committed(bool saved, const Game::GameState& state) {
         pending_ = false;
-        if (!saved) { error_ = MarketTutorText::SAVE_FAILED; return; }
+        if (!saved) { feedback_.set(SfxCue::UI_CANCEL); error_ = MarketTutorText::SAVE_FAILED; return; }
         error_ = nullptr;
         const auto& m = state.team[member_];
         const MoveInfo* move = findMove(chosenMove(state));
@@ -163,8 +165,9 @@ public:
         }
         page_ = mode_ == Mode::TEACH ? Page::TEACHING : mode_ == Mode::TRAIN ? Page::TRAINING : Page::RESULT;
         showMs_ = 0; tap_.cancel();
+        if (mode_ == Mode::RECALL) feedback_.set(SfxCue::MOVE_LEARNT);
     }
-    void rejected(Game::MarketTutor::Result r) { pending_ = false; error_ = reason(r); }
+    void rejected(Game::MarketTutor::Result r) { pending_ = false; feedback_.set(SfxCue::UI_CANCEL); error_ = reason(r); }
 
     void render(const Game::GameState& state) const {
         if (page_ == Page::CLOSED) return;
@@ -194,6 +197,7 @@ private:
     uint32_t transitionMs_ = 0, errorMs_ = 0, showMs_ = 0;
     Mode mode_ = Mode::TEACH;
     TouchTap tap_;
+    MarketUiFeedback feedback_;
     uint8_t member_ = 0, slot_ = 1, before_ = 0;
     Game::MoveId recallMove_ = 0;
     int scroll_ = 0, dragStartX_ = 0, dragStartY_ = 0, dragScroll_ = 0;
@@ -201,7 +205,12 @@ private:
     const char* error_ = nullptr;
     char greet_[96]{}, result1_[96]{}, result2_[64]{};
 
-    enum Target { ROW0 = 0, ROW1, ROW2, FOOTER = 10, BACK, PRIMARY, CLOSE, RECALL_ROW = 20, OUTSIDE = 1000 };
+    enum Target { ROW0 = 0, ROW1, ROW2, FOOTER = 10, BACK, PRIMARY, CLOSE, RECALL_ROW = 20, OUTSIDE = 1000, DISABLED };
+
+    void finishPerformance() {
+        page_ = Page::RESULT; tap_.cancel();
+        feedback_.set(mode_ == Mode::TRAIN ? SfxCue::UI_CONFIRM : SfxCue::MOVE_LEARNT);
+    }
 
     bool performing() const { return page_ == Page::TRAINING || page_ == Page::TEACHING; }
 
@@ -332,9 +341,11 @@ private:
             for (int i = 0; i < 3; ++i) if (contains(menuRow(i))) return i;
             return -1;
         case Page::TUTOR:
-            for (int i = 0; i < members(s); ++i)
-                if (contains(tutorMember(i, members(s))) && Game::MarketTutor::eligibility(s.team[i], s.marketTutor.move) ==
-                    Game::MarketTutor::Eligibility::CAN_LEARN && !s.marketTutor.taught) return i;
+            for (int i = 0; i < members(s); ++i) {
+                if (!contains(tutorMember(i, members(s)))) continue;
+                return Game::MarketTutor::eligibility(s.team[i], s.marketTutor.move) ==
+                    Game::MarketTutor::Eligibility::CAN_LEARN && !s.marketTutor.taught ? i : DISABLED;
+            }
             return contains(footer()) ? FOOTER : -1;
         case Page::SLOT:
             for (int i = 1; i < 3; ++i) if (contains(moveRow(i - 1))) return i;
@@ -342,17 +353,17 @@ private:
         case Page::CONFIRM: {
             const char* why = nullptr; unsigned long need = 0;
             if (contains(back())) return BACK;
-            return contains(primary()) && !confirmDisabled(s, &why, &need) ? PRIMARY : -1;
+            return contains(primary()) ? (!confirmDisabled(s, &why, &need) ? PRIMARY : DISABLED) : -1;
         }
         case Page::RESULT: return contains(wide()) ? PRIMARY : -1;
         case Page::TRAIN_MEMBER: case Page::RECALL_MEMBER:
-            for (int i = 0; i < members(s); ++i) if (contains(tutorMember(i, members(s))) && memberEnabled(s, i)) return i;
+            for (int i = 0; i < members(s); ++i) if (contains(tutorMember(i, members(s)))) return memberEnabled(s, i) ? i : DISABLED;
             return contains(footer()) ? FOOTER : -1;
         case Page::TRAIN_MOVE:
-            for (int i = 0; i < 2; ++i) if (contains(moveRow(i)) && trainable(s, uint8_t(i + 1))) return i;
+            for (int i = 0; i < 2; ++i) if (contains(moveRow(i))) return trainable(s, uint8_t(i + 1)) ? i : DISABLED;
             if (contains(back())) return BACK;
             { const char* why = nullptr; unsigned long need = 0;
-              return contains(primary()) && trainable(s, slot_) && !confirmDisabled(s, &why, &need) ? PRIMARY : -1; }
+              return contains(primary()) ? (trainable(s, slot_) && !confirmDisabled(s, &why, &need) ? PRIMARY : DISABLED) : -1; }
         case Page::RECALL_LIST: {
             if (contains(footer())) return FOOTER;
             if (y < LIST_TOP || y >= LIST_BOTTOM || x < 10 || x >= 358) return -1;
@@ -383,6 +394,9 @@ private:
 
     Request activate(int target, const Game::GameState& s) {
         Request r{};
+        feedback_.set(target == FOOTER || target == BACK || target == CLOSE || page_ == Page::RESULT ?
+                      SfxCue::UI_CANCEL : SfxCue::UI_CONFIRM);
+        if (target == DISABLED) { feedback_.set(SfxCue::UI_CANCEL); return r; }
         error_ = nullptr; errorMs_ = 0;
         switch (page_) {
         case Page::MENU:
@@ -392,7 +406,7 @@ private:
             if (!menuEnabled(s, target)) {
                 error_ = target == 0 ? (s.marketTutor.taught ? MarketTutorText::WHY_TAUGHT : MarketTutorText::SUB_CLOSED) :
                     target == 1 ? MarketTutorText::NEED_SCALE : MarketTutorText::SUB_TRAIN_DONE;
-                errorMs_ = 1800;
+                feedback_.set(SfxCue::UI_CANCEL); errorMs_ = 1800;
                 return r;
             }
             if (target == 0) { mode_ = Mode::TEACH; page_ = Page::TUTOR; }
@@ -407,7 +421,7 @@ private:
             slot_ = uint8_t(target); before_ = s.team[member_].moveProficiency[slot_]; page_ = Page::CONFIRM; return r;
         case Page::CONFIRM:
             if (target == BACK) { page_ = mode_ == Mode::TRAIN ? Page::TRAIN_MOVE : Page::SLOT; return r; }
-            pending_ = true;
+            feedback_.clear(); pending_ = true;
             r.kind = mode_ == Mode::TEACH ? Request::TEACH : mode_ == Mode::TRAIN ? Request::TRAIN : Request::RECALL;
             r.member = member_; r.slot = slot_; r.move = chosenMove(s);
             return r;
@@ -423,7 +437,7 @@ private:
         case Page::TRAIN_MOVE:
             if (target == BACK || target == FOOTER) { page_ = Page::TRAIN_MEMBER; return r; }
             if (target == PRIMARY) {
-                before_ = s.team[member_].moveProficiency[slot_]; pending_ = true;
+                before_ = s.team[member_].moveProficiency[slot_]; feedback_.clear(); pending_ = true;
                 r.kind = Request::TRAIN; r.member = member_; r.slot = slot_; r.move = chosenMove(s);
                 tap_.cancel(); return r;
             }

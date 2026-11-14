@@ -1,4 +1,5 @@
 #include "AmoledApp.h"
+#include "core/AudioManager.h"
 #include "core/FontResource.h"
 #include "game/MonsterFactory.h"
 #include "platform/desktop/DesktopPlatform.h"
@@ -9,6 +10,20 @@
 #include <string>
 #include <vector>
 static const char* output;
+class MusicResourceCounter final : public Platform::IResourceStore {
+public:
+    explicit MusicResourceCounter(Platform::IResourceStore& backing): backing_(backing) {}
+    bool mount() override { return backing_.mount(); }
+    size_t totalBytes() const override { return backing_.totalBytes(); }
+    size_t usedBytes() const override { return backing_.usedBytes(); }
+    Platform::ResourceFile open(const char* path) override {
+        if (path && std::strstr(path, "bgm_market.smonaudio")) ++marketOpens;
+        return backing_.open(path);
+    }
+    unsigned marketOpens = 0;
+private:
+    Platform::IResourceStore& backing_;
+};
 class FaultStore final : public Platform::IBlobStore {
 public:
     explicit FaultStore(Platform::IBlobStore& backing): backing_(backing) {}
@@ -37,19 +52,23 @@ static void capture(const char* name) {
 }
 namespace AmoledV1 {
 struct AmoledAppTestAccess {
-    static void run(AmoledApp& app,FaultStore& blobs) {
+    static void run(AmoledApp& app,FaultStore& blobs,MusicResourceCounter& resources) {
         auto& s=app.gameState;s={};s.oobeDone=true;s.teamCount=2;s.coins=20000;
         s.team[0]=Game::MonsterFactory::create(25,20);s.team[1]=Game::MonsterFactory::create(133,20);
         for(auto& clear:s.explorePoolRerollCounts)clear=1;
         app.syncHomeActors(0);uint32_t t=0,touch=1000;
-        auto advance=[&](int count){while(count--){t+=100;app.update(t);}};
+        auto advance=[&](int count){while(count--){t+=100;app.update(t);
+            if(app.market_)assert(AudioManager::ins().requestedMusic()==MusicTrack::MARKET);}};
         auto tap=[&](int x,int y){touch=std::max(touch,t+1);TouchEvent e{};e.x=x;e.y=y;e.timestampMs=touch;e.type=TouchEventType::DOWN;app.handleTouch(e);
             e.type=TouchEventType::UP;e.timestampMs+=60;app.handleTouch(e);touch+=200;};
         auto shot=[&](const char* name){app.render(PixelRenderer::canvas());capture(name);};
-        s.gameMinutesTotal=1440;assert(!app.startMarket(0));
+        s.gameMinutesTotal=1440;assert(app.startMarket(0));app.closeMarket(0);
         app.sceneFlow.enter(AppSceneFlow::Scene::EXPLORE_AREAS);app.selectedExploreDestination_=ExploreDestinations::MARKET;app.loadExplorePreview(0);
-        assert(!ExploreDestinations::unlocked(ExploreDestinations::MARKET,s));shot("01-market-closed");
-        s.gameMinutesTotal=0;assert(app.startMarket(0));advance(40);
+        assert(ExploreDestinations::unlocked(ExploreDestinations::MARKET,s));
+        assert(Game::MarketSchedule::daysUntilOpen(s)==0);shot("01-market-debug-open");
+        assert(app.startMarket(0));advance(40);
+        assert(resources.marketOpens>0);
+        const auto musicOpens=resources.marketOpens;
         auto enter=[&](int species){
             int target=-1;for(int i=0;i<app.market_->data().residentCount;++i)if(app.market_->actor(i).species==species)target=i;
             assert(target>=0&&marketStandNear(*app.market_,target));app.marketUi_.chatTarget=target;app.marketUi_.refresh(*app.market_);tap(184,399);
@@ -64,9 +83,9 @@ struct AmoledAppTestAccess {
         select(Game::MarketShop::NUTRIENT);assert(ui.page()==Ui::MarketShopUi::Page::SELECT_ITEM);shot("03-nutrient-choice");
         tap(272,262);assert(ui.page()==Ui::MarketShopUi::Page::CONFIRM);shot("04-nutrient-confirm");
         app.saveWritesBlocked=true;tap(272,414);assert(s.coins==20000&&s.marketSeason.stock[Game::MarketShop::NUTRIENT]==2&&!Game::ItemInventory::count(s,Game::ItemId::PROTEIN));
-        s.gameMinutesTotal=1440;tap(272,414);
+        s.gameMinutesTotal=3*1440;tap(272,414);
         assert(s.coins==20000&&s.marketSeason.stock[Game::MarketShop::NUTRIENT]==2&&!Game::ItemInventory::count(s,Game::ItemId::PROTEIN));
-        s.gameMinutesTotal=0;
+        s.gameMinutesTotal=1440;
         app.saveWritesBlocked=false;blobs.failKey="snapshots";tap(272,414);
         assert(ui.page()==Ui::MarketShopUi::Page::CONFIRM&&s.coins==20000&&s.marketSeason.stock[Game::MarketShop::NUTRIENT]==2);
         // One durable copy is a committed transaction even if its mirror fails.
@@ -95,29 +114,34 @@ struct AmoledAppTestAccess {
         app.marketTutorUi_.close();app.closeMarketTutor();s.bag.heartScale=98;enter(94);assert(s.marketTutorGifted&&s.bag.heartScale==99);
         app.closeMarketTutor();s.gameMinutesTotal=1440;app.gameClock.set(t,s.gameMinutesTotal);
         s.marketTutorGifted=0;s.bag.heartScale=0;
-        // Closing day during an existing visit must release a refused NPC
-        // conversation, keeping the market walk and exit controls usable.
+        // Debug visits keep every stall usable on a scheduled closing day.
         for(int species:{352,94,113}) {
             int target=-1;for(int i=0;i<app.market_->data().residentCount;++i)
                 if(app.market_->actor(i).species==species)target=i;
             assert(target>=0&&marketStandNear(*app.market_,target));
             app.marketUi_.chatTarget=target;app.marketUi_.refresh(*app.market_);
             tap(184,399);advance(60);
-            if(app.market_->conversing()||app.marketTutorPending_||app.marketServiceActive())
-                std::fprintf(stderr,"closed-stall species=%d t=%u locked=%d conversing=%d ready=%d pending=%d active=%d\n",species,t,app.displayLocked,app.market_->conversing(),app.market_->conversationReady(),app.marketTutorPending_,app.marketServiceActive());
-            assert(!app.market_->conversing()&&!app.marketTutorPending_&&!app.marketServiceActive());
+            assert(app.market_->conversing()&&!app.marketTutorPending_&&app.marketServiceActive());
+            assert(species!=352||app.marketShopUi_.active());
+            assert(species!=94||app.marketTutorUi_.active());
+            assert(species!=113||app.marketCareUi_.active());
+            app.closeMarketTutor();
         }
-        assert(!s.marketTutorGifted&&!s.bag.heartScale);
+        assert(s.marketTutorGifted&&s.bag.heartScale==1);
+        // Shopping, teaching and care pages share the playing stream. None
+        // may reopen its asset and restart the original intro.
+        assert(resources.marketOpens==musicOpens);
         app.closeMarket(t);
-        std::puts("market-season-app: closed countdown, eight-row scroll, shared selector, atomic purchases, bonus candy and persisted once-only/retried/full gift OK");
+        std::puts("market-season-app: debug always open, eight-row scroll, shared selector, atomic purchases, bonus candy and persisted once-only/retried/full gift OK");
     }
 };
 }
 int main(int argc,char**argv){
     assert(argc==2||argc==3);output=argc==3?argv[2]:nullptr;
     DesktopPlatform desktop(argv[1]);auto& base=desktop.serviceBundle();FaultStore blobs(base.blobs);
-    Platform::Services services{base.lifecycle,base.clock,base.logger,base.input,base.display,base.audio,base.imu,base.power,blobs,base.resources,base.memory,base.peers};
+    MusicResourceCounter resources(base.resources);
+    Platform::Services services{base.lifecycle,base.clock,base.logger,base.input,base.display,base.audio,base.imu,base.power,blobs,resources,base.memory,base.peers};
     Platform::bind(services);assert(desktop.begin());assert(Platform::resources().mount());assert(GameAssets::begin());assert(FontResource::ins().begin());
     std::vector<uint16_t> pixels(368*448);auto& c=PixelRenderer::canvas();c.attach({pixels.data(),368,448,false});c.setCoordinateScale(1);c.setLayoutScale(1);c.setAssetScale(1);c.setNativeText(true);
-    AmoledV1::AmoledApp app;app.begin(0);AmoledV1::AmoledAppTestAccess::run(app,blobs);
+    AmoledV1::AmoledApp app;app.begin(0);AmoledV1::AmoledAppTestAccess::run(app,blobs,resources);
 }

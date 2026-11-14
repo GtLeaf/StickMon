@@ -55,6 +55,12 @@ namespace AmoledV1 {
 using namespace BattleTiming;
 namespace {
 
+template <typename StallUi>
+void playMarketFeedback(StallUi& ui) {
+    SfxCue cue;
+    if (ui.takeSfx(cue)) AudioManager::ins().playSfx(cue);
+}
+
 constexpr int TAP_SLOP = 12;
 constexpr int DRAG_START_SLOP = 6;
 constexpr int MENU_HEADER_HEIGHT = 56;
@@ -266,6 +272,9 @@ void AmoledApp::setMusicContext(MusicContext context) {
 
     MusicTrack track = MusicTrack::HOME;
     switch (context) {
+    case MusicContext::MARKET:
+        track = MusicTrack::MARKET;
+        break;
     case MusicContext::EXPLORE:
         track = MusicTrack::EXPLORE;
         break;
@@ -3421,6 +3430,7 @@ void AmoledApp::update(uint32_t nowMs) {
             const uint32_t delta = active ? nowMs - marketTutorClockMs_ : 0;
             marketTutorClockMs_ = nowMs;
             if (marketShopUi_.update(delta)) changed = true;
+            if (active) playMarketFeedback(marketShopUi_);
             if (!marketShopUi_.active()) closeMarketTutor();
             else if (marketShopUi_.page() == Ui::MarketShopUi::Page::GREET) marketFrameDirty_ = true;
         }
@@ -3428,6 +3438,7 @@ void AmoledApp::update(uint32_t nowMs) {
             const uint32_t delta = active ? nowMs - marketTutorClockMs_ : 0;
             marketTutorClockMs_ = nowMs;
             if (marketCareUi_.update(delta)) changed = true;
+            if (active) playMarketFeedback(marketCareUi_);
             if (!marketCareUi_.active()) closeMarketTutor();
             else if (marketCareUi_.page() == Ui::MarketCareUi::Page::GREET) marketFrameDirty_ = true;
         }
@@ -3435,6 +3446,7 @@ void AmoledApp::update(uint32_t nowMs) {
             const uint32_t delta = active ? nowMs - marketTutorClockMs_ : 0;
             marketTutorClockMs_ = nowMs;
             if (marketTutorUi_.update(delta)) changed = true;
+            if (active) playMarketFeedback(marketTutorUi_);
             if (!marketTutorUi_.active()) closeMarketTutor();
             if (marketTutorUi_.page() == Ui::MarketTutorUi::Page::GREET) marketFrameDirty_ = true;
         }
@@ -7868,7 +7880,7 @@ void AmoledApp::render(Canvas565& canvas) const {
     if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_AREAS) {
         ExploreViewModel model;
         model.marketSelected = selectedExploreDestination_ == ExploreDestinations::MARKET;
-        model.marketDaysUntilOpen = Game::MarketSchedule::daysUntilOpen(Game::MarketSchedule::gameDay(gameState));
+        model.marketDaysUntilOpen = Game::MarketSchedule::daysUntilOpen(gameState);
         model.destinationMenu = true;
         model.visibleAreaCount = ExploreDestinations::visibleCount(gameState);
         for (uint8_t i=0; i<model.visibleAreaCount; ++i) {
@@ -8110,8 +8122,9 @@ bool AmoledApp::displayLockAllowed() const {
 
 bool AmoledApp::prepareDisplayLock(uint32_t nowMs) {
     if (!displayLockAllowed()) return false;
-    if (exploreSessionActive) {
-        // Settle the expedition through its normal return, then retry locking.
+    if (exploreSessionActive || market_) {
+        // Market trips skip expedition costs but still hide the room actors.
+        // Finish the normal return before capturing the room for locking.
         beginExploreReturn(nowMs);
         return false;
     }
@@ -10101,6 +10114,7 @@ bool AmoledApp::startMarket(uint32_t nowMs) {
     marketShopUi_.close(); marketCareUi_.close(); marketStallSpecies_ = 0;
     marketTutorUi_.close(); marketTutorPending_ = false;
     sceneFlow.enter(AppSceneFlow::Scene::MARKET); toast = nullptr;
+    setMusicContext(MusicContext::MARKET);
     lastMarketFrameMs_ = nowMs; marketFrameDirty_ = false;
     requestFullRender(); return true;
 }
@@ -10126,15 +10140,17 @@ void AmoledApp::openMarketTutor(uint32_t nowMs) {
         saveCoordinator_.mark(nowMs, SaveCoordinator::Priority::SOON);
     }
     const char* welcome = nullptr;
+    bool giftSaved = false;
     if (!gameState.marketTutorGifted) {
         const Game::GameState before = gameState;
         const auto result = Game::MarketWelcome::grant(gameState);
         if (result == Game::MarketWelcome::Result::GRANTED) {
-            if (saveState()) welcome = Ui::MarketTutorText::WELCOME_GIFT;
+            if (saveState()) { welcome = Ui::MarketTutorText::WELCOME_GIFT; giftSaved = true; }
             else { gameState = before; welcome = Ui::MarketTutorText::WELCOME_RETRY; }
         } else if (result == Game::MarketWelcome::Result::BAG_FULL) welcome = Ui::MarketTutorText::WELCOME_FULL;
     }
     marketTutorUi_.open(gameState, welcome);
+    if (giftSaved) AudioManager::ins().playSfx(SfxCue::ITEM_GET);
     marketTutorClockMs_ = nowMs;
     requestFullRender();
 }
@@ -10157,7 +10173,7 @@ void AmoledApp::openMarketShop(uint32_t nowMs) {
 
 void AmoledApp::handleMarketShopTouch(const Platform::IInputDevice::TouchEvent& touch) {
     const auto request = marketShopUi_.touch(touch, gameState);
-    if (request.kind != Ui::MarketShopUi::Request::BUY) return;
+    if (request.kind != Ui::MarketShopUi::Request::BUY) { playMarketFeedback(marketShopUi_); return; }
     // Apply to the live state, then roll back unless the save succeeds.
     const Game::GameState before = gameState;
     Game::MarketShop::Reward reward{};
@@ -10165,12 +10181,13 @@ void AmoledApp::handleMarketShopTouch(const Platform::IInputDevice::TouchEvent& 
     if (result != Game::MarketShop::Result::OK) {
         gameState = before;
         marketShopUi_.rejected(result);
+        playMarketFeedback(marketShopUi_);
         return;
     }
     const bool saved = saveState();
     if (!saved) gameState = before;
-    else AudioManager::ins().playSfx(SfxCue::UI_CONFIRM);
     marketShopUi_.committed(saved, reward.item, reward.amount);
+    playMarketFeedback(marketShopUi_);
 }
 
 void AmoledApp::openMarketCare(uint32_t nowMs) {
@@ -10187,7 +10204,7 @@ void AmoledApp::openMarketCare(uint32_t nowMs) {
 
 void AmoledApp::handleMarketCareTouch(const Platform::IInputDevice::TouchEvent& touch) {
     const auto request = marketCareUi_.touch(touch, gameState);
-    if (request.kind == Ui::MarketCareUi::Request::NONE) return;
+    if (request.kind == Ui::MarketCareUi::Request::NONE) { playMarketFeedback(marketCareUi_); return; }
     // Apply to the live state, then roll back unless the save succeeds.
     const Game::GameState before = gameState;
     const auto service = request.kind == Ui::MarketCareUi::Request::TEA
@@ -10196,12 +10213,13 @@ void AmoledApp::handleMarketCareTouch(const Platform::IInputDevice::TouchEvent& 
     if (result != Game::MarketCare::Result::OK) {
         gameState = before;
         marketCareUi_.rejected(result);
+        playMarketFeedback(marketCareUi_);
         return;
     }
     const bool saved = saveState();
     if (!saved) gameState = before;
-    else AudioManager::ins().playSfx(SfxCue::UI_CONFIRM);
     marketCareUi_.committed(saved, gameState);
+    playMarketFeedback(marketCareUi_);
 }
 
 void AmoledApp::closeMarketTutor() {
@@ -10218,7 +10236,7 @@ void AmoledApp::closeMarketTutor() {
 void AmoledApp::handleMarketTutorTouch(const Platform::IInputDevice::TouchEvent& touch) {
     const auto request = marketTutorUi_.touch(touch, gameState);
     using Request = Ui::MarketTutorUi::Request;
-    if (request.kind == Request::NONE) return;
+    if (request.kind == Request::NONE) { playMarketFeedback(marketTutorUi_); return; }
     if (request.kind == Request::CLOSE) { closeMarketTutor(); return; }
     // Apply to the live state, then roll back unless the save succeeds.
     const Game::GameState before = gameState;
@@ -10229,14 +10247,13 @@ void AmoledApp::handleMarketTutorTouch(const Platform::IInputDevice::TouchEvent&
     if (result != Game::MarketTutor::Result::OK) {
         gameState = before;
         marketTutorUi_.rejected(result);
+        playMarketFeedback(marketTutorUi_);
         return;
     }
     const bool saved = saveState();
     if (!saved) gameState = before;
-    else {
-        syncHomeActors(Platform::clock().millis());
-        AudioManager::ins().playSfx(SfxCue::UI_CONFIRM);
-    }
+    else syncHomeActors(Platform::clock().millis());
     marketTutorUi_.committed(saved, gameState);
+    playMarketFeedback(marketTutorUi_);
 }
 } // namespace AmoledV1

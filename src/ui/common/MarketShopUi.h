@@ -9,6 +9,7 @@
 #include "game/MarketShopService.h"
 #include "presentation/PixelRenderer.h"
 #include "ui/common/MarketStallMotion.h"
+#include "ui/common/MarketUiFeedback.h"
 #include "ui/common/MarketView.h"
 
 // Kecleon stall (奇珍小铺) for the 368x448 touch layout: greeting, scrollable
@@ -33,6 +34,7 @@ public:
     static constexpr int LIST_TOP = ROW_Y, LIST_BOTTOM = 440;
     static constexpr uint32_t GREET_HOLD_MS = 600, GREET_IN_MS = 360, OPEN_MS = 420, CLOSE_MS = 520;
 
+    bool takeSfx(SfxCue& cue) { return feedback_.takeSfx(cue); }
     bool active() const { return page_ != Page::CLOSED; }
     Page page() const { return page_; }
     bool pending() const { return pending_; }
@@ -52,7 +54,7 @@ public:
         greet_ = Game::MarketShop::soldOut(state) ? MarketShopText::GREET_SOLD_OUT : MarketShopText::GREET;
         period_ = state.marketSeason.periodDay;
     }
-    void close() { page_ = Page::CLOSED; transition_ = Transition::NONE; cancelTouch(); pending_ = false; }
+    void close() { feedback_.clear(); page_ = Page::CLOSED; transition_ = Transition::NONE; cancelTouch(); pending_ = false; }
     void cancelTouch() { tap_.cancel(); listTracking_ = dragging_ = false; }
 
     bool update(uint32_t deltaMs) {
@@ -94,7 +96,7 @@ public:
         if (pending_ || page_ == Page::CLOSED || animating()) { cancelTouch(); return none; }
         if (page_ == Page::GREET) {
             // The lifting finger of the skip tap never lands on a shelf row.
-            if (tap_.update(e, 0) == 0) openPanel();
+            if (tap_.update(e, 0) == 0) { feedback_.set(SfxCue::UI_CONFIRM); openPanel(); }
             return none;
         }
         if (page_ == Page::SHELF && listDrag(e)) return none;
@@ -108,10 +110,11 @@ public:
 
     void committed(bool saved, Game::ItemId reward = Game::ItemId::COUNT, uint8_t amount = 1) {
         pending_ = false;
-        if (!saved) { error_ = MarketShopText::SAVE_FAILED; return; }
+        if (!saved) { feedback_.set(SfxCue::UI_CANCEL); error_ = MarketShopText::SAVE_FAILED; return; }
+        feedback_.set(slot_ == Game::MarketShop::BOX ? SfxCue::ITEM_GET : SfxCue::BUY_ITEM);
         error_ = nullptr; rewardItem_ = reward; rewardAmount_ = amount; page_ = Page::RESULT;
     }
-    void rejected(Game::MarketShop::Result r) { pending_ = false; error_ = reason(r, 0); }
+    void rejected(Game::MarketShop::Result r) { pending_ = false; feedback_.set(SfxCue::UI_CANCEL); error_ = reason(r, 0); }
 
     void render(const Game::GameState& s) const {
         if (page_ == Page::CLOSED) return;
@@ -132,6 +135,7 @@ private:
     Transition transition_ = Transition::NONE;
     uint32_t transitionMs_ = 0, greetMs_ = 0, period_ = 0;
     TouchTap tap_;
+    MarketUiFeedback feedback_;
     uint8_t slot_ = 0, ownedBefore_ = 0;
     bool pending_ = false;
     bool listTracking_ = false, dragging_ = false;
@@ -203,7 +207,7 @@ private:
         }
         if (page_ == Page::CONFIRM) {
             if (back().contains(x, y)) return BACK;
-            return primary().contains(x, y) && Game::MarketShop::check(s, slot_, period_, choice_) == Game::MarketShop::Result::OK ? PRIMARY : -1;
+            return primary().contains(x, y) ? PRIMARY : -1;
         }
         if (page_ == Page::SELECT_ITEM) {
             if (wide().contains(x,y)) return BACK;
@@ -215,6 +219,7 @@ private:
 
     Request activate(int target, const Game::GameState& s) {
         Request r{};
+        feedback_.set(target == CLOSE || target == BACK ? SfxCue::UI_CANCEL : SfxCue::UI_CONFIRM);
         if (page_ == Page::SHELF) {
             if (target == CLOSE) { transition_ = Transition::CLOSING; transitionMs_ = 0; tap_.cancel(); return r; }
             slot_ = uint8_t(target); error_ = nullptr;
@@ -231,6 +236,9 @@ private:
         }
         if (page_ == Page::CONFIRM) {
             if (target == BACK) { page_ = Game::MarketShop::selectable(slot_) ? Page::SELECT_ITEM : Page::SHELF; error_ = nullptr; return r; }
+            const auto result = Game::MarketShop::check(s, slot_, period_, choice_);
+            if (result != Game::MarketShop::Result::OK) { rejected(result); return r; }
+            feedback_.clear();
             pending_ = true; r.kind = Request::BUY; r.slot = slot_; r.period = period_;
             r.choice = choice_;
             return r;

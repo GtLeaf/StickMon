@@ -96,7 +96,7 @@ private:
         uint32_t sampleRate = 0;
     };
     static constexpr size_t SFX_CACHE_COUNT =
-        static_cast<size_t>(SfxCue::CONTACT) + 1;
+        static_cast<size_t>(SfxCue::ITEM_GET) + 1;
     SfxCacheEntry sfxCache_[SFX_CACHE_COUNT] = {};
 
     MusicTrack requestedMusic_ = MusicTrack::NONE;

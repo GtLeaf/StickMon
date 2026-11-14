@@ -31,12 +31,13 @@ int main() {
             state.marketShop.periodDay = 987;
             const auto before = state;
             assert(MarketSchedule::gameDay(state) == c.day);
-            assert(MarketSchedule::isOpen(state) == c.open);
+            assert(MarketSchedule::isOpen(state) == (BuildConfig::DEBUG_FEATURES || c.open));
+            assert(MarketSchedule::daysUntilOpen(state) == (BuildConfig::DEBUG_FEATURES ? 0U : c.next - c.day));
             assert(MarketSchedule::periodDay(state) == c.previous);
-            // Closing the market must block departure while preserving the
-            // debug destination and every ordinary area's unlock behavior.
+            // Debug visits bypass closing days without changing saved periods
+            // or any ordinary area's unlock behavior.
             assert(ExploreDestinations::visible(ExploreDestinations::MARKET, state) == BuildConfig::DEBUG_FEATURES);
-            assert(ExploreDestinations::unlocked(ExploreDestinations::MARKET, state) == (BuildConfig::DEBUG_FEATURES && c.open));
+            assert(ExploreDestinations::unlocked(ExploreDestinations::MARKET, state) == BuildConfig::DEBUG_FEATURES);
             assert(ExploreDestinations::unlocked(0, state));
             assert(std::memcmp(&before, &state, sizeof(state)) == 0);
         }
