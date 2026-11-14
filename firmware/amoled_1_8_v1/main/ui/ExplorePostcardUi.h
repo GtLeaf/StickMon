@@ -19,12 +19,8 @@ inline void renderExplorePostcard(Canvas565& c,const ExploreViewModel& m,
     };
     auto width=[](const char* s,int size){int n=0;for(auto p=(const unsigned char*)s;*p;){
         if(*p<128){n+=size/2;++p;}else{n+=size;p+=3;}}return n;};
-    auto outlined=[&](int x,int y,const char* s,int size){
-        for(int d:{-1,1}){text(x+d,y,s,size,0x0001);text(x,y+d,s,size,0x0001);}
-        text(x,y,s,size,ink);
-    };
     c.fillRect(0,0,368,448,0);
-    if(rowBegin<76)UiCommon::drawPageHeader(c,"探险");
+
     const int count=std::min<int>(m.visibleAreaCount,7);
     const int selected=count?std::min<int>(m.selectedArea,count-1):0;
     const int id=m.marketSelected?6:m.destinationMenu?std::min<int>(m.destinationIds[selected],6):selected;
@@ -33,46 +29,52 @@ inline void renderExplorePostcard(Canvas565& c,const ExploreViewModel& m,
         Ui::Explore::TALL_GRASS_PARK,Ui::Explore::FROST_CRYSTAL_CAVE,
         Ui::Explore::MIST_FOREST_PATH,Ui::Explore::ANCIENT_WATERFALL_VALLEY,Ui::MarketView::NAME};
     const auto& art=ExplorePostcardArt::scenes[id];
-    const int first=std::max(0,(int(rowBegin)-POSTCARD_SCENE_Y)/2);
-    const int last=std::min(146,(int(rowEnd)-POSTCARD_SCENE_Y+1)/2);
+    const int first=std::max(0,int(rowBegin)/2);
+    const int last=std::min(190,(int(rowEnd)+1)/2);
     for(int y=first;y<last;++y){
-        int x=0;const int inset=postcardCardInset(y*2)/2;
+        int x=0;
         for(int j=art.rows[y];j<art.rows[y+1];j+=2){
-            const int end=x+art.runs[j],a=std::max(x,inset),b=std::min(end,168-inset);
-            if(b>a)c.fillRect(16+a*2,POSTCARD_SCENE_Y+y*2,(b-a)*2,2,art.palette[art.runs[j+1]]);
-            x=end;
+            c.fillRect(x*2,y*2,art.runs[j]*2,2,art.palette[art.runs[j+1]]);x+=art.runs[j];
         }
     }
-    // Artwork and gradient share every scanline boundary, including corners.
-    for(int y=std::max(0,int(rowBegin)-POSTCARD_SCENE_Y);
-        y<std::min(POSTCARD_SCENE_H,int(rowEnd)-POSTCARD_SCENE_Y);++y){
-        float q=std::clamp((y-100.f)/191.f,0.f,1.f);q=q*q*(3-2*q);
-        const int inset=postcardCardInset(y);
-        c.blendRectAlphaNative(16+inset,POSTCARD_SCENE_Y+y,336-inset*2,1,
-                               rgb(8,18,24),uint8_t(179*q));
+    for(int y=rowBegin;y<std::min(380,int(rowEnd));++y){
+        float top=1.f-std::clamp(y/110.f,0.f,1.f);top=top*top*(3-2*top);
+        c.blendRectAlphaNative(0,y,368,1,0,uint8_t(255*top));
+        float bottom=std::clamp((y-200.f)/179.f,0.f,1.f);bottom=bottom*bottom*(3-2*bottom);
+        c.blendRectAlphaNative(0,y,368,1,rgb(8,18,24),uint8_t(200*bottom));
     }
-    if(rowBegin<151 && rowEnd>93){
-        outlined(28,94,names[id],32);
-        if(id==6){
-            char status[64];
-            if(m.marketDaysUntilOpen)std::snprintf(status,sizeof(status),Ui::MarketText::NEXT_OPEN,
-                                                  (unsigned long)m.marketDaysUntilOpen);
-            else std::snprintf(status,sizeof(status),"%s",Ui::MarketText::OPEN_TODAY);
-            outlined(28,134,status,16);
+    if(rowBegin<76)UiCommon::drawPageHeader(c,"探险",nullptr,true,false);
+    if(rowBegin<132 && rowEnd>84){
+        const int w=width(names[id],32)+24;
+        for(int y=0;y<48;y++){
+            int edge=std::min(y,47-y),inset=edge<2?6:edge<4?3:edge<6?1:0;
+            c.blendRectAlphaNative(12+inset,84+y,w-2*inset,1,rgb(248,248,224),204);
         }
+        text(24,92,names[id],32,rgb(27,43,51));
     }
-    if(rowBegin<196 && rowEnd>156)for(int side=0;side<2;++side){
+    if(rowBegin<199 && rowEnd>153)for(int side=0;side<2;++side){
         if((!side && !selected)||(side && selected+1>=count))continue;
-        const int x=side?314:18;c.fillRoundRect(x,156,36,40,6,rgb(27,43,51));
-        for(int k=0;k<4;++k){const int dx=side?k:3-k;
-            c.fillRect(x+10+dx*3,167+k*3,3,3,ink);c.fillRect(x+10+dx*3,185-k*3,3,3,ink);}
+        const int cx=side?336:32,cy=176;
+        for(int y=-22;y<=22;y++){
+            const int w=int(std::sqrt(float(22*22-y*y)));
+            c.blendRectAlphaNative(cx-w,cy+y,2*w+1,1,rgb(14,26,32),155);
+        }
+        for(int pass=0;pass<2;pass++)for(int y=-10;y<=10;y+=2){
+            const int dx=std::abs(y)/2-5,px=cx+(side?-dx:dx),off=pass==0?1:0;
+            c.fillRect(px+off,cy+y+off,3,2,pass==0?rgb(20,32,35):rgb(232,242,237));
+        }
     }
     if(rowEnd>POSTCARD_POOL_TOP && rowBegin<POSTCARD_POOL_BOTTOM){
         if(id==6 || locked){
-            const char* title=id==6?"奇珍好物":Ui::Explore::AREA_LOCKED;
-            const char* detail=id==6?"道具补给与技能特训":Ui::Explore::DEFEAT_PREVIOUS_BOSS;
-            text((368-width(title,32))/2,276,title,32,id==6?accent:ink);
-            text((368-width(detail,16))/2,324,detail,16,muted);
+            if(id==6){
+                char status[48];
+                if(m.marketDaysUntilOpen)std::snprintf(status,sizeof(status),Ui::MarketText::SELECTOR_NEXT,(unsigned long)m.marketDaysUntilOpen);
+                else std::snprintf(status,sizeof(status),"%s",Ui::MarketText::SELECTOR_ACTIVE);
+                text((368-width(status,32))/2,310,status,32,m.marketDaysUntilOpen?ink:accent);
+            }else{
+                text((368-width(Ui::Explore::AREA_LOCKED,32))/2,276,Ui::Explore::AREA_LOCKED,32,ink);
+                text((368-width(Ui::Explore::DEFEAT_PREVIOUS_BOSS,16))/2,324,Ui::Explore::DEFEAT_PREVIOUS_BOSS,16,muted);
+            }
         }else{
             const auto layout=postcardPoolLayout(m.previewFrames,m.previewPool.count,m.previewOffset);
             int x=(368-layout.width)/2;
@@ -85,16 +87,12 @@ inline void renderExplorePostcard(Canvas565& c,const ExploreViewModel& m,
                 else PokemonSprites::drawFrame(f,x,350-f->height);
                 x+=f->width+POSTCARD_POOL_GAP;
             }
-            if(layout.pages>1)for(int i=0;i<layout.pages;++i)
-                c.fillCircle(184+(2*i-layout.pages+1)*5,363,2,i==layout.page?accent:rgb(67,97,101));
         }
     }
-    if(rowEnd>378 && rowBegin<383)for(int i=0;i<count;++i)
-        c.fillRoundRect((368-count*14)/2+i*14,378,i==selected?12:5,5,2,i==selected?accent:rgb(67,97,101));
     if(rowEnd>388 && rowBegin<436){
         c.fillRoundRect(20,388,328,48,8,locked?rgb(39,53,59):rgb(42,61,68));
         c.drawRoundRect(20,388,328,48,8,locked?rgb(67,97,101):accent);
-        const char* action=id==6?(locked?Ui::MarketText::CLOSED:"前往市集"):Ui::Explore::DEPART;
+        const char* action=Ui::Explore::DEPART;
         text((368-width(action,32))/2,396,action,32,locked?muted:ink);
     }
 }

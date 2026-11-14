@@ -92,7 +92,7 @@ class AudioAssetGeneratorTests(unittest.TestCase):
             self.assertEqual(header[7] * header[5], len(payload), audio_id)
             self.assertEqual(header[9], len(payload), audio_id)
             self.assertEqual(header[10], binascii.crc32(payload), audio_id)
-            self.assertEqual(8000 if audio_id == 'bgm_market' else audio.MUSIC_SAMPLE_RATE, header[3], audio_id)
+            self.assertEqual(audio.MUSIC_SAMPLE_RATE, header[3], audio_id)
             if audio_id in audio.SFX_SOURCES:
                 self.assertFalse(header[2] & audio.AUDIO_FLAG_LOOP, audio_id)
                 self.assertGreater(header[4], 0, audio_id)

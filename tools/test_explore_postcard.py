@@ -8,6 +8,9 @@ def main():
     if not a.legacy:
         env={**os.environ,'ASAN_OPTIONS':'detect_leaks=0'}
         layout=out/'layout'
+        clock=out/'clock'
+        subprocess.run(['c++','-std=c++17','-Isrc','-Ifirmware/amoled_1_8_v1/main','tools/explore_postcard_clock_host.cpp','-o',str(clock)],cwd=ROOT,check=True)
+        subprocess.run([str(clock)],check=True)
         subprocess.run(['c++','-std=c++17','-O1','-g','-fsanitize=address,undefined',
                         '-fno-omit-frame-pointer','-Isrc','-Ifirmware/amoled_1_8_v1/main',
                         'tools/explore_postcard_layout_host.cpp','-o',str(layout)],cwd=ROOT,check=True)

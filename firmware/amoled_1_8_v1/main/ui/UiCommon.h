@@ -67,7 +67,7 @@ void drawHeaderText(Canvas565& canvas, int x, const char* value,
 bool pageHeaderBackAt(int x, int y);
 void drawPageHeader(Canvas565& canvas, const char* title,
                     const char* trailing = nullptr,
-                    bool backButton = true);
+                    bool backButton = true, bool clearBackground = true);
 void drawPageHeaderCenteredText(Canvas565& canvas, const char* value,
                                 uint16_t color);
 void drawCoins(Canvas565& canvas, uint32_t value, int anchorX, int y,

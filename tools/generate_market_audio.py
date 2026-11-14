@@ -12,7 +12,7 @@ import tempfile
 import generate_audio_assets as audio
 
 SOURCE = audio.ROOT / audio.REPOSITORY_MUSIC_SOURCES['bgm_market']
-SAMPLE_RATE = 8000
+SAMPLE_RATE = 16000
 
 
 def prepare_midi(source, destination):

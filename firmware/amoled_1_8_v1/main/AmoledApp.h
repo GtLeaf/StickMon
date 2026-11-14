@@ -1,4 +1,5 @@
 #pragma once
+#include "ui/ExplorePostcardLayout.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -105,6 +106,7 @@ public:
     bool lockedHomePowerAllowed() const;
     void setDisplayLocked(bool locked) {
         if (locked && !displayLocked && market_) cancelTouch();
+        if(locked) explorePostcardClock_.pause();
         displayLocked = locked;
     }
     void forceRenderRegion(int left, int top, int right, int bottom) {
@@ -573,7 +575,8 @@ private:
     uint8_t exploreMenuCursor = 0;
     int pressedExploreMenuItem = -1;
     uint8_t explorePostcardPoolOffset_ = 0;
-    void advanceExplorePostcardPool(int direction);
+    PostcardPoolClock explorePostcardClock_;
+    void advanceExplorePostcardPool(int direction, uint32_t nowMs, bool manual = true);
     int pressedRoomItem = -1;
     int pressedCommunicationItem = -1;
     MusicContext musicContext = MusicContext::HOME;

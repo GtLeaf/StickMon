@@ -31,7 +31,7 @@ static void run(AmoledApp& app){
     assert(exploreStartAt(300,412)&&exploreSelectionBackAt(30,25));
     // Exact shared header pixels, including the Back target and title anchor.
     auto& c=PixelRenderer::canvas();std::vector<uint16_t> header(368*76);for(int y=0;y<76;y++)for(int x=0;x<368;x++)header[y*368+x]=c.readPixel(x,y);
-    UiCommon::drawPageHeader(c,"探险");for(int y=0;y<76;y++)for(int x=0;x<368;x++)assert(header[y*368+x]==c.readPixel(x,y));
+    UiCommon::drawPageHeader(c,"探险");for(int y=0;y<76;y++)for(int x=0;x<368;x++)if(c.readPixel(x,y))assert(header[y*368+x]==c.readPixel(x,y));
     // Production full versus dirty-row composition must be identical.
     ExploreViewModel m;PixelCache565 cache;m.previewPool=app.explorePreviewPool;
     for(int i=0;i<ExplorePool::POOL_CAP;i++){m.previewFrames[i]=app.explorePreviewFrames[i];m.previewHidden[i]=app.explorePreviewHidden[i];}
@@ -40,6 +40,10 @@ static void run(AmoledApp& app){
     c.fillRect(0,0,368,448,0);for(int y=0;y<448;y+=37)renderExploreScreen(c,m,cache,y,std::min(448,y+37));
     for(int y=0;y<448;y++)for(int x=0;x<368;x++)assert(full[y*368+x]==c.readPixel(x,y));
     for(int id=0;id<7;id++){m.destinationMenu=true;m.visibleAreaCount=7;m.selectedArea=id;m.marketSelected=id==6;for(int j=0;j<7;j++){m.destinationIds[j]=j;m.destinationUnlocked[j]=j<4||j==6;}renderExploreScreen(c,m,cache);char name[30];std::snprintf(name,sizeof(name),"area-%d",id);shot(name);}
+    m.destinationMenu=true;m.visibleAreaCount=7;m.selectedArea=6;m.marketSelected=true;
+    m.destinationIds[6]=6;m.destinationUnlocked[6]=false;m.marketDaysUntilOpen=3;
+    renderExploreScreen(c,m,cache);shot("market-closed");
+    assert(c.readPixel(184,430)==PixelRenderer::rgb(39,53,59));
     // Tap right arrow selects a real visible destination; left returns.
     tap(330,155);assert(app.selectedExploreListIndex()==grass+1);update();render("02-next");
     tap(30,155);assert(app.selectedExploreListIndex()==grass);update();
@@ -53,15 +57,25 @@ static void run(AmoledApp& app){
     app.explorePreviewPool.count=3;
     for(int i=0;i<3;i++){fixture[i].width=widths[i];fixture[i].height=96;app.explorePreviewFrames[i]=&fixture[i];}
     app.explorePostcardPoolOffset_=0;
-    tap(184,300);assert(app.explorePostcardPoolOffset_==1);
+    tap(184,300);assert(app.explorePostcardPoolOffset_==2);
     auto send=[&](TouchEventType type,int x,int y){TouchEvent e{};e.x=x;e.y=y;e.type=type;e.timestampMs=t+=40;app.handleTouch(e);};
     auto swipe=[&](int x1,int y1,int x2,int y2){send(TouchEventType::DOWN,x1,y1);send(TouchEventType::MOVE,x2,y2);send(TouchEventType::UP,x2,y2);};
     swipe(280,300,80,300);assert(app.explorePostcardPoolOffset_==0&&app.selectedExploreListIndex()==grass);
-    swipe(80,300,280,300);assert(app.explorePostcardPoolOffset_==1&&app.selectedExploreListIndex()==grass);
-    swipe(184,300,184,412);assert(app.explorePostcardPoolOffset_==1&&!app.pendingExpedition);
+    swipe(80,300,280,300);assert(app.explorePostcardPoolOffset_==2&&app.selectedExploreListIndex()==grass);
+    swipe(184,300,184,412);assert(app.explorePostcardPoolOffset_==2&&!app.pendingExpedition);
     send(TouchEventType::DOWN,280,300);send(TouchEventType::MOVE,80,300);app.cancelTouch();send(TouchEventType::UP,80,300);
-    assert(app.explorePostcardPoolOffset_==1&&!app.pendingExpedition);
+    assert(app.explorePostcardPoolOffset_==2&&!app.pendingExpedition);
     tap(184,300);assert(app.explorePostcardPoolOffset_==0);
+    app.explorePostcardClock_.pause();app.markRendered();
+    app.update(t+=100);assert(app.explorePostcardPoolOffset_==0);
+    app.update(t+=2999);assert(app.explorePostcardPoolOffset_==0);
+    app.update(++t);assert(app.explorePostcardPoolOffset_==2&&app.renderRowBegin()==218&&app.renderRowEnd()==372);
+    tap(184,300);assert(app.explorePostcardPoolOffset_==0);app.markRendered();
+    app.update(t+=4999);assert(app.explorePostcardPoolOffset_==0);
+    app.update(++t);assert(app.explorePostcardPoolOffset_==2);
+    app.setDisplayLocked(true);app.update(t+=10000);assert(app.explorePostcardPoolOffset_==2);
+    app.setDisplayLocked(false);app.update(++t);assert(app.explorePostcardPoolOffset_==2);
+    app.update(t+=3000);assert(app.explorePostcardPoolOffset_==0);
     app.explorePreviewPool=pool;app.explorePostcardPoolOffset_=savedOffset;
     for(int i=0;i<ExplorePool::POOL_CAP;i++)app.explorePreviewFrames[i]=oldFrames[i];
     assert(s.coins==before.coins&&s.gameMinutesTotal==before.gameMinutesTotal);
@@ -79,7 +93,7 @@ static void run(AmoledApp& app){
     // the two tallest species and an undiscovered silhouette.
     const uint16_t largeIds[]={6,130,75};
     PokemonSprites::setDynamicSceneSpecies(largeIds,3);PokemonSprites::preloadDynamicSpecies(largeIds,3);
-    auto rawPixel=[&](int area,int x,int y){const auto& art=ExplorePostcardArt::scenes[area];int row=(y-80)/2,col=(x-16)/2,current=0;
+    auto rawPixel=[&](int area,int x,int y){const auto& art=ExplorePostcardArt::scenes[area];int row=y/2,col=x/2,current=0;
         for(int j=art.rows[row];j<art.rows[row+1];j+=2){current+=art.runs[j];if(col<current)return art.palette[art.runs[j+1]];}assert(false);return uint16_t(0);};
     m={};m.visibleAreaCount=6;m.unlockedArea=5;m.selectedArea=5;
     for(int pair=0;pair<2;pair++){
@@ -101,11 +115,7 @@ static void run(AmoledApp& app){
     for(int area : {0,3,5}){
         m={};m.visibleAreaCount=6;m.unlockedArea=5;m.selectedArea=area;renderExploreScreen(c,m,cache);
         for(int y=134;y<150;y++)for(int x=28;x<100;x++)assert(c.readPixel(x,y)==rawPixel(area,x,y));
-        for(int row=150;row<292;row++){
-            int inset=row>=290?8:row>=288?4:row>=286?2:0;
-            for(int x : {16+inset,351-inset})assert(c.readPixel(x,80+row)!=rawPixel(area,x,80+row));
-            assert(c.readPixel(15,80+row)==0&&c.readPixel(352,80+row)==0);
-        }
+        for(int y=230;y<372;y++)for(int x : {0,367})assert(c.readPixel(x,y)!=rawPixel(area,x,y));
     }
 
     // Native byte ordering and single-row dirty updates must preserve every pixel.

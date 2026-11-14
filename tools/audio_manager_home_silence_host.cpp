@@ -48,13 +48,13 @@ int main(int argc, char** argv) {
 
     audio.setMusic(MusicTrack::MARKET);
     assert(audio.playingMusic()==MusicTrack::MARKET);
-    assert(platform.lastAudio().size()==4082); // 2041 decoded 8 kHz samples -> 16 kHz.
+    assert(platform.lastAudio().size()==2041); // Native 16 kHz: no 2x interpolation.
     // More than two full 46.25 second cycles, including an unaligned loop.
-    for(size_t block=0;block<500;++block) {
+    for(size_t block=0;block<1000;++block) {
         platform.consumeQueuedPcm(AudioManager::MUSIC_CHANNEL);
         platform.advanceMs(20);audio.update();
         assert(audio.playingMusic()==MusicTrack::MARKET);
-        assert(!platform.lastAudio().empty()&&platform.lastAudio().size()<=4082);
+        assert(!platform.lastAudio().empty()&&platform.lastAudio().size()<=2041);
     }
     audio.setMusicSuspended(true);audio.update();
     assert(platform.queuedPcm(AudioManager::MUSIC_CHANNEL)==0);
