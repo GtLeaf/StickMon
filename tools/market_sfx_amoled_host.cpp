@@ -140,8 +140,15 @@ struct AmoledAppTestAccess {
         app.handleMarketShopTouch(drag);drag.type=TouchEventType::MOVE;drag.y=48;app.handleMarketShopTouch(drag);
         drag.type=TouchEventType::UP;drag.timestampMs+=100;app.handleMarketShopTouch(drag);stamp+=200;quiet(n);
         assert(app.marketShopUi_.scrollOffset()==352);
-        tap(shop,184,404);n=audio.sounds.size();tap(shop,272,414);expect(n,SfxCue::ITEM_GET);
-        advance(5);quiet(n+1);
+        phase="box-stars";
+        tap(shop,184,404);n=audio.sounds.size();tap(shop,272,414);quiet(n);
+        assert(app.marketShopUi_.page()==Ui::MarketShopUi::Page::BOX_ARRIVE);
+        advance(7);assert(app.marketShopUi_.page()==Ui::MarketShopUi::Page::BOX_WAIT);quiet(n);
+        advance(20);tap(shop,184,100);quiet(n);assert(app.marketShopUi_.page()==Ui::MarketShopUi::Page::BOX_WAIT);
+        tap(shop,184,316);quiet(n);assert(app.marketShopUi_.page()==Ui::MarketShopUi::Page::BOX_OPEN);
+        app.displayLocked=true;advance(20);quiet(n);assert(app.marketShopUi_.page()==Ui::MarketShopUi::Page::BOX_OPEN);
+        app.displayLocked=false;advance(8);quiet(n);advance(1);expect(n,SfxCue::ITEM_GET);
+        advance(8);quiet(n+1);assert(app.marketShopUi_.page()==Ui::MarketShopUi::Page::RESULT);
         phase="gift";
         // Welcome is audible only for a persisted gift, including a later retry.
         reset();s.marketTutorGifted=0;s.bag.heartScale=0;app.saveWritesBlocked=true;

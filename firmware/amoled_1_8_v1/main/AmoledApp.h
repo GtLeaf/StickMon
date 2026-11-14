@@ -6,6 +6,8 @@
 #include "core/TouchTap.h"
 #include "game/ExploreDestinations.h"
 #include "game/MarketSession.h"
+#include "game/MarketTransaction.h"
+#include "ui/common/MarketCoinMotion.h"
 #include "ui/common/MarketWalkUi.h"
 #include "ui/common/MarketTutorUi.h"
 #include "ui/common/MarketShopUi.h"
@@ -582,6 +584,17 @@ private:
     Ui::MarketTutorUi marketTutorUi_;
     bool marketTutorPending_ = false;
     uint32_t marketTutorClockMs_ = 0;
+    Ui::MarketCoinMotion marketCoinMotion_;
+    uint32_t marketCoinClockMs_ = 0;
+    template<class Apply>
+    auto commitMarketTransaction(uint32_t nowMs,Apply apply) {
+        const uint32_t started=Platform::clock().millis();
+        return Game::MarketTransaction::commit(gameState,apply,[this](){return saveState();},
+            [this,nowMs,started](Game::MarketTransaction::CoinChange change){
+                marketCoinMotion_.committed(change);
+                marketCoinClockMs_=nowMs+(Platform::clock().millis()-started);
+            });
+    }
     void openMarketTutor(uint32_t nowMs);
     void closeMarketTutor();
     void handleMarketTutorTouch(const Platform::IInputDevice::TouchEvent& touch);

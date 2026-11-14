@@ -14,7 +14,7 @@ def main():
     env=os.environ.copy();env.setdefault('ASAN_OPTIONS','detect_leaks=0')
     sources=['src/game/ItemInventory.cpp','src/game/Species.cpp','src/game/ExperienceService.cpp',
              'src/game/ShopService.cpp','src/game/MonsterFactory.cpp','src/game/GameRandom.cpp']
-    for host in ['market_item_rules_host','market_season_host','market_selector_host','market_procurement_host','market_procurement_ui_host']:
+    for host in ['market_item_rules_host','market_season_host','market_selector_host','market_procurement_host','market_procurement_ui_host','market_box_opening_host']:
         binary=out/host
         subprocess.run(['c++','-std=c++17','-O1','-g','-fsanitize=address,undefined','-fno-omit-frame-pointer','-Isrc',
             'tools/'+host+'.cpp',*sources,*(['src/core/SaveCodec.cpp'] if host=='market_procurement_host' else []),'-o',str(binary)],cwd=ROOT,check=True,env=env)

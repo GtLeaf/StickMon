@@ -12,6 +12,7 @@
 #include "presentation/PixelRenderer.h"
 #include "ui/common/MarketStallMotion.h"
 #include "ui/common/MarketUiFeedback.h"
+#include "ui/common/MarketCoinHud.h"
 #include "ui/common/MarketListScroll.h"
 #include "ui/common/MarketTutorPerformance.h"
 #include "ui/common/MarketView.h"
@@ -173,7 +174,7 @@ public:
     }
     void rejected(Game::MarketTutor::Result r) { pending_ = false; feedback_.set(SfxCue::UI_CANCEL); error_ = reason(r); }
 
-    void render(const Game::GameState& state) const {
+    void render(const Game::GameState& state, const MarketCoinMotion* coins = nullptr) const {
         if (page_ == Page::CLOSED) return;
         if (page_ == Page::GREET) { renderGreet(); return; }
         panel(basePanelTop());
@@ -191,7 +192,7 @@ public:
         default: break;
         }
         if (page_ == Page::MENU && error_) ctext(ROW_Y + 3 * MENU_ROW_H + 6, error_, 16, red());
-        renderHud(state);
+        renderHud(state,coins);
     }
 
 private:
@@ -469,11 +470,10 @@ private:
     void hudBadge(int x, int y, const char* label) const {
         MarketStallMotion::drawBadge(x, y, label, textWidth(label, 28), paper(), ink());
     }
-    void renderHud(const Game::GameState& s) const {
+    void renderHud(const Game::GameState& s, const MarketCoinMotion* motion) const {
         const int y = 16 + hudOffset();
         hudBadge(23, y, MarketTutorText::TITLE);
-        char coins[16]; std::snprintf(coins, sizeof(coins), "C%lu", static_cast<unsigned long>(s.coins));
-        hudBadge(W - 28 - textWidth(coins, 28), y, coins);
+        MarketCoinHud::render(s.coins,motion,y,28);
     }
     void panel(int y) const {
         auto& c = PixelRenderer::canvas();

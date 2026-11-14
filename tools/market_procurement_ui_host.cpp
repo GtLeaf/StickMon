@@ -36,14 +36,34 @@ static void adviceFlow() {
     d.state.marketSupply.pendingAdvice=uint8_t(r.advice);d.ui.adviceCommitted(true);
     assert(d.ui.page()==UiShop::Page::ADVICE_DONE&&!d.ui.pending());
     d.tap(184,414);assert(d.ui.page()==UiShop::Page::MENU);
-    d.tap(184,354);r=d.tap(184,352);assert(r.advice==Game::MarketSupply::Advice::RARE);
+    d.tap(184,354);r=d.tap(184,390);assert(r.advice==Game::MarketSupply::Advice::RARE);
     d.ui.rejected(Game::MarketShop::Result::STALE);assert(!d.ui.pending()&&d.ui.page()==UiShop::Page::ADVICE);
-    r=d.tap(184,352);assert(r.kind==UiShop::Request::ADVISE);d.ui.adviceCommitted(true);
+    r=d.tap(184,390);assert(r.kind==UiShop::Request::ADVISE);d.ui.adviceCommitted(true);
     d.tap(184,100);assert(d.ui.page()==UiShop::Page::MENU);
-    d.tap(184,354);d.tap(184,414);assert(d.ui.page()==UiShop::Page::MENU);
+    d.tap(184,354);d.tap(184,430);assert(d.ui.page()==UiShop::Page::ADVICE);
+    d.tap(184,100);assert(d.ui.page()==UiShop::Page::MENU);
     d.tap(184,354);d.tap(184,100);assert(d.ui.page()==UiShop::Page::MENU);
     assert(std::memcmp(d.state.marketSeason.stock,original.marketSeason.stock,sizeof(original.marketSeason.stock))==0);
     d.tap(184,100);assert(d.ui.animating());settle(d.ui);assert(!d.ui.active());
+}
+// A visible row's lower portion must activate that row, while the space
+// below the list must never retain the old Back button's action.
+static void iconListTargetsAndOutsideReturn() {
+    Driver d;
+    d.tap(48,400);assert(d.ui.page()==UiShop::Page::ADVICE);
+    assert(d.tap(184,430).kind==UiShop::Request::NONE);
+    assert(d.ui.page()==UiShop::Page::ADVICE&&!d.ui.pending());
+    auto r=d.tap(184,414);
+    assert(r.kind==UiShop::Request::ADVISE&&r.advice==Game::MarketSupply::Advice::RARE);
+    assert(d.ui.page()==UiShop::Page::ADVICE&&d.ui.pending());
+    assert(d.tap(184,414).kind==UiShop::Request::NONE);
+    d.ui.adviceCommitted(false);
+    d.ui.touch({Type::DOWN,184,330,d.now},d.state);
+    d.ui.touch({Type::MOVE,184,400,d.now+40},d.state);
+    assert(d.ui.touch({Type::UP,184,400,d.now+80},d.state).kind==UiShop::Request::NONE);
+    assert(!d.ui.pending()&&d.ui.page()==UiShop::Page::ADVICE);
+    d.now+=200;d.tap(184,100);assert(d.ui.page()==UiShop::Page::MENU);
+    d.tap(48,320);assert(d.ui.page()==UiShop::Page::SHELF);
 }
 static void shelfFlow() {
     Driver d;d.tap(184,280);assert(d.ui.page()==UiShop::Page::SHELF);
@@ -80,6 +100,6 @@ static void capturedGestures() {
     assert(d.ui.page()==UiShop::Page::SHELF);
 }
 int main() {
-    adviceFlow();shelfFlow();capturedGestures();
+    iconListTargetsAndOutsideReturn();adviceFlow();shelfFlow();capturedGestures();
     std::puts("market-procurement-ui: menu/advice request-once/save failure/retry/replacement/outside/back, concrete direct confirm, preserved scroll/inertia/cancel OK");
 }
