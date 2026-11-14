@@ -2,6 +2,7 @@
 #include "AmoledApp.h"
 #include "core/FontResource.h"
 #include "game/MonsterFactory.h"
+#include "game/MarketMapData.h"
 #include "platform/desktop/DesktopPlatform.h"
 #include "presentation/PixelRenderer.h"
 #include <cassert>
@@ -69,6 +70,37 @@ struct AmoledAppTestAccess {
         const auto menuRow = [](int i) { return 216 + 68 * i + 34; };
         const auto listRow = [](int i) { return 216 + 56 * i + 28; };
         const auto& care = state.marketCare;
+
+        if (!BuildConfig::DEBUG_FEATURES) {
+            // Release currently hides the whole market. Exercise its NPC
+            // interaction independently so future entry changes stay safe.
+            assert(!app.startMarket(0));
+            app.openMarketCare(0);
+            assert(!ui.active());
+            app.market_.reset(new Market::Session());
+            assert(app.market_->reset(MarketMapData::get(), 1234, 25, 133, 0));
+            app.market_->enableManual();
+            app.marketUi_.reset(); app.marketUi_.enableDialogue();
+            app.marketUi_.setServiceSpecies(Game::MarketCare::STALL_SPECIES);
+            app.sceneFlow.enter(AppSceneFlow::Scene::MARKET);
+            advance(40);
+            int chansey = -1;
+            for (int i = 0; i < app.market_->data().residentCount; ++i)
+                if (app.market_->actor(i).species == Game::MarketCare::STALL_SPECIES) chansey = i;
+            assert(chansey >= 0 && marketStandNear(*app.market_, chansey));
+            app.marketUi_.chatTarget = chansey; app.marketUi_.refresh(*app.market_);
+            tap(184, 399);
+            assert(app.marketUi_.dialogue().active());
+            advance(30);
+            assert(!ui.active() && !app.marketTutorPending_);
+            assert(state.coins == 1774 && care.used == 0);
+            for (int i = 0; i < 20 && app.marketUi_.dialogue().active(); ++i) {
+                advance(10); tap(184, 400);
+            }
+            assert(!app.marketUi_.dialogue().active() && !app.market_->conversing());
+            std::puts("market-care-release: ordinary dialogue, no service or payment OK");
+            return;
+        }
 
         assert(app.startMarket(0));
         advance(40);

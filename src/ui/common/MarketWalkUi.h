@@ -1,6 +1,8 @@
 #pragma once
 
 #include "core/TouchTap.h"
+#include "core/BuildConfig.h"
+#include "game/MarketCareService.h"
 #include "ui/common/MarketView.h"
 #include "ui/common/MarketDialogueUi.h"
 
@@ -30,7 +32,11 @@ public:
     void cancel() {dragging=false;direction=-1;knobX=knobY=0;tap_.cancel();dialogueTap_.cancel();pressedNpc_=-1;dialogue_.suspendClock();}
     void reset() {cancel();chatTarget=-1;dialogue_.reset();dialogueEnabled_=false;serviceRequest_=-1;}
     void enableDialogue() {dialogueEnabled_=true;dialogue_.load();}
-    void setServiceSpecies(uint16_t species) {for(auto& v:serviceSpecies_)if(!v||v==species){v=species;return;}}
+    void setServiceSpecies(uint16_t species) {
+        // Unfinished Chansey services fall back to ordinary NPC dialogue.
+        if (species == Game::MarketCare::STALL_SPECIES && !BuildConfig::DEBUG_FEATURES) return;
+        for(auto& v:serviceSpecies_)if(!v||v==species){v=species;return;}
+    }
     int takeServiceRequest() {const int r=serviceRequest_;serviceRequest_=-1;return r;}
     const MarketDialogue& dialogue() const {return dialogue_;}
     bool update(Market::Session& s,uint32_t now,bool active=true) {

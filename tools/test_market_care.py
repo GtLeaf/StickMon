@@ -29,12 +29,14 @@ def main():
             stub.write_text('unsigned uzlib_adler32(const void*d,unsigned l,unsigned p){(void)d;(void)l;return p;}\n'
                             'unsigned uzlib_crc32(const void*d,unsigned l,unsigned c){(void)d;(void)l;return c;}\n')
             extra.append(stub)
-        journey = build_amoled_host(Path(tmp) / 'journey', [ROOT / 'tools/market_care_amoled_host.cpp', *extra], debug=True)
-        cmd = [str(journey), str(ROOT / 'data')]
-        if args.output:
-            args.output.mkdir(parents=True, exist_ok=True)
-            cmd.append(str(args.output.resolve()))
-        subprocess.run(cmd, check=True)
+        for debug in (False, True):
+            journey = build_amoled_host(Path(tmp) / ('debug' if debug else 'release'),
+                                       [ROOT / 'tools/market_care_amoled_host.cpp', *extra], debug=debug)
+            cmd = [str(journey), str(ROOT / 'data')]
+            if args.output and debug:
+                args.output.mkdir(parents=True, exist_ok=True)
+                cmd.append(str(args.output.resolve()))
+            subprocess.run(cmd, check=True)
 
 
 if __name__ == '__main__':
