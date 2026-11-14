@@ -960,7 +960,7 @@ int exploreAreaAt(int x, int y, uint8_t selectedArea,
                   uint8_t visibleAreaCount) {
     if constexpr (EXPLORE_POSTCARD) {
         if (y<146 || y>=206) return -1;
-        int target = x>=10 && x<64 ? int(selectedArea)-1 : x>=304 && x<358 ? int(selectedArea)+1 : -1;
+        int target = x>=4 && x<60 ? int(selectedArea)-1 : x>=308 && x<364 ? int(selectedArea)+1 : -1;
         return target>=0 && target<visibleAreaCount ? target : -1;
     }
     if (y < 0 || y >= EXPLORE_SELECTOR_TOP_HEIGHT) return -1;

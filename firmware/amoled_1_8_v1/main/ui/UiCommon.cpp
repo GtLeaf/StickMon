@@ -246,14 +246,14 @@ bool pageHeaderBackAt(int x, int y) {
 }
 
 void drawPageHeader(Canvas565& canvas, const char* title,
-                    const char* trailing, bool backButton) {
+                    const char* trailing, bool backButton, bool clearBackground) {
     constexpr int backCenterX = 40;
     constexpr int rightPadding = 28;
     const int centerY = UiMetrics::PAGE_HEADER_HEIGHT / 2;
     const int textY =
         (UiMetrics::PAGE_HEADER_HEIGHT - FontResource::LARGE_GLYPH_H) / 2;
 
-    canvas.fillRect(0, 0, AmoledUi::WIDTH, UiMetrics::PAGE_HEADER_HEIGHT,
+    if(clearBackground) canvas.fillRect(0, 0, AmoledUi::WIDTH, UiMetrics::PAGE_HEADER_HEIGHT,
                     rgb(0, 0, 0));
     if (backButton) {
         canvas.fillCircle(backCenterX, centerY, 26, rgb(27, 43, 51));

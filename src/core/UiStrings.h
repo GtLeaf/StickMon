@@ -4,6 +4,8 @@
 
 namespace Ui {
 namespace MarketText {
+static constexpr const char* SELECTOR_ACTIVE = "进行中";
+static constexpr const char* SELECTOR_NEXT = "%lu天后举行";
 static constexpr const char* OPEN_TODAY = "今日开放";
 static constexpr const char* NEXT_OPEN = "还有%lu天开放";
 static constexpr const char* CLOSED = "暂未开放";

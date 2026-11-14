@@ -4,19 +4,27 @@
 #include "game/ExplorePool.h"
 
 namespace AmoledV1 {
-inline constexpr int POSTCARD_SCENE_Y=80, POSTCARD_SCENE_H=292;
+inline constexpr int POSTCARD_SCENE_Y=0, POSTCARD_SCENE_H=380;
 inline constexpr int POSTCARD_POOL_TOP=218, POSTCARD_POOL_BOTTOM=372;
-inline constexpr int POSTCARD_POOL_WIDTH=312, POSTCARD_POOL_GAP=12;
-inline int postcardCardInset(int row) {
-    const int edge=std::min(row,POSTCARD_SCENE_H-1-row);
-    return edge<2?8:edge<4?4:edge<6?2:0;
-}
+inline constexpr int POSTCARD_POOL_WIDTH=344, POSTCARD_POOL_GAP=12;
 inline bool postcardPoolAt(int x,int y) {
-    return x>=16 && x<352 && y>=POSTCARD_POOL_TOP && y<POSTCARD_POOL_BOTTOM;
+    return x>=0 && x<368 && y>=POSTCARD_POOL_TOP && y<POSTCARD_POOL_BOTTOM;
 }
 inline bool postcardSceneGestureAt(int x,int y) {
-    return x>=16 && x<352 && y>=POSTCARD_SCENE_Y && y<POSTCARD_POOL_TOP;
+    return x>=0 && x<368 && y>=76 && y<POSTCARD_POOL_TOP;
 }
+struct PostcardPoolClock {
+    uint32_t dueAt=0;
+    bool armed=false;
+    void pause(){armed=false;}
+    void manual(uint32_t now){dueAt=now+5000;armed=true;}
+    bool tick(uint32_t now,bool eligible){
+        if(!eligible){pause();return false;}
+        if(!armed){dueAt=now+3000;armed=true;return false;}
+        if(static_cast<int32_t>(now-dueAt)<0)return false;
+        dueAt=now+3000;return true;
+    }
+};
 struct PostcardPoolLayout {
     uint8_t starts[ExplorePool::POOL_CAP]{};
     uint8_t pages=0,page=0,start=0,count=0;
