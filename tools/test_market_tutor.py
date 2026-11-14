@@ -20,11 +20,12 @@ def main():
     args = parser.parse_args()
     subprocess.run(['python3', str(ROOT / 'tools/import_tutor_moves.py'), '--check'], check=False)
     with tempfile.TemporaryDirectory(prefix='market-tutor-') as tmp:
-        rules = Path(tmp) / 'rules'
-        subprocess.run(['c++', '-std=c++17', '-O1', '-g', '-fsanitize=address,undefined', '-I' + str(ROOT / 'src'),
-                        str(ROOT / 'tools/market_tutor_host.cpp'), *[str(ROOT / s) for s in RULE_SOURCES],
-                        '-o', str(rules)], check=True)
-        subprocess.run([str(rules)], check=True)
+        for host in ['market_tutor_host', 'market_tutor_navigation_host']:
+            binary = Path(tmp) / host
+            subprocess.run(['c++', '-std=c++17', '-O1', '-g', '-fsanitize=address,undefined', '-I' + str(ROOT / 'src'),
+                            str(ROOT / 'tools' / (host + '.cpp')), *[str(ROOT / s) for s in RULE_SOURCES],
+                            '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
         extra = []
         if sys.platform != 'darwin':
             # GNU ld keeps uzlib's checksum references alive; they are unused here.

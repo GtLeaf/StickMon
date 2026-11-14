@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Periodic market rules, special item use, choices and production App journey."""
+"""Periodic market rules, special item use, procurement and production App journey."""
 import argparse
 from pathlib import Path
 import os
@@ -14,10 +14,10 @@ def main():
     env=os.environ.copy();env.setdefault('ASAN_OPTIONS','detect_leaks=0')
     sources=['src/game/ItemInventory.cpp','src/game/Species.cpp','src/game/ExperienceService.cpp',
              'src/game/ShopService.cpp','src/game/MonsterFactory.cpp','src/game/GameRandom.cpp']
-    for host in ['market_item_rules_host','market_season_host','market_selector_host']:
+    for host in ['market_item_rules_host','market_season_host','market_selector_host','market_procurement_host','market_procurement_ui_host']:
         binary=out/host
         subprocess.run(['c++','-std=c++17','-O1','-g','-fsanitize=address,undefined','-fno-omit-frame-pointer','-Isrc',
-            'tools/'+host+'.cpp',*sources,'-o',str(binary)],cwd=ROOT,check=True,env=env)
+            'tools/'+host+'.cpp',*sources,*(['src/core/SaveCodec.cpp'] if host=='market_procurement_host' else []),'-o',str(binary)],cwd=ROOT,check=True,env=env)
         subprocess.run([str(binary)],check=True,env=env)
     if args.rules_only:return
     stub=out/'uzlib_stub.c';stub.write_text('unsigned uzlib_adler32(const void*d,unsigned l,unsigned p){(void)d;(void)l;return p;}\nunsigned uzlib_crc32(const void*d,unsigned l,unsigned p){(void)d;(void)l;return p;}\n')

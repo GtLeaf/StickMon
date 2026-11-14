@@ -197,11 +197,11 @@ struct AmoledAppTestAccess {
         tap(184, 300);
         // A failed save keeps coins, moves and the period untouched.
         app.saveWritesBlocked = true;
-        tap(272, 414);
+        tap(184, 414);
         assert(ui().page() == Page::CONFIRM && state.coins == 1774 && state.team[1].move2Id == 129 && !state.marketTutor.taught);
         shot("06-confirm-save-failed");
         app.saveWritesBlocked = false;
-        tap(272, 414);
+        tap(184, 414);
         assert(ui().page() != Page::RESULT && state.coins == 1374);
         shot("learn-00");
         tap(184,330); assert(ui().page()!=Page::RESULT);
@@ -237,12 +237,12 @@ struct AmoledAppTestAccess {
         tap(184, 354); assert(ui().page() == Page::TRAIN_MOVE);
         assert(state.coins == 1374 && state.team[0].moveProficiency[1] == 64);
         app.saveWritesBlocked = true;
-        tap(272, 414);
+        tap(184, 414);
         assert(ui().page() == Page::TRAIN_MOVE && state.coins == 1374);
         assert(state.team[0].moveProficiency[1] == 64);
         shot("09a-train-save-failed");
         app.saveWritesBlocked = false;
-        tap(272, 414);
+        tap(184, 414);
         assert(ui().page() != Page::RESULT && state.team[0].moveProficiency[1] == 72 && state.coins == 1174);
         shot("10-training-start");
         tap(184, 330); assert(ui().page() != Page::RESULT); // Payment finger cannot skip.
@@ -264,7 +264,7 @@ struct AmoledAppTestAccess {
         tap(184, 380); tap(98, 328);
         assert(ui().page() == Page::TRAIN_MEMBER); // Already trained this period.
         shot("10e-train-member-used");
-        tap(184, 414); assert(ui().page() == Page::MENU);
+        tap(184, 100); assert(ui().page() == Page::MENU);
 
 
         // Recall: short lists are stationary; long lists reach every move.
@@ -287,8 +287,8 @@ struct AmoledAppTestAccess {
         Game::MoveId recallable[Game::MoveManagementService::MAX_RECALLABLE_MOVE_COUNT];
         const int recallCount = Game::MoveManagementService::collectRecallable(*findSpecies(133), state.team[1], recallable,
             Game::MoveManagementService::MAX_RECALLABLE_MOVE_COUNT);
-        assert(recallCount > 3);
-        const int maxScroll = (recallCount - 3) * 56;
+        assert(recallCount > 4);
+        const int maxScroll = (recallCount - 4) * 56;
         shot("11b-recall-long-top");
         TouchEvent slow{}; slow.type=TouchEventType::DOWN; slow.x=184; slow.y=365; slow.timestampMs=touchTime;
         app.handleTouch(slow); assert(ui().page()==Page::RECALL_LIST);
@@ -305,7 +305,7 @@ struct AmoledAppTestAccess {
         drag(184, 365, 184, 225); assert(ui().scrollOffset() == 140 && ui().page() == Page::RECALL_LIST);
         shot("11c-recall-long-scrolled");
         int changedPixels = 0;
-        for (int y = 216; y < 384; ++y) for (int x = 10; x < 358; ++x)
+        for (int y = 216; y < 440; ++y) for (int x = 10; x < 358; ++x)
             changedPixels += topPixels[y * 368 + x] != PixelRenderer::canvas().readPixel(x, y);
         assert(changedPixels > 0);
         drag(184, 240, 184, 285); assert(ui().scrollOffset() == 95);
@@ -320,7 +320,7 @@ struct AmoledAppTestAccess {
         scrollDown.type = TouchEventType::UP; scrollDown.y = 350; scrollDown.timestampMs += 60;
         app.handleTouch(scrollDown); touchTime += 200;
         assert(ui().scrollOffset() == maxScroll && ui().page() == Page::RECALL_LIST);
-        tap(184, 356); assert(ui().page() == Page::SLOT);
+        tap(184, 412); assert(ui().page() == Page::SLOT);
         tap(184, 100); assert(ui().page() == Page::RECALL_LIST && ui().scrollOffset() == maxScroll);
         for (int i = 0; i < maxScroll / 140 + 2; ++i) drag(184, 225, 184, 365);
         assert(ui().scrollOffset() == 0 && ui().page() == Page::RECALL_LIST);
@@ -329,11 +329,11 @@ struct AmoledAppTestAccess {
         tap(184, 100); assert(ui().page() == Page::RECALL_MEMBER);
         tap(270, 328); assert(ui().page() == Page::RECALL_LIST && ui().scrollOffset() == 0);
         for (int i = 0; i < maxScroll / 140 + 2; ++i) drag(184, 365, 184, 225);
-        tap(184, 356); assert(ui().page() == Page::SLOT);
+        tap(184, 412); assert(ui().page() == Page::SLOT);
         tap(184, 354); assert(ui().page() == Page::CONFIRM); shot("12-recall-confirm");
         tap(184, 100); assert(ui().page() == Page::SLOT && state.bag.heartScale == 1);
         tap(184, 354);
-        tap(272, 414); assert(ui().page() == Page::RESULT && state.bag.heartScale == 0);
+        tap(184, 414); assert(ui().page() == Page::RESULT && state.bag.heartScale == 0);
         // Verify the actual saved move is the last item, not its visible row index.
         assert(state.team[1].move3Id == recallable[recallCount - 1]);
         {
@@ -414,24 +414,24 @@ static void trainingCases() {
         ui.render(state);
         char label[24]; const unsigned price = before < 40 ? 100 : before < 80 ? 200 : 300;
         std::snprintf(label,sizeof(label),"特训%u",price);
-        centeredText(label,398,192,352,UiCommon::rgb(248,248,224));
+        centeredText(label,398,16,352,UiCommon::rgb(248,248,224));
         if(before==0) capture("training-price-100");
         // Selecting another move changes the footer price and never trains it.
         assert(tap(184,354).kind==UI::Request::NONE); ui.render(state);
-        centeredText("特训300",398,192,352,UiCommon::rgb(248,248,224));
+        centeredText("特训300",398,16,352,UiCommon::rgb(248,248,224));
         if(before==0) capture("training-price-300");
         assert(state.coins==3000);
-        tap(184,294); ui.render(state); centeredText(label,398,192,352,UiCommon::rgb(248,248,224));
+        tap(184,294); ui.render(state); centeredText(label,398,16,352,UiCommon::rgb(248,248,224));
         const auto rich = state;
         state.coins = 0;
-        assert(tap(272,414).kind==UI::Request::NONE && state.team[0].moveProficiency[1]==before);
+        assert(tap(184,414).kind==UI::Request::NONE && state.team[0].moveProficiency[1]==before);
         state = rich;
-        auto request = tap(272,414);
+        auto request = tap(184,414);
         assert(request.kind==UI::Request::TRAIN && request.slot==1 && ui.pending());
-        assert(tap(272,414).kind==UI::Request::NONE); // pending payment cannot repeat
+        assert(tap(184,414).kind==UI::Request::NONE); // pending payment cannot repeat
         ui.committed(false,state); ui.render(state);
         centeredText("保存失败，未完成，请重试",230,24,344,UiCommon::rgb(183,56,56),16);
-        request = tap(272,414); assert(request.kind==UI::Request::TRAIN);
+        request = tap(184,414); assert(request.kind==UI::Request::TRAIN);
         assert(Game::MarketTutor::train(state,0,request.slot)==Game::MarketTutor::Result::OK);
         assert(state.coins==3000-price);
         ui.committed(true,state); assert(ui.page()==UI::Page::TRAINING);
@@ -469,10 +469,10 @@ static void learningSkipCase() {
     };
     tap(184,380);ui.update(250);ui.update(250);tap(184,244);tap(184,328);tap(184,294);
     assert(ui.page()==UI::Page::CONFIRM);
-    auto request=tap(272,414);assert(request.kind==UI::Request::TEACH);
+    auto request=tap(184,414);assert(request.kind==UI::Request::TEACH);
     ui.committed(false,state);
     assert(ui.page()==UI::Page::CONFIRM && state.coins==3000 && state.team[0].move2Id==129);
-    request=tap(272,414);assert(request.kind==UI::Request::TEACH);
+    request=tap(184,414);assert(request.kind==UI::Request::TEACH);
     assert(Game::MarketTutor::teach(state,0,1)==Game::MarketTutor::Result::OK);
     ui.committed(true,state);assert(ui.page()==UI::Page::TEACHING);
     const auto coins=state.coins;assert(coins==2600 && state.team[0].move2Id==247);
@@ -514,7 +514,7 @@ static void trainingFacingCases() {
             clock+=200;return result;
         };
         tap(184,380);ui.update(250);ui.update(250);tap(184,380);tap(184,328);
-        assert(tap(272,414).kind==UI::Request::TRAIN);
+        assert(tap(184,414).kind==UI::Request::TRAIN);
         assert(Game::MarketTutor::train(state,0,1)==Game::MarketTutor::Result::OK);
         ui.committed(true,state);
         for(int ms=0;ms<4800;ms+=100) {
@@ -592,7 +592,7 @@ static void trainingTypeCases() {
             clock+=200;return req;
         };
         tap(184,380);ui.update(250);ui.update(250);tap(184,380);tap(184,328);
-        auto req=tap(272,414);assert(req.kind==UI::Request::TRAIN && req.slot==1);
+        auto req=tap(184,414);assert(req.kind==UI::Request::TRAIN && req.slot==1);
         assert(Game::MarketTutor::train(state,0,req.slot)==Game::MarketTutor::Result::OK);
         ui.committed(true,state);assert(ui.page()==UI::Page::TRAINING);
         int changedFrames=0;std::vector<uint16_t> previous;
@@ -646,10 +646,10 @@ static void learningTypeCases() {
             auto req=ui.touch({Type::UP,int16_t(x),int16_t(y),clock+50},state);clock+=200;return req;
         };
         tap(184,380);ui.update(250);ui.update(250);tap(184,244);tap(184,328);tap(184,294);
-        assert(tap(272,414).kind==UI::Request::TEACH);
+        assert(tap(184,414).kind==UI::Request::TEACH);
         ui.committed(false,state);
         assert(ui.page()==UI::Page::CONFIRM && state.coins==3000 && state.team[0].move2Id==old);
-        assert(tap(272,414).kind==UI::Request::TEACH);
+        assert(tap(184,414).kind==UI::Request::TEACH);
         assert(Game::MarketTutor::teach(state,0,1)==Game::MarketTutor::Result::OK);
         const auto paid=state.coins;
         assert(paid==3000-Game::MarketTutor::lessonPrice(test.move));

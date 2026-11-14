@@ -102,7 +102,7 @@ struct AmoledAppTestAccess {
         const auto shop=&AmoledApp::handleMarketShopTouch;
         const auto tutor=&AmoledApp::handleMarketTutorTouch;
         const auto care=&AmoledApp::handleMarketCareTouch;
-        auto openShop=[&]() { app.openMarketShop(t);advance(4);tap(shop,184,380);advance(5); };
+        auto openShop=[&]() { app.openMarketShop(t);advance(4);tap(shop,184,380);advance(5);tap(shop,184,280); };
         auto openTutor=[&]() {
             s.marketTutor={};s.marketTutor.periodDay=Game::MarketTutor::periodDay(s);
             s.marketTutor.move=247;s.marketTutor.drawnSpecies=133;
@@ -110,7 +110,15 @@ struct AmoledAppTestAccess {
         };
         auto openCare=[&]() { app.openMarketCare(t);advance(4);tap(care,184,380);advance(5); };
         openShop();
-        auto n=audio.sounds.size();tap(shop,184,252);expect(n,SfxCue::UI_CONFIRM);
+        // New home/advice routing still emits exactly one saved outcome cue.
+        tap(shop,184,100);assert(app.marketShopUi_.page()==Ui::MarketShopUi::Page::MENU);
+        tap(shop,184,354);assert(app.marketShopUi_.page()==Ui::MarketShopUi::Page::ADVICE);
+        auto n=audio.sounds.size();app.saveWritesBlocked=true;tap(shop,184,244);expect(n,SfxCue::UI_CANCEL);
+        assert(!s.marketSupply.pendingAdvice&&app.marketShopUi_.page()==Ui::MarketShopUi::Page::ADVICE);
+        app.saveWritesBlocked=false;n=audio.sounds.size();tap(shop,184,244);expect(n,SfxCue::UI_CONFIRM);
+        assert(s.marketSupply.pendingAdvice==1&&app.marketShopUi_.page()==Ui::MarketShopUi::Page::ADVICE_DONE);
+        advance(8);quiet(n+1);tap(shop,184,414);tap(shop,184,280);
+        n=audio.sounds.size();tap(shop,184,252);expect(n,SfxCue::UI_CONFIRM);
         app.saveWritesBlocked=true;n=audio.sounds.size();tap(shop,272,414);expect(n,SfxCue::UI_CANCEL);
         assert(app.marketShopUi_.page()==Ui::MarketShopUi::Page::CONFIRM);
         app.saveWritesBlocked=false;s.coins=0;n=audio.sounds.size();tap(shop,272,414);expect(n,SfxCue::UI_CANCEL);

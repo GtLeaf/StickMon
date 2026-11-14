@@ -16,6 +16,14 @@ static constexpr const char* CHAT = "聊天";
 
 // Kecleon stall (奇珍小铺).
 namespace MarketShopText {
+static constexpr const char* BUY_ITEMS = "购买道具";
+static constexpr const char* ADVICE = "进货建议";
+static constexpr const char* ADVICE_EXPLORE = "探险物品";
+static constexpr const char* ADVICE_GROWTH = "成长物品";
+static constexpr const char* ADVICE_RARE = "珍稀物品";
+static constexpr const char* ADVICE_DONE = "知道啦！下次多备些！";
+static constexpr const char* HOME = "返回首页";
+static constexpr const char* ADVICE_SAVE_FAILED = "建议未保存，请重试";
 static constexpr const char* NUTRIENT = "营养剂自选";
 static constexpr const char* RESET_BERRY = "洗点树果自选";
 static constexpr const char* RARE = "稀有道具";
@@ -31,6 +39,8 @@ static constexpr const char* TITLE = "奇珍小铺";
 static constexpr const char* GREET = "变隐龙：欢迎！本期的好货都在这里啦。";
 static constexpr const char* GREET_SOLD_OUT = "变隐龙：本期好货已经卖完啦。";
 static constexpr const char* LEFT = "本期剩余%u";
+static constexpr const char* STOCK = "库存：%u";
+static constexpr const char* CHOICE_STOCK = "本期可选购：%u";
 static constexpr const char* SOLD_OUT = "本期售罄";
 static constexpr const char* LEAVE = "离开摊位";
 static constexpr const char* BACK = "返回";
@@ -126,6 +136,7 @@ static constexpr const char* BOOK_TEA = "预约茶会";
 
 // Gengar stall (秘技小屋). ASCII separators keep the 16/32px glyph grid.
 namespace MarketTutorText {
+static constexpr const char* CHOOSE_MONSTER = "请选择精灵";
 static constexpr const char* WELCOME_GIFT = "初次见面，送你一枚心之鳞片！";
 static constexpr const char* WELCOME_FULL = "背包满了，心之鳞片下次再给你。";
 static constexpr const char* WELCOME_RETRY = "礼物没送成，下次见面再给你。";

@@ -311,6 +311,9 @@ void writeState(Writer& writer, const Game::GameState& state) {
     writer.u8(season.boxRoll);
     for (uint8_t stock : state.marketItemStock) writer.u8(stock);
     writer.u8(state.marketTutorGifted);
+    writer.u8(state.marketSupply.pendingAdvice);
+    writer.u8(state.marketSupply.stockPlan);
+    writer.u8(state.marketSupply.boxRoll2);
 }
 
 void readState(Reader& reader, uint16_t schema, Game::GameState& state) {
@@ -451,6 +454,11 @@ void readState(Reader& reader, uint16_t schema, Game::GameState& state) {
         season.boxRoll = reader.u8();
         for (uint8_t& stock : state.marketItemStock) stock = reader.u8();
         state.marketTutorGifted = reader.u8();
+    }
+    if (schema >= 9) {
+        state.marketSupply.pendingAdvice = reader.u8();
+        state.marketSupply.stockPlan = reader.u8();
+        state.marketSupply.boxRoll2 = reader.u8();
     }
     state.checksum = 0;
 }
@@ -593,7 +601,7 @@ bool decode(const uint8_t* input,
     const uint16_t expectedStateVersion =
         schema == 1 ? SCHEMA_1_STATE_VERSION : schema == 2 ? 4 :
         schema == 3 ? 5 : schema == 4 ? 6 : schema == 5 ? 7 :
-        schema <= 7 ? 8 : Game::SAVE_VERSION;
+        schema <= 7 ? 8 : schema == 8 ? 9 : Game::SAVE_VERSION;
     if (!reader.ok() || reader.position() != payloadLength ||
         snapshot.state.magic != Game::SAVE_MAGIC ||
         snapshot.state.version != expectedStateVersion ||

@@ -7,8 +7,10 @@
 #include "core/TouchTap.h"
 #include "core/UiStrings.h"
 #include "game/MarketShopService.h"
+#include "game/MarketSupply.h"
 #include "presentation/PixelRenderer.h"
 #include "ui/common/MarketStallMotion.h"
+#include "ui/common/MarketListScroll.h"
 #include "ui/common/MarketUiFeedback.h"
 #include "ui/common/MarketView.h"
 
@@ -16,17 +18,17 @@
 // shelf, single-purchase confirmation and success page. Shares the
 // Gengar stall panel style and slide-in: the greeting box rises from the
 // bottom edge and then grows into the panel, which sinks away on close. The
-// shelf closes by tapping the scene above it. The application applies a returned
+// shelf returns home by tapping the scene above it. The application applies a returned
 // Request to its state, saves, and reports back through committed().
 namespace Ui {
 class MarketShopUi {
 public:
-    enum class Page : uint8_t { CLOSED, GREET, SHELF, SELECT_ITEM, CONFIRM, RESULT };
+    enum class Page : uint8_t { CLOSED, GREET, MENU, SHELF, ADVICE, ADVICE_DONE, CONFIRM, RESULT };
     struct Request {
-        enum Kind : uint8_t { NONE, BUY } kind = NONE;
+        enum Kind : uint8_t { NONE, BUY, ADVISE } kind = NONE;
         uint8_t slot = 0;
         uint32_t period = 0;
-        Game::ItemId choice = Game::ItemId::COUNT;
+        Game::MarketSupply::Advice advice = Game::MarketSupply::Advice::NONE;
     };
     struct Rect { int x, y, w, h; bool contains(int px, int py) const { return px >= x && py >= y && px < x + w && py < y + h; } };
 
@@ -55,7 +57,7 @@ public:
         period_ = state.marketSeason.periodDay;
     }
     void close() { feedback_.clear(); page_ = Page::CLOSED; transition_ = Transition::NONE; cancelTouch(); pending_ = false; }
-    void cancelTouch() { tap_.cancel(); listTracking_ = dragging_ = false; }
+    void cancelTouch() { tap_.cancel(); scrollMotion_.cancel(); }
 
     bool update(uint32_t deltaMs) {
         if (!active() || !deltaMs) return false;
@@ -68,6 +70,8 @@ public:
             }
             return true;
         }
+        if (page_ == Page::SHELF) return scrollMotion_.update(deltaMs, maxScroll(), scroll_);
+        scrollMotion_.cancel();
         if (page_ != Page::GREET) return false;
         greetMs_ += deltaMs;
         if (greetMs_ < GREET_HOLD_MS + 40U * uint32_t(std::strlen(greet_) / 3)) return false;
@@ -104,7 +108,7 @@ public:
         const int clicked = tap_.update(e, target);
         if (clicked < 0) return none;
         if (clicked == OUTSIDE)
-            return activate(page_ == Page::SHELF ? CLOSE : page_ == Page::RESULT ? PRIMARY : BACK, state);
+            return activate(page_ == Page::MENU ? CLOSE : page_ == Page::RESULT ? PRIMARY : BACK, state);
         return activate(clicked, state);
     }
 
@@ -112,7 +116,12 @@ public:
         pending_ = false;
         if (!saved) { feedback_.set(SfxCue::UI_CANCEL); error_ = MarketShopText::SAVE_FAILED; return; }
         feedback_.set(slot_ == Game::MarketShop::BOX ? SfxCue::ITEM_GET : SfxCue::BUY_ITEM);
-        error_ = nullptr; rewardItem_ = reward; rewardAmount_ = amount; page_ = Page::RESULT;
+        error_ = nullptr; rewardItem_ = reward; rewardAmount_ = amount; changePage(Page::RESULT);
+    }
+    void adviceCommitted(bool saved) {
+        pending_ = false;
+        if (!saved) { feedback_.set(SfxCue::UI_CANCEL); error_ = MarketShopText::ADVICE_SAVE_FAILED; return; }
+        feedback_.set(SfxCue::UI_CONFIRM); error_ = nullptr; changePage(Page::ADVICE_DONE);
     }
     void rejected(Game::MarketShop::Result r) { pending_ = false; feedback_.set(SfxCue::UI_CANCEL); error_ = reason(r, 0); }
 
@@ -120,8 +129,10 @@ public:
         if (page_ == Page::CLOSED) return;
         if (page_ == Page::GREET) { renderGreet(); return; }
         panel();
-        if (page_ == Page::SHELF) renderShelf(s);
-        else if (page_ == Page::SELECT_ITEM) renderSelection();
+        if (page_ == Page::MENU) renderMenu();
+        else if (page_ == Page::SHELF) renderShelf(s);
+        else if (page_ == Page::ADVICE) renderAdvice(s);
+        else if (page_ == Page::ADVICE_DONE) renderAdviceDone();
         else if (page_ == Page::CONFIRM) renderConfirm(s);
         else renderResult(s);
         MarketStallMotion::drawBadge(23, 16 + hudOffset(), MarketShopText::TITLE,
@@ -130,43 +141,31 @@ public:
 
 private:
     enum class Transition : uint8_t { NONE, GREET_IN, OPENING, CLOSING };
-    enum Target { CLOSE = 10, BACK, PRIMARY, OUTSIDE, CHOICE0 = 40 };
+    enum Target { CLOSE = 10, BACK, PRIMARY, OUTSIDE, OPEN_SHELF, OPEN_ADVICE, ADVICE0 = 40 };
     Page page_ = Page::CLOSED;
     Transition transition_ = Transition::NONE;
     uint32_t transitionMs_ = 0, greetMs_ = 0, period_ = 0;
     TouchTap tap_;
     MarketUiFeedback feedback_;
-    uint8_t slot_ = 0, ownedBefore_ = 0;
+    uint8_t slot_ = 0;
     bool pending_ = false;
-    bool listTracking_ = false, dragging_ = false;
-    int scroll_ = 0, dragStartX_ = 0, dragStartY_ = 0, dragScroll_ = 0;
+    MarketListScroll scrollMotion_;
+    int scroll_ = 0;
     Game::ItemId rewardItem_ = Game::ItemId::COUNT;
     uint8_t rewardAmount_ = 1;
-    Game::ItemId choice_ = Game::ItemId::COUNT;
     const char* error_ = nullptr;
     const char* greet_ = MarketShopText::GREET;
 
     Rect row(int i) const { return {10, ROW_Y + i * ROW_H - scroll_, 348, ROW_H}; }
-    static Rect back() { return {16, 390, 160, 48}; }
-    static Rect primary() { return {192, 390, 160, 48}; }
-    static Rect wide() { return {16, 390, 336, 48}; }
-    static Rect choiceCard(int index) { return {16 + (index % 2) * 176, 240 + (index / 2) * 50, 160, 44}; }
+    static Rect back() { return {16, 394, 160, 44}; }
+    static Rect primary() { return {192, 394, 160, 44}; }
+    static Rect wide() { return {16, 394, 336, 44}; }
+    static Rect menuRow(int index) { return {16, 250 + index * 76, 336, 56}; }
+    static Rect adviceRow(int index) { return {16, 220 + index * 54, 336, 48}; }
     static constexpr int maxScroll() { return Game::MarketShop::ROW_COUNT * ROW_H - (LIST_BOTTOM - LIST_TOP); }
     bool listDrag(const Platform::IInputDevice::TouchEvent& e) {
-        using Type = Platform::IInputDevice::TouchType;
-        if (e.type == Type::DOWN) {
-            listTracking_ = Rect{10, LIST_TOP, 348, LIST_BOTTOM - LIST_TOP}.contains(e.x, e.y);
-            dragging_ = false; dragStartX_ = e.x; dragStartY_ = e.y; dragScroll_ = scroll_;
-            return false;
-        }
-        if (!listTracking_) return false;
-        if (e.type == Type::CANCEL) { cancelTouch(); return true; }
-        const int dx = e.x - dragStartX_, dy = e.y - dragStartY_;
-        if (!dragging_ && dx * dx + dy * dy > 100) { dragging_ = true; tap_.cancel(); }
-        const bool consumed = dragging_;
-        if (dragging_) scroll_ = std::clamp(dragScroll_ - dy, 0, maxScroll());
-        if (e.type == Type::UP) listTracking_ = dragging_ = false;
-        return consumed;
+        return scrollMotion_.touch(e, {10, LIST_TOP, 348, LIST_BOTTOM - LIST_TOP},
+                                   maxScroll(), scroll_, tap_);
     }
 
     uint32_t duration() const {
@@ -182,7 +181,9 @@ private:
         if (transition_ == Transition::CLOSING) return tween(0, H - PANEL_Y);
         return 0;
     }
-    void openPanel() { page_ = Page::SHELF; transition_ = Transition::OPENING; transitionMs_ = 0; tap_.cancel(); }
+    void changePage(Page page) { cancelTouch(); page_ = page; }
+    void home() { error_ = nullptr; changePage(Page::MENU); }
+    void openPanel() { changePage(Page::MENU); transition_ = Transition::OPENING; transitionMs_ = 0; tap_.cancel(); }
 
     static const char* reason(Game::MarketShop::Result r, unsigned long) {
         using R = Game::MarketShop::Result;
@@ -202,48 +203,54 @@ private:
         if (page_ == Page::SHELF) {
             if (y < LIST_TOP || y >= LIST_BOTTOM) return -1;
             for (int i = 0; i < Game::MarketShop::ROW_COUNT; ++i)
-                if (row(i).contains(x, y) && (i == Game::MarketShop::BOX || Game::MarketShop::item(s, uint8_t(i)) != Game::ItemId::COUNT)) return i;
+                if (row(i).contains(x, y) && s.marketSeason.stock[i] &&
+                    (i == Game::MarketShop::BOX || Game::MarketShop::item(s, uint8_t(i)) != Game::ItemId::COUNT)) return i;
             return -1;
+        }
+        if (page_ == Page::MENU) {
+            if (menuRow(0).contains(x,y)) return OPEN_SHELF;
+            if (menuRow(1).contains(x,y)) return OPEN_ADVICE;
+        }
+        if (page_ == Page::ADVICE) {
+            if (wide().contains(x,y)) return BACK;
+            for (int i=0;i<3;++i) if (adviceRow(i).contains(x,y)) return ADVICE0+i;
         }
         if (page_ == Page::CONFIRM) {
             if (back().contains(x, y)) return BACK;
             return primary().contains(x, y) ? PRIMARY : -1;
         }
-        if (page_ == Page::SELECT_ITEM) {
-            if (wide().contains(x,y)) return BACK;
-            for (int i=0;i<6;++i) if(choiceCard(i).contains(x,y)) return CHOICE0+i;
-        }
-        if (page_ == Page::RESULT) return wide().contains(x, y) ? PRIMARY : -1;
+        if (page_ == Page::RESULT || page_ == Page::ADVICE_DONE) return wide().contains(x, y) ? PRIMARY : -1;
         return -1;
     }
 
     Request activate(int target, const Game::GameState& s) {
         Request r{};
         feedback_.set(target == CLOSE || target == BACK ? SfxCue::UI_CANCEL : SfxCue::UI_CONFIRM);
+        cancelTouch();
+        if (page_ == Page::MENU) {
+            error_ = nullptr;
+            if (target == CLOSE) { transition_ = Transition::CLOSING; transitionMs_ = 0; return r; }
+            changePage(target == OPEN_ADVICE ? Page::ADVICE : Page::SHELF); return r;
+        }
         if (page_ == Page::SHELF) {
-            if (target == CLOSE) { transition_ = Transition::CLOSING; transitionMs_ = 0; tap_.cancel(); return r; }
+            if (target == BACK) { home(); return r; }
             slot_ = uint8_t(target); error_ = nullptr;
-            choice_ = Game::ItemId::COUNT;
             rewardItem_ = Game::ItemId::COUNT; rewardAmount_ = 1;
-            ownedBefore_ = Game::ItemInventory::count(s, Game::MarketShop::item(s, slot_));
-            page_ = Game::MarketShop::selectable(slot_) ? Page::SELECT_ITEM : Page::CONFIRM; return r;
+            changePage(Page::CONFIRM); return r;
         }
-        if (page_ == Page::SELECT_ITEM) {
-            if (target == BACK) { page_ = Page::SHELF; return r; }
-            const auto first = slot_ == Game::MarketShop::NUTRIENT ? Game::ItemId::HP_UP : Game::ItemId::POMEG_BERRY;
-            choice_ = Game::ItemId(uint8_t(first) + target - CHOICE0);
-            page_ = Page::CONFIRM; error_ = nullptr; tap_.cancel(); return r;
+        if (page_ == Page::ADVICE) {
+            if (target == BACK) { home(); return r; }
+            feedback_.clear(); pending_ = true; error_ = nullptr; r.kind = Request::ADVISE; r.period = period_;
+            r.advice = Game::MarketSupply::Advice(target - ADVICE0 + 1); return r;
         }
+        if (page_ == Page::ADVICE_DONE) { home(); return r; }
         if (page_ == Page::CONFIRM) {
-            if (target == BACK) { page_ = Game::MarketShop::selectable(slot_) ? Page::SELECT_ITEM : Page::SHELF; error_ = nullptr; return r; }
-            const auto result = Game::MarketShop::check(s, slot_, period_, choice_);
+            if (target == BACK) { error_ = nullptr; changePage(Page::SHELF); return r; }
+            const auto result = Game::MarketShop::check(s, slot_, period_);
             if (result != Game::MarketShop::Result::OK) { rejected(result); return r; }
-            feedback_.clear();
-            pending_ = true; r.kind = Request::BUY; r.slot = slot_; r.period = period_;
-            r.choice = choice_;
-            return r;
+            feedback_.clear(); pending_ = true; r.kind = Request::BUY; r.slot = slot_; r.period = period_; return r;
         }
-        page_ = Page::SHELF; return r; // success page: back to the same shelf
+        changePage(Page::SHELF); return r; // success page: back to the same shelf
     }
 
     // ---- drawing (palette and metrics match MarketTutorUi)
@@ -301,7 +308,7 @@ private:
         char* second = std::strchr(buf, ' ');
         if (second) *second++ = 0;
         text(24, y, buf);
-        if (second && *second) text(24, y + 36, second);
+        if (second && *second) text(24, y + 34, second);
     }
 
     void renderGreet() const {
@@ -328,27 +335,24 @@ private:
         for (uint8_t i = 0; i < Game::MarketShop::ROW_COUNT; ++i) {
             const bool box = i == Game::MarketShop::BOX;
             const Game::ItemId id = Game::MarketShop::item(s, i);
+            const bool legacyEmpty = !box && id == Game::ItemId::COUNT;
             const Rect r = row(i);
+            const bool sold = legacyEmpty || !s.marketSeason.stock[i];
+            if (sold) c.fillRect(r.x, r.y + offset(), r.w, r.h, off());
             if (i + 1 < Game::MarketShop::ROW_COUNT) c.drawFastHLine(16, r.y + r.h - 1 + offset(), 336, line());
-            if (!box && id == Game::ItemId::COUNT) {
-                icon(Game::ItemId::HEART_SCALE, 44, r.y + r.h / 2);
-                text(84, r.y + 6, MarketShopText::RARE, 32, muted());
-                text(84, r.y + 46, MarketShopText::NOT_UNLOCKED, 16, muted());
-                continue;
+            slotIcon(legacyEmpty ? Game::ItemId::HEART_SCALE : id, box, 44, r.y + r.h / 2);
+            const char* name = legacyEmpty ? MarketShopText::RARE : box ? MarketShopText::BOX : Game::ShopService::shortName(id);
+            const int textY = r.y + (r.h - 32) / 2;
+            text(84, textY, name, 32, sold ? muted() : ink());
+            char price[16];
+            if (legacyEmpty) std::snprintf(price, sizeof(price), "--");
+            else std::snprintf(price, sizeof(price), "%u", Game::MarketShop::priceForSlot(s, i));
+            rtext(344, textY, price, 32, sold ? muted() : ink());
+            if (sold) {
+                c.blendRectAlphaNative(20, r.y + (r.h - 48) / 2 + offset(), 48, 48, off(), 160);
+                c.drawFastHLine(84, textY + 16 + offset(), width(name, 32), muted());
+                c.drawFastHLine(344 - width(price, 32), textY + 16 + offset(), width(price, 32), muted());
             }
-            const bool locked = !box && !Game::MarketShop::unlocked(s, id);
-            const bool sold = !s.marketSeason.stock[i];
-            slotIcon(id, box, 44, r.y + r.h / 2);
-            const char* name = box ? MarketShopText::BOX : i == Game::MarketShop::NUTRIENT ? MarketShopText::NUTRIENT :
-                i == Game::MarketShop::RESET_BERRY ? MarketShopText::RESET_BERRY : Game::ShopService::shortName(id);
-            text(84, r.y + 6, name, 32, sold ? muted() : ink());
-            char price[16]; std::snprintf(price, sizeof(price), "%u", Game::MarketShop::priceForSlot(s, i));
-            rtext(344, r.y + 6, price, 32, sold ? muted() : ink());
-            char left[32];
-            if (locked) std::snprintf(left, sizeof(left), "%s", MarketShopText::NOT_UNLOCKED);
-            else if (sold) std::snprintf(left, sizeof(left), "%s", MarketShopText::SOLD_OUT);
-            else std::snprintf(left, sizeof(left), MarketShopText::LEFT, s.marketSeason.stock[i]);
-            text(84, r.y + 46, left, 16, sold && !locked ? red() : muted());
         }
         c.clearClipRect();
         const int thumb = (LIST_BOTTOM - LIST_TOP) * (LIST_BOTTOM - LIST_TOP) / (Game::MarketShop::ROW_COUNT * ROW_H);
@@ -356,37 +360,46 @@ private:
         c.fillRoundRect(355, y, 3, thumb, 1, line());
     }
 
-    void renderSelection() const {
-        ctext(216, slot_ == Game::MarketShop::NUTRIENT ? MarketShopText::SELECT_NUTRIENT : MarketShopText::SELECT_RESET, 16);
-        for(int i=0;i<6;++i) button(choiceCard(i), MarketShopText::STAT_LABELS[i], false);
-        button(wide(), MarketShopText::BACK, false);
+    void renderMenu() const {
+        button(menuRow(0), MarketShopText::BUY_ITEMS, false);
+        button(menuRow(1), MarketShopText::ADVICE, false);
+    }
+
+    void renderAdvice(const Game::GameState& s) const {
+        const char* labels[] = {MarketShopText::ADVICE_EXPLORE, MarketShopText::ADVICE_GROWTH, MarketShopText::ADVICE_RARE};
+        for (int i=0;i<3;++i) {
+            const bool selected = s.marketSupply.pendingAdvice == uint8_t(i+1);
+            button(adviceRow(i), labels[i], selected, pending_);
+        }
+        if (error_) ctext(378, error_, 16, red());
+        button(wide(), MarketShopText::BACK, false, pending_);
+    }
+
+    void renderAdviceDone() const {
+        ctext(284, MarketShopText::ADVICE_DONE);
+        button(wide(), MarketShopText::HOME, true);
     }
 
     void renderConfirm(const Game::GameState& s) const {
-        const Game::ItemId id = Game::MarketShop::item(s, slot_, choice_);
+        const Game::ItemId id = Game::MarketShop::item(s, slot_);
         const bool box = slot_ == Game::MarketShop::BOX;
         const char* name = box ? MarketShopText::BOX : Game::ShopService::shortName(id);
-        const uint16_t price = Game::MarketShop::priceForSlot(s, slot_, choice_);
-        slotIcon(id, box, 44, 244);
-        text(80, 218, name);
-        text(80 + width(name, 32) + 10, 226, "×1", 16);
-        if (box) { text(24, 272, MarketShopText::BOX_LINE1); text(24, 308, MarketShopText::BOX_LINE2); }
-        else description(id, 272);
+        const uint16_t price = Game::MarketShop::priceForSlot(s, slot_);
+        slotIcon(id, box, 44, 240);
+        text(80, 224, name);
+        rtext(344, 224, "×1");
+        if (box) text(24, 282, MarketShopText::BOX_LINE1);
+        else description(id, 282);
         char line[64];
-        const unsigned owned = Game::ItemInventory::count(s, id);
-        if (box) std::snprintf(line, sizeof(line), MarketShopText::LEFT, s.marketSeason.stock[Game::MarketShop::BOX]);
-        else std::snprintf(line, sizeof(line), MarketShopText::OWNED, owned, owned + 1);
-        text(24, 346, line, 16);
-        std::snprintf(line, sizeof(line), MarketShopText::COINS, static_cast<unsigned long>(s.coins),
-                      static_cast<unsigned long>(s.coins >= price ? s.coins - price : 0));
-        text(24, 368, line, 16);
-        const auto r = Game::MarketShop::check(s, slot_, period_, choice_);
+        std::snprintf(line, sizeof(line), MarketShopText::STOCK, s.marketSeason.stock[slot_]);
+        ctext(354, line);
+        const auto r = Game::MarketShop::check(s, slot_, period_);
         char why[64]; why[0] = 0;
         if (r == Game::MarketShop::Result::NO_COINS)
             std::snprintf(why, sizeof(why), MarketShopText::NO_COINS, static_cast<unsigned long>(price - s.coins));
         else if (r != Game::MarketShop::Result::OK) std::snprintf(why, sizeof(why), "%s", reason(r, 0));
         const char* shown = error_ ? error_ : why[0] ? why : nullptr;
-        if (shown) text(80, 252, shown, 16, red());
+        if (shown) text(88, 264, shown, 16, red());
         button(back(), MarketShopText::BACK, false);
         char label[24];
         if (r == Game::MarketShop::Result::OK) std::snprintf(label, sizeof(label), MarketShopText::BUY, price);
@@ -395,7 +408,7 @@ private:
     }
 
     void renderResult(const Game::GameState& s) const {
-        const Game::ItemId id = rewardItem_ == Game::ItemId::COUNT ? Game::MarketShop::item(s, slot_, choice_) : rewardItem_;
+        const Game::ItemId id = rewardItem_ == Game::ItemId::COUNT ? Game::MarketShop::item(s, slot_) : rewardItem_;
         icon(id, W / 2, 246);
         char got[64];
         if (slot_ == Game::MarketShop::BOX) std::snprintf(got, sizeof(got), MarketShopText::BOX_GOT, Game::ShopService::shortName(id), rewardAmount_);

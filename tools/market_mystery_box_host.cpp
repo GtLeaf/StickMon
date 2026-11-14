@@ -49,9 +49,11 @@ int main() {
     assert(!MarketShop::ensurePeriod(reference) && reference.marketSeason.boxRoll == frozenRoll);
 
     auto state = fresh();
-    std::array<unsigned,7> buckets{};
-    for (unsigned roll = 0; roll < 100; ++roll) {
-        const auto reward = MarketShop::boxRewardForRoll(state, roll);
+    for (bool progressed : {false,true}) {
+      auto weighted = fresh(0,progressed);
+      std::array<unsigned,7> buckets{};
+      for (unsigned roll = 0; roll < 100; ++roll) {
+        const auto reward = MarketShop::boxRewardForRoll(weighted, roll);
         unsigned index = 5;
         switch (reward.item) {
         case ItemId::HONEY: index = 0; assert(reward.amount == 3); break;
@@ -63,12 +65,17 @@ int main() {
         default: assert((reward.item == ItemId::FIRE_STONE || reward.item == ItemId::WATER_STONE || reward.item == ItemId::THUNDER_STONE) && reward.amount == 1);
         }
         ++buckets[index];
-    }
-    assert((buckets == std::array<unsigned,7>{25,25,15,15,12,6,2}));
-    const auto early = fresh(7,false);
-    for (unsigned roll = 0; roll < 100; ++roll) {
-        const auto reward = MarketShop::boxRewardForRoll(early,roll);
-        assert(reward.item == ItemId::HONEY && reward.amount == 3);
+        auto purchase = weighted;
+        purchase.marketSeason.boxRoll = uint8_t(roll+1);
+        const auto count = ItemInventory::count(purchase,reward.item);
+        MarketShop::Reward granted;
+        assert(MarketShop::buy(purchase,MarketShop::BOX,0,&granted) == MarketShop::Result::OK);
+        assert(granted.item == reward.item && granted.amount == reward.amount);
+        assert(ItemInventory::count(purchase,reward.item) == count+reward.amount);
+        assert(purchase.coins == 4700 && purchase.marketSeason.stock[MarketShop::BOX] == 0);
+        assert(purchase.marketSeason.boxRoll == roll+1);
+      }
+      assert((buckets == std::array<unsigned,7>{25,25,15,15,12,6,2}));
     }
     // Box candy is a bonus independent of the ordinary-shop daily counter.
     state.candyPurchasesToday = DAILY_CANDY_PURCHASE_CAP;
@@ -118,5 +125,5 @@ int main() {
     assert(MarketShop::soldOut(state));
     state.marketSeason.stock[MarketShop::BOX] = 1;
     assert(!MarketShop::soldOut(state));
-    std::puts("market-mystery-box: exact weights, frozen leader draw, unlock fallback, bonus candy, period quota, refusals and save OK");
+    std::puts("market-mystery-box: first-day exact weights, frozen leader draw, bonus candy, period quota, refusals and save OK");
 }
