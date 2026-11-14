@@ -11,6 +11,7 @@
 #include "game/MarketTutorService.h"
 #include "presentation/PixelRenderer.h"
 #include "ui/common/MarketStallMotion.h"
+#include "ui/common/MarketListScroll.h"
 #include "ui/common/MarketTutorPerformance.h"
 #include "ui/common/MarketView.h"
 
@@ -18,7 +19,7 @@
 // owns page state and hit geometry; the application owns saving. A request is
 // returned from touch(), applied to a GameState copy and confirmed through
 // committed(), so a failed save never shows success or keeps a charge. The
-// menu closes by tapping the scene above it; sub-pages keep their back button.
+// menu closes by tapping the scene above it; sub-pages return one level there.
 namespace Ui {
 class MarketTutorUi {
 public:
@@ -66,7 +67,7 @@ public:
         if (welcome) std::snprintf(greet_, sizeof(greet_), "%s", welcome);
     }
     void close() { page_ = Page::CLOSED; transition_ = Transition::NONE; tap_.cancel(); pending_ = false; }
-    void cancelTouch() { tap_.cancel(); listTracking_ = dragging_ = false; }
+    void cancelTouch() { tap_.cancel(); scrollMotion_.cancel(); }
 
     // Only an explicit completed tap advances the greeting.
     bool update(uint32_t deltaMs) {
@@ -91,6 +92,9 @@ public:
             if (showMs_ == duration) { page_ = Page::RESULT; tap_.cancel(); }
             return true;
         }
+        if (page_ == Page::RECALL_LIST)
+            changed = scrollMotion_.update(deltaMs, scrollMaximum_, scroll_) || changed;
+        else scrollMotion_.cancel();
         return changed;
     }
 
@@ -116,7 +120,7 @@ public:
     Request touch(const Platform::IInputDevice::TouchEvent& e, const Game::GameState& state) {
         using Type = Platform::IInputDevice::TouchType;
         Request none{};
-        if (pending_ || page_ == Page::CLOSED || animating()) { tap_.cancel(); return none; }
+        if (pending_ || page_ == Page::CLOSED || animating()) { cancelTouch(); return none; }
         if (performing()) {
             if (showMs_ < TRAIN_SKIP_MS) { tap_.cancel(); return none; }
             if (tap_.update(e, 0) == 0) { page_ = Page::RESULT; tap_.cancel(); }
@@ -196,8 +200,9 @@ private:
     TouchTap tap_;
     uint8_t member_ = 0, slot_ = 1, before_ = 0;
     Game::MoveId recallMove_ = 0;
-    int scroll_ = 0, dragStartX_ = 0, dragStartY_ = 0, dragScroll_ = 0;
-    bool listTracking_ = false, dragging_ = false, pending_ = false;
+    int scroll_ = 0, scrollMaximum_ = 0;
+    MarketListScroll scrollMotion_;
+    bool pending_ = false;
     const char* error_ = nullptr;
     char greet_[96]{}, result1_[96]{}, result2_[64]{};
 
@@ -230,11 +235,8 @@ private:
     static Rect row(int i, int top = ROW_Y) { return {10, top + i * ROW_H, 348, ROW_H}; }
     static Rect moveRow(int i) { return {10, 264 + i * 60, 348, 60}; }
     static Rect menuRow(int i) { return {10, ROW_Y + i * MENU_ROW_H, 348, MENU_ROW_H}; }
-    static Rect footer() { return {16, 394, 336, 44}; }
-    static Rect back() { return {16, 390, 160, 48}; }
-    static Rect primary() { return {192, 390, 160, 48}; }
     static Rect wide() { return {16, 390, 336, 48}; }
-    static constexpr int TUTOR_MEMBER_TOP = 280, LIST_TOP = 216, LIST_BOTTOM = 384;
+    static constexpr int TUTOR_MEMBER_TOP = 280, LIST_TOP = 216, LIST_BOTTOM = 440;
 
     static Rect tutorMember(int i, int count) {
         return {count == 1 ? 106 : 20 + i * 172, TUTOR_MEMBER_TOP, 156, 96};
@@ -277,26 +279,9 @@ private:
         return std::max(0, recallList(s, moves) * ROW_H - (LIST_BOTTOM - LIST_TOP));
     }
     bool listDrag(const Platform::IInputDevice::TouchEvent& e, const Game::GameState& s) {
-        using Type = Platform::IInputDevice::TouchType;
-        if (e.type == Type::DOWN) {
-            listTracking_ = Rect{10, LIST_TOP, 348, LIST_BOTTOM - LIST_TOP}.contains(e.x, e.y);
-            dragging_ = false;
-            dragStartX_ = e.x; dragStartY_ = e.y; dragScroll_ = scroll_;
-            return false;
-        }
-        if (!listTracking_) return false;
-        if (e.type == Type::CANCEL) { cancelTouch(); return true; }
-        const int dx = e.x - dragStartX_, dy = e.y - dragStartY_;
-        // Once captured, consume through release, even after crossing the
-        // panel edge or returning to the gesture's origin at a scroll limit.
-        if (!dragging_ && dx * dx + dy * dy > 100) {
-            dragging_ = true;
-            tap_.cancel();
-        }
-        const bool consumed = dragging_;
-        if (dragging_) scroll_ = std::clamp(dragScroll_ - dy, 0, maxScroll(s));
-        if (e.type == Type::UP) listTracking_ = dragging_ = false;
-        return consumed;
+        scrollMaximum_ = maxScroll(s);
+        return scrollMotion_.touch(e, {10, LIST_TOP, 348, LIST_BOTTOM - LIST_TOP},
+                                   scrollMaximum_, scroll_, tap_);
     }
 
     // ---- availability shared by hit testing and drawing
@@ -335,26 +320,23 @@ private:
             for (int i = 0; i < members(s); ++i)
                 if (contains(tutorMember(i, members(s))) && Game::MarketTutor::eligibility(s.team[i], s.marketTutor.move) ==
                     Game::MarketTutor::Eligibility::CAN_LEARN && !s.marketTutor.taught) return i;
-            return contains(footer()) ? FOOTER : -1;
+            return -1;
         case Page::SLOT:
             for (int i = 1; i < 3; ++i) if (contains(moveRow(i - 1))) return i;
-            return contains(footer()) ? FOOTER : -1;
+            return -1;
         case Page::CONFIRM: {
             const char* why = nullptr; unsigned long need = 0;
-            if (contains(back())) return BACK;
-            return contains(primary()) && !confirmDisabled(s, &why, &need) ? PRIMARY : -1;
+            return contains(wide()) && !confirmDisabled(s, &why, &need) ? PRIMARY : -1;
         }
         case Page::RESULT: return contains(wide()) ? PRIMARY : -1;
         case Page::TRAIN_MEMBER: case Page::RECALL_MEMBER:
             for (int i = 0; i < members(s); ++i) if (contains(tutorMember(i, members(s))) && memberEnabled(s, i)) return i;
-            return contains(footer()) ? FOOTER : -1;
+            return -1;
         case Page::TRAIN_MOVE:
             for (int i = 0; i < 2; ++i) if (contains(moveRow(i)) && trainable(s, uint8_t(i + 1))) return i;
-            if (contains(back())) return BACK;
             { const char* why = nullptr; unsigned long need = 0;
-              return contains(primary()) && trainable(s, slot_) && !confirmDisabled(s, &why, &need) ? PRIMARY : -1; }
+              return contains(wide()) && trainable(s, slot_) && !confirmDisabled(s, &why, &need) ? PRIMARY : -1; }
         case Page::RECALL_LIST: {
-            if (contains(footer())) return FOOTER;
             if (y < LIST_TOP || y >= LIST_BOTTOM || x < 10 || x >= 358) return -1;
             Game::MoveId moves[Game::MoveManagementService::MAX_RECALLABLE_MOVE_COUNT];
             const int index = (y - LIST_TOP + scroll_) / ROW_H;
@@ -383,6 +365,7 @@ private:
 
     Request activate(int target, const Game::GameState& s) {
         Request r{};
+        scrollMotion_.cancel();
         error_ = nullptr; errorMs_ = 0;
         switch (page_) {
         case Page::MENU:
@@ -652,7 +635,7 @@ private:
         for (int i = 0; i < members(s); ++i)
             memberCard(s, i, Game::MarketTutor::eligibility(s.team[i], t.move) ==
                        Game::MarketTutor::Eligibility::CAN_LEARN && !t.taught);
-        button(footer(), MarketTutorText::BACK, false);
+        ctext(412, MarketTutorText::CHOOSE_MONSTER, 16, muted());
     }
 
     void renderSlot(const Game::GameState& s) const {
@@ -665,7 +648,6 @@ private:
             rowFrame(r, false);
             rowText(r, 24, move ? move->name : MarketTutorText::EMPTY, "", move ? power : "", false, 0, 16);
         }
-        button(footer(), MarketTutorText::BACK, false);
     }
 
     void renderConfirm(const Game::GameState& s) const {
@@ -738,8 +720,7 @@ private:
         else std::snprintf(reasonText, sizeof(reasonText), "%s", why ? why : "");
         const char* shown = error_ ? error_ : disabled ? reasonText : nullptr;
         if (shown && *shown) ctext(374, shown, 16, red());
-        button(back(), MarketTutorText::BACK, false);
-        button(primary(), label, true, disabled || pending_);
+        button(wide(), label, true, disabled || pending_);
     }
 
     void renderResult(const Game::GameState& s) const {
@@ -757,7 +738,7 @@ private:
     void renderMembers(const Game::GameState& s, bool training) const {
         text(24, 222, training ? MarketTutorText::MENU_TRAIN : MarketTutorText::MENU_RECALL);
         for (int i = 0; i < members(s); ++i) memberCard(s, i, memberEnabled(s, i));
-        button(footer(), MarketTutorText::BACK, false);
+        ctext(412, MarketTutorText::CHOOSE_MONSTER, 16, muted());
     }
 
     void renderTrainMoves(const Game::GameState& s) const {
@@ -789,8 +770,7 @@ private:
         const char* shown = error_ ? error_ : disabled ? reasonText : nullptr;
         if (shown && *shown) ctext(230, shown, 16, red());
         else text(24, 222, MarketTutorText::TRAIN_MOVE_TITLE);
-        button(back(), MarketTutorText::BACK, false);
-        button(primary(), label, true, disabled || pending_);
+        button(wide(), label, true, disabled || pending_);
     }
 
     void renderPerformance(const Game::GameState& s) const {
@@ -829,7 +809,6 @@ private:
             c.fillRect(360, LIST_TOP + panelOffset(), 3, view, line());
             c.fillRect(359, pos + panelOffset(), 5, bar, edge());
         }
-        button(footer(), MarketTutorText::BACK, false);
     }
 };
 } // namespace Ui

@@ -10157,11 +10157,24 @@ void AmoledApp::openMarketShop(uint32_t nowMs) {
 
 void AmoledApp::handleMarketShopTouch(const Platform::IInputDevice::TouchEvent& touch) {
     const auto request = marketShopUi_.touch(touch, gameState);
-    if (request.kind != Ui::MarketShopUi::Request::BUY) return;
+    if (request.kind == Ui::MarketShopUi::Request::NONE) return;
     // Apply to the live state, then roll back unless the save succeeds.
     const Game::GameState before = gameState;
+    if (request.kind == Ui::MarketShopUi::Request::ADVISE) {
+        const auto result = Game::MarketShop::advise(gameState, request.advice, request.period);
+        if (result != Game::MarketShop::Result::OK) {
+            gameState = before;
+            marketShopUi_.rejected(result);
+            return;
+        }
+        const bool saved = saveState();
+        if (!saved) gameState = before;
+        else AudioManager::ins().playSfx(SfxCue::UI_CONFIRM);
+        marketShopUi_.adviceCommitted(saved);
+        return;
+    }
     Game::MarketShop::Reward reward{};
-    const auto result = Game::MarketShop::buy(gameState, request.slot, request.period, &reward, request.choice);
+    const auto result = Game::MarketShop::buy(gameState, request.slot, request.period, &reward);
     if (result != Game::MarketShop::Result::OK) {
         gameState = before;
         marketShopUi_.rejected(result);

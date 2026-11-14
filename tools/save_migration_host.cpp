@@ -526,6 +526,9 @@ void verifySnapshotSuccessMatchesDurableCopy(DesktopPlatform& desktop) {
         before.marketSeason.items[0] = static_cast<uint8_t>(Game::ItemId::HONEY);
         before.marketSeason.stock[0] = 3;
         before.marketSeason.boxRoll = 87;
+        before.marketSupply.stockPlan = 4;
+        before.marketSupply.boxRoll2 = 65;
+        before.marketSeason.stock[7] = 2;
         MainSceneViewState view;
         for (unsigned i = 0; i < baselineWrites; ++i) assert(manager.saveSnapshot(before,view));
         auto purchased = before;
@@ -534,6 +537,8 @@ void verifySnapshotSuccessMatchesDurableCopy(DesktopPlatform& desktop) {
         purchased.marketTutorGifted = 1;
         purchased.marketSeason.stock[0] = 2;
         purchased.marketItemStock[0] = 1;
+        purchased.marketSeason.stock[7] = 1;
+        purchased.marketSupply.pendingAdvice = 3;
         failures.failSlots = (failureMask & 1) != 0;
         failures.failMirror = (failureMask & 2) != 0;
         const bool saved = manager.saveSnapshot(purchased,view);
@@ -548,6 +553,10 @@ void verifySnapshotSuccessMatchesDurableCopy(DesktopPlatform& desktop) {
         assert(reloaded.marketTutorGifted == visible.marketTutorGifted);
         assert(reloaded.marketSeason.stock[0] == visible.marketSeason.stock[0]);
         assert(reloaded.marketSeason.boxRoll == visible.marketSeason.boxRoll);
+        assert(reloaded.marketSeason.stock[7] == visible.marketSeason.stock[7]);
+        assert(reloaded.marketSupply.stockPlan == visible.marketSupply.stockPlan);
+        assert(reloaded.marketSupply.pendingAdvice == visible.marketSupply.pendingAdvice);
+        assert(reloaded.marketSupply.boxRoll2 == visible.marketSupply.boxRoll2);
         assert(reloaded.marketItemStock[0] == visible.marketItemStock[0]);
     }
     Platform::bind(originalServices);
@@ -588,7 +597,7 @@ void verifySchema7MigrationAndFutureSchemaPreservation() {
     assert(loaded.marketTutorGifted == 0 && loaded.marketItemStock[0] == 0);
     std::vector<uint8_t> rewritten(length);
     assert(Platform::blobs().readBlob("stickmon", "state", rewritten.data(), rewritten.size()));
-    assert(rewritten[4] == 8);
+    assert(rewritten[4] == SaveCodec::SCHEMA_VERSION);
     assert(manager.load(loaded, view));
     assert(loaded.marketShop.boxBought == 1 && loaded.marketCare.used == 1);
 
@@ -719,10 +728,130 @@ void verifyRawV8ReservedBoxBytes() {
         assert(loaded.marketCare.served[0].metAt == 456);
         assert(loaded.marketSeason.periodDay == Game::MARKET_PERIOD_NONE);
         assert(loaded.marketItemStock[0] == 0 && loaded.marketTutorGifted == 0);
+        assert(loaded.marketSupply.pendingAdvice == 0 && loaded.marketSupply.stockPlan == 0 && loaded.marketSupply.boxRoll2 == 0);
         assert(view.valid && view.speciesId == first.speciesId);
         assert(view.monsterX == first.monsterX);
         assert(manager.load(loaded, view));
         assert(loaded.bag.honey == 4 && loaded.marketShop.boxBought == boxBought);
+    }
+}
+
+void verifySupplyPlansAndCorruption() {
+    const uint8_t caps[6][8] = {
+        {3,3,1,2,3,2,1,1}, {4,4,1,1,2,2,1,1}, {2,2,1,3,4,2,1,1},
+        {2,3,2,2,3,2,1,1}, {3,2,1,2,3,2,1,2}, {2,2,2,2,3,2,1,2}};
+    for (uint8_t plan = 0; plan < 6; ++plan) {
+        for (unsigned damage = 0; damage < 17; ++damage) {
+            assert(Platform::blobs().clearNamespace("stickmon"));
+            Game::GameState original;
+            original.teamCount = 0;
+            original.gameMinutesTotal = 10 * 1440;
+            original.careRewardDay = 10;
+            original.marketSeason.periodDay = 10;
+            original.marketSeason.boxRoll = 48;
+            original.marketSupply.stockPlan = plan;
+            original.marketSupply.pendingAdvice = 3;
+            original.marketSupply.boxRoll2 = plan >= 4 ? 89 : 0;
+            for (unsigned i = 0; i < 8; ++i) {
+                original.marketSeason.items[i] = uint8_t(Game::ItemId::POTION);
+                original.marketSeason.stock[i] = caps[plan][i];
+            }
+            original.marketSeason.items[7] = 255;
+            if (damage >= 1 && damage <= 8) ++original.marketSeason.stock[damage-1];
+            if (damage == 9) original.marketSupply.stockPlan = 6;
+            if (damage == 10) original.marketSupply.pendingAdvice = 4;
+            if (damage == 11) original.marketSupply.boxRoll2 = 101;
+            if (damage == 12) original.marketSupply.boxRoll2 = 0;
+            if (damage == 13) {
+                original.marketSeason.stock[7] = 0; // Second draw still required after both purchases.
+                original.marketSupply.boxRoll2 = 0;
+            }
+            if (damage == 14) original.marketSupply.reserved = 255;
+            if (damage >= 15) {
+                original.marketSeason.stock[7] = 1;
+                original.marketSupply.boxRoll2 = damage == 15 ? 0 : 101;
+            }
+            SaveManager manager; MainSceneViewState view; Game::GameState loaded;
+            assert(manager.saveSnapshot(original, view));
+            bool normalized = false;
+            assert(manager.load(loaded, view, &normalized));
+            const bool invalid = (damage >= 1 && damage <= 9) ||
+                (plan >= 4 && ((damage >= 11 && damage <= 13) || damage >= 15));
+            if (invalid) {
+                assert(loaded.marketSeason.periodDay == 10);
+                for (auto stock : loaded.marketSeason.stock) assert(stock == 0);
+                assert(manager.saveSnapshot(loaded, view));
+                assert(manager.load(loaded, view));
+                for (auto stock : loaded.marketSeason.stock) assert(stock == 0);
+            } else {
+                assert(loaded.marketSupply.stockPlan == plan);
+                for (unsigned i = 0; i < 8; ++i)
+                    assert(loaded.marketSeason.stock[i] == (i == 7 && damage == 13 ? 0 : i == 7 && damage >= 15 ? 1 : caps[plan][i]));
+                assert(loaded.marketSupply.pendingAdvice == (damage == 10 ? 0 : 3));
+                assert(loaded.marketSupply.reserved == 0);
+            }
+        }
+    }
+}
+
+void verifySchema8AndRawV9SupplyDefaults() {
+    for (bool rawVersion : {false, true}) {
+        assert(Platform::blobs().clearNamespace("stickmon"));
+        Game::GameState original;
+        original.version = 9;
+        original.teamCount = 0;
+        original.gameMinutesTotal = 10 * 1440;
+        original.careRewardDay = 10;
+        original.coins = 8765;
+        original.bag.honey = 8;
+        original.marketShop.periodDay = 10;
+        original.marketShop.items[0] = uint8_t(Game::ItemId::HONEY);
+        original.marketShop.stock[0] = 1;
+        original.marketShop.boxBought = 1;
+        original.marketShop.boxRoll = 42;
+        original.marketSeason.periodDay = 10;
+        original.marketSeason.items[0] = uint8_t(Game::ItemId::POTION);
+        original.marketSeason.items[3] = uint8_t(Game::ItemId::PROTEIN);
+        original.marketSeason.stock[0] = 2;
+        original.marketSeason.stock[3] = 1;
+        original.marketSeason.boxRoll = 92;
+        original.marketItemStock[3] = 7;
+        original.marketTutorGifted = 1;
+        const auto first = legacyViewV1();
+        if (rawVersion) {
+            struct RawV9 {
+                uint32_t magic = SAVE_RECORD_MAGIC;
+                uint16_t version = 9, reserved = 0;
+                uint8_t stateBytes[2524];
+                ViewV2 view{};
+            } raw{};
+            static_assert(sizeof(raw) == 2628);
+            std::memcpy(raw.stateBytes, &original, sizeof(raw.stateBytes));
+            const uint16_t crc = checksumBytes(raw.stateBytes, sizeof(raw.stateBytes), 6);
+            std::memcpy(raw.stateBytes + 6, &crc, 2);
+            std::memcpy(&raw.view, &first, sizeof(first));
+            raw.view.version = 2;
+            raw.view.checksum = checksumObject(raw.view);
+            assert(Platform::blobs().writeBlob("stickmon", "state", &raw, sizeof(raw)));
+        } else {
+            original.version = Game::SAVE_VERSION;
+            uint8_t encoded[SaveCodec::MAX_ENCODED_BYTES] = {}; size_t length = 0;
+            assert(SaveCodec::encode(original, {}, 9, encoded, sizeof(encoded), length));
+            std::vector<uint8_t> old;
+            assert(SaveTestUtil::fabricateLegacySchemaBlob(encoded, length, old, 8));
+            assert(Platform::blobs().writeBlob("stickmon", "state", old.data(), old.size()));
+        }
+        SaveManager manager; MainSceneViewState view; Game::GameState loaded;
+        assert(manager.load(loaded, view));
+        assert(loaded.version == Game::SAVE_VERSION);
+        assert(loaded.coins == 8765 && loaded.bag.honey == 8);
+        assert(std::memcmp(&loaded.marketSeason, &original.marketSeason, sizeof(original.marketSeason)) == 0);
+        assert(loaded.marketShop.stock[0] == 1 && loaded.marketShop.boxBought == 1 && loaded.marketShop.boxRoll == 42);
+        assert(loaded.marketItemStock[3] == 7 && loaded.marketTutorGifted == 1);
+        assert(loaded.marketSupply.pendingAdvice == 0 && loaded.marketSupply.stockPlan == 0 && loaded.marketSupply.boxRoll2 == 0);
+        if (rawVersion) assert(view.valid && view.speciesId == first.speciesId && view.monsterX == first.monsterX);
+        assert(manager.load(loaded, view));
+        assert(loaded.marketSeason.stock[0] == 2 && loaded.marketSeason.stock[3] == 1 && loaded.marketSeason.stock[7] == 0);
     }
 }
 
@@ -732,6 +861,8 @@ int main() {
     DesktopPlatform desktop(".");
     Platform::bind(desktop.serviceBundle());
     assert(Platform::blobs().initialize());
+    verifySupplyPlansAndCorruption();
+    verifySchema8AndRawV9SupplyDefaults();
     verifyV1Migration(desktop);
     verifyTransitionalMigration();
     verifyV2Migration(desktop);

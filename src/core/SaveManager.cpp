@@ -10,6 +10,7 @@
 #include "game/ExploreSpecialEncounter.h"
 #include "game/FriendshipPity.h"
 #include "game/MarketSchedule.h"
+#include "game/MarketSupply.h"
 #include "game/Species.h"
 #include "platform/api/PlatformServices.h"
 
@@ -150,6 +151,19 @@ struct SaveRecordV8 {
 static_assert(offsetof(Game::GameState, marketSeason) == 2480,
               "raw v8 state prefix changed");
 static_assert(sizeof(SaveRecordV8) == 2584, "raw v8 envelope changed");
+
+// Raw v9 has the full periodic-market prefix and the old view position.
+// Checksum and copy exactly these bytes, never sizeof the growing GameState.
+struct SaveRecordV9 {
+    uint32_t magic;
+    uint16_t version;
+    uint16_t reserved;
+    uint8_t stateBytes[2524];
+    MainSceneViewRecord view;
+};
+static_assert(offsetof(Game::GameState, marketSupply) == 2524,
+              "raw v9 state prefix changed");
+static_assert(sizeof(SaveRecordV9) == 2628, "raw v9 envelope changed");
 
 struct SaveRecordHeader {
     uint32_t magic;
@@ -947,23 +961,35 @@ bool sanitizeState(Game::GameState& state) {
     // Corrupted one-time flags are treated as already claimed.
     clampU8(state.marketTutorGifted, 1);
     auto& season = state.marketSeason;
-    constexpr uint8_t SEASON_CAPACITIES[] = {3,3,1,2,3,2,1,1};
+    auto& supply = state.marketSupply;
+    if (supply.pendingAdvice != 0 &&
+        !Game::MarketSupply::validAdvice(supply.pendingAdvice)) {
+        supply.pendingAdvice = 0;
+        changed = true;
+    }
+    if (supply.reserved != 0) { supply.reserved = 0; changed = true; }
+    const uint8_t* capacities = Game::MarketSupply::capacities(supply.stockPlan);
     const uint32_t currentPeriod = Game::MarketSchedule::periodDay(state);
-    bool seasonValid = true;
+    bool seasonValid = Game::MarketSupply::validPlan(supply.stockPlan);
+    if (Game::MarketSupply::initialBoxStock(supply.stockPlan) == 2 &&
+        (supply.boxRoll2 < 1 || supply.boxRoll2 > 100)) seasonValid = false;
     if (season.periodDay == Game::MARKET_PERIOD_NONE) {
-        seasonValid = season.boxRoll == 0;
+        seasonValid = seasonValid && season.boxRoll == 0;
         for (uint8_t i = 0; i < 8; ++i)
             seasonValid = seasonValid && season.items[i] == 255 && season.stock[i] == 0;
     } else {
-        seasonValid = season.periodDay <= currentPeriod &&
+        seasonValid = seasonValid && season.periodDay <= currentPeriod &&
                       Game::MarketSchedule::isOpenDay(season.periodDay) &&
                       season.boxRoll >= 1 && season.boxRoll <= 100;
+        unsigned totalStock = 0;
         for (uint8_t i = 0; i < 8; ++i) {
-            if (season.stock[i] > SEASON_CAPACITIES[i] ||
+            totalStock += season.stock[i];
+            if (season.stock[i] > capacities[i] ||
                 (season.items[i] != 255 &&
                  season.items[i] >= static_cast<uint8_t>(Game::ItemId::COUNT)) ||
                 (i != 7 && season.items[i] == 255 && season.stock[i])) seasonValid = false;
         }
+        if (totalStock > 16) seasonValid = false;
     }
     if (!seasonValid) {
         // Keep the current period marked as visited with no stock. Resetting
@@ -971,6 +997,8 @@ bool sanitizeState(Game::GameState& state) {
         season = Game::GameState::Season{};
         season.periodDay = currentPeriod;
         season.boxRoll = 1;
+        supply.stockPlan = 0;
+        supply.boxRoll2 = 0;
         changed = true;
     }
     return changed;
@@ -1010,7 +1038,7 @@ bool SaveManager::load(Game::GameState& state,
         if (migrated) {
             Platform::logf("[SaveManager] migrated state v%u -> v%u\n",
                            codecHeap->schema == 1 ? 3 : codecHeap->schema == 2 ? 4 :
-                           codecHeap->schema == 3 ? 5 : codecHeap->schema == 4 ? 6 : codecHeap->schema == 5 ? 7 : 8,
+                           codecHeap->schema == 3 ? 5 : codecHeap->schema == 4 ? 6 : codecHeap->schema == 5 ? 7 : codecHeap->schema <= 7 ? 8 : 9,
                            Game::SAVE_VERSION);
             if (saveSnapshot(state, viewState)) {
                 Platform::logLine("[SaveManager] migration committed");
@@ -1107,6 +1135,14 @@ bool SaveManager::load(Game::GameState& state,
     } else if (header.version == 8 && len == sizeof(SaveRecordV8)) {
         const auto* record = reinterpret_cast<const SaveRecordV8*>(raw);
         loaded = loadLegacyGameState(record->stateBytes, 8, state, 2480);
+        if (loaded) {
+            viewValid = mainSceneViewRecordValid(record->view);
+            if (viewValid) loadMainSceneViewRecord(record->view, viewState);
+            migrated = true;
+        }
+    } else if (header.version == 9 && len == sizeof(SaveRecordV9)) {
+        const auto* record = reinterpret_cast<const SaveRecordV9*>(raw);
+        loaded = loadLegacyGameState(record->stateBytes, 9, state, 2524);
         if (loaded) {
             viewValid = mainSceneViewRecordValid(record->view);
             if (viewValid) loadMainSceneViewRecord(record->view, viewState);

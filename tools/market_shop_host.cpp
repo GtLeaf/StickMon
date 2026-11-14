@@ -18,8 +18,72 @@ static GameState fresh(uint32_t day, unsigned clearedAreas = 6) {
     return state;
 }
 
+static void firstDayHasAllMarketGoods() {
+    auto state = fresh(0, 0);
+    assert(MarketShop::ensurePeriod(state));
+    const uint8_t capacities[] = {3,3,1,2,3,2,1,1};
+    unsigned total = 0;
+    for (uint8_t slot = 0; slot < MarketShop::ROW_COUNT; ++slot) {
+        assert(state.marketSeason.stock[slot] == capacities[slot]);
+        total += state.marketSeason.stock[slot];
+    }
+    assert(total == 16);
+    assert(!MarketShop::unlocked(state, ItemId::COUNT));
+    assert(!MarketShop::unlocked(state, ItemId(255)));
+
+    // Every possible market good can be bought without defeating a boss.
+    const struct { uint8_t slot; ItemId item; } goods[] = {
+        {0,ItemId::POTION}, {0,ItemId::SUPER_POTION}, {0,ItemId::ANTIDOTE},
+        {0,ItemId::PARALYZE_HEAL}, {0,ItemId::AWAKENING}, {0,ItemId::BURN_HEAL},
+        {0,ItemId::ICE_HEAL}, {0,ItemId::MAX_POTION}, {0,ItemId::FULL_RESTORE},
+        {0,ItemId::FULL_HEAL}, {0,ItemId::REVIVE}, {0,ItemId::MAX_REPEL}, {0,ItemId::HONEY},
+        {MarketShop::CANDY,ItemId::CANDY},
+        {MarketShop::NUTRIENT,ItemId::HP_UP}, {MarketShop::NUTRIENT,ItemId::PROTEIN},
+        {MarketShop::NUTRIENT,ItemId::IRON}, {MarketShop::NUTRIENT,ItemId::CALCIUM},
+        {MarketShop::NUTRIENT,ItemId::ZINC}, {MarketShop::NUTRIENT,ItemId::CARBOS},
+        {MarketShop::RESET_BERRY,ItemId::POMEG_BERRY}, {MarketShop::RESET_BERRY,ItemId::KELPSY_BERRY},
+        {MarketShop::RESET_BERRY,ItemId::QUALOT_BERRY}, {MarketShop::RESET_BERRY,ItemId::HONDEW_BERRY},
+        {MarketShop::RESET_BERRY,ItemId::GREPA_BERRY}, {MarketShop::RESET_BERRY,ItemId::TAMATO_BERRY},
+        {MarketShop::SPECIAL,ItemId::MAX_REVIVE}, {MarketShop::SPECIAL,ItemId::LAVA_COOKIE},
+        {MarketShop::SPECIAL,ItemId::ORAN_BERRY}, {MarketShop::SPECIAL,ItemId::SITRUS_BERRY},
+        {MarketShop::SPECIAL,ItemId::LUM_BERRY}, {MarketShop::RARE,ItemId::HEART_SCALE},
+        {MarketShop::RARE,ItemId::FIRE_STONE}, {MarketShop::RARE,ItemId::WATER_STONE},
+        {MarketShop::RARE,ItemId::THUNDER_STONE},
+    };
+    for (const auto& good : goods) {
+        auto purchase = state;
+        purchase.marketSeason.items[good.slot] = uint8_t(good.item);
+        const auto count = ItemInventory::count(purchase,good.item);
+        MarketShop::Reward reward;
+        assert(MarketShop::buy(purchase,good.slot,0,&reward) == MarketShop::Result::OK);
+        assert(reward.item == good.item && reward.amount == 1);
+        assert(ItemInventory::count(purchase,good.item) == count+1);
+        assert(purchase.coins == state.coins-MarketShop::price(good.item));
+        assert(purchase.marketSeason.stock[good.slot] == capacities[good.slot]-1);
+    }
+
+    // Lifting market gates must not unlock the ordinary shop's higher tiers.
+    auto ordinary = state;
+    assert(ShopService::buyItemCount(ShopService::Category::DAILY,ordinary) == 2);
+    assert(ShopService::buyItemCount(ShopService::Category::EXPLORE,ordinary) == 3);
+    for (auto id : {ItemId::SUPER_POTION,ItemId::MAX_REPEL,ItemId::FULL_RESTORE,
+                    ItemId::FIRE_STONE,ItemId::WATER_STONE,ItemId::THUNDER_STONE}) {
+        const auto before = ordinary;
+        assert(ShopService::buy(ordinary,id) == ShopService::BuyResult::LOCKED);
+        assert(std::memcmp(&before,&ordinary,sizeof(ordinary)) == 0);
+    }
+    assert(ShopService::buy(ordinary,ItemId::CANDY) == ShopService::BuyResult::INVALID_ITEM);
+    assert(ShopService::buy(ordinary,ItemId::POTION) == ShopService::BuyResult::BOUGHT);
+    ordinary.explorePoolRerollCounts[0] = 1;
+    assert(ShopService::buy(ordinary,ItemId::MAX_REPEL) == ShopService::BuyResult::BOUGHT);
+    assert(ShopService::buy(ordinary,ItemId::SUPER_POTION) == ShopService::BuyResult::LOCKED);
+    ordinary.explorePoolRerollCounts[1] = 1;
+    assert(ShopService::buy(ordinary,ItemId::SUPER_POTION) == ShopService::BuyResult::BOUGHT);
+}
+
 int main() {
     static_assert(MarketShop::ROW_COUNT == 8);
+    firstDayHasAllMarketGoods();
     const uint8_t capacities[] = {3,3,1,2,3,2,1,1};
     bool sawScale = false, sawStone = false;
     auto rotating = fresh(0);
@@ -61,12 +125,11 @@ int main() {
                                   (rotating.marketSeason.items[0] == previous.items[1] && rotating.marketSeason.items[1] == previous.items[0]);
             assert(!samePair);
         }
-        // Locked categories are unavailable; they never gain substitute goods.
-        assert(early.marketSeason.stock[MarketShop::CANDY] == 0);
-        assert(early.marketSeason.stock[MarketShop::NUTRIENT] == 0);
-        assert(early.marketSeason.stock[MarketShop::RESET_BERRY] == 0);
-        assert(early.marketSeason.stock[MarketShop::RARE] == 0);
-        assert(early.marketSeason.items[MarketShop::RARE] == 255);
+        for (uint8_t slot = 0; slot < MarketShop::ROW_COUNT; ++slot) {
+            assert(early.marketSeason.stock[slot] == capacities[slot]);
+            if (slot != MarketShop::BOX)
+                assert(MarketShop::item(early,slot) != ItemId::COUNT);
+        }
         const auto samePeriod = rotating;
         rotating.gameMinutesTotal += 600;
         assert(!MarketShop::ensurePeriod(rotating));
@@ -144,5 +207,24 @@ int main() {
     assert(std::memcmp(&decoded.state.marketSeason,&saved.marketSeason,sizeof(saved.marketSeason)) == 0);
     assert(decoded.state.marketItemStock[0] == 23 && decoded.state.marketTutorGifted == 1);
     assert(!MarketShop::ensurePeriod(decoded.state));
-    std::puts("market-shop: open/closed periods, rotation, 8 rows/16 units, unlocks, prices, refusals and migration/save OK");
+
+    // An existing shelf may have sold or formerly locked rows. Loading that
+    // same period must preserve every byte; only the next opening restocks.
+    auto oldShelf = fresh(0,0);
+    assert(MarketShop::ensurePeriod(oldShelf));
+    oldShelf.marketSeason.stock[MarketShop::DISCOUNT_A] = 1;
+    for (auto slot : {MarketShop::CANDY,MarketShop::NUTRIENT,MarketShop::RESET_BERRY,MarketShop::RARE,MarketShop::BOX})
+        oldShelf.marketSeason.stock[slot] = 0;
+    oldShelf.marketSeason.items[MarketShop::RARE] = 255;
+    const auto preserved = oldShelf.marketSeason;
+    assert(SaveCodec::encode(oldShelf,{},7,encoded,sizeof(encoded),length));
+    assert(SaveCodec::decode(encoded,length,decoded));
+    assert(!MarketShop::ensurePeriod(decoded.state));
+    assert(std::memcmp(&preserved,&decoded.state.marketSeason,sizeof(preserved)) == 0);
+    decoded.state.gameMinutesTotal = 3*1440;
+    assert(MarketShop::ensurePeriod(decoded.state));
+    for (uint8_t slot = 0; slot < MarketShop::ROW_COUNT; ++slot)
+        assert(decoded.state.marketSeason.stock[slot] == capacities[slot]);
+    assert(MarketShop::item(decoded.state,MarketShop::RARE) != ItemId::COUNT);
+    std::puts("market-shop: first-day all goods, ordinary-shop gates, rotation, 8 rows/16 units, prices, refusals and migration/save OK");
 }

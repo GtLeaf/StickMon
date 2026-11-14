@@ -11,6 +11,7 @@
 #include "game/Species.h"
 #include "presentation/PixelRenderer.h"
 #include "ui/common/MarketStallMotion.h"
+#include "ui/common/MarketListScroll.h"
 #include "ui/common/MarketView.h"
 
 // Chansey stall (暖心小屋) pages for the 368x448 touch layout: greeting, a
@@ -65,8 +66,8 @@ public:
         std::snprintf(greet_, sizeof(greet_), "%s%s", MarketCareText::SPEAKER,
                       Game::MarketCare::remaining(state) ? MarketCareText::GREET : MarketCareText::GREET_FULL);
     }
-    void close() { page_ = Page::CLOSED; transition_ = Transition::NONE; tap_.cancel(); pending_ = false; dragging_ = false; }
-    void cancelTouch() { tap_.cancel(); dragging_ = false; }
+    void close() { page_ = Page::CLOSED; transition_ = Transition::NONE; cancelTouch(); pending_ = false; }
+    void cancelTouch() { tap_.cancel(); scrollMotion_.cancel(); }
 
     bool update(uint32_t deltaMs) {
         if (!active() || !deltaMs) return false;
@@ -89,6 +90,9 @@ public:
             showMs_ += deltaMs;
             return true;
         }
+        if (page_ == Page::LIST)
+            return scrollMotion_.update(deltaMs, scrollMaximum_, scroll_) || changed;
+        scrollMotion_.cancel();
         if (page_ != Page::GREET) return changed;
         greetMs_ += deltaMs;
         if (greetMs_ < GREET_HOLD_MS + 40U * uint32_t(std::strlen(greet_) / 3)) return changed;
@@ -118,7 +122,7 @@ public:
     Request touch(const Platform::IInputDevice::TouchEvent& e, const Game::GameState& state) {
         using Type = Platform::IInputDevice::TouchType;
         Request none{};
-        if (pending_ || page_ == Page::CLOSED || animating()) { tap_.cancel(); dragging_ = false; return none; }
+        if (pending_ || page_ == Page::CLOSED || animating()) { cancelTouch(); return none; }
         if (page_ == Page::GREET || page_ == Page::SHOW) {
             // Lifting the finger anywhere advances; it never lands on a row.
             if (tap_.update(e, 0) != 0) return none;
@@ -171,8 +175,9 @@ private:
     uint32_t transitionMs_ = 0, greetMs_ = 0, showMs_ = 0, errorMs_ = 0, period_ = 0;
     TouchTap tap_;
     Target target_{};
-    int scroll_ = 0, dragStartY_ = 0, dragScroll_ = 0;
-    bool dragging_ = false, pending_ = false, fromEval_ = false, openFromGreet_ = true;
+    int scroll_ = 0, scrollMaximum_ = 0;
+    MarketListScroll scrollMotion_;
+    bool pending_ = false, fromEval_ = false, openFromGreet_ = true;
     uint8_t beforeAffection_ = 0, afterAffection_ = 0;
     int8_t beforeBond_ = 0, afterBond_ = 0;
     bool evolveHint_ = false;
@@ -230,19 +235,9 @@ private:
         return std::max(0, list(s, items) * ROW_H - (LIST_BOTTOM - LIST_TOP));
     }
     bool listDrag(const Platform::IInputDevice::TouchEvent& e, const Game::GameState& s) {
-        using Type = Platform::IInputDevice::TouchType;
-        if (e.type == Type::DOWN) { dragStartY_ = e.y; dragScroll_ = scroll_; dragging_ = e.y >= LIST_TOP && e.y < LIST_BOTTOM; return false; }
-        if (!dragging_) return false;
-        if (e.type == Type::CANCEL) { dragging_ = false; return false; }
-        const int dy = e.y - dragStartY_;
-        if (std::abs(dy) > 10 || scroll_ != dragScroll_) {
-            tap_.cancel();
-            scroll_ = std::clamp(dragScroll_ - dy, 0, maxScroll(s));
-            if (e.type == Type::UP) dragging_ = false;
-            return true;
-        }
-        if (e.type == Type::UP) dragging_ = false;
-        return false;
+        scrollMaximum_ = maxScroll(s);
+        return scrollMotion_.touch(e, {10, LIST_TOP, 348, LIST_BOTTOM - LIST_TOP},
+                                   scrollMaximum_, scroll_, tap_);
     }
 
     static const char* reason(Game::MarketCare::Result r, Mode mode = Mode::MASSAGE) {
@@ -317,6 +312,7 @@ private:
 
     Request activate(int hitTarget, const Game::GameState& s) {
         Request r{};
+        scrollMotion_.cancel();
         switch (page_) {
         case Page::MENU: {
             if (hitTarget == CLOSE) { transition_ = Transition::CLOSING; transitionMs_ = 0; tap_.cancel(); return r; }

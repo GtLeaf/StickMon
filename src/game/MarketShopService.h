@@ -1,10 +1,10 @@
 #pragma once
 #include <cstdint>
-#include "game/ExploreItemProgression.h"
 #include "game/ExplorePartyService.h"
 #include "game/ItemInventory.h"
 #include "game/MarketItemCatalog.h"
 #include "game/MarketSchedule.h"
+#include "game/MarketSupply.h"
 #include "game/ShopService.h"
 
 namespace Game::MarketShop {
@@ -12,21 +12,16 @@ constexpr uint16_t STALL_SPECIES = 352;
 enum Slot : uint8_t { DISCOUNT_A, DISCOUNT_B, CANDY, NUTRIENT, RESET_BERRY, SPECIAL, RARE, BOX };
 constexpr uint8_t ROW_COUNT = 8;
 constexpr uint16_t BOX_PRICE = 300;
-inline constexpr uint8_t INITIAL_STOCK[] = {3,3,1,2,3,2,1,1};
 struct Reward { ItemId item = ItemId::COUNT; uint8_t amount = 0; };
 enum class Result : uint8_t { OK, STALE, BAD_SLOT, SOLD_OUT, LOCKED, NO_COINS, BAG_FULL, DAILY_LIMIT };
 inline uint32_t periodDay(const GameState& s) { return MarketSchedule::periodDay(s); }
-inline bool selectable(uint8_t slot) { return slot == NUTRIENT || slot == RESET_BERRY; }
-inline bool choiceMatches(uint8_t slot, ItemId id) {
-    return slot == NUTRIENT ? MarketItemCatalog::nutrient(id) : slot == RESET_BERRY && MarketItemCatalog::resetBerry(id);
-}
-inline ItemId item(const GameState& s, uint8_t slot, ItemId choice = ItemId::COUNT) {
+inline ItemId item(const GameState& s, uint8_t slot) {
     if (slot >= ROW_COUNT || slot == BOX) return ItemId::COUNT;
-    if (selectable(slot) && choice != ItemId::COUNT) return choiceMatches(slot,choice) ? choice : ItemId::COUNT;
     return s.marketSeason.items[slot] < uint8_t(ItemId::COUNT) ? ItemId(s.marketSeason.items[slot]) : ItemId::COUNT;
 }
-inline bool unlocked(const GameState& s, ItemId id) {
-    return id < ItemId::COUNT && ExploreItemProgression::isShopItemUnlocked(id,s);
+inline bool unlocked(const GameState&, ItemId id) {
+    // Market supply is independent of the ordinary shop's exploration tiers.
+    return id < ItemId::COUNT;
 }
 inline uint16_t price(ItemId id) {
     if (const auto* entry = MarketItemCatalog::find(id)) return entry->price;
@@ -41,8 +36,8 @@ inline uint16_t price(ItemId id) {
     }
     }
 }
-inline uint16_t priceForSlot(const GameState& s,uint8_t slot,ItemId choice=ItemId::COUNT) {
-    return slot == BOX ? BOX_PRICE : price(item(s,slot,choice));
+inline uint16_t priceForSlot(const GameState& s,uint8_t slot) {
+    return slot == BOX ? BOX_PRICE : price(item(s,slot));
 }
 inline uint32_t mix(uint32_t x) { x^=x>>16; x*=0x7feb352dU; x^=x>>15; x*=0x846ca68bU; x^=x>>16; return x?x:1; }
 template<unsigned N> inline ItemId pick(const GameState& s,const ItemId (&list)[N],uint32_t& seed,ItemId avoid=ItemId::COUNT,ItemId avoidB=ItemId::COUNT) {
@@ -64,7 +59,17 @@ inline Reward boxRewardForRoll(const GameState& s,uint8_t roll) {
     } else if(roll>=98&&roll<100)r={ItemId::CANDY,1};
     return unlocked(s,r.item)?r:Reward{ItemId::HONEY,3};
 }
-inline Reward boxReward(const GameState& s) {return boxRewardForRoll(s,uint8_t(s.marketSeason.boxRoll-1));}
+inline uint8_t boxRoll(const GameState& s) {
+    return MarketSupply::initialBoxStock(s.marketSupply.stockPlan) == 2 && s.marketSeason.stock[BOX] == 1
+        ? s.marketSupply.boxRoll2 : s.marketSeason.boxRoll;
+}
+inline Reward boxReward(const GameState& s) {return boxRewardForRoll(s,uint8_t(boxRoll(s)-1));}
+inline Result advise(GameState& s,MarketSupply::Advice advice,uint32_t period) {
+    if(!MarketSchedule::isOpen(s)||s.marketSeason.periodDay!=period||period!=periodDay(s))return Result::STALE;
+    if(!MarketSupply::validAdvice(uint8_t(advice)))return Result::BAD_SLOT;
+    s.marketSupply.pendingAdvice=uint8_t(advice);
+    return Result::OK;
+}
 inline bool ensurePeriod(GameState& s) {
     if(!MarketSchedule::isOpen(s))return false;
     const uint32_t period=periodDay(s);
@@ -72,6 +77,18 @@ inline bool ensurePeriod(GameState& s) {
     const bool migrate=s.marketSeason.periodDay==MARKET_PERIOD_NONE&&s.marketShop.periodDay==period;
     const auto previous = s.marketSeason;
     s.marketSeason=GameState::Season{};auto& shelf=s.marketSeason;shelf.periodDay=period;
+    uint8_t plan=uint8_t(MarketSupply::Plan::DEFAULT);
+    if(!migrate) {
+        switch(MarketSupply::Advice(s.marketSupply.pendingAdvice)) {
+        case MarketSupply::Advice::EXPLORE: plan=uint8_t(MarketSupply::Plan::EXPLORE);break;
+        case MarketSupply::Advice::GROWTH: plan=uint8_t(MarketSupply::Plan::GROWTH);break;
+        case MarketSupply::Advice::RARE: plan=uint8_t(uint8_t(MarketSupply::Plan::RARE_A)+mix(period^0x53555050U)%3);break;
+        default: break;
+        }
+        s.marketSupply.pendingAdvice=uint8_t(MarketSupply::Advice::NONE);
+    }
+    s.marketSupply.stockPlan=plan;
+    s.marketSupply.boxRoll2=0;
     uint32_t seed=mix(period^0x4b45434cU);
     static constexpr ItemId discounts[]={ItemId::POTION,ItemId::SUPER_POTION,ItemId::ANTIDOTE,ItemId::PARALYZE_HEAL,
         ItemId::AWAKENING,ItemId::BURN_HEAL,ItemId::ICE_HEAL,ItemId::MAX_POTION,ItemId::FULL_RESTORE,
@@ -84,17 +101,22 @@ inline bool ensurePeriod(GameState& s) {
     auto second=pick(s,discounts,seed,first,avoidPair);
     if(second==ItemId::COUNT)second=pick(s,discounts,seed,first);
     shelf.items[DISCOUNT_A]=uint8_t(first);shelf.items[DISCOUNT_B]=uint8_t(second);
-    shelf.items[CANDY]=uint8_t(ItemId::CANDY);shelf.items[NUTRIENT]=uint8_t(ItemId::HP_UP);
-    shelf.items[RESET_BERRY]=uint8_t(ItemId::POMEG_BERRY);
+    shelf.items[CANDY]=uint8_t(ItemId::CANDY);
     auto special=pick(s,specials,seed,ItemId(previous.items[SPECIAL]));
     if(special==ItemId::COUNT)special=pick(s,specials,seed);
     auto rare=pick(s,rares,seed,ItemId(previous.items[RARE]));
     if(rare==ItemId::COUNT)rare=pick(s,rares,seed);
     shelf.items[SPECIAL]=uint8_t(special);shelf.items[RARE]=uint8_t(rare);
+    static constexpr ItemId nutrients[]={ItemId::HP_UP,ItemId::PROTEIN,ItemId::IRON,ItemId::CALCIUM,ItemId::ZINC,ItemId::CARBOS};
+    static constexpr ItemId berries[]={ItemId::POMEG_BERRY,ItemId::KELPSY_BERRY,ItemId::QUALOT_BERRY,ItemId::HONDEW_BERRY,ItemId::GREPA_BERRY,ItemId::TAMATO_BERRY};
+    shelf.items[NUTRIENT]=uint8_t(pick(s,nutrients,seed));
+    shelf.items[RESET_BERRY]=uint8_t(pick(s,berries,seed));
     for(auto& id:shelf.items)if(id>=uint8_t(ItemId::COUNT))id=255;
-    for(uint8_t i=0;i<ROW_COUNT;++i)shelf.stock[i]=(i==BOX||unlocked(s,item(s,i)))?INITIAL_STOCK[i]:0;
+    for(uint8_t i=0;i<ROW_COUNT;++i)shelf.stock[i]=(i==BOX||unlocked(s,item(s,i)))?MarketSupply::capacities(plan)[i]:0;
     const auto& leader=s.team[ExplorePartyService::leaderSlot(s)];
     shelf.boxRoll=uint8_t(1+mix(period^leader.ivPacked^leader.metAt^0x4d595354U)%100);
+    if(MarketSupply::initialBoxStock(plan)==2)
+        s.marketSupply.boxRoll2=uint8_t(1+mix(period^leader.ivPacked^leader.metAt^0x424f5832U)%100);
     if(migrate){
         for(uint8_t i=0;i<ROW_COUNT-1;++i)for(uint8_t old=0;old<MARKET_SHELF_SLOTS;++old)
             if(shelf.stock[i]&&s.marketShop.items[old]==shelf.items[i]&&!s.marketShop.stock[old])--shelf.stock[i];
@@ -105,23 +127,22 @@ inline bool ensurePeriod(GameState& s) {
     return true;
 }
 inline bool soldOut(const GameState& s){for(auto stock:s.marketSeason.stock)if(stock)return false;return true;}
-inline Result check(const GameState& s,uint8_t slot,uint32_t period,ItemId choice=ItemId::COUNT){
+inline Result check(const GameState& s,uint8_t slot,uint32_t period){
     if(!MarketSchedule::isOpen(s)||s.marketSeason.periodDay!=period||period!=periodDay(s))return Result::STALE;
     if(slot>=ROW_COUNT)return Result::BAD_SLOT;
-    if(selectable(slot)&&choice!=ItemId::COUNT&&!choiceMatches(slot,choice))return Result::BAD_SLOT;
-    Reward r{item(s,slot,choice),1};
-    if(slot==BOX){if(!s.marketSeason.boxRoll||s.marketSeason.boxRoll>100)return Result::STALE;r=boxReward(s);}
+    Reward r{item(s,slot),1};
+    if(slot==BOX){if(!boxRoll(s)||boxRoll(s)>100)return Result::STALE;r=boxReward(s);}
     else if(r.item==ItemId::COUNT)return Result::LOCKED;
     if(!unlocked(s,r.item))return Result::LOCKED;
     if(!s.marketSeason.stock[slot])return Result::SOLD_OUT;
     if(unsigned(ItemInventory::count(s,r.item))+r.amount>ITEM_STACK_CAP)return Result::BAG_FULL;
-    return s.coins<priceForSlot(s,slot,choice)?Result::NO_COINS:Result::OK;
+    return s.coins<priceForSlot(s,slot)?Result::NO_COINS:Result::OK;
 }
-inline Result buy(GameState& s,uint8_t slot,uint32_t period,Reward* granted=nullptr,ItemId choice=ItemId::COUNT){
-    const auto result=check(s,slot,period,choice);if(result!=Result::OK)return result;
-    const Reward r=slot==BOX?boxReward(s):Reward{item(s,slot,choice),1};
+inline Result buy(GameState& s,uint8_t slot,uint32_t period,Reward* granted=nullptr){
+    const auto result=check(s,slot,period);if(result!=Result::OK)return result;
+    const Reward r=slot==BOX?boxReward(s):Reward{item(s,slot),1};
     if(!ItemInventory::add(s,r.item,r.amount))return Result::BAG_FULL;
-    s.coins-=priceForSlot(s,slot,choice);--s.marketSeason.stock[slot];
+    s.coins-=priceForSlot(s,slot);--s.marketSeason.stock[slot];
     if(granted)*granted=r;
     return Result::OK;
 }

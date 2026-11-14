@@ -40,13 +40,15 @@ inline bool fabricateLegacySchemaBlob(const uint8_t* encoded, size_t length,
     constexpr size_t CARE_STALL_EXTENSION_BYTES = 4 + 1 + Game::MARKET_CARE_PERIOD_CAP * 8;
     constexpr size_t MYSTERY_BOX_EXTENSION_BYTES = 2;
     constexpr size_t SEASON_EXTENSION_BYTES = 4 + 8 + 8 + 1 + 17 + 1;
-    const size_t removedBytes = (schema <= 7 ? SEASON_EXTENSION_BYTES : 0) +
+    constexpr size_t SUPPLY_EXTENSION_BYTES = 3;
+    const size_t removedBytes = (schema <= 8 ? SUPPLY_EXTENSION_BYTES : 0) +
+                                (schema <= 7 ? SEASON_EXTENSION_BYTES : 0) +
                                 (schema <= 6 ? MYSTERY_BOX_EXTENSION_BYTES : 0) +
                                 (schema <= 5 ? CARE_STALL_EXTENSION_BYTES : 0) +
                                 (schema <= 4 ? SHOP_EXTENSION_BYTES : 0) +
                                 (schema <= 3 ? MARKET_EXTENSION_BYTES : 0) +
                                 (schema <= 2 ? CARE_EXTENSION_BYTES : 0) + (schema == 1 ? 1 : 0);
-    if (!encoded ||
+    if (schema < 1 || schema > 8 || !encoded ||
         length < SaveCodec::HEADER_BYTES + VIEW_PAYLOAD_BYTES + removedBytes + 1) {
         return false;
     }

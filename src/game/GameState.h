@@ -13,7 +13,7 @@ static constexpr uint8_t TEAM_CAP = 2;
 static constexpr uint8_t STORAGE_CAP = 20;
 static constexpr uint8_t ITEM_STACK_CAP = 99;
 static constexpr uint32_t SAVE_MAGIC = 0x534D4F4E; // SMON
-static constexpr uint16_t SAVE_VERSION = 9;
+static constexpr uint16_t SAVE_VERSION = 10;
 static constexpr uint16_t MIN_SUPPORTED_SAVE_VERSION = 1;
 // debugMotionFlags 位定义：AMOLED debug 菜单「运动」分类下的开关，
 // release 固件忽略这些位但必须原样保留。
@@ -435,6 +435,13 @@ struct GameState {
     } marketSeason;
     uint8_t marketItemStock[17] = {};
     uint8_t marketTutorGifted = 0;
+    // v10 append-only extension; do not consume the frozen v9 tail padding.
+    struct alignas(4) Supply {
+        uint8_t pendingAdvice = 0;
+        uint8_t stockPlan = 0;
+        uint8_t boxRoll2 = 0;
+        uint8_t reserved = 0;
+    } marketSupply;
 };
 static_assert(offsetof(GameState, careRewardDay) == 1572,
               "v5 care fields must follow the frozen v4 layout");
@@ -446,7 +453,9 @@ static_assert(offsetof(GameState, marketCare) == 2456,
               "v8 market care fields must follow the frozen v7 layout");
 static_assert(offsetof(GameState, marketSeason) == 2480,
               "v9 extension must preserve the frozen v8 prefix");
-static_assert(sizeof(GameState) == 2524, "v9 save size changed");
+static_assert(offsetof(GameState, marketSupply) == 2524,
+              "v10 extension must preserve the frozen v9 prefix");
+static_assert(sizeof(GameState) == 2528, "v10 save size changed");
 static_assert(offsetof(GameState, room) == 1452,
               "BagState must not shift the v1 room/save layout");
 static_assert(offsetof(GameState, tutorialFlags) == 1559,
