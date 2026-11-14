@@ -10247,6 +10247,7 @@ void AmoledApp::handleMarketShopTouch(const Platform::IInputDevice::TouchEvent& 
 
 void AmoledApp::openMarketCare(uint32_t nowMs) {
     marketTutorPending_ = false;
+    if (!BuildConfig::DEBUG_FEATURES) return;
     marketCoinMotion_.reset(gameState.coins);marketCoinClockMs_=nowMs;
     if (!Game::MarketSchedule::isOpen(gameState)) {
         closeMarketTutor();
