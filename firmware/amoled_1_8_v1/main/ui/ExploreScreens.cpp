@@ -1,6 +1,9 @@
 #include "game/ExploreDestinations.h"
 #include "ui/common/MarketView.h"
 #include "ui/ExploreScreens.h"
+#if STICKMON_EXPLORE_POSTCARD
+#include "ui/ExplorePostcardUi.h"
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -955,6 +958,11 @@ AmoledUi::Rect exploreRouteActorBounds(const ExploreRouteViewModel& model) {
 // Explore area, route, and explore menu rendering.
 int exploreAreaAt(int x, int y, uint8_t selectedArea,
                   uint8_t visibleAreaCount) {
+    if constexpr (EXPLORE_POSTCARD) {
+        if (y<146 || y>=206) return -1;
+        int target = x>=10 && x<64 ? int(selectedArea)-1 : x>=304 && x<358 ? int(selectedArea)+1 : -1;
+        return target>=0 && target<visibleAreaCount ? target : -1;
+    }
     if (y < 0 || y >= EXPLORE_SELECTOR_TOP_HEIGHT) return -1;
     int count = std::min<int>(visibleAreaCount, ExploreDestinations::COUNT);
     if (count <= 0) return -1;
@@ -969,10 +977,12 @@ int exploreAreaAt(int x, int y, uint8_t selectedArea,
 }
 
 bool exploreStartAt(int x, int y) {
+    if constexpr (EXPLORE_POSTCARD) return AmoledUi::Rect{20,388,328,48}.contains(x,y);
     return EXPLORE_START_BUTTON_NATIVE.contains(x, y);
 }
 
 bool exploreSelectionBackAt(int x, int y) {
+    if constexpr (EXPLORE_POSTCARD) return UiCommon::pageHeaderBackAt(x,y);
     return EXPLORE_BACK_BUTTON_NATIVE.contains(x, y);
 }
 
@@ -985,7 +995,7 @@ void drawExploreNativeButtonLabel(Canvas565& canvas,
         label, color, 1);
 }
 
-void renderExploreScreen(Canvas565& canvas, const ExploreViewModel& model,
+void renderExploreLegacyScreen(Canvas565& canvas, const ExploreViewModel& model,
                          PixelCache565& backgroundCache,
                          uint16_t rowBegin, uint16_t rowEnd) {
     const uint16_t ink = rgb(226, 238, 233);
@@ -1160,6 +1170,18 @@ void renderExploreScreen(Canvas565& canvas, const ExploreViewModel& model,
     }
     drawToast(canvas, model.toast);
     pageClip.reset();
+}
+
+void renderExploreScreen(Canvas565& canvas, const ExploreViewModel& model,
+                         PixelCache565& cache,uint16_t rowBegin,uint16_t rowEnd) {
+#if STICKMON_EXPLORE_POSTCARD
+    UiCommon::PageClip clip(canvas,rowBegin,rowEnd);
+    if(rowBegin>=rowEnd)return;
+    renderExplorePostcard(canvas,model,rowBegin,rowEnd);
+    drawToast(canvas,model.toast);
+#else
+    renderExploreLegacyScreen(canvas,model,cache,rowBegin,rowEnd);
+#endif
 }
 
 bool exploreRouteBackAt(int x, int y) {

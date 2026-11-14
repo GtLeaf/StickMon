@@ -12,6 +12,8 @@
 #include "ui/common/MarketStallMotion.h"
 #include "ui/common/MarketListScroll.h"
 #include "ui/common/MarketUiFeedback.h"
+#include "ui/common/MarketCoinHud.h"
+#include "ui/common/MarketBoxPerformance.h"
 #include "ui/common/MarketView.h"
 
 // Kecleon stall (奇珍小铺) for the 368x448 touch layout: greeting, scrollable
@@ -23,7 +25,8 @@
 namespace Ui {
 class MarketShopUi {
 public:
-    enum class Page : uint8_t { CLOSED, GREET, MENU, SHELF, ADVICE, ADVICE_DONE, CONFIRM, RESULT };
+    enum class Page : uint8_t { CLOSED, GREET, MENU, SHELF, ADVICE, ADVICE_DONE, CONFIRM, RESULT,
+                                BOX_ARRIVE, BOX_WAIT, BOX_OPEN };
     struct Request {
         enum Kind : uint8_t { NONE, BUY, ADVISE } kind = NONE;
         uint8_t slot = 0;
@@ -70,6 +73,24 @@ public:
             }
             return true;
         }
+        if (page_ == Page::BOX_ARRIVE) {
+            boxMs_ = std::min(MarketBoxPerformance::ARRIVE_MS, boxMs_ + deltaMs);
+            if (boxMs_ == MarketBoxPerformance::ARRIVE_MS) { changePage(Page::BOX_WAIT); boxMs_ = 0; }
+            return true;
+        }
+        if (page_ == Page::BOX_WAIT) {
+            boxMs_ += deltaMs;
+            if (boxMs_ >= 3000) boxMs_ -= 1500; // bounded clock, keep the initial hint fade complete
+            return true;
+        }
+        if (page_ == Page::BOX_OPEN) {
+            const auto before = boxMs_;
+            boxMs_ = std::min(MarketBoxPerformance::OPEN_MS, boxMs_ + deltaMs);
+            if (before < MarketBoxPerformance::REVEAL_MS && boxMs_ >= MarketBoxPerformance::REVEAL_MS)
+                feedback_.set(SfxCue::ITEM_GET);
+            if (boxMs_ == MarketBoxPerformance::OPEN_MS) changePage(Page::RESULT);
+            return true;
+        }
         if (page_ == Page::SHELF) return scrollMotion_.update(deltaMs, maxScroll(), scroll_);
         scrollMotion_.cancel();
         if (page_ != Page::GREET) return false;
@@ -98,6 +119,12 @@ public:
         using Type = Platform::IInputDevice::TouchType;
         Request none{};
         if (pending_ || page_ == Page::CLOSED || animating()) { cancelTouch(); return none; }
+        if (page_ == Page::BOX_ARRIVE || page_ == Page::BOX_OPEN) { cancelTouch(); return none; }
+        if (page_ == Page::BOX_WAIT) {
+            const int target = Rect{4, PANEL_Y, W-8, H-PANEL_Y-4}.contains(e.x,e.y) ? PRIMARY : -1;
+            if (tap_.update(e,target) == PRIMARY) { changePage(Page::BOX_OPEN); boxMs_ = 0; }
+            return none;
+        }
         if (page_ == Page::GREET) {
             // The lifting finger of the skip tap never lands on a shelf row.
             if (tap_.update(e, 0) == 0) { feedback_.set(SfxCue::UI_CONFIRM); openPanel(); }
@@ -115,8 +142,9 @@ public:
     void committed(bool saved, Game::ItemId reward = Game::ItemId::COUNT, uint8_t amount = 1) {
         pending_ = false;
         if (!saved) { feedback_.set(SfxCue::UI_CANCEL); error_ = MarketShopText::SAVE_FAILED; return; }
-        feedback_.set(slot_ == Game::MarketShop::BOX ? SfxCue::ITEM_GET : SfxCue::BUY_ITEM);
-        error_ = nullptr; rewardItem_ = reward; rewardAmount_ = amount; changePage(Page::RESULT);
+        error_ = nullptr; rewardItem_ = reward; rewardAmount_ = amount;
+        if (slot_ == Game::MarketShop::BOX) { feedback_.clear(); boxMs_ = 0; changePage(Page::BOX_ARRIVE); }
+        else { feedback_.set(SfxCue::BUY_ITEM); changePage(Page::RESULT); }
     }
     void adviceCommitted(bool saved) {
         pending_ = false;
@@ -125,7 +153,7 @@ public:
     }
     void rejected(Game::MarketShop::Result r) { pending_ = false; feedback_.set(SfxCue::UI_CANCEL); error_ = reason(r, 0); }
 
-    void render(const Game::GameState& s) const {
+    void render(const Game::GameState& s, const MarketCoinMotion* coins = nullptr) const {
         if (page_ == Page::CLOSED) return;
         if (page_ == Page::GREET) { renderGreet(); return; }
         panel();
@@ -134,9 +162,21 @@ public:
         else if (page_ == Page::ADVICE) renderAdvice(s);
         else if (page_ == Page::ADVICE_DONE) renderAdviceDone();
         else if (page_ == Page::CONFIRM) renderConfirm(s);
+        else if (page_ == Page::BOX_ARRIVE) {
+            renderConfirm(s,true);
+            PixelRenderer::canvas().blendRoundRectAlphaNative(5,209,358,234,13,paper(),MarketBoxPerformance::detailFade(boxMs_));
+            MarketBoxPerformance::arrival(boxMs_);
+        }
+        else if (page_ == Page::BOX_WAIT) {
+            MarketBoxPerformance::waiting(boxMs_);
+            ctext(386,MarketShopText::BOX_OPEN,16,MarketBoxPerformance::detail::fade(89,105,88,
+                MarketBoxPerformance::detail::smooth(MarketBoxPerformance::detail::p(boxMs_,0,220))));
+        }
+        else if (page_ == Page::BOX_OPEN) { MarketBoxPerformance::opening(boxMs_,rewardItem_); renderBoxText(boxMs_); }
         else renderResult(s);
         MarketStallMotion::drawBadge(23, 16 + hudOffset(), MarketShopText::TITLE,
                                      width(MarketShopText::TITLE, 28), paper(), ink());
+        MarketCoinHud::render(s.coins,coins,16+hudOffset());
     }
 
 private:
@@ -145,9 +185,11 @@ private:
     Page page_ = Page::CLOSED;
     Transition transition_ = Transition::NONE;
     uint32_t transitionMs_ = 0, greetMs_ = 0, period_ = 0;
+    uint32_t boxMs_ = 0;
     TouchTap tap_;
     MarketUiFeedback feedback_;
     uint8_t slot_ = 0;
+    uint8_t stockBefore_ = 0;
     bool pending_ = false;
     MarketListScroll scrollMotion_;
     int scroll_ = 0;
@@ -160,8 +202,8 @@ private:
     static Rect back() { return {16, 394, 160, 44}; }
     static Rect primary() { return {192, 394, 160, 44}; }
     static Rect wide() { return {16, 394, 336, 44}; }
-    static Rect menuRow(int index) { return {16, 250 + index * 76, 336, 56}; }
-    static Rect adviceRow(int index) { return {16, 220 + index * 54, 336, 48}; }
+    static Rect menuRow(int index) { return {14, 246 + index * 80, 340, 80}; }
+    static Rect adviceRow(int index) { return {14, 230 + index * 64, 340, 64}; }
     static constexpr int maxScroll() { return Game::MarketShop::ROW_COUNT * ROW_H - (LIST_BOTTOM - LIST_TOP); }
     bool listDrag(const Platform::IInputDevice::TouchEvent& e) {
         return scrollMotion_.touch(e, {10, LIST_TOP, 348, LIST_BOTTOM - LIST_TOP},
@@ -212,7 +254,6 @@ private:
             if (menuRow(1).contains(x,y)) return OPEN_ADVICE;
         }
         if (page_ == Page::ADVICE) {
-            if (wide().contains(x,y)) return BACK;
             for (int i=0;i<3;++i) if (adviceRow(i).contains(x,y)) return ADVICE0+i;
         }
         if (page_ == Page::CONFIRM) {
@@ -248,6 +289,7 @@ private:
             if (target == BACK) { error_ = nullptr; changePage(Page::SHELF); return r; }
             const auto result = Game::MarketShop::check(s, slot_, period_);
             if (result != Game::MarketShop::Result::OK) { rejected(result); return r; }
+            stockBefore_ = s.marketSeason.stock[slot_];
             feedback_.clear(); pending_ = true; r.kind = Request::BUY; r.slot = slot_; r.period = period_; return r;
         }
         changePage(Page::SHELF); return r; // success page: back to the same shelf
@@ -360,19 +402,67 @@ private:
         c.fillRoundRect(355, y, 3, thumb, 1, line());
     }
 
+    enum class ListIcon { GOODS, ADVICE, EXPLORE, GROWTH, RARE };
+
+    void menuIcon(ListIcon kind, int cx, int cy) const {
+        // Small pixel artwork shares the item icons' native 2px grid.
+        static constexpr const char* bag[] = {
+            "....................", ".......######.......", "......##....##......", ".....##......##.....",
+            ".....##......##.....", "...##############...", "...#TTTTTTTTTTTT#...", "...#T##########T#...",
+            "...#TT#TTTTTT#TT#...", "...#TT#TTTTTT#TT#...", "...#TTTTTTTTTTTT#...", "...#TTTTTTTTTTTT#...",
+            "...#TTTTTTTTTTTT#...", "...#TTTTTTTTTTTT#...", "...#TTTTTTTTTTTT#...", "...#TTTTTTTTTTTT#...",
+            "...#LLLLLLLLLLLL#...", "...##############...", "....................", "...................."};
+        static constexpr const char* note[] = {
+            ".......######.......", "....####TTTT####....", "...#LLL######LLL#...", "...#LPPPPPPPPPPL#...",
+            "...#LPPPPPPPPPPL#...", "...#LPSSPPSSSSPL#...", "...#LPSSPPSSSSPL#...", "...#LPPPPPPPPPPL#...",
+            "...#LPSSPPSSSSPL#...", "...#LPSSPPSSSSPL#...", "...#LPPPPPPPPPPL#...", "...#LPSSPPSSSSPL#...",
+            "...#LPSSPPSSSSPL#...", "...#LPPPPPPPPPPL#...", "...#LPPPPPPPPPPL#...", "...#LLLLLLLLLLLL#...",
+            "....############....", "....................", "....................", "...................."};
+        const auto art = kind == ListIcon::ADVICE ? note : bag;
+        auto& c = PixelRenderer::canvas();
+        cy += offset();
+        for (int y=0;y<20;++y) for (int x=0;x<20;++x) {
+            const char p=art[y][x];
+            if (p=='.') continue;
+            const auto color = p=='#' ? ink() : p=='T' ? rgb(196,152,88) :
+                p=='L' ? rgb(160,112,64) : p=='P' ? rgb(248,240,208) : rgb(104,128,112);
+            c.fillRect(cx-20+x*2,cy-20+y*2,2,2,color);
+        }
+    }
+
+    void listRow(Rect r, const char* label, ListIcon kind, bool selected, bool divider) const {
+        auto& c = PixelRenderer::canvas();
+        const int cy = r.y + r.h/2;
+        if (selected) c.fillRoundRect(r.x,r.y+3+offset(),r.w,r.h-6,8,rgb(224,235,201));
+        switch (kind) {
+        case ListIcon::GOODS: case ListIcon::ADVICE: menuIcon(kind,48,cy); break;
+        case ListIcon::EXPLORE: icon(Game::ItemId::POTION,48,cy); break;
+        case ListIcon::GROWTH: icon(Game::ItemId::PROTEIN,48,cy); break;
+        case ListIcon::RARE: slotIcon(Game::ItemId::COUNT,true,48,cy); break;
+        }
+        text(88,cy-16,label);
+        if (selected) {
+            const auto green=rgb(65,132,83);
+            const int y=cy+offset();
+            c.fillRect(316,y,4,4,green); c.fillRect(320,y+4,4,4,green);
+            c.fillRect(324,y,4,4,green); c.fillRect(328,y-4,4,4,green); c.fillRect(332,y-8,4,4,green);
+        }
+        if (divider) c.drawFastHLine(24,r.y+r.h-1+offset(),320,line());
+    }
+
     void renderMenu() const {
-        button(menuRow(0), MarketShopText::BUY_ITEMS, false);
-        button(menuRow(1), MarketShopText::ADVICE, false);
+        listRow(menuRow(0),MarketShopText::BUY_ITEMS,ListIcon::GOODS,false,true);
+        listRow(menuRow(1),MarketShopText::ADVICE,ListIcon::ADVICE,false,false);
     }
 
     void renderAdvice(const Game::GameState& s) const {
         const char* labels[] = {MarketShopText::ADVICE_EXPLORE, MarketShopText::ADVICE_GROWTH, MarketShopText::ADVICE_RARE};
+        const ListIcon icons[] = {ListIcon::EXPLORE,ListIcon::GROWTH,ListIcon::RARE};
         for (int i=0;i<3;++i) {
             const bool selected = s.marketSupply.pendingAdvice == uint8_t(i+1);
-            button(adviceRow(i), labels[i], selected, pending_);
+            listRow(adviceRow(i),labels[i],icons[i],selected,i<2);
         }
-        if (error_) ctext(378, error_, 16, red());
-        button(wide(), MarketShopText::BACK, false, pending_);
+        if (error_) ctext(426, error_, 16, red());
     }
 
     void renderAdviceDone() const {
@@ -380,7 +470,7 @@ private:
         button(wide(), MarketShopText::HOME, true);
     }
 
-    void renderConfirm(const Game::GameState& s) const {
+    void renderConfirm(const Game::GameState& s, bool bought = false) const {
         const Game::ItemId id = Game::MarketShop::item(s, slot_);
         const bool box = slot_ == Game::MarketShop::BOX;
         const char* name = box ? MarketShopText::BOX : Game::ShopService::shortName(id);
@@ -391,9 +481,9 @@ private:
         if (box) text(24, 282, MarketShopText::BOX_LINE1);
         else description(id, 282);
         char line[64];
-        std::snprintf(line, sizeof(line), MarketShopText::STOCK, s.marketSeason.stock[slot_]);
+        std::snprintf(line, sizeof(line), MarketShopText::STOCK, bought ? stockBefore_ : s.marketSeason.stock[slot_]);
         ctext(354, line);
-        const auto r = Game::MarketShop::check(s, slot_, period_);
+        const auto r = bought ? Game::MarketShop::Result::OK : Game::MarketShop::check(s, slot_, period_);
         char why[64]; why[0] = 0;
         if (r == Game::MarketShop::Result::NO_COINS)
             std::snprintf(why, sizeof(why), MarketShopText::NO_COINS, static_cast<unsigned long>(price - s.coins));
@@ -409,6 +499,7 @@ private:
 
     void renderResult(const Game::GameState& s) const {
         const Game::ItemId id = rewardItem_ == Game::ItemId::COUNT ? Game::MarketShop::item(s, slot_) : rewardItem_;
+        if (slot_ == Game::MarketShop::BOX) { icon(id,W/2,264); renderBoxText(MarketBoxPerformance::OPEN_MS); return; }
         icon(id, W / 2, 246);
         char got[64];
         if (slot_ == Game::MarketShop::BOX) std::snprintf(got, sizeof(got), MarketShopText::BOX_GOT, Game::ShopService::shortName(id), rewardAmount_);
@@ -416,6 +507,21 @@ private:
         ctext(282, got);
         ctext(326, MarketShopText::GOT_LINE2);
         button(wide(), MarketShopText::CONTINUE, true);
+    }
+    void renderBoxText(uint32_t ms) const {
+        using namespace MarketBoxPerformance::detail;
+        char got[64];
+        std::snprintf(got,sizeof(got),MarketShopText::BOX_GOT,Game::ShopService::shortName(rewardItem_),rewardAmount_);
+        const float show=smooth(p(ms,900,1120));
+        if (show>0) {
+            ctext(310,got,32,fade(40,56,80,show));
+            ctext(350,MarketShopText::GOT_LINE2,16,fade(89,105,88,show));
+        }
+        if (ms>1050) {
+            button(wide(),MarketShopText::CONTINUE,true);
+            const auto fadeOut=uint8_t(std::lround((1-smooth(p(ms,1050,1250)))*255));
+            PixelRenderer::canvas().blendRectAlphaNative(16,394,336,44,paper(),fadeOut);
+        }
     }
 };
 } // namespace Ui

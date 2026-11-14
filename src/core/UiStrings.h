@@ -35,6 +35,7 @@ static constexpr const char* BOX = "神秘盲盒";
 static constexpr const char* BOX_LINE1 = "随机获得一组道具";
 static constexpr const char* BOX_LINE2 = "本期限购一盒";
 static constexpr const char* BOX_GOT = "开出%s×%u";
+static constexpr const char* BOX_OPEN = "点击打开";
 static constexpr const char* TITLE = "奇珍小铺";
 static constexpr const char* GREET = "变隐龙：欢迎！本期的好货都在这里啦。";
 static constexpr const char* GREET_SOLD_OUT = "变隐龙：本期好货已经卖完啦。";

@@ -12,6 +12,7 @@
 #include "presentation/PixelRenderer.h"
 #include "ui/common/MarketStallMotion.h"
 #include "ui/common/MarketUiFeedback.h"
+#include "ui/common/MarketCoinHud.h"
 #include "ui/common/MarketListScroll.h"
 #include "ui/common/MarketView.h"
 
@@ -156,10 +157,10 @@ public:
     }
     void rejected(Game::MarketCare::Result r) { pending_ = false; feedback_.set(SfxCue::UI_CANCEL); error_ = reason(r); errorMs_ = 0; }
 
-    void render(const Game::GameState& state) const {
+    void render(const Game::GameState& state, const MarketCoinMotion* coins = nullptr) const {
         if (page_ == Page::CLOSED) return;
         if (page_ == Page::GREET) { renderGreet(); return; }
-        if (page_ == Page::SHOW) { renderShow(state); return; }
+        if (page_ == Page::SHOW) { renderShow(state); MarketCoinHud::render(state.coins,coins,16+hudOffset()); return; }
         panel(PANEL_Y + panelOffset());
         switch (page_) {
         case Page::MENU: renderMenu(state); break;
@@ -168,6 +169,7 @@ public:
         case Page::EVAL: renderEval(state); break;
         default: break;
         }
+        MarketCoinHud::render(state.coins,coins,16+hudOffset());
     }
 
 private:

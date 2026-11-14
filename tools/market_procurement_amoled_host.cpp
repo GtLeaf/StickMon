@@ -84,7 +84,7 @@ struct AmoledAppTestAccess {
         auto verifySaved=[&](){assert(manager.load(loaded,view));assert(!std::memcmp(&loaded.marketSupply,&s.marketSupply,sizeof(s.marketSupply)));
             assert(!std::memcmp(&loaded.marketSeason,&s.marketSeason,sizeof(s.marketSeason)));};
         auto advice=[&](Advice a){assert(ui.page()==Page::MENU);const auto before=s.marketSeason;tap(184,354);assert(ui.page()==Page::ADVICE);
-            tap(184,244+(int(a)-1)*54);assert(ui.page()==Page::ADVICE_DONE);assert(s.marketSupply.pendingAdvice==uint8_t(a));
+            tap(184,262+(int(a)-1)*64);assert(ui.page()==Page::ADVICE_DONE);assert(s.marketSupply.pendingAdvice==uint8_t(a));
             assert(!std::memcmp(&before,&s.marketSeason,sizeof(before)));verifySaved();tap(184,414);assert(ui.page()==Page::MENU);};
         shop();shot("01-home");shelf();shot("02-shelf");
         // Existing motion remains driven by real application ticks.
@@ -137,10 +137,22 @@ struct AmoledAppTestAccess {
         const auto beforeBoxCoins=s.coins;tap(272,414);assert(ui.page()==Page::CONFIRM&&s.coins==beforeBoxCoins&&s.marketSeason.stock[Game::MarketShop::BOX]==2);
         assert(Game::ItemInventory::remove(s,first.item,Game::ITEM_STACK_CAP-oldCount));
         app.saveWritesBlocked=true;tap(272,414);assert(ui.page()==Page::CONFIRM&&s.marketSeason.stock[Game::MarketShop::BOX]==2&&s.marketSeason.boxRoll==firstRoll&&s.marketSupply.boxRoll2==secondRoll);
-        app.saveWritesBlocked=false;tap(272,414);assert(ui.page()==Page::RESULT&&s.marketSeason.stock[Game::MarketShop::BOX]==1);
-        assert(Game::ItemInventory::count(s,first.item)==oldCount+first.amount&&Game::MarketShop::boxRoll(s)==secondRoll);shot("13-first-box-result");verifySaved();
+        app.saveWritesBlocked=false;tap(272,414);assert(ui.page()==Page::BOX_ARRIVE&&s.marketSeason.stock[Game::MarketShop::BOX]==1);
+        assert(Game::ItemInventory::count(s,first.item)==oldCount+first.amount&&Game::MarketShop::boxRoll(s)==secondRoll);verifySaved();
+        const auto paidCoins=s.coins;const auto paidSeason=s.marketSeason;const auto paidSupply=s.marketSupply;
+        // Display suspension pauses even while arriving or revealing; the saved transaction remains final.
+        app.displayLocked=true;advance(2000);assert(ui.page()==Page::BOX_ARRIVE);app.displayLocked=false;app.onWake(t);
+        for(int i=0;i<14;++i){char name[40];std::snprintf(name,sizeof(name),"box-arrive-%02d",i);shot(name);advance(50);}
+        assert(ui.page()==Page::BOX_WAIT);advance(3000);assert(ui.page()==Page::BOX_WAIT);shot("box-wait");
+        tap(184,100);assert(ui.page()==Page::BOX_WAIT);tap(184,316);assert(ui.page()==Page::BOX_OPEN);
+        app.displayLocked=true;advance(2000);assert(ui.page()==Page::BOX_OPEN);app.displayLocked=false;app.onWake(t);
+        for(int i=0;i<27;++i){char name[40];std::snprintf(name,sizeof(name),"box-opening-%02d",i);shot(name);advance(50);}
+        assert(ui.page()==Page::RESULT&&s.coins==paidCoins);
+        assert(!std::memcmp(&paidSeason,&s.marketSeason,sizeof(paidSeason))&&!std::memcmp(&paidSupply,&s.marketSupply,sizeof(paidSupply)));
+        assert(Game::ItemInventory::count(s,first.item)==oldCount+first.amount);shot("13-first-box-result");verifySaved();
         tap(184,414);select(Game::MarketShop::BOX);shot("14-second-box-detail");const auto second=Game::MarketShop::boxReward(s);const auto beforeSecond=Game::ItemInventory::count(s,second.item);
-        tap(272,414);assert(ui.page()==Page::RESULT&&s.marketSeason.stock[Game::MarketShop::BOX]==0&&Game::ItemInventory::count(s,second.item)==beforeSecond+second.amount);
+        tap(272,414);assert(ui.page()==Page::BOX_ARRIVE&&s.marketSeason.stock[Game::MarketShop::BOX]==0&&Game::ItemInventory::count(s,second.item)==beforeSecond+second.amount);
+        advance(650);assert(ui.page()==Page::BOX_WAIT);tap(184,316);advance(1300);assert(ui.page()==Page::RESULT);
         verifySaved();tap(184,414);select(Game::MarketShop::BOX);assert(ui.page()==Page::SHELF);shot("15-boxes-sold-out");home();leave();
         // No repeated advice means the following opening returns to default.
         uint32_t next=rareDay+1;while(!Game::MarketSchedule::isOpenDay(next))++next;day(next);shop();const uint8_t defaults[]={3,3,1,2,3,2,1,1};
@@ -169,7 +181,36 @@ struct AmoledAppTestAccess {
             assert(species!=352||app.marketShopUi_.active());assert(species!=94||app.marketTutorUi_.active());assert(species!=113||app.marketCareUi_.active());
             app.closeMarketTutor();
         }
-        assert(resources.marketOpens==musicOpens);app.closeMarket(t);
+        shop();shelf();select(Game::MarketShop::BOX);assert(ui.page()==Page::CONFIRM);
+        // Every current reward keeps the ordinary native-48 icon at the end of its reveal.
+        const Game::ItemId rewards[]={Game::ItemId::HONEY,Game::ItemId::SUPER_POTION,Game::ItemId::MAX_REPEL,
+            Game::ItemId::REVIVE,Game::ItemId::HEART_SCALE,Game::ItemId::FIRE_STONE,Game::ItemId::WATER_STONE,
+            Game::ItemId::THUNDER_STONE,Game::ItemId::CANDY};
+        auto& canvas=PixelRenderer::canvas();const auto paper=PixelRenderer::rgb(248,248,224);
+        for(unsigned i=0;i<9;++i){
+            app.render(canvas);canvas.fillRoundRect(4,208,360,236,14,paper);
+            Ui::MarketBoxPerformance::opening(1250,rewards[i]);
+            uint16_t actual[48*48];for(int y=0;y<48;++y)for(int x=0;x<48;++x)actual[y*48+x]=canvas.readPixel(160+x,240+y);
+            char name[40];std::snprintf(name,sizeof(name),"box-reward-%02u",i);capture(name);
+            canvas.fillRect(160,240,48,48,paper);assert(GameAssets::drawItemIcon48(rewards[i],184,264));
+            int visible=0;for(int y=0;y<48;++y)for(int x=0;x<48;++x){assert(actual[y*48+x]==canvas.readPixel(160+x,240+y));visible+=actual[y*48+x]!=paper;}
+            assert(visible>100);
+        }
+        // Real system locking returns home and reloads the already purchased reward exactly once.
+        s.bag={};const auto interruptedReward=Game::MarketShop::boxReward(s);const auto lockCoins=s.coins;
+        tap(272,414);assert(ui.page()==Page::BOX_ARRIVE&&s.coins==lockCoins-300);verifySaved();
+        assert(Game::ItemInventory::count(s,interruptedReward.item)==interruptedReward.amount);
+        assert(resources.marketOpens==musicOpens);assert(!app.prepareDisplayLock(t));assert(!ui.active());
+        bool lockReady=false;
+        for(int i=0;i<200&&!lockReady;++i){
+            t+=50;app.update(t);app.render(canvas);app.markRendered();
+            if(app.displayLockAllowed())lockReady=app.prepareDisplayLock(t);
+        }
+        assert(lockReady&&!app.market_&&app.sceneFlow.current()==AppSceneFlow::Scene::HOME);
+        assert(s.coins==lockCoins-300&&Game::ItemInventory::count(s,interruptedReward.item)==interruptedReward.amount);
+        verifySaved();assert(loaded.coins==lockCoins-300&&Game::ItemInventory::count(loaded,interruptedReward.item)==interruptedReward.amount);
+        assert(loaded.marketSeason.stock[Game::MarketShop::BOX]==0&&AudioManager::ins().requestedMusic()==MusicTrack::HOME);
+        std::puts("market-box-app: real lock-to-room and reload preserve paid reward once; nine native reward icons match ordinary UI");
         std::puts("market-procurement-app: concrete purchases, save rollback/partial commit, next-opening explore/growth/rare/default16, advice durability, two frozen boxes and three Gengar prompts OK");
     }
 };
