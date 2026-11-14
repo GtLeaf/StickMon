@@ -572,6 +572,8 @@ private:
     uint32_t explorePreviewLastRenderRequestMs = 0;
     uint8_t exploreMenuCursor = 0;
     int pressedExploreMenuItem = -1;
+    uint8_t explorePostcardPoolOffset_ = 0;
+    void advanceExplorePostcardPool(int direction);
     int pressedRoomItem = -1;
     int pressedCommunicationItem = -1;
     MusicContext musicContext = MusicContext::HOME;

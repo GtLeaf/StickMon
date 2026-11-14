@@ -1,3 +1,4 @@
+#include "ui/ExplorePostcardLayout.h"
 #include "game/MarketMapData.h"
 #include "game/MarketWelcome.h"
 #include "ui/common/MarketView.h"
@@ -1976,7 +1977,7 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
                 event.x, event.y, selectedExploreListIndex(),
                 ExploreDestinations::visibleCount(gameState));
             exploreDragStartArea = selectedExploreListIndex();
-            requestRenderRows(0, EXPLORE_SELECTOR_TOP_HEIGHT);
+            if(!EXPLORE_POSTCARD) requestRenderRows(0, EXPLORE_SELECTOR_TOP_HEIGHT);
         } else if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_MENU) {
             pressedExploreMenuItem = exploreRouteMenuItemAt(event.x, event.y);
             requestRenderRows(0, 448);
@@ -2134,15 +2135,25 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
                 requestRenderRows(0, 448);
             }
 #endif
+        } else if (EXPLORE_POSTCARD && sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_AREAS &&
+                   postcardPoolAt(touchStartX,touchStartY)) {
+            if(std::max(std::abs(event.x-touchStartX),std::abs(event.y-touchStartY))>TAP_SLOP){
+                dragging=true;pressedExploreArea=-1;
+            }
         } else if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_AREAS &&
-                   touchStartY < EXPLORE_SELECTOR_TOP_HEIGHT) {
+                   (EXPLORE_POSTCARD ? postcardSceneGestureAt(touchStartX,touchStartY)
+                                      : touchStartY < EXPLORE_SELECTOR_TOP_HEIGHT)) {
+            if(EXPLORE_POSTCARD && std::abs(event.y-touchStartY)>DRAG_START_SLOP &&
+               std::abs(event.y-touchStartY)>=std::abs(event.x-touchStartX)) {
+                pressedExploreArea=-1;dragging=true;break;
+            }
             if (std::abs(event.y - touchStartY) > DRAG_START_SLOP) {
                 // Scene selection is a horizontal carousel. A vertical move
                 // still cancels the press, but does not select an area.
                 if (std::abs(event.x - touchStartX) <= DRAG_START_SLOP) {
                     pressedExploreArea = -1;
                     dragging = true;
-                    requestRenderRows(0, EXPLORE_SELECTOR_TOP_HEIGHT);
+                    if(!EXPLORE_POSTCARD) requestRenderRows(0, EXPLORE_SELECTOR_TOP_HEIGHT);
                     break;
                 }
             }
@@ -2157,14 +2168,15 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
                 int startArea = exploreDragStartArea >= 0
                     ? exploreDragStartArea : selectedExploreListIndex();
                 int candidate = startArea + static_cast<int>(std::lround(
-                    (event.x - touchStartX) /
+                    (EXPLORE_POSTCARD ? touchStartX-event.x : event.x-touchStartX) /
                     static_cast<float>(EXPLORE_SELECTOR_AREA_SPACING)));
                 candidate = std::clamp(candidate, 0, std::max(0, count - 1));
                 if (candidate != selectedExploreListIndex()) {
                     selectExploreDestination(static_cast<uint8_t>(candidate),
                                       event.timestampMs);
+                    if(EXPLORE_POSTCARD) requestFullRender();
                 }
-                requestRenderRows(0, EXPLORE_PREVIEW_RENDER_BOTTOM);
+                if(!EXPLORE_POSTCARD) requestRenderRows(0, EXPLORE_PREVIEW_RENDER_BOTTOM);
             }
         } else if (sceneFlow.current() == AppSceneFlow::Scene::TEAM &&
                    teamController_.state().teamMovesOpen &&
@@ -2343,6 +2355,11 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
                              event.timestampMs);
                 }
             }
+        } else if (EXPLORE_POSTCARD && sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_AREAS &&
+                   postcardPoolAt(touchStartX,touchStartY) && dragging) {
+            const int dx=event.x-touchStartX,dy=event.y-touchStartY;
+            if(std::abs(dx)>28 && std::abs(dx)>std::abs(dy))
+                advanceExplorePostcardPool(dx<0?1:-1);
         } else if (evolutionTouchWasConsumed) {
             // A touch that began while evolution was running cannot cross the
             // completion boundary and acknowledge the completed evolution.
@@ -3259,6 +3276,9 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
     }
 
     if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_AREAS) {
+        if (EXPLORE_POSTCARD && postcardPoolAt(x,y)) {
+            advanceExplorePostcardPool(1);return;
+        }
         if (exploreSelectionBackAt(x, y)) {
             clearExplorePreview();
             sceneFlow.openMenu(AppSceneFlow::Scene::HOME);
@@ -3289,7 +3309,8 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
                 selectExploreDestination(static_cast<uint8_t>(area), nowMs);
                 toast = nullptr;
             }
-            requestRenderRows(0, EXPLORE_SELECTOR_BUTTON_TOP);
+            if(EXPLORE_POSTCARD) requestFullRender();
+            else requestRenderRows(0,EXPLORE_SELECTOR_BUTTON_TOP);
         }
         return;
     }
@@ -3644,6 +3665,8 @@ void AmoledApp::update(uint32_t nowMs) {
         float target = selectedExploreListIndex() < visibleAreaCount
             ? static_cast<float>(selectedExploreListIndex())
             : static_cast<float>(std::max<int>(0, visibleAreaCount - 1));
+        if(EXPLORE_POSTCARD) exploreAreaAnimCursor=target;
+        else {
         float difference = target - exploreAreaAnimCursor;
         if (std::fabs(difference) < 0.05f) {
             if (exploreAreaAnimCursor != target) {
@@ -3659,6 +3682,7 @@ void AmoledApp::update(uint32_t nowMs) {
         }
         exploreAreaAnimating = std::fabs(target - exploreAreaAnimCursor) >= 0.05f;
 
+        }
         bool previewLoadWasDue = explorePreviewLoadPending &&
             static_cast<int32_t>(nowMs - explorePreviewNextLoadAt) >= 0;
         updateExplorePreviewLoading(nowMs);
@@ -3666,7 +3690,7 @@ void AmoledApp::update(uint32_t nowMs) {
             requestRenderRows(EXPLORE_PREVIEW_RENDER_TOP,
                               EXPLORE_PREVIEW_RENDER_BOTTOM);
         }
-        if (explorePreviewPool.count > 0) {
+        if (!EXPLORE_POSTCARD && explorePreviewPool.count > 0) {
             uint32_t elapsed = nowMs - explorePreviewStartedAt;
             uint32_t visualCycle = elapsed / EXPLORE_PREVIEW_CYCLE_MS;
             if (visualCycle != explorePreviewVisualCycle) {
@@ -3881,6 +3905,15 @@ void AmoledApp::update(uint32_t nowMs) {
     }
 }
 
+void AmoledApp::advanceExplorePostcardPool(int direction) {
+    if(selectedExploreDestination_==ExploreDestinations::MARKET)return;
+    const auto layout=postcardPoolLayout(explorePreviewFrames,explorePreviewPool.count,explorePostcardPoolOffset_);
+    if(layout.pages<2)return;
+    const int page=(layout.page+layout.pages+(direction<0?-1:1))%layout.pages;
+    explorePostcardPoolOffset_=layout.starts[page];
+    requestRenderRows(POSTCARD_POOL_TOP,POSTCARD_POOL_BOTTOM);
+}
+
 void AmoledApp::loadExplorePreview(uint32_t nowMs) {
     std::memset(explorePreviewSpeciesIds, 0,
                 sizeof(explorePreviewSpeciesIds));
@@ -3888,6 +3921,7 @@ void AmoledApp::loadExplorePreview(uint32_t nowMs) {
                 sizeof(explorePreloadSpeciesIds));
     std::memset(explorePreviewFrames, 0, sizeof(explorePreviewFrames));
     std::memset(explorePreviewHidden, 0, sizeof(explorePreviewHidden));
+    explorePostcardPoolOffset_ = 0;
     explorePreviewPool = ExplorePool::Pool{};
     explorePreloadSpeciesCount = 0;
     explorePreviewLoadPending = false;
@@ -3963,7 +3997,7 @@ void AmoledApp::refreshExplorePreviewFrames() {
         const PokemonSprites::SpriteFrame* frame =
             PokemonSprites::findCachedSpeciesSprite(
                 speciesId, PokemonSprites::SpriteKind::FRONT);
-        if (!frame) {
+        if (!frame && !EXPLORE_POSTCARD) {
             frame = PokemonSprites::findCachedSpeciesSprite(
                 speciesId, PokemonSprites::SpriteKind::ICON_0);
         }
@@ -7899,6 +7933,7 @@ void AmoledApp::render(Canvas565& canvas) const {
             model.previewFrames[index] = explorePreviewFrames[index];
             model.previewHidden[index] = explorePreviewHidden[index];
         }
+        model.previewOffset = explorePostcardPoolOffset_;
         model.pressedArea = pressedExploreArea;
         model.toast = toast;
         renderExploreScreen(canvas, model, renderCaches_.exploreBackground,
