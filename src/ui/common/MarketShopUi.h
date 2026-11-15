@@ -9,6 +9,7 @@
 #include "game/MarketShopService.h"
 #include "game/MarketSupply.h"
 #include "presentation/PixelRenderer.h"
+#include "presentation/TextBlock.h"
 #include "ui/common/MarketStallMotion.h"
 #include "ui/common/MarketListScroll.h"
 #include "ui/common/MarketUiFeedback.h"
@@ -197,6 +198,7 @@ private:
     uint8_t rewardAmount_ = 1;
     const char* error_ = nullptr;
     const char* greet_ = MarketShopText::GREET;
+    mutable TextBlock bodyText_;
 
     Rect row(int i) const { return {10, ROW_Y + i * ROW_H - scroll_, 348, ROW_H}; }
     static Rect back() { return {16, 394, 160, 44}; }
@@ -344,13 +346,17 @@ private:
         if (box) GameAssets::drawCentered(GameAssets::Kind::MARKET_MYSTERY_BOX, cx, cy + offset());
         else icon(id, cx, cy);
     }
-    // Shop descriptions use a space as a soft break; split them over two lines.
+    void drawBody(const char* value, Rect r, bool centered = false, int gap = 2, uint16_t color = 0) const {
+        TextBlock::Options options;
+        options.width = r.w; options.maxHeight = r.h; options.font = BitmapText::Font::PX32;
+        options.lineGap = uint16_t(gap);
+        options.align = centered ? TextBlock::Align::CENTER : TextBlock::Align::LEFT;
+        bodyText_.setText(value); bodyText_.setOptions(options);
+        bodyText_.draw(PixelRenderer::canvas(), r.x, r.y + offset(), color ? color : ink());
+    }
+
     void description(Game::ItemId id, int y) const {
-        char buf[96]; std::snprintf(buf, sizeof(buf), "%s", Game::ShopService::shortDescription(id));
-        char* second = std::strchr(buf, ' ');
-        if (second) *second++ = 0;
-        text(24, y, buf);
-        if (second && *second) text(24, y + 34, second);
+        drawBody(Game::ShopService::shortDescription(id), {24, y, 320, 66});
     }
 
     void renderGreet() const {
@@ -358,17 +364,7 @@ private:
         auto& c = PixelRenderer::canvas();
         c.fillRect(0, y, W, H - y, paper());
         c.fillRect(0, y, W, 2, edge()); c.drawFastHLine(0, y + 4, W, light()); c.drawFastHLine(1, y + 6, W - 2, edge());
-        char line1[128], line2[128]; line2[0] = 0;
-        std::snprintf(line1, sizeof(line1), "%s", greet_);
-        size_t split = 0; int w = 0;
-        for (const auto* p = reinterpret_cast<const uint8_t*>(line1); *p;) {
-            const int n = *p < 0x80 ? 1 : *p < 0xe0 ? 2 : *p < 0xf0 ? 3 : 4;
-            const int adv = n == 1 ? 16 : 32;
-            if (w + adv > W - 48) break;
-            w += adv; p += n; split += size_t(n);
-        }
-        if (line1[split]) { std::snprintf(line2, sizeof(line2), "%s", line1 + split); line1[split] = 0; }
-        text(24, H - 106, line1); if (line2[0]) text(24, H - 66, line2);
+        drawBody(greet_, {24, H - 106, 320, 80}, false, 8);
     }
 
     void renderShelf(const Game::GameState& s) const {
@@ -478,7 +474,7 @@ private:
         slotIcon(id, box, 44, 240);
         text(80, 224, name);
         rtext(344, 224, "×1");
-        if (box) text(24, 282, MarketShopText::BOX_LINE1);
+        if (box) drawBody(MarketShopText::BOX_LINE1, {24, 282, 320, 66});
         else description(id, 282);
         char line[64];
         std::snprintf(line, sizeof(line), MarketShopText::STOCK, bought ? stockBefore_ : s.marketSeason.stock[slot_]);
@@ -502,9 +498,8 @@ private:
         if (slot_ == Game::MarketShop::BOX) { icon(id,W/2,264); renderBoxText(MarketBoxPerformance::OPEN_MS); return; }
         icon(id, W / 2, 246);
         char got[64];
-        if (slot_ == Game::MarketShop::BOX) std::snprintf(got, sizeof(got), MarketShopText::BOX_GOT, Game::ShopService::shortName(id), rewardAmount_);
-        else std::snprintf(got, sizeof(got), MarketShopText::GOT, Game::ShopService::shortName(id));
-        ctext(282, got);
+        std::snprintf(got, sizeof(got), MarketShopText::GOT, Game::ShopService::shortName(id));
+        drawBody(got, {24, 282, 320, 32}, true);
         ctext(326, MarketShopText::GOT_LINE2);
         button(wide(), MarketShopText::CONTINUE, true);
     }
@@ -514,7 +509,7 @@ private:
         std::snprintf(got,sizeof(got),MarketShopText::BOX_GOT,Game::ShopService::shortName(rewardItem_),rewardAmount_);
         const float show=smooth(p(ms,900,1120));
         if (show>0) {
-            ctext(310,got,32,fade(40,56,80,show));
+            drawBody(got, {24,310,320,32}, true, 2, fade(40,56,80,show));
             ctext(350,MarketShopText::GOT_LINE2,16,fade(89,105,88,show));
         }
         if (ms>1050) {

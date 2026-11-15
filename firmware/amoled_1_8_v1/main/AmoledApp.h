@@ -575,6 +575,7 @@ private:
     uint8_t exploreMenuCursor = 0;
     int pressedExploreMenuItem = -1;
     uint8_t explorePostcardPoolOffset_ = 0;
+    bool explorePostcardShowPets_ = false;
     PostcardPoolClock explorePostcardClock_;
     void advanceExplorePostcardPool(int direction, uint32_t nowMs, bool manual = true);
     int pressedRoomItem = -1;

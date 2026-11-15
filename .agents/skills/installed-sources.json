@@ -1,0 +1,28 @@
+{
+  "method": "upstream documented manual copy",
+  "scope": "project",
+  "skills": [
+    {
+      "name": "impeccable",
+      "repository": "https://github.com/pbakaus/impeccable",
+      "commit": "2b86d9c07b97d4bed7de23583e1bd1e58dd2baae",
+      "sourcePath": ".agents/skills/impeccable",
+      "installedPath": ".agents/skills/impeccable",
+      "license": "Apache-2.0",
+      "files": 70,
+      "bytes": 2318981,
+      "installedDate": "2026-11-15"
+    },
+    {
+      "name": "game-ui-ux",
+      "repository": "https://github.com/parodyband/game-ui-ux",
+      "commit": "f36ba36201ff210b365e4e8e8b0f184dae76f551",
+      "sourcePath": "skills/game-ui-ux",
+      "installedPath": ".agents/skills/game-ui-ux",
+      "license": "MIT",
+      "files": 2,
+      "bytes": 12584,
+      "installedDate": "2026-11-15"
+    }
+  ]
+}

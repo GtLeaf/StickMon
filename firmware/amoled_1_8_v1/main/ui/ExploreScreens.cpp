@@ -959,8 +959,9 @@ AmoledUi::Rect exploreRouteActorBounds(const ExploreRouteViewModel& model) {
 int exploreAreaAt(int x, int y, uint8_t selectedArea,
                   uint8_t visibleAreaCount) {
     if constexpr (EXPLORE_POSTCARD) {
-        if (y<146 || y>=206) return -1;
-        int target = x>=4 && x<60 ? int(selectedArea)-1 : x>=308 && x<364 ? int(selectedArea)+1 : -1;
+        const int cy=358;
+        if (y<334 || y>=382) return -1;
+        int target = x>=24 && x<68 ? int(selectedArea)-1 : x>=300 && x<344 ? int(selectedArea)+1 : -1;
         return target>=0 && target<visibleAreaCount ? target : -1;
     }
     if (y < 0 || y >= EXPLORE_SELECTOR_TOP_HEIGHT) return -1;
@@ -1178,7 +1179,7 @@ void renderExploreScreen(Canvas565& canvas, const ExploreViewModel& model,
     UiCommon::PageClip clip(canvas,rowBegin,rowEnd);
     if(rowBegin>=rowEnd)return;
     renderExplorePostcard(canvas,model,rowBegin,rowEnd);
-    drawToast(canvas,model.toast);
+    ThemedUi::drawToast(canvas,model.toast);
 #else
     renderExploreLegacyScreen(canvas,model,cache,rowBegin,rowEnd);
 #endif

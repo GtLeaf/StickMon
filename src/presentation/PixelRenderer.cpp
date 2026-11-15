@@ -324,11 +324,11 @@ void drawGlyphPass(Canvas565& canvas, int x, int y, const uint8_t* bitmap,
 }
 
 bool usesUnscii(uint32_t codepoint) {
-    return codepoint < 0x80 || codepoint == 0x2640 || codepoint == 0x2642;
+    return BitmapText::usesUnscii(codepoint);
 }
 
 int glyphAdvance(uint32_t codepoint) {
-    return usesUnscii(codepoint) ? ASCII_CELL_WIDTH : NATIVE_TEXT_HEIGHT;
+    return BitmapText::advance(codepoint, BitmapText::Font::PX16);
 }
 
 // AMOLED native-text coordinates are physical; the legacy layoutScale path
@@ -617,6 +617,54 @@ void PixelRenderer::text(Canvas565& target, int x, int y, const char* value,
         drawNativeTextPass(target, x, y, value, color);
     } else {
         drawTextPass(target, x, y, value, color);
+    }
+}
+
+void PixelRenderer::bitmapText(Canvas565& target, int x, int y, const char* value,
+                               uint16_t color, BitmapText::Font font) {
+    if (!value) return;
+    if (font == BitmapText::Font::PX16) {
+        drawTextPass(target, x, y, value, color);
+        return;
+    }
+    if (target.renderScale() == 1) {
+        const bool native = target.nativeText();
+        target.setNativeText(true);
+        drawNativeTextPass(target, x, y, value, color);
+        target.setNativeText(native);
+        return;
+    }
+    // Legacy/scaled canvases use logical 32px cells too. The native path above
+    // deliberately targets physical pixels, so rasterize these cells through
+    // drawPixel here, which applies the caller's Canvas scale and clip.
+    int cursor = x;
+    const char* p = value;
+    while (*p) {
+        const uint32_t cp = readUtf8(p);
+        if (cp == '\n') { cursor = x; y += 32; continue; }
+        const bool ascii = usesUnscii(cp);
+        const int w = BitmapText::advance(cp, font);
+        if (cp != ' ') {
+            const auto face = ascii ? FontFace::UNSCII_ASCII : FontFace::SARASA_CJK;
+            const auto* bitmap = FontResource::ins().findLargeGlyphBitmap(cp, face);
+            if (bitmap) {
+                for (int row = 0; row < 32; ++row) {
+                    const uint32_t bits = readLargeGlyphRow(bitmap, row);
+                    for (int col = 0; col < w; ++col)
+                        if (bits & (1UL << (31 - col))) target.drawPixel(cursor + col, y + row, color);
+                }
+            } else {
+                const auto* fallback = ascii ? nullptr : findFontFallbackCNGlyph(cp);
+                if (fallback) {
+                    for (int row = 0; row < 16; ++row) {
+                        const auto bits = readGlyphRow(fallback->bitmap, row, false);
+                        for (int col = 0; col < 16; ++col) if (bits & (1U << (15 - col)))
+                            target.fillRect(cursor + col * 2, y + row * 2, 2, 2, color);
+                    }
+                } else target.drawRect(cursor + 1, y + 2, ascii ? 12 : 24, 24, color);
+            }
+        }
+        cursor += w;
     }
 }
 

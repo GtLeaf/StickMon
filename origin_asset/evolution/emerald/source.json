@@ -1,0 +1,12 @@
+{
+  "source": "https://github.com/pret/pokeemerald/tree/master/graphics/evolution_scene",
+  "palette_sequence_source": "https://github.com/pret/pokeemerald/blob/master/src/evolution_scene.c",
+  "sha256": {
+    "bg.png": "3ecb4fba82795a640276a5ecf9725a7f992a8cc1ff4bad18b5371efccc2f5b10",
+    "bg_inner.bin": "c80efd4a71e8a84f3300a86e4126eda062325ca4c4084d00b569e412826f1d47",
+    "bg_outer.bin": "a2fb09b8131495e9913b02ec23ffa1c58207c083af465100099a2d802f0f62d8",
+    "bg_anim.pal": "ff58d56dc450a23d1122c1184eead7de2104f206c179ab703e79ba0bdae97b48",
+    "bg_anim_intro.pal": "49dda85444a1197acbaaee745b7fc3679ee1c99e87bb81c5ea8be3bb0f43b106",
+    "palette-index.json": "b286feb563672303d73a6c88b0dfd61f6e40a3ebeb75a3155537210a826244c7"
+  }
+}

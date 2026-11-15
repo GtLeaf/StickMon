@@ -17,7 +17,7 @@ def page_controller_binary() -> Path:
     atexit.register(directory.cleanup)
     return build_amoled_host(
         Path(directory.name) / "amoled-page-controllers",
-        ["tools/amoled_page_controller_host.cpp"],
+        ["tools/amoled_page_controller_host.cpp", "tools/amoled_checksum_guard.cpp"],
     )
 
 

@@ -17,6 +17,7 @@
 #include "presentation/Canvas565.h"
 #include "presentation/PixelRenderer.h"
 #include "ui/UiCommon.h"
+#include "ui/UiTheme.h"
 #include "ui/RenderCaches.h"
 #include "ui/ExploreMapRenderer.h"
 
@@ -1386,24 +1387,22 @@ int main(int argc, char** argv) {
             char name[64];
             std::snprintf(name, sizeof(name), "settings-reset-confirm-%d", pressed);
             checkPage(name, reset, renderSettingsScreen);
-            assert(canvas.readPixel(106, 418) == PixelRenderer::rgb(
-                pressed == 0 ? 53 : 36, pressed == 0 ? 76 : 54,
-                pressed == 0 ? 83 : 61));
-            assert(canvas.readPixel(262, 418) == PixelRenderer::rgb(
-                pressed == 1 ? 129 : 91, pressed == 1 ? 59 : 49,
-                pressed == 1 ? 68 : 55));
+            assert(canvas.readPixel(106, 430) == UiTheme::current().control);
+            assert(canvas.readPixel(262, 430) == UiTheme::current().danger);
+            assert((canvas.readPixel(106, 390) != UiTheme::current().control) == (pressed == 0));
+            assert((canvas.readPixel(262, 390) != UiTheme::current().danger) == (pressed == 1));
         }
         reset.toast = Ui::Settings::RESET_FAILED;
         checkPage("settings-reset-failed-toast", reset, renderSettingsScreen);
-        assert(settingsResetChoiceAt(36, 354) == 0);
-        assert(settingsResetChoiceAt(175, 425) == 0);
-        assert(settingsResetChoiceAt(192, 354) == 1);
-        assert(settingsResetChoiceAt(331, 425) == 1);
-        for (int x : {35, 176, 184, 191, 332}) {
+        assert(settingsResetChoiceAt(20, 384) == 0);
+        assert(settingsResetChoiceAt(177, 431) == 0);
+        assert(settingsResetChoiceAt(190, 384) == 1);
+        assert(settingsResetChoiceAt(347, 431) == 1);
+        for (int x : {19, 178, 184, 189, 348}) {
             assert(settingsResetChoiceAt(x, 390) == -1);
         }
-        assert(settingsResetChoiceAt(262, 353) == -1);
-        assert(settingsResetChoiceAt(262, 426) == -1);
+        assert(settingsResetChoiceAt(262, 383) == -1);
+        assert(settingsResetChoiceAt(262, 432) == -1);
         assert(settingsResetChoiceAt(40, 38) == -1);
         assert(settingsResetChoiceAt(184, 200) == -1);
         return 0;
@@ -1905,19 +1904,20 @@ int main(int argc, char** argv) {
     assert(computerItemAt(200, 176, ComputerViewModel::Page::MENU) == 1);
     assert(computerItemAt(200, 262, ComputerViewModel::Page::MENU) == -1);
     assert(computerItemAt(200, 348, ComputerViewModel::Page::MENU) == -1);
-    assert(settingsItemAt(200, 90) == 0);
-    assert(settingsItemAt(200, 323) == SETTINGS_POWER_SAVE_ITEM);
-    assert(settingsItemAt(200, 324) == SETTINGS_RESET_GAME_ITEM);
-    assert(settingsItemAt(200, 383) == SETTINGS_RESET_GAME_ITEM);
+    assert(settingsItemAt(200, 90) == -1);
+    assert(settingsItemAt(200, 148) == SETTINGS_BRIGHTNESS_ITEM);
+    assert(settingsItemAt(200, 323) == SETTINGS_GAME_SPEED_ITEM);
+    assert(settingsItemAt(200, 324) == SETTINGS_POWER_SAVE_ITEM);
+    assert(settingsItemAt(200, 375) == SETTINGS_POWER_SAVE_ITEM);
     assert(settingsItemAt(200, 384) == -1);
-    assert(settingsItemAt(200, 400) == -1);
-    assert(settingsItemAt(200, 324, true) == SETTINGS_RESET_GAME_ITEM);
-    assert(settingsItemAt(200, 383, true) == SETTINGS_RESET_GAME_ITEM);
+    assert(settingsItemAt(200, 400) == SETTINGS_RESET_GAME_ITEM);
+    assert(settingsItemAt(100, 400, true) == SETTINGS_RESET_GAME_ITEM);
+    assert(settingsItemAt(200, 383, true) == -1);
     const int updateItem = STICKMON_ENABLE_DEBUG_FEATURES
-        ? SETTINGS_SYSTEM_UPDATE_ITEM : -1;
-    assert(settingsItemAt(200, 384, true) == updateItem);
-    assert(settingsItemAt(200, 443, true) == updateItem);
-    assert(settingsItemAt(200, 444, true) == -1);
+        ? SETTINGS_SYSTEM_UPDATE_ITEM : SETTINGS_RESET_GAME_ITEM;
+    assert(settingsItemAt(200, 388, true) == updateItem);
+    assert(settingsItemAt(200, 431, true) == updateItem);
+    assert(settingsItemAt(200, 432, true) == -1);
     assert(settingsItemAt(200, 400, true) == updateItem);
     assert(settingsItemAt(200, 447, true) == -1);
     assert(settingsItemAt(200, 448, true) == -1);

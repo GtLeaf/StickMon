@@ -10,6 +10,7 @@
 #include "game/BattleSystem.h"
 #include "game/MarketTutorService.h"
 #include "presentation/PixelRenderer.h"
+#include "presentation/TextBlock.h"
 #include "ui/common/MarketStallMotion.h"
 #include "ui/common/MarketUiFeedback.h"
 #include "ui/common/MarketCoinHud.h"
@@ -70,7 +71,7 @@ public:
         if (welcome) std::snprintf(greet_, sizeof(greet_), "%s", welcome);
     }
     void close() { feedback_.clear(); page_ = Page::CLOSED; transition_ = Transition::NONE; cancelTouch(); pending_ = false; }
-    void cancelTouch() { tap_.cancel(); scrollMotion_.cancel(); }
+    void cancelTouch() { tap_.cancel(); scrollMotion_.cancel(); confirmScrollMotion_.cancel(); }
 
     // Only an explicit completed tap advances the greeting.
     bool update(uint32_t deltaMs) {
@@ -98,6 +99,9 @@ public:
         if (page_ == Page::RECALL_LIST)
             changed = scrollMotion_.update(deltaMs, scrollMaximum_, scroll_) || changed;
         else scrollMotion_.cancel();
+        if (page_ == Page::CONFIRM && mode_ != Mode::TRAIN)
+            changed = confirmScrollMotion_.update(deltaMs, confirmScrollMaximum(), confirmScroll_) || changed;
+        else confirmScrollMotion_.cancel();
         return changed;
     }
 
@@ -135,6 +139,12 @@ public:
             return none;
         }
         if (page_ == Page::RECALL_LIST && listDrag(e, state)) return none;
+        if (page_ == Page::CONFIRM && mode_ != Mode::TRAIN) {
+            if (prepareConfirmBody(state)) { confirmScroll_ = 0; confirmScrollMotion_.cancel(); }
+            const auto r = confirmBodyRect();
+            if (confirmScrollMotion_.touch(e, {r.x, r.y, r.w, r.h}, confirmScrollMaximum(),
+                                           confirmScroll_, tap_)) return none;
+        }
         const int target = e.type == Type::DOWN || e.type == Type::UP ? hit(e.x, e.y, state) : -1;
         const int clicked = tap_.update(e, target);
         if (clicked < 0) return none;
@@ -143,7 +153,12 @@ public:
                 page_ == Page::RESULT ? PRIMARY : page_ == Page::TRAIN_MOVE ? BACK : FOOTER;
             return activate(backTarget, state);
         }
-        return activate(clicked, state);
+        const Page previous = page_;
+        const auto request = activate(clicked, state);
+        if (page_ == Page::CONFIRM && previous != Page::CONFIRM && mode_ != Mode::TRAIN) {
+            confirmScroll_ = 0; confirmScrollMotion_.cancel(); prepareConfirmBody(state);
+        }
+        return request;
     }
 
     // Result of the application's save for the last request.
@@ -207,6 +222,9 @@ private:
     Game::MoveId recallMove_ = 0;
     int scroll_ = 0, scrollMaximum_ = 0;
     MarketListScroll scrollMotion_;
+    mutable TextBlock bodyText_;
+    MarketListScroll confirmScrollMotion_;
+    int confirmScroll_ = 0;
     bool pending_ = false;
     const char* error_ = nullptr;
     char greet_[96]{}, result1_[96]{}, result2_[64]{};
@@ -473,7 +491,7 @@ private:
     void renderHud(const Game::GameState& s, const MarketCoinMotion* motion) const {
         const int y = 16 + hudOffset();
         hudBadge(23, y, MarketTutorText::TITLE);
-        MarketCoinHud::render(s.coins,motion,y,28);
+        MarketCoinHud::render(s.coins,motion,y);
     }
     void panel(int y) const {
         auto& c = PixelRenderer::canvas();
@@ -567,33 +585,6 @@ private:
             if (used > 0 && size_t(used) < n) std::snprintf(out + used, n - used, MarketTutorText::ACCURACY, m->accuracy);
         }
     }
-    static int wrappedLines(const char* s, int width, int size) {
-        int lines = 1, used = 0;
-        for (const auto* p = reinterpret_cast<const uint8_t*>(s); *p;) {
-            if (*p == '\n') { ++lines; used = 0; ++p; continue; }
-            const int n = *p < 0x80 ? 1 : *p < 0xe0 ? 2 : *p < 0xf0 ? 3 : 4;
-            const int advance = n == 1 ? size / 2 : size;
-            if (used + advance > width) { ++lines; used = 0; }
-            used += advance; p += n;
-        }
-        return lines;
-    }
-    void wrapText(int x, int y, const char* s, int width, int lines, int size = 32, bool centered = false) const {
-        char buf[192];
-        const auto* p = reinterpret_cast<const uint8_t*>(s);
-        for (int lineIndex = 0; *p && lineIndex < lines; ++lineIndex) {
-            int w = 0; size_t used = 0;
-            while (*p) {
-                if (*p == '\n') { ++p; break; }
-                const int n = *p < 0x80 ? 1 : *p < 0xe0 ? 2 : *p < 0xf0 ? 3 : 4;
-                const int advance = n == 1 ? size / 2 : size;
-                if (w + advance > width || used + n >= sizeof(buf)) break;
-                std::memcpy(buf + used, p, n); used += n; p += n; w += advance;
-            }
-            buf[used] = 0;
-            text(centered ? x + (width - w) / 2 : x, y + lineIndex * (size + 2), buf, size);
-        }
-    }
     void memberCard(const Game::GameState& s, int i, bool enabled) const {
         const Rect r = tutorMember(i, members(s));
         auto& c = PixelRenderer::canvas();
@@ -610,19 +601,13 @@ private:
     // ---- pages
     void renderGreet() const {
         panel(H - GREET_H);
-        char line1[sizeof(MarketTutorText::SPEAKER) + sizeof(greet_) - 1];
-        char line2[sizeof(line1)]; line2[0] = 0;
-        std::snprintf(line1, sizeof(line1), "%s%s", MarketTutorText::SPEAKER, greet_);
-        // Two 32px lines of at most 10 CJK cells each.
-        size_t split = 0; int w = 0;
-        for (const auto* p = reinterpret_cast<const uint8_t*>(line1); *p;) {
-            const int n = *p < 0x80 ? 1 : *p < 0xe0 ? 2 : *p < 0xf0 ? 3 : 4;
-            const int adv = n == 1 ? 16 : 32;
-            if (w + adv > W - 48) break;
-            w += adv; p += n; split += n;
-        }
-        if (line1[split]) { std::snprintf(line2, sizeof(line2), "%s", line1 + split); line1[split] = 0; }
-        text(24, H - 106, line1); if (line2[0]) text(24, H - 66, line2);
+        char greeting[sizeof(MarketTutorText::SPEAKER) + sizeof(greet_) - 1];
+        std::snprintf(greeting, sizeof(greeting), "%s%s", MarketTutorText::SPEAKER, greet_);
+        TextBlock::Options options;
+        options.width = 320; options.maxHeight = 80; options.lineGap = 8;
+        options.font = BitmapText::Font::PX32;
+        bodyText_.setText(greeting); bodyText_.setOptions(options);
+        bodyText_.draw(PixelRenderer::canvas(), 24, H - 106 + panelOffset(), ink());
     }
 
     void renderMenu(const Game::GameState& s) const {
@@ -664,13 +649,39 @@ private:
         }
     }
 
+    Rect confirmBodyRect() const { return {24, 270, 320, mode_ == Mode::TEACH ? 96 : 76}; }
+    int confirmScrollMaximum() const {
+        return std::max(0, bodyText_.measure().height - confirmBodyRect().h);
+    }
+    bool prepareConfirmBody(const Game::GameState& s) const {
+        const auto& m = s.team[member_];
+        const auto* old = findMove(slotMove(m, slot_));
+        const auto* move = findMove(chosenMove(s));
+        const char* who = speciesName(m);
+        char first[96], second[96]{}, body[192];
+        if (old) {
+            std::snprintf(first, sizeof(first), MarketTutorText::TEACH_LINE1, who, old->name);
+            std::snprintf(second, sizeof(second), mode_ == Mode::TEACH ? MarketTutorText::TEACH_LINE2 :
+                          MarketTutorText::RECALL_LINE2, move ? move->name : "");
+        } else {
+            std::snprintf(first, sizeof(first), mode_ == Mode::TEACH ? MarketTutorText::TEACH_EMPTY :
+                          MarketTutorText::RECALL_EMPTY, who, move ? move->name : "");
+        }
+        std::snprintf(body, sizeof(body), "%s%s", first, second);
+        TextBlock::Options options;
+        options.width = 320; options.maxHeight = confirmBodyRect().h;
+        options.font = BitmapText::Font::PX32;
+        options.align = mode_ == Mode::TEACH ? TextBlock::Align::CENTER : TextBlock::Align::LEFT;
+        const bool textChanged = bodyText_.setText(body);
+        return bodyText_.setOptions(options) || textChanged;
+    }
+
     void renderConfirm(const Game::GameState& s) const {
         const auto& m = s.team[member_];
         const MoveInfo* move = findMove(chosenMove(s));
         char title[96], l1[96], l2[96], n1[96], n2[96], label[24];
         l2[0] = 0;
         const char* who = speciesName(m);
-        const MoveInfo* old = findMove(slotMove(m, slot_));
         if (mode_ == Mode::TRAIN) {
             trainIcon(20, 220);
             std::snprintf(title, sizeof(title), MarketTutorText::TRAIN_CONFIRM_TITLE, move ? move->name : "");
@@ -687,13 +698,6 @@ private:
             if (mode_ == Mode::RECALL) scaleIcon(20, 220);
             if (mode_ == Mode::TEACH) std::snprintf(title, sizeof(title), "%s", move ? move->name : "");
             else std::snprintf(title, sizeof(title), MarketTutorText::RECALL_CONFIRM_TITLE, move ? move->name : "");
-            if (old) {
-                std::snprintf(l1, sizeof(l1), MarketTutorText::TEACH_LINE1, who, old->name);
-                std::snprintf(l2, sizeof(l2), mode_ == Mode::TEACH ? MarketTutorText::TEACH_LINE2 : MarketTutorText::RECALL_LINE2, move ? move->name : "");
-            } else {
-                std::snprintf(l1, sizeof(l1), mode_ == Mode::TEACH ? MarketTutorText::TEACH_EMPTY : MarketTutorText::RECALL_EMPTY, who, move ? move->name : "");
-            }
-            std::snprintf(n1, sizeof(n1), MarketTutorText::RESET_NOTE, old ? m.moveProficiency[slot_] : 0);
             if (mode_ == Mode::TEACH) {
                 const unsigned price = Game::MarketTutor::lessonPrice(move ? move->id : 0);
                 std::snprintf(n2, sizeof(n2), MarketTutorText::COINS_CHANGE, static_cast<unsigned long>(s.coins),
@@ -715,15 +719,12 @@ private:
             text(24, 332, n1, 16);
             text(24, 354, n2, 16);
         } else {
-            char body[192]; std::snprintf(body, sizeof(body), "%s%s%s", l1, l2[0] ? "\n" : "", l2);
-            const int lines = mode_ == Mode::TEACH ? 3 : 2;
-            const int size = wrappedLines(body, 320, 32) <= lines ? 32 : 16;
-            const int count = wrappedLines(body, 320, size);
-            const int bodyY = mode_ == Mode::TEACH ? 270 + (96 - count * (size + 2)) / 2 : 270;
-            wrapText(24, bodyY, body, 320, size == 32 ? lines : mode_ == Mode::TEACH ? 5 : 3, size,
-                     mode_ == Mode::TEACH);
+            prepareConfirmBody(s);
+            const auto r = confirmBodyRect();
+            const auto& measured = bodyText_.measure();
+            const int y = r.y + (mode_ == Mode::TEACH ? std::max(0, (r.h - measured.height) / 2) : 0);
+            bodyText_.draw(PixelRenderer::canvas(), r.x, y + panelOffset(), ink(), confirmScroll_);
             if (mode_ == Mode::RECALL) {
-                text(24, 338, n1, 16);
                 text(24, 356, n2, 16);
             }
         }
@@ -742,9 +743,13 @@ private:
         if (mode_ == Mode::TEACH) discIcon(160, 220, move ? move->type : TypeId::GHOST);
         else if (mode_ == Mode::TRAIN) trainIcon(160, 220);
         else scaleIcon(160, 220);
-        const int size = wrappedLines(result1_, 320, 32) <= 2 ? 32 : 16;
-        const int lines = wrappedLines(result1_, 320, size);
-        wrapText(24, 278 + (68 - lines * (size + 2)) / 2, result1_, 320, size == 32 ? 2 : 3, size, true);
+        TextBlock::Options options;
+        options.width = 320; options.maxHeight = 68; options.font = BitmapText::Font::PX32;
+        options.align = TextBlock::Align::CENTER;
+        bodyText_.setText(result1_); bodyText_.setOptions(options);
+        // Preserve the result panel's existing 34px row-slot alignment.
+        const int y = 278 + std::max(0, (68 - bodyText_.measure().height - options.lineGap) / 2);
+        bodyText_.draw(PixelRenderer::canvas(), 24, y + panelOffset(), ink());
         if (result2_[0]) ctext(354, result2_, 16);
         button(wide(), MarketTutorText::HOME, true);
     }
@@ -764,14 +769,13 @@ private:
             if (!move) { rowText(r, 24, MarketTutorText::EMPTY, "", "", true); continue; }
             const uint8_t p = m.moveProficiency[slot];
             if (p >= Game::MOVE_PROFICIENCY_MAX) {
-                rowText(r, 24, move->name, MarketTutorText::TRAIN_MAXED, MarketTutorText::MAXED, true, 0, 16);
+                rowText(r, 24, move->name, "", MarketTutorText::MAXED, true, 0, 16);
                 continue;
             }
-            char sub[64], right[24];
+            char right[24];
             const auto step = Game::MarketTutor::trainStep(p);
-            std::snprintf(sub, sizeof(sub), MarketTutorText::TRAIN_PROFICIENCY, p, Game::MarketTutor::trainedProficiency(p));
             std::snprintf(right, sizeof(right), MarketTutorText::TRAIN_COST, step.cost);
-            rowText(r, 24, move->name, sub, right, false, 0, 16);
+            rowText(r, 24, move->name, "", right, false, 0, 16);
         }
         char label[24];
         const auto cost = Game::MarketTutor::trainStep(m.moveProficiency[slot_]).cost;

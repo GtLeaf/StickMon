@@ -167,9 +167,11 @@ struct AmoledAppTestAccess {
         // the actual distance/occlusion query and production button rendering.
         const auto saved=*app.market_;
         auto& player=const_cast<Market::Actor&>(app.market_->actor(app.market_->data().residentCount));
-        assert(marketStandNear(*app.market_,0));
-        app.marketUi_.chatTarget=0;app.marketUi_.refresh(*app.market_);
-        assert(app.marketUi_.chatTarget==0);
+        // Kecleon/Gengar are service stalls; use the ordinary Kangaskhan NPC
+        // when exercising the typewriter dialogue controller.
+        assert(marketStandNear(*app.market_,2));
+        app.marketUi_.chatTarget=2;app.marketUi_.refresh(*app.market_);
+        assert(app.marketUi_.chatTarget==2);
         const auto chat=Ui::MarketWalkUi::chat(view),hit=Ui::MarketWalkUi::chatHit(view);
         assert(chat.x+chat.w/2==184&&chat.y==363&&chat.w==72&&chat.h==72&&hit.w==88&&hit.h==88);
         app.render(PixelRenderer::canvas());capture(output,"market-chat");

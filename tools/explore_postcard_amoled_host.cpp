@@ -28,38 +28,57 @@ static void run(AmoledApp& app){
     auto tap=[&](int x,int y){TouchEvent e{};e.x=x;e.y=y;e.type=TouchEventType::DOWN;e.timestampMs=++t;app.handleTouch(e);e.type=TouchEventType::UP;e.timestampMs=t+=60;app.handleTouch(e);};
     update();render("01-grass");
 #if STICKMON_EXPLORE_POSTCARD
+    assert(PixelRenderer::canvas().readPixel(0,447)!=0 && PixelRenderer::canvas().readPixel(367,447)!=0);
     assert(exploreStartAt(300,412)&&exploreSelectionBackAt(30,25));
-    // Exact shared header pixels, including the Back target and title anchor.
-    auto& c=PixelRenderer::canvas();std::vector<uint16_t> header(368*76);for(int y=0;y<76;y++)for(int x=0;x<368;x++)header[y*368+x]=c.readPixel(x,y);
-    UiCommon::drawPageHeader(c,"探险");for(int y=0;y<76;y++)for(int x=0;x<368;x++)if(c.readPixel(x,y))assert(header[y*368+x]==c.readPixel(x,y));
+    auto& c=PixelRenderer::canvas();
+    assert(c.readPixel(0,447)==PixelRenderer::rgb(247,236,217));
+    assert(c.readPixel(40,38)==PixelRenderer::rgb(234,215,186));
+    assert(!app.explorePostcardShowPets_);
+    tap(310,118);assert(app.explorePostcardShowPets_);render("01-grass-shown");
+    tap(310,118);assert(!app.explorePostcardShowPets_);render("01-grass-hidden");
     // Production full versus dirty-row composition must be identical.
     ExploreViewModel m;PixelCache565 cache;m.previewPool=app.explorePreviewPool;
     for(int i=0;i<ExplorePool::POOL_CAP;i++){m.previewFrames[i]=app.explorePreviewFrames[i];m.previewHidden[i]=app.explorePreviewHidden[i];}
-    m.visibleAreaCount=6;m.unlockedArea=3;m.selectedArea=3;
+    m.visibleAreaCount=6;m.unlockedArea=3;m.selectedArea=0;
     renderExploreScreen(c,m,cache);std::vector<uint16_t> full(368*448);for(int y=0;y<448;y++)for(int x=0;x<368;x++)full[y*368+x]=c.readPixel(x,y);
     c.fillRect(0,0,368,448,0);for(int y=0;y<448;y+=37)renderExploreScreen(c,m,cache,y,std::min(448,y+37));
     for(int y=0;y<448;y++)for(int x=0;x<368;x++)assert(full[y*368+x]==c.readPixel(x,y));
-    for(int id=0;id<7;id++){m.destinationMenu=true;m.visibleAreaCount=7;m.selectedArea=id;m.marketSelected=id==6;for(int j=0;j<7;j++){m.destinationIds[j]=j;m.destinationUnlocked[j]=j<4||j==6;}renderExploreScreen(c,m,cache);char name[30];std::snprintf(name,sizeof(name),"area-%d",id);shot(name);}
+    for(int id=0;id<7;id++){m.destinationMenu=true;m.visibleAreaCount=7;m.selectedArea=id;m.marketSelected=id==6;for(int j=0;j<7;j++){m.destinationIds[j]=j;m.destinationUnlocked[j]=j<4||j==6;}renderExploreScreen(c,m,cache);char name[30];std::snprintf(name,sizeof(name),"area-%d",id);shot(name);
+        int bottomInk=0;for(int x=0;x<368;x++)bottomInk+=c.readPixel(x,447)!=0;assert(bottomInk>8);
+        for(int y=0;y<448;y++)for(int x=0;x<368;x++)full[y*368+x]=c.readPixel(x,y);
+        c.fillRect(0,0,368,448,0);for(int y=0;y<448;y+=37)renderExploreScreen(c,m,cache,y,std::min(448,y+37));
+        for(int y=0;y<448;y++)for(int x=0;x<368;x++)assert(full[y*368+x]==c.readPixel(x,y));
+    }
     m.destinationMenu=true;m.visibleAreaCount=7;m.selectedArea=6;m.marketSelected=true;
     m.destinationIds[6]=6;m.destinationUnlocked[6]=false;m.marketDaysUntilOpen=3;
     renderExploreScreen(c,m,cache);shot("market-closed");
-    assert(c.readPixel(184,430)==PixelRenderer::rgb(39,53,59));
+    assert(c.readPixel(184,430)==PixelRenderer::rgb(227,212,191));
     // Tap right arrow selects a real visible destination; left returns.
-    tap(330,155);assert(app.selectedExploreListIndex()==grass+1);update();render("02-next");
-    tap(30,155);assert(app.selectedExploreListIndex()==grass);update();
+    assert(exploreAreaAt(322,358,grass,7)==grass+1);
+    assert(exploreAreaAt(322,120,grass,7)==-1);
+    tap(322,358);assert(app.selectedExploreListIndex()==grass+1);update();render("02-next");
+    tap(46,358);assert(app.selectedExploreListIndex()==grass);update();
     // Page boundaries use actual native widths; gestures cannot select maps
     // or trigger departure while captured by the lower scene region.
     const auto before=s;const auto pool=app.explorePreviewPool;
     const auto savedOffset=app.explorePostcardPoolOffset_;
     const PokemonSprites::SpriteFrame* oldFrames[ExplorePool::POOL_CAP];
     for(int i=0;i<ExplorePool::POOL_CAP;i++)oldFrames[i]=app.explorePreviewFrames[i];
-    PokemonSprites::SpriteFrame fixture[3]{};int widths[]={168,138,96};
+    PokemonSprites::SpriteFrame fixture[3]{};int widths[]={130,130,96};
     app.explorePreviewPool.count=3;
     for(int i=0;i<3;i++){fixture[i].width=widths[i];fixture[i].height=96;app.explorePreviewFrames[i]=&fixture[i];}
     app.explorePostcardPoolOffset_=0;
+    tap(184,300);assert(app.explorePostcardPoolOffset_==0 && !app.explorePostcardShowPets_);
+    tap(310,118);assert(app.explorePostcardShowPets_);
     tap(184,300);assert(app.explorePostcardPoolOffset_==2);
     auto send=[&](TouchEventType type,int x,int y){TouchEvent e{};e.x=x;e.y=y;e.type=type;e.timestampMs=t+=40;app.handleTouch(e);};
     auto swipe=[&](int x1,int y1,int x2,int y2){send(TouchEventType::DOWN,x1,y1);send(TouchEventType::MOVE,x2,y2);send(TouchEventType::UP,x2,y2);};
+    send(TouchEventType::DOWN,310,139);send(TouchEventType::MOVE,310,150);send(TouchEventType::UP,310,150);
+    assert(app.selectedExploreListIndex()==grass && app.explorePostcardShowPets_ && app.explorePostcardPoolOffset_==2);
+    swipe(310,118,100,118);assert(app.selectedExploreListIndex()==grass && app.explorePostcardShowPets_ && app.explorePostcardPoolOffset_==2);
+    swipe(310,118,310,270);assert(app.selectedExploreListIndex()==grass && app.explorePostcardShowPets_);
+    send(TouchEventType::DOWN,310,118);send(TouchEventType::MOVE,100,118);app.cancelTouch();send(TouchEventType::UP,100,118);
+    assert(app.selectedExploreListIndex()==grass && app.explorePostcardShowPets_);
     swipe(280,300,80,300);assert(app.explorePostcardPoolOffset_==0&&app.selectedExploreListIndex()==grass);
     swipe(80,300,280,300);assert(app.explorePostcardPoolOffset_==2&&app.selectedExploreListIndex()==grass);
     swipe(184,300,184,412);assert(app.explorePostcardPoolOffset_==2&&!app.pendingExpedition);
@@ -69,7 +88,7 @@ static void run(AmoledApp& app){
     app.explorePostcardClock_.pause();app.markRendered();
     app.update(t+=100);assert(app.explorePostcardPoolOffset_==0);
     app.update(t+=2999);assert(app.explorePostcardPoolOffset_==0);
-    app.update(++t);assert(app.explorePostcardPoolOffset_==2&&app.renderRowBegin()==218&&app.renderRowEnd()==372);
+    app.update(++t);assert(app.explorePostcardPoolOffset_==2&&app.renderRowBegin()==150&&app.renderRowEnd()==328);
     tap(184,300);assert(app.explorePostcardPoolOffset_==0);app.markRendered();
     app.update(t+=4999);assert(app.explorePostcardPoolOffset_==0);
     app.update(++t);assert(app.explorePostcardPoolOffset_==2);
@@ -82,7 +101,7 @@ static void run(AmoledApp& app){
     // A predominantly vertical drag must not select the next destination.
     swipe(280,100,200,350);assert(app.selectedExploreListIndex()==grass);
     // Upper scene swipe selects destination and includes the locked footer.
-    swipe(300,180,100,180);assert(app.selectedExploreListIndex()==grass+1);
+    swipe(300,146,100,146);assert(app.selectedExploreListIndex()==grass+1 && !app.explorePostcardShowPets_);
     app.selectExploreDestination(grass,t);update();
     app.markRendered();for(int i=0;i<5;i++){t+=33;app.update(t);assert(!app.needsRender());}
     tap(30,30);assert(app.sceneFlow.current()==AppSceneFlow::Scene::MAIN_MENU);
@@ -93,9 +112,10 @@ static void run(AmoledApp& app){
     // the two tallest species and an undiscovered silhouette.
     const uint16_t largeIds[]={6,130,75};
     PokemonSprites::setDynamicSceneSpecies(largeIds,3);PokemonSprites::preloadDynamicSpecies(largeIds,3);
-    auto rawPixel=[&](int area,int x,int y){const auto& art=ExplorePostcardArt::scenes[area];int row=y/2,col=x/2,current=0;
-        for(int j=art.rows[row];j<art.rows[row+1];j+=2){current+=art.runs[j];if(col<current)return art.palette[art.runs[j+1]];}assert(false);return uint16_t(0);};
     m={};m.visibleAreaCount=6;m.unlockedArea=5;m.selectedArea=5;
+    for(int nativeArea : {0,1,2,3,4,5}){
+    m.selectedArea=nativeArea;m.previewVisible=true;
+    const int feet=304;
     for(int pair=0;pair<2;pair++){
         m.previewPool.count=pair?1:2;
         for(int i=0;i<m.previewPool.count;i++){int id=pair?75:largeIds[i];m.previewPool.entries[i].speciesId=id;m.previewFrames[i]=PokemonSprites::findSpeciesSprite(id,PokemonSprites::SpriteKind::FRONT);assert(m.previewFrames[i]);m.previewHidden[i]=pair;}
@@ -104,20 +124,14 @@ static void run(AmoledApp& app){
         const int total=pair?168:268;int x=(368-total)/2;
         c.fillRect(0,0,368,448,0xF81F);
         for(int i=0;i<m.previewPool.count;i++){
-            auto* frame=m.previewFrames[i];int top=350-frame->height;
-            if(pair)PokemonSprites::drawFrameSilhouette(frame,x,top,PixelRenderer::rgb(126,145,145));
+            auto* frame=m.previewFrames[i];int top=feet-frame->height;
+            if(pair)PokemonSprites::drawFrameSilhouette(frame,x,top,PixelRenderer::rgb(0,0,0));
             else PokemonSprites::drawFrame(frame,x,top);
-            int inkPixels=0;for(int y=top;y<350;y++)for(int col=x;col<x+frame->width;col++)if(c.readPixel(col,y)!=0xF81F){assert(rendered[y*368+col]==c.readPixel(col,y));++inkPixels;}
+            int inkPixels=0;for(int y=top;y<feet;y++)for(int col=x;col<x+frame->width;col++)if(c.readPixel(col,y)!=0xF81F){assert(rendered[y*368+col]==c.readPixel(col,y));++inkPixels;}
             assert(inkPixels>100);x+=frame->width+12;
         }
     }
-    // An old Lv label or unmasked side seam changes these actual pixels.
-    for(int area : {0,3,5}){
-        m={};m.visibleAreaCount=6;m.unlockedArea=5;m.selectedArea=area;renderExploreScreen(c,m,cache);
-        for(int y=134;y<150;y++)for(int x=28;x<100;x++)assert(c.readPixel(x,y)==rawPixel(area,x,y));
-        for(int y=230;y<372;y++)for(int x : {0,367})assert(c.readPixel(x,y)!=rawPixel(area,x,y));
     }
-
     // Native byte ordering and single-row dirty updates must preserve every pixel.
     m.previewPool.count=2;for(int i=0;i<2;i++){m.previewFrames[i]=PokemonSprites::findSpeciesSprite(largeIds[i],PokemonSprites::SpriteKind::FRONT);m.previewHidden[i]=false;}
     renderExploreScreen(c,m,cache);std::vector<uint16_t> expected(368*448);
@@ -128,6 +142,18 @@ static void run(AmoledApp& app){
     c.fillRect(0,0,368,448,0);for(int y=0;y<448;y++)renderExploreScreen(c,m,cache,y,y+1);
     for(int y=0;y<448;y++)for(int x=0;x<368;x++)assert(expected[y*368+x]==c.readPixel(x,y));
     c.attach({original,368,448,originalOrder});
+    // Export every real destination using a progressed test save.
+    for(int i=0;i<Game::EXPLORE_AREA_COUNT;i++)s.explorePoolRerollCounts[i]=1;
+    app.sceneFlow.enter(AppSceneFlow::Scene::EXPLORE_AREAS);
+    for(uint8_t i=0;i<ExploreDestinations::visibleCount(s);++i){
+        app.lastInteractionMs=t;
+        app.selectExploreDestination(i,t);update();
+        char name[32];std::snprintf(name,sizeof(name),"live-area-%u",unsigned(ExploreDestinations::visibleId(i,s)==ExploreDestinations::MARKET?6:ExploreDestinations::visibleId(i,s)));
+        assert(!app.explorePostcardShowPets_);render(name);
+        tap(310,118);assert(app.explorePostcardShowPets_);
+        std::snprintf(name,sizeof(name),"live-area-%u-shown",unsigned(ExploreDestinations::visibleId(i,s)==ExploreDestinations::MARKET?6:ExploreDestinations::visibleId(i,s)));
+        render(name);
+    }
 #else
     assert(exploreStartAt(98,412)&&exploreSelectionBackAt(270,412));
     assert(!exploreStartAt(300,412)&&!exploreSelectionBackAt(30,25));
