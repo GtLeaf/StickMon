@@ -106,7 +106,6 @@ public:
     bool lockedHomePowerAllowed() const;
     void setDisplayLocked(bool locked) {
         if (locked && !displayLocked && market_) cancelTouch();
-        if(locked) explorePostcardClock_.pause();
         displayLocked = locked;
     }
     void forceRenderRegion(int left, int top, int right, int bottom) {
@@ -576,8 +575,7 @@ private:
     int pressedExploreMenuItem = -1;
     uint8_t explorePostcardPoolOffset_ = 0;
     bool explorePostcardShowPets_ = false;
-    PostcardPoolClock explorePostcardClock_;
-    void advanceExplorePostcardPool(int direction, uint32_t nowMs, bool manual = true);
+    void advanceExplorePostcardPool(int direction);
     int pressedRoomItem = -1;
     int pressedCommunicationItem = -1;
     MusicContext musicContext = MusicContext::HOME;

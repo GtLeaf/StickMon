@@ -1,5 +1,6 @@
 #pragma once
 #include <algorithm>
+#include "AmoledGeometry.h"
 #include "assets/PokemonSprites.h"
 #include "game/ExplorePool.h"
 
@@ -13,19 +14,13 @@ inline bool postcardPoolAt(int x,int y) {
 inline bool postcardSceneGestureAt(int x,int y) {
     return x>=24 && x<344 && y>=84 && y<328;
 }
-inline bool postcardPetsToggleAt(int x,int y) {return x>=288 && x<332 && y>=96 && y<140;}
-struct PostcardPoolClock {
-    uint32_t dueAt=0;
-    bool armed=false;
-    void pause(){armed=false;}
-    void manual(uint32_t now){dueAt=now+5000;armed=true;}
-    bool tick(uint32_t now,bool eligible){
-        if(!eligible){pause();return false;}
-        if(!armed){dueAt=now+3000;armed=true;return false;}
-        if(static_cast<int32_t>(now-dueAt)<0)return false;
-        dueAt=now+3000;return true;
-    }
-};
+inline constexpr int POSTCARD_NAV_BOTTOM=382;
+inline constexpr AmoledUi::Rect POSTCARD_TOGGLE_VISUAL{286,94,48,48};
+inline constexpr AmoledUi::Rect POSTCARD_TOGGLE_HIT{282,90,56,56};
+inline bool postcardPetsToggleAt(int x,int y) {return POSTCARD_TOGGLE_HIT.contains(x,y);}
+inline bool postcardPreviewGestureAt(int x,int y) {
+    return x>=24 && x<344 && y>=84 && y<POSTCARD_NAV_BOTTOM;
+}
 struct PostcardPoolLayout {
     uint8_t starts[ExplorePool::POOL_CAP]{};
     uint8_t pages=0,page=0,start=0,count=0;

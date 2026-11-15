@@ -14,6 +14,10 @@ static void cases(){
     p=layout({131,130});assert(p.pages==2&&p.count==1);
     p=postcardPoolLayout(frames,0,0);assert(p.pages==0&&p.count==0);
     frames[0]=nullptr;p=postcardPoolLayout(frames,1,0);assert(p.pages==1&&p.width==168&&p.count==1);
+    // Expanded56px toggle stays inside the card; the visual control is48px.
+    assert(postcardPetsToggleAt(282,90)&&postcardPetsToggleAt(337,145));
+    assert(!postcardPetsToggleAt(281,118)&&!postcardPetsToggleAt(338,118));
+    assert(!postcardPetsToggleAt(310,89)&&!postcardPetsToggleAt(310,146));
     assert(postcardPoolAt(36,150)&&postcardPoolAt(331,327));
     assert(!postcardPoolAt(184,149)&&!postcardPoolAt(184,328));
     assert(!postcardPoolAt(368,300)&&!postcardPoolAt(184,388));
