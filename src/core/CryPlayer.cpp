@@ -2,6 +2,7 @@
 
 #include "core/AudioManager.h"
 #include "core/DeflateDecoder.h"
+#include "core/ImaAdpcm.h"
 #include "core/ResourcePack.h"
 #include "platform/api/PlatformServices.h"
 
@@ -10,6 +11,10 @@
 namespace {
 constexpr uint32_t CRY_PACK_MAGIC = 0x52434D53UL;  // SMCR
 constexpr uint16_t CRY_PACK_VERSION = 1;
+constexpr uint16_t CRY_ADPCM_VERSION = 2;
+constexpr uint16_t CRY_ADPCM_FLAGS = 4;
+constexpr size_t CRY_BLOCK_BYTES = 1024;
+constexpr size_t CRY_BLOCK_SAMPLES = 2041;
 constexpr uint16_t CRY_PACK_FLAG_RAW_DEFLATE = 1 << 0;
 constexpr uint16_t CRY_PACK_FLAG_PCM_U8_MONO = 1 << 1;
 constexpr uint16_t CRY_PACK_FLAGS =
@@ -45,6 +50,29 @@ bool readExact(Platform::ResourceFile& file, void* output, size_t length) {
     }
     return true;
 }
+
+bool decodeAdpcm(Platform::ResourceFile& file, uint8_t* pcm,
+                 const PackedCryHeader& header) {
+    uint8_t block[CRY_BLOCK_BYTES];
+    uint32_t crc = 0xFFFFFFFFU;
+    size_t produced = 0;
+    for (size_t offset = 0; offset < header.payloadCompressedBytes;
+         offset += sizeof(block)) {
+        if (!readExact(file, block, sizeof(block))) return false;
+        for (uint8_t byte : block) {
+            crc ^= byte;
+            for (unsigned bit = 0; bit < 8; ++bit)
+                crc = (crc >> 1) ^ (0xEDB88320U & (0U - (crc & 1U)));
+        }
+        const size_t wanted = std::min<size_t>(CRY_BLOCK_SAMPLES,
+                                               header.sampleCount - produced);
+        if (ImaAdpcm::decodeImaBlock(block, sizeof(block), pcm + produced,
+                                    header.sampleCount - produced, wanted) != wanted)
+            return false;
+        produced += wanted;
+    }
+    return produced == header.sampleCount && ~crc == header.payloadCrc32;
+}
 }  // namespace
 
 CryPlayer& CryPlayer::ins() {
@@ -67,16 +95,21 @@ bool CryPlayer::play(uint16_t speciesId) {
     }
 
     PackedCryHeader header{};
-    if (!readExact(file, &header, sizeof(header)) ||
+    if (!readExact(file, &header, sizeof(header))) return false;
+    const bool adpcm = header.version == CRY_ADPCM_VERSION;
+    const uint32_t expectedBlocks =
+        (header.sampleCount + uint64_t(CRY_BLOCK_SAMPLES) - 1) / CRY_BLOCK_SAMPLES;
+    if (
         header.magic != CRY_PACK_MAGIC ||
-        header.version != CRY_PACK_VERSION ||
+        (!adpcm && header.version != CRY_PACK_VERSION) ||
         header.speciesId != speciesId ||
         header.sampleRate != CRY_SAMPLE_RATE ||
         header.sampleCount != header.payloadRawBytes ||
         header.payloadRawBytes == 0 ||
         header.payloadRawBytes > MAX_CRY_PCM_BYTES ||
         header.payloadCompressedBytes == 0 ||
-        header.flags != CRY_PACK_FLAGS ||
+        header.flags != (adpcm ? CRY_ADPCM_FLAGS : CRY_PACK_FLAGS) ||
+        (adpcm && uint64_t(expectedBlocks) * CRY_BLOCK_BYTES != header.payloadCompressedBytes) ||
         header.reserved != 0 ||
         static_cast<uint64_t>(sizeof(header)) + header.payloadCompressedBytes !=
             file.size()) {
@@ -94,12 +127,14 @@ bool CryPlayer::play(uint16_t speciesId) {
     }
 
     DeflateDecoder::Stats stats{};
-    if (!DeflateDecoder::inflateFile(file,
+    const bool decoded = adpcm ? decodeAdpcm(file, pcm, header)
+        : DeflateDecoder::inflateFile(file,
                                      header.payloadCompressedBytes,
                                      pcm,
                                      header.payloadRawBytes,
                                      header.payloadCrc32,
-                                     &stats)) {
+                                     &stats);
+    if (!decoded) {
         Platform::memory().release(pcm);
         Platform::errorf("[CryPlayer] decode failed species=%u read=%u inflate=%u\n",
                       speciesId, stats.readMs, stats.inflateMs);

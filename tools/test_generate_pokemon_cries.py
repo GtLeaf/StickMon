@@ -29,6 +29,21 @@ def write_test_wav(path, seconds=0.1):
 
 
 class GeneratePokemonCriesTests(unittest.TestCase):
+    def test_generation_emits_checked_adpcm_with_exact_sample_count(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); source = root / 'source'; source.mkdir()
+            write_test_wav(source / '025_test.wav')
+            species = root / 'Species.cpp'; species.write_text('    {25,\n')
+            output = root / 'pack'
+            generator.generate(source, species, output)
+            data = (output / 'cries/025.smoncry').read_bytes()
+            h = struct.unpack('<IHHIIIIIHH', data[:32])
+            self.assertEqual(2, h[1])
+            self.assertEqual((16000, 1600, 1600, 1024), h[3:7])
+            self.assertEqual(4, h[8])
+            self.assertEqual(0, h[9])
+            self.assertEqual(zlib.crc32(data[32:]), h[7])
+
     def test_encode_source_downsamples_and_compresses_pcm(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             source = Path(temp_dir) / "001_test.wav"
@@ -78,12 +93,20 @@ class GeneratePokemonCriesTests(unittest.TestCase):
                 generator.CRY_HEADER_FORMAT,
                 payload[:generator.CRY_HEADER_SIZE],
             )
-            pcm = zlib.decompress(payload[generator.CRY_HEADER_SIZE:], -15)
+            encoded = payload[generator.CRY_HEADER_SIZE:]
             self.assertEqual(species_id, header[2])
             self.assertEqual(generator.TARGET_SAMPLE_RATE, header[3])
             self.assertEqual(len(payload) - generator.CRY_HEADER_SIZE, header[6])
-            self.assertEqual(header[5], len(pcm))
-            self.assertEqual(header[7], zlib.crc32(pcm) & 0xFFFFFFFF)
+            if header[1] == 1:
+                pcm = zlib.decompress(encoded, -15)
+                self.assertEqual(header[5], len(pcm))
+                self.assertEqual(header[7], zlib.crc32(pcm) & 0xFFFFFFFF)
+            else:
+                self.assertEqual(2, header[1])
+                self.assertEqual(4, header[8])
+                self.assertEqual(header[4], header[5])
+                self.assertEqual(((header[4]+2040)//2041)*1024, len(encoded))
+                self.assertEqual(header[7], zlib.crc32(encoded) & 0xFFFFFFFF)
 
 
 if __name__ == "__main__":

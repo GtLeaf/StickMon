@@ -5,7 +5,7 @@
   "battleAssets": "game/battle.smonfx",
   "cries": "cries",
   "cryCount": 64,
-  "cryEncoding": "raw-deflate-pcm-u8-mono-16000",
+  "cryEncoding": "ima-adpcm-mono-16000-v2",
   "font": "fonts/zh16.smonfont",
   "fontCount": 2,
   "fontLarge": "fonts/zh32.smonfont",

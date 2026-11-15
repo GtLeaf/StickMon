@@ -9,6 +9,7 @@ import sys
 import wave
 import zlib
 from pathlib import Path
+from generate_audio_assets import encode_ima_blocks
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -143,6 +144,16 @@ def make_pack(species_id, pcm, compressed):
     return header + compressed
 
 
+def make_adpcm_pack(species_id, pcm):
+    # Preserve the normalized 16 kHz U8 signal and its exact duration.
+    # The block encoder pads its final block; sampleCount excludes that padding.
+    encoded = encode_ima_blocks([(value - 128) * 256 for value in pcm])
+    header = struct.pack(CRY_HEADER_FORMAT, CRY_PACK_MAGIC, 2, species_id,
+                         TARGET_SAMPLE_RATE, len(pcm), len(pcm), len(encoded),
+                         zlib.crc32(encoded) & 0xFFFFFFFF, 4, 0)
+    return header + encoded
+
+
 def merge_manifest(cry_count, pack_out=PACK_OUT):
     manifest_path = Path(pack_out) / "manifest.json"
     payload = {}
@@ -153,7 +164,7 @@ def merge_manifest(cry_count, pack_out=PACK_OUT):
     payload.update({
         "cries": "cries",
         "cryCount": cry_count,
-        "cryEncoding": "raw-deflate-pcm-u8-mono-16000",
+        "cryEncoding": "ima-adpcm-mono-16000-v2",
         "format": "smon-resource-pack-v1",
         "id": payload.get("id", "dev"),
         "schema": 1,
@@ -186,11 +197,11 @@ def generate(source_dir=SOURCE_DIR, species_source=SPECIES_SOURCE, pack_out=PACK
     for species_id in sorted(species_ids):
         source_path = cries[species_id]
         pcm, compressed, gain = encode_source(source_path)
-        pack = make_pack(species_id, pcm, compressed)
+        pack = make_adpcm_pack(species_id, pcm)
         (output_dir / f"{species_id:03d}.smoncry").write_bytes(pack)
         source_bytes += source_path.stat().st_size
         raw_bytes += len(pcm)
-        compressed_bytes += len(compressed)
+        compressed_bytes += len(pack) - CRY_HEADER_SIZE
         gain_min = min(gain_min, gain)
         gain_max = max(gain_max, gain)
 
