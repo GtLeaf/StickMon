@@ -6,6 +6,7 @@ ui/TeamScreens.cpp
 ui/ComputerScreens.cpp
 ui/ExploreScreens.cpp
 ui/ProgressionScreens.cpp
+ui/EvolutionPresentation.cpp
 ui/UiCommon.cpp
 ui/RoomScreens.cpp
 ui/SettingsScreens.cpp

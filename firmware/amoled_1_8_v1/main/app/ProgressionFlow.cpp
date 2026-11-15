@@ -358,7 +358,7 @@ void ProgressionFlow::beginTouch(int x, int y, uint32_t nowMs) {
                              : nowMs)
             : 0;
         state_.progressionEvolutionTouchResumeUntilMs = 0;
-        if (cancellable) damageRows(0, 348);
+        if (cancellable) damageRows(0, 448);
     } else {
         if (state_.progressionMode == ProgressionViewModel::Mode::LEVEL_UP) {
             state_.progressionLevelUpTouchAllowed =
@@ -399,6 +399,7 @@ ProgressionFlow::Release ProgressionFlow::prepareRelease(uint32_t nowMs) {
         !evolutionCompletedAtRelease && !evolutionHoldReached &&
         !state_.progressionEvolution.cancelling();
     state_.progressionEvolutionTouchHeld = false;
+    if (evolutionTouchWasConsumed) damageRows(0, 448);
     return {evolutionTouchWasConsumed, evolutionTouchCanResume};
 }
 
@@ -424,7 +425,7 @@ void ProgressionFlow::update(uint32_t nowMs) {
                 // Completion wins when it reaches its deadline before the
                 // hold. The gesture remains consumed until the finger lifts.
                 state_.progressionEvolutionTouchHeld = false;
-                damageRows(330, 348);
+                damageRows(372, 384);
             } else if (nowMs - state_.progressionEvolutionTouchStartedMs >=
                        EVOLUTION_CANCEL_HOLD_MS) {
                 state_.progressionEvolutionTouchHeld = false;
@@ -449,7 +450,14 @@ void ProgressionFlow::update(uint32_t nowMs) {
             static_cast<int32_t>(nowMs - state_.nextProgressionAnimationFrameMs) >= 0) {
             state_.nextProgressionAnimationFrameMs =
                 nowMs + PROGRESSION_ANIMATION_FRAME_MS;
-            damageRows(0, 348);
+            // The cancel bar sits below the animated stage. During the final
+            // warm fade the header, instruction and page edges also change.
+            const bool cancelling = state_.progressionEvolution.cancelling();
+            const uint32_t elapsed = cancelling
+                ? state_.progressionEvolution.cancellationElapsed(nowMs)
+                : state_.progressionEvolution.elapsed(nowMs);
+            const bool fading = elapsed >= (cancelling ? 650U : 3700U);
+            damageRows(0, fading ? 448 : 384);
         } else if (!animating && state_.nextProgressionAnimationFrameMs != 0) {
             state_.nextProgressionAnimationFrameMs = 0;
             damageRows(0, 448);

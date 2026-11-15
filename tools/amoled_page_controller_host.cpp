@@ -638,14 +638,17 @@ void evolutionGestures(Fixture& f, bool cancel) {
     };
     checkUncommitted();
     f.event(TouchEventType::DOWN, 180, 240);
-    f.advance(cancel ? 610 : 200);
+    for (int i=0; i<(cancel?12:4); ++i) f.advance(50);
+    if (cancel) f.advance(10);
     // Movement does not cancel an evolution hold; a short tap remains consumed.
     f.event(TouchEventType::MOVE, 280, 340);
     f.event(TouchEventType::UP, 280, 340);
     checkUncommitted();
-    f.advance(cancel ? Game::EvolutionSequence::CANCEL_COMPLETE_MS
-                     : Game::EvolutionSequence::COMPLETE_MS);
+    for (unsigned i=0; i<(cancel?20U:80U); ++i) f.advance(50);
     checkUncommitted();
+    f.desktop.advanceMs(100);
+    f.app.update(f.desktop.millis());
+    assert(!f.app.needsRender()); // Stationary result has no animation work.
     f.tap(180, 240);
     assert(f.scene() == Scene::HOME);
     assert(f.state().team[0].speciesId == (cancel ? 133 : 134));

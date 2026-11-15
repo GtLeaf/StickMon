@@ -1842,6 +1842,10 @@ const SpriteCacheStats& cacheStats();
 bool drawFrame(const SpriteFrame* frame, int x, int y, bool flipX = false);
 bool drawFrameSilhouette(const SpriteFrame* frame, int x, int y,
                          uint16_t color = 0, bool flipX = false);
+// Color and white silhouette use identical nearest-sampled geometry.
+bool drawFrameTintedScaled(const SpriteFrame* frame, int x, int y, float scale,
+                           uint16_t tint, uint8_t amount = 255, bool flipX = false);
+
 bool drawFrameScaled(const SpriteFrame* frame, int x, int y, float scale, bool flipX = false,
                      bool nearest = false);
 
