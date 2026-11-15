@@ -978,7 +978,7 @@ int exploreAreaAt(int x, int y, uint8_t selectedArea,
 }
 
 bool exploreStartAt(int x, int y) {
-    if constexpr (EXPLORE_POSTCARD) return AmoledUi::Rect{20,388,328,48}.contains(x,y);
+    if constexpr (EXPLORE_POSTCARD) return AmoledUi::Rect{20,383,328,48}.contains(x,y);
     return EXPLORE_START_BUTTON_NATIVE.contains(x, y);
 }
 

@@ -60,7 +60,7 @@ void drawFooter(Canvas565& c,int item,bool systemUpdate,bool pressed){
     const char* label=reset?Ui::Settings::RESET_GAME:Ui::Amoled::SYSTEM_UPDATE;
     if(pressed)c.fillRoundRect(rect.x,rect.y,rect.width,rect.height,16,
                                reset?colors.dangerSurface:colors.pressed);
-    const int textX=rect.x+(rect.width-ThemedUi::textWidth(label,16)+24)/2;
+    const int textX=rect.x+(rect.width-ThemedUi::textWidth(label,32)+24)/2;
     const int cx=textX-18,cy=rect.y+rect.height/2;
     if(reset){
         c.drawCircle(cx,cy,7,color);
@@ -72,7 +72,7 @@ void drawFooter(Canvas565& c,int item,bool systemUpdate,bool pressed){
         c.drawLine(cx+4,cy+1,cx,cy+5,color);
         c.drawLine(cx-7,cy+8,cx+7,cy+8,color);
     }
-    ThemedUi::text(c,textX,rect.y+(rect.height-16)/2,label,color,16);
+    ThemedUi::text(c,textX,rect.y+(rect.height-32)/2,label,color,32);
 }
 void drawResetConfirmation(Canvas565& c,const SettingsViewModel& model){
     const auto& colors=UiTheme::current();

@@ -12,39 +12,29 @@
 
 namespace AmoledV1 {
 namespace ExplorePostcardIcons {
-// Bake 4x coverage at compile time; rendering only blends the small icon mask.
-inline constexpr auto eyes=[]() {
-    std::array<std::array<uint8_t,29*29>,2> masks{};
-    for(int state=0;state<2;++state){
-        for(int y=0;y<29;++y)for(int x=0;x<29;++x){
-            int coverage=0;
-            for(int sy=0;sy<4;++sy)for(int sx=0;sx<4;++sx){
-                const double px=x+(sx+0.5)/4-14.5;
-                const double py=y+(sy+0.5)/4-14.5;
-                const double ax=px<0?-px:px,ay=py<0?-py:py;
-                const double arc=ay-7+7*px*px/144;
-                const double slope=14*px/144;
-                const bool outline=(ax<=12 && arc*arc<=1+slope*slope) ||
-                    ((ax-12)*(ax-12)+py*py<=1);
-                const double radius2=px*px+py*py;
-                const bool pupil=radius2>=1.75*1.75 && radius2<=3.5*3.5;
-                const double projection=(px+py)/2;
-                const double q=projection<-11?-11:projection>11?11:projection;
-                const bool slash=state && (px-q)*(px-q)+(py-q)*(py-q)<=1;
-                if(outline || pupil || slash)++coverage;
-            }
-            masks[state][y*29+x]=uint8_t((coverage*255+8)/16);
+// One themed ink with transparent cutouts; supersampling only softens edges.
+inline constexpr auto ball=[](){
+    std::array<uint8_t,32*32> mask{};
+    for(int y=0;y<32;++y)for(int x=0;x<32;++x){
+        int coverage=0;
+        for(int sy=0;sy<4;++sy)for(int sx=0;sx<4;++sx){
+            const double px=x+(sx+.5)/4-16,py=y+(sy+.5)/4-16;
+            const double radius2=px*px+py*py;
+            const bool rim=radius2>=13*13 && radius2<=15*15;
+            const bool center=radius2>=4*4 && radius2<=6*6;
+            const bool seam=py>=-1.25 && py<=1.25 && radius2>=6*6 && radius2<=13*13;
+            if(rim || center || seam)++coverage;
         }
+        mask[y*32+x]=uint8_t((coverage*255+8)/16);
     }
-    return masks;
+    return mask;
 }();
-inline void drawEye(Canvas565& c,bool crossed,uint16_t color){
-    const auto& mask=eyes[crossed?1:0];
-    for(int y=0;y<29;++y)for(int x=0;x<29;){
-        const auto alpha=mask[y*29+x];
+inline void drawBall(Canvas565& c,uint16_t color){
+    for(int y=0;y<32;++y)for(int x=0;x<32;){
+        const auto alpha=ball[y*32+x];
         int end=x+1;
-        while(end<29 && mask[y*29+end]==alpha)++end;
-        if(alpha)c.blendRectAlphaNative(296+x,104+y,end-x,1,color,alpha);
+        while(end<32 && ball[y*32+end]==alpha)++end;
+        if(alpha)c.blendRectAlphaNative(294+x,102+y,end-x,1,color,alpha);
         x=end;
     }
 }
@@ -91,12 +81,14 @@ inline void renderExplorePostcard(Canvas565& c,const ExploreViewModel& m,
     if(rowBegin<76){
         ThemedUi::drawHeader(c,"探险");
     }
-    if(rowBegin<144 && rowEnd>96){
+    if(rowBegin<142 && rowEnd>94){
         text(40,100,names[id],32,colors.sceneText);
-        if(showPets)c.fillRoundRect(288,96,44,44,14,accent);
-        else c.blendRoundRectAlphaNative(288,96,44,44,14,colors.sceneControl,184);
-        const auto eye=canPreview?colors.sceneText:muted;
-        ExplorePostcardIcons::drawEye(c,showPets,eye);
+        const auto button=POSTCARD_TOGGLE_VISUAL;
+        if(showPets){
+            c.fillRoundRect(button.x,button.y,button.width,button.height,16,colors.control);
+            c.drawRoundRect(button.x,button.y,button.width,button.height,16,accent);
+        }else c.blendRoundRectAlphaNative(button.x,button.y,button.width,button.height,16,colors.sceneControl,184);
+        ExplorePostcardIcons::drawBall(c,showPets?accent:canPreview?colors.sceneText:muted);
     }
     if(id==6 && m.marketDaysUntilOpen && rowBegin<156 && rowEnd>140){
         char countdown[48];
@@ -124,18 +116,26 @@ inline void renderExplorePostcard(Canvas565& c,const ExploreViewModel& m,
         }
     }
     if(rowBegin<382 && rowEnd>334){
-        const int total=count?count*6+12+(count-1)*8:0;
-        int x=(368-total)/2;
-        for(int i=0;i<count;++i){const int w=i==selected?18:6;c.fillRoundRect(x,355,w,6,3,i==selected?accent:muted);x+=w+8;}
-        for(int side=0;side<2;++side){
+        const auto layout=postcardPoolLayout(m.previewFrames,m.previewPool.count,m.previewOffset);
+        const int pages=showPets?layout.pages:count;
+        const int pageIndex=showPets?layout.page:selected;
+        if(!showPets || pages>1){
+            const int total=pages?pages*6+12+(pages-1)*8:0;
+            int x=(368-total)/2;
+            for(int i=0;i<pages;++i){
+                const int w=i==pageIndex?18:6;
+                c.fillRoundRect(x,355,w,6,3,i==pageIndex?accent:muted);x+=w+8;
+            }
+        }
+        if(!showPets)for(int side=0;side<2;++side){
             const int cx=side?322:46,cy=358;
             const auto color=(!side && !selected)||(side && selected+1>=count)?muted:ink;
             for(int y=-10;y<=10;++y){const int dx=std::abs(y)/2-5;c.fillRect(cx+(side?-dx:dx),cy+y,2,1,color);}
         }
     }
-    if(rowEnd>388 && rowBegin<436){
-        c.fillRoundRect(20,388,328,48,16,locked?colors.disabledSurface:accent);
-        text((368-width(Ui::Explore::DEPART,32))/2,396,Ui::Explore::DEPART,32,locked?colors.disabledText:onAccent);
+    if(rowEnd>383 && rowBegin<431){
+        c.fillRoundRect(20,383,328,48,16,locked?colors.disabledSurface:accent);
+        text((368-width(Ui::Explore::DEPART,32))/2,391,Ui::Explore::DEPART,32,locked?colors.disabledText:onAccent);
     }
 }
 }
