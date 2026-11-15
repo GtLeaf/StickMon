@@ -18,7 +18,7 @@ struct FoodProfile {
 
 static constexpr FoodProfile PROFILES[Game::ROOM_FOOD_COUNT] = {
     {25, 3}, // 0 饼干（3 口/份，见 roomFoodBitesPerServing）
-    {22, 5}, // 1 能量方块
+    {35, 3}, // 1 能量方块（4 口/份，见 roomFoodBitesPerServing）
     {20, 8}, // 2 桃桃果
     {24, 4}, // 3 樱子果
     {22, 6}, // 4 利木果

@@ -21,6 +21,7 @@ class HomeCareTests(unittest.TestCase):
                     "tools/home_care_host.cpp",
                     "src/game/HomeCare.cpp",
                     "src/game/Species.cpp",
+                    "src/core/SaveCodec.cpp",
                     "-o",
                     str(binary),
                 ],

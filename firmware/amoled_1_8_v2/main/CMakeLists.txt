@@ -56,6 +56,10 @@ idf_component_register(
 )
 
 target_compile_features(${COMPONENT_LIB} PUBLIC cxx_std_17)
+# Full-screen frames can delay the UI-task music refill past one 128 ms block.
+target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    STICKMON_MUSIC_QUEUE_TARGET_BLOCKS=3
+    STICKMON_MUSIC_REFILL_BLOCKS=2)
 if(STICKMON_ENABLE_CLAW)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE STICKMON_HAS_CLAW=1)
 else()

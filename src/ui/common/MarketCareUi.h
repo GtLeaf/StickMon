@@ -46,6 +46,13 @@ public:
     Mode mode() const { return mode_; }
     bool pending() const { return pending_; }
     bool animating() const { return transition_ != Transition::NONE; }
+    // True when the last touch()/update() changed nothing but the list offset.
+    bool scrollOnlyChange() const { return scrollOnly_; }
+    // Rows repainted by a list offset change; false unless the list is settled.
+    bool scrollRows(int& top, int& bottom) const {
+        if (page_ != Page::LIST || animating() || pending_) return false;
+        top = LIST_TOP; bottom = LIST_BOTTOM; return true;
+    }
     bool showDone() const { return page_ == Page::SHOW && !animating() && showMs_ >= SHOW_MS; }
     Target target() const { return target_; }
     int panelTop() const {
@@ -73,6 +80,7 @@ public:
     void cancelTouch() { tap_.cancel(); scrollMotion_.cancel(); }
 
     bool update(uint32_t deltaMs) {
+        scrollOnly_ = false;
         if (!active() || !deltaMs) return false;
         deltaMs = std::min<uint32_t>(deltaMs, 250);
         bool changed = false;
@@ -95,8 +103,11 @@ public:
             if (!wasDone && showMs_ >= SHOW_MS) feedback_.set(SfxCue::UI_CONFIRM);
             return true;
         }
-        if (page_ == Page::LIST)
-            return scrollMotion_.update(deltaMs, scrollMaximum_, scroll_) || changed;
+        if (page_ == Page::LIST) {
+            const bool moved = scrollMotion_.update(deltaMs, scrollMaximum_, scroll_);
+            scrollOnly_ = moved && !changed;
+            return moved || changed;
+        }
         scrollMotion_.cancel();
         if (page_ != Page::GREET) return changed;
         greetMs_ += deltaMs;
@@ -127,6 +138,7 @@ public:
     Request touch(const Platform::IInputDevice::TouchEvent& e, const Game::GameState& state) {
         using Type = Platform::IInputDevice::TouchType;
         Request none{};
+        scrollOnly_ = false;
         if (pending_ || page_ == Page::CLOSED || animating()) { cancelTouch(); return none; }
         if (page_ == Page::GREET || page_ == Page::SHOW) {
             // Lifting the finger anywhere advances; it never lands on a row.
@@ -136,7 +148,7 @@ public:
             else { feedback_.set(SfxCue::UI_CONFIRM); page_ = Page::MENU; transition_ = Transition::OPENING; transitionMs_ = 0; openFromGreet_ = false; }
             return none;
         }
-        if (page_ == Page::LIST && listDrag(e, state)) return none;
+        if (page_ == Page::LIST && listDrag(e, state)) { scrollOnly_ = true; return none; }
         const int hitTarget = e.type == Type::DOWN || e.type == Type::UP ? hit(e.x, e.y, state) : -1;
         const int clicked = tap_.update(e, hitTarget);
         if (clicked < 0) return none;
@@ -183,6 +195,7 @@ private:
     MarketUiFeedback feedback_;
     Target target_{};
     int scroll_ = 0, scrollMaximum_ = 0;
+    bool scrollOnly_ = false;
     MarketListScroll scrollMotion_;
     bool pending_ = false, fromEval_ = false, openFromGreet_ = true;
     uint8_t beforeAffection_ = 0, afterAffection_ = 0;

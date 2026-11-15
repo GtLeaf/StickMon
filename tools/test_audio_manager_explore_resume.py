@@ -27,13 +27,15 @@ class ExploreMusicResumeTests(unittest.TestCase):
             samples = [((i * 271) % 40000) - 20000 for i in range(3 * audio.IMA_BLOCK_SAMPLES + 83)]
             (tracks / "bgm_explore.smonaudio").write_bytes(
                 audio.make_audio_pack(samples, 8000, True, 317))
-            for queue_target in (2, 3):
-                with self.subTest(queue_target=queue_target):
-                    binary = Path(directory) / f"resume-{queue_target}"
+            # (3, 2) is the AMOLED build: deeper queue, two blocks per refill.
+            for queue_target, refill in ((2, 1), (3, 1), (3, 2)):
+                with self.subTest(queue_target=queue_target, refill=refill):
+                    binary = Path(directory) / f"resume-{queue_target}-{refill}"
                     subprocess.run([
                         "c++", "-std=c++17", "-Wall", "-Wextra", "-Werror",
                         "-g", "-fsanitize=address,undefined", "-fno-omit-frame-pointer",
-                        f"-DSTICKMON_MUSIC_QUEUE_TARGET_BLOCKS={queue_target}", "-Isrc",
+                        f"-DSTICKMON_MUSIC_QUEUE_TARGET_BLOCKS={queue_target}",
+                        f"-DSTICKMON_MUSIC_REFILL_BLOCKS={refill}", "-Isrc",
                         "tools/audio_manager_explore_resume_host.cpp",
                         "src/core/AudioManager.cpp", "src/core/ResourcePack.cpp",
                         "src/core/ResourceFS.cpp", "src/platform/api/PlatformServices.cpp",

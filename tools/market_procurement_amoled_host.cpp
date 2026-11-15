@@ -87,6 +87,27 @@ struct AmoledAppTestAccess {
             tap(184,262+(int(a)-1)*64);assert(ui.page()==Page::ADVICE_DONE);assert(s.marketSupply.pendingAdvice==uint8_t(a));
             assert(!std::memcmp(&before,&s.marketSeason,sizeof(before)));verifySaved();tap(184,414);assert(ui.page()==Page::MENU);};
         shop();shot("01-home");shelf();shot("02-shelf");
+        {
+            // A shelf drag or fling is presented at the market frame rate and
+            // repaints only the list rows; the result equals a full render.
+            auto& canvas=PixelRenderer::canvas();
+            auto presentedEqualsFull=[&](){
+                assert(app.needsRender()&&app.renderRowBegin()==216&&app.renderRowEnd()==440);
+                app.render(canvas);app.markRendered();
+                const std::vector<uint16_t> partial(canvas.rawPixels(),canvas.rawPixels()+368*448);
+                app.forceFullRender();app.render(canvas);app.markRendered();
+                assert(std::equal(partial.begin(),partial.end(),canvas.rawPixels()));};
+            advance(100);app.render(canvas);app.markRendered();
+            send(TouchEventType::DOWN,184,410,1);assert(app.needsRender());app.render(canvas);app.markRendered();
+            send(TouchEventType::MOVE,184,375,30);assert(ui.scrollOffset()==35&&!app.needsRender());
+            advance(33);presentedEqualsFull();
+            send(TouchEventType::MOVE,184,340,30);send(TouchEventType::UP,184,325,15);assert(!app.needsRender());
+            const int flung=ui.scrollOffset();advance(33);presentedEqualsFull();assert(ui.scrollOffset()>flung);
+            advance(1500);app.render(canvas);app.markRendered();
+            while(ui.scrollOffset()>0){send(TouchEventType::DOWN,184,250,1);send(TouchEventType::MOVE,184,430,100);
+                send(TouchEventType::UP,184,430,200);app.update(t);}
+            advance(100);assert(ui.scrollOffset()==0&&ui.page()==Page::SHELF);
+        }
         // Existing motion remains driven by real application ticks.
         send(TouchEventType::DOWN,184,410,1);send(TouchEventType::MOVE,184,375,30);send(TouchEventType::MOVE,184,340,30);send(TouchEventType::UP,184,325,15);
         const int released=ui.scrollOffset();advance(33);assert(ui.scrollOffset()>released);

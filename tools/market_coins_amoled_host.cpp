@@ -93,7 +93,7 @@ struct AmoledAppTestAccess {
         openTutor();tap(184,386);tap(98,320);
         assert(app.marketTutorUi_.page()==Ui::MarketTutorUi::Page::TRAIN_MOVE);
         oldHeader=header();before=s.coins;tap(184,414);
-        assert(app.marketTutorUi_.page()==Ui::MarketTutorUi::Page::TRAINING);paid(before,100,oldHeader,"04-train");
+        assert(app.marketTutorUi_.page()==Ui::MarketTutorUi::Page::TRAINING);paid(before,800,oldHeader,"04-train");
         enter(113);tap(184,250);tap(184,244);assert(app.marketCareUi_.page()==Ui::MarketCareUi::Page::CONFIRM);
         oldHeader=header();before=s.coins;tap(272,414);paid(before,150,oldHeader,"05-massage");
         enter(113);tap(184,318);tap(184,300);assert(app.marketCareUi_.page()==Ui::MarketCareUi::Page::CONFIRM);

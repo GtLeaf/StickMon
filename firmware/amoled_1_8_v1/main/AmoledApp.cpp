@@ -1877,10 +1877,23 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
         const Platform::IInputDevice::TouchEvent touch{type,event.x,event.y,event.timestampMs};
         pointerDown = event.type != TouchEventType::UP;
         if (marketServiceActive() || marketTutorPending_) {
-            if (marketTutorUi_.active()) handleMarketTutorTouch(touch);
-            else if (marketShopUi_.active()) handleMarketShopTouch(touch);
-            else if (marketCareUi_.active()) handleMarketCareTouch(touch);
-            requestFullRender();
+            bool scrollOnly = false;
+            if (marketTutorUi_.active()) {
+                handleMarketTutorTouch(touch);
+                scrollOnly = marketTutorUi_.active() && marketTutorUi_.scrollOnlyChange();
+            } else if (marketShopUi_.active()) {
+                handleMarketShopTouch(touch);
+                scrollOnly = marketShopUi_.active() && marketShopUi_.scrollOnlyChange();
+            } else if (marketCareUi_.active()) {
+                handleMarketCareTouch(touch);
+                scrollOnly = marketCareUi_.active() && marketCareUi_.scrollOnlyChange();
+            }
+            // Drags are presented by update() at the market frame rate, so a
+            // stream of MOVE events cannot starve the music refill; a list
+            // drag repaints only its rows. Presses and releases stay immediate.
+            if (scrollOnly) marketListDirty_ = true;
+            else if (type == Type::MOVE) marketFrameDirty_ = true;
+            else requestFullRender();
             return;
         }
         marketUi_.touchSession(*market_, touch, marketViewport(), !market_->paused() && !market_->exiting());
@@ -3473,10 +3486,14 @@ void AmoledApp::update(uint32_t nowMs) {
         const uint32_t coinDelta = active&&coinElapsed>0?uint32_t(coinElapsed):0;
         if (coinElapsed>=0||!active) marketCoinClockMs_=nowMs;
         if (marketCoinMotion_.update(coinDelta)) changed = true;
+        bool listChanged = false;
         if (marketShopUi_.active()) {
             const uint32_t delta = active ? nowMs - marketTutorClockMs_ : 0;
             marketTutorClockMs_ = nowMs;
-            if (marketShopUi_.update(delta)) changed = true;
+            if (marketShopUi_.update(delta)) {
+                if (marketShopUi_.scrollOnlyChange()) listChanged = true;
+                else changed = true;
+            }
             if (active) playMarketFeedback(marketShopUi_);
             if (!marketShopUi_.active()) closeMarketTutor();
             else if (marketShopUi_.page() == Ui::MarketShopUi::Page::GREET) marketFrameDirty_ = true;
@@ -3484,7 +3501,10 @@ void AmoledApp::update(uint32_t nowMs) {
         if (marketCareUi_.active()) {
             const uint32_t delta = active ? nowMs - marketTutorClockMs_ : 0;
             marketTutorClockMs_ = nowMs;
-            if (marketCareUi_.update(delta)) changed = true;
+            if (marketCareUi_.update(delta)) {
+                if (marketCareUi_.scrollOnlyChange()) listChanged = true;
+                else changed = true;
+            }
             if (active) playMarketFeedback(marketCareUi_);
             if (!marketCareUi_.active()) closeMarketTutor();
             else if (marketCareUi_.page() == Ui::MarketCareUi::Page::GREET) marketFrameDirty_ = true;
@@ -3492,18 +3512,30 @@ void AmoledApp::update(uint32_t nowMs) {
         if (marketTutorUi_.active()) {
             const uint32_t delta = active ? nowMs - marketTutorClockMs_ : 0;
             marketTutorClockMs_ = nowMs;
-            if (marketTutorUi_.update(delta)) changed = true;
+            if (marketTutorUi_.update(delta)) {
+                if (marketTutorUi_.scrollOnlyChange()) listChanged = true;
+                else changed = true;
+            }
             if (active) playMarketFeedback(marketTutorUi_);
             if (!marketTutorUi_.active()) closeMarketTutor();
             if (marketTutorUi_.page() == Ui::MarketTutorUi::Page::GREET) marketFrameDirty_ = true;
         }
         const bool chatChanged = previousChat != marketUi_.chatTarget;
         if (changed || chatChanged) marketFrameDirty_ = true;
-        if (marketFrameDirty_ &&
+        if (listChanged) marketListDirty_ = true;
+        if ((marketFrameDirty_ || marketListDirty_) &&
             (chatChanged || nowMs - lastMarketFrameMs_ >= MARKET_FRAME_MS)) {
-            requestFullRender();
+            int top = 0, bottom = 0;
+            if (!marketFrameDirty_ && !dirtyRowsValid && marketListRows(top, bottom)) {
+                // Only the list offset moved: keep the market and the rest of
+                // the panel from the previous frame.
+                requestRenderRows(top, bottom);
+                marketListFrame_ = true;
+            } else {
+                requestFullRender();
+            }
             lastMarketFrameMs_ = nowMs;
-            marketFrameDirty_ = false;
+            marketFrameDirty_ = marketListDirty_ = false;
         }
         if (market_->finished()) beginExploreReturn(nowMs);
     }
@@ -7628,7 +7660,23 @@ void AmoledApp::requestRenderRect(int left, int top, int right, int bottom) {
     dirtyRowEnd = std::max<int>(dirtyRowEnd, bottom);
 }
 
+bool AmoledApp::marketListRows(int& top, int& bottom) const {
+    if (displayLocked || expeditionFade.active() || externalSceneFade) return false;
+    if (marketTutorUi_.active()) return marketTutorUi_.scrollRows(top, bottom);
+    if (marketShopUi_.active()) return marketShopUi_.scrollRows(top, bottom);
+    return marketCareUi_.active() && marketCareUi_.scrollRows(top, bottom);
+}
+
+// A scroll-only stall frame: exactly the list rows are dirty and still current.
+bool AmoledApp::marketListFrame() const {
+    int top = 0, bottom = 0;
+    return marketListFrame_ && sceneFlow.current() == AppSceneFlow::Scene::MARKET && market_ &&
+        marketListRows(top, bottom) && dirtyRowsValid && dirtyRowBegin == top && dirtyRowEnd == bottom &&
+        dirtyColumnBegin == 0 && dirtyColumnEnd == AmoledUi::WIDTH;
+}
+
 void AmoledApp::requestFullRender() {
+    marketListFrame_ = false;
     // Ordinary feedback belongs to the page that produced it.
     if (toast && toastScene != sceneFlow.current()) toast = nullptr;
     requestRenderRows(0, 448);
@@ -7642,6 +7690,7 @@ void AmoledApp::markRendered() {
     if (sceneFlow.current() != AppSceneFlow::Scene::EXPLORE_ROUTE &&
         sceneFlow.current() != AppSceneFlow::Scene::EXPLORE_MENU) explorePresenter_.invalidateDrawn();
     dirtyRowsValid = false;
+    marketListFrame_ = false;
     if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE) battleSession_.markPresented();
 }
 
@@ -7715,11 +7764,30 @@ bool AmoledApp::exploreFramePipelineAllowed() const {
         !expeditionFade.active();
 }
 
+namespace {
+// Limits a scroll-only stall frame to its list rows and restores the clip.
+struct ListRowsClip {
+    Canvas565& canvas;
+    int left, top, right, bottom;
+    ListRowsClip(Canvas565& c, int rowBegin, int rowEnd)
+        : canvas(c), left(c.clipLeft()), top(c.clipTop()), right(c.clipRight()), bottom(c.clipBottom()) {
+        const int begin = std::max(top, rowBegin), end = std::min(bottom, rowEnd);
+        canvas.setClipRect(left, begin, right - left, std::max(0, end - begin));
+    }
+    ~ListRowsClip() { canvas.setClipRect(left, top, right - left, bottom - top); }
+};
+}  // namespace
+
 void AmoledApp::render(Canvas565& canvas) const {
     if (displayStandby_) return;
     const auto& route = exploreSession_.state();
     renderCaches_.retainForScene(sceneFlow.current());
     if (sceneFlow.current() == AppSceneFlow::Scene::MARKET && market_ && marketShopUi_.active()) {
+        if (marketListFrame()) {
+            const ListRowsClip clip(PixelRenderer::canvas(), dirtyRowBegin, dirtyRowEnd);
+            marketShopUi_.render(gameState,&marketCoinMotion_);
+            return;
+        }
         auto view = marketViewport();
         view.cameraOffsetY = marketShopUi_.sceneShift(*market_, view);
         Ui::MarketView::render(*market_, view, market_->timeMs(), gameState.gameMinutesTotal);
@@ -7728,6 +7796,11 @@ void AmoledApp::render(Canvas565& canvas) const {
         return;
     }
     if (sceneFlow.current() == AppSceneFlow::Scene::MARKET && market_ && marketCareUi_.active()) {
+        if (marketListFrame()) {
+            const ListRowsClip clip(PixelRenderer::canvas(), dirtyRowBegin, dirtyRowEnd);
+            marketCareUi_.render(gameState,&marketCoinMotion_);
+            return;
+        }
         auto view = marketViewport();
         view.cameraOffsetY = marketCareUi_.sceneShift(*market_, view);
         Ui::MarketView::render(*market_, view, market_->timeMs(), gameState.gameMinutesTotal);
@@ -7736,6 +7809,11 @@ void AmoledApp::render(Canvas565& canvas) const {
         return;
     }
     if (sceneFlow.current() == AppSceneFlow::Scene::MARKET && market_ && marketTutorUi_.active()) {
+        if (marketListFrame()) {
+            const ListRowsClip clip(PixelRenderer::canvas(), dirtyRowBegin, dirtyRowEnd);
+            marketTutorUi_.render(gameState,&marketCoinMotion_);
+            return;
+        }
         auto view = marketViewport();
         // Keep the facing party above the current stall panel.
         view.cameraOffsetY = marketTutorUi_.sceneShift(*market_, view);

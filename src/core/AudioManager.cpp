@@ -32,9 +32,19 @@ constexpr uint8_t MUSIC_QUEUE_TARGET_BLOCKS = STICKMON_MUSIC_QUEUE_TARGET_BLOCKS
 static_assert(MUSIC_QUEUE_TARGET_BLOCKS >= MUSIC_PREFILL_BLOCKS &&
                   MUSIC_QUEUE_TARGET_BLOCKS <= 4,
               "music queue target must fit the PcmMixer block queue");
-constexpr uint8_t MUSIC_REFILL_BLOCKS = 1;
+// Blocks decoded per update. A target may allow 2 to catch up after a stall.
+#ifndef STICKMON_MUSIC_REFILL_BLOCKS
+#define STICKMON_MUSIC_REFILL_BLOCKS 1
+#endif
+constexpr uint8_t MUSIC_REFILL_BLOCKS = STICKMON_MUSIC_REFILL_BLOCKS;
+static_assert(MUSIC_REFILL_BLOCKS >= 1 && MUSIC_REFILL_BLOCKS <= 2,
+              "music refill is bounded by the two decode buffers");
 constexpr uint32_t HOME_MUSIC_SILENCE_MIN_MS = 2UL * 60UL * 1000UL;
 constexpr uint32_t HOME_MUSIC_SILENCE_MAX_MS = 4UL * 60UL * 1000UL;
+constexpr uint32_t MARKET_MUSIC_SILENCE_MIN_MS = 2UL * 60UL * 1000UL;
+constexpr uint32_t MARKET_MUSIC_SILENCE_MAX_MS = 4UL * 60UL * 1000UL;
+constexpr uint32_t MARKET_MUSIC_END_FADE_SAMPLES =
+    2U * PcmMixer::OUTPUT_SAMPLE_RATE;
 
 struct __attribute__((packed)) PackedAudioHeader {
     uint32_t magic;
@@ -117,7 +127,9 @@ AudioManager& AudioManager::ins() {
 void AudioManager::setMusic(MusicTrack track) {
     if (requestedMusic_ == track &&
         (track == MusicTrack::NONE || playingMusic_ == track ||
-         (track == MusicTrack::HOME && homeMusicResumeAtMs_ != 0))) {
+         (track == MusicTrack::HOME && homeMusicResumeAtMs_ != 0) ||
+         (track == MusicTrack::MARKET &&
+          marketMusicCoolingDown(Platform::clock().millis())))) {
         return;
     }
     if (track != MusicTrack::EXPLORE && !isBattleMusic(track)) {
@@ -204,7 +216,9 @@ bool AudioManager::openAudio(const char* id, Platform::ResourceFile& file,
 bool AudioManager::startRequestedMusic() {
     const char* id = musicId(requestedMusic_);
     if (!id || playingMusic_ != MusicTrack::NONE ||
-        Platform::audio().volume() == 0) {
+        Platform::audio().volume() == 0 ||
+        (requestedMusic_ == MusicTrack::MARKET &&
+         marketMusicCoolingDown(Platform::clock().millis()))) {
         return false;
     }
 
@@ -259,12 +273,13 @@ bool AudioManager::startRequestedMusic() {
         }
     }
     playingMusic_ = requestedMusic_;
+    if (playingMusic_ == MusicTrack::MARKET) marketSilenceDurationMs_ = 0;
     for (uint8_t block = 0; block < MUSIC_PREFILL_BLOCKS; ++block) {
         if (!queueNextMusicBlock(block == 0)) {
             releaseMusic();
             return false;
         }
-        if (homeMusicCycleComplete_) break;
+        if (musicCycleComplete_) break;
     }
     if (playingMusic_ == MusicTrack::EXPLORE) exploreResumeValid_ = false;
     Platform::logf(
@@ -312,6 +327,7 @@ bool AudioManager::decodeMusicBlock(uint8_t bufferIndex) {
         musicCompressed_, musicHeader_.blockBytes, musicPcm_[bufferIndex],
         musicHeader_.blockSamples, wanted);
     if (decoded != wanted || nextMusicSkipSamples_ >= decoded) return false;
+    const uint32_t firstSourceSample = blockStart + nextMusicSkipSamples_;
     if (nextMusicSkipSamples_ > 0) {
         decoded -= nextMusicSkipSamples_;
         std::memmove(
@@ -333,13 +349,31 @@ bool AudioManager::decodeMusicBlock(uint8_t bufferIndex) {
         }
         decoded *= 2;
     }
+    if (playingMusic_ == MusicTrack::MARKET) {
+        // Fade the actual final samples, including the queued tail. Keep the
+        // music channel gain and the independent SFX/cry channels unchanged.
+        const uint32_t expansion = PcmMixer::OUTPUT_SAMPLE_RATE / musicHeader_.sampleRate;
+        const uint64_t total = uint64_t(musicHeader_.sampleCount) * expansion;
+        const uint64_t first = uint64_t(firstSourceSample) * expansion;
+        const uint32_t fade = static_cast<uint32_t>(
+            std::min<uint64_t>(MARKET_MUSIC_END_FADE_SAMPLES, total));
+        if (fade > 1 && first + decoded > total - fade) {
+            for (size_t i = 0; i < decoded; ++i) {
+                const uint64_t remaining = total - 1 - (first + i);
+                if (remaining >= fade) continue;
+                const int32_t centered = int32_t(musicPcm_[bufferIndex][i]) - 128;
+                musicPcm_[bufferIndex][i] = static_cast<uint8_t>(128 +
+                    centered * static_cast<int32_t>(remaining) / static_cast<int32_t>(fade - 1));
+            }
+        }
+    }
     musicPcmSamples_[bufferIndex] = static_cast<uint16_t>(decoded);
     ++nextMusicBlock_;
-    if (playingMusic_ == MusicTrack::HOME &&
+    if ((playingMusic_ == MusicTrack::HOME || playingMusic_ == MusicTrack::MARKET) &&
         nextMusicBlock_ >= musicHeader_.blockCount) {
-        // HOME plays the packed track once. Let the already queued tail drain
-        // before starting the quiet interval instead of wrapping immediately.
-        homeMusicCycleComplete_ = true;
+        // Intermittent tracks play once, then drain every queued sample
+        // before starting their independent quiet intervals.
+        musicCycleComplete_ = true;
     }
     return true;
 }
@@ -457,9 +491,10 @@ void AudioManager::update() {
         }
         return;
     }
-    if (playingMusic_ == MusicTrack::HOME && homeMusicCycleComplete_) {
+    if (musicCycleComplete_) {
         if (Platform::audio().queuedPcm(MUSIC_CHANNEL) == 0) {
-            beginHomeMusicSilence(nowMs);
+            if (playingMusic_ == MusicTrack::HOME) beginHomeMusicSilence(nowMs);
+            else releaseMusic();
         }
         return;
     }
@@ -478,9 +513,9 @@ void AudioManager::update() {
         return;
     }
     musicPaused_ = false;
-    // Refill at most one block per update. Platform audio backends may report
-    // a conservative queue depth, and streaming must never monopolize the UI
-    // task when that happens.
+    // Refill at most MUSIC_REFILL_BLOCKS per update. Platform audio backends
+    // may report a conservative queue depth, and streaming must never
+    // monopolize the UI task when that happens.
     uint8_t queued = Platform::audio().queuedPcm(MUSIC_CHANNEL);
     uint8_t refill = queued < MUSIC_QUEUE_TARGET_BLOCKS
         ? static_cast<uint8_t>(MUSIC_QUEUE_TARGET_BLOCKS - queued) : 0;
@@ -506,6 +541,22 @@ void AudioManager::beginHomeMusicSilence(uint32_t nowMs) {
                    static_cast<unsigned long>(durationMs));
 }
 
+bool AudioManager::marketMusicCoolingDown(uint32_t nowMs) const {
+    // Elapsed time also handles a quiet interval that crosses millis() wrap.
+    return marketSilenceDurationMs_ != 0 &&
+        uint32_t(nowMs - marketSilenceStartedMs_) < marketSilenceDurationMs_;
+}
+
+void AudioManager::beginMarketMusicSilence(uint32_t nowMs) {
+    marketSilenceStartedMs_ = nowMs;
+    const uint32_t span = MARKET_MUSIC_SILENCE_MAX_MS -
+                          MARKET_MUSIC_SILENCE_MIN_MS + 1U;
+    marketSilenceDurationMs_ = MARKET_MUSIC_SILENCE_MIN_MS +
+        Platform::power().hardwareRandom() % span;
+    Platform::logf("[Audio] market silence=%lu ms\n",
+        static_cast<unsigned long>(marketSilenceDurationMs_));
+}
+
 void AudioManager::updateMusicFade(uint32_t nowMs) {
     if (musicChannelVolume_ == musicFadeTargetVolume_) return;
     uint32_t elapsed = nowMs - musicFadeStartedMs_;
@@ -523,6 +574,11 @@ void AudioManager::updateMusicFade(uint32_t nowMs) {
 }
 
 void AudioManager::releaseMusic() {
+    // A completed or interrupted market performance always earns a break.
+    // Keep this deadline across scene changes, mute, and display suspension.
+    if (playingMusic_ == MusicTrack::MARKET) {
+        beginMarketMusicSilence(Platform::clock().millis());
+    }
     Platform::audio().stopChannel(MUSIC_CHANNEL);
     musicFile_.reset();
     if (musicCompressed_) Platform::memory().release(musicCompressed_);
@@ -538,7 +594,7 @@ void AudioManager::releaseMusic() {
     nextMusicBlock_ = 0;
     nextMusicSkipSamples_ = 0;
     queuedMusicCursorCount_ = 0;
-    homeMusicCycleComplete_ = false;
+    musicCycleComplete_ = false;
     playingMusic_ = MusicTrack::NONE;
     musicPaused_ = false;
 }
@@ -564,5 +620,6 @@ void AudioManager::stopAll() {
     homeMusicResumeAtMs_ = 0;
     Platform::audio().stop();
     releaseMusic();
+    marketSilenceDurationMs_ = 0;
     releaseSfx();
 }
