@@ -1210,11 +1210,11 @@ struct AmoledAppTestAccess {
         };
         app.sceneFlow.enter(Scene::SETTINGS);
         app.markRendered();
-        tap(app, desktop, 200, 414);  // V1 has no action below reset.
+        tap(app, desktop, 200, 438);  // Space below the footer is inert.
         assert(!app.settingsController.resetConfirm());
         assertSavesUnchanged();
         size_t writesBefore = blobs.writes;
-        tap(app, desktop, 200, 354);
+        tap(app, desktop, 100, 410);
         assert(app.settingsController.resetConfirm());
         assert(blobs.clears == 0 && blobs.writes == writesBefore);
         assert(app.needsRender());
@@ -1226,14 +1226,14 @@ struct AmoledAppTestAccess {
         assert(!app.settingsController.resetConfirm() && app.sceneFlow.current() == Scene::SETTINGS);
         assert(blobs.clears == 0 && blobs.writes == writesBefore);
         assertSavesUnchanged();
-        tap(app, desktop, 200, 354);
+        tap(app, desktop, 100, 410);
         tap(app, desktop, 40, 38);  // Header back also only dismisses confirmation.
         assert(!app.settingsController.resetConfirm() && app.sceneFlow.current() == Scene::SETTINGS);
         assertSavesUnchanged();
 
         app.visitSession.startSearch();
         assert(app.visitSession.busy());
-        tap(app, desktop, 200, 354);
+        tap(app, desktop, 100, 410);
         assert(!app.settingsController.resetConfirm());
         assert(blobs.clears == 0);
         assertSavesUnchanged();
@@ -1241,14 +1241,15 @@ struct AmoledAppTestAccess {
 
         app.setSystemUpdateHandler(resetTestOtaHandler);
         resetTestOtaCalls = 0;
-        tap(app, desktop, 200, 354);  // Adding OTA does not replace the reset row.
+        tap(app, desktop, 100, 410);  // Adding OTA does not replace the reset row.
         assert(app.settingsController.resetConfirm() && resetTestOtaCalls == 0);
         tap(app, desktop, 106, 390);
-        tap(app, desktop, 200, 414);
+        tap(app, desktop, 270, 414);
 #if STICKMON_ENABLE_DEBUG_FEATURES
         assert(resetTestOtaCalls == 1 && !app.settingsController.resetConfirm());
 #else
-        assert(resetTestOtaCalls == 0 && !app.settingsController.resetConfirm());
+        assert(resetTestOtaCalls == 0 && app.settingsController.resetConfirm());
+        tap(app, desktop, 106, 390);
         assertSavesUnchanged();
 #endif
         assert(blobs.clears == 0 && power.restarts == 0);
@@ -1257,7 +1258,7 @@ struct AmoledAppTestAccess {
             before[i] = blobs.contents("stickmon", GAME_KEYS[i]);
         }
         writesBefore = blobs.writes;
-        tap(app, desktop, 200, 354);
+        tap(app, desktop, 100, 410);
         assert(app.settingsController.resetConfirm());
         TouchEvent event;
         event.timestampMs = desktop.millis();
@@ -1267,10 +1268,10 @@ struct AmoledAppTestAccess {
         app.handleTouch(event);  // An orphan release cannot confirm deletion.
         assert(blobs.clears == 0);
         event.type = TouchEventType::DOWN;
-        event.x = 333;
+        event.x = 349;
         app.handleTouch(event);
         event.type = TouchEventType::MOVE;
-        event.x = 330;
+        event.x = 346;
         app.handleTouch(event);
         event.type = TouchEventType::UP;
         app.handleTouch(event);  // A short move from outside the button is inert.
@@ -1278,7 +1279,7 @@ struct AmoledAppTestAccess {
         event.type = TouchEventType::DOWN;
         app.handleTouch(event);
         event.type = TouchEventType::UP;
-        event.x = 333;
+        event.x = 349;
         app.handleTouch(event);  // Releasing outside is inert too.
         assert(blobs.clears == 0);
         assert(blobs.writes == writesBefore);

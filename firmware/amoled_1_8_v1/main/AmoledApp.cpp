@@ -2136,7 +2136,12 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
             }
 #endif
         } else if (EXPLORE_POSTCARD && sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_AREAS &&
-                   postcardPoolAt(touchStartX,touchStartY)) {
+                   postcardPetsToggleAt(touchStartX,touchStartY)) {
+            if(std::max(std::abs(event.x-touchStartX),std::abs(event.y-touchStartY))>TAP_SLOP){
+                dragging=true;pressedExploreArea=-1;
+            }
+        } else if (EXPLORE_POSTCARD && sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_AREAS &&
+                   explorePostcardShowPets_ && postcardPoolAt(touchStartX,touchStartY)) {
             if(std::max(std::abs(event.x-touchStartX),std::abs(event.y-touchStartY))>TAP_SLOP){
                 dragging=true;pressedExploreArea=-1;
             }
@@ -2356,7 +2361,12 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
                 }
             }
         } else if (EXPLORE_POSTCARD && sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_AREAS &&
-                   postcardPoolAt(touchStartX,touchStartY) && dragging) {
+                   postcardPetsToggleAt(touchStartX,touchStartY)) {
+            // Keep the entire gesture on the eye, including short edge crossings.
+            if(!dragging && distance<=TAP_SLOP && postcardPetsToggleAt(event.x,event.y))
+                handleTap(event.x,event.y,event.timestampMs);
+        } else if (EXPLORE_POSTCARD && sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_AREAS &&
+                   explorePostcardShowPets_ && postcardPoolAt(touchStartX,touchStartY) && dragging) {
             const int dx=event.x-touchStartX,dy=event.y-touchStartY;
             if(std::abs(dx)>28 && std::abs(dx)>std::abs(dy))
                 advanceExplorePostcardPool(dx<0?1:-1,event.timestampMs);
@@ -3276,7 +3286,15 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
     }
 
     if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_AREAS) {
-        if (EXPLORE_POSTCARD && postcardPoolAt(x,y)) {
+        if (EXPLORE_POSTCARD && postcardPetsToggleAt(x,y)) {
+            if(postcardPetsToggleAt(touchStartX,touchStartY) && (selectedExploreDestination_==ExploreDestinations::MARKET || ExploreDestinations::unlocked(selectedExploreDestination_,gameState))) {
+                explorePostcardShowPets_=!explorePostcardShowPets_;
+                explorePostcardClock_.pause();
+                requestRenderRows(84,328);
+            }
+            return;
+        }
+        if (EXPLORE_POSTCARD && explorePostcardShowPets_ && postcardPoolAt(x,y)) {
             advanceExplorePostcardPool(1,nowMs);return;
         }
         if (exploreSelectionBackAt(x, y)) {
@@ -3697,7 +3715,7 @@ void AmoledApp::update(uint32_t nowMs) {
             bool ready=!explorePreviewLoadPending;
             for(int i=0;i<explorePreviewPool.count;i++)ready=ready&&explorePreviewFrames[i];
             const bool eligible=ready && poolLayout.pages>1 && !pointerDown && !displayLocked && !displayStandby_ &&
-                selectedExploreDestination_!=ExploreDestinations::MARKET && ExploreDestinations::unlocked(selectedExploreDestination_,gameState);
+                explorePostcardShowPets_ && (selectedExploreDestination_==ExploreDestinations::MARKET || ExploreDestinations::unlocked(selectedExploreDestination_,gameState));
             if(explorePostcardClock_.tick(nowMs,eligible))advanceExplorePostcardPool(1,nowMs,false);
         }
         if (!EXPLORE_POSTCARD && explorePreviewPool.count > 0) {
@@ -3916,7 +3934,7 @@ void AmoledApp::update(uint32_t nowMs) {
 }
 
 void AmoledApp::advanceExplorePostcardPool(int direction,uint32_t nowMs,bool manual) {
-    if(selectedExploreDestination_==ExploreDestinations::MARKET)return;
+    if(!explorePostcardShowPets_)return;
     const auto layout=postcardPoolLayout(explorePreviewFrames,explorePreviewPool.count,explorePostcardPoolOffset_);
     if(layout.pages<2)return;
     const int page=(layout.page+layout.pages+(direction<0?-1:1))%layout.pages;
@@ -3933,6 +3951,7 @@ void AmoledApp::loadExplorePreview(uint32_t nowMs) {
     std::memset(explorePreviewFrames, 0, sizeof(explorePreviewFrames));
     std::memset(explorePreviewHidden, 0, sizeof(explorePreviewHidden));
     explorePostcardPoolOffset_ = 0;
+    explorePostcardShowPets_ = false;
     explorePostcardClock_.pause();
     explorePreviewPool = ExplorePool::Pool{};
     explorePreloadSpeciesCount = 0;
@@ -4021,6 +4040,8 @@ void AmoledApp::refreshExplorePreviewFrames() {
 }
 
 void AmoledApp::clearExplorePreview() {
+    explorePostcardShowPets_ = false;
+    explorePostcardClock_.pause();
     PokemonSprites::setDynamicSceneSpecies(nullptr, 0);
     PokemonSprites::setPinnedDynamicSpecies(nullptr, 0);
     explorePreviewPool = ExplorePool::Pool{};
@@ -7946,6 +7967,7 @@ void AmoledApp::render(Canvas565& canvas) const {
             model.previewHidden[index] = explorePreviewHidden[index];
         }
         model.previewOffset = explorePostcardPoolOffset_;
+        model.previewVisible = explorePostcardShowPets_;
         model.pressedArea = pressedExploreArea;
         model.toast = toast;
         renderExploreScreen(canvas, model, renderCaches_.exploreBackground,

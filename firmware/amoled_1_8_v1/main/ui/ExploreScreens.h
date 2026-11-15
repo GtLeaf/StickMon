@@ -23,8 +23,8 @@ inline constexpr int EXPLORE_SELECTOR_AREA_SPACING = 144;
 // Keep the centered action group close to the physical bottom of the AMOLED
 // display while leaving a 12-pixel native bottom margin.
 inline constexpr int EXPLORE_SELECTOR_BUTTON_TOP = 384;
-inline constexpr int EXPLORE_PREVIEW_TOP = EXPLORE_POSTCARD ? 218 : 168;
-inline constexpr int EXPLORE_PREVIEW_BOTTOM = EXPLORE_POSTCARD ? 372 : 328;
+inline constexpr int EXPLORE_PREVIEW_TOP = EXPLORE_POSTCARD ? 150 : 168;
+inline constexpr int EXPLORE_PREVIEW_BOTTOM = 328;
 
 AmoledUi::Rect exploreRouteActorBounds(const ExploreRouteViewModel& model);
 AmoledUi::Rect exploreRouteWildlifeBounds(const ExploreRouteViewModel& model,

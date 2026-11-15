@@ -1,6 +1,7 @@
 #pragma once
 
 #include "presentation/Canvas565.h"
+#include "presentation/BitmapTextMetrics.h"
 
 class PixelRenderer {
 public:
@@ -21,6 +22,10 @@ public:
                      uint8_t size = 1);
     static void text(Canvas565& target, int x, int y, const char* value,
                      uint16_t color, uint8_t size = 1);
+    // Explicit bitmap font in Canvas logical pixels, independent of nativeText
+    // and layoutScale font selection. Preserves all Canvas state and clipping.
+    static void bitmapText(Canvas565& target, int x, int y, const char* value,
+                           uint16_t color, BitmapText::Font font);
     // Opt-in coverage text; 16/20px are native, 17-19px are animation only.
     // Missing optional glyphs fall back to the original 16px bitmap.
     static void textSmooth(int x, int y, const char* value, uint16_t color,

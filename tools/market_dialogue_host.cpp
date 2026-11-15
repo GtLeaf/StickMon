@@ -39,7 +39,8 @@ static void catalog(const std::vector<uint8_t>& bytes) {
                 assert(c.role(script,line)!=Market::Dialogue::PARTNER);
                 if(context!=3)assert(c.role(script,line)!=Market::Dialogue::OTHER);
             }
-            for(int j=5;j>0;--j)recent[j]=recent[j-1];recent[0]=c.id(script);
+            for(int j=5;j>0;--j)recent[j]=recent[j-1];
+            recent[0]=c.id(script);
         }
     }
     for(size_t n=0;n<bytes.size();n+=11){Market::Dialogue::Catalog bad;assert(!bad.load(bytes.data(),n));}
@@ -93,7 +94,7 @@ struct DialogueStore final : Platform::IResourceStore {
         return Platform::ResourceFile(new DialogueFile(std::move(data),failure==3));
     }
 };
-static void controller(const std::vector<uint8_t>& bytes,const char* dataRoot) {
+static void controller(const std::vector<uint8_t>& bytes,const char* dataRoot,bool narrow=false) {
     DesktopPlatform desktop(dataRoot);auto base=desktop.serviceBundle();
     DialogueMemory memory(base.memory);DialogueStore store(base.resources,bytes);
     Platform::Services services{base.lifecycle,base.clock,base.logger,base.input,base.display,
@@ -107,12 +108,21 @@ static void controller(const std::vector<uint8_t>& bytes,const char* dataRoot) {
         assert(dialogue.load()==(failure==0));assert(memory.live==(failure==0?1:0));
         for(int iteration=0;iteration<12;++iteration) {
             place(s,0,8,8);place(s,2,7,8);place(s,3,6,8);
-            assert(dialogue.begin(s,0,glyph==16?208:320,glyph));
+            const int textWidth=narrow?64:glyph==16?208:320;
+            assert(dialogue.begin(s,0,textWidth,glyph));
             auto tick=[&](bool running=true) {now+=100;s.update(now,running);dialogue.update(s,now,running);};
-            for(int n=0;n<5&&!dialogue.visible();++n)tick();assert(dialogue.visible());
+            for(int n=0;n<5&&!dialogue.visible();++n)tick();
+            assert(dialogue.visible());
+            const auto& layout=dialogue.textLayout();
+            const std::string fixedText=layout.text();
+            const auto fixedLine=layout.line(0);
+            assert(!layout.needsLayout()&&dialogue.pageLineCount()<=2);
             char before[256],after[256];dialogue.visibleText(before,sizeof(before));
-            for(int n=0;n<10;++n)tick(false);dialogue.visibleText(after,sizeof(after));
+            for(int n=0;n<10;++n)tick(false);
+            dialogue.visibleText(after,sizeof(after));
             assert(std::strcmp(before,after)==0);
+            assert(fixedText==layout.text()&&fixedLine.begin==layout.line(0).begin&&
+                   fixedLine.end==layout.line(0).end&&!layout.needsLayout());
             int script=-1;for(int i=0;i<catalog.count();++i)if(catalog.id(i)==dialogue.scriptId())script=i;
             assert((script>=0)==(failure==0));
             const char* fallback[]={"你好，今天也来逛市集吗？","这里真热闹。","慢慢逛吧。"};
@@ -123,8 +133,9 @@ static void controller(const std::vector<uint8_t>& bytes,const char* dataRoot) {
                 const char* name=catalog.name(species);if(!name)name=findSpecies(species)->name;
                 const std::string expected=std::string(name)+"："+(script>=0?catalog.text(script,line):fallback[line]);
                 std::string actual;
-                for(int page=0;actual!=expected&&page<12;++page) {
+                for(int page=0;actual!=expected&&page<128;++page) {
                     dialogue.advance(s);assert(dialogue.complete());
+                    assert(dialogue.revealedCharacters()>0&&dialogue.pageLineCount()<=2);
                     const auto size=dialogue.visibleText(after,sizeof(after));assert(size==std::strlen(after));
                     for(size_t capacity=1;capacity<8;++capacity) {
                         char shortText[8];const auto n=dialogue.visibleText(shortText,capacity);
@@ -135,13 +146,23 @@ static void controller(const std::vector<uint8_t>& bytes,const char* dataRoot) {
                     int width=0,rows=1;
                     for(size_t i=0;i<size;++i) {
                         const auto c=uint8_t(after[i]);
-                        if(c=='\n'){assert(width<=(glyph==16?208:320));width=0;++rows;}
+                        if(c=='\n'){assert(width<=textWidth);width=0;++rows;}
                         else if((c&0xc0)!=0x80)width+=c<128?glyph/2:glyph;
                         if(c!='\n')actual+=after[i];
                     }
-                    assert(rows<=2&&width<=(glyph==16?208:320));
+                    assert(rows<=2&&width<=textWidth);
                     assert(expected.compare(0,actual.size(),actual)==0);
                     dialogue.advance(s);
+                    if(dialogue.active()) {
+                        assert(dialogue.revealedCharacters()==0);
+                        const auto pageLine=dialogue.pageFirstLine();
+                        const std::string fullLayout=dialogue.textLayout().text();
+                        now+=39;s.update(now);dialogue.update(s,now,true);
+                        assert(dialogue.revealedCharacters()==0);
+                        now+=1;s.update(now);dialogue.update(s,now,true);
+                        assert(dialogue.revealedCharacters()==1&&dialogue.pageFirstLine()==pageLine);
+                        assert(fullLayout==dialogue.textLayout().text()&&!dialogue.textLayout().needsLayout());
+                    }
                 }
                 assert(actual==expected);
             }
@@ -204,5 +225,21 @@ int main(int argc,char** argv) {
     assert(argc==3);std::ifstream input(argv[1],std::ios::binary);
     const std::vector<uint8_t> bytes{std::istreambuf_iterator<char>(input),{}};
     catalog(bytes);session();controller(bytes,argv[2]);
+    // Exercise valid maximum-length resource strings at the smallest supported
+    // width, exceeding one bounded line cache without dropping/repeating text.
+    auto longBytes=bytes;
+    const auto u16=[&](int i){return unsigned(longBytes[i])|(unsigned(longBytes[i+1])<<8);};
+    const auto u32=[&](int i){return unsigned(longBytes[i])|(unsigned(longBytes[i+1])<<8)|
+        (unsigned(longBytes[i+2])<<16)|(unsigned(longBytes[i+3])<<24);};
+    const auto put=[&](size_t i,unsigned value){for(int b=0;b<4;++b)longBytes[i+b]=uint8_t(value>>(b*8));};
+    const unsigned stringOffset=u32(12),scripts=20+u16(6)*8,count=u16(8);
+    for(unsigned script=0;script<count;++script) {
+        const auto record=scripts+script*32;
+        for(unsigned line=0;line<longBytes[record+3];++line)put(record+13+line*5,stringOffset);
+    }
+    longBytes.insert(longBytes.end(),192,'a');longBytes.push_back(0);put(12,stringOffset+193);
+    uint32_t crc=~0U;for(size_t i=20;i<longBytes.size();++i){crc^=longBytes[i];
+        for(int b=0;b<8;++b)crc=(crc>>1)^(0xedb88320U&uint32_t(-int32_t(crc&1)));}
+    put(16,crc^~0U);controller(longBytes,argv[2],true);
     std::puts("market-dialogue: catalog CRC group settle facing pause resume RNG UTF-8 pagination resource failures OK");
 }

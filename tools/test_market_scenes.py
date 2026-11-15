@@ -20,7 +20,8 @@ def main():
     output.mkdir(parents=True,exist_ok=True)
     result,_=compile_and_run('sticks3',output/'stick',host=ROOT/'tools/market_scene_host.cpp',sanitize=True,debug=debug)
     print(result.strip())
-    amoled=build_amoled_host(output/'market-amoled',[ROOT/'tools/market_amoled_host.cpp'],debug=debug)
+    amoled=build_amoled_host(output/'market-amoled',
+        [ROOT/'tools/market_amoled_host.cpp',ROOT/'tools/amoled_checksum_guard.cpp'],debug=debug)
     (output/'amoled').mkdir(exist_ok=True)
     subprocess.run([str(amoled),str(ROOT/'data'),str(output/'amoled')],check=True)
     # Select the compact family source list, then apply the SDGOODS round
@@ -30,7 +31,8 @@ def main():
     replaced={p.name for p in overrides}
     sources=[p for p in sources_for('ostb') if '/platform/web/' not in str(p) and
              not (p.parent.name=='compact_touch' and p.name in replaced)]
-    sources+=overrides+[ROOT/'src/platform/desktop/DesktopPlatform.cpp',ROOT/'tools/market_scene_host.cpp']
+    sources+=overrides+[ROOT/'src/platform/desktop/DesktopPlatform.cpp',ROOT/'tools/market_scene_host.cpp',
+                        ROOT/'tools/amoled_checksum_guard.cpp']
     flags=['-DSTICKMON_UI_COMPACT_TOUCH=1','-DSTICKMON_UI_ROUND_TOUCH=1','-DSTICKMON_TOUCH_INPUT=1',
            '-DSTICKMON_DISPLAY_WIDTH=360','-DSTICKMON_DISPLAY_HEIGHT=360',
            '-DSTICKMON_UI_HEADER_INSET_X=60','-DSTICKMON_UI_HEADER_TOP=32',

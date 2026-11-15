@@ -30,6 +30,8 @@ FONT_GLYPH_BYTES = 32
 LARGE_FONT_GLYPH_W = 32
 LARGE_FONT_GLYPH_H = 32
 LARGE_FONT_GLYPH_BYTES = 128
+LARGE_CJK_INK_BOTTOM = 30
+LOW_CJK_PUNCTUATION = frozenset("，。、")
 LARGE_ASCII_DRAW_W = 15
 LARGE_ASCII_DRAW_H = 28
 ASCII_CELL_W = 8
@@ -331,6 +333,12 @@ def glyph_bytes_large(font, ch):
     img = Image.new("L", (LARGE_FONT_GLYPH_W, LARGE_FONT_GLYPH_H), 0)
     x = (cell_w - w) // 2
     y = (LARGE_FONT_GLYPH_H - h) // 2
+    if ch in LOW_CJK_PUNCTUATION:
+        # Keep low punctuation next to the CJK ink bottom instead of centering
+        # its small bounding box. Preserve shape, side bearings and advance.
+        ink = glyph.point(lambda value: 255 if value > BITMAP_THRESHOLD else 0).getbbox()
+        if ink:
+            y = LARGE_CJK_INK_BOTTOM - (ink[3] - 1)
     img.paste(glyph, (x, y))
 
     out = bytearray()

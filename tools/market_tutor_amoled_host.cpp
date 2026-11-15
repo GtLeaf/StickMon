@@ -146,17 +146,17 @@ struct AmoledAppTestAccess {
         assert(!ui().animating() && ui().panelTop() == Ui::MarketTutorUi::MENU_Y && ui().hudOffset() == 0);
         assert(ui().sceneShift(*app.market_, viewport) > partialShift);
         shot("02-menu");
-        // Currency uses the shop glyphs at 28px and keeps the stall palette.
+        // Currency uses the shared 32px shop glyphs and keeps the stall palette.
         {
             const auto pixels = std::vector<uint16_t>(PixelRenderer::canvas().rawPixels(),
                 PixelRenderer::canvas().rawPixels() + 368 * 448);
             ShopViewModel model{}; model.coins = state.coins;
             renderShopScreen(PixelRenderer::canvas(), model, 0, 64);
-            const int w = UiCommon::textWidth("C1774") * 28 / 32;
-            for (int y = 0; y < 28; ++y) for (int x = 0; x < w; ++x) {
+            const int w = UiCommon::textWidth("C1774");
+            for (int y = 0; y < 32; ++y) for (int x = 0; x < w; ++x) {
                 const int shopY = (UiMetrics::PAGE_HEADER_HEIGHT - FontResource::LARGE_GLYPH_H) / 2;
-                const auto shop = PixelRenderer::canvas().readPixel(184 - UiCommon::textWidth("C1774") / 2 + x * 32 / 28, shopY + y * 32 / 28);
-                const auto tutor = pixels[(18 + y) * 368 + 340 - w + x];
+                const auto shop = PixelRenderer::canvas().readPixel(184 - w / 2 + x, shopY + y);
+                const auto tutor = pixels[(16 + y) * 368 + 340 - w + x];
                 const auto gold = UiCommon::rgb(248, 210, 105);
                 const auto ink = UiCommon::rgb(40, 56, 80);
                 const auto paper = UiCommon::rgb(248, 248, 224);

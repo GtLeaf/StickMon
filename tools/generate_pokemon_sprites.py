@@ -848,6 +848,10 @@ const SpriteCacheStats& cacheStats();
 bool drawFrame(const SpriteFrame* frame, int x, int y, bool flipX = false);
 bool drawFrameSilhouette(const SpriteFrame* frame, int x, int y,
                          uint16_t color = 0, bool flipX = false);
+// Color and white silhouette use identical nearest-sampled geometry.
+bool drawFrameTintedScaled(const SpriteFrame* frame, int x, int y, float scale,
+                           uint16_t tint, uint8_t amount = 255, bool flipX = false);
+
 bool drawFrameScaled(const SpriteFrame* frame, int x, int y, float scale, bool flipX = false,
                      bool nearest = false);
 
@@ -866,6 +870,7 @@ bool drawFrameScaled(const SpriteFrame* frame, int x, int y, float scale, bool f
 #include "platform/api/FlashStorage.h"
 #include "platform/api/PlatformServices.h"
 #include "presentation/PixelRenderer.h"
+#include "presentation/TintedSpriteRle.h"
 
 namespace PokemonSprites {
 
@@ -1691,6 +1696,27 @@ bool drawFrameSilhouette(const SpriteFrame* frame, int x, int y,
     PixelRenderer::drawRgb565RleSolid(
         x, y, width, height, cached->data, offset, length, color, flipX);
     return true;
+}
+
+bool drawFrameTintedScaled(const SpriteFrame* frame, int x, int y, float scale,
+                           uint16_t tint, uint8_t amount, bool flipX) {
+    if (!frame) return false;
+    const uint8_t format = FlashStorage::readByte(&frame->format);
+    if (FlashStorage::readByte(&frame->source) != SPRITE_SOURCE_FILE_BLOCK ||
+        format > static_cast<uint8_t>(SpriteFormat::INDEXED4_RLE)) return false;
+    CachedSpecies* cached = cachedSpeciesFor(FlashStorage::readWord(&frame->speciesId));
+    const uint32_t offset = FlashStorage::readDword(&frame->offset);
+    const uint32_t length = FlashStorage::readDword(&frame->length);
+    if (!cached || offset > cached->rleWords || length > cached->rleWords - offset) return false;
+    const bool indexed = format == static_cast<uint8_t>(SpriteFormat::INDEXED4_RLE);
+    const uint32_t paletteOffset = FlashStorage::readDword(&frame->paletteOffset);
+    const uint8_t paletteSize = FlashStorage::readByte(&frame->paletteSize);
+    if (indexed && (paletteOffset > cached->paletteWords ||
+        paletteSize > cached->paletteWords - paletteOffset)) return false;
+    const Ui::TintedSpriteRle::Source source{cached->data, offset, length,
+        cached->palettes, paletteOffset, paletteSize,
+        FlashStorage::readByte(&frame->width), FlashStorage::readByte(&frame->height), indexed};
+    return Ui::TintedSpriteRle::draw(PixelRenderer::canvas(), source, x, y, scale, tint, amount, flipX);
 }
 
 bool drawFrameScaled(const SpriteFrame* frame, int x, int y, float scale, bool flipX, bool nearest) {

@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <cstring>
 
 #include "assets/GameAssets.h"
 #include "assets/PokemonSprites.h"
@@ -13,6 +12,7 @@
 #include "game/MoveManagementService.h"
 #include "platform/api/FlashStorage.h"
 #include "presentation/PixelRenderer.h"
+#include "presentation/TextBlock.h"
 #include "ui/ItemShopScreens.h"
 #include "ui/UiCommon.h"
 #include "ui/UiMetrics.h"
@@ -607,37 +607,17 @@ void drawMoveDetailContent(Canvas565& canvas, const MoveInfo& move,
                   move.power, move.accuracy);
     text(canvas, 24, detailBase + 20, detail,
          fadeColor(rgb(226, 238, 233)));
-    const char* description = move.description;
-    if (!description || !description[0]) return;
-    char line[80] = {};
-    size_t lineLength = 0;
-    int lineWidth = 0;
-    int lineIndex = 0;
-    const uint8_t* cursor = reinterpret_cast<const uint8_t*>(description);
-    while (*cursor && lineIndex < 5) {
-        size_t bytes = 1;
-        while (cursor[bytes] && (cursor[bytes] & 0xC0) == 0x80) ++bytes;
-        const int glyphWidth = *cursor < 0x80 ? 16 : 32;
-        if (lineLength > 0 && lineWidth + glyphWidth > 320) {
-            line[lineLength] = '\0';
-            text(canvas, 24, detailBase + 64 + lineIndex * UiMetrics::MOVE_DESCRIPTION_LINE_STEP,
-                 line, fadeColor(rgb(178, 194, 190)));
-            ++lineIndex;
-            lineLength = 0;
-            lineWidth = 0;
-            if (lineIndex >= 5) break;
-        }
-        if (lineLength + bytes >= sizeof(line)) break;
-        std::memcpy(line + lineLength, cursor, bytes);
-        lineLength += bytes;
-        lineWidth += glyphWidth;
-        cursor += bytes;
-    }
-    if (lineLength > 0 && lineIndex < 5) {
-        line[lineLength] = '\0';
-        text(canvas, 24, detailBase + 64 + lineIndex * UiMetrics::MOVE_DESCRIPTION_LINE_STEP,
-             line, fadeColor(rgb(178, 194, 190)));
-    }
+    // Position and fade only affect drawing; keep full-description breaks cached.
+    static Ui::TextBlock description;
+    Ui::TextBlock::Options options;
+    options.width = 320;
+    options.font = BitmapText::Font::PX32;
+    options.lineGap = UiMetrics::MOVE_DESCRIPTION_LINE_STEP - 32;
+    options.maxHeight = 4 * UiMetrics::MOVE_DESCRIPTION_LINE_STEP + 32;
+    description.setText(move.description);
+    description.setOptions(options);
+    description.draw(canvas, 24, detailBase + 64,
+                     fadeColor(rgb(178, 194, 190)));
 }
 
 int teamMovesItemAt(int x, int y, TeamMovesViewModel::Mode mode,
@@ -778,10 +758,10 @@ void renderTeamMovesScreen(Canvas565& canvas,
         const int visibleDetailBottom = std::min(
             AmoledUi::HEIGHT, detailBase + detailHeight);
         UiCommon::PageClip detailClip(
-            canvas, static_cast<uint16_t>(std::clamp(visibleDetailTop, 0,
-                                                     AmoledUi::HEIGHT)),
-            static_cast<uint16_t>(std::clamp(visibleDetailBottom, 0,
-                                             AmoledUi::HEIGHT)));
+            canvas, static_cast<uint16_t>(std::clamp(
+                std::max<int>(rowBegin, visibleDetailTop), 0, AmoledUi::HEIGHT)),
+            static_cast<uint16_t>(std::clamp(
+                std::min<int>(rowEnd, visibleDetailBottom), 0, AmoledUi::HEIGHT)));
         detailClip.setRect(0, detailBase, AmoledUi::WIDTH,
                            std::max(0, std::min(AmoledUi::HEIGHT,
                                                 detailBase + detailHeight) - detailBase));

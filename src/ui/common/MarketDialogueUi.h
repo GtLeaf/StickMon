@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/MarketDialogue.h"
+#include "presentation/TextBlock.h"
 #include "ui/common/MarketView.h"
 
 namespace Ui::MarketDialogueUi {
@@ -33,12 +34,10 @@ inline void render(const MarketDialogue& dialogue,const MarketView::Viewport& v)
     c.fillRect(b.x,b.y,b.w,b.h,paper);
     for(int inset=0;inset<2;++inset)c.drawRect(b.x+inset,b.y+inset,b.w-2*inset,b.h-2*inset,edge);
     c.drawRect(b.x+3,b.y+3,b.w-6,b.h-6,light);c.drawRect(b.x+5,b.y+5,b.w-10,b.h-10,edge);
-    char text[256];dialogue.visibleText(text,sizeof(text));
-    const bool native=c.nativeText();c.setNativeText(b.glyph==32);
-    char* second=std::strchr(text,'\n');if(second)*second++=0;
-    PixelRenderer::text(b.textX,b.textY,text,ink);
-    if(second)PixelRenderer::text(b.textX,b.textY+b.lineHeight,second,ink);
-    c.setNativeText(native);
+    TextBlock::DrawRange range;
+    range.firstLine=dialogue.pageFirstLine();range.lineCount=dialogue.pageLineCount();
+    range.visibleCharacters=int(dialogue.revealedCharacters());
+    TextBlock::drawLayout(c,dialogue.textLayout(),b.textX,b.textY,ink,range);
     if(!dialogue.complete())return;
     static constexpr uint16_t outline[7]={0x0fe,0x101,0x101,0x082,0x044,0x028,0x010};
     static constexpr uint16_t fill[7]={0,0x0fe,0x0fe,0x07c,0x038,0x010,0};
