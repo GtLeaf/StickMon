@@ -4,15 +4,16 @@
 #include "game/ExplorePool.h"
 
 namespace AmoledV1 {
-inline constexpr int POSTCARD_SCENE_Y=0, POSTCARD_SCENE_H=380;
-inline constexpr int POSTCARD_POOL_TOP=218, POSTCARD_POOL_BOTTOM=372;
-inline constexpr int POSTCARD_POOL_WIDTH=344, POSTCARD_POOL_GAP=12;
+inline constexpr int POSTCARD_SCENE_Y=84, POSTCARD_SCENE_H=244;
+inline constexpr int POSTCARD_POOL_TOP=150, POSTCARD_POOL_BOTTOM=328;
+inline constexpr int POSTCARD_POOL_WIDTH=272, POSTCARD_POOL_GAP=12;
 inline bool postcardPoolAt(int x,int y) {
-    return x>=0 && x<368 && y>=POSTCARD_POOL_TOP && y<POSTCARD_POOL_BOTTOM;
+    return x>=36 && x<332 && y>=POSTCARD_POOL_TOP && y<POSTCARD_POOL_BOTTOM;
 }
 inline bool postcardSceneGestureAt(int x,int y) {
-    return x>=0 && x<368 && y>=76 && y<POSTCARD_POOL_TOP;
+    return x>=24 && x<344 && y>=84 && y<328;
 }
+inline bool postcardPetsToggleAt(int x,int y) {return x>=288 && x<332 && y>=96 && y<140;}
 struct PostcardPoolClock {
     uint32_t dueAt=0;
     bool armed=false;

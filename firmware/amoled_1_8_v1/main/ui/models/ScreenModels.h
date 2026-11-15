@@ -157,6 +157,7 @@ struct DebugViewModel {
 
 struct ExploreViewModel {
     uint8_t previewOffset = 0;
+    bool previewVisible = false;
     bool destinationMenu = false;
     bool marketSelected = false;
     uint32_t marketDaysUntilOpen = 0;
