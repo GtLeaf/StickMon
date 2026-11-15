@@ -10,6 +10,7 @@
 #include "game/ItemInventory.h"
 #include "game/ShopService.h"
 #include "presentation/PixelRenderer.h"
+#include "presentation/TextBlock.h"
 #include "ui/UiCommon.h"
 #include "ui/UiMetrics.h"
 
@@ -37,6 +38,18 @@ constexpr AmoledUi::Rect SHOP_DETAIL_ACTION_RECT = UiMetrics::DETAIL_ACTION_RECT
 constexpr AmoledUi::Rect SHOP_DETAIL_BACK_RECT = UiMetrics::DETAIL_BACK_RECT;
 constexpr float SHOP_GRID_ICON_SCALE = 1.5f;
 constexpr float SHOP_DETAIL_ICON_END_SCALE = 1.5f;
+
+void drawItemDescription(Canvas565& canvas, Game::ItemId item, uint16_t color) {
+    // These pages render serially; share one cache keyed by description/options.
+    static Ui::TextBlock description;
+    Ui::TextBlock::Options options;
+    options.width = 320;
+    options.maxHeight = UiMetrics::DETAIL_BUTTON_Y - 248 - 6;
+    options.font = BitmapText::Font::PX32;
+    description.setText(Game::ShopService::shortDescription(item));
+    description.setOptions(options);
+    description.draw(canvas, 24, 248, color);
+}
 
 bool drawShopItemCentered(GameAssets::Kind kind, int centerX, int centerY,
                           float scale, uint8_t alpha) {
@@ -263,8 +276,7 @@ void drawItemConfirm(Canvas565& canvas, const ItemListViewModel& model) {
     char owned[16]; std::snprintf(owned, sizeof(owned), "X%u",
         Game::ItemInventory::count(*model.state, model.pendingItem));
     text(canvas, 168, 136, owned, rgb(239, 196, 154));
-    text(canvas, 24, 248, Game::ShopService::shortDescription(model.pendingItem),
-         rgb(126, 175, 175));
+    drawItemDescription(canvas, model.pendingItem, rgb(126, 175, 175));
     const bool feeding = model.battleMode &&
         Game::foodIndexForItemId(model.pendingItem) >= 0;
     const bool usable = feeding || (model.battleMode
@@ -443,8 +455,8 @@ void renderItemListScreen(Canvas565& canvas,
             text(canvas, priceX, y + 16, priceText, rgb(248, 210, 105));
         }
     }
-    drawToast(canvas, model.toast);
     drawItemConfirm(canvas, model);
+    drawToast(canvas, model.toast);
     pageClip.reset();
 }
 
@@ -608,8 +620,7 @@ void renderShopScreen(Canvas565& canvas, const ShopViewModel& model,
         text(canvas, 168, 188, price,
              shopFadeColor(rgb(248, 210, 105), detailAlpha,
                            detailBackground));
-        text(canvas, 24, 248,
-             Game::ShopService::shortDescription(model.detailItem),
+        drawItemDescription(canvas, model.detailItem,
              shopFadeColor(rgb(126, 175, 175), detailAlpha,
                            detailBackground));
 

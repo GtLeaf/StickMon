@@ -141,50 +141,47 @@ void shopDetail(Canvas565& canvas, Game::GameState& state) {
 void settingsSliders(Canvas565& canvas, Game::GameState& state) {
     SettingsViewModel model;
     model.state = &state;
-    const auto track = PixelRenderer::rgb(48, 63, 70);
-    const auto active = PixelRenderer::rgb(83, 184, 157);
-    const auto knob = PixelRenderer::rgb(226, 238, 233);
-    const auto background = PixelRenderer::rgb(0, 0, 0);
+    const auto track = PixelRenderer::rgb(229, 211, 184);
+    const auto active = PixelRenderer::rgb(168, 89, 56);
+    const auto knob = PixelRenderer::rgb(255, 247, 235);
+    const auto surface = PixelRenderer::rgb(255, 246, 231);
     model.brightness = 32;
     model.volume = 0;
     renderSettingsScreen(canvas, model);
     const auto minimum = capture(canvas);
-    for (int y : {108, 172}) {
-        expectPixel(canvas, 148, y, active);
-        expectPixel(canvas, 148, y - 10, knob);
-        for (int dy = -8; dy < 8; ++dy) expectPixel(canvas, 240, y + dy, track);
-        expectPixel(canvas, 240, y - 9, background);
-        expectPixel(canvas, 240, y + 8, background);
+    for (int y : {148, 236}) {
+        expectPixel(canvas, 40, y, knob);
+        expectPixel(canvas, 40, y - 10, active);
+        for (int dy = -6; dy < 6; ++dy) expectPixel(canvas, 240, y + dy, track);
+        expectPixel(canvas, 240, y - 7, surface);
+        expectPixel(canvas, 240, y + 6, surface);
     }
     model.brightness = 255;
     model.volume = 100;
     renderSettingsScreen(canvas, model);
-    for (int y : {108, 172}) {
-        expectPixel(canvas, 332, y, active);
-        expectPixel(canvas, 332, y - 10, knob);
+    for (int y : {148, 236}) {
+        expectPixel(canvas, 328, y, knob);
+        expectPixel(canvas, 328, y - 10, active);
         expectPixel(canvas, 240, y, active);
-        // Changing values must leave the labels unchanged beside the slider.
-        for (int row = y - 16; row < y + 16; ++row) {
-            for (int x = 12; x < 130; ++x) {
+        // Value changes must leave the label above the slider unchanged.
+        for (int row = y - 52; row < y - 20; ++row)
+            for (int x = 76; x < 148; ++x)
                 expectPixel(canvas, x, row, minimum[row * AmoledUi::WIDTH + x]);
-            }
-        }
-        expectPixel(canvas, 332, y - 13, background);
+        expectPixel(canvas, 328, y - 13, surface);
     }
     for (int index : {0, 1}) {
         model.pressedItem = index;
         renderSettingsScreen(canvas, model);
-        const int y = index == 0 ? 108 : 172;
-        expectPixel(canvas, 332, y - 13, knob);
-        expectPixel(canvas, 332, y, PixelRenderer::rgb(115, 226, 183));
+        const int y = index == 0 ? 148 : 236;
+        expectPixel(canvas, 328, y - 13, active);
+        expectPixel(canvas, 328, y, knob);
     }
-    // Values below/above the supported range stay at the nearest endpoint.
     model.pressedItem = -1;
     model.brightness = 0;
     model.volume = 255;
     renderSettingsScreen(canvas, model);
-    expectPixel(canvas, 148, 108, active);
-    expectPixel(canvas, 332, 172, active);
+    expectPixel(canvas, 40, 148, knob);
+    expectPixel(canvas, 328, 236, knob);
 }
 
 void teamPopup(Canvas565& canvas, Game::GameState& state) {

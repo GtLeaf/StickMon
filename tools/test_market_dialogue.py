@@ -23,11 +23,12 @@ class DialogueTests(unittest.TestCase):
         # Every NPC in the maintained map is named; unknown future species use
         # the unfiltered fallback scripts checked by the compiled host.
         profiles = {p['species'] for p in self.content['profiles']}
-        from catalog import Catalog
-        from market_export import compile_market
-        runtime = compile_market(market, Catalog())
-        species = {p['species'] for p in runtime['residents']}
-        species.update(s for p in runtime['families'] for s in (p['adult'],p['juvenile']) if s)
+        # Profile coverage depends on the authored roster, not optional external
+        # tileset images needed to compile map geometry.
+        species = {int(p['sprite'].removeprefix('pokemon-')) for p in market['map']['npcs']}
+        for zone in market['map']['activityZones']:
+            for family in zone.get('visitors', {}).get('families', []):
+                species.update(int(s) for s in family.split('-') if s != 'solo' and int(s))
         self.assertTrue(species <= profiles)
 
     def test_invalid_roles_content_and_fallbacks_rejected(self):

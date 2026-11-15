@@ -28,10 +28,7 @@ SettingsController::Change SettingsController::beginTouch(
     const int item = resetConfirm_ ? settingsResetChoiceAt(x, y)
                                   : settingsItemAt(x, y, systemUpdate);
     pressedItem_ = item < 0 ? 0xFF : static_cast<uint8_t>(item);
-    constexpr int TAP_SLOP = 12;
-    sliderDragging_ = !resetConfirm_ && (item == 0 || item == 1) &&
-        x >= SETTINGS_SLIDER_LEFT - TAP_SLOP &&
-        x <= SETTINGS_SLIDER_RIGHT + TAP_SLOP;
+    sliderDragging_ = !resetConfirm_ && (item == 0 || item == 1);
     return sliderDragging_ ? setSlider(pressedItem_, x, settings) : Change::NONE;
 }
 
@@ -74,6 +71,7 @@ SettingsController::Action SettingsController::tap(
         return busy ? Action::BUSY : Action::RESET_GAME;
     }
     const int item = settingsItemAt(x, y, systemUpdate);
+    if (item < 0 || item != pressedItem_) return Action::NONE;
     switch (item) {
     case SETTINGS_RESET_GAME_ITEM:
         if (busy) return Action::BUSY;

@@ -207,7 +207,6 @@ int main() {
         for source, title in (
                 (self.room_source, "Ui::ROOM"),
                 (self.room_source, "Ui::FOOD"),
-                (self.settings_source, "Ui::SETTINGS"),
                 (self.source, "Ui::TEAM"),
                 (self.source, "Ui::SOCIAL"),
                 (self.source, "Ui::Amoled::WASH_PET")):
@@ -215,7 +214,8 @@ int main() {
                 self.assertIn(f"drawPageHeader(canvas, {title}", source)
         self.assertIn("drawPageHeader(canvas, title)", self.source)
         self.assertIn("drawPageHeader(canvas, Ui::SHOP", self.source)
-        self.assertIn("drawPageHeaderCenteredText(canvas, coins",
+        self.assertIn("ThemedUi::drawHeader(c,Ui::SETTINGS)", self.settings_source)
+        self.assertIn("drawCoins(canvas, model.coins, AmoledUi::WIDTH / 2",
                       self.source)
         self.assertIn("drawHeader(canvas, HEADER_HEIGHT, true)", self.source)
         self.assertIn("drawClawTabs(canvas, model.clawLogView)", self.source)

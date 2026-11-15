@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 
 #include "assets/GameAssets.h"
 #include "assets/PokemonSprites.h"
@@ -11,6 +12,7 @@
 #include "game/MoveManagementService.h"
 #include "platform/api/FlashStorage.h"
 #include "presentation/PixelRenderer.h"
+#include "presentation/TextBlock.h"
 #include "ui/UiCommon.h"
 #include "ui/UiMetrics.h"
 
@@ -71,19 +73,28 @@ void drawLevelUpDialog(Canvas565& canvas, const Species* species,
     char line[96];
     std::snprintf(line, sizeof(line), Ui::Common::LEVEL_UP_DIALOG_FMT,
                   name, level);
-    if (textWidth(line) <= DIALOG_W - 24) {
-        text(canvas, (AmoledUi::WIDTH - textWidth(line)) / 2, DIALOG_Y + 18,
-             line, body);
-    } else {
-        char firstLine[64];
-        char secondLine[32];
-        std::snprintf(firstLine, sizeof(firstLine), "%s等级", name);
-        std::snprintf(secondLine, sizeof(secondLine), "提升到%u", level);
-        text(canvas, (AmoledUi::WIDTH - textWidth(firstLine)) / 2,
-             DIALOG_Y + 8, firstLine, body);
-        text(canvas, (AmoledUi::WIDTH - textWidth(secondLine)) / 2,
-             DIALOG_Y + 40, secondLine, body);
+    static Ui::TextBlock message;
+    static char source[sizeof(line)] = {};
+    Ui::TextBlock::Options options;
+    options.width = DIALOG_W - 24;
+    options.maxHeight = 64;
+    options.font = BitmapText::Font::PX32;
+    options.lineGap = 0;
+    options.align = Ui::TextBlock::Align::CENTER;
+    const bool optionsChanged = message.setOptions(options);
+    if (optionsChanged || std::strcmp(source, line) != 0) {
+        // Key the authored-break decision by the original text, so a two-line
+        // message does not alternate source/layout on every animation paint.
+        std::snprintf(source, sizeof(source), "%s", line);
+        message.setText(line);
+        if (message.measure().lineCount > 1) {
+            // Retain the authored phrase break instead of isolating the level.
+            std::snprintf(line, sizeof(line), "%s等级\n提升到%u", name, level);
+            message.setText(line);
+        }
     }
+    const int top = DIALOG_Y + (message.measure().lineCount > 1 ? 8 : 18);
+    message.draw(canvas, DIALOG_X + 12, top, body);
 }
 
 void drawLevelUpScene(Canvas565& canvas, const Species* species,
@@ -162,10 +173,16 @@ void drawEvolutionBackground(Canvas565& canvas) {
                                  rgb(3, 12, 18), 70);
 }
 
-void drawCenteredEvolutionText(Canvas565& canvas, int y, const char* value,
-                               uint16_t color) {
-    const int width = textWidth(value);
-    text(canvas, std::max(8, (AmoledUi::WIDTH - width) / 2), y, value, color);
+void drawCenteredEvolutionText(Canvas565& canvas, Ui::TextBlock& block, int y,
+                               const char* value, uint16_t color, int height) {
+    Ui::TextBlock::Options options;
+    options.width = AmoledUi::WIDTH - 16;
+    options.maxHeight = height;
+    options.font = BitmapText::Font::PX32;
+    options.align = Ui::TextBlock::Align::CENTER;
+    block.setText(value);
+    block.setOptions(options);
+    block.draw(canvas, 8, y, color);
 }
 
 void drawEvolutionSprite(const PokemonSprites::SpriteFrame* frame,
@@ -333,16 +350,19 @@ void renderEvolutionProgression(Canvas565& canvas,
         std::snprintf(message, sizeof(message), Ui::Common::EVOLUTION_FMT,
                       from ? from->name : Ui::Status::MOVE_UNKNOWN);
     }
-    drawCenteredEvolutionText(canvas, 270, message, rgb(239, 246, 240));
+    static Ui::TextBlock messageText;
+    static Ui::TextBlock instructionText;
+    drawCenteredEvolutionText(canvas, messageText, 270, message,
+                              rgb(239, 246, 240), 66);
 
     const bool cancelling = phase == Phase::CANCEL_MORPH ||
                             phase == Phase::CANCEL_REVEAL;
     if (!model.evolutionReady && phase != Phase::CANCELLED) {
         drawCenteredEvolutionText(
-            canvas, 388,
+            canvas, instructionText, 388,
             cancelling ? Ui::Amoled::CANCELLING_EVOLUTION
                        : Ui::Amoled::HOLD_TO_CANCEL_EVOLUTION,
-            rgb(175, 204, 198));
+            rgb(175, 204, 198), 52);
         if (!cancelling && model.evolutionCancelHoldProgress > 0) {
             constexpr int HOLD_BAR_X = 104;
             constexpr int HOLD_BAR_Y = 340;
@@ -468,8 +488,14 @@ void renderProgressionScreen(Canvas565& canvas,
     text(canvas, 144, 80, title, rgb(248, 210, 105));
     {
         const MoveInfo* move = findMove(model.moveId);
-        text(canvas, 88, 224, move ? move->name : Ui::Status::MOVE_UNKNOWN,
-             rgb(226, 238, 233));
+        static Ui::TextBlock moveName;
+        Ui::TextBlock::Options options;
+        options.width = 256;
+        options.maxHeight = 100;
+        options.font = BitmapText::Font::PX32;
+        moveName.setText(move ? move->name : Ui::Status::MOVE_UNKNOWN);
+        moveName.setOptions(options);
+        moveName.draw(canvas, 88, 224, rgb(226, 238, 233));
     }
     canvas.fillRoundRect((40), (348), (288), (80), (8), model.pressedItem == 0 ? rgb(48, 74, 68) : rgb(24, 34, 42));
     text(canvas, 130, 380, Ui::Amoled::CONTINUE,

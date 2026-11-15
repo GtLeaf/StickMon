@@ -3,6 +3,7 @@
 #include "ui/ExplorePostcardLayout.h"
 #include "ui/ExploreScreens.h"
 #include "ui/UiCommon.h"
+#include "ui/ThemedUi.h"
 #include "ui/common/MarketView.h"
 #include "core/UiStrings.h"
 #include "presentation/PixelRenderer.h"
@@ -50,9 +51,9 @@ inline void drawEye(Canvas565& c,bool crossed,uint16_t color){
 }
 inline void renderExplorePostcard(Canvas565& c,const ExploreViewModel& m,
                                  uint16_t rowBegin,uint16_t rowEnd) {
-    const auto rgb=PixelRenderer::rgb;
-    const auto page=rgb(247,236,217),ink=rgb(89,67,46),accent=rgb(168,89,56);
-    const auto muted=rgb(182,160,128),onAccent=rgb(255,247,235);
+    const auto& colors=UiTheme::current();
+    const auto page=colors.background,ink=colors.text,accent=colors.accent;
+    const auto muted=colors.muted,onAccent=colors.accentText;
     auto text=[&](int x,int y,const char* s,int size,uint16_t color){
         const bool native=c.nativeText();c.setNativeText(size==32);
         PixelRenderer::text(c,x,y,s,color);c.setNativeText(native);
@@ -71,7 +72,7 @@ inline void renderExplorePostcard(Canvas565& c,const ExploreViewModel& m,
         Ui::Explore::MIST_FOREST_PATH,Ui::Explore::ANCIENT_WATERFALL_VALLEY,Ui::MarketView::NAME};
 
     // Draw directly into the page clip, rounding each row without a scratch buffer.
-    c.fillRoundRect(23,83,322,246,21,rgb(213,186,147));
+    c.fillRoundRect(23,83,322,246,21,colors.border);
     const auto& art=ExplorePostcardArt::scenes[id];
     for(int dy=std::max(0,int(rowBegin)-84);dy<std::min(244,int(rowEnd)-84);++dy){
         const int edge=std::min(dy,243-dy);
@@ -85,25 +86,23 @@ inline void renderExplorePostcard(Canvas565& c,const ExploreViewModel& m,
         }
         int alpha=dy<104?135-(dy*115/104):20+(dy-104)*23/140;
         if(showPets && dy>90)alpha=std::max(alpha,(dy-90)*180/153);
-        c.blendRectAlphaNative(left,y,right-left,1,rgb(34,21,10),uint8_t(alpha));
+        c.blendRectAlphaNative(left,y,right-left,1,colors.sceneScrim,uint8_t(alpha));
     }
     if(rowBegin<76){
-        c.fillCircle(40,38,26,rgb(234,215,186));
-        UiCommon::drawBackChevron(c,29,38,16,ink);
-        text(276,22,"探险",32,rgb(128,83,57));
+        ThemedUi::drawHeader(c,"探险");
     }
     if(rowBegin<144 && rowEnd>96){
-        text(40,100,names[id],32,rgb(255,244,224));
+        text(40,100,names[id],32,colors.sceneText);
         if(showPets)c.fillRoundRect(288,96,44,44,14,accent);
-        else c.blendRoundRectAlphaNative(288,96,44,44,14,rgb(48,32,22),184);
-        const auto eye=canPreview?rgb(255,244,224):muted;
+        else c.blendRoundRectAlphaNative(288,96,44,44,14,colors.sceneControl,184);
+        const auto eye=canPreview?colors.sceneText:muted;
         ExplorePostcardIcons::drawEye(c,showPets,eye);
     }
     if(id==6 && m.marketDaysUntilOpen && rowBegin<156 && rowEnd>140){
         char countdown[48];
         std::snprintf(countdown,sizeof(countdown),Ui::MarketText::SELECTOR_NEXT,
                       (unsigned long)m.marketDaysUntilOpen);
-        text(40,140,countdown,16,rgb(255,241,217));
+        text(40,140,countdown,16,colors.sceneStatus);
     }
     if(rowEnd>POSTCARD_POOL_TOP && rowBegin<POSTCARD_POOL_BOTTOM){
         if(showPets){
@@ -113,7 +112,7 @@ inline void renderExplorePostcard(Canvas565& c,const ExploreViewModel& m,
             for(int i=layout.start;i<layout.start+layout.count;++i){
                 const auto* f=m.previewFrames[i];
                 if(!f){c.drawCircle(x+84,feet-20,6,onAccent);x+=168+POSTCARD_POOL_GAP;continue;}
-                c.fillRoundRect(x+f->width/2-20,feet+2,40,4,2,rgb(49,36,23));
+                c.fillRoundRect(x+f->width/2-20,feet+2,40,4,2,colors.sceneShadow);
                 if(m.previewHidden[i])PokemonSprites::drawFrameSilhouette(f,x,feet-f->height,0);
                 else PokemonSprites::drawFrame(f,x,feet-f->height);
                 x+=f->width+POSTCARD_POOL_GAP;
@@ -135,8 +134,8 @@ inline void renderExplorePostcard(Canvas565& c,const ExploreViewModel& m,
         }
     }
     if(rowEnd>388 && rowBegin<436){
-        c.fillRoundRect(20,388,328,48,16,locked?rgb(227,212,191):accent);
-        text((368-width(Ui::Explore::DEPART,32))/2,396,Ui::Explore::DEPART,32,locked?rgb(154,134,110):onAccent);
+        c.fillRoundRect(20,388,328,48,16,locked?colors.disabledSurface:accent);
+        text((368-width(Ui::Explore::DEPART,32))/2,396,Ui::Explore::DEPART,32,locked?colors.disabledText:onAccent);
     }
 }
 }

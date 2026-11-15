@@ -8,6 +8,9 @@
 #include "platform/desktop/DesktopPlatform.h"
 #include "presentation/Canvas565.h"
 #include "presentation/PixelRenderer.h"
+#include "ui/SettingsScreens.h"
+#include "ui/ExploreScreens.h"
+#include "ui/UiTheme.h"
 
 #include <cassert>
 #include <cstdio>
@@ -233,24 +236,27 @@ void settingsSliders(Fixture& f) {
     f.enter(Scene::SETTINGS);
     assert(f.desktop.brightness() == 128 && f.desktop.volume() == 50);
     const auto writes = f.blobs.writes;
-    f.event(TouchEventType::DOWN, 148, 108);
-    f.event(TouchEventType::MOVE, 332, 108);
+    f.tap(83,126);f.tap(86,214);
+    assert(f.state().settings.brightness==128 && f.state().settings.volume==50);
+    assert(f.blobs.writes==writes);
+    f.event(TouchEventType::DOWN, 40, 148);
+    f.event(TouchEventType::MOVE, 328, 148);
     assert(f.state().settings.brightness == 255 && f.desktop.brightness() == 255);
     assert(f.blobs.writes == writes && f.saved().settings.brightness == 128);
     f.cancel();
-    f.event(TouchEventType::UP, 148, 108);
+    f.event(TouchEventType::UP, 40, 148);
     assert(f.blobs.writes == writes && f.saved().settings.brightness == 128);
-    f.event(TouchEventType::DOWN, 148, 108);
-    f.event(TouchEventType::MOVE, 332, 108);
-    f.event(TouchEventType::UP, 332, 108);
+    f.event(TouchEventType::DOWN, 40, 148);
+    f.event(TouchEventType::MOVE, 328, 148);
+    f.event(TouchEventType::UP, 328, 148);
     assert(f.blobs.writes > writes && f.saved().settings.brightness == 255);
 
     const auto volumeWrites = f.blobs.writes;
-    f.event(TouchEventType::DOWN, 332, 172);
-    f.event(TouchEventType::MOVE, 148, 172);
+    f.event(TouchEventType::DOWN, 328, 236);
+    f.event(TouchEventType::MOVE, 40, 236);
     assert(f.state().settings.volume == 0 && f.desktop.volume() == 0);
     assert(f.blobs.writes == volumeWrites && f.saved().settings.volume == 50);
-    f.event(TouchEventType::UP, 148, 172);
+    f.event(TouchEventType::UP, 40, 236);
     assert(f.saved().settings.volume == 0);
     f.tap(40, 38);
     assert(f.scene() == Scene::HOME);
@@ -264,27 +270,27 @@ void settingsSliders(Fixture& f) {
 void settingsActions(Fixture& f) {
     f.enter(Scene::SETTINGS);
     for (uint8_t speed = 1; speed <= 4; ++speed) {
-        f.tap(240, 234);
+        f.tap(240, 298);
         assert(f.state().settings.speedIndex == speed % 4);
         assert(f.saved().settings.speedIndex == speed % 4);
     }
     for (uint8_t idle = 0; idle < 5; ++idle) {
-        f.tap(240, 294);
+        f.tap(240, 350);
         assert(f.state().settings.idleTimeoutIndex == idle);
         assert(f.saved().settings.idleTimeoutIndex == idle);
     }
     const auto writes = f.blobs.writes;
-    f.event(TouchEventType::DOWN, 240, 234);
+    f.event(TouchEventType::DOWN, 240, 298);
     f.cancel();
-    f.event(TouchEventType::UP, 240, 234);
+    f.event(TouchEventType::UP, 240, 298);
     assert(f.state().settings.speedIndex == 0 && f.blobs.writes == writes);
-    f.event(TouchEventType::DOWN, 240, 294);
+    f.event(TouchEventType::DOWN, 240, 350);
     assert(f.app.prepareDisplayLock(f.desktop.millis()));
     assert(f.scene() == Scene::HOME);
-    f.event(TouchEventType::UP, 240, 294);
+    f.event(TouchEventType::UP, 240, 350);
     assert(f.state().settings.idleTimeoutIndex == 4);
     f.enter(Scene::SETTINGS);
-    f.tap(240, 234);
+    f.tap(240, 298);
     assert(f.state().settings.speedIndex == 1);
     std::puts("settings: speed/power cycles persist; cancelled and exited gestures cannot activate rows");
 }
@@ -293,7 +299,7 @@ void settingsReset(Fixture& f) {
     f.enter(Scene::SETTINGS);
     const auto writes = f.blobs.writes;
     const auto list = f.pixels;
-    f.tap(240, 354);
+    f.tap(240, 410);
     const auto confirmation = f.pixels;
     assert(confirmation != list && f.blobs.writes == writes);
     f.event(TouchEventType::UP, 262, 390);
@@ -309,12 +315,91 @@ void settingsReset(Fixture& f) {
     assert(f.saved().coins == 4321 && f.state().coins == 4321);
     f.tap(106, 390);
     assert(f.scene() == Scene::SETTINGS && f.pixels == list);
-    f.tap(240, 354);
+    f.tap(240, 410);
     f.tap(40, 38);
     assert(f.scene() == Scene::SETTINGS && f.pixels == list);
     f.tap(40, 38);
     assert(f.scene() == Scene::HOME);
     std::puts("settings: reset requires explicit confirmation; orphan, cancelled and cross-button releases rejected");
+}
+
+void settingsTheme(Fixture& f,const char* output){
+    const auto original=UiTheme::current();
+    const auto savedWrites=f.blobs.writes;
+    auto shot=[&](const char* name){
+        if(!output)return;
+        const auto path=std::string(output)+"/"+name+".ppm";
+        auto* file=std::fopen(path.c_str(),"wb");assert(file);
+        std::fprintf(file,"P6\n368 448\n255\n");
+        for(int y=0;y<448;++y)for(int x=0;x<368;++x){
+            auto p=f.canvas.readPixel(x,y);
+            const unsigned char rgb[]={uint8_t(((p>>11)&31)*255/31),
+                uint8_t(((p>>5)&63)*255/63),uint8_t((p&31)*255/31)};
+            assert(std::fwrite(rgb,1,3,file)==3);
+        }
+        assert(std::fclose(file)==0);
+    };
+    f.enter(Scene::SETTINGS);shot("settings");
+    SettingsViewModel m;m.state=&f.state();m.brightness=128;m.volume=50;
+    for(int variant=0;variant<2;++variant){
+        if(variant){
+            auto alternate=original;
+            alternate.background=0x1903;
+            alternate.surface=UiTheme::rgb565(40,56,47);
+            alternate.control=UiTheme::rgb565(55,74,60);
+            alternate.text=UiTheme::rgb565(241,232,210);
+            alternate.secondaryText=UiTheme::rgb565(196,192,164);
+            alternate.title=UiTheme::rgb565(236,207,153);
+            alternate.accent=UiTheme::rgb565(221,169,100);
+            alternate.accentText=UiTheme::rgb565(37,34,25);
+            alternate.track=UiTheme::rgb565(78,93,72);
+            alternate.pressed=UiTheme::rgb565(68,84,66);
+            UiTheme::setPalette(alternate);
+            alternate.background=0; // The active palette must own its values.
+        }
+        for(int state=0;state<6;++state){
+            m.resetConfirm=state==3;m.systemUpdate=state==4;
+            m.pressedItem=state==1?0:state==2?3:255;
+            m.toast=state==5?Ui::Settings::BRIGHTNESS_CHANGED:nullptr;
+            renderSettingsScreen(f.canvas,m);
+            assert(f.canvas.readPixel(0,447)==(variant?0x1903:original.background));
+            if(!variant){
+                if(state==3)shot("reset");
+                if(state==4)shot("settings-update");
+            }else if(state==0)shot("settings-alternate");
+            const Frame expected=f.pixels;
+            f.canvas.fillSprite(0);
+            for(int y=0;y<448;y+=37)
+                renderSettingsScreen(f.canvas,m,y,std::min(448,y+37));
+            assert(f.pixels==expected);
+            Frame swapped(368*448);
+            f.canvas.attach({swapped.data(),368,448,true});
+            for(int y=0;y<448;++y)renderSettingsScreen(f.canvas,m,y,y+1);
+            for(int y=0;y<448;++y)for(int x=0;x<368;++x)
+                assert(f.canvas.readPixel(x,y)==expected[y*368+x]);
+            f.canvas.attach({f.pixels.data(),368,448,false});
+        }
+        ExploreViewModel explore;explore.visibleAreaCount=6;explore.unlockedArea=5;
+        PixelCache565 cache;renderExploreScreen(f.canvas,explore,cache);
+        assert(f.canvas.readPixel(0,447)==(variant?0x1903:original.background));
+        assert(f.canvas.readPixel(184,430)==UiTheme::current().accent);
+        if(variant)shot("explore-alternate");
+        explore.toast=Ui::Settings::BRIGHTNESS_CHANGED;
+        renderExploreScreen(f.canvas,explore,cache);
+        assert(f.canvas.readPixel(184,284)==UiTheme::current().text);
+        const Frame toastFrame=f.pixels;
+        f.canvas.fillSprite(0);
+        for(int y=0;y<448;y+=37)
+            renderExploreScreen(f.canvas,explore,cache,y,std::min(448,y+37));
+        assert(f.pixels==toastFrame);
+    }
+    UiTheme::setPalette(original);
+    m.resetConfirm=false;m.systemUpdate=false;m.pressedItem=255;m.toast=nullptr;
+    f.canvas.setNativeText(false);renderSettingsScreen(f.canvas,m);
+    assert(!f.canvas.nativeText());f.canvas.setNativeText(true);
+    assert(f.blobs.writes==savedWrites && f.state().coins==4321);
+    assert(f.state().settings.brightness==128 && f.state().settings.volume==50);
+    std::puts("settings-theme: copied palettes affect both pages; six states, clipped rows and swapped storage OK");
 }
 
 void teamNavigation(Fixture& f) {
@@ -578,7 +663,7 @@ void pageExitGestures(Fixture& f) {
     for (const auto& page : {PagePress{Scene::TEAM, 100, 120},
                              PagePress{Scene::BAG, 64, 240},
                              PagePress{Scene::SHOP, 106, 390},
-                             PagePress{Scene::SETTINGS, 240, 234}}) {
+                             PagePress{Scene::SETTINGS, 240, 298}}) {
         f.enter(page.scene);
         if (page.scene == Scene::SHOP) {
             f.tap(50, 230);
@@ -600,11 +685,12 @@ void pageExitGestures(Fixture& f) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    assert(argc == 3);
+    assert(argc == 3 || argc == 4);
     Fixture fixture(argv[1]);
     if (std::strcmp(argv[2], "settings-sliders") == 0) settingsSliders(fixture);
     else if (std::strcmp(argv[2], "settings-actions") == 0) settingsActions(fixture);
     else if (std::strcmp(argv[2], "settings-reset") == 0) settingsReset(fixture);
+    else if (std::strcmp(argv[2], "settings-theme") == 0) settingsTheme(fixture,argc==4?argv[3]:nullptr);
     else if (std::strcmp(argv[2], "team-navigation") == 0) teamNavigation(fixture);
     else if (std::strcmp(argv[2], "team-leader") == 0) teamLeader(fixture);
     else if (std::strcmp(argv[2], "bag-navigation") == 0) bagNavigation(fixture);

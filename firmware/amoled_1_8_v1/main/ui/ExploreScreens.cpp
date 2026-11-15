@@ -1179,7 +1179,7 @@ void renderExploreScreen(Canvas565& canvas, const ExploreViewModel& model,
     UiCommon::PageClip clip(canvas,rowBegin,rowEnd);
     if(rowBegin>=rowEnd)return;
     renderExplorePostcard(canvas,model,rowBegin,rowEnd);
-    drawToast(canvas,model.toast);
+    ThemedUi::drawToast(canvas,model.toast);
 #else
     renderExploreLegacyScreen(canvas,model,cache,rowBegin,rowEnd);
 #endif

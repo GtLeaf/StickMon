@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class AmoledNativeRenderTests(unittest.TestCase):
     def test_page_headers_are_self_contained(self):
         headers = [f"ui/{header}" for header in
-                   ("RoomScreens.h", "SettingsScreens.h", "HatchScreens.h", "UiCommon.h",
+                   ("RoomScreens.h", "SettingsScreens.h", "SettingsLayout.h", "UiTheme.h", "ThemedUi.h", "HatchScreens.h", "UiCommon.h",
                     "ItemShopScreens.h", "TeamScreens.h", "ComputerScreens.h",
                     "ExploreScreens.h", "ProgressionScreens.h", "ShowerScreens.h",
                     "ExploreMapRenderer.h", "RenderCaches.h", "SceneFade.h")]
@@ -49,6 +49,7 @@ class AmoledNativeRenderTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         sources = [
+            "tools/amoled_checksum_guard.cpp",
             "tools/amoled_native_render_host.cpp",
             "tools/amoled_battery_host.cpp",
             "tools/amoled_ecology_host.cpp",
