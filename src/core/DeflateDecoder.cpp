@@ -77,12 +77,12 @@ bool inflateMemory(const uint8_t* compressed, size_t compressedBytes,
     return state.dest == state.dest_limit && (status == TINF_OK || status == TINF_DONE);
 }
 
-bool inflateFile(Platform::ResourceFile& file,
+static bool inflateFileImpl(Platform::ResourceFile& file,
                  uint32_t compressedBytes,
                  uint8_t* output,
                  size_t outputBytes,
                  uint32_t expectedCrc32,
-                 Stats* stats) {
+                 Stats* stats, bool strict) {
     Stats result{};
     result.inputBytes = compressedBytes;
     result.outputBytes = static_cast<uint32_t>(outputBytes);
@@ -102,7 +102,7 @@ bool inflateFile(Platform::ResourceFile& file,
     context.state.source_read_cb = refillSource;
     context.state.dest_start = output;
     context.state.dest = output;
-    context.state.dest_limit = output + outputBytes;
+    context.state.dest_limit = output + outputBytes + (strict ? 1 : 0);
     uzlib_init();
     uzlib_uncompress_init(&context.state, nullptr, 0);
 
@@ -119,11 +119,30 @@ bool inflateFile(Platform::ResourceFile& file,
     result.inflateMs = result.totalMs >= result.readMs ? result.totalMs - result.readMs : 0;
     if (stats) *stats = result;
 
-    bool streamComplete = status == TINF_DONE ||
+    const size_t buffered = static_cast<size_t>(context.state.source_limit - context.state.source);
+    const size_t consumed = context.bytesRead - buffered;
+    bool streamComplete = strict
+        ? status == TINF_DONE && !context.state.eof && consumed == compressedBytes
+        : status == TINF_DONE ||
                           (status == TINF_OK && context.state.dest == context.state.dest_limit);
     return streamComplete && !context.readFailed &&
            context.bytesRead <= compressedBytes && produced == outputBytes &&
            actualCrc32 == expectedCrc32;
+}
+
+bool inflateFile(Platform::ResourceFile& file, uint32_t compressedBytes,
+                 uint8_t* output, size_t outputBytes, uint32_t expectedCrc32,
+                 Stats* stats) {
+    return inflateFileImpl(file, compressedBytes, output, outputBytes,
+                           expectedCrc32, stats, false);
+}
+
+bool inflateFileExact(Platform::ResourceFile& file, uint32_t compressedBytes,
+                      uint8_t* output, size_t outputCapacity, size_t outputBytes,
+                      uint32_t expectedCrc32, Stats* stats) {
+    if (outputCapacity <= outputBytes) return false;
+    return inflateFileImpl(file, compressedBytes, output, outputBytes,
+                           expectedCrc32, stats, true);
 }
 
 }  // namespace DeflateDecoder

@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PIL import Image, ImageChops
+from generate_menu_icon_pack import DEFAULT_OUTPUT as DEFAULT_PACK, generate_pack
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -334,8 +335,9 @@ def update_cpp(cpp_path: Path, sheet: Image.Image) -> tuple[int, list[int]]:
 
     existing = cpp_path.read_text(encoding="utf-8")
     start = existing.index("const RleFrame MAIN_ICON_FRAMES[] STICKMON_FLASH_DATA = {")
-    end = existing.index("const RleFrame BOX_ICON_FRAMES[] STICKMON_FLASH_DATA = {")
-    cpp_path.write_text(existing[:start] + generated + existing[end:], encoding="utf-8")
+    rle_start = existing.index("const uint16_t MAIN_ICON_RLE[] STICKMON_FLASH_DATA = {", start)
+    end = existing.index("};", rle_start) + 2
+    cpp_path.write_text(existing[:start] + generated.rstrip() + existing[end:], encoding="utf-8")
     return len(words), [len(frame) for frame in frames]
 
 
@@ -380,6 +382,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--preview", type=Path, default=DEFAULT_PREVIEW)
     parser.add_argument("--cpp", type=Path, default=DEFAULT_CPP)
     parser.add_argument("--header", type=Path, default=DEFAULT_HEADER)
+    parser.add_argument("--pack", type=Path, default=DEFAULT_PACK)
     parser.add_argument(
         "--keep-white",
         action="store_true",
@@ -404,6 +407,8 @@ def main() -> None:
     save_preview(sheet, args.preview)
     word_count, frame_lengths = update_cpp(args.cpp, sheet)
     update_header(args.header)
+    pack_bytes = generate_pack(args.cpp, args.pack)
+    print(f"generated {args.pack}: {pack_bytes} bytes")
     print(f"generated {args.sheet} ({sheet.width}x{sheet.height})")
     print(f"generated {args.preview}")
     print(f"updated {args.cpp}: {word_count} words, frames={frame_lengths}")

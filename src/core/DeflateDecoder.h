@@ -25,4 +25,11 @@ bool inflateFile(Platform::ResourceFile& file,
                  uint32_t expectedCrc32,
                  Stats* stats = nullptr);
 
+// Strict variant: requires the final DEFLATE marker and exact input length.
+// outputCapacity must include at least one guard byte beyond outputBytes;
+// an extra decoded byte is rejected and never exposed as valid output.
+bool inflateFileExact(Platform::ResourceFile& file, uint32_t compressedBytes,
+                      uint8_t* output, size_t outputCapacity, size_t outputBytes,
+                      uint32_t expectedCrc32, Stats* stats = nullptr);
+
 }  // namespace DeflateDecoder

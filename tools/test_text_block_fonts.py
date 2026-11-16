@@ -4,6 +4,7 @@ import struct
 import unittest
 from PIL import ImageFont
 import generate_font16cn as gen
+from font_pack import unpack_font
 
 def points(bits):
     return {(x,y) for y in range(32) for x in range(32)
@@ -21,7 +22,7 @@ class PunctuationTests(unittest.TestCase):
 
     def test_pack_matches_generator(self):
         font=ImageFont.truetype(str(gen.SARASA_FONT_PATH),32)
-        data=gen.PACK_FONT_LARGE_REGULAR_OUT.read_bytes()
+        data=unpack_font(gen.PACK_FONT_LARGE_REGULAR_OUT.read_bytes())
         _,_,count,w,h,stride,_,_=struct.unpack_from('<IHHBBBBI',data)
         self.assertEqual((w,h,stride),(32,32,128))
         self.assertEqual(len(data),16+count*(4+stride))

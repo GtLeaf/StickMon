@@ -7,7 +7,7 @@ import struct
 
 ROOT = Path(__file__).resolve().parents[1]
 ENTRY = struct.Struct('<192sII')
-EXTENSIONS = {'.json', '.smonsp', '.smonroom', '.smonfurn', '.smonfx', '.smonfont', '.smondialogue'}
+EXTENSIONS = {'.json', '.smonsp', '.smonroom', '.smonfurn', '.smonfx', '.smonfont', '.smondialogue', '.smonmenu'}
 
 
 def pack(data: Path, output: Path, *, audio_only=False):

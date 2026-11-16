@@ -56,6 +56,8 @@ idf_component_register(
 )
 
 target_compile_features(${COMPONENT_LIB} PUBLIC cxx_std_17)
+target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    STICKMON_EXTERNAL_MAP_LAYOUTS=1 STICKMON_EXTERNAL_MENU_ICONS=1)
 if(STICKMON_ENABLE_CLAW)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE STICKMON_HAS_CLAW=1)
 else()

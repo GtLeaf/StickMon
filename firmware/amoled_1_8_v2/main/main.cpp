@@ -10,6 +10,8 @@
 #include <cstring>
 
 #include "AmoledApp.h"
+#include "assets/MenuAssets.h"
+#include "core/MapLayoutResources.h"
 #include "AmoledPlatform.h"
 #include "OtaRuntime.h"
 #include "AmoledGeometry.h"
@@ -828,6 +830,22 @@ extern "C" void app_main(void) {
         !AmoledV2::AmoledPlatform::instance().initialize() || !AmoledV2::Ota::bootResourcesHealthy())) {
         ESP_LOGE(TAG, "OTA boot health check failed; reverting on restart");
         esp_restart();
+    }
+    if (!beginMapLayoutResources() || !MenuAssets::begin()) {
+        ESP_LOGE(TAG, "Invalid map/menu resources; game state has not been loaded");
+        if (pendingOta) esp_restart();
+        canvas.fillRect(0, 0, AmoledUi::WIDTH, AmoledUi::HEIGHT, 0);
+        PixelRenderer::text(16, 24, "Resource error", 0xffff);
+        PixelRenderer::text(16, 72, "Tap to update", 0xffff);
+        AmoledV2::AmoledPlatform::instance().setBrightness(120);
+        submitFrame(panel, physicalPixels, transferBuffers, transferDone);
+        while (true) {
+            AmoledV2::TouchEvent event;
+            if (touchReady && touch.poll(millisNow(), event) &&
+                event.type == AmoledV2::TouchEventType::UP)
+                AmoledV2::Ota::requestMaintenance();
+            vTaskDelay(pdMS_TO_TICKS(20));
+        }
     }
     ESP_LOGI(TAG, "App: creating home application (object=%u bytes, stack-free=%u)",
              static_cast<unsigned>(sizeof(AmoledV1::AmoledApp)),

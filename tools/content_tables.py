@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """Stable content table IDs and generated-header adapters for external targets.
 
-Generators call adapt_header before writing their output. Other targets retain
-the exact static tables; SDGOODS decodes the same explicit wire fields instead.
+Generators call adapt_header before writing their output. V2 can externalize
+only map layouts; SDGOODS decodes the full catalog. Other targets retain the
+exact static tables. Both external modes use the same explicit wire fields.
 """
 import re
 
@@ -37,7 +38,14 @@ def fields_code(types):
                      for typ,fields in types.items())+'\n'
 
 def adapt_header(text, key):
-    if 'CONTENT_TABLES_ADAPTED' in text: return text
+    maps = key in {'ExploreGrassPathData','ExploreMistForestData','ExploreValleyData',
+                   'ExploreFrostLayouts','ExploreAncientValleyLayouts'}
+    condition = 'STICKMON_EXTERNAL_CONTENT || STICKMON_EXTERNAL_MAP_LAYOUTS' if maps else 'STICKMON_EXTERNAL_CONTENT'
+    if 'CONTENT_TABLES_ADAPTED' in text:
+        if maps:
+            text=text.replace('#if STICKMON_EXTERNAL_CONTENT\n', '#if '+condition+'\n')
+            text=text.replace('STICKMON_CONTENT_CONSTEXPR','STICKMON_MAP_CONSTEXPR')
+        return text
     namespace, types, tables = SCHEMAS[key]
     text=text.replace('#pragma once','#pragma once\n// CONTENT_TABLES_ADAPTED\n#include "game/ContentData.h"',1)
     # Insert codecs after the last record definition, before its first table.
@@ -57,14 +65,14 @@ def adapt_header(text, key):
         original=text[start:end]
         alias=f'{name}_ContentItem'
         external=f'using {alias} = {typ}{dims};\ninline const ContentData::Table<{alias},{limit}> {name}{{{ident}}};'
-        text=text[:start]+f'#if STICKMON_EXTERNAL_CONTENT\n{external}\n#else\n{original}\n#endif'+text[end:]
+        text=text[:start]+f'#if {condition}\n{external}\n#else\n{original}\n#endif'+text[end:]
         text=text.replace(f'sizeof({name}) / sizeof({name}[0])',str(limit))
     # Functions which access a table cease to be constexpr in the external build.
-    text=re.sub(r'inline constexpr (?=[^;\n]+\()', 'inline STICKMON_CONTENT_CONSTEXPR ',text)
+    text=re.sub(r'inline constexpr (?=[^;\n]+\()', 'inline '+('STICKMON_MAP_CONSTEXPR' if maps else 'STICKMON_CONTENT_CONSTEXPR')+' ',text)
     # Static validation still runs in the producer/default build.
     def assertion(m):
         value=m.group()
-        return '#if !STICKMON_EXTERNAL_CONTENT\n'+value+'\n#endif' if any(re.search(r'\b'+n+r'\b',value) for n,*_ in tables) else value
+        return '#if !('+condition+')\n'+value+'\n#endif' if any(re.search(r'\b'+n+r'\b',value) for n,*_ in tables) else value
     text=re.sub(r'static_assert\([\s\S]*?;',assertion,text)
     return text
 

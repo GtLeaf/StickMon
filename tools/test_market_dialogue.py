@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Dialogue content coverage, malformed resources and the real market lock."""
+from font_pack import unpack_font
 import copy
 import json
 from pathlib import Path
@@ -44,7 +45,7 @@ class DialogueTests(unittest.TestCase):
         chars.update(c for s in self.content['scripts'] for line in s['lines'] for c in line['text'] if ord(c)>=128)
         chars.add('：')
         for name,glyph_bytes in [('zh16',32),('zh32',128)]:
-            data=(ROOT/f'data/packs/dev/fonts/{name}.smonfont').read_bytes()
+            data=unpack_font((ROOT/f'data/packs/dev/fonts/{name}.smonfont').read_bytes())
             count=struct.unpack_from('<H',data,6)[0]
             glyphs={chr(struct.unpack_from('<I',data,16+i*(4+glyph_bytes))[0]) for i in range(count)}
             self.assertFalse(chars-glyphs, (name,chars-glyphs))

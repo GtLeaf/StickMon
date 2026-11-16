@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Prepare the box sprite and install it without re-encoding existing assets."""
+from font_pack import unpack_font
 import argparse
 import json
 import struct
@@ -46,7 +47,7 @@ def install_icon(image):
 def install_glyphs():
     for name, size, pixel_size in [('zh16', 32, 16), ('zh32', 128, 32)]:
         path = ROOT / f'data/packs/dev/fonts/{name}.smonfont'
-        data = path.read_bytes(); count = struct.unpack_from('<H', data, 6)[0]
+        data = unpack_font(path.read_bytes()); count = struct.unpack_from('<H', data, 6)[0]
         existing = {}
         for i in range(count):
             offset = 16 + i * (4 + size)

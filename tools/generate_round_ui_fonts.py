@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Generate opt-in Sarasa A4 fonts for round navigation and battle text."""
 import struct
+from font_pack import compress_font, unpack_font
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -37,7 +38,7 @@ def generate(output=None):
             chars.update(collect_pack_text_chars())
             # Include every character available to the running game, including
             # retained pack glyphs that are absent from today's source text.
-            regular = PACK_FONT_REGULAR_OUT.read_bytes()
+            regular = unpack_font(PACK_FONT_REGULAR_OUT.read_bytes())
             magic, version, count, width, height, stride, reserved, flags = HEADER.unpack_from(regular)
             if (magic, version, width, height, stride, reserved, flags) != (0x4E464D53, 1, 16, 16, 32, 0, 0):
                 raise ValueError("Unexpected regular font format")
@@ -54,7 +55,7 @@ def generate(output=None):
         header = HEADER.pack(0x4E464D53, 2, len(chars), size, size,
                              size * size // 2, 0, 4)
         path = output / f"round-zh{size}-a4.smonfont"
-        path.write_bytes(header + payload)
+        path.write_bytes(compress_font(header + payload))
         print(f"Sarasa {size}px A4: {len(chars)} glyphs, {path.stat().st_size} bytes -> {path}")
 
 

@@ -82,12 +82,26 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
 
 file(GLOB RESOURCE_FONT_FILES CONFIGURE_DEPENDS
      "${RESOURCE_FONTS_DIR}/*.smonfont")
+# Native AMOLED uses bitmap fonts only; A4 coverage fonts belong to round UI.
+list(FILTER RESOURCE_FONT_FILES EXCLUDE REGEX "/round-zh(16|20)-a4[.]smonfont$")
 file(GLOB RESOURCE_SPRITE_FILES CONFIGURE_DEPENDS
      "${RESOURCE_SPRITES_DIR}/*.smonsp")
 file(GLOB RESOURCE_AUDIO_FILES CONFIGURE_DEPENDS
      "${RESOURCE_AUDIO_DIR}/*.smonaudio")
 file(GLOB RESOURCE_CRY_FILES CONFIGURE_DEPENDS
      "${RESOURCE_CRIES_DIR}/*.smoncry")
+set(RESOURCE_MENU "${STICKMON_ROOT}/data/packs/dev/ui/menu.smonmenu")
+set(RESOURCE_LAYOUT_FILES)
+foreach(LAYOUT_ID RANGE 10 20)
+    set(LAYOUT_FILE "${STICKMON_ROOT}/data/packs/dev/catalog/${LAYOUT_ID}.smondata")
+    if(NOT EXISTS "${LAYOUT_FILE}")
+        message(FATAL_ERROR "Missing map table: run tools/generate_map_layout_resources.py")
+    endif()
+    list(APPEND RESOURCE_LAYOUT_FILES "${LAYOUT_FILE}")
+endforeach()
+if(NOT EXISTS "${RESOURCE_MENU}")
+    message(FATAL_ERROR "Missing menu icons: run tools/generate_menu_icon_pack.py")
+endif()
 
 if(NOT RESOURCE_FONT_FILES)
     message(FATAL_ERROR "StickMon font resources are missing")
@@ -99,6 +113,12 @@ endif()
 file(REMOVE_RECURSE "${RESOURCE_STAGE_DIR}")
 include("${STICKMON_ROOT}/firmware/common/market_dialogue_resources.cmake")
 file(MAKE_DIRECTORY "${RESOURCE_STAGE_DIR}/packs/dev/sprites")
+file(MAKE_DIRECTORY "${RESOURCE_STAGE_DIR}/packs/dev/ui" "${RESOURCE_STAGE_DIR}/packs/dev/catalog")
+configure_file("${RESOURCE_MENU}" "${RESOURCE_STAGE_DIR}/packs/dev/ui/menu.smonmenu" COPYONLY)
+foreach(LAYOUT_FILE IN LISTS RESOURCE_LAYOUT_FILES)
+    get_filename_component(LAYOUT_NAME "${LAYOUT_FILE}" NAME)
+    configure_file("${LAYOUT_FILE}" "${RESOURCE_STAGE_DIR}/packs/dev/catalog/${LAYOUT_NAME}" COPYONLY)
+endforeach()
 file(MAKE_DIRECTORY "${RESOURCE_STAGE_DIR}/packs/dev/rooms")
 file(MAKE_DIRECTORY "${RESOURCE_STAGE_DIR}/packs/dev/game")
 file(MAKE_DIRECTORY "${RESOURCE_STAGE_DIR}/packs/dev/fonts")
@@ -169,7 +189,7 @@ spiffs_create_partition_image(
     resources
     "${RESOURCE_STAGE_DIR}"
     FLASH_IN_PROJECT
-    DEPENDS "${RESOURCE_ACTIVE}" "${RESOURCE_MANIFEST}"
+    DEPENDS "${RESOURCE_ACTIVE}" "${RESOURCE_MANIFEST}" "${RESOURCE_MENU}" ${RESOURCE_LAYOUT_FILES}
             ${RESOURCE_SPRITE_FILES} "${RESOURCE_ROOM}" ${RESOURCE_DEBUG_ROOMS} "${RESOURCE_MAPS}"
             "${RESOURCE_UI}" "${RESOURCE_BATTLE}" "${RESOURCE_HATCH}"
             ${RESOURCE_FONT_FILES} ${RESOURCE_AUDIO_FILES}

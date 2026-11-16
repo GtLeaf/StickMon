@@ -1,7 +1,16 @@
 #include "MenuAssets.h"
 
+#if STICKMON_EXTERNAL_MENU_ICONS
+#include "core/DeflateDecoder.h"
+#include "core/ResourceFS.h"
+#include "core/ResourcePack.h"
+#include <cstdio>
+#include <cstring>
+#endif
+
 namespace MenuAssets {
 
+#if !STICKMON_EXTERNAL_MENU_ICONS
 const RleFrame MAIN_ICON_FRAMES[] STICKMON_FLASH_DATA = {
     { 0, 1349 },
     { 1349, 1349 },
@@ -1029,6 +1038,8 @@ const uint16_t MAIN_ICON_RLE[] STICKMON_FLASH_DATA = {
     0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0x8055,
 };
 
+#endif
+
 const RleFrame BOX_ICON_FRAMES[] STICKMON_FLASH_DATA = {
     { 0, 664 },
     { 664, 546 },
@@ -1388,3 +1399,101 @@ const uint16_t BOX_ICON_RLE[] STICKMON_FLASH_DATA = {
 };
 
 }
+
+namespace MenuAssets {
+#if STICKMON_EXTERNAL_MENU_ICONS
+namespace {
+constexpr size_t HEADER_BYTES = 28;
+constexpr size_t FRAME_BYTES = MAIN_ICON_COUNT * sizeof(RleFrame);
+constexpr size_t MAX_PAYLOAD_BYTES = FRAME_BYTES + MAIN_ICON_COUNT * FRAME_W * FRAME_H * 4;
+static_assert(sizeof(RleFrame) == 4, "menu frame wire layout");
+RleFrame* loadedFrames = nullptr;
+uint16_t* loadedRle = nullptr;
+bool attempted = false;
+
+uint16_t le16(const uint8_t* p) {
+    return uint16_t(p[0]) | uint16_t(p[1]) << 8;
+}
+uint32_t le32(const uint8_t* p) {
+    return uint32_t(p[0]) | uint32_t(p[1]) << 8 |
+           uint32_t(p[2]) << 16 | uint32_t(p[3]) << 24;
+}
+
+bool validatePayload(uint8_t* payload, size_t bytes) {
+    auto* frames = reinterpret_cast<RleFrame*>(payload);
+    auto* words = reinterpret_cast<uint16_t*>(payload + FRAME_BYTES);
+    const size_t wordCount = (bytes - FRAME_BYTES) / 2;
+    // Convert the little-endian wire payload in place, including on hosts.
+    for (size_t i = 0; i < MAIN_ICON_COUNT; ++i) {
+        const uint16_t offset = le16(payload + i * 4);
+        const uint16_t length = le16(payload + i * 4 + 2);
+        frames[i] = {offset, length};
+    }
+    for (size_t i = 0; i < wordCount; ++i) words[i] = le16(payload + FRAME_BYTES + i * 2);
+    size_t next = 0;
+    for (size_t i = 0; i < MAIN_ICON_COUNT; ++i) {
+        const auto& frame = frames[i];
+        if (frame.offset != next || !frame.length || frame.length > wordCount - next) return false;
+        const size_t end = next + frame.length;
+        size_t pixels = 0;
+        while (next < end) {
+            const uint16_t control = words[next++];
+            const size_t run = control & 0x7fff;
+            if (!run || run > size_t(FRAME_W) * FRAME_H - pixels) return false;
+            pixels += run;
+            if (!(control & 0x8000)) {
+                if (run > end - next) return false;
+                next += run;
+            }
+        }
+        if (pixels != size_t(FRAME_W) * FRAME_H) return false;
+    }
+    return next == wordCount;
+}
+
+bool loadExternal() {
+    auto& pack = ResourcePack::ins();
+    if (!pack.begin()) return false;
+    char path[96];
+    const int length = std::snprintf(path, sizeof(path), "%s/ui/menu.smonmenu", pack.root());
+    if (length < 0 || size_t(length) >= sizeof(path)) return false;
+    auto file = ResourceFS::ins().open(path);
+    uint8_t header[HEADER_BYTES];
+    if (!file || file.read(header, sizeof(header)) != sizeof(header)) return false;
+    if (std::memcmp(header, "SMMN", 4) || le16(header + 4) != 1 ||
+        le16(header + 6) != MAIN_ICON_COUNT || le16(header + 8) != FRAME_W ||
+        le16(header + 10) != FRAME_H || le32(header + 24) != 0) return false;
+    const size_t decoded = le32(header + 12);
+    const uint32_t encoded = le32(header + 16);
+    if (decoded <= FRAME_BYTES || decoded > MAX_PAYLOAD_BYTES || (decoded & 1) ||
+        !encoded || encoded > MAX_PAYLOAD_BYTES + 1024 ||
+        file.size() != HEADER_BYTES + size_t(encoded)) return false;
+    auto* payload = static_cast<uint8_t*>(Platform::memory().allocate(decoded + 1, true));
+    if (!payload) return false;
+    if (!DeflateDecoder::inflateFileExact(file, encoded, payload, decoded + 1,
+                                         decoded, le32(header + 20)) ||
+        !validatePayload(payload, decoded)) {
+        Platform::memory().release(payload);
+        return false;
+    }
+    loadedFrames = reinterpret_cast<RleFrame*>(payload);
+    loadedRle = reinterpret_cast<uint16_t*>(payload + FRAME_BYTES);
+    return true;
+}
+} // namespace
+
+bool begin() {
+    if (!attempted) {
+        attempted = true;
+        if (!loadExternal()) Platform::errorLine("[MenuAssets] main-menu icon preload failed");
+    }
+    return loadedFrames != nullptr;
+}
+const RleFrame* mainIconFrames() { return loadedFrames; }
+const uint16_t* mainIconRle() { return loadedRle; }
+#else
+bool begin() { return true; }
+const RleFrame* mainIconFrames() { return MAIN_ICON_FRAMES; }
+const uint16_t* mainIconRle() { return MAIN_ICON_RLE; }
+#endif
+} // namespace MenuAssets

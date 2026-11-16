@@ -89,7 +89,8 @@ def install_icons(images, path=None):
 
 
 def extend_font(path, chars):
-    data = Path(path).read_bytes()
+    from font_pack import compress_font, unpack_font
+    data = unpack_font(Path(path).read_bytes())
     magic, version, count, width, height, stride, reserved, flags = struct.unpack_from('<IHHBBBBI', data)
     if (magic != 0x4e464d53 or width != height or reserved or
             (version, width, stride, flags) not in {(1, 16, 32, 0), (1, 32, 128, 0), (2, 16, 128, 4)} or
@@ -109,7 +110,7 @@ def extend_font(path, chars):
     struct.pack_into('<H', header, 6, len(existing))
     payload = b''.join(struct.pack('<I', ord(char)) + existing[char]
                        for char in sorted(existing, key=ord))
-    Path(path).write_bytes(header + payload)
+    Path(path).write_bytes(compress_font(header + payload))
     print(Path(path).name, 'added glyphs:', ''.join(sorted(missing)))
 
 

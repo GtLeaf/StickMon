@@ -13,7 +13,7 @@ template<class V> inline void contentFields(V& v, Point& x) { v(x.x,x.y); }
 template<class V> inline void contentFields(V& v, Portal& x) { v(x.point,x.edge,x.target,x.entrance,x.warp); }
 template<class V> inline void contentFields(V& v, Room& x) { v(x.layers,x.roads,x.stairs,x.count,x.portals,x.forest); }
 template<class V> inline void contentFields(V& v, Tile& x) { v(x.offset,x.frames,x.depth,x.flags); }
-#if STICKMON_EXTERNAL_CONTENT
+#if STICKMON_EXTERNAL_CONTENT || STICKMON_EXTERNAL_MAP_LAYOUTS
 using TILES_ContentItem = Tile;
 inline const ContentData::Table<TILES_ContentItem,132> TILES{15};
 #else
@@ -152,11 +152,11 @@ constexpr Tile TILES[132] = {
     {201,8,0,4},
 };
 #endif
-inline STICKMON_CONTENT_CONSTEXPR const Tile* tile(uint16_t id) {
+inline STICKMON_MAP_CONSTEXPR const Tile* tile(uint16_t id) {
     return id >= 9000 && id < 9132 ? &TILES[id-9000] : nullptr;
 }
-inline STICKMON_CONTENT_CONSTEXPR bool flag(uint16_t id, uint8_t flag) { return tile(id) && (tile(id)->flags & flag); }
-#if STICKMON_EXTERNAL_CONTENT
+inline STICKMON_MAP_CONSTEXPR bool flag(uint16_t id, uint8_t flag) { return tile(id) && (tile(id)->flags & flag); }
+#if STICKMON_EXTERNAL_CONTENT || STICKMON_EXTERNAL_MAP_LAYOUTS
 using FORESTS_ContentItem = Room[6];
 inline const ContentData::Table<FORESTS_ContentItem,2> FORESTS{16};
 #else
@@ -309,7 +309,7 @@ constexpr Room FORESTS[2][6] = {
   },
 };
 #endif
-#if STICKMON_EXTERNAL_CONTENT
+#if STICKMON_EXTERNAL_CONTENT || STICKMON_EXTERNAL_MAP_LAYOUTS
 using CAVES_ContentItem = Room[4];
 inline const ContentData::Table<CAVES_ContentItem,1> CAVES{17};
 #else
@@ -366,7 +366,7 @@ constexpr Room CAVES[1][4] = {
   },
 };
 #endif
-#if STICKMON_EXTERNAL_CONTENT
+#if STICKMON_EXTERNAL_CONTENT || STICKMON_EXTERNAL_MAP_LAYOUTS
 using BRIDGES_ContentItem = Room[3];
 inline const ContentData::Table<BRIDGES_ContentItem,16> BRIDGES{18};
 #else

@@ -14,6 +14,7 @@
 #include "core/RoomResource.h"
 #include "core/ResourcePack.h"
 #include "assets/PokemonSprites.h"
+#include "assets/MenuAssets.h"
 #include "esp_ota_ops.h"
 
 namespace {
@@ -42,6 +43,7 @@ extern "C" void app_main() {
     if(!board.resourcesReady()) recovery("Missing or invalid resources");
     ContentData::bind(&catalog);
     if(!validateContentCatalog() || !catalog.healthy()) recovery("Invalid content catalog");
+    if(!MenuAssets::begin()) recovery("Invalid menu icons");
     Platform::logf("[SDGOODS] build debug=%u trace=%u\n",
         unsigned(STICKMON_ENABLE_DEBUG_FEATURES), unsigned(STICKMON_ENABLE_TRACE_LOGS));
     GameRandom::seed(board.hardwareRandom());
