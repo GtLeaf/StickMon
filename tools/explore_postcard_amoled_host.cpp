@@ -1,5 +1,6 @@
 #include "AmoledApp.h"
 #include "ui/UiCommon.h"
+#include "ui/UiTheme.h"
 #include "ui/ExplorePostcardLayout.h"
 #if STICKMON_EXPLORE_POSTCARD
 #include "ui/ExplorePostcardArt.h"
@@ -70,7 +71,32 @@ static void run(AmoledApp& app){
     app.explorePostcardPoolOffset_=0;
     tap(184,300);assert(app.explorePostcardPoolOffset_==0 && !app.explorePostcardShowPets_);
     tap(310,118);assert(app.explorePostcardShowPets_);
+    render("fixture-preview-first");app.markRendered();
+    const auto pageBackground=UiTheme::current().background;
+    for(int y=334;y<382;++y)for(int x=24;x<68;++x)assert(c.readPixel(x,y)==pageBackground);
+    for(int y=334;y<382;++y)for(int x=300;x<344;++x)assert(c.readPixel(x,y)==pageBackground);
+    assert(c.readPixel(170,357)==UiTheme::current().accent);
+    assert(c.readPixel(196,357)==UiTheme::current().muted);
     tap(184,300);assert(app.explorePostcardPoolOffset_==2);
+    assert(app.renderRowBegin()==150&&app.renderRowEnd()==382);
+    app.render(c);const auto* raw=c.rawPixels();
+    const std::vector<uint16_t> dirty(raw,raw+368*448);
+    app.forceFullRender();app.render(c);
+    assert(std::equal(dirty.begin(),dirty.end(),c.rawPixels()));
+    assert(c.readPixel(170,357)==UiTheme::current().muted);
+    assert(c.readPixel(184,357)==UiTheme::current().accent);
+    app.markRendered();
+    // Empty/single/loading preview groups have no pagination or scene arrows.
+    ExploreViewModel single;single.visibleAreaCount=6;single.unlockedArea=5;single.previewVisible=true;
+    for(int count : {0,1}){
+        single.previewPool.count=count;
+        for(bool pending : {false,true}){
+            single.previewFrames[0]=pending?nullptr:&fixture[0];
+            renderExploreScreen(c,single,cache);
+            for(int y=334;y<382;++y)for(int x=24;x<344;++x)assert(c.readPixel(x,y)==pageBackground);
+        }
+    }
+    render("fixture-preview-second");app.markRendered();
     auto send=[&](TouchEventType type,int x,int y){TouchEvent e{};e.x=x;e.y=y;e.type=type;e.timestampMs=t+=40;app.handleTouch(e);};
     auto swipe=[&](int x1,int y1,int x2,int y2){send(TouchEventType::DOWN,x1,y1);send(TouchEventType::MOVE,x2,y2);send(TouchEventType::UP,x2,y2);};
     send(TouchEventType::DOWN,310,139);send(TouchEventType::MOVE,310,150);send(TouchEventType::UP,310,150);
@@ -85,16 +111,25 @@ static void run(AmoledApp& app){
     send(TouchEventType::DOWN,280,300);send(TouchEventType::MOVE,80,300);app.cancelTouch();send(TouchEventType::UP,80,300);
     assert(app.explorePostcardPoolOffset_==2&&!app.exploreTransition_.state().pending);
     tap(184,300);assert(app.explorePostcardPoolOffset_==0);
-    app.explorePostcardClock_.pause();app.markRendered();
+    app.markRendered();
     app.update(t+=100);assert(app.explorePostcardPoolOffset_==0);
-    app.update(t+=2999);assert(app.explorePostcardPoolOffset_==0);
-    app.update(++t);assert(app.explorePostcardPoolOffset_==2&&app.renderRowBegin()==150&&app.renderRowEnd()==328);
-    tap(184,300);assert(app.explorePostcardPoolOffset_==0);app.markRendered();
-    app.update(t+=4999);assert(app.explorePostcardPoolOffset_==0);
-    app.update(++t);assert(app.explorePostcardPoolOffset_==2);
-    app.setDisplayLocked(true);app.update(t+=10000);assert(app.explorePostcardPoolOffset_==2);
-    app.setDisplayLocked(false);app.update(++t);assert(app.explorePostcardPoolOffset_==2);
-    app.update(t+=3000);assert(app.explorePostcardPoolOffset_==0);
+    app.update(t+=10000);assert(app.explorePostcardPoolOffset_==0);
+    app.setDisplayLocked(true);app.update(t+=10000);
+    app.setDisplayLocked(false);app.update(t+=10000);
+    assert(app.explorePostcardPoolOffset_==0); // Manual preview never rotates.
+    swipe(260,110,80,110);assert(app.explorePostcardPoolOffset_==2 && app.selectedExploreListIndex()==grass);
+    swipe(80,358,260,358);assert(app.explorePostcardPoolOffset_==0 && app.selectedExploreListIndex()==grass);
+    tap(322,358);tap(46,358);
+    assert(app.explorePostcardShowPets_ && app.selectedExploreListIndex()==grass && app.explorePostcardPoolOffset_==0);
+    swipe(184,180,184,310);assert(app.explorePostcardPoolOffset_==0);
+    // Larger toggle edge receives complete taps; dragging out never toggles.
+    send(TouchEventType::DOWN,281,118);send(TouchEventType::UP,282,118);
+    assert(app.explorePostcardShowPets_);
+    send(TouchEventType::DOWN,284,92);send(TouchEventType::MOVE,150,110);send(TouchEventType::UP,150,110);
+    assert(app.explorePostcardShowPets_ && app.selectedExploreListIndex()==grass);
+    tap(284,92);assert(!app.explorePostcardShowPets_);
+    tap(336,144);assert(app.explorePostcardShowPets_);
+    tap(336,144);assert(!app.explorePostcardShowPets_);
     app.explorePreviewPool=pool;app.explorePostcardPoolOffset_=savedOffset;
     for(int i=0;i<ExplorePool::POOL_CAP;i++)app.explorePreviewFrames[i]=oldFrames[i];
     assert(s.coins==before.coins&&s.gameMinutesTotal==before.gameMinutesTotal);
@@ -104,8 +139,10 @@ static void run(AmoledApp& app){
     swipe(300,146,100,146);assert(app.selectedExploreListIndex()==grass+1 && !app.explorePostcardShowPets_);
     app.selectExploreDestination(grass,t);update();
     app.markRendered();for(int i=0;i<5;i++){t+=33;app.update(t);assert(!app.needsRender());}
+    tap(310,118);assert(app.explorePostcardShowPets_);
     tap(30,30);assert(app.sceneFlow.current()==AppSceneFlow::Scene::MAIN_MENU);
     app.sceneFlow.enter(AppSceneFlow::Scene::EXPLORE_AREAS);app.selectExploreDestination(grass,t);update();
+    tap(310,118);assert(app.explorePostcardShowPets_);
     tap(300,412);assert(app.exploreTransition_.state().pending&&app.sceneFlow.current()==AppSceneFlow::Scene::HOME);
     app.cancelExploreDeparture();
     // Native foreground pixels must match direct FRONT drawing, including

@@ -10,6 +10,8 @@ Approved by the user: implement the grouped-card preview and extract theme color
 - Options card (20,272,328,104): speed and power-save rows, 52px each.
 - Reset entry (20,388,328,44), with explicit confirmation. On builds supporting
   system update, divide this footer into two 158px entries with a 12px gap.
+- Footer labels use 32px text with vertically centered icons and a centered icon/text group,
+  for both the full-width reset entry and paired debug update entries.
 - Keep brightness32..255, volume0..100, four speeds, five timeouts, save timing,
   cancellation, lock lifecycle and update availability.
 - Render and hit testing share geometry; press/release must belong to one control.

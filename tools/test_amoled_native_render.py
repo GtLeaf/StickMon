@@ -384,6 +384,9 @@ class AmoledNativeRenderTests(unittest.TestCase):
             lines = [line for line in result.stdout.splitlines() if line.startswith("TransitionTrace ")]
             fixture = json.loads((ROOT / "tools/fixtures/amoled_explore_transition_baseline.json").read_text())
             self.assertEqual(fixture["lines"], len(lines))
+            states = [line.rsplit(" ", 1)[0] for line in lines]
+            self.assertEqual(fixture["state_sha256"],
+                             hashlib.sha256(("\n".join(states) + "\n").encode()).hexdigest())
             self.assertEqual(fixture["sha256"], hashlib.sha256(("\n".join(lines)+"\n").encode()).hexdigest())
 
     def test_healthy_reserve_continues_normal_and_boss_encounters(self):
