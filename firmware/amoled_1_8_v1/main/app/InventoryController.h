@@ -10,7 +10,7 @@ namespace AmoledV1 {
 class InventoryController {
 public:
     enum class PendingItemAction : uint8_t { NONE = 0, BUY, SELL, USE };
-    enum class Selection : uint8_t { NONE, DETAIL, CANNOT_USE, OPEN_MOVE_MANAGER };
+    enum class Selection : uint8_t { NONE, DETAIL, CANNOT_USE };
 
     struct State {
         float itemScroll = 0.0f;

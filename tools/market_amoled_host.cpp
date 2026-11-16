@@ -1,6 +1,7 @@
 #include "AmoledApp.h"
 #include "game/MonsterFactory.h"
 #include "core/FontResource.h"
+#include "ui/UiTheme.h"
 #include "platform/desktop/DesktopPlatform.h"
 #include "presentation/PixelRenderer.h"
 #include <cassert>
@@ -32,18 +33,39 @@ struct AmoledAppTestAccess {
         assert(app.homeMainActor.active&&app.homeCompanionActor.active);
         for(int i=0;i<6;++i){state.explorePoolRerollCounts[i]=i+1;state.normalBossMissCount[i]=i+2;}
         app.sceneFlow.enter(AppSceneFlow::Scene::EXPLORE_AREAS);
+        assert(ExploreDestinations::visibleCount(state)==7);
+        assert(app.selectedExploreDestination_==ExploreDestinations::MARKET);
+        assert(app.selectedExploreListIndex()==0);
+        app.loadExplorePreview(0);
+        uint32_t navTime=0;
+        const auto navTouch=[&](TouchEventType type,int x,int y) {
+            TouchEvent e{};e.type=type;e.x=x;e.y=y;e.timestampMs=navTime+=50;app.handleTouch(e);
+        };
+        navTouch(TouchEventType::DOWN,280,180);
+        navTouch(TouchEventType::MOVE,80,180);
+        navTouch(TouchEventType::UP,80,180);
+        assert(app.selectedExploreDestination_==0&&app.selectedExploreListIndex()==1);
+        navTouch(TouchEventType::DOWN,80,180);
+        navTouch(TouchEventType::MOVE,280,180);
+        navTouch(TouchEventType::UP,280,180);
+        assert(app.selectedExploreDestination_==ExploreDestinations::MARKET&&app.selectedExploreListIndex()==0);
         if(!BuildConfig::DEBUG_FEATURES) {
-            assert(ExploreDestinations::visibleCount(state)==6);
-            app.selectedExploreDestination_=0;app.loadExplorePreview(0);
-            assert(app.selectedExploreListIndex()==0);
-            const auto before=state;
+            state.gameMinutesTotal=1440;
+            app.loadExplorePreview(navTime);
+            assert(Game::MarketSchedule::daysUntilOpen(state)==2);
+            const auto closed=state;
             assert(!app.queueExploreDeparture(ExploreDestinations::MARKET,false));
-            assert(!app.startMarket(0)&&!app.market_&&!app.pendingExpedition);
-            assert(std::memcmp(&before,&state,sizeof(state))==0);
-            app.render(PixelRenderer::canvas());capture(output,"release-explore-selection");
-            assert(app.queueExploreDeparture(0,false));
-            std::puts("market-amoled-release: hidden; direct entry blocked; normal exploration available");
-            return;
+            assert(!app.startMarket(navTime)&&!app.market_&&!app.pendingExpedition);
+            assert(std::memcmp(&closed,&state,sizeof(state))==0);
+            app.forceFullRender();app.render(PixelRenderer::canvas());capture(output,"release-market-closed");
+            assert(PixelRenderer::canvas().readPixel(40,407)==UiTheme::current().disabledSurface);
+            navTouch(TouchEventType::DOWN,184,412);
+            navTouch(TouchEventType::UP,184,412);
+            assert(!app.pendingExpedition&&app.sceneFlow.current()==AppSceneFlow::Scene::EXPLORE_AREAS);
+            assert(std::memcmp(&closed,&state,sizeof(state))==0);
+            state.gameMinutesTotal=0;
+            app.forceFullRender();app.render(PixelRenderer::canvas());capture(output,"release-market-open");
+            assert(PixelRenderer::canvas().readPixel(40,407)==UiTheme::current().accent);
         }
         app.selectedExploreDestination_=ExploreDestinations::MARKET;
         app.loadExplorePreview(0);

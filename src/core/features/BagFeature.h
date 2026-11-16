@@ -37,7 +37,7 @@ enum class BattleResult : uint8_t {
         REVIVE,
         MARKET_ITEM,
 };
-enum class Selection : uint8_t { NONE, CONFIRM, RECALL, BACK };
+enum class Selection : uint8_t { NONE, CONFIRM, BACK };
 enum class Notice : uint8_t { NONE,
     FAINTED_CANNOT_HEAL,
     USED_POTION,

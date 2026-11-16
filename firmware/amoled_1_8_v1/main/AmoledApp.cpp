@@ -3207,6 +3207,7 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
         if (inventoryController_.state().itemConfirmOpen) {
             int choice = itemConfirmChoiceAt(x, y);
             if (choice == 0) {
+                if (!inventoryController_.canConfirm(gameState)) return;
                 if (inventoryController_.state().battleBagMode) {
                     performBattleBagItem(inventoryController_.state().pendingItem, nowMs);
                 } else if (Game::ItemInventory::usableFromHomeBag(inventoryController_.state().pendingItem) &&
@@ -3237,10 +3238,6 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             return;
         case InventoryController::Selection::CANNOT_USE:
             setToast(Ui::Amoled::CANNOT_USE, nowMs);
-            return;
-        case InventoryController::Selection::OPEN_MOVE_MANAGER:
-            openTeamScene();
-            openTeamMoves(0, nowMs);
             return;
         case InventoryController::Selection::DETAIL:
             break;
@@ -10238,7 +10235,7 @@ void AmoledApp::selectExploreDestination(uint8_t index, uint32_t nowMs) {
 }
 
 bool AmoledApp::startMarket(uint32_t nowMs) {
-    if (!BuildConfig::DEBUG_FEATURES || !Game::MarketSchedule::isOpen(gameState)) return false;
+    if (!Game::MarketSchedule::isOpen(gameState)) return false;
     const auto slot = Game::ExplorePartyService::leaderSlot(gameState);
     const uint16_t leader = gameState.teamCount ? gameState.team[slot].speciesId : 25;
     const uint16_t follower = gameState.teamCount > 1 && slot == 0 && Game::ExplorePartyService::healthy(gameState.team[1]) ? gameState.team[1].speciesId : 0;

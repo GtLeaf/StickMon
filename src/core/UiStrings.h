@@ -1202,6 +1202,7 @@ static constexpr const char* LONG_HOME_HINT = "长A回房间";
 }
 
 namespace Bag {
+static constexpr const char* HEART_SCALE_DESC = "美丽的鳞片，在爱好者中有着相当高的人气。";
 static constexpr const char* USED_ITEM_FMT = "已使用%s";
 static constexpr const char* NOTHING_ELSE_NEEDED = "现在不需要使用";
 static constexpr const char* ITEMS = "持有物";
@@ -1299,7 +1300,7 @@ static constexpr const char* DESCS[][3] = {
     {"让濒死伙伴复活", "回复一半体力", "探索途中必备"},
     {"100步内避开遇敌", "对下一次探索生效", "保底遭遇不受影响"},
     {"下一步必定遇敌", "对下一次探索生效", "刷怪提速好帮手"},
-    {"让伙伴回忆招式", "选择招式后替换技能", "使用后消耗一枚"},
+    {"美丽的鳞片，", "在爱好者中有着", "相当高的人气。"},
     {"HP努力值增加10", "单项上限252", "总努力值上限510"},
     {"攻击努力值增加10", "单项上限252", "总努力值上限510"},
     {"防御努力值增加10", "单项上限252", "总努力值上限510"},

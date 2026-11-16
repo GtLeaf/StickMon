@@ -596,14 +596,6 @@ bool MenuScene::handleBagAction(const BagUi::Action& action) {
         } else bagUi.afterUse(engine.gameState(), bagContext());
         break;
     }
-    case BagUi::Action::Kind::RECALL:
-        if (movesUi.openRecall(0)) {
-            foodUi.resetDescription();
-            pushView(ViewMode::MOVES);
-        } else {
-            pageNotice(Ui::Team::MOVE_RECALL_EMPTY, 1100);
-        }
-        break;
     default: break;
     }
     return action.changed;

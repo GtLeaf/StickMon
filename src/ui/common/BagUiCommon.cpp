@@ -130,7 +130,6 @@ BagUi::Action BagUi::activate(const Game::GameState& state, const Context& conte
     const auto source = sourceAt(state, context.battle, cursor);
     switch (select(source, context.battle)) {
     case Selection::BACK: return {true, Action::Kind::BACK};
-    case Selection::RECALL: return {true, Action::Kind::RECALL, source};
     case Selection::CONFIRM:
         confirmSource = source;
         confirmYes = true;

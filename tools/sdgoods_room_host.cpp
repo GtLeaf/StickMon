@@ -1258,9 +1258,12 @@ int main(int argc, char** argv) {
         state.team[0].move2Id=state.team[0].move3Id=0;
         const auto scales=state.bag.heartScale;
         openItem(menu(),Item::HEART_SCALE);
-        assert(menu().viewMode==MenuScene::ViewMode::MOVES && !menu().bagUi.detailOpen);
-        capturePage("bag-heart-scale-direct");back();
-        assert(menu().viewMode==MenuScene::ViewMode::BAG && state.bag.heartScale==scales);
+        assert(menu().viewMode==MenuScene::ViewMode::BAG && menu().bagUi.detailOpen);
+        assert(menu().bagUi.target(130,270,state,menu().bagContext())==-1);
+        pageTap(130,270);
+        assert(menu().viewMode==MenuScene::ViewMode::BAG && menu().bagUi.detailOpen && state.bag.heartScale==scales);
+        capturePage("bag-heart-scale-readonly");back();
+        assert(menu().viewMode==MenuScene::ViewMode::BAG && !menu().bagUi.detailOpen && state.bag.heartScale==scales);
         state.team[0]=leaderBeforeRecall;
         back();menuItem(0);
         selectRegion(*static_cast<ExploreScene*>(engine.currentScene.get()),0);

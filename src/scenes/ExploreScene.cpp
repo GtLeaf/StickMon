@@ -3906,7 +3906,6 @@ Ui::ExploreBattleFrame ExploreScene::exploreBattleFrame() const {
 }
 
 bool ExploreScene::beginMarket() {
-    if (!BuildConfig::DEBUG_FEATURES) return false;
     auto& engine = GameEngine::ins();
     const auto& state = engine.gameState();
     if (!Game::MarketSchedule::isOpen(state)) return false;

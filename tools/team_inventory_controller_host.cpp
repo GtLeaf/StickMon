@@ -65,8 +65,12 @@ void checkInventoryFlow() {
     controller.open();
     const uint8_t scaleRow = findItem(controller, game, Scene::BAG, ItemId::HEART_SCALE);
     assert(controller.selectItem(game, Scene::BAG, scaleRow) ==
-        InventoryController::Selection::OPEN_MOVE_MANAGER);
-    assert(!controller.state().itemConfirmOpen);
+        InventoryController::Selection::DETAIL);
+    assert(controller.state().itemConfirmOpen && controller.state().pendingItem == ItemId::HEART_SCALE);
+    assert(!controller.canConfirm(game));
+    controller.beginDetailTouch(0, game);
+    assert(controller.state().pressedShopDetailAction == -1);
+    controller.clearAction();
     controller.setBattleBagMode(true);
     const auto battleBag = controller.bagModel(game);
     assert(battleBag.battleMode && !battleBag.exploreOnly);

@@ -9,9 +9,7 @@ namespace ExploreDestinations {
 constexpr uint8_t MARKET = 0xfe, INVALID = 0xff;
 // Reorder this table to move destinations without migrating saves.
 inline constexpr uint8_t ORDER[] = {
-#if STICKMON_ENABLE_DEBUG_FEATURES
     MARKET,
-#endif
     0, 1, 2, 3, 4, 5
 };
 constexpr uint8_t COUNT = sizeof(ORDER) / sizeof(ORDER[0]);
@@ -21,7 +19,7 @@ constexpr uint8_t indexOf(uint8_t value) {
     return COUNT;
 }
 inline bool visible(uint8_t value, const Game::GameState& state) {
-    return value == MARKET ? BuildConfig::DEBUG_FEATURES
+    return value == MARKET ? true
         : value < ExploreItemProgression::visibleAreaCount(state);
 }
 inline uint8_t visibleCount(const Game::GameState& state) {
@@ -45,7 +43,7 @@ inline uint8_t visibleIndex(uint8_t value, const Game::GameState& state) {
     return COUNT;
 }
 inline bool unlocked(uint8_t value, const Game::GameState& state) {
-    return value == MARKET ? BuildConfig::DEBUG_FEATURES && Game::MarketSchedule::isOpen(state)
+    return value == MARKET ? Game::MarketSchedule::isOpen(state)
         : ExploreItemProgression::isAreaUnlocked(value, state);
 }
 } // namespace ExploreDestinations

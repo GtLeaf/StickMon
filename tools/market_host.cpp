@@ -9,10 +9,10 @@ int main(int argc,char** argv) {
     const uint32_t seed=argc>1?uint32_t(std::strtoul(argv[1],nullptr,10)):38;
     const auto& d=MarketMapData::get();
     Game::GameState state{};
-    const uint8_t offset=BuildConfig::DEBUG_FEATURES?1:0;
+    const uint8_t offset=1;
     assert(ExploreDestinations::COUNT==Game::EXPLORE_AREA_COUNT+offset);
-    assert(ExploreDestinations::visible(ExploreDestinations::MARKET,state)==BuildConfig::DEBUG_FEATURES);
-    assert(ExploreDestinations::unlocked(ExploreDestinations::MARKET,state)==BuildConfig::DEBUG_FEATURES);
+    assert(ExploreDestinations::visible(ExploreDestinations::MARKET,state));
+    assert(ExploreDestinations::unlocked(ExploreDestinations::MARKET,state));
     if(offset)assert(ExploreDestinations::visibleId(0,state)==ExploreDestinations::MARKET);
     for(uint8_t progress=0;progress<Game::EXPLORE_AREA_COUNT;++progress) {
         if(progress)state.explorePoolRerollCounts[progress-1]=1;

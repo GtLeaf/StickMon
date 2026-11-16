@@ -72,17 +72,11 @@ struct AmoledAppTestAccess {
         const auto& care = state.marketCare;
 
         if (!BuildConfig::DEBUG_FEATURES) {
-            // Release currently hides the whole market. Exercise its NPC
-            // interaction independently so future entry changes stay safe.
-            assert(!app.startMarket(0));
+            // Release allows market entry on opening days; unfinished care
+            // services still fall back to ordinary NPC dialogue.
+            assert(app.startMarket(0));
             app.openMarketCare(0);
             assert(!ui.active());
-            app.market_.reset(new Market::Session());
-            assert(app.market_->reset(MarketMapData::get(), 1234, 25, 133, 0));
-            app.market_->enableManual();
-            app.marketUi_.reset(); app.marketUi_.enableDialogue();
-            app.marketUi_.setServiceSpecies(Game::MarketCare::STALL_SPECIES);
-            app.sceneFlow.enter(AppSceneFlow::Scene::MARKET);
             advance(40);
             int chansey = -1;
             for (int i = 0; i < app.market_->data().residentCount; ++i)

@@ -106,7 +106,7 @@ uint8_t sourceAt(const Game::GameState& state, bool battle, uint8_t index) {
 
 Selection select(uint8_t source, bool battle) {
     if (source == SOURCE_BACK) return Selection::BACK;
-    if (source == SOURCE_HEART_SCALE && !battle) return Selection::RECALL;
+    if (source == SOURCE_HEART_SCALE) return Selection::NONE;
     if (source >= SOURCE_MARKET_BASE && source < SOURCE_BACK)
         return visible(source, battle) ? Selection::CONFIRM : Selection::NONE;
     if (source < 3 ||

@@ -116,7 +116,6 @@ BagUi::Action BagUi::button(const ButtonEvent& event, const Game::GameState& sta
     const auto item = itemAt(state, cursor);
     if (!detailOpen) {
         if (context.battle && !usable(item, true)) return {true, Action::Kind::UNUSABLE};
-        if (!context.battle && item == Game::ItemId::HEART_SCALE) return {true, Action::Kind::RECALL};
         detailOpen = true;
         return {true};
     }
