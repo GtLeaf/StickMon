@@ -113,7 +113,10 @@ bool HomeSleepFlow::chooseCompanionSpot(const Layout &layout, float &x, float &y
 }
 
 bool HomeSleepFlow::atBedPose(const Layout &layout) const {
-    return std::fabs(main_.x - layout.bedX) <= 2.5f && std::fabs(main_.y - layout.bedY) <= 6.0f;
+    return atBedPose(layout.bedX, layout.bedY);
+}
+bool HomeSleepFlow::atBedPose(float bedX, float bedY) const {
+    return std::fabs(main_.x - bedX) <= 2.5f && std::fabs(main_.y - bedY) <= 6.0f;
 }
 HomeSleepFlow::StartResult HomeSleepFlow::startMain(const Layout &layout, Movement &movement,
                                                     uint32_t nowMs) {

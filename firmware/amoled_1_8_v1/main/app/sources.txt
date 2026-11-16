@@ -16,6 +16,8 @@ app/HomeViewState.cpp
 app/HomeFlow.cpp
 app/HomeFoodFlow.cpp
 app/HomeSleepFlow.cpp
+app/HomeRestFlow.cpp
+app/HomePresenter.cpp
 app/PairFlow.cpp
 app/VisitorFlow.cpp
 app/VisitAwayFlow.cpp

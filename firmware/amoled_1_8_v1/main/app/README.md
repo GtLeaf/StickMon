@@ -49,7 +49,8 @@ the same sources through `sources.txt`.
 - `HomeFlow` (first batch): attention, ambient motions, window gaze and the
   main actor's post-feed clearance lifecycle. Owns action state and deadlines;
   borrows actors and the shared Simulation. App supplies room geometry and
-  bowl-blocking observations, and retains camera/frame animation and damage.
+  bowl-blocking observations, and retains actor frame animation and damage.
+  HomePresenter owns the room camera and breathing clock.
   Food uses HomeFoodFlow, ordinary sleep uses HomeSleepFlow and doors use ExploreTransitionFlow.
 - `HomeFoodFlow`: food arbitration/retries, approach search, bite clocks and feeding
   completion. Borrows GameState, both actors and Simulation; uses shared ActorController
@@ -60,9 +61,19 @@ the same sources through `sources.txt`.
 - `HomeSleepFlow`: ordinary sleep geometry/anchor/grid selection, bed claim and
   direct/routed entry, companion target retention and wake/food-retry transitions.
   Borrows actors and Simulation without duplicate state. App supplies room layout
-  and a synchronous movement adapter, retaining frame clocks, sleep breathing,
-  faint recovery, cancellation priority and restored-pose departure movement.
+  and a synchronous movement adapter, retaining actor frame clocks, cancellation
+  priority and restored-pose departure movement. Faint recovery uses HomeRestFlow;
+  camera and sleep breathing use HomePresenter.
   Sleep/wake transitions reuse shared policies and allocate no heap.
+- `HomeRestFlow`: forced faint placement, ongoing main/companion rest and recovery.
+  Borrows actors, Simulation and HomeSleepFlow placement queries; shared care rules
+  still decide actual HP recovery. App retains cancellation, main idle RNG scheduling
+  and animation/damage feedback. Forced placement and repeated rest are distinct.
+- `HomePresenter` (first slice): owns the room camera and sleep breathing clock.
+  App supplies room dimensions and actor position; sprite bounds are read once when
+  starting sleep. Camera rounding/clamping and fallback projection stay unchanged.
+  Actor frame clocks, visual-action selection, HUD/model composition and damage
+  aggregation remain in App for later presentation batches.
 - `PairFlow`: pair eligibility, scheduling, approach/invite/talk/chase/celebration,
   cancellation and visitor arrival talk events. Owns pair state; borrows GameState,
   two actors, Simulation and the shared VisitArrivalFlow. App supplies narrow
@@ -86,8 +97,9 @@ Visitor/visit departure ordering contract:
    talk. Exit releases resources before App removes the guest/synchronizes caches.
    The direct movement tail resumes after terminal effects to preserve damage
    and frame ordering. Early exit during host approach releases the host door.
-4. App retains frame clocks/camera/damage, debug formatting, communication,
-   roster and save operations. Exploration-specific departure/return uses
+4. App retains actor frame clocks/damage, debug formatting, communication,
+   roster and save operations; room camera/breathing live in HomePresenter.
+   Exploration-specific departure/return uses
    ExploreTransitionFlow. Effects use fixed storage and allocate no heap.
 
 Pair interaction ordering contract:
@@ -274,3 +286,18 @@ Sleep ordering contract:
 4. Movement callbacks are synchronous; the only flow reentry allowed is remembering
    a successfully planned companion target. No delayed effects or mutable state view.
    See [sleep extraction](../../../../specs/amoled-app-refactor/home-sleep-flow.md).
+
+Faint-rest and presentation ordering contract:
+
+1. App cancels room/pair activity before invoking HomeRestFlow. Forced placement
+   clears route/velocity and positions the leader before choosing the companion's
+   spot. An ongoing companion rest keeps its existing position; main rest corrects
+   bed drift over 0.01. Return values request presentation without storing effects.
+2. Shared care clears fainted/HP state. App then invokes recovery; the flow stops
+   the actor and resets its mind. App schedules the main idle decision at the same
+   RNG point; companion retains its 700ms delay. Recovery animation uses 520ms.
+3. HomePresenter owns only camera and breath state. Its layout is a value supplied
+   by App, without resource-singleton or device access. Sleep sprite bounds are
+   resolved at start, not per frame. Lock/unlock does not restart this clock.
+4. Ordinary awake bed checks pass just bed coordinates to HomeSleepFlow and do not
+   scan behavior anchors. See [rest/presentation batch](../../../../specs/amoled-app-refactor/home-rest-presenter.md).

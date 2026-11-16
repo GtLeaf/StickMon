@@ -38,6 +38,7 @@ class HomeSleepFlow {
     bool chooseCompanionSpot(const Layout &layout, float &x, float &y,
                              bool avoidBedRoute = false) const;
     bool atBedPose(const Layout &layout) const;
+    bool atBedPose(float bedX, float bedY) const;
     StartResult startMain(const Layout &layout, Movement &movement, uint32_t nowMs);
     bool startCompanion(const Layout &layout, Movement &movement, uint32_t nowMs);
     void enterSleep(uint8_t actor, uint32_t nowMs);

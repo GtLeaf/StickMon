@@ -143,10 +143,6 @@ uint8_t moodHeartCountFor(uint8_t mood) {
 
 constexpr float FOOD_FEED_OFFSET_X = 12.0f;
 constexpr float FOOD_FEED_OFFSET_Y = 4.0f;
-constexpr float CAMERA_SAFE_LEFT = 62.0f;
-constexpr float CAMERA_SAFE_RIGHT = 122.0f;
-constexpr float CAMERA_SAFE_TOP = 58.0f;
-constexpr float CAMERA_SAFE_BOTTOM = 126.0f;
 
 constexpr RoomResource::Point FALLBACK_WALK_POLYGON[] = {
     {static_cast<int16_t>(FALLBACK_ROOM_MIN_X),
@@ -4095,37 +4091,14 @@ void AmoledApp::completeExploreReturn() {
 }
 
 void AmoledApp::placeFaintedHomeActors(uint32_t nowMs) {
-    RoomResource& room = RoomResource::ins();
-    if (gameState.teamCount > 0 &&
-        (gameState.team[0].fainted || gameState.team[0].hpCur == 0)) {
-        homeMainActor.x = homeMainActor.targetX = room.available()
-            ? static_cast<float>(room.bedX()) : 76.0f;
-        homeMainActor.y = homeMainActor.targetY = room.available()
-            ? static_cast<float>(room.bedY()) : 99.0f;
-        homeMainActor.faintRestActive = true;
-        homeMainActor.motion = Home::MotionPhase::STILL;
+    const uint8_t placed = homeRestFlow_.place(gameState, homeSleepLayout(), nowMs);
+    if (placed & 1U) {
         petStopping = false;
         petDirection = PokemonSprites::WalkDirection::DOWN;
         petFrame = 0;
         startSleepAnimation(nowMs, 700);
-        homeMainActor.route.clear();
-        homeMainActor.velocityX = homeMainActor.velocityY = 0.0f;
-        homeRuntime.transition(0, Home::Task::FAINTED, nowMs, 0, true);
     }
-    if (gameState.teamCount > 1 && homeCompanionActor.active &&
-        (gameState.team[1].fainted || gameState.team[1].hpCur == 0)) {
-        float sleepX = homeCompanionActor.x;
-        float sleepY = homeCompanionActor.y;
-        if (chooseCompanionSleepSpot(sleepX, sleepY)) {
-            homeCompanionActor.x = sleepX;
-            homeCompanionActor.y = sleepY;
-        }
-        homeCompanionActor.targetX = homeCompanionActor.x;
-        homeCompanionActor.targetY = homeCompanionActor.y;
-        homeCompanionActor.route.clear();
-        homeCompanionActor.velocityX = homeCompanionActor.velocityY = 0.0f;
-        homeCompanionActor.faintRestActive = true;
-        homeRuntime.transition(1, Home::Task::FAINTED, nowMs, 0, true);
+    if (placed & 2U) {
         companionFrame = 0;
         nextCompanionFrameMs = nowMs + HOME_SLEEP_FRAME_MS;
     }
@@ -4221,27 +4194,12 @@ void AmoledApp::updateMoodHearts(uint32_t nowMs) {
 }
 
 void AmoledApp::startSleepAnimation(uint32_t nowMs, uint16_t frameMs) {
-    PokemonSprites::PetAnimationProfile profile{};
-    PokemonSprites::petAnimationProfile(gameState.team[0].speciesId, profile);
-    uint8_t expanded = 0;
-    PokemonSprites::FrameBounds largest{};
-    for (uint8_t i = 0; i < profile.sleepingFrames; ++i) {
-        const auto* frame = PokemonSprites::findSpeciesSprite(
-            gameState.team[0].speciesId, static_cast<PokemonSprites::SpriteKind>(
-                static_cast<uint16_t>(profile.sleepingBase) + i));
-        const auto bounds = PokemonSprites::frameVisibleBounds(frame);
-        if (bounds.height > largest.height ||
-            (bounds.height == largest.height && bounds.width > largest.width)) {
-            expanded = i;
-            largest = bounds;
-        }
-    }
-    sleepBreath.start(nowMs, frameMs, profile.sleepingFrames, expanded);
-    petFrame = sleepBreath.frame(nowMs);
+    homePresenter_.startSleep(gameState.team[0].speciesId, nowMs, frameMs);
+    petFrame = homePresenter_.sleepFrame(nowMs);
 }
 
 void AmoledApp::updateSleepAnimation(uint32_t nowMs) {
-    const uint8_t frame = sleepBreath.frame(nowMs);
+    const uint8_t frame = homePresenter_.sleepFrame(nowMs);
     if (frame == petFrame) return;
     petFrame = frame;
     requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
@@ -4330,30 +4288,20 @@ void AmoledApp::updatePet(uint32_t nowMs) {
     if (initialMainIntent == Home::ActorIntent::FAINT_REST) {
         cancelRoomAction(nowMs);
         if (homeRuntime.pairActive()) cancelPairInteraction(nowMs);
-        homeRuntime.transition(0, Home::Task::FAINTED, nowMs, 0, true);
         RoomResource& room = RoomResource::ins();
-        const float restX = room.available() ? static_cast<float>(room.bedX())
-                                              : 76.0f;
-        const float restY = room.available() ? static_cast<float>(room.bedY())
-                                              : 99.0f;
-        if (!petIsResting() || std::fabs(homeMainActor.x - restX) > 0.01f ||
-            std::fabs(homeMainActor.y - restY) > 0.01f) {
-            homeMainActor.faintRestActive = true;
-            homeMainActor.x = homeMainActor.targetX = restX;
-            homeMainActor.y = homeMainActor.targetY = restY;
-            homeMainActor.motion = Home::MotionPhase::STILL;
+        const float restX = room.available() ? static_cast<float>(room.bedX()) : 76.0f;
+        const float restY = room.available() ? static_cast<float>(room.bedY()) : 99.0f;
+        if (homeRestFlow_.restMain(restX, restY, nowMs)) {
             petStopping = false;
             petDirection = PokemonSprites::WalkDirection::DOWN;
             petFrame = 0;
             startSleepAnimation(nowMs, 700);
             updateCamera();
-            Platform::logf("[AmoledPet] faint rest started bed=%.1f,%.1f\n",
-                           restX, restY);
+            Platform::logf("[AmoledPet] faint rest started bed=%.1f,%.1f\n", restX, restY);
             requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
         } else {
             updateSleepAnimation(nowMs);
         }
-        homeMainActor.motion = Home::MotionPhase::STILL;
         petStopping = false;
         return;
     }
@@ -4377,16 +4325,10 @@ void AmoledApp::updatePet(uint32_t nowMs) {
         }
     }
 
-    if (homeMainActor.faintRestActive) {
-        homeMainActor.faintRestActive = false;
-        homeRuntime.stop(0, nowMs);
-        homeMainActor.motion = Home::MotionPhase::STILL;
+    if (homeRestFlow_.recoverMain(nowMs)) {
         petStopping = false;
         petFrame = 0;
         nextPetFrameMs = nowMs + 520;
-        homeMainActor.targetX = homeMainActor.x;
-        homeMainActor.targetY = homeMainActor.y;
-        homeMainActor.mind.reset(nowMs);
         schedulePetDecision(nowMs);
         Platform::logLine("[AmoledPet] faint rest complete; waking at bed");
         requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
@@ -4402,7 +4344,10 @@ void AmoledApp::updatePet(uint32_t nowMs) {
     // A sleep pose is persisted at the bed center. When the sleep window has
     // ended, the actor must leave that pose before normal idle decisions can
     // run; otherwise STARE/turning can keep it visually stranded on the bed.
-    const bool atBedPose = homeSleepFlow_.atBedPose(homeSleepLayout());
+    const RoomResource& bedRoom = RoomResource::ins();
+    const bool atBedPose = homeSleepFlow_.atBedPose(
+        bedRoom.available() ? static_cast<float>(bedRoom.bedX()) : 76.0f,
+        bedRoom.available() ? static_cast<float>(bedRoom.bedY()) : 99.0f);
     if (!mainSleepTime && petMotion() == PetMotion::IDLE && atBedPose &&
         homeMainActor.task == Home::Task::IDLE) {
         float wakeX = homeMainActor.x;
@@ -4578,8 +4523,8 @@ void AmoledApp::updatePet(uint32_t nowMs) {
         const float speed = Home::ActorController::routeSpeed(
             speedTask, homeMainActor.behavior, monster);
         const float previousY = homeMainActor.y;
-        const int previousCameraX = static_cast<int>(std::lround(cameraX));
-        const int previousCameraY = static_cast<int>(std::lround(cameraY));
+        const int previousCameraX = static_cast<int>(std::lround(homePresenter_.cameraX()));
+        const int previousCameraY = static_cast<int>(std::lround(homePresenter_.cameraY()));
         Home::RouteStep routeStep = homeRuntime.advanceRoute(
             0, nowMs, speed, elapsedSeconds, 0.8f,
             homeCompanionActor.active);
@@ -4626,8 +4571,8 @@ void AmoledApp::updatePet(uint32_t nowMs) {
         }
         updateCamera();
         const bool cameraMoved =
-            static_cast<int>(std::lround(cameraX)) != previousCameraX ||
-            static_cast<int>(std::lround(cameraY)) != previousCameraY;
+            static_cast<int>(std::lround(homePresenter_.cameraX())) != previousCameraX ||
+            static_cast<int>(std::lround(homePresenter_.cameraY())) != previousCameraY;
         if (cameraMoved) {
             // The room background is sampled in camera-space. Present it as
             // soon as the camera changes, even when the sprite animation
@@ -4987,12 +4932,12 @@ bool AmoledApp::updateRoomAction(uint32_t nowMs, float elapsedSeconds) {
         layout, nowMs, elapsedSeconds, homeActorBlocksFoodApproach(0));
     applyHomeFlowEffects(nowMs);
     if (!result.moved) return result.active;
-    const int previousCameraX = static_cast<int>(std::lround(cameraX));
-    const int previousCameraY = static_cast<int>(std::lround(cameraY));
+    const int previousCameraX = static_cast<int>(std::lround(homePresenter_.cameraX()));
+    const int previousCameraY = static_cast<int>(std::lround(homePresenter_.cameraY()));
     updateCamera();
     const bool cameraMoved =
-        static_cast<int>(std::lround(cameraX)) != previousCameraX ||
-        static_cast<int>(std::lround(cameraY)) != previousCameraY;
+        static_cast<int>(std::lround(homePresenter_.cameraX())) != previousCameraX ||
+        static_cast<int>(std::lround(homePresenter_.cameraY())) != previousCameraY;
     if (cameraMoved) requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
     if (static_cast<int32_t>(nowMs - nextPetFrameMs) >= 0) {
         PokemonSprites::PetAnimationProfile animation{};
@@ -5713,17 +5658,11 @@ void AmoledApp::updateCompanion(uint32_t nowMs) {
             gameState.room.bowlCount > 0);
     if (initialCompanionIntent == Home::ActorIntent::FAINT_REST) {
         cancelPairInteraction(nowMs);
-        homeRuntime.transition(1, Home::Task::FAINTED, nowMs, 0, true);
-        if (!homeCompanionActor.faintRestActive) {
-            float sleepX = homeCompanionActor.x;
-            float sleepY = homeCompanionActor.y;
-            if (chooseCompanionSleepSpot(sleepX, sleepY)) {
-                homeCompanionActor.x = sleepX;
-                homeCompanionActor.y = sleepY;
-            }
-            homeCompanionActor.targetX = homeCompanionActor.x;
-            homeCompanionActor.targetY = homeCompanionActor.y;
-            homeCompanionActor.faintRestActive = true;
+        // Geometry is only consumed on the first rest tick; avoid anchor lookups
+        // for a companion that has already settled.
+        const auto layout = homeCompanionActor.faintRestActive
+            ? HomeSleepFlow::Layout{} : homeSleepLayout();
+        if (homeRestFlow_.restCompanion(layout, nowMs)) {
             companionFrame = 0;
             nextCompanionFrameMs = nowMs + HOME_SLEEP_FRAME_MS;
             requestRenderRows(HOME_ROOM_TOP, HOME_STATUS_TOP);
@@ -5731,15 +5670,13 @@ void AmoledApp::updateCompanion(uint32_t nowMs) {
         if (static_cast<int32_t>(nowMs - nextCompanionFrameMs) >= 0) {
             ++companionFrame;
             nextCompanionFrameMs = nowMs + HOME_SLEEP_FRAME_MS;
-            requestHomeActorRows(
-                homeCompanionActor.y, homeCompanionActor.y);
+            requestHomeActorRows(homeCompanionActor.y, homeCompanionActor.y);
         }
         return;
     }
-    if (homeCompanionActor.faintRestActive) {
-        homeCompanionActor.faintRestActive = false;
-        stopCompanion(nowMs, 700);
-        homeCompanionActor.mind.reset(nowMs);
+    if (homeRestFlow_.recoverCompanion(nowMs)) {
+        companionFrame = 0;
+        nextCompanionFrameMs = nowMs + 520;
     }
 
     PokemonSprites::PetAnimationProfile animation{};
@@ -6466,47 +6403,22 @@ bool AmoledApp::chooseFoodApproachTarget(float desiredX, float desiredY,
     return false;
 }
 
+HomePresenter::RoomLayout AmoledApp::homePresenterLayout() const {
+    const auto& room = RoomResource::ins();
+    if (!room.available()) return {};
+    return {true, room.width(), room.height(), room.roomY()};
+}
+
 void AmoledApp::updateCamera() {
-    RoomResource& room = RoomResource::ins();
-    if (!room.available()) {
-        cameraX = 0.0f;
-        cameraY = 0.0f;
-        return;
-    }
-
-    float screenX = homeMainActor.x - cameraX;
-    if (screenX < CAMERA_SAFE_LEFT) cameraX = homeMainActor.x - CAMERA_SAFE_LEFT;
-    else if (screenX > CAMERA_SAFE_RIGHT) cameraX = homeMainActor.x - CAMERA_SAFE_RIGHT;
-
-    float screenY = homeMainActor.y - cameraY;
-    if (screenY < CAMERA_SAFE_TOP) cameraY = homeMainActor.y - CAMERA_SAFE_TOP;
-    else if (screenY > CAMERA_SAFE_BOTTOM) cameraY = homeMainActor.y - CAMERA_SAFE_BOTTOM;
-
-    float maximumCameraX = std::max<float>(0.0f,
-        static_cast<float>(room.width() - HOME_ROOM_WIDTH / AmoledUi::RESOURCE_SCALE));
-    float minimumCameraY = static_cast<float>(room.roomY());
-    float maximumCameraY = std::max<float>(minimumCameraY,
-        static_cast<float>(room.roomY() + room.height() - HOME_ROOM_HEIGHT / AmoledUi::RESOURCE_SCALE));
-    // The room cache is sampled at integer logical pixels. Keep the camera
-    // on that same grid so the room, sprites, bowl, and dirty-region decision
-    // use one coordinate system instead of mixing float and rounded values.
-    cameraX = std::clamp(std::round(cameraX), 0.0f, maximumCameraX);
-    cameraY = std::clamp(std::round(cameraY), minimumCameraY, maximumCameraY);
+    homePresenter_.updateCamera(homePresenterLayout(), homeMainActor.x, homeMainActor.y);
 }
 
 int AmoledApp::worldToScreenX(float worldX) const {
-    if (!RoomResource::ins().available()) {
-        return static_cast<int>(std::lround((worldX) * AmoledUi::RESOURCE_SCALE));
-    }
-    return static_cast<int>(std::lround((worldX - cameraX) * AmoledUi::RESOURCE_SCALE));
+    return homePresenter_.worldToScreenX(homePresenterLayout(), worldX);
 }
 
 int AmoledApp::worldToScreenY(float worldY) const {
-    if (!RoomResource::ins().available()) {
-        return static_cast<int>(std::lround((worldY) * AmoledUi::RESOURCE_SCALE));
-    }
-    return HOME_ROOM_TOP +
-           static_cast<int>(std::lround((worldY - cameraY) * AmoledUi::RESOURCE_SCALE));
+    return homePresenter_.worldToScreenY(homePresenterLayout(), worldY);
 }
 
 void AmoledApp::requestRenderRows(uint16_t begin, uint16_t end) {
@@ -6690,8 +6602,8 @@ void AmoledApp::render(Canvas565& canvas) const {
         }
         model.gameMinutesOfDay = static_cast<uint16_t>(
             gameState.gameMinutesTotal % Game::GAME_MINUTES_PER_DAY);
-        model.cameraX = static_cast<int16_t>(std::lround(cameraX));
-        model.cameraY = static_cast<int16_t>(std::lround(cameraY));
+        model.cameraX = static_cast<int16_t>(std::lround(homePresenter_.cameraX()));
+        model.cameraY = static_cast<int16_t>(std::lround(homePresenter_.cameraY()));
         RoomResource& room = RoomResource::ins();
         if (room.available()) {
             model.bowlCenterX = static_cast<int16_t>(

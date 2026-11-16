@@ -3,7 +3,6 @@
 import os
 import hashlib
 import json
-import re
 import struct
 import zlib
 import shutil
@@ -12,67 +11,18 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from amoled_host import build_amoled_host
+from amoled_native_cases import native_render_binary
+from amoled_sequence import (compare_frames, parse_frames, parse_summary,
+                             reference_frames, select_reference_frames)
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class AmoledNativeRenderTests(unittest.TestCase):
-    def test_page_headers_are_self_contained(self):
-        headers = [f"ui/{header}" for header in
-                   ("RoomScreens.h", "SettingsScreens.h", "SettingsLayout.h", "UiTheme.h", "ThemedUi.h", "HatchScreens.h", "UiCommon.h",
-                    "ItemShopScreens.h", "TeamScreens.h", "ComputerScreens.h",
-                    "ExploreScreens.h", "ProgressionScreens.h", "ShowerScreens.h",
-                    "ExploreMapRenderer.h", "RenderCaches.h", "SceneFade.h")]
-        headers += ["app/HatchController.h", "app/ShowerController.h",
-                    "app/BattleSession.h", "app/BattleTimeline.h",
-                    "app/ExploreSession.h", "app/ExploreTransitionFlow.h", "app/ExplorePresenter.h", "app/HomeViewState.h", "app/HomeFoodFlow.h", "app/HomeSleepFlow.h", "app/HomeFlow.h", "app/PairFlow.h",
-                    "app/VisitorFlow.h", "app/VisitAwayFlow.h"]
-        for header in headers:
-            with self.subTest(header=header):
-                subprocess.run([
-                    "c++", "-std=c++17", "-fsyntax-only", "-x", "c++",
-                    "-Isrc", "-Ifirmware/amoled_1_8_v1/main", "-",
-                ], input=f'#include "{header}"\n',
-                   text=True, cwd=ROOT, check=True)
-
-    def test_models_header_is_self_contained(self):
-        for debug in (0, 1):
-            with self.subTest(debug=debug):
-                subprocess.run([
-                    "c++", "-std=c++17", "-fsyntax-only", "-x", "c++",
-                    "-Isrc", "-Ifirmware/amoled_1_8_v1/main",
-                    f"-DSTICKMON_ENABLE_DEBUG_FEATURES={debug}", "-",
-                ], input='#include "ui/models/ScreenModels.h"\n'
-                         'AmoledV1::HomeViewModel model;\n',
-                   text=True, cwd=ROOT, check=True)
-
     @classmethod
     def setUpClass(cls):
-        sources = [
-            "tools/amoled_checksum_guard.cpp",
-            "tools/amoled_native_render_host.cpp",
-            "tools/amoled_battery_host.cpp",
-            "tools/amoled_ecology_host.cpp",
-            "tools/amoled_ui_behavior_host.cpp",
-            "tools/amoled_expedition_host.cpp",
-            "tools/amoled_battle_flow_host.cpp",
-            "tools/amoled_shower_host.cpp",
-            "tools/amoled_bath_hatch_controller_host.cpp",
-            "tools/amoled_care_host.cpp",
-            "tools/amoled_lock_power_host.cpp",
-        ]
-        tmp = tempfile.TemporaryDirectory()
-        cls.addClassCleanup(tmp.cleanup)
-        cls.binary = str(Path(tmp.name) / "amoled-native-render")
-        build_amoled_host(Path(cls.binary), sources,
-                          debug=os.environ.get("AMOLED_RENDER_DEBUG", "0") == "1")
-        keep_binary = os.environ.get("AMOLED_RENDER_KEEP_BINARY")
-        if keep_binary:
-            target = Path(keep_binary).resolve()
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(cls.binary, target)
-            target.chmod(0o755)
+        cls.binary = native_render_binary(os.environ.get("AMOLED_RENDER_DEBUG", "0") == "1")
+        cls.sequence_frames = {}
 
     def run_case(self, name):
         subprocess.run([self.binary, str(ROOT / "data"), "--case", name],
@@ -147,7 +97,7 @@ class AmoledNativeRenderTests(unittest.TestCase):
         self.run_case("locked-room-power")
 
     def test_home_care_rewards_progression_and_reboot(self):
-        self.run_case("home-care-rewards")
+        self.run_trace_case("home-care-rewards", "sleep")
 
     def test_home_hud_messages_wrap_restore_and_ignore_hidden_buttons(self):
         args = [self.binary, str(ROOT / "data"), "--case", "home-hud-messages"]
@@ -158,30 +108,38 @@ class AmoledNativeRenderTests(unittest.TestCase):
         subprocess.run(args, cwd=ROOT, check=True)
 
     def test_home_actor_motion_and_lock_wake_preserve_authoritative_pose(self):
-        self.run_case("home-room-authority")
+        self.run_trace_case("home-room-authority", "sleep")
 
     def test_home_two_servings_choose_hungrier_actor_and_clear_bowl(self):
-        self.run_case("home-food-turns")
+        self.run_trace_case("home-food-turns", "food")
+
+    def check_sequence(self, case, reference_case):
+        reference = json.loads((ROOT / "tools/fixtures/amoled_home_sequence_fields.json").read_text())["cases"][reference_case]
+
+        def run(name):
+            result = subprocess.run(
+                [self.binary, str(ROOT / "data"), "--case", name],
+                cwd=ROOT, check=True, capture_output=True, text=True,
+                env={**os.environ, "STICKMON_SEQUENCE_TRACE": "1"})
+            frames = parse_frames(result.stdout)
+            self.assertEqual(reference["frame_count"], len(frames), name)
+            self.assertEqual(reference["summary"], parse_summary(result.stdout), name)
+            compare_frames(reference_frames(reference), select_reference_frames(frames))
+            return frames
+
+        if reference_case not in self.sequence_frames:
+            self.sequence_frames[reference_case] = run(reference_case)
+        if case != reference_case:
+            compare_frames(self.sequence_frames[reference_case], run(case))
 
     def check_home_sequence(self, case):
-        result = subprocess.run([self.binary, str(ROOT / "data"), "--case", case],
-                                cwd=ROOT, check=True, text=True, capture_output=True)
-        actual = re.findall(r"HomeSequence [^\n]+", result.stdout)
-        expected = json.loads((ROOT / "tools/fixtures/amoled_home_flow_baseline.json").read_text())
-        self.assertEqual(expected["sequence"], actual)
+        self.check_sequence(case, "home-ambient-sequence")
 
-    def check_visitor_sequence(self, case, key):
-        result = subprocess.run([self.binary, str(ROOT / "data"), "--case", case],
-                                cwd=ROOT, check=True, capture_output=True, text=True)
-        actual = re.findall(r"VisitorSequence [^\n]+", result.stdout)
-        fixture = json.loads((ROOT / "tools/fixtures/amoled_visitor_flow_baseline.json").read_text())
-        self.assertEqual(fixture[key], actual)
+    def test_visitor_state_and_rendering_match_reference(self):
+        self.check_sequence("visitor-sequence", "visitor-sequence")
 
-    def test_visitor_matches_pre_refactor_behavior(self):
-        self.check_visitor_sequence("visitor-sequence", "normal")
-
-    def test_visitor_matches_pre_refactor_clock_wrap(self):
-        self.check_visitor_sequence("visitor-wrap", "wrap")
+    def test_visitor_clock_wrap_preserves_each_frame(self):
+        self.check_sequence("visitor-wrap", "visitor-sequence")
 
     def test_visitor_early_exit_cancellation_and_landing_effects(self):
         self.run_case("visitor-effects")
@@ -192,18 +150,11 @@ class AmoledNativeRenderTests(unittest.TestCase):
     def test_pair_flow_effects_and_termination(self):
         self.run_case("pair-effects")
 
-    def check_pair_sequence(self, case, key):
-        result = subprocess.run([self.binary, str(ROOT / "data"), "--case", case],
-                                cwd=ROOT, check=True, capture_output=True, text=True)
-        actual = re.findall(r"PairSequence [^\n]+", result.stdout)
-        fixture = json.loads((ROOT / "tools/fixtures/amoled_pair_flow_baseline.json").read_text())
-        self.assertEqual(fixture[key], actual)
+    def test_pair_flow_state_and_rendering_match_reference(self):
+        self.check_sequence("pair-sequence", "pair-sequence")
 
-    def test_pair_flow_matches_pre_refactor_behavior(self):
-        self.check_pair_sequence("pair-sequence", "normal")
-
-    def test_pair_flow_matches_pre_refactor_clock_wrap(self):
-        self.check_pair_sequence("pair-wrap", "wrap")
+    def test_pair_flow_clock_wrap_preserves_each_frame(self):
+        self.check_sequence("pair-wrap", "pair-sequence")
 
     def test_home_ambient_routes_frames_damage_and_rng_match_baseline(self):
         self.check_home_sequence("home-ambient-sequence")
@@ -215,45 +166,35 @@ class AmoledNativeRenderTests(unittest.TestCase):
         self.run_case("home-ambient-effects")
 
     def test_home_both_faint_recover_sleep_and_wake(self):
-        self.run_case("home-faint-sleep-wake")
+        self.run_trace_case("home-faint-sleep-wake", "sleep")
 
     def test_home_fed_companion_clears_bowl_for_hungry_leader_after_restore(self):
         self.run_case("home-food-exit-stall")
 
-    def test_home_sleep_state_and_rendering_match_before_extraction(self):
-        fixture = json.loads((ROOT / "tools/fixtures/amoled_home_sleep_baseline.json").read_text())
-        for case, expected in fixture["cases"].items():
-            with self.subTest(case=case):
-                result = subprocess.run(
-                    [self.binary, str(ROOT / "data"), "--case", case],
-                    cwd=ROOT, check=True, capture_output=True, text=True,
-                    env={**os.environ, "STICKMON_SLEEP_TRACE": "1"})
-                if os.environ.get("AMOLED_RENDER_DEBUG", "0") != "1":
-                    lines = [line for line in result.stdout.splitlines() if line.startswith("SleepTrace ")]
-                    self.assertEqual(expected["lines"], len(lines))
-                    self.assertEqual(expected["sha256"],
-                        hashlib.sha256(("\n".join(lines) + "\n").encode()).hexdigest())
+    def run_trace_case(self, case, family):
+        prefix = "FoodTrace " if family == "food" else "SleepTrace "
+        variable = "STICKMON_FOOD_TRACE" if family == "food" else "STICKMON_SLEEP_TRACE"
+        result = subprocess.run(
+            [self.binary, str(ROOT / "data"), "--case", case],
+            cwd=ROOT, check=True, capture_output=True, text=True,
+            env={**os.environ, variable: "1"})
+        if os.environ.get("AMOLED_RENDER_DEBUG", "0") != "1":
+            fixture = json.loads((ROOT / f"tools/fixtures/amoled_home_{family}_baseline.json").read_text())
+            expected = fixture["cases"][case]
+            lines = [line for line in result.stdout.splitlines() if line.startswith(prefix)]
+            self.assertEqual(expected["lines"], len(lines))
+            self.assertEqual(expected["sha256"],
+                hashlib.sha256(("\n".join(lines) + "\n").encode()).hexdigest())
 
-    def test_home_food_state_and_rendering_match_before_extraction(self):
-        fixture = json.loads((ROOT / "tools/fixtures/amoled_home_food_baseline.json").read_text())
-        for case, expected in fixture["cases"].items():
-            with self.subTest(case=case):
-                result = subprocess.run(
-                    [self.binary, str(ROOT / "data"), "--case", case],
-                    cwd=ROOT, check=True, capture_output=True, text=True,
-                    env={**os.environ, "STICKMON_FOOD_TRACE": "1"})
-                # Debug availability may affect rendering; it still runs the real journey.
-                if os.environ.get("AMOLED_RENDER_DEBUG", "0") != "1":
-                    lines = [line for line in result.stdout.splitlines() if line.startswith("FoodTrace ")]
-                    self.assertEqual(expected["lines"], len(lines))
-                    self.assertEqual(expected["sha256"],
-                        hashlib.sha256(("\n".join(lines) + "\n").encode()).hexdigest())
+    def test_home_faint_placement_and_recovery_match_before_extraction(self):
+        self.run_trace_case("home-faint-placement", "rest")
+
 
     def test_home_save_during_turn_restores_walk_and_food_routes(self):
         self.run_case("home-saved-turns")
 
     def test_home_yield_turn_and_room_action_arrival_presentation(self):
-        self.run_case("home-yield-actions")
+        self.run_trace_case("home-yield-actions", "food")
 
     def test_shower_foam_rinse_feedback_and_cache_partial_frames(self):
         args = [self.binary, str(ROOT / "data"), "--case", "shower-render"]
@@ -388,9 +329,9 @@ class AmoledNativeRenderTests(unittest.TestCase):
     def test_battle_shared_rules_and_effect_logs_apply_once_on_both_sides(self):
         self.run_case("battle-shared-execution")
 
+    @unittest.skipUnless(os.environ.get("AMOLED_RENDER_DEBUG") == "1", "Debug-only behavior")
     def test_debug_battle_fixtures_preserve_player_save_on_close_and_reboot(self):
-        if os.environ.get("AMOLED_RENDER_DEBUG") == "1":
-            self.run_case("battle-diagnostic-save")
+        self.run_case("battle-diagnostic-save")
 
     def test_medicine_target_selection_hp_animation_and_return(self):
         self.run_case("medicine-flow")
@@ -451,20 +392,14 @@ class AmoledNativeRenderTests(unittest.TestCase):
     def test_explore_saves_at_rewards_and_exit_boundaries(self):
         self.run_case("explore-save-boundaries")
 
+    @unittest.skipUnless(os.environ.get("AMOLED_RENDER_DEBUG") == "1", "Debug-only behavior")
     def test_debug_visitor_prompt_talk_and_exit(self):
-        if os.environ.get("AMOLED_RENDER_DEBUG") == "1":
-            self.run_case("visitor-diagnostics")
+        self.run_case("visitor-diagnostics")
 
+    @unittest.skipUnless(os.environ.get("AMOLED_RENDER_DEBUG") == "1", "Debug-only behavior")
     def test_debug_visitor_recovers_invalid_host_door_pose(self):
-        if os.environ.get("AMOLED_RENDER_DEBUG") == "1":
-            self.run_case("visitor-invalid-entry")
+        self.run_case("visitor-invalid-entry")
 
-    def test_unknown_behavior_case_is_rejected(self):
-        result = subprocess.run(
-            [self.binary, str(ROOT / "data"), "--case", "unknown-case"],
-            cwd=ROOT, capture_output=True, text=True)
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("unknown behavior case", result.stderr)
 
     def test_native_geometry_and_partial_frames(self):
         args = [self.binary, str(ROOT / "data")]

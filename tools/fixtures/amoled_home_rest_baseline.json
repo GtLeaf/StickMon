@@ -1,0 +1,14 @@
+{
+  "baseline": "pre-HomeRestFlow and HomePresenter production snapshot with additive home-faint-placement host scenario, 2026-11-16",
+  "baseline_commit": "6765233b7be6c0a6dad34cd96075628a4fe4d75f",
+  "app_sha256": "a74cf536cc4a7244badafe382611f4056591a10a5ae887236ce625ba02c2756e",
+  "header_sha256": "81774f50470742430c257f1943cc79573eef582a148310b643a77a1214bb5707",
+  "trace_host_sha256": "4640424b04767f9215ea4393619f14a7988a71294b43fe738dc46b4562e35e67",
+  "cases": {
+    "home-faint-placement": {
+      "lines": 133,
+      "frame_lines": 48,
+      "sha256": "03116761c8a072fc915a6b8f30889947611d3b640eddf1ea4b2746205329caf1"
+    }
+  }
+}

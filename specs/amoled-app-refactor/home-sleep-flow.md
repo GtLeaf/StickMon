@@ -87,6 +87,8 @@ No runtime memory/high-water, frame-time or hardware performance improvement is 
 Deferred review minor: the ordinary awake bed-pose check currently builds full sleep
 layout and scans behavior anchors. A bed-only path could avoid this extra work;
 it does not change results, but its device CPU cost has not been measured.
+Resolved in [batch 2c](home-rest-presenter.md): the awake path now passes only bed
+coordinates and avoids full layout/anchor lookup; no measured frame-time claim.
 
 Only V2 firmware was built. No V1/OSTB/SDGOODS build, flashing, device acceptance,
 commit, push or environment publication. SDGOODS application and shared gameplay

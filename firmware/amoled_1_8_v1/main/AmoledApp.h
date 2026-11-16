@@ -32,11 +32,12 @@
 #include "app/HomeFlow.h"
 #include "app/HomeFoodFlow.h"
 #include "app/HomeSleepFlow.h"
+#include "app/HomeRestFlow.h"
 #include "app/PairFlow.h"
 #include "app/VisitorFlow.h"
 #include "app/VisitAwayFlow.h"
 #include "app/ExplorePresenter.h"
-#include "SleepBreathClock.h"
+#include "app/HomePresenter.h"
 #include "AmoledGeometry.h"
 #include "HomeScreen.h"
 #include "ui/RenderCaches.h"
@@ -134,7 +135,7 @@ public:
     bool lockTapHitsPet(int16_t x, int16_t y) const;
     bool petIsSleeping() const;
     uint8_t petSleepFrame() const { return petFrame; }
-    float petSleepExpansion(uint32_t nowMs) const { return sleepBreath.expansion(nowMs); }
+    float petSleepExpansion(uint32_t nowMs) const { return homePresenter_.sleepExpansion(nowMs); }
 #if STICKMON_ENABLE_DEBUG_FEATURES
     void renderDebugTouchOverlay(Canvas565& canvas) const;
     bool debugStartExplore(uint8_t area);
@@ -470,6 +471,7 @@ private:
     bool chooseWakeTarget(float& x, float& y) const;
     bool chooseFoodApproachTarget(float desiredX, float desiredY,
                                   float& x, float& y) const;
+    HomePresenter::RoomLayout homePresenterLayout() const;
     void updateCamera();
     int worldToScreenX(float worldX) const;
     int worldToScreenY(float worldY) const;
@@ -699,10 +701,8 @@ private:
     bool visitRecallConfirm = false;
     bool visitRadioExclusive = false;
 
-    float cameraX = 0.0f;
-    float cameraY = 0.0f;
+    HomePresenter homePresenter_;
     uint32_t lastPetUpdateMs = 0;
-    SleepBreathClock sleepBreath;
     uint32_t nextPetFrameMs = 0;
     uint8_t petFrame = 0;
     PokemonSprites::WalkDirection petDirection =
@@ -710,6 +710,7 @@ private:
     bool petStopping = false;
     bool petLongMove = true;
     HomeSleepFlow homeSleepFlow_{homeMainActor, homeCompanionActor, homeRuntime};
+    HomeRestFlow homeRestFlow_{homeMainActor, homeCompanionActor, homeRuntime, homeSleepFlow_};
     HomeFoodFlow homeFoodFlow_{gameState, homeMainActor, homeCompanionActor, homeRuntime};
     HomeFlow homeFlow_{gameState, homeMainActor, homeCompanionActor, homeRuntime};
     bool autonomousExpedition = false;

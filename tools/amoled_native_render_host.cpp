@@ -77,6 +77,7 @@ void checkHomeHudMessages(DesktopPlatform& desktop, Canvas565& canvas);
 void checkHomeRoomAuthority(DesktopPlatform& desktop, Canvas565& canvas);
 void checkHomeAutomaticFoodTurns(DesktopPlatform& desktop, Canvas565& canvas);
 void checkHomeFoodExitNoStall(DesktopPlatform& desktop, Canvas565& canvas);
+void checkHomeFaintPlacement(DesktopPlatform& desktop, Canvas565& canvas);
 void checkHomeFaintRecoveryAndSleep(DesktopPlatform& desktop, Canvas565& canvas);
 void checkHomeSavedTurns(DesktopPlatform& desktop);
 void checkHomeYieldAndActions(DesktopPlatform& desktop, Canvas565& canvas);
@@ -1477,6 +1478,10 @@ int main(int argc, char** argv) {
     }
     if (selectedCase && std::strcmp(selectedCase, "home-food-exit-stall") == 0) {
         checkHomeFoodExitNoStall(desktop, canvas);
+        return 0;
+    }
+    if (selectedCase && std::strcmp(selectedCase, "home-faint-placement") == 0) {
+        checkHomeFaintPlacement(desktop, canvas);
         return 0;
     }
     if (selectedCase && std::strcmp(selectedCase, "home-faint-sleep-wake") == 0) {

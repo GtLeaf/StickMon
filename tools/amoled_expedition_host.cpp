@@ -1764,7 +1764,7 @@ struct AmoledAppTestAccess {
             app.homeCompanionActor.x, app.homeCompanionActor.y,
             unsigned(app.homeMainActor.task), unsigned(app.homeCompanionActor.task),
             app.petFrame, app.companionFrame, (unsigned long)app.nextPetFrameMs,
-            (unsigned long)app.nextCompanionFrameMs, app.cameraX, app.cameraY,
+            (unsigned long)app.nextCompanionFrameMs, app.homePresenter_.cameraX(), app.homePresenter_.cameraY(),
             (unsigned long long)hash);
     }
 
