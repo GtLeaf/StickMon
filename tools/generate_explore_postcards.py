@@ -33,5 +33,5 @@ def generate():
             lines.extend(','.join(map(str,values[i:i+32]))+',' for i in range(0,len(values),32));lines.append('};')
     lines.append('struct Scene {const uint16_t* palette;const uint16_t* rows;const uint8_t* runs;};')
     lines.append('inline constexpr Scene scenes[] = {'+','.join('{palette%d,rows%d,runs%d}'%(i,i,i) for i in range(len(SOURCES)))+'};\n}')
-    (ROOT/'firmware/amoled_1_8_v1/main/ui/ExplorePostcardArt.h').write_text('\n'.join(lines)+'\n')
+    (ROOT/'src/assets/ExplorePostcardArt.h').write_text('\n'.join(lines)+'\n')
 if __name__=='__main__':generate()

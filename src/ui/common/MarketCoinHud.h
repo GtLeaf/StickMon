@@ -9,6 +9,7 @@
 #include "ui/common/MarketCoinMotion.h"
 
 namespace Ui::MarketCoinHud {
+struct Layout { int right=340, tagHeight=32, laneGap=48, tagOffset=48; };
 namespace detail {
     inline uint16_t rgb(int r,int g,int b) { return PixelRenderer::rgb(uint8_t(r),uint8_t(g),uint8_t(b)); }
     inline void pixel(Canvas565& c,int x,int y,uint16_t color,uint8_t alpha) {
@@ -42,11 +43,11 @@ namespace detail {
 }
 // Shared by all three stalls. A standalone renderer without a live model
 // synchronizes immediately; rendering itself never advances or changes state.
-inline void render(uint32_t balance,const MarketCoinMotion* live,int y,int height=32) {
+inline void render(uint32_t balance,const MarketCoinMotion* live,int y,int height=32,const Layout& layout=Layout{}) {
     auto& c=PixelRenderer::canvas();MarketCoinMotion stationary;
     if(!live)stationary.reset(balance);
     const auto f=live?live->frame():stationary.frame();
-    constexpr int right=340;
+    const int right=layout.right;
     const int cell=height/2,numberLeft=right-int(std::lround(f.widthDigits*cell));
     const int symbolX=numberLeft-cell,top=y+(32-height)/2;
     c.fillRoundRect(symbolX-8,y-4,right-symbolX+16,40,6,detail::rgb(248,248,224));
@@ -75,9 +76,9 @@ inline void render(uint32_t balance,const MarketCoinMotion* live,int y,int heigh
         const float alpha=detail::smooth(float(tag.elapsed)/120)*(1-detail::smooth((float(tag.elapsed)-650)/250))*visible;
         if(alpha<=0)continue;
         char value[24];std::snprintf(value,sizeof(value),"%+lld",static_cast<long long>(tag.delta));
-        constexpr int tagHeight=32,tagCell=16,laneGap=48;
+        const int tagHeight=layout.tagHeight,tagCell=tagHeight/2,laneGap=layout.laneGap;
         const int width=int(std::strlen(value))*tagCell;
-        int x=right-width;const int tagY=y+48+lane*laneGap-int(std::lround(float(tag.elapsed)*12/900));
+        int x=right-width;const int tagY=y+layout.tagOffset+lane*laneGap-int(std::lround(float(tag.elapsed)*12/900));
         const auto color=tag.delta>0?detail::rgb(65,132,83):detail::rgb(180,76,64);
         const auto opacity=uint8_t(std::lround(alpha*255));
         // Stroke the whole label before its ink so adjacent glyph outlines

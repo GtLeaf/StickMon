@@ -30,7 +30,26 @@ namespace Ui::MarketTutorPerformance {
         default: return Style::LEARN_REMOTE;
         }
     }
+    struct Layout {
+        float scale=1; int originX=0, originY=0;
+        int x(int v) const { return originX+int(std::lround(v*scale)); }
+        int y(int v) const { return originY+int(std::lround(v*scale)); }
+        int size(int v) const { return std::max(1,int(std::lround(v*scale))); }
+    };
     namespace detail {
+        inline Layout& layout() { static Layout value; return value; }
+        // Transform primitives directly, preserving the caller's clip/byte order.
+        // Defaults are identity; round screens need no temporary framebuffer.
+        struct StageCanvas {
+            void fillCircle(int x,int y,int r,uint16_t color) { PixelRenderer::canvas().fillCircle(layout().x(x),layout().y(y),layout().size(r),color); }
+            void drawCircle(int x,int y,int r,uint16_t color) { PixelRenderer::canvas().drawCircle(layout().x(x),layout().y(y),layout().size(r),color); }
+            void fillEllipse(int x,int y,int a,int b,uint16_t color) { PixelRenderer::canvas().fillEllipse(layout().x(x),layout().y(y),layout().size(a),layout().size(b),color); }
+            void fillRect(int x,int y,int w,int h,uint16_t color) { PixelRenderer::canvas().fillRect(layout().x(x),layout().y(y),layout().size(w),layout().size(h),color); }
+            void drawFastHLine(int x,int y,int w,uint16_t color) { PixelRenderer::canvas().drawFastHLine(layout().x(x),layout().y(y),layout().size(w),color); }
+            void drawFastVLine(int x,int y,int h,uint16_t color) { PixelRenderer::canvas().drawFastVLine(layout().x(x),layout().y(y),layout().size(h),color); }
+            bool nativeText() const { return PixelRenderer::canvas().nativeText(); }
+            void setNativeText(bool value) { PixelRenderer::canvas().setNativeText(value); }
+        };
         inline constexpr double PI = 3.141592653589793;
         inline constexpr uint16_t rgb(int r, int g, int b) {
             return uint16_t(((r&0xf8)<<8)|((g&0xfc)<<3)|(b>>3));
@@ -40,8 +59,8 @@ namespace Ui::MarketTutorPerformance {
         inline constexpr uint16_t white = rgb(255, 255, 240);
         inline constexpr uint16_t energy = rgb(112, 184, 216);
         inline constexpr uint16_t shadow = rgb(186, 196, 160);
-        inline Canvas565& c() {
-            return PixelRenderer::canvas();
+        inline StageCanvas& c() {
+            static StageCanvas canvas; return canvas;
         }
         inline double p(double t, double a, double b) {
             return std::clamp((t-a)/(b-a), 0.0, 1.0);
@@ -96,7 +115,7 @@ namespace Ui::MarketTutorPerformance {
             if (!frame) return;
             float scale = std::min(2.0f, 80.0f/std::max(frame->width, frame->height));
             int sy = int(ground+lift-(PokemonSprites::frameGroundOffsetY(frame)+frame->height/2.0f)*scale);
-            PokemonSprites::drawFrameScaled(frame, int(x-frame->width*scale/2), sy, scale, a.flipX, true);
+            PokemonSprites::drawFrameScaled(frame, layout().x(int(x-frame->width*scale/2)), layout().y(sy), scale*layout().scale, a.flipX, true);
         }
         inline void approval(double t, double a, double b) {
             double q = p(t, a, b);
@@ -239,7 +258,7 @@ namespace Ui::MarketTutorPerformance {
             approval(t, 4.3, 4.8);
         }
         namespace learning {
-            inline void question(double t,double a,double b){if(t<a||t>=b)return;const bool native=c().nativeText();c().setNativeText(true);PixelRenderer::text(272,252,"?",ink);c().setNativeText(native);}
+            inline void question(double t,double a,double b){if(t<a||t>=b)return;const bool native=c().nativeText();c().setNativeText(true);if(layout().scale==1)PixelRenderer::text(272,252,"?",ink);else PixelRenderer::textSmooth(layout().x(272),layout().y(252),"?",ink,20);c().setNativeText(native);}
             inline void pulseTarget(double t,double a,double b){if(t<a||t>=b)return;ring(178,330,lerp(19,27,p(t,a,b)),purple);}
             inline void remote(double t, uint16_t partner){
              int gh=0,ph=0,gpose=0,ppose=0,gx=90;
@@ -324,7 +343,8 @@ namespace Ui::MarketTutorPerformance {
         } // namespace learning
     }
     // namespace detail
-    inline void render(Style style, uint32_t elapsedMs, uint16_t partner) {
+    inline void render(Style style, uint32_t elapsedMs, uint16_t partner,const Layout& stage=Layout{}) {
+        const auto previous=detail::layout(); detail::layout()=stage;
         const double t = elapsedMs / 1000.0;
         switch (style) {
         case Style::LEARN_REMOTE: detail::learning::remote(t, partner); break;
@@ -334,6 +354,7 @@ namespace Ui::MarketTutorPerformance {
         case Style::SELF: detail::self(t, partner); break;
         default: detail::remote(t, partner); break;
         }
+        detail::layout()=previous;
     }
 }
 // namespace Ui::MarketTutorPerformance

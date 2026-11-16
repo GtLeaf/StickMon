@@ -10,6 +10,10 @@ void processPowerActions(Board& board, Session& session, Engine& engine) {
         engine.wakeFromIdle();
         engine.invalidateScene();
     }
+    if(board.lockRequestReady()&&engine.prepareDisplayLock()){
+        if(session.save())board.completeLockRequest();
+        else board.deferLockRequest();
+    }
     if (board.takeShutdownRequest() && session.save()) board.powerOff();
 }
 }  // namespace Sdgoods
