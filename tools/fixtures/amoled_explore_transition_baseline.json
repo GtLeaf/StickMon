@@ -1,0 +1,10 @@
+{
+  "baseline_commit": "b5c99c5",
+  "ui_baseline_commit": "f7518f3edd5514d639f6b0f206e87c062c460140",
+  "case": "expedition-transition",
+  "note": "Original production state baseline; fixture explicitly selects grass instead of default market. The f7518f3 Pokeball preview UI changes four EXPLORE_AREAS framebuffer records; all 2264 actor/animation/camera state records remain identical. State and complete visual traces are checked independently.",
+  "lines": 2264,
+  "previous_sha256": "ed42b3e4b34a0d09cac3fb06d0eb0762dacea13a3dd18e9811f41d5f26f34f50",
+  "state_sha256": "63d9dbd56e6459f9d5b5af59a3a06bc04c207be38ee7a9ba3dca12a9384e092c",
+  "sha256": "006ae076f5eb8d5bff3738bbb9b770fb8e1fa9d43b478845b53524ee737da0f9"
+}

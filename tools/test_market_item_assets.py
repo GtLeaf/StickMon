@@ -1,4 +1,5 @@
 """Market item source preparation, append-only pack install, and glyph retention."""
+from font_pack import unpack_font
 import importlib.util
 import hashlib
 import json
@@ -80,7 +81,7 @@ class MarketItemAssetsTests(unittest.TestCase):
                 else:
                     path.write_bytes(struct.pack('<IHHBBBBI', 0x4e464d53, 2, 1, size, size, stride, 0, 4) + struct.pack('<I', ord('旧')) + old)
                 module.extend_font(path, {'旧', '锌', 'A', '♂'})
-                data = path.read_bytes()
+                data = unpack_font(path.read_bytes())
                 count = struct.unpack_from('<H', data, 6)[0]
                 glyphs = {chr(struct.unpack_from('<I', data, 16 + i * (4 + stride))[0]): data[20 + i * (4 + stride):20 + i * (4 + stride) + stride] for i in range(count)}
                 self.assertEqual(set(glyphs), {'旧', '锌'})
@@ -147,7 +148,7 @@ class MarketItemAssetsTests(unittest.TestCase):
         chars = collect_chars_from_text((ROOT / 'src/game/MarketItemCatalog.h').read_text()) - UNSCII_CHARS
         self.assertTrue(chars <= collect_ui_chars())
         for name in ('zh16', 'zh32', 'round-zh16-a4'):
-            data = (ROOT / f'data/packs/dev/fonts/{name}.smonfont').read_bytes()
+            data = unpack_font((ROOT / f'data/packs/dev/fonts/{name}.smonfont').read_bytes())
             count = struct.unpack_from('<H', data, 6)[0]
             stride = data[10]
             glyphs = {chr(struct.unpack_from('<I', data, 16 + i * (4 + stride))[0]) for i in range(count)}

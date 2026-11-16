@@ -1,4 +1,6 @@
 #include "AmoledApp.h"
+#include "assets/MenuAssets.h"
+#include "core/MapLayoutResources.h"
 #include "AmoledGeometry.h"
 #include "platform/web/WebPlatform.h"
 #include "presentation/Canvas565.h"
@@ -64,6 +66,10 @@ int main() {
     canvas.setNativeText(true);
     PixelRenderer::bind(buffer);
     PixelRenderer::canvas().setNativeText(true);
+    if (!beginMapLayoutResources() || !MenuAssets::begin()) {
+        EM_ASM({ if (Module['onGameError']) Module['onGameError']('Invalid map/menu resources'); });
+        return 1;
+    }
     app.begin(0);
     ready = true;
     stickmon_web_tick(0);

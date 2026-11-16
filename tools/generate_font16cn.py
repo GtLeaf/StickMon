@@ -4,6 +4,7 @@ import re
 import struct
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
+from font_pack import compress_font
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -296,7 +297,7 @@ def write_pack_font(path, chars, glyph_for_char, glyph_w=FONT_GLYPH_W,
         0,
         0,
     )
-    path.write_bytes(header + glyph_rows)
+    path.write_bytes(compress_font(header + glyph_rows))
 
 
 def glyph_bytes_large(font, ch):

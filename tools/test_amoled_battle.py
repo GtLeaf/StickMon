@@ -109,7 +109,8 @@ class AmoledBattleTests(unittest.TestCase):
         )
 
         touch_start = self.app_source.index(
-            "if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE)"
+            "if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE)",
+            self.app_source.index("void AmoledApp::handleTap(")
         )
         touch_end = self.app_source.index(
             "if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_MENU)",
@@ -138,22 +139,6 @@ class AmoledBattleTests(unittest.TestCase):
         )
         self.assertIn("drawBattleHpBar(canvas, 44, 72", self.screen_source)
         self.assertIn("drawBattleHpBar(canvas, 216, 290", self.screen_source)
-
-    def test_defeat_clears_expedition_visibility_before_returning_home(self):
-        start = self.app_source.index("void AmoledApp::finishBattleDefeat(")
-        end = self.app_source.index("void AmoledApp::closeBattle(", start)
-        defeat = self.app_source[start:end]
-        self.assertIn("expeditionMainHidden = false;", defeat)
-        self.assertIn("expeditionCompanionHidden = false;", defeat)
-        self.assertIn("expeditionCompanionDeparting = false;", defeat)
-        self.assertLess(
-            defeat.index("expeditionMainHidden = false;"),
-            defeat.index("sceneFlow.goHome();"),
-        )
-        self.assertLess(
-            defeat.index("expeditionCompanionHidden = false;"),
-            defeat.index("sceneFlow.goHome();"),
-        )
 
     def test_audio_submission_does_not_wait_for_codec_task(self):
         for platform_path in AMOLED_PLATFORMS:

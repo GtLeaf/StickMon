@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 
-from build_web import ROOT, sources_for, stage_resources
+from build_web import ROOT, sources_for, stage_resources, ui_flags_for
 
 
 class WebSimulatorTests(unittest.TestCase):
@@ -29,7 +29,7 @@ class WebSimulatorTests(unittest.TestCase):
             executable = root / "web-simulator-host"
             subprocess.run(["c++", "-std=c++17", "-O1", "-ffunction-sections", "-fdata-sections",
                             "-Wl,-dead_strip" if sys.platform == "darwin" else "-Wl,--gc-sections",
-                            "-DSTICKMON_HAS_CLAW=0",
+                            "-DSTICKMON_HAS_CLAW=0", *ui_flags_for("amoled-v2"),
                             "-DSTICKMON_ENABLE_DEBUG_FEATURES=0", "-Isrc",
                             "-Ifirmware/amoled_1_8_v1/main", "tools/web_simulator_host.cpp",
                             *[str(p) for p in sources if p.suffix == ".cpp"],

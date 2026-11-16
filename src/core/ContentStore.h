@@ -5,6 +5,9 @@
 #include "platform/api/PlatformServices.h"
 #include <cstdio>
 #include <new>
+#if STICKMON_EXTERNAL_MAP_LAYOUTS
+#include "core/DeflateDecoder.h"
+#endif
 
 // Loaded once before entering the game. Views and strings live until shutdown.
 class ContentStore final : public ContentData::Source {
@@ -30,20 +33,43 @@ public:
         auto file=ResourceFS::ins().open(path);
         const size_t size=file ? file.size() : 0;
         if(size<16 || size>1024*1024 || !itemSize || itemSize>128*1024) { failed_=true; return nullptr; }
-        auto* raw=static_cast<uint8_t*>(Platform::memory().allocate(size,true));
-        if(!raw) { failed_=true; return nullptr; }
-        std::memset(raw,0,size);
-        bool ok=file.read(raw,size)==size;
-        ContentData::Reader r{raw,size};
+        uint8_t header[16];
+        if(file.read(header,sizeof(header))!=sizeof(header)) { failed_=true;return nullptr; }
+        ContentData::Reader h{header,sizeof(header)};
         uint32_t magic=0, n=0, payload=0; uint16_t schema=0,key=0;
-        r(magic,schema,key,n,payload);
-        ok=ok && magic==0x44434d53 && schema==1 && key==id && n && n<=maxCount &&
-           payload==size-16 && n<=1024*1024/itemSize && allocated_+size+n*itemSize<=2*1024*1024;
+        h(magic,schema,key,n,payload);
+        bool compressed=false;
+        uint32_t encoded=0, crc=0;
+#if STICKMON_EXTERNAL_MAP_LAYOUTS
+        compressed=schema==2 && id>=10 && id<=20;
+        if(compressed) {
+            uint8_t extension[8];
+            if(file.read(extension,sizeof(extension))!=sizeof(extension)) { failed_=true;return nullptr; }
+            ContentData::Reader e{extension,sizeof(extension)};e(encoded,crc);
+        }
+#endif
+        bool ok=h.good && magic==0x44434d53 && (schema==1 || compressed) && key==id && n && n<=maxCount &&
+           payload && payload<=1024*1024 && n<=1024*1024/itemSize &&
+           allocated_+payload+size_t(n)*itemSize+1<=2*1024*1024 &&
+           (compressed ? encoded && uint64_t(encoded)+24==size : payload==size-16);
+        auto* raw=ok ? static_cast<uint8_t*>(Platform::memory().allocate(payload+(compressed?1:0),true)) : nullptr;
+        if(!raw) { failed_=true;return nullptr; }
+#if STICKMON_EXTERNAL_MAP_LAYOUTS
+        ok=compressed ? DeflateDecoder::inflateFileExact(file,encoded,raw,payload+1,payload,crc)
+                      : file.read(raw,payload)==payload;
+#else
+        (void)encoded;(void)crc;
+        ok=file.read(raw,payload)==payload;
+#endif
+        ContentData::Reader r{raw,payload};
         void* data=ok ? Platform::memory().allocate(n*itemSize,true) : nullptr;
         if(data) std::memset(data,0,n*itemSize);
         ok=ok && data && decode(r,data,n);
         if(ok) for(auto& e:entries_) if(!e.id) {
-            e={id,raw,data,n,itemSize}; allocated_+=size+n*itemSize; count=n; return data;
+            // Schema2 is limited to pointer-free map records. Legacy tables
+            // may contain strings pointing into raw and must retain it.
+            if(compressed) { Platform::memory().release(raw);raw=nullptr; }
+            e={id,raw,data,n,itemSize}; allocated_+=(raw?payload:0)+n*itemSize; count=n; return data;
         }
         Platform::memory().release(raw);
         if(data) Platform::memory().release(data);

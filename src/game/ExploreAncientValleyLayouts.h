@@ -22,7 +22,7 @@ constexpr bool caveRock(uint16_t t) { return caveSource(t) >= 557 && caveSource(
 constexpr int depthRows(uint16_t t) { return caveSource(t) == 524 ? 2 : ((caveSource(t) >= 504 && caveSource(t) <= 532) || caveRock(t) ? 1 : 0); }
 template<class V> inline void contentFields(V& v, Route& x) { v(x.count,x.controls,x.exit); }
 template<class V> inline void contentFields(V& v, Layout& x) { v(x.entry,x.junction,x.routes,x.layers,x.water,x.solid,x.stairs); }
-#if STICKMON_EXTERNAL_CONTENT
+#if STICKMON_EXTERNAL_CONTENT || STICKMON_EXTERNAL_MAP_LAYOUTS
 using LAYOUTS_ContentItem = Layout;
 inline const ContentData::Table<LAYOUTS_ContentItem,4> LAYOUTS{20};
 #else

@@ -13,6 +13,7 @@ src/core/CryPlayer.cpp
 src/core/FontResource.cpp
 src/core/GameClockService.cpp
 src/core/ResourceFS.cpp
+src/core/MapLayoutResources.cpp
 src/core/ResourcePack.cpp
 src/core/RoomMovementArea.cpp
 src/core/RoomNavigator.cpp

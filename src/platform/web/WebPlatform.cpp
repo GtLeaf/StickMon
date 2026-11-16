@@ -546,6 +546,10 @@ bool WebPlatform::mount() {
 
 Platform::ResourceFile WebPlatform::open(const char* path) {
     if (!resourcesMounted_ || !path) return {};
+#ifndef __EMSCRIPTEN__
+    // Native adapter tests run with the staged virtual root as their cwd.
+    if (path[0] == '/') ++path;
+#endif
     // Emscripten virtual FS paths are relative to / or absolute
     auto* file = new (std::nothrow) WebResourceFile(path);
     if (!file || !file->valid()) {

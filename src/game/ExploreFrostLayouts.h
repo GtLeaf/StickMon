@@ -15,7 +15,7 @@ struct Layout {
 };
 constexpr uint16_t COUNT = 384;
 template<class V> inline void contentFields(V& v, Layout& x) { v(x.floorRows,x.iceRect,x.junction,x.controls,x.controlCounts); }
-#if STICKMON_EXTERNAL_CONTENT
+#if STICKMON_EXTERNAL_CONTENT || STICKMON_EXTERNAL_MAP_LAYOUTS
 using LAYOUTS_ContentItem = Layout;
 inline const ContentData::Table<LAYOUTS_ContentItem,384> LAYOUTS{19};
 #else

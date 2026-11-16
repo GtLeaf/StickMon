@@ -55,13 +55,13 @@ struct AmoledAppTestAccess {
             assert(Game::MarketSchedule::daysUntilOpen(state)==2);
             const auto closed=state;
             assert(!app.queueExploreDeparture(ExploreDestinations::MARKET,false));
-            assert(!app.startMarket(navTime)&&!app.market_&&!app.pendingExpedition);
+            assert(!app.startMarket(navTime)&&!app.market_&&!app.exploreTransition_.state().pending);
             assert(std::memcmp(&closed,&state,sizeof(state))==0);
             app.forceFullRender();app.render(PixelRenderer::canvas());capture(output,"release-market-closed");
             assert(PixelRenderer::canvas().readPixel(40,407)==UiTheme::current().disabledSurface);
             navTouch(TouchEventType::DOWN,184,412);
             navTouch(TouchEventType::UP,184,412);
-            assert(!app.pendingExpedition&&app.sceneFlow.current()==AppSceneFlow::Scene::EXPLORE_AREAS);
+            assert(!app.exploreTransition_.state().pending&&app.sceneFlow.current()==AppSceneFlow::Scene::EXPLORE_AREAS);
             assert(std::memcmp(&closed,&state,sizeof(state))==0);
             state.gameMinutesTotal=0;
             app.forceFullRender();app.render(PixelRenderer::canvas());capture(output,"release-market-open");
@@ -78,12 +78,12 @@ struct AmoledAppTestAccess {
             TouchEvent event{};event.x=98;event.y=412;event.timestampMs=simulationTime;
             event.type=TouchEventType::DOWN;app.handleTouch(event);
             event.type=TouchEventType::UP;app.handleTouch(event);
-            assert(app.pendingExpedition&&app.pendingExpeditionArea==ExploreDestinations::MARKET);
+            assert(app.exploreTransition_.state().pending&&app.exploreTransition_.state().area==ExploreDestinations::MARKET);
             assert(!app.market_&&!app.exploreSessionActive&&app.sceneFlow.current()==AppSceneFlow::Scene::HOME);
             bool walk=false,cross=false,companion=false,companionCross=false,out=false,black=false,in=false;
-            for(int n=0;n<3600&&(app.pendingExpedition||app.expeditionDeparturePhase!=AmoledApp::ExpeditionDeparturePhase::NONE);++n) {
+            for(int n=0;n<3600&&(app.exploreTransition_.state().pending||app.exploreTransition_.state().phase!=AmoledApp::ExpeditionDeparturePhase::NONE);++n) {
                 simulationTime+=33;app.update(simulationTime);
-                const auto phase=app.expeditionDeparturePhase;
+                const auto phase=app.exploreTransition_.state().phase;
                 if(phase==AmoledApp::ExpeditionDeparturePhase::WALK_TO_DOOR&&!walk) {
                     walk=true;app.render(PixelRenderer::canvas());capture(output,"market-depart-room");
                 }
@@ -108,7 +108,7 @@ struct AmoledAppTestAccess {
                 }
             }
             assert(walk&&cross&&companion==pair&&companionCross==pair&&out&&black&&in);
-            assert(app.market_&&!app.pendingExpedition&&!app.exploreSessionActive&&!app.sceneFadeActive());
+            assert(app.market_&&!app.exploreTransition_.state().pending&&!app.exploreSessionActive&&!app.sceneFadeActive());
             assert(state.team[0].lastExploredAt==before.team[0].lastExploredAt);
         };
         depart(true);
@@ -284,7 +284,7 @@ struct AmoledAppTestAccess {
             advance(1);assert(!app.marketUi_.dragging&&app.marketUi_.direction==-1);
             if(lane==1){app.render(PixelRenderer::canvas());capture(output,"market-walkout");}
             bool fadeOut=false,black=false,fadeIn=false;
-            for(int t=0;t<1200&&(app.market_||app.expeditionDeparturePhase!=AmoledApp::ExpeditionDeparturePhase::NONE);++t) {
+            for(int t=0;t<1200&&(app.market_||app.exploreTransition_.state().phase!=AmoledApp::ExpeditionDeparturePhase::NONE);++t) {
                 advance(1);
                 assert(app.sceneFlow.current()!=AppSceneFlow::Scene::EXPLORE_AREAS);
                 if(app.sceneFadeActive()) {
@@ -323,11 +323,11 @@ struct AmoledAppTestAccess {
         // during the room walk cancels without leaving a queued market behind.
         state.teamCount=1;state.team[0].satiety=0;app.syncHomeActors(simulationTime);
         assert(app.queueExploreDeparture(ExploreDestinations::MARKET,false));
-        advance(2);assert(app.expeditionDeparturePhase==AmoledApp::ExpeditionDeparturePhase::WALK_TO_DOOR);
+        advance(2);assert(app.exploreTransition_.state().phase==AmoledApp::ExpeditionDeparturePhase::WALK_TO_DOOR);
         TouchEvent cancel{};cancel.x=184;cancel.y=100;cancel.timestampMs=simulationTime;
         cancel.type=TouchEventType::DOWN;app.handleTouch(cancel);
         cancel.type=TouchEventType::UP;app.handleTouch(cancel);
-        assert(!app.pendingExpedition&&!app.market_&&app.expeditionDeparturePhase==AmoledApp::ExpeditionDeparturePhase::NONE);
+        assert(!app.exploreTransition_.state().pending&&!app.market_&&app.exploreTransition_.state().phase==AmoledApp::ExpeditionDeparturePhase::NONE);
         depart(false);assert(state.team[0].satiety==0);
     }
 };

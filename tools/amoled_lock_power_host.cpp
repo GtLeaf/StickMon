@@ -1,3 +1,4 @@
+#include "home_food_test_access.h"
 #include "AmoledApp.h"
 #include "game/MonsterFactory.h"
 #include "game/CareExperience.h"
@@ -37,7 +38,7 @@ struct AmoledPowerTestAccess {
         assert(app.homeRuntime.acquire(Home::Resource::BOWL, 0,
             Home::Task::FEEDING, desktop.millis()));
         app.homeRuntime.transition(0, Home::Task::FEEDING, desktop.millis(), 10000, true);
-        app.nextFeedBiteMs = desktop.millis();
+        AmoledV1::HomeFoodTestAccess::setBiteDeadline(app.homeFoodFlow_, 0, desktop.millis());
         for (int i = 0; i < 60; ++i) {
             desktop.advanceMs(i % 3 == 0 ? 110 : 100);
             app.update(desktop.millis());
@@ -153,7 +154,7 @@ struct AmoledPowerTestAccess {
         assert(app.homeRuntime.acquire(Home::Resource::BOWL, 0,
             Home::Task::FEEDING, desktop.millis()));
         app.homeRuntime.transition(0, Home::Task::FEEDING, desktop.millis(), 10000, true);
-        app.nextFeedBiteMs = desktop.millis();
+        AmoledV1::HomeFoodTestAccess::setBiteDeadline(app.homeFoodFlow_, 0, desktop.millis());
         const uint32_t standbyXp = monster.exp;
         const auto standbyScene = app.sceneFlow.current();
         assert(app.prepareDisplayStandby(desktop.millis()));

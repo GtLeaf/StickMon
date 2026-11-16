@@ -1,3 +1,4 @@
+#include "explore_transition_test_access.h"
 #include "AmoledApp.h"
 #include "HomeScreen.h"
 #include "assets/PokemonSprites.h"
@@ -17,6 +18,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstdlib>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -1514,9 +1516,9 @@ struct AmoledAppTestAccess {
         assert(!app.consumeLockRequest());
         assert(!app.displayLockAllowed());
 
-        app.pendingExpedition = false;
-        app.expeditionDeparturePhase = Phase::NONE;
-        app.expeditionFade.reset();
+        ExploreTransitionTestAccess::state(app.exploreTransition_).pending = false;
+        ExploreTransitionTestAccess::state(app.exploreTransition_).phase = Phase::NONE;
+        ExploreTransitionTestAccess::resetFade(app.exploreTransition_);
         assert(app.displayLockAllowed());
         std::puts("display lock arbitration: transition owns the display");
     }
@@ -1749,10 +1751,27 @@ struct AmoledAppTestAccess {
     }
 #endif
 
+    static void traceTransition(const AmoledApp& app, const Canvas565* canvas = nullptr) {
+        if (!std::getenv("STICKMON_TRANSITION_TRACE")) return;
+        uint64_t hash = 1469598103934665603ULL;
+        if (canvas) for (int y=0;y<AmoledUi::HEIGHT;++y) for(int x=0;x<AmoledUi::WIDTH;++x) {
+            hash ^= canvas->readPixel(x,y); hash *= 1099511628211ULL;
+        }
+        std::printf("TransitionTrace %u %u %u %u %u %u %.4f %.4f %.4f %.4f %u %u %u %u %lu %lu %.4f %.4f %llu\n",
+            unsigned(app.sceneFlow.current()), unsigned(app.exploreTransition_.state().phase),
+            unsigned(app.exploreTransition_.fade().alpha()), app.exploreTransition_.state().mainHidden, app.exploreTransition_.state().companionHidden,
+            app.exploreSessionActive, app.homeMainActor.x, app.homeMainActor.y,
+            app.homeCompanionActor.x, app.homeCompanionActor.y,
+            unsigned(app.homeMainActor.task), unsigned(app.homeCompanionActor.task),
+            app.petFrame, app.companionFrame, (unsigned long)app.nextPetFrameMs,
+            (unsigned long)app.nextCompanionFrameMs, app.homePresenter_.cameraX(), app.homePresenter_.cameraY(),
+            (unsigned long long)hash);
+    }
+
     static void present(AmoledApp& app, Canvas565& canvas, bool acknowledge = true) {
         assert(app.needsRender());
         app.render(canvas);
-        if (app.expeditionFade.alpha() == 255) {
+        if (app.exploreTransition_.fade().alpha() == 255) {
             assert(app.renderRowBegin() == 0 && app.renderRowEnd() == AmoledUi::HEIGHT);
             for (int y = 0; y < AmoledUi::HEIGHT; ++y) {
                 for (int x = 0; x < AmoledUi::WIDTH; ++x) {
@@ -1761,36 +1780,38 @@ struct AmoledAppTestAccess {
             }
         }
         if (acknowledge) app.markRendered();
+        traceTransition(app, &canvas);
     }
 
     static void tick(AmoledApp& app, DesktopPlatform& desktop, uint32_t delay = 50) {
         desktop.advanceMs(delay);
         app.update(desktop.millis());
         assert(app.sceneFlow.current() != Scene::EXPLORE_AREAS);
+        traceTransition(app);
     }
 
     static void fadeOut(AmoledApp& app, DesktopPlatform& desktop, Canvas565& canvas,
                         Scene source) {
-        assert(app.expeditionFade.alpha() == 0);
+        assert(app.exploreTransition_.fade().alpha() == 0);
         tick(app, desktop, 1200);  // No first frame submitted yet, despite elapsed time.
-        assert(app.expeditionFade.alpha() == 0);
+        assert(app.exploreTransition_.fade().alpha() == 0);
         present(app, canvas);
         int shades = 0;
-        while (app.expeditionFade.alpha() != 255) {
-            const int before = app.expeditionFade.alpha();
+        while (app.exploreTransition_.fade().alpha() != 255) {
+            const int before = app.exploreTransition_.fade().alpha();
             tick(app, desktop, 500);  // Simulate a slow display/resource frame.
             assert(app.sceneFlow.current() == source);
-            assert(app.expeditionFade.alpha() > before);
-            assert(app.expeditionFade.alpha() - before <= 43);
+            assert(app.exploreTransition_.fade().alpha() > before);
+            assert(app.exploreTransition_.fade().alpha() - before <= 43);
             ++shades;
-            if (app.expeditionFade.alpha() != 255) present(app, canvas);
+            if (app.exploreTransition_.fade().alpha() != 255) present(app, canvas);
             assert(shades < 20);
         }
         assert(shades >= 6);
         present(app, canvas, false);  // A failed transfer must not allow a scene switch.
         tick(app, desktop, 1000);
         assert(app.sceneFlow.current() == source);
-        assert(!app.expeditionFade.complete());
+        assert(!app.exploreTransition_.fade().complete());
         // A partial submission is not evidence that the entire screen is black.
         app.forceRenderRows(0, 100);
         app.render(canvas);
@@ -1798,10 +1819,10 @@ struct AmoledAppTestAccess {
         tick(app, desktop);
         assert(app.sceneFlow.current() == source);
         present(app, canvas);
-        assert(app.expeditionFade.complete());
+        assert(app.exploreTransition_.fade().complete());
         tick(app, desktop);
         assert(app.sceneFlow.current() != source);
-        assert(app.expeditionFade.alpha() == 255);
+        assert(app.exploreTransition_.fade().alpha() == 255);
     }
 
     static void fadeIn(AmoledApp& app, DesktopPlatform& desktop, Canvas565& canvas,
@@ -1809,16 +1830,16 @@ struct AmoledAppTestAccess {
         const float petX = app.homeMainActor.x;
         const float petY = app.homeMainActor.y;
         tick(app, desktop, 2000);  // Destination loading cannot consume its fade-in.
-        assert(app.expeditionFade.alpha() == 255);
+        assert(app.exploreTransition_.fade().alpha() == 255);
         present(app, canvas);
         int shades = 0;
-        while (app.expeditionFade.active()) {
-            const int before = app.expeditionFade.alpha();
+        while (app.exploreTransition_.fade().active()) {
+            const int before = app.exploreTransition_.fade().alpha();
             tick(app, desktop);
             assert(app.sceneFlow.current() == destination);
-            assert(app.expeditionFade.alpha() <= before);
-            assert(before - app.expeditionFade.alpha() <= 43);
-            if (app.expeditionFade.active()) {
+            assert(app.exploreTransition_.fade().alpha() <= before);
+            assert(before - app.exploreTransition_.fade().alpha() <= 43);
+            if (app.exploreTransition_.fade().active()) {
                 assert(app.homeMainActor.x == petX && app.homeMainActor.y == petY);
                 ++shades;
             }
@@ -1834,10 +1855,11 @@ struct AmoledAppTestAccess {
         app.begin(desktop.millis());
         app.gameState = state;
         app.gameState.settings.idleTimeoutIndex = 4;
-        app.sceneFlow.enter(Scene::EXPLORE_AREAS);
+        app.selectExploreDestination(ExploreDestinations::visibleIndex(0, app.gameState), desktop.millis());
+            app.sceneFlow.enter(Scene::EXPLORE_AREAS);
         tap(app, desktop, 98, 412);
         int frames = 0;
-        while (app.expeditionDeparturePhase != Phase::FADE_OUT) {
+        while (app.exploreTransition_.state().phase != Phase::FADE_OUT) {
             tick(app, desktop);
             present(app, canvas);
             assert(++frames < 1000);
@@ -1850,11 +1872,12 @@ struct AmoledAppTestAccess {
             // there is no extra delay between markRendered and update.
             app.update(desktop.millis());
             assert(app.sceneFlow.current() != Scene::EXPLORE_AREAS);
+        traceTransition(app);
             present(app, canvas, false);
             desktop.advanceMs(35);
             app.markRendered();
             assert(++frames < 100);
-        } while (app.expeditionDeparturePhase != Phase::NONE);
+        } while (app.exploreTransition_.state().phase != Phase::NONE);
         assert(app.sceneFlow.current() == Scene::EXPLORE_ROUTE);
         assert(desktop.millis() - fadeStarted < 2000);
         std::puts("immediate next frame: departure and both fade endpoints complete");
@@ -2319,7 +2342,13 @@ struct AmoledAppTestAccess {
 
         app.sceneFlow.enter(Scene::BATTLE);
         app.battleSession_.state_.battlePhase = BattleViewModel::Phase::DEFEAT;
+        auto& transition = ExploreTransitionTestAccess::state(app.exploreTransition_);
+        transition.mainHidden = transition.companionHidden = transition.companionDeparting = true;
         app.finishBattleDefeat(desktop.millis());
+        assert(!transition.mainHidden && !transition.companionHidden && !transition.companionDeparting);
+        HomeViewModel defeatModel;
+        app.fillHomePetModel(defeatModel);
+        assert(defeatModel.petVisible && app.homeMainActor.faintRestActive);
         load();
         assert(loaded.team[0].hpCur == 0 && loaded.team[0].fainted);
 
@@ -2455,43 +2484,44 @@ struct AmoledAppTestAccess {
                     if (flagOnly) app.gameState.team[slot].fainted = true;
                     else app.gameState.team[slot].hpCur = 0;
                 }
-                app.sceneFlow.enter(Scene::EXPLORE_AREAS);
+                app.selectExploreDestination(ExploreDestinations::visibleIndex(0, app.gameState), desktop.millis());
+            app.sceneFlow.enter(Scene::EXPLORE_AREAS);
                 const auto activeSlot = app.gameState.activeSlot;
                 tap(app, desktop, 98, 412);
                 if (faintMask == 3) {
-                    assert(!app.pendingExpedition && !app.exploreSessionActive);
-                    assert(app.expeditionDeparturePhase == Phase::NONE);
+                    assert(!app.exploreTransition_.state().pending && !app.exploreSessionActive);
+                    assert(app.exploreTransition_.state().phase == Phase::NONE);
                     assert(app.sceneFlow.current() == Scene::EXPLORE_AREAS);
                     assert(app.toast && std::strcmp(app.toast, Ui::Menu::PET_REST) == 0);
                     continue;
                 }
-                assert(app.pendingExpedition);
+                assert(app.exploreTransition_.state().pending);
                 assert(app.sceneFlow.current() == Scene::HOME);
                 const float mainX = app.homeMainActor.x, mainY = app.homeMainActor.y;
                 const float companionX = app.homeCompanionActor.x;
                 const float companionY = app.homeCompanionActor.y;
                 int frames = 0;
-                while (app.expeditionDeparturePhase != Phase::FADE_OUT) {
+                while (app.exploreTransition_.state().phase != Phase::FADE_OUT) {
                     tick(app, desktop);
                     assert(++frames < 1000);
                     if (faintMask & 1) {
-                        assert(app.petIsResting() && !app.expeditionMainHidden);
+                        assert(app.petIsResting() && !app.exploreTransition_.state().mainHidden);
                         assert(app.homeMainActor.x == mainX && app.homeMainActor.y == mainY);
                         assert(app.homeMainActor.task == Home::Task::FAINTED);
-                        assert(app.expeditionDeparturePhase != Phase::WALK_TO_DOOR);
-                        assert(app.expeditionDeparturePhase != Phase::CROSS_DOOR);
+                        assert(app.exploreTransition_.state().phase != Phase::WALK_TO_DOOR);
+                        assert(app.exploreTransition_.state().phase != Phase::CROSS_DOOR);
                     }
                     if (faintMask & 2) {
                         assert(app.homeCompanionActor.faintRestActive);
-                        assert(!app.expeditionCompanionHidden);
+                        assert(!app.exploreTransition_.state().companionHidden);
                         assert(app.homeCompanionActor.x == companionX);
                         assert(app.homeCompanionActor.y == companionY);
                         assert(app.homeCompanionActor.task == Home::Task::FAINTED);
                     }
-                    if (app.expeditionDeparturePhase != Phase::FADE_OUT) present(app, canvas);
+                    if (app.exploreTransition_.state().phase != Phase::FADE_OUT) present(app, canvas);
                 }
-                assert(app.expeditionMainHidden == !(faintMask & 1));
-                assert(app.expeditionCompanionHidden == !(faintMask & 2));
+                assert(app.exploreTransition_.state().mainHidden == !(faintMask & 1));
+                assert(app.exploreTransition_.state().companionHidden == !(faintMask & 2));
                 fadeOut(app, desktop, canvas, Scene::HOME);
                 fadeIn(app, desktop, canvas, Scene::EXPLORE_ROUTE);
                 assert(app.gameState.team[0].speciesId == 8);
@@ -2507,7 +2537,7 @@ struct AmoledAppTestAccess {
         solo.gameState.teamCount = 1;
         solo.gameState.team[0].hpCur = 0;
         assert(!solo.queueExploreDeparture(0, false));
-        assert(!solo.pendingExpedition);
+        assert(!solo.exploreTransition_.state().pending);
         std::puts("healthy departure: both/leader/reserve, HP zero/flag only, all down and solo guards verified");
     }
 
@@ -2546,7 +2576,7 @@ struct AmoledAppTestAccess {
             }
             fadeIn(app, desktop, canvas, Scene::HOME);
             int frames = 0;
-            while (app.expeditionDeparturePhase != Phase::NONE) {
+            while (app.exploreTransition_.state().phase != Phase::NONE) {
                 tick(app, desktop);
                 present(app, canvas);
                 assert(++frames < 1000);
@@ -2576,6 +2606,7 @@ struct AmoledAppTestAccess {
             app.begin(desktop.millis());
             app.gameState = state;
             app.gameState.settings.idleTimeoutIndex = 4;
+            app.selectExploreDestination(ExploreDestinations::visibleIndex(0, app.gameState), desktop.millis());
             app.sceneFlow.enter(Scene::EXPLORE_AREAS);
             app.forceFullRender();
             present(app, canvas);
@@ -2583,10 +2614,10 @@ struct AmoledAppTestAccess {
             assert(app.sceneFlow.current() == Scene::HOME);
             present(app, canvas);
             int walkingFrames = 0;
-            while (app.expeditionDeparturePhase != Phase::FADE_OUT) {
+            while (app.exploreTransition_.state().phase != Phase::FADE_OUT) {
                 tick(app, desktop);
                 assert(app.sceneFlow.current() == Scene::HOME);
-                if (app.expeditionDeparturePhase != Phase::FADE_OUT) present(app, canvas);
+                if (app.exploreTransition_.state().phase != Phase::FADE_OUT) present(app, canvas);
                 assert(++walkingFrames < 1000);
             }
             fadeOut(app, desktop, canvas, Scene::HOME);
@@ -2615,21 +2646,21 @@ struct AmoledAppTestAccess {
                 finishRoute(app, desktop.millis());
                 if (returnMode == 0) tap(app, desktop, 184, 200);
             }
-            assert(app.expeditionDeparturePhase == Phase::RETURN_FADE_OUT);
+            assert(app.exploreTransition_.state().phase == Phase::RETURN_FADE_OUT);
             assert(app.sceneFlow.current() == Scene::EXPLORE_ROUTE);
             tap(app, desktop, 98, 412);  // Repeated taps cannot cancel a return.
             app.leaveExploreRoute();   // Repeated return requests cannot settle twice.
-            assert(app.expeditionDeparturePhase == Phase::RETURN_FADE_OUT);
+            assert(app.exploreTransition_.state().phase == Phase::RETURN_FADE_OUT);
             fadeOut(app, desktop, canvas, Scene::EXPLORE_ROUTE);
             assert(app.sceneFlow.current() == Scene::HOME);
             const auto settledBond = app.gameState.team[0].bond;
             fadeIn(app, desktop, canvas, Scene::HOME);
-            assert(app.expeditionDeparturePhase == Phase::RETURN_WALK_IN);
+            assert(app.exploreTransition_.state().phase == Phase::RETURN_WALK_IN);
             int enteringFrames = 0;
-            while (app.expeditionDeparturePhase != Phase::NONE) {
+            while (app.exploreTransition_.state().phase != Phase::NONE) {
                 tick(app, desktop);
                 assert(app.sceneFlow.current() == Scene::HOME);
-                assert(app.expeditionFade.alpha() == 0);
+                assert(app.exploreTransition_.fade().alpha() == 0);
                 present(app, canvas);
                 assert(++enteringFrames < 1000);
             }
@@ -2656,8 +2687,8 @@ struct AmoledAppTestAccess {
                 const float dx = app.homeCompanionActor.x - app.homeMainActor.x;
                 const float dy = app.homeCompanionActor.y - app.homeMainActor.y;
                 assert(dx * dx + dy * dy > 16.0f);
-                assert(!app.expeditionMainHidden);
-                assert(!app.expeditionCompanionHidden);
+                assert(!app.exploreTransition_.state().mainHidden);
+                assert(!app.exploreTransition_.state().companionHidden);
             }
             std::printf("expedition return mode %d: black endpoints and direct home return verified\n",
                         returnMode);

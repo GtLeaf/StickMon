@@ -1,0 +1,14 @@
+{
+  "baseline": "pre-batch-2 uncommitted ExploreTransitionFlow snapshot on b5c99c5",
+  "app_sha256": "8e58873ffbe10442cc94f6ed5fb590e100460b12859fe36bfbfc4414637f3b50",
+  "cases": {
+    "home-food-turns": {
+      "lines": 529,
+      "sha256": "ec42fdabbe0bd62b99cc1fe033420aee834cf951da576b2873bf39fa2e1cb990"
+    },
+    "home-yield-actions": {
+      "lines": 142,
+      "sha256": "6470bbbfc2498db5d7d64b7e3c73e87ed499ff603b391f3c3f13ed204ac83185"
+    }
+  }
+}

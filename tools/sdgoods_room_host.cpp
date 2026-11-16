@@ -1295,6 +1295,22 @@ int main(int argc, char** argv) {
             tap(148,304);assert(explore.exploreSubViewOpen);
             assert(explore.exploreSubView.battleBagMode);
         };
+        const auto completeItemTurnWithoutInput=[&]() {
+            bool enemyActionSeen=false;
+            const auto deadline=desktop.millis()+10000;
+            // Use only the normal engine loop: no touch, invalidation, manual
+            // scene wake or screen toggle may rescue the pending enemy turn.
+            while((explore.battleLogBusy() ||
+                   explore.battleTurnStage!=ExploreScene::BattleTurnStage::IDLE) &&
+                  desktop.millis()<deadline) {
+                tick(50);
+                enemyActionSeen|=explore.battleActionAttackerWild;
+            }
+            assert(!explore.battleLogBusy());
+            assert(explore.battleTurnStage==ExploreScene::BattleTurnStage::IDLE);
+            assert(enemyActionSeen && !display.isLocked);
+            assert(explore.phase==Ui::ExplorePhase::ENCOUNTER);
+        };
         state.bag.potion=2;
         resetBattle();openBattleBag();auto& battleMenu=explore.exploreSubView;
         const auto battleCandy=state.bag.candy;
@@ -1311,12 +1327,30 @@ int main(int argc, char** argv) {
         assert(state.bag.potion==battlePotion-1 && state.team[1].hpCur>1);
         tick(800);assert(!explore.exploreSubViewOpen && Ui::SceneSurface::width()==360);
         assert(explore.battleLogBusy() || explore.battleTurnStage!=ExploreScene::BattleTurnStage::IDLE);
-        capturePage("bag-battle-after-use");tick(6000);
+        capturePage("bag-battle-after-use");completeItemTurnWithoutInput();
+        assert(state.bag.potion==battlePotion-1);
+        // The active combatant uses the same delayed feedback path for HP
+        // recovery and status cures, not only healing the reserve member.
+        for(auto item:{Item::POTION,Item::SUPER_POTION,Item::ANTIDOTE}) {
+            resetBattle();openBattleBag();
+            state.team[0].hpCur=item==Item::ANTIDOTE ? state.team[0].hpMax : 1;
+            state.team[0].majorStatus=item==Item::ANTIDOTE
+                ? Game::MajorStatus::POISON : Game::MajorStatus::NONE;
+            const auto stock=Game::ItemInventory::count(state,item);
+            openItem(battleMenu,item);pageTap(130,270);targetTap(battleMenu.teamUi,0);
+            assert(battleMenu.itemFeedback);
+            assert(Game::ItemInventory::count(state,item)==stock-1);
+            assert(state.team[0].hpCur>1 && state.team[0].majorStatus==Game::MajorStatus::NONE);
+            tick(800);assert(!explore.exploreSubViewOpen);
+            completeItemTurnWithoutInput();
+            assert(Game::ItemInventory::count(state,item)==stock-1);
+        }
         resetBattle();openBattleBag();state.team[1].fainted=true;state.team[1].hpCur=0;
         const auto battleRevives=state.bag.revive;
         openItem(battleMenu,Item::REVIVE);pageTap(130,270);targetTap(battleMenu.teamUi,1);
         assert(!state.team[1].fainted && state.bag.revive==battleRevives-1);
-        tick(800);assert(!explore.exploreSubViewOpen);tick(6000);
+        tick(800);assert(!explore.exploreSubViewOpen);completeItemTurnWithoutInput();
+        assert(state.bag.revive==battleRevives-1);
         resetBattle();state.room.food[0]=1;openBattleBag();const auto food=state.room.food[0];
         openItem(battleMenu,Item::NORMAL_FOOD);capturePage("bag-battle-feed-detail");
         pageTap(130,270);

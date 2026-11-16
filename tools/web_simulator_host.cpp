@@ -1,4 +1,6 @@
 #include "AmoledApp.h"
+#include "assets/MenuAssets.h"
+#include "core/MapLayoutResources.h"
 #include "platform/web/WebPlatform.h"
 #include <cassert>
 #include <cstdio>
@@ -35,6 +37,7 @@ int main() {
     assert(platform.millis() == 100); // A paused web clock cannot advance itself.
     assert(!platform.enable()); // No simulated ESP-NOW session that can hang.
     AmoledV1::AmoledApp app;
+    assert(beginMapLayoutResources() && MenuAssets::begin());
     app.begin(100);
     AmoledV1::AmoledAppTestAccess::cancelledHatchTap(app);
     assert(app.flushSave());

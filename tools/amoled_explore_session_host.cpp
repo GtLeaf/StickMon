@@ -489,9 +489,9 @@ struct AmoledAppTestAccess {
                 }
             }
         }
-        assert(hit && app.expeditionDeparturePhase == AmoledApp::ExpeditionDeparturePhase::RETURN_FADE_OUT);
+        assert(hit && app.exploreTransition_.state().phase == AmoledApp::ExpeditionDeparturePhase::RETURN_FADE_OUT);
         assert(!app.exploreSession_.state().exploreRouteMoving);
-        for (int i = 0; i < 1000 && app.expeditionDeparturePhase != AmoledApp::ExpeditionDeparturePhase::NONE; ++i) {
+        for (int i = 0; i < 1000 && app.exploreTransition_.state().phase != AmoledApp::ExpeditionDeparturePhase::NONE; ++i) {
             desktop.advanceMs(100);
             app.updateExploreDeparture(desktop.millis());
             if (app.needsRender()) app.markRendered();

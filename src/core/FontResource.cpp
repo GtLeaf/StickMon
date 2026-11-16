@@ -1,6 +1,7 @@
 #include "core/FontResource.h"
 
 #include "core/ResourcePack.h"
+#include "core/DeflateDecoder.h"
 #include "platform/api/PlatformServices.h"
 
 #include <cstdlib>
@@ -25,9 +26,48 @@ struct __attribute__((packed)) PackedFontHeader {
     uint32_t flags;
 };
 
+constexpr uint32_t COMPRESSED_RECORDS = 0x80000000U;
+struct FontPayload {
+    bool compressed = false;
+    uint32_t decodedBytes = 0;
+    uint32_t encodedBytes = 0;
+    uint32_t crc32 = 0;
+};
+
 bool readExact(Platform::ResourceFile& file, void* out, size_t length) {
     if (length == 0) return true;
     return file.read(reinterpret_cast<uint8_t*>(out), length) == length;
+}
+
+bool readHeader(Platform::ResourceFile& file, PackedFontHeader& header,
+                FontPayload& payload) {
+    if (!readExact(file, &header, sizeof(header))) return false;
+    payload.compressed = (header.flags & COMPRESSED_RECORDS) != 0;
+    if (payload.compressed) {
+        uint32_t extension[3];
+        if (!readExact(file, extension, sizeof(extension))) return false;
+        payload.decodedBytes = extension[0];
+        payload.encodedBytes = extension[1];
+        payload.crc32 = extension[2];
+        header.flags &= ~COMPRESSED_RECORDS;
+    }
+    return true;
+}
+
+bool validPayload(Platform::ResourceFile& file, const FontPayload& payload,
+                  size_t expectedBytes) {
+    return payload.compressed
+        ? payload.decodedBytes == expectedBytes && payload.encodedBytes > 0 &&
+          uint64_t(sizeof(PackedFontHeader) + 12) + payload.encodedBytes == file.size()
+        : sizeof(PackedFontHeader) + expectedBytes == file.size();
+}
+
+bool readPayload(Platform::ResourceFile& file, const FontPayload& payload,
+                 void* output, size_t bytes) {
+    return payload.compressed
+        ? DeflateDecoder::inflateFileExact(file, payload.encodedBytes,
+              static_cast<uint8_t*>(output), bytes + 1, bytes, payload.crc32)
+        : readExact(file, output, bytes);
 }
 
 bool validHeader(const PackedFontHeader& h, uint8_t width, uint8_t height,
@@ -35,7 +75,7 @@ bool validHeader(const PackedFontHeader& h, uint8_t width, uint8_t height,
     if (h.magic != FONT_PACK_MAGIC || h.version != FONT_PACK_VERSION) return false;
     if (h.glyphCount == 0 || h.glyphCount > MAX_FONT_GLYPHS) return false;
     if (h.width != width || h.height != height) return false;
-    return h.bytesPerGlyph == bytesPerGlyph;
+    return h.bytesPerGlyph == bytesPerGlyph && h.flags == 0 && h.reserved == 0;
 }
 
 bool validCodepoint(uint32_t codepoint) {
@@ -63,17 +103,19 @@ bool FontResource::loadCoverage(uint8_t height, CoverageFontData& data) {
     if (!ResourcePack::ins().openFont(
             height == 16 ? "round-zh16-a4" : "round-zh20-a4", file)) return false;
     PackedFontHeader h{};
+    FontPayload payload;
     const size_t stride = sizeof(uint32_t) + height * height / 2;
-    if (!readExact(file, &h, sizeof(h)) || h.magic != FONT_PACK_MAGIC ||
+    if (!readHeader(file, h, payload) || h.magic != FONT_PACK_MAGIC ||
         h.version != 2 || h.flags != 4 || h.reserved != 0 ||
         h.width != height || h.height != height ||
         h.bytesPerGlyph != height * height / 2 ||
         !h.glyphCount || h.glyphCount > MAX_FONT_GLYPHS ||
-        file.size() != sizeof(h) + stride * h.glyphCount) return false;
+        !validPayload(file, payload, stride * h.glyphCount)) return false;
     const size_t bytes = stride * h.glyphCount;
-    auto* records = static_cast<uint8_t*>(Platform::memory().allocate(bytes, true));
+    auto* records = static_cast<uint8_t*>(Platform::memory().allocate(
+        bytes + (payload.compressed ? 1 : 0), true));
     if (!records) return false;
-    bool valid = readExact(file, records, bytes);
+    bool valid = readPayload(file, payload, records, bytes);
     uint32_t previous = 0;
     for (uint16_t i = 0; valid && i < h.glyphCount; ++i) {
         uint32_t codepoint;
@@ -216,7 +258,8 @@ bool FontResource::loadExternal(FontFace face, FontData& data) {
     }
 
     PackedFontHeader header{};
-    if (!readExact(file, &header, sizeof(header))) {
+    FontPayload payload;
+    if (!readHeader(file, header, payload)) {
         Platform::errorf("[FontResource] %s font header truncated\n",
                       faceName(face));
         return false;
@@ -236,7 +279,7 @@ bool FontResource::loadExternal(FontFace face, FontData& data) {
 
     size_t bytes = sizeof(Glyph) * header.glyphCount;
     size_t expectedSize = sizeof(PackedFontHeader) + bytes;
-    if (file.size() != expectedSize) {
+    if (!validPayload(file, payload, bytes)) {
         Platform::errorf("[FontResource] %s font size invalid actual=%u expected=%u\n",
                       faceName(face),
                       static_cast<unsigned>(file.size()),
@@ -244,7 +287,7 @@ bool FontResource::loadExternal(FontFace face, FontData& data) {
         return false;
     }
     Glyph* glyphs = static_cast<Glyph*>(
-        Platform::memory().allocate(bytes, true));
+        Platform::memory().allocate(bytes + (payload.compressed ? 1 : 0), true));
     if (!glyphs) {
         Platform::errorf("[FontResource] %s font allocation failed bytes=%u\n",
                       faceName(face),
@@ -252,7 +295,7 @@ bool FontResource::loadExternal(FontFace face, FontData& data) {
         return false;
     }
 
-    if (!readExact(file, glyphs, bytes)) {
+    if (!readPayload(file, payload, glyphs, bytes)) {
         Platform::errorf("[FontResource] %s font glyph payload truncated\n",
                       faceName(face));
         Platform::memory().release(glyphs);
@@ -301,7 +344,8 @@ bool FontResource::loadExternalLarge(FontFace face, LargeFontData& data) {
     }
 
     PackedFontHeader header{};
-    if (!readExact(file, &header, sizeof(header))) {
+    FontPayload payload;
+    if (!readHeader(file, header, payload)) {
         Platform::errorf("[FontResource] large %s font header truncated\n",
                       faceName(face));
         return false;
@@ -319,7 +363,7 @@ bool FontResource::loadExternalLarge(FontFace face, LargeFontData& data) {
 
     size_t bytes = sizeof(LargeGlyph) * header.glyphCount;
     size_t expectedSize = sizeof(PackedFontHeader) + bytes;
-    if (file.size() != expectedSize) {
+    if (!validPayload(file, payload, bytes)) {
         Platform::errorf(
             "[FontResource] large %s font size invalid actual=%u expected=%u\n",
             faceName(face), static_cast<unsigned>(file.size()),
@@ -327,13 +371,13 @@ bool FontResource::loadExternalLarge(FontFace face, LargeFontData& data) {
         return false;
     }
     LargeGlyph* glyphs = static_cast<LargeGlyph*>(
-        Platform::memory().allocate(bytes, true));
+        Platform::memory().allocate(bytes + (payload.compressed ? 1 : 0), true));
     if (!glyphs) {
         Platform::errorf("[FontResource] large %s font allocation failed bytes=%u\n",
                       faceName(face), static_cast<unsigned>(bytes));
         return false;
     }
-    if (!readExact(file, glyphs, bytes)) {
+    if (!readPayload(file, payload, glyphs, bytes)) {
         Platform::errorf("[FontResource] large %s font glyph payload truncated\n",
                       faceName(face));
         Platform::memory().release(glyphs);

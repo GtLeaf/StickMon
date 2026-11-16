@@ -97,13 +97,14 @@ void mainMenu(Canvas565& canvas, const Layout& layout, int count,
         rect.y += layout.drawOffsetY;
         card(canvas, rect, i == pressed, i == selected);
         const auto entry = AppSceneFlow::mainMenuEntry(i, STICKMON_ENABLE_DEBUG_FEATURES != 0);
-        if (entry.iconIndex < MenuAssets::MAIN_ICON_COUNT) {
-            const auto& frame = MenuAssets::MAIN_ICON_FRAMES[entry.iconIndex];
+        if (entry.iconIndex < MenuAssets::MAIN_ICON_COUNT &&
+            MenuAssets::mainIconFrames() && MenuAssets::mainIconRle()) {
+            const auto& frame = MenuAssets::mainIconFrames()[entry.iconIndex];
             PixelRenderer::drawRgb565RleScaled(
                 rect.x + (rect.width - MenuAssets::FRAME_W * layout.textScale) / 2,
                 rect.y + (layout.textScale == 2 ? 12 : 4),
                 MenuAssets::FRAME_W, MenuAssets::FRAME_H,
-                MenuAssets::MAIN_ICON_RLE, FlashStorage::readWord(&frame.offset),
+                MenuAssets::mainIconRle(), FlashStorage::readWord(&frame.offset),
                 FlashStorage::readWord(&frame.length), float(layout.textScale));
         }
         label(canvas, rect.x + rect.width / 2,

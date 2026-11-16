@@ -14,7 +14,7 @@ ABI=1
 BANK_SIZE=9*1024*1024
 INDEX_ENTRY=struct.Struct('<160sI32s')
 EXTENSIONS={'.json','.smonsp','.smonroom','.smonfurn','.smonfx','.smonfont',
-            '.smondialogue','.smonaudio','.smoncry'}
+            '.smondialogue','.smonaudio','.smoncry','.smonmenu'}
 
 def stage(output,layout='16m'):
     if layout not in ('16m','32m'):raise ValueError('Unknown SDGOODS resource layout')

@@ -2,6 +2,7 @@
 import struct
 import unittest
 import zlib
+from font_pack import unpack_font
 from PIL import Image
 from generate_game_assets import ROOT, KIND_IDS, KIND_ORDER, OUTPUTS, validate_kind_order, validate_committed_pack_kind_ids
 
@@ -22,7 +23,7 @@ class MysteryBoxAssetsTests(unittest.TestCase):
 
     def test_new_name_glyphs_exist(self):
         for name, size in [('zh16', 32), ('zh32', 128)]:
-            data = (ROOT / f'data/packs/dev/fonts/{name}.smonfont').read_bytes()
+            data = unpack_font((ROOT / f'data/packs/dev/fonts/{name}.smonfont').read_bytes())
             count = struct.unpack_from('<H', data, 6)[0]
             glyphs = {chr(struct.unpack_from('<I', data, 16 + i * (4 + size))[0]) for i in range(count)}
             self.assertTrue(set('盲盒') <= glyphs)

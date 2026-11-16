@@ -22,7 +22,7 @@ def ui_flags_for(target):
                 "-DSTICKMON_DISPLAY_WIDTH=296", "-DSTICKMON_DISPLAY_HEIGHT=240",
                 "-DSTICKMON_UI_HEADER_INSET_X=28", "-DSTICKMON_UI_HEADER_TOP=4"]
     if target == "amoled-v2":
-        return []
+        return ["-DSTICKMON_EXTERNAL_MAP_LAYOUTS=1", "-DSTICKMON_EXTERNAL_MENU_ICONS=1"]
     raise ValueError(f"Unknown source target: {target}")
 
 
@@ -58,11 +58,19 @@ def stage_resources(target, stage):
                         str(data / "packs/dev/game/ui.smonfx"),
                         str(data / "packs/dev/game/ui_amoled.smonfx")], check=True)
     # Only runtime files; exclude source PNGs and unused target-specific UI packs.
-    extensions = {".json", ".smonsp", ".smonroom", ".smonfurn", ".smonfx", ".smonfont", ".smonaudio", ".smoncry"}
+    extensions = {".json", ".smonsp", ".smonroom", ".smonfurn", ".smonfx", ".smonfont", ".smonaudio", ".smoncry", ".smondata", ".smonmenu"}
     for source in sorted(data.rglob("*")):
         if not source.is_file() or source.suffix not in extensions:
             continue
         relative = source.relative_to(data)
+        if source.suffix in {".smondata", ".smonmenu"}:
+            required = {f"packs/dev/catalog/{key}.smondata" for key in range(10,21)}
+            required.add("packs/dev/ui/menu.smonmenu")
+            if target != "amoled-v2" or relative.as_posix() not in required:
+                continue
+        if (target == "amoled-v2" and relative.parent.as_posix() == "packs/dev/fonts"
+                and source.name in {"round-zh16-a4.smonfont", "round-zh20-a4.smonfont"}):
+            continue
         if source.name == "ui_amoled.smonfx":
             continue
         if target == "amoled-v2" and relative.as_posix() == "packs/dev/game/ui.smonfx":

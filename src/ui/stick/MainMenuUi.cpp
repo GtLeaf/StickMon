@@ -123,19 +123,20 @@ void MainMenuUi::render() {
         int iconIndex = AppSceneFlow::mainMenuEntry(
             static_cast<uint8_t>(i),
             STICKMON_ENABLE_DEBUG_FEATURES != 0).iconIndex;
-        if (iconIndex >= 0 && iconIndex < MenuAssets::MAIN_ICON_COUNT) {
+        if (iconIndex >= 0 && iconIndex < MenuAssets::MAIN_ICON_COUNT &&
+            MenuAssets::mainIconFrames() && MenuAssets::mainIconRle()) {
             if (isSelected) {
                 c.fillRect(boxX - 4, y - boxH / 2, 2, boxH, 0xFFE0);
             }
 
-            uint16_t offset = FlashStorage::readWord(&MenuAssets::MAIN_ICON_FRAMES[iconIndex].offset);
-            uint16_t length = FlashStorage::readWord(&MenuAssets::MAIN_ICON_FRAMES[iconIndex].length);
+            uint16_t offset = FlashStorage::readWord(&MenuAssets::mainIconFrames()[iconIndex].offset);
+            uint16_t length = FlashStorage::readWord(&MenuAssets::mainIconFrames()[iconIndex].length);
             int scaledIconW = (int)(MenuAssets::FRAME_W * relScale);
             int scaledIconH = (int)(MenuAssets::FRAME_H * relScale);
             int iconX = boxX + (iconSlotW - scaledIconW) / 2;
             int iconY = y - scaledIconH / 2;
             PixelRenderer::drawRgb565RleScaled(iconX, iconY, MenuAssets::FRAME_W, MenuAssets::FRAME_H,
-                                               MenuAssets::MAIN_ICON_RLE, offset, length, relScale);
+                                               MenuAssets::mainIconRle(), offset, length, relScale);
             leftW = iconSlotW;
         } else {
             int drawBoxW = (int)(boxW * relScale);

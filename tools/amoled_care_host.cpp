@@ -1,3 +1,5 @@
+#include "home_food_test_access.h"
+#include "amoled_sequence_trace.h"
 #include "AmoledApp.h"
 #include "game/MonsterFactory.h"
 #include "game/CareExperience.h"
@@ -7,6 +9,7 @@
 #include "platform/desktop/DesktopPlatform.h"
 #include "presentation/Canvas565.h"
 #include <cassert>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <cmath>
@@ -72,9 +75,91 @@ struct AmoledCareTestAccess {
             assert(false);
         }
         app.markRendered();
+        traceFood(app, &canvas);
+        traceSleep(app, &canvas);
+    }
+
+    static void traceSleep(const AmoledApp& app, const Canvas565* canvas = nullptr) {
+        if (!std::getenv("STICKMON_SLEEP_TRACE")) return;
+        uint64_t pixels = 1469598103934665603ULL;
+        if (canvas) for (int y = 0; y < AmoledUi::HEIGHT; ++y) {
+            for (int x = 0; x < AmoledUi::WIDTH; ++x) {
+                pixels ^= canvas->readPixel(x, y);
+                pixels *= 1099511628211ULL;
+            }
+        }
+        const auto& food = app.homeFoodFlow_.state();
+        const auto& bowl = app.homeRuntime.bowlSession();
+        std::printf("SleepTrace kind=%c game=%lu clocks=%lu,%lu,%lu,%lu,%lu "
+                    "frames=%u,%u direction=%u,%u breath=%u,%a "
+                    "leases=%d,%d,%d bowl=%u,%d,%lu food=%u,%lu,%lu,%lu "
+                    "room=%u,%u motion=%u frame=%llu",
+            canvas ? 'F' : 'S', (unsigned long)app.gameState.gameMinutesTotal,
+            (unsigned long)app.lastPetUpdateMs, (unsigned long)app.lastCompanionUpdateMs,
+            (unsigned long)app.lastCareMs, (unsigned long)app.nextPetFrameMs,
+            (unsigned long)app.nextCompanionFrameMs, app.petFrame, app.companionFrame,
+            unsigned(app.petDirection), unsigned(app.companionDirection),
+            app.homePresenter_.sleepFrame(app.lastPetUpdateMs),
+            double(app.homePresenter_.sleepExpansion(app.lastPetUpdateMs)),
+            app.homeRuntime.owner(Home::Resource::BOWL),
+            app.homeRuntime.owner(Home::Resource::BED),
+            app.homeRuntime.owner(Home::Resource::DOOR),
+            unsigned(bowl.phase), bowl.actorId, (unsigned long)bowl.phaseStartedMs,
+            food.pending, (unsigned long)food.retryAtMs,
+            (unsigned long)food.biteAtMs[0], (unsigned long)food.biteAtMs[1],
+            app.gameState.room.bowlCount, app.gameState.room.bowlBitesRemaining,
+            unsigned(app.petMotion()), (unsigned long long)pixels);
+        for (uint8_t slot = 0; slot < 2; ++slot) {
+            const auto& actor = slot == 0 ? app.homeMainActor : app.homeCompanionActor;
+            const auto& monster = app.gameState.team[slot];
+            std::printf(" actor%u=%u,%u,%u,%u,%u,%a,%a,%a,%a,%a,%a "
+                        "task=%u,%u,%u sleep=%u,%a,%a,%u,%u "
+                        "timers=%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu "
+                        "progress=%a,%u health=%u,%u,%u,%u,%lu route=%u,%u",
+                slot, actor.active, actor.hidden, unsigned(actor.role),
+                actor.teamSlot, actor.speciesId, double(actor.x), double(actor.y),
+                double(actor.targetX), double(actor.targetY),
+                double(actor.velocityX), double(actor.velocityY),
+                unsigned(actor.task), unsigned(actor.resumeTask), unsigned(actor.motion),
+                actor.sleepSpotValid, double(actor.sleepX), double(actor.sleepY),
+                actor.wakingForFood, actor.faintRestActive,
+                (unsigned long)actor.taskUntilMs, (unsigned long)actor.nextDecisionMs,
+                (unsigned long)actor.nextMindUpdateMs, (unsigned long)actor.postFeedAwakeUntilMs,
+                (unsigned long)actor.foodWakeRetryAfterMs, (unsigned long)actor.blockedSinceMs,
+                (unsigned long)actor.nextReplanMs, (unsigned long)actor.lastMoveProgressMs,
+                double(actor.lastWaypointDistance), actor.stuckRecoveryCount,
+                monster.fainted, monster.hpCur, monster.satiety,
+                unsigned(monster.majorStatus), (unsigned long)monster.lastSeenAt,
+                actor.route.count, actor.route.index);
+            for (uint8_t point = 0; point < actor.route.count; ++point) {
+                std::printf(",%a,%a", double(actor.route.x[point]), double(actor.route.y[point]));
+            }
+        }
+        std::putchar('\n');
+    }
+
+    static void traceFood(const AmoledApp& app, const Canvas565* canvas = nullptr) {
+        if (!std::getenv("STICKMON_FOOD_TRACE")) return;
+        uint64_t pixels = 1469598103934665603ULL;
+        if (canvas) for (int y=0;y<AmoledUi::HEIGHT;++y) for(int x=0;x<AmoledUi::WIDTH;++x) {
+            pixels ^= canvas->readPixel(x,y); pixels *= 1099511628211ULL;
+        }
+        std::printf("FoodTrace %u %u %u %u %lu %lu %d %u %.4f %.4f %.4f %.4f %u %u %u %u %lu %lu %lu %lu %u %lu %llu\n",
+            app.gameState.room.bowlCount, app.gameState.room.bowlBitesRemaining,
+            app.gameState.team[0].satiety, app.gameState.team[1].satiety,
+            (unsigned long)app.gameState.team[0].exp, (unsigned long)app.gameState.team[1].exp,
+            app.homeRuntime.owner(Home::Resource::BOWL), unsigned(app.homeRuntime.bowlSession().phase),
+            app.homeMainActor.x, app.homeMainActor.y, app.homeCompanionActor.x, app.homeCompanionActor.y,
+            unsigned(app.homeMainActor.task), unsigned(app.homeCompanionActor.task),
+            app.petFrame, app.companionFrame, (unsigned long)app.nextPetFrameMs,
+            (unsigned long)app.nextCompanionFrameMs, (unsigned long)app.homeFoodFlow_.state().biteAtMs[0],
+            (unsigned long)app.homeFoodFlow_.state().biteAtMs[1], app.homeFoodFlow_.state().pending,
+            (unsigned long)app.homeFoodFlow_.state().retryAtMs, (unsigned long long)pixels);
     }
 
     static void assertRoomState(const AmoledApp& app) {
+        traceFood(app);
+        traceSleep(app);
         assert(app.homeRuntime.validate() == Home::INVARIANT_OK);
         HomeViewModel model;
         app.fillHomePetModel(model);
@@ -387,6 +472,125 @@ struct AmoledCareTestAccess {
         std::puts("room food exit: narrow-gap restore and two hungry actors with sequential servings both finish without stalling");
     }
 
+    static void checkFaintPlacement(DesktopPlatform& desktop, Canvas565& canvas) {
+        // Freeze explicit placement and ordinary update entry independently.
+        for (bool forced : {true, false}) {
+            for (bool alreadyActive : {false, true}) {
+                if (!forced && alreadyActive) continue;
+                for (uint8_t faintMask : {1, 2, 3}) {
+                    AmoledApp app;
+                    prepareRoom(app, desktop);
+                    const uint32_t placedAt = desktop.millis();
+                    app.petFrame = 3;
+                    app.companionFrame = 5;
+                    app.petDirection = PokemonSprites::WalkDirection::LEFT;
+                    app.companionDirection = PokemonSprites::WalkDirection::RIGHT;
+                    app.petStopping = true;
+                    app.nextPetFrameMs = placedAt + 123;
+                    app.nextCompanionFrameMs = placedAt + 234;
+                    for (uint8_t slot = 0; slot < 2; ++slot) {
+                        if (!(faintMask & (1u << slot))) continue;
+                        auto& monster = app.gameState.team[slot];
+                        auto& actor = slot == 0 ? app.homeMainActor : app.homeCompanionActor;
+                        monster.fainted = 1;
+                        monster.hpCur = 0;
+                        actor.faintRestActive = alreadyActive;
+                        actor.x = 126 + slot * 12;
+                        actor.y = 122;
+                        actor.targetX = 154;
+                        actor.targetY = 134;
+                        actor.velocityX = 3.5f;
+                        actor.velocityY = -2.25f;
+                        actor.route.count = 2;
+                        actor.route.index = 1;
+                        actor.route.x[0] = actor.x;
+                        actor.route.y[0] = actor.y;
+                        actor.route.x[1] = actor.targetX;
+                        actor.route.y[1] = actor.targetY;
+                        actor.motion = Home::MotionPhase::ROUTE;
+                    }
+                    traceSleep(app);
+                    if (forced) app.placeFaintedHomeActors(placedAt);
+                    else app.updatePet(placedAt);
+                    float restX[2] = {app.homeMainActor.x, app.homeCompanionActor.x};
+                    float restY[2] = {app.homeMainActor.y, app.homeCompanionActor.y};
+                    for (uint8_t slot = 0; slot < 2; ++slot) {
+                        if (!(faintMask & (1u << slot))) continue;
+                        const auto& actor = slot == 0 ? app.homeMainActor : app.homeCompanionActor;
+                        assert(actor.faintRestActive && actor.task == Home::Task::FAINTED);
+                        assert(actor.route.empty());
+                        assert(actor.velocityX == (forced ? 0.0f : 3.5f));
+                        assert(actor.velocityY == (forced ? 0.0f : -2.25f));
+                        assert(actor.targetX == actor.x && actor.targetY == actor.y);
+                    }
+                    if (faintMask & 1) {
+                        assert(app.petDirection == PokemonSprites::WalkDirection::DOWN);
+                        assert(!app.petStopping);
+                    }
+                    if (faintMask & 2) {
+                        assert(app.companionFrame == 0);
+                        assert(app.nextCompanionFrameMs == placedAt + 800);
+                    }
+                    traceSleep(app);
+                    app.updateCamera();
+                    app.forceFullRender();
+                    presentRoom(app, canvas);
+                    uint32_t previousOffset = 0;
+                    for (uint32_t offset : {0u, 699u, 700u, 799u, 800u, 1400u}) {
+                        desktop.advanceMs(offset - previousOffset);
+                        previousOffset = offset;
+                        app.updatePet(desktop.millis());
+                        for (uint8_t slot = 0; slot < 2; ++slot) {
+                            if (!(faintMask & (1u << slot))) continue;
+                            const auto& actor = slot == 0 ? app.homeMainActor : app.homeCompanionActor;
+                            assert(actor.faintRestActive && actor.task == Home::Task::FAINTED);
+                            assert(actor.x == restX[slot] && actor.y == restY[slot]);
+                        }
+                        if (faintMask & 2) {
+                            assert(app.companionFrame == (offset < 800 ? 0 : 1));
+                            assert(app.nextCompanionFrameMs == placedAt + (offset < 800 ? 800 : 1600));
+                        }
+                        traceSleep(app);
+                        presentRoom(app, canvas);
+                    }
+                    // Restart the slots separately so one remains faint while the
+                    // other resumes its ordinary decision/animation schedule.
+                    for (uint8_t slot = 0; slot < 2; ++slot) {
+                        if (!(faintMask & (1u << slot))) continue;
+                        app.gameState.team[slot].fainted = 0;
+                        app.gameState.team[slot].hpCur = 1;
+                        // This direct health mutation bypasses care HUD damage.
+                        app.forceFullRender();
+                        desktop.advanceMs(50);
+                        app.updatePet(desktop.millis());
+                        const auto& actor = slot == 0 ? app.homeMainActor : app.homeCompanionActor;
+                        assert(!actor.faintRestActive && actor.task != Home::Task::FAINTED);
+                        if (slot == 1) {
+                            assert(app.companionFrame == 0);
+                            assert(app.nextCompanionFrameMs == desktop.millis() + 520);
+                            assert(actor.nextDecisionMs == desktop.millis() + 700);
+                        }
+                        traceSleep(app);
+                        presentRoom(app, canvas);
+                    }
+                }
+            }
+        }
+        // Explicit placement must leave an inactive companion untouched.
+        AmoledApp app;
+        prepareRoom(app, desktop);
+        app.homeCompanionActor.active = false;
+        app.gameState.team[1].fainted = 1;
+        app.gameState.team[1].hpCur = 0;
+        const auto previous = app.homeCompanionActor;
+        app.placeFaintedHomeActors(desktop.millis());
+        assert(app.homeCompanionActor.x == previous.x && app.homeCompanionActor.y == previous.y);
+        assert(app.homeCompanionActor.task == previous.task);
+        assert(app.homeCompanionActor.faintRestActive == previous.faintRestActive);
+        traceSleep(app);
+        std::puts("room faint placement: forced main/companion/both, existing rest, entry, repeated ticks and independent restart agree");
+    }
+
     static void checkFaintRecoveryAndSleep(DesktopPlatform& desktop,
                                            Canvas565& canvas) {
         AmoledApp app;
@@ -672,6 +876,7 @@ struct AmoledCareTestAccess {
             for (int frame = 0; frame < 1000 && !eating; ++frame) {
                 desktop.advanceMs(50);
                 app.updatePet(desktop.millis());
+                traceSleep(app);
                 eating = slot == 0 ? app.petMotion() == AmoledApp::PetMotion::EATING
                     : app.homeCompanionActor.task == Home::Task::FEEDING;
             }
@@ -711,6 +916,7 @@ struct AmoledCareTestAccess {
         for (int frame = 0; frame < 20 && app.petMotion() != AmoledApp::PetMotion::EATING; ++frame) {
             desktop.advanceMs(100);
             app.updatePet(desktop.millis());
+            traceSleep(app);
         }
         assert(app.petMotion() == AmoledApp::PetMotion::EATING);
         assert(app.petDirection == PokemonSprites::WalkDirection::LEFT);
@@ -728,10 +934,10 @@ struct AmoledCareTestAccess {
         assert(app.homeRuntime.acquire(Home::Resource::BOWL, slot, Home::Task::FEEDING, now));
         app.homeRuntime.transition(slot, Home::Task::FEEDING, now, 10000, true);
         if (slot == 0) {
-            app.nextFeedBiteMs = now;
+            AmoledV1::HomeFoodTestAccess::setBiteDeadline(app.homeFoodFlow_, 0, now);
             app.updatePet(now);
         } else {
-            app.companionFoodBiteMs = now;
+            AmoledV1::HomeFoodTestAccess::setBiteDeadline(app.homeFoodFlow_, 1, now);
             app.updateCompanion(now);
         }
     }
@@ -760,31 +966,29 @@ struct AmoledCareTestAccess {
             app.applyHomeFlowEffects(base);
             const auto selected = app.homeFlow_.state().action;
             seen |= 1U << static_cast<uint8_t>(selected);
-            uint64_t hash = 1469598103934665603ULL;
-            const auto add = [&](uint32_t value) {
-                for (uint8_t byte = 0; byte < 4; ++byte) {
-                    hash = (hash ^ (value & 255U)) * 1099511628211ULL;
-                    value >>= 8;
-                }
-            };
-            const auto number = [&](float value) {
-                uint32_t bits;
-                std::memcpy(&bits, &value, sizeof(bits));
-                add(bits);
-            };
+            AmoledSequenceTrace trace(seed, 0);
             int frames = 0;
             do {
-                add(static_cast<uint8_t>(app.homeFlow_.state().action));
-                add(app.homeFlow_.state().phase);
-                add(static_cast<uint8_t>(actor.task));
-                add(static_cast<uint8_t>(actor.motion));
-                number(actor.x); number(actor.y);
-                number(actor.targetX); number(actor.targetY);
-                add(actor.route.count); add(actor.route.index);
-                add(static_cast<uint8_t>(app.petDirection)); add(app.petFrame);
-                add(app.nextPetFrameMs - base); add(actor.nextDecisionMs - base);
-                add(app.homeFlow_.state().nextSpecialActionMs - base);
-                add(app.needsRender()); add(app.renderRowBegin()); add(app.renderRowEnd());
+                trace.begin(frames);
+                trace.integer("home.action", static_cast<uint8_t>(app.homeFlow_.state().action));
+                trace.integer("home.phase", app.homeFlow_.state().phase);
+                trace.integer("main.task", static_cast<uint8_t>(actor.task));
+                trace.integer("main.motion", static_cast<uint8_t>(actor.motion));
+                trace.number("main.x", actor.x);
+                trace.number("main.y", actor.y);
+                trace.number("main.targetX", actor.targetX);
+                trace.number("main.targetY", actor.targetY);
+                trace.integer("main.route.count", actor.route.count);
+                trace.integer("main.route.index", actor.route.index);
+                trace.integer("petDirection", static_cast<uint8_t>(app.petDirection));
+                trace.integer("petFrame", app.petFrame);
+                trace.integer("nextPetFrameMs", app.nextPetFrameMs - base);
+                trace.integer("main.nextDecisionMs", actor.nextDecisionMs - base);
+                trace.integer("home.nextSpecialActionMs", app.homeFlow_.state().nextSpecialActionMs - base);
+                trace.integer("damage.pending", app.needsRender());
+                trace.integer("damage.top", app.renderRowBegin());
+                trace.integer("damage.bottom", app.renderRowEnd());
+                trace.end();
                 if (frames % 13 == 0) presentRoom(app, canvas);
                 if (app.homeFlow_.state().action == AmoledApp::RoomAction::NONE) break;
                 ++frames;
@@ -795,7 +999,7 @@ struct AmoledCareTestAccess {
             presentRoom(app, canvas);
             std::printf("HomeSequence seed=%u action=%u frames=%d hash=%016llx rng=%08x\n",
                 seed, static_cast<unsigned>(selected), frames,
-                static_cast<unsigned long long>(hash), GameRandom::next());
+                static_cast<unsigned long long>(trace.hash()), GameRandom::next());
         }
         for (const auto action : {AmoledApp::RoomAction::LOOK_AROUND,
                 AmoledApp::RoomAction::QUIET_GAZE, AmoledApp::RoomAction::STEP_BACK,
@@ -827,6 +1031,9 @@ struct AmoledCareTestAccess {
             app.homeCompanionActor.y = app.homeCompanionActor.targetY = 115;
             app.configureHomeRuntime(); app.updateCamera(); presentRoom(app, canvas);
             app.nextPetFrameMs = app.nextCompanionFrameMs = base + 140;
+            // prepareRoom uses the desktop clock; bind this fixture's unused
+            // interaction deadline to the same epoch as its simulated updates.
+            app.pairFlow_.state_.nextInteractionMs = base + 3600000U;
             app.gameState.pairMoodRewardsToday = scenario == 9 ? 3 : 0;
             const bool arrival = scenario == 2 || scenario == 3 || scenario == 4 || scenario == 9;
             if (arrival) {
@@ -837,38 +1044,56 @@ struct AmoledCareTestAccess {
             GameRandom::seed(seed);
             const bool started = app.startPairInteraction(base, scenario == 1, arrival, arrival);
             assert(started);
-            uint64_t hash = 1469598103934665603ULL;
-            const auto add = [&](uint32_t value) {
-                for (uint8_t byte = 0; byte < 4; ++byte) {
-                    hash = (hash ^ (value & 255U)) * 1099511628211ULL; value >>= 8;
-                }
-            };
-            const auto number = [&](float value) {
-                uint32_t bits; std::memcpy(&bits, &value, sizeof(bits)); add(bits);
-            };
+            AmoledSequenceTrace trace(seed, scenario);
             int frames = 0;
             do {
-                add(static_cast<uint8_t>(app.pairFlow_.state_.phase)); add(static_cast<uint8_t>(app.pairFlow_.state_.activity));
-                add(app.pairFlow_.state_.leaderMain); add(app.pairFlow_.state_.arrivalTalk);
-                add(app.pairFlow_.state_.parallelApproach); add(app.pairFlow_.state_.mainArrived); add(app.pairFlow_.state_.companionArrived);
-                add(app.pairFlow_.state_.phaseUntilMs - base); add(app.pairFlow_.state_.interactionUntilMs - base);
-                add(app.pairFlow_.state_.chaseLegsRemaining); add(app.pairFlow_.state_.nextInteractionMs - base);
-                number(app.pairFlow_.state_.mainRenderOffsetY); number(app.pairFlow_.state_.companionRenderOffsetY);
-                number(app.cameraX); number(app.cameraY);
-                add(static_cast<uint8_t>(app.petDirection)); add(static_cast<uint8_t>(app.companionDirection));
-                add(app.petFrame); add(app.companionFrame); add(app.nextPetFrameMs-base); add(app.nextCompanionFrameMs-base);
-                add(app.heartsUntil == 0 ? 0 : app.heartsUntil-base);
-                add(static_cast<uint8_t>(app.visitArrival.phase()));
-                add(app.gameState.pairMoodRewardsToday);
+                trace.begin(frames);
+                trace.integer("pair.phase", static_cast<uint8_t>(app.pairFlow_.state_.phase));
+                trace.integer("pair.activity", static_cast<uint8_t>(app.pairFlow_.state_.activity));
+                trace.integer("pair.leaderMain", app.pairFlow_.state_.leaderMain);
+                trace.integer("pair.arrivalTalk", app.pairFlow_.state_.arrivalTalk);
+                trace.integer("pair.parallelApproach", app.pairFlow_.state_.parallelApproach);
+                trace.integer("pair.mainArrived", app.pairFlow_.state_.mainArrived);
+                trace.integer("pair.companionArrived", app.pairFlow_.state_.companionArrived);
+                trace.integer("pair.phaseUntilMs", app.pairFlow_.state_.phaseUntilMs - base);
+                trace.integer("pair.interactionUntilMs", app.pairFlow_.state_.interactionUntilMs - base);
+                trace.integer("pair.chaseLegsRemaining", app.pairFlow_.state_.chaseLegsRemaining);
+                trace.integer("pair.nextInteractionMs", app.pairFlow_.state_.nextInteractionMs - base);
+                trace.number("pair.mainRenderOffsetY", app.pairFlow_.state_.mainRenderOffsetY);
+                trace.number("pair.companionRenderOffsetY", app.pairFlow_.state_.companionRenderOffsetY);
+                trace.number("cameraX", app.homePresenter_.cameraX());
+                trace.number("cameraY", app.homePresenter_.cameraY());
+                trace.integer("petDirection", static_cast<uint8_t>(app.petDirection));
+                trace.integer("companionDirection", static_cast<uint8_t>(app.companionDirection));
+                trace.integer("petFrame", app.petFrame);
+                trace.integer("companionFrame", app.companionFrame);
+                trace.integer("nextPetFrameMs", app.nextPetFrameMs-base);
+                trace.integer("nextCompanionFrameMs", app.nextCompanionFrameMs-base);
+                trace.integer("heartsUntil", app.heartsUntil == 0 ? 0 : app.heartsUntil-base);
+                trace.integer("arrival.phase", static_cast<uint8_t>(app.visitArrival.phase()));
+                trace.integer("pairMoodRewardsToday", app.gameState.pairMoodRewardsToday);
                 for (uint8_t slot = 0; slot < 2; ++slot) {
+                    trace.actor(slot);
                     const auto& actor = *app.homeRuntime.actor(slot);
-                    add(static_cast<uint8_t>(actor.task)); add(static_cast<uint8_t>(actor.motion));
-                    number(actor.x); number(actor.y); number(actor.targetX); number(actor.targetY);
-                    number(actor.velocityX); number(actor.velocityY);
-                    add(actor.route.count); add(actor.route.index); add(actor.nextDecisionMs-base);
-                    add(app.gameState.team[slot].exp); add(app.gameState.team[slot].mood);
+                    trace.integer("actor.task", static_cast<uint8_t>(actor.task));
+                    trace.integer("actor.motion", static_cast<uint8_t>(actor.motion));
+                    trace.number("actor.x", actor.x);
+                    trace.number("actor.y", actor.y);
+                    trace.number("actor.targetX", actor.targetX);
+                    trace.number("actor.targetY", actor.targetY);
+                    trace.number("actor.velocityX", actor.velocityX);
+                    trace.number("actor.velocityY", actor.velocityY);
+                    trace.integer("actor.route.count", actor.route.count);
+                    trace.integer("actor.route.index", actor.route.index);
+                    trace.integer("actor.nextDecisionMs", actor.nextDecisionMs-base);
+                    trace.integer("actor.exp", app.gameState.team[slot].exp);
+                    trace.integer("actor.mood", app.gameState.team[slot].mood);
                 }
-                add(app.needsRender()); add(app.renderRowBegin()); add(app.renderRowEnd());
+                trace.actor(-1);
+                trace.integer("damage.pending", app.needsRender());
+                trace.integer("damage.top", app.renderRowBegin());
+                trace.integer("damage.bottom", app.renderRowEnd());
+                trace.end();
                 if (frames % 67 == 0) presentRoom(app, canvas);
                 if (app.pairFlow_.state_.phase == AmoledApp::PairPhase::NONE) break;
                 assert(++frames <= 1000);
@@ -890,7 +1115,7 @@ struct AmoledCareTestAccess {
             assert(app.gameState.pairMoodRewardsToday == mood && app.gameState.team[0].exp == experience);
             presentRoom(app, canvas);
             std::printf("PairSequence seed=%u scenario=%u frames=%d hash=%016llx rng=%08x\n",seed,scenario,frames,
-                static_cast<unsigned long long>(hash), GameRandom::next());
+                static_cast<unsigned long long>(trace.hash()), GameRandom::next());
         }
     }
 
@@ -907,31 +1132,54 @@ struct AmoledCareTestAccess {
             app.configureHomeRuntime(); app.updateCamera(); presentRoom(app, canvas);
             GameRandom::seed(seed);
             app.beginVisitorEntry(base);
-            uint64_t hash = 1469598103934665603ULL;
-            const auto add = [&](uint32_t value) {
-                for (uint8_t byte=0; byte<4; ++byte) { hash=(hash^(value&255U))*1099511628211ULL; value>>=8; }
-            };
-            const auto number = [&](float value) {uint32_t bits; std::memcpy(&bits,&value,sizeof(bits));add(bits);};
+            AmoledSequenceTrace trace(seed, scenario);
             bool exited = false; int frames = 0; bool activeSeen = false;
             do {
-                add(static_cast<uint8_t>(app.visitorFlow_.state_.motion)); add(app.visitorFlow_.state_.hostDoorPhase);
-                add(app.visitorFlow_.state_.crossingDoor); add(app.visitorFlow_.state_.untilMs-base);
-                add(app.visitorFlow_.state_.welcomeValid); number(app.visitorFlow_.state_.welcomeX); number(app.visitorFlow_.state_.welcomeY);
-                add(app.visitorFlow_.state_.landingValid); number(app.visitorFlow_.state_.landingX); number(app.visitorFlow_.state_.landingY);
-                add(static_cast<uint8_t>(app.visitArrival.phase())); add(app.gameState.teamCount);
-                add(static_cast<uint8_t>(app.pairFlow_.state().phase));
-                number(app.cameraX);number(app.cameraY);add(app.petFrame);add(app.companionFrame);
-                add(app.nextPetFrameMs-base);add(app.nextCompanionFrameMs-base);
-                add(static_cast<uint8_t>(app.petDirection));add(static_cast<uint8_t>(app.companionDirection));
+                trace.begin(frames);
+                trace.integer("visitor.motion", static_cast<uint8_t>(app.visitorFlow_.state_.motion));
+                trace.integer("visitor.hostDoorPhase", app.visitorFlow_.state_.hostDoorPhase);
+                trace.integer("visitor.crossingDoor", app.visitorFlow_.state_.crossingDoor);
+                trace.clock("visitor.untilMs", app.visitorFlow_.state_.untilMs, base,
+                            app.visitorFlow_.state_.motion != AmoledApp::VisitorMotion::NONE);
+                trace.integer("visitor.welcomeValid", app.visitorFlow_.state_.welcomeValid);
+                trace.number("visitor.welcomeX", app.visitorFlow_.state_.welcomeX);
+                trace.number("visitor.welcomeY", app.visitorFlow_.state_.welcomeY);
+                trace.integer("visitor.landingValid", app.visitorFlow_.state_.landingValid);
+                trace.number("visitor.landingX", app.visitorFlow_.state_.landingX);
+                trace.number("visitor.landingY", app.visitorFlow_.state_.landingY);
+                trace.integer("arrival.phase", static_cast<uint8_t>(app.visitArrival.phase()));
+                trace.integer("teamCount", app.gameState.teamCount);
+                trace.integer("pair.phase", static_cast<uint8_t>(app.pairFlow_.state().phase));
+                trace.number("cameraX", app.homePresenter_.cameraX());
+                trace.number("cameraY", app.homePresenter_.cameraY());
+                trace.integer("petFrame", app.petFrame);
+                trace.integer("companionFrame", app.companionFrame);
+                trace.integer("nextPetFrameMs", app.nextPetFrameMs-base);
+                trace.integer("nextCompanionFrameMs", app.nextCompanionFrameMs-base);
+                trace.integer("petDirection", static_cast<uint8_t>(app.petDirection));
+                trace.integer("companionDirection", static_cast<uint8_t>(app.companionDirection));
                 for (uint8_t slot=0;slot<2;++slot) {
+                    trace.actor(slot);
                     const auto& a=slot==0?app.homeMainActor:app.homeCompanionActor;
-                    number(a.x);number(a.y);number(a.targetX);number(a.targetY);
-                    number(a.velocityX);number(a.velocityY);add(a.hidden);add(a.active);
-                    add(static_cast<uint8_t>(a.task));add(static_cast<uint8_t>(a.motion));
-                    add(a.route.count);add(a.route.index);
+                    trace.number("actor.x", a.x);
+                    trace.number("actor.y", a.y);
+                    trace.number("actor.targetX", a.targetX);
+                    trace.number("actor.targetY", a.targetY);
+                    trace.number("actor.velocityX", a.velocityX);
+                    trace.number("actor.velocityY", a.velocityY);
+                    trace.integer("actor.hidden", a.hidden);
+                    trace.integer("actor.active", a.active);
+                    trace.integer("actor.task", static_cast<uint8_t>(a.task));
+                    trace.integer("actor.motion", static_cast<uint8_t>(a.motion));
+                    trace.integer("actor.route.count", a.route.count);
+                    trace.integer("actor.route.index", a.route.index);
                 }
-                add(static_cast<uint32_t>(app.homeRuntime.owner(Home::Resource::DOOR)));
-                add(app.needsRender());add(app.renderRowBegin());add(app.renderRowEnd());
+                trace.actor(-1);
+                trace.integer("doorOwner", static_cast<uint32_t>(app.homeRuntime.owner(Home::Resource::DOOR)));
+                trace.integer("damage.pending", app.needsRender());
+                trace.integer("damage.top", app.renderRowBegin());
+                trace.integer("damage.bottom", app.renderRowEnd());
+                trace.end();
                 if(frames%79==0)presentRoom(app,canvas);
                 if(exited && app.visitorFlow_.state_.motion==AmoledApp::VisitorMotion::NONE)break;
                 assert(++frames<=1100);const uint32_t now=base+frames*50U;
@@ -955,7 +1203,7 @@ struct AmoledCareTestAccess {
             assert(app.gameState.teamCount==1 && app.homeRuntime.owner(Home::Resource::DOOR)<0);
             presentRoom(app,canvas);
             std::printf("VisitorSequence seed=%u scenario=%u frames=%d hash=%016llx rng=%08x\n",seed,scenario,frames,
-                static_cast<unsigned long long>(hash),GameRandom::next());
+                static_cast<unsigned long long>(trace.hash()),GameRandom::next());
         }
     }
 
@@ -1293,6 +1541,7 @@ struct AmoledCareTestAccess {
         for (int frame = 0; frame < 800 && app.homeCompanionActor.task != Task::SLEEPING; ++frame) {
             desktop.advanceMs(50);
             app.updateCompanion(desktop.millis());
+            traceSleep(app);
             assert(!app.homeRuntime.overlapsOther(1, app.homeCompanionActor.x,
                                                    app.homeCompanionActor.y));
         }
@@ -1445,6 +1694,10 @@ void checkHomeAutomaticFoodTurns(DesktopPlatform& desktop, Canvas565& canvas) {
 
 void checkHomeFoodExitNoStall(DesktopPlatform& desktop, Canvas565& canvas) {
     AmoledV1::AmoledCareTestAccess::checkFoodExitNoStall(desktop, canvas);
+}
+
+void checkHomeFaintPlacement(DesktopPlatform& desktop, Canvas565& canvas) {
+    AmoledV1::AmoledCareTestAccess::checkFaintPlacement(desktop, canvas);
 }
 
 void checkHomeFaintRecoveryAndSleep(DesktopPlatform& desktop, Canvas565& canvas) {

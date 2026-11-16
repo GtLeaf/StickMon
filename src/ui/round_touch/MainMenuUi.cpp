@@ -24,10 +24,11 @@ void drawCard(MenuGrid::Rect rect, int index, bool pressed, bool selected) {
     MenuGrid::card(c, rect, pressed, selected);
     const int cx = rect.x + rect.width / 2;
     const auto entry = AppSceneFlow::mainMenuEntry(index, STICKMON_ENABLE_DEBUG_FEATURES != 0);
-    if (entry.iconIndex < MenuAssets::MAIN_ICON_COUNT) {
-        const auto& frame = MenuAssets::MAIN_ICON_FRAMES[entry.iconIndex];
+    if (entry.iconIndex < MenuAssets::MAIN_ICON_COUNT &&
+        MenuAssets::mainIconFrames() && MenuAssets::mainIconRle()) {
+        const auto& frame = MenuAssets::mainIconFrames()[entry.iconIndex];
         PixelRenderer::drawRgb565RleScaled(cx - MenuAssets::FRAME_W / 2, rect.y + 4,
-            MenuAssets::FRAME_W, MenuAssets::FRAME_H, MenuAssets::MAIN_ICON_RLE,
+            MenuAssets::FRAME_W, MenuAssets::FRAME_H, MenuAssets::mainIconRle(),
             FlashStorage::readWord(&frame.offset), FlashStorage::readWord(&frame.length), 1.0f);
     }
     MenuGrid::label(c, cx, rect.y + 50, entry.shortLabel, rect.width - 8, 0xffff);

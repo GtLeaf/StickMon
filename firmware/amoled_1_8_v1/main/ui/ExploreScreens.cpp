@@ -202,11 +202,12 @@ constexpr const char* EXPLORE_AREA_NAMES[Game::EXPLORE_AREA_COUNT] = {
 
 void drawExploreBagIcon(Canvas565& canvas) {
     drawHomeHudButton(canvas, EXPLORE_ROUTE_BAG_BUTTON_X);
+    if (!MenuAssets::mainIconFrames() || !MenuAssets::mainIconRle()) return;
     constexpr uint8_t bagIconIndex = 3;
     const uint16_t offset = FlashStorage::readWord(
-        &MenuAssets::MAIN_ICON_FRAMES[bagIconIndex].offset);
+        &MenuAssets::mainIconFrames()[bagIconIndex].offset);
     const uint16_t length = FlashStorage::readWord(
-        &MenuAssets::MAIN_ICON_FRAMES[bagIconIndex].length);
+        &MenuAssets::mainIconFrames()[bagIconIndex].length);
     // The source frame is 40x40. Keep a small, even inset inside the 64px
     // HUD button so the backpack reads at the same visual weight as the
     // other native HUD controls.
@@ -217,7 +218,7 @@ void drawExploreBagIcon(Canvas565& canvas) {
             (HOME_HUD_BUTTON_SIZE - iconSize) / 2,
         HOME_HUD_BUTTON_Y + (HOME_HUD_BUTTON_SIZE - iconSize) / 2,
         MenuAssets::FRAME_W, MenuAssets::FRAME_H,
-        MenuAssets::MAIN_ICON_RLE, offset, length, scale);
+        MenuAssets::mainIconRle(), offset, length, scale);
 }
 
 void drawExploreMenuIcon(Canvas565& canvas) {

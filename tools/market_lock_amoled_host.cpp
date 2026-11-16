@@ -34,13 +34,13 @@ struct AmoledAppTestAccess {
             }
         };
         assert(app.queueExploreDeparture(ExploreDestinations::MARKET, false));
-        for (int n = 0; n < 1200 && (app.pendingExpedition ||
-             app.expeditionDeparturePhase != AmoledApp::ExpeditionDeparturePhase::NONE); ++n) step();
+        for (int n = 0; n < 1200 && (app.exploreTransition_.state().pending ||
+             app.exploreTransition_.state().phase != AmoledApp::ExpeditionDeparturePhase::NONE); ++n) step();
         assert(app.sceneFlow.current() == AppSceneFlow::Scene::MARKET && app.market_);
         assert(AudioManager::ins().requestedMusic() == MusicTrack::MARKET);
         assert(AudioManager::ins().playingMusic() == (muted ? MusicTrack::NONE : MusicTrack::MARKET));
-        assert(!app.exploreSessionActive && app.expeditionMainHidden);
-        assert(app.expeditionCompanionHidden == !solo);
+        assert(!app.exploreSessionActive && app.exploreTransition_.state().mainHidden);
+        assert(app.exploreTransition_.state().companionHidden == !solo);
         const uint32_t arrival = desktop.millis();
         if (mode == "never") {
             for (int n = 0; n < 1300; ++n) {
@@ -70,7 +70,7 @@ struct AmoledAppTestAccess {
             // and doorway animation finish. Never lock an invisible actor.
             assert(!app.prepareDisplayLock(desktop.millis()));
             assert(app.sceneFlow.current() == AppSceneFlow::Scene::MARKET);
-            assert(app.expeditionDeparturePhase == AmoledApp::ExpeditionDeparturePhase::RETURN_FADE_OUT);
+            assert(app.exploreTransition_.state().phase == AmoledApp::ExpeditionDeparturePhase::RETURN_FADE_OUT);
             assert(!app.marketTutorUi_.active() && !app.marketTutorPending_);
         }
         bool sawRoom = false;
@@ -91,8 +91,8 @@ struct AmoledAppTestAccess {
         assert(AudioManager::ins().playingMusic() == (muted ? MusicTrack::NONE : MusicTrack::HOME));
         assert(desktop.volume() == (muted ? 0 : 30));
         assert(!app.market_ && !app.exploreSessionActive);
-        assert(!app.expeditionMainHidden && !app.expeditionCompanionHidden);
-        assert(app.expeditionDeparturePhase == AmoledApp::ExpeditionDeparturePhase::NONE);
+        assert(!app.exploreTransition_.state().mainHidden && !app.exploreTransition_.state().companionHidden);
+        assert(app.exploreTransition_.state().phase == AmoledApp::ExpeditionDeparturePhase::NONE);
         assert(state.teamCount == (solo ? 1 : 2));
         assert(state.team[0].speciesId == 25 && state.team[0].lastExploredAt == 0);
         assert(!state.normalBossMissCount[0] && !state.explorePoolRerollCounts[0]);
@@ -109,7 +109,7 @@ struct AmoledAppTestAccess {
         app.onWake(desktop.millis());
         app.fillHomePetModel(model);
         assert(model.petVisible && app.sceneFlow.current() == AppSceneFlow::Scene::HOME);
-        assert(!app.market_ && !app.expeditionMainHidden && !app.expeditionCompanionHidden);
+        assert(!app.market_ && !app.exploreTransition_.state().mainHidden && !app.exploreTransition_.state().companionHidden);
         assert(AudioManager::ins().requestedMusic() == MusicTrack::HOME);
         std::printf("market-lock %s: room return, visible party, lock focus and wake OK\n", mode.c_str());
     }

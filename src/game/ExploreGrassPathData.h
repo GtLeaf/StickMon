@@ -12,13 +12,13 @@ constexpr uint8_t SAMPLES = 4;
 template<class V> inline void contentFields(V& v, Point& x) { v(x.x,x.y); }
 template<class V> inline void contentFields(V& v, Route& x) { v(x.exit,x.edge,x.count,x.points); }
 template<class V> inline void contentFields(V& v, Room& x) { v(x.layers,x.entry,x.junction,x.paths); }
-#if STICKMON_EXTERNAL_CONTENT
+#if STICKMON_EXTERNAL_CONTENT || STICKMON_EXTERNAL_MAP_LAYOUTS
 using TILES_ContentItem = uint16_t;
 inline const ContentData::Table<TILES_ContentItem,49> TILES{10};
 #else
 constexpr uint16_t TILES[] = {0,385,386,387,388,389,390,415,537,538,539,540,542,545,547,553,554,555,556,558,800,801,802,804,805,808,809,810,811,812,813,818,819,820,821,824,825,826,832,833,834,840,841,842,859,1662,1665,1681,1682};
 #endif
-#if STICKMON_EXTERNAL_CONTENT
+#if STICKMON_EXTERNAL_CONTENT || STICKMON_EXTERNAL_MAP_LAYOUTS
 using ROOMS_ContentItem = Room;
 inline const ContentData::Table<ROOMS_ContentItem,96> ROOMS{11};
 #else

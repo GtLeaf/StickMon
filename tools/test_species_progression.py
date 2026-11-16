@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from font_pack import unpack_font
 import re
 import shutil
 import struct
@@ -17,7 +18,7 @@ UNSCII_CHARS = UNSCII_CHARS.union({"♀", "♂"})
 
 
 def load_smonfont_codepoints(path):
-    data = path.read_bytes()
+    data = unpack_font(path.read_bytes())
     magic, _, count, _, _, glyph_bytes, _, _ = struct.unpack_from("<IHHBBBBI", data, 0)
     if magic != FONT_PACK_MAGIC:
         raise AssertionError(f"invalid font pack magic: {path}")

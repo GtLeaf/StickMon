@@ -107,9 +107,9 @@ static void run(AmoledApp& app){
     assert(app.selectedExploreListIndex()==grass && app.explorePostcardShowPets_);
     swipe(280,300,80,300);assert(app.explorePostcardPoolOffset_==0&&app.selectedExploreListIndex()==grass);
     swipe(80,300,280,300);assert(app.explorePostcardPoolOffset_==2&&app.selectedExploreListIndex()==grass);
-    swipe(184,300,184,412);assert(app.explorePostcardPoolOffset_==2&&!app.pendingExpedition);
+    swipe(184,300,184,412);assert(app.explorePostcardPoolOffset_==2&&!app.exploreTransition_.state().pending);
     send(TouchEventType::DOWN,280,300);send(TouchEventType::MOVE,80,300);app.cancelTouch();send(TouchEventType::UP,80,300);
-    assert(app.explorePostcardPoolOffset_==2&&!app.pendingExpedition);
+    assert(app.explorePostcardPoolOffset_==2&&!app.exploreTransition_.state().pending);
     tap(184,300);assert(app.explorePostcardPoolOffset_==0);
     app.markRendered();
     app.update(t+=100);assert(app.explorePostcardPoolOffset_==0);
@@ -143,7 +143,7 @@ static void run(AmoledApp& app){
     tap(30,30);assert(app.sceneFlow.current()==AppSceneFlow::Scene::MAIN_MENU);
     app.sceneFlow.enter(AppSceneFlow::Scene::EXPLORE_AREAS);app.selectExploreDestination(grass,t);update();
     tap(310,118);assert(app.explorePostcardShowPets_);
-    tap(300,412);assert(app.pendingExpedition&&app.sceneFlow.current()==AppSceneFlow::Scene::HOME);
+    tap(300,412);assert(app.exploreTransition_.state().pending&&app.sceneFlow.current()==AppSceneFlow::Scene::HOME);
     app.cancelExploreDeparture();
     // Native foreground pixels must match direct FRONT drawing, including
     // the two tallest species and an undiscovered silhouette.

@@ -14,7 +14,7 @@ template<class V> inline void contentFields(V& v, Point& x) { v(x.x,x.y); }
 template<class V> inline void contentFields(V& v, Route& x) { v(x.count,x.points); }
 template<class V> inline void contentFields(V& v, Room& x) { v(x.layers,x.entry,x.exit,x.count,x.paths); }
 template<class V> inline void contentFields(V& v, Tile& x) { v(x.frame,x.depth,x.flags); }
-#if STICKMON_EXTERNAL_CONTENT
+#if STICKMON_EXTERNAL_CONTENT || STICKMON_EXTERNAL_MAP_LAYOUTS
 using TILES_ContentItem = Tile;
 inline const ContentData::Table<TILES_ContentItem,141> TILES{12};
 #else
@@ -162,11 +162,11 @@ constexpr Tile TILES[141] = {
     {273,4,33},
 };
 #endif
-inline STICKMON_CONTENT_CONSTEXPR const Tile* tile(uint16_t id) {
+inline STICKMON_MAP_CONSTEXPR const Tile* tile(uint16_t id) {
     return id>=10000 && id<10141 ? &TILES[id-10000] : nullptr;
 }
-inline STICKMON_CONTENT_CONSTEXPR bool flag(uint16_t id,uint8_t flag) { return tile(id) && (tile(id)->flags&flag); }
-#if STICKMON_EXTERNAL_CONTENT
+inline STICKMON_MAP_CONSTEXPR bool flag(uint16_t id,uint8_t flag) { return tile(id) && (tile(id)->flags&flag); }
+#if STICKMON_EXTERNAL_CONTENT || STICKMON_EXTERNAL_MAP_LAYOUTS
 using ROOMS_ContentItem = Room[7][4];
 inline const ContentData::Table<ROOMS_ContentItem,2> ROOMS{13};
 #else
@@ -621,7 +621,7 @@ constexpr Room ROOMS[2][7][4] = {
   },
 };
 #endif
-#if STICKMON_EXTERNAL_CONTENT
+#if STICKMON_EXTERNAL_CONTENT || STICKMON_EXTERNAL_MAP_LAYOUTS
 using TRANSITIONS_ContentItem = Room[2][4];
 inline const ContentData::Table<TRANSITIONS_ContentItem,2> TRANSITIONS{14};
 #else
