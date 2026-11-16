@@ -573,7 +573,10 @@ SceneUpdateResult ExploreScene::update(uint32_t nowMs, float dtSeconds) {
     if (exploreSubViewOpen) {
         ui.updateRouteVisual(nowMs, false);
         const auto result = exploreSubView.update(nowMs, dtSeconds);
-        if (finishSubViewInput()) return SceneUpdateResult::frame();
+        // The subview may finish delayed item feedback during this update.
+        // Hand pending battle/route work back to the scene on the next frame.
+        if (finishSubViewInput())
+            return SceneUpdateResult::animate(visualFrameIntervalMs(nowMs));
         return result;
     }
     if (phase == Phase::EVOLUTION && ProgressionUi::evolutionCancelHeld(nowMs)) {
