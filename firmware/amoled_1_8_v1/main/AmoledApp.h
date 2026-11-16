@@ -28,7 +28,10 @@
 #include "app/ProgressionFlow.h"
 #include "app/BattleSession.h"
 #include "app/ExploreSession.h"
+#include "app/ExploreTransitionFlow.h"
 #include "app/HomeFlow.h"
+#include "app/HomeFoodFlow.h"
+#include "app/HomeSleepFlow.h"
 #include "app/PairFlow.h"
 #include "app/VisitorFlow.h"
 #include "app/VisitAwayFlow.h"
@@ -99,9 +102,9 @@ public:
     using SystemUpdateHandler = bool (*)();
     void setSystemUpdateHandler(SystemUpdateHandler handler) { systemUpdateHandler = handler; }
     void setExternalSceneFade(bool enabled) { externalSceneFade = enabled; }
-    bool sceneFadeActive() const { return expeditionFade.active(); }
-    bool sceneFadeInward() const { return expeditionFade.inward(); }
-    uint8_t sceneFadeAlpha() const { return expeditionFade.alpha(); }
+    bool sceneFadeActive() const { return exploreTransition_.fade().active(); }
+    bool sceneFadeInward() const { return exploreTransition_.fade().inward(); }
+    uint8_t sceneFadeAlpha() const { return exploreTransition_.fade().alpha(); }
     bool displayLockAllowed() const;
     bool lockedHomePowerAllowed() const;
     void setDisplayLocked(bool locked) {
@@ -221,20 +224,7 @@ private:
 
     using PendingItemAction = InventoryController::PendingItemAction;
 
-    enum class ExpeditionDeparturePhase : uint8_t {
-        NONE = 0,
-        WALK_TO_DOOR,
-        CROSS_DOOR,
-        WALK_COMPANION_TO_DOOR,
-        CROSS_COMPANION_DOOR,
-        FADE_OUT,
-        FADE_IN,
-        RETURN_FADE_OUT,
-        RETURN_WALK_IN,
-        RETURN_CLEAR_MAIN,
-        RETURN_COMPANION_WALK_IN,
-        RETURN_FADE_IN,
-    };
+    using ExpeditionDeparturePhase = ExploreTransitionFlow::Phase;
 
     void handleTap(int x, int y, uint32_t nowMs);
     void setToast(const char* value, uint32_t nowMs,
@@ -412,22 +402,31 @@ private:
     bool homeActorCanEatFromBowl(uint8_t teamSlot,
                                  uint32_t nowMs) const;
     int8_t preferredBowlEater(uint32_t nowMs) const;
-    bool claimBowl(uint8_t teamSlot, uint32_t nowMs);
     bool homeActorNearFood(uint8_t actorId) const;
     bool homeActorBlocksFoodApproach(uint8_t actorId) const;
     bool tryYieldHomeBlocker(uint8_t waitingActorId, float goalX, float goalY,
                              uint32_t nowMs);
+    struct FoodMovement final : HomeFoodFlow::Movement {
+        explicit FoodMovement(AmoledApp& owner) : app(owner) {}
+        bool chooseMainApproach(float desiredX, float desiredY, float& x, float& y) override;
+        bool begin(uint8_t actor, Home::Task task, float x, float y, uint32_t nowMs) override;
+        AmoledApp& app;
+    };
+    HomeFoodFlow::Layout homeFoodLayout() const;
+    void applyHomeFoodEffects(uint32_t nowMs);
+    bool startFoodSeek(uint8_t actor, uint32_t nowMs);
     bool startMainFoodSeek(uint32_t nowMs);
     bool startCompanionFoodSeek(uint32_t nowMs);
     bool startCompanionFoodExit(uint32_t nowMs);
     void wakeHomeFoodArbitration(uint32_t nowMs);
     void serviceHomeFoodArbitration(uint32_t nowMs);
     bool chooseCompanionTarget(float& x, float& y);
-    float companionSleepMinDistance() const;
-    bool companionSleepSpotUsableWithDistance(
-        float x, float y, float minDistance) const;
-    bool companionSleepSpotUsable(float x, float y) const;
-    bool companionPointBlocksBedRoute(float x, float y) const;
+    struct SleepMovement final : HomeSleepFlow::Movement {
+        explicit SleepMovement(AmoledApp& owner) : app(owner) {}
+        bool begin(uint8_t actor, Home::Task task, float x, float y, uint32_t nowMs) override;
+        AmoledApp& app;
+    };
+    HomeSleepFlow::Layout homeSleepLayout() const;
     bool chooseCompanionSleepSpot(float& x, float& y,
                                   bool avoidBedRoute = false) const;
     bool beginCompanionMove(Home::Task task, float x, float y,
@@ -705,33 +704,19 @@ private:
     uint32_t lastPetUpdateMs = 0;
     SleepBreathClock sleepBreath;
     uint32_t nextPetFrameMs = 0;
-    uint32_t nextFeedBiteMs = 0;
     uint8_t petFrame = 0;
     PokemonSprites::WalkDirection petDirection =
         PokemonSprites::WalkDirection::DOWN;
     bool petStopping = false;
     bool petLongMove = true;
+    HomeSleepFlow homeSleepFlow_{homeMainActor, homeCompanionActor, homeRuntime};
+    HomeFoodFlow homeFoodFlow_{gameState, homeMainActor, homeCompanionActor, homeRuntime};
     HomeFlow homeFlow_{gameState, homeMainActor, homeCompanionActor, homeRuntime};
     bool autonomousExpedition = false;
     bool exploreSessionActive = false;
-    ExpeditionDeparturePhase expeditionDeparturePhase =
-        ExpeditionDeparturePhase::NONE;
-    SceneFade expeditionFade;
-    bool pendingExpedition = false;
-    bool pendingExpeditionAutoWalk = false;
-    uint8_t pendingExpeditionArea = 0;
-    float expeditionDoorInsideX = 0.0f;
-    float expeditionDoorInsideY = 0.0f;
-    float expeditionDoorOutsideX = 0.0f;
-    float expeditionDoorOutsideY = 0.0f;
-    bool expeditionMainHidden = false;
-    bool expeditionCompanionDeparting = false;
-    bool expeditionCompanionHidden = false;
-    float expeditionCompanionDoorInsideX = 0.0f;
-    float expeditionCompanionDoorInsideY = 0.0f;
-    float expeditionCompanionDoorOutsideX = 0.0f;
-    float expeditionCompanionDoorOutsideY = 0.0f;
-    uint32_t expeditionDoorPhaseStartedMs = 0;
+    ExploreTransitionFlow exploreTransition_{gameState, homeMainActor, homeCompanionActor, homeRuntime};
+    ExploreTransitionFlow::Layout exploreTransitionLayout() const;
+    void applyExploreTransitionEffects(uint32_t nowMs);
     uint32_t nextPetDebugLogMs = 0;
     uint32_t lastCompanionUpdateMs = 0;
     uint32_t nextCompanionFrameMs = 0;
@@ -739,9 +724,6 @@ private:
     PokemonSprites::WalkDirection companionDirection =
         PokemonSprites::WalkDirection::DOWN;
     bool companionLongMove = true;
-    uint32_t companionFoodBiteMs = 0;
-    bool homeFoodArbitrationPending = false;
-    uint32_t nextHomeFoodArbitrationMs = 0;
     uint32_t nextHomeFoodDebugLogMs = 0;
 
     PairFlow pairFlow_{gameState, homeMainActor, homeCompanionActor, homeRuntime, visitArrival};

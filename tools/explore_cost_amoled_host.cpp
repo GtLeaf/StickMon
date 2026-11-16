@@ -1,3 +1,4 @@
+#include "explore_transition_test_access.h"
 #include <cassert>
 #include <cstdio>
 #include <cstring>
@@ -27,7 +28,7 @@ struct AmoledAppTestAccess {
         game.team[1].satiety = 19;
         assert(!app.queueExploreDeparture(0, false));
         assert(app.toast && std::strstr(app.toast, "皮卡丘"));
-        assert(!app.pendingExpedition);
+        assert(!app.exploreTransition_.state().pending);
         assert(!app.exploreSession_.begin(game, 0));
         game.team[1].satiety = 20;
         assert(app.exploreSession_.begin(game, 0));
@@ -71,14 +72,14 @@ struct AmoledAppTestAccess {
         route.exploreRouteExiting = true;
         app.exploreSession_.finishExit(game);
         app.applyExploreEffects(desktop.millis());
-        assert(app.expeditionDeparturePhase == AmoledApp::ExpeditionDeparturePhase::RETURN_FADE_OUT);
+        assert(app.exploreTransition_.state().phase == AmoledApp::ExpeditionDeparturePhase::RETURN_FADE_OUT);
         assert(!app.exploreRouteModel().complete);
         assert(game.team[0].satiety == 16 && game.team[1].satiety == 16);
         assert(game.team[0].hpCur == hp);
         app.completeExploreReturn();
         assert(app.sceneFlow.current() == AppSceneFlow::Scene::HOME);
         assert(game.team[0].satiety == 16 && game.team[1].satiety == 16);
-        app.expeditionDeparturePhase = AmoledApp::ExpeditionDeparturePhase::NONE;
+        ExploreTransitionTestAccess::state(app.exploreTransition_).phase = AmoledApp::ExpeditionDeparturePhase::NONE;
         // Defeat also consumes the pending battle and partial walking once,
         // before the home scene can recover fainted monsters.
         game.team[0].satiety = game.team[1].satiety = 20;

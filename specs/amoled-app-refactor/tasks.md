@@ -14,7 +14,8 @@
 | 自主房间动作／伙伴互动 | [HomeFlow](home-flow.md)、[PairFlow](pair-flow.md) |
 | 访客／外出拜访 | [VisitorFlow／VisitAwayFlow](visitor-flow.md) |
 
-探索专用出发／返程门口、伙伴生存编排与 HomePresenter 仍在 App；
+探索专用出发／返程门口已抽出 [ExploreTransitionFlow](explore-transition.md)；房间进食已抽出 [HomeFoodFlow](home-food-flow.md)；
+普通睡眠编排已抽出 [HomeSleepFlow](home-sleep-flow.md)；昏厥恢复与 HomePresenter 仍在 App；
 通用 InputRouter／NavigationCoordinator／SnapshotBuilder 未提取，renderer／板级物理整理仍待推进。
 Claw 专项随迭代暂停。后续优先级应结合当前源码与风险重新评估，不沿用旧批次的“下一批”。
 完整待验收项查各批次；实现和编译通过不能替代实机显示／触摸、音频、低功耗、双机或内存测量。

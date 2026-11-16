@@ -1,3 +1,4 @@
+#include "explore_transition_test_access.h"
 #include "AmoledApp.h"
 #include "HomeScreen.h"
 #include "core/SaveCodec.h"
@@ -74,7 +75,7 @@ struct AmoledEcologyTestAccess {
                 app.selectedExploreArea = area;
                 app.gameState.gameMinutesTotal = minute;
                 assert(app.startExploreRoute(now));
-                app.expeditionFade.reset();
+                ExploreTransitionTestAccess::resetFade(app.exploreTransition_);
                 auto& session = app.exploreSession_;
                 auto& route = session.state_;
                 route.exploreRouteBossPending = route.exploreRouteBossScheduled = false;
@@ -190,7 +191,7 @@ struct AmoledEcologyTestAccess {
             AmoledApp app;
             app.begin(desktop.millis());
             assert(app.startExploreRoute(desktop.millis()));
-            app.expeditionFade.reset();
+            ExploreTransitionTestAccess::resetFade(app.exploreTransition_);
             app.gameState.teamCount = 1;
             app.gameState.team[0].speciesId = 161;
             app.explorePresenter_.state_.exploreRouteWorldX = app.explorePresenter_.state_.exploreRouteWorldY = -1000;
@@ -638,7 +639,7 @@ struct AmoledEcologyTestAccess {
         app.gameState.gameMinutesTotal = 1140;
         app.gameClock.set(desktop.millis(), 1140);
         assert(app.startExploreRoute(desktop.millis()));
-        app.expeditionFade.reset();
+        ExploreTransitionTestAccess::resetFade(app.exploreTransition_);
         assert(app.exploreRouteModel().daylight == ExploreDaylight::at(1140, 0));
         app.render(canvas); app.markRendered();
         app.updateClockAndCare(desktop.millis());
@@ -678,7 +679,7 @@ struct AmoledEcologyTestAccess {
         AmoledApp app;
         app.begin(desktop.millis());
         assert(app.startExploreRoute(desktop.millis()));
-        app.expeditionFade.reset();
+        ExploreTransitionTestAccess::resetFade(app.exploreTransition_);
         app.exploreSession_.state_.exploreRouteBossPending = app.exploreSession_.state_.exploreRouteBossScheduled = false;
         app.exploreSession_.state_.exploreRouteMap = {};
         auto& map = app.exploreSession_.state_.exploreRouteMap;

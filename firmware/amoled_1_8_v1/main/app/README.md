@@ -34,7 +34,15 @@ the same sources through `sources.txt`.
 - `ExploreSession`: one route map/pool, step and ice progression, pickups,
   encounters/Boss scheduling, route item effects, pause state and return rewards.
   Reuses portable game rules and emits fixed effects; its state is read-only.
-  App retains resource preloading, storage and departure/return presentation.
+  App retains resource preloading and storage; ExploreTransitionFlow owns doorway transitions.
+- `ExploreTransitionFlow`: departure/return phase, door anchors and visibility overrides.
+  Borrows actors and Simulation; receives room geometry and clock observations.
+  Owns the presentation-acknowledged SceneFade. App forwards full-frame completion,
+  applies sprite/camera/damage effects and acknowledges destination loading and
+  return settlement at the black-frame boundary. Clearance fallback requests the
+  existing random target picker only after deterministic candidates are exhausted.
+  Requests/effects are consumed once; repeated updates cannot re-run settlement.
+  No platform, storage, resource singleton or heap allocation in the flow.
 - `ExplorePresenter`: route interpolation/follower motion, camera/frame clocks,
   ecology/grass/daylight, read-only models and bounded damage. Borrows the
   session map and game state; never owns a duplicate or mutates gameplay.
@@ -42,7 +50,19 @@ the same sources through `sources.txt`.
   main actor's post-feed clearance lifecycle. Owns action state and deadlines;
   borrows actors and the shared Simulation. App supplies room geometry and
   bowl-blocking observations, and retains camera/frame animation and damage.
-  Companion survival and exploration door transitions remain in App.
+  Food uses HomeFoodFlow, ordinary sleep uses HomeSleepFlow and doors use ExploreTransitionFlow.
+- `HomeFoodFlow`: food arbitration/retries, approach search, bite clocks and feeding
+  completion. Borrows GameState, both actors and Simulation; uses shared ActorController
+  eligibility and HomeCare consumption. App supplies bowl geometry/observations and a
+  synchronous movement adapter for existing turn/animation setup. One-shot effects
+  request facing/frame/damage and generic blocker yielding; App retains experience,
+  hearts, persistence and the main HomeFlow clearance action. No per-tick allocation.
+- `HomeSleepFlow`: ordinary sleep geometry/anchor/grid selection, bed claim and
+  direct/routed entry, companion target retention and wake/food-retry transitions.
+  Borrows actors and Simulation without duplicate state. App supplies room layout
+  and a synchronous movement adapter, retaining frame clocks, sleep breathing,
+  faint recovery, cancellation priority and restored-pose departure movement.
+  Sleep/wake transitions reuse shared policies and allocate no heap.
 - `PairFlow`: pair eligibility, scheduling, approach/invite/talk/chase/celebration,
   cancellation and visitor arrival talk events. Owns pair state; borrows GameState,
   two actors, Simulation and the shared VisitArrivalFlow. App supplies narrow
@@ -67,8 +87,8 @@ Visitor/visit departure ordering contract:
    The direct movement tail resumes after terminal effects to preserve damage
    and frame ordering. Early exit during host approach releases the host door.
 4. App retains frame clocks/camera/damage, debug formatting, communication,
-   roster and save operations. Exploration-specific departure/return remains
-   in App for the next batch. Effects use fixed storage and allocate no heap.
+   roster and save operations. Exploration-specific departure/return uses
+   ExploreTransitionFlow. Effects use fixed storage and allocate no heap.
 
 Pair interaction ordering contract:
 
@@ -221,3 +241,36 @@ The first suite drives public App touch/update/render entry points and checks
 partial renders against full frames. The second checks controller transitions
 and shared-service contracts. Device display, touch and power behavior still
 require hardware validation.
+
+Food ordering contract:
+
+1. `tickFeeding()` commits at most one bite using shared HomeCare and returns the
+   result. App applies experience/hearts, damages the frame and saves before calling
+   `finishFeeding()`. Completion uses pre-bite eligibility, preserving the old next-tick
+   completion after the final bite and the two actors' rejected-bite asymmetry.
+2. Simulation owns tasks, bowl leases and clearance; HomeFoodFlow owns only food
+   scheduling. `takeEffects()` consumes pending presentation/yield requests once.
+   The movement adapter must not reenter this flow or consume its effects.
+3. Main feeding draws bite-delay before duration; companion draws duration before
+   bite-delay. Routed entry preserves its goal; direct feeding retargets in place.
+   App does not reset food clocks independently during begin/restore.
+4. Main post-feed actions remain in HomeFlow. Companion exit uses the existing
+   deterministic candidate order and App's normal movement setup. Ordinary sleep uses HomeSleepFlow; generic
+   blocker yielding stays in App. See [food extraction](../../../../specs/amoled-app-refactor/home-food-flow.md).
+
+Sleep ordering contract:
+
+1. Shared ActorController supplies the intent. Main wake continues its update
+   after releasing BED; companion wake returns immediately. Companion food wake
+   retains the 60000ms retry deadline, including uint32 rollover; ordinary wake
+   keeps the 700ms delay. Animation frame changes stay in App.
+2. Main bed entry first claims BED and attempts to move a nearby companion away.
+   At the 2.5 x 6 bed tolerance it clears stale route/velocity and sleeps directly;
+   otherwise the existing App movement path starts the route. Failed movement
+   releases BED. Companion routes retain their selected sleep target.
+3. Companion selection retains the anchor, footprint and inclusive bed exclusions,
+   route/turn clearance and Y-major 3-unit fallback grid with first-minimum ties.
+   Faint positioning reuses selection without moving faint recovery into this flow.
+4. Movement callbacks are synchronous; the only flow reentry allowed is remembering
+   a successfully planned companion target. No delayed effects or mutable state view.
+   See [sleep extraction](../../../../specs/amoled-app-refactor/home-sleep-flow.md).

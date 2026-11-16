@@ -1,0 +1,23 @@
+{
+  "baseline": "pre-HomeSleepFlow working tree snapshot, 2026-11-16",
+  "app_sha256": "792c57aea1d6d13948ca724da407fa8a8a18b27b6c2b9bda8801f17cf907124d",
+  "header_sha256": "087c0bd5dc3f003d266a7b0663418e326331c968c9b6ed36dcc15536cc674b08",
+  "trace_host_sha256": "6dd70153a93ceec3d3cca76d542999e4d55b5e4301741627211c0755a1860128",
+  "cases": {
+    "home-faint-sleep-wake": {
+      "lines": 81,
+      "frame_lines": 5,
+      "sha256": "5744b8c1152dcc0e62b673815c9d6e55fd6e5bd7f472fe70cb735d048148088f"
+    },
+    "home-care-rewards": {
+      "lines": 309,
+      "frame_lines": 0,
+      "sha256": "5299c5cb76d694c9fb6a6b6b01577248e7f2264b491881d5224e0913ffabb434"
+    },
+    "home-room-authority": {
+      "lines": 97,
+      "frame_lines": 10,
+      "sha256": "2b9689ca442ad8550078cbf31be0146f85b6044d93c109a1e151f72f268b78d2"
+    }
+  }
+}

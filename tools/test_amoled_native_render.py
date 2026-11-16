@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Render real AMOLED pages and compare native dirty bands with full frames."""
 import os
+import hashlib
 import json
 import re
 import struct
@@ -25,7 +26,7 @@ class AmoledNativeRenderTests(unittest.TestCase):
                     "ExploreMapRenderer.h", "RenderCaches.h", "SceneFade.h")]
         headers += ["app/HatchController.h", "app/ShowerController.h",
                     "app/BattleSession.h", "app/BattleTimeline.h",
-                    "app/ExploreSession.h", "app/ExplorePresenter.h", "app/HomeViewState.h", "app/HomeFlow.h", "app/PairFlow.h",
+                    "app/ExploreSession.h", "app/ExploreTransitionFlow.h", "app/ExplorePresenter.h", "app/HomeViewState.h", "app/HomeFoodFlow.h", "app/HomeSleepFlow.h", "app/HomeFlow.h", "app/PairFlow.h",
                     "app/VisitorFlow.h", "app/VisitAwayFlow.h"]
         for header in headers:
             with self.subTest(header=header):
@@ -219,6 +220,35 @@ class AmoledNativeRenderTests(unittest.TestCase):
     def test_home_fed_companion_clears_bowl_for_hungry_leader_after_restore(self):
         self.run_case("home-food-exit-stall")
 
+    def test_home_sleep_state_and_rendering_match_before_extraction(self):
+        fixture = json.loads((ROOT / "tools/fixtures/amoled_home_sleep_baseline.json").read_text())
+        for case, expected in fixture["cases"].items():
+            with self.subTest(case=case):
+                result = subprocess.run(
+                    [self.binary, str(ROOT / "data"), "--case", case],
+                    cwd=ROOT, check=True, capture_output=True, text=True,
+                    env={**os.environ, "STICKMON_SLEEP_TRACE": "1"})
+                if os.environ.get("AMOLED_RENDER_DEBUG", "0") != "1":
+                    lines = [line for line in result.stdout.splitlines() if line.startswith("SleepTrace ")]
+                    self.assertEqual(expected["lines"], len(lines))
+                    self.assertEqual(expected["sha256"],
+                        hashlib.sha256(("\n".join(lines) + "\n").encode()).hexdigest())
+
+    def test_home_food_state_and_rendering_match_before_extraction(self):
+        fixture = json.loads((ROOT / "tools/fixtures/amoled_home_food_baseline.json").read_text())
+        for case, expected in fixture["cases"].items():
+            with self.subTest(case=case):
+                result = subprocess.run(
+                    [self.binary, str(ROOT / "data"), "--case", case],
+                    cwd=ROOT, check=True, capture_output=True, text=True,
+                    env={**os.environ, "STICKMON_FOOD_TRACE": "1"})
+                # Debug availability may affect rendering; it still runs the real journey.
+                if os.environ.get("AMOLED_RENDER_DEBUG", "0") != "1":
+                    lines = [line for line in result.stdout.splitlines() if line.startswith("FoodTrace ")]
+                    self.assertEqual(expected["lines"], len(lines))
+                    self.assertEqual(expected["sha256"],
+                        hashlib.sha256(("\n".join(lines) + "\n").encode()).hexdigest())
+
     def test_home_save_during_turn_restores_walk_and_food_routes(self):
         self.run_case("home-saved-turns")
 
@@ -405,7 +435,15 @@ class AmoledNativeRenderTests(unittest.TestCase):
         self.run_case("lock-focus-pixels")
 
     def test_expedition_black_frames_and_direct_home_return(self):
-        self.run_case("expedition-transition")
+        result = subprocess.run([self.binary, str(ROOT / "data"), "--case", "expedition-transition"],
+                                cwd=ROOT, check=True, capture_output=True, text=True,
+                                env={**os.environ, "STICKMON_TRANSITION_TRACE": "1"})
+        # The frozen trace uses release-mode scene availability and rendering.
+        if os.environ.get("AMOLED_RENDER_DEBUG", "0") != "1":
+            lines = [line for line in result.stdout.splitlines() if line.startswith("TransitionTrace ")]
+            fixture = json.loads((ROOT / "tools/fixtures/amoled_explore_transition_baseline.json").read_text())
+            self.assertEqual(fixture["lines"], len(lines))
+            self.assertEqual(fixture["sha256"], hashlib.sha256(("\n".join(lines)+"\n").encode()).hexdigest())
 
     def test_healthy_reserve_continues_normal_and_boss_encounters(self):
         self.run_case("explore-reserve-encounters")

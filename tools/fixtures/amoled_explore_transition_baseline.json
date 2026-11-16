@@ -1,0 +1,7 @@
+{
+  "baseline_commit": "b5c99c5",
+  "case": "expedition-transition",
+  "note": "Original production code; fixture explicitly selects grass instead of default market. Trace covers per-tick actor/animation/camera state and per-presentation framebuffer pixels.",
+  "lines": 2264,
+  "sha256": "ed42b3e4b34a0d09cac3fb06d0eb0762dacea13a3dd18e9811f41d5f26f34f50"
+}

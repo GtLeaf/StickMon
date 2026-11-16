@@ -10,9 +10,12 @@ app/ProgressionFlow.cpp
 app/BattleSession.cpp
 app/BattleTimeline.cpp
 app/ExploreSession.cpp
+app/ExploreTransitionFlow.cpp
 app/ExplorePresenter.cpp
 app/HomeViewState.cpp
 app/HomeFlow.cpp
+app/HomeFoodFlow.cpp
+app/HomeSleepFlow.cpp
 app/PairFlow.cpp
 app/VisitorFlow.cpp
 app/VisitAwayFlow.cpp

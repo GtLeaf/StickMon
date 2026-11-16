@@ -1,3 +1,4 @@
+#include "home_food_test_access.h"
 #include "AmoledApp.h"
 #include "game/MonsterFactory.h"
 #include "game/CareExperience.h"
@@ -7,6 +8,7 @@
 #include "platform/desktop/DesktopPlatform.h"
 #include "presentation/Canvas565.h"
 #include <cassert>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <cmath>
@@ -72,9 +74,91 @@ struct AmoledCareTestAccess {
             assert(false);
         }
         app.markRendered();
+        traceFood(app, &canvas);
+        traceSleep(app, &canvas);
+    }
+
+    static void traceSleep(const AmoledApp& app, const Canvas565* canvas = nullptr) {
+        if (!std::getenv("STICKMON_SLEEP_TRACE")) return;
+        uint64_t pixels = 1469598103934665603ULL;
+        if (canvas) for (int y = 0; y < AmoledUi::HEIGHT; ++y) {
+            for (int x = 0; x < AmoledUi::WIDTH; ++x) {
+                pixels ^= canvas->readPixel(x, y);
+                pixels *= 1099511628211ULL;
+            }
+        }
+        const auto& food = app.homeFoodFlow_.state();
+        const auto& bowl = app.homeRuntime.bowlSession();
+        std::printf("SleepTrace kind=%c game=%lu clocks=%lu,%lu,%lu,%lu,%lu "
+                    "frames=%u,%u direction=%u,%u breath=%u,%a "
+                    "leases=%d,%d,%d bowl=%u,%d,%lu food=%u,%lu,%lu,%lu "
+                    "room=%u,%u motion=%u frame=%llu",
+            canvas ? 'F' : 'S', (unsigned long)app.gameState.gameMinutesTotal,
+            (unsigned long)app.lastPetUpdateMs, (unsigned long)app.lastCompanionUpdateMs,
+            (unsigned long)app.lastCareMs, (unsigned long)app.nextPetFrameMs,
+            (unsigned long)app.nextCompanionFrameMs, app.petFrame, app.companionFrame,
+            unsigned(app.petDirection), unsigned(app.companionDirection),
+            app.sleepBreath.frame(app.lastPetUpdateMs),
+            double(app.sleepBreath.expansion(app.lastPetUpdateMs)),
+            app.homeRuntime.owner(Home::Resource::BOWL),
+            app.homeRuntime.owner(Home::Resource::BED),
+            app.homeRuntime.owner(Home::Resource::DOOR),
+            unsigned(bowl.phase), bowl.actorId, (unsigned long)bowl.phaseStartedMs,
+            food.pending, (unsigned long)food.retryAtMs,
+            (unsigned long)food.biteAtMs[0], (unsigned long)food.biteAtMs[1],
+            app.gameState.room.bowlCount, app.gameState.room.bowlBitesRemaining,
+            unsigned(app.petMotion()), (unsigned long long)pixels);
+        for (uint8_t slot = 0; slot < 2; ++slot) {
+            const auto& actor = slot == 0 ? app.homeMainActor : app.homeCompanionActor;
+            const auto& monster = app.gameState.team[slot];
+            std::printf(" actor%u=%u,%u,%u,%u,%u,%a,%a,%a,%a,%a,%a "
+                        "task=%u,%u,%u sleep=%u,%a,%a,%u,%u "
+                        "timers=%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu "
+                        "progress=%a,%u health=%u,%u,%u,%u,%lu route=%u,%u",
+                slot, actor.active, actor.hidden, unsigned(actor.role),
+                actor.teamSlot, actor.speciesId, double(actor.x), double(actor.y),
+                double(actor.targetX), double(actor.targetY),
+                double(actor.velocityX), double(actor.velocityY),
+                unsigned(actor.task), unsigned(actor.resumeTask), unsigned(actor.motion),
+                actor.sleepSpotValid, double(actor.sleepX), double(actor.sleepY),
+                actor.wakingForFood, actor.faintRestActive,
+                (unsigned long)actor.taskUntilMs, (unsigned long)actor.nextDecisionMs,
+                (unsigned long)actor.nextMindUpdateMs, (unsigned long)actor.postFeedAwakeUntilMs,
+                (unsigned long)actor.foodWakeRetryAfterMs, (unsigned long)actor.blockedSinceMs,
+                (unsigned long)actor.nextReplanMs, (unsigned long)actor.lastMoveProgressMs,
+                double(actor.lastWaypointDistance), actor.stuckRecoveryCount,
+                monster.fainted, monster.hpCur, monster.satiety,
+                unsigned(monster.majorStatus), (unsigned long)monster.lastSeenAt,
+                actor.route.count, actor.route.index);
+            for (uint8_t point = 0; point < actor.route.count; ++point) {
+                std::printf(",%a,%a", double(actor.route.x[point]), double(actor.route.y[point]));
+            }
+        }
+        std::putchar('\n');
+    }
+
+    static void traceFood(const AmoledApp& app, const Canvas565* canvas = nullptr) {
+        if (!std::getenv("STICKMON_FOOD_TRACE")) return;
+        uint64_t pixels = 1469598103934665603ULL;
+        if (canvas) for (int y=0;y<AmoledUi::HEIGHT;++y) for(int x=0;x<AmoledUi::WIDTH;++x) {
+            pixels ^= canvas->readPixel(x,y); pixels *= 1099511628211ULL;
+        }
+        std::printf("FoodTrace %u %u %u %u %lu %lu %d %u %.4f %.4f %.4f %.4f %u %u %u %u %lu %lu %lu %lu %u %lu %llu\n",
+            app.gameState.room.bowlCount, app.gameState.room.bowlBitesRemaining,
+            app.gameState.team[0].satiety, app.gameState.team[1].satiety,
+            (unsigned long)app.gameState.team[0].exp, (unsigned long)app.gameState.team[1].exp,
+            app.homeRuntime.owner(Home::Resource::BOWL), unsigned(app.homeRuntime.bowlSession().phase),
+            app.homeMainActor.x, app.homeMainActor.y, app.homeCompanionActor.x, app.homeCompanionActor.y,
+            unsigned(app.homeMainActor.task), unsigned(app.homeCompanionActor.task),
+            app.petFrame, app.companionFrame, (unsigned long)app.nextPetFrameMs,
+            (unsigned long)app.nextCompanionFrameMs, (unsigned long)app.homeFoodFlow_.state().biteAtMs[0],
+            (unsigned long)app.homeFoodFlow_.state().biteAtMs[1], app.homeFoodFlow_.state().pending,
+            (unsigned long)app.homeFoodFlow_.state().retryAtMs, (unsigned long long)pixels);
     }
 
     static void assertRoomState(const AmoledApp& app) {
+        traceFood(app);
+        traceSleep(app);
         assert(app.homeRuntime.validate() == Home::INVARIANT_OK);
         HomeViewModel model;
         app.fillHomePetModel(model);
@@ -672,6 +756,7 @@ struct AmoledCareTestAccess {
             for (int frame = 0; frame < 1000 && !eating; ++frame) {
                 desktop.advanceMs(50);
                 app.updatePet(desktop.millis());
+                traceSleep(app);
                 eating = slot == 0 ? app.petMotion() == AmoledApp::PetMotion::EATING
                     : app.homeCompanionActor.task == Home::Task::FEEDING;
             }
@@ -711,6 +796,7 @@ struct AmoledCareTestAccess {
         for (int frame = 0; frame < 20 && app.petMotion() != AmoledApp::PetMotion::EATING; ++frame) {
             desktop.advanceMs(100);
             app.updatePet(desktop.millis());
+            traceSleep(app);
         }
         assert(app.petMotion() == AmoledApp::PetMotion::EATING);
         assert(app.petDirection == PokemonSprites::WalkDirection::LEFT);
@@ -728,10 +814,10 @@ struct AmoledCareTestAccess {
         assert(app.homeRuntime.acquire(Home::Resource::BOWL, slot, Home::Task::FEEDING, now));
         app.homeRuntime.transition(slot, Home::Task::FEEDING, now, 10000, true);
         if (slot == 0) {
-            app.nextFeedBiteMs = now;
+            AmoledV1::HomeFoodTestAccess::setBiteDeadline(app.homeFoodFlow_, 0, now);
             app.updatePet(now);
         } else {
-            app.companionFoodBiteMs = now;
+            AmoledV1::HomeFoodTestAccess::setBiteDeadline(app.homeFoodFlow_, 1, now);
             app.updateCompanion(now);
         }
     }
@@ -1293,6 +1379,7 @@ struct AmoledCareTestAccess {
         for (int frame = 0; frame < 800 && app.homeCompanionActor.task != Task::SLEEPING; ++frame) {
             desktop.advanceMs(50);
             app.updateCompanion(desktop.millis());
+            traceSleep(app);
             assert(!app.homeRuntime.overlapsOther(1, app.homeCompanionActor.x,
                                                    app.homeCompanionActor.y));
         }
