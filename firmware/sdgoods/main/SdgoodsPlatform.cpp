@@ -211,7 +211,9 @@ void SdgoodsPlatform::pollInputs() {
     case Stickmon::PowerButton::Action::PRESSED:
         saveRequested_ = true; cancelPending_ = true; break;
     case Stickmon::PowerButton::Action::TOGGLE_LOCK:
-        setLocked(!locked_); unlocked_ = !locked_; break;
+        if(locked_){setLocked(false);unlocked_=true;}
+        else lockRequest_.toggle(now);
+        break;
     case Stickmon::PowerButton::Action::SHUTDOWN: shutdown_ = true; break;
     default: break;
     }
@@ -219,7 +221,7 @@ void SdgoodsPlatform::pollInputs() {
     if (!powerButton_.down() && !locked_) battery_.poll(now);
     if (now - sampledAtMs_ < 20) return;
     sampledAtMs_ = now;
-    if (powerButton_.down() || locked_) {
+    if (powerButton_.down() || locked_ || lockRequest_.pending()) {
         touchBlocked_ = true;
         touch_.sample(nullptr, now); return;
     }
@@ -318,7 +320,7 @@ void SdgoodsPlatform::setCpuPowerSave(bool value) {
     (void)value;
 #endif
 }
-void SdgoodsPlatform::sleep() { setLocked(true); }
+void SdgoodsPlatform::sleep() { lockRequest_.request(millis());touchBlocked_=true;cancelPending_=true;touch_.sample(nullptr,millis()); }
 Platform::WakeReason SdgoodsPlatform::wakeReason() const {
     switch (esp_sleep_get_wakeup_cause()) {
     case ESP_SLEEP_WAKEUP_EXT0: return Platform::WakeReason::EXTERNAL_SIGNAL;

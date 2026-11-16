@@ -10,11 +10,12 @@
 #include "presentation/PixelRenderer.h"
 #include "ui/round_touch/RoundPage.h"
 #include "ui/round_touch/ItemGrid.h"
+#include "ui/round_touch/ItemDetailView.h"
 
 namespace {
 constexpr MenuGrid::Rect ITEMS{60, 60, 240, 300};
-constexpr MenuGrid::Rect ACTION{88, 252, 84, 36};
-constexpr MenuGrid::Rect BACK{188, 252, 84, 36};
+constexpr auto ACTION=Ui::RoundItemDetail::ACTION;
+constexpr auto BACK=Ui::RoundItemDetail::BACK;
 Game::ItemId itemAt(const Game::GameState& state, uint8_t index) {
     return Game::ItemInventory::homeBagItemAt(state, index);
 }
@@ -53,17 +54,15 @@ void BagUi::render(const Game::GameState& state, const Context& context) {
     } else {
         const auto item = itemAt(state, cursor);
         GameAssets::drawCentered(GameAssets::itemKind(item), 108, 148, 1.5f);
-        MenuGrid::label(c, 216, 116, Game::ShopService::shortName(item), 144, PixelRenderer::rgb(226, 238, 233));
+        Ui::RoundItemDetail::title(Game::ShopService::shortName(item),148,108,144);
         char value[16]; std::snprintf(value, sizeof(value), Ui::Bag::COUNT_X_FMT, Game::ItemInventory::count(state, item));
-        PixelRenderer::text(148, 142, value, PixelRenderer::rgb(239, 196, 154));
-        c.setClipRect(68, 178, 224, 66);
-        wrappedText(72, 180, Game::ShopService::shortDescription(item), 216, PixelRenderer::rgb(126, 175, 175));
-        c.clearClipRect();
+        PixelRenderer::textSmooth(148,160,value,PixelRenderer::rgb(239,196,154),20);
+        Ui::RoundItemDetail::description(Game::ShopService::shortDescription(item));
         if (usable(item, context.battle)) {
             const bool feeding = context.battle && Game::foodIndexForItemId(item) >= 0;
-            ItemTouchUi::detailButton(ACTION, feeding ? Ui::Amoled::FEED : Ui::Amoled::USE, touch.pressed() == 231);
+            Ui::RoundItemDetail::button(ACTION, feeding ? Ui::Amoled::FEED : Ui::Amoled::USE, touch.pressed() == 231);
         }
-        ItemTouchUi::detailButton(BACK, Ui::BACK, touch.pressed() == 230, true);
+        Ui::RoundItemDetail::button(BACK, Ui::BACK, touch.pressed() == 230, true);
     }
     Ui::RoundPage::nativeHeader(Ui::BAG, touch.pressed() == 230);
 }

@@ -65,6 +65,7 @@ bool ExploreUi::onButton(const ButtonEvent& event) {
         if (event.action != BtnAction::PRESSED) return false;
         if (event.btn == 0) return selection.tap(host, state, RoundExplore::DEPART);
         if (event.btn == 1 && frame.visibleAreaCount) {
+            selection.release();
             state.areaCursor = (state.areaCursor + 1) % frame.visibleAreaCount;
             state.areaAnimCursor = state.areaCursor;
             return host.activateExplore(ExploreAction::AREA_CHANGED, state.areaCursor);

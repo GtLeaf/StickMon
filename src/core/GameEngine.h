@@ -68,6 +68,7 @@ public:
     void requestScene(SceneID id, bool saveBeforeSwitch = true);
     bool fadeToScene(SceneID id, uint16_t durationMs = 300);
     bool sceneFadeActive() const;
+    bool prepareDisplayLock();
     bool sceneFadeInActive() const;
     SceneID previousScene() const { return prevId; }
     SceneID homeScene() const { return state.oobeDone ? SceneID::MAIN : SceneID::HATCH; }

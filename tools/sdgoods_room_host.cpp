@@ -1180,18 +1180,18 @@ int main(int argc, char** argv) {
         };
         assert(menu().bagUi.grid(state,false).count()==Game::ItemInventory::homeBagItemCount(state));
         openItem(menu(),Item::NORMAL_FOOD);
-        assert(menu().bagUi.detailOpen && menu().bagUi.target(130,270,state,menu().bagContext())==-1);
+        assert(menu().bagUi.detailOpen && menu().bagUi.target(130,312,state,menu().bagContext())==-1);
         capturePage("bag-food-readonly");back();
         openItem(menu(),Item::NUGGET);
-        assert(menu().bagUi.detailOpen && menu().bagUi.target(130,270,state,menu().bagContext())==-1);back();
+        assert(menu().bagUi.detailOpen && menu().bagUi.target(130,312,state,menu().bagContext())==-1);back();
         openItem(menu(),Item::SOAP_0);assert(menu().bagUi.detailOpen);back();
         openItem(menu(),Item::MAX_REPEL);const auto repel=state.bag.maxRepel;
-        pageTap(130,270);assert(state.bag.maxRepel==repel && engine.repelStepsRemaining()==0);back();
+        pageTap(130,312);assert(state.bag.maxRepel==repel && engine.repelStepsRemaining()==0);back();
         state.team[0].hpCur=state.team[0].hpMax;
         state.team[1].hpCur=1;
         state.bag.potion=1;
         const auto potion=state.bag.potion;
-        openItem(menu(),Item::POTION);pageTap(130,270);
+        openItem(menu(),Item::POTION);pageTap(130,312);
         assert(menu().selectingTeamItem() && !menu().bagUi.confirmOpen);
         capturePage("bag-target-two-members");
         targetTap(menu().teamUi,0);
@@ -1204,26 +1204,26 @@ int main(int argc, char** argv) {
         pageTap(100,125);assert(state.bag.potion==potion-1);
         capturePage("bag-hp-feedback");tick(800);
         assert(menu().viewMode==MenuScene::ViewMode::BAG && !menu().bagUi.detailOpen);
-        openItem(menu(),Item::SUPER_POTION);pageTap(130,270);back();
+        openItem(menu(),Item::SUPER_POTION);pageTap(130,312);back();
         assert(!menu().selectingTeamItem() && state.bag.superPotion>=3);
         // Revive the selected member, retaining the other fainted member.
         state.team[0].fainted=state.team[1].fainted=true;
         state.team[0].hpCur=state.team[1].hpCur=0;
         const auto revives=state.bag.revive;
-        openItem(menu(),Item::REVIVE);pageTap(130,270);targetTap(menu().teamUi,1);
+        openItem(menu(),Item::REVIVE);pageTap(130,312);targetTap(menu().teamUi,1);
         assert(state.team[0].fainted && !state.team[1].fainted && state.bag.revive==revives-1);
         tick(800);assert(menu().viewMode==MenuScene::ViewMode::BAG);
         state.team[0].fainted=false;state.team[0].hpCur=state.team[0].hpMax;
         state.team[1].majorStatus=Game::MajorStatus::SLEEP;
         const auto cures=state.bag.awakening;
-        openItem(menu(),Item::AWAKENING);pageTap(130,270);targetTap(menu().teamUi,0);
+        openItem(menu(),Item::AWAKENING);pageTap(130,312);targetTap(menu().teamUi,0);
         assert(state.bag.awakening==cures && !menu().itemFeedback);
         targetTap(menu().teamUi,1);assert(state.team[1].majorStatus==Game::MajorStatus::NONE);
         tick(800);
         // Candy uses the same growth/evolution/move pipeline as earned EXP.
         state.team[1]=Game::MonsterFactory::create(25,5);
         const auto leaderLevel=state.team[0].level;const auto candy=state.bag.candy;
-        openItem(menu(),Item::CANDY);pageTap(130,270);targetTap(menu().teamUi,1);tick(800);
+        openItem(menu(),Item::CANDY);pageTap(130,312);targetTap(menu().teamUi,1);tick(800);
         assert(state.team[1].level==6 && state.team[0].level==leaderLevel && state.bag.candy==candy-1);
         assert(menu().itemProgression==MenuScene::ItemProgression::LEVEL_UP && Ui::SceneSurface::width()==360);
         capturePage("bag-candy-level-up");
@@ -1235,7 +1235,7 @@ int main(int argc, char** argv) {
         }
         assert(menu().viewMode==MenuScene::ViewMode::BAG && !state.pendingLevelUp);
         const auto stones=state.bag.thunderStone;
-        openItem(menu(),Item::THUNDER_STONE);pageTap(130,270);targetTap(menu().teamUi,0);
+        openItem(menu(),Item::THUNDER_STONE);pageTap(130,312);targetTap(menu().teamUi,0);
         assert(!menu().itemFeedback && state.bag.thunderStone==stones);
         targetTap(menu().teamUi,1);tick(800);
         assert(menu().itemProgression==MenuScene::ItemProgression::EVOLUTION);
@@ -1246,7 +1246,7 @@ int main(int argc, char** argv) {
         tick(2000);capturePage("bag-evolution-cancelled");tap(180,180);tick(100);
         assert(state.team[1].speciesId==25 && state.bag.thunderStone==stones);
         assert(menu().viewMode==MenuScene::ViewMode::BAG);
-        openItem(menu(),Item::THUNDER_STONE);pageTap(130,270);targetTap(menu().teamUi,1);tick(800);
+        openItem(menu(),Item::THUNDER_STONE);pageTap(130,312);targetTap(menu().teamUi,1);tick(800);
         capturePage("bag-stone-evolution");tick(8000);capturePage("bag-evolution-complete");tap(180,308);tick(100);
         for(int i=0;i<12 && menu().itemProgression!=MenuScene::ItemProgression::NONE;++i) {
             menu().onButton({1,BtnAction::PRESSED});menu().onButton({0,BtnAction::PRESSED});tick(50);
@@ -1272,13 +1272,13 @@ int main(int argc, char** argv) {
         tick(1000);
         explore.exploreSubView.openExploreBagView();explore.exploreSubViewOpen=true;
         explore.routePausedForTouch=true;engine.invalidateScene();tick(20);
-        openItem(explore.exploreSubView,Item::MAX_REPEL);pageTap(130,270);
+        openItem(explore.exploreSubView,Item::MAX_REPEL);pageTap(130,312);
         if (!(state.bag.maxRepel==repel-1 && engine.repelStepsRemaining()==100))
             std::fprintf(stderr,"repel before=%u after=%u steps=%u scene=%u mode=%u detail=%u context=%u toast=%s\n",repel,state.bag.maxRepel,engine.repelStepsRemaining(),unsigned(engine.currentId),unsigned(explore.exploreSubView.viewMode),explore.exploreSubView.bagUi.detailOpen,explore.exploreSubView.exploreContextMode,explore.exploreSubView.toast?explore.exploreSubView.toast:"none");
         assert(state.bag.maxRepel==repel-1 && engine.repelStepsRemaining()==100);
-        openItem(explore.exploreSubView,Item::MAX_REPEL);pageTap(130,270);
+        openItem(explore.exploreSubView,Item::MAX_REPEL);pageTap(130,312);
         assert(state.bag.maxRepel==repel-1);back();
-        openItem(explore.exploreSubView,Item::HONEY);pageTap(130,270);
+        openItem(explore.exploreSubView,Item::HONEY);pageTap(130,312);
         assert(engine.honeyEncounterPending());back();assert(!explore.exploreSubViewOpen);
         const auto resetBattle=[&]() {
             state.team[0].hpCur=state.team[0].hpMax;
@@ -1298,12 +1298,12 @@ int main(int argc, char** argv) {
         openItem(battleMenu,Item::CANDY);
         assert(!battleMenu.bagUi.detailOpen && state.bag.candy==battleCandy);
         const auto battlePotion=state.bag.potion;
-        openItem(battleMenu,Item::POTION);pageTap(130,270);targetTap(battleMenu.teamUi,0);
+        openItem(battleMenu,Item::POTION);pageTap(130,312);targetTap(battleMenu.teamUi,0);
         assert(!battleMenu.itemFeedback && state.bag.potion==battlePotion && !explore.battleLogBusy());
         back();assert(battleMenu.viewMode==MenuScene::ViewMode::BAG);back();
         assert(!explore.exploreSubViewOpen && !explore.battleLogBusy());
         openBattleBag();state.team[1].hpCur=1;
-        openItem(battleMenu,Item::POTION);pageTap(130,270);targetTap(battleMenu.teamUi,1);
+        openItem(battleMenu,Item::POTION);pageTap(130,312);targetTap(battleMenu.teamUi,1);
         assert(battleMenu.itemFeedback && !explore.battleLogBusy());
         assert(state.bag.potion==battlePotion-1 && state.team[1].hpCur>1);
         tick(800);assert(!explore.exploreSubViewOpen && Ui::SceneSurface::width()==360);
@@ -1311,12 +1311,12 @@ int main(int argc, char** argv) {
         capturePage("bag-battle-after-use");tick(6000);
         resetBattle();openBattleBag();state.team[1].fainted=true;state.team[1].hpCur=0;
         const auto battleRevives=state.bag.revive;
-        openItem(battleMenu,Item::REVIVE);pageTap(130,270);targetTap(battleMenu.teamUi,1);
+        openItem(battleMenu,Item::REVIVE);pageTap(130,312);targetTap(battleMenu.teamUi,1);
         assert(!state.team[1].fainted && state.bag.revive==battleRevives-1);
         tick(800);assert(!explore.exploreSubViewOpen);tick(6000);
         resetBattle();state.room.food[0]=1;openBattleBag();const auto food=state.room.food[0];
         openItem(battleMenu,Item::NORMAL_FOOD);capturePage("bag-battle-feed-detail");
-        pageTap(130,270);
+        pageTap(130,312);
         assert(!explore.exploreSubViewOpen && !battleMenu.bagUi.confirmOpen);
         assert(state.room.food[0]==food-1 && explore.foodThrowActive);
         assert(state.settings.volume==0);
@@ -2678,12 +2678,12 @@ int main(int argc, char** argv) {
         pageTap(potionRect.x+potionRect.width/2,potionRect.y+potionRect.height/2);
         assert(menu().bagUi.detailOpen);capturePage("bag-detail");
         const auto potions=engine.gameState().bag.potion;
-        pageTap(130,270);assert(menu().selectingTeamItem() && !menu().bagUi.confirmOpen);
+        pageTap(130,312);assert(menu().selectingTeamItem() && !menu().bagUi.confirmOpen);
         capturePage("bag-target");
         back();assert(menu().viewMode==MenuScene::ViewMode::BAG && engine.gameState().bag.potion==potions);
         engine.gameState().team[0].hpCur=engine.gameState().team[0].hpMax-5;
         pageTap(potionRect.x+potionRect.width/2,potionRect.y+potionRect.height/2);
-        pageTap(130,270);targetTap(menu().teamUi,0);
+        pageTap(130,312);targetTap(menu().teamUi,0);
         assert(menu().itemFeedback && engine.gameState().bag.potion==potions-1);
         capturePage("bag-recovery");tick(800);
         assert(menu().viewMode==MenuScene::ViewMode::BAG && !menu().bagUi.detailOpen);

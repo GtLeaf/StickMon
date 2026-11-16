@@ -8,12 +8,16 @@
 #include "BatteryPolicy.h"
 #include "ChargingTrend.h"
 #include "PowerActions.h"
+#include "DisplayLockRequest.h"
 #include "PowerButton.h"
 
 namespace {
 std::string calls;
 struct Board {
-    bool save=false, unlock=false, shutdown=false;
+    bool save=false, unlock=false, shutdown=false, lock=false, due=true;
+    bool lockRequestReady() const {return lock&&due;}
+    void completeLockRequest(){lock=false;calls+='L';}
+    void deferLockRequest(){due=false;calls+='D';}
     bool takeSaveRequest() { bool v=save; save=false; return v; }
     bool takeUnlockRequest() { bool v=unlock; unlock=false; return v; }
     bool takeShutdownRequest() { bool v=shutdown; shutdown=false; return v; }
@@ -24,6 +28,8 @@ struct Session {
     bool save() { calls += 'S'; return ok; }
 };
 struct Engine {
+    bool ready=true;
+    bool prepareDisplayLock(){calls+='R';return ready;}
     void wakeFromIdle() { calls += 'W'; }
     void invalidateScene() { calls += 'I'; }
 };
@@ -46,6 +52,10 @@ int main() {
     assert(button.update(true, 0x900u)==A::NONE && button.down());
     button.update(false, 0x910u);
     assert(button.update(false, 0x930u)==A::SHUTDOWN);
+    Sdgoods::DisplayLockRequest lock;
+    lock.request(0xfffffff0u);assert(lock.ready(0xfffffff0u));lock.retryLater(0xfffffff0u);
+    assert(!lock.ready(0x100u)&&lock.ready(0x400u));lock.toggle(0x500u);assert(!lock.pending());
+    lock.toggle(0x600u);assert(lock.ready(0x600u));lock.cancel();assert(!lock.ready(0x900u));
     Board board; Session session; Engine engine;
     board.save=true; Sdgoods::processPowerActions(board,session,engine);
     assert(calls=="S");
@@ -55,12 +65,19 @@ int main() {
     Sdgoods::processPowerActions(board,session,engine); assert(calls=="SWIS");
     session.ok=true; board.shutdown=true;
     Sdgoods::processPowerActions(board,session,engine); assert(calls=="SWISSP");
+    calls.clear();board.lock=true;engine.ready=false;
+    Sdgoods::processPowerActions(board,session,engine);assert(calls=="R"&&board.lock);
+    engine.ready=true;session.ok=false;Sdgoods::processPowerActions(board,session,engine);assert(calls=="RRSD"&&board.lock);
+    Sdgoods::processPowerActions(board,session,engine);assert(calls=="RRSD");board.due=true;session.ok=true;
+    Sdgoods::processPowerActions(board,session,engine);assert(calls=="RRSDRSL"&&!board.lock);
+
     std::puts("PASS power press before simulation, bounce/wake-held/wraparound, unlock and save-failure shutdown guard");
     const int16_t mono[]{-32768,-1234,0,1234,32767}; int16_t stereo[10];
     for(unsigned v=0;v<=100;++v) {
         Sdgoods::AudioPolicy::stereo(mono,stereo,5,v);
         for(unsigned i=0;i<5;++i) {
-            assert(stereo[2*i]==int32_t(mono[i])*int(v)/100);
+            assert(Sdgoods::AudioPolicy::MAX_OUTPUT_PERCENT==20);
+            assert(stereo[2*i]==int32_t(mono[i])*int(v)/500);
             assert(stereo[2*i+1]==stereo[2*i]);
         }
     }

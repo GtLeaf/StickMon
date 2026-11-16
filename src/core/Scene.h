@@ -103,6 +103,8 @@ public:
     virtual void onEnter() {}
     virtual void onExit() {}
     virtual bool onBeforeSave() { return true; }
+    // Defer display sleep while a scene completes its normal return path.
+    virtual bool prepareDisplayLock() { return true; }
     // Synchronize presentation surfaces before input mapping and frame binding.
     virtual void prepareSurface() {}
     virtual SceneUpdateResult update(uint32_t nowMs, float dtSeconds) = 0;

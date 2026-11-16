@@ -18,6 +18,11 @@
 #include "scenes/MenuScene.h"
 #include "ui/ExploreUi.h"
 #include "ui/common/MarketWalkUi.h"
+#if STICKMON_UI_ROUND_TOUCH
+#include "ui/round_touch/MarketShopUi.h"
+#include "ui/round_touch/MarketTutorUi.h"
+#include "ui/round_touch/MarketCareUi.h"
+#endif
 
 namespace PokemonSprites {
 struct SpriteFrame;
@@ -44,6 +49,7 @@ public:
     void onEnter() override;
     void onExit() override;
     void prepareSurface() override;
+    bool prepareDisplayLock() override;
     SceneUpdateResult update(uint32_t nowMs, float dtSeconds) override;
     void render() override;
     uint32_t visualFrameIntervalMs(uint32_t nowMs) const override;
@@ -358,6 +364,22 @@ private:
     void renderExploreProgression() override;
     std::unique_ptr<Market::Session> market_;
     Ui::MarketWalkUi marketUi_;
+#if STICKMON_UI_ROUND_TOUCH
+    uint32_t marketCountdownDay_ = UINT32_MAX;
+    Ui::RoundMarketShopUi marketShopUi_;
+    Ui::RoundMarketTutorUi marketTutorUi_;
+    Ui::RoundMarketCareUi marketCareUi_;
+    void commitMarketCare(const Ui::RoundMarketCareUi::Request& request,uint32_t eventMs);
+    uint16_t marketServiceSpecies_ = 0;
+    bool marketStallActive() const {return marketShopUi_.active() || marketTutorUi_.active() || marketCareUi_.active();}
+    void commitMarketTutor(const Ui::RoundMarketTutorUi::Request& request,uint32_t eventMs);
+    Ui::MarketCoinMotion marketCoins_;
+    bool marketServicePending_ = false;
+    uint32_t marketStallClockMs_ = 0;
+    void updateMarketStall(uint32_t nowMs);
+    void commitMarketShop(const Ui::RoundMarketShopUi::Request& request, uint32_t eventMs);
+    void resetMarketStall();
+#endif
     bool beginMarket();
     void closeMarket();
     bool ownsSpecies(uint16_t speciesId) const;

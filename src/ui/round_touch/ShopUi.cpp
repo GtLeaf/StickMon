@@ -212,24 +212,24 @@ void ShopUi::renderCoins() {
 void ShopUi::renderDetail() {
     const Item item = selectedItem();
     GameAssets::drawItemIcon48(gameItemIdFor(item), 100, 140);
-    drawShopWrappedText(nameFor(item), 142, 112, 152, PixelRenderer::rgb(226, 238, 233), 2);
+    RoundItemDetail::title(nameFor(item),142,104,152);
     char value[32];
     std::snprintf(value, sizeof(value), Ui::Shop::OWNED_FMT, ownedCountFor(item));
-    PixelRenderer::text(142, 156, value, PixelRenderer::rgb(239, 196, 154));
+    PixelRenderer::textSmooth(142,150,value,PixelRenderer::rgb(239,196,154),20);
     const bool sell = viewMode == ViewMode::SELL;
     std::snprintf(value, sizeof(value), sell ? Ui::Shop::SELL_PRICE_FMT : Ui::Shop::PRICE_FMT,
         sell ? sellPriceFor(item) : priceFor(item));
-    PixelRenderer::text(142, 178, value, PixelRenderer::rgb(248, 210, 105));
-    drawShopWrappedText(descFor(item), 70, 210, 220, PixelRenderer::rgb(126, 175, 175), 3);
+    PixelRenderer::textSmooth(142,174,value,PixelRenderer::rgb(248,210,105),20);
+    RoundItemDetail::description(descFor(item));
     const int mode = static_cast<int>(viewMode) * 256;
-    ItemTouchUi::detailButton(actionBounds(), sell ? Ui::Amoled::SELL : Ui::Amoled::BUY,
+    RoundItemDetail::button(actionBounds(), sell ? Ui::Amoled::SELL : Ui::Amoled::BUY,
         gridTouch.pressed() == mode + 231);
-    ItemTouchUi::detailButton(detailBackBounds(), Ui::BACK, gridTouch.pressed() == mode + 230, true);
+    RoundItemDetail::button(detailBackBounds(), Ui::BACK, gridTouch.pressed() == mode + 230, true);
 }
 
 void ShopUi::render() {
-    RoundPage::background();
     auto& c = PixelRenderer::canvas();
+    c.fillRect(0,0,360,360,PixelRenderer::rgb(7,12,17));
     const int mode = static_cast<int>(viewMode) * 256;
     if (touchDetailOpen) renderDetail();
     else {
@@ -261,7 +261,8 @@ void ShopUi::render() {
 void ShopUi::renderToast() {
     if (!toast) return;
     auto& c = PixelRenderer::canvas();
-    c.fillRoundRect(70, 310, 220, 28, 6, PixelRenderer::rgb(34, 39, 47));
-    MenuGrid::label(c, 180, 316, toast, 208, 0xffff);
+    const int y=touchDetailOpen?246:310;
+    c.fillRoundRect(70,y,220,28,6,PixelRenderer::rgb(34,39,47));
+    MenuGrid::label(c,180,y+6,toast,208,0xffff);
 }
 }  // namespace Ui
