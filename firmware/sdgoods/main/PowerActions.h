@@ -12,4 +12,13 @@ void processPowerActions(Board& board, Session& session, Engine& engine) {
     }
     if (board.takeShutdownRequest() && session.save()) board.powerOff();
 }
+
+// Recovery must remain operable without a save session or game engine.
+template<class Board>
+void pollRecoveryPowerActions(Board& board) {
+    board.pollPowerButton(false);
+    board.takeSaveRequest();
+    board.takeUnlockRequest();
+    if (board.takeShutdownRequest()) board.powerOff();
+}
 }  // namespace Sdgoods

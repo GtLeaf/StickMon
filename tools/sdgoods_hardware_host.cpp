@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <limits>
 #include <string>
 #include "AudioPolicy.h"
@@ -27,8 +28,26 @@ struct Engine {
     void wakeFromIdle() { calls += 'W'; }
     void invalidateScene() { calls += 'I'; }
 };
+// Recovery has neither a usable save session nor a running game engine.
+struct RecoveryBoard {
+    Stickmon::PowerButton button;
+    bool raw=false, save=true, unlock=true, shutdown=false;
+    uint32_t now=0;
+    unsigned polls=0, offs=0;
+    void pollPowerButton(bool allowLock) {
+        assert(!allowLock);
+        ++polls;
+        const auto action=button.update(raw,now);
+        if(action==Stickmon::PowerButton::Action::PRESSED) save=true;
+        if(action==Stickmon::PowerButton::Action::SHUTDOWN) shutdown=true;
+    }
+    bool takeSaveRequest() { const bool v=save;save=false;return v; }
+    bool takeUnlockRequest() { const bool v=unlock;unlock=false;return v; }
+    bool takeShutdownRequest() { const bool v=shutdown;shutdown=false;return v; }
+    void powerOff() { ++offs; }
+};
 }
-int main() {
+int main(int argc, char** argv) {
     using A=Stickmon::PowerButton::Action;
     Stickmon::PowerButton button;
     button.begin(true, 0);
@@ -56,6 +75,38 @@ int main() {
     session.ok=true; board.shutdown=true;
     Sdgoods::processPowerActions(board,session,engine); assert(calls=="SWISSP");
     std::puts("PASS power press before simulation, bounce/wake-held/wraparound, unlock and save-failure shutdown guard");
+    {
+        calls.clear();
+        RecoveryBoard recovery;
+        recovery.button.begin(false,0);
+        const auto poll=[&](bool raw,uint32_t now) {
+            recovery.raw=raw;recovery.now=now;
+            const auto before=recovery.polls;
+            Sdgoods::pollRecoveryPowerActions(recovery);
+            assert(recovery.polls==before+1);
+            assert(!recovery.save && !recovery.unlock && calls.empty());
+        };
+        poll(false,0);
+        poll(true,100);poll(true,130);
+        poll(false,200);poll(false,230); // A short press must not shut down.
+        assert(recovery.offs==0);
+        poll(true,300);poll(true,330);poll(true,2400);
+        assert(recovery.offs==0); // The existing gesture completes on release.
+        poll(false,2410);poll(false,2440);
+        assert(recovery.offs==1);
+        poll(false,2500);assert(recovery.offs==1);
+        // Releasing the held boot/wake key does not shut recovery down.
+        recovery.button.begin(true,0);recovery.offs=0;
+        poll(true,3000);poll(false,3010);poll(false,3040);
+        assert(recovery.offs==0);
+        // Long-press timing must survive uint32 clock rollover.
+        recovery.button.begin(false,0xffffff00u);
+        poll(true,0xffffff10u);poll(true,0xffffff30u);poll(true,0x900u);
+        poll(false,0x910u);poll(false,0x930u);
+        assert(recovery.offs==1);
+        std::puts("PASS recovery polls power, ignores short/held-wake releases and shuts down once across clock wrap without saving or using an engine");
+    }
+    if(argc==2 && std::strcmp(argv[1],"--power-only")==0) return 0;
     const int16_t mono[]{-32768,-1234,0,1234,32767}; int16_t stereo[10];
     for(unsigned v=0;v<=100;++v) {
         Sdgoods::AudioPolicy::stereo(mono,stereo,5,v);

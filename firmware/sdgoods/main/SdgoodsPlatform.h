@@ -33,6 +33,8 @@ public:
     // The application samples before simulation to persist a power press first.
     void update() override {}
     void pollInputs();
+    // Recovery polls only the key, without touch/ADC access or screen locking.
+    void pollPowerButton(bool allowLock = true);
     bool pressed(Platform::InputButton) const override { return false; }
     bool touchAvailable() const override { return true; }
     bool touchCalibrationSupported() const override { return true; }

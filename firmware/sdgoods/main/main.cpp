@@ -27,8 +27,13 @@ void recovery(const char* reason) {
     if(esp_ota_get_state_partition(esp_ota_get_running_partition(),&state)==ESP_OK &&
        state==ESP_OTA_IMG_PENDING_VERIFY && esp_ota_check_rollback_is_possible())
         esp_ota_mark_app_invalid_rollback_and_reboot();
+    board.enableSaveWrites(false);
     Sdgoods::storageRecovery(board,reason);
-    for(;;) {Sdgoods::pollMaintenanceConsole(board,session,false);board.sleepMs(10);}
+    for(;;) {
+        Sdgoods::pollRecoveryPowerActions(board);
+        Sdgoods::pollMaintenanceConsole(board,session,false);
+        board.sleepMs(10);
+    }
 }
 }
 

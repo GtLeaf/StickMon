@@ -204,17 +204,23 @@ void SdgoodsPlatform::sleepMs(uint32_t ms) { vTaskDelay(std::max<TickType_t>(1, 
 void SdgoodsPlatform::write(const char* text, size_t length) { if (text) std::fwrite(text, 1, length, stdout); }
 void SdgoodsPlatform::flush() { std::fflush(stdout); }
 
-void SdgoodsPlatform::pollInputs() {
+void SdgoodsPlatform::pollPowerButton(bool allowLock) {
     const uint32_t now = millis();
     const bool raw = gpio_get_level(BOARD_KEY_GPIO) == BOARD_KEY_ACTIVE_LEVEL;
     switch (powerButton_.update(raw, now)) {
     case Stickmon::PowerButton::Action::PRESSED:
         saveRequested_ = true; cancelPending_ = true; break;
     case Stickmon::PowerButton::Action::TOGGLE_LOCK:
-        setLocked(!locked_); unlocked_ = !locked_; break;
+        if (allowLock) { setLocked(!locked_); unlocked_ = !locked_; }
+        break;
     case Stickmon::PowerButton::Action::SHUTDOWN: shutdown_ = true; break;
     default: break;
     }
+}
+
+void SdgoodsPlatform::pollInputs() {
+    pollPowerButton();
+    const uint32_t now = millis();
     // The charging estimate resets on unlock; skip ADC bursts while dark.
     if (!powerButton_.down() && !locked_) battery_.poll(now);
     if (now - sampledAtMs_ < 20) return;
@@ -352,7 +358,7 @@ void SdgoodsPlatform::prepareSleep() {
 }
 void SdgoodsPlatform::powerOff() {
     prepareSleep();
-    Platform::logLine("[SDGOODS] snapshot saved; releasing power latch (USB: deep sleep fallback)");
+    Platform::logLine("[SDGOODS] releasing power latch (USB: deep sleep fallback)");
     flush();
     ESP_ERROR_CHECK(gpio_set_level(BOARD_BAT_CONTROL_GPIO, 1 - BOARD_BAT_CONTROL_LATCH_LEVEL));
     ESP_ERROR_CHECK(gpio_hold_en(BOARD_BAT_CONTROL_GPIO));
