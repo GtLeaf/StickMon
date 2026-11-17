@@ -11,6 +11,7 @@
 #include "presentation/PixelRenderer.h"
 #include "presentation/TextBlock.h"
 #include "ui/common/MarketStallMotion.h"
+#include "ui/common/MarketStallIcons.h"
 #include "ui/common/MarketListScroll.h"
 #include "ui/common/MarketUiFeedback.h"
 #include "ui/common/MarketCoinHud.h"
@@ -47,6 +48,13 @@ public:
     bool animating() const { return transition_ != Transition::NONE; }
     uint8_t selected() const { return slot_; }
     int scrollOffset() const { return scroll_; }
+    // True when the last touch()/update() changed nothing but the list offset.
+    bool scrollOnlyChange() const { return scrollOnly_; }
+    // Rows repainted by a list offset change; false unless the list is settled.
+    bool scrollRows(int& top, int& bottom) const {
+        if (page_ != Page::SHELF || animating() || pending_) return false;
+        top = LIST_TOP; bottom = LIST_BOTTOM; return true;
+    }
     int panelTop() const { return page_ == Page::GREET ? H - GREET_H + offset() : PANEL_Y + offset(); }
     // Vertical offset of the coin badge: hidden while greeting, sliding in
     // and out with the panel.
@@ -64,6 +72,7 @@ public:
     void cancelTouch() { tap_.cancel(); scrollMotion_.cancel(); }
 
     bool update(uint32_t deltaMs) {
+        scrollOnly_ = false;
         if (!active() || !deltaMs) return false;
         deltaMs = std::min<uint32_t>(deltaMs, 250);
         if (animating()) {
@@ -92,7 +101,7 @@ public:
             if (boxMs_ == MarketBoxPerformance::OPEN_MS) changePage(Page::RESULT);
             return true;
         }
-        if (page_ == Page::SHELF) return scrollMotion_.update(deltaMs, maxScroll(), scroll_);
+        if (page_ == Page::SHELF) return scrollOnly_ = scrollMotion_.update(deltaMs, maxScroll(), scroll_);
         scrollMotion_.cancel();
         if (page_ != Page::GREET) return false;
         greetMs_ += deltaMs;
@@ -119,6 +128,7 @@ public:
     Request touch(const Platform::IInputDevice::TouchEvent& e, const Game::GameState& state) {
         using Type = Platform::IInputDevice::TouchType;
         Request none{};
+        scrollOnly_ = false;
         if (pending_ || page_ == Page::CLOSED || animating()) { cancelTouch(); return none; }
         if (page_ == Page::BOX_ARRIVE || page_ == Page::BOX_OPEN) { cancelTouch(); return none; }
         if (page_ == Page::BOX_WAIT) {
@@ -131,7 +141,7 @@ public:
             if (tap_.update(e, 0) == 0) { feedback_.set(SfxCue::UI_CONFIRM); openPanel(); }
             return none;
         }
-        if (page_ == Page::SHELF && listDrag(e)) return none;
+        if (page_ == Page::SHELF && listDrag(e)) { scrollOnly_ = true; return none; }
         const int target = e.type == Type::DOWN || e.type == Type::UP ? hit(e.x, e.y, state) : -1;
         const int clicked = tap_.update(e, target);
         if (clicked < 0) return none;
@@ -194,6 +204,7 @@ private:
     bool pending_ = false;
     MarketListScroll scrollMotion_;
     int scroll_ = 0;
+    bool scrollOnly_ = false;
     Game::ItemId rewardItem_ = Game::ItemId::COUNT;
     uint8_t rewardAmount_ = 1;
     const char* error_ = nullptr;
@@ -369,7 +380,11 @@ private:
 
     void renderShelf(const Game::GameState& s) const {
         auto& c = PixelRenderer::canvas();
-        c.setClipRect(10, LIST_TOP + offset(), 348, LIST_BOTTOM - LIST_TOP);
+        // Intersect with the caller's clip: a scroll-only frame repaints just these rows.
+        const int left = c.clipLeft(), top = c.clipTop(), right = c.clipRight(), bottom = c.clipBottom();
+        const int clipLeft = std::max(left, 10), clipRight = std::min(right, 358);
+        const int clipTop = std::max(top, LIST_TOP + offset()), clipBottom = std::min(bottom, LIST_BOTTOM + offset());
+        c.setClipRect(clipLeft, clipTop, std::max(0, clipRight - clipLeft), std::max(0, clipBottom - clipTop));
         for (uint8_t i = 0; i < Game::MarketShop::ROW_COUNT; ++i) {
             const bool box = i == Game::MarketShop::BOX;
             const Game::ItemId id = Game::MarketShop::item(s, i);
@@ -392,7 +407,7 @@ private:
                 c.drawFastHLine(344 - width(price, 32), textY + 16 + offset(), width(price, 32), muted());
             }
         }
-        c.clearClipRect();
+        c.setClipRect(left, top, right - left, bottom - top);
         const int thumb = (LIST_BOTTOM - LIST_TOP) * (LIST_BOTTOM - LIST_TOP) / (Game::MarketShop::ROW_COUNT * ROW_H);
         const int y = LIST_TOP + scroll_ * (LIST_BOTTOM - LIST_TOP - thumb) / maxScroll() + offset();
         c.fillRoundRect(355, y, 3, thumb, 1, line());
@@ -401,29 +416,7 @@ private:
     enum class ListIcon { GOODS, ADVICE, EXPLORE, GROWTH, RARE };
 
     void menuIcon(ListIcon kind, int cx, int cy) const {
-        // Small pixel artwork shares the item icons' native 2px grid.
-        static constexpr const char* bag[] = {
-            "....................", ".......######.......", "......##....##......", ".....##......##.....",
-            ".....##......##.....", "...##############...", "...#TTTTTTTTTTTT#...", "...#T##########T#...",
-            "...#TT#TTTTTT#TT#...", "...#TT#TTTTTT#TT#...", "...#TTTTTTTTTTTT#...", "...#TTTTTTTTTTTT#...",
-            "...#TTTTTTTTTTTT#...", "...#TTTTTTTTTTTT#...", "...#TTTTTTTTTTTT#...", "...#TTTTTTTTTTTT#...",
-            "...#LLLLLLLLLLLL#...", "...##############...", "....................", "...................."};
-        static constexpr const char* note[] = {
-            ".......######.......", "....####TTTT####....", "...#LLL######LLL#...", "...#LPPPPPPPPPPL#...",
-            "...#LPPPPPPPPPPL#...", "...#LPSSPPSSSSPL#...", "...#LPSSPPSSSSPL#...", "...#LPPPPPPPPPPL#...",
-            "...#LPSSPPSSSSPL#...", "...#LPSSPPSSSSPL#...", "...#LPPPPPPPPPPL#...", "...#LPSSPPSSSSPL#...",
-            "...#LPSSPPSSSSPL#...", "...#LPPPPPPPPPPL#...", "...#LPPPPPPPPPPL#...", "...#LLLLLLLLLLLL#...",
-            "....############....", "....................", "....................", "...................."};
-        const auto art = kind == ListIcon::ADVICE ? note : bag;
-        auto& c = PixelRenderer::canvas();
-        cy += offset();
-        for (int y=0;y<20;++y) for (int x=0;x<20;++x) {
-            const char p=art[y][x];
-            if (p=='.') continue;
-            const auto color = p=='#' ? ink() : p=='T' ? rgb(196,152,88) :
-                p=='L' ? rgb(160,112,64) : p=='P' ? rgb(248,240,208) : rgb(104,128,112);
-            c.fillRect(cx-20+x*2,cy-20+y*2,2,2,color);
-        }
+        MarketStallIcons::draw(kind == ListIcon::ADVICE,cx,cy+offset());
     }
 
     void listRow(Rect r, const char* label, ListIcon kind, bool selected, bool divider) const {

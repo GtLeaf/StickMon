@@ -1,5 +1,7 @@
 #include "AmoledPlatform.h"
 
+#include "AudioUnderrunHold.h"
+
 #include <cstdio>
 #include <cstring>
 #include <new>
@@ -38,7 +40,7 @@ constexpr char RESOURCE_BASE_PATH[] = "/assets";
 constexpr char RESOURCE_PARTITION[] = "resources";
 constexpr gpio_num_t TOUCH_WAKE_GPIO = GPIO_NUM_21;
 constexpr uint8_t PEER_QUEUE_CAPACITY = 8;
-constexpr uint8_t AUDIO_QUEUE_CAPACITY = 4;
+constexpr uint8_t AUDIO_QUEUE_CAPACITY = 8;
 
 Platform::PeerPacket peerQueue[PEER_QUEUE_CAPACITY];
 volatile uint8_t peerQueueHead = 0;
@@ -160,6 +162,7 @@ void AmoledPlatform::audioTaskEntry(void* context) {
 void AmoledPlatform::audioTask() {
     AudioChunk* chunk = nullptr;
     int16_t pcm[PcmMixer::MIX_BLOCK_SAMPLES];
+    Stickmon::AudioUnderrunHold underrunHold;
     auto decrementQueued = [this](uint8_t channel, uint8_t count) {
         while (count-- > 0 &&
                channel < Platform::IAudioDevice::CHANNEL_COUNT &&
@@ -193,13 +196,14 @@ void AmoledPlatform::audioTask() {
         mixerGeneration_[item->channel] = item->generation;
         releaseChunk(item, false);
     };
-    auto stopInvalidatedChannels = [this] {
+    auto stopInvalidatedChannels = [this, &underrunHold] {
         for (uint8_t channel = 0;
              channel < Platform::IAudioDevice::CHANNEL_COUNT; ++channel) {
             uint32_t generation = audioGeneration_[channel].load();
             if (mixerGeneration_[channel] == generation) continue;
             mixer_.stop(static_cast<PcmMixer::Channel>(channel));
             mixerGeneration_[channel] = generation;
+            underrunHold.cancel();
         }
     };
     auto reclaimFinished = [this, &decrementQueued] {
@@ -219,9 +223,21 @@ void AmoledPlatform::audioTask() {
         }
         reclaimFinished();
         if (!mixer_.anyActive()) {
+            // A drained mixer is usually a late music block: keep writing
+            // silence briefly so the stream resumes without an output gap.
+            xSemaphoreTake(audioMutex_, portMAX_DELAY);
+            if (speakerCodec_ && speakerOpen_ && !microphoneMode_ &&
+                !audioStandby_.load() && underrunHold.holdNext()) {
+                std::memset(pcm, 0, sizeof(pcm));
+                esp_codec_dev_write(
+                    speakerCodec_, pcm, static_cast<int>(sizeof(pcm)));
+                xSemaphoreGive(audioMutex_);
+                vTaskDelay(1);
+                continue;
+            }
+            underrunHold.cancel();
             // No channel remains: release the codec/I2S and amplifier before
             // blocking. The next queued sound reopens the same output.
-            xSemaphoreTake(audioMutex_, portMAX_DELAY);
             if (speakerCodec_ && speakerOpen_) {
                 esp_codec_dev_close(speakerCodec_);
                 speakerOpen_ = false;
@@ -273,6 +289,7 @@ void AmoledPlatform::audioTask() {
                     channelVolumes_[channel]);
             }
             mixer_.mix(pcm, PcmMixer::MIX_BLOCK_SAMPLES);
+            underrunHold.played();
             audioPlaying_ = true;
             esp_codec_dev_write(
                 speakerCodec_, pcm, static_cast<int>(sizeof(pcm)));

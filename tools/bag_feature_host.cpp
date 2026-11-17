@@ -74,7 +74,7 @@ int main() {
     }
     assert(std::memcmp(&state, &beforeQueries, sizeof(state)) == 0);
     assert(select(SOURCE_BACK, false) == Selection::BACK);
-    assert(select(SOURCE_HEART_SCALE, false) == Selection::RECALL);
+    assert(select(SOURCE_HEART_SCALE, false) == Selection::NONE);
     assert(select(SOURCE_HEART_SCALE, true) == Selection::NONE);
     assert(select(0, false) == Selection::CONFIRM);
     assert(select(SOURCE_FOOD_BASE, true) == Selection::CONFIRM);
@@ -96,6 +96,10 @@ int main() {
     assert(targetSlot(0, context, state) == 0);
     context.targetTeamSlot = 255;
     assert(targetSlot(0, context, state) == 0);
+    const auto beforeScaleUse = state;
+    const auto scaleUse = use(state, SOURCE_HEART_SCALE, context, applyItem);
+    assert(!scaleUse.used && applyCalls == 0);
+    assert(std::memcmp(&state, &beforeScaleUse, sizeof(state)) == 0);
     context.targetTeamSlot = 1;
     applyCalls = 0;
     auto outcome = use(state, 0, context, applyItem);

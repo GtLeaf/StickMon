@@ -1,3 +1,7 @@
+#if STICKMON_UI_ROUND_TOUCH
+#include "game/MarketTransaction.h"
+#include "game/MarketWelcome.h"
+#endif
 #include "game/ExploreDestinations.h"
 #include "game/MarketMapData.h"
 #include "game/MarketSchedule.h"
@@ -520,6 +524,9 @@ void ExploreScene::prepareSurface() {
 }
 
 void ExploreScene::onExit() {
+#if STICKMON_UI_ROUND_TOUCH
+    resetMarketStall();
+#endif
     if (market_) { market_.reset(); Ui::MarketView::release(); }
     cancelTouch();
     PokemonSprites::setDynamicSceneSpecies(nullptr, 0);
@@ -550,20 +557,15 @@ bool ExploreScene::areaPreviewScrolls() const {
 }
 
 uint32_t ExploreScene::visualFrameIntervalMs(uint32_t nowMs) const {
-#if STICKMON_UI_ROUND_TOUCH
-    if (phase == Phase::SELECT && !market_ && !exploreSubViewOpen &&
-        areaPreviewReady && !areaPreviewPaused && areaPreviewScrolls() &&
-        (nowMs - areaPreviewStartedAt) % AREA_PREVIEW_CYCLE_MS >= AREA_PREVIEW_HOLD_MS)
-        return 33;
-#else
-    (void)nowMs;
-#endif
-    return 66;
+    (void)nowMs;return 66;
 }
 
 SceneUpdateResult ExploreScene::update(uint32_t nowMs, float dtSeconds) {
     if (market_) {
         marketUi_.update(*market_,nowMs,!GameEngine::ins().sceneFadeActive());
+#if STICKMON_UI_ROUND_TOUCH
+        updateMarketStall(nowMs);
+#endif
         if (market_->finished()) {
             if (phase != Phase::ENDING) closeMarket();
             return SceneUpdateResult::animate(33);
@@ -609,7 +611,14 @@ SceneUpdateResult ExploreScene::update(uint32_t nowMs, float dtSeconds) {
         if (paused || areaPreviewPaused)
             areaPreviewStartedAt = nowMs - areaPreviewPausedElapsed;
         areaPreviewPaused = paused;
-        previewCanAnimate = areaPreviewScrolls() && !paused;
+        previewCanAnimate = false; // Manual card pages never auto-scroll.
+    }
+#endif
+#if STICKMON_UI_ROUND_TOUCH
+    if(phase==Phase::SELECT&&ExploreDestinations::visibleId(ui.state.areaCursor,GameEngine::ins().gameState())==ExploreDestinations::MARKET){
+        const auto day=Game::MarketSchedule::gameDay(GameEngine::ins().gameState());
+        if(day!=marketCountdownDay_){marketCountdownDay_=day;demand.redraw();}
+        demand.wakeIn(1000);
     }
 #endif
     if (phase == Phase::SELECT) {
@@ -733,6 +742,17 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
 
 void ExploreScene::cancelTouch() {
     marketUi_.cancel();
+#if STICKMON_UI_ROUND_TOUCH
+    marketShopUi_.cancelTouch();
+    marketTutorUi_.cancelTouch();marketCareUi_.cancelTouch();
+    marketStallClockMs_ = Hal::ins().millis();
+    // Power-key cancellation happens even when a quick lock/unlock occurs
+    // between scheduled scene updates.
+    if (Platform::display().locked() && market_ &&
+        (marketStallActive() || marketServicePending_)) {
+        resetMarketStall(); market_->endConversation();
+    }
+#endif
     if(market_)market_->setDirection(-1);
     ProgressionUi::cancelMoveLearnTouch();
     Scene::cancelTouch();
@@ -742,7 +762,22 @@ void ExploreScene::cancelTouch() {
 
 bool ExploreScene::onTouch(const Platform::IInputDevice::TouchEvent& event) {
     if (market_) {
+#if STICKMON_UI_ROUND_TOUCH
+        if (marketStallActive()) {
+            if (!Platform::display().locked() && !market_->paused() && !market_->exiting() && !GameEngine::ins().sceneFadeActive()) {
+                if(marketCareUi_.active())commitMarketCare(marketCareUi_.touch(event,GameEngine::ins().gameState()),event.timestampMs);
+                else if(marketTutorUi_.active())commitMarketTutor(marketTutorUi_.touch(event,GameEngine::ins().gameState()),event.timestampMs);
+                else commitMarketShop(marketShopUi_.touch(event,GameEngine::ins().gameState()),event.timestampMs);
+            } else {marketShopUi_.cancelTouch();marketTutorUi_.cancelTouch();marketCareUi_.cancelTouch();}
+            return true;
+        }
+        if (marketServicePending_) { marketUi_.cancel(); return true; }
+#endif
         marketUi_.touchSession(*market_,event,Ui::MarketWalkUi::viewport(),!market_->paused()&&!market_->exiting());
+#if STICKMON_UI_ROUND_TOUCH
+        const int service=marketUi_.takeServiceRequest();
+        if (service >= 0) {marketServicePending_ = true;marketServiceSpecies_=market_->actor(service).species;}
+#endif
         return true;
     }
     if (!exploreSubViewOpen && phase == Phase::LEARN_MOVE) {
@@ -3334,6 +3369,17 @@ void ExploreScene::render() {
     if (market_ || exploreSubViewOpen || phase != Phase::SELECT) ui.releaseSelectionCache();
 #endif
     if (market_) {
+#if STICKMON_UI_ROUND_TOUCH
+        if (marketStallActive()) {
+            auto view = Ui::MarketWalkUi::viewport();
+            view.cameraOffsetY = marketCareUi_.active()?marketCareUi_.sceneShift(*market_,view):marketTutorUi_.active()?marketTutorUi_.sceneShift(*market_,view):marketShopUi_.sceneShift(*market_,view);
+            Ui::MarketView::render(*market_,view,market_->timeMs(),GameEngine::ins().gameState().gameMinutesTotal);
+            if(marketCareUi_.active())marketCareUi_.render(GameEngine::ins().gameState(),&marketCoins_);
+            else if(marketTutorUi_.active())marketTutorUi_.render(GameEngine::ins().gameState(),&marketCoins_);
+            else marketShopUi_.render(GameEngine::ins().gameState(),&marketCoins_);
+            return;
+        }
+#endif
         marketUi_.render(*market_,Ui::MarketWalkUi::viewport(),GameEngine::ins().gameState().gameMinutesTotal);
         return;
     }
@@ -3515,17 +3561,6 @@ bool ExploreScene::updateAreaPreviewLoading(uint32_t nowMs) {
         areaPreviewNextLoadAt = nowMs + 1000;
         return false;
     }
-    const uint32_t elapsed = nowMs - areaPreviewStartedAt;
-    const uint32_t cycle = elapsed % AREA_PREVIEW_CYCLE_MS;
-    // Leave headroom for one synchronous species decode. Never start one in
-    // motion, and extend the hold if an unexpectedly slow decode overruns it.
-    const uint32_t guard = std::min<uint32_t>(AREA_PREVIEW_HOLD_MS / 2,
-        std::max<uint32_t>(500, PokemonSprites::cacheStats().lastReloadMs + 100));
-    if (phase == Phase::SELECT && areaPreviewReady && areaPreviewScrolls() &&
-        cycle >= AREA_PREVIEW_HOLD_MS - guard) {
-        areaPreviewNextLoadAt = nowMs + AREA_PREVIEW_CYCLE_MS - cycle;
-        return false;
-    }
 #endif
     areaPreviewLoadPending = !PokemonSprites::preloadDynamicSpecies(
         areaPreloadSpeciesIds, areaPreloadSpeciesCount, 1);
@@ -3537,10 +3572,6 @@ bool ExploreScene::updateAreaPreviewLoading(uint32_t nowMs) {
     if (!wasReady && areaPreviewReady) {
         areaPreviewStartedAt = finished;
         areaPreviewPausedElapsed = 0;
-    } else if (phase == Phase::SELECT && areaPreviewReady && areaPreviewScrolls() &&
-               cycle < AREA_PREVIEW_HOLD_MS &&
-               finished - nowMs >= AREA_PREVIEW_HOLD_MS - cycle) {
-        areaPreviewStartedAt = finished - (elapsed / AREA_PREVIEW_CYCLE_MS) * AREA_PREVIEW_CYCLE_MS;
     }
 #endif
     areaPreviewNextLoadAt = finished + PREVIEW_BACKGROUND_LOAD_INTERVAL_MS;
@@ -3758,6 +3789,7 @@ Ui::ExploreRouteFrame ExploreScene::exploreRouteFrame() const {
         frame.visibleAreaCount = ExploreDestinations::visibleCount(state);
         for (uint8_t i = 0; i < Ui::ExploreRouteFrame::AREA_CAP; ++i) {
             const auto destination = ExploreDestinations::visibleId(i, state);
+            frame.areaIds[i] = destination;
             frame.areaNames[i] = destination == ExploreDestinations::MARKET ? Ui::MarketView::NAME :
                 destination < ROUTE_MAP_COUNT ? routeMap(destination).name : Ui::BACK;
             frame.areaUnlocked[i] = ExploreDestinations::unlocked(destination, state);
@@ -3765,12 +3797,15 @@ Ui::ExploreRouteFrame ExploreScene::exploreRouteFrame() const {
                 specialKindForArea(destination) != ExploreSpecial::Kind::NONE;
         }
         frame.marketPreview = ExploreDestinations::visibleId(ui.state.areaCursor,state)==ExploreDestinations::MARKET;
+        frame.marketOpen=Game::MarketSchedule::isOpen(state);
+        frame.marketDaysUntilOpen=Game::MarketSchedule::daysUntilOpen(state);
         frame.areaPreviewStartedAt = areaPreviewStartedAt;
 #if STICKMON_UI_ROUND_TOUCH
         if (areaPreviewPaused || !areaPreviewReady)
             frame.areaPreviewStartedAt = frame.nowMs - areaPreviewPausedElapsed;
 #endif
         frame.areaPreviewCount = areaPreviewPool.count;
+        frame.areaPreviewReady = areaPreviewReady;
         frame.areaPreviewHasRare = ExplorePool::poolHasRare(areaPreviewPool);
         for (uint8_t i = 0; i < frame.areaPreviewCount; ++i) {
             frame.areaPreviewFrames[i] = areaPreviewFrames[i];
@@ -3909,7 +3944,6 @@ Ui::ExploreBattleFrame ExploreScene::exploreBattleFrame() const {
 }
 
 bool ExploreScene::beginMarket() {
-    if (!BuildConfig::DEBUG_FEATURES) return false;
     auto& engine = GameEngine::ins();
     const auto& state = engine.gameState();
     if (!Game::MarketSchedule::isOpen(state)) return false;
@@ -3924,16 +3958,137 @@ bool ExploreScene::beginMarket() {
     market_ = std::move(market);
     market_->enableManual();marketUi_.reset();
 #if STICKMON_UI_ROUND_TOUCH
+    resetMarketStall();
     marketUi_.enableDialogue();
+    marketUi_.setServiceSpecies(Game::MarketShop::STALL_SPECIES);
+    marketUi_.setServiceSpecies(Game::MarketTutor::STALL_SPECIES);
+    marketUi_.setServiceSpecies(Game::MarketCare::STALL_SPECIES);
 #endif
     AudioManager::ins().setMusic(MusicTrack::MARKET);
     phase = Phase::WALKING; cancelTouch(); prepareSurface(); return true;
+}
+
+bool ExploreScene::prepareDisplayLock() {
+    if(!market_)return true;
+    if(phase!=Phase::ENDING)closeMarket();
+    return false;
 }
 
 void ExploreScene::closeMarket() {
     // Keep the last market frame/resources until the full-screen fade reaches
     // black. onExit releases them before the ordinary room return begins.
     cancelTouch(); marketUi_.reset();
+#if STICKMON_UI_ROUND_TOUCH
+    resetMarketStall();
+#endif
     phase = Phase::ENDING;
     GameEngine::ins().beginExploreReturn(false);
 }
+
+#if STICKMON_UI_ROUND_TOUCH
+void ExploreScene::resetMarketStall() {
+    marketShopUi_.close();marketTutorUi_.close();marketCareUi_.close();marketServiceSpecies_=0;
+    marketCoins_.reset(GameEngine::ins().gameState().coins);
+    marketServicePending_ = false;
+    marketStallClockMs_ = Hal::ins().millis();
+}
+
+void ExploreScene::updateMarketStall(uint32_t nowMs) {
+    auto& engine = GameEngine::ins();
+    if ((Platform::display().locked() || market_->exiting()) &&
+        (marketStallActive() || marketServicePending_)) {
+        resetMarketStall(); market_->endConversation(); marketUi_.cancel();
+    }
+    const bool active = !Platform::display().locked() && !market_->paused() && !market_->exiting() && !engine.sceneFadeActive();
+    if (marketServicePending_ && market_->conversationReady() && active) {
+        auto& state = engine.gameState();
+        const auto before = state;
+        const bool tutor=marketServiceSpecies_==Game::MarketTutor::STALL_SPECIES;
+        const bool care=marketServiceSpecies_==Game::MarketCare::STALL_SPECIES;
+        if(care&&!BuildConfig::DEBUG_FEATURES){resetMarketStall();market_->endConversation();return;}
+        const bool changed=care?false:tutor?Game::MarketTutor::ensurePeriod(state):Game::MarketShop::ensurePeriod(state);
+        const auto gift=tutor?Game::MarketWelcome::grant(state):Game::MarketWelcome::Result::ALREADY;
+        const bool saved=(!changed&&gift!=Game::MarketWelcome::Result::GRANTED)||engine.saveNow();
+        if (!saved) state=before;
+        marketUi_.cancel();market_->setDirection(-1);
+        if(care)marketCareUi_.open(state);
+        else if(tutor){
+            const char* welcome=gift==Game::MarketWelcome::Result::GRANTED?Ui::MarketTutorText::WELCOME_GIFT:
+                gift==Game::MarketWelcome::Result::BAG_FULL?Ui::MarketTutorText::WELCOME_FULL:nullptr;
+            marketTutorUi_.open(state,welcome,saved);
+            if(saved&&gift==Game::MarketWelcome::Result::GRANTED)AudioManager::ins().playSfx(SfxCue::ITEM_GET);
+        }else marketShopUi_.open(state,saved);
+        marketCoins_.reset(state.coins);
+        marketServicePending_ = false;
+        marketStallClockMs_ = Hal::ins().millis();
+    }
+    // A synchronous save may finish after this loop's sampled timestamp.
+    // Keep that future anchor so saving never consumes the new animation.
+    const int32_t elapsed = static_cast<int32_t>(nowMs-marketStallClockMs_);
+    if (elapsed < 0) return;
+    marketStallClockMs_ = nowMs;
+    if (!active) { marketShopUi_.cancelTouch();marketTutorUi_.cancelTouch();marketCareUi_.cancelTouch();return; }
+    if (marketStallActive()) {
+        marketShopUi_.update(uint32_t(elapsed));marketTutorUi_.update(uint32_t(elapsed));marketCareUi_.update(uint32_t(elapsed));
+        marketCoins_.update(std::min<uint32_t>(uint32_t(elapsed),250));
+        SfxCue cue; if (marketShopUi_.takeSfx(cue)||marketTutorUi_.takeSfx(cue)||marketCareUi_.takeSfx(cue)) AudioManager::ins().playSfx(cue);
+        if (!marketStallActive()) {
+            market_->endConversation(); marketUi_.cancel();
+            marketCoins_.reset(engine.gameState().coins);
+        }
+    }
+}
+
+void ExploreScene::commitMarketShop(const Ui::RoundMarketShopUi::Request& request,uint32_t eventMs) {
+    using Request = Ui::RoundMarketShopUi::Request;
+    using Status = Game::MarketTransaction::Status;
+    if (request.kind == Request::NONE) return;
+    auto& engine = GameEngine::ins();
+    Game::MarketShop::Reward reward{};
+    const auto started = Hal::ins().millis();
+    const auto outcome = Game::MarketTransaction::commit(engine.gameState(),
+        [&](Game::GameState& state) {
+            return request.kind == Request::BUY
+                ? Game::MarketShop::buy(state,request.slot,request.period,&reward)
+                : Game::MarketShop::advise(state,request.advice,request.period);
+        },[&] { return engine.saveNow(); },
+        [&](Game::MarketTransaction::CoinChange change) { marketCoins_.committed(change); });
+    if (outcome.status == Status::REJECTED) marketShopUi_.rejected(outcome.result);
+    else if (request.kind == Request::BUY)
+        marketShopUi_.committed(outcome.status == Status::COMMITTED,reward.item,reward.amount);
+    else marketShopUi_.adviceCommitted(outcome.status == Status::COMMITTED);
+    marketStallClockMs_ = eventMs + (Hal::ins().millis()-started);
+}
+void ExploreScene::commitMarketTutor(const Ui::RoundMarketTutorUi::Request& request,uint32_t eventMs) {
+    using Request=Ui::RoundMarketTutorUi::Request;using Result=Game::MarketTutor::Result;using Status=Game::MarketTransaction::Status;
+    if(request.kind==Request::NONE||request.kind==Request::CLOSE)return;
+    auto& engine=GameEngine::ins();const auto started=Hal::ins().millis();
+    const auto outcome=Game::MarketTransaction::commit(engine.gameState(),[&](Game::GameState& state){
+        if(request.period!=Game::MarketTutor::periodDay(state)||request.period!=state.marketTutor.periodDay)return Result::NO_CLASS;
+        if(request.member>=state.teamCount||state.team[request.member].ivPacked!=request.iv||state.team[request.member].metAt!=request.metAt)return Result::BAD_MEMBER;
+        const auto& m=state.team[request.member];
+        const auto move=request.slot==0?m.move1Id:request.slot==1?m.move2Id:m.move3Id;
+        if(request.kind==Request::TEACH){if(request.move!=state.marketTutor.move)return Result::NO_CLASS;return Game::MarketTutor::teach(state,request.member,request.slot);}
+        if(request.kind==Request::TRAIN){if(request.move!=move)return Result::BAD_SLOT;return Game::MarketTutor::train(state,request.member,request.slot);}
+        return Game::MarketTutor::recall(state,request.member,request.move,request.slot);
+    },[&]{return engine.saveNow();},[&](Game::MarketTransaction::CoinChange change){marketCoins_.committed(change);});
+    if(outcome.status==Status::REJECTED)marketTutorUi_.rejected(outcome.result);
+    else marketTutorUi_.committed(outcome.status==Status::COMMITTED,engine.gameState());
+    marketStallClockMs_=eventMs+(Hal::ins().millis()-started);
+}
+
+void ExploreScene::commitMarketCare(const Ui::RoundMarketCareUi::Request& request,uint32_t eventMs) {
+    using Request=Ui::RoundMarketCareUi::Request;using Result=Game::MarketCare::Result;using Status=Game::MarketTransaction::Status;
+    if(!BuildConfig::DEBUG_FEATURES||request.kind==Request::NONE)return;
+    auto& engine=GameEngine::ins();const auto started=Hal::ins().millis();
+    const auto outcome=Game::MarketTransaction::commit(engine.gameState(),[&](Game::GameState& state){
+        const auto* m=Game::MarketCare::monster(state,request.target);
+        if(!m||m->ivPacked!=request.iv||m->metAt!=request.metAt)return Result::BAD_TARGET;
+        return Game::MarketCare::apply(state,request.kind==Request::TEA?Game::MarketCare::Service::TEA:Game::MarketCare::Service::MASSAGE,request.target,request.period);
+    },[&]{return engine.saveNow();},[&](Game::MarketTransaction::CoinChange change){marketCoins_.committed(change);});
+    if(outcome.status==Status::REJECTED)marketCareUi_.rejected(outcome.result);
+    else marketCareUi_.committed(outcome.status==Status::COMMITTED,engine.gameState());
+    marketStallClockMs_=eventMs+(Hal::ins().millis()-started);
+}
+
+#endif

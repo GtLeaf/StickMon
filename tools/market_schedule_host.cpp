@@ -36,8 +36,10 @@ int main() {
             assert(MarketSchedule::periodDay(state) == c.previous);
             // Debug visits bypass closing days without changing saved periods
             // or any ordinary area's unlock behavior.
-            assert(ExploreDestinations::visible(ExploreDestinations::MARKET, state) == BuildConfig::DEBUG_FEATURES);
-            assert(ExploreDestinations::unlocked(ExploreDestinations::MARKET, state) == BuildConfig::DEBUG_FEATURES);
+            assert(ExploreDestinations::visible(ExploreDestinations::MARKET, state));
+            assert(ExploreDestinations::visibleId(0, state) == ExploreDestinations::MARKET);
+            assert(ExploreDestinations::visibleIndex(ExploreDestinations::MARKET, state) == 0);
+            assert(ExploreDestinations::unlocked(ExploreDestinations::MARKET, state) == (BuildConfig::DEBUG_FEATURES || c.open));
             assert(ExploreDestinations::unlocked(0, state));
             assert(std::memcmp(&before, &state, sizeof(state)) == 0);
         }

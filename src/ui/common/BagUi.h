@@ -15,7 +15,7 @@ public:
     using Context = Features::Bag::Context;
     using Row = Features::Bag::Row;
     struct Action {
-        enum class Kind : uint8_t { NONE, BACK, HOME, USE, RECALL, SELECT_TARGET, USE_DIRECT, UNUSABLE };
+        enum class Kind : uint8_t { NONE, BACK, HOME, USE, SELECT_TARGET, USE_DIRECT, UNUSABLE };
         bool changed = false;
         Kind kind = Kind::NONE;
         uint8_t source = Features::Bag::SOURCE_BACK;

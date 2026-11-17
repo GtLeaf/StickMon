@@ -15,8 +15,12 @@ bool RoomSession::begin(bool persist) {
     if (!verifier.begin()) return false;
     bool normalized=false;
     verifier.load(prior, view, &normalized, &status);
-    // A trial application must not rewrite data its fallback still owns.
-    if(!persist && normalized) return false;
+    // The shared-resource boot keeps the platform write gate closed until
+    // resource and session validation finish. A readable migrated/normalized
+    // save is valid in RAM; app_main commits it after opening that gate.
+    if (!persist && normalized) {
+        Platform::logLine("[SDGOODS] readable save loaded; rewrite deferred until boot validation");
+    }
     if (status == SaveManager::LoadStatus::INVALID ||
         status == SaveManager::LoadStatus::NEWER_VERSION) {
         Platform::errorf("[SDGOODS] refusing unreadable save: status=%u\n", unsigned(status));

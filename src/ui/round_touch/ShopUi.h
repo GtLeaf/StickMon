@@ -4,6 +4,7 @@
 #include "ui/common/ShopUiBase.h"
 #include "core/TouchScroll.h"
 #include "ui/compact_touch/ItemTouchUi.h"
+#include "ui/round_touch/ItemDetailView.h"
 
 namespace Ui {
 class ShopUi final : public ShopUiBase {
@@ -20,8 +21,8 @@ public:
     bool onTouch(const Platform::IInputDevice::TouchEvent& event) override;
     void cancelTouch() override;
     static MenuGrid::Rect coinBounds() { return {206, 56, 88, 36}; }
-    static MenuGrid::Rect actionBounds() { return {70, 268, 104, 36}; }
-    static MenuGrid::Rect detailBackBounds() { return {186, 268, 104, 36}; }
+    static MenuGrid::Rect actionBounds() { return RoundItemDetail::ACTION; }
+    static MenuGrid::Rect detailBackBounds() { return RoundItemDetail::BACK; }
     MenuGrid::Rect tabBounds(int index) const;
     MenuGrid::Rect tabHitBounds(int index) const;
 private:

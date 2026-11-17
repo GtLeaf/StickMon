@@ -28,6 +28,7 @@
 #include "core/RoomResource.h"
 #include "core/FontResource.h"
 #include "core/SaveCodec.h"
+#include "save_schema1_fabricator.h"
 #include "core/SaveManager.h"
 #include "core/ContentStore.h"
 #include "core/ContentValidation.h"
@@ -94,16 +95,22 @@ public:
         const auto pending = fs::path(file.string() + ".tmp");
         writeFile(pending, data, size);
         fs::rename(pending, file);
+        ++successfulWrites;
         return true;
     }
-    bool removeBlob(const char* ns, const char* key) override { fs::remove(path(ns, key)); return true; }
+    bool removeBlob(const char* ns, const char* key) override {
+        if (failWrites) return false;
+        fs::remove(path(ns, key)); return true;
+    }
     bool clearNamespace(const char* ns) override {
+        if (failWrites) return false;
         const std::string prefix = std::string(ns) + "--";
         for (const auto& entry : fs::directory_iterator(root_))
             if (entry.path().filename().string().rfind(prefix, 0) == 0) fs::remove(entry.path());
         return true;
     }
     bool failWrites = false;
+    unsigned successfulWrites = 0;
 private:
     fs::path root_;
 };
@@ -423,6 +430,101 @@ int main(int argc, char** argv) {
         }
         SaveManager writer;
         assert(writer.begin() && writer.saveSnapshot(state, MainSceneViewState{}));
+    }
+    if (mode.rfind("save-startup-", 0) == 0) {
+        // Match app_main: the NVS write gate stays closed until resources and
+        // session state pass boot validation, then save the migrated snapshot.
+        Game::GameState prior;
+        Game::HatchService::initializeNewGame(prior);
+        assert(Game::HatchService::finish(prior, 0));
+        prior.coins = 4321;
+        prior.settings.volume = mode == "save-startup-normalized" ? 255 : 17;
+        prior.tutorialFlags = Game::TUTORIAL_ALL_FLAGS;
+        uint8_t encoded[SaveCodec::MAX_ENCODED_BYTES];
+        size_t length = 0;
+        assert(SaveCodec::encode(prior, MainSceneViewState{}, 42, encoded, sizeof(encoded), length));
+        std::vector<uint8_t> bytes(encoded, encoded + length);
+        const bool fresh = mode == "save-startup-fresh";
+        const bool invalid = mode == "save-startup-invalid";
+        const bool newer = mode == "save-startup-newer";
+        if (mode.rfind("save-startup-schema-", 0) == 0) {
+            const auto schema = unsigned(std::stoi(mode.substr(std::strlen("save-startup-schema-"))));
+            assert(SaveTestUtil::fabricateLegacySchemaBlob(encoded, length, bytes, schema));
+        }
+        if (invalid) bytes.back() ^= 1;
+        if (newer) {
+            bytes[4] = SaveCodec::SCHEMA_VERSION + 1;
+            const auto crc = SaveTestUtil::blobCrc16(bytes.data(), bytes.size());
+            bytes[14] = uint8_t(crc); bytes[15] = uint8_t(crc >> 8);
+        }
+        if (!fresh) {
+            assert(blobs.writeBlob("stickmon", "state_a", bytes.data(), bytes.size()));
+            assert(blobs.writeBlob("stickmon", "state_b", bytes.data(), bytes.size()));
+            if (mode == "save-startup-redundant") {
+                auto bad = bytes; bad.back() ^= 1;
+                assert(blobs.writeBlob("stickmon", "state_a", bad.data(), bad.size()));
+            }
+        }
+        const uint8_t calibration[]{1, 4, 9, 16};
+        assert(blobs.writeBlob("touchcal", "probe", calibration, sizeof(calibration)));
+        const auto snapshot = [&]() {
+            std::vector<std::pair<std::string, std::vector<uint8_t>>> files;
+            for (const auto& f : fs::directory_iterator(argv[4]))
+                files.emplace_back(f.path().filename().string(), readFile(f.path()));
+            std::sort(files.begin(), files.end());
+            return files;
+        };
+        const auto before = snapshot();
+        const auto writes = blobs.successfulWrites;
+        blobs.failWrites = true;
+        Sdgoods::RoomSession startup;
+        const bool started = startup.begin(false);
+        assert(snapshot() == before && blobs.successfulWrites == writes);
+        writeFile(output / (mode + ".log"), desktop.logs().data(), desktop.logs().size());
+        if (invalid || newer) {
+            assert(!started && !startup.ready());
+            assert(!startup.save() && snapshot() == before);
+            std::puts("PASS invalid/newer save rejected with all original blobs retained");
+            return 0;
+        }
+        assert(started && startup.ready());
+        auto& engine = GameEngine::ins();
+        assert(!engine.saveWritesBlocked);
+        if (fresh) assert(!engine.gameState().oobeDone && engine.currentId == SceneID::HATCH);
+        else {
+            assert(engine.gameState().oobeDone && engine.currentId == SceneID::MAIN);
+            assert(engine.gameState().coins == 4321);
+            assert(engine.gameState().team[0].speciesId == prior.team[0].speciesId);
+            const auto volume = prior.settings.volume > 100 ? 100 : prior.settings.volume;
+            assert(engine.gameState().settings.volume == volume && Platform::audio().volume() == volume);
+        }
+        assert(!startup.save() && snapshot() == before);
+        // A persistent post-validation failure must not overwrite the old data.
+        if (mode == "save-startup-write-fail") {
+            assert(!startup.lastSaveOk());
+            std::puts("PASS boot accepted valid state but failed writes preserve original blobs");
+            return 0;
+        }
+        blobs.failWrites = false;
+        assert(startup.save() && startup.lastSaveOk());
+        assert(blobs.successfulWrites > writes);
+        Game::GameState restored{}; MainSceneViewState restoredView{};
+        SaveManager reader; SaveManager::LoadStatus status{}; bool normalized = false;
+        assert(reader.begin() && reader.load(restored, restoredView, &normalized, &status));
+        assert(status == SaveManager::LoadStatus::LOADED && !normalized);
+        assert(restored.coins == engine.gameState().coins);
+        assert(restored.settings.volume == engine.gameState().settings.volume);
+        // Saves alternate A/B; a second successful commit refreshes both slots.
+        assert(startup.save());
+        for (const auto* key : {"state_a", "state_b"}) {
+            const auto stored = readFile(blobs.path("stickmon", key));
+            assert(stored.size() >= SaveCodec::HEADER_BYTES);
+            assert(stored[4] == SaveCodec::SCHEMA_VERSION && stored[5] == 0);
+        }
+        assert(readFile(blobs.path("touchcal", "probe")) ==
+               std::vector<uint8_t>(calibration, calibration + sizeof(calibration)));
+        std::puts("PASS read-only startup preserves old data; post-validation save commits current schema");
+        return 0;
     }
     Sdgoods::RoomSession session;
     if (mode == "reject") {
@@ -1180,18 +1282,18 @@ int main(int argc, char** argv) {
         };
         assert(menu().bagUi.grid(state,false).count()==Game::ItemInventory::homeBagItemCount(state));
         openItem(menu(),Item::NORMAL_FOOD);
-        assert(menu().bagUi.detailOpen && menu().bagUi.target(130,270,state,menu().bagContext())==-1);
+        assert(menu().bagUi.detailOpen && menu().bagUi.target(130,312,state,menu().bagContext())==-1);
         capturePage("bag-food-readonly");back();
         openItem(menu(),Item::NUGGET);
-        assert(menu().bagUi.detailOpen && menu().bagUi.target(130,270,state,menu().bagContext())==-1);back();
+        assert(menu().bagUi.detailOpen && menu().bagUi.target(130,312,state,menu().bagContext())==-1);back();
         openItem(menu(),Item::SOAP_0);assert(menu().bagUi.detailOpen);back();
         openItem(menu(),Item::MAX_REPEL);const auto repel=state.bag.maxRepel;
-        pageTap(130,270);assert(state.bag.maxRepel==repel && engine.repelStepsRemaining()==0);back();
+        pageTap(130,312);assert(state.bag.maxRepel==repel && engine.repelStepsRemaining()==0);back();
         state.team[0].hpCur=state.team[0].hpMax;
         state.team[1].hpCur=1;
         state.bag.potion=1;
         const auto potion=state.bag.potion;
-        openItem(menu(),Item::POTION);pageTap(130,270);
+        openItem(menu(),Item::POTION);pageTap(130,312);
         assert(menu().selectingTeamItem() && !menu().bagUi.confirmOpen);
         capturePage("bag-target-two-members");
         targetTap(menu().teamUi,0);
@@ -1204,26 +1306,26 @@ int main(int argc, char** argv) {
         pageTap(100,125);assert(state.bag.potion==potion-1);
         capturePage("bag-hp-feedback");tick(800);
         assert(menu().viewMode==MenuScene::ViewMode::BAG && !menu().bagUi.detailOpen);
-        openItem(menu(),Item::SUPER_POTION);pageTap(130,270);back();
+        openItem(menu(),Item::SUPER_POTION);pageTap(130,312);back();
         assert(!menu().selectingTeamItem() && state.bag.superPotion>=3);
         // Revive the selected member, retaining the other fainted member.
         state.team[0].fainted=state.team[1].fainted=true;
         state.team[0].hpCur=state.team[1].hpCur=0;
         const auto revives=state.bag.revive;
-        openItem(menu(),Item::REVIVE);pageTap(130,270);targetTap(menu().teamUi,1);
+        openItem(menu(),Item::REVIVE);pageTap(130,312);targetTap(menu().teamUi,1);
         assert(state.team[0].fainted && !state.team[1].fainted && state.bag.revive==revives-1);
         tick(800);assert(menu().viewMode==MenuScene::ViewMode::BAG);
         state.team[0].fainted=false;state.team[0].hpCur=state.team[0].hpMax;
         state.team[1].majorStatus=Game::MajorStatus::SLEEP;
         const auto cures=state.bag.awakening;
-        openItem(menu(),Item::AWAKENING);pageTap(130,270);targetTap(menu().teamUi,0);
+        openItem(menu(),Item::AWAKENING);pageTap(130,312);targetTap(menu().teamUi,0);
         assert(state.bag.awakening==cures && !menu().itemFeedback);
         targetTap(menu().teamUi,1);assert(state.team[1].majorStatus==Game::MajorStatus::NONE);
         tick(800);
         // Candy uses the same growth/evolution/move pipeline as earned EXP.
         state.team[1]=Game::MonsterFactory::create(25,5);
         const auto leaderLevel=state.team[0].level;const auto candy=state.bag.candy;
-        openItem(menu(),Item::CANDY);pageTap(130,270);targetTap(menu().teamUi,1);tick(800);
+        openItem(menu(),Item::CANDY);pageTap(130,312);targetTap(menu().teamUi,1);tick(800);
         assert(state.team[1].level==6 && state.team[0].level==leaderLevel && state.bag.candy==candy-1);
         assert(menu().itemProgression==MenuScene::ItemProgression::LEVEL_UP && Ui::SceneSurface::width()==360);
         capturePage("bag-candy-level-up");
@@ -1235,7 +1337,7 @@ int main(int argc, char** argv) {
         }
         assert(menu().viewMode==MenuScene::ViewMode::BAG && !state.pendingLevelUp);
         const auto stones=state.bag.thunderStone;
-        openItem(menu(),Item::THUNDER_STONE);pageTap(130,270);targetTap(menu().teamUi,0);
+        openItem(menu(),Item::THUNDER_STONE);pageTap(130,312);targetTap(menu().teamUi,0);
         assert(!menu().itemFeedback && state.bag.thunderStone==stones);
         targetTap(menu().teamUi,1);tick(800);
         assert(menu().itemProgression==MenuScene::ItemProgression::EVOLUTION);
@@ -1246,7 +1348,7 @@ int main(int argc, char** argv) {
         tick(2000);capturePage("bag-evolution-cancelled");tap(180,180);tick(100);
         assert(state.team[1].speciesId==25 && state.bag.thunderStone==stones);
         assert(menu().viewMode==MenuScene::ViewMode::BAG);
-        openItem(menu(),Item::THUNDER_STONE);pageTap(130,270);targetTap(menu().teamUi,1);tick(800);
+        openItem(menu(),Item::THUNDER_STONE);pageTap(130,312);targetTap(menu().teamUi,1);tick(800);
         capturePage("bag-stone-evolution");tick(8000);capturePage("bag-evolution-complete");tap(180,308);tick(100);
         for(int i=0;i<12 && menu().itemProgression!=MenuScene::ItemProgression::NONE;++i) {
             menu().onButton({1,BtnAction::PRESSED});menu().onButton({0,BtnAction::PRESSED});tick(50);
@@ -1258,9 +1360,12 @@ int main(int argc, char** argv) {
         state.team[0].move2Id=state.team[0].move3Id=0;
         const auto scales=state.bag.heartScale;
         openItem(menu(),Item::HEART_SCALE);
-        assert(menu().viewMode==MenuScene::ViewMode::MOVES && !menu().bagUi.detailOpen);
-        capturePage("bag-heart-scale-direct");back();
-        assert(menu().viewMode==MenuScene::ViewMode::BAG && state.bag.heartScale==scales);
+        assert(menu().viewMode==MenuScene::ViewMode::BAG && menu().bagUi.detailOpen);
+        assert(menu().bagUi.target(130,312,state,menu().bagContext())==-1);
+        pageTap(130,312);
+        assert(menu().viewMode==MenuScene::ViewMode::BAG && menu().bagUi.detailOpen && state.bag.heartScale==scales);
+        capturePage("bag-heart-scale-readonly");back();
+        assert(menu().viewMode==MenuScene::ViewMode::BAG && !menu().bagUi.detailOpen && state.bag.heartScale==scales);
         state.team[0]=leaderBeforeRecall;
         back();menuItem(0);
         selectRegion(*static_cast<ExploreScene*>(engine.currentScene.get()),0);
@@ -1272,13 +1377,13 @@ int main(int argc, char** argv) {
         tick(1000);
         explore.exploreSubView.openExploreBagView();explore.exploreSubViewOpen=true;
         explore.routePausedForTouch=true;engine.invalidateScene();tick(20);
-        openItem(explore.exploreSubView,Item::MAX_REPEL);pageTap(130,270);
+        openItem(explore.exploreSubView,Item::MAX_REPEL);pageTap(130,312);
         if (!(state.bag.maxRepel==repel-1 && engine.repelStepsRemaining()==100))
             std::fprintf(stderr,"repel before=%u after=%u steps=%u scene=%u mode=%u detail=%u context=%u toast=%s\n",repel,state.bag.maxRepel,engine.repelStepsRemaining(),unsigned(engine.currentId),unsigned(explore.exploreSubView.viewMode),explore.exploreSubView.bagUi.detailOpen,explore.exploreSubView.exploreContextMode,explore.exploreSubView.toast?explore.exploreSubView.toast:"none");
         assert(state.bag.maxRepel==repel-1 && engine.repelStepsRemaining()==100);
-        openItem(explore.exploreSubView,Item::MAX_REPEL);pageTap(130,270);
+        openItem(explore.exploreSubView,Item::MAX_REPEL);pageTap(130,312);
         assert(state.bag.maxRepel==repel-1);back();
-        openItem(explore.exploreSubView,Item::HONEY);pageTap(130,270);
+        openItem(explore.exploreSubView,Item::HONEY);pageTap(130,312);
         assert(engine.honeyEncounterPending());back();assert(!explore.exploreSubViewOpen);
         const auto resetBattle=[&]() {
             state.team[0].hpCur=state.team[0].hpMax;
@@ -1314,12 +1419,12 @@ int main(int argc, char** argv) {
         openItem(battleMenu,Item::CANDY);
         assert(!battleMenu.bagUi.detailOpen && state.bag.candy==battleCandy);
         const auto battlePotion=state.bag.potion;
-        openItem(battleMenu,Item::POTION);pageTap(130,270);targetTap(battleMenu.teamUi,0);
+        openItem(battleMenu,Item::POTION);pageTap(130,312);targetTap(battleMenu.teamUi,0);
         assert(!battleMenu.itemFeedback && state.bag.potion==battlePotion && !explore.battleLogBusy());
         back();assert(battleMenu.viewMode==MenuScene::ViewMode::BAG);back();
         assert(!explore.exploreSubViewOpen && !explore.battleLogBusy());
         openBattleBag();state.team[1].hpCur=1;
-        openItem(battleMenu,Item::POTION);pageTap(130,270);targetTap(battleMenu.teamUi,1);
+        openItem(battleMenu,Item::POTION);pageTap(130,312);targetTap(battleMenu.teamUi,1);
         assert(battleMenu.itemFeedback && !explore.battleLogBusy());
         assert(state.bag.potion==battlePotion-1 && state.team[1].hpCur>1);
         tick(800);assert(!explore.exploreSubViewOpen && Ui::SceneSurface::width()==360);
@@ -1334,7 +1439,7 @@ int main(int argc, char** argv) {
             state.team[0].majorStatus=item==Item::ANTIDOTE
                 ? Game::MajorStatus::POISON : Game::MajorStatus::NONE;
             const auto stock=Game::ItemInventory::count(state,item);
-            openItem(battleMenu,item);pageTap(130,270);targetTap(battleMenu.teamUi,0);
+            openItem(battleMenu,item);pageTap(130,312);targetTap(battleMenu.teamUi,0);
             assert(battleMenu.itemFeedback);
             assert(Game::ItemInventory::count(state,item)==stock-1);
             assert(state.team[0].hpCur>1 && state.team[0].majorStatus==Game::MajorStatus::NONE);
@@ -1344,13 +1449,13 @@ int main(int argc, char** argv) {
         }
         resetBattle();openBattleBag();state.team[1].fainted=true;state.team[1].hpCur=0;
         const auto battleRevives=state.bag.revive;
-        openItem(battleMenu,Item::REVIVE);pageTap(130,270);targetTap(battleMenu.teamUi,1);
+        openItem(battleMenu,Item::REVIVE);pageTap(130,312);targetTap(battleMenu.teamUi,1);
         assert(!state.team[1].fainted && state.bag.revive==battleRevives-1);
         tick(800);assert(!explore.exploreSubViewOpen);completeItemTurnWithoutInput();
         assert(state.bag.revive==battleRevives-1);
         resetBattle();state.room.food[0]=1;openBattleBag();const auto food=state.room.food[0];
         openItem(battleMenu,Item::NORMAL_FOOD);capturePage("bag-battle-feed-detail");
-        pageTap(130,270);
+        pageTap(130,312);
         assert(!explore.exploreSubViewOpen && !battleMenu.bagUi.confirmOpen);
         assert(state.room.food[0]==food-1 && explore.foodThrowActive);
         assert(state.settings.volume==0);
@@ -2712,12 +2817,12 @@ int main(int argc, char** argv) {
         pageTap(potionRect.x+potionRect.width/2,potionRect.y+potionRect.height/2);
         assert(menu().bagUi.detailOpen);capturePage("bag-detail");
         const auto potions=engine.gameState().bag.potion;
-        pageTap(130,270);assert(menu().selectingTeamItem() && !menu().bagUi.confirmOpen);
+        pageTap(130,312);assert(menu().selectingTeamItem() && !menu().bagUi.confirmOpen);
         capturePage("bag-target");
         back();assert(menu().viewMode==MenuScene::ViewMode::BAG && engine.gameState().bag.potion==potions);
         engine.gameState().team[0].hpCur=engine.gameState().team[0].hpMax-5;
         pageTap(potionRect.x+potionRect.width/2,potionRect.y+potionRect.height/2);
-        pageTap(130,270);targetTap(menu().teamUi,0);
+        pageTap(130,312);targetTap(menu().teamUi,0);
         assert(menu().itemFeedback && engine.gameState().bag.potion==potions-1);
         capturePage("bag-recovery");tick(800);
         assert(menu().viewMode==MenuScene::ViewMode::BAG && !menu().bagUi.detailOpen);

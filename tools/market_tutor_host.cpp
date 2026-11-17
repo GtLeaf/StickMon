@@ -128,7 +128,7 @@ int main() {
         MarketTutor::ensurePeriod(s);
         assert(MarketTutor::checkTrain(s, 0, 2) == MarketTutor::Result::MAXED);
         assert(MarketTutor::train(s, 0, 1) == MarketTutor::Result::OK);
-        assert(s.team[0].moveProficiency[1] == 72 && s.coins == 4800);
+        assert(s.team[0].moveProficiency[1] == 72 && s.coins == 4400);
         assert(MarketTutor::train(s, 0, 1) == MarketTutor::Result::ALREADY_TRAINED);
         std::swap(s.team[0], s.team[1]);
         assert(MarketTutor::checkTrain(s, 1, 1) == MarketTutor::Result::ALREADY_TRAINED);
@@ -139,7 +139,7 @@ int main() {
         s.gameMinutesTotal = 3 * 1440;
         assert(MarketTutor::ensurePeriod(s));
         assert(MarketTutor::checkTrain(s, 1, 1) == MarketTutor::Result::OK);
-        assert(MarketTutor::trainedProficiency(97) == 100 && MarketTutor::trainStep(97).cost == 300);
+        assert(MarketTutor::trainedProficiency(97) == 100 && MarketTutor::trainStep(97).cost == 400);
         assert(MarketTutor::trainedProficiency(39) == 49 && MarketTutor::trainedProficiency(40) == 48);
     }
     // Recall keeps the heart-scale rule.

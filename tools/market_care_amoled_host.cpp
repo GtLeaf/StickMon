@@ -72,17 +72,11 @@ struct AmoledAppTestAccess {
         const auto& care = state.marketCare;
 
         if (!BuildConfig::DEBUG_FEATURES) {
-            // Release currently hides the whole market. Exercise its NPC
-            // interaction independently so future entry changes stay safe.
-            assert(!app.startMarket(0));
+            // Release allows market entry on opening days; unfinished care
+            // services still fall back to ordinary NPC dialogue.
+            assert(app.startMarket(0));
             app.openMarketCare(0);
             assert(!ui.active());
-            app.market_.reset(new Market::Session());
-            assert(app.market_->reset(MarketMapData::get(), 1234, 25, 133, 0));
-            app.market_->enableManual();
-            app.marketUi_.reset(); app.marketUi_.enableDialogue();
-            app.marketUi_.setServiceSpecies(Game::MarketCare::STALL_SPECIES);
-            app.sceneFlow.enter(AppSceneFlow::Scene::MARKET);
             advance(40);
             int chansey = -1;
             for (int i = 0; i < app.market_->data().residentCount; ++i)
@@ -176,6 +170,24 @@ struct AmoledAppTestAccess {
         shot("13-menu-quota-error");
         advance(20);
         tap(184, menuRow(2)); assert(ui.page() == Page::LIST);
+        {
+            // A list drag repaints only the list rows and equals a full render.
+            auto& canvas = PixelRenderer::canvas();
+            advance(5); app.render(canvas); app.markRendered();
+            TouchEvent e{}; e.x = 184; e.y = 360; e.type = TouchEventType::DOWN; e.timestampMs = touchTime;
+            app.handleTouch(e); app.render(canvas); app.markRendered();
+            e.type = TouchEventType::MOVE; e.y = 320; e.timestampMs += 30; app.handleTouch(e);
+            assert(!app.needsRender());
+            t += 40; app.update(t);
+            assert(app.needsRender() && app.renderRowBegin() == 216 && app.renderRowEnd() == 384);
+            app.render(canvas); app.markRendered();
+            const std::vector<uint16_t> partial(canvas.rawPixels(), canvas.rawPixels() + 368 * 448);
+            app.forceFullRender(); app.render(canvas); app.markRendered();
+            assert(std::equal(partial.begin(), partial.end(), canvas.rawPixels()));
+            e.type = TouchEventType::MOVE; e.y = 420; e.timestampMs += 30; app.handleTouch(e); // back to the top
+            e.type = TouchEventType::UP; e.timestampMs += 300; app.handleTouch(e); touchTime += 600;
+            advance(5); app.render(canvas); app.markRendered();
+        }
         drag(184, 360, 220); assert(ui.page() == Page::LIST); shot("14-eval-list-scrolled");
         drag(184, 220, 380);
         tap(184, listRow(0)); assert(ui.page() == Page::EVAL); shot("15-eval-pikachu-no-quota");

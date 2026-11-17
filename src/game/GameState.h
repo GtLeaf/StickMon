@@ -36,6 +36,7 @@ static constexpr uint8_t ROOM_BOWL_CAPACITY = 1;
 static constexpr uint8_t ROOM_NORMAL_FOOD_INDEX = 0;
 static constexpr uint8_t ROOM_NORMAL_FOOD_BITES = 3;
 static constexpr uint8_t ROOM_TASTY_FOOD_INDEX = 1;
+static constexpr uint8_t ROOM_TASTY_FOOD_BITES = 5;
 static constexpr uint8_t ROOM_SWEET_FOOD_INDEX = 2;
 static constexpr uint8_t ROOM_SPICY_FOOD_INDEX = 3;
 static constexpr uint8_t ROOM_SOUR_FOOD_INDEX = 4;
@@ -210,7 +211,9 @@ inline uint16_t evTotal(const StatLine& ev) {
 }
 
 inline uint8_t roomFoodBitesPerServing(uint8_t foodIndex) {
-    return foodIndex == ROOM_NORMAL_FOOD_INDEX ? ROOM_NORMAL_FOOD_BITES : 1;
+    if (foodIndex == ROOM_NORMAL_FOOD_INDEX) return ROOM_NORMAL_FOOD_BITES;
+    if (foodIndex == ROOM_TASTY_FOOD_INDEX) return ROOM_TASTY_FOOD_BITES;
+    return 1;
 }
 
 struct MonsterRuntime {

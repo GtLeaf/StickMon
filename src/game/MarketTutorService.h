@@ -36,9 +36,9 @@ inline uint16_t lessonPrice(MoveId move) {
 
 inline TrainStep trainStep(uint8_t proficiency) {
     if (proficiency >= MOVE_PROFICIENCY_MAX) return {0, 0};
-    if (proficiency < 40) return {100, 10};
-    if (proficiency < 80) return {200, 8};
-    return {300, 5};
+    if (proficiency < 40) return {800, 10};
+    if (proficiency < 80) return {600, 8};
+    return {400, 5};
 }
 inline uint8_t trainedProficiency(uint8_t proficiency) {
     const auto step = trainStep(proficiency);

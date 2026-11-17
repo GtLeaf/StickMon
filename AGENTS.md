@@ -1,3 +1,25 @@
+2026-11-17 谷仓刷机后Save unavailable启动误判（已构建签名Release，未刷机）：
+实际11/17刷机日志的擦写范围未覆盖NVS；错误来自RoomSession::begin(false)在平台写门
+关闭时将normalized=true直接拒绝，有效旧schema迁移写入被禁止后会触发，正常字段
+规范化也可复现。现允许可读存档先在RAM中迁移／规范化，仍拒绝INVALID／NEWER_VERSION
+及无有效快照；资源／精灵／启动验证通过后才由app_main开写门并session.save提交，
+保留失败旧blob重试和校准，不修改SaveManager格式、分区或刷机脚本。改前真实引擎
+用有效存档＋关写门复现失败；修后ASan/UBSan 15例覆盖schema1..8／当前／规范化／新档／
+损坏／新版／单副本坏／写失败，开门前全blob字节不变，开门后A/B轮换保存并读回通过。
+刷机安装器23例、SaveCodec／SaveMigration通过，Release app1474272B、SHA256
+ eaa51050a176de434f7143c25855a1f1550b1540e24c9c9ebb92f627e20933a0。
+包.stick-local/firmware/sdgoods/flash-release-16m-20261117-002403-2360/，证据
+.stick-local/artifacts/sdgoods-save-startup-20261117/verification.json；未访问设备／串口，
+未采实际启动日志，实机恢复待刷入验收，不将主机复现等同设备存档已恢复。
+
+2026-11-16 心之鳞片描述更正：按绿宝石原意改为「美丽的鳞片，在爱好者中有着相当高的人气。」，替换上一轮耿鬼用途提示；共享分行与AMOLED说明同步。仅补者字到16px／32px及圆屏16px A4字库（共300B），原1254字逐项不变。真实AMOLED背包三入口返回、全状态不变／隐藏使用区／字形完整与全部48道具详情布局绘制通过。此轮未构建设备固件／刷机，后续安装需同步字库资源；上一轮已构建固件不含此次文案。证据.stick-local/artifacts/heart-scale-description-20261116/。
+
+2026-11-16 心之鳞片背包返回修复（已构建，未刷机）：旧AMOLED背包跳TEAM/moves覆盖单层subSceneReturn为BAG，回包后不能退出，真实App已复现。现只开物品详情，禁用隐藏使用区域及确认，保持滚动与原返回目标；共享／圆屏／compact移除背包回忆入口，说明指向市集耿鬼。耿鬼回忆服务保留，成功消耗1枚。真实AMOLED Release/Debug验证三入口×重复查看、完整状态不变、退出背包及主菜单；谷仓完整bag-flow ASan/UBSan、耿鬼规则／真实旅程、控制器／背包／物品／详情绘制／架构通过，16/32px字形齐全且无需更新资源，已检查两屏截图。微雪V2 lite Release、谷仓Release构建通过，未构建V1／OSTB，未刷机／提交／推送。保留前序未提交市集开放及能量方块5口改动。证据.stick-local/artifacts/heart-scale-bag-fix-20261115/verification.json。
+
+2026-11-15 Release开放市集入口（未刷机）：ExploreDestinations两模式都包含市集，shared/AMOLED启动只检查MarketSchedule；Release闭市保留倒计时与置灰不可点出发，Debug每日可进，库存／配额周期不变，吉利蛋照料独立Debug限制保留。真实Release/Debug三家族完整进出／滑回、闭市按钮像素与点击、日历／照料／架构通过；微雪V2 lite Release与谷仓Release构建通过。test_market 7通过、6项地图导出因既有runtime-art来源指纹不一致报错，未改素材。未构建V1／OSTB，无存档格式变化。证据.stick-local/artifacts/market-release-access-20261115/verification.json。
+
+2026-11-15 微雪摊位列表滚动BGM卡顿修复（V2已构建，未刷机）：音乐由主循环每轮补1块、队列2块，集市BGM升16kHz后每块约128ms，余量减半；摊位打开时每个触摸事件都整屏重绘并同步传屏，补块跟不上即欠载，音频任务随即关codec放大成停顿。真机帧耗时未量，“单帧超约110ms”是推断。现微雪V1/V2 CMake设STICKMON_MUSIC_QUEUE_TARGET_BLOCKS=3、新增STICKMON_MUSIC_REFILL_BLOCKS=2（共享默认仍2/1），平台音频队列4→8，音频任务经firmware/common/AudioUnderrunHold.h在混音器排空后保持约300ms静音输出，主动停止（静音／锁屏／待机）立即关。摊位触摸：按下／抬起仍立即整屏，MOVE走33ms限帧；三个Ui新增scrollOnlyChange()/scrollRows()，列表拖动与惯性只重绘并传输列表行（耿鬼／变隐龙216..440、吉利蛋216..384），不重画集市。耿鬼回忆列表滚动条轨道缩短10px，避免画到面板圆角外的集市上。三摊真实App新增列表行帧与整屏重绘逐像素一致等检查、test_audio_music_stall、探索续播(3,2)、架构／调度通过；market_silence／home_silence失败属工作区另一项进行中的集市静默改动。V1源码同步修改但按约定未构建。app2393216B，SHA256前缀5634a47b93b0，固件.stick-local/firmware/amoled-v2/market-scroll-bgm-debug-20261115/，证据.stick-local/artifacts/market-scroll-bgm-20261115/verification.md。
+
 2026-11-14 市集BGM提升16kHz（资源更新，未刷机）：用户要求先升源采样率，未改PCM位深链路。原Emerald MIDI＋Essentials GMGSx.sf2重新合成，保留映射／音量归一化／ADPCM格式，46.2499375秒、循环8571/16000秒，来自原MIDI标记；与旧8k采样取整相差0.0625ms。资源186404→371748B（增185344B），其余21个音频包哈希不变。14项资源／音乐上下文／播放循环／恢复／混音检查通过，8k非对齐循环兼容保留；LSan受ptrace限制关闭检测，ASan/UBSan保留。谷仓9MiB资源银行打包3966922B通过，未构建设备固件或刷机。音色库SHA记录于源元数据，工具临时依赖及试听只存.stick-local。未提交推送；保留之前未提交探险改动。证据.stick-local/artifacts/market-audio-16k-20261114/verification.json。
 
 2026-11-14 微雪探险满宽与圆钮（主机验证，未刷机）：用户选半透明圆按钮。场景368×380延伸至公共导航后，黑色顶部渐变、浅米色名称底；市集仅进行中／X天后举行、统一出发，闭市禁用。精灵原生1×、344px实际宽度分组，3秒换组、手动5秒暂停，移除两类指示器；加载／单组／按住／离页／锁屏／待机暂停，只更新218..372行，保留原帧限制。新旧真实App、时钟回绕、单行／分带／字节序重绘及圆钮边缘命中通过，15架构／调度检查通过，已看实际截图；独立审查无阻断。两字库只增举，原1253字位图不变，安装需同步资源。基线84e50b4，分支feat/explore-fullbleed，保留旧版编译开关；无存档／规则变化，未提交推送、未构建设备固件／刷机。规格specs/explore-postcard-trial.md；证据.stick-local/artifacts/explore-fullbleed-live-20261114/verification.json。
@@ -710,6 +732,9 @@ OSTB 3ST 自 2026-10-30 起暂停适配，仅保留本地文件，不再提交�
 
 ## 开发原则
 
+- 用户于 2026-11-15 明确要求：Release 与 Debug 的探索列表均展示市集并可滑回；Release
+  按 MarketSchedule 游戏日历开放，闭市保留倒计时且「出发」置灰／点击无效，Debug 每天开放。
+  市集库存与服务额度仍按原周期刷新；吉利蛋未完成照料服务的独立 Debug 限制保留。
 - 用户于 2026-11-15 再次明确：OSTB 暂停维护，后续不自动编译其固件、原生 host 或
   Web 目标，也不纳入日常回归和合并前验证；跨目标测试仅选择仍维护的目标。
   不为 OSTB 单独复现或修补历史测试失败；仅在用户明确要求恢复时重新纳入。

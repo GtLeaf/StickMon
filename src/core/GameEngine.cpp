@@ -346,6 +346,14 @@ bool GameEngine::sceneFadeActive() const {
     return sceneFade != SceneFadePhase::NONE;
 }
 
+bool GameEngine::prepareDisplayLock() {
+    if(currentScene){currentScene->cancelTouch();if(!currentScene->prepareDisplayLock())return false;}
+    // Wait through the door return and its fade before taking the home snapshot.
+    // A request during departure follows the same completed return path.
+    if(exploreArea==ExploreDestinations::MARKET&&exploreTravel!=ExploreTravelPhase::NONE)return false;
+    return !sceneFadeActive();
+}
+
 bool GameEngine::sceneFadeInActive() const {
     return sceneFade == SceneFadePhase::IN;
 }
@@ -2058,7 +2066,9 @@ bool GameEngine::saveNow() {
     bool ok = stateOk && historyOk;
     if (historyOk) encounterHistoryDirty = false;
     saveCoordinator.recordAttempt(now, ok);
-    return ok;
+    // Transactions depend on the durable game snapshot. Encounter history
+    // remains independently dirty and is retried by the coordinator.
+    return stateOk;
 }
 
 bool GameEngine::resetGame() {

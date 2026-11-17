@@ -7,6 +7,7 @@
 #include "Battery.h"
 #include "PeerRadio.h"
 #include "PowerButton.h"
+#include "DisplayLockRequest.h"
 #include "Qmi8658.h"
 #include "Cst816TouchState.h"
 #include "NativePanel.h"
@@ -48,6 +49,9 @@ public:
         }
         return touch_.poll(event);
     }
+    bool lockRequestReady() const {return lockRequest_.ready(millis());}
+    void deferLockRequest() {lockRequest_.retryLater(millis());}
+    void completeLockRequest() {lockRequest_.cancel();setLocked(true);}
     bool takeSaveRequest() { const bool result = saveRequested_; saveRequested_ = false; return result; }
     Platform::FrameBuffer565 frameBuffer() override { return {frame_, 360, 360, true}; }
     void present() override;
@@ -89,6 +93,7 @@ private:
     PeerRadio radio_;
     Stickmon::Qmi8658 imu_;
     Stickmon::PowerButton powerButton_;
+    DisplayLockRequest lockRequest_;
     Platform::Services services_;
     bool beginDisplay();
     bool beginTouch();

@@ -199,13 +199,13 @@ const char* shortName(ItemId item) {
 }
 
 const char* shortDescription(ItemId item) {
+    if (item == ItemId::HEART_SCALE) return Ui::Bag::HEART_SCALE_DESC;
     if (const auto* entry = MarketItemCatalog::find(item)) return entry->description;
 #if STICKMON_EXTERNAL_CONTENT
     const auto* p=ItemCatalog::find(item);return p ? p->description : Ui::Amoled::ITEM;
 #else
     int index = itemTextIndex(item);
     if (index >= 0) return Ui::Shop::DESCS[index];
-    if (item == ItemId::HEART_SCALE) return Ui::Bag::DESCS[24][0];
     return Ui::Amoled::ITEM;
 #endif
 }

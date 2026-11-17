@@ -8,7 +8,24 @@
 #include "ui/UiMetrics.h"
 #include <cassert>
 #include <cstdio>
+#include <cstring>
+#include <string>
 #include <vector>
+
+static const char* output = nullptr;
+static void capture(const char* name) {
+    if (!output) return;
+    const auto path = std::string(output) + "/" + name + ".ppm";
+    auto* file = std::fopen(path.c_str(), "wb"); assert(file);
+    std::fprintf(file, "P6\n368 448\n255\n");
+    for (int y = 0; y < 448; ++y) for (int x = 0; x < 368; ++x) {
+        const auto c = PixelRenderer::canvas().readPixel(x, y);
+        const unsigned char rgb[] = {uint8_t(((c >> 11) & 31) * 255 / 31),
+            uint8_t(((c >> 5) & 63) * 255 / 63), uint8_t((c & 31) * 255 / 31)};
+        std::fwrite(rgb, 1, 3, file);
+    }
+    assert(std::fclose(file) == 0);
+}
 
 namespace AmoledV1 {
 struct AmoledAppTestAccess {
@@ -52,6 +69,54 @@ struct AmoledAppTestAccess {
             }
             assert(false && "purchased item must be reachable by scrolling");
         };
+        // A read-only detail must preserve the bag's original return target,
+        // including after repeated visits and taps where Use would normally be.
+        for (const auto parent : {Scene::MAIN_MENU, Scene::EXPLORE_MENU, Scene::HOME}) {
+            if (parent == Scene::MAIN_MENU) app.sceneFlow.openMenu(Scene::HOME);
+            else app.sceneFlow.enter(parent);
+            app.openItemScene(Scene::BAG);
+            const auto before = state;
+            for (int visit = 0; visit < 2; ++visit) {
+                choose(Game::ItemId::HEART_SCALE);
+                auto& inventory = app.inventoryController_;
+                const auto scroll = inventory.state().itemScroll;
+                assert(app.sceneFlow.current() == Scene::BAG);
+                assert(app.sceneFlow.subSceneReturn() == parent);
+                assert(!inventory.canConfirm(state));
+                assert(!inventory.state().selectingItemTarget);
+                app.forceFullRender(); app.render(PixelRenderer::canvas());
+                capture("heart-scale-readonly");
+                tap(UiMetrics::DETAIL_ACTION_RECT.x + 20, UiMetrics::DETAIL_ACTION_RECT.y + 20);
+                assert(app.sceneFlow.current() == Scene::BAG && inventory.state().itemConfirmOpen);
+                assert(!inventory.state().selectingItemTarget);
+                assert(inventory.state().pressedShopDetailAction == -1);
+                assert(app.sceneFlow.subSceneReturn() == parent);
+                assert(std::memcmp(&before, &state, sizeof(state)) == 0);
+                tap(UiMetrics::DETAIL_BACK_RECT.x + 20, UiMetrics::DETAIL_BACK_RECT.y + 20);
+                assert(!inventory.state().itemConfirmOpen);
+                assert(inventory.state().itemScroll == scroll);
+            }
+            tap(30, 25);
+            assert(app.sceneFlow.current() == parent);
+            assert(std::memcmp(&before, &state, sizeof(state)) == 0);
+            if (parent == Scene::MAIN_MENU) {
+                app.menuScroll = mainMenuMaxScroll();
+                const int back = AppSceneFlow::mainMenuItemCount(STICKMON_ENABLE_DEBUG_FEATURES != 0) - 1;
+                bool found = false;
+                for (int y = 0; y < 448 && !found; y += 8)
+                    for (int x = 0; x < 368 && !found; x += 8)
+                        if (mainMenuItemAt(x, y, app.menuScroll) == back) {
+                            tap(x, y); found = true;
+                        }
+                assert(found && app.sceneFlow.current() == Scene::HOME);
+            }
+        }
+        for (char32_t cp : U"美丽的鳞片，在爱好者中有着相当高的人气。") {
+            if (!cp) continue;
+            assert(FontResource::ins().findGlyphBitmap(cp, FontFace::SARASA_CJK));
+            assert(FontResource::ins().findLargeGlyphBitmap(cp, FontFace::SARASA_CJK));
+        }
+        std::puts("heart-scale-bag: read-only detail, inert Use region, unchanged state/scroll and all three return targets OK");
         // Every cultivation purchase can be selected, confirmed and used
         // through the actual home bag and target screen.
         for (const auto& entry : Game::MarketItemCatalog::ITEMS) {
@@ -98,7 +163,8 @@ struct AmoledAppTestAccess {
 }
 
 int main(int argc, char** argv) {
-    assert(argc == 2);
+    assert(argc == 2 || argc == 3);
+    if (argc == 3) output = argv[2];
     DesktopPlatform desktop(argv[1]); Platform::bind(desktop.serviceBundle()); assert(desktop.begin());
     assert(Platform::resources().mount()); assert(GameAssets::begin()); FontResource::ins().begin();
     std::vector<uint16_t> pixels(368 * 448); auto& canvas = PixelRenderer::canvas();

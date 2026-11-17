@@ -49,21 +49,25 @@ int main(int argc, char** argv) {
     audio.setMusic(MusicTrack::MARKET);
     assert(audio.playingMusic()==MusicTrack::MARKET);
     assert(platform.lastAudio().size()==2041); // Native 16 kHz: no 2x interpolation.
-    // More than two full 46.25 second cycles, including an unaligned loop.
-    for(size_t block=0;block<1000;++block) {
+    guard = 0;
+    while (audio.playingMusic() == MusicTrack::MARKET) {
         platform.consumeQueuedPcm(AudioManager::MUSIC_CHANNEL);
-        platform.advanceMs(20);audio.update();
-        assert(audio.playingMusic()==MusicTrack::MARKET);
-        assert(!platform.lastAudio().empty()&&platform.lastAudio().size()<=2041);
+        platform.advanceMs(20); audio.update();
+        assert(++guard < 1000);
     }
-    audio.setMusicSuspended(true);audio.update();
-    assert(platform.queuedPcm(AudioManager::MUSIC_CHANNEL)==0);
-    audio.setMusicSuspended(false);audio.update();
-    assert(audio.playingMusic()==MusicTrack::MARKET);
-    platform.setVolume(0);audio.update();
-    assert(platform.queuedPcm(AudioManager::MUSIC_CHANNEL)==0);
-    platform.setVolume(50);audio.update();
-    assert(audio.playingMusic()==MusicTrack::MARKET);
+    assert(platform.queuedPcm(AudioManager::MUSIC_CHANNEL) == 0);
+    const auto marketPlays = platform.audioPlayCount();
+    audio.setMusicSuspended(true); audio.update();
+    audio.setMusicSuspended(false); audio.update();
+    platform.setVolume(0); audio.update();
+    platform.setVolume(50); audio.update();
+    audio.setMusic(MusicTrack::MARKET);
+    assert(audio.playingMusic() == MusicTrack::NONE);
+    assert(platform.audioPlayCount() == marketPlays);
+    platform.advanceMs(2UL * 60UL * 1000UL - 1UL); audio.update();
+    assert(audio.playingMusic() == MusicTrack::NONE);
+    platform.advanceMs(2UL * 60UL * 1000UL + 1UL); audio.update();
+    assert(audio.playingMusic() == MusicTrack::MARKET);
     audio.setMusic(MusicTrack::EXPLORE);
     assert(audio.playingMusic()==MusicTrack::EXPLORE);
     audio.stopAll();

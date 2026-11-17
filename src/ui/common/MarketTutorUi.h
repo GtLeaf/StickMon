@@ -49,6 +49,13 @@ public:
     bool pending() const { return pending_; }
     uint8_t member() const { return member_; }
     int scrollOffset() const { return scroll_; }
+    // True when the last touch()/update() changed nothing but the list offset.
+    bool scrollOnlyChange() const { return scrollOnly_; }
+    // Rows repainted by a list offset change; false unless the list is settled.
+    bool scrollRows(int& top, int& bottom) const {
+        if (page_ != Page::RECALL_LIST || animating() || pending_) return false;
+        top = LIST_TOP; bottom = LIST_BOTTOM; return true;
+    }
     bool animating() const { return transition_ != Transition::NONE; }
     int panelTop() const { return page_ == Page::GREET ? H - GREET_H + panelOffset() : basePanelTop() + panelOffset(); }
     // Vertical offset of the coin badge: hidden while greeting, sliding in
@@ -75,6 +82,7 @@ public:
 
     // Only an explicit completed tap advances the greeting.
     bool update(uint32_t deltaMs) {
+        scrollOnly_ = false;
         if (!active() || !deltaMs) return false;
         deltaMs = std::min<uint32_t>(deltaMs, 250);
         bool changed = false;
@@ -96,9 +104,11 @@ public:
             if (showMs_ == duration) finishPerformance();
             return true;
         }
-        if (page_ == Page::RECALL_LIST)
-            changed = scrollMotion_.update(deltaMs, scrollMaximum_, scroll_) || changed;
-        else scrollMotion_.cancel();
+        if (page_ == Page::RECALL_LIST) {
+            const bool moved = scrollMotion_.update(deltaMs, scrollMaximum_, scroll_);
+            scrollOnly_ = moved && !changed;
+            changed = moved || changed;
+        } else scrollMotion_.cancel();
         if (page_ == Page::CONFIRM && mode_ != Mode::TRAIN)
             changed = confirmScrollMotion_.update(deltaMs, confirmScrollMaximum(), confirmScroll_) || changed;
         else confirmScrollMotion_.cancel();
@@ -127,6 +137,7 @@ public:
     Request touch(const Platform::IInputDevice::TouchEvent& e, const Game::GameState& state) {
         using Type = Platform::IInputDevice::TouchType;
         Request none{};
+        scrollOnly_ = false;
         if (pending_ || page_ == Page::CLOSED || animating()) { cancelTouch(); return none; }
         if (performing()) {
             if (showMs_ < TRAIN_SKIP_MS) { tap_.cancel(); return none; }
@@ -138,7 +149,7 @@ public:
             if (tap_.update(e, 0) == 0) { feedback_.set(SfxCue::UI_CONFIRM); openPanel(); }
             return none;
         }
-        if (page_ == Page::RECALL_LIST && listDrag(e, state)) return none;
+        if (page_ == Page::RECALL_LIST && listDrag(e, state)) { scrollOnly_ = true; return none; }
         if (page_ == Page::CONFIRM && mode_ != Mode::TRAIN) {
             if (prepareConfirmBody(state)) { confirmScroll_ = 0; confirmScrollMotion_.cancel(); }
             const auto r = confirmBodyRect();
@@ -221,6 +232,7 @@ private:
     uint8_t member_ = 0, slot_ = 1, before_ = 0;
     Game::MoveId recallMove_ = 0;
     int scroll_ = 0, scrollMaximum_ = 0;
+    bool scrollOnly_ = false;
     MarketListScroll scrollMotion_;
     mutable TextBlock bodyText_;
     MarketListScroll confirmScrollMotion_;
@@ -822,9 +834,12 @@ private:
         c.setClipRect(left, top, right - left, bottom - top);
         const int total = n * ROW_H, view = LIST_BOTTOM - LIST_TOP;
         if (total > view) {
-            const int bar = std::max(24, view * view / total);
-            const int pos = LIST_TOP + (view - bar) * scroll_ / std::max(1, total - view);
-            c.fillRect(360, LIST_TOP + panelOffset(), 3, view, line());
+            // The track stops above the panel's rounded corner, so the bar
+            // never paints outside the panel onto the market.
+            const int track = view - 10;
+            const int bar = std::max(24, track * view / total);
+            const int pos = LIST_TOP + (track - bar) * scroll_ / std::max(1, total - view);
+            c.fillRect(360, LIST_TOP + panelOffset(), 3, track, line());
             c.fillRect(359, pos + panelOffset(), 5, bar, edge());
         }
     }

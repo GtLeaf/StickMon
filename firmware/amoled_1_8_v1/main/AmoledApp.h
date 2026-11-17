@@ -620,6 +620,10 @@ private:
     static constexpr uint32_t MARKET_FRAME_MS = 33;
     uint32_t lastMarketFrameMs_ = 0;
     bool marketFrameDirty_ = false;
+    bool marketListDirty_ = false;
+    bool marketListFrame_ = false;
+    bool marketListRows(int& top, int& bottom) const;
+    bool marketListFrame() const;
     static constexpr Ui::MarketView::Viewport marketViewport() {
         return {368, 448, 1.5f, false, true, 2};
     }

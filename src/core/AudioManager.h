@@ -58,6 +58,8 @@ private:
     bool decodeMusicBlock(uint8_t bufferIndex);
     bool queueNextMusicBlock(bool stopCurrent);
     void beginHomeMusicSilence(uint32_t nowMs);
+    bool marketMusicCoolingDown(uint32_t nowMs) const;
+    void beginMarketMusicSilence(uint32_t nowMs);
     void rememberExploreMusic();
     void releaseMusic();
     void releaseSfx();
@@ -73,7 +75,9 @@ private:
     uint16_t nextMusicSkipSamples_ = 0;
     uint8_t musicPreviousSample_ = 128;
     uint32_t homeMusicResumeAtMs_ = 0;
-    bool homeMusicCycleComplete_ = false;
+    bool musicCycleComplete_ = false;
+    uint32_t marketSilenceStartedMs_ = 0;
+    uint32_t marketSilenceDurationMs_ = 0;
 
     struct MusicCursor {
         uint32_t block = 0;

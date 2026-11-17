@@ -58,7 +58,8 @@ void BagUi::render(const Game::GameState& state, const Context& context) {
                     PixelRenderer::rgb(126, 175, 175)) * 16;
             c.clearClipRect();
         }
-        ItemTouchUi::detailButton(ItemTouchUi::action(), Ui::Amoled::USE, touch.pressed() == 231);
+        if (row.source != Features::Bag::SOURCE_HEART_SCALE)
+            ItemTouchUi::detailButton(ItemTouchUi::action(), Ui::Amoled::USE, touch.pressed() == 231);
         ItemTouchUi::detailButton(ItemTouchUi::back(), Ui::BACK, touch.pressed() == 230, true);
     }
     TouchUi::safePageHeader(Ui::BAG, touch.pressed() == 230,
@@ -136,7 +137,8 @@ int BagUi::target(int16_t x, int16_t y, const Game::GameState& state, const Cont
     if (TouchUi::safeBack().contains(x, y)) return 230;
     if (detailOpen) {
         if (ItemTouchUi::back().contains(x, y)) return 230;
-        if (ItemTouchUi::action().contains(x, y)) return 231;
+        if (Features::Bag::sourceAt(state, context.battle, cursor) != Features::Bag::SOURCE_HEART_SCALE &&
+            ItemTouchUi::action().contains(x, y)) return 231;
         return -1;
     }
     return grid(state, context.battle).itemAt(x, y, gridScroll);

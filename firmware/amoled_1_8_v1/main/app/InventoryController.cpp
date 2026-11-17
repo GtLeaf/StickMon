@@ -18,8 +18,7 @@ void InventoryController::beginListTouch(int row, int category) {
 void InventoryController::beginDetailTouch(int choice, const Game::GameState& gameState) {
     stopScroll();
     state_.pressedShopDetailAction = choice;
-    if (choice == 0 && state_.pendingItemAction == PendingItemAction::SELL &&
-        Game::ItemInventory::count(gameState, state_.pendingItem) == 0) {
+    if (choice == 0 && !canConfirm(gameState)) {
         state_.pressedShopDetailAction = -1;
     }
 }
@@ -99,8 +98,6 @@ InventoryController::Selection InventoryController::selectItem(
     if (page == AppSceneFlow::Scene::BAG) {
         if (state_.battleBagMode && Game::foodIndexForItemId(item) < 0 &&
             !Game::ItemInventory::usableInBattle(item)) return Selection::CANNOT_USE;
-        if (!state_.battleBagMode && item == Game::ItemId::HEART_SCALE)
-            return Selection::OPEN_MOVE_MANAGER;
         state_.pendingItemAction = PendingItemAction::USE;
     } else if (page == AppSceneFlow::Scene::SHOP) {
         state_.pendingItemAction = state_.shopCategory == Game::ShopService::Category::SELL
@@ -115,6 +112,7 @@ InventoryController::Selection InventoryController::selectItem(
 
 bool InventoryController::canConfirm(const Game::GameState& gameState) const {
     return state_.itemConfirmOpen && state_.pendingItem != Game::ItemId::COUNT &&
+        !(state_.pendingItemAction == PendingItemAction::USE && state_.pendingItem == Game::ItemId::HEART_SCALE) &&
         (state_.pendingItemAction != PendingItemAction::SELL ||
          Game::ItemInventory::count(gameState, state_.pendingItem) > 0);
 }

@@ -73,7 +73,10 @@ struct ExploreRouteFrame {
     uint32_t areaPreviewStartedAt = 0;
     uint8_t areaPreviewCount = 0;
     bool areaPreviewHasRare = false;
-    bool marketPreview = false;
+    uint8_t areaIds[AREA_CAP] = {};
+    bool areaPreviewReady = false;
+    bool marketPreview = false, marketOpen = false;
+    uint32_t marketDaysUntilOpen = 0;
     const PokemonSprites::SpriteFrame* areaPreviewFrames[PREVIEW_CAP] = {};
     bool areaPreviewHidden[PREVIEW_CAP] = {};
 

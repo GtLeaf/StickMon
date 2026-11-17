@@ -243,15 +243,15 @@ struct AmoledAppTestAccess {
         shot("09a-train-save-failed");
         app.saveWritesBlocked = false;
         tap(184, 414);
-        assert(ui().page() != Page::RESULT && state.team[0].moveProficiency[1] == 72 && state.coins == 1174);
+        assert(ui().page() != Page::RESULT && state.team[0].moveProficiency[1] == 72 && state.coins == 774);
         shot("10-training-start");
         tap(184, 330); assert(ui().page() != Page::RESULT); // Payment finger cannot skip.
         advance(3); shot("10a-training-demonstrate");
         app.setDisplayLocked(true); advance(30);
         app.setDisplayLocked(false); app.update(t);
-        assert(ui().page() != Page::RESULT && state.coins == 1174);
+        assert(ui().page() != Page::RESULT && state.coins == 774);
         app.setDisplayStandby(true,t); advance(30); app.setDisplayStandby(false,t); app.update(t);
-        assert(ui().page() != Page::RESULT && state.coins == 1174);
+        assert(ui().page() != Page::RESULT && state.coins == 774);
         for (int i = 3; i < 48; ++i) {
             char name[48]; std::snprintf(name,sizeof(name),"animation-%02d",i);
             shot(name);
@@ -312,6 +312,44 @@ struct AmoledAppTestAccess {
         for (int i = 0; i < maxScroll / 140 + 2; ++i) drag(184, 365, 184, 225);
         assert(ui().scrollOffset() == maxScroll && ui().page() == Page::RECALL_LIST);
         shot("11d-recall-last");
+        {
+            // A list drag is presented by update() at the market frame rate and
+            // repaints only the list rows; the result equals a full render.
+            auto& canvas = PixelRenderer::canvas();
+            const auto presentedEqualsFull = [&] {
+                assert(app.needsRender() && app.renderRowBegin() == 216 && app.renderRowEnd() == 440);
+                app.render(canvas); app.markRendered();
+                const std::vector<uint16_t> partial(canvas.rawPixels(), canvas.rawPixels() + 368 * 448);
+                app.forceFullRender(); app.render(canvas); app.markRendered();
+                assert(std::equal(partial.begin(), partial.end(), canvas.rawPixels()));
+            };
+            advance(10); app.render(canvas); app.markRendered();
+            TouchEvent e{}; e.x = 184; e.y = 300; e.type = TouchEventType::DOWN; e.timestampMs = touchTime;
+            app.handleTouch(e); assert(app.needsRender()); // presses stay immediate
+            app.render(canvas); app.markRendered();
+            e.type = TouchEventType::MOVE; e.y = 340; e.timestampMs += 20; app.handleTouch(e);
+            assert(ui().scrollOffset() == maxScroll - 40 && !app.needsRender());
+            e.y = 350; e.timestampMs += 5; app.handleTouch(e);
+            assert(!app.needsRender()); // MOVE events never force a frame by themselves
+            t += 40; app.update(t); presentedEqualsFull();
+            e.y = 372; e.timestampMs += 20; app.handleTouch(e);
+            e.type = TouchEventType::UP; e.timestampMs += 20; app.handleTouch(e);
+            assert(!app.needsRender());
+            const int released = ui().scrollOffset();
+            t += 40; app.update(t); presentedEqualsFull();
+            assert(ui().scrollOffset() < released); // the fling keeps using list-only frames
+            t += 40; app.update(t); presentedEqualsFull();
+            touchTime += 400; advance(20);
+            // A press that is not part of a scroll still repaints the whole frame.
+            e.type = TouchEventType::DOWN; e.y = 300; e.timestampMs = touchTime; app.handleTouch(e);
+            assert(app.needsRender() && app.renderRowBegin() == 0 && app.renderRowEnd() == 448);
+            e.type = TouchEventType::MOVE; e.y = 302; e.timestampMs += 20; app.handleTouch(e);
+            e.type = TouchEventType::UP; e.x = 400; e.timestampMs += 500; app.handleTouch(e); touchTime += 800;
+            advance(5); app.render(canvas); app.markRendered();
+            for (int i = 0; i < maxScroll / 140 + 2; ++i) drag(184, 365, 184, 225);
+            advance(20);
+            assert(ui().scrollOffset() == maxScroll && ui().page() == Page::RECALL_LIST);
+        }
         // Overscroll stays clamped, and dragging outside never activates back.
         drag(184, 365, 184, 100); assert(ui().scrollOffset() == maxScroll && ui().page() == Page::RECALL_LIST);
         TouchEvent scrollDown{}; scrollDown.type = TouchEventType::DOWN;
@@ -339,7 +377,7 @@ struct AmoledAppTestAccess {
         {
             SaveManager manager; Game::GameState loaded; MainSceneViewState view;
             assert(manager.load(loaded, view));
-            assert(loaded.team[1].move3Id == recallable[recallCount - 1] && loaded.bag.heartScale == 0 && loaded.coins == 1174);
+            assert(loaded.team[1].move3Id == recallable[recallCount - 1] && loaded.bag.heartScale == 0 && loaded.coins == 774);
         }
         shot("12a-recalled");
         leaveAndReopen(); shot("13-menu-after");
@@ -412,14 +450,14 @@ static void trainingCases() {
         ui.open(state); ui.update(250); ui.update(250); tap(184,380); ui.update(250); ui.update(250);
         tap(184,380); tap(184,328); assert(ui.page()==UI::Page::TRAIN_MOVE);
         ui.render(state);
-        char label[24]; const unsigned price = before < 40 ? 100 : before < 80 ? 200 : 300;
+        char label[24]; const unsigned price = before < 40 ? 800 : before < 80 ? 600 : 400;
         std::snprintf(label,sizeof(label),"特训%u",price);
         centeredText(label,398,16,352,UiCommon::rgb(248,248,224));
-        if(before==0) capture("training-price-100");
+        if(before==0) capture("training-price-800");
         // Selecting another move changes the footer price and never trains it.
         assert(tap(184,354).kind==UI::Request::NONE); ui.render(state);
-        centeredText("特训300",398,16,352,UiCommon::rgb(248,248,224));
-        if(before==0) capture("training-price-300");
+        centeredText("特训400",398,16,352,UiCommon::rgb(248,248,224));
+        if(before==0) capture("training-price-400");
         assert(state.coins==3000);
         tap(184,294); ui.render(state); centeredText(label,398,16,352,UiCommon::rgb(248,248,224));
         const auto rich = state;
@@ -611,7 +649,7 @@ static void trainingTypeCases() {
             std::vector<uint16_t> pixels(canvas.rawPixels(),canvas.rawPixels()+368*448);
             changedFrames+=!previous.empty() && pixels!=previous;previous=std::move(pixels);
             char file[80];std::snprintf(file,sizeof(file),"type-%s-%02d",test.name,ms/100);capture(file);
-            assert(state.coins==2800 && state.team[0].moveProficiency[1]==48);
+            assert(state.coins==2400 && state.team[0].moveProficiency[1]==48);
             ui.update(100);
         }
         assert(ui.page()==UI::Page::RESULT && changedFrames>25);

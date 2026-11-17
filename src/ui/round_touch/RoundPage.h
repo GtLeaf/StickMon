@@ -14,6 +14,8 @@ bool safePoint(int x, int y);
 bool backHit(int x, int y);
 void background();
 void header(const char* title, bool pressed);
+struct NativeHeaderColors {uint16_t background,ink,fill,border;};
 void nativeHeader(const char* title, bool pressed);
+void nativeHeader(const char* title, bool pressed,const NativeHeaderColors& colors);
 void notice(const char* text);
 } }  // namespace Ui::RoundPage
