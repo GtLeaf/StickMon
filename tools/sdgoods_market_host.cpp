@@ -66,6 +66,7 @@ static void savedMatches(GameEngine& engine){
     SaveManager saves;assert(saves.begin());Game::GameState loaded;MainSceneViewState view{};assert(saves.load(loaded,view));
     const auto& current=engine.gameState();
     assert(loaded.coins==current.coins);
+    assert(loaded.room.ownedFurniture==current.room.ownedFurniture&&loaded.room.placedFurniture==current.room.placedFurniture);
     assert(loaded.marketTutorGifted==current.marketTutorGifted);
     assert(loaded.marketCare.periodDay==current.marketCare.periodDay&&loaded.marketCare.used==current.marketCare.used);
     for(int i=0;i<current.marketCare.used;++i)assert(loaded.marketCare.served[i].ivPacked==current.marketCare.served[i].ivPacked&&loaded.marketCare.served[i].metAt==current.marketCare.served[i].metAt);
@@ -206,6 +207,7 @@ static void journeyTests(DesktopPlatform& desktop,GameEngine& engine,Blobs& blob
 #include "ui/round_touch/ExploreSelectUi.h"
 #include "sdgoods_market_tutor_tests.h"
 #include "sdgoods_market_layout_tests.h"
+#include "sdgoods_market_workshop_tests.h"
 #include "sdgoods_market_care_tests.h"
 #include "sdgoods_market_entry_lock_tests.h"
 #include "sdgoods_explore_card_tests.h"
@@ -224,6 +226,7 @@ int main(int argc,char**argv){
     assert(engine.saveNow() && "A durable game snapshot must survive encounter-history failure");
     assert(blobs.failedHistory>0&&engine.saveCoordinator.dirty());savedMatches(engine);
     blobs.failHistory=false;assert(engine.saveNow()&&!engine.saveCoordinator.dirty());
+    workshopJourney(desktop,engine,blobs,display,argv[2]);
     if(!BuildConfig::DEBUG_FEATURES){careRelease(desktop,engine);return 0;}
     Game::MarketShop::ensurePeriod(state);assert(engine.saveNow());
     const auto before=state.coins;blobs.failAll=true;
@@ -242,6 +245,7 @@ int main(int argc,char**argv){
     assert(GameAssets::drawCentered(GameAssets::Kind::MARKET_MYSTERY_BOX,180,180));
     assert(Ui::RoundExplore::PREVIOUS_BOUNDS.y+Ui::RoundExplore::PREVIOUS_BOUNDS.height/2==180&&Ui::RoundExplore::NEXT_BOUNDS.y+Ui::RoundExplore::NEXT_BOUNDS.height/2==180);
     exploreCardTests(desktop,engine,argv[2]);
+    workshopControllerTests(argv[2]);
     stallLayoutTests(state,argv[2]);
     controllerTests();journeyTests(desktop,engine,blobs,display,argv[2]);
     tutorJourney(desktop,engine,blobs,display,argv[2]);

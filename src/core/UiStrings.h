@@ -136,6 +136,14 @@ static constexpr const char* BOOK_MASSAGE = "预约按摩";
 static constexpr const char* BOOK_TEA = "预约茶会";
 }
 
+namespace MarketWorkshopText {
+static constexpr const char* WELCOME="袋龙：你好呀！我正为工坊开张做准备呢。";
+static constexpr const char* GIFT="袋龙：这是我试做的相框，送你吧！";
+static constexpr const char* OPENING="袋龙：工坊还在布置中，开张了记得来捧场！";
+static constexpr const char* RECEIVED="获得相框";
+static constexpr const char* RETRY="袋龙：礼物没送成，再点一下试试。";
+}
+
 // Gengar stall (秘技小屋). ASCII separators keep the 16/32px glyph grid.
 namespace MarketTutorText {
 static constexpr const char* CHOOSE_MONSTER = "请选择精灵";
@@ -820,6 +828,24 @@ static constexpr const char* ITEMS[] = {
 #endif
     Ui::BACK,
 };
+}
+
+namespace HomeLibraryText {
+static constexpr const char* TITLE="家居库";
+static constexpr const char* PREVIEW="家居预览";
+static constexpr const char* FRAME="相框";
+static constexpr const char* EMPTY="暂无家居";
+static constexpr const char* PLACED="已摆放";
+static constexpr const char* PLACE="摆放";
+static constexpr const char* CHANGE="更换";
+static constexpr const char* REMOVE="撤下";
+static constexpr const char* TRY="试摆中";
+static constexpr const char* FAILED="保存失败，请重试";
+static constexpr const char* NO_PREVIEW="房间预览不可用";
+static constexpr const char* ALL="全部";
+static constexpr const char* WALL="墙饰";
+static constexpr const char* BED="床";
+static constexpr const char* RUG="地毯";
 }
 
 namespace Room {

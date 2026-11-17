@@ -744,7 +744,7 @@ void ExploreScene::cancelTouch() {
     marketUi_.cancel();
 #if STICKMON_UI_ROUND_TOUCH
     marketShopUi_.cancelTouch();
-    marketTutorUi_.cancelTouch();marketCareUi_.cancelTouch();
+    marketTutorUi_.cancelTouch();marketCareUi_.cancelTouch();marketWorkshopUi_.cancelTouch();
     marketStallClockMs_ = Hal::ins().millis();
     // Power-key cancellation happens even when a quick lock/unlock occurs
     // between scheduled scene updates.
@@ -765,10 +765,11 @@ bool ExploreScene::onTouch(const Platform::IInputDevice::TouchEvent& event) {
 #if STICKMON_UI_ROUND_TOUCH
         if (marketStallActive()) {
             if (!Platform::display().locked() && !market_->paused() && !market_->exiting() && !GameEngine::ins().sceneFadeActive()) {
-                if(marketCareUi_.active())commitMarketCare(marketCareUi_.touch(event,GameEngine::ins().gameState()),event.timestampMs);
+                if(marketWorkshopUi_.active())commitMarketWorkshop(marketWorkshopUi_.touch(event,GameEngine::ins().gameState()),event.timestampMs);
+                else if(marketCareUi_.active())commitMarketCare(marketCareUi_.touch(event,GameEngine::ins().gameState()),event.timestampMs);
                 else if(marketTutorUi_.active())commitMarketTutor(marketTutorUi_.touch(event,GameEngine::ins().gameState()),event.timestampMs);
                 else commitMarketShop(marketShopUi_.touch(event,GameEngine::ins().gameState()),event.timestampMs);
-            } else {marketShopUi_.cancelTouch();marketTutorUi_.cancelTouch();marketCareUi_.cancelTouch();}
+            } else {marketShopUi_.cancelTouch();marketTutorUi_.cancelTouch();marketCareUi_.cancelTouch();marketWorkshopUi_.cancelTouch();}
             return true;
         }
         if (marketServicePending_) { marketUi_.cancel(); return true; }
@@ -3372,10 +3373,12 @@ void ExploreScene::render() {
 #if STICKMON_UI_ROUND_TOUCH
         if (marketStallActive()) {
             auto view = Ui::MarketWalkUi::viewport();
-            view.cameraOffsetY = marketCareUi_.active()?marketCareUi_.sceneShift(*market_,view):marketTutorUi_.active()?marketTutorUi_.sceneShift(*market_,view):marketShopUi_.sceneShift(*market_,view);
-            if(!marketCareUi_.active())view.cameraOffsetX=marketTutorUi_.active()?marketTutorUi_.sceneShiftX(*market_,view):marketShopUi_.sceneShiftX(*market_,view);
+            view.cameraOffsetY = marketWorkshopUi_.active()?marketWorkshopUi_.sceneShift(*market_,view):marketCareUi_.active()?marketCareUi_.sceneShift(*market_,view):marketTutorUi_.active()?marketTutorUi_.sceneShift(*market_,view):marketShopUi_.sceneShift(*market_,view);
+            if(marketWorkshopUi_.active())view.cameraOffsetX=marketWorkshopUi_.sceneShiftX(*market_,view);
+            else if(!marketCareUi_.active())view.cameraOffsetX=marketTutorUi_.active()?marketTutorUi_.sceneShiftX(*market_,view):marketShopUi_.sceneShiftX(*market_,view);
             Ui::MarketView::render(*market_,view,market_->timeMs(),GameEngine::ins().gameState().gameMinutesTotal);
-            if(marketCareUi_.active())marketCareUi_.render(GameEngine::ins().gameState(),&marketCoins_);
+            if(marketWorkshopUi_.active())marketWorkshopUi_.render(GameEngine::ins().gameState(),&marketCoins_);
+            else if(marketCareUi_.active())marketCareUi_.render(GameEngine::ins().gameState(),&marketCoins_);
             else if(marketTutorUi_.active())marketTutorUi_.render(GameEngine::ins().gameState(),&marketCoins_);
             else marketShopUi_.render(GameEngine::ins().gameState(),&marketCoins_);
             return;
@@ -3964,6 +3967,7 @@ bool ExploreScene::beginMarket() {
     marketUi_.setServiceSpecies(Game::MarketShop::STALL_SPECIES);
     marketUi_.setServiceSpecies(Game::MarketTutor::STALL_SPECIES);
     marketUi_.setServiceSpecies(Game::MarketCare::STALL_SPECIES);
+    marketUi_.setServiceSpecies(Game::MarketWorkshop::STALL_SPECIES);
 #endif
     AudioManager::ins().setMusic(MusicTrack::MARKET);
     phase = Phase::WALKING; cancelTouch(); prepareSurface(); return true;
@@ -3988,7 +3992,7 @@ void ExploreScene::closeMarket() {
 
 #if STICKMON_UI_ROUND_TOUCH
 void ExploreScene::resetMarketStall() {
-    marketShopUi_.close();marketTutorUi_.close();marketCareUi_.close();marketServiceSpecies_=0;
+    marketShopUi_.close();marketTutorUi_.close();marketCareUi_.close();marketWorkshopUi_.close();marketServiceSpecies_=0;
     marketCoins_.reset(GameEngine::ins().gameState().coins);
     marketServicePending_ = false;
     marketStallClockMs_ = Hal::ins().millis();
@@ -4007,6 +4011,9 @@ void ExploreScene::updateMarketStall(uint32_t nowMs) {
         const bool tutor=marketServiceSpecies_==Game::MarketTutor::STALL_SPECIES;
         const bool care=marketServiceSpecies_==Game::MarketCare::STALL_SPECIES;
         if(care&&!BuildConfig::DEBUG_FEATURES){resetMarketStall();market_->endConversation();return;}
+        if(marketServiceSpecies_==Game::MarketWorkshop::STALL_SPECIES){
+            marketUi_.cancel();market_->setDirection(-1);marketWorkshopUi_.open(state);
+        }else{
         const bool changed=care?false:tutor?Game::MarketTutor::ensurePeriod(state):Game::MarketShop::ensurePeriod(state);
         const auto gift=tutor?Game::MarketWelcome::grant(state):Game::MarketWelcome::Result::ALREADY;
         const bool saved=(!changed&&gift!=Game::MarketWelcome::Result::GRANTED)||engine.saveNow();
@@ -4019,6 +4026,7 @@ void ExploreScene::updateMarketStall(uint32_t nowMs) {
             marketTutorUi_.open(state,welcome,saved);
             if(saved&&gift==Game::MarketWelcome::Result::GRANTED)AudioManager::ins().playSfx(SfxCue::ITEM_GET);
         }else marketShopUi_.open(state,saved);
+        }
         marketCoins_.reset(state.coins);
         marketServicePending_ = false;
         marketStallClockMs_ = Hal::ins().millis();
@@ -4028,15 +4036,31 @@ void ExploreScene::updateMarketStall(uint32_t nowMs) {
     const int32_t elapsed = static_cast<int32_t>(nowMs-marketStallClockMs_);
     if (elapsed < 0) return;
     marketStallClockMs_ = nowMs;
-    if (!active) { marketShopUi_.cancelTouch();marketTutorUi_.cancelTouch();marketCareUi_.cancelTouch();return; }
+    if (!active) { marketShopUi_.cancelTouch();marketTutorUi_.cancelTouch();marketCareUi_.cancelTouch();marketWorkshopUi_.cancelTouch();return; }
     if (marketStallActive()) {
-        marketShopUi_.update(uint32_t(elapsed));marketTutorUi_.update(uint32_t(elapsed));marketCareUi_.update(uint32_t(elapsed));
+        marketShopUi_.update(uint32_t(elapsed));marketTutorUi_.update(uint32_t(elapsed));marketCareUi_.update(uint32_t(elapsed));marketWorkshopUi_.update(uint32_t(elapsed));
         marketCoins_.update(std::min<uint32_t>(uint32_t(elapsed),250));
-        SfxCue cue; if (marketShopUi_.takeSfx(cue)||marketTutorUi_.takeSfx(cue)||marketCareUi_.takeSfx(cue)) AudioManager::ins().playSfx(cue);
+        SfxCue cue; if (marketShopUi_.takeSfx(cue)||marketTutorUi_.takeSfx(cue)||marketCareUi_.takeSfx(cue)||marketWorkshopUi_.takeSfx(cue)) AudioManager::ins().playSfx(cue);
         if (!marketStallActive()) {
             market_->endConversation(); marketUi_.cancel();
             marketCoins_.reset(engine.gameState().coins);
         }
+    }
+}
+
+void ExploreScene::commitMarketWorkshop(Ui::MarketWorkshopUi::Request request,uint32_t eventMs) {
+    (void)eventMs;
+    auto& engine=GameEngine::ins();
+    if(request==Ui::MarketWorkshopUi::Request::GRANT){
+        const auto result=Game::MarketTransaction::commit(engine.gameState(),[](Game::GameState& state){return Game::MarketWorkshop::grantFrame(state);},
+            [&](){return engine.saveNow();},[](auto){});
+        if(result.result==Game::MarketWorkshop::Result::ALREADY)marketWorkshopUi_.already();
+        else marketWorkshopUi_.committed(result.status==Game::MarketTransaction::Status::COMMITTED);
+        marketStallClockMs_=Hal::ins().millis();
+    }
+    SfxCue cue;if(marketWorkshopUi_.takeSfx(cue))AudioManager::ins().playSfx(cue);
+    if(!marketWorkshopUi_.active()){
+        resetMarketStall();if(market_)market_->endConversation();marketUi_.cancel();
     }
 }
 

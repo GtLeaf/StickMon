@@ -36,6 +36,7 @@ struct HomeHudRow {
 
 // Read-only presentation data. World coordinates retain their save semantics.
 struct HomeFrame {
+    uint16_t placedFurniture = 0;
     uint32_t nowMs = 0;
     bool night = false;
     HomeActorVisual main, visitor;

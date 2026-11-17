@@ -2628,6 +2628,10 @@ void GameEngine::resetIdle(uint32_t nowMs) {
 }
 
 void GameEngine::updateIdle(uint32_t nowMs) {
+    if(currentScene&&currentScene->keepsDisplayAwake()){
+        resetIdle(nowMs);
+        return;
+    }
     uint32_t timeout = idleTimeoutMs();
     if (timeout == 0 || idleActive) return;
     int32_t elapsed = (int32_t)(nowMs - lastActivityMs);
