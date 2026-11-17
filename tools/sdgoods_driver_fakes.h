@@ -20,7 +20,7 @@ inline int failAt=0, step=0;
 inline bool shouldFail() { return failAt && ++step==failAt; }
 struct StopTask {};
 inline bool runningTask=false;
-inline int taskIterations=0;
+inline int taskIterations=0,notifications=0,blockingWaits=0;
 inline void (*task)(void*)=nullptr;
 inline void* taskContext=nullptr;
 inline bool pa=false, wifi=false, now=false;
@@ -34,16 +34,24 @@ inline void runAudio(int iterations=1) {
     runningTask=false;
 }
 }
+using TaskHandle_t=void*;
 using SemaphoreHandle_t=int*;
 inline SemaphoreHandle_t xSemaphoreCreateMutex() { static int mutex; return &mutex; }
 inline void xSemaphoreTake(SemaphoreHandle_t, int) {
     if (Fake::runningTask && Fake::taskIterations--<=0) throw Fake::StopTask{};
 }
 inline void xSemaphoreGive(SemaphoreHandle_t) {}
-inline int xTaskCreatePinnedToCore(void (*task)(void*),const char*,int,void* context,int,void*,int) {
+inline int xTaskCreatePinnedToCore(void (*task)(void*),const char*,int,void* context,int,TaskHandle_t* handle,int) {
+    if(handle)*handle=context;
     Fake::task=task; Fake::taskContext=context; return pdPASS;
 }
 inline void vTaskDelay(int) {}
+inline void xTaskNotifyGive(TaskHandle_t){++Fake::notifications;}
+inline uint32_t ulTaskNotifyTake(int,int timeout){
+    assert(timeout==portMAX_DELAY);++Fake::blockingWaits;
+    if(Fake::notifications){auto n=Fake::notifications;Fake::notifications=0;return n;}
+    throw Fake::StopTask{};
+}
 struct FakeQueue { size_t size, capacity; std::deque<std::vector<uint8_t>> data; };
 using QueueHandle_t=FakeQueue*;
 inline QueueHandle_t xQueueCreate(int capacity,size_t size) {
@@ -85,7 +93,9 @@ using i2s_chan_handle_t=FakeI2s*;
 inline FakeI2s fakeChannels[2];
 inline int i2s_new_channel(const i2s_chan_config_t* cfg,i2s_chan_handle_t* tx,i2s_chan_handle_t* rx) {
     auto* ch=&fakeChannels[cfg->id];ch->id=cfg->id;
-    if(tx)*tx=ch;if(rx)*rx=ch;return ESP_OK;
+    if(tx)*tx=ch;
+    if(rx)*rx=ch;
+    return ESP_OK;
 }
 inline int i2s_channel_init_std_mode(i2s_chan_handle_t ch,const i2s_std_config_t* config) {
     if(ch->id==0) {
@@ -135,7 +145,8 @@ inline int esp_wifi_stop() { Fake::wifi=false;return ESP_OK; }
 inline int esp_now_init() { if(Fake::shouldFail())return ESP_FAIL;Fake::now=true;return ESP_OK; }
 inline int esp_now_deinit() { Fake::now=false;Fake::peers.clear();return ESP_OK; }
 inline int esp_now_register_recv_cb(FakeReceive cb) {
-    if(Fake::shouldFail())return ESP_FAIL;fakeReceive=cb;return ESP_OK;
+    if(Fake::shouldFail())return ESP_FAIL;
+    fakeReceive=cb;return ESP_OK;
 }
 inline int esp_now_unregister_recv_cb() { fakeReceive=nullptr;return ESP_OK; }
 inline bool esp_now_is_peer_exist(const uint8_t* dest) { return Fake::peers.count({dest,dest+6}); }

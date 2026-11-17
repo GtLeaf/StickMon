@@ -5,7 +5,7 @@ foreach(DIR presentation assets core core/features hardware scenes game ui/commo
     list(APPEND GAME_SOURCES ${SOURCES})
 endforeach()
 list(FILTER GAME_SOURCES EXCLUDE REGEX "/ui/compact_touch/(HomeUi|MainMenuUi|FoodUi|MenuOverlayUi|SocialUi|HatchUi|ShopUi|BagUi|ComputerUi|TeamUi|RoomUi|ContactsUi|SettingsUi|StatusUi|MovesUi|DebugUi|ProgressionUi)[.]cpp$")
-idf_component_register(SRCS "main.cpp" "SdgoodsPlatform.cpp" "RoomSession.cpp" "Audio.cpp" "Battery.cpp" "PeerRadio.cpp" "ResourceBanks.cpp" "StorageMaintenance.cpp"
+idf_component_register(SRCS "main.cpp" "SdgoodsPlatform.cpp" "RoomSession.cpp" "Audio.cpp" "Battery.cpp" "PeerRadio.cpp" "ResourceBanks.cpp" "StorageMaintenance.cpp" "AdaptiveStandby.cpp"
     "${STICKMON_ROOT}/src/platform/api/PlatformServices.cpp"
     "${STICKMON_ROOT}/firmware/common/Rgb565Transfer.cpp"
     "${STICKMON_ROOT}/firmware/common/Qmi8658.cpp"
@@ -23,6 +23,7 @@ target_compile_definitions(${COMPONENT_LIB} PUBLIC
     STICKMON_SDGOODS_FULL_STORAGE=$<BOOL:${STICKMON_SDGOODS_FULL_STORAGE}>
     STICKMON_MUSIC_QUEUE_TARGET_BLOCKS=3
     STICKMON_DEFAULT_AUDIO_VOLUME=5 STICKMON_LOCKED_UPDATE_MS=1000
+    STICKMON_SDGOODS_ADAPTIVE_STANDBY=1
     STICKMON_SDGOODS_RIGHT_TOUCH_COMPENSATION=$<BOOL:${STICKMON_SDGOODS_RIGHT_TOUCH_COMPENSATION}>
     STICKMON_ENABLE_DEBUG_FEATURES=$<BOOL:${STICKMON_ENABLE_DEBUG_FEATURES}>
     STICKMON_ENABLE_ROOM_DIAGNOSTICS=$<BOOL:${STICKMON_ENABLE_ROOM_DIAGNOSTICS}>

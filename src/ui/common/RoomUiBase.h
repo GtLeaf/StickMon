@@ -10,6 +10,7 @@ class RoomHost : public virtual MenuPageHost {
 public:
     virtual void openRoomFood() = 0;
     virtual void openRoomShower() = 0;
+    virtual bool changeHomeFurniture(uint16_t,bool) { return false; }
 };
 
 class FoodHost : public virtual MenuPageHost {
@@ -20,6 +21,7 @@ public:
 class RoomUiBase : public Scene {
 public:
     explicit RoomUiBase(RoomHost& host) : host(host) {}
+    bool showsNotices() const { return true; }
 protected:
     RoomHost& host;
     void activateRoom(uint8_t index);

@@ -22,6 +22,7 @@ extern "C" {
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <sys/time.h>
 #include "nvs.h"
 #include "nvs_flash.h"
 }
@@ -53,8 +54,7 @@ bool SdgoodsPlatform::initialize() {
     return true;
 }
 
-bool SdgoodsPlatform::begin() {
-    if (initialized_) return true;
+void SdgoodsPlatform::beginPowerPins(){
     // Restore the latch before releasing retained holds, including USB fallback wake.
     rtc_gpio_deinit(BOARD_BAT_CONTROL_GPIO);
     rtc_gpio_deinit(BOARD_KEY_GPIO);
@@ -64,7 +64,25 @@ bool SdgoodsPlatform::begin() {
     ESP_ERROR_CHECK(gpio_config(&latch));
     ESP_ERROR_CHECK(gpio_set_level(BOARD_BAT_CONTROL_GPIO, BOARD_BAT_CONTROL_LATCH_LEVEL));
     ESP_ERROR_CHECK(gpio_hold_dis(BOARD_BAT_CONTROL_GPIO));
+    gpio_config_t off{};off.mode=GPIO_MODE_OUTPUT;
+    off.pin_bit_mask=(1ULL<<BOARD_AUDIO_PA_EN_GPIO)|(1ULL<<BOARD_LCD_GPIO_BACKLIGHT);
+    ESP_ERROR_CHECK(gpio_config(&off));
+    ESP_ERROR_CHECK(gpio_set_level(BOARD_AUDIO_PA_EN_GPIO,1-BOARD_AUDIO_PA_EN_ACTIVE_LEVEL));
+    ESP_ERROR_CHECK(gpio_set_level(static_cast<gpio_num_t>(BOARD_LCD_GPIO_BACKLIGHT),BOARD_LCD_BACKLIGHT_LEDC_INVERT));
+    gpio_hold_dis(BOARD_AUDIO_PA_EN_GPIO);
+    gpio_hold_dis(static_cast<gpio_num_t>(BOARD_LCD_GPIO_BACKLIGHT));
     gpio_deep_sleep_hold_dis();
+    gpio_config_t key{};key.pin_bit_mask=1ULL<<BOARD_KEY_GPIO;key.mode=GPIO_MODE_INPUT;key.pull_up_en=GPIO_PULLUP_ENABLE;
+    ESP_ERROR_CHECK(gpio_config(&key));
+}
+bool SdgoodsPlatform::beginStandbyStorage(){
+    beginPowerPins();setCpuPowerSave(true);
+    if(!initialize())return false;
+    resourcesReady_=resources_.mount();return resourcesReady_;
+}
+bool SdgoodsPlatform::begin() {
+    if (initialized_) return true;
+    beginPowerPins();
     if (!initialize()) return false;
     setCpuPowerSave(false);
     if (!audio_.begin()) Platform::errorLine("[SDGOODS] speaker unavailable; continuing silently");
@@ -79,6 +97,7 @@ bool SdgoodsPlatform::begin() {
     key.pull_up_en = GPIO_PULLUP_ENABLE;
     ESP_ERROR_CHECK(gpio_config(&key));
     powerButton_.begin(gpio_get_level(BOARD_KEY_GPIO) == BOARD_KEY_ACTIVE_LEVEL, millis());
+    beginKeyInterrupt();
     resourcesReady_=resources_.mount();
     initialized_ = true;
     Platform::logLine("[SDGOODS] native 360x360 RGB565; PSRAM frame + two 8-row DMA strips; no LVGL");
@@ -201,6 +220,29 @@ bool SdgoodsPlatform::saveTouchCalibration(const Platform::TouchTransform& trans
 uint32_t SdgoodsPlatform::micros() const { return static_cast<uint32_t>(esp_timer_get_time()); }
 uint32_t SdgoodsPlatform::millis() const { return static_cast<uint32_t>(esp_timer_get_time() / 1000); }
 void SdgoodsPlatform::sleepMs(uint32_t ms) { vTaskDelay(std::max<TickType_t>(1, pdMS_TO_TICKS(ms))); }
+uint64_t SdgoodsPlatform::standbyMicros()const{
+    timeval now{};gettimeofday(&now,nullptr);return uint64_t(now.tv_sec)*1000000+now.tv_usec;
+}
+bool SdgoodsPlatform::powerKeyActive()const{return powerButton_.down()||gpio_get_level(BOARD_KEY_GPIO)==BOARD_KEY_ACTIVE_LEVEL;}
+void SdgoodsPlatform::beginKeyInterrupt(){
+    const auto err=gpio_install_isr_service(0);
+    if(err!=ESP_OK&&err!=ESP_ERR_INVALID_STATE){Platform::errorLine("[Standby] key ISR unavailable");return;}
+    inputTask_=xTaskGetCurrentTaskHandle();
+    ESP_ERROR_CHECK(gpio_set_intr_type(BOARD_KEY_GPIO,GPIO_INTR_ANYEDGE));
+    ESP_ERROR_CHECK(gpio_isr_handler_add(BOARD_KEY_GPIO,[](void* data){
+        auto* self=static_cast<SdgoodsPlatform*>(data);BaseType_t higher=pdFALSE;
+        vTaskNotifyGiveFromISR(self->inputTask_,&higher);if(higher)portYIELD_FROM_ISR();
+    },this));
+    ESP_ERROR_CHECK(gpio_wakeup_enable(BOARD_KEY_GPIO,GPIO_INTR_LOW_LEVEL));
+    ESP_ERROR_CHECK(esp_sleep_enable_gpio_wakeup());
+}
+void SdgoodsPlatform::waitStandby(uint32_t ms,bool allowLightSleep){
+    if(powerKeyActive()){ms=std::min<uint32_t>(ms,5);allowLightSleep=false;}
+    if(lightSleepAllowed_!=allowLightSleep){lightSleepAllowed_=allowLightSleep;setCpuPowerSave(locked_);}
+    // An ISR failure keeps the former debounce polling rather than losing wake.
+    if(!inputTask_){sleepMs(std::min<uint32_t>(ms,40));return;}
+    ulTaskNotifyTake(pdTRUE,std::max<TickType_t>(1,pdMS_TO_TICKS(ms)));
+}
 void SdgoodsPlatform::write(const char* text, size_t length) { if (text) std::fwrite(text, 1, length, stdout); }
 void SdgoodsPlatform::flush() { std::fflush(stdout); }
 
@@ -282,6 +324,7 @@ void SdgoodsPlatform::setBrightness(uint8_t value) {
 void SdgoodsPlatform::setLocked(bool value) {
     battery_.resetChargingEstimate();
     locked_ = value;
+    lightSleepAllowed_=false;
     touchBlocked_ = true; cancelPending_ = true;
     touch_.sample(nullptr, millis());
     audio_.suspend(value);
@@ -320,7 +363,7 @@ void SdgoodsPlatform::setCpuPowerSave(bool value) {
     esp_pm_config_t config{};
     config.max_freq_mhz = value ? LOCKED_CPU_MHZ : CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
     config.min_freq_mhz = config.max_freq_mhz;
-    config.light_sleep_enable = false;
+    config.light_sleep_enable = value&&lightSleepAllowed_;
     const auto err = esp_pm_configure(&config);
     if (err != ESP_OK) Platform::errorf("[SDGOODS] cpu %uMHz failed: %s\n", unsigned(config.max_freq_mhz), esp_err_to_name(err));
 #else
@@ -353,7 +396,8 @@ void SdgoodsPlatform::prepareSleep() {
     radio_.end();
     audio_.stop();
     ESP_ERROR_CHECK(gpio_hold_en(BOARD_AUDIO_PA_EN_GPIO));
-    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_, false));
+    if(panel_)ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_, false));
+    ESP_ERROR_CHECK(gpio_hold_en(static_cast<gpio_num_t>(BOARD_LCD_GPIO_BACKLIGHT)));
     ESP_ERROR_CHECK(esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL));
     ESP_ERROR_CHECK(rtc_gpio_pullup_en(BOARD_KEY_GPIO));
     ESP_ERROR_CHECK(rtc_gpio_pulldown_dis(BOARD_KEY_GPIO));

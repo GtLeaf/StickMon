@@ -5,10 +5,14 @@ void GameClockService::start(uint32_t nowMs, uint32_t gameMinutes) {
 }
 
 uint32_t GameClockService::minutesAt(uint32_t nowMs, float speed) const {
-    uint32_t elapsedMs = nowMs - anchorMs_;
-    uint32_t scaledMinutes = static_cast<uint32_t>(
-        static_cast<double>(elapsedMs) * static_cast<double>(speed) / 60000.0);
-    return anchorMinutes_ + scaledMinutes;
+    return uint32_t(millisecondsAt(nowMs,speed)/60000);
+}
+uint64_t GameClockService::millisecondsAt(uint32_t nowMs,float speed)const{
+    return uint64_t(anchorMinutes_)*60000+fractionMs_+
+        uint64_t(double(uint32_t(nowMs-anchorMs_))*double(speed));
+}
+void GameClockService::setMilliseconds(uint32_t nowMs,uint64_t gameMs){
+    anchorMs_=nowMs;anchorMinutes_=uint32_t(gameMs/60000);fractionMs_=uint32_t(gameMs%60000);
 }
 
 bool GameClockService::sync(uint32_t nowMs, float speed,
@@ -22,4 +26,5 @@ bool GameClockService::sync(uint32_t nowMs, float speed,
 void GameClockService::set(uint32_t nowMs, uint32_t gameMinutes) {
     anchorMs_ = nowMs;
     anchorMinutes_ = gameMinutes;
+    fractionMs_=0;
 }

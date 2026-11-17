@@ -39,6 +39,7 @@ public:
     void onExit() override;
     SceneUpdateResult update(uint32_t nowMs, float dtSeconds) override;
     void render() override;
+    bool keepsDisplayAwake() const override;
     bool onButton(const ButtonEvent& event) override;
     bool touchNavigation() const override;
     bool onTouch(const Platform::IInputDevice::TouchEvent& event) override;
@@ -146,6 +147,7 @@ private:
     Scene* delegatedPage();
     void openRoomFood() override;
     void openRoomShower() override;
+    bool changeHomeFurniture(uint16_t id,bool place) override;
     bool selectPageFood(uint8_t index) override;
     void openComputerSocial() override;
     void openComputerContacts() override;

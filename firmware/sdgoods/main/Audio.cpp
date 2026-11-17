@@ -41,7 +41,7 @@ bool Audio::begin() {
     config.gpio_cfg.din = GPIO_NUM_NC;
     if (i2s_channel_init_std_mode(tx_, &config) == ESP_OK &&
         xTaskCreatePinnedToCore([](void* context) { static_cast<Audio*>(context)->run(); },
-            "sg_audio", 4096, this, 2, nullptr, 1) == pdPASS) {
+            "sg_audio", 4096, this, 2, &worker_, 1) == pdPASS) {
         Platform::logLine("[SDGOODS] I2S speaker ready; initial volume=0 PA=OFF; microphone on demand");
         return true;
     }
@@ -73,7 +73,8 @@ void Audio::run() {
             amplifier(false);
             if (txEnabled_) { i2s_channel_disable(tx_); txEnabled_ = false; }
             // Muted playback still retires queued PCM at its normal rate.
-            vTaskDelay(pdMS_TO_TICKS(active ? 16 : 10));
+            if(active)vTaskDelay(pdMS_TO_TICKS(16));
+            else ulTaskNotifyTake(pdTRUE,portMAX_DELAY);
             continue;
         }
         if (active) AudioPolicy::stereo(mono, stereo, PcmMixer::MIX_BLOCK_SAMPLES, volume);
@@ -100,6 +101,7 @@ void Audio::run() {
 void Audio::setVolume(uint8_t value) {
     volume_ = std::min<uint8_t>(value, 100);
     if (!volume_) amplifier(false);
+    if(worker_)xTaskNotifyGive(worker_);
     Platform::logf("[SDGOODS] volume=%u; mute PA=%s\n", unsigned(volume()), volume() ? "eligible" : "OFF");
 }
 void Audio::suspend(bool value) {
@@ -111,6 +113,7 @@ void Audio::suspend(bool value) {
         amplifier(false); mixer_.stopAll(); publishQueued();
     }
     xSemaphoreGive(mutex_);
+    if(worker_)xTaskNotifyGive(worker_);
 }
 bool Audio::playPcmU8(const uint8_t* data, size_t count, uint32_t rate) {
     return playPcmU8Channel(data, count, rate, 0, false);
@@ -122,6 +125,7 @@ bool Audio::playPcmU8Channel(const uint8_t* data, size_t count, uint32_t rate, u
         {data, count, rate, 100, false}, replace ? PcmMixer::StartMode::REPLACE : PcmMixer::StartMode::APPEND);
     publishQueued();
     xSemaphoreGive(mutex_);
+    if(ok&&worker_)xTaskNotifyGive(worker_);
     return ok;
 }
 void Audio::setChannelVolume(uint8_t ch, uint8_t value) {

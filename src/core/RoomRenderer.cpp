@@ -6,6 +6,7 @@
 #include "hardware/Hal.h"
 #include "platform/api/PlatformServices.h"
 #include "presentation/PixelRenderer.h"
+#include "presentation/FurnitureArt.h"
 
 #include <cmath>
 #include <cstdlib>
@@ -19,6 +20,7 @@ uint32_t roomBufferPixels = 0;
 bool roomBufferValid = false;
 bool roomBufferNight = false;
 uint32_t roomBufferRevision = 0;
+uint16_t roomBufferFurniture = 0;
 
 bool ensureRoomBuffer() {
     RoomResource& room = RoomResource::ins();
@@ -88,10 +90,11 @@ void applyNightPatch() {
     }
 }
 
-bool prepare(bool night) {
+bool prepare(bool night,uint16_t placedFurniture) {
+    placedFurniture &= 1u;
     if (!ensureRoomBuffer()) return false;
     if (roomBufferValid && roomBufferNight == night &&
-        roomBufferRevision == RoomResource::ins().revision()) return true;
+        roomBufferRevision == RoomResource::ins().revision()&&roomBufferFurniture==placedFurniture) return true;
     uint32_t started = Platform::clock().millis();
     if (!decodeBase()) {
         Platform::errorLine("[RoomRenderer] base decode failed");
@@ -120,6 +123,16 @@ bool prepare(bool night) {
                            ((rgb[i * 3 + 1] & 0xfc) << 3) | (rgb[i * 3 + 2] >> 3);
         Platform::memory().release(rgb);
     } else if (night) applyNightPatch();
+    if(placedFurniture&1u){
+        const int scale=room.artScale();
+        const int x=193*scale,y=54*scale,size=21*scale;
+        for(int row=0;row<size;++row)for(int col=0;col<size;++col){
+            const int px=x+col,py=y+row+col/3;
+            if(px>=0&&px<room.artWidth()&&py>=0&&py<room.artHeight())
+                roomBuffer[py*room.artWidth()+px]=FurnitureArt::framePixel(col*112/size,row*112/size,night);
+        }
+    }
+    roomBufferFurniture=placedFurniture;
     roomBufferNight = night;
     roomBufferRevision = RoomResource::ins().revision();
     roomBufferValid = true;
@@ -234,9 +247,9 @@ int16_t screenY(float worldY, float cameraY) {
     return viewport().y + static_cast<int16_t>(roundf((worldY - clampCameraY(cameraY)) * PIXEL_SCALE));
 }
 
-bool draw(float cameraY, bool night, float cameraX) {
+bool draw(float cameraY, bool night, float cameraX,uint16_t placedFurniture) {
     RoomResource::ins().begin();
-    if (!prepare(night)) {
+    if (!prepare(night,placedFurniture)) {
         PixelRenderer::clear(PixelRenderer::rgb(16, 18, 24));
         return false;
     }
@@ -249,12 +262,28 @@ bool draw(float cameraY, bool night, float cameraX) {
 bool drawViewport(int16_t destinationX, int16_t destinationY,
                   uint16_t viewportWidth, uint16_t viewportHeight,
                   int16_t cameraX, int16_t cameraY, bool night,
-                  uint8_t pixelScale) {
+                  uint8_t pixelScale,uint16_t placedFurniture) {
     RoomResource::ins().begin();
-    if (!prepare(night)) return false;
+    if (!prepare(night,placedFurniture)) return false;
     return drawViewportBuffer(destinationX, destinationY,
                               viewportWidth, viewportHeight,
                               cameraX, cameraY, pixelScale);
+}
+
+bool drawPreview(int16_t x,int16_t y,uint16_t width,uint16_t height,bool night,uint16_t placedFurniture){
+    RoomResource::ins().begin();
+    if(!width||!height||width>480||!prepare(night,placedFurniture))return false;
+    auto& room=RoomResource::ins();auto& c=PixelRenderer::canvas();
+    const int drawWidth=std::min<int>(width,int(height)*room.artWidth()/room.artHeight());
+    const int drawHeight=drawWidth*room.artHeight()/room.artWidth();
+    const int left=x+(width-drawWidth)/2,top=y+(height-drawHeight)/2;
+    uint16_t row[480];
+    for(int dy=0;dy<drawHeight;++dy){
+        const int sy=dy*room.artHeight()/drawHeight;
+        for(int dx=0;dx<drawWidth;++dx)row[dx]=roomBuffer[sy*room.artWidth()+dx*room.artWidth()/drawWidth];
+        c.pushImage(left,top+dy,drawWidth,1,row);
+    }
+    return true;
 }
 
 }  // namespace RoomRenderer

@@ -362,7 +362,7 @@ void drawTutorial(const HomeFrame& frame) {
 
 void drawLayer(HomeLayer layer, const HomeFrame& frame, const Camera& camera) {
     switch (layer) {
-    case HomeLayer::BACKGROUND: RoomRenderer::draw(camera.y, frame.night, camera.x); break;
+    case HomeLayer::BACKGROUND: RoomRenderer::draw(camera.y, frame.night, camera.x,frame.placedFurniture); break;
     case HomeLayer::FOOD: drawFood(frame, camera); break;
     case HomeLayer::MAIN_SHADOW: drawShadow(frame.main, frame.night, camera); break;
     case HomeLayer::VISITOR_SHADOW: drawShadow(frame.visitor, frame.night, camera); break;
