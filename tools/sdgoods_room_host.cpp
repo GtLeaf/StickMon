@@ -28,6 +28,7 @@
 #include "core/RoomResource.h"
 #include "core/FontResource.h"
 #include "core/SaveCodec.h"
+#include "save_schema1_fabricator.h"
 #include "core/SaveManager.h"
 #include "core/ContentStore.h"
 #include "core/ContentValidation.h"
@@ -94,16 +95,22 @@ public:
         const auto pending = fs::path(file.string() + ".tmp");
         writeFile(pending, data, size);
         fs::rename(pending, file);
+        ++successfulWrites;
         return true;
     }
-    bool removeBlob(const char* ns, const char* key) override { fs::remove(path(ns, key)); return true; }
+    bool removeBlob(const char* ns, const char* key) override {
+        if (failWrites) return false;
+        fs::remove(path(ns, key)); return true;
+    }
     bool clearNamespace(const char* ns) override {
+        if (failWrites) return false;
         const std::string prefix = std::string(ns) + "--";
         for (const auto& entry : fs::directory_iterator(root_))
             if (entry.path().filename().string().rfind(prefix, 0) == 0) fs::remove(entry.path());
         return true;
     }
     bool failWrites = false;
+    unsigned successfulWrites = 0;
 private:
     fs::path root_;
 };
@@ -423,6 +430,101 @@ int main(int argc, char** argv) {
         }
         SaveManager writer;
         assert(writer.begin() && writer.saveSnapshot(state, MainSceneViewState{}));
+    }
+    if (mode.rfind("save-startup-", 0) == 0) {
+        // Match app_main: the NVS write gate stays closed until resources and
+        // session state pass boot validation, then save the migrated snapshot.
+        Game::GameState prior;
+        Game::HatchService::initializeNewGame(prior);
+        assert(Game::HatchService::finish(prior, 0));
+        prior.coins = 4321;
+        prior.settings.volume = mode == "save-startup-normalized" ? 255 : 17;
+        prior.tutorialFlags = Game::TUTORIAL_ALL_FLAGS;
+        uint8_t encoded[SaveCodec::MAX_ENCODED_BYTES];
+        size_t length = 0;
+        assert(SaveCodec::encode(prior, MainSceneViewState{}, 42, encoded, sizeof(encoded), length));
+        std::vector<uint8_t> bytes(encoded, encoded + length);
+        const bool fresh = mode == "save-startup-fresh";
+        const bool invalid = mode == "save-startup-invalid";
+        const bool newer = mode == "save-startup-newer";
+        if (mode.rfind("save-startup-schema-", 0) == 0) {
+            const auto schema = unsigned(std::stoi(mode.substr(std::strlen("save-startup-schema-"))));
+            assert(SaveTestUtil::fabricateLegacySchemaBlob(encoded, length, bytes, schema));
+        }
+        if (invalid) bytes.back() ^= 1;
+        if (newer) {
+            bytes[4] = SaveCodec::SCHEMA_VERSION + 1;
+            const auto crc = SaveTestUtil::blobCrc16(bytes.data(), bytes.size());
+            bytes[14] = uint8_t(crc); bytes[15] = uint8_t(crc >> 8);
+        }
+        if (!fresh) {
+            assert(blobs.writeBlob("stickmon", "state_a", bytes.data(), bytes.size()));
+            assert(blobs.writeBlob("stickmon", "state_b", bytes.data(), bytes.size()));
+            if (mode == "save-startup-redundant") {
+                auto bad = bytes; bad.back() ^= 1;
+                assert(blobs.writeBlob("stickmon", "state_a", bad.data(), bad.size()));
+            }
+        }
+        const uint8_t calibration[]{1, 4, 9, 16};
+        assert(blobs.writeBlob("touchcal", "probe", calibration, sizeof(calibration)));
+        const auto snapshot = [&]() {
+            std::vector<std::pair<std::string, std::vector<uint8_t>>> files;
+            for (const auto& f : fs::directory_iterator(argv[4]))
+                files.emplace_back(f.path().filename().string(), readFile(f.path()));
+            std::sort(files.begin(), files.end());
+            return files;
+        };
+        const auto before = snapshot();
+        const auto writes = blobs.successfulWrites;
+        blobs.failWrites = true;
+        Sdgoods::RoomSession startup;
+        const bool started = startup.begin(false);
+        assert(snapshot() == before && blobs.successfulWrites == writes);
+        writeFile(output / (mode + ".log"), desktop.logs().data(), desktop.logs().size());
+        if (invalid || newer) {
+            assert(!started && !startup.ready());
+            assert(!startup.save() && snapshot() == before);
+            std::puts("PASS invalid/newer save rejected with all original blobs retained");
+            return 0;
+        }
+        assert(started && startup.ready());
+        auto& engine = GameEngine::ins();
+        assert(!engine.saveWritesBlocked);
+        if (fresh) assert(!engine.gameState().oobeDone && engine.currentId == SceneID::HATCH);
+        else {
+            assert(engine.gameState().oobeDone && engine.currentId == SceneID::MAIN);
+            assert(engine.gameState().coins == 4321);
+            assert(engine.gameState().team[0].speciesId == prior.team[0].speciesId);
+            const auto volume = prior.settings.volume > 100 ? 100 : prior.settings.volume;
+            assert(engine.gameState().settings.volume == volume && Platform::audio().volume() == volume);
+        }
+        assert(!startup.save() && snapshot() == before);
+        // A persistent post-validation failure must not overwrite the old data.
+        if (mode == "save-startup-write-fail") {
+            assert(!startup.lastSaveOk());
+            std::puts("PASS boot accepted valid state but failed writes preserve original blobs");
+            return 0;
+        }
+        blobs.failWrites = false;
+        assert(startup.save() && startup.lastSaveOk());
+        assert(blobs.successfulWrites > writes);
+        Game::GameState restored{}; MainSceneViewState restoredView{};
+        SaveManager reader; SaveManager::LoadStatus status{}; bool normalized = false;
+        assert(reader.begin() && reader.load(restored, restoredView, &normalized, &status));
+        assert(status == SaveManager::LoadStatus::LOADED && !normalized);
+        assert(restored.coins == engine.gameState().coins);
+        assert(restored.settings.volume == engine.gameState().settings.volume);
+        // Saves alternate A/B; a second successful commit refreshes both slots.
+        assert(startup.save());
+        for (const auto* key : {"state_a", "state_b"}) {
+            const auto stored = readFile(blobs.path("stickmon", key));
+            assert(stored.size() >= SaveCodec::HEADER_BYTES);
+            assert(stored[4] == SaveCodec::SCHEMA_VERSION && stored[5] == 0);
+        }
+        assert(readFile(blobs.path("touchcal", "probe")) ==
+               std::vector<uint8_t>(calibration, calibration + sizeof(calibration)));
+        std::puts("PASS read-only startup preserves old data; post-validation save commits current schema");
+        return 0;
     }
     Sdgoods::RoomSession session;
     if (mode == "reject") {

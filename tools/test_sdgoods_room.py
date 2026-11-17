@@ -18,7 +18,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path,
                         default=ROOT / '.stick-local/artifacts/sdgoods-room-proof-20261025')
-    parser.add_argument('--journey', choices=('onboard-fresh', 'learn-move', 'bag-flow', 'shop-tabs', 'battery-hud', 'audio-resources', 'settings-audio', 'locked-standby'), help='Run one focused interaction journey')
+    parser.add_argument('--journey', choices=('onboard-fresh', 'learn-move', 'bag-flow', 'shop-tabs', 'battery-hud', 'audio-resources', 'settings-audio', 'locked-standby', 'save-startup'), help='Run one focused interaction journey')
     parser.add_argument('--debug', action='store_true',
                         help='Check the debug menu and exploration with debug/trace enabled')
     parser.add_argument('--external-content',action='store_true',
@@ -90,6 +90,13 @@ def main():
                 run('catalog-invalid',output/f'{blobs.name}-{case}')
             finally:path.write_bytes(original)
         print('PASS missing/truncated/count-invalid coin ranges and semantic species/boss rejection')
+    if args.journey == 'save-startup':
+        cases = ['current', 'normalized', 'fresh', 'invalid', 'newer', 'redundant', 'write-fail']
+        cases += [f'schema-{schema}' for schema in range(1, 9)]
+        for case in cases:
+            run(f'save-startup-{case}', output / f'{blobs.name}-save-startup-{case}')
+        print('PASS gated startup, schemas 1..8, normalization, fresh/invalid/newer, redundancy and write failures')
+        return
     if args.journey:
         run(args.journey, output / f'{blobs.name}-{args.journey}')
         return

@@ -1,3 +1,17 @@
+2026-11-17 谷仓刷机后Save unavailable启动误判（已构建签名Release，未刷机）：
+实际11/17刷机日志的擦写范围未覆盖NVS；错误来自RoomSession::begin(false)在平台写门
+关闭时将normalized=true直接拒绝，有效旧schema迁移写入被禁止后会触发，正常字段
+规范化也可复现。现允许可读存档先在RAM中迁移／规范化，仍拒绝INVALID／NEWER_VERSION
+及无有效快照；资源／精灵／启动验证通过后才由app_main开写门并session.save提交，
+保留失败旧blob重试和校准，不修改SaveManager格式、分区或刷机脚本。改前真实引擎
+用有效存档＋关写门复现失败；修后ASan/UBSan 15例覆盖schema1..8／当前／规范化／新档／
+损坏／新版／单副本坏／写失败，开门前全blob字节不变，开门后A/B轮换保存并读回通过。
+刷机安装器23例、SaveCodec／SaveMigration通过，Release app1474272B、SHA256
+ eaa51050a176de434f7143c25855a1f1550b1540e24c9c9ebb92f627e20933a0。
+包.stick-local/firmware/sdgoods/flash-release-16m-20261117-002403-2360/，证据
+.stick-local/artifacts/sdgoods-save-startup-20261117/verification.json；未访问设备／串口，
+未采实际启动日志，实机恢复待刷入验收，不将主机复现等同设备存档已恢复。
+
 2026-11-16 心之鳞片描述更正：按绿宝石原意改为「美丽的鳞片，在爱好者中有着相当高的人气。」，替换上一轮耿鬼用途提示；共享分行与AMOLED说明同步。仅补者字到16px／32px及圆屏16px A4字库（共300B），原1254字逐项不变。真实AMOLED背包三入口返回、全状态不变／隐藏使用区／字形完整与全部48道具详情布局绘制通过。此轮未构建设备固件／刷机，后续安装需同步字库资源；上一轮已构建固件不含此次文案。证据.stick-local/artifacts/heart-scale-description-20261116/。
 
 2026-11-16 心之鳞片背包返回修复（已构建，未刷机）：旧AMOLED背包跳TEAM/moves覆盖单层subSceneReturn为BAG，回包后不能退出，真实App已复现。现只开物品详情，禁用隐藏使用区域及确认，保持滚动与原返回目标；共享／圆屏／compact移除背包回忆入口，说明指向市集耿鬼。耿鬼回忆服务保留，成功消耗1枚。真实AMOLED Release/Debug验证三入口×重复查看、完整状态不变、退出背包及主菜单；谷仓完整bag-flow ASan/UBSan、耿鬼规则／真实旅程、控制器／背包／物品／详情绘制／架构通过，16/32px字形齐全且无需更新资源，已检查两屏截图。微雪V2 lite Release、谷仓Release构建通过，未构建V1／OSTB，未刷机／提交／推送。保留前序未提交市集开放及能量方块5口改动。证据.stick-local/artifacts/heart-scale-bag-fix-20261115/verification.json。
