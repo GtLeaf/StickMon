@@ -3373,6 +3373,7 @@ void ExploreScene::render() {
         if (marketStallActive()) {
             auto view = Ui::MarketWalkUi::viewport();
             view.cameraOffsetY = marketCareUi_.active()?marketCareUi_.sceneShift(*market_,view):marketTutorUi_.active()?marketTutorUi_.sceneShift(*market_,view):marketShopUi_.sceneShift(*market_,view);
+            if(!marketCareUi_.active())view.cameraOffsetX=marketTutorUi_.active()?marketTutorUi_.sceneShiftX(*market_,view):marketShopUi_.sceneShiftX(*market_,view);
             Ui::MarketView::render(*market_,view,market_->timeMs(),GameEngine::ins().gameState().gameMinutesTotal);
             if(marketCareUi_.active())marketCareUi_.render(GameEngine::ins().gameState(),&marketCoins_);
             else if(marketTutorUi_.active())marketTutorUi_.render(GameEngine::ins().gameState(),&marketCoins_);

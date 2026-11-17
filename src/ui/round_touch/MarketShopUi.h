@@ -17,6 +17,7 @@
 #include "ui/common/MarketCoinHud.h"
 #include "ui/common/MarketBoxPerformance.h"
 #include "ui/common/MarketView.h"
+#include "ui/round_touch/MarketStallUi.h"
 
 // Native 360px round layout; shared game services own all stock and pricing.
 namespace Ui {
@@ -30,10 +31,10 @@ public:
         uint32_t period = 0;
         Game::MarketSupply::Advice advice = Game::MarketSupply::Advice::NONE;
     };
-    struct Rect { int x, y, w, h; bool contains(int px, int py) const { return px >= x && py >= y && px < x + w && py < y + h; } };
+    using Rect = RoundMarketStall::Rect;
 
-    static constexpr int W = 360, H = 360, PANEL_Y = 144, ROW_Y = 152, ROW_H = 64, GREET_H = 136;
-    static constexpr int LIST_TOP = ROW_Y, LIST_BOTTOM = 304;
+    static constexpr int W = 360, H = 360, PANEL_Y = 132, ROW_Y = 140, ROW_H = 72, GREET_H = 140;
+    static constexpr int LIST_TOP = ROW_Y, LIST_BOTTOM = 360;
     static constexpr uint32_t GREET_HOLD_MS = 600, GREET_IN_MS = 360, OPEN_MS = 420, CLOSE_MS = 520;
 
     bool takeSfx(SfxCue& cue) { return feedback_.takeSfx(cue); }
@@ -44,11 +45,7 @@ public:
     uint8_t selected() const { return slot_; }
     int scrollOffset() const { return scroll_; }
     int panelTop() const { return page_ == Page::GREET ? H - GREET_H + offset() : PANEL_Y + offset(); }
-    // Vertical offset of the coin badge: hidden while greeting, sliding in
-    // and out with the panel.
-    int hudOffset() const { return MarketStallMotion::hudOffset(page_ == Page::GREET, transition_ == Transition::OPENING,
-                                                                 transition_ == Transition::CLOSING, transitionMs_,
-                                                                 duration()); }
+    int hudOffset() const { return transition_==Transition::CLOSING?tween(0,-64):0; }
 
     void open(const Game::GameState& state, bool initialized = true) {
         *this = RoundMarketShopUi{};
@@ -97,19 +94,16 @@ public:
     }
 
     int sceneShift(const Market::Session& s, const MarketView::Viewport& v) const {
-        const int camera = v.cameraY(s);
-        int lowest = -100000;
-        for (int role = 0; role < 4; ++role) {
-            const int i = s.conversationActor(role);
-            if (i >= 0) lowest = std::max(lowest, v.pixel(s.pose(i).y) - camera);
-        }
-        if (lowest < -10000) return 0;
-        const int greeting = std::clamp(lowest - (H - 148), 0, 120);
-        const int opened = std::clamp(lowest - (PANEL_Y - 28), -240, 240);
-        if (transition_ == Transition::GREET_IN) return tween(0, greeting);
-        if (transition_ == Transition::OPENING) return tween(greeting, opened);
-        if (transition_ == Transition::CLOSING) return tween(opened, 0);
-        return page_ == Page::GREET ? greeting : opened;
+        const int shift=RoundMarketStall::sceneShift(s,v);
+        if(transition_==Transition::GREET_IN)return tween(0,shift);
+        if(transition_==Transition::CLOSING)return tween(shift,0);
+        return shift;
+    }
+    int sceneShiftX(const Market::Session& s,const MarketView::Viewport& v) const {
+        const int shift=RoundMarketStall::sceneShiftX(s,v);
+        if(transition_==Transition::GREET_IN)return tween(0,shift);
+        if(transition_==Transition::CLOSING)return tween(shift,0);
+        return shift;
     }
 
     Request touch(const Platform::IInputDevice::TouchEvent& e, const Game::GameState& state) {
@@ -119,7 +113,7 @@ public:
         if (pending_ || page_ == Page::CLOSED || animating()) { cancelTouch(); return none; }
         if (page_ == Page::BOX_ARRIVE || page_ == Page::BOX_OPEN) { cancelTouch(); return none; }
         if (page_ == Page::BOX_WAIT) {
-            const int target = Rect{4, PANEL_Y, W-8, H-PANEL_Y-4}.contains(e.x,e.y) ? PRIMARY : -1;
+            const int target = RoundMarketStall::PANEL.contains(e.x,e.y) ? PRIMARY : -1;
             if (tap_.update(e,target) == PRIMARY) { changePage(Page::BOX_OPEN); boxMs_ = 0; }
             return none;
         }
@@ -153,7 +147,7 @@ public:
 
     void render(const Game::GameState& s, const MarketCoinMotion* coins = nullptr) const {
         if (page_ == Page::CLOSED) return;
-        if (page_ == Page::GREET) { renderGreet(); return; }
+        if (page_ == Page::GREET) { renderGreet(); RoundMarketStall::hud(s.coins,coins,hudOffset()); return; }
         panel();
         if (page_ == Page::MENU) renderMenu();
         else if (page_ == Page::SHELF) renderShelf(s);
@@ -163,26 +157,22 @@ public:
         else if (page_ == Page::ERROR) { drawBody(MarketShopText::SAVE_FAILED,{68,204,224,52},true,4,red()); button(wide(),"离开",true); }
         else if (page_ == Page::BOX_ARRIVE) {
             renderConfirm(s,true);
-            PixelRenderer::canvas().blendRoundRectAlphaNative(5,PANEL_Y+1,350,232,18,paper(),MarketBoxPerformance::detailFade(boxMs_));
+            PixelRenderer::canvas().blendRoundRectAlphaNative(49,PANEL_Y+1,262,234,13,paper(),MarketBoxPerformance::detailFade(boxMs_));
             MarketBoxPerformance::arrival(boxMs_,boxStage);
         }
         else if (page_ == Page::BOX_WAIT) {
             MarketBoxPerformance::waiting(boxMs_,boxStage);
-            ctext(284,MarketShopText::BOX_OPEN,16,MarketBoxPerformance::detail::fade(89,105,88,
+            ctext(284,MarketShopText::BOX_OPEN,32,MarketBoxPerformance::detail::fade(89,105,88,
                 MarketBoxPerformance::detail::smooth(MarketBoxPerformance::detail::p(boxMs_,0,220))));
         }
         else if (page_ == Page::BOX_OPEN) { MarketBoxPerformance::opening(boxMs_,rewardItem_,boxStage); renderBoxText(boxMs_); }
         else renderResult(s);
-        const int hudY=52+hudOffset();
-        auto& c=PixelRenderer::canvas();
-        c.fillRoundRect(56,hudY-4,96,32,6,paper());
-        PixelRenderer::textSmooth(64,hudY+6,MarketShopText::TITLE,ink(),20);
-        MarketCoinHud::render(s.coins,coins,hudY,20,{288,24,32,36});
+        RoundMarketStall::hud(s.coins,coins,hudOffset());
     }
 
 private:
     static bool inside(int x,int y) { return (x-180)*(x-180)+(y-180)*(y-180)<180*180; }
-    inline static constexpr MarketBoxPerformance::Layout boxStage{180,232,88,178,270,192};
+    inline static constexpr MarketBoxPerformance::Layout boxStage{180,224,88,164,262,170};
     enum class Transition : uint8_t { NONE, GREET_IN, OPENING, CLOSING };
     enum Target { CLOSE = 10, BACK, PRIMARY, OUTSIDE, OPEN_SHELF, OPEN_ADVICE, ADVICE0 = 40 };
     Page page_ = Page::CLOSED;
@@ -202,15 +192,14 @@ private:
     const char* greet_ = MarketShopText::GREET;
     mutable TextBlock bodyText_;
 
-    Rect row(int i) const { return {60, ROW_Y + i * ROW_H - scroll_, 240, ROW_H}; }
-    static Rect back() { return {84, 288, 88, 40}; }
-    static Rect primary() { return {188, 288, 88, 40}; }
-    static Rect wide() { return {80, 288, 200, 40}; }
-    static Rect menuRow(int index) { return {64, 166 + index * 68, 232, 56}; }
-    static Rect adviceRow(int index) { return {64, 162 + index * 46, 232, 46}; }
-    static constexpr int maxScroll() { return Game::MarketShop::ROW_COUNT * ROW_H - (LIST_BOTTOM - LIST_TOP); }
+    Rect row(int i) const { return {54, ROW_Y + i * ROW_H - scroll_, 252, ROW_H}; }
+    static Rect wide() { return RoundMarketStall::ACTION; }
+    static Rect purchase() { auto r=wide();r.y+=10;return r; }
+    static Rect menuRow(int index) { return {58, 170 + index * 80, 244, 80}; }
+    static Rect adviceRow(int index) { return {58, 142 + index * 64, 244, 64}; }
+    static constexpr int maxScroll() { return Game::MarketShop::ROW_COUNT * ROW_H + 56 - (LIST_BOTTOM - LIST_TOP); }
     bool listDrag(const Platform::IInputDevice::TouchEvent& e) {
-        return scrollMotion_.touch(e, {60, LIST_TOP, 240, LIST_BOTTOM - LIST_TOP},
+        return scrollMotion_.touch(e, {54, LIST_TOP, 252, LIST_BOTTOM - LIST_TOP},
                                    maxScroll(), scroll_, tap_);
     }
 
@@ -245,7 +234,7 @@ private:
 
     int hit(int x, int y, const Game::GameState& s) const {
         // The exposed market above the panel is a separate tap target.
-        if (x >= 0 && x < W && y >= 0 && y < PANEL_Y) return OUTSIDE;
+        if (!RoundMarketStall::PANEL.contains(x,y)) return OUTSIDE;
         if (page_ == Page::ERROR) return wide().contains(x,y) ? CLOSE : -1;
         if (page_ == Page::SHELF) {
             if (y < LIST_TOP || y >= LIST_BOTTOM) return -1;
@@ -262,8 +251,7 @@ private:
             for (int i=0;i<3;++i) if (adviceRow(i).contains(x,y)) return ADVICE0+i;
         }
         if (page_ == Page::CONFIRM) {
-            if (back().contains(x, y)) return BACK;
-            return primary().contains(x, y) ? PRIMARY : -1;
+            return purchase().contains(x, y) && Game::MarketShop::check(s,slot_,period_)==Game::MarketShop::Result::OK ? PRIMARY : -1;
         }
         if (page_ == Page::RESULT || page_ == Page::ADVICE_DONE) return wide().contains(x, y) ? PRIMARY : -1;
         return -1;
@@ -311,27 +299,12 @@ private:
     static uint16_t line(){return rgb(186,196,160);}
     static uint16_t red(){return rgb(183,56,56);}
     static uint16_t off(){return rgb(225,227,207);}
-    static int width(const char* s,int size) {
-        int w=0;for(const auto* p=reinterpret_cast<const uint8_t*>(s);*p;){
-            const int n=*p<0x80?1:*p<0xe0?2:*p<0xf0?3:4;
-            w+=n==1?size/2:size;p+=n;
-        }return w;
-    }
-    void text(int x,int y,const char* s,int size=20,uint16_t color=0) const {
-        PixelRenderer::textSmooth(x,y+offset(),s,color?color:ink(),uint8_t(size));
-    }
-    void ctext(int y,const char* s,int size=20,uint16_t color=0) const {text((W-width(s,size))/2,y,s,size,color);}
-    void rtext(int x,int y,const char* s,int size=20,uint16_t color=0) const {text(x-width(s,size),y,s,size,color);}
-    void panel() const {
-        auto& c=PixelRenderer::canvas();const int y=PANEL_Y+offset();
-        c.fillRoundRect(4,y,W-8,232,18,paper());c.drawRoundRect(4,y,W-8,232,18,edge());
-    }
-    void button(Rect r,const char* label,bool primary,bool disabled=false) const {
-        auto& c=PixelRenderer::canvas();const int y=r.y+offset();
-        c.fillRoundRect(r.x,y,r.w,r.h,8,disabled?off():primary?edge():paper());
-        c.drawRoundRect(r.x,y,r.w,r.h,8,disabled?line():edge());
-        text(r.x+(r.w-width(label,20))/2,r.y+(r.h-20)/2,label,20,disabled?muted():primary?paper():ink());
-    }
+    static int width(const char* s,int size) {return RoundMarketStall::width(s,size);}
+    void text(int x,int y,const char* s,int size=32,uint16_t color=0) const {RoundMarketStall::text(x,y+offset(),s,size,color);}
+    void ctext(int y,const char* s,int size=32,uint16_t color=0) const {text((W-width(s,size))/2,y,s,size,color);}
+    void rtext(int x,int y,const char* s,int size=32,uint16_t color=0) const {text(x-width(s,size),y,s,size,color);}
+    void panel() const {RoundMarketStall::panel(offset());}
+    void button(Rect r,const char* label,bool primary,bool disabled=false) const {RoundMarketStall::button(r,label,primary,disabled,offset());}
     void icon(Game::ItemId id,int cx,int cy) const {
         if(!GameAssets::drawItemIcon48(id,cx,cy+offset()))PixelRenderer::canvas().fillCircle(cx,cy+offset(),14,line());
     }
@@ -339,57 +312,47 @@ private:
         if(box)GameAssets::drawCentered(GameAssets::Kind::MARKET_MYSTERY_BOX,cx,cy+offset());
         else icon(id,cx,cy);
     }
-    void drawBody(const char* value,Rect r,bool centered=false,int gap=2,uint16_t color=0) const {
-        TextBlock::Options options;options.width=r.w;options.maxHeight=r.h;
-        options.font=BitmapText::Font::PX16;options.lineGap=uint16_t(gap);
-        options.align=centered?TextBlock::Align::CENTER:TextBlock::Align::LEFT;
-        bodyText_.setText(value);bodyText_.setOptions(options);
-        bodyText_.draw(PixelRenderer::canvas(),r.x,r.y+offset(),color?color:ink());
+    void drawBody(const char* value,Rect r,bool centered=false,int=2,uint16_t color=0,int maxSize=32) const {
+        r.y+=offset();RoundMarketStall::body(bodyText_,value,r,centered,color,false,0,maxSize);
     }
-    void renderGreet() const {
-        auto& c=PixelRenderer::canvas();const int y=H-GREET_H+offset();
-        c.fillRoundRect(4,y,W-8,160,18,paper());c.drawRoundRect(4,y,W-8,160,18,edge());
-        drawBody(greet_,{72,H-GREET_H+18,216,70},true,4);
-    }
+    void renderGreet() const {RoundMarketStall::dialogue(greet_,offset());}
     void renderShelf(const Game::GameState& s) const {
+        constexpr int priceSize=24;
         auto& c=PixelRenderer::canvas();
         const int left=c.clipLeft(),top=c.clipTop(),right=c.clipRight(),bottom=c.clipBottom();
-        const int clipX=std::max(left,60),clipY=std::max(top,LIST_TOP+offset());
-        c.setClipRect(clipX,clipY,std::max(0,std::min(right,300)-clipX),std::max(0,std::min(bottom,LIST_BOTTOM+offset())-clipY));
+        const int clipX=std::max(left,54),clipY=std::max(top,LIST_TOP+offset());
+        c.setClipRect(clipX,clipY,std::max(0,std::min(right,306)-clipX),std::max(0,std::min(bottom,LIST_BOTTOM+offset())-clipY));
         for(uint8_t i=0;i<Game::MarketShop::ROW_COUNT;++i){
+            const auto r=row(i);if(r.y+ROW_H<=LIST_TOP||r.y>=LIST_BOTTOM)continue;
             const bool box=i==Game::MarketShop::BOX;const auto id=Game::MarketShop::item(s,i);
-            const bool empty=!box&&id==Game::ItemId::COUNT,sold=empty||!s.marketSeason.stock[i];const Rect r=row(i);
+            const bool empty=!box&&id==Game::ItemId::COUNT,sold=empty||!s.marketSeason.stock[i];
             if(sold)c.fillRect(r.x,r.y+offset(),r.w,r.h,off());
-            slotIcon(empty?Game::ItemId::HEART_SCALE:id,box,86,r.y+32);
+            slotIcon(empty?Game::ItemId::HEART_SCALE:id,box,88,r.y+36);
             const char* name=empty?MarketShopText::RARE:box?MarketShopText::BOX:Game::ShopService::shortName(id);
-            text(120,r.y+7,name,20,sold?muted():ink());
             char price[20];if(empty)std::snprintf(price,sizeof(price),"--");
             else std::snprintf(price,sizeof(price),"%u",Game::MarketShop::priceForSlot(s,i));
-            text(120,r.y+34,price,16,sold?muted():ink());
-            if(sold){
-                c.blendRectAlphaNative(62,r.y+8+offset(),48,48,off(),160);
-                c.drawFastHLine(120,r.y+17+offset(),width(name,20),muted());
-                c.drawFastHLine(120,r.y+42+offset(),width(price,16),muted());
-            }
+            const int available=std::min(100,292-width(price,priceSize)-12-128);
+            const int size=width(name,32)<=available?32:width(name,24)<=available?24:16;
+            text(128,r.y+(ROW_H-size)/2,name,size,sold?muted():ink());
+            rtext(292,r.y+(ROW_H-priceSize)/2,price,priceSize,sold?muted():ink());
+            if(sold){c.blendRectAlphaNative(64,r.y+12+offset(),48,48,off(),160);
+                c.drawFastHLine(128,r.y+36+offset(),width(name,size),muted());
+                c.drawFastHLine(292-width(price,priceSize),r.y+36+offset(),width(price,priceSize),muted());}
             if(i+1<Game::MarketShop::ROW_COUNT)c.drawFastHLine(68,r.y+ROW_H-1+offset(),224,line());
         }
         c.setClipRect(left,top,right-left,bottom-top);
-        constexpr int h=LIST_BOTTOM-LIST_TOP;const int thumb=h*h/(Game::MarketShop::ROW_COUNT*ROW_H);
-        c.fillRoundRect(298,LIST_TOP+scroll_*(h-thumb)/maxScroll()+offset(),3,thumb,1,line());
+        constexpr int h=LIST_BOTTOM-LIST_TOP;const int total=Game::MarketShop::ROW_COUNT*ROW_H+56,thumb=h*h/total;
+        c.fillRect(298,LIST_TOP+offset(),3,h,off());
+        c.fillRect(298,LIST_TOP+scroll_*(h-thumb)/maxScroll()+offset(),3,thumb,line());
     }
     void listRow(Rect r,const char* label,Game::ItemId id,bool selected,bool divider,int menuIcon=-1) const {
         auto& c=PixelRenderer::canvas();const int cy=r.y+r.h/2;
-        if(selected)c.fillRoundRect(r.x,r.y+2+offset(),r.w,r.h-4,8,rgb(224,235,201));
+        if(selected)c.fillRoundRect(r.x,r.y+3+offset(),r.w,r.h-6,8,rgb(224,235,201));
         if(menuIcon>=0)MarketStallIcons::draw(menuIcon==1,92,cy+offset());
-        else {
-            const auto kind=id==Game::ItemId::COUNT?GameAssets::Kind::MARKET_MYSTERY_BOX:GameAssets::itemKind(id);
-            // Advice rows are shorter than shelf rows; all three illustrations
-            // use the same32px box rather than touching their dividers.
-            const float size=id==Game::ItemId::POTION?32.f/36.f:32.f/48.f;
-            GameAssets::drawCentered(kind,92,cy+offset(),size);
-        }
-        text(126,cy-10,label);
-        if(selected){const int y=cy+offset();c.drawLine(274,y,278,y+4,muted());c.drawLine(278,y+4,286,y-5,muted());}
+        else slotIcon(id,id==Game::ItemId::COUNT,92,cy);
+        text(132,cy-16,label);
+        if(selected){const auto green=rgb(65,132,83);const int y=cy+offset();
+            c.fillRect(276,y,4,4,green);c.fillRect(280,y+4,4,4,green);c.fillRect(284,y,4,4,green);c.fillRect(288,y-4,4,4,green);}
         if(divider)c.drawFastHLine(68,r.y+r.h-1+offset(),224,line());
     }
     void renderMenu() const {
@@ -400,45 +363,40 @@ private:
         const char* labels[]={MarketShopText::ADVICE_EXPLORE,MarketShopText::ADVICE_GROWTH,MarketShopText::ADVICE_RARE};
         const Game::ItemId icons[]={Game::ItemId::POTION,Game::ItemId::PROTEIN,Game::ItemId::COUNT};
         for(int i=0;i<3;++i)listRow(adviceRow(i),labels[i],icons[i],s.marketSupply.pendingAdvice==uint8_t(i+1),i<2);
-        if(error_)drawBody(error_,{72,307,216,18},true,2,red());
+        if(error_)drawBody(error_,{108,326,144,18},true,2,red(),16);
     }
     void renderAdviceDone() const {
-        drawBody(MarketShopText::ADVICE_DONE,{68,204,224,52},true,4);
+        drawBody(MarketShopText::ADVICE_DONE,{68,198,224,72},true);
         button(wide(),MarketShopText::HOME,true);
     }
     void renderConfirm(const Game::GameState& s,bool bought=false) const {
         const auto id=Game::MarketShop::item(s,slot_);const bool box=slot_==Game::MarketShop::BOX;
         const auto price=Game::MarketShop::priceForSlot(s,slot_);
-        if(!bought)slotIcon(id,box,88,178);
-        text(124,154,box?MarketShopText::BOX:Game::ShopService::shortName(id));rtext(292,180,"×1");
-        char value[32];std::snprintf(value,sizeof(value),"%u",price);text(124,180,value,16,muted());
+        if(!bought)slotIcon(id,box,88,164);
+        const char* name=box?MarketShopText::BOX:Game::ShopService::shortName(id);
+        text(124,148,name,width(name,32)<=112?32:width(name,28)<=112?28:24);rtext(292,148,"×1",32);
         const auto result=bought?Game::MarketShop::Result::OK:Game::MarketShop::check(s,slot_,period_);
-        char why[64]{};
-        if(result==Game::MarketShop::Result::NO_COINS)std::snprintf(why,sizeof(why),MarketShopText::NO_COINS,static_cast<unsigned long>(price-s.coins));
-        else if(result!=Game::MarketShop::Result::OK)std::snprintf(why,sizeof(why),"%s",reason(result,0));
-        const char* shown=error_?error_:why[0]?why:nullptr;
-        drawBody(shown?shown:box?MarketShopText::BOX_LINE1:Game::ShopService::shortDescription(id),{68,208,224,52},false,2,shown?red():ink());
-        char stock[32];std::snprintf(stock,sizeof(stock),MarketShopText::STOCK,bought?stockBefore_:s.marketSeason.stock[slot_]);ctext(264,stock);
-        button(back(),MarketShopText::BACK,false);
-        // Price already appears above; the compact action stays inside its
-        // circular safe area even for the largest prices.
-        button(primary(),result==Game::MarketShop::Result::OK?"购买":MarketShopText::UNAVAILABLE,true,result!=Game::MarketShop::Result::OK||pending_);
+        const char* shown=error_?error_:result!=Game::MarketShop::Result::OK&&result!=Game::MarketShop::Result::NO_COINS?reason(result,0):nullptr;
+        if(shown)drawBody(shown,{68,184,224,20},false,2,red(),16);
+        drawBody(box?MarketShopText::BOX_LINE1:Game::ShopService::shortDescription(id),{68,206,224,36});
+        char stock[32];std::snprintf(stock,sizeof(stock),MarketShopText::STOCK,bought?stockBefore_:s.marketSeason.stock[slot_]);ctext(244,stock);
+        char label[32];if(result==Game::MarketShop::Result::OK||result==Game::MarketShop::Result::NO_COINS)std::snprintf(label,sizeof(label),MarketShopText::BUY,price);
+        else std::snprintf(label,sizeof(label),"%s",MarketShopText::UNAVAILABLE);
+        button(purchase(),label,true,result!=Game::MarketShop::Result::OK||pending_);
     }
     void renderResult(const Game::GameState& s) const {
         const auto id=rewardItem_==Game::ItemId::COUNT?Game::MarketShop::item(s,slot_):rewardItem_;
-        icon(id,W/2,192);
-        if(slot_==Game::MarketShop::BOX){renderBoxText(MarketBoxPerformance::OPEN_MS);return;}
-        char got[96];std::snprintf(got,sizeof(got),MarketShopText::GOT,Game::ShopService::shortName(id));
-        drawBody(got,{68,226,224,34},true);ctext(264,MarketShopText::GOT_LINE2,16);
-        button(wide(),MarketShopText::CONTINUE,true);
+        if(slot_==Game::MarketShop::BOX){MarketBoxPerformance::detail::reward(id,boxStage.rewardY,1,1,boxStage.cx);renderBoxText(MarketBoxPerformance::OPEN_MS);return;}
+        icon(id,W/2,160);char got[96];std::snprintf(got,sizeof(got),MarketShopText::GOT,Game::ShopService::shortName(id));
+        drawBody(got,{68,192,224,68},true);ctext(260,MarketShopText::GOT_LINE2,16);button(wide(),MarketShopText::CONTINUE,true);
     }
     void renderBoxText(uint32_t ms) const {
         using namespace MarketBoxPerformance::detail;
         char got[96];std::snprintf(got,sizeof(got),MarketShopText::BOX_GOT,Game::ShopService::shortName(rewardItem_),rewardAmount_);
         const float show=smooth(p(ms,900,1120));
-        if(show>0){drawBody(got,{68,226,224,34},true,2,fade(40,56,80,show));ctext(264,MarketShopText::GOT_LINE2,16,fade(89,105,88,show));}
+        if(show>0){drawBody(got,{68,200,224,56},true,2,fade(40,56,80,show));ctext(260,MarketShopText::GOT_LINE2,16,fade(89,105,88,show));}
         if(ms>1050){button(wide(),MarketShopText::CONTINUE,true);
-            PixelRenderer::canvas().blendRectAlphaNative(wide().x,wide().y+offset(),wide().w,wide().h,paper(),uint8_t(std::lround((1-smooth(p(ms,1050,1250)))*255)));}
+            PixelRenderer::canvas().blendRoundRectAlphaNative(wide().x,wide().y+offset(),wide().w,wide().h,10,paper(),uint8_t(std::lround((1-smooth(p(ms,1050,1250)))*255)));}
     }
 };
 } // namespace Ui

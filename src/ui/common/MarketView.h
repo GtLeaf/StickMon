@@ -22,6 +22,7 @@ struct Viewport {
     bool freeWalk=false;
     int controlScale=1;
     int cameraOffsetY=0;
+    int cameraOffsetX=0;
     int pixel(float world) const {return int(std::lround(world*scale));}
     struct Button { int x,y,width,height; };
     int footer() const { return freeWalk?0:round?80:scale==2?56:24; }
@@ -32,8 +33,9 @@ struct Viewport {
     }
     int cameraX(const Market::Session& s) const {
         const int world=pixel(Market::CELL_WIDTH*26);
-        return std::clamp(pixel(s.playerPose().x)-width/2,
-                          std::min(0,(world-width)/2),std::max(0,world-width));
+        const int low=std::min(0,(world-width)/2),high=std::max(0,world-width);
+        const int walking=std::clamp(pixel(s.playerPose().x)-width/2,low,high);
+        return std::clamp(walking+cameraOffsetX,low,high);
     }
     int cameraY(const Market::Session& s) const {
         const int world=pixel(Market::CELL_HEIGHT*26);

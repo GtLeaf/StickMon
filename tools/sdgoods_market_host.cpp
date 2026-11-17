@@ -83,6 +83,7 @@ static void savedMatches(GameEngine& engine){
 }
 using UI=Ui::RoundMarketShopUi;
 using Page=UI::Page;
+static void stallCameraBounds(const Market::Session& session);
 struct UiDriver {
     Game::GameState state{}; UI ui; uint32_t time=1000;
     UiDriver(){state.coins=20000;Game::MarketShop::ensurePeriod(state);ui.open(state);advance(4000);}
@@ -94,7 +95,7 @@ struct UiDriver {
         // Leaving the circle cancels this gesture rather than selecting a row.
         assert(ui.page()==Page::SHELF);
         for(int n=0;n<4;++n){event(Type::DOWN,180,280);event(Type::MOVE,180,160,100);event(Type::UP,180,160,200);advance(1000);}
-        assert(ui.scrollOffset()==360);tap(180,270);assert(ui.page()==Page::CONFIRM&&ui.selected()==Game::MarketShop::BOX);}
+        assert(ui.scrollOffset()==412);tap(180,270);assert(ui.page()==Page::CONFIRM&&ui.selected()==Game::MarketShop::BOX);}
 };
 static void controllerTests(){
     UiDriver d;assert(d.ui.page()==Page::MENU);d.event(Type::UP,180,190);assert(d.ui.page()==Page::MENU);
@@ -122,7 +123,7 @@ static void controllerTests(){
     b.event(Type::DOWN,180,232);b.event(Type::MOVE,180,200);b.event(Type::UP,180,232);assert(b.ui.page()==Page::BOX_WAIT);
     b.event(Type::DOWN,180,232);b.ui.cancelTouch();b.event(Type::UP,180,232);assert(b.ui.page()==Page::BOX_WAIT);
     b.tap(180,232);assert(b.ui.page()==Page::BOX_OPEN);b.advance(1249);assert(b.ui.page()==Page::BOX_OPEN);b.advance(1);assert(b.ui.page()==Page::RESULT);
-    assert(!std::memcmp(&paid,&b.state,sizeof(paid)));b.event(Type::UP,180,308);assert(b.ui.page()==Page::RESULT);b.tap(180,308);assert(b.ui.page()==Page::SHELF&&b.ui.scrollOffset()==360);
+    assert(!std::memcmp(&paid,&b.state,sizeof(paid)));b.event(Type::UP,180,308);assert(b.ui.page()==Page::RESULT);b.tap(180,308);assert(b.ui.page()==Page::SHELF&&b.ui.scrollOffset()==412);
     std::puts("round-market: native UI inertia/brake/circle, advice, failed save, explicit box and once-only state OK");
 }
 static void capture(const std::string& out,const char* name){
@@ -144,7 +145,7 @@ struct Journey {
         tap(180,304);assert(scene.marketServicePending_&&scene.market_->conversing()&&!scene.marketUi_.dragging);
         advance(4000);assert(scene.marketShopUi_.page()==(initialized?Page::MENU:Page::ERROR)&&!scene.marketServicePending_);}
     void shelf(){tap(180,190);assert(scene.marketShopUi_.page()==Page::SHELF);}
-    void toBox(){for(int n=0;n<4;++n){event(Type::DOWN,180,280);event(Type::MOVE,180,160,100);event(Type::UP,180,160,200);advance(1000);}assert(scene.marketShopUi_.scrollOffset()==360);tap(180,270);assert(scene.marketShopUi_.selected()==Game::MarketShop::BOX&&scene.marketShopUi_.page()==Page::CONFIRM);}
+    void toBox(){for(int n=0;n<4;++n){event(Type::DOWN,180,280);event(Type::MOVE,180,160,100);event(Type::UP,180,160,200);advance(1000);}assert(scene.marketShopUi_.scrollOffset()==412);tap(180,270);assert(scene.marketShopUi_.selected()==Game::MarketShop::BOX&&scene.marketShopUi_.page()==Page::CONFIRM);}
 };
 template<class Stall> static void renderContract(Stall& ui,const Game::GameState& state,const Ui::MarketCoinMotion* coins=nullptr){
     auto& c=PixelRenderer::canvas();const auto old=Platform::display().frameBuffer();std::vector<uint16_t> pixels(360*360),expected(360*360);
@@ -160,6 +161,7 @@ template<class Stall> static void renderContract(Stall& ui,const Game::GameState
 }
 static void journeyTests(DesktopPlatform& desktop,GameEngine& engine,Blobs& blobs,Display& display,const std::string& out){
     engine.switchScene(SceneID::EXPLORE,false);auto& scene=*static_cast<ExploreScene*>(engine.currentScene.get());assert(scene.beginMarket());Journey j{desktop,engine,scene,out};auto& state=engine.gameState();
+    stallCameraBounds(*scene.market_);
     j.advance(1000);
     state.marketSeason.periodDay=Game::MARKET_PERIOD_NONE;assert(engine.saveNow());
     blobs.failAll=true;j.open(false);assert(state.marketSeason.periodDay==Game::MARKET_PERIOD_NONE);j.shot("00-init-failed");
@@ -203,6 +205,7 @@ static void journeyTests(DesktopPlatform& desktop,GameEngine& engine,Blobs& blob
 
 #include "ui/round_touch/ExploreSelectUi.h"
 #include "sdgoods_market_tutor_tests.h"
+#include "sdgoods_market_layout_tests.h"
 #include "sdgoods_market_care_tests.h"
 #include "sdgoods_market_entry_lock_tests.h"
 #include "sdgoods_explore_card_tests.h"
@@ -239,6 +242,7 @@ int main(int argc,char**argv){
     assert(GameAssets::drawCentered(GameAssets::Kind::MARKET_MYSTERY_BOX,180,180));
     assert(Ui::RoundExplore::PREVIOUS_BOUNDS.y+Ui::RoundExplore::PREVIOUS_BOUNDS.height/2==180&&Ui::RoundExplore::NEXT_BOUNDS.y+Ui::RoundExplore::NEXT_BOUNDS.height/2==180);
     exploreCardTests(desktop,engine,argv[2]);
+    stallLayoutTests(state,argv[2]);
     controllerTests();journeyTests(desktop,engine,blobs,display,argv[2]);
     tutorJourney(desktop,engine,blobs,display,argv[2]);
     careJourney(desktop,engine,blobs,display,argv[2]);
