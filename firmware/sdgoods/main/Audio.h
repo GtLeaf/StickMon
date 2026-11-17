@@ -6,6 +6,7 @@
 #include "driver/i2s_std.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 
 namespace Sdgoods {
 class Audio final : public Platform::IAudioDevice {
@@ -40,6 +41,7 @@ private:
     std::atomic<uint8_t> queued_[CHANNEL_COUNT]{};
     std::atomic<bool> recording_{false}, microphoneOn_{false}, suspended_{false};
     bool txEnabled_ = false;  // Owned by the audio task.
+    TaskHandle_t worker_=nullptr;
     uint32_t microphoneRate_ = 16000;
 };
 }  // namespace Sdgoods

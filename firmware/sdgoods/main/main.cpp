@@ -2,6 +2,7 @@
 #include "RoomSession.h"
 #include "PowerActions.h"
 #include "SdgoodsPlatform.h"
+#include "AdaptiveStandby.h"
 #include "game/GameRandom.h"
 #include "core/UiStrings.h"
 #include "core/BuildConfig.h"
@@ -21,7 +22,6 @@ namespace {
 Sdgoods::SdgoodsPlatform board;
 Sdgoods::RoomSession session;
 ContentStore catalog;
-constexpr uint32_t LOCKED_LOOP_MS = 40;
 void recovery(const char* reason) {
     esp_ota_img_states_t state;
     if(esp_ota_get_state_partition(esp_ota_get_running_partition(),&state)==ESP_OK &&
@@ -34,6 +34,7 @@ void recovery(const char* reason) {
 
 extern "C" void app_main() {
     Platform::bind(board.serviceBundle());
+    auto standbyBoot=Sdgoods::resumeStandbyBoot(board,catalog);
     if (!board.begin()) {
         Platform::errorLine("[SDGOODS] board initialization failed; no game started");
         return;
@@ -51,6 +52,11 @@ extern "C" void app_main() {
         Platform::errorLine("[SDGOODS] save unavailable; original data retained");
         recovery("Save unavailable - retained");
     }
+    if(standbyBoot.restored){
+        auto& engine=GameEngine::ins();
+        if(standbyBoot.pendingState){engine.gameState()=*standbyBoot.pendingState;standbyBoot.pendingState.reset();}
+        engine.adaptiveStandbyRestore(standbyBoot.context,false);engine.adaptiveStandbyEnd();
+    }
     if(!ResourcePack::ins().active() || !FontResource::ins().loaded() || !RoomResource::ins().available())
         recovery("Critical resources unavailable");
     const auto& state=GameEngine::ins().gameState();
@@ -61,8 +67,11 @@ extern "C" void app_main() {
     if(!Sdgoods::confirmStorageBoot()) recovery("Boot validation failed");
     board.enableSaveWrites(true);
     if(!session.save()) recovery("Save write failed - retained");
+    Sdgoods::StandbyRetention retention;retention.clear();
+    Sdgoods::AdaptiveStandby standby(board,session,GameEngine::ins(),retention);
     for (;;) {
         board.pollInputs();
+        standby.beforePowerActions();
 #if STICKMON_ENABLE_ROOM_DIAGNOSTICS
         static uint32_t lastBoardDiagnostic = 0;
         const uint32_t now = board.millis();
@@ -78,8 +87,9 @@ extern "C" void app_main() {
         AudioManager::ins().setMusicSuspended(board.locked());
         Sdgoods::pollMaintenanceConsole(board,session,true);
         if (board.powerKeyHeld()) board.sleepMs(5);
+        else if(board.locked())standby.poll();
         else session.poll();
-        // Locked: the engine steps once a second; poll the key at debounce pace.
-        if (board.locked()) board.sleepMs(LOCKED_LOOP_MS);
+        // GPIO notification interrupts the policy wait for key debounce.
+        if (board.locked()) standby.wait();
     }
 }

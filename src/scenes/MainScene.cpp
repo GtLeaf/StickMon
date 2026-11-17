@@ -742,6 +742,13 @@ void MainScene::onExit() {
     }
 }
 
+bool MainScene::standbySafe() const {
+    return progressionModal == ProgressionModal::NONE &&
+        contactDialog == ContactDialog::NONE && contactGuestMotion == ContactGuestMotion::NONE &&
+        visitDeparture == VisitDeparture::NONE && doorTransition == DoorTransitionMode::NONE &&
+        pairInteraction == PairInteraction::NONE;
+}
+
 bool MainScene::onBeforeSave() {
     if (doorTransition == DoorTransitionMode::NONE) {
         persistViewState(Hal::ins().millis());

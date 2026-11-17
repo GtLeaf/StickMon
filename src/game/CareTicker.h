@@ -93,6 +93,8 @@ struct CareTickAccumulators {
     uint16_t hpRecoveryMinuteAcc = 0;
     uint16_t satietyDecayUnitAcc[TEAM_CAP] = {};
     bool satietyDecayWasSleeping[TEAM_CAP] = {};
+    // Opt-in timeline fraction: 1728000 units per satiety point. Not save schema.
+    uint32_t satietyFraction[TEAM_CAP] = {};
 };
 
 struct CareTickResult {
@@ -134,7 +136,8 @@ inline CareTickResult applyCareMinutes(GameState& state,
                                        CareTickAccumulators& acc,
                                        uint32_t realElapsedMin,
                                        uint32_t gameElapsedMin,
-                                       bool homeRecovery) {
+                                       bool homeRecovery,
+                                       bool updateSatiety = true) {
     CareTickResult result{};
     uint16_t hpRecoveryTicks = 0;
     if (homeRecovery) {
@@ -195,7 +198,7 @@ inline CareTickResult applyCareMinutes(GameState& state,
     for (uint8_t i = 0; i < state.teamCount && i < Game::TEAM_CAP; ++i) {
         MonsterRuntime& mon = state.team[i];
         const SpeciesCareProfile careProfile = speciesCareProfileFor(mon.speciesId);
-        if (mon.origin != Origin::VISITOR) {
+        if (updateSatiety && mon.origin != Origin::VISITOR) {
             if (!careProfile.satietyDecays) {
                 acc.satietyDecayUnitAcc[i] = 0;
                 acc.satietyDecayWasSleeping[i] = false;

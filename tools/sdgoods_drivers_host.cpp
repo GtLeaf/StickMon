@@ -91,16 +91,16 @@ int main() {
             Sdgoods::AudioPolicy::stereo(pcm, stereo, 5, volume);
             for (unsigned i=0; i<5; ++i) {
                 assert(stereo[i*2]==stereo[i*2+1]);
-                assert(stereo[i*2]>=-16056 && stereo[i*2]<=16055);
+                assert(stereo[i*2]>=-6553 && stereo[i*2]<=6553);
                 if (!volume) assert(stereo[i*2]==0);
             }
             assert(stereo[0]>previous); previous=stereo[0];
-            assert(stereo[4]==int(volume)*49 && stereo[6]==-int(volume)*49);
+            assert(stereo[4]==int(volume)*20 && stereo[6]==-int(volume)*20);
         }
         Sdgoods::AudioPolicy::stereo(pcm, stereo, 5, 255);
-        assert(stereo[0]==16055 && stereo[2]==-16056);
-        assert(stereo[4]==4900 && stereo[6]==-4900 && stereo[8]==0);
-        std::puts("PASS speaker gain: 101 distinct levels, 49% amplitude ceiling, stereo polarity, silence and out-of-range clamp");
+        assert(stereo[0]==6553 && stereo[2]==-6553);
+        assert(stereo[4]==2000 && stereo[6]==-2000 && stereo[8]==0);
+        std::puts("PASS speaker gain: 101 distinct levels, 20% amplitude ceiling, stereo polarity, silence and out-of-range clamp");
     }
     Allocator allocator; Sdgoods::Audio audio(allocator);
     assert(audio.begin() && !Fake::pa && audio.volume()==0 && Fake::stereoRate==16000);
@@ -111,10 +111,15 @@ int main() {
     assert(audio.queuedPcm(1)==1); // one block partially retired at normal pace
     audio.setVolume(50); Fake::runAudio();
     assert(Fake::pa && Fake::i2sWrites==1 && fakeChannels[0].enabled);
-    for(auto s:Fake::lastWrite)assert(s==7965); // 32512 PCM x 50% slider x 49% cap
+    for(auto s:Fake::lastWrite)assert(s==3251); // 32512 PCM x 50% slider x 20% cap
     audio.setVolume(0);assert(!Fake::pa);Fake::runAudio();
     assert(Fake::i2sWrites==1 && !fakeChannels[0].enabled && audio.volume()==0);
+    const auto notifications=Fake::notifications,waits=Fake::blockingWaits;
     audio.suspend(true);assert(!audio.playing() && !Fake::pa);
+    assert(Fake::notifications>notifications);
+    Fake::runAudio(20);assert(Fake::blockingWaits>waits);
+    assert(!fakeChannels[0].enabled);
+
     assert(!audio.playPcmU8(samples.data(),samples.size(),16000));
     audio.suspend(false);assert(audio.volume()==0);
     assert(audio.playPcmU8(samples.data(),samples.size(),16000));
