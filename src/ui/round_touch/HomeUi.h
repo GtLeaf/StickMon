@@ -13,7 +13,7 @@ public:
     void onExit() override;
     void render() override;
     bool roomVisualFrozen() const override { return photoFrame_.active(); }
-    void closeTransientOverlay() override { photoFrame_.close(); }
+    void closeTransientOverlay() override;
     bool onTouch(const Platform::IInputDevice::TouchEvent& event) override;
     void cancelTouch() override;
     void focus(float x, float y) { focusCamera(x, y, 180); }
@@ -28,5 +28,6 @@ protected:
     void drawContact(const HomeFrame& frame) override;
 private:
     HomePhotoFrame photoFrame_;
+    bool wallFramePressed_ = false;
 };
 }  // namespace Ui

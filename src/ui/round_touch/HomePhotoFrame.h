@@ -24,11 +24,11 @@ public:
 private:
     static constexpr int WALL_PHOTO_SIZE = 13;
     Photos::Library library_;
-    Photos::PixelBuffer background_, image_, thumbnails_;
-    uint16_t wallPhoto_[WALL_PHOTO_SIZE * WALL_PHOTO_SIZE] = {};
+    Photos::PixelBuffer background_, image_, pickerImages_;
+    uint16_t wallPhoto_[2][WALL_PHOTO_SIZE * WALL_PHOTO_SIZE] = {};
     uint64_t binding_ = 0, imageId_ = 0;
     unsigned selection_ = 0;
-    bool validThumb_[Photos::CAPACITY] = {};
+    bool validPickerImage_[Photos::CAPACITY] = {};
     bool active_ = false, picking_ = false;
     bool wallPhotoValid_ = false;
     bool backgroundReady_ = false, backgroundSwapped_ = false;
@@ -46,7 +46,7 @@ private:
     void confirm();
     void setNotice(Photos::Result result);
     void cacheWallPhoto(const uint16_t* pixels, int width);
-    const uint16_t* thumbnail(unsigned index) const;
+    const uint16_t* pickerImage(unsigned index) const;
 };
 
 }  // namespace Ui

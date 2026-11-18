@@ -26,6 +26,13 @@ MenuGrid::Rect wallFrameBounds(const HomeUiContent::Camera& camera) {
             FurnitureArt::FRAME_WORLD_SIZE + FurnitureArt::FRAME_WORLD_SIZE/3};
 }
 
+MenuGrid::Rect wallFrameHitBounds(const HomeUiContent::Camera& camera) {
+    constexpr int size = 44;
+    const auto frame = wallFrameBounds(camera);
+    return {frame.x + frame.width/2 - size/2,
+            frame.y + frame.height/2 - size/2, size, size};
+}
+
 bool visibleToast(const char* text) {
     return text && std::strcmp(text, Ui::Menu::FOOD_ADDED) != 0;
 }
@@ -62,12 +69,33 @@ void HomeUi::render() {
 
 bool HomeUi::onTouch(const Platform::IInputDevice::TouchEvent& event) {
     if (photoFrame_.active()) return photoFrame_.touch(event);
+    using Type = Platform::IInputDevice::TouchType;
+    if (event.type == Type::CANCEL) {
+        cancelTouch();
+        return false;
+    }
+    if (event.type == Type::DOWN) {
+        wallFramePressed_ = wallFrameHitBounds(camera).contains(event.x, event.y) &&
+            touchTarget(event.x, event.y) == PHOTO_FRAME_TARGET;
+        if (wallFramePressed_) HomeUiBase::cancelTouch();
+    }
+    if (wallFramePressed_) {
+        if (event.type != Type::UP) return false;
+        wallFramePressed_ = false;
+        return touchTarget(event.x, event.y) == PHOTO_FRAME_TARGET && onTap(PHOTO_FRAME_TARGET);
+    }
     return HomeUiBase::onTouch(event);
 }
 
 void HomeUi::cancelTouch() {
+    wallFramePressed_ = false;
     HomeUiBase::cancelTouch();
     photoFrame_.cancelTouch();
+}
+
+void HomeUi::closeTransientOverlay() {
+    wallFramePressed_ = false;
+    photoFrame_.close();
 }
 
 int HomeUi::touchTarget(int16_t x, int16_t y) {
@@ -75,10 +103,9 @@ int HomeUi::touchTarget(int16_t x, int16_t y) {
     if (!frame.touchBlocked) {
         if (HOME_MENU_RECT.contains(x, y)) return 2;
         if ((frame.placedFurniture & PHOTO_FRAME_MASK) && RoomResource::ins().available()) {
-            const auto b = wallFrameBounds(camera);
             const auto view = RoomRenderer::viewport();
             const MenuGrid::Rect viewport{view.x, view.y, view.width, view.height};
-            const MenuGrid::Rect hit{b.x-8, b.y-8, b.width+16, b.height+16};
+            const auto hit = wallFrameHitBounds(camera);
             if (viewport.contains(x, y) && hit.contains(x, y)) return PHOTO_FRAME_TARGET;
         }
     }

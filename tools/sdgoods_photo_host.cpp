@@ -234,6 +234,11 @@ int main(int argc,char**argv){
         for(int y=0;y<360;++y)for(int x=0;x<360;++x)pixels.push_back(canvas.readPixel(x,y));
         return pixels;
     };
+    auto framePhoto=[&](){
+        std::vector<uint16_t> pixels;
+        for(int y=116;y<228;++y)for(int x=124;x<236;++x)pixels.push_back(canvas.readPixel(x,y));
+        return pixels;
+    };
     auto swipeLeft=[&](){
         assert(!homeEvent(T::DOWN,246,174)&&!homeEvent(T::MOVE,120,174));
         return homeEvent(T::UP,120,174);
@@ -249,9 +254,19 @@ int main(int argc,char**argv){
     };
     assert(library.refresh()==Photos::Result::OK&&library.count()==5&&binding()==0);
     const auto chosen=library.entry(1);
-    homeEvent(T::DOWN,263,166);homeEvent(T::MOVE,240,166);
-    assert(!homeEvent(T::UP,263,166)&&"A room gesture cannot open the frame");
-    assert(homeTap(263,166)&&"Tap the placed picture on the right wall");
+    for(int y=144;y<=189;++y)for(int x=240;x<=285;++x){
+        const bool inFrame=x>=241&&x<=284&&y>=145&&y<=188;
+        assert((home.touchTarget(x,y)==3)==inFrame&&"Wall frame must have a 44px square hit box");
+    }
+    homeEvent(T::DOWN,240,166);
+    assert(!homeEvent(T::UP,263,166)&&"A touch that starts outside cannot open the frame");
+    homeEvent(T::DOWN,263,166);
+    assert(!homeEvent(T::UP,285,166)&&"A touch that ends outside cannot open the frame");
+    homeEvent(T::DOWN,263,166);homeEvent(T::CANCEL,263,166);
+    assert(!homeEvent(T::UP,263,166)&&"A canceled touch cannot open the frame");
+    homeEvent(T::DOWN,241,145);homeEvent(T::MOVE,240,166);
+    desktop.advanceMs(1200);
+    assert(homeEvent(T::UP,284,188)&&"Wall frame only checks endpoints of the same touch");
     shot("frame-01-empty",home);
     const auto frozenRoom=snapshot();
     engine.sceneDirty=false;
@@ -290,7 +305,8 @@ int main(int argc,char**argv){
         homeRender(true);
         assert(snapshot()==pickerAfter&&"The cached room must survive either framebuffer byte order");
     }
-    assert(files.reads==pickerReads&&"Swipes must use cached thumbnail pixels");
+    assert(files.reads==pickerReads&&"Swipes must use cached photo pixels");
+    const auto candidatePhoto=framePhoto();
     shot("frame-03-swiped",home);
     assert(homeTap(180,52)&&binding()==0&&blobs.bindingWrites==0);
     assert(homeTap(180,299));homeRender(true);
@@ -301,11 +317,21 @@ int main(int argc,char**argv){
     blobs.failBinding=false;
     assert(homeTap(180,299)&&binding()==chosen.id&&blobs.bindingWrites==1);
     homeRender(true);shot("frame-04-preview",home);
+    assert(framePhoto()==candidatePhoto&&"Photo must have the same detail before and after confirming");
     assert(library.loadImage(chosen,restored.data())==Photos::Result::OK);
     assert(canvas.readPixel(180,172)==restored[96*Photos::WIDTH+96]);
     assert(homeTap(180,52));shot("frame-05-wall",home);
     assert(library.loadThumbnail(chosen,restored.data())==Photos::Result::OK);
-    assert(canvas.readPixel(263,166)==restored[22*Photos::THUMB_WIDTH+22]);
+    const uint16_t wallSample=restored[22*Photos::THUMB_WIDTH+22];
+    assert(canvas.readPixel(263,166)==wallSample);
+    const auto daytimeClock=engine.gameClock;
+    engine.gameClock.set(desktop.millis(),19*60);
+    homeRender(false);shot("frame-06-wall-night",home);
+    const auto eightyPercent=[](int value){return (4*value+2)/5;};
+    const uint16_t nightSample=(eightyPercent((wallSample>>11)&31)<<11) |
+        (eightyPercent((wallSample>>5)&63)<<5) | eightyPercent(wallSample&31);
+    assert(canvas.readPixel(263,166)==nightSample&&"Wall photo retains 80% channel brightness at night");
+    engine.gameClock=daytimeClock;
     assert(home.update(desktop.millis(),.066f).redraw&&
         home.progressionModal==MainScene::ProgressionModal::LEVEL_UP);
     state.pendingLevelUp=false;

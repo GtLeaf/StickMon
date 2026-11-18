@@ -18,6 +18,7 @@ using Rect = MenuGrid::Rect;
 constexpr int PANEL = 360;
 constexpr Rect FRAME{99, 91, 162, 162};
 constexpr Rect IMAGE{124, 116, 112, 112};
+constexpr size_t PICKER_IMAGE_PIXELS = IMAGE.width * IMAGE.height;
 constexpr Rect LEFT{20, 141, 62, 62};
 constexpr Rect RIGHT{278, 141, 62, 62};
 constexpr Rect BUTTON{112, 277, 136, 46};
@@ -44,6 +45,10 @@ void drawPhoto(Canvas565& canvas, const uint16_t* pixels, int source, const Rect
         canvas.fillRect(rect.x, rect.y, rect.width, rect.height, PixelRenderer::rgb(228, 232, 208));
         return;
     }
+    if (source == rect.width && source == rect.height) {
+        canvas.pushImage(rect.x, rect.y, rect.width, rect.height, pixels);
+        return;
+    }
     uint16_t row[IMAGE.width];
     int column[IMAGE.width];
     for (int x = 0; x < rect.width; ++x) column[x] = x * source / rect.width;
@@ -68,7 +73,7 @@ void label(Canvas565& canvas, const char* text, const Rect& rect, BitmapText::Fo
 }
 
 void drawCandidate(Canvas565& canvas, const uint16_t* pixels, const Rect& image) {
-    drawPhoto(canvas, pixels, Photos::THUMB_WIDTH, image);
+    drawPhoto(canvas, pixels, IMAGE.width, image);
     if (!pixels) label(canvas, "?", image, BitmapText::Font::PX16, PixelRenderer::rgb(67, 72, 66));
 }
 
@@ -118,7 +123,7 @@ void HomePhotoFrame::close() {
     imageId_ = 0;
     background_.reset();
     image_.reset();
-    thumbnails_.reset();
+    pickerImages_.reset();
 }
 
 bool HomePhotoFrame::back() {
@@ -127,7 +132,7 @@ bool HomePhotoFrame::back() {
         close();
     } else {
         picking_ = false;
-        thumbnails_.reset();
+        pickerImages_.reset();
         notice_ = nullptr;
         layoutDirty_ = true;
         loadPreview();
@@ -181,25 +186,36 @@ void HomePhotoFrame::openPicker() {
         notice_ = Photo::EMPTY;
         return;
     }
-    if (!thumbnails_.allocate(library_.count() * Photos::THUMB_PIXELS)) {
+    Photos::PixelBuffer original;
+    if (!original.allocate(Photos::PIXELS) ||
+        !pickerImages_.allocate(library_.count() * PICKER_IMAGE_PIXELS)) {
         setNotice(Photos::Result::NO_MEMORY);
         return;
     }
     const auto index = findPhoto(library_, binding_);
     selection_ = index < library_.count() ? index : 0;
-    // The album already preserves display order. Keep only its small images
-    // for browsing so touch never waits for a full-resolution read.
+    // Sample each original at the frame's display resolution once. All
+    // subsequent swipes use this cache, and neighbors shrink the same pixels.
     for (unsigned i = 0; i < library_.count(); ++i) {
         const auto& entry = library_.entry(i);
-        validThumb_[i] = entry.valid && library_.loadThumbnail(entry,
-            thumbnails_.data() + i * Photos::THUMB_PIXELS) == Photos::Result::OK;
+        const bool cachedOriginal = entry.valid && entry.id == imageId_;
+        validPickerImage_[i] = entry.valid && (cachedOriginal ||
+            library_.loadImage(entry, original.data()) == Photos::Result::OK);
+        if (!validPickerImage_[i]) continue;
+        const uint16_t* pixels = cachedOriginal ? image_.data() : original.data();
+        uint16_t* preview = pickerImages_.data() + i * PICKER_IMAGE_PIXELS;
+        for (int y = 0; y < IMAGE.height; ++y) {
+            const auto* sourceRow = pixels + (y * Photos::WIDTH / IMAGE.height) * Photos::WIDTH;
+            for (int x = 0; x < IMAGE.width; ++x)
+                preview[y * IMAGE.width + x] = sourceRow[x * Photos::WIDTH / IMAGE.width];
+        }
     }
     picking_ = true;
 }
 
-const uint16_t* HomePhotoFrame::thumbnail(unsigned index) const {
-    if (index >= library_.count() || !validThumb_[index]) return nullptr;
-    return thumbnails_.data() + index * Photos::THUMB_PIXELS;
+const uint16_t* HomePhotoFrame::pickerImage(unsigned index) const {
+    if (index >= library_.count() || !validPickerImage_[index]) return nullptr;
+    return pickerImages_.data() + index * PICKER_IMAGE_PIXELS;
 }
 
 bool HomePhotoFrame::moveSelection(int delta) {
@@ -238,7 +254,7 @@ void HomePhotoFrame::confirm() {
     }
     binding_ = entry.id;
     cacheWallPhoto(image_.data(), Photos::WIDTH);
-    thumbnails_.reset();
+    pickerImages_.reset();
     notice_ = nullptr;
     picking_ = false;
 }
@@ -333,9 +349,9 @@ void HomePhotoFrame::render(Canvas565& canvas) {
         FrameDamage::restrictTo(LEFT.x, top, RIGHT.x + RIGHT.width - LEFT.x, bottom - top);
     }
     if (picking_) {
-        drawCandidate(canvas, thumbnail(selection_), IMAGE);
-        if (selection_) drawNeighbor(canvas, thumbnail(selection_ - 1), LEFT);
-        if (selection_ + 1 < library_.count()) drawNeighbor(canvas, thumbnail(selection_ + 1), RIGHT);
+        drawCandidate(canvas, pickerImage(selection_), IMAGE);
+        if (selection_) drawNeighbor(canvas, pickerImage(selection_ - 1), LEFT);
+        if (selection_ + 1 < library_.count()) drawNeighbor(canvas, pickerImage(selection_ + 1), RIGHT);
     } else {
         drawPhoto(canvas, image_.data(), Photos::WIDTH, IMAGE);
     }
@@ -361,10 +377,17 @@ void HomePhotoFrame::cacheWallPhoto(const uint16_t* pixels, int width) {
     auto sample = [scale](int value) {
         return (value * Photos::THUMB_WIDTH / WALL_PHOTO_SIZE) * scale + scale / 2;
     };
+    auto nightChannel = [](int value) { return (4 * value + 2) / 5; };
     for (int row = 0; row < WALL_PHOTO_SIZE; ++row) {
         const uint16_t* source = pixels + sample(row) * width;
-        for (int col = 0; col < WALL_PHOTO_SIZE; ++col)
-            wallPhoto_[row * WALL_PHOTO_SIZE + col] = source[sample(col)];
+        for (int col = 0; col < WALL_PHOTO_SIZE; ++col) {
+            const int index = row * WALL_PHOTO_SIZE + col;
+            const uint16_t pixel = source[sample(col)];
+            wallPhoto_[0][index] = pixel;
+            wallPhoto_[1][index] = (nightChannel((pixel >> 11) & 31) << 11) |
+                                  (nightChannel((pixel >> 5) & 63) << 5) |
+                                  nightChannel(pixel & 31);
+        }
     }
     wallPhotoValid_ = true;
 }
@@ -372,11 +395,11 @@ void HomePhotoFrame::cacheWallPhoto(const uint16_t* pixels, int width) {
 void HomePhotoFrame::drawWallPhoto(Canvas565& canvas, int x, int y, bool night) const {
     if (!wallPhotoValid_) return;
     constexpr int inset = (FurnitureArt::FRAME_WORLD_SIZE - WALL_PHOTO_SIZE) / 2;
+    const auto* pixels = wallPhoto_[night];
     for (int row = 0; row < WALL_PHOTO_SIZE; ++row) {
         for (int col = 0; col < WALL_PHOTO_SIZE; ++col) {
             const int frameX = inset + col;
-            auto pixel = wallPhoto_[row * WALL_PHOTO_SIZE + col];
-            if (night) pixel = (pixel >> 1) & 0x7bef;
+            const uint16_t pixel = pixels[row * WALL_PHOTO_SIZE + col];
             canvas.drawPixel(x + frameX, y + inset + row + frameX/3, pixel);
         }
     }
