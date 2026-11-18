@@ -90,6 +90,7 @@ public:
         return true;
     }
     bool writeBlob(const char* ns, const char* key, const void* data, size_t size) override {
+        ++writeAttempts;
         if (failWrites) return false;
         const auto file = path(ns, key);
         const auto pending = fs::path(file.string() + ".tmp");
@@ -111,6 +112,7 @@ public:
     }
     bool failWrites = false;
     unsigned successfulWrites = 0;
+    unsigned writeAttempts = 0;
 private:
     fs::path root_;
 };
@@ -1054,6 +1056,25 @@ int main(int argc, char** argv) {
     if (mode == "locked-standby") {
         tick(1000);
         assert(engine.currentId==SceneID::MAIN);
+        // A failed final lock save must retry even when food has not changed.
+        display.isLocked=true;
+        assert(session.save());
+        engine.gameState().coins+=7;
+        const auto expectedCoins=engine.gameState().coins;
+        blobs.failWrites=true;
+        assert(!session.save() && !session.lastSaveOk());
+        const auto attempts=blobs.writeAttempts;
+        blobs.failWrites=false;
+        desktop.advanceMs(1900);session.poll();
+        assert(!session.lastSaveOk() && blobs.writeAttempts==attempts);
+        desktop.advanceMs(150);session.poll();
+        assert(session.lastSaveOk());
+        SaveManager retryVerifier;Game::GameState retried{};MainSceneViewState retryView{};
+        assert(retryVerifier.begin() && retryVerifier.load(retried,retryView));
+        assert(retried.coins==expectedCoins && display.isLocked);
+        display.isLocked=false;
+        engine.wakeFromIdle();engine.invalidateScene();tick(100);
+        engine.gameState().settings.idleTimeoutIndex=0; // Exercise 30s dimming while locked.
         static_assert(GameEngine::LOCKED_FRAME_MS==1000, "host mirrors the SDGOODS lock cadence");
         const auto bowl=bowlPoint();
         const uint8_t stock=engine.selectedFoodCount();
@@ -1087,6 +1108,8 @@ int main(int argc, char** argv) {
         assert(updates.size()>=59 && updates.size()<=62);
         assert(sceneSteps>=59);
         assert(desktop.presentCount()==lockedFrames);
+        assert(display.isLocked && engine.idleActive);
+        assert(desktop.brightness()==16);
         assert(ate);
         assert(room==engine.currentScene.get());
         assert(room->mainActor.x!=startX || room->mainActor.y!=startY);
@@ -1108,7 +1131,7 @@ int main(int argc, char** argv) {
         tick(100);
         assert(desktop.presentCount()>lockedFrames);
         capturePage("locked-standby-woken");
-        std::printf("PASS locked standby: %zu core updates/60s, %u scene steps, no frames, pet ate, %u game minutes; wake redraws\n",
+        std::printf("PASS failed lock save retries without food changes; locked standby: %zu core updates/60s, %u scene steps, 30s idle dim stays locked, no frames, pet ate, %u game minutes; wake redraws\n",
             updates.size(), unsigned(sceneSteps), unsigned(elapsedMinutes));
         return 0;
     }

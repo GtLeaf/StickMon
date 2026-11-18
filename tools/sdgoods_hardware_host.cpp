@@ -15,10 +15,9 @@
 namespace {
 std::string calls;
 struct Board {
-    bool save=false, unlock=false, shutdown=false, lock=false, due=true;
-    bool lockRequestReady() const {return lock&&due;}
+    bool save=false, unlock=false, shutdown=false, lock=false;
+    bool lockRequestReady() const {return lock;}
     void completeLockRequest(){lock=false;calls+='L';}
-    void deferLockRequest(){due=false;calls+='D';}
     bool takeSaveRequest() { bool v=save; save=false; return v; }
     bool takeUnlockRequest() { bool v=unlock; unlock=false; return v; }
     bool takeShutdownRequest() { bool v=shutdown; shutdown=false; return v; }
@@ -54,9 +53,27 @@ struct RecoveryBoard {
 };
 }
 int main(int argc, char** argv) {
+    // A new press at the old guard's final sleep must restart release debounce.
+    uint32_t guardClock=0;bool sampledDown=false;
+    Sdgoods::waitForPowerKeyRelease([&]{sampledDown=guardClock>=30&&guardClock<60;return sampledDown;},
+        [&]{return guardClock;},[&]{guardClock+=5;});
+    assert(guardClock==90&&!sampledDown);
+    guardClock=0xfffffff0u;
+    Sdgoods::waitForPowerKeyRelease([]{return false;},[&]{return guardClock;},[&]{guardClock+=5;});
+    assert(guardClock==14u);
     using A=Stickmon::PowerButton::Action;
+    Stickmon::PowerButton lateRelease;
+    lateRelease.begin(false,0);
+    lateRelease.update(true,0);assert(lateRelease.update(true,30)==A::PRESSED);
+    lateRelease.update(false,1990);
+    assert(lateRelease.update(false,2040)==A::TOGGLE_LOCK);
+    lateRelease.begin(false,0);
+    lateRelease.update(true,100);assert(lateRelease.update(true,130)==A::PRESSED);
+    lateRelease.update(false,2100); // Full 2s, without polling at the threshold.
+    assert(lateRelease.update(false,2150)==A::SHUTDOWN);
     Stickmon::PowerButton button;
     button.begin(true, 0);
+    assert(button.update(true,2900)==A::NONE && button.down());
     assert(button.update(false, 3000)==A::NONE);
     assert(button.update(false, 3030)==A::NONE);
     assert(button.update(true, 3100)==A::NONE);
@@ -68,12 +85,24 @@ int main(int argc, char** argv) {
     button.begin(false, 0xffffff00u);
     button.update(true, 0xffffff10u);
     assert(button.update(true, 0xffffff30u)==A::PRESSED);
-    assert(button.update(true, 0x900u)==A::NONE && button.down());
+    assert(button.update(true, 0x900u)==A::SHUTDOWN_HELD && button.down());
+    assert(button.update(true, 0x901u)==A::NONE); // Confirm once while still held.
     button.update(false, 0x910u);
     assert(button.update(false, 0x930u)==A::SHUTDOWN);
+    assert(button.update(false, 0x950u)==A::NONE);
+    button.begin(false,0);
+    button.update(true,100);
+    assert(button.update(true,130)==A::PRESSED);
+    assert(button.update(true,2099)==A::NONE);
+    assert(button.update(true,2100)==A::SHUTDOWN_HELD && button.down());
+    assert(button.update(true,6000)==A::NONE);
+    button.update(false,6010);
+    assert(button.update(false,6040)==A::SHUTDOWN);
+    button.update(true,7000);assert(button.update(true,7030)==A::PRESSED);
+    button.update(false,7100);assert(button.update(false,7130)==A::TOGGLE_LOCK);
     Sdgoods::DisplayLockRequest lock;
-    lock.request(0xfffffff0u);assert(lock.ready(0xfffffff0u));lock.retryLater(0xfffffff0u);
-    assert(!lock.ready(0x100u)&&lock.ready(0x400u));lock.toggle(0x500u);assert(!lock.pending());
+    lock.request(0xfffffff0u);assert(lock.ready(0xfffffff0u));
+    assert(lock.ready(0x100u));lock.toggle(0x500u);assert(!lock.pending());
     lock.toggle(0x600u);assert(lock.ready(0x600u));lock.cancel();assert(!lock.ready(0x900u));
     Board board; Session session; Engine engine;
     board.save=true; Sdgoods::processPowerActions(board,session,engine);
@@ -81,16 +110,19 @@ int main(int argc, char** argv) {
     Sdgoods::processPowerActions(board,session,engine); assert(calls=="S");
     board.unlock=true; Sdgoods::processPowerActions(board,session,engine); assert(calls=="SWI");
     session.ok=false; board.shutdown=true;
-    Sdgoods::processPowerActions(board,session,engine); assert(calls=="SWIS");
+    Sdgoods::processPowerActions(board,session,engine); assert(calls=="SWISP");
     session.ok=true; board.shutdown=true;
-    Sdgoods::processPowerActions(board,session,engine); assert(calls=="SWISSP");
+    Sdgoods::processPowerActions(board,session,engine); assert(calls=="SWISPSP");
     calls.clear();board.lock=true;engine.ready=false;
     Sdgoods::processPowerActions(board,session,engine);assert(calls=="R"&&board.lock);
-    engine.ready=true;session.ok=false;Sdgoods::processPowerActions(board,session,engine);assert(calls=="RRSD"&&board.lock);
-    Sdgoods::processPowerActions(board,session,engine);assert(calls=="RRSD");board.due=true;session.ok=true;
-    Sdgoods::processPowerActions(board,session,engine);assert(calls=="RRSDRSL"&&!board.lock);
+    engine.ready=true;session.ok=false;Sdgoods::processPowerActions(board,session,engine);assert(calls=="RRLS"&&!board.lock);
+    Sdgoods::processPowerActions(board,session,engine);assert(calls=="RRLS");
+    // Shutdown must not wait for market exit/fade preparation or duplicate saves.
+    calls.clear();board.lock=true;board.shutdown=true;board.save=true;engine.ready=false;
+    Sdgoods::processPowerActions(board,session,engine);assert(calls=="SP"&&!board.save);
+    board.lock=false;
 
-    std::puts("PASS power press before simulation, bounce/wake-held/wraparound, unlock and save-failure shutdown guard");
+    std::puts("PASS press save ordering, short lock despite save failure, shutdown priority and save-failure shutdown");
     {
         calls.clear();
         RecoveryBoard recovery;
@@ -107,7 +139,7 @@ int main(int argc, char** argv) {
         poll(false,200);poll(false,230); // A short press must not shut down.
         assert(recovery.offs==0);
         poll(true,300);poll(true,330);poll(true,2400);
-        assert(recovery.offs==0); // The existing gesture completes on release.
+        assert(recovery.offs==0); // Held confirmation must not cut power yet.
         poll(false,2410);poll(false,2440);
         assert(recovery.offs==1);
         poll(false,2500);assert(recovery.offs==1);

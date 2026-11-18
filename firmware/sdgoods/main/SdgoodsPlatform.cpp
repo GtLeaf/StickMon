@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include "Rgb565Transfer.h"
 #include "TouchCalibrationStore.h"
+#include "PowerActions.h"
 extern "C" {
 #include "board_pins.h"
 #include "driver/spi_master.h"
@@ -55,6 +56,8 @@ bool SdgoodsPlatform::initialize() {
 
 bool SdgoodsPlatform::begin() {
     if (initialized_) return true;
+    Platform::logf("[Power] boot reset=%u wake=%u\n",
+        unsigned(esp_reset_reason()), unsigned(esp_sleep_get_wakeup_cause()));
     // Restore the latch before releasing retained holds, including USB fallback wake.
     rtc_gpio_deinit(BOARD_BAT_CONTROL_GPIO);
     rtc_gpio_deinit(BOARD_KEY_GPIO);
@@ -78,7 +81,7 @@ bool SdgoodsPlatform::begin() {
     key.mode = GPIO_MODE_INPUT;
     key.pull_up_en = GPIO_PULLUP_ENABLE;
     ESP_ERROR_CHECK(gpio_config(&key));
-    powerButton_.begin(gpio_get_level(BOARD_KEY_GPIO) == BOARD_KEY_ACTIVE_LEVEL, millis());
+    input_.begin(gpio_get_level(BOARD_KEY_GPIO) == BOARD_KEY_ACTIVE_LEVEL, millis());
     resourcesReady_=resources_.mount();
     initialized_ = true;
     Platform::logLine("[SDGOODS] native 360x360 RGB565; PSRAM frame + two 8-row DMA strips; no LVGL");
@@ -165,9 +168,9 @@ bool SdgoodsPlatform::beginTouch() {
     if (i2c_master_probe(i2cBus_, 0x15, 100) != ESP_OK) return false;
     bool restored = false;
     const auto transform = TouchCalibrationStore::load(*this, &restored);
-    touch_.setTransform(transform);
+    input_.touchDecoder().setTransform(transform);
     const bool rightCompensation = STICKMON_SDGOODS_RIGHT_TOUCH_COMPENSATION && !restored;
-    touch_.setRightCompensation(rightCompensation);
+    input_.touchDecoder().setRightCompensation(rightCompensation);
     Platform::logf("[TouchCorrection] right_progressive=%d saved_affine=%d\n",
         rightCompensation, restored);
     Platform::logf("[TouchCalibration] loaded %.5f %.5f %.3f / %.5f %.5f %.3f\n",
@@ -177,10 +180,8 @@ bool SdgoodsPlatform::beginTouch() {
 }
 
 void SdgoodsPlatform::bypassTouchCalibration(bool value) {
-    touchBlocked_ = true;
-    cancelPending_ = true;
-    touch_.sample(nullptr, millis());
-    touch_.bypass(value);
+    input_.cancelTouch(millis());
+    input_.touchDecoder().bypass(value);
 }
 
 bool SdgoodsPlatform::saveTouchCalibration(const Platform::TouchTransform& transform) {
@@ -189,8 +190,8 @@ bool SdgoodsPlatform::saveTouchCalibration(const Platform::TouchTransform& trans
         return false;
     }
     // Publish only after the independent NVS record has been committed.
-    touch_.setTransform(transform);
-    touch_.setRightCompensation(false);
+    input_.touchDecoder().setTransform(transform);
+    input_.touchDecoder().setRightCompensation(false);
     bypassTouchCalibration(false);
     Platform::logf("[TouchCalibration] saved %.5f %.5f %.3f / %.5f %.5f %.3f\n",
         transform.values[0], transform.values[1], transform.values[2],
@@ -207,36 +208,29 @@ void SdgoodsPlatform::flush() { std::fflush(stdout); }
 void SdgoodsPlatform::pollPowerButton(bool allowLock) {
     const uint32_t now = millis();
     const bool raw = gpio_get_level(BOARD_KEY_GPIO) == BOARD_KEY_ACTIVE_LEVEL;
-    switch (powerButton_.update(raw, now)) {
-    case Stickmon::PowerButton::Action::PRESSED:
-        saveRequested_ = true; cancelPending_ = true; break;
-    case Stickmon::PowerButton::Action::TOGGLE_LOCK:
-        if (allowLock) {
-            if (locked_) { setLocked(false); unlocked_ = true; }
-            else lockRequest_.toggle(now);
-        }
-        break;
-    case Stickmon::PowerButton::Action::SHUTDOWN: shutdown_ = true; break;
-    default: break;
-    }
+    const auto action = input_.pollKey(raw, now, allowLock);
+    if (action != Stickmon::PowerButton::Action::NONE)
+        Platform::logf("[PowerKey] t=%u action=%u locked=%u shutdown=%u\n",
+            now, unsigned(action), unsigned(input_.locked()), unsigned(input_.shutdownPending()));
+    if (input_.locked() != locked_) setLocked(input_.locked());
 }
 
 void SdgoodsPlatform::pollInputs() {
     pollPowerButton();
     const uint32_t now = millis();
     // The charging estimate resets on unlock; skip ADC bursts while dark.
-    if (!powerButton_.down() && !locked_) battery_.poll(now);
+    if (!powerKeyHeld() && !locked_) battery_.poll(now);
     if (now - sampledAtMs_ < 20) return;
     sampledAtMs_ = now;
-    if (powerButton_.down() || locked_ || lockRequest_.pending()) {
-        touchBlocked_ = true;
-        touch_.sample(nullptr, now); return;
+    if (!input_.needsTouchSample()) {
+        input_.sampleTouch(nullptr, now); return;
     }
     const uint8_t reg = 0x02;
     uint8_t data[5]{};
     const auto err = i2c_master_transmit_receive(touchDevice_, &reg, 1, data, sizeof(data), 20);
-    if (err == ESP_OK && (data[0] & 0x0f) == 0) touchBlocked_ = false;
-    touch_.sample(err == ESP_OK && !touchBlocked_ ? data : nullptr, now);
+    if (input_.sampleTouch(err == ESP_OK ? data : nullptr, now))
+        Platform::logLine("[Power] wake=double-tap");
+    if (input_.locked() != locked_) setLocked(input_.locked());
 }
 void SdgoodsPlatform::present() { presentRegion(0, 0, 360, 360); }
 void SdgoodsPlatform::presentRegion(int x, int y, int width, int height) {
@@ -282,8 +276,7 @@ void SdgoodsPlatform::setBrightness(uint8_t value) {
 void SdgoodsPlatform::setLocked(bool value) {
     battery_.resetChargingEstimate();
     locked_ = value;
-    touchBlocked_ = true; cancelPending_ = true;
-    touch_.sample(nullptr, millis());
+    if (input_.locked() != value) input_.setLocked(value, millis());
     audio_.suspend(value);
     if (value) { audio_.endMicrophone(); imu_.setAccelerationEnabled(false); }
     if (firstFrame_) applyBacklight();
@@ -327,7 +320,7 @@ void SdgoodsPlatform::setCpuPowerSave(bool value) {
     (void)value;
 #endif
 }
-void SdgoodsPlatform::sleep() { lockRequest_.request(millis());touchBlocked_=true;cancelPending_=true;touch_.sample(nullptr,millis()); }
+void SdgoodsPlatform::sleep() { input_.requestLock(millis()); }
 Platform::WakeReason SdgoodsPlatform::wakeReason() const {
     switch (esp_sleep_get_wakeup_cause()) {
     case ESP_SLEEP_WAKEUP_EXT0: return Platform::WakeReason::EXTERNAL_SIGNAL;
@@ -363,6 +356,11 @@ void SdgoodsPlatform::powerOff() {
     prepareSleep();
     Platform::logLine("[SDGOODS] releasing power latch (USB: deep sleep fallback)");
     flush();
+    // A new press during the final save, or contact bounce, must not trigger
+    // EXT0 immediately after entering the deep-sleep fallback.
+    waitForPowerKeyRelease(
+        [] { return gpio_get_level(BOARD_KEY_GPIO) == BOARD_KEY_ACTIVE_LEVEL; },
+        [this] { return millis(); }, [this] { sleepMs(5); });
     ESP_ERROR_CHECK(gpio_set_level(BOARD_BAT_CONTROL_GPIO, 1 - BOARD_BAT_CONTROL_LATCH_LEVEL));
     ESP_ERROR_CHECK(gpio_hold_en(BOARD_BAT_CONTROL_GPIO));
     gpio_deep_sleep_hold_en();

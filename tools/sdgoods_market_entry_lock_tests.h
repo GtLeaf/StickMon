@@ -40,12 +40,11 @@ static void marketSelectorTests(GameEngine& engine,const std::string& out){
 }
 struct NativeLockBoard {
     DesktopPlatform& desktop;Display& display;GameEngine& engine;Sdgoods::DisplayLockRequest pending;
-    bool unlock=false,save=false;int locks=0,deferrals=0;
+    bool unlock=false,save=false;int locks=0;
     bool takeSaveRequest(){const bool v=save;save=false;return v;}
     bool takeUnlockRequest(){const bool v=unlock;unlock=false;return v;}
     bool takeShutdownRequest(){return false;}
     bool lockRequestReady()const{return pending.ready(desktop.millis());}
-    void deferLockRequest(){++deferrals;pending.retryLater(desktop.millis());}
     void completeLockRequest(){assert(engine.currentId==SceneID::MAIN&&engine.exploreTravelPhase()==ExploreTravelPhase::NONE&&!engine.sceneFadeActive());pending.cancel();display.isLocked=true;++locks;}
     void powerOff(){assert(false);}
 };
@@ -74,7 +73,11 @@ static void marketLockTests(DesktopPlatform& desktop,GameEngine& engine,Blobs& b
         // The same native main loop advances the market fade and door arrival;
         // no sleeps, manual scene switch or early forced home state.
         for(int i=0;i<1500&&!display.isLocked;++i){desktop.advanceMs(66);engine.run();Sdgoods::processPowerActions(board,session,engine);}
-        assert(display.isLocked&&board.locks==1&&state.coins==paid);if(mode==0)assert(board.deferrals==1);savedMatches(engine);
+        assert(display.isLocked&&board.locks==1&&state.coins==paid);
+        if(mode==0)assert(session.saves==1&&!session.rejectFinalOnce&&engine.saveCoordinator.dirty());
+        savedMatches(engine);
+        // A failed final snapshot must not veto the lock; retry while dark.
+        if(mode==0){desktop.advanceMs(2100);engine.run();assert(display.isLocked&&!engine.saveCoordinator.dirty());savedMatches(engine);}
         display.isLocked=false;board.unlock=true;Sdgoods::processPowerActions(board,session,engine);desktop.advanceMs(66);engine.run();assert(engine.currentId==SceneID::MAIN&&!engine.sceneFadeActive());
         if(mode==0){engine.render(desktop.millis());capture(out,"entry-04-home-after-lock");}
     }
@@ -86,7 +89,7 @@ static void marketLockTests(DesktopPlatform& desktop,GameEngine& engine,Blobs& b
     auto& scene=departMarket(desktop,engine);board.pending.request(desktop.millis());Sdgoods::processPowerActions(board,session,engine);board.pending.toggle(desktop.millis());
     for(int i=0;i<1500&&engine.exploreTravelPhase()!=ExploreTravelPhase::NONE;++i){desktop.advanceMs(66);engine.run();Sdgoods::processPowerActions(board,session,engine);}
     assert(!display.isLocked&&!board.pending.pending()&&engine.currentId==SceneID::MAIN&&engine.exploreTravelPhase()==ExploreTravelPhase::NONE);(void)scene;
-    std::puts("market-lock: actual three paid stalls→fade/door/home/save/lock, failed-save retry, wake/departure/cancel and durable rewards OK");
+    std::puts("market-lock: three paid stalls→fade/door/home/lock despite save failure, retry while dark, wake/departure/cancel and durable rewards OK");
 }
 
 #ifdef STICKMON_SELECTOR_BASELINE

@@ -75,7 +75,7 @@ bool RoomSession::save() {
 void RoomSession::poll() {
     if (!ready_) return;
     GameEngine::ins().run();
-    if (foodState() != savedFood_ &&
+    if ((foodState() != savedFood_ || !lastSaveOk_) &&
         (lastSaveOk_ || Platform::clock().millis() - lastAttemptMs_ >= 2000)) save();
 }
 

@@ -6,10 +6,8 @@
 #include "Audio.h"
 #include "Battery.h"
 #include "PeerRadio.h"
-#include "PowerButton.h"
-#include "DisplayLockRequest.h"
+#include "PowerInputState.h"
 #include "Qmi8658.h"
-#include "Cst816TouchState.h"
 #include "NativePanel.h"
 #include "driver/i2c_master.h"
 #include "freertos/FreeRTOS.h"
@@ -42,17 +40,11 @@ public:
     void bypassTouchCalibration(bool value) override;
     bool saveTouchCalibration(const Platform::TouchTransform& transform) override;
     bool pollTouch(TouchEvent& event) override {
-        if (cancelPending_) {
-            cancelPending_ = false;
-            event = {TouchType::CANCEL, 0, 0, millis()};
-            return true;
-        }
-        return touch_.poll(event);
+        return input_.pollTouch(event, millis());
     }
-    bool lockRequestReady() const {return lockRequest_.ready(millis());}
-    void deferLockRequest() {lockRequest_.retryLater(millis());}
-    void completeLockRequest() {lockRequest_.cancel();setLocked(true);}
-    bool takeSaveRequest() { const bool result = saveRequested_; saveRequested_ = false; return result; }
+    bool lockRequestReady() const {return input_.lockRequestReady(millis());}
+    void completeLockRequest() {input_.completeLockRequest(millis());setLocked(true);}
+    bool takeSaveRequest() { return input_.takeSaveRequest(); }
     Platform::FrameBuffer565 frameBuffer() override { return {frame_, 360, 360, true}; }
     void present() override;
     void presentRegion(int x, int y, int width, int height) override;
@@ -65,9 +57,10 @@ public:
     int batteryLevel() override { return battery_.level(millis()); }
     bool batteryCharging() override { return battery_.chargingEstimate(millis()); }
     Platform::PowerCapabilities capabilities() const override { return {true, false, true, true}; }
-    bool powerKeyHeld() const { return powerButton_.down(); }
-    bool takeUnlockRequest() { const bool v = unlocked_; unlocked_ = false; return v; }
-    bool takeShutdownRequest() { const bool v = shutdown_; shutdown_ = false; return v; }
+    bool powerKeyHeld() const { return input_.powerKeyHeld(); }
+    bool shutdownPending() const { return input_.shutdownPending(); }
+    bool takeUnlockRequest() { return input_.takeUnlockRequest(); }
+    bool takeShutdownRequest() { return input_.takeShutdownRequest(); }
     void powerOff();
     Platform::WakeReason wakeReason() const override;
     uint32_t hardwareRandom() override;
@@ -92,8 +85,7 @@ private:
     Battery battery_;
     PeerRadio radio_;
     Stickmon::Qmi8658 imu_;
-    Stickmon::PowerButton powerButton_;
-    DisplayLockRequest lockRequest_;
+    PowerInputState input_;
     Platform::Services services_;
     bool beginDisplay();
     bool beginTouch();
@@ -111,12 +103,10 @@ private:
     esp_lcd_panel_handle_t panel_ = nullptr;
     i2c_master_bus_handle_t i2cBus_ = nullptr;
     i2c_master_dev_handle_t touchDevice_ = nullptr;
-    Cst816TouchState touch_;
     uint32_t sampledAtMs_ = 0;
     uint8_t brightness_ = 128;
     bool initialized_ = false, storageReady_ = false, firstFrame_ = false;
-    bool locked_ = false, unlocked_ = false, shutdown_ = false, saveRequested_ = false;
-    bool touchBlocked_ = true, cancelPending_ = false;
+    bool locked_ = false;
     // panelSleeping_: display off until a full frame is written after wake.
     bool panelSleeping_ = false, panelAsleep_ = false;
     uint32_t panelWokeAtMs_ = 0;

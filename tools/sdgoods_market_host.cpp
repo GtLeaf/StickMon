@@ -217,6 +217,12 @@ int main(int argc,char**argv){
 #endif
     auto& engine=GameEngine::ins();assert(engine.begin());
     auto& state=engine.gameState();state.oobeDone=true;state.coins=10000;state.teamCount=1;state.team[0]=Game::MonsterFactory::create(25,25);state.team[0].satiety=100;state.settings.idleTimeoutIndex=4;
+#if HAS_ROUND_MARKET
+    if(std::string(argv[3])=="market-lock") {
+        marketLockTests(desktop,engine,blobs,display,argv[2]);
+        engine.currentScene.reset();return 0;
+    }
+#endif
     blobs.failHistory=true;
     assert(engine.saveNow() && "A durable game snapshot must survive encounter-history failure");
     assert(blobs.failedHistory>0&&engine.saveCoordinator.dirty());savedMatches(engine);

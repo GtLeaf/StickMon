@@ -21,7 +21,7 @@ namespace {
 Sdgoods::SdgoodsPlatform board;
 Sdgoods::RoomSession session;
 ContentStore catalog;
-constexpr uint32_t LOCKED_LOOP_MS = 40;
+constexpr uint32_t LOCKED_LOOP_MS = 20;
 void recovery(const char* reason) {
     esp_ota_img_states_t state;
     if(esp_ota_get_state_partition(esp_ota_get_running_partition(),&state)==ESP_OK &&
@@ -82,9 +82,9 @@ extern "C" void app_main() {
         // reopening the track every tick, and restart it on unlock.
         AudioManager::ins().setMusicSuspended(board.locked());
         Sdgoods::pollMaintenanceConsole(board,session,true);
-        if (board.powerKeyHeld()) board.sleepMs(5);
+        if (board.powerKeyHeld() || board.shutdownPending()) board.sleepMs(5);
         else session.poll();
-        // Locked: the engine steps once a second; poll the key at debounce pace.
+        // Locked: core updates stay at 1Hz; touch needs 20ms samples for double taps.
         if (board.locked()) board.sleepMs(LOCKED_LOOP_MS);
     }
 }

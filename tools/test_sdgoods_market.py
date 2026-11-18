@@ -16,7 +16,7 @@ def build(out,external=False,sanitize=False,extra_flags=(),debug=True,host_sourc
     flags=['STICKMON_DISPLAY_WIDTH=360','STICKMON_DISPLAY_HEIGHT=360','STICKMON_ROOM_PIXEL_SCALE=1','STICKMON_TOUCH_INPUT=1','STICKMON_UI_COMPACT_TOUCH=1','STICKMON_UI_ROUND_TOUCH=1','STICKMON_UI_HEADER_INSET_X=60','STICKMON_UI_HEADER_TOP=32','STICKMON_DEDICATED_POWER_BUTTON=1',f'STICKMON_ENABLE_DEBUG_FEATURES={int(debug)}','STICKMON_HAS_CLAW=0',f'STICKMON_EXTERNAL_CONTENT={int(external)}']
     binary=out/'sdgoods-market-host'
     flags += [f'STICKMON_EXTERNAL_MENU_ICONS={int(external)}']
-    common=['c++','-std=c++17','-O1','-ffunction-sections','-fdata-sections','-Isrc','-Ifirmware/sdgoods/main',*['-D'+f for f in flags]]
+    common=['c++','-std=c++17','-O1','-ffunction-sections','-fdata-sections','-Isrc','-Ifirmware/sdgoods/main','-Ifirmware/common',*['-D'+f for f in flags]]
     if sanitize: common += ['-g','-fsanitize=address,undefined','-fno-omit-frame-pointer']
     common += list(extra_flags)
     # Configuration identity prevents a reused output directory from silently
@@ -37,13 +37,13 @@ def build(out,external=False,sanitize=False,extra_flags=(),debug=True,host_sourc
     return binary
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--output',type=Path,required=True);p.add_argument('--save-only',action='store_true');p.add_argument('--external',action='store_true');p.add_argument('--sanitize',action='store_true');p.add_argument('--release',action='store_true');a=p.parse_args();out=a.output.resolve();out.mkdir(parents=True,exist_ok=True)
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--output',type=Path,required=True);p.add_argument('--save-only',action='store_true');p.add_argument('--external',action='store_true');p.add_argument('--sanitize',action='store_true');p.add_argument('--release',action='store_true');p.add_argument('--journey',choices=('market-lock',));a=p.parse_args();out=a.output.resolve();out.mkdir(parents=True,exist_ok=True)
     resource=ROOT/'data'
     if a.external:
         from build_sdgoods_resources import stage
         resource=out/'resource-stage';stage(resource)
     binary=build(out,a.external,a.sanitize,debug=not a.release)
-    subprocess.run([str(binary),str(resource),str(out),'save' if a.save_only else 'all','external' if a.external else 'embedded'],cwd=ROOT,check=True,env={**os.environ,'ASAN_OPTIONS':'detect_leaks=0','UBSAN_OPTIONS':'halt_on_error=1'})
+    subprocess.run([str(binary),str(resource),str(out),a.journey or ('save' if a.save_only else 'all'),'external' if a.external else 'embedded'],cwd=ROOT,check=True,env={**os.environ,'ASAN_OPTIONS':'detect_leaks=0','UBSAN_OPTIONS':'halt_on_error=1'})
     from PIL import Image
     for ppm in out.glob('*.ppm'):
         Image.open(ppm).save(ppm.with_suffix('.png'))
