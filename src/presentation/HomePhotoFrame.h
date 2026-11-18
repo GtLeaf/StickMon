@@ -10,6 +10,7 @@ namespace Ui {
 
 class HomePhotoFrame {
 public:
+    explicit HomePhotoFrame(bool roundPanel = true) : roundPanel_(roundPanel) {}
     void enter(bool placed);
     bool open();
     void close();
@@ -19,10 +20,11 @@ public:
     bool touch(const TouchTap::Event& event);
     void cancelTouch();
     void render(Canvas565& canvas);
-    void drawWallPhoto(Canvas565& canvas, int x, int y, bool night) const;
+    void drawWallPhoto(Canvas565& canvas, int x, int y, bool night, int scale = 1) const;
 
 private:
     static constexpr int WALL_PHOTO_SIZE = 13;
+    bool roundPanel_;
     Photos::Library library_;
     Photos::PixelBuffer background_, image_, pickerImages_;
     uint16_t wallPhoto_[2][WALL_PHOTO_SIZE * WALL_PHOTO_SIZE] = {};
@@ -47,6 +49,7 @@ private:
     void setNotice(Photos::Result result);
     void cacheWallPhoto(const uint16_t* pixels, int width);
     const uint16_t* pickerImage(unsigned index) const;
+    void drawOverlay(Canvas565& canvas, bool drawFrame, bool drawControls) const;
 };
 
 }  // namespace Ui

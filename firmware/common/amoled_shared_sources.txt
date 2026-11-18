@@ -63,3 +63,4 @@ src/third_party/uzlib/tinflate.c
 src/presentation/VisitMenu.cpp
 src/assets/VisitIcons.cpp
 src/presentation/PhotoFlow.cpp
+src/presentation/HomePhotoFrame.cpp

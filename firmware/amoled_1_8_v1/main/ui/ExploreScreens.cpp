@@ -62,10 +62,17 @@ constexpr int EXPLORE_MENU_PANEL_WIDTH = 120;
 constexpr int EXPLORE_MENU_PANEL_ROW_HEIGHT = 60;
 constexpr int EXPLORE_MENU_TEXT_INSET =
     (EXPLORE_MENU_PANEL_ROW_HEIGHT - FontResource::LARGE_GLYPH_H) / 2;
-constexpr int EXPLORE_MENU_PANEL_HEIGHT =
-    AppSceneFlow::exploreMenuItemCount() * EXPLORE_MENU_PANEL_ROW_HEIGHT;
-constexpr int EXPLORE_MENU_PANEL_TOP =
-    (HOME_STATUS_TOP - EXPLORE_MENU_PANEL_HEIGHT) / 2;
+constexpr int exploreMenuRows(bool showCamera) {
+    return AppSceneFlow::exploreMenuItemCount() + int(showCamera);
+}
+
+constexpr int exploreMenuHeight(bool showCamera) {
+    return exploreMenuRows(showCamera) * EXPLORE_MENU_PANEL_ROW_HEIGHT;
+}
+
+constexpr int exploreMenuTop(bool showCamera) {
+    return (HOME_STATUS_TOP - exploreMenuHeight(showCamera)) / 2;
+}
 
 constexpr int EXPLORE_ROUTE_HUD_X = 8;
 constexpr int EXPLORE_ROUTE_HUD_Y = 6;
@@ -1413,16 +1420,14 @@ bool exploreRouteMenuBackAt(int x, int y) {
     return x >= 0 && x < 60 && y >= 0 && y < HEADER_HEIGHT;
 }
 
-int exploreRouteMenuItemAt(int x, int y) {
+int exploreRouteMenuItemAt(int x, int y, bool showCamera) {
     const int panelX = AmoledUi::WIDTH - EXPLORE_MENU_PANEL_WIDTH;
+    const int top = exploreMenuTop(showCamera);
     if (x < panelX || x >= AmoledUi::WIDTH ||
-        y < EXPLORE_MENU_PANEL_TOP ||
-        y >= EXPLORE_MENU_PANEL_TOP + EXPLORE_MENU_PANEL_HEIGHT) {
+        y < top || y >= top + exploreMenuHeight(showCamera)) {
         return -1;
     }
-    int index = (y - EXPLORE_MENU_PANEL_TOP) /
-                EXPLORE_MENU_PANEL_ROW_HEIGHT;
-    return index < AppSceneFlow::exploreMenuItemCount() ? index : -1;
+    return (y - top) / EXPLORE_MENU_PANEL_ROW_HEIGHT;
 }
 
 void renderExploreMenuScreen(Canvas565& canvas,
@@ -1434,17 +1439,18 @@ void renderExploreMenuScreen(Canvas565& canvas,
     if (rowBegin >= rowEnd) return;
 
     const int panelX = AmoledUi::WIDTH - EXPLORE_MENU_PANEL_WIDTH;
+    const int top = exploreMenuTop(model.showCamera);
+    const int height = exploreMenuHeight(model.showCamera);
     pageClip.setRect((panelX), (rowBegin), (EXPLORE_MENU_PANEL_WIDTH), (rowEnd - rowBegin));
-    canvas.fillRoundRect(panelX, EXPLORE_MENU_PANEL_TOP,
-                         EXPLORE_MENU_PANEL_WIDTH, EXPLORE_MENU_PANEL_HEIGHT,
+    canvas.fillRoundRect(panelX, top,
+                         EXPLORE_MENU_PANEL_WIDTH, height,
                          8, rgb(20, 25, 32));
-    canvas.drawRoundRect(panelX, EXPLORE_MENU_PANEL_TOP,
-                         EXPLORE_MENU_PANEL_WIDTH, EXPLORE_MENU_PANEL_HEIGHT,
+    canvas.drawRoundRect(panelX, top,
+                         EXPLORE_MENU_PANEL_WIDTH, height,
                          8, rgb(190, 200, 205));
 
-    for (uint8_t index = 0; index < AppSceneFlow::exploreMenuItemCount();
-         ++index) {
-        int y = EXPLORE_MENU_PANEL_TOP +
+    for (int index = 0; index < exploreMenuRows(model.showCamera); ++index) {
+        int y = top +
                 index * EXPLORE_MENU_PANEL_ROW_HEIGHT;
         if (y + EXPLORE_MENU_PANEL_ROW_HEIGHT <= rowBegin || y >= rowEnd) {
             continue;
@@ -1464,8 +1470,9 @@ void renderExploreMenuScreen(Canvas565& canvas,
         }
         uint16_t color = selected ? rgb(255, 216, 72)
                                   : rgb(235, 239, 232);
-        text(canvas, panelX + 26, y + EXPLORE_MENU_TEXT_INSET,
-             Ui::Explore::SIDE_MENU_ITEMS[index], color);
+        const char* label = model.showCamera && index == 0 ? Ui::Photo::CAMERA :
+            Ui::Explore::SIDE_MENU_ITEMS[index - int(model.showCamera)];
+        text(canvas, panelX + 26, y + EXPLORE_MENU_TEXT_INSET, label, color);
     }
     pageClip.reset();
     if (model.toast && rowBegin < UiCommon::TOAST_BOTTOM &&

@@ -20,10 +20,12 @@
 #include "game/GameState.h"
 #include "game/ShopService.h"
 #include "game/BathInteraction.h"
+namespace Ui { class HomePhotoFrame; }
 namespace AmoledV1 {
 
 struct HomeViewModel {
     uint16_t placedFurniture = 0;
+    const Ui::HomePhotoFrame* wallPhoto = nullptr;
     struct MonsterHud {
         uint8_t hp = 0;
         uint8_t hunger = 0;
@@ -227,6 +229,7 @@ struct ExploreMenuViewModel {
     uint8_t cursor = 0;
     int pressedItem = -1;
     const char* toast = nullptr;
+    bool showCamera = false;
 };
 
 using CommunicationViewModel = Communication::VisitSessionService::ViewModel;

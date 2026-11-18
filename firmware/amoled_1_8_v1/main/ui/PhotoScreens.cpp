@@ -70,7 +70,8 @@ void renderPhotoScreen(Canvas565& c,const PhotoSession& flow,uint16_t top,uint16
         }else{
             std::snprintf(count,sizeof(count),"%u/%u",flow.selected()+1,flow.count());label(c,count,120,24,128,16,muted());trash(c);image(c,flow.image(),24,80,320,Photos::WIDTH);
             const auto& e=flow.entry(flow.selected());const char* const areas[]={Ui::Explore::GRASS_PATH,Ui::Explore::CREEK_SLOPE,Ui::Explore::TALL_GRASS_PARK,Ui::Explore::FROST_CRYSTAL_CAVE,Ui::Explore::MIST_FOREST_PATH,Ui::Explore::ANCIENT_WATERFALL_VALLEY};
-            char metadata[64];std::snprintf(metadata,sizeof(metadata),Ui::Photo::META,areas[e.area<6?e.area:0],unsigned(e.day));label(c,metadata,24,420,320,16,muted());
+            const char* location = e.area == Photos::MARKET_AREA ? Ui::MarketText::NAME : areas[e.area];
+            char metadata[64];std::snprintf(metadata,sizeof(metadata),Ui::Photo::META,location,unsigned(e.day));label(c,metadata,24,420,320,16,muted());
             if(page==P::DELETE_CONFIRM){PixelRenderer::fillRectAlpha(0,0,368,448,0,150);c.fillRoundRect(24,152,320,144,12,UiCommon::rgb(17,27,34));label(c,Ui::Photo::DELETE_CONFIRM,24,176,320);button(c,Ui::Photo::CANCEL,40,232,136);button(c,Ui::Photo::DELETE,192,232,136,true);}
         }
     }

@@ -34,7 +34,7 @@ bool Library::resolve(){
 bool Library::header(unsigned slot,Entry&e,uint8_t*h){
     e={};e.slot=uint8_t(slot);char name[24];slotName(slot,name,sizeof(name));
     if(files_->size(name)!=FILE_BYTES||!files_->read(name,0,h,HEADER_BYTES))return false;
-    if(u32(h)!=MAGIC||u16(h+4)!=1||u16(h+6)!=HEADER_BYTES||!u64(h+8)||h[20]>=6||
+    if(u32(h)!=MAGIC||u16(h+4)!=1||u16(h+6)!=HEADER_BYTES||!u64(h+8)||h[20]>MARKET_AREA||
        h[21]||h[22]||h[23]||u16(h+24)!=WIDTH||u16(h+26)!=WIDTH||u16(h+28)!=THUMB_WIDTH||u16(h+30)!=THUMB_WIDTH||crc(h,40)!=u32(h+40))return false;
     e.id=u64(h+8);e.day=u32(h+16);e.area=h[20];e.valid=true;return true;
 }
@@ -49,7 +49,7 @@ Result Library::refresh(){
     return Result::OK;
 }
 Result Library::save(const uint16_t*pixels,uint8_t area,uint32_t day,Platform::FileYield yield){
-    if(!pixels||area>=6)return Result::FAILED;
+    if(!pixels||area>MARKET_AREA)return Result::FAILED;
     auto result=refresh();if(result!=Result::OK)return result;
     size_t available=0;
     if(!files_->queryAvailableBytes(available))return Result::UNAVAILABLE;

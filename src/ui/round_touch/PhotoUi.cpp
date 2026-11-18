@@ -71,7 +71,9 @@ void render(const PhotoFlow& f){
             c.drawRect(x-8,y-5,16,17,ink());c.drawFastHLine(x-10,y-9,20,ink());c.drawRect(x-4,y-13,8,4,ink());
             image(f.image(),80,76,200,Photos::WIDTH);
             const char* areas[]={Explore::GRASS_PATH,Explore::CREEK_SLOPE,Explore::TALL_GRASS_PARK,Explore::FROST_CRYSTAL_CAVE,Explore::MIST_FOREST_PATH,Explore::ANCIENT_WATERFALL_VALLEY};
-            const auto& e=f.entry(f.selected());std::snprintf(text,sizeof(text),Photo::META,areas[e.area<6?e.area:0],unsigned(e.day));
+            const auto& e=f.entry(f.selected());
+            const char* location = e.area == Photos::MARKET_AREA ? MarketText::NAME : areas[e.area];
+            std::snprintf(text,sizeof(text),Photo::META,location,unsigned(e.day));
             label(text,60,286,240,16);
             if(page==P::DELETE_CONFIRM){
                 PixelRenderer::fillRectAlpha(0,0,360,360,0,150);c.fillRoundRect(60,132,240,132,12,PixelRenderer::rgb(17,27,34));

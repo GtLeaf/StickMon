@@ -54,6 +54,6 @@ void renderExploreMenuScreen(Canvas565& canvas,
                              uint16_t rowBegin = 0,
                              uint16_t rowEnd = AmoledUi::HEIGHT);
 bool exploreRouteMenuBackAt(int x, int y);
-int exploreRouteMenuItemAt(int x, int y);
+int exploreRouteMenuItemAt(int x, int y, bool showCamera = false);
 
 }  // namespace AmoledV1

@@ -67,6 +67,11 @@ void playMarketFeedback(StallUi& ui) {
 constexpr int TAP_SLOP = 12;
 constexpr int DRAG_START_SLOP = 6;
 constexpr int MENU_HEADER_HEIGHT = 56;
+constexpr int MARKET_MENU_X = UiMetrics::HOME_LOCK_BUTTON_X;
+constexpr AmoledUi::Rect MARKET_MENU_HIT{
+    MARKET_MENU_X - 8, UiMetrics::HOME_HUD_BUTTON_Y - 8,
+    UiMetrics::HOME_HUD_BUTTON_SIZE + 16, UiMetrics::HOME_HUD_BUTTON_SIZE + 16,
+};
 constexpr uint32_t MIND_UPDATE_MS = 400;
 constexpr uint32_t MOTION_FRAME_MS = 140;
 constexpr uint32_t TURN_PAUSE_MS = 160;
@@ -1062,7 +1067,7 @@ bool AmoledApp::updateExploreDeparture(uint32_t nowMs) {
 void AmoledApp::beginExploreReturn(uint32_t nowMs) {
     photoFlow_.close();
     if (exploreTransition_.state().phase != ExpeditionDeparturePhase::NONE) return;
-    const bool fromMarket = market_ && sceneFlow.current() == AppSceneFlow::Scene::MARKET;
+    const bool fromMarket = bool(market_);
     if (!fromMarket && exploreSessionActive) {
         if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE)
             advanceExploreMinutes(battleSession_.settleExploreCosts(gameState, exploreSession_.costs), nowMs);
@@ -1072,6 +1077,7 @@ void AmoledApp::beginExploreReturn(uint32_t nowMs) {
     lastInteractionMs = nowMs;
     // Close route menus before fading; never expose the area selector on return.
     if (fromMarket) {
+        sceneFlow.enter(AppSceneFlow::Scene::MARKET);
         cancelTouch(); marketUi_.reset();
         marketTutorUi_.close(); marketTutorPending_ = false;
         marketShopUi_.close(); marketCareUi_.close(); marketWorkshopUi_.close(); marketStallSpecies_ = 0;
@@ -1224,7 +1230,12 @@ bool AmoledApp::brainSay(const char* text) {
 
 void AmoledApp::cancelTouch() {
     photoFlow_.cancelTouch();
+    homePhotoFrame_.cancelTouch();
+    wallFrameTap_.cancel();
+    wallFramePressed_ = false;
     marketUi_.cancel();
+    marketMenuTap_.cancel();
+    marketMenuPressed_ = false;
     marketTutorUi_.cancelTouch();
     marketShopUi_.cancelTouch();
     marketCareUi_.cancelTouch();
@@ -1305,6 +1316,25 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
                           event.type == TouchEventType::MOVE ? Type::MOVE : Type::UP;
         const Platform::IInputDevice::TouchEvent touch{type,event.x,event.y,event.timestampMs};
         pointerDown = event.type != TouchEventType::UP;
+        const bool menuHit = marketMenuAvailable() && MARKET_MENU_HIT.contains(event.x, event.y);
+        if (type == Type::DOWN) {
+            marketMenuPressed_ = menuHit;
+            if (menuHit) {
+                marketUi_.cancel();
+                market_->setDirection(-1);
+            }
+        }
+        if (marketMenuPressed_) {
+            const bool openMenu = marketMenuTap_.update(touch, menuHit ? 0 : -1) == 0;
+            if (type == Type::UP) marketMenuPressed_ = false;
+            if (openMenu) {
+                cancelTouch();
+                exploreMenuCursor = 0;
+                toast = nullptr;
+                sceneFlow.enter(AppSceneFlow::Scene::EXPLORE_MENU);
+            }
+            return;
+        }
         if (marketServiceActive() || marketTutorPending_) {
             bool scrollOnly = false;
             if (marketWorkshopUi_.active()) {
@@ -1381,6 +1411,7 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
         }
         return;
     }
+    if (handleWallFrameTouch(event)) return;
     switch (event.type) {
     case TouchEventType::DOWN:
         if (exploreTransition_.state().pending ||
@@ -1423,7 +1454,7 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
             exploreDragStartArea = selectedExploreListIndex();
             if(!EXPLORE_POSTCARD) requestRenderRows(0, EXPLORE_SELECTOR_TOP_HEIGHT);
         } else if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_MENU) {
-            pressedExploreMenuItem = exploreRouteMenuItemAt(event.x, event.y);
+            pressedExploreMenuItem = exploreRouteMenuItemAt(event.x, event.y, bool(market_));
             requestRenderRows(0, 448);
         } else if (sceneFlow.current() == AppSceneFlow::Scene::TEAM &&
                    teamController_.state().teamStatusOpen) {
@@ -2246,17 +2277,28 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
     }
 
     if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_MENU) {
-        int itemIndex = exploreRouteMenuItemAt(x, y);
-        if (exploreRouteMenuBackAt(x, y) || itemIndex < 0) {
-            sceneFlow.closeExploreMenu();
-            resumeExploreRoute(nowMs);
+        const bool showCamera = bool(market_);
+        const int itemIndex = exploreRouteMenuItemAt(x, y, showCamera);
+        const auto closeMenu = [&] {
+            if (market_) sceneFlow.enter(AppSceneFlow::Scene::MARKET);
+            else {
+                sceneFlow.closeExploreMenu();
+                resumeExploreRoute(nowMs);
+            }
             toast = nullptr;
             requestFullRender();
+        };
+        if (exploreRouteMenuBackAt(x, y) || itemIndex < 0) {
+            closeMenu();
             return;
         }
         exploreMenuCursor = static_cast<uint8_t>(itemIndex);
+        if (showCamera && itemIndex == 0) {
+            openPhotoCamera(nowMs);
+            return;
+        }
         AppSceneFlow::ExploreMenuEntry entry =
-            AppSceneFlow::exploreMenuEntry(static_cast<uint8_t>(itemIndex));
+            AppSceneFlow::exploreMenuEntry(static_cast<uint8_t>(itemIndex - int(showCamera)));
         switch (entry.item) {
         case AppSceneFlow::ExploreMenuItem::TEAM:
             openTeamScene();
@@ -2268,10 +2310,7 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             leaveExploreRoute();
             break;
         case AppSceneFlow::ExploreMenuItem::BACK:
-            sceneFlow.closeExploreMenu();
-            resumeExploreRoute(nowMs);
-            toast = nullptr;
-            requestFullRender();
+            closeMenu();
             break;
         }
         return;
@@ -2916,13 +2955,19 @@ void AmoledApp::updateBattery(uint32_t nowMs) {
 }
 
 void AmoledApp::update(uint32_t nowMs) {
+    if (sceneFlow.current() != AppSceneFlow::Scene::HOME && homePhotoFrame_.active()) {
+        homePhotoFrame_.close();
+    }
     if(photoFlow_.active()){
-        if(sceneFlow.current()!=AppSceneFlow::Scene::EXPLORE_ROUTE&&sceneFlow.current()!=AppSceneFlow::Scene::COMPUTER)photoFlow_.close();
+        const auto scene = sceneFlow.current();
+        const bool marketCamera = scene == AppSceneFlow::Scene::MARKET && market_ && photoFlow_.camera();
+        if(scene != AppSceneFlow::Scene::EXPLORE_ROUTE && scene != AppSceneFlow::Scene::COMPUTER && !marketCamera)photoFlow_.close();
         else if(displayLocked||displayStandby_){photoFlow_.cancelTouch();photoClockMs_=nowMs;}
         else if(static_cast<int32_t>(nowMs-photoClockMs_)>=66){
             const auto elapsed=nowMs-photoClockMs_;photoClockMs_=nowMs;
             if(photoFlow_.update(elapsed)){
-                if(photoFlow_.viewfinder())requestRenderRows(0,PhotoSession::MAP_HEIGHT);
+                if(marketCamera)requestFullRender();
+                else if(photoFlow_.viewfinder())requestRenderRows(0,PhotoSession::MAP_HEIGHT);
                 else requestRenderRows(80,448);
             }
         }
@@ -2947,6 +2992,7 @@ void AmoledApp::update(uint32_t nowMs) {
     }
     if (market_) {
         const bool active = sceneFlow.current() == AppSceneFlow::Scene::MARKET && !displayLocked &&
+            !photoFlow_.camera() &&
             exploreTransition_.state().phase == ExpeditionDeparturePhase::NONE;
         if (!active) marketUi_.cancel();
         const int previousChat = marketUi_.chatTarget;
@@ -6735,7 +6781,15 @@ void AmoledApp::render(Canvas565& canvas) const {
     }
     if (sceneFlow.current() == AppSceneFlow::Scene::MARKET && market_) {
         marketUi_.render(*market_, marketViewport(), gameState.gameMinutesTotal, true);
+        if (marketMenuAvailable()) UiCommon::drawHudMenuIcon(canvas, MARKET_MENU_X);
         UiCommon::drawSceneFadeOverlay(canvas, externalSceneFade ? 0 : exploreTransition_.fade().alpha(), 0, AmoledUi::HEIGHT);
+        return;
+    }
+    if (sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_MENU && market_) {
+        Ui::MarketView::render(*market_, marketViewport(), market_->timeMs(), gameState.gameMinutesTotal);
+        UiCommon::drawHudMenuIcon(canvas, MARKET_MENU_X);
+        renderExploreMenuScreen(canvas, {exploreMenuCursor, pressedExploreMenuItem, toast, true},
+                                dirtyRowBegin, dirtyRowEnd);
         return;
     }
     if (sceneFlow.current() == AppSceneFlow::Scene::HATCH) {
@@ -6896,8 +6950,21 @@ void AmoledApp::render(Canvas565& canvas) const {
             worldToScreenY(welcomeY));
 #endif
         model.toast = toast;
+        if (model.placedFurniture & 1u) {
+            if (!wallPhotoLoaded_) {
+                homePhotoFrame_.enter(true);
+                wallPhotoLoaded_ = true;
+            }
+            model.wallPhoto = &homePhotoFrame_;
+        } else {
+            wallPhotoLoaded_ = false;
+        }
         renderHomeScreenRegion(canvas, model, dirtyRowBegin, dirtyRowEnd,
                                dirtyColumnBegin, dirtyColumnEnd);
+        if (homePhotoFrame_.active()) {
+            UiCommon::PageClip clip(canvas, dirtyRowBegin, dirtyRowEnd, dirtyColumnBegin, dirtyColumnEnd);
+            homePhotoFrame_.render(canvas);
+        }
         return;
     }
 
@@ -7190,6 +7257,9 @@ bool AmoledApp::displayLockAllowed() const {
 bool AmoledApp::prepareDisplayLock(uint32_t nowMs) {
     if (!displayLockAllowed()) return false;
     photoFlow_.close();
+    homePhotoFrame_.close();
+    wallFrameTap_.cancel();
+    wallFramePressed_ = false;
     if (exploreSessionActive || market_) {
         // Market trips skip expedition costs but still hide the room actors.
         // Finish the normal return before capturing the room for locking.
@@ -8817,8 +8887,8 @@ void AmoledApp::performPendingItemAction(uint32_t nowMs) {
         bool explorationItem = inventoryController_.state().pendingItem == Game::ItemId::MAX_REPEL ||
                                inventoryController_.state().pendingItem == Game::ItemId::HONEY;
         AppSceneFlow::Scene itemReturn = sceneFlow.subSceneReturn();
-        bool exploring = itemReturn == AppSceneFlow::Scene::EXPLORE_MENU ||
-                         itemReturn == AppSceneFlow::Scene::EXPLORE_ROUTE;
+        const bool exploring = !market_ && (itemReturn == AppSceneFlow::Scene::EXPLORE_MENU ||
+                                            itemReturn == AppSceneFlow::Scene::EXPLORE_ROUTE);
         if (explorationItem && exploring) {
             const bool activated = exploreSession_.useItem(gameState,
                 inventoryController_.state().pendingItem);
@@ -9159,6 +9229,14 @@ bool AmoledV1::AmoledApp::debugStartShowerDrag(uint8_t tool, uint32_t nowMs) {
 #endif
 
 namespace AmoledV1 {
+bool AmoledApp::marketMenuAvailable() const {
+    return market_ && !displayLocked && !market_->paused() && !market_->exiting() &&
+           !market_->conversing() && !marketUi_.dialogue().active() &&
+           !marketTutorPending_ && !marketServiceActive() &&
+           exploreTransition_.state().phase == ExpeditionDeparturePhase::NONE &&
+           !exploreTransition_.fade().active();
+}
+
 void AmoledApp::selectExploreDestination(uint8_t index, uint32_t nowMs) {
     const auto id = ExploreDestinations::visibleId(index, gameState);
     if (id == ExploreDestinations::INVALID) return;
