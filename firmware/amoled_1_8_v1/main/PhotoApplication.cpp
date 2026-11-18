@@ -6,7 +6,8 @@
 namespace AmoledV1 {
 void AmoledApp::openPhotoCamera(uint32_t nowMs){
     const auto& route=exploreSession_.state();
-    if(sceneFlow.current()!=AppSceneFlow::Scene::EXPLORE_ROUTE||!exploreSessionActive||route.exploreRoutePaused||route.exploreRouteComplete||route.exploreRouteExitConfirm||route.exploreRouteExiting||route.exploreRouteIceSliding||exploreTransition_.fade().active())return;
+    if(sceneFlow.current()!=AppSceneFlow::Scene::EXPLORE_MENU||!exploreSessionActive||route.exploreRouteComplete||route.exploreRouteExitConfirm||route.exploreRouteExiting||route.exploreRouteIceSliding||exploreTransition_.fade().active())return;
+    sceneFlow.closeExploreMenu();
     cancelTouch();pauseExploreRoute(nowMs);photoClockMs_=nowMs;
     photoFlow_.openCamera(selectedExploreArea,gameState.gameMinutesTotal/1440+1);
     requestFullRender();

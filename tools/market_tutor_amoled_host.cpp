@@ -109,6 +109,10 @@ struct AmoledAppTestAccess {
         advance(3); shot("01-greet");
         advance(600); // A full minute never advances the greeting on its own.
         assert(ui().page() == Page::GREET && !ui().animating());
+        auto lowGreetingView = app.marketViewport();
+        lowGreetingView.cameraOffsetY -= 160;
+        assert(ui().sceneShift(*app.market_, lowGreetingView) == 0 &&
+               "Even a low stall greeting keeps the walking camera");
         drag(184, 360, 184, 260);
         assert(ui().page() == Page::GREET);
         TouchEvent greetDown{}; greetDown.type = TouchEventType::DOWN;
@@ -123,6 +127,7 @@ struct AmoledAppTestAccess {
         assert(ui().page() == Page::MENU && ui().animating() && ui().panelTop() == 328 && ui().hudOffset() < -40);
         const auto viewport = app.marketViewport();
         const int greetingShift = ui().sceneShift(*app.market_, viewport);
+        assert(greetingShift == 0);
         shot("01a-opening-start");
         tap(184, 244); // A tap during the slide cannot choose a service.
         assert(ui().page() == Page::MENU);

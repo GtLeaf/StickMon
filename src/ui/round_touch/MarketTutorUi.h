@@ -16,6 +16,7 @@
 #include "ui/common/MarketCoinHud.h"
 #include "ui/common/MarketListScroll.h"
 #include "ui/common/MarketTutorPerformance.h"
+#include "ui/common/MarketDialogueUi.h"
 #include "ui/common/MarketView.h"
 #include "ui/round_touch/MarketStallUi.h"
 
@@ -38,7 +39,7 @@ public:
     };
     using Rect = RoundMarketStall::Rect;
 
-    static constexpr int W = 360, H = 360, PANEL_Y = 132, ROW_Y = 140, ROW_H = 56, GREET_H = 140;
+    static constexpr int W = 360, H = 360, PANEL_Y = 132, ROW_Y = 140, ROW_H = 56, GREET_H = MarketDialogueUi::ROUND_HEIGHT;
     static constexpr int MENU_Y = PANEL_Y, MENU_ROW_H = 64;
     static constexpr uint32_t TRAIN_MS = MarketTutorPerformance::TRAINING_MS;
     static constexpr uint32_t TEACH_MS = MarketTutorPerformance::LEARNING_MS, TRAIN_SKIP_MS = 400;
@@ -53,26 +54,32 @@ public:
     int scrollOffset() const { return scroll_; }
     bool animating() const { return transition_ != Transition::NONE; }
     int panelTop() const { return page_ == Page::GREET ? H - GREET_H + panelOffset() : basePanelTop() + panelOffset(); }
-    int hudOffset() const { return transition_==Transition::CLOSING?tween(0,-64):0; }
+    int hudOffset() const {
+        if (page_ == Page::GREET) return MarketStallMotion::HUD_HIDDEN;
+        if (transition_ == Transition::OPENING && page_ != Page::ERROR) return tween(MarketStallMotion::HUD_HIDDEN,0);
+        return transition_==Transition::CLOSING?tween(0,MarketStallMotion::HUD_HIDDEN):0;
+    }
 
     void open(const Game::GameState& state, const char* welcome = nullptr, bool initialized = true) {
         *this = RoundMarketTutorUi{};
         period_=state.marketTutor.periodDay;
         page_ = initialized ? Page::GREET : Page::ERROR;
         transition_ = Transition::GREET_IN;
+        if (!initialized) return;
         const auto& t = state.marketTutor;
-        if (t.move && !t.taught) {
+        if (welcome) greeting_.start(welcome,MarketTutorText::SPEAKER);
+        else if (t.move && !t.taught) {
+            char greeting[96];
             const MoveInfo* move = findMove(t.move);
-            std::snprintf(greet_, sizeof(greet_), MarketTutorText::GREET_CLASS, move ? move->name : "");
+            std::snprintf(greeting, sizeof(greeting), MarketTutorText::GREET_CLASS, move ? move->name : "");
+            greeting_.start(greeting,MarketTutorText::SPEAKER);
         } else {
-            std::snprintf(greet_, sizeof(greet_), "%s", t.move ? MarketTutorText::GREET_TAUGHT : MarketTutorText::GREET_CLOSED);
+            greeting_.start(t.move ? MarketTutorText::GREET_TAUGHT : MarketTutorText::GREET_CLOSED,MarketTutorText::SPEAKER);
         }
-        if (welcome) std::snprintf(greet_, sizeof(greet_), "%s", welcome);
     }
     void close() { feedback_.clear(); page_ = Page::CLOSED; transition_ = Transition::NONE; cancelTouch(); pending_ = false; }
     void cancelTouch() { tap_.cancel(); scrollMotion_.cancel(); confirmScrollMotion_.cancel(); }
 
-    // Only an explicit completed tap advances the greeting.
     bool update(uint32_t deltaMs) {
         if (!active() || !deltaMs) return false;
         deltaMs = std::min<uint32_t>(deltaMs, 250);
@@ -89,6 +96,7 @@ public:
             }
             return true;
         }
+        if (page_ == Page::GREET) return greeting_.update(deltaMs) || changed;
         if (performing()) {
             const uint32_t duration = page_ == Page::TEACHING ? TEACH_MS : TRAIN_MS;
             showMs_ = std::min(duration, showMs_ + deltaMs);
@@ -104,18 +112,18 @@ public:
         return changed;
     }
 
-    // Camera shift that keeps the facing actors inside the top scene band.
-    // The greeting box covers the bottom 120px, the stall panel everything
-    // below the current panel top; feet land about 28px above the covered edge.
+    // Move the camera with the service panel.
     int sceneShift(const Market::Session& s, const MarketView::Viewport& v) const {
+        if (page_ == Page::GREET) return 0;
         const int shift=RoundMarketStall::sceneShift(s,v);
-        if(transition_==Transition::GREET_IN)return tween(0,shift);
+        if(transition_==Transition::OPENING)return tween(0,shift);
         if(transition_==Transition::CLOSING)return tween(shift,0);
         return shift;
     }
     int sceneShiftX(const Market::Session& s,const MarketView::Viewport& v) const {
+        if (page_ == Page::GREET) return 0;
         const int shift=RoundMarketStall::sceneShiftX(s,v);
-        if(transition_==Transition::GREET_IN)return tween(0,shift);
+        if(transition_==Transition::OPENING)return tween(0,shift);
         if(transition_==Transition::CLOSING)return tween(shift,0);
         return shift;
     }
@@ -131,8 +139,7 @@ public:
             return none;
         }
         if (page_ == Page::GREET) {
-            // The lifting finger of the skip tap never lands on the menu.
-            if (tap_.update(e, 0) == 0) { feedback_.set(SfxCue::UI_CONFIRM); openPanel(); }
+            if (greeting_.touch(e,tap_)) { feedback_.set(SfxCue::UI_CONFIRM); openPanel(); }
             return none;
         }
         if (page_ == Page::RECALL_LIST && listDrag(e, state)) return none;
@@ -188,7 +195,7 @@ public:
 
     void render(const Game::GameState& state, const MarketCoinMotion* coins = nullptr) const {
         if (page_ == Page::CLOSED) return;
-        if (page_ == Page::GREET) { renderGreet(); renderHud(state,coins); return; }
+        if (page_ == Page::GREET) { greeting_.render(panelOffset()); return; }
         panel(basePanelTop());
         switch (page_) {
         case Page::ERROR: body(MarketTutorText::SAVE_FAILED,{68,204,224,54},true,red());button(wide(),"离开",true);break;
@@ -228,7 +235,8 @@ private:
     mutable bool confirmMessage_=false;
     bool pending_ = false;
     const char* error_ = nullptr;
-    char greet_[96]{}, result1_[96]{}, result2_[64]{};
+    MarketDialogueUi::RoundGreeting greeting_;
+    char result1_[96]{}, result2_[64]{};
 
     enum Target { ROW0 = 0, ROW1, ROW2, FOOTER = 10, BACK, PRIMARY, CLOSE, RECALL_ROW = 20, OUTSIDE = 1000, DISABLED };
 
@@ -557,11 +565,6 @@ private:
 
     void body(const char* value,Rect r,bool centered=false,uint16_t color=0,int maxSize=32) const {
         r.y+=panelOffset();RoundMarketStall::body(bodyText_,value,r,centered,color,false,0,maxSize);
-    }
-    void renderGreet() const {
-        char value[sizeof(greet_)+sizeof(MarketTutorText::SPEAKER)];
-        std::snprintf(value,sizeof(value),"%s%s",MarketTutorText::SPEAKER,greet_);
-        RoundMarketStall::dialogue(value,panelOffset());
     }
     void renderMenu(const Game::GameState& s) const {
         const char* names[]={MarketTutorText::MENU_TUTOR,MarketTutorText::MENU_RECALL,MarketTutorText::MENU_TRAIN};

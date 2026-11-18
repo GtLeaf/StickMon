@@ -6,7 +6,6 @@
 #include "core/UiStrings.h"
 #include "presentation/PixelRenderer.h"
 #include "ui/common/HomeUiContent.h"
-#include "ui/round_touch/PhotoUi.h"
 
 namespace Ui::RoundExplore {
 namespace {
@@ -135,7 +134,13 @@ void drawRouteHud(const ExploreRouteFrame& frame) {
             GameAssets::drawCentered(status, slot.x + slot.width / 2, slot.y + slot.height / 2);
         }
     }
-    if (showMenu) {
+    drawRouteMenu(frame.exploreMenuOpen, frame.exploreMenuCursor, showMenu);
+}
+
+void drawRouteMenu(bool open, uint8_t cursor, bool buttonVisible) {
+    auto& c = PixelRenderer::canvas();
+    const auto foreground = PixelRenderer::rgb(247, 246, 233);
+    if (buttonVisible) {
         const auto button = ROUTE_MENU_BUTTON;
         c.fillRoundRect(button.x, button.y, button.width, button.height,
             8, PixelRenderer::rgb(23, 45, 50));
@@ -146,22 +151,20 @@ void drawRouteHud(const ExploreRouteFrame& frame) {
         for (int y : {centerY - 7, centerY - 1, centerY + 5})
             c.fillRect(x, y, 18, 2, foreground);
     }
-    if (!frame.exploreMenuOpen) {
-        if(frame.menuAvailable)RoundPhotoUi::cameraIcon(c,180,82);
-        return;
-    }
+    if (!open) return;
     c.fillRoundRect(ROUTE_PANEL.x, ROUTE_PANEL.y, ROUTE_PANEL.width,
         ROUTE_PANEL.height, 8, PixelRenderer::rgb(20, 25, 32));
     c.drawRoundRect(ROUTE_PANEL.x, ROUTE_PANEL.y, ROUTE_PANEL.width,
         ROUTE_PANEL.height, 8, PixelRenderer::rgb(190, 200, 205));
-    for (uint8_t i = 0; i < AppSceneFlow::exploreMenuItemCount(); ++i) {
+    for (uint8_t i = 0; i < AppSceneFlow::exploreMenuItemCount(true); ++i) {
+        const auto entry = AppSceneFlow::exploreMenuEntry(i, true);
         const auto row = routeMenuItem(i);
-        const bool selected = i == frame.exploreMenuCursor;
+        const bool selected = i == cursor;
         const auto color = selected ? PixelRenderer::rgb(255, 216, 72) : foreground;
-        if (selected) c.fillRect(row.x + 6, row.y + 10, 3, 24, color);
-        PixelRenderer::textSmooth(row.x + 21, row.y + 11,
-            i + 1 == AppSceneFlow::exploreMenuItemCount() ? CLOSE_MENU :
-                Ui::Explore::SIDE_MENU_ITEMS[i], color, 20);
+        if (selected) c.fillRect(row.x + 6, row.y + (row.height - 24) / 2, 3, 24, color);
+        PixelRenderer::textSmooth(row.x + 21, row.y + (row.height - 20) / 2,
+            entry.item == AppSceneFlow::ExploreMenuItem::BACK ? CLOSE_MENU :
+                entry.shortLabel, color, 20);
     }
 }
 }  // namespace Ui::RoundExplore

@@ -2,8 +2,8 @@
 #include <cstdint>
 
 namespace BitmapText {
-enum class Font : uint8_t { PX16, PX32 };
-inline int height(Font font) { return font==Font::PX32?32:16; }
+enum class Font : uint8_t { PX16, PX32, PX20 };
+inline int height(Font font) { return font==Font::PX32?32:font==Font::PX20?20:16; }
 inline bool usesUnscii(uint32_t cp) { return cp<0x80||cp==0x2640||cp==0x2642; }
 inline int advance(uint32_t cp,Font font) { return height(font)/(usesUnscii(cp)?2:1); }
 

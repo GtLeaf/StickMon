@@ -620,9 +620,52 @@ void PixelRenderer::text(Canvas565& target, int x, int y, const char* value,
     }
 }
 
+static void drawSmoothText(Canvas565& canvas, int x, int y, const char* value,
+                           uint16_t color, uint8_t height) {
+    if (!value || height < 16 || height > 20) return;
+    const int startX = x;
+    while (*value) {
+        const uint32_t codepoint = readUtf8(value);
+        if (codepoint == '\n') { x = startX; y += height; continue; }
+        const bool ascii = usesUnscii(codepoint);
+        const int width = ascii ? height / 2 : height;
+        if (codepoint == ' ') { x += width; continue; }
+        const int sourceSize = height == 16 ? 16 : 20;
+        const auto* coverage = FontResource::ins().findCoverageGlyph(codepoint, sourceSize);
+        const auto* bitmap = coverage ? nullptr : FontResource::ins().findGlyphBitmap(
+            codepoint, ascii ? FontFace::UNSCII_ASCII : FontFace::SARASA_CJK);
+        const auto* fallback = coverage || bitmap || ascii ? nullptr : findFontFallbackCNGlyph(codepoint);
+        if (fallback) bitmap = fallback->bitmap;
+        for (int row = 0; row < height; ++row) for (int col = 0; col < width; ++col) {
+            const int px = x + col, py = y + row;
+            if (px < canvas.clipLeft() || px >= canvas.clipRight() ||
+                py < canvas.clipTop() || py >= canvas.clipBottom()) continue;
+            uint8_t alpha = 0;
+            if (coverage) {
+                const int index = row * sourceSize / height * sourceSize + col * sourceSize / height;
+                const uint8_t packed = coverage[index / 2];
+                alpha = ((index & 1) ? (packed & 15) : (packed >> 4)) * 17;
+            } else if (bitmap) {
+                const int sx = col * (ascii ? ASCII_CELL_WIDTH : 16) / width;
+                const int sy = row * 16 / height;
+                alpha = (readGlyphRow(bitmap, sy, fallback != nullptr) & (1U << (15 - sx))) ? 255 : 0;
+            }
+            if (alpha == 255) canvas.drawPixel(px, py, color);
+            else if (alpha) canvas.drawPixel(px, py,
+                blendRgb565(canvas.readPixel(px, py), color, alpha));
+        }
+        if (!coverage && !bitmap) canvas.drawRect(x + 1, y + 2, width - 2, height - 4, color);
+        x += width;
+    }
+}
+
 void PixelRenderer::bitmapText(Canvas565& target, int x, int y, const char* value,
                                uint16_t color, BitmapText::Font font) {
     if (!value) return;
+    if (font == BitmapText::Font::PX20) {
+        drawSmoothText(target, x, y, value, color, 20);
+        return;
+    }
     if (font == BitmapText::Font::PX16) {
         drawTextPass(target, x, y, value, color);
         return;
@@ -670,39 +713,7 @@ void PixelRenderer::bitmapText(Canvas565& target, int x, int y, const char* valu
 
 void PixelRenderer::textSmooth(int x, int y, const char* value, uint16_t color,
                                uint8_t height) {
-    if (!value || height < 16 || height > 20) return;
-    const int startX = x;
-    while (*value) {
-        const uint32_t codepoint = readUtf8(value);
-        if (codepoint == '\n') { x = startX; y += height; continue; }
-        const bool ascii = usesUnscii(codepoint);
-        const int width = ascii ? height / 2 : height;
-        if (codepoint == ' ') { x += width; continue; }
-        const int sourceSize = height == 16 ? 16 : 20;
-        const auto* coverage = FontResource::ins().findCoverageGlyph(codepoint, sourceSize);
-        const auto* bitmap = coverage ? nullptr : FontResource::ins().findGlyphBitmap(
-            codepoint, ascii ? FontFace::UNSCII_ASCII : FontFace::SARASA_CJK);
-        const auto* fallback = coverage || bitmap || ascii ? nullptr : findFontFallbackCNGlyph(codepoint);
-        if (fallback) bitmap = fallback->bitmap;
-        for (int row = 0; row < height; ++row) for (int col = 0; col < width; ++col) {
-            const int px = x + col, py = y + row;
-            if (px < 0 || px >= gCanvas.width() || py < 0 || py >= gCanvas.height()) continue;
-            uint8_t alpha = 0;
-            if (coverage) {
-                const int index = row * sourceSize / height * sourceSize + col * sourceSize / height;
-                const uint8_t packed = coverage[index / 2];
-                alpha = ((index & 1) ? (packed & 15) : (packed >> 4)) * 17;
-            } else if (bitmap) {
-                const int sx = col * (ascii ? ASCII_CELL_WIDTH : 16) / width;
-                const int sy = row * 16 / height;
-                alpha = (readGlyphRow(bitmap, sy, fallback != nullptr) & (1U << (15 - sx))) ? 255 : 0;
-            }
-            if (alpha) gCanvas.drawPixel(px, py,
-                blendRgb565(gCanvas.readPixel(px, py), color, alpha));
-        }
-        if (!coverage && !bitmap) gCanvas.drawRect(x + 1, y + 2, width - 2, height - 4, color);
-        x += width;
-    }
+    drawSmoothText(gCanvas, x, y, value, color, height);
 }
 
 void PixelRenderer::textOutlined(int x, int y, const char* value, uint16_t color,

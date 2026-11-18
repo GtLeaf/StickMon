@@ -115,10 +115,9 @@ public:
         return changed;
     }
 
-    // Camera shift that keeps the facing actors inside the top scene band.
-    // The greeting box covers the bottom 120px, the stall panel everything
-    // below the current panel top; feet land about 28px above the covered edge.
+    // Move the camera with the service panel.
     int sceneShift(const Market::Session& s, const MarketView::Viewport& v) const {
+        if (page_ == Page::GREET) return 0;
         const int camera = v.cameraY(s);
         int lowest = -100000;
         for (int role = 0; role < 4; ++role) {
@@ -126,12 +125,10 @@ public:
             if (i >= 0) lowest = std::max(lowest, v.pixel(s.pose(i).y) - camera);
         }
         if (lowest < -10000) return 0;
-        const int greeting = std::clamp(lowest - (H - 148), 0, 120);
         const int opened = std::clamp(lowest - (basePanelTop() - 28), -240, 240);
-        if (transition_ == Transition::GREET_IN) return tween(0, greeting);
-        if (transition_ == Transition::OPENING) return tween(greeting, opened);
+        if (transition_ == Transition::OPENING) return tween(0, opened);
         if (transition_ == Transition::CLOSING) return tween(opened, 0);
-        return page_ == Page::GREET ? greeting : opened;
+        return opened;
     }
 
     Request touch(const Platform::IInputDevice::TouchEvent& e, const Game::GameState& state) {

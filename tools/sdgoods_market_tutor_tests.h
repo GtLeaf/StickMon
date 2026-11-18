@@ -8,7 +8,8 @@ static void tutorOpen(Journey& j,bool initialized=true){
     assert(keeper>=0&&marketStandNear(*j.scene.market_,keeper));j.scene.marketUi_.chatTarget=keeper;j.scene.marketUi_.refresh(*j.scene.market_);
     j.tap(180,304);assert(j.scene.marketServicePending_&&!j.scene.marketUi_.dialogue().active());j.advance(1000);
     if(!initialized){assert(j.scene.marketTutorUi_.page()==TutorPage::ERROR);return;}
-    assert(j.scene.marketTutorUi_.page()==TutorPage::GREET);j.shot("tutor-01-greeting");j.tap(180,260);j.advance(500);assert(j.scene.marketTutorUi_.page()==TutorPage::MENU);
+    assert(j.scene.marketTutorUi_.page()==TutorPage::GREET);
+    j.advance(1100);j.shot("tutor-01-greeting");j.finishGreeting(j.scene.marketTutorUi_);
 }
 static void tutorLeave(Journey& j){j.tap(180,100);j.advance(600);assert(!j.scene.marketTutorUi_.active()&&!j.scene.market_->conversing());}
 static void tutorJourney(DesktopPlatform& desktop,GameEngine& engine,Blobs& blobs,Display& display,const std::string& out){

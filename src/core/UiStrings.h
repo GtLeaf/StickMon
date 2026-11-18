@@ -907,6 +907,7 @@ static constexpr const char* SOAP_NAMES[] = {
 }
 
 namespace Photo {
+static constexpr const char* TAKE="拍照";
 static constexpr const char* ALBUM="相册";
 static constexpr const char* PREVIEW="预览";
 static constexpr const char* RETAKE="重拍";

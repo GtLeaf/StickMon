@@ -36,7 +36,7 @@ ExploreBattleLayout battleLayout() {
 }
 enum Target {
     TARGET_WALK = 100, TARGET_COMMAND = 110, TARGET_MENU = 120, TARGET_SPECIAL = 130, TARGET_FRIEND = 132,
-    TARGET_PICKUP = 140, TARGET_RESULT, TARGET_END, TARGET_DEFEAT, TARGET_OPEN_MENU, TARGET_PHOTO
+    TARGET_PICKUP = 140, TARGET_RESULT, TARGET_END, TARGET_DEFEAT, TARGET_OPEN_MENU
 };
 int touchContext(const ExploreInputFrame& frame) {
     return static_cast<int>(frame.phase) | (int(frame.menuOpen) << 8) |
@@ -120,10 +120,9 @@ int ExploreUi::touchTarget(int16_t x, int16_t y) {
     if (frame.phase == ExplorePhase::WALKING) {
         if (frame.iceSliding || frame.routeBlocked) return -1;
 #if STICKMON_UI_ROUND_TOUCH
-        if (!frame.menuOpen && RoundExplore::ROUTE_CAMERA.contains(x,y)) return TARGET_PHOTO;
         if (RoundExplore::ROUTE_MENU.contains(x, y)) return TARGET_OPEN_MENU;
         if (frame.menuOpen) {
-            for (int i = 0; i < AppSceneFlow::exploreMenuItemCount(); ++i)
+            for (int i = 0; i < AppSceneFlow::exploreMenuItemCount(true); ++i)
                 if (RoundExplore::routeMenuItem(i).contains(x, y)) return TARGET_MENU + i;
             return -1;
         }
@@ -183,7 +182,6 @@ bool ExploreUi::onTap(int target) {
 #endif
     if (frame.phase == ExplorePhase::WALKING && !frame.iceSliding && !frame.routeBlocked) {
 #if STICKMON_UI_ROUND_TOUCH
-        if (!frame.menuOpen && target == TARGET_PHOTO) return host.activateExplore(ExploreAction::PHOTO);
         if (frame.menuOpen && target == TARGET_OPEN_MENU)
             return host.activateExplore(ExploreAction::MENU_RETURN_PAUSE);
 #endif
@@ -192,9 +190,10 @@ bool ExploreUi::onTap(int target) {
             return host.activateExplore(ExploreAction::OPEN_MENU);
         }
         if (!frame.menuOpen && target == TARGET_WALK) return host.activateExplore(ExploreAction::WALK);
-        if (frame.menuOpen && target >= TARGET_MENU && target < TARGET_MENU + AppSceneFlow::exploreMenuItemCount()) {
+        if (frame.menuOpen && target >= TARGET_MENU &&
+            target < TARGET_MENU + AppSceneFlow::exploreMenuItemCount(STICKMON_UI_ROUND_TOUCH)) {
             state.exploreMenuCursor = static_cast<uint8_t>(target - TARGET_MENU);
-            if (AppSceneFlow::exploreMenuEntry(state.exploreMenuCursor).item ==
+            if (AppSceneFlow::exploreMenuEntry(state.exploreMenuCursor, STICKMON_UI_ROUND_TOUCH).item ==
                 AppSceneFlow::ExploreMenuItem::BACK)
                 return host.activateExplore(ExploreAction::MENU_RETURN_PAUSE);
             return host.activateExplore(ExploreAction::MENU_ITEM, state.exploreMenuCursor);

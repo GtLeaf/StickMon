@@ -37,6 +37,11 @@ static void run(DesktopPlatform& desktop,PhotoFiles& files,const char* output){
     uint32_t time=desktop.millis();
     auto event=[&](TouchEventType type,int x,int y){desktop.sleepMs(40);time=desktop.millis();app.handleTouch({type,int16_t(x),int16_t(y),int16_t(x),int16_t(y),time});};
     auto tap=[&](int x,int y){event(TouchEventType::DOWN,x,y);event(TouchEventType::UP,x,y);};
+    auto openCamera=[&](){
+        tap(120,396);assert(app.sceneFlow.current()==S::EXPLORE_MENU);
+        tap(308,52);
+        assert(app.sceneFlow.current()==S::EXPLORE_ROUTE&&app.photoFlow_.viewfinder()&&"First menu row must open camera");
+    };
     auto shot=[&](const char* name){
         app.forceFullRender();app.render(PixelRenderer::canvas());app.markRendered();
         const auto path=std::string(output)+"/"+name+".ppm";FILE*f=std::fopen(path.c_str(),"wb");assert(f);std::fprintf(f,"P6\n368 448\n255\n");
@@ -53,7 +58,9 @@ static void run(DesktopPlatform& desktop,PhotoFiles& files,const char* output){
     const auto before=app.exploreRouteModel();const auto fingerprint=ExploreMapGenerator::fingerprint(*before.map);
     shot("01-entry");
     tap(44,396);
-    assert(app.sceneFlow.current()==AppSceneFlow::Scene::EXPLORE_ROUTE&&"Explore lower-left shortcut must enter camera instead of BAG");
+    assert(app.sceneFlow.current()==S::BAG&&!app.photoFlow_.active());
+    app.closeItemScene();assert(app.sceneFlow.current()==S::EXPLORE_ROUTE);
+    openCamera();
     assert(app.photoFlow_.page()==P::VIEWFINDER&&app.exploreSession_.state().exploreRoutePaused);
     shot("02-viewfinder");bands();event(TouchEventType::UP,184,396);assert(app.photoFlow_.page()==P::VIEWFINDER);
     event(TouchEventType::DOWN,184,396);app.cancelTouch();event(TouchEventType::UP,184,396);assert(app.photoFlow_.page()==P::VIEWFINDER);
@@ -83,7 +90,7 @@ static void run(DesktopPlatform& desktop,PhotoFiles& files,const char* output){
     event(TouchEventType::DOWN,184,172);event(TouchEventType::MOVE,84,72);event(TouchEventType::UP,84,72);frameAt(0,0);
     shot("15-frame-upper-left");bands();desktop.sleepMs(66);app.update(desktop.millis());frameAt(0,0);
     // Back remains a button when the crop is underneath it; reopening resets crop.
-    tap(36,28);assert(!app.photoFlow_.active());tap(44,396);frameAt(56,44);
+    tap(36,28);assert(!app.photoFlow_.active());openCamera();frameAt(56,44);
     // Reaching all four sides clamps to the viewport, never the104px control bar.
     event(TouchEventType::DOWN,184,172);event(TouchEventType::MOVE,4,4);event(TouchEventType::UP,4,4);frameAt(0,0);
     event(TouchEventType::DOWN,100,100);event(TouchEventType::MOVE,300,100);event(TouchEventType::UP,300,100);frameAt(112,0);
@@ -125,10 +132,10 @@ static void run(DesktopPlatform& desktop,PhotoFiles& files,const char* output){
     Photos::Library library;assert(library.refresh()==Photos::Result::OK&&library.count()==1);assert(library.entry(0).day==capturedDay&&"Photo date must be the shutter day, not viewfinder entry day");std::vector<uint16_t> saved(Photos::PIXELS);assert(library.loadImage(library.entry(0),saved.data())==Photos::Result::OK&&saved==expected);
     // The original exploration menu still provides the bag.
     tap(120,396);assert(app.sceneFlow.current()==S::EXPLORE_MENU);
-    tap(308,142);assert(app.sceneFlow.current()==S::BAG);
+    tap(308,172);assert(app.sceneFlow.current()==S::BAG);
     app.closeItemScene();assert(app.sceneFlow.current()==S::EXPLORE_MENU);
     tap(120,396);assert(app.sceneFlow.current()==S::EXPLORE_ROUTE);
-    tap(44,396);tap(184,396);assert(app.photoFlow_.page()==P::PREVIEW);tap(100,420);assert(app.photoFlow_.viewfinder());tap(36,28);assert(!app.photoFlow_.active()&&library.count()==1);
+    openCamera();tap(184,396);assert(app.photoFlow_.page()==P::PREVIEW);tap(100,420);assert(app.photoFlow_.viewfinder());tap(36,28);assert(!app.photoFlow_.active()&&library.count()==1);
     for(int i=0;i<3;++i)assert(library.save(expected.data(),uint8_t(i),12+i)==Photos::Result::OK);
     app.openComputerScene();shot("05-computer");tap(120,290);assert(app.photoFlow_.page()==P::ALBUM&&app.photoFlow_.count()==4);shot("06-album");
     tap(90,140);assert(app.photoFlow_.page()==P::DETAIL&&app.photoFlow_.image());shot("07-detail");
@@ -148,7 +155,7 @@ static void run(DesktopPlatform& desktop,PhotoFiles& files,const char* output){
     assert(app.photoFlow_.page()==P::ALBUM&&app.photoFlow_.offset()>0&&app.photoFlow_.moving());
     desktop.sleepMs(66);app.update(desktop.millis());assert(app.photoFlow_.page()==P::ALBUM);shot("09-album-scroll");
     app.cancelTouch();event(TouchEventType::UP,100,270);assert(app.photoFlow_.page()==P::ALBUM&&!app.photoFlow_.moving());tap(36,36);assert(!app.photoFlow_.active());
-    app.sceneFlow.enter(S::EXPLORE_ROUTE);tap(44,396);assert(app.photoFlow_.viewfinder()&&app.photoFlow_.count()==5);tap(184,396);assert(app.photoFlow_.viewfinder()&&app.photoFlow_.error());
+    app.sceneFlow.enter(S::EXPLORE_ROUTE);openCamera();assert(app.photoFlow_.viewfinder()&&app.photoFlow_.count()==5);tap(184,396);assert(app.photoFlow_.viewfinder()&&app.photoFlow_.error());
     assert(!app.prepareDisplayLock(desktop.millis())&&!app.photoFlow_.active());assert(library.refresh()==Photos::Result::OK&&library.count()==5);
     std::puts("photo AMOLED: actual shortcut/clean capture/keep-awake/park/retry/slow write/reload/route return/bag/album/swipe/delete/dirty bands/byte order OK");
     std::printf("native host timing only: clean capture%lldus, save%lldus (not device measurements)\n",static_cast<long long>(captureUs),static_cast<long long>(saveUs));

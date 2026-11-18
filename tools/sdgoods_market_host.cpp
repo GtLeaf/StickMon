@@ -3,11 +3,13 @@
 #include <cassert>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <string>
 #include <vector>
 #include "platform/desktop/DesktopPlatform.h"
+#include "platform/common/PosixUserFiles.h"
 #define private public
 #include "core/GameEngine.h"
 #include "scenes/ExploreScene.h"
@@ -39,6 +41,9 @@ public:
     bool failAll=false,failHistory=false,failPrimary=false;int failedHistory=0;uint32_t delay=0;DesktopPlatform* clock=nullptr;
     bool initialize()override{return b.initialize();}
     size_t blobSize(const char* n,const char* k)override{return b.blobSize(n,k);}
+    Platform::BlobLookup lookupBlob(const char* n,const char* k,size_t& size)override{
+        return b.lookupBlob(n,k,size);
+    }
     bool readBlob(const char*n,const char*k,void*d,size_t s)override{return b.readBlob(n,k,d,s);}
     bool writeBlob(const char*n,const char*k,const void*d,size_t s)override{
         if(delay&&clock)clock->advanceMs(delay);
@@ -87,7 +92,13 @@ using Page=UI::Page;
 static void stallCameraBounds(const Market::Session& session);
 struct UiDriver {
     Game::GameState state{}; UI ui; uint32_t time=1000;
-    UiDriver(){state.coins=20000;Game::MarketShop::ensurePeriod(state);ui.open(state);advance(4000);}
+    UiDriver(){
+        state.coins=20000;Game::MarketShop::ensurePeriod(state);ui.open(state);advance(4000);
+        assert(ui.page()==Page::GREET&&"Greetings wait for the reader");
+        tap(180,180);assert(ui.page()==Page::GREET&&"Taps outside the dialogue box do not advance it");
+        for(int i=0;i<8&&ui.page()==Page::GREET;++i)tap(180,285);
+        advance(500);
+    }
     void advance(int ms){while(ms){const auto step=std::min(ms,66);ui.update(step);ms-=step;}}
     UI::Request event(Type type,int x,int y,int dt=40){time+=dt;return ui.touch({type,int16_t(x),int16_t(y),time},state);}
     UI::Request tap(int x,int y){event(Type::DOWN,x,y);return event(Type::UP,x,y);}
@@ -140,11 +151,23 @@ struct Journey {
     void event(Type type,int x,int y,int dt=40){desktop.advanceMs(dt);Event e{type,int16_t(x),int16_t(y),desktop.millis()};
         scene.prepareSurface();Ui::SceneSurface::InputScope scope(desktop.frameBuffer());assert(Ui::SceneSurface::mapTouch(e));scene.onTouch(e);}
     void tap(int x,int y){event(Type::DOWN,x,y);event(Type::UP,x,y);}
+    template<class Stall> void finishGreeting(const Stall& stall) {
+        using StallPage=typename Stall::Page;
+        assert(stall.page()==StallPage::GREET);
+        for(int i=0;i<8&&stall.page()==StallPage::GREET;++i)tap(180,285);
+        advance(500);
+        assert(stall.page()==StallPage::MENU);
+    }
     void shot(const char* name){scene.prepareSurface();assert(Ui::SceneSurface::begin(desktop.frameBuffer()));scene.render();Ui::SceneSurface::finish();capture(out,name);}
     void open(bool initialized=true){int keeper=-1;for(int i=0;i<scene.market_->data().residentCount;++i)if(scene.market_->actor(i).species==Game::MarketShop::STALL_SPECIES)keeper=i;
         assert(keeper>=0&&marketStandNear(*scene.market_,keeper));scene.marketUi_.chatTarget=keeper;scene.marketUi_.refresh(*scene.market_);
         tap(180,304);assert(scene.marketServicePending_&&scene.market_->conversing()&&!scene.marketUi_.dragging);
-        advance(4000);assert(scene.marketShopUi_.page()==(initialized?Page::MENU:Page::ERROR)&&!scene.marketServicePending_);}
+        advance(2200);assert(!scene.marketServicePending_);
+        if(initialized){
+            if(out!=".")shot("shop-greeting");
+            finishGreeting(scene.marketShopUi_);
+        }else assert(scene.marketShopUi_.page()==Page::ERROR);
+    }
     void shelf(){tap(180,190);assert(scene.marketShopUi_.page()==Page::SHELF);}
     void toBox(){for(int n=0;n<4;++n){event(Type::DOWN,180,280);event(Type::MOVE,180,160,100);event(Type::UP,180,160,200);advance(1000);}assert(scene.marketShopUi_.scrollOffset()==412);tap(180,270);assert(scene.marketShopUi_.selected()==Game::MarketShop::BOX&&scene.marketShopUi_.page()==Page::CONFIRM);}
 };
@@ -214,7 +237,10 @@ static void journeyTests(DesktopPlatform& desktop,GameEngine& engine,Blobs& blob
 
 int main(int argc,char**argv){
     assert(argc==5);assert(std::string(argv[4])==(STICKMON_EXTERNAL_CONTENT?"external":"embedded"));DesktopPlatform desktop(argv[1]);auto services=desktop.serviceBundle();Blobs blobs(services.blobs);blobs.clock=&desktop;Display display(services.display);
-    Platform::Services bundle{services.lifecycle,services.clock,services.logger,services.input,display,services.audio,services.imu,services.power,blobs,services.resources,services.memory,services.peers};
+    std::string photoDirectory=std::string(argv[2])+"/workshop-photos.XXXXXX";
+    assert(mkdtemp(photoDirectory.data()));
+    Platform::PosixUserFiles photos(photoDirectory);
+    Platform::Services bundle{services.lifecycle,services.clock,services.logger,services.input,display,services.audio,services.imu,services.power,blobs,services.resources,services.memory,services.peers,&photos};
     Platform::bind(bundle);assert(desktop.begin());
 #if STICKMON_EXTERNAL_CONTENT
     assert(Platform::resources().mount());ContentStore catalog;ContentData::bind(&catalog);

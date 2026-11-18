@@ -89,7 +89,7 @@ bool ExploreUiBase::onButton(const ButtonEvent& event) {
             return host.activateExplore(ExploreAction::MENU_ITEM, state.exploreMenuCursor);
         if (event.btn == 1)
             state.exploreMenuCursor = (state.exploreMenuCursor + 1) %
-                AppSceneFlow::exploreMenuItemCount();
+                AppSceneFlow::exploreMenuItemCount(STICKMON_UI_ROUND_TOUCH);
         return true;
     }
     if (frame.phase == ExplorePhase::WALKING && event.btn == 1 && pressed) {

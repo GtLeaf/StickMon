@@ -16,6 +16,7 @@
 #include "ui/common/MarketUiFeedback.h"
 #include "ui/common/MarketCoinHud.h"
 #include "ui/common/MarketBoxPerformance.h"
+#include "ui/common/MarketDialogueUi.h"
 #include "ui/common/MarketView.h"
 #include "ui/round_touch/MarketStallUi.h"
 
@@ -33,9 +34,9 @@ public:
     };
     using Rect = RoundMarketStall::Rect;
 
-    static constexpr int W = 360, H = 360, PANEL_Y = 132, ROW_Y = 140, ROW_H = 72, GREET_H = 140;
+    static constexpr int W = 360, H = 360, PANEL_Y = 132, ROW_Y = 140, ROW_H = 72, GREET_H = MarketDialogueUi::ROUND_HEIGHT;
     static constexpr int LIST_TOP = ROW_Y, LIST_BOTTOM = 360;
-    static constexpr uint32_t GREET_HOLD_MS = 600, GREET_IN_MS = 360, OPEN_MS = 420, CLOSE_MS = 520;
+    static constexpr uint32_t GREET_IN_MS = 360, OPEN_MS = 420, CLOSE_MS = 520;
 
     bool takeSfx(SfxCue& cue) { return feedback_.takeSfx(cue); }
     bool active() const { return page_ != Page::CLOSED; }
@@ -45,12 +46,16 @@ public:
     uint8_t selected() const { return slot_; }
     int scrollOffset() const { return scroll_; }
     int panelTop() const { return page_ == Page::GREET ? H - GREET_H + offset() : PANEL_Y + offset(); }
-    int hudOffset() const { return transition_==Transition::CLOSING?tween(0,-64):0; }
+    int hudOffset() const {
+        if (page_ == Page::GREET) return MarketStallMotion::HUD_HIDDEN;
+        if (transition_ == Transition::OPENING && page_ != Page::ERROR) return tween(MarketStallMotion::HUD_HIDDEN,0);
+        return transition_==Transition::CLOSING?tween(0,MarketStallMotion::HUD_HIDDEN):0;
+    }
 
     void open(const Game::GameState& state, bool initialized = true) {
         *this = RoundMarketShopUi{};
         page_ = initialized ? Page::GREET : Page::ERROR; transition_ = initialized ? Transition::GREET_IN : Transition::OPENING;
-        greet_ = Game::MarketShop::soldOut(state) ? MarketShopText::GREET_SOLD_OUT : MarketShopText::GREET;
+        if(initialized)greeting_.start(Game::MarketShop::soldOut(state) ? MarketShopText::GREET_SOLD_OUT : MarketShopText::GREET);
         period_ = state.marketSeason.periodDay;
     }
     void close() { feedback_.clear(); page_ = Page::CLOSED; transition_ = Transition::NONE; cancelTouch(); pending_ = false; }
@@ -87,21 +92,20 @@ public:
         }
         if (page_ == Page::SHELF) return scrollMotion_.update(deltaMs, maxScroll(), scroll_);
         scrollMotion_.cancel();
-        if (page_ != Page::GREET) return false;
-        greetMs_ += deltaMs;
-        if (greetMs_ < GREET_HOLD_MS + 40U * uint32_t(std::strlen(greet_) / 3)) return false;
-        openPanel(); return true;
+        return page_ == Page::GREET && greeting_.update(deltaMs);
     }
 
     int sceneShift(const Market::Session& s, const MarketView::Viewport& v) const {
+        if (page_ == Page::GREET) return 0;
         const int shift=RoundMarketStall::sceneShift(s,v);
-        if(transition_==Transition::GREET_IN)return tween(0,shift);
+        if(transition_==Transition::OPENING)return tween(0,shift);
         if(transition_==Transition::CLOSING)return tween(shift,0);
         return shift;
     }
     int sceneShiftX(const Market::Session& s,const MarketView::Viewport& v) const {
+        if (page_ == Page::GREET) return 0;
         const int shift=RoundMarketStall::sceneShiftX(s,v);
-        if(transition_==Transition::GREET_IN)return tween(0,shift);
+        if(transition_==Transition::OPENING)return tween(0,shift);
         if(transition_==Transition::CLOSING)return tween(shift,0);
         return shift;
     }
@@ -118,8 +122,7 @@ public:
             return none;
         }
         if (page_ == Page::GREET) {
-            // The lifting finger of the skip tap never lands on a shelf row.
-            if (tap_.update(e, 0) == 0) { feedback_.set(SfxCue::UI_CONFIRM); openPanel(); }
+            if (greeting_.touch(e,tap_)) { feedback_.set(SfxCue::UI_CONFIRM); openPanel(); }
             return none;
         }
         if (page_ == Page::SHELF && listDrag(e)) return none;
@@ -147,7 +150,7 @@ public:
 
     void render(const Game::GameState& s, const MarketCoinMotion* coins = nullptr) const {
         if (page_ == Page::CLOSED) return;
-        if (page_ == Page::GREET) { renderGreet(); RoundMarketStall::hud(s.coins,coins,hudOffset()); return; }
+        if (page_ == Page::GREET) { greeting_.render(offset()); return; }
         panel();
         if (page_ == Page::MENU) renderMenu();
         else if (page_ == Page::SHELF) renderShelf(s);
@@ -177,7 +180,7 @@ private:
     enum Target { CLOSE = 10, BACK, PRIMARY, OUTSIDE, OPEN_SHELF, OPEN_ADVICE, ADVICE0 = 40 };
     Page page_ = Page::CLOSED;
     Transition transition_ = Transition::NONE;
-    uint32_t transitionMs_ = 0, greetMs_ = 0, period_ = 0;
+    uint32_t transitionMs_ = 0, period_ = 0;
     uint32_t boxMs_ = 0;
     TouchTap tap_;
     MarketUiFeedback feedback_;
@@ -189,7 +192,7 @@ private:
     Game::ItemId rewardItem_ = Game::ItemId::COUNT;
     uint8_t rewardAmount_ = 1;
     const char* error_ = nullptr;
-    const char* greet_ = MarketShopText::GREET;
+    MarketDialogueUi::RoundGreeting greeting_;
     mutable TextBlock bodyText_;
 
     Rect row(int i) const { return {54, ROW_Y + i * ROW_H - scroll_, 252, ROW_H}; }
@@ -315,7 +318,6 @@ private:
     void drawBody(const char* value,Rect r,bool centered=false,int=2,uint16_t color=0,int maxSize=32) const {
         r.y+=offset();RoundMarketStall::body(bodyText_,value,r,centered,color,false,0,maxSize);
     }
-    void renderGreet() const {RoundMarketStall::dialogue(greet_,offset());}
     void renderShelf(const Game::GameState& s) const {
         constexpr int priceSize=24;
         auto& c=PixelRenderer::canvas();

@@ -34,11 +34,6 @@ void back(const PhotoFlow& f){
     for(int n=0;n<2;++n){c.drawLine(x+4+n,y-8,x-4+n,y,ink());c.drawLine(x-4+n,y,x+4+n,y+8,ink());}
 }
 }
-void cameraIcon(Canvas565& c,int x,int y){
-    const auto col=ink();c.fillRoundRect(x-20,y-20,40,40,10,PixelRenderer::rgb(23,45,50));
-    for(int n=0;n<2;++n)c.drawRoundRect(x-14+n,y-8+n,28-2*n,20-2*n,3,col);
-    c.fillRect(x-7,y-12,14,5,col);c.drawCircle(x,y+2,6,col);c.drawCircle(x,y+2,5,col);
-}
 void notice(const char* text){
     PixelRenderer::canvas().fillRoundRect(68,252,224,44,10,PixelRenderer::rgb(17,27,34));
     label(text,76,258,208);
@@ -70,8 +65,8 @@ void render(const PhotoFlow& f){
             const auto trash=f.trashBounds();const int x=trash.x+trash.width/2,y=trash.y+trash.height/2;
             c.drawRect(x-8,y-5,16,17,ink());c.drawFastHLine(x-10,y-9,20,ink());c.drawRect(x-4,y-13,8,4,ink());
             image(f.image(),80,76,200,Photos::WIDTH);
-            const char* areas[]={Explore::GRASS_PATH,Explore::CREEK_SLOPE,Explore::TALL_GRASS_PARK,Explore::FROST_CRYSTAL_CAVE,Explore::MIST_FOREST_PATH,Explore::ANCIENT_WATERFALL_VALLEY};
-            const auto& e=f.entry(f.selected());std::snprintf(text,sizeof(text),Photo::META,areas[e.area<6?e.area:0],unsigned(e.day));
+            const char* areas[]={Explore::GRASS_PATH,Explore::CREEK_SLOPE,Explore::TALL_GRASS_PARK,Explore::FROST_CRYSTAL_CAVE,Explore::MIST_FOREST_PATH,Explore::ANCIENT_WATERFALL_VALLEY,MarketText::NAME};
+            const auto& e=f.entry(f.selected());std::snprintf(text,sizeof(text),Photo::META,areas[e.area<=Photos::MARKET_AREA?e.area:0],unsigned(e.day));
             label(text,60,286,240,16);
             if(page==P::DELETE_CONFIRM){
                 PixelRenderer::fillRectAlpha(0,0,360,360,0,150);c.fillRoundRect(60,132,240,132,12,PixelRenderer::rgb(17,27,34));

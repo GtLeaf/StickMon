@@ -118,7 +118,22 @@ int main(int argc,char**argv){
     shot("01-explore",route);
     auto event=[&](Platform::IInputDevice::TouchType type,int x,int y){desktop.advanceMs(40);route.onTouch({type,int16_t(x),int16_t(y),desktop.millis()});};
     using T=Platform::IInputDevice::TouchType;
-    event(T::DOWN,180,82);event(T::UP,180,82);
+    auto tap=[&](int x,int y){event(T::DOWN,x,y);event(T::UP,x,y);};
+    auto openCamera=[&](){
+        tap(220,35);assert(route.exploreMenuOpen);
+        for (int i=0;i<5;++i) {
+            const auto row=Ui::RoundExplore::routeMenuItem(i);
+            for (int x : {row.x,row.x+row.width-1})
+                for (int y : {row.y,row.y+row.height-1})
+                    assert(route.touchTarget(x,y)==120+i);
+        }
+        if (!route.departureToastUntil) shot("15-photo-menu",route);
+        tap(270,114);
+        assert(route.photo_.viewfinder()&&!route.exploreMenuOpen&&"First menu row must open camera");
+    };
+
+    assert(route.touchTarget(180,82)==100);
+    openCamera();
     assert(route.keepsDisplayAwake()&&"Round camera entry must open awake viewfinder");
     const auto pauseElapsed=route.photoPauseAt_-route.routeMoveStarted;
     using P=Ui::PhotoFlow::Page;assert(route.photo_.viewfinder());assert(route.routePausedForTouch);
@@ -159,17 +174,23 @@ int main(int argc,char**argv){
     Photos::Library library;assert(library.refresh()==Photos::Result::OK&&library.count()==1);
     std::vector<uint16_t> restored(Photos::PIXELS);assert(library.loadImage(library.entry(0),restored.data())==Photos::Result::OK&&restored==expected);
     assert(desktop.millis()-route.routeMoveStarted==pauseElapsed&&"Photo pause must preserve the in-flight route clock");
+    // Reopening the menu during the save notice keeps the close row readable.
+    tap(220,35);assert(route.exploreMenuOpen);
+    route.render();const auto closeRowPixel=canvas.readPixel(280,274);
+    route.departureToastUntil=0;route.render();
+    assert(closeRowPixel==canvas.readPixel(280,274)&&"Save notice must not cover the menu");
+    route.closeExploreMenu();
     desktop.advanceMs(10);route.update(desktop.millis(),.010f);assert(route.routeIndex==originalIndex&&route.routeMoving&&"Slow failed save must not catch up whole route steps");
     // A paused exploration menu must still allow photography, preserving pause on close.
     assert(route.activateExplore(Ui::ExploreAction::OPEN_MENU));
     assert(route.activateExplore(Ui::ExploreAction::MENU_RETURN_PAUSE));
     const auto pausedAt=route.routePausedAt;assert(route.routePausedForTouch);
-    event(T::DOWN,180,82);event(T::UP,180,82);
+    openCamera();
     assert(route.photo_.viewfinder()&&"Camera must also open after closing the exploration menu into pause");
     route.closePhoto();assert(route.routePausedForTouch&&route.routePausedAt==pausedAt);
     route.activateExplore(Ui::ExploreAction::WALK);assert(!route.routePausedForTouch);
     // New camera centers; power lock discards draft without deleting stored photographs.
-    event(T::DOWN,180,82);event(T::UP,180,82);assert(route.photo_.frameX()==68&&route.photo_.frameY()==68);
+    openCamera();assert(route.photo_.frameX()==68&&route.photo_.frameY()==68);
     event(T::DOWN,180,324);event(T::UP,180,324);assert(route.photo_.page()==P::PREVIEW);
     assert(route.prepareDisplayLock()&&!route.photo_.active());assert(library.refresh()==Photos::Result::OK&&library.count()==1);
     route.ui.renderPhotoWorld();
@@ -211,7 +232,7 @@ int main(int argc,char**argv){
     albumTap(106,46);assert(menu.viewMode==MenuScene::ViewMode::COMPUTER&&Ui::SceneSurface::width()==240);shot("12-computer-after",menu);
     Ui::SceneSurface::select(SceneID::EXPLORE);route.prepareSurface();
     // Full archive refuses a sixth shutter without replacing a photo.
-    event(T::DOWN,180,82);event(T::UP,180,82);event(T::DOWN,180,324);event(T::UP,180,324);
+    openCamera();event(T::DOWN,180,324);event(T::UP,180,324);
     assert(route.photo_.viewfinder()&&route.photo_.error());shot("13-camera-full",route);route.closePhoto();
     // Both native framebuffer byte orders render the same round UI.
     Ui::SceneSurface::select(SceneID::MENU);menu.openComputerAlbum();std::vector<uint16_t> visual;

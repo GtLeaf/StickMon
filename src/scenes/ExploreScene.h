@@ -381,6 +381,12 @@ private:
     void closePhoto(bool saved=false);
     bool photoTouch(const Platform::IInputDevice::TouchEvent& event);
     SceneUpdateResult updatePhoto(uint32_t nowMs);
+    void renderMarketPhotoWorld();
+    bool marketMenuAvailable() const;
+    bool marketMenuTouch(const Platform::IInputDevice::TouchEvent& event);
+    bool marketMenuOpen_ = false;
+    bool marketMenuOwnsTouch_ = false;
+    TouchTap marketMenuTap_;
     uint32_t marketCountdownDay_ = UINT32_MAX;
     Ui::RoundMarketShopUi marketShopUi_;
     Ui::RoundMarketTutorUi marketTutorUi_;

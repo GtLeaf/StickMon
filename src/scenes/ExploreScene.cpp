@@ -8,6 +8,7 @@
 #include "ui/common/MarketView.h"
 #include "scenes/ExploreScene.h"
 #if STICKMON_UI_ROUND_TOUCH
+#include "ui/round_touch/ExploreRouteUi.h"
 #include "ui/round_touch/PhotoUi.h"
 #endif
 #include <algorithm>
@@ -568,9 +569,10 @@ SceneUpdateResult ExploreScene::update(uint32_t nowMs, float dtSeconds) {
 #if STICKMON_UI_ROUND_TOUCH
     if(photo_.active())return updatePhoto(nowMs);
 #endif
-    if (market_) {
+    if (market_ && !exploreSubViewOpen) {
         marketUi_.update(*market_,nowMs,!GameEngine::ins().sceneFadeActive());
 #if STICKMON_UI_ROUND_TOUCH
+        if (departureToastUntil && static_cast<int32_t>(nowMs-departureToastUntil)>=0) departureToastUntil=0;
         updateMarketStall(nowMs);
 #endif
         if (market_->finished()) {
@@ -580,7 +582,7 @@ SceneUpdateResult ExploreScene::update(uint32_t nowMs, float dtSeconds) {
         return market_->paused() ? SceneUpdateResult::parked() : SceneUpdateResult::animate(66);
     }
     if (exploreSubViewOpen) {
-        ui.updateRouteVisual(nowMs, false);
+        if (!market_) ui.updateRouteVisual(nowMs, false);
         const auto result = exploreSubView.update(nowMs, dtSeconds);
         // The subview may finish delayed item feedback during this update.
         // Hand pending battle/route work back to the scene on the next frame.
@@ -737,7 +739,7 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
     }
 #endif
     cancelTouch();
-    if (market_) {
+    if (market_ && !exploreSubViewOpen) {
         if (event.action == BtnAction::LONG_PRESS && event.btn == 1) market_->leave();
         else if (event.action == BtnAction::PRESSED) {
             if (event.btn == 0) market_->walkSelected();
@@ -757,6 +759,8 @@ void ExploreScene::cancelTouch() {
     marketUi_.cancel();
 #if STICKMON_UI_ROUND_TOUCH
     photo_.cancelTouch();
+    marketMenuTap_.cancel();
+    marketMenuOwnsTouch_ = false;
     marketShopUi_.cancelTouch();
     marketTutorUi_.cancelTouch();marketCareUi_.cancelTouch();marketWorkshopUi_.cancelTouch();
     marketStallClockMs_ = Hal::ins().millis();
@@ -778,11 +782,16 @@ bool ExploreScene::onTouch(const Platform::IInputDevice::TouchEvent& event) {
 #if STICKMON_UI_ROUND_TOUCH
     if(photo_.active())return photoTouch(event);
 #endif
-    if (market_) {
+    if (market_ && !exploreSubViewOpen) {
 #if STICKMON_UI_ROUND_TOUCH
         if (marketStallActive()) {
             if (!Platform::display().locked() && !market_->paused() && !market_->exiting() && !GameEngine::ins().sceneFadeActive()) {
-                if(marketWorkshopUi_.active())commitMarketWorkshop(marketWorkshopUi_.touch(event,GameEngine::ins().gameState()),event.timestampMs);
+                if(marketWorkshopUi_.active()){
+                    const bool exiting=marketWorkshopUi_.exiting();
+                    const auto request=marketWorkshopUi_.touch(event,GameEngine::ins().gameState());
+                    if(!exiting&&marketWorkshopUi_.exiting())marketStallClockMs_=Hal::ins().millis();
+                    commitMarketWorkshop(request,event.timestampMs);
+                }
                 else if(marketCareUi_.active())commitMarketCare(marketCareUi_.touch(event,GameEngine::ins().gameState()),event.timestampMs);
                 else if(marketTutorUi_.active())commitMarketTutor(marketTutorUi_.touch(event,GameEngine::ins().gameState()),event.timestampMs);
                 else commitMarketShop(marketShopUi_.touch(event,GameEngine::ins().gameState()),event.timestampMs);
@@ -790,6 +799,7 @@ bool ExploreScene::onTouch(const Platform::IInputDevice::TouchEvent& event) {
             return true;
         }
         if (marketServicePending_) { marketUi_.cancel(); return true; }
+        if (marketMenuTouch(event)) return true;
 #endif
         marketUi_.touchSession(*market_,event,Ui::MarketWalkUi::viewport(),!market_->paused()&&!market_->exiting());
 #if STICKMON_UI_ROUND_TOUCH
@@ -3385,18 +3395,27 @@ void ExploreScene::advanceMapBlock(uint8_t nextMap, bool fell) {
 void ExploreScene::render() {
 #if STICKMON_UI_ROUND_TOUCH
     if(photo_.active()){
-        if(photo_.viewfinder())ui.renderPhotoWorld();
+        if(photo_.viewfinder()){
+            if(market_)renderMarketPhotoWorld();
+            else ui.renderPhotoWorld();
+        }
         Ui::RoundPhotoUi::render(photo_);return;
     }
     if (market_ || exploreSubViewOpen || phase != Phase::SELECT) ui.releaseSelectionCache();
 #endif
-    if (market_) {
+    if (market_ && !exploreSubViewOpen) {
 #if STICKMON_UI_ROUND_TOUCH
         if (marketStallActive()) {
             auto view = Ui::MarketWalkUi::viewport();
-            view.cameraOffsetY = marketWorkshopUi_.active()?marketWorkshopUi_.sceneShift(*market_,view):marketCareUi_.active()?marketCareUi_.sceneShift(*market_,view):marketTutorUi_.active()?marketTutorUi_.sceneShift(*market_,view):marketShopUi_.sceneShift(*market_,view);
-            if(marketWorkshopUi_.active())view.cameraOffsetX=marketWorkshopUi_.sceneShiftX(*market_,view);
-            else if(!marketCareUi_.active())view.cameraOffsetX=marketTutorUi_.active()?marketTutorUi_.sceneShiftX(*market_,view):marketShopUi_.sceneShiftX(*market_,view);
+            if (marketCareUi_.active()) {
+                view.cameraOffsetY = marketCareUi_.sceneShift(*market_,view);
+            } else if (marketTutorUi_.active()) {
+                view.cameraOffsetY = marketTutorUi_.sceneShift(*market_,view);
+                view.cameraOffsetX = marketTutorUi_.sceneShiftX(*market_,view);
+            } else if (marketShopUi_.active()) {
+                view.cameraOffsetY = marketShopUi_.sceneShift(*market_,view);
+                view.cameraOffsetX = marketShopUi_.sceneShiftX(*market_,view);
+            }
             Ui::MarketView::render(*market_,view,market_->timeMs(),GameEngine::ins().gameState().gameMinutesTotal);
             if(marketWorkshopUi_.active())marketWorkshopUi_.render(GameEngine::ins().gameState(),&marketCoins_);
             else if(marketCareUi_.active())marketCareUi_.render(GameEngine::ins().gameState(),&marketCoins_);
@@ -3406,6 +3425,12 @@ void ExploreScene::render() {
         }
 #endif
         marketUi_.render(*market_,Ui::MarketWalkUi::viewport(),GameEngine::ins().gameState().gameMinutesTotal);
+#if STICKMON_UI_ROUND_TOUCH
+        if (marketMenuAvailable()) {
+            Ui::RoundExplore::drawRouteMenu(marketMenuOpen_,0);
+            if (departureToastUntil && !marketMenuOpen_) Ui::RoundPhotoUi::notice(departureToast);
+        }
+#endif
         return;
     }
     if (exploreSubViewOpen) {
@@ -3694,12 +3719,6 @@ void ExploreScene::renderExploreProgression() {
 
 bool ExploreScene::activateExplore(Ui::ExploreAction action, uint8_t value) {
     switch (action) {
-    case Ui::ExploreAction::PHOTO:
-#if STICKMON_UI_ROUND_TOUCH
-        return openPhoto();
-#else
-        return false;
-#endif
     case Ui::ExploreAction::RETURN_HOME: completeExploreReturn(false); return true;
     case Ui::ExploreAction::RESUME_WALK: resumeWalk(); return true;
     case Ui::ExploreAction::MENU_RETURN_PAUSE:
@@ -3721,7 +3740,10 @@ bool ExploreScene::activateExplore(Ui::ExploreAction action, uint8_t value) {
         }
         return true;
     case Ui::ExploreAction::MENU_ITEM: {
-        const auto item = AppSceneFlow::exploreMenuEntry(value).item;
+        const auto item = AppSceneFlow::exploreMenuEntry(value, STICKMON_UI_ROUND_TOUCH).item;
+#if STICKMON_UI_ROUND_TOUCH
+        if (item == AppSceneFlow::ExploreMenuItem::PHOTO) return openPhoto();
+#endif
         if (item == AppSceneFlow::ExploreMenuItem::TEAM) {
             cancelTouch();
             exploreSubView.openExploreTeamView();
@@ -3738,6 +3760,9 @@ bool ExploreScene::activateExplore(Ui::ExploreAction action, uint8_t value) {
     case Ui::ExploreAction::OPEN_MENU:
         exploreMenuOpen = true;
         exploreMenuOpenedAt = Hal::ins().millis();
+#if STICKMON_UI_ROUND_TOUCH
+        departureToastUntil = 0;
+#endif
         GameEngine::ins().completeTutorial(Game::TutorialStep::EXPLORE_MENU);
         return true;
     case Ui::ExploreAction::EXIT: requestExploreExit(); return true;
@@ -3992,6 +4017,7 @@ bool ExploreScene::beginMarket() {
     market_ = std::move(market);
     market_->enableManual();marketUi_.reset();
 #if STICKMON_UI_ROUND_TOUCH
+    marketMenuOpen_ = false;
     resetMarketStall();
     marketUi_.enableDialogue();
     marketUi_.setServiceSpecies(Game::MarketShop::STALL_SPECIES);
@@ -4017,6 +4043,9 @@ void ExploreScene::closeMarket() {
     // black. onExit releases them before the ordinary room return begins.
     cancelTouch(); marketUi_.reset();
 #if STICKMON_UI_ROUND_TOUCH
+    marketMenuOpen_ = false;
+    exploreSubViewOpen = false;
+    prepareSurface();
     resetMarketStall();
 #endif
     phase = Phase::ENDING;
@@ -4024,6 +4053,58 @@ void ExploreScene::closeMarket() {
 }
 
 #if STICKMON_UI_ROUND_TOUCH
+bool ExploreScene::marketMenuAvailable() const {
+    return market_ && phase == Phase::WALKING && !exploreSubViewOpen &&
+        !marketStallActive() && !marketServicePending_ && !market_->conversing() &&
+        !market_->paused() && !market_->exiting() && !Platform::display().locked() &&
+        !GameEngine::ins().sceneFadeActive();
+}
+
+bool ExploreScene::marketMenuTouch(const Platform::IInputDevice::TouchEvent& event) {
+    using Type = Platform::IInputDevice::TouchType;
+    using Item = AppSceneFlow::ExploreMenuItem;
+    using namespace Ui::RoundExplore;
+    constexpr int toggle = 20, dismiss = 21;
+    if (!marketMenuAvailable()) {
+        marketMenuTap_.cancel();
+        marketMenuOwnsTouch_ = false;
+        return false;
+    }
+    const bool onButton = ROUTE_MENU.contains(event.x,event.y);
+    if (event.type == Type::DOWN) marketMenuOwnsTouch_ = marketMenuOpen_ || onButton;
+    if (!marketMenuOwnsTouch_) return false;
+    if (event.type == Type::UP || event.type == Type::CANCEL) marketMenuOwnsTouch_ = false;
+    int target = onButton ? toggle : -1;
+    if (target < 0 && marketMenuOpen_) {
+        target = dismiss;
+        for (int i=0;i<AppSceneFlow::exploreMenuItemCount(true);++i) {
+            if (routeMenuItem(i).contains(event.x,event.y)) { target=i; break; }
+        }
+    }
+    const int tapped = marketMenuTap_.update(event,target);
+    if (tapped < 0) return true;
+    if (tapped == toggle) {
+        marketMenuOpen_ = !marketMenuOpen_;
+        marketUi_.cancel();
+        market_->setDirection(-1);
+    } else if (tapped == dismiss) {
+        marketMenuOpen_ = false;
+    } else {
+        switch (AppSceneFlow::exploreMenuEntry(tapped,true).item) {
+        case Item::PHOTO: openPhoto(); break;
+        case Item::TEAM:
+        case Item::BAG: activateExplore(Ui::ExploreAction::MENU_ITEM,uint8_t(tapped)); break;
+        case Item::END:
+            marketMenuOpen_ = false;
+            cancelTouch();
+            market_->leave();
+            break;
+        case Item::BACK: marketMenuOpen_ = false; break;
+        }
+    }
+    return true;
+}
+
 void ExploreScene::resetMarketStall() {
     marketShopUi_.close();marketTutorUi_.close();marketCareUi_.close();marketWorkshopUi_.close();marketServiceSpecies_=0;
     marketCoins_.reset(GameEngine::ins().gameState().coins);

@@ -14,7 +14,6 @@ struct Rect {
     int x,y,w,h;
     bool contains(int px,int py) const { return px>=x&&py>=y&&px<x+w&&py<y+h; }
 };
-inline constexpr Rect PANEL{48,132,264,236},DIALOGUE{0,220,360,180},ACTION{96,282,168,44};
 inline uint16_t paper(){return PixelRenderer::rgb(248,248,224);}
 inline uint16_t ink(){return PixelRenderer::rgb(40,56,80);}
 inline uint16_t edge(){return PixelRenderer::rgb(48,64,112);}
@@ -89,10 +88,11 @@ inline int body(TextBlock& block,const char* value,Rect r,bool centered=true,uin
     c.setClipRect(left,top,right-left,bottom-top);
     return m.height*size/32;
 }
-inline void panel(int offset=0,bool dialogue=false) {
-    const auto r=dialogue?DIALOGUE:PANEL;auto& c=PixelRenderer::canvas();
-    c.fillRoundRect(r.x,r.y+offset,r.w,r.h,dialogue?16:14,paper());
-    c.drawRoundRect(r.x,r.y+offset,r.w,r.h,dialogue?16:14,edge());
+inline constexpr Rect PANEL{48,132,264,236},ACTION{96,282,168,44};
+inline void panel(int offset=0) {
+    const auto r=PANEL;auto& c=PixelRenderer::canvas();
+    c.fillRoundRect(r.x,r.y+offset,r.w,r.h,14,paper());
+    c.drawRoundRect(r.x,r.y+offset,r.w,r.h,14,edge());
 }
 inline void button(Rect r,const char* label,bool primary,bool disabled=false,int offset=0) {
     auto& c=PixelRenderer::canvas();r.y+=offset;
@@ -101,15 +101,6 @@ inline void button(Rect r,const char* label,bool primary,bool disabled=false,int
     c.drawRoundRect(r.x,r.y,r.w,r.h,10,border);c.drawRoundRect(r.x+1,r.y+1,r.w-2,r.h-2,9,border);
     const int size=width(label,32)<=r.w-12?32:width(label,24)<=r.w-12?24:20;
     text(r.x+(r.w-width(label,size))/2,r.y+(r.h-size)/2,label,size,disabled?muted():primary?paper():ink());
-}
-inline void dialogue(const char* value,int offset=0,int textY=228) {
-    panel(offset,true);TextBlock block;const char* remaining=value;
-    for(int row=0;row<3&&*remaining;++row){
-        const int w=row<2?256:192;TextBlock::Options o;o.width=w;o.maxHeight=32;o.font=BitmapText::Font::PX32;o.align=TextBlock::Align::CENTER;
-        block.setText(remaining);block.setOptions(o);const auto l=block.line(0);if(!l.end)break;
-        block.draw(PixelRenderer::canvas(),(360-w)/2,textY+offset+row*34,ink(),TextBlock::DrawRange{0,1,-1});
-        remaining+=l.end;while(*remaining=='\n'||*remaining==' ')++remaining;
-    }
 }
 inline void hud(uint32_t balance,const MarketCoinMotion* motion,int offset=0) {
     MarketCoinMotion still;if(!motion)still.reset(balance);const auto f=motion?motion->frame():still.frame();

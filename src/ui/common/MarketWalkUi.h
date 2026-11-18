@@ -114,8 +114,7 @@ public:
         return clicked==0?CHAT:NONE;
     }
     void render(const Market::Session& s,const MarketView::Viewport& v,uint32_t minutes,bool touchInput=device.touchInput) const {
-        const auto worldView=MarketDialogueUi::viewport(s,v,dialogue_);
-        MarketView::render(s,worldView,s.timeMs(),minutes,dialogue_.environmentMs());
+        MarketView::render(s,v,s.timeMs(),minutes,dialogue_.environmentMs());
         if(dialogue_.active()){MarketDialogueUi::render(dialogue_,v);return;}
         auto& c=PixelRenderer::canvas();
         if(touchInput&&dragging&&!s.exiting()&&!s.paused()) {

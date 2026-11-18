@@ -16,6 +16,7 @@
 #include "ui/common/MarketUiFeedback.h"
 #include "ui/common/MarketCoinHud.h"
 #include "ui/common/MarketListScroll.h"
+#include "ui/common/MarketDialogueUi.h"
 #include "ui/common/MarketView.h"
 
 // Native360 round Chansey UI: greeting, a
@@ -37,9 +38,9 @@ public:
     };
     struct Rect { int x, y, w, h; bool contains(int px, int py) const { return px >= x && py >= y && px < x + w && py < y + h; } };
 
-    static constexpr int W = 360, H = 360, PANEL_Y = 144, ROW_Y = 156, ROW_H = 56, MENU_ROW_H = 46, GREET_H = 136;
+    static constexpr int W = 360, H = 360, PANEL_Y = 144, ROW_Y = 156, ROW_H = 56, MENU_ROW_H = 46, GREET_H = MarketDialogueUi::ROUND_HEIGHT;
     static constexpr int LIST_TOP = 152, LIST_BOTTOM = 304;
-    static constexpr uint32_t GREET_HOLD_MS = 600, GREET_IN_MS = 360, OPEN_MS = 420, CLOSE_MS = 520,
+    static constexpr uint32_t GREET_IN_MS = 360, OPEN_MS = 420, CLOSE_MS = 520,
                               SHRINK_MS = 360, SHOW_MS = 1200, ERROR_MS = 1800;
 
     bool takeSfx(SfxCue& cue) { return feedback_.takeSfx(cue); }
@@ -70,8 +71,8 @@ public:
         if(!BuildConfig::DEBUG_FEATURES)return;
         page_ = Page::GREET; transition_ = Transition::GREET_IN;
         period_ = Game::MarketCare::periodDay(state);
-        std::snprintf(greet_, sizeof(greet_), "%s%s", MarketCareText::SPEAKER,
-                      Game::MarketCare::remaining(state) ? MarketCareText::GREET : MarketCareText::GREET_FULL);
+        greeting_.start(Game::MarketCare::remaining(state) ? MarketCareText::GREET : MarketCareText::GREET_FULL,
+                        MarketCareText::SPEAKER);
     }
     void close() { feedback_.clear(); page_ = Page::CLOSED; transition_ = Transition::NONE; cancelTouch(); pending_ = false; }
     void cancelTouch() { tap_.cancel(); scrollMotion_.cancel(); }
@@ -101,14 +102,12 @@ public:
         if (page_ == Page::LIST)
             return scrollMotion_.update(deltaMs, scrollMaximum_, scroll_) || changed;
         scrollMotion_.cancel();
-        if (page_ != Page::GREET) return changed;
-        greetMs_ += deltaMs;
-        if (greetMs_ < GREET_HOLD_MS + 40U * uint32_t(std::strlen(greet_) / 3)) return changed;
-        openPanel(); return true;
+        return (page_ == Page::GREET && greeting_.update(deltaMs)) || changed;
     }
 
-    // Camera shift that keeps the facing actors above the box or panel.
+    // Move the camera with the service panel.
     int sceneShift(const Market::Session& s, const MarketView::Viewport& v) const {
+        if (page_ == Page::GREET) return 0;
         const int camera = v.cameraY(s);
         int lowest = -100000;
         for (int role = 0; role < 4; ++role) {
@@ -116,14 +115,12 @@ public:
             if (i >= 0) lowest = std::max(lowest, v.pixel(s.pose(i).y) - camera);
         }
         if (lowest < -10000) return 0;
-        const int greeting = std::clamp(lowest - (H - 148), 0, 120);
         const int opened = std::clamp(lowest - (PANEL_Y - 28), -240, 240);
         switch (transition_) {
-        case Transition::GREET_IN: return tween(0, greeting);
-        case Transition::OPENING: return tween(greeting, opened);
+        case Transition::OPENING: return tween(0, opened);
         case Transition::CLOSING: return tween(opened, 0);
-        case Transition::SHRINKING: return tween(opened, greeting);
-        default: return page_ == Page::GREET ? greeting : opened;
+        case Transition::SHRINKING: return tween(opened, 0);
+        default: return opened;
         }
     }
 
@@ -132,7 +129,10 @@ public:
         Request none{};
         if (pending_ || page_ == Page::CLOSED || animating()) { cancelTouch(); return none; }
         if ((int(e.x)-180)*(int(e.x)-180)+(int(e.y)-180)*(int(e.y)-180)>=180*180) {cancelTouch();return none;}
-        if(page_==Page::GREET) {if(tap_.update(e,0)==0){feedback_.set(SfxCue::UI_CONFIRM);openPanel();}return none;}
+        if(page_==Page::GREET) {
+            if(greeting_.touch(e,tap_)){feedback_.set(SfxCue::UI_CONFIRM);openPanel();}
+            return none;
+        }
         if(page_==Page::SHOW) {
             const bool done=showMs_>=SHOW_MS;
             const int target=done?(wide().contains(e.x,e.y)||e.y<PANEL_Y?PRIMARY:-1):(e.y>=PANEL_Y?PRIMARY:-1);
@@ -162,7 +162,7 @@ public:
 
     void render(const Game::GameState& state, const MarketCoinMotion* coins = nullptr) const {
         if (page_ == Page::CLOSED) return;
-        if (page_ == Page::GREET) { renderGreet(); return; }
+        if (page_ == Page::GREET) { greeting_.render(panelOffset()); return; }
         if (page_ == Page::SHOW) { renderShow(state); renderHud(state,coins); return; }
         panel(PANEL_Y + panelOffset());
         switch (page_) {
@@ -181,7 +181,7 @@ private:
     Page page_ = Page::CLOSED;
     Mode mode_ = Mode::MASSAGE;
     Transition transition_ = Transition::NONE;
-    uint32_t transitionMs_ = 0, greetMs_ = 0, showMs_ = 0, errorMs_ = 0, period_ = 0;
+    uint32_t transitionMs_ = 0, showMs_ = 0, errorMs_ = 0, period_ = 0;
     TouchTap tap_;
     MarketUiFeedback feedback_;
     Target target_{};
@@ -194,7 +194,7 @@ private:
     int8_t beforeBond_ = 0, afterBond_ = 0;
     bool evolveHint_ = false;
     const char* error_ = nullptr;
-    char greet_[128]{};
+    MarketDialogueUi::RoundGreeting greeting_;
 
     uint32_t duration() const {
         switch (transition_) {
@@ -437,7 +437,6 @@ private:
         const int y=52+hudOffset();auto& c=PixelRenderer::canvas();c.fillRoundRect(56,y-4,96,32,6,paper());
         PixelRenderer::textSmooth(64,y+6,MarketCareText::TITLE,ink(),20);MarketCoinHud::render(s.coins,coins,y,20,{288,24,32,36});
     }
-    void renderGreet() const {panel(H-GREET_H+panelOffset());body(greet_,72,242,216,70,true);}
     void renderMenu(const Game::GameState& s) const {
         const char* labels[]={MarketCareText::MENU_MASSAGE,MarketCareText::MENU_TEA,MarketCareText::MENU_EVAL};
         for(int i=0;i<3;++i){const auto r=menuRow(i);const bool enabled=i==2||Game::MarketCare::anyEligible(s,service(i?Mode::TEA:Mode::MASSAGE));

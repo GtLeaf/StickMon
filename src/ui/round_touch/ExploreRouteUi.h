@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include "core/AppSceneFlow.h"
 #include "ui/common/ExploreUiModel.h"
 
 namespace Ui::RoundExplore {
@@ -12,10 +13,12 @@ constexpr MenuGrid::Rect routeStatusSlot(unsigned member) {
 }
 constexpr MenuGrid::Rect ROUTE_MENU{202, 13, 44, 44};
 constexpr MenuGrid::Rect ROUTE_MENU_BUTTON{208, 19, 32, 32};
-constexpr MenuGrid::Rect ROUTE_CAMERA{158,60,44,44};
-constexpr MenuGrid::Rect ROUTE_PANEL{236, 88, 92, 184};
+constexpr int ROUTE_MENU_ROW_HEIGHT = 40;
+constexpr MenuGrid::Rect ROUTE_PANEL{224, 90, 92,
+    AppSceneFlow::exploreMenuItemCount(true) * ROUTE_MENU_ROW_HEIGHT + 8};
 constexpr MenuGrid::Rect routeMenuItem(int index) {
-    return {240, 92 + index * 44, 84, 44};
+    return {ROUTE_PANEL.x + 4, ROUTE_PANEL.y + 4 + index * ROUTE_MENU_ROW_HEIGHT,
+        ROUTE_PANEL.width - 8, ROUTE_MENU_ROW_HEIGHT};
 }
 // Route geometry is independent of battle and progression layouts.
 constexpr bool nativeRoute(ExplorePhase phase) {
@@ -30,4 +33,5 @@ constexpr ExploreRouteLayout routeLayout(ExplorePhase phase) {
 bool routePoint(int x, int y);
 bool routeHudHit(int x, int y, uint8_t members);
 void drawRouteHud(const ExploreRouteFrame& frame);
+void drawRouteMenu(bool open, uint8_t cursor, bool buttonVisible = true);
 }  // namespace Ui::RoundExplore

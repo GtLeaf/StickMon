@@ -115,8 +115,9 @@ public:
         openPanel(); return true;
     }
 
-    // Camera shift that keeps the facing actors above the box or panel.
+    // Move the camera with the service panel.
     int sceneShift(const Market::Session& s, const MarketView::Viewport& v) const {
+        if (page_ == Page::GREET) return 0;
         const int camera = v.cameraY(s);
         int lowest = -100000;
         for (int role = 0; role < 4; ++role) {
@@ -124,14 +125,12 @@ public:
             if (i >= 0) lowest = std::max(lowest, v.pixel(s.pose(i).y) - camera);
         }
         if (lowest < -10000) return 0;
-        const int greeting = std::clamp(lowest - (H - 148), 0, 120);
         const int opened = std::clamp(lowest - (PANEL_Y - 28), -240, 240);
         switch (transition_) {
-        case Transition::GREET_IN: return tween(0, greeting);
-        case Transition::OPENING: return tween(greeting, opened);
+        case Transition::OPENING: return tween(0, opened);
         case Transition::CLOSING: return tween(opened, 0);
-        case Transition::SHRINKING: return tween(opened, greeting);
-        default: return page_ == Page::GREET || page_ == Page::SHOW ? greeting : opened;
+        case Transition::SHRINKING: return tween(opened, 0);
+        default: return page_ == Page::SHOW ? 0 : opened;
         }
     }
 

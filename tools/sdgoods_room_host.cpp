@@ -1925,7 +1925,7 @@ int main(int argc, char** argv) {
         const auto menuFrames=desktop.presentCount();tick(500);
         assert(desktop.presentCount()==menuFrames);
 
-        for(int i=0;i<4;++i) {
+        for(int i=0;i<5;++i) {
             const auto r=Ui::RoundExplore::routeMenuItem(i);
             for(int x:{r.x,r.x+r.width-1})for(int y:{r.y,r.y+r.height-1}) {
                 assert(Ui::RoundExplore::routePoint(x,y));
@@ -1935,7 +1935,7 @@ int main(int argc, char** argv) {
         const auto steps=explore.steps;
         tap(180,180);tick(500);
         assert(explore.exploreMenuOpen && explore.steps==steps && !explore.exploreSubViewOpen);
-        targetTap(explore,120);assert(explore.exploreSubViewOpen && Ui::SceneSurface::width()==240);
+        targetTap(explore,121);assert(explore.exploreSubViewOpen && Ui::SceneSurface::width()==240);
         targetTap(explore.exploreSubView.teamUi,0);
         int statusAction=-1;
         auto& team=explore.exploreSubView.teamUi;
@@ -1945,7 +1945,7 @@ int main(int argc, char** argv) {
         assert(Ui::SceneSurface::width()==360);
         back();assert(explore.exploreSubViewOpen && Ui::SceneSurface::width()==240);
         back();assert(!explore.exploreSubViewOpen && Ui::SceneSurface::width()==360 && explore.exploreMenuOpen);
-        targetTap(explore,121);assert(explore.exploreSubViewOpen && Ui::SceneSurface::width()==360);
+        targetTap(explore,122);assert(explore.exploreSubViewOpen && Ui::SceneSurface::width()==360);
         // Wait for the newly opened page to paint its physical header before
         // tapping it; a stopped map no longer happens to redraw every poll.
         capturePage("explore-round-bag");
@@ -1958,7 +1958,7 @@ int main(int argc, char** argv) {
         assert(explore.routePausedForTouch && !explore.autoWalkActive);
         tap(180,70);assert(explore.autoWalkActive && !explore.routePausedForTouch);
         tap(220,35);assert(explore.exploreMenuOpen);
-        targetTap(explore,123);assert(!explore.exploreMenuOpen && explore.routePausedForTouch);
+        targetTap(explore,124);assert(!explore.exploreMenuOpen && explore.routePausedForTouch);
         state.team[0].majorStatus=Game::MajorStatus::POISON;
         state.team[1].majorStatus=Game::MajorStatus::PARALYSIS;
         capturePage("explore-round-status");
@@ -2934,9 +2934,9 @@ int main(int argc, char** argv) {
         assert(explore.phase==Ui::ExplorePhase::WALKING);capturePage("explore-route");
         targetTap(explore,144); // TARGET_OPEN_MENU
         assert(explore.exploreMenuOpen);capturePage("explore-menu");
-        targetTap(explore,120);assert(explore.exploreSubViewOpen);capturePage("explore-team");back();
+        targetTap(explore,121);assert(explore.exploreSubViewOpen);capturePage("explore-team");back();
         assert(!explore.exploreSubViewOpen);
-        targetTap(explore,121);assert(explore.exploreSubViewOpen);
+        targetTap(explore,122);assert(explore.exploreSubViewOpen);
         assert(explore.exploreSubView.viewMode==MenuScene::ViewMode::BAG);
         capturePage("explore-bag");
         event(Type::DOWN,158,32);event(Type::CANCEL,158,32);event(Type::UP,158,32);

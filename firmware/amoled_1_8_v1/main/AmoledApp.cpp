@@ -2178,7 +2178,8 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             return;
         }
         if (exploreRouteBagAt(x, y)) {
-            openPhotoCamera(nowMs);
+            pauseExploreRoute(nowMs);
+            openItemScene(AppSceneFlow::Scene::BAG);
             return;
         }
         if (exploreRouteMenuAt(x, y)) {
@@ -2256,8 +2257,11 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
         }
         exploreMenuCursor = static_cast<uint8_t>(itemIndex);
         AppSceneFlow::ExploreMenuEntry entry =
-            AppSceneFlow::exploreMenuEntry(static_cast<uint8_t>(itemIndex));
+            AppSceneFlow::exploreMenuEntry(static_cast<uint8_t>(itemIndex), true);
         switch (entry.item) {
+        case AppSceneFlow::ExploreMenuItem::PHOTO:
+            openPhotoCamera(nowMs);
+            break;
         case AppSceneFlow::ExploreMenuItem::TEAM:
             openTeamScene();
             break;
@@ -6687,8 +6691,7 @@ void AmoledApp::render(Canvas565& canvas) const {
     const auto& route = exploreSession_.state();
     renderCaches_.retainForScene(sceneFlow.current());
     if(sceneFlow.current()==AppSceneFlow::Scene::MARKET&&market_&&marketWorkshopUi_.active()){
-        auto view=marketViewport();view.cameraOffsetY=marketWorkshopUi_.sceneShift(*market_,view);view.cameraOffsetX=marketWorkshopUi_.sceneShiftX(*market_,view);
-        Ui::MarketView::render(*market_,view,market_->timeMs(),gameState.gameMinutesTotal);
+        Ui::MarketView::render(*market_,marketViewport(),market_->timeMs(),gameState.gameMinutesTotal);
         marketWorkshopUi_.render(gameState,&marketCoinMotion_);
         UiCommon::drawSceneFadeOverlay(canvas,externalSceneFade?0:exploreTransition_.fade().alpha(),0,AmoledUi::HEIGHT);
         return;

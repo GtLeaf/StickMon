@@ -7,7 +7,7 @@ using CarePage=Care::Page;
 static void careOpen(Journey& j){
     int target=-1;for(int i=0;i<j.scene.market_->data().residentCount;++i)if(j.scene.market_->actor(i).species==113)target=i;
     assert(target>=0&&marketStandNear(*j.scene.market_,target));j.scene.marketUi_.chatTarget=target;j.scene.marketUi_.refresh(*j.scene.market_);
-    j.tap(180,304);assert(j.scene.marketServicePending_&&!j.scene.marketUi_.dialogue().active());j.advance(4000);assert(j.scene.marketCareUi_.page()==CarePage::MENU);
+    j.tap(180,304);assert(j.scene.marketServicePending_&&!j.scene.marketUi_.dialogue().active());j.advance(2200);j.shot("care-greeting");j.finishGreeting(j.scene.marketCareUi_);
 }
 static void careRelease(DesktopPlatform& desktop,GameEngine& engine){
     auto& state=engine.gameState();state.gameMinutesTotal=1440;

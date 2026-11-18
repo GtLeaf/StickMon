@@ -33,6 +33,7 @@ enum class ExploreMenuItem : uint8_t {
     BAG,
     END,
     BACK,
+    PHOTO,
 };
 
 struct ExploreMenuEntry {
@@ -42,9 +43,15 @@ struct ExploreMenuEntry {
     const char* shortLabel;
 };
 
-inline constexpr uint8_t exploreMenuItemCount() { return 4; }
+inline constexpr uint8_t exploreMenuItemCount(bool withPhoto = false) {
+    return withPhoto ? 5 : 4;
+}
 
-inline ExploreMenuEntry exploreMenuEntry(uint8_t index) {
+inline ExploreMenuEntry exploreMenuEntry(uint8_t index, bool withPhoto = false) {
+    if (withPhoto) {
+        if (index == 0) return {ExploreMenuItem::PHOTO, Scene::EXPLORE_ROUTE, 0, Ui::Photo::TAKE};
+        --index;
+    }
     switch (index) {
     case 0:
         return {ExploreMenuItem::TEAM, Scene::TEAM, 1, Ui::TEAM};

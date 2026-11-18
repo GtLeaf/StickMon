@@ -34,11 +34,6 @@ void image(Canvas565& c,const uint16_t*p,int x,int y,int size,int source){
 }
 void trash(Canvas565& c){const auto col=ink();c.drawFastHLine(318,28,24,col);c.drawFastHLine(318,29,24,col);c.drawRect(324,21,12,8,col);c.drawRect(320,31,20,22,col);c.drawFastVLine(327,35,13,col);c.drawFastVLine(333,35,13,col);}
 }
-void drawPhotoCameraIcon(Canvas565& c,int cx,int cy){
-    const auto col=ink();c.drawRoundRect(cx-18,cy-11,36,28,5,col);c.drawRoundRect(cx-17,cy-10,34,26,4,col);
-    c.drawLine(cx-11,cy-11,cx-7,cy-18,col);c.drawLine(cx-7,cy-18,cx+7,cy-18,col);c.drawLine(cx+7,cy-18,cx+11,cy-11,col);
-    c.drawCircle(cx,cy+3,8,col);c.drawCircle(cx,cy+3,7,col);
-}
 void renderPhotoScreen(Canvas565& c,const PhotoSession& flow,uint16_t top,uint16_t bottom,uint16_t left,uint16_t right){
     const UiCommon::PageClip clip(c,top,bottom,left,right);
     using P=PhotoSession::Page;const auto page=flow.page();char count[20];

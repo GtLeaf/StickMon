@@ -1,7 +1,6 @@
 #include "game/ExploreDestinations.h"
 #include "ui/common/MarketView.h"
 #include "ui/ExploreScreens.h"
-#include "ui/PhotoScreens.h"
 #if STICKMON_EXPLORE_POSTCARD
 #include "ui/ExplorePostcardUi.h"
 #endif
@@ -63,7 +62,7 @@ constexpr int EXPLORE_MENU_PANEL_ROW_HEIGHT = 60;
 constexpr int EXPLORE_MENU_TEXT_INSET =
     (EXPLORE_MENU_PANEL_ROW_HEIGHT - FontResource::LARGE_GLYPH_H) / 2;
 constexpr int EXPLORE_MENU_PANEL_HEIGHT =
-    AppSceneFlow::exploreMenuItemCount() * EXPLORE_MENU_PANEL_ROW_HEIGHT;
+    AppSceneFlow::exploreMenuItemCount(true) * EXPLORE_MENU_PANEL_ROW_HEIGHT;
 constexpr int EXPLORE_MENU_PANEL_TOP =
     (HOME_STATUS_TOP - EXPLORE_MENU_PANEL_HEIGHT) / 2;
 
@@ -203,7 +202,23 @@ constexpr const char* EXPLORE_AREA_NAMES[Game::EXPLORE_AREA_COUNT] = {
 
 void drawExploreBagIcon(Canvas565& canvas) {
     drawHomeHudButton(canvas, EXPLORE_ROUTE_BAG_BUTTON_X);
-    drawPhotoCameraIcon(canvas,EXPLORE_ROUTE_BAG_BUTTON_X+HOME_HUD_BUTTON_SIZE/2,HOME_HUD_BUTTON_Y+HOME_HUD_BUTTON_SIZE/2);
+    if (!MenuAssets::mainIconFrames() || !MenuAssets::mainIconRle()) return;
+    constexpr uint8_t bagIconIndex = 3;
+    const uint16_t offset = FlashStorage::readWord(
+        &MenuAssets::mainIconFrames()[bagIconIndex].offset);
+    const uint16_t length = FlashStorage::readWord(
+        &MenuAssets::mainIconFrames()[bagIconIndex].length);
+    // The source frame is 40x40. Keep a small, even inset inside the 64px
+    // HUD button so the backpack reads at the same visual weight as the
+    // other native HUD controls.
+    constexpr float scale = 1.4f;
+    constexpr int iconSize = 56;
+    PixelRenderer::drawRgb565RleScaled(
+        EXPLORE_ROUTE_BAG_BUTTON_X +
+            (HOME_HUD_BUTTON_SIZE - iconSize) / 2,
+        HOME_HUD_BUTTON_Y + (HOME_HUD_BUTTON_SIZE - iconSize) / 2,
+        MenuAssets::FRAME_W, MenuAssets::FRAME_H,
+        MenuAssets::mainIconRle(), offset, length, scale);
 }
 
 void drawExploreMenuIcon(Canvas565& canvas) {
@@ -1422,7 +1437,7 @@ int exploreRouteMenuItemAt(int x, int y) {
     }
     int index = (y - EXPLORE_MENU_PANEL_TOP) /
                 EXPLORE_MENU_PANEL_ROW_HEIGHT;
-    return index < AppSceneFlow::exploreMenuItemCount() ? index : -1;
+    return index < AppSceneFlow::exploreMenuItemCount(true) ? index : -1;
 }
 
 void renderExploreMenuScreen(Canvas565& canvas,
@@ -1442,7 +1457,7 @@ void renderExploreMenuScreen(Canvas565& canvas,
                          EXPLORE_MENU_PANEL_WIDTH, EXPLORE_MENU_PANEL_HEIGHT,
                          8, rgb(190, 200, 205));
 
-    for (uint8_t index = 0; index < AppSceneFlow::exploreMenuItemCount();
+    for (uint8_t index = 0; index < AppSceneFlow::exploreMenuItemCount(true);
          ++index) {
         int y = EXPLORE_MENU_PANEL_TOP +
                 index * EXPLORE_MENU_PANEL_ROW_HEIGHT;
@@ -1465,7 +1480,7 @@ void renderExploreMenuScreen(Canvas565& canvas,
         uint16_t color = selected ? rgb(255, 216, 72)
                                   : rgb(235, 239, 232);
         text(canvas, panelX + 26, y + EXPLORE_MENU_TEXT_INSET,
-             Ui::Explore::SIDE_MENU_ITEMS[index], color);
+             AppSceneFlow::exploreMenuEntry(index, true).shortLabel, color);
     }
     pageClip.reset();
     if (model.toast && rowBegin < UiCommon::TOAST_BOTTOM &&
