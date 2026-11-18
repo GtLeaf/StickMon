@@ -49,6 +49,8 @@ public:
         uint8_t roomId = 0;
         uint8_t roomCount = 0;
         EspNowLink::RoomEntry rooms[EspNowLink::MAX_ROOMS] = {};
+        uint8_t peerMac[6] = {};
+        uint16_t requestSeq = 0;
         bool incomingRequest = false;
         bool localIsHost = false;
         RemotePet remote;

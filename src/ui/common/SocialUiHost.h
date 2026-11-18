@@ -5,7 +5,7 @@
 
 namespace Ui {
 enum class SocialAction : uint8_t {
-    BACK, HOST, SEARCH, STOP, SELECT_ROOM, DECIDE, END_VISIT
+    BACK, HOST, SEARCH, STOP, SELECT_ROOM, DECIDE, END_VISIT, ADJUST_TEAM
 };
 
 class SocialHost {

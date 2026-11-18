@@ -66,6 +66,7 @@ public:
     bool begin();
     void run();
     void requestScene(SceneID id, bool saveBeforeSwitch = true);
+    void requestTeamMenu();
     bool fadeToScene(SceneID id, uint16_t durationMs = 300);
     bool sceneFadeActive() const;
     bool prepareDisplayLock();

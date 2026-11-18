@@ -1,5 +1,6 @@
 #include "presentation/PokemonShadow.h"
 #include "HomeScreen.h"
+#include "presentation/VisitMenu.h"
 #include "AmoledGeometry.h"
 #include "ui/UiMetrics.h"
 #include "ui/UiCommon.h"
@@ -1293,111 +1294,22 @@ void renderDebugScreen(Canvas565& canvas, const DebugViewModel& model,
 }
 #endif
 
-namespace {
-
-const char* communicationStateLabel(
-    Communication::VisitSessionService::State state) {
-    using State = Communication::VisitSessionService::State;
-    switch (state) {
-    case State::HOSTING: return Ui::HOSTING;
-    case State::SEARCHING: return Ui::SEARCHING;
-    case State::ROOM_LIST: return Ui::Social::SELECT_ROOM;
-    case State::JOINING: return Ui::Social::WAIT_HOST_DECISION;
-    case State::WAITING_HOST_DECISION: return Ui::Amoled::INCOMING;
-    case State::SYNCING: return Ui::Amoled::SYNCING;
-    case State::WAITING_ACCEPT: return Ui::Amoled::WAIT_ACCEPT;
-    case State::ACTIVE: return Ui::Amoled::VISITING;
-    case State::ENDING: return Ui::Amoled::ENDING;
-    case State::FAILED: return Ui::Amoled::FAILED;
-    case State::ENDED: return Ui::Amoled::ENDED;
-    case State::IDLE: return Ui::SOCIAL;
-    }
-    return Ui::SOCIAL;
-}
-
-void drawCommunicationButton(Canvas565& canvas, int y, const char* label,
-                             uint16_t color) {
-    canvas.fillRoundRect((20), (y), (328), (72), (8), rgb(24, 38, 45));
-    canvas.drawRoundRect((20), (y), (328), (72), (8), rgb(68, 100, 102));
-    text(canvas, (368 - textWidth(label)) / 2, y + 28, label, color);
-}
-
-}  // namespace
-
-void renderCommunicationScreen(Canvas565& canvas,
-                               const CommunicationViewModel& model,
-                               uint16_t rowBegin, uint16_t rowEnd) {
-    rowBegin = std::min<uint16_t>(rowBegin, AmoledUi::HEIGHT);
-    rowEnd = std::min<uint16_t>(rowEnd, AmoledUi::HEIGHT);
-    UiCommon::PageClip pageClip(canvas, rowBegin, rowEnd);
+void renderCommunicationTouchScreen(Canvas565& canvas,
+                                    const CommunicationViewModel& model,
+                                    uint16_t rowBegin, uint16_t rowEnd,
+                                    uint32_t nowMs, int pressed) {
+    UiCommon::PageClip clip(canvas, rowBegin, rowEnd);
     if (rowBegin >= rowEnd) return;
-    using State = Communication::VisitSessionService::State;
-
     if (rowBegin < MENU_CONTENT_TOP) {
-        int bottom = std::min<int>(rowEnd, MENU_CONTENT_TOP);
-        pageClip.setRect((0), (rowBegin), (AmoledUi::WIDTH), (bottom - rowBegin));
-        UiCommon::drawPageHeader(canvas, Ui::SOCIAL);
-        pageClip.reset();
+        clip.setRect(0, rowBegin, 368, std::min<int>(rowEnd, MENU_CONTENT_TOP) - rowBegin);
+        UiCommon::drawPageHeader(canvas, Ui::VisitMenu::title(model));
     }
     if (rowEnd <= MENU_CONTENT_TOP) return;
-    int top = std::max<int>(rowBegin, MENU_CONTENT_TOP);
-    pageClip.setRect((0), (top), (AmoledUi::WIDTH), (rowEnd - top));
-    canvas.fillRect((0), (MENU_CONTENT_TOP), (AmoledUi::WIDTH), (AmoledUi::HEIGHT - MENU_CONTENT_TOP), UiMetrics::PAGE_BACKGROUND);
-
-    if (model.state == State::IDLE) {
-        drawCommunicationButton(canvas, 84, Ui::Amoled::HOST,
-                                rgb(115, 226, 183));
-        drawCommunicationButton(canvas, 180, Ui::Amoled::SEARCH,
-                                rgb(226, 238, 233));
-    } else if (model.state == State::SEARCHING ||
-               model.state == State::ROOM_LIST) {
-        const char* title = communicationStateLabel(model.state);
-        if (model.error && std::strcmp(model.error, "JOIN DECLINED") == 0) {
-            title = Ui::Social::JOIN_REJECTED;
-        } else if (model.error &&
-                   std::strcmp(model.error, "JOIN TIMEOUT") == 0) {
-            title = Ui::Social::JOIN_TIMED_OUT;
-        }
-        text(canvas, 28, 84, title,
-             rgb(115, 226, 183));
-        if (model.roomCount == 0) {
-            text(canvas, 96, 172, Ui::Amoled::NO_ROOM, rgb(151, 168, 166));
-        } else {
-            for (uint8_t index = 0; index < model.roomCount; ++index) {
-                int y = 108 + index * 80;
-                canvas.fillRoundRect((16), (y), (336), (64), (8), rgb(24, 38, 45));
-                char room[24] = {};
-                std::snprintf(room, sizeof(room), Ui::Social::ROOM_ROW_FMT,
-                              static_cast<unsigned>(model.rooms[index].roomId));
-                text(canvas, 36, y + 24, room,
-                     rgb(226, 238, 233));
-                text(canvas, 276, y + 24, Ui::Amoled::JOIN,
-                     rgb(115, 226, 183));
-            }
-        }
-    } else if (model.state == State::HOSTING) {
-        text(canvas, 108, 84, Ui::Amoled::WAITING, rgb(115, 226, 183));
-        char room[24] = {};
-        std::snprintf(room, sizeof(room), Ui::Social::ROOM_ROW_FMT,
-                      static_cast<unsigned>(model.roomId));
-        text(canvas, (368 - textWidth(room)) / 2, 132, room,
-             rgb(226, 238, 233));
-    } else if (model.state == State::WAITING_HOST_DECISION) {
-        text(canvas, 84, 84, Ui::Amoled::INCOMING, rgb(248, 210, 105));
-        drawCommunicationButton(canvas, 132, Ui::Amoled::ACCEPT,
-                                rgb(115, 226, 183));
-        drawCommunicationButton(canvas, 224, Ui::Amoled::DECLINE,
-                                rgb(239, 143, 148));
-    } else if (model.state == State::JOINING ||
-               model.state == State::SYNCING ||
-               model.state == State::WAITING_ACCEPT) {
-        text(canvas, 112, 96, communicationStateLabel(model.state),
-             rgb(115, 226, 183));
-        if (model.remote.known) {
-            drawTeamSprite(canvas, model.remote.speciesId, 184, 252);
-        }
-    } else if (model.state == State::ACTIVE ||
-               model.state == State::ENDING) {
+    clip.setRect(0, std::max<int>(rowBegin, MENU_CONTENT_TOP), 368,
+                 rowEnd - std::max<int>(rowBegin, MENU_CONTENT_TOP));
+    canvas.fillRect(0, MENU_CONTENT_TOP, 368, 448 - MENU_CONTENT_TOP, 0);
+    using State = Communication::VisitSessionService::State;
+    if (model.state == State::ACTIVE || model.state == State::ENDING) {
         if (model.remote.known) {
             drawTeamSprite(canvas, model.remote.speciesId, 184, 200);
             char level[8] = {};
@@ -1420,45 +1332,27 @@ void renderCommunicationScreen(Canvas565& canvas,
             std::snprintf(remain, sizeof(remain), "%us", model.remainSec);
             text(canvas, 184, 348, remain, rgb(115, 226, 183));
         }
-        drawCommunicationButton(canvas, 368,
-                                model.state == State::ENDING
-                                    ? Ui::Amoled::ENDING : Ui::Amoled::EXIT,
-                                rgb(239, 143, 148));
-    } else {
-        text(canvas, 116, 96, communicationStateLabel(model.state),
-             rgb(239, 143, 148));
-        if (model.error) text(canvas, 64, 152, model.error, rgb(239, 143, 148));
-        drawCommunicationButton(canvas, 264, Ui::BACK, rgb(115, 226, 183));
+        const bool ending = model.state == State::ENDING;
+        canvas.fillRoundRect(20, 368, 328, 72, 8, pressed == 0 ? rgb(42, 61, 68) : rgb(24, 38, 45));
+        canvas.drawRoundRect(20, 368, 328, 72, 8, rgb(68, 100, 102));
+        const char* action = ending ? Ui::Amoled::ENDING : Ui::VisitText::END;
+        text(canvas, (368 - textWidth(action)) / 2, 388, action, rgb(239, 143, 148));
+        return;
     }
-    pageClip.reset();
+    Ui::VisitMenu::render(canvas, model, false, nowMs, pressed);
 }
 
-bool communicationBackAt(int x, int y) {
-    return UiCommon::pageHeaderBackAt(x, y);
+void renderCommunicationScreen(Canvas565& canvas, const CommunicationViewModel& model,
+                               uint16_t rowBegin, uint16_t rowEnd) {
+    renderCommunicationTouchScreen(canvas, model, rowBegin, rowEnd,
+                                    Platform::clock().millis(), -1);
 }
 
-int communicationItemAt(int x, int y,
-                        const CommunicationViewModel& model) {
-    if (x < 16 || x >= 356 || y < MENU_CONTENT_TOP || y >= 448) return -1;
-    using State = Communication::VisitSessionService::State;
-    if (model.state == State::IDLE) {
-        if (y >= 84 && y < 156) return 0;
-        if (y >= 180 && y < 252) return 1;
-    } else if (model.state == State::ROOM_LIST) {
-        if (y >= 108 && y < 108 + model.roomCount * 80) {
-            return (y - 108) / 80;
-        }
-    } else if (model.state == State::WAITING_HOST_DECISION) {
-        if (y >= 132 && y < 204) return 0;
-        if (y >= 224 && y < 296) return 1;
-    } else if (model.state == State::ACTIVE ||
-               model.state == State::ENDING) {
-        if (y >= 368) return 0;
-    } else if (model.state == State::FAILED ||
-               model.state == State::ENDED) {
-        if (y >= 264 && y < 336) return 0;
-    }
-    return -1;
+bool communicationBackAt(int x, int y) { return UiCommon::pageHeaderBackAt(x, y); }
+int communicationItemAt(int x, int y, const CommunicationViewModel& model) {
+    if (model.state == Communication::VisitSessionService::State::ACTIVE)
+        return MenuGrid::Rect{20, 368, 328, 72}.contains(x, y) ? 0 : -1;
+    return Ui::VisitMenu::itemAt(x, y, model, false);
 }
 
 int battleItemAt(int x, int y, BattleViewModel::Phase phase) {

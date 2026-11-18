@@ -409,7 +409,7 @@ int main(int argc, char** argv) {
         assert(writer.saveHatchProgress(progress));
         return 0;
     }
-    if (mode == "settings-audio" || mode == "audio-resources" || mode == "battery-hud" || mode == "locked-standby" || mode == "bag-flow" || mode == "fresh" || mode == "reset" || mode == "hud-pair" || mode == "menu-fixed" || mode == "shop-tabs" || mode == "home-notice" || mode == "contacts-header" || mode == "settings-header" || mode == "status-round" || mode == "team-moves" || mode == "explore-select" || mode == "debug-menu" || (mode == "explore-round" || mode == "battle-round" || mode == "learn-move")) {
+    if (mode == "social-flow" || mode == "settings-audio" || mode == "audio-resources" || mode == "battery-hud" || mode == "locked-standby" || mode == "bag-flow" || mode == "fresh" || mode == "reset" || mode == "hud-pair" || mode == "menu-fixed" || mode == "shop-tabs" || mode == "home-notice" || mode == "contacts-header" || mode == "settings-header" || mode == "status-round" || mode == "team-moves" || mode == "explore-select" || mode == "debug-menu" || (mode == "explore-round" || mode == "battle-round" || mode == "learn-move")) {
         // Existing menu journeys use an explicit established-save fixture.
         Game::GameState state;
         Game::HatchService::initializeNewGame(state);
@@ -794,6 +794,24 @@ int main(int argc, char** argv) {
         assert(engine.currentId == SceneID::MENU);
         return *static_cast<MenuScene*>(engine.currentScene.get());
     };
+    if (mode == "social-flow") {
+        engine.requestScene(SceneID::SOCIAL);tick(1000);
+        assert(Ui::SceneSurface::width()==360 && !engine.currentScene->touchNavigation());
+        tap(180,150);tick(200);
+        assert(engine.visitService().state()==Communication::VisitSessionService::State::FAILED);
+        capture(output/"social-unavailable.ppm");tap(92,56);tick(200);
+        assert(engine.currentId==SceneID::MENU);
+        engine.gameState().teamCount=2;
+        engine.gameState().team[1]=Game::MonsterFactory::create(4,20);
+        engine.requestScene(SceneID::SOCIAL);tick(1000);tap(180,150);tick(200);
+        assert(std::strcmp(engine.visitService().viewModel().error,"TEAM NOT SOLO")==0);
+        capture(output/"social-team-required.ppm");tap(180,280);tick(200);
+        assert(engine.currentId==SceneID::MENU && menu().viewMode==MenuScene::ViewMode::TEAM && !menu().exploreContextMode);
+        assert(engine.gameState().teamCount==2 && !EspNowLink::ins().isEnabled());
+        tap(158,32);tick(200);assert(menu().viewMode==MenuScene::ViewMode::MENU);
+        std::puts("PASS real SDGOODS engine: native social surface, unavailable/back, solo error, adjust-team navigation and normal back");
+        return 0;
+    }
     const auto pageEvent = [&](Type type, int x, int y) { const int offset=Ui::SceneSurface::width()==360?0:60;event(type, x + offset, y + offset); };
     const auto pageTap = [&](int x, int y) { const int offset=Ui::SceneSurface::width()==360?0:60;tap(x + offset, y + offset); };
     const auto nativeMenu = [&]() {
@@ -2862,9 +2880,12 @@ int main(int argc, char** argv) {
         targetTap(menu().contactsUi,128+remove);targetTap(menu().contactsUi,200);assert(engine.gameState().storageCount==1);
         tap(158,32);assert(menu().viewMode==MenuScene::ViewMode::COMPUTER);
         targetTap(menu().computerUi,0);tick(1000);assert(engine.currentId==SceneID::SOCIAL);capturePage("social");
-        pageTap(120,72);tick(200);
+        tap(180,150);tick(200);
         assert(engine.visitService().state()==Communication::VisitSessionService::State::FAILED);
-        capturePage("social-unavailable");pageTap(35,224);tick(1000);assert(engine.currentId==SceneID::MENU);
+        capturePage("social-unavailable");tap(92,56);tick(1000);assert(engine.currentId==SceneID::MENU);
+        engine.requestTeamMenu();tick(200);
+        assert(menu().viewMode==MenuScene::ViewMode::TEAM && !menu().exploreContextMode);
+        tap(158,32);tick(200);assert(menu().viewMode==MenuScene::ViewMode::MENU);
 
         menuItem(2);targetTap(menu().roomUi,1);tick(1000);assert(engine.currentId==SceneID::SHOWER);capturePage("shower");
         auto& shower=*static_cast<ShowerScene*>(engine.currentScene.get());

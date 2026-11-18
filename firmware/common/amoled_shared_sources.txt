@@ -59,3 +59,5 @@ src/presentation/HudRenderer.cpp
 src/presentation/MenuGrid.cpp
 src/presentation/PixelRenderer.cpp
 src/third_party/uzlib/tinflate.c
+src/presentation/VisitMenu.cpp
+src/assets/VisitIcons.cpp

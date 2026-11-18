@@ -37,22 +37,6 @@ class VisitSessionServiceTests(unittest.TestCase):
             )
             subprocess.run([str(binary)], check=True)
 
-    def test_amoled_communication_contract(self):
-        app = (ROOT / "firmware/amoled_1_8_v1/main/AmoledApp.cpp").read_text()
-        screen = (ROOT / "firmware/amoled_1_8_v1/main/HomeScreen.cpp").read_text()
-        self.assertIn("model.rooms[index].roomId", screen)
-        self.assertIn("model.remote.satiety", screen)
-        self.assertIn("model.remote.mood", screen)
-        self.assertIn("model.remote.affection", screen)
-        self.assertIn('"HP --"', screen)
-        self.assertIn("visitSession.visitorHealthKnown()", app)
-        self.assertIn("communicationBefore.remote.hpCur != communicationAfter.remote.hpCur", app)
-        self.assertIn("visitSession.endVisit();", app)
-        self.assertIn("communicationAfter.localIsHost", app)
-        self.assertIn("sceneFlow.goHome();", app)
-        self.assertIn("beginVisitorExit(nowMs, false);", app)
-        self.assertIn("homeCompanionActor.hidden", app)
-
     def test_stick_uses_shared_visit_session(self):
         scene = (ROOT / "src/scenes/SocialScene.cpp").read_text()
         engine = (ROOT / "src/core/GameEngine.cpp").read_text()

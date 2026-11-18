@@ -65,6 +65,10 @@ bool SocialScene::activateSocial(Ui::SocialAction action, uint8_t value) {
     case Ui::SocialAction::SELECT_ROOM: service.selectRoom(value); break;
     case Ui::SocialAction::DECIDE: service.acceptIncoming(value != 0); break;
     case Ui::SocialAction::END_VISIT: service.endVisit(); break;
+    case Ui::SocialAction::ADJUST_TEAM:
+        service.stop();
+        GameEngine::ins().requestTeamMenu();
+        return true;
     }
     return true;
 }

@@ -3,6 +3,7 @@
 #include "game/MarketWelcome.h"
 #include "ui/common/MarketView.h"
 #include "AmoledApp.h"
+#include "presentation/VisitMenu.h"
 
 #include <algorithm>
 #include <cmath>
@@ -1424,8 +1425,11 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
         } else if (sceneFlow.current() ==
                        AppSceneFlow::Scene::COMMUNICATION &&
                    event.y >= MENU_HEADER_HEIGHT) {
+            communicationPressModel_ = visitSession.viewModel();
             pressedCommunicationItem = communicationItemAt(
-                event.x, event.y, visitSession.viewModel());
+                event.x, event.y, communicationPressModel_);
+            if (!Ui::VisitMenu::sameTarget(communicationDisplayedModel_, communicationPressModel_, pressedCommunicationItem))
+                pressedCommunicationItem = -1;
             requestRenderRows(MENU_HEADER_HEIGHT, 448);
         } else if (sceneFlow.current() == AppSceneFlow::Scene::BATTLE &&
                    event.y >= MENU_HEADER_HEIGHT) {
@@ -1833,7 +1837,18 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
             teamController_.endMovesGesture();
         } else if (!dragging && distance <= TAP_SLOP) {
             if (shopTouch) Platform::logLine("[ShopTouch] list_tap=accepted");
-            handleTap(event.x, event.y, event.timestampMs);
+            bool validCommunication = true;
+            if (sceneFlow.current() == AppSceneFlow::Scene::COMMUNICATION) {
+                if (communicationBackAt(event.x, event.y)) {
+                    validCommunication = communicationBackAt(touchStartX, touchStartY);
+                } else {
+                    const auto current = visitSession.viewModel();
+                    const int hit = communicationItemAt(event.x, event.y, current);
+                    validCommunication = hit >= 0 && hit == pressedCommunicationItem &&
+                        Ui::VisitMenu::sameTarget(communicationPressModel_, current, hit);
+                }
+            }
+            if (validCommunication) handleTap(event.x, event.y, event.timestampMs);
         } else if (shopTouch) {
             Platform::logf("[ShopTouch] list_tap=rejected dragging=%d distance=%d\n",
                            dragging, distance);
@@ -2085,7 +2100,10 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
         }
         int item = communicationItemAt(x, y, model);
         using CommState = Communication::VisitSessionService::State;
-        if (model.state == CommState::IDLE) {
+        if (item == Ui::VisitMenu::CANCEL) {
+            visitSession.stop();
+            releaseVisitRadioSession();
+        } else if (model.state == CommState::IDLE) {
             if (item == 0) startVisitHost();
             else if (item == 1) startVisitSearch();
         } else if (model.state == CommState::ROOM_LIST && item >= 0) {
@@ -2097,8 +2115,14 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             requestVisitEnd(nowMs);
         } else if ((model.state == CommState::FAILED ||
                     model.state == CommState::ENDED) && item == 0) {
+            const bool adjustTeam = model.state == CommState::FAILED &&
+                Ui::VisitMenu::error(model.error).adjustTeam;
             visitSession.stop();
             releaseVisitRadioSession();
+            if (adjustTeam) {
+                sceneFlow.goHome();
+                openTeamScene();
+            }
         }
         requestFullRender();
         return;
@@ -3050,6 +3074,12 @@ void AmoledApp::update(uint32_t nowMs) {
     if (hadAttachedVisitor) detachedVisitor = gameState.team[1];
     visitSession.update(nowMs);
     CommunicationViewModel communicationAfter = visitSession.viewModel();
+    if (sceneFlow.current() == AppSceneFlow::Scene::COMMUNICATION &&
+        Ui::VisitMenu::waiting(communicationAfter.state) &&
+        nowMs / 500 != communicationVisualTick_) {
+        communicationVisualTick_ = nowMs / 500;
+        requestRenderRows(80, 100);
+    }
     if (hadAttachedVisitor && gameState.teamCount < 2 &&
         homeCompanionActor.hidden) {
         cancelPairInteraction(nowMs);
@@ -3085,7 +3115,9 @@ void AmoledApp::update(uint32_t nowMs) {
         if (!communicationAfter.localIsHost) beginVisitDeparture(nowMs);
     }
     if (communicationBefore.state != communicationAfter.state ||
-        communicationBefore.roomCount != communicationAfter.roomCount ||
+        !Ui::VisitMenu::sameRooms(communicationBefore, communicationAfter) ||
+        communicationBefore.requestSeq != communicationAfter.requestSeq ||
+        std::memcmp(communicationBefore.peerMac, communicationAfter.peerMac, 6) != 0 ||
         communicationBefore.remote.speciesId != communicationAfter.remote.speciesId ||
         communicationBefore.remote.mood != communicationAfter.remote.mood ||
         communicationBefore.remote.satiety != communicationAfter.remote.satiety ||
@@ -6899,8 +6931,10 @@ void AmoledApp::render(Canvas565& canvas) const {
     }
 
     if (sceneFlow.current() == AppSceneFlow::Scene::COMMUNICATION) {
-        renderCommunicationScreen(canvas, visitSession.viewModel(),
-                                  dirtyRowBegin, dirtyRowEnd);
+        communicationDisplayedModel_ = visitSession.viewModel();
+        renderCommunicationTouchScreen(canvas, communicationDisplayedModel_,
+                                       dirtyRowBegin, dirtyRowEnd,
+                                       Platform::clock().millis(), pressedCommunicationItem);
         return;
     }
 

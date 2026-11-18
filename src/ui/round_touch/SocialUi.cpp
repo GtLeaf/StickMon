@@ -1,75 +1,151 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "ui/round_touch/SocialUi.h"
-
-#include <cstring>
-#include "core/UiStrings.h"
 #include "presentation/PixelRenderer.h"
-#include "ui/SceneInput.h"
-#include "ui/common/SocialUiContent.h"
-#include "ui/round_touch/RoundPage.h"
-
+#include "presentation/VisitMenu.h"
+#include <algorithm>
 namespace Ui {
 namespace {
-MenuGrid::Rect menuRow(int i) { return {8, 50 + i * 50, 224, 44}; }
+bool listState(SocialState state) {
+    return state == SocialState::SEARCHING || state == SocialState::ROOM_LIST;
+}
+} // namespace
+void SocialUi::enter(const Communication::VisitSessionService::ViewModel &model, uint32_t now) {
+    SocialUiBase::enter(model, now);
+    cancelTouch();
+    offset_ = 0;
+    displayed_ = false;
+    lastUpdateMs_ = now;
+}
+void SocialUi::stateChanged(SocialState state, uint32_t now) {
+    SocialUiBase::stateChanged(state, now);
+    cancelTouch();
+    if (state != SocialState::ROOM_LIST)
+        offset_ = 0;
+    displayed_ = false;
+    lastUpdateMs_ = now;
+}
+void SocialUi::update(const Communication::VisitSessionService::ViewModel &model, uint32_t now,
+                      RenderDemand &demand) {
+    SocialUiBase::update(model, now, demand);
+    if (!listState(model.state)) {
+        motion_.cancel();
+        offset_ = 0;
+        lastUpdateMs_ = now;
+        return;
+    }
+    const int maximum = VisitMenu::roomScrollMaximum(model.roomCount);
+    if (displayed_ && !VisitMenu::sameRooms(displayedModel_, model)) {
+        cancelTouch();
+        demand.redraw();
+    }
+    const uint32_t elapsed = now - lastUpdateMs_;
+    lastUpdateMs_ = now;
+    if (elapsed > 250)
+        motion_.cancel();
+    if (motion_.update(std::min<uint32_t>(elapsed, 250), maximum, offset_))
+        demand.redraw();
+    if (motion_.moving())
+        demand.wakeIn(33);
+}
+uint32_t SocialUi::visualFrameIntervalMs(uint32_t) const {
+    return motion_.moving() || (context_ >= 0 && listState(downModel_.state)) ? 33 : 66;
 }
 void SocialUi::render() {
-    auto frame = host.socialFrame();
-    frame.visuals = &state;
-    if (frame.model.state == SocialState::IDLE) {
-        RoundPage::background();
-        for (int i = 0; i < 3; ++i) {
-            const auto rect = menuRow(i);
-            MenuGrid::card(PixelRenderer::canvas(), rect, false, state.cursor == i);
-            MenuGrid::label(PixelRenderer::canvas(), 120, rect.y + 14, Ui::Social::MENU_ITEMS[i], 208, 0xffff);
-        }
-        RoundPage::header(Ui::SOCIAL, false);
-    } else if (frame.model.state == SocialState::FAILED || frame.model.state == SocialState::ENDED) {
-        RoundPage::background();
-        RoundPage::header(Ui::SOCIAL, false);
-        MenuGrid::card(PixelRenderer::canvas(), {8, 76, 224, 96}, false);
-        const bool unavailable = frame.model.error && std::strcmp(frame.model.error, "LINK UNAVAILABLE") == 0;
-        MenuGrid::label(PixelRenderer::canvas(), 120, 96,
-            unavailable ? "无线暂不可用" : frame.model.error ? frame.model.error : Ui::Social::VISIT_ENDED, 208, 0xffe0);
-        MenuGrid::label(PixelRenderer::canvas(), 120, 134, Ui::BACK, 208, 0xffff);
-    } else {
-        SocialUiContent::draw(frame, layout());
-        // Link errors come from the shared service (including LINK UNAVAILABLE).
-        // The navigation bar remains available in every state.
+    const auto frame = host.socialFrame();
+    const int clamped = std::clamp(offset_, 0, VisitMenu::roomScrollMaximum(frame.model.roomCount));
+    if (clamped != offset_) {
+        offset_ = clamped;
+        cancelTouch();
     }
+    PixelRenderer::clear(0);
+    VisitMenu::render(PixelRenderer::canvas(), frame.model, true, frame.nowMs, pressed_, offset_);
+    displayedModel_ = frame.model;
+    displayedOffset_ = offset_;
+    displayed_ = true;
 }
-
-bool SocialUi::onTouch(const Platform::IInputDevice::TouchEvent& event) {
+bool SocialUi::onTouch(const Platform::IInputDevice::TouchEvent &event) {
     using Type = Platform::IInputDevice::TouchType;
     const auto model = host.socialFrame().model;
     const int key = int(model.state) * 16 + model.roomCount;
-    if (event.type == Type::DOWN) { cancelTouch(); context = key; }
-    else if (context != key) { cancelTouch(); return false; }
-    int target = SceneInput::target(event.x, event.y, true);
-    if (target == SceneInput::CONTENT) {
-        target = -1;
-        if (RoundPage::backHit(event.x, event.y) && (model.state == SocialState::IDLE ||
-            model.state == SocialState::FAILED || model.state == SocialState::ENDED)) target = 230;
-        else if (model.state == SocialState::IDLE) {
-            for (int i = 0; i < 3; ++i) if (menuRow(i).contains(event.x, event.y)) target = i;
-        } else if (model.state == SocialState::ROOM_LIST) {
-            for (int i = 0; i <= model.roomCount; ++i)
-                if (MenuGrid::Rect{40, 40 + i * 20, 192, 20}.contains(event.x, event.y)) target = 100 + i;
+    const bool list = listState(model.state);
+    const auto viewport = VisitMenu::roomViewport();
+    const MarketListScroll::Bounds bounds =
+        list ? MarketListScroll::Bounds{viewport.x, viewport.y, viewport.width, viewport.height}
+             : MarketListScroll::Bounds{0, 0, 0, 0};
+    const int maximum = list ? VisitMenu::roomScrollMaximum(model.roomCount) : 0;
+    const int target = VisitMenu::backButton(true).contains(event.x, event.y)
+                           ? 100
+                           : VisitMenu::itemAt(event.x, event.y, model, true, offset_);
+    if (event.type == Type::CANCEL) {
+        const bool changed = context_ >= 0 || motion_.moving();
+        cancelTouch();
+        return changed;
+    }
+    if (event.type == Type::DOWN) {
+        clearPress();
+        const bool brake = motion_.touch(event, bounds, maximum, offset_, tap_);
+        if (target != 100 &&
+            (!displayed_ || !VisitMenu::sameTarget(displayedModel_, model, target) ||
+             (target >= 0 && target < VisitMenu::CANCEL && list && displayedOffset_ != offset_))) {
+            cancelTouch();
+            return brake;
+        }
+        context_ = key;
+        downX_ = event.x;
+        downY_ = event.y;
+        downModel_ = model;
+        if (brake)
+            return true;
+        pressed_ = target;
+    } else {
+        if (context_ != key || !VisitMenu::sameTarget(downModel_, model, pressed_) ||
+            (list && !VisitMenu::sameRooms(downModel_, model))) {
+            cancelTouch();
+            return true;
+        }
+        if (motion_.touch(event, bounds, maximum, offset_, tap_)) {
+            pressed_ = -1;
+            if (event.type == Type::UP)
+                clearPress();
+            return true;
+        }
+        const int dx = event.x - downX_, dy = event.y - downY_;
+        if (dx * dx + dy * dy > 100) {
+            cancelTouch();
+            return true;
         }
     }
-    const int activated = tap.update(event, target);
-    if (activated < 0) return false;
-    cancelTouch();
-    ButtonEvent button;
-    if (SceneInput::button(activated, button)) return onButton(button);
-    if (activated == 230) return host.activateSocial(SocialAction::BACK);
-    if (model.state == SocialState::IDLE && activated >= 0 && activated < 3) {
-        state.cursor = static_cast<uint8_t>(activated);
-        return onButton({0, BtnAction::PRESSED});
+    const bool visual = pressed_ >= 0;
+    const int hit = tap_.update(event, target);
+    if (event.type == Type::UP)
+        clearPress();
+    if (hit < 0)
+        return visual;
+    if (hit == 100) {
+        offset_ = 0;
+        return host.activateSocial(SocialAction::BACK);
     }
-    if (model.state == SocialState::ROOM_LIST && activated >= 100 && activated <= 100 + model.roomCount) {
-        state.roomCursor = static_cast<uint8_t>(activated - 100);
-        return onButton({0, BtnAction::PRESSED});
+    if (hit == VisitMenu::CANCEL) {
+        offset_ = 0;
+        return host.activateSocial(SocialAction::STOP);
     }
-    return false;
+    switch (model.state) {
+    case SocialState::IDLE:
+        return host.activateSocial(hit ? SocialAction::SEARCH : SocialAction::HOST);
+    case SocialState::ROOM_LIST:
+        return host.activateSocial(SocialAction::SELECT_ROOM, uint8_t(hit));
+    case SocialState::WAITING_HOST_DECISION:
+        return host.activateSocial(SocialAction::DECIDE, hit == 0);
+    case SocialState::ACTIVE:
+        return host.activateSocial(SocialAction::END_VISIT);
+    case SocialState::FAILED:
+        return host.activateSocial(VisitMenu::error(model.error).adjustTeam
+                                       ? SocialAction::ADJUST_TEAM
+                                       : SocialAction::STOP);
+    case SocialState::ENDED:
+        return host.activateSocial(SocialAction::STOP);
+    default:
+        return false;
+    }
 }
-}  // namespace Ui
+} // namespace Ui

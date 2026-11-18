@@ -10,6 +10,7 @@ public:
     void onEnter() override;
     void onExit() override;
     SceneUpdateResult update(uint32_t nowMs, float dtSeconds) override;
+    uint32_t visualFrameIntervalMs(uint32_t nowMs) const override { return ui.visualFrameIntervalMs(nowMs); }
     void render() override;
     bool onButton(const ButtonEvent& event) override;
     bool touchNavigation() const override { return ui.touchNavigation(); }

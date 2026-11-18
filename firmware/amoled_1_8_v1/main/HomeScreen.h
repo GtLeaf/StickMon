@@ -95,6 +95,9 @@ int debugPopupDigitAt(int x, int y, uint8_t digitCount);
 int debugContactChoiceAt(int x, int y);
 #endif
 
+void renderCommunicationTouchScreen(Canvas565& canvas, const CommunicationViewModel& model,
+                                    uint16_t rowBegin, uint16_t rowEnd,
+                                    uint32_t nowMs, int pressed);
 void renderCommunicationScreen(Canvas565& canvas,
                                const CommunicationViewModel& model,
                                uint16_t rowBegin = 0,

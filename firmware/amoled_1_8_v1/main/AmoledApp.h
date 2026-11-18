@@ -578,6 +578,9 @@ private:
     bool explorePostcardShowPets_ = false;
     void advanceExplorePostcardPool(int direction);
     int pressedRoomItem = -1;
+    Communication::VisitSessionService::ViewModel communicationPressModel_{};
+    mutable Communication::VisitSessionService::ViewModel communicationDisplayedModel_{};
+    uint32_t communicationVisualTick_ = 0;
     int pressedCommunicationItem = -1;
     MusicContext musicContext = MusicContext::HOME;
     uint8_t selectedExploreArea = 0;

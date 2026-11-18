@@ -328,6 +328,15 @@ void GameEngine::requestScene(SceneID id, bool saveBeforeSwitch) {
     switchScene(id, saveBeforeSwitch);
 }
 
+void GameEngine::requestTeamMenu() {
+    requestScene(SceneID::MENU);
+    if (currentId == SceneID::MENU) {
+        static_cast<MenuScene*>(currentScene.get())->openTeamView();
+        invalidateScene();
+        scheduleSceneUpdate(Hal::ins().millis());
+    }
+}
+
 bool GameEngine::fadeToScene(SceneID id, uint16_t durationMs) {
     if (id == currentId || sceneFade != SceneFadePhase::NONE) return false;
     sceneFadeTarget = id;

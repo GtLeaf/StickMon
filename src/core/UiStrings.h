@@ -1740,3 +1740,31 @@ static constexpr const char* SATIETY_FMT = "Satiety %u%%";
 static constexpr const char* START_FAILED = "Save unavailable";
 static constexpr const char* DATA_RETAINED = "Original data retained";
 } }
+
+namespace Ui::VisitText {
+inline constexpr const char* TITLE = "联机";
+inline constexpr const char* HOST = "邀请来访";
+inline constexpr const char* SEARCH = "前去拜访";
+inline constexpr const char* SEARCHING = "搜索房间";
+inline constexpr const char* REQUEST = "拜访请求";
+inline constexpr const char* WAITING = "等待来访";
+inline constexpr const char* JOINING = "等待确认";
+inline constexpr const char* SYNCING = "同步中";
+inline constexpr const char* ENDING = "结束中";
+inline constexpr const char* ACTIVE = "拜访中";
+inline constexpr const char* ENDED = "拜访结束";
+inline constexpr const char* UNAVAILABLE = "无法接待";
+inline constexpr const char* SOLO = "请只保留 1 只精灵";
+inline constexpr const char* ADJUST = "调整队伍";
+inline constexpr const char* FAILED = "连接失败";
+inline constexpr const char* RADIO = "无线暂不可用";
+inline constexpr const char* NO_PET = "请先孵化精灵";
+inline constexpr const char* NO_ROOM = "未找到房间";
+inline constexpr const char* NO_VISITOR = "无人来访";
+inline constexpr const char* LOST = "连接已断开";
+inline constexpr const char* TIMEOUT = "连接超时";
+inline constexpr const char* HOST_BUSY = "对方暂无法接待";
+inline constexpr const char* REJECTED = "已拒绝";
+inline constexpr const char* NO_CONFIRM = "确认超时";
+inline constexpr const char* END = "结束拜访";
+}

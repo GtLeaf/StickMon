@@ -9,8 +9,11 @@ inline constexpr uint32_t SOCIAL_DOTS_INTERVAL_MS = 500;
 
 struct SocialUiState {
     uint8_t cursor = 0;
+    uint8_t lastPeerMac[6] = {};
+    uint16_t lastRequestSeq = 0;
     uint8_t roomCursor = 0;
     uint8_t lastRoomCount = 0;
+    EspNowLink::RoomEntry lastRooms[EspNowLink::MAX_ROOMS] = {};
     uint32_t stateStartedMs = 0;
     uint32_t lastVisualTick = UINT32_MAX;
 };

@@ -154,6 +154,10 @@ void MenuScene::onEnter() {
 #endif
 }
 
+void MenuScene::openTeamView() {
+    activateMainMenu(1);
+}
+
 void MenuScene::openExploreTeamView() {
     openExploreView(ViewMode::TEAM);
 }

@@ -18,7 +18,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path,
                         default=ROOT / '.stick-local/artifacts/sdgoods-room-proof-20261025')
-    parser.add_argument('--journey', choices=('onboard-fresh', 'learn-move', 'bag-flow', 'shop-tabs', 'battery-hud', 'audio-resources', 'settings-audio', 'locked-standby', 'save-startup'), help='Run one focused interaction journey')
+    parser.add_argument('--journey', choices=('social-flow', 'onboard-fresh', 'learn-move', 'bag-flow', 'shop-tabs', 'battery-hud', 'audio-resources', 'settings-audio', 'locked-standby', 'save-startup'), help='Run one focused interaction journey')
     parser.add_argument('--debug', action='store_true',
                         help='Check the debug menu and exploration with debug/trace enabled')
     parser.add_argument('--external-content',action='store_true',

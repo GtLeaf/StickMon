@@ -45,6 +45,7 @@ public:
     void cancelTouch() override;
     int touchTarget(int16_t x, int16_t y) override;
     bool onTap(int target) override;
+    void openTeamView();
     void openExploreTeamView();
     void openExploreBagView();
     void openBattleBagView(const char* targetName, uint8_t targetTeamSlot);

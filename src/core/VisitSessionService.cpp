@@ -501,6 +501,9 @@ VisitSessionService::ViewModel VisitSessionService::viewModel() const {
     if (localIsHost_ && state_ != State::IDLE) {
         model.roomId = EspNowLink::ins().currentRoomId();
     }
+    if (incomingRequest_) std::memcpy(model.peerMac, pendingJoinMac_, 6);
+    else EspNowLink::ins().copyPeerMac(model.peerMac);
+    model.requestSeq = incomingRequest_ ? pendingJoinSeq_ : 0;
     model.incomingRequest = incomingRequest_;
     model.localIsHost = localIsHost_;
     model.remote = remote_;

@@ -18,6 +18,7 @@ bool exploreScene = false;
 bool nativeExplore = false;
 bool nativeMenu = false;
 bool nativeShop = false;
+bool nativeSocial = false;
 bool nativeDetail = false;
 const char* headerTitle = nullptr;
 bool headerPressed = false;
@@ -48,7 +49,8 @@ void select(SceneID scene) {
     nativeMenu = false;
     nativeDetail = false;
     nativeShop = scene == SceneID::SHOP;
-    page = scene != SceneID::MAIN && scene != SceneID::HATCH && !nativeShop;
+    nativeSocial = scene == SceneID::SOCIAL;
+    page = scene != SceneID::MAIN && scene != SceneID::HATCH && !nativeShop && !nativeSocial;
 }
 void mainMenu(bool native, bool detail) {
     headerTitle = nullptr;
@@ -124,7 +126,7 @@ void finish() {
 bool mapTouch(Platform::IInputDevice::TouchEvent& event) {
     if (!page) {
         if (output.pixels) PixelRenderer::bind(output);
-        if (nativeMenu || nativeShop || nativeDetail || nativeExplore) {
+        if (nativeMenu || nativeShop || nativeDetail || nativeExplore || nativeSocial) {
             const int dx = 2 * event.x - (device.width - 1);
             const int dy = 2 * event.y - (device.height - 1);
             if (dx * dx + dy * dy >= device.width * device.width)

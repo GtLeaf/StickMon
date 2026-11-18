@@ -103,6 +103,9 @@ ConnectedHost connectHost(DesktopPlatform& desktop,
     service.update(desktop.millis());
     assert(service.state() == Communication::VisitSessionService::State::
                                   WAITING_HOST_DECISION);
+    const auto requester = service.viewModel();
+    assert(requester.requestSeq == requestSeq);
+    assert(std::memcmp(requester.peerMac, PEER, 6) == 0);
     service.acceptIncoming(true);
     Platform::PeerPacket joinAck = takeType(desktop,
                                             LinkMessageType::JOIN_ACK);
