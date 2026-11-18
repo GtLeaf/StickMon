@@ -15,6 +15,9 @@
 #include "hardware/Hal.h"
 #include "platform/api/FlashStorage.h"
 #include "ui/SceneSurface.h"
+#if STICKMON_UI_ROUND_TOUCH
+#include "ui/round_touch/PhotoUi.h"
+#endif
 
 namespace {
 bool applyBagItem(Game::ItemId item, uint8_t slot) {
@@ -180,7 +183,7 @@ MenuScene::BattleBagResult MenuScene::consumeBattleBagResult() {
 bool MenuScene::nativeSurfaceView(ViewMode view) {
     return view == ViewMode::STATUS || view == ViewMode::MOVES || view == ViewMode::STORAGE
 #if defined(STICKMON_UI_ROUND_TOUCH) && STICKMON_UI_ROUND_TOUCH
-        || view == ViewMode::BAG
+        || view == ViewMode::BAG || view == ViewMode::ALBUM
 #endif
 #if STICKMON_ENABLE_DEBUG_FEATURES
         || view == ViewMode::DEBUG
@@ -201,12 +204,16 @@ bool MenuScene::exploreViewClosed() const {
 }
 
 void MenuScene::onExit() {
+#if STICKMON_UI_ROUND_TOUCH
+    photos_.close();
+#endif
     cancelTouch();
     mainMenuUi.rememberCursor();
 }
 
 void MenuScene::resetNavigation() {
 #if STICKMON_UI_ROUND_TOUCH
+    photos_.close();
     pendingTeamItem = Game::ItemId::COUNT;
     itemFeedback = false;
     itemProgression = ItemProgression::NONE;
@@ -221,6 +228,9 @@ void MenuScene::resetNavigation() {
 
 void MenuScene::pushView(ViewMode next) {
     if (next == viewMode) return;
+#if STICKMON_UI_ROUND_TOUCH
+    if(next==ViewMode::COMPUTER)photos_.refreshCatalogue();
+#endif
     cancelTouch();
     if (next == ViewMode::BAG) bagUi.enter();
     if (navDepth < NAV_STACK_CAP) {
@@ -237,6 +247,7 @@ void MenuScene::pushView(ViewMode next) {
 
 void MenuScene::popView() {
 #if STICKMON_UI_ROUND_TOUCH
+    if(viewMode==ViewMode::ALBUM)photos_.close();
     if (selectingTeamItem()) {
         pendingTeamItem = Game::ItemId::COUNT;
         itemFeedback = false;
@@ -270,6 +281,14 @@ bool MenuScene::keepsDisplayAwake() const {
 
 SceneUpdateResult MenuScene::update(uint32_t nowMs, float dtSeconds) {
 #if STICKMON_UI_ROUND_TOUCH
+    if(viewMode==ViewMode::ALBUM){
+        if(Platform::display().locked()){photos_.cancelTouch();photoTouching_=photoDirty_=false;return SceneUpdateResult::parked();}
+        const auto elapsed=nowMs-photoClock_;
+        if(elapsed<66)return photoTouching_||photoDirty_||photos_.moving()?SceneUpdateResult::pollAfter(66-elapsed):SceneUpdateResult::parked();
+        photoClock_=nowMs;RenderDemand demand;demand.changed(photos_.update(elapsed)||photoDirty_);photoDirty_=false;
+        if(photoTouching_||photos_.moving())demand.wakeIn(66);
+        return demand.result();
+    }
     if (itemFeedback) {
         if (nowMs - itemFeedbackStarted >= 700) {
             itemFeedback = false;
@@ -315,6 +334,9 @@ bool MenuScene::directTouchPage() const {
 }
 
 bool MenuScene::touchNavigation() const {
+#if STICKMON_UI_ROUND_TOUCH
+    if(viewMode==ViewMode::ALBUM)return false;
+#endif
     if (viewMode == ViewMode::MENU) return mainMenuUi.touchNavigation();
     if (viewMode == ViewMode::TEAM) return teamUi.touchNavigation();
     if (viewMode == ViewMode::STATUS) return statusUi.touchNavigation();
@@ -328,6 +350,7 @@ bool MenuScene::touchNavigation() const {
 
 void MenuScene::cancelTouch() {
 #if STICKMON_UI_ROUND_TOUCH
+    photos_.cancelTouch();photoTouching_=false;
     ProgressionUi::cancelMoveLearnTouch();
 #endif
     Scene::cancelTouch();
@@ -347,6 +370,16 @@ void MenuScene::cancelTouch() {
 
 bool MenuScene::onTouch(const Platform::IInputDevice::TouchEvent& event) {
 #if STICKMON_UI_ROUND_TOUCH
+    if(viewMode==ViewMode::ALBUM){
+        using T=Platform::IInputDevice::TouchType;
+        if(event.type==T::DOWN)photoTouching_=true;
+        else if(event.type==T::UP||event.type==T::CANCEL)photoTouching_=false;
+        const int before=photos_.offset();
+        const auto request=photos_.touch(event);photoDirty_|=before!=photos_.offset();
+        if(request==Ui::PhotoFlow::Request::CLOSE_ALBUM)popView();
+        if(event.type!=T::MOVE)photoDirty_=false;
+        return event.type!=T::MOVE;
+    }
     if (itemFeedback) return true;
     if (itemProgression != ItemProgression::NONE) return handleItemProgressionTouch(event);
 #endif
@@ -384,6 +417,14 @@ bool MenuScene::onTap(int target) {
 
 bool MenuScene::onButton(const ButtonEvent& event) {
 #if STICKMON_UI_ROUND_TOUCH
+    if(viewMode==ViewMode::ALBUM){
+        if(event.btn==1&&(event.action==BtnAction::PRESSED||event.action==BtnAction::LONG_PRESS)){
+            const auto r=photos_.backBounds();const auto now=Hal::ins().millis();
+            onTouch({Platform::IInputDevice::TouchType::DOWN,int16_t(r.x+r.width/2),int16_t(r.y+r.height/2),now});
+            onTouch({Platform::IInputDevice::TouchType::UP,int16_t(r.x+r.width/2),int16_t(r.y+r.height/2),now});
+        }
+        return true;
+    }
     if (itemFeedback) return true;
     if (itemProgression != ItemProgression::NONE) return handleItemProgressionButton(event);
 #endif
@@ -486,6 +527,9 @@ bool MenuScene::activateMainMenu(uint8_t index) {
 }
 
 void MenuScene::render() {
+#if STICKMON_UI_ROUND_TOUCH
+    if(viewMode==ViewMode::ALBUM){Ui::RoundPhotoUi::render(photos_);return;}
+#endif
     overlayUi.renderBackground();
 #if STICKMON_UI_ROUND_TOUCH
     if (itemProgression != ItemProgression::NONE) {
@@ -694,6 +738,10 @@ bool MenuScene::changeHomeFurniture(uint16_t id,bool place) {
 bool MenuScene::selectPageFood(uint8_t index) { return GameEngine::ins().selectFood(index); }
 
 void MenuScene::openComputerSocial() { GameEngine::ins().requestScene(SceneID::SOCIAL); }
+#if STICKMON_UI_ROUND_TOUCH
+void MenuScene::openComputerAlbum(){pushView(ViewMode::ALBUM);photos_.openAlbum();photoClock_=Hal::ins().millis();photoDirty_=photoTouching_=false;}
+unsigned MenuScene::computerPhotoCount()const{return photos_.count();}
+#endif
 void MenuScene::openComputerContacts() {
     pushView(ViewMode::STORAGE);
     contactsUi.enter();

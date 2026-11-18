@@ -19,6 +19,7 @@
 #include "game/Species.h"
 #if STICKMON_UI_ROUND_TOUCH
 #include "core/ProgressionUi.h"
+#include "presentation/PhotoFlow.h"
 #endif
 
 class MenuScene : public Scene, private Ui::TeamHost, private Ui::MovesHost, private Ui::RoomHost, private Ui::FoodHost, private Ui::ComputerHost, private Ui::ContactsHost, private Ui::MainMenuHost
@@ -64,6 +65,9 @@ private:
         BAG,
         COMPUTER,
         STORAGE,
+#if STICKMON_UI_ROUND_TOUCH
+        ALBUM,
+#endif
 #if STICKMON_ENABLE_DEBUG_FEATURES
         DEBUG,
 #endif
@@ -98,6 +102,11 @@ private:
     BattleBagResult battleBagResult = BattleBagResult::NONE;
     uint8_t battleBagFoodIndex = 0;
 #if STICKMON_UI_ROUND_TOUCH
+    Ui::PhotoFlow photos_{{360,360,360,224,true}};
+    uint32_t photoClock_=0;
+    bool photoTouching_=false,photoDirty_=false;
+    void openComputerAlbum() override;
+    unsigned computerPhotoCount() const override;
     enum class ItemProgression : uint8_t { NONE, LEVEL_UP, EVOLUTION, CANCELLED, MOVE, REPLACED };
     Game::ItemId pendingTeamItem = Game::ItemId::COUNT;
     bool itemFeedback = false;

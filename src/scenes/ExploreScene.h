@@ -23,6 +23,7 @@
 #include "ui/round_touch/MarketTutorUi.h"
 #include "ui/round_touch/MarketCareUi.h"
 #include "ui/common/MarketWorkshopUi.h"
+#include "presentation/PhotoFlow.h"
 #endif
 
 namespace PokemonSprites {
@@ -51,6 +52,13 @@ public:
     void onExit() override;
     void prepareSurface() override;
     bool prepareDisplayLock() override;
+    bool keepsDisplayAwake() const override {
+#if STICKMON_UI_ROUND_TOUCH
+        return photo_.keepsDisplayAwake();
+#else
+        return false;
+#endif
+    }
     SceneUpdateResult update(uint32_t nowMs, float dtSeconds) override;
     void render() override;
     uint32_t visualFrameIntervalMs(uint32_t nowMs) const override;
@@ -366,6 +374,13 @@ private:
     std::unique_ptr<Market::Session> market_;
     Ui::MarketWalkUi marketUi_;
 #if STICKMON_UI_ROUND_TOUCH
+    Ui::PhotoFlow photo_{{360,360,360,224,true}};
+    uint32_t photoClock_=0,photoPauseAt_=0;
+    bool photoWasPaused_=false;
+    bool openPhoto();
+    void closePhoto(bool saved=false);
+    bool photoTouch(const Platform::IInputDevice::TouchEvent& event);
+    SceneUpdateResult updatePhoto(uint32_t nowMs);
     uint32_t marketCountdownDay_ = UINT32_MAX;
     Ui::RoundMarketShopUi marketShopUi_;
     Ui::RoundMarketTutorUi marketTutorUi_;

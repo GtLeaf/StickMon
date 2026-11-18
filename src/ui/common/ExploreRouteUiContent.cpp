@@ -527,6 +527,7 @@ void drawWalking(const ExploreRouteFrame& view, ExploreRouteVisualState& visual,
     c.multiplyRectRgb(0, 0, layout.width, layout.height,
         daylight.red, daylight.green, daylight.blue);
 
+    if (view.photoMode) return;
     if (view.overlay && view.overlay->drawHud(view, layout)) return;
 
     const uint16_t panel = PixelRenderer::rgb(8, 10, 14);

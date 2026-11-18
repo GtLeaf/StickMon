@@ -2,6 +2,7 @@
 #pragma once
 
 #include "ResourceBanks.h"
+#include "PhotoFiles.h"
 #include "esp_partition.h"
 #include "Audio.h"
 #include "Battery.h"
@@ -82,6 +83,7 @@ public:
     void enterDeepSleep(uint64_t, bool) override;
     bool initialize() override;
     size_t blobSize(const char*, const char*) override;
+    Platform::BlobLookup lookupBlob(const char*, const char*, size_t&) override;
     bool readBlob(const char*, const char*, void*, size_t) override;
     bool writeBlob(const char*, const char*, const void*, size_t) override;
     bool removeBlob(const char*, const char*) override;
@@ -93,6 +95,7 @@ private:
     bool resourcesReady_=false;
     bool saveWritesEnabled_=true;
     ResourceBanks resources_;
+    PhotoFiles photoFiles_;
     Audio audio_;
     Battery battery_;
     PeerRadio radio_;

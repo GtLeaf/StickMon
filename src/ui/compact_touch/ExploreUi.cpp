@@ -9,10 +9,12 @@
 #include "hardware/Hal.h"
 #include "ui/compact_touch/ExploreHudUi.h"
 #include "ui/compact_touch/HudControls.h"
+#include "ui/common/ExploreRouteUiContent.h"
 #if STICKMON_UI_ROUND_TOUCH
 #include "ui/round_touch/TouchTutorial.h"
 #include "ui/round_touch/ExploreRouteUi.h"
 #include "ui/round_touch/ExploreBattleUi.h"
+#include "presentation/PhotoFlow.h"
 #endif
 
 namespace Ui {
@@ -34,7 +36,7 @@ ExploreBattleLayout battleLayout() {
 }
 enum Target {
     TARGET_WALK = 100, TARGET_COMMAND = 110, TARGET_MENU = 120, TARGET_SPECIAL = 130, TARGET_FRIEND = 132,
-    TARGET_PICKUP = 140, TARGET_RESULT, TARGET_END, TARGET_DEFEAT, TARGET_OPEN_MENU
+    TARGET_PICKUP = 140, TARGET_RESULT, TARGET_END, TARGET_DEFEAT, TARGET_OPEN_MENU, TARGET_PHOTO
 };
 int touchContext(const ExploreInputFrame& frame) {
     return static_cast<int>(frame.phase) | (int(frame.menuOpen) << 8) |
@@ -54,6 +56,20 @@ void ExploreUi::render() {
 #endif
     renderWith(routeLayout(host.exploreInputFrame().phase), battleLayout());
 }
+
+#if STICKMON_UI_ROUND_TOUCH
+void ExploreUi::renderPhotoWorld() {
+    auto frame = routeFrame();frame.photoMode=true;frame.toast=nullptr;
+    frame.routeMoving=frame.routeFollowerMoving=false;
+    auto& canvas=PixelRenderer::canvas();canvas.fillRect(0,0,360,360,0);
+    ExploreRouteUiContent::drawWalking(frame,routeVisual,RoundExplore::routeLayout(ExplorePhase::WALKING));
+}
+bool ExploreUi::capturePhoto(PhotoFlow& flow,uint32_t day){
+    auto& canvas=PixelRenderer::canvas();const int l=canvas.clipLeft(),t=canvas.clipTop(),r=canvas.clipRight(),b=canvas.clipBottom();
+    canvas.clearClipRect();renderPhotoWorld();const bool captured=flow.capture(canvas,day);
+    canvas.setClipRect(l,t,r-l,b-t);return captured;
+}
+#endif
 
 bool ExploreUi::onButton(const ButtonEvent& event) {
     cancelTouch();
@@ -104,6 +120,7 @@ int ExploreUi::touchTarget(int16_t x, int16_t y) {
     if (frame.phase == ExplorePhase::WALKING) {
         if (frame.iceSliding || frame.routeBlocked) return -1;
 #if STICKMON_UI_ROUND_TOUCH
+        if (!frame.menuOpen && RoundExplore::ROUTE_CAMERA.contains(x,y)) return TARGET_PHOTO;
         if (RoundExplore::ROUTE_MENU.contains(x, y)) return TARGET_OPEN_MENU;
         if (frame.menuOpen) {
             for (int i = 0; i < AppSceneFlow::exploreMenuItemCount(); ++i)
@@ -166,6 +183,7 @@ bool ExploreUi::onTap(int target) {
 #endif
     if (frame.phase == ExplorePhase::WALKING && !frame.iceSliding && !frame.routeBlocked) {
 #if STICKMON_UI_ROUND_TOUCH
+        if (!frame.menuOpen && target == TARGET_PHOTO) return host.activateExplore(ExploreAction::PHOTO);
         if (frame.menuOpen && target == TARGET_OPEN_MENU)
             return host.activateExplore(ExploreAction::MENU_RETURN_PAUSE);
 #endif

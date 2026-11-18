@@ -44,7 +44,9 @@ Result Library::refresh(){
 Result Library::save(const uint16_t*pixels,uint8_t area,uint32_t day,Platform::FileYield yield){
     if(!pixels||area>=6)return Result::FAILED;
     auto result=refresh();if(result!=Result::OK)return result;
-    if(count_>=CAPACITY||files_->availableBytes()<FILE_BYTES+4096)return Result::FULL;
+    size_t available=0;
+    if(!files_->queryAvailableBytes(available))return Result::UNAVAILABLE;
+    if(count_>=CAPACITY||available<FILE_BYTES+4096)return Result::FULL;
     uint64_t sequence=0,maxId=0;
     for(unsigned i=0;i<count_;++i)maxId=std::max(maxId,entries_[i].id);
     uint8_t serial[16]{};size_t serialSize=0;

@@ -282,6 +282,11 @@ public:
                           FileYield yield = nullptr) = 0;
     virtual bool remove(const char* name) = 0;
     virtual size_t availableBytes() { return SIZE_MAX; }
+    // A failed query must not be confused with a successfully measured full disk.
+    virtual bool queryAvailableBytes(size_t& available) {
+        available = availableBytes();
+        return true;
+    }
 };
 
 struct Services {

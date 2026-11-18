@@ -41,7 +41,7 @@ esp_err_t openStore(const char* nameSpace, nvs_open_mode_t mode, nvs_handle_t& h
 SdgoodsPlatform::SdgoodsPlatform()
     : audio_(*this),
       services_{*this, *this, *this, *this, *this, audio_, *this, *this,
-                *this, resources_, *this, radio_} {}
+                *this, resources_, *this, radio_, &photoFiles_} {}
 
 bool SdgoodsPlatform::initialize() {
     if (storageReady_) return true;
@@ -426,6 +426,23 @@ size_t SdgoodsPlatform::blobSize(const char* ns, const char* key) {
     const auto result = nvs_get_blob(handle, key, nullptr, &length);
     nvs_close(handle);
     return result == ESP_OK ? length : 0;
+}
+Platform::BlobLookup SdgoodsPlatform::lookupBlob(const char* ns, const char* key, size_t& length) {
+    using Status = Platform::BlobLookup;
+    length = 0;
+    if (!key || !*key) return Status::FAILED;
+    nvs_handle_t handle = 0;
+    auto result = openStore(ns, NVS_READONLY, handle);
+    if (result != ESP_OK)
+        return result == ESP_ERR_NVS_NOT_FOUND ? Status::MISSING : Status::FAILED;
+    size_t actual = 0;
+    result = nvs_get_blob(handle, key, nullptr, &actual);
+    nvs_close(handle);
+    if (result == ESP_OK) {
+        length = actual;
+        return Status::FOUND;
+    }
+    return result == ESP_ERR_NVS_NOT_FOUND ? Status::MISSING : Status::FAILED;
 }
 bool SdgoodsPlatform::readBlob(const char* ns, const char* key, void* output, size_t length) {
     if (!output || blobSize(ns, key) != length) return false;

@@ -6,6 +6,7 @@
 #include "core/UiStrings.h"
 #include "presentation/PixelRenderer.h"
 #include "ui/common/HomeUiContent.h"
+#include "ui/round_touch/PhotoUi.h"
 
 namespace Ui::RoundExplore {
 namespace {
@@ -145,7 +146,10 @@ void drawRouteHud(const ExploreRouteFrame& frame) {
         for (int y : {centerY - 7, centerY - 1, centerY + 5})
             c.fillRect(x, y, 18, 2, foreground);
     }
-    if (!frame.exploreMenuOpen) return;
+    if (!frame.exploreMenuOpen) {
+        if(frame.menuAvailable)RoundPhotoUi::cameraIcon(c,180,82);
+        return;
+    }
     c.fillRoundRect(ROUTE_PANEL.x, ROUTE_PANEL.y, ROUTE_PANEL.width,
         ROUTE_PANEL.height, 8, PixelRenderer::rgb(20, 25, 32));
     c.drawRoundRect(ROUTE_PANEL.x, ROUTE_PANEL.y, ROUTE_PANEL.width,

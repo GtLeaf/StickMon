@@ -9,12 +9,15 @@
 #endif
 
 namespace Ui {
+class PhotoFlow;
 class ExploreUi : public ExploreUiBase, private ExploreRouteOverlay {
 public:
     explicit ExploreUi(ExploreHost& host) : ExploreUiBase(host) {}
     void render() override;
 #if STICKMON_UI_ROUND_TOUCH
     void releaseSelectionCache() { selection.release(); }
+    void renderPhotoWorld();
+    bool capturePhoto(PhotoFlow& flow,uint32_t day);
 #endif
     bool onButton(const ButtonEvent& event);
     int touchTarget(int16_t x, int16_t y) override;

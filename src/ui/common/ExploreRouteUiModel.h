@@ -60,6 +60,7 @@ struct ExploreRouteVisualState {
 
 // A view of the current scene. Map and sprite resources remain host-owned.
 struct ExploreRouteFrame {
+    bool photoMode = false;
     static constexpr uint8_t AREA_CAP = ExploreDestinations::COUNT;
     static constexpr uint8_t PREVIEW_CAP = ExplorePool::POOL_CAP;
     uint32_t nowMs = 0;

@@ -9,6 +9,8 @@ class ComputerHost : public virtual MenuPageHost {
 public:
     virtual void openComputerSocial() = 0;
     virtual void openComputerContacts() = 0;
+    virtual void openComputerAlbum() {}
+    virtual unsigned computerPhotoCount() const {return 0;}
 };
 
 class ComputerUiBase : public Scene {

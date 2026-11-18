@@ -6,6 +6,7 @@
 
 #include <cstdio>
 #include "core/UiStrings.h"
+#include "core/PhotoLibrary.h"
 #include "hardware/Hal.h"
 #include "presentation/MenuGrid.h"
 #include "presentation/PixelRenderer.h"
@@ -51,15 +52,18 @@ void ComputerUi::render() {
     c.fillRect(0, 0, Ui::Page::WIDTH, Ui::Page::HEIGHT, 0);
     const auto layout = pageLayout();
     c.setClipRect(0, 0, Ui::Page::WIDTH, Ui::Page::HEIGHT);
-    for (int i = 0; i < 2; ++i) {
+    for (int i = 0; i < 3; ++i) {
         const auto rect = layout.cell(i, pageScroll);
         if (rect.y + rect.height <= 0 || rect.y >= Ui::Page::HEIGHT) continue;
         MenuGrid::card(c, rect, gridTouch.pressed() == i, computerCursor == i);
-        PixelRenderer::text(rect.x + 16, rect.y + 29, Ui::Computer::ITEMS[i], 0xffff);
+        PixelRenderer::text(rect.x + 16, rect.y + 29, i==2?Ui::Photo::ALBUM:Ui::Computer::ITEMS[i], 0xffff);
         if (i == 1) {
             char value[12];
             std::snprintf(value, sizeof(value), Ui::Computer::STORAGE_COUNT_FMT, host.pageState().storageCount);
             PixelRenderer::text(Ui::Page::WIDTH - 18 - textPixelWidth(value), rect.y + 29, value, 0x77b6);
+        } else if(i==2){
+            char value[12];std::snprintf(value,sizeof(value),"%u/%u",host.computerPhotoCount(),Photos::CAPACITY);
+            PixelRenderer::text(Ui::Page::WIDTH-18-textPixelWidth(value),rect.y+29,value,0x77b6);
         } else PixelRenderer::text(Ui::Page::WIDTH - 28, rect.y + 29, ">", 0x77b6);
     }
     c.clearClipRect();
@@ -77,7 +81,7 @@ bool ComputerUi::onButton(const ButtonEvent& event) {
         return true;
     }
     if (event.btn == 1 && event.action == BtnAction::PRESSED) {
-        computerCursor = (computerCursor + 1) % 2;
+        computerCursor = (computerCursor + 1) % 3;
         return true;
     }
     if (event.btn == 0 && event.action == BtnAction::PRESSED) {
@@ -95,7 +99,7 @@ void ComputerUi::cancelTouch() {
 bool ComputerUi::onTouch(const Platform::IInputDevice::TouchEvent& event) {
     const auto layout = pageLayout();
     const auto result = gridTouch.update(event, touchTarget(event.x, event.y), pageScroll,
-        layout.maxScroll(2), layout.viewport.contains(event.x, event.y));
+        layout.maxScroll(3), layout.viewport.contains(event.x, event.y));
     const bool activated = result.tap >= 0 && onTap(result.tap);
     return result.changed || activated;
 }
@@ -103,12 +107,12 @@ bool ComputerUi::onTouch(const Platform::IInputDevice::TouchEvent& event) {
 int ComputerUi::touchTarget(int16_t x, int16_t y) {
     if (RoundPage::NATIVE_BACK.contains(x + 60, y + 60)) return 230;
     if (x < 0 || x >= Ui::Page::WIDTH || y < 0 || y >= Ui::Page::HEIGHT) return -1;
-    return pageLayout().itemAt(x, y, pageScroll, 2);
+    return pageLayout().itemAt(x, y, pageScroll, 3);
 }
 
 bool ComputerUi::onTap(int target) {
     if (target == 230) return onButton({1, BtnAction::LONG_PRESS});
-    if (target < 0 || target >= 128) return false;
+    if (target < 0 || target >= 3) return false;
     computerCursor = target;
     host.pageNavigationTutorial();
     return onButton({0, BtnAction::PRESSED});
