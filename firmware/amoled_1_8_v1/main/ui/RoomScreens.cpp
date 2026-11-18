@@ -11,6 +11,7 @@
 #include "ui/models/ScreenModels.h"
 #include "assets/GameAssets.h"
 #include "game/ItemInventory.h"
+#include "presentation/FurnitureArt.h"
 
 namespace AmoledV1 {
 
@@ -34,13 +35,13 @@ int roomMenuItemAt(int x, int y) {
     constexpr int rowHeight = 120;
     if (x < 12 || x >= 356 || y < MENU_CONTENT_TOP || y >= 448) return -1;
     int index = (y - MENU_CONTENT_TOP) / rowHeight;
-    return index < 2 ? index : -1;
+    return index < 3 ? index : -1;
 }
 
 void renderRoomMenuScreen(Canvas565& canvas, const RoomMenuViewModel& model,
                           uint16_t rowBegin, uint16_t rowEnd) {
     static constexpr const char* LABELS[] = {
-        Ui::Room::FOOD_ITEM, Ui::Room::BATH,
+        Ui::Room::FOOD_ITEM, Ui::Room::BATH, Ui::HomeLibraryText::TITLE,
     };
     rowBegin = std::min<uint16_t>(rowBegin, AmoledUi::HEIGHT);
     rowEnd = std::min<uint16_t>(rowEnd, AmoledUi::HEIGHT);
@@ -55,7 +56,7 @@ void renderRoomMenuScreen(Canvas565& canvas, const RoomMenuViewModel& model,
     if (model.state) {
         for (uint8_t stock : model.state->room.food) foodCount += stock;
     }
-    for (int index = 0; index < 2; ++index) {
+    for (int index = 0; index < 3; ++index) {
         int y = MENU_CONTENT_TOP + index * 120;
         uint16_t background = index == model.pressedItem
             ? rgb(42, 61, 68) : rgb(24, 34, 42);
@@ -71,6 +72,8 @@ void renderRoomMenuScreen(Canvas565& canvas, const RoomMenuViewModel& model,
                     62, y + 56, 1.44f)) {
                 text(canvas, 56, y + 48, "?", rgb(126, 175, 175));
             }
+        } else {
+            FurnitureArt::drawFrame(canvas,62,y+56,48);
         }
         text(canvas, 116, y + 44, LABELS[index], rgb(226, 238, 233));
         if (index == 0) {

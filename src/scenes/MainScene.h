@@ -23,6 +23,7 @@ struct PetResult;
 class MainScene : public Scene, private Ui::HomeHost {
 public:
     MainScene() : homeUi(*this) {}
+    bool standbySafe() const;
     void onEnter() override;
     void onExit() override;
     bool onBeforeSave() override;

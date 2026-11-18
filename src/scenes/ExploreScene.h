@@ -22,6 +22,7 @@
 #include "ui/round_touch/MarketShopUi.h"
 #include "ui/round_touch/MarketTutorUi.h"
 #include "ui/round_touch/MarketCareUi.h"
+#include "ui/common/MarketWorkshopUi.h"
 #endif
 
 namespace PokemonSprites {
@@ -369,9 +370,11 @@ private:
     Ui::RoundMarketShopUi marketShopUi_;
     Ui::RoundMarketTutorUi marketTutorUi_;
     Ui::RoundMarketCareUi marketCareUi_;
+    Ui::MarketWorkshopUi marketWorkshopUi_{{360,360,true}};
+    void commitMarketWorkshop(Ui::MarketWorkshopUi::Request request,uint32_t eventMs);
     void commitMarketCare(const Ui::RoundMarketCareUi::Request& request,uint32_t eventMs);
     uint16_t marketServiceSpecies_ = 0;
-    bool marketStallActive() const {return marketShopUi_.active() || marketTutorUi_.active() || marketCareUi_.active();}
+    bool marketStallActive() const {return marketShopUi_.active() || marketTutorUi_.active() || marketCareUi_.active() || marketWorkshopUi_.active();}
     void commitMarketTutor(const Ui::RoundMarketTutorUi::Request& request,uint32_t eventMs);
     Ui::MarketCoinMotion marketCoins_;
     bool marketServicePending_ = false;

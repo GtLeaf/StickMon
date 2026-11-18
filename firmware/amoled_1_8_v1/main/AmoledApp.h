@@ -13,6 +13,8 @@
 #include "ui/common/MarketTutorUi.h"
 #include "ui/common/MarketShopUi.h"
 #include "ui/common/MarketCareUi.h"
+#include "ui/common/MarketWorkshopUi.h"
+#include "ui/common/HomeLibraryUi.h"
 
 #ifndef STICKMON_HAS_CLAW
 #define STICKMON_HAS_CLAW 0
@@ -109,7 +111,7 @@ public:
     bool displayLockAllowed() const;
     bool lockedHomePowerAllowed() const;
     void setDisplayLocked(bool locked) {
-        if (locked && !displayLocked && market_) cancelTouch();
+        if (locked && !displayLocked && (market_||homeLibraryUi_.active())) cancelTouch();
         displayLocked = locked;
     }
     void forceRenderRegion(int left, int top, int right, int bottom) {
@@ -616,7 +618,13 @@ private:
     Ui::MarketCareUi marketCareUi_;
     void openMarketCare(uint32_t nowMs);
     void handleMarketCareTouch(const Platform::IInputDevice::TouchEvent& touch);
-    bool marketServiceActive() const { return marketTutorUi_.active() || marketShopUi_.active() || marketCareUi_.active(); }
+    Ui::MarketWorkshopUi marketWorkshopUi_;
+    Ui::HomeLibraryUi homeLibraryUi_;
+    uint32_t homeLibraryClockMs_=0;
+    bool homeLibraryDirty_=false;
+    void openMarketWorkshop(uint32_t nowMs);
+    void handleMarketWorkshopTouch(const Platform::IInputDevice::TouchEvent& touch);
+    bool marketServiceActive() const { return marketTutorUi_.active() || marketShopUi_.active() || marketCareUi_.active() || marketWorkshopUi_.active(); }
     // The market animates continuously; cap its full-screen frames instead of
     // redrawing on every 20 ms loop and every touch move. On the 20 ms loop
     // grid a 33 ms minimum gap presents a steady frame every 40 ms (25 fps).

@@ -10,6 +10,8 @@ public:
     bool begin(bool persist=true);
     void poll();
     bool save();
+    void retryFailedSave();
+    bool failedSaveRetryDue() const;
     bool restart();
     bool ready() const { return ready_; }
     bool lastSaveOk() const { return lastSaveOk_; }

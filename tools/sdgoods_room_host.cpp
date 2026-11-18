@@ -1067,7 +1067,8 @@ int main(int argc, char** argv) {
         blobs.failWrites=false;
         desktop.advanceMs(1900);session.poll();
         assert(!session.lastSaveOk() && blobs.writeAttempts==attempts);
-        desktop.advanceMs(150);session.poll();
+        assert(!session.failedSaveRetryDue());
+        desktop.advanceMs(150);session.retryFailedSave(); // Adaptive standby does not run the room loop.
         assert(session.lastSaveOk());
         SaveManager retryVerifier;Game::GameState retried{};MainSceneViewState retryView{};
         assert(retryVerifier.begin() && retryVerifier.load(retried,retryView));

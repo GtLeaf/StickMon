@@ -23,6 +23,7 @@
 namespace AmoledV1 {
 
 struct HomeViewModel {
+    uint16_t placedFurniture = 0;
     struct MonsterHud {
         uint8_t hp = 0;
         uint8_t hunger = 0;

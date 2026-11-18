@@ -17,6 +17,7 @@
 #include "ui/common/MarketListScroll.h"
 #include "ui/common/MarketTutorPerformance.h"
 #include "ui/common/MarketView.h"
+#include "ui/round_touch/MarketStallUi.h"
 
 // Native360 round Gengar pages; shared services own all gameplay mutations. The controller
 // owns page state and hit geometry; the application owns saving. A request is
@@ -35,10 +36,10 @@ public:
         Game::MoveId move = 0;
         uint32_t period=0,iv=0,metAt=0;
     };
-    struct Rect { int x, y, w, h; bool contains(int px, int py) const { return px >= x && py >= y && px < x + w && py < y + h; } };
+    using Rect = RoundMarketStall::Rect;
 
-    static constexpr int W = 360, H = 360, PANEL_Y = 144, ROW_Y = 156, ROW_H = 56, GREET_H = 136;
-    static constexpr int MENU_Y = PANEL_Y, MENU_ROW_H = 46;
+    static constexpr int W = 360, H = 360, PANEL_Y = 132, ROW_Y = 140, ROW_H = 56, GREET_H = 140;
+    static constexpr int MENU_Y = PANEL_Y, MENU_ROW_H = 64;
     static constexpr uint32_t TRAIN_MS = MarketTutorPerformance::TRAINING_MS;
     static constexpr uint32_t TEACH_MS = MarketTutorPerformance::LEARNING_MS, TRAIN_SKIP_MS = 400;
     static constexpr uint32_t GREET_IN_MS = 360, OPEN_MS = 420, CLOSE_MS = 520;
@@ -52,11 +53,7 @@ public:
     int scrollOffset() const { return scroll_; }
     bool animating() const { return transition_ != Transition::NONE; }
     int panelTop() const { return page_ == Page::GREET ? H - GREET_H + panelOffset() : basePanelTop() + panelOffset(); }
-    // Vertical offset of the coin badge: hidden while greeting, sliding in
-    // and out with the panel.
-    int hudOffset() const { return MarketStallMotion::hudOffset(page_ == Page::GREET, transition_ == Transition::OPENING,
-                                                                 transition_ == Transition::CLOSING, transitionMs_,
-                                                                 duration()); }
+    int hudOffset() const { return transition_==Transition::CLOSING?tween(0,-64):0; }
 
     void open(const Game::GameState& state, const char* welcome = nullptr, bool initialized = true) {
         *this = RoundMarketTutorUi{};
@@ -111,19 +108,16 @@ public:
     // The greeting box covers the bottom 120px, the stall panel everything
     // below the current panel top; feet land about 28px above the covered edge.
     int sceneShift(const Market::Session& s, const MarketView::Viewport& v) const {
-        const int camera = v.cameraY(s);
-        int lowest = -100000;
-        for (int role = 0; role < 4; ++role) {
-            const int i = s.conversationActor(role);
-            if (i >= 0) lowest = std::max(lowest, v.pixel(s.pose(i).y) - camera);
-        }
-        if (lowest < -10000) return 0;
-        const int greeting = std::clamp(lowest - (H - 148), 0, 120);
-        const int opened = std::clamp(lowest - (basePanelTop() - 28), -240, 240);
-        if (transition_ == Transition::GREET_IN) return tween(0, greeting);
-        if (transition_ == Transition::OPENING) return tween(greeting, opened);
-        if (transition_ == Transition::CLOSING) return tween(opened, 0);
-        return page_ == Page::GREET ? greeting : opened;
+        const int shift=RoundMarketStall::sceneShift(s,v);
+        if(transition_==Transition::GREET_IN)return tween(0,shift);
+        if(transition_==Transition::CLOSING)return tween(shift,0);
+        return shift;
+    }
+    int sceneShiftX(const Market::Session& s,const MarketView::Viewport& v) const {
+        const int shift=RoundMarketStall::sceneShiftX(s,v);
+        if(transition_==Transition::GREET_IN)return tween(0,shift);
+        if(transition_==Transition::CLOSING)return tween(shift,0);
+        return shift;
     }
 
     Request touch(const Platform::IInputDevice::TouchEvent& e, const Game::GameState& state) {
@@ -194,7 +188,7 @@ public:
 
     void render(const Game::GameState& state, const MarketCoinMotion* coins = nullptr) const {
         if (page_ == Page::CLOSED) return;
-        if (page_ == Page::GREET) { renderGreet(); return; }
+        if (page_ == Page::GREET) { renderGreet(); renderHud(state,coins); return; }
         panel(basePanelTop());
         switch (page_) {
         case Page::ERROR: body(MarketTutorText::SAVE_FAILED,{68,204,224,54},true,red());button(wide(),"离开",true);break;
@@ -210,7 +204,7 @@ public:
         case Page::RECALL_LIST: renderRecallList(state); break;
         default: break;
         }
-        if (page_ == Page::MENU && error_) body(error_,{72,304,216,18},true,red());
+        if (page_ == Page::MENU && error_) body(error_,{100,326,160,18},true,red(),16);
         renderHud(state,coins);
     }
 
@@ -227,9 +221,11 @@ private:
     Game::MoveId recallMove_ = 0;
     int scroll_ = 0, scrollMaximum_ = 0;
     MarketListScroll scrollMotion_;
-    mutable TextBlock bodyText_;
+    mutable TextBlock bodyText_,confirmBody_;
     MarketListScroll confirmScrollMotion_;
     int confirmScroll_ = 0;
+    mutable int confirmTextSize_=16;
+    mutable bool confirmMessage_=false;
     bool pending_ = false;
     const char* error_ = nullptr;
     char greet_[96]{}, result1_[96]{}, result2_[64]{};
@@ -266,13 +262,13 @@ private:
 
     // ---- geometry shared by hit testing and drawing
     static Rect row(int i, int top = ROW_Y) { return {60, top + i * ROW_H, 240, ROW_H}; }
-    static Rect moveRow(int i) { return {68, 190 + i * 44, 224, 42}; }
-    static Rect menuRow(int i) { return {64, ROW_Y + i * MENU_ROW_H, 232, MENU_ROW_H}; }
-    static Rect wide() { return {80, 288, 200, 40}; }
-    static constexpr int TUTOR_MEMBER_TOP = 220, LIST_TOP = 152, LIST_BOTTOM = 304;
+    Rect moveRow(int i) const { return page_==Page::TRAIN_MOVE?Rect{68,184+i*48,224,48}:Rect{68,188+i*60,224,60}; }
+    static Rect menuRow(int i) { return {58, ROW_Y + i * MENU_ROW_H, 244, MENU_ROW_H}; }
+    static Rect wide() { return RoundMarketStall::ACTION; }
+    static constexpr int TUTOR_MEMBER_TOP = 216, LIST_TOP = 140, LIST_BOTTOM = 360;
 
-    static Rect tutorMember(int i, int count) {
-        return {count == 1 ? 132 : 76 + i * 112, TUTOR_MEMBER_TOP, 96, 76};
+    Rect tutorMember(int i, int count) const {
+        return {count == 1 ? 128 : 68 + i * 120, page_==Page::TUTOR?TUTOR_MEMBER_TOP:204, 104, 84};
     }
 
     static const char* speciesName(const Game::MonsterRuntime& m) {
@@ -309,11 +305,11 @@ private:
     }
     int maxScroll(const Game::GameState& s) const {
         Game::MoveId moves[Game::MoveManagementService::MAX_RECALLABLE_MOVE_COUNT];
-        return std::max(0, recallList(s, moves) * ROW_H - (LIST_BOTTOM - LIST_TOP));
+        return std::max(0, recallList(s, moves) * ROW_H + ROW_H - (LIST_BOTTOM - LIST_TOP));
     }
     bool listDrag(const Platform::IInputDevice::TouchEvent& e, const Game::GameState& s) {
         scrollMaximum_ = maxScroll(s);
-        return scrollMotion_.touch(e, {60, LIST_TOP, 240, LIST_BOTTOM - LIST_TOP},
+        return scrollMotion_.touch(e, {54, LIST_TOP, 252, LIST_BOTTOM - LIST_TOP},
                                    scrollMaximum_, scroll_, tap_);
     }
 
@@ -343,7 +339,7 @@ private:
 
     int hit(int x, int y, const Game::GameState& s) const {
         // Keep outside taps distinct from rows/buttons at both touch edges.
-        if (x >= 0 && x < W && y >= 0 && y < basePanelTop()) return OUTSIDE;
+        if (!RoundMarketStall::PANEL.contains(x,y)) return OUTSIDE;
         const auto contains = [&](Rect r) { return r.contains(x, y); };
         switch (page_) {
         case Page::ERROR: return contains(wide()) ? CLOSE : -1;
@@ -373,7 +369,7 @@ private:
             { const char* why = nullptr; unsigned long need = 0;
               return contains(wide()) ? (trainable(s, slot_) && !confirmDisabled(s, &why, &need) ? PRIMARY : DISABLED) : -1; }
         case Page::RECALL_LIST: {
-            if (y < LIST_TOP || y >= LIST_BOTTOM || x < 60 || x >= 300) return -1;
+            if (y < LIST_TOP || y >= LIST_BOTTOM || x < 54 || x >= 306) return -1;
             Game::MoveId moves[Game::MoveManagementService::MAX_RECALLABLE_MOVE_COUNT];
             const int index = (y - LIST_TOP + scroll_) / ROW_H;
             return index < recallList(s, moves) ? RECALL_ROW + index : -1;
@@ -475,47 +471,23 @@ private:
     static uint16_t red() { return rgb(183, 56, 56); }
     static uint16_t off() { return rgb(225, 227, 207); }
 
-    static int textWidth(const char* s, int size) {
-        int w = 0;
-        for (const auto* p = reinterpret_cast<const uint8_t*>(s); *p;) {
-            const int n = *p < 0x80 ? 1 : *p < 0xe0 ? 2 : *p < 0xf0 ? 3 : 4;
-            w += n == 1 ? size / 2 : size; p += n;
-        }
-        return w;
+    static int textWidth(const char* s,int size) {return RoundMarketStall::width(s,size);}
+    void text(int x,int y,const char* s,int size=32,uint16_t color=0) const {RoundMarketStall::text(x,y+panelOffset(),s,size,color);}
+    void rtext(int x,int y,const char* s,int size=32,uint16_t color=0) const {text(x-textWidth(s,size),y,s,size,color);}
+    void ctext(int y,const char* s,int size=32,uint16_t color=0) const {text((W-textWidth(s,size))/2,y,s,size,color);}
+    void renderHud(const Game::GameState& s,const MarketCoinMotion* motion) const {RoundMarketStall::hud(s.coins,motion,hudOffset());}
+    void panel(int) const {RoundMarketStall::panel(panelOffset());}
+    void button(Rect r,const char* label,bool primary,bool disabled=false) const {RoundMarketStall::button(r,label,primary,disabled,panelOffset());}
+    void rowFrame(Rect r,bool selected) const {
+        r.y+=panelOffset();auto& c=PixelRenderer::canvas();
+        if(selected)c.fillRect(58,r.y,244,r.h,green());
+        c.drawFastHLine(68,r.y+r.h-1,224,line());
     }
-    void text(int x, int y, const char* s, int size = 20, uint16_t color = 0) const {
-        PixelRenderer::textSmooth(x,y+panelOffset(),s,color?color:ink(),uint8_t(size));
-    }
-    void rtext(int right, int y, const char* s, int size = 20, uint16_t color = 0) const { text(right - textWidth(s, size), y, s, size, color); }
-    void ctext(int y, const char* s, int size = 20, uint16_t color = 0) const { text((W - textWidth(s, size)) / 2, y, s, size, color); }
-
-    void renderHud(const Game::GameState& s,const MarketCoinMotion* motion) const {
-        const int y=52+hudOffset();auto& c=PixelRenderer::canvas();c.fillRoundRect(56,y-4,96,32,6,paper());
-        PixelRenderer::textSmooth(64,y+6,MarketTutorText::TITLE,ink(),20);MarketCoinHud::render(s.coins,motion,y,20,{288,24,32,36});
-    }
-    void panel(int y) const {
-        auto& c = PixelRenderer::canvas();
-        const int height = 232;
-        y += panelOffset();
-        c.fillRoundRect(4, y, W - 8, height, 14, paper());
-        c.drawRoundRect(4, y, W - 8, height, 14, edge());
-    }
-    void button(Rect r,const char* label,bool primary,bool disabled=false) const {
-        auto& c=PixelRenderer::canvas();const int y=r.y+panelOffset();
-        c.fillRoundRect(r.x,y,r.w,r.h,8,disabled?off():primary?edge():paper());
-        c.drawRoundRect(r.x,y,r.w,r.h,8,disabled?line():edge());
-        text(r.x+(r.w-textWidth(label,20))/2,r.y+(r.h-20)/2,label,20,disabled?muted():primary?paper():ink());
-    }
-    void rowFrame(Rect r, bool selected) const {
-        r.y += panelOffset();
-        auto& c = PixelRenderer::canvas();
-        if (selected) c.fillRect(r.x, r.y, r.w, r.h, green());
-        c.drawFastHLine(68, r.y + r.h - 1, 224, line());
-    }
-    void rowText(Rect r,int x,const char* main,const char*,const char* right,bool disabled,uint16_t=0,int rightSize=20) const {
-        const int size=textWidth(main,20)+(right?textWidth(right,rightSize):0)>204?16:20;
+    void rowText(Rect r,int x,const char* main,const char*,const char* right,bool disabled,uint16_t=0,int rightSize=16) const {
+        const int available=292-x-(right&&*right?textWidth(right,rightSize)+12:0);
+        const int size=textWidth(main,32)<=available?32:textWidth(main,24)<=available?24:20;
         text(x,r.y+(r.h-size)/2,main,size,disabled?muted():ink());
-        if(right&&*right)rtext(284,r.y+(r.h-rightSize)/2,right,rightSize,disabled?muted():ink());
+        if(right&&*right)rtext(292,r.y+(r.h-rightSize)/2,right,rightSize,disabled?muted():ink());
     }
     // Type-tinted disc stands in for a TM until a bundled icon is added.
     void discIcon(int x, int y, TypeId type, int size = 48) const {
@@ -583,93 +555,113 @@ private:
         else std::snprintf(out, size, "%s", MarketTutorText::POWER_NONE);
     }
 
-    void body(const char* value,Rect r,bool centered=false,uint16_t color=0) const {
-        TextBlock::Options o;o.width=r.w;o.maxHeight=r.h;o.font=BitmapText::Font::PX16;o.lineGap=2;
-        o.align=centered?TextBlock::Align::CENTER:TextBlock::Align::LEFT;
-        bodyText_.setText(value);bodyText_.setOptions(o);bodyText_.draw(PixelRenderer::canvas(),r.x,r.y+panelOffset(),color?color:ink());
+    void body(const char* value,Rect r,bool centered=false,uint16_t color=0,int maxSize=32) const {
+        r.y+=panelOffset();RoundMarketStall::body(bodyText_,value,r,centered,color,false,0,maxSize);
     }
-    void renderGreet() const {panel(H-GREET_H);body(greet_,{72,242,216,70},true);}
+    void renderGreet() const {
+        char value[sizeof(greet_)+sizeof(MarketTutorText::SPEAKER)];
+        std::snprintf(value,sizeof(value),"%s%s",MarketTutorText::SPEAKER,greet_);
+        RoundMarketStall::dialogue(value,panelOffset());
+    }
     void renderMenu(const Game::GameState& s) const {
         const char* names[]={MarketTutorText::MENU_TUTOR,MarketTutorText::MENU_RECALL,MarketTutorText::MENU_TRAIN};
-        for(int i=0;i<3;++i){const auto r=menuRow(i);rowFrame(r,false);
-            if(i==0)discIcon(76,r.y+7,TypeId::GHOST,32);
-            else if(i==1)GameAssets::drawCentered(GameAssets::Kind::ITEM_HEART_SCALE,92,r.y+23+panelOffset(),32.f/36.f);
-            else {auto& c=PixelRenderer::canvas();const int y=r.y+panelOffset();c.fillRect(79,y+18,27,8,edge());c.fillRect(76,y+10,5,24,edge());c.fillRect(104,y+10,5,24,edge());}
-            text(126,r.y+13,names[i],20,menuEnabled(s,i)?ink():muted());
+        const auto* move=findMove(s.marketTutor.move);
+        for(int i=0;i<3;++i){const auto r=menuRow(i);if(i<2)rowFrame(r,false);
+            if(i==0)discIcon(64,r.y+8,move?move->type:TypeId::GHOST);
+            else if(i==1)scaleIcon(64,r.y+8);else trainIcon(64,r.y+8);
+            text(132,r.y+16,names[i],32,menuEnabled(s,i)?ink():muted());
         }
     }
     void memberCard(const Game::GameState& s,int i,bool enabled) const {
         const auto r=tutorMember(i,members(s));auto& c=PixelRenderer::canvas();
-        c.fillRoundRect(r.x,r.y+panelOffset(),r.w,r.h,10,enabled?green():off());
-        monsterIcon(r.x+(r.w-56)/2,r.y+4,s.team[i].speciesId,56);
-        text(r.x+(r.w-textWidth(speciesName(s.team[i]),16))/2,r.y+r.h-20,speciesName(s.team[i]),16,enabled?ink():muted());
-        if(!enabled)c.blendRectAlphaNative(r.x,r.y+panelOffset(),r.w,r.h,off(),100);
+        c.fillRoundRect(r.x,r.y+panelOffset(),r.w,r.h,12,enabled?green():off());
+        c.drawRoundRect(r.x,r.y+panelOffset(),r.w,r.h,12,enabled?light():line());
+        monsterIcon(r.x+12,r.y+2,s.team[i].speciesId,80);
+        if(!enabled)c.blendRoundRectAlphaNative(r.x+2,r.y+2+panelOffset(),r.w-4,r.h-4,10,off(),120);
     }
     void renderTutor(const Game::GameState& s) const {
-        const auto* move=findMove(s.marketTutor.move);discIcon(72,151,move?move->type:TypeId::GHOST,32);
-        text(116,154,move?move->name:MarketTutorText::SUB_CLOSED);
-        char info[128];moveInfoLine(info,sizeof(info),move,true);body(info,{68,182,224,34});
+        const auto* move=findMove(s.marketTutor.move);discIcon(64,144,move?move->type:TypeId::GHOST);
+        const char* name=move?move->name:MarketTutorText::SUB_CLOSED;
+        text(120,144,name,textWidth(name,32)<=176?32:24);
+        char info[128];moveInfoLine(info,sizeof(info),move,true);body(info,{120,178,176,36},false,muted(),16);
         for(int i=0;i<members(s);++i)memberCard(s,i,!s.marketTutor.taught&&Game::MarketTutor::eligibility(s.team[i],s.marketTutor.move)==Game::MarketTutor::Eligibility::CAN_LEARN);
-        ctext(306,MarketTutorText::CHOOSE_MONSTER,16,muted());
+        ctext(318,MarketTutorText::CHOOSE_MONSTER,16,muted());
     }
     void renderMembers(const Game::GameState& s,bool training) const {
-        ctext(156,training?MarketTutorText::MENU_TRAIN:MarketTutorText::MENU_RECALL);
+        text(68,146,training?MarketTutorText::MENU_TRAIN:MarketTutorText::MENU_RECALL);
         for(int i=0;i<members(s);++i)memberCard(s,i,memberEnabled(s,i));
-        ctext(306,MarketTutorText::CHOOSE_MONSTER,16,muted());
+        ctext(318,MarketTutorText::CHOOSE_MONSTER,16,muted());
     }
     void renderSlot(const Game::GameState& s) const {
-        ctext(156,MarketTutorText::FORGET_TITLE);const auto& m=s.team[member_];
-        for(int i=1;i<3;++i){const auto r=moveRow(i-1);const auto* move=findMove(slotMove(m,i));char p[32];powerLabel(p,sizeof(p),move);rowFrame(r,false);rowText(r,76,move?move->name:MarketTutorText::EMPTY,"",move?p:"",false,0,16);}
+        text(68,146,MarketTutorText::FORGET_TITLE);const auto& m=s.team[member_];
+        for(int i=1;i<3;++i){const auto r=moveRow(i-1);const auto* move=findMove(slotMove(m,i));char p[32];powerLabel(p,sizeof(p),move);rowFrame(r,false);rowText(r,68,move?move->name:MarketTutorText::EMPTY,"",move?p:"",false,0,16);}
     }
-    Rect confirmBodyRect() const {return {68,190,224,72};}
-    int confirmScrollMaximum() const {return std::max(0,bodyText_.measure().height-confirmBodyRect().h);}
+    Rect confirmBodyRect() const {return {68,192,224,mode_==Mode::RECALL||confirmMessage_?48:90};}
+    int confirmScrollMaximum() const {return std::max(0,confirmBody_.measure().height*confirmTextSize_/32-confirmBodyRect().h);}
     bool prepareConfirmBody(const Game::GameState& s) const {
         const auto& m=s.team[member_];const auto* old=findMove(slotMove(m,slot_));const auto* move=findMove(chosenMove(s));
         char first[96],second[96]{},value[192];
         if(old){std::snprintf(first,sizeof(first),MarketTutorText::TEACH_LINE1,speciesName(m),old->name);std::snprintf(second,sizeof(second),mode_==Mode::TEACH?MarketTutorText::TEACH_LINE2:MarketTutorText::RECALL_LINE2,move?move->name:"");}
         else std::snprintf(first,sizeof(first),mode_==Mode::TEACH?MarketTutorText::TEACH_EMPTY:MarketTutorText::RECALL_EMPTY,speciesName(m),move?move->name:"");
-        std::snprintf(value,sizeof(value),"%s%s",first,second);TextBlock::Options o;o.width=224;o.maxHeight=72;o.font=BitmapText::Font::PX16;o.lineGap=2;o.align=TextBlock::Align::CENTER;o.overflow=TextBlock::Overflow::CLIP;
-        const bool changed=bodyText_.setText(value);return bodyText_.setOptions(o)||changed;
+        std::snprintf(value,sizeof(value),"%s%s",first,second);
+        const auto previous=confirmBody_.options();const bool changed=confirmBody_.setText(value);
+        const char* why=nullptr;unsigned long need=0;const bool disabled=confirmDisabled(s,&why,&need);
+        confirmMessage_=error_||(disabled&&why!=MarketTutorText::NO_COINS);
+        confirmTextSize_=RoundMarketStall::fit(confirmBody_,value,224,48,mode_==Mode::TEACH);
+        return changed||!(previous==confirmBody_.options());
     }
     void renderConfirm(const Game::GameState& s) const {
-        const auto* move=findMove(chosenMove(s));ctext(156,move?move->name:"");prepareConfirmBody(s);
-        const auto r=confirmBodyRect();bodyText_.draw(PixelRenderer::canvas(),r.x,r.y+panelOffset(),ink(),confirmScroll_);
-        char label[40];if(mode_==Mode::TEACH)std::snprintf(label,sizeof(label),MarketTutorText::TEACH_BUTTON,Game::MarketTutor::lessonPrice(chosenMove(s)));
+        const auto* move=findMove(chosenMove(s));char title[128];
+        if(mode_==Mode::RECALL){scaleIcon(64,144);std::snprintf(title,sizeof(title),MarketTutorText::RECALL_CONFIRM_TITLE,move?move->name:"");}
+        else {discIcon(64,144,move?move->type:TypeId::GHOST);std::snprintf(title,sizeof(title),"%s",move?move->name:"");}
+        const int size=textWidth(title,32)<=176?32:textWidth(title,28)<=176?28:24;text(124,144,title,size);
+        prepareConfirmBody(s);auto r=confirmBodyRect();r.y+=panelOffset();
+        RoundMarketStall::body(confirmBody_,confirmBody_.text(),r,mode_==Mode::TEACH,ink(),mode_==Mode::TEACH&&!confirmMessage_,48,32,confirmScroll_);
+        const char* why=nullptr;unsigned long need=0;const bool disabled=confirmDisabled(s,&why,&need);char label[64];
+        if(error_||(disabled&&why!=MarketTutorText::NO_COINS))body(error_?error_:why,{84,244,192,36},true,red());
+        else if(mode_==Mode::RECALL){const auto have=Game::ItemInventory::count(s,Game::ItemId::HEART_SCALE);std::snprintf(label,sizeof(label),MarketTutorText::SCALE_CHANGE,have,have?have-1:0);ctext(262,label,16);}
+        if(mode_==Mode::TEACH)std::snprintf(label,sizeof(label),MarketTutorText::TEACH_BUTTON,Game::MarketTutor::lessonPrice(chosenMove(s)));
         else std::snprintf(label,sizeof(label),"%s",MarketTutorText::RECALL_BUTTON);
-        const char* why=nullptr;unsigned long need=0;const bool disabled=confirmDisabled(s,&why,&need);char reasonText[96]{};
-        if(why==MarketTutorText::NO_COINS)std::snprintf(reasonText,sizeof(reasonText),why,need);else if(why)std::snprintf(reasonText,sizeof(reasonText),"%s",why);
-        if(error_||disabled)body(error_?error_:reasonText,{68,266,224,18},true,red());
         button(wide(),label,true,disabled||pending_);
     }
     void renderTrainMoves(const Game::GameState& s) const {
-        const auto& m=s.team[member_];ctext(154,MarketTutorText::TRAIN_MOVE_TITLE);
+        const auto& m=s.team[member_];
+        const char* why=nullptr;unsigned long need=0;const bool disabled=!trainable(s,slot_)||confirmDisabled(s,&why,&need);
+        if(error_||(disabled&&why&&why!=MarketTutorText::NO_COINS))body(error_?error_:why,{68,144,224,36},true,red(),16);
+        else text(68,146,MarketTutorText::TRAIN_MOVE_TITLE);
         for(int i=1;i<3;++i){const auto* move=findMove(slotMove(m,i));const auto r=moveRow(i-1);rowFrame(r,i==slot_&&trainable(s,i));
             char cost[32]{};if(move)std::snprintf(cost,sizeof(cost),MarketTutorText::TRAIN_COST,Game::MarketTutor::trainStep(m.moveProficiency[i]).cost);
-            rowText(r,76,move?move->name:MarketTutorText::EMPTY,"",move?(trainable(s,i)?cost:MarketTutorText::MAXED):"",!trainable(s,i),0,16);
-        }
-        const char* why=nullptr;unsigned long need=0;const bool disabled=!trainable(s,slot_)||confirmDisabled(s,&why,&need);char reasonText[96]{};
-        if(why==MarketTutorText::NO_COINS)std::snprintf(reasonText,sizeof(reasonText),why,need);else if(why)std::snprintf(reasonText,sizeof(reasonText),"%s",why);
-        if(error_||disabled)body(error_?error_:reasonText,{68,174,224,16},true,red());
+            rowText(r,68,move?move->name:MarketTutorText::EMPTY,"",move?(trainable(s,i)?cost:MarketTutorText::MAXED):"",!trainable(s,i),0,16);}
         char label[32];std::snprintf(label,sizeof(label),MarketTutorText::TRAIN_BUTTON,Game::MarketTutor::trainStep(m.moveProficiency[slot_]).cost);button(wide(),label,true,disabled||pending_);
     }
-    void renderResult(const Game::GameState&) const {
-        discIcon(164,162,TypeId::GHOST,32);body(result1_,{68,210,224,54},true);
-        if(result2_[0])ctext(268,result2_,16);
+    void renderResult(const Game::GameState& s) const {
+        const auto* move=findMove(chosenMove(s));
+        if(mode_==Mode::TEACH)discIcon(156,144,move?move->type:TypeId::GHOST);
+        else if(mode_==Mode::TRAIN)trainIcon(156,144);else scaleIcon(156,144);
+        char value[sizeof(result1_)+1];std::snprintf(value,sizeof(value),"%s",result1_);
+        if(mode_!=Mode::TRAIN&&move){char* at=std::strstr(value,move->name);if(at&&at!=value){const size_t n=std::strlen(at);if(std::strlen(value)+1<sizeof(value)){std::memmove(at+1,at,n+1);*at='\n';}}}
+        body(value,{68,192,224,76},true);if(result2_[0])ctext(260,result2_,16);
         button(wide(),MarketTutorText::HOME,true);
     }
     void renderPerformance(const Game::GameState& s) const {
-        const bool learning=page_==Page::TEACHING;ctext(154,learning?MarketTutorText::LEARNING:MarketTutorText::TRAINING);
-        MarketTutorPerformance::render(learning?MarketTutorPerformance::learningStyle(findMove(chosenMove(s))):MarketTutorPerformance::trainingStyle(findMove(chosenMove(s))),showMs_,s.team[member_].speciesId,{.76f,40,-18});
+        const bool learning=page_==Page::TEACHING;ctext(148,learning?MarketTutorText::LEARNING:MarketTutorText::TRAINING);
+        MarketTutorPerformance::render(learning?MarketTutorPerformance::learningStyle(findMove(chosenMove(s))):MarketTutorPerformance::trainingStyle(findMove(chosenMove(s))),showMs_,s.team[member_].speciesId,{.70f,51,26+panelOffset()});
     }
     void renderRecallList(const Game::GameState& s) const {
         Game::MoveId moves[Game::MoveManagementService::MAX_RECALLABLE_MOVE_COUNT];const auto n=recallList(s,moves);auto& c=PixelRenderer::canvas();
-        const int l=c.clipLeft(),t=c.clipTop(),r=c.clipRight(),b=c.clipBottom();const int x=std::max(l,60),y=std::max(t,LIST_TOP+panelOffset());
-        c.setClipRect(x,y,std::max(0,std::min(r,300)-x),std::max(0,std::min(b,LIST_BOTTOM+panelOffset())-y));
+        const int l=c.clipLeft(),t=c.clipTop(),r=c.clipRight(),b=c.clipBottom();const int x=std::max(l,54),y=std::max(t,LIST_TOP+panelOffset());
+        c.setClipRect(x,y,std::max(0,std::min(r,306)-x),std::max(0,std::min(b,LIST_BOTTOM+panelOffset())-y));
+        const auto* species=findSpecies(s.team[member_].speciesId);
         for(int i=0;i<n;++i){const int top=LIST_TOP+i*ROW_H-scroll_;if(top+ROW_H<=LIST_TOP||top>=LIST_BOTTOM)continue;
-            const auto* move=findMove(moves[i]);const Rect row{60,top,240,ROW_H};rowFrame(row,false);text(72,top+5,move?move->name:"");
-            char info[128];moveInfoLine(info,sizeof(info),move,false);body(info,{72,top+30,216,16},false,muted());
+            const auto* move=findMove(moves[i]);const Rect row{54,top,252,ROW_H};rowFrame(row,false);
+            const char* name=move?move->name:"";text(68,top+1,name,textWidth(name,32)<=224?32:24);
+            char info[160];moveInfoLine(info,sizeof(info),move,false);const unsigned level=species?moveLearnLevelForSpecies(*species,moves[i]):0;
+            if(level){const size_t used=std::strlen(info);std::snprintf(info+used,sizeof(info)-used," / Lv%u",level);}
+            body(info,{68,top+36,224,18},false,muted(),16);
         }c.setClipRect(l,t,r-l,b-t);
-        if(n*ROW_H>LIST_BOTTOM-LIST_TOP){const int h=LIST_BOTTOM-LIST_TOP,thumb=std::max(16,h*h/(n*ROW_H));c.fillRect(299,LIST_TOP+scroll_*(h-thumb)/std::max(1,n*ROW_H-h)+panelOffset(),3,thumb,line());}
+        const int total=n*ROW_H+ROW_H,h=LIST_BOTTOM-LIST_TOP,thumb=std::max(24,h*h/std::max(h,total));
+        c.fillRect(298,LIST_TOP+panelOffset(),3,h,line());
+        c.fillRect(298,LIST_TOP+scroll_*(h-thumb)/std::max(1,total-h)+panelOffset(),3,thumb,edge());
     }
 };
 } // namespace Ui

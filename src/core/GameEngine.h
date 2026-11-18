@@ -14,6 +14,9 @@
 #include "game/BathService.h"
 #include "game/HomeCare.h"
 #include "game/CareTicker.h"
+#if STICKMON_SDGOODS_ADAPTIVE_STANDBY
+#include "game/StandbyCare.h"
+#endif
 #include "game/ExploreItemEffects.h"
 #include "game/EncounterHistory.h"
 #include "game/ItemInventory.h"
@@ -75,6 +78,14 @@ public:
     SceneID homeScene() const { return state.oobeDone ? SceneID::MAIN : SceneID::HATCH; }
 
     float gameSpeed() const;
+#if STICKMON_SDGOODS_ADAPTIVE_STANDBY
+    void adaptiveStandbyBegin();
+    void adaptiveStandbyEnd();
+    bool adaptiveStandbySafe() const;
+    Game::StandbyCare::Context adaptiveStandbyContext();
+    void adaptiveStandbyRestore(const Game::StandbyCare::Context&,bool offline);
+    void flushAdaptiveProgression();
+#endif
     uint32_t gameMinutesTotal() const;
     void advanceExploreMinutes(uint32_t minutes);
     uint16_t gameMinutesOfDay() const;
@@ -430,6 +441,10 @@ private:
     uint32_t lastActivityMs = 0;
     // 跨 tickCare 调用保留的会话型照护累加器（不持久化），见 game/CareTicker.h。
     Game::CareTickAccumulators careAcc = {};
+#if STICKMON_SDGOODS_ADAPTIVE_STANDBY
+    uint32_t satietyClockMs_=0;
+    bool adaptiveDark_=false,adaptiveOffline_=false;
+#endif
     bool idleActive = false;
     bool fullFrameRequired = true;
     bool previousFrameAllowsPartial = false;

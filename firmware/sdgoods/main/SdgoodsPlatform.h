@@ -12,6 +12,7 @@
 #include "driver/i2c_master.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 
 namespace Sdgoods {
 class SdgoodsPlatform final : public Platform::IPlatformLifecycle, public Platform::IClock,
@@ -22,6 +23,9 @@ public:
     SdgoodsPlatform();
     Platform::Services& serviceBundle() { return services_; }
     bool begin() override;
+    bool beginStandbyStorage();
+    uint64_t standbyMicros() const;
+    void waitStandby(uint32_t ms,bool allowLightSleep);
     bool resourcesReady() const {return resourcesReady_;}
     void enableSaveWrites(bool enabled) {saveWritesEnabled_=enabled;}
     uint32_t millis() const override;
@@ -61,6 +65,8 @@ public:
     bool shutdownPending() const { return input_.shutdownPending(); }
     bool takeUnlockRequest() { return input_.takeUnlockRequest(); }
     bool takeShutdownRequest() { return input_.takeShutdownRequest(); }
+    bool powerKeyActive() const;
+    bool standbyTouchRequired() const { return true; }
     void powerOff();
     Platform::WakeReason wakeReason() const override;
     uint32_t hardwareRandom() override;
@@ -88,6 +94,8 @@ private:
     PowerInputState input_;
     Platform::Services services_;
     bool beginDisplay();
+    void beginPowerPins();
+    void beginKeyInterrupt();
     bool beginTouch();
     void applyBacklight();
     void setLocked(bool value);
@@ -107,6 +115,8 @@ private:
     uint8_t brightness_ = 128;
     bool initialized_ = false, storageReady_ = false, firstFrame_ = false;
     bool locked_ = false;
+    TaskHandle_t inputTask_=nullptr;
+    bool lightSleepAllowed_=false;
     // panelSleeping_: display off until a full frame is written after wake.
     bool panelSleeping_ = false, panelAsleep_ = false;
     uint32_t panelWokeAtMs_ = 0;

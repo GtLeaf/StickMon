@@ -242,6 +242,9 @@ bool GameEngine::begin() {
     lastInputMs = lastFrameMs = lastUpdateMs = lastSceneUpdateMs =
         lastCareMs = lastActivityMs = now;
     lastCareGameMinutes = state.gameMinutesTotal;
+#if STICKMON_SDGOODS_ADAPTIVE_STANDBY
+    satietyClockMs_=now;adaptiveDark_=adaptiveOffline_=false;
+#endif
     nextSceneUpdateMs = now;
     sceneUpdateScheduled = true;
     sceneDirty = true;
@@ -483,6 +486,9 @@ float GameEngine::gameSpeed() const {
 }
 
 uint32_t GameEngine::gameMinutesTotal() const {
+#if STICKMON_SDGOODS_ADAPTIVE_STANDBY
+    if(adaptiveOffline_)return state.gameMinutesTotal;
+#endif
     return gameClock.minutesAt(Hal::ins().millis(), gameSpeed());
 }
 
@@ -497,8 +503,15 @@ bool GameEngine::isMonsterSleepTime() const {
 void GameEngine::cycleGameSpeed() {
     uint32_t now = Hal::ins().millis();
     syncGameClock(now);
+#if STICKMON_SDGOODS_ADAPTIVE_STANDBY
+    tickCare(now);
+    const auto precise=gameClock.millisecondsAt(now,gameSpeed());
+#endif
     state.settings.speedIndex = (state.settings.speedIndex + 1) % 4;
     gameClock.set(now, state.gameMinutesTotal);
+#if STICKMON_SDGOODS_ADAPTIVE_STANDBY
+    gameClock.setMilliseconds(now,precise);
+#endif
     markDirty(SaveUrgency::DEFERRED);
 }
 
@@ -2108,6 +2121,9 @@ bool GameEngine::resetGame() {
 
     lastCareMs = now;
     lastCareGameMinutes = state.gameMinutesTotal;
+#if STICKMON_SDGOODS_ADAPTIVE_STANDBY
+    satietyClockMs_=now;adaptiveDark_=adaptiveOffline_=false;
+#endif
     lastUpdateMs = now;
     resetIdle(now);
     Hal::ins().setBrightness(state.settings.brightness);
@@ -2311,6 +2327,9 @@ void GameEngine::update(uint32_t nowMs) {
         gameClock.set(nowMs, state.gameMinutesTotal);
         lastCareMs = nowMs;
         lastCareGameMinutes = state.gameMinutesTotal;
+#if STICKMON_SDGOODS_ADAPTIVE_STANDBY
+        satietyClockMs_=nowMs;
+#endif
         return;
     }
     syncGameClock(nowMs);
@@ -2332,12 +2351,18 @@ void GameEngine::update(uint32_t nowMs) {
                       nowMs, startupSpriteCacheReady ? 1 : 0);
     }
     if (mainSceneFirstFrameRendered && startupSpriteCacheReady &&
+#if STICKMON_SDGOODS_ADAPTIVE_STANDBY
+        !adaptiveDark_ &&
+#endif
         currentId == SceneID::MAIN &&
         static_cast<int32_t>(nowMs - nextExplorePoolPreloadMs) >= 0) {
         bool ready = ExploreScene::serviceAreaPoolCache(1);
         nextExplorePoolPreloadMs = nowMs + (ready ? 1000UL : 250UL);
     }
     tickCare(nowMs);
+#if STICKMON_SDGOODS_ADAPTIVE_STANDBY
+    if(!adaptiveDark_)flushAdaptiveProgression();
+#endif
     if (visitSession.busy()) updateVisit(nowMs);
     if (lockedBackground()) catchUpLockedScene(nowMs);
     updateCurrentScene(nowMs);
@@ -2612,6 +2637,10 @@ void GameEngine::resetIdle(uint32_t nowMs) {
 }
 
 void GameEngine::updateIdle(uint32_t nowMs) {
+    if(currentScene&&currentScene->keepsDisplayAwake()){
+        resetIdle(nowMs);
+        return;
+    }
     uint32_t timeout = idleTimeoutMs();
     if (timeout == 0 || idleActive) return;
     int32_t elapsed = (int32_t)(nowMs - lastActivityMs);
@@ -2642,6 +2671,9 @@ uint32_t GameEngine::gameMinutesTotalAt(uint32_t nowMs) const {
 }
 
 void GameEngine::syncGameClock(uint32_t nowMs) {
+#if STICKMON_SDGOODS_ADAPTIVE_STANDBY
+    if(adaptiveOffline_)return;
+#endif
     if (gameClock.sync(nowMs, gameSpeed(), state.gameMinutesTotal)) {
         markDirty(SaveUrgency::DEFERRED);
     }
@@ -2735,6 +2767,22 @@ void GameEngine::resetDailyCountersIfNeeded() {
 }
 
 void GameEngine::tickCare(uint32_t nowMs) {
+#if STICKMON_SDGOODS_ADAPTIVE_STANDBY
+    if(adaptiveOffline_)return;
+    uint64_t left=uint32_t(nowMs-satietyClockMs_);
+    const auto end=gameClock.millisecondsAt(nowMs,gameSpeed());
+    const unsigned speed=unsigned(gameSpeed());
+    uint64_t at=end>=left*speed?end-left*speed:0;
+    const auto finalMinute=state.gameMinutesTotal;bool hungerChanged=false;
+    while(left){
+        const auto step=std::min<uint64_t>(left,(60000-at%60000+speed-1)/speed);
+        state.gameMinutesTotal=uint32_t(at/60000);
+        hungerChanged|=Game::StandbyCare::hunger(state,careAcc,step,adaptiveDark_);
+        left-=step;at+=step*speed;
+    }
+    state.gameMinutesTotal=finalMinute;satietyClockMs_=nowMs;
+    if(hungerChanged)markDirty(SaveUrgency::DEFERRED);
+#endif
     uint32_t realElapsedMin = (nowMs - lastCareMs) / 60000UL;
     uint32_t gameElapsedMin = state.gameMinutesTotal - lastCareGameMinutes;
     if (realElapsedMin == 0 && gameElapsedMin == 0) return;
@@ -2747,7 +2795,11 @@ void GameEngine::tickCare(uint32_t nowMs) {
                               exploreTravel == ExploreTravelPhase::NONE;
     // 核心照护逻辑与深度睡眠静默唤醒路径共用（game/CareTicker.h）。
     Game::CareTickResult care = Game::applyCareMinutes(
-        state, careAcc, realElapsedMin, gameElapsedMin, homeRecoveryActive);
+        state, careAcc, realElapsedMin, gameElapsedMin, homeRecoveryActive
+#if STICKMON_SDGOODS_ADAPTIVE_STANDBY
+        ,false
+#endif
+    );
     if (care.faintRevivals > 0) {
         Platform::logf("[Care] faint rest complete for %u monster(s)\n",
                       care.faintRevivals);
@@ -2801,3 +2853,42 @@ void GameEngine::queueMoveLearnIfReady(Game::MonsterRuntime& mon, const Species&
     }
     queueNextPendingMove(mon, species, teamSlot, startIndex);
 }
+
+#if STICKMON_SDGOODS_ADAPTIVE_STANDBY
+void GameEngine::adaptiveStandbyBegin(){
+    const auto now=Hal::ins().millis();syncGameClock(now);tickCare(now);adaptiveDark_=true;
+}
+void GameEngine::adaptiveStandbyEnd(){
+    const auto now=Hal::ins().millis();syncGameClock(now);tickCare(now);
+    adaptiveDark_=adaptiveOffline_=false;flushAdaptiveProgression();
+}
+bool GameEngine::adaptiveStandbySafe()const{
+    return currentId==SceneID::MAIN&&currentScene&&static_cast<const MainScene*>(currentScene.get())->standbySafe()&&
+        state.oobeDone&&!saveWritesBlocked&&!resourceAlertVisible()&&
+        exploreTravel==ExploreTravelPhase::NONE&&!sceneFadeActive()&&!visitSession.busy()&&
+        !contactVisit.active&&!contactVisit.pendingKnock&&!hasPendingLevelUp()&&
+        !hasPendingEvolution()&&!hasPendingMoveLearn()&&!hasPendingMoveReplacement();
+}
+Game::StandbyCare::Context GameEngine::adaptiveStandbyContext(){
+    const auto now=Hal::ins().millis();syncGameClock(now);tickCare(now);
+    Game::StandbyCare::Context c;c.care=careAcc;
+    c.gameMs=gameClock.millisecondsAt(now,gameSpeed());c.realMinuteMs=uint32_t(now-lastCareMs)%60000;
+    return c;
+}
+void GameEngine::adaptiveStandbyRestore(const Game::StandbyCare::Context& c,bool offline){
+    const auto now=Hal::ins().millis();careAcc=c.care;
+    state.gameMinutesTotal=uint32_t(c.gameMs/60000);gameClock.setMilliseconds(now,c.gameMs);
+    lastCareMs=now-c.realMinuteMs;lastCareGameMinutes=state.gameMinutesTotal;
+    satietyClockMs_=now;lastUpdateMs=lastSceneUpdateMs=now;
+    adaptiveOffline_=offline;invalidateScene();
+}
+void GameEngine::flushAdaptiveProgression(){
+    if(hasPendingLevelUp()||hasPendingEvolution()||hasPendingMoveLearn()||hasPendingMoveReplacement())return;
+    for(unsigned i=0;i<state.teamCount&&i<Game::TEAM_CAP;++i){
+        auto* r=Game::CareExperience::recordFor(state,state.team[i]);
+        if(!r||!r->pendingOldLevel)continue;
+        const auto old=r->pendingOldLevel;r->pendingOldLevel=0;
+        if(state.team[i].level>old){queueTeamLevelUp(uint8_t(i),old);markDirty(SaveUrgency::SOON);return;}
+    }
+}
+#endif

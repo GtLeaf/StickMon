@@ -8,6 +8,7 @@
 #include "core/MathUtil.h"
 #include "core/UiMotion.h"
 #include "game/BondSystem.h"
+#include "game/HomeFurnitureService.h"
 #include "game/MarketItemCatalog.h"
 #include "game/Species.h"
 #include "game/TeamRoster.h"
@@ -267,6 +268,10 @@ void MenuScene::popView() {
         nativeSurfaceView(viewMode));
 }
 
+bool MenuScene::keepsDisplayAwake() const {
+    return viewMode==ViewMode::ROOM&&roomUi.keepsDisplayAwake();
+}
+
 SceneUpdateResult MenuScene::update(uint32_t nowMs, float dtSeconds) {
 #if STICKMON_UI_ROUND_TOUCH
     if (itemFeedback) {
@@ -510,8 +515,7 @@ void MenuScene::render() {
     }
     if (viewMode == ViewMode::ROOM) {
         roomUi.render();
-        renderToast();
-        renderTutorial();
+        if(roomUi.showsNotices()){renderToast();renderTutorial();}
         return;
     }
     if (viewMode == ViewMode::FOOD) {
@@ -687,6 +691,10 @@ void MenuScene::openRoomFood() {
 }
 void MenuScene::openMainMenuFood() { openRoomFood(); }
 void MenuScene::openRoomShower() { GameEngine::ins().requestScene(SceneID::SHOWER); }
+bool MenuScene::changeHomeFurniture(uint16_t id,bool place) {
+    auto& engine=GameEngine::ins();
+    return Game::HomeFurniture::commit(engine.gameState(),id,place,[&](){return engine.saveNow();});
+}
 bool MenuScene::selectPageFood(uint8_t index) { return GameEngine::ins().selectFood(index); }
 
 void MenuScene::openComputerSocial() { GameEngine::ins().requestScene(SceneID::SOCIAL); }

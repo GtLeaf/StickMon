@@ -1,4 +1,5 @@
 #include "scenes/MainScene.h"
+#include "game/HomeFurnitureService.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -740,6 +741,13 @@ void MainScene::onExit() {
         }
         GameEngine::ins().saveMainSceneViewState(saved);
     }
+}
+
+bool MainScene::standbySafe() const {
+    return progressionModal == ProgressionModal::NONE &&
+        contactDialog == ContactDialog::NONE && contactGuestMotion == ContactGuestMotion::NONE &&
+        visitDeparture == VisitDeparture::NONE && doorTransition == DoorTransitionMode::NONE &&
+        pairInteraction == PairInteraction::NONE;
 }
 
 bool MainScene::onBeforeSave() {
@@ -6926,6 +6934,7 @@ Ui::HomeFrame MainScene::homeFrame() const {
     const auto& state = engine.gameState();
     frame.nowMs = Hal::ins().millis();
     frame.night = mainSceneIsNight();
+    frame.placedFurniture=Game::HomeFurniture::visibleMask(state);
     frame.gameMinutes = engine.gameMinutesOfDay();
     frame.main.frame = currentMonsterFrame();
     frame.main.x = mainActor.x;

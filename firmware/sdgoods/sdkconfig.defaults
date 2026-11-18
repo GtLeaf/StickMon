@@ -21,3 +21,4 @@ CONFIG_COMPILER_CXX_RTTI=n
 CONFIG_I2S_ISR_IRAM_SAFE=y
 # Lets lock-screen standby drop the CPU to 80MHz (no automatic light sleep).
 CONFIG_PM_ENABLE=y
+CONFIG_FREERTOS_USE_TICKLESS_IDLE=y

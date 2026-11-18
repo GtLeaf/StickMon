@@ -23,6 +23,17 @@
       "files": 2,
       "bytes": 12584,
       "installedDate": "2026-11-15"
+    },
+    {
+      "name": "game-ui-and-hud",
+      "repository": "https://github.com/ProkStudio/skills",
+      "commit": "056b13a91db5d0bb6a195f5271360aaf82270fdb",
+      "sourcePath": "skills/game/2d/game-ui-and-hud",
+      "installedPath": ".agents/skills/game-ui-and-hud",
+      "license": "Not specified for this skill; root LICENSE excludes skills/",
+      "files": 7,
+      "bytes": 34270,
+      "installedDate": "2026-11-17"
     }
   ]
 }

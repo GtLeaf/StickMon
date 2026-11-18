@@ -23,12 +23,15 @@ int16_t clampCameraX(float cameraX);
 int16_t clampCameraY(float cameraY);
 int16_t screenX(float worldX, float cameraX = 0);
 int16_t screenY(float worldY, float cameraY);
-bool draw(float cameraY, bool night, float cameraX = 0);
+bool draw(float cameraY, bool night, float cameraX = 0, uint16_t placedFurniture = 0);
 bool drawViewport(int16_t destinationX, int16_t destinationY,
                   uint16_t viewportWidth, uint16_t viewportHeight,
                   int16_t cameraX, int16_t cameraY, bool night,
                   // Scale of world pixels on the target surface. The room
                   // package may have a separate native art scale.
-                  uint8_t pixelScale = 1);
+                  uint8_t pixelScale = 1, uint16_t placedFurniture = 0);
+// Fit the complete authored room into a UI preview without another framebuffer.
+bool drawPreview(int16_t x,int16_t y,uint16_t width,uint16_t height,
+                 bool night,uint16_t placedFurniture);
 
 }  // namespace RoomRenderer

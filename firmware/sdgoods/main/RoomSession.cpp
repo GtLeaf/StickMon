@@ -75,8 +75,17 @@ bool RoomSession::save() {
 void RoomSession::poll() {
     if (!ready_) return;
     GameEngine::ins().run();
-    if ((foodState() != savedFood_ || !lastSaveOk_) &&
+    if (foodState() != savedFood_ &&
         (lastSaveOk_ || Platform::clock().millis() - lastAttemptMs_ >= 2000)) save();
+    retryFailedSave();
+}
+
+void RoomSession::retryFailedSave() {
+    if (failedSaveRetryDue()) save();
+}
+
+bool RoomSession::failedSaveRetryDue() const {
+    return ready_ && !lastSaveOk_ && Platform::clock().millis() - lastAttemptMs_ >= 2000;
 }
 
 bool RoomSession::restart() {

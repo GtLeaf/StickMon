@@ -1072,7 +1072,7 @@ void AmoledApp::beginExploreReturn(uint32_t nowMs) {
     if (fromMarket) {
         cancelTouch(); marketUi_.reset();
         marketTutorUi_.close(); marketTutorPending_ = false;
-        marketShopUi_.close(); marketCareUi_.close(); marketStallSpecies_ = 0;
+        marketShopUi_.close(); marketCareUi_.close(); marketWorkshopUi_.close(); marketStallSpecies_ = 0;
     } else sceneFlow.enterExploreRoute();
     exploreTransition_.beginReturn();
     autonomousExpedition = false;
@@ -1225,6 +1225,9 @@ void AmoledApp::cancelTouch() {
     marketTutorUi_.cancelTouch();
     marketShopUi_.cancelTouch();
     marketCareUi_.cancelTouch();
+    marketWorkshopUi_.cancelTouch();
+    homeLibraryUi_.cancelTouch();
+    homeLibraryDirty_=false;
     if (market_) market_->setDirection(-1);
     // Losing pointer capture must not turn a cancelled gesture into a tap.
     pointerDown = dragging = false;
@@ -1270,6 +1273,21 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
             return;
         }
     }
+    if(sceneFlow.current()==AppSceneFlow::Scene::ROOM&&homeLibraryUi_.active()){
+        if(displayLocked){cancelTouch();return;}
+        using Type=Platform::IInputDevice::TouchType;
+        const Type type=event.type==TouchEventType::DOWN?Type::DOWN:event.type==TouchEventType::MOVE?Type::MOVE:Type::UP;
+        const Platform::IInputDevice::TouchEvent touch{type,event.x,event.y,event.timestampMs};
+        pointerDown=type!=Type::UP;
+        const auto request=homeLibraryUi_.touch(touch,gameState);
+        if(request.kind!=Ui::HomeLibraryUi::Request::NONE){
+            const bool saved=Game::HomeFurniture::commit(gameState,request.id,request.kind==Ui::HomeLibraryUi::Request::PLACE,[&](){return saveState();});
+            homeLibraryUi_.committed(saved);homeLibraryClockMs_=Platform::clock().millis();
+        }
+        playMarketFeedback(homeLibraryUi_);
+        if(type==Type::MOVE)homeLibraryDirty_=true;else requestFullRender();
+        return;
+    }
     if (sceneFlow.current() == AppSceneFlow::Scene::HATCH) {
         handleHatchTouch(event);
         return;
@@ -1283,7 +1301,9 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
         pointerDown = event.type != TouchEventType::UP;
         if (marketServiceActive() || marketTutorPending_) {
             bool scrollOnly = false;
-            if (marketTutorUi_.active()) {
+            if (marketWorkshopUi_.active()) {
+                handleMarketWorkshopTouch(touch);
+            } else if (marketTutorUi_.active()) {
                 handleMarketTutorTouch(touch);
                 scrollOnly = marketTutorUi_.active() && marketTutorUi_.scrollOnlyChange();
             } else if (marketShopUi_.active()) {
@@ -2416,6 +2436,9 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             openRoomFoodScene();
         } else if (item == 1) {
             openShowerScene(nowMs);
+        } else if(item==2){
+            homeLibraryUi_.open();homeLibraryClockMs_=nowMs;homeLibraryDirty_=false;
+            pressedRoomItem=-1;requestFullRender();
         }
         return;
     }
@@ -2886,6 +2909,15 @@ void AmoledApp::updateBattery(uint32_t nowMs) {
 }
 
 void AmoledApp::update(uint32_t nowMs) {
+    if(sceneFlow.current()==AppSceneFlow::Scene::ROOM&&homeLibraryUi_.active()){
+        if(displayLocked||displayStandby_){homeLibraryUi_.cancelTouch();homeLibraryClockMs_=nowMs;homeLibraryDirty_=false;}
+        else if(static_cast<int32_t>(nowMs-homeLibraryClockMs_)>=66){
+            const auto elapsed=nowMs-homeLibraryClockMs_;homeLibraryClockMs_=nowMs;
+            if(homeLibraryUi_.update(elapsed,gameState)||homeLibraryDirty_)requestFullRender();
+            homeLibraryDirty_=false;
+        }
+    }
+
     if (displayStandby_ && gameState.oobeDone && !lockedHomePowerAllowed()) {
         // Keep care/time/save retries alive, while interactive scenes retain
         // their current state until the display returns.
@@ -2902,7 +2934,8 @@ void AmoledApp::update(uint32_t nowMs) {
         const int previousChat = marketUi_.chatTarget;
         bool changed = marketUi_.update(*market_, nowMs, active);
         if (marketTutorPending_ && active && market_->conversationReady()) {
-            if (marketStallSpecies_ == Game::MarketShop::STALL_SPECIES) openMarketShop(nowMs);
+            if (marketStallSpecies_ == Game::MarketWorkshop::STALL_SPECIES) openMarketWorkshop(nowMs);
+            else if (marketStallSpecies_ == Game::MarketShop::STALL_SPECIES) openMarketShop(nowMs);
             else if (marketStallSpecies_ == Game::MarketCare::STALL_SPECIES) openMarketCare(nowMs);
             else openMarketTutor(nowMs);
             changed = true;
@@ -2914,6 +2947,14 @@ void AmoledApp::update(uint32_t nowMs) {
         if (coinElapsed>=0||!active) marketCoinClockMs_=nowMs;
         if (marketCoinMotion_.update(coinDelta)) changed = true;
         bool listChanged = false;
+        if(marketWorkshopUi_.active()){
+            const int32_t elapsed=static_cast<int32_t>(nowMs-marketTutorClockMs_);
+            const uint32_t delta=active&&elapsed>0?uint32_t(elapsed):0;
+            if(elapsed>=0||!active)marketTutorClockMs_=nowMs;
+            if(marketWorkshopUi_.update(delta))changed=true;
+            if(active)playMarketFeedback(marketWorkshopUi_);
+            if(!marketWorkshopUi_.active())closeMarketTutor();
+        }
         if (marketShopUi_.active()) {
             const uint32_t delta = active ? nowMs - marketTutorClockMs_ : 0;
             marketTutorClockMs_ = nowMs;
@@ -3374,6 +3415,7 @@ void AmoledApp::update(uint32_t nowMs) {
     default: break;
     }
     bool sleepSafeScene = displayLockAllowed() &&
+                          !(sceneFlow.current()==AppSceneFlow::Scene::ROOM&&homeLibraryUi_.keepsDisplayAwake()) &&
                           sceneFlow.current() != AppSceneFlow::Scene::BATTLE &&
                           sceneFlow.current() != AppSceneFlow::Scene::SHOWER &&
                           sceneFlow.current() != AppSceneFlow::Scene::PROGRESSION &&
@@ -6558,6 +6600,7 @@ float AmoledApp::gameSpeed() const {
 }
 
 void AmoledApp::fillHomePetModel(HomeViewModel& model) const {
+    model.placedFurniture=Game::HomeFurniture::visibleMask(gameState);
     const auto homeSnapshot = homeRuntime.renderSnapshot();
     model.speciesId = gameState.team[0].speciesId;
     model.petCenterX = static_cast<int16_t>(worldToScreenX(
@@ -6620,6 +6663,13 @@ void AmoledApp::render(Canvas565& canvas) const {
     if (displayStandby_) return;
     const auto& route = exploreSession_.state();
     renderCaches_.retainForScene(sceneFlow.current());
+    if(sceneFlow.current()==AppSceneFlow::Scene::MARKET&&market_&&marketWorkshopUi_.active()){
+        auto view=marketViewport();view.cameraOffsetY=marketWorkshopUi_.sceneShift(*market_,view);view.cameraOffsetX=marketWorkshopUi_.sceneShiftX(*market_,view);
+        Ui::MarketView::render(*market_,view,market_->timeMs(),gameState.gameMinutesTotal);
+        marketWorkshopUi_.render(gameState,&marketCoinMotion_);
+        UiCommon::drawSceneFadeOverlay(canvas,externalSceneFade?0:exploreTransition_.fade().alpha(),0,AmoledUi::HEIGHT);
+        return;
+    }
     if (sceneFlow.current() == AppSceneFlow::Scene::MARKET && market_ && marketShopUi_.active()) {
         if (marketListFrame()) {
             const ListRowsClip clip(PixelRenderer::canvas(), dirtyRowBegin, dirtyRowEnd);
@@ -6959,6 +7009,10 @@ void AmoledApp::render(Canvas565& canvas) const {
     }
 
     if (sceneFlow.current() == AppSceneFlow::Scene::ROOM) {
+        if(homeLibraryUi_.active()){
+            const UiCommon::PageClip clip(canvas,dirtyRowBegin,dirtyRowEnd,dirtyColumnBegin,dirtyColumnEnd);
+            homeLibraryUi_.render(gameState);return;
+        }
         RoomMenuViewModel model;
         model.state = &gameState;
         model.pressedItem = pressedRoomItem;
@@ -8029,6 +8083,7 @@ void AmoledApp::openItemScene(AppSceneFlow::Scene target) {
 }
 
 void AmoledApp::closeItemScene() {
+    homeLibraryUi_.close();
     cancelTouch();
     inventoryController_.close();
     teamController_.dismissConfirmation();
@@ -8042,6 +8097,7 @@ void AmoledApp::closeItemScene() {
 }
 
 void AmoledApp::openRoomScene() {
+    homeLibraryUi_.close();
     sceneFlow.openSubScene(AppSceneFlow::Scene::ROOM);
     pressedRoomItem = -1;
     toast = nullptr;
@@ -9101,7 +9157,8 @@ bool AmoledApp::startMarket(uint32_t nowMs) {
     marketUi_.setServiceSpecies(Game::MarketTutor::STALL_SPECIES);
     marketUi_.setServiceSpecies(Game::MarketShop::STALL_SPECIES);
     marketUi_.setServiceSpecies(Game::MarketCare::STALL_SPECIES);
-    marketShopUi_.close(); marketCareUi_.close(); marketStallSpecies_ = 0;
+    marketUi_.setServiceSpecies(Game::MarketWorkshop::STALL_SPECIES);
+    marketShopUi_.close(); marketCareUi_.close(); marketWorkshopUi_.close(); marketStallSpecies_ = 0;
     marketTutorUi_.close(); marketTutorPending_ = false;
     sceneFlow.enter(AppSceneFlow::Scene::MARKET); toast = nullptr;
     setMusicContext(MusicContext::MARKET);
@@ -9116,7 +9173,25 @@ void AmoledApp::closeMarket(uint32_t nowMs) {
     market_.reset(); Ui::MarketView::release();
     marketUi_.reset();
     marketTutorUi_.close(); marketTutorPending_ = false;
-    marketShopUi_.close(); marketCareUi_.close(); marketStallSpecies_ = 0;
+    marketShopUi_.close(); marketCareUi_.close(); marketWorkshopUi_.close(); marketStallSpecies_ = 0;
+}
+
+void AmoledApp::openMarketWorkshop(uint32_t nowMs){
+    marketTutorPending_=false;
+    if(!Game::MarketSchedule::isOpen(gameState)){closeMarketTutor();setToast(Ui::MarketText::CLOSED,nowMs);return;}
+    marketCoinMotion_.reset(gameState.coins);marketCoinClockMs_=marketTutorClockMs_=nowMs;
+    marketWorkshopUi_.open(gameState);requestFullRender();
+}
+void AmoledApp::handleMarketWorkshopTouch(const Platform::IInputDevice::TouchEvent& touch){
+    const auto request=marketWorkshopUi_.touch(touch,gameState);
+    if(request==Ui::MarketWorkshopUi::Request::GRANT){
+        const auto result=commitMarketTransaction(touch.timestampMs,[](Game::GameState& state){return Game::MarketWorkshop::grantFrame(state);});
+        if(result.result==Game::MarketWorkshop::Result::ALREADY)marketWorkshopUi_.already();
+        else marketWorkshopUi_.committed(result.status==Game::MarketTransaction::Status::COMMITTED);
+        marketTutorClockMs_=Platform::clock().millis();
+    }
+    playMarketFeedback(marketWorkshopUi_);
+    if(!marketWorkshopUi_.active())closeMarketTutor();
 }
 
 void AmoledApp::openMarketTutor(uint32_t nowMs) {
@@ -9218,6 +9293,7 @@ void AmoledApp::closeMarketTutor() {
     marketTutorUi_.close();
     marketShopUi_.close();
     marketCareUi_.close();
+    marketWorkshopUi_.close();
     marketTutorPending_ = false;
     marketStallSpecies_ = 0;
     if (market_ && market_->conversing()) market_->endConversation();
