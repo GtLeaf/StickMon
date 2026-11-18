@@ -1998,7 +1998,7 @@ void GameEngine::markSaveDirty(SaveUrgency urgency) {
 }
 
 void GameEngine::markDirty(SaveUrgency urgency) {
-    invalidateScene();
+    if (!currentScene || currentScene->redrawOnStateChange()) invalidateScene();
     markSaveDirty(urgency);
 }
 

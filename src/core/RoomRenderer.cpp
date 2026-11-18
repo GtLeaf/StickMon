@@ -125,7 +125,9 @@ bool prepare(bool night,uint16_t placedFurniture) {
     } else if (night) applyNightPatch();
     if(placedFurniture&1u){
         const int scale=room.artScale();
-        const int x=193*scale,y=54*scale,size=21*scale;
+        const int x=FurnitureArt::FRAME_WORLD_X*scale,
+                  y=FurnitureArt::FRAME_ART_Y*scale,
+                  size=FurnitureArt::FRAME_WORLD_SIZE*scale;
         for(int row=0;row<size;++row)for(int col=0;col<size;++col){
             const int px=x+col,py=y+row+col/3;
             if(px>=0&&px<room.artWidth()&&py>=0&&py<room.artHeight())

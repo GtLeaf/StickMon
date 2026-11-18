@@ -3,6 +3,8 @@
 #include "presentation/PixelRenderer.h"
 
 namespace FurnitureArt {
+inline constexpr int FRAME_WORLD_X = 193, FRAME_ART_Y = 54, FRAME_WORLD_SIZE = 21;
+
 inline uint16_t framePixel(int x,int y,bool night=false){
     if(x<0||x>=112||y<0||y>=112)return 0;
     int r=88,g=56,b=40;

@@ -4,15 +4,28 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include "core/RoomResource.h"
 #include "core/UiStrings.h"
 #include "hardware/Hal.h"
 #include "ui/round_touch/RoomControls.h"
+#include "presentation/FurnitureArt.h"
 #include "presentation/HudRenderer.h"
 #include "presentation/PixelRenderer.h"
 
 namespace Ui {
 using namespace RoundRoom;
 namespace {
+constexpr int PHOTO_FRAME_TARGET = 3;
+constexpr int PHOTO_FRAME_MASK = 1;
+
+MenuGrid::Rect wallFrameBounds(const HomeUiContent::Camera& camera) {
+    const auto& room = RoomResource::ins();
+    return {RoomRenderer::screenX(FurnitureArt::FRAME_WORLD_X, camera.x),
+            RoomRenderer::screenY(room.roomY() + FurnitureArt::FRAME_ART_Y, camera.y),
+            FurnitureArt::FRAME_WORLD_SIZE,
+            FurnitureArt::FRAME_WORLD_SIZE + FurnitureArt::FRAME_WORLD_SIZE/3};
+}
+
 bool visibleToast(const char* text) {
     return text && std::strcmp(text, Ui::Menu::FOOD_ADDED) != 0;
 }
@@ -32,20 +45,66 @@ void drawClock20(Canvas565& canvas, const char* clock) {
 }
 }  // namespace
 
+void HomeUi::enter(uint16_t placedFurniture) {
+    HomeUiBase::enter(placedFurniture);
+    photoFrame_.enter(placedFurniture & PHOTO_FRAME_MASK);
+}
+
+void HomeUi::onExit() {
+    photoFrame_.enter(false);
+    HomeUiBase::onExit();
+}
+
+void HomeUi::render() {
+    if (!photoFrame_.active() || photoFrame_.needsBackground()) HomeUiBase::render();
+    if (photoFrame_.active()) photoFrame_.render(PixelRenderer::canvas());
+}
+
+bool HomeUi::onTouch(const Platform::IInputDevice::TouchEvent& event) {
+    if (photoFrame_.active()) return photoFrame_.touch(event);
+    return HomeUiBase::onTouch(event);
+}
+
+void HomeUi::cancelTouch() {
+    HomeUiBase::cancelTouch();
+    photoFrame_.cancelTouch();
+}
+
 int HomeUi::touchTarget(int16_t x, int16_t y) {
     const auto frame = host.homeFrame();
     if (!frame.touchBlocked) {
         if (HOME_MENU_RECT.contains(x, y)) return 2;
+        if ((frame.placedFurniture & PHOTO_FRAME_MASK) && RoomResource::ins().available()) {
+            const auto b = wallFrameBounds(camera);
+            const auto view = RoomRenderer::viewport();
+            const MenuGrid::Rect viewport{view.x, view.y, view.width, view.height};
+            const MenuGrid::Rect hit{b.x-8, b.y-8, b.width+16, b.height+16};
+            if (viewport.contains(x, y) && hit.contains(x, y)) return PHOTO_FRAME_TARGET;
+        }
     }
     return HomeUiContent::touchTarget(x, y, frame, camera, false);
 }
 
 bool HomeUi::onTap(int target) {
+    if (target == PHOTO_FRAME_TARGET) {
+        if (!photoFrame_.open()) {
+            toast = Photo::NO_MEMORY;
+            toastUntil = Hal::ins().millis() + 1200;
+        }
+        return true;
+    }
     return HomeUiBase::onTap(target);
 }
 
 bool HomeUi::onButton(const ButtonEvent& event) {
+    if (photoFrame_.active()) return event.action == BtnAction::PRESSED && photoFrame_.back();
     return HomeUiBase::onButton(event);
+}
+
+void HomeUi::drawFloor(const HomeFrame& frame) {
+    if (!(frame.placedFurniture & PHOTO_FRAME_MASK) || photoFrame_.active()) return;
+    const auto b = wallFrameBounds(camera);
+    photoFrame_.drawWallPhoto(PixelRenderer::canvas(), b.x, b.y, frame.night);
 }
 
 void HomeUi::drawHud(const HomeFrame& frame) {
@@ -84,7 +143,7 @@ void HomeUi::drawToast() {
 }
 
 void HomeUi::drawHomeMenu(const HomeFrame& frame) {
-    if (frame.touchBlocked) return;
+    if (frame.touchBlocked || photoFrame_.active()) return;
     auto& canvas = PixelRenderer::canvas();
     drawMenuButton();
     if (frame.tutorialVisible && !visibleToast(toast)) {

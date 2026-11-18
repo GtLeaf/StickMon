@@ -111,6 +111,7 @@ public:
     virtual void prepareSurface() {}
     virtual SceneUpdateResult update(uint32_t nowMs, float dtSeconds) = 0;
     virtual void render() = 0;
+    virtual bool redrawOnStateChange() const { return true; }
     // Opt-in visual cadence. Core care/audio/save ticks keep their own interval.
     virtual uint32_t visualFrameIntervalMs(uint32_t nowMs) const { (void)nowMs; return 66; }
     virtual bool onButton(const ButtonEvent& event) { (void)event; return false; }

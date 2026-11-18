@@ -42,10 +42,13 @@ public:
     Result loadImage(const Entry&,uint16_t* output);
     Result loadThumbnail(const Entry&,uint16_t* output);
     Result erase(const Entry&);
+    Result readFrameBinding(uint64_t& id);
+    Result writeFrameBinding(uint64_t id);
     static void slotName(unsigned slot,char* out,size_t length);
 private:
     Platform::IUserFiles* files_;Platform::IBlobStore* blobs_;Platform::IMemoryAllocator* memory_;
     Entry entries_[CAPACITY]{};unsigned count_=0;
+    Platform::IBlobStore* blobStore();
     bool resolve();
     bool header(unsigned slot,Entry& entry,uint8_t* bytes);
     Result load(const Entry&,uint16_t*,bool thumbnail);

@@ -576,7 +576,7 @@ void MainScene::onEnter() {
     roomAction = RoomAction::NONE;
     heartEffect = HeartEffect::NONE;
     heartEffectUntilMs = 0;
-    homeUi.enter();
+    homeUi.enter(Game::HomeFurniture::visibleMask(GameEngine::ins().gameState()));
     feedingHadTastyBite = false;
     feedingHadDislikedBite = false;
     feedingBecameFull = false;
@@ -937,6 +937,21 @@ void MainScene::persistViewState(uint32_t nowMs) {
 }
 
 SceneUpdateResult MainScene::update(uint32_t nowMs, float dtSeconds) {
+    const auto result = updateHome(nowMs, dtSeconds);
+    if (!homeUi.roomVisualFrozen()) return result;
+    if (homeOverlayActive()) {
+        homeUi.closeTransientOverlay();
+        return SceneUpdateResult::animate(66);
+    }
+    return SceneUpdateResult::pollAfter(result.nextUpdateDelayMs);
+}
+
+bool MainScene::prepareDisplayLock() {
+    homeUi.closeTransientOverlay();
+    return true;
+}
+
+SceneUpdateResult MainScene::updateHome(uint32_t nowMs, float dtSeconds) {
 #if STICKMON_ENABLE_ROOM_DIAGNOSTICS
     static uint32_t lastRoomDiagnostic = 0;
     if (nowMs - lastRoomDiagnostic >= 5000) {
@@ -3755,6 +3770,7 @@ bool MainScene::startWander(uint32_t nowMs) {
 
 bool MainScene::openPendingProgression() {
     if (progressionModal != ProgressionModal::NONE) return true;
+    if (homeUi.roomVisualFrozen()) return false;
     if (GameEngine::ins().hasPendingLevelUp()) {
         progressionModal = ProgressionModal::LEVEL_UP;
         return true;

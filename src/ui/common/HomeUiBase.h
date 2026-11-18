@@ -13,9 +13,11 @@ public:
     uint32_t hungerAnimStartedMs = 0, hungerAnimUntilMs = 0;
     uint8_t hungerAnimFrom = 0, hungerAnimTo = 0;
 
-    void enter();
+    void enter(uint16_t placedFurniture);
     SceneUpdateResult update(uint32_t nowMs, float dtSeconds) override;
     void render() override;
+    virtual bool roomVisualFrozen() const { return false; }
+    virtual void closeTransientOverlay() {}
     bool onButton(const ButtonEvent& event) override;
     bool onTap(int target) override;
     void onExit() override { cancelTouch(); }
@@ -26,6 +28,7 @@ public:
 protected:
     HomeHost& host;
     virtual void drawHud(const HomeFrame& frame) = 0;
+    virtual void drawFloor(const HomeFrame&) {}
     virtual void drawToast() = 0;
     virtual void drawHomeMenu(const HomeFrame& frame) = 0;
     virtual void drawContact(const HomeFrame& frame) { HomeUiContent::drawContact(frame); }

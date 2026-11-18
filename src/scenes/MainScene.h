@@ -27,6 +27,8 @@ public:
     void onEnter() override;
     void onExit() override;
     bool onBeforeSave() override;
+    bool prepareDisplayLock() override;
+    bool redrawOnStateChange() const override { return !homeUi.roomVisualFrozen(); }
     SceneUpdateResult update(uint32_t nowMs, float dtSeconds) override;
     void render() override;
     bool onButton(const ButtonEvent& event) override;
@@ -39,6 +41,7 @@ public:
                               const SecondarySceneViewState& saved);
 
 private:
+    SceneUpdateResult updateHome(uint32_t nowMs, float dtSeconds);
     // Legacy values are retained only for save compatibility and sprite
     // presentation. Home::Actor::task is the authoritative gameplay state.
     using AiMode = Home::Task;

@@ -8,7 +8,7 @@
 
 namespace Ui {
 
-void HomeUiBase::enter() {
+void HomeUiBase::enter(uint16_t) {
     cancelTouch();
     hungerAnimUntilMs = 0;
 }
@@ -91,6 +91,7 @@ void HomeUiBase::render() {
     for (const auto& item : items) {
         if (item.roomLayer) canvas.setClipRect(view.x, view.y, view.width, view.height);
         switch (item.layer) {
+        case HomeLayer::FLOOR: drawFloor(frame); break;
         case HomeLayer::HUD: drawHud(frame); break;
         case HomeLayer::TOAST: drawToast(); break;
         case HomeLayer::CONTACT: drawContact(frame); break;
@@ -105,6 +106,7 @@ void HomeUiBase::render() {
 void HomeUiBase::drawLayer(HomeLayer layer) {
     const HomeFrame frame = host.homeFrame();
     switch (layer) {
+    case HomeLayer::FLOOR: drawFloor(frame); break;
     case HomeLayer::HUD: drawHud(frame); break;
     case HomeLayer::TOAST: drawToast(); break;
     case HomeLayer::CONTACT: drawContact(frame); break;

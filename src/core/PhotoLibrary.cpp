@@ -14,15 +14,22 @@ void put32(uint8_t*p,uint32_t v){for(unsigned i=0;i<4;++i)p[i]=uint8_t(v>>(8*i))
 void put64(uint8_t*p,uint64_t v){put32(p,uint32_t(v));put32(p+4,uint32_t(v>>32));}
 uint32_t crc(const uint8_t*p,size_t n){uint32_t c=~0u;while(n--){c^=*p++;for(int i=0;i<8;++i)c=(c>>1)^(0xedb88320u&(0u-(c&1)));}return ~c;}
 constexpr uint32_t MAGIC=0x48504d53,SEQUENCE_MAGIC=0x51534d53;
+constexpr uint32_t FRAME_MAGIC=0x52464d53;
+// Game reset clears the decoration along with the room, and keeps the album.
+constexpr const char* FRAME_NAMESPACE="stickmon";
+constexpr const char* FRAME_KEY="room_photo";
 }
 void Library::slotName(unsigned slot,char*out,size_t n){std::snprintf(out,n,"slot%u.photo",slot);}
+Platform::IBlobStore* Library::blobStore() {
+    if (!blobs_ && Platform::bound()) blobs_ = &Platform::blobs();
+    return blobs_;
+}
 bool Library::resolve(){
     if(Platform::bound()){
         if(!files_)files_=Platform::services().userFiles;
-        if(!blobs_)blobs_=&Platform::blobs();
         if(!memory_)memory_=&Platform::memory();
     }
-    return files_&&blobs_&&memory_&&files_->begin();
+    return files_&&blobStore()&&memory_&&files_->begin();
 }
 bool Library::header(unsigned slot,Entry&e,uint8_t*h){
     e={};e.slot=uint8_t(slot);char name[24];slotName(slot,name,sizeof(name));
@@ -94,6 +101,35 @@ Result Library::load(const Entry&e,uint16_t*out,bool thumbnail){
 }
 Result Library::loadImage(const Entry&e,uint16_t*out){return load(e,out,false);}
 Result Library::loadThumbnail(const Entry&e,uint16_t*out){return load(e,out,true);}
+Result Library::readFrameBinding(uint64_t& id) {
+    id = 0;
+    auto* blobs = blobStore();
+    if (!blobs) return Result::UNAVAILABLE;
+    size_t size = 0;
+    const auto lookup = blobs->lookupBlob(FRAME_NAMESPACE, FRAME_KEY, size);
+    if (lookup == Platform::BlobLookup::MISSING) return Result::OK;
+    if (lookup != Platform::BlobLookup::FOUND) return Result::UNAVAILABLE;
+    uint8_t record[16];
+    if (size != sizeof(record)) return Result::CORRUPT;
+    if (!blobs->readBlob(FRAME_NAMESPACE, FRAME_KEY, record, sizeof(record)))
+        return Result::UNAVAILABLE;
+    if (u32(record) != FRAME_MAGIC || crc(record, 12) != u32(record + 12))
+        return Result::CORRUPT;
+    id = u64(record + 4);
+    return Result::OK;
+}
+
+Result Library::writeFrameBinding(uint64_t id) {
+    auto* blobs = blobStore();
+    if (!blobs) return Result::UNAVAILABLE;
+    uint8_t record[16];
+    put32(record, FRAME_MAGIC);
+    put64(record + 4, id);
+    put32(record + 12, crc(record, 12));
+    return blobs->writeBlob(FRAME_NAMESPACE, FRAME_KEY, record, sizeof(record))
+        ? Result::OK : Result::FAILED;
+}
+
 Result Library::erase(const Entry&e){
     if(e.slot>=CAPACITY||!resolve())return Result::UNAVAILABLE;
     char name[24];slotName(e.slot,name,sizeof(name));if(!files_->exists(name))return Result::NOT_FOUND;
