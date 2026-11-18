@@ -906,6 +906,23 @@ static constexpr const char* SOAP_NAMES[] = {
 };
 }
 
+namespace Photo {
+static constexpr const char* ALBUM="相册";
+static constexpr const char* PREVIEW="预览";
+static constexpr const char* RETAKE="重拍";
+static constexpr const char* SAVE="保存";
+static constexpr const char* SAVED="照片已保存";
+static constexpr const char* FULL="相册已满，请前往电脑删除照片";
+static constexpr const char* UNAVAILABLE="照片存储不可用";
+static constexpr const char* NO_MEMORY="内存不足，请重试";
+static constexpr const char* CORRUPT="照片无法读取";
+static constexpr const char* FAILED="操作失败，请重试";
+static constexpr const char* EMPTY="还没有照片";
+static constexpr const char* DELETE_CONFIRM="删除照片？";
+static constexpr const char* CANCEL="取消";
+static constexpr const char* DELETE="删除";
+static constexpr const char* META="%s · 第%u天";
+}
 namespace Computer {
 static constexpr const char* STORAGE_EMPTY = "通讯录为空";
 static constexpr const char* STORAGE_COUNT_FMT = "%u/20";

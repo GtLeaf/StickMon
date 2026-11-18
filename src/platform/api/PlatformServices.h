@@ -149,11 +149,18 @@ public:
                                 bool wakeOnSecondaryButton) = 0;
 };
 
+enum class BlobLookup : uint8_t { FOUND, MISSING, FAILED };
 class IBlobStore {
 public:
     virtual ~IBlobStore() = default;
     virtual bool initialize() = 0;
     virtual size_t blobSize(const char* nameSpace, const char* key) = 0;
+    // Absence must be authoritative before initializing monotonic metadata.
+    // Legacy backends cannot distinguish a zero size from an I/O failure.
+    virtual BlobLookup lookupBlob(const char* nameSpace,const char* key,size_t& length) {
+        length=blobSize(nameSpace,key);
+        return length?BlobLookup::FOUND:BlobLookup::FAILED;
+    }
     virtual bool readBlob(const char* nameSpace, const char* key,
                           void* output, size_t length) = 0;
     virtual bool writeBlob(const char* nameSpace, const char* key,
@@ -261,6 +268,22 @@ public:
     virtual bool receive(PeerPacket& packet) = 0;
 };
 
+using FileYield = void (*)();
+// Player-owned files, separate from read-only resource packs and save blobs.
+class IUserFiles {
+public:
+    virtual ~IUserFiles() = default;
+    virtual bool begin() = 0;
+    virtual bool exists(const char* name) = 0;
+    virtual size_t size(const char* name) = 0;
+    virtual bool read(const char* name, size_t offset, void* output, size_t length) = 0;
+    // Publish a complete NEW file; an existing destination is never replaced.
+    virtual bool writeNew(const char* name, const void* data, size_t length,
+                          FileYield yield = nullptr) = 0;
+    virtual bool remove(const char* name) = 0;
+    virtual size_t availableBytes() { return SIZE_MAX; }
+};
+
 struct Services {
     IPlatformLifecycle& lifecycle;
     IClock& clock;
@@ -274,6 +297,7 @@ struct Services {
     IResourceStore& resources;
     IMemoryAllocator& memory;
     IPeerTransport& peers;
+    IUserFiles* userFiles = nullptr;
 };
 
 void bind(Services& services);

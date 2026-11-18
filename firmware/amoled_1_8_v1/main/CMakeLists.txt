@@ -16,6 +16,8 @@ set(STICKMON_MAIN_REQUIRES
     esp_wifi
     nvs_flash
     spiffs
+    fatfs
+    wear_levelling
     espressif__esp_lcd_touch
     waveshare__esp32_s3_touch_amoled_1_8
 )

@@ -8,6 +8,7 @@
 #include "assets/PokemonSprites.h"
 #include "brain/ClawStatusLog.h"
 #include "core/BuildConfig.h"
+#include "core/PhotoLibrary.h"
 #include "core/UiStrings.h"
 #include "game/BondSystem.h"
 #include "game/ContactRoster.h"
@@ -228,9 +229,9 @@ int computerItemAt(int x, int y, ComputerViewModel::Page page,
     if (page == ComputerViewModel::Page::MENU) {
         int row = (y - MENU_CONTENT_TOP) / COMPUTER_MENU_ROW_HEIGHT;
 #if STICKMON_HAS_CLAW
-        return row < 3 ? row : -1;
+        return row < 4 ? row : -1;
 #else
-        return row < 2 ? row : -1;
+        return row < 3 ? row : -1;
 #endif
     }
     if (page == ComputerViewModel::Page::AI_HOSTING) {
@@ -329,7 +330,7 @@ void renderComputerScreen(Canvas565& canvas, const ComputerViewModel& model,
 
     if (model.page == ComputerViewModel::Page::MENU) {
         static constexpr const char* ITEMS[] = {
-            Ui::SOCIAL, Ui::Amoled::STORAGE_PAGE,
+            Ui::SOCIAL, Ui::Amoled::STORAGE_PAGE, Ui::Photo::ALBUM,
 #if STICKMON_HAS_CLAW
             Ui::Amoled::AI_HOSTING,
 #endif
@@ -340,6 +341,7 @@ void renderComputerScreen(Canvas565& canvas, const ComputerViewModel& model,
             bool selected = index == model.pressedItem;
             canvas.fillRoundRect((12), (y + 4), (344), (COMPUTER_MENU_CELL_HEIGHT), (8), selected ? rgb(42, 61, 68) : rgb(24, 34, 42));
             text(canvas, 40, y + 26, ITEMS[index], rgb(226, 238, 233));
+            if(index==2){char count[16];std::snprintf(count,sizeof(count),"%u/%u",unsigned(model.photoCount),Photos::CAPACITY);text(canvas,344-textWidth(count),y+26,count,rgb(126,175,175));}
             if (index == 1 && model.state) {
                 char count[12];
                 std::snprintf(count, sizeof(count),

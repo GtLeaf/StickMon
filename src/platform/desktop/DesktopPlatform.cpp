@@ -169,6 +169,13 @@ size_t DesktopPlatform::blobSize(const char* nameSpace, const char* key) {
     return found == blobs_.end() ? 0 : found->second.size();
 }
 
+Platform::BlobLookup DesktopPlatform::lookupBlob(const char* nameSpace,const char* key,size_t& length){
+    length=0;if(!nameSpace||!key)return Platform::BlobLookup::FAILED;
+    const auto found=blobs_.find(blobKey(nameSpace,key));
+    if(found==blobs_.end())return Platform::BlobLookup::MISSING;
+    length=found->second.size();return Platform::BlobLookup::FOUND;
+}
+
 bool DesktopPlatform::readBlob(const char* nameSpace, const char* key,
                                void* output, size_t length) {
     auto found = blobs_.find(blobKey(nameSpace, key));

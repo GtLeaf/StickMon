@@ -11,6 +11,7 @@ src/core/AudioManager.cpp
 src/core/PcmMixer.cpp
 src/core/CryPlayer.cpp
 src/core/FontResource.cpp
+src/core/PhotoLibrary.cpp
 src/core/GameClockService.cpp
 src/core/ResourceFS.cpp
 src/core/MapLayoutResources.cpp

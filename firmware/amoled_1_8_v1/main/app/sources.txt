@@ -12,6 +12,8 @@ app/BattleTimeline.cpp
 app/ExploreSession.cpp
 app/ExploreTransitionFlow.cpp
 app/ExplorePresenter.cpp
+PhotoSession.cpp
+PhotoApplication.cpp
 app/HomeViewState.cpp
 app/HomeFlow.cpp
 app/HomeFoodFlow.cpp

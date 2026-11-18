@@ -14,8 +14,9 @@ MAP_RENDERER = HOME_SCREEN.parent / "ui" / "ExploreMapRenderer.cpp"
 class AmoledExploreScreenTests(unittest.TestCase):
     def test_background_continues_behind_scene_selector(self):
         source = read_home_source(ROOT)
-        start = source.index("void renderExploreScreen(")
-        end = source.index("bool exploreRouteBackAt(", start)
+        # The current dispatcher delegates the retained legacy implementation.
+        start = source.index("void renderExploreLegacyScreen(")
+        end = source.index("void renderExploreScreen(", start)
         render = source[start:end]
 
         self.assertIn("EXPLORE_SELECTOR_TOP_HEIGHT", render)
@@ -197,13 +198,16 @@ class AmoledExploreScreenTests(unittest.TestCase):
         self.assertIn("constexpr int mapBottom = EXPLORE_ROUTE_VIEW_HEIGHT", app)
         self.assertIn("y < EXPLORE_ROUTE_MAP_BOTTOM", home)
 
-    def test_route_bottom_buttons_open_bag_and_menu(self):
+    def test_route_bottom_buttons_open_camera_and_menu(self):
         home = read_home_source(ROOT)
         app = read_app_source(ROOT)
 
         self.assertIn("bool exploreRouteBagAt(int x, int y)", home)
         self.assertIn("if (exploreRouteBagAt(x, y))", app)
-        self.assertIn("openItemScene(AppSceneFlow::Scene::BAG);", app)
+        shortcut = app.split("if (exploreRouteBagAt(x, y))", 1)[1].split("if (exploreRouteMenuAt", 1)[0]
+        self.assertIn("openPhotoCamera(nowMs);", shortcut)
+        self.assertNotIn("openItemScene(", shortcut)
+        self.assertIn("case AppSceneFlow::ExploreMenuItem::BAG:", app)
         self.assertIn("if (exploreRouteMenuAt(x, y))", app)
 
     def test_map_tiles_have_a_decoded_cache_path(self):

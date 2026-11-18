@@ -1,6 +1,7 @@
 #include "game/ExploreDestinations.h"
 #include "ui/common/MarketView.h"
 #include "ui/ExploreScreens.h"
+#include "ui/PhotoScreens.h"
 #if STICKMON_EXPLORE_POSTCARD
 #include "ui/ExplorePostcardUi.h"
 #endif
@@ -202,23 +203,7 @@ constexpr const char* EXPLORE_AREA_NAMES[Game::EXPLORE_AREA_COUNT] = {
 
 void drawExploreBagIcon(Canvas565& canvas) {
     drawHomeHudButton(canvas, EXPLORE_ROUTE_BAG_BUTTON_X);
-    if (!MenuAssets::mainIconFrames() || !MenuAssets::mainIconRle()) return;
-    constexpr uint8_t bagIconIndex = 3;
-    const uint16_t offset = FlashStorage::readWord(
-        &MenuAssets::mainIconFrames()[bagIconIndex].offset);
-    const uint16_t length = FlashStorage::readWord(
-        &MenuAssets::mainIconFrames()[bagIconIndex].length);
-    // The source frame is 40x40. Keep a small, even inset inside the 64px
-    // HUD button so the backpack reads at the same visual weight as the
-    // other native HUD controls.
-    constexpr float scale = 1.4f;
-    constexpr int iconSize = 56;
-    PixelRenderer::drawRgb565RleScaled(
-        EXPLORE_ROUTE_BAG_BUTTON_X +
-            (HOME_HUD_BUTTON_SIZE - iconSize) / 2,
-        HOME_HUD_BUTTON_Y + (HOME_HUD_BUTTON_SIZE - iconSize) / 2,
-        MenuAssets::FRAME_W, MenuAssets::FRAME_H,
-        MenuAssets::mainIconRle(), offset, length, scale);
+    drawPhotoCameraIcon(canvas,EXPLORE_ROUTE_BAG_BUTTON_X+HOME_HUD_BUTTON_SIZE/2,HOME_HUD_BUTTON_Y+HOME_HUD_BUTTON_SIZE/2);
 }
 
 void drawExploreMenuIcon(Canvas565& canvas) {
@@ -1379,7 +1364,7 @@ void renderExploreRouteScreen(Canvas565& canvas,
         pageClip.reset();
     }
 
-    if (rowBegin < EXPLORE_ROUTE_HUD_Y + EXPLORE_ROUTE_HUD_HEIGHT &&
+    if (!model.photoMode && rowBegin < EXPLORE_ROUTE_HUD_Y + EXPLORE_ROUTE_HUD_HEIGHT &&
         rowEnd > EXPLORE_ROUTE_HUD_Y) {
         int top = std::max<int>(rowBegin, EXPLORE_ROUTE_HUD_Y);
         int bottom = std::min<int>(
@@ -1392,7 +1377,8 @@ void renderExploreRouteScreen(Canvas565& canvas,
     if (rowEnd > HOME_STATUS_TOP) {
         int top = std::max<int>(rowBegin, HOME_STATUS_TOP);
         pageClip.setRect((0), (top), (AmoledUi::WIDTH), (rowEnd - top));
-        drawExploreRouteBottomHud(canvas, model);
+        if(model.photoMode)canvas.fillRect(0,HOME_STATUS_TOP,368,448-HOME_STATUS_TOP,0);
+        else drawExploreRouteBottomHud(canvas, model);
         pageClip.reset();
     }
 
