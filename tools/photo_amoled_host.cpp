@@ -1,0 +1,164 @@
+#include "AmoledApp.h"
+#include "core/FontResource.h"
+#include "ui/UiCommon.h"
+#include "game/MonsterFactory.h"
+#include "game/ExploreRouteGeometry.h"
+#include "platform/common/PosixUserFiles.h"
+#include "platform/desktop/DesktopPlatform.h"
+#include <cassert>
+#include <cstdio>
+#include <filesystem>
+#include <string>
+#include <vector>
+#include <chrono>
+struct PhotoFiles:Platform::PosixUserFiles {
+    using PosixUserFiles::PosixUserFiles;bool failWrite=false,failDelete=false;DesktopPlatform* desktop=nullptr;uint32_t delay=0;
+    bool writeNew(const char*n,const void*p,size_t len,Platform::FileYield yield=nullptr)override{if(delay){desktop->sleepMs(delay);delay=0;}return !failWrite&&PosixUserFiles::writeNew(n,p,len,yield);}
+    bool remove(const char*n)override{return !failDelete&&PosixUserFiles::remove(n);}
+};
+namespace AmoledV1 {
+struct AmoledAppTestAccess {
+static void run(DesktopPlatform& desktop,PhotoFiles& files,const char* output){
+    using P=PhotoSession::Page;using S=AppSceneFlow::Scene;
+    desktop.sleepMs(1000);AmoledApp app;app.begin(desktop.millis());app.gameState.oobeDone=true;app.gameState.teamCount=2;
+    app.gameState.team[0]=Game::MonsterFactory::create(25,20);app.gameState.team[1]=Game::MonsterFactory::create(1,20);
+    app.gameState.team[0].satiety=app.gameState.team[1].satiety=100;
+    app.selectedExploreArea=0;assert(app.startExploreRoute(desktop.millis()));
+    // Resume a mid-route fixture so rendered photo subjects are fully visible.
+    auto& route=const_cast<ExploreSession::State&>(app.exploreSession_.state());
+    const auto& path=route.exploreRouteMap.paths[route.exploreRoutePath];
+    route.exploreRouteIndex=uint8_t(path.pointCount/2);route.exploreRouteSteps=route.exploreRouteIndex;
+    app.resetExploreMapPresentation(desktop.millis());
+    auto& visual=const_cast<ExplorePresenter::State&>(app.explorePresenter_.state());
+    const auto trailing=ExploreRouteGeometry::pathPoint(path,route.exploreRouteIndex?route.exploreRouteIndex-1:0);
+    visual.exploreRouteFollowerWorldX=visual.exploreRouteFollowerFromX=visual.exploreRouteFollowerTargetX=trailing.x;
+    visual.exploreRouteFollowerWorldY=visual.exploreRouteFollowerFromY=visual.exploreRouteFollowerTargetY=trailing.y;
+    app.sceneFlow.enter(AppSceneFlow::Scene::EXPLORE_ROUTE);
+    uint32_t time=desktop.millis();
+    auto event=[&](TouchEventType type,int x,int y){desktop.sleepMs(40);time=desktop.millis();app.handleTouch({type,int16_t(x),int16_t(y),int16_t(x),int16_t(y),time});};
+    auto tap=[&](int x,int y){event(TouchEventType::DOWN,x,y);event(TouchEventType::UP,x,y);};
+    auto shot=[&](const char* name){
+        app.forceFullRender();app.render(PixelRenderer::canvas());app.markRendered();
+        const auto path=std::string(output)+"/"+name+".ppm";FILE*f=std::fopen(path.c_str(),"wb");assert(f);std::fprintf(f,"P6\n368 448\n255\n");
+        auto& c=PixelRenderer::canvas();for(int y=0;y<448;++y)for(int x=0;x<368;++x){auto p=c.readPixel(x,y);const unsigned char rgb[]={uint8_t(((p>>11)&31)*255/31),uint8_t(((p>>5)&63)*255/63),uint8_t((p&31)*255/31)};std::fwrite(rgb,1,3,f);}std::fclose(f);
+    };
+    auto bands=[&](){
+        auto& c=PixelRenderer::canvas();auto* original=c.rawPixels();
+        for(bool swap:{false,true}){
+            std::vector<uint16_t> pixels(368*448),full;c.attach({pixels.data(),368,448,swap});app.forceFullRender();app.render(c);for(int y=0;y<448;++y)for(int x=0;x<368;++x)full.push_back(c.readPixel(x,y));
+            c.fillSprite(0x1234);for(int y=0;y<448;y+=13){app.forceRenderRegion(0,y,368,std::min(448,y+13));app.render(c);}for(int y=0;y<448;++y)for(int x=0;x<368;++x)assert(c.readPixel(x,y)==full[y*368+x]);
+        }
+        c.attach({original,368,448,false});app.forceFullRender();
+    };
+    const auto before=app.exploreRouteModel();const auto fingerprint=ExploreMapGenerator::fingerprint(*before.map);
+    shot("01-entry");
+    tap(44,396);
+    assert(app.sceneFlow.current()==AppSceneFlow::Scene::EXPLORE_ROUTE&&"Explore lower-left shortcut must enter camera instead of BAG");
+    assert(app.photoFlow_.page()==P::VIEWFINDER&&app.exploreSession_.state().exploreRoutePaused);
+    shot("02-viewfinder");bands();event(TouchEventType::UP,184,396);assert(app.photoFlow_.page()==P::VIEWFINDER);
+    event(TouchEventType::DOWN,184,396);app.cancelTouch();event(TouchEventType::UP,184,396);assert(app.photoFlow_.page()==P::VIEWFINDER);
+    app.gameState.settings.idleTimeoutIndex=0;desktop.sleepMs(31000);app.update(desktop.millis());assert(!app.consumeLockRequest());
+    // Geometry is asserted through production pixels, including off-center frames.
+    auto frameAt=[&](int x,int y,bool force=true){
+        if(force)app.forceFullRender();app.render(PixelRenderer::canvas());app.markRendered();
+        const auto ink=UiCommon::rgb(226,238,233);auto& canvas=PixelRenderer::canvas();
+        assert(canvas.readPixel(x,y)==ink&&"Expected256px crop top-left corner");
+        assert(canvas.readPixel(x+255,y+255)==ink&&"Expected256px crop bottom-right corner");
+    };
+    frameAt(56,44);shot("14-frame-centered");
+    // Sub-threshold jitter and a gesture starting outside the crop do nothing.
+    event(TouchEventType::DOWN,184,172);event(TouchEventType::MOVE,189,177);event(TouchEventType::UP,189,177);frameAt(56,44);
+    event(TouchEventType::DOWN,20,172);event(TouchEventType::MOVE,120,220);event(TouchEventType::UP,120,220);frameAt(56,44);
+    // Starting away from the center keeps the finger's original crop offset.
+    event(TouchEventType::DOWN,120,130);frameAt(56,44);
+    event(TouchEventType::MOVE,136,140);assert(!app.needsRender()&&"MOVE must be coalesced");
+    event(TouchEventType::MOVE,144,144);assert(!app.needsRender());
+    desktop.sleepMs(66);app.update(desktop.millis());
+    assert(app.needsRender()&&app.dirtyRowBegin==0&&app.dirtyRowEnd==344);
+    // Verify actual pending rows before UP can mask a stale MOVE composition.
+    frameAt(80,58,false);
+    event(TouchEventType::UP,152,150);assert(app.needsRender());frameAt(88,64,false);
+    assert(!app.photoFlow_.update(66)&&"Released crop must not queue a duplicate redraw");
+    // Drag to upper-left, with no automatic recentering or inertia.
+    event(TouchEventType::DOWN,184,172);event(TouchEventType::MOVE,84,72);event(TouchEventType::UP,84,72);frameAt(0,0);
+    shot("15-frame-upper-left");bands();desktop.sleepMs(66);app.update(desktop.millis());frameAt(0,0);
+    // Back remains a button when the crop is underneath it; reopening resets crop.
+    tap(36,28);assert(!app.photoFlow_.active());tap(44,396);frameAt(56,44);
+    // Reaching all four sides clamps to the viewport, never the104px control bar.
+    event(TouchEventType::DOWN,184,172);event(TouchEventType::MOVE,4,4);event(TouchEventType::UP,4,4);frameAt(0,0);
+    event(TouchEventType::DOWN,100,100);event(TouchEventType::MOVE,300,100);event(TouchEventType::UP,300,100);frameAt(112,0);
+    event(TouchEventType::DOWN,200,100);event(TouchEventType::MOVE,200,343);event(TouchEventType::UP,200,343);frameAt(112,88);
+    event(TouchEventType::DOWN,200,200);event(TouchEventType::MOVE,4,200);event(TouchEventType::UP,4,200);frameAt(0,88);
+    // CANCEL/outside-screen release end drag; subsequent MOVE/UP cannot revive it.
+    event(TouchEventType::DOWN,100,200);event(TouchEventType::MOVE,140,180);frameAt(40,68);
+    using InputType=Platform::IInputDevice::TouchType;
+    assert(app.photoFlow_.touch({InputType::CANCEL,140,180,desktop.millis()})==PhotoSession::Request::NONE);
+    event(TouchEventType::MOVE,200,220);event(TouchEventType::UP,184,396);assert(app.photoFlow_.viewfinder());frameAt(40,68);
+    event(TouchEventType::DOWN,140,180);event(TouchEventType::MOVE,156,180);frameAt(56,68);
+    event(TouchEventType::UP,-1,180);event(TouchEventType::MOVE,200,220);event(TouchEventType::UP,184,396);frameAt(56,68);
+    // Dragging onto shutter consumes the gesture and keeps the map camera fixed.
+    event(TouchEventType::DOWN,184,172);event(TouchEventType::MOVE,300,300);event(TouchEventType::UP,300,300);frameAt(112,88);
+    event(TouchEventType::DOWN,184,172);event(TouchEventType::MOVE,184,396);event(TouchEventType::UP,184,396);
+    assert(app.photoFlow_.viewfinder());frameAt(112,88);shot("16-frame-lower-right");bands();
+    const auto moved=app.exploreRouteModel();
+    assert(moved.cameraX==before.cameraX&&moved.cameraY==before.cameraY&&moved.worldX==before.worldX&&moved.worldY==before.worldY);
+    std::vector<uint16_t> expected(Photos::PIXELS);
+    app.forceFullRender();app.renderPhotoWorld(PixelRenderer::canvas(),0,448);
+    for(unsigned y=0;y<192;++y)for(unsigned x=0;x<192;++x)expected[y*192+x]=PixelRenderer::canvas().readPixel(112+int((2*x+1)*256/384),88+int((2*y+1)*256/384));
+    shot("02-viewfinder");const auto originalMinutes=app.gameState.gameMinutesTotal;app.gameState.gameMinutesTotal+=1440;
+    const auto capturedDay=app.gameState.gameMinutesTotal/1440+1;
+    const auto captureStarted=std::chrono::steady_clock::now();
+    tap(184,396);app.gameState.gameMinutesTotal=originalMinutes;
+    const auto captureUs=std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now()-captureStarted).count();
+    assert(app.photoFlow_.page()==P::PREVIEW&&std::equal(expected.begin(),expected.end(),app.photoFlow_.image()));shot("03-preview");shot("17-moved-capture");
+    tap(100,420);assert(app.photoFlow_.viewfinder());frameAt(112,88);
+    // No MOVE in a new gesture: the release itself still carries final drag position.
+    event(TouchEventType::DOWN,184,172);event(TouchEventType::UP,172,162);frameAt(100,78);
+    event(TouchEventType::DOWN,184,172);event(TouchEventType::UP,196,182);frameAt(112,88);
+    app.gameState.gameMinutesTotal+=1440;tap(184,396);app.gameState.gameMinutesTotal=originalMinutes;
+    assert(app.photoFlow_.page()==P::PREVIEW&&std::equal(expected.begin(),expected.end(),app.photoFlow_.image()));
+    app.update(desktop.millis());shot("03-preview");bands();shot("03-preview");
+    for(int i=0;i<3;++i){desktop.sleepMs(66);app.update(desktop.millis());assert(!app.needsRender()&&"Static photo preview must park");}
+    files.failWrite=true;tap(268,420);files.failWrite=false;assert(app.photoFlow_.page()==P::PREVIEW&&app.photoFlow_.error()&&app.photoFlow_.count()==0);assert(std::equal(expected.begin(),expected.end(),app.photoFlow_.image()));shot("04-save-failed");
+    files.delay=1100;const auto saveStarted=std::chrono::steady_clock::now();tap(268,420);const auto saveUs=std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now()-saveStarted).count();assert(!app.photoFlow_.active()&&app.sceneFlow.current()==S::EXPLORE_ROUTE&&!app.exploreSession_.state().exploreRoutePaused);
+    const auto after=app.exploreRouteModel();assert(ExploreMapGenerator::fingerprint(*after.map)==fingerprint&&after.worldX==before.worldX&&after.worldY==before.worldY&&after.cameraX==before.cameraX&&after.cameraY==before.cameraY);
+    Photos::Library library;assert(library.refresh()==Photos::Result::OK&&library.count()==1);assert(library.entry(0).day==capturedDay&&"Photo date must be the shutter day, not viewfinder entry day");std::vector<uint16_t> saved(Photos::PIXELS);assert(library.loadImage(library.entry(0),saved.data())==Photos::Result::OK&&saved==expected);
+    // The original exploration menu still provides the bag.
+    tap(120,396);assert(app.sceneFlow.current()==S::EXPLORE_MENU);
+    tap(308,142);assert(app.sceneFlow.current()==S::BAG);
+    app.closeItemScene();assert(app.sceneFlow.current()==S::EXPLORE_MENU);
+    tap(120,396);assert(app.sceneFlow.current()==S::EXPLORE_ROUTE);
+    tap(44,396);tap(184,396);assert(app.photoFlow_.page()==P::PREVIEW);tap(100,420);assert(app.photoFlow_.viewfinder());tap(36,28);assert(!app.photoFlow_.active()&&library.count()==1);
+    for(int i=0;i<3;++i)assert(library.save(expected.data(),uint8_t(i),12+i)==Photos::Result::OK);
+    app.openComputerScene();shot("05-computer");tap(120,290);assert(app.photoFlow_.page()==P::ALBUM&&app.photoFlow_.count()==4);shot("06-album");
+    tap(90,140);assert(app.photoFlow_.page()==P::DETAIL&&app.photoFlow_.image());shot("07-detail");
+    event(TouchEventType::DOWN,220,220);event(TouchEventType::UP,-20,220);assert(app.photoFlow_.selected()==0&&"Out-of-panel release must cancel a photo swipe");
+    event(TouchEventType::DOWN,240,220);event(TouchEventType::MOVE,120,220);event(TouchEventType::UP,120,220);assert(app.photoFlow_.selected()==1);
+    tap(330,36);assert(app.photoFlow_.page()==P::DELETE_CONFIRM);shot("08-delete");tap(100,250);assert(app.photoFlow_.page()==P::DETAIL);
+    tap(330,36);files.failDelete=true;tap(260,250);files.failDelete=false;assert(app.photoFlow_.page()==P::DELETE_CONFIRM&&app.photoFlow_.count()==4);tap(260,250);assert(app.photoFlow_.page()==P::ALBUM&&app.photoFlow_.count()==3);
+    // Static screens obey dirty bands and both stored framebuffer byte orders.
+    bands();app.markRendered();desktop.sleepMs(31000);app.update(desktop.millis());assert(app.consumeLockRequest()&&"Album must retain normal automatic lock policy");
+    tap(36,36);assert(!app.photoFlow_.active()&&app.sceneFlow.current()==S::COMPUTER);
+    PhotoSession reboot;reboot.openAlbum();assert(reboot.count()==3);reboot.close();
+    assert(library.refresh()==Photos::Result::OK);while(library.count()<5)assert(library.save(expected.data(),0,50)==Photos::Result::OK);
+    app.photoFlow_.refreshCatalogue();shot("10-computer-full");
+    tap(120,290);assert(app.photoFlow_.page()==P::ALBUM&&app.photoFlow_.count()==5);
+    shot("11-album-full");tap(90,140);shot("12-detail-full");tap(330,36);shot("13-delete-full");tap(100,250);tap(36,36);
+    event(TouchEventType::DOWN,100,350);event(TouchEventType::MOVE,100,270);event(TouchEventType::UP,100,270);
+    assert(app.photoFlow_.page()==P::ALBUM&&app.photoFlow_.offset()>0&&app.photoFlow_.moving());
+    desktop.sleepMs(66);app.update(desktop.millis());assert(app.photoFlow_.page()==P::ALBUM);shot("09-album-scroll");
+    app.cancelTouch();event(TouchEventType::UP,100,270);assert(app.photoFlow_.page()==P::ALBUM&&!app.photoFlow_.moving());tap(36,36);assert(!app.photoFlow_.active());
+    app.sceneFlow.enter(S::EXPLORE_ROUTE);tap(44,396);assert(app.photoFlow_.viewfinder()&&app.photoFlow_.count()==5);tap(184,396);assert(app.photoFlow_.viewfinder()&&app.photoFlow_.error());
+    assert(!app.prepareDisplayLock(desktop.millis())&&!app.photoFlow_.active());assert(library.refresh()==Photos::Result::OK&&library.count()==5);
+    std::puts("photo AMOLED: actual shortcut/clean capture/keep-awake/park/retry/slow write/reload/route return/bag/album/swipe/delete/dirty bands/byte order OK");
+    std::printf("native host timing only: clean capture%lldus, save%lldus (not device measurements)\n",static_cast<long long>(captureUs),static_cast<long long>(saveUs));
+}
+};
+}
+int main(int argc,char**argv){
+    assert(argc==3);DesktopPlatform desktop(argv[1]);auto& services=desktop.serviceBundle();
+    const auto path=std::string(argv[2])+"/photos";PhotoFiles files(path);files.desktop=&desktop;services.userFiles=&files;
+    Platform::bind(services);assert(desktop.begin()&&Platform::resources().mount());assert(GameAssets::begin()&&FontResource::ins().begin());
+    std::vector<uint16_t> pixels(368*448);auto& c=PixelRenderer::canvas();c.attach({pixels.data(),368,448,false});c.setCoordinateScale(1);c.setLayoutScale(1);c.setAssetScale(1);c.setNativeText(true);
+    AmoledV1::AmoledAppTestAccess::run(desktop,files,argv[2]);
+}

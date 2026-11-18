@@ -5,6 +5,7 @@ ui/ItemShopScreens.cpp
 ui/TeamScreens.cpp
 ui/ComputerScreens.cpp
 ui/ExploreScreens.cpp
+ui/PhotoScreens.cpp
 ui/ProgressionScreens.cpp
 ui/EvolutionPresentation.cpp
 ui/UiCommon.cpp

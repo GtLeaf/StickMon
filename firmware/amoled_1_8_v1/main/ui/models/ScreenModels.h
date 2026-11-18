@@ -178,6 +178,7 @@ struct ExploreViewModel {
 };
 
 struct ExploreRouteViewModel {
+    bool photoMode = false;
     ExploreDaylight::Tone daylight{};
     const ExploreGrass::Simulation* grass = nullptr;
     ExploreEcology::Pose wildlife[ExploreEcology::CAPACITY]{};
@@ -282,6 +283,7 @@ struct RoomFoodViewModel {
 };
 
 struct ComputerViewModel {
+    uint8_t photoCount = 0;
     enum class Page : uint8_t {
         MENU = 0, STATUS, STORAGE, AI_HOSTING, CLAW_SETUP
     };

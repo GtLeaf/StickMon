@@ -16,6 +16,7 @@
 #include "app/HomeViewState.h"
 #include "ui/UiCommon.h"
 #include "ui/ExploreMapRenderer.h"
+#include "ui/PhotoScreens.h"
 #include "assets/PokemonSprites.h"
 #include "core/MathUtil.h"
 #include "core/AudioManager.h"
@@ -1059,6 +1060,7 @@ bool AmoledApp::updateExploreDeparture(uint32_t nowMs) {
 }
 
 void AmoledApp::beginExploreReturn(uint32_t nowMs) {
+    photoFlow_.close();
     if (exploreTransition_.state().phase != ExpeditionDeparturePhase::NONE) return;
     const bool fromMarket = market_ && sceneFlow.current() == AppSceneFlow::Scene::MARKET;
     if (!fromMarket && exploreSessionActive) {
@@ -1221,6 +1223,7 @@ bool AmoledApp::brainSay(const char* text) {
 #endif
 
 void AmoledApp::cancelTouch() {
+    photoFlow_.cancelTouch();
     marketUi_.cancel();
     marketTutorUi_.cancelTouch();
     marketShopUi_.cancelTouch();
@@ -1272,6 +1275,9 @@ void AmoledApp::handleTouch(const TouchEvent& physicalEvent) {
             pointerDown = dragging = false;
             return;
         }
+    }
+    if(photoFlow_.active()){
+        handlePhotoTouch(event);return;
     }
     if(sceneFlow.current()==AppSceneFlow::Scene::ROOM&&homeLibraryUi_.active()){
         if(displayLocked){cancelTouch();return;}
@@ -2172,8 +2178,7 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
             return;
         }
         if (exploreRouteBagAt(x, y)) {
-            pauseExploreRoute(nowMs);
-            openItemScene(AppSceneFlow::Scene::BAG);
+            openPhotoCamera(nowMs);
             return;
         }
         if (exploreRouteMenuAt(x, y)) {
@@ -2542,9 +2547,11 @@ void AmoledApp::handleTap(int x, int y, uint32_t nowMs) {
                 computerVelocity = 0.0f;
                 toast = nullptr;
                 requestFullRender();
+            } else if(item==2){
+                cancelTouch();photoFlow_.openAlbum();photoClockMs_=nowMs;requestFullRender();
             }
 #if STICKMON_HAS_CLAW
-            else if (item == 2) {
+            else if (item == 3) {
                 computerPage = ComputerViewModel::Page::AI_HOSTING;
                 computerPressedItem = 0xFF;
                 computerScroll = 0.0f;
@@ -2909,6 +2916,17 @@ void AmoledApp::updateBattery(uint32_t nowMs) {
 }
 
 void AmoledApp::update(uint32_t nowMs) {
+    if(photoFlow_.active()){
+        if(sceneFlow.current()!=AppSceneFlow::Scene::EXPLORE_ROUTE&&sceneFlow.current()!=AppSceneFlow::Scene::COMPUTER)photoFlow_.close();
+        else if(displayLocked||displayStandby_){photoFlow_.cancelTouch();photoClockMs_=nowMs;}
+        else if(static_cast<int32_t>(nowMs-photoClockMs_)>=66){
+            const auto elapsed=nowMs-photoClockMs_;photoClockMs_=nowMs;
+            if(photoFlow_.update(elapsed)){
+                if(photoFlow_.viewfinder())requestRenderRows(0,PhotoSession::MAP_HEIGHT);
+                else requestRenderRows(80,448);
+            }
+        }
+    }
     if(sceneFlow.current()==AppSceneFlow::Scene::ROOM&&homeLibraryUi_.active()){
         if(displayLocked||displayStandby_){homeLibraryUi_.cancelTouch();homeLibraryClockMs_=nowMs;homeLibraryDirty_=false;}
         else if(static_cast<int32_t>(nowMs-homeLibraryClockMs_)>=66){
@@ -3415,6 +3433,7 @@ void AmoledApp::update(uint32_t nowMs) {
     default: break;
     }
     bool sleepSafeScene = displayLockAllowed() &&
+                          !photoFlow_.keepsDisplayAwake() &&
                           !(sceneFlow.current()==AppSceneFlow::Scene::ROOM&&homeLibraryUi_.keepsDisplayAwake()) &&
                           sceneFlow.current() != AppSceneFlow::Scene::BATTLE &&
                           sceneFlow.current() != AppSceneFlow::Scene::SHOWER &&
@@ -3751,7 +3770,7 @@ void AmoledApp::beginExploreRouteExit(uint32_t nowMs) {
 void AmoledApp::updateExploreEcology(uint32_t nowMs) {
     const auto& route = exploreSession_.state();
     const bool active = sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_ROUTE &&
-        !route.exploreRoutePaused && !route.exploreRouteComplete && !route.exploreRouteExitConfirm &&
+        (!route.exploreRoutePaused||photoFlow_.viewfinder()) && !route.exploreRouteComplete && !route.exploreRouteExitConfirm &&
         !route.exploreRouteExiting && !exploreTransition_.fade().active();
     explorePresenter_.updateEcology(route, gameState, selectedExploreArea, active, nowMs);
     applyExplorePresentationDamage();
@@ -6639,7 +6658,7 @@ void AmoledApp::fillHomePetModel(HomeViewModel& model) const {
 }
 
 bool AmoledApp::exploreFramePipelineAllowed() const {
-    return sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_ROUTE &&
+    return !photoFlow_.active() && sceneFlow.current() == AppSceneFlow::Scene::EXPLORE_ROUTE &&
         exploreSession_.state().exploreRouteSteps > 0 &&
         exploreTransition_.state().phase == ExpeditionDeparturePhase::NONE &&
         !exploreTransition_.fade().active();
@@ -6661,6 +6680,10 @@ struct ListRowsClip {
 
 void AmoledApp::render(Canvas565& canvas) const {
     if (displayStandby_) return;
+    if(photoFlow_.active()){
+        if(photoFlow_.viewfinder())renderPhotoWorld(canvas,dirtyRowBegin,dirtyRowEnd);
+        renderPhotoScreen(canvas,photoFlow_,dirtyRowBegin,dirtyRowEnd,dirtyColumnBegin,dirtyColumnEnd);return;
+    }
     const auto& route = exploreSession_.state();
     renderCaches_.retainForScene(sceneFlow.current());
     if(sceneFlow.current()==AppSceneFlow::Scene::MARKET&&market_&&marketWorkshopUi_.active()){
@@ -7041,6 +7064,7 @@ void AmoledApp::render(Canvas565& canvas) const {
         ComputerViewModel model;
         model.state = &gameState;
         model.page = computerPage;
+        model.photoCount=uint8_t(photoFlow_.count());
         model.storageScroll = computerScroll;
         model.pressedItem = computerPressedItem == 0xFF
             ? -1 : computerPressedItem;
@@ -7165,6 +7189,7 @@ bool AmoledApp::displayLockAllowed() const {
 
 bool AmoledApp::prepareDisplayLock(uint32_t nowMs) {
     if (!displayLockAllowed()) return false;
+    photoFlow_.close();
     if (exploreSessionActive || market_) {
         // Market trips skip expedition costs but still hide the room actors.
         // Finish the normal return before capturing the room for locking.
@@ -8113,6 +8138,7 @@ void AmoledApp::openRoomFoodScene() {
 }
 
 void AmoledApp::openComputerScene() {
+    photoFlow_.close();photoFlow_.refreshCatalogue();
     sceneFlow.openSubScene(AppSceneFlow::Scene::COMPUTER);
     computerPage = ComputerViewModel::Page::MENU;
     computerScroll = 0.0f;

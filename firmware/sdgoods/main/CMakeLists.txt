@@ -5,7 +5,7 @@ foreach(DIR presentation assets core core/features hardware scenes game ui/commo
     list(APPEND GAME_SOURCES ${SOURCES})
 endforeach()
 list(FILTER GAME_SOURCES EXCLUDE REGEX "/ui/compact_touch/(HomeUi|MainMenuUi|FoodUi|MenuOverlayUi|SocialUi|HatchUi|ShopUi|BagUi|ComputerUi|TeamUi|RoomUi|ContactsUi|SettingsUi|StatusUi|MovesUi|DebugUi|ProgressionUi)[.]cpp$")
-idf_component_register(SRCS "main.cpp" "SdgoodsPlatform.cpp" "RoomSession.cpp" "Audio.cpp" "Battery.cpp" "PeerRadio.cpp" "ResourceBanks.cpp" "StorageMaintenance.cpp" "AdaptiveStandby.cpp"
+idf_component_register(SRCS "main.cpp" "SdgoodsPlatform.cpp" "PhotoFiles.cpp" "RoomSession.cpp" "Audio.cpp" "Battery.cpp" "PeerRadio.cpp" "ResourceBanks.cpp" "StorageMaintenance.cpp" "AdaptiveStandby.cpp"
     "${STICKMON_ROOT}/src/platform/api/PlatformServices.cpp"
     "${STICKMON_ROOT}/firmware/common/Rgb565Transfer.cpp"
     "${STICKMON_ROOT}/firmware/common/Qmi8658.cpp"

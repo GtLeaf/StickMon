@@ -56,12 +56,13 @@ void expectRect(Hit hit, int left, int top, int right, int bottom) {
 
 void exploreButtons(Canvas565& canvas, Game::GameState&) {
     if constexpr (EXPLORE_POSTCARD) {
-        expectRect(exploreStartAt,20,388,348,436);
+        // Current cream selector: the approved departure button moved up5px.
+        expectRect(exploreStartAt,20,383,348,431);
         expectRect(exploreSelectionBackAt,0,0,80,76);
         PixelCache565 cache;ExploreViewModel model;renderExploreScreen(canvas,model,cache);
-        expectPixel(canvas,184,430,PixelRenderer::rgb(42,61,68));
+        expectPixel(canvas,184,425,PixelRenderer::rgb(168,89,56));
         model.visibleAreaCount=2;model.selectedArea=1;renderExploreScreen(canvas,model,cache);
-        expectPixel(canvas,184,430,PixelRenderer::rgb(39,53,59));
+        expectPixel(canvas,184,425,PixelRenderer::rgb(227,212,191));
         return;
     }
     expectRect(exploreStartAt, 20, 388, 176, 436);

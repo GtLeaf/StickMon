@@ -11,6 +11,7 @@ src/core/AudioManager.cpp
 src/core/PcmMixer.cpp
 src/core/CryPlayer.cpp
 src/core/FontResource.cpp
+src/core/PhotoLibrary.cpp
 src/core/GameClockService.cpp
 src/core/ResourceFS.cpp
 src/core/MapLayoutResources.cpp
@@ -61,3 +62,4 @@ src/presentation/PixelRenderer.cpp
 src/third_party/uzlib/tinflate.c
 src/presentation/VisitMenu.cpp
 src/assets/VisitIcons.cpp
+src/presentation/PhotoFlow.cpp

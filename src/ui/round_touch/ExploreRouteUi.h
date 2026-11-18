@@ -12,6 +12,7 @@ constexpr MenuGrid::Rect routeStatusSlot(unsigned member) {
 }
 constexpr MenuGrid::Rect ROUTE_MENU{202, 13, 44, 44};
 constexpr MenuGrid::Rect ROUTE_MENU_BUTTON{208, 19, 32, 32};
+constexpr MenuGrid::Rect ROUTE_CAMERA{158,60,44,44};
 constexpr MenuGrid::Rect ROUTE_PANEL{236, 88, 92, 184};
 constexpr MenuGrid::Rect routeMenuItem(int index) {
     return {240, 92 + index * 44, 84, 44};

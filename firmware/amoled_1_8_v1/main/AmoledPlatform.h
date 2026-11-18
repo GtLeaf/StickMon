@@ -12,6 +12,7 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "platform/api/PlatformServices.h"
+#include "PlayerPhotoFiles.h"
 
 namespace AmoledV1 {
 
@@ -77,6 +78,7 @@ public:
 
     bool initialize() override;
     size_t blobSize(const char*, const char*) override;
+    Platform::BlobLookup lookupBlob(const char*,const char*,size_t&) override;
     bool readBlob(const char*, const char*, void*, size_t) override;
     bool writeBlob(const char*, const char*, const void*, size_t) override;
     bool removeBlob(const char*, const char*) override;
@@ -114,6 +116,7 @@ private:
     void applySpeakerVolumeLocked();
 
     Platform::Services services_;
+    Stickmon::PlayerPhotoFiles photoFiles_;
     Stickmon::Qmi8658 imu_;
     Stickmon::Axp2101Battery battery_;
     Amoled::PowerButton powerButton_;

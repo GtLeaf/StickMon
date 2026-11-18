@@ -5,6 +5,7 @@ namespace Ui {
 void ComputerUiBase::activateComputer(uint8_t index) {
     if (index == 0) host.openComputerSocial();
     else if (index == 1) host.openComputerContacts();
+    else if (index == 2) host.openComputerAlbum();
 }
 
 }  // namespace Ui

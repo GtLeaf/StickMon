@@ -39,6 +39,7 @@
 #include "app/VisitorFlow.h"
 #include "app/VisitAwayFlow.h"
 #include "app/ExplorePresenter.h"
+#include "PhotoSession.h"
 #include "app/HomePresenter.h"
 #include "AmoledGeometry.h"
 #include "HomeScreen.h"
@@ -111,7 +112,7 @@ public:
     bool displayLockAllowed() const;
     bool lockedHomePowerAllowed() const;
     void setDisplayLocked(bool locked) {
-        if (locked && !displayLocked && (market_||homeLibraryUi_.active())) cancelTouch();
+        if (locked && !displayLocked && (market_||homeLibraryUi_.active()||photoFlow_.active())) cancelTouch();
         displayLocked = locked;
     }
     void forceRenderRegion(int left, int top, int right, int bottom) {
@@ -176,6 +177,11 @@ public:
 #endif
 
 private:
+    PhotoSession photoFlow_;
+    uint32_t photoClockMs_=0;
+    void openPhotoCamera(uint32_t nowMs);
+    void handlePhotoTouch(const TouchEvent& event);
+    void renderPhotoWorld(Canvas565& canvas,uint16_t top,uint16_t bottom) const;
     void updateBattery(uint32_t nowMs);
     void fillHomePetModel(HomeViewModel& model) const;
     friend struct AmoledAppTestAccess;

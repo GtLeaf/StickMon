@@ -7,6 +7,9 @@
 #include "game/MarketSchedule.h"
 #include "ui/common/MarketView.h"
 #include "scenes/ExploreScene.h"
+#if STICKMON_UI_ROUND_TOUCH
+#include "ui/round_touch/PhotoUi.h"
+#endif
 #include <algorithm>
 #include <cstddef>
 #include <cstdio>
@@ -525,6 +528,7 @@ void ExploreScene::prepareSurface() {
 
 void ExploreScene::onExit() {
 #if STICKMON_UI_ROUND_TOUCH
+    photo_.close();
     resetMarketStall();
 #endif
     if (market_) { market_.reset(); Ui::MarketView::release(); }
@@ -561,6 +565,9 @@ uint32_t ExploreScene::visualFrameIntervalMs(uint32_t nowMs) const {
 }
 
 SceneUpdateResult ExploreScene::update(uint32_t nowMs, float dtSeconds) {
+#if STICKMON_UI_ROUND_TOUCH
+    if(photo_.active())return updatePhoto(nowMs);
+#endif
     if (market_) {
         marketUi_.update(*market_,nowMs,!GameEngine::ins().sceneFadeActive());
 #if STICKMON_UI_ROUND_TOUCH
@@ -723,6 +730,12 @@ SceneUpdateResult ExploreScene::update(uint32_t nowMs, float dtSeconds) {
 }
 
 bool ExploreScene::onButton(const ButtonEvent& event) {
+#if STICKMON_UI_ROUND_TOUCH
+    if(photo_.active()){
+        if(event.action==BtnAction::PRESSED&&event.btn==1)closePhoto();
+        return true;
+    }
+#endif
     cancelTouch();
     if (market_) {
         if (event.action == BtnAction::LONG_PRESS && event.btn == 1) market_->leave();
@@ -743,6 +756,7 @@ bool ExploreScene::onButton(const ButtonEvent& event) {
 void ExploreScene::cancelTouch() {
     marketUi_.cancel();
 #if STICKMON_UI_ROUND_TOUCH
+    photo_.cancelTouch();
     marketShopUi_.cancelTouch();
     marketTutorUi_.cancelTouch();marketCareUi_.cancelTouch();marketWorkshopUi_.cancelTouch();
     marketStallClockMs_ = Hal::ins().millis();
@@ -761,6 +775,9 @@ void ExploreScene::cancelTouch() {
 }
 
 bool ExploreScene::onTouch(const Platform::IInputDevice::TouchEvent& event) {
+#if STICKMON_UI_ROUND_TOUCH
+    if(photo_.active())return photoTouch(event);
+#endif
     if (market_) {
 #if STICKMON_UI_ROUND_TOUCH
         if (marketStallActive()) {
@@ -3367,6 +3384,10 @@ void ExploreScene::advanceMapBlock(uint8_t nextMap, bool fell) {
 
 void ExploreScene::render() {
 #if STICKMON_UI_ROUND_TOUCH
+    if(photo_.active()){
+        if(photo_.viewfinder())ui.renderPhotoWorld();
+        Ui::RoundPhotoUi::render(photo_);return;
+    }
     if (market_ || exploreSubViewOpen || phase != Phase::SELECT) ui.releaseSelectionCache();
 #endif
     if (market_) {
@@ -3392,6 +3413,9 @@ void ExploreScene::render() {
         return;
     }
     ui.render();
+#if STICKMON_UI_ROUND_TOUCH
+    if(phase==Phase::WALKING&&departureToastUntil)Ui::RoundPhotoUi::notice(departureToast);
+#endif
 }
 
 
@@ -3670,6 +3694,12 @@ void ExploreScene::renderExploreProgression() {
 
 bool ExploreScene::activateExplore(Ui::ExploreAction action, uint8_t value) {
     switch (action) {
+    case Ui::ExploreAction::PHOTO:
+#if STICKMON_UI_ROUND_TOUCH
+        return openPhoto();
+#else
+        return false;
+#endif
     case Ui::ExploreAction::RETURN_HOME: completeExploreReturn(false); return true;
     case Ui::ExploreAction::RESUME_WALK: resumeWalk(); return true;
     case Ui::ExploreAction::MENU_RETURN_PAUSE:
@@ -3974,6 +4004,9 @@ bool ExploreScene::beginMarket() {
 }
 
 bool ExploreScene::prepareDisplayLock() {
+#if STICKMON_UI_ROUND_TOUCH
+    closePhoto();
+#endif
     if(!market_)return true;
     if(phase!=Phase::ENDING)closeMarket();
     return false;

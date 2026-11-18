@@ -114,7 +114,7 @@ private:
 
 AmoledPlatform::AmoledPlatform()
     : services_{*this, *this, *this, *this, *this, *this, *this, *this,
-                *this, *this, *this, *this},
+                *this, *this, *this, *this, &photoFiles_},
       mixer_(*this) {}
 
 AmoledPlatform& AmoledPlatform::instance() {
@@ -573,6 +573,15 @@ size_t AmoledPlatform::blobSize(const char* nameSpace, const char* key) {
     esp_err_t result = nvs_get_blob(handle, key, nullptr, &length);
     nvs_close(handle);
     return result == ESP_OK ? length : 0;
+}
+
+Platform::BlobLookup AmoledPlatform::lookupBlob(const char* nameSpace,const char* key,size_t& length){
+    using Status=Platform::BlobLookup;
+    length=0;if(!nameSpace||!key)return Status::FAILED;
+    nvs_handle_t handle=0;auto result=nvs_open(nameSpace,NVS_READONLY,&handle);
+    if(result!=ESP_OK)return result==ESP_ERR_NVS_NOT_FOUND?Status::MISSING:Status::FAILED;
+    result=nvs_get_blob(handle,key,nullptr,&length);nvs_close(handle);
+    return result==ESP_OK?Status::FOUND:result==ESP_ERR_NVS_NOT_FOUND?Status::MISSING:Status::FAILED;
 }
 
 bool AmoledPlatform::readBlob(const char* nameSpace, const char* key,

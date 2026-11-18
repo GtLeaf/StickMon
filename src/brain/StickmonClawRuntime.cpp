@@ -32,6 +32,7 @@
 #include "esp_wifi.h"
 #include "freertos/idf_additions.h"
 #include "wear_levelling.h"
+#include "platform/esp32/PlayerVolume.h"
 #include "platform/api/PlatformServices.h"
 #include "presentation/QrCodeGen.h"
 
@@ -40,7 +41,6 @@ namespace {
 
 constexpr char TAG[] = "StickmonClaw";
 constexpr char BRAINFS_BASE[] = "/brain";
-constexpr char BRAINFS_PARTITION[] = "brainfs";
 constexpr char NVS_WIFI_NAMESPACE[] = "wifi";
 constexpr char NVS_CLAW_NAMESPACE[] = "claw";
 constexpr char NVS_CLAW_ENABLED_KEY[] = "runtime_enabled";
@@ -60,7 +60,6 @@ volatile bool s_wifiConnected = false;
 volatile bool s_wifiStopping = false;
 volatile bool s_wifiReconnectSuppressed = false;
 portMUX_TYPE s_wifiMux = portMUX_INITIALIZER_UNLOCKED;
-wl_handle_t s_brainWlHandle = WL_INVALID_HANDLE;
 
 constexpr size_t SETUP_MAX_BODY = 4096;
 
@@ -1282,23 +1281,7 @@ bool startSetupHttpServer() {
 }
 
 bool mountBrainFs() {
-    static bool mounted = false;
-    if (mounted) return true;
-    esp_vfs_fat_mount_config_t config = {
-        .format_if_mount_failed = true,
-        .max_files = 12,
-        .allocation_unit_size = 4096,
-        .disk_status_check_enable = false,
-        .use_one_fat = false,
-    };
-    esp_err_t result = esp_vfs_fat_spiflash_mount_rw_wl(
-        BRAINFS_BASE, BRAINFS_PARTITION, &config, &s_brainWlHandle);
-    if (result != ESP_OK && result != ESP_ERR_INVALID_STATE) {
-        ESP_LOGE(TAG, "brainfs mount failed: %s", esp_err_to_name(result));
-        return false;
-    }
-    mounted = true;
-    return true;
+    return Stickmon::mountPlayerVolume();
 }
 
 void appendImGroup(char* output, size_t outputSize, const char* channels,
