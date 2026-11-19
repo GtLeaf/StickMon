@@ -2,7 +2,7 @@
 #pragma once
 
 #include "ui/common/HomeUiBase.h"
-#include "ui/round_touch/HomePhotoFrame.h"
+#include "presentation/HomePhotoFrame.h"
 
 namespace Ui {
 // The room keeps the full native canvas; menu surfaces have separate geometry.

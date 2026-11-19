@@ -52,6 +52,7 @@ inline constexpr int MAIN_MENU_CONTENT_TOP = 0;
 inline constexpr int HOME_ROOM_WIDTH = 368;
 inline constexpr int HOME_ROOM_HEIGHT = UiMetrics::HOME_ROOM_HEIGHT;
 inline constexpr int HOME_STATUS_TOP = UiMetrics::HOME_STATUS_TOP;
+AmoledUi::Rect homeWallFrameBounds(int cameraX, int cameraY);
 
 enum class HomeHitTarget {
     NONE,

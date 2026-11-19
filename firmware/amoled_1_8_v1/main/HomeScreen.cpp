@@ -1,6 +1,8 @@
 #include "presentation/PokemonShadow.h"
 #include "HomeScreen.h"
 #include "presentation/VisitMenu.h"
+#include "presentation/FurnitureArt.h"
+#include "presentation/HomePhotoFrame.h"
 #include "AmoledGeometry.h"
 #include "ui/UiMetrics.h"
 #include "ui/UiCommon.h"
@@ -757,6 +759,11 @@ void renderHomeScreenRegion(Canvas565& canvas, const HomeViewModel& model,
         // Food is part of the room surface. Draw it after the room art but
         // before every actor so a pet standing over the bowl occludes it.
         if (roomDrawn) {
+            if (model.wallPhoto && (model.placedFurniture & 1u)) {
+                const auto frame = homeWallFrameBounds(model.cameraX, model.cameraY);
+                model.wallPhoto->drawWallPhoto(canvas, frame.x, frame.y, model.night,
+                                                AmoledUi::RESOURCE_SCALE);
+            }
             if (model.bowlFilled) {
                 drawFoodContent(canvas, model.bowlCenterX, model.bowlCenterY);
             }
@@ -923,6 +930,15 @@ int recallConfirmChoiceAt(int x, int y) {
     if (x >= 54 && x < 170) return 0;
     if (x >= 198 && x < 314) return 1;
     return -1;
+}
+
+AmoledUi::Rect homeWallFrameBounds(int cameraX, int cameraY) {
+    const auto& room = RoomResource::ins();
+    constexpr int scale = AmoledUi::RESOURCE_SCALE;
+    constexpr int size = FurnitureArt::FRAME_WORLD_SIZE * scale;
+    return {(FurnitureArt::FRAME_WORLD_X - cameraX) * scale,
+            HOME_ROOM_TOP + (room.roomY() + FurnitureArt::FRAME_ART_Y - cameraY) * scale,
+            size, size + size / 3};
 }
 
 HomeHitTarget homeHitTargetAt(int x, int y, int petCenterX,

@@ -1430,9 +1430,9 @@ bool exploreRouteMenuBackAt(int x, int y) {
 
 int exploreRouteMenuItemAt(int x, int y) {
     const int panelX = AmoledUi::WIDTH - EXPLORE_MENU_PANEL_WIDTH;
+    const int top = EXPLORE_MENU_PANEL_TOP;
     if (x < panelX || x >= AmoledUi::WIDTH ||
-        y < EXPLORE_MENU_PANEL_TOP ||
-        y >= EXPLORE_MENU_PANEL_TOP + EXPLORE_MENU_PANEL_HEIGHT) {
+        y < top || y >= top + EXPLORE_MENU_PANEL_HEIGHT) {
         return -1;
     }
     int index = (y - EXPLORE_MENU_PANEL_TOP) /
@@ -1449,12 +1449,14 @@ void renderExploreMenuScreen(Canvas565& canvas,
     if (rowBegin >= rowEnd) return;
 
     const int panelX = AmoledUi::WIDTH - EXPLORE_MENU_PANEL_WIDTH;
+    const int top = EXPLORE_MENU_PANEL_TOP;
+    const int height = EXPLORE_MENU_PANEL_HEIGHT;
     pageClip.setRect((panelX), (rowBegin), (EXPLORE_MENU_PANEL_WIDTH), (rowEnd - rowBegin));
-    canvas.fillRoundRect(panelX, EXPLORE_MENU_PANEL_TOP,
-                         EXPLORE_MENU_PANEL_WIDTH, EXPLORE_MENU_PANEL_HEIGHT,
+    canvas.fillRoundRect(panelX, top,
+                         EXPLORE_MENU_PANEL_WIDTH, height,
                          8, rgb(20, 25, 32));
-    canvas.drawRoundRect(panelX, EXPLORE_MENU_PANEL_TOP,
-                         EXPLORE_MENU_PANEL_WIDTH, EXPLORE_MENU_PANEL_HEIGHT,
+    canvas.drawRoundRect(panelX, top,
+                         EXPLORE_MENU_PANEL_WIDTH, height,
                          8, rgb(190, 200, 205));
 
     for (uint8_t index = 0; index < AppSceneFlow::exploreMenuItemCount(true);

@@ -1,5 +1,6 @@
 #include "AmoledApp.h"
 #include "core/FontResource.h"
+#include "core/RoomResource.h"
 #include "ui/UiCommon.h"
 #include "game/MonsterFactory.h"
 #include "game/ExploreRouteGeometry.h"
@@ -15,6 +16,18 @@ struct PhotoFiles:Platform::PosixUserFiles {
     using PosixUserFiles::PosixUserFiles;bool failWrite=false,failDelete=false;DesktopPlatform* desktop=nullptr;uint32_t delay=0;
     bool writeNew(const char*n,const void*p,size_t len,Platform::FileYield yield=nullptr)override{if(delay){desktop->sleepMs(delay);delay=0;}return !failWrite&&PosixUserFiles::writeNew(n,p,len,yield);}
     bool remove(const char*n)override{return !failDelete&&PosixUserFiles::remove(n);}
+};
+
+struct PhotoPower final : Platform::IPowerDevice {
+    explicit PhotoPower(Platform::IPowerDevice& power) : power(power) {}
+    Platform::IPowerDevice& power;
+    int batteryLevel() override { return power.batteryLevel(); }
+    Platform::WakeReason wakeReason() const override { return power.wakeReason(); }
+    uint32_t hardwareRandom() override { return power.hardwareRandom(); }
+    size_t externalMemorySize() const override { return 8 * 1024 * 1024; }
+    size_t externalMemoryFree() const override { return externalMemorySize(); }
+    void restart() override { power.restart(); }
+    void enterDeepSleep(uint64_t duration, bool external) override { power.enterDeepSleep(duration, external); }
 };
 namespace AmoledV1 {
 struct AmoledAppTestAccess {
@@ -157,13 +170,46 @@ static void run(DesktopPlatform& desktop,PhotoFiles& files,const char* output){
     app.cancelTouch();event(TouchEventType::UP,100,270);assert(app.photoFlow_.page()==P::ALBUM&&!app.photoFlow_.moving());tap(36,36);assert(!app.photoFlow_.active());
     app.sceneFlow.enter(S::EXPLORE_ROUTE);openCamera();assert(app.photoFlow_.viewfinder()&&app.photoFlow_.count()==5);tap(184,396);assert(app.photoFlow_.viewfinder()&&app.photoFlow_.error());
     assert(!app.prepareDisplayLock(desktop.millis())&&!app.photoFlow_.active());assert(library.refresh()==Photos::Result::OK&&library.count()==5);
+
+    // Exercise the placed frame through the real HOME touch route.
+    app.exploreTransition_.reset();
+    app.exploreSessionActive=false;
+    app.sceneFlow.enter(S::HOME);
+    assert(RoomResource::ins().available());
+    app.homeMainActor.x=193;
+    app.homeMainActor.y=RoomResource::ins().roomY()+108;
+    app.updateCamera();
+    const int frameX=app.worldToScreenX(203);
+    const int frameY=app.worldToScreenY(RoomResource::ins().roomY()+68);
+    assert(frameX>=0&&frameX<368&&frameY>=48&&frameY<344);
+    app.gameState.room.ownedFurniture|=1;
+    app.gameState.room.placedFurniture|=1;
+    shot("17-wall-frame-blank");
+    const auto blank=PixelRenderer::canvas().readPixel(frameX,frameY);
+    event(TouchEventType::DOWN,frameX,frameY);app.cancelTouch();event(TouchEventType::UP,frameX,frameY);
+    tap(184,365);tap(184,365);
+    uint64_t binding=0;
+    assert(library.readFrameBinding(binding)==Photos::Result::OK&&!binding);
+    tap(frameX,frameY);assert(app.homePhotoFrame_.active());shot("18-wall-frame-preview");
+    tap(184,344);shot("19-wall-frame-picker");
+    tap(184,344);
+    assert(library.readFrameBinding(binding)==Photos::Result::OK&&binding==library.entry(0).id);
+    shot("20-wall-frame-selected");bands();
+    tap(184,64);shot("21-wall-frame-mounted");
+    assert(PixelRenderer::canvas().readPixel(frameX,frameY)!=blank);
+    tap(frameX,frameY);tap(184,344);tap(314,216);tap(184,344);tap(184,64);
+    assert(library.readFrameBinding(binding)==Photos::Result::OK&&binding==library.entry(1).id);
+    std::puts("photo AMOLED: placed wall frame opens, selects, changes and displays the durable photo; cancel and dirty bands OK");
     std::puts("photo AMOLED: actual shortcut/clean capture/keep-awake/park/retry/slow write/reload/route return/bag/album/swipe/delete/dirty bands/byte order OK");
     std::printf("native host timing only: clean capture%lldus, save%lldus (not device measurements)\n",static_cast<long long>(captureUs),static_cast<long long>(saveUs));
 }
 };
 }
 int main(int argc,char**argv){
-    assert(argc==3);DesktopPlatform desktop(argv[1]);auto& services=desktop.serviceBundle();
+    assert(argc==3);DesktopPlatform desktop(argv[1]);auto& base=desktop.serviceBundle();
+    PhotoPower power(base.power);
+    Platform::Services services{base.lifecycle,base.clock,base.logger,base.input,base.display,
+        base.audio,base.imu,power,base.blobs,base.resources,base.memory,base.peers};
     const auto path=std::string(argv[2])+"/photos";PhotoFiles files(path);files.desktop=&desktop;services.userFiles=&files;
     Platform::bind(services);assert(desktop.begin()&&Platform::resources().mount());assert(GameAssets::begin()&&FontResource::ins().begin());
     std::vector<uint16_t> pixels(368*448);auto& c=PixelRenderer::canvas();c.attach({pixels.data(),368,448,false});c.setCoordinateScale(1);c.setLayoutScale(1);c.setAssetScale(1);c.setNativeText(true);

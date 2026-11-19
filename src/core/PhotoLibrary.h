@@ -8,7 +8,8 @@ namespace Photos {
 #define STICKMON_PHOTO_CAPACITY 5
 #endif
 inline constexpr unsigned WIDTH=192,THUMB_WIDTH=48,CAPACITY=STICKMON_PHOTO_CAPACITY;
-inline constexpr uint8_t MARKET_AREA=6;
+// On-disk location IDs 0 through 5 denote exploration areas.
+inline constexpr uint8_t MARKET_AREA = 6;
 static_assert(CAPACITY>=1&&CAPACITY<=32,"Photo capacity must be1..32");
 inline constexpr size_t PIXELS=WIDTH*WIDTH,THUMB_PIXELS=THUMB_WIDTH*THUMB_WIDTH;
 enum class Result:uint8_t {OK,FULL,UNAVAILABLE,FAILED,CORRUPT,NOT_FOUND,NO_MEMORY};

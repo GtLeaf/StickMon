@@ -3,12 +3,15 @@
 #include "core/FontResource.h"
 #include "ui/UiTheme.h"
 #include "platform/desktop/DesktopPlatform.h"
+#include "platform/common/PosixUserFiles.h"
 #include "presentation/PixelRenderer.h"
 #include <cassert>
 #include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
+#include <chrono>
+#include <filesystem>
 #include "market_dialogue_fixture.h"
 
 static void capture(const char* output,const char* name) {
@@ -137,32 +140,73 @@ struct AmoledAppTestAccess {
         for(int y=0;y<448;++y)for(int x=0;x<368;++x)
             idlePixels.push_back(PixelRenderer::canvas().readPixel(x,y));
         Ui::MarketView::render(*app.market_,view,app.market_->timeMs(),state.gameMinutesTotal);
-        for(int y=0;y<448;++y)for(int x=0;x<368;++x)
-            assert(idlePixels[y*368+x]==PixelRenderer::canvas().readPixel(x,y));
+        unsigned menuPixels=0;
+        for(int y=0;y<448;++y)for(int x=0;x<368;++x) {
+            if(idlePixels[y*368+x]==PixelRenderer::canvas().readPixel(x,y)) continue;
+            assert(x>=12&&x<76&&y>=364&&y<428);
+            ++menuPixels;
+        }
+        assert(menuPixels>1000 && "Expected a visible lower-left market menu button");
         uint32_t touchTime=100;
         const auto touch=[&](TouchEventType type,int x,int y) {
             TouchEvent e{};e.type=type;e.x=x;e.y=y;e.timestampMs=touchTime;
             app.handleTouch(e);touchTime+=50;
         };
-        // The old footer is ordinary walking space, without pause/back taps.
-        touch(TouchEventType::DOWN,60,420);
+        using Scene=AppSceneFlow::Scene;
+        const auto tap=[&](int x,int y){touch(TouchEventType::DOWN,x,y);touch(TouchEventType::UP,x,y);};
+        touch(TouchEventType::DOWN,44,396);assert(!app.marketUi_.dragging);
+        touch(TouchEventType::MOVE,100,396);touch(TouchEventType::UP,44,396);
+        assert(app.sceneFlow.current()==Scene::MARKET&&!app.marketUi_.dragging);
+        touch(TouchEventType::DOWN,44,396);app.cancelTouch();touch(TouchEventType::UP,44,396);
+        assert(app.sceneFlow.current()==Scene::MARKET);
+        const auto menuTime=app.market_->timeMs();
+        tap(44,396);assert(app.sceneFlow.current()==Scene::EXPLORE_MENU);
+        app.forceFullRender();app.render(PixelRenderer::canvas());capture(output,"market-menu-open");
+        advance(4);assert(app.market_->timeMs()==menuTime);
+        tap(310,50);assert(app.photoFlow_.viewfinder()&&app.sceneFlow.current()==Scene::MARKET);
+        advance(4);assert(app.photoFlow_.viewfinder()&&app.market_->timeMs()==menuTime);
+        auto& canvas=PixelRenderer::canvas();
+        Ui::MarketView::render(*app.market_,view,app.market_->timeMs(),state.gameMinutesTotal);
+        const auto clean=canvas.readPixel(app.photoFlow_.frameX(),app.photoFlow_.frameY());
+        app.forceFullRender();app.render(canvas);capture(output,"market-camera");
+        tap(184,396);assert(app.photoFlow_.page()==PhotoSession::Page::PREVIEW);
+        assert(app.photoFlow_.image()[0]==clean);
+        tap(268,420);assert(!app.photoFlow_.active()&&app.sceneFlow.current()==Scene::MARKET);
+        Photos::Library album;
+        assert(album.refresh()==Photos::Result::OK&&album.count()==1&&album.entry(0).valid);
+        assert(album.entry(0).area==Photos::MARKET_AREA);
+        std::vector<uint16_t> savedPhoto(Photos::PIXELS);
+        assert(album.loadImage(album.entry(0),savedPhoto.data())==Photos::Result::OK&&savedPhoto[0]==clean);
+        tap(44,396);tap(310,50);assert(app.photoFlow_.viewfinder());
+        tap(36,28);assert(!app.photoFlow_.active()&&app.sceneFlow.current()==Scene::MARKET);
+        tap(44,396);assert(app.sceneFlow.current()==Scene::EXPLORE_MENU);
+        tap(310,110);assert(app.sceneFlow.current()==Scene::TEAM);
+        tap(36,36);assert(app.sceneFlow.current()==Scene::EXPLORE_MENU);
+        tap(310,170);assert(app.sceneFlow.current()==Scene::BAG);
+        tap(36,36);assert(app.sceneFlow.current()==Scene::EXPLORE_MENU);
+        tap(310,286);assert(app.sceneFlow.current()==Scene::MARKET);
+        assert(app.market_->playerPose().x==idle.x&&app.market_->playerPose().y==idle.y);
+        touch(TouchEventType::DOWN,98,420);touch(TouchEventType::UP,44,396);
+        assert(app.sceneFlow.current()==Scene::MARKET&&!app.marketUi_.dragging);
+        // Empty lower edge space remains available for walking.
+        touch(TouchEventType::DOWN,98,420);
         assert(app.marketUi_.dragging&&app.marketUi_.direction==-1);
-        touch(TouchEventType::MOVE,67,420);assert(app.marketUi_.direction==-1);
-        touch(TouchEventType::MOVE,60,396);assert(app.marketUi_.direction==2);
-        touch(TouchEventType::MOVE,82,396);assert(app.marketUi_.direction==6);
+        touch(TouchEventType::MOVE,105,420);assert(app.marketUi_.direction==-1);
+        touch(TouchEventType::MOVE,98,396);assert(app.marketUi_.direction==2);
+        touch(TouchEventType::MOVE,120,396);assert(app.marketUi_.direction==6);
         app.render(PixelRenderer::canvas());capture(output,"market-joystick");
         advance(4);
         assert(app.market_->playerPose().x!=idle.x||app.market_->playerPose().y!=idle.y);
-        touch(TouchEventType::UP,60,396);
+        touch(TouchEventType::UP,98,396);
         assert(!app.marketUi_.dragging&&app.marketUi_.direction==-1&&!app.market_->exiting());
         advance(5);const auto stopped=app.market_->playerPose();advance(10);
         assert(app.market_->playerPose().x==stopped.x&&app.market_->playerPose().y==stopped.y);
-        for(int x : {60,184,310}) {
+        for(int x : {98,184,310}) {
             touch(TouchEventType::DOWN,x,420);touch(TouchEventType::UP,x,420);
             assert(!app.market_->paused()&&!app.market_->exiting()&&!app.marketUi_.dragging);
         }
-        touch(TouchEventType::DOWN,60,420);app.cancelTouch();
-        touch(TouchEventType::MOVE,60,380);touch(TouchEventType::UP,60,420);
+        touch(TouchEventType::DOWN,98,420);app.cancelTouch();
+        touch(TouchEventType::MOVE,98,380);touch(TouchEventType::UP,98,420);
         assert(!app.marketUi_.dragging&&app.marketUi_.direction==-1);
         touch(TouchEventType::DOWN,3,200);touch(TouchEventType::MOVE,27,200);
         assert(app.marketUi_.joystick().x+34==3&&app.marketUi_.direction==3);
@@ -202,6 +246,7 @@ struct AmoledAppTestAccess {
         touch(TouchEventType::DOWN,184,399);assert(!app.marketUi_.dragging);
         touch(TouchEventType::UP,184,399);assert(!app.marketUi_.dragging);
         assert(app.market_->conversing()&&app.marketUi_.dialogue().active());
+        tap(44,396);assert(app.sceneFlow.current()==Scene::MARKET&&app.marketUi_.dialogue().active());
         const auto frozenTime=app.market_->timeMs();
         for(int n=0;n<30&&!app.marketUi_.dialogue().visible();++n)advance(1);
         assert(app.market_->conversationReady()&&app.marketUi_.dialogue().visible());
@@ -330,15 +375,25 @@ struct AmoledAppTestAccess {
         cancel.type=TouchEventType::UP;app.handleTouch(cancel);
         assert(!app.exploreTransition_.state().pending&&!app.market_&&app.exploreTransition_.state().phase==AmoledApp::ExpeditionDeparturePhase::NONE);
         depart(false);assert(state.team[0].satiety==0);
+        tap(44,396);assert(app.sceneFlow.current()==Scene::EXPLORE_MENU);
+        tap(310,230);assert(app.sceneFlow.current()==Scene::MARKET&&app.sceneFadeActive());
+        for(int n=0;n<1200&&app.market_;++n)advance(1);
+        assert(!app.market_&&app.sceneFlow.current()==Scene::HOME);
+        std::puts("market-amoled: lower-left menu, team/bag return, tap isolation and leave-market fade OK");
     }
 };
 }
 int main(int argc,char** argv) {
-    assert(argc==2||argc==3);DesktopPlatform desktop(argv[1]);Platform::bind(desktop.serviceBundle());assert(desktop.begin());
+    assert(argc==2||argc==3);DesktopPlatform desktop(argv[1]);auto& services=desktop.serviceBundle();
+    const auto photoPath=std::filesystem::temp_directory_path()/
+        ("stickmon-market-photo-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    Platform::PosixUserFiles photos(photoPath.string());services.userFiles=&photos;
+    Platform::bind(services);assert(desktop.begin());
     assert(Platform::resources().mount());assert(GameAssets::begin());FontResource::ins().begin();
     std::vector<uint16_t> pixels(368*448);auto& c=PixelRenderer::canvas();c.attach({pixels.data(),368,448,false});
     c.setCoordinateScale(1);c.setLayoutScale(1);c.setAssetScale(1);c.setNativeText(true);
     AmoledV1::AmoledApp app;app.begin(0);AmoledV1::AmoledAppTestAccess::run(app,argc==3?argv[2]:nullptr);
+    std::filesystem::remove_all(photoPath);
     if(BuildConfig::DEBUG_FEATURES)
         std::puts("market-amoled: eight-way joystick lock chat walkout full-screen fade black room-return progress OK");
 }

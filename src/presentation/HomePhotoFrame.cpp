@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-#include "ui/round_touch/HomePhotoFrame.h"
+#include "presentation/HomePhotoFrame.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -106,7 +106,7 @@ void HomePhotoFrame::enter(bool placed) {
 }
 
 bool HomePhotoFrame::open() {
-    if (!background_.allocate(PANEL * PANEL)) return false;
+    if (roundPanel_ && !background_.allocate(PANEL * PANEL)) return false;
     active_ = true;
     layoutDirty_ = true;
     const auto result = library_.readFrameBinding(binding_);
@@ -271,11 +271,14 @@ void HomePhotoFrame::setNotice(Photos::Result result) {
 
 bool HomePhotoFrame::touch(const TouchTap::Event& event) {
     using T = TouchTap::Type;
-    if (event.type == T::CANCEL || !onPanel(event.x, event.y)) {
+    const bool inside = roundPanel_ ? onPanel(event.x, event.y) :
+        event.x >= 0 && event.x < 368 && event.y >= 0 && event.y < 448;
+    if (event.type == T::CANCEL || !inside) {
         cancelTouch();
         return false;
     }
-    const int x = event.x, y = event.y;
+    const int x = event.x - (roundPanel_ ? 0 : 4);
+    const int y = event.y - (roundPanel_ ? 0 : 44);
     int target = -1;
     if (BUTTON.contains(x, y)) target = ACTION;
     else if (picking_ && selection_ && LEFT.contains(x, y)) target = PREVIOUS;
@@ -307,6 +310,12 @@ bool HomePhotoFrame::touch(const TouchTap::Event& event) {
 }
 
 void HomePhotoFrame::render(Canvas565& canvas) {
+    if (!roundPanel_) {
+        // AMOLED redraws the room in the requested region before the overlay.
+        canvas.multiplyRectRgb(0, 0, canvas.width(), canvas.height(), 122, 122, 122);
+        drawOverlay(canvas, true, true);
+        return;
+    }
     const bool first = !backgroundReady_;
     const bool full = first || !FrameDamage::allowed ||
         lastOutput_ != canvas.rawPixels() || lastOutputSwapped_ != canvas.byteSwapped();
@@ -336,7 +345,6 @@ void HomePhotoFrame::render(Canvas565& canvas) {
     if (!full && !layoutDirty_ && !photosDirty_) return;
     if (full) {
         if (!first) restore({0, 0, PANEL, PANEL});
-        FurnitureArt::drawFrame(canvas, PANEL/2, FRAME.y + FRAME.height/2, FRAME.width);
     } else {
         restore(LEFT);
         restore(RIGHT);
@@ -348,28 +356,43 @@ void HomePhotoFrame::render(Canvas565& canvas) {
         const int bottom = layoutDirty_ ? BUTTON.y + BUTTON.height : IMAGE.y + IMAGE.height;
         FrameDamage::restrictTo(LEFT.x, top, RIGHT.x + RIGHT.width - LEFT.x, bottom - top);
     }
+    drawOverlay(canvas, full, full || layoutDirty_);
+    layoutDirty_ = photosDirty_ = false;
+}
+
+void HomePhotoFrame::drawOverlay(Canvas565& canvas, bool drawFrame, bool drawControls) const {
+    const int dx = roundPanel_ ? 0 : 4;
+    const int dy = roundPanel_ ? 0 : 44;
+    const auto offset = [dx, dy](Rect r) {
+        r.x += dx;
+        r.y += dy;
+        return r;
+    };
+    if (drawFrame)
+        FurnitureArt::drawFrame(canvas, PANEL/2 + dx, FRAME.y + FRAME.height/2 + dy, FRAME.width);
     if (picking_) {
-        drawCandidate(canvas, pickerImage(selection_), IMAGE);
-        if (selection_) drawNeighbor(canvas, pickerImage(selection_ - 1), LEFT);
-        if (selection_ + 1 < library_.count()) drawNeighbor(canvas, pickerImage(selection_ + 1), RIGHT);
+        drawCandidate(canvas, pickerImage(selection_), offset(IMAGE));
+        if (selection_) drawNeighbor(canvas, pickerImage(selection_ - 1), offset(LEFT));
+        if (selection_ + 1 < library_.count()) drawNeighbor(canvas, pickerImage(selection_ + 1), offset(RIGHT));
     } else {
-        drawPhoto(canvas, image_.data(), Photos::WIDTH, IMAGE);
+        drawPhoto(canvas, image_.data(), Photos::WIDTH, offset(IMAGE));
     }
-    if (full || layoutDirty_) {
-        canvas.fillRoundRect(BUTTON.x, BUTTON.y, BUTTON.width, BUTTON.height,
+    if (drawControls) {
+        const auto button = offset(BUTTON);
+        canvas.fillRoundRect(button.x, button.y, button.width, button.height,
             10, PixelRenderer::rgb(36, 64, 60));
-        canvas.drawRoundRect(BUTTON.x, BUTTON.y, BUTTON.width, BUTTON.height,
+        canvas.drawRoundRect(button.x, button.y, button.width, button.height,
             10, PixelRenderer::rgb(98, 133, 124));
         const uint16_t ink = PixelRenderer::rgb(240, 248, 242);
         label(canvas, picking_ ? Photo::CONFIRM_FRAME :
-              image_.data() ? Photo::CHANGE_FRAME : Photo::CHOOSE_FRAME, BUTTON, BitmapText::Font::PX32, ink);
+              image_.data() ? Photo::CHANGE_FRAME : Photo::CHOOSE_FRAME, button, BitmapText::Font::PX32, ink);
         if (notice_) {
-            canvas.fillRoundRect(NOTICE.x, NOTICE.y, NOTICE.width, NOTICE.height,
+            const auto notice = offset(NOTICE);
+            canvas.fillRoundRect(notice.x, notice.y, notice.width, notice.height,
                 7, PixelRenderer::rgb(17, 27, 34));
-            label(canvas, notice_, NOTICE, BitmapText::Font::PX16, ink);
+            label(canvas, notice_, notice, BitmapText::Font::PX16, ink);
         }
     }
-    layoutDirty_ = photosDirty_ = false;
 }
 
 void HomePhotoFrame::cacheWallPhoto(const uint16_t* pixels, int width) {
@@ -392,15 +415,18 @@ void HomePhotoFrame::cacheWallPhoto(const uint16_t* pixels, int width) {
     wallPhotoValid_ = true;
 }
 
-void HomePhotoFrame::drawWallPhoto(Canvas565& canvas, int x, int y, bool night) const {
+void HomePhotoFrame::drawWallPhoto(Canvas565& canvas, int x, int y, bool night, int scale) const {
     if (!wallPhotoValid_) return;
     constexpr int inset = (FurnitureArt::FRAME_WORLD_SIZE - WALL_PHOTO_SIZE) / 2;
     const auto* pixels = wallPhoto_[night];
     for (int row = 0; row < WALL_PHOTO_SIZE; ++row) {
         for (int col = 0; col < WALL_PHOTO_SIZE; ++col) {
-            const int frameX = inset + col;
+            const int frameX = (inset + col) * scale;
             const uint16_t pixel = pixels[row * WALL_PHOTO_SIZE + col];
-            canvas.drawPixel(x + frameX, y + inset + row + frameX/3, pixel);
+            for (int dx = 0; dx < scale; ++dx) {
+                const int column = frameX + dx;
+                canvas.drawFastVLine(x + column, y + (inset + row) * scale + column/3, scale, pixel);
+            }
         }
     }
 }
