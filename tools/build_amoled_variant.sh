@@ -85,18 +85,21 @@ fi
 
 # Existing build directories must adopt the room power-management settings too.
 if [[ -f "$SDKCONFIG" && "$1" != 1_75c ]]; then
-    python3 - "$SDKCONFIG" <<'PYCONFIG'
+    python3 - "$SDKCONFIG" "$1" <<'PYCONFIG'
 import re
 import sys
 from pathlib import Path
 path = Path(sys.argv[1])
 text = path.read_text()
-for key, value in {
+settings = {
     "CONFIG_PM_ENABLE": "y",
     "CONFIG_PM_DFS_INIT_AUTO": "n",
     "CONFIG_FREERTOS_USE_TICKLESS_IDLE": "y",
     "CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION": "y",
-}.items():
+}
+if sys.argv[2] == "v2" and not re.search(r"(?m)^CONFIG_FATFS_LFN_STACK=y$", text):
+    settings.update(CONFIG_FATFS_LFN_NONE="n", CONFIG_FATFS_LFN_HEAP="y")
+for key, value in settings.items():
     line = key + "=" + value
     pattern = r"(?m)^(?:" + key + r"=.*|# " + key + r" is not set)$"
     if re.search(pattern, text):

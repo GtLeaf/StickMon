@@ -8,6 +8,7 @@
 #include "Qmi8658.h"
 #include "Axp2101Battery.h"
 #include "AmoledPowerButton.h"
+#include "PlayerPhotoFiles.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
@@ -81,6 +82,7 @@ public:
     void setOtaWriteProtection(bool value) { otaWriteProtection_ = value; }
     bool initialize() override;
     size_t blobSize(const char*, const char*) override;
+    Platform::BlobLookup lookupBlob(const char*, const char*, size_t&) override;
     bool readBlob(const char*, const char*, void*, size_t) override;
     bool writeBlob(const char*, const char*, const void*, size_t) override;
     bool removeBlob(const char*, const char*) override;
@@ -117,6 +119,7 @@ private:
     void clearAudioQueue();
     void applySpeakerVolumeLocked();
 
+    Stickmon::PlayerPhotoFiles photoFiles_;
     Platform::Services services_;
     Stickmon::Qmi8658 imu_;
     Stickmon::Axp2101Battery battery_;
