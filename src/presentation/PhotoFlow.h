@@ -6,7 +6,7 @@ class Canvas565;
 namespace Ui {
 class PhotoFlow {
 public:
-    struct Geometry {int width=368,height=448,mapHeight=344,frameSize=256;bool circular=false;};
+    struct Geometry {int width=368,height=448,mapHeight=344;bool circular=false;};
     struct Rect {
         int x,y,width,height;
         bool contains(int px,int py)const{return px>=x&&px<x+width&&py>=y&&py<y+height;}
@@ -14,7 +14,7 @@ public:
     PhotoFlow():PhotoFlow(Geometry{}){}
     explicit PhotoFlow(Geometry geometry);
     const Geometry& geometry()const{return geometry_;}
-    int frameSize()const{return geometry_.frameSize;}
+    int frameSize()const{return frameSize_;}
     Rect backBounds()const;
     Rect shutterBounds()const;
     Rect retakeBounds()const;
@@ -26,7 +26,8 @@ public:
     Rect thumbBounds(unsigned index)const;
     enum class Page:uint8_t {CLOSED,VIEWFINDER,PREVIEW,ALBUM,DETAIL,DELETE_CONFIRM};
     enum class Request:uint8_t {NONE,CAPTURE,CLOSE_CAMERA,CLOSE_ALBUM};
-    static constexpr int MAP_WIDTH=368,MAP_HEIGHT=344,FRAME_SIZE=256;
+    static constexpr int MAP_WIDTH=368,MAP_HEIGHT=344;
+    static constexpr int MIN_FRAME_SIZE=160, DEFAULT_FRAME_SIZE=224, MAX_FRAME_SIZE=240;
     int frameX()const{return frameX_;}
     int frameY()const{return frameY_;}
     bool active()const{return page_!=Page::CLOSED;}
@@ -61,9 +62,13 @@ private:
     uint8_t area_=0;uint32_t day_=0;
     bool imageValid_=false,saved_=false,thumbValid_[Photos::CAPACITY]{};
     bool swipeDown_=false;int swipeX_=0,swipeY_=0;
-    int frameX_=(MAP_WIDTH-FRAME_SIZE)/2,frameY_=(MAP_HEIGHT-FRAME_SIZE)/2;
+    int frameSize_=DEFAULT_FRAME_SIZE;
+    int frameX_,frameY_;
     int frameTouchX_=0,frameTouchY_=0,frameOriginX_=0,frameOriginY_=0;
-    bool frameDown_=false,frameDragging_=false,frameDirty_=false;
+    enum class FrameGesture { NONE, MOVE, RESIZE };
+    FrameGesture frameGesture_=FrameGesture::NONE;
+    int frameOriginSize_=0;
+    bool frameDragging_=false,frameDirty_=false;
     TouchTap tap_;Ui::MarketListScroll scroll_;
     bool contains(int x,int y)const;
     void moveFrame(int x,int y);

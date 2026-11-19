@@ -1,5 +1,6 @@
 #include "ui/round_touch/PhotoUi.h"
 #include "core/UiStrings.h"
+#include "ui/common/PhotoCropMarks.h"
 #include "presentation/PixelRenderer.h"
 #include "presentation/TextBlock.h"
 #include <algorithm>
@@ -83,11 +84,7 @@ void render(const PhotoFlow& f){
     }
     // Crop marks remain visible even when a legal corner crosses a header badge.
     if(page==P::VIEWFINDER){
-        const int x=f.frameX(),y=f.frameY(),r=x+f.frameSize(),b=y+f.frameSize();
-        for(int side=0;side<2;++side)for(int edge=0;edge<2;++edge){
-            const int xx=side?r-1:x,yy=edge?b-1:y;
-            for(int n=0;n<2;++n){c.drawFastHLine(side?xx-16:xx,yy+(edge?-n:n),17,ink());c.drawFastVLine(xx+(side?-n:n),edge?yy-16:yy,17,ink());}
-        }
+        drawPhotoCropMarks(c,f,17,ink());
     }
     if(f.error()&&page!=P::DELETE_CONFIRM){
         c.fillRoundRect(60,232,240,48,10,PixelRenderer::rgb(17,27,34));

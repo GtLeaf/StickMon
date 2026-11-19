@@ -103,7 +103,7 @@ private:
     BattleBagResult battleBagResult = BattleBagResult::NONE;
     uint8_t battleBagFoodIndex = 0;
 #if STICKMON_UI_ROUND_TOUCH
-    Ui::PhotoFlow photos_{{360,360,360,224,true}};
+    Ui::PhotoFlow photos_{{360,360,360,true}};
     uint32_t photoClock_=0;
     bool photoTouching_=false,photoDirty_=false;
     void openComputerAlbum() override;

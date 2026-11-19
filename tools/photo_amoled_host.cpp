@@ -102,62 +102,66 @@ static void run(DesktopPlatform& desktop,PhotoFiles& files,const char* output){
     event(TouchEventType::DOWN,184,396);app.cancelTouch();event(TouchEventType::UP,184,396);assert(app.photoFlow_.page()==P::VIEWFINDER);
     desktop.sleepMs(31000);app.update(desktop.millis());assert(!app.consumeLockRequest());
     // Geometry is asserted through production pixels, including off-center frames.
-    auto frameAt=[&](int x,int y,bool force=true){
+    auto frameAt=[&](int x,int y,bool force=true,int size=224){
         if(force)app.forceFullRender();app.render(PixelRenderer::canvas());app.markRendered();
         const auto ink=UiCommon::rgb(226,238,233);auto& canvas=PixelRenderer::canvas();
-        assert(canvas.readPixel(x,y)==ink&&"Expected256px crop top-left corner");
-        assert(canvas.readPixel(x+255,y+255)==ink&&"Expected256px crop bottom-right corner");
+        assert(canvas.readPixel(x,y)==ink&&"Expected crop top-left corner");
+        assert(canvas.readPixel(x+size-1,y+size-1)==ink&&"Expected crop bottom-right corner");
+        assert(canvas.readPixel(x+size-11,y+size-5)==ink&&"Expected resize grip");
     };
-    frameAt(56,44);shot("14-frame-centered");
+    frameAt(72,60);shot("14-frame-centered");
     // Sub-threshold jitter and a gesture starting outside the crop do nothing.
-    event(TouchEventType::DOWN,184,172);event(TouchEventType::MOVE,189,177);event(TouchEventType::UP,189,177);frameAt(56,44);
-    event(TouchEventType::DOWN,20,172);event(TouchEventType::MOVE,120,220);event(TouchEventType::UP,120,220);frameAt(56,44);
+    event(TouchEventType::DOWN,184,172);event(TouchEventType::MOVE,189,177);event(TouchEventType::UP,189,177);frameAt(72,60);
+    event(TouchEventType::DOWN,20,172);event(TouchEventType::MOVE,120,220);event(TouchEventType::UP,120,220);frameAt(72,60);
     // Starting away from the center keeps the finger's original crop offset.
-    event(TouchEventType::DOWN,120,130);frameAt(56,44);
+    event(TouchEventType::DOWN,120,130);frameAt(72,60);
     event(TouchEventType::MOVE,136,140);assert(!app.needsRender()&&"MOVE must be coalesced");
     event(TouchEventType::MOVE,144,144);assert(!app.needsRender());
     desktop.sleepMs(66);app.update(desktop.millis());
     assert(app.needsRender()&&app.dirtyRowBegin==0&&app.dirtyRowEnd==344);
     // Verify actual pending rows before UP can mask a stale MOVE composition.
-    frameAt(80,58,false);
-    event(TouchEventType::UP,152,150);assert(app.needsRender());frameAt(88,64,false);
+    frameAt(96,74,false);
+    event(TouchEventType::UP,152,150);assert(app.needsRender());frameAt(104,80,false);
     assert(!app.photoFlow_.update(66)&&"Released crop must not queue a duplicate redraw");
     // Drag to upper-left, with no automatic recentering or inertia.
-    event(TouchEventType::DOWN,184,172);event(TouchEventType::MOVE,84,72);event(TouchEventType::UP,84,72);frameAt(0,0);
+    event(TouchEventType::DOWN,184,172);event(TouchEventType::MOVE,64,62);event(TouchEventType::UP,64,62);frameAt(0,0);
     shot("15-frame-upper-left");bands();desktop.sleepMs(66);app.update(desktop.millis());frameAt(0,0);
     // Back remains a button when the crop is underneath it; reopening resets crop.
-    tap(36,28);assert(!app.photoFlow_.active());openCamera();frameAt(56,44);
+    tap(36,28);assert(!app.photoFlow_.active());openCamera();frameAt(72,60);
     // Reaching all four sides clamps to the viewport, never the104px control bar.
     event(TouchEventType::DOWN,184,172);event(TouchEventType::MOVE,4,4);event(TouchEventType::UP,4,4);frameAt(0,0);
-    event(TouchEventType::DOWN,100,100);event(TouchEventType::MOVE,300,100);event(TouchEventType::UP,300,100);frameAt(112,0);
-    event(TouchEventType::DOWN,200,100);event(TouchEventType::MOVE,200,343);event(TouchEventType::UP,200,343);frameAt(112,88);
-    event(TouchEventType::DOWN,200,200);event(TouchEventType::MOVE,4,200);event(TouchEventType::UP,4,200);frameAt(0,88);
+    event(TouchEventType::DOWN,100,100);event(TouchEventType::MOVE,300,100);event(TouchEventType::UP,300,100);frameAt(144,0);
+    event(TouchEventType::DOWN,200,100);event(TouchEventType::MOVE,200,343);event(TouchEventType::UP,200,343);frameAt(144,120);
+    event(TouchEventType::DOWN,200,200);event(TouchEventType::MOVE,4,200);event(TouchEventType::UP,4,200);frameAt(0,120);
     // CANCEL/outside-screen release end drag; subsequent MOVE/UP cannot revive it.
-    event(TouchEventType::DOWN,100,200);event(TouchEventType::MOVE,140,180);frameAt(40,68);
+    event(TouchEventType::DOWN,100,200);event(TouchEventType::MOVE,140,180);frameAt(40,100);
     using InputType=Platform::IInputDevice::TouchType;
     assert(app.photoFlow_.touch({InputType::CANCEL,140,180,desktop.millis()})==PhotoSession::Request::NONE);
-    event(TouchEventType::MOVE,200,220);event(TouchEventType::UP,184,396);assert(app.photoFlow_.viewfinder());frameAt(40,68);
-    event(TouchEventType::DOWN,140,180);event(TouchEventType::MOVE,156,180);frameAt(56,68);
-    event(TouchEventType::UP,-1,180);event(TouchEventType::MOVE,200,220);event(TouchEventType::UP,184,396);frameAt(56,68);
+    event(TouchEventType::MOVE,200,220);event(TouchEventType::UP,184,396);assert(app.photoFlow_.viewfinder());frameAt(40,100);
+    event(TouchEventType::DOWN,140,180);event(TouchEventType::MOVE,156,180);frameAt(56,100);
+    event(TouchEventType::UP,-1,180);event(TouchEventType::MOVE,200,220);event(TouchEventType::UP,184,396);frameAt(56,100);
     // Dragging onto shutter consumes the gesture and keeps the map camera fixed.
-    event(TouchEventType::DOWN,184,172);event(TouchEventType::MOVE,300,300);event(TouchEventType::UP,300,300);frameAt(112,88);
+    event(TouchEventType::DOWN,184,172);event(TouchEventType::MOVE,300,300);event(TouchEventType::UP,300,300);frameAt(144,120);
     event(TouchEventType::DOWN,184,172);event(TouchEventType::MOVE,184,396);event(TouchEventType::UP,184,396);
-    assert(app.photoFlow_.viewfinder());frameAt(112,88);shot("16-frame-lower-right");bands();
+    assert(app.photoFlow_.viewfinder());frameAt(144,120);shot("16-frame-lower-right");bands();
+    // Drag the corner from inside the frame, then photograph the smaller crop.
+    event(TouchEventType::DOWN,346,322);event(TouchEventType::MOVE,326,302);
+    event(TouchEventType::UP,326,302);frameAt(164,140,true,184);
     const auto moved=app.exploreRouteModel();
     assert(moved.cameraX==before.cameraX&&moved.cameraY==before.cameraY&&moved.worldX==before.worldX&&moved.worldY==before.worldY);
     std::vector<uint16_t> expected(Photos::PIXELS);
     app.forceFullRender();app.renderPhotoWorld(PixelRenderer::canvas(),0,448);
-    for(unsigned y=0;y<192;++y)for(unsigned x=0;x<192;++x)expected[y*192+x]=PixelRenderer::canvas().readPixel(112+int((2*x+1)*256/384),88+int((2*y+1)*256/384));
+    for(unsigned y=0;y<192;++y)for(unsigned x=0;x<192;++x)expected[y*192+x]=PixelRenderer::canvas().readPixel(164+int((2*x+1)*184/384),140+int((2*y+1)*184/384));
     shot("02-viewfinder");const auto originalMinutes=app.gameState.gameMinutesTotal;app.gameState.gameMinutesTotal+=1440;
     const auto capturedDay=app.gameState.gameMinutesTotal/1440+1;
     const auto captureStarted=std::chrono::steady_clock::now();
     tap(184,396);app.gameState.gameMinutesTotal=originalMinutes;
     const auto captureUs=std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now()-captureStarted).count();
     assert(app.photoFlow_.page()==P::PREVIEW&&std::equal(expected.begin(),expected.end(),app.photoFlow_.image()));shot("03-preview");shot("17-moved-capture");
-    tap(100,420);assert(app.photoFlow_.viewfinder());frameAt(112,88);
+    tap(100,420);assert(app.photoFlow_.viewfinder());frameAt(164,140,true,184);
     // No MOVE in a new gesture: the release itself still carries final drag position.
-    event(TouchEventType::DOWN,184,172);event(TouchEventType::UP,172,162);frameAt(100,78);
-    event(TouchEventType::DOWN,184,172);event(TouchEventType::UP,196,182);frameAt(112,88);
+    event(TouchEventType::DOWN,184,172);event(TouchEventType::UP,172,162);frameAt(152,130,true,184);
+    event(TouchEventType::DOWN,184,172);event(TouchEventType::UP,196,182);frameAt(164,140,true,184);
     app.gameState.gameMinutesTotal+=1440;tap(184,396);app.gameState.gameMinutesTotal=originalMinutes;
     assert(app.photoFlow_.page()==P::PREVIEW&&std::equal(expected.begin(),expected.end(),app.photoFlow_.image()));
     app.update(desktop.millis());shot("03-preview");bands();shot("03-preview");

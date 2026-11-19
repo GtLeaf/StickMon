@@ -32,10 +32,43 @@ static void corners(const Flow& f){
         const double dx=x-179.5,dy=y-179.5;assert(dx*dx+dy*dy<=180.0*180.0);
     }
 }
+static void resizeGesture(Flow& f,int dx,int dy){
+    const int x=f.frameX()+f.frameSize()-22,y=f.frameY()+f.frameSize()-22;
+    event(f,T::DOWN,x,y);
+    event(f,T::MOVE,x+dx,y+dy);
+    assert(event(f,T::UP,x+dx,y+dy)==Flow::Request::NONE);
+}
+static void checkResize(Flow& f){
+    f.openCamera(0,1);
+    const int cx=f.geometry().width/2,cy=f.geometry().mapHeight/2;
+    assert(f.frameSize()==224);
+    resizeGesture(f,-15,-16);
+    assert(f.frameSize()==193 && f.frameX()==cx-97 && f.frameY()==cy-97);
+    resizeGesture(f,-35,-35);
+    assert(f.frameSize()==160 && f.frameX()==cx-80 && f.frameY()==cy-80);
+    // Grow after panning the small frame toward the upper-left perimeter.
+    event(f,T::DOWN,cx,cy);
+    event(f,T::UP,cx-105,cy-105);
+    resizeGesture(f,44,44);
+    assert(f.frameSize()==240);
+    if(f.geometry().circular)corners(f);
+    else assert(f.frameX()==0 && f.frameY()==0);
+    const int gx=f.frameX()+220,gy=f.frameY()+220;
+    event(f,T::DOWN,gx,gy);
+    event(f,T::MOVE,gx-8,gy);
+    assert(f.frameSize()==240 && !f.update(66));
+    event(f,T::MOVE,gx-20,gy);
+    assert(f.frameSize()==220 && f.update(66));
+    event(f,T::CANCEL,gx-20,gy);
+    assert(event(f,T::UP,gx-40,gy)==Flow::Request::NONE && f.frameSize()==220);
+    f.openCamera(0,1);
+    assert(f.frameSize()==224 && f.frameX()==cx-112 && f.frameY()==cy-112);
+}
 int main(int argc,char**argv){
     assert(argc==2);DesktopPlatform platform;Files files(argv[1]);
     auto& services=platform.serviceBundle();services.userFiles=&files;Platform::bind(services);
-    Flow f({360,360,360,224,true});
+    Flow f({360,360,360,true});
+    checkResize(f);
     assert(f.geometry().circular&&f.frameSize()==224);
     rect(f.backBounds(),84,24,44,44);rect(f.shutterBounds(),148,302,64,44);
     rect(f.retakeBounds(),88,288,88,44);rect(f.saveBounds(),184,288,88,44);
@@ -71,10 +104,12 @@ int main(int argc,char**argv){
     // Capture and persisted image sample precisely the runtime frame.
     for(unsigned n=0;n<Photos::CAPACITY;++n){
         f.openCamera(2,7+n);event(f,T::DOWN,180,180);event(f,T::UP,190,180);
+        resizeGesture(f,-32,-32);
+        assert(f.frameSize()==160);
         const int fx=f.frameX(),fy=f.frameY();assert(tap(f,f.shutterBounds())==Flow::Request::CAPTURE);
         assert(f.capture(canvas,20+n)&&f.page()==Flow::Page::PREVIEW);
-        for(unsigned y=0;y<192;++y)for(unsigned x=0;x<192;++x)assert(f.image()[y*192+x]==canvas.readPixel(fx+(2*x+1)*224/384,fy+(2*y+1)*224/384));
-        if(!n){tap(f,f.retakeBounds());assert(f.viewfinder()&&f.frameX()==fx&&f.frameY()==fy);assert(f.capture(canvas,20));}
+        for(unsigned y=0;y<192;++y)for(unsigned x=0;x<192;++x)assert(f.image()[y*192+x]==canvas.readPixel(fx+(2*x+1)*160/384,fy+(2*y+1)*160/384));
+        if(!n){tap(f,f.retakeBounds());assert(f.viewfinder()&&f.frameSize()==160&&f.frameX()==fx&&f.frameY()==fy);assert(f.capture(canvas,20));}
         if(!n){
             files.failWrite=true;assert(tap(f,f.saveBounds())==Flow::Request::NONE);
             assert(f.page()==Flow::Page::PREVIEW&&f.image()&&f.count()==0&&f.error());files.failWrite=false;
@@ -92,6 +127,6 @@ int main(int argc,char**argv){
     event(f,T::DOWN,100,305);event(f,T::UP,100,305);assert(f.page()==Flow::Page::ALBUM);
     tap(f,f.thumbBounds(0));assert(f.page()==Flow::Page::DETAIL);
     f.close();assert(!f.active()&&!f.image());f.openCamera(2,1);assert(f.frameX()==68&&f.frameY()==68);
-    Flow rectangular;rectangular.openCamera(0,1);assert(rectangular.frameSize()==256&&rectangular.frameX()==56&&rectangular.frameY()==44);
+    Flow rectangular;checkResize(rectangular);
     std::puts("photo flow: round geometry, exhaustive crop corners, offset/threshold/cancel/coalescing, runtime capture, retake/reopen, five real-file photos, album swipe/delete/scroll OK");
 }

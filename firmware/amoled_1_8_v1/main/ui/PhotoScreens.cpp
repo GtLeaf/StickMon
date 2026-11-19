@@ -1,6 +1,7 @@
 #include "ui/PhotoScreens.h"
 #include "ui/UiCommon.h"
 #include "core/UiStrings.h"
+#include "ui/common/PhotoCropMarks.h"
 #include "presentation/PixelRenderer.h"
 #include "presentation/TextBlock.h"
 #include <algorithm>
@@ -39,19 +40,13 @@ void renderPhotoScreen(Canvas565& c,const PhotoSession& flow,uint16_t top,uint16
     using P=PhotoSession::Page;const auto page=flow.page();char count[20];
     if(page==P::VIEWFINDER){
         c.fillRect(0,344,368,104,0);
-        const int frameX=flow.frameX(),frameY=flow.frameY(),size=PhotoSession::FRAME_SIZE;
+        const int frameX=flow.frameX(),frameY=flow.frameY(),size=flow.frameSize();
         const int frameRight=frameX+size,frameBottom=frameY+size;
         PixelRenderer::fillRectAlpha(0,0,frameX,PhotoSession::MAP_HEIGHT,0,118);
         PixelRenderer::fillRectAlpha(frameRight,0,PhotoSession::MAP_WIDTH-frameRight,PhotoSession::MAP_HEIGHT,0,118);
         PixelRenderer::fillRectAlpha(frameX,0,size,frameY,0,118);
         PixelRenderer::fillRectAlpha(frameX,frameBottom,size,PhotoSession::MAP_HEIGHT-frameBottom,0,118);
-        for(int side=0;side<2;++side)for(int edge=0;edge<2;++edge){
-            const int x=side?frameRight-1:frameX,y=edge?frameBottom-1:frameY;
-            for(int n=0;n<2;++n){
-                c.drawFastHLine(side?x-18:x,y+(edge?-n:n),19,ink());
-                c.drawFastVLine(x+(side?-n:n),edge?y-18:y,19,ink());
-            }
-        }
+        Ui::drawPhotoCropMarks(c,flow,19,ink());
         back(c,28);c.fillRoundRect(278,10,78,36,12,UiCommon::rgb(27,43,51));std::snprintf(count,sizeof(count),"%u/%u",flow.count(),Photos::CAPACITY);label(c,count,278,12,78);
         c.drawCircle(184,396,29,ink());c.drawCircle(184,396,28,ink());c.fillCircle(184,396,22,ink());
     }else{

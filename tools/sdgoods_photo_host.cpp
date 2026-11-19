@@ -153,12 +153,17 @@ int main(int argc,char**argv){
     assert(wildlifeChanged&&"Wildlife must remain live during viewfinder");
     event(T::DOWN,180,180);event(T::MOVE,220,190);event(T::UP,220,190);
     assert(route.photo_.frameX()>68);shot("03-moved-viewfinder",route);
+    const int gripX=route.photo_.frameX()+202,gripY=route.photo_.frameY()+202;
+    event(T::DOWN,gripX,gripY);event(T::MOVE,gripX-32,gripY-32);event(T::UP,gripX-32,gripY-32);
+    assert(route.photo_.frameSize()==160);
+    route.render();
     const int fx=route.photo_.frameX(),fy=route.photo_.frameY();
-    for(int x:{fx,fx+223})for(int y:{fy,fy+223})assert(Ui::RoundExplore::routePoint(x,y));
+    for(int x:{fx,fx+159})for(int y:{fy,fy+159})assert(Ui::RoundExplore::routePoint(x,y));
+    assert(canvas.readPixel(fx+149,fy+155)==PixelRenderer::rgb(226,238,233));
     // Capture at exactly the shutter release's game clock; exclude all overlays.
     event(T::DOWN,180,324);desktop.advanceMs(40);route.ui.renderPhotoWorld();
     std::vector<uint16_t> expected(Photos::PIXELS);
-    for(unsigned y=0;y<192;++y)for(unsigned x=0;x<192;++x)expected[y*192+x]=canvas.readPixel(fx+int((2*x+1)*224/384),fy+int((2*y+1)*224/384));
+    for(unsigned y=0;y<192;++y)for(unsigned x=0;x<192;++x)expected[y*192+x]=canvas.readPixel(fx+int((2*x+1)*160/384),fy+int((2*y+1)*160/384));
     route.onTouch({T::UP,180,324,desktop.millis()});
     assert(route.photo_.page()==P::PREVIEW&&std::equal(expected.begin(),expected.end(),route.photo_.image()));shot("04-preview",route);clipped(route.photo_);
     auto frozen=route.ui.ecology.pose(0);desktop.advanceMs(31000);const auto parked=route.update(desktop.millis(),31.f);

@@ -62,9 +62,9 @@ void PhotoFlow::error(Photos::Result r){
         r==R::NO_MEMORY?Ui::Photo::NO_MEMORY:r==R::CORRUPT?Ui::Photo::CORRUPT:Ui::Photo::FAILED;
 }
 void PhotoFlow::close(){page_=Page::CLOSED;cancelTouch();image_.reset();thumbs_.reset();imageValid_=false;error_=nullptr;saved_=false;frameDirty_=false;}
-void PhotoFlow::cancelTouch(){tap_.cancel();scroll_.cancel();swipeDown_=false;frameDown_=frameDragging_=false;}
+void PhotoFlow::cancelTouch(){tap_.cancel();scroll_.cancel();swipeDown_=false;frameGesture_=FrameGesture::NONE;frameDragging_=false;}
 void PhotoFlow::openCamera(uint8_t area,uint32_t day){
-    close();area_=area;day_=day;error(library_.refresh());page_=Page::VIEWFINDER;
+    close();frameSize_=DEFAULT_FRAME_SIZE;area_=area;day_=day;error(library_.refresh());page_=Page::VIEWFINDER;
     frameX_=(geometry_.width-frameSize())/2;frameY_=(geometry_.mapHeight-frameSize())/2;
 }
 void PhotoFlow::openAlbum(){close();page_=Page::ALBUM;offset_=0;error(library_.refresh());if(!error_)thumbnails();}
@@ -120,20 +120,32 @@ PhotoFlow::Request PhotoFlow::touch(const Platform::IInputDevice::TouchEvent&e){
         if(e.type==T::DOWN){
             cancelTouch();
             const bool header=target(e.x,e.y)>=BACK_TARGET||(geometry_.circular?trashBounds().contains(e.x,e.y):(e.x>=278&&e.x<356&&e.y>=10&&e.y<46));
-            frameDown_=!header&&e.x>=frameX_&&e.x<frameX_+frameSize()&&e.y>=frameY_&&e.y<frameY_+frameSize();
-            if(frameDown_){
+            const Rect frame{frameX_,frameY_,frameSize_,frameSize_};
+            if(!header && frame.contains(e.x,e.y)){
+                constexpr int hitSize=44;
+                const Rect handle{frameX_+frameSize_-hitSize,frameY_+frameSize_-hitSize,hitSize,hitSize};
+                frameGesture_=handle.contains(e.x,e.y)?FrameGesture::RESIZE:FrameGesture::MOVE;
+                frameOriginSize_=frameSize_;
                 frameTouchX_=e.x;frameTouchY_=e.y;frameOriginX_=frameX_;frameOriginY_=frameY_;
                 return Request::NONE;
             }
-        }else if(frameDown_){
+        }else if(frameGesture_!=FrameGesture::NONE){
             const int dx=e.x-frameTouchX_,dy=e.y-frameTouchY_;
             if(dx*dx+dy*dy>64)frameDragging_=true;
-            if(frameDragging_){
+            if(frameDragging_ && frameGesture_==FrameGesture::RESIZE){
+                // Project finger motion onto the diagonal. Keeping the center
+                // fixed makes each edge travel half the change in side length.
+                const int size=std::clamp(frameOriginSize_+dx+dy,MIN_FRAME_SIZE,MAX_FRAME_SIZE);
+                frameDirty_|=size!=frameSize_;
+                frameSize_=size;
+                const int inset=(frameOriginSize_+1)/2-(size+1)/2;
+                moveFrame(frameOriginX_+inset,frameOriginY_+inset);
+            }else if(frameDragging_){
                 moveFrame(frameOriginX_+dx,frameOriginY_+dy);
             }
             // A crop gesture owns its release, even over shutter or back.
             if(e.type==T::UP){
-                frameDown_=frameDragging_=false;
+                frameGesture_=FrameGesture::NONE;frameDragging_=false;
                 // AmoledApp renders every release immediately; do not redraw it
                 // again on the next coalesced MOVE tick.
                 frameDirty_=false;

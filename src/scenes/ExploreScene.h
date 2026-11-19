@@ -374,7 +374,7 @@ private:
     std::unique_ptr<Market::Session> market_;
     Ui::MarketWalkUi marketUi_;
 #if STICKMON_UI_ROUND_TOUCH
-    Ui::PhotoFlow photo_{{360,360,360,224,true}};
+    Ui::PhotoFlow photo_{{360,360,360,true}};
     uint32_t photoClock_=0,photoPauseAt_=0;
     bool photoWasPaused_=false;
     bool openPhoto();
